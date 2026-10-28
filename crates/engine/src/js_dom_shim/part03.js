@@ -9700,28 +9700,65 @@
     // 命中即直调 trap 版本。
     var _r219OwnIb = this && Object.prototype.hasOwnProperty.call(this, 'insertBefore')
       ? this.insertBefore : null;
+    // s131（html-semantics M2 切片 131）：插入前 form owner 键快照（radio 组排他
+    // 现象 3 的 before 面——HTML §4.10.5.1.16 现象表「The element's form owner
+    // changes」：变更后 checkedness 为 true 则新组其余成员置 false）。
+    // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+    // 键形同 part05 `_zwRadioUncheckGroupOthers`（handle/sel/id 串键——form 代理
+    // 每取可新建对象，裸 toString 恒「[object Object]」无法区分 form A/B）。仅
+    // 元素节点取样（非元素 undefined 作哨兵跳过 after 面）。
+    var _foKeyIns131 = function (n) {
+      try {
+        if (!n) return null;
+        if (n.__zwHandle) return '@' + n.__zwHandle;
+        if (n.__zwSelector) return 's:' + n.__zwSelector;
+        if (n.id) return 'id:' + n.id;
+      } catch (_e131fk) {}
+      return null;
+    };
+    var _foB131 = undefined;
+    try {
+      if (newNode && newNode.nodeType === 1) _foB131 = _foKeyIns131(newNode.form);
+    } catch (_e131fb) {}
+    var _insRet131 = newNode;
     if (!_r219OwnIb && this && this.__zwHandle !== undefined
       && typeof this.insertBefore === 'function'
       && this.insertBefore !== globalThis.Node.prototype.insertBefore) {
-      return this.insertBefore(newNode, refNode);
-    }
-    if (_r219OwnIb && typeof _r219OwnIb === 'function'
+      _insRet131 = this.insertBefore(newNode, refNode);
+    } else if (_r219OwnIb && typeof _r219OwnIb === 'function'
         && _r219OwnIb !== globalThis.Node.prototype.insertBefore) {
-      return _r219OwnIb.call(this, newNode, refNode);
+      _insRet131 = _r219OwnIb.call(this, newNode, refNode);
+    } else {
+      // R341 还账（PR #76 审查 D1 / PR #78）：appendChild 兜底须排除 R341 安装的
+      // Node.prototype.appendChild——其 spec 本义即 insertBefore(node, null)。接收者
+      // 无 own insertBefore 且无 __zwHandle 时，兜底委托回原型 appendChild 再进本方法
+      // → 互调成环至 RangeError 被上方 catch 吞（终态 no-op 不变，但一次满栈空转
+      // 纯浪费；R219 探针时代 appendChild 为 undefined → TypeError 立即出局，环是
+      // R341 装方法后新暴露）。判据断环：兜底只委托非原型实现（own/工厂实现语义
+      // 不受扰）；原型形态直接静默返回入参（与 R219 无实现终态一致）。
+      try {
+        if (this.appendChild !== globalThis.Node.prototype.appendChild) {
+          this.appendChild(newNode);
+        }
+      } catch (_e6) {}
     }
-    // R341 还账（PR #76 审查 D1 / PR #78）：appendChild 兜底须排除 R341 安装的
-    // Node.prototype.appendChild——其 spec 本义即 insertBefore(node, null)。接收者
-    // 无 own insertBefore 且无 __zwHandle 时，兜底委托回原型 appendChild 再进本方法
-    // → 互调成环至 RangeError 被上方 catch 吞（终态 no-op 不变，但一次满栈空转
-    // 纯浪费；R219 探针时代 appendChild 为 undefined → TypeError 立即出局，环是
-    // R341 装方法后新暴露）。判据断环：兜底只委托非原型实现（own/工厂实现语义
-    // 不受扰）；原型形态直接静默返回入参（与 R219 无实现终态一致）。
+    // s131 after 面：插入实做完成后比对 form owner 键——变更且该 INPUT radio
+    // checkedness 为 true → 新组排他 sweep（radio-disconnected-group-owner
+    // 「Appending input radio input into a disconnect form should update …」
+    // 断言面；同文件 DIV 对照案 root/tree 变更非现象——owner null→null 键等
+    // 不触发）。文档面 parser 插入不经本钩子（Rust 侧建树）；form 内同树移动
+    // 键不变不误触发。FIXME: form= 属性变更、移除方向（form → detached）、
+    // 子树整体插入的深层 radio 未接同一现象。
     try {
-      if (this.appendChild !== globalThis.Node.prototype.appendChild) {
-        this.appendChild(newNode);
+      if (_foB131 !== undefined && newNode && newNode.nodeType === 1
+          && String(newNode.localName || '').toLowerCase() === 'input') {
+        var _foA131 = _foKeyIns131(newNode.form);
+        if (String(_foA131) !== String(_foB131)) {
+          _zwRadioUncheckGroupOthers(newNode);
+        }
       }
-    } catch (_e6) {}
-    return newNode;
+    } catch (_e131fa) {}
+    return _insRet131;
   });
   // R219（js-dom M4）：`Node.prototype.contains` / `compareDocumentPosition` /
   // `hasChildNodes` 泛型（spec Node 接口三方法）。既有实现只逐节点 own-property

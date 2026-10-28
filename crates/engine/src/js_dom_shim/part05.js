@@ -504,79 +504,20 @@
             _checkedDirtyState[key] = !!value;
             // s125（html-semantics M2 切片 125）：radio 组排他——checkedness 置 true 时
             // 同组其余 radio checkedness 全部置 false（HTML §4.10.5.1.16 Radio Button
-            // state 现象表「The element's checkedness state is set to true (for whatever
-            // reason)」；checked IDL setter 置 checkedness 即触发——clone.html「inputs[2]
-            // .checked=true 后 inputs[3] 克隆态应为 false」断言面）。
+            // state 现象表现象 1「The element's checkedness state is set to true (for
+            // whatever reason)」；checked IDL setter 置 checkedness 即触发——clone.html
+            // 「inputs[2].checked=true 后 inputs[3] 克隆态应为 false」断言面）。
             // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
-            // 组定义：同树 type=radio + 同 name（非空）+ 同 form owner（或均无）。
-            // 引擎模型：脏件写 _checkedDirtyState=false（dirty 旗标保持——spec 只清
-            // checkedness 不清旗标，旗标在则属性变更不联动）；净件移除 checked 属性
-            // （latest-wins 面即刻可见——checked getter 回落属性读）。组枚举沿 R3254-K5
-            // 键盘臂先例（document qSA 同名 radio），owner 比对经 .form + 选择器串键。
-            // FIXME: 仅 IDL checked setter 面触发；checked 属性增设/defaultChecked/
-            // 激活行为等其余置真现象未走组排他。
+            // 组定义：同 root（s130 根域）+ 同 form owner（或均无）+ type=radio +
+            // 同 name（非空）。s131 起 sweep 收口进 `_zwRadioUncheckGroupOthers`
+            // 共享出口（现象 3 form owner 变更面同款）；引擎模型不变：脏件写
+            // _checkedDirtyState=false（dirty 旗标保持——spec 只清 checkedness 不清
+            // 旗标，旗标在则属性变更不联动）；净件移除 checked 属性（latest-wins
+            // 面即刻可见——checked getter 回落属性读）。
+            // FIXME: checked 属性增设/defaultChecked/type 变更/becomes connected
+            // 等其余置真现象未走组排他（form owner 变更已由 s131 接线）。
             if (value) {
-              try {
-                var _me125 = _makeProxy(sel, handle);
-                if (String(_me125.getAttribute('type') || '').toLowerCase() === 'radio'
-                    && _me125.getAttribute('name')) {
-                  var _foKey125 = function (el) {
-                    try {
-                      if (!el) return null;
-                      if (el.__zwHandle) return '@' + el.__zwHandle;
-                      if (el.__zwSelector) return 's:' + el.__zwSelector;
-                      if (el.id) return 'id:' + el.id;
-                    } catch (_e125fk) {}
-                    return null;
-                  };
-                  var _foK125 = null;
-                  try { _foK125 = _foKey125(_me125.form); } catch (_e125f) {}
-                  // s130：组枚举根域——spec 组定义首条「b 的 root 与 a 相同」
-                  //（https://html.spec.whatwg.org/multipage/input.html#radio-button-state
-                  // 的 radio button group 定义）。parent 链顶 nodeType 9 → document
-                  // qSA（文档面绿面不变；探针 s130b：documentElement 级元素 qSA
-                  // 异常返 0，文档面不经元素级）；链顶非 document（detached 树）→
-                  // 链顶子树 qSA——orphan 树组员 document qSA 不可见（radio.html
-                  // orphan/different-form-owners/different-name 三案根因，探针
-                  // s130b detached DIV qSA identity 真）。
-                  var _qRoot125 = document;
-                  try {
-                    var _qp125 = _me125, _qh125 = 0;
-                    while (_qp125 && _qp125.parentNode && _qh125++ < 64) _qp125 = _qp125.parentNode;
-                    if (_qp125 && _qp125.nodeType !== 9 && typeof _qp125.querySelectorAll === 'function') _qRoot125 = _qp125;
-                  } catch (_e125qr) {}
-                  var _all125 = _qRoot125.querySelectorAll('input[type="radio"][name="'
-                    + String(_me125.getAttribute('name')).replace(/"/g, '\\"') + '"]');
-                  for (var _gi125 = 0; _gi125 < _all125.length; _gi125++) {
-                    var _gd125 = _all125[_gi125];
-                    var _gk125 = _elKey(_gd125.__zwSelector, _gd125.__zwHandle);
-                    if (_gk125 === key) continue;
-                    var _gfoK125 = null;
-                    try { _gfoK125 = _foKey125(_gd125.form); } catch (_e125gf) {}
-                    if (String(_gfoK125) !== String(_foK125)) continue;
-                    if (_checkedDirtyState[_gk125] !== undefined) {
-                      _checkedDirtyState[_gk125] = false;
-                    } else {
-                      var _gov125 = null;
-                      try {
-                        _gov125 = (_gd125.__zwHandle && typeof __zw_get_attr_handle === 'function')
-                          ? __zw_get_attr_handle(_gd125.__zwHandle, 'checked')
-                          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(_gd125.__zwSelector, 'checked') : null);
-                      } catch (_e125go) {}
-                      if (_gd125.__zwHandle && typeof __zw_remove_attr_handle === 'function') {
-                        __zw_remove_attr_handle(_gd125.__zwHandle, 'checked');
-                      } else if (typeof __zw_remove_attr === 'function') {
-                        __zw_remove_attr(_gd125.__zwSelector, 'checked');
-                      }
-                      if (typeof _zwAttrInstanceRemoveKey === 'function') {
-                        _zwAttrInstanceRemoveKey(_gk125, 'checked');
-                      }
-                      _mo_notify(_gd125.__zwSelector, _gd125.__zwHandle,
-                        { type: 'attributes', attributeName: 'checked', oldValue: _gov125 || null });
-                    }
-                  }
-                }
-              } catch (_e125sw) {}
+              try { _zwRadioUncheckGroupOthers(_makeProxy(sel, handle)); } catch (_e125sw) {}
             }
           }
           else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') _captureBoolDefault(key, 'selected', sel, handle);
@@ -1533,6 +1474,75 @@
 
   function _wrapSelector(sel) {
     return _makeProxy(sel, null);
+  }
+
+  // s131（html-semantics M2 切片 131）：radio 组排他 sweep 共享出口——现象表逐项
+  // 触发点（s125 checked IDL setter / s131 form owner 变更插入钩子与 innerHTML
+  // 面）统一走本函数（HTML §4.10.5.1.16 Radio Button state 现象表「When any of
+  // the following phenomena occur, if the element's checkedness state is true
+  // after the occurrence, the checkedness state of all the other elements in
+  // the same radio button group must be set to false」；现象 1 = checkedness
+  // 置 true，现象 3 = form owner 变更）。
+  // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+  // 组定义（s130 根域策略）：同 root + 同 form owner（键比对，或均无）+
+  // type=radio + name 非空且相等。根域枚举：parent 链顶（≤64 跳）nodeType 9 →
+  // document qSA（文档面不经元素级——探针 s130b：documentElement 级元素 qSA
+  // 异常返 0）；链顶非 document（detached 树）→ 链顶子树 qSA。
+  function _zwRadioUncheckGroupOthers(el) {
+    try {
+      if (!el || el.nodeType !== 1) return;
+      if (String(el.getAttribute('type') || '').toLowerCase() !== 'radio') return;
+      if (!el.getAttribute('name')) return;
+      try { if (!el.checked) return; } catch (_e131ck) { return; }
+      var _selfKey131 = _elKey(el.__zwSelector, el.__zwHandle);
+      var _foKey131 = function (f) {
+        try {
+          if (!f) return null;
+          if (f.__zwHandle) return '@' + f.__zwHandle;
+          if (f.__zwSelector) return 's:' + f.__zwSelector;
+          if (f.id) return 'id:' + f.id;
+        } catch (_e131fk) {}
+        return null;
+      };
+      var _foSelf131 = null;
+      try { _foSelf131 = _foKey131(el.form); } catch (_e131f) {}
+      var _qRoot131 = document;
+      try {
+        var _qp131 = el, _qh131 = 0;
+        while (_qp131 && _qp131.parentNode && _qh131++ < 64) _qp131 = _qp131.parentNode;
+        if (_qp131 && _qp131.nodeType !== 9 && typeof _qp131.querySelectorAll === 'function') _qRoot131 = _qp131;
+      } catch (_e131qr) {}
+      var _all131 = _qRoot131.querySelectorAll('input[type="radio"][name="'
+        + String(el.getAttribute('name')).replace(/"/g, '\\"') + '"]');
+      for (var _gi131 = 0; _gi131 < _all131.length; _gi131++) {
+        var _gd131 = _all131[_gi131];
+        var _gk131 = _elKey(_gd131.__zwSelector, _gd131.__zwHandle);
+        if (_gk131 === _selfKey131) continue;
+        var _gfoK131 = null;
+        try { _gfoK131 = _foKey131(_gd131.form); } catch (_e131gf) {}
+        if (String(_gfoK131) !== String(_foSelf131)) continue;
+        if (_checkedDirtyState[_gk131] !== undefined) {
+          _checkedDirtyState[_gk131] = false;
+        } else {
+          var _gov131 = null;
+          try {
+            _gov131 = (_gd131.__zwHandle && typeof __zw_get_attr_handle === 'function')
+              ? __zw_get_attr_handle(_gd131.__zwHandle, 'checked')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(_gd131.__zwSelector, 'checked') : null);
+          } catch (_e131go) {}
+          if (_gd131.__zwHandle && typeof __zw_remove_attr_handle === 'function') {
+            __zw_remove_attr_handle(_gd131.__zwHandle, 'checked');
+          } else if (typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(_gd131.__zwSelector, 'checked');
+          }
+          if (typeof _zwAttrInstanceRemoveKey === 'function') {
+            _zwAttrInstanceRemoveKey(_gk131, 'checked');
+          }
+          _mo_notify(_gd131.__zwSelector, _gd131.__zwHandle,
+            { type: 'attributes', attributeName: 'checked', oldValue: _gov131 || null });
+        }
+      }
+    } catch (_e131sw) {}
   }
 
   // js-dom M3 R100：query 返回点的 identity 反查——命中的唯一选择器若属于

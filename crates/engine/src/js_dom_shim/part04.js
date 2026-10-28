@@ -6574,6 +6574,24 @@
         }
         if (prop === 'appendChild') {
           return function(child) {
+            // s131（html-semantics M2 切片 131）：插入前 form owner 键快照——radio
+            // 组排他现象 3「The element's form owner changes」的 before 面（tail
+            // 出口比对；校验抛错不到 tail 不触发）。appendChild 与 insertBefore
+            // 是平行的 trap 实现（本 trap 不经 insertBefore trap），同款接线。
+            // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+            var _foKeyIns131 = function (n) {
+              try {
+                if (!n) return null;
+                if (n.__zwHandle) return '@' + n.__zwHandle;
+                if (n.__zwSelector) return 's:' + n.__zwSelector;
+                if (n.id) return 'id:' + n.id;
+              } catch (_e131fk) {}
+              return null;
+            };
+            var _foB131 = undefined;
+            try {
+              if (child && child.nodeType === 1) _foB131 = _foKeyIns131(child.form);
+            } catch (_e131fb) {}
             // R177（js-dom M4）：WebIDL Node 类型校验前置（spec WebIDL「nullable Node」
             // ——null / 非 Node 对象抛 TypeError，先于 pre-insert 一切步骤；WPT
             // Node-appendChild "WebIDL tests" / "Appending null to a *" 族——旧版
@@ -6932,6 +6950,21 @@
               // mutations「parent is a picture and [the element / a source sibling]
               // is inserted」；非 picture 父在 helper tag 门零成本返回）。
               try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277t334) {}
+              // s131 after 面（R334 提前出口专用——removed sel 子重挂主路径）：同
+              // trap tail 的 form owner 变更现象（before 面在函数头快照）。探针 A：
+              // radio2（remove 后 sel 形）appendChild 进文档内 form，本出口 wire 后
+              // `.form` 活解析即命中新 owner，组排他 sweep 使新组已 checked 成员
+              // uncheck（radio-disconnected-group-owner「Removed elements are moved
+              // into separate radio groups.」断言面）。
+              try {
+                if (_foB131 !== undefined && child && child.nodeType === 1
+                    && String(child.localName || '').toLowerCase() === 'input') {
+                  var _foA131 = _foKeyIns131(child.form);
+                  if (String(_foA131) !== String(_foB131)) {
+                    _zwRadioUncheckGroupOthers(child);
+                  }
+                }
+              } catch (_e131fa334) {}
               return child;
             }
             // R34xx：重新插入清除移除标记（append 后元素回到文档）。
@@ -7407,6 +7440,18 @@
               }
             }
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277tap) {}
+            // s131 after 面：同 insertBefore trap tail——form owner 键变更且该
+            // INPUT radio checkedness 为 true → 新组排他 sweep（DIV 对照案 owner
+            // null→null 不触发；type/name/checkedness 门在 helper 内）。
+            try {
+              if (_foB131 !== undefined && child && child.nodeType === 1
+                  && String(child.localName || '').toLowerCase() === 'input') {
+                var _foA131 = _foKeyIns131(child.form);
+                if (String(_foA131) !== String(_foB131)) {
+                  _zwRadioUncheckGroupOthers(child);
+                }
+              }
+            } catch (_e131fa) {}
             return child;
           };
         }
@@ -7951,6 +7996,26 @@
         }
         if (prop === 'insertBefore') {
           return function(newNode, refNode) {
+            // s131（html-semantics M2 切片 131）：插入前 form owner 键快照——radio
+            // 组排他现象 3「The element's form owner changes」的 before 面（tail
+            // 出口比对；校验抛错不到 tail 不触发）。键形同 part05
+            // `_zwRadioUncheckGroupOthers`（handle/sel/id 串键——form 代理每取可
+            // 新建对象，裸 toString 无法区分 form A/B）。仅元素节点取样（非元素
+            // undefined 哨兵跳过 tail 面）。
+            // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+            var _foKeyIns131 = function (n) {
+              try {
+                if (!n) return null;
+                if (n.__zwHandle) return '@' + n.__zwHandle;
+                if (n.__zwSelector) return 's:' + n.__zwSelector;
+                if (n.id) return 'id:' + n.id;
+              } catch (_e131fk) {}
+              return null;
+            };
+            var _foB131 = undefined;
+            try {
+              if (newNode && newNode.nodeType === 1) _foB131 = _foKeyIns131(newNode.form);
+            } catch (_e131fb) {}
             // R296（js-dom M4）：WebIDL 参数序（转换先于算法）——parameter 1 非节点
             // TypeError；parameter 2 缺省/非节点非 null TypeError（WPT
             // "non-Node first argument" / "second argument missing" 双断言对
@@ -8798,6 +8863,23 @@
             }
             // s70：img/source 插入 picture → relevant mutation（insertBefore 主尾路径）。
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tibm) {}
+            // s131 after 面：插入实做完成后比对 form owner 键——变更且该 INPUT
+            // radio checkedness 为 true → 新组排他 sweep（radio-disconnected-group-
+            // owner「Appending input radio input into a disconnect form should
+            // update …」断言面；同文件 DIV 对照案 root/tree 变更非现象——owner
+            // null→null 键等不触发；type/name/checkedness 门在 helper 内）。
+            // 文档面 parser 插入不经本钩子（Rust 侧建树）；form 内同树移动键不变
+            // 不误触发。FIXME: form= 属性变更、移除方向（form → detached）、
+            // _zwMEl registry 树 own insertBefore（part03 R225 形）未接同一现象。
+            try {
+              if (_foB131 !== undefined && newNode && newNode.nodeType === 1
+                  && String(newNode.localName || '').toLowerCase() === 'input') {
+                var _foA131 = _foKeyIns131(newNode.form);
+                if (String(_foA131) !== String(_foB131)) {
+                  _zwRadioUncheckGroupOthers(newNode);
+                }
+              }
+            } catch (_e131fa) {}
             return newNode;
           };
         }
@@ -12322,6 +12404,30 @@
                 _ihMat.push(_ihMw);
               }
               _handleChildren[handle] = _ihMat;
+              // s131（html-semantics M2 切片 131）：innerHTML 产物的 radio 组排他——
+              // 解析子全部为新建元素（before 无 form owner），落在 form 内的 radio
+              // 视为现象 3「The element's form owner changes」命中（HTML
+              // §4.10.5.1.16），逆 registry 序 sweep 使后案 checked 胜出、前案被
+              // uncheck（radio-disconnected-group-owner「Appending input radio input
+              // into a disconnect form」innerHTML 断言面；DIV 对照案 form owner 恒
+              // null，`_ihRd131.form` 门跳过）。type/name/checkedness 门全在
+              // `_zwRadioUncheckGroupOthers` 内。**位置在 registry 重建后**：物化
+              // wrapper（t8r `_ihMat`）是同 turn 断言面读到的子对象，桥调用点处枚举
+              // 只见旧 registry（s131 探针 B 取证）。文档面 parser 直建不经本钩子。
+              // FIXME: sel 面（in-document 容器，R304/R309 pending overlay 域）、
+              // outerHTML/insertAdjacentHTML 与移除方向（form → detached）未接同一
+              // 现象。
+              try {
+                var _ihR131 = _handleChildren[handle] || [];
+                for (var _ihRi131 = _ihR131.length - 1; _ihRi131 >= 0; _ihRi131--) {
+                  try {
+                    var _ihRd131 = _ihR131[_ihRi131];
+                    if (_ihRd131 && _ihRd131.nodeType === 1 && _ihRd131.form) {
+                      _zwRadioUncheckGroupOthers(_ihRd131);
+                    }
+                  } catch (_e131ri) {}
+                }
+              } catch (_e131ih) {}
             }
             else if (handle && _ihVal.indexOf('<') < 0) _handleChildren[handle] = [];
             // WC-M3 切片 8 第九增量：slotchange 队列钩子**下移**到本地文本视图重注册
