@@ -9667,7 +9667,12 @@ fn prepare_harness_html(
     let reporter = HARNESS_REPORTER_SOURCE;
     // security-hardening M2-s1：注入脚本 nonce 戳记（见 [`harness_nonce_attr`]）。
     let csp_nonce_attr = harness_nonce_attr(source);
-    let cache_abort_fixture = if case_path.contains("cache-abort") {
+    // net-api M2-S6：abort/general 同注入 stash 仿真 fixture——wptserve
+    // stash-take/put + infinite-slow-response.py 端点语义（「Already aborted
+    // signal does not make request」经 stash-take 观测请求未发出；此前落静态
+    // 读库 404 空体 → r.json() SyntaxError 掩盖断言面）。
+    let cache_abort_fixture = if case_path.contains("cache-abort") || case_path.contains("abort/general")
+    {
         CACHE_ABORT_FETCH_FIXTURE
     } else {
         ""
@@ -9796,8 +9801,6 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
     var url = parseUrl(input);
     if (!url) return nativeFetch(input, init);
     var path = url.pathname;
-    var signal = signalOf(input, init);
-    if (signal && signal.aborted) return Promise.reject(signal.reason);
     if (path.endsWith('/fetch/api/resources/stash-take.py')) {
       var takeKey = url.searchParams.get('key') || '';
       var value = Object.prototype.hasOwnProperty.call(stash, takeKey) ? stash[takeKey] : null;
@@ -9811,22 +9814,23 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
       return Promise.resolve(responseFor(url, 'done', 'text/plain'));
     }
     if (path.endsWith('/fetch/api/resources/infinite-slow-response.py')) {
+      var signal = signalOf(input, init);
+      // net-api M2-S6：入口 abort 只在 wrapper 自持端点拦截（generic URL 交还
+      // 引擎语义——Request bodyUsed/流体同步 cancel 等引擎面不被 wrapper 遮蔽）。
+      // 已 aborted → 请求未发出，stateKey 不落 'open'（stash-take 观测 null）。
+      if (signal && signal.aborted) return Promise.reject(signal.reason);
       var stateKey = url.searchParams.get('stateKey') || '';
       if (stateKey) stash[stateKey] = 'open';
-      return new Promise(function(resolve, reject) {
-        var settled = false;
-        function abort() {
-          if (settled) return;
-          settled = true;
-          reject(signal && signal.reason);
-        }
-        if (signal) signal.addEventListener('abort', abort);
-        if (!signal) Promise.resolve().then(function() {
-          if (settled) return;
-          settled = true;
-          resolve(responseFor(url, Array(2049).join('.'), 'text/plain'));
+      // 上游 wptserve 头快速到达、体缓慢流式——runner 同步契约下立即返响应
+      //（防 await fetch 悬挂到 harness 超时）；abort 视为连接关闭 → stateKey
+      // 落 'closed'（「Underlying connection is closed」轮询观测面）。
+      var done = responseFor(url, Array(2049).join('.'), 'text/plain');
+      if (signal) {
+        signal.addEventListener('abort', function() {
+          if (stateKey) stash[stateKey] = 'closed';
         });
-      });
+      }
+      return Promise.resolve(done);
     }
     return nativeFetch(input, init);
   };

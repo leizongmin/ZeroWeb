@@ -4715,7 +4715,24 @@
       }
       return new Promise(function(resolve, reject) {
         // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
+        // net-api M2-S6：abort-a-fetch 同步取消面（M2-S3 记账 3 清偿）——
+        // ① init 流体 body（ReadableStream）同步 cancel(reason)："Readable stream
+        //   synchronously cancels with AbortError if aborted before reading" 腿——
+        //   cancel 回调于 fetch() 返回前执行，reason 与 fetch rejection 同一实例
+        //   （signal.reason 默认 AbortError DOMException）。
+        //   https://fetch.spec.whatwg.org/#abort-fetch
+        // ② Request 载体有体时置 used（abort-a-fetch 对 request body 的 extract+error
+        //   语义，与 scheme 分派提取面同型）："Request is still 'used' if signal is
+        //   aborted before fetching" 腿。
         if (signal && signal._aborted) {
+          var _zwAbBody = (init && typeof init === 'object') ? init.body : null;
+          if (_zwAbBody && typeof _zwAbBody.cancel === 'function') {
+            try { _zwAbBody.cancel(signal.reason); } catch (_eAbC) {}
+          }
+          if (input && typeof input === 'object' && input.url !== undefined &&
+              init.body == null && input.body != null) {
+            input._bodyUsed = true;
+          }
           reject(signal.reason);
           return;
         }
@@ -5333,12 +5350,23 @@
           }
         } catch (_eRtEmit) {}
       };
-      return p.then(function (v) {
+      // net-api M2-S6：RT 发射改侧信道挂接（不包装返回 promise）——包装式
+      // `p.then(emit, emit)` 的派生 promise 使一切 fetch settle 晚一个 microtask，
+      // abort/general「Already aborted signal rejects immediately」期望已 aborted
+      // 入口的 fetch rejection 先于调用方排队的下一 microtask（reject 排序
+      // `['fetch-reject', 'next-microtask']`）。发射时机容差不受影响（endMs ≈
+      // settle 时刻，侧信道仍在 settle 后同步排队）。
+      // 注：返回 p 也顺带消除了旧包装的假绿面——testharness 对「promise_rejects_js
+      // 返回值未被 await」的迟到 unreached 断言有 phase 守卫丢弃（Test.step 的
+      // phase > STARTED 静默 return），包装多出的那一格 microtask 曾把 SRI 腿的
+      // assert_unreached 推迟到 test done 之后被丢弃 → 引擎无 SRI 的真缺口假绿
+      //（M2-S6 记账，response-null-body SRI 腿显影）。
+      p.then(function (v) {
         // net 元数据由响应对象携带（_makeResponseFromWire 挂 __zwRtMeta——
         // body 字节数/content-length/headers 线长/协议）。
         _rtEmitOnce(v && v.__zwRtMeta);
-        return v;
-      }, function (e) { _rtEmitOnce(null); throw e; });
+      }, function () { _rtEmitOnce(null); });
+      return p;
     };
   }
 
