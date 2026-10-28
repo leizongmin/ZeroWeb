@@ -367,6 +367,96 @@ fn inject_image_batch(
     }
 }
 
+/// 请求 `Cache-Control` 头是否含指定指令（RFC 9111 §5.2.1 请求指令面，大小写不敏感）。
+#[cfg(not(test))]
+fn request_cache_control_directive(headers: &[(String, String)], directive: &str) -> bool {
+    headers.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("cache-control")
+            && value
+                .split(',')
+                .map(str::trim)
+                .any(|item| item.eq_ignore_ascii_case(directive))
+    })
+}
+
+/// 缓存复用路径（新鲜命中 / 304 重建）的存储响应 → 线上响应：剥除 `Set-Cookie`。
+/// 与 GUI 路径一致——ResourceLoader::submit 命中即回、仅在 submit_network 应用
+/// Set-Cookie；缓存复用不重放 cookie（RFC 9111 §4.3.4 的 304 并头集亦不含它）。
+#[cfg(not(test))]
+fn cached_response_into_http_response(cached: zero_net::CachedResponse) -> zero_net::HttpResponse {
+    let mut response = cached.into_response();
+    response
+        .headers
+        .retain(|(name, _)| !name.eq_ignore_ascii_case("set-cookie"));
+    response
+}
+
+/// 网络响应的缓存收尾（GUI 路径 ResourceLoader::submit_network 同构）：
+/// 304 以「存储体 + 更新头」重建响应（RFC 9111 §4.3.4）；成功响应按响应策略写入
+/// 共享缓存；其余透传。
+#[cfg(not(test))]
+fn finalize_network_response_with_cache(
+    cache: &Arc<Mutex<zero_net::HttpCache>>,
+    url: &str,
+    request_headers: &[(String, String)],
+    result: Result<zero_net::HttpResponse, zero_net::NetError>,
+) -> Result<zero_net::HttpResponse, zero_net::NetError> {
+    match result {
+        Ok(response) if response.status_code == 304 => cache
+            .lock()
+            .expect("headless HTTP cache lock")
+            .not_modified(url, request_headers, &response)
+            .map(cached_response_into_http_response)
+            .ok_or_else(|| zero_net::NetError::Network("304 without cached entry".to_string())),
+        Ok(response) => {
+            if response.is_success() {
+                let _ =
+                    cache
+                        .lock()
+                        .expect("headless HTTP cache lock")
+                        .put_with_headers(url, request_headers, &response);
+            }
+            Ok(response)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// 经 per-origin 调度器发网络请求并做缓存收尾：条件请求头并入请求头（同名不覆盖），
+/// 优先级按原始请求头推断（与校验器无关），超时对齐既有直发路径（30s）。
+#[cfg(not(test))]
+fn submit_network_with_cache(
+    cache: &Arc<Mutex<zero_net::HttpCache>>,
+    scheduler: &Arc<Mutex<zero_net::PerOriginFetchScheduler>>,
+    url: &str,
+    request_headers: &[(String, String)],
+    conditional_headers: Vec<(String, String)>,
+) -> Result<zero_net::HttpResponse, zero_net::NetError> {
+    let mut network_headers = request_headers.to_vec();
+    for (name, value) in conditional_headers {
+        if !network_headers
+            .iter()
+            .any(|(existing, _)| existing.eq_ignore_ascii_case(&name))
+        {
+            network_headers.push((name, value));
+        }
+    }
+    let (priority, _) = zero_net::FetchPriority::from_fetch_headers(request_headers, url);
+    let (rx, _telemetry, _owns) = zero_net::PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
+        scheduler,
+        url.to_string(),
+        url.to_string(),
+        priority,
+        network_headers,
+        30,
+    );
+    let result = rx
+        .recv()
+        .map_err(|error| zero_net::NetError::Network(format!("fetch scheduler channel: {error}")))
+        .and_then(|result| result.map_err(zero_net::NetError::Network));
+    finalize_network_response_with_cache(cache, url, request_headers, result)
+}
+
 #[cfg(not(test))]
 impl HeadlessSession {
     pub(super) fn handle_renderer_message(
@@ -740,19 +830,45 @@ impl HeadlessSession {
             .name("headless-fetch".into())
             .spawn(move || {
                 let outcome = if via_scheduler {
-                    let (priority, _) = zero_net::FetchPriority::from_fetch_headers(&job_headers, &job_url);
-                    let (rx, _telemetry, _owns) =
-                        zero_net::PerOriginFetchScheduler::submit_shared_with_key_headers_and_telemetry(
-                            &scheduler,
-                            job_url.clone(),
-                            job_url.clone(),
-                            priority,
-                            job_headers,
-                            30,
-                        );
-                    rx.recv()
-                        .map_err(|error| zero_net::NetError::Network(format!("fetch scheduler channel: {error}")))
-                        .and_then(|result| result.map_err(zero_net::NetError::Network))
+                    // T25：GET 无 body 请求接入进程级共享 HTTP 缓存（与 GUI 路径
+                    // ResourceLoader::submit/submit_network 同构，webview/fetch_proxy/
+                    // net_pool/headless 共用同一份）——此前 headless 代理 fetch 零缓存
+                    // 查询/存储/条件请求，同 profile 热导航对可缓存子资源全量 200 重传。
+                    // 语义（RFC 9111，https://www.rfc-editor.org/rfc/rfc9111）：
+                    // 请求侧 no-store 完全绕过缓存（§5.2.1.2）；新鲜命中直接复用存储
+                    // 响应（§4）；stale 可再验证条目与请求侧 no-cache 的新鲜命中
+                    // （§5.2.1.4）附校验器条件请求，304 以存储体+更新头重建（§4.3.4）；
+                    // 未命中/网络成功响应按响应策略存储。
+                    let cache = zero_net::shared_http_cache();
+                    let request_no_store = request_cache_control_directive(&job_headers, "no-store");
+                    let request_no_cache = request_cache_control_directive(&job_headers, "no-cache");
+                    let lookup = if request_no_store {
+                        zero_net::CacheLookup::Miss
+                    } else {
+                        cache
+                            .lock()
+                            .expect("headless HTTP cache lock")
+                            .lookup(&job_url, &job_headers)
+                    };
+                    match lookup {
+                        zero_net::CacheLookup::Hit(cached) if !request_no_cache => {
+                            Ok(cached_response_into_http_response(cached))
+                        }
+                        zero_net::CacheLookup::Hit(_) => {
+                            // 请求侧 no-cache：新鲜命中也须再验证后方可复用。
+                            let conditional_headers = cache
+                                .lock()
+                                .expect("headless HTTP cache lock")
+                                .conditional_headers_with_request(&job_url, &job_headers);
+                            submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, conditional_headers)
+                        }
+                        zero_net::CacheLookup::Revalidate {
+                            conditional_headers, ..
+                        } => submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, conditional_headers),
+                        zero_net::CacheLookup::Miss => {
+                            submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, Vec::new())
+                        }
+                    }
                 } else {
                     http.send(HttpRequest {
                         method: job_method,
