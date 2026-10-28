@@ -118,6 +118,8 @@
   // 用户编辑标记：minlength/maxlength 的 tooShort/tooLong 只适用于用户提供的值，脚本 `.value=`
   // 不触发。宿主 user-action helper 在提交 SetText 后标记；reset/navigation 清空。
   var _userEdited = {};
+  // s128（html-semantics M2）：change-on-blur 净比较基线（key → API 值，focus 时捕获）。
+  var _s128ChgBase = {};
   // HTMLInputElement.files 空 FileList（R2830）：headless 无真文件 → 共享空 FileList（length 0 +
   // item→null + 可迭代）。上传表单读 `input.files.length` 不抛（无文件 → 0，跳过上传逻辑）。
   var _emptyFileList = {
@@ -7455,10 +7457,30 @@
       if (_proxyCache[key] === el) { delete _userEdited[key]; return; }
     }
   };
+  // s128（html-semantics M2）：text control change-on-blur 提交语义两钩子。baseline：
+  // focus 时记 API 值（R3906 归一形，`_zwSelNormValue`）。due：`_userEdited` 置脏
+  //（仅 __zw_text_input/__zw_text_delete/计划管道 mark_user_edited 置——script value=
+  // 不算用户编辑）且现值 ≠ 基线 → 提交（返回 true 由调用方派 change；序 blur →
+  // focusout → change）。净值比较使 restore-then-set（change-set-value 负案）不误触；
+  // 提交后重置基线并清脏旗（下一次 change 需新的用户编辑 + 净变化）。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-text/input/changed
+  globalThis.__zw_text_change_baseline = function (key, sel, handle) {
+    try { _s128ChgBase[key] = _zwSelNormValue(sel, handle, key); } catch (_eS128b) {}
+  };
+  globalThis.__zw_text_change_due = function (key, sel, handle) {
+    try {
+      if (!_userEdited[key]) return false;
+      var _s128Cur = _zwSelNormValue(sel, handle, key);
+      if (_s128ChgBase[key] === undefined || _s128ChgBase[key] === _s128Cur) return false;
+      delete _userEdited[key];
+      _s128ChgBase[key] = _s128Cur;
+      return true;
+    } catch (_eS128d) { return false; }
+  };
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

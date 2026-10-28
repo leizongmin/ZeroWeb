@@ -4604,8 +4604,19 @@
               _activeElKey = null; // 失焦相位聚焦区先清（activeElement 回落 body）
               try { oldEl.dispatchEvent(_zwBL); } catch (_eBLd) {}
               try { oldEl.dispatchEvent(_zwFO); } catch (_eFOd) {}
+              // s128（html-semantics M2）：焦点迁移即失焦提交——旧焦点 text control 的
+              // change-on-blur 同语义（blur → focusout → change 序，与 blur() 臂同）。
+              try {
+                var _s128OldSel = oldEl.__zwSelector, _s128OldHnd = oldEl.__zwHandle;
+                if ((_s128OldSel || _s128OldHnd) && globalThis.__zw_text_change_due
+                    && globalThis.__zw_text_change_due(oldKey, _s128OldSel, _s128OldHnd)) {
+                  oldEl.dispatchEvent(_makeEvent('change', { bubbles: true, cancelable: false }));
+                }
+              } catch (_eS128oc) {}
             }
             _activeElKey = key; // 获焦相位落新（focus handler 内 activeElement 已是新元素）
+            // s128：text control change 基线捕获（blur 提交时净值比较用）。
+            if (globalThis.__zw_text_change_baseline) globalThis.__zw_text_change_baseline(key, sel, handle);
             // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
             // 无先验指针交互即可见焦点；headless 近似恒匹配，见 part06 旗标注释）。
             _zwFocusVisibleMod = true;
@@ -4711,6 +4722,15 @@
               _dispatchWithBubble(key, sel, handle, _makeEvent('blur', { bubbles: false, cancelable: false }));
               _dispatchWithBubble(key, sel, handle, _makeEvent('focusout', { bubbles: true, cancelable: false }));
             } catch (_e) {}
+            // s128（html-semantics M2）：text control change-on-blur——用户编辑置脏
+            //（`_userEdited`：__zw_text_input/__zw_text_delete/计划管道 mark_user_edited
+            // 置；script value= 不算）且现值 ≠ focus 基线 → fire change（bubbles；序
+            // blur → focusout → change，Chromium/Firefox 互操作序）。净值比较使
+            // change-set-value 的 restore-then-set 负案不误触。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-text/input/changed
+            if (globalThis.__zw_text_change_due && globalThis.__zw_text_change_due(key, sel, handle)) {
+              _dispatchWithBubble(key, sel, handle, _makeEvent('change', { bubbles: true, cancelable: false }));
+            }
             // R3254-M7'：通知宿主失焦（空串表示 blur）。
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
           };
@@ -11419,6 +11439,10 @@
         if (prop === 'type') {
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-type
           if (_realTag(sel, handle) === 'OUTPUT') return 'output';
+          // s128：TEXTAREA type 恒 'textarea'（textarea 无 type 内容属性——IDL 常量；
+          // textarea-type 断言面）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-type
+          if (_realTag(sel, handle) === 'TEXTAREA') return 'textarea';
           var _et = _reflectedTypeEnum(sel, handle);
           if (_et !== null) return _et;
         }

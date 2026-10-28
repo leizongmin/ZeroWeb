@@ -24545,6 +24545,16 @@ return e;
           var _tagIf = globalThis.__zwHtmlTagIface && globalThis.__zwHtmlTagIface[_realTag(sel, handle).toLowerCase()];
           return _tagIf || 'HTMLElement';
         }
+        // s128（html-semantics M2）：TEXTAREA textLength——API 值 UTF-16 长度（同 value
+        // getter 读路径：脏 → dirty 缓存归一形；非脏 → child text content 归一形）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-textlength
+        if (prop === 'textLength' && _realTag(sel, handle) === 'TEXTAREA') {
+          if (_inputValues[key] != null && _inputValuesSet[key] === true) {
+            return String(_inputValues[key]).replace(/\r\n/g, '\n').replace(/\r/g, '\n').length;
+          }
+          var _s128TaLen = (!handle && sel) ? (__zw_get_text(sel) || '') : _zwTaLiveText(handle);
+          return String(_s128TaLen).replace(/\r\n/g, '\n').replace(/\r/g, '\n').length;
+        }
         if (prop === 'value') {
           // P1a select：<select>.value = 选中 option 的 value（HTML spec 语义，非 value 属性）。
           // R3909：双形态统一 JS 真态视图（宿主读短路移除，理由同 selectedIndex getter；
