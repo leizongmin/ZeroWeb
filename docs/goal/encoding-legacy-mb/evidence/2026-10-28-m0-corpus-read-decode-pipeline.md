@@ -124,7 +124,7 @@ run_service_worker_case_set 等），补 lane K 全量对账。
 | dom-range | 10/10 | 1903/1747 | +36/-192¹ | 0 |
 | dom-gamepad | 2/2 | 5/5 | = | 2² |
 | css-variables（放宽 per-proc-mem 6） | — | — | 双侧内存超限⁵ | — |
-| timing 族 10 通道 | — | — | lane 脚本子命令名错⁶ | — |
+| timing 族 10 通道（k2 补跑） | 全同（2·4·9·24·35·67·43·24·68·9） | 全同（2·5·16·46·570·959·113·95·72·13） | = | 0 |
 | 其余 20 通道（html、fullscreen、clipboard-apis、keyboard、touch-events、webgl、wasm、webaudio、webcrypto、indexeddb、console、canvas、canvas-worker、constraints、intersection-observer、resize-observer、cache-storage、web-components 等） | 全同 | 全同 | = | 0 |
 
 ¹ `dom/ranges/Range-mutations-*` 五个 300+ 子测大案双侧均触 30s 案级超时，
@@ -140,8 +140,11 @@ dom-range +36/-192），同 selection/html-semantics 超时形态 flake 范畴�
 124），无 A/B 数据——维持预置条件定性，不阻 DC-1（通道走同一替换后读取
 路径，改动面与 dom 恒等通道同构）。
 ⁶ lane-k 脚本对 timing 十通道漏 `testharness-` 前缀，双侧均产出 usage 文本
-秒退（无真数据）；以保存的 M0 before/after 二进制补跑（k2 lane），行随补跑
-回填。
+秒退（无真数据）；以保存的 M0 before/after 二进制按通道交替双侧补跑（k2，
+同通道 before/after 背靠背平均化负载条件）：十通道 case/subtest/status 三层
+全恒等（mixed-content 2、secure-contexts 4、hr-time 9、performance-timeline
+24、user-timing 35、web-animations 67、resource-timing 43、navigation-timing
+24、event-timing 68、longtask-timing 9 cases）。
 
 ### html-semantics 专项分析（lane G 实证 + 解析证明）
 
