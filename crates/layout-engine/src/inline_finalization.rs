@@ -343,11 +343,16 @@ pub fn build_text_parent_override_map<T: Copy>(doc: &Document, source: &NodeIdMa
 /// 时不换行」的最小充分条件；preserve 仅影响空白折叠，对 box 高度测量非必要，故测量路径保持
 /// preserve=false（与历史行为一致），空白保真由 paint 路径（text.rs:737）负责。
 pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> bool {
-    use zero_style_system::property::types::WhiteSpaceValue;
-    matches!(
-        style.map(|s| &s.white_space).unwrap_or(&WhiteSpaceValue::Normal),
-        WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap
-    )
+    use zero_style_system::property::types::{TextWrapComputedValue, WhiteSpaceValue};
+    // R5308：CSS Text 4 text-wrap: nowrap 与 white-space:nowrap 同效禁止行内换行
+    //（镜像 compute_final_inline_layouts 主配置与 paint Path B 的 Nowrap 覆盖）——
+    // 测量期不 suppress 时盒高按换行形计算，text-wrap-nowrap-001 渲染与 mis-ref
+    // 同形。仅单向加严（见主配置处注释）。
+    // https://drafts.csswg.org/css-text-4/#text-wrap
+    style.is_some_and(|s| {
+        matches!(s.text_wrap, TextWrapComputedValue::Nowrap)
+            || matches!(s.white_space, WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap)
+    })
 }
 
 /// R1935：measure 期是否保留空白序列（pre/pre-wrap）。镜像 `resolve_no_wrap_for_ifc_measure`。
@@ -1707,7 +1712,7 @@ pub(crate) fn compute_final_inline_layouts(
         style.overflow_wrap,
         OverflowWrapValue::BreakWord | OverflowWrapValue::Anywhere
     ) || matches!(style.word_break, zero_style_system::WordBreakValue::BreakWord);
-    let (no_wrap, preserve_whitespace, break_at_newline) = match &style.white_space {
+    let (mut no_wrap, preserve_whitespace, break_at_newline) = match &style.white_space {
         WhiteSpaceValue::Pre => (true, true, false),
         WhiteSpaceValue::PreWrap => (false, true, false),
         // pre-line：空白序列折叠（preserve_whitespace=false）但 `\n` 强制断行
@@ -1720,6 +1725,18 @@ pub(crate) fn compute_final_inline_layouts(
         WhiteSpaceValue::Nowrap => (true, false, false),
         _ => (false, false, false),
     };
+    // CSS Text 4 §text-wrap: nowrap 禁止行内换行（与 paint Path B text.rs resolve_text_wrap
+    // 同源消费——此前 layout 仍按容器宽换行，text-wrap-nowrap-001：test 与 mis-ref（无
+    // nowrap 同宽换行形）渲染同形 0/480000px → mismatch-ref 命中误判红）。仅单向加严：
+    // white-space 无软换行机会时（pre 族）text-wrap 不新造换行点；Balance/Pretty/Stable
+    // 行分配算法未实现维持 Wrap 语义（tree.rs container_has_balancing_text_wrap 同口径）。
+    // https://drafts.csswg.org/css-text-4/#text-wrap
+    if matches!(
+        style.text_wrap,
+        zero_style_system::property::types::TextWrapComputedValue::Nowrap
+    ) {
+        no_wrap = true;
+    }
     let break_word = break_word
         || !no_wrap
             && matches!(

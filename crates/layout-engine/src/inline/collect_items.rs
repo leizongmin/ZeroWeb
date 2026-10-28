@@ -226,16 +226,33 @@ impl InlineFormattingContext {
         }
     }
 
-    fn run_white_space(ws: &zero_style_system::WhiteSpaceValue) -> crate::inline::RunWhiteSpace {
+    /// R3778 white-space 三/四标志映射 + CSS Text 4 `text-wrap: nowrap` run 级折入。
+    ///
+    /// run 级 `ws_override` 在 break_lines 处**遮蔽**容器级 IFC no_wrap 旗标
+    ///（Some 优先），`white-space: normal` 的 `Some(default)` 也会遮蔽——text-wrap:
+    /// nowrap 只落在容器级时对带样式 run 无效（text-wrap-nowrap-001：测量/layout
+    /// 双路径 3 行、paint 单行）。text-wrap 与 white-space 均 inherited 且独立生效：
+    /// run 侧语义 = 任一 nowrap 即禁软换行（nowrap 白空格折叠维度不受影响，仅
+    /// 抑制换行机会）；Balance/Pretty/Stable 未实现维持 Wrap 语义（tree.rs
+    /// container_has_balancing_text_wrap 同口径）。
+    /// https://drafts.csswg.org/css-text-4/#text-wrap
+    fn run_white_space(style: &ComputedStyle) -> crate::inline::RunWhiteSpace {
         use zero_style_system::WhiteSpaceValue;
-        match ws {
+        let mut rws = match &style.white_space {
             WhiteSpaceValue::Pre => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: true, hang_trailing: false },
             WhiteSpaceValue::PreWrap => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: false, hang_trailing: true },
             WhiteSpaceValue::PreLine => crate::inline::RunWhiteSpace { preserve: false, break_at_newline: true, no_wrap: false, hang_trailing: false },
             WhiteSpaceValue::BreakSpaces => crate::inline::RunWhiteSpace { preserve: true, break_at_newline: true, no_wrap: false, hang_trailing: false },
             WhiteSpaceValue::Nowrap => crate::inline::RunWhiteSpace { preserve: false, break_at_newline: false, no_wrap: true, hang_trailing: false },
             _ => crate::inline::RunWhiteSpace::default(),
+        };
+        if matches!(
+            style.text_wrap,
+            zero_style_system::property::types::TextWrapComputedValue::Nowrap
+        ) {
+            rws.no_wrap = true;
         }
+        rws
     }
 
     fn parse_html_dimension_attr(value: Option<String>) -> f32 {
@@ -363,7 +380,7 @@ impl InlineFormattingContext {
                         let run_ws = styles
                             .get(&child_id)
                             .or_else(|| doc.parent_node(child_id).and_then(|pid| styles.get(&pid)))
-                            .map(|s| Self::run_white_space(&s.white_space))
+                            .map(Self::run_white_space)
                             .or_else(|| {
                                 // R3778：paint Path B（空 styles）——layout 期存储的 run 级
                                 // white-space 覆盖（按文本节点/其父元素 id 键）。
@@ -1425,7 +1442,7 @@ impl InlineFormattingContext {
         let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();
         let style = styles.get(&child_id);
         let run_ws = style
-            .map(|s| Self::run_white_space(&s.white_space))
+            .map(Self::run_white_space)
             .or_else(|| self.ws_overrides.get(&child_id).copied());
         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
         // R4402：注音排除泛化到任意元素的扁平化收集——rt/rp/rtc 是 display:none 域的
@@ -1661,7 +1678,7 @@ impl InlineFormattingContext {
         } else {
             // CSS 规范：空 inline 元素仍需通过 line-height + padding + border 影响行盒高度
             Some(InlineItem::Text(TextRun {
-                ws_override: style.map(|s| Self::run_white_space(&s.white_space)),
+                ws_override: style.map(Self::run_white_space),
                 ruby_rt_ascent: 0.0,
                 glyph_ascent: 0.0,
                 glyph_descent: 0.0,
@@ -1710,7 +1727,7 @@ impl InlineFormattingContext {
     ) {
         let style = styles.get(&elem_id);
         let run_ws = style
-            .map(|s| Self::run_white_space(&s.white_space))
+            .map(Self::run_white_space)
             .or_else(|| self.ws_overrides.get(&elem_id).copied());
         let run_preserves = run_ws.map_or(self.preserve_whitespace, |ws| ws.preserve);
         // R4308（quotes-001 walk-on 9324px paint 残差根因）：font 度量须走与
@@ -2079,7 +2096,7 @@ impl InlineFormattingContext {
                         }
                         let child_style = styles.get(&gc);
                         let child_ws = child_style
-                            .map(|st| Self::run_white_space(&st.white_space))
+                            .map(Self::run_white_space)
                             .or_else(|| self.ws_overrides.get(&gc).copied());
                         // R5177（CSS 2.1 §16.1 color 继承 + css-ui outline-027 案形）：
                         // computed color 与外层 inline 不同的纯文本壳不折回——祖先吸收把
