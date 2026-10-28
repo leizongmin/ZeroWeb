@@ -421,6 +421,18 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"padding:0 10px\"><span><button style=\"border:0;padding:0;background:red;color:#fff\">ab cd ef</button></span></li></ul></body></html>",
         is_match: true,
     },
+    // t-p114 r3 DEF-A 守卫（css-flexbox-1 §4.1 flex base size）：声明宽 percent 分量门——
+    // li{width:50%} 无 px 定宽、converter 按 percent 映射首趟已正确求解为 250px（500 的
+    // 50%）。pass 误覆写时 li 被替换为原子 max-content 80px：250px 红带缩到 80px（差
+    // ≈34% 远超 Layout 1% 阈值）。ref 用显式 width:250px 块级 li 等价锚定；双臂 li
+    // 显式 height 对齐 flex stretch。绿按钮为盒内可见锚点。
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-declared-percent-width-zw-003",
+        category: ReftestCategory::Layout,
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:50%;height:260px;background:red\"><span><button style=\"border:0;padding:0;background:#0f0\">ab</button></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:250px;height:260px;background:red\"><span><button style=\"border:0;padding:0;background:#0f0\">ab</button></span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

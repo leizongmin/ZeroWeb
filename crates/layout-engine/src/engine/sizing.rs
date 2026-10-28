@@ -519,6 +519,15 @@ impl LayoutEngine {
             if b.declared_width_px.is_some() {
                 continue;
             }
+            // 声明形态门（r3 DEF-A）：只有 width:auto 是本 pass 待求解形态——taffy
+            // content-based 尺寸被提升原子 abspos 表示破坏、且无其他 pass 代解。
+            // percent/fit-content/stretch 首趟按声明求解；min-content/max-content 关键字
+            // 由 R1018 intrinsic pass（同 re-run 组、先于本 pass）写入关键字测度——
+            // 覆写任一者都会把正确定尺回归为 max-content（css-flexbox-1 §4.1 flex base
+            // size）。
+            if !styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)) {
+                continue;
+            }
             // abspos item 门：css-flexbox-1 §4——out-of-flow 子不是 flex item，其宽由
             // R3929 shrink-to-fit（min(max-content, CB 可用宽)）cap；覆写为未封顶
             // max-content 会溢出 containing block。
@@ -530,7 +539,9 @@ impl LayoutEngine {
             }
             // 直接子含提升原子行内级盒（DOM 父 ≠ 本容器 + inline-block 家族/replaced-inline，
             // 与 inline_finalization is_hoisted_atomic_child 同源判据）。无此形态的 item
-            // 走 taffy 原生路径零干涉。
+            // 走 taffy 原生路径零干涉。作者 position:absolute/fixed 的子原子与提升原子
+            // 同形、同样命中（taffy 原生内容测量对任何 abspos 子同样塌 0）——pass 照跑，
+            // 其宽度在下方原子表构建时排除（r3 DEF-B）。
             let container = id;
             let has_hoisted = b.children.iter().any(|c| {
                 c.node_id.is_some_and(|cid| {
@@ -553,6 +564,16 @@ impl LayoutEngine {
             let mut atomic_widths: HashMap<NodeId, f32> = HashMap::default();
             for c in &b.children {
                 let Some(cid) = c.node_id else { continue };
+                // 脱流子不计入原子表（r3 DEF-B；CSS2 §9.3.1 out-of-flow 非流内内容）：
+                // 作者 position:absolute/fixed 的子原子不参与 item 内容尺寸，其尺寸由
+                // abspos 路径对 item CB 求解（其余消费方同款守卫：tree.rs
+                // is_block_level_in_flow、inline_finalization sync 跳点）。
+                if styles
+                    .get(&cid)
+                    .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                {
+                    continue;
+                }
                 if crate::inline_finalization::is_hoisted_atomic_child(doc, Some(container), cid, styles) {
                     let mc_content = measure_text(
                         cid,

@@ -3691,6 +3691,62 @@ AAAA</div></body></html>"#,
         );
     }
 
+    /// 声明形态门——percent 定宽保留（r3 DEF-A 回归）：li{width:50%} 无 px 定宽、
+    /// converter 按 percent 映射首趟已正确求解（css-flexbox-1 §4.1 flex base size），
+    /// pass 覆写会把 200px 回归为按钮 max-content 340px。
+    #[test]
+    fn p114_flex_item_percent_width_preserved() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;width:400px;font:20px/1 Ahem">
+            <li id="li" style="width:50%"><span><button id="atomic" type="button">ab cd ef gh ij kl</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - 200.0).abs() < 1.0,
+            "declared percent li width must stay 200px (50% of 400), got {:?}",
+            li
+        );
+    }
+
+    /// 子级脱流守卫（r3 DEF-B 回归；CSS2 §9.3.1 out-of-flow 非流内内容）：包裹提升使
+    /// 作者 position:absolute 的子原子与提升原子同形（DOM 父≠容器、atomic），修复前
+    /// hoisted 臂按 max-content 重测计入原子表、li 被撑到脱流按钮宽；修复后脱流子不
+    /// 参与 item 内容尺寸，li = 流内原子宽且单行。
+    #[test]
+    fn p114_flex_item_abspos_child_not_counted() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li"><span><button id="atomic" type="button">ab</button></span><span><button type="button" style="position:absolute">ab cd ef gh ij</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, atomic) = compute_li_and_atomic(html);
+        assert!(
+            (li.0 - atomic.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
+            "li must match the in-flow atom only ({:?} vs {:?}) — abspos sibling must not count",
+            li,
+            atomic
+        );
+    }
+
+    /// 声明形态门——min-content 关键字不被覆写（r3 DEF-A：关键字声明宽属 R1018
+    /// intrinsic pass 求解域，且先于本 pass 执行；本 pass 覆写会把 min-content 解回归
+    /// max-content 定宽——多词文本下 56→166 级差异）。
+    #[test]
+    fn p114_flex_item_min_content_width_not_overwritten() {
+        let html = r#"<html><body style="margin:0">
+          <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem">
+            <li id="li" style="width:min-content">intro wider<span><button id="atomic" type="button">ab</button></span></li>
+          </ul>
+        </body></html>"#;
+        let (li, _atomic) = compute_li_and_atomic(html);
+        assert!(
+            li.0 > 40.0 && li.0 < 120.0,
+            "min-content declared li must keep the keyword solve (≈56), not the max-content overwrite (≈166), got {:?}",
+            li
+        );
+    }
+
     /// 完整布局后取 li 与原子行内级盒的 border-box (宽, 高)。
     fn compute_li_and_atomic(html: &str) -> ((f32, f32), (f32, f32)) {
         let doc = zero_dom::parse_html(html);
