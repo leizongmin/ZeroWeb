@@ -79,4 +79,4 @@
 2026-10-28,upstream,v1.10,16592,15763,95.0,failed=829;skipped=0,80ee2c69e,
 2026-10-28,upstream,v1.10,16592,15765,95.0,failed=827;skipped=0,c150e5c09,
 2026-10-29,upstream,v1.10,16592,15767,95.0,failed=825;skipped=0,dc0f99d47,
-2026-10-29,upstream,v1.10,16592,15768,95.0,failed=824;skipped=0,973ae5978,R5317 va:text-* atom margin-box union + img border-box
+2026-10-29,upstream,v1.10,16592,15768,95.0,failed=824;skipped=0,37a474e0f,R5317 va:text-* atom margin-box union + img border-box

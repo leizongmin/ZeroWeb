@@ -6,6 +6,6 @@
   "passed": 15768,
   "rate_pct": 95.0,
   "extra": "failed=824;skipped=0",
-  "git_sha": "973ae5978",
+  "git_sha": "37a474e0f",
   "note": "R5317 va:text-* atom margin-box union + img border-box"
 }
