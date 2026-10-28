@@ -112,8 +112,7 @@ const ZW_PC_SPECIAL_SCHEMES: [&str; 6] = ["http", "https", "ws", "wss", "ftp", "
 fn pc_label_rescuable(label: &str, lower: &str) -> bool {
     lower.starts_with("xn--")
         && label.bytes().all(|b| {
-            (0x21..=0x7e).contains(&b)
-                && !matches!(b, b'%' | b'<' | b'>' | b'[' | b']' | b'\\' | b'^' | b'|' | b':')
+            (0x21..=0x7e).contains(&b) && !matches!(b, b'%' | b'<' | b'>' | b'[' | b']' | b'\\' | b'^' | b'|' | b':')
         })
         && url::Url::parse(&format!("https://{lower}/")).is_err()
 }
@@ -122,7 +121,9 @@ fn pc_label_rescuable(label: &str, lower: &str) -> bool {
 #[cfg(feature = "script-runtime")]
 fn pc_label_is_placeholder(label: &str) -> bool {
     label.starts_with(ZW_PC_PLACEHOLDER_PREFIX)
-        && label[ZW_PC_PLACEHOLDER_PREFIX.len()..].bytes().all(|b| b.is_ascii_digit())
+        && label[ZW_PC_PLACEHOLDER_PREFIX.len()..]
+            .bytes()
+            .all(|b| b.is_ascii_digit())
 }
 
 /// host[:port] 串中 host span 的拆分（userinfo 剥离取最后一个 '@'；port 取最后
@@ -217,11 +218,15 @@ pub(crate) fn pc_lenient_parse(input: &str) -> Option<(url::Url, Vec<String>)> {
 pub(crate) fn pc_patch_components(mut c: UrlComponents, rescues: &[String]) -> Option<UrlComponents> {
     let hostname = pc_patch_host_str(&c.hostname, rescues)?;
     // origin 重建：特殊 scheme = protocol + "//" + host[:port]（port 数字无占位）。
-    let origin = format!("{}//{}", c.protocol, if c.port.is_empty() {
-        hostname.clone()
-    } else {
-        format!("{}:{}", hostname, c.port)
-    });
+    let origin = format!(
+        "{}//{}",
+        c.protocol,
+        if c.port.is_empty() {
+            hostname.clone()
+        } else {
+            format!("{}:{}", hostname, c.port)
+        }
+    );
     // href 的 authority host span 定位（与序列化后扫描同构）后回写。
     let href = {
         let h = &c.href;
@@ -278,8 +283,7 @@ mod tests {
     fn lenient_rescues_ascii_punycode_labels_beyond_hyphen_shape() {
         // `,` 非 forbidden domain code point（spec 非 fatal 验证错误，IdnaTestV2
         // 「V7 (含) + ignored 标注」期望 PASS 面）；crate deny list 过严 → 回退。
-        let (url, rescues) =
-            pc_lenient_parse("https://xn--6,-7i3cj157d.xn--0f9ao925c/x").expect("rescuable");
+        let (url, rescues) = pc_lenient_parse("https://xn--6,-7i3cj157d.xn--0f9ao925c/x").expect("rescuable");
         // 第二标签 U1（连字位）crate 亦拒 → 一并回退原样保留（语料期望 verbatim）。
         assert_eq!(
             rescues,
@@ -291,8 +295,7 @@ mod tests {
 
     #[test]
     fn lenient_multi_label_with_port_and_userinfo() {
-        let (url, rescues) =
-            pc_lenient_parse("https://u@xn--ab-j1t:8080/x?q=1#f").expect("rescuable");
+        let (url, rescues) = pc_lenient_parse("https://u@xn--ab-j1t:8080/x?q=1#f").expect("rescuable");
         assert_eq!(rescues, vec!["xn--ab-j1t".to_string()]);
         assert_eq!(url.host_str(), Some("zwpcfb0"));
         assert_eq!(url.port(), Some(8080));

@@ -4945,6 +4945,12 @@
         };
         var hopCount = 0;
         var _zwHopOriginOpaque = false; // net-api M4-S23：跨源重定向 → Origin opaque
+        // net-api M2-S3b：response tainting "cors" 追踪（fetch spec HTTP fetch——
+        // mode cors 的跨源请求过 cors check 后置 "cors"；同源起始保持 "basic"，
+        // 随跨源跳转翻转后不回退）。HTTP-redirect fetch 的 Location credentials
+        // network error 规则②依赖它。
+        var _zwRespTaintingCors = mode === 'cors' &&
+          _zwUrlOriginLenient(url) !== _zwUrlOriginLenient(_zwCurrentHref());
         var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
           var response = _makeResponseFromWire(raw);
@@ -4965,6 +4971,27 @@
             }
             var nextUrl = hopUrl;
             try { nextUrl = new URL(loc, hopUrl).href; } catch (_eHopLoc) {}
+            // net-api M2-S3b：fetch spec HTTP-redirect fetch——Location URL 带
+            // credentials（username/password 非空）→ 两条 network error 规则：
+            // ① mode cors 且 request's origin 与 locationURL origin 不同源；
+            // ② response tainting 已是 "cors"（跨源 cors 链任意跳，含同源收尾——
+            // 跨源 cors 链凭据不得回流）。观测面一致转 TypeError：此前
+            // remote→same-origin with credentials 族随 :8000 页锚对齐把 userinfo
+            // 静默剥离后按同源 200 走完（cors-redirect-credentials 15 legs）。
+            // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            var _hopHasCreds = false;
+            try {
+              var _hopU = new URL(nextUrl);
+              _hopHasCreds = Boolean(_hopU.username || _hopU.password);
+            } catch (_eHopU) {}
+            if (_hopHasCreds && mode === 'cors' &&
+                (_zwRespTaintingCors ||
+                 _zwUrlOrigin(_zwCurrentHref()) !== _zwUrlOrigin(nextUrl))) {
+              settled = true;
+              delete globalThis.__zw_pending[id];
+              reject(new TypeError('Redirect location with credentials is not allowed'));
+              return;
+            }
             // net-api M4-S22：fetch spec HTTP-redirect fetch——Location URL 带 credentials
             //（userinfo）且 credentials mode 非 include → 升级 include（后续 cors check 按
             // include 判定：ACAO `*` 失效——access-control-and-redirects-async user-info 面）。
@@ -4981,6 +5008,10 @@
             // fetch spec：跨源重定向 → Authorization 头丢弃（xhr-authorization-redirect
             // 「cross origin redirection」期望 'none' 面）。
             if (nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
+              // net-api M2-S3b：跨源跳转后 response tainting 置 "cors" 且不回退
+              //（fetch spec HTTP fetch——cors check 通过即置；后续 Location
+              // credentials 规则②按链上已跨源判定）。
+              if (mode === 'cors') _zwRespTaintingCors = true;
               var dropParts = nextWire ? nextWire.split('\x1e') : [];
               var keptWire = '';
               for (var di = 0; di + 1 < dropParts.length; di += 2) {
@@ -5004,8 +5035,15 @@
               _zwHopOriginOpaque = true;
             }
             var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
-            if (mode === 'cors' && nextUrl && _zwUrlOrigin(nextUrl) !== _hopDocOrigin &&
-                _hopDocOrigin) {
+            // cors 跳 Origin 一律归一：跳透明用文档 origin，跳不透明（跨跳
+            // 改写）用 'null'——**不**以 nextUrl 是否等于文档 origin 为门
+            // （跨跳回到文档 origin 的 Location 也要送 'null'，fetch spec
+            // HTTP-redirect fetch 的 opaque origin 规则按键住的是「当前跳
+            // origin ≠ Location origin」，非「Location origin ≠ 文档
+            // origin」；否则 wpt.test:8000 锚下 cors-redirect
+            // 「cors to same origin」面的 null 写不进 wire）。
+            // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (mode === 'cors' && nextUrl && _hopDocOrigin) {
               var oParts = nextWire ? nextWire.split('\x1e') : [];
               var keptO = '';
               for (var oi = 0; oi + 1 < oParts.length; oi += 2) {

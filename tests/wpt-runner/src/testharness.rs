@@ -4963,7 +4963,11 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
         // （net-api corpus http、其余通道 https）——strip 双 scheme。
         let path_part = url
             .strip_prefix("https://wpt.test")
-            .or_else(|| url.strip_prefix("http://wpt.test"))?;
+            .or_else(|| url.strip_prefix("http://wpt.test"))
+            // net-api 二期 M2-S3b：net-api 页锚端口化（wpt.test:8000）——图片源
+            // 解析出 :8000 绝对 URL，双 scheme 前缀同步放行。
+            .or_else(|| url.strip_prefix("https://wpt.test:8000"))
+            .or_else(|| url.strip_prefix("http://wpt.test:8000"))?;
         let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
         // 去查询串/片段。
         let clean = path_part.split(['?', '#']).next()?;
@@ -6214,9 +6218,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // form-submission-0 三族（urlencoded2/text-plain/multipart-formdata
                 // .window.js 经 enctypes-helper.js ACTION_URL）的提交回显端点——上游
                 // wptserve echo-content-escaped.py 行为等价：请求体逐字节转义为 `\xNN`
-                // 文本（可打印 ASCII 原样；`\` 自身转义 `\x5C`，防被 helper 的
-                // `\xNN` 还原正则误吞），text/plain 交付——helper `unescape()` 可逆，
-                // 断言面即提交编码算法本体。
+                // 文本（可打印 ASCII 与 CR/LF 字面原样；`\` 自身转义 `\x5C`，防被
+                // helper 的 `\xNN` 还原正则误吞），text/plain 交付——helper
+                // `unescape()` 可逆，断言面即提交编码算法本体。CR/LF 不转义是语义
+                // 关键：helper `unescape()` 首步 `/\r\n?|\n/g → "\r\n"` 归一只作用于
+                // 字面 CR/LF（先于 `\xNN` 解码）——若转义为 `\x0D\x0A`，解码后不再
+                // 归一，text/plain `\n`→`\r\n` 展开案即错。
                 let raw: Vec<u8> = req
                     .body_bytes
                     .clone()
@@ -6226,7 +6233,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 for &byte in &raw {
                     match byte {
                         b'\\' => escaped.push_str("\\x5C"),
-                        0x20..=0x7E => escaped.push(byte as char),
+                        b'\r' | b'\n' | 0x20..=0x7E => escaped.push(byte as char),
                         _ => escaped.push_str(&format!("\\x{byte:02X}")),
                     }
                 }
@@ -8557,7 +8564,11 @@ fn wpt_fetch_response_type(req: &zero_engine::fetch_bridge::FetchRequest, status
     // wpt.test 权威双 scheme 成员（本 runner 页面域恒 wpt.test）。
     let page_origin = "https://wpt.test";
     let response_origin = wpt_url_origin(&req.url);
-    let same_origin = response_origin == page_origin || response_origin == "http://wpt.test";
+    // net-api 二期 M2-S3b：net-api 页锚端口化（wpt.test:8000）——同源成员同步
+    // 扩 :8000 形（HTTP_ORIGIN 端点响应 origin 全等面）。
+    let same_origin = response_origin == page_origin
+        || response_origin == "http://wpt.test"
+        || response_origin == "http://wpt.test:8000";
     let mode = req.mode.as_deref().unwrap_or("");
     let redirect = req.redirect.as_deref().unwrap_or("");
     if redirect == "manual" && matches!(status, 301 | 302 | 303 | 307 | 308) {
@@ -8885,6 +8896,14 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // :9443 形态；谓词注释见 navigation_case_uses_ported_origin）。
     let page_authority = if navigation_case_uses_ported_origin(case_name) {
         "wpt.test:9443"
+    } else if net_api_case_uses_http_page(case_name) {
+        // net-api 二期 M2-S3b：net-api 页锚端口化 wpt.test:8000——上游 wptserve
+        // 形态下 get_host_info().HTTP_ORIGIN = http://wpt.test:8000（{{ports[http][0]}}
+        // 替换值）与页锚 origin 全等，同源判定不再撕裂（access-control-and-redirects
+        // 「same-origin redirect」面：:8000 端点此前被按跨源预检、无 ACAO 即翻红）。
+        // 非默认端口替换形与 `new URL().origin` 序列化形一致（:8000 保留），s116
+        // :80 默认端口两形撕裂面不复现。ref/page-state http 家族维持无端口锚不动。
+        "wpt.test:8000"
     } else {
         "wpt.test"
     };
@@ -13272,8 +13291,9 @@ async_test(function(test) {
 
     #[test]
     fn echo_content_escaped_py_handler_round_trips_helper_unescape() {
-        // form-submission-0 三族回显端点：POST body 逐字节转义（printable ASCII 原样、
-        // `\` → `\x5C`、其余 `\xNN`），经 enctypes-helper.js `unescape()` 可逆还原。
+        // form-submission-0 三族回显端点：POST body 逐字节转义（printable ASCII 与
+        // CR/LF 字面原样、`\` → `\x5C`、其余 `\xNN`），经 enctypes-helper.js
+        // `unescape()` 可逆还原（CR/LF 字面是 helper 首步换行归一的前提）。
         let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
         let make_req = |method: &str, body: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
             url: "https://wpt.test/FileAPI/file/resources/echo-content-escaped.py".to_string(),
@@ -13290,17 +13310,47 @@ async_test(function(test) {
         assert_eq!(basic.status, 200);
         assert_eq!(basic.body, "basic=test");
         assert_eq!(basic.headers[0], ("content-type".to_string(), "text/plain".to_string()));
-        // 0x00 / 换行 / backslash 字节转义形态（hex 大写、backslash 用 \x5C 防
-        // `\xNN` 还原正则误吞）。
+        // 0x00 / 换行 / backslash 字节形态（CR/LF 字面交付——helper unescape 首步
+        // 归一的作用对象；hex 大写、backslash 用 \x5C 防 `\xNN` 还原正则误吞）。
         let escaped = handler(&make_req("POST", Some("a\x00b\r\nc\\d"))).unwrap();
-        assert_eq!(escaped.body, "a\\x00b\\x0D\\x0Ac\\x5Cd");
-        // 反向校验：转义文本经 helper unescape 逻辑还原原 body（JS 侧等价实现）。
-        let unescaped: String = escaped
-            .body
-            .replace("\\x0D\\x0A", "\r\n")
-            .replace("\\x00", "\u{0}")
-            .replace("\\x5C", "\\");
-        assert_eq!(unescaped, "a\x00b\r\nc\\d");
+        assert_eq!(escaped.body, "a\\x00b\r\nc\\x5Cd");
+        // 反向校验：转义文本经 helper unescape 逻辑还原原 body（JS 侧等价实现，
+        // 含首步字面换行归一 `/\r\n?|\n/ → "\r\n"`）。
+        let helper_unescape = |s: &str| -> String {
+            let mut out = String::new();
+            let mut chars = s.chars().peekable();
+            while let Some(c) = chars.next() {
+                match c {
+                    '\r' => {
+                        if chars.peek() == Some(&'\n') {
+                            chars.next();
+                        }
+                        out.push_str("\r\n");
+                    }
+                    '\n' => out.push_str("\r\n"),
+                    '\\' => {
+                        // `\xNN` 还原（backslash 已被端点转义为 \x5C，不会误入）。
+                        if chars.peek() == Some(&'x') {
+                            chars.next(); // 消费 'x'，后两位才是 hex
+                            let hex: String = chars.by_ref().take(2).collect();
+                            if let Ok(b) = u8::from_str_radix(&hex, 16) {
+                                out.push(b as char);
+                                continue;
+                            }
+                        }
+                        out.push('\\');
+                    }
+                    _ => out.push(c),
+                }
+            }
+            out
+        };
+        assert_eq!(helper_unescape(&escaped.body), "a\x00b\r\nc\\d");
+        // text/plain `\n`-in-value 案形态：body 携带 lone LF（提交编码器已归一，
+        // 此处兜底端点层不吞）——helper 首步归一还原 `\r\n` 展开。
+        let lone_lf = handler(&make_req("POST", Some("a\nb=c\n"))).unwrap();
+        assert_eq!(lone_lf.body, "a\nb=c\n");
+        assert_eq!(helper_unescape(&lone_lf.body), "a\r\nb=c\r\n");
         // GET / 无 body → 空回显（200 非错误）。
         let empty = handler(&make_req("GET", None)).unwrap();
         assert_eq!(empty.status, 200);

@@ -44,6 +44,10 @@ pub use compress::*;
 // URL 序列化组件 + IDNA IgnoreInvalidPunycode 回退（net-api 二期 M2-S2 拆出）。
 // parse_url_to_json/serialize_url 消费。
 mod url_idna;
+// 与条目自身门控一致：`serialize_url` 在 url_idna 内为 `#[cfg(feature = "script-runtime")]`，
+// 消费方（parse_url_to_json/set_url_part）同门控；再导出不加门控会使无 script-runtime
+// 的构建（如 `cargo build --release -p zero-browser` 默认 feature 口径）E0432。
+#[cfg(feature = "script-runtime")]
 pub(crate) use url_idna::serialize_url;
 
 // TextDecoder legacy 编码 host 实现（encoding-compat M2，labels 全表 + 多字节解码经 encoding_rs）。
@@ -4190,9 +4194,7 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     match result {
         Ok(u) => serialize_url(&u),
         Err(_) => url_idna::pc_lenient_parse(input)
-            .and_then(|(u, rescues)| {
-                url_idna::pc_patch_components(url_idna::serialize_url_components(&u)?, &rescues)
-            })
+            .and_then(|(u, rescues)| url_idna::pc_patch_components(url_idna::serialize_url_components(&u)?, &rescues))
             .map(|c| url_idna::components_to_json(&c))
             .unwrap_or_default(),
     }
