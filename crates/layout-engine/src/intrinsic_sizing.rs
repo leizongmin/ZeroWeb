@@ -1026,6 +1026,64 @@ fn block_intrinsic_width_ex(
                 } else {
                     inline_sum += (frame + ml + mr).max(0.0);
                 }
+            } else if !min_mode
+                && std::env::var("ZW_IB_INTRINSIC_RECURSE").as_deref() != Ok("0")
+                && child.width <= 0.5
+                && child_style.is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+                && !child.is_replaced
+                && !child.node_id.and_then(|cid| doc.get(cid)).is_some_and(|n| {
+                    matches!(
+                        &n.kind,
+                        zero_dom::NodeKind::Element(e)
+                            if matches!(
+                                e.local_name(),
+                                "img" | "video" | "audio" | "canvas" | "iframe" | "embed" | "object" | "svg"
+                            )
+                    )
+                })
+            {
+                // R5310（css-sizing-3 §5.1 max-content；outline-028 取证）：非 replaced 原子
+                // inline（inline-block 族）max 模式在 **child.width 塌 0** 时改 DOM 递归真
+                // 测量。intrinsic 测量发生在 taffy 首趟前（R4355 同序），内容定尺寸
+                // inline-block 的 child.width 彼时为 0——容器（典型 width:max-content）
+                // max-content 只算到 margin（ref 页 `<div class=inline style=margin-left:
+                // 5px>XX</div>` 唯一子测 5 应 25，布局期行宽 5 放不下 XX 塌 0、随行 span
+                // 被挤换行）。R4032 在 box_content_max_width_inner 已有同款臂
+                //（ZW_IB_DESTRETCH，opt-in 未验证），本函数（width:max-content 实际解析
+                // 路径，R1018 分发）此前无对应接线。仅塌 0 臂生效（bench 同窗 A/B：全量
+                // 递归使 medium 页 layout +10.4%，174.67→192.73ms——definite/已解析宽的
+                // 子递归是纯浪费，child.width 已是正确贡献）；post-taffy 重测（R5236 D2
+                // abspos shrink-to-fit 等）child.width 已解析，同样走旧口径。
+                // replaced 维持 child.width：attr/AR 宽第一趟已解析进 child.width 且 DOM
+                // 递归对无文本原子盒测 0 会塌（R4355 intrinsic-percent-replaced-001/012/
+                // 013/dynamic-004 实证回退——塌 0 门对其同样关死，双保险）；svg 已在上方
+                // R4000 臂消费。kill-switch `ZW_IB_INTRINSIC_RECURSE=0` 回退 child.width
+                // 口径。
+                // 贡献再被自身 definite max/min-width 钳制（css-sizing-3 §5.2；CSS2
+                // §10.3.7 shrink-to-fit：max-width 约束长度定义父 preferred 宽——
+                // absolute-non-replaced-width-017/018/021 同款：pre-taffy 塌 0 子递归裸值
+                // 240 须钳至 120，未钳时 preferred 宽翻倍）。关键字不在此钳（min/max-
+                // content 已由递归内 kw_aware_max_width 消费，R4151）、百分比 intrinsic
+                // 语境循环记 None，均被 resolve 返回值天然排除。
+                let mut w = box_content_max_width(child, doc, styles);
+                if let Some(child_cs) = child_style {
+                    let child_frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                    if let Some(cap) = resolve_intrinsic_real_length(&child_cs.max_width, child_cs) {
+                        w = w.min(cap + child_frame);
+                    }
+                    if let Some(floor) = resolve_intrinsic_real_length(&child_cs.min_width, child_cs) {
+                        w = w.max(floor + child_frame);
+                    }
+                }
+                inline_sum += (w + ml + mr).max(0.0);
             } else if min_mode {
                 // 原子盒独立断点（UAX14：atomic inline 前后可断）——取 max 非求和。
                 inline_sum = inline_sum.max((child.width + ml + mr).max(0.0));
