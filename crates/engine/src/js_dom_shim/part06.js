@@ -2791,7 +2791,7 @@
         if (w2 === nxt2) list[w2].checked = true;
         else if (list[w2].checked) list[w2].checked = false;
       }
-      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
       el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
       return true;
     }
@@ -2818,7 +2818,7 @@
     var v2 = opts[next].value;
     if (v2 == null || v2 === '') v2 = String(opts[next].text || '');
     el.value = v2;
-    el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+    el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
     el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
     return true;
   };
@@ -2851,7 +2851,7 @@
         var v2 = opts[i].value;
         if (v2 == null || v2 === '') v2 = String(opts[i].text || '');
         el.value = v2;
-        el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+        el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
         el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
         return '1';
       }
@@ -2871,7 +2871,7 @@
           var v4 = opts[i2].value;
           if (v4 == null || v4 === '') v4 = String(opts[i2].text || '');
           el.value = v4;
-          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
           el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
           return '1';
         }
@@ -2888,7 +2888,7 @@
           var v3 = opts[j].value;
           if (v3 == null || v3 === '') v3 = String(opts[j].text || '');
           el.value = v3;
-          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false }));
+          el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
           el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
           return '1';
         }
@@ -4166,7 +4166,7 @@
             // 同款（UA 合成编辑操作）。beforeinput 取消 → 命令失败（返回 false，
             // spec「canceled commands return false」）。
             var before57 = new InputEvent('beforeinput', {
-              bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
+              bubbles: true, cancelable: true, composed: true, data: ins, inputType: 'insertText', isComposing: false
             });
             try {
               Object.defineProperty(before57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
@@ -4182,7 +4182,7 @@
             globalThis.__zwSkipValueSanitize = true;
             try { tgt.value = combined; } finally { globalThis.__zwSkipValueSanitize = false; }
             var input57 = new InputEvent('input', {
-              bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
+              bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
             });
             try {
               Object.defineProperty(input57, 'isTrusted', { value: true, writable: true, configurable: true, enumerable: true });
@@ -4241,7 +4241,7 @@
              (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host2, rng2.endContainer))));
           if (host2 && inHost2 && typeof host2.dispatchEvent === 'function') {
             var before2 = new InputEvent('beforeinput', {
-              bubbles: true, cancelable: true,
+              bubbles: true, cancelable: true, composed: true,
               data: _zwExecCmdEventData(cmd, arguments[2]),
               inputType: _zwExecCmdInputType[cmd], isComposing: false
             });
@@ -4314,7 +4314,7 @@
                 }
               } catch (_eRh) {}
               var input2 = new InputEvent('input', {
-                bubbles: true, cancelable: false,
+                bubbles: true, cancelable: false, composed: true,
                 data: _zwExecCmdEventData(cmd, arguments[2]),
                 inputType: _zwExecCmdInputType[cmd], isComposing: false
               });
@@ -14729,9 +14729,12 @@
         data: (detail && detail.data) || ''
       });
     } else if ((type === 'beforeinput' || type === 'input') && detail && detail.inputType) {
+      // s129：beforeinput/input 均 composed:true（UI Events 事件定义表——
+      // https://w3c.github.io/uievents/#event-type-input 、#event-type-beforeinput）。
       ev = new InputEvent(type, {
         bubbles: true,
         cancelable: type === 'beforeinput',
+        composed: true,
         data: detail.data,
         inputType: detail.inputType,
         isComposing: !!detail.isComposing
@@ -14750,7 +14753,7 @@
         data: (detail && detail.data != null) ? String(detail.data) : ''
       });
     } else if (type === 'input') {
-      ev = new InputEvent(type, { bubbles: true, cancelable: false });
+      ev = new InputEvent(type, { bubbles: true, cancelable: false, composed: true });
     } else if (type === 'change' || type === 'focus' || type === 'blur' ||
                type === 'focusin' || type === 'focusout') {
       ev = _makeEvent(type, {
@@ -16998,6 +17001,13 @@
       if (!_proxyCache[k] && typeof _makeProxy === 'function') _makeProxy(sel, null);
       _activeElKey = k;
     } catch (_eHF) {}
+    // s129（html-semantics M2）：text control change 基线捕获——镜像 part04 focus()
+    // 臂（s128 change-on-blur 两钩子之一；宿主 mousedown/Tab 焦点迁移此前只派事件
+    // 不记基线，宿主聚焦→失焦时 `__zw_text_change_due` 因基线 undefined 恒 false，
+    // input-change-event-properties typing 断言面——send_keys 首键自聚焦即宿主通道）。
+    try {
+      if (globalThis.__zw_text_change_baseline) globalThis.__zw_text_change_baseline(k, sel, null);
+    } catch (_eHFs129b) {}
     try {
       __zw_dispatch_event(sel, 'focus', null);
       __zw_dispatch_event(sel, 'focusin', null);
@@ -17016,6 +17026,18 @@
       __zw_dispatch_event(sel, 'blur', null);
       __zw_dispatch_event(sel, 'focusout', null);
     } catch (_eHB2) {}
+    // s129（html-semantics M2）：text control change-on-blur 派生——镜像 part04
+    // blur() 臂（序 blur → focusout → change，Chromium/Firefox 互操作序；脏旗 + 净值
+    // 比较门复用 `__zw_text_change_due`，基线由 `__zw_host_focus` 捕获）。
+    // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-text/input/changed
+    // change 是 UA 语义事件 → trusted（R312 __zwTrusted 通道，同 `_zwFireInputChange`）。
+    try {
+      var _s129HbK = _elKey(sel, null);
+      if (globalThis.__zw_text_change_due && globalThis.__zw_text_change_due(_s129HbK, sel, null)) {
+        _dispatchWithBubble(_s129HbK, sel, null,
+          _makeEvent('change', { bubbles: true, cancelable: false, __zwTrusted: true }));
+      }
+    } catch (_eHBs129c) {}
   };
   // uievents-compat M3 尾簇 6b（2026-10-04）：mousedown 默认动作 = 焦点迁移
   //（UI Events §5.2.2 https://w3c.github.io/uievents/#focus-event-focus「focus is

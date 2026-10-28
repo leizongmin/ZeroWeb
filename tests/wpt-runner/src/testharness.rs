@@ -10945,8 +10945,24 @@ fn apply_testdriver_command(
                         focus_prefix.as_str(),
                     );
                     if keydown_result != "prevented" {
-                        let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
-                        let _ = webview.execute_script(&scroll_script);
+                        // s129（html-semantics M2）：SELECT/radio 焦点键消费门——目标是
+                        // SELECT（或 radio 组成员）时 ArrowUp/Down/Home/End 走既有
+                        // `__zw_select_key_action` 选中项导航（input+change 派发，
+                        // input-change-event-properties down-arrow 断言面；R3254-K5 生成器
+                        // 此前无调用点）。键被消费即跳过滚动默认动作（spec：select 键导航
+                        // 不滚动）；非 SELECT 返 false → 照旧滚动。
+                        let select_consumed = if selector.is_empty() {
+                            false
+                        } else {
+                            webview
+                                .execute_script(&zero_engine::script_select_key_action(&selector, key_name))
+                                .map(|v| v.trim() == "true")
+                                .unwrap_or(false)
+                        };
+                        if !select_consumed {
+                            let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
+                            let _ = webview.execute_script(&scroll_script);
+                        }
                     }
                     dispatch_key_event_script(webview, &selector, "keyup", &scroll_detail);
                     continue;
