@@ -14,17 +14,19 @@
 //!
 //! URL/域名不入键（内容寻址边界）：css 束在拼接期已按文档 base 绝对化
 //!（`absolutize_css_urls`），base 差异被 css 内容哈希吸收；paint 侧 document_url
-//! 唯一消费点 `bg_clip_text_solid_color → image_resource_key(u, document_url)` 的
-//! `u` 来自已绝对化的束——同 (html, css) 键下不同 document_url 不产生图元差异。
+//! 的消费点是 `image_resource_key(u, document_url)` 族（img 元素/border-image/
+//! effects/text-list/bg-clip-text 多处），`u` 来自已绝对化的束，且 image 四表键
+//! 含 document_url（`build_img_intrinsic_all`）——跨 URL 同内容命中在新图片到达
+//! 后键变 MISS 自愈，残余仅为到达前图元引用旧站站位图的瞬态。命中臂以
+//! `Document::pristine_snapshot` 还原文档并重放 `set_url`/`set_referrer`（Parse
+//! 步同值），还原文档不携带旧导航 URL/referrer。
 //! canvas registry 为跨文档共享可变句柄且无版本号，位图变化不可完整刻画——按
 //! **本文档代内活跃**判禁用：registry 长度对比导航起点基线
 //!（`set_canvas_ctx_baseline`，webview 导航换代时下推；T13 S5 同址重入不清
 //! registry，遗留死文档 context 不算活跃），代内有 getContext 即整体禁用短路，
 //! 保守回退全量（diff 不确定一律回退，设计卡 §2.0）。
 
-use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
 
 use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId};
@@ -38,8 +40,12 @@ use crate::animation::compositor_export::ExportedAnimationSet;
 /// `stylesheets`/`export_set` 随帧保存：命中臂须复刻全量 Complete 的动画时钟注册
 /// 与合成导出缓存副作用（全量在 Style/Paint 步内联完成，见 `advance_budgeted_render`）。
 pub(crate) struct CachedFrame {
-    /// 命中臂写回 `RenderPipeline::cached_doc` 的文档（Rc 共享，免整树复制）。
-    pub(crate) doc: Rc<RefCell<Document>>,
+    /// 命中臂写回 `RenderPipeline::cached_doc` 的文档**纯净树快照**（自有深拷，
+    /// 见 `Document::pristine_snapshot`）。DF-1 根修：不得以 Rc 与管线活文档共享
+    /// ——回填后脚本突变路径原位修改 `cached_doc`，共享会把脚本效应写进缓存条
+    /// 目，热航同键命中还原含突变树 + 脚本重执行 = 非幂等效应翻倍；命中臂再拷
+    /// 一次入管线，缓存条目与活文档零共享，值恒为键输入的纯函数输出。
+    pub(crate) doc: Document,
     /// 命中臂写回 `RenderPipeline::cached_styles` 的计算样式。
     pub(crate) styles: HashMap<NodeId, ComputedStyle>,
     /// 命中臂补跑 `AnimationClock::register_from_stylesheets` 所需的样式表集合
@@ -51,15 +57,17 @@ pub(crate) struct CachedFrame {
     pub(crate) result: RenderResult,
 }
 
-/// 指纹缓存：文档级键 → 完整帧输出。容量上限 + FIFO 驱逐（同键覆盖不驱逐）。
+/// 指纹缓存：文档级键 → 完整帧输出。容量上限 + **LRU-by-lookup** 驱逐（命中
+/// 提升至驱逐序尾；同键覆盖不驱逐、不计新插入）。
 ///
 /// 容量 4：一轮导航典型产生 2-4 个 budget session（FirstPaint 轮、styled 轮、
-/// 图片批轮、字体重绘轮），容量覆盖单轮导航全部帧形态；热导航首轮（FirstPaint/
-/// styled，环境初态键）必须仍驻留——这正是 FIFO 相对 LRU 的保守选择：命中不重排，
-/// 单页突发异键轮不会把初态键挤出。
+/// 图片批轮、字体重绘轮），容量覆盖单轮导航全部帧形态。驱逐序语义对「热导航
+/// 首轮（FirstPaint/styled，环境初态键）必须仍驻留」的目标等价或优于纯 FIFO：
+/// 初态键正是每轮热导航的命中目标，命中即提升保活，不会被同页突发异键轮挤出；
+/// 未被命中的条目按最久未活跃逐出，顺序与 FIFO 相同（最旧先出）。
 pub(crate) struct FrameFingerprintCache {
     entries: HashMap<u128, CachedFrame>,
-    /// FIFO 驱逐序（插入序，不含命中重排）。
+    /// 驱逐序（LRU-by-lookup：尾 = 最近插入或最近命中，首 = 最久未活跃）。
     order: VecDeque<u128>,
     capacity: usize,
 }
@@ -84,7 +92,7 @@ impl FrameFingerprintCache {
         self.entries.get(&key)
     }
 
-    /// 插入/覆盖条目；超容量按 FIFO 驱逐最旧异键条目。
+    /// 插入/覆盖条目；超容量按驱逐序逐出序首（最久未活跃）异键条目。
     pub(crate) fn insert(&mut self, key: u128, frame: CachedFrame) {
         if !self.entries.contains_key(&key) {
             while self.entries.len() >= self.capacity {
@@ -202,11 +210,25 @@ pub(crate) fn frame_fingerprint_key(pipeline: &super::RenderPipeline, html: &str
     hash_sorted_u64_map(&mut h, &pipeline.image_ratios, |v| v.to_bits().to_le_bytes().to_vec());
     hash_sorted_u64_map(&mut h, &pipeline.image_no_ratio, |v| {
         let (w, r) = v;
-        [
-            w.map_or(0, f32::to_bits).to_le_bytes(),
-            r.map_or(0, f32::to_bits).to_le_bytes(),
-        ]
-        .concat()
+        // DF-5：Option 加判别前缀字节——裸 map_or(0, to_bits) 使 None 与
+        // Some(0.0) 同哈希输入，「固有尺寸未知→解码出 0×0」状态迁移键不变，
+        // 陈旧帧命中（两态布局路径不同：占位/宽高比回退 vs 零盒）。
+        let mut bytes = Vec::with_capacity(10);
+        match w {
+            None => bytes.push(0u8),
+            Some(w) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&w.to_bits().to_le_bytes());
+            }
+        }
+        match r {
+            None => bytes.push(0u8),
+            Some(r) => {
+                bytes.push(1);
+                bytes.extend_from_slice(&r.to_bits().to_le_bytes());
+            }
+        }
+        bytes
     });
     hash_sorted_u64_map(&mut h, &pipeline.image_solid_colors, |v| v.to_vec());
     // 字体面：family → font_id 映射整体入键（字体晚到触发 request_rerender 重绘时
@@ -230,7 +252,7 @@ mod tests {
 
     fn sample_frame(tag: u8) -> CachedFrame {
         let html = format!("<html><body><p>frame-{tag}</p></body></html>");
-        let doc = Rc::new(RefCell::new(zero_dom::parse_html(&html)));
+        let doc = zero_dom::parse_html(&html);
         // 最小 RenderResult：空图元 + 计时 total_ms=tag 供覆盖断言。
         let result = crate::pipeline::make_render_result(
             zero_render_foundation::primitive::RenderPrimitives::default(),
@@ -327,6 +349,27 @@ mod tests {
         if unset {
             assert!(fingerprint_cache_enabled(), "env 未设时缺省开启");
         }
+    }
+
+    #[test]
+    fn fingerprint_key_image_no_ratio_none_vs_zero_decode_differ() {
+        // DF-5：「固有尺寸未知」（None）与「成功解码 0×0」（Some(0.0)）必须判异——
+        // 裸 map_or(0, to_bits) 折叠使两态同哈希输入，「未知→零尺寸解码」状态迁移
+        // 键不变，陈旧帧命中（布局路径不同：占位/宽高比回退 vs 零盒）。
+        let mut unknown = super::super::RenderPipeline::new(100.0, 100.0);
+        let mut table_unknown = std::collections::HashMap::new();
+        table_unknown.insert(9u64, (None, None));
+        unknown.set_image_no_ratio(table_unknown);
+        let mut zero = super::super::RenderPipeline::new(100.0, 100.0);
+        let mut table_zero = std::collections::HashMap::new();
+        table_zero.insert(9u64, (Some(0.0f32), Some(0.0f32)));
+        zero.set_image_no_ratio(table_zero);
+        let k_unknown = frame_fingerprint_key(&unknown, "<img src=x>", "");
+        let k_zero = frame_fingerprint_key(&zero, "<img src=x>", "");
+        assert_ne!(
+            k_unknown, k_zero,
+            "None 与 Some(0.0) 必须判异（状态迁移不得命中陈旧帧）"
+        );
     }
 
     #[test]

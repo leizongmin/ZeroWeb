@@ -414,3 +414,100 @@ fn s1_fingerprint_content_change_misses_and_recomputes() {
     assert_frames_bitwise_equal(&px_second, &px_reference, "content change recomputes");
     let _ = first;
 }
+
+// ── S1 命中臂返修回归钉（DF-1/DF-3，红→绿证据见运行目录 evidence/t21-df-red/green）──
+
+/// DF-1 突变批次：`body` 追加一个探针 div（appendChild 类非幂等操作——每重放
+/// 一次多一个节点，效应可计数）。
+fn df1_append_probe_mutations() -> Vec<crate::js_dom_bridge::DomMutation> {
+    vec![
+        crate::js_dom_bridge::DomMutation::CreateElement {
+            handle: "__zw_df1_probe".to_string(),
+            tag: "div".to_string(),
+        },
+        crate::js_dom_bridge::DomMutation::AppendChild {
+            parent_selector: "body".to_string(),
+            child_handle: "__zw_df1_probe".to_string(),
+        },
+    ]
+}
+
+/// body 直接子节点数（探针计数面；NAV_A_HTML 为单行 HTML，body 子节点全为元素）。
+fn df1_body_child_count(pipeline: &RenderPipeline) -> usize {
+    let doc = pipeline
+        .cached_doc
+        .as_ref()
+        .expect("cached_doc present after render")
+        .borrow();
+    let body = doc.query_selector(doc.root(), "body").expect("body present");
+    doc.get(body).expect("body node").children.len()
+}
+
+/// DF-1（blocker 根修钉）：脚本突变不得泄漏进指纹缓存。
+///
+/// 缺陷时序（返修前红）：冷航 Complete 回填把管线活文档 Rc 共享入缓存 → 脚本
+/// 突变路径（`render_with_dom_mutations_persistent`）原位写入缓存条目持有的同一
+/// 实例 → 热航同键命中还原含突变树 → 脚本重放 → appendChild 效应翻倍（body 5
+/// 子 vs 期望 4）。修后语义 = 改前热导航语义：命中还原**纯净树**，脚本效应单次。
+#[test]
+fn s1_fingerprint_hit_restores_pristine_tree_script_effects_not_doubled() {
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    // 冷导航：MISS 全量渲染并回填（fill 点在脚本执行前 = 纯净树）。
+    let cold = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    let _ = cold;
+    // 页面脚本执行：非幂等突变一次。
+    warm.render_with_dom_mutations_persistent(&df1_append_probe_mutations(), NAV_CSS, None)
+        .expect("script mutation applies");
+    assert_eq!(df1_body_child_count(&warm), 4, "冷航 + 单次突变：body 3 元素 + 1 探针");
+    // 热导航：同输入新会话（新 NodeId 代际）——必须命中（四段零耗）。
+    let mut session = crate::BudgetedRenderSession::new(NAV_A_HTML, NAV_CSS);
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    assert_eq!(
+        session.timings().parse_ms,
+        0.0,
+        "热导航必须命中指纹缓存（parse 段零耗时；MISS 则本钉前提不成立）"
+    );
+    let _ = session.take_result();
+    // 命中还原 + 脚本重放一次：效应必须单次（不翻倍）。
+    warm.render_with_dom_mutations_persistent(&df1_append_probe_mutations(), NAV_CSS, None)
+        .expect("script mutation re-applies after hit");
+    assert_eq!(
+        df1_body_child_count(&warm),
+        4,
+        "命中还原纯净树 + 脚本单次效应：探针不得翻倍（翻倍 = 突变泄漏进缓存）"
+    );
+}
+
+/// DF-3：命中帧 `RenderResult.timings` 必须覆写为命中计时——与外层 session 计时
+/// 同值（RenderResult.timings 语义 = 产生该帧的实际耗时；不得携带冷航全量幻影
+/// 毫秒，消费方 apps/renderer resize 诊断读该值）。
+#[test]
+fn s1_fingerprint_hit_result_timings_matches_hit_not_cold() {
+    let mut warm = RenderPipeline::new(320.0, 400.0);
+    let cold = fingerprint_session(&mut warm, NAV_A_HTML, NAV_CSS);
+    assert!(cold.timings.parse_ms > 0.0, "冷航前置：全量路径 parse 有耗时");
+    let mut session = crate::BudgetedRenderSession::new(NAV_A_HTML, NAV_CSS);
+    loop {
+        if matches!(
+            warm.advance_budgeted_render(&mut session, 5_000.0),
+            crate::BudgetAdvance::Complete
+        ) {
+            break;
+        }
+    }
+    assert_eq!(session.timings().parse_ms, 0.0, "热航命中前提");
+    let result = session.take_result().expect("complete session has result");
+    assert_eq!(
+        result.timings.total_ms,
+        session.timings().total_ms,
+        "命中帧 result.timings 必须与 session.timings（命中计时）同值"
+    );
+    assert_eq!(result.timings.parse_ms, 0.0, "命中帧不得携带冷航 parse 毫秒");
+}

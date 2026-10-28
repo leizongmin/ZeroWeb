@@ -128,18 +128,28 @@ impl RenderPipeline {
             // 结束借用后方可写回管线状态。
             let hit = self.frame_fingerprint_cache.lookup(key).map(|c| {
                 (
-                    c.doc.clone(),
+                    // DF-1 根修：命中再拷一次纯净树——缓存条目保有的快照不得与
+                    // 管线活文档共享（后续脚本原位突变 cached_doc 会经 Rc 写穿
+                    // 缓存条目，第二次命中即还原污染树）。
+                    Rc::new(RefCell::new(c.doc.pristine_snapshot())),
                     c.styles.clone(),
                     c.stylesheets.clone(),
                     c.export_set.clone(),
                     c.result.clone(),
                 )
             });
-            if let Some((doc, styles, stylesheets, export_set, result)) = hit {
+            if let Some((doc, styles, stylesheets, export_set, mut result)) = hit {
                 let t_hit = Instant::now();
                 // 命中臂逐一复刻全量 Complete 副作用（下方 Done 分支同序同语义）：
                 // cached_doc/cached_styles 写回、CSS 解析缓存失效（DOM 已换代）。
                 self.cached_doc = Some(doc);
+                // DF-2 尾巴：还原文档重放 Parse 步导航态（pristine_snapshot 复位面
+                // 不带 url/referrer）——与全量 Parse 步同值，还原文档不携带旧导航。
+                {
+                    let mut restored = self.cached_doc.as_ref().expect("just set").borrow_mut();
+                    restored.set_url(self.document_url.clone());
+                    restored.set_referrer(self.referrer.clone());
+                }
                 self.cached_styles = styles;
                 self.cached_css_text = None;
                 // slice37/slice38 换代清理（handle→NodeId 持久表 + form live value
@@ -173,6 +183,10 @@ impl RenderPipeline {
                     paint_count: 0,
                 };
                 session.export_set = export_set;
+                // DF-3：命中帧 result.timings 同步覆写为命中计时（与 session.timings
+                // 同值）——RenderResult.timings 语义 = 产生该帧的实际耗时，不得携带
+                // 冷航全量幻影毫秒（消费方 apps/renderer resize 诊断读该值）。
+                result.timings = session.timings.clone();
                 session.result = Some(result);
                 session.step = BudgetStep::Done;
                 return BudgetAdvance::Complete;
@@ -369,10 +383,20 @@ impl RenderPipeline {
                     if let Some(key) = session.fingerprint_key
                         && let Some(result) = &session.result
                     {
+                        // DF-1 根修：回填**纯净树快照**（`pristine_snapshot` 深拷）
+                        // 而非活文档 Rc——本点在页面脚本执行前，快照 = 键输入的纯
+                        // 函数输出；Rc 共享则后续脚本突变（render_with_dom_mutations_
+                        // persistent 原位改 cached_doc）写穿缓存条目，热航命中还原
+                        // 含突变树 + 脚本重执行 = 非幂等效应翻倍。
                         self.frame_fingerprint_cache.insert(
                             key,
                             crate::pipeline::frame_fingerprint::CachedFrame {
-                                doc: self.cached_doc.clone().expect("cached_doc set above"),
+                                doc: self
+                                    .cached_doc
+                                    .as_ref()
+                                    .expect("cached_doc set above")
+                                    .borrow()
+                                    .pristine_snapshot(),
                                 styles: session.styles.clone(),
                                 stylesheets: session.stylesheets.clone(),
                                 export_set: session.export_set.clone(),
