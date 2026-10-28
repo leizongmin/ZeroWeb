@@ -10849,10 +10849,12 @@
                 } catch (_e4) {}
                 if (_firstInv != null) return; // 中止提交（interactive validation 失败；finally 清 flag）
               }
-              // dispatch submit SubmitEvent（cancelable，含 submitter）。
+              // dispatch submit SubmitEvent（cancelable，含 submitter）。s129：requestSubmit/
+              // submit 按钮激活派的 submit 事件是 UA 语义——isTrusted true（R312 通道；
+              // button-events.html「submit 事件 isTrusted」断言面）。
               var _sev;
-              try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null }); }
-              catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true }); }
+              try { _sev = new SubmitEvent('submit', { bubbles: true, cancelable: true, submitter: submitter || null, __zwTrusted: true }); }
+              catch (_e) { _sev = new Event('submit', { bubbles: true, cancelable: true, __zwTrusted: true }); }
               var _notCanceled = _dispatchWithBubble(fKey, fSel, fHandle, _sev);
             } finally {
               // R3999：spec submit 步 5.4 negative / 步 5.7——两出口统一清位（步 5.8
@@ -11196,7 +11198,9 @@
         if (_realTag(sel, handle) === 'FORM' && (prop === 'reset' || prop === 'requestSubmit' || prop === 'submit')) {
           if (prop === 'reset') {
             return function () {
-              var _rev = new Event('reset', { bubbles: true, cancelable: true });
+              // s129：reset 事件由 form.reset() UA 语义派发——isTrusted true（R312
+              // __zwTrusted 通道；reset-event.html isTrusted 断言面）。
+              var _rev = new Event('reset', { bubbles: true, cancelable: true, __zwTrusted: true });
               if (_dispatchWithBubble(key, sel, handle, _rev) === false) return; // preventDefault → 不重置
               if (sel) {
                 var _fcs = _formControls(sel);

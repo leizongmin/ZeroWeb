@@ -4166,7 +4166,16 @@
     while (_q.length && _q[0].ready) {
       var _ent = _q.shift();
       if (_ent.failed) {
-        try { _ent.el.dispatchEvent(new Event('error')); } catch (_eS110de) {}
+        // s129：UA 取回失败派 error 是 trusted（UA 派发语义，R312 通道；
+        // fetch-src/failure.html isTrusted 断言面）。bubbles/cancelable 缺省 false（Event 构造）。
+        // s129：UA 取回失败派 error 是 trusted（UA 派发语义，R312 通道——
+        // `__zwMakeTrustedEvent` 双印 `__zwTrusted` + `_zwUaDispatch`，裸
+        // dispatchEvent 会翻 false；fetch-src/failure.html isTrusted 断言面）。
+        // bubbles/cancelable 缺省 false（Event 构造）。
+        try {
+          _ent.el.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+            ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error'));
+        } catch (_eS110de) {}
         if (typeof _ent.cb === 'function') { try { _ent.cb(); } catch (_eS110dc) {} }
       } else {
         globalThis._zwExecuteFetchedScript(_ent.url, _ent.el, _ent.code, _ent.cb);
@@ -4309,7 +4318,13 @@
           globalThis._zwDrainInOrderScriptQueue();
           return;
         }
-        try { el96.dispatchEvent(new Event('error')); } catch (_eS96e) {}
+        // s129：UA 取回失败派 error 是 trusted（R312 `__zwMakeTrustedEvent` 双印通道，
+        // 同上方 S110 排水臂；fetch-src/failure.html isTrusted 断言面）。
+        // bubbles/cancelable 缺省 false。
+        try {
+          el96.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+            ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error'));
+        } catch (_eS96e) {}
         if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb2) {} }
       });
       return true;
@@ -13574,6 +13589,13 @@
               var cur = '0';
               try { cur = handle ? __zw_has_attr_handle(handle, 'checked') : (sel ? __zw_has_attr(sel, 'checked') : '0'); } catch (_e4) {}
               var _r108Pre = (cur === '1'); // 翻转前状态（legacy-canceled 回滚目标）
+              // s129：pre-click 清 indeterminate（spec checkbox pre-click activation
+              // steps——https://html.spec.whatwg.org/multipage/input.html#checkbox-state-(type%3Dcheckbox)
+              // ；checkbox.html t3/t4「indeterminate 应为 false」断言面）。
+              try {
+                var _s129Ck = _elKey(sel, handle);
+                if (_s129Ck != null) delete _indeterminate[_s129Ck];
+              } catch (_eS129Id) {}
               if (cur === '1') {
                 if (handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, 'checked'); } catch (_e5) {} }
                 else if (typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(sel, 'checked'); } catch (_e5) {} }
@@ -13636,6 +13658,10 @@
   // 时序：post-activation（dispatch finally、rollback 之后）——WPT 同文件 detached 用例
   // 断言不派发，attached 用例断言派发，均与 checked 翻转时序解耦。两个事件 bubbles:true、
   // cancelable:false（spec input/change 事件定义），input 走 InputEvent 构造器（可用时）。
+  // s129（html-semantics M2）：激活派生的 input/change 是 **UA 语义事件**——isTrusted
+  // true（R312 __zwTrusted 通道；同一 click() 的 click 事件本身仍合成 untrusted——
+  // checkbox.html/radio.html t1 断言面）；input 另 composed:true（UI Events
+  // https://w3c.github.io/uievents/#event-type-input）。
   function _zwFireInputChange(sel, handle) {
     var el = _makeProxy(sel, handle);
     // R155（js-dom M4）：inline oninput/onchange handler 显式编译执行（listener 派发
@@ -13648,13 +13674,13 @@
     var inputEv;
     try {
       inputEv = globalThis.InputEvent
-        ? new globalThis.InputEvent('input', { bubbles: true, cancelable: false })
-        : _makeEvent('input', { bubbles: true, cancelable: false });
-    } catch (_eI) { inputEv = _makeEvent('input', { bubbles: true, cancelable: false }); }
+        ? new globalThis.InputEvent('input', { bubbles: true, cancelable: false, composed: true, __zwTrusted: true })
+        : _makeEvent('input', { bubbles: true, cancelable: false, composed: true, __zwTrusted: true });
+    } catch (_eI) { inputEv = _makeEvent('input', { bubbles: true, cancelable: false, composed: true, __zwTrusted: true }); }
     try { _dispatchWithBubble(_elKey(sel, handle), sel, handle, inputEv); } catch (_e1) {}
     try {
       _dispatchWithBubble(_elKey(sel, handle), sel, handle,
-        _makeEvent('change', { bubbles: true, cancelable: false }));
+        _makeEvent('change', { bubbles: true, cancelable: false, __zwTrusted: true }));
     } catch (_e2) {}
     return el;
   }
@@ -14566,6 +14592,12 @@
               if (_rb.handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_rb.handle, 'checked'); } catch (_eB) {} }
               else if (_rb.sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(_rb.sel, 'checked'); } catch (_eB) {} }
             }
+            // s129：canceled activation 同步清 indeterminate（spec canceled activation
+            // steps——checkbox.html t6「onclick 内置 true、派发后应 false」断言面）。
+            try {
+              var _s129RbK = _elKey(_rb.sel, _rb.handle);
+              if (_s129RbK != null) delete _indeterminate[_s129RbK];
+            } catch (_eS129Rb) {}
           } else if (_rb.kind === 'radio') {
             if (_rb.handle) { try { if (typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(_rb.handle, 'checked'); } catch (_eC) {} }
             else if (_rb.sel && typeof __zw_remove_attr === 'function') { try { __zw_remove_attr(_rb.sel, 'checked'); } catch (_eC) {} }

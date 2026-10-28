@@ -6946,6 +6946,11 @@
   // https://w3c.github.io/input-events/#input-event-order-during-user-initiated-editing
   // host 在 keydown 默认动作阶段调用：先派 cancelable beforeinput；未取消才更新 value/selection，
   // 再派 textInput(legacy) 与不可取消 input。非 input/textarea 目标 → no-op。
+  // s129（html-semantics M2）：本族 beforeinput/input 派发统一 composed:true（UI Events
+  // 事件定义表——https://w3c.github.io/uievents/#event-type-input 与
+  // https://w3c.github.io/uievents/#event-type-beforeinput 均 composed:true；WPT
+  // input-change-event-properties 的 `input composed expected true` 断言面）。
+  // 本文件全部 16 处 InputEvent 构造（insert/delete/CE 系）同形，逐点不再注。
   // t2-pd2a：readonly/maxlength 守卫从宿主侧计划（快照读）下沉到本函数——原子插入路径
   // 与守卫同一活状态读取点，消除「快照计划→迟到应用」的 lost-update 窗（DDG 首页实测：
   // 击键重叠时按陈旧快照覆盖写入，"rust"→"rsut"/24 字符落 2 字符）。
@@ -6981,7 +6986,7 @@
       if (inserted.length === 0) return;
     }
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: inserted, inputType: 'insertText', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: inserted, inputType: 'insertText', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return 'prevented';
     // 尾簇 31：legacy textInput 夹在 beforeinput 与 DOM 变更之间（UI Events legacy
@@ -7005,7 +7010,7 @@
     // script_set_text_control_state 的 mark_user_edited）。
     if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
     var input = new InputEvent('input', {
-      bubbles: true, cancelable: false, data: inserted, inputType: 'insertText', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: inserted, inputType: 'insertText', isComposing: false
     });
     el.dispatchEvent(input);
   };
@@ -7032,7 +7037,7 @@
       }
     }
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
     // t2-pd2a 复核 D2：取消语义与 `__zw_text_input` 对齐——返回 'prevented' 供宿主
     // canceled 契约传播（DeleteBackward 的 canceled 面不回退）。
@@ -7046,7 +7051,7 @@
     // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。
     if (typeof __zw_mark_user_edited === 'function') __zw_mark_user_edited(sel);
     var input = new InputEvent('input', {
-      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
     el.dispatchEvent(input);
   };
@@ -7095,7 +7100,7 @@
     if (ins === '') return;
     var range = globalThis.__zw_ce_caret_range(el);
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: ins, inputType: 'insertText', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: ins, inputType: 'insertText', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
     // 尾簇 31：CE 插入的事件序补 textInput（UI Events legacy——beforeinput →
@@ -7143,7 +7148,7 @@
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     var input = new InputEvent('input', {
-      bubbles: true, cancelable: false, data: ins, inputType: 'insertText', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
     });
     el.dispatchEvent(input);
   };
@@ -7170,7 +7175,7 @@
     }
     if (start === end) return; // 空区间（起点无字符）
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentBackward', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
     sc.nodeValue = v.slice(0, start) + v.slice(end);
@@ -7179,7 +7184,7 @@
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     el.dispatchEvent(new InputEvent('input', {
-      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentBackward', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     }));
   };
   // CE ForwardDelete（尾簇 32——Delete 键的 CE 面，deleteContentForward 语义；WPT
@@ -7205,7 +7210,7 @@
     }
     if (start === end) return;
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: null, inputType: 'deleteContentForward', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
     sc.nodeValue = v.slice(0, start) + v.slice(end);
@@ -7214,7 +7219,7 @@
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     el.dispatchEvent(new InputEvent('input', {
-      bubbles: true, cancelable: false, data: null, inputType: 'deleteContentForward', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     }));
   };
   // CE Enter 换行（R3254-M2 切片 3，editing goal，2026-09-07）：caret 处插 `<br>`
@@ -7237,7 +7242,7 @@
     // 永挂（WPT uievents/textInput enter-textarea-contenteditable CE 案 TO）。
     if (sc === el) {
       var beforeE = new InputEvent('beforeinput', {
-        bubbles: true, cancelable: true, data: null, inputType: 'insertLineBreak', isComposing: false
+        bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
       });
       if (el.dispatchEvent(beforeE) === false) return;
       if (globalThis._zwTextEventCtorRef) {
@@ -7251,7 +7256,7 @@
       nrE.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nrE]; }
       el.dispatchEvent(new InputEvent('input', {
-        bubbles: true, cancelable: false, data: null, inputType: 'insertLineBreak', isComposing: false
+        bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
       }));
       return;
     }
@@ -7261,7 +7266,7 @@
     // 选区非空：Enter 先删选区（insertLineBreak 语义）。
     var eo = range.collapsed ? so : (range.endOffset | 0);
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: null, inputType: 'insertLineBreak', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
     // 尾簇 33：CE Enter 补 **textInput(data='\n')**（真实浏览器 CE 换行的事件序
@@ -7310,7 +7315,7 @@
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     el.dispatchEvent(new InputEvent('input', {
-      bubbles: true, cancelable: false, data: null, inputType: 'insertLineBreak', isComposing: false
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
     }));
   };
   // CE insertParagraph 块级拆分（R3254-M3 切片 5，editing goal，2026-09-07）：
@@ -7331,7 +7336,7 @@
     var v = String(sc.nodeValue || '');
     var eo = range.collapsed ? so : (range.endOffset | 0);
     var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, data: null, inputType: 'insertParagraph', isComposing: false
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
     });
     if (el.dispatchEvent(before) === false) return;
     var kids = el.childNodes || [];
@@ -7388,7 +7393,7 @@
     try {
       el2 = document.querySelector(sel);
       if (el2) el2.dispatchEvent(new InputEvent('input', {
-        bubbles: true, cancelable: false, data: null, inputType: 'insertParagraph', isComposing: false
+        bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
       }));
     } catch (_eIpEv) {}
   };
