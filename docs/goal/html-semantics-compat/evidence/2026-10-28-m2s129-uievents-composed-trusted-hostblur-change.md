@@ -109,8 +109,10 @@ trusted 同根①）。
   6780P/1032F/103T**；键级（去重归一 tab）join **恰 19 Fail→Pass**
   （input-change-event-properties 11 + checkbox 4 + radio 1 +
   reset-event 1 + button-events submit 1 + failure 1，全 `1F→1P`），
-  **真翻红 0、new non-Pass key 0**。唯一键数 +3 为 149.html 子测名
-  含 tab 的归一伪影（Pass→Pass 非翻动）。本轮无 guard 内存杀。
+  **真翻红 0、new non-Pass key 0**。唯一键数 +3 为 zw-probe-s129.html
+  探针页三个 Pass 键（参跑时在语料、验后已删）——勘误（2026-10-28
+  复算）：初记「149.html tab 归一伪影」有误，149.html 12 行结果行
+  两轮逐字节一致零 diff。本轮无 guard 内存杀。
 - engine lib **3570/0**；wpt-runner **256/0**（76 ignored）；
   clippy（zero-wpt-runner --all-targets -D warnings）零告警。
 - 探针页 zw-probe-s129.html（gitignored wpt-data）四轮取证后**已删**

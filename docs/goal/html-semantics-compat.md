@@ -54,7 +54,9 @@
 > failure 全 Pass；全量 A/B × /tmp/s128-full.log 原始行口径
 > **6758P/1051F/103T → 6780P/1032F/103T**，键级 join **恰 19
 > Fail→Pass**（11+4+1+1+1+1，全 `1F→1P`），**真翻红 0、new non-Pass
-> key 0**（+3 唯一键为 149.html 子测名含 tab 归一伪影，Pass→Pass）。
+> key 0**（+3 唯一键为 zw-probe-s129.html 探针页三 Pass 键——参跑
+> 时在语料、验后已删；初记 149.html tab 归一伪影系误归因，勘误：
+> 149.html 12 行结果行两轮逐字节一致）。
 > engine lib **3570/0**；runner **256/0**（76 ignored）；clippy
 > （zero-wpt-runner -D warnings）零告警；fmt 净（fmt 修 testharness.rs
 > 一处换行）；shim 拼接 node --check 过。探针页（gitignored）验后删
