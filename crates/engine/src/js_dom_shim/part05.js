@@ -418,7 +418,6 @@
                 }
               } else __zw_set_text(sel, String(value));
             } catch (_e) {}
-            try { _textareaDefault[key] = String(value); } catch (_e) {}
             // R57（FV M1）：本地 value 状态同步（_controlValue 优先读
             // _inputValues——mutation 未应用时 value 读取不 stale）。
             // R3906：脏态（value IDL set / setRangeText 置 `_inputValuesSet`）**不覆写**

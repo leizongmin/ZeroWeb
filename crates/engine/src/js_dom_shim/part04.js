@@ -11184,7 +11184,7 @@
                   var c = _fcs[i];
                   try {
                     var _ct = c.tagName;
-                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA R3049 _textareaDefault）。
+                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA s127 live child text content）。
                     if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') { c.value = c.defaultValue; }
                     else if (_ct === 'INPUT') {
                       var _it = c.type;
@@ -13319,21 +13319,26 @@
             // R3906：TEXTAREA 写前校准基准（API 值换行归一形——\r\n 形变同值不折叠）。
             var _r3906IsTa = _realTag(sel, handle) === 'TEXTAREA';
             var _r3906TaOld = _r3906IsTa ? _zwSelNormValue(sel, handle, key) : null;
-            _inputValues[key] = String(value); _inputValuesSet[key] = true;
+            // s127（html-semantics M2）：textarea value IDL 为 [LegacyNullToEmptyString]
+            // ——null → 空串（value-defaultValue-textContent 'tests for the value
+            // setter' `value = null` → '' 断言面；INPUT 等 plain DOMString 不受影响）。
+            // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
+            var _s127TaSet = (_r3906IsTa && value == null) ? '' : String(value);
+            _inputValues[key] = _s127TaSet; _inputValuesSet[key] = true;
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
             // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
-            // R2996/R3049：首次写前仍捕获 defaultValue，供 getter + form.reset。
             //（R3901：INPUT 已上提模式分派分支——本 else 仅 TEXTAREA 与其余元素；
             // 首行缓存写必须保留——textarea 无专属缓存面，getter 靠它读回（R3901
             // 回归面：reset-form/setRangeText/validity textarea 曾全数 stale）。）
+            // s127：旧 R2996/R3049 sel 形 defaultValue 捕获行移除——defaultValue
+            // getter 改 live child text content（.value= 不触碰子文本，无需捕获）。
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
-              if (_textareaDefault[key] == null) _textareaDefault[key] = __zw_get_text(sel) || '';
-              __zw_set_form_value(sel, String(value));
+              __zw_set_form_value(sel, _s127TaSet);
             } else {
               if (handle) {
-                __zw_set_attr_handle(handle, 'value', String(value));
+                __zw_set_attr_handle(handle, 'value', _s127TaSet);
               } else {
-                __zw_set_form_value(sel, String(value));
+                __zw_set_form_value(sel, _s127TaSet);
               }
             }
             // R3906（HTML §4.10.11 value IDL setter）：API 值变更 → 光标折叠到新值末 +

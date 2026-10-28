@@ -1603,8 +1603,9 @@ fn test_form_named_access_shadowing_t2pb1() {
 
 #[test]
 fn test_textarea_default_value_r3049() {
-    // R3049：textarea.defaultValue 追踪（闭合 R3048 限制①）。textarea.value ↔ live textContent，旧无独立初值缓存
-    // → defaultValue 返 undefined、form.reset 不还原 textarea。本切片 _textareaDefault 惰性捕获初值。
+    // R3049 引入 textarea.defaultValue 追踪（闭合 R3048 限制①：defaultValue 返 undefined、
+    // form.reset 不还原 textarea）。s127 起 getter 改 live child text content（直接 Text 子
+    // 拼接，.value= 不触碰子文本），捕获机制移除——本测试行为断言不变，继续作回归面。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig { persistent_context: true, ..Default::default() };

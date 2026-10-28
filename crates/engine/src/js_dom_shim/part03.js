@@ -15935,11 +15935,14 @@
   }
   // R3906：textarea API 值的 JS 侧活文本读（handle 形 detached）。`__zw_get_text_handle`
   // /_zwTextWritten 是 host 写缓存（textContent=/defaultValue= 写入面），子节点增删
-  //（firstChild.remove/appendChild）不可见——非脏 textarea 的 API value = 子文本
-  //（HTML §4.10.6），沿 textContent getter R81 同源融合视图拼接（本地注册文本
-  // _zwLocalChildNodes + registry 子 _handleChildren；dom-node-textcontent：字符数据
-  // 后代）。视图空即值空——不落写缓存兜底（缓存对子增删 stale，extra.html
-  // 'Removing child nodes in non-dirty textarea' 断言面）。
+  //（firstChild.remove/appendChild）不可见——非脏 textarea 的 API value = child text
+  // content（HTML §4.10.11），沿本地注册文本 _zwLocalChildNodes + registry 子
+  // _handleChildren 融合视图拼接。s127（html-semantics M2）：child text content 是
+  // **直接 Text 子的数据拼接**（spec 定义；旧 nodeType 1 元素子 textContent 并入臂
+  // 使元素孙文本混入 value/defaultValue——value-defaultValue-textContent 'reflect
+  // child text content, not textContent' 断言面，textContent getter R81 融合视图
+  // 不受影响仍含全部后代）。视图空即值空——不落写缓存兜底（缓存对子增删 stale，
+  // extra.html 'Removing child nodes in non-dirty textarea' 断言面）。
   function _zwTaLiveText(handle) {
     var kids = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, handle) : null;
     var reg = (typeof _handleChildren !== 'undefined' && _handleChildren[handle]) ? _handleChildren[handle] : null;
@@ -15951,8 +15954,6 @@
       if (!n) continue;
       if (n.nodeType === 3 || n.nodeType === 4) {
         out += String(n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : ''));
-      } else if (n.nodeType === 1 && typeof n.textContent === 'string') {
-        out += n.textContent;
       }
     }
     return out;
@@ -24433,6 +24434,21 @@ return e;
           var _rvTag3 = _realTag(sel, handle);
           var _rvSkip3 = (_rvTag3 === 'BUTTON' || _rvTag3 === 'LI' || _rvTag3 === 'METER'
               || _rvTag3 === 'PROGRESS' || _rvTag3 === 'PARAM' || _rvTag3 === 'OPTION');
+          // s127（html-semantics M2）：TEXTAREA value getter——API 值面。非脏（dirty
+          // value flag false）→ child text content + raw value → API value 换行归一
+          //（\r\n|\r → \n，HTML §4.10.11）；脏（.value= 置 `_inputValuesSet`）→ dirty
+          // 缓存 + 同款归一（setter 存原串，归一在读侧统一）。旧路径 handle 形
+          //（detached createElement）落 stable-key 惰性初始化读 value 属性——textarea
+          // 无该属性 → 缓存 '' 钉死，textContent/nodeValue/data/子节点增删全部不可见
+          //（value-defaultValue-textContent 10F 断言面主根因）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
+          if (_rvTag3 === 'TEXTAREA') {
+            if (_inputValues[key] != null && _inputValuesSet[key] === true) {
+              return String(_inputValues[key]).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            }
+            var _s127TaLive = (!handle && sel) ? (__zw_get_text(sel) || '') : _zwTaLiveText(handle);
+            return String(_s127TaLive).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          }
           if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER') {
             // R3907：OPTION value = 无 ns value 内容属性（**存在即采纳**——空串采纳）；
             // 缺省回落 child text content（strip-and-collapse，与 .text 同源；此前裸 attr
@@ -26013,13 +26029,19 @@ return e;
           }
           return _outputDefault[key];
         }
-        // R3049：textarea.defaultValue（闭合 R3048 限制①）——textarea 无 value 属性，default = 初值 textContent。
-        // 惰性捕获（首读时 = 当前 text，未被 value= 改过即初值；value setter 首写前亦捕获保初值不丢）。
+        // s127（html-semantics M2）：textarea.defaultValue = **child text content**（live
+        // ——直接 Text 子数据拼接，handle 形 `_zwTaLiveText` / sel 形 `__zw_get_text`）。
+        // spec：getting 返回 child text content，dirty flag 不影响 default 面（.value=
+        // 不触碰子文本——R3906 起缓存态与子文本解耦）。旧 R3049 单次惰性捕获失去存在
+        // 依据且有两缺口：捕获后 nodeValue/data/appendChild 子文本变更不可见（冻结），
+        // `__zw_get_text_handle` 读 host 写缓存含元素孙文本（child text content 仅
+        // Text 子）——value-defaultValue-textContent 10F 断言面 6 例根因。R57
+        // defaultValue setter 本就同步 live 视图（清 registry 子 + 重注册文本），
+        // getter 直读即正确。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
         if (prop === 'defaultValue' && _realTag(sel, handle) === 'TEXTAREA') {
-          if (_textareaDefault[key] == null) {
-            _textareaDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
-          }
-          return _textareaDefault[key];
+          if (!handle && sel) return __zw_get_text(sel) || '';
+          return _zwTaLiveText(handle);
         }
         if (prop === 'style') {
           return _styleProxy(sel, handle);
