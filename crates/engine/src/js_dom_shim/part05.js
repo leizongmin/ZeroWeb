@@ -1102,6 +1102,11 @@
               return true;
             }
             var _ruNum = Number(value);
+            // s128（html-semantics M2）：maxLength/minLength（limited long 对）WebIDL
+            // long NaN → 0——IDL set "not-a-number" → attr "0" → getter 0（textarea-
+            // maxlength/minlength 'Assigning non-numeric ... sets ... to 0' 断言面；
+            // 旧行为 String(NaN)="NaN" 写属性 → getter 解析失败返 -1）。
+            if ((p === 'maxLength' || p === 'minLength') && _ruNum !== _ruNum) _ruNum = 0;
             // R5009 片 e（M4 片 a）：limited-unsigned 仅 throwOnZero 条目（ol.start）
             // IDL set 0 抛 IndexSizeError；clamped 面（colSpan/rowSpan）不抛——数值
             // 归一写入（"-0" → "0"），getter 侧 clamp [min,max]。
