@@ -25,6 +25,7 @@ const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
 /// 改值用法（reftest/tests.rs 的 set_var 只动 ZW_PRINT_* 变量）。
 struct RunnerFlags {
     corpus_case_timeout_secs: Option<u64>,
+    script_timeout_ms: Option<u64>,
     time_log: bool,
     raf_frame_driven: bool,
     timer_per_task: bool,
@@ -39,12 +40,24 @@ fn runner_flags() -> &'static RunnerFlags {
         corpus_case_timeout_secs: std::env::var("ZW_CORPUS_CASE_TIMEOUT_SECS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok()),
+        script_timeout_ms: std::env::var("ZW_SCRIPT_TIMEOUT_MS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok()),
         time_log: std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1"),
         raf_frame_driven: std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1"),
         timer_per_task: std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0"),
         disable_pump: std::env::var("ZW_DISABLE_PUMP").is_ok(),
         td_debug: std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1"),
     })
+}
+
+/// V8 看门狗脚本执行预算——`ZW_SCRIPT_TIMEOUT_MS` 按跑覆盖（encoding-legacy-mb
+/// M1 记账：decode wrapper 每个variant 对 chars 文档全量 span 做桥调用密集断言
+/// （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic Fail；缺省
+/// 维持 90s，零行为变化）。外层案超时只在 run_page_scripts 返回后 tick，拦不到
+/// 同步脚本段——本看门狗是该形态的实际预算边界。
+fn script_timeout_ms() -> u64 {
+    runner_flags().script_timeout_ms.unwrap_or(90_000)
 }
 
 /// 单案 wall-clock 预算——`ZW_CORPUS_CASE_TIMEOUT_SECS` 按跑覆盖（html-syntax-compat
@@ -4402,6 +4415,52 @@ pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
     run_any_js_corpus_subdirs(wpt_root, ENCODING_CORPUS_SUBDIRS, filter, encoding_case_skipped)
 }
 
+/// encoding/legacy-mb 文档族通道语料叶目录（fetch 脚本 goals/31-encoding-legacy-mb.sh
+/// DIRS 同域：日/韩/繁中/简中四族 × 各编码标签目录；flat 扫描不递归，与 fetch
+/// depth 布局对齐）。
+pub const ENCODING_LEGACY_MB_CORPUS_SUBDIRS: &[&str] = &[
+    "encoding/legacy-mb-japanese/euc-jp",
+    "encoding/legacy-mb-japanese/iso-2022-jp",
+    "encoding/legacy-mb-japanese/shift_jis",
+    "encoding/legacy-mb-korean/euc-kr",
+    "encoding/legacy-mb-schinese/gb18030",
+    "encoding/legacy-mb-schinese/gbk",
+    "encoding/legacy-mb-tchinese/big5",
+];
+
+/// legacy-mb corpus 案面规则（31 号 fetch 脚本头注释同域）：只跑 decode wrapper 页
+/// ——`*-decode.html` / `*-decode-<label>.html`（testharness + `<meta charset>`
+/// legacy 标签 + chars iframe + `<meta name="variant">` 窗口 ×14；decode-common.js
+/// 按 iframe span 断言 `textContent == decoder(dataset.bytes)`）与
+/// `*-decode-errors.html`（错误替换面，自足 inline 断言）。其余全 skip：
+/// `*-chars*.html` / `*_errors.html`（iframe 子文档，由 wrapper 经 iframe 消费）；
+/// `*-encode-form-*.html` / `*-encode-href*.html`（goal 划界：form 提交编码与
+/// `<a href>` URL 序列化面不属本 goal，M3 甄别）；helper JS（`*-decoder.js`/
+/// `*index*.js`/`ranges.js`）与 `.headers` sidecar 非案；`.any.js`（30 号 JS API
+/// 面遗留的 `*-decoder.any.js`，testharness-encoding 通道已收口）不在本域。
+fn encoding_legacy_mb_case_skipped(relative: &str, _source: &str) -> bool {
+    if relative.ends_with(".any.js") {
+        return true;
+    }
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    !(name.ends_with("-decode.html") || name.contains("-decode-"))
+}
+
+/// Run the legacy-mb document-family decode wrappers（encoding-legacy-mb goal M1 /
+/// DC-2）。filter 按路径子串透传（如 `euc-jp/`、`iso-2022-jp/`、`big5/`——基线按
+/// 编码族分类）。variant 展开（navigation S4K 先例）+ iframe 管道（html-syntax
+/// xmldecl R115 先例：引擎侧子文档字节解码/嗅探）。
+pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        ENCODING_LEGACY_MB_CORPUS_SUBDIRS,
+        filter,
+        encoding_legacy_mb_case_skipped,
+        &[],
+        true,
+    )
+}
+
 /// html-syntax corpus pinned subset directories（fetch 脚本 goals/40-html-syntax-compat.sh
 /// DIRS 同域——html/syntax 解析树/序列化面 + html/dom 接口语义/reflection 面 +
 /// encoding-compat P5 双向记账转入的文档级编码嗅探案面）。html/syntax 顶层无 .html
@@ -8253,6 +8312,27 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     let body = if clean.ends_with(".html") {
                         match std::str::from_utf8(&bytes) {
                             Ok(html) => {
+                                // encoding-legacy-mb DC-2（2026-10-28）：合法 UTF-8 字节 +
+                                // 非 UTF-8 声明 → serve 侧按声明解码。iso-2022-jp 语料
+                                // 7-bit clean（字节合法 UTF-8 ≠ UTF-8 内容），plain wire
+                                // 侧 shim 嗅探只落 characterSet 元数据、正文不重解码
+                                //（spec encoding sniffing 的 change-encoding-and-restart
+                                // 步缺失）→ 文档族字面转义全败。解码走文档管道
+                                //（decode_document_bytes：BOM > meta 预扫描 > UTF-8，
+                                // DC-1 read_corpus_to_string 同语义）。例外：replacement
+                                // 编码（iso-2022-kr bogo 声明，xmldecl replacement.htm
+                                // 支持页）不解——replacement 解码恒 U+FFFD 毁页，维持
+                                // 字面 + shim characterSet 元数据面（2026-10-20
+                                // html-syntax 既定行为）。UTF-8/无声明语料恒等零变化；
+                                // 非 UTF-8 字节走 Err 分支（`__zw_bytes:` wire 字节保真，
+                                // XHR document/iframe bytes 面零变化）。
+                                // https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
+                                let html = match sniff_document_encoding(html) {
+                                    Some(name) if name != "UTF-8" && name != "replacement" => {
+                                        zero_dom::decode_document_bytes(&bytes)
+                                    }
+                                    _ => html.to_string(),
+                                };
                                 // navigation-compat M3-S4（wptserve 模板面）：fetch 通道
                                 // .html 按该请求查询串做 `{{GET[name]}}` 替换——上游
                                 // wptserve 对每请求资源注入（replace-before-load 族
@@ -8260,7 +8340,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                                 // run_testharness_html_inner 已替换，iframe 子文档此前拿
                                 // 字面量 → 注入脚本语法错误，自导航从未发生）。替换先于
                                 // 脚本内联（注入代码须进提取出的 script 源）。
-                                let substituted = wpt_apply_get_query_substitutions(html.to_string(), query);
+                                let substituted = wpt_apply_get_query_substitutions(html, query);
                                 let inlined = inline_local_scripts(
                                     &substituted,
                                     &root,
@@ -8692,7 +8772,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // 随用例序列线性增长后，R260/R262/R263 adjust 对全部历史条目全量扫描 → 每用例
         // 二次方累积（非固定 per-op 成本，放宽超时无解）；同轮已在 shim 侧加跨树根守卫
         // 修复，90s 对修复后的单用例余量充足。
-        script_timeout_ms: 90_000,
+        script_timeout_ms: script_timeout_ms(),
         // security-hardening M2-s1：runner 侧开启 CSP 强制（生产 default off = kill-switch；
         // runner 是 WPT 标尺的实验臂——meta CSP 装配 + script 检查点 + violation 事件经
         // 此生效）。make test 全量门禁走生产默认（off），零 delta 由工作区测试守。

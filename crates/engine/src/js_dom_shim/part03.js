@@ -8913,7 +8913,11 @@
   // R167（js-dom M1 L2-d3b）：root 子树真实节点索引——键 tag+id+outer（与
   // wrapper 缓存/桥同键空间；R163 fragment nodeIdx 的共用化提取）。挂 root 槽
   // `_zwNodeIdx`，首次访问 DFS 建一次；key 含 outer 使树变更后查 miss → 上层
-  // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 512 防爆。
+  // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 200000 防爆——原 512 对
+  // encoding-legacy-mb 语料树（decode-common 单页 13.5k span）触发「清空后
+  // 仍回存」→ 索引恒空、每次查找全量重建（O(结果数 × 树)；qsa 千元 13.9s、
+  // 全量页 4GB 堆 OOM 实证）。13.5k 条键 Map ≈ 1MB 级，提额后缓存语义与
+  // 既有 ≤512 档一致（失效仍走各写点 `_zwNodeIdx = null`）。
   function _zwMFindRealNode(root, key) {
     if (!root || typeof root !== 'object' || !key) return null;
     // R307（js-dom M4）：键的 empty-ns 标记归一——真节点 `outerHTML`（`_zwMSerialize`
@@ -8975,7 +8979,10 @@
         for (var w = 0; w < cs.length; w++) walk167(cs[w]);
         void _r307IsRoot;
       })(root);
-      if (idx.size > 512) idx.clear();
+      // OPTIMIZATION: 上限 512→200000——>512 清空回存使索引恒空、每次查找全量
+      // 重建（legacy-mb 语料 13.5k span：1000 wrap × 14ms 重建 = qsa 13.9s，
+      // 全量页外层串分配 4GB 堆 OOM）；缓存键串总量 ≈ MB 级可接受，失效语义不变。
+      if (idx.size > 200000) idx.clear();
       try { root._zwNodeIdx = idx; } catch (_e167s) {}
     }
     var hit188 = idx.get(key) || null;
@@ -8997,6 +9004,17 @@
     }
     return null;
   }
+  // OPTIMIZATION: 查询产物 `_zwRootHtml` 惰性化（见 _zwMWrapCached 桥归一臂注释）
+  // ——非枚举 accessor 不入 for-in/序列化，读时才调 produce()（根串/文档串生产者
+  // 零参 thunk）；defineProperty 失败（冻结对象等）静默回落无属性（与旧读 undefined 等价）。
+  function _zwRootHtmlLazy(obj, produce) {
+    try {
+      Object.defineProperty(obj, '_zwRootHtml', {
+        configurable: true,
+        get: function () { return produce(); },
+      });
+    } catch (_eRhl) {}
+  }
   function _zwMWrapCached(root, info) {
     if (!root || typeof root !== 'object') return new _zwParseEl(info);
     var map = root._zwQWrapMap;
@@ -9012,7 +9030,7 @@
     // 者胜 = 节点本体）。查询产物与 traverse/mutation 面跨面 identity 统一
     //（R166 RFC §2.1 d3b 消费点；数据源不变——JSON 往返仍是语义权威）。
     // DFS 索引挂 root 槽 `_zwNodeIdx`（代际失效同 _zwQWrapMap——key 含 outer，
-    // 树变更后自然 miss 重建；上限 512 防爆）。
+    // 树变更后自然 miss 重建；上限 200000 防爆，见 _zwMFindRealNode）。
     var realNode = _zwMFindRealNode(root, key);
     if (realNode) {
       // R308（js-dom M4）：**miss 补登**——桥表会被 `_zwQWrapBump`/innerHTML 写点
@@ -9026,14 +9044,21 @@
         return realNode;
       })();
       if (bridged) {
-        try { bridged._zwRootHtml = _zwMOuterHtml(root); } catch (_e167r) {}
+        // OPTIMIZATION: 真节点不做 eager `_zwRootHtml = _zwMOuterHtml(root)`——
+        // 每结果全树序列化是 O(结果数 × 根树)（legacy-mb 语料 qsa 千元：1000 ×
+        // 50KB ≈ 13s，n250 683ms 同源实证）。唯一读者是 `_zwParseEl.prototype.matches`
+        //（part02），真节点消费面（Element.prototype.matches 走真树）不读它——
+        // 改惰性 accessor：首次读取才算根串（语义仍新鲜），真节点零开销。
+        _zwRootHtmlLazy(bridged, function () { return _zwMOuterHtml(root); });
         map.set(key, bridged);
         return bridged;
       }
     }
     var cached = map.get(key);
     if (cached) {
-      try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
+      if (cached instanceof _zwParseEl) {
+        try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
+      }
       return cached;
     }
     if (map.size > 512) map.clear();
@@ -17970,6 +17995,47 @@
       // 移除前 presence，真关变迁才入队——notify 内比对）。name 移除成组失败无 steps。
       if (n.toLowerCase() === 'open') _zwMDetailsAttrTail4100(n, _r4100Had);
     };
+    // dataset（spec https://html.spec.whatwg.org/multipage/dom.html#dom-dataset
+    // ——DOMStringMap data-* 反射）：iframe/innerHTML 解析产物（本工厂 plain 节点）
+    // 缺 dataset 时 decode-common.js showNodes 读 `nodes[i].dataset.cp` 直接
+    // TypeError（encoding-legacy-mb M1 语料页整链断）。与 part05 `_datasetProxy`
+    // 同语义（camelCase ↔ data-kebab、missing → undefined、delete 真移除），
+    // 但直读本地 attrs 数组（经 getAttribute/setAttribute/removeAttribute），
+    // 无 sel/handle 桥路径。
+    node.dataset = new Proxy({}, {
+      get: function (_t, key) {
+        if (typeof key !== 'string' || key === 'then') return undefined; // 防 Promise 化误判
+        var v = node.getAttribute('data-' + _camelToKebab(key));
+        return v == null ? undefined : v;
+      },
+      set: function (_t, key, value) {
+        if (typeof key !== 'string') return false;
+        node.setAttribute('data-' + _camelToKebab(key), value == null ? '' : String(value));
+        return true;
+      },
+      has: function (_t, key) {
+        return typeof key === 'string' && node.getAttribute('data-' + _camelToKebab(key)) !== null;
+      },
+      deleteProperty: function (_t, key) {
+        if (typeof key !== 'string') return false;
+        node.removeAttribute('data-' + _camelToKebab(key));
+        return true;
+      },
+      ownKeys: function () {
+        var out = [];
+        var names = node.getAttributeNames();
+        for (var i = 0; i < names.length; i++) {
+          if (names[i].indexOf('data-') === 0) out.push(_kebabToCamel(names[i].slice(5)));
+        }
+        return out;
+      },
+      getOwnPropertyDescriptor: function (_t, key) {
+        if (typeof key !== 'string') return undefined;
+        var v = node.getAttribute('data-' + _camelToKebab(key));
+        if (v == null) return undefined;
+        return { configurable: true, enumerable: true, value: v, writable: true };
+      },
+    });
     // WC-M3 切片 8 第九增量（web-components goal，spec slot's/slottable's name 的
     // attribute change steps → assign slottables → signal）：slot 的 name / slottable 的
     // slot 属性写入后队列 plain 世界 slotchange 分配面 diff（__zwQueuePlainSlotchange
@@ -19771,10 +19837,72 @@
   try { if (typeof globalThis.__zwWireSlotElement === 'function') globalThis.__zwWireSlotElement(node); } catch (_eWs3) {}
   return node;
   }
+  // 深树条目 → 本地节点（`_zwMBuildBodyTree` 深臂递归，`__zw_parse_html_subtree`
+  // 数据源）。语义对齐 `_zwMBuildNode` 浅臂：C 条目 '?…?' bogus 形态转 PI 视图
+  //（同款守卫）；template 的 contents 由 host 内联为 children（deep_entry_json），
+  // 无 TEMPLATE 特判。scripting===false 时子节点入列盖 `__zwTreeScripting=false`
+  // 印章（同浅臂逐层盖章——顶层不入列不盖，形态一致）。
+  function _zwMBuildDeepTreeNode(entry, parent, scripting) {
+    if (!entry) return null;
+    if (entry.k === 'T') return _zwMText(String(entry.v == null ? '' : entry.v), parent);
+    if (entry.k === 'C') {
+      var cv = String(entry.v == null ? '' : entry.v);
+      if (cv.charAt(0) === '?') {
+        var _piInner = cv.slice(1, cv.length >= 1 && cv.charAt(cv.length - 1) === '?' ? -1 : undefined);
+        var _piSp = _piInner.indexOf(' ');
+        if (_piSp > 0 && /^[A-Za-z_:][-A-Za-z0-9_:.]*$/.test(_piInner.slice(0, _piSp))) {
+          return _zwMPiFromBogus(cv, parent);
+        }
+      }
+      return _zwMComment(cv, parent);
+    }
+    // 属性经工厂 attrs 映射直灌（镜像 `_zwMBuildNode` 浅臂 `_zwMEl(snap)` 的
+    // attrs:{name:value} 消费形态，id/cls 同浅快照喂 IDL 反射字段）——解析产物
+    // 不走 setAttribute 语义：attribute 写尾（如 R4100 details open 互斥
+    // others-prong）会在构造期逐 attr 触发、后者关前者，破坏 host 解析器已裁决
+    // 的「树序第一 open 胜出」标记态（make test test_details_name_exclusivity_r4100
+    // T1 实证：0,1,1 期望 1,0,1）。null 原型映射：`__proto__` 合法属性名经普通
+    // 对象赋值会走原型 setter 丢属性（host JSON.parse 产物为自有属性，浅臂可承载）。
+    var _da = Object.create(null);
+    var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
+    for (var ai = 0; ai < ats.length; ai++) {
+      if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
+    }
+    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
+    var kids = Array.isArray(entry.children) ? entry.children : [];
+    for (var ci = 0; ci < kids.length; ci++) {
+      var ck = _zwMBuildDeepTreeNode(kids[ci], node, scripting);
+      if (ck) {
+        try { if (scripting === false) ck.__zwTreeScripting = false; } catch (_e5ds) {}
+        node.childNodes.push(ck);
+      }
+    }
+    return node;
+  }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
   function _zwMBuildBodyTree(innerHtml, ctxNs, scripting) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
+    // OPTIMIZATION（encoding-legacy-mb DC-2，2026-10-28）：单次解析深树臂——host 一
+    // 次解析整子树深 JSON（`__zw_parse_html_subtree`），消旧臂每元素
+    // `__zw_parse_html_query` + `__zw_parse_html_child_nodes` 各自全文档重解析的
+    // O(元素数 × 文档大小) 二次成本（legacy-mb chars 文档 13k span 单次 iframe
+    // 装载 ≥90s 超看门狗，250→4000 span 12.7→85ms/span 陡增实证）。节点形态
+    // 等价：`_zwMEl` 只消费 tag/attrs/id/cls/ns——浅快照亦不发 ns（回退 HTML ns
+    // 同款），深臂 setAttribute 经 `_zwMReflectIdl` 同步 id/cls 反射。解析失败
+    // 落旧臂（浅条目二次定位），零行为面收敛。
+    if (typeof __zw_parse_html_subtree === 'function') {
+      try {
+        var _p5deep = JSON.parse(
+          __zw_parse_html_subtree(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1'));
+        if (Array.isArray(_p5deep)) {
+          for (var di5 = 0; di5 < _p5deep.length; di5++) {
+            if (_p5deep[di5]) body.childNodes.push(_zwMBuildDeepTreeNode(_p5deep[di5], body, scripting));
+          }
+          return body;
+        }
+      } catch (_eDeep) {}
+    }
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
         // R5000 片 b：ctxNs 可选 context namespace——foreign context（createElementNS
@@ -20236,7 +20364,12 @@
         if (realNode167) {
           var bridged167 = _zwBridgeGet(realNode167);
           if (bridged167) {
-            try { bridged167._zwRootHtml = detHtml(); } catch (_e167rr) {}
+            // OPTIMIZATION: 桥归一真节点不做 eager `_zwRootHtml = detHtml()`——
+            // 每结果全文档序列化是 O(结果数 × 文档)（legacy-mb 语料 qsa 千元：
+            // 999 × ~12.8ms ≈ 12.8s，P1 墙钟 12.87s 实证；第二查询再烧一轮致
+            // case 超时丢 P2/P3）。唯一读者 `_zwParseEl.prototype.matches`（part02）
+            // 不在真节点原型链上——改惰性 accessor（读时才算，语义仍新鲜）。
+            _zwRootHtmlLazy(bridged167, function () { return detHtml(); });
             _zwQWrapCache.set(key, bridged167);
             return bridged167;
           }
@@ -20244,8 +20377,12 @@
       } catch (_e167t) {}
       var cached = _zwQWrapCache.get(key);
       if (cached) {
-        // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）
-        try { cached._zwRootHtml = detHtml(); } catch (_e158r) {}
+        // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）。
+        // OPTIMIZATION: 真节点（非 _zwParseEl）跳过重挂——其消费面不读 _zwRootHtml
+        //（同上桥归一臂），每命中全文档序列化是纯浪费。
+        if (cached instanceof _zwParseEl) {
+          try { cached._zwRootHtml = detHtml(); } catch (_e158r) {}
+        }
         return cached;
       }
       var e = new _zwParseEl(info);
