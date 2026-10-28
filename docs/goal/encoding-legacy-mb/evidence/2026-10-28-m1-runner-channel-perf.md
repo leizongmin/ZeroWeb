@@ -152,6 +152,80 @@ rebase 后定向复验（新基 × 本改动）：R4100 单测复绿（1 passed�
 语料续拉复试（FORCE=1 + GITHUB_TOKEN + 代理）：网络仍 degraded（curl
 timeout），盘点维持 136 html——M1 语料补全卡点不变。
 
+## base 臂补跑与六通道对账收口（2026-10-28 追记）
+
+上节的对账计划本日落成，过程中拦下一处真回归并修复。
+
+### relay 链 bug：base 臂此前从未产出
+
+并行 relay 会话的 base 构建重试脚本在 `cd "$ROOT"` 后裸跑 `cargo build`——
+落在了**主工作树**，base worktree 的产物检查 `[ -x … ]` 随即失败，报出
+「base build retry FAIL **rc=0**」的假绿（构建成功的是主树 HEAD，base 二进制
+不存在）。本轮修正：`cargo build --manifest-path "$BASEWT/Cargo.toml"`，
+并带 `RUSTY_V8_ARCHIVE` 指向预编译库（冷 worktree 缺 gitignored 的
+`.cargo/rusty_v8/archive` 符号链接时 v8 build.rs 直接 panic）。构建经
+systemd scope（MemoryMax=24G + RuntimeMaxSec）封顶，产物
+`/tmp/zero-wpt-runner-base-s127`（c1482756a，精确同基去 DC-2）。
+
+### 五通道对账结果（base c1482756a vs old-head 906b99540）
+
+条件镜像 lane-m1.sh（test-guard `--per-proc-mem 4 --total-mem 8` + 负载门
+load1≥4 等待 + CWD 主工作树），产物 `/tmp/ab-legacy-mb/m1/base/`：
+
+| 通道 | case | subtest | 状态差 |
+|---|---|---|---|
+| encoding | 36/36 `=` | 12075/12075 `=` | 0 |
+| web-components | 265/265 `=` | 5178/5178 `=` | 0 |
+| navigation | 431/431 `=` | 584/584 `=` | 0 |
+| html-semantics | 939/939 `=` | 5340/5340 `=` | 0 |
+| dom | 368/368 `=` | +333/−1 | **1（真回归，下节）** |
+
+dom 的 +333/−1 pair 漂移**全部**是 `dom/ranges/Range-mutations-*.html`
+超时截断形态（30s/案 mega-case 在负载下截断点漂移，M0 对账已记账家族，
+同二进制复跑即漂）——不构成行为差。唯一状态差即下节回归。
+
+### 对账拦截的真回归：深臂属性名丢前缀（cloneNode-svg xlink:href）
+
+- **现象**：`dom/nodes/Node-cloneNode-svg.html` :: `cloned <use>'s
+  xlink:href attribute should have the right properties`——base Pass →
+  old-head Fail。隔离复跑定责：head 二进制 2/2 Fail、base 2/2 Pass。
+- **根因**：host `deep_entry_json` 属性输出只发 `attr.name.local`。深臂
+  shim 按 ctxNs 解析 SVG 等 foreign content 片段时，`xlink:href` 被拆成
+  prefix+local，JSON 只发 local → plain 工厂节点属性名为 `href`（无冒号）
+  → R185 sel-view cloneNode 的克隆属性按既有「名含冒号」口径派生 NS 元
+  数据失败，克隆属性 namespaceURI 断言 null ≠ xlink 命名空间 → Fail。
+  浅臂 `__zw_parse_html_query` 同发 local，但 HTML context 下 prefix 恒
+  None 故从未暴露——深臂首次把 foreign context 片段喂进该输出口。
+- **修复**：`deep_entry_json` 属性名发**限定名**（prefix 非空拼
+  `prefix:local`，None 短路只发 local）。HTML context 输出逐字节同旧；
+  foreign context 恢复冒号形态，工厂侧既有 NS 派生口径即拿到正确命名空间。
+- **修复后零回归复验**（同款 test-guard + 负载门，产物
+  `/tmp/ab-legacy-mb/fix-verify/`）：
+  - 目标案 4/4 Pass（含原失败子测试）。
+  - dom 全通道 vs base：368/368 `=`、+256/−29 仍全 Range 截断家族、状态差
+    2 且均为 `dom/events/Event-timestamp-high-resolution.html` 计时散布
+    （**base 二进制同机即时复跑同案也 2F/4P，散布在不同子测试**——
+    timestamp 亚 0.01ms 阈值抖动，记账计时 flake，非本改动）；原回归翻转
+    消失，delta 中无 cloneNode-svg。
+  - 波及面：深 JSON 消费方 = 深臂建树 + template contents 内联。HTML
+    context（prefix None）逐字节不变；foreign context 仅 dom（SVG 用例）
+    与 web-components（模板内联）语料可触达——web-components 全通道
+    修复后重跑对账（结果行见下）；encoding/legacy-mb 以 euc-jp 全族复验
+    锚定（结果行见下）。
+
+### 修复后补充通道结果
+
+- web-components 全通道 vs base：**265/265 case `=`、5178/5178 subtest `=`、
+  状态差 0**（exit=1 与 base 臂同属性——通道既有基面失败两侧逐字节一致，
+  非本改动）。
+- legacy-mb euc-jp 族（深臂自身成果锚点）：43 case **40,388P/0F、exit 0**
+  维持。
+- 门禁：fmt `--all -- --check` 无 diff；clippy `-p zero-engine
+  --all-targets -D warnings` 零 warning（workspace 绿已记账于本树
+  906b99540 + s124–s126 rebase 后，本变更单函数 diff 按影响补定向）；engine
+  lib `js_dom_bridge` 过滤腿 1350P/0F、`test_details_name_exclusivity_r4100`
+  复绿 1P。
+
 ## 方法论备忘
 
 - shim 内 `performance.now()` 是虚拟时钟——桥路径耗时插桩必须 `Date.now()`。

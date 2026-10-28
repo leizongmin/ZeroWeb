@@ -531,7 +531,21 @@
                   };
                   var _foK125 = null;
                   try { _foK125 = _foKey125(_me125.form); } catch (_e125f) {}
-                  var _all125 = document.querySelectorAll('input[type="radio"][name="'
+                  // s130：组枚举根域——spec 组定义首条「b 的 root 与 a 相同」
+                  //（https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+                  // 的 radio button group 定义）。parent 链顶 nodeType 9 → document
+                  // qSA（文档面绿面不变；探针 s130b：documentElement 级元素 qSA
+                  // 异常返 0，文档面不经元素级）；链顶非 document（detached 树）→
+                  // 链顶子树 qSA——orphan 树组员 document qSA 不可见（radio.html
+                  // orphan/different-form-owners/different-name 三案根因，探针
+                  // s130b detached DIV qSA identity 真）。
+                  var _qRoot125 = document;
+                  try {
+                    var _qp125 = _me125, _qh125 = 0;
+                    while (_qp125 && _qp125.parentNode && _qh125++ < 64) _qp125 = _qp125.parentNode;
+                    if (_qp125 && _qp125.nodeType !== 9 && typeof _qp125.querySelectorAll === 'function') _qRoot125 = _qp125;
+                  } catch (_e125qr) {}
+                  var _all125 = _qRoot125.querySelectorAll('input[type="radio"][name="'
                     + String(_me125.getAttribute('name')).replace(/"/g, '\\"') + '"]');
                   for (var _gi125 = 0; _gi125 < _all125.length; _gi125++) {
                     var _gd125 = _all125[_gi125];

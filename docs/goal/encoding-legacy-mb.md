@@ -1,8 +1,8 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
 **版本**: v1.3
-**日期**: 2026-10-28（M1 runner 通道落地 + 通道性能收口，见「M1 进展」节；M0/DC-1 见「M0 结果」节与 evidence/）
-**状态**: Active——DC-1/DC-2 完成；M1 余语料补全（网络 degraded 卡点维持）；M2 基线分类待语料
+**日期**: 2026-10-28（M1 六通道对账收口 + 深臂属性限定名回归修复；M2 部分语料基线已落，见「M1 进展」「M2 进展」节与 evidence/）
+**状态**: Active——DC-1/DC-2 完成；DC-3 部分（136 html 基线已落，全量待语料）；M1 余语料补全（网络 degraded 卡点维持）；DC-4 待全量
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -105,6 +105,34 @@
   （stash A/B 0.63s 同断言），同 R5295「renderer page_scripts」记账不修）。
   rebase 后定向复验：R4100 单测复绿、fmt/clippy 复跑绿、euc-jp 全族
   40,388P/0F（上条）。
+- **六通道对账收口（2026-10-28 追记）**：relay 链 base 构建 `cd` 错目录的
+  假绿修正后（`--manifest-path` 冷 worktree 构建 + RUSTY_V8_ARCHIVE），
+  base 臂（c1482756a）五通道补跑：encoding/web-components/navigation/
+  html-semantics case/subtest/状态三层全恒等；dom 368/368 仅
+  Range-mutations-* 截断漂移 + **1 处真回归**——深臂 `deep_entry_json`
+  属性只发 local 名，foreign context（SVG 片段）丢 `xlink:` 前缀，
+  `Node-cloneNode-svg` 克隆属性 namespaceURI 断言 Fail（head 2/2 Fail、
+  base 2/2 Pass 定责）。修复：属性名发限定名 `prefix:local`（prefix None
+  短路，HTML context 逐字节同旧）。修复后复验：目标案 4/4 Pass；dom 全
+  通道重跑零回归（回归翻转消失，余 2 状态差为 Event-timestamp 计时散布，
+  base 二进制同机同现于不同子测试）；euc-jp 族 43 case **40,388P/0F
+  exit 0** 锚点维持；web-components 全通道对账恒等。细节见 evidence
+  「base 臂补跑与六通道对账收口」节。
+
+## M2 进展（2026-10-28，部分语料基线先行）
+
+细节见 [evidence/2026-10-28-m2-baseline-classification.md](evidence/2026-10-28-m2-baseline-classification.md)。要点：
+
+- **部分语料基线**（136 html，chars 大文件缺）：385 case / 360,431 子测试
+  **100% Pass / 0 Fail / 0 超时**（decode-wrapper 380 case + decode-errors
+  5 case，五族全绿，iso-2022-jp 转义状态机 7,329×2 variant 含内）。全量
+  分母（1,127,087 + schinese 1,017）待语料补全后按同法增量收口 DC-3，
+  本基线即复测恒等锚点。
+- **`.headers` 两形态复核销账**（DC-3 第三项）：98/98 sidecar hdr==meta
+  逐字一致，「有 headers 无 meta」「头/meta 不一致」均 0——file 通道不
+  消费 sidecar 对现有语料行为中性由抽样升格为全量实证。
+- **wpt-suites.csv**：planned 行转数据行（subtests 口径 360431/360431，
+  evidence 列指向上文件，note 注明部分语料口径与全量分母关系）。
 
 ## Mission
 
@@ -151,15 +179,18 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
 
 - **M0** ✅（2026-10-28）：通道接入切片（DC-1）——testharness 通道读取统一
   接解码管道 + 最小验证集 + 零回归对账（见「M0 结果」节）。
-- **M1** 进行中：runner 通道 + Makefile ✅（2026-10-28，DC-2，见「M1 进展」
-  节）；语料补全（`FORCE=1` 跑 31 号脚本至全量）卡网络 degraded 维持挂账。
-- **M2**：基线分类（按编码族/用例形态分簇）+ wpt-suites.csv 回填。
-- **M3**：失败簇收敛或归口（form-encode 面甄别在此）+ coverage 复测收口。
+- **M1** ✅（2026-10-28）：runner 通道 + Makefile（DC-2）+ 通道性能收口 +
+  六通道对账收口 + 深臂限定名回归修复（见「M1 进展」节）；语料补全卡点
+  移交 M2。
+- **M2** 进行中：部分语料基线分类 + wpt-suites.csv 回填 + `.headers`
+  复核 ✅（2026-10-28，见「M2 进展」节）；全量基线待语料补全（DC-3 收口）。
+- **M3**：失败簇收敛或归口（form-encode 面甄别在此）+ coverage 复测收口
+  （DC-4）。
 
 语料预置进度：七族 253 文件已到位（30 号预置）；2026-10-27 起 `FORCE=1`
 全量续拉（~1,200 文件，幂等补缺）——**网络持续 degraded（jsdelivr 拒连、
-raw ~1/3 成功率带超时），六轮重试后仍 136 html**（七族 wrapper 已齐、chars
-大文件缺）。M1 通道以现有语料先行，语料补全随网络恢复在 M1/M2 间补（以
+raw ~1/3 成功率带超时），多轮重试后仍 136 html**（七族 wrapper 已齐、chars
+大文件缺）。通道以现有语料先行，语料补全随网络恢复在 M2 间补（以
 `goals_inventory` 输出核对）。
 
 ## 依赖约束（run-rules §9）

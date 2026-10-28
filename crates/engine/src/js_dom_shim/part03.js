@@ -11566,11 +11566,38 @@
         } catch (_e) {}
         try {
           var q = 'input[type="radio"][name="' + String(nm).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"]';
-          var allR = globalThis.document.querySelectorAll(q);
+          // s130：组枚举根域 + form owner 比对（radio button group = 同 root +
+          // 同 form owner 或均无——https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+          // 组定义；根域策略同 part05 s125 组排他：链顶 nodeType 9 → document
+          // qSA 绿面不变，detached → 链顶子树 qSA）。orphan 案 radios[2]
+          //（detached form 内 checked）不得并入无 form owner 组员的组
+          //（radio.html「The second radio should be invalid***」断言面）。
+          var _vlEl = _makeProxy(sel, handle);
+          var _vlRoot = globalThis.document;
+          try {
+            var _vlP = _vlEl, _vlH = 0;
+            while (_vlP && _vlP.parentNode && _vlH++ < 64) _vlP = _vlP.parentNode;
+            if (_vlP && _vlP.nodeType !== 9 && typeof _vlP.querySelectorAll === 'function') _vlRoot = _vlP;
+          } catch (_evlr) {}
+          var _vlFoKey = function (el) {
+            try {
+              if (!el) return null;
+              if (el.__zwHandle) return '@' + el.__zwHandle;
+              if (el.__zwSelector) return 's:' + el.__zwSelector;
+              if (el.id) return 'id:' + el.id;
+            } catch (_evlfk) {}
+            return null;
+          };
+          var _vlSelfFoK = null;
+          try { _vlSelfFoK = _vlFoKey(_vlEl.form); } catch (_evlf) {}
+          var allR = _vlRoot.querySelectorAll(q);
           for (var ri = 0; ri < allR.length; ri++) {
             var rp = allR.item ? allR.item(ri) : allR[ri];
             try {
               if (rp.__zwSelector && typeof _zwIsRemoved === 'function' && _zwIsRemoved(rp.__zwSelector)) continue;
+            } catch (_e) {}
+            try {
+              if (String(_vlFoKey(rp.form)) !== String(_vlSelfFoK)) continue;
             } catch (_e) {}
             try { if (rp.required) groupRequired = true; } catch (_e) {}
             try { if (rp.checked) checkedAny = true; } catch (_e) {}

@@ -4233,6 +4233,19 @@ impl super::Painter {
                             HashMap::new()
                         };
                         for (frag_ei, frag) in stored_fragments.iter().enumerate() {
+                            // R5313（CSS2.1 App E 绘制序）：FLAT_CHILD_WALK 对无有效尺寸
+                            // shrink-to-fit inline-block 的降级（collect_items「降级为零宽度
+                            // TextRun」）把 ib 自身文本片段归因到 ib 元素 id、存进本容器
+                            // stored IFC——此处先绘字形，子盒遍历后绘 ib 背景盖字，ib 自身
+                            // paint_text 再被 painted_inline_nodes dedup 跳过（outline-028
+                            // ref 页白 bg 压字形实证）。命中让位：跳过绘制且不进宏（宏内
+                            // insert 恰是 dedup 来源），交 ib 自身盒路径按 App E 序
+                            //（bg → 自绘文本）完成。
+                            if let Some(styles) = styles
+                                && defer_flattened_atomic_inline_fragment(box_node, frag.node_id, doc, styles)
+                            {
+                                continue;
+                            }
                             // R817 linebox 度量统一 Phase 2 → R3856 基线契约统一：GlyphPrimitive.y
                             // 即基线（raster 侧 y_offset = bitmap_top − height 自行放置位图，
                             // Ahem 方块由 rasterize_ahem_glyph 放到 [baseline−0.8em, baseline+0.2em]，
@@ -4986,6 +4999,62 @@ pub(super) fn mark_split_owner_ancestor_chain_painted(
             ancestor = doc.parent_node(id);
         }
     }
+}
+
+/// R5313（CSS2.1 App E 绘制序）stored 片段让位判据——见
+/// [`defer_flattened_atomic_inline_fragment`]。
+fn defer_flattened_atomic_inline_fragment(
+    box_node: &LayoutBox,
+    frag_nid: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
+    static DEFER: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_IB_FLAT_FRAG_DEFER").as_deref() != Ok("0"));
+    if !*DEFER {
+        return false;
+    }
+    // 片段 owner（Text 归父，镜像 render_fragment! r4332_owner 口径）须是原子
+    // inline 级盒——正常契约下父容器 stored IFC 不携带 ib 文本（App E 空占位），
+    // 唯 FLAT_CHILD_WALK 降级路径例外。
+    let owner = if doc.get(frag_nid).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))) {
+        doc.parent_node(frag_nid).unwrap_or(frag_nid)
+    } else {
+        frag_nid
+    };
+    let Some(st) = styles.get(&owner) else {
+        return false;
+    };
+    if !matches!(
+        st.display,
+        DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid | DisplayValue::InlineTable
+    ) {
+        return false;
+    }
+    flattened_atomic_box_decorated(box_node, owner, st, 8)
+}
+
+/// 在盒子树内找 owner 的真实原子盒（盒不存在时不让位——否则无人绘文本），
+/// 命中且盒自带可见装饰（非零边框，或背景色/图）才让位：裸 ib 现行为无覆盖
+/// 问题，收窄爆炸半径。深度限 8：inline 扁平化嵌套（wrapper 链 + 匿名盒）浅。
+fn flattened_atomic_box_decorated(node: &LayoutBox, nid: NodeId, st: &ComputedStyle, depth: u8) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    for child in &node.children {
+        if child.node_id == Some(nid) {
+            return child.border_left > 0.0
+                || child.border_top > 0.0
+                || child.border_right > 0.0
+                || child.border_bottom > 0.0
+                || st.background_color != ColorValue::Transparent
+                || super::has_paintable_bg_image(&st.background_image);
+        }
+        if flattened_atomic_box_decorated(child, nid, st, depth - 1) {
+            return true;
+        }
+    }
+    false
 }
 
 /// 收集 `box_node` 对应 DOM 子树内 display:none 的元素节点集——paint Path B（空
