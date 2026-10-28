@@ -514,8 +514,9 @@
             // _checkedDirtyState=false（dirty 旗标保持——spec 只清 checkedness 不清
             // 旗标，旗标在则属性变更不联动）；净件移除 checked 属性（latest-wins
             // 面即刻可见——checked getter 回落属性读）。
-            // FIXME: checked 属性增设/defaultChecked/type 变更/becomes connected
-            // 等其余置真现象未走组排他（form owner 变更已由 s131 接线）。
+            // FIXME: checked 属性增设/defaultChecked/becomes connected 等其余置真
+            // 现象未走组排他（form owner 变更 s131、type 变更信号 s132 已接线——
+            // 后者在 part01 _zwApplyInputTypeChange 尾部单点覆盖 IDL+setAttribute）。
             if (value) {
               try { _zwRadioUncheckGroupOthers(_makeProxy(sel, handle)); } catch (_e125sw) {}
             }

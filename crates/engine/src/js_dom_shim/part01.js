@@ -2189,6 +2189,21 @@
         try { soR.val = _zwSelNormValue(sel, handle, key); } catch (_eSelNorm) {}
       }
     }
+    // s132（html-semantics M2 切片 132）：radio 组排他现象 4——type 变更信号。
+    // HTML §4.10.5.4 input type change steps 步骤 6「Signal a type change for
+    // the element. (The Radio Button state uses this, in particular.)」+ §4.10.5.1.16
+    // 现象表现象 4「A type change is signalled for the element」：状态实际迁移且
+    // 新状态为 Radio 时，若该元素 checkedness 置真（非脏回落 checked 属性读，
+    // sweep 门自判）则同组其余 radio 全部 uncheck（radio-morphed 断言面：
+    // text+checked 属性 → type=radio 后同组 checked radio 应 uncheck）。
+    // https://html.spec.whatwg.org/multipage/input.html#radio-button-state-(type=radio)
+    // IDL setter（part05 type 分支）与 setAttribute 路径（part04 R3901 臂）均汇入
+    // 本函数——单点覆盖双通道；removeAttribute('type') 未接变更步骤（FIXME 同上）
+    // 且新状态恒 Text 不触发本现象。BUTTON 经 setAttribute 设 type=radio 时
+    // sweep 的 checked 门自兜（BUTTON 无 checked 属性，读 undefined 即返）。
+    if (oldTy !== newTy && newTy === 'radio') {
+      try { _zwRadioUncheckGroupOthers(_makeProxy(sel, handle)); } catch (_e132sw) {}
+    }
   }
   // R3038/R3041：reflected unsigned-long（numeric）+ boolean 属性读（R3037 follow-up——string 已在 R3037 覆盖）。
   // 数值型 spec 返 number（缺省 default，colSpan/rowSpan spec default 1 且 min 1；maxLength/minLength default -1
