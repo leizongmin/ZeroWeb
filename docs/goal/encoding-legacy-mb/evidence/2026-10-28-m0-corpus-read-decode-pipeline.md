@@ -109,8 +109,39 @@ css-variables 双侧单进程内存超限（4.22–4.32GB > 4GB per-proc 上限�
 经核对同走替换后读取路径（run_performance_api_subdirs /
 run_service_worker_case_set 等），补 lane K 全量对账。
 
-（dom / navigation / uievents / css-variables / html-semantics / lane K 行在
-lane 收尾后回填。）
+### lane 收尾回填（2026-10-28 全 lane 完成后）
+
+| 通道 | cases b/a | subtests b/a | 集合 | status 差 |
+|---|---|---|---|---|
+| dom（放宽 1800s） | 368/368 | 56172/56177 | +20/-15¹ | 1² |
+| navigation（放宽 1800s） | 431/431 | 584/584 | = | 0 |
+| uievents（放宽 1800s） | 317/317 | 2397/2397 | = | 0 |
+| selection | 611/611 | 41223/41223 | ±1³ | 0 |
+| net-api | 487/488⁴ | — | 预期解锁 | — |
+| csp（@3600） | 445/445 | 678/678 | = | 0 |
+| service-workers / -fetch / -cache-storage | 65 · 31 · 25 / 同 | 245 · 76 · 318 | = | 0 |
+| dom-native（ZW_NATIVE_DOM=1，1800s） | 368/368 | 56008/56175 | +172/-5¹ | 0 |
+| dom-range | 10/10 | 1903/1747 | +36/-192¹ | 0 |
+| dom-gamepad | 2/2 | 5/5 | = | 2² |
+| css-variables（放宽 per-proc-mem 6） | — | — | 双侧内存超限⁵ | — |
+| timing 族 10 通道 | — | — | lane 脚本子命令名错⁶ | — |
+| 其余 20 通道（html、fullscreen、clipboard-apis、keyboard、touch-events、webgl、wasm、webaudio、webcrypto、indexeddb、console、canvas、canvas-worker、constraints、intersection-observer、resize-observer、cache-storage、web-components 等） | 全同 | 全同 | = | 0 |
+
+¹ `dom/ranges/Range-mutations-*` 五个 300+ 子测大案双侧均触 30s 案级超时，
+截断点随负载漂移——公共对 status 零翻转（dom 行 +20/-15、dom-native
++172/-5 其中 172 为 before 侧案级超时不可见的新完成子测 135P/35F/2T、
+dom-range +36/-192），同 selection/html-semantics 超时形态 flake 范畴。
+² `Event-timestamp-high-resolution` gamepad 构造时间戳面：dom 行 Pass→Fail
+×1 与 dom-gamepad 行 Fail→Pass ×2 反向成对（同文件族）→ 时序 flake。
+³ 见前文 selection 叙述（超时表现形态）。
+⁴ `websockets/constructor/016.html` before 侧 read `Err` 不可见、after 侧
+预期解锁，见前文叙述。
+⁵ 放宽到 6GB per-proc 后仍双侧对称超限被 guard 杀（6.3GB / 6.9GB，exit
+124），无 A/B 数据——维持预置条件定性，不阻 DC-1（通道走同一替换后读取
+路径，改动面与 dom 恒等通道同构）。
+⁶ lane-k 脚本对 timing 十通道漏 `testharness-` 前缀，双侧均产出 usage 文本
+秒退（无真数据）；以保存的 M0 before/after 二进制补跑（k2 lane），行随补跑
+回填。
 
 ### html-semantics 专项分析（lane G 实证 + 解析证明）
 
