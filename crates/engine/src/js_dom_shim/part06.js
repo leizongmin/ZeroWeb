@@ -18147,9 +18147,10 @@ function _zwCaretFromSelText(sel, end) {
     }
     // https://html.spec.whatwg.org/#the-websocket-constructor — spec step 4：fragment
     // 非 null → SyntaxError（Create-invalid-urls「http://…/#」「http://…/#test」「#test」
-    // 断言面；相对输入解析到 http base 后同样落此门）。URL.hash 非 '' 即含 fragment
-    //（空 fragment「#」返 '#'，亦算非 null）。
-    if (resolved.hash !== '') {
+    // 断言面；相对输入解析到 http base 后同样落此门）。hash getter 对 null 与空串
+    // fragment 同返 ''（URL spec hash getter，M2-S4a 起）——presence 以 href 判定：
+    // 序列化 href 中首个 '#' 恒起 fragment（query 面 '#' 必转 %23），裸尾 '#' 保留。
+    if (resolved.href.indexOf('#') >= 0) {
       var DEf = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
       throw new DEf('The URL contains a fragment', 'SyntaxError');
     }

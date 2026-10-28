@@ -5867,7 +5867,15 @@
       throw new TypeError('URL setter requires __zw_set_url_part');
     }
     var raw = __zw_set_url_part(this._href, part, String(value));
-    if (!raw) throw new TypeError('Invalid URL ' + part + ': ' + value);
+    // URL spec：仅 href setter 解析失败抛 TypeError；组件 setter 失败一律
+    // **no-op**（host/hostname/port/username/password 的 host-missing、forbidden
+    // code point、cannot-have-credentials 等失败面——url-setters 语料期望原
+    // URL 不变且不抛）。
+    // https://url.spec.whatwg.org/#dom-url-href
+    if (!raw) {
+      if (part === 'href') throw new TypeError('Invalid URL: ' + value);
+      return;
+    }
     var p = JSON.parse(raw);
     this._load(p);
     // search/href 改变可能变 query → 同步 searchParams（_zw_reinit 不触发 _onchange，无递归）。

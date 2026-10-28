@@ -4185,11 +4185,13 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
 #[cfg(feature = "script-runtime")]
 pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     let result = match base.filter(|b| !b.is_empty()) {
-        Some(base_str) => match url::Url::parse(base_str) {
-            Ok(base_url) => url::Url::options().base_url(Some(&base_url)).parse(input),
+        Some(base_str) => match url::Url::parse(&zw_opaque_space_normalize(base_str)) {
+            Ok(base_url) => {
+                url::Url::options().base_url(Some(&base_url)).parse(&zw_opaque_space_normalize(input))
+            }
             Err(_) => return String::new(),
         },
-        None => url::Url::parse(input),
+        None => url::Url::parse(&zw_opaque_space_normalize(input)),
     };
     match result {
         Ok(u) => serialize_url(&u),
@@ -4203,15 +4205,48 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
 // `Url` → JSON 组件串：serialize_url 自 url_idna 导入（文件头 use 块）——
 // `parse_url_to_json` 与 `set_url_part` 共用，组件提取/组装与 IDNA 回退见 url_idna。
 
+/// opaque path SPACE 规范化（net-api M2-S4a，URL spec §opaque path state）：
+/// 非 special scheme 且无 `//` authority 的输入（opaque path 面），`?`/`#` 直前
+/// 空格改写 `%20`、其余空格保留原样——spec 逐字符判定「remaining 以 ?/# 开头
+/// 则 %20，否则原样」；url crate 不实现该 quirk，且 set_query 后续序列化剥
+/// 尾随空格（`data:space ?query` search='' 期望 `data:space%20` 面）。
+/// https://url.spec.whatwg.org/#opaque-path-state
+#[cfg(feature = "script-runtime")]
+fn zw_opaque_space_normalize(input: &str) -> String {
+    let Some(colon) = input.find(':') else { return input.to_string(); };
+    let scheme = &input[..colon];
+    if scheme.is_empty()
+        || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https" | "ws" | "wss" | "ftp" | "file")
+    {
+        return input.to_string();
+    }
+    let rest = &input[colon + 1..];
+    if rest.starts_with("//") {
+        return input.to_string();
+    }
+    let bytes = rest.as_bytes();
+    let mut out = String::with_capacity(input.len());
+    out.push_str(&input[..colon + 1]);
+    for (i, c) in rest.char_indices() {
+        if c == ' ' && bytes.get(i + 1).is_some_and(|&b| b == b'?' || b == b'#') {
+            out.push_str("%20");
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
 /// URL 组件 setter（供 JS shim URL 属性 setter 经 `__zw_set_url_part` 回调消费）。
 ///
 /// 委托 `url` crate 的 `Url` setters（spec-correct：set_scheme/set_host/set_path/set_query 等，
 /// 含 percent-encoding / IDNA / 默认端口归一）。`prev_href` 为当前 href；`part` 标识组件（href 时
-/// 忽略 prev_href，整体重解析 value）；成功返新 JSON 串，失败返空串（shim 抛 TypeError，spec）。
+/// 忽略 prev_href，整体重解析 value）；成功返新 JSON 串，失败返空串（组件 setter 失败为
+/// no-op，仅 href 抛 TypeError，见 shim `_setPart`）。
 #[cfg(feature = "script-runtime")]
 pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
     let mut url = if part == "href" {
-        match url::Url::parse(value) {
+        match url::Url::parse(&zw_opaque_space_normalize(value)) {
             Ok(u) => u,
             Err(_) => return String::new(),
         }
@@ -4223,44 +4258,82 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
     };
     let ok = match part {
         "protocol" => {
-            // net-api 收尾：protocol setter 剥离（url-setters-stripping——TAB/LF/CR 剥除、
-            // 尾 ':' 修剪、小写化；set_scheme 失败 → **无操作**（url 不变，leading U+0000
-            // 面期望原 scheme 保留，非 throw））。
+            // net-api M2-S4a：scheme start/scheme state override——值取**首个 ':'**
+            // 前缀为 scheme（'https:foo : bar' → 'https'，尾段丢弃）；TAB/LF/CR 剥除、
+            // 小写化；set_scheme 失败（special↔non-special 互转、非法字符、空串）→
+            // **无操作**（组件 setter 不抛；url crate 的 special 边界即 spec 的
+            // scheme state override 阻断规则）。
+            // https://url.spec.whatwg.org/#scheme-state
             let cleaned: String = value
-                .trim_end_matches(':')
                 .chars()
                 .filter(|c| !matches!(*c, '\t' | '\n' | '\r'))
                 .collect();
-            let _ = url.set_scheme(&cleaned.to_ascii_lowercase());
+            let scheme = cleaned.split(':').next().unwrap_or("");
+            let _ = url.set_scheme(&scheme.to_ascii_lowercase());
             true
         }
-        "hostname" => url.set_host(Some(value)).is_ok(),
-        "host" => set_url_host_and_port(&mut url, value),
-        "port" => set_url_port_stripping(&mut url, value),
+        "hostname" | "host" => {
+            return match set_url_host_component(&mut url, value, part == "host") {
+                Some(json) => json,
+                None => String::new(),
+            };
+        }
+        "port" => {
+            // URL spec「cannot have a username/password/port」：host null/空串或
+            // file scheme → no-op。空串 → port null；其余走剥离解析（失败 no-op）。
+            // https://url.spec.whatwg.org/#cannot-have-a-username-password-port
+            if url.host_str().is_none() || url.host_str() == Some("") || url.scheme() == "file" {
+                true
+            } else if value.is_empty() {
+                let _ = url.set_port(None);
+                true
+            } else {
+                set_url_port_stripping(&mut url, value)
+            }
+        }
         "pathname" => {
             // URL spec pathname setter 步 3：「If url is null or url has an opaque path,
             // then return」——opaque path（cannot_be_a_base，如 `non-special:opaque`）no-op，
             // href 不变。WPT non-special-opaque-path-url-getter-setter：pathname set
             // 'string' 后 setget 仍 'opaque'。
+            // M2-S4a：path state override 下 `?`/`#` 是**字面字符**（spec 仅非
+            // override 面转 query/fragment state）——url crate set_path 按分隔符
+            // 拆分，前置改写 `%3F`/`%23`（crate 保留既有 %XX 不重编）。
+            // https://url.spec.whatwg.org/#path-state
             if !url.cannot_be_a_base() {
-                url.set_path(value);
+                let encoded = value.replace('?', "%3F").replace('#', "%23");
+                url.set_path(&encoded);
             }
             true
         }
         "search" => {
+            // URL spec search setter：值剥**单个**前导 '?'；空值 → query null；
+            // 其余（含裸 '?' → 空 query，序列化为 '?'）置 query。
+            // https://url.spec.whatwg.org/#dom-url-search
             let q = value.strip_prefix('?').unwrap_or(value);
-            url.set_query(if q.is_empty() { None } else { Some(q) });
+            url.set_query(if value.is_empty() { None } else { Some(q) });
             true
         }
         "hash" => {
+            // hash setter 同 search：空值 → fragment null；裸 '#' → 空 fragment。
             let f = value.strip_prefix('#').unwrap_or(value);
-            url.set_fragment(if f.is_empty() { None } else { Some(f) });
+            url.set_fragment(if value.is_empty() { None } else { Some(f) });
             true
         }
-        "username" => url.set_username(value).is_ok(),
-        "password" => url
-            .set_password(if value.is_empty() { None } else { Some(value) })
-            .is_ok(),
+        "username" | "password" => {
+            // URL spec username/password setter：「cannot have a username/password/port
+            // 则 return」——host null（opaque/cannot-be-a-base）、host 空串（sc:// 面）、
+            // file scheme 均 no-op（不抛）；其余委托 url crate（失败 no-op）。
+            // https://url.spec.whatwg.org/#cannot-have-a-username-password-port
+            if url.host_str().is_none() || url.host_str() == Some("") || url.scheme() == "file" {
+                true
+            } else if part == "username" {
+                url.set_username(value).is_ok()
+            } else {
+                url.set_password(if value.is_empty() { None } else { Some(value) })
+                    .is_ok()
+            }
+        }
         _ => true, // 含 "href"（已整体重解析）
     };
     if ok { serialize_url(&url) } else { String::new() }
@@ -4285,22 +4358,175 @@ fn set_url_port_stripping(url: &mut url::Url, value: &str) -> bool {
     }
 }
 
-/// `host` setter 辅助：`host[:port]` 拆分（仅当 `:` 后全数字视为端口），分别 set_host + set_port。
+/// `host`/`hostname` setter（net-api M2-S4a，URL spec §host state/hostname state
+/// **state override** 语义）：值经 host state override 解析——分隔符 `/`、`?`、
+/// `#`（special 面 `\`）终止 host 并丢弃尾段（path/query/fragment 保持原值）；
+/// bracket 外 `:` 在 hostname state 直接失败、host state 转入 port（数字前缀
+/// u16，尾段丢弃，默认端口归一由 url crate 承接）；解析失败一律 no-op（组件
+/// setter 不抛，仅 href setter 抛 TypeError）。file scheme 走 file host state
+/// （无 port、localhost 归一空串）。opaque path（cannot-be-a-base）setter 步
+/// 直接 no-op。
+/// https://url.spec.whatwg.org/#host-state
+/// https://url.spec.whatwg.org/#hostname-state
+/// `host`/`hostname` setter 组件入口：常规 override 解析成功即序列化；host
+/// null → host 有值后 url crate 把 no-host 标记 "/.//" 转入 path 前缀
+///（`non-spec:/.//p` hostname 'h' → `non-spec://h/.//p`），按 spec 剥标记。
 #[cfg(feature = "script-runtime")]
-fn set_url_host_and_port(url: &mut url::Url, value: &str) -> bool {
-    let (host, port) = match value.rfind(':') {
-        Some(i) if !value[i + 1..].is_empty() && value[i + 1..].chars().all(|c| c.is_ascii_digit()) => {
-            (&value[..i], Some(&value[i + 1..]))
+fn set_url_host_component(url: &mut url::Url, value: &str, port_allowed: bool) -> Option<String> {
+    let had_host = url.host_str().is_some();
+    if !set_url_host_override(url, value, port_allowed) {
+        return None;
+    }
+    if !had_host {
+        let p = url.path().to_string();
+        if let Some(stripped) = p.strip_prefix("/.//") {
+            url.set_path(&format!("//{stripped}"));
         }
-        _ => (value, None),
+    }
+    Some(serialize_url(url))
+}
+
+#[cfg(feature = "script-runtime")]
+fn set_url_host_override(url: &mut url::Url, value: &str, port_allowed: bool) -> bool {
+    if url.cannot_be_a_base() {
+        return true;
+    }
+    if url.scheme() == "file" {
+        return set_url_file_host_override(url, value);
+    }
+    let special = matches!(url.scheme(), "http" | "https" | "ws" | "wss" | "ftp");
+    let sanitized: String =
+        value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
+    let mut buffer = String::new();
+    let mut inside_brackets = false;
+    // 终止/EOF 共用：spec host state 分隔步——special 空 buffer host-missing 失败；
+    // override 空 buffer 且已带凭据或端口非空失败；host parse 失败失败；成功即
+    // 设 host 并返回（override 不进 path start）。
+    let commit = |url: &mut url::Url, buffer: &str| -> bool {
+        if buffer.is_empty() {
+            if special || url_has_credentials_or_port(url) {
+                return false;
+            }
+        }
+        url.set_host(if buffer.is_empty() { Some("") } else { Some(buffer) })
+            .is_ok()
     };
-    if url.set_host(Some(host)).is_err() {
+    let mut chars = sanitized.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == ':' && !inside_brackets {
+            if buffer.is_empty() {
+                return false; // host-missing
+            }
+            if !port_allowed {
+                return false; // hostname state：':' → failure（'example.com:8080' 整体 no-op）
+            }
+            if !commit(url, &buffer) {
+                return false;
+            }
+            // port state（override）：ASCII digit 前缀 u16；default port 归一 null；
+            // 尾段（'8080stuff2'/'8080+2'）与空 buffer（'example.com:'）丢弃端口不动。
+            // 越界 → failure（整个 setter no-op）。
+            let rest: String = chars.collect();
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if !digits.is_empty() {
+                // 越界端口（'65536'）丢弃端口但 **host 保留**（corpus：overflowing
+                // is an error, hostname is still set——spec port state failure 在
+                // state override 下观测为端口不动、URL 其余已生效）。
+                if let Ok(p) = digits.parse::<u16>() {
+                    let _ = url.set_port(Some(p));
+                }
+            }
+            return true;
+        }
+        if c == '/' || c == '?' || c == '#' || (special && c == '\\') {
+            return commit(url, &buffer);
+        }
+        if c == '[' {
+            inside_brackets = true;
+        } else if c == ']' {
+            inside_brackets = false;
+        }
+        buffer.push(c);
+    }
+    commit(url, &buffer)
+}
+
+/// `host`/`hostname` setter 的 file host state 分支（URL spec §file host state）：
+/// 值取首个 `/`、`\`、`?`、`#` 前缀；percent-decode 后 forbidden host code point
+/// → 失败 no-op（`x:123` 面——url crate set_host 会误拆 port）；`localhost` 归一
+/// 空串（`loc%41lhost` decode 后 localhost 面）；空 buffer → host 置空串
+///（`file://hi/x` → `file:///x`）。url crate 对 file 空 host 拒绝（EmptyHost）
+/// 且不归一 localhost——组串重解析承接（path/query/fragment 原样保留）。
+/// https://url.spec.whatwg.org/#file-host-state
+#[cfg(feature = "script-runtime")]
+fn set_url_file_host_override(url: &mut url::Url, value: &str) -> bool {
+    let sanitized: String =
+        value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
+    let buffer: String = sanitized
+        .chars()
+        .take_while(|c| !matches!(c, '/' | '\\' | '?' | '#'))
+        .collect();
+    let decoded = zw_percent_decode_utf8_lossy(&buffer);
+    if decoded.chars().any(|c| {
+        matches!(c, ' ' | '#' | '/' | ':' | '<' | '>' | '?' | '@' | '[' | '\\' | ']' | '^' | '|')
+    }) {
         return false;
     }
-    if let Some(p) = port {
-        let _ = url.set_port(p.parse::<u16>().ok());
+    let mut host = decoded.to_ascii_lowercase();
+    if host == "localhost" {
+        host.clear();
     }
-    true
+    let candidate = format!(
+        "file://{}{}{}{}",
+        host,
+        url.path(),
+        url.query().map(|q| format!("?{q}")).unwrap_or_default(),
+        url.fragment().map(|f| format!("#{f}")).unwrap_or_default(),
+    );
+    match url::Url::parse(&candidate) {
+        Ok(u2) => {
+            *url = u2;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// percent-decode（spec host parse 前置 decode）：`%XX` 两位 hex → 字节，其余
+/// 原样；按 UTF-8 lossy 收敛（opaque host 面，非 ASCII 不进 file host 语料）。
+#[cfg(feature = "script-runtime")]
+fn zw_percent_decode_utf8_lossy(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(h), Some(l)) = (
+                (bytes[i + 1] as char).to_digit(16),
+                (bytes[i + 2] as char).to_digit(16),
+            ) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// URL「includes credentials 或 port 非空」判定（host state override 空 buffer
+/// 失败步）。password() 在 url crate 内部偏移不一致时可 panic（M2-S2 守卫同源
+/// 线索）——catch_unwind 收场为 false。
+#[cfg(feature = "script-runtime")]
+fn url_has_credentials_or_port(url: &url::Url) -> bool {
+    url.port().is_some()
+        || !url.username().is_empty()
+        || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            url.password().map_or(false, |p| !p.is_empty())
+        }))
+        .unwrap_or(false)
 }
 
 /// 媒体查询求值为 JSON 串（供 JS shim `window.matchMedia(query)` 经 `__zw_match_media` 回调消费）。
