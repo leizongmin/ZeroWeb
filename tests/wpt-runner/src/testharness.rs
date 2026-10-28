@@ -13893,6 +13893,71 @@ globalThis.test(function() {
     }
 
     #[test]
+    fn formdata_entry_list_s123() {
+        // s123（html-semantics M2 切片 123）：FormData 条目构造两面钉——
+        // ①动态建表（createElement+append）同 turn `new FormData(form)` 枚举
+        // 非空（枚举双源并集：form 子树 live face + document 级快照 face 按键
+        // 去重——原单源 document 级对 live 树恒空，逗号列表查询无 pending 回
+        // 落），且 hidden value 原文换行零归一（spec entry list 不做换行规范
+        // 化——newline-normalization 12F 判据面）；②file 状态条目臂（spec
+        // constructing the entry list：每个选中文件一条 [name, File,
+        // filename]——DataTransfer→files→input.files 链 + get 返 File 本体，
+        // File.name 原文换行）。
+        let root = std::env::temp_dir().join("zw-s123-formdata-entry-test");
+        std::fs::create_dir_all(&root).unwrap();
+        let html = r##"<script src="/resources/testharness.js"></script>
+<script>
+globalThis.test(function() {
+  var form = document.createElement('form');
+  var input = document.createElement('input');
+  input.type = 'hidden';
+  input.name = 'a';
+  input.value = 'b\nc';
+  form.appendChild(input);
+  document.body.appendChild(form);
+  var fd = new FormData(form);
+  assert_equals(fd.get('a'), 'b\nc',
+    'live form 枚举 + 原文换行零归一: ' + JSON.stringify(fd.get('a')));
+}, 's123 live form entry list');
+globalThis.test(function() {
+  var form = document.createElement('form');
+  var input = document.createElement('input');
+  input.type = 'file';
+  input.name = 'f';
+  var dt = new DataTransfer();
+  dt.items.add(new File([], 'x\ny', { type: 'text/plain' }));
+  input.files = dt.files;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  var fd = new FormData(form);
+  var v = fd.get('f');
+  assert_equals(v && v.name, 'x\ny',
+    'file 条目 File.name 原文: ' + (v ? JSON.stringify(v.name) : 'null'));
+}, 's123 file entry filename');
+</script>"##;
+        let results = run_testharness_html(
+            &root,
+            "formdata-entry-pin.html",
+            html,
+            &mini_harness_stateful(),
+            CASE_TIMEOUT,
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "s123 live form entry list" && r.status == HarnessStatus::Pass),
+            "FormData live 表单枚举面须通过: {results:?}"
+        );
+        assert!(
+            results
+                .iter()
+                .any(|r| r.name == "s123 file entry filename" && r.status == HarnessStatus::Pass),
+            "FormData file 条目面须通过: {results:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn inline_module_import_specs_rewrite_to_root_absolute_s101() {
         // 直接钉 helper：相对 spec 以模块自身目录（resources/）为基上溯归一；
         // root-absolute/裸 specifier/含 scheme 的 spec 不动；单双引号皆替换。

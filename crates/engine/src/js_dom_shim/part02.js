@@ -3541,10 +3541,38 @@
     try {
       // best-effort form 字段枚举（文档树序 + form owner 过滤——form= 属性关联的
       // 站外元素同入列，outerNamed 面；submit 按钮仅 submitter 本尊入列）。
+      // s123：字段枚举双源并集——①form 自身子树查询（live face：createElement
+      // 动态建表后同 turn 构造 FormData，host 快照无该子树，document 级**逗号
+      // 列表**查询恒空且单选择器才有的 R161 pending 回落臂对列表不生效——
+      // newline-normalization 探针实证 docInTa=0 / formQSA=2；静态标记页
+      // document 级逗号查询正常 staticDocInSel=2，host 引擎支持列表，缺口仅
+      // live 树 face）；②document 级查询（静态页原路径 + form= 属性站外关联
+      // 元素 best-effort 面）。按键去重，序 = document 级结果在前、form 子树
+      // 新增随后（静态页与原行为逐项一致；动态页 form 子树序即树序）。
       try {
-        var fields = (typeof document !== 'undefined' && document.querySelectorAll)
-          ? document.querySelectorAll('input, select, textarea, button')
-          : form.querySelectorAll('input, select, textarea, button');
+        var fields = [];
+        var _fdSeen = {};
+        var _fdPush = function (el) {
+          if (!el) return;
+          var k = null;
+          try { k = (typeof _elKeyOf === 'function') ? _elKeyOf(el) : null; } catch (_eFdk) {}
+          if (k == null) {
+            try { k = el.__zwHandle ? ('@' + el.__zwHandle) : (el.__zwSelector || null); } catch (_eFdk2) {}
+          }
+          if (k != null && _fdSeen[k]) return;
+          if (k != null) _fdSeen[k] = 1;
+          fields.push(el);
+        };
+        try {
+          var _fdDocQ = (typeof document !== 'undefined' && document.querySelectorAll)
+            ? document.querySelectorAll('input, select, textarea, button')
+            : null;
+          for (var _fdqd = 0; _fdDocQ && _fdqd < _fdDocQ.length; _fdqd++) _fdPush(_fdDocQ[_fdqd]);
+        } catch (_eFdd) {}
+        try {
+          var _fdFormQ = form.querySelectorAll('input, select, textarea, button');
+          for (var _fdq = 0; _fdq < _fdFormQ.length; _fdq++) _fdPush(_fdFormQ[_fdq]);
+        } catch (_eFdf) {}
         var subKey = null;
         if (submitter != null && typeof _elKey === 'function') {
           try { subKey = _elKey(submitter.__zwSelector || null, submitter.__zwHandle || null); } catch (_eSk) {}
@@ -3591,7 +3619,22 @@
             if (isSub) this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
           } else if (type === 'checkbox' || type === 'radio') {
             if (f.checked) this._p.push([String(name), f.value != null ? String(f.value) : 'on', undefined]);
-          } else if (type !== 'file' && type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
+          } else if (type === 'file') {
+            // s123：file 状态条目（spec constructing the entry list 的 file 臂）——
+            // 每个选中文件一条 [name, File, filename]（无选中文件 → 零条目，spec
+            // 同）；File 值构造复用 _zwFdEntry（get 返 File 本体，corpus 断言
+            // `formData.get(name).name` = File.name 原文——File 构造名不做换行
+            // 归一，newline-normalization filename 四臂判据面）。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-the-entry-list
+            try {
+              var _fdFiles = f.files;
+              var _fdFl = _fdFiles ? _fdFiles.length : 0;
+              for (var _fdj = 0; _fdj < _fdFl; _fdj++) {
+                var _fdFile = _fdFiles.item ? _fdFiles.item(_fdj) : _fdFiles[_fdj];
+                if (_fdFile) this._p.push(_zwFdEntry(String(name), _fdFile));
+              }
+            } catch (_eFdi) {}
+          } else if (type !== 'submit' && type !== 'button' && type !== 'reset' && type !== 'image') {
             this._p.push([String(name), f.value != null ? String(f.value) : '', undefined]);
           }
         }
