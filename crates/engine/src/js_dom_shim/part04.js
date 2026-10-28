@@ -5539,7 +5539,10 @@
                 if (_r106st === 'INPUT' || _r106st === 'BUTTON') {
                   var _r106ty = '';
                   try {
-                    _r106ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+                    // s136：与 .click() API 门同根同修——type IDL 写不落快照，sel 分支
+                    // 换 lw 融合读（R2995 latest-wins），handle 分支不动。
+                    _r106ty = handle ? __zw_get_attr_handle(handle, 'type')
+                      : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
                   } catch (_e106s1) { _r106ty = ''; }
                   _r106ty = String(_r106ty || '').toLowerCase();
                   var _r106is = (_r106st === 'BUTTON' && (_r106ty === 'submit' || _r106ty === 'reset' || _r106ty === ''))
@@ -5649,7 +5652,13 @@
               if (_subTag === 'INPUT' || _subTag === 'BUTTON') {
                 var _subTy = '';
                 try {
-                  _subTy = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+                  // s136：type IDL setter 只写 lw 层（R2995 变更列表 latest-wins）不落
+                  // 快照——激活门读纯快照恒空 → BUTTON 空 type 恒判 submit（button-events
+                  // t2/t3 误派发单根）。sel 分支换 lw 融合读（consult 变更列表 → applied
+                  // view 回落）；handle 分支 `__zw_get_attr_handle` 本身 consult 当前批
+                  // mutations（latest-wins）不动。
+                  _subTy = handle ? __zw_get_attr_handle(handle, 'type')
+                    : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
                 } catch (_e6) { _subTy = ''; }
                 _subTy = String(_subTy || '').toLowerCase();
                 var _subIsBtn = (_subTag === 'BUTTON' && (_subTy === 'submit' || _subTy === ''))
