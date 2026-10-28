@@ -4194,9 +4194,7 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     match result {
         Ok(u) => serialize_url(&u),
         Err(_) => url_idna::pc_lenient_parse(input)
-            .and_then(|(u, rescues)| {
-                url_idna::pc_patch_components(url_idna::serialize_url_components(&u)?, &rescues)
-            })
+            .and_then(|(u, rescues)| url_idna::pc_patch_components(url_idna::serialize_url_components(&u)?, &rescues))
             .map(|c| url_idna::components_to_json(&c))
             .unwrap_or_default(),
     }
