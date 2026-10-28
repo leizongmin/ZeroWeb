@@ -82,3 +82,20 @@ schinese 1,017。本基线 360,431 来自 34 个 wrapper/errors 文件——char
    `docs/compat/wptfyi/coverage-2026-10-27.md` 复核。
 3. M3：失败簇（当前 0）或 form-encode 面甄别 + `_zwMBuildDeepEntry`
    details 裁决态挂账收口。
+
+## 更正（2026-10-29）
+
+本文件上方「chars 数据文件未到位不产 case」「chars 大文件未到位，数字
+不是全量口径」为误记：29 个 chars 文件自预置起即在本地（上游 trees API
+对账 missing=0），它们是无脚本 span fixture，本来就不产独立 case——其
+数据经 decode wrapper iframe 全量断言，**本基线 360,431 即全量口径**。
+详见 [2026-10-29-corpus-completeness-dc3.md](2026-10-29-corpus-completeness-dc3.md)。
+「后续」第 1 项随之完成（DC-3 收口），第 2 项（DC-4 coverage 复测）为
+唯一剩余项。原文保留不改写。
+
+### 勘误二（2026-10-29，同日更正追记）
+
+上表 tchinese 行 75,755 为 transcription 笔误——与自身合计 360,431 矛盾
+（114,208+170,488+x=360,431 ⇒ x=75,735）。2026-10-29 当前 HEAD 全通道
+重跑实测 75,735，并与 M1 时代整跑 JSON 逐案恒等（0 diff）。详见
+[2026-10-29-corpus-completeness-dc3.md](2026-10-29-corpus-completeness-dc3.md)。

@@ -1,8 +1,8 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
-**版本**: v1.5
-**日期**: 2026-10-28（M3 甄别面收口：details 裁决态 ✅ + form-encode/href 可跑性甄别 ✅——两面均归口非本 goal；余 DC-3 全量基线 / DC-4 待语料）
-**状态**: Active——DC-1/DC-2 完成；DC-3 部分（136 html 基线已落，全量待语料）；M3 甄别收口（余 DC-4 待全量语料）；语料补全（网络 degraded 卡点维持）
+**版本**: v1.6
+**日期**: 2026-10-29（语料完备性更正：pin 口径语料本已全量在位，「chars 大文件缺/网络卡点」为误记销账——DC-3 收口；唯一剩余 DC-4 coverage 复测）
+**状态**: Active——DC-1/DC-2/DC-3 完成；DC-4 待做（47 套件 `--json` 重跑 + `wptfyi_gap.py coverage` 全量复测）；M3 甄别面全部收口
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -119,20 +119,28 @@
   exit 0** 锚点维持；web-components 全通道对账恒等。细节见 evidence
   「base 臂补跑与六通道对账收口」节。
 
-## M2 进展（2026-10-28，部分语料基线先行）
+## M2 进展（2026-10-28 基线；2026-10-29 更正为全量口径，DC-3 收口）
 
-细节见 [evidence/2026-10-28-m2-baseline-classification.md](evidence/2026-10-28-m2-baseline-classification.md)。要点：
+细节见 [evidence/2026-10-28-m2-baseline-classification.md](evidence/2026-10-28-m2-baseline-classification.md)
+与 [evidence/2026-10-29-corpus-completeness-dc3.md](evidence/2026-10-29-corpus-completeness-dc3.md)。要点：
 
-- **部分语料基线**（136 html，chars 大文件缺）：385 case / 360,431 子测试
-  **100% Pass / 0 Fail / 0 超时**（decode-wrapper 380 case + decode-errors
-  5 case，五族全绿，iso-2022-jp 转义状态机 7,329×2 variant 含内）。全量
-  分母（1,127,087 + schinese 1,017）待语料补全后按同法增量收口 DC-3，
-  本基线即复测恒等锚点。
-- **`.headers` 两形态复核销账**（DC-3 第三项）：98/98 sidecar hdr==meta
-  逐字一致，「有 headers 无 meta」「头/meta 不一致」均 0——file 通道不
-  消费 sidecar 对现有语料行为中性由抽样升格为全量实证。
-- **wpt-suites.csv**：planned 行转数据行（subtests 口径 360431/360431，
-  evidence 列指向上文件，note 注明部分语料口径与全量分母关系）。
+- **基线**：385 case / 360,431 子测试 **100% Pass / 0 Fail / 0 超时**
+  （decode-wrapper 380 case + decode-errors 5 case，五族全绿，iso-2022-jp
+  转义状态机 7,329×2 variant 含内）。
+- **语料完备性更正（2026-10-29）**：「chars 大文件缺/网络卡点」为误记——
+  上游 pin（315976933）四族清单与本地逐文件对账 **missing = 0**；29 个
+  `*-chars*.html`（各 ~852KB）全部在位且为**无脚本 span fixture**（数据经
+  wrapper iframe 全量断言，浏览器侧同样 0 子测试）。基线 360,431 即全量
+  口径，非部分语料。
+- **分母对账（DC-3 依据）**：wpt.fyi 四族分母 1,128,104 = decode 面
+  360,431（已 100% 收敛）+ encode 面 767,673（68 文件甄别 not-run 归口，
+  见 M3 甄别 evidence）。136 html 普查 = 34 跑 + 29 chars fixture +
+  5 errors fixture + 68 encode 面。
+- **`.headers` 两形态复核销账**：98/98 sidecar hdr==meta 逐字一致，
+  「有 headers 无 meta」「头/meta 不一致」均 0——file 通道不消费 sidecar
+  行为中性全量实证。
+- **wpt-suites.csv**：planned 行转数据行（360431/360431），note 随更正
+  同步（全量口径 + encode 面归口）。
 
 ## M3 进展（2026-10-28，甄别面收口）
 
@@ -153,8 +161,10 @@
 - **form-encode / encode-href 可跑性甄别**：细节见
   [evidence/2026-10-28-m3-encode-form-href-runnability.md](evidence/2026-10-28-m3-encode-form-href-runnability.md)。要点：
 
-  - 本地语料 encode 两面 65 文件（form 46 + href 19，占 136 html 的 48%）——
-    通道 skip 规则排除的主体，本轮把「未甄别」升格为已甄别。
+  - 本地语料 encode 面合计 68 文件（form 46 + href 19 + `*-encoder.html` 2
+    + `big5-enc-ascii` 1；初记 65 漏 3 个非 `encode-*` 命名同面文件，
+    2026-10-29 更正）——通道 skip 规则排除的主体，本轮把「未甄别」升格为
+    已甄别。
   - **encode-form 不可跑**（三层缺面）：`_zwFormSubmitNavigate` `_encPair`
     硬编码 UTF-8 `encodeURIComponent`（acceptCharset 零消费——核心被测
     语义不可达）；form.target → iframe 嵌套导航缺面（`iframe.onload` 断言链
@@ -164,7 +174,7 @@
     面全 UTF-8（shim + rust-url），无「encoding-parse a URL」文档编码
     override——实跑预期近全量 Fail，无判据意义，skip 理由升格。归口
     URL/HTML 集成面。
-  - **口径影响**：DC-3 全量基线分母把 encode 两面单列 skip（not-run），
+  - **口径影响**：DC-3 分母对账把 encode 面单列 not-run（767,673 子测试），
     与 decode 面分开计——解锁面通过率不被未解锁面稀释。
 
 ## Mission
@@ -219,18 +229,19 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
 - **M1** ✅（2026-10-28）：runner 通道 + Makefile（DC-2）+ 通道性能收口 +
   六通道对账收口 + 深臂限定名回归修复（见「M1 进展」节）；语料补全卡点
   移交 M2。
-- **M2** 进行中：部分语料基线分类 + wpt-suites.csv 回填 + `.headers`
-  复核 ✅（2026-10-28，见「M2 进展」节）；全量基线待语料补全（DC-3 收口）。
+- **M2** ✅（2026-10-28 基线；2026-10-29 更正为全量口径，DC-3 收口）：
+  基线分类 + wpt-suites.csv 回填 + `.headers` 复核 + 分母对账（见「M2
+  进展」节与 2026-10-29 evidence）。
 - **M3** 进行中：`_zwMBuildDeepEntry` details 裁决态甄别 ✅（2026-10-28，
-  两面背离修复）+ form-encode/href 可跑性甄别 ✅（2026-10-28，两面归口
-  非 goal 面，见「M3 进展」节）；余失败簇归口 + coverage 复测收口
-  （DC-4，均待全量语料）。
+  两面背离修复）+ form-encode/href 可跑性甄别 ✅（2026-10-28，68 文件
+  归口非 goal 面，见「M3 进展」节）；**余 DC-4 coverage 复测**（47 套件
+  `--json` 重跑 + `wptfyi_gap.py coverage` 全量对账，唯一剩余项）。
 
-语料预置进度：七族 253 文件已到位（30 号预置）；2026-10-27 起 `FORCE=1`
-全量续拉（~1,200 文件，幂等补缺）——**网络持续 degraded（jsdelivr 拒连、
-raw ~1/3 成功率带超时），多轮重试后仍 136 html**（七族 wrapper 已齐、chars
-大文件缺）。通道以现有语料先行，语料补全随网络恢复在 M2 间补（以
-`goals_inventory` 输出核对）。
+语料进度（2026-10-29 更正）：七族 253 文件**已全量在位**（30 号预置即齐，
+上游 pin 315976933 对账 missing=0）——此前多轮「网络 degraded 语料卡点」
+为误记：curl 报错是真实的，但重拉的是已在位文件（FORCE=1 全量重下语义），
+没有任何文件缺失过。fetch 基建经代理可用（直连 raw 持续超时，代理 10801
+正常），日常续拉用 `FORCE=1` + 代理环境变量。
 
 ## 依赖约束（run-rules §9）
 

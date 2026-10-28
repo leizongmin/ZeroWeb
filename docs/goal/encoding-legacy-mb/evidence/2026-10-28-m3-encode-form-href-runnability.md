@@ -68,3 +68,12 @@ spec 仍保留）。引擎实况：URL 面全 UTF-8——shim `new URL`/
   「未解锁面」稀释。
 - 若未来立项 form 提交面 / URL 面 goal，本文件即两面的依赖清单一（缺面 1/2
   与 encoding-parse）。
+
+## 更正（2026-10-29）
+
+语料盘点表按文件名模式（`*encode-form*`/`*encode-href*`）统计漏掉 3 个
+同面文件：schinese `gb18030-encoder.html`/`gbk-encoder.html`（inline
+a.href 面，本地在位）与 tchinese `big5-enc-ascii.html`。encode 面合计
+**68** 文件（非 65），schinese 1,017 分母即出自 2 个 `*-encoder.html`。
+结论不变：同属 href 序列化面（encoding-parse a URL），甄别归口维持。
+详见 [2026-10-29-corpus-completeness-dc3.md](2026-10-29-corpus-completeness-dc3.md)。
