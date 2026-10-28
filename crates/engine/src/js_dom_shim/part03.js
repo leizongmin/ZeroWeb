@@ -542,8 +542,15 @@
       self.responseText = text;
       var rt = self._zwXhrResponseType || '';
       if (rt === 'json') {
+        // xhr.spec §the response attribute（JSON response steps）：json 解析基于
+        // **UTF-8 decode**（Encoding #utf-8-decode），不走 _zwXhrDecode 的 final
+        // encoding BOM 嗅探路径——UTF-16 BOM 面字节经 UTF-8 lossy 成 U+FFFD 前缀
+        // → JSON.parse 失败 → null（json.any「Ensure UTF-16 results in an error」
+        // 面）；UTF-8 BOM 随 decode 剥离（data: ﻿ JSON 面）。
+        // https://xhr.spec.whatwg.org/#the-response-attribute
+        // https://encoding.spec.whatwg.org/#utf-8-decode
         var parsedJson = null;
-        try { parsedJson = JSON.parse(text); } catch (_eXhrJson) {}
+        try { parsedJson = JSON.parse(new TextDecoder().decode(bytes)); } catch (_eXhrJson) {}
         self.response = parsedJson;
       } else if (rt === 'arraybuffer') {
         var ab = new Uint8Array(bytes.length);
