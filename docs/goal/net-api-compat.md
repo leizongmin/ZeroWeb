@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.7
-**日期**: 2026-10-29（M 收口）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → 10843（+1489），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.8
+**日期**: 2026-10-29（M 收口 + 收口后小片 M2-S5）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10882**（+1528，含收口后 M2-S5 小片 +39），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -65,13 +65,19 @@
   fetch/api 572+1T→334+1T，剔除 request-cache standing exclusion 达线）+
   **一期零回归声明**（全轮 A/B 零真回归，显影 1 记账）。二期 Done
   Criteria 全部满足。
+- **M2-S5 完成（收口后重开小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s5-header-values-wire-escaping.md)）**：
+  header-values-normalize 36F 三分解收敛——fetch 头 wire `\x1e`/`\x1f`
+  边界对称转义（`fetch_bridge` + shim 六点）、fixture `inspect-headers.py`
+  POST 豁免、空值头回显：normalize **62/62 收口**；全通道 vs M 收口参考
+  **+39 零回归**（10843 → 10882），fetch/api 334F → **295F**，url/mimesniff
+  零扰动。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）。
-- **后续可推进小片**（不阻塞收口，重开时按此入列）：header-values-normalize
-  wire `\x1e` 转义（36F）、abort/general 引擎入口同步 cancel（4F）、SRI
-  切片（integrity 显影后重排）、request-cache HTTP 缓存层（待决项立项
-  后）。
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：abort/general
+  引擎入口同步 cancel（4F）、SRI 切片（integrity 显影后重排）、
+  request-headers 方法面余 22F（runner 域，M2-S5 首腿清偿后）、
+  request-cache HTTP 缓存层（待决项立项后）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 

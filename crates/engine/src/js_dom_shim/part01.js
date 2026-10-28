@@ -2337,11 +2337,11 @@
         var hdrs360 = String(parts[2] || '').split('\x1e');
         for (var h360 = 0; h360 + 1 < hdrs360.length; h360 += 2) {
           if (hdrs360[h360] === 'X-Zero-Final-URL' && hdrs360[h360 + 1]) {
-            effectiveUrl = String(hdrs360[h360 + 1]);
+            effectiveUrl = _zwWireUnescape(hdrs360[h360 + 1]);
           // 大小写不敏感取 Content-Type——sidecar headers wire 按原始大小写入列
           //（runner 推小写 `content-type`；HTTP 头名本就 case-insensitive）。
           } else if (String(hdrs360[h360]).toLowerCase() === 'content-type' && !_zwFrameCt) {
-            _zwFrameCt = String(hdrs360[h360 + 1]);
+            _zwFrameCt = _zwWireUnescape(hdrs360[h360 + 1]);
           }
         }
       }
@@ -3240,7 +3240,7 @@
     if (!wire) return out;
     var parts = wire.split('\x1e');
     for (var i = 0; i + 1 < parts.length; i += 2) {
-      var k = parts[i], v = parts[i + 1];
+      var k = parts[i], v = _zwWireUnescape(parts[i + 1]);
       // R3222：多值头（Set-Cookie 等）累加为数组（旧 last-wins 丢多 cookie——getSetCookie 失效）。
       if (Object.prototype.hasOwnProperty.call(out, k)) {
         if (Array.isArray(out[k])) out[k].push(v);
@@ -3658,6 +3658,18 @@
     if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
     return Promise.resolve(_zwBytesThenableSafe(bytes));
   }
+  // net-api M2-S5：wire 字段转义/还原——头值可含任意控制字符（header-values-normalize
+  // 语料 0x01-0x1F 面），分隔符 \x1e/\x1f 出现在值内会被两侧拆解腐蚀。shim↔fetch_bridge
+  // 边界对称转义：ESC(\x1b)→\x1bX、\x1e→\x1bE、\x1f→\x1bF；头名恒为合法 token 不转义。
+  // Rust 侧对称实现见 fetch_bridge escape_wire_field/unescape_wire_field。
+  function _zwWireEscape(v) {
+    return String(v).replace(/\x1b/g, '\x1bX').replace(/\x1e/g, '\x1bE').replace(/\x1f/g, '\x1bF');
+  }
+  function _zwWireUnescape(v) {
+    var s = String(v);
+    if (s.indexOf('\x1b') < 0) return s;
+    return s.replace(/\x1bX/g, '\x1b').replace(/\x1bE/g, '\x1e').replace(/\x1bF/g, '\x1f');
+  }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
     if (!src) return '';
@@ -3672,7 +3684,7 @@
       if (!Object.prototype.hasOwnProperty.call(h._h, k)) continue;
       var vals = h._h[k];
       for (var vi = 0; vi < vals.length; vi++) {
-        out += (out ? '\x1e' : '') + k + '\x1e' + vals[vi];
+        out += (out ? '\x1e' : '') + k + '\x1e' + _zwWireEscape(vals[vi]);
       }
     }
     return out;
@@ -3686,7 +3698,7 @@
     return false;
   }
   function _zwAddHeader(wire, name, value) {
-    return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + String(value);
+    return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + _zwWireEscape(value);
   }
   function _zwCurrentHref() {
     if (globalThis.location && globalThis.location.href) return String(globalThis.location.href);
@@ -3866,7 +3878,9 @@
     };
     for (var i = 0; i + 1 < parts.length; i += 2) {
       var ln = String(parts[i]).toLowerCase();
-      var val = String(parts[i + 1]);
+      // safelist 判定须见还原后的真实值（wire 值经 _zwWireEscape，forbidden 字节
+      // 检查对转义形失真）。
+      var val = _zwWireUnescape(parts[i + 1]);
       if (ln === 'origin' || ln === 'content-length' ||
           ln.indexOf('access-control-') === 0 || ln === 'referer' ||
           ln === 'last-event-id' || ln === 'user-agent') {
@@ -4435,7 +4449,7 @@
     var parts = wire.split('\x1e');
     var ln = String(name).toLowerCase();
     for (var i = 0; i + 1 < parts.length; i += 2) {
-      if (String(parts[i]).toLowerCase() === ln) return parts[i + 1];
+      if (String(parts[i]).toLowerCase() === ln) return _zwWireUnescape(parts[i + 1]);
     }
     return null;
   }

@@ -7907,7 +7907,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             }
             // net-api M4-S18：非 GET 放行至各 fixture 自行分派（corsenabled/redirect-cors
             // 的 OPTIONS preflight 分支）后兜底拒绝——preflight OPTIONS 不再被 blanket 拒。
-            if req.method != "GET" && req.method != "OPTIONS" {
+            // net-api M2-S5：inspect-headers.py 上游 wptserve handler 方法无关（任意
+            // 方法回显请求头）——header-values-normalize XHR POST 腿经此回显；其余
+            // 端点维持兜底拒绝。
+            if req.method != "GET" && req.method != "OPTIONS"
+                && !clean.ends_with("/inspect-headers.py")
+            {
                 return Err(format!("method not supported: {}", req.method));
             }
             if req.method == "OPTIONS" {
@@ -7978,16 +7983,19 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     })
                     .unwrap_or_default();
                 for name in &checked {
-                    let value = req
+                    // 上游 inspect-headers.py 按「头存在」回显（wptserve `in
+                    // request.headers`），值可为空串——header-values-normalize strip
+                    // 腿（值 strip 后为 ""）期望 x-request-val1 == "" 而非缺席。
+                    let hits: Vec<&str> = req
                         .headers
                         .iter()
                         .filter(|(n, _)| n.eq_ignore_ascii_case(name))
                         .map(|(_, v)| v.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    if !value.is_empty() {
-                        headers.push((format!("x-request-{}", name), value));
+                        .collect();
+                    if hits.is_empty() {
+                        continue;
                     }
+                    headers.push((format!("x-request-{}", name), hits.join(", ")));
                 }
                 if wpt_query_value(query, "cors").is_some() {
                     let origin = req

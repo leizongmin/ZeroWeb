@@ -204,7 +204,44 @@ pub fn decode_body_bytes_raw(wire: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
-/// 把响应头列表编码为 `name\x1evalue\x1e...` wire（空列表 → 空串）。
+/// wire 字段转义：`\x1b`（ESC）→ `\x1bX`、[`HEADER_SEP`] → `\x1bE`、[`FIELD_SEP`] → `\x1bF`。
+/// 头值可含任意字节（header-values-normalize 控制字符面），分隔符出现在值内会被两侧
+/// 拆解腐蚀——shim↔host 边界对称转义/还原（JS 侧 `_zwWireEscape` 同方案）。头名恒为
+/// 合法 token 不转义。先替换 ESC 再替换分隔符，展开结果不含未转义 ESC，逆变换无歧义。
+fn escape_wire_field(v: &str) -> String {
+    v.replace('\x1b', "\x1bX")
+        .replace(HEADER_SEP, "\x1bE")
+        .replace(FIELD_SEP, "\x1bF")
+}
+
+/// [`escape_wire_field`] 的逆变换；未知转义序列按字面保留（向后兼容旧 wire）。
+fn unescape_wire_field(v: &str) -> String {
+    if !v.contains('\x1b') {
+        return v.to_string();
+    }
+    let mut out = String::with_capacity(v.len());
+    let mut it = v.chars();
+    while let Some(c) = it.next() {
+        if c != '\x1b' {
+            out.push(c);
+            continue;
+        }
+        match it.next() {
+            Some('X') => out.push('\x1b'),
+            Some('E') => out.push(HEADER_SEP),
+            Some('F') => out.push(FIELD_SEP),
+            Some(other) => {
+                out.push('\x1b');
+                out.push(other);
+            }
+            None => out.push('\x1b'),
+        }
+    }
+    out
+}
+
+/// 把响应头列表编码为 `name\x1evalue\x1e...` wire（空列表 → 空串）；值经
+/// [`escape_wire_field`] 转义。
 pub fn encode_headers(headers: &[(String, String)]) -> String {
     let mut out = String::new();
     for (i, (n, v)) in headers.iter().enumerate() {
@@ -213,12 +250,13 @@ pub fn encode_headers(headers: &[(String, String)]) -> String {
         }
         out.push_str(n);
         out.push(HEADER_SEP);
-        out.push_str(v);
+        out.push_str(&escape_wire_field(v));
     }
     out
 }
 
-/// 解码请求头 wire（`name\x1evalue\x1e...`）为 (name,value) 列表；奇数尾项忽略。
+/// 解码请求头 wire（`name\x1evalue\x1e...`）为 (name,value) 列表；奇数尾项忽略；
+/// 值经 [`unescape_wire_field`] 还原。
 pub fn decode_headers(wire: &str) -> Vec<(String, String)> {
     if wire.is_empty() {
         return Vec::new();
@@ -227,7 +265,7 @@ pub fn decode_headers(wire: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i + 1 < parts.len() {
-        out.push((parts[i].to_string(), parts[i + 1].to_string()));
+        out.push((parts[i].to_string(), unescape_wire_field(parts[i + 1])));
         i += 2;
     }
     out
@@ -377,6 +415,22 @@ mod tests {
         // 奇数尾项忽略（不可配对）。
         let odd = decode_headers("a\x1eb\x1ec");
         assert_eq!(odd, vec![("a".to_string(), "b".to_string())]);
+    }
+
+    #[test]
+    fn headers_wire_escapes_separator_bytes_in_values() {
+        // net-api M2-S5：值含分隔符/ESC（header-values-normalize 控制字符面）经转义
+        // 往返保真——不转义时两侧拆解腐蚀（值截断 + 后续对错位）。
+        let hs = vec![
+            ("val1".to_string(), "\x1e".to_string()),
+            ("val2".to_string(), "x\x1fy".to_string()),
+            ("val3".to_string(), "a\x1bb".to_string()),
+        ];
+        let wire = encode_headers(&hs);
+        assert_eq!(wire, "val1\x1e\x1bE\x1eval2\x1ex\x1bFy\x1eval3\x1ea\x1bXb");
+        assert_eq!(decode_headers(&wire), hs);
+        // 未知转义序列按字面保留（向后兼容旧 wire）。
+        assert_eq!(unescape_wire_field("p\x1bq"), "p\x1bq");
     }
 
     #[test]
