@@ -298,6 +298,14 @@ pub(crate) fn mc_contain_size_fix_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_MC_CONTAIN_SIZE_SIZE").as_deref() != Ok("0"))
 }
 
+/// R5318 kill-switch 读取（进程级缓存）：`ZW_REPLACED_LEAF_INTRINSIC=0` 回退替换叶盒
+/// 固有宽臂（`box_content_max_width_inner` 叶盒回退）。OnceLock 同
+/// [`mc_contain_size_fix_enabled`] 热路径口径。
+fn replaced_leaf_intrinsic_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_REPLACED_LEAF_INTRINSIC").as_deref() != Ok("0"))
+}
+
 fn box_content_max_width_inner(
     box_node: &LayoutBox,
     doc: &Document,
@@ -647,7 +655,25 @@ fn box_content_max_width_inner(
         let text_w = box_node
             .node_id
             .map_or(0.0, |id| text_content_max_width(id, doc, styles));
-        own_explicit.max(text_w)
+        // R5318（css-sizing-3 §5.1 max-content + CSS2 §10.3.2）：替换叶盒 max-content
+        // = 固有尺寸——attr/解码尺寸在 tree.rs apply_replaced_element_sizing 已写为
+        // taffy definite 宽，第一趟 box_node.width 即真实固有值（替换盒主轴永不
+        // fill-stretch，无拉伸伪影）。旧文本/显式宽口径对替换叶双 0 → td 内
+        // display:block img 的 cell intrinsic 塌 0、整格消失（c42-ibx-pad-000 格2；
+        // R4028 臂经 box_content_max_width 测 auto 宽块级子正落此处）。CSS 显式宽
+        // 已反映在第一趟宽中，max() 合并安全。垂直书写替换叶的块轴语义不同，不开放。
+        // kill-switch `ZW_REPLACED_LEAF_INTRINSIC=0` 回退（OnceLock：本函数热路径
+        // 不耐受 env 线性扫描，mc_contain_size_fix_enabled 同款）。
+        let replaced_leaf_w = if box_node.is_replaced
+            && matches!(box_node.writing_mode, zero_style_system::WritingModeValue::HorizontalTb)
+            && replaced_leaf_intrinsic_enabled()
+        {
+            let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+            (box_node.width - frame).max(0.0)
+        } else {
+            0.0
+        };
+        own_explicit.max(text_w).max(replaced_leaf_w)
     } else {
         // R4389：混合内容（裸文本 + inline 元素子）的**裸文本段**贡献——子循环只累计
         // 元素子（R1479 递归/outer_w），div「XYZ <ruby>..</ruby> XYZ」型两侧 XYZ 裸文本

@@ -3948,5 +3948,8 @@ fn update_row_group_positions(
     }
 }
 
+/// R5318 替换叶盒 cell intrinsic 固有宽（css-sizing-3 §5.1 + CSS2 §10.3.2，c42-ibx-pad-000）。
+#[cfg(test)]
+mod r5318_replaced_leaf_cell_tests;
 #[cfg(test)]
 mod tests;
