@@ -456,6 +456,15 @@ const REFTESTS: &[InlineReftestDef] = &[
         ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:120px;height:260px;background:red\">hi<span><b>x</b></span></li></ul></body></html>",
         is_match: true,
     },
+    InlineReftestDef {
+        id: "css-flexbox/flex-item-inline-abspos-text-excluded-zw-006",
+        category: ReftestCategory::Layout,
+        // t-p115 返修（r1 DEF-1）：纯行内 abspos（引擎不 blockify）的文本不计入
+        // item 主轴 max-content（CSS2 §9.3.1）——li 只保留流内 "hi"=80px。
+        test_html: "<html><body style=\"margin:0\"><ul style=\"display:flex;list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"height:260px;background:red\">hi<span><b style=\"position:absolute\">xyz</b></span></li></ul></body></html>",
+        ref_html: "<html><body style=\"margin:0\"><ul style=\"list-style:none;margin:0;padding:0;width:500px;height:260px;font:40px/40px Ahem\"><li style=\"width:80px;height:260px;background:red\">hi<span><b style=\"position:absolute\">xyz</b></span></li></ul></body></html>",
+        is_match: true,
+    },
 ];
 
 pub fn reftests() -> &'static [InlineReftestDef] {

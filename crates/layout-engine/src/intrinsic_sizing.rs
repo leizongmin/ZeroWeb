@@ -2139,6 +2139,13 @@ fn dom_inline_text_walk(
                 if matches!(cs.display, DV::None) {
                     continue;
                 }
+                // 脱流定位（CSS2 §9.3.1）：abspos/fixed 子树整体不属于本 inline 流，
+                // 文本与原子都不计入 max-content；对空白折叠透明（同 display:none）。
+                // 引擎对 inline 显示的 abspos 不做 blockify（tree.rs:4043 已知簇），
+                // 必须在递归前显式跳过，否则 span/b 等纯行内 abspos 的文本被误计。
+                if matches!(cs.position, PositionValue::Absolute | PositionValue::Fixed) {
+                    continue;
+                }
                 // 块级后代：停止（不属本 inline 流）；其后空白为下一行行首（丢弃）。
                 if matches!(
                     cs.display,
@@ -3760,8 +3767,8 @@ AAAA</div></body></html>"#,
         </body></html>"#;
         let (li, _atomic) = compute_li_and_atomic(html);
         assert!(
-            (li.0 - 40.0).abs() < 1.0 && li.1 <= li.0 + 1.0,
-            "li must keep its in-flow text width (hi = 40px) single-line, got {:?}",
+            (li.0 - 40.0).abs() < 1.0 && (li.1 - 20.0).abs() < 1.0,
+            "li must keep its in-flow text width (hi = 40px) at single-line height 20px, got {:?}",
             li
         );
     }
@@ -3798,8 +3805,8 @@ AAAA</div></body></html>"#,
             "li",
         );
         assert!(
-            (w.0 - 60.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
-            "li must include hi(40) + wrapped text x(20) single-line, got {:?}",
+            (w.0 - 60.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "li must include hi(40) + wrapped text x(20) at single-line height 20px, got {:?}",
             w
         );
     }
@@ -3815,8 +3822,8 @@ AAAA</div></body></html>"#,
             "li",
         );
         assert!(
-            (w.0 - 100.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
-            "li must include hi(40) + xy(40) + z(20) single-line, got {:?}",
+            (w.0 - 100.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "li must include hi(40) + xy(40) + z(20) at single-line height 20px, got {:?}",
             w
         );
     }
@@ -3832,8 +3839,8 @@ AAAA</div></body></html>"#,
             "li",
         );
         assert!(
-            (w.0 - 140.0).abs() < 1.5 && w.1 <= w.0 + 1.0,
-            "li must include hi(40) + inline-block(100) single-line, got {:?}",
+            (w.0 - 140.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "li must include hi(40) + inline-block(100) at single-line height 20px, got {:?}",
             w
         );
     }
@@ -3849,8 +3856,8 @@ AAAA</div></body></html>"#,
             "li",
         );
         assert!(
-            (w.0 - 80.0).abs() < 1.0 && w.1 <= w.0 + 1.0,
-            "childless-span leaf li must stay 80px single-line, got {:?}",
+            (w.0 - 80.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "childless-span leaf li must stay 80px at single-line height 20px, got {:?}",
             w
         );
     }
@@ -3868,6 +3875,40 @@ AAAA</div></body></html>"#,
         assert!(
             w.0 <= 1.0,
             "ooflow-only li has no in-flow content and must stay 0, got {:?}",
+            w
+        );
+    }
+
+    /// DEF-1 形态负向钉（r1 defects 首轮）：纯行内 abspos（引擎不 blockify，
+    /// tree.rs:4043 已知簇）的文本不得计入 item 主轴 max-content——walker 脱流
+    /// 跳过前 ON 误计 200（hi40+xyz120+…），修复后 li 只保留流内 "hi"=40。
+    #[test]
+    fn p115_flex_item_inline_abspos_text_excluded() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li">hi<span><b id="abs" style="position:absolute">xyz</b></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 40.0).abs() < 1.0 && (w.1 - 20.0).abs() < 1.0,
+            "abspos-wrapped text must not join max-content; li stays hi(40) single-line, got {:?}",
+            w
+        );
+    }
+
+    /// 新触发臂门守卫（r1 TV-2）：声明宽不受 max-content 覆写（width:auto 门）。
+    #[test]
+    fn p115_flex_item_declared_width_not_overwritten() {
+        let w = compute_box(
+            r#"<html><body style="margin:0">
+              <ul id="ul" style="display:flex;list-style:none;margin:0;padding:0;font:20px/1 Ahem"><li id="li" style="width:120px">hi<span><b>x</b></span></li></ul>
+            </body></html>"#,
+            "li",
+        );
+        assert!(
+            (w.0 - 120.0).abs() < 1.0,
+            "declared width must survive the pass untouched, got {:?}",
             w
         );
     }
