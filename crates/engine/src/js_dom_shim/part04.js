@@ -5542,8 +5542,8 @@
                     _r106ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
                   } catch (_e106s1) { _r106ty = ''; }
                   _r106ty = String(_r106ty || '').toLowerCase();
-                  var _r106is = (_r106st === 'BUTTON' && (_r106ty === 'submit' || _r106ty === ''))
-                    || (_r106st === 'INPUT' && (_r106ty === 'submit' || _r106ty === 'image'));
+                  var _r106is = (_r106st === 'BUTTON' && (_r106ty === 'submit' || _r106ty === 'reset' || _r106ty === ''))
+                    || (_r106st === 'INPUT' && (_r106ty === 'submit' || _r106ty === 'image' || _r106ty === 'reset'));
                   if (_r106is) {
                     var _r106dis = '0';
                     try {
@@ -5555,7 +5555,7 @@
                     if (_r106st === 'INPUT' && _r106ty === 'image') {
                       _zwImgRecordClickCoords(sel, handle, event);
                     }
-                    _zwSubmitBtnDefaultAction(sel, handle);
+                    _zwSubmitBtnDefaultAction(sel, handle, _r106ty === 'reset');
                   }
                 }
               } catch (_e106ds) {}
@@ -5654,11 +5654,15 @@
                 _subTy = String(_subTy || '').toLowerCase();
                 var _subIsBtn = (_subTag === 'BUTTON' && (_subTy === 'submit' || _subTy === ''))
                   || (_subTag === 'INPUT' && (_subTy === 'submit' || _subTy === 'image'));
-                if (_subIsBtn) {
+                // s134：reset 按钮（INPUT/BUTTON type=reset）激活行为同门——
+                // spec 激活 = form.reset()（R3048 trusted reset 事件 + s133 控件
+                // 复位/清脏）；disabled 门与 submit 同守卫。
+                var _subIsReset = (_subTag === 'BUTTON' || _subTag === 'INPUT') && _subTy === 'reset';
+                if (_subIsBtn || _subIsReset) {
                   // disabled 表单控件无激活行为（spec：click() 对 disabled form control 直接 return）。
                   try {
                     var _subDis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled');
-                    if (_subDis === '1') _subIsBtn = false;
+                    if (_subDis === '1') { _subIsBtn = false; _subIsReset = false; }
                   } catch (_e7) {}
                 }
                 if (_subIsBtn) {
@@ -5670,6 +5674,8 @@
                     _zwImgRecordClickCoords(sel, handle, ev);
                   }
                   _zwSubmitBtnDefaultAction(sel, handle);
+                } else if (_subIsReset) {
+                  _zwSubmitBtnDefaultAction(sel, handle, true);
                 }
               }
               // R3072：popovertarget 声明式触发——click default action（未 preventDefault 时）。找最近含 popovertarget
@@ -10832,8 +10838,10 @@
         // net-api M5-S8：submit 按钮（INPUT submit/image + BUTTON submit）click 默认
         // 动作共享入口——.click() API 门（R57）与 dispatchEvent 派发 click 默认动作
         //（R106 扩面）共用：最近 form 祖先反链 + _zwRunFormSubmit（submitter = 本元素
-        // proxy，form owner null → no-op）。
-        function _zwSubmitBtnDefaultAction(sel, handle) {
+        // proxy，form owner null → no-op）。s134：asReset 时走 reset 按钮激活行为
+        //（spec §4.10.5.4 reset button 的 form.reset()——R3048 trusted reset 事件 +
+        // s133 控件复位/清脏），form 反链同路。
+        function _zwSubmitBtnDefaultAction(sel, handle, asReset) {
           var frm = null;
           try { frm = _makeProxy(sel, handle).form; } catch (_eSf0) { frm = null; }
           var frmSel = sel, frmHandle = handle, hops = 0;
@@ -10859,7 +10867,14 @@
           }
           if (frm) {
             var fs = frm.__zwSelector || null, fh = frm.__zwHandle || null;
-            _zwRunFormSubmit(_elKey(fs, fh), fs, fh, _makeProxy(sel, handle));
+            if (asReset) {
+              // s134：reset 按钮激活行为 = form.reset()（spec §4.10.5.4）——
+              // 经 R3048 reset 闭包（trusted reset 事件，preventDefault 可取消 +
+              // s133 控件复位/清脏），不经 _zwRunFormSubmit 提交链。
+              try { frm.reset(); } catch (_eRst0) {}
+            } else {
+              _zwRunFormSubmit(_elKey(fs, fh), fs, fh, _makeProxy(sel, handle));
+            }
           }
         }
         // R57（FV M3）：form 提交共享路径（requestSubmit + submit 按钮 click 默认动作共用）——
