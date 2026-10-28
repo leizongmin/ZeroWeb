@@ -618,15 +618,39 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
 /// 为节点生成在文档中**唯一**的选择器（P1a gBCR path A handle-identity 用）。
 ///
 /// 优先用 [`stable_selector_for_node`]（`#id` / `tag.class` / `tag`）——在文档中**唯一匹配**
-/// 时返回（最短、最稳）。歧义时（多同 tag 无 id/class）回落到 **nth-child 结构路径**
+/// 时返回（最短、最稳）。歧义时（多同 tag 无 id/class）先试 **name/target 唯一属性锚**
+/// （`tag[name="v"]` / `tag[target="v"]`——见下），仍歧义再回落到 **nth-child 结构路径**
 /// （`html > body > div:nth-child(2) > …`，按 sibling 位置唯一定位，`:nth-child` 经
-/// dom 选择器引擎解析+匹配）。两种形态都保证 `find_by_selector` 返回该节点本身——宁可结构路径
+/// dom 选择器引擎解析+匹配）。各形态都保证 `find_by_selector` 返回该节点本身——宁可路径
 /// 冗长不错值。文本节点无 tag → `None`。
+///
+/// 属性锚（M2 s142）：结构路径钉 `:nth-child` **绝对位置**，后续 afterbegin/prepend
+/// 插入使全部后继兄弟整体位移——旧 sel 静默别名到同位新节点（WPT targetted-form 族
+/// populateForm 连环插入实证：上一代 iframe/form proxy 的结构路径 sel 在下一代查询时
+/// 命中新一代同位节点，previousSibling/事件路由全链错位）。name/target 随节点移动、
+/// 唯一性由本处 `matches == 1` 门保证（同名多命中仍落结构路径）；值域限
+/// `[A-Za-z0-9_-]`（CSS 属性选择器引号串内无转义面，值域外回落结构路径）。仅在
+/// id/class/裸 tag 候选不唯一后启用——既有 id/class/唯一裸 tag 选择器形态零变化；
+/// 无 name/target 的歧义节点零额外宿主查询（属性读 miss 即走结构路径）。
 pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
     if let Some(sel) = stable_selector_for_node(doc, node) {
         let matches = doc.query_selector_all(doc.root(), sel.trim());
         if matches.len() == 1 {
             return Some(sel);
+        }
+    }
+    if let NodeKind::Element(e) = &doc.get(node)?.kind {
+        let tag = e.local_name();
+        for attr in ["name", "target"] {
+            if let Some(v) = doc.get_attribute(node, attr)
+                && !v.is_empty()
+                && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+            {
+                let sel = format!("{tag}[{attr}=\"{v}\"]");
+                if doc.query_selector_all(doc.root(), &sel).len() == 1 {
+                    return Some(sel);
+                }
+            }
         }
     }
     structural_path_selector(doc, node)
@@ -4273,10 +4297,7 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
             true
         }
         "hostname" | "host" => {
-            return match set_url_host_component(&mut url, value, part == "host") {
-                Some(json) => json,
-                None => String::new(),
-            };
+            return set_url_host_component(&mut url, value, part == "host").unwrap_or_default();
         }
         "port" => {
             // URL spec「cannot have a username/password/port」：host null/空串或
@@ -4403,10 +4424,8 @@ fn set_url_host_override(url: &mut url::Url, value: &str, port_allowed: bool) ->
     // override 空 buffer 且已带凭据或端口非空失败；host parse 失败失败；成功即
     // 设 host 并返回（override 不进 path start）。
     let commit = |url: &mut url::Url, buffer: &str| -> bool {
-        if buffer.is_empty() {
-            if special || url_has_credentials_or_port(url) {
-                return false;
-            }
+        if buffer.is_empty() && (special || url_has_credentials_or_port(url)) {
+            return false;
         }
         url.set_host(if buffer.is_empty() { Some("") } else { Some(buffer) })
             .is_ok()
@@ -4500,15 +4519,14 @@ fn zw_percent_decode_utf8_lossy(input: &str) -> String {
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
     let mut i = 0;
     while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let (Some(h), Some(l)) = (
-                (bytes[i + 1] as char).to_digit(16),
-                (bytes[i + 2] as char).to_digit(16),
-            ) {
-                out.push((h * 16 + l) as u8);
-                i += 3;
-                continue;
-            }
+        if bytes[i] == b'%'
+            && i + 2 < bytes.len()
+            && let (Some(h), Some(l)) =
+                ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16))
+        {
+            out.push((h * 16 + l) as u8);
+            i += 3;
+            continue;
         }
         out.push(bytes[i]);
         i += 1;
@@ -4524,7 +4542,7 @@ fn url_has_credentials_or_port(url: &url::Url) -> bool {
     url.port().is_some()
         || !url.username().is_empty()
         || std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            url.password().map_or(false, |p| !p.is_empty())
+            url.password().is_some_and(|p| !p.is_empty())
         }))
         .unwrap_or(false)
 }
