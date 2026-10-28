@@ -2,9 +2,216 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 124 施工收口（module 网络面收口轮：link rel=modulepreload 取回面——**modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass，真翻红 0**；勘根四项定谳：modulepreload 族三面缺口（端点仿真 echo-referrer.py 缺 / shim 取回面缺 / 元素级 referrerpolicy 无通道）+ cross-origin 页实缺 script.py 端点（非 https 传输）；module-import-referrer TLA 根因精确化（入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面）；dynamic import() with 透传 = css-module 复合保留；classic 外链 SRI 无语料需求；施工五件：shim `_zwModulePreloadMaybeStart`（**同步内联取回**——mp5 探针实证 setTimeout 延后臂不轮转、import() 先行覆写 referrers）+ `_mo_notify` LINK 触发臂（顶层 + 下降）+ classic 动态 import() **module map 记忆化**（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；A/B +15P/−4F/−2T 全落家族、总量口径 +9 已记账；engine lib 3570/0 + sandbox lib 377/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s125 候选：承袭挂账序复核 / meta color-scheme 跨流面评估）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
+**状态**: Active——M2 切片 127 施工收口（TEXTAREA value/defaultValue getter 面轮：value-defaultValue-textContent **10F→0F** + wrapping 换行归一搭车 1F→0F，全量 join 恰 11 Fail→Pass 真翻红 0；勘根定谳：value getter 非脏路径 handle 形落 stable-key 惰性初始化读 value 属性缓存 '' 钉死 + API 值缺 \r\n|\r→\n 归一 + child text content 误用 textContent 融合视图 + value setter 缺 [LegacyNullToEmptyString] null 折叠 + defaultValue getter R3049 冻结捕获 stale；施工：part03 live 读双形态 + 读侧统一归一 + part04 setter null 折叠缓存写保留 + `_textareaDefault` 全链删（part01/03/04/05）+ Rust 测试断言不变仅注释更新；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check；下一步 s128 候选：挂账序复核 / 全量基线翻拣下一单根面 / textarea 域残余 8F 同域收割）；承前：M2 切片 126（img relevant mutations 三根因轮：relevant-mutations 家族 **114P/7F → 121/121 全 Pass，真翻红 0**（全量 6690P/1118F/103T → 6737P/1071F/103T 配平，47 翻绿 = 40 语料资源 green-2x2.png 补齐 + 7 本修复）；勘根定谳：`__zwAttrState5277` 把 referrerpolicy missing/invalid/empty 归并 `'no-referrer-when-downgrade'`（现行 spec 缺省态是空串，n-r-w-d 独立）×5 + removeChild 后调致 SOURCE 移除臂 `after` 旗标死码 ×1 + lazy img width/height 属性臂缺失（whatwg/html#8492）×1；施工：part03 状态表空串态 + 树触发 helper 增 former-next-sibling 位置锚（part04 R188 `_r188Next` 同源传递）+ IMG 属性分支 lazy width/height 臂；engine lib 3570/0 + runner 256/0 + clippy 零告警 + fmt + shim 拼接 node --check）；承前：M2 切片 125（input 克隆状态传播轮：clone.html 19F→19/19 + radio.html 4F→0，全量真翻红 0；part04 deep clone HTML-ns 物化 + form 状态 walk + part05 checked setter radio 组排他）；承前：M2 切片 124（module 网络面收口轮：modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass 真翻红 0；shim `_zwModulePreloadMaybeStart` 同步内联取回 + `_mo_notify` LINK 触发臂 + classic 动态 import() module map 记忆化（恰好一次求值 + 失败不入缓存）+ runner 端点仿真 ×2 + pin ×2；module-import-referrer TLA 根因精确化：入口 TLA 可用、依赖模块 TLA 不可用——build_dep_iife 同步 IIFE，深转换架构面；dynamic import() with 透传 = css-module 复合保留）；承前：M2 切片 123（FormData 条目构造收口轮：newline-normalization **12F→0F**，全量 A/B 恰 14 Fail→Pass 真翻红 0；勘根证伪换行归一假设——真根因 document 级逗号列表 live 树查询恒空 + file 状态无枚举臂；双刀：枚举双源并集 + file 臂；新挂账 ×2：FileList 缺索引访问 + live 树 document 级逗号列表 qSA 根缺口）；承前：M2 切片 122（classic script 编码链三面 4F→0F）；**用户决策 2026-10-23**：parser form element pointer 4F **缓行**——与 declarative shadow DOM 打捆 parser 批次、M2 收口后尾段单独立项（[决策记录](html-semantics-compat/evidence/2026-10-23-user-decision-parser-form-pointer-defer.md)），流按其余挂账序推进
 
-> **▶ 当前状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮）**：
+> **▶ 当前状态（2026-10-28 M2 切片 127 施工收口，TEXTAREA value/defaultValue getter 面轮）**：
+> **入场定刀位**：全量基线翻拣 forms/the-textarea-element 域
+> value-defaultValue-textContent.html 整页 12 子测试 10F，语料全为
+> detached createElement textarea（handle 形）——value/defaultValue
+> 读面单根，入场。
+> **勘根定谳**：①value getter 非脏路径 handle 形落 stable-key 惰性
+> 初始化读 value **属性**——textarea 无该属性 → 缓存 `''` 钉死，
+> live 树 textContent/nodeValue/data/子节点增删全部不可见（6+3 断言
+> 主根因）。②API 值缺 `\r\n|\r → \n` 归一（CRLF 2 断言 + 搭车
+> wrapping 换行归一 1F）。③child text content 误并入元素
+> textContent（"reflect child text content, not textContent"——仅
+> 直接 Text 子数据拼接，R81 融合视图语义不受影响）。④value setter
+> 缺 [LegacyNullToEmptyString] null→'' 折叠。⑤defaultValue getter
+> R3049 冻结捕获 stale，应 live child text content。
+> **施工**（part01/03/04/05.js + part01.rs 注释，无 Rust 行为变更）：
+> ①`_zwTaLiveText` 删元素文本并入臂；②value getter 补 TEXTAREA 臂：
+> 脏读 dirty 缓存、非脏 sel 形 `__zw_get_text` / handle 形
+> `_zwTaLiveText`，读侧统一归一；③defaultValue getter 改 live 双
+> 形态；④setter `_s127TaSet` null 折叠（`_inputValues`/
+> `_inputValuesSet` 缓存写保留——2026-10-15 learning 写入点契约）；
+> ⑤`_textareaDefault` 全链删除（声明/reset 链/三处捕获写点）；
+> ⑥Rust 测试断言不变仅注释更新（①defaultValue=初值 ②value= 不改
+> defaultValue ③顺序无关 ④reset 还原 全兼容）。
+> **验证**：定向 `FILTER=forms/the-textarea-element` **33P/8F**
+> （value-defaultValue-textContent 10F→0F，12/12 Pass）；全量 A/B ×
+> /tmp/s126-full.log 原始行口径 **6738P/1073F/103T →
+> 6749P/1060F/103T**，键级 join 翻动 = 11 Fail→Pass（恰 10 本修复 +
+> 1 wrapping 搭车）+ 2 GONE（zw-probe-s126.html s126 探针已删 corpus
+> 态差），**真翻红 0、漂移 0、新增 0**（既有 ×2 重跑键两轮一致；
+> s126 账本 6737P/1071F/103T = 同文件原始行扣探针 2F − ×2P 记 1 行
+> 口径，本轮起记原始行口径以 join 为门禁）。首跑 guard 内存超限杀
+> 一次（4.31GB，ZeroWeb-3 并行测试流在场）复跑过——并行摆动（s126
+> 同款注记）。engine lib **3570/0**；runner **256/0**；clippy 零
+> 告警；fmt 净；shim 拼接 node --check 过。语料零改动、无探针页。
+> 渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s127-textarea-value-defaultValue.md](html-semantics-compat/evidence/2026-10-28-m2s127-textarea-value-defaultValue.md)。
+> **范围**：engine shim part01/03/04/05.js + part01.rs 测试注释。
+> **挂账更新**：textarea value/defaultValue 面**收口移出候选**；
+> the-textarea-element 域残余 8F 各单点（change-to-empty-value /
+> maxlength / minlength / placeholder-lineheight / textLength / type
+> / wrapping LF+col-count ×2）未勘根，入同域收割候选。承袭其余不变
+> （form-submission-0 186F、写流盖章断链、part02 setAttribute 绕
+> notify、execution-timing 构成面、041 nested write、radio 组排他
+> 其余置真、deep clone 非 HTML ns、lazy-loading 26F、meta
+> color-scheme 21F、naturalWidth SVG viewBox 22F、current-pixel-
+> density 11F、css-module corpus 门（待决）、www2 可达性、module-
+> import-referrer TLA、dynamic import() with 透传、classic 外链
+> SRI、143 write、defer 多写完成序、接口对象基建面、FIXME 组、
+> /tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号列表 qSA 根缺
+> 口）；**待决（须用户拍板）**：css/text 数据模块语料资源缺失、
+> green-2x2.png 语料资源分发、parser form element pointer 4F 缓行
+> （2026-10-23）。
+> **下一步**：s128 入场定刀位（候选：挂账序复核——form-submission-0
+> 186F POST 传输契约勘根 / execution-timing 构成面单根；或全量基线
+> 翻拣下一单根面；或 textarea 域残余 8F 同域收割逐点勘根）。
+
+> **▶ 上轮状态（2026-10-28 M2 切片 126 施工收口，img relevant mutations 三根因轮：relevant-mutations 家族 114P/7F→121/121 全 Pass，全量 47 翻绿配平真翻红 0——其下一步 s127 已由 s127 收口，见上）**：
+> **入场定刀位**：全量基线翻拣 the-img-element 域 relevant-mutations.html
+> 整页 46F。前置动作（非代码）：corpus 依赖 `wpt-data/images/
+> green-2x2.png` 为 gitignore 本地语料缺失——生成本地 2×2 绿 PNG 后
+> 46F→6F（+40 资源假红翻绿，真翻红 0；资源分发策略挂账待决）。余 7F
+> 三根因代码修复收口。
+> **勘根定谳**：①referrerpolicy ×5——`__zwAttrState5277` 把
+> missing/invalid/empty 归并 `'no-referrer-when-downgrade'`（旧 spec
+> invalid default），现行 spec 缺省态为空串、n-r-w-d 独立——状态比对
+> 判「未变」不触发；Pass/Fail 分界线 100% 吻合（凡 `'no-referrer'` 新旧
+> 态 7 行真变迁经 avail 重派本就 Pass）。②"parent is picture, previous
+> source removed"——removeChild trap 在节点摘除**后**调 helper，`after`
+> 旗标依赖 `kids[i] === node` 永不置位，SOURCE 移除臂死码。③lazy
+> "width attribute changes"（whatwg/html#8492）——part05 维度 setter 经
+> moAttr 汇流，IMG 分支无 width/height 臂。
+> **施工**（part03.js + part04.js，无 Rust 变更）：①状态表 referrerpolicy
+> 缺省 `'no-referrer-when-downgrade'` → `''`（crossorigin 分支不动）；
+> ②`__zwImgTreeMutated5277` 增第 5 参 `afterAnchor`（former next
+> sibling 位置锚：从锚含向后重验、null=原为末子不重验、缺省保守全量；
+> part04 sel 路径尾调传 R188 `_r188Next`，plain 子路径不变）；③IMG 属性
+> 分支补 width/height lazy 臂（loading 归一 `'lazy'` 才重验）。
+> **验证**：定向 relevant-mutations **121/121**（113+8；修复前 114P/7F；
+> src-absent referrerpolicy 族保持 timeout-Pass（null selection 静默）、
+> state-not-changed 族保持 Pass）；the-img-element 全域 A/B 资源同态
+> **827P/110F/17T → 834P/103F/17T** 翻动恰 7 行、零漂移；全量 A/B
+> **6690P/1118F/103T → 6737P/1071F/103T**（47 翻绿配平 = 40 资源 +
+> 7 修复，真翻红 0、漂移 0、gone/new 0；首跑 test-guard 单进程内存
+> 超限杀一次复跑过——并行摆动）。engine lib **3570/0**；runner
+> **256/0**；clippy 零告警；fmt 净；shim 拼接 node --check 过。语料零
+> 改动（探针 ×1 验后删；green-2x2.png 不入提交）。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s126-img-relevant-mutations.md](html-semantics-compat/evidence/2026-10-28-m2s126-img-relevant-mutations.md)。
+> **范围**：engine shim part03.js + part04.js。
+> **挂账更新**：img relevant mutations **收口移出候选**；新增
+> green-2x2.png 语料资源分发策略待决（gitignore 本地数据他机假红面，
+> 须用户拍板）；naturalWidth SVG viewBox 22F / current-pixel-density
+> 11F = 渲染流面让位不施工。承袭其余不变（form-submission-0 186F、
+> 写流盖章断链、part02 setAttribute 绕 notify、execution-timing 构成
+> 面、041 nested write、radio 组排他其余置真、deep clone 非 HTML ns、
+> lazy-loading 26F、meta color-scheme 21F、css-module corpus 门（待
+> 决）、www2 可达性、module-import-referrer TLA、dynamic import()
+> with 透传、classic 外链 SRI、143 write、defer 多写完成序、接口对象
+> 基建面、FIXME 组、/tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号
+> 列表 qSA 根缺口）；**待决（须用户拍板）**：css/text 数据模块语料资
+> 源缺失、parser form element pointer 4F 缓行（2026-10-23）。
+> **下一步**：s127 入场定刀位（候选：挂账序复核——form-submission-0
+> 186F POST 传输契约勘根 / execution-timing 构成面单根；或全量基线
+> 翻拣下一单根面——本轮域翻拣刀法同款，整页整簇 Fail 勘根优先）。
+> （已由 s127 择「全量基线翻拣下一单根面」收口，见上）
+
+> **▶ 上轮状态（2026-10-28 M2 切片 125 施工收口，input 克隆状态传播轮：deep clone form 状态传播——clone.html 19F→19/19 全 Pass，radio.html 搭车 4F→0，真翻红 0——其下一步 s126 已由 s126 收口，见上）**：
+> **入场定刀位**：s124 候选均为大基建/跨流面，全量基线翻拣 forms 域
+> 单根面：`forms/the-input-element/clone.html` 整页 19F（4 checked +
+> 15 value）——克隆状态传播单根，入场。
+> **勘根定谳（探针页 gitignored corpus 验后删）**：①deep clone 子树
+> innerHTML 序列化重解析产物是 **`_zwMEl` plain 视图**（无 handle、无
+> IDL 面）——克隆 input 的 value/checked IDL get 无脏缓存无键，form
+> 状态传播断链（浅克隆臂 R3901/R3902b 正常，隔离探针对照）；②修复
+> 18/19 后余 1 定谳——corpus setup 跳过 `inputs[3].checked = false`，
+> 依赖 spec §4.10.5.1.16 radio 组排他（checkedness 置 true 时同组其余
+> 置 false），引擎 checked setter 无此逻辑；③序列化面只含已 apply 面
+> ——pending RemoveAttr/SetAttr 不入克隆属性复制，克隆侧需显式对齐。
+> **本轮施工**（净变更 part04.js + part05.js，无 Rust）：①deep clone
+> HTML-ns 物化（`_wcRebuildAsHandle` t8r 同款，`_zwNodeParent` 反链；
+> **含 TEMPLATE 后代的顶层子豁免**——WC-M1 85d3987cc content 惰性视图
+> 契约 + 模板 content 子 inert 无传播需求，首版全量物化翻红
+> wc_m1 inShadow 形态哨兵已修）；②form 状态配对 walk
+> （`_inputValues`/`_inputValuesSet` 复制 + `_zwInputValueMode` 分派
+> default 族补写 value 属性、value 族只写脏缓存 + `_checkedDirtyState`/
+> `_indeterminate` 复制 + checked 属性 latest-wins 对齐含
+> `_zwAttrInstanceRemoveKey`）；③part05 checked setter radio 组排他
+> （qSA 同名 + form owner 键比对；脏件写 `_checkedDirtyState=false` 保
+> dirty 旗标、净件移属性 + `_mo_notify`；FIXME 仅 IDL setter 面）。
+> **验证**：定向 clone **19/19**；**全量 A/B ×2（修正前后各一轮）真翻
+> 红 0、Fail→Timeout 漂移 0**，翻绿 23 = clone 19 + radio 4（组排他
+> 搭车：only one control/non-ASCII name/changing the name/moving
+> into a form）；6668P/1141F/103T → 6691P/1118F/103T 干净配平。
+> engine lib **3570/0**（连续两轮）；runner 全量 **256/0**；guard 内
+> clippy 零告警；fmt 净；shim 拼接 node --check 过。语料零改动（探针
+> ×1 验后删）。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s125-input-clone-state.md](html-semantics-compat/evidence/2026-10-28-m2s125-input-clone-state.md)。
+> **范围**：engine shim part04.js + part05.js。
+> **挂账更新**：input 克隆状态传播**收口移出候选**；radio 组排他其余
+> 置真现象（属性增设/defaultChecked/激活）FIXME 保留（无语料需求）；
+> deep clone 非 HTML ns 保持 plain 视图路径（R190 面向）。承袭其余
+> 不变（form-submission-0 219F、写流盖章断链、part02 setAttribute 绕
+> notify、execution-timing 构成面、041 nested write、lazy-loading 26F、
+> meta color-scheme 21F、css-module corpus 门（待决）、www2 可达性、
+> module-import-referrer TLA、dynamic import() with 透传、classic 外
+> 链 SRI、script-crossorigin-network cookies、redirect-relative-urls、
+> export-from with FIXME、143 write、defer 多写完成序、接口对象基建面、
+> FIXME 组、/tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号列表 qSA
+> 根缺口）；**待决（须用户拍板）**：css/text 数据模块语料资源缺失、
+> parser form element pointer 4F 缓行（2026-10-23）。
+> **下一步**：s126 入场定刀位（候选：挂账序复核——form-submission-0
+> 186F POST 传输契约勘根 / execution-timing 构成面单根；或全量基线
+> 翻拣下一 forms 域单根面——本轮 clone.html 同款刀法，域挂账外单页
+> 整簇 Fail 勘根优先）。
+
+> **▶ 上轮状态（2026-10-28 M2 切片 124 施工收口，module 网络面收口轮：link rel=modulepreload 取回面——modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass，真翻红 0——其下一步 s125 已由 s125 收口，见上）**：
+> **入场定刀位**：s123 下一步首选 module 网络面挂账项勘根（四项逐一辨
+> shim/runner/host 契约面）。**勘根定谳**：①modulepreload referrerpolicy
+> 族三面缺口（echo-referrer.py 端点仿真缺 / shim 无 link modulepreload
+> 取回面 / 元素级 referrerpolicy 无通道）+ cross-origin 页堵点**非
+> https 传输**（www1:8444 别名已剥）实缺 script.py 端点；②
+> module-import-referrer TLA 根因精确化——入口 TLA 可用、**依赖模块
+> TLA 不可用**（build_dep_iife 同步 IIFE SyntaxError，深转换架构面）；
+> ③dynamic import() with 透传——语料页全为 css-module 复合面，保留；
+> ④classic 外链 SRI——无语料需求，保留 FIXME。
+> **本轮施工**（shim part01/part03 + script-sandbox v8_runtime.rs +
+> runner testharness.rs）：①shim `_zwModulePreloadMaybeStart` 取回面
+> （script prepare 同连接门 + rel 白名单 + `__zw_lp` 内部查询参数携
+> 元素级 referrerpolicy + `__zw_fetch_script` 取回 + 绝对 URL 键播种
+> `__moduleCache` + 异步 load/error）；②**同步内联取回**（时序勘根：
+> setTimeout 延后臂在断言前从未轮转——ZW 文档脚本与 testharness 起跑
+> 间不泵 timer 队列，body 的 import()×4 先行重取回覆写 referrers——
+> mp5 忠实复刻探针实证）；③`_mo_notify` childList 汇流点 LINK 触发臂
+> （顶层 + _walk111 下降，SCRIPT 臂同型；innerHTML 重建产物 body-context
+> 平铺解析代理，连接门父链爬升复核）；④classic 动态 import() **module
+> map 记忆化**（原生回调此前每调用重取回重求值——成功条目读
+> `__moduleCache[resolved]` 命中即 resolve 恰好一次求值 + 成功写表 +
+> 失败三态不入缓存 s87 口径保持，best-effort 双向）；⑤runner 端点仿真
+> ×2（echo-referrer.py 策略链 `__zw_lp`→pipe→文档→默认逐臂过滤 +
+> script.py 非空 JS 回体）；⑥pin ×2（runner 端点四面 +
+> sandbox 记忆化四臂——persistent context 必要性首版钉假阳性已修正）。
+> **验证**：定向 `FILTER=modulepreload` **15/15**；**全量 A/B 逐行
+> status join：+15P/−4F/−2T 全落 modulepreload 家族，真翻红 = 0**
+> （6653P/1145F/105T → 6668P/1141F/103T，行数 +9 = 基线挂起页未完成
+> 注册的 9 子测试现完成打印，总量口径变化已记账）。script-sandbox lib
+> **377/0**；engine lib **3570/0**；wpt-runner 全量 **256/0**；guard 内
+> clippy（sandbox+runner+engine -D warnings）零告警；fmt 净；shim 拼接
+> node --check 过。语料零改动（探针页 ×7 + dep ×2 验后删，调试追踪桩
+> 全移除）。渲染面零依赖。账本见
+> [evidence/2026-10-28-m2s124-modulepreload-face.md](html-semantics-compat/evidence/2026-10-28-m2s124-modulepreload-face.md)。
+> **范围**：engine shim part01/part03 + script-sandbox v8_runtime.rs +
+> runner testharness.rs。
+> **挂账更新**：modulepreload referrerpolicy 族 + inline 重建路径**收口
+> 移出候选**；module-import-referrer TLA 根因精确化保留（依赖图 async
+> 语义 = module transform 管线重构级）；dynamic import() with 透传保留
+> （css-module 复合）；classic 外链 SRI 保留 FIXME。承袭其余不变
+> （form-submission-0 219F、写流盖章断链、part02 setAttribute 绕 notify、
+> execution-timing 构成面、041 nested write、lazy-loading 26F、meta
+> color-scheme 21F、css-module corpus 门（待决）、www2 可达性、
+> script-crossorigin-network cookies、redirect-relative-urls、
+> export-from with FIXME、143 write、defer 多写完成序、接口对象基建面、
+> FIXME 组、/tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号列表 qSA
+> 根缺口）；**待决（须用户拍板）**：css/text 数据模块语料资源缺失、
+> parser form element pointer 4F 缓行（2026-10-23）。
+> **下一步**：s125 入场定刀位（候选：承袭挂账序复核——form-submission-0
+> 186F POST 传输契约勘根 / execution-timing 构成面单根；或 meta
+> color-scheme 21F 跨流面评估（style-system 协同））。
+
+> **▶ 上轮状态（2026-10-28 M2 切片 123 施工收口，FormData 条目构造收口轮：newline-normalization 12F→0F，全量 A/B 恰 14 Fail→Pass 真翻红 0——其下一步 module 网络面已由 s124 收口，见上）**：
 > **入场定刀位**：取 s122 挂账首选 newline-normalization 12F 单根候选
 > （原假设「FormData 构造换行归一过度」）——**勘根证伪原假设**：条目枚举
 > 整体为零，换行归一面反而正确（idlVal 原文保真）。
@@ -61,60 +268,7 @@
 > element pointer 4F 缓行（2026-10-23，并入 declarative shadow DOM
 > parser 批次）。
 > **切片间隙**：本轮 FormData 条目构造 shim 单根面（枚举双源 + file 臂）；
-> 下一候选 module 网络面挂账项勘根轮。
-
-> **▶ 当前状态（2026-10-28 M2 切片 124 施工收口，module 网络面收口轮：link rel=modulepreload 取回面——modulepreload 家族基线 6 行（4F+2T）→ 15/15 全 Pass，真翻红 0）**：
-> **入场定刀位**：s123 下一步首选 module 网络面挂账项勘根（四项逐一辨
-> shim/runner/host 契约面）。**勘根定谳**：①modulepreload referrerpolicy
-> 族三面缺口（echo-referrer.py 端点仿真缺 / shim 无 link modulepreload
-> 取回面 / 元素级 referrerpolicy 无通道）+ cross-origin 页堵点**非
-> https 传输**（www1:8444 别名已剥）实缺 script.py 端点；②
-> module-import-referrer TLA 根因精确化——入口 TLA 可用、**依赖模块
-> TLA 不可用**（build_dep_iife 同步 IIFE SyntaxError，深转换架构面）；
-> ③dynamic import() with 透传——语料页全为 css-module 复合面，保留；
-> ④classic 外链 SRI——无语料需求，保留 FIXME。
-> **本轮施工**（shim part01/part03 + script-sandbox v8_runtime.rs +
-> runner testharness.rs）：①shim `_zwModulePreloadMaybeStart` 取回面
-> （script prepare 同连接门 + rel 白名单 + `__zw_lp` 内部查询参数携
-> 元素级 referrerpolicy + `__zw_fetch_script` 取回 + 绝对 URL 键播种
-> `__moduleCache` + 异步 load/error）；②**同步内联取回**（时序勘根：
-> setTimeout 延后臂在断言前从未轮转——ZW 文档脚本与 testharness 起跑
-> 间不泵 timer 队列，body 的 import()×4 先行重取回覆写 referrers——
-> mp5 忠实复刻探针实证）；③`_mo_notify` childList 汇流点 LINK 触发臂
-> （顶层 + _walk111 下降，SCRIPT 臂同型；innerHTML 重建产物 body-context
-> 平铺解析代理，连接门父链爬升复核）；④classic 动态 import() **module
-> map 记忆化**（原生回调此前每调用重取回重求值——成功条目读
-> `__moduleCache[resolved]` 命中即 resolve 恰好一次求值 + 成功写表 +
-> 失败三态不入缓存 s87 口径保持，best-effort 双向）；⑤runner 端点仿真
-> ×2（echo-referrer.py 策略链 `__zw_lp`→pipe→文档→默认逐臂过滤 +
-> script.py 非空 JS 回体）；⑥pin ×2（runner 端点四面 +
-> sandbox 记忆化四臂——persistent context 必要性首版钉假阳性已修正）。
-> **验证**：定向 `FILTER=modulepreload` **15/15**；**全量 A/B 逐行
-> status join：+15P/−4F/−2T 全落 modulepreload 家族，真翻红 = 0**
-> （6653P/1145F/105T → 6668P/1141F/103T，行数 +9 = 基线挂起页未完成
-> 注册的 9 子测试现完成打印，总量口径变化已记账）。script-sandbox lib
-> **377/0**；engine lib **3570/0**；wpt-runner 全量 **256/0**；guard 内
-> clippy（sandbox+runner+engine -D warnings）零告警；fmt 净；shim 拼接
-> node --check 过。语料零改动（探针页 ×7 + dep ×2 验后删，调试追踪桩
-> 全移除）。渲染面零依赖。账本见
-> [evidence/2026-10-28-m2s124-modulepreload-face.md](html-semantics-compat/evidence/2026-10-28-m2s124-modulepreload-face.md)。
-> **范围**：engine shim part01/part03 + script-sandbox v8_runtime.rs +
-> runner testharness.rs。
-> **挂账更新**：modulepreload referrerpolicy 族 + inline 重建路径**收口
-> 移出候选**；module-import-referrer TLA 根因精确化保留（依赖图 async
-> 语义 = module transform 管线重构级）；dynamic import() with 透传保留
-> （css-module 复合）；classic 外链 SRI 保留 FIXME。承袭其余不变
-> （form-submission-0 219F、写流盖章断链、part02 setAttribute 绕 notify、
-> execution-timing 构成面、041 nested write、lazy-loading 26F、meta
-> color-scheme 21F、css-module corpus 门（待决）、www2 可达性、
-> script-crossorigin-network cookies、redirect-relative-urls、
-> export-from with FIXME、143 write、defer 多写完成序、接口对象基建面、
-> FIXME 组、/tmp/zw-hb*.txt、FileList 缺索引访问、live 树逗号列表 qSA
-> 根缺口）；**待决（须用户拍板）**：css/text 数据模块语料资源缺失、
-> parser form element pointer 4F 缓行（2026-10-23）。
-> **下一步**：s125 入场定刀位（候选：承袭挂账序复核——form-submission-0
-> 186F POST 传输契约勘根 / execution-timing 构成面单根；或 meta
-> color-scheme 21F 跨流面评估（style-system 协同））。
+> 下一候选 module 网络面挂账项勘根轮（已由 s124 收口，见上）。
 
 > **▶ 上轮状态（2026-10-28 M2 切片 120 施工收口，fragment 解析 script 克隆 already-started 继承轮——其下一步 s121 已由 s121 收口，见上）**：
 > **入场定谳**：s118 FIXME(spec-gap)「cloneNode 重解析产物 fragment 章」由语料

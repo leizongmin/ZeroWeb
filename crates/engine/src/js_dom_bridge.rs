@@ -2464,6 +2464,40 @@ pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>
     child_nodes_json_full(html, elem_sel, context_ns, true)
 }
 
+/// 单次解析整子树深 JSON（`__zw_parse_html_subtree` 回调）——shim `_zwMBuildBodyTree`
+/// 深臂的整树数据源。条目形态 = [`deep_entry_json`]（template contents 内联）。
+/// OPTIMIZATION（encoding-legacy-mb DC-2，2026-10-28）：旧浅路径每元素两次回调
+///（`__zw_parse_html_query` + `__zw_parse_html_child_nodes`）各自全文档重解析，
+/// O(元素数 × 文档大小) 二次建树（legacy-mb chars 文档 13k span 单次 iframe 装载
+/// ≥90s 超看门狗，250→4000 span 12.7→85ms/span 陡增实证）；本回调 host 解析一次、
+/// 深 JSON 一次下发，建树 O(n)。
+pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
+    match context_ns {
+        None | Some("http://www.w3.org/1999/xhtml") => {
+            let mut doc = parse_html_with_scripting(html, scripting);
+            // 与 `parse_html_element_json_full` 同款 no-ns 标记还原（查询前）。
+            doc.apply_empty_ns_markers();
+            let Some(node) = find_by_selector(&doc, elem_sel) else {
+                return "[]".to_string();
+            };
+            let entries: Vec<String> = doc
+                .child_nodes(node)
+                .iter()
+                .filter_map(|&k| deep_entry_json(&doc, k))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+        Some(ns) => {
+            let frag = parse_html_fragment_with_scripting(html, ns, "body", scripting);
+            let entries: Vec<String> = fragment_top_level_children(&frag)
+                .into_iter()
+                .filter_map(|c| deep_entry_json(&frag, c))
+                .collect();
+            format!("[{}]", entries.join(","))
+        }
+    }
+}
+
 /// R5001 M3 片 a 收口（html-syntax-compat）：HTML **context tag** 片段解析变体——
 /// `Range.createContextualFragment` 的 context 元素面（spec §8.5.7：startContainer
 /// Element 或 Text/CDATASection 的 parentElement，`<html>` 容器与 null 回落 body）。
@@ -2485,7 +2519,9 @@ pub fn fragment_children_json(html: &str, context_tag: &str, scripting: bool) ->
 
 /// 深形态单节点条目（`{"k":"T","v"}` / `{"k":"C","v"}` / `{"k":"E","tag","attrs","children"}`）
 /// ——children 嵌套，shim 侧本地构建消费（[`template_contents_json_doc`] 同形态；
-/// fragment 顶层子面无 selector 二次定位可达性，直接发全子树）。
+/// fragment 顶层子面无 selector 二次定位可达性，直接发全子树）。template 的
+/// contents 内联为 children（[`parse_template_contents_deep_json`] 内层 deep_entry
+/// 同款——contents 子在 fragment，shim 深臂无 selector 可二次定位）。
 fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
     let node = doc.get(id)?;
     match &node.kind {
@@ -2504,11 +2540,11 @@ fn deep_entry_json(doc: &Document, id: NodeId) -> Option<String> {
                     )
                 })
                 .collect();
-            let kids: Vec<String> = doc
-                .child_nodes(id)
-                .iter()
-                .filter_map(|&k| deep_entry_json(doc, k))
-                .collect();
+            let kids_src = match doc.template_contents_children(id) {
+                tpl_kids if !tpl_kids.is_empty() => tpl_kids,
+                _ => doc.child_nodes(id),
+            };
+            let kids: Vec<String> = kids_src.iter().filter_map(|&k| deep_entry_json(doc, k)).collect();
             Some(format!(
                 "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}",
                 tag,

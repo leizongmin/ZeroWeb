@@ -1,8 +1,8 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
-**版本**: v1.2
-**日期**: 2026-10-28（M0/DC-1 收口，见「M0 结果」节与 evidence/）
-**状态**: Active——M0 完成（读取统一 + 语义钉 + 全通道 A/B 零回归门）；M1 进行中（runner 通道 + 语料补全，语料网络卡点未解）
+**版本**: v1.3
+**日期**: 2026-10-28（M1 runner 通道落地 + 通道性能收口，见「M1 进展」节；M0/DC-1 见「M0 结果」节与 evidence/）
+**状态**: Active——DC-1/DC-2 完成；M1 余语料补全（网络 degraded 卡点维持）；M2 基线分类待语料
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -70,6 +70,42 @@
   FORCE=1 + GITHUB_TOKEN + curl shim 六轮重试）——当前 136 html（七族
   wrapper 已齐，chars 大文件缺），不阻 M1 通道先行。
 
+## M1 进展（2026-10-28，DC-2 收口）
+
+细节与数据见 [evidence/2026-10-28-m1-runner-channel-perf.md](evidence/2026-10-28-m1-runner-channel-perf.md)。要点：
+
+- **DC-2 通道落地**：`zero-wpt-runner testharness-encoding-legacy-mb` 子命令 +
+  per-dir skip 规则（只跑 decode wrapper/decode-errors，chars/encode 面/helper
+  skip）+ Makefile target（test-guard 包裹，5400s envelope + 本通道
+  `ZW_SCRIPT_TIMEOUT_MS=600000`）。
+- **通道首跑暴露三处 O(结果数 × 树) 共享路径成本，全部修复**：①建树浅臂每元素
+  两次全文档重解析 → host 单次解析深 JSON 深臂（`__zw_parse_html_subtree`）；
+  ②`_zwMFindRealNode` 512 上限悬崖（13.5k span 页索引恒空、每次查找全量重建）
+  → 提额 200000；③查询产物 eager `_zwRootHtml` 全树/全文档序列化 ×2 处 → 惰性
+  accessor。qsa 千元命中 12,872ms→74ms（172×）。
+- **dataset 缺失修复**：`_zwMEl` 工厂节点补 dataset Proxy（本地 attrs 版，
+  part05 `_datasetProxy` 同语义），decode-common.js showNodes 整链 TypeError 解锁。
+- **门禁拦截的回归（R4100）**：深臂初版 setAttribute 灌属性触发 details open
+  互斥 others-prong 破坏解析产物 host 裁决态——改工厂 attrs 映射直灌（镜像浅臂），
+  单测复绿；既有 `_zwMBuildDeepEntry`（template contents）同暴露挂账 M3。
+- **端到端**：`eucjp-decode-x-euc-jp` 全 14 variant **13,459P/0F**（修复前
+  ~176s 后 V8 4GB 堆 OOM），插桩清理后最终构建复验一致；rebase（并行流
+  s124–s126 engine 合入）后全族复核 **40,388P/0F**（4 wrapper × 14 variant
+  + errors，exit 0）。
+- **回归对账（新基归因）**：六通道 lane 前两通道（dom/html-semantics）出现
+  失败——**stash A/B 定责为基面属性，非本改动**：dom
+  `window-named-properties` 2F、html-semantics 839F（relevant-mutations 46F/
+  67P 等，语料 mtime 未变）在去掉本改动后的 HEAD 二进制逐字节同现。M0 全绿
+  基线随 s124–s126 合入陈旧；余四通道零回归改由并行 relay 会话六通道
+  `--json` 集合恒等对账承担（before = worktree 冷建 c1482756a base 二进制，
+  精确同基去本改动），legacy-mb 整跑 JSON 兼作 M2 基线数据源。
+- **门禁**：fmt/clippy workspace 零 warning；make test 腿补全全绿（腿 1 跳过
+  R5295/R5300 已记账 image_batch/network 并发窗 flake 两案，隔离复跑 2/2 绿；
+  quickjs renderer lib 腿 `mutation_arm_…_reset_window` 红为 HEAD 复现既有问题
+  （stash A/B 0.63s 同断言），同 R5295「renderer page_scripts」记账不修）。
+  rebase 后定向复验：R4100 单测复绿、fmt/clippy 复跑绿、euc-jp 全族
+  40,388P/0F（上条）。
+
 ## Mission
 
 让 runner 文档加载管道按文档编码声明（`<meta charset>` / HTTP Content-Type
@@ -115,7 +151,8 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
 
 - **M0** ✅（2026-10-28）：通道接入切片（DC-1）——testharness 通道读取统一
   接解码管道 + 最小验证集 + 零回归对账（见「M0 结果」节）。
-- **M1**：语料补全（`FORCE=1` 跑 31 号脚本至全量）+ runner 通道 + Makefile。
+- **M1** 进行中：runner 通道 + Makefile ✅（2026-10-28，DC-2，见「M1 进展」
+  节）；语料补全（`FORCE=1` 跑 31 号脚本至全量）卡网络 degraded 维持挂账。
 - **M2**：基线分类（按编码族/用例形态分簇）+ wpt-suites.csv 回填。
 - **M3**：失败簇收敛或归口（form-encode 面甄别在此）+ coverage 复测收口。
 

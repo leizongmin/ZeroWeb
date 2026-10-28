@@ -6301,7 +6301,127 @@
                   // 与 appendChild 的 text 子同形态）。
                   try {
                     if (typeof _zwFragmentAdded === 'function' && ih.indexOf('<') >= 0) {
-                      _handleChildren[nh] = _zwFragmentAdded(ih, nh);
+                      // s125（html-semantics M2 切片 125）：deep 克隆子树物化 + form 控件
+                      // 状态随克隆传播。R3901/R3902b 浅克隆臂只覆盖克隆根本体（下方同
+                      // 型臂）；deep 走 innerHTML 重解析，`_zwFragmentAdded` 产物是
+                      // _zwMEl 解析视图——无 __zwHandle/.value IDL 面（INPUT .value
+                      // undefined、checked 落属性反射读序列化 stale 默认值；WPT
+                      // the-input-element/clone.html 19F 主簇：4 checked + 15 value）。
+                      // t8r innerHTML setter 同款 [_wcRebuildAsHandle] 物化（顶层元素子
+                      // 重建 detached 真 handle 树，子递归，__zwFragNoExec 章 s120 传递
+                      // 由其内建）；物化失败回落原视图（walk 的 dKey 守卫跳过）。非
+                      // HTML ns 源保持 _zwMEl 视图路径——R190 ns 修复面面向视图形态，
+                      // 物化 wrapper createElement 恒 HTML ns 会丢 SVG ns（与 setter
+                      // 路径同款 documented limitation：物化 wrapper 与宿主树 innerHTML
+                      // 产物 handle 不同源）。
+                      // https://html.spec.whatwg.org/multipage/input.html#the-input-element:cloning-steps
+                      var _s125Views = _zwFragmentAdded(ih, nh);
+                      if (_r185SrcNs === '') {
+                        var _s125Mat = [];
+                        for (var _s125i = 0; _s125i < _s125Views.length; _s125i++) {
+                          var _s125k = _s125Views[_s125i];
+                          // s125：含 TEMPLATE 后代的顶层子**不物化**——WC-M1 切片 2a
+                          // （85d3987cc）刻意以 plain 惰性视图承载模板 content（拷贝语义
+                          // 在有环装配下无限递归；content 产物无 Element 全 API——
+                          // wc_m1_factory_shadow_mutation_and_clone_template_content
+                          // 「inShadow:ok」形态哨兵）。物化会把 content 子升级为 handle
+                          // proxy（importNode 产物带 closest 翻哨兵）且把 slot 落成模板
+                          // 常规子（spec：模板子属 contents fragment 非 childNodes）。
+                          // 模板 content 子是 inert 非表单控件，无状态传播需求——整树
+                          // 保持 plain 视图路径（既有 R95/R194b content getter 消费）。
+                          var _s125Tpl = false;
+                          try {
+                            var _s125Stack = [_s125k];
+                            while (_s125Stack.length && !_s125Tpl) {
+                              var _s125v = _s125Stack.pop();
+                              if (!_s125v || _s125v.nodeType !== 1) continue;
+                              if (String(_s125v.tagName || '').toUpperCase() === 'TEMPLATE') { _s125Tpl = true; break; }
+                              var _s125cv = _s125v.childNodes;
+                              if (Array.isArray(_s125cv)) {
+                                for (var _s125ci = 0; _s125ci < _s125cv.length; _s125ci++) _s125Stack.push(_s125cv[_s125ci]);
+                              }
+                            }
+                          } catch (_e125sc) {}
+                          var _s125w = (!_s125Tpl && _s125k && _s125k.nodeType === 1) ? _wcRebuildAsHandle(_s125k) : _s125k;
+                          if (_s125w && _s125w !== _s125k && _s125w.__zwHandle && _zwNodeParent) {
+                            _zwNodeParent[_s125w.__zwHandle] = { parentSel: null, parentHandle: nh, nextSibling: null };
+                          }
+                          _s125Mat.push(_s125w);
+                        }
+                        _handleChildren[nh] = _s125Mat;
+                        // s125：input/textarea 状态随克隆传播（HTML §4.10.5.4 cloning
+                        // steps——value IDL 值 + dirty value/dirty checkedness 旗标随克隆
+                        // 复制）。源侧优先 JS registry（身份/键即状态键），回落宿主子视
+                        // 图（含 pending overlay）；重解析 ih 只含已 apply 面——default 族
+                        // .value= 的 pending SetAttr 不在 ih，故 default/default-on 族
+                        // 目标补写 value 属性（该族 getter 读属性、存储即内容属性——spec
+                        // 同义），value 族只写脏缓存（不反射属性）。
+                        try {
+                          var _s125Src = (handle && _handleChildren[handle] && _handleChildren[handle].length)
+                            ? _handleChildren[handle] : _childNodeList(sel, handle);
+                          var _s125Walk = function (_s125S, _s125D) {
+                            var _s125sk = _s125S.childNodes || [];
+                            var _s125dk = _s125D.childNodes || [];
+                            var _s125si = 0;
+                            for (var _s125di = 0; _s125di < _s125dk.length; _s125di++) {
+                              var _s125dn = _s125dk[_s125di];
+                              if (!_s125dn || _s125dn.nodeType !== 1) continue;
+                              while (_s125si < _s125sk.length
+                                  && !(_s125sk[_s125si] && _s125sk[_s125si].nodeType === 1)) _s125si++;
+                              if (_s125si >= _s125sk.length) break;
+                              var _s125sn = _s125sk[_s125si];
+                              _s125si++;
+                              var _s125st = String(_s125sn.tagName || '').toUpperCase();
+                              if (_s125st === String(_s125dn.tagName || '').toUpperCase()
+                                  && (_s125st === 'INPUT' || _s125st === 'TEXTAREA')) {
+                                var _s125sKey = _elKey(_s125sn.__zwSelector, _s125sn.__zwHandle);
+                                var _s125dHdl = _s125dn.__zwHandle;
+                                var _s125dKey = _s125dHdl ? ('@' + _s125dHdl) : null;
+                                if (_s125sKey && _s125dKey && _inputValues[_s125sKey] != null) {
+                                  _inputValues[_s125dKey] = _inputValues[_s125sKey];
+                                  _inputValuesSet[_s125dKey] = _inputValuesSet[_s125sKey] === true;
+                                  if (_s125st === 'INPUT') {
+                                    var _s125Ty = __zw_get_attr_handle(_s125dHdl, 'type') || '';
+                                    var _s125Md = _zwInputValueMode(_zwNormalizeInputType(_s125Ty));
+                                    if (_s125Md === 'default' || _s125Md === 'default/on') {
+                                      __zw_set_attr_handle(_s125dHdl, 'value', String(_inputValues[_s125sKey]));
+                                    }
+                                  }
+                                }
+                                if (_s125st === 'INPUT' && _s125sKey && _s125dKey) {
+                                  if (_checkedDirtyState[_s125sKey] !== undefined) {
+                                    _checkedDirtyState[_s125dKey] = _checkedDirtyState[_s125sKey];
+                                  }
+                                  if (_indeterminate[_s125sKey] === true) _indeterminate[_s125dKey] = true;
+                                  // s125：checked 属性对齐（克隆属性集应与源当前属性集一致——
+                                  // spec 克隆概念步复制属性；序列化 ih 只含已 apply 面，pending
+                                  // SetAttr/RemoveAttr（.checked= 反射 / s125 组排他）不在 ih。
+                                  // 源侧 hasAttribute 走 latest-wins 读含 pending）。脏克隆
+                                  // checkedness 由脏缓存裁决（getter 脏值优先）——本对齐只纠
+                                  // attr 面；净克隆的 getter 读属性即得源当前 checkedness。
+                                  var _s125Sc = null;
+                                  try { _s125Sc = _s125sn.hasAttribute('checked'); } catch (_e125ha) {}
+                                  if (typeof _s125Sc === 'boolean') {
+                                    var _s125Dc = __zw_has_attr_handle(_s125dHdl, 'checked') === '1';
+                                    if (_s125Sc && !_s125Dc) {
+                                      __zw_set_attr_handle(_s125dHdl, 'checked', '');
+                                    } else if (!_s125Sc && _s125Dc) {
+                                      __zw_remove_attr_handle(_s125dHdl, 'checked');
+                                      if (typeof _zwAttrInstanceRemoveKey === 'function') {
+                                        _zwAttrInstanceRemoveKey(_s125dKey, 'checked');
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                              _s125Walk(_s125sn, _s125dn);
+                            }
+                          };
+                          _s125Walk({ childNodes: _s125Src }, { childNodes: _s125Mat });
+                        } catch (_eS125pw) {}
+                      } else {
+                        _handleChildren[nh] = _s125Views;
+                      }
                       // s120（html-semantics M2 切片 120）：deep 重解析产物 fragment
                       // already-started 章——克隆步骤 already started 与源一致（HTML
                       // §the-script-element cloning steps；dom-node-clone 概念步复制
@@ -7775,7 +7895,10 @@
             }
             // s70：img/source 自 picture 移除 → relevant mutation（R125 sel 子与各
             // 长尾路径汇此 return；文本路径的早退 return 不达——非元素本就无关）。
-            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false); } catch (_e5277trm2) {}
+            // 第 5 参传移除前捕获的 former next sibling（R188 `_r188Next`）作
+            // 「其后 img 兄弟」位置锚——helper 在节点摘除后调用，kids 已不含
+            // 被移节点，无锚无法定位。
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false, _r188Next); } catch (_e5277trm2) {}
             return child;
           };
         }
@@ -11061,7 +11184,7 @@
                   var c = _fcs[i];
                   try {
                     var _ct = c.tagName;
-                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA R3049 _textareaDefault）。
+                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA s127 live child text content）。
                     if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') { c.value = c.defaultValue; }
                     else if (_ct === 'INPUT') {
                       var _it = c.type;
@@ -13196,21 +13319,26 @@
             // R3906：TEXTAREA 写前校准基准（API 值换行归一形——\r\n 形变同值不折叠）。
             var _r3906IsTa = _realTag(sel, handle) === 'TEXTAREA';
             var _r3906TaOld = _r3906IsTa ? _zwSelNormValue(sel, handle, key) : null;
-            _inputValues[key] = String(value); _inputValuesSet[key] = true;
+            // s127（html-semantics M2）：textarea value IDL 为 [LegacyNullToEmptyString]
+            // ——null → 空串（value-defaultValue-textContent 'tests for the value
+            // setter' `value = null` → '' 断言面；INPUT 等 plain DOMString 不受影响）。
+            // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
+            var _s127TaSet = (_r3906IsTa && value == null) ? '' : String(value);
+            _inputValues[key] = _s127TaSet; _inputValuesSet[key] = true;
             // input/textarea 的 IDL value 是 retained 当前值，不改 HTML 内容属性/textarea 默认文本。
             // https://html.spec.whatwg.org/multipage/input.html#dom-input-value
-            // R2996/R3049：首次写前仍捕获 defaultValue，供 getter + form.reset。
             //（R3901：INPUT 已上提模式分派分支——本 else 仅 TEXTAREA 与其余元素；
             // 首行缓存写必须保留——textarea 无专属缓存面，getter 靠它读回（R3901
             // 回归面：reset-form/setRangeText/validity textarea 曾全数 stale）。）
+            // s127：旧 R2996/R3049 sel 形 defaultValue 捕获行移除——defaultValue
+            // getter 改 live child text content（.value= 不触碰子文本，无需捕获）。
             if (!handle && sel && _isTag(sel, 'TEXTAREA')) {
-              if (_textareaDefault[key] == null) _textareaDefault[key] = __zw_get_text(sel) || '';
-              __zw_set_form_value(sel, String(value));
+              __zw_set_form_value(sel, _s127TaSet);
             } else {
               if (handle) {
-                __zw_set_attr_handle(handle, 'value', String(value));
+                __zw_set_attr_handle(handle, 'value', _s127TaSet);
               } else {
-                __zw_set_form_value(sel, String(value));
+                __zw_set_form_value(sel, _s127TaSet);
               }
             }
             // R3906（HTML §4.10.11 value IDL setter）：API 值变更 → 光标折叠到新值末 +

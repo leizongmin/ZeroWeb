@@ -2759,11 +2759,14 @@
     return s ? s.url : '';
   };
   // §4.8.4.3.2 relevant mutations 状态表：crossorigin/referrerpolicy 按
-  // content-state 枚举比较（missing/empty/invalid → 缺省态，大小写不敏感）——
-  // 「state not changed」rows（empty→invalid、absent→invalid、大小写等值）
-  // 不触发，真变迁（absent→empty、default→有效关键字）触发。
+  // content-state 枚举比较，大小写不敏感。referrerpolicy 的 missing value
+  // default 与 invalid value default 均为**空串态**（HTML
+  // §referrerpolicy-attribute——现行 spec，「no-referrer-when-downgrade」是
+  // 独立关键字态，不与缺省归并）——「state not changed」rows（absent→invalid、
+  // empty→empty、大小写等值）不触发，真变迁（absent/empty → 任一关键字、
+  // n-r-w-d ↔ 空/他关键字）触发。
   globalThis.__zwAttrState5277 = function (name, v) {
-    if (v == null) return name === 'crossorigin' ? 'missing' : 'no-referrer-when-downgrade';
+    if (v == null) return name === 'crossorigin' ? 'missing' : '';
     var s = String(v).trim().toLowerCase();
     if (name === 'crossorigin') {
       return (s === 'use-credentials') ? 'use-credentials' : 'anonymous';
@@ -2774,7 +2777,7 @@
       case 'strict-origin-when-cross-origin': case 'unsafe-url':
         return s;
       default:
-        return 'no-referrer-when-downgrade';
+        return '';
     }
   };
   // s70：update-the-image-data 运行核（R56h `.src` IDL 链自 part05 setter 抽出，
@@ -3007,6 +3010,13 @@
           globalThis.__zwImgRevalidate5277(sel, handle);
         }
       }
+      if (ln === 'width' || ln === 'height') {
+        // whatwg/html#8492：loading=lazy 的 img，width/height 内容属性
+        // set/changed/removed 是 relevant mutation（重验——同 URL 命中
+        // available-images 重派 load）。eager/无效 loading 不触发。
+        var _lzV = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase();
+        if (_lzV === 'lazy') globalThis.__zwImgRevalidate5277(sel, handle);
+      }
       return;
     }
     if (tag === 'SOURCE') {
@@ -3031,7 +3041,7 @@
   // spec relevant mutations：img 自身插入/移除且新/旧父为 picture → 重验该 img；
   // source 插入/移除且父为 picture → 其后 img 兄弟重验。子树深查不做（picture
   // 整体插入不动 img 自身——'picture is inserted' rows timeout 面）。
-  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert) {
+  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert, afterAnchor) {
     try {
       if (!node || node.nodeType !== 1) return;
       var pTag = '';
@@ -3046,10 +3056,26 @@
       var pEl = _makeProxy(parentSel, parentHandle);
       var kids = pEl.children;
       var after = false;
-      for (var i = 0; i < kids.length; i++) {
-        if (kids[i] === node) { after = true; continue; }
-        if (after && _zw5277Tag(kids[i]) === 'IMG') {
-          globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+      if (isInsert) {
+        // 插入：node 仍在 kids 中，其后 img 兄弟重验。
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i] === node) { after = true; continue; }
+          if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+          }
+        }
+      } else {
+        // 移除：removeChild trap 在节点摘除后调用，kids 已不含 node——
+        // 「其后」判定改由 trap 侧移除前捕获的 former next sibling（part04
+        // R188 `_r188Next` 同源）作位置锚：从锚（含）向后重验 img。锚为 null
+        // = 移除节点原为末子，其后无 img，不重验；锚缺省（plain 子路径无位
+        // 置捕获）保守回退全量重验。
+        after = (afterAnchor === undefined);
+        for (var i = 0; i < kids.length; i++) {
+          if (!after && afterAnchor != null && kids[i] === afterAnchor) after = true;
+          if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+          }
         }
       }
     } catch (_e5277tm) {}
@@ -8887,7 +8913,11 @@
   // R167（js-dom M1 L2-d3b）：root 子树真实节点索引——键 tag+id+outer（与
   // wrapper 缓存/桥同键空间；R163 fragment nodeIdx 的共用化提取）。挂 root 槽
   // `_zwNodeIdx`，首次访问 DFS 建一次；key 含 outer 使树变更后查 miss → 上层
-  // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 512 防爆。
+  // 重建（`_zwNodeIdxGen` 槽写点失效）。上限 200000 防爆——原 512 对
+  // encoding-legacy-mb 语料树（decode-common 单页 13.5k span）触发「清空后
+  // 仍回存」→ 索引恒空、每次查找全量重建（O(结果数 × 树)；qsa 千元 13.9s、
+  // 全量页 4GB 堆 OOM 实证）。13.5k 条键 Map ≈ 1MB 级，提额后缓存语义与
+  // 既有 ≤512 档一致（失效仍走各写点 `_zwNodeIdx = null`）。
   function _zwMFindRealNode(root, key) {
     if (!root || typeof root !== 'object' || !key) return null;
     // R307（js-dom M4）：键的 empty-ns 标记归一——真节点 `outerHTML`（`_zwMSerialize`
@@ -8949,7 +8979,10 @@
         for (var w = 0; w < cs.length; w++) walk167(cs[w]);
         void _r307IsRoot;
       })(root);
-      if (idx.size > 512) idx.clear();
+      // OPTIMIZATION: 上限 512→200000——>512 清空回存使索引恒空、每次查找全量
+      // 重建（legacy-mb 语料 13.5k span：1000 wrap × 14ms 重建 = qsa 13.9s，
+      // 全量页外层串分配 4GB 堆 OOM）；缓存键串总量 ≈ MB 级可接受，失效语义不变。
+      if (idx.size > 200000) idx.clear();
       try { root._zwNodeIdx = idx; } catch (_e167s) {}
     }
     var hit188 = idx.get(key) || null;
@@ -8971,6 +9004,17 @@
     }
     return null;
   }
+  // OPTIMIZATION: 查询产物 `_zwRootHtml` 惰性化（见 _zwMWrapCached 桥归一臂注释）
+  // ——非枚举 accessor 不入 for-in/序列化，读时才调 produce()（根串/文档串生产者
+  // 零参 thunk）；defineProperty 失败（冻结对象等）静默回落无属性（与旧读 undefined 等价）。
+  function _zwRootHtmlLazy(obj, produce) {
+    try {
+      Object.defineProperty(obj, '_zwRootHtml', {
+        configurable: true,
+        get: function () { return produce(); },
+      });
+    } catch (_eRhl) {}
+  }
   function _zwMWrapCached(root, info) {
     if (!root || typeof root !== 'object') return new _zwParseEl(info);
     var map = root._zwQWrapMap;
@@ -8986,7 +9030,7 @@
     // 者胜 = 节点本体）。查询产物与 traverse/mutation 面跨面 identity 统一
     //（R166 RFC §2.1 d3b 消费点；数据源不变——JSON 往返仍是语义权威）。
     // DFS 索引挂 root 槽 `_zwNodeIdx`（代际失效同 _zwQWrapMap——key 含 outer，
-    // 树变更后自然 miss 重建；上限 512 防爆）。
+    // 树变更后自然 miss 重建；上限 200000 防爆，见 _zwMFindRealNode）。
     var realNode = _zwMFindRealNode(root, key);
     if (realNode) {
       // R308（js-dom M4）：**miss 补登**——桥表会被 `_zwQWrapBump`/innerHTML 写点
@@ -9000,14 +9044,21 @@
         return realNode;
       })();
       if (bridged) {
-        try { bridged._zwRootHtml = _zwMOuterHtml(root); } catch (_e167r) {}
+        // OPTIMIZATION: 真节点不做 eager `_zwRootHtml = _zwMOuterHtml(root)`——
+        // 每结果全树序列化是 O(结果数 × 根树)（legacy-mb 语料 qsa 千元：1000 ×
+        // 50KB ≈ 13s，n250 683ms 同源实证）。唯一读者是 `_zwParseEl.prototype.matches`
+        //（part02），真节点消费面（Element.prototype.matches 走真树）不读它——
+        // 改惰性 accessor：首次读取才算根串（语义仍新鲜），真节点零开销。
+        _zwRootHtmlLazy(bridged, function () { return _zwMOuterHtml(root); });
         map.set(key, bridged);
         return bridged;
       }
     }
     var cached = map.get(key);
     if (cached) {
-      try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
+      if (cached instanceof _zwParseEl) {
+        try { cached._zwRootHtml = _zwMOuterHtml(root); } catch (_e158r2) {}
+      }
       return cached;
     }
     if (map.size > 512) map.clear();
@@ -15909,11 +15960,14 @@
   }
   // R3906：textarea API 值的 JS 侧活文本读（handle 形 detached）。`__zw_get_text_handle`
   // /_zwTextWritten 是 host 写缓存（textContent=/defaultValue= 写入面），子节点增删
-  //（firstChild.remove/appendChild）不可见——非脏 textarea 的 API value = 子文本
-  //（HTML §4.10.6），沿 textContent getter R81 同源融合视图拼接（本地注册文本
-  // _zwLocalChildNodes + registry 子 _handleChildren；dom-node-textcontent：字符数据
-  // 后代）。视图空即值空——不落写缓存兜底（缓存对子增删 stale，extra.html
-  // 'Removing child nodes in non-dirty textarea' 断言面）。
+  //（firstChild.remove/appendChild）不可见——非脏 textarea 的 API value = child text
+  // content（HTML §4.10.11），沿本地注册文本 _zwLocalChildNodes + registry 子
+  // _handleChildren 融合视图拼接。s127（html-semantics M2）：child text content 是
+  // **直接 Text 子的数据拼接**（spec 定义；旧 nodeType 1 元素子 textContent 并入臂
+  // 使元素孙文本混入 value/defaultValue——value-defaultValue-textContent 'reflect
+  // child text content, not textContent' 断言面，textContent getter R81 融合视图
+  // 不受影响仍含全部后代）。视图空即值空——不落写缓存兜底（缓存对子增删 stale，
+  // extra.html 'Removing child nodes in non-dirty textarea' 断言面）。
   function _zwTaLiveText(handle) {
     var kids = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(null, handle) : null;
     var reg = (typeof _handleChildren !== 'undefined' && _handleChildren[handle]) ? _handleChildren[handle] : null;
@@ -15925,8 +15979,6 @@
       if (!n) continue;
       if (n.nodeType === 3 || n.nodeType === 4) {
         out += String(n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : ''));
-      } else if (n.nodeType === 1 && typeof n.textContent === 'string') {
-        out += n.textContent;
       }
     }
     return out;
@@ -17943,6 +17995,47 @@
       // 移除前 presence，真关变迁才入队——notify 内比对）。name 移除成组失败无 steps。
       if (n.toLowerCase() === 'open') _zwMDetailsAttrTail4100(n, _r4100Had);
     };
+    // dataset（spec https://html.spec.whatwg.org/multipage/dom.html#dom-dataset
+    // ——DOMStringMap data-* 反射）：iframe/innerHTML 解析产物（本工厂 plain 节点）
+    // 缺 dataset 时 decode-common.js showNodes 读 `nodes[i].dataset.cp` 直接
+    // TypeError（encoding-legacy-mb M1 语料页整链断）。与 part05 `_datasetProxy`
+    // 同语义（camelCase ↔ data-kebab、missing → undefined、delete 真移除），
+    // 但直读本地 attrs 数组（经 getAttribute/setAttribute/removeAttribute），
+    // 无 sel/handle 桥路径。
+    node.dataset = new Proxy({}, {
+      get: function (_t, key) {
+        if (typeof key !== 'string' || key === 'then') return undefined; // 防 Promise 化误判
+        var v = node.getAttribute('data-' + _camelToKebab(key));
+        return v == null ? undefined : v;
+      },
+      set: function (_t, key, value) {
+        if (typeof key !== 'string') return false;
+        node.setAttribute('data-' + _camelToKebab(key), value == null ? '' : String(value));
+        return true;
+      },
+      has: function (_t, key) {
+        return typeof key === 'string' && node.getAttribute('data-' + _camelToKebab(key)) !== null;
+      },
+      deleteProperty: function (_t, key) {
+        if (typeof key !== 'string') return false;
+        node.removeAttribute('data-' + _camelToKebab(key));
+        return true;
+      },
+      ownKeys: function () {
+        var out = [];
+        var names = node.getAttributeNames();
+        for (var i = 0; i < names.length; i++) {
+          if (names[i].indexOf('data-') === 0) out.push(_kebabToCamel(names[i].slice(5)));
+        }
+        return out;
+      },
+      getOwnPropertyDescriptor: function (_t, key) {
+        if (typeof key !== 'string') return undefined;
+        var v = node.getAttribute('data-' + _camelToKebab(key));
+        if (v == null) return undefined;
+        return { configurable: true, enumerable: true, value: v, writable: true };
+      },
+    });
     // WC-M3 切片 8 第九增量（web-components goal，spec slot's/slottable's name 的
     // attribute change steps → assign slottables → signal）：slot 的 name / slottable 的
     // slot 属性写入后队列 plain 世界 slotchange 分配面 diff（__zwQueuePlainSlotchange
@@ -19744,10 +19837,72 @@
   try { if (typeof globalThis.__zwWireSlotElement === 'function') globalThis.__zwWireSlotElement(node); } catch (_eWs3) {}
   return node;
   }
+  // 深树条目 → 本地节点（`_zwMBuildBodyTree` 深臂递归，`__zw_parse_html_subtree`
+  // 数据源）。语义对齐 `_zwMBuildNode` 浅臂：C 条目 '?…?' bogus 形态转 PI 视图
+  //（同款守卫）；template 的 contents 由 host 内联为 children（deep_entry_json），
+  // 无 TEMPLATE 特判。scripting===false 时子节点入列盖 `__zwTreeScripting=false`
+  // 印章（同浅臂逐层盖章——顶层不入列不盖，形态一致）。
+  function _zwMBuildDeepTreeNode(entry, parent, scripting) {
+    if (!entry) return null;
+    if (entry.k === 'T') return _zwMText(String(entry.v == null ? '' : entry.v), parent);
+    if (entry.k === 'C') {
+      var cv = String(entry.v == null ? '' : entry.v);
+      if (cv.charAt(0) === '?') {
+        var _piInner = cv.slice(1, cv.length >= 1 && cv.charAt(cv.length - 1) === '?' ? -1 : undefined);
+        var _piSp = _piInner.indexOf(' ');
+        if (_piSp > 0 && /^[A-Za-z_:][-A-Za-z0-9_:.]*$/.test(_piInner.slice(0, _piSp))) {
+          return _zwMPiFromBogus(cv, parent);
+        }
+      }
+      return _zwMComment(cv, parent);
+    }
+    // 属性经工厂 attrs 映射直灌（镜像 `_zwMBuildNode` 浅臂 `_zwMEl(snap)` 的
+    // attrs:{name:value} 消费形态，id/cls 同浅快照喂 IDL 反射字段）——解析产物
+    // 不走 setAttribute 语义：attribute 写尾（如 R4100 details open 互斥
+    // others-prong）会在构造期逐 attr 触发、后者关前者，破坏 host 解析器已裁决
+    // 的「树序第一 open 胜出」标记态（make test test_details_name_exclusivity_r4100
+    // T1 实证：0,1,1 期望 1,0,1）。null 原型映射：`__proto__` 合法属性名经普通
+    // 对象赋值会走原型 setter 丢属性（host JSON.parse 产物为自有属性，浅臂可承载）。
+    var _da = Object.create(null);
+    var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
+    for (var ai = 0; ai < ats.length; ai++) {
+      if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
+    }
+    var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
+    var kids = Array.isArray(entry.children) ? entry.children : [];
+    for (var ci = 0; ci < kids.length; ci++) {
+      var ck = _zwMBuildDeepTreeNode(kids[ci], node, scripting);
+      if (ck) {
+        try { if (scripting === false) ck.__zwTreeScripting = false; } catch (_e5ds) {}
+        node.childNodes.push(ck);
+      }
+    }
+    return node;
+  }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
   function _zwMBuildBodyTree(innerHtml, ctxNs, scripting) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
+    // OPTIMIZATION（encoding-legacy-mb DC-2，2026-10-28）：单次解析深树臂——host 一
+    // 次解析整子树深 JSON（`__zw_parse_html_subtree`），消旧臂每元素
+    // `__zw_parse_html_query` + `__zw_parse_html_child_nodes` 各自全文档重解析的
+    // O(元素数 × 文档大小) 二次成本（legacy-mb chars 文档 13k span 单次 iframe
+    // 装载 ≥90s 超看门狗，250→4000 span 12.7→85ms/span 陡增实证）。节点形态
+    // 等价：`_zwMEl` 只消费 tag/attrs/id/cls/ns——浅快照亦不发 ns（回退 HTML ns
+    // 同款），深臂 setAttribute 经 `_zwMReflectIdl` 同步 id/cls 反射。解析失败
+    // 落旧臂（浅条目二次定位），零行为面收敛。
+    if (typeof __zw_parse_html_subtree === 'function') {
+      try {
+        var _p5deep = JSON.parse(
+          __zw_parse_html_subtree(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1'));
+        if (Array.isArray(_p5deep)) {
+          for (var di5 = 0; di5 < _p5deep.length; di5++) {
+            if (_p5deep[di5]) body.childNodes.push(_zwMBuildDeepTreeNode(_p5deep[di5], body, scripting));
+          }
+          return body;
+        }
+      } catch (_eDeep) {}
+    }
     if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
         // R5000 片 b：ctxNs 可选 context namespace——foreign context（createElementNS
@@ -20209,7 +20364,12 @@
         if (realNode167) {
           var bridged167 = _zwBridgeGet(realNode167);
           if (bridged167) {
-            try { bridged167._zwRootHtml = detHtml(); } catch (_e167rr) {}
+            // OPTIMIZATION: 桥归一真节点不做 eager `_zwRootHtml = detHtml()`——
+            // 每结果全文档序列化是 O(结果数 × 文档)（legacy-mb 语料 qsa 千元：
+            // 999 × ~12.8ms ≈ 12.8s，P1 墙钟 12.87s 实证；第二查询再烧一轮致
+            // case 超时丢 P2/P3）。唯一读者 `_zwParseEl.prototype.matches`（part02）
+            // 不在真节点原型链上——改惰性 accessor（读时才算，语义仍新鲜）。
+            _zwRootHtmlLazy(bridged167, function () { return detHtml(); });
             _zwQWrapCache.set(key, bridged167);
             return bridged167;
           }
@@ -20217,8 +20377,12 @@
       } catch (_e167t) {}
       var cached = _zwQWrapCache.get(key);
       if (cached) {
-        // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）
-        try { cached._zwRootHtml = detHtml(); } catch (_e158r) {}
+        // R156 attachments refresh（树可能已变更——rootHtml 重挂保 matches 语义）。
+        // OPTIMIZATION: 真节点（非 _zwParseEl）跳过重挂——其消费面不读 _zwRootHtml
+        //（同上桥归一臂），每命中全文档序列化是纯浪费。
+        if (cached instanceof _zwParseEl) {
+          try { cached._zwRootHtml = detHtml(); } catch (_e158r) {}
+        }
         return cached;
       }
       var e = new _zwParseEl(info);
@@ -24407,6 +24571,21 @@ return e;
           var _rvTag3 = _realTag(sel, handle);
           var _rvSkip3 = (_rvTag3 === 'BUTTON' || _rvTag3 === 'LI' || _rvTag3 === 'METER'
               || _rvTag3 === 'PROGRESS' || _rvTag3 === 'PARAM' || _rvTag3 === 'OPTION');
+          // s127（html-semantics M2）：TEXTAREA value getter——API 值面。非脏（dirty
+          // value flag false）→ child text content + raw value → API value 换行归一
+          //（\r\n|\r → \n，HTML §4.10.11）；脏（.value= 置 `_inputValuesSet`）→ dirty
+          // 缓存 + 同款归一（setter 存原串，归一在读侧统一）。旧路径 handle 形
+          //（detached createElement）落 stable-key 惰性初始化读 value 属性——textarea
+          // 无该属性 → 缓存 '' 钉死，textContent/nodeValue/data/子节点增删全部不可见
+          //（value-defaultValue-textContent 10F 断言面主根因）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
+          if (_rvTag3 === 'TEXTAREA') {
+            if (_inputValues[key] != null && _inputValuesSet[key] === true) {
+              return String(_inputValues[key]).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            }
+            var _s127TaLive = (!handle && sel) ? (__zw_get_text(sel) || '') : _zwTaLiveText(handle);
+            return String(_s127TaLive).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          }
           if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER') {
             // R3907：OPTION value = 无 ns value 内容属性（**存在即采纳**——空串采纳）；
             // 缺省回落 child text content（strip-and-collapse，与 .text 同源；此前裸 attr
@@ -25987,13 +26166,19 @@ return e;
           }
           return _outputDefault[key];
         }
-        // R3049：textarea.defaultValue（闭合 R3048 限制①）——textarea 无 value 属性，default = 初值 textContent。
-        // 惰性捕获（首读时 = 当前 text，未被 value= 改过即初值；value setter 首写前亦捕获保初值不丢）。
+        // s127（html-semantics M2）：textarea.defaultValue = **child text content**（live
+        // ——直接 Text 子数据拼接，handle 形 `_zwTaLiveText` / sel 形 `__zw_get_text`）。
+        // spec：getting 返回 child text content，dirty flag 不影响 default 面（.value=
+        // 不触碰子文本——R3906 起缓存态与子文本解耦）。旧 R3049 单次惰性捕获失去存在
+        // 依据且有两缺口：捕获后 nodeValue/data/appendChild 子文本变更不可见（冻结），
+        // `__zw_get_text_handle` 读 host 写缓存含元素孙文本（child text content 仅
+        // Text 子）——value-defaultValue-textContent 10F 断言面 6 例根因。R57
+        // defaultValue setter 本就同步 live 视图（清 registry 子 + 重注册文本），
+        // getter 直读即正确。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
         if (prop === 'defaultValue' && _realTag(sel, handle) === 'TEXTAREA') {
-          if (_textareaDefault[key] == null) {
-            _textareaDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
-          }
-          return _textareaDefault[key];
+          if (!handle && sel) return __zw_get_text(sel) || '';
+          return _zwTaLiveText(handle);
         }
         if (prop === 'style') {
           return _styleProxy(sel, handle);

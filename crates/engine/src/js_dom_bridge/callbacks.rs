@@ -634,6 +634,34 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 单次解析整子树深 JSON（encoding-legacy-mb DC-2）——shim `_zwMBuildBodyTree`
+    // 深臂数据源，消旧浅路径每元素两次全文档重解析的 O(元素数 × 文档大小) 二次
+    // 建树。arg[1] elem_sel 定位取子（HTML ns 全文档解析）；arg[2] ctx_ns /
+    // arg[3] scripting（'0' = inert）语义与 `__zw_parse_html_child_nodes` 相同。
+    // 条目形态 `deep_entry_json`（template contents 内联为 children）。
+    sandbox.register_callback(
+        "__zw_parse_html_subtree",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let sel = args.get(1).map(String::as_str).unwrap_or("");
+            let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
+            let scripting = args.get(3).map(|s| s != "0").unwrap_or(true);
+            parse_html_subtree_deep_json(html, sel, ctx_ns, scripting)
+        }),
+    );
+
+    // 诊断日志桥（ZW_DBG_LOG=1 时输出 stderr）——页面/shim 打点定位长尾案的分段
+    // 耗时与硬终止死点（结果 all-or-nothing 时的观测窗口）。
+    sandbox.register_callback(
+        "__zw_dbg_log",
+        Box::new(|args: &[String]| -> String {
+            if std::env::var("ZW_DBG_LOG").as_deref() == Ok("1") {
+                eprintln!("[dbg] {}", args.first().map(String::as_str).unwrap_or(""));
+            }
+            String::new()
+        }),
+    );
+
     // WC-M2：参数化 html 串的 template contents children（iframe/detached shim 文档的 JS 树
     // 构建数据源——html 是文档自身串，非主文档快照；与 __zw_template_contents 的主文档域区分）。
     // 深形态（children 嵌套）——contents 子非文档树节点，selector 二次定位不可达。

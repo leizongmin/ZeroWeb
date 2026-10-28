@@ -418,7 +418,6 @@
                 }
               } else __zw_set_text(sel, String(value));
             } catch (_e) {}
-            try { _textareaDefault[key] = String(value); } catch (_e) {}
             // R57（FV M1）：本地 value 状态同步（_controlValue 优先读
             // _inputValues——mutation 未应用时 value 读取不 stale）。
             // R3906：脏态（value IDL set / setRangeText 置 `_inputValuesSet`）**不覆写**
@@ -503,6 +502,68 @@
             // R3902b：IDL set 置 dirty checkedness（HTML §4.10.5.4）——getter 读脏值优先
             // 于内容属性（part03 checked getter）；克隆步骤随克隆传播（part04 clone 块）。
             _checkedDirtyState[key] = !!value;
+            // s125（html-semantics M2 切片 125）：radio 组排他——checkedness 置 true 时
+            // 同组其余 radio checkedness 全部置 false（HTML §4.10.5.1.16 Radio Button
+            // state 现象表「The element's checkedness state is set to true (for whatever
+            // reason)」；checked IDL setter 置 checkedness 即触发——clone.html「inputs[2]
+            // .checked=true 后 inputs[3] 克隆态应为 false」断言面）。
+            // https://html.spec.whatwg.org/multipage/input.html#radio-button-state
+            // 组定义：同树 type=radio + 同 name（非空）+ 同 form owner（或均无）。
+            // 引擎模型：脏件写 _checkedDirtyState=false（dirty 旗标保持——spec 只清
+            // checkedness 不清旗标，旗标在则属性变更不联动）；净件移除 checked 属性
+            // （latest-wins 面即刻可见——checked getter 回落属性读）。组枚举沿 R3254-K5
+            // 键盘臂先例（document qSA 同名 radio），owner 比对经 .form + 选择器串键。
+            // FIXME: 仅 IDL checked setter 面触发；checked 属性增设/defaultChecked/
+            // 激活行为等其余置真现象未走组排他。
+            if (value) {
+              try {
+                var _me125 = _makeProxy(sel, handle);
+                if (String(_me125.getAttribute('type') || '').toLowerCase() === 'radio'
+                    && _me125.getAttribute('name')) {
+                  var _foKey125 = function (el) {
+                    try {
+                      if (!el) return null;
+                      if (el.__zwHandle) return '@' + el.__zwHandle;
+                      if (el.__zwSelector) return 's:' + el.__zwSelector;
+                      if (el.id) return 'id:' + el.id;
+                    } catch (_e125fk) {}
+                    return null;
+                  };
+                  var _foK125 = null;
+                  try { _foK125 = _foKey125(_me125.form); } catch (_e125f) {}
+                  var _all125 = document.querySelectorAll('input[type="radio"][name="'
+                    + String(_me125.getAttribute('name')).replace(/"/g, '\\"') + '"]');
+                  for (var _gi125 = 0; _gi125 < _all125.length; _gi125++) {
+                    var _gd125 = _all125[_gi125];
+                    var _gk125 = _elKey(_gd125.__zwSelector, _gd125.__zwHandle);
+                    if (_gk125 === key) continue;
+                    var _gfoK125 = null;
+                    try { _gfoK125 = _foKey125(_gd125.form); } catch (_e125gf) {}
+                    if (String(_gfoK125) !== String(_foK125)) continue;
+                    if (_checkedDirtyState[_gk125] !== undefined) {
+                      _checkedDirtyState[_gk125] = false;
+                    } else {
+                      var _gov125 = null;
+                      try {
+                        _gov125 = (_gd125.__zwHandle && typeof __zw_get_attr_handle === 'function')
+                          ? __zw_get_attr_handle(_gd125.__zwHandle, 'checked')
+                          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(_gd125.__zwSelector, 'checked') : null);
+                      } catch (_e125go) {}
+                      if (_gd125.__zwHandle && typeof __zw_remove_attr_handle === 'function') {
+                        __zw_remove_attr_handle(_gd125.__zwHandle, 'checked');
+                      } else if (typeof __zw_remove_attr === 'function') {
+                        __zw_remove_attr(_gd125.__zwSelector, 'checked');
+                      }
+                      if (typeof _zwAttrInstanceRemoveKey === 'function') {
+                        _zwAttrInstanceRemoveKey(_gk125, 'checked');
+                      }
+                      _mo_notify(_gd125.__zwSelector, _gd125.__zwHandle,
+                        { type: 'attributes', attributeName: 'checked', oldValue: _gov125 || null });
+                    }
+                  }
+                }
+              } catch (_e125sw) {}
+            }
           }
           else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') _captureBoolDefault(key, 'selected', sel, handle);
           if (value) {

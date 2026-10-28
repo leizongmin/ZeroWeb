@@ -120,6 +120,9 @@ Commands:
   testharness-encoding  Run pinned encoding corpus (TextEncoder/TextDecoder/labels/
                        legacy-mb) window testharness cases
                        (encoding-compat goal M1 / DC-1)
+  testharness-encoding-legacy-mb  Run legacy-mb document-family decode wrapper pages
+                       (chars iframe + variant windows) window testharness cases
+                       (encoding-legacy-mb goal M1 / DC-2)
   testharness-html-syntax  Run pinned html/syntax + html/dom corpus (parse-tree/
                        serializer/DOM-interface + P5 document-encoding face)
                        window testharness cases (html-syntax-compat goal M1 / DC-1)
@@ -389,6 +392,7 @@ fn main() {
         "testharness-longtask-timing" => cmd_testharness_longtask_timing(&options, filter.as_deref()),
         "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-encoding" => cmd_testharness_encoding(&options, filter.as_deref()),
+        "testharness-encoding-legacy-mb" => cmd_testharness_encoding_legacy_mb(&options, filter.as_deref()),
         "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
         "testharness-navigation" => cmd_testharness_navigation(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
@@ -1596,6 +1600,21 @@ fn cmd_testharness_net_api(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_encoding(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_encoding_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-encoding-legacy-mb` 子命令 — 跑导入的 encoding/legacy-mb 文档族
+/// decode wrapper 页（encoding-legacy-mb goal M1 / DC-2——通道）。
+///
+/// 用例由 `tests/wpt-runner/scripts/goals/31-encoding-legacy-mb.sh` 按需拉到
+/// `wpt-data/`（gitignored）。退出码：有用例非 Pass 或用例集为空 → 1（与
+/// testharness-encoding 一致）。基线首跑即便大量 Fail 也只用于记录通过率
+/// （agent 经 `--json` 捕获后写 evidence/），不作为 land 门禁。filter 按路径
+/// 子串透传：make testharness-encoding-legacy-mb FILTER=euc-jp/（按编码族
+/// 分类跑/出数；全量 ~1.1M 子测量级，整跑须大 envelope 或分族出数）。
+fn cmd_testharness_encoding_legacy_mb(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_encoding_legacy_mb_cases(wpt_root, filter)
     });
 }
 

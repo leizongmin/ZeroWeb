@@ -2717,6 +2717,21 @@ pub(crate) fn measure_text_content(
         .with_break_word(break_word)
         .with_inline_block_sizes(ib_sizes)
         .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
+    // R5311（CSS2 §10.3.1）：测量 IFC 与布局/paint IFC 同源 text-indent——此前漏设，
+    // taffy 内容高按「无首行缩进」的行数计（c547-indent-001：196px 容器 + 50% 缩进，
+    // 测量 3 行 54 高，布局带缩进 4 行，末行溢出盒外 = reftest 丢词）。百分比缩进以
+    // 本测量宽为基准；intrinsic 测量（Min/MaxContent）width 无穷时百分比无 containing
+    // block 基准，按循环百分比=0 惯例取 0（真实长度缩进照用）。
+    if let Some(s) = measure_style {
+        let indent = resolve_text_indent(
+            &s.text_indent,
+            &s.font_size,
+            if width.is_finite() { width } else { 0.0 },
+        );
+        if indent != 0.0 {
+            inline_ctx = inline_ctx.with_text_indent(indent);
+        }
+    }
     // R4332：并入 run-in 前缀参与测量——taffy 测量 IFC 此前不含 run-in 前缀内容，
     // 后继块内容高少算一行（run-in-breaking-001：5 行文本测成 4 行 ch=74，ref 93.1，
     // 底边框切进末行文字）。与 inline_finalization 主路径（1286）同源注入。
