@@ -2,7 +2,7 @@
 
 - **日期**: 2026-10-29
 - **驱动案**: `css/CSS2/css1/c42-ibx-pad-000.xht` ✗2.60% → **✓0.08%**
-- **corpus**: 824F → **821F**（16592 案，FIXED=3，REGRESSED=0；trend 行 15771P/821F/95.1% @ `da90b10ad`）
+- **corpus**: 824F → **821F**（16592 案，FIXED=3，REGRESSED=0；trend 行 15771P/821F/95.1% @ `12ccfdd3e`）
 - **域**: css-sizing-3 §5.1 max-content（替换叶盒）× CSS2 §17.5.2（cell intrinsic）× CSS2 §9.5.1（float shrink-to-fit 连带）
 
 ## 定性（探针链）

@@ -80,4 +80,4 @@
 2026-10-28,upstream,v1.10,16592,15765,95.0,failed=827;skipped=0,c150e5c09,
 2026-10-29,upstream,v1.10,16592,15767,95.0,failed=825;skipped=0,dc0f99d47,
 2026-10-29,upstream,v1.10,16592,15768,95.0,failed=824;skipped=0,37a474e0f,R5317 va:text-* atom margin-box union + img border-box
-2026-10-29,upstream,v1.10,16592,15771,95.1,failed=821;skipped=0,da90b10ad,R5318 replaced-leaf cell intrinsic——td>img[display:block] 塌0 收口，FIXED=3 (c42-ibx-pad/c43-rpl-ibx/floats-030)
+2026-10-29,upstream,v1.10,16592,15771,95.1,failed=821;skipped=0,12ccfdd3e,R5318 replaced-leaf cell intrinsic——td>img[display:block] 塌0 收口，FIXED=3 (c42-ibx-pad/c43-rpl-ibx/floats-030)
