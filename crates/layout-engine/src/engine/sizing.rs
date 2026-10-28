@@ -443,6 +443,189 @@ impl LayoutEngine {
         changed
     }
 
+    /// t-p114（css-flexbox-1 §4.1 flex base size + css-display-3 §2.4 atomic inline）：
+    /// R4941/R2156 slice19 把含嵌套原子的 inline 子树提升——原子行内级盒（inline-block
+    /// 家族 / display:inline 的 replaced，如 button）成为 flex item 的 **taffy Absolute**
+    /// 子节点（不占块级 flex 槽的表示技巧，tree.rs 构树期同源；盒尺寸/gBCR/命中/绘制
+    /// 真值由该 abspos 盒承担）。taffy 的 content-based 尺寸排除 abspos 子 → 横向 flex
+    /// item 的 main size 漏计其宽：`<li><span><button></span></li>` item 塌 0 宽、文本在
+    /// 0 宽约束下竖排（github.com/login 页脚 cookie-consent-link>button 实证；chromium
+    /// 单行水平）。原子行内级盒是 **in-flow** 内容（CSS2 §9.2.1.1），须计入 flex base
+    /// size。LayoutBox 侧该原子是普通 inline 级子（extract 不带 abspos 标），但第一趟
+    /// 以塌缩 li 为 CB 的 abspos shrink-to-fit 已把它折到 min-content（多词文本）——
+    /// 已布局宽不可作 max-content。
+    ///
+    /// 适用门（门外语义交还 taffy 原生路径，零干涉）：
+    /// - 横向主轴：父容器 flex/inline-flex + row/row-reverse（column 属块轴域另切片）；
+    /// - 水平书写模式（css-writing-modes-3：vertical 下 converter 已交换 taffy 主轴与
+    ///   size 槽，水平文本步进不可写入；R1018 同门）；
+    /// - item 无作者声明 definite width（css-flexbox-1 §4.1：definite 主轴尺寸即 flex
+    ///   base size，converter 已写入 taffy size.width，不得覆写）；
+    /// - item 非 abspos（css-flexbox-1 §4：out-of-flow 子不是 flex item，R3929
+    ///   shrink-to-fit cap 管界，不得覆写为未封顶 max-content）；
+    /// - 直接子含提升原子且子全为行内级（含块级子的 item 走 taffy 块流径正常求和）。
+    ///
+    /// max-content = max(各段 文本+段内原子)（[`dom_inline_content_max_width`]，br 切段；
+    /// 提升原子按 taffy 同源 measure 闭包 MaxContent 重测 + frame + margins——first-pass
+    /// 污染防护：提升原子第一趟以塌缩 li 为 CB 做 abspos shrink-to-fit（多词文本折到
+    /// min-content），已布局宽不可信；非提升直属 atomic inline 读已布局 outer）+ item
+    /// 自身水平 frame（组成是 content-box 口径，css-sizing-3 §max-content border-box 计
+    /// 自身 padding/border）。命中项覆写第一趟污染的 auto 定尺：taffy size.width（R4360
+    /// 同口径 box_sizing 换算）+ mark_dirty，与 R1018 关键字 pass 同一 re-run 组。
+    /// kill-switch `ZW_HOISTED_ATOMIC_ITEM_INTRINSIC=0`。
+    pub(super) fn apply_hoisted_atomic_item_main_size(
+        taffy_tree: &mut TaffyTree<NodeId>,
+        root: &LayoutBox,
+        dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
+        measure_text: impl Fn(
+            NodeId,
+            taffy::geometry::Size<Option<f32>>,
+            taffy::geometry::Size<AvailableSpace>,
+        ) -> taffy::geometry::Size<f32>,
+    ) -> bool {
+        if std::env::var("ZW_HOISTED_ATOMIC_ITEM_INTRINSIC").as_deref() == Ok("0") {
+            return false;
+        }
+        let mut changed = false;
+        let mut stack: Vec<&LayoutBox> = vec![root];
+        while let Some(b) = stack.pop() {
+            stack.extend(b.children.iter());
+            let Some(id) = b.node_id else { continue };
+            if !b.is_flex_grid_item {
+                continue;
+            }
+            // 仅横向主轴 flex item（父容器 flex/inline-flex + row/row-reverse）。
+            let parent_row_main = doc.parent_node(id).and_then(|pid| styles.get(&pid)).is_some_and(|s| {
+                matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                    && matches!(
+                        s.flex_direction,
+                        FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                    )
+            });
+            if !parent_row_main {
+                continue;
+            }
+            // 水平书写模式门：vertical 下 converter apply_vertical_writing_mode 已把该子树
+            // taffy flex_direction Row→Column、size width↔height 交换——水平文本步进写入
+            // size.width 槽会落进 CSS height 语义位（css-writing-modes-3；R1018 同门）。
+            if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
+                continue;
+            }
+            // 作者声明 definite width 门：css-flexbox-1 §4.1——definite 主轴尺寸即 flex
+            // base size，converter 已把声明宽写入 taffy size.width；覆写会破坏作者定尺
+            // （declared_width_px 为 border-box px，None = auto/百分比/intrinsic）。
+            if b.declared_width_px.is_some() {
+                continue;
+            }
+            // 声明形态门（r3 DEF-A）：只有 width:auto 是本 pass 待求解形态——taffy
+            // content-based 尺寸被提升原子 abspos 表示破坏、且无其他 pass 代解。
+            // percent/fit-content/stretch 首趟按声明求解；min-content/max-content 关键字
+            // 由 R1018 intrinsic pass（同 re-run 组、先于本 pass）写入关键字测度——
+            // 覆写任一者都会把正确定尺回归为 max-content（css-flexbox-1 §4.1 flex base
+            // size）。
+            if !styles.get(&id).is_some_and(|s| matches!(s.width, LengthValue::Auto)) {
+                continue;
+            }
+            // abspos item 门：css-flexbox-1 §4——out-of-flow 子不是 flex item，其宽由
+            // R3929 shrink-to-fit（min(max-content, CB 可用宽)）cap；覆写为未封顶
+            // max-content 会溢出 containing block。
+            if b.node_id
+                .and_then(|nid| styles.get(&nid))
+                .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+            {
+                continue;
+            }
+            // 直接子含提升原子行内级盒（DOM 父 ≠ 本容器 + inline-block 家族/replaced-inline，
+            // 与 inline_finalization is_hoisted_atomic_child 同源判据）。无此形态的 item
+            // 走 taffy 原生路径零干涉。作者 position:absolute/fixed 的子原子与提升原子
+            // 同形、同样命中（taffy 原生内容测量对任何 abspos 子同样塌 0）——pass 照跑，
+            // 其宽度在下方原子表构建时排除（r3 DEF-B）。
+            let container = id;
+            let has_hoisted = b.children.iter().any(|c| {
+                c.node_id.is_some_and(|cid| {
+                    crate::inline_finalization::is_hoisted_atomic_child(doc, Some(container), cid, styles)
+                })
+            });
+            if !has_hoisted {
+                continue;
+            }
+            // 缺陷族形态门：li 的 LayoutBox 子全为行内级（提升原子已扁平为直接子）。
+            // 含块级子的 item 不属本缺陷族（taffy 块流径正常求和），零干涉。
+            if b.children.iter().any(|c| c.is_block_level) {
+                continue;
+            }
+            // 原子宽度表：提升原子按 taffy 同源 measure 闭包 MaxContent 重测 + 自身
+            // frame + margins（first-pass 污染防护：提升原子第一趟以塌缩 li 为 CB 做
+            // abspos shrink-to-fit——多词文本折到 min-content，LayoutBox.width 不可信，
+            // 故排除在 walker 口径外、一律重测）；非提升直属 atomic inline 正常流内
+            // taffy 已正确测量，读已布局 outer。
+            let mut atomic_widths: HashMap<NodeId, f32> = HashMap::default();
+            for c in &b.children {
+                let Some(cid) = c.node_id else { continue };
+                // 脱流子不计入原子表（r3 DEF-B；CSS2 §9.3.1 out-of-flow 非流内内容）：
+                // 作者 position:absolute/fixed 的子原子不参与 item 内容尺寸，其尺寸由
+                // abspos 路径对 item CB 求解（其余消费方同款守卫：tree.rs
+                // is_block_level_in_flow、inline_finalization sync 跳点）。
+                if styles
+                    .get(&cid)
+                    .is_some_and(|s| matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                {
+                    continue;
+                }
+                if crate::inline_finalization::is_hoisted_atomic_child(doc, Some(container), cid, styles) {
+                    let mc_content = measure_text(
+                        cid,
+                        taffy::geometry::Size {
+                            width: None,
+                            height: None,
+                        },
+                        taffy::geometry::Size {
+                            width: AvailableSpace::MaxContent,
+                            height: AvailableSpace::MaxContent,
+                        },
+                    )
+                    .width;
+                    let frame = c.padding_left + c.padding_right + c.border_left + c.border_right;
+                    atomic_widths.insert(cid, (mc_content + frame).max(0.0) + c.margin_left + c.margin_right);
+                } else if crate::inline_finalization::atomic_inline_child_style(doc, cid, styles) {
+                    atomic_widths.insert(cid, c.width + c.margin_left + c.margin_right);
+                }
+            }
+            // max-content 按段组合：原子宽经 resolver 落入 br 切开前的当前段——
+            // max(各段 文本+段内原子)；全局 Σ原子在最宽段不含原子时多计（css-sizing-3
+            // §max-content 按行取最大）。
+            let mut intrinsic =
+                crate::intrinsic_sizing::dom_inline_content_max_width(b, doc, styles, &|nid: NodeId| {
+                    atomic_widths.get(&nid).copied()
+                });
+            // 组成是 content-box 口径（文本段 + 原子 outer，均不含容器自身 padding/
+            // border）——border-box max-content 须计入 item 自身水平 frame，再走下方
+            // R4360 box_sizing 换算（漏加 frame 时 item 恒窄一个 frame 宽，同症状复现）。
+            intrinsic += b.padding_left + b.padding_right + b.border_left + b.border_right;
+            let Some(&taffy_id) = dom_to_taffy.get(&id) else {
+                continue;
+            };
+            if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
+                // R4360 同口径换算：组成 + frame 后 intrinsic 为 border-box 宽（R4360 的
+                // 前提在此成立），taffy size.width 为 content-box 语义（converter 默认
+                // content-box）——按 box_sizing 换算。
+                let frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
+                let content_width = if matches!(style.box_sizing, taffy::style::BoxSizing::BorderBox) {
+                    intrinsic
+                } else {
+                    (intrinsic - frame).max(0.0)
+                };
+                style.size.width = taffy::style::Dimension::length(content_width);
+                let _ = taffy_tree.set_style(taffy_id, style);
+                let _ = taffy_tree.mark_dirty(taffy_id);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// R4557：块轴 content 关键字尺寸（css-sizing-3 §5.1 sizing-values）。
     ///
     /// `height`/`min-height`/`max-height`（水平书写模式的块轴属性）的 `min-content`/

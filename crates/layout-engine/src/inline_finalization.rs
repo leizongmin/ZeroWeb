@@ -1282,7 +1282,7 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
 /// 的 inline 子树提升而来）。收集判据与 tree.rs `collect_atomic_inline_descendants`
 /// 同源：inline-block 家族，或 display:inline 的 replaced 元素（R4489 八类）。
 /// 匿名文本/虚拟盒（styles 缺失）不算。
-fn is_hoisted_atomic_child(
+pub(crate) fn is_hoisted_atomic_child(
     doc: &Document,
     container_dom: Option<NodeId>,
     child_id: NodeId,
@@ -1294,6 +1294,16 @@ fn is_hoisted_atomic_child(
     if doc.parent_node(child_id) == Some(container_dom) {
         return false;
     }
+    atomic_inline_child_style(doc, child_id, styles)
+}
+
+/// 子元素是否 atomic inline 行内级盒（inline-block 家族，或 display:inline 的 replaced
+/// 元素）——不依赖容器上下文的样式判据（t-p114 sizing pass 复用同源判据）。
+pub(crate) fn atomic_inline_child_style(
+    doc: &Document,
+    child_id: NodeId,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> bool {
     let Some(s) = styles.get(&child_id) else {
         return false;
     };

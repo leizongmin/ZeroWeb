@@ -849,6 +849,28 @@ impl LayoutEngine {
         } else {
             false
         };
+        // t-p114：R4941 提升原子行内级盒（taffy abspos 表示）不计入横向 flex item 的
+        // content-based main size——item 塌 0 宽（github 页脚 cookie-consent-link>button）。
+        // 与上方 sizing pass 同一 re-run 组（set_style+mark_dirty 后统一重跑一次）。
+        let changed_hoisted_item = Self::apply_hoisted_atomic_item_main_size(
+            &mut taffy_tree,
+            &root_box,
+            &dom_to_taffy,
+            styles,
+            doc,
+            |dom_id, known, available| {
+                measure_text_content(
+                    doc,
+                    styles,
+                    dom_id,
+                    known,
+                    available,
+                    &intrinsic_for_r695,
+                    inline_fonts,
+                    r109.run_in_prepended.get(&dom_id).copied(),
+                )
+            },
+        );
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
@@ -859,6 +881,7 @@ impl LayoutEngine {
             || changed_ar_container
             || changed_ar_flex_cross
             || changed_block_kw
+            || changed_hoisted_item
         {
             // 重跑 taffy 布局：set_style+mark_dirty 后需重新计算受影响子树。
             let available_space = taffy::geometry::Size {
