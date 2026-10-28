@@ -2759,11 +2759,14 @@
     return s ? s.url : '';
   };
   // §4.8.4.3.2 relevant mutations 状态表：crossorigin/referrerpolicy 按
-  // content-state 枚举比较（missing/empty/invalid → 缺省态，大小写不敏感）——
-  // 「state not changed」rows（empty→invalid、absent→invalid、大小写等值）
-  // 不触发，真变迁（absent→empty、default→有效关键字）触发。
+  // content-state 枚举比较，大小写不敏感。referrerpolicy 的 missing value
+  // default 与 invalid value default 均为**空串态**（HTML
+  // §referrerpolicy-attribute——现行 spec，「no-referrer-when-downgrade」是
+  // 独立关键字态，不与缺省归并）——「state not changed」rows（absent→invalid、
+  // empty→empty、大小写等值）不触发，真变迁（absent/empty → 任一关键字、
+  // n-r-w-d ↔ 空/他关键字）触发。
   globalThis.__zwAttrState5277 = function (name, v) {
-    if (v == null) return name === 'crossorigin' ? 'missing' : 'no-referrer-when-downgrade';
+    if (v == null) return name === 'crossorigin' ? 'missing' : '';
     var s = String(v).trim().toLowerCase();
     if (name === 'crossorigin') {
       return (s === 'use-credentials') ? 'use-credentials' : 'anonymous';
@@ -2774,7 +2777,7 @@
       case 'strict-origin-when-cross-origin': case 'unsafe-url':
         return s;
       default:
-        return 'no-referrer-when-downgrade';
+        return '';
     }
   };
   // s70：update-the-image-data 运行核（R56h `.src` IDL 链自 part05 setter 抽出，
@@ -3007,6 +3010,13 @@
           globalThis.__zwImgRevalidate5277(sel, handle);
         }
       }
+      if (ln === 'width' || ln === 'height') {
+        // whatwg/html#8492：loading=lazy 的 img，width/height 内容属性
+        // set/changed/removed 是 relevant mutation（重验——同 URL 命中
+        // available-images 重派 load）。eager/无效 loading 不触发。
+        var _lzV = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase();
+        if (_lzV === 'lazy') globalThis.__zwImgRevalidate5277(sel, handle);
+      }
       return;
     }
     if (tag === 'SOURCE') {
@@ -3031,7 +3041,7 @@
   // spec relevant mutations：img 自身插入/移除且新/旧父为 picture → 重验该 img；
   // source 插入/移除且父为 picture → 其后 img 兄弟重验。子树深查不做（picture
   // 整体插入不动 img 自身——'picture is inserted' rows timeout 面）。
-  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert) {
+  globalThis.__zwImgTreeMutated5277 = function (parentSel, parentHandle, node, isInsert, afterAnchor) {
     try {
       if (!node || node.nodeType !== 1) return;
       var pTag = '';
@@ -3046,10 +3056,26 @@
       var pEl = _makeProxy(parentSel, parentHandle);
       var kids = pEl.children;
       var after = false;
-      for (var i = 0; i < kids.length; i++) {
-        if (kids[i] === node) { after = true; continue; }
-        if (after && _zw5277Tag(kids[i]) === 'IMG') {
-          globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+      if (isInsert) {
+        // 插入：node 仍在 kids 中，其后 img 兄弟重验。
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i] === node) { after = true; continue; }
+          if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+          }
+        }
+      } else {
+        // 移除：removeChild trap 在节点摘除后调用，kids 已不含 node——
+        // 「其后」判定改由 trap 侧移除前捕获的 former next sibling（part04
+        // R188 `_r188Next` 同源）作位置锚：从锚（含）向后重验 img。锚为 null
+        // = 移除节点原为末子，其后无 img，不重验；锚缺省（plain 子路径无位
+        // 置捕获）保守回退全量重验。
+        after = (afterAnchor === undefined);
+        for (var i = 0; i < kids.length; i++) {
+          if (!after && afterAnchor != null && kids[i] === afterAnchor) after = true;
+          if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
+          }
         }
       }
     } catch (_e5277tm) {}

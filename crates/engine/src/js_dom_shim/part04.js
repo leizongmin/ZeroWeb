@@ -7895,7 +7895,10 @@
             }
             // s70：img/source 自 picture 移除 → relevant mutation（R125 sel 子与各
             // 长尾路径汇此 return；文本路径的早退 return 不达——非元素本就无关）。
-            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false); } catch (_e5277trm2) {}
+            // 第 5 参传移除前捕获的 former next sibling（R188 `_r188Next`）作
+            // 「其后 img 兄弟」位置锚——helper 在节点摘除后调用，kids 已不含
+            // 被移节点，无锚无法定位。
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false, _r188Next); } catch (_e5277trm2) {}
             return child;
           };
         }
