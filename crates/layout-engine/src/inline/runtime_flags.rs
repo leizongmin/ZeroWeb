@@ -252,6 +252,17 @@ pub(super) fn first_word_float_fit() -> bool {
     selected(*VALUE, || default_on("ZW_FIRST_WORD_FLOAT_FIT"))
 }
 
+/// R5316（CSS2 §10.8.1 va:text-* × 负 leading）：text-top/text-bottom 对齐参照 =
+/// **父 content area**（字体度量、基线相对）——负 leading（line-height < A+D）时参照
+/// 位越出行盒，half_leading 扩展下限被钳零、行盒不生长
+///（vertical-align-negative-leading-001：chromium 行高 30/20/20，ZW 恒 10）。
+/// 基线锚定需求与既有 half_leading 校准值取 max（正 leading 域零扰动）。
+/// default-on；`ZW_VA_TEXT_BASELINE_PIN=0` 回退纯 half_leading 扩展（旧行为）。
+pub(super) fn va_text_baseline_pin() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_VA_TEXT_BASELINE_PIN"));
+    selected(*VALUE, || default_on("ZW_VA_TEXT_BASELINE_PIN"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

@@ -244,7 +244,9 @@ impl InlineFormattingContext {
                             margin_top: 0.0,
                             margin_bottom: 0.0,
                             baseline: run.font_size,
-                        });
+                            anchored_baseline_y: 0.0,
+                        }
+);
                         // R4299：padding_right 推进（§8.4，同 padding_left）
                         if run.padding_right > 0.0 {
                             current_x += run.padding_right;
@@ -399,7 +401,9 @@ impl InlineFormattingContext {
                                 margin_top: 0.0,
                             margin_bottom: 0.0,
                                 baseline: run.font_size,
-                            });
+                                anchored_baseline_y: 0.0,
+                            }
+);
                             current_x += tab_advance;
                             last_was_collapsible_ws = false;
                             // R5161：tab 是空白——其后断行合法，不构成词中拼接。
@@ -485,7 +489,9 @@ impl InlineFormattingContext {
                                     margin_top: 0.0,
                                     margin_bottom: 0.0,
                                     baseline: run.font_size,
-                                });
+                                    anchored_baseline_y: 0.0,
+                                }
+);
                             }
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
@@ -794,7 +800,9 @@ impl InlineFormattingContext {
                                     margin_top: 0.0,
                             margin_bottom: 0.0,
                                     baseline: run.font_size,
-                                });
+                                    anchored_baseline_y: 0.0,
+                                }
+);
 
                                 partial_x += ch_width;
                                 // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
@@ -843,7 +851,9 @@ impl InlineFormattingContext {
                                 margin_top: 0.0,
                             margin_bottom: 0.0,
                                 baseline: run.font_size,
-                            });
+                                anchored_baseline_y: 0.0,
+                            }
+);
 
                         // R5115：词级 owner/结尾空白态更新（边界判定消费于下一词）。
                         last_content_owner = Some(run.node_id);
@@ -1001,7 +1011,9 @@ impl InlineFormattingContext {
                         margin_top: m_top,
                         margin_bottom: m_bot,
                         baseline: box_info.baseline,
-                    });
+                        anchored_baseline_y: 0.0,
+                    }
+);
 
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
@@ -1426,7 +1438,9 @@ impl InlineFormattingContext {
                         margin_top: 0.0,
                             margin_bottom: 0.0,
                         baseline: run.font_size,
-                    });
+                        anchored_baseline_y: 0.0,
+                    }
+);
 
                     partial_depth += ch_height;
                     current_column.height = current_column.height.max(run.line_height);
@@ -1466,7 +1480,9 @@ impl InlineFormattingContext {
                         margin_top: 0.0,
                             margin_bottom: 0.0,
                         baseline: segment.run.font_size,
-                    });
+                        anchored_baseline_y: 0.0,
+                    }
+);
 
                     segment_depth += segment_height;
                     current_column.height = current_column.height.max(segment.run.line_height);

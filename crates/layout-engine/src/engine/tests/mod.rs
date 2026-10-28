@@ -883,3 +883,7 @@ mod r5300_abspos_stf_cb_prop_tests;
 /// R5166 锚发射门扩 InlineBlock（UA replaced 组），abspos img 不再落块游标位盖住
 /// 前驱 atomic inline-block（vertical-align-baseline-004a/005a）。
 mod r5315_inline_block_oof_static_pos_tests;
+/// R5316（CSS2 §10.8.1 va:text-* × 负 leading）text-top/text-bottom 基线锚定围合——
+/// 行盒按父 content area 需求生长（负 leading 域），正 leading 域 max 合成零扰动
+///（vertical-align-negative-leading-001）。
+mod r5316_va_text_neg_leading_tests;

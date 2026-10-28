@@ -267,6 +267,7 @@ mod tests {
             margin_top: 0.0,
             margin_bottom: 0.0,
             baseline: font_size,
+            anchored_baseline_y: 0.0,
         }
     }
 

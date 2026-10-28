@@ -445,6 +445,7 @@ fn r3636_refresh_reused_inline_block_metrics_resolves_residual_vertical_margins(
             margin_top: 0.0,
             margin_bottom: 0.0,
             baseline: 10.0,
+            anchored_baseline_y: 0.0,
         }],
         baseline_y: 10.0,
         ascent: 10.0,

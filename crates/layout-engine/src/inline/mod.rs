@@ -2162,6 +2162,7 @@ impl InlineFormattingContext {
                         margin_top: 0.0,
                         margin_bottom: 0.0,
                         baseline: box_info.baseline,
+                        anchored_baseline_y: 0.0,
                     });
 
                     // 垂直模式：margin_top/bottom 沿 inline（depth）方向推进，
@@ -2732,11 +2733,51 @@ impl InlineFormattingContext {
                 self.container_font_size
             };
             let half_leading_hl = ((line_height - strut_fs_hl) / 2.0).max(0.0);
+            // R5316（CSS2 §10.8.1 va:text-* × 负 leading）：text-top/text-bottom 的对齐
+            // 参照是**父 content area**（容器字体度量、基线相对：顶 = baseline − A_parent、
+            // 底 = baseline + D_parent），盒参与行盒围合。负 leading（line-height < A+D）
+            // 时参照位越出行盒、旧 half_leading 扩展被 .max(0.0) 钳零 → 行盒不生长
+            //（vertical-align-negative-leading-001：chromium 行高 30/20/20，ZW 恒 10）。
+            // 需求与既有 half_leading 校准值取 **max**：正 leading 域需求 ≤ 0 ≤ half
+            //（fs16/lh20 单 text-top/text-bottom 逐字节同旧行为，va-117a 判例零扰动），
+            // 负 leading 域需求生效。top 先行（盒顶越出线顶的量），bot 按**扩展后基线**
+            // 合围（线底达 baseline_new + D_parent / 盒底）。参照取 IFC strut 字体
+            //（A+D≈fs 近似同 R990 口径；嵌套异体 inline 父参照为近似，corpus 判例均为
+            // 容器字体）。kill-switch `ZW_VA_TEXT_BASELINE_PIN=0` 回退纯 half_leading。
+            let (va_a_parent, va_d_parent) = if runtime_flags::va_text_baseline_pin() {
+                let va_ratio = ascent_ratio_lookup(
+                    &self.ascent_ratio_overrides,
+                    self.container_node_id.unwrap_or_default(),
+                    self.container_strut_is_ahem,
+                );
+                (
+                    self.container_font_size * va_ratio,
+                    self.container_font_size * (1.0 - va_ratio),
+                )
+            } else {
+                (0.0, 0.0)
+            };
+            let va_baseline_pre = baseline_y;
             let mut top_extend = 0.0f32;
             let mut bot_extend = 0.0f32;
             for run in &line.runs {
+                // R5316：基线锚定需求仅对**文本 run**生效——原子盒（font_size=0，img 等）
+                // 的 text-* 行盒贡献保持 R822 half_leading 臂（c44-ln-box-000：4em img 於
+                // 10px 容器，锚定需求 = 40−D−B ≈ 25 会把已校准行高 25 拉到 45，chromium
+                // 判例不开——原子 text-* 的行盒围合域另案）。
                 let (up, down) = match run.vertical_align {
+                    VerticalAlignValue::TextBottom if run.font_size > 0.0 => (
+                        half_leading_hl.max(if va_a_parent + va_d_parent > 0.0 {
+                            run.height - va_d_parent - va_baseline_pre
+                        } else {
+                            0.0
+                        }),
+                        0.0,
+                    ),
                     VerticalAlignValue::TextBottom => (half_leading_hl, 0.0),
+                    VerticalAlignValue::TextTop if run.font_size > 0.0 => {
+                        ((va_a_parent - va_baseline_pre).max(0.0), half_leading_hl)
+                    }
                     VerticalAlignValue::TextTop => (0.0, half_leading_hl),
                     VerticalAlignValue::Super => (0.3 * run.font_size, 0.0),
                     VerticalAlignValue::Sub => (0.0, 0.3 * run.font_size),
@@ -2749,11 +2790,65 @@ impl InlineFormattingContext {
                     bot_extend = down;
                 }
             }
+            // R5316 bot 合围：text-top 盒底（baseline_new − A_parent + h）与 text-bottom
+            // 盒底钉位（baseline_new + D_parent）须在最终线高内——需求 bot 总量 =
+            // va_bot_need − line_height − top_extend，与既有 loop bot 取 max。
+            if va_a_parent + va_d_parent > 0.0 {
+                let va_baseline_new = va_baseline_pre + top_extend;
+                let va_bot_need = line
+                    .runs
+                    .iter()
+                    .filter(|r| {
+                        r.font_size > 0.0
+                            && matches!(
+                                r.vertical_align,
+                                VerticalAlignValue::TextTop | VerticalAlignValue::TextBottom
+                            )
+                    })
+                    .map(|r| match r.vertical_align {
+                        VerticalAlignValue::TextTop => va_baseline_new - va_a_parent + r.height,
+                        _ => va_baseline_new + va_d_parent,
+                    })
+                    .fold(0.0f32, f32::max);
+                let va_bot_total = va_bot_need - line_height - top_extend;
+                if va_bot_total > bot_extend {
+                    bot_extend = va_bot_total;
+                }
+            }
             if top_extend > 0.0 || bot_extend > 0.0 {
                 line.height += top_extend + bot_extend;
                 line.baseline_y += top_extend;
                 line.ascent += top_extend;
                 line.descent += bot_extend;
+            }
+            // R5316 Phase 3（CSS2 §10.8.1 va:text-*）：文本 run 的字形基线按**父
+            // content area**精确锚定——text-top 盒顶（leaded box 顶 = (lh−fs)/2 + A_span）
+            // 钉 baseline − A_parent、text-bottom 盒底钉 baseline + D_parent：
+            //   Δ(top) = (line_height − fs)/2 + A_span − A_parent
+            //   Δ(bot) = −((line_height − fs)/2 + D_span − D_parent)
+            // 同字体正 leading 域退化为 ±half_leading（inline_finalization R822 Phase 3
+            // 重建式，零扰动）；负 leading 域该式被 .max(0.0) 钳零、字形滞留 strut 基线
+            //（vertical-align-negative-leading-001：chromium −10/+10，ZW 0）。存
+            // run.baseline_y（恒 0 = 未设哨兵）供存储臂优先消费；旗标关时不写 → 旧重建式。
+            if runtime_flags::va_text_baseline_pin() && va_a_parent + va_d_parent > 0.0 {
+                for run in &mut line.runs {
+                    if run.font_size <= 0.0 {
+                        continue;
+                    }
+                    let va_half_span = (line_height - run.font_size) / 2.0;
+                    let va_ratio_run = ascent_ratio_lookup(&self.ascent_ratio_overrides, run.node_id, run.is_ahem);
+                    match run.vertical_align {
+                        VerticalAlignValue::TextTop => {
+                            run.anchored_baseline_y =
+                                line.baseline_y + va_half_span + run.font_size * va_ratio_run - va_a_parent;
+                        }
+                        VerticalAlignValue::TextBottom => {
+                            run.anchored_baseline_y =
+                                line.baseline_y - (va_half_span + run.font_size * (1.0 - va_ratio_run) - va_d_parent);
+                        }
+                        _ => {}
+                    }
+                }
             }
             r5298_lifts.push(r5298_lift);
         }
@@ -3040,6 +3135,7 @@ impl InlineFormattingContext {
                     margin_top: run.margin_top,
                     margin_bottom: run.margin_bottom,
                     baseline: run.baseline,
+                    anchored_baseline_y: 0.0,
                 })
             })
             .collect()

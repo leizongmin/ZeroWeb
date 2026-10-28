@@ -2167,9 +2167,14 @@ fn r822_linebox_grows_for_valign_extension() {
         "text-bottom 行 line-box 应扩展超 130+40，实际 {}",
         line.height
     );
+    // R5316（CSS2 §10.8.1 va:text-*）：text-bottom 盒底钉 **容器** content 底
+    //（baseline + D_parent）——本测试 IFC 容器字体 16px 非 Ahem（D_p≈1.15）而 run
+    // 40px 混排，扩展量 = 盒顶越出线顶量 130 − D_p − baseline(82.12) ≈ 46.73，
+    // 不再是 run 自身 half_leading 45 的近似（真实判例 va-117a 容器/run 同字体域
+    // 两值一致，max 合成零扰动）。期望 height ≈ 176.73。
     assert!(
-        line.height <= 130.0 + 45.0 + 1.0,
-        "text-bottom 扩展量应≈half_leading 45，实际 height={}",
+        (line.height - 176.73).abs() < 1.0,
+        "text-bottom 扩展量应≈基线锚定钉位 46.73（height≈176.73），实际 height={}",
         line.height
     );
     // baseline_y 随 top_extend 下移（strut 在更高 line-box 内下移）。

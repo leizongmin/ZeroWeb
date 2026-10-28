@@ -428,6 +428,11 @@ pub struct TextFragment {
     /// - inline-block：baseline = height（基线在底部边缘）
     /// - inline-flex/inline-grid：baseline 从第一个 item 合成
     pub baseline: f32,
+    /// R5316：va:text-* 文本 run 的**锚定字形基线**（行顶相对）——text-top/text-bottom
+    /// 按父 content area（基线相对）精确锚定后的基线位。恒 `0.0` = 未设哨兵（其他
+    /// vertical-align 值及旗标关臂），存储臂（inline_finalization）回退 R822 Phase 3
+    /// 重建式。仅 layout 内部流转，不进 `all_fragments*` 公开面。
+    pub anchored_baseline_y: f32,
 }
 
 /// CSS Text §4.1 白空格折叠：将连续空白字符折叠为单个空格。

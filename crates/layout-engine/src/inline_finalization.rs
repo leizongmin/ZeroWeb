@@ -2011,12 +2011,20 @@ pub(crate) fn compute_final_inline_layouts(
                     // （apply_vertical_alignment 已把 line-box 撑高、strut 下移）使 div 高度正确。
                     let strut_fs = ((line.ascent - line.height / 2.0) / 0.3).max(0.0);
                     let half_leading = (line.ascent - 0.8 * strut_fs).max(0.0);
-                    let frag_baseline_y = match frag.vertical_align {
-                        VerticalAlignValue::TextBottom => line.baseline_y - half_leading,
-                        VerticalAlignValue::TextTop => line.baseline_y + half_leading,
-                        VerticalAlignValue::Sub => line.baseline_y + 0.3 * frag.font_size,
-                        VerticalAlignValue::Super => line.baseline_y - 0.3 * frag.font_size,
-                        _ => line.baseline_y,
+                    // R5316：IFC 侧已按父 content area 精确锚定 text-top/text-bottom
+                    //（mod.rs R822 Phase 3 写 run.anchored_baseline_y，恒 0 = 未设哨兵
+                    // → 旧重建式）。重建式由**扩展后**行度量反推 half_leading，负 leading
+                    // 域被钳零失真，仅作未锚定 run（sub/super/baseline 及旗标关臂）的回退。
+                    let frag_baseline_y = if frag.anchored_baseline_y != 0.0 {
+                        frag.anchored_baseline_y
+                    } else {
+                        match frag.vertical_align {
+                            VerticalAlignValue::TextBottom => line.baseline_y - half_leading,
+                            VerticalAlignValue::TextTop => line.baseline_y + half_leading,
+                            VerticalAlignValue::Sub => line.baseline_y + 0.3 * frag.font_size,
+                            VerticalAlignValue::Super => line.baseline_y - 0.3 * frag.font_size,
+                            _ => line.baseline_y,
+                        }
                     };
                     // R5250：本 fragment 归因节点的 relative inset 视觉位移（无表/未
                     // 入表 = 零位移）。
