@@ -558,7 +558,10 @@ fn load_data_url(input: &str) -> FetchJobResult {
 /// 计算 unsafe 请求成功后需要失效的同源缓存 URI。
 ///
 /// https://www.rfc-editor.org/rfc/rfc9111#section-4.4
-fn unsafe_invalidation_targets(request_url: &str, response: &crate::HttpResponse) -> Vec<String> {
+/// pub：headless 代理 fetch 非 GET 直发臂（`apps/browser` session.rs）与 GUI
+/// ResourceLoader 共用同一目标集语义（请求 URL + 最终 URL + 同源
+/// Location/Content-Location）。
+pub fn unsafe_invalidation_targets(request_url: &str, response: &crate::HttpResponse) -> Vec<String> {
     let Ok(request_url) = url::Url::parse(request_url) else {
         return vec![request_url.to_string()];
     };

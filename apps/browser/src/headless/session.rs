@@ -7,8 +7,10 @@ use std::sync::{Arc, Mutex};
 use zero_browser_shell::BrowserShell;
 
 use zero_net::cookie::CookieStore;
+// HttpMethod：缓存收尾/失效助手（cfg(test) 单元钉同用）与 proxy_fetch 方法归一。
+use zero_net::HttpMethod;
 #[cfg(not(test))]
-use zero_net::{HttpClient, HttpMethod, HttpRequest};
+use zero_net::{HttpClient, HttpRequest};
 #[cfg(not(test))]
 use zero_protocol::message::{
     AutomationOperation, AutomationRequest, AutomationResult, FetchParams, FramePublishMode, LoadHtmlParams,
@@ -368,7 +370,6 @@ fn inject_image_batch(
 }
 
 /// 请求 `Cache-Control` 头是否含指定指令（RFC 9111 §5.2.1 请求指令面，大小写不敏感）。
-#[cfg(not(test))]
 fn request_cache_control_directive(headers: &[(String, String)], directive: &str) -> bool {
     headers.iter().any(|(name, value)| {
         name.eq_ignore_ascii_case("cache-control")
@@ -382,7 +383,6 @@ fn request_cache_control_directive(headers: &[(String, String)], directive: &str
 /// 缓存复用路径（新鲜命中 / 304 重建）的存储响应 → 线上响应：剥除 `Set-Cookie`。
 /// 与 GUI 路径一致——ResourceLoader::submit 命中即回、仅在 submit_network 应用
 /// Set-Cookie；缓存复用不重放 cookie（RFC 9111 §4.3.4 的 304 并头集亦不含它）。
-#[cfg(not(test))]
 fn cached_response_into_http_response(cached: zero_net::CachedResponse) -> zero_net::HttpResponse {
     let mut response = cached.into_response();
     response
@@ -392,13 +392,13 @@ fn cached_response_into_http_response(cached: zero_net::CachedResponse) -> zero_
 }
 
 /// 网络响应的缓存收尾（GUI 路径 ResourceLoader::submit_network 同构）：
-/// 304 以「存储体 + 更新头」重建响应（RFC 9111 §4.3.4）；成功响应按响应策略写入
-/// 共享缓存；其余透传。
-#[cfg(not(test))]
+/// 304 以「存储体 + 更新头」重建响应（RFC 9111 §4.3.4）；成功响应在允许存储时
+/// 按响应策略写入共享缓存；其余透传。
 fn finalize_network_response_with_cache(
     cache: &Arc<Mutex<zero_net::HttpCache>>,
     url: &str,
     request_headers: &[(String, String)],
+    may_store: bool,
     result: Result<zero_net::HttpResponse, zero_net::NetError>,
 ) -> Result<zero_net::HttpResponse, zero_net::NetError> {
     match result {
@@ -409,7 +409,9 @@ fn finalize_network_response_with_cache(
             .map(cached_response_into_http_response)
             .ok_or_else(|| zero_net::NetError::Network("304 without cached entry".to_string())),
         Ok(response) => {
-            if response.is_success() {
+            // RFC 9111 §5.2.1.2：请求 no-store 禁止存储——读侧绕过查找之外，
+            // 写侧同闸（may_store=false 时即使响应可缓存也不得写入）。
+            if may_store && response.is_success() {
                 let _ =
                     cache
                         .lock()
@@ -422,8 +424,31 @@ fn finalize_network_response_with_cache(
     }
 }
 
+/// 非安全方法成功响应后的缓存失效（RFC 9111 §4.4 MUST）：非安全方法（非
+/// GET/HEAD/OPTIONS）成功即失效目标 URI 及同源 Location/Content-Location 目标，
+/// 与 GUI ResourceLoader 非 GET 直发臂共用 zero-net 目标集语义。
+/// 错误响应（非 2xx）不失效——目标未改变。
+fn invalidate_after_unsafe_response(
+    cache: &Arc<Mutex<zero_net::HttpCache>>,
+    method: &HttpMethod,
+    request_url: &str,
+    result: &Result<zero_net::HttpResponse, zero_net::NetError>,
+) {
+    let Ok(response) = result else {
+        return;
+    };
+    if matches!(method, HttpMethod::Get | HttpMethod::Head | HttpMethod::Options) || !response.is_success() {
+        return;
+    }
+    let mut cache = cache.lock().expect("headless HTTP cache lock");
+    for target in zero_net::resource_loader::unsafe_invalidation_targets(request_url, response) {
+        cache.invalidate(&target);
+    }
+}
+
 /// 经 per-origin 调度器发网络请求并做缓存收尾：条件请求头并入请求头（同名不覆盖），
-/// 优先级按原始请求头推断（与校验器无关），超时对齐既有直发路径（30s）。
+/// 优先级按原始请求头推断（与校验器无关），超时对齐既有直发路径（30s）；
+/// `may_store=false`（请求侧 no-store）时成功响应不写缓存。
 #[cfg(not(test))]
 fn submit_network_with_cache(
     cache: &Arc<Mutex<zero_net::HttpCache>>,
@@ -431,6 +456,7 @@ fn submit_network_with_cache(
     url: &str,
     request_headers: &[(String, String)],
     conditional_headers: Vec<(String, String)>,
+    may_store: bool,
 ) -> Result<zero_net::HttpResponse, zero_net::NetError> {
     let mut network_headers = request_headers.to_vec();
     for (name, value) in conditional_headers {
@@ -454,7 +480,7 @@ fn submit_network_with_cache(
         .recv()
         .map_err(|error| zero_net::NetError::Network(format!("fetch scheduler channel: {error}")))
         .and_then(|result| result.map_err(zero_net::NetError::Network));
-    finalize_network_response_with_cache(cache, url, request_headers, result)
+    finalize_network_response_with_cache(cache, url, request_headers, may_store, result)
 }
 
 #[cfg(not(test))]
@@ -842,6 +868,8 @@ impl HeadlessSession {
                     let cache = zero_net::shared_http_cache();
                     let request_no_store = request_cache_control_directive(&job_headers, "no-store");
                     let request_no_cache = request_cache_control_directive(&job_headers, "no-cache");
+                    // RFC 9111 §5.2.1.2：请求 no-store 读写双侧绕过缓存（写侧闸传给收尾）。
+                    let may_store = !request_no_store;
                     let lookup = if request_no_store {
                         zero_net::CacheLookup::Miss
                     } else {
@@ -860,22 +888,40 @@ impl HeadlessSession {
                                 .lock()
                                 .expect("headless HTTP cache lock")
                                 .conditional_headers_with_request(&job_url, &job_headers);
-                            submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, conditional_headers)
+                            submit_network_with_cache(
+                                &cache,
+                                &scheduler,
+                                &job_url,
+                                &job_headers,
+                                conditional_headers,
+                                may_store,
+                            )
                         }
                         zero_net::CacheLookup::Revalidate {
                             conditional_headers, ..
-                        } => submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, conditional_headers),
+                        } => submit_network_with_cache(
+                            &cache,
+                            &scheduler,
+                            &job_url,
+                            &job_headers,
+                            conditional_headers,
+                            may_store,
+                        ),
                         zero_net::CacheLookup::Miss => {
-                            submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, Vec::new())
+                            submit_network_with_cache(&cache, &scheduler, &job_url, &job_headers, Vec::new(), may_store)
                         }
                     }
                 } else {
-                    http.send(HttpRequest {
-                        method: job_method,
+                    let outcome = http.send(HttpRequest {
+                        method: job_method.clone(),
                         url: job_url.clone(),
                         headers: job_headers,
                         body: job_body,
-                    })
+                    });
+                    // RFC 9111 §4.4：非安全方法成功响应失效目标 URI（含同源
+                    // Location/Content-Location），防止后续 GET 复用陈旧条目。
+                    invalidate_after_unsafe_response(&zero_net::shared_http_cache(), &job_method, &job_url, &outcome);
+                    outcome
                 };
                 let _ = outcome_tx.send(CompletedFetch {
                     request_id,
@@ -889,11 +935,13 @@ impl HeadlessSession {
             // 线程创建失败（极端场景）：同步兜底，正确性优先于响应性。
             tracing::warn!("headless fetch worker spawn failed, running inline: {error}");
             let outcome = self.http.send(HttpRequest {
-                method,
+                method: method.clone(),
                 url: params.url.clone(),
                 headers,
                 body: params.body,
             });
+            // 非 GET 兜底路径同闸：非安全方法成功失效目标 URI（RFC 9111 §4.4）。
+            invalidate_after_unsafe_response(&zero_net::shared_http_cache(), &method, &params.url, &outcome);
             self.apply_fetch_completion(CompletedFetch {
                 request_id,
                 net_request_id,
@@ -1771,5 +1819,98 @@ mod tests {
         inject_image_batch(&mut snapshot, epoch.wrapping_sub(1), vec![batch_payload(42)]);
         let key = zero_render_foundation::image_cache::ImageKey::new(42);
         assert!(snapshot.image_cache.get(&key).is_none());
+    }
+
+    /// T25 请求指令解析：`Cache-Control` 大小写不敏感、多指令按逗号切分。
+    #[test]
+    fn request_cache_control_directive_parses_headers() {
+        let headers = vec![("Cache-Control".to_string(), "no-cache, no-store".to_string())];
+        assert!(request_cache_control_directive(&headers, "no-store"));
+        assert!(request_cache_control_directive(&headers, "NO-CACHE"));
+        assert!(!request_cache_control_directive(&headers, "max-age"));
+        let mixed = vec![
+            ("Content-Type".to_string(), "text/html".to_string()),
+            ("cache-control".to_string(), " max-age=60 ".to_string()),
+        ];
+        assert!(!request_cache_control_directive(&mixed, "no-store"));
+    }
+
+    fn t25_response(url: &str, status: u16) -> zero_net::HttpResponse {
+        zero_net::HttpResponse {
+            status_code: status,
+            headers: vec![("Cache-Control".to_string(), "public, max-age=60".to_string())],
+            body: b"t25".to_vec(),
+            url: url.to_string(),
+            redirect_count: 0,
+        }
+    }
+
+    /// T25 D1（RFC 9111 §5.2.1.2）：请求侧 no-store 的响应不得写入缓存
+    /// （may_store=false），其后查找必须未命中；对照组 may_store=true 正常存储。
+    /// 生产接线：proxy_fetch 以 `!request_no_store` 传入（请求侧 no-store 时读侧
+    /// 已强制 Miss，写侧由本闸收口）。
+    #[test]
+    fn finalize_may_store_false_skips_cache_write() {
+        let cache = Arc::new(std::sync::Mutex::new(zero_net::HttpCache::new()));
+        let url = "http://127.0.0.1:1/t25-no-store";
+        let no_store_headers = vec![("Cache-Control".to_string(), "no-store".to_string())];
+
+        let stored =
+            finalize_network_response_with_cache(&cache, url, &no_store_headers, false, Ok(t25_response(url, 200)));
+        assert!(stored.is_ok(), "response passes through regardless of store gate");
+        assert!(
+            matches!(
+                cache.lock().expect("cache lock").lookup(url, &[]),
+                zero_net::CacheLookup::Miss
+            ),
+            "no-store request response must not be stored"
+        );
+
+        // 对照：允许存储时同形态响应写入缓存（非 Miss）。
+        let url2 = "http://127.0.0.1:1/t25-stored";
+        let _ = finalize_network_response_with_cache(&cache, url2, &[], true, Ok(t25_response(url2, 200)));
+        assert!(
+            !matches!(
+                cache.lock().expect("cache lock").lookup(url2, &[]),
+                zero_net::CacheLookup::Miss
+            ),
+            "may_store=true must store a storable success response"
+        );
+    }
+
+    /// T25 D2（RFC 9111 §4.4）：非安全方法成功响应失效目标 URI；安全方法与
+    /// 错误响应不失效。与 GUI ResourceLoader 非 GET 直发臂共用目标集语义。
+    #[test]
+    fn unsafe_method_success_invalidates_cache_entry() {
+        let cache = Arc::new(std::sync::Mutex::new(zero_net::HttpCache::new()));
+        let url = "http://127.0.0.1:1/t25-unsafe";
+        let _ = finalize_network_response_with_cache(&cache, url, &[], true, Ok(t25_response(url, 200)));
+        assert!(!matches!(
+            cache.lock().expect("cache lock").lookup(url, &[]),
+            zero_net::CacheLookup::Miss
+        ));
+
+        // POST 成功（重定向后最终 URL 同 URL）→ 条目必须失效。
+        let post_response = t25_response(url, 200);
+        invalidate_after_unsafe_response(&cache, &HttpMethod::Post, url, &Ok(post_response));
+        assert!(
+            matches!(
+                cache.lock().expect("cache lock").lookup(url, &[]),
+                zero_net::CacheLookup::Miss
+            ),
+            "POST success must invalidate the cached entry"
+        );
+
+        // 安全方法（GET）与错误响应（500）不失效。
+        let _ = finalize_network_response_with_cache(&cache, url, &[], true, Ok(t25_response(url, 200)));
+        invalidate_after_unsafe_response(&cache, &HttpMethod::Get, url, &Ok(t25_response(url, 200)));
+        invalidate_after_unsafe_response(&cache, &HttpMethod::Post, url, &Ok(t25_response(url, 500)));
+        assert!(
+            !matches!(
+                cache.lock().expect("cache lock").lookup(url, &[]),
+                zero_net::CacheLookup::Miss
+            ),
+            "safe methods and error responses must not invalidate"
+        );
     }
 }

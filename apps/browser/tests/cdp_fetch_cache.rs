@@ -14,6 +14,13 @@
 //!
 //! `/marker`（`no-store`）每轮必上网，作为「第二轮页面加载与图片通道活跃」的
 //! 确定性证据，防止「第二轮压根没请求」造成缓存钉假绿。
+//!
+//! 钉 4（非安全方法失效）：表单 POST 提交（用户动作级——click submit 按钮 →
+//! `HtmlUserAction::Submit` → webview 转 POST Navigate → renderer `fetch_post` →
+//! browser `proxy_fetch` 非 GET 直发臂）成功后必须失效目标 URI 缓存
+//! （RFC 9111 §4.4 MUST）；其后再导航含同 URL 图片的页面必须重新上网。
+//! 注意：页面内 `fetch()`/XHR 走 renderer 自带 ResourceLoader（GUI 同构、
+//! 本就不经 headless proxy_fetch），无法驱动被测面——POST 入口只有表单提交导航。
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -44,6 +51,10 @@ struct TestSite {
     marker_hits: Arc<AtomicUsize>,
     /// `/reval`（no-cache+ETag）每次请求的（是否带 If-None-Match，响应状态）。
     reval_requests: Arc<Mutex<Vec<(bool, u16)>>>,
+    /// `/probe`（max-age=60，可缓存探针）GET 请求次数（子资源图片通道）。
+    probe_get_hits: Arc<AtomicUsize>,
+    /// `/probe` POST 请求次数（表单提交导航通道——非安全方法失效钉的被测面）。
+    probe_post_hits: Arc<AtomicUsize>,
     /// 全部请求的 `(时刻, 请求行)` 日志（诊断加载节奏）。
     request_log: Arc<Mutex<Vec<(String, String)>>>,
 }
@@ -56,12 +67,16 @@ impl TestSite {
         let fresh_hits = Arc::new(AtomicUsize::new(0));
         let marker_hits = Arc::new(AtomicUsize::new(0));
         let reval_requests = Arc::new(Mutex::new(Vec::new()));
+        let probe_get_hits = Arc::new(AtomicUsize::new(0));
+        let probe_post_hits = Arc::new(AtomicUsize::new(0));
         let request_log = Arc::new(Mutex::new(Vec::new()));
         let started = Instant::now();
         let shutdown_clone = shutdown.clone();
         let fresh_hits_thread = fresh_hits.clone();
         let marker_hits_thread = marker_hits.clone();
         let reval_requests_thread = reval_requests.clone();
+        let probe_get_hits_thread = probe_get_hits.clone();
+        let probe_post_hits_thread = probe_post_hits.clone();
         let request_log_thread = request_log.clone();
         std::thread::spawn(move || {
             listener.set_nonblocking(true).ok();
@@ -74,6 +89,7 @@ impl TestSite {
                 let n = stream.read(&mut buf).unwrap_or(0);
                 let req = String::from_utf8_lossy(&buf[..n]).to_string();
                 let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let req_method = req.split_whitespace().next().unwrap_or("GET").to_string();
                 let req_lower = req.to_ascii_lowercase();
                 request_log_thread
                     .lock()
@@ -85,7 +101,18 @@ impl TestSite {
                         "HTTP/1.1 200 OK",
                         "<!DOCTYPE html><html><head><title>T25 Cache</title>\
                          <link rel=\"stylesheet\" href=\"/reval\"></head><body>\
-                         <img src=\"/fresh\"><img src=\"/marker\"></body></html>"
+                         <img src=\"/fresh\"><img src=\"/marker\"><img src=\"/probe\"></body></html>"
+                            .to_string()
+                            .into_bytes(),
+                    ),
+                    "/formpage" => (
+                        "HTTP/1.1 200 OK",
+                        // 表单提交导航页：submit 按钮为页面唯一内容（click 命中面）。
+                        // POST 经用户动作 → webview SubmitForm→Navigate → renderer
+                        // fetch_post → browser proxy_fetch 非 GET 直发臂。
+                        "<!DOCTYPE html><html><head><title>T25 Form</title></head><body>\
+                         <form method=\"POST\" action=\"/probe\">\
+                         <input type=\"submit\" value=\"go\"></form></body></html>"
                             .to_string()
                             .into_bytes(),
                     ),
@@ -98,6 +125,20 @@ impl TestSite {
                     "/marker" => {
                         marker_hits_thread.fetch_add(1, Ordering::SeqCst);
                         head_extra.push_str("Cache-Control: no-store\r\n");
+                        ("HTTP/1.1 200 OK", PNG_1X1.to_vec())
+                    }
+                    "/probe" if req_method == "POST" => {
+                        // 表单 POST 落点：非安全方法直发臂的观测点（计数即是否上网）。
+                        // 响应按文档加载，text/plain 避免图片解码失败噪声。
+                        probe_post_hits_thread.fetch_add(1, Ordering::SeqCst);
+                        ("HTTP/1.1 200 OK", b"probe-post".to_vec())
+                    }
+                    "/probe" => {
+                        // 可缓存探针（max-age=60）：图片子资源通道 + 非安全方法失效
+                        // 语义的服务器面观测点（计数即是否真实上网）。
+                        probe_get_hits_thread.fetch_add(1, Ordering::SeqCst);
+                        head_extra.push_str("Cache-Control: public, max-age=60\r\n");
+                        head_extra.push_str("ETag: \"t25-probe-1\"\r\n");
                         ("HTTP/1.1 200 OK", PNG_1X1.to_vec())
                     }
                     "/reval" => {
@@ -119,9 +160,10 @@ impl TestSite {
                     }
                     _ => ("HTTP/1.1 200 OK", b"not found".to_vec()),
                 };
-                let content_type = match path.split('?').next().unwrap_or("/") {
-                    "/page" => "text/html",
-                    "/reval" => "text/css",
+                let content_type = match (path.split('?').next().unwrap_or("/"), req_method.as_str()) {
+                    ("/page", _) | ("/formpage", _) => "text/html",
+                    ("/reval", _) => "text/css",
+                    ("/probe", "POST") => "text/plain",
                     _ => "image/png",
                 };
                 let response = format!(
@@ -139,12 +181,22 @@ impl TestSite {
             fresh_hits,
             marker_hits,
             reval_requests,
+            probe_get_hits,
+            probe_post_hits,
             request_log,
         }
     }
 
     fn url(&self, path: &str) -> String {
         format!("http://127.0.0.1:{}{path}", self.port)
+    }
+
+    fn probe_get_hits(&self) -> usize {
+        self.probe_get_hits.load(Ordering::SeqCst)
+    }
+
+    fn probe_post_hits(&self) -> usize {
+        self.probe_post_hits.load(Ordering::SeqCst)
     }
 
     fn fresh_hits(&self) -> usize {
@@ -190,6 +242,46 @@ impl TestSite {
             if self.marker_hits() >= min_marker && last_change.elapsed() >= quiet {
                 return;
             }
+        }
+    }
+
+    /// 等到 probe GET 计数达到 `min` 且在 `quiet` 窗口内无新请求（子资源图片通道收敛判定）。
+    fn wait_probe_get(&self, min: usize, quiet: Duration, timeout: Duration, what: &str) {
+        let deadline = Instant::now() + timeout;
+        let mut last = self.probe_get_hits();
+        let mut last_change = Instant::now();
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "timeout waiting for {what}: log={:?}",
+                self.request_log()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+            let now = self.probe_get_hits();
+            if now != last {
+                last = now;
+                last_change = Instant::now();
+                continue;
+            }
+            if self.probe_get_hits() >= min && last_change.elapsed() >= quiet {
+                return;
+            }
+        }
+    }
+
+    /// 等到 probe POST 计数达到 `min`（表单提交导航到达非 GET 直发臂）。
+    fn wait_probe_post(&self, min: usize, timeout: Duration, what: &str) {
+        let deadline = Instant::now() + timeout;
+        loop {
+            assert!(
+                Instant::now() < deadline,
+                "timeout waiting for {what}: log={:?}",
+                self.request_log()
+            );
+            if self.probe_post_hits() >= min {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
         }
     }
 }
@@ -453,5 +545,107 @@ fn second_navigation_reuses_http_cache() {
     assert!(
         reval_statuses.iter().all(|status| *status == 200),
         "renderer must observe 200 (cached body rebuilt from 304), got {reval_statuses:?}"
+    );
+}
+
+/// 点击页面首个 submit 按钮（gBCR 真实布局 rect 取坐标 → Input.dispatchMouseEvent
+/// Press/Release 合成 Click）。用户动作级提交：webview `is_submit_button` →
+/// `HtmlUserAction::Submit` → SubmitForm 效果转 POST Navigate。
+fn click_submit_button(cdp: &mut CdpClient) {
+    let eval = cdp.call(
+        "Runtime.evaluate",
+        serde_json::json!({
+            "expression":
+                "var el = document.querySelector('input[type=submit]'); \
+                 var r = el.getBoundingClientRect(); \
+                 JSON.stringify({x: r.x, y: r.y, w: r.width, h: r.height})",
+        }),
+        Duration::from_secs(10),
+    );
+    let raw = eval["result"]["result"]["value"]
+        .as_str()
+        .unwrap_or("{\"x\":8,\"y\":8,\"w\":60,\"h\":22}");
+    let rect: Value = serde_json::from_str(raw).unwrap_or(serde_json::json!({}));
+    let cx = rect["x"].as_f64().unwrap_or(8.0) + rect["w"].as_f64().unwrap_or(60.0) / 2.0;
+    let cy = rect["y"].as_f64().unwrap_or(8.0) + rect["h"].as_f64().unwrap_or(22.0) / 2.0;
+    cdp.call(
+        "Input.dispatchMouseEvent",
+        serde_json::json!({ "type": "mousePressed", "x": cx, "y": cy, "button": "left", "clickCount": 1 }),
+        Duration::from_secs(10),
+    );
+    cdp.call(
+        "Input.dispatchMouseEvent",
+        serde_json::json!({ "type": "mouseReleased", "x": cx, "y": cy, "button": "left", "clickCount": 1 }),
+        Duration::from_secs(10),
+    );
+}
+
+/// 非安全方法成功后必须失效目标 URI 缓存（RFC 9111 §4.4 MUST，与 GUI
+/// ResourceLoader 非 GET 直发臂同构）：GET 缓存命中后同 URL 表单 POST 成功，再
+/// 导航含同 URL 图片的页面必须重新上网，不得复用陈旧条目（写后读一致性）。
+///
+/// 缺陷形态（T25 双审查返修前）：POST 走非 GET 直发臂零缓存交互，GET 条目原样
+/// 存活——第三步导航命中缓存、服务器零新 GET（本测试在该形态下红）。
+/// 页面内 `fetch()`/XHR 不经 headless proxy_fetch（renderer 自带 ResourceLoader
+/// GUI 同构路径），故 POST 入口取用户动作级表单提交导航。
+#[test]
+fn unsafe_method_invalidates_cached_entry() {
+    let site = TestSite::spawn();
+    let (port, _browser) = spawn_browser();
+    let mut cdp = CdpClient::connect(port);
+    cdp.call("Network.enable", serde_json::json!({}), Duration::from_secs(10));
+
+    // 第一步：含 /probe 图片的页面——探针经子资源通道上网并写入缓存。
+    cdp.call(
+        "Page.navigate",
+        serde_json::json!({ "url": site.url("/page?r=1") }),
+        Duration::from_secs(20),
+    );
+    site.wait_quiet(
+        1,
+        Duration::from_millis(1500),
+        Duration::from_secs(20),
+        "first navigation subresources",
+    );
+    let probe_get_base = site.probe_get_hits();
+    assert!(
+        probe_get_base >= 1,
+        "first navigation must fetch /probe subresource; log={:?}",
+        site.request_log()
+    );
+
+    // 第二步：表单页 click submit → POST /probe（非 GET 直发臂）。成功响应（200）
+    // 必须失效 /probe 缓存条目。
+    cdp.call(
+        "Page.navigate",
+        serde_json::json!({ "url": site.url("/formpage?r=2") }),
+        Duration::from_secs(20),
+    );
+    site.wait_quiet(
+        2,
+        Duration::from_millis(1000),
+        Duration::from_secs(20),
+        "form page load",
+    );
+    click_submit_button(&mut cdp);
+    site.wait_probe_post(1, Duration::from_secs(20), "form POST to reach proxy_fetch");
+
+    // 第三步：再导航含 /probe 图片的页面。POST 已失效条目 → 必须重新上网
+    // （GET 计数上升）；失效缺失（返修前缺陷形态）时此处命中陈旧缓存、计数不变。
+    cdp.call(
+        "Page.navigate",
+        serde_json::json!({ "url": site.url("/page?r=3") }),
+        Duration::from_secs(20),
+    );
+    site.wait_probe_get(
+        probe_get_base + 1,
+        Duration::from_millis(1500),
+        Duration::from_secs(20),
+        "post-unsafe navigation to re-fetch invalidated entry",
+    );
+    assert!(
+        site.probe_get_hits() > probe_get_base,
+        "unsafe method success must invalidate cached entry: navigation after POST must re-fetch /probe from network; log={:?}",
+        site.request_log()
     );
 }
