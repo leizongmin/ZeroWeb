@@ -6,11 +6,30 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.0
-**日期**: 2026-10-27（二期立项）
-**状态**: Active——M1 未启动
+**版本**: v2.1
+**日期**: 2026-10-29（M1 归因收口）
+**状态**: Active——M1 完成（DC-1/DC-3 落档），M2+ 未启动
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
+
+## 当前状态（2026-10-29）
+
+- **M1 完成**：通道全量基线七域 9354/12078 = 77.4%（url 1146F、mimesniff
+  865F、fetch/api 572F+1T 为三大失败族）；失败簇逐簇归因落
+  [M1 归因档](net-api-compat/evidence/2026-10-29-m1-failure-attribution.md)，
+  WebSocket 重估结论**维持挂账**（残面全为 runner 结构面）落
+  [DC-3 档](net-api-compat/evidence/2026-10-29-m1-ws-reassessment.md)。
+- **一期零回归对账**：url/streams/eventsource/fetch-other 零回归；mimesniff
+  −856 与 fetch/api 13 legs 为一期已记账翻转/trade-off；**真回归 3 legs**
+  （xhr json UTF-16、xhr CORS 同源重定向、ws constructor/016）挂收敛轮清偿。
+- **卡点**：url 759F 根因在 `url`/`idna` crate 共享路径（FailFast vs spec
+  IgnoreInvalidPunycode），收敛点为 `js_dom_bridge.rs` 解析回退，涉及共享
+  crate 边界，改动按依赖约束核对。
+- **下一步（M2+，按可收敛腿量排序）**：① mimesniff Request/Response 腿
+  blob().type parse-serialize（263+xhr 7 连带）；② url IDNA（~783）；
+  ③ fetch/api 构造/消费语义簇（~138）+ 真回归 3 legs；④ runner 基建切片
+  （cors-filtering/request-cache 族，记账推动）；⑤ USP BOM（28）/
+  setters-stripping（54）小片。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -39,8 +58,9 @@
   evidence 落档。
 - **DC-3（WebSocket 结论）**：挂账重估结论落 evidence（可行切片或维持挂账
   及重入条件）。
-- **DC-4（coverage 复测）**：三族已覆盖失败子测试显著下降（目标值在 M1
-  归因后按可收敛簇定量）；对一期已收口域零回归。
+- **DC-4（coverage 复测）**：三族已覆盖失败子测试显著下降（M1 归因定量：
+  mimesniff 865→602、url 1146→~360、fetch/api 572→~300，详见 M1 归因档
+  「M2+ 收敛排序建议」）；对一期已收口域零回归。
 
 ## 里程碑
 
