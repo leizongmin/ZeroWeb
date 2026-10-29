@@ -68,7 +68,13 @@
 > --all-targets -D warnings 零告警；fmt 过（本轮 .rs 干净；既有
 > text_encoding.rs fmt 漂移归口 encoding 流提交 a828dfac4 遗留——
 > `make test` fmt 前置门会先挡它，按工作面不重叠纪律不动仅提及）。验证集
-> 对齐 s142–s149 同面先例（无 reftest 义务——行为面非渲染）。账本见
+> 对齐 s142–s149 同面先例（无 reftest 义务——行为面非渲染）。**合并树
+> 复验**（提交后 pull --rebase 并入 encoding 流 d31398b12/548019ec7 两提
+> 交，s143/s144 先例）：全量重跑 7122P/847F/89T——位移 26 P 键 + 1 文件
+> T 键全部集中在 textfieldselection/select-event.html（该文件全量跑文件
+> 级超时早收形，在册负载 flake s148「负偏差恢复 39」先例同族）；定向复
+> 跑 **270/270 键逐字节复绿**（零真回归，encoding 流并入与 link 事件面
+> 零交叉）；runner bin 合并树复出 **265/0F**。账本见
 > [evidence/2026-10-29-m2s150-dynamic-link-stylesheet-event-face.md](html-semantics-compat/evidence/2026-10-29-m2s150-dynamic-link-stylesheet-event-face.md)。
 > **范围**：engine src/js_dom_shim/part01.js/part03.js/part04.js/part05.js
 > + tests/wpt-runner/src/testharness.rs（stylesheet.py 端点 + 单测修复）。
