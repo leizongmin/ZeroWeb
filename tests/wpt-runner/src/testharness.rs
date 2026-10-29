@@ -5011,7 +5011,14 @@ fn parse_serve_with_content_type_query(query: &str) -> Option<(String, String)> 
 /// （无法识别 → None，调用方顺延下一级）。1024 字符窗近似 spec prescan 窗。
 /// https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
 fn sniff_document_encoding(html: &str) -> Option<String> {
-    let window = &html[..html.len().min(1024)];
+    // 窗口按字节计（spec prescan 1024 bytes），截断点须落在 char boundary——
+    // byte 1024 落进多字节字符时直切 panic（canvas 语料全角注释实证 rc=101）；
+    // 回退最近边界至多丢窗尾半个字符，不影响 meta 面匹配。
+    let mut end = html.len().min(1024);
+    while !html.is_char_boundary(end) {
+        end -= 1;
+    }
+    let window = &html[..end];
     let re_match = window.match_indices("<meta").find_map(|(pos, _)| {
         let tag_end = window[pos..].find('>')? + pos;
         let tag = &window[pos..=tag_end];
@@ -11924,6 +11931,24 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // encoding-legacy-mb DC-4 回归钉：sniff 1024 字节窗截断须落在 char
+    // boundary——byte 1024 落在多字节字符（'（' 占 1022..1025）内时原 `[..1024]`
+    // 直切 panic（canvas 语料全角注释实证 rc=101）。boundary 对齐输入窗恒等，
+    // 嗅探语义不变。
+    #[test]
+    fn sniff_document_encoding_window_multibyte_boundary() {
+        // byte 1024 在 '（' 字节中段：修复前 panic；现回退边界 1022，窗内无
+        // 完整 meta → None
+        let mut html = format!("<p>{}", "a".repeat(1019));
+        html.push('（');
+        html.push_str("<meta charset=\"utf-8\">");
+        assert_eq!(html.len(), 1025 + 22);
+        assert_eq!(sniff_document_encoding(&html), None);
+        // boundary 对齐：meta 在 1024 字节窗内照常嗅探（对齐输入零行为变化）
+        let aligned = format!("<meta charset=\"euc-jp\">{}", "a".repeat(1024));
+        assert_eq!(sniff_document_encoding(&aligned).as_deref(), Some("EUC-JP"));
+    }
 
     // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认
     // application/json 放行（pipe/sidecar 可覆盖）；serve-with-content-type.py 按
