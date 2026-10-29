@@ -76,7 +76,19 @@
     var headers = _zwCacheParseHeadersWire(rest.slice(headersStart, p3));
     var body = rest.slice(p3 + 1);
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwCacheDecodeBytesPrefix(body) : body;
-    var response = new Response(bodyArg, { status: status, statusText: statusText, headers: headers });
+    // net-api M2-S3：Response 构造器对 init.status ∉ [200,599] 抛 RangeError
+    //（https://fetch.spec.whatwg.org/#dom-response，user init 面）。wire 存档的
+    // error response（status 0、type 'error'——Response.error() put 后 match 回建）
+    // 非 user init，按 Response.error 同款构造后覆写，不走用户校验。
+    var response = (status >= 200 && status <= 599)
+      ? new Response(bodyArg, { status: status, statusText: statusText, headers: headers })
+      : (function () {
+          var r = new Response(bodyArg, { headers: headers });
+          r.status = status;
+          r.statusText = statusText;
+          r.ok = false;
+          return r;
+        })();
     response.type = String(responseType || 'default');
     response.url = responseUrl;
     if (_zwCacheIsOpaqueLikeType(response.type)) {

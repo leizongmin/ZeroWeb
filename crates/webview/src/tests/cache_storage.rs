@@ -635,3 +635,33 @@ fn persistent_owner_restores_page_cache_storage_after_webview_rebuild() {
         "missing"
     );
 }
+
+#[test]
+fn page_execute_script_entry_parses_absolute_urls_for_request_and_url() {
+    // 邻近回归钉（T26）：独立 `execute_script` 入口注入了 js_dom shim（R3295），其
+    // `new URL`/`new Request` 契约依赖 `register_dom_callbacks` 武装的 host 桥
+    //（`__zw_parse_url`）。绝对 https URL 经 `_zwRequestValidate`（fetch consumer
+    // 同源校验链）必须解析成功——非缓存路径，证明修复对校验器全部调用方生效。
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
+
+    webview
+        .execute_script(
+            r#"
+            globalThis.__urlProbe = (function () {
+              try {
+                const parsed = new URL('https://cache.example/app/data.txt');
+                const request = new Request('https://cache.example/app/data.txt');
+                return [parsed.href, request.url, String(typeof fetch === 'function')].join('|');
+              } catch (error) {
+                return 'error:' + String(error && error.message ? error.message : error);
+              }
+            })();
+            "#,
+        )
+        .unwrap();
+
+    assert_eq!(
+        webview.execute_script("globalThis.__urlProbe").unwrap(),
+        "https://cache.example/app/data.txt|https://cache.example/app/data.txt|true"
+    );
+}

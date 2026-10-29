@@ -2601,6 +2601,33 @@ impl WebView {
         if script.trim().is_empty() {
             return Err(WebViewError::Script("script is empty".into()));
         }
+        // T26（P33 主干回归）：本入口自 R3295 起注入 js_dom shim，但 shim 全局
+        //（`new URL`/`Request`/`Response`/Cache API…）依赖 `register_dom_callbacks`
+        // 武装的 host 桥（`__zw_parse_url` 等，js_dom_bridge/callbacks.rs 注册区）——
+        // 此前仅 run_page_scripts / execute_script_with_dom / dispatch_event 注册，
+        // 独立 execute_script 的 shim 全局停在缺桥状态：页面脚本 `cache.put(绝对URL)`
+        // 经 `new Request` → `_zwRequestValidate` → `new URL` 恒抛 TypeError。
+        // 镜像 execute_script_with_dom 的武装集：mutation 游标发布 + DOM 回调 +
+        // identity/pointer 桥（嵌入宿主桥面与页面 runtime 契约逐脚本执行入口对齐）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
+        {
+            let mutations = self.shared_mutations.clone();
+            let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+                std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+            let page_url = self.page_url_wire.clone();
+            let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+            register_dom_callbacks(
+                &mut **sandbox,
+                &mutations,
+                &dom_html,
+                &page_url,
+                &self.canvas_registry,
+                Some(&self.layout_rect_snapshot),
+            );
+            Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+            Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
+            Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        }
         self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
         let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
         sandbox
@@ -2615,6 +2642,9 @@ impl WebView {
                 // quickjs native 写此前既无重渲染也无 MO 排空，DC-7 对等收口）。
                 #[cfg(any(feature = "v8", feature = "quickjs"))]
                 self.sync_render_after_native_dom();
+                // T26：本入口已武装 shim 写桥，执行期记录的新增 DOM 变更在此应用
+                //（游标尾部；不 apply 会把变更滞留共享队列——镜像 execute_script_with_dom）。
+                self.apply_pending_shared_mutations()?;
                 // performance-api-compat M2-S1：本 execute 即一次任务边界——超阈值执行
                 // 的 longtask 条目在此发射（runner 探测环 timer 回调经此路径覆盖）。
                 self.drain_long_task_entries();
