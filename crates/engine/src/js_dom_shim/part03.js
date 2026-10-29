@@ -4510,13 +4510,18 @@
   // s151：@import 内层 URL 提取（`url('...')` / `"..."` / `'...'` 三书写形，去重保序，
   // 绝对化失败项跳过——data: base 下相对 URL 解析抛置，语料内层恒绝对 URL）。
   // 一层递归——内层响应体不再展开 @import（语料形态；多层链挂账）。
+  // s153：带引号 url() 形改回引边界捕获——旧捕获类 `[^'")]` 排除 `)`，把
+  // `url("...?pipe=status(404)")` 在 404 闭括号处截断（URL 丢 `)` → runner
+  // wpt_pipe_status strip_suffix 失败 → 404 退化为 200 → 期望 error 案误 load，
+  // link-load-error-events nonexistent/slow-fast 4 案单根）。引号形内 `)` 合法，
+  // 裸形才排除。
   function _zwStylesheetImports(_ssCss, _ssBase) {
     var _ssOut = [];
     try {
-      var _ssRe = /@import\s+(?:url\(\s*['"]?([^'")]*)['"]?\s*\)|"([^"]*)"|'([^']*)')/gi;
+      var _ssRe = /@import\s+(?:url\(\s*(['"])(.*?)\1\s*\)|url\(\s*([^'"\s)]+)\s*\)|"([^"]*)"|'([^']*)')/gi;
       var _ssM;
       while ((_ssM = _ssRe.exec(String(_ssCss))) != null) {
-        var _ssU = (_ssM[1] || _ssM[2] || _ssM[3] || '').trim();
+        var _ssU = (_ssM[2] || _ssM[3] || _ssM[4] || _ssM[5] || '').trim();
         if (!_ssU) continue;
         try {
           var _ssAbs = new URL(_ssU, _ssBase).href;
@@ -4612,31 +4617,60 @@
       // quirks-宽容 / broken-CT 无头放行）；通过后解析 @import 内层 URL 逐个取回
       //（同一判定链），任一 error → 外层 error、全部 load → load。
       // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
-      fetch(_ssHref).then(function (_ssR) {
-        if (!_ssR || !_ssR.ok) { _ssFire('error'); return; }
-        if (_zwStylesheetJudge(_ssR, _ssAbs) !== 'load') { _ssFire('error'); return; }
-        _ssR.text().then(function (_ssCss) {
-          var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbs);
-          if (!_ssUrls.length) { _ssFire('load'); return; }
-          var _ssPending = _ssUrls.length;
-          var _ssFailed = false;
-          for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
-            (function (_ssUrl) {
-              fetch(_ssUrl).then(function (_ir) {
-                if (!_ir || !_ir.ok) return 'error';
-                return _zwStylesheetJudge(_ir, _ssUrl);
-              }).then(function (_iv) {
-                if (_iv !== 'load') _ssFailed = true;
-              }).catch(function () { _ssFailed = true; }).then(function () {
-                _ssPending -= 1;
-                if (_ssPending === 0) _ssFire(_ssFailed ? 'error' : 'load');
-              });
-            })(_ssUrls[_ssI]);
+      // s153 三件：①多层递归展开（s151 一层边界收口——中层体内的第二层 @import
+      // 此前不可见，双层案（nonexistent/non-CSS/http mixed）期望 error 面全部失效
+      // 误 load；_ssDepth 上限 3 兜底环，FIXME(compat)：CSS @import 环检测未建模）。
+      // ②逐层 mixed content 门——@import 内层请求同为子资源取回，https 页 http:
+      // 内层应 block（error），此前只有外层 href 门覆盖；跨源 http 内层在 s153 前
+      // 碰巧由 fetch CORS check 顶住（静态臂无 ACAO），stylesheet 通道 CORS 豁免
+      // （③）后须显式补门（同 spec blocked fetch → error 事件语义）。③调用窗置位
+      // _zwStylesheetChannelDepth（part01 IIFE 局部旗标，页面不可见）——上游
+      // stylesheet 取回是 no-cors 请求不做 CORS check（HTML fetching stylesheets；
+      // 跨源无 ACAO 照常 load），shim fetch(cors) 仿真引入的 check 对跨端口案拒
+      //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
+      // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
+      // 门不受影响。
+      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDone) {
+        var _ssBlocked = false;
+        try {
+          var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL()
+            : (globalThis.location ? globalThis.location.href : '');
+          if (String(_ssUrl).indexOf('http:') === 0 && String(_ssPageHref || '').indexOf('https:') === 0) {
+            _ssBlocked = true;
           }
-        }).catch(function () { _ssFire('error'); });
-      }).catch(function () {
-        _ssFire('error');
-      });
+        } catch (_eMx) {}
+        if (_ssBlocked) {
+          // 同步回调：批内序先于微任务 load 子归零——先标 failed 后再归零，防
+          // 同批可 load 内层的微任务抢先 fire load（聚合语义 error 优先）。
+          _ssOnDone('error');
+          return;
+        }
+        var _ssP;
+        _zwStylesheetChannelDepth++;
+        try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
+        _ssP.then(function (_ssR) {
+          if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
+          if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
+          _ssR.text().then(function (_ssCss) {
+            if (_ssDepth >= 3) { _ssOnDone('load'); return; }
+            var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbsUrl);
+            if (!_ssUrls.length) { _ssOnDone('load'); return; }
+            var _ssPending = _ssUrls.length;
+            var _ssFailed = false;
+            for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
+              _ssVisit(_ssUrls[_ssI], _ssUrls[_ssI], _ssDepth + 1, function (_ssV) {
+                if (_ssV !== 'load') _ssFailed = true;
+                _ssPending -= 1;
+                if (_ssPending === 0) _ssOnDone(_ssFailed ? 'error' : 'load');
+              });
+            }
+          }).catch(function () { _ssOnDone('error'); });
+        }).catch(function () {
+          _ssOnDone('error');
+        });
+      };
+      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) { _ssFire(_ssV); });
     } catch (_eSs) {
       if (typeof globalThis._zwReportListenerError === 'function') {
         try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}

@@ -3950,7 +3950,23 @@
     response._bodyNull = true;
     return response;
   }
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials) {
+  // s153（html-semantics M2 切片 153）：**stylesheet 内部取回通道豁免 CORS 检查**——
+  // 上游 `<link rel=stylesheet>`（无 crossorigin 属性）的样式表取回是 no-cors 请求，
+  // 不做 CORS check 且跨源无 ACAO 照常 load（HTML spec fetching stylesheets；
+  // link-load-error-events「Load of https:// stylesheet」期望 load——上游 wptserve
+  // 静态 .css 不带 ACAO，跨端口取回成功）。shim 的 stylesheet 加载仿真
+  //（part03 _zwStylesheetMaybeStart，s150 动态臂/s151 判定链/s152 静态扫描共用）
+  // 走页面 fetch()（cors 模式）→ 引入了上游不存在的 CORS check：跨端口案被拒
+  // 「Failed to fetch」→ error 事件 ≠ 期望 load。旗标由 part03 取回点在 fetch()
+  // 调用窗内置位/清位（IIFE 模块局部——页面脚本不可见、不可伪造，区别于挂
+  // globalThis 的公开面）；_zwFetchMainImpl 同步段快照进闭包，trickle/delay 等
+  // setTimeout 异步取回臂同样生效。豁免 = 跳过 cors check + 跳过 cors 头过滤
+  //（全头保留——MIME/nosniff 判定 _zwStylesheetJudge 须读 x-content-type-options，
+  // cors 过滤会把非 safelisted 头剥掉）。404/MIME 判定链与 mixed content 门不受
+  // 影响（期望 error 案语义不变）。FIXME(compat)：crossorigin 属性形态的
+  // stylesheet 仍应走 CORS check（语料无该形态，未分型）。
+  var _zwStylesheetChannelDepth = 0;
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -3964,7 +3980,7 @@
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
-    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
+    if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
       // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
       // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
       var allowOrigin = response.headers.get('access-control-allow-origin');
@@ -3977,7 +3993,7 @@
         throw new TypeError('Failed to fetch');
       }
     }
-    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
+    if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
       // https://fetch.spec.whatwg.org/#concept-filtered-response-cors——cors 响应仅暴露
       // CORS-safelisted 响应头 + Access-Control-Expose-Headers 白名单；Set-Cookie 恒排除；
       // `*` 通配（credentials mode include 下仅字面匹配——cors-expose-star 页）。
@@ -4879,6 +4895,9 @@
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
+      // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
+      // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
+      var _zwSsChannel = _zwStylesheetChannelDepth > 0;
       var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
       // net-api M4-S12：内部直设头 wire 旁路（`init.__zwInternalHeadersWire`，\x1e 对齐
       // headersWire 格式）。spec 场景：SSE EventSource 于 request header list **内部直设**
@@ -5221,7 +5240,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel);
           if (hopUrl) response.url = hopUrl;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
@@ -5253,7 +5272,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
           response.url = hopUrl;
           return response;
         };
@@ -5286,7 +5305,7 @@
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
             try {
-              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
             } catch (eHop) {
               settled = true;
               delete globalThis.__zw_pending[id];
