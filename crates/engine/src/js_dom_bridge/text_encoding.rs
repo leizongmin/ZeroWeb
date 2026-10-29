@@ -1,5 +1,7 @@
 //! TextDecoder legacy 编码 host 面（encoding-compat M2 labels 全表 + legacy 解码；
 //! M3 增补空 chunk 直通 guard——encoding_rs 0.8.35 空输入调用丢驻留 lead）。
+//! encode 方向：form/urlencoded 提交编码桥（form-url-encoding-compat M1，
+//! [`text_encode_percent`]）。
 //! 经 encoding_rs（WHATWG encoding 标准 tables 的生成实现，zero-net 同款工作区依赖）——
 //! labels 标签匹配（trim ASCII whitespace + ASCII case-insensitive 全表）与解码器
 //!（单字节 28 编码 / GBK / GB18030 / Big5 / Shift_JIS / EUC-JP / EUC-KR /
@@ -112,6 +114,92 @@ pub fn text_decoder_decode(handle: u64, bytes_csv: &str, fatal: bool, last: bool
         false
     };
     format!("{{\"text\":{},\"err\":{}}}", json_str(&text), u8::from(err))
+}
+
+/// form/urlencoded 提交编码 encode 桥（form-url-encoding-compat M1）：legacy 提交
+/// 编码逐 scalar fresh 编码出字节，再按 URL standard percent-encode after encoding
+///（https://url.spec.whatwg.org/#string-percent-encode-after-encoding）字节级百分号
+/// 编码。HTML urlencoded serializer 的编码来自「select a form submission encoding」
+///（accept-charset 逐 token，首个合法者胜，回落文档编码）——shim 侧经
+/// `_zwEncodingFromLabel` 归一后传规范名；UTF-8 路径不经本桥（shim 既有纯 JS
+/// `_encPair` 零变化）。
+///
+/// **逐 scalar fresh 模型**：每码点独立编码、编码器状态不跨码点驻留、不产
+/// end-of-queue flush 切换。WPT iso-2022-jp encode-form 期望结构钉死：条目分隔符
+///（U+0019，ASCII）编为裸 %19、条目 = 完整 fresh 序列（ESC $ B 前缀逐条目重现）；
+/// 整串流式编码会在每个 ASCII 字节前多出 ESC ( B 模式切换而判 FAIL，Chrome 全
+/// variant 过（wpt.fyi c=[1000,1000]）同向实证。无状态编码（euc-jp/big5/gbk/
+/// euc-kr/shift_jis/windows-1252）逐 scalar 与整串逐位相同，无行为差。
+///
+/// mode="form"：application/x-www-form-urlencoded percent-encode set——字面量仅
+/// alnum + `*` `-` `.` `_`（与 shim `_encPair` 的 encodeURIComponent+补编同域），
+/// 空格 → `+`。mode="query"：special-query set（C0 + >U+007E + 空格 `"` `#` `<` `>` `` ` `` +
+/// `'`，M2 href 面预留）。unmappable → encoding_rs 出 HTML NCR `&#N;` 字节，
+/// `&` `#` `;` 在 set 内自然成 `%26%23N%3B`（spec errors 面同式）。UTF-16 系与
+/// replacement 经 get-an-output-encoding 以 UTF-8 出字节（URL standard 同名算法）。
+/// 未知 label → 空串（shim 归一后方调用，正常不达）。
+pub fn text_encode_percent(label: &str, text: &str, mode: &str) -> String {
+    let Some(encoding) = Encoding::for_label(label.as_bytes()) else {
+        return String::new();
+    };
+    // get-an-output-encoding：replacement 与 UTF-16 系的输出编码 = UTF-8。
+    let encoding = if encoding == encoding_rs::REPLACEMENT
+        || encoding == encoding_rs::UTF_16LE
+        || encoding == encoding_rs::UTF_16BE
+    {
+        encoding_rs::UTF_8
+    } else {
+        encoding
+    };
+    let query_mode = mode == "query";
+    let mut out = String::with_capacity(text.len() * 3 + 8);
+    if encoding == encoding_rs::UTF_8 {
+        encode_percent_bytes(text.as_bytes(), query_mode, &mut out);
+        return out;
+    }
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        let (encoded, _, _) = encoding.encode(ch.encode_utf8(&mut buf));
+        let raw: &[u8] = encoded.as_ref();
+        // ISO-2022-JP fresh 单 scalar 编码的 end-of-queue flush 尾巴（ESC ( B）剥除——
+        // per-scalar 输出里恒为伪迹（jis0208 字节域 0x21-0x7E、katakana 0xA1-0xDF、
+        // roman 0x5C/0x7E 均不含 0x1B；ASCII 面不切模式），非编码产出。
+        let raw = if encoding == encoding_rs::ISO_2022_JP && raw.ends_with(&[0x1B, 0x28, 0x42]) {
+            &raw[..raw.len() - 3]
+        } else {
+            raw
+        };
+        encode_percent_bytes(raw, query_mode, &mut out);
+    }
+    out
+}
+
+/// 字节级 percent-encode set 判定 + 编码（URL standard 序列化语义：输出字节按其
+/// 字节值比对该 set，https://url.spec.whatwg.org/#percent-encoded-bytes）。form
+/// mode：空格 → `+`，字面量 = alnum + `*-._`；query mode：special-query set
+///（query set = C0 controls + >0x7E + 空格 `"` `#` `<` `>`，special 补 `'`）。
+fn encode_percent_bytes(bytes: &[u8], query_mode: bool, out: &mut String) {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    for &b in bytes {
+        if !query_mode && b == b' ' {
+            out.push('+');
+            continue;
+        }
+        let in_set = if query_mode {
+            b <= 0x20
+                || b >= 0x7F
+                || matches!(b, b'"' | b'#' | b'<' | b'>' | b'`' | b'\'')
+        } else {
+            !(b.is_ascii_alphanumeric() || matches!(b, b'*' | b'-' | b'.' | b'_'))
+        };
+        if in_set {
+            out.push('%');
+            out.push(HEX[(b >> 4) as usize] as char);
+            out.push(HEX[(b & 0x0F) as usize] as char);
+        } else {
+            out.push(b as char);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -273,6 +361,71 @@ mod tests {
         }
         let out = text_decoder_decode(first.parse().unwrap(), "65", false, true);
         assert!(out.contains("\"err\":0"), "{out}");
+    }
+
+    #[test]
+    fn test_encode_percent_utf8_form_literals() {
+        // 字面量域 alnum + `*-._`（与 shim _encPair 的 encodeURIComponent+补编同域）；
+        // 空格 '+'；form set 补编 !'()~ 及 path/userinfo/component 系字符。
+        assert_eq!(text_encode_percent("UTF-8", "a*-._Z9", "form"), "a*-._Z9");
+        assert_eq!(text_encode_percent("UTF-8", "a b", "form"), "a+b");
+        assert_eq!(text_encode_percent("UTF-8", "!'()~", "form"), "%21%27%28%29%7E");
+        assert_eq!(text_encode_percent("UTF-8", "a=b&c#d", "form"), "a%3Db%26c%23d");
+        // 未知 label → 空串（shim 归一后方调用，正常不达）。
+        assert_eq!(text_encode_percent("no-such-enc", "A", "form"), "");
+    }
+
+    #[test]
+    fn test_encode_percent_windows_1252() {
+        // € U+20AC → 0x80（M0 失败形态对称锚点：期望 %80 而非 UTF-8 %E2%82%AC）。
+        assert_eq!(text_encode_percent("windows-1252", "\u{20ac}", "form"), "%80");
+        assert_eq!(text_encode_percent("windows-1252", "A \u{20ac}", "form"), "A+%80");
+    }
+
+    #[test]
+    fn test_encode_percent_euc_jp() {
+        // euc-jp U+FF9A → 8E DA（M0 实测断言消息「expected %8E%DA but got
+        // %EF%BE%9A」——host 桥产出即期望侧字节序列）。
+        assert_eq!(text_encode_percent("EUC-JP", "\u{ff9a}", "form"), "%8E%DA");
+        // 分隔符 ","（eucjp-encode-form separator）→ %2C，条目拼接形态。
+        assert_eq!(
+            text_encode_percent("EUC-JP", "\u{ff9a},\u{ff9a}", "form"),
+            "%8E%DA%2C%8E%DA"
+        );
+    }
+
+    #[test]
+    fn test_encode_percent_iso_2022_jp_fresh_scalar() {
+        // 佩 U+4F69 = jis0208 0x50 0x50（decode 面 test_iso_2022_jp_state_machine
+        // 同表反向）——fresh 条目 = ESC $ B 前缀 + 双字节；字节级 set 下 0x42/0x50
+        // alnum 字面量 → "%1B%24BPP"（百分号解码后 == ESC $ B P P；flush 尾巴
+        // ESC ( B 已剥）。整串流式编码会产出 "%1B%24BPP%1B(B..." 形态，此处同时
+        // 钉死 fresh 模型与字节级 set 两语义。
+        assert_eq!(text_encode_percent("ISO-2022-JP", "\u{4f69}", "form"), "%1B%24BPP");
+        // 分隔符 U+0019 fresh ASCII 面 → 裸 %19（无模式切换）；两条目串保持
+        // split(encodedSeparator) 结构性质（WPT harness 依赖）。
+        assert_eq!(text_encode_percent("ISO-2022-JP", "\u{0019}", "form"), "%19");
+        assert_eq!(
+            text_encode_percent("ISO-2022-JP", "\u{4f69}\u{0019}\u{4f69}", "form"),
+            "%1B%24BPP%19%1B%24BPP"
+        );
+        // unmappable（U+4DC0 不在 jis0208）→ HTML NCR `&#19904;` → set 补编
+        // %26%23N%3B（WPT encode-form errors 变体期望公式）。
+        assert_eq!(
+            text_encode_percent("ISO-2022-JP", "\u{4dc0}", "form"),
+            "%26%2319904%3B"
+        );
+    }
+
+    #[test]
+    fn test_encode_percent_query_mode_and_output_encoding() {
+        // query mode（M2 href 面预留）：special-query set——空格 %20（非 '+'）、
+        // `'` 补编、`!` 字面量。
+        assert_eq!(text_encode_percent("UTF-8", "a b'c", "query"), "a%20b%27c");
+        assert_eq!(text_encode_percent("UTF-8", "a!b", "query"), "a!b");
+        // get-an-output-encoding：utf-16le / replacement 输出面 = UTF-8。
+        assert_eq!(text_encode_percent("utf-16le", "\u{4f69}", "form"), "%E4%BD%A9");
+        assert_eq!(text_encode_percent("csiso2022kr", "A", "form"), "A");
     }
 }
 

@@ -11304,6 +11304,33 @@
             }
             _fEnc = _fEnc.toLowerCase();
             if (_fEnc !== 'text/plain' && _fEnc !== 'multipart/form-data') _fEnc = 'application/x-www-form-urlencoded';
+            // M1 form-url-encoding-compat：「select a form submission encoding」步
+            //（spec form submission algorithm，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#select-a-form-submission-encoding）：
+            // accept-charset 属性值按 ASCII whitespace 切分，逐 token get-an-encoding
+            //（_zwEncodingFromLabel 全 label 表），首个合法者胜；全非法或属性缺席 →
+            // 回落文档 character encoding（document.characterSet 同源：host 预扫描
+            // 优先）。仅 urlencoded 序列化面消费（_encPair 分派：GET query + POST
+            // body）；text/plain / multipart 不消费提交编码（字面/UTF-8），行为不变。
+            // utf-16 系 label 不在表（_zwEncodingFromLabel 非 htmlMeta 面）→ 回落——
+            // 与 spec get-an-output-encoding(UTF-16*)=UTF-8 的可观测差异仅在
+            // accept-charset 显式 utf-16 且文档非 UTF-8 场景（无 WPT 覆盖）。FIXME:
+            // get-an-encoding 的 utf-16 label 面未实现。
+            var _fSubmitEnc = '';
+            try {
+              var _fAc = fHandle ? __zw_get_attr_handle(fHandle, 'accept-charset') : (__zw_get_attr(fSel, 'accept-charset') || '');
+              var _fTk = _fAc ? String(_fAc).split(/[\t\n\f\r ]+/) : [];
+              for (var _fTi = 0; _fTi < _fTk.length; _fTi++) {
+                if (!_fTk[_fTi]) continue;
+                var _fCanon = _zwEncodingFromLabel(_fTk[_fTi], false);
+                if (_fCanon) { _fSubmitEnc = String(_fCanon); break; }
+              }
+            } catch (_eAc0) {}
+            if (!_fSubmitEnc) {
+              var _fDocEnc = '';
+              try { _fDocEnc = String(globalThis.document.characterSet || ''); } catch (_eAc1) {}
+              _fSubmitEnc = (_fDocEnc && _zwEncodingFromLabel(_fDocEnc, false)) || 'UTF-8';
+            }
             // 换行归一（spec convert to a list of name-value pairs：lone CR/LF →
             // CRLF，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#convert-to-a-list-of-name-value-pairs）——
             // 三序列化共用；CRLF 保持、lone CR/LF 展开。
@@ -11317,6 +11344,15 @@
             // （`*` 两侧均字面量）。
             function _encPair(n, v) {
               function enc(s) {
+                // M1：非 UTF-8 提交编码 + host 编码桥在位 → legacy 编码字节面
+                // percent-encode（URL standard percent-encode after encoding，
+                // https://url.spec.whatwg.org/#string-percent-encode-after-encoding；
+                // 逐 scalar fresh 编码 + 字节级 set，见 text_encoding.rs 模块注）。
+                // host 未注册（engine/reftest/polyfill 面）或 UTF-8 → 既有纯 JS
+                // 路径零变化。
+                if (_fSubmitEnc !== 'UTF-8' && typeof __zw_text_encode_percent === 'function') {
+                  return __zw_text_encode_percent(_fSubmitEnc, _normNL(s), 'form');
+                }
                 return encodeURIComponent(_normNL(s))
                   .replace(/%20/g, '+')
                   .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/~/g, '%7E');

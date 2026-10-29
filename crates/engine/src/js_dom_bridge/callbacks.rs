@@ -800,6 +800,22 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // form/urlencoded 提交编码 encode 桥（form-url-encoding-compat M1）——legacy
+    // 提交编码逐 scalar fresh 编码 + URL standard percent-encode after encoding
+    //（mode="form"：urlencoded set + 空格 '+'；mode="query"：special-query set，
+    // M2 href 面预留）。arg[0]=label（shim `_zwEncodingFromLabel` 归一的规范名），
+    // arg[1]=text，arg[2]=mode。返百分号编码 ASCII 串（未知 label → 空串）。
+    // 未注册时 shim 留守 `_encPair` 纯 JS UTF-8 路径，零回归。
+    sandbox.register_callback(
+        "__zw_text_encode_percent",
+        Box::new(|args: &[String]| -> String {
+            let label = args.first().map(String::as_str).unwrap_or("");
+            let text = args.get(1).map(String::as_str).unwrap_or("");
+            let mode = args.get(2).map(String::as_str).unwrap_or("form");
+            text_encode_percent(label, text, mode)
+        }),
+    );
+
     // `crypto.subtle.sign/verify("HMAC", ...)`（R2955）——HMAC-SHA-1/256/384/512。
     // arg[0]=hash 名（"SHA-256"），arg[1]=key 字节 csv，arg[2]=data 字节 csv。返 MAC csv（unsupported → 空）。
     sandbox.register_callback(
