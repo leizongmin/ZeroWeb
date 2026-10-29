@@ -11594,7 +11594,16 @@
     var tag = _realTag(sel, handle);
     var ty = '';
     if (tag === 'INPUT') {
-      try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+      // s148：type IDL 写只落 lw 层（R2995 变更列表 latest-wins）不落快照——
+      // sel 分支读纯快照恒旧值（s136 激活门同根，input-type-change-submit
+      // url/email 案单根：click handler 内 type→submit 后约束校验仍按旧
+      // email/url state 判 typeMismatch → invalid 中止提交 → loadPromise 挂死
+      // → 文件级 Timeout）。spec §4.10.5.2.6：typeMismatch 仅 email/url state
+      // 适用——默认动作校验时 type 已是 Submit Button（barred）→ 无 mismatch。
+      // sel 分支换 lw 融合读（consult 变更列表 → applied view 回落）；handle
+      // 分支 `__zw_get_attr_handle` 本身 consult 当前批 mutations 不动。
+      try { ty = handle ? __zw_get_attr_handle(handle, 'type')
+          : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')); } catch (_e) { ty = ''; }
       ty = String(ty || '').toLowerCase();
     }
     // R57（FV M1）：disabled barred 仅对 valueMissing——validator.js 的
