@@ -1,11 +1,13 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.3
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）
+**版本**: v1.4
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（自旋簇归因 = 预算截断）
 **状态**: Active——M1 完成；R5331（3d173dccc，查询回落槽锚点）land 后 M2
 首轮（innerHTML 物化身份失步全环）完成：run 面 setup 级联解锁
 （0.007% → 48.78%，分母收缩口径见 evidence），R5331 指认的 cloneNode
-断点环已闭合，自旋簇浮出为新头号；跨域 html-syntax 99.90% 零回归
+断点环已闭合；跨域 html-syntax 99.90% 零回归。「自旋簇」已归因为
+runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），全分母
+重跑进行中
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
@@ -14,9 +16,15 @@
 > ——并行撞车后折叠进 R5331 的 `_zwPendingNodeInDoc` 作 fallback / cloneNode
 > 融合源读 / 子树脏门 ID 锚定感知），闭合 R5331 指认的 cloneNode 断点环。
 > 探针 F/G/E 全绿，全量重跑 run 48.78% / other 32.03%（**分母收缩**
-> 96,663→15,343：setup 解锁后变体级 90s 自旋中止取代全分母 setup 快败——
-> 自旋是下一头号簇）。卡点：run 面自旋案（bold/justify ?3001-last 形态）
-> 未归因。下一步：自旋归因 → white-space join 簇。详见
+> 96,663→15,343：setup 解锁后变体级 90s 自旋中止取代全分母 setup 快败）。
+> **自旋簇已归因（同日二轮，并行撞车折叠一笔后本侧核验推进）**：非死循环
+> ——run 面大案每变体 ~1000 子测试同步脚本段 ~200-300s，runner 内部 V8
+> 看门狗 `ZW_SCRIPT_TIMEOUT_MS`（缺省 90s）是同步段实际预算边界（外层
+> CASE_WALL_S 拦不到同步段），90s 内跑不完整变体 aborted 无子测试行。
+> 实证：bold 四变体 90s 预算 12 行 → 300s 预算 3048 行全出（1138P/1910F，
+> 单案隔离跑）。corpus 脚本已改：run 通道缺省预算 300s + CASE_WALL_S 按案
+> 内变体数自适应。全分母重跑（3 分片）进行中，失败簇按新账重排后定
+> white-space join / insertparagraph 入簇序。详见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
@@ -81,10 +89,12 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   双流撞车后按上游版收敛）+ 首轮（2026-10-30，innerHTML 物化身份失步全环：
   matches 自含 / 深层解析产物 in-doc / cloneNode 融合源读 / 子树脏门 ID 锚定
   ——R5331 指认的 cloneNode 断点环闭合；四笔 + 全量重跑 + 跨域零回归，见
-  evidence）。次轮 = 自旋簇归因（run 面 ?3001-last 变体中止 + R5331 记录的
-  8 大案 420s 墙钟转 Timeout + other 面 list/inline delete 循环，同根因
-  概率高）；其后 white-space join → insertparagraph → execCommand 语义逐簇
-  立项。
+  evidence）。次轮（2026-10-30）= 自旋簇归因**已落**：run 面 ?3001-last
+  形态实为 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（同步脚本
+  段 ~200-300s/变体，bold 单案 12→3048 行实证，非死循环）；corpus 脚本
+  run 通道预算已修（300s/变体 + CASE_WALL_S 按变体数自适应），全分母重跑
+  后按新账定 white-space join → insertparagraph → execCommand 逐簇序。
+  other 面 list/inline delete 自旋案待新预算口径复跑后再归因（是否同根因）。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
   等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 

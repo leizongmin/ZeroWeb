@@ -35,6 +35,8 @@ RUNNER="${2:-./target/release/zero-wpt-runner}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DATA_DIR="${REPO_ROOT}/tests/wpt-runner/wpt-data/editing/${CORPUS}"
+CASE_WALL_S_SET=0
+[[ -n "${CASE_WALL_S:-}" ]] && CASE_WALL_S_SET=1
 CASE_WALL_S="${CASE_WALL_S:-120}"
 RESUME="${EDITING_CORPUS_RESUME:-0}"
 SHARD="${EDITING_CORPUS_SHARD:-}"
@@ -58,6 +60,18 @@ done_cases=""
 if [[ "${RESUME}" == "1" ]]; then
   done_cases="$(grep '^==== ' "${transcript}" 2>/dev/null | sed 's/^==== //')"
 fi
+# editing-compat M2 自旋簇归一（2026-10-30）：「自旋」实为变体级**预算截断**——
+# run 面大案每变体 ~1000 子测试同步脚本段 ~200-300s，runner 内部 V8 看门狗
+# script_timeout_ms()（ZW_SCRIPT_TIMEOUT_MS，缺省 90s）是同步段的实际预算边界
+# （外层案超时只在 run_page_scripts 返回后 tick，拦不到同步段），90s 内跑不完
+# 整变体 aborted 无子测试行（declared 0）。实证：bold 四变体 90s 下 12 行，
+# 300s 预算下 3048 行全出（1138P/1910F）——非死循环。CASE_WALL_S 只是外部
+# 兜底杀，调它不解锁变体。run 通道缺省预算 300s/变体；CASE_WALL_S 缺省按案
+# 内变体数计（60 + 变体数×330 + 90 底）——multitest 10 变体需 ~3400s，统一
+# 420s 口径必然外部截断。显式 env 仍优先。
+if [[ "${CORPUS}" == "run" && -z "${ZW_SCRIPT_TIMEOUT_MS:-}" ]]; then
+  export ZW_SCRIPT_TIMEOUT_MS=300000
+fi
 shard_k=0 shard_n=1
 if [[ "${SHARD}" =~ ^[0-9]+/[0-9]+$ ]]; then
   shard_k="${SHARD%/*}"; shard_n="${SHARD#*/}"
@@ -75,12 +89,17 @@ while read -r f; do
     fi
   fi
   idx=$((idx + 1))
-  out="$(timeout --signal=KILL "${CASE_WALL_S}" "${RUNNER}" "${SUBCMD}" "${rel}" 2>&1)"
+  case_wall="${CASE_WALL_S}"
+  if [[ "${CORPUS}" == "run" && "${CASE_WALL_S_SET:-0}" != "1" ]]; then
+    nv="$(grep -c 'meta name="variant"' "${DATA_DIR}/${f#"${DATA_DIR}"/}" 2>/dev/null || true)"
+    case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+  fi
+  out="$(timeout --signal=KILL "${case_wall}" "${RUNNER}" "${SUBCMD}" "${rel}" 2>&1)"
   rc=$?
   echo "==== ${rel}" >> "${transcript}"
   echo "${out}" >> "${transcript}"
   if [[ "${rc}" -eq 124 || "${rc}" -eq 137 ]]; then
-    echo "Timeout ${rel} :: external wall-clock kill (${CASE_WALL_S}s, rc=${rc})" >> "${transcript}"
+    echo "Timeout ${rel} :: external wall-clock kill (${case_wall}s, rc=${rc})" >> "${transcript}"
     t=1; p=0; fl=0; un=0
   else
     p="$(grep -c '^Pass ' <<<"${out}" || true)"
