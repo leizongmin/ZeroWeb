@@ -9,6 +9,7 @@ on:
       - 'scripts/generate-website.py'
       - 'scripts/website-render.mjs'
       - 'scripts/test-website-seo.py'
+      - 'scripts/test-website-layout.mjs'
       - 'scripts/test-guard.rs'
       - 'docs/perf/trends/benchmark-trend.csv'
       - 'docs/goal/rendering-compat/evidence/wpt-trends/trend.csv'

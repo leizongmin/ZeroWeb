@@ -2,7 +2,8 @@
   {
     "date": "2026-10-25",
     "type": "weekly",
-    "title": {"en": "33 closed goals batch-archived, 15 more close this week; rendering failures down to 884", "zh": "33 个已收口 goal 批量归档，本周再收 15 个；渲染失败降到 884"},
+    "title": {"en": "Rendering failures fall to 884", "zh": "渲染失败降至 884 项"},
+    "teaser": {"en": "33 previously closed goals were archived, and 15 more reached a terminal state. Rendering fixes reduced full-corpus failures from 1,104 to 884; media timing and browser stability also improved.", "zh": "33 个已完成目标归档，另有 15 个目标结束。渲染修复将全量语料失败数从 1,104 降至 884，媒体时钟与浏览器稳定性也得到改善。"},
     "summary": {
       "en": "Two batch waves on 10-20 moved 33 already-closed goals into archive/ (18 engineering goals, 15 WPT-domain goals); fifteen more goals reached terminal state this week. Eight WPT compat goals closed: html-syntax-compat archived at 61,228/61,333 (99.9%); workers-compat went from 169/371 to 693/714 (97.1%) within a day; svg-compat followed its 8.8% M1 baseline (134/1,527) with M4 closure a day later at 1,245/1,772 (70.3%); webgl-compat covered M1→M4 in two days and fixed its baseline at 2,112/2,115 (3 upstream IDL-mixin failures accepted); navigation-compat closed against the M3 criteria (473/584, 81.0%); encoding-compat (12,072/12,075), pointerlock-compat (22/22) and page-wasm (715/719) closed in the same window. Four engineering goals closed: media-runtime-isolation with all five done-criteria verified (media-process stays default-off), the incremental-rendering oracle (five DCs), background-resource-lifecycle, and compositor animation plus Worker Canvas. devtools and browser-delivery-loop were archived as terminated, clearing the goal root. On the media side, batch A of plan C landed: sample-level clock alignment moved the media clock rate from 1.45402 to 1.00000; narrowed cue-anchored seek cut the mid-GOP cold path from 302ms to 18ms; source residency gained a 256MB admission-eviction cap. Rendering cut full-corpus failures from 1,104 to 884 (R5272 accounting: 15,706/16,590, 94.67%): the collapse border model took 001e from 7.25% to 0.00%, ::selection highlight owner and UA-fallback models got several consecutive rounds, clip:text converged box2/3 from 11.71% to 0.00%, and the frame-driven rAF fix lifted 30-second frame counts from 2 to 1,575. On the browser, the split_important crash on CSS variable values ending with Chinese characters is fixed (#215), CDP eval round-trips dropped from 52ms to 5ms, and a zero://feedback page plus --profile/--version flags landed.",
       "zh": "10-20 两波批量归档把 33 个已收口 goal 整树移入 archive/（18 个工程目标、15 个 WPT 分域 goal）；本周另有 15 个 goal 走到终态。八个 WPT 兼容 goal 收口：html-syntax-compat 以 61,228/61,333（99.9%）归档；workers-compat 一天内从 169/371 做到 693/714（97.1%）；svg-compat 从 M1 基线 8.8%（134/1,527）次日以 1,245/1,772（70.3%）收口；webgl-compat 两天走完 M1→M4，基线定格 2,112/2,115（3 例上游 IDL-mixin 失败接受入基线）；navigation-compat 按 M3 判据收口（473/584，81.0%）；encoding-compat 12,072/12,075、pointerlock-compat 22/22、page-wasm 715/719 同期归档。四个工程目标收口：media-runtime-isolation 五个完成判据全证、media-process 维持默认关；增量渲染对照 oracle 五 DC 收口；后台资源生命周期 DONE 收敛；合成动画与 Worker Canvas 收口。devtools 与 browser-delivery-loop 终止归档，清出根目录。媒体实现面，方案 C 的 A 批落地：时钟批内对齐把 media clock rate 从 1.45402 修到 1.00000；cue 锚定窄化 seek 把 mid-GOP 冷路径从 302ms 降到 18ms；源驻留加 256MB 准入驱逐。渲染全语料失败数从 1,104 降到 884（R5272 记账 15,706/16,590，94.67%）：collapse 边框模型把 001e 从 7.25% 收到 0.00%，::selection 高亮的 owner 与 UA 回落模型连修数轮，clip:text 把 box2/3 从 11.71% 收敛到 0.00%；帧驱动 rAF 饥饿修复把 30 秒帧数从 2 提到 1,575。浏览器面修掉 CSS 变量值尾含中文时的 split_important 崩溃（#215），CDP eval 往返从 52ms 降到 5ms，新增 zero://feedback 内部页和 --profile/--version 参数。"
@@ -42,7 +43,8 @@
   {
     "date": "2026-10-18",
     "type": "weekly",
-    "title": {"en": "Crypto goal goes from baseline to closed in one day; rendering failures down to 1,104", "zh": "加密 goal 一天从基线走到收口；渲染失败降到 1,104"},
+    "title": {"en": "WebCrypto reaches its acceptance milestone", "zh": "WebCrypto 完成阶段验收"},
+    "teaser": {"en": "WebCrypto moved from baseline to goal closure in one day, with 25,788 of 33,109 subtests passing. Eight WPT goals closed this week, while rendering failures fell to 1,104.", "zh": "WebCrypto 一天内从建立基线推进到目标完成，33,109 个子测试中通过 25,788 个。本周八个 WPT 目标完成，渲染失败降至 1,104 项。"},
     "summary": {
       "en": "Eight WPT goals closed this week. webcrypto-compat went baseline to Done inside one day (10-17): the M1 channel and its 6,728/32,717 (20.6%) baseline landed after midnight, and by evening the corpus stood at 25,788/33,109 (77.89%). Six rounds in between put AES-GCM/CBC/CTR/KW, RSA-OAEP/PSS/RSASSA, ECDSA/ECDH over P-256/384/521 and Ed25519/X25519 through full-chain implementations on RustCrypto crates, checked against NIST and RFC vectors. Per-subtest regression stayed at zero, and non-tentative failures are gone (the 7,320 that remain all sit in tentative draft domains). page-state-compat closed the same night at 41/41. Earlier in the week cookies (533/837), performance-api (191/293), console (28/28), touch-events (30/32), selection (2,968/2,970, 99.93%) and compression (245/318, 77.04%) all reached Done, and net-api-compat's M5 re-entry phase took websockets to 376/376. Rendering failures went from 1,298 to 1,104 (15,486/16,590, 93.35% at the R5172 accounting). The cuts came from nested-multicol fragmentation work, multicol-2 column-height/column-wrap, the contain:size and contain:paint series, SVG CSS filters, anonymous table-cell sizing and painting, rtl table column order, table-caption shrink-to-fit width, and UAX #14 line breaking for complex scripts; on 10-17 the user raised the goal's pass-rate targets from ≥95% to 100%. html-semantics-compat moved from its nine-domain baseline (42.63%) to 61.13% (4,531/7,412) in three M2 slices. dnd-compat published its M1 baseline (213/387). The browser shipped GUI batches numbered through T60, and several real-site breakages got root-cause fixes: DuckDuckGo search navigation and Turbopack chunk paths, GitHub pages missing events after load, qq.com detail pages on adoptedStyleSheets, and Google's homepage logo SVG measuring zero width.",
       "zh": "本周八个 WPT goal 收口。webcrypto-compat 一天走完基线到收官（10-17）：凌晨落 M1 通道与基线 6,728/32,717（20.6%），晚间 corpus 停在 25,788/33,109（77.89%）。中间六轮把 AES-GCM/CBC/CTR/KW、RSA-OAEP/PSS/RSASSA、P-256/384/521 上的 ECDSA/ECDH、Ed25519/X25519 全部做成全链实现，压在 RustCrypto 库族上，用 NIST/RFC 向量核对。逐 subtest 零回归，非 tentative 失败清零（剩下的 7,320 全部位于 tentative 草案域）。page-state-compat 同夜以 41/41 收口。前几天 cookies（533/837）、performance-api（191/293）、console（28/28）、touch-events（30/32）、selection（2,968/2,970，99.93%）、compression（245/318，77.04%）相继 Done，net-api-compat 的 M5 重入期把 websockets 清到 376/376。渲染失败从 1,298 降到 1,104（R5172 口径 15,486/16,590，93.35%）。压下来靠的是嵌套 multicol 碎片化、multicol-2 column-height/column-wrap、contain:size 与 contain:paint 系列、SVG CSS filter、匿名表格 cell 的尺寸与绘制、rtl 表格列序、table-caption 收缩适应宽、UAX #14 复杂文字断行；10-17 用户拍板，把 goal 的通过率目标从 ≥95% 提到 100%。html-semantics-compat 从九域基线（42.63%）走到 61.13%（4,531/7,412），用了三个 M2 切片。dnd-compat 交出 M1 基线（213/387）。浏览器壳层推完编号到 T60 的 GUI 批次，几处真实站点故障拿到根因修复：DDG 搜索导航与 Turbopack chunk 路径、GitHub 页面载入后事件收不到、qq.com 详情页的 adoptedStyleSheets、Google 首页 logo SVG 被算成零宽。"
@@ -78,7 +80,8 @@
   {
     "date": "2026-10-11",
     "type": "weekly",
-    "title": {"en": "UI events goal closes at 1,794 passes; navigation compatibility climbs to 85.7%", "zh": "UI 事件目标以 1,794 通过收官；导航兼容爬到 85.7%"},
+    "title": {"en": "UI events goal closes with 1,794 passes", "zh": "UI 事件目标完成，1,794 项测试通过"},
+    "teaser": {"en": "The UI events goal closed with remaining failures and timeouts documented. Navigation reached 85.7% on its M2 suite, while deeper navigation structures remain gated.", "zh": "UI 事件目标完成，剩余失败和超时均有记录。导航 M2 测试集通过率达到 85.7%，更深层的导航结构仍待批准后推进。"},
     "summary": {
       "en": "uievents-compat reached Done (10-07): forty-one tail-cluster rounds took the corpus from a 230-pass baseline to 1,794 passes / 170 failures / 96 timeouts (the goal counts +1,575 cumulative), and DC-1~4 all checked. The remaining failures and timeouts weren't hidden; they were cataloged as parked debt across fourteen categories, each with written re-entry conditions, and four items moved to the user-decision list for after the archive. navigation-compat closed its M2 (10-11): thirty-three slices across nine rounds lifted the suite from 20.9% to 85.7% (408/476), with location-interface at 97.7%, history at 98.2%, traversal at 93.3% and navigation-api at 93.3%; the goal stays Active only because one deep piece remains user-gated. Rendering compatibility crossed to 91.99% (15,265/16,594 at the R5051 accounting) on an aspect-ratio/min-content campaign and a new ::placeholder and ::selection series; three more selection rounds on 10-11 cut failures to 1,323. Seven more WPT goals were chartered (fileapi, webmessaging, performance-api, touch-events, selection, compression, html-semantics), filling the roster through slot 25. Away from the scoreboards, the fixes that matter to real pages landed: innerHTML products now materialize into real handle trees (the bilibili nano player's widgets were dying mid-script), custom-element constructors no longer fire twice, and register_callback's slot ownership was fixed after multi-sandbox collisions. The weekly WPT trend rose to 92.3%.",
       "zh": "uievents-compat 收官（10-07）：四十一个尾簇轮次把 corpus 从 230 通过的基线带到 1,794 通过 / 170 失败 / 96 超时（目标文档记 +1,575 累计），DC-1~4 全部勾验。剩余失败和超时没有藏起来，而是按十四类编目成挂账、逐类写明重入条件，另有四项转入归档后的用户决策清单。navigation-compat 收了 M2（10-11）：九轮三十三片把套件从 20.9% 抬到 85.7%（408/476），location-interface 97.7%、history 98.2%、traversal 93.3%、navigation-api 93.3%；目标仍 Active，只因剩一块深结构等用户门控。渲染兼容迈过 91.99%（R5051 口径 15,265/16,594），靠的是 aspect-ratio/min-content 战役与新一季 ::placeholder、::selection 系列；10-11 当天的三轮选区修复又把失败数压到 1,323。另有七个 WPT 目标立项（fileapi、webmessaging、performance-api、touch-events、selection、compression、html-semantics），编号排到 25 号槽。记分板之外，对真实页面要紧的修复也落地了：innerHTML 产物现在会物化成真 handle 树（bilibili nano 播放器的小部件不再中途断掉）、自定义元素构造器不再重复触发、register_callback 的槽位所有权在多 sandbox 撞写后彻底修掉。weekly WPT 趋势升到 92.3%。"
@@ -108,7 +111,8 @@
   {
     "date": "2026-10-04",
     "type": "weekly",
-    "title": {"en": "Five goals closed in one week: the browser's real window, timing, network, encoding, HTML syntax", "zh": "一周收五个目标：真窗口、计时动画、网络、编码、HTML 语法"},
+    "title": {"en": "Five browser goals reach acceptance", "zh": "五个浏览器目标完成验收"},
+    "teaser": {"en": "Desktop browser, timing and animation, network APIs, encoding and HTML syntax reached their scoped acceptance criteria. The desktop path now includes Linux window flows and startup smoke checks on three CI platforms.", "zh": "桌面浏览器、计时动画、网络 API、编码与 HTML 语法达到各自验收标准。桌面路径包含 Linux 窗口演示流和三个 CI 平台的启动检查。"},
     "summary": {
       "en": "Five goals closed in seven days (438 commits). desktop-browser reached Done first (09-27): the real-window main path runs on Linux demo flows with GPU compositing, headless smoke covers three CI platforms, and the content tools are in, from downloads and the context menu to zoom and page find, with the bookmarks/history/settings data plane alongside. timing-animation-compat followed (09-28) at 1,107/1,571 subtests = 70.5%, up from a 23.2% baseline, with Web Animations growing 52→502 passes and user-timing at 98.1%. net-api-compat closed 10-01 at 9,292/11,659 = 79.7% across its six corpora, up from 25.8%. XHR finished at 95.4%, EventSource at 100%, mimesniff perfect, streams at 88.7%; WebSocket alone was deferred to a second phase. encoding-compat closed 10-02 at 12,070/12,075 = 99.96%, from a 6.1% start, by wiring a full TextDecoder label table with legacy decoders on encoding_rs plus a spec utf-8 state machine. html-syntax-compat closed 10-03 with its full channel frozen at 61,218/61,304 = 99.86% and all 86 residual failures attributed. The one goal still running, uievents-compat, moved its corpus from 502 to 1,107 passes with zero regressions after its ledger absorbed previously unregistered cases. Rendering compatibility held at 91.49% (15,182/16,594) through custody rounds, and the weekly WPT trend read 91.9%.",
       "zh": "七天收了五个目标（438 个提交）。desktop-browser 率先 Done（09-27）：真窗口主链路跑通 Linux 演示流与 GPU 合成，三平台 CI 接了 headless 启动冒烟，下载、右键菜单、缩放、页面查找等内容工具与收藏/历史/设置数据面齐备。timing-animation-compat 次日收口（09-28），收在 1,107/1,571 subtests = 70.5%（基线 23.2%），Web Animations 从 52 通过涨到 502，user-timing 到 98.1%。net-api-compat 10-01 收口，六 corpus 9,292/11,659 = 79.7%（基线 25.8%）。XHR 95.4%、EventSource 100%、mimesniff 满分、streams 88.7%；只有 WebSocket 挂二期。encoding-compat 10-02 收口在 12,070/12,075 = 99.96%（起点 6.1%），靠 encoding_rs 的 TextDecoder 全 label 表与 legacy 解码，外加 spec 版 utf-8 状态机。html-syntax-compat 10-03 收口，全通道冻结 61,218/61,304 = 99.86%，86 个残余失败全部归因。唯一还在跑的 uievents-compat 把 corpus 从 502 推到 1,107 通过、零回归，账本此前未入册的案也全部进了分母。渲染兼容守成维持 91.49%（15,182/16,594），weekly WPT 趋势读出 91.9%。"
@@ -138,7 +142,8 @@
   {
     "date": "2026-09-27",
     "type": "weekly",
-    "title": {"en": "Security hardening went from charter to Done in a week; two more goals closed", "zh": "security-hardening 一周从立项走到 Done；另有两个目标收口"},
+    "title": {"en": "Browser security enforcement reaches acceptance", "zh": "浏览器安全执行机制完成验收"},
+    "teaser": {"en": "CSP gained runtime enforcement and violation events, alongside Mixed Content blocking, HSTS registration and a permissions API. The security goal closed with its remaining coverage gaps recorded.", "zh": "CSP 接入运行时执行和违规事件，并补充混合内容阻止、HSTS 注册与权限 API。安全目标完成，剩余覆盖缺口保留在记录中。"},
     "summary": {
       "en": "A quiet week by commit count (705, more than half of it CDP gate ledger entries), but three goals reached their end state. The big one was security-hardening, chartered on 09-12 and finished on 09-25: CSP went from a parsed-but-inert header to runtime enforcement wired through script, style, connect-src, eval, event-handler attributes and img src-set checkpoints, with violation events. Mixed Content gained tiered subresource blocking, HSTS responses register, and navigator.permissions grew a JS face. The CSP WPT corpus went from 30 green files to 74 of 445 with zero losses (subtests 16.3% → 28.8%), both kill-switches landed default-on after an A/B where both arms scored 19,451/0F identically, and the reftest gate read 691/691. web-api-batch2 also closed this week (09-24) at clipboard 61/73 (83.6%) and fullscreen 132/150 (88.0%, up from 61.7%). Rendering compatibility spent the rest of the week in custody: a handful of code rounds early on (clip:text url backgrounds, block-axis content sizing, @container style(), video poster frames, a font-size determinism fix) nudged the corpus to 15,175 of 16,594 (91.45%), then the tree went invariant and patrol rounds held it there through Sunday. The weekly WPT trend ticked up to 91.8% (14,748/16,058).",
       "zh": "按提交数算是安静的一周（705 个，其中过半是 CDP 门禁账本），但有三个目标走到终点。最大的是 security-hardening，09-12 立项、09-25 完成：CSP 从「能解析但不执行」变成运行时强制，script、style、connect-src、eval、事件处理器属性、img src-set 检查点逐面接线，violation 事件齐备。Mixed Content 拿到分级子资源阻止，HSTS 响应注册落地，navigator.permissions 长出 JS 面。CSP WPT 语料从 30 个全绿文件涨到 74/445、零丢失（subtests 16.3% → 28.8%）；两个 kill-switch 在 A/B 双臂同值 19,451/0F 后落定默认开启；reftest 门禁 691/691。web-api-batch2 也在本周收口（09-24）：clipboard 61/73（83.6%）、fullscreen 132/150（88.0%，基线时 61.7%）。渲染兼容其余时间在守成：周初几轮代码（clip:text url 背景、块轴 content 尺寸、@container style()、video poster 帧、font-size 确定性修复）把语料推到 15,175/16,594（91.45%），随后树进入不变态，巡检轮一路守到周日。weekly WPT 趋势升到 91.8%（14,748/16,058）。"
@@ -168,7 +173,8 @@
   {
     "date": "2026-09-20",
     "type": "weekly",
-    "title": {"en": "Two tools goals closed in five days; vertical writing modes push the reftest corpus past 15,000", "zh": "两个工具目标五天收官；竖排 writing modes 把渲染语料推过 15,000"},
+    "title": {"en": "CDP and DevTools goals close", "zh": "CDP 与开发者工具目标完成"},
+    "teaser": {"en": "DevTools now operates the real browser, and the CDP gate checks 33 deterministic steps. Vertical writing and multi-column fixes lifted rendering passes above 15,000; a layout slowdown was also recorded.", "zh": "开发者工具可操作真实浏览器，CDP 验收覆盖 33 个确定性步骤。竖排与多列布局修复使渲染通过数超过 15,000；本周也记录了布局性能退化。"},
     "summary": {
       "en": "Two developer-tools goals went from charter to Done this week. cdp-protocol closed on 09-16 with user sign-off; devtools followed a day later. The DevTools frontend now drives the real browser: Elements with live DOM, a working Console REPL, a Network panel whose event shapes were validated against a real Chrome capture, an Application cookie panel, and a GUI-mode CDP server that opts in via --remote-debugging-port. After closing, the CDP gate settled into silent monitoring, re-running 33 deterministic green steps day after day (that's the 1,300+ ledger commits). On the rendering side the vertical writing-modes campaign and a multicol push moved the corpus past 15,000 on 09-18, ending the week at 15,148 of 16,594 (91.31%, up from 89.0% last week). The row-progression cluster closed 12/12 with ten pixel-perfect cases, the ruby overhang model went default-on, multicol climbed from 288 to 316 passing cases, and background-clip:text got a constant-color paint path worth seven more green cases. One regression was filed, honestly: the low-frequency guard measured page-level layout 5.24× slower on its morning page (1.27× on medium, paint +10-11%), specific to the layout stage and suspected in this window's vertical/multicol work. Absolute budgets still hold; the bisect is pending.",
       "zh": "本周两个开发者工具目标从立项走到了 Done。cdp-protocol 09-16 经用户批复收官，devtools 次日跟进。DevTools 前端现在能驱动真实浏览器：Elements 挂活 DOM、Console REPL 可用、Network 面板的事件形状对着真实 Chrome 抓包校准过、Application cookie 面板落地，GUI 模式的 CDP server 经 --remote-debugging-port 显式开启。收官之后 CDP 门禁转入静默监测，33 个确定性绿步天天复跑（那 1,300 多条账本提交就是这么来的）。渲染这边跑的是竖排 writing modes 战役与 multicol 攻坚，语料 09-18 破 15,000，周末收在 15,148/16,594（91.31%，上周 89.0%）。row-progression 簇 12/12 收官、10 案像素级 0.00%；ruby overhang 模型转默认开启；multicol 从 288 过案爬到 316；background-clip:text 拿到恒色染色路径，再收 7 案。有一笔回归如实立案：低频巡检测得 page 级 layout 在 morning 页慢了 5.24×（medium 1.27×、paint +10-11%），归因锁定 layout 阶段、嫌疑指向本窗口的竖排/multicol 工作。绝对预算未破线，bisect 待做。"
@@ -199,7 +205,8 @@
   {
     "date": "2026-09-14",
     "type": "weekly",
-    "title": {"en": "828 commits: nine goals finished, fourteen chartered, CDP hits 33 green e2e steps", "zh": "本周 828 个提交：九个目标收官、十四个新立项，CDP 跑到 33 个绿步"},
+    "title": {"en": "CDP passes 33 end-to-end steps", "zh": "CDP 通过 33 个端到端验收步骤"},
+    "teaser": {"en": "Eight goals were archived, Android was marked Done, and fourteen new goals opened. The rendering corpus denominator was rebuilt after removing duplicate reference variants.", "zh": "八个目标归档，Android 目标标记完成，十四个新目标立项。渲染语料去除了重复参考变体，并重新核定测试分母。"},
     "summary": {
       "en": "Eight goals were archived this week and a ninth, the Android browser, was marked Done. On 09-12 the user chartered fourteen new goals in one batch. Two days later the first of them, CDP protocol compatibility, had Playwright driving the browser through 33 deterministic e2e steps; when the goal opened, headless exposed three CDP commands and the connection would not even come up. Rendering compatibility ran about 230 rounds (R4094–R4321). Mid-week the reftest denominator was rebuilt: multi-reference aggregation removed 211 pseudo-variants, the corpus now counts 16,595, and the pass count ended the week at 14,762 (89.0%). The windows-aarch64 CI failure, recorded 34 rounds in a row, was fixed on Monday. Downloaded fonts now survive into production rendering, and a new optimizer skill has ZeroWeb drive its own browser against a website, keeping only what it can prove.",
       "zh": "本周八个目标归档，第九个 android-browser 标记 Done。09-12 用户一批立项十四个新目标。两天后其中第一个，CDP 协议兼容，已经让 Playwright 走完 33 个确定性绿步；立项时 headless 只有三条 CDP 命令，连接都建不起来。渲染兼容跑了约 230 轮（R4094–R4321）。周中 reftest 分母重建了一次：多参考聚合去掉 211 个伪变体，语料按 16,595 计，通过数收在 14,762（89.0%）。连续记录 34 轮的 windows-aarch64 CI 失败在周一修掉。下载字体现在能走通生产渲染管线；新的 optimizer skill 让 ZeroWeb 用自己的浏览器去跑网站，只保留能证明的东西。"
@@ -230,7 +237,8 @@
   {
     "date": "2026-09-06",
     "type": "weekly",
-    "title": {"en": "652 commits: js-dom goal closed, all three media goals shipped and archived", "zh": "652 个提交：js-dom 目标收官，媒体三目标完成并归档"},
+    "title": {"en": "Native DOM bindings and media goals close", "zh": "原生 DOM 绑定与媒体目标完成"},
+    "teaser": {"en": "V8 and QuickJS now use native DOM bindings by default. Video decoding, playback and Web Audio reached their scoped media milestones, with further rendering and Service Worker tests added.", "zh": "V8 与 QuickJS 默认使用原生 DOM 绑定。视频解码、播放与 Web Audio 达到各自阶段目标，并补充了渲染和 Service Worker 测试。"},
     "summary": {
       "en": "Three goals reached their end state this week. The js-dom goal closed: V8 and QuickJS native DOM bindings were both turned on by default, the ZW_NATIVE_DOM kill-switch was removed so native bindings are the only production path on either engine, an eight-criterion verification matrix checked out, and the goal was archived as Done. The three media goals finished the same day: video decoding landed for AV1 (dav1d) and H.264 mp4 with AAC audio, A/V sync and a playback pump made <video> actually play in the browser, Web Audio reached a 100% pass rate on its headless-importable WPT surface, and the HTMLMediaElement suite finished at 98.01%. All three were archived. Rendering compatibility advanced about 200 rounds (R3818–R4073), moving the upstream reftest corpus from 14,006 to 14,481 of 16,814 (86.1%); inline SVG paint became a default-on path by user decision. Service Worker tests kept landing (core runner 63 cases / 234 subtests, fetch/message 30/75, CacheStorage 25/318, all passing). The weekly WPT trend run put the upstream reftest suite at 87.3% (14,204/16,269), up from 81.5% a month ago. CI ran eleven patrol rounds; the windows-aarch64 clippy environment failure hit its 33rd consecutive round, and the benchmark gate is green again after the 7763 runner baseline was re-captured.",
       "zh": "本周三个目标走到终点。js-dom 目标收官：V8 与 QuickJS 的原生 DOM 绑定双双默认开启，ZW_NATIVE_DOM kill-switch 移除，两个引擎的 native 绑定成为唯一生产路径；八项 Done Criteria 判定矩阵逐项核验通过，目标归档为 Done。媒体三目标同日收官：视频解码落地 AV1（dav1d）与 H.264 mp4/AAC，A/V 同步与播放泵让 <video> 在浏览器里真正播起来，Web Audio 在 headless 可导入 WPT 面上 100% 全过，HTMLMediaElement 套件收在 98.01%，三目标随后全部归档。渲染兼容推进约 200 轮（R3818–R4073），上游 reftest 语料从 14,006 提到 14,481/16,814（86.1%）；inline SVG paint 经用户点名转为默认开启。Service Worker 测试持续入库（core runner 63 case / 234 subtest、fetch/message 30/75、CacheStorage 25/318 全过）。weekly WPT 趋势跑出上游 reftest 87.3%（14,204/16,269），一个月前还是 81.5%。CI 跑了十一轮巡检：windows-aarch64 clippy 环境失败到连续第 33 轮；benchmarks 门禁在 7763 基线 re-capture 后重新转绿。"
@@ -260,7 +268,8 @@
   {
     "date": "2026-08-30",
     "type": "weekly",
-    "title": {"en": "539 commits this week: js-dom down to six known-fail files, CSS reftest corpus up 341 cases", "zh": "本周 539 个提交：js-dom 已知失败文件减到 6 个，CSS reftest 语料 +341 案"},
+    "title": {"en": "DOM known-fail files fall to six", "zh": "DOM 已知失败文件减至六个"},
+    "teaser": {"en": "DOM baseline corrections exposed previously unexecuted subtests, while QuickJS binding milestones passed audit. CSS rendering fixes added 341 passing cases across caching, line clamping and tables.", "zh": "DOM 基线修正使此前未执行的子测试进入验证，QuickJS 绑定里程碑通过审计。缓存、行数限制和表格修复新增 341 个渲染通过用例。"},
     "summary": {
       "en": "539 commits this week. The js-dom track ran 169 rounds (R194–R378, roughly 350 of them code). Mid-week a baseline migration unlocked the real subtests of twelve mega-case files whose setup scripts had not been executing, and the full WPT sweep ends at 55,807 passes; the known-fail file set went from 11 to 6. M6, the QuickJS native-binding milestone, was audited and confirmed fully closed (DC-7); M3's Vue e2e acceptance now passes under QuickJS too; and a new pending-apply lifecycle RFC opened, with its first audit slice landed. Rendering flipped 341 upstream CSS reftest cases green, 13,237→13,577. One style-key cache fix accounts for 73 of those; the long -webkit-line-clamp tail and table border-collapse/caption work account for most of the rest, and the SVG intrinsic-size cluster closed at 100%. Service Worker baselines grew again: fetch 15 cases / 34 subtests passing, SW CacheStorage 12 / 157, core 162/162. The CSS parser took a counter-style grammar tightening series plus @namespace support. CI was functionally green on all seven platforms. The two recurring failures are pre-existing: windows-aarch64 ring/clang (round 21), and two benchmarks metrics on the 7763 runner that ran 5% and 8% over budget on a platform that itself drifted about +20%.",
       "zh": "本周 539 个提交。js-dom 线跑了 169 轮（R194–R378，其中代码提交约 350 个）。周中一次基线迁移解锁了十二个 mega-case 文件的真实 subtest（此前的 setup 脚本没有执行），全量 WPT sweep 收在 55,807 通过；已知失败文件从 11 个缩到 6 个。QuickJS 原生绑定里程碑 M6 经审计确认全量收口（DC-7），M3 的 Vue e2e 验收也在 QuickJS 矩阵下通过，新的 pending-apply 生命周期 RFC 立项、首个审计切片 pa1 落地。渲染侧把上游 CSS reftest 语料从 13,237 推到 13,577（净 +341）：其中 73 案来自一次样式键缓存修复，其余大头是 -webkit-line-clamp 的长尾与表格 border-collapse/caption 系列；SVG intrinsic-size 簇以 100% 收口。Service Worker 基线继续扩大：fetch 15 case / 34 subtest 全过，SW CacheStorage 12 / 157 全过，core 162/162。CSS 解析器纳入了 counter-style 语法收紧系列与 @namespace 支持。CI 功能面 7 平台全绿。两个反复失败都是预存：windows-aarch64 ring/clang（连续第 21 轮），以及 7763 runner 上两项 benchmarks 指标超预算 5% 和 8%（该平台整体漂移约 +20%）。"
@@ -287,7 +296,8 @@
   {
     "date": "2026-08-23",
     "type": "weekly",
-    "title": {"en": "DOM corpus passes 9,700; Service Worker and Cache land their first WPT baselines", "zh": "DOM 全量通过数破 9,700；Service Worker 与 Cache 建起首批 WPT 基线"},
+    "title": {"en": "Service Worker and Cache gain WPT baselines", "zh": "Service Worker 与 Cache 建立 WPT 基线"},
+    "teaser": {"en": "The DOM corpus reached 9,734 passes with 135 failures remaining. Initial Service Worker fetch and CacheStorage baselines passed, alongside CSS hardening and Android rendering work.", "zh": "DOM 语料达到 9,734 项通过，剩余 135 项失败。Service Worker 请求拦截与 CacheStorage 首批基线通过，CSS 加固和 Android 渲染继续推进。"},
     "summary": {
       "en": "The js-dom track finished 76 rounds this week (R118–R193), moving the full WPT DOM corpus from 9,727 to 9,734 passes with 135 failures left. The work spanned query scoping, cross-realm adoption and listener semantics, live Range getters, DOMParser mutation surfaces, MutationObserver records and namespace attribute metadata. The CSS parser and style system took a long hardening tail: non-finite values rejected, keywords parsed case-insensitively, dozens of commits in total, with a layout length-resolution batch and a layout performance series (R3429–R3447) alongside. Service Workers landed its first WPT baselines: 6 fetch-interception cases and 10 CacheStorage cases, every subtest passing; the sibling CacheStorage window baseline reached 32 cases / 429 subtests at full pass. The Android renderer gained real browsing capability: frames forwarded to the compositor, scroll gestures, network proxying, back navigation and a persistent profile. CI came back 9/10 green, the regression guard found no new regressions, and the perf gate passed a full 113-metric rerun.",
       "zh": "本周 js-dom 线收掉 76 轮（R118–R193），全量 WPT DOM 语料从 9,727 通过推进到 9,734 通过、剩 135 失败，覆盖查询作用域、跨 realm 的 adopt 与监听器语义、live Range 取值、DOMParser 可变面、MutationObserver 记录与命名空间属性元数据。CSS 解析器与样式系统做了一长段加固：数十个提交拒绝非有限值、关键字改为大小写不敏感解析，另有布局长度解析一批与布局性能系列（R3429–R3447）。Service Worker 目标建起首批 WPT 基线：fetch 拦截 6 case、CacheStorage 10 case 全部通过；兄弟目标 CacheStorage window 基线扩到 32 case / 429 subtest 全过。Android 渲染端继续推进，帧转发到合成器、滚动手势、网络代理、返回导航与持久化 profile 都已落地。CI 9/10 绿、无新回归，perf-gate 全量 113 指标复测通过。"
@@ -313,7 +323,8 @@
   {
     "date": "2026-08-16",
     "type": "weekly",
-    "title": {"en": "Canvas compatibility sweep, QuickJS DOM bindings", "zh": "Canvas 兼容性冲刺与 QuickJS 原生 DOM 绑定"},
+    "title": {"en": "Canvas fixes and QuickJS DOM bindings", "zh": "Canvas 修复与 QuickJS DOM 绑定"},
+    "teaser": {"en": "Canvas path-object failures were cleared and most image-drawing gaps addressed. QuickJS native DOM binding slices completed, with page zoom and device-DPI frames added to the browser.", "zh": "Canvas 路径对象的剩余失败清除，大部分图像绘制缺口得到修复。QuickJS 原生 DOM 绑定切片完成，浏览器新增缩放与设备 DPI 合成帧。"},
     "summary": {
       "en": "The Canvas 2D WPT sweep cleared the last path-objects failures and most of the drawing-images gaps. The QuickJS native DOM binding line finished M6 S0q-S5q and closed the S1q composite objects. The HTML behavior compatibility track, started this week, completed M0-M4, and browser product work added page zoom and device-DPI compositor frames.",
       "zh": "本周 Canvas 2D WPT 兼容性清扫清除了 path-objects 的全部剩余失败与大部分 drawing-images 缺口；QuickJS 原生 DOM 绑定线完成 M6 S0q–S5q 全部切片，S1q 复合对象收尾。新的 HTML 行为兼容专项完成 M0–M4，浏览器产品层新增页面缩放与设备 DPI 合成帧。"
@@ -337,6 +348,7 @@
     "date": "2026-08-11",
     "type": "weekly",
     "title": {"en": "Compositor safety and presentation advance", "zh": "合成器安全与呈现链路推进"},
+    "teaser": {"en": "Shared GPU mailbox transport, owned window surfaces and Linux sandboxing improve the compositor's presentation path.", "zh": "共享 GPU 图像传输、自有窗口呈现表面和 Linux 沙箱完善了合成器的呈现路径。"},
     "summary": {
       "en": "The compositor moved toward a safer, more direct presentation path this week: shared GPU mailbox transport, owned window surfaces, and Linux sandboxing.",
       "zh": "本周的工作围绕更安全、更直接的合成器呈现路径推进：共享 GPU mailbox 传输、自有窗口呈现 surface 与 Linux 沙箱同步完成。"
@@ -359,7 +371,8 @@
   {
     "date": "2026-08-09",
     "type": "weekly",
-    "title": {"en": "Native DOM bindings gain a live document path", "zh": "原生 DOM 绑定新增 live Document 路径"},
+    "title": {"en": "Native DOM bindings gain live document access", "zh": "原生 DOM 绑定接入实时文档"},
+    "teaser": {"en": "Native bindings expand beyond read-only access to shared documents, tree mutation, node collections and text content.", "zh": "原生绑定从只读访问扩展到共享文档、树变更、节点集合与文本内容。"},
     "summary": {"en": "The native DOM bindings expanded from read-only access into document sharing, tree mutation, node collections, and text content behavior.", "zh": "原生 DOM 绑定从只读访问扩展到文档共享、树变更、节点集合与 textContent 行为。"},
     "completed": {"en": ["Added native tree mutation operations and child collections.", "Added native textContent and node-value behavior.", "Implemented the shared live-Document design and the cached document refactor."], "zh": ["加入原生树变更操作与子节点集合。", "加入原生 textContent 与 nodeValue 行为。", "实现了 shared live-Document 设计与缓存文档重构。"]},
     "inProgress": {"en": "The broader DOM/Web API compatibility effort continues; production wiring and behavior coverage are added in slices.", "zh": "更完整的 DOM/Web API 兼容工作仍在持续推进，生产接入与行为覆盖会继续按切片完成。"},
@@ -369,6 +382,7 @@
     "date": "2026-08-02",
     "type": "weekly",
     "title": {"en": "Targeted CSS fixes for rendering compatibility", "zh": "渲染兼容性的针对性 CSS 修复"},
+    "teaser": {"en": "Targeted CSS fixes improve rendering compatibility. The deeper structural constraints that remain are documented with evidence.", "zh": "针对性 CSS 修复改善了渲染兼容性，尚未解决的结构性约束及其证据保留在记录中。"},
     "summary": {"en": "Compatibility work delivered targeted CSS fixes this week. It also recorded, with evidence, the deeper rendering constraints that remain.", "zh": "本周兼容性工作完成了针对性的 CSS 修复，并把仍未解决的深层渲染约束连同依据记录在案。"},
     "completed": {"en": ["Implemented CSS overflow-clip-margin across parsing and paint paths.", "Canonicalized the logical sizing cascade and measured the compatibility gains.", "Kept legacy product smoke checks free of structural regressions."], "zh": ["在解析与绘制链路实现 CSS overflow-clip-margin。", "规范化逻辑尺寸层叠行为，并取得可测的兼容性收益。", "保持 legacy 产品 smoke 检查无结构性回归。"]},
     "inProgress": {"en": "The remaining compatibility gaps are concentrated in structural and font-metric work rather than small isolated switches.", "zh": "剩余兼容性缺口集中在结构性与字体度量工作，而不是零散的小开关。"},
@@ -377,7 +391,8 @@
   {
     "date": "2026-07-19",
     "type": "weekly",
-    "title": {"en": "Font metrics and rendering evidence point to the next steps", "zh": "字体度量与渲染数据为下一步指明方向"},
+    "title": {"en": "Font measurements clarify rendering gaps", "zh": "字体度量明确渲染缺口"},
+    "teaser": {"en": "Rendering investigations improve measurement consistency and identify constraints in complex text and font metrics.", "zh": "渲染排查改善了测量一致性，并明确复杂文本和字体度量方面的约束。"},
     "summary": {"en": "Rendering investigations improved measurement consistency and made it clearer where broad compatibility work is held back by complex text and metric behavior.", "zh": "渲染调研提升了测量一致性，也进一步明确了整体兼容性工作在哪里受复杂文本与度量行为制约。"},
     "completed": {"en": ["Registered fontdue measurement to align the browser path with rendering expectations.", "Confirmed full product smoke coverage for the current fixture set.", "Recorded fresh CSS Grid measurements and updated the compatibility evidence."], "zh": ["注册 fontdue 测量，使浏览器路径与渲染预期保持一致。", "确认当前 fixture 集的产品 smoke 全部通过。", "记录新的 CSS Grid 测量结果并更新兼容性数据。"]},
     "inProgress": {"en": "The next compatibility work focuses on text metrics and structural rendering paths that need coordinated, rather than isolated, changes.", "zh": "下一阶段兼容性工作聚焦于需要协同改动的文本度量与结构性渲染路径。"},
@@ -386,7 +401,8 @@
   {
     "date": "2026-07-12",
     "type": "weekly",
-    "title": {"en": "FreeType default-on and the taffy upgrade lift WPT reftest compatibility", "zh": "FreeType 默认开启与 taffy 升级：WPT 兼容性继续爬坡"},
+    "title": {"en": "FreeType and Taffy improve rendering results", "zh": "FreeType 与 Taffy 改善渲染结果"},
+    "teaser": {"en": "FreeType becomes the default rasterizer and Taffy upgrades from 0.7.7 to 0.12.1. Font alignment and layout fixes increase WPT rendering passes.", "zh": "FreeType 成为默认光栅化器，Taffy 从 0.7.7 升级至 0.12.1。字体对齐与布局修复提高了 WPT 渲染通过数。"},
     "summary": {
       "en": "FreeType rasterization became the default renderer and the default fonts were aligned with Chromium's font wall, which alone gained about +200 CSS2 WPT passes on retest. The vendored taffy layout engine was upgraded from 0.7.7 to 0.12.1, and a steady stream of zero-regression layout fixes landed across floats, br, grid and clearance handling.",
       "zh": "FreeType 光栅化改为默认渲染路径，默认字体与 Chromium 字体墙对齐，仅 CSS2 目录重测即净增约 +200 通过；vendored taffy 布局引擎从 0.7.7 升级到 0.12.1，另有大批零回归的布局修复在 float、br、grid、clearance 等方向落地。"
@@ -409,7 +425,8 @@
   {
     "date": "2026-07-05",
     "type": "weekly",
-    "title": {"en": "The font-metric wall gives: +138 reftest passes", "zh": "字体度量墙告破：一周净增 138 项通过"},
+    "title": {"en": "Font-metric fix adds 138 rendering passes", "zh": "字体度量修复新增 138 项渲染通过"},
+    "teaser": {"en": "A font-metric fix adds 138 oracle passes. Multi-column and intrinsic-size work advances, while the browser gains scrolling, find and tab controls.", "zh": "字体度量修复新增 138 项对照测试通过。多列布局与固有尺寸工作推进，浏览器补充滚动、查找和标签操作。"},
     "summary": {
       "en": "A dense compatibility week (R781–R1057): the long-standing font-metric wall finally gave ground with an Ahem-gated ascent-ratio fix worth 138 oracle passes, while multi-column layout, flex/grid intrinsic sizing and logical properties each closed out long campaigns. Outside the oracle, the browser gained overlay scrollbars, keyboard page scrolling, a find bar and tab conveniences, and @font-face picked up WOFF 1.0 support.",
       "zh": "兼容性冲刺最密集的一周（R781–R1057）：长期瓶颈字体度量墙首次告破（+138 项通过），多列布局、flex/grid 固有尺寸与逻辑属性三条长线各自收官。产品侧同步落地悬浮式滚动条、键盘页面滚动、查找栏与标签页便利操作，@font-face 也补上 WOFF 1.0 支持。"
@@ -432,7 +449,8 @@
   {
     "date": "2026-06-28",
     "type": "weekly",
-    "title": {"en": "A shared page runtime and a near-complete chrome redesign", "zh": "页面运行时统一，界面翻新接近收官"},
+    "title": {"en": "Page execution converges on a shared runtime", "zh": "页面执行统一使用共享运行时"},
+    "teaser": {"en": "Renderer, TabWorker and the WPT runner share one WebView-based page runtime. The browser interface gains themes, persistent settings and improved tab management.", "zh": "渲染进程、TabWorker 与 WPT runner 复用同一套基于 WebView 的页面运行时，浏览器界面补充主题、持久化设置与标签管理。"},
     "summary": {
       "en": "The renderer, TabWorker, and the WPT runner now converge on one shared page runtime through WebView, replacing three parallel implementations. Around it, the browser chrome got a near-complete redesign pass — theming, persistent settings, tab management, a new app icon — while the oracle-measured rendering compatibility campaign landed another batch of CSS and layout fixes.",
       "zh": "渲染进程、TabWorker 与 WPT runner 现统一走同一套基于 WebView 的页面运行时，三份平行实现就此归一。同期浏览器界面完成一轮接近收官的翻新（主题、设置持久化、标签管理、新应用图标），渲染兼容性在独立 oracle 测量下又落地了一批 CSS 与布局修复。"
@@ -455,7 +473,8 @@
   {
     "date": "2026-06-21",
     "type": "weekly",
-    "title": {"en": "Rendering compatibility is now measured against a real Chrome oracle", "zh": "渲染兼容性改以真实 Chrome 为对照度量"},
+    "title": {"en": "Chrome screenshots become the rendering reference", "zh": "渲染测试接入真实 Chrome 截图对照"},
+    "teaser": {"en": "Pixel comparisons now use real Chrome screenshots. All ten upstream WPT CSS directories were imported, and the first results guide rendering fixes.", "zh": "像素对比接入真实 Chrome 截图，上游 WPT CSS 十个目录全部导入，首批结果用于指导渲染修复。"},
     "summary": {
       "en": "The compatibility program rebuilt its measurement: every reftest is now pixel-compared against real Chrome screenshots instead of ZeroWeb's own output. The full upstream WPT CSS corpus — all ten directories, ending with the huge CSS2 — was imported, and the first results already steered a new wave of rendering fixes.",
       "zh": "兼容性计划重建了度量方式：每个 reftest 现在都与真实 Chrome 截图逐像素对照，而不是与 ZeroWeb 自己的输出比较。上游 WPT CSS 套件十个目录已全部导入（以体量最大的 CSS2 收尾），首批结果随即引导出一波渲染修复。"
@@ -478,7 +497,8 @@
   {
     "date": "2026-06-14",
     "type": "weekly",
-    "title": {"en": "Reftest pass rate crosses 85% as remaining failures map to structural targets", "zh": "reftest 通过率超过 85%，剩余失败全部归入结构性目标"},
+    "title": {"en": "Reftest passes reach 420 of 490", "zh": "reftest 通过数达到 420 / 490"},
+    "teaser": {"en": "Table layout fixes lift the recorded reftest pass rate to 85.7%. The remaining 71 failures are mapped to structural targets such as nested columns and large-font paint fallback.", "zh": "表格布局修复将该期 reftest 通过率提高至 85.7%。剩余 71 项失败归入嵌套多列和大字号绘制回退等结构性目标。"},
     "summary": {
       "en": "Upstream reftest pass rate climbed from 76.7% to 420/490 (85.7%), with a table-layout milestone — row-height distribution, border-collapse sync, column visibility:collapse — breaking the 81.0% plateau. Incremental wins are now exhausted: the 71 remaining failures were re-scanned and mapped to structural targets, led by nested multicol collapse and the large-font paint fallback deadlock.",
       "zh": "本周上游 reftest 通过率从 76.7% 提升至 420/490（85.7%）：行高分配、border-collapse 同步、列 visibility:collapse 等表格修复带过了 81.0% 平台期。增量式修复已近枯竭，剩余 71 个失败用例全部重新扫描并归入结构性目标，以嵌套多列塌缩与大字号绘制回退死锁为代表。"
@@ -501,7 +521,8 @@
   {
     "date": "2026-06-07",
     "type": "weekly",
-    "title": {"en": "ZeroWeb launches — first week ships the browser core and imports 514 upstream reftests", "zh": "ZeroWeb 启动：首周交付浏览器核心，导入 514 个上游 reftest"},
+    "title": {"en": "The first week delivers a working browser core", "zh": "首周交付可运行的浏览器核心"},
+    "teaser": {"en": "The first week connects CSS, layout, CPU/GPU rendering and V8 to a browser shell. The imported set of 514 upstream reftests records a 76.3% pass rate.", "zh": "首周将 CSS、布局、CPU/GPU 渲染和 V8 接入浏览器应用，导入的 514 个上游 reftest 记录通过率 76.3%。"},
     "summary": {
       "en": "The project went from its first commit on May 30 to a working browser core in one week: CSS parsing through layout to a 13-primitive CPU and GPU render pipeline, V8-backed script execution, and a browser shell app. Mid-week the milestone plan was reworked around rendering compatibility — the new M1-M6 finished at 100% reftest pass, and M10 ended the week with 514 upstream WPT reftests imported at a 76.3% pass rate.",
       "zh": "项目于 5 月 30 日提交首个代码，一周内从零搭出可运行的浏览器核心：从 CSS 解析、布局到 13 种图元类型的 CPU/GPU 渲染管线，V8 脚本执行与浏览器外壳应用齐备。周中里程碑计划重写为以渲染兼容性为主线，新版 M1-M6 以 100% reftest 通过收官，M10 在周末把 514 个上游 WPT reftest 导入内置套件，通过率 76.3%。"
@@ -525,6 +546,7 @@
     "date": "2026-06-01",
     "type": "launch",
     "title": {"en": "ZeroWeb goes public", "zh": "ZeroWeb 项目启动"},
+    "teaser": {"en": "An experimental Rust browser with its own DOM, CSS, layout and rendering is published on GitHub under the MIT license.", "zh": "自研 DOM、CSS、布局和渲染的实验性 Rust 浏览器在 GitHub 以 MIT 协议公开。"},
     "summary": {
       "en": "An experimental browser written from scratch in Rust — DOM, CSS, layout and rendering all built in-house — is now public on GitHub under the MIT license.",
       "zh": "一个用 Rust 从零构建的实验性浏览器——DOM、CSS、布局、渲染全部自研——在 GitHub 上以 MIT 协议公开。"

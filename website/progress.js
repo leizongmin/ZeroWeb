@@ -7,6 +7,25 @@ const copy = {
   }
 };
 
+Object.assign(copy.en, {
+  gapDetails: 'All directory gaps', wptDetails: 'Monthly measurements',
+  suiteDetails: 'Suite measurements and evidence', perfDetails: 'Selected metric measurements',
+  tableHint: 'Scroll horizontally to see every column, including dates and evidence.',
+  wptKicker: 'Rendering self-consistency', wptTitle: 'Self-source reftest trend',
+  wptDescription: 'Both test and reference pages are rendered by ZeroWeb. Each point is the latest result for that month; this measures self-consistency. Corpus versions and passed / total counts are in the table.',
+  perfDescription: 'These results come from the recorded GitHub runner class. Compare the same metric, unit and measurement conditions; a class label does not guarantee identical hardware. Lower is better.',
+  gapUncovered: 'uncovered subtests'
+});
+Object.assign(copy.zh, {
+  gapDetails: '展开全部目录缺口', wptDetails: '展开月度测量记录',
+  suiteDetails: '展开测试集数据与依据', perfDetails: '展开当前指标的测量记录',
+  tableHint: '横向滚动可查看全部列，包括日期和验收依据。',
+  wptKicker: '渲染自身一致性', wptTitle: '自身一致性像素测试趋势',
+  wptDescription: '测试页和参照页均由 ZeroWeb 渲染，衡量的是自身一致性。每个点取当月最后一次记录；语料版本和通过 / 总数见下方数据表。',
+  perfDescription: '结果来自记录的 GitHub Runner 类别。比较时应核对同一指标、单位与测量条件；类别相同不保证硬件完全相同。数值越低越好。',
+  gapUncovered: '个未覆盖子测试', unitTests: '测试'
+});
+
 let language = typeof document !== 'undefined' && document.documentElement.lang.startsWith('zh') ? 'zh' : 'en';
 let metricsData = null;
 
@@ -26,12 +45,18 @@ function renderSummary() {
   const medium = latestPoint('page/medium/total_ms');
   const startup = latestPoint('startup_ms');
   const memory = latestPoint('resource/peak_rss_mb');
-  document.getElementById('metric-summary').innerHTML = [
-    summaryCard(t('wptPassed'), latestWpt ? `${formatNumber(latestWpt.passed, 0)} / ${formatNumber(latestWpt.total, 0)}` : '—', latestWpt ? `${latestWpt.rate}% · ${t('corpusVersion')} ${latestWpt.ref}` : t('empty')),
-    summaryCard(t('mediumPage'), medium ? `${formatNumber(medium.value)} ms` : '—', t('latest')),
-    summaryCard(t('startup'), startup ? `${formatNumber(startup.value)} ms` : '—', t('latest')),
-    summaryCard(t('peakMemory'), memory ? `${formatNumber(memory.value)} MB` : '—', t('latest'))
-  ].join('');
+  const full = metricsData.wptfyi;
+  // 概览逐项标注原始测量日期，避免页面最新日期被误认为每项的测量日期。
+  const cards = full?.totals ? [
+    summaryCard(t('wptfyiTitle'), `${formatNumber(full.totals.pass_rate * 100, 2)}%`, `${formatDate(full.date)} · ${t('unitSubtests')}`),
+    summaryCard(t('wptfyiCoverage'), `${formatNumber(full.totals.coverage_file_rate * 100, 2)}%`, `${formatDate(full.date)} · ${t('unitFiles')}`)
+  ] : [];
+  cards.push(
+    summaryCard(t('wptPassed'), latestWpt ? `${latestWpt.rate}%` : '—', latestWpt ? `${formatDate(latestWpt.date)} · ${formatNumber(latestWpt.passed, 0)} / ${formatNumber(latestWpt.total, 0)} · ${t('corpusVersion')} ${esc(latestWpt.ref)}` : t('empty')),
+    ...[[t('mediumPage'), medium, 'ms'], [t('startup'), startup, 'ms'], [t('peakMemory'), memory, 'MB']].map(([label, point, unit]) =>
+      summaryCard(label, point ? `${formatNumber(point.value)} ${unit}` : '—', point ? `${formatDate(point.date)} · p95` : t('empty')))
+  );
+  document.getElementById('metric-summary').innerHTML = cards.join('');
 }
 
 function chartMarkup(points, options) {
@@ -100,13 +125,15 @@ function renderWptfyi() {
   const totals = data.totals;
   document.getElementById('wptfyi-summary').innerHTML = [
     summaryCard(t('wptfyiRate'), `${formatNumber(totals.zw_passes, 0)} / ${formatNumber(totals.den_subtests, 0)}`, `${formatNumber(totals.pass_rate * 100, 2)}% · ${formatDate(data.date)}`),
-    summaryCard(t('wptfyiCoverage'), `${formatNumber(totals.covered_files, 0)} / ${formatNumber(totals.den_files, 0)}`, `${formatNumber(totals.coverage_file_rate * 100, 2)}% · ${t('wptfyiFiles')}`)
+    summaryCard(t('wptfyiCoverage'), `${formatNumber(totals.covered_files, 0)} / ${formatNumber(totals.den_files, 0)}`, `${formatNumber(totals.coverage_file_rate * 100, 2)}% · ${t('wptfyiFiles')} · ${formatDate(data.date)}`)
   ].join('');
   const browsers = Object.entries(data.browsers || {});
   document.getElementById('wptfyi-browsers').innerHTML = browsers.length
     ? tableMarkup(browsers, [t('colSuite'), t('passRate'), t('colWptfyiDen')], ([name, browser]) => [esc(name), `<strong>${formatNumber(browser.pass_rate * 100, 2)}%</strong>`, `${formatNumber(browser.subtest_passes, 0)} / ${formatNumber(browser.den_subtests, 0)}`])
     : '';
   const gap = data.gap_top || [];
+  document.getElementById('wptfyi-gap-preview').innerHTML = `<ol class="gap-preview">${gap.slice(0, 5).map((row) =>
+    `<li><code>${esc(row.dir_name)}</code><span>${formatNumber(row.den_subtests - row.zw_passes, 0)} ${t('gapUncovered')}</span></li>`).join('')}</ol>`;
   document.getElementById('wptfyi-table').innerHTML = gap.length
     ? tableMarkup(gap, [t('colWptfyiDir'), t('colWptfyiDen'), t('colWptfyiPassed'), t('colWptfyiUncovered'), t('colWptfyiEnv'), t('colWptfyiCovered')], (row) => [
         esc(row.dir_name),

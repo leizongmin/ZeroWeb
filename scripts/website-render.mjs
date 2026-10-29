@@ -24,7 +24,4 @@ elements['metric-select'].innerHTML = elements['metric-select'].innerHTML.replac
   `value="${elements['metric-select'].value}" selected`,
 );
 const progress = vm.runInContext('copy[language]', context);
-progress.perfDescription = language === 'zh'
-  ? '这些结果来自记录的 GitHub Runner 类别。比较时需同时核对指标、单位与测量条件；类别相同不保证硬件完全相同。数值越低越好。'
-  : 'These results come from the recorded GitHub runner class. Compare the same metric, unit and measurement conditions; a class label does not guarantee identical hardware. Lower is better.';
 process.stdout.write(JSON.stringify({ home: translations[language], updates: updates[language], progress, elements }));

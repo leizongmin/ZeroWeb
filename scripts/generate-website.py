@@ -143,44 +143,120 @@ def metadata(path, language, title, description, article_date=None):
     return "\n".join(tags)
 
 
+def words(language, en, zh):
+    """选择分别编辑的中英文界面文案。"""
+    return zh if language == "zh" else en
+
+
+def paragraphs(text, language):
+    """沿句子边界分段，保留完整周报文字，不以短摘要替代详情。"""
+    sentences = re.split(r"(?<=。)" if language == "zh" else r"(?<=[.!?])\s+(?=[A-Z])", text)
+    chunks, current = [], ""
+    for sentence in sentences:
+        if current and len(current) + len(sentence) > (220 if language == "zh" else 520):
+            chunks.append(current)
+            current = ""
+        current += (" " if current and language == "en" else "") + sentence
+    if current:
+        chunks.append(current)
+    return "".join(f"<p>{esc(chunk)}</p>" for chunk in chunks)
+
+
+def contents(entries, language, label=None):
+    """输出无需脚本即可使用的文章目录。"""
+    label = label or words(language, "On this page", "本页目录")
+    return (
+        f'<nav class="article-toc" aria-label="{esc(label)}">'
+        f'<strong>{esc(label)}</strong><ul>' +
+        "".join(f'<li><a href="#{esc(anchor)}">{esc(title)}</a></li>' for anchor, title in entries) +
+        "</ul></nav>"
+    )
+
+
 def update_card(item, language, copy, detail=False):
+    """列表使用独立摘要，详情按阅读顺序呈现全文、任务和来源。"""
     path = route(f'/updates/{item["date"]}-{item["type"]}/', language)
     heading = "h1" if detail else "h2"
     title = esc(item["title"][language])
     if not detail:
         title = f'<a href="{path}">{title}</a>'
     sources = "".join(f'<a href="{esc(source["url"])}">{esc(source["label"])} ↗</a>' for source in item["sources"])
-    completed = "".join(f"<li>{esc(entry)}</li>" for entry in item["completed"][language])
-    return (
+    header = (
         f'<article class="update-card"><div class="update-meta"><time datetime="{item["date"]}">{item["date"]}</time>'
         f'<span class="update-type">{esc(copy[item["type"]])}</span></div><{heading}>{title}</{heading}>'
-        f'<p>{esc(item["summary"][language])}</p><div class="update-detail"><div><h3>{copy["completed"]}</h3>'
-        f'<ul>{completed}</ul></div><div><h3>{copy["inProgress"]}</h3><p>{esc(item["inProgress"][language])}</p>'
-        f'</div></div><div class="source-links"><span>{copy["sources"]}:</span>{sources}</div></article>'
+    )
+    teaser = item.get("teaser", item["summary"])[language]
+    if not detail:
+        return header + f'<p>{esc(teaser)}</p><a class="text-link read-update" href="{path}">{words(language, "Read update", "阅读全文")} →</a></article>'
+    entries = [("overview", words(language, "Overview", "本期概览")),
+               ("completed", copy["completed"]), ("in-progress", copy["inProgress"]), ("sources", copy["sources"])]
+    completed = "".join(f"<li>{paragraphs(entry, language)}</li>" for entry in item["completed"][language])
+    return (
+        header + f'<p class="intro">{esc(teaser)}</p>' + contents(entries, language) +
+        f'<section id="overview"><h2>{entries[0][1]}</h2>{paragraphs(item["summary"][language], language)}</section>'
+        f'<div class="update-detail"><section id="completed"><h2>{copy["completed"]}</h2><ul>{completed}</ul></section>'
+        f'<section id="in-progress"><h2>{copy["inProgress"]}</h2>{paragraphs(item["inProgress"][language], language)}</section></div>'
+        f'<section id="sources"><h2>{copy["sources"]}</h2><div class="source-links">{sources}</div></section></article>'
     )
 
 
-def guide_links(guides, language):
+def guide_links(guides, language, exclude=None):
     return "".join(
         f'<article class="update-summary"><h3><a href="{route("/guides/" + guide["slug"] + "/", language)}">'
         f'{esc(guide["title"][language])}</a></h3><p>{esc(guide["description"][language])}</p></article>'
-        for guide in guides
+        for guide in guides if guide["slug"] != exclude
     )
 
 
-def hero_wptfyi(totals, language, copy):
+def guide_body(guide, language):
+    """为指南章节提供稳定锚点，并把已有管线清单呈现为流程。"""
+    tree = PageParser(guide["body"][language]).root
+    entries = []
+    for node in tree.walk():
+        if node.tag == "h2":
+            anchor = f"section-{len(entries) + 1}"
+            node.attrs["id"] = anchor
+            label = html.unescape("".join(child.render() for child in node.children))
+            entries.append((anchor, label))
+        if guide["slug"] == "rust-browser-architecture" and node.tag == "ol":
+            node.attrs["class"] = "guide-pipeline"
+    return contents(entries, language) + tree.render()
+
+
+def update_archive(updates, language, labels):
+    """按月份分组，让归档保留可抓取的紧凑列表。"""
+    months = {}
+    for item in updates:
+        months.setdefault(item["date"][:7], []).append(item)
+    links = contents([(f"month-{month}", month) for month in months], language, words(language, "Browse by month", "按月份浏览"))
+    return links + "".join(
+        f'<section class="update-month" id="month-{month}"><h2>{month}</h2>' +
+        "".join(update_card(item, language, labels) for item in items) + "</section>"
+        for month, items in months.items()
+    )
+
+
+def hero_wptfyi(data, language, copy):
     """首页 hero 的全量通过率大数字：数字取 coverage 快照，文案复用 script.js 翻译。"""
+    totals = data["totals"]
     rate = f"{totals['pass_rate'] * 100:.2f}%"
     subtests = f"{totals['zw_passes']:,} / {totals['den_subtests']:,}"
     return (
-        f'<strong>{esc(rate)}<small>{esc(copy["wptfyiHeroLabel"])}</small></strong>'
+        f'<small class="stat-label">{esc(copy["wptfyiHeroLabel"])}</small><strong>{esc(rate)}</strong>'
         f'<span>{esc(subtests)} {esc(copy["wptfyiHeroNote"])} · '
-        f'<a href="{route("/progress.html", language)}">{esc(copy["wptfyiHeroCta"])} →</a></span>'
+        f'<time datetime="{esc(data["date"])}">{esc(data["date"])}</time></span>'
+        f'<a class="stat-link" href="{route("/progress.html", language)}">{esc(copy["wptfyiHeroCta"])} →</a>'
     )
 
 
 def page(template, language, path, copy, title, description, replacements=None, extra="", article_date=None, reveal=()):
     tree = PageParser(template).root
+    if not any(node.attrs.get("class") == "skip-link" for node in tree.walk()):
+        target = "#article-content" if path.startswith(("/guides/", "/updates/")) else "#main"
+        for node in tree.walk():
+            if node.tag == "body":
+                node.children.insert(0, Node(text=f'<a class="skip-link" href="{target}">{words(language, "Skip to content", "跳至主要内容")}</a>'))
+                break
     for node in list(tree.walk()):
         if node.tag == "html":
             node.attrs["lang"] = "zh-CN" if language == "zh" else "en"
@@ -193,14 +269,34 @@ def page(template, language, path, copy, title, description, replacements=None, 
                 child for child in node.children
                 if child.tag != "title" and not (child.tag == "meta" and child.attrs.get("name") == "description")
             ]
-            node.children.append(Node(text=metadata(path, language, title, description, article_date) + '<link rel="stylesheet" href="/seo.css">'))
+            node.children.append(Node(text=metadata(path, language, title, description, article_date) + '<link rel="stylesheet" href="/seo.css"><link rel="stylesheet" href="/layout.css">'))
         if "language-switcher" in node.attrs.get("class", "").split():
             node.replace(language_links(path, language))
+        if node.tag == "nav" and node.attrs.get("aria-label") == "Primary navigation":
+            for child in node.children:
+                child.attrs.pop("aria-current", None)
+                href = child.attrs.get("href", "")
+                if (path.startswith("/updates/") or path == "/updates.html") and href == "updates.html":
+                    child.attrs["aria-current"] = "page"
+                if path == "/progress.html" and href == "progress.html":
+                    child.attrs["aria-current"] = "page"
+            current = ' aria-current="page"' if path.startswith("/guides/") else ""
+            node.children.append(Node(text=f'<a href="{route("/guides/", language)}"{current}>'
+                                      f'{words(language, "Guides", "指南")}</a>'))
+        if node.tag == "main":
+            if not node.attrs.get("id"):
+                node.attrs["id"] = "main"
+            if path.startswith(("/guides/", "/updates/")) and path != "/guides/":
+                node.attrs["class"] = "updates-page article-page"
+        if node.tag == "a" and node.attrs.get("class") == "skip-link" and path.startswith(("/guides/", "/updates/")):
+            node.attrs["href"] = "#article-content"
         for attr in ("href", "src"):
             value = node.attrs.get(attr, "")
             if value.startswith("index.html"):
                 node.attrs[attr] = route("/", language) + value[len("index.html"):]
             elif value in ("progress.html", "updates.html"):
+                node.attrs[attr] = route("/" + value, language)
+            elif value.startswith("guides/"):
                 node.attrs[attr] = route("/" + value, language)
             elif value and not value.startswith(("/", "#", "http", "mailto:")):
                 node.attrs[attr] = "/" + value
@@ -266,7 +362,9 @@ def build(output):
             ["node", str(ROOT / "scripts/website-render.mjs"), language, str(output / "metrics.json")], text=True))
         labels = rendered["updates"]
         guide_title = "Engineering guides" if language == "en" else "工程指南"
-        extra = f'<section class="section"><div class="section-heading"><h2>{guide_title}</h2></div><div class="experiment-grid">{guide_links(guides, language)}</div></section>'
+        def guide_section(exclude=None):
+            return f'<section class="section guide-links"><div class="section-heading"><h2>{guide_title}</h2></div><div class="guide-grid">{guide_links(guides, language, exclude)}</div></section>'
+        extra = guide_section()
         titles = {
             "/": ("ZeroWeb — AI-Autonomous Engineering with a Rust Browser", "ZeroWeb — 以 Rust 浏览器验证 AI 自主软件工程"),
             "/progress.html": ("ZeroWeb WPT Results & Performance Benchmarks", "ZeroWeb — WPT 测试结果与性能基准"),
@@ -281,8 +379,9 @@ def build(output):
         cards = "".join(
             f'<article class="update-summary"><time datetime="{item["date"]}">{item["date"]}</time>'
             f'<h3><a href="{route("/updates/" + item["date"] + "-" + item["type"] + "/", language)}">{esc(item["title"][language])}</a></h3>'
-            f'<p>{esc(item["summary"][language])}</p></article>' for item in updates[:3])
-        index_replacements = {"home-update-list": cards, "hero-wptfyi-stat": hero_wptfyi(wptfyi_totals, language, rendered["home"]) if wptfyi_totals else ""}
+            f'<p>{esc(item.get("teaser", item["summary"])[language])}</p>'
+            f'<a class="text-link read-update" href="{route("/updates/" + item["date"] + "-" + item["type"] + "/", language)}">{words(language, "Read update", "阅读全文")} →</a></article>' for item in updates[:3])
+        index_replacements = {"home-update-list": cards, "hero-wptfyi-stat": hero_wptfyi(metrics["wptfyi"], language, rendered["home"]) if wptfyi_totals else ""}
         write("/", language, page(index, language, "/", rendered["home"], titles["/"][language == "zh"], descriptions["/"][language == "zh"], index_replacements, extra))
         progress = {key: value["innerHTML"] or esc(value["textContent"]) for key, value in rendered["elements"].items()}
         # 结构容器（如 wptfyi-section）在渲染器里只有空 innerHTML 条目；按 id 替换会把
@@ -291,13 +390,13 @@ def build(output):
         # Keep all benchmark histories readable before JS selects a single metric.
         histories = "".join(
             f'<details><summary>{esc(metric["label"][language])} ({esc(metric["unit"])})</summary>'
-            f'<table><thead><tr><th scope="col">{"Date" if language == "en" else "日期"}</th><th scope="col">p95</th></tr></thead><tbody>' +
+            f'<div class="chart-table" tabindex="0" role="region" aria-label="{esc(metric["label"][language])}"><table><thead><tr><th scope="col">{"Date" if language == "en" else "日期"}</th><th scope="col">p95</th></tr></thead><tbody>' +
             "".join(f'<tr><td>{point["date"]}</td><td>{point["value"]} {esc(metric["unit"])}</td></tr>' for point in metric["points"]) +
-            "</tbody></table></details>" for metric in metrics["performance"]["metrics"])
-        note = f'<section class="chart-section"><h2>{"All benchmark histories" if language == "en" else "全部性能历史"}</h2>{histories}</section>'
+            "</tbody></table></div></details>" for metric in metrics["performance"]["metrics"])
+        note = f'<section class="chart-section"><details><summary>{words(language, "All benchmark histories", "全部性能历史")}</summary>{histories}</details></section>'
         write("/progress.html", language, page((SITE / "progress.html").read_text(), language, "/progress.html", rendered["progress"], titles["/progress.html"][language == "zh"], descriptions["/progress.html"][language == "zh"], progress, note + extra, reveal=("wptfyi-section",) if wptfyi_totals else ()))
         template = (SITE / "updates.html").read_text()
-        write("/updates.html", language, page(template, language, "/updates.html", labels, titles["/updates.html"][language == "zh"], descriptions["/updates.html"][language == "zh"], {"update-list": "".join(update_card(item, language, labels) for item in updates)}, extra))
+        write("/updates.html", language, page(template, language, "/updates.html", labels, titles["/updates.html"][language == "zh"], descriptions["/updates.html"][language == "zh"], {"update-list": update_archive(updates, language, labels)}, extra))
         # Reuse the archive shell for focused articles, preserving navigation.
         shell = PageParser(template).root
         for node in shell.walk():
@@ -309,12 +408,14 @@ def build(output):
             path = f'/updates/{item["date"]}-{item["type"]}/'
             adjacent = [updates[j] for j in (i - 1, i + 1) if 0 <= j < len(updates)]
             links = "".join(f'<p><a class="text-link" href="{route("/updates/" + entry["date"] + "-" + entry["type"] + "/", language)}">{esc(entry["title"][language])}</a></p>' for entry in adjacent)
-            body = update_card(item, language, labels, True) + links
-            write(path, language, page(shell.render(), language, path, labels, item["title"][language] + " — ZeroWeb", item["summary"][language], {"article-content": body}, extra, item["date"]))
+            body = update_card(item, language, labels, True) + f'<nav class="adjacent-updates" aria-label="{words(language, "Adjacent updates", "相邻更新")}">{links}<p><a class="text-link" href="{route("/updates.html", language)}">{words(language, "All updates", "全部更新")} →</a></p></nav>'
+            write(path, language, page(shell.render(), language, path, labels, item["title"][language] + " — ZeroWeb", item.get("teaser", item["summary"])[language], {"article-content": body}, extra, item["date"]))
+        directory = f'<h1>{guide_title}</h1><p class="intro">{words(language, "Explore the experiment, architecture, local setup and measurement methods.", "了解实验方法、浏览器架构、本地运行与数据口径。")}</p><div class="guide-grid">{guide_links(guides, language)}</div>'
+        write("/guides/", language, page(shell.render(), language, "/guides/", labels, guide_title + " — ZeroWeb", words(language, "Engineering guides for ZeroWeb and ZeroWebView.", "ZeroWeb 与 ZeroWebView 工程指南。"), {"article-content": directory}))
         for guide in guides:
             path = "/guides/" + guide["slug"] + "/"
-            body = f'<article class="guide"><h1>{esc(guide["title"][language])}</h1><p class="intro">{esc(guide["description"][language])}</p>{guide["body"][language]}</article>'
-            write(path, language, page(shell.render(), language, path, labels, guide["title"][language] + " — ZeroWeb", guide["description"][language], {"article-content": body}, extra))
+            body = f'<article class="guide"><h1>{esc(guide["title"][language])}</h1><p class="intro">{esc(guide["description"][language])}</p>{guide_body(guide, language)}</article>'
+            write(path, language, page(shell.render(), language, path, labels, guide["title"][language] + " — ZeroWeb", guide["description"][language], {"article-content": body}, guide_section(guide["slug"])))
     # Sitemaps list canonical URLs only; no fabricated lastmod dates.
     # https://developers.google.com/search/docs/crawling-indexing/sitemaps/build-sitemap
     ET.register_namespace("", "http://www.sitemaps.org/schemas/sitemap/0.9")

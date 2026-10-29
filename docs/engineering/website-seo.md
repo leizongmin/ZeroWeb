@@ -8,8 +8,9 @@
 
 - 首页模板：`website/index.html`；翻译：`website/script.js`。
 - 测试页：`website/progress.html`、`website/progress.js`；指标仍由已有 CSV 和指标生成器决定。
-- 更新：`website/updates.json`，详情网址为 `/updates/<日期>-<类型>/`。生成器按日期倒序排列。
-- 指南：`website/guides.json`，网址为 `/guides/<slug>/`。
+- 更新：`website/updates.json`，详情网址为 `/updates/<日期>-<类型>/`。生成器按日期倒序、按月分组；`teaser` 为列表短摘要，详情保留完整 `summary`、已完成工作和进行中任务。
+- 指南：`website/guides.json`，目录为 `/guides/`，文章为 `/guides/<slug>/`。文章章节自动生成目录，相关推荐排除当前文章。
+- 公共阅读排版：`website/layout.css`；中英文分别调整字距、标题和正文行高。
 - 分享卡片：`website/social-en.png` 与 `website/social-zh.png`，尺寸为 1200 × 630。
 
 在仓库根目录执行：
@@ -67,6 +68,19 @@ python3 -m http.server 8769 --directory /tmp/zeroweb-site-preview
 `scripts/test-website-seo.py` 检查所有页面的 canonical、语言链接、标题摘要、
 分享图片、静态正文和本地资源。浏览器验收还应检查语言切换、性能指标切换、
 375px 小屏及禁用 JavaScript 后的正文。脚本增强失败时保留静态测试数据。
+
+`scripts/test-website-layout.mjs` 是浏览器回归入口，需要环境中已安装 Playwright
+及其 Chromium；不影响静态生成器的零 npm 依赖。先生成预览目录，再经资源守卫运行：
+
+```sh
+./target/test-guard --per-proc-mem 2 --total-mem 4 --time-limit 300 -- \
+  node scripts/test-website-layout.mjs /tmp/zeroweb-site-preview /tmp/zeroweb-site-layout-evidence
+```
+
+脚本覆盖 sitemap 中全部页面的 375、390、768、1024、1440px 布局，
+同时检查默认和展开表格后的页面宽度、语言切换、文章和月份锚点、
+键盘展开表格、性能指标切换、禁用 JavaScript、数据请求失败及深色主题。
+截图和结果写入指定证据目录；不修改生成产物。
 
 参考：[Google 多语言指南](https://developers.google.com/search/docs/specialty/international/managing-multi-regional-sites)、
 [JavaScript SEO](https://developers.google.com/search/docs/crawling-indexing/javascript/javascript-seo-basics)、
