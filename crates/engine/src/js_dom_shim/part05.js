@@ -15100,6 +15100,10 @@
     // 全簇——对象 listener 派发时 handleEvent 非 callable 须抛 TypeError 上报，注册
     // 是前提）。callable 判定移到派发点（dispatchEvent 的 R139 分支）。
     if (cb == null) return;
+    // R5323（site-opt p119）：WebIDL callback interface 转换——非 null 非 callable 原始值
+    // 注册点 TypeError（与其余注册面同语义；对象 listener 仍入表走 R139 派发面）。
+    // https://webidl.spec.whatwg.org/#es-callback-interface
+    _zwRequireCallback5323(cb);
     var capture = opts === true || (opts && opts.capture) ? '|cap' : '';
     var key = type + capture;
     (this._et_listeners[key] = this._et_listeners[key] || []).push(cb);

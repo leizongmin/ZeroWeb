@@ -1199,12 +1199,25 @@
     return s.indexOf('on') === 0 ? s.slice(2) : s;
   }
 
+  // R5323（site-opt p119）：WebIDL callback interface 转换——非 null 非 callable 原始值
+  //（number/string/boolean/symbol/bigint）在注册点抛 TypeError（Chrome 同措辞）；
+  // 对象 listener 照常入表（单操作 callback interface 经 handleEvent，R113 派发面
+  // 语义不变）；null/undefined 已由 R5301 前置静默。六注册面共用（window/document/
+  // element/EventTarget addEventListener + element/document attachEvent 镜像）。
+  // https://webidl.spec.whatwg.org/#es-callback-interface
+  function _zwRequireCallback5323(fn) {
+    if (typeof fn !== 'function' && typeof fn !== 'object') {
+      throw new TypeError("Failed to execute 'addEventListener' on 'EventTarget': parameter 2 is not of type 'Function'.");
+    }
+  }
   function _attachEventForKey(key, type, fn) {
     var t = _ieEventType(type);
     // R5301（site-opt p118）：与 DOM 注册面同语义——fn 为 null/undefined 不入表
     //（attachEvent 无现行规范，取 addEventListener 同参行为镜像）。
     // https://dom.spec.whatwg.org/#add-an-event-listener
     if (fn == null) return;
+    // R5323（site-opt p119）：原始值注册点 TypeError（attachEvent 镜像 addEventListener）。
+    _zwRequireCallback5323(fn);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     _listenerStore[key][t].push({ fn: fn, capture: false });
@@ -1265,6 +1278,8 @@
     // 「handleEvent property is not a function」，Chrome 同参静默。
     // https://dom.spec.whatwg.org/#add-an-event-listener
     if (fn == null) return;
+    // R5323（site-opt p119）：WebIDL callback interface 转换——原始值注册点 TypeError。
+    _zwRequireCallback5323(fn);
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同 type +
