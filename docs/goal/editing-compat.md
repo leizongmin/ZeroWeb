@@ -24,12 +24,16 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 实证：bold 四变体 90s 预算 12 行 → 300s 预算 3048 行全出（1138P/1910F，
 > 单案隔离跑）。corpus 脚本已改：run 通道缺省预算 300s + CASE_WALL_S 按案
 > 内变体数自适应。全分母重跑（3 分片）进行中（bold 已按新预算全矩阵
-> 发射）；other 面同预算复跑同窗启动。**自旋分类首例已出（单案 600s
-> 放宽探针）**：delete-without-unwrapping-first-line-of-child-block 非
+> 发射）；other 面同预算复跑同窗启动。**自旋分类三例已出（单案 600s
+> 放宽探针）**：① delete-without-unwrapping-first-line-of-child-block 与
+> ② inserttext-last-mutation 非
 > 预算族——300s 脚本预算下 ~3min 吃满 4G scope OOM、150s 零子测试行，
-> delete 循环不收敛且 DOM 无界增长，M1「list/inline delete 循环疑似
-> 不终止」在该案成立——真引擎簇（delete 收敛性），预算解锁不覆盖，
-> 归入 execCommand/delete 语义簇序列。**重跑在途两笔待办**：① 自适应墙钟 nv=0 下限
+> 编辑循环不收敛且 DOM 无界增长，M1「list/inline delete 循环疑似
+> 不终止」成立——真引擎簇（delete/inserttext 收敛性），预算解锁不覆盖，
+> 归入 execCommand/delete 语义簇序列；③ join-different-white-space-style-
+> paragraphs（white-space 簇旗舰）**有限慢**：300s 预算内跑完整案 3,456
+> 子测试行（exit=1 正常带 Fail）——white-space join 簇随预算解锁，仅需
+> 墙钟 ≥ 实际耗时，非引擎簇。**重跑在途两笔待办**：① 自适应墙钟 nv=0 下限
 > 150s 偏紧——300s 脚本预算下无变体大单页案（createlink-with-selecting-img
 > 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
 > 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案；② other 面曾
