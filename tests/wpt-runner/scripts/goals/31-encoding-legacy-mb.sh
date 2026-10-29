@@ -7,7 +7,8 @@
 # 测试面是 legacy-mb `*_chars-<label>.html` 文档解码族——用例自带
 # `<meta charset="<label>">`，要求 runner 文档加载管道按声明编码解码字节流。
 # 该管道 M0 可行性未验证（runner 现按 UTF-8 加载文档），是 goal 第一关，契约见
-# docs/goal/encoding-legacy-mb.md DC-1；不可行则按契约挂账重估。
+# docs/goal/archive/encoding-legacy-mb.md DC-1；不可行则按契约挂账重估。
+# （goal 已收口归档 2026-10-29——本脚本保留作语料续拉/盘点。）
 #
 # 语料现状（30 号预置）：euc-jp 36 / iso-2022-jp 31 / shift_jis 60 / euc-kr 66 /
 # gbk 2 / gb18030 3 / big5 55 文件，为子集（上游全量 ~1,200 .html）。本脚本

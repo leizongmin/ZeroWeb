@@ -4,7 +4,7 @@
 **日期**: 2026-10-29（DC-4 收口：54 通道批量实跑 status.tsv 全行 rc∈{0,1} 且
 results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb decode 面
 360,431 清零路径成立）
-**状态**: Done——DC-1~DC-4 全部收口（2026-10-29）
+**状态**: ✅ Completed（2026-10-29——DC-1~DC-4 全部收口）
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -21,7 +21,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
 全量对账头条从「基本没测过编码文档面」变为「编码面有数字」——JS API 面
 （30 号已收口）已验证同族解码表实现通过率 ~100%，文档面解锁后预期高通过率。
 
-**DC-4 复测（2026-10-29，[coverage-2026-10-29.md](../compat/wptfyi/coverage-2026-10-29.md)）**：
+**DC-4 复测（2026-10-29，[coverage-2026-10-29.md](../../compat/wptfyi/coverage-2026-10-29.md)）**：
 上表「0 文件覆盖」形态已消除——四族分母 1,128,104 计入全量对账，decode 面
 360,431 全过（japanese 114,208 + korean 170,488 + tchinese 75,735，与 M2
 基线逐字对上），未覆盖余量 767,316 = M3 甄别归口 encode 面；全量头条
@@ -55,7 +55,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
 
 ## M0 结果（2026-10-28，DC-1 收口）
 
-细节与全量数据见 [evidence/2026-10-28-m0-corpus-read-decode-pipeline.md](evidence/2026-10-28-m0-corpus-read-decode-pipeline.md)。要点：
+细节与全量数据见 [evidence/2026-10-28-m0-corpus-read-decode-pipeline.md](encoding-legacy-mb/evidence/2026-10-28-m0-corpus-read-decode-pipeline.md)。要点：
 
 - **机制实证成立**：testharness 各通道语料读取原为 `std::fs::read_to_string`
   88 调用点，非 UTF-8 文档整案 skip——「读不进来」而非「解码错误」。
@@ -80,7 +80,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
 
 ## M1 进展（2026-10-28，DC-2 收口）
 
-细节与数据见 [evidence/2026-10-28-m1-runner-channel-perf.md](evidence/2026-10-28-m1-runner-channel-perf.md)。要点：
+细节与数据见 [evidence/2026-10-28-m1-runner-channel-perf.md](encoding-legacy-mb/evidence/2026-10-28-m1-runner-channel-perf.md)。要点：
 
 - **DC-2 通道落地**：`zero-wpt-runner testharness-encoding-legacy-mb` 子命令 +
   per-dir skip 规则（只跑 decode wrapper/decode-errors，chars/encode 面/helper
@@ -129,8 +129,8 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
 
 ## M2 进展（2026-10-28 基线；2026-10-29 更正为全量口径，DC-3 收口）
 
-细节见 [evidence/2026-10-28-m2-baseline-classification.md](evidence/2026-10-28-m2-baseline-classification.md)
-与 [evidence/2026-10-29-corpus-completeness-dc3.md](evidence/2026-10-29-corpus-completeness-dc3.md)。要点：
+细节见 [evidence/2026-10-28-m2-baseline-classification.md](encoding-legacy-mb/evidence/2026-10-28-m2-baseline-classification.md)
+与 [evidence/2026-10-29-corpus-completeness-dc3.md](encoding-legacy-mb/evidence/2026-10-29-corpus-completeness-dc3.md)。要点：
 
 - **基线**：385 case / 360,431 子测试 **100% Pass / 0 Fail / 0 超时**
   （decode-wrapper 380 case + decode-errors 5 case，五族全绿，iso-2022-jp
@@ -153,7 +153,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
 ## M3 进展（2026-10-28，甄别面收口）
 
 - **details 裁决态**：细节见
-  [evidence/2026-10-28-m3-deep-entry-details-adjudication.md](evidence/2026-10-28-m3-deep-entry-details-adjudication.md)。要点：
+  [evidence/2026-10-28-m3-deep-entry-details-adjudication.md](encoding-legacy-mb/evidence/2026-10-28-m3-deep-entry-details-adjudication.md)。要点：
 
   - **甄别结论**：host 解析产物不裁决 details name= 互斥（深 JSON 双 open
     实证），裁决责任在 plain 物化面。M1 挂账的 `_zwMBuildDeepEntry`（template
@@ -167,7 +167,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
     通道复验对账零回归，html-semantics 净修复 +7 子测试。
 
 - **form-encode / encode-href 可跑性甄别**：细节见
-  [evidence/2026-10-28-m3-encode-form-href-runnability.md](evidence/2026-10-28-m3-encode-form-href-runnability.md)。要点：
+  [evidence/2026-10-28-m3-encode-form-href-runnability.md](encoding-legacy-mb/evidence/2026-10-28-m3-encode-form-href-runnability.md)。要点：
 
   - 本地语料 encode 面合计 68 文件（form 46 + href 19 + `*-encoder.html` 2
     + `big5-enc-ascii` 1；初记 65 漏 3 个非 `encode-*` 命名同面文件，
@@ -194,7 +194,7 @@ results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb de
     字节 prescan 窗按字节直切，byte 1024 落进全角字符字节中段 panic 杀整
     通道——共享路径修复（截断点回退最近 char boundary）+ 回归钉同提交，
     复跑 rc=1（合格完成态）入账。
-  - coverage 全量复测（[coverage-2026-10-29.md](../compat/wptfyi/coverage-2026-10-29.md)）：
+  - coverage 全量复测（[coverage-2026-10-29.md](../../compat/wptfyi/coverage-2026-10-29.md)）：
     全量头条 7.41% → **24.19%**（548,502/2,267,219 子测试，8,627 文件覆盖）；
     四族 decode 面 360,431 全过清零，余量 767,316 = encode 面甄别归口。
 
@@ -235,7 +235,8 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
   见 evidence「M3：form-encode / encode-href 面可跑性甄别」）：form 面
   不可跑（UTF-8 序列化硬编码 + 嵌套导航缺面），href 面可跑但缺
   encoding-parse a URL——两面均归口 runner form/URL-compat 能力缺口，
-  skip 维持且理由升格。
+  skip 维持且理由升格；已立项承接（36 号
+  [form-url-encoding-compat](../form-url-encoding-compat.md)，2026-10-29）。
 - `.py` 服务器端点不拉（lib.sh 不含）；`.headers` sidecar 全拉（HTTP charset
   头优先语义是用例依赖，DC-1 甄别 runner 是否消费）。预检实证（见上节）：
   带 sidecar 的案本体均带 meta 声明，sidecar 消费维持挂账不动。

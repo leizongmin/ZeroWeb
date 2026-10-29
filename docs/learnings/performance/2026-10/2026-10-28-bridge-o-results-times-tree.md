@@ -9,7 +9,7 @@ modules: engine
 
 encoding-legacy-mb 语料（单页 13.5k span、qsa 千元命中）把三处共享路径的
 「每结果重算全局量」放大到 13.9s/查询与 4GB 堆 OOM（详见
-`docs/goal/encoding-legacy-mb/evidence/2026-10-28-m1-runner-channel-perf.md`）。
+`docs/goal/archive/encoding-legacy-mb/evidence/2026-10-28-m1-runner-channel-perf.md`）。
 
 ## 三形态与修复模式
 
