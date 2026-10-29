@@ -889,3 +889,7 @@ mod r5315_inline_block_oof_static_pos_tests;
 /// 行盒按父 content area 需求生长（负 leading 域），正 leading 域 max 合成零扰动
 ///（vertical-align-negative-leading-001）。
 mod r5316_va_text_neg_leading_tests;
+/// R5329（css-sizing-3 + css-flexbox-1 §4.5）替换内容叶 intrinsic 测量锚——img 叶
+/// MinContent/MaxContent 回固有尺寸（非 0），flex item automatic min 的 specified/
+/// content size suggestion 生效（flex-minimum-width-flex-items-005/006）。
+mod r5329_replaced_leaf_intrinsic_min_tests;
