@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.4
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1 完成（css-color/css-align/css-sizing 入账 + 根 support 文件修复，六目录统一基线 27,824 子测试 5,593 Pass），M4 未启动
+**版本**: v1.5
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1 完成（六目录统一基线 27,824 子测试 5,593 Pass）；批次 2 完成（css-typed-om/css-fonts/css-shapes 入账，九目录统一基线 38,853 子测试 9,583 Pass = 24.7%，parity 三目录全 IDENTICAL），M4 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -132,8 +132,14 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   2026-10-30：css-color/css-align/css-sizing 入账，六目录统一基线
   1,052 案 27,824 子测试 5,593 Pass = 20.1%；顺带修复根 support 文件
   `resources/check-layout-th.js` 缺失——153 个挂起超时清零、2,921 子测试
-  解掩。证据：evidence/2026-10-30-m3-batch1-color-align-sizing.md。批次 2
-  起 top15 其余目录，css-grid / css-text 重量级独立轮次。）
+  解掩。证据：evidence/2026-10-30-m3-batch1-color-align-sizing.md。
+  批次 2 完成 2026-10-30：css-typed-om/css-fonts/css-shapes 入账，九目录
+  统一基线 38,853 子测试 9,583 Pass = 24.7%，parity 全 IDENTICAL；
+  typed-om 单簇 = Typed OM API 面整体未实现（96.7% Fail，引擎缺口挂账）；
+  fonts 幂等快路径漏差以 blob-hash 定向补拉 357 页收口（fresh checkout
+  复现口径见 evidence，M4 CI 接线前须脚本化）。证据：
+  evidence/2026-10-30-m3-batch2-typed-om-fonts-shapes.md。批次 3 起
+  top15 其余目录（css-grid / css-text 重量级独立轮次）。）
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）

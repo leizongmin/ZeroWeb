@@ -209,3 +209,24 @@ pub fn run_css_align_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 pub fn run_css_sizing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-sizing", filter)
 }
+
+/// Run the pinned upstream css-typed-om testharness subset（css-testharness-compat
+/// goal M3 扩面批次 2——CSS Typed OM API 断言面（CSSStyleValue/CSSNumericValue
+/// 等），top15 分母 13,445 子测试）。filter 按路径子串过滤。
+pub fn run_css_typed_om_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-typed-om", filter)
+}
+
+/// Run the pinned upstream css-fonts testharness subset（css-testharness-compat
+/// goal M3 扩面批次 2——@font-face/font-family 匹配断言面，top15 分母
+/// 8,665 子测试）。filter 按路径子串过滤。
+pub fn run_css_fonts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-fonts", filter)
+}
+
+/// Run the pinned upstream css-shapes testharness subset（css-testharness-compat
+/// goal M3 扩面批次 2——shape-outside 解析/计算值断言面，top15 分母
+/// 7,527 子测试）。filter 按路径子串过滤。
+pub fn run_css_shapes_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-shapes", filter)
+}

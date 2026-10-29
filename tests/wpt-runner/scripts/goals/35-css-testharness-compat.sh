@@ -50,6 +50,14 @@ DIRS=(
   "css/css-color"
   "css/css-align"
   "css/css-sizing"
+  # M3 扩面批次 2（top15 分母目录过 M0 模板）：css-typed-om（13,445 子测试 /
+  # CSS Typed OM API 面）+ css-fonts（8,665 / @font-face 匹配）+ css-shapes
+  # （7,527 / shape-outside）。typed-om 与 shapes 本地原为空目录（深挖全量
+  # 首拉），fonts 精选仓已含 476 页（深挖幂等快路径会漏——首拉后如需补差
+  # 按 blob hash 定向，FORCE=1 会连带 1,650 个字体资产全量重拉，不划算）。
+  "css/css-typed-om"
+  "css/css-fonts"
+  "css/css-shapes"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
