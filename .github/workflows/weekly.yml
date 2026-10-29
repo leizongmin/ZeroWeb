@@ -749,8 +749,10 @@ jobs:
       matrix:
         shard:
           # time_limit（秒）按 2026-10-27 本地实测 ×2 系数定：html-semantics 4732s、
-          # csp 3494s、uievents 1513s、dom 900s；css-variables 病态内存（单进程
-          # >8.8GB 三跑被杀）不进 CI，修复前 misc 不含之（coverage 记 0 属实）。
+          # csp 3494s、uievents 1513s、dom 900s。css-variables 曾因病态内存
+          # （单进程 >8.8GB 三跑被杀）不进 CI——2026-10-30 M2 解禁：病态案
+          # （variable-exponential-blowup.html 单案 4.9GB + *-crash.html）由
+          # runner 谓词名级排除后单进程入账（css-testharness-compat DC-3）。
           # 原 sec-render 五套件一 job 撞 90min timeout（svg 被杀 webgl 未跑，
           # aggregate 连带 skip）→ 拆 sec/render 两分片（run 40505731836）。
           - name: syntax-dom
@@ -823,10 +825,11 @@ jobs:
           - name: misc
             suites: >-
               console compression canvas canvas-worker media
-              webaudio
+              webaudio css-variables
             fetch: >-
               fetch-wpt-console fetch-wpt-compression
               fetch-wpt-media fetch-wpt-webaudio
+              fetch-wpt-css-variables
             fetch_scripts: "fetch-canvas-subset.sh"
             time_limit: 5400
           - name: sec

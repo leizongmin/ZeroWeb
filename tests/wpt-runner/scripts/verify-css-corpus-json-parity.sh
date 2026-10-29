@@ -4,7 +4,7 @@
 # testharness-speed A/B 先例口径）。M3 扩面目录按 CORPUS/FILTER 换子集复用。
 #
 # 用法：verify-css-corpus-json-parity.sh <corpus> <filter-substr> [runner]
-#   <corpus>        wpt-data/css/ 下的目录名（css-values | selectors）
+#   <corpus>        wpt-data/css/ 下的目录名（css-values | selectors | css-variables）
 #   <filter-substr> 子集过滤（选无外部墙钟 Timeout 案的子集——两通道的 Timeout
 #                   语义固有差异：分片=外部 90s 杀+合成条目，单进程=内部超时，
 #                   不在恒等判据内）
@@ -19,7 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "${CORPUS}" in
   css-values) SUBCMD=testharness-css-values ;;
   selectors) SUBCMD=testharness-selectors ;;
-  *) echo "usage: $0 <css-values|selectors> <filter-substr> [runner]" >&2; exit 2 ;;
+  css-variables) SUBCMD=testharness-css-variables ;;
+  *) echo "usage: $0 <css-values|selectors|css-variables> <filter-substr> [runner]" >&2; exit 2 ;;
 esac
 
 WORK="$(mktemp -d)"

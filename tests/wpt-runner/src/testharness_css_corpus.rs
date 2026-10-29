@@ -1,5 +1,5 @@
 //! css testharness 面（css-testharness-compat goal M0 试点）——`css/css-values` +
-//! `css/selectors` 上游 testharness 通道。
+//! `css/selectors` + `css/css-variables` 上游 testharness 通道。
 //!
 //! 独立模块而非并入 [`crate::testharness`]（2000 行约束，testharness_svg
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_testharness_html_inner` /
@@ -14,6 +14,8 @@
 //! selectors 996 blobs（2026-10-29 树清单）——`.html` 主体 + support 资产
 //! （png/css/woff）+ `.xht` XML 页；两目录均无 `.any.js`（形态分簇实测，
 //! `.any.js` window 变体通道为后续扩面目录预留，net-api 先例）。
+//! css-variables 数据双源（M2）：fetch-wpt-data 精选仓（v1.10）只有 reftest
+//! 口径子集（harness 形态 59 页），上游全量 harness 面由 35 号脚本深挖补拉。
 //!
 //! 运行面 = 目录全递归扫描（svg/workers 先例，skip 规则两侧同源防漂移）+
 //! 只收 `.html`/`.htm` + [`css_testharness_case_skipped`] 内容规则筛减：
@@ -35,11 +37,21 @@ use std::path::Path;
 ///   css-variables `*-crash.html` 同口径）
 const HELPER_DIRS: &[&str] = &["resources", "support", "reference", "crashtests"];
 
+/// 病态内存案名级排除（fuzz-repro-guard 口径不入常驻运行面；runner 谓词单点，
+/// 直接子命令调用与分片脚本两路同享）：
+/// - `if-conditionals.html`：css-values，CSS if() 条件面半支持状态指数膨胀，
+///   单案 Oilpan CagedHeap OOM（fuzz-repro-guard 口径复现实证，M0）
+/// - `variable-exponential-blowup.html`：css-variables，自定义属性引用链指数
+///   展开，单案 4.9GB 实测杀树（css-testharness-compat M1 归因实证；M2 解禁
+///   css-variables 的前置排除）
+const PATHO_CASES: &[&str] = &["if-conditionals.html", "variable-exponential-blowup.html"];
+
 /// [`run_css_corpus_dir`] 用例排除规则（fetch 侧 35 号脚本头注释同域，双保险）。
 /// `relative` 为 wpt-data 相对路径，`source` 为用例原文。
 ///
 /// - `*-manual.html`（需真实用户交互；css-variables 先例）
 /// - `*-crash.html`（病态输入 crash 回归——fuzz-repro-guard 口径）
+/// - 病态内存案名（[`PATHO_CASES`]）
 /// - `.https.`（secure-context 前提 runner 无——svg 先例）
 /// - helper / 资产目录前缀（[`HELPER_DIRS`] 双保险；collect_scan_dirs 已跳）
 /// - 无 `testharness` 引用（reftest 页 / ref 页 / manual / demo——渲染断言面
@@ -48,6 +60,9 @@ const HELPER_DIRS: &[&str] = &["resources", "support", "reference", "crashtests"
 pub(crate) fn css_testharness_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
     if name.ends_with("-manual.html") || name.ends_with("-crash.html") {
+        return true;
+    }
+    if PATHO_CASES.contains(&name) {
         return true;
     }
     if relative.contains(".https.") {
@@ -164,4 +179,12 @@ pub fn run_css_values_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
 /// （css-testharness-compat goal M0 / DC-1）。filter 按路径子串过滤。
 pub fn run_css_selectors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/selectors", filter)
+}
+
+/// Run the pinned upstream css-variables testharness subset（css-testharness-compat
+/// goal M2 / DC-3——自 site-optimizer R5114 通道（`testharness` 模块
+/// `run_css_variables_cases`）迁入共享底座：skip 规则单点防漂移，非 testharness
+/// reftest 页出运行面，病态内存案谓词排除）。filter 按路径子串过滤。
+pub fn run_css_variables_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-variables", filter)
 }

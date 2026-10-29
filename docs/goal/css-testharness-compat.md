@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.2
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）
-**状态**: Active——M0 完成（DC-1）、M1 完成（DC-2），M2 未启动
+**版本**: v1.3
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）
+**状态**: Active——M0 完成（DC-1）、M1 完成（DC-2）、M2 完成（DC-3 本地判据全落，CI 快照待 weekly），M3/M4 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -75,11 +75,15 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
    死循环案的外部兜底（每案独立进程通道已覆盖）；M1 剩余实质 = 分片通道产出
    runner 形状 `--json` + 合并等价恒等判据 + coverage 管道免特调消费——
    weekly 其余长套件同享。
-3. **css-variables 解禁**（M2）：病态案（`variable-exponential-blowup.html`
-   单案 4.9GB 杀树实证；`*-crash.html` 按仓库 fuzz-repro-guard 口径本就
-   不入常驻运行面）在 runner skip 规则单点排除，既有分片运行器
-   （`tests/wpt-runner/scripts/run-css-variables-corpus.sh`，每案独立进程）
-   的执行面经 M1 管道接回 coverage misc 分片，584 子测试入账。
+3. **css-variables 解禁**（M2，2026-10-30 完成）：病态案
+   （`variable-exponential-blowup.html` 单案 4.9GB 杀树实证；`*-crash.html`
+   按仓库 fuzz-repro-guard 口径）在 runner skip 规则单点排除
+   （共享谓词 `PATHO_CASES`），R5114 通道迁入 css 共享底座（skip 规则单点 +
+   非 testharness reftest 页出运行面——coverage 分母不虚增），分片脚本补
+   css-variables 分支，weekly CI misc 分片接线（fetch 入口
+   `fetch-wpt-css-variables`）。运行面 58 案 532 子测试（239 Pass =
+   44.9%），三通道计数一致，coverage 管道 0 suspicious。实测详见
+   [evidence/2026-10-30-m2-css-variables-unban.md](css-testharness-compat/evidence/2026-10-30-m2-css-variables-unban.md)。
 
 ## Done Criteria
 
@@ -92,7 +96,9 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   `(case, 子测名→status)` 集合恒等判据，perf/wpt-runner-testharness-speed
   A/B 先例）；weekly coverage matrix 无需逐套件特调即可纳入新套件。
 - **DC-3（css-variables 入账）**：病态案排除后 css-variables 进 coverage
-  misc 分片，快照 css/css-variables 组 covered>0。
+  misc 分片，快照 css/css-variables 组 covered>0。（2026-10-30：本地判据
+  全落——通道迁移 + 谓词排除 + misc 分片接线 + 管道消费 0 suspicious；
+  CI 快照待 weekly cron 落账。）
 - **DC-4（coverage 复测）**：重跑 coverage 对账，css 面从 0 到有数字；
   试点目录未覆盖子测试清零路径成立。
 
@@ -118,7 +124,9 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
 - **M1**：通道治理收口（DC-2）——RSS 归因实验已完成并否证线性累积前提
   （2026-10-30）；选型结论 = 内存维度不治理，保留每案隔离通道；交付分片
   JSON 通道 + 恒等复验 + 管道契约，全量端到端回填收口。
-- **M2**：css-variables 解禁（DC-3）。
+- **M2**：css-variables 解禁（DC-3，2026-10-30 完成）——通道迁移共享底座 +
+  病态案谓词排除 + misc 分片接线；运行面 58 案 532 子测试 239 Pass，
+  三通道计数一致，语料与上游 pin 对齐（268/268）。
 - **M3**：按簇扩面——top15 顺序逐目录过 M0 模板，每目录独立基线与
   失败簇归口；cssom-view / geometry 到此阶段先协调。
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。

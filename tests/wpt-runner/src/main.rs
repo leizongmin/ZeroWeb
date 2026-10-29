@@ -1498,9 +1498,16 @@ fn cmd_testharness_fullscreen(options: &CliOptions, filter: Option<&str>) {
     });
 }
 
+/// `testharness-css-variables` 子命令 — 跑导入的上游 css-variables testharness
+/// 用例（css-testharness-compat goal M2 / DC-3——自 site-optimizer R5114 通道迁入
+/// css 共享底座 [`testharness_css_corpus`]：skip 规则单点 + 非 testharness
+/// reftest 页出运行面 + 病态内存案谓词排除；契约详见
+/// `cmd_testharness_css_values` 文档）。全量跑走 Makefile 分片通道
+/// `make testharness-css-variables`；定向 make testharness-css-variables-one
+/// FILTER=case-sensitive。
 fn cmd_testharness_css_variables(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
-        testharness::run_css_variables_cases(wpt_root, filter)
+        testharness_css_corpus::run_css_variables_cases(wpt_root, filter)
     });
 }
 

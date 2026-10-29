@@ -3496,40 +3496,6 @@ pub fn run_fullscreen_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
     run_corpus_subdirs(wpt_root, FULLSCREEN_SUBDIRS, filter, fullscreen_case_skipped)
 }
 
-/// css-variables 上游语料目录（R5114：fetch-wpt-data 随 css/ 全量拉取
-/// `wpt-data/css/css-variables`，无需独立 fetch 脚本）。
-pub const CSS_VARIABLES_SUBDIRS: &[&str] = &["css/css-variables"];
-
-/// Run the upstream css-variables window corpus（site-optimizer P9-9 切片 2/R5114
-/// 测试资产化：gCS 自定义属性暴露 + StyleSheetList 语义的常驻上游断言）。filter
-/// 按路径子串过滤。基线首跑通过率只记录不设门禁（clipboard/csp 先例）。
-pub fn run_css_variables_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs(wpt_root, CSS_VARIABLES_SUBDIRS, filter, css_variables_case_skipped)
-}
-
-/// css-variables 运行面筛减规则（数据全量在 data 侧，运行面按内容规则收口）：
-/// - `*/resources/`、`*/support/`、`*/reference/`（helper / ref 资产，不按案跑）
-/// - `*-crash.html`（病态输入 crash 回归——解析器病态输入行为按仓库规约走
-///   fuzz-repro-guard 口径，不进常驻语料运行面）
-/// - `*-manual.html`（需真实用户交互；规则同域防新增）
-/// - source 含 `<iframe`——iframe 依赖面（runner 无 iframe 文档管道，fullscreen 同口径）
-fn css_variables_case_skipped(relative: &str, source: &str) -> bool {
-    let name = relative.rsplit('/').next().unwrap_or(relative);
-    if name.ends_with("-manual.html") || name.ends_with("-crash.html") {
-        return true;
-    }
-    for skipped_dir in [
-        "css/css-variables/resources",
-        "css/css-variables/support",
-        "css/css-variables/reference",
-    ] {
-        if relative.starts_with(skipped_dir) {
-            return true;
-        }
-    }
-    source.contains("<iframe")
-}
-
 /// Clipboard API pinned subset 运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*/resources/`（helper 资产，inline_local_scripts 消费）
 /// - `detached-iframe/`、`permissions-policy/`（fetch 侧不拉——iframe 面 /

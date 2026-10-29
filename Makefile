@@ -564,11 +564,14 @@ testharness-clipboard-apis: target-disk-guard fetch-wpt-clipboard-apis target/te
 testharness-fullscreen: target-disk-guard fetch-wpt-fullscreen target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-fullscreen $(if $(FILTER),$(FILTER),)
 
-# site-optimizer P9-9 切片 2（R5114）：上游 css/css-variables window 语料（数据随
-# fetch-wpt-data 全量在位）。基线首跑只记录通过率，不设门禁（clipboard/csp 先例）。
-# 用法: make testharness-css-variables [FILTER=case-sensitive]
+# css-testharness-compat M2（DC-3）：上游 css/css-variables testharness 语料
+# （自 site-optimizer R5114 通道迁入共享分片脚本——每案独立进程 + 外部墙钟 +
+# JSON 通道，见 run-css-testharness-corpus.sh 头注释）。数据双源：fetch-wpt-data
+# 精选仓 + fetch-wpt-css-testharness 深挖补拉上游全量。病态案 runner 谓词排除
+# （PATHO_CASES），基线只记录通过率不设门禁。
+# 用法: make testharness-css-variables
 testharness-css-variables: fetch-wpt-data fetch-wpt-css-variables target-disk-guard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),2400) -- bash tests/wpt-runner/scripts/run-css-variables-corpus.sh ./target/release/zero-wpt-runner
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),2400) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-variables ./target/release/zero-wpt-runner
 # 单案/子串定向：make testharness-css-variables-one FILTER=case-sensitive
 testharness-css-variables-one: fetch-wpt-css-variables target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-variables $(if $(FILTER),$(FILTER),)

@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # css-testharness-compat goal（docs/goal/css-testharness-compat.md M0 / DC-1）：
-# css/values + css/selectors 语料分片运行器（M3 扩面目录按 CORPUS 参数复用）。
+# css/values + css/selectors + css/css-variables 语料分片运行器（M3 扩面目录按
+# CORPUS 参数复用）。
 #
-# 为何分片：runner 单进程跑全量（css-values ~600 案 / selectors ~700 案）时 RSS
-# 线性累积（每案独立 WebView/V8 分配器驻留，~35MB/案——run-css-variables-corpus.sh
-# 同根因），test-guard 8G 单进程上限必然杀树；单案 RSS <300MB。每案独立 runner
-# 进程使内存天然有界，代价是每案 ~1s 进程启动开销——基线/回归记录场景可接受，
-# 速度敏感场景待 M1 内存治理（契约 DC-2）。
+# 为何每案独立进程：M1 归因实证单进程 RSS 无线性累积（0.06–0.82MB/案，
+# 8.8GB 杀树实为病态单案 4.9GB 抬升笼水位后的平摊误读——goal evidence
+# 2026-10-30-m1-rss-attribution.md），内存不是本通道的理由。真实价值是外部
+# 兜底：病态内存案与原生同步死循环案（engine 侧自旋）内部超时拦不住，每案
+# 独立进程 + 外部墙钟（CASE_WALL_S）保证单案失控不连累整轮；顺带获得断点
+# 续跑与多分片并行。代价是每案 ~1s 进程启动开销。
 #
 # 用法：run-css-testharness-corpus.sh <corpus> [runner]
-#   <corpus>  wpt-data/css/ 下的目录名（css-values | selectors）
+#   <corpus>  wpt-data/css/ 下的目录名（css-values | selectors | css-variables）
 # 退出码：0 = 至少跑了 1 案（记录模式，不设通过门禁——css-variables corpus
 # 脚本先例：基线首跑通过率只记录）；2 = runner/语料缺失（基础设施错误）。
 # 筛减规则单点在 runner 侧 css_testharness_case_skipped（fetch 脚本头注释同域
@@ -55,7 +57,8 @@ ONLY_SUBSTR="${CSS_CORPUS_ONLY_SUBSTR:-}"
 case "${CORPUS}" in
   css-values) SUBCMD=testharness-css-values ;;
   selectors) SUBCMD=testharness-selectors ;;
-  *) echo "usage: $0 <css-values|selectors> [runner]" >&2; exit 2 ;;
+  css-variables) SUBCMD=testharness-css-variables ;;
+  *) echo "usage: $0 <css-values|selectors|css-variables> [runner]" >&2; exit 2 ;;
 esac
 
 if [[ ! -x "${RUNNER}" || ! -d "${DATA_DIR}" ]]; then
@@ -81,11 +84,12 @@ idx=0
 while read -r f; do
   rel="css/${CORPUS}/${f#"${DATA_DIR}"/}"
   name="$(basename "${f}")"
-  # 病态案名级快筛（css-variables corpus 脚本先例：run-css-variables-corpus.sh
-  # 跳 variable-exponential-blowup.html）：if-conditionals.html 单案 Oilpan
-  # CagedHeap OOM 实证（fuzz-repro-guard 口径复现——CSS if() 条件面引擎半支持
-  # 状态指数膨胀，4G 单进程守卫杀树连累整轮）。重入条件 = if() 求值内存语义
-  # 修复；内容级筛减仍由 runner 侧谓词单点负责，此处不复制。
+  # 病态案名级快筛（避免无谓进程启动；规则单点在 runner 侧谓词
+  # `css_testharness_case_skipped` PATHO_CASES——本表只是同名单的快路径，
+  # 两侧同源防漂移）：if-conditionals.html 单案 Oilpan CagedHeap OOM 实证
+  # （fuzz-repro-guard 口径复现——CSS if() 条件面引擎半支持状态指数膨胀，
+  # 4G 单进程守卫杀树连累整轮）。variable-exponential-blowup.html（css-variables，
+  # 单案 4.9GB）由 runner 谓词排除，进程启动后即时跳过，无需此快路径。
   if [[ "${name}" == "if-conditionals.html" ]]; then
     skipped_patho=$((skipped_patho + 1))
     continue

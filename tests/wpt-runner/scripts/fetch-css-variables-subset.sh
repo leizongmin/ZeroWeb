@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# R5114（site-optimizer P9-9 切片 2）：css-variables testharness 语料的 harness 资源。
-# 用例本体由 fetch-wpt-data 全量拉取（wpt-data/css/css-variables）——本脚本只补
-# testharness 运行面所需的公共资源（数据仓为 reftest 口径，不含 resources/）。
+# css-variables testharness 语料 fetch（css-testharness-compat M2 / DC-3 扩展；
+# R5114 起点）：
+# 1. harness 公共资源（数据仓为 reftest 口径，不含 resources/）；
+# 2. css/css-variables 用例树深挖补拉（goals/lib.sh fetch_dir_deep，同 pin）——
+#    精选仓数据近全（2026-10-30 实测仅缺 2 用例页 + 5 helper 资产），上游滚动
+#    增量与 CI 全新环境靠这里补齐。目录幂等：已含 .html 跳过 API 列目录
+#    （FORCE=1 强制重列重拉；GITHUB_TOKEN 认证列目录）。
 
 set -euo pipefail
 
@@ -30,3 +34,14 @@ for relative in "${FILES[@]}"; do
 done
 
 echo "css-variables harness resources ready (${#FILES[@]} files, WPT ${WPT_REV})"
+
+# 用例树深挖补拉（35 号 goal 脚本同款机制：git trees recursive 清单一次拿全量，
+# 文件本体走 jsdelivr/raw 不吃 API 配额）。skip 规则两侧同源：runner 谓词
+# css_testharness_case_skipped 见 testharness_css_corpus.rs。
+source "${SCRIPT_DIR}/goals/lib.sh"
+GOAL_FETCH_DEEP=1
+fetch_dir_deep css/css-variables
+if [[ "${FAILED_FETCHES}" -gt 0 ]]; then
+  echo "css-variables tree fetch incomplete: ${FAILED_FETCHES} files failed" >&2
+  exit 1
+fi

@@ -1,6 +1,6 @@
 # css-testharness-compat master
 
-**状态**: Active——M0 完成（DC-1）、M1 完成（DC-2，2026-10-30）；M2 未启动
+**状态**: Active——M0（DC-1）、M1（DC-2）、M2（DC-3 本地判据全落，CI 快照待 weekly）均于 2026-10-30 完成；M3/M4 未启动
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
@@ -9,11 +9,41 @@
 |---|---|---|---|
 | M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | **完成**（2026-10-30，[基线 evidence](evidence/2026-10-30-m0-pilot-baseline.md)） |
 | M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
-| M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | 未启动 |
+| M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)——本地判据全落；CI 快照待 weekly cron） |
 | M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | 未启动 |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（csv 试点数据行已回填） |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（csv 数据行已含 css-variables） |
 
-## 本轮记录（2026-10-30，M1 收口）
+## 本轮记录（2026-10-30，M2 收口）
+
+- **通道迁移**：`testharness-css-variables` 子命令自 R5114 专用通道迁入
+  css 共享底座（`run_css_corpus_dir` + 共享谓词单点）；R5114 谓词、
+  `CSS_VARIABLES_SUBDIRS` 与 `run-css-variables-corpus.sh`（头注释含被 M1
+  否证的 35MB/案前提）删除；分片脚本补 css-variables 分支，Makefile
+  target 指向共享脚本，M1 parity 脚本同步支持。
+- **病态案谓词排除（M2 核心）**：共享谓词新增 `PATHO_CASES`
+  （`variable-exponential-blowup.html` 4.9GB + css-values
+  `if-conditionals.html` 双案名单）；探针复验即时 `[]` 无内存事件。
+- **运行面语义修正**：R5114 通道对 202 页非 testharness reftest 形态页照跑
+  产合成单 Pass——coverage 管道按案 `max(universe, zw_total)` 会虚增分母；
+  共享谓词"无 testharness 引用"规则把这些页出运行面，入账面 = 真实
+  harness 断言面。运行面 **58 案 532 子测试：239P/282F/11TO**（44.9%，
+  Timeout 全部为 animation/transition 异步子测试——M3 分簇素材）。
+- **语料对账**：本地精选仓对照上游 pin（git trees 清单）缺 2 用例页 +
+  5 helper 资产，补齐至 268/268；`fetch-css-variables-subset.sh` 扩展为
+  用例树深挖补拉（goals/lib.sh 复用），weekly misc 分片 fetch 入口 =
+  `fetch-wpt-css-variables`；35 号 DIRS 加入 css/css-variables。
+- **CI 接线**：weekly.yml misc 分片 suites 加入 css-variables（单进程
+  `--json` 形态，本地实测 1m58s / 峰值 RSS 983MB——排除病态案后守卫余量
+  充足，DC-2"weekly 免特调纳入新套件"判据实践）；矩阵注释同步更新。
+- **验证**：三通道计数一致（单进程 JSON ≡ 分片文本 ≡ parity 子集 10/10
+  IDENTICAL）；coverage 管道消费 0 suspicious；M0 试点面探针回归一致；
+  runner bin 265/265；wpt-suites.csv 聚合行更新（10,375/2,978，生成器
+  契约 8/8）。
+- **DC-3 边界**：本地判据全落；CI 快照（css/css-variables 组 covered>0）
+  待下一次 weekly cron 落账——misc 接线、fetch 入口、管道消费三环节已
+  本地验证。
+
+## 上一轮记录（2026-10-30，M1 收口）
 
 - **归因否证**：逐案 RSS 插桩（`ZW_TESTHARNESS_MEM_LOG=1`，`HarnessCaseTimer`
   RAII + `/proc` 采样，镜像 `REFTEST_MEM_LOG` 先例）实测四序列 197 案斜率
@@ -88,13 +118,17 @@
 - **零回归底线**：css 值语义修复若触 `zero-engine`/`style-system`，与
   rendering-compat 的 reftest 回归门（716/716）同窗验证，防两账互相打红。
 
-## 下一步（M2 检查单）
+## 下一步（M3/M4 检查单）
 
-1. css-variables 病态案排除：`variable-exponential-blowup.html`（4.9GB 单案
-   实证）与 `*-crash.html` 进 runner 谓词（`css_testharness_case_skipped` 同款
-   单点，fetch 脚本头注释两侧同源——M0 先例）。
-2. css-variables 分片 JSON 接 coverage misc 分片：corpus 脚本已参数化
-   （CORPUS=css-variables 需补 SUBCMD 分支与 35 号 DIRS 核对），584 子测试
-   入账（DC-3：快照 css/css-variables 组 covered>0）。
-3. DC-3 落成后转 M3 扩面（top15 逐目录过 M0 模板，cssom-view / geometry 先
-   按 run-rules §9 协调）或 M4 复测收口。
+1. **DC-3 CI 快照落账**：weekly cron（或 workflow_dispatch
+   `run_wptfyi_coverage=true`，dispatch 前按惯例先查 CI 在跑实例）产出
+   coverage 快照，核对 css/css-variables 组 covered_files ≈ 58 /
+   zw_passes ≈ 239——正式落账后 M2 的 CI 判据闭环。
+2. **M3 扩面**：top15 顺序逐目录过 M0 模板（35 号 DIRS 追加 → fetch →
+   子命令 + 谓词 → 基线 evidence → csv 行）；cssom-view / geometry 先按
+   run-rules §9 与 rendering-compat 控制面协调划界。
+3. **失败分簇**：css-variables 282 Fail + 11 Timeout（animation/transition
+   集中簇）与 css-values/selectors 失败簇合并归口——引擎可修簇 vs 挂账簇，
+   animation 簇优先归口 timing-animation-compat 底座（划界节约定）。
+4. **M4 复测收口**：coverage 重跑对账（css 面从 0 到有数字的正式快照）+
+   wpt-suites.csv 汇总行。
