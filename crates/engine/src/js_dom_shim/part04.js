@@ -11045,6 +11045,19 @@
         // handle)` 双身份化后 entry list 正常枚举。
         function _zwFormSubmitNavigate(fSel, fHandle, submitter) {
           try {
+            // spec submit 算法步 1 / 步 5.9——cannot navigate → return（form 未连入文档；
+            // 步 5.9 = submit 事件派发后复查，handler 内移除 form → 导航中止）。三入口
+            // 共享：requestSubmit/click 通道在 _zwRunFormSubmit 入口已查（10962），此处
+            // 复查覆盖事件窗口内的移除；submit() 通道由此覆盖（无事件窗口）。
+            // cannot navigate 完整定义（node document fully active / salvageable 面）
+            // 未实现（FIXME 挂账），以 connectedness 近似。
+            var _nvConn = true;
+            try {
+              if (globalThis.document && typeof globalThis.document.contains === 'function') {
+                _nvConn = !!globalThis.document.contains(_makeProxy(fSel, fHandle));
+              }
+            } catch (_eNvC) {}
+            if (!_nvConn) return;
             // R3910：spec submit 步 2 / construct-entry-list 步 1——constructing entry
             // list flag true → return（construct-entry-list，
             // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#constructing-entry-list）。
@@ -11195,6 +11208,20 @@
               } catch (_eFd0) {}
               finally { try { _flForm.__zwFormDataConstructing = false; } catch (_eFd1) {} }
             }
+            // spec submit 算法步 9——cannot navigate → return（「Cannot navigate is run
+            // again as dispatching the formdata event in constructing the entry list
+            // could have changed the outcome」——formdata handler 内 form.remove() →
+            // 构造完成后中止导航，不产生导航副作用）。语料锚点：
+            // form-submission-0/form-submission-algorithm.html t10「Cannot navigate
+            // (after constructing the entry list)」+ form-double-submit-preventdefault
+            // 键 2（form.remove() 后 submit() 不覆盖首次导航）。
+            var _nvConn2 = true;
+            try {
+              if (globalThis.document && typeof globalThis.document.contains === 'function') {
+                _nvConn2 = !!globalThis.document.contains(_makeProxy(fSel, fHandle));
+              }
+            } catch (_eNvC2) {}
+            if (!_nvConn2) return;
             // R3910：spec form submission algorithm dialog 分支（construct-entry-list 与
             // cannot-navigate 之后）——无祖先 dialog → return；subject = 最近祖先 dialog；
             // result 缺省 null（close-the-dialog 不改 returnValue）：image 按钮提交者 →
@@ -11622,18 +11649,20 @@
               _zwRunFormSubmit(key, sel, handle, submitter);
             };
           } else { // submit
-            // spec form.submit()：不发 submit 事件、不做交互校验，直接走提交导航步骤
-            //（submitter = null）。旧 no-op（R-baidu5 前置）：URL 不变。
-            // review m3a：submit 派发窗口内调用（如 onsubmit="form.submit()"）→ 短路，
-            // 由外层默认动作统一导航一次（spec ongoing submission 语义近似；否则内层
-            // 立即入队 + 外层 _notCanceled 再入队 = 双导航）。已知边界（FIXME 挂账，
-            // review m3b，二轮修正触发点）：真正双通道窗口是宿主 HtmlUserAction::Submit
-            //（Enter 隐式提交，plan_submit → 宿主 SubmitForm effect）路径中 submit
-            // listener 再调 submit()/requestSubmit()——JS 通道与宿主通道无去重，双导航；
-            // 宿主对 submit 按钮的 Activate 是纯 click（ActionTargetState::Generic，无
-            // submit effect）不入此窗口。留待 runtime 侧同 URL 去重收口。
+            // spec form.submit()：submit 算法步 5 整段（firing flag 检查/置位、交互校验、
+            // submit 事件派发）仅在「submitted from submit() method = false」时执行——
+            // submit() 直接跳到 entry list 构造 + cannot-navigate 复查（步 9）+ 导航
+            //（submitter = null，按钮不贡献 entry）。不发 submit 事件、不做交互校验、
+            // submit 派发窗口内照常导航（旧 no-op 前置：R-baidu5）。语料锚点：
+            // form-submission-0/form-double-submit-requestsubmit.html runTest2
+            //（callSubmit=true）期望 handler 内 submit() 产生导航（n1=submit() 时刻的
+            // entry）。宿主通道双导航边界（FIXME 挂账，review m3b，二轮修正触发点）：
+            // 宿主 HtmlUserAction::Submit（Enter 隐式提交，plan_submit → 宿主
+            // SubmitForm effect）路径中 submit listener 再调 submit()/requestSubmit()
+            // ——JS 通道与宿主通道无去重；宿主对 submit 按钮的 Activate 是纯 click
+            //（ActionTargetState::Generic，无 submit effect）不入此窗口。留待 runtime
+            // 侧同 URL 去重收口。
             return function () {
-              if (_zwSubmitBusy) return;
               _zwFormSubmitNavigate(sel, handle, null);
             };
           }
