@@ -20,6 +20,7 @@ mod testharness_console;
 mod testharness_cookies;
 mod testharness_css_corpus;
 mod testharness_dnd;
+mod testharness_editing_corpus;
 mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
@@ -108,6 +109,10 @@ Commands:
                        API face; css-testharness-compat goal M0 / DC-1)
   testharness-selectors  Run imported css/selectors testharness cases (selector
                        matching API face; css-testharness-compat goal M0 / DC-1)
+  testharness-editing-run  Run imported editing/run execCommand testharness cases
+                       (editing-compat goal M1 / DC-2)
+  testharness-editing-other  Run imported editing/other testharness cases
+                       (editing-compat goal M1 / DC-2)
   testharness-csp  Run imported Content-Security-Policy testharness cases
                        (security-hardening goal M1 / DC-1)
   testharness-mixed-content  Run imported Mixed Content testharness cases
@@ -395,6 +400,12 @@ fn main() {
         "testharness-css-variables" => cmd_testharness_css_variables(&options, filter.as_deref()),
         "testharness-css-values" => cmd_testharness_css_values(&options, filter.as_deref()),
         "testharness-selectors" => cmd_testharness_css_selectors(&options, filter.as_deref()),
+        "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
+        }),
+        "testharness-editing-other" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_editing_corpus::run_editing_other_cases(wpt_root, filter)
+        }),
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
