@@ -15059,17 +15059,20 @@
       // 与 defaultPrevented/cancelBubble 同款「公开镜像」——此处占位 null，真正的 getter 经下方
       // defineProperty 定义（读 this.target，dispatch 时 target 更新即反映）。
       srcElement: null,
-      // R150（js-dom M4）：timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+      // R150（js-dom M4）：timeStamp 量化——定时侧信道缓解（WPT
       // Event-timestamp-safe-resolution：千样本 GCD ≥ 5µs——真实浏览器对 Event
       // timeStamp 施加 coarse 粒度防 timing attack；高分辨率原值使相邻构造事件的
-      // µs 差 GCD 跌到 1）。high-resolution 用例（FocusEvent vs performance.now
-      // 单调性）不受影响（同源粗化后仍 ≥ 构造前时刻）。
+      // µs 差 GCD 跌到 1）。
+      // R-p122：量化与 performance.now()（_perfNow）**同 transform**（同 origin +
+      // 同 100µs ceil 网格）——spec DOM「same time origin as performance.now()」+
+      // WPT Event-timestamp-high-resolution 夹逼 before ≤ ts ≤ after 要求两钟
+      // 同变换；旧 5µs ceil 网格与 now() 100µs floor 网格异向异宽 → 边界落入
+      // 构造→after 间隙即断言假（存量时序 flake 根因）。ceil 不归零（R22 ts > 0）。
       timeStamp: (function () {
         var t = typeof __zw_performance_now === 'function'
           ? Number(__zw_performance_now())
           : (typeof Date.now === 'function' ? Date.now() : 0);
-        // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.005ms（round 会把 <2.5µs 的早期值归 0）。
-        return Math.ceil(t * 200) / 200;
+        return Math.ceil(t * 10) / 10;
       })(),
       detail: options.detail, // CustomEvent 用；Event 读得 undefined（spec 一致）
       defaultPrevented: false, // 公开镜像（dispatch 读 _defaultPrevented，勿删私字段）
