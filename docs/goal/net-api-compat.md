@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.10
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10893**（+1539，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.11
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10897**（+1543，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -86,12 +86,20 @@
   crypto.subtle 未挂载）：**+6 零回归**（10887 → 10893），
   integrity.sub 13P/5F → **18P/0F 收口**，response-null-body SRI 腿
   翻绿；S3c 记账 1 与 S6 记账 4（同根因显影两腿）双双清偿。
+- **M2-S8 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s8-signal-identity-clone.md)）**：
+  Request signal 身份族——构造器克隆原语 `_zwAbortSignalFollow`（独立对象
+  + `_zwDependents` 依赖登记）+ `_zw_abort_signal` 依赖级联（dom spec
+  signal abort 步骤 3-6：依赖先统一置 aborted、abort steps 源先依赖后派发）
+  + 构造器/fetch 两处 signal 三态（AbortSignal / 显式非 AbortSignal 移除 /
+  缺省回落载体）：**+4 零回归**（10893 → 10897），abort/general
+  35P/26F → 39P/22F，「Clone aborts with original controller」顺序腿
+  保持 Pass（过程轮 listener 方案翻红未落提交，dependent 模型清偿）。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）。
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：abort body-abort
   族（response/request 体消费中止 ~20F + 组合面 10F，S6 证据档记账
-  1-3）、signal 身份族 4F、request-headers 方法面余 22F（runner 域）、
+  1-3 / S8 记账 1）、request-headers 方法面余 22F（runner 域）、
   request-cache HTTP 缓存层（待决项立项后）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）

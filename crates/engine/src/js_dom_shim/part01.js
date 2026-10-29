@@ -4698,8 +4698,10 @@
           if (!_isH2Endpoint) {
             var _sig = null;
             if (typeof AbortSignal === 'function') {
+              // M2-S8 三态：member 显式非 AbortSignal → signal 面移除（null 回落
+              // 不生效——与 fetch 主路径同型）。
               if (init.signal instanceof AbortSignal) _sig = init.signal;
-              else if (input && typeof input === 'object' && input.signal instanceof AbortSignal) _sig = input.signal;
+              else if (!('signal' in init) && input && typeof input === 'object' && input.signal instanceof AbortSignal) _sig = input.signal;
             }
             if (!(_sig && _sig._aborted)) {
               return Promise.reject(new TypeError('Streaming upload is not supported on HTTP/1.1'));
@@ -4793,7 +4795,12 @@
       // AbortSignal 忽略，lenient）。仅影响有 signal 的 fetch 调用——无 signal 路径不变（零回归）。
       var signal = null;
       if (typeof AbortSignal === 'function') {
+        // net-api M2-S8：三态判定——member 存在但非 AbortSignal（fetch(request,
+        // {signal: null})「Signal removed by setting to null」腿）→ signal 面移除
+        //（不回落 Request 载体 signal）；缺省 → 回落 input.signal（Request 构造器
+        // 已是关联克隆，fetch 直接消费）。
         if (init.signal instanceof AbortSignal) signal = init.signal;
+        else if ('signal' in init) signal = null;
         else if (isObj && input.signal instanceof AbortSignal) signal = input.signal;
       }
       // net-api M2-S7：integrity 元数据（subresource integrity）——init 优先、
@@ -6016,14 +6023,37 @@
         }
       }
     }
-    // R3045：Request.signal（spec 恒为 AbortSignal，非 null）。init.signal 优先；否则继承 input（Request）的 signal；
-    // 否则新建非 aborted AbortSignal。fetch(new Request(url,{signal})) 经此透传 signal 给 R3044 abort 路径。
-    // 注：复用同一 signal 对象（非 spec clone 独立）——同 request 多次 fetch 共享 signal，pragmatic（documented）。
+    // R3045：Request.signal（spec 恒为 AbortSignal，非 null）。fetch(new Request(url,{signal}))
+    // 经此透传 signal 给 R3044 abort 路径。
+    // net-api M2-S8：signal 关联克隆（引用直挂为 abort/general 4F 根因——「Signal
+    // state is cloned」「Signal on request object」双腿）。三态判定（spec Request
+    // 构造器 RequestInit.signal = AbortSignal? null 缺省）：
+    // ① member 存在且为 AbortSignal → 以其为 abort source 关联克隆（对象身份独立、
+    //    abort 状态/reason 跟随）；
+    // ② member 存在但非 AbortSignal（含显式 null/undefined）→ 全新无源 signal
+    //    （克隆不继承 input.signal）；
+    // ③ member 缺省 → 回落 input.signal（Request 载体，同 ① 克隆）。
+    //   https://fetch.spec.whatwg.org/#dom-request
+    var _zwSigSrc = null;
+    var _zwSigInInit = init && typeof init === 'object' && ('signal' in init);
     if (typeof AbortSignal === 'function') {
-      this.signal = (init.signal instanceof AbortSignal)
-        ? init.signal
-        : ((isRequestLike && input.signal instanceof AbortSignal) ? input.signal : new AbortSignal());
+      if (_zwSigInInit) {
+        _zwSigSrc = (init.signal instanceof AbortSignal) ? init.signal : null;
+      } else if (isRequestLike && input.signal instanceof AbortSignal) {
+        _zwSigSrc = input.signal;
+      }
+      this._zwSignal = _zwAbortSignalFollow(_zwSigSrc);
+      // signal 访问器（spec getter/setter）——setter 忽略赋值恒置全新 AbortSignal
+      //（「signal = null 后源 abort 不再传播」语义面）。
+      //   https://fetch.spec.whatwg.org/#ref-for-dom-request-signal
+      var _zwReqSelf = this;
+      Object.defineProperty(this, 'signal', {
+        configurable: true, enumerable: true,
+        get: function () { return _zwReqSelf._zwSignal; },
+        set: function () { _zwReqSelf._zwSignal = new AbortSignal(); }
+      });
     } else {
+      this._zwSignal = null;
       this.signal = null;
     }
     // R2982：body 消费表面（对称 Response R2978，spec text/json/blob/arrayBuffer/formData）。fetch 包装库 /

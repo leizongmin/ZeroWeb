@@ -810,6 +810,12 @@
     }
   };
   // 统一 abort 逻辑（controller.abort 与 AbortSignal.abort 共用）。
+  // net-api M2-S8：依赖级联（dom spec「signal abort」步骤 3-6）——依赖 signal
+  // 先统一置 aborted+同 reason（不派发事件），源 abort steps 全部跑完后才轮到
+  // 依赖各自的 abort steps，保证事件顺序源先、依赖后（abort/general
+  // 「Clone aborts with original controller」钉 ['original-aborted',
+  // 'clone-aborted']）；无 `_zwDependents` 的 signal（既有全部路径）零变化。
+  //   https://dom.spec.whatwg.org/#abort-signal-abort
   function _zw_abort_signal(signal, reason) {
     if (signal._aborted) return; // 重复 abort 静默 no-op（spec）
     signal._aborted = true;
@@ -822,23 +828,63 @@
     } else {
       signal._reason = reason;
     }
-    var ls = signal._listeners.slice();
-    signal._listeners = [];
-    for (var i = 0; i < ls.length; i++) {
-      try { ls[i]({ type: 'abort', target: signal }); } catch (_) {}
+    // 步骤 3-4：依赖 BFS 展平收集并置 aborted+同 reason（此时不派发事件）；
+    // 已 aborted 的依赖跳过（重复 abort no-op）。
+    var _zwFireList = [signal];
+    for (var _zwFi = 0; _zwFi < _zwFireList.length; _zwFi++) {
+      var _zwDeps = _zwFireList[_zwFi]._zwDependents;
+      if (_zwDeps) {
+        for (var _zwDi = 0; _zwDi < _zwDeps.length; _zwDi++) {
+          var _zwDep = _zwDeps[_zwDi];
+          if (!_zwDep._aborted) {
+            _zwDep._aborted = true;
+            _zwDep._reason = signal._reason;
+            _zwFireList.push(_zwDep);
+          }
+        }
+      }
     }
-    // M2-S4O：`onabort` 事件处理器属性同步触发（spec：abort 事件派发——event handler
-    // 本质是 addEventListener('abort') 注册面；WPT signal-abort-window-stop 族
-    // `signal.onabort = () => onabort_called = true` 断言面）。
-    try {
-      if (typeof signal.onabort === 'function') signal.onabort.call(signal, { type: 'abort', target: signal });
-    } catch (_) {}
+    // 步骤 5-6：abort steps 按源先依赖后逐个派发（listeners + onabort）。
+    for (var _zwFj = 0; _zwFj < _zwFireList.length; _zwFj++) {
+      var _zwSig = _zwFireList[_zwFj];
+      var ls = _zwSig._listeners.slice();
+      _zwSig._listeners = [];
+      for (var i = 0; i < ls.length; i++) {
+        try { ls[i]({ type: 'abort', target: _zwSig }); } catch (_) {}
+      }
+      // M2-S4O：`onabort` 事件处理器属性同步触发（spec：abort 事件派发——event handler
+      // 本质是 addEventListener('abort') 注册面；WPT signal-abort-window-stop 族
+      // `signal.onabort = () => onabort_called = true` 断言面）。
+      try {
+        if (typeof _zwSig.onabort === 'function') _zwSig.onabort.call(_zwSig, { type: 'abort', target: _zwSig });
+      } catch (_) {}
+    }
   }
   AbortSignal.abort = function (reason) {
     var s = new AbortSignal();
     _zw_abort_signal(s, reason);
     return s;
   };
+  // net-api M2-S8：Request signal 关联克隆原语（fetch spec Request 构造器——
+  // 「set this's signal to a new AbortSignal object created with signal abort
+  // source set to init's signal」）：对象身份独立，abort 状态与 reason 跟随源；
+  // 源已 aborted → 立即同 reason abort（克隆不丢已中止状态）；源 null → 裸新
+  // signal（init.signal 显式 null 覆盖面 / 无源缺省）。依赖关系走
+  // `_zwDependents`（dom spec「signal abort」的 dependent signals 语义——
+  // 依赖级联在 `_zw_abort_signal` 内完成，不用 listener：abort 事件顺序须为
+  // 源先、依赖后）。
+  //   https://dom.spec.whatwg.org/#abort-signal-abort
+  //   https://fetch.spec.whatwg.org/#dom-request
+  function _zwAbortSignalFollow(source) {
+    var s = new AbortSignal();
+    if (source && source._aborted) {
+      _zw_abort_signal(s, source._reason);
+    } else if (source) {
+      if (!source._zwDependents) source._zwDependents = [];
+      source._zwDependents.push(s);
+    }
+    return s;
+  }
   AbortSignal.timeout = function (ms) {
     var s = new AbortSignal();
     if (typeof setTimeout === 'function') {
