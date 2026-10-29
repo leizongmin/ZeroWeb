@@ -10,6 +10,7 @@ pub(super) struct TreeRuntimeFlags {
     br_vert_last_child_skip: bool,
     inline_box_model_coherence: bool,
     run_in: bool,
+    r109_slice_vframe_overflow: bool,
     record_node_map: bool,
 }
 
@@ -26,6 +27,7 @@ impl TreeRuntimeFlags {
             br_vert_last_child_skip: enabled("ZW_BR_VERT_LAST_CHILD_SKIP"),
             inline_box_model_coherence: enabled("ZW_INLINE_BOX_MODEL_COHERENCE"),
             run_in: enabled("ZW_RUN_IN"),
+            r109_slice_vframe_overflow: enabled("ZW_R109_SLICE_VFRAME_OVERFLOW"),
             record_node_map: std::env::var("ZW_TREE_NODE_MAP_RECORD").as_deref() == Ok("1"),
         }
     }
@@ -64,6 +66,10 @@ impl TreeRuntimeFlags {
 
     pub(super) fn run_in(self) -> bool {
         self.value("ZW_RUN_IN", self.run_in)
+    }
+
+    pub(super) fn r109_slice_vframe_overflow(self) -> bool {
+        self.value("ZW_R109_SLICE_VFRAME_OVERFLOW", self.r109_slice_vframe_overflow)
     }
 
     pub(super) fn record_node_map(self) -> bool {

@@ -3988,6 +3988,20 @@ fn build_subtree(
                                 let mut anon_style =
                                     computed_style_to_taffy(&computed, parent_grid_areas, viewport_w, viewport_h);
                                 anon_style.display = taffy::style::Display::Block;
+                                // R5336：CSS2 §10.8.1 切片片段盒模型——被拆分 inline 的
+                                // 垂直 border/padding 在 inline 级只绘制不占块轴空间
+                                //（chromium 对照实验：insert-010 slice 匿名块全为 18px
+                                // strut 行，边框溢出行盒 −3/+1.5px 不撑高；ZW 旧继承
+                                // 盒模型按块级语义计 3+3 进块轴 → 24px，3 slice 累计
+                                // +18px 页高，insert 家族剩余挂案共性主因）。水平框保留
+                                // （R5248 border advance 落账 / R5335 壳 frame 剥离依赖）。
+                                // kill-switch `ZW_R109_SLICE_VFRAME_OVERFLOW=0`。
+                                if ctx.flags.r109_slice_vframe_overflow() {
+                                    anon_style.border.top = taffy::style::LengthPercentage::length(0.0_f32);
+                                    anon_style.border.bottom = taffy::style::LengthPercentage::length(0.0_f32);
+                                    anon_style.padding.top = taffy::style::LengthPercentage::length(0.0_f32);
+                                    anon_style.padding.bottom = taffy::style::LengthPercentage::length(0.0_f32);
+                                }
                                 // 清零 inset：匿名块片段不应继承 split inline 的 position 偏移
                                 anon_style.inset = taffy::geometry::Rect {
                                     left: taffy::style::LengthPercentageAuto::AUTO,
@@ -4617,6 +4631,31 @@ fn build_subtree(
         // taffy final h=15，后继块整体下移 15px）。显式 Definite(0) 在尺寸解析源头钳制，
         // 绕过任何缓存/拉伸路径。
         taffy_style.size.height = taffy::style::Dimension::length(0.0);
+    }
+    // R5336：CSS2 §10.8.1——inline 级盒的垂直 border/padding 只绘制不占块轴空间。
+    // taffy 无 inline 显示，R109 切片场景中被提升为块盒的 inline（split 壳自身，或
+    // 切片链上的 inline 祖先盒——其 taffy 子含 split parent）继承的盒模型按块级语义
+    // 把竖向框计入块轴（insert-010 实测：壳 3+3、anon 片段 18+6，3 slice 累计 +18px
+    // 页高；chromium 对照：slice 匿名块全为 18px strut 行，边框溢出行盒 −3/+1.5px）。
+    // 水平框保留（R5248 border advance 落账 / R5335 壳 frame 剥离依赖）。块化语境
+    //（float / flex|grid item / OOF）豁免——display:inline 在这些语境块化，竖框照常
+    // 占位。kill-switch 同 anon 片段臂 `ZW_R109_SLICE_VFRAME_OVERFLOW=0`。
+    if ctx.flags.r109_slice_vframe_overflow()
+        && matches!(computed.display, DisplayValue::Inline)
+        && matches!(computed.float, FloatValue::None)
+        && matches!(computed.position, PositionValue::Static | PositionValue::Relative)
+        && !is_flex_grid_item(doc, styles, dom_id)
+        && (r109_wired() && inline_has_block_child(doc, styles, dom_id)
+            || child_taffy_ids.iter().any(|&t| {
+                ctx.taffy_to_dom
+                    .get(&t)
+                    .is_some_and(|d| ctx.r109.split_parents.contains(d))
+            }))
+    {
+        taffy_style.border.top = taffy::style::LengthPercentage::length(0.0_f32);
+        taffy_style.border.bottom = taffy::style::LengthPercentage::length(0.0_f32);
+        taffy_style.padding.top = taffy::style::LengthPercentage::length(0.0_f32);
+        taffy_style.padding.bottom = taffy::style::LengthPercentage::length(0.0_f32);
     }
     let taffy_id = if child_taffy_ids.is_empty() {
         ctx.taffy.new_leaf_with_context(taffy_style, dom_id).unwrap()

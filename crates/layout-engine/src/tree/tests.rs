@@ -1767,3 +1767,90 @@ fn float_precedes_is_document_order_scoped() {
         "fr2: 仅子内 float、无前置 float 应判 false（BFC 包含子 float 语义）"
     );
 }
+
+/// R5336：CSS2 §10.8.1 切片域竖框不占块轴——inline 含块级子被 R109 拆分时，
+/// 其 taffy 盒（split 壳）与匿名块片段盒的竖向 border/padding 须清零（边框在
+/// inline 级只绘制、溢出行盒，不撑高：chromium oracle insert-010 三 slice 全
+/// 18px strut 行、页高 126 精确对齐）；水平框保留（R5248 advance 落账依赖）。
+/// kill-switch `ZW_R109_SLICE_VFRAME_OVERFLOW=0`（runtime_flags 单测覆盖旗标
+/// 机制，此处只 pin 默认开启路径的树形态）。
+#[test]
+fn test_r109_slice_vframe_overflow_zeroes_vertical_frame() {
+    use zero_style_system::BorderStyleValue;
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let span = doc.create_element("span");
+    doc.append_child(body, span).unwrap();
+    let text = doc.create_text_node("x");
+    doc.append_child(span, text).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(span, div).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut span_style = ComputedStyle::default();
+    span_style.display = DisplayValue::Inline;
+    for (width, style_field) in [
+        (&mut span_style.border_top_width, &mut span_style.border_top_style),
+        (&mut span_style.border_right_width, &mut span_style.border_right_style),
+        (&mut span_style.border_bottom_width, &mut span_style.border_bottom_style),
+        (&mut span_style.border_left_width, &mut span_style.border_left_style),
+    ] {
+        *width = LengthValue::Px(3.0);
+        *style_field = BorderStyleValue::Solid;
+    }
+    styles.insert(span, span_style);
+
+    let mut div_style = ComputedStyle::default();
+    div_style.display = DisplayValue::Block;
+    styles.insert(div, div_style);
+
+    let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+
+    // 收集映射到 span dom 的全部 taffy 节点：split 壳 + 匿名块片段（text/div 两段）。
+    let span_nodes: Vec<_> = taffy_to_dom
+        .iter()
+        .filter(|(_, dom_id)| **dom_id == span)
+        .map(|(t, _)| *t)
+        .collect();
+    assert!(
+        span_nodes.len() >= 2,
+        "span 应产生 split 壳 + 至少一个匿名块片段，实得 {}",
+        span_nodes.len()
+    );
+    for t in &span_nodes {
+        let style = taffy_tree.style(*t).unwrap();
+        assert_eq!(
+            style.border.top,
+            taffy::style::LengthPercentage::length(0.0),
+            "节点 {t:?} 竖向 border.top 应清零（§10.8.1 只绘制不占块轴）"
+        );
+        assert_eq!(
+            style.border.bottom,
+            taffy::style::LengthPercentage::length(0.0),
+            "节点 {t:?} 竖向 border.bottom 应清零"
+        );
+        assert_eq!(
+            style.padding.top,
+            taffy::style::LengthPercentage::length(0.0),
+            "节点 {t:?} 竖向 padding.top 应清零"
+        );
+        assert_eq!(
+            style.border.left,
+            taffy::style::LengthPercentage::length(3.0),
+            "节点 {t:?} 水平 border.left 应保留（R5248 advance 落账依赖）"
+        );
+    }
+}
