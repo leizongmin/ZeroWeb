@@ -9655,7 +9655,23 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                     )),
                 }];
             }
-            return map_harness_results(partial_results);
+            // s149：早收形（上游 Tests.prototype.timeout 页级超时完成文件）保留文件级
+            // Timeout 键——upstream wptrunner 对 harness status=TIMEOUT 文件记 TIMEOUT +
+            // partial rows；键/态与案超时旧路径同形，仅墙钟 30s → 完成即收。
+            let state_pending = last_state.get("pending").and_then(serde_json::Value::as_u64);
+            let state_tests = last_state.get("tests").and_then(serde_json::Value::as_u64);
+            let mut results = map_harness_results(partial_results);
+            if state_pending.unwrap_or(0) > 0 || state_tests.is_some_and(|tests| tests != results.len() as u64) {
+                results.push(HarnessSubtestResult {
+                    name: case_name.to_string(),
+                    status: HarnessStatus::Timeout,
+                    message: Some(format!(
+                        "testharness page timeout completed the file with {} test(s) unreported (state={last_state})",
+                        state_pending.unwrap_or(0)
+                    )),
+                });
+            }
+            return results;
         }
         if !has_harness_ref && partial_results.is_empty() && !probe.test_wait {
             return vec![HarnessSubtestResult {
@@ -9679,7 +9695,14 @@ fn terminal_harness_state(state: &serde_json::Value, result_count: usize) -> boo
 }
 
 fn harness_probe_is_terminal(complete: bool, state: &serde_json::Value, result_count: usize) -> bool {
-    terminal_harness_state(state, result_count) || (state.is_null() && complete)
+    terminal_harness_state(state, result_count)
+        // s149：上游 Tests.prototype.timeout 页级超时早收形——harness 已完成（completion
+        // 回调已发，complete 置位）但未报测试被强制标 COMPLETE（done() 此后 no-op），
+        // num_pending 恒 >0、结果行恒 <tests 数 → pending/results 配平永不满足，探针
+        // 空转到案超时（s148 全量 96 文件级 Timeout 键中 91 例此形态实测）。completion
+        // 已发 + harness phase COMPLETE = 文件终态，此后不可能再有结果行。
+        || (complete && state.get("phase").and_then(serde_json::Value::as_u64) == Some(4))
+        || (state.is_null() && complete)
 }
 
 fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResult> {
@@ -10618,13 +10641,13 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
         .execute_script(
             "JSON.stringify({\
              complete:(function(){\
+               if (globalThis.__zw_harness_complete) return true;\
                var timers = globalThis.__zw_timers || [];\
                var graceDeadline = Date.now() + 1000;\
                for (var i = 0; i < timers.length; i++) {\
                  if (timers[i].at <= graceDeadline && globalThis.__zw_pending\
                      && globalThis.__zw_pending[timers[i].id]) return false;\
                }\
-               if (globalThis.__zw_harness_complete) return true;\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
                if (st && st.phase === 3) return true;\
