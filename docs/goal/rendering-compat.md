@@ -9,6 +9,12 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5327 实验轮（扩张轴 FIXME 收口尝试——负结果定谳死路全量回退，corpus 809F/810F 不变 FIXED=0 REGRESSED=0；line-height-125 真根因重定位：R639/R1442 fragment 臂行盒锚 = 跨切片深结构域）**（2026-10-29）
+>
+> - **定性**：前会话 429 中断 WIP（`inline_ca_paint_override` 删「只收缩不扩张」门，driving line-height-125 ✗1.20%）——实验假设「旧实验面 ≠ 本 deco-override 面」。同树 corpus A/B：**WIP 净效果 = 0 修 −1 回归**（+active-selection-027 ✗1.16% 同二进制复跑稳定；−content-none-select-1 = 负载脆弱族 flake 基线跑伪红）；**driving 案 PNG base vs WIP AE=0 逐字节同像**，% 1.20↔1.08 为 run-to-run 漂移 flake（入 flake 账）。
+> - **可达性插桩定谳**：整页渲染无任何 fs=50 盒进入 override（命中全为 runner 预热页盒）——line-height-125 绿底 span 不走 R5171 box-level 面，实际由 **R639/R1442 per-line-fragment 臂**（orphan 臂/bleed 扩展，行盒锚非内容区锚）绘制。真修复须在 fragment 臂引入内容区锚，受 R638 双绘史成对门不变量（R5296）+ R5052/R5054 选区行盒缘语义 + R2197/R2198 orphan 判定链三重约束，与扩张轴 FIXME 同属「fragment/selection 站同切片校准」域——非单点轻修，挂深结构专项轮（paint 面现归本流，R5313/R5320/R5325 先例）。active-selection-027 回归实证旧 FIXME 约束在本面复验证成立。
+> - **回退**：准则 4/5——施画面错位零像素、无 witness 无 pin、有稳定回归；FIXME 门注释随回退恢复原状。证据：[`rendering-compat/evidence/r5327-expansion-axis-forensics-2026-10-29.md`](rendering-compat/evidence/r5327-expansion-axis-forensics-2026-10-29.md)。**下一步 R5328**：①809F 账本续扫择轻（0.00% 段 + 低 diff 段，避开 va 域与 OOF 锚域）②multicol 嵌套分片专项轮预研（8×1.04% 聚簇）③css-flexbox 52F 域内挑轻（writing-mode-008 1.25%、min-width-auto-004 1.45%）。
+>
 > **▶ R5326 取证轮（上轮 429 中断 WIP 收口——3 hunk 逐 hunk 像素级定谳后全量回退，corpus 809F 不变 FIXED=0 REGRESSED=0；insert-009 家族真根因重定位：多层 inline 载体链不升格 = 深结构域）**（2026-10-29）
 >
 > - **定性**：前会话遗留 3 处未提交 hunk（collect_items 成员表过滤删除 / r109 分裂边 / tree.rs ctx+首末标记），目标 insert-009 家族。同树 A/B：809F fail-list 逐案一致 + 全量 mismatch % 逐值 diff 仅 2 案移位且经同二进制复跑证伪为本轮无关 flake——WIP 像素零影响。逐 hunk 取证：nosplit-ref 页 PNG base/WIP 字节一致（walk+过滤路径对该页死路，「784×0 文本丢失」不可复现）；layout-dump 实证 insert-009 测试页 R109 split 根本未触发（「蓝脊」为未分裂嵌套渲染形态）。**真根因**：`inline_child_is_pure_block_carrier`（inline_block_split.rs:335）只认直接 block 子——`span(蓝边) > span#target(青边) > [inline…, div×4]` 两层载体链不触发 body 层 split；放行需多层载体升格 + 带框 wrapper inline 片段化（边框按 §9.2.1.1 分片到各匿名块），纯块载体「自身不生成可见盒」口径带框 wrapper 不能静默升格 = R5225 分叉对/inline_block_split FIXME 同域深结构。
