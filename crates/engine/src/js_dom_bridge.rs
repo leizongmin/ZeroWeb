@@ -4248,9 +4248,9 @@ pub fn style_from_mutations_lw(mutations: &[DomMutation], handle: &str) -> Strin
 pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
     let result = match base.filter(|b| !b.is_empty()) {
         Some(base_str) => match url::Url::parse(&zw_opaque_space_normalize(base_str)) {
-            Ok(base_url) => {
-                url::Url::options().base_url(Some(&base_url)).parse(&zw_opaque_space_normalize(input))
-            }
+            Ok(base_url) => url::Url::options()
+                .base_url(Some(&base_url))
+                .parse(&zw_opaque_space_normalize(input)),
             Err(_) => return String::new(),
         },
         None => url::Url::parse(&zw_opaque_space_normalize(input)),
@@ -4275,10 +4275,15 @@ pub(crate) fn parse_url_to_json(input: &str, base: Option<&str>) -> String {
 /// https://url.spec.whatwg.org/#opaque-path-state
 #[cfg(feature = "script-runtime")]
 fn zw_opaque_space_normalize(input: &str) -> String {
-    let Some(colon) = input.find(':') else { return input.to_string(); };
+    let Some(colon) = input.find(':') else {
+        return input.to_string();
+    };
     let scheme = &input[..colon];
     if scheme.is_empty()
-        || matches!(scheme.to_ascii_lowercase().as_str(), "http" | "https" | "ws" | "wss" | "ftp" | "file")
+        || matches!(
+            scheme.to_ascii_lowercase().as_str(),
+            "http" | "https" | "ws" | "wss" | "ftp" | "file"
+        )
     {
         return input.to_string();
     }
@@ -4326,10 +4331,7 @@ pub(crate) fn set_url_part(prev_href: &str, part: &str, value: &str) -> String {
             // **无操作**（组件 setter 不抛；url crate 的 special 边界即 spec 的
             // scheme state override 阻断规则）。
             // https://url.spec.whatwg.org/#scheme-state
-            let cleaned: String = value
-                .chars()
-                .filter(|c| !matches!(*c, '\t' | '\n' | '\r'))
-                .collect();
+            let cleaned: String = value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
             let scheme = cleaned.split(':').next().unwrap_or("");
             let _ = url.set_scheme(&scheme.to_ascii_lowercase());
             true
@@ -4454,8 +4456,7 @@ fn set_url_host_override(url: &mut url::Url, value: &str, port_allowed: bool) ->
         return set_url_file_host_override(url, value);
     }
     let special = matches!(url.scheme(), "http" | "https" | "ws" | "wss" | "ftp");
-    let sanitized: String =
-        value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
+    let sanitized: String = value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
     let mut buffer = String::new();
     let mut inside_brackets = false;
     // 终止/EOF 共用：spec host state 分隔步——special 空 buffer host-missing 失败；
@@ -4517,15 +4518,17 @@ fn set_url_host_override(url: &mut url::Url, value: &str, port_allowed: bool) ->
 /// https://url.spec.whatwg.org/#file-host-state
 #[cfg(feature = "script-runtime")]
 fn set_url_file_host_override(url: &mut url::Url, value: &str) -> bool {
-    let sanitized: String =
-        value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
+    let sanitized: String = value.chars().filter(|c| !matches!(*c, '\t' | '\n' | '\r')).collect();
     let buffer: String = sanitized
         .chars()
         .take_while(|c| !matches!(c, '/' | '\\' | '?' | '#'))
         .collect();
     let decoded = zw_percent_decode_utf8_lossy(&buffer);
     if decoded.chars().any(|c| {
-        matches!(c, ' ' | '#' | '/' | ':' | '<' | '>' | '?' | '@' | '[' | '\\' | ']' | '^' | '|')
+        matches!(
+            c,
+            ' ' | '#' | '/' | ':' | '<' | '>' | '?' | '@' | '[' | '\\' | ']' | '^' | '|'
+        )
     }) {
         return false;
     }
@@ -4559,8 +4562,7 @@ fn zw_percent_decode_utf8_lossy(input: &str) -> String {
     while i < bytes.len() {
         if bytes[i] == b'%'
             && i + 2 < bytes.len()
-            && let (Some(h), Some(l)) =
-                ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16))
+            && let (Some(h), Some(l)) = ((bytes[i + 1] as char).to_digit(16), (bytes[i + 2] as char).to_digit(16))
         {
             out.push((h * 16 + l) as u8);
             i += 3;

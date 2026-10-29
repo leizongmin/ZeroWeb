@@ -7493,8 +7493,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.ends_with("/status.py")
-                && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py")
+            if clean.ends_with("/status.py") && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py")
             {
                 // net-api M2-S3c：fetch/api/resources/status.py 同语义接入——上游
                 // fetch/api/resources/status.py 与 xhr/resources/status.py 逐字同源
@@ -7941,9 +7940,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             // net-api M2-S5：inspect-headers.py 上游 wptserve handler 方法无关（任意
             // 方法回显请求头）——header-values-normalize XHR POST 腿经此回显；其余
             // 端点维持兜底拒绝。
-            if req.method != "GET" && req.method != "OPTIONS"
-                && !clean.ends_with("/inspect-headers.py")
-            {
+            if req.method != "GET" && req.method != "OPTIONS" && !clean.ends_with("/inspect-headers.py") {
                 return Err(format!("method not supported: {}", req.method));
             }
             if req.method == "OPTIONS" {
@@ -9702,8 +9699,7 @@ fn prepare_harness_html(
     // stash-take/put + infinite-slow-response.py 端点语义（「Already aborted
     // signal does not make request」经 stash-take 观测请求未发出；此前落静态
     // 读库 404 空体 → r.json() SyntaxError 掩盖断言面）。
-    let cache_abort_fixture = if case_path.contains("cache-abort") || case_path.contains("abort/general")
-    {
+    let cache_abort_fixture = if case_path.contains("cache-abort") || case_path.contains("abort/general") {
         CACHE_ABORT_FETCH_FIXTURE
     } else {
         ""
