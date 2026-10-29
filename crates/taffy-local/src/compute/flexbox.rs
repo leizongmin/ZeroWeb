@@ -1410,10 +1410,29 @@ fn resolve_flexible_lengths(line: &mut FlexLine, constants: &AlgoConstants) {
 
         if free_space.is_normal() {
             if growing && sum_flex_grow > 0.0 {
+                // ZW R5333（css-values-4 math functions × css-flexbox-1 §resolve-flexible-lengths）：
+                // 无穷 flex 因子（`flex-grow: calc(infinity)`，flex-grow-009）——比例分配
+                // inf/inf 在 IEEE 下为 NaN → 全员 target NaN→0（案中 100×100 全红）。
+                // 规范语义：无穷因子吸收全部 free space——∞ 项**均分**（css-values-4 ∞ 相等
+                // 比较），有限因子项份额 = free×(f/∞) = 0。
+                // kill-switch `ZW_FLEX_INFINITE_GROW=0` 回退（NaN→0 旧行为）。
+                let infinite_grow_enabled = std::env::var("ZW_FLEX_INFINITE_GROW").as_deref() != Ok("0");
+                let infinite_grow_count = if infinite_grow_enabled {
+                    unfrozen.iter().filter(|child| child.flex_grow.is_infinite()).count() as f32
+                } else {
+                    0.0
+                };
                 for child in &mut unfrozen {
-                    child
-                        .target_size
-                        .set_main(constants.dir, child.flex_basis + free_space * (child.flex_grow / sum_flex_grow));
+                    let share = if infinite_grow_count > 0.0 {
+                        if child.flex_grow.is_infinite() {
+                            free_space / infinite_grow_count
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        free_space * (child.flex_grow / sum_flex_grow)
+                    };
+                    child.target_size.set_main(constants.dir, child.flex_basis + share);
                 }
             } else if shrinking && sum_flex_shrink > 0.0 {
                 let sum_scaled_shrink_factor: f32 =

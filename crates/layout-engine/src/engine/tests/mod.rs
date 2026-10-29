@@ -904,3 +904,7 @@ mod r5331_flex_intrinsic_main_probe_tests;
 /// content box cross 锚——img stretch 到容器 content cross 而非 outer cross
 ///（flex-cross-size-border-box-001）。
 mod r5332_border_box_flex_cross_tests;
+/// R5333（css-values-4 math × css-flexbox-1 §resolve-flexible-lengths）无穷 flex
+/// 因子锚——`flex-grow: calc(infinity)` 吸收全部 free space、普通 math 长手求值、
+/// shrink ∞ 拒收守卫（flex-grow-009）。
+mod r5333_flex_infinite_grow_tests;
