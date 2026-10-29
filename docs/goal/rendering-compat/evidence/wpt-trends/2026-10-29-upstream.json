@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15779,
+  "passed": 15781,
   "rate_pct": 95.1,
-  "extra": "failed=811;skipped=0",
-  "git_sha": "9ce236a09",
-  "note": "R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0"
+  "extra": "failed=809;skipped=0",
+  "git_sha": "c94ab8ce2",
+  "note": "R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）——balance-002/004 ✓ 家族 25/25，FIXED=2 REGRESSED=0"
 }
