@@ -615,30 +615,14 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
     Some(tag)
 }
 
-/// 为节点生成在文档中**唯一**的选择器（P1a gBCR path A handle-identity 用）。
-///
-/// 优先用 [`stable_selector_for_node`]（`#id` / `tag.class` / `tag`）——在文档中**唯一匹配**
-/// 时返回（最短、最稳）。歧义时（多同 tag 无 id/class）先试 **name/target 唯一属性锚**
-/// （`tag[name="v"]` / `tag[target="v"]`——见下），仍歧义再回落到 **nth-child 结构路径**
-/// （`html > body > div:nth-child(2) > …`，按 sibling 位置唯一定位，`:nth-child` 经
-/// dom 选择器引擎解析+匹配）。各形态都保证 `find_by_selector` 返回该节点本身——宁可路径
-/// 冗长不错值。文本节点无 tag → `None`。
-///
-/// 属性锚（M2 s142）：结构路径钉 `:nth-child` **绝对位置**，后续 afterbegin/prepend
-/// 插入使全部后继兄弟整体位移——旧 sel 静默别名到同位新节点（WPT targetted-form 族
-/// populateForm 连环插入实证：上一代 iframe/form proxy 的结构路径 sel 在下一代查询时
-/// 命中新一代同位节点，previousSibling/事件路由全链错位）。name/target 随节点移动、
-/// 唯一性由本处 `matches == 1` 门保证（同名多命中仍落结构路径）；值域限
-/// `[A-Za-z0-9_-]`（CSS 属性选择器引号串内无转义面，值域外回落结构路径）。仅在
-/// id/class/裸 tag 候选不唯一后启用——既有 id/class/唯一裸 tag 选择器形态零变化；
-/// 无 name/target 的歧义节点零额外宿主查询（属性读 miss 即走结构路径）。
-pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
-    if let Some(sel) = stable_selector_for_node(doc, node) {
-        let matches = doc.query_selector_all(doc.root(), sel.trim());
-        if matches.len() == 1 {
-            return Some(sel);
-        }
-    }
+/// name/target 唯一属性锚（M2 s142）：结构路径钉 `:nth-child` **绝对位置**，后续
+/// afterbegin/prepend 插入使全部后继兄弟整体位移——旧 sel 静默别名到同位新节点
+/// （WPT targetted-form 族 populateForm 连环插入实证：上一代 iframe/form proxy 的
+/// 结构路径 sel 在下一代查询时命中新一代同位节点，previousSibling/事件路由全链
+/// 错位）。name/target 随节点移动、唯一性由 `matches == 1` 门保证（同名多命中仍
+/// 落结构路径）；值域限 `[A-Za-z0-9_-]`（CSS 属性选择器引号串内无转义面，值域外
+/// 回落结构路径）。
+fn unique_attr_anchor(doc: &Document, node: NodeId) -> Option<String> {
     if let NodeKind::Element(e) = &doc.get(node)?.kind {
         let tag = e.local_name();
         for attr in ["name", "target"] {
@@ -652,6 +636,27 @@ pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
                 }
             }
         }
+    }
+    None
+}
+
+/// 为节点生成在文档中**唯一**的选择器（P1a gBCR path A handle-identity 用）。
+///
+/// 优先用 [`stable_selector_for_node`]（`#id` / `tag.class` / `tag`）——在文档中**唯一匹配**
+/// 时返回（最短、最稳）。歧义时（多同 tag 无 id/class）先试 **name/target 唯一属性锚**
+/// （[`unique_attr_anchor`]），仍歧义再回落到 **nth-child 结构路径**
+/// （[`structural_path_selector`]，按 sibling 位置唯一定位，`:nth-child` 经
+/// dom 选择器引擎解析+匹配）。各形态都保证 `find_by_selector` 返回该节点本身——宁可路径
+/// 冗长不错值。文本节点无 tag → `None`。
+pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    if let Some(sel) = stable_selector_for_node(doc, node) {
+        let matches = doc.query_selector_all(doc.root(), sel.trim());
+        if matches.len() == 1 {
+            return Some(sel);
+        }
+    }
+    if let Some(sel) = unique_attr_anchor(doc, node) {
+        return Some(sel);
     }
     structural_path_selector(doc, node)
 }
@@ -683,10 +688,39 @@ fn element_child_index(doc: &Document, parent: NodeId, node: NodeId) -> Option<u
     None
 }
 
-/// 构造 nth-child 结构路径选择器：node→root 每层 `tag:nth-child(pos)`，用 `>` 连接。
-/// 始终唯一（每层 pin 一个具体 sibling 位置）。根元素（`<html>`）用 `:nth-child(1)`
-/// （与 `compute_element_position` 对根置 child_index=1 一致）。
+/// 祖先唯一身份锚（结构路径落根候选）：`#id` / `tag.class`（唯一匹配门）或
+/// [`unique_attr_anchor`]（name/target，唯一匹配门）。**裸 `tag` 排除**——不携带
+/// 节点身份，对 afterbegin 位移零稳定增益（`body` 锚与 `html > body` 暴露同一层
+/// 兄弟位），排除后无锚祖先链保持既有 root 形态，形态变化面收敛到真锚子树。
+fn ancestor_anchor_selector(doc: &Document, node: NodeId) -> Option<String> {
+    if let Some(sel) = stable_selector_for_node(doc, node)
+        && (sel.starts_with('#') || sel.contains('.'))
+        && doc.query_selector_all(doc.root(), sel.trim()).len() == 1
+    {
+        return Some(sel);
+    }
+    unique_attr_anchor(doc, node)
+}
+
+/// 构造 nth-child 结构路径选择器：自 node 上行，**最近唯一身份锚祖先处落根**
+/// （[`ancestor_anchor_selector`]，`anchor > tag:nth-child(pos) > …`），无锚祖先链
+/// 回落 node→root 每层 `tag:nth-child(pos)` 旧形态。每层 pin 一个具体 sibling 位置，
+/// 始终唯一（锚 `matches == 1` 全局唯一 + 锚内位置段唯一）。根元素（`<html>`）用
+/// `:nth-child(1)`（与 `compute_element_position` 对根置 child_index=1 一致）。
 /// M2-S2a 起导出侧复用（`compositor_export` 元素路径），跨 crate 可见。
+///
+/// 祖先锚定（M2 s145 刀 D）：纯位置路径钉**绝对位置**，body afterbegin 连环插入
+/// （WPT targetted-form populateForm）使全部后继兄弟整体位移，且新旧两代各自
+/// issue 时刻算出的路径串字节相同——`_proxyCache`/`_inputValues`/listener store
+/// 按 `_elKey`（裸 selector 串）把不同代元素判成同一身份（proxy/脏值/listener
+/// 跨代共享，form-double-submit-requestsubmit runTest/runTest2 20 键探针链定谳）。
+/// 身份锚（id/class/name/target）随节点移动，锚内 `:nth-child` 段只在锚子树内
+/// 定位——锚子树内无插入则路径恒解析回原节点。锚唯一性是 issue 时刻门（同
+/// `tag.class` 既有信任面：后续插入同 id/class 的歧义化风险为选择器模型固有，
+/// `find_by_selector` 首匹配语义不变）。OPTIMIZATION 不做：锚定形态（首段非
+/// `tag:nth-child`）不经 [`try_structural_path_fastpath`]（识别失败回落通用引擎，
+/// t8b 回落钉语义）；锚定路径天然短（锚 + 1–2 段），引擎解析税可忽略，fastpath
+/// 锚首段扩展暂缓。
 pub(crate) fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
     let mut segments: Vec<String> = Vec::new();
     let mut cur = node;
@@ -700,6 +734,10 @@ pub(crate) fn structural_path_selector(doc: &Document, node: NodeId) -> Option<S
             Some(parent) => {
                 let pos = element_child_index(doc, parent, cur)?;
                 segments.push(format!("{tag}:nth-child({pos})"));
+                if let Some(anchor) = ancestor_anchor_selector(doc, parent) {
+                    segments.reverse();
+                    return Some(format!("{anchor} > {}", segments.join(" > ")));
+                }
                 cur = parent;
             }
             None => {
