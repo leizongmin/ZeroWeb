@@ -1,8 +1,9 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.1
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）
-**状态**: Active——M1 完成（DC-1/DC-2/DC-3 基线），M2 按簇收敛未启动
+**版本**: v1.2
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口 + R5331 修复后复测）
+**状态**: Active——M1 完成（DC-1/DC-2/DC-3 基线）；shim 查询回落修复 R5331（3d173dccc）
+已 land 并复测（run 面 Fail -48.5%，setup 链断点后移至 cloneNode 环）；M2 按簇收敛未启动
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
@@ -25,6 +26,16 @@ run 面是**单根因 setup 级联**（innerHTML 产物宿主侧身份失步—�
 M2 指针详见 [evidence/2026-10-30-m1-corpus-baseline.md](editing-compat/evidence/2026-10-30-m1-corpus-baseline.md)。
 分母口径 = 本地 pin 语料 run-face 实测子测试（与 coverage 快照口径并行不
 互换）；`docs/compat/trends/wpt-suites.csv` 已回填数据行。
+
+**R5331 修复后复测（2026-10-30，3d173dccc）**：shim 查询回落 in-doc 门对
+innerHTML 解析产物放行（`_zwSelPendingParent` 槽锚点爬升，R125 R5001 同款；
+并行双流撞车后按上游版收敛，本 goal 侧只落引擎修复）。同分片器同口径复测：
+run 面 96,656F → 49,778F（-48.5%，+7T）、other 面 2,316P → 2,325P（+9P/-6T），
+逐案零 Fail 回归。setup 链断点后移至**第三环 cloneNode**（克隆读链走视图物化
+子树，同 turn innerHTML 产物缺席）——M2 首簇不变；8 个大案（multitest/delete/
+forwarddelete/insertparagraph/justifycenter 等）setup 全通后首次进入真实命令
+执行面、超 420s 案墙钟转 Timeout，执行面信号待墙钟调优后完整暴露。明细见
+[evidence/2026-10-30-r5331-postfix-rerun.md](editing-compat/evidence/2026-10-30-r5331-postfix-rerun.md)。
 
 ## Mission
 
@@ -50,10 +61,13 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
 ## 里程碑
 
 - **M1**：语料预置 + runner 通道 + 基线分类（2026-10-30 完成——DC-1/DC-2/DC-3）。
-- **M2**：按簇收敛（每簇一轮）。首轮 = innerHTML 物化身份失步（共享路径，
-  修后 run/ 面重跑基线；跨域核对 dom-expansion 34 号与 html-syntax 通道基线
-  不回归，run-rules §9）；其后 white-space join → insertparagraph →
-  execCommand 语义逐簇立项；list/inline delete 自旋案先归因再定去留。
+- **M2**：按簇收敛（每簇一轮）。首轮 = **cloneNode 视图/pending 身份分裂**
+  （R5331 后 run 面 49,778F 的公共断点；含上游定性 innerHTML 物化身份失步的
+  matches 断面——同一级联的宿主侧表象；共享路径，修后 run/ 面重跑基线；跨域
+  核对 dom-expansion 34 号与 html-syntax 通道基线不回归，run-rules §9）；
+  其后 8 大案墙钟调优（run 通道 CASE_WALL_S）→ white-space join →
+  insertparagraph → execCommand 语义逐簇立项；list/inline delete 自旋案先归因
+  再定去留。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
   等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 
