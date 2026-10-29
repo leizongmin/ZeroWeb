@@ -3754,6 +3754,89 @@
     status = status | 0;
     return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
   }
+  // net-api M2-S7：fetch integrity 校验门（subresource integrity——本仓此前忽略
+  // integrity 元数据，M2-S3c 记账 1 / M2-S6 记账 4 显影）。fetch spec main fetch
+  // 完成响应后的 verify 步：integrity 元数据非空时对 response 校验，任何不匹配
+  // → network error（TypeError reject）。
+  //   https://fetch.spec.whatwg.org/#fetching（verify the integrity of response）
+  //   https://www.w3.org/TR/SRI/#verify-metadata
+  // 返回 Promise：resolve(response)（通过/无需校验）或 reject(TypeError)（失败）。
+  function _zwFetchVerifyIntegrity(response, integrity) {
+    if (!integrity) return Promise.resolve(response);
+    // ① opaque filtered response：body 对 JS 不可见（opaque 过滤已清空 _bodyText/
+    //    _bodyBytes）→ 校验无输入，spec 恒不匹配（「SHA-* integrity for opaque
+    //    response」腿；空 integrity 不入本门照常 pass）。
+    if (response && response.type === 'opaque') {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    // ② null body（204/205/304）→ fail（fetch spec：response body null → network
+    //    error，不做哈希比对——「Null body status with subresource integrity
+    //    should abort」腿）。
+    if (!response || response._bodyNull || response.status === 204 ||
+        response.status === 205 || response.status === 304) {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    // ③ 解析 integrity metadata（W3C SRI grammar）：空白分隔的 `alg-value` 列表，
+    //    alg ∈ sha256/sha384/sha512（大小写不敏感）；非法项跳过不拖垮整体；按
+    //    算法强度取最强组，组内任一 value 匹配即通过（「Multiple integrities」
+    //    invalid-stronger-than-valid / as-strong-as-valid 语料面）。
+    var _sriAlgos = { sha256: 1, sha384: 2, sha512: 3 };
+    var _sriGroups = { 1: [], 2: [], 3: [] };
+    var _sriItems = String(integrity).split(/\s+/);
+    for (var _sriI = 0; _sriI < _sriItems.length; _sriI++) {
+      if (!_sriItems[_sriI]) continue;
+      var _sriDash = _sriItems[_sriI].indexOf('-');
+      if (_sriDash <= 0) continue;
+      var _sriRank = _sriAlgos[_sriItems[_sriI].slice(0, _sriDash).toLowerCase()];
+      if (!_sriRank) continue;
+      // base64 值宽容面：base64url 字母表（-/_）与缺省 padding 均合法（语料
+      // wrongpadding / base64url 腿）；长度余 3 或字符非法 → 该项跳过。
+      var _sriB64 = _sriItems[_sriI].slice(_sriDash + 1)
+        .replace(/-/g, '+').replace(/_/g, '/');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(_sriB64)) continue;
+      var _sriPad = _sriB64.length % 4;
+      if (_sriPad === 1) continue;
+      var _sriBin = null;
+      try { _sriBin = atob(_sriPad ? _sriB64 + (_sriPad === 2 ? '==' : '=') : _sriB64); }
+      catch (_eSriB64) { continue; }
+      _sriGroups[_sriRank].push(_sriBin);
+    }
+    var _sriPick = _sriGroups[3].length ? 3 : _sriGroups[2].length ? 2 : _sriGroups[1].length ? 1 : 0;
+    // metadata 非空但无任何合法 option → fail（spec parse 失败 → network error）。
+    if (!_sriPick) return Promise.reject(new TypeError('Failed to fetch'));
+    // ④ body 字节：二进制体直取；文本体 TextEncoder（SRI 摘要以传输字节计）。
+    //    摘要直调 host 回调（`__zw_crypto_subtle_digest`，与 part01b ECDSA 面
+    //    同型）——不走 crypto.subtle：其按 [SecureContext] 暴露，runner http 页
+    //    锚下 undefined（SRI 不是 WebCrypto API 面，直接消费同一 RustCrypto 底座）。
+    var _sriBody = response._bodyBytes;
+    if (!_sriBody && typeof TextEncoder === 'function') {
+      _sriBody = new TextEncoder().encode(response._bodyText || '');
+    }
+    if (!_sriBody) _sriBody = new Uint8Array(0);
+    var _sriAlg = _sriPick === 3 ? 'SHA-512' : _sriPick === 2 ? 'SHA-384' : 'SHA-256';
+    if (typeof __zw_crypto_subtle_digest !== 'function') {
+      // digest host 不可用等实现失败同样 fail-closed（SRI 校验失败不得放行响应）。
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    var _sriCsv = new Array(_sriBody.length);
+    for (var _sriB = 0; _sriB < _sriBody.length; _sriB++) _sriCsv[_sriB] = _sriBody[_sriB];
+    var _sriOut = null;
+    try { _sriOut = __zw_crypto_subtle_digest(_sriAlg, _sriCsv.join(',')); }
+    catch (_eSriD) { _sriOut = null; }
+    if (!_sriOut) return Promise.reject(new TypeError('Failed to fetch'));
+    var _sriDig = _sriOut.split(',');
+    for (var _sriJ = 0; _sriJ < _sriGroups[_sriPick].length; _sriJ++) {
+      var _sriWant = _sriGroups[_sriPick][_sriJ];
+      if (_sriDig.length === _sriWant.length) {
+        var _sriOk = true;
+        for (var _sriK = 0; _sriK < _sriDig.length; _sriK++) {
+          if (+_sriDig[_sriK] !== _sriWant.charCodeAt(_sriK)) { _sriOk = false; break; }
+        }
+        if (_sriOk) return Promise.resolve(response);
+      }
+    }
+    return Promise.reject(new TypeError('Failed to fetch'));
+  }
   function _zwFetchMakeOpaqueLike(response, type) {
     response._zwOpaqueStatus = response.status;
     response._zwOpaqueStatusText = response.statusText;
@@ -4713,6 +4796,11 @@
         if (init.signal instanceof AbortSignal) signal = init.signal;
         else if (isObj && input.signal instanceof AbortSignal) signal = input.signal;
       }
+      // net-api M2-S7：integrity 元数据（subresource integrity）——init 优先、
+      // Request 载体回落（Request 构造器存 _zwIntegrity，同 mode/method 取值型）；
+      // 空串不校验。校验门在 settleFetch 最终 settle（_zwFetchVerifyIntegrity）。
+      var integrity = String(init.integrity != null ? init.integrity
+        : (isRequestLike && input.integrity != null ? input.integrity : '') || '');
       return new Promise(function(resolve, reject) {
         // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
         // net-api M2-S6：abort-a-fetch 同步取消面（M2-S3 记账 3 清偿）——
@@ -5201,9 +5289,15 @@
           }
           settled = true;
           delete globalThis.__zw_pending[currentId || id];
+          // net-api M2-S7：SRI 校验门——integrity 非空时 opaque/null-body/哈希
+          // 不匹配转 TypeError reject（中间跳不校验，spec 校验在最终 response）。
+          var _finResp;
           try {
-            resolve(finishFetch(raw, hopUrl));
-          } catch (error) { reject(error); }
+            _finResp = finishFetch(raw, hopUrl);
+          } catch (error) { reject(error); return; }
+          _zwFetchVerifyIntegrity(_finResp, integrity).then(resolve, function () {
+            reject(new TypeError('Failed to fetch'));
+          });
         };
         globalThis.__zw_pending[id] = function(raw) {
           settleFetch(raw, url, method, body, headersWire, id);
