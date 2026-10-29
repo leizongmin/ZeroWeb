@@ -2770,9 +2770,43 @@
       // 赋值落父窗 globalThis.on*——R2932 setter 误注册父窗监听，父窗 message
       // 派发回环 / 子窗局部遍历事件无人收）。仅包合命中子文档（其余 corpus 面
       // 逐字节不变）。
+      // s147（html-semantics M2）：testharness 注册 API 子文档 realm 隔离——裸标识
+      // 符落 globalThis 的既有近似对**同路径自导航递归**形态（form 提交把父页自身
+      // 导航进 iframe，form-submit-action「missing form action」提交 URL = 父页
+      // 地址，s146 全量 50 行=5 注册实测）泄注册：嵌套副本 test()/async_test() 落
+      // 宿主 harness tests 数组 → 同 sandbox 重复注册 ×N → runner 同键多行、
+      // 嵌套再提交级联（单 case
+      // 内脚本体多遍执行、文件级 Timeout 键集随负载漂移的直接根因）。影子仅对
+      // 「嵌套文档路径 == 顶层 case 路径（去 query/fragment）」生效——异路径
+      // helper iframe（runTestsFromIframe 模式，dynamic-imports-credentials 族）
+      // 的嵌套 test() 落宿主 harness 是既有承重契约（结果经宿主回调上报），保持
+      // 不动。上游语义：iframe 文档脚本解析 test() 走**子窗自身全局**（独立
+      // realm）——无 harness 即 ReferenceError，永不可达父窗 harness
+      //（https://html.spec.whatwg.org/multipage/nav-history-apis.html#the-window-object）。
+      // 影子为声明式委派：调用时从 win 取值（harness 段先于页面段求值，prologue
+      // 直捕会拿到 pre-harness undefined）；子窗无该名 → ReferenceError 中止调用
+      //（per-part try/catch 隔离，嵌套级联源头就此掐断——副本页面段首个注册调用
+      // 即止，不再 populateForm/再提交）。影子声明仅本 Function 作用域；
+      // exportSuffix206 扫描 parts 原文，不含影子名——无 win 回写、无自委派环；
+      // 页面段同名 function/var 声明照常覆写影子（上游局部声明语义）。
+      var _zwRealmShadow = '';
+      if (String(pageUrl || '').split(/[?#]/)[0] ===
+          String(globalThis.location && globalThis.location.href || '').split(/[?#]/)[0]) {
+        var _zwRealmShadowNames = ['test', 'async_test', 'promise_test', 'generate_tests',
+          'setup', 'promise_setup', 'done', 'on_event', 'step_timeout',
+          'add_start_callback', 'add_test_state_callback', 'add_result_callback',
+          'add_completion_callback', 'promise_rejects_js', 'promise_rejects_dom',
+          'promise_rejects_quotaexceedederror', 'promise_rejects_exactly'];
+        for (var _zsI = 0; _zsI < _zwRealmShadowNames.length; _zsI++) {
+          var _zsN = _zwRealmShadowNames[_zsI];
+          _zwRealmShadow += 'function ' + _zsN + '(){var _f=window["' + _zsN + '"];' +
+            'if(typeof _f==="function")return _f.apply(window,arguments);' +
+            'throw new ReferenceError("' + _zsN + ' is not defined");}\n';
+        }
+      }
       var _omWrapped = /(^|[^\w.$])on(message|popstate)\s*=[^=]/.test(combined206)
-        ? 'with(window){' + combined206 + exportSuffix206 + '\n}'
-        : combined206 + exportSuffix206;
+        ? 'with(window){' + _zwRealmShadow + combined206 + exportSuffix206 + '\n}'
+        : _zwRealmShadow + combined206 + exportSuffix206;
       var fn = new Function(
         'window', 'self', 'parent', 'top', 'document', 'location',
         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
