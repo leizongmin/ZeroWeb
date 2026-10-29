@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-30",
+  "mode": "upstream",
+  "wpt_data_ref": "v1.10",
+  "total": 16590,
+  "passed": 15790,
+  "rate_pct": 95.2,
+  "extra": "failed=800;skipped=0",
+  "git_sha": "07f12bd82",
+  "note": "R5333 无穷 flex 因子语义（css-values-4 math × css-flexbox-1 §resolve-flexible-lengths）——flex-grow-009 ✓ calc(infinity) 吸收全部 free space，FIXED=1 REGRESSED=0"
+}
