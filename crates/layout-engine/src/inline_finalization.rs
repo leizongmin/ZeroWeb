@@ -1266,7 +1266,12 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         // 位置来自 layout IFC（使用真实样式），而 paint 阶段运行独立的 paint IFC（使用
         // 空样式），两者行断行为不同；空零宽 run 不参与行断，几何可直接采信。
         let metrics = extract_inline_visual_metrics(style);
-        child.x = agg.first_x;
+        // R5335：first_x 含首片段流内折入推进（border advance 落账，R5248 口径同
+        // min_box_x）——空 inline 盒 x 语义 = border-box 缘，扣折入落账（与上方
+        // any_text 臂 fold_landed 同式），否则 border-left 被双计（盒整体右偏）。
+        let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
+        let fold_landed = (agg.first_ml - raw_ml).max(0.0);
+        child.x = agg.first_x - fold_landed;
         child.y = agg.first_y - metrics.padding_top - metrics.border_top;
         child.width =
             agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;

@@ -4034,10 +4034,10 @@ fn build_subtree(
                 if let Some(&first) = inline_anon_ids.first() {
                     ctx.r109.first_inline_fragments.insert(first);
                 }
-                if inline_anon_ids.len() > 1 {
-                    if let Some(&last) = inline_anon_ids.last() {
-                        ctx.r109.last_inline_fragments.insert(last);
-                    }
+                // R5335：单片段（首末合一）同样登记 last——边选择据此判定
+                // 「首末合一保留全边」（旧 len>1 条件使单片段被当 first 清 right）。
+                if let Some(&last) = inline_anon_ids.last() {
+                    ctx.r109.last_inline_fragments.insert(last);
                 }
             } else {
                 // 非 flex/grid 容器
