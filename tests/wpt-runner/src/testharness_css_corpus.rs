@@ -230,3 +230,28 @@ pub fn run_css_fonts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 pub fn run_css_shapes_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-shapes", filter)
 }
+
+/// Run the pinned upstream css-anchor-position testharness subset
+/// （css-testharness-compat goal M3 扩面批次 3——CSS anchor positioning API
+/// 断言面（anchor()/anchor-size()/position-anchor 等），top15 分母
+/// 13,657 子测试）。filter 按路径子串过滤。
+pub fn run_css_anchor_position_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-anchor-position", filter)
+}
+
+/// Run the pinned upstream css-masking testharness subset（css-testharness-compat
+/// goal M3 扩面批次 3——mask/clip-path/mask-border 解析与计算值断言面，top15
+/// 分母 6,399 子测试）。filter 按路径子串过滤。
+pub fn run_css_masking_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-masking", filter)
+}
+
+/// Run the pinned upstream css-backgrounds testharness subset
+/// （css-testharness-compat goal M3 扩面批次 3——background/border 解析、
+/// 序列化与计算值断言面，top15 分母 6,223 子测试）。filter 按路径子串过滤。
+pub fn run_css_backgrounds_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-backgrounds", filter)
+}

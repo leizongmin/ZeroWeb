@@ -58,6 +58,15 @@ DIRS=(
   "css/css-typed-om"
   "css/css-fonts"
   "css/css-shapes"
+  # M3 扩面批次 3（top15 分母目录过 M0 模板）：css-anchor-position（13,657
+  # 子测试 / anchor positioning API 面）+ css-masking（6,399 / mask 与
+  # clip-path 断言）+ css-backgrounds（6,223 / background/border 解析序列
+  # 化）。anchor-position 与 masking 本地为空目录（深挖全量首拉）；
+  # backgrounds 精选仓已含存量页（幂等快路径会漏差——补差口径同 fonts，
+  # 按 pin 树清单 blob hash 定向，不 FORCE 全量重拉）。
+  "css/css-anchor-position"
+  "css/css-masking"
+  "css/css-backgrounds"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
