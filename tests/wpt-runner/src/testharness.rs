@@ -9829,12 +9829,25 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
       var stateKey = url.searchParams.get('stateKey') || '';
       if (stateKey) stash[stateKey] = 'open';
       // 上游 wptserve 头快速到达、体缓慢流式——runner 同步契约下立即返响应
-      //（防 await fetch 悬挂到 harness 超时）；abort 视为连接关闭 → stateKey
-      // 落 'closed'（「Underlying connection is closed」轮询观测面）。
-      var done = responseFor(url, Array(2049).join('.'), 'text/plain');
+      //（防 await fetch 悬挂到 harness 超时）。net-api M2-S9：体为**开放流**
+      //（入队一 chunk 不 close——上游体无限缓慢、连接持续开放；首 chunk 立即
+      // 可读、次 read 挂起，消费不悬挂）。abort → 连接关闭观测（stateKey 落
+      // 'closed'，「Underlying connection is closed」轮询面）+ 流 error(reason)
+      //（挂起读/closed/后续消费拒 abort reason，「Stream errors once aborted /
+      // connection closed after calling response.*()」面）。
+      var bodyCtl = null;
+      var bodyStream = new ReadableStream({
+        start: function(controller) {
+          bodyCtl = controller;
+          controller.enqueue(new TextEncoder().encode(Array(2049).join('.')));
+        }
+      });
+      var done = responseFor(url, bodyStream, 'text/plain');
       if (signal) {
         signal.addEventListener('abort', function() {
           if (stateKey) stash[stateKey] = 'closed';
+          if (bodyCtl) { try { bodyCtl.error(signal.reason); } catch (_eBsErr) {} }
+          try { done._zwAbortErr = signal.reason; } catch (_eAbortGate) {}
         });
       }
       return Promise.resolve(done);

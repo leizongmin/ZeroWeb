@@ -3453,6 +3453,30 @@
     }
     return Promise.reject(new TypeError(String(target._bodyError)));
   }
+  // net-api M2-S9：signal abort → body 中止（fetch spec abort-a-fetch——response 已
+  // settle 时 signal abort 错误体：`_zwAbortErr` 存 abort reason 作消费门
+  //（_zwConsumeBodyBytes 顶部同步拒，abort/general「rejects if already aborted /
+  // Call text() twice」面——门先于 unusable 判定，重复消费同拒 abort reason 而非
+  // TypeError），活动体流经 controller error（reader.read/closed 拒同 reason，
+  // 「Stream errors once aborted」面）。幂等；流已 closed/errored 时 error 内部
+  // no-op（part02 errorStream 非 readable 短路）。
+  //   https://fetch.spec.whatwg.org/#abort-a-fetch
+  function _zwAbortResponseBody(target, reason) {
+    if (target._zwAbortErr != null) return;
+    target._zwAbortErr = reason;
+    var bs = target._zwBodyStream || target._bs;
+    if (bs && bs._zwController) {
+      try { bs._zwController.error(reason); } catch (_eAbortBody) {}
+    }
+  }
+  // net-api M2-S9：consume 族同步 gate——abort 时直返已拒 promise（不经 .then 派生：
+  // 已拒 P1 上挂 .then 的派生 promise 在调用方 .catch 挂接时尚 pending，reject
+  // reaction 晚一 microtask——abort/general「rejects if already aborted」的
+  // [reject, next-microtask] 排序断言面；bytes() 直返无此跳故该腿先绿）。
+  function _zwConsumeBodyChecked(target, f) {
+    if (target._zwAbortErr != null) return Promise.reject(target._zwAbortErr);
+    return _zwConsumeBodyBytes(target).then(f);
+  }
   function _zwCreateBodyStream(target) {
     var source = target._bodyBytes != null ? target._bodyBytes : target._bodyText;
     var stream = target._bodyError
@@ -3616,6 +3640,10 @@
   // 消费即标记 bodyUsed；字节/文本源消费后补建锁定+扰动 stream（disturbed-5：
   // 消费后 body.getReader() 须 throw）。body 为 null → 空字节（可重复消费，spec null body）。
   function _zwConsumeBodyBytes(target) {
+    // net-api M2-S9：signal abort 消费门——先于 unusable 判定（abort/general
+    // 「Call text() twice on aborted response」两度消费同拒 abort reason，落
+    // TypeError 会失败）。见 _zwAbortResponseBody 注。
+    if (target._zwAbortErr != null) return Promise.reject(target._zwAbortErr);
     var streamSrc = target._zwBodyStream;
     var streamState = streamSrc || target._bs;
     if (target._bodyUsed || (streamState && (streamState._disturbed || streamState._locked))) {
@@ -4751,6 +4779,18 @@
       // fetch(request) 转发优先取字节/文本缓存，避免 String(ReadableStream) 化；用户流体
       //（_zwBodyStream）回退 input.body 由既有路径处理。
       var rawBody = _zwPumpedBody != null ? _zwPumpedBody : _zwFetchRawBodyOf(input, init);
+      // net-api M2-S9：fetch(request) 传输体 → request body disturbed（spec HTTP fetch
+      // 传输即读取——abort/request「aborted consumed nonempty request」面：fetch 后再
+      // 消费拒 TypeError）。空体不标（「aborted consumed empty request」fulfillment 面
+      // ——空体传输不扰动，request.text() 照常可消费）；init.body 显式覆盖不动 input 体。
+      //   https://fetch.spec.whatwg.org/#http-fetch
+      if (isRequestLike && init.body == null && rawBody != null) {
+        var _zwReqBodyNonEmpty = true;
+        if (typeof rawBody === 'string') _zwReqBodyNonEmpty = rawBody.length > 0;
+        else if (typeof Blob === 'function' && rawBody instanceof Blob) _zwReqBodyNonEmpty = rawBody.size > 0;
+        else if (rawBody instanceof Uint8Array) _zwReqBodyNonEmpty = rawBody.length > 0;
+        if (_zwReqBodyNonEmpty) input._bodyUsed = true;
+      }
       if (rawBody instanceof FormData) {
         var mp = rawBody._zwMultipart();
         body = _zwEncodeBytesPrefix(mp.body); // R3020：multipart 字节 byte-wire（含二进制文件内容保真）
@@ -5302,6 +5342,14 @@
           try {
             _finResp = finishFetch(raw, hopUrl);
           } catch (error) { reject(error); return; }
+          // net-api M2-S9：settle 后 signal abort → response body 中止（fetch spec
+          // abort-a-fetch——response 已交付时 abort 错误体而非 fetch promise）。
+          //   https://fetch.spec.whatwg.org/#abort-a-fetch
+          if (signal) {
+            signal.addEventListener('abort', function () {
+              _zwAbortResponseBody(_finResp, signal.reason);
+            });
+          }
           _zwFetchVerifyIntegrity(_finResp, integrity).then(resolve, function () {
             reject(new TypeError('Failed to fetch'));
           });
@@ -5645,14 +5693,16 @@
     });
     // net-api M2-S3：consume 方法统一走 _zwConsumeBodyBytes（unusable 判定 / 用户流
     // 源 error+chunk 类型传播 / 字节路径 + 消费后 stream 锁定扰动）。
+    // net-api M2-S9：text/json/blob/arrayBuffer/formData 经 _zwConsumeBodyChecked
+    // （abort 同步 gate——直返已拒 promise，排序面见该函数注）。
     this.text = function () {
-      return _zwConsumeBodyBytes(self).then(function (b) { return new TextDecoder().decode(b); });
+      return _zwConsumeBodyChecked(self, function (b) { return new TextDecoder().decode(b); });
     };
     this.json = function () {
-      return _zwConsumeBodyBytes(self).then(function (b) { return JSON.parse(new TextDecoder().decode(b)); });
+      return _zwConsumeBodyChecked(self, function (b) { return JSON.parse(new TextDecoder().decode(b)); });
     };
     this.blob = function () {
-      return _zwConsumeBodyBytes(self).then(function (b) {
+      return _zwConsumeBodyChecked(self, function (b) {
         // net-api 二期 M2：https://fetch.spec.whatwg.org/#dom-body-blob —— Blob type =
         // extract a MIME type 的 serialize 结果**直设**，不走 Blob 构造器 type 判据
         // （FileAPI 范围判据+小写化只作用于构造器 type 选项；mimesniff parsing.any.js
@@ -5664,7 +5714,7 @@
       });
     };
     this.arrayBuffer = function () {
-      return _zwConsumeBodyBytes(self).then(function (b) {
+      return _zwConsumeBodyChecked(self, function (b) {
         var cp = new Uint8Array(b.length);
         for (var j = 0; j < b.length; j++) cp[j] = b[j];
         return _zwBytesThenableSafe(cp); // 已知限制（R2978 注记保留）：返 Uint8Array（spec ArrayBuffer），既有接口形态
@@ -5676,7 +5726,7 @@
       return _zwConsumeBodyBytes(self);
     };
     this.formData = function () {
-      return _zwConsumeBodyBytes(self).then(function (b) {
+      return _zwConsumeBodyChecked(self, function (b) {
         var text = new TextDecoder().decode(b);
         var contentType = _zwBodyMimeType(self.headers) || '';
         var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);

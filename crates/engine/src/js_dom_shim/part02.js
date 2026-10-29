@@ -1632,6 +1632,9 @@
     };
     controllerProto.error = errorStream;
     var controller = Object.create(controllerProto);
+    // net-api M2-S9：controller 流外可达（宿主编排 error 入口——fetch signal abort →
+    // response body error、runner 体中止仿真）。non-enumerable：流自有属性枚举面零扰动。
+    Object.defineProperty(this, '_zwController', { value: controller });
     // net-api M4-S4：spec §ReadableStreamCancel——disturbed；closed → resolved；errored →
     // reject storedError（「return() rejects if the stream has errored」面）；否则 close +
     // CancelSteps（await source.cancel——fulfillment → undefined、rejection 传播）。
