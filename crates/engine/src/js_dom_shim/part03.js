@@ -25739,7 +25739,31 @@ return e;
             var aBase = typeof globalThis._zwDocBaseURL === 'function'
               ? globalThis._zwDocBaseURL()
               : (globalThis.location ? globalThis.location.href : '');
-            var aJson = __zw_parse_url(aRaw, aBase);
+            // M2 form-url-encoding-compat：encoding-parse a URL——非 UTF-8 文档编码
+            // 下 a/area 组件 getter 解析前对 query 段按文档编码逐 scalar fresh 编码 +
+            // special-query set 字节级 percent-encode（URL standard
+            // https://url.spec.whatwg.org/#encoding-parsing-a-url：encoding override
+            // 仅 query 组件；fragment 恒 UTF-8 percent-encode 由 rust-url 既有路径
+            // 处理，`#` 起原样透传）。首 `?` 存在且先于首 `#` 才有 query 可预编码。
+            // UTF-8 文档 / host 桥未注册 / 无 query → aRaw 原样解析（零变化）；
+            // 解析失败回落仍用原始 aRaw；BASE/LINK 分支与组件 setter 不在消费面
+            //（20 号 url 域零扰动）。href 面不触 ASCII/控制字符（ranges 0x80 起），
+            // 无 tab/newline 剥除交互。
+            var aParseRaw = aRaw;
+            var _epDoc = '';
+            try { _epDoc = String(globalThis.document.characterSet || ''); } catch (_eEp0) {}
+            var _epEnc = (_epDoc && typeof _zwEncodingFromLabel === 'function')
+              ? _zwEncodingFromLabel(_epDoc, false) : null;
+            if (_epEnc && _epEnc !== 'UTF-8' && typeof __zw_text_encode_percent === 'function') {
+              var _epQ = aRaw.indexOf('?');
+              var _epH = aRaw.indexOf('#');
+              if (_epQ !== -1 && (_epH === -1 || _epQ < _epH)) {
+                aParseRaw = aRaw.slice(0, _epQ + 1) +
+                  __zw_text_encode_percent(_epEnc, aRaw.slice(_epQ + 1, _epH === -1 ? aRaw.length : _epH), 'query') +
+                  (_epH === -1 ? '' : aRaw.slice(_epH));
+              }
+            }
+            var aJson = __zw_parse_url(aParseRaw, aBase);
             // 解析失败 = spec set the url 后 url 仍 null（§4.6.3 api-for-a-and-area-elements）：
             // href 返原串；protocol 返 ':'（protocol getter 步 2「If this's url is null, return ':'」）；
             // 其余组件 url null → ''。WPT non-parsable-url-getter-setter：`http://test:test/`

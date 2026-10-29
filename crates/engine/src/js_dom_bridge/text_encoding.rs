@@ -169,6 +169,21 @@ pub fn text_encode_percent(label: &str, text: &str, mode: &str) -> String {
         } else {
             raw
         };
+        // NCR 错误路径直出：unmappable 的 HTML NCR 字节（`&#N;`）不经 set 再判定，
+        // 以预编码形态 `%26%23N%3B` 直接落输出（URL standard percent-encode after
+        // encoding 的 HTML error mode 面，
+        // https://url.spec.whatwg.org/#string-percent-encode-after-encoding）——
+        // special-query set 不含 `&` `;`，set 路径在 query mode 会漏编界定符出
+        // 字面量 `&#N;`；corpus 侧 errors-href expect 硬编码 `%26%23N%3B` +
+        // gb18030-encoder 硬编码期望同向钉死。form mode 经 set 展开逐字节同形
+        //（等价路径，M1 form 面行为不变）。guard 前置 len/首字节，避免可映射
+        // 输出逐 char 分配。
+        if raw.len() > 1 && raw[0] == b'&' && raw == format!("&#{};", ch as u32).as_bytes() {
+            out.push_str("%26%23");
+            out.push_str(&(ch as u32).to_string());
+            out.push_str("%3B");
+            continue;
+        }
         encode_percent_bytes(raw, query_mode, &mut out);
     }
     out
@@ -177,7 +192,9 @@ pub fn text_encode_percent(label: &str, text: &str, mode: &str) -> String {
 /// 字节级 percent-encode set 判定 + 编码（URL standard 序列化语义：输出字节按其
 /// 字节值比对该 set，https://url.spec.whatwg.org/#percent-encoded-bytes）。form
 /// mode：空格 → `+`，字面量 = alnum + `*-._`；query mode：special-query set
-///（query set = C0 controls + >0x7E + 空格 `"` `#` `<` `>`，special 补 `'`）。
+///（query set = C0 controls + >0x7E + 空格 `"` `#` `<` `>`，special 补 `'`）+
+/// `%`——engine 适配：rust-url 解析面保留裸 `%` 不归一 `%25`（Chrome 消费侧归一，
+/// WPT iso2022jp-encode-href 期望依赖该归一），预编码源直接出 `%25` 对齐。
 fn encode_percent_bytes(bytes: &[u8], query_mode: bool, out: &mut String) {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     for &b in bytes {
@@ -186,9 +203,7 @@ fn encode_percent_bytes(bytes: &[u8], query_mode: bool, out: &mut String) {
             continue;
         }
         let in_set = if query_mode {
-            b <= 0x20
-                || b >= 0x7F
-                || matches!(b, b'"' | b'#' | b'<' | b'>' | b'`' | b'\'')
+            b <= 0x20 || b >= 0x7F || matches!(b, b'%' | b'"' | b'#' | b'<' | b'>' | b'`' | b'\'')
         } else {
             !(b.is_ascii_alphanumeric() || matches!(b, b'*' | b'-' | b'.' | b'_'))
         };
@@ -411,10 +426,7 @@ mod tests {
         );
         // unmappable（U+4DC0 不在 jis0208）→ HTML NCR `&#19904;` → set 补编
         // %26%23N%3B（WPT encode-form errors 变体期望公式）。
-        assert_eq!(
-            text_encode_percent("ISO-2022-JP", "\u{4dc0}", "form"),
-            "%26%2319904%3B"
-        );
+        assert_eq!(text_encode_percent("ISO-2022-JP", "\u{4dc0}", "form"), "%26%2319904%3B");
     }
 
     #[test]
@@ -426,6 +438,35 @@ mod tests {
         // get-an-output-encoding：utf-16le / replacement 输出面 = UTF-8。
         assert_eq!(text_encode_percent("utf-16le", "\u{4f69}", "form"), "%E4%BD%A9");
         assert_eq!(text_encode_percent("csiso2022kr", "A", "form"), "A");
+    }
+
+    #[test]
+    fn test_encode_percent_query_ncr_direct() {
+        // M2 href 面 NCR 直出：query mode 下 unmappable → 预编码 `%26%23N%3B`
+        //（special-query set 不含 `&` `;`，set 路径会出字面量 `&#N;`——
+        // errors-href expect 硬编码同式）。
+        assert_eq!(text_encode_percent("EUC-JP", "\u{4dc0}", "query"), "%26%2319904%3B");
+        // form mode 输出不变：set 展开与直出逐字节同形（M1 行为锁）。
+        assert_eq!(text_encode_percent("EUC-JP", "\u{4dc0}", "form"), "%26%2319904%3B");
+        // ISO-2022-JP NCR：模式切换序列后直出判定不误伤（尾剥后仍 `&#N;` 形态）。
+        assert_eq!(
+            text_encode_percent("ISO-2022-JP", "\u{4dc0}", "query"),
+            "%26%2319904%3B"
+        );
+        // mappable 输出不误入直出：euc-jp ¥（U+00A5）→ 0x5C，query set 外 → 字面量。
+        assert_eq!(text_encode_percent("EUC-JP", "\u{a5}", "query"), "\\");
+        // ISO-2022-JP roman fresh：¥ → ESC ( J + 0x5C（无 flush 尾）——%1B 出 set，
+        // ( J \ 字面量。
+        assert_eq!(text_encode_percent("ISO-2022-JP", "\u{a5}", "query"), "%1B(J\\");
+        // 字面量 `&`（单字节 mappable，len 1）不触发直出判定：query set 外 → 原样。
+        assert_eq!(text_encode_percent("windows-1252", "a&b", "query"), "a&b");
+        // `%` 归一（rust-url 保留裸 %，Chrome 消费侧归一 %25——预编码源对齐）：
+        // ISO-2022-JP Ε（U+0395）fresh = ESC $ B 0x26 0x25，字面 $ B & + %25，
+        // normalizeStr 后与期望 %1B%24%42%26%25 逐位合流（WPT 实测失败向量）。
+        assert_eq!(text_encode_percent("ISO-2022-JP", "\u{395}", "query"), "%1B$B&%25");
+        // 字面量 `%`（UTF-8 面）query 出 %25；form 面行为不变。
+        assert_eq!(text_encode_percent("UTF-8", "a%", "query"), "a%25");
+        assert_eq!(text_encode_percent("UTF-8", "a%", "form"), "a%25");
     }
 }
 
