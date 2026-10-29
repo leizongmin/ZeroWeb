@@ -6,8 +6,8 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.17
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14）
+**版本**: v2.18
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15）
 **状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11000**（+1646，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
@@ -154,12 +154,20 @@
   js_dom_bridge 单测长期预存红（V8 桥 about:blank 基址相对 URL 严格拒绝，
   回溯 M2-S11b 同失败；stash 干净树同集合）——非本切片引入，归引擎域
   独立切片（记账 2），共享面不越界。
+- **M2-S15 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s15-xhr-streams-drift-sweep.md)）**：
+  xhr/streams 语料漂移巡检（S13 记账 4 挂账清偿，巡检范围至此覆盖通道五域）
+  ——双基准比对（HEAD + `WPT_REV` pin）：447 文件对 pin **0 差异**（S14 pin
+  模型实测成立），对 HEAD 漂移 7 文件全部分类且**零可清偿面**（additive/
+  加严/元数据/绿腿上游删除各归记账）；通道 xhr/streams 红腿与漂移无交集，
+  `ReadableStream.from` 11F 认证为**有钉真引擎缺口**（streams 域最大收敛面，
+  入列后续小片）。巡检不常态化结论维持，收敛到 pin 滚动单点结算。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
   tag（M2-S12 的 cors-preflight-redirect 对齐目前为本地补丁 + update 脚本
   缺口清单记账，见 [S12 档](net-api-compat/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）。
-- **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：**ReadableStream.from
+  收敛**（S15 认证有钉 11F，streams 域最大收敛面，优先）、request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
   语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
   cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /
