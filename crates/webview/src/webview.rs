@@ -496,15 +496,20 @@ pub struct WebView {
     shared_mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// [`Self::shared_mutations`] 的已应用游标（apply 尾部的起点）。
     applied_mutations: usize,
-    /// T26（DF1-F1）：apply 重入护栏——`apply_mutations_subset` 执行期间置位。
+    /// T26（DF1-F1）：apply 重入护栏——[`Self::apply_pending_shared_mutations`] 整体
+    /// 执行期间置位（round 2 DF2-F1 起：单步与两步路径都覆盖，见该函数入口注记）。
     ///
     /// 该函数尾部经 [`Self::execute_script`] 下发换代通知，而 execute_script 的 Ok
-    /// 尾部会再触发 [`Self::apply_pending_shared_mutations`]；无护栏时两步切分的样式
-    /// 子批会在嵌套 execute 中被抢先应用（样式先于 before-change 基线落地，外层再重复
-    /// 应用同批），`applied_mutations` 游标永久超前 M——同代后续 mutation 被 min()
-    /// 钳制静默跳过直到导航换代。execute_script 尾部见置位即跳过（外层自会应用其
-    /// 尾部；嵌套脚本新排队的 mutation 留给下次 apply，既有生产者语义）。
-    applying_mutations: bool,
+    /// 尾部会再触发本函数自身；无护栏时嵌套 execute 会把此刻排队的 mutation 抢先
+    /// 应用——两步切分下样式子批先于 before-change 基线落地、外层再重复应用同批，
+    /// `applied_mutations` 游标永久超前 M（同代后续 mutation 被 min() 钳制静默跳过
+    /// 直到导航换代）；单步路径下换代钩子若再排队 mutation 即逐层重入（mutation-
+    /// writing 定时器链无界递归直至栈耗尽）。execute_script 尾部见置位即跳过（外层
+    /// 自会应用其尾部；嵌套脚本新排队的 mutation 留给下次 apply，既有生产者语义）。
+    /// Arc + 原子而非裸 bool：Drop 守卫（round 2 DF2-F2）持 owned 克隆不借用 `self`
+    /// 字段，守卫存活期间 flush 主体照常调用 `&mut self` 方法（尾部 execute_script
+    /// 换代通知等）。
+    applying_mutations: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// js-dom R150（M4）：布局 rect 快照（NodeId→rect，render 后刷新）——进程内
     /// `__zw_getBoundingClientRect` 回调的读取源。多进程路径由 renderer 的共享
     /// `rect_bridge::LayoutRectSnapshot` 承担；进程内 webview 此前无该桥（gBCR 恒零
@@ -724,6 +729,27 @@ pub struct WebView {
     security_context: SecurityContext,
 }
 
+/// T26 round 2（DF2-F2）：[`WebView::applying_mutations`] 护栏的 Drop 守卫——构造
+/// 置位，drop 清除；panic unwind 经 drop 路径同样复位，任何出口都不残留置位卡死
+/// 后续 flush。持 [`std::sync::Arc`] 克隆而非借用 `self` 字段（借用会在守卫存活
+/// 期间封死 flush 主体的 `&mut self` 调用——尾部 execute_script 换代通知等）。
+struct ApplyingMutationsGuard(std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl ApplyingMutationsGuard {
+    /// 置位并持有护栏（单层即可：置位期间嵌套 flush 的唯一入口 execute_script
+    /// 尾部见置位即跳过，不会嵌套构造）。
+    fn arm(flag: &std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        flag.store(true, Ordering::Relaxed);
+        Self(flag.clone())
+    }
+}
+
+impl Drop for ApplyingMutationsGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
+}
+
 impl WebView {
     /// 创建新的 WebView。
     pub fn new(config: WebViewConfig) -> Self {
@@ -785,7 +811,7 @@ impl WebView {
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
-            applying_mutations: false,
+            applying_mutations: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             layout_rect_snapshot: zero_engine::rect_bridge::new_layout_rect_snapshot(),
             runner_probe_html: None,
             http_client,
@@ -2530,16 +2556,11 @@ impl WebView {
     /// 更新 `applied_mutations` 游标并同步 handle 映射（与
     /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。
     fn apply_mutations_subset(&mut self, subset: &[zero_engine::js_dom_bridge::DomMutation]) {
-        // T26（DF1-F1）：重入护栏置位——本函数尾部的换代通知走 execute_script，其
-        // Ok 尾部会再触发 apply_pending_shared_mutations（见 applying_mutations 字段
-        // 文档）。所有出口（含空批早退、通知 Err 分支）清除，勿卡死。
-        self.applying_mutations = true;
         // t2-pb1 F2：共享队列路径（动画泵/tick observer）批内 apply 同样置脏。
         if self.script_batch_active && !subset.is_empty() {
             self.script_batch_dirty = true;
         }
         if subset.is_empty() {
-            self.applying_mutations = false;
             return;
         }
         let html_snapshot = {
@@ -2571,12 +2592,12 @@ impl WebView {
         }
         // R379/pa2b：与 apply_pending_shared_mutations 同款换代通知（两步 apply 的结构
         // 批/样式批各通知一次——第二次 no-op 幂等，标记表已空）。T26（DF1-F1）：通知
-        // 期间护栏置位，嵌套 execute_script 尾部 apply 跳过（本子批刚应用完，嵌套尾部
-        // 本无新增可应用；置位清除放在通知返回之后，覆盖其 Err 分支）。
+        // 期间嵌套 execute_script 尾部 apply 跳过——护栏由 flush 入口
+        // （apply_pending_shared_mutations，round 2 DF2-F1 起单步与两步全程持有）
+        // 统一置位/清除，本函数不再自管。
         let bump = self.execute_script(
             "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
         );
-        self.applying_mutations = false;
         let _ = bump;
     }
 
@@ -2663,13 +2684,15 @@ impl WebView {
                 self.sync_render_after_native_dom();
                 // T26：本入口已武装 shim 写桥，执行期记录的新增 DOM 变更在此应用
                 //（游标尾部；不 apply 会把变更滞留共享队列——镜像 execute_script_with_dom）。
-                // T26（DF1-F1）：apply 重入护栏——本调用可能处于 apply_mutations_subset
-                // 尾部换代通知的嵌套栈内（applying_mutations 置位）。此时两步切分的样式
-                // 子批尚未应用，此处 apply 会把它抢先落 DOM（样式先于 before-change 基线
-                // + 外层随后重复应用同批，游标永久超前 M，同代后续 mutation 被钳制静默
-                // 跳过）。跳过：外层自会应用其尾部；嵌套脚本新排队的 mutation 留给下次
-                // apply（既有生产者语义）。
-                if !self.applying_mutations {
+                // T26（DF1-F1）：apply 重入护栏——本调用可能处于 apply_pending_shared_
+                // mutations 尾部换代通知的嵌套栈内（applying_mutations 置位，round 2
+                // DF2-F1 起单步与两步路径全程持有）。此时外层 apply 尚未收口，此处 apply
+                // 会把外层未落地的子批抢先应用（两步切分下样式先于 before-change 基线 +
+                // 外层随后重复应用同批，游标永久超前 M，同代后续 mutation 被钳制静默
+                // 跳过；单步下换代钩子再排队 mutation 即逐层重入直至栈耗尽）。跳过：
+                // 外层自会应用其尾部；嵌套脚本新排队的 mutation 留给下次 apply（既有
+                // 生产者语义）。
+                if !self.applying_mutations.load(Ordering::Relaxed) {
                     self.apply_pending_shared_mutations()?;
                 }
                 // performance-api-compat M2-S1：本 execute 即一次任务边界——超阈值执行
@@ -4717,6 +4740,16 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
     /// 正置 handle→selector 表作为 apply 的持久翻译层（跨 execute 旧 handle 的写
     /// mutation 锚定回 selector）。apply 后 merge handle map + 双表发布。
     fn apply_pending_shared_mutations(&mut self) -> Result<(), WebViewError> {
+        // T26（DF1-F1）：重入护栏在 flush 入口持有、函数出口（Drop）清除——单步与
+        // 两步路径整体覆盖。round 2（DF2-F1）：护栏此前只在两步路径的
+        // apply_mutations_subset 内部置位，单步路径（纯结构/纯样式批）尾部的换代
+        // 通知 execute_script 在护栏 false 下重入本函数——换代钩子若再排队 mutation
+        // （或 mutation-writing 定时器链每层被 drain 一个 pending 回调补给），嵌套
+        // apply 逐层递归（每层整管线 render + execute）直至栈耗尽。置位期间嵌套
+        // 尾部 apply 跳过：嵌套脚本新排队的 mutation 留给下次 flush（既有生产者
+        // 语义）。round 2（DF2-F2）：守卫经 Drop 清除——空批早退、批硬错 Err 分支、
+        // panic unwind 全部出口复位，不残留置位卡死后续 flush。
+        let _flush_guard = ApplyingMutationsGuard::arm(&self.applying_mutations);
         let tail: Vec<DomMutation> = {
             let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
             guard[self.applied_mutations.min(guard.len())..].to_vec()
@@ -8082,6 +8115,108 @@ mod tests {
                 .any(|s| s.contains("__zw_apply_generation_bump")),
             "两步切分子批 apply 后同样下发换代通知（子批通知调用点删行即红）"
         );
+    }
+
+    // T26 round 2（DF2-F1 回归钉）：单步 flush 尾部换代 bump 的无界重入。换代钩子自身
+    // 每次调用排队一条 SetText（非样式），触发批为纯结构（Create+Append）→
+    // execute_script 尾部 apply 走单步路径。护栏只在两步路径（apply_mutations_subset）
+    // 内部置位时，单步尾部的 bump execute_script 在护栏 false 下嵌套重入 flush：钩子
+    // 刚排队的 mutation 被抢先应用 → 再次 bump → 每层整管线 render + execute 递归
+    // （mutation-writing setInterval/setTimeout 链还会经每层 drain 各补给一个 pending
+    // 回调）直至栈耗尽。钉：单次 execute_script 内换代钩子恰好执行 1 次（队列增量
+    // len-cursor==1）、游标恰好推进触发批、钩子排队的 mutation 完整留在队列（既有
+    // 生产者语义），随后每次显式 flush 恰好应用 1 条。观察全部走游标/队列长度/html
+    // 快照——不直读 applying_mutations 字段（本钉须能在护栏改制前后两种字段形态下
+    // 编译运行取红；直读断言在 flush_reentry_guard_clears_on_every_exit_t26df2f2）。
+    #[test]
+    fn flush_single_step_bump_hook_mutation_stays_queued_t26df2f1() {
+        let mut wv = wv();
+        wv.load_html(r#"<html><body><main id="probe">base</main></body></html>"#, None);
+        wv.execute_script(
+            r#"
+            globalThis.__zwBumpCount = 0;
+            globalThis.__zw_apply_generation_bump = function () {
+              globalThis.__zwBumpCount++;
+              document.getElementById('probe').textContent = 'gen-' + globalThis.__zwBumpCount;
+            };
+            "#,
+        )
+        .expect("换代钩子安装成功");
+        let queue_len = |wv: &WebView| wv.shared_mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
+
+        // 纯结构触发批 → 单步路径。护栏缺位时该调用无界重入（实测修复前单次
+        // execute 内嵌套重入 ~100 层、游标推进 101，V8 栈限是唯一刹车）。
+        wv.execute_script(
+            r#"
+            (function () {
+              document.body.appendChild(document.createElement('div'));
+            })();
+            "#,
+        )
+        .expect("单步 flush 必须终止（护栏缺位时此处无界重入）");
+        assert_eq!(wv.applied_mutations, 2, "游标恰好推进触发批（Create+Append）");
+        assert_eq!(
+            queue_len(&wv),
+            3,
+            "换代钩子必须恰好执行 1 次且其排队的 SetText 完整留队（生产者语义）——嵌套尾部 apply 未被跳过即逐层重入，修复前该值随递归深度膨胀"
+        );
+        assert!(
+            !wv.html_content().contains("gen-1"),
+            "钩子 mutation 不得在本次 execute 内被嵌套 apply 抢先落 DOM"
+        );
+
+        // 每次显式 flush 恰好应用一条：gen-1 落 DOM，flush 尾部 bump 钩子再排队
+        // gen-2 留队（等待下一次 flush）。
+        wv.flush_pending_shared_mutations().expect("显式 flush 成功");
+        assert_eq!(wv.applied_mutations, 3, "显式 flush 恰好应用钩子排队的 1 条");
+        assert!(wv.html_content().contains("gen-1"), "显式 flush 后钩子 mutation 落 DOM");
+        assert_eq!(queue_len(&wv), 4, "flush 尾部 bump 再排队一条，仍留队等下次 flush");
+        wv.flush_pending_shared_mutations().expect("第二次显式 flush 成功");
+        assert_eq!(wv.applied_mutations, 4, "第二条钩子 mutation 同样一次 flush 恰好一条");
+        assert!(wv.html_content().contains("gen-2"), "每次显式 flush 恰好推进一代");
+    }
+
+    // T26 round 2（DF2-F2 守卫生命周期钉）：护栏任何出口都必须复位——空批早退、
+    // 批硬错 Err 分支（warn + 推游标 + Ok 返回）、正常 Ok 尾部。unwind 安全由 Drop
+    // 守卫保证（panic 展开经 drop 复位；`&mut self` 上 catch_unwind 不可用，该路径
+    // 以 Drop 实现兜底，不另设注入断言）。护栏卡死的表现是后续 execute_script 尾部
+    // apply 见置位静默跳过——故除直读标志外，末尾以一次真实 execute 尾部 flush 的
+    // 游标推进钉活性。
+    #[test]
+    fn flush_reentry_guard_clears_on_every_exit_t26df2f2() {
+        let mut wv = wv();
+        wv.load_html("<html><body><p class='g1'>t</p></body></html>", None);
+        // 出口 1：空批早退（tail 空早退先于任何 apply 工作）。
+        wv.flush_pending_shared_mutations().expect("空批 flush 成功");
+        assert!(
+            !wv.applying_mutations.load(Ordering::Relaxed),
+            "空批早退后护栏必须复位（Drop 出口）"
+        );
+        // 出口 2：批硬错 Err 分支——悬垂 child handle 触发 apply_dom_mutations_full
+        // 的 unknown handle 硬错（P19 不 lenient），flush 吞错推游标返回 Ok，护栏
+        // 不得残留。
+        wv.shared_mutations
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(DomMutation::AppendChildByHandle {
+                parent_handle: "__nMissingParent".to_string(),
+                child_handle: "__nMissingChild".to_string(),
+            });
+        wv.flush_pending_shared_mutations()
+            .expect("硬错批 flush 仍返回 Ok（批丢弃语义）");
+        assert_eq!(
+            wv.applied_mutations, 1,
+            "硬错批同样推游标（队列整体活性让位单批可恢复性）"
+        );
+        assert!(
+            !wv.applying_mutations.load(Ordering::Relaxed),
+            "Err 分支返回后护栏必须复位（Drop 出口）"
+        );
+        // 活性：护栏若卡死，此处 execute_script 尾部 apply 被静默跳过、游标不再推进。
+        wv.execute_script("document.querySelector('p.g1').textContent = 'alive';")
+            .unwrap();
+        assert_eq!(wv.applied_mutations, 2, "后续 execute 尾部 flush 不得被残留护栏卡死");
+        assert!(!wv.applying_mutations.load(Ordering::Relaxed));
     }
 
     // slice35：第 4 应用路径（execute_dom_script，user_actions.rs 子模块）的 evict
