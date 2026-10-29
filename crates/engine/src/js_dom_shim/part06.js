@@ -1873,7 +1873,7 @@
   // → 身份保持。外部合成条目（owner=null）不缓存（externalWire 逐次可变）。
   var _zwSheetSameObj = typeof WeakMap === 'function' ? new WeakMap() : null;
 
-  function _makeStyleSheet(owner, externalWire) {
+  function _makeStyleSheet(owner, externalWire, externalHref) {
     if (owner != null && _zwSheetSameObj) {
       // R5271b：元素不在文档 → sheet 返 null（spec LinkStyle：HTMLStyleElement/
       // HTMLLinkElement 的 sheet 仅在文档内存在——LinkStyle.html「not in a Document」
@@ -1895,24 +1895,26 @@
       } catch (_fp5271e) {}
       var _fp5271hit = _zwSheetSameObj.get(owner);
       if (_fp5271hit && _fp5271hit.fp === _fp5271) return _fp5271hit.ss;
-      var _ss5271 = _makeSheetBuild(owner, externalWire);
+      var _ss5271 = _makeSheetBuild(owner, externalWire, externalHref);
       _zwSheetSameObj.set(owner, { fp: _fp5271, ss: _ss5271 });
       return _ss5271;
     }
-    return _makeSheetBuild(owner, externalWire);
+    return _makeSheetBuild(owner, externalWire, externalHref);
   }
 
-  function _makeSheetBuild(owner, externalWire) {
+  function _makeSheetBuild(owner, externalWire, externalHref) {
     var sel = owner && owner.__zwSelector;
     // js-dom M4 R113：handle-based owner（createElement('style') 后 append——CSS-in-JS /
     // WPT prefixed-animation 形态）。初始规则经 `__zw_style_rules_handle`（host 从 mutation
     // 历史解析该 handle 的 style 文本），写回经 `__zw_set_text_handle`（SetTextOnHandle）。
     var handle = !sel && owner ? owner.__zwHandle : null;
     // R5114（P9-9 切片 2）：owner=null + externalWire → 外部样式表合成条目（引擎合并
-    // blob——collect_stylesheets 级联源顺序在 <style> 表之前，此处同序）。href/ownerNode
-    // 为 null（per-link 拆分需 per-link CSS 文本穿线，引擎暂无该数据——documented
-    // limitation）；规则只读（insertRule/deleteRule 仅内存 cache，无宿主写回——blob 由
-    // runtime 管线同步管）。
+    // blob——collect_stylesheets 级联源顺序在 <style> 表之前，此处同序）。href s159 起
+    // 有通道：externalHref（part03 `_zwSsSheetHrefFor` 查询口——live 文档序首个
+    // rel=stylesheet link 的生效 sheet href，全 miss → null）；ownerNode 仍为 null
+    //（per-link 文本拆分需 per-link CSS 文本穿线，引擎暂无该数据——documented
+    // limitation 不变）；规则只读（insertRule/deleteRule 仅内存 cache，无宿主写回——
+    // blob 由 runtime 管线同步管）。
     var external = owner == null;
     var rulesCache = null;
     function getRules() {
@@ -1957,7 +1959,10 @@
     }
     var ss = {
       type: 'text/css',
-      href: null,
+      // s159：外部合成条目 href = 生效 sheet href 通道（per-link 近似，见 R5114 注）；
+      // 元素表（`<style>`/`<link>` per-element）与既有语义不变（null——LinkStyle.sheet
+      // 的 href 反映元素 href 属性面未建模）。
+      href: externalHref || null,
       ownerNode: owner,
       owningElement: owner,
       disabled: false,
@@ -5954,7 +5959,15 @@
       if (typeof __zw_style_rules_external === 'function') {
         var _extWire = '';
         try { _extWire = String(__zw_style_rules_external()); } catch (_eExtR) { _extWire = ''; }
-        if (_extWire) out.push(_makeStyleSheet(null, _extWire));
+        if (_extWire) {
+          // s159：合成条目 href = live 文档序首个 rel=stylesheet link 的生效 sheet
+          // href（part03 `_zwSsSheetHrefFor`——fetch 发起即挂值不等 load；无 link
+          // 或全 miss → null，与引擎合并 blob 单条目的 spec 近似一致）。
+          // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+          var _extHref = (typeof globalThis._zwSsSheetHrefFor === 'function')
+            ? globalThis._zwSsSheetHrefFor() : null;
+          out.push(_makeStyleSheet(null, _extWire, _extHref));
+        }
       }
       var sels = (typeof __zw_query_all === 'function')
         ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];

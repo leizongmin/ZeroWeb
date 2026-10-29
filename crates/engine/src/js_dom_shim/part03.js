@@ -4557,6 +4557,48 @@
   // 展开未建模——同特异性下相对顶层后继规则的优先级偏差，语料无该形态）；link media
   // 属性门未建模（级联无 media 求值，stylesheet-media-change-no-fetch 记账 F）。
   var _zwExtSheetTexts = {}; // identity key → 表文本（'' = 取回失败空贡献）
+  // s159（html-semantics M2 切片 159）：per-link **生效 sheet href**（合成条目 href 通道
+  // ——document.styleSheets R5114 合成条目此前恒 null）。spec link processing 的 sheet
+  // 对象生命周期近似：helper 首次发起取回（fetch 发起，幂等门后）= sheet 创建语义
+  // —— href 挂取回解析 URL（同步断言段即可读，不等 load）；done('load') = 新表生效
+  // 替换（覆写为新 URL）；done('error') 与幂等重入不动（error 失败保持旧——替换未
+  // 发生）；rel 移除臂删除（stylesheet 关联解除）。查询口 `globalThis._zwSsSheetHrefFor`
+  // 返 live 文档序**第一个** rel=stylesheet link 的生效 href（多 link 合并 blob 条目的
+  // href 映射取级联首序；全 miss → null）。案面：stylesheet-not-removed-until-next-
+  // stylesheet-loads——href 变更同步断言段（新取回在飞、未 load）读旧生效值。
+  // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+  var _zwSsSheetHrefMap = {}; // identity key → 生效 sheet href（解析绝对 URL）
+  globalThis._zwSsSheetHrefFor = function () {
+    try {
+      if (typeof __zw_query_all !== 'function') return null;
+      var _shSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
+      for (var _shI = 0; _shI < _shSels.length; _shI++) {
+        var _shSel = _shSels[_shI];
+        var _shRel = '';
+        var _shHref = '';
+        try {
+          _shRel = String((typeof __zw_get_attr_lw === 'function')
+            ? (__zw_get_attr_lw(_shSel, 'rel') || '') : '');
+          _shHref = String((typeof __zw_get_attr_lw === 'function')
+            ? (__zw_get_attr_lw(_shSel, 'href') || '') : '');
+        } catch (_eShR) { continue; }
+        var _shIsSheet = false;
+        var _shParts = _zwLinkRelTokens(_shRel);
+        for (var _shJ = 0; _shJ < _shParts.length; _shJ++) {
+          if (_shParts[_shJ] === 'stylesheet') { _shIsSheet = true; break; }
+        }
+        if (!_shIsSheet || !_shHref) continue;
+        var _shH = null;
+        try {
+          _shH = (typeof __zw_handle_for_selector === 'function')
+            ? (__zw_handle_for_selector(_shSel) || null) : null;
+        } catch (_eShH) {}
+        var _shKey = _shH ? ('@' + _shH) : _shSel;
+        if (_zwSsSheetHrefMap.hasOwnProperty(_shKey)) return _zwSsSheetHrefMap[_shKey];
+      }
+    } catch (_eSh) {}
+    return null;
+  };
   // s158：rel 分词——spec ASCII whitespace 集（TAB/LF/FF/CR/SPACE）。JS `\s` 含 \v
   // (U+000B)，tokenization 案面 `test\u000Bstylesheet` 是单 token ≠ stylesheet 应判
   // miss，旧 `\s+` 误命中。helper rel 门与重算遍历共用。
@@ -4705,6 +4747,7 @@
                 || _zwSsFiredMap.hasOwnProperty(_ssKey))) {
           delete _zwExtSheetTexts[_ssKey];
           delete _zwSsFiredMap[_ssKey];
+          delete _zwSsSheetHrefMap[_ssKey];
           _zwSsRecomputeExt();
         }
         return;
@@ -4779,6 +4822,9 @@
       // 解析 URL 已 preload 取回完成 → 零网络派 load（spec：转换后按 stylesheet
       // 处理模型从 preload cache 采用资源，load 事件再 fire——上游明示语义）。
       if (_ssKey != null && _zwPreloadCache[_ssKey] === _ssAbs) {
+        // s159：转换面 sheet 从 cache 采用 = sheet 创建生效（零网络）——生效 href
+        // 同步挂取回解析 URL（fetch 发起路径同语义，见 _zwSsSheetHrefMap 注）。
+        if (!_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) _zwSsSheetHrefMap[_ssKey] = _ssAbs;
         setTimeout(function () { _ssFire('load'); }, 0);
         return;
       }
@@ -4790,6 +4836,13 @@
       if (_ssKey != null) {
         if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
         _zwSsFiredMap[_ssKey] = _ssAbs;
+      }
+      // s159：sheet 创建语义——首次发起取回即挂生效 href（spec processing 的 sheet
+      // 对象在 fetch 完成前已存在并可经 document.styleSheets 观察；load/error 完
+      // 成不改写——error 替换未发生保持旧值，load 覆写在 done 包装）。
+      // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+      if (_ssKey != null && !_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) {
+        _zwSsSheetHrefMap[_ssKey] = _ssAbs;
       }
       // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
       // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
@@ -4881,6 +4934,7 @@
       _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) {
         if (_ssKey != null) {
           _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
+          if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
           if (!noOverlay) _zwSsRecomputeExt();
         }
         _ssFire(_ssV);
