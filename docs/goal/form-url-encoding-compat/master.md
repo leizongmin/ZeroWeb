@@ -1,6 +1,6 @@
 # form-url-encoding-compat master
 
-**状态**: Active——M1 完成（2026-10-29，DC-2 判据全落）；M2 href 面施工中
+**状态**: Active——M1+M2 完成（2026-10-29，DC-2/DC-3 判据全落）；M3 收口待启动
 **入口**: [form-url-encoding-compat.md](../form-url-encoding-compat.md)
 
 ## 里程碑状态表
@@ -9,43 +9,39 @@
 |---|---|---|---|
 | M0 | 面单 + per-face 分母实测 + form 最小切片 | DC-1 | **完成**（[evidence](evidence/2026-10-29-m0-face-list-denominator-slice.md)） |
 | M1 | runner 通道 + form 面能力（acceptCharset 序列化） | DC-2 | **完成**（[evidence](evidence/2026-10-29-m1-form-face-capability.md)；施工 `da608f159`） |
-| M2 | href 面 encoding-parse | DC-3 | **施工中**（host 桥 query mode 已预留；shim A/AREA getter 消费点待落） |
+| M2 | href 面 encoding-parse | DC-3 | **完成**（[evidence](evidence/2026-10-29-m2-href-face-encoding-parse.md)） |
 | M3 | 基线收口 + coverage 复测 | DC-4 | 未启动 |
 
 ## 验证基线
 
 - **通道**：`make testharness-form-url-encoding`（2026-10-29 落地，commit
   `7ae6909cf`；test-guard 4/8G/5400s + `ZW_SCRIPT_TIMEOUT_MS=600000`，语料
-  同源复用 31 号 fetch；filter 按路径子串，`FILTER=encode-form` 分面）。
-- **encode 面基线（M1 后）**：766,959 子测试 = **550,178P / 216,780F /
-  1 Timeout**（71.7%）。form 面 550,053/550,054（唯一非 P = data: iframe
-  Timeout 挂账案）；href 面 216,780 F 待 M2。逐文件账
-  [TSV](evidence/2026-10-29-m1-per-file-post.tsv)。
-- **M1 零回归对账**（同轮）：31 号 decode 面 360,431P/0F 逐位一致；25 号
-  form-submission-0 A/B 翻转 11 legs 全为挂账④等价面 F→P/Timeout→4P、
-  P→F 0；20 号 url 域 5,924P/141F（收口 169F − 20 号 M2-S17 USP BOM 28F，
-  url-setters 13 与单案面 128 分布同，零 P→F）。
+  同源复用 31 号 fetch；filter 按路径子串，`FILTER=encode-form`/`encode-href`
+  分面）。
+- **encode 面基线（M2 后）**：766,959 子测试 = **766,958 P / 0 F /
+  1 Timeout**（99.9999%）。form 面 550,053/550,054、href 面 216,479/216,479、
+  schinese encoder 303/303（M1 挂的 gb18030/gbk-encoder 硬编码 301F 随 NCR
+  直出翻转）、big5-enc-ascii 123/123。唯一非 P = data: iframe Timeout 挂账
+  案。逐文件账 [TSV](evidence/2026-10-29-m2-per-file-post.tsv)。
+- **M2 零回归对账**（同轮）：31 号 decode 面 JSON 逐字节一致
+  （md5 `f73af333…`，360,431P/0F）；25 号 form-submission 216 腿零翻转
+  （+16 语料新增腿：10P dialog + 6T target 既有挂账类）；20 号 url pre/post
+  leg 集逐字节一致（6,261 legs，零 P→F）。
 - 零回归参照：31 号 decode 面 360,431P/0F；25 号 form-submission 与 20 号
   url 基线每轮 shim 变更同带。
 
 ## 缺口清单
 
 1. ~~form 面——序列化编码 override~~ 已销账（M1，`da608f159`）。
-2. **form 面——`iso2022jp-encode-form-errors-stateful` 特例**（挂账）：单
-   子测试 promise_test，链路含 data: URL iframe 脚本执行 + 子→父
-   postMessage 回传，runner 侧 data: iframe 不走脚本通道（M0/M1 实测
-   Timeout 600s）。acceptCharset 已落地，卡点纯 runner data: iframe 管道
-   ——非编码语义，M3 收口按契约挂账或随 runner 能力顺带解锁。
-3. **href 面——encoding-parse a URL 消费点**（M2，施工中）：`a.href`
-   setter 存 raw、A/AREA 组件 getter 经 `__zw_parse_url`（rust-url UTF-8）
-   解析（part03.js:25742）。实现路径 = getter 解析点前以
-   `document.characterSet`（非 UTF-8 时）预编码 query 交 rust-url：
-   首 `?`（须先于首 `#`）切片，query 段走既有 host 桥
-   `__zw_text_encode_percent(enc, q, 'query')`，fragment 段原样（URL
-   standard fragment 恒 UTF-8 percent-encode）。host 桥两处待补：NCR 错误
-   路径按 spec 直接出预编码 `%26%23N%3B`（现出 `&#N;` 字节过 set——form
-   mode 输出等价，query mode 会漏编 `&` `;`）；
-   `big5-enc-ascii`/`*-encoder` 同链路覆盖。
+2. **`iso2022jp-encode-form-errors-stateful` 特例**（唯一挂账）：单子测试
+   promise_test，链路含 data: URL iframe 脚本执行 + 子→父 postMessage 回传，
+   runner 侧 data: iframe 不走脚本通道（M0/M1/M2 三轮实测 Timeout 600s）。
+   acceptCharset/编码语义已全部落地，卡点纯 runner data: iframe 管道——
+   M3 收口按契约挂账或随 runner 能力顺带解锁。
+3. ~~href 面——encoding-parse a URL 消费点~~ 已销账（M2：getter 解析点预
+   编码 + host 桥 NCR 直出 `%26%23N%3B` + query set 补 `%` 归一——rust-url
+   保留裸 `%`，见
+   [learning](../../learnings/bugs/2026-10/2026-10-29-rust-url-preserves-bare-percent.md)）。
 4. ~~口径差~~ 已销账（M0 钉死 766,959）。~~envelope~~ 已销账。
 
 ## 碰撞管理记录
@@ -57,18 +53,14 @@
 - **边界**：20 号 net-api-compat url 主干不动；text/plain、multipart、
   File entry 层留 25 号（s138 挂账 ①②）。
 - **零回归底线**：31 号 decode 面 360,431 逐 subtest 对照；每轮 shim 变更
-  A/B 带 25 号 form-submission 基线与 20 号 url 基线（M1 已带，见上）。
+  A/B 带 25 号 form-submission 基线与 20 号 url 基线（M1/M2 均已带）。
 
-## 下一步（M2 检查单）
+## 下一步（M3 检查单）
 
-1. host 桥：`text_encode_percent` query mode NCR 错误路径改 spec 直出
-   `%26%23N%3B`（form mode 输出不变，等价路径）；补 unit 案（euc-jp/
-   iso-2022-jp query 期望、NCR query 形态）。
-2. shim：part03.js A/AREA 组件 getter 解析点（`__zw_parse_url` 调用前）增
-   encoding-parse 预编码——`document.characterSet` 归一非 UTF-8 + raw 含
-   `?`（先于 `#`）才分派；UTF-8/无桥路径零变化；BASE/LINK 与组件 setter
-   不动（最小消费面，20 号 url 零扰动）。
-3. 判据：href 面 216,905 全收敛（预期 encoding_rs 编码表反向近 100%；
-   `*-encoder` 301F 含 GB18030-2022 面）；31 号 decode + 25 号
-   form-submission + 20 号 url 零回归同轮带；form 面 550,053 不动。
-4. 通道基线更新落 evidence，M3 转 coverage 复测。
+1. coverage 复测：`scripts/check-coverage.sh` 按 goal 影响面（engine
+   js_dom_bridge/js_dom_shim 消费点）复测并入账，与 M0 基线对照。
+2. 全量头条增量入账：encode 面 550,178P/216,780F/1T → 766,958P/1T（其中
+   legacy-mb 归口的 decode+encode 语料 wpt.fyi 口径对照）。
+3. `iso2022jp-encode-form-errors-stateful` Timeout 按契约挂账落 Final
+   Output Protocol（或 runner data: iframe 能力顺带解锁后复跑）。
+4. goal 入口文档状态面收口（DC-4 判据核对 + Final Output Protocol 输出）。

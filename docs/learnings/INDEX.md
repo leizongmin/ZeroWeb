@@ -5,8 +5,16 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（190）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（198）
 
+- 2026-10-29 [WPT 红腿排查先证上游漂移，再动引擎/runner——一次 stash 冲突假设的证伪](bugs/2026-10/2026-10-29-wpt-red-leg-upstream-drift-first.md) — wpt-runner,net-api-compat
+- 2026-10-29 [官网移动端溢出需要检查网格最小宽度和展开内容](bugs/2026-10/2026-10-29-website-grid-overflow.md) — website, generate-website
+- 2026-10-29 [rust-url 保留裸 `%` 不归一 `%25`——预编码输出必须源侧归一](bugs/2026-10/2026-10-29-rust-url-preserves-bare-percent.md) — engine
+- 2026-10-29 [QuickJS 全局 `var` 重声明不转换自有 accessor——WPT 全局变量拼接值静默丢失](bugs/2026-10/2026-10-29-quickjs-global-var-accessor-conversion.md) — engine,script-sandbox,wpt-runner
+- 2026-10-28 [解析产物属性必须工厂直灌，不走 setAttribute（R4100 形态）](bugs/2026-10/2026-10-28-parse-product-attrs-factory-not-setattr.md) — engine
+- 2026-10-27 [进程级代际计数守护线程局部缓存——并行化 runner 时在跑案绑定状态被误重装](bugs/2026-10/2026-10-27-thread-local-cache-guarded-by-process-global-generation.md) — crates/engine/src/dom_bindings/mod.rs, crates/webview/src/webview.rs, tests/wpt-runner
+- 2026-10-27 [R2156 虚拟 inline 包装的盒回填必须放在管线终末，不能在 extract 期插入](bugs/2026-10/2026-10-27-r2156-wrapper-box-synthesis-timing.md) — layout-engine
+- 2026-10-27 [product-smoke 与 reftest 判定管线在 bidi 域分叉——新鲜 PNG 也不可代表 reftest 判定](bugs/2026-10/2026-10-27-product-smoke-bidi-pipeline-diverges-from-reftest.md) — crates/engine/src/paint/painter/text.rs, tests/wpt-runner（bidi 域取证）
 - 2026-10-27 [「高度 > 1.5×fs」式多行代理判据会被 line-height 膨胀欺骗](bugs/2026-10/2026-10-27-line-height-inflation-fools-height-proxy-multiline-gates.md) — engine, layout-engine
 - 2026-10-27 [聚合字段改语义前先盘点全部消费方——单字段承载多口径是回归温床](bugs/2026-10/2026-10-27-agg-field-multi-consumer-semantics.md) — layout-engine
 - 2026-10-26 [compound token 读取吞顶层逗号——s81 约束误剔致选择器列表查询恒空](bugs/2026-10/2026-10-26-selector-list-compound-token-comma.md) — engine
@@ -198,8 +206,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（25）
+## Patterns — 可复用代码模式与最佳实践（26）
 
+- 2026-10-29 [WPT encode-form 期望按 per-scalar fresh 编码出字节——整串流式编码对 stateful 编码必判 FAIL](patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md) — engine, tests/wpt-runner
 - 2026-10-23 [真 Chrome 仲裁：WPT 语料在本地 Chromium 的基线跑法](patterns/2026-10/2026-10-23-real-chrome-wpt-arbitration.md) — wpt-runner, engine
 - 2026-10-23 [IFC collect 期 styles 依赖判定必须有存储信号镜像（paint Path B 空 styles）](patterns/2026-10/2026-10-23-ifc-collect-styles-dependent-branch-needs-stored-signal.md) — layout-engine/inline, engine/paint
 - 2026-10-19 [spec 字面与 WPT 语料分歧时：先查真实引擎结果，语料是验收标尺](patterns/2026-10/2026-10-19-spec-literal-vs-corpus-pin.md) — engine
@@ -226,8 +235,10 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（43）
+## Performance — 性能优化经验（45）
 
+- 2026-10-28 [shim 内 performance.now() 是虚拟时钟——耗时插桩必须 Date.now()](performance/2026-10/2026-10-28-shim-virtual-clock-instrumentation.md) — engine,tests/wpt-runner
+- 2026-10-28 [桥查询路径的 O(结果数 × 树) 三形态——per-result 全局量必须惰性/缓存](performance/2026-10/2026-10-28-bridge-o-results-times-tree.md) — engine
 - 2026-10-16 [bench-gate 必须静机跑——与其他重负载并行 = 测量污染假 FAIL](performance/2026-10/2026-10-16-bench-gate-needs-quiet-machine.md) — bench-gate, rally
 - 2026-10-07 [DOM shim 每次访问打宿主/重扫树的模式在批量循环下退化为 O(n²)](performance/2026-10/2026-10-07-dom-shim-per-access-host-requery-quadratic.md) — engine,js-dom-shim
 - 2026-09-14 [热路径遗留 env 探针——R4332_FOLD_OFF 逐 item `std::env::var` 致 wide_tree 微基准 +67%](performance/2026-09/2026-09-14-env-var-kill-switch-hot-path-regression.md) — zero-layout-engine
@@ -272,8 +283,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（32）
+## Platform — 平台与环境相关经验（34）
 
+- 2026-10-29 [规范迁移期 JS 语义以 Chrome 实测为地面真值——node 旧 V8 是反例](platform/2026-10/2026-10-29-spec-transition-ground-truth-chrome-first.md) — engine,tests/wpt-runner
+- 2026-10-28 [V8 宿主进程不能用 ulimit -v 封内存——外部 RSS 看门狗替代](platform/2026-10/2026-10-28-v8-ulimit-oilpan-rss-watchdog.md) — tests/wpt-runner,engine
 - 2026-10-19 [rebase/pull 翻新源文件 mtime 会触发 cdp 测试 stale binary 守卫](platform/2026-10/2026-10-19-stale-guard-vs-rebase-mtime.md) — engine,browser
 - 2026-10-19 [quickjs 测试矩阵不含 zero-browser --tests，其中 bookmark 建标签页测预存红](platform/2026-10/2026-10-19-quickjs-matrix-excludes-browser-tests.md) — browser
 - 2026-10-18 [亚秒级调度突发可穿透 1min loadavg 静窗守卫——基准落盘需逐指标校验](platform/2026-10/2026-10-18-subsecond-burst-pierce-loadavg-guard.md)
