@@ -1,22 +1,29 @@
 # WebAssembly 兼容扩面 — wasm/core + wasm/webapi
 
-**版本**: v1.1
-**日期**: 2026-10-29（M1 收口：语料全量 + 通道 + 基线 99.98%；异步编译面收敛 +163）
-**状态**: Active——M1 完成；M2 缺口归簇完成（memory64 9F + webapi streaming 27F）；剩 M3 coverage 复测收口
+**版本**: v1.2
+**日期**: 2026-10-29（M3 收口：webapi streaming 27F→2F、memory64 定性翻案 Chrome 同形、coverage 复测闭环）
+**状态**: Done——DC-1~DC-4 全部达成；M1/M2/M3 全部完成（M3 证据见
+[evidence/2026-10-29-m3-close.md](wasm-compat/evidence/2026-10-29-m3-close.md)）
 **执行模式**: WPT 驱动（上游 wasm corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——wasm 面）
 
-**当前卡点**: 无阻塞。M3 收口清单——① coverage 复测（wpt.fyi 对账，wasm/core、
-wasm/webapi 未覆盖子测试清零路径）；② M2 两簇缺口的收敛或挂账定性
-（memory64 64 位 index 面 / webapi streaming Response 集成面，见 evidence）。
+**当前卡点**: 无。挂账移交（不属本 goal 引擎缺口）：
+- webapi streaming 残差 2F（ReadableStream 体含裸 ArrayBuffer chunk 须 TypeError）
+  ——engine streams 体消费 chunk 类型门，net-api goal 域（streams corpus 同面）。
+- memory64 系 9F 定性为 V8 16GB memory64/table64 声明上限 validation 期检查，
+  Chrome stable 同形（102/107、39/41、102/104）——不修，随 drift 巡检重估。
 
-## coverage 对账（coverage-2026-10-27 基线 → 2026-10-29 M1 实跑更新）
+## coverage 对账（coverage-2026-10-27 基线 → 2026-10-29 M3 收口更新）
 
-| WPT 面 | 全量分母（子测试） | M1 实跑 | 说明 |
+| WPT 面 | 全量分母（子测试） | M3 实跑 | 说明 |
 |---|---:|---|---|
-| wasm/jsapi | 2,545 | **878/878 全绿** | 底线重记账：2026-09-12 的 715/945+4T 中 4 个 Timeout 根因收敛（见 evidence） |
-| wasm/core | 188,319 | **188,280/188,289 = 99.99%**（258 wrapper 页 + 273 案中 core 面） | M1 首跑，残差 9F（memory64 64 位 index 面） |
-| wasm/webapi | 1,066 | **245/272 = 90.07%**（window 可执行子集 15 案） | 残差 27F（streaming Response 集成面，单根因） |
+| wasm/jsapi | 2,545 | **878/878 全绿** | 底线重记账：2026-09-12 的 715/945+4T 中 4 个 Timeout 根因收敛（见 evidence）；通道即 window 可执行子集（31/244 文件，立项口径） |
+| wasm/core | 188,385 | **188,280/188,289 = 99.995%**（258 wrapper 页 + 273 案中 core 面） | 残差 9F = memory64 系定性账（Chrome 同形）；分母差额 96 = pin 漂移 87 + 上游新增 cast.wast 9（pin 后文件），pin 内文件覆盖无洞 |
+| wasm/webapi | 1,066 | **270/272 = 99.26%**（window 可执行子集 15 案） | M1 残差 27F → 2F（streams 域挂账）；未拉 66 文件 = worker-only/esm-integration/idlharness（通道 scope 边界） |
+
+coverage 复测（07ce6e987a aligned stable 三家）scoped 报告见
+[evidence/2026-10-29-m3-coverage.md](wasm-compat/evidence/2026-10-29-m3-coverage.md)
+（只 wasm 通道实跑入分子，勿全量引用）。
 
 ## Mission
 
@@ -39,9 +46,11 @@ simd/gc/exceptions/relaxed-simd/bulk-memory/multi-memory 全绿（runner 页面�
   [evidence/2026-10-29-m1-baseline.md](wasm-compat/evidence/2026-10-29-m1-baseline.md)
   （md + json）；失败按簇归口（memory64 9F / webapi streaming 27F，jsapi 缺口随
   4 Timeout 收敛清账）；`wpt-suites.csv` 新增 wasm-core/webapi/jsapi 三条数据行。
-- **DC-4（coverage 复测）**：jsapi 侧已闭环——715 基线逐 subtest 对照零回归 +
-  4 记账 Timeout 收敛（878/878）；wasm/core、wasm/webapi 未覆盖子测试清零路径
-  待 coverage 复测收口（M3）。
+- **DC-4（coverage 复测）✅**：jsapi 侧 715 基线逐 subtest 零回归 + 4 记账
+  Timeout 收敛（878/878）；wasm/core、wasm/webapi 未覆盖子测试清零路径收口——
+  pin 内文件覆盖无洞（core 258/259，缺者系 pin 后上游新增），残差全部归口
+  （9F 定性账 / 2F streams 域挂账 / worker-only 通道 scope），见
+  [evidence/2026-10-29-m3-close.md](wasm-compat/evidence/2026-10-29-m3-close.md)。
 
 ## 里程碑
 
@@ -51,7 +60,11 @@ simd/gc/exceptions/relaxed-simd/bulk-memory/multi-memory 全绿（runner 页面�
   async wasm 编译面收敛（`compile`/`instantiate`/`compileStreaming`/
   `instantiateStreaming` 以原生同步原语重接，spec 语义钉齐——jsapi 4 个记账
   Timeout 的共同根因，净增 +163 零回归）。
-- **M3**：两簇缺口修齐或挂账定性 + coverage 复测收口（DC-4 后半）。
+- **M3 ✅（2026-10-29）**：webapi streaming 簇 27F→2F（runner 面五处：.wasm
+  MIME、同名头去重、Promise<Response> 入参、CT 整值判定、Module 不可序列化
+  登记；jsapi 878/878 零回归）；memory64 簇定性翻案（flag 实验假设证伪——V8
+  已 shipped 无门控 flag，9F = 16GB 声明上限，Chrome stable 同形）；coverage
+  复测收口（DC-4）。残差 2F 挂账移交 net-api 域。
 
 ## 依赖约束（run-rules §9）
 
