@@ -4103,6 +4103,16 @@
             else if (handle) __zw_set_attr_handle(handle, n, '');
             else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, n);
             else __zw_set_attr(sel, n, '');
+            // s158：LINK rel 移除触发 link processing 重跑（spec react to
+            // mutations——rel 属性移除后 link 无关联类型，helper rel 读缺失走
+            // 移除臂：清表 + 级联重算 + 印记清空；与 setAttribute s155 臂同点分流，
+            // 本臂此前缺位使 removeAttribute('rel') 后样式滞留、再入 rel 不重取）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            if (n === 'rel' && targetTag === 'LINK'
+                && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              try { globalThis._zwStylesheetMaybeStart(sel, handle, null); }
+              catch (_eSsRlRm) {}
+            }
             // navigation-compat M3：src/srcdoc 移除 → 重新处理 iframe 属性（srcdoc
             // 移除回落 src（srcdoc_process_attributes ③）；src 移除落 about:blank
             //（iframe_remove_src）。与 setAttribute 钩子对称。
