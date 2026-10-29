@@ -76,6 +76,8 @@ cors-preflight-redirect 对齐 + 本轮 request-upload 对齐。无不明白改�
    Pass）。引擎翻新与语料对齐**必须同步**，单独动任一边都互斥翻红；挂
    goal「后续可推进小片」，建议与语料仓滚动新 tag 同批执行（届时该腿自动
    显影，属预期）。
+   **[2026-10-29 M2-S14 已双侧同步翻转收口（引擎 + 语料同批），见
+   M2-S14 档](2026-10-29-m2-s14-request-disturbed-init-body.md)。**
 2. **additive/数据面不追 HEAD 的口径**：追平 = 分母上涨 + 上游新特性红腿
    （PAC 代理、FormData GC、searchParams 反射、preflight 缓存通配），与
    「残余失败收敛」方向相反；统一留给语料仓滚动 tag 时按 M2-S13 分类表
@@ -83,6 +85,11 @@ cors-preflight-redirect 对齐 + 本轮 request-upload 对齐。无不明白改�
 3. **S12 记账 3 清偿**：巡检已执行，结论**不常态化立项**——13 小时窗漂移面
    仅 9 文件且全部分类处置后，常态化巡检性价比低；语料对账收敛到「语料仓
    滚动 tag 时一次性结算」单点。S12 档记账 3 已加指针。
+   **[2026-10-29 M2-S14 事实修正：「13h 窗」推断不准——net-api 语料有正式
+   pin（goals/lib.sh `WPT_REV=3159769`，上游 2026-08-12 快照；幂等快路径
+   已存在即跳过，本地 mtime 只是首拉时刻非内容时点）。9 个 differ 实为
+   pin→master HEAD（2026-10-29）约 2.5 个月漂移，巡检分类与处置结论不变；
+   见 M2-S14 档](2026-10-29-m2-s14-request-disturbed-init-body.md)。**
 4. **巡检范围**：goal 三族（fetch/url/mimesniff，247 文件）。xhr/streams 在
    通道分母内但不在 goal 三族，未巡检；如后续在该域见可疑红腿，按 S12
    learnings 流程单点核查即可，无需扩巡检。

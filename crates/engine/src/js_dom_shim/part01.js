@@ -6148,8 +6148,8 @@
     // read/cancel 反向标记 bodyUsed（对称 Response _zwWireStreamToBody）。
     // 继承自 input（spec #dom-request）：用户流 tee 分叉（input 留支 0、this 取支 1，
     // 两侧 body getter 返各自新流——request-disturbed 面）；派生字节/文本体直接复制
-    //（不共享懒建流）。input 扰动标记统一在构造器尾（含 init 给体形态——
-    // request-disturbed「even if body is not used」面）。
+    //（不共享懒建流）。input 扰动标记统一在构造器尾（仅未给 init 体形态——
+    // request-disturbed「with a new body is not disturbed」面）。
     if (inheritedStream) {
       var teed = _zwTeeStreamEager(input._zwBodyStream);
       input._zwBodyStream = teed[0];
@@ -6288,10 +6288,13 @@
         return _zwParseFormUrlencoded(text);
       });
     };
-    // spec #dom-request 尾步：全部校验通过后标 input used——init 是否给体无关
-    //（request-disturbed「became disturbed even if body is not used」面）；构造中途
-    // 抛错不标（「construction failure should not set bodyUsed」面）。
-    if (isRequestLike && !this._bodyNull) input._bodyUsed = true;
+    // spec #dom-request 尾步：全部校验通过后标 input used——仅限采纳 input 体形态
+    //（initBody null + inputBody 非空，spec 只有该分支触碰 input 体并过 unusable
+    // 检查）；init 给体时 input 体不被扰动（request-disturbed「with a new body is
+    // not disturbed」面，上游 2026-10-29 期望翻转）。构造中途抛错不标
+    //（「construction failure should not set bodyUsed」面）。
+    //   https://fetch.spec.whatwg.org/#dom-request
+    if (isRequestLike && !this._bodyNull && !bodyGiven) input._bodyUsed = true;
   };
   // net-api 二期 M2-S3：只读原型访问器（spec #request-structure——sloppy 赋值静默
   // 无效、in 判定为真；own-property 赋值会破坏该面，故走 prototype getter + hidden 字段）。
