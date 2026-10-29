@@ -34,6 +34,11 @@ css topdir 全量分母 **195,173 子测试 / 89 个二级目录，ZeroWeb 覆�
 css/css-variables（584 子测试 / 249 文件）是唯一已有 runner 通道的 css
 testharness 套件，因内存问题未进 CI coverage（见 M2）。
 
+**coverage-2026-10-29 复核**：css topdir 分母 195,334 子测试 / 35,319 文件
+（上游清单滚动 +161），覆盖 3 文件 0 通过——全部落在 css/css-scroll-snap
+（845 分母，其他通道顺带页）。试点两目录（css-values / selectors）覆盖
+仍为 0，M0 前提不变。
+
 ## Mission
 
 让 css/* 目录的 testharness 形态语料可运行并入账 coverage，分三件事：
