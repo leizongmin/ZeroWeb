@@ -4,7 +4,7 @@
 - **驱动案**: `css/css-flexbox/flex-grow-009.html` ✗2.08% → **✓0.00%**
 - **corpus**: 800F（R5332 交付态 801F；同树 A/B）→ **800F**（16590 案；**FIXED=1**，REGRESSED=0），通过率 15790/16590 = **95.2%**
 - **域**: flex-grow/shrink 长手 math 求值 × taffy 无穷 flex 因子分配
-- **代码**: `07f12bd82`（fix(flex): 无穷 flex 因子语义——flex-grow-009 ✓ calc(infinity) 吸收全部 free space）
+- **代码**: `4af441b8e`（fix(flex): 无穷 flex 因子语义——flex-grow-009 ✓ calc(infinity) 吸收全部 free space）
 
 ## 定性
 
@@ -45,7 +45,7 @@
 
 - corpus 同树 A/B（基线 R5332 交付态 801F）→ **800F**，集合 diff 恰
   {−flex-grow-009}，REGRESSED=0；kill-switch =0 复现基线全红 10000px
-  （双向可判）；trend 行 @ `07f12bd82` 已录。
+  （双向可判）；trend 行 @ `4af441b8e` 已录。
 - 择轻过程：R5332 挂账头号候选 flexbox-collapsed-item-horiz-002（1.59%）
   dump 图定性 = **多行 strut 迁移重排**（taffy 分行级中型改动，001/003 已过
   仅 002 单案受益）→ 转挂账换案；baseline-synthesis 聚簇 5 案核查 = 全族
