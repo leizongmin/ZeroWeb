@@ -8362,7 +8362,16 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 Ok(bytes) => {
                     let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
                     let mut headers = wpt_pipe_headers(query);
-                    headers.extend(wpt_static_resource_headers(clean));
+                    let default_headers = wpt_static_resource_headers(clean);
+                    // 同名头去重保首项（pipe 优先）：pipe 头与默认 MIME 并存时页面
+                    // Headers.get 按 HTTP 组合语义逗号拼接（`a, a`）——wasm-compat M3
+                    // streaming 面 contenttype 整值判定探针实证误挂；与 CT 解析侧
+                    // 「首项胜出」同向。
+                    for (name, value) in default_headers {
+                        if !headers.iter().any(|(n, _)| n.eq_ignore_ascii_case(&name)) {
+                            headers.push((name, value));
+                        }
+                    }
                     // wptserve `.headers` sidecar 语义：同名 sidecar 的 Content-Type
                     // 覆盖默认 MIME（wpt_static_resource_headers）——替换而非追加
                     //（重复 content-type 头在 CT 解析侧首项胜出，保留单头不变量）。
@@ -8690,6 +8699,13 @@ fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
         Some("image/svg+xml")
     } else if path.ends_with(".ico") {
         Some("image/x-icon")
+    } else if path.ends_with(".wasm") {
+        // wasm-compat M3（2026-10-29）：wasm/webapi streaming 面静态资产 MIME——
+        // 上游 wptserve mime.types 对 `.wasm` 即 application/wasm；webapi contenttype
+        // 合法 MIME 腿经 fetch 静态读断言 compileStreaming 成功。`?pipe=header(...)`
+        // 与 sidecar 覆盖序在前（wpt_pipe_headers 首项胜出 / sidecar retain+push），
+        // invalid MIME 腿语义不受影响。
+        Some("application/wasm")
     } else {
         None
     };
@@ -9043,46 +9059,51 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
       return { module: module, instance: new W.Instance(module, importObject) };
     });
   };
-  W.compileStreaming = function compileStreaming(response) {
-    try {
-      if (!response || typeof response.arrayBuffer !== 'function'
-        || !response.headers || typeof response.headers.get !== 'function') {
-        return Promise.reject(new TypeError(
-          'WebAssembly.compileStreaming(): Argument 0 must be a Response'));
-      }
-      var contentType = String(response.headers.get('content-type') || '');
-      if (contentType.split(';')[0].trim().toLowerCase() !== 'application/wasm') {
-        return Promise.reject(new TypeError(
-          'WebAssembly.compileStreaming(): Response has unsupported MIME type'));
-      }
-      return response.arrayBuffer().then(function(buffer) {
-        return new W.Module(buffer);
-      });
-    } catch (e) {
-      return Promise.reject(e);
+  // streaming 两件（compileStreaming/instantiateStreaming）：入参 Promise<Response>
+  // spec 一等支持——await 后对 resolved 值做 Response 鸭子检查（arrayBuffer +
+  // headers.get）+ application/wasm MIME 判定（大小写不敏感、参数剥离）；
+  // 入参 promise 的 rejection 原样传播（rejected-arg sentinel / fetch AbortError
+  // 不得被换型成 TypeError）；arrayBuffer()/Module 构造错误自然沿链传播。
+  function streamingResponseCheck(response, method) {
+    if (!response || typeof response.arrayBuffer !== 'function'
+      || !response.headers || typeof response.headers.get !== 'function') {
+      return Promise.reject(new TypeError(
+        'WebAssembly.' + method + '(): Argument 0 must be a Response'));
     }
+    // 上游 jsapi 语义：Content-Type 整值逐字比较（大小写不敏感，参数不豁免——
+    // `application/wasm;charset=UTF-8` / `application/wasm;` 均 invalid，上游
+    // contenttype.any.js invalidContentTypes 钉死），非 MIME essence 剥离。
+    var contentType = String(response.headers.get('content-type') || '');
+    if (contentType.trim().toLowerCase() !== 'application/wasm') {
+      return Promise.reject(new TypeError(
+        'WebAssembly.' + method + '(): Response has unsupported MIME type'));
+    }
+    return Promise.resolve(response.arrayBuffer());
+  }
+  W.compileStreaming = function compileStreaming(response) {
+    return Promise.resolve(response).then(function(resolved) {
+      return streamingResponseCheck(resolved, 'compileStreaming');
+    }).then(function(buffer) {
+      return new W.Module(buffer);
+    });
   };
   W.instantiateStreaming = function instantiateStreaming(response) {
     var importObject = arguments[1];
-    try {
-      if (!response || typeof response.arrayBuffer !== 'function'
-        || !response.headers || typeof response.headers.get !== 'function') {
-        return Promise.reject(new TypeError(
-          'WebAssembly.instantiateStreaming(): Argument 0 must be a Response'));
-      }
-      var contentType = String(response.headers.get('content-type') || '');
-      if (contentType.split(';')[0].trim().toLowerCase() !== 'application/wasm') {
-        return Promise.reject(new TypeError(
-          'WebAssembly.instantiateStreaming(): Response has unsupported MIME type'));
-      }
-      return response.arrayBuffer().then(function(buffer) {
-        var module = new W.Module(buffer);
-        return { module: module, instance: new W.Instance(module, importObject) };
-      });
-    } catch (e) {
-      return Promise.reject(e);
-    }
+    return Promise.resolve(response).then(function(resolved) {
+      return streamingResponseCheck(resolved, 'instantiateStreaming');
+    }).then(function(buffer) {
+      var module = new W.Module(buffer);
+      return { module: module, instance: new W.Instance(module, importObject) };
+    });
   };
+  // wasm-compat M3（2026-10-29）：Module 不可序列化（JS-API——Module 无序列化槽位，
+  // structured clone / IDB store.put 抛 DataCloneError；webapi historical.any.js 断言
+  // 面）。原生 Module.prototype 登记进 shim 平台对象拒绝注册表（part02
+  // _zw_structured_clone 的 isPrototypeOf 命中即抛）。
+  if (typeof globalThis.__zwRegisterNonCloneableProto === 'function'
+    && W.Module && W.Module.prototype) {
+    globalThis.__zwRegisterNonCloneableProto(W.Module.prototype);
+  }
   globalThis.WebAssembly = W;
 })();
 "#,

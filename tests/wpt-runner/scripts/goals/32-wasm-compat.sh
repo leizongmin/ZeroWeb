@@ -27,5 +27,9 @@ DIRS=(
 )
 
 goals_fetch_all
+# 顶层 wasm/ 散资产单点补拉（webapi fetch 集成面绝对/相对引用：'/wasm/incrementer.wasm'
+# 与 '../incrementer.wasm' 都落 wasm/incrementer.wasm——DIRS 深挖不覆盖顶层散文件；
+# contenttype/historical/wasm_stream_* 依赖。fetch_raw 由 lib.sh 提供）。
+fetch_raw "wasm/incrementer.wasm" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
 goals_inventory
 goals_next_steps "${GOAL}"
