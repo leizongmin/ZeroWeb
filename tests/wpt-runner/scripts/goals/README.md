@@ -41,7 +41,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 33 | [editing-compat](../../../../docs/goal/editing-compat.md) | editing/run; editing/other | 无（2026-10-27 coverage 立项；长线先语料后引擎，按簇收敛） |
 | 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
 | 35 | [css-testharness-compat](../../../../docs/goal/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **内存治理门控**（2026-10-27 coverage 立项）：M1 分片执行 + coverage 分片管道落地前扩面套件进不了 CI；css-variables 病态内存案解禁在 M2；渲染面归 rendering-compat |
-| 36 | [form-url-encoding-compat](../../../../docs/goal/form-url-encoding-compat.md) | encoding/legacy-mb encode 面（form 46 + href 22） | 无新 fetch（语料已在位，31 号 DC-3 missing=0）；2026-10-29 立项：31 号 M3 甄别归口（acceptCharset 序列化 + encoding-parse a URL）；嵌套导航主干已由 25 号流 s138 落地 |
+| 36 | [form-url-encoding-compat](../../../../docs/goal/archive/form-url-encoding-compat.md) | encoding/legacy-mb encode 面（form 46 + href 22） | **已收口**（2026-10-29 DC-1~4：encode 面 766,958/766,959 = 99.9999%，全量头条 24.19% → 58.02%，已归档；唯一非 P = data: iframe Timeout 契约挂案） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/archive/navigation-compat.md) | history; navigation-api; html/browsers | **已收口**（2026-10-21 M3 收口，M2 437/476 = 91.8%、全量 473P/584 案行，已归档）；残余超口径记账池挂账 |

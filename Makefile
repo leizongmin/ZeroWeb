@@ -450,7 +450,7 @@ fetch-wpt-encoding-legacy-mb:
 testharness-encoding-legacy-mb: target-disk-guard fetch-wpt-encoding-legacy-mb target/test-guard zero-wpt-runner-release
 	ZW_SCRIPT_TIMEOUT_MS=600000 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),5400) -- ./target/release/zero-wpt-runner testharness-encoding-legacy-mb $(if $(FILTER),$(FILTER),)
 
-# form-url-encoding-compat goal（docs/goal/form-url-encoding-compat.md）：legacy-mb
+# form-url-encoding-compat goal（docs/goal/archive/form-url-encoding-compat.md）：legacy-mb
 # encode 面（form 提交编码序列化 + href URL 序列化）68 文件通道——与 decode 通道
 # face 互斥、语料同源（fetch 目标直接复用 31 号脚本，幂等）。ZW_SCRIPT_TIMEOUT_MS
 # 沿 31 号先例（encode-form 页每 variant ~1000 async_test 分窗断言）。基线期面缺

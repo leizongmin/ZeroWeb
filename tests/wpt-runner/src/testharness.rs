@@ -4484,7 +4484,7 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
 }
 
 /// form-url-encoding-compat goal：encode 面案面规则（面单见
-/// docs/goal/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
+/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
 /// 只放行 form 提交编码序列化面（`*-encode-form*.html`，含 label 变体与
 /// errors 面）与 href URL 序列化面（`*-encode-href*.html` + schinese
 /// `*-encoder.html` inline a.href 面 + `big5-enc-ascii.html`）；decode 面
