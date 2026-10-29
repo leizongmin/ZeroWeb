@@ -4005,6 +4005,29 @@ impl WebView {
                 None
             };
             let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+            // s152（html-semantics M2 切片 152）：静态 link rel=stylesheet 文档序交错
+            // 触发——parser 流物化的 link 不经动态 mutation 臂（part01 只覆盖运行期
+            // 插入），静态树 link 零 fetch 零 load/error 事件。spec 的 script-blocking
+            // stylesheet 只阻塞文档序位于其后的 pending parsing-blocking script，故每
+            // 脚本体求值前按序号触发其之前的静态 link（v1「全部脚本前一次触发全部
+            // link」推迟了 link 之前的 var 声明 script，onerror 内 t.step 撞
+            // ReferenceError——WPT link-{error,load}-fired-before-scripting-unblocked
+            // 判式面）。独立 execute：`__zw_fetch` 同步契约 + fetch promise 微任务同
+            // 求值清空 → load/error 先于本脚本体 fire（__zw_begin_script 与体同求值
+            // 不可用）。序号与 shim getElementsByTagName('script') 文档序在册对齐
+            //（extract_page_scripts_indexed 过滤前递增口径）。幂等：shim 侧交错表
+            // 单次建表 + fired 前缀游标单调推进。
+            // FIXME(compat): 交错表为首次调用时的快照，脚本执行期动态插入 link/script
+            // 的序移未追踪；CSP/混合内容拦截 script 的序号仍占位（游标随下一执行脚本
+            // 补齐触发，仅触发时机提前，无漏触发）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            let scan_js = format!(
+                "if (typeof globalThis._zwStylesheetStaticScanUpto === 'function') \
+                 globalThis._zwStylesheetStaticScanUpto({idx});",
+                idx = script_index
+            );
+            let _ = sandbox.execute(&scan_js);
             if let Some(violation) = csp_violation {
                 let document_uri = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
                 let (line, column) = script_positions.get(script_index).copied().unwrap_or((0, 0));

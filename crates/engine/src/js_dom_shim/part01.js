@@ -5527,8 +5527,16 @@
             ? globalThis._zwFetchSimDelay(_us) : 0;
           if (_delayMs === 0 && !/delay\.py|redirect\.py/.test(_us)) {
             // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
+            // s152：静态 stylesheet 交错扫描窗内折叠（__zwScanCollapseTrickle——
+            // part03 _zwStylesheetStaticScanUpto 触发窗置位，同步段结束即清）。
+            // spec 的 script-blocking stylesheet 等待语义由「load 先于后继脚本
+            // 本」承载；runner 无 parser 阻塞，保留 3s 延迟只会把 load 推迟到后
+            // 继脚本断言之后（WPT link-load-fired-before-scripting-unblocked 判
+            // 式面）。fetch API 面 timeout 竞速用例不在扫描窗内，延迟语义零变化。
             var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
-            if (_tp) _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            if (_tp && globalThis.__zwScanCollapseTrickle !== true) {
+              _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            }
           }
         }
         var _issueFetch = function () {

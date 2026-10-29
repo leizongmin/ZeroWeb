@@ -4643,6 +4643,77 @@
       }
     }
   };
+  // s152（html-semantics M2 切片 152）：**静态 link rel=stylesheet 文档序交错触发**——
+  // 此前该面整体缺位：parser 流物化的 link（runner 装载管线的静态树）不经动态
+  // mutation 臂（part01 childList 汇流只覆盖运行期插入），零 fetch 零 load/error
+  // 事件（link-error-fired-before-scripting-unblocked 的 onerror 属性 handler 与
+  // link-load-fired 的 onload 同根恒不触发）。spec 的 script-blocking stylesheet 只
+  // 阻塞文档序位于其后的 pending parsing-blocking script——runner 每执行第
+  // scriptOrdinal 个 script（与 getElementsByTagName('script') 文档序在册对齐，
+  // extract_page_scripts_indexed 过滤前递增口径）前独立求值本入口：按预计算
+  // scriptPrefix 表触发文档序上位于该 script 之前的未触发 link（逐 link 复用
+  // _zwStylesheetMaybeStart 全部门：TAG/连接/rel 分词/href 非空/幂等/mixed——
+  // 非 stylesheet 链接 rel 分词不命中零成本返回）。`__zw_fetch` 同步契约 + fetch
+  // promise 微任务同求值清空 → 该 script 之前 link 的 load/error 先于本脚本体
+  // fire。幂等：交错表首次调用单次建表 + fired 前缀游标单调推进。
+  // FIXME(compat): 交错表为首次调用时的快照（_zwDocAllElements），脚本执行期动态
+  // 插入 link/script 的序移未追踪——动态 link 走 part01/part04/part05 既有触发臂，
+  // 此处幂等门兜底防重。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  var _zwScanLinks = null; // 文档序 link selector 表（前缀游标直取）
+  var _zwScanScriptPrefix = null; // 每 script 前的 link 累计数（script 文档序）
+  var _zwScanFiredCount = 0; // 已触发 link 前缀游标（单调推进）
+  globalThis._zwStylesheetStaticScanUpto = function (scriptOrdinal) {
+    try {
+      var _ord = Number(scriptOrdinal) | 0;
+      if (!(_ord >= 0) || typeof _zwDocAllElements !== 'function'
+          || typeof globalThis._zwStylesheetMaybeStart !== 'function') return;
+      if (_zwScanScriptPrefix === null) {
+        _zwScanLinks = [];
+        _zwScanScriptPrefix = [];
+        var _scAll = _zwDocAllElements();
+        var _scLinks = 0;
+        for (var _sci = 0; _sci < _scAll.length; _sci++) {
+          var _scEl = _scAll[_sci];
+          if (!_scEl || _scEl.nodeType !== 1) continue;
+          var _scLn = '';
+          try { _scLn = String(_scEl.localName || ''); } catch (_eLn) {}
+          if (_scLn === 'script') {
+            _zwScanScriptPrefix.push(_scLinks);
+          } else if (_scLn === 'link') {
+            var _scSel = String(_scEl.__zwSelector || _scEl.__zwHandle || '');
+            if (!_scSel) continue;
+            _zwScanLinks.push(_scSel);
+            _scLinks++;
+          }
+        }
+      }
+      // 目标前缀 = 第 _ord 个 script 前的 link 累计数；序号越界（不该发生——
+      // runner 侧序号有 scripts.len() 界）收敛为全部 link。
+      var _scPrefix = (_ord < _zwScanScriptPrefix.length)
+        ? _zwScanScriptPrefix[_ord] : _zwScanLinks.length;
+      // prevHref 传 null（首次物化总取语义）；门内 rel 分词/href 非空/TAG/连接
+      // 门自甄别——非 stylesheet 链接（author/preconnect/icon 等静态链接常见面）
+      // rel 分词不命中零成本返回，游标照常推进（槽位语义按 link 元素计数）。
+      // 触发窗置位 __zwScanCollapseTrickle（part01 fetch wrapper trickle 仿真读）：
+      // 扫描窗内发起的取取体折叠 trickle 延迟——同步段结束即清位，.then 链内
+      // @import 内层取回与页面 fetch() 均不受影响。
+      globalThis.__zwScanCollapseTrickle = true;
+      try {
+        while (_zwScanFiredCount < _scPrefix) {
+          globalThis._zwStylesheetMaybeStart(_zwScanLinks[_zwScanFiredCount], null, null, null);
+          _zwScanFiredCount++;
+        }
+      } finally {
+        globalThis.__zwScanCollapseTrickle = false;
+      }
+    } catch (_eScan) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eScan, null); } catch (_eScanR) {}
+      }
+    }
+  };
   // s113：type/language 分类器供 part04 R387/s95 臂与后续写入执行面复用（导出
   // 随本层求值恒在——_zwPrepareSrcScript 同款理由）。
   globalThis._zwScriptTypeClassify = _zwScriptTypeClassify;
