@@ -4547,6 +4547,17 @@
   var _zwSsFiredMap = {};   // identity key → 最后一次发起取回的解析 URL
   var _zwSsRetryDone = {};  // identity key → 重查已排程（单发）
   var _zwPreloadCache = {}; // s155：identity key → preload 取回完成的解析 URL（rel 转换复用）
+  // s157：stylesheet 取回在飞计数——spec stylesheet 加载 delay the document load
+  // event（HTML the-link-element styling——加载完成前 window load 不派发）。
+  // _ssVisit 每层恰一次 settle（同步门/then 链全路径）→ 包装计数归零；runner
+  // loadStep5275 经 __zwStylesheetFetchPending 轮询。preload 取回不计数
+  //（resource hint 不 delay load）。谓词按尾扫触发印记（_zwSsTailFired）门控：
+  // 仅脚本流末尾补扫真实推进游标的页面激活 load 持有——无尾随 link 的页面
+  // 谓词恒 false 与基线全同（该文件族 case 内 2s 竞速窗 ×4 对 harness 全局
+  // 预算贴边，非尾随面按页边际必须归零）。
+  var _zwSsLoadPending = 0;
+  var _zwSsTailFired = false;
+  globalThis.__zwStylesheetFetchPending = function () { return _zwSsTailFired && _zwSsLoadPending > 0; };
   // s154 单发重查排程（见下方②）：同身份只排一次；+0ms 后按原身份重跑（身份
   // 缺失时回落 elObj 现读——R368 盖章形 append 臂的 elObj 后到章）。重查再 bail
   // 不再排程（_zwSsRetryDone 印记），detached 恒态零循环。
@@ -4720,7 +4731,7 @@
       //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
       // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
       // 门不受影响。
-      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDone) {
+      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDoneRaw) {
         var _ssBlocked = false;
         try {
           var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
@@ -4733,12 +4744,26 @@
         if (_ssBlocked) {
           // 同步回调：批内序先于微任务 load 子归零——先标 failed 后再归零，防
           // 同批可 load 内层的微任务抢先 fire load（聚合语义 error 优先）。
-          _ssOnDone('error');
+          _ssOnDoneRaw('error');
           return;
         }
+        // s157：取回在飞 pending——每层 _ssVisit 恰一次 settle（同步门/then 链全
+        // 路径），包装在 settle 点归零；@import 内层递归逐层自计。fetch 同步抛按
+        // 取回拒绝语义归零派 error（旧路径外层 catch 静默无事件——计数平衡优先）。
+        var _ssOnDone = function (_ssV) {
+          _zwSsLoadPending--;
+          _ssOnDoneRaw(_ssV);
+        };
+        _zwSsLoadPending++;
         var _ssP;
-        _zwStylesheetChannelDepth++;
-        try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
+        try {
+          _zwStylesheetChannelDepth++;
+          try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
+        } catch (_eSsF157) {
+          _zwSsLoadPending--;
+          _ssOnDoneRaw('error');
+          return;
+        }
         _ssP.then(function (_ssR) {
           if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
           if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
@@ -4813,8 +4838,10 @@
           }
         }
       }
-      // 目标前缀 = 第 _ord 个 script 前的 link 累计数；序号越界（不该发生——
-      // runner 侧序号有 scripts.len() 界）收敛为全部 link。
+      // 目标前缀 = 第 _ord 个 script 前的 link 累计数；序号越界收敛为全部
+      // link——常规交错路径序号有界（runner 侧 scripts.len()），越界调用即
+      // s157 脚本流末尾补扫（webview.rs 尾扫）。
+      var _scFrom = _zwScanFiredCount;
       var _scPrefix = (_ord < _zwScanScriptPrefix.length)
         ? _zwScanScriptPrefix[_ord] : _zwScanLinks.length;
       // prevHref 传 null（首次物化总取语义）；门内 rel 分词/href 非空/TAG/连接
@@ -4831,6 +4858,12 @@
         }
       } finally {
         globalThis.__zwScanCollapseTrickle = false;
+      }
+      // s157：尾扫（越界调用）真实推进游标 → 置位 load 持有门控印记；常规
+      // 交错扫描（序号有界）不置位——其取回时序由既有谓词覆盖，不扩大
+      // loadStep5275 持有面。
+      if (_zwScanFiredCount > _scFrom && _ord >= _zwScanScriptPrefix.length) {
+        _zwSsTailFired = true;
       }
     } catch (_eScan) {
       if (typeof globalThis._zwReportListenerError === 'function') {

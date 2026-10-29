@@ -4438,6 +4438,25 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
+        // s157（html-semantics M2 切片 157）：尾随静态 link 触发收口——per-script
+        // 交错扫描只覆盖「script 之前的 link」（spec：script-blocking stylesheet
+        // 只阻塞其后 pending script），最后一个 script 之后的尾随 link
+        //（link-load-event.html 形态：trickle(d3) stylesheet + window load 断言）
+        // 零触发零事件——onload 恒不 fire。脚本流末尾补扫：序号传 i32::MAX，shim
+        // 侧越界收敛为全部 link（游标幂等——已触发段零成本返回）。spec 时序不变式：
+        // 尾随 stylesheet 不阻塞任何已执行 script，只 delay document load event
+        //（loadStep5275 经 __zwStylesheetFetchPending 轮询在飞取回）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+        {
+            let sandbox = self
+                .js_sandbox
+                .as_mut()
+                .ok_or_else(|| WebViewError::Script("no js sandbox".to_string()))?;
+            let _ = sandbox.execute(
+                "if (typeof globalThis._zwStylesheetStaticScanUpto === 'function') \
+                 globalThis._zwStylesheetStaticScanUpto(2147483647);",
+            );
+        }
         self.page_scripts_initialized = true;
         // security-hardening M2-s2：被 CSP 阻止的 markup img 在**页面脚本之后**统一
         // 派发 error（onerror 语义）——上游 error 于文档序内触发，页面此前注册的

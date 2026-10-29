@@ -83,6 +83,9 @@ fn with_dom_mut<R>(f: impl FnOnce(&mut Document) -> R) -> Option<R> {
 /// `dom_bindings::document_compat_mode_string`：headless 通道 `__zw_get_compat_mode`
 /// 桥共用——DOM 源缺席回落 "CSS1Compat"，与 shim getter 的桥缺席回落同口径）。
 /// https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+/// cfg 镜像唯一调用臂（js_dom_bridge compat_mode_callback quickjs 腿）——v8
+/// 默认构建下该臂缺席，函数本体若常在即 dead-code（78754deb3 引入面）。
+#[cfg(all(feature = "quickjs", not(feature = "v8")))]
 pub(crate) fn document_compat_mode_string() -> String {
     match with_dom(|d| d.quirks_mode()) {
         Some(zero_dom::QuirksMode::Quirks) => "BackCompat".to_string(),
