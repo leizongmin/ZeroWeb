@@ -11878,9 +11878,30 @@
         if (prop === 'sheet') {
           var _shTag = _realTag(sel, handle);
           if (_shTag === 'STYLE' || _shTag === 'LINK') {
+            // s156：CSSOM 创建门——type essence 门（CSSOM create a CSS style sheet：
+            // type 属性存在且 essence 非 text/css → 不创建返 null；ASCII 案面
+            // TeXt/CsS 小写归一创建、text/cſs 不创建）。type 缺省不设门（缺省即
+            // text/css 语义）。style4 type="text/html" 断言面。
+            // https://drafts.csswg.org/cssom/#create-a-css-style-sheet
+            var _shType = (handle ? __zw_get_attr_handle(handle, 'type')
+              : (sel ? __zw_get_attr(sel, 'type') : '')) || '';
+            if (String(_shType).trim() !== '') {
+              var _shEssence = String(_shType).split(';')[0].trim().toLowerCase();
+              if (_shEssence !== 'text/css') return null;
+            }
             if (_shTag === 'LINK') {
               var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
               if (!/\bstylesheet\b/i.test(_lrel)) return null; // link 非 stylesheet → null
+              // s156：alternate + 空 title 门（HTML spec the-link-element styling：
+              // rel 含 alternate 且 title 属性值为空串 → 不创建返 null；title 属性
+              // 缺失同空串。style2（title=""）/style3（无 title）断言面；style6
+              //（alternate + 非空 title）照常创建）。
+              // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+              if (/\balternate\b/i.test(_lrel)) {
+                var _ltitle = (handle ? __zw_get_attr_handle(handle, 'title')
+                  : (sel ? __zw_get_attr(sel, 'title') : '')) || '';
+                if (String(_ltitle) === '') return null;
+              }
             }
             // js-dom M4 R113：handle-based <style>（createElement 后 append 入 head——CSS-in-JS
             // 与 WPT prefixed-animation 用例形态）也返 CSSStyleSheet。规则读写经 `_makeStyleSheet`
