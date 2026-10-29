@@ -11,6 +11,8 @@ RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
 
 FILES=(
   "resources/testharness.js"
+  "resources/testharnessreport.js"
+  "common/subset-tests.js"
   "html/semantics/forms/the-output-element/output.html"
   "html/semantics/forms/the-input-element/input-whitespace.html"
   "html/interaction/focus/sequential-focus-navigation-and-the-tabindex-attribute/focus-tabindex-default-value.html"
