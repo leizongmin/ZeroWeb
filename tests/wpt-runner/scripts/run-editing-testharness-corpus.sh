@@ -24,7 +24,8 @@
 #    解析（共享路径时后启实例启动即 `: > transcript` 截断，先启实例的账丢失、
 #    双方 JSON 互相掺案）。
 #
-# 为何每案另有外部墙钟（CASE_WALL_S，run 通道建议 ≥150）：runner 内部
+# 为何每案另有外部墙钟（CASE_WALL_S，run 通道不设时按案自适应、nv=0 下限
+# 420s）：runner 内部
 # per-case 超时在同步脚本死循环形态下拦不住（css selectors 首跑实证），
 # 外部 timeout 兜底杀单案（rc 124/137 记 Timeout 行，账面不缺案）。
 
@@ -67,8 +68,8 @@ fi
 # 整变体 aborted 无子测试行（declared 0）。实证：bold 四变体 90s 下 12 行，
 # 300s 预算下 3048 行全出（1138P/1910F）——非死循环。CASE_WALL_S 只是外部
 # 兜底杀，调它不解锁变体。run 通道缺省预算 300s/变体；CASE_WALL_S 缺省按案
-# 内变体数计（60 + 变体数×330 + 90 底）——multitest 10 变体需 ~3400s，统一
-# 420s 口径必然外部截断。显式 env 仍优先。
+# 内变体数计（60 + 变体数×330 + 90 底，nv=0 下限 420s）——multitest 10 变体
+# 需 ~3400s，统一 420s 口径必然外部截断。显式 env 仍优先。
 if [[ "${CORPUS}" == "run" && -z "${ZW_SCRIPT_TIMEOUT_MS:-}" ]]; then
   export ZW_SCRIPT_TIMEOUT_MS=300000
 fi
@@ -94,6 +95,10 @@ while read -r f; do
     nv="$(grep -c 'meta name="variant"' "${DATA_DIR}/${f#"${DATA_DIR}"/}" 2>/dev/null || true)"
     if [[ "${CORPUS}" == "run" ]]; then
       case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+      # nv=0 大单页案在 300s 脚本预算下真实耗时可超 150s（createlink-with-selecting-img
+      # 曾被 150s 下限 external kill——M2-r1 时代 90s 看门狗先截断才显得 420s 够用），
+      # 下限取 420s（= 单变体口径 60+300+余量，与 run 通道建议一致）。
+      (( case_wall < 420 )) && case_wall=420
     else
       # R5342（2026-10-30）：other 面同形自适应——此前平墙 120s 对变体多案过紧：
       # join-different-white-space-style 三案（nv=60）单案实测 ~150-170s
