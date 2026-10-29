@@ -1,6 +1,6 @@
 # css-testharness-compat master
 
-**状态**: Active——M0 完成（DC-1，2026-10-30）；M1 未启动
+**状态**: Active——M0 完成（DC-1）、M1 完成（DC-2，2026-10-30）；M2 未启动
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
@@ -8,12 +8,31 @@
 | 里程碑 | 内容 | 判据 | 状态 |
 |---|---|---|---|
 | M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | **完成**（2026-10-30，[基线 evidence](evidence/2026-10-30-m0-pilot-baseline.md)） |
-| M1 | runner 套件内存治理（RSS 归因 → 方案选型 → coverage 分片消费管道） | DC-2 | 未启动 |
+| M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
 | M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | 未启动 |
 | M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | 未启动 |
 | M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（csv 试点数据行已回填） |
 
-## 本轮记录（2026-10-30，M0 收口）
+## 本轮记录（2026-10-30，M1 收口）
+
+- **归因否证**：逐案 RSS 插桩（`ZW_TESTHARNESS_MEM_LOG=1`，`HarnessCaseTimer`
+  RAII + `/proc` 采样，镜像 `REFTEST_MEM_LOG` 先例）实测四序列 197 案斜率
+  0.06–0.82MB/案——"~35MB/案线性累积"前提不成立；历史 css-variables >8.8GB
+  修正为病态案 4.9GB 抬升笼水位的平摊误读。内存维度不治理，每案独立进程通道
+  的真实价值 = 病态内存案与原生同步死循环案的外部兜底隔离。
+- **DC-2 交付**：分片 corpus 脚本增 JSON 通道（`CSS_CORPUS_JSON_DIR` runner
+  形状合并数组 + `CSS_CORPUS_ONLY_SUBSTR` 子集过滤 + 墙钟杀案合成 Timeout
+  条目）；`verify-css-corpus-json-parity.sh` + `make testharness-css-parity`
+  恒等复验（selectors 43/43、css-values 59/59 IDENTICAL）；`wptfyi_gap.py`
+  results 目录通配 + 按案取最完整——分片文件零特调投喂。
+- **全量端到端**：selectors 274 案 2,001P/2,249F/6TO（4m11s）、css-values
+  256 案 738P/4,837F/12TO（2m47s），与 M0 文本基线逐项一致，合并 JSON 落
+  coverage 消费形状。
+- **回归修复**：`trend_csv_check` 抓到 M0 回填的 csv 行 note 字段含裸逗号
+  （17 列违反生成器契约，单测先红）——去逗号修复，runner bin 265/265 过。
+- **经验沉淀**：[守卫杀树总增量按案平摊会伪造线性内存累积结论](../../../learnings/bugs/2026-10/2026-10-30-guard-kill-total-averaging-fakes-linear-memory-growth.md)。
+
+## 上一轮记录（2026-10-30，M0 收口）
 
 - **通道落地**：`testharness-css-values` / `testharness-selectors` 子命令
   （tests/wpt-runner/src/testharness_css_corpus.rs，svg 模块先例）+ 内容
@@ -69,14 +88,13 @@
 - **零回归底线**：css 值语义修复若触 `zero-engine`/`style-system`，与
   rendering-compat 的 reftest 回归门（716/716）同窗验证，防两账互相打红。
 
-## 下一步（M0 检查单）
+## 下一步（M2 检查单）
 
-1. 语料：`FORCE=1 bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh`
-   深拉 css-values + selectors（含 support 资产），盘点落 evidence。
-2. runner：`testharness-css-values` / `testharness-selectors` 子命令（或单一
-   `testharness-css` 按目录过滤）+ per-dir skip 规则 + Makefile target
-   （test-guard 包裹，skip 两侧同源防漂移——html-semantics 先例）。
-3. 干跑基线：全量分类通过率（文本 + JSON）落
-   `evidence/`，形态分簇表（直跑 / any.js / 资产依赖）入账；
-   `docs/compat/trends/wpt-suites.csv` 回填数据行（DC-1）。
-4. DC-1 落成后转 M1：RSS 归因小实验先行，再选型落地内存治理。
+1. css-variables 病态案排除：`variable-exponential-blowup.html`（4.9GB 单案
+   实证）与 `*-crash.html` 进 runner 谓词（`css_testharness_case_skipped` 同款
+   单点，fetch 脚本头注释两侧同源——M0 先例）。
+2. css-variables 分片 JSON 接 coverage misc 分片：corpus 脚本已参数化
+   （CORPUS=css-variables 需补 SUBCMD 分支与 35 号 DIRS 核对），584 子测试
+   入账（DC-3：快照 css/css-variables 组 covered>0）。
+3. DC-3 落成后转 M3 扩面（top15 逐目录过 M0 模板，cssom-view / geometry 先
+   按 run-rules §9 协调）或 M4 复测收口。

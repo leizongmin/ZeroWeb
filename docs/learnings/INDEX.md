@@ -5,10 +5,12 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（198）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（200）
 
+- 2026-10-30 [守卫杀树总增量按案平摊会伪造"线性内存累积"结论](bugs/2026-10/2026-10-30-guard-kill-total-averaging-fakes-linear-memory-growth.md) — wpt-runner, testing
 - 2026-10-29 [WPT 红腿排查先证上游漂移，再动引擎/runner——一次 stash 冲突假设的证伪](bugs/2026-10/2026-10-29-wpt-red-leg-upstream-drift-first.md) — wpt-runner,net-api-compat
 - 2026-10-29 [官网移动端溢出需要检查网格最小宽度和展开内容](bugs/2026-10/2026-10-29-website-grid-overflow.md) — website, generate-website
+- 2026-10-29 [template content 物化重入 + 栈耗尽吞 RangeError 导致 details 互斥 flake](bugs/2026-10/2026-10-29-template-content-scan-reentrant-materialization.md) — engine
 - 2026-10-29 [rust-url 保留裸 `%` 不归一 `%25`——预编码输出必须源侧归一](bugs/2026-10/2026-10-29-rust-url-preserves-bare-percent.md) — engine
 - 2026-10-29 [QuickJS 全局 `var` 重声明不转换自有 accessor——WPT 全局变量拼接值静默丢失](bugs/2026-10/2026-10-29-quickjs-global-var-accessor-conversion.md) — engine,script-sandbox,wpt-runner
 - 2026-10-28 [解析产物属性必须工厂直灌，不走 setAttribute（R4100 形态）](bugs/2026-10/2026-10-28-parse-product-attrs-factory-not-setattr.md) — engine
@@ -206,9 +208,10 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（26）
+## Patterns — 可复用代码模式与最佳实践（27）
 
 - 2026-10-29 [WPT encode-form 期望按 per-scalar fresh 编码出字节——整串流式编码对 stateful 编码必判 FAIL](patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md) — engine, tests/wpt-runner
+- 2026-10-29 [布局根因排查：单点观测插桩定谳，不用手工推演开局](patterns/2026-10/2026-10-29-diagnose-layout-by-observation-over-simulation.md) — crates/taffy-local,crates/layout-engine
 - 2026-10-23 [真 Chrome 仲裁：WPT 语料在本地 Chromium 的基线跑法](patterns/2026-10/2026-10-23-real-chrome-wpt-arbitration.md) — wpt-runner, engine
 - 2026-10-23 [IFC collect 期 styles 依赖判定必须有存储信号镜像（paint Path B 空 styles）](patterns/2026-10/2026-10-23-ifc-collect-styles-dependent-branch-needs-stored-signal.md) — layout-engine/inline, engine/paint
 - 2026-10-19 [spec 字面与 WPT 语料分歧时：先查真实引擎结果，语料是验收标尺](patterns/2026-10/2026-10-19-spec-literal-vs-corpus-pin.md) — engine

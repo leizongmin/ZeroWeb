@@ -27,6 +27,7 @@ struct RunnerFlags {
     corpus_case_timeout_secs: Option<u64>,
     script_timeout_ms: Option<u64>,
     time_log: bool,
+    mem_log: bool,
     raf_frame_driven: bool,
     timer_per_task: bool,
     disable_pump: bool,
@@ -44,6 +45,7 @@ fn runner_flags() -> &'static RunnerFlags {
             .ok()
             .and_then(|v| v.parse::<u64>().ok()),
         time_log: std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1"),
+        mem_log: std::env::var("ZW_TESTHARNESS_MEM_LOG").ok().as_deref() == Some("1"),
         raf_frame_driven: std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1"),
         timer_per_task: std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0"),
         disable_pump: std::env::var("ZW_DISABLE_PUMP").is_ok(),
@@ -8866,6 +8868,23 @@ pub(crate) fn run_testharness_html_inner(
     )
 }
 
+/// 当前进程 VmRSS / VmHWM（kB，读 /proc/self/status；非 Linux 或读取失败返回
+/// None）。镜像 main.rs `log_mem_if_enabled` 的读法（REFTEST_MEM_LOG 先例——
+/// 区分真 leak vs allocator RSS retention）。
+fn process_rss_hwm_kb() -> Option<(usize, usize)> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let mut rss = None;
+    let mut hwm = None;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            rss = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("VmHWM:") {
+            hwm = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+        }
+    }
+    rss.zip(hwm)
+}
+
 /// [`run_testharness_html_inner`] 的注入模式参数化形态（dnd 通道传
 /// [`PointerStepInjection::DragStateMachine`]，其余通道经包装走默认）。
 /// 诊断（env `ZW_TESTHARNESS_TIME_LOG=1` 启用）：每案分段计时（镜像 main.rs
@@ -8873,9 +8892,14 @@ pub(crate) fn run_testharness_html_inner(
 /// js-dom shim 的 V8 编译）/setup/媒体登记各段耗时与探针循环轮数，定位每案
 /// 固定成本。输出走 stderr：`--json` 时 stdout 必须是纯 JSON（main.rs 结束时
 /// 单次 println）。env 关闭时仅一次 env 读 + 一次 `Instant::now`。
+/// 另有 env `ZW_TESTHARNESS_MEM_LOG=1`：每案起止各读一次进程 RSS（css
+/// testharness-compat M1 RSS 归因——单进程长套件每案 ~35MB 线性累积来自
+/// allocator 驻留还是引擎态保留，Drop 点在 WebView 析构之后，delta 即该案
+/// 拆除后仍驻留的增量）。
 struct HarnessCaseTimer {
     id: String,
     enabled: bool,
+    rss_start_kb: Option<usize>,
     start: std::time::Instant,
     phase: std::time::Instant,
     segments: Vec<(&'static str, u128)>,
@@ -8886,9 +8910,16 @@ impl HarnessCaseTimer {
     fn new(id: &str) -> Self {
         let now = std::time::Instant::now();
         let enabled = runner_flags().time_log;
+        let mem_log = runner_flags().mem_log;
+        let rss_start_kb = if mem_log {
+            process_rss_hwm_kb().map(|(rss, _)| rss)
+        } else {
+            None
+        };
         Self {
             id: id.to_string(),
             enabled,
+            rss_start_kb,
             start: now,
             phase: now,
             segments: Vec::new(),
@@ -8907,24 +8938,29 @@ impl HarnessCaseTimer {
 
 impl Drop for HarnessCaseTimer {
     fn drop(&mut self) {
-        if !self.enabled {
-            return;
+        if self.enabled {
+            // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
+            let run_ms = self.phase.elapsed().as_millis();
+            let segs = self
+                .segments
+                .iter()
+                .map(|(name, ms)| format!("{name}={ms}ms"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            eprintln!(
+                "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
+                self.id,
+                segs,
+                self.rounds,
+                self.start.elapsed().as_secs_f64()
+            );
         }
-        // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
-        let run_ms = self.phase.elapsed().as_millis();
-        let segs = self
-            .segments
-            .iter()
-            .map(|(name, ms)| format!("{name}={ms}ms"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        eprintln!(
-            "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
-            self.id,
-            segs,
-            self.rounds,
-            self.start.elapsed().as_secs_f64()
-        );
+        if let Some(start_kb) = self.rss_start_kb
+            && let Some((rss, hwm)) = process_rss_hwm_kb()
+        {
+            let delta = rss as i64 - start_kb as i64;
+            eprintln!("[th-rss] {} | rss_kb={rss} delta_kb={delta} hwm_kb={hwm}", self.id);
+        }
     }
 }
 

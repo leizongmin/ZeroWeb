@@ -595,6 +595,11 @@ testharness-css-values-one: fetch-wpt-css-testharness target-disk-guard target/t
 testharness-selectors-one: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-selectors $(if $(FILTER),$(FILTER),)
 
+# css-testharness-compat M1 / DC-2 等价判据复验：分片通道合并结果 ≡ 单进程 --json
+# （(case, 子测名→status) 集合恒等）。换目录子集：make testharness-css-parity CORPUS=css-values FILTER=css/css-values/calc
+testharness-css-parity: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- bash tests/wpt-runner/scripts/verify-css-corpus-json-parity.sh $(or $(CORPUS),selectors) $(or $(FILTER),css/selectors/i18n/) ./target/release/zero-wpt-runner
+
 # security-hardening goal M1（docs/goal/archive/security-hardening.md）：上游 content-security-policy/
 # + mixed-content/ + secure-contexts/ 三 corpus window 可执行子集（fetch 脚本 sparse
 # 克隆首批指令面 + runner 侧内容规则筛减 ref/manual/iframe/worker）。基线首跑只记
