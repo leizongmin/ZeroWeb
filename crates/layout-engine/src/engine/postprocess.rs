@@ -1707,13 +1707,19 @@ pub(super) fn shift_siblings_after_ifc_grow(
     let parent_backfill = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
         std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0")
     });
-    shift_siblings_after_ifc_grow_inner(box_node, styles, inside_multicol, parent_backfill);
+    shift_siblings_after_ifc_grow_inner(box_node, styles, inside_multicol, false, parent_backfill);
 }
 
 fn shift_siblings_after_ifc_grow_inner(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     inside_multicol: bool,
+    // R5330：本盒（box_node）是 column 方向 flex 容器的 item——主轴（height）已由 flex
+    // 算法定尺（可收缩到分配值），非「内容决定型 auto 高」，R1743 max-bottom 回填不得
+    // 扩展（css-flexbox-1 §4.1：flexed main size 即 definite used size，内容溢出可见但
+    // 不回撑 item）。由父层调用点按 is_col_flex_item_no_backfill 传入（父为 column flex
+    // ∧ 本盒 is_flex_grid_item ∧ 本盒指定 min-height 非 auto）。
+    in_column_flex_main: bool,
     parent_backfill: PostprocessEnvFlag,
 ) {
     use zero_css_parser::values::{DisplayValue, FloatValue};
@@ -1844,12 +1850,42 @@ fn shift_siblings_after_ifc_grow_inner(
     let mut prev_plain = false;
     let mut prev_atomic_inline = false;
     let mut prev_margin_bottom: f32 = 0.0;
+    // R5330：本盒是否为 column 方向 flex 容器——其 flex-grid item 子的主轴（height）由
+    // flex 算法定尺，递归下钻时对这类子传入豁免信号（非 item 子/row 容器不受影响）。
+    let self_is_column_flex = box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+            && matches!(
+                s.flex_direction,
+                FlexDirectionValue::Column | FlexDirectionValue::ColumnReverse
+            )
+    });
+    // R5330：column flex 容器对 flex-grid item 子的主轴高回填豁免（css-flexbox-1 §4.1：
+    // flexed main size 即 definite used size，内容溢出不回撑 item）。仅限**指定 min-height
+    // 非 auto** 的 item——automatic minimum 被显式关闭，主轴高完全由 flex 算法定尺
+    //（flex-minimum-height-flex-items-027：min-height:0 item 100px 被回填到子底 200px）。
+    // min-height:auto 的 item 保留回填：taffy automatic min 测量回 transferred size 而非
+    // content size suggestion（flex-aspect-ratio-026 子例 2/3/6/7 item 25px 应 200px），
+    // R1743 回填是该短板的现行补偿位，撤销须先补 taffy content-suggestion 臂。
+    // row 容器 item 的 height 是 cross 轴（内容决定型时回填仍是合法 R1743 修复位），不在
+    // 豁免域。kill-switch `ZW_FLEX_COL_ITEM_NO_HEIGHT_BACKFILL=0`（default-on）。
+    let is_col_flex_item_no_backfill = |child: &LayoutBox| {
+        self_is_column_flex
+            && child.is_flex_grid_item
+            && child
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| !matches!(s.min_height, LengthValue::Auto))
+    };
     // R5095 kill-switch：`ZW_IFC_ATOMIC_PAIR_NO_SHIFT=0` 恢复「atomic inline prev 对
     // atomic inline next 的重叠下推」旧行为。
     let atomic_pair_no_shift = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
         std::env::var("ZW_IFC_ATOMIC_PAIR_NO_SHIFT").as_deref() != Ok("0")
     });
     let auto_parent_height = box_node.declared_height_auto;
+    // R5330：column flex item 主轴高豁免回填的 kill-switch（进程级单读，R5108 教训）。
+    static COL_FLEX_NO_BACKFILL: OnceLock<bool> = OnceLock::new();
+    let col_flex_no_backfill_enabled = *COL_FLEX_NO_BACKFILL
+        .get_or_init(|| std::env::var("ZW_FLEX_COL_ITEM_NO_HEIGHT_BACKFILL").as_deref() != Ok("0"));
     // R3765（css-sizing-4 §5.2）：`aspect-ratio` + definite width + height:auto + **非
     // visible overflow** 的块盒，used block-size 已由 ratio **传递确定**（taffy 已按 100
     // 布局），非「内容决定型 auto 高」——scroll container 无 content-based minimum，
@@ -1906,7 +1942,15 @@ fn shift_siblings_after_ifc_grow_inner(
                                 | zero_style_system::WritingModeValue::VerticalLr
                         ))
             })
-        && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"));
+        && parent_backfill.value(|| std::env::var("ZW_IFC_PARENT_HEIGHT_BACKFILL").as_deref() != Ok("0"))
+        // R5330（css-flexbox-1 §4.1）：column flex item 指定 min-height 非 auto 时，主轴高
+        // 已由 flex 算法定尺（automatic minimum 被显式关闭，flex 收缩/分配的 definite used
+        // size），其子内容溢出不构成「taffy 欠计」——max-bottom 回填把收缩后的 item 重新
+        // 撑回内容高（flex-minimum-height-flex-items-027 实证：item 100px 被回填到子底
+        // 200px）。min-height:auto 的 item 保留回填（taffy automatic min 短板补偿，详见
+        // is_col_flex_item_no_backfill）；row 容器的 item 主轴是 width、height 为 cross
+        // 轴（内容决定型时回填仍是合法 R1743 修复位），不在本豁免域。
+        && !(in_column_flex_main && col_flex_no_backfill_enabled);
     let mut max_in_flow_bottom: f32 = 0.0;
     let mut has_negative_margin = false;
     // R3754：父 BFC 判定先于子循环借用（ establishes_bfc 只读 box_node 自身标志）。
@@ -1924,7 +1968,13 @@ fn shift_siblings_after_ifc_grow_inner(
             // 仍下钻（子可能是 block-flow 容器）。R4263：::scroll-button 合成盒叶（坐标
             // 烘焙）——不入 prev/shiftee 链（flex row 并排按钮被重叠模型逐个下推），
             // 亦不被累积位移改写。
-            shift_siblings_after_ifc_grow_inner(child, styles, children_inside_multicol, parent_backfill);
+            shift_siblings_after_ifc_grow_inner(
+                child,
+                styles,
+                children_inside_multicol,
+                is_col_flex_item_no_backfill(child),
+                parent_backfill,
+            );
             continue;
         }
         if shift_active {
@@ -1975,7 +2025,13 @@ fn shift_siblings_after_ifc_grow_inner(
                 }
             }
         }
-        shift_siblings_after_ifc_grow_inner(child, styles, children_inside_multicol, parent_backfill);
+        shift_siblings_after_ifc_grow_inner(
+            child,
+            styles,
+            children_inside_multicol,
+            is_col_flex_item_no_backfill(child),
+            parent_backfill,
+        );
         if shift_active {
             prev_bottom = Some(child.y + child.height);
             prev_plain = is_plain_real_block(child);

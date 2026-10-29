@@ -893,3 +893,6 @@ mod r5316_va_text_neg_leading_tests;
 /// MinContent/MaxContent 回固有尺寸（非 0），flex item automatic min 的 specified/
 /// content size suggestion 生效（flex-minimum-width-flex-items-005/006）。
 mod r5329_replaced_leaf_intrinsic_min_tests;
+/// R5330（css-flexbox-1 §4.1）column flex item 主轴高回填豁免锚——指定 min-height 非
+/// auto 的 item 保持 flex 定尺不被 R1743 max-bottom 回填（flex-minimum-height-flex-items-027）。
+mod r5330_col_flex_item_no_backfill_tests;
