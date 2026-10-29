@@ -795,6 +795,24 @@ jobs:
               fetch-wpt-navigation
             fetch_scripts: ""
             time_limit: 3600
+          # 2026-10-29 后新入账的三个大子测试面（合计 ~110 万，缺任一都会让
+          # coverage 头条显著失真）：wasm-core 188k（32 号已归档）、legacy-mb
+          # decode 360k（31 号已归档）、form-url encode 550k（36 号 M1）。
+          - name: wasm-core
+            suites: "wasm-core"
+            fetch: "fetch-wpt-wasm fetch-wpt-wasm-core"
+            fetch_scripts: ""
+            time_limit: 7200
+          - name: mb-decode
+            suites: "encoding-legacy-mb"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            time_limit: 7200
+          - name: form-encode
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            time_limit: 7200
           - name: timing
             suites: >-
               resource-timing navigation-timing event-timing longtask-timing
