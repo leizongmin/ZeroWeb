@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15788,
+  "passed": 15789,
   "rate_pct": 95.2,
-  "extra": "failed=802;skipped=0",
-  "git_sha": "deaa29eff",
-  "note": "R5331 column flex 容器内在主尺寸探针（css-flexbox-1 §9.9.1 × §4.5）——flex-minimum-height-flex-items-029 ✓ item specified 主轴尺寸不注入测量，FIXED=1 REGRESSED=0"
+  "extra": "failed=801;skipped=0",
+  "git_sha": "04f3cc437",
+  "note": "R5332 border-box flex 容器 transferred/stretch 目标 content cross 化（css-flexbox-1 §4.5 × §9.4）——flex-cross-size-border-box-001 ✓ img stretch 到容器 content cross，FIXED=1 REGRESSED=0"
 }
