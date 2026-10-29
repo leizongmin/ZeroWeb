@@ -6,6 +6,6 @@
   "passed": 15791,
   "rate_pct": 95.2,
   "extra": "failed=799;skipped=0",
-  "git_sha": "820f1f2bb",
+  "git_sha": "0d4430775",
   "note": "R5334 scroll container flex item 自动最小=0（css-flexbox-1 §4.5 × css-overflow-3 §3.1 × R1743 回填臂）——fieldset-as-item-overflow ✓ 回填豁免半区，FIXED=1 REGRESSED=0"
 }

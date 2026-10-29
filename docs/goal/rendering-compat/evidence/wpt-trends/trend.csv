@@ -94,4 +94,4 @@
 2026-10-29,upstream,v1.10,16590,15788,95.2,failed=802;skipped=0,deaa29eff,R5331 column flex 容器内在主尺寸探针（css-flexbox-1 §9.9.1 × §4.5）——flex-minimum-height-flex-items-029 ✓ item specified 主轴尺寸不注入测量，FIXED=1 REGRESSED=0
 2026-10-29,upstream,v1.10,16590,15789,95.2,failed=801;skipped=0,fbf4a7be5,R5332 border-box flex 容器 transferred/stretch 目标 content cross 化（css-flexbox-1 §4.5 × §9.4）——flex-cross-size-border-box-001 ✓ img stretch 到容器 content cross，FIXED=1 REGRESSED=0
 2026-10-30,upstream,v1.10,16590,15790,95.2,failed=800;skipped=0,4af441b8e,R5333 无穷 flex 因子语义（css-values-4 math × css-flexbox-1 §resolve-flexible-lengths）——flex-grow-009 ✓ calc(infinity) 吸收全部 free space，FIXED=1 REGRESSED=0
-2026-10-30,upstream,v1.10,16590,15791,95.2,failed=799;skipped=0,820f1f2bb,R5334 scroll container flex item 自动最小=0（css-flexbox-1 §4.5 × css-overflow-3 §3.1 × R1743 回填臂）——fieldset-as-item-overflow ✓ 回填豁免半区，FIXED=1 REGRESSED=0
+2026-10-30,upstream,v1.10,16590,15791,95.2,failed=799;skipped=0,0d4430775,R5334 scroll container flex item 自动最小=0（css-flexbox-1 §4.5 × css-overflow-3 §3.1 × R1743 回填臂）——fieldset-as-item-overflow ✓ 回填豁免半区，FIXED=1 REGRESSED=0

@@ -4,7 +4,7 @@
 - **驱动案**: `css/css-flexbox/fieldset-as-item-overflow.html` ✗1.91% → **✓0.20%**（passed，残差 = 滚动条绘制细节过阈）
 - **corpus**: 800F（R5333 交付态；同树 A/B）→ **799F**（16590 案；**FIXED=1**，REGRESSED=0），通过率 15791/16590 = **95.2%**
 - **域**: column flex item automatic minimum × R1743 父高回填豁免半区
-- **代码**: `820f1f2bb`（fix(flex): scroll container item 自动最小=0——fieldset-as-item-overflow ✓ 回填豁免半区）
+- **代码**: `0d4430775`（fix(flex): scroll container item 自动最小=0——fieldset-as-item-overflow ✓ 回填豁免半区）
 
 ## 定性
 
@@ -60,7 +60,7 @@ R3754 ar_transferred 臂同型先例（:1902「滚动容器无 content-based min
   （`diff /tmp/r5333-after-fails.txt` 新清单唯一删行），REGRESSED=0。
 - 驱动案单跑 ✗1.91% → **✓0.20%**（passed，>strict 近似通过档：残差为滚动条
   绘制细节——ref 底部横滚条位 vs ZW 竖滚条呈现，过阈非语义差）。
-- trend 行 @ `820f1f2bb` 已录（15791/16590 = 95.2%）。
+- trend 行 @ `0d4430775` 已录（15791/16590 = 95.2%）。
 
 ## 回归
 
@@ -77,7 +77,7 @@ R3754 ar_transferred 臂同型先例（:1902「滚动容器无 content-based min
 - fmt 0——**wpt-runner 既有 drift 修复后恢复**：`8a71e4f29` 的
   `run_css_corpus_dir` 单签名超宽使 `cargo fmt --all -- --check` 持续红、
   T58 fmt 前置门阻断 `make test` 全量入口；单文件 rustfmt 重排零行为变化，
-  独立 commit `b191bce1f`。
+  独立 commit `bf476fd73`。
 - clippy `zero-layout-engine --all-targets -D warnings` 0（guarded）。
 - workspace 测试腿 46 binary **45 ok**，唯一红 = zero-engine fetch 家族
   **3600P/9F**（既有维持项零位移，R5333 同签名）。
@@ -87,7 +87,7 @@ R3754 ar_transferred 臂同型先例（:1902「滚动容器无 content-based min
   fixtures 0。
 - **bench-gate 定向 `zero-layout-engine`**：静窗（loadavg 0.73/9.54/11.19）
   **GATE PASS 25 指标 NEW=0** 全在预算内。
-- **跨面门禁恢复**（engine 流域，独立 commit `ac6f2cc8a`）：29923b68f 的 s151
+- **跨面门禁恢复**（engine 流域，独立 commit `78754deb3`）：29923b68f 的 s151
   compatMode 桥把 `__zw_get_compat_mode` 闭包直指 v8 门控 `dom_bindings` 模块，
   quickjs 腿（`--no-default-features --features quickjs`）E0433 编译断——
   `quickjs_dom_bindings` 补同语义 twin（自有 with_dom + QuirksMode 回落
