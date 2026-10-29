@@ -37,7 +37,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 29 | [pointerlock-compat](../../../../docs/goal/archive/pointerlock-compat.md) | pointerlock | **已收口**（2026-10-19 M3 完成 22/22，已归档） |
 | 30 | [encoding-compat](../../../../docs/goal/archive/encoding-compat.md) | encoding | **已收口**（2026-10-04） |
 | 31 | [encoding-legacy-mb](../../../../docs/goal/archive/encoding-legacy-mb.md) | encoding/legacy-mb 文档族 | **已收口**（2026-10-29 DC-1~4：decode 面 360,431 = 100%，全量头条 24.19%；encode 面甄别归口 36 号） |
-| 32 | [wasm-compat](../../../../docs/goal/wasm-compat.md) | wasm/core; wasm/webapi | 无（2026-10-27 coverage 立项；jsapi 75.7% 基线零回归底线） |
+| 32 | [wasm-compat](../../../../docs/goal/archive/wasm-compat.md) | wasm/core; wasm/webapi | **已收口**（2026-10-29 DC-1~4：core 188,280/188,289 = 99.995% / webapi 270/272 = 99.26% / jsapi 底线 878/878，已归档） |
 | 33 | [editing-compat](../../../../docs/goal/editing-compat.md) | editing/run; editing/other | 无（2026-10-27 coverage 立项；长线先语料后引擎，按簇收敛） |
 | 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
 | 35 | [css-testharness-compat](../../../../docs/goal/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **内存治理门控**（2026-10-27 coverage 立项）：M1 分片执行 + coverage 分片管道落地前扩面套件进不了 CI；css-variables 病态内存案解禁在 M2；渲染面归 rendering-compat |
