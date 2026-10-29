@@ -2982,6 +2982,24 @@
     for (var fi = 1; fi < list.length; fi++) if (_r4006TreeCmp(list[fi], first) < 0) first = list[fi];
     return first;
   }
+  // editing-compat M1（R5331）：pending in-doc 门对解析插入产物的补偿判定——R145
+  // 纯 tag / R3902b 复合回落的既有门直接把节点 sel/handle 喂 `_zwMutationInDoc`，
+  // 而 innerHTML/insertAdjacentHTML 解析 wrapper 无 `__zwSelector`/`__zwHandle`
+  // 身份（`_zwMutationInDoc(null, null)` 恒 false）→ 同 turn 产物对 compound/纯
+  // tag 查询恒不可见（WPT editing/run `runConformanceTest`：innerHTML 后
+  // `querySelector('div[contenteditable]')` null → 全案 setup 抛异常）。补法沿用
+  // R125 gEBI（R5001 片 a）既有形态：无身份节点改用 R3254-K3/R304 挂载槽
+  // `_zwSelPendingParent` 的 parentSel/parentHandle 作锚点爬升判定。带槽 =
+  // 已记账到 in-doc 挂载点的解析产物；createElement 孤儿无槽，R346 排除语义不变。
+  function _zwPendingNodeInDoc(nd) {
+    var sel = nd.__zwSelector || null, h = nd.__zwHandle || null;
+    if (sel || h) return !!_zwMutationInDoc(sel, h);
+    var pl = nd._zwSelPendingParent;
+    if (!pl) return false;
+    if (pl.parentSel && _zwMutationInDoc(pl.parentSel, null)) return true;
+    if (pl.parentHandle && _zwMutationInDoc(null, pl.parentHandle)) return true;
+    return false;
+  }
 
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
@@ -3071,10 +3089,10 @@
           // R346：in-doc 门——createElement-only（从未 append）的孤儿不在文档中，spec 查询
           // 不可见（WPT Event-dispatch-on-disabled-elements：sync tests 留下 16 个孤儿
           // button/input，孤儿排在 _zwPendingAdded 首部 → 派发脚本 querySelector 命中孤儿
-          // → 事件派到无 listener 的元素 → 链卡死）。R54/R120 的 `_zwMutationInDoc` 门同源。
+          // → 事件派到无 listener 的元素 → 链卡死）。R54/R120 的 `_zwMutationInDoc` 门同源；
+          // R5331 解析插入产物经 `_zwSelPendingParent` 槽锚点放行（`_zwPendingNodeInDoc`）。
           try {
-            if (typeof _zwMutationInDoc === 'function'
-                && !_zwMutationInDoc(_r145n.__zwSelector, _r145n.__zwHandle)) continue;
+            if (!_zwPendingNodeInDoc(_r145n)) continue;
           } catch (_e346g) {}
           try {
             if (String(_r145n.tagName) === wantTag) return _r145n;
@@ -3103,8 +3121,9 @@
             var _r3902bn = _zwPendingAdded[_r3902bi];
             if (!_r3902bn || _r3902bn.nodeType !== 1) continue;
             try {
-              if (typeof _zwMutationInDoc === 'function'
-                  && !_zwMutationInDoc(_r3902bn.__zwSelector, _r3902bn.__zwHandle)) continue;
+              // R5331：解析插入产物（无 sel/handle、仅 `_zwSelPendingParent` 槽）经挂载点
+              // 爬升放行；createElement 孤儿仍被排除（R346 语义不变）。
+              if (!_zwPendingNodeInDoc(_r3902bn)) continue;
             } catch (_e3902bd) {}
             try {
               if (_matchCompoundOf(_r3902bn, _r3902bC)) return _r3902bn;
