@@ -2,10 +2,10 @@
   "date": "2026-10-29",
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
-  "total": 16592,
-  "passed": 15776,
+  "total": 16590,
+  "passed": 15777,
   "rate_pct": 95.1,
-  "extra": "failed=816;skipped=0",
-  "git_sha": "35765c92d",
-  "note": "R5321 作者 ::selection transparent 背景声明存储探针（css-pseudo-4 §highlight-cascading）——后值歧义形 collect 探针 + background 面字面 transparent 值判据，selection-background-color-transparent ✓3.18%，FIXED=1 (selection-background-color-transparent)"
+  "extra": "failed=813;skipped=0",
+  "git_sha": "531839470",
+  "note": "R5322 pre 容器 \n 强制断行空行 strut 写回（CSS Text 3 §5.2）——white-space-008 ✓0.65% 连带 webkit-line-clamp-032，FIXED=2 + 账本清洁 −1F−1P"
 }
