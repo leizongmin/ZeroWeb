@@ -2957,39 +2957,77 @@
     this.highWaterMark = Number(hwmValue2);
     this.size = _zwByteLengthSizeFn;
   };
-  // ReadableStream.from（spec §rs.from——async-iterable → ReadableStream）。getMethod/
-  // 迭代器获取错误**同步重抛**（from re-throws 面）；@@asyncIterator 优先、回落
-  // @@iterator（同步迭代器经 Promise 适配）；pull 逐 next（done → close）；error 传播
-  // controller.error；cancel → 调迭代器 return（best-effort）。
+  // ReadableStream.from（streams spec §rs.from → ReadableStreamFromIterable；迭代原语 =
+  // WebIDL §3.2.22 async sequence：open / get the next value / close an async iterator。
+  // M2-S16：11F 收敛——参数非 Object 即 TypeError（'a string' 腿，Chrome 154 实测同）；
+  // GetMethod 语义（nullish 回落 @@iterator、非 callable 即 TypeError）；迭代器获取同步
+  // 重抛 + 返回非 Object 同步 TypeError（from re-throws / iterator-non-object 四腿）；
+  // pull 逐 next：iterResult 非 Object → TypeError error（'next() (fulfills) a non-object'
+  // 两腿）、done → close、**value 经 Promise.resolve 展平**后 enqueue（'array of promises' /
+  // 'sync iterable of promises' 两腿——V8/Chrome 实测展平）；cancel：GetMethod(return)
+  // 非 callable → TypeError 拒绝（'return is not a method' 腿）、reason 透传
+  // return(reason)（'calls and awaits return()' 腿）、GetV/Call 同步抛 → 拒绝
+  // （'return() throws synchronously' 腿）、fulfill 结果非 Object → TypeError 拒绝
+  // （'return() fulfills a non-object' 腿）、拒绝传播（'return() rejects' 腿）。
   if (!ReadableStream.from) {
     ReadableStream.from = function (source) {
-      var itFn = (source != null && source[Symbol.asyncIterator] !== undefined)
-        ? source[Symbol.asyncIterator] : undefined;
-      var isAsync = typeof itFn === 'function';
-      if (!isAsync) {
-        itFn = (source != null && source[Symbol.iterator] !== undefined) ? source[Symbol.iterator] : undefined;
-        if (typeof itFn !== 'function') {
-          throw new TypeError('ReadableStream.from: source is not async-iterable');
-        }
+      // WebIDL async_sequence 转换步 1：非 Object → TypeError（原始值/字符串面）。
+      if (source === null || (typeof source !== 'object' && typeof source !== 'function')) {
+        throw new TypeError("Failed to execute 'ReadableStream.from': parameter 1 is not of type 'object'.");
       }
-      var iterator = itFn.call(source);
+      var itFn = source[Symbol.asyncIterator];
+      var isSync = (itFn === undefined || itFn === null);
+      if (isSync) itFn = source[Symbol.iterator];
+      // GetMethod 步：非 callable 且非 nullish → TypeError（non-callable @@iterator/
+      // @@asyncIterator 腿）；undefined/null 落空 → TypeError（{}、Object.create(null) 面）。
+      if (typeof itFn !== 'function') {
+        throw new TypeError('ReadableStream.from: source is not async-iterable');
+      }
+      var iterator = itFn.call(source); // 迭代器方法同步抛错重抛（from re-throws 两条腿）
+      // GetIteratorFromMethod 步：返回非 Object → 同步 TypeError（函数是 Object，放行）。
+      if (iterator === null || (typeof iterator !== 'object' && typeof iterator !== 'function')) {
+        throw new TypeError('ReadableStream.from: the iterator method must return an object');
+      }
       // net-api M4-S4：spec CreateReadableStream(start, pull, cancel, **0**)——hwm 0（惰性拉，
       // 构造即拉面回归防护）。
       return new ReadableStream({
         pull: function (controller) {
           var p;
-          try { p = isAsync ? iterator.next() : Promise.resolve(iterator.next()); }
+          try { p = iterator.next(); } // 同步迭代器同步抛 → error（'next() throws synchronously' 腿）
           catch (_eFromNext) { controller.error(_eFromNext); return; }
-          return Promise.resolve(p).then(function (r) {
-            if (r.done) { controller.close(); return; }
-            controller.enqueue(r.value);
+          // get-the-next-value 步：iterResult 非 Object → TypeError（'next() returns/
+          // fulfills a non-object' 两腿）；done → close；value 展平后 enqueue。
+          return Promise.resolve(p).then(function (iterResult) {
+            if (iterResult === null || (typeof iterResult !== 'object' && typeof iterResult !== 'function')) {
+              controller.error(new TypeError('ReadableStream.from: next() must return an object'));
+              return;
+            }
+            if (iterResult.done) { controller.close(); return; }
+            // value 展平：Promise.resolve(value) 兑现后 enqueue、拒绝转 error。
+            return Promise.resolve(iterResult.value).then(function (v) {
+              controller.enqueue(v);
+            }, function (e) { controller.error(e); });
           }, function (e) { controller.error(e); });
         },
-        cancel: function () {
-          try {
-            if (typeof iterator.return === 'function') return Promise.resolve(iterator.return());
-          } catch (_eFromReturn) {}
-          return Promise.resolve();
+        cancel: function (reason) {
+          var retFn;
+          try { retFn = iterator.return; } // GetV——getter 抛错传播为拒绝
+          catch (_eReturnGet) { return Promise.reject(_eReturnGet); }
+          if (retFn === undefined || retFn === null) return Promise.resolve(); // 缺 return → resolve（'return missing' 腿）
+          if (typeof retFn !== 'function') {
+            // GetMethod 步：非 callable → TypeError 拒绝（'return is not a method' 腿）。
+            return Promise.reject(new TypeError('ReadableStream.from: iterator.return must be a function'));
+          }
+          var rp;
+          try { rp = retFn.call(iterator, reason); } // reason 透传（'calls and awaits return()' 腿）
+          catch (_eReturnCall) { return Promise.reject(_eReturnCall); } // 同步抛 → 拒绝（'throws synchronously' 腿）
+          // close 步：fulfill 结果非 Object → TypeError（'fulfills a non-object' 腿）；
+          // rp 拒绝原样传播（'return() rejects' 腿）。
+          return Promise.resolve(rp).then(function (retResult) {
+            if (retResult === null || (typeof retResult !== 'object' && typeof retResult !== 'function')) {
+              throw new TypeError('ReadableStream.from: iterator.return() must return an object');
+            }
+          });
         }
       }, { highWaterMark: 0 });
     };

@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.18
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11000**（+1646，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.19
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11011**（+1657，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -161,15 +161,24 @@
   加严/元数据/绿腿上游删除各归记账）；通道 xhr/streams 红腿与漂移无交集，
   `ReadableStream.from` 11F 认证为**有钉真引擎缺口**（streams 域最大收敛面，
   入列后续小片）。巡检不常态化结论维持，收敛到 pin 滚动单点结算。
+- **M2-S16 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s16-readablestream-from.md)）**：
+  ReadableStream.from **11F 全收口**（from.any.js 39P/11F → **50P/0F**）——
+  `part02.js` 按 streams spec §rs.from + WebIDL §3.2.22 async sequence 原语
+  重做：参数非 Object 同步 TypeError / GetMethod 语义 / 迭代器结果 Object 校验 /
+  **value 展平**（Promise.resolve 后 enqueue）/ cancel 面（return 非_callable
+  TypeError 拒绝、reason 透传、同步抛转拒绝、fulfill 非对象校验、拒绝传播）。
+  spec 迁移期语义以 Chrome 154 实测标定（node 22 旧 V8 不展平为反例，弃用）。
+  语料零改动；全通道 A/B **+11 / 0 回归 / 0 MISSING**（11000 → 11011），增益
+  全部集中 from.any.js，其余 487 文件零扰动。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
   tag（M2-S12 的 cors-preflight-redirect 对齐目前为本地补丁 + update 脚本
   缺口清单记账，见 [S12 档](net-api-compat/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）。
-- **后续可推进小片**（不阻塞收口，重开时按此入列）：**ReadableStream.from
-  收敛**（S15 认证有钉 11F，streams 域最大收敛面，优先）、request-cache HTTP
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
   语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
+  ReadableStream.from 收敛已由 M2-S16 收口（S15 入列清偿）；
   cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /
   S11b 记账 1 清偿）；request-disturbed 翻转已由 M2-S14 双侧同步收口
   （S13 记账 1 清偿）。
