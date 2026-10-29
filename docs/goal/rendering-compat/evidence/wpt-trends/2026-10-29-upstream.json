@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15778,
+  "passed": 15779,
   "rate_pct": 95.1,
-  "extra": "failed=812;skipped=0",
-  "git_sha": "84e818f75",
-  "note": "R5323 纯空白 run 与前词尾随空格跨边界折叠（css-text-3 §4.1 phase-1）——white-space-007 ✓0.00%，FIXED=1 REGRESSED=0"
+  "extra": "failed=811;skipped=0",
+  "git_sha": "7e4778676",
+  "note": "R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0"
 }
