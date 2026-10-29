@@ -79,7 +79,11 @@
     // net-api M2-S3：Response 构造器对 init.status ∉ [200,599] 抛 RangeError
     //（https://fetch.spec.whatwg.org/#dom-response，user init 面）。wire 存档的
     // error response（status 0、type 'error'——Response.error() put 后 match 回建）
-    // 非 user init，按 Response.error 同款构造后覆写，不走用户校验。
+    // 非 user init：往返保真构造（保留存档 headers/body，bodyArg 为 '' 时构造器
+    // 仍补 text/plain;charset=UTF-8——与 spec Response.error() 的 null body/空
+    // header 列表不同），仅对齐 status/statusText/ok 的 error 形态，不走用户校验。
+    // 取舍：fetch 规范本禁 cache.put(error response)（#dom-cache-put），引擎放行
+    // 是既有偏差，此处往返保真优先于严格 error 形态。
     var response = (status >= 200 && status <= 599)
       ? new Response(bodyArg, { status: status, statusText: statusText, headers: headers })
       : (function () {

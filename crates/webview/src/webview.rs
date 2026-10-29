@@ -496,6 +496,15 @@ pub struct WebView {
     shared_mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// [`Self::shared_mutations`] 的已应用游标（apply 尾部的起点）。
     applied_mutations: usize,
+    /// T26（DF1-F1）：apply 重入护栏——`apply_mutations_subset` 执行期间置位。
+    ///
+    /// 该函数尾部经 [`Self::execute_script`] 下发换代通知，而 execute_script 的 Ok
+    /// 尾部会再触发 [`Self::apply_pending_shared_mutations`]；无护栏时两步切分的样式
+    /// 子批会在嵌套 execute 中被抢先应用（样式先于 before-change 基线落地，外层再重复
+    /// 应用同批），`applied_mutations` 游标永久超前 M——同代后续 mutation 被 min()
+    /// 钳制静默跳过直到导航换代。execute_script 尾部见置位即跳过（外层自会应用其
+    /// 尾部；嵌套脚本新排队的 mutation 留给下次 apply，既有生产者语义）。
+    applying_mutations: bool,
     /// js-dom R150（M4）：布局 rect 快照（NodeId→rect，render 后刷新）——进程内
     /// `__zw_getBoundingClientRect` 回调的读取源。多进程路径由 renderer 的共享
     /// `rect_bridge::LayoutRectSnapshot` 承担；进程内 webview 此前无该桥（gBCR 恒零
@@ -776,6 +785,7 @@ impl WebView {
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
+            applying_mutations: false,
             layout_rect_snapshot: zero_engine::rect_bridge::new_layout_rect_snapshot(),
             runner_probe_html: None,
             http_client,
@@ -2520,11 +2530,16 @@ impl WebView {
     /// 更新 `applied_mutations` 游标并同步 handle 映射（与
     /// [`Self::apply_pending_shared_mutations`] 同机制，按给定子集切分）。
     fn apply_mutations_subset(&mut self, subset: &[zero_engine::js_dom_bridge::DomMutation]) {
+        // T26（DF1-F1）：重入护栏置位——本函数尾部的换代通知走 execute_script，其
+        // Ok 尾部会再触发 apply_pending_shared_mutations（见 applying_mutations 字段
+        // 文档）。所有出口（含空批早退、通知 Err 分支）清除，勿卡死。
+        self.applying_mutations = true;
         // t2-pb1 F2：共享队列路径（动画泵/tick observer）批内 apply 同样置脏。
         if self.script_batch_active && !subset.is_empty() {
             self.script_batch_dirty = true;
         }
         if subset.is_empty() {
+            self.applying_mutations = false;
             return;
         }
         let html_snapshot = {
@@ -2555,10 +2570,14 @@ impl WebView {
             self.cached_html = mutated;
         }
         // R379/pa2b：与 apply_pending_shared_mutations 同款换代通知（两步 apply 的结构
-        // 批/样式批各通知一次——第二次 no-op 幂等，标记表已空）。
-        let _ = self.execute_script(
+        // 批/样式批各通知一次——第二次 no-op 幂等，标记表已空）。T26（DF1-F1）：通知
+        // 期间护栏置位，嵌套 execute_script 尾部 apply 跳过（本子批刚应用完，嵌套尾部
+        // 本无新增可应用；置位清除放在通知返回之后，覆盖其 Err 分支）。
+        let bump = self.execute_script(
             "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
         );
+        self.applying_mutations = false;
+        let _ = bump;
     }
 
     /// 执行 JavaScript。
@@ -2644,7 +2663,15 @@ impl WebView {
                 self.sync_render_after_native_dom();
                 // T26：本入口已武装 shim 写桥，执行期记录的新增 DOM 变更在此应用
                 //（游标尾部；不 apply 会把变更滞留共享队列——镜像 execute_script_with_dom）。
-                self.apply_pending_shared_mutations()?;
+                // T26（DF1-F1）：apply 重入护栏——本调用可能处于 apply_mutations_subset
+                // 尾部换代通知的嵌套栈内（applying_mutations 置位）。此时两步切分的样式
+                // 子批尚未应用，此处 apply 会把它抢先落 DOM（样式先于 before-change 基线
+                // + 外层随后重复应用同批，游标永久超前 M，同代后续 mutation 被钳制静默
+                // 跳过）。跳过：外层自会应用其尾部；嵌套脚本新排队的 mutation 留给下次
+                // apply（既有生产者语义）。
+                if !self.applying_mutations {
+                    self.apply_pending_shared_mutations()?;
+                }
                 // performance-api-compat M2-S1：本 execute 即一次任务边界——超阈值执行
                 // 的 longtask 条目在此发射（runner 探测环 timer 回调经此路径覆盖）。
                 self.drain_long_task_entries();

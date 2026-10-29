@@ -362,7 +362,7 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
                 const keys = await cache.keys();
                 globalThis.__cacheRejectResult = results.concat([
                   'okMissing:' + String(ok === undefined),
-                  'errorType:' + String(error && error.type),
+                  'errorType:' + String(error && error.type) + ':' + String(error && error.status),
                   'keys:' + String(keys.length)
                 ]).join('|');
               } catch (error) {
@@ -376,7 +376,7 @@ fn page_cache_api_rejects_uncacheable_put_and_atomic_add_all() {
 
     assert_eq!(
         webview.execute_script("globalThis.__cacheRejectResult").unwrap(),
-        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|error:resolved|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|errorType:error|keys:1"
+        "post:true:Cache.put request method must be GET|ftp:true:Cache.put request URL must be an HTTP(S) URL|partial:true:Cache.put cannot store a 206 Partial Content response|vary:true:Cache.put cannot store a response with Vary: *|error:resolved|addAll:true:Cache.addAll fetch response is not ok|okMissing:true|errorType:error:0|keys:1"
     );
 }
 
@@ -642,6 +642,9 @@ fn page_execute_script_entry_parses_absolute_urls_for_request_and_url() {
     // `new URL`/`new Request` 契约依赖 `register_dom_callbacks` 武装的 host 桥
     //（`__zw_parse_url`）。绝对 https URL 经 `_zwRequestValidate`（fetch consumer
     // 同源校验链）必须解析成功——非缓存路径，证明修复对校验器全部调用方生效。
+    // T26 返修（DF1-F4）：补钉裸入口相对 URL + base 解析（`new URL('/x', base)` 与
+    // `new Request('/x')` 经 `__zw_get_page_url` 取 base 链路）——若未来回归只漏装
+    // get_page_url 而装了 parse_url，此钉仍红。
     let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
 
     webview
@@ -651,7 +654,15 @@ fn page_execute_script_entry_parses_absolute_urls_for_request_and_url() {
               try {
                 const parsed = new URL('https://cache.example/app/data.txt');
                 const request = new Request('https://cache.example/app/data.txt');
-                return [parsed.href, request.url, String(typeof fetch === 'function')].join('|');
+                const relativeBase = new URL('/app/x', location.href).href;
+                const relativeRequest = new Request('/app/x');
+                return [
+                  parsed.href,
+                  request.url,
+                  String(typeof fetch === 'function'),
+                  relativeBase,
+                  relativeRequest.url
+                ].join('|');
               } catch (error) {
                 return 'error:' + String(error && error.message ? error.message : error);
               }
@@ -662,6 +673,51 @@ fn page_execute_script_entry_parses_absolute_urls_for_request_and_url() {
 
     assert_eq!(
         webview.execute_script("globalThis.__urlProbe").unwrap(),
-        "https://cache.example/app/data.txt|https://cache.example/app/data.txt|true"
+        "https://cache.example/app/data.txt|https://cache.example/app/data.txt|true|https://cache.example/app/x|https://cache.example/app/x"
+    );
+}
+
+// T26 返修（DF1-F1 回归钉）：execute_script 尾部 apply 与 apply_mutations_subset
+// 尾部换代 bump 的中途重入。单轮 execute_script 混合批（建元素 + 写 transition 样式）
+// 走 apply_pending_shared_mutations 两步切分：结构子批 apply 后的嵌套 bump
+// execute_script 若把仍在队列的样式子批抢先应用（游标超前 M），外层再重复应用同批，
+// 游标永久超前——随后第二条独立 SetStyle 被 min() 钳制静默跳过（同代内永不落 DOM）。
+// 断言锚 host 真相快照 html_content()：`__zw_get_style_lw`/getComputedStyle 回调均对
+// 全队列（含未应用尾）做 latest-wins replay，不能作 apply 真相观测点；落 DOM 与
+// 游标不超前在该断言合一（被跳过 = 游标超前 = 快照无该样式）。
+#[test]
+fn page_execute_script_mixed_batch_two_step_split_does_not_overshoot_cursor() {
+    let mut webview = webview_with_owner(IndexedDbOwner::in_memory(), "https://cache.example/app/page.html");
+    webview.load_html("<html><body><main>cursor probe base</main></body></html>", None);
+
+    // 单轮混合批：结构（建元素 + 挂载）+ 样式（transition）→ 两步切分路径。
+    webview
+        .execute_script(
+            r#"
+            (function () {
+              const el = document.createElement('div');
+              el.id = 'cursorProbe';
+              document.body.appendChild(el);
+              el.style.transition = 'opacity 1s linear';
+              return 'queued';
+            })();
+            "#,
+        )
+        .unwrap();
+
+    // 同代内第二条独立 SetStyle：护栏缺失时其被超前的游标钳制静默跳过。
+    webview
+        .execute_script("document.getElementById('cursorProbe').style.color = 'red';")
+        .unwrap();
+
+    let html = webview.html_content();
+    assert!(html.contains("cursorProbe"), "混合批结构子批必须落 DOM：{html}");
+    assert!(
+        html.contains("transition"),
+        "混合批样式子批必须恰好落 DOM（两步切分成立的前置）：{html}"
+    );
+    assert!(
+        html.contains("red"),
+        "第二条独立 SetStyle 必须落 DOM——apply 重入致游标超前 M 时该 mutation 被静默跳过：{html}"
     );
 }
