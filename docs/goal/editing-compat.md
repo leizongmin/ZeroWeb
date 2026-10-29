@@ -26,7 +26,12 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 内变体数自适应。全分母重跑（3 分片）进行中（bold 已按新预算全矩阵
 > 发射）；other 面同预算复跑同窗启动（M1 悬置的 list/inline delete
 > 自旋案是否同根因——150s 口径先跑齐，Timeout 案再单案放宽墙钟分类
-> 有限慢 vs 真自旋），失败簇按新账重排后定
+> 有限慢 vs 真自旋）。**重跑在途两笔待办**：① 自适应墙钟 nv=0 下限
+> 150s 偏紧——300s 脚本预算下无变体大单页案（createlink-with-selecting-img
+> 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
+> 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案；② other 面曾
+> 双实例共写 transcript 一案块双倍（420 行），收口时删块单案重跑。
+> 失败簇按新账重排后定
 > white-space join / insertparagraph 入簇序。详见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
