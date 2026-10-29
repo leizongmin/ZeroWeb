@@ -64,6 +64,14 @@ transcript/JSON 各自独立——并行分片共享 transcript 会互相截断�
 坑）。s2 有一笔 nv=0 误杀案待修下限后重跑。账面待三分片退出后合并补记，
 并入 M2 失败簇重排。
 
+**分片中途账（2026-10-30 06:0x 快照）**：s1 已退出（exit=0，14 案全出）
+**10,937P / 14,437F / 0T**——bold/formatblock/delete 等 nv≥2 案在新预算下
+全量发射、零 Timeout，预算解锁主簇验证成立；s0 在 justifycenter（10/14）、
+s2 在 insertparagraph（8/14）。s2 误杀案即
+createlink-with-selecting-img.html（150s external kill，transcript 第 6-8 行）。
+二进制时点实测：runner mtime 04:51:27 < 94eb9f0d2 落时 05:42:54，在途分片
+确为落前二进制。
+
 **二进制时点注记（94eb9f0d2，收口必读）**：重跑窗口内并行流（html-semantics
 域）落尾随静态 link 触发收口——共享面 part03.js/webview.rs/testharness.rs
 被触碰，corpus 脚本与 wpt-data 未动（在途 bash 分片读取不受影响）。在途
