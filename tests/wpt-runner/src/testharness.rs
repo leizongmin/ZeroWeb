@@ -4468,6 +4468,40 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
     )
 }
 
+/// form-url-encoding-compat goal：encode 面案面规则（面单见
+/// docs/goal/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
+/// 只放行 form 提交编码序列化面（`*-encode-form*.html`，含 label 变体与
+/// errors 面）与 href URL 序列化面（`*-encode-href*.html` + schinese
+/// `*-encoder.html` inline a.href 面 + `big5-enc-ascii.html`）；decode 面
+/// / chars / errors fixture / `.any.js` 全 skip——与 [`encoding_legacy_mb_case_skipped`]
+/// face 互斥（31 号 decode 通道规则与基线不动，零回归底线）。
+fn form_url_encoding_case_skipped(relative: &str, _source: &str) -> bool {
+    if relative.ends_with(".any.js") {
+        return true;
+    }
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    !(name.contains("-encode-form")
+        || name.contains("-encode-href")
+        || name.ends_with("-encoder.html")
+        || name == "big5-enc-ascii.html")
+}
+
+/// Run the legacy-mb encode-face pages（form-url-encoding-compat goal M0/M1——
+/// 通道）。语料与 decode 通道同源（[`ENCODING_LEGACY_MB_CORPUS_SUBDIRS`]）。
+/// filter 按路径子串透传（如 `euc-jp/`、`encode-form`、`encoder.html`——按面/
+/// 族分批出数）。variant 展开（encode-form/href 页 8 variant 分片，decode
+/// 通道同款）。
+pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        ENCODING_LEGACY_MB_CORPUS_SUBDIRS,
+        filter,
+        form_url_encoding_case_skipped,
+        &[],
+        true,
+    )
+}
+
 /// html-syntax corpus pinned subset directories（fetch 脚本 goals/40-html-syntax-compat.sh
 /// DIRS 同域——html/syntax 解析树/序列化面 + html/dom 接口语义/reflection 面 +
 /// encoding-compat P5 双向记账转入的文档级编码嗅探案面）。html/syntax 顶层无 .html
@@ -11951,6 +11985,45 @@ mod tests {
         // boundary 对齐：meta 在 1024 字节窗内照常嗅探（对齐输入零行为变化）
         let aligned = format!("<meta charset=\"euc-jp\">{}", "a".repeat(1024));
         assert_eq!(sniff_document_encoding(&aligned).as_deref(), Some("EUC-JP"));
+    }
+
+    // form-url-encoding-compat DC-1：encode 面通道案面分类钉——form/href 两面
+    // （含 label 变体与 errors 面）+ schinese inline encoder 面 + big5-enc-ascii
+    // 放行；decode 面（31 号通道所有物）/ chars fixture / .any.js 互斥 skip。
+    #[test]
+    fn form_url_encoding_case_skipped_faces() {
+        assert!(!form_url_encoding_case_skipped(
+            "encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form.html",
+            "",
+        ));
+        assert!(!form_url_encoding_case_skipped(
+            "encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-errors-hangul.html",
+            "",
+        ));
+        assert!(!form_url_encoding_case_skipped(
+            "encoding/legacy-mb-japanese/euc-jp/eucjp-encode-href.html",
+            ""
+        ));
+        assert!(!form_url_encoding_case_skipped(
+            "encoding/legacy-mb-schinese/gbk/gbk-encoder.html",
+            "",
+        ));
+        assert!(!form_url_encoding_case_skipped(
+            "encoding/legacy-mb-tchinese/big5/big5-enc-ascii.html",
+            "",
+        ));
+        assert!(form_url_encoding_case_skipped(
+            "encoding/legacy-mb-japanese/euc-jp/eucjp-decode.html",
+            "",
+        ));
+        assert!(form_url_encoding_case_skipped(
+            "encoding/legacy-mb-japanese/euc-jp/eucjp_chars.html",
+            "",
+        ));
+        assert!(form_url_encoding_case_skipped(
+            "encoding/legacy-mb-schinese/gbk/gbk-decoder.any.js",
+            "",
+        ));
     }
 
     // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认

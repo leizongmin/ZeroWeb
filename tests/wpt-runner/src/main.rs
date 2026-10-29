@@ -123,6 +123,9 @@ Commands:
   testharness-encoding-legacy-mb  Run legacy-mb document-family decode wrapper pages
                        (chars iframe + variant windows) window testharness cases
                        (encoding-legacy-mb goal M1 / DC-2)
+  testharness-form-url-encoding  Run legacy-mb encode-face pages (form submission
+                       encoding + href URL serialization) window testharness cases
+                       (form-url-encoding-compat goal)
   testharness-html-syntax  Run pinned html/syntax + html/dom corpus (parse-tree/
                        serializer/DOM-interface + P5 document-encoding face)
                        window testharness cases (html-syntax-compat goal M1 / DC-1)
@@ -393,6 +396,7 @@ fn main() {
         "testharness-net-api" => cmd_testharness_net_api(&options, filter.as_deref()),
         "testharness-encoding" => cmd_testharness_encoding(&options, filter.as_deref()),
         "testharness-encoding-legacy-mb" => cmd_testharness_encoding_legacy_mb(&options, filter.as_deref()),
+        "testharness-form-url-encoding" => cmd_testharness_form_url_encoding(&options, filter.as_deref()),
         "testharness-html-syntax" => cmd_testharness_html_syntax(&options, filter.as_deref()),
         "testharness-navigation" => cmd_testharness_navigation(&options, filter.as_deref()),
         "testharness-service-workers" => cmd_testharness_service_workers(&options, filter.as_deref()),
@@ -1615,6 +1619,22 @@ fn cmd_testharness_encoding(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_encoding_legacy_mb(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_encoding_legacy_mb_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-form-url-encoding` 子命令 — 跑导入的 encoding/legacy-mb encode 面
+///（form 提交编码序列化 + href URL 序列化，68 文件）window 用例
+///（form-url-encoding-compat goal——通道）。
+///
+/// 用例与 decode 通道同源（`tests/wpt-runner/scripts/goals/31-encoding-legacy-mb.sh`
+/// 拉到 `wpt-data/`，gitignored）。退出码：有用例非 Pass 或用例集为空 → 1（与
+/// testharness-encoding 一致）。基线首跑即便大量 Fail 也只用于记录通过率与分母
+///（agent 经 `--format json` 捕获后写 evidence/），不作为 land 门禁。filter 按
+/// 路径子串透传：make testharness-form-url-encoding FILTER=euc-jp/（按编码族）
+/// 或 FILTER=encode-form（按面分批出数）。
+fn cmd_testharness_form_url_encoding(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_form_url_encoding_cases(wpt_root, filter)
     });
 }
 
