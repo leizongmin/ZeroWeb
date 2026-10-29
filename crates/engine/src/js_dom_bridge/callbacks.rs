@@ -417,10 +417,7 @@ pub fn register_dom_callbacks(
     // NoQuirks / LimitedQuirks → "CSS1Compat"。DOM 源缺席（裸 sandbox 管路测试）回落
     // CSS1Compat（与 shim getter 的桥缺席回落同口径）。
     // https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
-    sandbox.register_callback(
-        "__zw_get_compat_mode",
-        Box::new(|_args: &[String]| crate::dom_bindings::document_compat_mode_string()),
-    );
+    sandbox.register_callback("__zw_get_compat_mode", compat_mode_callback());
 
     // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
     // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
@@ -3013,6 +3010,25 @@ pub fn register_dom_callbacks(
     let _ = sandbox.execute(
         "try { if (typeof __zwDetailsInitOpenMark5254 === 'function') __zwDetailsInitOpenMark5254(); if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', function () { try { if (typeof __zwDetailsInitOpenFire5254 === 'function') __zwDetailsInitOpenFire5254(); } catch (_eR5254d) {} }, true); } catch (_eR5254) {}",
     );
+}
+
+/// `__zw_get_compat_mode` 桥闭包按脚本引擎 feature 组合取求值源（R5334：quickjs 腿
+/// `--no-default-features --features quickjs` 编译面——`dom_bindings` 为 v8 门控，
+/// quickjs 构建经 [`crate::quickjs_dom_bindings::document_compat_mode_string`] 同语义
+/// twin 求值；双引擎缺席回落常量 "CSS1Compat"，与 DOM 源缺席回落同口径）。
+fn compat_mode_callback() -> Box<dyn Fn(&[String]) -> String + Send + Sync> {
+    #[cfg(feature = "v8")]
+    {
+        Box::new(|_args: &[String]| crate::dom_bindings::document_compat_mode_string())
+    }
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+    {
+        Box::new(|_args: &[String]| crate::quickjs_dom_bindings::document_compat_mode_string())
+    }
+    #[cfg(not(any(feature = "v8", feature = "quickjs")))]
+    {
+        Box::new(|_args: &[String]| String::from("CSS1Compat"))
+    }
 }
 
 thread_local! {

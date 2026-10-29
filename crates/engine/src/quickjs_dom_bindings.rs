@@ -79,6 +79,17 @@ fn with_dom_mut<R>(f: impl FnOnce(&mut Document) -> R) -> Option<R> {
     Some(f(&mut doc))
 }
 
+/// `dom-document-compatmode` 字符串求值（s151 quickjs 半源，镜像 V8
+/// `dom_bindings::document_compat_mode_string`：headless 通道 `__zw_get_compat_mode`
+/// 桥共用——DOM 源缺席回落 "CSS1Compat"，与 shim getter 的桥缺席回落同口径）。
+/// https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+pub(crate) fn document_compat_mode_string() -> String {
+    match with_dom(|d| d.quirks_mode()) {
+        Some(zero_dom::QuirksMode::Quirks) => "BackCompat".to_string(),
+        _ => "CSS1Compat".to_string(),
+    }
+}
+
 /// R386（js-dom 多进程 worker 路径）：仅刷新线程局部 DOM 源（镜像 V8 `refresh_dom_source`）。
 ///
 /// worker 沙箱的快照换代（`SetDomSnapshot`）场景：绑定全局已装（bootstrap install），
