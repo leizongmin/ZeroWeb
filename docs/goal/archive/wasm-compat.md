@@ -10,7 +10,7 @@
 **当前卡点**: 无。挂账移交结清：webapi streaming 残差 2F（ReadableStream 体含
 裸 ArrayBuffer chunk 须 TypeError）已由 net-api goal M2-S18 清偿——Body mixin
 arrayBuffer() 返 spec ArrayBuffer 后 enqueue 产物撞既有体消费类型门，wasm/webapi
-全子集 272/272（[net-api S18 证据档](../net-api-compat/evidence/2026-10-29-m2-s18-body-arraybuffer-wasm-stream.md)）。
+全子集 272/272（[net-api S18 证据档](../net-api-compat-v2/evidence/2026-10-29-m2-s18-body-arraybuffer-wasm-stream.md)）。
 余项不变：
 - memory64 系 9F 定性为 V8 16GB memory64/table64 声明上限 validation 期检查，
   Chrome stable 同形（102/107、39/41、102/104）——不修，随 drift 巡检重估。
@@ -21,7 +21,7 @@ arrayBuffer() 返 spec ArrayBuffer 后 enqueue 产物撞既有体消费类型门
 |---|---:|---|---|
 | wasm/jsapi | 2,545 | **878/878 全绿** | 底线重记账：2026-09-12 的 715/945+4T 中 4 个 Timeout 根因收敛（见 evidence）；通道即 window 可执行子集（31/244 文件，立项口径） |
 | wasm/core | 188,385 | **188,280/188,289 = 99.995%**（258 wrapper 页 + 273 案中 core 面） | 残差 9F = memory64 系定性账（Chrome 同形）；分母差额 96 = pin 漂移 87 + 上游新增 cast.wast 9（pin 后文件），pin 内文件覆盖无洞 |
-| wasm/webapi | 1,066 | **272/272 = 100%**（window 可执行子集 15 案） | M1 残差 27F → M3 后 2F → **0F**（net-api M2-S18 清偿 streams 域挂账，见[证据档](../net-api-compat/evidence/2026-10-29-m2-s18-body-arraybuffer-wasm-stream.md)）；未拉 66 文件 = worker-only/esm-integration/idlharness（通道 scope 边界） |
+| wasm/webapi | 1,066 | **272/272 = 100%**（window 可执行子集 15 案） | M1 残差 27F → M3 后 2F → **0F**（net-api M2-S18 清偿 streams 域挂账，见[证据档](../net-api-compat-v2/evidence/2026-10-29-m2-s18-body-arraybuffer-wasm-stream.md)）；未拉 66 文件 = worker-only/esm-integration/idlharness（通道 scope 边界） |
 
 coverage 复测（07ce6e987a aligned stable 三家）scoped 报告见
 [evidence/2026-10-29-m3-coverage.md](wasm-compat/evidence/2026-10-29-m3-coverage.md)
