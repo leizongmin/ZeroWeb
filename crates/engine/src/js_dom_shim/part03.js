@@ -8939,7 +8939,10 @@
       }
       return comp;
     }
-    function _zwMQueryAll(n, sel) {
+    // includeSelf：matches 调用方（root === this 时）要求**含自身**语义——R188
+    // 的 QSA 自剔在此形态下会把唯一候选（自身镜像）删光（editing-compat M2：
+    // innerHTML 顶层解析产物 `el.matches('div')` 恒 false，探针 F3/F4/F5）。
+    function _zwMQueryAll(n, sel, includeSelf) {
       // R171（L2-d3d 评估，回退记录）：element 上下文本树前置实测 0 subtest
       // 改善 + identity 边缘回归（querySelector 本树直出真节点 vs QSA JSON
       // wrapper 的归一分歧——`:enabled` 形态 qS≠QSA[0] +2F；纯 tag 收缩版
@@ -9001,7 +9004,7 @@
         // 根镜像）。首元素与根同 tag+id 视为镜像剔除（只查 arr[0]，后续同名后代不受
         // 影响）。R173 的 lang 包装形态（src173 被改写）不在此路径（:lang 与本滤除
         // 正交——包装的 html/body 已被 filter_synthetic 剔，首元素仍是根镜像）。
-        if (arr && arr.length && n && n.nodeType === 1) {
+        if (!includeSelf && arr && arr.length && n && n.nodeType === 1) {
           var _r188T = String(n.localName || (n.tagName || '').toLowerCase() || '').toLowerCase();
           var _r188I = String(n.id != null ? n.id : '');
           // R310b：镜像判定补 class 比对——旧 tag+id 双键把「根 div（无 id）+ 首命中
@@ -9168,7 +9171,12 @@
       if (pn167 && typeof pn167.__zwHandle !== 'string' && typeof pn167.__zwSelector !== 'string') rootFor167 = pn167;
       else break;
     }
-    var arr = _zwMQueryAll(rootFor167, sel);
+    // editing-compat M2：root walk 止于 this 自身时（顶层 innerHTML 解析产物——
+    // parentNode 是锚 proxy，上行在第一跳就断），查询面就是自身序列化，R188
+    // 自剔会把唯一候选删光 → matches 恒 false。matches 语义自含（spec
+    // `dom-element-matches`：context object 匹配即真），此形态传 includeSelf。
+    // https://dom.spec.whatwg.org/#dom-element-matches
+    var arr = _zwMQueryAll(rootFor167, sel, rootFor167 === this);
     // R291（js-dom M4）：self 键的 id/outer 回落——iframe 子文档的 body/head 视图
     // 是轻量对象（无反射 id getter、无 outerHTML accessor——probe 实证均
     // undefined，但 getAttribute('id') 可达）；旧键 String(this.id||'') 恒空段

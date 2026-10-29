@@ -1,11 +1,23 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.2
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口 + R5331 修复后复测）
-**状态**: Active——M1 完成（DC-1/DC-2/DC-3 基线）；shim 查询回落修复 R5331（3d173dccc）
-已 land 并复测（run 面 Fail -48.5%，setup 链断点后移至 cloneNode 环）；M2 按簇收敛未启动
+**版本**: v1.3
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）
+**状态**: Active——M1 完成；R5331（3d173dccc，查询回落槽锚点）land 后 M2
+首轮（innerHTML 物化身份失步全环）完成：run 面 setup 级联解锁
+（0.007% → 48.78%，分母收缩口径见 evidence），R5331 指认的 cloneNode
+断点环已闭合，自旋簇浮出为新头号；跨域 html-syntax 99.90% 零回归
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
+
+> **M2 首轮当前状态（2026-10-30，R5331 之后的同日续环）**：js_dom_shim
+> 四笔共享路径修复（matches 自含语义 / doc 级查询深层解析产物 in-doc 链上行
+> ——并行撞车后折叠进 R5331 的 `_zwPendingNodeInDoc` 作 fallback / cloneNode
+> 融合源读 / 子树脏门 ID 锚定感知），闭合 R5331 指认的 cloneNode 断点环。
+> 探针 F/G/E 全绿，全量重跑 run 48.78% / other 32.03%（**分母收缩**
+> 96,663→15,343：setup 解锁后变体级 90s 自旋中止取代全分母 setup 快败——
+> 自旋是下一头号簇）。卡点：run 面自旋案（bold/justify ?3001-last 形态）
+> 未归因。下一步：自旋归因 → white-space join 簇。详见
+> [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -65,13 +77,14 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
 ## 里程碑
 
 - **M1**：语料预置 + runner 通道 + 基线分类（2026-10-30 完成——DC-1/DC-2/DC-3）。
-- **M2**：按簇收敛（每簇一轮）。首轮 = **cloneNode 视图/pending 身份分裂**
-  （R5331 后 run 面 49,778F 的公共断点；含上游定性 innerHTML 物化身份失步的
-  matches 断面——同一级联的宿主侧表象；共享路径，修后 run/ 面重跑基线；跨域
-  核对 dom-expansion 34 号与 html-syntax 通道基线不回归，run-rules §9）；
-  其后 8 大案墙钟调优（run 通道 CASE_WALL_S）→ white-space join →
-  insertparagraph → execCommand 语义逐簇立项；list/inline delete 自旋案先归因
-  再定去留。
+- **M2**：按簇收敛（每簇一轮）。R5331（3d173dccc，查询回落槽锚点——并行
+  双流撞车后按上游版收敛）+ 首轮（2026-10-30，innerHTML 物化身份失步全环：
+  matches 自含 / 深层解析产物 in-doc / cloneNode 融合源读 / 子树脏门 ID 锚定
+  ——R5331 指认的 cloneNode 断点环闭合；四笔 + 全量重跑 + 跨域零回归，见
+  evidence）。次轮 = 自旋簇归因（run 面 ?3001-last 变体中止 + R5331 记录的
+  8 大案 420s 墙钟转 Timeout + other 面 list/inline delete 循环，同根因
+  概率高）；其后 white-space join → insertparagraph → execCommand 语义逐簇
+  立项。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
   等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 

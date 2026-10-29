@@ -18,6 +18,11 @@
 # 断点续跑（EDITING_CORPUS_RESUME=1）与分片（EDITING_CORPUS_SHARD=k/N）语义
 # 同 run-css-testharness-corpus.sh；分片实例并行消费同一名册时各写各的
 # transcript/JSON，合并口径在 evidence 侧按 transcript 相加。
+# editing-compat M2 首轮实测两条操作坑（2026-10-30）：
+# 1. 分片 k **从 0 起**（`idx % shard_n != shard_k`——k=N 恒不命中，0 案退出）；
+# 2. 并行分片**必须**各设 EDITING_CORPUS_TRANSCRIPT——JSON 汇总从 transcript
+#    解析（共享路径时后启实例启动即 `: > transcript` 截断，先启实例的账丢失、
+#    双方 JSON 互相掺案）。
 #
 # 为何每案另有外部墙钟（CASE_WALL_S，run 通道建议 ≥150）：runner 内部
 # per-case 超时在同步脚本死循环形态下拦不住（css selectors 首跑实证），

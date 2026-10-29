@@ -2,10 +2,16 @@
 <!-- M2 首簇最小复现探针（editing-compat M1 基线 evidence 附件，不入运行面）。
      放入 wpt-data/editing/other/ 后经
      `make testharness-editing-other-one FILTER=zz-probe` 执行。
-     2026-10-30 实测：F1/F2/F6 Pass，F3/F4/F5 Fail——
-     innerHTML 产物的宿主侧身份失步：getElementById 能命中（host id_map 有节点），
-     JS 属性 API 可读（本地视图），但 Element.matches 连 tag-only 都不命中
-     （宿主句柄解析不到该元素）；createElement+setAttribute 路径正常。 -->
+     M1 基线实测：F1/F2/F6 Pass，F3/F4/F5 Fail——innerHTML 产物的宿主侧身份失步。
+     M2 首轮修复后（2026-10-30）F1-F6 全 Pass；配套 G 系列
+     （zz-probe-m2.html：runConformanceTest 形态 opening query / matches /
+     documentElement.cloneNode(true) pending 携带 / setupDiv marker walk）全 Pass。
+     修复四笔：① matches 自含语义（R188 includeSelf——part03）；② doc 级
+     querySelector 解析产物 in-doc 判定（_zwPendingPlainInDoc 父链上行，
+     R145/R3902b 门——part05/part06）；③ cloneNode 深克隆源读走 R380 融合
+     （_zwFusedInnerHtmlSel 抽取共享——part04/part05）；④ 子树脏门 ID 锚定
+     sel 感知（_zwPendingSubtreeDirty 补 __zw_contains 祖先判定 + 记账代际
+     缓存——part05，`#wrap`/`#tc` 浅选择器无字面前缀关系）。 -->
 <meta charset=utf-8>
 <div id=log></div>
 <div id=test-container></div>

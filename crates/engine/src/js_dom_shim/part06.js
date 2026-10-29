@@ -2995,9 +2995,22 @@
     var sel = nd.__zwSelector || null, h = nd.__zwHandle || null;
     if (sel || h) return !!_zwMutationInDoc(sel, h);
     var pl = nd._zwSelPendingParent;
-    if (!pl) return false;
-    if (pl.parentSel && _zwMutationInDoc(pl.parentSel, null)) return true;
-    if (pl.parentHandle && _zwMutationInDoc(null, pl.parentHandle)) return true;
+    if (pl) {
+      if (pl.parentSel && _zwMutationInDoc(pl.parentSel, null)) return true;
+      if (pl.parentHandle && _zwMutationInDoc(null, pl.parentHandle)) return true;
+    }
+    // editing-compat M2：槽只打在 fragment **顶层**视图（setter 侧 R304 打点）——
+    // 深层解析子（≥2 级，如 `<div><div contenteditable>` 的内层）无槽无身份，
+    // 上面两臂全 miss → doc 级纯 tag/compound 查询对深层产物仍不可见。补
+    // plain parentNode 链上行到最近锚祖先（sel/handle proxy）按挂载点判定
+    //（t7 ③ plainParent 臂同构；guard 防 DOM 循环。探针 E1 wrap-clone 面实证）。
+    var anc = nd, guard = 0;
+    while (anc && !anc.__zwSelector && !anc.__zwHandle && guard++ < 32) {
+      try { anc = anc.parentNode; } catch (_eppid) { return false; }
+    }
+    if (anc && (anc.__zwSelector || anc.__zwHandle)) {
+      return !!_zwMutationInDoc(anc.__zwSelector || null, anc.__zwHandle || null);
+    }
     return false;
   }
 

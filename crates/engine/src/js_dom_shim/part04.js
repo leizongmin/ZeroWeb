@@ -1801,53 +1801,13 @@
             if (_isContainerHandle(handle)) return '';
             return __zw_get_inner_html_handle(handle);
           }
-          // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML**——pending
-          // 桶非空（同 turn 内 replaceWith/removeChild/appendChild 等已记账、host 快照
-          // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化
-          // （`_childNodeList` 的 overlay 已并入 pending added / 剔除 pending removed，
-          // R51/R309/R322 补偿链；R379 pa1/pa2 后移除标记语义已正确——标记中子不出现
-          // 在融合视图）。桶空时保持 host 直读零变化（热路径不受影响）。
-          // 序列化：text 转义 / comment / 元素递归 outerHTML（pending 新子经 part05
-          // outerHTML handle 分支或自身融合序列化——R377 实验「子序列化依赖 outerHTML
-          // 对 pending 新子递归正确」在本轮 R380 registry 随迁后成立：克隆子的后代已
-          // 在 `_handleChildren`，outerHTML 的 handle 分支可读）。
-          // R381：**代际门**——`stamp === _zwApplyGeneration()` 校验桶是「apply 前
-          // stale 补偿」。pa2b 设计 apply 后不清桶（identity 记账供后续操作消费），
-          // 故桶非空不再隐含快照 stale：vue_mount_lands 的 execute#2 innerHTML 读时
-          // 桶仍是 mount 时记账（apply 已发生、快照已含子），无代际门会把快照已含的
-          // 子经 overlay 重复并入（双份 `<p class="msg">`——R309 identity 双源教训的
-          // 代际表述）。时间戳在 `_zwHCLiveInvalidate` 记账时盖（每批 mutation 刷新）。
-          var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
-            ? _zwPendingByParent.get(sel) : null;
-          // R3254-E2 切片 8（editing goal，2026-09-07）：门扩展——子树深层 mutation
-          // （deleteContents 的 removeChild/deleteData 落孙代容器桶）经
-          // `_zwPendingSubtreeDirty` 前缀扫描纳入（此前只看目标自身桶 → 跨元素删除后
-          // innerHTML 读回 stale）。
-          if ((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
-              && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
-              || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))) {
-            try {
-              var _r380Kids = _childNodeList(sel, null);
-              var _r380Out = '';
-              for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
-                var _r380n = _r380Kids[_r380i];
-                if (!_r380n) continue;
-                if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
-                else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
-                else if (_r380n.nodeType === 7) {
-                  // R5003 M3 片 b：PI 序列化（同 handle 分支——spec 恒空格分隔）。
-                  _r380Out += '<?' + (_r380n.target != null ? _r380n.target : (_r380n.nodeName != null ? _r380n.nodeName : ''))
-                    + ' ' + (_r380n.data != null ? _r380n.data : (_r380n.nodeValue != null ? _r380n.nodeValue : '')) + '?>';
-                }
-                else if (_r380n.nodeType === 1) {
-                  if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r380n)) continue;
-                  _r380Out += _r380n.outerHTML || '';
-                }
-              }
-              if (_r380Out !== '') return _r380Out;
-            } catch (_e380ih) { /* 序列化失败回落 host 快照 */ }
-          }
-          return __zw_get_inner_html(sel);
+          // R380/pa3 sel 域融合（含 R3254-E2 子树脏门）抽为 `_zwFusedInnerHtmlSel`
+          // 共享——cloneNode 深克隆同消费（stale host 串使克隆丢 pending 子：
+          // editing-compat M2，runConformanceTest 的
+          // `documentElement.cloneNode(true)` 后 `querySelector('[contenteditable]')`
+          // 恒 null → `.parentNode` TypeError 级联）。空融合（桶空/序列化空）回落
+          // host 直读，语义与本抽函数前逐位一致。
+          return _zwFusedInnerHtmlSel(sel) || __zw_get_inner_html(sel);
         }
         // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
         // `__zw_get_outer_html` 真实序列化（含 void 元素 + 属性转义）。R3201：handle-only（createElement 未挂载）
@@ -6370,9 +6330,14 @@
             if (deep) {
               var _cnd = false;
               try {
+                // editing-compat M2：sel 源先走 R380 融合序列化（`_zwFusedInnerHtmlSel`
+                // ——pending 子在 host 快照 apply 前不可见，纯 host 串使克隆丢子：
+                // runConformanceTest `documentElement.cloneNode(true)` 后
+                // `querySelector('[contenteditable]')` 恒 null 级联）。桶空/序列化空
+                // 返 null 回落 host 直读（既有行为零变化）。
                 var ih = handle
                   ? __zw_get_inner_html_handle(handle)
-                  : (sel ? __zw_get_inner_html(sel) : null);
+                  : (sel ? ((_zwFusedInnerHtmlSel && _zwFusedInnerHtmlSel(sel)) || __zw_get_inner_html(sel)) : null);
                 if (ih) {
                   __zw_set_inner_html_handle(nh, ih);
                   _cnd = true;
