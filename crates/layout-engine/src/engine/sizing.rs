@@ -456,7 +456,9 @@ impl LayoutEngine {
     /// 已布局宽不可作 max-content。
     ///
     /// 适用门（门外语义交还 taffy 原生路径，零干涉）：
-    /// - 横向主轴：父容器 flex/inline-flex + row/row-reverse（column 属块轴域另切片）；
+    /// - 横向内在尺寸：父容器 flex/inline-flex + row/row-reverse（column 属块轴域另
+    ///   切片），或父 grid/inline-grid 且轨道含内在关键字/未声明（t-p117，definite/fr
+    ///   轨道内 item 默认 stretch 不覆写）；
     /// - 水平书写模式（css-writing-modes-3：vertical 下 converter 已交换 taffy 主轴与
     ///   size 槽，水平文本步进不可写入；R1018 同门）；
     /// - item 无作者声明 definite width（css-flexbox-1 §4.1：definite 主轴尺寸即 flex
@@ -473,8 +475,12 @@ impl LayoutEngine {
     /// 污染防护：提升原子第一趟以塌缩 li 为 CB 做 abspos shrink-to-fit（多词文本折到
     /// min-content），已布局宽不可信；非提升直属 atomic inline 读已布局 outer）+ item
     /// 自身水平 frame（组成是 content-box 口径，css-sizing-3 §max-content border-box 计
-    /// 自身 padding/border）。命中项覆写第一趟污染的 auto 定尺：taffy size.width（R4360
-    /// 同口径 box_sizing 换算）+ mark_dirty，与 R1018 关键字 pass 同一 re-run 组。
+    /// 自身 padding/border）。命中项覆写第一趟污染的 auto 定尺：flex 父写 taffy
+    /// size.width（R4360 同口径 box_sizing 换算；flex-grow:0 无默认拉伸，定尺即 base
+    /// size）；grid 父在纯 max-content 轨道列表且作者未声明 min-width 时写
+    /// min_size.width 地板、size 保持 auto（css-grid-1 §7.2.2 max-content 轨道恒 ≥
+    /// max-content 贡献，地板与求解零冲突；§10.3 item 默认 stretch 填轨，门收窄与
+    /// 写法理由见函数体内注）+ mark_dirty，与 R1018 关键字 pass 同一 re-run 组。
     /// kill-switch `ZW_HOISTED_ATOMIC_ITEM_INTRINSIC=0`。
     pub(super) fn apply_hoisted_atomic_item_main_size(
         taffy_tree: &mut TaffyTree<NodeId>,
@@ -499,15 +505,49 @@ impl LayoutEngine {
             if !b.is_flex_grid_item {
                 continue;
             }
-            // 仅横向主轴 flex item（父容器 flex/inline-flex + row/row-reverse）。
-            let parent_row_main = doc.parent_node(id).and_then(|pid| styles.get(&pid)).is_some_and(|s| {
-                matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
-                    && matches!(
-                        s.flex_direction,
-                        FlexDirectionValue::Row | FlexDirectionValue::RowReverse
-                    )
-            });
-            if !parent_row_main {
+            // 横向内在尺寸 item：父 flex/inline-flex + row/row-reverse（css-flexbox-1
+            // §4.1 主轴 base size），或父 grid/inline-grid——轨道推导取 item 的
+            // max-content contribution（css-grid-1 §7.2.2：max-content 轨道与 auto
+            // 轨道 growth limit 均为 max-content contribution；行内轴即 width）。
+            // t-p117：提升原子 abspos 表示下 taffy 网格轨道同样漏计流内文本，与 flex
+            // 同源覆写。
+            let (parent_axis_ok, parent_is_grid) =
+                doc.parent_node(id)
+                    .and_then(|pid| styles.get(&pid))
+                    .map_or((false, false), |s| match s.display {
+                        DisplayValue::Flex | DisplayValue::InlineFlex => (
+                            matches!(
+                                s.flex_direction,
+                                FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                            ),
+                            false,
+                        ),
+                        DisplayValue::Grid | DisplayValue::InlineGrid => {
+                            // 内在轨道门（r2 DEF-1 收窄：仅纯 max-content 列表放行）——
+                            // max-content 轨道 growth limit = item max-content contribution
+                            //（css-grid-1 §7.2.2），轨道恒 ≥ 贡献，地板与求解零冲突。
+                            // auto/min-content 轨道受自由空间分配/最小基准约束、definite/fr
+                            // 定轨，均可解到贡献以下，地板会强迫溢出（r1 实证：100px auto
+                            // 列 definite item 100→420 叠压相邻列、auto 1fr 容器内容溢出、
+                            // 受约束 auto 200→520）——该族保持既有行为（stretch 填满已解
+                            // 轨宽，受限形态修前即正确，r1 缺陷轮 9 形态 A/B 实证）。
+                            // 未声明/none 为隐式 auto 轨道同类保守跳过。token 比较 ASCII
+                            // 大小写不敏感（CSS 保留字大小写无关；r1 小写精确匹配漏
+                            // MAX-CONTENT）。repeat()/minmax() 不识别跳过。
+                            // FIXME: 轨道列表解析切片后按 track 粒度放行贡献覆写。
+                            let mut max_content_gate = false;
+                            if let Some(t) = s.grid_template_columns.as_deref() {
+                                let mut tokens = t.split_whitespace();
+                                if let Some(first) = tokens.next() {
+                                    max_content_gate = first.eq_ignore_ascii_case("max-content")
+                                        && tokens.all(|k| k.eq_ignore_ascii_case("max-content"));
+                                }
+                            }
+                            (max_content_gate, max_content_gate)
+                        }
+                        _ => (false, false),
+                    });
+            if !parent_axis_ok {
                 continue;
             }
             // 水平书写模式门：vertical 下 converter apply_vertical_writing_mode 已把该子树
@@ -636,10 +676,34 @@ impl LayoutEngine {
                 } else {
                     (intrinsic - frame).max(0.0)
                 };
-                style.size.width = taffy::style::Dimension::length(content_width);
-                let _ = taffy_tree.set_style(taffy_id, style);
-                let _ = taffy_tree.mark_dirty(taffy_id);
-                changed = true;
+                if parent_is_grid {
+                    // 作者声明 min-width 门（r2 DEF-2）：converter 已把声明写入 taffy
+                    // min_size.width，覆写会静默失效 min-width:0 防溢出 reset（r1 对
+                    // width 有声明门、对 min-width 无，不对称）。非 Auto 即声明——保持
+                    // 原生路径，该子类的贡献注入随切片延后。
+                    let min_width_declared = styles
+                        .get(&id)
+                        .is_some_and(|s| !matches!(s.min_width, LengthValue::Auto));
+                    if !min_width_declared {
+                        // grid item 默认 justify/align normal→stretch 填满轨道区
+                        //（css-grid-1 §10.3）——写 min_size 地板而非定尺：size 保持
+                        // auto，taffy 拉伸步把 item 撑到轨宽；地板值 = max-content
+                        // 贡献真值，而纯 max-content 轨道恒 ≥ 贡献（css-grid-1
+                        // §7.2.2），地板与求解零冲突。写定 size 会击败 stretch，
+                        // item 回缩内容宽（双 item 同列实证）。flex item 无默认拉伸
+                        //（flex-grow:0），维持定尺写入。
+                        style.min_size.width = taffy::style::Dimension::length(content_width);
+                        style.size.width = taffy::style::Dimension::auto();
+                        let _ = taffy_tree.set_style(taffy_id, style);
+                        let _ = taffy_tree.mark_dirty(taffy_id);
+                        changed = true;
+                    }
+                } else {
+                    style.size.width = taffy::style::Dimension::length(content_width);
+                    let _ = taffy_tree.set_style(taffy_id, style);
+                    let _ = taffy_tree.mark_dirty(taffy_id);
+                    changed = true;
+                }
             }
         }
         changed

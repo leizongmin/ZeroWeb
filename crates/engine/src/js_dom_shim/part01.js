@@ -2337,11 +2337,11 @@
         var hdrs360 = String(parts[2] || '').split('\x1e');
         for (var h360 = 0; h360 + 1 < hdrs360.length; h360 += 2) {
           if (hdrs360[h360] === 'X-Zero-Final-URL' && hdrs360[h360 + 1]) {
-            effectiveUrl = String(hdrs360[h360 + 1]);
+            effectiveUrl = _zwWireUnescape(hdrs360[h360 + 1]);
           // 大小写不敏感取 Content-Type——sidecar headers wire 按原始大小写入列
           //（runner 推小写 `content-type`；HTTP 头名本就 case-insensitive）。
           } else if (String(hdrs360[h360]).toLowerCase() === 'content-type' && !_zwFrameCt) {
-            _zwFrameCt = String(hdrs360[h360 + 1]);
+            _zwFrameCt = _zwWireUnescape(hdrs360[h360 + 1]);
           }
         }
       }
@@ -3240,7 +3240,7 @@
     if (!wire) return out;
     var parts = wire.split('\x1e');
     for (var i = 0; i + 1 < parts.length; i += 2) {
-      var k = parts[i], v = parts[i + 1];
+      var k = parts[i], v = _zwWireUnescape(parts[i + 1]);
       // R3222：多值头（Set-Cookie 等）累加为数组（旧 last-wins 丢多 cookie——getSetCookie 失效）。
       if (Object.prototype.hasOwnProperty.call(out, k)) {
         if (Array.isArray(out[k])) out[k].push(v);
@@ -3312,6 +3312,12 @@
     // R3021：二进制 response body 经 `__zw_bytes:` csv-decimal wire → Uint8Array（response.blob()/arrayBuffer() 保真）；
     // 文本 body 原样字符串。
     var bodyArg = body.indexOf('__zw_bytes:') === 0 ? _zwDecodeBytesPrefix(body) : body;
+    // net-api M2-S3c：null body status（fetch spec #null-body-status——204/205/304）
+    // wire 响应体置 null——`response.body` 须为 null 而非空流（response-null-body
+    // 族断言 `body === null`；.text() 空串语义不变）。101 仅信息性响应面，fetch
+    // 通道不可达，不入表。
+    // https://fetch.spec.whatwg.org/#null-body-status
+    if (status === 204 || status === 205 || status === 304) bodyArg = null;
     // net-api M5-S11：wire 头保真判定（须在构造前——Response ctor 对 string body 的
     // spec 默认 content-type 注入不适用于网络响应：wire 头无 content-type → 可见头表
     // 不得凭空出现，getallresponseheaders-after-reuse headers-basic.asis「仅 foo-test」
@@ -3652,6 +3658,18 @@
     if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
     return Promise.resolve(_zwBytesThenableSafe(bytes));
   }
+  // net-api M2-S5：wire 字段转义/还原——头值可含任意控制字符（header-values-normalize
+  // 语料 0x01-0x1F 面），分隔符 \x1e/\x1f 出现在值内会被两侧拆解腐蚀。shim↔fetch_bridge
+  // 边界对称转义：ESC(\x1b)→\x1bX、\x1e→\x1bE、\x1f→\x1bF；头名恒为合法 token 不转义。
+  // Rust 侧对称实现见 fetch_bridge escape_wire_field/unescape_wire_field。
+  function _zwWireEscape(v) {
+    return String(v).replace(/\x1b/g, '\x1bX').replace(/\x1e/g, '\x1bE').replace(/\x1f/g, '\x1bF');
+  }
+  function _zwWireUnescape(v) {
+    var s = String(v);
+    if (s.indexOf('\x1b') < 0) return s;
+    return s.replace(/\x1bX/g, '\x1b').replace(/\x1bE/g, '\x1e').replace(/\x1bF/g, '\x1f');
+  }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
   function _headersToWire(src) {
     if (!src) return '';
@@ -3666,7 +3684,7 @@
       if (!Object.prototype.hasOwnProperty.call(h._h, k)) continue;
       var vals = h._h[k];
       for (var vi = 0; vi < vals.length; vi++) {
-        out += (out ? '\x1e' : '') + k + '\x1e' + vals[vi];
+        out += (out ? '\x1e' : '') + k + '\x1e' + _zwWireEscape(vals[vi]);
       }
     }
     return out;
@@ -3680,7 +3698,7 @@
     return false;
   }
   function _zwAddHeader(wire, name, value) {
-    return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + String(value);
+    return (wire ? wire + '\x1e' : '') + String(name) + '\x1e' + _zwWireEscape(value);
   }
   function _zwCurrentHref() {
     if (globalThis.location && globalThis.location.href) return String(globalThis.location.href);
@@ -3735,6 +3753,89 @@
   function _zwFetchRedirectStatus(status) {
     status = status | 0;
     return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+  }
+  // net-api M2-S7：fetch integrity 校验门（subresource integrity——本仓此前忽略
+  // integrity 元数据，M2-S3c 记账 1 / M2-S6 记账 4 显影）。fetch spec main fetch
+  // 完成响应后的 verify 步：integrity 元数据非空时对 response 校验，任何不匹配
+  // → network error（TypeError reject）。
+  //   https://fetch.spec.whatwg.org/#fetching（verify the integrity of response）
+  //   https://www.w3.org/TR/SRI/#verify-metadata
+  // 返回 Promise：resolve(response)（通过/无需校验）或 reject(TypeError)（失败）。
+  function _zwFetchVerifyIntegrity(response, integrity) {
+    if (!integrity) return Promise.resolve(response);
+    // ① opaque filtered response：body 对 JS 不可见（opaque 过滤已清空 _bodyText/
+    //    _bodyBytes）→ 校验无输入，spec 恒不匹配（「SHA-* integrity for opaque
+    //    response」腿；空 integrity 不入本门照常 pass）。
+    if (response && response.type === 'opaque') {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    // ② null body（204/205/304）→ fail（fetch spec：response body null → network
+    //    error，不做哈希比对——「Null body status with subresource integrity
+    //    should abort」腿）。
+    if (!response || response._bodyNull || response.status === 204 ||
+        response.status === 205 || response.status === 304) {
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    // ③ 解析 integrity metadata（W3C SRI grammar）：空白分隔的 `alg-value` 列表，
+    //    alg ∈ sha256/sha384/sha512（大小写不敏感）；非法项跳过不拖垮整体；按
+    //    算法强度取最强组，组内任一 value 匹配即通过（「Multiple integrities」
+    //    invalid-stronger-than-valid / as-strong-as-valid 语料面）。
+    var _sriAlgos = { sha256: 1, sha384: 2, sha512: 3 };
+    var _sriGroups = { 1: [], 2: [], 3: [] };
+    var _sriItems = String(integrity).split(/\s+/);
+    for (var _sriI = 0; _sriI < _sriItems.length; _sriI++) {
+      if (!_sriItems[_sriI]) continue;
+      var _sriDash = _sriItems[_sriI].indexOf('-');
+      if (_sriDash <= 0) continue;
+      var _sriRank = _sriAlgos[_sriItems[_sriI].slice(0, _sriDash).toLowerCase()];
+      if (!_sriRank) continue;
+      // base64 值宽容面：base64url 字母表（-/_）与缺省 padding 均合法（语料
+      // wrongpadding / base64url 腿）；长度余 3 或字符非法 → 该项跳过。
+      var _sriB64 = _sriItems[_sriI].slice(_sriDash + 1)
+        .replace(/-/g, '+').replace(/_/g, '/');
+      if (!/^[A-Za-z0-9+/]*={0,2}$/.test(_sriB64)) continue;
+      var _sriPad = _sriB64.length % 4;
+      if (_sriPad === 1) continue;
+      var _sriBin = null;
+      try { _sriBin = atob(_sriPad ? _sriB64 + (_sriPad === 2 ? '==' : '=') : _sriB64); }
+      catch (_eSriB64) { continue; }
+      _sriGroups[_sriRank].push(_sriBin);
+    }
+    var _sriPick = _sriGroups[3].length ? 3 : _sriGroups[2].length ? 2 : _sriGroups[1].length ? 1 : 0;
+    // metadata 非空但无任何合法 option → fail（spec parse 失败 → network error）。
+    if (!_sriPick) return Promise.reject(new TypeError('Failed to fetch'));
+    // ④ body 字节：二进制体直取；文本体 TextEncoder（SRI 摘要以传输字节计）。
+    //    摘要直调 host 回调（`__zw_crypto_subtle_digest`，与 part01b ECDSA 面
+    //    同型）——不走 crypto.subtle：其按 [SecureContext] 暴露，runner http 页
+    //    锚下 undefined（SRI 不是 WebCrypto API 面，直接消费同一 RustCrypto 底座）。
+    var _sriBody = response._bodyBytes;
+    if (!_sriBody && typeof TextEncoder === 'function') {
+      _sriBody = new TextEncoder().encode(response._bodyText || '');
+    }
+    if (!_sriBody) _sriBody = new Uint8Array(0);
+    var _sriAlg = _sriPick === 3 ? 'SHA-512' : _sriPick === 2 ? 'SHA-384' : 'SHA-256';
+    if (typeof __zw_crypto_subtle_digest !== 'function') {
+      // digest host 不可用等实现失败同样 fail-closed（SRI 校验失败不得放行响应）。
+      return Promise.reject(new TypeError('Failed to fetch'));
+    }
+    var _sriCsv = new Array(_sriBody.length);
+    for (var _sriB = 0; _sriB < _sriBody.length; _sriB++) _sriCsv[_sriB] = _sriBody[_sriB];
+    var _sriOut = null;
+    try { _sriOut = __zw_crypto_subtle_digest(_sriAlg, _sriCsv.join(',')); }
+    catch (_eSriD) { _sriOut = null; }
+    if (!_sriOut) return Promise.reject(new TypeError('Failed to fetch'));
+    var _sriDig = _sriOut.split(',');
+    for (var _sriJ = 0; _sriJ < _sriGroups[_sriPick].length; _sriJ++) {
+      var _sriWant = _sriGroups[_sriPick][_sriJ];
+      if (_sriDig.length === _sriWant.length) {
+        var _sriOk = true;
+        for (var _sriK = 0; _sriK < _sriDig.length; _sriK++) {
+          if (+_sriDig[_sriK] !== _sriWant.charCodeAt(_sriK)) { _sriOk = false; break; }
+        }
+        if (_sriOk) return Promise.resolve(response);
+      }
+    }
+    return Promise.reject(new TypeError('Failed to fetch'));
   }
   function _zwFetchMakeOpaqueLike(response, type) {
     response._zwOpaqueStatus = response.status;
@@ -3860,7 +3961,9 @@
     };
     for (var i = 0; i + 1 < parts.length; i += 2) {
       var ln = String(parts[i]).toLowerCase();
-      var val = String(parts[i + 1]);
+      // safelist 判定须见还原后的真实值（wire 值经 _zwWireEscape，forbidden 字节
+      // 检查对转义形失真）。
+      var val = _zwWireUnescape(parts[i + 1]);
       if (ln === 'origin' || ln === 'content-length' ||
           ln.indexOf('access-control-') === 0 || ln === 'referer' ||
           ln === 'last-event-id' || ln === 'user-agent') {
@@ -4429,7 +4532,7 @@
     var parts = wire.split('\x1e');
     var ln = String(name).toLowerCase();
     for (var i = 0; i + 1 < parts.length; i += 2) {
-      if (String(parts[i]).toLowerCase() === ln) return parts[i + 1];
+      if (String(parts[i]).toLowerCase() === ln) return _zwWireUnescape(parts[i + 1]);
     }
     return null;
   }
@@ -4693,9 +4796,31 @@
         if (init.signal instanceof AbortSignal) signal = init.signal;
         else if (isObj && input.signal instanceof AbortSignal) signal = input.signal;
       }
+      // net-api M2-S7：integrity 元数据（subresource integrity）——init 优先、
+      // Request 载体回落（Request 构造器存 _zwIntegrity，同 mode/method 取值型）；
+      // 空串不校验。校验门在 settleFetch 最终 settle（_zwFetchVerifyIntegrity）。
+      var integrity = String(init.integrity != null ? init.integrity
+        : (isRequestLike && input.integrity != null ? input.integrity : '') || '');
       return new Promise(function(resolve, reject) {
         // signal 已 aborted → 同步 reject（spec：fetch 入口检查 signal.aborted）。
+        // net-api M2-S6：abort-a-fetch 同步取消面（M2-S3 记账 3 清偿）——
+        // ① init 流体 body（ReadableStream）同步 cancel(reason)："Readable stream
+        //   synchronously cancels with AbortError if aborted before reading" 腿——
+        //   cancel 回调于 fetch() 返回前执行，reason 与 fetch rejection 同一实例
+        //   （signal.reason 默认 AbortError DOMException）。
+        //   https://fetch.spec.whatwg.org/#abort-fetch
+        // ② Request 载体有体时置 used（abort-a-fetch 对 request body 的 extract+error
+        //   语义，与 scheme 分派提取面同型）："Request is still 'used' if signal is
+        //   aborted before fetching" 腿。
         if (signal && signal._aborted) {
+          var _zwAbBody = (init && typeof init === 'object') ? init.body : null;
+          if (_zwAbBody && typeof _zwAbBody.cancel === 'function') {
+            try { _zwAbBody.cancel(signal.reason); } catch (_eAbC) {}
+          }
+          if (input && typeof input === 'object' && input.url !== undefined &&
+              init.body == null && input.body != null) {
+            input._bodyUsed = true;
+          }
           reject(signal.reason);
           return;
         }
@@ -4798,6 +4923,12 @@
           // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
           // 校验该头——缺失 → 400 Invalid access in preflight）。
           preHeaders = _zwAddHeader(preHeaders, 'accept', '*/*');
+          // net-api M2-S3c：preflight 带 User-Agent（浏览器所有 HTTP 请求均带 UA；
+          // preflight.py checkUserAgentHeaderInPreflight 比对 preflight/实际请求 UA
+          // 一致性——此前两侧皆缺省 `''==='` 假绿，主请求 M2-S3c 补 UA 后不一致
+          // → 400，preflight 侧补齐对齐）。
+          preHeaders = _zwAddHeader(preHeaders, 'user-agent',
+            (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
           // net-api M4-S25：ACRH 恒携带（空值头入 preNames 触发 preflight 但不列入
           // ACRH 值——cors-preflight-referrer「ACRH value expected ''」面）。
           var _acrhNames = [];
@@ -5158,9 +5289,15 @@
           }
           settled = true;
           delete globalThis.__zw_pending[currentId || id];
+          // net-api M2-S7：SRI 校验门——integrity 非空时 opaque/null-body/哈希
+          // 不匹配转 TypeError reject（中间跳不校验，spec 校验在最终 response）。
+          var _finResp;
           try {
-            resolve(finishFetch(raw, hopUrl));
-          } catch (error) { reject(error); }
+            _finResp = finishFetch(raw, hopUrl);
+          } catch (error) { reject(error); return; }
+          _zwFetchVerifyIntegrity(_finResp, integrity).then(resolve, function () {
+            reject(new TypeError('Failed to fetch'));
+          });
         };
         globalThis.__zw_pending[id] = function(raw) {
           settleFetch(raw, url, method, body, headersWire, id);
@@ -5188,6 +5325,19 @@
         }
         var _issueFetch = function () {
         try {
+          // net-api M2-S3c：浏览器默认请求头（UA 网络层追加、Accept `*/*`）——
+          // inspect-headers 回读面（request-headers「Request has header
+          // user-agent」、accept-header「accept `*/*`」）。仅缺省补齐不覆盖显式
+          // init；user-agent 在 _zwPreNamesOf 恒跳过、`*/*` 在 accept 值条件
+          // 安全名单内——预检名单零变化。accept-language 不补（按引擎 2024 名单
+          // 逻辑恒入预检名单，补齐会扰动 cors 族既有面）。
+          if (!_zwHasHeader(headersWire, 'user-agent')) {
+            headersWire = _zwAddHeader(headersWire, 'user-agent',
+              (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
+          }
+          if (!_zwHasHeader(headersWire, 'accept')) {
+            headersWire = _zwAddHeader(headersWire, 'accept', '*/*');
+          }
           var _sync = __zw_fetch(
             id,
             method,
@@ -5294,12 +5444,23 @@
           }
         } catch (_eRtEmit) {}
       };
-      return p.then(function (v) {
+      // net-api M2-S6：RT 发射改侧信道挂接（不包装返回 promise）——包装式
+      // `p.then(emit, emit)` 的派生 promise 使一切 fetch settle 晚一个 microtask，
+      // abort/general「Already aborted signal rejects immediately」期望已 aborted
+      // 入口的 fetch rejection 先于调用方排队的下一 microtask（reject 排序
+      // `['fetch-reject', 'next-microtask']`）。发射时机容差不受影响（endMs ≈
+      // settle 时刻，侧信道仍在 settle 后同步排队）。
+      // 注：返回 p 也顺带消除了旧包装的假绿面——testharness 对「promise_rejects_js
+      // 返回值未被 await」的迟到 unreached 断言有 phase 守卫丢弃（Test.step 的
+      // phase > STARTED 静默 return），包装多出的那一格 microtask 曾把 SRI 腿的
+      // assert_unreached 推迟到 test done 之后被丢弃 → 引擎无 SRI 的真缺口假绿
+      //（M2-S6 记账，response-null-body SRI 腿显影）。
+      p.then(function (v) {
         // net 元数据由响应对象携带（_makeResponseFromWire 挂 __zwRtMeta——
         // body 字节数/content-length/headers 线长/协议）。
         _rtEmitOnce(v && v.__zwRtMeta);
-        return v;
-      }, function (e) { _rtEmitOnce(null); throw e; });
+      }, function () { _rtEmitOnce(null); });
+      return p;
     };
   }
 

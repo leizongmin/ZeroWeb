@@ -1,11 +1,10 @@
 # 遗留多字节编码文档解码面 — encoding/legacy-mb 文档族
 
-**版本**: v1.7
-**日期**: 2026-10-29（DC-4 批量运行中：重试链换 v2——rc=1 为「完成但有失败」
-合格态不再重跑，cache-storage 重试参数补回通道名；收口判据 = status.tsv 全行
-rc∈{0,1} 且 results/*.json 全部可解析）
-**状态**: Active——DC-1/DC-2/DC-3 完成；DC-4 进行中（51 通道 `--json` 批量
-重跑，收齐后 `wptfyi_gap.py coverage` 全量复测）；M3 甄别面全部收口
+**版本**: v1.8
+**日期**: 2026-10-29（DC-4 收口：54 通道批量实跑 status.tsv 全行 rc∈{0,1} 且
+results/*.json 全部可解析；coverage-2026-10-29 全量复测，legacy-mb decode 面
+360,431 清零路径成立）
+**状态**: Done——DC-1~DC-4 全部收口（2026-10-29）
 **执行模式**: WPT 驱动（上游 encoding/legacy-mb corpus 为验收标尺）+ runner 管道能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -21,6 +20,12 @@ rc∈{0,1} 且 results/*.json 全部可解析）
 三大多字节族合计 **1,127,087 子测试 = 全量分母（2,264,876）的 50%**。解锁即把
 全量对账头条从「基本没测过编码文档面」变为「编码面有数字」——JS API 面
 （30 号已收口）已验证同族解码表实现通过率 ~100%，文档面解锁后预期高通过率。
+
+**DC-4 复测（2026-10-29，[coverage-2026-10-29.md](../compat/wptfyi/coverage-2026-10-29.md)）**：
+上表「0 文件覆盖」形态已消除——四族分母 1,128,104 计入全量对账，decode 面
+360,431 全过（japanese 114,208 + korean 170,488 + tchinese 75,735，与 M2
+基线逐字对上），未覆盖余量 767,316 = M3 甄别归口 encode 面；全量头条
+7.41% → **24.19%**。
 
 ## 执行前预检（2026-10-27，v1.1 修订依据）
 
@@ -180,6 +185,19 @@ rc∈{0,1} 且 results/*.json 全部可解析）
   - **口径影响**：DC-3 分母对账把 encode 面单列 not-run（767,673 子测试），
     与 decode 面分开计——解锁面通过率不被未解锁面稀释。
 
+- **DC-4 批量复测收口（2026-10-29）**：细节见
+  [evidence/2026-10-29-dc4-coverage-reclose.md](encoding-legacy-mb/evidence/2026-10-29-dc4-coverage-reclose.md)。要点：
+
+  - 54 通道（51 主批 + CI 对齐 canvas/canvas-worker/constraints 补跑）
+    `--json` 实跑收齐，收口判据达成（全行 rc∈{0,1}、JSON 全可解析）。
+  - canvas 通道 rc=101 定谳：DC-1 引入的 `sniff_document_encoding` 1024
+    字节 prescan 窗按字节直切，byte 1024 落进全角字符字节中段 panic 杀整
+    通道——共享路径修复（截断点回退最近 char boundary）+ 回归钉同提交，
+    复跑 rc=1（合格完成态）入账。
+  - coverage 全量复测（[coverage-2026-10-29.md](../compat/wptfyi/coverage-2026-10-29.md)）：
+    全量头条 7.41% → **24.19%**（548,502/2,267,219 子测试，8,627 文件覆盖）；
+    四族 decode 面 360,431 全过清零，余量 767,316 = encode 面甄别归口。
+
 ## Mission
 
 让 runner 文档加载管道按文档编码声明（`<meta charset>` / HTTP Content-Type
@@ -235,20 +253,13 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
 - **M2** ✅（2026-10-28 基线；2026-10-29 更正为全量口径，DC-3 收口）：
   基线分类 + wpt-suites.csv 回填 + `.headers` 复核 + 分母对账（见「M2
   进展」节与 2026-10-29 evidence）。
-- **M3** 进行中：`_zwMBuildDeepEntry` details 裁决态甄别 ✅（2026-10-28，
-  两面背离修复）+ form-encode/href 可跑性甄别 ✅（2026-10-28，68 文件
-  归口非 goal 面，见「M3 进展」节）；**DC-4 批量驱动已启动**（2026-10-29
-  夜，51 通道 `--json` 顺序跑，结果目录
-  `/lzcapp/document/work/zw-coverage-dc4/results/`，status.tsv 逐通道 rc；
-  数小时量级——下轮收齐跑 `wptfyi_gap.py coverage` 出新日期全量报告）。
-  运行追记（2026-10-29 凌晨）：前 4 通道完成——html rc=0（curated 精选面
-  7 case，通道定义如此；上期报告 html/dom 覆盖实来自 html-syntax 通道的
-  pinned corpus）、dom rc=124（900s envelope 预置偏紧，M0 先例放宽 1800s
-  即可完成，重试 3x=2700s 兜底）、selection/keyboard rc=1（runner 语义 =
-  完成但有失败子测试，`failed||empty→exit(1)`，JSON 完整即 coverage 合格
-  输入）。重试链换 v2（脚本在仓库外 `/lzcapp/document/work/zw-coverage-dc4/`）：
-  rc=1 通道不再 3x 重跑（v1 会空耗数小时）；cache-storage 重试参数补回
-  通道名（v1 丢名会 argparse 失败且把主跑好 JSON 截断成 0 字节）。
+- **M3** ✅（2026-10-29 收口）：`_zwMBuildDeepEntry` details 裁决态甄别 ✅
+  （2026-10-28，两面背离修复）+ form-encode/href 可跑性甄别 ✅（2026-10-28，
+  68 文件归口非 goal 面，见「M3 进展」节）+ **DC-4 批量复测收口**（2026-10-29：
+  54 通道实跑 status.tsv 全行 rc∈{0,1}、JSON 全可解析；canvas 通道 sniff
+  prescan 窗 char boundary panic 定谳修复后复跑入账；coverage-2026-10-29
+  全量头条 24.19%，legacy-mb 清零路径成立。细节见
+  [DC-4 收口 evidence](encoding-legacy-mb/evidence/2026-10-29-dc4-coverage-reclose.md)）。
 
 语料进度（2026-10-29 更正）：七族 253 文件**已全量在位**（30 号预置即齐，
 上游 pin 315976933 对账 missing=0）——此前多轮「网络 degraded 语料卡点」

@@ -827,6 +827,8 @@ impl StyleSystem {
             // ——UA 表单默认值是非继承属性，无规则时 pseudo 计算回落 initial 值即
             // 与元素 UA 背景相异，误存）。UA 默认高亮色未实现（FIXME）：无作者
             // 规则不存储，paint 无高亮（零新红——老页面选区渲染零变化）。
+            // R5321 扩：值歧义形（transparent/同值声明）以 collect 探针判作者
+            // 声明存在性（见下方存储位注）。
             let is_selection_host = |kind: &NodeKind| -> bool {
                 let NodeKind::Element(e) = kind else { return false };
                 let tag = e.local_name();
@@ -891,7 +893,49 @@ impl StyleSystem {
                         sel.color = fg;
                     }
                 }
-                if sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent) {
+                // R5321（css-pseudo-4 §highlight-cascading）：后值判据不可判别
+                // 「作者显式 transparent/同值声明」与「无规则」（同落 Transparent/同
+                // color）——此形误不存储 → paint 侧 R5272 UA 默认高亮回落给作者已
+                // 声明页再铺 OS 高亮底（driving: selection-background-color-transparent
+                // mismatch 型 0 差异 fail；作者声明须压过 UA origin，test 与 notref
+                // 必异）。值歧义形才走 collect 探针（≡ R4257 scroll-button 位同构：
+                // 媒体+容器链顶），invalid/empty 规则族（051/053/054）探针空维持
+                // 不存储旧判。
+                let sel_value_differs =
+                    sel.color != elem_style.color || !matches!(sel.background_color, ColorValue::Transparent);
+                let sel_stored = sel_value_differs || {
+                    let media_ctx = match (self.viewport_width, self.viewport_height) {
+                        (Some(w), Some(h)) => {
+                            let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                            ctx.prefers_color_scheme = self.prefers_color_scheme;
+                            ctx.media_type = self.media_type;
+                            Some(ctx)
+                        }
+                        _ => None,
+                    };
+                    let container_ctx = container_context_from_chain(&self.container_chain);
+                    matcher::collect_pseudo_declarations_with_media(
+                        doc,
+                        node,
+                        stylesheets,
+                        rule_index,
+                        media_ctx.as_ref(),
+                        container_ctx.as_ref(),
+                        "selection",
+                    )
+                    .iter()
+                    // 只认 background 面的**字面 transparent 值**声明——探针返回
+                    // 未过滤的原始声明（未知属性 `foo: bar`、非法值
+                    // `background-color: bar`（active-selection-054）、`revert`
+                    // 回落 UA origin 都在列，级联期才丢弃），按名或按值域判存会
+                    // 复活 invalid/revert 族（corpus 实测 +2 红）；color/decoration
+                    // 面已有后值判据覆盖。
+                    .any(|(prop, value, ..)| {
+                        (prop == "background-color" || prop == "background")
+                            && value.trim().eq_ignore_ascii_case("transparent")
+                    })
+                };
+                if sel_stored {
                     computed.selection_pseudo = Some(sel);
                 }
             }
@@ -1297,8 +1341,9 @@ impl StyleSystem {
     /// R3867：`::first-letter`（CSS2 §5.12.2）伪元素计算——独立 helper 保持
     /// R5258（CSS2 §5.12.1）：`::first-line` 伪样式计算——镜像
     /// [`Self::compute_first_letter_pseudo`]：collect 空 → None（零存储零 paint
-    /// 影响）；非空走完整级联，color 与元素不同才存储（帧体量纪律 R3867 同款
-    /// 独立 helper，不占 [`Self::compute_styles_recursive`] 的 debug 栈帧体量）。
+    /// 影响）；非空走完整级联，color 或 background-color 与元素不同才存储
+    ///（R5320 补 background-color 位，帧体量纪律 R3867 同款独立 helper，
+    /// 不占 [`Self::compute_styles_recursive`] 的 debug 栈帧体量）。
     #[allow(clippy::too_many_arguments)]
     fn compute_first_line_pseudo(
         &mut self,
@@ -1342,7 +1387,11 @@ impl StyleSystem {
             quirks_mode,
             Some("first-line"),
         );
-        (first_line.color != elem_style.color).then(|| Box::new(first_line))
+        // R5320（CSS2 §5.12.1 切片 2 bg 位）：background-color 与元素不同也
+        // 存储——bg-only 页（`p:first-line { background: green }`）此前 None
+        // → paint 侧无伪样式可取（c25-pseudo-elmnt-000 driving）。
+        (first_line.color != elem_style.color || first_line.background_color != elem_style.background_color)
+            .then(|| Box::new(first_line))
     }
 
     /// `::first-letter` 伪样式计算抽为独立 helper，不占

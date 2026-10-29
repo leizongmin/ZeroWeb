@@ -17638,7 +17638,7 @@
       // §9.2.4：Last-Event-ID 于 request header list 内部直设（任意 UTF-8 串）——经
       // __zwInternalHeadersWire 旁路（公共 init.headers 的 ByteString 校验会拒绝 >U+00FF）。
       if (self._lastEventId) {
-        init.__zwInternalHeadersWire = 'last-event-id\x1e' + self._lastEventId;
+        init.__zwInternalHeadersWire = 'last-event-id\x1e' + _zwWireEscape(self._lastEventId);
       }
       var p;
       try {

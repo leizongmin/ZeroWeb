@@ -58,7 +58,13 @@ pub(crate) fn serialize_url_components(url: &url::Url) -> Option<UrlComponents> 
                 Some("") | None => String::new(),
                 Some(q) => format!("?{q}"),
             },
-            hash: url.fragment().map(|f| format!("#{f}")).unwrap_or_default(),
+            // URL spec §hash getter：「fragment 为 null 或空串返空串，否则 "#" +
+            // fragment」——裸尾 `#` 被 url crate 解析为 Some("")，href 序列化仍
+            // 保留 `#`，但 hash getter 须归空串（url-setters hash '#' 面）。
+            hash: match url.fragment() {
+                Some("") | None => String::new(),
+                Some(f) => format!("#{f}"),
+            },
             href: url.as_str().to_string(),
         }
     }))

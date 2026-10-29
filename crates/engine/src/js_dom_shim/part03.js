@@ -15686,9 +15686,15 @@
   // innerHTML 补偿链把解析片段顶层节点（_zwMEl，apply 前无 handle/sel、挂 `_zwSelPendingParent`
   // 槽）并入融合 childNodes，而查询入口（QSA/getElementsByName）对同批插入命中 host
   // apply-pending 视图返 sel proxy——同一逻辑节点两个 JS 对象。本 helper 以签名
-  //（tag + id + name + class）把 sel proxy 映射到 pending 解析节点；命中且唯一时消费方可
+  //（tag + id + name + class + target）把 sel proxy 映射到 pending 解析节点；命中且唯一时消费方可
   // 按融合 identity 定位（兄弟导航/父子关系与 childNodes 同源）。匹配仅在有 pending 解析
   // 节点时进行（常态零开销）；签名歧义（多节点同签名）→ 不归一（保守返 undefined，旧行为）。
+  // M2 s142：签名补 `target`——targeted-form 语料族 populateForm 的 `<form target=N>`
+  // 连环插入（每 test 一对 iframe+form，form 无 id/name/class），旧签名全部 `FORM|||`
+  // 同签 → hits>1 歧义不归一 → 落 live 臂（对 pending 失明）恒 null（`loadPromise(
+  // form.previousSibling)` 崩 Cannot set properties of null 主根因）。target 随节点移动
+  // 且该族值唯一（frameName 计数器），与 host 侧 unique_selector_for_node 的 name/target
+  // 属性锚同源。
   // 返值：匹配节点 / undefined（不归一）。
   function _zwPendingParsedForSel(sel, _unusedProp) {
     if (typeof _zwPendingByParent === 'undefined' || !_zwPendingByParent || typeof __zw_get_tag !== 'function') {
@@ -15709,13 +15715,14 @@
           // 保守不归一」由下方 `hits === 1` 唯一性判定实现，不以候选数截断。
           var tag = '';
           try { tag = String(nd.tagName || '').toUpperCase(); } catch (_et) {}
-          var attrs = { id: '', name: '', class: '' };
+          var attrs = { id: '', name: '', class: '', target: '' };
           try {
             attrs.id = String(nd.id || '');
             attrs.name = String(nd.getAttribute('name') || '');
             attrs.class = String(nd.getAttribute('class') || nd.className || '');
+            attrs.target = String(nd.getAttribute('target') || '');
           } catch (_ea) {}
-          nd.__zwSig3k = tag + '|' + attrs.id + '|' + attrs.name + '|' + attrs.class;
+          nd.__zwSig3k = tag + '|' + attrs.id + '|' + attrs.name + '|' + attrs.class + '|' + attrs.target;
           cand = nd; // 记最后一个，计数在签名比较时统一
           candCount++;
         }
@@ -15723,14 +15730,15 @@
     } catch (_ew) { return undefined; }
     if (candCount === 0) return undefined;
     // sel 签名（host apply-pending 视图）与候选比对；多候选时选唯一签名命中。
-    var selTag = '', selId = '', selName = '', selCls = '';
+    var selTag = '', selId = '', selName = '', selCls = '', selTarget = '';
     try {
       selTag = String(__zw_get_tag(sel) || '').toUpperCase();
       selId = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'id') : '') || '');
       selName = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'name') : '') || '');
       selCls = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'class') : '') || '');
+      selTarget = String((typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'target') : '') || '');
     } catch (_es) { return undefined; }
-    var selSig = selTag + '|' + selId + '|' + selName + '|' + selCls;
+    var selSig = selTag + '|' + selId + '|' + selName + '|' + selCls + '|' + selTarget;
     var hit = null, hits = 0;
     try {
       _zwPendingByParent.forEach(function (bucket) {

@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.5
-**日期**: 2026-10-29（M2-S3b 收口）
-**状态**: Active——M1/M2-S1/M2-S2/M2-S3/M2-S3b 完成（M1 基线 9354 → 10585，累计 +1231），下一步 runner 基建切片与 USP/setters 小片，其后 M 收口 coverage 复测
+**版本**: v2.10
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10893**（+1539，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -37,10 +37,62 @@
   语义两项（cors 跳 Origin 恒归一、Location credentials network error）：
   全通道 A/B **0 回归 +11**（10574→10585，8 MISSING 逐条核对为 subtest
   改名 Pass→Pass）。
-- **一期零回归对账**：各轮 A/B 均零回归；真回归 3 legs 已于 M2-S3b 全部清偿。
-- **下一步**：runner 基建切片（url crate panic 根因、cors-redirect-preflight
-  per-hop preflight）、USP BOM/setters-stripping 小片，其后 M 收口 coverage
-  复测。
+- **M2-S3c 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s3c-fetch-defaults-txt-unlock.md)）：
+  fetch fixture `.txt` 三件解锁（top.txt/cors-top.txt/empty.txt，46F 面）+
+  `fetch/api/resources/status.py` 路由同语义接入（10F）+ 浏览器默认请求头
+  UA/`Accept: */*` 缺省补齐（2F，预检名单零变化）+ null body status
+  204/205/304（9F）+ preflight UA 一致性对齐：fetch/api 404F → **334F**。
+- **M2-S4a 完成**（[证据档](net-api-compat/evidence/2026-10-29-m2-s4a-url-setters.md)；
+  前轮遗留未提交工作本轮补验收口）：url 组件 setter 语义面（no-throw
+  分型、cannot-have 守卫、host/hostname state override 机、opaque path
+  SPACE 归一、hash getter 空串面 + ws 构造器 fragment presence 连带回归
+  修复）：url 357F → **169F**（setters +110 / setters-stripping +54 /
+  a-element、url-constructor 各 +11）；url crate panic stderr 噪声 0 次
+  （基线每轮 2 次）。
+- **联合终态 A/B（S3c + S4a 一轮全通道）**：`netapi-m2s3c-r4.json` vs
+  `netapi-m2s3b-r3.json` 逐 subtest——**+258 增益 / 0 真回归 / MISSING 0**
+  （10585 → 10843）。唯一 Pass→Fail 为 integrity「CORS invalid integrity」
+  **语义显影**记账（基线靠 Failed to fetch 假绿，top.txt 解锁后显影为
+  SRI 真缺口，机械证据落 S3c 档记账 1）。
+- **DC-4 判读（复测数据待 M 收口终稿）**：mimesniff 865→**602** ✓ 精确
+  命中；url 1146→**169** ✓ 超额（目标 ~360）；fetch/api 572→**334**
+  （目标 ~300：剔除 request-cache 族 98F「HTTP 栈本体」standing
+  exclusion 后 236F 已达线，含族则差 34F——口径决策见待决项）。
+- **一期零回归对账**：各轮 A/B 均零回归；真回归 3 legs（M2-S3b）+ 过程
+  轮 2 legs（S3c/S4a）全部清偿；1 语义显影记账（非行为回归）。
+- **M 收口完成**（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）：
+  DC-4 终稿（url 1146→169F 超额 / mimesniff 865→602F 精确命中 /
+  fetch/api 572+1T→334+1T，剔除 request-cache standing exclusion 达线）+
+  **一期零回归声明**（全轮 A/B 零真回归，显影 1 记账）。二期 Done
+  Criteria 全部满足。
+- **M2-S5 完成（收口后重开小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s5-header-values-wire-escaping.md)）**：
+  header-values-normalize 36F 三分解收敛——fetch 头 wire `\x1e`/`\x1f`
+  边界对称转义（`fetch_bridge` + shim 六点）、fixture `inspect-headers.py`
+  POST 豁免、空值头回显：normalize **62/62 收口**；全通道 vs M 收口参考
+  **+39 零回归**（10843 → 10882），fetch/api 334F → **295F**，url/mimesniff
+  零扰动。
+- **M2-S6 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s6-abort-entry-sync-cancel.md)）**：
+  abort/general 引擎入口同步取消面——fetch 入口已 aborted 信号同步
+  cancel 流体 body + 置 Request bodyUsed（abort-a-fetch 语义，M2-S3
+  记账 3 清偿）+ fetch settle 时序去包装（RT 发射侧信道化）+ stash
+  仿真 fixture 扩注入 abort/general：**+6 零真回归**（10882 → 10887），
+  general.any.js 29P/32F → 35P/26F；A/B 唯一 Pass→Fail 为 SRI 腿
+  **语义显影**记账（旧 RT 包装 +1 microtask 假绿被去包装显影，与 S3c
+  记账 1 同根因 SRI 未实现，机制落证据档）。
+- **M2-S7 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s7-sri-integrity-verify.md)）**：
+  SRI integrity 校验门（fetch verify 步，shim 单点）——opaque+integrity
+  fail / null-body+integrity fail / metadata 解析（最强算法组 + base64url
+  宽容面）/ 摘要直调 `__zw_crypto_subtle_digest`（http 页锚下
+  crypto.subtle 未挂载）：**+6 零回归**（10887 → 10893），
+  integrity.sub 13P/5F → **18P/0F 收口**，response-null-body SRI 腿
+  翻绿；S3c 记账 1 与 S6 记账 4（同根因显影两腿）双双清偿。
+- **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
+  排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
+  HTTP 缓存层方案，挂用户拍板）。
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：abort body-abort
+  族（response/request 体消费中止 ~20F + 组合面 10F，S6 证据档记账
+  1-3）、signal 身份族 4F、request-headers 方法面余 22F（runner 域）、
+  request-cache HTTP 缓存层（待决项立项后）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -61,15 +113,15 @@
 3. **WebSocket 二期重估**：一期挂账面按当前 runner 通道现状出可行性与切片
    建议，可行则本轮内立项推进。
 
-## Done Criteria
+## Done Criteria（v2.7 全部满足，对账见[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）
 
-- **DC-1（归因表）**：三族失败逐簇归因落 `docs/goal/net-api-compat/evidence/`
+- **DC-1（归因表）✓**：三族失败逐簇归因落 `docs/goal/net-api-compat/evidence/`
   （簇 → 根因 → 归口 → 可收敛性）。
-- **DC-2（收敛轮）**：真引擎簇逐域修齐，每轮与一期基线逐 subtest 对照零回归，
+- **DC-2（收敛轮）✓**：真引擎簇逐域修齐，每轮与一期基线逐 subtest 对照零回归，
   evidence 落档。
-- **DC-3（WebSocket 结论）**：挂账重估结论落 evidence（可行切片或维持挂账
+- **DC-3（WebSocket 结论）✓**：挂账重估结论落 evidence（可行切片或维持挂账
   及重入条件）。
-- **DC-4（coverage 复测）**：三族已覆盖失败子测试显著下降（M1 归因定量：
+- **DC-4（coverage 复测）✓**：三族已覆盖失败子测试显著下降（M1 归因定量：
   mimesniff 865→602、url 1146→~360、fetch/api 572→~300，详见 M1 归因档
   「M2+ 收敛排序建议」）；对一期已收口域零回归。
 

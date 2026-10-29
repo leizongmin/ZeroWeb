@@ -5011,7 +5011,14 @@ fn parse_serve_with_content_type_query(query: &str) -> Option<(String, String)> 
 /// （无法识别 → None，调用方顺延下一级）。1024 字符窗近似 spec prescan 窗。
 /// https://html.spec.whatwg.org/multipage/parsing.html#encoding-sniffing-algorithm
 fn sniff_document_encoding(html: &str) -> Option<String> {
-    let window = &html[..html.len().min(1024)];
+    // 窗口按字节计（spec prescan 1024 bytes），截断点须落在 char boundary——
+    // byte 1024 落进多字节字符时直切 panic（canvas 语料全角注释实证 rc=101）；
+    // 回退最近边界至多丢窗尾半个字符，不影响 meta 面匹配。
+    let mut end = html.len().min(1024);
+    while !html.is_char_boundary(end) {
+        end -= 1;
+    }
+    let window = &html[..end];
     let re_match = window.match_indices("<meta").find_map(|(pos, _)| {
         let tag_end = window[pos..].find('>')? + pos;
         let tag = &window[pos..=tag_end];
@@ -7462,7 +7469,14 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.ends_with("/status.py") && clean.starts_with("xhr/") {
+            if clean.ends_with("/status.py")
+                && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py")
+            {
+                // net-api M2-S3c：fetch/api/resources/status.py 同语义接入——上游
+                // fetch/api/resources/status.py 与 xhr/resources/status.py 逐字同源
+                //（code/text/content/type + X-Request-Method）。此前仅 xhr/ 前缀
+                // 命中，fetch/api 面落静态读库 404（response-null-body「expected
+                // 204 but got 404」、text-utf8 fetched-data 族）。
                 // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
                 // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
                 // status.py）。?code=（默认 200）&text=（默认 OMG）&content=&type=
@@ -7900,7 +7914,12 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             }
             // net-api M4-S18：非 GET 放行至各 fixture 自行分派（corsenabled/redirect-cors
             // 的 OPTIONS preflight 分支）后兜底拒绝——preflight OPTIONS 不再被 blanket 拒。
-            if req.method != "GET" && req.method != "OPTIONS" {
+            // net-api M2-S5：inspect-headers.py 上游 wptserve handler 方法无关（任意
+            // 方法回显请求头）——header-values-normalize XHR POST 腿经此回显；其余
+            // 端点维持兜底拒绝。
+            if req.method != "GET" && req.method != "OPTIONS"
+                && !clean.ends_with("/inspect-headers.py")
+            {
                 return Err(format!("method not supported: {}", req.method));
             }
             if req.method == "OPTIONS" {
@@ -7971,16 +7990,19 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     })
                     .unwrap_or_default();
                 for name in &checked {
-                    let value = req
+                    // 上游 inspect-headers.py 按「头存在」回显（wptserve `in
+                    // request.headers`），值可为空串——header-values-normalize strip
+                    // 腿（值 strip 后为 ""）期望 x-request-val1 == "" 而非缺席。
+                    let hits: Vec<&str> = req
                         .headers
                         .iter()
                         .filter(|(n, _)| n.eq_ignore_ascii_case(name))
                         .map(|(_, v)| v.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    if !value.is_empty() {
-                        headers.push((format!("x-request-{}", name), value));
+                        .collect();
+                    if hits.is_empty() {
+                        continue;
                     }
+                    headers.push((format!("x-request-{}", name), hits.join(", ")));
                 }
                 if wpt_query_value(query, "cors").is_some() {
                     let origin = req
@@ -9652,7 +9674,12 @@ fn prepare_harness_html(
     let reporter = HARNESS_REPORTER_SOURCE;
     // security-hardening M2-s1：注入脚本 nonce 戳记（见 [`harness_nonce_attr`]）。
     let csp_nonce_attr = harness_nonce_attr(source);
-    let cache_abort_fixture = if case_path.contains("cache-abort") {
+    // net-api M2-S6：abort/general 同注入 stash 仿真 fixture——wptserve
+    // stash-take/put + infinite-slow-response.py 端点语义（「Already aborted
+    // signal does not make request」经 stash-take 观测请求未发出；此前落静态
+    // 读库 404 空体 → r.json() SyntaxError 掩盖断言面）。
+    let cache_abort_fixture = if case_path.contains("cache-abort") || case_path.contains("abort/general")
+    {
         CACHE_ABORT_FETCH_FIXTURE
     } else {
         ""
@@ -9781,8 +9808,6 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
     var url = parseUrl(input);
     if (!url) return nativeFetch(input, init);
     var path = url.pathname;
-    var signal = signalOf(input, init);
-    if (signal && signal.aborted) return Promise.reject(signal.reason);
     if (path.endsWith('/fetch/api/resources/stash-take.py')) {
       var takeKey = url.searchParams.get('key') || '';
       var value = Object.prototype.hasOwnProperty.call(stash, takeKey) ? stash[takeKey] : null;
@@ -9796,22 +9821,23 @@ const CACHE_ABORT_FETCH_FIXTURE: &str = r#"
       return Promise.resolve(responseFor(url, 'done', 'text/plain'));
     }
     if (path.endsWith('/fetch/api/resources/infinite-slow-response.py')) {
+      var signal = signalOf(input, init);
+      // net-api M2-S6：入口 abort 只在 wrapper 自持端点拦截（generic URL 交还
+      // 引擎语义——Request bodyUsed/流体同步 cancel 等引擎面不被 wrapper 遮蔽）。
+      // 已 aborted → 请求未发出，stateKey 不落 'open'（stash-take 观测 null）。
+      if (signal && signal.aborted) return Promise.reject(signal.reason);
       var stateKey = url.searchParams.get('stateKey') || '';
       if (stateKey) stash[stateKey] = 'open';
-      return new Promise(function(resolve, reject) {
-        var settled = false;
-        function abort() {
-          if (settled) return;
-          settled = true;
-          reject(signal && signal.reason);
-        }
-        if (signal) signal.addEventListener('abort', abort);
-        if (!signal) Promise.resolve().then(function() {
-          if (settled) return;
-          settled = true;
-          resolve(responseFor(url, Array(2049).join('.'), 'text/plain'));
+      // 上游 wptserve 头快速到达、体缓慢流式——runner 同步契约下立即返响应
+      //（防 await fetch 悬挂到 harness 超时）；abort 视为连接关闭 → stateKey
+      // 落 'closed'（「Underlying connection is closed」轮询观测面）。
+      var done = responseFor(url, Array(2049).join('.'), 'text/plain');
+      if (signal) {
+        signal.addEventListener('abort', function() {
+          if (stateKey) stash[stateKey] = 'closed';
         });
-      });
+      }
+      return Promise.resolve(done);
     }
     return nativeFetch(input, init);
   };
@@ -11905,6 +11931,24 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // encoding-legacy-mb DC-4 回归钉：sniff 1024 字节窗截断须落在 char
+    // boundary——byte 1024 落在多字节字符（'（' 占 1022..1025）内时原 `[..1024]`
+    // 直切 panic（canvas 语料全角注释实证 rc=101）。boundary 对齐输入窗恒等，
+    // 嗅探语义不变。
+    #[test]
+    fn sniff_document_encoding_window_multibyte_boundary() {
+        // byte 1024 在 '（' 字节中段：修复前 panic；现回退边界 1022，窗内无
+        // 完整 meta → None
+        let mut html = format!("<p>{}", "a".repeat(1019));
+        html.push('（');
+        html.push_str("<meta charset=\"utf-8\">");
+        assert_eq!(html.len(), 1025 + 22);
+        assert_eq!(sniff_document_encoding(&html), None);
+        // boundary 对齐：meta 在 1024 字节窗内照常嗅探（对齐输入零行为变化）
+        let aligned = format!("<meta charset=\"euc-jp\">{}", "a".repeat(1024));
+        assert_eq!(sniff_document_encoding(&aligned).as_deref(), Some("EUC-JP"));
+    }
 
     // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认
     // application/json 放行（pipe/sidecar 可覆盖）；serve-with-content-type.py 按

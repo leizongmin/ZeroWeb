@@ -55,12 +55,22 @@ Blob.type 翻转（一期 fileapi-compat 2026-10-11 仲裁：构造器 type 选�
 
 ## 已知差异记账
 
-## 已知差异记账
-
 - `fetch/api/response/response-consume.html`「Consume response's body: from
   URLSearchParams to blob」1 腿：语料期望派生 CT 面 blob type 为**小写**
   `charset=utf-8`，而 `fetch/api/body/mime-type.any.js` 同浏览器绿面钉派生 CT
   **头面**为大写 `charset=UTF-8`（extract-from-headers 语义下两者互斥——
-  parse-serialize 保参数大小写）。浏览器靠非规范双字面量实现调和；本引擎按
-  fetch spec `get the MIME type` 单一路径走，该腿归**语料内部张力**记账，
-  与 M5-S5 trade-off 家族同性质。
+  parse-serialize 保参数大小写）。
+  **记账证据升级（M2-S3c 轮复核，2026-10-29）**：原「浏览器靠非规范双字面量
+  实现调和」的推测不成立——张力是**双向实证**的，任何单一实现三面不可兼得：
+  - C 面（隐式 body init CT 经 blob() 小写，response-consume:230）：
+    Chrome latest（wpt.fyi run 5077221233131520，rev 5ccef26dd9）
+    response-consume.html **40/40** 全绿（分母与本引擎逐 subtest 同构 40）；
+  - B 面（显式头参数值大小写经 blob() 保留，mimesniff parsing.any
+    (Request/Response) `CHARSET=GBK` → `text/html;charset=GBK`）：
+    Chrome latest parsing.any.html 仅 **712/1898**——语料腿算术（B/F 955 +
+    R/R 942 + parent 1 = 1898，harness 与 pin 逐字同源排除漂移）推得 R/R 腿
+    至少挂 231，GBK 保留面不在 Chrome 绿面；本引擎按 spec parse-serialize
+    实现在该面 +263 全翻。
+  - Chrome 以「丢 B 得 C」、本引擎以「丢 C 得 B」各执一端，spec 文本
+    （parse-serialize 保参数原样）支持 B 面故本引擎选择不变；该腿保持 1F
+    记账，归**语料内部张力**（与 M5-S5 trade-off 家族同性质）。

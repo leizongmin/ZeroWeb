@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16592,
-  "passed": 15773,
+  "passed": 15776,
   "rate_pct": 95.1,
-  "extra": "failed=819;skipped=0",
-  "git_sha": "2ad4ddf47",
-  "note": "R5319 svg float margin-auto R4091 臂侧放行——float-replaced-width-007/008 整盒消失收口，FIXED=2 (float-replaced-width-007/008)"
+  "extra": "failed=816;skipped=0",
+  "git_sha": "35765c92d",
+  "note": "R5321 作者 ::selection transparent 背景声明存储探针（css-pseudo-4 §highlight-cascading）——后值歧义形 collect 探针 + background 面字面 transparent 值判据，selection-background-color-transparent ✓3.18%，FIXED=1 (selection-background-color-transparent)"
 }
