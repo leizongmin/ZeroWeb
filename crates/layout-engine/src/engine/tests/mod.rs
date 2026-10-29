@@ -900,3 +900,7 @@ mod r5330_col_flex_item_no_backfill_tests;
 /// specified main size 只能经 automatic minimum 进入容器内在尺寸
 ///（flex-minimum-height-flex-items-029/030）。
 mod r5331_flex_intrinsic_main_probe_tests;
+/// R5332（css-flexbox-1 §4.5/§9.4）border-box flex 容器 transferred/stretch 目标按
+/// content box cross 锚——img stretch 到容器 content cross 而非 outer cross
+///（flex-cross-size-border-box-001）。
+mod r5332_border_box_flex_cross_tests;
