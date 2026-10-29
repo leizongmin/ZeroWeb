@@ -45,7 +45,9 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 150s 偏紧——300s 脚本预算下无变体大单页案（createlink-with-selecting-img
 > 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
 > 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案（run 面 s2 在途）。
-> run 面全分母 3 分片重跑进行中。失败簇按新账重排后定
+> run 面全分母 3 分片重跑进行中；窗口内并行流落 94eb9f0d2（共享面
+> part03/webview/testharness）——在途账面为落前二进制、对 M2-r1 对照仍
+> 可比，收口时按 evidence 时点注记以新二进制抽查核账。失败簇按新账重排后定
 > white-space join / insertparagraph 入簇序。归因机制、三分类与 other 面
 > 终账明细见
 > [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)；首轮修复与 M2-r1 账面见

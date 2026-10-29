@@ -64,6 +64,15 @@ transcript/JSON 各自独立——并行分片共享 transcript 会互相截断�
 坑）。s2 有一笔 nv=0 误杀案待修下限后重跑。账面待三分片退出后合并补记，
 并入 M2 失败簇重排。
 
+**二进制时点注记（94eb9f0d2，收口必读）**：重跑窗口内并行流（html-semantics
+域）落尾随静态 link 触发收口——共享面 part03.js/webview.rs/testharness.rs
+被触碰，corpus 脚本与 wpt-data 未动（在途 bash 分片读取不受影响）。在途
+分片与 other 面账面测的都是**落前二进制**；对 M2-r1 的对照仍同二进制可比
+（唯一变量为预算口径）。收口时须以落后二进制抽查 1-2 代表案（如 bold 全
+矩阵）核对计数零位移，零位移则账视为现行，有位移则受影响面按新二进制
+重跑；分片退出前**禁止重建** target/release/zero-wpt-runner（cargo 以
+rename 换新 inode，后继案静默切新二进制 → 混二进制账）。
+
 ## 运行入口
 
 `make testharness-editing-run` / `make testharness-editing-other`（分片
