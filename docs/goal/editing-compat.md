@@ -1,8 +1,8 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.6
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）；2026-10-30（M2 次轮收环：缺陷 #2 已修 R5341 + other 面墙钟 R5342，三例 Timeout 全收口）；2026-10-30（簇 A 归因收口：填充/物化逐节点 JS glue 定量，修复 scope 定案）
-**状态**: Active——M2 次轮完成并收环；簇 A（cloneNode 性能）归因收口（修复下轮立项）。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**）、runner 完成接线过早置 all_loaded（缺陷 #2，**已修 R5341**：静态尾改 load+setTimeout(0) 门控镜像原生时序，write 注入路径维持直调；回归钉两枚 + 探针双 Pass + scripting-1 verdict 流零影响）。R5340+R5341 双落复跑：预算窗三例 Timeout **全部收口**（① delete-without-unwrapping 200F/0T、② inserttext-last-mutation 64F/0T、③ white-space join 三案实为 other 面平墙 120s 过紧的外部截断假象——corpus 脚本 **R5342** other 面接线自适应墙 60+nv×15+90；R5342 后 other 面全量复跑终账 **2,406P/12,308F/0T**，Timeout 清零、分母完整、总账逐位核对：F = 基线 11,159 + R5340 解锁 1,144 + R5341 回归 5）
+**版本**: v1.7
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）；2026-10-30（M2 次轮收环：缺陷 #2 已修 R5341 + other 面墙钟 R5342，三例 Timeout 全收口）；2026-10-30（预算窗 run 面全分母重跑收口 39,885P/47,804F/0T）；2026-10-30（簇 A 归因收口：填充/物化逐节点 JS glue 定量，修复 scope 定案）
+**状态**: Active——M2 次轮完成并收环；簇 A（cloneNode 性能）归因收口（修复下轮立项）。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**）、runner 完成接线过早置 all_loaded（缺陷 #2，**已修 R5341**：静态尾改 load+setTimeout(0) 门控镜像原生时序，write 注入路径维持直调；回归钉两枚 + 探针双 Pass + scripting-1 verdict 流零影响）。R5340+R5341 双落复跑：预算窗三例 Timeout **全部收口**（① delete-without-unwrapping 200F/0T、② inserttext-last-mutation 64F/0T、③ white-space join 三案实为 other 面平墙 120s 过紧的外部截断假象——corpus 脚本 **R5342** other 面接线自适应墙 60+nv×15+90；R5342 后 other 面全量复跑终账 **2,406P/12,308F/0T**，Timeout 清零、分母完整、总账逐位核对：F = 基线 11,159 + R5340 解锁 1,144 + R5341 回归 5）。**run 面全分母 3 分片重跑收口（同日四轮）**：43 案全出零 case 级 Timeout，**39,885P / 47,804F / 0T（87,689 行，45.51%）**——分母对 M2-r1 15,343 解锁 5.7×、Pass 7,485→39,885（率降为分母效应）；对 M1 96,663 差 -8,974 全部定位自旋四案 delete/forwarddelete/multitest/insertparagraph（分片二进制无 R5340），四案新二进制复跑归 R5340 收敛轮；误杀案 createlink-with-selecting-img 新二进制直跑收口（3 子测试 0P/3F，createLink 未包裹 img，归 createLink 簇）；bold 全矩阵新二进制抽查逐位零位移，账视为现行；分片+续跑 idx 槽位 bug 已修（resume 跳过保序）。明细见 [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
@@ -40,6 +40,8 @@
 > 150s 偏紧——300s 脚本预算下无变体大单页案（createlink-with-selecting-img
 > 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
 > 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案（run 面 s2 在途）。
+> 【已收口 2026-10-30 四轮：420 下限落地、误杀案新二进制直跑 3F 归
+> createLink 簇、三分片终账 39,885P/47,804F/0T——见 evidence 终账节】
 > run 面全分母 3 分片重跑进行中；窗口内并行流落 94eb9f0d2（共享面
 > part03/webview/testharness）——在途账面为落前二进制、对 M2-r1 对照仍
 > 可比，收口时按 evidence 时点注记以新二进制抽查核账。失败簇按新账重排后定
@@ -171,7 +173,11 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   verdict 流零影响），预算窗三例 Timeout 全收口（①②R5340 解锁出真实
   断言、③ other 面平墙过紧截断假象由 R5342 修复——corpus 脚本 other 面
   接线自适应墙 60+nv×15+90，run 通道分支未动；该文件与预算窗挂账的
-  420 下限重写共享，碰头信号记此）；其后 cloneNode 性能簇**归因已收口**
+  420 下限重写共享，碰头信号记此）。run 面预算窗重跑收口（2026-10-30）：
+  3 分片 43 案 39,885P/47,804F/0T（87,689 行），分母 -8,974 差距
+  定位自旋四案、bold 新二进制零位移背书账面；误杀案收口 3 Fail 归
+  createLink 簇。其后入簇序：自旋四案新二进制复跑（R5340 收敛轮，
+  预期收回 run 面分母缺口）→ cloneNode 性能簇**归因已收口**
   （2026-10-30 四轮探针，逐节点物化 glue 定量，修复 scope 定案下轮按
   guideline #35 整体替换 A/B 立项——见簇 A evidence）→ white-space
   join → insertparagraph → execCommand 语义逐簇立项。

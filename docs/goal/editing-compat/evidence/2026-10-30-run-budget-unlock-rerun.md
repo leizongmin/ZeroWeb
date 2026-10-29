@@ -72,6 +72,51 @@ createlink-with-selecting-img.html（150s external kill，transcript 第 6-8 行
 二进制时点实测：runner mtime 04:51:27 < 94eb9f0d2 落时 05:42:54，在途分片
 确为落前二进制。
 
+## run 面全分母重跑终账（2026-10-30 收口）
+
+三分片全部 exit=0（43 案全出，零 case 级 Timeout），合并终账
+**39,885P / 47,804F / 0T（87,689 行，45.51%）**，逐案 JSON 已存档
+（[2026-10-30-run-budget-unlock-rerun-run.json](2026-10-30-run-budget-unlock-rerun-run.json)）：
+
+| 分片 | 案 | Pass | Fail | Timeout |
+|---|---:|---:|---:|---:|
+| s0 | 15 | 13,941 | 18,202 | 0 |
+| s1 | 14 | 10,937 | 14,437 | 0 |
+| s2 | 14 | 15,007 | 15,165 | 0 |
+
+对照 M2-r1（15,343 分母 / 7,485P / 48.78%）：分母 **5.7× 解锁**
+（15,343→87,689）、case 级 Timeout 20→0、Pass 7,485→39,885；通过率
+48.78%→45.51% 的表观下降同 other 面一样是分母效应，非质量回退。
+
+**分母对 M1（96,663）尚差 -8,974 行，全部定位在自旋四案**：
+delete.html -4,129、forwarddelete.html -3,266、multitest.html -1,091、
+insertparagraph.html -490——与 R5340（removeChild 对 sel 父 pending
+解析子静默穿透）受害家族完全重合：分片二进制无 R5340，这些案在编辑
+循环自旋到案墙钟被外部截断（部分变体无行）。M1 时代 setup 快败不进
+命令执行面故无自旋、全分母记账。四案在新二进制（R5340 后）复跑归
+R5340 收敛轮，预期收回分母缺口并出真实断言。
+
+**误杀案收口（新二进制直跑）**：createlink-with-selecting-img 以
+ZW_SCRIPT_TIMEOUT_MS=300000 + 420s 墙钟（R5342 同款下限）单案直跑：
+**3 子测试 0P/3F/0T、数秒完成**（旧二进制 150s 零行——removeChild 自旋
+即该案 >150s 的全部原因）。3 Fail 均为 createLink 未包裹 `<img>`
+（inline/block/inline-block 三形态）——归 createLink 语义簇。该案为账内
+唯一新二进制案（42 案为分片二进制），混二进制由下述零位移抽查背书。
+
+**新二进制零位移抽查（收口义务履行）**：bold 全矩阵（nv=4，3,048 行）
+新二进制（07:27:58，含 94eb9f0d2 + R5340 + R5341）复跑 =
+**1,138P / 1,910F，与在途 s1 账逐位一致**——按本文件时点注记的判据，
+账视为现行；R5340 影响面已由分母 delta 定位在自旋四案（上节），
+R5341 load 形态缺陷不影响 run 面变体案（bold 零位移为证）。
+
+**分片 + 续跑组合 bug（已修，本 goal 通道脚本）**：resume 跳过已完成案
+时不消费 idx 槽位，`EDITING_CORPUS_RESUME=1` + `EDITING_CORPUS_SHARD`
+组合下后续案 `idx % shard_n` 归属整体左移——13/14 完成态续跑单案实测
+把 shard 2 名册错位成全名册扫描（s2 transcript 曾被灌入 5 个他分片案，
+已从 transcript 剔除并从备份重建，分片 JSON 账不受影响）。修复：resume
+跳过分支补 `idx++`。教训：分片成员资格由名册序位决定，任何跳过都必须
+保序消费槽位。
+
 **二进制时点注记（94eb9f0d2，收口必读）**：重跑窗口内并行流（html-semantics
 域）落尾随静态 link 触发收口——共享面 part03.js/webview.rs/testharness.rs
 被触碰，corpus 脚本与 wpt-data 未动（在途 bash 分片读取不受影响）。在途

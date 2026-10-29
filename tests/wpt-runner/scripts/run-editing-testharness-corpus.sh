@@ -81,6 +81,11 @@ idx=0
 while read -r f; do
   rel="editing/${CORPUS}/${f#"${DATA_DIR}"/}"
   if [[ "${RESUME}" == "1" && "${done_cases}" == *"${rel}"* ]]; then
+    # 已完成案也必须消费 idx 槽位，否则分片 + 续跑组合下后续案的
+    # idx%shard_n 归属整体左移，本分片会误跑其他分片的案（2026-10-30
+    # createlink-with-selecting-img 误杀案续跑实测：13/14 完成态续跑把
+    # shard 2 名册错位成全名册扫描）。
+    idx=$((idx + 1))
     continue
   fi
   if [[ "${shard_n}" -gt 1 ]]; then
