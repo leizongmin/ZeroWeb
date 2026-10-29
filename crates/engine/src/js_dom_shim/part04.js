@@ -5455,6 +5455,8 @@
             // 则直接返回，listener 不入表（与 window/document 注册面同语义）。
             // https://dom.spec.whatwg.org/#add-an-event-listener
             if (fn == null) return;
+            // R5323（site-opt p119）：WebIDL callback interface 转换——原始值注册点 TypeError。
+            _zwRequireCallback5323(fn);
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
             // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同

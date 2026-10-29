@@ -2289,6 +2289,63 @@ fn test_add_event_listener_null_callback_r5301() {
     );
 }
 
+// R5323（site-opt p119）：WebIDL callback interface 转换——非 null 非 callable 原始值
+//（number/string/boolean 等）在注册点抛 TypeError（Chrome 同参同措辞）；对象 listener
+// 仍正常入表走 R113 派发面；null/undefined 静默（R5301 回归邻位）；真函数照常派发。
+// 覆盖 window/document/element/EventTarget 四 addEventListener 面 + element/document
+// 两 attachEvent 面（镜像同一注册语义）。
+// https://webidl.spec.whatwg.org/#es-callback-interface
+#[test]
+fn test_add_event_listener_non_callable_r5323() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var msgs = [];\
+             var CHROME_MSG = \"Failed to execute 'addEventListener' on 'EventTarget': parameter 2 is not of type 'Function'.\";\
+             function reg(name, call) {\
+               try { call(); msgs.push(name + ':no-throw'); }\
+               catch (e) { msgs.push(name + ':' + (e instanceof TypeError && e.message === CHROME_MSG ? 'typeerror' : 'other:' + e.message)); }\
+             }\
+             reg('win-num', function () { addEventListener('t', 42); });\
+             reg('doc-str', function () { document.addEventListener('t', 'x'); });\
+             reg('el-bool', function () { document.getElementById('d').addEventListener('t', true); });\
+             reg('et-num', function () { new EventTarget().addEventListener('t', 0); });\
+             reg('el-attach-num', function () { document.getElementById('d').attachEvent('t', 42); });\
+             reg('doc-attach-str', function () { document.attachEvent('t', 'x'); });\
+             var silent = 0;\
+             try { addEventListener('t', null); document.addEventListener('t', undefined); document.getElementById('d').addEventListener('t', null); silent = 1; } catch (e) { silent = 2; }\
+             msgs.push('null-silent:' + silent);\
+             var objOk = 0; try { document.getElementById('d').addEventListener('t2', {}); objOk = 1; } catch (e) { objOk = 2; }\
+             msgs.push('obj-registers:' + objOk);\
+             var hit = 0; addEventListener('t3', function () { hit++; }); dispatchEvent(new Event('t3'));\
+             msgs.push('fn-fires:' + hit);\
+             msgs.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out,
+        "win-num:typeerror|doc-str:typeerror|el-bool:typeerror|et-num:typeerror|el-attach-num:typeerror|doc-attach-str:typeerror|null-silent:1|obj-registers:1|fn-fires:1",
+        "R5323 非 callable 原始值六注册面抛 Chrome 措辞 TypeError；null/undefined 静默、对象入表、真函数派发不回归"
+    );
+}
+
 // R140（js-dom M4）：live childNodes（spec `dom-node-childnodes` 返 live NodeList）——
 // ① 同节点重复读同一对象（caching）② append/insert/remove 后旧引用反映（live）③
 // item()/迭代器（真数组承载——Array 原生 keys/values/entries/forEach/Symbol.iterator
