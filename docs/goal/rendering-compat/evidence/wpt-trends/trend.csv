@@ -91,3 +91,4 @@
 2026-10-29,upstream,v1.10,16590,15782,95.1,failed=808;skipped=0,0e21b0bc9,R5328 overflow computed value 传播（css-overflow-3 §3.1 × css-flexbox-1 §4.5）——flexbox-min-width-auto-004 ✓ min-width:auto × overflow 联动，FIXED=1 REGRESSED=0
 2026-10-29,upstream,v1.10,16590,15786,95.1,failed=804;skipped=0,95d92a791,R5329 替换内容叶 intrinsic 测量（css-sizing-3 × css-flexbox-1 §4.5）——flex-minimum-width-flex-items-005/006 ✓ specified size suggestion，FIXED=4 REGRESSED=0
 2026-10-29,upstream,v1.10,16590,15787,95.2,failed=803;skipped=0,4cf07ff30,R5330 column flex item 主轴高回填豁免（css-flexbox-1 §4.1 × R1743 回填臂）——flex-minimum-height-flex-items-027 ✓ min-height:0 保持 flex 定尺，FIXED=1 REGRESSED=0
+2026-10-29,upstream,v1.10,16590,15788,95.2,failed=802;skipped=0,deaa29eff,R5331 column flex 容器内在主尺寸探针（css-flexbox-1 §9.9.1 × §4.5）——flex-minimum-height-flex-items-029 ✓ item specified 主轴尺寸不注入测量，FIXED=1 REGRESSED=0
