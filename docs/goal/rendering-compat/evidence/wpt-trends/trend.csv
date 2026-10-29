@@ -89,3 +89,4 @@
 2026-10-29,upstream,v1.10,16590,15779,95.1,failed=811;skipped=0,9ce236a09,R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0
 2026-10-29,upstream,v1.10,16590,15781,95.1,failed=809;skipped=0,a669d8213,R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）——balance-002/004 ✓ 家族 25/25，FIXED=2 REGRESSED=0
 2026-10-29,upstream,v1.10,16590,15782,95.1,failed=808;skipped=0,0e21b0bc9,R5328 overflow computed value 传播（css-overflow-3 §3.1 × css-flexbox-1 §4.5）——flexbox-min-width-auto-004 ✓ min-width:auto × overflow 联动，FIXED=1 REGRESSED=0
+2026-10-29,upstream,v1.10,16590,15786,95.1,failed=804;skipped=0,dffa3f4d6,R5329 替换内容叶 intrinsic 测量（css-sizing-3 × css-flexbox-1 §4.5）——flex-minimum-width-flex-items-005/006 ✓ specified size suggestion，FIXED=4 REGRESSED=0
