@@ -27,6 +27,8 @@ mod r5298_mixed_lh_line_pitch_tests;
 mod r5303_lh0_atomic_strut_tests;
 /// R5317 va:text-* 原子 margin box 围合 + 基线锚定 + img border-box 口径（CSS2 §10.8.1/§10.3.2）。
 mod r5317_va_atom_line_box_tests;
+/// R5323 纯空白 run 与前词尾随空格跨边界折叠（css-text-3 §4.1 phase-1）。
+mod r5323_ws_seq_pure_run_collapse_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

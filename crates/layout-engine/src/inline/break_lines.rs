@@ -278,18 +278,37 @@ impl InlineFormattingContext {
                     // 连续纯空白 run 折叠为单个空格（last_was_collapsible_ws）。
                     if words.is_empty() {
                         if !current_line.runs.is_empty() && !last_was_collapsible_ws {
-                            // R4233（css-text-4 #letter-spacing）：空格亦为字符单元——
-                            // 词间纯空白 run / run 前导可折叠空格的 advance 同样计 ls
-                            //（与 R4232 词尾空格同语义；旧实现漏计 → c542-letter-sp-001
-                            // 行 6 span 后空格 advance 多 15px，词右移）。
-                            // R5229（css-text-3 §8 word-separator）：空格 advance 同样计
-                            // word_spacing——与 paint 侧 per-char 口径（text.rs
-                            // is_word_separator(ch) += frag_word_spacing）及下方词尾空格
-                            // 臂同模型；旧实现漏计 → c541-word-sp-001 div5 span 前空格
-                            // 25 应 0（ws -1em）。
-                            current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
-                                + run.letter_spacing
-                                + run.word_spacing;
+                            // R5323（css-text-3 §4.1 phase-1：Any space immediately
+                            // following another collapsible space—even one outside the
+                            // boundary of the inline containing that space，provided both
+                            // spaces are within the same inline formatting context—is
+                            // collapsed to a single collapsible space）：纯空白 run 的空格
+                            // 与上一内容词尾随空格同属一个空白序列——只保留前者的 advance。
+                            // R5297 词臂前导空格门（!last_ended_collapsible_ws）的对偶补全，
+                            // 本臂当时按「纯空白 run 路径不变」收窄未覆盖；
+                            // `<span>X </span> <span>X </span>` 旧实现词间双计 2 空格
+                            //（white-space-007 每行 4 X 共 3 行 vs chromium 5 X 2 行）。
+                            // 仅吞 advance：owner/no_wrap 状态照常更新——断行机会治理
+                            //（R5115 boundary_ws_break 经 last_ws_no_wrap）维持「序列最后
+                            // 一个空格所属 run」口径，折行位不变、仅间距归一。
+                            // preserve run 空格不可折叠，不参与序列。
+                            let collapse_with_prev_trailing = !run_preserve
+                                && runtime_flags::ws_seq_pure_run_collapse()
+                                && last_ended_collapsible_ws;
+                            if !collapse_with_prev_trailing {
+                                // R4233（css-text-4 #letter-spacing）：空格亦为字符单元——
+                                // 词间纯空白 run / run 前导可折叠空格的 advance 同样计 ls
+                                //（与 R4232 词尾空格同语义；旧实现漏计 → c542-letter-sp-001
+                                // 行 6 span 后空格 advance 多 15px，词右移）。
+                                // R5229（css-text-3 §8 word-separator）：空格 advance 同样计
+                                // word_spacing——与 paint 侧 per-char 口径（text.rs
+                                // is_word_separator(ch) += frag_word_spacing）及下方词尾空格
+                                // 臂同模型；旧实现漏计 → c541-word-sp-001 div5 span 前空格
+                                // 25 应 0（ws -1em）。
+                                current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
+                                    + run.letter_spacing
+                                    + run.word_spacing;
+                            }
                             last_was_collapsible_ws = true;
                             last_content_owner = Some(run.node_id);
                             last_ended_collapsible_ws = true;

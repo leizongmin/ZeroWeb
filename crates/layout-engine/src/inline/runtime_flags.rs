@@ -283,6 +283,17 @@ pub(super) fn img_atom_border_box() -> bool {
     selected(*VALUE, || default_on("ZW_IMG_ATOM_BORDER_BOX"))
 }
 
+/// R5323（css-text-3 §4.1 phase-1 collapse 跨 inline 边界）：纯空白 run 的空格与
+/// 上一内容词尾随空格同属一个空白序列时只保留前者 advance——R5297 词臂前导空格
+/// 门（`!last_ended_collapsible_ws`）的对偶补全，本臂当时按「纯空白 run 路径不变」
+/// 收窄未覆盖。`<span>X </span> <span>X </span>` 旧实现词间双计 2 空格
+///（white-space-007 每行 4 X 共 3 行 vs chromium 折叠单空格 5 X 共 2 行）。
+/// default-on；`ZW_WS_SEQ_PURE_RUN_COLLAPSE=0` 回退双 advance（旧行为）。
+pub(super) fn ws_seq_pure_run_collapse() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_WS_SEQ_PURE_RUN_COLLAPSE"));
+    selected(*VALUE, || default_on("ZW_WS_SEQ_PURE_RUN_COLLAPSE"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;
