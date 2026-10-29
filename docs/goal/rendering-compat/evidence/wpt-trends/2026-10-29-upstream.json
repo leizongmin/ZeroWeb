@@ -6,6 +6,6 @@
   "passed": 15779,
   "rate_pct": 95.1,
   "extra": "failed=811;skipped=0",
-  "git_sha": "7e4778676",
+  "git_sha": "9ce236a09",
   "note": "R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0"
 }

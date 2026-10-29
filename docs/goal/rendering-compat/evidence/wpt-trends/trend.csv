@@ -86,4 +86,4 @@
 2026-10-29,upstream,v1.10,16592,15776,95.1,failed=816;skipped=0,35765c92d,R5321 作者 ::selection transparent 背景声明存储探针（css-pseudo-4 §highlight-cascading）——后值歧义形 collect 探针 + background 面字面 transparent 值判据，selection-background-color-transparent ✓3.18%，FIXED=1 (selection-background-color-transparent)
 2026-10-29,upstream,v1.10,16590,15777,95.1,failed=813;skipped=0,531839470,R5322 pre 容器 \n 强制断行空行 strut 写回（CSS Text 3 §5.2）——white-space-008 ✓0.65% 连带 webkit-line-clamp-032，FIXED=2 + 账本清洁 −1F−1P
 2026-10-29,upstream,v1.10,16590,15778,95.1,failed=812;skipped=0,84e818f75,R5323 纯空白 run 与前词尾随空格跨边界折叠（css-text-3 §4.1 phase-1）——white-space-007 ✓0.00%，FIXED=1 REGRESSED=0
-2026-10-29,upstream,v1.10,16590,15779,95.1,failed=811;skipped=0,7e4778676,R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0
+2026-10-29,upstream,v1.10,16590,15779,95.1,failed=811;skipped=0,9ce236a09,R5324 行中 float 锚遇 nowrap 溢出行降行（CSS2 §9.5 + bugzilla 488725）——float-nowrap-1 ✓0.40%，FIXED=1 REGRESSED=0
