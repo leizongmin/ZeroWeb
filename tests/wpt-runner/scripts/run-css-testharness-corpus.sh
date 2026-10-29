@@ -32,6 +32,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 DATA_DIR="${REPO_ROOT}/tests/wpt-runner/wpt-data/css/${CORPUS}"
 CASE_WALL_S="${CASE_WALL_S:-90}"
+# 断点续跑（CSS_CORPUS_RESUME=1）：transcript 已有 `==== <rel>` 的案跳过——
+# 大目录全量超出单轮 test-guard 墙钟时的续跑通道（css-values 首跑实证 3600s
+# 只走完 290/595 案）。分片（CSS_CORPUS_SHARD=k/N，k=0..N-1）：按列表序取模
+# 交错分片，多 test-guard 实例并行消费同一名册（各写各的 transcript/JSON），
+# 墙钟线性下降；合并口径在 evidence 侧按 transcript 相加。
+RESUME="${CSS_CORPUS_RESUME:-0}"
+SHARD="${CSS_CORPUS_SHARD:-}"
 
 case "${CORPUS}" in
   css-values) SUBCMD=testharness-css-values ;;
@@ -45,12 +52,42 @@ if [[ ! -x "${RUNNER}" || ! -d "${DATA_DIR}" ]]; then
 fi
 
 transcript="${CSS_CORPUS_TRANSCRIPT:-/tmp/css-${CORPUS}-corpus.log}"
-: > "${transcript}"
+# 续跑模式追加写（不截断既有 transcript——done 集与已完成案都靠它）；否则清空重跑。
+[[ "${RESUME}" == "1" ]] || : > "${transcript}"
 
-ran=0 pass=0 fail=0 timeout=0 unsupported=0
+ran=0 pass=0 fail=0 timeout=0 unsupported=0 skipped_patho=0
+done_cases=""
+if [[ "${RESUME}" == "1" ]]; then
+  done_cases="$(grep '^==== ' "${transcript}" 2>/dev/null | sed 's/^==== //')"
+fi
+shard_k=0 shard_n=1
+if [[ "${SHARD}" =~ ^[0-9]+/[0-9]+$ ]]; then
+  shard_k="${SHARD%/*}"; shard_n="${SHARD#*/}"
+fi
+idx=0
 # process substitution 而非管道——管道 while 在子 shell 计数，退出后归零。
 while read -r f; do
   rel="css/${CORPUS}/${f#"${DATA_DIR}"/}"
+  name="$(basename "${f}")"
+  # 病态案名级快筛（css-variables corpus 脚本先例：run-css-variables-corpus.sh
+  # 跳 variable-exponential-blowup.html）：if-conditionals.html 单案 Oilpan
+  # CagedHeap OOM 实证（fuzz-repro-guard 口径复现——CSS if() 条件面引擎半支持
+  # 状态指数膨胀，4G 单进程守卫杀树连累整轮）。重入条件 = if() 求值内存语义
+  # 修复；内容级筛减仍由 runner 侧谓词单点负责，此处不复制。
+  if [[ "${name}" == "if-conditionals.html" ]]; then
+    skipped_patho=$((skipped_patho + 1))
+    continue
+  fi
+  if [[ "${RESUME}" == "1" && "${done_cases}" == *"${rel}"* ]]; then
+    continue
+  fi
+  if [[ "${shard_n}" -gt 1 ]]; then
+    if (( idx % shard_n != shard_k )); then
+      idx=$((idx + 1))
+      continue
+    fi
+  fi
+  idx=$((idx + 1))
   out="$(timeout --signal=KILL "${CASE_WALL_S}" "${RUNNER}" "${SUBCMD}" "${rel}" 2>&1)"
   rc=$?
   echo "==== ${rel}" >> "${transcript}"
@@ -71,7 +108,7 @@ while read -r f; do
   pass=$((pass + p)); fail=$((fail + fl)); timeout=$((timeout + t)); unsupported=$((unsupported + un))
 done < <(find "${DATA_DIR}" \( -name '*.html' -o -name '*.htm' \) | sort)
 
-echo "css ${CORPUS} corpus: cases=${ran} pass=${pass} fail=${fail} timeout=${timeout} unsupported=${unsupported}"
+echo "css ${CORPUS} corpus: cases=${ran} pass=${pass} fail=${fail} timeout=${timeout} unsupported=${unsupported} skipped-patho=${skipped_patho}"
 echo "transcript: ${transcript}"
 
 if [[ -n "${CSS_CORPUS_JSON:-}" ]]; then

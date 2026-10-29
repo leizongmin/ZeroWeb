@@ -1,18 +1,41 @@
 # css-testharness-compat master
 
-**状态**: Active——M0 未启动（契约 2026-10-27 立项；2026-10-29 基线复核 +
-控制面建档）
+**状态**: Active——M0 完成（DC-1，2026-10-30）；M1 未启动
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
 
 | 里程碑 | 内容 | 判据 | 状态 |
 |---|---|---|---|
-| M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | 未启动 |
+| M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | **完成**（2026-10-30，[基线 evidence](evidence/2026-10-30-m0-pilot-baseline.md)） |
 | M1 | runner 套件内存治理（RSS 归因 → 方案选型 → coverage 分片消费管道） | DC-2 | 未启动 |
 | M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | 未启动 |
 | M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | 未启动 |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动 |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（csv 试点数据行已回填） |
+
+## 本轮记录（2026-10-30，M0 收口）
+
+- **通道落地**：`testharness-css-values` / `testharness-selectors` 子命令
+  （tests/wpt-runner/src/testharness_css_corpus.rs，svg 模块先例）+ 内容
+  筛减规则（runner 谓词与 fetch 脚本头注释两侧同源）+ Makefile 全量分片
+  target 与 -one 定向 target（test-guard 包裹）。
+- **基线（DC-1）**：run-face 530 案 9,843 子测试——css-values 738/5,587 =
+  13.2%、selectors 2,001/4,256 = 47.0%（合计 27.8%）；逐案 JSON + 失败簇
+  归类落 evidence；wpt-suites.csv 试点数据行回填（分母口径 = 本地 pin
+  run-face，与 coverage 快照并行）。
+- **形态分簇**：两目录均无 `.any.js`；html 总数 43%/42% 为 testharness
+  run-face，其余为 reftest 渲染面（rendering-compat 流域，内容规则自动
+  分界）；`.xht` 22 页 XML 路径缺位挂账。
+- **基建补丁**：goals/lib.sh 深挖分支补 `*.css` 扩展；35 号 DIRS 补共享
+  helper 目录 `css/support`（`parsing-testcommon.js` 等 22 helper 到位）；
+  分片运行器补每案 90s 外部墙钟（runner 内部 30s 超时拦不住同步死循环）
+  + 断点续跑/并行分片参数。
+- **病态案**：css-values `if-conditionals.html` 单案 Oilpan CagedHeap OOM
+  （fuzz-repro-guard 复现），分片脚本名级跳过（css-variables 先例）；
+  重入条件 = if() 求值内存语义修复。
+- **教训**：跨脚本版本的并行分片会 todo 错位一档（病态案跳过增删使奇偶
+  互补变完全重叠）——分片必须同版本脚本 + 同 seeding；本轮 152 案漏跑由
+  第三次续跑收口。
 
 ## 缺口清单（立项时点，2026-10-29）
 

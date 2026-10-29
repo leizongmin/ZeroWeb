@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.0
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）
-**状态**: Active——M0 未启动
+**版本**: v1.1
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）
+**状态**: Active——M0 完成（DC-1），M1 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -38,6 +38,15 @@ testharness 套件，因内存问题未进 CI coverage（见 M2）。
 （上游清单滚动 +161），覆盖 3 文件 0 通过——全部落在 css/css-scroll-snap
 （845 分母，其他通道顺带页）。试点两目录（css-values / selectors）覆盖
 仍为 0，M0 前提不变。
+
+**M0 基线（2026-10-30，DC-1 落成）**：试点两目录 run-face 530 案 9,843
+子测试全量干跑——css-values 738/5,587 = 13.2%、selectors 2,001/4,256 =
+47.0%，合计 27.8%。通道（子命令 + 内容筛减规则 + Makefile 分片 target）、
+形态分簇（两目录均无 .any.js；非 testharness reftest 页占 55%+）、失败簇
+与病态案（css-values if-conditionals.html Oilpan OOM 名级排除）详见
+[evidence/2026-10-30-m0-pilot-baseline.md](css-testharness-compat/evidence/2026-10-30-m0-pilot-baseline.md)。
+分母口径 = 本地 pin 语料 run-face 实测子测试（与 coverage 快照含 .any.js
+变体矩阵的口径并行不互换）。
 
 ## Mission
 
