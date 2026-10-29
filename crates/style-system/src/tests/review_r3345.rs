@@ -2,14 +2,15 @@
 //!
 //! 本轮 deep-review 发现并修复的数值属性 finite 性 bug 的常驻断言：
 //!
-//! **flex-grow / flex-shrink longhand 接受 Infinity**：apply.rs 的 longhand 路径
-//! `value.parse::<f64>()` 仅检 `v >= 0.0`——`Infinity >= 0.0` 为真 → 存储无穷大值。
-//! `flex_grow` 经 `style.flex_grow as f32` 喂入 layout-engine 的 Taffy flex 算法
-//!（converter/mod.rs:323），无穷大 grow factor 可致 flex 分配计算异常/NaN 传播。
-//! CSS Flexbox §7.3.1/§7.3.2 要求 flex-grow/shrink 为 `<number>`（有限非负）。
-//! **不一致证据**：`flex` 简写（shorthand/mod.rs:1123）用 `is_finite()` 严格拒绝
-//! Infinity/NaN，而 longhand 路径无此检查——同属性简写严、longhand 松。改 longhand
-//! 路径加 `v.is_finite()` 与非负校验，并让非法声明返回 false。
+//! **flex-shrink longhand 拒绝 Infinity/NaN；flex-grow 语义其后修正**：
+//! apply.rs 的 longhand 路径 `value.parse::<f64>()` 仅检 `v >= 0.0`——
+//! `Infinity >= 0.0` 为真 → 存储无穷大值。无穷 grow/shrink 因子经 layout-engine
+//! 的 Taffy flex 算法（converter/mod.rs:323）可致 flex 分配计算异常/NaN 传播。
+//! **4af441b8e 语义修正（css-values-4 `<number [0,∞]>` 上界含 ∞ +
+//! css-flexbox-1 §resolve-flexible-lengths；WPT flex-grow-009）**：flex-grow
+//! 因子放行 +∞（taffy grow 臂有 ∞ 语义，calc(infinity) 吸收全部 free space），
+//! R3345 对 grow 的旧拒绝断言作废；shrink 值域同含 ∞ 但 taffy shrink 臂无
+//! ∞ 语义（scaled factor ∞ 比例 NaN）——维持拒绝。
 //! // https://www.w3.org/TR/css-flexbox-1/#flex-grow-property
 
 #![allow(clippy::float_cmp)]
@@ -17,29 +18,33 @@
 use crate::property::ComputedStyle;
 use crate::property::apply::apply_property_value;
 
-// ── flex-grow / flex-shrink 须拒绝 Infinity / NaN ───────────────────────
+// ── flex-grow 接受 +∞（4af441b8e 语义修正）；flex-shrink 仍拒绝 ───────────
 
 #[test]
-fn test_flex_grow_rejects_infinity_r3345() {
+fn test_flex_grow_accepts_infinity_semantics_update() {
     let mut style = ComputedStyle::default();
-    // Infinity 须被拒绝（v >= 0.0 对 inf 为真，但 is_finite 为假 → 修复前误存）。
+    // 4af441b8e（css-values-4 <number [0,∞]> 上界含 ∞ + css-flexbox-1
+    // §resolve-flexible-lengths；WPT flex-grow-009 calc(infinity) 吸收全部
+    // free space）：R3345 旧定性「flex-grow: Infinity 非法」证伪——grow 因子
+    // 放行 +∞（taffy grow 臂有 ∞ 语义）。
     let applied = apply_property_value(&mut style, "flex-grow", "Infinity");
-    assert!(!applied);
+    assert!(applied, "flex-grow: Infinity 按 4af441b8e 语义应接受");
     assert!(
-        style.flex_grow.is_finite(),
-        "flex-grow: Infinity 不得存储为无穷大（实际 {}）",
+        style.flex_grow.is_infinite(),
+        "flex-grow: Infinity 应存储为 +∞（实际 {}）",
         style.flex_grow
     );
 }
 
 #[test]
-fn test_flex_grow_rejects_scientific_overflow_r3345() {
+fn test_flex_grow_accepts_scientific_overflow_semantics_update() {
     let mut style = ComputedStyle::default();
-    // 1e999 → f64 溢出为 Infinity（Rust parse 接受）。
-    assert!(!apply_property_value(&mut style, "flex-grow", "1e999"));
+    // 1e999 → f64 溢出为 +∞，同上按 <number [0,∞]> 接受（原 R3345 断言随
+    // 4af441b8e 语义修正作废）。
+    assert!(apply_property_value(&mut style, "flex-grow", "1e999"));
     assert!(
-        style.flex_grow.is_finite(),
-        "flex-grow: 1e999（溢出为 inf）不得存储为无穷大（实际 {}）",
+        style.flex_grow.is_infinite(),
+        "flex-grow: 1e999（溢出为 inf）应存储为 +∞（实际 {}）",
         style.flex_grow
     );
 }
