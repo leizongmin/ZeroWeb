@@ -7107,6 +7107,15 @@
               } else {
                 _tag109 = String(_an109n.tagName || '').toUpperCase();
               }
+              // s150：plain handle 形（innerHTML flatten 产物）宿主 tag 表 miss
+              // → _realTag 回落恒 DIV——节点对象 tagName 甄别修正（仅 LINK；
+              // SCRIPT 甄别行为不动）。LINK/modulepreload/stylesheet 触发臂
+              // 依赖此甄别，失准则臂整面失效。
+              if (_tag109 === 'DIV' && _an109n.__zwSelector == null
+                  && _an109n.__zwHandle != null && _an109n.tagName
+                  && String(_an109n.tagName).toUpperCase() === 'LINK') {
+                _tag109 = 'LINK';
+              }
               if (_tag109 === 'SCRIPT') {
                 _zwScriptMaybeStartDynamic(_an109n);
               } else if (_tag109 === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
@@ -7115,6 +7124,19 @@
                 // prepare 同挂 childList 汇流点，记账后逐节点触发）。
                 // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
                 try { globalThis._zwModulePreloadMaybeStart(_an109n); } catch (_e109mp) {}
+                // s150：link rel=stylesheet 插入触发（spec link processing 的
+                // stylesheet 分支——插入后按当前 rel/href 决定取回；helper 内
+                // rel/href/非空门自行甄别，非 stylesheet 链接零成本返回）。
+                // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+                try {
+                  if (typeof globalThis._zwStylesheetMaybeStart === 'function') {
+                    globalThis._zwStylesheetMaybeStart(
+                      _an109n.__zwSelector != null ? _an109n.__zwSelector : null,
+                      _an109n.__zwHandle != null ? _an109n.__zwHandle : null,
+                      null,
+                      _an109n);
+                  }
+                } catch (_e109ss) {}
               } else if (_an109n.nodeType === 1) {
                 // s111：detached 子树整体插入的「becomes connected」后代面——spec
                 // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
@@ -7135,12 +7157,30 @@
                       }
                     }
                     if (!_kdTagW) _kdTagW = String(_kdW.tagName || '').toUpperCase();
+                    // s150：plain handle 形 _realTag 回落恒 DIV 的 LINK 甄别修正
+                    //（顶层臂同款；下降臂 innerHTML 整树插入形态依赖）。
+                    if (_kdTagW === 'DIV' && _kdW.__zwSelector == null
+                        && _kdW.__zwHandle != null && _kdW.tagName
+                        && String(_kdW.tagName).toUpperCase() === 'LINK') {
+                      _kdTagW = 'LINK';
+                    }
                     if (_kdTagW === 'SCRIPT') {
                       _zwScriptMaybeStartDynamic(_kdW);
                     } else if (_kdTagW === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
                       // s124：detached 子树整体插入的 modulepreload 后代面（SCRIPT
                       // 下降臂同型——inclusive descendants 文档序）。
                       try { globalThis._zwModulePreloadMaybeStart(_kdW); } catch (_e111mp) {}
+                      // s150：detached 子树整体插入的 stylesheet 后代面（同型下降——
+                      // document-without-browsing-context innerHTML 整树插入形态）。
+                      try {
+                        if (typeof globalThis._zwStylesheetMaybeStart === 'function') {
+                          globalThis._zwStylesheetMaybeStart(
+                            _kdW.__zwSelector != null ? _kdW.__zwSelector : null,
+                            _kdW.__zwHandle != null ? _kdW.__zwHandle : null,
+                            null,
+                            _kdW);
+                        }
+                      } catch (_e111ss) {}
                       _walk111(_kdW);
                     } else {
                       _walk111(_kdW);

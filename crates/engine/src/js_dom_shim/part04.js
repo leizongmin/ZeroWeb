@@ -3793,8 +3793,29 @@
                 _zw5277SetPre = _ce_attrValue(sel, handle, n);
               }
             }
+            // s150：LINK href 旧值写前捕获（幂等比较基准——写入后再读即新值；
+            // 经 lw 读——pending SetAttr 未 apply 面 R3202 stale-snapshot 族同款
+            // typeof 回退）。TAG 门在此，非 LINK 恒 null 且不触发。
+            var _zwSsPrev = null;
+            if (n === 'href' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              try {
+                if (_realTag(sel, handle) === 'LINK') {
+                  _zwSsPrev = String((handle ? __zw_get_attr_handle(handle, 'href')
+                    : (typeof __zw_get_attr_lw === 'function'
+                      ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'))) || '');
+                }
+              } catch (_eSsPv) {}
+            }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // s150：LINK href 变更触发 stylesheet 重取（spec link processing——
+            // href 值变更 → re-fetch；幂等比较在 helper 内做解析后绝对 URL 比较，
+            // prevHref=null 语义「无写入路径旧值」不发生于此臂——捕获已定，
+            // 空串表示旧属性缺失，与新值比较自然走解析差异臂）。
+            if (n === 'href' && _zwSsPrev != null
+                && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrev);
+            }
             // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级

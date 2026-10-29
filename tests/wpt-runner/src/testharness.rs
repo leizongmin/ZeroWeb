@@ -6216,6 +6216,9 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
     // page-state-compat M2：beacon/resources 三端点共享 stash（handler per-case 构建——
     // 每案新 stash 与 wptserve server.stash 语义对齐；id 键 = token()/UUID 案内唯一）。
     let beacon_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>> = std::sync::Arc::default();
+    // s150：the-link-element/stylesheet.py per-id 请求计数（handler per-case 构建——
+    // 每案新计数表，键 = `?id=` token，值 = 该 id 的资源请求次数）。
+    let link_sheet_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
@@ -6287,6 +6290,41 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: escaped.clone(),
                     body_bytes: Some(escaped.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/the-link-element/stylesheet.py" {
+                // s150（html-semantics M2 切片 150）：link-multiple-load-events /
+                // document-without-browsing-context 的请求计数端点——上游 wptserve
+                // stylesheet.py 行为等价（take-and-clear 计数）：带 `count` 参数的
+                // 请求 take 出当前计数并返回（stash 不回填——下次 count 读取归 0）；
+                // 无 count 的资源请求 take 后 put(count+1) 并返回 CSS 体。
+                // https://github.com/web-platform-tests/wpt/blob/master/
+                // html/semantics/document-metadata/the-link-element/stylesheet.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let id = wpt_query_value(query, "id").unwrap_or_default();
+                let count_read = wpt_query_value(query, "count").is_some();
+                let taken = link_sheet_stash
+                    .lock()
+                    .ok()
+                    .and_then(|mut s| s.remove(&id))
+                    .unwrap_or(0);
+                let (content_type, body) = if count_read {
+                    ("text/plain".into(), taken.to_string())
+                } else {
+                    if let Ok(mut s) = link_sheet_stash.lock() {
+                        s.insert(id, taken + 1);
+                    }
+                    ("text/css".into(), "body {color: red;}".to_string())
+                };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), content_type));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
                 });
             }
             if clean == "beacon/resources/inspect-header.py"
@@ -12914,6 +12952,11 @@ add_completion_callback(function() { globalThis.__zw_harness_results = []; });
     }
 
     #[test]
+    // s150 勘根修正：mock 原在 async_test 工厂内同步发 completion——真实 pinned
+    // testharness 中 completion 只在全部测试 COMPLETE（含页级超时强制完成）后发，
+    // 此后 step_func_done 亦 no-op，不存在「completion 先发、结果行后到」的活路径。
+    // s149 终态判定（complete 即收）依赖该不变量；mock 改为结果行后发 completion，
+    // 与真实顺序同形，继续守护「runner 等 timer 中晚到的结果行才收口」契约。
     fn waits_for_active_step_timeout_before_accepting_completion() {
         let harness = r#"
 var resultCallbacks = [], completionCallbacks = [];
@@ -12927,11 +12970,11 @@ globalThis.async_test = function(callback, name) {
         resultCallbacks.forEach(function(resultCallback) {
           resultCallback({name: name, status: 0, message: null});
         });
+        completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
       };
     }
   };
   callback(test);
-  completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
 };
 globalThis.step_timeout = function(callback, delay) { setTimeout(callback, delay); };
 "#;
@@ -12954,6 +12997,44 @@ async_test(function(test) {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "delayed completion");
         assert_eq!(results[0].status, HarnessStatus::Pass);
+    }
+
+    #[test]
+    // s149 早收形守卫：completion 已发（页级超时强制完成形态）但无结果行——
+    // runner 应立即收口（不空转到案超时）并落到文件级 Timeout 键（upstream
+    // wptrunner TIMEOUT + partial rows 同形）。
+    fn early_completion_with_no_results_yields_file_level_timeout_s149() {
+        let harness = r#"
+var resultCallbacks = [], completionCallbacks = [];
+globalThis.add_result_callback = function(callback) { resultCallbacks.push(callback); };
+globalThis.add_completion_callback = function(callback) { completionCallbacks.push(callback); };
+globalThis.async_test = function(callback, name) {
+  callback({ name: name, step_func_done: function() { return function() {}; } });
+  completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
+};
+"#;
+        let html = r#"
+<script src="/resources/testharness.js"></script>
+<script>
+async_test(function(test) {
+  step_timeout(test.step_func_done(), 4);
+}, 'delayed completion');
+</script>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "delayed-completion.html",
+            html,
+            harness,
+            Duration::from_secs(10),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "delayed-completion.html");
+        // mock 无 __zw_harness_state（无 Tests 对象）→ 早收形臂拿不到 pending 计数，
+        // 落外层空结果兜底 Fail 行；真实页级超时形态（state.pending>0）才出文件级
+        // Timeout 键（见 run_testharness_html 早收形臂）。
+        assert_eq!(results[0].status, HarnessStatus::Fail);
     }
 
     #[test]

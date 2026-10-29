@@ -1098,6 +1098,18 @@
               _refVal = String(_ruNum);
             }
           }
+          // s150：LINK href 旧值写前捕获（幂等比较基准——写入后再读即新值；lw 读
+          // 同 part04 钩子注记）。非 LINK 恒 null 且不触发。
+          var _zwSsPrevI = null;
+          if (_refAttr === 'href' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            try {
+              if (_realTag(sel, handle) === 'LINK') {
+                _zwSsPrevI = String((handle ? __zw_get_attr_handle(handle, 'href')
+                  : (typeof __zw_get_attr_lw === 'function'
+                    ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'))) || '');
+              }
+            } catch (_eSsPvI) {}
+          }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
           // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
@@ -1115,6 +1127,16 @@
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {
             globalThis.__zw_reload_iframe(proxy, String(value), {});
+          }
+          // s150：LINK href IDL 写触发 stylesheet 重取（link.href= 走 R3069 reflected
+          // 臂写 raw 值，不经 part04 setAttribute；写前旧值已捕获于写入点上方——
+          // prevHref=null 仅当 TAG 门未过，此臂 TAG 门已过则必为捕获串（含旧属性
+          // 缺失的 '' 形，与新值比较走解析差异臂）。link.href = link.href 同值赋值
+          // 的幂等由 helper 解析比较拦截：IDL href getter 返回解析后绝对 URL——
+          // 同值赋值写入即绝对串，与旧相对串解析比较同址，不重取）。
+          if (_refAttr === 'href' && _zwSsPrevI != null
+              && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrevI);
           }
           moAttr = _refAttr;
         } else if (typeof prop === 'string' && prop !== ''

@@ -4460,6 +4460,117 @@
       }
     }
   };
+  // s150（html-semantics M2 切片 150）：**link rel=stylesheet 动态取回事件面**——
+  // spec link processing model 的 stylesheet 分支（插入 / href 值变更触发 fetch，
+  // 成功派 'load'、失败派 'error'，元素站异步派发）。触发点：part01 childList 汇流
+  // 臂（插入）+ part04 setAttribute 钩子 / part05 R3069 IDL 臂尾钩（href 变更）。
+  // 此前该面整体缺位——动态 link（createElement+append）零 fetch 零事件，
+  // link-multiple-load-events / link-style-error-01 / link-load-error-events /
+  // document-without-browsing-context 四族全文件级 Timeout/挂死（探针
+  // zz-s150-probe-dynlink p1-p4「neither event」实证）。
+  // 幂等门：href 值未变不重取（spec「If the href attribute's value doesn't
+  // change, no re-fetch」）——书写形差异（相对/绝对）经解析后绝对 URL 比较；
+  // prevHref 为 null（插入触发）时总取。链接级 already-started 语义不存在
+  //（remove→再插按 spec 重新 fetch），不设 run-once 表。
+  // mixed content：https 文档的 http 子资源按 should-block-fetch 阻断 → error
+  //（https://w3c.github.io/webappsec-mixed-content/#should-block-fetch；link-load-error-
+  // events 的 httpSheet 案语义——页锚 https 时期望 error）。
+  // data: URL 交现有 fetch 通道（宿主 404 → error；data: 导入链的 @import
+  // 内层解析不在本刀面）。
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj) {
+    try {
+      if (typeof _realTag !== 'function') return;
+      // TAG 门（尽力判定）：sel 形命中宿主 tag 表 → 严格校验；handle-only 形
+      // （innerHTML flatten 产物 plain handle）宿主表 miss 时 _realTag 回落恒
+      // DIV——该形态放行（插入臂调用前已按节点 tagName 判 LINK；rel=stylesheet
+      // + href 非空的后继门对非 LINK 元素不成立，误触发面可忽略）。
+      var _ssTag = '';
+      try { _ssTag = String(_realTag(sel, handle) || ''); } catch (_eTag) {}
+      if (_ssTag && _ssTag !== 'LINK' && !(_ssTag === 'DIV' && !sel && handle)) return;
+      // 连接门：link processing 只在元素连接到文档时进行（detached link 的 href
+      // 赋值不取回——createElement 后先赋 href 再 append 的先赋后插形防双请求，
+      // 插入臂触发一次即足）。_zwMutationInDoc (sel,handle) 形父链爬升判定
+      //（part05 定义；缺席嵌入方放宽——与 helper 其余门的 typeof 回退同口径）。
+      try {
+        if (typeof _zwMutationInDoc === 'function' && _zwMutationInDoc(sel, handle) !== true) return;
+      } catch (_eConn) {}
+      // attr 读通道：sel/handle 形走宿主桥（lw 读——pending SetAttr 未 apply 面
+      // R3202 stale-snapshot 族同款 typeof 回退）；plain handle 形（innerHTML
+      // flatten 产物）宿主表 miss（null）→ 节点对象 getAttribute 回落（解析树
+      // 存储——插入臂传 _an109n/_kdW 即此通道）。
+      var _ssReadAttr = function (_ssName) {
+        var _ssV = null;
+        try {
+          _ssV = handle ? __zw_get_attr_handle(handle, _ssName)
+            : (typeof __zw_get_attr_lw === 'function'
+              ? __zw_get_attr_lw(sel, _ssName) : __zw_get_attr(sel, _ssName));
+        } catch (_eAttr) {}
+        if (_ssV == null && elObj && typeof elObj.getAttribute === 'function') {
+          try { _ssV = elObj.getAttribute(_ssName); } catch (_eAttrEl) {}
+        }
+        return String(_ssV || '');
+      };
+      var _ssRel = _ssReadAttr('rel');
+      var _ssIs = false;
+      var _ssParts = _ssRel.split(/\s+/);
+      for (var _ssI = 0; _ssI < _ssParts.length; _ssI++) {
+        if (_ssParts[_ssI] === 'stylesheet') { _ssIs = true; break; }
+      }
+      if (!_ssIs) return;
+      var _ssHref = _ssReadAttr('href');
+      if (!_ssHref || typeof fetch !== 'function') return;
+      // 幂等门：解析后绝对 URL 相同（含两者均解析失败的逐字相等回落）→ 不重取。
+      if (prevHref != null && typeof __zw_parse_url === 'function') {
+        try {
+          var _ssBase = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL()
+            : (globalThis.location ? globalThis.location.href : '');
+          var _ssNew = JSON.parse(__zw_parse_url(_ssHref, _ssBase) || 'null');
+          var _ssOld = JSON.parse(__zw_parse_url(String(prevHref), _ssBase) || 'null');
+          if (_ssNew && _ssOld && _ssNew.href === _ssOld.href) return;
+          if (!_ssNew && !_ssOld && _ssHref === String(prevHref)) return;
+        } catch (_eCmp) {}
+      }
+      var _ssAbs = _ssHref;
+      var _ssMixed = false;
+      try {
+        var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
+          ? globalThis._zwDocBaseURL()
+          : (globalThis.location ? globalThis.location.href : '');
+        if (typeof __zw_parse_url === 'function') {
+          var _ssJson = JSON.parse(__zw_parse_url(_ssHref, _ssPageHref) || 'null');
+          if (_ssJson && _ssJson.href) _ssAbs = _ssJson.href;
+        }
+        if (_ssAbs.indexOf('http:') === 0 && String(_ssPageHref).indexOf('https:') === 0) {
+          _ssMixed = true;
+        }
+      } catch (_eAbs) {}
+      var _ssFire = function (_ssType) {
+        try {
+          if (typeof _elKey !== 'function' || typeof _dispatchWithBubble !== 'function'
+              || typeof _makeEvent !== 'function') return;
+          _dispatchWithBubble(_elKey(sel, handle), sel, handle,
+            _makeEvent(_ssType, { bubbles: false, cancelable: false }));
+        } catch (_eFire) {}
+      };
+      // mixed 阻断：不 fetch 直接 error（spec blocked fetch → link error 事件）。
+      if (_ssMixed) {
+        setTimeout(function () { _ssFire('error'); }, 0);
+        return;
+      }
+      // fetch 结果即事件语义：HTTP ok（含 200 空体）→ load；非 ok / 网络失败 → error。
+      fetch(_ssHref).then(function (_ssR) {
+        _ssFire(_ssR && _ssR.ok ? 'load' : 'error');
+      }).catch(function () {
+        _ssFire('error');
+      });
+    } catch (_eSs) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}
+      }
+    }
+  };
   // s113：type/language 分类器供 part04 R387/s95 臂与后续写入执行面复用（导出
   // 随本层求值恒在——_zwPrepareSrcScript 同款理由）。
   globalThis._zwScriptTypeClassify = _zwScriptTypeClassify;
