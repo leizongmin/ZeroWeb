@@ -40,6 +40,13 @@
 #     v1.10 快照早于该提交；docs/goal/net-api-compat/evidence/2026-10-29-m2-s12-
 #     preflight-redirect-corpus-drift.md）——升级新 ref 后需重新核对（新 ref 若
 #     快照 ≥ 2026-09-12 则无需补）
+#   - fetch/api/basic/request-upload.any.js：已对齐上游 HEAD（2026-10-29，
+#     net-api M2-S13 语料巡检——上游删除「POST text body 421 retried once」
+#     测试，本地残留假红腿；docs/goal/net-api-compat/evidence/2026-10-29-m2-s13-
+#     corpus-drift-sweep.md）——升级新 ref 后无需补（新 ref 原生含删除）。
+#     注意：request-disturbed.any.js 上游已翻转期望（init body 不再扰动源
+#     Request）但**故意不对齐**——引擎仍按旧语义（对齐即 Pass→Fail），须引擎
+#     + 语料同步翻转，见 M2-S13 档记账 2；新 ref 落地时该文件会出现 1 条新红腿
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

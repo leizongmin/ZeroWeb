@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.15
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11000**（+1646，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.16
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11000**（+1646，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5；M2-S13 语料巡检红腿 −1 分母 12078→12077），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -132,6 +132,17 @@
   Chrome 158 实测 10/10 绿）。语料逐字对齐上游 HEAD，引擎零改动（M4-S24
   重预检机制既有）：cors-preflight-redirect 5/10 → **10/10 收口 +5 零回归**
   （10995 → 11000）；教训落 learnings/bugs。
+- **M2-S13 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s13-corpus-drift-sweep.md)）**：
+  语料漂移巡检首轮 + request-upload 假红腿清偿——mtime 取证证伪 v1.10 周级
+  漂移前提（三域 247 文件已由交互会话于 2026-10-29 00:19–00:39 全量同步上游
+  master，无记录），实测 13h 窗漂移仅 9 文件并全部分类处置：request-upload
+  上游已删的「421 text retry」腿逐字对齐清偿（引擎零改动，探针 18/18，全通道
+  A/B **0 增益 / 0 回归 / 0 翻转 / 删除 1**，pass 11000 持平、分母 12078→
+  12077）；request-disturbed 期望翻转（init body 不扰动源）记账挂起（引擎+
+  语料须同步翻，单独动互斥翻红）；additive/数据 7 文件不追 HEAD（口径记账 2）；
+  巡检结论不常态化立项（S12 记账 3 清偿，收敛到语料仓滚动 tag 单点结算）。
+  update-wpt-data.sh 缺口清单补两条（request-upload 无需重补 + disturbed
+  翻转预警）。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
@@ -139,7 +150,9 @@
   缺口清单记账，见 [S12 档](net-api-compat/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）。
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
-  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
+  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）、
+  request-disturbed 期望翻转（S13 记账 1：`new Request(req, {body})` 不再
+  扰动源——引擎与语料同步翻，建议与语料仓滚动 tag 同批，单独动任一边翻红）。
   cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /
   S11b 记账 1 清偿）。
 
