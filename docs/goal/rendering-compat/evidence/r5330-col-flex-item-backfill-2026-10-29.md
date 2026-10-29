@@ -5,7 +5,7 @@
 - **corpus**: 804F（R5329 交付态）→ **803F**（16590 案；**FIXED=1**，REGRESSED=0），
   通过率 15787/16590 = **95.2%**
 - **域**: flex 布局主轴定尺 × R1743 parent height backfill 误扩展
-- **代码**: `d8a26db15`（fix(layout): column flex item 主轴高豁免 R1743 max-bottom 回填）
+- **代码**: `4cf07ff30`（fix(layout): column flex item 主轴高豁免 R1743 max-bottom 回填）
 
 ## 定性
 

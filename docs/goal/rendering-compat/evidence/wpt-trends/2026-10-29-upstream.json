@@ -6,6 +6,6 @@
   "passed": 15787,
   "rate_pct": 95.2,
   "extra": "failed=803;skipped=0",
-  "git_sha": "d8a26db15",
+  "git_sha": "4cf07ff30",
   "note": "R5330 column flex item 主轴高回填豁免（css-flexbox-1 §4.1 × R1743 回填臂）——flex-minimum-height-flex-items-027 ✓ min-height:0 保持 flex 定尺，FIXED=1 REGRESSED=0"
 }
