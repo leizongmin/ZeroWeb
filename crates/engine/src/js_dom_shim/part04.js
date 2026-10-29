@@ -1476,6 +1476,16 @@
                   _r145Built = _tcArr.map(function (e) {
                     return (typeof _zwMBuildDeepEntry === 'function') ? _zwMBuildDeepEntry(e, _tcParent) : null;
                   }).filter(Boolean);
+                  // R4100 details 双关 flake 根修：缓存**先于 scan** 落位。scan 的片外
+                  // 分支 `_zwDetailsCollect4100(_zwNodeRootOf(el))` 会经 `_tplContent`
+                  // 的 childNodes getter 重入 `_r145SelKids`，彼时 `proxy._zwTplContentKids`
+                  // 尚未写 → 逐层重建 + 嵌套 scan，直至 V8 栈耗尽（RangeError 被物化/
+                  // 收集各层 try/catch 吞掉）；幸存层的重建对象与外层 frag 身份错位，
+                  // `_zwDetailsIsInFrag4100` 误判片外 → 同名 open 成员判定成立 →
+                  // tp0/tp1 双关（(0,0)），触发面随栈布局漂移（前驱测试/插桩改变栈
+                  // 深度即翻转 solo/pair 通过率）。先置缓存使重入读命中同一活数组
+                  //（对象身份稳定），scan 单次收敛、树序第一 open 胜出口径不变。
+                  try { proxy._zwTplContentKids = _r145Built; } catch (_eTkEarly) {}
                   // R4100（encoding-legacy-mb M3 甄别）：contents 深条目物化后的 parse-face
                   // details name= 互斥 + parser-open toggle 排程——host 解析产物不裁决互斥
                   //（深 JSON 双 open 实证），其余 markup 面的裁决在 __zwCeAttachForAdded /
