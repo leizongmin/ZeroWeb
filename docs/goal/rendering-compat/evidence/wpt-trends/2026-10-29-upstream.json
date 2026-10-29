@@ -6,6 +6,6 @@
   "passed": 15786,
   "rate_pct": 95.1,
   "extra": "failed=804;skipped=0",
-  "git_sha": "dffa3f4d6",
+  "git_sha": "95d92a791",
   "note": "R5329 替换内容叶 intrinsic 测量（css-sizing-3 × css-flexbox-1 §4.5）——flex-minimum-width-flex-items-005/006 ✓ specified size suggestion，FIXED=4 REGRESSED=0"
 }
