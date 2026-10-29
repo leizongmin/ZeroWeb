@@ -1,7 +1,7 @@
 # 编辑命令兼容 — editing/run + editing/other
 
 **版本**: v1.4
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（自旋簇归因 = 预算截断）
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（自旋簇归因 = 预算截断）；2026-10-30（other 面复跑收口 2,404P/11,159F/3T）
 **状态**: Active——M1 完成；R5331（3d173dccc，查询回落槽锚点）land 后 M2
 首轮（innerHTML 物化身份失步全环）完成：run 面 setup 级联解锁
 （0.007% → 48.78%，分母收缩口径见 evidence），R5331 指认的 cloneNode
@@ -33,12 +33,19 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 归入 execCommand/delete 语义簇序列；③ join-different-white-space-style-
 > paragraphs（white-space 簇旗舰）**有限慢**：300s 预算内跑完整案 3,456
 > 子测试行（exit=1 正常带 Fail）——white-space join 簇随预算解锁，仅需
-> 墙钟 ≥ 实际耗时，非引擎簇。**重跑在途两笔待办**：① 自适应墙钟 nv=0 下限
+> 墙钟 ≥ 实际耗时，非引擎簇。**other 面同预算复跑已收口（2026-10-30 三轮）**：
+> 96 块/86 有效，账面 **2,404P / 11,159F / 3T**（transcript
+> /tmp 快照，JSON 按脚本 summarizer 再生）——Pass 与 M2-r1 完全一致
+> （2,404=2,404，同 shim 只解锁发射的零回归信号）；Fail 5,096→11,159 为
+> 分母 7,505→13,566 纯发射解锁（原被 90s 截断的变体现全量出断言行），
+> 3 个 Timeout 即上述①②③ runaway 三例（timeout-only 块逐一核对）。
+> 曾记「双实例案块双倍」经核查为误读：840 体行 = 420 唯一 Fail + 420 缩进
+> 断言续行（单实例天然形态），块替换 + JSON 再生后总额逐位不变、无重复
+> 案块——账面无需修正。**重跑在途余一笔待办**：自适应墙钟 nv=0 下限
 > 150s 偏紧——300s 脚本预算下无变体大单页案（createlink-with-selecting-img
 > 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
-> 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案；② other 面曾
-> 双实例共写 transcript 一案块双倍（420 行），收口时删块单案重跑。
-> 失败簇按新账重排后定
+> 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案（run 面 s2 在途）。
+> run 面全分母 3 分片重跑进行中。失败簇按新账重排后定
 > white-space join / insertparagraph 入簇序。详见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
