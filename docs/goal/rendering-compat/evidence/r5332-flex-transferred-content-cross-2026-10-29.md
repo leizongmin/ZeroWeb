@@ -4,7 +4,7 @@
 - **驱动案**: `css/css-flexbox/flex-cross-size-border-box-001.html` ✗1.58% → **✓0.00%**
 - **corpus**: 802F（R5331 交付态）→ **801F**（16590 案；**FIXED=1**，REGRESSED=0），通过率 15789/16590 = **95.2%**
 - **域**: flex item transferred size suggestion × align-self:stretch 目标 × 容器 box-sizing
-- **代码**: `04f3cc437`（fix(layout): border-box flex 容器 transferred/stretch 目标按 content box cross）
+- **代码**: `fbf4a7be5`（fix(layout): border-box flex 容器 transferred/stretch 目标按 content box cross）
 
 ## 定性
 
@@ -54,7 +54,7 @@ stretch 到容器 **content box** cross = 200 − 2×10 = 180 → 180×180；ZW 
 - corpus 同树 A/B（基线 R5331 交付态 802F，fail-list `/tmp/r5331-after2.txt`）→
   **801F**，集合 diff 恰 {−flex-cross-size-border-box-001}，REGRESSED=0。
 - kill-switch 双向：=0 复现 img 200×200（min 180↔200 翻转，观测插桩实证）。
-- trend 行 @ `04f3cc437` 已录。
+- trend 行 @ `fbf4a7be5` 已录。
 
 ## 回归
 
