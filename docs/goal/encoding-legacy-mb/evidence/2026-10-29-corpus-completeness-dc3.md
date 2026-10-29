@@ -81,10 +81,10 @@ coverage 复测 = `wptfyi_gap.py coverage --results <47 套件 --json 结果目�
 
 ## DC-4 执行（2026-10-29 夜启动）
 
-批量驱动 `/lzcapp/document/work/zw-coverage-dc4/run-dc4.sh`（仓库外，不入
+批量驱动仓库外与仓库同级的 `zw-coverage-dc4/run-dc4.sh`（运行目录，不入
 git）：51 个 testharness 通道按 Makefile 各 target 的 env/guard envelope
 逐通道顺序重跑（fetch 依赖跳过——语料已在盘），`--json` 落
-`/lzcapp/document/work/zw-coverage-dc4/results/<channel>.json`，
+该运行目录下 `results/<channel>.json`，
 `status.tsv` 记 rc+字节数，`driver.log` 记起止。testharness-css-variables
 按分片器同规则改为逐案 `--json` 合并（其 Makefile wrapper 不透传 JSON）。
 首通道（testharness-html，7 case 小语料）已验证驱动机制正常。对账管道已
