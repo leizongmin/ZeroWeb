@@ -966,9 +966,13 @@
       ? Number(__zw_performance_now())
       : (typeof Date.now === 'function' ? Date.now() : 0);
     // M2-S3（hr-time §privacy-security）：非隔离上下文推荐最小分辨率 **100μs**——
-    // now() 粗化到 0.1ms 网格（floor 保单调）。webtiming-resolution（≥5μs 下限）与
-    // timing-attack（100μs 分辨率）两簇同闭；monotonic/正值语义不受影响（floor 单调）。
-    return Math.floor(v * 10) / 10;
+    // now() 粗化到 0.1ms 网格（ceil 保单调且恒非 0）。webtiming-resolution（≥5μs 下限）与
+    // timing-attack（100μs 分辨率）两簇同闭；monotonic/正值语义不受影响（ceil 单调）。
+    // R-p122：ceil 与 Event.timeStamp（shim _makeEvent / native perf_now_ms）**同 transform**
+    //（同 origin + 同 100µs ceil 网格）——WPT Event-timestamp-high-resolution 夹逼断言
+    // before ≤ e.timeStamp ≤ after 要求两钟同变换（floor/ceil 异向或网格异宽时，
+    // 0.1ms 边界落入构造→after 间隙即假——存量时序 flake 根因）。
+    return Math.ceil(v * 10) / 10;
   }
   // entry buffer + mark startTime 表 + 活跃 observer 表（shim IIFE 内部，不污染 globalThis）。
   var _perfEntries = [];

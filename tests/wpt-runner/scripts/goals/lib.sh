@@ -227,9 +227,11 @@ for entry in d["tree"]:
         ;;
       # .htm 与 .headers 同 fetch_dir_html 扩展模式（workers corpus 三层 .htm 用例 +
       # .headers sidecar——深挖模式此前漏拉，2026-10-20 workers-compat M1 补齐）。
+      # .css 同 fetch_dir_html 扩展模式（css-testharness-compat M0：css-values
+      # support/*.css 资产面——2026-10-29 补齐，深挖模式此前缺位）。
       # GOAL_PULL_HEADERS_TARGETS=1 的 sidecar 目标带拉语义同 fetch_dir_html（此处
       # name 为相对路径，%#.headers 还原目标；仅无扩展名目标生效防双拉）。
-      *.html | *.htm | *.headers | *.js | *.json | *.xml | *.xhtml | *.svg)
+      *.html | *.htm | *.css | *.headers | *.js | *.json | *.xml | *.xhtml | *.svg)
         fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
         if [[ "${GOAL_PULL_HEADERS_TARGETS:-0}" == "1" && "${name}" == *.headers ]]; then
           local header_target="${name%.headers}"

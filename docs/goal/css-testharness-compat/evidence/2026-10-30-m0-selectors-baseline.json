@@ -1,0 +1,4595 @@
+{
+ "corpus": "css/selectors",
+ "totals": {
+  "fail": 2249,
+  "pass": 2001,
+  "timeout": 6
+ },
+ "cases": [
+  {
+   "case": "css/selectors/active-after-relayouts.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/active-display-none-001.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/active-observable.html",
+   "pass": 0,
+   "fail": 17,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/active-toplayer-001.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/cssom.html",
+   "pass": 22,
+   "fail": 50,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/resources/semantics-quirks.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/resources/syntax-quirks.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/semantics.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/syntax.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/attribute-case/value-case-sensitivity-svg.html",
+   "pass": 2,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/attribute-selectors/style-attribute-selector.html",
+   "pass": 5,
+   "fail": 6,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/backdrop-input-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/caret-color-visited-inheritance-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/caret-color-visited-inheritance.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/child-indexed-during-parse.html",
+   "pass": 6,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/child-indexed-no-parent-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/child-indexed-no-parent.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/child-indexed-pseudo-class.html",
+   "pass": 29,
+   "fail": 28,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/chrome-40257746-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/crashtests/empty-pseudo-with-first-line.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-pseudo-in-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-pseudo-on-bdi-element.html",
+   "pass": 0,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-pseudo-on-input-element.html",
+   "pass": 0,
+   "fail": 20,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-pseudo-update-document-element-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-pseudo-update-document-element.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-auto-direction-change-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-auto.html",
+   "pass": 13,
+   "fail": 9,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-003-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-004-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-change-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-ltr-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-ltr-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-ltr-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-querySelector.html",
+   "pass": 3,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-rtl-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-white-space-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-selector-white-space-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-01-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-01a.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-01b.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-02-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-02a.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-02b.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-03-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-03a.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-03b.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-04-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/dir-style-04.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/eof-right-after-selector-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/eof-some-after-selector-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/featureless-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/featureless-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/featureless-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/featureless-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/featureless-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-child.html",
+   "pass": 5,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-letter-flag-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-letter-flag-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-line-bidi-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-line-bidi-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-line-bidi-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-line-bidi-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/first-of-type.html",
+   "pass": 8,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/floating-first-letter-05d0.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/floating-first-letter-feff.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/floating-first-letter-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-display-none-001.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-in-focus-event-001.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-in-focusin-event-001.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-001.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-002.html",
+   "pass": 0,
+   "fail": 14,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-003.html",
+   "pass": 0,
+   "fail": 12,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-004.html",
+   "pass": 0,
+   "fail": 10,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-005.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-006.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-007.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-008.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-009.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-010.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-011.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-012.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-013.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-014.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-015.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-016.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-017-2.html",
+   "pass": 1,
+   "fail": 37,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-017.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-018-2.html",
+   "pass": 38,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-018.html",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-019.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-020.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-021.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-022.tentative.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-023.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-024.html",
+   "pass": 1,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-025.html",
+   "pass": 1,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-026.html",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-027.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-028.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-001.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-002.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-003.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-004.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-005.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-006.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-007.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-008-b.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-008.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-009.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-010.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-011.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-012.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-013.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-014.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-015.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-016.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-017.tentative.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-018.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-019.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-visible-script-focus-020.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-006-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-006.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-007-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-007.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-008.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-009.html",
+   "pass": 1,
+   "fail": 11,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-010.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-011-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-011.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-012-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-012.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-013-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-013.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-display-none-001.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-focus-move.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-removal.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-shadow-006.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/focus-within-toplayer-001.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-argument-with-explicit-scope.html",
+   "pass": 4,
+   "fail": 9,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-basic.html",
+   "pass": 8,
+   "fail": 10,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-display-none-checked-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-display-none-checked.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-focus-display-change.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-matches-to-uninserted-elements.html",
+   "pass": 4,
+   "fail": 8,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-nth-of-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-relative-argument.html",
+   "pass": 10,
+   "fail": 25,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-sibling-chrome-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-specificity.html",
+   "pass": 8,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-003-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-004-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-005-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-006-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-006.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-007-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-007.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-003-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-004-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-005-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-006-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-006.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-007-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-007.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-008-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-style-sharing-pseudo-008.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-visited-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/has-visited.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/hash-collision-cssom.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/hash-collision.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/heading-prefixed.html",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/heading.html",
+   "pass": 0,
+   "fail": 182,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/hover-001-manual.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/hover-002.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/hover-toplayer-001.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-001.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-002.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-004.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-005.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-006.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-007.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-008.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-009.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-010.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-011.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-012.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-014.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-015.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-016.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-021.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-022.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-024.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-025.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-026.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-027.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-028.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-029.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-030.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-031.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-032.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-034.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-035.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-036.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-041.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-042.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-044.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-045.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-046.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-047.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-048.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-049.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-050.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-051.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-052.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-054.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-055.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/css3-selectors-lang-056.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/lang-pseudo-class-across-shadow-boundaries-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/lang-pseudo-class-across-shadow-boundaries.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/i18n/lang-pseudo-class-disconnected.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/any-link-attribute-removal-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/any-link-attribute-removal.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/any-link-pseudo.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/attribute-or-elemental-selectors-in-has.html",
+   "pass": 14,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/attribute.html",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/child-indexed-pseudo-classes-in-has.html",
+   "pass": 39,
+   "fail": 27,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/class-id-attr-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/class-id-attr.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/crashtests/has-pseudoclass-only-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/crashtests/nth-child-of-attribute-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/defined-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/defined.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/dir-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/empty-pseudo-in-has-display-none.html",
+   "pass": 7,
+   "fail": 7,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/empty-pseudo-in-has.html",
+   "pass": 1,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/enabled-disabled.html",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/first-child-last-child.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/fullscreen-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-append-first-node.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-complexity.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-css-nesting-shared.html",
+   "pass": 12,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-in-adjacent-position.html",
+   "pass": 195,
+   "fail": 100,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-in-ancestor-position.html",
+   "pass": 214,
+   "fail": 123,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-in-is-non-subject-compound.html",
+   "pass": 2,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-in-parent-position.html",
+   "pass": 155,
+   "fail": 56,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-in-sibling-position.html",
+   "pass": 183,
+   "fail": 112,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-invalidation-after-removing-non-first-element.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-invalidation-first-in-sibling-chain.html",
+   "pass": 8,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-invalidation-for-wiping-an-element.html",
+   "pass": 3,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-nested-pseudo-001-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-nested-pseudo-002-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-nested-pseudo-003-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-pseudo-element-subject-child-mutation.html",
+   "pass": 0,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-pseudo-element.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-pseudoclass-only.html",
+   "pass": 24,
+   "fail": 12,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-sibling-insertion-removal.html",
+   "pass": 14,
+   "fail": 14,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-sibling.html",
+   "pass": 36,
+   "fail": 35,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-side-effect.html",
+   "pass": 2,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-unstyled.html",
+   "pass": 7,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-is-child-combinator.html",
+   "pass": 10,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-nesting-parent-containing-complex.html",
+   "pass": 19,
+   "fail": 18,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-nesting-parent-containing-hover.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-not.html",
+   "pass": 13,
+   "fail": 8,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-nth-child-sibling-remove.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-nth-child.html",
+   "pass": 2,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/has-with-pseudo-class.html",
+   "pass": 36,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/heading-pseudo-class-in-has-with-headingoffset.html",
+   "pass": 33,
+   "fail": 23,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/heading-pseudo-class-in-has-with-slot-reassignment.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/heading-pseudo-class-in-has.html",
+   "pass": 55,
+   "fail": 17,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/host-context-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 6,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/host-has-shadow-tree-element-at-nonsubject-position.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/host-has-shadow-tree-element-at-subject-position.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/host-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/input-in-range-in-has-with-readonly.html",
+   "pass": 0,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/input-pseudo-classes-in-has.html",
+   "pass": 6,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/insert-sibling-001.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/insert-sibling-002.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/insert-sibling-003.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/insert-sibling-004.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/is-pseudo-containing-complex-in-has.html",
+   "pass": 170,
+   "fail": 306,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/is-pseudo-containing-sibling-relationship-in-has.html",
+   "pass": 3,
+   "fail": 18,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/is-where-pseudo-containing-hard-pseudo-and-never-matching.html",
+   "pass": 8,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/is-where-pseudo-containing-hard-pseudo.html",
+   "pass": 20,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/is.html",
+   "pass": 6,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/lang-pseudo-class-in-has-document-element.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/lang-pseudo-class-in-has-multiple-document-elements.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/lang-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/link-pseudo-class-in-has.html",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/link-pseudo-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/location-pseudo-classes-in-has.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/media-loading-pseudo-classes-in-has.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/media-pseudo-classes-in-has.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/modal-pseudo-class-in-has.html",
+   "pass": 1,
+   "fail": 3,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-always-matches-negated-first-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-always-matches-negated-first-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-always-matches-negated-last-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-always-matches-negated-last-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-first-of-type-in-nonsubject-position.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-has-in-nonsubject-position.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-always-matches-negated-first-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-always-matches-negated-first-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-always-matches-negated-last-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-always-matches-negated-last-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-never-matches-negated-first-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-never-matches-negated-first-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-never-matches-negated-last-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-is-never-matches-negated-last-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-last-of-type-invalidation.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-negated-first-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-negated-first-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-negated-last-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-negated-last-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-never-matches-negated-first-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-never-matches-negated-first-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-never-matches-negated-last-of-type-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-never-matches-negated-last-of-type-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-nth-child-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-nth-child-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-nth-last-child-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/negated-nth-last-child-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/not-001.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/not-002.html",
+   "pass": 5,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/not-pseudo-containing-complex-in-has.html",
+   "pass": 154,
+   "fail": 306,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/not-pseudo-containing-sibling-relationship-in-has.html",
+   "pass": 1,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-containing-ancestor-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-containing-ancestor.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-in-shadow-root-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-in-shadow-root.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-attr-largedom-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-attr-largedom.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-attr-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-attr.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-class-prefix.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-class-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-class.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-has-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-id-prefix.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-ids.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-in-ancestor-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-in-ancestor.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-in-is.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-in-shadow-root-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-in-shadow-root.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-is.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-pseudo-class-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-pseudo-class.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-sibling-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-of-sibling.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-when-sibling-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-when-sibling-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-child-whole-subtree.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-containing-ancestor.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-in-shadow-root-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-in-shadow-root.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-attr-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-attr.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-class-prefix.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-class-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-class.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-has-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-id-prefix.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-ids.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-in-ancestor-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-in-ancestor.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-in-is.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-in-shadow-root-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-in-shadow-root.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-is.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-pseudo-class-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-pseudo-class.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-sibling-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-of-sibling.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-when-ancestor-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-when-ancestor-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-when-sibling-changes-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-last-child-when-sibling-changes.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/nth-of-namespace-class-invalidation-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/open-pseudo-class-in-has.html",
+   "pass": 0,
+   "fail": 9,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/option-disabled-when-ancestor-changes.html",
+   "pass": 4,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/part-dir.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/part-lang.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/part-pseudo-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/part-pseudo.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/placeholder-shown.html",
+   "pass": 2,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/quirks-mode-stylesheet-dynamic-add-001.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/selectorText-dynamic-001.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/sheet-going-away-001.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/sheet-going-away-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/sheet-going-away-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/sibling.html",
+   "pass": 2,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/state-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/subject-has-invalidation-with-display-none-anchor-element.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/target-pseudo-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/typed-child-indexed-pseudo-classes-in-has.html",
+   "pass": 54,
+   "fail": 48,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/user-action-pseudo-classes-in-has.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/user-valid-user-invalid.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/invalidation/where.html",
+   "pass": 3,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-default-ns-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-default-ns-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-default-ns-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-nested.html",
+   "pass": 2,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-specificity-shadow.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-specificity.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-basic.html",
+   "pass": 11,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-error-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-error-recovery.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-not.html",
+   "pass": 0,
+   "fail": 18,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-pseudo-classes.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-pseudo-elements-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-pseudo-elements.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-shadow.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-visited-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/is-where-visited.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/last-child.html",
+   "pass": 5,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/last-of-type.html",
+   "pass": 8,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/link-sharing-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/media-loading-state-timing.sub.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/media-loading-state.sub.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 1,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/media-playback-state-timing.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/media-playback-state.html",
+   "pass": 0,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/media-playing-paused-style-invalidation.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/media/sound-state.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/missing-right-token.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/modal-pseudo-class.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-complex.html",
+   "pass": 5,
+   "fail": 15,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-default-ns-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-default-ns-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-default-ns-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-links-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-links.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/not-specificity.html",
+   "pass": 8,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-and-nth-last-child-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-and-nth-last-child.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-large-anplusb-clamp.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-attribute.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-classname-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-classname-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-classname.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector-many-children-2-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector-many-children-2.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector-many-children-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector-many-children.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-complex-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-compound-selector-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-compound-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-has.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-nesting-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-nesting.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-no-space-after-of-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-no-space-after-of.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-not.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-nth-child.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-pseudo-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-pseudo.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-tagname-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-tagname.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-of-universal-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-1-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-1.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-2-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-2.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-3-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-3.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-4-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-specificity-4.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-child-spurious-brace-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-invalid.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-classname-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-classname.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-complex-selector-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-complex-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-compound-selector-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-compound-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-nesting.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-no-space-after-of.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-style-sharing-1-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-style-sharing-1.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-style-sharing-2-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-style-sharing-2.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-tagname-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-of-tagname.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-1-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-1.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-2-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-2.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-3-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-3.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-4-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-last-child-specificity-4.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-of-invalid.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-of-selector-before.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/nth-of-type-namespace.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/only-child.html",
+   "pass": 4,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/only-of-type.html",
+   "pass": 4,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/open-pseudo.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/invalid-pseudos.html",
+   "pass": 0,
+   "fail": 12,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-anplusb.html",
+   "pass": 64,
+   "fail": 48,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-attribute.html",
+   "pass": 6,
+   "fail": 10,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-child.html",
+   "pass": 1,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-class.html",
+   "pass": 4,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-descendant.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-focus-visible.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-has-disallow-nesting-has-inside-has.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-has-forgiving-selector.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-has-slotted.tentative.html",
+   "pass": 0,
+   "fail": 23,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-has.html",
+   "pass": 17,
+   "fail": 12,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-heading.html",
+   "pass": 0,
+   "fail": 28,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-id.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-is-where.html",
+   "pass": 10,
+   "fail": 35,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-is.html",
+   "pass": 3,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-not.html",
+   "pass": 11,
+   "fail": 15,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-part.html",
+   "pass": 0,
+   "fail": 32,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-sibling.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-slotted.html",
+   "pass": 6,
+   "fail": 13,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-state.html",
+   "pass": 0,
+   "fail": 24,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-universal.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/parsing/parse-where.html",
+   "pass": 3,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/partitioned-visited-manual.tentative.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/placeholder-shown.html",
+   "pass": 7,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/popover-open-with-has-sibling-selector.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/pseudo-enabled-disabled.html",
+   "pass": 4,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/pseudo-where-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/query/query-is.html",
+   "pass": 2,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/query/query-where.html",
+   "pass": 2,
+   "fail": 4,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/quirks-mode-import.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/remove-hovered-element-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/remove-hovered-element.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/resources/partitioned-visited-cross-site-iframe.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/resources/partitioned-visited-same-site-iframe.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/root-siblings.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/scope-selector.html",
+   "pass": 3,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/scope-without-scoping.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selection-image-001-no-selection-noref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selection-image-001-noref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selection-image-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selection-image-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-after-font-family.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-emptify-placeholder.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-003-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-placeholder-shown-type-change-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-read-write-type-change-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-read-write-type-change-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-read-write-type-change-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-read-write-type-change-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required-type-change-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required-type-change-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required-type-change-002-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required-type-change-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-required.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-structural-pseudo-root-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selector-structural-pseudo-root.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/details-open-pseudo-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/details-open-pseudo-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/details-open-pseudo-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/details-open-pseudo-003-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/details-open-pseudo-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-000-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-000.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-002.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-003.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-004.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-005.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-006.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-007.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-008.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-009.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-010.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-011.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-012.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-013.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-014.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-015.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-016.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-017.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-018.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-019.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-020-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-020.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-021.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-022.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-023.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-024.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-025.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-4/lang-singleton-subtag-matching.html",
+   "pass": 9,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-attr-many-2.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-attr-many-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-attr-many.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-attr-white-space-001-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-attr-white-space-001.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/selectors-case-sensitive-001.html",
+   "pass": 1,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/sharing-in-svg-use-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/sharing-in-svg-use.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/spurious-brace-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-emphasis-visited-inheritance-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-emphasis-visited-inheritance.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-fill-color-visited-inheritance-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-fill-color-visited-inheritance.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-stroke-color-visited-inheritance-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/text-stroke-color-visited-inheritance.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/toplayer-transition-001.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-action-pseudo-top-layer.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-invalid-form-submission-invalidation-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-invalid-form-submission-invalidation.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-invalid.html",
+   "pass": 1,
+   "fail": 7,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-valid-user-invalid-multifield-inputs.tentative.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/user-valid.html",
+   "pass": 0,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/valid-invalid-form-fieldset.html",
+   "pass": 0,
+   "fail": 1,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-in-visited-compound-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-in-visited-compound.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-inheritance-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-inheritance.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-nested-ref.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-nested.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/visited-part-crash.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/webkit-pseudo-element.html",
+   "pass": 1,
+   "fail": 5,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "css/selectors/x-pseudo-element.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  }
+ ]
+}

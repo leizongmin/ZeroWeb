@@ -343,6 +343,45 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 run_mode: RunMode::ComputeSize,
                 vertical_margins_are_collapsible,
                 flex_base_probe: false,
+                flex_intrinsic_main_probe: false,
+            },
+        )
+        .size
+        .get_abs(axis)
+    }
+
+    /// ZW R5331（css-flexbox-1 §9.9.1）：内在主尺寸贡献探针测量——同 `measure_child_size`，
+    /// 但被测节点自身的 specified main size 不参与 ComputeSize 结果
+    ///（`flex_intrinsic_main_probe` 旗标：compute_flexbox_layout 的 InherentSize style
+    /// 覆盖在主轴失效）。§9.9.1 容器内在主尺寸 = Σ item hypothetical main size，item
+    /// specified size 只能经 automatic minimum（min(specified, content)，§4.5）进入；
+    /// style 覆盖顶替 content 贡献会使 auto 高 column flex 容器用 item 显式 height
+    /// 定尺（flex-minimum-height-flex-items-029：容器应 100 实渲 500）。cross 轴与
+    /// 后代节点不受影响。
+    #[inline(always)]
+    #[allow(clippy::too_many_arguments)]
+    fn measure_child_intrinsic_main_size(
+        &mut self,
+        node_id: NodeId,
+        known_dimensions: Size<Option<f32>>,
+        parent_size: Size<Option<f32>>,
+        available_space: Size<AvailableSpace>,
+        sizing_mode: SizingMode,
+        axis: AbsoluteAxis,
+        vertical_margins_are_collapsible: Line<bool>,
+    ) -> f32 {
+        self.compute_child_layout(
+            node_id,
+            LayoutInput {
+                known_dimensions,
+                parent_size,
+                available_space,
+                sizing_mode,
+                axis: axis.into(),
+                run_mode: RunMode::ComputeSize,
+                vertical_margins_are_collapsible,
+                flex_base_probe: false,
+                flex_intrinsic_main_probe: true,
             },
         )
         .size
@@ -376,6 +415,7 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 run_mode: RunMode::ComputeSize,
                 vertical_margins_are_collapsible,
                 flex_base_probe: true,
+                flex_intrinsic_main_probe: false,
             },
         )
         .size
@@ -405,6 +445,7 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 run_mode: RunMode::ComputeSize,
                 vertical_margins_are_collapsible,
                 flex_base_probe: false,
+                flex_intrinsic_main_probe: false,
             },
         )
         .size
@@ -432,6 +473,7 @@ pub(crate) trait LayoutPartialTreeExt: LayoutPartialTree {
                 run_mode: RunMode::PerformLayout,
                 vertical_margins_are_collapsible,
                 flex_base_probe: false,
+                flex_intrinsic_main_probe: false,
             },
         )
     }

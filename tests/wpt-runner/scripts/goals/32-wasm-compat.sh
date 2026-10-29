@@ -7,7 +7,7 @@
 # 形态以 .any.js 为主（any_js_window_wrapper window 变体执行，fs/timing 先例），
 # 埋在 core/ 二三层子目录，必须深挖模式。预计 75% 起步；缺口预计集中在
 # threads/SIMD 等 proposal 面（wasm-sandbox feature gate 边界，逐簇挂账）。
-# 契约见 docs/goal/wasm-compat.md DC-1。
+# 契约见 docs/goal/archive/wasm-compat.md DC-1。
 # 用法：bash tests/wpt-runner/scripts/goals/32-wasm-compat.sh（FORCE=1 强制重拉）
 set -euo pipefail
 

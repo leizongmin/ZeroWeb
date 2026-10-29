@@ -6,7 +6,7 @@
 # 测试面：`*-encode-form-*.html`（GET + acceptCharset=<meta charset> +
 # target=iframe，断言 query 出非 UTF-8 字节序列）与 `*-encode-href-*.html`
 # / `*-encoder.html`（a.href 以文档编码 fallback 解析，读 a.search 比对）。
-# 契约见 docs/goal/form-url-encoding-compat.md（form 面缺 acceptCharset
+# 契约见 docs/goal/archive/form-url-encoding-compat.md（form 面缺 acceptCharset
 # 序列化消费，href 面缺 encoding-parse a URL——M0/M1/M2 逐面解锁）。
 #
 # 语料现状：68 文件已全量在位（31 号 DC-3 对账上游 pin 315976933

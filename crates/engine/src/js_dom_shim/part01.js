@@ -3950,7 +3950,23 @@
     response._bodyNull = true;
     return response;
   }
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials) {
+  // s153（html-semantics M2 切片 153）：**stylesheet 内部取回通道豁免 CORS 检查**——
+  // 上游 `<link rel=stylesheet>`（无 crossorigin 属性）的样式表取回是 no-cors 请求，
+  // 不做 CORS check 且跨源无 ACAO 照常 load（HTML spec fetching stylesheets；
+  // link-load-error-events「Load of https:// stylesheet」期望 load——上游 wptserve
+  // 静态 .css 不带 ACAO，跨端口取回成功）。shim 的 stylesheet 加载仿真
+  //（part03 _zwStylesheetMaybeStart，s150 动态臂/s151 判定链/s152 静态扫描共用）
+  // 走页面 fetch()（cors 模式）→ 引入了上游不存在的 CORS check：跨端口案被拒
+  // 「Failed to fetch」→ error 事件 ≠ 期望 load。旗标由 part03 取回点在 fetch()
+  // 调用窗内置位/清位（IIFE 模块局部——页面脚本不可见、不可伪造，区别于挂
+  // globalThis 的公开面）；_zwFetchMainImpl 同步段快照进闭包，trickle/delay 等
+  // setTimeout 异步取回臂同样生效。豁免 = 跳过 cors check + 跳过 cors 头过滤
+  //（全头保留——MIME/nosniff 判定 _zwStylesheetJudge 须读 x-content-type-options，
+  // cors 过滤会把非 safelisted 头剥掉）。404/MIME 判定链与 mixed content 门不受
+  // 影响（期望 error 案语义不变）。FIXME(compat)：crossorigin 属性形态的
+  // stylesheet 仍应走 CORS check（语料无该形态，未分型）。
+  var _zwStylesheetChannelDepth = 0;
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -3964,7 +3980,7 @@
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
-    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
+    if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
       // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
       // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
       var allowOrigin = response.headers.get('access-control-allow-origin');
@@ -3977,7 +3993,7 @@
         throw new TypeError('Failed to fetch');
       }
     }
-    if (mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
+    if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
       // https://fetch.spec.whatwg.org/#concept-filtered-response-cors——cors 响应仅暴露
       // CORS-safelisted 响应头 + Access-Control-Expose-Headers 白名单；Set-Cookie 恒排除；
       // `*` 通配（credentials mode include 下仅字面匹配——cors-expose-star 页）。
@@ -4879,6 +4895,9 @@
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
+      // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
+      // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
+      var _zwSsChannel = _zwStylesheetChannelDepth > 0;
       var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
       // net-api M4-S12：内部直设头 wire 旁路（`init.__zwInternalHeadersWire`，\x1e 对齐
       // headersWire 格式）。spec 场景：SSE EventSource 于 request header list **内部直设**
@@ -5221,7 +5240,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel);
           if (hopUrl) response.url = hopUrl;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
@@ -5253,7 +5272,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
           response.url = hopUrl;
           return response;
         };
@@ -5286,7 +5305,7 @@
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
             try {
-              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials);
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
             } catch (eHop) {
               settled = true;
               delete globalThis.__zw_pending[id];
@@ -5527,8 +5546,16 @@
             ? globalThis._zwFetchSimDelay(_us) : 0;
           if (_delayMs === 0 && !/delay\.py|redirect\.py/.test(_us)) {
             // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
+            // s152：静态 stylesheet 交错扫描窗内折叠（__zwScanCollapseTrickle——
+            // part03 _zwStylesheetStaticScanUpto 触发窗置位，同步段结束即清）。
+            // spec 的 script-blocking stylesheet 等待语义由「load 先于后继脚本
+            // 本」承载；runner 无 parser 阻塞，保留 3s 延迟只会把 load 推迟到后
+            // 继脚本断言之后（WPT link-load-fired-before-scripting-unblocked 判
+            // 式面）。fetch API 面 timeout 竞速用例不在扫描窗内，延迟语义零变化。
             var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
-            if (_tp) _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            if (_tp && globalThis.__zwScanCollapseTrickle !== true) {
+              _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            }
           }
         }
         var _issueFetch = function () {
@@ -5876,9 +5903,14 @@
     };
     this.arrayBuffer = function () {
       return _zwConsumeBodyChecked(self, function (b) {
+        // spec ArrayBuffer（WebIDL Promise<ArrayBuffer>——R2978 旧形态返 Uint8Array，
+        // wasm_stream_*「ReadableStream with ArrayBuffer chunk」腿以 arrayBuffer() 结果
+        // 真 ArrayBuffer 身份入流钉 read-loop chunk 类型门，Uint8Array 假绿）。fresh
+        // cp 的 buffer 即精确尺寸 ArrayBuffer，零拷贝外露。
+        //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
         var cp = new Uint8Array(b.length);
         for (var j = 0; j < b.length; j++) cp[j] = b[j];
-        return _zwBytesThenableSafe(cp); // 已知限制（R2978 注记保留）：返 Uint8Array（spec ArrayBuffer），既有接口形态
+        return _zwBytesThenableSafe(cp.buffer);
       });
     };
     // net-api M2-S3：bytes()（Body mixin——response-error-from-stream/bad-chunk 族经
@@ -6310,9 +6342,11 @@
     };
     this.arrayBuffer = function () {
       return _zwConsumeBodyBytes(self).then(function (b) {
+        // spec ArrayBuffer（对称 Response.arrayBuffer——R2982 旧形态返 Uint8Array 已废）。
+        //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
         var arr = new Uint8Array(b.length);
         for (var k = 0; k < b.length; k++) arr[k] = b[k];
-        return _zwBytesThenableSafe(arr); // 已知限制（R2982 注记保留）：返 Uint8Array（spec ArrayBuffer）
+        return _zwBytesThenableSafe(arr.buffer);
       });
     };
     this.bytes = function () { return _zwConsumeBodyBytes(self); };
@@ -7100,6 +7134,15 @@
               } else {
                 _tag109 = String(_an109n.tagName || '').toUpperCase();
               }
+              // s150：plain handle 形（innerHTML flatten 产物）宿主 tag 表 miss
+              // → _realTag 回落恒 DIV——节点对象 tagName 甄别修正（仅 LINK；
+              // SCRIPT 甄别行为不动）。LINK/modulepreload/stylesheet 触发臂
+              // 依赖此甄别，失准则臂整面失效。
+              if (_tag109 === 'DIV' && _an109n.__zwSelector == null
+                  && _an109n.__zwHandle != null && _an109n.tagName
+                  && String(_an109n.tagName).toUpperCase() === 'LINK') {
+                _tag109 = 'LINK';
+              }
               if (_tag109 === 'SCRIPT') {
                 _zwScriptMaybeStartDynamic(_an109n);
               } else if (_tag109 === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
@@ -7108,6 +7151,19 @@
                 // prepare 同挂 childList 汇流点，记账后逐节点触发）。
                 // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
                 try { globalThis._zwModulePreloadMaybeStart(_an109n); } catch (_e109mp) {}
+                // s150：link rel=stylesheet 插入触发（spec link processing 的
+                // stylesheet 分支——插入后按当前 rel/href 决定取回；helper 内
+                // rel/href/非空门自行甄别，非 stylesheet 链接零成本返回）。
+                // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+                try {
+                  if (typeof globalThis._zwStylesheetMaybeStart === 'function') {
+                    globalThis._zwStylesheetMaybeStart(
+                      _an109n.__zwSelector != null ? _an109n.__zwSelector : null,
+                      _an109n.__zwHandle != null ? _an109n.__zwHandle : null,
+                      null,
+                      _an109n);
+                  }
+                } catch (_e109ss) {}
               } else if (_an109n.nodeType === 1) {
                 // s111：detached 子树整体插入的「becomes connected」后代面——spec
                 // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
@@ -7128,12 +7184,30 @@
                       }
                     }
                     if (!_kdTagW) _kdTagW = String(_kdW.tagName || '').toUpperCase();
+                    // s150：plain handle 形 _realTag 回落恒 DIV 的 LINK 甄别修正
+                    //（顶层臂同款；下降臂 innerHTML 整树插入形态依赖）。
+                    if (_kdTagW === 'DIV' && _kdW.__zwSelector == null
+                        && _kdW.__zwHandle != null && _kdW.tagName
+                        && String(_kdW.tagName).toUpperCase() === 'LINK') {
+                      _kdTagW = 'LINK';
+                    }
                     if (_kdTagW === 'SCRIPT') {
                       _zwScriptMaybeStartDynamic(_kdW);
                     } else if (_kdTagW === 'LINK' && typeof globalThis._zwModulePreloadMaybeStart === 'function') {
                       // s124：detached 子树整体插入的 modulepreload 后代面（SCRIPT
                       // 下降臂同型——inclusive descendants 文档序）。
                       try { globalThis._zwModulePreloadMaybeStart(_kdW); } catch (_e111mp) {}
+                      // s150：detached 子树整体插入的 stylesheet 后代面（同型下降——
+                      // document-without-browsing-context innerHTML 整树插入形态）。
+                      try {
+                        if (typeof globalThis._zwStylesheetMaybeStart === 'function') {
+                          globalThis._zwStylesheetMaybeStart(
+                            _kdW.__zwSelector != null ? _kdW.__zwSelector : null,
+                            _kdW.__zwHandle != null ? _kdW.__zwHandle : null,
+                            null,
+                            _kdW);
+                        }
+                      } catch (_e111ss) {}
                       _walk111(_kdW);
                     } else {
                       _walk111(_kdW);

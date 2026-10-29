@@ -127,13 +127,14 @@ pub(crate) fn resolve_tree_definite_real_length(value: &LengthValue, style: &Com
 
 /// R4163：computed 样式的水平 frame（左右 border + padding）——border-box 解析宽扣减
 /// content 宽用。CSS2 §8 box model；replaced ratio 配对维度修正（replaced-element-031）。
-fn frame_width(computed: &ComputedStyle) -> f32 {
+/// R5332：sizing.rs flex stretch 目标（容器 content box cross）同用。
+pub(crate) fn frame_width(computed: &ComputedStyle) -> f32 {
     frame_size(computed).0
 }
 
 /// R4165：computed 样式的水平/垂直 frame（border + padding，border-style none/hidden
 /// 时 width 按 CSS §8.5.3 归零，converter 同规）。
-fn frame_size(computed: &ComputedStyle) -> (f32, f32) {
+pub(crate) fn frame_size(computed: &ComputedStyle) -> (f32, f32) {
     use zero_style_system::property::types::BorderStyleValue;
     fn pxv(v: &LengthValue) -> f32 {
         match v {
@@ -2223,11 +2224,35 @@ fn apply_flex_transferred_min_size(
     //      case（width:0 / auto-height 容器，#819 leaf available_space 变化），须 ZW 覆盖。
     //      cross 须取 min/max 钳制后的 used size（flex-minimum-width-flex-items-012：
     //      height:2000 + max-height:50 → used cross=50，transferred=100，非 2000×ratio）。
-    let container_cross = if is_column {
+    // R5332（css-flexbox-1 §4.5 transferred size suggestion）：item computed cross =
+    // 容器 **content box** cross——box-sizing:border-box 容器的 CSS 尺寸含 frame，原值
+    // 直取会把 min 建在容器 outer cross 上（flex-cross-size-border-box-001：容器
+    // height:200 border-box + border 10，img 固有 1×1 被 min 钳到 200×200，应 stretch
+    // 180×180）。content-box 原值即 content 零变化；%/不可解析形态（None）不受影响。
+    // kill-switch `ZW_FLEX_TRANSFERRED_CONTENT_CROSS=0` 回退。
+    let transferred_content_cross_enabled = std::env::var("ZW_FLEX_TRANSFERRED_CONTENT_CROSS").as_deref() != Ok("0");
+    let container_cross_raw = if is_column {
         resolve_tree_definite_real_length(&parent_style.width, parent_style)
     } else {
         resolve_tree_definite_real_length(&parent_style.height, parent_style)
     };
+    let container_cross = container_cross_raw.map(|v| {
+        if transferred_content_cross_enabled
+            && matches!(
+                parent_style.box_sizing,
+                zero_style_system::property::types::BoxSizingValue::BorderBox
+            )
+        {
+            let frame = if is_column {
+                frame_width(parent_style)
+            } else {
+                frame_size(parent_style).1
+            };
+            (v - frame).max(0.0)
+        } else {
+            v
+        }
+    });
     let (cross, from_item_cross) = match container_cross {
         Some(c) if c > 0.0 => (c, false),
         _ => {
@@ -4009,10 +4034,10 @@ fn build_subtree(
                 if let Some(&first) = inline_anon_ids.first() {
                     ctx.r109.first_inline_fragments.insert(first);
                 }
-                if inline_anon_ids.len() > 1 {
-                    if let Some(&last) = inline_anon_ids.last() {
-                        ctx.r109.last_inline_fragments.insert(last);
-                    }
+                // R5335：单片段（首末合一）同样登记 last——边选择据此判定
+                // 「首末合一保留全边」（旧 len>1 条件使单片段被当 first 清 right）。
+                if let Some(&last) = inline_anon_ids.last() {
+                    ctx.r109.last_inline_fragments.insert(last);
                 }
             } else {
                 // 非 flex/grid 容器

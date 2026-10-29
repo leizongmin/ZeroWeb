@@ -2982,6 +2982,37 @@
     for (var fi = 1; fi < list.length; fi++) if (_r4006TreeCmp(list[fi], first) < 0) first = list[fi];
     return first;
   }
+  // editing-compat M1（R5331）：pending in-doc 门对解析插入产物的补偿判定——R145
+  // 纯 tag / R3902b 复合回落的既有门直接把节点 sel/handle 喂 `_zwMutationInDoc`，
+  // 而 innerHTML/insertAdjacentHTML 解析 wrapper 无 `__zwSelector`/`__zwHandle`
+  // 身份（`_zwMutationInDoc(null, null)` 恒 false）→ 同 turn 产物对 compound/纯
+  // tag 查询恒不可见（WPT editing/run `runConformanceTest`：innerHTML 后
+  // `querySelector('div[contenteditable]')` null → 全案 setup 抛异常）。补法沿用
+  // R125 gEBI（R5001 片 a）既有形态：无身份节点改用 R3254-K3/R304 挂载槽
+  // `_zwSelPendingParent` 的 parentSel/parentHandle 作锚点爬升判定。带槽 =
+  // 已记账到 in-doc 挂载点的解析产物；createElement 孤儿无槽，R346 排除语义不变。
+  function _zwPendingNodeInDoc(nd) {
+    var sel = nd.__zwSelector || null, h = nd.__zwHandle || null;
+    if (sel || h) return !!_zwMutationInDoc(sel, h);
+    var pl = nd._zwSelPendingParent;
+    if (pl) {
+      if (pl.parentSel && _zwMutationInDoc(pl.parentSel, null)) return true;
+      if (pl.parentHandle && _zwMutationInDoc(null, pl.parentHandle)) return true;
+    }
+    // editing-compat M2：槽只打在 fragment **顶层**视图（setter 侧 R304 打点）——
+    // 深层解析子（≥2 级，如 `<div><div contenteditable>` 的内层）无槽无身份，
+    // 上面两臂全 miss → doc 级纯 tag/compound 查询对深层产物仍不可见。补
+    // plain parentNode 链上行到最近锚祖先（sel/handle proxy）按挂载点判定
+    //（t7 ③ plainParent 臂同构；guard 防 DOM 循环。探针 E1 wrap-clone 面实证）。
+    var anc = nd, guard = 0;
+    while (anc && !anc.__zwSelector && !anc.__zwHandle && guard++ < 32) {
+      try { anc = anc.parentNode; } catch (_eppid) { return false; }
+    }
+    if (anc && (anc.__zwSelector || anc.__zwHandle)) {
+      return !!_zwMutationInDoc(anc.__zwSelector || null, anc.__zwHandle || null);
+    }
+    return false;
+  }
 
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
@@ -3071,10 +3102,10 @@
           // R346：in-doc 门——createElement-only（从未 append）的孤儿不在文档中，spec 查询
           // 不可见（WPT Event-dispatch-on-disabled-elements：sync tests 留下 16 个孤儿
           // button/input，孤儿排在 _zwPendingAdded 首部 → 派发脚本 querySelector 命中孤儿
-          // → 事件派到无 listener 的元素 → 链卡死）。R54/R120 的 `_zwMutationInDoc` 门同源。
+          // → 事件派到无 listener 的元素 → 链卡死）。R54/R120 的 `_zwMutationInDoc` 门同源；
+          // R5331 解析插入产物经 `_zwSelPendingParent` 槽锚点放行（`_zwPendingNodeInDoc`）。
           try {
-            if (typeof _zwMutationInDoc === 'function'
-                && !_zwMutationInDoc(_r145n.__zwSelector, _r145n.__zwHandle)) continue;
+            if (!_zwPendingNodeInDoc(_r145n)) continue;
           } catch (_e346g) {}
           try {
             if (String(_r145n.tagName) === wantTag) return _r145n;
@@ -3103,8 +3134,9 @@
             var _r3902bn = _zwPendingAdded[_r3902bi];
             if (!_r3902bn || _r3902bn.nodeType !== 1) continue;
             try {
-              if (typeof _zwMutationInDoc === 'function'
-                  && !_zwMutationInDoc(_r3902bn.__zwSelector, _r3902bn.__zwHandle)) continue;
+              // R5331：解析插入产物（无 sel/handle、仅 `_zwSelPendingParent` 槽）经挂载点
+              // 爬升放行；createElement 孤儿仍被排除（R346 语义不变）。
+              if (!_zwPendingNodeInDoc(_r3902bn)) continue;
             } catch (_e3902bd) {}
             try {
               if (_matchCompoundOf(_r3902bn, _r3902bC)) return _r3902bn;
@@ -5535,7 +5567,20 @@
       if (c === this.doctype) { this._docDtorRemoved = false; return c; }
       return c;
     },
-    compatMode: 'CSS1Compat',
+    // s151（html-semantics M2 切片 151）：headless 通道 compatMode 真值化——旧常量
+    // 'CSS1Compat' 遮蔽解析期 doctype 判定（WPT link-style-error-quirks 判式的
+    // CSS1Compat 分支恒真、quirks 宽容分支永不激活；探针 zz-s151-probe-quirks 实证
+    // BackCompat 期望得 CSS1Compat）。桥缺席（嵌入方未接 DOM 源）回落 CSS1Compat。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+    get compatMode() {
+      try {
+        if (typeof __zw_get_compat_mode === 'function') {
+          var _cm = __zw_get_compat_mode();
+          if (_cm === 'BackCompat' || _cm === 'CSS1Compat') return _cm;
+        }
+      } catch (_eCm) {}
+      return 'CSS1Compat';
+    },
     // R5000 片 c（html-syntax-compat P5）：解析期 `<meta charset>` 预扫描标签经
     // encoding_rs 归一（`__zw_get_character_set`）——旧常量 'UTF-8' 遮蔽真实嗅探值
     //（WPT quotes-in-meta / meta-inhead-insertion-mode 断言面）。

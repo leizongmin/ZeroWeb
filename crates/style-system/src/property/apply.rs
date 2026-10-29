@@ -955,15 +955,22 @@ pub fn apply_property_value_with_quirks(
                 return true;
             }
         }
-        // CSS Flexbox §7.3.1/§7.3.2：flex-grow/flex-shrink 须为非负 <number>，负值/Infinity
-        // 非法，按未声明处理（回退到初始值：flex-grow=0、flex-shrink=1，见 default_impl）。
-        // R3345 deep-review：旧实现仅检 `v >= 0.0`——`Infinity >= 0.0` 为真 → 无穷大值被存储，
-        // 经 `style.flex_grow as f32` 喂入 Taffy flex 算法（converter/mod.rs）可致 flex 分配异常。
-        // 加 `is_finite()` 前置，与 `flex` 简写（shorthand/mod.rs is_number 用 is_finite）一致。
+        // CSS Flexbox §7.3.1/§7.3.2：flex-grow/flex-shrink 值域 `<number [0,∞]>`——负值
+        // 非法按未声明处理（回退到初始值：flex-grow=0、flex-shrink=1，见 default_impl）。
+        // R5333（css-values-4 math functions × driving flex-grow-009）：math 表达式先求值
+        // ——`calc(infinity)` 是合法 flex-grow（旧实现 `parse::<f64>()` 对 calc 字符串直接
+        // 失败整条拒收）。R3345 旧定性「Infinity 非法」证伪：值域上界含 ∞，√∞ 因子由
+        // taffy R5333 分配臂实现「∞ 均分全部 free space」语义（flex-grow 放行 +∞）；
+        // flex-shrink 值域同含 ∞ 但 taffy shrink 分配臂无 ∞ 语义（scaled factor ∞/∞ NaN），
+        // 维持拒 ∞（挂账：taffy shrink ∞ 臂），普通 math 表达式放行。
         // https://www.w3.org/TR/css-flexbox-1/#flex-grow-property
         "flex-grow" => {
-            if let Ok(v) = value.parse::<f64>()
-                && v.is_finite()
+            let v = value.parse::<f64>().ok().or_else(|| {
+                zero_css_parser::values::parse_math_function(value)
+                    .and_then(|e| zero_css_parser::values::eval_calc(&e, None))
+            });
+            // `v >= 0.0` 同时拒负值、-∞ 与 NaN；+∞ 是值域合法上界
+            if let Some(v) = v
                 && v >= 0.0
             {
                 style.flex_grow = v;
@@ -971,7 +978,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "flex-shrink" => {
-            if let Ok(v) = value.parse::<f64>()
+            let v = value.parse::<f64>().ok().or_else(|| {
+                zero_css_parser::values::parse_math_function(value)
+                    .and_then(|e| zero_css_parser::values::eval_calc(&e, None))
+            });
+            if let Some(v) = v
                 && v.is_finite()
                 && v >= 0.0
             {

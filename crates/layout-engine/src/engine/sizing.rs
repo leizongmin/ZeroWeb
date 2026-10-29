@@ -1635,11 +1635,37 @@ impl LayoutEngine {
                         matches!(item_style.height, LengthValue::Auto)
                     }) && !cross_margin_auto
                         && cross_align_stretchy;
+                    // R5332（css-flexbox-1 §4.5/§9.4）：stretch 目标 = 容器 **content box**
+                    // cross——box-sizing:border-box 容器的 CSS 尺寸含 frame，原值直用作
+                    // cross 推导与 stretch 写回会把 item 建在容器 outer cross 上
+                    // （flex-cross-size-border-box-001：容器 height:200 border-box + border 10，
+                    // img 被写 200×200，应 stretch 180×180）。与 tree.rs transferred-suggestion
+                    // 臂同根同开关：content-box 容器原值即 content（零变化），%/不可解析形态
+                    // （None）不受影响。kill-switch `ZW_FLEX_TRANSFERRED_CONTENT_CROSS=0` 回退。
+                    let content_cross_enabled =
+                        std::env::var("ZW_FLEX_TRANSFERRED_CONTENT_CROSS").as_deref() != Ok("0");
                     let parent_cross_definite = if is_column {
                         resolve_sizing_definite_real_length(&ps.width, ps)
                     } else {
                         resolve_sizing_definite_real_length(&ps.height, ps)
-                    };
+                    }
+                    .map(|v| {
+                        if content_cross_enabled
+                            && matches!(
+                                ps.box_sizing,
+                                zero_style_system::property::types::BoxSizingValue::BorderBox
+                            )
+                        {
+                            let frame = if is_column {
+                                crate::tree::frame_width(ps)
+                            } else {
+                                crate::tree::frame_size(ps).1
+                            };
+                            (v - frame).max(0.0)
+                        } else {
+                            v
+                        }
+                    });
                     let cross_resolved = if item_cross_is_auto {
                         parent_cross_definite.unwrap_or(cross_resolved)
                     } else {

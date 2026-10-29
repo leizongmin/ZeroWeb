@@ -140,6 +140,15 @@ pub struct LayoutInput {
     /// max-content 测 100 应 1）。仅 determine_flex_base_size 的测量调用置位；后代
     /// 节点照常钳制（各自的 inputs 不携带本旗标）。
     pub flex_base_probe: bool,
+    /// ZW R5331（css-flexbox-1 §9.9.1 容器内在主尺寸）：内在贡献探针旗标——真值时被测
+    /// 节点自身的 specified main size 不注入 ComputeSize 结果（compute_flexbox_layout
+    /// 的 InherentSize style 覆盖在主轴失效）。§9.9.1 容器内在主尺寸 = Σ item
+    /// hypothetical main size，item specified size 只能经 automatic minimum
+    /// （min(specified, content)，§4.5）进入，不得经 style 覆盖顶替 content 贡献
+    /// （flex-minimum-height-flex-items-029：column + `flex:1 0 0px` + height:500px
+    /// item，auto 高容器应 100 实渲 500）。cross 轴照常注入（wrap 分栏宽度解析依赖）；
+    /// 后代节点不受影响。
+    pub flex_intrinsic_main_probe: bool,
 }
 
 impl LayoutInput {
@@ -155,6 +164,7 @@ impl LayoutInput {
         axis: RequestedAxis::Both,
         vertical_margins_are_collapsible: Line::FALSE,
         flex_base_probe: false,
+        flex_intrinsic_main_probe: false,
     };
 }
 

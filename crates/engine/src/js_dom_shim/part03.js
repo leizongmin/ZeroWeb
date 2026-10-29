@@ -4460,6 +4460,384 @@
       }
     }
   };
+  // s150（html-semantics M2 切片 150）：**link rel=stylesheet 动态取回事件面**——
+  // spec link processing model 的 stylesheet 分支（插入 / href 值变更触发 fetch，
+  // 成功派 'load'、失败派 'error'，元素站异步派发）。触发点：part01 childList 汇流
+  // 臂（插入）+ part04 setAttribute 钩子 / part05 R3069 IDL 臂尾钩（href 变更）。
+  // 此前该面整体缺位——动态 link（createElement+append）零 fetch 零事件，
+  // link-multiple-load-events / link-style-error-01 / link-load-error-events /
+  // document-without-browsing-context 四族全文件级 Timeout/挂死（探针
+  // zz-s150-probe-dynlink p1-p4「neither event」实证）。
+  // 幂等门：href 值未变不重取（spec「If the href attribute's value doesn't
+  // change, no re-fetch」）——书写形差异（相对/绝对）经解析后绝对 URL 比较；
+  // prevHref 为 null（插入触发）时总取。链接级 already-started 语义不存在
+  //（remove→再插按 spec 重新 fetch），不设 run-once 表。
+  // mixed content：https 文档的 http 子资源按 should-block-fetch 阻断 → error
+  //（https://w3c.github.io/webappsec-mixed-content/#should-block-fetch；link-load-error-
+  // events 的 httpSheet 案语义——页锚 https 时期望 error）。
+  // data: URL 交现有 fetch 通道（宿主 404 → error；data: 导入链的 @import
+  // 内层解析由 s151 fetch 回调面补齐——取回体经 _zwStylesheetImports 展开一层）。
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  // s151（html-semantics M2 切片 151）：CSS 适配色判定——上游 link-style-error 判式
+  //（`nosniff || (wrong-CT && (CSS1Compat || cross-origin))` → error）的 spec 语义同构：
+  // - nosniff 头存在：essence 非 text/css（含 CT 缺失）→ error；
+  // - 无 nosniff：CT 缺失 / 不可解析（essence 无 '/'——`oops` 形）→ 放行（无法判定
+  //   即嗅探放行——上游 no/broken Content-Type 非 nosniff 案期望 load）；
+  // - 可解析非 text/css：standards（CSS1Compat）或跨源 → error；quirks 同源 →
+  //   宽容放行（legacy quirks 色面——limited-quirks 经 compatMode 真值化仍 CSS1Compat）。
+  // 同步全判定，返 'load' | 'error'（fetch then 链内直调，无 async 包装）。
+  // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
+  function _zwStylesheetJudge(_ssR, _ssUrl) {
+    var _ssCt = '';
+    var _ssSn = '';
+    try { _ssCt = String(_ssR.headers.get('content-type') || ''); } catch (_eCt) {}
+    try { _ssSn = String(_ssR.headers.get('x-content-type-options') || '').trim().toLowerCase(); } catch (_eSn) {}
+    var _ssNosniff = _ssSn.split(/\s+/).indexOf('nosniff') >= 0;
+    var _ssEssence = _ssCt.split(';')[0].trim().toLowerCase();
+    if (_ssNosniff && _ssEssence !== 'text/css') return 'error';
+    if (!_ssEssence || _ssEssence.indexOf('/') < 0) return 'load';
+    if (_ssEssence === 'text/css') return 'load';
+    var _ssCompat = 'CSS1Compat';
+    try { _ssCompat = String(globalThis.document && globalThis.document.compatMode) || 'CSS1Compat'; } catch (_eCm) {}
+    if (_ssCompat === 'CSS1Compat') return 'error';
+    var _ssCross = false;
+    try {
+      var _ssPageO = new URL(globalThis.location ? globalThis.location.href : '').origin;
+      _ssCross = new URL(_ssUrl, _ssPageO).origin !== _ssPageO;
+    } catch (_eOr) {}
+    return _ssCross ? 'error' : 'load';
+  }
+  // s151：@import 内层 URL 提取（`url('...')` / `"..."` / `'...'` 三书写形，去重保序，
+  // 绝对化失败项跳过——data: base 下相对 URL 解析抛置，语料内层恒绝对 URL）。
+  // 一层递归——内层响应体不再展开 @import（语料形态；多层链挂账）。
+  // s153：带引号 url() 形改回引边界捕获——旧捕获类 `[^'")]` 排除 `)`，把
+  // `url("...?pipe=status(404)")` 在 404 闭括号处截断（URL 丢 `)` → runner
+  // wpt_pipe_status strip_suffix 失败 → 404 退化为 200 → 期望 error 案误 load，
+  // link-load-error-events nonexistent/slow-fast 4 案单根）。引号形内 `)` 合法，
+  // 裸形才排除。
+  function _zwStylesheetImports(_ssCss, _ssBase) {
+    var _ssOut = [];
+    try {
+      var _ssRe = /@import\s+(?:url\(\s*(['"])(.*?)\1\s*\)|url\(\s*([^'"\s)]+)\s*\)|"([^"]*)"|'([^']*)')/gi;
+      var _ssM;
+      while ((_ssM = _ssRe.exec(String(_ssCss))) != null) {
+        var _ssU = (_ssM[2] || _ssM[3] || _ssM[4] || _ssM[5] || '').trim();
+        if (!_ssU) continue;
+        try {
+          var _ssAbs = new URL(_ssU, _ssBase).href;
+          if (_ssOut.indexOf(_ssAbs) < 0) _ssOut.push(_ssAbs);
+        } catch (_eU) {}
+      }
+    } catch (_eRe) {}
+    return _ssOut;
+  }
+  // s154（html-semantics M2 切片 154）：跨触发臂的身份时序缺口两件——
+  // ①取回印记表（identity 键）：同 (sel,handle) 同解析 URL 只发起一次。触发臂
+  //   并发面（先赋 href detached bail → 重查排程，后 append 插入臂直取；href
+  //   变更解析 URL 不同照常重取）此前只靠连接门时序隐式去重，重查引入后须显
+  //   式表驱动。键用 _elKey(sel,handle)——attr 臂 3 参调用无 elObj，节点属性
+  //   印记覆盖不到；身份键对两臂一致。
+  // ②单发重查：TAG/连接门 bail 且身份可推进时 setTimeout(0) 按同一身份重跑
+  //   一次。innerHTML flatten 产物在 mutation 记账时身份双表示——汇流臂手里
+  //   的解析树 M 节点永不盖章（物化产物是另一 JS 对象），其重查自弃（身份不可
+  //   推进）；可恢复面是物化 attr 臂（handle 已盖章、_zwNodeParent 反链注册
+  //   滞后于属性写）——+0ms 注册完成，同身份重查即命中 connected（
+  //   document-without-browsing-context innerHTML 案形态）。重查键同身份表，
+  //   单发不循环（detached 重查再 bail 即放弃）。
+  var _zwSsFiredMap = {};   // identity key → 最后一次发起取回的解析 URL
+  var _zwSsRetryDone = {};  // identity key → 重查已排程（单发）
+  var _zwPreloadCache = {}; // s155：identity key → preload 取回完成的解析 URL（rel 转换复用）
+  // s154 单发重查排程（见下方②）：同身份只排一次；+0ms 后按原身份重跑（身份
+  // 缺失时回落 elObj 现读——R368 盖章形 append 臂的 elObj 后到章）。重查再 bail
+  // 不再排程（_zwSsRetryDone 印记），detached 恒态零循环。
+  var _ssScheduleRetry = function (_ssRSel, _ssRHandle, _ssRElObj, _ssRKey) {
+    if (_ssRKey == null) return;
+    if (_zwSsRetryDone[_ssRKey]) return;
+    _zwSsRetryDone[_ssRKey] = true;
+    setTimeout(function () {
+      try {
+        var _ssR2Sel = _ssRSel, _ssR2H = _ssRHandle;
+        if (_ssR2Sel == null && _ssR2H == null && _ssRElObj) {
+          _ssR2Sel = _ssRElObj.__zwSelector != null ? _ssRElObj.__zwSelector : null;
+          _ssR2H = _ssRElObj.__zwHandle != null ? _ssRElObj.__zwHandle : null;
+        }
+        if (_ssR2Sel == null && _ssR2H == null) return;
+        globalThis._zwStylesheetMaybeStart(_ssR2Sel, _ssR2H, null, _ssRElObj);
+      } catch (_eSsR2) {}
+    }, 0);
+  };
+  globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj) {
+    try {
+      if (typeof _realTag !== 'function') return;
+      var _ssKey = (typeof _elKey === 'function') ? _elKey(sel, handle) : null;
+      // TAG 门（尽力判定）：sel 形命中宿主 tag 表 → 严格校验；handle-only 形
+      // （innerHTML flatten 产物 plain handle）宿主表 miss 时 _realTag 回落恒
+      // DIV——该形态放行（插入臂调用前已按节点 tagName 判 LINK；rel=stylesheet
+      // + href 非空的后继门对非 LINK 元素不成立，误触发面可忽略）。
+      var _ssTag = '';
+      try { _ssTag = String(_realTag(sel, handle) || ''); } catch (_eTag) {}
+      if (_ssTag && _ssTag !== 'LINK' && !(_ssTag === 'DIV' && !sel && handle)) {
+        _ssScheduleRetry(sel, handle, elObj, _ssKey);
+        return;
+      }
+      // 连接门：link processing 只在元素连接到文档时进行（detached link 的 href
+      // 赋值不取回——createElement 后先赋 href 再 append 的先赋后插形防双请求，
+      // 插入臂触发一次即足）。_zwMutationInDoc (sel,handle) 形父链爬升判定
+      //（part05 定义；缺席嵌入方放宽——与 helper 其余门的 typeof 回退同口径）。
+      // s154：bail 时单发重查（物化臂先于反链注册的时序缺口，见上方②）。
+      try {
+        if (typeof _zwMutationInDoc === 'function' && _zwMutationInDoc(sel, handle) !== true) {
+          _ssScheduleRetry(sel, handle, elObj, _ssKey);
+          return;
+        }
+      } catch (_eConn) {}
+      // attr 读通道：sel/handle 形走宿主桥（lw 读——pending SetAttr 未 apply 面
+      // R3202 stale-snapshot 族同款 typeof 回退）；plain handle 形（innerHTML
+      // flatten 产物）宿主表 miss（null）→ 节点对象 getAttribute 回落（解析树
+      // 存储——插入臂传 _an109n/_kdW 即此通道）。s154：宿主 absent 属性可能返
+      // ''（非 null，part01 _mo_read_attr 同款注记）——R368 盖章路径 R4004 回填
+      // 依赖 getAttributeNames，DOMParser 解析树 M 节点无该方法 → 宿主表恒空 '',
+      // 回退判据从 `== null` 放宽为 falsy（rel/href 均非空串语义——空值本就该
+      // 判 miss，document-without-browsing-context adopt 案根因）。
+      var _ssReadAttr = function (_ssName) {
+        var _ssV = null;
+        try {
+          _ssV = handle ? __zw_get_attr_handle(handle, _ssName)
+            : (typeof __zw_get_attr_lw === 'function'
+              ? __zw_get_attr_lw(sel, _ssName) : __zw_get_attr(sel, _ssName));
+        } catch (_eAttr) {}
+        if (!_ssV && elObj && typeof elObj.getAttribute === 'function') {
+          try { _ssV = elObj.getAttribute(_ssName); } catch (_eAttrEl) {}
+        }
+        return String(_ssV || '');
+      };
+      var _ssRel = _ssReadAttr('rel');
+      var _ssIsSheet = false;
+      var _ssIsPreload = false;
+      var _ssParts = _ssRel.split(/\s+/);
+      for (var _ssI = 0; _ssI < _ssParts.length; _ssI++) {
+        if (_ssParts[_ssI] === 'stylesheet') _ssIsSheet = true;
+        else if (_ssParts[_ssI] === 'preload') _ssIsPreload = true;
+      }
+      if (!_ssIsSheet && !_ssIsPreload) return;
+      var _ssHref = _ssReadAttr('href');
+      if (!_ssHref || typeof fetch !== 'function') return;
+      // 幂等门：解析后绝对 URL 相同（含两者均解析失败的逐字相等回落）→ 不重取。
+      if (prevHref != null && typeof __zw_parse_url === 'function') {
+        try {
+          var _ssBase = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL()
+            : (globalThis.location ? globalThis.location.href : '');
+          var _ssNew = JSON.parse(__zw_parse_url(_ssHref, _ssBase) || 'null');
+          var _ssOld = JSON.parse(__zw_parse_url(String(prevHref), _ssBase) || 'null');
+          if (_ssNew && _ssOld && _ssNew.href === _ssOld.href) return;
+          if (!_ssNew && !_ssOld && _ssHref === String(prevHref)) return;
+        } catch (_eCmp) {}
+      }
+      var _ssAbs = _ssHref;
+      var _ssMixed = false;
+      try {
+        var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
+          ? globalThis._zwDocBaseURL()
+          : (globalThis.location ? globalThis.location.href : '');
+        if (typeof __zw_parse_url === 'function') {
+          var _ssJson = JSON.parse(__zw_parse_url(_ssHref, _ssPageHref) || 'null');
+          if (_ssJson && _ssJson.href) _ssAbs = _ssJson.href;
+        }
+        if (_ssAbs.indexOf('http:') === 0 && String(_ssPageHref).indexOf('https:') === 0) {
+          _ssMixed = true;
+        }
+      } catch (_eAbs) {}
+      var _ssFire = function (_ssType) {
+        try {
+          if (typeof _elKey !== 'function' || typeof _dispatchWithBubble !== 'function'
+              || typeof _makeEvent !== 'function') return;
+          _dispatchWithBubble(_elKey(sel, handle), sel, handle,
+            _makeEvent(_ssType, { bubbles: false, cancelable: false }));
+        } catch (_eFire) {}
+      };
+      // mixed 阻断：不 fetch 直接 error（spec blocked fetch → link error 事件）。
+      if (_ssMixed) {
+        setTimeout(function () { _ssFire('error'); }, 0);
+        return;
+      }
+      // s155（html-semantics M2 切片 155）：rel=preload 取回臂（spec link type
+      // preload——插入/href 设置后按当前 rel 发起资源取回，fetch 完成派 load /
+      // 失败派 error，与 stylesheet 分支同身份印记表去重——重入同 URL 静默返）。
+      // 取回完成以身份键播种 _zwPreloadCache——rel 变更 stylesheet 转换面
+      //（link-multiple-load-events 案 5）经下方复用臂零网络派 load。FIXME：
+      // 资源级共享缓存（跨元素同 URL 复用）与 as destination 分型（image/
+      // script/font 等）语料无形态不建模——as 门只做非空校验（missing/invalid
+      // as 上游不发起取回）；rel 同时含 stylesheet+preload 时 sheet 分流优先
+      //（语料无该形态）。404 等非网络失败 fetch 照常 resolve → load（上游
+      // preload 语义——error 仅网络失败）。
+      // https://html.spec.whatwg.org/multipage/links.html#link-type-preload
+      if (!_ssIsSheet && _ssIsPreload) {
+        if (!_ssReadAttr('as')) return;
+        if (_ssKey != null) {
+          if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
+          _zwSsFiredMap[_ssKey] = _ssAbs;
+        }
+        fetch(_ssAbs).then(function (_ssPResp) {
+          if (_ssKey != null) _zwPreloadCache[_ssKey] = _ssAbs;
+          _ssFire('load');
+        }, function () {
+          _ssFire('error');
+        });
+        return;
+      }
+      // s155：preload 资源复用（rel=preload → stylesheet 转换面）——同身份同
+      // 解析 URL 已 preload 取回完成 → 零网络派 load（spec：转换后按 stylesheet
+      // 处理模型从 preload cache 采用资源，load 事件再 fire——上游明示语义）。
+      if (_ssKey != null && _zwPreloadCache[_ssKey] === _ssAbs) {
+        setTimeout(function () { _ssFire('load'); }, 0);
+        return;
+      }
+      // s154 取回印记：同身份同解析 URL 只发起一次（印记在发起前置位）。先赋
+      // href（detached bail → s154 重查排程）后 append（插入臂直取）形的重查
+      // 与插入臂并发去重；href 变更（重查/attr 臂携 prevHref 幂等门）解析 URL
+      // 不同 → 印记失配照常重取。无身份（_ssKey null——静态扫描 sel 空槽形）
+      // 不设印记照旧直取。
+      if (_ssKey != null) {
+        if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
+        _zwSsFiredMap[_ssKey] = _ssAbs;
+      }
+      // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
+      // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
+      // quirks-宽容 / broken-CT 无头放行）；通过后解析 @import 内层 URL 逐个取回
+      //（同一判定链），任一 error → 外层 error、全部 load → load。
+      // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
+      // s153 三件：①多层递归展开（s151 一层边界收口——中层体内的第二层 @import
+      // 此前不可见，双层案（nonexistent/non-CSS/http mixed）期望 error 面全部失效
+      // 误 load；_ssDepth 上限 3 兜底环，FIXME(compat)：CSS @import 环检测未建模）。
+      // ②逐层 mixed content 门——@import 内层请求同为子资源取回，https 页 http:
+      // 内层应 block（error），此前只有外层 href 门覆盖；跨源 http 内层在 s153 前
+      // 碰巧由 fetch CORS check 顶住（静态臂无 ACAO），stylesheet 通道 CORS 豁免
+      // （③）后须显式补门（同 spec blocked fetch → error 事件语义）。③调用窗置位
+      // _zwStylesheetChannelDepth（part01 IIFE 局部旗标，页面不可见）——上游
+      // stylesheet 取回是 no-cors 请求不做 CORS check（HTML fetching stylesheets；
+      // 跨源无 ACAO 照常 load），shim fetch(cors) 仿真引入的 check 对跨端口案拒
+      //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
+      // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
+      // 门不受影响。
+      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDone) {
+        var _ssBlocked = false;
+        try {
+          var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL()
+            : (globalThis.location ? globalThis.location.href : '');
+          if (String(_ssUrl).indexOf('http:') === 0 && String(_ssPageHref || '').indexOf('https:') === 0) {
+            _ssBlocked = true;
+          }
+        } catch (_eMx) {}
+        if (_ssBlocked) {
+          // 同步回调：批内序先于微任务 load 子归零——先标 failed 后再归零，防
+          // 同批可 load 内层的微任务抢先 fire load（聚合语义 error 优先）。
+          _ssOnDone('error');
+          return;
+        }
+        var _ssP;
+        _zwStylesheetChannelDepth++;
+        try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
+        _ssP.then(function (_ssR) {
+          if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
+          if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
+          _ssR.text().then(function (_ssCss) {
+            if (_ssDepth >= 3) { _ssOnDone('load'); return; }
+            var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbsUrl);
+            if (!_ssUrls.length) { _ssOnDone('load'); return; }
+            var _ssPending = _ssUrls.length;
+            var _ssFailed = false;
+            for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
+              _ssVisit(_ssUrls[_ssI], _ssUrls[_ssI], _ssDepth + 1, function (_ssV) {
+                if (_ssV !== 'load') _ssFailed = true;
+                _ssPending -= 1;
+                if (_ssPending === 0) _ssOnDone(_ssFailed ? 'error' : 'load');
+              });
+            }
+          }).catch(function () { _ssOnDone('error'); });
+        }).catch(function () {
+          _ssOnDone('error');
+        });
+      };
+      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) { _ssFire(_ssV); });
+    } catch (_eSs) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}
+      }
+    }
+  };
+  // s152（html-semantics M2 切片 152）：**静态 link rel=stylesheet 文档序交错触发**——
+  // 此前该面整体缺位：parser 流物化的 link（runner 装载管线的静态树）不经动态
+  // mutation 臂（part01 childList 汇流只覆盖运行期插入），零 fetch 零 load/error
+  // 事件（link-error-fired-before-scripting-unblocked 的 onerror 属性 handler 与
+  // link-load-fired 的 onload 同根恒不触发）。spec 的 script-blocking stylesheet 只
+  // 阻塞文档序位于其后的 pending parsing-blocking script——runner 每执行第
+  // scriptOrdinal 个 script（与 getElementsByTagName('script') 文档序在册对齐，
+  // extract_page_scripts_indexed 过滤前递增口径）前独立求值本入口：按预计算
+  // scriptPrefix 表触发文档序上位于该 script 之前的未触发 link（逐 link 复用
+  // _zwStylesheetMaybeStart 全部门：TAG/连接/rel 分词/href 非空/幂等/mixed——
+  // 非 stylesheet 链接 rel 分词不命中零成本返回）。`__zw_fetch` 同步契约 + fetch
+  // promise 微任务同求值清空 → 该 script 之前 link 的 load/error 先于本脚本体
+  // fire。幂等：交错表首次调用单次建表 + fired 前缀游标单调推进。
+  // FIXME(compat): 交错表为首次调用时的快照（_zwDocAllElements），脚本执行期动态
+  // 插入 link/script 的序移未追踪——动态 link 走 part01/part04/part05 既有触发臂，
+  // 此处幂等门兜底防重。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  var _zwScanLinks = null; // 文档序 link selector 表（前缀游标直取）
+  var _zwScanScriptPrefix = null; // 每 script 前的 link 累计数（script 文档序）
+  var _zwScanFiredCount = 0; // 已触发 link 前缀游标（单调推进）
+  globalThis._zwStylesheetStaticScanUpto = function (scriptOrdinal) {
+    try {
+      var _ord = Number(scriptOrdinal) | 0;
+      if (!(_ord >= 0) || typeof _zwDocAllElements !== 'function'
+          || typeof globalThis._zwStylesheetMaybeStart !== 'function') return;
+      if (_zwScanScriptPrefix === null) {
+        _zwScanLinks = [];
+        _zwScanScriptPrefix = [];
+        var _scAll = _zwDocAllElements();
+        var _scLinks = 0;
+        for (var _sci = 0; _sci < _scAll.length; _sci++) {
+          var _scEl = _scAll[_sci];
+          if (!_scEl || _scEl.nodeType !== 1) continue;
+          var _scLn = '';
+          try { _scLn = String(_scEl.localName || ''); } catch (_eLn) {}
+          if (_scLn === 'script') {
+            _zwScanScriptPrefix.push(_scLinks);
+          } else if (_scLn === 'link') {
+            var _scSel = String(_scEl.__zwSelector || _scEl.__zwHandle || '');
+            if (!_scSel) continue;
+            _zwScanLinks.push(_scSel);
+            _scLinks++;
+          }
+        }
+      }
+      // 目标前缀 = 第 _ord 个 script 前的 link 累计数；序号越界（不该发生——
+      // runner 侧序号有 scripts.len() 界）收敛为全部 link。
+      var _scPrefix = (_ord < _zwScanScriptPrefix.length)
+        ? _zwScanScriptPrefix[_ord] : _zwScanLinks.length;
+      // prevHref 传 null（首次物化总取语义）；门内 rel 分词/href 非空/TAG/连接
+      // 门自甄别——非 stylesheet 链接（author/preconnect/icon 等静态链接常见面）
+      // rel 分词不命中零成本返回，游标照常推进（槽位语义按 link 元素计数）。
+      // 触发窗置位 __zwScanCollapseTrickle（part01 fetch wrapper trickle 仿真读）：
+      // 扫描窗内发起的取取体折叠 trickle 延迟——同步段结束即清位，.then 链内
+      // @import 内层取回与页面 fetch() 均不受影响。
+      globalThis.__zwScanCollapseTrickle = true;
+      try {
+        while (_zwScanFiredCount < _scPrefix) {
+          globalThis._zwStylesheetMaybeStart(_zwScanLinks[_zwScanFiredCount], null, null, null);
+          _zwScanFiredCount++;
+        }
+      } finally {
+        globalThis.__zwScanCollapseTrickle = false;
+      }
+    } catch (_eScan) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eScan, null); } catch (_eScanR) {}
+      }
+    }
+  };
   // s113：type/language 分类器供 part04 R387/s95 臂与后续写入执行面复用（导出
   // 随本层求值恒在——_zwPrepareSrcScript 同款理由）。
   globalThis._zwScriptTypeClassify = _zwScriptTypeClassify;
@@ -8561,7 +8939,10 @@
       }
       return comp;
     }
-    function _zwMQueryAll(n, sel) {
+    // includeSelf：matches 调用方（root === this 时）要求**含自身**语义——R188
+    // 的 QSA 自剔在此形态下会把唯一候选（自身镜像）删光（editing-compat M2：
+    // innerHTML 顶层解析产物 `el.matches('div')` 恒 false，探针 F3/F4/F5）。
+    function _zwMQueryAll(n, sel, includeSelf) {
       // R171（L2-d3d 评估，回退记录）：element 上下文本树前置实测 0 subtest
       // 改善 + identity 边缘回归（querySelector 本树直出真节点 vs QSA JSON
       // wrapper 的归一分歧——`:enabled` 形态 qS≠QSA[0] +2F；纯 tag 收缩版
@@ -8623,7 +9004,7 @@
         // 根镜像）。首元素与根同 tag+id 视为镜像剔除（只查 arr[0]，后续同名后代不受
         // 影响）。R173 的 lang 包装形态（src173 被改写）不在此路径（:lang 与本滤除
         // 正交——包装的 html/body 已被 filter_synthetic 剔，首元素仍是根镜像）。
-        if (arr && arr.length && n && n.nodeType === 1) {
+        if (!includeSelf && arr && arr.length && n && n.nodeType === 1) {
           var _r188T = String(n.localName || (n.tagName || '').toLowerCase() || '').toLowerCase();
           var _r188I = String(n.id != null ? n.id : '');
           // R310b：镜像判定补 class 比对——旧 tag+id 双键把「根 div（无 id）+ 首命中
@@ -8790,7 +9171,12 @@
       if (pn167 && typeof pn167.__zwHandle !== 'string' && typeof pn167.__zwSelector !== 'string') rootFor167 = pn167;
       else break;
     }
-    var arr = _zwMQueryAll(rootFor167, sel);
+    // editing-compat M2：root walk 止于 this 自身时（顶层 innerHTML 解析产物——
+    // parentNode 是锚 proxy，上行在第一跳就断），查询面就是自身序列化，R188
+    // 自剔会把唯一候选删光 → matches 恒 false。matches 语义自含（spec
+    // `dom-element-matches`：context object 匹配即真），此形态传 includeSelf。
+    // https://dom.spec.whatwg.org/#dom-element-matches
+    var arr = _zwMQueryAll(rootFor167, sel, rootFor167 === this);
     // R291（js-dom M4）：self 键的 id/outer 回落——iframe 子文档的 body/head 视图
     // 是轻量对象（无反射 id getter、无 outerHTML accessor——probe 实证均
     // undefined，但 getAttribute('id') 可达）；旧键 String(this.id||'') 恒空段
@@ -11594,7 +11980,16 @@
     var tag = _realTag(sel, handle);
     var ty = '';
     if (tag === 'INPUT') {
-      try { ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type'); } catch (_e) { ty = ''; }
+      // s148：type IDL 写只落 lw 层（R2995 变更列表 latest-wins）不落快照——
+      // sel 分支读纯快照恒旧值（s136 激活门同根，input-type-change-submit
+      // url/email 案单根：click handler 内 type→submit 后约束校验仍按旧
+      // email/url state 判 typeMismatch → invalid 中止提交 → loadPromise 挂死
+      // → 文件级 Timeout）。spec §4.10.5.2.6：typeMismatch 仅 email/url state
+      // 适用——默认动作校验时 type 已是 Submit Button（barred）→ 无 mismatch。
+      // sel 分支换 lw 融合读（consult 变更列表 → applied view 回落）；handle
+      // 分支 `__zw_get_attr_handle` 本身 consult 当前批 mutations 不动。
+      try { ty = handle ? __zw_get_attr_handle(handle, 'type')
+          : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')); } catch (_e) { ty = ''; }
       ty = String(ty || '').toLowerCase();
     }
     // R57（FV M1）：disabled barred 仅对 valueMissing——validator.js 的
@@ -14867,17 +15262,20 @@
       // 与 defaultPrevented/cancelBubble 同款「公开镜像」——此处占位 null，真正的 getter 经下方
       // defineProperty 定义（读 this.target，dispatch 时 target 更新即反映）。
       srcElement: null,
-      // R150（js-dom M4）：timeStamp 量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+      // R150（js-dom M4）：timeStamp 量化——定时侧信道缓解（WPT
       // Event-timestamp-safe-resolution：千样本 GCD ≥ 5µs——真实浏览器对 Event
       // timeStamp 施加 coarse 粒度防 timing attack；高分辨率原值使相邻构造事件的
-      // µs 差 GCD 跌到 1）。high-resolution 用例（FocusEvent vs performance.now
-      // 单调性）不受影响（同源粗化后仍 ≥ 构造前时刻）。
+      // µs 差 GCD 跌到 1）。
+      // R-p122：量化与 performance.now()（_perfNow）**同 transform**（同 origin +
+      // 同 100µs ceil 网格）——spec DOM「same time origin as performance.now()」+
+      // WPT Event-timestamp-high-resolution 夹逼 before ≤ ts ≤ after 要求两钟
+      // 同变换；旧 5µs ceil 网格与 now() 100µs floor 网格异向异宽 → 边界落入
+      // 构造→after 间隙即断言假（存量时序 flake 根因）。ceil 不归零（R22 ts > 0）。
       timeStamp: (function () {
         var t = typeof __zw_performance_now === 'function'
           ? Number(__zw_performance_now())
           : (typeof Date.now === 'function' ? Date.now() : 0);
-        // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.005ms（round 会把 <2.5µs 的早期值归 0）。
-        return Math.ceil(t * 200) / 200;
+        return Math.ceil(t * 10) / 10;
       })(),
       detail: options.detail, // CustomEvent 用；Event 读得 undefined（spec 一致）
       defaultPrevented: false, // 公开镜像（dispatch 读 _defaultPrevented，勿删私字段）
@@ -25730,7 +26128,31 @@ return e;
             var aBase = typeof globalThis._zwDocBaseURL === 'function'
               ? globalThis._zwDocBaseURL()
               : (globalThis.location ? globalThis.location.href : '');
-            var aJson = __zw_parse_url(aRaw, aBase);
+            // M2 form-url-encoding-compat：encoding-parse a URL——非 UTF-8 文档编码
+            // 下 a/area 组件 getter 解析前对 query 段按文档编码逐 scalar fresh 编码 +
+            // special-query set 字节级 percent-encode（URL standard
+            // https://url.spec.whatwg.org/#encoding-parsing-a-url：encoding override
+            // 仅 query 组件；fragment 恒 UTF-8 percent-encode 由 rust-url 既有路径
+            // 处理，`#` 起原样透传）。首 `?` 存在且先于首 `#` 才有 query 可预编码。
+            // UTF-8 文档 / host 桥未注册 / 无 query → aRaw 原样解析（零变化）；
+            // 解析失败回落仍用原始 aRaw；BASE/LINK 分支与组件 setter 不在消费面
+            //（20 号 url 域零扰动）。href 面不触 ASCII/控制字符（ranges 0x80 起），
+            // 无 tab/newline 剥除交互。
+            var aParseRaw = aRaw;
+            var _epDoc = '';
+            try { _epDoc = String(globalThis.document.characterSet || ''); } catch (_eEp0) {}
+            var _epEnc = (_epDoc && typeof _zwEncodingFromLabel === 'function')
+              ? _zwEncodingFromLabel(_epDoc, false) : null;
+            if (_epEnc && _epEnc !== 'UTF-8' && typeof __zw_text_encode_percent === 'function') {
+              var _epQ = aRaw.indexOf('?');
+              var _epH = aRaw.indexOf('#');
+              if (_epQ !== -1 && (_epH === -1 || _epQ < _epH)) {
+                aParseRaw = aRaw.slice(0, _epQ + 1) +
+                  __zw_text_encode_percent(_epEnc, aRaw.slice(_epQ + 1, _epH === -1 ? aRaw.length : _epH), 'query') +
+                  (_epH === -1 ? '' : aRaw.slice(_epH));
+              }
+            }
+            var aJson = __zw_parse_url(aParseRaw, aBase);
             // 解析失败 = spec set the url 后 url 仍 null（§4.6.3 api-for-a-and-area-elements）：
             // href 返原串；protocol 返 ':'（protocol getter 步 2「If this's url is null, return ':'」）；
             // 其余组件 url null → ''。WPT non-parsable-url-getter-setter：`http://test:test/`

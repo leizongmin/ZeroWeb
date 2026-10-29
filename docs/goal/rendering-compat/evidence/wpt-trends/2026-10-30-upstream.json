@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-30",
+  "mode": "upstream",
+  "wpt_data_ref": "v1.10",
+  "total": 16590,
+  "passed": 15792,
+  "rate_pct": 95.2,
+  "extra": "failed=798;skipped=0",
+  "git_sha": "ee26d526a",
+  "note": "R5335 block-in-inline 切片边框语义（CSS2 §9.2.1.1 × R109 切片段）——block-in-inline-insert-009 ✓ 切片分段边框+壳 frame 剥离，FIXED=1 REGRESSED=0"
+}

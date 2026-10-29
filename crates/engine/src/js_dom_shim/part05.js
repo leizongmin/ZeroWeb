@@ -1098,6 +1098,18 @@
               _refVal = String(_ruNum);
             }
           }
+          // s150：LINK href 旧值写前捕获（幂等比较基准——写入后再读即新值；lw 读
+          // 同 part04 钩子注记）。非 LINK 恒 null 且不触发。
+          var _zwSsPrevI = null;
+          if (_refAttr === 'href' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            try {
+              if (_realTag(sel, handle) === 'LINK') {
+                _zwSsPrevI = String((handle ? __zw_get_attr_handle(handle, 'href')
+                  : (typeof __zw_get_attr_lw === 'function'
+                    ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'))) || '');
+              }
+            } catch (_eSsPvI) {}
+          }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
           // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
@@ -1115,6 +1127,26 @@
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {
             globalThis.__zw_reload_iframe(proxy, String(value), {});
+          }
+          // s150：LINK href IDL 写触发 stylesheet 重取（link.href= 走 R3069 reflected
+          // 臂写 raw 值，不经 part04 setAttribute；写前旧值已捕获于写入点上方——
+          // prevHref=null 仅当 TAG 门未过，此臂 TAG 门已过则必为捕获串（含旧属性
+          // 缺失的 '' 形，与新值比较走解析差异臂）。link.href = link.href 同值赋值
+          // 的幂等由 helper 解析比较拦截：IDL href getter 返回解析后绝对 URL——
+          // 同值赋值写入即绝对串，与旧相对串解析比较同址，不重取）。
+          if (_refAttr === 'href' && _zwSsPrevI != null
+              && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrevI);
+          }
+          // s155：LINK rel IDL 写触发同 part04 setAttribute 臂（link.rel= 走
+          // R3069 reflected 臂不经 setAttribute——rel=preload→stylesheet 转换
+          // 面触发；TAG 门内甄别，非 LINK 零成本返回）。
+          if (_refAttr === 'rel' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            try {
+              if (_realTag(sel, handle) === 'LINK') {
+                globalThis._zwStylesheetMaybeStart(sel, handle, null);
+              }
+            } catch (_eSsRlI) {}
           }
           moAttr = _refAttr;
         } else if (typeof prop === 'string' && prop !== ''
@@ -10559,6 +10591,55 @@
       return _zwOverlayPendingChildNodes(out, sel, parent);
     } catch (_e) { return []; }
   }
+  // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML 序列化**——pending
+  // 桶非空（同 turn 内 replaceWith/removeChild/appendChild/innerHTML= 等已记账、host 快照
+  // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化
+  // （`_childNodeList` 的 overlay 已并入 pending added / 剔除 pending removed，
+  // R51/R309/R322 补偿链；R379 pa1/pa2 后移除标记语义已正确——标记中子不出现
+  // 在融合视图）。桶空时返回 null（调用方回落 host 直读零变化，热路径不受影响）。
+  // 序列化：text 转义 / comment / 元素递归 outerHTML（pending 新子经 part05
+  // outerHTML handle 分支或自身融合序列化——R377 实验「子序列化依赖 outerHTML
+  // 对 pending 新子递归正确」在本轮 R380 registry 随迁后成立：克隆子的后代已
+  // 在 `_handleChildren`，outerHTML 的 handle 分支可读）。
+  // R381：**代际门**——`stamp === _zwApplyGeneration()` 校验桶是「apply 前
+  // stale 补偿」。pa2b 设计 apply 后不清桶（identity 记账供后续操作消费），
+  // 故桶非空不再隐含快照 stale：vue_mount_lands 的 execute#2 innerHTML 读时
+  // 桶仍是 mount 时记账（apply 已发生、快照已含子），无代际门会把快照已含的
+  // 子经 overlay 重复并入（双份 `<p class="msg">`——R309 identity 双源教训的
+  // 代际表述）。时间戳在 `_zwHCLiveInvalidate` 记账时盖（每批 mutation 刷新）。
+  // R3254-E2 切片 8（editing goal，2026-09-07）：门扩展——子树深层 mutation
+  // （deleteContents 的 removeChild/deleteData 落孙代容器桶）经
+  // `_zwPendingSubtreeDirty` 前缀扫描纳入（此前只看目标自身桶 → 跨元素删除后
+  // innerHTML 读回 stale）。消费方：innerHTML getter（part04 sel 分支）+
+  // cloneNode 深克隆的源内容读（editing-compat M2——克隆走 host 串会丢 pending 子，
+  // runConformanceTest `documentElement.cloneNode(true)` 级联）。
+  function _zwFusedInnerHtmlSel(sel) {
+    var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+      ? _zwPendingByParent.get(sel) : null;
+    if (!(((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
+        && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
+        || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))))) return null;
+    try {
+      var _r380Kids = _childNodeList(sel, null);
+      var _r380Out = '';
+      for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
+        var _r380n = _r380Kids[_r380i];
+        if (!_r380n) continue;
+        if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
+        else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
+        else if (_r380n.nodeType === 7) {
+          // R5003 M3 片 b：PI 序列化（同 handle 分支——spec 恒空格分隔）。
+          _r380Out += '<?' + (_r380n.target != null ? _r380n.target : (_r380n.nodeName != null ? _r380n.nodeName : ''))
+            + ' ' + (_r380n.data != null ? _r380n.data : (_r380n.nodeValue != null ? _r380n.nodeValue : '')) + '?>';
+        }
+        else if (_r380n.nodeType === 1) {
+          if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r380n)) continue;
+          _r380Out += _r380n.outerHTML || '';
+        }
+      }
+      return _r380Out !== '' ? _r380Out : null;
+    } catch (_e380ih) { return null; /* 序列化失败回落 host 快照 */ }
+  }
   // js-dom M4 R51：sel 父 childNodes 的 pending overlay——同步脚本内 mutation（insertBefore/
   // appendChild/removeChild）经 host 异步 apply，快照（__zw_child_nodes）在脚本 turn 内是旧的。
   // WPT dom/common.js indexOf 等 identity 循环依赖「parentNode.childNodes 含本节点」：
@@ -11359,6 +11440,12 @@
   // 原样）。sel 为路径选择器（'html:nth-child(1) > body:nth-child(2) > …'，' > ' 分隔），
   // 后代桶键共享前缀 → 前缀扫描判定（桶数量级 = 活跃容器数，可接受）。代际门同 R380：
   // 桶 stamp 须等于当前 apply 代际（apply 后的 identity 记账桶不算 stale 补偿）。
+  // 判定缓存（editing-compat M2）：键 = 记账代际（`_zwPSDEpoch`，`_zwHCLiveInvalidate`
+  // 入账即 bump）+ sel。同一代内子树判定不变（桶只增不删），innerHTML/outerHTML
+  // 高频重读不重复问询；换代整缓存作废（与 R3254-E2 桶代际口径一致）。
+  var _zwPSDScan = null;
+  var _zwPSDScanEpoch = -1;
+  var _zwPSDEpoch = 0;
   function _zwPendingSubtreeDirty(sel) {
     if (typeof _zwPendingByParent !== 'object' || !_zwPendingByParent || !sel) return false;
     var own = _zwPendingByParent.get(sel);
@@ -11367,19 +11454,40 @@
       return true;
     }
     var prefix = sel + ' > ';
+    // R3254-E2 前缀扫描只覆盖**同前缀系** sel；host 静态元素 sel 方言是 ID 锚定
+    // 浅选择器（最近 id 祖先截断——`#wrap` 下的 `#tc`），后代桶键与祖先 sel 无字面
+    // 前缀关系 → 子树深层 pending 漏判 → 融合门 miss 回落 stale 快照串
+    //（editing-compat M2：runConformanceTest `documentElement.cloneNode(true)`
+    // 源读丢 pending 子，克隆内层 registry 空）。miss 键补 host 祖先判定
+    //（`__zw_contains` 双侧 sel 解析）；前缀命中仍走快路径零 host 调用。
+    if (_zwPSDScan == null || _zwPSDScanEpoch !== _zwPSDEpoch) {
+      _zwPSDScan = new Map();
+      _zwPSDScanEpoch = _zwPSDEpoch;
+    }
+    var _psdHit = _zwPSDScan.get(sel);
+    if (_psdHit !== undefined) return _psdHit;
+    var _psdFound = false;
     try {
       var keys = _zwPendingByParent.keys();
-      for (var k = keys.next(); !k.done; k = keys.next()) {
+      for (var k = keys.next(); !k.done && !_psdFound; k = keys.next()) {
         var key = k.value;
-        if (typeof key !== 'string' || key.indexOf(prefix) !== 0) continue;
+        if (typeof key !== 'string') continue;
+        var _psdRel = key.indexOf(prefix) === 0;
+        if (!_psdRel) {
+          try {
+            _psdRel = typeof __zw_contains === 'function' && !!__zw_contains(sel, key);
+          } catch (_e3kPsdC) { _psdRel = false; }
+        }
+        if (!_psdRel) continue;
         var b = _zwPendingByParent.get(key);
         if (b && (b.added.length || b.removed.length)
             && (!globalThis._zwApplyGeneration || b.stamp === globalThis._zwApplyGeneration())) {
-          return true;
+          _psdFound = true;
         }
       }
     } catch (_e3kPsd) {}
-    return false;
+    _zwPSDScan.set(sel, _psdFound);
+    return _psdFound;
   }
   function _zwPASet() {
     if (!_zwPendingAddedSet) {
@@ -11602,6 +11710,8 @@
       // `stamp === _zwApplyGeneration()` 判「桶是 apply 前 stale 补偿」；apply 后
       // 桶仅剩 identity 记账语义（pa2b 不清桶），stale 判据不成立。
       _pb.stamp = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+      // editing-compat M2：子树脏判定缓存代际 bump（桶内容变化使 `_zwPSDScan` 作废）。
+      _zwPSDEpoch++;
       // R51c：桶 removed 压实（同全局表语义——handle-only 死条目丢弃，512 软上限）。
       if (_pb.removed.length > 512) {
         // siteopt slice24：parsed CharacterData 条目同全局表例外——快照真实节点，压实保留。

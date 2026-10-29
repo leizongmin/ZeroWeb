@@ -1,10 +1,23 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.0
-**日期**: 2026-10-27（立项，coverage 对账驱动）
-**状态**: Active——M1 语料预置未启动
+**版本**: v1.3
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）
+**状态**: Active——M1 完成；R5331（3d173dccc，查询回落槽锚点）land 后 M2
+首轮（innerHTML 物化身份失步全环）完成：run 面 setup 级联解锁
+（0.007% → 48.78%，分母收缩口径见 evidence），R5331 指认的 cloneNode
+断点环已闭合，自旋簇浮出为新头号；跨域 html-syntax 99.90% 零回归
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
+
+> **M2 首轮当前状态（2026-10-30，R5331 之后的同日续环）**：js_dom_shim
+> 四笔共享路径修复（matches 自含语义 / doc 级查询深层解析产物 in-doc 链上行
+> ——并行撞车后折叠进 R5331 的 `_zwPendingNodeInDoc` 作 fallback / cloneNode
+> 融合源读 / 子树脏门 ID 锚定感知），闭合 R5331 指认的 cloneNode 断点环。
+> 探针 F/G/E 全绿，全量重跑 run 48.78% / other 32.03%（**分母收缩**
+> 96,663→15,343：setup 解锁后变体级 90s 自旋中止取代全分母 setup 快败——
+> 自旋是下一头号簇）。卡点：run 面自旋案（bold/justify ?3001-last 形态）
+> 未归因。下一步：自旋归因 → white-space join 簇。详见
+> [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -14,6 +27,31 @@
 | editing/other | 16,339 | 2/510 文件 |
 
 合计 **113,084 子测试**，是 encoding 之外最大的连片零覆盖域。
+
+**M1 基线（2026-10-30，DC-1/DC-2/DC-3 落成）**：本地 pin 语料 run-face
+128 案（run 42 + other 86，iframe/https 内容筛减后）106,736 子测试全量
+干跑——run 7/96,663 = 0.007%、other 2,316/10,073 = 23.0%，合计 2.18%。
+run 面是**单根因 setup 级联**（innerHTML 产物宿主侧身份失步——
+`Element.matches` 解析不到 innerHTML 物化元素，占 Fail 99.96%，最小六探针
+复现存档）；other 面白空间 join/insertparagraph/execCommand 三层真实语义簇。
+通道（子命令 + 内容筛减 + Makefile 分片 target）、形态分簇、失败归簇与
+M2 指针详见 [evidence/2026-10-30-m1-corpus-baseline.md](editing-compat/evidence/2026-10-30-m1-corpus-baseline.md)。
+分母口径 = 本地 pin 语料 run-face 实测子测试（与 coverage 快照口径并行不
+互换）；`docs/compat/trends/wpt-suites.csv` 已回填数据行。
+
+**R5331 修复后复测（2026-10-30，3d173dccc）**：shim 查询回落 in-doc 门对
+innerHTML 解析产物放行（`_zwSelPendingParent` 槽锚点爬升，R125 R5001 同款；
+并行双流撞车后按上游版收敛，本 goal 侧只落引擎修复）。同分片器同口径复测：
+run 面 96,656F → 49,778F（-48.5%，+7T）、other 面 2,316P → 2,325P（+9P/-6T），
+逐案零 Fail 回归。setup 链断点后移至**第三环 cloneNode**（克隆读链走视图物化
+子树，同 turn innerHTML 产物缺席）——M2 首簇不变；8 个大案（multitest/delete/
+forwarddelete/insertparagraph/justifycenter 等）setup 全通后首次进入真实命令
+执行面、超 420s 案墙钟转 Timeout，执行面信号待墙钟调优后完整暴露。明细见
+[evidence/2026-10-30-r5331-postfix-rerun.md](editing-compat/evidence/2026-10-30-r5331-postfix-rerun.md)。
+跨域核对（M2 指针要求）已落：dom + html-syntax 双腿同树 revert 对照零回归
+（html-syntax 逐位一致 61,341P/62F/7T/1U；dom 6 案差异全为 timing/发射形态，
+单案两侧隔离重跑判据），html-syntax 现行 pin 参照账 61,341/61,411 已记 CSV——
+见 [evidence/2026-10-30-r5331-cross-domain-regression.md](editing-compat/evidence/2026-10-30-r5331-cross-domain-regression.md)。
 
 ## Mission
 
@@ -38,9 +76,17 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
 
 ## 里程碑
 
-- **M1**：语料预置 + runner 通道。
-- **M2**：基线分类（重点：execCommand 全命令矩阵的能力现状图）。
-- **M3+**：按簇收敛（每簇一轮），收口标准按簇定稿。
+- **M1**：语料预置 + runner 通道 + 基线分类（2026-10-30 完成——DC-1/DC-2/DC-3）。
+- **M2**：按簇收敛（每簇一轮）。R5331（3d173dccc，查询回落槽锚点——并行
+  双流撞车后按上游版收敛）+ 首轮（2026-10-30，innerHTML 物化身份失步全环：
+  matches 自含 / 深层解析产物 in-doc / cloneNode 融合源读 / 子树脏门 ID 锚定
+  ——R5331 指认的 cloneNode 断点环闭合；四笔 + 全量重跑 + 跨域零回归，见
+  evidence）。次轮 = 自旋簇归因（run 面 ?3001-last 变体中止 + R5331 记录的
+  8 大案 420s 墙钟转 Timeout + other 面 list/inline delete 循环，同根因
+  概率高）；其后 white-space join → insertparagraph → execCommand 语义逐簇
+  立项。
+- **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
+  等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 
 ## 依赖约束（run-rules §9）
 

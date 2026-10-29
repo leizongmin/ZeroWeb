@@ -1128,6 +1128,8 @@ impl LayoutEngine {
         // border/background 落在文本宽而非全宽（inline-box-001 等用例）。
         // R109 默认启用；未生成匿名块片段时 fragment_node_ids 恒 None，此步为 no-op。
         crate::r109::shrink_r109_anon_blocks(&mut root_box, doc, styles);
+        // R5335：壳 frame 推进剥离（切片内容块层化，紧随片段收缩之后）。
+        crate::r109::unshift_r109_slice_content_frames(&mut root_box, 0.0);
 
         // 6. 后处理：为包含 float 元素的容器重新测量文本，使文本环绕 float 排列
         let inline_fonts = self.inline_font_context(&font_overrides);

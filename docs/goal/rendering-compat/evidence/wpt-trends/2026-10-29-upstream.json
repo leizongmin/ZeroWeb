@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15782,
-  "rate_pct": 95.1,
-  "extra": "failed=808;skipped=0",
-  "git_sha": "0e21b0bc9",
-  "note": "R5328 overflow computed value 传播（css-overflow-3 §3.1 × css-flexbox-1 §4.5）——flexbox-min-width-auto-004 ✓ min-width:auto × overflow 联动，FIXED=1 REGRESSED=0"
+  "passed": 15789,
+  "rate_pct": 95.2,
+  "extra": "failed=801;skipped=0",
+  "git_sha": "fbf4a7be5",
+  "note": "R5332 border-box flex 容器 transferred/stretch 目标 content cross 化（css-flexbox-1 §4.5 × §9.4）——flex-cross-size-border-box-001 ✓ img stretch 到容器 content cross，FIXED=1 REGRESSED=0"
 }

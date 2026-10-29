@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 用 rally run 持续推进 form-url-encoding-compat goal（docs/goal/form-url-encoding-compat.md）。
+# 用 rally run 持续推进 form-url-encoding-compat goal（docs/goal/archive/form-url-encoding-compat.md，已收口归档；重入条件见归档 master）。
 #
 # 用途：legacy-mb encode 面（form 提交编码序列化 + href URL encoding-parse）
 # ——31 号 encoding-legacy-mb M3 甄别归口；全量 WPT 通过率到 50%+ 的唯一
@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-exec rally run docs/goal/form-url-encoding-compat.md \
+exec rally run docs/goal/archive/form-url-encoding-compat.md \
     -w "$PROJECT_ROOT" \
     --agent-command claude-glm \
     "$@"

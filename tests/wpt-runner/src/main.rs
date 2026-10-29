@@ -18,7 +18,9 @@ mod runner_text_metrics;
 mod testharness;
 mod testharness_console;
 mod testharness_cookies;
+mod testharness_css_corpus;
 mod testharness_dnd;
+mod testharness_editing_corpus;
 mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
@@ -103,6 +105,20 @@ Commands:
   testharness-fullscreen  Run imported Fullscreen testharness cases
   testharness-css-variables  Run upstream css-variables testharness cases
                        (web-api-batch2 goal M1 / DC-1)
+  testharness-css-values  Run imported css/values testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M0 / DC-1)
+  testharness-selectors  Run imported css/selectors testharness cases (selector
+                       matching API face; css-testharness-compat goal M0 / DC-1)
+  testharness-css-color  Run upstream css-color testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-align  Run upstream css-align testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-sizing  Run upstream css-sizing testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-editing-run  Run imported editing/run execCommand testharness cases
+                       (editing-compat goal M1 / DC-2)
+  testharness-editing-other  Run imported editing/other testharness cases
+                       (editing-compat goal M1 / DC-2)
   testharness-csp  Run imported Content-Security-Policy testharness cases
                        (security-hardening goal M1 / DC-1)
   testharness-mixed-content  Run imported Mixed Content testharness cases
@@ -388,6 +404,17 @@ fn main() {
         "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
         "testharness-fullscreen" => cmd_testharness_fullscreen(&options, filter.as_deref()),
         "testharness-css-variables" => cmd_testharness_css_variables(&options, filter.as_deref()),
+        "testharness-css-values" => cmd_testharness_css_values(&options, filter.as_deref()),
+        "testharness-selectors" => cmd_testharness_css_selectors(&options, filter.as_deref()),
+        "testharness-css-color" => cmd_testharness_css_color(&options, filter.as_deref()),
+        "testharness-css-align" => cmd_testharness_css_align(&options, filter.as_deref()),
+        "testharness-css-sizing" => cmd_testharness_css_sizing(&options, filter.as_deref()),
+        "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
+        }),
+        "testharness-editing-other" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_editing_corpus::run_editing_other_cases(wpt_root, filter)
+        }),
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
@@ -1480,9 +1507,64 @@ fn cmd_testharness_fullscreen(options: &CliOptions, filter: Option<&str>) {
     });
 }
 
+/// `testharness-css-variables` 子命令 — 跑导入的上游 css-variables testharness
+/// 用例（css-testharness-compat goal M2 / DC-3——自 site-optimizer R5114 通道迁入
+/// css 共享底座 [`testharness_css_corpus`]：skip 规则单点 + 非 testharness
+/// reftest 页出运行面 + 病态内存案谓词排除；契约详见
+/// `cmd_testharness_css_values` 文档）。全量跑走 Makefile 分片通道
+/// `make testharness-css-variables`；定向 make testharness-css-variables-one
+/// FILTER=case-sensitive。
 fn cmd_testharness_css_variables(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
-        testharness::run_css_variables_cases(wpt_root, filter)
+        testharness_css_corpus::run_css_variables_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-values` / `testharness-selectors` 子命令 — 跑导入的上游
+/// css/values + css/selectors testharness 用例（css-testharness-compat goal
+/// M0 / DC-1——css topdir CSSOM/style API 断言面试点通道）。
+///
+/// 用例由 `scripts/goals/35-css-testharness-compat.sh`（GOAL_FETCH_DEEP=1）按需
+/// 拉到 `wpt-data/css/`（gitignored），运行面按内容规则筛减
+/// （`css_testharness_case_skipped`：manual / crash / .https / helper 资产目录 /
+/// 非 testharness reftest 页 / iframe 依赖——skip 规则两侧同源防漂移）。退出码：
+/// 有用例非 Pass 或用例集为空 → 1（与 observers 命令一致）。基线首跑即便大量
+/// Fail 也只用于记录通过率（agent 经 `--json` 捕获后写 evidence/），不作为
+/// land 门禁。filter 按路径子串透传：make testharness-css-values-one FILTER=calc。
+/// 全量跑走 Makefile 分片通道（`testharness-css-values`——runner 单进程长套件
+/// RSS 线性累积，M1 治理前用每案独立进程的 corpus 脚本）。
+fn cmd_testharness_css_values(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_values_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_selectors(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_selectors_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-color` / `testharness-css-align` / `testharness-css-sizing`
+/// 子命令 — 跑导入的上游 css-color / css-align / css-sizing testharness 用例
+/// （css-testharness-compat goal M3 扩面首批——top15 分母目录过 M0 模板；
+/// 契约与退出码同 `cmd_testharness_css_values`：共享底座 skip 规则单点，
+/// 病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_color(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_align(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_align_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_sizing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_sizing_cases(wpt_root, filter)
     });
 }
 

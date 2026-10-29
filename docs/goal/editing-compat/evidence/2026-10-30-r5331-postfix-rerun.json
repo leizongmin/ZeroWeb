@@ -1,0 +1,862 @@
+{
+ "date": "2026-10-30",
+ "goal": "editing-compat",
+ "milestone": "post-R5331 rerun (3d173dccc) on upstream M1 channel (d3c4fb232 sharder)",
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+ "command": "make testharness-editing-run / testharness-editing-other (run-editing-testharness-corpus.sh, per-case process + CASE_WALL_S=120 external wall clock)",
+ "baseline_ref": "2026-10-30-m1-run-baseline.json / 2026-10-30-m1-other-baseline.json (pre-fix, commit dc719ecf0)",
+ "totals": {
+  "run": {
+   "pass": 7,
+   "fail": 49778,
+   "timeout": 7,
+   "unsupported": 0
+  },
+  "other": {
+   "pass": 2325,
+   "fail": 7782,
+   "timeout": 4,
+   "unsupported": 0
+  }
+ },
+ "cases": {
+  "run": {
+   "editing/run/backcolor.html": {
+    "pass": 0,
+    "fail": 1026,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/bold.html": {
+    "pass": 0,
+    "fail": 3048,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/caret-navigation-after-removing-line-break.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/caret-navigation-around-line-break.html": {
+    "pass": 0,
+    "fail": 20,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/caretnavigation.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/createlink-with-selecting-img.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/createlink.html": {
+    "pass": 0,
+    "fail": 441,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/delete-list-items-in-table-cell.html": {
+    "pass": 0,
+    "fail": 36,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/delete-to-make-editing-host-empty.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/delete.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/fontname.html": {
+    "pass": 0,
+    "fail": 2225,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/fontsize.html": {
+    "pass": 0,
+    "fail": 2422,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/forecolor.html": {
+    "pass": 0,
+    "fail": 2327,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/formatblock.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/forwarddelete.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/hilitecolor.html": {
+    "pass": 0,
+    "fail": 1218,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/indent.html": {
+    "pass": 0,
+    "fail": 1329,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/insert-list-items-in-table-cell.html": {
+    "pass": 0,
+    "fail": 112,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/inserthorizontalrule.html": {
+    "pass": 0,
+    "fail": 1348,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/inserthtml.html": {
+    "pass": 0,
+    "fail": 1565,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/insertimage.html": {
+    "pass": 0,
+    "fail": 962,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/insertlinebreak.html": {
+    "pass": 0,
+    "fail": 1691,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/insertorderedlist.html": {
+    "pass": 0,
+    "fail": 1761,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/insertparagraph.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/inserttext.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/insertunorderedlist.html": {
+    "pass": 0,
+    "fail": 2065,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/italic.html": {
+    "pass": 0,
+    "fail": 2073,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/justifycenter.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/justifyfull.html": {
+    "pass": 0,
+    "fail": 4762,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/justifyleft.html": {
+    "pass": 0,
+    "fail": 2503,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/justifyright.html": {
+    "pass": 0,
+    "fail": 4814,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/misc.html": {
+    "pass": 0,
+    "fail": 423,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/multitest.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/run/outdent.html": {
+    "pass": 0,
+    "fail": 2550,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/removeformat.html": {
+    "pass": 0,
+    "fail": 1832,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/strikethrough.html": {
+    "pass": 0,
+    "fail": 2147,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/subscript.html": {
+    "pass": 0,
+    "fail": 1241,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/superscript.html": {
+    "pass": 0,
+    "fail": 1273,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/typing-text-in-direct-child-of-editing-host.html": {
+    "pass": 6,
+    "fail": 10,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/underline.html": {
+    "pass": 0,
+    "fail": 2147,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/undo-redo-after-mutation.html": {
+    "pass": 0,
+    "fail": 7,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/undo-redo.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/run/unlink.html": {
+    "pass": 0,
+    "fail": 395,
+    "timeout": 0,
+    "unsupported": 0
+   }
+  },
+  "other": {
+   "editing/other/body-should-not-deleted-even-if-empty.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/br-tag-not-added-with-inline-root-editable-element.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/cefalse-boundaries-deletion.html": {
+    "pass": 0,
+    "fail": 3,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/cloning-attributes-at-splitting-element.tentative.html": {
+    "pass": 32,
+    "fail": 20,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/copy-elements-with-css-vars.tentative.html": {
+    "pass": 1,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/copy-paste-before-non-editable.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/copy-paste-in-styled-inline-editing-host.https.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/data_transfer_on_input_event_with_insertfrompaste_type.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-at-end-boundary-of-div-followed-by-inline-element-containing-hidden-select-element-with-non-editable-node.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-at-start-boundary-of-div-containing-hidden-select-element-with-non-editable-node.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-editing-host.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-child-of-head.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-child-of-html.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-inline-editing-host-under-shadow-root.html": {
+    "pass": 0,
+    "fail": 4,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-last-definition-list-item-when-parent-list-is-editing-host.html": {
+    "pass": 0,
+    "fail": 16,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-last-list-item-when-parent-list-is-editing-host.html": {
+    "pass": 0,
+    "fail": 28,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-in-shadow-hosted-in-body.html": {
+    "pass": 0,
+    "fail": 3,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/delete-without-unwrapping-first-line-of-child-block.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/other/delete.html": {
+    "pass": 0,
+    "fail": 16,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/double-click-range-selection-in-floating-list-item.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/double-click-range-selection-in-list-item.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/edit-in-textcontrol-immediately-after-hidden.tentative.html": {
+    "pass": 24,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/editable-state-and-focus-in-assigned-slot-dom.tentative.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/editable-state-and-focus-in-shadow-dom-in-designMode.tentative.html": {
+    "pass": 17,
+    "fail": 12,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/editing-around-select-element.tentative.html": {
+    "pass": 24,
+    "fail": 87,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/editing-div-outside-body.html": {
+    "pass": 15,
+    "fail": 40,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/editing-style-of-range-around-void-element-child.tentative.html": {
+    "pass": 2,
+    "fail": 6,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/empty-elements-insertion-padding.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/empty-elements-insertion.html": {
+    "pass": 0,
+    "fail": 5,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/end-key-with-wbr.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/exec-command-never-throw-exceptions.tentative.html": {
+    "pass": 4,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/exec-command-with-text-editor.tentative.html": {
+    "pass": 1332,
+    "fail": 474,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/exec-command-without-editable-element.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/extra-text-nodes.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/fire-selection-change-on-deleting-empty-element.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/formatblock-preserving-selection.tentative.html": {
+    "pass": 288,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/html-text-copy-paste-of-anchor-with-href-in-content-editable.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/indent-preserving-selection.tentative.html": {
+    "pass": 24,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/inline-editing-host-has-placeholder-with-after-pseudo-element.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/inline-editing-host-has-placeholder-with-before-pseudo-element.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/input-in-text-control-which-is-also-editing-host.tentative.html": {
+    "pass": 6,
+    "fail": 10,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insert-br-tag-on-text-node-removal-with-non-editable-elements.html": {
+    "pass": 0,
+    "fail": 3,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insert-list-preserving-selection.tentative.html": {
+    "pass": 92,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insert-paragraph-in-void-element.tentative.html": {
+    "pass": 2,
+    "fail": 70,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insert-space-at-beginning-of-wrapped-line.html": {
+    "pass": 4,
+    "fail": 8,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insert-text-in-void-element.tentative.html": {
+    "pass": 0,
+    "fail": 48,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/inserthtml-do-not-preserve-inline-styles.html": {
+    "pass": 0,
+    "fail": 54,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertlinebreak-with-white-space-style.tentative.html": {
+    "pass": 0,
+    "fail": 552,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-in-child-of-head.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-in-child-of-html.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-in-editing-host-cannot-have-div.tentative.html": {
+    "pass": 0,
+    "fail": 420,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-in-inline-editing-host.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-in-non-splittable-element.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/insertparagraph-with-white-space-style.tentative.html": {
+    "pass": 36,
+    "fail": 1068,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/inserttext-after-bold-in-font-face-monospace.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/inserttext-last-mutation.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/other/join-different-white-space-style-left-line-and-right-paragraph.html": {
+    "pass": 0,
+    "fail": 2607,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/join-different-white-space-style-left-paragraph-and-right-line.html": {
+    "pass": 0,
+    "fail": 1455,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/join-different-white-space-style-paragraphs.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 1,
+    "unsupported": 0
+   },
+   "editing/other/join-pre-and-other-block.html": {
+    "pass": 0,
+    "fail": 426,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/justify-preserving-selection.tentative.html": {
+    "pass": 160,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/keeping-attributes-at-joining-elements.tentative.html": {
+    "pass": 60,
+    "fail": 152,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/legacy-edit-command.html": {
+    "pass": 90,
+    "fail": 30,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/link-boundaries-insertion.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/mathml-html-serializtion-on-copy.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/merge-span-with-style-after-backspace-having-contenteditable.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/merge-span-with-style-after-forwarddelete-having-contenteditable.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/merge-span-with-style-after-pressing-enter-followed-by-backspace-in-contenteditable-div.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/no-beforeinput-when-no-selection.html": {
+    "pass": 2,
+    "fail": 3,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/non-html-document.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/outdent-preserving-selection.tentative.html": {
+    "pass": 62,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/password-bidi-dblclick.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste-clipboard-change.tentative.html": {
+    "pass": 0,
+    "fail": 2,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste-in-list-with-inline-style.tentative.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste-multiline-text-as-plaintext.tentative.https.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste-text-after-collapsible-white-space-whose-container-remove-non-first-children.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste-with-newline-three-times.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/paste_text_with_text_transform.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/plain-text-copy-paste-of-paragraph-ending-with-non-layed-out-content.html": {
+    "pass": 0,
+    "fail": 9,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/recursive-exec-command-calls.tentative.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/removeformat_background_color.html": {
+    "pass": 0,
+    "fail": 6,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/removing-inline-style-specified-by-parent-block.tentative.html": {
+    "pass": 3,
+    "fail": 9,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/restoration.html": {
+    "pass": 0,
+    "fail": 34,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/restyle-textcontrol-during-beforeinput.html": {
+    "pass": 2,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/select-all-and-delete-in-html-element-having-contenteditable.html": {
+    "pass": 0,
+    "fail": 12,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/selectall-in-editinghost.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/selectall-without-focus.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/selection-change-not-fired-if-selection-set-to-root.html": {
+    "pass": 1,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/setting-value-of-textcontrol-immediately-after-hidden.html": {
+    "pass": 28,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/shadow_root_iteration_in_block_style.html": {
+    "pass": 0,
+    "fail": 1,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/typing-around-link-element-after-joining-paragraphs.html": {
+    "pass": 0,
+    "fail": 48,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/typing-around-link-element-at-collapsed-selection.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/typing-around-link-element-at-non-collapsed-selection.tentative.html": {
+    "pass": 0,
+    "fail": 0,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/typing-space-in-editable-button.tentative.html": {
+    "pass": 0,
+    "fail": 4,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/typing-space-in-editable-summary.tentative.html": {
+    "pass": 0,
+    "fail": 4,
+    "timeout": 0,
+    "unsupported": 0
+   },
+   "editing/other/undo-insertparagraph-after-moving-split-nodes.html": {
+    "pass": 0,
+    "fail": 4,
+    "timeout": 0,
+    "unsupported": 0
+   }
+  }
+ }
+}

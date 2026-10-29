@@ -1476,6 +1476,16 @@
                   _r145Built = _tcArr.map(function (e) {
                     return (typeof _zwMBuildDeepEntry === 'function') ? _zwMBuildDeepEntry(e, _tcParent) : null;
                   }).filter(Boolean);
+                  // R4100 details 双关 flake 根修：缓存**先于 scan** 落位。scan 的片外
+                  // 分支 `_zwDetailsCollect4100(_zwNodeRootOf(el))` 会经 `_tplContent`
+                  // 的 childNodes getter 重入 `_r145SelKids`，彼时 `proxy._zwTplContentKids`
+                  // 尚未写 → 逐层重建 + 嵌套 scan，直至 V8 栈耗尽（RangeError 被物化/
+                  // 收集各层 try/catch 吞掉）；幸存层的重建对象与外层 frag 身份错位，
+                  // `_zwDetailsIsInFrag4100` 误判片外 → 同名 open 成员判定成立 →
+                  // tp0/tp1 双关（(0,0)），触发面随栈布局漂移（前驱测试/插桩改变栈
+                  // 深度即翻转 solo/pair 通过率）。先置缓存使重入读命中同一活数组
+                  //（对象身份稳定），scan 单次收敛、树序第一 open 胜出口径不变。
+                  try { proxy._zwTplContentKids = _r145Built; } catch (_eTkEarly) {}
                   // R4100（encoding-legacy-mb M3 甄别）：contents 深条目物化后的 parse-face
                   // details name= 互斥 + parser-open toggle 排程——host 解析产物不裁决互斥
                   //（深 JSON 双 open 实证），其余 markup 面的裁决在 __zwCeAttachForAdded /
@@ -1791,53 +1801,13 @@
             if (_isContainerHandle(handle)) return '';
             return __zw_get_inner_html_handle(handle);
           }
-          // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML**——pending
-          // 桶非空（同 turn 内 replaceWith/removeChild/appendChild 等已记账、host 快照
-          // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化
-          // （`_childNodeList` 的 overlay 已并入 pending added / 剔除 pending removed，
-          // R51/R309/R322 补偿链；R379 pa1/pa2 后移除标记语义已正确——标记中子不出现
-          // 在融合视图）。桶空时保持 host 直读零变化（热路径不受影响）。
-          // 序列化：text 转义 / comment / 元素递归 outerHTML（pending 新子经 part05
-          // outerHTML handle 分支或自身融合序列化——R377 实验「子序列化依赖 outerHTML
-          // 对 pending 新子递归正确」在本轮 R380 registry 随迁后成立：克隆子的后代已
-          // 在 `_handleChildren`，outerHTML 的 handle 分支可读）。
-          // R381：**代际门**——`stamp === _zwApplyGeneration()` 校验桶是「apply 前
-          // stale 补偿」。pa2b 设计 apply 后不清桶（identity 记账供后续操作消费），
-          // 故桶非空不再隐含快照 stale：vue_mount_lands 的 execute#2 innerHTML 读时
-          // 桶仍是 mount 时记账（apply 已发生、快照已含子），无代际门会把快照已含的
-          // 子经 overlay 重复并入（双份 `<p class="msg">`——R309 identity 双源教训的
-          // 代际表述）。时间戳在 `_zwHCLiveInvalidate` 记账时盖（每批 mutation 刷新）。
-          var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
-            ? _zwPendingByParent.get(sel) : null;
-          // R3254-E2 切片 8（editing goal，2026-09-07）：门扩展——子树深层 mutation
-          // （deleteContents 的 removeChild/deleteData 落孙代容器桶）经
-          // `_zwPendingSubtreeDirty` 前缀扫描纳入（此前只看目标自身桶 → 跨元素删除后
-          // innerHTML 读回 stale）。
-          if ((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
-              && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
-              || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))) {
-            try {
-              var _r380Kids = _childNodeList(sel, null);
-              var _r380Out = '';
-              for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
-                var _r380n = _r380Kids[_r380i];
-                if (!_r380n) continue;
-                if (_r380n.nodeType === 3) _r380Out += _zwMEscapeText(_r380n.nodeValue != null ? _r380n.nodeValue : (_r380n.data != null ? _r380n.data : ''));
-                else if (_r380n.nodeType === 8) _r380Out += '<!--' + (_r380n.nodeValue != null ? _r380n.nodeValue : _r380n.data) + '-->';
-                else if (_r380n.nodeType === 7) {
-                  // R5003 M3 片 b：PI 序列化（同 handle 分支——spec 恒空格分隔）。
-                  _r380Out += '<?' + (_r380n.target != null ? _r380n.target : (_r380n.nodeName != null ? _r380n.nodeName : ''))
-                    + ' ' + (_r380n.data != null ? _r380n.data : (_r380n.nodeValue != null ? _r380n.nodeValue : '')) + '?>';
-                }
-                else if (_r380n.nodeType === 1) {
-                  if (typeof _zwIsRemovedNode === 'function' && _zwIsRemovedNode(_r380n)) continue;
-                  _r380Out += _r380n.outerHTML || '';
-                }
-              }
-              if (_r380Out !== '') return _r380Out;
-            } catch (_e380ih) { /* 序列化失败回落 host 快照 */ }
-          }
-          return __zw_get_inner_html(sel);
+          // R380/pa3 sel 域融合（含 R3254-E2 子树脏门）抽为 `_zwFusedInnerHtmlSel`
+          // 共享——cloneNode 深克隆同消费（stale host 串使克隆丢 pending 子：
+          // editing-compat M2，runConformanceTest 的
+          // `documentElement.cloneNode(true)` 后 `querySelector('[contenteditable]')`
+          // 恒 null → `.parentNode` TypeError 级联）。空融合（桶空/序列化空）回落
+          // host 直读，语义与本抽函数前逐位一致。
+          return _zwFusedInnerHtmlSel(sel) || __zw_get_inner_html(sel);
         }
         // `element.outerHTML`（getter）：含自身 tag/属性 + 子树序列化。sel-based（已挂载）经 host
         // `__zw_get_outer_html` 真实序列化（含 void 元素 + 属性转义）。R3201：handle-only（createElement 未挂载）
@@ -3783,8 +3753,41 @@
                 _zw5277SetPre = _ce_attrValue(sel, handle, n);
               }
             }
+            // s150：LINK href 旧值写前捕获（幂等比较基准——写入后再读即新值；
+            // 经 lw 读——pending SetAttr 未 apply 面 R3202 stale-snapshot 族同款
+            // typeof 回退）。TAG 门在此，非 LINK 恒 null 且不触发。
+            var _zwSsPrev = null;
+            if (n === 'href' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              try {
+                if (_realTag(sel, handle) === 'LINK') {
+                  _zwSsPrev = String((handle ? __zw_get_attr_handle(handle, 'href')
+                    : (typeof __zw_get_attr_lw === 'function'
+                      ? __zw_get_attr_lw(sel, 'href') : __zw_get_attr(sel, 'href'))) || '');
+                }
+              } catch (_eSsPv) {}
+            }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // s150：LINK href 变更触发 stylesheet 重取（spec link processing——
+            // href 值变更 → re-fetch；幂等比较在 helper 内做解析后绝对 URL 比较，
+            // prevHref=null 语义「无写入路径旧值」不发生于此臂——捕获已定，
+            // 空串表示旧属性缺失，与新值比较自然走解析差异臂）。
+            if (n === 'href' && _zwSsPrev != null
+                && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrev);
+            }
+            // s155：LINK rel 变更触发 link processing 重跑（spec react to
+            // mutations——rel 属性写后按新 rel 分流：preload 取回 / stylesheet
+            // 取回或 preload cache 复用；幂等写由 helper 身份印记静默拦截不重取
+            // 不重派——link-multiple-load-events case 1 idempotent rel 写）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            if (n === 'rel' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              try {
+                if (_realTag(sel, handle) === 'LINK') {
+                  globalThis._zwStylesheetMaybeStart(sel, handle, null);
+                }
+              } catch (_eSsRl) {}
+            }
             // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
@@ -6327,9 +6330,14 @@
             if (deep) {
               var _cnd = false;
               try {
+                // editing-compat M2：sel 源先走 R380 融合序列化（`_zwFusedInnerHtmlSel`
+                // ——pending 子在 host 快照 apply 前不可见，纯 host 串使克隆丢子：
+                // runConformanceTest `documentElement.cloneNode(true)` 后
+                // `querySelector('[contenteditable]')` 恒 null 级联）。桶空/序列化空
+                // 返 null 回落 host 直读（既有行为零变化）。
                 var ih = handle
                   ? __zw_get_inner_html_handle(handle)
-                  : (sel ? __zw_get_inner_html(sel) : null);
+                  : (sel ? ((_zwFusedInnerHtmlSel && _zwFusedInnerHtmlSel(sel)) || __zw_get_inner_html(sel)) : null);
                 if (ih) {
                   __zw_set_inner_html_handle(nh, ih);
                   _cnd = true;
@@ -11304,6 +11312,33 @@
             }
             _fEnc = _fEnc.toLowerCase();
             if (_fEnc !== 'text/plain' && _fEnc !== 'multipart/form-data') _fEnc = 'application/x-www-form-urlencoded';
+            // M1 form-url-encoding-compat：「select a form submission encoding」步
+            //（spec form submission algorithm，
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#select-a-form-submission-encoding）：
+            // accept-charset 属性值按 ASCII whitespace 切分，逐 token get-an-encoding
+            //（_zwEncodingFromLabel 全 label 表），首个合法者胜；全非法或属性缺席 →
+            // 回落文档 character encoding（document.characterSet 同源：host 预扫描
+            // 优先）。仅 urlencoded 序列化面消费（_encPair 分派：GET query + POST
+            // body）；text/plain / multipart 不消费提交编码（字面/UTF-8），行为不变。
+            // utf-16 系 label 不在表（_zwEncodingFromLabel 非 htmlMeta 面）→ 回落——
+            // 与 spec get-an-output-encoding(UTF-16*)=UTF-8 的可观测差异仅在
+            // accept-charset 显式 utf-16 且文档非 UTF-8 场景（无 WPT 覆盖）。FIXME:
+            // get-an-encoding 的 utf-16 label 面未实现。
+            var _fSubmitEnc = '';
+            try {
+              var _fAc = fHandle ? __zw_get_attr_handle(fHandle, 'accept-charset') : (__zw_get_attr(fSel, 'accept-charset') || '');
+              var _fTk = _fAc ? String(_fAc).split(/[\t\n\f\r ]+/) : [];
+              for (var _fTi = 0; _fTi < _fTk.length; _fTi++) {
+                if (!_fTk[_fTi]) continue;
+                var _fCanon = _zwEncodingFromLabel(_fTk[_fTi], false);
+                if (_fCanon) { _fSubmitEnc = String(_fCanon); break; }
+              }
+            } catch (_eAc0) {}
+            if (!_fSubmitEnc) {
+              var _fDocEnc = '';
+              try { _fDocEnc = String(globalThis.document.characterSet || ''); } catch (_eAc1) {}
+              _fSubmitEnc = (_fDocEnc && _zwEncodingFromLabel(_fDocEnc, false)) || 'UTF-8';
+            }
             // 换行归一（spec convert to a list of name-value pairs：lone CR/LF →
             // CRLF，https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#convert-to-a-list-of-name-value-pairs）——
             // 三序列化共用；CRLF 保持、lone CR/LF 展开。
@@ -11317,6 +11352,15 @@
             // （`*` 两侧均字面量）。
             function _encPair(n, v) {
               function enc(s) {
+                // M1：非 UTF-8 提交编码 + host 编码桥在位 → legacy 编码字节面
+                // percent-encode（URL standard percent-encode after encoding，
+                // https://url.spec.whatwg.org/#string-percent-encode-after-encoding；
+                // 逐 scalar fresh 编码 + 字节级 set，见 text_encoding.rs 模块注）。
+                // host 未注册（engine/reftest/polyfill 面）或 UTF-8 → 既有纯 JS
+                // 路径零变化。
+                if (_fSubmitEnc !== 'UTF-8' && typeof __zw_text_encode_percent === 'function') {
+                  return __zw_text_encode_percent(_fSubmitEnc, _normNL(s), 'form');
+                }
                 return encodeURIComponent(_normNL(s))
                   .replace(/%20/g, '+')
                   .replace(/!/g, '%21').replace(/'/g, '%27').replace(/\(/g, '%28').replace(/\)/g, '%29').replace(/~/g, '%7E');
@@ -11799,9 +11843,30 @@
         if (prop === 'sheet') {
           var _shTag = _realTag(sel, handle);
           if (_shTag === 'STYLE' || _shTag === 'LINK') {
+            // s156：CSSOM 创建门——type essence 门（CSSOM create a CSS style sheet：
+            // type 属性存在且 essence 非 text/css → 不创建返 null；ASCII 案面
+            // TeXt/CsS 小写归一创建、text/cſs 不创建）。type 缺省不设门（缺省即
+            // text/css 语义）。style4 type="text/html" 断言面。
+            // https://drafts.csswg.org/cssom/#create-a-css-style-sheet
+            var _shType = (handle ? __zw_get_attr_handle(handle, 'type')
+              : (sel ? __zw_get_attr(sel, 'type') : '')) || '';
+            if (String(_shType).trim() !== '') {
+              var _shEssence = String(_shType).split(';')[0].trim().toLowerCase();
+              if (_shEssence !== 'text/css') return null;
+            }
             if (_shTag === 'LINK') {
               var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
               if (!/\bstylesheet\b/i.test(_lrel)) return null; // link 非 stylesheet → null
+              // s156：alternate + 空 title 门（HTML spec the-link-element styling：
+              // rel 含 alternate 且 title 属性值为空串 → 不创建返 null；title 属性
+              // 缺失同空串。style2（title=""）/style3（无 title）断言面；style6
+              //（alternate + 非空 title）照常创建）。
+              // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+              if (/\balternate\b/i.test(_lrel)) {
+                var _ltitle = (handle ? __zw_get_attr_handle(handle, 'title')
+                  : (sel ? __zw_get_attr(sel, 'title') : '')) || '';
+                if (String(_ltitle) === '') return null;
+              }
             }
             // js-dom M4 R113：handle-based <style>（createElement 后 append 入 head——CSS-in-JS
             // 与 WPT prefixed-animation 用例形态）也返 CSSStyleSheet。规则读写经 `_makeStyleSheet`

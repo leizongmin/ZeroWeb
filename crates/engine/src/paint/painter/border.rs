@@ -1922,6 +1922,68 @@ impl super::Painter {
             }
         }
     }
+
+    /// R5335（CSS2 §9.2.1.1 block-in-inline）：被块级后代切片的 inline 盒边框按
+    /// slice 描绘。box-level 全边绘制把 left/right 竖带画成贯穿全部块的连续竖带
+    /// （driving: block-in-inline-insert-009/010 outer blue 全边带）；规范语义是
+    /// 边框随切片分段：left 竖边仅首 slice、right 竖边仅末 slice、上下横带每个
+    /// slice 独立（slice 间被无框块子隔开，带不相接）。横带外侧锚定各 slice 盒
+    /// 区间（嵌套 inline 域横带与内层片段盒横带同位，内层后画覆盖，视觉只剩
+    /// 内层带——nosplit-ref slice1 实证）。绘制为实心矩形条带；复杂 border-style
+    /// 按实心近似（FIXME：dashed/double 等逐 slice 复刻），background 的切片化
+    /// 未实现（本域案例均无背景，挂账）。
+    pub(super) fn paint_block_in_inline_slice_borders(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        slices: &[(f32, f32, f32)],
+    ) {
+        let bl = box_node.border_left;
+        let br = box_node.border_right;
+        let bt = box_node.border_top;
+        let bb = box_node.border_bottom;
+        let current = &style.color;
+        let left_color = color_value_to_render(&resolve_border_current_color(style.border_left_color.clone(), current));
+        let right_color =
+            color_value_to_render(&resolve_border_current_color(style.border_right_color.clone(), current));
+        let top_color = color_value_to_render(&resolve_border_current_color(style.border_top_color.clone(), current));
+        let bottom_color = color_value_to_render(&resolve_border_current_color(
+            style.border_bottom_color.clone(),
+            current,
+        ));
+        let n = slices.len();
+        for (i, &(top, bottom, right)) in slices.iter().enumerate() {
+            let is_first = i == 0;
+            let is_last = i == n - 1;
+            let band_right = right + br;
+            let y0 = abs_y + top;
+            let y1 = abs_y + bottom;
+            let span = (y1 - y0).max(0.0);
+            // 上下横带：每 slice 独立（外侧锚定 slice 盒区间）。
+            if bt > 0.0 {
+                self.primitives
+                    .add_fill(Rect::new(abs_x, y0 - bt, band_right, bt), top_color);
+            }
+            if bb > 0.0 {
+                self.primitives
+                    .add_fill(Rect::new(abs_x, y1, band_right, bb), bottom_color);
+            }
+            // 左竖带：仅首 slice（含角部全高）。
+            if bl > 0.0 && is_first {
+                self.primitives
+                    .add_fill(Rect::new(abs_x, y0 - bt, bl, span + bt + bb), left_color);
+            }
+            // 右竖带：仅末 slice。
+            if br > 0.0 && is_last {
+                self.primitives.add_fill(
+                    Rect::new(abs_x + band_right - br, y0 - bt, br, span + bt + bb),
+                    right_color,
+                );
+            }
+        }
+    }
 }
 
 fn resolve_outline_length(length: &LengthValue, style: &ComputedStyle) -> f32 {
@@ -1995,6 +2057,48 @@ fn resolve_border_current_color(color: ColorValue, current: &ColorValue) -> Colo
         ColorValue::Rgba(c.r, c.g, c.b, c.a)
     } else {
         color
+    }
+}
+
+/// R5335：收集 inline 盒子树中匿名块片段盒的 slice 区间（相对盒 border-box
+/// 原点：(top, bottom, right)）。CSS2 §9.2.1.1 切片 = inline 内容被块级后代
+/// 切开的 inline 段（R109 匿名块片段盒承载）；无框块级子（div 等）只作切分
+/// 边界不计 slice（其区域外层 inline 无边框——nosplit-ref div 区无上下带实证）。
+/// 中间 inline 层（R109 split 宿主壳）继续深入；原子盒（replaced）不深入。
+/// 返回 None = 子树无片段盒（调用方不进切片绘制路径）。
+pub(crate) fn collect_block_in_inline_slices(box_node: &LayoutBox) -> Option<Vec<(f32, f32, f32)>> {
+    let mut out: Vec<(f32, f32, f32)> = Vec::new();
+    collect_slice_regions(box_node, 0.0, 0.0, 0, &mut out);
+    if out.is_empty() {
+        None
+    } else {
+        out.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        Some(out)
+    }
+}
+
+fn collect_slice_regions(box_node: &LayoutBox, base_x: f32, base_y: f32, depth: usize, out: &mut Vec<(f32, f32, f32)>) {
+    if depth > 32 {
+        return;
+    }
+    let cx = base_x + box_node.padding_left + box_node.border_left;
+    let cy = base_y + box_node.padding_top + box_node.border_top;
+    for c in &box_node.children {
+        let x = cx + c.x;
+        let y = cy + c.y;
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        if c.fragment_node_ids.is_some() {
+            out.push((y, y + c.height, x + c.width));
+            continue;
+        }
+        if c.is_block_level {
+            continue;
+        }
+        if !c.is_replaced {
+            collect_slice_regions(c, x, y, depth + 1, out);
+        }
     }
 }
 

@@ -1859,31 +1859,27 @@ fn test_blob_stream_response_body_readers_r2978() {
         "Response.blob().text() 还原 body = 'hi'"
     );
 
-    // Response.arrayBuffer()：UTF-8 Uint8Array（byteLength + 索引）。
+    // Response.arrayBuffer()：spec ArrayBuffer（Body mixin——net-api M2-S18 对齐，
+    // R2978 旧 Uint8Array 形态已废；字节经包裹 Uint8Array 视图取索引）。
+    //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
     sandbox
         .execute(
             "new Response('ABC').arrayBuffer().then(function(buf){\
-               globalThis.__abIsU8 = (buf instanceof Uint8Array);\
-               globalThis.__abLen = buf.length;\
+               globalThis.__abIsAB = (buf instanceof ArrayBuffer);\
                globalThis.__abByteLen = buf.byteLength;\
-               globalThis.__ab0 = buf[0];\
+               globalThis.__ab0 = new Uint8Array(buf)[0];\
              });",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__abIsU8)").unwrap().value,
+        sandbox.execute("String(globalThis.__abIsAB)").unwrap().value,
         "true",
-        "Response.arrayBuffer() → Uint8Array"
-    );
-    assert_eq!(
-        sandbox.execute("String(globalThis.__abLen)").unwrap().value,
-        "3",
-        "Response.arrayBuffer('ABC') length=3"
+        "Response.arrayBuffer() → ArrayBuffer"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__abByteLen)").unwrap().value,
         "3",
-        "Response.arrayBuffer byteLength=3"
+        "Response.arrayBuffer('ABC') byteLength=3"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ab0)").unwrap().value,

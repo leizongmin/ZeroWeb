@@ -3444,7 +3444,26 @@ impl Painter {
                 // R4332：多行 inline（skip_inline_box_border）改由 paint_text per-fragment 描绘。
                 // R5265：collapse 驱动 cell 的带在此置位，由子树分派处 sweep A 之后补发射
                 //（带 = 「后代块背景 < 带 < inline 内容」相位间插，CSS2 App E）。
-                if !skip_split_inline_deco
+                // R5335（CSS2 §9.2.1.1）：block-in-inline 切片域——inline 盒子树含
+                // 匿名块片段盒（自身非 R109 split 宿主，即间接含块级后代的 inline，
+                // 如 insert-009/010 的 outer span）时，box-level 全边 border 会画成
+                // 贯穿全部块的连续竖带；抑制盒级绘制，改按 slice 描绘（left 仅首
+                // slice / right 仅末 slice / 上下带每 slice，见 border.rs 绘制函数）。
+                let r5335_block_slices = if matches!(style.display, DisplayValue::Inline)
+                    && !box_node.is_r109_split
+                    && !box_node.is_absolute
+                    && !box_node.is_fixed
+                    && !box_node.is_replaced
+                {
+                    border::collect_block_in_inline_slices(box_node)
+                } else {
+                    None
+                };
+                if let Some(slices) = r5335_block_slices.as_ref() {
+                    self.paint_block_in_inline_slice_borders(box_node, abs_x, abs_y, style, slices);
+                }
+                if r5335_block_slices.is_none()
+                    && !skip_split_inline_deco
                     && !skip_inline_box_border
                     && !spanner_segs_active
                     && !band_driver

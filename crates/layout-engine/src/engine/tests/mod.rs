@@ -889,3 +889,27 @@ mod r5315_inline_block_oof_static_pos_tests;
 /// 行盒按父 content area 需求生长（负 leading 域），正 leading 域 max 合成零扰动
 ///（vertical-align-negative-leading-001）。
 mod r5316_va_text_neg_leading_tests;
+/// R5329（css-sizing-3 + css-flexbox-1 §4.5）替换内容叶 intrinsic 测量锚——img 叶
+/// MinContent/MaxContent 回固有尺寸（非 0），flex item automatic min 的 specified/
+/// content size suggestion 生效（flex-minimum-width-flex-items-005/006）。
+mod r5329_replaced_leaf_intrinsic_min_tests;
+/// R5330（css-flexbox-1 §4.1）column flex item 主轴高回填豁免锚——指定 min-height 非
+/// auto 的 item 保持 flex 定尺不被 R1743 max-bottom 回填（flex-minimum-height-flex-items-027）。
+mod r5330_col_flex_item_no_backfill_tests;
+/// R5331（css-flexbox-1 §9.9.1）column flex 容器内在主轴定尺 item 内容贡献探针锚——
+/// specified main size 只能经 automatic minimum 进入容器内在尺寸
+///（flex-minimum-height-flex-items-029/030）。
+mod r5331_flex_intrinsic_main_probe_tests;
+/// R5332（css-flexbox-1 §4.5/§9.4）border-box flex 容器 transferred/stretch 目标按
+/// content box cross 锚——img stretch 到容器 content cross 而非 outer cross
+///（flex-cross-size-border-box-001）。
+mod r5332_border_box_flex_cross_tests;
+/// R5333（css-values-4 math × css-flexbox-1 §resolve-flexible-lengths）无穷 flex
+/// 因子锚——`flex-grow: calc(infinity)` 吸收全部 free space、普通 math 长手求值、
+/// shrink ∞ 拒收守卫（flex-grow-009）。
+mod r5333_flex_infinite_grow_tests;
+/// R5334（css-flexbox-1 §4.5 + css-overflow-3 §3.1）scroll container flex item
+/// 自动最小 = 0 锚——overflow 非 visible 的 column item 不被 R1743 回填撑回内容高、
+/// overflow visible 自动最小保留、row 轴 cross 域既有行为守卫
+///（fieldset-as-item-overflow）。
+mod r5334_flex_scroll_item_min_tests;

@@ -93,6 +93,15 @@ pub(super) fn native_compat_mode_getter(
     set_string_rv(scope, val, &mut rv);
 }
 
+/// `dom-document-compatmode` 字符串求值（s151：shim headless 通道 `__zw_get_compat_mode`
+/// 桥共用——DOM 源缺席回落 "CSS1Compat"，与 shim getter 的桥缺席回落同口径）。
+pub(crate) fn document_compat_mode_string() -> String {
+    match with_dom(|d| d.quirks_mode()) {
+        Some(zero_dom::QuirksMode::Quirks) => "BackCompat".to_string(),
+        _ => "CSS1Compat".to_string(),
+    }
+}
+
 /// `document.characterSet` getter（spec `dom-document-character-set`）：HTML 解析文档
 /// 读解析期 `<meta charset>` 预扫描标签（R5000 片 c / P5——zero-dom
 /// `sniff_meta_charset`），经 encoding_rs for_label 归一为编码名（"windows-1250" /

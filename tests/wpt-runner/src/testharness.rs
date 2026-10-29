@@ -27,6 +27,7 @@ struct RunnerFlags {
     corpus_case_timeout_secs: Option<u64>,
     script_timeout_ms: Option<u64>,
     time_log: bool,
+    mem_log: bool,
     raf_frame_driven: bool,
     timer_per_task: bool,
     disable_pump: bool,
@@ -44,6 +45,7 @@ fn runner_flags() -> &'static RunnerFlags {
             .ok()
             .and_then(|v| v.parse::<u64>().ok()),
         time_log: std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1"),
+        mem_log: std::env::var("ZW_TESTHARNESS_MEM_LOG").ok().as_deref() == Some("1"),
         raf_frame_driven: std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1"),
         timer_per_task: std::env::var("ZW_TESTHARNESS_TIMER_PER_TASK").as_deref() != Ok("0"),
         disable_pump: std::env::var("ZW_DISABLE_PUMP").is_ok(),
@@ -3494,40 +3496,6 @@ pub fn run_fullscreen_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
     run_corpus_subdirs(wpt_root, FULLSCREEN_SUBDIRS, filter, fullscreen_case_skipped)
 }
 
-/// css-variables 上游语料目录（R5114：fetch-wpt-data 随 css/ 全量拉取
-/// `wpt-data/css/css-variables`，无需独立 fetch 脚本）。
-pub const CSS_VARIABLES_SUBDIRS: &[&str] = &["css/css-variables"];
-
-/// Run the upstream css-variables window corpus（site-optimizer P9-9 切片 2/R5114
-/// 测试资产化：gCS 自定义属性暴露 + StyleSheetList 语义的常驻上游断言）。filter
-/// 按路径子串过滤。基线首跑通过率只记录不设门禁（clipboard/csp 先例）。
-pub fn run_css_variables_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs(wpt_root, CSS_VARIABLES_SUBDIRS, filter, css_variables_case_skipped)
-}
-
-/// css-variables 运行面筛减规则（数据全量在 data 侧，运行面按内容规则收口）：
-/// - `*/resources/`、`*/support/`、`*/reference/`（helper / ref 资产，不按案跑）
-/// - `*-crash.html`（病态输入 crash 回归——解析器病态输入行为按仓库规约走
-///   fuzz-repro-guard 口径，不进常驻语料运行面）
-/// - `*-manual.html`（需真实用户交互；规则同域防新增）
-/// - source 含 `<iframe`——iframe 依赖面（runner 无 iframe 文档管道，fullscreen 同口径）
-fn css_variables_case_skipped(relative: &str, source: &str) -> bool {
-    let name = relative.rsplit('/').next().unwrap_or(relative);
-    if name.ends_with("-manual.html") || name.ends_with("-crash.html") {
-        return true;
-    }
-    for skipped_dir in [
-        "css/css-variables/resources",
-        "css/css-variables/support",
-        "css/css-variables/reference",
-    ] {
-        if relative.starts_with(skipped_dir) {
-            return true;
-        }
-    }
-    source.contains("<iframe")
-}
-
 /// Clipboard API pinned subset 运行面筛减规则（fetch 脚本头注释同域，双保险）：
 /// - `*/resources/`（helper 资产，inline_local_scripts 消费）
 /// - `detached-iframe/`、`permissions-policy/`（fetch 侧不拉——iframe 面 /
@@ -4168,6 +4136,21 @@ fn referrer_case_uses_http_page(case_name: &str) -> bool {
     case_name.ends_with("module/referrer-strict-policies.sub.html")
 }
 
+/// s151：link-style-error 三文件页面 scheme 判定——上游 css.py 语料假设 http 页
+///（判式 cross-origin 臂锚 get_host_info().HTTP_REMOTE_ORIGIN（http://www1.*:8000）
+/// 相对判定、wptserve 环境 stylesheet 加载无 mixed-content 阻断）。runner 页锚
+/// https 时跨源案被 s150 helper mixed-content 门拦死 error，期望 load 的案到不了
+/// MIME 判定面。referrer 同口径先例。
+fn link_style_error_case_uses_http_page(case_name: &str) -> bool {
+    [
+        "link-style-error-01.html",
+        "link-style-error-limited-quirks.html",
+        "link-style-error-quirks.html",
+    ]
+    .iter()
+    .any(|file| case_name.ends_with(file))
+}
+
 /// navigation-compat M2-S10 单案 origin 端口化：上游 wptserve 恒带显式端口
 /// （http :8800 / https :9443），location_port.html 断言取 `location.href` 权威段
 /// ":" 后子串与 `location.port` 全等——runner 缺省 origin 无端口时权威段整体
@@ -4469,7 +4452,7 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
 }
 
 /// form-url-encoding-compat goal：encode 面案面规则（面单见
-/// docs/goal/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
+/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
 /// 只放行 form 提交编码序列化面（`*-encode-form*.html`，含 label 变体与
 /// errors 面）与 href URL 序列化面（`*-encode-href*.html` + schinese
 /// `*-encoder.html` inline a.href 面 + `big5-enc-ascii.html`）；decode 面
@@ -6216,6 +6199,9 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
     // page-state-compat M2：beacon/resources 三端点共享 stash（handler per-case 构建——
     // 每案新 stash 与 wptserve server.stash 语义对齐；id 键 = token()/UUID 案内唯一）。
     let beacon_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>> = std::sync::Arc::default();
+    // s150：the-link-element/stylesheet.py per-id 请求计数（handler per-case 构建——
+    // 每案新计数表，键 = `?id=` token，值 = 该 id 的资源请求次数）。
+    let link_sheet_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
@@ -6287,6 +6273,78 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     headers,
                     body: escaped.clone(),
                     body_bytes: Some(escaped.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/the-link-element/stylesheet.py" {
+                // s150（html-semantics M2 切片 150）：link-multiple-load-events /
+                // document-without-browsing-context 的请求计数端点——上游 wptserve
+                // stylesheet.py 行为等价（take-and-clear 计数）：带 `count` 参数的
+                // 请求 take 出当前计数并返回（stash 不回填——下次 count 读取归 0）；
+                // 无 count 的资源请求 take 后 put(count+1) 并返回 CSS 体。
+                // https://github.com/web-platform-tests/wpt/blob/master/
+                // html/semantics/document-metadata/the-link-element/stylesheet.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let id = wpt_query_value(query, "id").unwrap_or_default();
+                let count_read = wpt_query_value(query, "count").is_some();
+                let taken = link_sheet_stash
+                    .lock()
+                    .ok()
+                    .and_then(|mut s| s.remove(&id))
+                    .unwrap_or(0);
+                let (content_type, body) = if count_read {
+                    ("text/plain".into(), taken.to_string())
+                } else {
+                    if let Ok(mut s) = link_sheet_stash.lock() {
+                        s.insert(id, taken + 1);
+                    }
+                    ("text/css".into(), "body {color: red;}".to_string())
+                };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), content_type));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/the-link-element/resources/css.py" {
+                // s151（html-semantics M2 切片 151）：link-style-error 三文件的响应头
+                // 参数化 CSS 端点——上游 css.py 行为等价（pin master 逐字核对）：
+                // `content_type` 查询参数原样作 Content-Type 头（缺席 → **无 CT 头**
+                // ——「no Content-Type」案的 sniff 放行面）；`nosniff` 旗标 →
+                // x-content-type-options: nosniff；`cors` 旗标上游 → ACAO: *（语料
+                // URL 未携带该参数，两头无条件交付已覆盖其语义）。体恒
+                // `body { background:red }`、status 200。
+                // https://github.com/web-platform-tests/wpt/blob/master/
+                // html/semantics/document-metadata/the-link-element/resources/css.py
+                // runner 通道补 ACAO/ACAH 外的 Access-Control-Allow-Origin 与
+                // Access-Control-Expose-Headers `*`：shim 侧 s150 helper 经通用 fetch
+                // （默认 cors 模式）取回——跨源案无 ACAO 即 reject（fetch CORS check
+                // 臂）；ACAO 通配放行后 cors 过滤响应仍剥非 safelisted 头
+                //（x-content-type-options 读不到）——ACEH `*` 通配全暴露。上游
+                // wptserve 真环境 stylesheet 加载不走 CORS 检查，两头是通道妥协，
+                // 语料不读 ACAO/ACEH，期望面不变。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                if let Some(ct) = wpt_query_value(query, "content_type") {
+                    headers.push(("content-type".into(), ct));
+                }
+                if wpt_query_value(query, "nosniff").is_some() {
+                    headers.push(("x-content-type-options".into(), "nosniff".into()));
+                }
+                headers.push(("access-control-allow-origin".into(), "*".into()));
+                headers.push(("access-control-expose-headers".into(), "*".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = "body { background:red }".to_string();
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
                 });
             }
             if clean == "beacon/resources/inspect-header.py"
@@ -8776,6 +8834,23 @@ pub(crate) fn run_testharness_html_inner(
     )
 }
 
+/// 当前进程 VmRSS / VmHWM（kB，读 /proc/self/status；非 Linux 或读取失败返回
+/// None）。镜像 main.rs `log_mem_if_enabled` 的读法（REFTEST_MEM_LOG 先例——
+/// 区分真 leak vs allocator RSS retention）。
+fn process_rss_hwm_kb() -> Option<(usize, usize)> {
+    let status = std::fs::read_to_string("/proc/self/status").ok()?;
+    let mut rss = None;
+    let mut hwm = None;
+    for line in status.lines() {
+        if let Some(rest) = line.strip_prefix("VmRSS:") {
+            rss = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+        } else if let Some(rest) = line.strip_prefix("VmHWM:") {
+            hwm = rest.split_whitespace().next().and_then(|v| v.parse().ok());
+        }
+    }
+    rss.zip(hwm)
+}
+
 /// [`run_testharness_html_inner`] 的注入模式参数化形态（dnd 通道传
 /// [`PointerStepInjection::DragStateMachine`]，其余通道经包装走默认）。
 /// 诊断（env `ZW_TESTHARNESS_TIME_LOG=1` 启用）：每案分段计时（镜像 main.rs
@@ -8783,9 +8858,14 @@ pub(crate) fn run_testharness_html_inner(
 /// js-dom shim 的 V8 编译）/setup/媒体登记各段耗时与探针循环轮数，定位每案
 /// 固定成本。输出走 stderr：`--json` 时 stdout 必须是纯 JSON（main.rs 结束时
 /// 单次 println）。env 关闭时仅一次 env 读 + 一次 `Instant::now`。
+/// 另有 env `ZW_TESTHARNESS_MEM_LOG=1`：每案起止各读一次进程 RSS（css
+/// testharness-compat M1 RSS 归因——单进程长套件每案 ~35MB 线性累积来自
+/// allocator 驻留还是引擎态保留，Drop 点在 WebView 析构之后，delta 即该案
+/// 拆除后仍驻留的增量）。
 struct HarnessCaseTimer {
     id: String,
     enabled: bool,
+    rss_start_kb: Option<usize>,
     start: std::time::Instant,
     phase: std::time::Instant,
     segments: Vec<(&'static str, u128)>,
@@ -8796,9 +8876,16 @@ impl HarnessCaseTimer {
     fn new(id: &str) -> Self {
         let now = std::time::Instant::now();
         let enabled = runner_flags().time_log;
+        let mem_log = runner_flags().mem_log;
+        let rss_start_kb = if mem_log {
+            process_rss_hwm_kb().map(|(rss, _)| rss)
+        } else {
+            None
+        };
         Self {
             id: id.to_string(),
             enabled,
+            rss_start_kb,
             start: now,
             phase: now,
             segments: Vec::new(),
@@ -8817,24 +8904,29 @@ impl HarnessCaseTimer {
 
 impl Drop for HarnessCaseTimer {
     fn drop(&mut self) {
-        if !self.enabled {
-            return;
+        if self.enabled {
+            // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
+            let run_ms = self.phase.elapsed().as_millis();
+            let segs = self
+                .segments
+                .iter()
+                .map(|(name, ms)| format!("{name}={ms}ms"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            eprintln!(
+                "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
+                self.id,
+                segs,
+                self.rounds,
+                self.start.elapsed().as_secs_f64()
+            );
         }
-        // 尾段（探针循环；提前 return 时为残余路径）不显式标记者并入 run。
-        let run_ms = self.phase.elapsed().as_millis();
-        let segs = self
-            .segments
-            .iter()
-            .map(|(name, ms)| format!("{name}={ms}ms"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        eprintln!(
-            "[th-time] {} | {} run={run_ms}ms rounds={} total={:.3}s",
-            self.id,
-            segs,
-            self.rounds,
-            self.start.elapsed().as_secs_f64()
-        );
+        if let Some(start_kb) = self.rss_start_kb
+            && let Some((rss, hwm)) = process_rss_hwm_kb()
+        {
+            let delta = rss as i64 - start_kb as i64;
+            eprintln!("[th-rss] {} | rss_kb={rss} delta_kb={delta} hwm_kb={hwm}", self.id);
+        }
     }
 }
 
@@ -8945,6 +9037,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let page_scheme = if net_api_case_uses_http_page(case_name)
         || webcrypto_case_uses_http_page(case_name)
         || referrer_case_uses_http_page(case_name)
+        || link_style_error_case_uses_http_page(case_name)
         || crate::testharness_page_state::page_state_case_uses_http_page(case_name)
     {
         "http"
@@ -9655,7 +9748,23 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                     )),
                 }];
             }
-            return map_harness_results(partial_results);
+            // s149：早收形（上游 Tests.prototype.timeout 页级超时完成文件）保留文件级
+            // Timeout 键——upstream wptrunner 对 harness status=TIMEOUT 文件记 TIMEOUT +
+            // partial rows；键/态与案超时旧路径同形，仅墙钟 30s → 完成即收。
+            let state_pending = last_state.get("pending").and_then(serde_json::Value::as_u64);
+            let state_tests = last_state.get("tests").and_then(serde_json::Value::as_u64);
+            let mut results = map_harness_results(partial_results);
+            if state_pending.unwrap_or(0) > 0 || state_tests.is_some_and(|tests| tests != results.len() as u64) {
+                results.push(HarnessSubtestResult {
+                    name: case_name.to_string(),
+                    status: HarnessStatus::Timeout,
+                    message: Some(format!(
+                        "testharness page timeout completed the file with {} test(s) unreported (state={last_state})",
+                        state_pending.unwrap_or(0)
+                    )),
+                });
+            }
+            return results;
         }
         if !has_harness_ref && partial_results.is_empty() && !probe.test_wait {
             return vec![HarnessSubtestResult {
@@ -9679,7 +9788,14 @@ fn terminal_harness_state(state: &serde_json::Value, result_count: usize) -> boo
 }
 
 fn harness_probe_is_terminal(complete: bool, state: &serde_json::Value, result_count: usize) -> bool {
-    terminal_harness_state(state, result_count) || (state.is_null() && complete)
+    terminal_harness_state(state, result_count)
+        // s149：上游 Tests.prototype.timeout 页级超时早收形——harness 已完成（completion
+        // 回调已发，complete 置位）但未报测试被强制标 COMPLETE（done() 此后 no-op），
+        // num_pending 恒 >0、结果行恒 <tests 数 → pending/results 配平永不满足，探针
+        // 空转到案超时（s148 全量 96 文件级 Timeout 键中 91 例此形态实测）。completion
+        // 已发 + harness phase COMPLETE = 文件终态，此后不可能再有结果行。
+        || (complete && state.get("phase").and_then(serde_json::Value::as_u64) == Some(4))
+        || (state.is_null() && complete)
 }
 
 fn map_harness_results(results: Vec<RawHarnessResult>) -> Vec<HarnessSubtestResult> {
@@ -10618,13 +10734,13 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
         .execute_script(
             "JSON.stringify({\
              complete:(function(){\
+               if (globalThis.__zw_harness_complete) return true;\
                var timers = globalThis.__zw_timers || [];\
                var graceDeadline = Date.now() + 1000;\
                for (var i = 0; i < timers.length; i++) {\
                  if (timers[i].at <= graceDeadline && globalThis.__zw_pending\
                      && globalThis.__zw_pending[timers[i].id]) return false;\
                }\
-               if (globalThis.__zw_harness_complete) return true;\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
                if (st && st.phase === 3) return true;\
@@ -12891,6 +13007,11 @@ add_completion_callback(function() { globalThis.__zw_harness_results = []; });
     }
 
     #[test]
+    // s150 勘根修正：mock 原在 async_test 工厂内同步发 completion——真实 pinned
+    // testharness 中 completion 只在全部测试 COMPLETE（含页级超时强制完成）后发，
+    // 此后 step_func_done 亦 no-op，不存在「completion 先发、结果行后到」的活路径。
+    // s149 终态判定（complete 即收）依赖该不变量；mock 改为结果行后发 completion，
+    // 与真实顺序同形，继续守护「runner 等 timer 中晚到的结果行才收口」契约。
     fn waits_for_active_step_timeout_before_accepting_completion() {
         let harness = r#"
 var resultCallbacks = [], completionCallbacks = [];
@@ -12904,11 +13025,11 @@ globalThis.async_test = function(callback, name) {
         resultCallbacks.forEach(function(resultCallback) {
           resultCallback({name: name, status: 0, message: null});
         });
+        completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
       };
     }
   };
   callback(test);
-  completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
 };
 globalThis.step_timeout = function(callback, delay) { setTimeout(callback, delay); };
 "#;
@@ -12931,6 +13052,44 @@ async_test(function(test) {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "delayed completion");
         assert_eq!(results[0].status, HarnessStatus::Pass);
+    }
+
+    #[test]
+    // s149 早收形守卫：completion 已发（页级超时强制完成形态）但无结果行——
+    // runner 应立即收口（不空转到案超时）并落到文件级 Timeout 键（upstream
+    // wptrunner TIMEOUT + partial rows 同形）。
+    fn early_completion_with_no_results_yields_file_level_timeout_s149() {
+        let harness = r#"
+var resultCallbacks = [], completionCallbacks = [];
+globalThis.add_result_callback = function(callback) { resultCallbacks.push(callback); };
+globalThis.add_completion_callback = function(callback) { completionCallbacks.push(callback); };
+globalThis.async_test = function(callback, name) {
+  callback({ name: name, step_func_done: function() { return function() {}; } });
+  completionCallbacks.forEach(function(completionCallback) { completionCallback([]); });
+};
+"#;
+        let html = r#"
+<script src="/resources/testharness.js"></script>
+<script>
+async_test(function(test) {
+  step_timeout(test.step_func_done(), 4);
+}, 'delayed completion');
+</script>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "delayed-completion.html",
+            html,
+            harness,
+            Duration::from_secs(10),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "delayed-completion.html");
+        // mock 无 __zw_harness_state（无 Tests 对象）→ 早收形臂拿不到 pending 计数，
+        // 落外层空结果兜底 Fail 行；真实页级超时形态（state.pending>0）才出文件级
+        // Timeout 键（见 run_testharness_html 早收形臂）。
+        assert_eq!(results[0].status, HarnessStatus::Fail);
     }
 
     #[test]

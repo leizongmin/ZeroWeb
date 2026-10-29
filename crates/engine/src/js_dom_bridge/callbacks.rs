@@ -409,6 +409,16 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s151（html-semantics M2 切片 151）：headless 通道 `document.compatMode` 真值化——
+    // 此前 shim 常量 'CSS1Compat' 遮蔽解析期 doctype 判定（part06 回落形态），quirks
+    // 语料的 CSS 适配色判定（link-style-error-quirks 判式 `compatMode === 'CSS1Compat'`
+    // 宽容分支）与 scrollingElement 语义面拿不到真值。经 live Document `quirks_mode`
+    // 求值（dom_bindings native_compat_mode_getter 同源）：Quirks → "BackCompat"，
+    // NoQuirks / LimitedQuirks → "CSS1Compat"。DOM 源缺席（裸 sandbox 管路测试）回落
+    // CSS1Compat（与 shim getter 的桥缺席回落同口径）。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+    sandbox.register_callback("__zw_get_compat_mode", compat_mode_callback());
+
     // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
     // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
     // 回调返 elapsed ms（f64 串）。Instant 单调且 Send+Sync，闭包仅借 &origin 故为 Fn。
@@ -797,6 +807,22 @@ pub fn register_dom_callbacks(
             let fatal = args.get(2).map(String::as_str) == Some("1");
             let last = args.get(3).map(String::as_str) != Some("0"); // 缺省 flush
             text_decoder_decode(handle, data, fatal, last)
+        }),
+    );
+
+    // form/urlencoded 提交编码 encode 桥（form-url-encoding-compat M1）——legacy
+    // 提交编码逐 scalar fresh 编码 + URL standard percent-encode after encoding
+    //（mode="form"：urlencoded set + 空格 '+'；mode="query"：special-query set，
+    // M2 href 面预留）。arg[0]=label（shim `_zwEncodingFromLabel` 归一的规范名），
+    // arg[1]=text，arg[2]=mode。返百分号编码 ASCII 串（未知 label → 空串）。
+    // 未注册时 shim 留守 `_encPair` 纯 JS UTF-8 路径，零回归。
+    sandbox.register_callback(
+        "__zw_text_encode_percent",
+        Box::new(|args: &[String]| -> String {
+            let label = args.first().map(String::as_str).unwrap_or("");
+            let text = args.get(1).map(String::as_str).unwrap_or("");
+            let mode = args.get(2).map(String::as_str).unwrap_or("form");
+            text_encode_percent(label, text, mode)
         }),
     );
 
@@ -2984,6 +3010,25 @@ pub fn register_dom_callbacks(
     let _ = sandbox.execute(
         "try { if (typeof __zwDetailsInitOpenMark5254 === 'function') __zwDetailsInitOpenMark5254(); if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') document.addEventListener('DOMContentLoaded', function () { try { if (typeof __zwDetailsInitOpenFire5254 === 'function') __zwDetailsInitOpenFire5254(); } catch (_eR5254d) {} }, true); } catch (_eR5254) {}",
     );
+}
+
+/// `__zw_get_compat_mode` 桥闭包按脚本引擎 feature 组合取求值源（R5334：quickjs 腿
+/// `--no-default-features --features quickjs` 编译面——`dom_bindings` 为 v8 门控，
+/// quickjs 构建经 [`crate::quickjs_dom_bindings::document_compat_mode_string`] 同语义
+/// twin 求值；双引擎缺席回落常量 "CSS1Compat"，与 DOM 源缺席回落同口径）。
+fn compat_mode_callback() -> Box<dyn Fn(&[String]) -> String + Send + Sync> {
+    #[cfg(feature = "v8")]
+    {
+        Box::new(|_args: &[String]| crate::dom_bindings::document_compat_mode_string())
+    }
+    #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+    {
+        Box::new(|_args: &[String]| crate::quickjs_dom_bindings::document_compat_mode_string())
+    }
+    #[cfg(not(any(feature = "v8", feature = "quickjs")))]
+    {
+        Box::new(|_args: &[String]| String::from("CSS1Compat"))
+    }
 }
 
 thread_local! {

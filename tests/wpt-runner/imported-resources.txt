@@ -36,3 +36,8 @@ css/css-conditional/at-supports-001-ref.html
 css/css-multicol/support/swatch-navy.png
 images/green-256x256.png
 css/css-borders/corner-shape/resources/render-corner-shape.js
+# s150：the-link-element 上游资源——初始抓取缺失（整目录导入未含直接引用
+# 的 css），缺 → stylesheet-change-href/load-load-event 系 refetch 案 404；
+# runner fetch handler 通用静态臂交付。
+html/semantics/document-metadata/the-link-element/resources/good.css
+html/semantics/document-metadata/the-link-element/style.css

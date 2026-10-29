@@ -356,27 +356,29 @@ fn test_request_body_readers_r2982() {
         "Request.blob().text() 还原 body"
     );
 
-    // arrayBuffer()：Uint8Array + byteLength + 索引（'AB' → [65,66]）。
+    // arrayBuffer()：spec ArrayBuffer + byteLength + 包裹视图索引（'AB' → [65,66]）。
+    // net-api M2-S18 对齐（R2982 旧 Uint8Array 形态已废）。
+    //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
     sandbox
         .execute(
-            "globalThis.__abIsU8 = false; globalThis.__abLen = -1; globalThis.__ab0 = -1;\
+            "globalThis.__abIsAB = false; globalThis.__abLen = -1; globalThis.__ab0 = -1;\
              new Request('/api', { method:'POST', body:'AB' })\
                .arrayBuffer().then(function(buf){\
-                 globalThis.__abIsU8 = (buf instanceof Uint8Array);\
-                 globalThis.__abLen = buf.length;\
-                 globalThis.__ab0 = buf[0];\
+                 globalThis.__abIsAB = (buf instanceof ArrayBuffer);\
+                 globalThis.__abLen = buf.byteLength;\
+                 globalThis.__ab0 = new Uint8Array(buf)[0];\
                });",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("String(globalThis.__abIsU8)").unwrap().value,
+        sandbox.execute("String(globalThis.__abIsAB)").unwrap().value,
         "true",
-        "Request.arrayBuffer() → Uint8Array"
+        "Request.arrayBuffer() → ArrayBuffer"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__abLen)").unwrap().value,
         "2",
-        "Request.arrayBuffer('AB') length=2"
+        "Request.arrayBuffer('AB') byteLength=2"
     );
     assert_eq!(
         sandbox.execute("String(globalThis.__ab0)").unwrap().value,
@@ -404,13 +406,13 @@ fn test_request_body_readers_r2982() {
         "Request.formData() c=hello+world → 'hello world'（+ → space）"
     );
 
-    // 无体 GET 请求：text() 返 ''，arrayBuffer() 长度 0。
+    // 无体 GET 请求：text() 返 ''，arrayBuffer() byteLength 0。
     sandbox
         .execute(
             "globalThis.__et = '(pending)'; globalThis.__eab = -1;\
              var get = new Request('/api');\
              get.text().then(function(t){ globalThis.__et = t; });\
-             get.arrayBuffer().then(function(b){ globalThis.__eab = b.length; });",
+             get.arrayBuffer().then(function(b){ globalThis.__eab = b.byteLength; });",
         )
         .unwrap();
     assert_eq!(
@@ -421,7 +423,7 @@ fn test_request_body_readers_r2982() {
     assert_eq!(
         sandbox.execute("String(globalThis.__eab)").unwrap().value,
         "0",
-        "GET（无 body）Request.arrayBuffer() length=0"
+        "GET（无 body）Request.arrayBuffer() byteLength=0"
     );
 
     // clone() 保留 body，clone 的 reader 独立读。

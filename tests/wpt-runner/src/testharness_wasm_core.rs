@@ -1,5 +1,5 @@
 //! WebAssembly 兼容扩面 goal（wasm-compat M1 / DC-2）——`wasm/core` 全量 +
-//! `wasm/webapi` 上游 testharness 通道（docs/goal/wasm-compat.md）。
+//! `wasm/webapi` 上游 testharness 通道（docs/goal/archive/wasm-compat.md）。
 //!
 //! 独立模块而非并入 [`crate::testharness`]（2000 行约束，testharness_workers
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_any_js_window_case` /

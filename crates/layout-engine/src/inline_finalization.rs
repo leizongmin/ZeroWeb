@@ -1266,7 +1266,12 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         // 位置来自 layout IFC（使用真实样式），而 paint 阶段运行独立的 paint IFC（使用
         // 空样式），两者行断行为不同；空零宽 run 不参与行断，几何可直接采信。
         let metrics = extract_inline_visual_metrics(style);
-        child.x = agg.first_x;
+        // R5335：first_x 含首片段流内折入推进（border advance 落账，R5248 口径同
+        // min_box_x）——空 inline 盒 x 语义 = border-box 缘，扣折入落账（与上方
+        // any_text 臂 fold_landed 同式），否则 border-left 被双计（盒整体右偏）。
+        let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
+        let fold_landed = (agg.first_ml - raw_ml).max(0.0);
+        child.x = agg.first_x - fold_landed;
         child.y = agg.first_y - metrics.padding_top - metrics.border_top;
         child.width =
             agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
@@ -2633,18 +2638,40 @@ pub(crate) fn measure_text_content(
         };
         let cis_w = style.and_then(|s| s.contain_intrinsic_width.as_ref());
         let cis_h = style.and_then(|s| s.contain_intrinsic_height.as_ref());
+        // R5329（css-sizing-3 / css-flexbox-1 §4.5）：替换内容叶（img）的固有尺寸——
+        // min-content/max-content 测量下替换元素的内容**不是 0**而是固有尺寸
+        //（css-sizing-3：replaced element 的 min-content/max-content = intrinsic
+        // size），空叶分支「无内容回 0」不适用于替换内容。taffy flexbox 的 automatic
+        // minimum size fallback（§4.5）用该测量 maybe_min(显式 main size) 实现
+        // specified/content size suggestion 取小：回 0 → min-size:auto 塌 0，item
+        // 缩进容器（flex-minimum-width-flex-items-005/006：img width:100px 在 10px
+        // 容器缩到 ~10px 实证）。taffy compute/leaf.rs 自加 padding/border，此处报
+        // content-box 固有值；Definite 测量面维持显式 width/height 回退不变。仅 img
+        // 登记表（svg 的 ratio-only/no-ratio 信号走 converter aspect_ratio/默认对象
+        // 尺寸面，不经此表）。
+        let replaced_leaf_intrinsic = if matches!(
+            doc.get(dom_id).map(|node| &node.kind),
+            Some(NodeKind::Element(e)) if e.local_name() == "img"
+        ) {
+            img_intrinsic_sizes.get(&dom_id).copied()
+        } else {
+            None
+        };
         let explicit_w = known_dimensions.width.or_else(|| {
             if measuring_content_w {
                 // R4008：仅 contain:size（CIS 替代固有尺寸）参与 content 测量；
                 // 无 containment 时显式 width 不回填（min-size:auto 的 content
                 // suggestion 须为纯内容宽——flex-shrink-001 族回归守卫）。
-                return cis_intrinsic(cis_w);
+                // R5329：替换内容叶回固有尺寸——固有尺寸即替换元素的「纯内容宽」，
+                // 与显式 size 的取小钳由 taffy 侧 §4.5 完成。
+                return cis_intrinsic(cis_w).or(replaced_leaf_intrinsic.map(|(w, _)| w));
             }
             style.and_then(|s| resolve_definite_real_length(&s.width, s))
         });
         let explicit_h = known_dimensions.height.or_else(|| {
             if measuring_content_h {
-                return cis_intrinsic(cis_h);
+                // R5329：对称 width——column flex/grid 的 min-content 高测量取固有高。
+                return cis_intrinsic(cis_h).or(replaced_leaf_intrinsic.map(|(_, h)| h));
             }
             style.and_then(|s| resolve_definite_real_length(&s.height, s))
         });

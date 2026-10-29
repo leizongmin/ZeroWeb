@@ -236,7 +236,7 @@ charset / BOM）解码字节流，使 legacy-mb `*_chars-<label>.html` 族可运
   不可跑（UTF-8 序列化硬编码 + 嵌套导航缺面），href 面可跑但缺
   encoding-parse a URL——两面均归口 runner form/URL-compat 能力缺口，
   skip 维持且理由升格；已立项承接（36 号
-  [form-url-encoding-compat](../form-url-encoding-compat.md)，2026-10-29）。
+  [form-url-encoding-compat](./form-url-encoding-compat.md)，2026-10-29）。
 - `.py` 服务器端点不拉（lib.sh 不含）；`.headers` sidecar 全拉（HTTP charset
   头优先语义是用例依赖，DC-1 甄别 runner 是否消费）。预检实证（见上节）：
   带 sidecar 的案本体均带 meta 声明，sidecar 消费维持挂账不动。

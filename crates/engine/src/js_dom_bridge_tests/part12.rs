@@ -1356,11 +1356,12 @@ fn test_fetch_response_binary_body_r3021() {
     // 多级 .then 链须额外 microtask flush。
     sandbox.execute("0;").unwrap();
     assert_eq!(sandbox.execute("globalThis.__status").unwrap().value, "200", "二进制 body response status=200");
+    // bd6837412 起 arrayBuffer 返 spec ArrayBuffer（非 Uint8Array）——断言同步翻转：byteLength + 包裹视图取字节。
     sandbox.execute(
-        "globalThis.__len = globalThis.__ab.length;\
-         globalThis.__bytes = Array.prototype.slice.call(globalThis.__ab).join(',');",
+        "globalThis.__len = globalThis.__ab.byteLength;\
+         globalThis.__bytes = Array.prototype.slice.call(new Uint8Array(globalThis.__ab)).join(',');",
     ).unwrap();
-    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "5", "response.arrayBuffer() 字节长度=5");
+    assert_eq!(sandbox.execute("globalThis.__len").unwrap().value, "5", "response.arrayBuffer() byteLength=5");
     assert_eq!(
         sandbox.execute("globalThis.__bytes").unwrap().value,
         "255,0,128,72,105",
