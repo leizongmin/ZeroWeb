@@ -47,6 +47,10 @@ accessor 遇 `var` 重声明应转换为数据属性；**QuickJS 不落实该转
 ## 记账（未清偿）
 
 1. cors-preflight-redirect「after preflight failed」×5（沿 M2-S11 记账 1）：
+   **[2026-10-29 M2-S12 归因纠正：stash 互写 KeyError 假设不成立（wptserve
+   Stash 按 path 作用域）；真根因是语料漂移，语料对齐上游 651ffcb03 后
+   10/10 收口，见
+   M2-S12 档](2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)。**
    本轮补上游 fixture 核对——runner redirect.py OPTIONS 分支与上游逐字
    等价（无 `redirect_preflight` → 200 + ACAO + ACAH 合法预检响应）；拒源
    疑在上游 redirect.py（双键 stash dict）与 preflight.py（六键 schema）

@@ -34,6 +34,12 @@
 #   - 其余 4 项维持缺：black_red.png（引用案无 match/mismatch 声明，无翻转面）、
 #     css-overflow/support/common.js 与 numeric-testcommon.js（testharness JS 非 reftest
 #     像素面）、swatch-blue.png（manual 案）
+#   - fetch/api/cors/cors-preflight-redirect.any.js：已对齐上游 HEAD（2026-10-29，
+#     net-api M2-S12——上游 651ffcb03 于 2026-09-12 把「after preflight failed」
+#     五腿改写为「after preflight succeeded」（跟随 + 重定向跳重预检），本地
+#     v1.10 快照早于该提交；docs/goal/net-api-compat/evidence/2026-10-29-m2-s12-
+#     preflight-redirect-corpus-drift.md）——升级新 ref 后需重新核对（新 ref 若
+#     快照 ≥ 2026-09-12 则无需补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

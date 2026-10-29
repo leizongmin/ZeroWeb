@@ -68,7 +68,13 @@
 
 ## 记账（未清偿）
 
-1. cors-preflight-redirect「after preflight failed」×5——hop 臂对裸 preflight.py
+1. ~~cors-preflight-redirect「after preflight failed」×5~~ **[2026-10-29 M2-S12
+   归因纠正：本条 KeyError → 500 假设不成立——wptserve Stash 按（请求 path,
+   uuid）作用域，跨 fixture 互不碰撞；真根因是语料漂移（上游 651ffcb03 于
+   2026-09-12 把五腿改写为跟随+重预检，本地快照早于该提交）。语料对齐后
+   10/10 收口，见
+   M2-S12 档](2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)。**原假设
+   ：hop 臂对裸 preflight.py
    （无 `allow_headers`）的预检期望拒绝（ACAH 缺失 → network error），r2 实测
    resolve；链路含 entry 预检 200 后 30x 重定向 + 同 origin 跳，待专项定界。
 2. cors-preflight-referrer 6F（基线既有，非本轮回归）：preflight Referer

@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.14
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10995**（+1641，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.15
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11000**（+1646，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -124,14 +124,24 @@
   顶层 `var origin` 期望值静默丢失（S11 记账 2 的引擎 `_zwRefOut` 假设经
   诊断用例实证推翻，引擎 Referer 本已正确）：referrer **6F 全收口 +6 零
   回归**（10989 → 10995，6/12 → 12/12）；经验落 learnings/bugs。
+- **M2-S12 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）**：
+  cors-preflight-redirect 五腿**归因反转 + 语料对齐收口**——S11/S11b 记账的
+  runner stash 互写 KeyError 假设经上游源码核对证伪（wptserve Stash 按请求
+  path 作用域，跨 fixture 不碰撞）；真根因是语料漂移（上游 651ffcb03 于
+  2026-09-12 把五腿改写为「跟随 + 重定向跳重预检」，本地快照早于该提交，
+  Chrome 158 实测 10/10 绿）。语料逐字对齐上游 HEAD，引擎零改动（M4-S24
+  重预检机制既有）：cors-preflight-redirect 5/10 → **10/10 收口 +5 零回归**
+  （10995 → 11000）；教训落 learnings/bugs。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
-  HTTP 缓存层方案，挂用户拍板）。
+  HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
+  tag（M2-S12 的 cors-preflight-redirect 对齐目前为本地补丁 + update 脚本
+  缺口清单记账，见 [S12 档](net-api-compat/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）。
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
-  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）、
-  cors-preflight-redirect after-preflight 拒绝链（S11 记账 1 / S11b 记账 1，
-  +5F 面，runner 跨 fixture stash 互写语义）。
+  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
+  cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /
+  S11b 记账 1 清偿）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
