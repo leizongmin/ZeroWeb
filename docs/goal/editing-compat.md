@@ -36,6 +36,10 @@ run 面 96,656F → 49,778F（-48.5%，+7T）、other 面 2,316P → 2,325P（+9
 forwarddelete/insertparagraph/justifycenter 等）setup 全通后首次进入真实命令
 执行面、超 420s 案墙钟转 Timeout，执行面信号待墙钟调优后完整暴露。明细见
 [evidence/2026-10-30-r5331-postfix-rerun.md](editing-compat/evidence/2026-10-30-r5331-postfix-rerun.md)。
+跨域核对（M2 指针要求）已落：dom + html-syntax 双腿同树 revert 对照零回归
+（html-syntax 逐位一致 61,341P/62F/7T/1U；dom 6 案差异全为 timing/发射形态，
+单案两侧隔离重跑判据），html-syntax 现行 pin 参照账 61,341/61,411 已记 CSV——
+见 [evidence/2026-10-30-r5331-cross-domain-regression.md](editing-compat/evidence/2026-10-30-r5331-cross-domain-regression.md)。
 
 ## Mission
 
