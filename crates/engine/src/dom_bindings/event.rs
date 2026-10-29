@@ -42,14 +42,19 @@ fn perf_time_origin() -> std::time::Instant {
 }
 
 /// 当前 DOMHighResTimeStamp（ms，自 [`perf_time_origin`] 起的单调 elapsed）。供 `Event.timeStamp` 用。
-/// R150（js-dom M4）：量化到 5µs（0.005ms）——定时侧信道缓解（WPT
+/// R150（js-dom M4）：量化粗化——定时侧信道缓解（WPT
 /// Event-timestamp-safe-resolution 千样本 GCD ≥ 5µs；真实浏览器对 Event timeStamp
-/// 施加 coarse 粒度。与 shim `_makeEvent` 的 JS 侧量化同语义，两路径一致）。
+/// 施加 coarse 粒度）。
+/// R-p122：量化与 `performance.now()`（shim `_perfNow`）**同 transform**——同共享
+/// origin、同 100µs ceil 网格。spec DOM「same time origin as performance.now()」与 WPT
+/// Event-timestamp-high-resolution 夹逼断言 `before ≤ e.timeStamp ≤ after` 要求两钟同变换；
+/// 旧 5µs ceil 网格与 now() 100µs floor 网格异向异宽 → 边界落入构造→after 间隙即断言假
+///（存量时序 flake 根因）。ceil 不归零（R22 `timeStamp > 0`）。
 fn perf_now_ms() -> f64 {
     let t = perf_time_origin().elapsed().as_secs_f64() * 1000.0;
-    // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.005ms（round 会把 <2.5µs 的早期
-    // 值归 0——R22 断言 timeStamp > 0 回归）。ceil 保持 5µs 步进粒度（GCD 性质不变）。
-    (t * 200.0).ceil() / 200.0
+    // ceil 向上取整：任意正 elapsed 量化后恒 ≥ 0.1ms（round 会把早期值归 0——R22
+    // 断言 timeStamp > 0 回归）。ceil 单调保持（同 transform 夹逼不变量成立）。
+    (t * 10.0).ceil() / 10.0
 }
 use super::string_arg;
 

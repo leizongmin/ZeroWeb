@@ -1860,6 +1860,51 @@ fn test_event_timestamp_quantized_5us_r150() {
     );
 }
 
+/// R-p122：构造事件 timeStamp 与 performance.now() 夹逼不变量——WPT
+/// Event-timestamp-high-resolution 语义（spec DOM：Event timeStamp 与 performance.now()
+/// 同 time origin 同变换）。300 迭代 + 变长忙等扰动扫相位/间隙空间，断言
+/// `before ≤ new Event().timeStamp ≤ after` 零违例。修复前两钟异 transform
+///（now() floor 100µs vs ts ceil 5µs）时 0.1ms 边界落入构造→after 间隙即违例
+///（存量时序 flake 根因，该测试修复前大面积红）。
+#[test]
+fn test_event_timestamp_bracket_invariant_r_p122() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var viol = 0;\
+             for (var i = 0; i < 300; i++) {\
+               var before = performance.now();\
+               var e = new Event('x');\
+               var after = performance.now();\
+               if (!(e.timeStamp >= before && e.timeStamp <= after)) viol++;\
+               for (var j = 0; j < (i % 7) * 120; j++) { /* 变长忙等：扫 0.1ms 边界相位 */ }\
+             }\
+             'viol:' + viol",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "viol:0",
+        "R-p122 夹逼不变量：同 origin 同 transform 下 before ≤ ts ≤ after 恒成立（300 迭代零违例）"
+    );
+}
+
 /// R150③：GamepadEvent 构造器（spec Gamepad §gamepadevent）——WPT
 /// Event-timestamp-high-resolution.https 断言 `new GamepadEvent('gamepadconnected')`
 /// 可构造 + timeStamp 与 performance.now 同源单调。断言构造面 + gamepad 属性默认 null。
