@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "v8")]
@@ -803,18 +804,47 @@ impl WebView {
         executor: Option<&dyn JsExecutor>,
         script: &str,
     ) -> Result<DomScriptResult, WebViewError> {
+        // 刀 A′（html-semantics M2 s143）：script 执行边界强制 flush apply-pending。
+        // R379/pa2b 的 apply 换代通知（apply_pending_shared_mutations/apply_mutations_subset）
+        // 走 execute_script 常规队列，页面回调积压时滞留队尾；用户动作脚本（优先通道或
+        // 沙箱直执）可反超 → shim 侧 overlay 补偿状态（槽位/解析标记）在 host apply 落地
+        // 后仍未清算的窗口被用户动作读取穿透（探针实证：BUMP 在 apply 后多次到位才清掉
+        // IFRAME/FORM 槽位补偿，窗口内融合视图含已应用前缀的 overlay 副本）。此处把幂等
+        // bump（微秒级、标记表空即 no-op）拼进本脚本头部，保证用户动作脚本读取前补偿
+        // 状态已清算。前提守卫 = 共享队列无未应用尾（applied_mutations 游标对齐）——恰为
+        // bump 清除「host apply 后节点已进快照」的成立条件；有未应用尾则跳过（维持既有
+        // apply 后通知语义，不提前清导致解析补偿节点丢失）。
+        // 注：WPT implicit-submission「Submit event with a submit button」的根因是查询
+        // 视图已应用前缀重放双计（桥侧 MUT_APPLIED_CURSOR 修复），非本窗口——本刀收口
+        // 的是同族 shim overlay 滞留面，不承担该键。
+        let pending_tail_len = {
+            let guard = self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner());
+            guard[self.applied_mutations.min(guard.len())..].len()
+        };
+        let script = if pending_tail_len == 0 {
+            Cow::Owned(format!(
+                "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();{}",
+                script
+            ))
+        } else {
+            Cow::Borrowed(script)
+        };
         if let Some(executor) = executor {
             // t2-pb1 fix#13：用户动作（键入/删除/提交等）走优先通道 + 有界等待（快照与
             // 脚本成对同通道 FIFO）。普通通道同步往返在页面回调洪水下逐个等 28-30s 臂，
             // 主循环被输入派发占死时导航 IPC 饿死。超时脚本留队列照常执行（值晚至），
             // 调用方按 Err 降级（见 apply_text_edit 等的错误分支）。
+            // s143：executor 队列每批清空（下方 837-838），[0..count) 全为本脚本
+            // pending → 重放起点 0；发布 0 同时清同线程可能残留的共享队列游标陈值
+            //（陈值 > 0 会跳过本批前缀——见桥侧 MUT_APPLIED_CURSOR）。
+            zero_engine::js_dom_bridge::publish_mut_applied_cursor(0);
             executor.set_dom_snapshot_priority(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
             let mutations = executor.mutations();
             mutations.lock().unwrap_or_else(|error| error.into_inner()).clear();
             // R-baidu3：drain 代际递增——查询视图增量链只在无 drain 的批内成立。
             zero_engine::js_dom_bridge::bump_mut_drain_gen();
             let value = executor
-                .execute_script_priority_bounded(script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
+                .execute_script_priority_bounded(&script, zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT)
                 .map_err(WebViewError::Script)?;
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
             let result = self.apply_dom_script_result(value, recorded)?;
@@ -827,6 +857,9 @@ impl WebView {
         let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
         let dom_html = Arc::new(Mutex::new(self.cached_html.clone()));
         let page_url = Arc::new(Mutex::new(self.current_url.clone().unwrap_or_default()));
+        // s143：私有队列 [0..count) 全为本脚本 pending → 查询视图重放起点 0
+        //（见桥侧 MUT_APPLIED_CURSOR）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(0);
         {
             let sandbox = self
                 .js_sandbox
@@ -846,7 +879,7 @@ impl WebView {
             .js_sandbox
             .as_mut()
             .expect("js sandbox")
-            .execute(script)
+            .execute(&script)
             .map_err(|error| WebViewError::Script(error.to_string()))?
             .value;
         let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
@@ -885,6 +918,11 @@ impl WebView {
             let shared = self.shared_mutations.clone();
             let dom_html_shared = Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
             let page_url = Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
+            // s143：共享队列全史注册 → 发布已应用前缀作查询视图重放起点（R4400 回灌
+            // 已含在本游标内——见桥侧 MUT_APPLIED_CURSOR；无此发布则异步续延查询把
+            // 已应用进基座的 InsertAdjacentHtml 再重放一次，WPT implicit-submission
+            // 「Submit event with a submit button」实证双计）。
+            zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
             register_dom_callbacks(
                 &mut **sandbox,
                 &shared,

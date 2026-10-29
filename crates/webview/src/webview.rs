@@ -1087,6 +1087,9 @@ impl WebView {
         // 缓存靠重注册新 dom_html Arc 免疫，队列键消费方必须靠代际。
         zero_engine::js_dom_bridge::bump_mut_drain_gen();
         self.applied_mutations = 0;
+        // s143：队列清空对齐桥侧已应用前缀镜像（新页查询视图重放自 0 起——见桥侧
+        // MUT_APPLIED_CURSOR）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(0);
         zero_engine::js_dom_bridge::publish_forward_handle_map(None);
         zero_engine::js_dom_bridge::clear_mutation_history();
         // js-dom M1 L2 R102：清 live 查询源（旧页 Rc 失效；render_html 后由
@@ -3231,6 +3234,9 @@ impl WebView {
             // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
             // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
             zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+            // s143：共享队列全史注册 → 发布已应用前缀作查询视图重放起点（见桥侧
+            // MUT_APPLIED_CURSOR）。
+            zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
             register_dom_callbacks(
                 &mut **sandbox,
                 &mutations,
@@ -3386,6 +3392,9 @@ impl WebView {
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+        // s143：共享队列全史注册 → 发布已应用前缀作查询视图重放起点（见桥侧
+        // MUT_APPLIED_CURSOR）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
         register_dom_callbacks(
             &mut **sandbox,
             &mutations,
@@ -4540,6 +4549,10 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
         zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+        // s143：共享队列全史注册 → 发布已应用前缀作查询视图重放起点（R55 本路径每次
+        // 换新 Arc = 最新 cached_html；无此发布则重放已应用前缀双计——见桥侧
+        // MUT_APPLIED_CURSOR）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
         register_dom_callbacks(
             &mut **sandbox,
             &mutations,

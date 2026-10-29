@@ -11217,6 +11217,26 @@
         }
       }
     }
+    // s143（html-semantics M2）：flatten 鬼影随根消退——_mo_notify 汇流点的展平
+    // 后代（`_zwMoFlatRoot` 根印）在根已不在 pending 表（根补偿已清算）时同批
+    // 作废。无此清除则无槽无 handle 的后代条目永久滞留（探针实证：populateForm
+    // 的 INPUT 展平条目在 bump 前后常驻 pending 表——见汇流点 stamp 注释）。
+    // 根仍 pending → 鬼影保留（同 turn 语义：host apply 未落，overlay 完整）。
+    for (var _gh1 = _zwPendingAdded.length - 1; _gh1 >= 0; _gh1--) {
+      var _ghn = _zwPendingAdded[_gh1];
+      if (_ghn && _ghn._zwMoFlatRoot && _zwPendingAdded.indexOf(_ghn._zwMoFlatRoot) < 0) {
+        _zwPendingAdded.splice(_gh1, 1);
+        _zwPendingAddedSet && _zwPendingAddedSet.delete(_ghn);
+        _zwPAIdRemove(_ghn);
+        _zwPendingByParent.forEach(function (_ghB) {
+          var _ghi = _ghB.added.indexOf(_ghn);
+          if (_ghi >= 0) {
+            _ghB.added.splice(_ghi, 1);
+            if (_ghB.addedSet) _ghB.addedSet.delete(_ghn);
+          }
+        });
+      }
+    }
     // R3254-E2 切片 13（editing goal，2026-09-08）：**removed 补偿同批作废**——
     // 桶/全局表的 removed[] 条目是「快照已含节点、host apply 未落」窗口的视图修正
     // 补偿（_zwOverlayPendingChildNodes 剔除 / live 集合剔除）。apply 后快照已真删除，
@@ -11563,7 +11583,18 @@
     }
     var addFlat = [], remFlat = [];
     if (removedNodes) for (var r0 = 0; r0 < removedNodes.length; r0++) _zwHCCollectSubtree(removedNodes[r0], remFlat);
-    if (addedNodes) for (var a0 = 0; a0 < addedNodes.length; a0++) _zwHCCollectSubtree(addedNodes[a0], addFlat);
+    if (addedNodes) for (var a0 = 0; a0 < addedNodes.length; a0++) {
+      var _a0off = addFlat.length;
+      _zwHCCollectSubtree(addedNodes[a0], addFlat);
+      // s143（html-semantics M2）：展平后代盖根印——后代条目无槽（槽只挂顶层，
+      // insertAdjacentHTML 补偿臂）/无 handle/无 _zwMatParsed，apply 代际 bump 的
+      // K3、t8r-4 两臂都清不到 → host apply 后永久滞留 pending 表/桶（探针实证：
+      // populateForm 后 pend 常驻 INPUT 展平条目，表级清除后才归零）。根印供 bump
+      // 随根同批作废（清除块见 bump 内 `_zwMoFlatRoot` 注记）。
+      for (var _a0i = _a0off; _a0i < addFlat.length; _a0i++) {
+        try { if (addFlat[_a0i]) addFlat[_a0i]._zwMoFlatRoot = addedNodes[a0]; } catch (_eMofr) {}
+      }
+    }
     // R51c：分桶入账（mutSel/mutHandle = mutation 目标父）。removed 先入（同批先删后加语义不变）。
     if (mutSel != null || mutHandle != null) {
       var _pb = _zwPendBucket(mutSel, mutHandle);

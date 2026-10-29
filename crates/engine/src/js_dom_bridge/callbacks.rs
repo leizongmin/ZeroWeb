@@ -62,6 +62,10 @@ struct ViewDocKey {
 /// latest-wins 兜底数据——radio 组 valueMissing 的 .checked= 同批查询回归）；
 /// apply 失败回落未应用快照（当前元素属性由 `__zw_has_attr_lw` latest-wins 兜底）。
 ///
+/// s143：重放区间 = 队列**未应用尾** `[applied..count)`（[`MUT_APPLIED_CURSOR`]）——
+/// 共享队列注册站的基座为最新 cached_html（已含已应用前缀的落地效果），自 0 重放即
+/// 双计；私有队列注册站游标恒 0，`[0..count)` 全为本脚本 pending，语义不变。
+///
 /// **应用范围 = 结构级 mutation only**（InsertAdjacentHtml/SetInnerHtml/SetOuterHtml/
 /// Remove）：
 /// - 属性级（SetAttr/RemoveAttr/SetStyle/SetFormValue/SetAttrOnHandle…）**不应用**——
@@ -92,10 +96,13 @@ fn with_query_view_doc<R>(
     // + [0..count] 重放 = R100 原始设计语义（dom_html 不可变 + 队列全史）；native
     // 写/live 读经 live-first 路径（publish_live_query_doc）覆盖，不依赖视图基座。
     let count = mutations.lock().unwrap_or_else(|e| e.into_inner()).len();
-    // live_ok 判定：队列 [0..count) 无 pending structural mutations——与 R57 字符串
-    // 路径的 structural.is_empty()/base_live 传播逐点一致（结构性插入一旦入队即
-    // false；全空即 true）。true 且 live doc 已发布 → 闭包直读 live（js-dom M1 L2
-    // R102，[`with_query_doc_live_aware`] 同语义），视图文档根本不用建。
+    // s143：重放/live_ok 的队列区间起点 = 已应用前缀（见 [`MUT_APPLIED_CURSOR`]）——
+    // 基座（最新 cached_html）已含 `[0..applied)` 的落地效果，重放自 applied 起。
+    let applied = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(count);
+    // live_ok 判定：队列 pending 区间 [applied..count) 无 structural mutations——与
+    // R57 字符串路径的 structural.is_empty()/base_live 传播逐点一致（结构性插入一旦
+    // 入队即 false；全空即 true）。true 且 live doc 已发布 → 闭包直读 live（js-dom
+    // M1 L2 R102，[`with_query_doc_live_aware`] 同语义），视图文档根本不用建。
     let live_ok = {
         let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
         // R342 返修（PR #77 双审查 D1）：count（:84 锁外读）与本锁之间队列可能被
@@ -105,7 +112,7 @@ fn with_query_view_doc<R>(
         if mut_guard.len() < count {
             true
         } else {
-            !mut_guard[..count]
+            !mut_guard[applied..count]
                 .iter()
                 .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
         }
@@ -169,6 +176,10 @@ fn with_query_view_doc<R>(
                 .unwrap_or(0)
         };
         let chain_hit = prev_count > 0;
+        // s143：重放区间起点——链步 = 上一条目 count（其基座已含 [0..prev) 的重放
+        // 效果，续段自 prev 起）；全量重建 = 已应用前缀 applied（基座 = 最新
+        // cached_html，已含 [0..applied) 的落地效果——见 [`MUT_APPLIED_CURSOR`]）。
+        let replay_start = if chain_hit { prev_count } else { applied };
         // 结构级 mutation 子集（见 register_dom_callbacks 处 R57 文档——属性级/handle
         // 链/Remove/SetInnerHtml 不应用）。Remove 排除：被移除元素的 proxy 属性读取
         //（old.id / removedNodes[].tagName——R3029/replace_child_e2e）须回落快照；且
@@ -201,7 +212,7 @@ fn with_query_view_doc<R>(
                 // 文档一致。R5001 基线恒等写前内容 ⇒ 本筛减对写流精确；基线 ≠ 基座
                 // 内容的一般 SIH 形态不在本次修复面（重置本体仍不应用，R3029 语义
                 // 保持）。
-                let last_reset: HashMap<&str, usize> = mut_guard[prev_count..count]
+                let last_reset: HashMap<&str, usize> = mut_guard[replay_start..count]
                     .iter()
                     .enumerate()
                     .filter_map(|(i, m)| match m {
@@ -209,7 +220,7 @@ fn with_query_view_doc<R>(
                         _ => None,
                     })
                     .collect();
-                let kept: Vec<usize> = mut_guard[prev_count..count]
+                let kept: Vec<usize> = mut_guard[replay_start..count]
                     .iter()
                     .enumerate()
                     .filter(|(i, m)| match m {
@@ -245,7 +256,7 @@ fn with_query_view_doc<R>(
                     })
                     .map(|(i, _)| i)
                     .collect();
-                kept.into_iter().map(|i| mut_guard[prev_count + i].clone()).collect()
+                kept.into_iter().map(|i| mut_guard[replay_start + i].clone()).collect()
             }
         };
         if !structural.is_empty() {
@@ -291,6 +302,31 @@ pub static MUT_DRAIN_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::At
 /// mutations 队列 drain 站点调用（见 [`MUT_DRAIN_GEN`]）。
 pub fn bump_mut_drain_gen() {
     MUT_DRAIN_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+// s143（html-semantics M2）：共享队列**已应用前缀长度**——webview `applied_mutations`
+// 游标的桥侧镜像（thread_local，webview JS 线程私有）。查询视图的重放区间起点：
+// 共享队列 append-only 全史 + 读回调基座「最新 cached_html」（R55/R348 每次注册换新
+// Arc）组合下，重放 `[0..count)` 会把**已应用进基座**的 InsertAdjacentHtml 再插一次
+//（uievents-compat 尾簇 13 的 id 去重只覆盖带 id 片段——WPT implicit-submission 的
+// `<iframe><form>` 无 id 片段在 R348 重绑后的异步续延查询里双计：`__zw_query_all`
+// 返 nth-child(2)+nth-child(4) 双份同 target 表单 → qSA 2 个 wrapper →
+// form.submitButton 2 元素集合 vs event.submitter 单元素断言翻红）。重放自
+// `applied` 起（基座已含 `[0..applied)` 的落地效果）；live_ok 同步只扫
+// `[applied..count)` 的 pending 尾。发布点 = 共享队列注册站（run_page_scripts /
+// execute_script_with_dom / dispatch_dom_event_inner / execute_dom_script 的 R348
+// 重绑，发布 webview 游标值）；私有队列注册站发布 0（其 `[0..count)` 全为本脚本
+// pending，重放自 0 起即正确）。游标仅在脚本间推进，且推进后必经重注册（新 Arc 键）
+// 才再有查询——视图缓存 O(1)/链键无须加游标项。未发布的宿主（renderer 直连等）恒 0
+// = 既有 `[0..count)` 语义，零行为变化。
+thread_local! {
+    static MUT_APPLIED_CURSOR: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// webview 共享队列注册站发布已应用前缀（私有队列注册站发布 0，见
+/// [`MUT_APPLIED_CURSOR`]）。
+pub fn publish_mut_applied_cursor(applied: usize) {
+    MUT_APPLIED_CURSOR.with(|cursor| cursor.set(applied));
 }
 
 /// R358/R3243：dom_html 快照**就地换代**代际——快照写入点（renderer `SetDomSnapshot`
