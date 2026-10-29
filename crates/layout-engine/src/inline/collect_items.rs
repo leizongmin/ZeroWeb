@@ -591,6 +591,13 @@ impl InlineFormattingContext {
                                         self.plaintext_bidi_override
                                             || parent_id.is_some_and(|id| self.plaintext_bidi_overrides.contains(&id))
                                     }),
+is_isolated_bidi: style.is_some_and(|s| {
+                                    matches!(
+                                        s.unicode_bidi,
+                                        zero_style_system::UnicodeBidiValue::Isolate
+                                            | zero_style_system::UnicodeBidiValue::IsolateOverride
+                                    )
+                                }),
                                 ws_override: run_ws,
                                 ruby_rt_ascent: 0.0,
                                 glyph_ascent,
@@ -1711,6 +1718,16 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&child_id)
                     }),
+                is_isolated_bidi: style
+                    .map(|s| {
+                        matches!(
+                            s.unicode_bidi,
+                            zero_style_system::UnicodeBidiValue::Isolate
+                                | zero_style_system::UnicodeBidiValue::IsolateOverride
+                        )
+                    })
+                    .unwrap_or_else(|| self.isolated_bidi_overrides.contains(&child_id)),
+
                 glyph_ascent,
                 glyph_descent,
             }))
@@ -1749,6 +1766,16 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&child_id)
                     }),
+                is_isolated_bidi: style
+                    .map(|s| {
+                        matches!(
+                            s.unicode_bidi,
+                            zero_style_system::UnicodeBidiValue::Isolate
+                                | zero_style_system::UnicodeBidiValue::IsolateOverride
+                        )
+                    })
+                    .unwrap_or_else(|| self.isolated_bidi_overrides.contains(&child_id)),
+
             }))
         }
     }
@@ -1911,6 +1938,16 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&elem_id)
                     }),
+                is_isolated_bidi: style
+                    .map(|s| {
+                        matches!(
+                            s.unicode_bidi,
+                            zero_style_system::UnicodeBidiValue::Isolate
+                                | zero_style_system::UnicodeBidiValue::IsolateOverride
+                        )
+                    })
+                    .unwrap_or_else(|| self.isolated_bidi_overrides.contains(&elem_id)),
+
                 glyph_ascent,
                 glyph_descent,
             }));
@@ -1978,6 +2015,16 @@ impl InlineFormattingContext {
                     .unwrap_or_else(|| {
                         self.plaintext_bidi_override || self.plaintext_bidi_overrides.contains(&elem_id)
                     }),
+                is_isolated_bidi: style
+                    .map(|s| {
+                        matches!(
+                            s.unicode_bidi,
+                            zero_style_system::UnicodeBidiValue::Isolate
+                                | zero_style_system::UnicodeBidiValue::IsolateOverride
+                        )
+                    })
+                    .unwrap_or_else(|| self.isolated_bidi_overrides.contains(&elem_id)),
+
                 glyph_ascent,
                 glyph_descent,
             }));

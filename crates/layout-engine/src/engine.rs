@@ -2745,7 +2745,7 @@ impl LayoutEngine {
             text_node_line_heights: Default::default(),
             text_node_ascent_ratios: Default::default(),
             text_node_text_transform: Default::default(),
-            plaintext_bidi_nodes: Default::default(),
+            path_bidi_nodes: None,
             inline_vertical_nodes: Default::default(),
             inline_block_child_nodes: Default::default(),
             inline_color_divergent_nodes: Default::default(),

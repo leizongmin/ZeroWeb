@@ -1382,6 +1382,7 @@ mod tests {
             text: Arc::<str>::from("aאבb"),
             visual_to_logical: vec![Some(3..5), Some(1..3)],
             visual_is_rtl: vec![true, true],
+            visual_levels: Vec::new(),
         };
         assert_eq!(
             fragment_shape_direction(Some(&rtl), TextDirection::LeftToRight, false),
@@ -1403,6 +1404,7 @@ mod tests {
             text: Arc::<str>::from("aאב"),
             visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
             visual_is_rtl: vec![false, true, true],
+            visual_levels: Vec::new(),
         };
         assert_eq!(
             fragment_shape_direction(Some(&mixed), TextDirection::LeftToRight, true),
@@ -1549,6 +1551,7 @@ mod tests {
             text: text.clone(),
             visual_to_logical: vec![Some(5..7), Some(3..5), Some(1..3)],
             visual_is_rtl: vec![true, true, true],
+            visual_levels: Vec::new(),
         };
         let logical =
             logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).expect("contiguous RTL source");
@@ -1565,6 +1568,7 @@ mod tests {
             text: Arc::<str>::from("aאב"),
             visual_to_logical: vec![Some(0..1), Some(3..5), Some(1..3)],
             visual_is_rtl: vec![false, true, true],
+            visual_levels: Vec::new(),
         };
         assert!(logical_fragment_source(Some(&source), TextDirection::RightToLeft, true).is_none());
 
@@ -1572,6 +1576,7 @@ mod tests {
             text: Arc::<str>::from("aאב"),
             visual_to_logical: vec![Some(3..5), Some(1..3), Some(0..1)],
             visual_is_rtl: vec![true, true, true],
+            visual_levels: Vec::new(),
         };
         assert!(logical_fragment_source(Some(&monotonic_mixed), TextDirection::RightToLeft, true).is_none());
     }

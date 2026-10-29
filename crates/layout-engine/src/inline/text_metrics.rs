@@ -642,6 +642,9 @@ pub(crate) struct BidiReorderedText {
     pub visual_to_logical: Vec<Range<usize>>,
     /// 与 `visual_text.chars()` 一一对应的 UBA resolved level 奇偶方向。
     pub visual_is_rtl: Vec<bool>,
+    /// 与 `visual_text.chars()` 一一对应的 UBA resolved level 值（段落级路径携带；
+    /// 空 = 未携带，level 语义）。
+    pub visual_levels: Vec<u8>,
 }
 
 /// bidi 控制码：U+202A-202E 嵌入/覆盖（LRE/RLE/LRO/RLO/PDF）+ U+2066-2069 isolate
@@ -662,25 +665,28 @@ fn strip_bidi_controls(reordered: BidiReorderedText) -> BidiReorderedText {
     if !reordered.visual_text.chars().any(is_bidi_control_char) {
         return reordered;
     }
+    // 控制码位置标记（按字符位）——三平行数组同位过滤。
+    let is_control: Vec<bool> = reordered.visual_text.chars().map(is_bidi_control_char).collect();
     let mut visual_text = String::with_capacity(reordered.visual_text.len());
     let mut visual_to_logical = Vec::with_capacity(reordered.visual_to_logical.len());
     let mut visual_is_rtl = Vec::with_capacity(reordered.visual_is_rtl.len());
-    for (ch, (range, rtl)) in reordered
-        .visual_text
-        .chars()
-        .zip(reordered.visual_to_logical.into_iter().zip(reordered.visual_is_rtl))
-    {
-        if is_bidi_control_char(ch) {
+    let mut visual_levels = Vec::with_capacity(reordered.visual_levels.len());
+    for (idx, ch) in reordered.visual_text.chars().enumerate() {
+        if is_control[idx] {
             continue;
         }
         visual_text.push(ch);
-        visual_to_logical.push(range);
-        visual_is_rtl.push(rtl);
+        visual_to_logical.push(reordered.visual_to_logical[idx].clone());
+        visual_is_rtl.push(reordered.visual_is_rtl[idx]);
+        if !reordered.visual_levels.is_empty() {
+            visual_levels.push(reordered.visual_levels[idx]);
+        }
     }
     BidiReorderedText {
         visual_text,
         visual_to_logical,
         visual_is_rtl,
+        visual_levels,
     }
 }
 
@@ -693,6 +699,7 @@ fn identity_bidi_mapping(text: &str) -> BidiReorderedText {
             .map(|(start, ch)| start..start + ch.len_utf8())
             .collect(),
         visual_is_rtl: vec![false; char_count],
+        visual_levels: Vec::new(),
     }
 }
 
@@ -720,6 +727,7 @@ fn bidi_override_mapping(text: &str, is_rtl: bool, mirror_glyphs: bool) -> BidiR
         visual_text,
         visual_to_logical,
         visual_is_rtl: vec![is_rtl; char_count],
+        visual_levels: Vec::new(),
     })
 }
 
@@ -953,6 +961,7 @@ fn bidi_reorder_paragraphs(
         visual_text,
         visual_to_logical,
         visual_is_rtl,
+        visual_levels: Vec::new(),
     })
 }
 
@@ -972,6 +981,7 @@ pub(crate) struct BidiFragmentMapping {
 struct BidiLogicalMapping {
     visual_to_logical: Vec<Option<Range<usize>>>,
     visual_is_rtl: Vec<bool>,
+    visual_levels: Vec<u8>,
 }
 
 /// 返回 plaintext 段落首个 strong 字符的基方向。
@@ -1045,7 +1055,9 @@ impl BidiFragmentCursor {
     /// （css-writing-modes-3 §2.4 / UAX #9：先按逻辑序断行，再逐行 bidi 重排；
     /// R5121 v3 断行前视觉重排使贪心折行点偏离，bidi-004 实证），视觉重排
     /// 延迟到行级 `reorder_lines_l2_for_para_bidi` 消费。
-    /// `visual_is_rtl` 携带逐字符段落级 parity（供行级 pass 分类与片段内反转）。
+    /// `visual_is_rtl` 携带逐字符段落级 parity（供 paint/shaping RTL 方向选择），
+    /// `visual_levels` 携带完整 level 值（供行级精确 L2 逐层反转——R5337：parity
+    /// 布尔无法区分 ≥2 层嵌套组序，bidi-011 LRO 偶层跨片段反序实证）。
     /// https://unicode.org/reports/tr9/#L2
     pub(crate) fn with_levels_logical(text: &str, levels: &[u8]) -> Self {
         debug_assert_eq!(text.chars().count(), levels.len(), "level 序列必须逐字符对齐");
@@ -1055,6 +1067,7 @@ impl BidiFragmentCursor {
             *rtl = level % 2 == 1;
         }
         // R5239：levels 按原文逐位消费完毕后再剥控制码（剥前 zip 需原文对齐）。
+        reordered.visual_levels = levels.to_vec();
         Self {
             source_text: enabled.then(|| Arc::<str>::from(text)),
             reordered: strip_bidi_controls(reordered),
@@ -1082,6 +1095,7 @@ impl BidiFragmentCursor {
             text: source_text,
             visual_to_logical: logical.visual_to_logical.clone(),
             visual_is_rtl: logical.visual_is_rtl,
+            visual_levels: logical.visual_levels.clone(),
         });
         Some(BidiFragmentMapping {
             source,
@@ -1118,12 +1132,21 @@ impl BidiFragmentCursor {
         let mut visual_is_rtl = self.reordered.visual_is_rtl.get(mapped_start..mapped_end)?.to_vec();
         let synthetic_is_rtl = visual_is_rtl.last().copied().unwrap_or(false);
         visual_is_rtl.extend(std::iter::repeat_n(synthetic_is_rtl, synthetic_count));
+        let visual_levels = if self.reordered.visual_levels.is_empty() {
+            Vec::new()
+        } else {
+            let mut levels = self.reordered.visual_levels.get(mapped_start..mapped_end)?.to_vec();
+            let synthetic_level = levels.last().copied().unwrap_or(0);
+            levels.extend(std::iter::repeat_n(synthetic_level, synthetic_count));
+            levels
+        };
 
         self.visual_byte_offset += relative_start + matched.len();
         self.visual_char_offset = mapped_end;
         Some(BidiLogicalMapping {
             visual_to_logical,
             visual_is_rtl,
+            visual_levels,
         })
     }
 }
