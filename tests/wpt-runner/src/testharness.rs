@@ -4168,6 +4168,21 @@ fn referrer_case_uses_http_page(case_name: &str) -> bool {
     case_name.ends_with("module/referrer-strict-policies.sub.html")
 }
 
+/// s151：link-style-error 三文件页面 scheme 判定——上游 css.py 语料假设 http 页
+///（判式 cross-origin 臂锚 get_host_info().HTTP_REMOTE_ORIGIN（http://www1.*:8000）
+/// 相对判定、wptserve 环境 stylesheet 加载无 mixed-content 阻断）。runner 页锚
+/// https 时跨源案被 s150 helper mixed-content 门拦死 error，期望 load 的案到不了
+/// MIME 判定面。referrer 同口径先例。
+fn link_style_error_case_uses_http_page(case_name: &str) -> bool {
+    [
+        "link-style-error-01.html",
+        "link-style-error-limited-quirks.html",
+        "link-style-error-quirks.html",
+    ]
+    .iter()
+    .any(|file| case_name.ends_with(file))
+}
+
 /// navigation-compat M2-S10 单案 origin 端口化：上游 wptserve 恒带显式端口
 /// （http :8800 / https :9443），location_port.html 断言取 `location.href` 权威段
 /// ":" 后子串与 `location.port` 全等——runner 缺省 origin 无端口时权威段整体
@@ -6319,6 +6334,43 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), content_type));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/the-link-element/resources/css.py" {
+                // s151（html-semantics M2 切片 151）：link-style-error 三文件的响应头
+                // 参数化 CSS 端点——上游 css.py 行为等价（pin master 逐字核对）：
+                // `content_type` 查询参数原样作 Content-Type 头（缺席 → **无 CT 头**
+                // ——「no Content-Type」案的 sniff 放行面）；`nosniff` 旗标 →
+                // x-content-type-options: nosniff；`cors` 旗标上游 → ACAO: *（语料
+                // URL 未携带该参数，两头无条件交付已覆盖其语义）。体恒
+                // `body { background:red }`、status 200。
+                // https://github.com/web-platform-tests/wpt/blob/master/
+                // html/semantics/document-metadata/the-link-element/resources/css.py
+                // runner 通道补 ACAO/ACAH 外的 Access-Control-Allow-Origin 与
+                // Access-Control-Expose-Headers `*`：shim 侧 s150 helper 经通用 fetch
+                // （默认 cors 模式）取回——跨源案无 ACAO 即 reject（fetch CORS check
+                // 臂）；ACAO 通配放行后 cors 过滤响应仍剥非 safelisted 头
+                //（x-content-type-options 读不到）——ACEH `*` 通配全暴露。上游
+                // wptserve 真环境 stylesheet 加载不走 CORS 检查，两头是通道妥协，
+                // 语料不读 ACAO/ACEH，期望面不变。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                if let Some(ct) = wpt_query_value(query, "content_type") {
+                    headers.push(("content-type".into(), ct));
+                }
+                if wpt_query_value(query, "nosniff").is_some() {
+                    headers.push(("x-content-type-options".into(), "nosniff".into()));
+                }
+                headers.push(("access-control-allow-origin".into(), "*".into()));
+                headers.push(("access-control-expose-headers".into(), "*".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = "body { background:red }".to_string();
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
                     status_text: "OK".to_string(),
@@ -8983,6 +9035,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     let page_scheme = if net_api_case_uses_http_page(case_name)
         || webcrypto_case_uses_http_page(case_name)
         || referrer_case_uses_http_page(case_name)
+        || link_style_error_case_uses_http_page(case_name)
         || crate::testharness_page_state::page_state_case_uses_http_page(case_name)
     {
         "http"

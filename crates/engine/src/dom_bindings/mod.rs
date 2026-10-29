@@ -33,6 +33,10 @@ use std::rc::Rc;
 
 use zero_dom::{Document, NodeId};
 
+// s151：compatMode 字符串求值导出（js_dom_bridge `__zw_get_compat_mode` 桥消费——
+// shim headless 通道 document.compatMode 真值化）。
+pub(crate) use document::document_compat_mode_string;
+
 // gc 的线程局部访问器（crate-private）。
 // R3116/R3117：NNM + EventTarget 相关 gc 助手（cache/cached/namednodemap_template_local/
 // set_namednodemap_template + add_listener/listeners_local/remove_listener）迁对应子模块，不再于此导入。

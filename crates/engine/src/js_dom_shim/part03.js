@@ -4476,8 +4476,56 @@
   //（https://w3c.github.io/webappsec-mixed-content/#should-block-fetch；link-load-error-
   // events 的 httpSheet 案语义——页锚 https 时期望 error）。
   // data: URL 交现有 fetch 通道（宿主 404 → error；data: 导入链的 @import
-  // 内层解析不在本刀面）。
+  // 内层解析由 s151 fetch 回调面补齐——取回体经 _zwStylesheetImports 展开一层）。
   // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  // s151（html-semantics M2 切片 151）：CSS 适配色判定——上游 link-style-error 判式
+  //（`nosniff || (wrong-CT && (CSS1Compat || cross-origin))` → error）的 spec 语义同构：
+  // - nosniff 头存在：essence 非 text/css（含 CT 缺失）→ error；
+  // - 无 nosniff：CT 缺失 / 不可解析（essence 无 '/'——`oops` 形）→ 放行（无法判定
+  //   即嗅探放行——上游 no/broken Content-Type 非 nosniff 案期望 load）；
+  // - 可解析非 text/css：standards（CSS1Compat）或跨源 → error；quirks 同源 →
+  //   宽容放行（legacy quirks 色面——limited-quirks 经 compatMode 真值化仍 CSS1Compat）。
+  // 同步全判定，返 'load' | 'error'（fetch then 链内直调，无 async 包装）。
+  // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
+  function _zwStylesheetJudge(_ssR, _ssUrl) {
+    var _ssCt = '';
+    var _ssSn = '';
+    try { _ssCt = String(_ssR.headers.get('content-type') || ''); } catch (_eCt) {}
+    try { _ssSn = String(_ssR.headers.get('x-content-type-options') || '').trim().toLowerCase(); } catch (_eSn) {}
+    var _ssNosniff = _ssSn.split(/\s+/).indexOf('nosniff') >= 0;
+    var _ssEssence = _ssCt.split(';')[0].trim().toLowerCase();
+    if (_ssNosniff && _ssEssence !== 'text/css') return 'error';
+    if (!_ssEssence || _ssEssence.indexOf('/') < 0) return 'load';
+    if (_ssEssence === 'text/css') return 'load';
+    var _ssCompat = 'CSS1Compat';
+    try { _ssCompat = String(globalThis.document && globalThis.document.compatMode) || 'CSS1Compat'; } catch (_eCm) {}
+    if (_ssCompat === 'CSS1Compat') return 'error';
+    var _ssCross = false;
+    try {
+      var _ssPageO = new URL(globalThis.location ? globalThis.location.href : '').origin;
+      _ssCross = new URL(_ssUrl, _ssPageO).origin !== _ssPageO;
+    } catch (_eOr) {}
+    return _ssCross ? 'error' : 'load';
+  }
+  // s151：@import 内层 URL 提取（`url('...')` / `"..."` / `'...'` 三书写形，去重保序，
+  // 绝对化失败项跳过——data: base 下相对 URL 解析抛置，语料内层恒绝对 URL）。
+  // 一层递归——内层响应体不再展开 @import（语料形态；多层链挂账）。
+  function _zwStylesheetImports(_ssCss, _ssBase) {
+    var _ssOut = [];
+    try {
+      var _ssRe = /@import\s+(?:url\(\s*['"]?([^'")]*)['"]?\s*\)|"([^"]*)"|'([^']*)')/gi;
+      var _ssM;
+      while ((_ssM = _ssRe.exec(String(_ssCss))) != null) {
+        var _ssU = (_ssM[1] || _ssM[2] || _ssM[3] || '').trim();
+        if (!_ssU) continue;
+        try {
+          var _ssAbs = new URL(_ssU, _ssBase).href;
+          if (_ssOut.indexOf(_ssAbs) < 0) _ssOut.push(_ssAbs);
+        } catch (_eU) {}
+      }
+    } catch (_eRe) {}
+    return _ssOut;
+  }
   globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj) {
     try {
       if (typeof _realTag !== 'function') return;
@@ -4559,9 +4607,33 @@
         setTimeout(function () { _ssFire('error'); }, 0);
         return;
       }
-      // fetch 结果即事件语义：HTTP ok（含 200 空体）→ load；非 ok / 网络失败 → error。
+      // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
+      // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
+      // quirks-宽容 / broken-CT 无头放行）；通过后解析 @import 内层 URL 逐个取回
+      //（同一判定链），任一 error → 外层 error、全部 load → load。
+      // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
       fetch(_ssHref).then(function (_ssR) {
-        _ssFire(_ssR && _ssR.ok ? 'load' : 'error');
+        if (!_ssR || !_ssR.ok) { _ssFire('error'); return; }
+        if (_zwStylesheetJudge(_ssR, _ssAbs) !== 'load') { _ssFire('error'); return; }
+        _ssR.text().then(function (_ssCss) {
+          var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbs);
+          if (!_ssUrls.length) { _ssFire('load'); return; }
+          var _ssPending = _ssUrls.length;
+          var _ssFailed = false;
+          for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
+            (function (_ssUrl) {
+              fetch(_ssUrl).then(function (_ir) {
+                if (!_ir || !_ir.ok) return 'error';
+                return _zwStylesheetJudge(_ir, _ssUrl);
+              }).then(function (_iv) {
+                if (_iv !== 'load') _ssFailed = true;
+              }).catch(function () { _ssFailed = true; }).then(function () {
+                _ssPending -= 1;
+                if (_ssPending === 0) _ssFire(_ssFailed ? 'error' : 'load');
+              });
+            })(_ssUrls[_ssI]);
+          }
+        }).catch(function () { _ssFire('error'); });
       }).catch(function () {
         _ssFire('error');
       });

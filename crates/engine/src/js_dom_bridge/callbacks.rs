@@ -409,6 +409,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s151（html-semantics M2 切片 151）：headless 通道 `document.compatMode` 真值化——
+    // 此前 shim 常量 'CSS1Compat' 遮蔽解析期 doctype 判定（part06 回落形态），quirks
+    // 语料的 CSS 适配色判定（link-style-error-quirks 判式 `compatMode === 'CSS1Compat'`
+    // 宽容分支）与 scrollingElement 语义面拿不到真值。经 live Document `quirks_mode`
+    // 求值（dom_bindings native_compat_mode_getter 同源）：Quirks → "BackCompat"，
+    // NoQuirks / LimitedQuirks → "CSS1Compat"。DOM 源缺席（裸 sandbox 管路测试）回落
+    // CSS1Compat（与 shim getter 的桥缺席回落同口径）。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+    sandbox.register_callback(
+        "__zw_get_compat_mode",
+        Box::new(|_args: &[String]| crate::dom_bindings::document_compat_mode_string()),
+    );
+
     // `performance.now()`——DOMHighResTimeStamp（ms，单调时钟，自 time origin 起，子毫秒精度）。
     // analytics / 动画计时 / rAF timestamp 高频查询。time origin = 回调注册时刻（页面/脚本启动近似），
     // 回调返 elapsed ms（f64 串）。Instant 单调且 Send+Sync，闭包仅借 &origin 故为 Fn。

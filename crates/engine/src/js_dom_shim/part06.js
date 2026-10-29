@@ -5535,7 +5535,20 @@
       if (c === this.doctype) { this._docDtorRemoved = false; return c; }
       return c;
     },
-    compatMode: 'CSS1Compat',
+    // s151（html-semantics M2 切片 151）：headless 通道 compatMode 真值化——旧常量
+    // 'CSS1Compat' 遮蔽解析期 doctype 判定（WPT link-style-error-quirks 判式的
+    // CSS1Compat 分支恒真、quirks 宽容分支永不激活；探针 zz-s151-probe-quirks 实证
+    // BackCompat 期望得 CSS1Compat）。桥缺席（嵌入方未接 DOM 源）回落 CSS1Compat。
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-compatmode
+    get compatMode() {
+      try {
+        if (typeof __zw_get_compat_mode === 'function') {
+          var _cm = __zw_get_compat_mode();
+          if (_cm === 'BackCompat' || _cm === 'CSS1Compat') return _cm;
+        }
+      } catch (_eCm) {}
+      return 'CSS1Compat';
+    },
     // R5000 片 c（html-syntax-compat P5）：解析期 `<meta charset>` 预扫描标签经
     // encoding_rs 归一（`__zw_get_character_set`）——旧常量 'UTF-8' 遮蔽真实嗅探值
     //（WPT quotes-in-meta / meta-inhead-insertion-mode 断言面）。
