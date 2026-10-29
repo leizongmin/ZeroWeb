@@ -5,7 +5,7 @@
 - **corpus**: 810F（基线，含 content-none-select-1 flake）→ **808F**（16590 案；
   **FIXED=1**，REGRESSED=0），通过率 15782/16590 = **95.1%**；同二进制复跑 808F
   fail-list 逐案一致
-- **代码**: `92e885d40`（converter + pin 同提交）
+- **代码**: `0e21b0bc9`（converter + pin 同提交）
 - **域**: flex/grid item automatic minimum size × overflow 联动（§4.5 min-size:auto
   禁用条件）
 

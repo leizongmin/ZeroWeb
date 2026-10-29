@@ -6,6 +6,6 @@
   "passed": 15782,
   "rate_pct": 95.1,
   "extra": "failed=808;skipped=0",
-  "git_sha": "92e885d40",
+  "git_sha": "0e21b0bc9",
   "note": "R5328 overflow computed value 传播（css-overflow-3 §3.1 × css-flexbox-1 §4.5）——flexbox-min-width-auto-004 ✓ min-width:auto × overflow 联动，FIXED=1 REGRESSED=0"
 }
