@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15791,
+  "passed": 15792,
   "rate_pct": 95.2,
-  "extra": "failed=799;skipped=0",
-  "git_sha": "0d4430775",
-  "note": "R5334 scroll container flex item 自动最小=0（css-flexbox-1 §4.5 × css-overflow-3 §3.1 × R1743 回填臂）——fieldset-as-item-overflow ✓ 回填豁免半区，FIXED=1 REGRESSED=0"
+  "extra": "failed=798;skipped=0",
+  "git_sha": "ac7a2e5c2",
+  "note": "R5335 block-in-inline 切片边框语义（CSS2 §9.2.1.1 × R109 切片段）——block-in-inline-insert-009 ✓ 切片分段边框+壳 frame 剥离，FIXED=1 REGRESSED=0"
 }
