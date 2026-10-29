@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5328 修复轮（overflow computed value 传播——css-overflow-3 §3.1 × css-flexbox-1 §4.5：flexbox-min-width-auto-004 ✗1.45% → ✓；kill-switch 无（单侧域先例）；corpus 810F→808F FIXED=1 REGRESSED=0，通过率 15782/16590 = 95.1%）**（2026-10-29）
+>
+> - **定性**（flexbox 52F 域内择轻）：004 水平排版单规则案——4 item overflow-y visible/hidden/scroll/auto，期望 2-4 因 overflow-x 计算为非 visible 禁用 automatic minimum size 收缩到容器 30px，ZW 四行全宽。根因：converter `convert_overflow` 两轴独立映射 taffy，无 §3.1 传播（visible/clip 与非 visible/clip 配对 → visible→auto、clip→hidden）；taffy flexbox.rs:852 按 `maybe_into_automatic_min_size`（Hidden/Scroll→0）消费——x 未传播 → automatic min = min-content 撑开。
+> - **实现**：①`computed_overflow_pair` converter 入口统一计算传播对；②传播产生的 auto 并入 taffy `Hidden`（min-size 禁用语义同 auto，scrollbar 槽位不预留——taffy 对 Scroll 无条件预留 vs chromium auto 仅实际溢出才出滚动条；首版 auto→Scroll 实测 scrollbar-empty-001 +1 红收窄回绿）；③raw 声明值路径（auto→Scroll）与 scrollbar_width 预留门（R4265）不动。
+> - **交付**：corpus 同树 A/B（基线 R5327 交付态）→ **808F**，逐案 diff 恰 {−驱动案, −content-none-select-1 flake} REGRESSED=0；同二进制复跑 fail-list 逐案一致；trend 行已录 @ `92e885d40`。
+> - **回归**：+1 pin（`r5328_overflow_computed_propagation` 六腿：三传播 + 两同族不传播 + raw auto 不回退（auto×visible → y 传播 Hidden，§3.1 对 auto 一致）；**mutant** stash 实测无 fix 首腿 FAIL 双向可判别）。
+> - **门禁**：fmt 0；clippy workspace --all-targets -D warnings 0；**zero-layout-engine lib 2247P/0F**（2246+1）；本地 725 套件 724/725（唯一红 = R5311 既有记账零位移）；product-smoke welcome **15.68%** ≤ 20% 零位移 + struct ×6 PASS + legacy struct 0；**bench-gate 定向 GATE FAIL 3/25 NEW=0 + 同窗 clean-HEAD INCONCLUSIVE（loadavg=20 跨流争用，基线 medium p95 834ms 更劣一倍级）＝环境归因，静窗复测挂账**（每节点一次 enum match ns 级不可能解释 43% 漂移；R5316-R5318 同判例）。
+> - **挂账**：**收口** flexbox-min-width-auto-004；**静窗复测** bench-gate 定向 zero-layout-engine；**观察（不挂账）** taffy Clip 不禁用 automatic min size（spec 应禁，无红案驱动）；**维持** R5327 fragment 臂内容区锚深结构域、content-none-select-1 脆弱族、c44-003 残差、va 族余案、c548 待用户决策、zero-engine fetch 10F + details 闪断、fmt drift 移交。**下一步 R5329**：①808F 账本续扫择轻（避开 va 域与 OOF 锚域）②css-flexbox 续挑（flexbox-safe-overflow-position-001 1.40%、baseline-synthesis 族）③multicol 嵌套分片专项预研。证据：[`rendering-compat/evidence/r5328-overflow-computed-propagation-2026-10-29.md`](rendering-compat/evidence/r5328-overflow-computed-propagation-2026-10-29.md)。
+>
 > **▶ R5327 实验轮（扩张轴 FIXME 收口尝试——负结果定谳死路全量回退，corpus 809F/810F 不变 FIXED=0 REGRESSED=0；line-height-125 真根因重定位：R639/R1442 fragment 臂行盒锚 = 跨切片深结构域）**（2026-10-29）
 >
 > - **定性**：前会话 429 中断 WIP（`inline_ca_paint_override` 删「只收缩不扩张」门，driving line-height-125 ✗1.20%）——实验假设「旧实验面 ≠ 本 deco-override 面」。同树 corpus A/B：**WIP 净效果 = 0 修 −1 回归**（+active-selection-027 ✗1.16% 同二进制复跑稳定；−content-none-select-1 = 负载脆弱族 flake 基线跑伪红）；**driving 案 PNG base vs WIP AE=0 逐字节同像**，% 1.20↔1.08 为 run-to-run 漂移 flake（入 flake 账）。

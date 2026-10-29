@@ -3,9 +3,9 @@
   "mode": "upstream",
   "wpt_data_ref": "v1.10",
   "total": 16590,
-  "passed": 15781,
+  "passed": 15782,
   "rate_pct": 95.1,
-  "extra": "failed=809;skipped=0",
-  "git_sha": "a669d8213",
-  "note": "R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）——balance-002/004 ✓ 家族 25/25，FIXED=2 REGRESSED=0"
+  "extra": "failed=808;skipped=0",
+  "git_sha": "92e885d40",
+  "note": "R5328 overflow computed value 传播（css-overflow-3 §3.1 × css-flexbox-1 §4.5）——flexbox-min-width-auto-004 ✓ min-width:auto × overflow 联动，FIXED=1 REGRESSED=0"
 }
