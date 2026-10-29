@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- M2 首簇最小复现探针（editing-compat M1 基线 evidence 附件，不入运行面）。
+     放入 wpt-data/editing/other/ 后经
+     `make testharness-editing-other-one FILTER=zz-probe` 执行。
+     2026-10-30 实测：F1/F2/F6 Pass，F3/F4/F5 Fail——
+     innerHTML 产物的宿主侧身份失步：getElementById 能命中（host id_map 有节点），
+     JS 属性 API 可读（本地视图），但 Element.matches 连 tag-only 都不命中
+     （宿主句柄解析不到该元素）；createElement+setAttribute 路径正常。 -->
+<meta charset=utf-8>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+test(function() {
+  var d = document.getElementById("test-container");
+  d.innerHTML = "<div contenteditable id=dyn-f></div>";
+  assert_not_equals(document.querySelector("#dyn-f"), null, "host id_map sees dyn-f");
+}, "F1: host tree has dyn-f (id query)");
+test(function() {
+  var dyn = document.getElementById("dyn-f");
+  assert_equals(dyn.id, "dyn-f", "JS id reflected");
+  assert_true(dyn.hasAttribute("id"), "JS hasAttribute id");
+  assert_true(dyn.hasAttribute("contenteditable"), "JS hasAttribute contenteditable");
+}, "F2: JS API sees both attrs");
+test(function() {
+  var dyn = document.getElementById("dyn-f");
+  assert_true(dyn.matches("div"), "host matches tag-only on dyn-f");
+}, "F3: host matches tag on dyn-f");
+test(function() {
+  var dyn = document.getElementById("dyn-f");
+  assert_true(dyn.matches("[id=dyn-f]"), "host matches [id=dyn-f]");
+}, "F4: host matches id attr on dyn-f");
+test(function() {
+  var dyn = document.getElementById("dyn-f");
+  assert_true(dyn.matches("[contenteditable]"), "host matches contenteditable presence");
+}, "F5: host matches contenteditable on dyn-f");
+test(function() {
+  var n2 = document.createElement("div");
+  n2.setAttribute("contenteditable", "true");
+  document.getElementById("test-container").appendChild(n2);
+  assert_true(n2.matches("[contenteditable=true]"), "setAttribute path host matches");
+}, "F6: setAttribute element host matches");
+</script>
