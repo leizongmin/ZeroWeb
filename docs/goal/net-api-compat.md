@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.20
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16/S17）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11039**（+1685，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11 / M2-S17 +28；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.21
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16/S17/S18）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11040**（+1686，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11 / M2-S17 +28 / M2-S18 +1；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账；M2-S18 +1 为基线漂移修正，切片净账 0/0/0，见 S18 档记账 3），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -180,6 +180,19 @@
   percent-decode（废弃 decodeURIComponent 的 URIError 面）。语料零改动；
   全通道 A/B **+28 / 0 回归 / 0 MISSING**（11011 → 11039），formData 消费
   面 10 文件零扰动。
+- **M2-S18 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s18-body-arraybuffer-wasm-stream.md)；
+  wasm-compat goal M3 挂账移交承接）**：Body mixin `arrayBuffer()` 返 spec
+  **ArrayBuffer**（fetch spec #dom-body-arraybuffer；R2978/R2982 旧 Uint8Array
+  形态解除，Response/Request 两处 + 单测断言同步）→ wasm streaming 挂账
+  **2F 清偿**（enqueue 产物撞既有体消费 chunk 类型门，引擎无新增门）——
+  wasm/webapi 全子集 **272/272**（M3 基线 270/272），jsapi 底线 878/878 维持，
+  wasm-compat M3 挂账结清。全通道 A/B：**REGRESSIONS 0 / MISSING 0**，
+  11039 → 11040 的唯一 GAINS 三重对照定谳为 S17 基线漂移伪影（S17 采数
+  runner 早于并行流 M3 静态头去重修复，属基线修正）——**本切片净账
+  0 增益 / 0 回归 / 0 MISSING**，fetch/api consume 族零扰动。范围引擎
+  测试 3592 过/11 败（名单对账 +1 为 rebase 基座预存红，stash 归并行流域）。
+  记账 3 项落证据档（语料 403 限流补盘 / 类型门既有承接 / 基线漂移定谳
+  与采数教训）。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新

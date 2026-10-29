@@ -5876,9 +5876,14 @@
     };
     this.arrayBuffer = function () {
       return _zwConsumeBodyChecked(self, function (b) {
+        // spec ArrayBuffer（WebIDL Promise<ArrayBuffer>——R2978 旧形态返 Uint8Array，
+        // wasm_stream_*「ReadableStream with ArrayBuffer chunk」腿以 arrayBuffer() 结果
+        // 真 ArrayBuffer 身份入流钉 read-loop chunk 类型门，Uint8Array 假绿）。fresh
+        // cp 的 buffer 即精确尺寸 ArrayBuffer，零拷贝外露。
+        //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
         var cp = new Uint8Array(b.length);
         for (var j = 0; j < b.length; j++) cp[j] = b[j];
-        return _zwBytesThenableSafe(cp); // 已知限制（R2978 注记保留）：返 Uint8Array（spec ArrayBuffer），既有接口形态
+        return _zwBytesThenableSafe(cp.buffer);
       });
     };
     // net-api M2-S3：bytes()（Body mixin——response-error-from-stream/bad-chunk 族经
@@ -6310,9 +6315,11 @@
     };
     this.arrayBuffer = function () {
       return _zwConsumeBodyBytes(self).then(function (b) {
+        // spec ArrayBuffer（对称 Response.arrayBuffer——R2982 旧形态返 Uint8Array 已废）。
+        //   https://fetch.spec.whatwg.org/#dom-body-arraybuffer
         var arr = new Uint8Array(b.length);
         for (var k = 0; k < b.length; k++) arr[k] = b[k];
-        return _zwBytesThenableSafe(arr); // 已知限制（R2982 注记保留）：返 Uint8Array（spec ArrayBuffer）
+        return _zwBytesThenableSafe(arr.buffer);
       });
     };
     this.bytes = function () { return _zwConsumeBodyBytes(self); };
