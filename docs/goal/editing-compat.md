@@ -46,7 +46,9 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 实证）真实耗时超 150s 被 externals kill（M2-r1 时代是 90s 看门狗先截断
 > 才显得 420 够用），分片退出后修 420 下限 + 重跑误杀案（run 面 s2 在途）。
 > run 面全分母 3 分片重跑进行中。失败簇按新账重排后定
-> white-space join / insertparagraph 入簇序。详见
+> white-space join / insertparagraph 入簇序。归因机制、三分类与 other 面
+> 终账明细见
+> [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)；首轮修复与 M2-r1 账面见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
