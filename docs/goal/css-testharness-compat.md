@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.3
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）
-**状态**: Active——M0 完成（DC-1）、M1 完成（DC-2）、M2 完成（DC-3 本地判据全落，CI 快照待 weekly），M3/M4 未启动
+**版本**: v1.4
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1 完成（css-color/css-align/css-sizing 入账 + 根 support 文件修复，六目录统一基线 27,824 子测试 5,593 Pass），M4 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -96,9 +96,9 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   `(case, 子测名→status)` 集合恒等判据，perf/wpt-runner-testharness-speed
   A/B 先例）；weekly coverage matrix 无需逐套件特调即可纳入新套件。
 - **DC-3（css-variables 入账）**：病态案排除后 css-variables 进 coverage
-  misc 分片，快照 css/css-variables 组 covered>0。（2026-10-30：本地判据
-  全落——通道迁移 + 谓词排除 + misc 分片接线 + 管道消费 0 suspicious；
-  CI 快照待 weekly cron 落账。）
+  misc 分片，快照 css/css-variables 组 covered>0。（2026-10-30 全落：本地
+  判据 + CI 快照运行 40935989794——css/css-variables covered_files=58 /
+  zw_passes=232 / zw_env_fails=0，css 顶目录自 0 入账。）
 - **DC-4（coverage 复测）**：重跑 coverage 对账，css 面从 0 到有数字；
   试点目录未覆盖子测试清零路径成立。
 
@@ -128,7 +128,12 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   病态案谓词排除 + misc 分片接线；运行面 58 案 532 子测试 239 Pass，
   三通道计数一致，语料与上游 pin 对齐（268/268）。
 - **M3**：按簇扩面——top15 顺序逐目录过 M0 模板，每目录独立基线与
-  失败簇归口；cssom-view / geometry 到此阶段先协调。
+  失败簇归口；cssom-view / geometry 到此阶段先协调。（批次 1 完成
+  2026-10-30：css-color/css-align/css-sizing 入账，六目录统一基线
+  1,052 案 27,824 子测试 5,593 Pass = 20.1%；顺带修复根 support 文件
+  `resources/check-layout-th.js` 缺失——153 个挂起超时清零、2,921 子测试
+  解掩。证据：evidence/2026-10-30-m3-batch1-color-align-sizing.md。批次 2
+  起 top15 其余目录，css-grid / css-text 重量级独立轮次。）
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）

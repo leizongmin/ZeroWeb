@@ -1,6 +1,6 @@
 # css-testharness-compat master
 
-**状态**: Active——M0（DC-1）、M1（DC-2）、M2（DC-3 本地判据全落，CI 快照待 weekly）均于 2026-10-30 完成；M3/M4 未启动
+**状态**: Active——M0/M1/M2 完成（DC-1/DC-2/DC-3 全落，DC-3 CI 快照已闭环）；M3 批次 1 完成（2026-10-30）；M4 未启动
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
@@ -9,9 +9,43 @@
 |---|---|---|---|
 | M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | **完成**（2026-10-30，[基线 evidence](evidence/2026-10-30-m0-pilot-baseline.md)） |
 | M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
-| M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)——本地判据全落；CI 快照待 weekly cron） |
-| M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | 未启动 |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（csv 数据行已含 css-variables） |
+| M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)；CI 快照运行 40935989794 闭环——58 files / 232 passes） |
+| M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | **进行中**（批次 1 完成 2026-10-30，[批次 evidence](evidence/2026-10-30-m3-batch1-color-align-sizing.md)——css-color/css-align/css-sizing 入账 + check-layout support 修复；批次 2 = top15 其余目录） |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（css 面已入 CI 快照口径，weekly 分片批量接线待做） |
+
+## 本轮记录（2026-10-30，M3 批次 1 + DC-3 CI 闭环）
+
+- **DC-3 正式闭环**：workflow_dispatch coverage 运行 40935989794 全绿
+  （17 shard success / misc 1,795s）；聚合快照 `css/css-variables`
+  covered_files=58（判据 ≈58 ✓）/ zw_passes=232（本地 239，−7 = CI runner
+  动画子测时序差异，案数 58=58）/ zw_env_fails=0；css 顶目录自 0 入账
+  （61 files / 232 passes / 195,338 分母 / 0.12%）。
+- **M3 批次 1 入账**：css-color / css-align / css-sizing 三目录过 M0
+  模板（子命令 + 泛化 CORPUS 映射 + Makefile target + DIRS）；语料
+  git blob hash 对账至上游 pin 全量一致（460/342/865——精选仓内容漂移
+  21+4 页实证"文件数一致 ≠ 内容一致"）；单进程基线 color 62 案
+  11,009 子测试 11.3%、align 234 案 4,540 子测试 14.5%、sizing 168 案
+  1,894 子测试 37.0%。六目录统一基线 **1,052 案 / 27,824 子测试 /
+  5,593 Pass（20.1%）**，csv 聚合行同步。
+- **根 support 文件修复（批次 1 最大发现）**：`resources/check-layout-th.js`
+  缺失（css 面 201 页引用）使 align/sizing 的 checkLayout 族页脚本报错或
+  挂起——153 个 Timeout 子测试、2,921 个子测试被掩蔽；补拉 + goal 脚本
+  定向接线后 **Timeout 全部清零**、两目录墙钟 1m54s→41s / 2m10s→22s。
+  testdriver\*.js 不补（runner 装配层置空注入，无需落盘）。
+- **失败分簇（六目录）**：color 一簇独大——Color-4 计算值面 7,199
+  （73.7%，color-mix/oklch/light-dark computed style 不支持）；align
+  指定值展开/序列化 ~1,345 + 布局几何 ~848；sizing aspect-ratio ~145 +
+  布局几何 ~300+。布局几何两簇与 rendering-compat 同域，修复须两账
+  同窗回归。
+- **parity 全语料首跑**：color 62/62、align 234/234 IDENTICAL；sizing
+  6 子测 status-diff（stretch 族）——三步归因实验（standalone ≡ 分片臂 /
+  全量重跑 0 差异）定性为**单进程跨案状态残留**（engine 页面加载顺序
+  依赖，0.3%），按 M2 Timeout 先例记通道语义差异，归失败分簇账本。
+- **跨流修复**：兄弟流（editing-compat）dc719ecf0 在 csv 数据行引入裸
+  逗号（16 列，rebase 后 trend_csv_check 红）——按生成器契约改分号，
+  随本轮提交。属并行双流共享面碰撞的常规互修，无工作面重叠。
+
+## 上一轮记录（2026-10-30，M2 收口）
 
 ## 本轮记录（2026-10-30，M2 收口）
 
@@ -118,17 +152,19 @@
 - **零回归底线**：css 值语义修复若触 `zero-engine`/`style-system`，与
   rendering-compat 的 reftest 回归门（716/716）同窗验证，防两账互相打红。
 
-## 下一步（M3/M4 检查单）
+## 下一步（M3 批次 2 / M4 检查单）
 
-1. **DC-3 CI 快照落账**：weekly cron（或 workflow_dispatch
-   `run_wptfyi_coverage=true`，dispatch 前按惯例先查 CI 在跑实例）产出
-   coverage 快照，核对 css/css-variables 组 covered_files ≈ 58 /
-   zw_passes ≈ 239——正式落账后 M2 的 CI 判据闭环。
-2. **M3 扩面**：top15 顺序逐目录过 M0 模板（35 号 DIRS 追加 → fetch →
-   子命令 + 谓词 → 基线 evidence → csv 行）；cssom-view / geometry 先按
-   run-rules §9 与 rendering-compat 控制面协调划界。
-3. **失败分簇**：css-variables 282 Fail + 11 Timeout（animation/transition
-   集中簇）与 css-values/selectors 失败簇合并归口——引擎可修簇 vs 挂账簇，
-   animation 簇优先归口 timing-animation-compat 底座（划界节约定）。
-4. **M4 复测收口**：coverage 重跑对账（css 面从 0 到有数字的正式快照）+
-   wpt-suites.csv 汇总行。
+1. ~~DC-3 CI 快照落账~~（本轮闭环：40935989794，58 files / 232 passes）。
+2. **M3 批次 2**：top15 其余目录逐个过 M0 模板（35 号 DIRS 追加 →
+   FORCE=1 首拉 → 子命令 → blob hash 对账 → 基线 → 分簇 → csv 行）；
+   重量级 css-grid（15,841 分母 / 2,523 文件）与 css-text（5,714 / 1,983）
+   独立轮次；cssom-view / geometry 落地前按 run-rules §9 与
+   rendering-compat 控制面协调划界。
+3. **失败簇归口评估**：color 的 Color-4 计算值面（7,199，最大单簇）评估
+   引擎工作项归属；align/sizing 指定值展开族归 CSSOM 序列化、布局几何族
+   与 rendering-compat 同窗；sizing stretch 族跨案状态残留（6 子测）入
+   engine 布局账本。
+4. **M4（DC-4）**：weekly coverage 分片批量接线（values/selectors/color/
+   align/sizing 入 shard + fetch 入口 + 时间预算——本地合计 ~71s 单进程、
+   CI ~2-3 倍的经验数据点已录）→ 正式 css 面复测快照 → wpt-suites.csv
+   汇总行收口。

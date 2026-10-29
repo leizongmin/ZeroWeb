@@ -43,6 +43,13 @@ DIRS=(
   # css-variables harness 面入账。数据双源——fetch-wpt-data 精选仓的 reftest
   # 子集 + 本脚本深挖的上游全量（首次须 FORCE=1 补拉缺失 harness 页）。
   "css/css-variables"
+  # M3 扩面首批（top15 分母目录过 M0 模板）：css-color（12,714 子测试 /
+  # getComputedStyle 颜色序列化）+ css-align（5,311 / box alignment）+
+  # css-sizing（6,258 / sizing 属性）。三目录均须 FORCE=1 首拉（精选仓已含
+  # .html 会走深挖幂等快路径，css-variables M2 先例）。
+  "css/css-color"
+  "css/css-align"
+  "css/css-sizing"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
@@ -50,5 +57,15 @@ DIRS=(
 )
 
 goals_fetch_all
+
+# 根级 support 单文件定向补拉（不入 DIRS——上游根 resources/ 目录体量大，按需
+# 点拉）：css-align/css-sizing 等目录 200+ 页 testharness 用 data-* 布局断言库
+# check-layout-th.js（自包含，仅依赖 testharness.js）。M3 基线分簇实证缺它 →
+# 页脚报 checkLayout undefined（css-sizing 29 子测直接报错 + 挂起超时簇）。
+# testdriver*.js 不在此列：runner 装配层对 testdriver script 标签置空注入
+# （testharness.rs 装配管道），本地无需落盘。
+fetch_raw "resources/check-layout-th.js" \
+  || echo "  ⚠ resources/check-layout-th.js 拉取失败（重跑脚本幂等续拉）" >&2
+
 goals_inventory
 goals_next_steps "${GOAL}"

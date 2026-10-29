@@ -109,6 +109,12 @@ Commands:
                        API face; css-testharness-compat goal M0 / DC-1)
   testharness-selectors  Run imported css/selectors testharness cases (selector
                        matching API face; css-testharness-compat goal M0 / DC-1)
+  testharness-css-color  Run upstream css-color testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-align  Run upstream css-align testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-sizing  Run upstream css-sizing testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -400,6 +406,9 @@ fn main() {
         "testharness-css-variables" => cmd_testharness_css_variables(&options, filter.as_deref()),
         "testharness-css-values" => cmd_testharness_css_values(&options, filter.as_deref()),
         "testharness-selectors" => cmd_testharness_css_selectors(&options, filter.as_deref()),
+        "testharness-css-color" => cmd_testharness_css_color(&options, filter.as_deref()),
+        "testharness-css-align" => cmd_testharness_css_align(&options, filter.as_deref()),
+        "testharness-css-sizing" => cmd_testharness_css_sizing(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1533,6 +1542,29 @@ fn cmd_testharness_css_values(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_selectors(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_selectors_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-color` / `testharness-css-align` / `testharness-css-sizing`
+/// 子命令 — 跑导入的上游 css-color / css-align / css-sizing testharness 用例
+/// （css-testharness-compat goal M3 扩面首批——top15 分母目录过 M0 模板；
+/// 契约与退出码同 `cmd_testharness_css_values`：共享底座 skip 规则单点，
+/// 病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_color(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_align(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_align_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_sizing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_sizing_cases(wpt_root, filter)
     });
 }
 

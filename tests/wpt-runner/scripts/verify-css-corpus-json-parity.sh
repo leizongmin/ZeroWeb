@@ -16,11 +16,12 @@ FILTER="${2:-}"
 RUNNER="${3:-./target/release/zero-wpt-runner}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# SUBCMD 映射规则同 run-css-testharness-corpus.sh：css-* → `testharness-<corpus>`，
+# selectors 历史命名特殊。
 case "${CORPUS}" in
-  css-values) SUBCMD=testharness-css-values ;;
   selectors) SUBCMD=testharness-selectors ;;
-  css-variables) SUBCMD=testharness-css-variables ;;
-  *) echo "usage: $0 <css-values|selectors|css-variables> <filter-substr> [runner]" >&2; exit 2 ;;
+  css-*) SUBCMD="testharness-${CORPUS}" ;;
+  *) echo "usage: $0 <css-values|selectors|css-variables|css-color|...> <filter-substr> [runner]" >&2; exit 2 ;;
 esac
 
 WORK="$(mktemp -d)"

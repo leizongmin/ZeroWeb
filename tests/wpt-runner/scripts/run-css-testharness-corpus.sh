@@ -54,11 +54,12 @@ SHARD="${CSS_CORPUS_SHARD:-}"
 JSON_DIR="${CSS_CORPUS_JSON_DIR:-}"
 ONLY_SUBSTR="${CSS_CORPUS_ONLY_SUBSTR:-}"
 
+# SUBCMD 映射规则（M3 扩面批量接线统一）：css-* 目录 → `testharness-<corpus>`
+# （css-values → testharness-css-values）；selectors 历史命名特殊（无 css- 前缀）。
 case "${CORPUS}" in
-  css-values) SUBCMD=testharness-css-values ;;
   selectors) SUBCMD=testharness-selectors ;;
-  css-variables) SUBCMD=testharness-css-variables ;;
-  *) echo "usage: $0 <css-values|selectors|css-variables> [runner]" >&2; exit 2 ;;
+  css-*) SUBCMD="testharness-${CORPUS}" ;;
+  *) echo "usage: $0 <css-values|selectors|css-variables|css-color|css-align|css-sizing|...> [runner]" >&2; exit 2 ;;
 esac
 
 if [[ ! -x "${RUNNER}" || ! -d "${DATA_DIR}" ]]; then

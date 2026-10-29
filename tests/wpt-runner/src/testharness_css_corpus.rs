@@ -188,3 +188,24 @@ pub fn run_css_selectors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 pub fn run_css_variables_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-variables", filter)
 }
+
+/// Run the pinned upstream css-color testharness subset（css-testharness-compat
+/// goal M3 扩面——getComputedStyle 颜色序列化/解析断言面，top15 分母
+/// 12,714 子测试）。filter 按路径子串过滤。
+pub fn run_css_color_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-color", filter)
+}
+
+/// Run the pinned upstream css-align testharness subset（css-testharness-compat
+/// goal M3 扩面——box alignment 属性值解析/序列化断言面，top15 分母
+/// 5,311 子测试）。filter 按路径子串过滤。
+pub fn run_css_align_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-align", filter)
+}
+
+/// Run the pinned upstream css-sizing testharness subset（css-testharness-compat
+/// goal M3 扩面——sizing 属性解析/计算值断言面，top15 分母 6,258 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_sizing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-sizing", filter)
+}
