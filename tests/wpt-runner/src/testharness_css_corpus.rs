@@ -88,7 +88,11 @@ fn collect_scan_dirs(wpt_root: &Path, dir: &Path, out: &mut Vec<String>) {
 /// Run one upstream css testharness corpus directory（试点 css-values /
 /// selectors 共用底座，M3 扩面目录复用）。`scan_root` 为 wpt_root 相对目录
 /// （如 `css/css-values`）。filter 按路径子串过滤。
-fn run_css_corpus_dir(wpt_root: &Path, scan_root: &str, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+fn run_css_corpus_dir(
+    wpt_root: &Path,
+    scan_root: &str,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
