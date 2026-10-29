@@ -23,7 +23,10 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > CASE_WALL_S 拦不到同步段），90s 内跑不完整变体 aborted 无子测试行。
 > 实证：bold 四变体 90s 预算 12 行 → 300s 预算 3048 行全出（1138P/1910F，
 > 单案隔离跑）。corpus 脚本已改：run 通道缺省预算 300s + CASE_WALL_S 按案
-> 内变体数自适应。全分母重跑（3 分片）进行中，失败簇按新账重排后定
+> 内变体数自适应。全分母重跑（3 分片）进行中（bold 已按新预算全矩阵
+> 发射）；other 面同预算复跑同窗启动（M1 悬置的 list/inline delete
+> 自旋案是否同根因——150s 口径先跑齐，Timeout 案再单案放宽墙钟分类
+> 有限慢 vs 真自旋），失败簇按新账重排后定
 > white-space join / insertparagraph 入簇序。详见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
 
