@@ -16,12 +16,7 @@ impl InlineFormattingContext {
     /// 放得下或不再与 float 重叠。返回 (下移后行 y, 新带左缘, 新带宽)。
     ///
     /// R5216：fit 门断行产生的新空行同走此径（`atomic_postbreak_float_fit`）。
-    fn shift_new_line_below_floats(
-        &self,
-        mut current_y: f32,
-        est_height: f32,
-        box_width: f32,
-    ) -> (f32, f32, f32) {
+    fn shift_new_line_below_floats(&self, mut current_y: f32, est_height: f32, box_width: f32) -> (f32, f32, f32) {
         let mut left_offset;
         let mut avail_width;
         loop {
@@ -78,10 +73,7 @@ impl InlineFormattingContext {
         let debug_ifc = runtime_flags::debug_ifc();
         if debug_ifc {
             let n_text = items.iter().filter(|i| matches!(i, InlineItem::Text(_))).count();
-            let n_ib = items
-                .iter()
-                .filter(|i| matches!(i, InlineItem::InlineBlock(_)))
-                .count();
+            let n_ib = items.iter().filter(|i| matches!(i, InlineItem::InlineBlock(_))).count();
             let n_br = items.iter().filter(|i| matches!(i, InlineItem::Br)).count();
             if n_ib > 0 {
                 let ib_dims: Vec<(f32, f32, f32)> = items
@@ -102,6 +94,11 @@ impl InlineFormattingContext {
             self.break_items_into_columns(items);
             return;
         }
+
+        // R5325（css-text-4 §text-wrap-balance）：balance 断点规划——纯文本段在贪心
+        // 行数内重排词界（最小行宽参差 DP，balance_breaks 规划面）。plan 为 None
+        //（scope 外 / 贪心已参差最优）时零扰动；命中断点由词臂 fit 门之前消费。
+        let balance_plan = self.balance_line_break_plan(&items);
 
         // 追踪当前行的 y 偏移量（用于计算浮动排除区域）
         let mut current_y = 0.0_f32;
@@ -199,8 +196,8 @@ impl InlineFormattingContext {
                         Some(ws) => (ws.preserve, ws.break_at_newline, ws.no_wrap),
                         None => (self.preserve_whitespace, self.break_at_newline, self.no_wrap),
                     };
-                    let has_leading_collapsible_space = !run_preserve
-                        && run.text.chars().next().is_some_and(is_collapsible_ws);
+                    let has_leading_collapsible_space =
+                        !run_preserve && run.text.chars().next().is_some_and(is_collapsible_ws);
                     // 按字符类别逐字符估算宽度，替代统一 0.6 倍近似
                     let words = self.split_into_words_with_ws(
                         source_cursor.visual_text(),
@@ -260,8 +257,7 @@ impl InlineFormattingContext {
                             margin_bottom: 0.0,
                             baseline: run.font_size,
                             anchored_baseline_y: 0.0,
-                        }
-);
+                        });
                         // R4299：padding_right 推进（§8.4，同 padding_left）
                         if run.padding_right > 0.0 {
                             current_x += run.padding_right;
@@ -292,9 +288,8 @@ impl InlineFormattingContext {
                             //（R5115 boundary_ws_break 经 last_ws_no_wrap）维持「序列最后
                             // 一个空格所属 run」口径，折行位不变、仅间距归一。
                             // preserve run 空格不可折叠，不参与序列。
-                            let collapse_with_prev_trailing = !run_preserve
-                                && runtime_flags::ws_seq_pure_run_collapse()
-                                && last_ended_collapsible_ws;
+                            let collapse_with_prev_trailing =
+                                !run_preserve && runtime_flags::ws_seq_pure_run_collapse() && last_ended_collapsible_ws;
                             if !collapse_with_prev_trailing {
                                 // R4233（css-text-4 #letter-spacing）：空格亦为字符单元——
                                 // 词间纯空白 run / run 前导可折叠空格的 advance 同样计 ls
@@ -433,11 +428,10 @@ impl InlineFormattingContext {
                                 padding_left: 0.0,
                                 padding_right: 0.0,
                                 margin_top: 0.0,
-                            margin_bottom: 0.0,
+                                margin_bottom: 0.0,
                                 baseline: run.font_size,
                                 anchored_baseline_y: 0.0,
-                            }
-);
+                            });
                             current_x += tab_advance;
                             last_was_collapsible_ws = false;
                             // R5161：tab 是空白——其后断行合法，不构成词中拼接。
@@ -447,14 +441,12 @@ impl InlineFormattingContext {
 
                         // CSS 2.1 §16.6.1：行首空格不渲染。
                         // 当前行首的第一个词如果以空格开头，去除前导空格。
-                        let content_word = if current_line.runs.is_empty()
-                            && !run_preserve
-                            && content_word.starts_with(' ')
-                        {
-                            content_word.trim_start_matches(' ')
-                        } else {
-                            content_word
-                        };
+                        let content_word =
+                            if current_line.runs.is_empty() && !run_preserve && content_word.starts_with(' ') {
+                                content_word.trim_start_matches(' ')
+                            } else {
+                                content_word
+                            };
                         // CSS Text §3.1：pre/pre-wrap/pre-line 模式下，换行符 `\n` 是强制断行机会。
                         // split_into_words（preserve_whitespace 或 break_at_newline 模式）为每个 `\n`
                         // 推入空字符串作为强制换行标记——此处消费它：把当前行推入结果并开始新行（同 <br>）。
@@ -524,8 +516,7 @@ impl InlineFormattingContext {
                                     margin_bottom: 0.0,
                                     baseline: run.font_size,
                                     anchored_baseline_y: 0.0,
-                                }
-);
+                                });
                             }
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
@@ -546,9 +537,9 @@ impl InlineFormattingContext {
                             if crate::inline::runtime_flags::pre_newline_strut() {
                                 current_line.height = est_height;
                             }
-            current_line.y = current_y;
-            self.lines.push(current_line);
-            last_word_on_line = false;
+                            current_line.y = current_y;
+                            self.lines.push(current_line);
+                            last_word_on_line = false;
                             current_y += est_height;
                             current_line = LineBox {
                                 y: f32::NAN,
@@ -597,7 +588,10 @@ impl InlineFormattingContext {
                         let word_width =
                             self.advance_run_width(content_word, &run) + run.letter_spacing * content_char_count as f32;
                         if std::env::var("ZW_LS_TRACE").is_ok() {
-                            eprintln!("[ZW_LS_TRACE] word={:?} ls={} count={} ww={}", content_word, run.letter_spacing, content_char_count, word_width);
+                            eprintln!(
+                                "[ZW_LS_TRACE] word={:?} ls={} count={} ww={}",
+                                content_word, run.letter_spacing, content_char_count, word_width
+                            );
                         }
                         // R1086：word-spacing 作为词间前导间隙（CSS：词与词之间的额外间距）。
                         // 旧实现把 word_spacing 计入 word_width → fragment.x（=current_x，置位前）
@@ -616,10 +610,9 @@ impl InlineFormattingContext {
                             let prev_last = words.get(word_idx - 1).and_then(|w| w.chars().last());
                             let curr_first = content_word.chars().next();
                             match (prev_last, curr_first) {
-                                (Some(pc), Some(cc)) if !pc.is_whitespace() && !cc.is_whitespace() => (
-                                    autospace_gap_for(pc, cc, self.text_autospace, run.font_size),
-                                    0.0,
-                                ),
+                                (Some(pc), Some(cc)) if !pc.is_whitespace() && !cc.is_whitespace() => {
+                                    (autospace_gap_for(pc, cc, self.text_autospace, run.font_size), 0.0)
+                                }
                                 _ => (0.0, 0.0),
                             }
                         } else {
@@ -643,10 +636,7 @@ impl InlineFormattingContext {
                         // 带内且可用宽被吃尽（avail ≤ 0）时，行位下推到该带底（行盒不与
                         // float 重叠；auto-015：300px float 占满 200px 容器 → 带内行全部
                         // 下推到 float 底）。仅 avail ≤ 0 触发（有剩余宽的环绕不推）。
-                        if current_line.runs.is_empty()
-                            && avail_width <= 0.0
-                            && !self.float_exclusions.is_empty()
-                        {
+                        if current_line.runs.is_empty() && avail_width <= 0.0 && !self.float_exclusions.is_empty() {
                             let pushed = self
                                 .float_exclusions
                                 .iter()
@@ -679,24 +669,20 @@ impl InlineFormattingContext {
                         // 落地，−7 墙经 ruby-overhang 模型 + 度量同源四幕后新鲜 A/B 核对）。
                         // 仅 normal（!run_preserve）：break-spaces 的 U+3000 为真实 advance
                         // 逐格换行（hang 臂首版误罩致 007/015 翻红，实证后收窄）。
-                        let is_ws_word = !content_word.is_empty()
-                            && content_word.chars().all(char::is_whitespace);
-                        let is_ideographic_space_word = !content_word.is_empty()
-                            && content_word.chars().all(|c| c == '\u{3000}');
-                        let hang_trailing_space = (run_preserve
-                            && is_ws_word
-                            && run.ws_override.is_some_and(|ws| ws.hang_trailing))
-                            || (is_ideographic_space_word && !run_preserve);
+                        let is_ws_word = !content_word.is_empty() && content_word.chars().all(char::is_whitespace);
+                        let is_ideographic_space_word =
+                            !content_word.is_empty() && content_word.chars().all(|c| c == '\u{3000}');
+                        let hang_trailing_space =
+                            (run_preserve && is_ws_word && run.ws_override.is_some_and(|ws| ws.hang_trailing))
+                                || (is_ideographic_space_word && !run_preserve);
                         // R5115（css-text-3 §5.5）：词前断点治理——内容词的跨 run
                         // 边界（上一 run 尾空格 + 本 run 首词）由**空格所属 run**
                         // 治理；空白词与本 run 内部按自身 no_wrap。
                         // mixed-001：空白词（pre 保留空格/nowrap 内空格）误用边界
                         // 治理曾 26.20% 翻红，空白词门修复。
-                        let word_is_ws = !content_word.is_empty()
-                            && content_word.chars().all(char::is_whitespace);
-                        let boundary_ws_break = !word_is_ws
-                            && last_ended_collapsible_ws
-                            && last_content_owner != Some(run.node_id);
+                        let word_is_ws = !content_word.is_empty() && content_word.chars().all(char::is_whitespace);
+                        let boundary_ws_break =
+                            !word_is_ws && last_ended_collapsible_ws && last_content_owner != Some(run.node_id);
                         // R5161（css-text-3 §5.2 / UAX#14）：跨 run 词中拼接边界无软
                         // 换行机会。旧实现逐 run 独立断行——`PASS<span>FAIL</span>` 的
                         // S|F 边界（无空白相邻的字母对）被当断点，FAIL 误折第 2 行
@@ -751,12 +737,33 @@ impl InlineFormattingContext {
                             && word_width > avail_width
                             && !self.float_exclusions.is_empty()
                         {
-                            let (new_y, lo, aw) =
-                                self.shift_new_line_below_floats(current_y, est_height, word_width);
+                            let (new_y, lo, aw) = self.shift_new_line_below_floats(current_y, est_height, word_width);
                             current_y = new_y;
                             left_offset = lo;
                             avail_width = aw;
                             current_x = self.text_indent.max(left_offset);
+                        }
+                        // R5325：balance 规划断点——plan 命中（行非空）优先于贪心
+                        // fit 门，把 DP 选定的词界落成推行（与下方 fit 门断行同构：
+                        // 行首词自然跳过；规划面保证该位为合法软换行点、本行剩余词
+                        // 在新行继续贪心收尾）。
+                        if !current_line.runs.is_empty()
+                            && balance_plan.as_ref().is_some_and(|p| p.contains(&(item_idx, word_idx)))
+                        {
+                            current_line.y = current_y;
+                            self.lines.push(current_line);
+                            current_y += est_height;
+                            current_line = LineBox {
+                                y: f32::NAN,
+                                height: 0.0,
+                                runs: Vec::new(),
+                                baseline_y: 0.0,
+                                ascent: 0.0,
+                                descent: 0.0,
+                            };
+                            let (new_left, _) = self.effective_content_area(current_y, est_height);
+                            current_x = new_left;
+                            lead_gap = 0.0;
                         }
                         if !hang_trailing_space
                             && wrap_allowed
@@ -765,8 +772,8 @@ impl InlineFormattingContext {
                             && !current_line.runs.is_empty()
                         {
                             // 当前行放不下，开始新行
-            current_line.y = current_y;
-            self.lines.push(current_line);
+                            current_line.y = current_y;
+                            self.lines.push(current_line);
                             current_y += est_height;
                             current_line = LineBox {
                                 y: f32::NAN,
@@ -810,8 +817,8 @@ impl InlineFormattingContext {
 
                                 if partial_x + ch_width > line_limit && ci > 0 {
                                     // 当前行满了，开始新行
-            current_line.y = current_y;
-            self.lines.push(current_line);
+                                    current_line.y = current_y;
+                                    self.lines.push(current_line);
                                     current_y += fragment_height;
                                     current_line = LineBox {
                                         y: f32::NAN,
@@ -846,11 +853,10 @@ impl InlineFormattingContext {
                                     padding_left: run.padding_left,
                                     padding_right: run.padding_right,
                                     margin_top: 0.0,
-                            margin_bottom: 0.0,
+                                    margin_bottom: 0.0,
                                     baseline: run.font_size,
                                     anchored_baseline_y: 0.0,
-                                }
-);
+                                });
 
                                 partial_x += ch_width;
                                 // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
@@ -897,21 +903,20 @@ impl InlineFormattingContext {
                                 padding_left: run.padding_left,
                                 padding_right: run.padding_right,
                                 margin_top: 0.0,
-                            margin_bottom: 0.0,
+                                margin_bottom: 0.0,
                                 baseline: run.font_size,
                                 anchored_baseline_y: 0.0,
-                            }
-);
+                            });
 
-                        // R5115：词级 owner/结尾空白态更新（边界判定消费于下一词）。
-                        last_content_owner = Some(run.node_id);
-                        last_ended_collapsible_ws = trailing_space_width > 0.0;
-                        if trailing_space_width > 0.0 {
-                            last_ws_no_wrap = run_no_wrap;
-                        }
-                        // R5161：末字符供跨 run 词中拼接判定（空白词尾即空白，自然豁免）。
-                        last_word_last_char = content_word.chars().last();
-                        last_word_on_line = true;
+                            // R5115：词级 owner/结尾空白态更新（边界判定消费于下一词）。
+                            last_content_owner = Some(run.node_id);
+                            last_ended_collapsible_ws = trailing_space_width > 0.0;
+                            if trailing_space_width > 0.0 {
+                                last_ws_no_wrap = run_no_wrap;
+                            }
+                            // R5161：末字符供跨 run 词中拼接判定（空白词尾即空白，自然豁免）。
+                            last_word_last_char = content_word.chars().last();
+                            last_word_on_line = true;
                             current_x += word_width + trailing_space_width;
                             // 行盒高度需容纳 inline 元素的完整盒体（含 padding+border）
                             // R4359（css-ruby-1）：ruby 注音行高（rt 0.5em 行盒）参与行盒高度
@@ -979,8 +984,7 @@ impl InlineFormattingContext {
                         && !self.float_exclusions.is_empty()
                         && box_width > avail_width
                     {
-                        let (new_y, lo, aw) =
-                            self.shift_new_line_below_floats(current_y, est_height, box_width);
+                        let (new_y, lo, aw) = self.shift_new_line_below_floats(current_y, est_height, box_width);
                         current_y = new_y;
                         left_offset = lo;
                         avail_width = aw;
@@ -1002,9 +1006,9 @@ impl InlineFormattingContext {
                         && !current_line.runs.is_empty()
                     {
                         // 当前行放不下，开始新行
-            current_line.y = current_y;
-            self.lines.push(current_line);
-            last_word_on_line = false;
+                        current_line.y = current_y;
+                        self.lines.push(current_line);
+                        last_word_on_line = false;
                         current_y += est_height;
                         current_line = LineBox {
                             y: f32::NAN,
@@ -1026,8 +1030,7 @@ impl InlineFormattingContext {
                             && !self.float_exclusions.is_empty()
                             && box_width > self.effective_content_area(current_y, est_height).1
                         {
-                            let (new_y, lo, _) =
-                                self.shift_new_line_below_floats(current_y, est_height, box_width);
+                            let (new_y, lo, _) = self.shift_new_line_below_floats(current_y, est_height, box_width);
                             current_y = new_y;
                             current_x = self.text_indent.max(lo);
                         }
@@ -1067,8 +1070,7 @@ impl InlineFormattingContext {
                         margin_bottom: m_bot,
                         baseline: box_info.baseline,
                         anchored_baseline_y: 0.0,
-                    }
-);
+                    });
 
                     current_x += box_width + m_right;
                     current_line.height = current_line.height.max(box_height + m_top + m_bot);
@@ -1158,10 +1160,7 @@ impl InlineFormattingContext {
                     // 匿名块拆分无 line box；float 脱流 §9.5 同理）。旧实现照 push → 幽灵
                     // 0 高行占据 line-clamp 预算（line-clamp-with-floats-001 cap=4 只剩 3 行
                     // 真文本）。Br 保持旧行为（真 <br> 的空行有 strut，R1286）。
-                    if !matches!(item, InlineItem::Br)
-                        && current_line.runs.is_empty()
-                        && current_line.height <= 0.0
-                    {
+                    if !matches!(item, InlineItem::Br) && current_line.runs.is_empty() && current_line.height <= 0.0 {
                         let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                         current_x = new_left;
                         continue;
@@ -1177,15 +1176,12 @@ impl InlineFormattingContext {
                     // est_height 已是 strut（default_line_height）；非空行（含文本，height>0）
                     // 不受影响。与 R1285（br 在 block 间的 taffy min-height）正交——本处管
                     // br 在 IFC 内（p>br 等）的空行。kill-switch `ZW_BR_IFC_LINE=0`（default-on）。
-                    if matches!(item, InlineItem::Br)
-                        && current_line.height <= 0.0
-                        && runtime_flags::br_ifc_line()
-                    {
+                    if matches!(item, InlineItem::Br) && current_line.height <= 0.0 && runtime_flags::br_ifc_line() {
                         current_line.height = est_height;
                     }
-            current_line.y = current_y;
-            self.lines.push(current_line);
-            last_word_on_line = false;
+                    current_line.y = current_y;
+                    self.lines.push(current_line);
+                    last_word_on_line = false;
                     current_y += est_height;
                     current_line = LineBox {
                         y: f32::NAN,
@@ -1263,9 +1259,10 @@ impl InlineFormattingContext {
             // 063：pre 纯 tab 行选区高亮必须可见，chromium 绿满格实证；R1447 tab 片段
             // text="" 宽度由 x 推进承载，仅凭文本判据会把保留空白行误塌 0 高 → auto
             // 高块/float 盒高 0 整盒不可见）。
-            let line_preserves_ws = line.runs.iter().any(|f| {
-                f.ws_override.map_or(self.preserve_whitespace, |ws| ws.preserve)
-            });
+            let line_preserves_ws = line
+                .runs
+                .iter()
+                .any(|f| f.ws_override.map_or(self.preserve_whitespace, |ws| ws.preserve));
             let all_collapsible_ws = !line_preserves_ws
                 && !line.runs.is_empty()
                 && line.runs.iter().all(|f| {
@@ -1294,7 +1291,12 @@ impl InlineFormattingContext {
         if debug_ifc && !self.lines.is_empty() {
             let total: f32 = self.lines.iter().map(|l| l.height).sum();
             let heights: Vec<f32> = self.lines.iter().map(|l| l.height).collect();
-            eprintln!("[ZW_DEBUG_IFC] lines={} total_h={:.1} heights={:?}", self.lines.len(), total, heights);
+            eprintln!(
+                "[ZW_DEBUG_IFC] lines={} total_h={:.1} heights={:?}",
+                self.lines.len(),
+                total,
+                heights
+            );
         }
 
         // 应用文本对齐
@@ -1483,13 +1485,14 @@ impl InlineFormattingContext {
                     let mapping = source_cursor.take_source_and_logical_ranges(&text);
                     let span_index = vertical_span_index_for_ranges(
                         &spans,
-                        mapping.as_ref().map_or(&[], |mapping| mapping.visual_to_logical.as_slice()),
-                    );
-                    let span = &spans[span_index];
-                    let source =
                         mapping
                             .as_ref()
-                            .and_then(|mapping| vertical_local_source(mapping, span, 0, 1));
+                            .map_or(&[], |mapping| mapping.visual_to_logical.as_slice()),
+                    );
+                    let span = &spans[span_index];
+                    let source = mapping
+                        .as_ref()
+                        .and_then(|mapping| vertical_local_source(mapping, span, 0, 1));
                     let run = span.run;
                     let ch_height =
                         self.advance_of(ch, run.font_id, run.font_size, run.is_ahem_font) + run.letter_spacing;
@@ -1519,11 +1522,10 @@ impl InlineFormattingContext {
                         padding_left: run.padding_left,
                         padding_right: run.padding_right,
                         margin_top: 0.0,
-                            margin_bottom: 0.0,
+                        margin_bottom: 0.0,
                         baseline: run.font_size,
                         anchored_baseline_y: 0.0,
-                    }
-);
+                    });
 
                     partial_depth += ch_height;
                     current_column.height = current_column.height.max(run.line_height);
@@ -1532,8 +1534,7 @@ impl InlineFormattingContext {
             } else {
                 let mapping = source_cursor.take_source_and_logical_ranges(word);
                 let mut segment_depth = *current_depth;
-                for (segment_index, segment) in vertical_word_segments(word, mapping, &spans).into_iter().enumerate()
-                {
+                for (segment_index, segment) in vertical_word_segments(word, mapping, &spans).into_iter().enumerate() {
                     let segment_char_count = segment.text.chars().count();
                     let mut segment_height = self.advance_run_width(&segment.text, segment.run)
                         + segment.run.letter_spacing * segment_char_count as f32;
@@ -1561,11 +1562,10 @@ impl InlineFormattingContext {
                         padding_left: segment.run.padding_left,
                         padding_right: segment.run.padding_right,
                         margin_top: 0.0,
-                            margin_bottom: 0.0,
+                        margin_bottom: 0.0,
                         baseline: segment.run.font_size,
                         anchored_baseline_y: 0.0,
-                    }
-);
+                    });
 
                     segment_depth += segment_height;
                     current_column.height = current_column.height.max(segment.run.line_height);
@@ -1582,7 +1582,8 @@ impl InlineFormattingContext {
     }
 
     fn push_vertical_column(&mut self, current_column: &mut LineBox, current_depth: &mut f32) {
-        self.lines.push(std::mem::replace(current_column, empty_inline_line_box()));
+        self.lines
+            .push(std::mem::replace(current_column, empty_inline_line_box()));
         *current_depth = 0.0;
     }
 }
@@ -1645,11 +1646,18 @@ struct VerticalTextSegment<'a> {
     run: &'a TextRun,
 }
 
-fn vertical_span_index_for_ranges(spans: &[VerticalTextRunSpan<'_>], ranges: &[Option<std::ops::Range<usize>>]) -> usize {
+fn vertical_span_index_for_ranges(
+    spans: &[VerticalTextRunSpan<'_>],
+    ranges: &[Option<std::ops::Range<usize>>],
+) -> usize {
     ranges
         .iter()
         .flatten()
-        .find_map(|range| spans.iter().position(|span| range.start >= span.start && range.end <= span.end))
+        .find_map(|range| {
+            spans
+                .iter()
+                .position(|span| range.start >= span.start && range.end <= span.end)
+        })
         .unwrap_or(0)
 }
 
@@ -1801,7 +1809,9 @@ fn plaintext_paragraph_directions(items: &[InlineItem]) -> HashMap<NodeId, bool>
                 paragraph.push_str(&run.text);
                 nodes.push(run.node_id);
             }
-            InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => flush(&mut paragraph, &mut nodes, &mut directions),
+            InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
+                flush(&mut paragraph, &mut nodes, &mut directions)
+            }
             _ => {}
         }
     }

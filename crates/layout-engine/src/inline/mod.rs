@@ -133,6 +133,10 @@ pub struct InlineFormattingContext {
     pub preserve_whitespace: bool,
     /// 是否在换行符 `\n` 处强制断行（white-space: pre-line；CSS Text 3 §4.2）。
     pub break_at_newline: bool,
+    /// R5325：`text-wrap: balance`（css-text-4 §text-wrap-balance）——断行前按
+    /// 「贪心行数 + 最小行宽参差」重排软换行点（balance_breaks 规划器消费）。
+    /// 规划仅作用于 scope 门内的纯文本段，其余维持贪心。
+    pub balance: bool,
     /// CSS word-break 行为。
     pub word_break: WordBreakMode,
     /// CSS text-autospace 行为（CSS Text 4 §8，表意文字与字母/数字间 0.125em 间距）。
@@ -449,6 +453,7 @@ impl InlineFormattingContext {
             no_wrap: false,
             preserve_whitespace: false,
             break_at_newline: false,
+            balance: false,
             word_break: WordBreakMode::default(),
             text_autospace: TextAutospaceValue::NoAutospace,
             text_indent: 0.0,
@@ -1127,6 +1132,12 @@ impl InlineFormattingContext {
         self
     }
 
+    /// 设置 `text-wrap: balance`（R5325，css-text-4 §text-wrap-balance）。
+    pub fn with_balance(mut self, balance: bool) -> Self {
+        self.balance = balance;
+        self
+    }
+
     /// 设置 word-break 行为。
     pub fn with_word_break(mut self, mode: WordBreakMode) -> Self {
         self.word_break = mode;
@@ -1715,6 +1726,9 @@ include!("collect_items.rs");
 
 // 行盒分割方法（break_into_lines / break_items_into_lines）— 拆分到独立文件控制 mod.rs 体积
 include!("break_lines.rs");
+
+// text-wrap: balance 断点规划器（R5325）— 纯函数规划面，同 include! 模式并入本模块
+include!("balance_breaks.rs");
 
 impl InlineFormattingContext {
     /// 计算行尾「悬挂」空白的总宽度（CSS Text §3.1.4 phase II）。

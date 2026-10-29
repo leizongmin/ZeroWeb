@@ -1720,6 +1720,14 @@ impl super::Painter {
                     .with_no_wrap(no_wrap)
                     .with_preserve_whitespace(preserve_whitespace)
                     .with_break_at_newline(break_at_newline)
+                    // R5325（css-text-4 §text-wrap-balance）：Path B 重跑 IFC 同源注入
+                    // balance——非 pure-Ahem 容器 layout 不存储（compute_final store 门）
+                    // ，本重跑即权威绘制几何，漏注入会以贪心行形覆盖 layout 断点
+                    //（text-wrap-balance-004：monospace 非 Ahem → Path B，蓝段恒贪心）。
+                    .with_balance(matches!(
+                        style.text_wrap,
+                        zero_style_system::property::types::TextWrapComputedValue::Balance
+                    ))
                     .with_word_break(word_break_mode)
                     .with_text_autospace(style.text_autospace)
                     .with_text_indent(text_indent_px)

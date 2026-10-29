@@ -306,6 +306,15 @@ pub(super) fn float_line_overflow_descent() -> bool {
     selected(*VALUE, || default_on("ZW_FLOAT_LINE_OVERFLOW_DESCENT"))
 }
 
+/// R5325（css-text-4 §text-wrap-balance）：`text-wrap: balance` 断点规划——纯文本段
+/// 保持贪心行数、词间重排最小化行宽参差（min-Σw² DP）。算法 UA 自定义（spec 只约束
+/// 「行数不增 + 均衡」），规划面 scope 门收窄到无浮动/无缩进/无原子与 bidi 的普通
+/// white-space 段，其余维持贪心。default-on；`ZW_TEXT_WRAP_BALANCE=0` 回退纯贪心。
+pub(super) fn text_wrap_balance() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_TEXT_WRAP_BALANCE"));
+    selected(*VALUE, || default_on("ZW_TEXT_WRAP_BALANCE"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

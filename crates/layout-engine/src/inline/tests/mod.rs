@@ -31,6 +31,8 @@ mod r5317_va_atom_line_box_tests;
 mod r5323_ws_seq_pure_run_collapse_tests;
 /// R5324 行中 float 锚遇满溢行（剩余带宽 ≤ 0）降行锚定（CSS2 §9.5）。
 mod r5324_float_line_overflow_descent_tests;
+/// R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）。
+mod r5325_text_wrap_balance_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

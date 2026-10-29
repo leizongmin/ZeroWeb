@@ -355,6 +355,18 @@ pub(crate) fn resolve_no_wrap_for_ifc_measure(style: Option<&ComputedStyle>) -> 
     })
 }
 
+/// R5325（css-text-4 §text-wrap-balance）：remeasure 路径的 balance 注入口——镜像
+/// compute_final_inline_layouts 主配置。remeasure 重建 IFC 的行形状是 paint 消费的
+/// 最终几何，不注入时 balance 段在 remeasure 期回退贪心、覆盖主路径断点。
+pub(crate) fn resolve_balance_for_ifc(style: Option<&ComputedStyle>) -> bool {
+    style.is_some_and(|s| {
+        matches!(
+            s.text_wrap,
+            zero_style_system::property::types::TextWrapComputedValue::Balance
+        )
+    })
+}
+
 /// R1935：measure 期是否保留空白序列（pre/pre-wrap）。镜像 `resolve_no_wrap_for_ifc_measure`。
 ///
 /// R645 仅传 no_wrap 不传 preserve（letter-spacing-201 pre-wrap 多空格回归），但 binary-search
@@ -1813,6 +1825,13 @@ pub(crate) fn compute_final_inline_layouts(
         .with_no_wrap(no_wrap)
         .with_preserve_whitespace(preserve_whitespace)
         .with_break_at_newline(break_at_newline)
+        // R5325（css-text-4 §text-wrap-balance）：balance 折入断行层——布局主路径
+        // IFC 携带 balance 旗标，break_items_into_lines 入口做词界重排规划。度量
+        // 路径不注入（balance 不影响 min/max-content，css-text-4 §text-wrap 注记）。
+        .with_balance(matches!(
+            style.text_wrap,
+            zero_style_system::property::types::TextWrapComputedValue::Balance
+        ))
         .with_word_break(word_break_mode)
         .with_text_autospace(style.text_autospace)
         .with_text_indent(text_indent_px)
@@ -3975,7 +3994,8 @@ pub(crate) fn remeasure_inline_only_containers(
         let mut inline_ctx = InlineFormattingContext::new(box_node.content_width)
             .with_no_wrap(resolve_no_wrap_for_ifc_measure(styles.get(&dom_id)))
             .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
-            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
+            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)))
+            .with_balance(resolve_balance_for_ifc(styles.get(&dom_id)));
         inline_ctx.set_fragment_node_ids(frag_ids);
         inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
         // R4332：并入 run-in 前缀参与重测（与 measure 路径同源，行形状一致）。
@@ -4226,6 +4246,7 @@ pub(crate) fn remeasure_inline_only_containers(
             .with_no_wrap(no_wrap)
             .with_preserve_whitespace(preserve)
             .with_break_at_newline(break_at_newline)
+            .with_balance(resolve_balance_for_ifc(styles.get(&dom_id)))
             .with_inline_block_sizes(ib_sizes.clone())
             .with_baseline_overrides(probe_inline_block_baselines(
                 box_node,
@@ -4271,6 +4292,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_no_wrap(no_wrap)
                 .with_preserve_whitespace(preserve)
                 .with_break_at_newline(break_at_newline)
+                .with_balance(resolve_balance_for_ifc(styles.get(&dom_id)))
                 .with_inline_block_sizes(strut_ib_sizes)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             h_ctx = configure_inline_fonts(h_ctx, inline_fonts, false);
@@ -4297,6 +4319,7 @@ pub(crate) fn remeasure_inline_only_containers(
                 .with_text_group_align(resolve_text_group_align(styles.get(&dom_id)))
                 .with_text_align_last(text_align_last)
                 .with_no_wrap(no_wrap)
+                .with_balance(resolve_balance_for_ifc(styles.get(&dom_id)))
                 .with_inline_block_sizes(ib_sizes_for_mc)
                 .with_img_intrinsic_sizes(img_intrinsic_sizes.clone());
             col_ctx = configure_inline_fonts(col_ctx, inline_fonts, false);
@@ -4655,7 +4678,8 @@ pub(crate) fn remeasure_multicol_text_blocks(
                 let mut inline_ctx = InlineFormattingContext::new(info.column_width)
                     .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
                     .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
-                    .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)));
+                    .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)))
+                    .with_balance(resolve_balance_for_ifc(Some(style)));
                 inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
                 inline_ctx.layout(doc, node_id, styles);
                 let num_lines = inline_ctx.lines.len();
@@ -4738,7 +4762,8 @@ pub(crate) fn multicol_inline_flow_balanced_height(
     let mut inline_ctx = InlineFormattingContext::new(info.column_width)
         .with_no_wrap(resolve_no_wrap_for_ifc_measure(Some(style)))
         .with_preserve_whitespace(resolve_preserve_for_ifc_measure(Some(style)))
-        .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)));
+        .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(Some(style)))
+        .with_balance(resolve_balance_for_ifc(Some(style)));
     inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
     inline_ctx.layout(doc, dom_id, styles);
     let num_lines = inline_ctx.lines.len();
@@ -4851,7 +4876,8 @@ pub(crate) fn balance_multicol_spanner_regions(
         let mut inline_ctx = InlineFormattingContext::new(info.column_width)
             .with_no_wrap(resolve_no_wrap_for_ifc_measure(styles.get(&dom_id)))
             .with_preserve_whitespace(resolve_preserve_for_ifc_measure(styles.get(&dom_id)))
-            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)));
+            .with_break_at_newline(resolve_break_at_newline_for_ifc_measure(styles.get(&dom_id)))
+            .with_balance(resolve_balance_for_ifc(styles.get(&dom_id)));
         inline_ctx.set_fragment_node_ids(frag_ids);
         inline_ctx = configure_inline_fonts(inline_ctx, inline_fonts, false);
         inline_ctx.layout(doc, dom_id, styles);

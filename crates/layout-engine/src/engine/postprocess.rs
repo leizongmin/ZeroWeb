@@ -476,6 +476,11 @@ pub(super) fn adjust_inline_block_positions(
         .with_inline_block_sizes(ib_sizes)
         .with_baseline_overrides(baseline_overrides)
         .with_no_wrap(no_wrap)
+        // R5325（css-text-4 §text-wrap-balance）：与主路径同源注入 balance——无 float
+        // 排除带时规划面有效，避免本重测以贪心行形覆盖主路径断点。
+        .with_balance(crate::inline_finalization::resolve_balance_for_ifc(
+            styles.get(&container_node_id),
+        ))
         .with_float_exclusions(float_exclusions);
     // t-p116（CSS2 §10.8 行盒度量同源）：本 IFC 决定原子行内盒的行位（同行续排 vs
     // 折行），文本 advance 必须与 intrinsic 测量/stored IFC 同源（configure_inline_fonts
