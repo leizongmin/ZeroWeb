@@ -2225,6 +2225,70 @@ fn test_eventtarget_object_listener_r139() {
     );
 }
 
+// R5301（site-opt p118）：spec「add an event listener」步骤 3——callback 为 null/undefined
+// 直接返回，listener 不入表（window/document/element 三面 + EventTarget 类）。此前 null
+// 入表后在派发点被 R113 误报「handleEvent property is not a function」——github.com 实站
+// 页面脚本 document.addEventListener('DOMContentLoaded', undefined) 触发 window error。
+// Chrome 同参静默。派发侧语义不变：对象 listener（{handleEvent: null} 等）仍按 R113 上报。
+// https://dom.spec.whatwg.org/#add-an-event-listener
+#[test]
+fn test_add_event_listener_null_callback_r5301() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var errObj = null;\
+             window.addEventListener('error', function (e) { errObj = e; });\
+             addEventListener('boom', null);\
+             addEventListener('boom', undefined);\
+             document.addEventListener('boom', null);\
+             document.addEventListener('boom', undefined);\
+             var d = document.getElementById('d');\
+             d.addEventListener('boom', null);\
+             d.addEventListener('boom', undefined);\
+             var et = new EventTarget;\
+             et.addEventListener('boom', null);\
+             et.addEventListener('boom', undefined);\
+             dispatchEvent(new Event('boom'));\
+             document.dispatchEvent(new Event('boom'));\
+             d.dispatchEvent(new Event('boom'));\
+             et.dispatchEvent(new Event('boom'));\
+             parts.push('null-silent:' + (errObj === null));\
+             var hit = 0;\
+             addEventListener('boom', function () { hit++; });\
+             dispatchEvent(new Event('boom'));\
+             parts.push('fn-still-fires:' + hit);\
+             var errObj2 = null;\
+             window.addEventListener('error', function (e) { if (!errObj2) errObj2 = e; });\
+             d.addEventListener('pop', {});\
+             d.dispatchEvent(new Event('pop'));\
+             parts.push('obj-misfire-reported:' + (errObj2 && errObj2.error && errObj2.error.name === 'TypeError'));\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "null-silent:true|fn-still-fires:1|obj-misfire-reported:true",
+        "R5301 null/undefined callback 注册静默忽略（window/document/element/EventTarget 四面），真函数照常派发，对象 listener 非 callable handleEvent 仍上报"
+    );
+}
+
 // R140（js-dom M4）：live childNodes（spec `dom-node-childnodes` 返 live NodeList）——
 // ① 同节点重复读同一对象（caching）② append/insert/remove 后旧引用反映（live）③
 // item()/迭代器（真数组承载——Array 原生 keys/values/entries/forEach/Symbol.iterator
