@@ -96,4 +96,4 @@
 2026-10-30,upstream,v1.10,16590,15790,95.2,failed=800;skipped=0,4af441b8e,R5333 无穷 flex 因子语义（css-values-4 math × css-flexbox-1 §resolve-flexible-lengths）——flex-grow-009 ✓ calc(infinity) 吸收全部 free space，FIXED=1 REGRESSED=0
 2026-10-30,upstream,v1.10,16590,15791,95.2,failed=799;skipped=0,0d4430775,R5334 scroll container flex item 自动最小=0（css-flexbox-1 §4.5 × css-overflow-3 §3.1 × R1743 回填臂）——fieldset-as-item-overflow ✓ 回填豁免半区，FIXED=1 REGRESSED=0
 2026-10-30,upstream,v1.10,16590,15792,95.2,failed=798;skipped=0,ee26d526a,R5335 block-in-inline 切片边框语义（CSS2 §9.2.1.1 × R109 切片段）——block-in-inline-insert-009 ✓ 切片分段边框+壳 frame 剥离，FIXED=1 REGRESSED=0
-2026-10-30,upstream,v1.10,16590,15792,95.2,failed=798;skipped=0,7616aecf4,R5336 block-in-inline 切片段竖框块轴语义（CSS2 §10.8.1 × R109 切片段）——taffy 页面几何精确对齐 chromium，corpus 净零 FAILSET-IDENTICAL（paint 带域转 R5337）
+2026-10-30,upstream,v1.10,16590,15792,95.2,failed=798;skipped=0,6dfacc0ac,R5336 block-in-inline 切片段竖框块轴语义（CSS2 §10.8.1 × R109 切片段）——taffy 页面几何精确对齐 chromium，corpus 净零 FAILSET-IDENTICAL（paint 带域转 R5337）
