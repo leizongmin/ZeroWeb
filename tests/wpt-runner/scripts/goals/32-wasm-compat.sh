@@ -18,6 +18,9 @@ source "${SCRIPT_DIR}/lib.sh"
 GOAL="wasm-compat"
 GOAL_FETCH_DEEP=1
 GOAL_PULL_ANY_JS=1
+# .wasm 二进制资产（wasm/webapi/resources incrementer*.wasm——contenttype/
+# instantiateStreaming fetch 集成面依赖；lib.sh opt-in 同 .txt 先例）。
+GOAL_PULL_WASM=1
 DIRS=(
   "wasm/core"
   "wasm/webapi"

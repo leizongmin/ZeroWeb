@@ -8982,8 +8982,110 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // Module/exports 使 wasm/jsapi 通道自基线 715/719 塌缩至 141/460。经桥的
     // __zwNative__ 不可枚举锚点整面回挂原生——还原 b785548dc 之前全部 runner corpus
     // 的页面环境形态；生产路径不回挂，宿主 wasm-sandbox 桥语义不变。
+    //
+    // wasm-compat M3 收敛修（2026-10-29）：回挂原生后 async 编译面
+    // （compile/instantiate/compileStreaming/instantiateStreaming）在 runner 的 V8 平台泵下永不完成
+    // ——原生 async wasm 编译的完成回调依赖平台 foreground task 泵，runner 页面循
+    // 环只驱动 microtask/setTimeout（mini 复现页 b 隔离实证；jsapi 4 个记账 Timeout
+    // compile/instantiate 系 + wasm/core 全语料 async_index chain-waiter 挂死同此
+    // 根因）。同步面（Module/Instance/Memory/Table/Global/validate 构造与反射）不受
+    // 影响（jsapi 715 Pass 佐证）。修法：async 四件以原生同步原语重接——spec 契约
+    // 是「返回 Promise」，编译同步完成即 resolve 合法（编译异步是实现细节）。
+    // 重接面按上游 jsapi 语义钉齐（2026-10-29 复跑迭代）：instantiate 双重载——
+    // Module 形参同步读导入并 resolve 裸 Instance，Buffer 形参调用时同步快照字节
+    // （「Changing the buffer」）+ 编译链接推迟到 promise job（导入 getter 不得
+    // 同步触发）resolve {module, instance}；非对象 importObject 走 rejected
+    // promise（上游 promise_rejects_js 语义，非同步 throw）；streaming 两件走
+    // Response arrayBuffer + application/wasm MIME 判定。compile/instantiate
+    // 的 length 按上游 IDL 对齐（importObject optional → length 1）。
+    // 复跑结果：jsapi 通道 715 Pass + 4 Timeout 记账 → 878/878 全绿零回归
+    // （4 Timeout 收敛为净增量，DC-4「只增不降」合规）。
+    // http://webassembly.github.io/spec/js-api/index.html
     let _ = webview.execute_script(
-        "if (globalThis.WebAssembly && globalThis.WebAssembly.__zwNative__) globalThis.WebAssembly = globalThis.WebAssembly.__zwNative__;",
+        r#"
+(function() {
+  if (!globalThis.WebAssembly || !globalThis.WebAssembly.__zwNative__) return;
+  var W = globalThis.WebAssembly.__zwNative__;
+  W.compile = function compile(bufferSource) {
+    try {
+      return Promise.resolve(new W.Module(bufferSource));
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  };
+  W.instantiate = function instantiate(bufferSourceOrModule) {
+    var importObject = arguments[1];
+    if (importObject !== undefined && (importObject === null
+      || (typeof importObject !== 'object' && typeof importObject !== 'function'))) {
+      return Promise.reject(new TypeError('WebAssembly.instantiate(): Argument 1 must be an object or undefined'));
+    }
+    // Module 形参：同步读导入（getter 同步触发）+ promise resolve 裸 Instance。
+    if (bufferSourceOrModule instanceof W.Module) {
+      try {
+        return Promise.resolve(new W.Instance(bufferSourceOrModule, importObject));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    }
+    // Buffer 形参：字节同步快照（上游「Changing the buffer」钉调用时捕获语义），
+    // 编译+链接推迟到 promise job（导入 getter 不得同步触发），resolve
+    // { module, instance }。
+    var stableBytes;
+    try {
+      stableBytes = ArrayBuffer.isView(bufferSourceOrModule)
+        ? bufferSourceOrModule.slice()
+        : bufferSourceOrModule.slice(0);
+    } catch (e) {
+      return Promise.reject(e);
+    }
+    return Promise.resolve().then(function() {
+      var module = new W.Module(stableBytes);
+      return { module: module, instance: new W.Instance(module, importObject) };
+    });
+  };
+  W.compileStreaming = function compileStreaming(response) {
+    try {
+      if (!response || typeof response.arrayBuffer !== 'function'
+        || !response.headers || typeof response.headers.get !== 'function') {
+        return Promise.reject(new TypeError(
+          'WebAssembly.compileStreaming(): Argument 0 must be a Response'));
+      }
+      var contentType = String(response.headers.get('content-type') || '');
+      if (contentType.split(';')[0].trim().toLowerCase() !== 'application/wasm') {
+        return Promise.reject(new TypeError(
+          'WebAssembly.compileStreaming(): Response has unsupported MIME type'));
+      }
+      return response.arrayBuffer().then(function(buffer) {
+        return new W.Module(buffer);
+      });
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  };
+  W.instantiateStreaming = function instantiateStreaming(response) {
+    var importObject = arguments[1];
+    try {
+      if (!response || typeof response.arrayBuffer !== 'function'
+        || !response.headers || typeof response.headers.get !== 'function') {
+        return Promise.reject(new TypeError(
+          'WebAssembly.instantiateStreaming(): Argument 0 must be a Response'));
+      }
+      var contentType = String(response.headers.get('content-type') || '');
+      if (contentType.split(';')[0].trim().toLowerCase() !== 'application/wasm') {
+        return Promise.reject(new TypeError(
+          'WebAssembly.instantiateStreaming(): Response has unsupported MIME type'));
+      }
+      return response.arrayBuffer().then(function(buffer) {
+        var module = new W.Module(buffer);
+        return { module: module, instance: new W.Instance(module, importObject) };
+      });
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  };
+  globalThis.WebAssembly = W;
+})();
+"#,
     );
     // M3 扩批 XVIII（2026-09-03，注册竞态消除）：媒体源按需供给方——宿主桥 play
     // 未命中（源未登记）时**同步**读 wpt-data 字节补登记，消除「重试等下一 probe

@@ -217,6 +217,14 @@ for entry in d["tree"]:
           fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
         fi
         ;;
+      # .wasm 二进制资产（wasm-compat M1：wasm/webapi/resources incrementer*.wasm
+      # ——contenttype/instantiateStreaming fetch 集成面单点；opt-in 同 .txt 先例，
+      # 防其他 goal 语料面意外扩张）。
+      *.wasm)
+        if [[ "${GOAL_PULL_WASM:-0}" == "1" ]]; then
+          fetch_raw "${dir}/${name}" || FAILED_FETCHES=$((FAILED_FETCHES + 1))
+        fi
+        ;;
       # .htm 与 .headers 同 fetch_dir_html 扩展模式（workers corpus 三层 .htm 用例 +
       # .headers sidecar——深挖模式此前漏拉，2026-10-20 workers-compat M1 补齐）。
       # GOAL_PULL_HEADERS_TARGETS=1 的 sidecar 目标带拉语义同 fetch_dir_html（此处

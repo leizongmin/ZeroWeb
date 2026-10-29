@@ -1,0 +1,250 @@
+{
+ "date": "2026-10-29",
+ "goal": "wasm-compat",
+ "milestone": "M1 baseline (DC-1/DC-2/DC-3)",
+ "wpt_rev": "315976933870b34d6ea30e3f6643403edae678ba",
+ "command": "make testharness-wasm-core  # zero-wpt-runner testharness-wasm-core, test-guard --per-proc-mem 4 --total-mem 8 --time-limit 3600",
+ "totals": {
+  "cases": 273,
+  "pass": 188525,
+  "fail": 36,
+  "timeout": 0
+ },
+ "clusters": {
+  "wasm/core-top": {
+   "cases": 97,
+   "Pass": 65924,
+   "Fail": 2,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/bulk-memory": {
+   "cases": 8,
+   "Pass": 8134,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/exceptions": {
+   "cases": 4,
+   "Pass": 188,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/gc": {
+   "cases": 17,
+   "Pass": 1158,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/memory64": {
+   "cases": 25,
+   "Pass": 10245,
+   "Fail": 7,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/multi-memory": {
+   "cases": 41,
+   "Pass": 1506,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/relaxed-simd": {
+   "cases": 7,
+   "Pass": 314,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/core/simd": {
+   "cases": 59,
+   "Pass": 100811,
+   "Fail": 0,
+   "Timeout": 0,
+   "Not run": 0
+  },
+  "wasm/webapi": {
+   "cases": 15,
+   "Pass": 245,
+   "Fail": 27,
+   "Timeout": 0,
+   "Not run": 0
+  }
+ },
+ "failing_subtests": [
+  {
+   "case": "wasm/core/memory64/memory64.wast.js.html",
+   "subtest": "#6 Test that WebAssembly compilation succeeds (memory64.wast:8)"
+  },
+  {
+   "case": "wasm/core/memory64/memory64.wast.js.html",
+   "subtest": "#7 Test that WebAssembly compilation succeeds (memory64.wast:9)"
+  },
+  {
+   "case": "wasm/core/memory64/memory64.wast.js.html",
+   "subtest": "#36 Test that WebAssembly compilation succeeds (memory64.wast:8)"
+  },
+  {
+   "case": "wasm/core/memory64/memory64.wast.js.html",
+   "subtest": "#37 Test that WebAssembly compilation succeeds (memory64.wast:9)"
+  },
+  {
+   "case": "wasm/core/memory64/memory64.wast.js.html",
+   "subtest": "#38 Test that WebAssembly instantiation succeeds"
+  },
+  {
+   "case": "wasm/core/memory64/table64.wast.js.html",
+   "subtest": "#10 Test that WebAssembly compilation succeeds (table64.wast:9)"
+  },
+  {
+   "case": "wasm/core/memory64/table64.wast.js.html",
+   "subtest": "#33 Test that WebAssembly compilation succeeds (table64.wast:9)"
+  },
+  {
+   "case": "wasm/core/table.wast.js.html",
+   "subtest": "#8 Test that WebAssembly compilation succeeds (table.wast:9)"
+  },
+  {
+   "case": "wasm/core/table.wast.js.html",
+   "subtest": "#55 Test that WebAssembly compilation succeeds (table.wast:9)"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "compileStreaming() on an already-aborted request should reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "compileStreaming() synchronously followed by abort should reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "compileStreaming() asynchronously racing with abort should succeed or reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "instantiateStreaming() on an already-aborted request should reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "instantiateStreaming() synchronously followed by abort should reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/abort.any.js",
+   "subtest": "instantiateStreaming() asynchronously racing with abort should succeed or reject with AbortError"
+  },
+  {
+   "case": "wasm/webapi/body.any.js",
+   "subtest": "compileStreaming before consumption"
+  },
+  {
+   "case": "wasm/webapi/body.any.js",
+   "subtest": "instantiateStreaming before consumption"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"application/wasm\": compileStreaming"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"application/wasm\": instantiateStreaming"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"APPLICATION/wasm\": compileStreaming"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"APPLICATION/wasm\": instantiateStreaming"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"APPLICATION/WASM\": compileStreaming"
+  },
+  {
+   "case": "wasm/webapi/contenttype.any.js",
+   "subtest": "Response with Content-Type \"APPLICATION/WASM\": instantiateStreaming"
+  },
+  {
+   "case": "wasm/webapi/empty-body.any.js",
+   "subtest": "compileStreaming: no body in a promise"
+  },
+  {
+   "case": "wasm/webapi/empty-body.any.js",
+   "subtest": "compileStreaming: empty body in a promise"
+  },
+  {
+   "case": "wasm/webapi/empty-body.any.js",
+   "subtest": "instantiateStreaming: no body in a promise"
+  },
+  {
+   "case": "wasm/webapi/empty-body.any.js",
+   "subtest": "instantiateStreaming: empty body in a promise"
+  },
+  {
+   "case": "wasm/webapi/historical.any.js",
+   "subtest": "historical"
+  },
+  {
+   "case": "wasm/webapi/rejected-arg.any.js",
+   "subtest": "compileStreaming"
+  },
+  {
+   "case": "wasm/webapi/rejected-arg.any.js",
+   "subtest": "instantiateStreaming"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_compile_test.any.js",
+   "subtest": "compileStreaming using promise response from fetch and check instantiate"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_compile_test.any.js",
+   "subtest": "compileStreaming check CORS"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_compile_test.any.js",
+   "subtest": "compileStreaming using ReadableStream with ArrayBuffer chunk"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_instantiate_test.any.js",
+   "subtest": "instantiateStreaming using promise response from fetch and check instantiate"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_instantiate_test.any.js",
+   "subtest": "instantiateStreaming check CORS"
+  },
+  {
+   "case": "wasm/webapi/wasm_stream_instantiate_test.any.js",
+   "subtest": "instantiateStreaming using ReadableStream with ArrayBuffer chunk"
+  }
+ ],
+ "jsapi_floor_dc4": {
+  "channel": "make testharness-wasm",
+  "before": {
+   "pass": 715,
+   "fail": 0,
+   "timeout": 4,
+   "booked": [
+    "wasm/jsapi/constructor/compile.any.js",
+    "wasm/jsapi/constructor/instantiate.any.js",
+    "wasm/jsapi/constructor/instantiate-bad-imports.any.js",
+    "wasm/jsapi/constructor/multi-value.any.js"
+   ]
+  },
+  "after": {
+   "pass": 878,
+   "fail": 0,
+   "timeout": 0,
+   "exit": 0
+  },
+  "regression": 0
+ },
+ "async_fix": "runner warmup native-restore point rewires compile/instantiate/compileStreaming/instantiateStreaming over native sync primitives (platform-pump stall root cause); production bridge untouched",
+ "gap_clusters": {
+  "memory64_index_face": 9,
+  "webapi_streaming_response_integration": 27
+ }
+}
