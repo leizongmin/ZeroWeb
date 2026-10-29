@@ -4531,27 +4531,73 @@
     } catch (_eRe) {}
     return _ssOut;
   }
+  // s154（html-semantics M2 切片 154）：跨触发臂的身份时序缺口两件——
+  // ①取回印记表（identity 键）：同 (sel,handle) 同解析 URL 只发起一次。触发臂
+  //   并发面（先赋 href detached bail → 重查排程，后 append 插入臂直取；href
+  //   变更解析 URL 不同照常重取）此前只靠连接门时序隐式去重，重查引入后须显
+  //   式表驱动。键用 _elKey(sel,handle)——attr 臂 3 参调用无 elObj，节点属性
+  //   印记覆盖不到；身份键对两臂一致。
+  // ②单发重查：TAG/连接门 bail 且身份可推进时 setTimeout(0) 按同一身份重跑
+  //   一次。innerHTML flatten 产物在 mutation 记账时身份双表示——汇流臂手里
+  //   的解析树 M 节点永不盖章（物化产物是另一 JS 对象），其重查自弃（身份不可
+  //   推进）；可恢复面是物化 attr 臂（handle 已盖章、_zwNodeParent 反链注册
+  //   滞后于属性写）——+0ms 注册完成，同身份重查即命中 connected（
+  //   document-without-browsing-context innerHTML 案形态）。重查键同身份表，
+  //   单发不循环（detached 重查再 bail 即放弃）。
+  var _zwSsFiredMap = {};   // identity key → 最后一次发起取回的解析 URL
+  var _zwSsRetryDone = {};  // identity key → 重查已排程（单发）
+  // s154 单发重查排程（见下方②）：同身份只排一次；+0ms 后按原身份重跑（身份
+  // 缺失时回落 elObj 现读——R368 盖章形 append 臂的 elObj 后到章）。重查再 bail
+  // 不再排程（_zwSsRetryDone 印记），detached 恒态零循环。
+  var _ssScheduleRetry = function (_ssRSel, _ssRHandle, _ssRElObj, _ssRKey) {
+    if (_ssRKey == null) return;
+    if (_zwSsRetryDone[_ssRKey]) return;
+    _zwSsRetryDone[_ssRKey] = true;
+    setTimeout(function () {
+      try {
+        var _ssR2Sel = _ssRSel, _ssR2H = _ssRHandle;
+        if (_ssR2Sel == null && _ssR2H == null && _ssRElObj) {
+          _ssR2Sel = _ssRElObj.__zwSelector != null ? _ssRElObj.__zwSelector : null;
+          _ssR2H = _ssRElObj.__zwHandle != null ? _ssRElObj.__zwHandle : null;
+        }
+        if (_ssR2Sel == null && _ssR2H == null) return;
+        globalThis._zwStylesheetMaybeStart(_ssR2Sel, _ssR2H, null, _ssRElObj);
+      } catch (_eSsR2) {}
+    }, 0);
+  };
   globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj) {
     try {
       if (typeof _realTag !== 'function') return;
+      var _ssKey = (typeof _elKey === 'function') ? _elKey(sel, handle) : null;
       // TAG 门（尽力判定）：sel 形命中宿主 tag 表 → 严格校验；handle-only 形
       // （innerHTML flatten 产物 plain handle）宿主表 miss 时 _realTag 回落恒
       // DIV——该形态放行（插入臂调用前已按节点 tagName 判 LINK；rel=stylesheet
       // + href 非空的后继门对非 LINK 元素不成立，误触发面可忽略）。
       var _ssTag = '';
       try { _ssTag = String(_realTag(sel, handle) || ''); } catch (_eTag) {}
-      if (_ssTag && _ssTag !== 'LINK' && !(_ssTag === 'DIV' && !sel && handle)) return;
+      if (_ssTag && _ssTag !== 'LINK' && !(_ssTag === 'DIV' && !sel && handle)) {
+        _ssScheduleRetry(sel, handle, elObj, _ssKey);
+        return;
+      }
       // 连接门：link processing 只在元素连接到文档时进行（detached link 的 href
       // 赋值不取回——createElement 后先赋 href 再 append 的先赋后插形防双请求，
       // 插入臂触发一次即足）。_zwMutationInDoc (sel,handle) 形父链爬升判定
       //（part05 定义；缺席嵌入方放宽——与 helper 其余门的 typeof 回退同口径）。
+      // s154：bail 时单发重查（物化臂先于反链注册的时序缺口，见上方②）。
       try {
-        if (typeof _zwMutationInDoc === 'function' && _zwMutationInDoc(sel, handle) !== true) return;
+        if (typeof _zwMutationInDoc === 'function' && _zwMutationInDoc(sel, handle) !== true) {
+          _ssScheduleRetry(sel, handle, elObj, _ssKey);
+          return;
+        }
       } catch (_eConn) {}
       // attr 读通道：sel/handle 形走宿主桥（lw 读——pending SetAttr 未 apply 面
       // R3202 stale-snapshot 族同款 typeof 回退）；plain handle 形（innerHTML
       // flatten 产物）宿主表 miss（null）→ 节点对象 getAttribute 回落（解析树
-      // 存储——插入臂传 _an109n/_kdW 即此通道）。
+      // 存储——插入臂传 _an109n/_kdW 即此通道）。s154：宿主 absent 属性可能返
+      // ''（非 null，part01 _mo_read_attr 同款注记）——R368 盖章路径 R4004 回填
+      // 依赖 getAttributeNames，DOMParser 解析树 M 节点无该方法 → 宿主表恒空 '',
+      // 回退判据从 `== null` 放宽为 falsy（rel/href 均非空串语义——空值本就该
+      // 判 miss，document-without-browsing-context adopt 案根因）。
       var _ssReadAttr = function (_ssName) {
         var _ssV = null;
         try {
@@ -4559,7 +4605,7 @@
             : (typeof __zw_get_attr_lw === 'function'
               ? __zw_get_attr_lw(sel, _ssName) : __zw_get_attr(sel, _ssName));
         } catch (_eAttr) {}
-        if (_ssV == null && elObj && typeof elObj.getAttribute === 'function') {
+        if (!_ssV && elObj && typeof elObj.getAttribute === 'function') {
           try { _ssV = elObj.getAttribute(_ssName); } catch (_eAttrEl) {}
         }
         return String(_ssV || '');
@@ -4611,6 +4657,15 @@
       if (_ssMixed) {
         setTimeout(function () { _ssFire('error'); }, 0);
         return;
+      }
+      // s154 取回印记：同身份同解析 URL 只发起一次（印记在发起前置位）。先赋
+      // href（detached bail → s154 重查排程）后 append（插入臂直取）形的重查
+      // 与插入臂并发去重；href 变更（重查/attr 臂携 prevHref 幂等门）解析 URL
+      // 不同 → 印记失配照常重取。无身份（_ssKey null——静态扫描 sel 空槽形）
+      // 不设印记照旧直取。
+      if (_ssKey != null) {
+        if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
+        _zwSsFiredMap[_ssKey] = _ssAbs;
       }
       // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
       // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
