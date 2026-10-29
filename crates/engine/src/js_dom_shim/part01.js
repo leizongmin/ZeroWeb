@@ -3997,7 +3997,8 @@
   // 入列——长度 <128、无 forbidden 字节、accept 无 `"`、CT essence 三形），range 为
   // 值条件 safelist（单一 simple range `bytes=\d+-\d*` 免预检；suffix/多段/空白/畸形
   // 入列——t8s-4 修正：旧「恒入列」使媒体 CDN Range 拉取误预检），accept-language/
-  // content-language 2024 spec 移出安全名单恒入列；
+  // content-language 值字节集 safelist（0-9 A-Z a-z SP * , - . ; =——M2-S11 对齐
+  // 现行 spec；旧「2024 移出安全名单恒入列」注记过时，fr/bzh/eu 合法值误预检）；
   // origin/content-length/access-control-*/referer/last-event-id/user-agent 恒跳过。
   // preflight 触发与 ACRH/ACAH 覆盖检查共用本名单（单一事实源）。
   function _zwPreNamesOf(headersWire) {
@@ -4045,13 +4046,37 @@
         push(ln);
         continue;
       }
-      push(ln); // accept-language/content-language/其余自定义头
+      if (ln === 'accept-language' || ln === 'content-language') {
+        // net-api M2-S11：值条件 safelist——值仅含 0-9 A-Z a-z SP * , - . ; =（spec
+        // 字节集）且长度 ≤128 免预检；\x01/@ 等破格值仍入列（not-cors-safelisted 面）。
+        // https://fetch.spec.whatwg.org/#cors-safelisted-request-header
+        if (val.length <= 128) {
+          var clOk = true;
+          for (var cli = 0; cli < val.length; cli++) {
+            var cc = val.charCodeAt(cli);
+            if (!((cc >= 0x30 && cc <= 0x39) || (cc >= 0x41 && cc <= 0x5A) ||
+                  (cc >= 0x61 && cc <= 0x7A) || cc === 0x20 || cc === 0x2A ||
+                  cc === 0x2C || cc === 0x2D || cc === 0x2E || cc === 0x3B ||
+                  cc === 0x3D)) {
+              clOk = false;
+              break;
+            }
+          }
+          if (clOk) continue;
+        }
+        push(ln);
+        continue;
+      }
+      push(ln); // 其余自定义头
     }
     return names;
   }
   // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——条目
-  // {key=(目标 origin|credentials), methods, headers, star, expires}。命中：未过期 +
-  // method ∈ methods + 每个自定义头 ∈ headers（star 通配）。
+  // {key=(目标 origin|URL|credentials), methods, headers, star, expires}。命中：未过期 +
+  // method ∈ methods + 每个自定义头 ∈ headers（star 通配）。M2-S11：键补 URL 维度
+  //（spec 条目按 (origin, URL, credentials) 索引——origin 级键使同 origin 异 URL
+  // 预检误命中，redirect-preflight 污染链根因）；method 存取恒**大小写敏感**
+  //（spec method token 精确匹配——ACAM PATCH 后 patch 须重预检，star 面）。
   var _zwPreflightCache = [];
   function _zwPreflightCacheHit(key, method, headerNames) {
     var nowMs = Date.now();
@@ -4059,7 +4084,7 @@
       var e = _zwPreflightCache[i];
       if (e.expires < nowMs) { _zwPreflightCache.splice(i, 1); continue; }
       if (e.key !== key) continue;
-      if (e.methods.indexOf(String(method).toLowerCase()) < 0) continue;
+      if (e.methods.indexOf(String(method)) < 0) continue; // M2-S11：大小写敏感
       var ok = true;
       for (var j = 0; j < headerNames.length; j++) {
         // net-api M4-S24：`*` 不覆盖 Authorization（cors-preflight-cache wildcard 面）。
@@ -4073,13 +4098,13 @@
   function _zwPreflightCacheStore(key, methodsRaw, headersRaw, maxAge, method) {
     var methods = [];
     if (methodsRaw && methodsRaw !== '*') {
-      var mp = String(methodsRaw).toLowerCase().split(',');
+      var mp = String(methodsRaw).split(',');
       for (var i = 0; i < mp.length; i++) {
         var t = mp[i].trim();
         if (t && methods.indexOf(t) < 0) methods.push(t);
       }
     }
-    var lm = String(method).toLowerCase();
+    var lm = String(method);
     if (methods.indexOf(lm) < 0) methods.push(lm); // 保底：本次请求方法可复用
     var star = String(headersRaw).trim() === '*';
     var headers = [];
@@ -4109,7 +4134,8 @@
   // https://fetch.spec.whatwg.org/#cors-preflight-fetch
   // p: { id, url, method, preHeaders, preNames, preDocOrigin, opaqueOrigin,
   //      credentials, mode, redirect } → Promise<{ resp, ok }>。缓存与失败处置由调用方
-  // 执行（主路径仅成功才缓存；重定向臂保持无条件缓存原语义）。
+  // 执行（M2-S11：两臂均仅覆盖检查成功后写缓存——spec store 步位于 CORS check
+  // 成功分支内，失败预检不落缓存）。
   function _zwRunPreflight(p) {
     return new Promise(function (preResolve) {
       var settlePre = function (preWire) {
@@ -4121,26 +4147,50 @@
         var preOk = (preResp.status >= 200 && preResp.status < 300) &&
           (preOrigin === p.preDocOrigin || p.opaqueOrigin && preOrigin === 'null' ||
            (preOrigin === '*' && p.credentials !== 'include'));
-        // net-api M4-S23：ACAM/ACAH 覆盖判定 spec 化——非 safelisted method 须 ACAM
-        // 覆盖（缺 ACAM → 拒）；`*` 通配 method（无凭据）。自定义头须 ACAH 覆盖
-        //（缺 ACAH → 拒；`*` 通配——authorization 例外面记账）。
-        if (preOk && !_zwFetchIsSafelistedMethod(p.method)) {
-          if (!preMethods || (preMethods !== '*' &&
-              String(preMethods).toLowerCase().split(',').map(function (s) { return s.trim(); })
-                .indexOf(String(p.method).toLowerCase()) < 0)) {
-            preOk = false;
+        // net-api M2-S11：ACAM/ACAH 值先经提取校验——`#method`/`#field-name` 逗号表
+        // 逐项 token 语法（含空格等非 tchar → failure → network error；
+        // cors-preflight-response-validation "Bad value" 面）。
+        // https://fetch.spec.whatwg.org/#extract-header-list-values
+        var _preListOk = function (raw) {
+          if (raw == null) return true;
+          var its = String(raw).split(',');
+          for (var ti = 0; ti < its.length; ti++) {
+            var tt = its[ti].trim();
+            if (tt && !/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(tt)) return false;
           }
-        }
-        if (preOk && p.preNames.length > 0) {
-          if (!preAllowedHdrs || preAllowedHdrs !== '*') {
-            var allowed = String(preAllowedHdrs || '').toLowerCase().split(',')
-              .map(function (s) { return s.trim(); });
-            for (var ai = 0; ai < p.preNames.length; ai++) {
-              if (allowed.indexOf(p.preNames[ai]) < 0) { preOk = false; break; }
+          return true;
+        };
+        if (preOk && (!_preListOk(preMethods) || !_preListOk(preAllowedHdrs))) preOk = false;
+        // net-api M2-S11：ACAM 覆盖 spec 化——非 safelisted method 须逐项匹配（method
+        // token **大小写敏感**——PATCH/patch、DELETE/delete 面）；`*` 仅无凭据通配
+        //（含凭据 → 拒，star 面）；缺 ACAM → 拒。safelisted method 不检 ACAM。
+        // https://fetch.spec.whatwg.org/#cors-preflight-fetch
+        if (preOk && !_zwFetchIsSafelistedMethod(p.method)) {
+          var pmOk = false;
+          if (preMethods === '*' && p.credentials !== 'include') {
+            pmOk = true;
+          } else if (preMethods != null) {
+            var pmParts = String(preMethods).split(',');
+            for (var pi = 0; pi < pmParts.length; pi++) {
+              if (pmParts[pi].trim() === String(p.method)) { pmOk = true; break; }
             }
-          } else if (p.preNames.indexOf('authorization') >= 0) {
-            // net-api M4-S24：ACAH `*` 不覆盖 authorization（wildcard 面须重 preflight）。
+          }
+          if (!pmOk) preOk = false;
+        }
+        // net-api M2-S11：ACAH 覆盖统一面——逐项大小写不敏感匹配；authorization 恒须
+        // 显式列出（`*` 永不覆盖，M4-S24 沿革）；其余名 `*` 仅无凭据通配（含凭据时仅
+        // 字面同名——star `["*", "1"]` 面角标）。
+        if (preOk && p.preNames.length > 0) {
+          var paParts = preAllowedHdrs == null ? [] :
+            String(preAllowedHdrs).toLowerCase().split(',').map(function (s) { return s.trim(); });
+          var paStar = paParts.indexOf('*') >= 0 && p.credentials !== 'include';
+          for (var ai = 0; ai < p.preNames.length; ai++) {
+            var pn = p.preNames[ai];
+            if (paParts.indexOf(pn) >= 0) continue;
+            if (pn === 'authorization') { preOk = false; break; }
+            if (paStar) continue;
             preOk = false;
+            break;
           }
         }
         preResolve({ resp: preResp, ok: preOk, methods: preMethods, allowed: preAllowedHdrs });
@@ -4774,7 +4824,10 @@
       var isObj = input && typeof input === 'object';
       var isRequestLike = isObj && input.url !== undefined;
       var url = _zwResolveFetchUrl(_zwFetchInputUrl(input));
-      var method = String(init.method || (isRequestLike ? input.method : '') || 'GET').toUpperCase();
+      // net-api M2-S11：method 归一走 `_zwNormalizeMethod`（spec 只大写 8 固定 token——
+      // patch 与自定义方法保持原串，ACRM 回显逐字比对前提；旧盲 toUpperCase 使
+      // patcH/chicken/patch 面全翻红）。https://fetch.spec.whatwg.org/#concept-method-normalize
+      var method = _zwNormalizeMethod(String(init.method || (isRequestLike ? input.method : '') || 'GET'));
       var mode = String(init.mode || (isRequestLike ? input.mode : '') || 'cors');
       // https://fetch.spec.whatwg.org/#concept-request-credentials-mode
       var credentials = String(init.credentials || (isRequestLike ? input.credentials : '') || 'same-origin');
@@ -4981,8 +5034,10 @@
         if (!_zwPreDone && mode === 'cors' && _zwFetchNeedsPreflight(method, headersWire) &&
             _zwHasRealPageOrigin() && _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
           var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+          // net-api M2-S11：缓存键补 URL 维度（spec 条目按 (origin, URL, credentials)
+          // 索引——origin 级键使同 origin 异 URL 误命中，redirect-preflight 污染链）。
           if (!_zwPreflightCacheHit(
-                _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
+                _zwUrlOrigin(url) + '|' + url + '|' + (credentials === 'include' ? 'i' : 's'),
                 method, _preNames)) {
           // net-api M4-S26：preflight 请求头取**最小集**（origin + ACRM + Accept: */* +
           // ACRH + referer——spec §cors-preflight-fetch，OPTIONS 不转发原请求自定义头；
@@ -5015,7 +5070,9 @@
           if (_acrhNames.length > 0) {
             // net-api M4-S25：无非空自定义头时 ACRH 须**省略**（cors-preflight
             // 「should be omitted」面）；空值头触发 preflight 但不入 ACRH 值。
-            preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Headers', _acrhNames.sort().join(', '));
+            // M2-S11：排序后 `,` 连接（无空格，Chromium 同形——preflight stash
+            // 「x-control-request-headers」精确断言面）。
+            preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Headers', _acrhNames.sort().join(','));
           }
           // t5：preflight 经 _zwRunPreflight（__zw_pending 异步契约，见该函数注记）。
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
@@ -5036,7 +5093,7 @@
             var preMaxAgeRaw = response_headers_get(pre.resp, 'access-control-max-age');
             var preMaxAge = preMaxAgeRaw == null ? 5 : (parseInt(preMaxAgeRaw, 10) || 0);
             _zwPreflightCacheStore(
-              _zwUrlOrigin(url) + '|' + (credentials === 'include' ? 'i' : 's'),
+              _zwUrlOrigin(url) + '|' + url + '|' + (credentials === 'include' ? 'i' : 's'),
               pre.methods, pre.allowed, preMaxAge, method);
             // 主请求重入（_zwPreDone 跳过本 preflight 臂）；外层 Promise 的 settle 移交。
             _zwFetchMain(input, init, true).then(resolve, reject);
@@ -5315,10 +5372,15 @@
                 reject(new TypeError('Failed to fetch'));
               }
             };
+            // net-api M2-S11：跨源 cors 链上 response tainting 恒 "cors" 不回退——
+            // 同源收尾跳仍走 cors 分支预检（主 fetch 递归语义；cors-redirect-preflight
+            // 「cors to same origin」面）。`_zwRespTaintingCors` 于跨跳处置位先行置位，
+            // 首个同源收尾跳到达本门时已就绪。
             if (mode === 'cors' && _zwFetchNeedsPreflight(nextMethod, nextWire) &&
-                nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
+                nextUrl && (_zwUrlOrigin(nextUrl) !== _zwUrlOrigin(_zwCurrentHref()) ||
+                  _zwRespTaintingCors) &&
                 !_zwPreflightCacheHit(
-                  _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
+                  _zwUrlOrigin(nextUrl) + '|' + nextUrl + '|' + (credentials === 'include' ? 'i' : 's'),
                   nextMethod, _rpNames)) {
               var rpDocOrigin = _zwHopOriginOpaque ? 'null' : _zwUrlOrigin(_zwCurrentHref());
               // 最小集（同上——不转发原请求自定义头）。
@@ -5336,11 +5398,13 @@
                 }
               }
               if (_rpAcrh.length > 0) {
-                rpHeaders = _zwAddHeader(rpHeaders, 'Access-Control-Request-Headers', _rpAcrh.sort().join(', '));
+                // M2-S11：与主路径同形——排序后 `,` 连接无空格。
+                rpHeaders = _zwAddHeader(rpHeaders, 'Access-Control-Request-Headers', _rpAcrh.sort().join(','));
               }
               // t5：重定向臂 preflight 与主路径同一异步契约缺陷（浏览器 fetch_bridge
-              // 同步返 "" → 恒判失败）——经 _zwRunPreflight 等待。缓存保持本臂原
-              // 无条件存储语义；失败 → network error；后续跳经 _issueNextHop。
+              // 同步返 "" → 恒判失败）——经 _zwRunPreflight 等待。缓存仅成功后写入
+              //（M2-S11 与主路径对齐/spec store 步）；失败 → network error；后续跳经
+              // _issueNextHop。
               globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
               var rpId = '__zwfid:repre' + globalThis.__zw_fetch_counter;
               _zwRunPreflight({
@@ -5349,17 +5413,17 @@
                 preDocOrigin: rpDocOrigin, opaqueOrigin: _zwHopOriginOpaque,
                 credentials: credentials, mode: mode, redirect: redirect,
               }).then(function (rp) {
-                var rpMaxAgeRaw = response_headers_get(rp.resp, 'access-control-max-age');
-                var rpMaxAge = rpMaxAgeRaw == null ? 5 : (parseInt(rpMaxAgeRaw, 10) || 0);
-                _zwPreflightCacheStore(
-                  _zwUrlOrigin(nextUrl) + '|' + (credentials === 'include' ? 'i' : 's'),
-                  rp.methods, rp.allowed, rpMaxAge, nextMethod);
                 if (!rp.ok) {
                   settled = true;
                   delete globalThis.__zw_pending[currentId || id];
                   reject(new TypeError('Failed to fetch'));
                   return;
                 }
+                var rpMaxAgeRaw = response_headers_get(rp.resp, 'access-control-max-age');
+                var rpMaxAge = rpMaxAgeRaw == null ? 5 : (parseInt(rpMaxAgeRaw, 10) || 0);
+                _zwPreflightCacheStore(
+                  _zwUrlOrigin(nextUrl) + '|' + nextUrl + '|' + (credentials === 'include' ? 'i' : 's'),
+                  rp.methods, rp.allowed, rpMaxAge, nextMethod);
                 _issueNextHop();
               }, function () {
                 // t5 返修 D2：重定向臂同形 rejection 分支（executor 裸 __zw_fetch 同步

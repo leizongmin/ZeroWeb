@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.13
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10949**（+1595，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.14
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10989**（+1635，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -108,12 +108,24 @@
   头名大小写线上保真（`_hCase` + wire 同名值合并 + 内部头 Title-Case 31 处 +
   runner echo-headers 逐字回显）+ set-cookie 入 forbidden 名单：
   **+25 零回归**（10924 → 10949）。
+- **M2-S11 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s11-cors-preflight-cache-coverage.md)）**：
+  CORS preflight 面 **+40 / 0 回归**（10949 → 10989）——preflight 缓存键补
+  URL 维度（spec (origin, URL, credentials) 条目）+ settlePre ACAM/ACAH 覆盖
+  spec 化（token 语法校验 / ACAM 大小写敏感 / `*` 凭据条件 / authorization
+  非通配）+ 缓存 method 精确匹配 + accept-language/content-language 值条件
+  safelist + hop 门 taint 补位 + 两臂缓存仅成功写入 + fetch 入口 method
+  归一 `_zwNormalizeMethod` + ACRH 无空格连接。六文件收口
+  （redirect-preflight 30/30、star 34/34、preflight 22/22、no-preflight
+  15/15、cache 2/2、response-validation 2/2）；cors-preflight-redirect 余
+  5F、referrer 6F 记账落档。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）。
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
-  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
+  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）、
+  cors-preflight-redirect after-preflight 拒绝链 + preflight Referer
+  origin 序列化尾斜杠（S11 记账 1-2，+11F 面）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
