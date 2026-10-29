@@ -10,7 +10,13 @@
 # 器匹配 API 面）。试点产出「通道 → 基线 → 分簇」模板后再按 top15 顺序
 # 扩面（里程碑见契约 docs/goal/css-testharness-compat.md）。
 #
-# runner 通道（子命令/skip 规则/Makefile target）属 M0 rally 轮落地内容；
+# runner 通道已落地（M0）：子命令 `testharness-css-values` / `testharness-selectors`
+# （tests/wpt-runner/src/testharness_css_corpus.rs），运行面按内容规则筛减
+# （`css_testharness_case_skipped`：manual / crash / .https / helper 资产目录 /
+# 非 testharness reftest 页 / iframe 依赖）——本脚本拉取面与 runner 谓词两侧
+# 同源防漂移（html-semantics 先例）。全量跑走 Makefile 分片通道
+# `make testharness-css-values` / `make testharness-selectors`（每案独立进程，
+# run-css-testharness-corpus.sh）；定向走 -one + FILTER。
 # 长套件内存治理（css-variables 全语料单进程 >8.8GB 三跑被杀的根因）是
 # M1 前置——治理落地前扩面套件进不了 CI coverage。
 # 用法：bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
@@ -26,6 +32,10 @@ GOAL_FETCH_DEEP=1
 DIRS=(
   "css/css-values"
   "css/selectors"
+  # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
+  # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
+  # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
+  "css/support"
 )
 
 goals_fetch_all
