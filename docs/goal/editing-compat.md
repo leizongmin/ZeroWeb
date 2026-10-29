@@ -1,8 +1,8 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.4
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）
-**状态**: Active——M2 次轮（双窗并行，已折叠）完成。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：自旋簇拆三事实——cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**，delete-in-last 家族 44 断言 0 Timeout 解锁、createlink 出真实语义断言）、runner 完成接线过早置 all_loaded（缺陷 #2，other 面 29/96 load 声明形态案账面完整性，挂账未修）
+**版本**: v1.5
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）；2026-10-30（M2 次轮收环：缺陷 #2 已修 R5341 + other 面墙钟 R5342，三例 Timeout 全收口）
+**状态**: Active——M2 次轮完成并收环。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**）、runner 完成接线过早置 all_loaded（缺陷 #2，**已修 R5341**：静态尾改 load+setTimeout(0) 门控镜像原生时序，write 注入路径维持直调；回归钉两枚 + 探针双 Pass + scripting-1 verdict 流零影响）。R5340+R5341 双落复跑：预算窗三例 Timeout **全部收口**（① delete-without-unwrapping 200F/0T、② inserttext-last-mutation 64F/0T、③ white-space join 三案实为 other 面平墙 120s 过紧的外部截断假象——corpus 脚本 **R5342** other 面接线自适应墙 60+nv×15+90；R5342 后 other 面全量复跑终账 **2,406P/12,308F/0T**，Timeout 清零、分母完整、总账逐位核对：F = 基线 11,159 + R5340 解锁 1,144 + R5341 回归 5）
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
@@ -72,9 +72,18 @@
 > 修复受 270896e25（write 注入路径 102 伪 Timeout 翻绿）约束不能简单
 > 删除。归因全文、R5340 验证与缺陷 #2 机制链见
 > [evidence/2026-10-30-m2-r2-spin-cluster-attribution.md](editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md)。
-> 下一步：缺陷 #2 修复（最小探针已归档）→ cloneNode 性能簇 → white-space
-> join → insertparagraph → execCommand 逐簇立项；run 面全分母复跑与收口
-> 抽查按预算窗时点注记执行，新二进制落位后 delete 族随抽查重核。
+> 下一步（2026-10-30 收环更新）：缺陷 #2 **已修 R5341**（静态尾 load+
+> setTimeout(0) 门控镜像 vendored harness 原生时序，write 注入路径维持
+> eval 尾直调——270896e25 依赖不动；行为钉+形态钉两枚回归钉常驻 make
+> test；探针双 Pass 验收；scripting-1 verdict 流零影响、102 Fail 核实为
+> 先于 R5341 的既有账归并行流）。预算窗三例 Timeout 全收口（①②
+> R5340 解锁出真实断言、③ 实为 other 面平墙 120s 过紧的截断假象，
+> corpus 脚本 R5342 接线 other 面自适应墙 60+nv×15+90——join 三案
+> nv=60 单案 ~150-170s 双二进制同值实证）。其余同上：cloneNode
+> 性能簇 → white-space join → insertparagraph → execCommand 逐簇立项；
+> run 面全分母复跑与收口抽查按预算窗时点注记执行。R5341 修复全文与
+> 三例收口账见
+> [evidence/2026-10-30-r5341-defect2-completion-wiring.md](editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md)。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -146,8 +155,13 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   前置成本性能簇（挂账）、removeChild pending 解析子静默穿透真自旋
   （R5340 修，delete-in-last 家族解锁验证，other 面 list/inline delete
   自旋案是否同根因就此收口）、runner 完成接线过早置 all_loaded（缺陷 #2，
-  other 面 29/96 load 形态案账面不完整，挂账）；其后缺陷 #2 → cloneNode
-  性能簇 → white-space join → insertparagraph → execCommand 语义逐簇立项。
+  other 面 29/96 load 形态案账面不完整）。收环（2026-10-30 三轮）：缺陷 #2
+  已修 R5341（testharness.rs 静态尾 load 门控 + 回归钉两枚 + scripting-1
+  verdict 流零影响），预算窗三例 Timeout 全收口（①②R5340 解锁出真实
+  断言、③ other 面平墙过紧截断假象由 R5342 修复——corpus 脚本 other 面
+  接线自适应墙 60+nv×15+90，run 通道分支未动；该文件与预算窗挂账的
+  420 下限重写共享，碰头信号记此）；其后 cloneNode 性能簇 → white-space
+  join → insertparagraph → execCommand 语义逐簇立项。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
   等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 

@@ -90,9 +90,20 @@ while read -r f; do
   fi
   idx=$((idx + 1))
   case_wall="${CASE_WALL_S}"
-  if [[ "${CORPUS}" == "run" && "${CASE_WALL_S_SET:-0}" != "1" ]]; then
+  if [[ "${CASE_WALL_S_SET:-0}" != "1" ]]; then
     nv="$(grep -c 'meta name="variant"' "${DATA_DIR}/${f#"${DATA_DIR}"/}" 2>/dev/null || true)"
-    case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+    if [[ "${CORPUS}" == "run" ]]; then
+      case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+    else
+      # R5342（2026-10-30）：other 面同形自适应——此前平墙 120s 对变体多案过紧：
+      # join-different-white-space-style 三案（nv=60）单案实测 ~150-170s
+      # （R5340-only 与 R5341 双二进制同值，非接线回归），全量复跑被外部截断
+      # 且 runner 按案缓冲零行落盘（Timeout 记账假象）。other 面每变体页
+      # CASE_TIMEOUT=10s 上限，系数取 15s/变体 + 150s 底（nv=0 对齐 run 面
+      # 已知待记的 150s 下限形）。实证见
+      # docs/goal/editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md §3.1。
+      case_wall=$(( 60 + ${nv:-0} * 15 + 90 ))
+    fi
   fi
   out="$(timeout --signal=KILL "${case_wall}" "${RUNNER}" "${SUBCMD}" "${rel}" 2>&1)"
   rc=$?

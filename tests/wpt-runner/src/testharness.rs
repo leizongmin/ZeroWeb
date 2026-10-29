@@ -9305,6 +9305,16 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 标记改 runner 侧执行（此前是 prepare 尾部 append 的 `<script>`——被解析器归入 body，
     // 成为页面可见 DOM，污染 documentElement.outerHTML 精确断言）。时序不变：全部页面脚本
     // 之后同步执行。
+    // R5341（editing-compat 缺陷 #2，2026-10-30）：harness_loaded 标记改 load 门控——
+    // 脚本尾同步置 all_loaded 早于下方三任务链的 load 派发，load handler 内同步 `test()`
+    // （testharness 声明即同步执行）首测 done 时四条件全真 → 提前 complete，同 handler
+    // 及后续 listener 的声明被 Tests.push 静默丢弃（phase===COMPLETE）。改挂 window load
+    // listener + setTimeout(0)，镜像 vendored testharness.js 原生 load listener 时序
+    //（93-100 行）——load 派发完成（含全部 load handler）后才置 all_loaded；complete()
+    // 有 phase===COMPLETE 再入守卫，与原生 listener 双标记幂等。write 注入路径不适用
+    //（document.open 后 load 不重发，fetch 服务源 eval 尾直调维持原形态，见
+    // HARNESS_LOADED_TAIL_CALL）。归因证据见
+    // docs/goal/editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md 簇 C。
     let _ = webview.execute_script(
         // R5000 片 d（html-syntax-compat，spec the-end）：生命周期三事件单 timer 任务
         // 内严格序 DCL → load → pageshow。①DCL 异步入队——defer 脚本已入队的 timer
@@ -9338,13 +9348,15 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // `__zwSchedArmDrain` 回调（interactive 后 drain：max trickle 到期 → 文档序
         // 执行 → 同任务派 DCL，spec the-end 序）。
         // https://html.spec.whatwg.org/multipage/scripting.html#the-end
-        "(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}function fireSettle5275() {try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}}\
+        &("(function () {var mk = globalThis.__zwMakeTrustedEvent;function protoLink(ev, proto) {try { if (proto && proto.prototype) Object.setPrototypeOf(ev, proto.prototype); } catch (_e5000pl) {}return ev;}function fireSettle5275() {try { if (typeof globalThis.__zwFireStaticImgSettle === 'function') globalThis.__zwFireStaticImgSettle(); } catch (_eIm5275) {}}\
         setTimeout(function () {try {globalThis.__zwReadyState='interactive';} catch (_ers8m1) {}try {var rs1 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs1);} catch (_ers8m1d) {}var _zwDclFire112 = function () {try {if (!globalThis.__zwDclFired112) {globalThis.__zwDclFired112 = true;var dcl = protoLink(mk ? mk('DOMContentLoaded', { bubbles: true }) : new Event('DOMContentLoaded', { bubbles: true }), globalThis.Event);document.dispatchEvent(dcl);}} catch (_edcl112) {}};var _zwHasDef112 = (typeof globalThis.__zwSchedHasDeferred === 'function') && globalThis.__zwSchedHasDeferred();if (_zwHasDef112 && typeof globalThis.__zwSchedArmDrain === 'function') {globalThis.__zwSchedArmDrain(_zwDclFire112);} else {_zwDclFire112();}\
         setTimeout(function () {fireSettle5275();\
         setTimeout(function () {var loadStep5275 = function () {fireSettle5275();try { if ((typeof globalThis.__zwImgLoadBlocked === 'function' && globalThis.__zwImgLoadBlocked()) || (typeof globalThis.__zwScriptFetchPending === 'function' && globalThis.__zwScriptFetchPending()) || (typeof globalThis.__zwSchedPending === 'function' && globalThis.__zwSchedPending()) || (typeof globalThis.__zwStylesheetFetchPending === 'function' && globalThis.__zwStylesheetFetchPending())) { setTimeout(loadStep5275, 100); return; } } catch (_eImBlk) {}try {globalThis.__zwReadyState='complete';} catch (_ers8m2) {}try {var rs2 = protoLink(mk ? mk('readystatechange') : new Event('readystatechange'), globalThis.Event);document.dispatchEvent(rs2);} catch (_ers8m2d) {}var load = protoLink(mk ? mk('load') : new Event('load'), globalThis.Event);try { load._zwTargetOverride = true; load.target = document; } catch (_e5000lt) {}globalThis.dispatchEvent(load);var ps = protoLink(mk ? mk('pageshow', { bubbles: true, cancelable: true }) : new Event('pageshow', { bubbles: true, cancelable: true }), globalThis.PageTransitionEvent);try { ps.persisted = false; } catch (_e5000pp) {}try { ps._zwTargetOverride = true; ps.target = document; } catch (_e5000pt) {}globalThis.dispatchEvent(ps);try {if(!globalThis.__zwPagerevealFired){globalThis.__zwPagerevealFired=true;var pr = protoLink(mk ? mk('pagereveal') : new Event('pagereveal'), globalThis.Event);globalThis.dispatchEvent(pr);}} catch (_ers5pr) {}};loadStep5275();}, 0);\
         }, 0);\
         }, 0);\
-        })();if (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}",
+        })();"
+            .to_string()
+            + HARNESS_LOADED_STATIC_TAIL),
     );
     // M3 扩批（2026-09-02，fixture-mounted 播放切片）：播放宿主桥 + 媒体源登记。
     // 页面 <video>/<audio> src（经 extract_media_resources 提取、相对 case 目录解析）
@@ -9921,10 +9933,20 @@ fn apply_harness_completion_patch(harness_source: String) -> String {
     )
 }
 
-/// write 注入 harness 的 eval 尾自调（镜像生命周期脚本尾钩子调用——静态路径由
-/// runner 生命周期脚本补调；fetch 服务源须自带，注入副本求值完成即置 all_loaded）。
+/// write 注入 harness 的 eval 尾直调（fetch 服务源须自带——write 注入路径
+/// document.open 后 load 不重发，求值完成即置 all_loaded；静态路径生命周期脚本尾
+/// 经 load 门控补调（R5341），不走此直调形态）。
 const HARNESS_LOADED_TAIL_CALL: &str =
     "\nif (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.__zw_mark_harness_loaded();}\n";
+
+/// 静态路径生命周期脚本尾钩子（R5341 缺陷 #2：load 门控——window load listener +
+/// setTimeout(0)，镜像 vendored testharness.js 原生 load listener 时序（93-100 行），
+/// load 派发完成（含全部 load handler）后才置 all_loaded。此前脚本尾同步直调早于
+/// load 派发，load handler 内同步 `test()` 首测 done 即提前 complete，同 handler 及
+/// 后续 listener 的声明被 Tests.push 静默丢弃（other 面 29/96 load 形态案账面分母
+/// 低估）。write 注入路径无 load 可等（document.open 后不重发），维持
+/// [`HARNESS_LOADED_TAIL_CALL`] 直调形态。
+const HARNESS_LOADED_STATIC_TAIL: &str = "\nif (typeof globalThis.__zw_mark_harness_loaded === 'function') {globalThis.addEventListener('load', function () {setTimeout(function () {globalThis.__zw_mark_harness_loaded();}, 0);});}";
 
 fn prepare_harness_html(
     source: &str,
@@ -12889,6 +12911,61 @@ promise_test(async function() {
             Duration::from_millis(10),
         );
         assert_eq!(results[0].status, HarnessStatus::Timeout);
+    }
+
+    #[test]
+    fn load_handler_sync_tests_survive_completion_wiring_r5341() {
+        // 缺陷 #2 回归钉（R5341，editing-compat M2 次轮簇 C）：静态路径 harness_loaded
+        // 标记须 load 门控——修复前脚本尾同步直调早于 load 派发，load handler 内同步
+        // `test()` 首测 done 即 all_done 提前 complete，M1-b 被 Tests.push
+        //（phase===COMPLETE）静默丢弃，本页只报 M1-a；修复后镜像原生
+        // load+setTimeout(0) 时序，双声明全入账。用 vendored 真 harness（缺陷机制在真
+        // Tests/all_done/complete 交互里，MINI_HARNESS 无 all_loaded 面）。探针形态
+        // 归档于 docs/goal/editing-compat/evidence/2026-10-30-load-handler-sync-test-probe.html。
+        let html = r#"
+<div id=host contenteditable></div>
+<script src="/resources/testharness.js"></script>
+<script>
+addEventListener("load", function() {
+    test(function() { assert_true(true); }, "M1-a sync first");
+    test(function() { assert_true(true); }, "M1-b sync second");
+});
+</script>
+"#;
+        let results = run_testharness_html(
+            Path::new("/nonexistent-wpt-root-for-tests"),
+            "defect2-load-handler-sync.html",
+            html,
+            include_str!("../wpt-data/resources/testharness.js"),
+            // R5005 谱系：workspace 全量并行负载下 JS 启动 + 事件泵间歇超 2s，取宽。
+            Duration::from_secs(6),
+        );
+        assert_eq!(results.len(), 2, "load handler 内同步 test() 须全部入账: {results:?}");
+        assert!(
+            results.iter().all(|r| r.status == HarnessStatus::Pass),
+            "双子测试须 Pass: {results:?}"
+        );
+    }
+
+    #[test]
+    fn harness_loaded_tails_pin_defect2_load_gate() {
+        // 完成接线双形态钉（R5341）：静态路径尾必须 load 门控（防脚本尾直调回退——
+        // 症状即上测 M1-b 丢失）；write 注入路径必须维持 eval 尾直调（document.open
+        // 后 load 不重发，改挂 load 门控会使 all_loaded 永不置位——270896e25 的
+        // scripting-1 102 伪 Timeout 打回）。两形态对称守卫。
+        assert!(
+            HARNESS_LOADED_STATIC_TAIL.contains("=== 'function') {globalThis.addEventListener('load'"),
+            "静态路径尾须 load 门控: {HARNESS_LOADED_STATIC_TAIL}"
+        );
+        assert!(
+            !HARNESS_LOADED_STATIC_TAIL.contains("=== 'function') {globalThis.__zw_mark_harness_loaded();}"),
+            "静态路径尾不得脚本尾同步直调"
+        );
+        assert!(
+            HARNESS_LOADED_TAIL_CALL.contains("=== 'function') {globalThis.__zw_mark_harness_loaded();}"),
+            "write 注入路径尾须 eval 尾直调: {HARNESS_LOADED_TAIL_CALL}"
+        );
+        assert!(!HARNESS_LOADED_TAIL_CALL.contains("addEventListener"));
     }
 
     #[test]
