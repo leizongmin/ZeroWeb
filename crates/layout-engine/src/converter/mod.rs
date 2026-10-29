@@ -151,6 +151,15 @@ pub fn computed_style_to_taffy(
             style.display,
             DisplayValue::TableColumn | DisplayValue::TableColumnGroup
         );
+    // CSS Overflow 3 §3.1 computed value 传播：overflow-x/y 之一为非 visible/clip 时，
+    // 另轴的 visible 计算为 auto、clip 计算为 hidden——computed 值是一切 overflow 消费
+    // 面（taffy automatic min size、滚动容器判定）的输入（driving:
+    // flexbox-min-width-auto-004：overflow-y:hidden/scroll/auto 使 flex item 的
+    // min-width:auto 禁用为 0，item 收缩到容器宽；无传播则 automatic min 按
+    // min-content 撑开）。scrollbar_width 预留门（R4265）维持读原始声明值——传播
+    // 产生的 auto 与 raw auto 同不无条件预留槽位（R4265 bounded 近似口径不变）。
+    // https://www.w3.org/TR/css-overflow-3/#overflow-properties
+    let (overflow_x_computed, overflow_y_computed) = computed_overflow_pair(&style.overflow_x, &style.overflow_y);
     taffy::Style {
         display: convert_display(&style.display),
         // R5281（CSS2 §8.3.1 × §17.5.1）：table-cell 立独立格式化上下文——子代
@@ -191,8 +200,8 @@ pub fn computed_style_to_taffy(
             _ => taffy::style::Direction::Ltr,
         },
         overflow: taffy::geometry::Point {
-            x: convert_overflow(&style.overflow_x),
-            y: convert_overflow(&style.overflow_y),
+            x: convert_overflow_computed(&overflow_x_computed, &style.overflow_x),
+            y: convert_overflow_computed(&overflow_y_computed, &style.overflow_y),
         },
         // R4265（CSS Overflow §scrollbar 预留语义）：taffy 仅对 `Overflow::Scroll` 轴预留
         // `scrollbar_width` 槽位，而 ZW 把 CSS overflow:auto 并入 Scroll 映射 → 每个 auto
@@ -858,6 +867,37 @@ fn convert_position(value: &PositionValue) -> taffy::style::Position {
         // sticky 和 relative/static 一样参与正常流
         PositionValue::Sticky | PositionValue::Relative | PositionValue::Static => taffy::style::Position::Relative,
     }
+}
+
+/// CSS Overflow 3 §3.1：overflow-x/y 的 computed value 传播——一轴为非
+/// visible/clip（hidden/scroll/auto）时，另一轴 visible→auto、clip→hidden；
+/// 两轴同族（均 visible/clip 或均非）不传播。
+fn computed_overflow_pair(x: &OverflowValue, y: &OverflowValue) -> (OverflowValue, OverflowValue) {
+    fn propagated(v: &OverflowValue) -> Option<OverflowValue> {
+        match v {
+            OverflowValue::Visible => Some(OverflowValue::Auto),
+            OverflowValue::Clip => Some(OverflowValue::Hidden),
+            _ => None,
+        }
+    }
+    match (propagated(x), propagated(y)) {
+        (Some(nx), None) => (nx, y.clone()),
+        (None, Some(ny)) => (x.clone(), ny),
+        _ => (x.clone(), y.clone()),
+    }
+}
+
+/// 转换 overflow 属性（consumed computed 值）。传播产生的 auto（raw 声明为 visible）
+/// 并入 Hidden：taffy 无条件为 `Overflow::Scroll` 轴预留 scrollbar 槽位，而 chromium
+/// 对 auto 仅内容实际溢出才出现滚动条（预布局期不可知，R4265 同判）——Hidden 的
+/// automatic min size 禁用语义与 auto 一致（`is_scroll_container()` 同真），槽位不
+/// 预留（scrollbar-empty-001：overflow-y:scroll 空 div 传播 x=auto 不得长高）。
+/// raw 声明值路径（含 raw auto→Scroll）维持 convert_overflow 原口径（R4265）。
+fn convert_overflow_computed(computed: &OverflowValue, raw: &OverflowValue) -> taffy::style::Overflow {
+    if matches!(raw, OverflowValue::Visible) && matches!(computed, OverflowValue::Auto) {
+        return taffy::style::Overflow::Hidden;
+    }
+    convert_overflow(computed)
 }
 
 /// 转换 overflow 属性。

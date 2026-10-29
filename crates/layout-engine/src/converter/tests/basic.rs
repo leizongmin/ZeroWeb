@@ -279,6 +279,57 @@ fn test_convert_overflow() {
     assert_eq!(taffy_style.overflow.y, taffy::style::Overflow::Scroll);
 }
 
+/// R5328（CSS Overflow 3 §3.1 computed value 传播）：overflow 两轴之一为非
+/// visible/clip 时另一轴 visible→auto、clip→hidden；taffy 侧传播产生的 auto 并入
+/// Hidden（automatic min size 禁用同语义，scrollbar 槽位不预留）。raw 声明值路径
+/// （含 raw auto→Scroll）维持 R4265 口径。driving: flexbox-min-width-auto-004
+/// （min-width:auto × overflow 联动）、scrollbar-empty-001（传播 auto 不长高）。
+/// https://www.w3.org/TR/css-overflow-3/#overflow-properties
+#[test]
+fn r5328_overflow_computed_propagation() {
+    let mut style = ComputedStyle::default();
+
+    // visible × hidden → x 传播 auto→Hidden（min-size 禁用、槽位不预留）。
+    style.overflow_x = OverflowValue::Visible;
+    style.overflow_y = OverflowValue::Hidden;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Hidden);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Hidden);
+
+    // visible × scroll → x 同上；y raw scroll 保留 Scroll。
+    style.overflow_y = OverflowValue::Scroll;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Hidden);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Scroll);
+
+    // clip × hidden → x clip 传播为 hidden。
+    style.overflow_x = OverflowValue::Clip;
+    style.overflow_y = OverflowValue::Hidden;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Hidden);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Hidden);
+
+    // 同族不传播：visible × clip 双侧原值保留。
+    style.overflow_x = OverflowValue::Visible;
+    style.overflow_y = OverflowValue::Clip;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Visible);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Clip);
+
+    // 双 visible 不传播。
+    style.overflow_y = OverflowValue::Visible;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Visible);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Visible);
+
+    // raw auto 不回退（R4265）：auto × visible → x 仍 Scroll；y visible 与非
+    // visible/clip 的 auto 配对同样传播（§3.1 对 auto 一致）→ Hidden。
+    style.overflow_x = OverflowValue::Auto;
+    let t = computed_style_to_taffy(&style, None, 800.0, 600.0);
+    assert_eq!(t.overflow.x, taffy::style::Overflow::Scroll);
+    assert_eq!(t.overflow.y, taffy::style::Overflow::Hidden);
+}
+
 /// 测试绝对定位的 inset 转换。
 #[test]
 fn test_convert_absolute_position_inset() {
