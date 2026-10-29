@@ -1201,6 +1201,10 @@
 
   function _attachEventForKey(key, type, fn) {
     var t = _ieEventType(type);
+    // R5301（site-opt p118）：与 DOM 注册面同语义——fn 为 null/undefined 不入表
+    //（attachEvent 无现行规范，取 addEventListener 同参行为镜像）。
+    // https://dom.spec.whatwg.org/#add-an-event-listener
+    if (fn == null) return;
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     _listenerStore[key][t].push({ fn: fn, capture: false });
@@ -1255,6 +1259,12 @@
   function _globalAddEventListener(type, fn, opts) {
     var key = _elKey('html', null);
     var t = String(type);
+    // R5301（site-opt p118）：spec「add an event listener」步骤 3——callback 为 null 则直接
+    // 返回，listener 不入表（null/undefined 不参与派发）。github.com 页面脚本
+    // document.addEventListener('DOMContentLoaded', undefined) 此前入表后在派发点误报
+    // 「handleEvent property is not a function」，Chrome 同参静默。
+    // https://dom.spec.whatwg.org/#add-an-event-listener
+    if (fn == null) return;
     if (!_listenerStore[key]) _listenerStore[key] = {};
     if (!_listenerStore[key][t]) _listenerStore[key][t] = [];
     // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同 type +

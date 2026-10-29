@@ -5451,6 +5451,10 @@
         }
         if (prop === 'addEventListener') {
           return function(type, fn, opts) {
+            // R5301（site-opt p118）：spec「add an event listener」步骤 3——callback 为 null
+            // 则直接返回，listener 不入表（与 window/document 注册面同语义）。
+            // https://dom.spec.whatwg.org/#add-an-event-listener
+            if (fn == null) return;
             if (!_listenerStore[key]) _listenerStore[key] = {};
             if (!_listenerStore[key][type]) _listenerStore[key][type] = [];
             // R143（js-dom M4）：spec「add an event listener」步骤 4——重复 listener（同
