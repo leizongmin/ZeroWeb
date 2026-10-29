@@ -2483,6 +2483,20 @@
   // the element has a browsing context through insertion into a connected tree.
   function _zwIframeNavigationConnected(sel, handle) {
     if (sel) {
+      // s146（html-semantics M2）：pending 解析节点先行判定——insertAdjacentHTML
+      // 产物（populateForm 形态）在本 script 任务内未 apply 时对 `__zw_contains`
+      // 不可见（R102 live_aware 直读 live/cached_html 快照，两者均不重放 pending
+      // structural mutations）→ 恒误判 detached → `iframe.src = …` 的导航钩子
+      // 永不触发（WPT form-submission-algorithm t10「Cannot navigate (after
+      // constructing the entry list)」：`iframe.src='/common/dummy.xhtml'` 与
+      // submit 同任务连环，loadPromise 永挂 → 文件级 Timeout）。pending 解析
+      // 节点挂 `_zwSelPendingParent` 槽（插入点已定且目标在 connected 树内，
+      // insertAdjacentHTML 语义）=「insertion into a connected tree」已成立；
+      // 签名命中即 connected。`_zwPendingParsedForSel` 常态零开销（无 pending
+      // 解析节点即早退），签名歧义保守返 undefined 落下方 contains 判定。
+      if (typeof _zwPendingParsedForSel === 'function' && _zwPendingParsedForSel(sel)) {
+        return true;
+      }
       if (typeof __zw_contains === 'function') {
         try { return __zw_contains('html', sel) === '1'; } catch (_eIframeNavSel) { return true; }
       }
