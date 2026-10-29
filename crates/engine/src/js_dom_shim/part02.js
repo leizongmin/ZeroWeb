@@ -3936,7 +3936,7 @@
     'access-control-request-headers': 1, 'access-control-request-method': 1,
     'connection': 1, 'content-length': 1, 'cookie': 1, 'cookie2': 1,
     'date': 1, 'dnt': 1, 'expect': 1, 'host': 1, 'keep-alive': 1,
-    'origin': 1, 'referer': 1, 'te': 1, 'trailer': 1,
+    'origin': 1, 'referer': 1, 'set-cookie': 1, 'te': 1, 'trailer': 1,
     'transfer-encoding': 1, 'upgrade': 1, 'via': 1
   };
   function _zwIsForbiddenReqHeader(ln, value) {
@@ -3979,7 +3979,7 @@
   }
   // remove privileged no-CORS request-headers（Fetch §5.1——no-cors guard 变更后清 Range）。
   function _zwRemovePrivilegedNoCors(h) {
-    if (h._guard === 'request-no-cors') delete h._h['range'];
+    if (h._guard === 'request-no-cors') { delete h._h['range']; delete h._hCase['range']; }
   }
   // validate a header（Fetch §5.1）：name/value 非法 → TypeError（guard immutable → false）。
   // 调用方在 normalize value 之后调用。
@@ -4052,6 +4052,10 @@
       throw new TypeError('Headers init must be a sequence or record');
     }
     this._h = {}; // lowername -> string[]（保 append 序与多值）
+    // M2-S10：首见原始大小写（lowername -> 首个 append/set 的原始 name）——仅
+    // `_headersToWire` 请求出口使用（HTTP 线上保用户大小写，request-headers-case
+    // 断言面）；迭代/查找面仍恒小写（spec HeaderList 归一小写语义零扰动）。
+    this._hCase = {};
     this._guard = 'none'; // R3223：guard none/request/response（Fetch §5.1）；ctor 构造为 none（不过滤）
     if (init != null) _fillHeaders(this, init); // guard none → 不过滤禁止头
   };
@@ -4059,7 +4063,8 @@
     // M2-S2：append/set/get/has/delete 全走 name/value 校验（非法 → TypeError）；
     // value 先 Normalize（首尾 HTTP whitespace 剥除）再 validate；guard 阻断静默返回。
     append: function (name, value) {
-      name = String(name).toLowerCase();
+      var origName = String(name);
+      name = origName.toLowerCase();
       value = _zwNormalizeHeaderValue(value);
       if (!_zwValidateHeader(name, value, this._guard)) return;
       // request-no-cors：combine 后整体 safelist 判定（spec append step 3）。
@@ -4069,6 +4074,7 @@
         checkValue = existing && existing.length ? existing.join(', ') + ', ' + value : value;
       }
       if (_hdrGuardBlocks(this._guard, name, checkValue)) return;
+      if (!Object.prototype.hasOwnProperty.call(this._h, name)) this._hCase[name] = origName; // M2-S10：首见原始大小写
       (this._h[name] = this._h[name] || []).push(value);
       _zwRemovePrivilegedNoCors(this);
     },
@@ -4078,6 +4084,7 @@
       // R3223：禁止头经 guard 不可删（Fetch §5.4 delete step 3/5；request guard 下本就未存，response guard 护 Set-Cookie）。
       if (_hdrGuardBlocks(this._guard, name)) return;
       delete this._h[name];
+      delete this._hCase[name]; // M2-S10：原始大小写随名清除
       _zwRemovePrivilegedNoCors(this);
     },
     get: function (name) {
@@ -4101,11 +4108,13 @@
       return Object.prototype.hasOwnProperty.call(this._h, name);
     },
     set: function (name, value) {
-      name = String(name).toLowerCase();
+      var origName = String(name);
+      name = origName.toLowerCase();
       value = _zwNormalizeHeaderValue(value);
       if (!_zwValidateHeader(name, value, this._guard)) return;
       // R3223：guard 写侧阻断（同 append；no-cors 按单值 safelist 判定——spec set step 3）。
       if (_hdrGuardBlocks(this._guard, name, value)) return;
+      if (!Object.prototype.hasOwnProperty.call(this._h, name)) this._hCase[name] = origName; // M2-S10：新名记原始大小写（已有名 set 保首见 case——spec set 保 pair 名）
       this._h[name] = [value];
       _zwRemovePrivilegedNoCors(this);
     },

@@ -3699,7 +3699,9 @@
     return s.replace(/\x1bX/g, '\x1b').replace(/\x1bE/g, '\x1e').replace(/\x1bF/g, '\x1f');
   }
   // 收集 headers 源（Object / [[k,v]] / Headers-like forEach）→ `name\x1evalue\x1e...` wire（空 → ''）。
-  function _headersToWire(src) {
+  // 可选 caseMap（lowername -> 原始 name）——XHR setRequestHeader 等自持头的原始
+  // 大小写回注（fill 走 append 已小写，dict 源无 _hCase 可依）。
+  function _headersToWire(src, caseMap) {
     if (!src) return '';
     // M2-S2：经 guard-request Headers 归一（Fetch §5.1 fill 语义）——name/value 校验
     //（非法 → TypeError 上抛 → fetch reject）、value Normalize、forbidden request-header
@@ -3707,12 +3709,30 @@
     var h = new Headers();
     h._guard = 'request';
     _fillHeaders(h, src);
+    if (caseMap) {
+      for (var ck in caseMap) {
+        if (Object.prototype.hasOwnProperty.call(caseMap, ck) &&
+            Object.prototype.hasOwnProperty.call(h._h, ck)) {
+          h._hCase[ck] = caseMap[ck];
+        }
+      }
+    }
     var out = '';
     for (var k in h._h) {
       if (!Object.prototype.hasOwnProperty.call(h._h, k)) continue;
+      // M2-S10：头名 HTTP 线上保首见原始大小写（request-headers-case 断言面；
+      // 浏览器同型——API 面归一小写、网络面保用户 case）。无记录回落小写。
+      var name = (h._hCase && h._hCase[k]) || k;
       var vals = h._h[k];
-      for (var vi = 0; vi < vals.length; vi++) {
-        out += (out ? '\x1e' : '') + k + '\x1e' + _zwWireEscape(vals[vi]);
+      if (k === 'set-cookie') {
+        // set-cookie 各值独立条目（HTTP 语义特例——合并破坏多 cookie 语义）。
+        for (var vi = 0; vi < vals.length; vi++) {
+          out += (out ? '\x1e' : '') + name + '\x1e' + _zwWireEscape(vals[vi]);
+        }
+      } else {
+        // 其余同名值合并单条目 `a, b`（HTTP/1.1 线上语义；echo-headers
+        // 「THIS-is-A-test: 1, 2」断言面）。
+        out += (out ? '\x1e' : '') + name + '\x1e' + _zwWireEscape(vals.join(', '));
       }
     }
     return out;
@@ -4794,15 +4814,15 @@
       if (rawBody instanceof FormData) {
         var mp = rawBody._zwMultipart();
         body = _zwEncodeBytesPrefix(mp.body); // R3020：multipart 字节 byte-wire（含二进制文件内容保真）
-        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', mp.contentType);
+        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'Content-Type', mp.contentType);
       } else if (rawBody instanceof URLSearchParams) {
         body = String(rawBody); // toString → urlencoded
-        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', 'application/x-www-form-urlencoded;charset=UTF-8');
+        if (!_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'Content-Type', 'application/x-www-form-urlencoded;charset=UTF-8');
       } else if (rawBody instanceof Blob) {
         body = _zwEncodeBytesPrefix(_zw_blobBytes(rawBody)); // R3020：Blob 字节 byte-wire（二进制保真）
         // fetch spec body init：仅 Blob.type 非空才派生 Content-Type（type-less blob 无
         // 默认——send-blob-with-no-mime-type 的 X-Request-Content-Type: NO 断言面）。
-        if ((rawBody.type || '') && !_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'content-type', rawBody.type);
+        if ((rawBody.type || '') && !_zwHasHeader(headersWire, 'content-type')) headersWire = _zwAddHeader(headersWire, 'Content-Type', rawBody.type);
       } else if (typeof ArrayBuffer !== 'undefined' && rawBody instanceof ArrayBuffer) {
         // net-api M4-S21：ArrayBuffer 体 byte-wire（XMLHttpRequestBodyInit /
         // fetch body init 合法体——send-data-arraybuffer 面）。
@@ -4813,6 +4833,11 @@
         body = _zwEncodeBytesPrefix(new Uint8Array(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength));
       } else if (rawBody != null) {
         body = String(rawBody);
+        // fetch spec body init：string 体默认 `text/plain;charset=UTF-8`（作者 CT 已设
+        // 则不覆盖；Request ctor string 体同型派生——request-init-headers 结构面）。
+        if (!_zwHasHeader(headersWire, 'content-type')) {
+          headersWire = _zwAddHeader(headersWire, 'Content-Type', 'text/plain;charset=UTF-8');
+        }
       }
       if (body && !_zwHasHeader(headersWire, 'content-length')) {
         var _zwClLen = 0;
@@ -4821,7 +4846,7 @@
         } else {
           _zwClLen = new TextEncoder().encode(body).length;
         }
-        headersWire = _zwAddHeader(headersWire, 'content-length', String(_zwClLen));
+        headersWire = _zwAddHeader(headersWire, 'Content-Length', String(_zwClLen));
       }
       if (typeof __zw_fetch !== 'function') {
         return Promise.resolve(_makeResponse('__zw_fetch_error:no-handler'));
@@ -4945,7 +4970,7 @@
               _zwRefOut = _tgtCross ? null : _refUrl;
             }
             if (_zwRefOut && !_zwHasHeader(headersWire, 'referer')) {
-              headersWire = _zwAddHeader(headersWire, 'referer', _zwRefOut);
+              headersWire = _zwAddHeader(headersWire, 'Referer', _zwRefOut);
             }
           }
         }
@@ -4964,17 +4989,17 @@
           // 转发会使原 accept 值遮蔽 UA Accept: */*，preflight.py 校验误拒——accept 值
           // 规则腿根因）。
           var preHeaders = '';
-          preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
-          if (_zwRefOut) preHeaders = _zwAddHeader(preHeaders, 'referer', _zwRefOut);
-          preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', method);
+          preHeaders = _zwAddHeader(preHeaders, 'Origin', preDocOrigin);
+          if (_zwRefOut) preHeaders = _zwAddHeader(preHeaders, 'Referer', _zwRefOut);
+          preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Method', method);
           // net-api M4-S23：preflight 请求带 `Accept: */*`（浏览器行为；上游 preflight.py
           // 校验该头——缺失 → 400 Invalid access in preflight）。
-          preHeaders = _zwAddHeader(preHeaders, 'accept', '*/*');
+          preHeaders = _zwAddHeader(preHeaders, 'Accept', '*/*');
           // net-api M2-S3c：preflight 带 User-Agent（浏览器所有 HTTP 请求均带 UA；
           // preflight.py checkUserAgentHeaderInPreflight 比对 preflight/实际请求 UA
           // 一致性——此前两侧皆缺省 `''==='` 假绿，主请求 M2-S3c 补 UA 后不一致
           // → 400，preflight 侧补齐对齐）。
-          preHeaders = _zwAddHeader(preHeaders, 'user-agent',
+          preHeaders = _zwAddHeader(preHeaders, 'User-Agent',
             (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
           // net-api M4-S25：ACRH 恒携带（空值头入 preNames 触发 preflight 但不列入
           // ACRH 值——cors-preflight-referrer「ACRH value expected ''」面）。
@@ -4990,7 +5015,7 @@
           if (_acrhNames.length > 0) {
             // net-api M4-S25：无非空自定义头时 ACRH 须**省略**（cors-preflight
             // 「should be omitted」面）；空值头触发 preflight 但不入 ACRH 值。
-            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', _acrhNames.sort().join(', '));
+            preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Headers', _acrhNames.sort().join(', '));
           }
           // t5：preflight 经 _zwRunPreflight（__zw_pending 异步契约，见该函数注记）。
           globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
@@ -5039,11 +5064,11 @@
         // when-cross-origin → https→非https 降级 → null；same-origin → 跨源 → null
         //（header-origin-same-origin.html 跨源 "null" 期望面）；origin / origin-when-
         // cross-origin / unsafe-url → 文档 origin。普通 fetch no-cors 非幂等方法仍缺
-        // Origin——FIXME(#append-a-request-origin-header)。
+        // Origin——net-api M2-S10 补第三分支（下方 else if 尾）。
         var _zwReqOrigin = _zwUrlOrigin(url);
         var _zwDocOrigin = _zwUrlOrigin(_zwCurrentHref());
         if (mode === 'cors' && _zwReqOrigin && _zwDocOrigin && _zwReqOrigin !== _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
-          headersWire = _zwAddHeader(headersWire, 'origin', _zwDocOrigin);
+          headersWire = _zwAddHeader(headersWire, 'Origin', _zwDocOrigin);
         } else if (_zwBeaconPolicy != null && mode !== 'cors' && method !== 'GET' && method !== 'HEAD' &&
                    _zwReqOrigin && _zwDocOrigin && !_zwHasHeader(headersWire, 'origin')) {
           var _zwBeaconOrigin = _zwDocOrigin;
@@ -5055,7 +5080,23 @@
           } else if (_zwBeaconPolicy === 'same-origin') {
             if (_zwReqOrigin !== _zwDocOrigin) _zwBeaconOrigin = 'null';
           }
-          headersWire = _zwAddHeader(headersWire, 'origin', _zwBeaconOrigin);
+          headersWire = _zwAddHeader(headersWire, 'Origin', _zwBeaconOrigin);
+        } else if (method !== 'GET' && method !== 'HEAD' && _zwReqOrigin && _zwDocOrigin &&
+                   !_zwHasHeader(headersWire, 'origin')) {
+          // net-api M2-S10：非 GET/HEAD 请求恒带 Origin（fetch spec HTTP-network-or-cache
+          // fetch——method 非 GET/HEAD 即 append Origin/request's origin，模式无关；
+          // inspect-headers 回显「Fetch with POST/PUT/… needs an Origin header」面。
+          // cors 跨源 GET 由上方首分支覆盖；beacon 通道按 referrer policy 序列化）。
+          //   https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+          headersWire = _zwAddHeader(headersWire, 'Origin', _zwDocOrigin);
+        }
+        // net-api M2-S10：体缺失的 POST 请求补 Content-Length: 0（浏览器 POST 无体
+        // 仍发 CL:0，GET/HEAD 与自定义方法不带 CL——「Fetch with Chicken」CL null
+        // 断言面；有体时 CL 由 host 按体长补齐不重叠——inspect-headers
+        // 「POST without body」CL "0" 断言面）。
+        if (method === 'POST' && (rawBody == null || rawBody === '') &&
+            !_zwHasHeader(headersWire, 'content-length')) {
+          headersWire = _zwAddHeader(headersWire, 'Content-Length', '0');
         }
 
         globalThis.__zw_fetch_counter = (globalThis.__zw_fetch_counter | 0) + 1;
@@ -5229,7 +5270,7 @@
                 keptO = keptO ? keptO + '\x1e' + oParts[oi] + '\x1e' + oParts[oi + 1]
                               : oParts[oi] + '\x1e' + oParts[oi + 1];
               }
-              nextWire = _zwAddHeader(keptO, 'origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin);
+              nextWire = _zwAddHeader(keptO, 'Origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin);
             }
             if (nextBody != null) {
               var hopLen = 0;
@@ -5238,7 +5279,7 @@
               } else {
                 hopLen = new TextEncoder().encode(nextBody).length;
               }
-              nextWire = _zwAddHeader(nextWire, 'content-length', String(hopLen));
+              nextWire = _zwAddHeader(nextWire, 'Content-Length', String(hopLen));
             }
             // net-api M4-S24：fetch spec cors-preflight-fetch——重定向后的请求仍携
             // 非 safelisted method/自定义头 → 对新 URL **重跑 preflight**（主 fetch
@@ -5281,10 +5322,10 @@
                   nextMethod, _rpNames)) {
               var rpDocOrigin = _zwHopOriginOpaque ? 'null' : _zwUrlOrigin(_zwCurrentHref());
               // 最小集（同上——不转发原请求自定义头）。
-              var rpHeaders = _zwAddHeader('', 'origin', rpDocOrigin);
-              if (_zwRefOut) rpHeaders = _zwAddHeader(rpHeaders, 'referer', _zwRefOut);
-              rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-method', nextMethod);
-              rpHeaders = _zwAddHeader(rpHeaders, 'accept', '*/*');
+              var rpHeaders = _zwAddHeader('', 'Origin', rpDocOrigin);
+              if (_zwRefOut) rpHeaders = _zwAddHeader(rpHeaders, 'Referer', _zwRefOut);
+              rpHeaders = _zwAddHeader(rpHeaders, 'Access-Control-Request-Method', nextMethod);
+              rpHeaders = _zwAddHeader(rpHeaders, 'Accept', '*/*');
               var _rpAcrh = [];
               var _rpParts = nextWire ? nextWire.split('\x1e') : [];
               for (var rbi = 0; rbi + 1 < _rpParts.length; rbi += 2) {
@@ -5295,7 +5336,7 @@
                 }
               }
               if (_rpAcrh.length > 0) {
-                rpHeaders = _zwAddHeader(rpHeaders, 'access-control-request-headers', _rpAcrh.sort().join(', '));
+                rpHeaders = _zwAddHeader(rpHeaders, 'Access-Control-Request-Headers', _rpAcrh.sort().join(', '));
               }
               // t5：重定向臂 preflight 与主路径同一异步契约缺陷（浏览器 fetch_bridge
               // 同步返 "" → 恒判失败）——经 _zwRunPreflight 等待。缓存保持本臂原
@@ -5387,11 +5428,11 @@
           // 安全名单内——预检名单零变化。accept-language 不补（按引擎 2024 名单
           // 逻辑恒入预检名单，补齐会扰动 cors 族既有面）。
           if (!_zwHasHeader(headersWire, 'user-agent')) {
-            headersWire = _zwAddHeader(headersWire, 'user-agent',
+            headersWire = _zwAddHeader(headersWire, 'User-Agent',
               (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
           }
           if (!_zwHasHeader(headersWire, 'accept')) {
-            headersWire = _zwAddHeader(headersWire, 'accept', '*/*');
+            headersWire = _zwAddHeader(headersWire, 'Accept', '*/*');
           }
           var _sync = __zw_fetch(
             id,

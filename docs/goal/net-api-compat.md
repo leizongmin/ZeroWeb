@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.12
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10924**（+1570，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.13
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **10949**（+1595，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -101,12 +101,19 @@
   档）+ `_zwController` 流外可达 + settle 后 abort 错误体接线 +
   fetch(request) 传输即扰动（空体豁免）+ runner fixture 体改开放流：
   **+27 零回归**（10897 → 10924）。
+- **M2-S10 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s10-request-headers-method.md)）**：
+  request-headers 方法面 **25F 全收口**（basic/request-headers 22F +
+  request-headers-case 2F + request/request-headers 1F）——Origin 第三分支
+  （非 GET/HEAD 恒带，FIXME 清偿）+ string 体默认 CT + CL:0 收窄 POST +
+  头名大小写线上保真（`_hCase` + wire 同名值合并 + 内部头 Title-Case 31 处 +
+  runner echo-headers 逐字回显）+ set-cookie 入 forbidden 名单：
+  **+25 零回归**（10924 → 10949）。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）。
-- **后续可推进小片**（不阻塞收口，重开时按此入列）：request-headers
-  方法面余 22F（runner 域）、request-cache HTTP 缓存层（待决项立项后）、
-  abort 目录外 signal 关联体中止（S9 记账 1-2，语料无钉）。
+- **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
+  缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
+  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 

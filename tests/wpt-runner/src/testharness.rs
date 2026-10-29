@@ -6819,26 +6819,16 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 // net-api M4-S21 fixture：request-content-length 载体——回显全部请求头
                 // 为 `Name: value` 行（request-content-length.any.js 断言
                 // responseText 含 `Content-Length: <len>`）。
+                // net-api M2-S10：头名逐字回显（不再 title-case——request-headers-case
+                // 「THIS-is-A-test: 1, 2」原始大小写断言面；引擎内部头已按 HTTP 惯例
+                // Title-Case 发出，`Content-Length: <len>` 大小写敏感 includes 面由
+                // 引擎侧保住）。
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), "text/plain".into()));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 let mut body = String::new();
                 for (n, v) in &req.headers {
-                    // HTTP 头名 HTTP 风格大写（`Content-Length: N` 大小写敏感 includes 面）。
-                    let mut title = String::new();
-                    let mut cap = true;
-                    for ch in n.chars() {
-                        if cap {
-                            title.extend(ch.to_uppercase());
-                            cap = false;
-                        } else {
-                            title.push(ch);
-                            if ch == '-' {
-                                cap = true;
-                            }
-                        }
-                    }
-                    body.push_str(&format!("{}: {}\n", title, v));
+                    body.push_str(&format!("{}: {}\n", n, v));
                 }
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,

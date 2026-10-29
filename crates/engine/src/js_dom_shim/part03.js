@@ -76,6 +76,7 @@
     self.upload = self._zwUpload;
     self._zwXhrUrl = '';
     self._zwXhrHeaders = {};
+    self._zwXhrHeaderCase = {}; // M2-S10：lowername -> 首见原始大小写（请求 wire 出口保 case）
     self._zwXhrAborted = false;
     // net-api M4-S21：ProgressEvent 版 fire（loadstart 族——e.loaded/e.total/
     // e.lengthComputable 断言面）。
@@ -770,7 +771,7 @@
       // 同步 send 网络错误——blob-range unsupported 族断言面）；命中 → 本地填充返回。
       if (self._zwXhrAsync === false) {
         var schemeHit = _zwFetchSchemeDispatch(self._zwXhrUrl, self._zwXhrMethod,
-          _headersToWire(self._zwXhrHeaders));
+          _headersToWire(self._zwXhrHeaders, self._zwXhrHeaderCase));
         if (schemeHit) {
           if (schemeHit.reject) {
             throw new (globalThis.DOMException || Error)(
@@ -797,17 +798,17 @@
         // byte-wire 二进制保真（原 String(body) → '[object Blob]' 线上垃圾）+ 派生 CT +
         // UA Content-Length。
         var syncBody = '';
-        var syncHeaders = _headersToWire(self._zwXhrHeaders);
+        var syncHeaders = _headersToWire(self._zwXhrHeaders, self._zwXhrHeaderCase);
         if (body instanceof Blob) {
           syncBody = _zwEncodeBytesPrefix(_zw_blobBytes(body));
           if ((body.type || '') && !_zwHasHeader(syncHeaders, 'content-type')) {
-            syncHeaders = _zwAddHeader(syncHeaders, 'content-type', body.type);
+            syncHeaders = _zwAddHeader(syncHeaders, 'Content-Type', body.type);
           }
         } else if (typeof FormData === 'function' && body instanceof FormData) {
           var syncMp = body._zwMultipart();
           syncBody = _zwEncodeBytesPrefix(syncMp.body);
           if (!_zwHasHeader(syncHeaders, 'content-type')) {
-            syncHeaders = _zwAddHeader(syncHeaders, 'content-type', syncMp.contentType);
+            syncHeaders = _zwAddHeader(syncHeaders, 'Content-Type', syncMp.contentType);
           }
         } else if (body != null) {
           syncBody = String(body);
@@ -819,13 +820,13 @@
           } else {
             syncCl = new TextEncoder().encode(syncBody).length;
           }
-          syncHeaders = _zwAddHeader(syncHeaders, 'content-length', String(syncCl));
+          syncHeaders = _zwAddHeader(syncHeaders, 'Content-Length', String(syncCl));
         }
         // net-api M4-S18：同步入口 Origin 注入（跨源时——镜像异步入口注入面；
         // redirect-cors/allow 族的 Origin 回显门控依赖）。
         if (_zwUrlOrigin(self._zwXhrUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
             _zwUrlOrigin(_zwCurrentHref()) && !_zwHasHeader(syncHeaders, 'origin')) {
-          syncHeaders = _zwAddHeader(syncHeaders, 'origin', _zwUrlOrigin(_zwCurrentHref()));
+          syncHeaders = _zwAddHeader(syncHeaders, 'Origin', _zwUrlOrigin(_zwCurrentHref()));
         }
         // net-api M4-S18：同步路径 CORS-preflight（与异步同规——非 safelisted cors 请求
         // 先 OPTIONS，2xx + ACAM/ACAH 覆盖才继续）。
@@ -836,9 +837,9 @@
           var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
           var preHeaders = syncHeaders;
           if (!_zwHasHeader(preHeaders, 'origin')) {
-            preHeaders = _zwAddHeader(preHeaders, 'origin', preDocOrigin);
+            preHeaders = _zwAddHeader(preHeaders, 'Origin', preDocOrigin);
           }
-          preHeaders = _zwAddHeader(preHeaders, 'access-control-request-method', self._zwXhrMethod);
+          preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Method', self._zwXhrMethod);
           var preNames = [];
           var preParts = syncHeaders ? syncHeaders.split('\x1e') : [];
           for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
@@ -852,7 +853,7 @@
             if (preNames.indexOf(pn) < 0) preNames.push(pn);
           }
           if (preNames.length > 0) {
-            preHeaders = _zwAddHeader(preHeaders, 'access-control-request-headers', preNames.sort().join(', '));
+            preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Headers', preNames.sort().join(', '));
           }
           var preWire = globalThis.__zw_fetch(
             '__zwxhr:pre', 'OPTIONS', self._zwXhrUrl, preHeaders, '',
@@ -946,7 +947,7 @@
           var syncDocOrigin = _zwUrlOrigin(_zwCurrentHref());
           if (syncNext && _zwUrlOrigin(syncNext) !== syncDocOrigin && syncDocOrigin &&
               !_zwHasHeader(syncHeaders, 'origin')) {
-            syncHeaders = _zwAddHeader(syncHeaders, 'origin', syncDocOrigin);
+            syncHeaders = _zwAddHeader(syncHeaders, 'Origin', syncDocOrigin);
           }
           syncUrl = syncNext;
           syncHops++;
@@ -1132,6 +1133,7 @@
       var ln = name.toLowerCase();
       var existing = self._zwXhrHeaders[ln];
       self._zwXhrHeaders[ln] = existing ? existing + ', ' + value : value;
+      if (!existing) self._zwXhrHeaderCase[ln] = name; // M2-S10：首见原始大小写（spec setRequestHeader 保 pair 名）
     };
     self.getResponseHeader = function(name) {
       if (!self._zwXhrResponseHeaders || !name) return null;
