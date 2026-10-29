@@ -6,6 +6,6 @@
   "passed": 15781,
   "rate_pct": 95.1,
   "extra": "failed=809;skipped=0",
-  "git_sha": "c94ab8ce2",
+  "git_sha": "a669d8213",
   "note": "R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）——balance-002/004 ✓ 家族 25/25，FIXED=2 REGRESSED=0"
 }
