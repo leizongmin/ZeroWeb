@@ -762,5 +762,15 @@
       }
     }
   })();
-
+  // net-api M2-S11：Window.origin——关联文档 URL origin 序列化（opaque origin →
+  // 'null'，与 location.origin 同源语义）。**数据属性快照**（非自有 accessor）——
+  // 真浏览器 origin accessor 挂 Window.prototype，全局 `var origin` 建自有数据属性
+  // 遮蔽之（spec CreateGlobalVarBinding：可配置 accessor 重声明 → 转数据属性）；
+  // QuickJS 对自有 accessor 不落实该转换（赋值静默吞、读仍走 getter）→
+  // cors-preflight-referrer `var origin = HTTP_ORIGIN + "/"` 全局拼接值丢失。
+  // 数据属性走 QuickJS 常规 var 重声明路径。置于 shim 安装尾（part01 安装期
+  // _hist_current 依赖未就绪，eager 求值 href() 翻车）；runner 单文档页 origin
+  // 装载即定，快照不腐化。
+  // https://html.spec.whatwg.org/multipage/window-object.html#dom-window-origin
+  globalThis.origin = (globalThis.location && globalThis.location.origin) || 'null';
 })();

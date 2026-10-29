@@ -8744,16 +8744,8 @@
       if (typeof _setLocationPart === 'function') _setLocationPart('href', String(v));
     },
   });
-  // Window.origin——关联文档 URL origin 序列化（opaque origin → 'null'，与
-  // location.origin 同源语义）。configurable accessor：全局 `var origin` 按 spec
-  // 属性语义可遮蔽（可配置访问器属性 → var 重声明替换）。
-  // https://html.spec.whatwg.org/multipage/window-object.html#dom-window-origin
-  Object.defineProperty(globalThis, 'origin', {
-    enumerable: true, configurable: true,
-    get: function () {
-      return (globalThis.location && globalThis.location.origin) || 'null';
-    },
-  });
+  // Window.origin 快照挪至 shim 安装尾（part07 闭合前）——part01 安装期
+  // _hist_current 依赖未就绪，eager 求值 href() 翻车；数据属性理由见彼处注记。
   globalThis.self = globalThis;
   globalThis.top = globalThis;
   globalThis.parent = globalThis;
