@@ -1055,6 +1055,7 @@ fn perform_final_layout_on_in_flow_children(
                     Line::FALSE
                 },
                 flex_base_probe: false,
+                flex_intrinsic_main_probe: false,
             };
 
             #[cfg(feature = "float_layout")]

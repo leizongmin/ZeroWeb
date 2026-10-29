@@ -5,7 +5,7 @@ use crate::style::{
     AlignContent, AlignContentKeyword, AlignItems, AlignItemsKeyword, AlignSelf, AvailableSpace, FlexWrap,
     JustifyContent, LengthPercentageAuto, Overflow, Position,
 };
-use crate::style::{CoreStyle, FlexDirection, FlexboxContainerStyle, FlexboxItemStyle};
+use crate::style::{CompactLength, CoreStyle, FlexDirection, FlexboxContainerStyle, FlexboxItemStyle};
 use crate::style_helpers::{TaffyMaxContent, TaffyMinContent};
 use crate::tree::{Layout, LayoutInput, LayoutOutput, RunMode, SizingMode};
 use crate::tree::{LayoutFlexboxContainer, LayoutPartialTreeExt, NodeId};
@@ -18,6 +18,14 @@ use crate::{BoxGenerationMode, BoxSizing, Direction, RequestedAxis};
 use super::common::alignment::apply_alignment_fallback;
 #[cfg(feature = "content_size")]
 use super::common::content_size::compute_content_size_contribution;
+
+/// R5331（css-flexbox-1 §9.9.1）：column flex 容器内在主轴定尺的 item 内容贡献探针
+/// ——item 有 specified main size 且 flex-basis definite 时，主轴 style 尺寸不注入
+/// 内容测量（见 [`LayoutInput::flex_intrinsic_main_probe`] 与 compute_flexbox_layout
+/// 的 clamped_style_size 门）。
+///（kill-switch `ZW_FLEX_INTRINSIC_MAIN_PROBE=0` 回退，default-on）。
+static FLEX_INTRINSIC_MAIN_PROBE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLEX_INTRINSIC_MAIN_PROBE").as_deref() != Ok("0"));
 
 /// The intermediate results of a flexbox calculation for a single item
 struct FlexItem {
@@ -190,12 +198,22 @@ pub fn compute_flexbox_layout(
         .maybe_apply_aspect_ratio(aspect_ratio)
         .maybe_add(box_sizing_adjustment);
     let clamped_style_size = if inputs.sizing_mode == SizingMode::InherentSize {
-        style
+        let mut size = style
             .size()
             .maybe_resolve(parent_size, |val, basis| tree.calc(val, basis))
             .maybe_apply_aspect_ratio(aspect_ratio)
             .maybe_add(box_sizing_adjustment)
-            .maybe_clamp(min_size, max_size)
+            .maybe_clamp(min_size, max_size);
+        // ZW R5331（css-flexbox-1 §9.9.1）：内在贡献探针——被测 item 的 specified main
+        // size 不注入测量结果。容器内在主尺寸 = Σ item hypothetical main size，specified
+        // size 只能经 automatic minimum（min(specified, content)，§4.5）进入，不得经
+        // InherentSize 的 style 覆盖直接顶替 content 贡献（flex-minimum-height-flex-items-
+        // 029：column + `flex:1 0 0px` + height:500px item，auto 高容器应 100 实渲 500）。
+        // cross 轴不动（wrap 分栏宽度解析依赖）。
+        if inputs.flex_intrinsic_main_probe {
+            size.set_main(style.flex_direction(), None);
+        }
+        size
     } else {
         Size::NONE
     };
@@ -1111,15 +1129,58 @@ fn determine_container_main_size(
                                 // Either the min- or max- content size depending on which constraint we are sizing under.
                                 // TODO: Optimise by using already computed values where available
                                 debug_log!("COMPUTE CHILD BASE SIZE (for intrinsic main size):");
-                                let content_main_size = tree.measure_child_size(
-                                    item.node,
-                                    child_known_dimensions,
-                                    constants.node_inner_size,
-                                    child_available_space,
-                                    SizingMode::InherentSize,
-                                    dir.main_axis(),
-                                    Line::FALSE,
-                                ) + item.margin.main_axis_sum(constants.dir);
+                                // ZW R5331（css-flexbox-1 §9.9.1）：column 主轴（块轴）的
+                                // item 内容贡献测量，item 有 specified main size 且 flex-basis
+                                // definite 时走探针（主轴 style 尺寸不注入，见
+                                // compute_flexbox_layout clamped_style_size 门）。row 主轴
+                                // （inline 轴）贡献面已按 Chrome/WebKit/Firefox 校准
+                                //（flex_basis_unconstraint_* gentests、csswg#1435）不适用；
+                                // basis auto/content 时 base = main size property 已覆盖
+                                // specified size（§9.2.3），探针无收益且有 content 超出
+                                // specified 的回归面，同样不启用。
+                                let use_intrinsic_main_probe = !constants.is_row
+                                    && *FLEX_INTRINSIC_MAIN_PROBE
+                                    && item.size.main(constants.dir).is_some()
+                                    && matches!(
+                                        tree.get_flexbox_child_style(item.node).flex_basis().tag(),
+                                        CompactLength::LENGTH_TAG
+                                            | CompactLength::PERCENT_TAG
+                                            | CompactLength::CALC_TAG
+                                    );
+                                let measured_main_size = if use_intrinsic_main_probe {
+                                    tree.measure_child_intrinsic_main_size(
+                                        item.node,
+                                        child_known_dimensions,
+                                        constants.node_inner_size,
+                                        child_available_space,
+                                        SizingMode::InherentSize,
+                                        dir.main_axis(),
+                                        Line::FALSE,
+                                    )
+                                } else {
+                                    tree.measure_child_size(
+                                        item.node,
+                                        child_known_dimensions,
+                                        constants.node_inner_size,
+                                        child_available_space,
+                                        SizingMode::InherentSize,
+                                        dir.main_axis(),
+                                        Line::FALSE,
+                                    )
+                                };
+                                // ZW R5331（css-flexbox-1 §4.5/#min-size-auto）：探针测得
+                                // true content 后还须被 item specified main size 钳——
+                                // automatic minimum = min(specified, content)，列臂贡献 =
+                                // clamp(flex base, 该 min)（flex-minimum-height-flex-items-
+                                // 030：content 200 × height 70 → 贡献 70 非 200；029：
+                                // content 100 × height 500 → 贡献 100 非 500）。
+                                let clamped_main_size = if use_intrinsic_main_probe {
+                                    measured_main_size.maybe_min(item.size.main(constants.dir))
+                                } else {
+                                    measured_main_size
+                                };
+                                let content_main_size =
+                                    clamped_main_size + item.margin.main_axis_sum(constants.dir);
 
                                 // This is somewhat bizarre in that it's asymmetrical depending whether the flex container is a column or a row.
                                 //

@@ -896,3 +896,7 @@ mod r5329_replaced_leaf_intrinsic_min_tests;
 /// R5330（css-flexbox-1 §4.1）column flex item 主轴高回填豁免锚——指定 min-height 非
 /// auto 的 item 保持 flex 定尺不被 R1743 max-bottom 回填（flex-minimum-height-flex-items-027）。
 mod r5330_col_flex_item_no_backfill_tests;
+/// R5331（css-flexbox-1 §9.9.1）column flex 容器内在主轴定尺 item 内容贡献探针锚——
+/// specified main size 只能经 automatic minimum 进入容器内在尺寸
+///（flex-minimum-height-flex-items-029/030）。
+mod r5331_flex_intrinsic_main_probe_tests;
