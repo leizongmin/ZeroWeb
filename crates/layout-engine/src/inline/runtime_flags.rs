@@ -294,6 +294,18 @@ pub(super) fn ws_seq_pure_run_collapse() -> bool {
     selected(*VALUE, || default_on("ZW_WS_SEQ_PURE_RUN_COLLAPSE"))
 }
 
+/// R5324（CSS2 §9.5 float 定位 + bugzilla 488725）：行中 float 锚遇到**由 nowrap
+/// 内容溢出**的当前行（剩余带宽 < 0 ∧ 行片段 no_wrap）→ float 锚下移到本臂尾随
+/// 推行后的下一行槽顶，不与该行共行（float-nowrap-1：290px nowrap 文本于 80px
+/// 容器后接 float，旧锚 = 满溢行顶 → test ≡ notref 同像，mismatch 恒红）。
+/// 非 nowrap 行溢出（stack-floats-003：advance 含既有空白折叠偏差，chromium 语义
+/// remaining=0 共行）与剩余 ≥ 0 维持共行锚（floats-006）。
+/// default-on；`ZW_FLOAT_LINE_OVERFLOW_DESCENT=0` 回退共行锚（旧行为）。
+pub(super) fn float_line_overflow_descent() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_LINE_OVERFLOW_DESCENT"));
+    selected(*VALUE, || default_on("ZW_FLOAT_LINE_OVERFLOW_DESCENT"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

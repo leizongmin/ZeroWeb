@@ -1112,7 +1112,35 @@ impl InlineFormattingContext {
                                 current_y
                             }
                         } else {
-                            (current_y - current_line.height).max(0.0)
+                            // R5324（CSS2 §9.5 + bugzilla 488725）：行中 float 且当前行
+                            // **由 nowrap 内容溢出**（剩余带宽 < 0 且行片段 no_wrap，
+                            // float-nowrap-1：290px nowrap 文本于 80px 容器后接 float）→
+                            // float 不与该行共行，锚 = 本臂尾随推行后的下一行槽顶
+                            //（current_y + est，与下方推行的 est_height 同式同态：
+                            // FloatAnchor 路径两者间不改 current_line.height）；chromium
+                            // 实证 float 降行（headless 截图：文本行下方蓝块）。
+                            // 非 nowrap 行溢出不降（stack-floats-003 钉：其第二行 advance
+                            // 120 含既有空白折叠偏差 20px，chromium 语义 remaining=0 共行；
+                            // nowrap ∧ 溢出合取门对该类偏差免疫）。剩余 ≥ 0 维持共行锚
+                            //（floats-006：X 与 float 同行 → 锚 = 行顶 0）。
+                            let descent_est = if current_line.height > 0.0 {
+                                current_line.height
+                            } else {
+                                default_line_height
+                            };
+                            let (band_left, band_width) = self.effective_content_area(current_y, descent_est);
+                            let line_nowrap = current_line
+                                .runs
+                                .iter()
+                                .any(|f| f.ws_override.map_or(self.no_wrap, |w| w.no_wrap));
+                            let saturated = runtime_flags::float_line_overflow_descent()
+                                && line_nowrap
+                                && band_left + band_width - current_x < 0.0;
+                            if saturated {
+                                current_y + descent_est
+                            } else {
+                                (current_y - current_line.height).max(0.0)
+                            }
                         };
                         self.float_anchor_ys.insert(*fid, anchor_y);
                         last_float_anchor_y = anchor_y;

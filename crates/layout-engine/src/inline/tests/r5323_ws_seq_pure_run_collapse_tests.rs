@@ -69,10 +69,7 @@ fn last_frag_x(runs: Vec<TextRun>) -> f32 {
 #[test]
 fn r5323_pure_ws_run_collapses_with_prev_trailing_ws_across_runs() {
     let id = ids(3);
-    let one_space = last_frag_x(vec![
-        run_with("z ", id[0], None),
-        run_with("x", id[1], None),
-    ]);
+    let one_space = last_frag_x(vec![run_with("z ", id[0], None), run_with("x", id[1], None)]);
     let collapsed = last_frag_x(vec![
         run_with("z ", id[0], None),
         run_with(" ", id[2], None),
@@ -124,10 +121,7 @@ fn r5323_pure_ws_run_kept_when_prev_word_has_no_trailing_ws() {
         run_with(" ", id[2], None),
         run_with("x", id[1], None),
     ]);
-    let without = last_frag_x(vec![
-        run_with("zz", id[0], None),
-        run_with("x", id[1], None),
-    ]);
+    let without = last_frag_x(vec![run_with("zz", id[0], None), run_with("x", id[1], None)]);
     assert!(
         with_ws - without > 1.0,
         "纯空白 run 应计一次 advance，实得 Δ={}",
@@ -152,10 +146,7 @@ fn r5323_preserve_pure_ws_run_not_collapsed() {
         run_with("x", id[1], Some(pre)),
     ]);
     // 正常折叠语境单空格锚。
-    let one_space = last_frag_x(vec![
-        run_with("z ", id[0], None),
-        run_with("x", id[1], None),
-    ]);
+    let one_space = last_frag_x(vec![run_with("z ", id[0], None), run_with("x", id[1], None)]);
     assert!(
         two_spaces - one_space > 1.0,
         "preserve 空格不参与折叠（Δ 应 ≥1 空格），实得 Δ={}",
