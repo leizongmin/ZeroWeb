@@ -1138,6 +1138,16 @@
               && typeof globalThis._zwStylesheetMaybeStart === 'function') {
             globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrevI);
           }
+          // s155：LINK rel IDL 写触发同 part04 setAttribute 臂（link.rel= 走
+          // R3069 reflected 臂不经 setAttribute——rel=preload→stylesheet 转换
+          // 面触发；TAG 门内甄别，非 LINK 零成本返回）。
+          if (_refAttr === 'rel' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+            try {
+              if (_realTag(sel, handle) === 'LINK') {
+                globalThis._zwStylesheetMaybeStart(sel, handle, null);
+              }
+            } catch (_eSsRlI) {}
+          }
           moAttr = _refAttr;
         } else if (typeof prop === 'string' && prop !== ''
                    && _realTag(sel, handle) === 'FORM'

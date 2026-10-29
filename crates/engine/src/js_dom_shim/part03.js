@@ -4546,6 +4546,7 @@
   //   单发不循环（detached 重查再 bail 即放弃）。
   var _zwSsFiredMap = {};   // identity key → 最后一次发起取回的解析 URL
   var _zwSsRetryDone = {};  // identity key → 重查已排程（单发）
+  var _zwPreloadCache = {}; // s155：identity key → preload 取回完成的解析 URL（rel 转换复用）
   // s154 单发重查排程（见下方②）：同身份只排一次；+0ms 后按原身份重跑（身份
   // 缺失时回落 elObj 现读——R368 盖章形 append 臂的 elObj 后到章）。重查再 bail
   // 不再排程（_zwSsRetryDone 印记），detached 恒态零循环。
@@ -4611,12 +4612,14 @@
         return String(_ssV || '');
       };
       var _ssRel = _ssReadAttr('rel');
-      var _ssIs = false;
+      var _ssIsSheet = false;
+      var _ssIsPreload = false;
       var _ssParts = _ssRel.split(/\s+/);
       for (var _ssI = 0; _ssI < _ssParts.length; _ssI++) {
-        if (_ssParts[_ssI] === 'stylesheet') { _ssIs = true; break; }
+        if (_ssParts[_ssI] === 'stylesheet') _ssIsSheet = true;
+        else if (_ssParts[_ssI] === 'preload') _ssIsPreload = true;
       }
-      if (!_ssIs) return;
+      if (!_ssIsSheet && !_ssIsPreload) return;
       var _ssHref = _ssReadAttr('href');
       if (!_ssHref || typeof fetch !== 'function') return;
       // 幂等门：解析后绝对 URL 相同（含两者均解析失败的逐字相等回落）→ 不重取。
@@ -4656,6 +4659,38 @@
       // mixed 阻断：不 fetch 直接 error（spec blocked fetch → link error 事件）。
       if (_ssMixed) {
         setTimeout(function () { _ssFire('error'); }, 0);
+        return;
+      }
+      // s155（html-semantics M2 切片 155）：rel=preload 取回臂（spec link type
+      // preload——插入/href 设置后按当前 rel 发起资源取回，fetch 完成派 load /
+      // 失败派 error，与 stylesheet 分支同身份印记表去重——重入同 URL 静默返）。
+      // 取回完成以身份键播种 _zwPreloadCache——rel 变更 stylesheet 转换面
+      //（link-multiple-load-events 案 5）经下方复用臂零网络派 load。FIXME：
+      // 资源级共享缓存（跨元素同 URL 复用）与 as destination 分型（image/
+      // script/font 等）语料无形态不建模——as 门只做非空校验（missing/invalid
+      // as 上游不发起取回）；rel 同时含 stylesheet+preload 时 sheet 分流优先
+      //（语料无该形态）。404 等非网络失败 fetch 照常 resolve → load（上游
+      // preload 语义——error 仅网络失败）。
+      // https://html.spec.whatwg.org/multipage/links.html#link-type-preload
+      if (!_ssIsSheet && _ssIsPreload) {
+        if (!_ssReadAttr('as')) return;
+        if (_ssKey != null) {
+          if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
+          _zwSsFiredMap[_ssKey] = _ssAbs;
+        }
+        fetch(_ssAbs).then(function (_ssPResp) {
+          if (_ssKey != null) _zwPreloadCache[_ssKey] = _ssAbs;
+          _ssFire('load');
+        }, function () {
+          _ssFire('error');
+        });
+        return;
+      }
+      // s155：preload 资源复用（rel=preload → stylesheet 转换面）——同身份同
+      // 解析 URL 已 preload 取回完成 → 零网络派 load（spec：转换后按 stylesheet
+      // 处理模型从 preload cache 采用资源，load 事件再 fire——上游明示语义）。
+      if (_ssKey != null && _zwPreloadCache[_ssKey] === _ssAbs) {
+        setTimeout(function () { _ssFire('load'); }, 0);
         return;
       }
       // s154 取回印记：同身份同解析 URL 只发起一次（印记在发起前置位）。先赋

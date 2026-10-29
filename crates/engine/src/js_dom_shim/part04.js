@@ -3816,6 +3816,18 @@
                 && typeof globalThis._zwStylesheetMaybeStart === 'function') {
               globalThis._zwStylesheetMaybeStart(sel, handle, _zwSsPrev);
             }
+            // s155：LINK rel 变更触发 link processing 重跑（spec react to
+            // mutations——rel 属性写后按新 rel 分流：preload 取回 / stylesheet
+            // 取回或 preload cache 复用；幂等写由 helper 身份印记静默拦截不重取
+            // 不重派——link-multiple-load-events case 1 idempotent rel 写）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            if (n === 'rel' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
+              try {
+                if (_realTag(sel, handle) === 'LINK') {
+                  globalThis._zwStylesheetMaybeStart(sel, handle, null);
+                }
+              } catch (_eSsRl) {}
+            }
             // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
