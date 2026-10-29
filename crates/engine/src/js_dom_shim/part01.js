@@ -5680,17 +5680,25 @@
   // 消费（比 bracket `headers['x']` 更常见 + 标准）——Headers 实例提供 get/has/append/set/delete/forEach/entries。
   // `new Headers(init)` 接受 plain dict / Headers-like / [[k,v]] / undefined。clone 经 new Response(headers) 再封装。
   // urlencoded 表单体 → FormData（R2982 抽出，Response.formData / Request.formData 共用）。
-  // `+`→space + % 解码，spec application/x-www-form-urlencoded 语义（multipart/form-data 解析 defer）。
-  function _zwParseFormUrlencoded(bodyText) {
+  // M2-S17：spec formData →「parse the urlencoded-byte sequence」字节面语义——体字节经
+  // **UTF-8 decode without BOM** lossy 文本化（保留前导 U+FEFF——剥 BOM 的缺省 TextDecoder
+  // 是 BOM 2 腿根因），逐 pair '+'→space + percent-decode + 同语义解码（decodeURIComponent
+  // 对非法 % 序列/半截多字节抛 URIError 是 24 腿根因；_zwPercentDecodeBytes 非法序列字面
+  // 保留、U+FFFD 往返 1:1）。`&`/`=` 分割与 '+' 替换在文本面安全（0x26/0x3D/0x2B 不入
+  // 多字节序列）。multipart/form-data 解析仍走剥 BOM 文本（不属本面）。
+  function _zwParseFormUrlencoded(bodyBytes) {
+    function pairDecode(raw) {
+      return new TextDecoder('utf-8', { ignoreBOM: true }).decode(_zwPercentDecodeBytes(raw.replace(/\+/g, ' ')));
+    }
     var fd = new FormData();
-    var body = String(bodyText == null ? '' : bodyText).trim();
+    var body = (bodyBytes != null && bodyBytes.length) ? new TextDecoder('utf-8', { ignoreBOM: true }).decode(bodyBytes) : '';
     if (body) {
       body.split('&').forEach(function (pair) {
         if (!pair) return;
         var eq = pair.indexOf('=');
         var k = eq >= 0 ? pair.slice(0, eq) : pair;
         var v = eq >= 0 ? pair.slice(eq + 1) : '';
-        fd.append(decodeURIComponent(k.replace(/\+/g, ' ')), decodeURIComponent(v.replace(/\+/g, ' ')));
+        fd.append(pairDecode(k), pairDecode(v));
       });
     }
     return fd;
@@ -5880,16 +5888,15 @@
     };
     this.formData = function () {
       return _zwConsumeBodyChecked(self, function (b) {
-        var text = new TextDecoder().decode(b);
         var contentType = _zwBodyMimeType(self.headers) || '';
         var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
-        if (boundaryMatch) return _zwParseFormMultipart(text, boundaryMatch[1].replace(/^"|"$/g, ''));
+        if (boundaryMatch) return _zwParseFormMultipart(new TextDecoder().decode(b), boundaryMatch[1].replace(/^"|"$/g, ''));
         var essence = contentType.split(';')[0].trim().toLowerCase();
         // spec formData：essence 非 multipart/urlencoded（含缺 Content-Type）→ TypeError
         if (essence !== 'application/x-www-form-urlencoded') {
           throw new TypeError('Body is not form data');
         }
-        return _zwParseFormUrlencoded(text);
+        return _zwParseFormUrlencoded(b);
       });
     };
     this.clone = function () {
@@ -6311,15 +6318,14 @@
     this.bytes = function () { return _zwConsumeBodyBytes(self); };
     this.formData = function () {
       return _zwConsumeBodyBytes(self).then(function (b) {
-        var text = new TextDecoder().decode(b);
         var contentType = _zwBodyMimeType(self.headers) || '';
         var boundaryMatch = contentType.match(/multipart\/form-data\s*;\s*boundary=([^;]+)/i);
-        if (boundaryMatch) return _zwParseFormMultipart(text, boundaryMatch[1].replace(/^"|"$/g, ''));
+        if (boundaryMatch) return _zwParseFormMultipart(new TextDecoder().decode(b), boundaryMatch[1].replace(/^"|"$/g, ''));
         var essence = contentType.split(';')[0].trim().toLowerCase();
         if (essence !== 'application/x-www-form-urlencoded') {
           throw new TypeError('Body is not form data');
         }
-        return _zwParseFormUrlencoded(text);
+        return _zwParseFormUrlencoded(b);
       });
     };
     // spec #dom-request 尾步：全部校验通过后标 input used——仅限采纳 input 体形态

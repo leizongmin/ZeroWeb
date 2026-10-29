@@ -6,9 +6,9 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.19
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16）
-**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11011**（+1657，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
+**版本**: v2.20
+**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16/S17）
+**状态**: Done——DC-1/2/3/4 全部满足（[收口档](net-api-compat/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11039**（+1685，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11 / M2-S17 +28；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 
@@ -170,6 +170,16 @@
   spec 迁移期语义以 Chrome 154 实测标定（node 22 旧 V8 不展平为反例，弃用）。
   语料零改动；全通道 A/B **+11 / 0 回归 / 0 MISSING**（11000 → 11011），增益
   全部集中 from.any.js，其余 487 文件零扰动。
+- **M2-S17 完成（收口后小片，[证据档](net-api-compat/evidence/2026-10-29-m2-s17-usp-bom-formdata-urlencoded.md)）**：
+  USP BOM + formData urlencoded **28F 全收口**（urlencoded-parser 77P/28F →
+  **105P/0F**；M1 归因「独立小片」清单最后一项——BOM 本档 / setters S4a /
+  integrity S7 三项全部清偿）——URLSearchParams 解码改
+  `ignoreBOM: true`（url spec urlencoded parser「UTF-8 decoding without BOM」
+  保留前导 U+FEFF）；formData 改字节面解析（fetch spec「parse the
+  urlencoded-byte sequence」）：体字节 ignoreBOM lossy 文本化 + 逐 pair
+  percent-decode（废弃 decodeURIComponent 的 URIError 面）。语料零改动；
+  全通道 A/B **+28 / 0 回归 / 0 MISSING**（11011 → 11039），formData 消费
+  面 10 文件零扰动。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
@@ -178,7 +188,8 @@
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
   语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
-  ReadableStream.from 收敛已由 M2-S16 收口（S15 入列清偿）；
+  **「有钉引擎缺口」存量清零**（M1 归因独立小片三项 BOM/setters/integrity
+  已由 S17/S4a/S7 清偿，ReadableStream.from 由 M2-S16 收口）；
   cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /
   S11b 记账 1 清偿）；request-disturbed 翻转已由 M2-S14 双侧同步收口
   （S13 记账 1 清偿）。

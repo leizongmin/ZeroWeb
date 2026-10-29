@@ -3408,9 +3408,11 @@
   // net-api M3-S3：urlencoded percent-decode（urlencoded-parser——%XX → 字节、非法 %
   // 序列字面保留、字节经 UTF-8 lossy 解码，**不抛**（decodeURIComponent 的 URIError
   // 是 %FE%FF/%C2 面根因）；'+' → space）。复用 part01 _zwPercentDecodeBytes（同 IIFE）。
+  // net-api M2-S17：url spec urlencoded parser「UTF-8 decoding **without BOM**」——
+  // 保留前导 U+FEFF（缺省 TextDecoder 剥 BOM 是 urlencoded-parser BOM 两腿根因）。
   function _zw_usp_decode(part) {
     var bytes = _zwPercentDecodeBytes(String(part).replace(/\+/g, ' '));
-    return new TextDecoder().decode(bytes);
+    return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
   }
   function _zw_usp_parse(s) {
     var out = [];
