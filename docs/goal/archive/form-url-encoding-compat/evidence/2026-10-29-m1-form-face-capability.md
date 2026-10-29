@@ -21,7 +21,7 @@ encoding」步 + callbacks 注册。过程工件在运行 session `/tmp/zw-form-
 - **per-scalar fresh 模型**（非整串流式）：WPT encode-form 期望按逐码点
   独立预计算（encode-form-common.js split(separator) 逐段比），Chrome 同构；
   stateful 编码整串流式产出多出模式切换序列全 FAIL。定谳过程与指纹见
-  [learning](../../../learnings/patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md)。
+  [learning](../../../../learnings/patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md)。
 
 ## form 面基线（DC-2 判据 1）
 

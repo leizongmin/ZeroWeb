@@ -14,7 +14,7 @@
   2. **query set 补 `%` 归一**——rust-url 保留裸 `%` 不归一 `%25`（Chrome
      消费侧归一，WPT iso2022jp-encode-href 期望依赖该归一），预编码源直接出
      `%25` 对齐（根因与排查见
-     [learning](../../../learnings/bugs/2026-10/2026-10-29-rust-url-preserves-bare-percent.md)）。
+     [learning](../../../../learnings/bugs/2026-10/2026-10-29-rust-url-preserves-bare-percent.md)）。
   - unit 6 案（`encode_percent` 过滤）全过：新案
     `test_encode_percent_query_ncr_direct`（EUC-JP/ISO-2022-JP query NCR 直出
     + form 等价锁 + euc-jp ¥ 0x5C 字面量 + ISO roman ¥ fresh + 裸 `%` 归一 +

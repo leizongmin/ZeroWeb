@@ -1,15 +1,18 @@
 # Form/URL 遗留编码序列化 — form-url-encoding-compat
 
-> **立项（2026-10-29，用户决策）**：31 号 [encoding-legacy-mb](archive/encoding-legacy-mb.md)
+> **立项（2026-10-29，用户决策）**：31 号 [encoding-legacy-mb](./encoding-legacy-mb.md)
 > 把 decode 面 360,431 子测试收到 100% 后收口，其 M3 甄别把 encode 面 68 文件
 > （form 提交编码 + href URL 序列化）归口为「runner form/URL-compat 能力缺口」。
 > 本 goal 承接该归口。这是全量 WPT 通过率到 50%+ 的唯一未立项杠杆：
 > 当前头条 24.19%，encode 面 767,673 子测试 = +33.9pp 空间。
 > **31 号 decode 面基线 360,431 是零回归底线**（分母逐 subtest 对照）。
 
-**版本**: v1.0
-**日期**: 2026-10-29（立项）
-**状态**: Active——M0 未启动
+**版本**: v1.1
+**日期**: 2026-10-29（立项）；2026-10-29（收口）
+**状态**: Done——M0~M3 完成（2026-10-29 收口归档）。encode 面 68 文件
+766,959 子测试 766,958P/0F/1T（99.9999%），唯一非 P = data: iframe runner
+Timeout 契约挂案（重入条件见 [master.md](form-url-encoding-compat/master.md)
+缺口清单 2）；coverage 复测全量头条 24.19% → 58.02%。
 **执行模式**: WPT 验收（上游 encoding/legacy-mb encode 面 corpus）+ 能力建设
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——文档编码面）
 
@@ -22,7 +25,7 @@
   `big5-enc-ascii` 1）。per-face 子测试 split 待 M0 实测（按文件数比例估算
   form ≈ 2/3、href ≈ 1/3，不作为承诺数字）。
   甄别依据：31 号
-  [M3 可跑性甄别](archive/encoding-legacy-mb/evidence/2026-10-28-m3-encode-form-href-runnability.md)。
+  [M3 可跑性甄别](./encoding-legacy-mb/evidence/2026-10-28-m3-encode-form-href-runnability.md)。
 - **语料零依赖**：68 文件全部本地在位（31 号 DC-3 对账上游 pin 315976933
   missing=0），`/common/blank.html` 在位——本 goal 无 fetch 依赖，M0 直接进
   通道与能力切片。
