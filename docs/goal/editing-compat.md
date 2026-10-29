@@ -84,16 +84,17 @@
 > run 面全分母复跑与收口抽查按预算窗时点注记执行。R5341 修复全文与
 > 三例收口账见
 > [evidence/2026-10-30-r5341-defect2-completion-wiring.md](editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md)。
-> **簇 A 归因收口（2026-10-30 四轮探针）**：cloneNode/innerHTML 填充的 2 秒级
-> 成本全部在 JS shim glue 层——host 解析（1.3ms/2000 span）、裸宿主队列
-> （0.23µs/调）、createElement wrap（13µs 线性）、属性读（2-6µs）全部免罪；
-> 主项 = t8r 逐节点物化的 appendChild trap 全链 glue（handle 子 ~286µs/次、
-> plain text 子 +~650µs，全新 pair 960µs 与 setter B+C 相合计互证），重设
-> 2-4×（移除侧逐子 + 全局状态温和超线性）。消费者换算与 ~15 项语义义务的
-> 修复约束（guideline #35 整体替换 A/B + dom/html-syntax/selection/web-
-> components 跨域抽查）见
+> **簇 A 归因收口（2026-10-30 四轮探针 + 同日二轮修正）**：cloneNode/innerHTML
+> 填充的 2 秒级成本全部在 JS shim glue 层——host 解析（1.3ms/2000 span）、
+> 裸宿主队列（0.23µs/调）、createElement wrap（13µs 线性）、属性读（2-6µs）
+> 全部免罪；主项 = t8r 逐节点物化的 appendChild trap 全链 glue（element 子
+> ~286µs/次，text 子一侧 +~650µs 差额待 trap 内部插桩归因——初稿 plain 分支
+> 机制断言经 part06.js:4014 复核证伪，text 子实为 handle 形），重设 2-4×
+> （移除侧逐子 + 全局状态温和超线性）。消费者换算与修复约束（guideline #35
+> 整体替换 A/B + dom/html-syntax/selection/web-components 跨域抽查）见
 > [evidence/2026-10-30-cluster-a-clone-perf-attribution.md](editing-compat/evidence/2026-10-30-cluster-a-clone-perf-attribution.md)
-> ——修复下轮立项；R5342 后本簇为纯性能余量项，语料已解锁不受其阻。
+> ——修复下轮立项（候选：循环不变量提出 1.5-2× / 常见形态快速门 5-10×）；
+> R5342 后本簇为纯性能余量项，语料已解锁不受其阻。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 

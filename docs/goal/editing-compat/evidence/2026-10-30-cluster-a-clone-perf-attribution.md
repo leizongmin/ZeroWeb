@@ -70,10 +70,16 @@ glue**——B/C 相边界受此污染，判读见 §5）：
 
 属性读全部 µs 级（R351 时代的 78µs/读已被既有短路消除）——**慢不在读，在
 append 链**：全新 pair 960µs 与 §3 的 B+C 合计（~2.3s/2000 对）同量级互证。
-S4（仅 span append，无 text 子）286µs/次 vs pair 960µs——差额 ~650µs 落在
-text 子 append：物化路径的 text 子是 plain 节点（`document.createTextNode`
-产物无 handle），走 appendChild trap 的 plain 子分支（registry push + 4×
-defineProperty 反链 + R181 adopt 子树递归 + notify 链），比 handle 子分支重。
+S4（仅 span append）286µs/次 vs pair 960µs——差额 ~650µs 落在 text 子 append
+一侧。**机制注记（2026-10-30 二轮修正）**：复核 part06.js:4014 后确认主文档
+`createTextNode` 产物是 **handle 形**（`__zw_create_text` + `_textHandles` +
+`_wrapHandle` proxy），text 子与 element 子同走 appendChild trap 的 handle
+子分支、同 wire `__zw_append_child_handle`（第 3 轮拦截 nA=2000 只计 element
+append 是拦截面缺口，非分支差异）；本文初稿「plain 节点走 plain 子分支」的
+机制断言有误，~650µs 差额的精确分支归因（trap 内 s95 `_zwS95ChildText` 文本
+门 / text 相关 `_zwRegisterTextEl` 面 / 或纯逐调用 glue 噪声）**未定**，
+需 trap 内部插桩（`Object.defineProperty`/裸回调全量计时）才能收口——修复
+设计不建立在未证机制上。
 
 ## 5. 结论与修复 scope
 
@@ -81,8 +87,9 @@ defineProperty 反链 + R181 adopt 子树递归 + notify 链），比 handle 子
    0ms）+ `_zwFragmentAdded`（parse+plain 建树，80ms/2000）+ t8r 同款
    `_wcRebuildAsHandle` 逐顶层物化（part04.js ~12811 与 ~6377）——物化逐节点
    `createElement`+`createTextNode`+`appendChild`，每节点付 appendChild trap
-   全链 glue（handle 子 ~286µs、plain text 子 +~650µs）。innerHTML setter 对
-   handle 容器同款物化（t8r），故 clone ≈ 2×set。
+   全链 glue（element 子 ~286µs/次，text 子一侧 +~650µs 差额待插桩归因，
+   见 §4 修正注记）。innerHTML setter 对 handle 容器同款物化（t8r），
+   故 clone ≈ 2×set。
 2. **放大项**：重设 2-4×（S8、resetBody 3.7×——移除侧逐子成本叠加）+ 全局
    状态温和超线性（S4 桶 134→179、reset 增幅随累计创建数增长）。非解析器、
    非宿主桥、非属性读。
@@ -91,15 +98,18 @@ defineProperty 反链 + R181 adopt 子树递归 + notify 链），比 handle 子
    「3048 行需 ~300s」定量吻合。R5342 + 300s 预算已解除墙钟截断（终账
    2,406P/12,308F/0T），**本簇现为纯性能余量项，非正确性/解锁项**。
 4. **修复 scope（下轮立项）**：appendChild trap 热路径（part04.js 6622 起
-   ~450 行语义密集 dispatch）+ plain text 子分支（4× defineProperty 反链 +
-   R181 递归）。候选：常见形态（handle 子 + handle 父 + registry 空 + 无
-   observer）快速门 + plain 子反链批量接线。**约束**：该 trap 承载 ~15 项
-   语义义务（R177 校验/Document-Attr 拒绝、s95 SCRIPT 门、R368 plain 盖章、
-   R334 sel 子路径、R97 fragment 展平、容器门、R51 反链、R50 live 集合失效、
-   R3909 select 复位、MO 记录、range adjust、CE connect、s131 form 键、
-   picture/img mutation）——按 guideline #35 须整体替换 A/B（全链等价实现
-   对照，非单点微基准），跨域抽查 dom + html-syntax + selection +
-   web-components 后方可落。本轮不动手。
+   ~450 行语义密集 dispatch，每调用 ~25-40 个 try/catch 内 helper 调用的
+   分布式成本，无单一 villain——286µs ≈ 全部子步之和）。候选：①循环不变量
+   提出（`_realTag(sel,handle)` 每调用算 3-4 次、CE/mo/live-range 门控前置，
+   guideline #26 既有先例 t8，预期 1.5-2×）；②常见形态快速门（handle 子 +
+   handle 父 + registry 空 + 无 observer，预期 5-10×，须逐义务核对等价）。
+   **约束**：该 trap 承载 ~15 项语义义务（R177 校验/Document-Attr 拒绝、
+   s95 SCRIPT 门、R368 plain 盖章、R334 sel 子路径、R97 fragment 展平、
+   容器门、R51 反链、R50 live 集合失效、R3909 select 复位、MO 记录、
+   range adjust、CE connect、s131 form 键、picture/img mutation）——按
+   guideline #35 须整体替换 A/B（全链等价实现对照，非单点微基准），跨域
+   抽查 dom + html-syntax + selection + web-components 后方可落。
+   **本轮不动手**（风险面与验证量需独立整轮）。
 5. **尾钩单修收益有限**（不支持顺手小修）：s131 sweep `.form` 读 6µs × n、
    CE `_elConnected` 父链走查 ~15µs × n、R3k 命名注册 plain 遍历——合计
    ≤100ms/2000 量级，占总成本 <5%；主项是逐节点物化 glue 本身。
@@ -112,3 +122,6 @@ defineProperty 反链 + R181 adopt 子树递归 + notify 链），比 handle 子
 - 修复验收基线：S5 ≤300ms/2000 span、S7 同量级、S8 ≤1.5× S5、bold 四变体
   单案墙钟对照（当前 ~300s 预算占用 → 目标 <100s）、全量 run 面零 verdict
   级回归（逐案折叠变体 diff）。
+- 二轮修正（2026-10-30）：§4/§5 机制注记按 part06.js:4014 复核修正
+  （text 子为 handle 形）；~650µs 差额分支归因待 trap 内部插桩，修复设计
+  不建立在未证机制上。
