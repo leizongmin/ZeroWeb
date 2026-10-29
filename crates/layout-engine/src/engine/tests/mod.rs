@@ -908,3 +908,8 @@ mod r5332_border_box_flex_cross_tests;
 /// 因子锚——`flex-grow: calc(infinity)` 吸收全部 free space、普通 math 长手求值、
 /// shrink ∞ 拒收守卫（flex-grow-009）。
 mod r5333_flex_infinite_grow_tests;
+/// R5334（css-flexbox-1 §4.5 + css-overflow-3 §3.1）scroll container flex item
+/// 自动最小 = 0 锚——overflow 非 visible 的 column item 不被 R1743 回填撑回内容高、
+/// overflow visible 自动最小保留、row 轴 cross 域既有行为守卫
+///（fieldset-as-item-overflow）。
+mod r5334_flex_scroll_item_min_tests;

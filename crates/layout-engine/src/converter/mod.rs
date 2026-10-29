@@ -872,7 +872,7 @@ fn convert_position(value: &PositionValue) -> taffy::style::Position {
 /// CSS Overflow 3 §3.1：overflow-x/y 的 computed value 传播——一轴为非
 /// visible/clip（hidden/scroll/auto）时，另一轴 visible→auto、clip→hidden；
 /// 两轴同族（均 visible/clip 或均非）不传播。
-fn computed_overflow_pair(x: &OverflowValue, y: &OverflowValue) -> (OverflowValue, OverflowValue) {
+pub(crate) fn computed_overflow_pair(x: &OverflowValue, y: &OverflowValue) -> (OverflowValue, OverflowValue) {
     fn propagated(v: &OverflowValue) -> Option<OverflowValue> {
         match v {
             OverflowValue::Visible => Some(OverflowValue::Auto),

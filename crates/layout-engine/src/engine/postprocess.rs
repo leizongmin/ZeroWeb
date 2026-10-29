@@ -1866,15 +1866,28 @@ fn shift_siblings_after_ifc_grow_inner(
     // min-height:auto 的 item 保留回填：taffy automatic min 测量回 transferred size 而非
     // content size suggestion（flex-aspect-ratio-026 子例 2/3/6/7 item 25px 应 200px），
     // R1743 回填是该短板的现行补偿位，撤销须先补 taffy content-suggestion 臂。
+    // R5334（css-flexbox-1 §4.5 + css-overflow-3 §3.1）：例外半区——**scroll container**
+    // item（computed overflow 任一轴经传播后非 visible/clip）automatic minimum size = 0，
+    // taffy 已按 min=0 定尺（Overflow::maybe_into_automatic_min_size），内容溢出可滚动/
+    // 裁剪不构成「taffy 欠计」，回填把它撑回子 max-bottom（fieldset-as-item-overflow：
+    // overflow-y:scroll + min-height:auto item flex 分配 100px 被撑回 200px 溢出容器，
+    // chromium bug 1149714）。传播经 computed_overflow_pair（R4265 同源：一轴非
+    // visible/clip 时另轴 visible→auto）。与 R3754 ar_transferred 臂（滚动容器无
+    // content-based minimum，内容不撑盒）同型语义在 flex item 域补齐。
     // row 容器 item 的 height 是 cross 轴（内容决定型时回填仍是合法 R1743 修复位），不在
     // 豁免域。kill-switch `ZW_FLEX_COL_ITEM_NO_HEIGHT_BACKFILL=0`（default-on）。
     let is_col_flex_item_no_backfill = |child: &LayoutBox| {
         self_is_column_flex
             && child.is_flex_grid_item
-            && child
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .is_some_and(|s| !matches!(s.min_height, LengthValue::Auto))
+            && child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                !matches!(s.min_height, LengthValue::Auto) || {
+                    // scroll container 判定用传播后 computed pair（§3.1）——任一轴非
+                    // visible/clip（hidden/scroll/auto）即为 scroll container。
+                    let (cx, cy) = crate::converter::computed_overflow_pair(&s.overflow_x, &s.overflow_y);
+                    !matches!(cx, OverflowValue::Visible | OverflowValue::Clip)
+                        || !matches!(cy, OverflowValue::Visible | OverflowValue::Clip)
+                }
+            })
     };
     // R5095 kill-switch：`ZW_IFC_ATOMIC_PAIR_NO_SHIFT=0` 恢复「atomic inline prev 对
     // atomic inline next 的重叠下推」旧行为。
