@@ -7721,6 +7721,71 @@
               } catch (_eRdL) {}
               return child;
             }
+            // R5340（editing-compat M2 次轮，2026-10-30）：sel 父 + **pending 解析子**（
+            // innerHTML 同 turn 产物——_zwMText/_zwMEl 视图，无 handle 无 sel，
+            // `__zwIsText` 印缺失 → 上一 slice24 分支门不命中）的移除路径。四既有分支
+            // 全不命中（slice24 要 __zwIsText；R195 要 handle 父 registry；R125 要
+            // child.__zwSelector）→ 静默穿透返回：父融合视图仍含该子，编辑工具链
+            // （EditorTestUtils.setupEditingHost 的 marker 删除循环——removeNode 后
+            // 重扫 firstChild 又见同一 "{"）每轮重删同节点 → 无限自旋
+            // （editing/run/createlink-with-selecting-img 90s 脚本超时 + other 面
+            // EditorTestUtils 族 setup 全灭）。修复 = slice24 同款三件，索引读**融合
+            // 视图**（不用基底缓存——pending 子不在快照；融合序在每步移除后现算，
+            // 恰等于 apply 时该子落位，多子连续删除序正确）：
+            // ① host `RemoveChildAt`——apply 序在 SetInnerHTML 之后，pending 子
+            //    落地后同位摘除；② 桶 retract（added splice + removed push——
+            //    overlay 立即隐藏，apply 后由记账清桶）；③ 迭代器/range 通知 +
+            //    挂槽清除 + 断链 + childList record。
+            // https://dom.spec.whatwg.org/#dom-node-removechild
+            // https://dom.spec.whatwg.org/#concept-node-pre-remove
+            if (child && sel && !child.__zwHandle && !child.__zwSelector) {
+              var _pvIdx = -1, _pvKids = null;
+              try {
+                _pvKids = _childNodeList(sel, handle);
+                for (var _pvi = 0; _pvi < _pvKids.length; _pvi++) {
+                  if (_pvKids[_pvi] === child) { _pvIdx = _pvi; break; }
+                }
+              } catch (_ePvK) {}
+              if (_pvIdx >= 0) {
+                if (typeof __zw_remove_child_at === 'function') {
+                  try { __zw_remove_child_at(sel, String(_pvIdx)); } catch (_ePvH) {}
+                }
+                var _pvB = null;
+                if (typeof _zwPendBucket === 'function') {
+                  _pvB = _zwPendBucket(sel, handle);
+                } else if (typeof _zwPendingByParent === 'object' && _zwPendingByParent) {
+                  var _pvKey = sel;
+                  _pvB = _zwPendingByParent.get(_pvKey) || null;
+                }
+                if (_pvB) {
+                  for (var _pva = _pvB.added.length - 1; _pva >= 0; _pva--) {
+                    if (_pvB.added[_pva] === child) { _pvB.added.splice(_pva, 1); break; }
+                  }
+                  if (!_pvB.removedSet || !_pvB.removedSet.has(child)) {
+                    if (_pvB.removedSet) _pvB.removedSet.add(child);
+                    _pvB.removed.push(child);
+                  }
+                }
+                if (globalThis._zwNotifyIteratorsRemove) {
+                  try { globalThis._zwNotifyIteratorsRemove(child); } catch (_ePvI) {}
+                }
+                try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_ePvR) {}
+                var _pvPv = _pvIdx > 0 ? _pvKids[_pvIdx - 1] : null;
+                var _pvNx = _pvIdx + 1 < _pvKids.length ? _pvKids[_pvIdx + 1] : null;
+                try { child.parentNode = null; } catch (_ePvP) {}
+                if (child._zwSelPendingParent) {
+                  try { delete child._zwSelPendingParent; } catch (_ePvS) {}
+                }
+                _mo_notify(sel, handle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _pvPv, nextSibling: _pvNx });
+                try {
+                  if (globalThis._zwLiveNLSync && sel && globalThis._zwLiveNLSync[sel]) {
+                    globalThis._zwLiveNLSync[sel]();
+                  }
+                } catch (_ePvL) {}
+                return child;
+              }
+              // 融合视图 identity miss——维持静默穿透（R117 lenient 同语义）。
+            }
             if (child && child.__zwHandle) {
               // R2994：移除前快照连接态（移除后 host 快照变化，但 _ceConn 为 JS 端追踪，移除调用不影响）。
               // R34xx：注销注册的文本元素（DOM 对照侧几何——removeChild 后 caret 不再命中）。

@@ -1,0 +1,33 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>probe: sync test() declared in window load handler (defect #2 acceptance)</title>
+<!--
+  editing-compat 缺陷 #2 验收探针（2026-10-30 M2 次轮归因，见
+  2026-10-30-m2-r2-spin-cluster-attribution.md）。
+
+  形态：window load handler 内同步声明两个 test()。
+
+  真实浏览器预期：M1-a、M1-b 两个子测试全 Pass——testharness 原生 load
+  listener 在 load 事件的 setTimeout(0) 里才置 test_environment.all_loaded，
+  严格晚于全部 load handler 执行完毕，首测 done 时 num_pending 已计满，
+  all_done() 不成立，无提前 complete。
+
+  本仓现状（2026-10-30 HEAD，runner 完成接线 __zw_mark_harness_loaded 在页
+  load listener 跑完前置位 all_loaded）：只报 M1-a——首测同步执行完毕即
+  all_done() 全真提前 complete()，M1-b 被 Tests.prototype.push 的
+  phase===COMPLETE 守卫静默丢弃。
+
+  缺陷修复后的验收判据：两行子测试全 Pass。
+-->
+<div id=log></div>
+<div id=host contenteditable></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+addEventListener("load", function() {
+    document.getElementById("host").focus();
+    test(function() { assert_true(true); }, "M1-a sync first");
+    test(function() { assert_true(true); }, "M1-b sync second");
+});
+</script>

@@ -1,13 +1,8 @@
 # 编辑命令兼容 — editing/run + editing/other
 
 **版本**: v1.4
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（自旋簇归因 = 预算截断）；2026-10-30（other 面复跑收口 2,404P/11,159F/3T）
-**状态**: Active——M1 完成；R5331（3d173dccc，查询回落槽锚点）land 后 M2
-首轮（innerHTML 物化身份失步全环）完成：run 面 setup 级联解锁
-（0.007% → 48.78%，分母收缩口径见 evidence），R5331 指认的 cloneNode
-断点环已闭合；跨域 html-syntax 99.90% 零回归。「自旋簇」已归因为
-runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），全分母
-重跑进行中
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）
+**状态**: Active——M2 次轮（双窗并行，已折叠）完成。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：自旋簇拆三事实——cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**，delete-in-last 家族 44 断言 0 Timeout 解锁、createlink 出真实语义断言）、runner 完成接线过早置 all_loaded（缺陷 #2，other 面 29/96 load 声明形态案账面完整性，挂账未修）
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
@@ -52,6 +47,34 @@ runner V8 看门狗预算截断（非死循环，corpus 脚本预算已修），
 > 终账明细见
 > [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)；首轮修复与 M2-r1 账面见
 > [evidence/2026-10-30-m2-r1-innerhtml-materialization.md](editing-compat/evidence/2026-10-30-m2-r1-innerhtml-materialization.md)。
+
+> **M2 次轮·三分类窗（2026-10-30，与预算窗并行折叠、本侧收环）**：自旋簇
+> 归因深化为**三个独立事实**（非单一根因）。簇 A：run 面墙钟杀 =
+> cloneNode 前置成本 ~54ms/次的线性放大——runConformanceTest 每行数据
+> `documentElement.cloneNode(true)`（tests.js 5582 行），bold 四变体 3048
+> 行 = 深克隆物化 × 数据行数 × 变体页数的线性放大，非死循环，性能簇与
+> 墙钟调优一并挂账。簇 B：真自旋 = removeChild 对 sel 父 pending 解析子
+> 静默穿透——innerHTML 同 turn 解析产物（无 handle/sel/`__zwIsText` 印）
+> 在 removeChild 分支网既有四分支全不命中，末尾静默 `return child` 后父
+> 融合视图仍含失效子，删除标记循环无限重扫同一 firstChild；**R5340 已修**
+> （part04.js 分支链新增 sel 父 + 融合视图 identity 分支 → host
+> `__zw_remove_child_at` + 桶 retract + 迭代器/range 通知），delete-in-last
+> 家族两案修复前 90s 脚本中止、修复后 44 断言全出真实语义 Fail 0 Timeout，
+> createlink-with-selecting-img 出真实语义断言——预算窗三例 Timeout 中的
+> delete 族案待新二进制（94eb9f0d2 + R5340）复跑核对是否由此解除；
+> ②inserttext OOM 簇（DOM 无界增长）非本根因、仍开放，归 execCommand/
+> delete 语义簇序列待立项。簇 C（缺陷 #2）：runner
+> `apply_harness_completion_patch` 尾调在页 load listener 之前置
+> all_loaded，load handler 内同步 `test()`（声明即同步执行）首测 done 即
+> 提前 complete，后续声明被 `Tests.push` 静默丢弃（真实浏览器原生 load+
+> setTimeout(0) 时序严格晚于全部 load handler，无此形态）——other 面
+> 29/96 load 形态案中 handler 内同步 test() 子集只报 ≤1 测试、分母低估；
+> 修复受 270896e25（write 注入路径 102 伪 Timeout 翻绿）约束不能简单
+> 删除。归因全文、R5340 验证与缺陷 #2 机制链见
+> [evidence/2026-10-30-m2-r2-spin-cluster-attribution.md](editing-compat/evidence/2026-10-30-m2-r2-spin-cluster-attribution.md)。
+> 下一步：缺陷 #2 修复（最小探针已归档）→ cloneNode 性能簇 → white-space
+> join → insertparagraph → execCommand 逐簇立项；run 面全分母复跑与收口
+> 抽查按预算窗时点注记执行，新二进制落位后 delete 族随抽查重核。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
@@ -115,12 +138,16 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   双流撞车后按上游版收敛）+ 首轮（2026-10-30，innerHTML 物化身份失步全环：
   matches 自含 / 深层解析产物 in-doc / cloneNode 融合源读 / 子树脏门 ID 锚定
   ——R5331 指认的 cloneNode 断点环闭合；四笔 + 全量重跑 + 跨域零回归，见
-  evidence）。次轮（2026-10-30）= 自旋簇归因**已落**：run 面 ?3001-last
+  evidence）。次轮（2026-10-30，双窗并行折叠）：预算窗——run 面 ?3001-last
   形态实为 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（同步脚本
-  段 ~200-300s/变体，bold 单案 12→3048 行实证，非死循环）；corpus 脚本
-  run 通道预算已修（300s/变体 + CASE_WALL_S 按变体数自适应），全分母重跑
-  后按新账定 white-space join → insertparagraph → execCommand 逐簇序。
-  other 面 list/inline delete 自旋案待新预算口径复跑后再归因（是否同根因）。
+  段 ~200-300s/变体，bold 单案 12→3048 行实证，非死循环），corpus 脚本
+  run 通道预算已修（300s/变体 + CASE_WALL_S 按变体数自适应），other 面同
+  预算复跑收口 2,404P/11,159F/3T；三分类窗——自旋簇拆三事实：cloneNode
+  前置成本性能簇（挂账）、removeChild pending 解析子静默穿透真自旋
+  （R5340 修，delete-in-last 家族解锁验证，other 面 list/inline delete
+  自旋案是否同根因就此收口）、runner 完成接线过早置 all_loaded（缺陷 #2，
+  other 面 29/96 load 形态案账面不完整，挂账）；其后缺陷 #2 → cloneNode
+  性能簇 → white-space join → insertparagraph → execCommand 语义逐簇立项。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
   等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
 
