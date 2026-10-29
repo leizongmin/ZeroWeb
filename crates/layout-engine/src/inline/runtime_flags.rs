@@ -27,6 +27,15 @@ pub(super) fn br_ifc_line() -> bool {
     selected(*VALUE, || default_on("ZW_BR_IFC_LINE"))
 }
 
+/// R5322（CSS Text 3 §5.2 / CSS2 §10.8.1）：pre/pre-line 的 `\n` 强制断行空行
+/// 写回 strut 行盒 height（与 R1286 `<br>` 空行同构），空行 strut 取容器 used
+/// line-height（R5298 捕获）而非硬编码 20px。default-on；
+/// `ZW_PRE_NEWLINE_STRUT=0` 回退旧行为（不写 height + 20px）。
+pub(super) fn pre_newline_strut() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_PRE_NEWLINE_STRUT"));
+    selected(*VALUE, || default_on("ZW_PRE_NEWLINE_STRUT"))
+}
+
 pub(super) fn skip_oof() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IFC_SKIP_OOF"));
     selected(*VALUE, || default_on("ZW_IFC_SKIP_OOF"))

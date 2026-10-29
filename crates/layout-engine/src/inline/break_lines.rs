@@ -105,8 +105,23 @@ impl InlineFormattingContext {
 
         // 追踪当前行的 y 偏移量（用于计算浮动排除区域）
         let mut current_y = 0.0_f32;
-        // 估算默认行高（用于初始浮动排除计算）
+        // 估算默认行高（用于初始浮动排除计算与非 preserve `<br>` 空行 strut）
         let default_line_height = 20.0_f32;
+        // R5322（CSS Text 3 §5.2 / CSS2 §10.8.1）：**preserve 容器**（pre/pre-wrap）
+        // 的空行 strut = 容器 used line-height（R5298 `layout()` 捕获）——strut 是
+        // 块容器字体的假想盒、参与每一行盒；旧实现空行一律 20px（c548-ln-ht-000
+        // 控制块 `font:30px/1` 空行 20px、行距 50 ≠ 60 实证）。只收窄到 preserve
+        // 语境：非 preserve `<br>` 空行（ruby-align-001 的 inline ruby 页，0.77%）
+        // 与浮动排除估算的 20px 地板为 corpus 承重近似，全量换 strut 实测
+        // ruby-align-001/001a 0.77→1.02 越阈翻红（kill-switch A/B 归因）→ 回退
+        // legacy，另案入账。未捕获（paint Path B/旧调用，值 0）与容器显式
+        // line-height:0（R5303 两义分离，strut 0 高语义未建模 FIXME）落 20px。
+        let preserved_empty_line_strut =
+            if crate::inline::runtime_flags::pre_newline_strut() && self.container_strut_line_height > 0.0 {
+                self.container_strut_line_height
+            } else {
+                default_line_height
+            };
 
         // R3785：行盒 y 哨兵 NaN = 未定位——行盒 y 在 push 时按 current_y 记录
         // （float 垂直推压后行位非顺序累计）；末尾只为 NaN 行盒顺序补位。
@@ -496,8 +511,22 @@ impl InlineFormattingContext {
                             let est_height = if current_line.height > 0.0 {
                                 current_line.height
                             } else {
-                                default_line_height
+                                preserved_empty_line_strut
                             };
+                            // R5322：`\n` 强制断行的空行写回 strut 行盒 height——旧实现
+                            // 只推进 current_y 不写 height，块高按行盒 height 合计时
+                            // 空行蒸发（white-space-008：green pre `\n\nX` 渲染 1 行
+                            // vs red `<br/><br/>X` 3 行实证）。与 R1286 `<br>` 空行
+                            //（下方 Br 臂 current_line.height = est_height）同构；
+                            // 非空行 est_height ≡ current_line.height，写回恒等。
+                            // marker 仅存在于 preserve/break_at_newline run（见上方
+                            // split 标记产出），天然限于 preserve 语境；pre-line 的
+                            // marker fragment 行由 R1476 裸空塌缩接管（既有口径，
+                            // 不在本刀域）。kill-switch off = 不写回（height 0 蒸发，
+                            // 精确回退旧行为）。
+                            if crate::inline::runtime_flags::pre_newline_strut() {
+                                current_line.height = est_height;
+                            }
             current_line.y = current_y;
             self.lines.push(current_line);
             last_word_on_line = false;

@@ -84,6 +84,8 @@ mod r5299_inline_slice_segment_tests;
 mod r5320_first_line_bg_tests;
 /// R5321 作者 ::selection transparent/同值声明存储探针（css-pseudo-4 §highlight-cascading）。
 mod r5321_selection_transparent_bg_tests;
+/// R5322 pre 容器 `\n` 强制断行 strut（CSS Text 3 §5.2 / CSS2 §10.8.1）。
+mod r5322_pre_newline_strut_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
