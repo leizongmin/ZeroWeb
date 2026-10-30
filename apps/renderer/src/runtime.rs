@@ -489,6 +489,9 @@ pub(crate) struct RendererRuntime {
     history_index: usize,
     /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
     deferred_inbound: VecDeque<IpcMessage>,
+    /// T27-P35：在途阻塞 fetch 等待深度（0 = 无）。>0 时再入阻塞 fetch 返回 Err，
+    /// 防输入派发触发嵌套等待吞走外层 FetchResponse。
+    ipc_fetch_depth: u8,
     /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复（worker 长臂时主循环 2s 放行，
     /// 主循环每轮轮询补答；automation::PendingAutomationReply）。
     pending_automation_replies: Vec<automation::PendingAutomationReply>,
@@ -822,6 +825,7 @@ impl RendererRuntime {
             history: Vec::new(),
             history_index: 0,
             deferred_inbound: VecDeque::new(),
+            ipc_fetch_depth: 0,
             pending_automation_replies: Vec::new(),
             compositor_publish,
             animation_export: AnimationExportState::new(0),
@@ -1543,7 +1547,7 @@ impl RendererRuntime {
         }
         // S8：已发送图片 key（browser 端 ImageCache 已存）不重传像素。
         // P14（2026-10-25）：取回改两阶段批量——先非阻塞发起全部缺图，再统收响应。
-        // 旧逐图 `ipc_fetch_get` 闭包每次阻塞收单张，同 origin 图片并发恒为 1。
+        // 旧逐图阻塞闭包每次收单张，同 origin 图片并发恒为 1。
         let payloads = if allow_network_fetch && !self.stub_network {
             let mut batch = crate::ipc_image_batch::IpcImageBatch::new(
                 &mut self.outbound,
@@ -3063,13 +3067,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         if self.stub_network {
             return Err(format!("stub network (no browser process): {url}"));
         }
-        ipc_fetch_get(
-            &mut self.outbound,
-            &self.inbound_rx,
-            &mut self.next_fetch_id,
-            &mut self.deferred_inbound,
-            url,
-        )
+        self.ipc_fetch_via_browser(url, "GET", &[], None)
+            .map(|(bytes, _)| bytes)
     }
 
     /// 经浏览器 IPC 代理 POST 请求（R3055 form POST 导航）。body = urlencoded form data，
@@ -3079,16 +3078,76 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         if self.stub_network {
             return Err(format!("stub network (no browser process): {url}"));
         }
-        ipc_fetch(
-            &mut self.outbound,
-            &self.inbound_rx,
-            &mut self.next_fetch_id,
-            &mut self.deferred_inbound,
+        self.ipc_fetch_via_browser(
             url,
             "POST",
             &[("Content-Type", "application/x-www-form-urlencoded")],
             if body.is_empty() { None } else { Some(body) },
         )
+        .map(|(bytes, _)| bytes)
+    }
+
+    /// 阻塞 fetch 生产入口（POST form 导航 / 后退前进整页重取 / FontFace.load 字节）。
+    /// 发 `FetchRequest` 后进入 [`ipc_fetch_wait_step`] 等待循环：点击/输入类消息即时
+    /// 让位 [`Self::dispatch_message`]（与主循环同款分发；字段借用随 step 返回结束，
+    /// 此处 `&mut self` 合法），其余非目标消息扣压、收尾回填 [`Self::deferred_inbound`]。
+    ///
+    /// 深度守卫：输入派发可运行任意页面脚本，若再入阻塞 fetch（当前无此路径，防御
+    /// 未知页面行为），返回 Err 而非嵌套等待——嵌套时内层可能吞走外层的
+    /// FetchResponse 到自己的 skipped，时序耦合不可控；POST 重发还会二次提交表单。
+    fn ipc_fetch_via_browser(
+        &mut self,
+        url: &str,
+        method: &str,
+        headers: &[(&str, &str)],
+        body: Option<&str>,
+    ) -> Result<(Vec<u8>, Option<String>), String> {
+        if self.ipc_fetch_depth > 0 {
+            return Err(format!("嵌套阻塞 fetch 被拒绝（在途 fetch 等待期内）: {url}"));
+        }
+        let request_id = self.next_fetch_id;
+        self.next_fetch_id += 1;
+        let msg = IpcMessage {
+            id: 0,
+            kind: IpcMessageKind::FetchRequest(FetchParams {
+                request_id,
+                url: url.to_string(),
+                method: method.to_string(),
+                headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+                body: body.map(|b| b.as_bytes().to_vec()),
+            }),
+        };
+        self.outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
+        let mut wait = IpcFetchWait {
+            request_id,
+            skipped: VecDeque::new(),
+            deadline: Instant::now() + IPC_FETCH_WAIT_MAX,
+        };
+        self.ipc_fetch_depth += 1;
+        let result = loop {
+            match ipc_fetch_wait_step(
+                &mut self.outbound,
+                &self.inbound_rx,
+                &mut self.deferred_inbound,
+                &mut wait,
+            ) {
+                Ok(IpcFetchStep::Done(result)) => break result,
+                Ok(IpcFetchStep::Yield(input)) => {
+                    // 主循环同款分发路径；非断连错误只记录不中断（与主循环对派发
+                    // 错误的容忍一致），fetch 继续等目标响应。
+                    if let Err(e) = self.dispatch_message(*input) {
+                        if browser_ipc_disconnected(&e) {
+                            break Err(e);
+                        }
+                        tracing::warn!("fetch 等待期输入派发失败: {e}");
+                    }
+                }
+                Err(e) => break Err(e),
+            }
+        };
+        self.ipc_fetch_depth -= 1;
+        self.deferred_inbound.append(&mut wait.skipped);
+        result
     }
 
     fn push_history(&mut self, url: &str) {
@@ -4626,119 +4685,102 @@ fn ipc_fetch_error(status_code: u16, body: &[u8]) -> String {
     }
 }
 
-/// 经浏览器 IPC 代理 HTTP 请求（R3055：从 `ipc_fetch_get` 泛化，支持 method/headers/body——供 POST form 导航）。
-/// 收发逻辑同 GET：发 `FetchRequest`，等待匹配 `request_id` 的 `FetchResponse`，非目标消息暂存局部队列后回填
-///（防单核自旋）。状态码非 2xx → Err。`ipc_fetch_get` 为 GET 便捷封装。
-#[allow(clippy::too_many_arguments)] // 8 参 = 4 IPC 通道 + url/method/headers/body，签名清晰优于打包结构体
-fn ipc_fetch(
-    outbound: &mut IpcOutbound,
-    inbound_rx: &Receiver<IpcMessage>,
-    next_fetch_id: &mut u64,
-    deferred: &mut VecDeque<IpcMessage>,
-    url: &str,
-    method: &str,
-    headers: &[(&str, &str)],
-    body: Option<&str>,
-) -> Result<Vec<u8>, String> {
-    ipc_fetch_with_final_url(
-        outbound,
-        inbound_rx,
-        next_fetch_id,
-        deferred,
-        url,
-        method,
-        headers,
-        body,
-    )
-    .map(|(bytes, _)| bytes)
+/// fetch 等待期单次 `recv_timeout` 切片：到期复核总上限。点击/输入类消息由通道
+/// 唤醒即刻让位，切片本身只约束空通道时的复核节奏。
+const IPC_FETCH_WAIT_SLICE: Duration = Duration::from_millis(250);
+
+/// 单次 fetch 等待总上限。browser 侧每臂 ~30s 超时（fetch_proxy），2 倍余量封顶
+/// 渲染主循环被单条 fetch 冻结的时长——T27-P35 定谳：此处原为无界 `recv()`，是
+/// 点击链路上唯一无界低 CPU 等待点（实测 12s POST 臂扣压点击 8.1s、20s 字体串行窗
+/// 冻结期间输入全部滞留，30s×N ≈ 分钟级）。超限按 fetch 失败收场（字体 Promise
+/// reject / 错误页），主循环不再无限冻结。
+const IPC_FETCH_WAIT_MAX: Duration = Duration::from_secs(60);
+
+/// 经浏览器 IPC 代理 fetch 的等待期可恢复状态：目标 request_id + 已扣压的非目标
+/// 消息 + 总上限时点。点击/输入类消息让位派发后携本状态续等同一 `FetchResponse`
+///（请求已发出，续等不重发——POST 重发会二次提交表单）。
+struct IpcFetchWait {
+    request_id: u64,
+    skipped: VecDeque<IpcMessage>,
+    deadline: Instant,
 }
 
-/// [`ipc_fetch`] 的扩展形态：同时返回最终 URL（fetch_proxy 对 30x 重定向追后附加的
-/// `X-Zero-Final-URL` 响应头；无重定向/无该头时为 None）。
-///
-/// bing-t3（site-optimizer bing-20261010-r1 簇 C1，2026-10-11）：POST 文档导航
-/// 30x 重定向后，文档 URL 须为最终 URL（HTML fetch 标准：response URL 即
-/// document URL，https://html.spec.whatwg.org/multipage/browsers.html#document-requested-url）。
-#[allow(clippy::too_many_arguments)] // 同 [`ipc_fetch`]：8 参 = 4 IPC 通道 + url/method/headers/body
-fn ipc_fetch_with_final_url(
+/// [`ipc_fetch_wait_step`] 的单步结果。
+enum IpcFetchStep {
+    /// 等到目标 `FetchResponse`（非 2xx 已转 Err）或等待超过总上限（Err）。
+    Done(Result<(Vec<u8>, Option<String>), String>),
+    /// 点击/输入类消息到达（优先通道）：fetch 让位，调用方派发后携原状态续等。
+    /// 装箱压变体尺寸（IpcMessage ≈368B，Done 臂仅 48B）。
+    Yield(Box<IpcMessage>),
+}
+
+/// 等待循环单步：先耗尽 `deferred`，再有界等待入站通道，直到 [`IpcFetchStep`] 就绪。
+/// 目标 `FetchResponse` 与心跳在本步内消费；点击/输入类即时让位；其余非目标消息
+/// 扣入 `wait.skipped`（由调用方收尾统一回填 `deferred`——若直接放回 `deferred`，
+/// 下一轮会立刻 pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，
+/// 导致单核自旋）。
+fn ipc_fetch_wait_step(
     outbound: &mut IpcOutbound,
     inbound_rx: &Receiver<IpcMessage>,
-    next_fetch_id: &mut u64,
     deferred: &mut VecDeque<IpcMessage>,
-    url: &str,
-    method: &str,
-    headers: &[(&str, &str)],
-    body: Option<&str>,
-) -> Result<(Vec<u8>, Option<String>), String> {
-    let request_id = *next_fetch_id;
-    *next_fetch_id += 1;
-    let msg = IpcMessage {
-        id: 0,
-        kind: IpcMessageKind::FetchRequest(FetchParams {
-            request_id,
-            url: url.to_string(),
-            method: method.to_string(),
-            headers: headers.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
-            body: body.map(|b| b.as_bytes().to_vec()),
-        }),
-    };
-    outbound.send(msg).map_err(|e| format!("IPC 发送失败: {e}"))?;
-
-    // 当前请求不消费的消息先移到局部队列。若直接放回 `deferred`，下一轮会立刻
-    // pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，导致单核自旋。
-    let mut skipped = VecDeque::new();
-    let result = (|| {
-        loop {
-            let msg = if let Some(m) = deferred.pop_front() {
-                m
-            } else {
-                inbound_rx.recv().map_err(|e| format!("IPC 接收失败: {e}"))?
-            };
-            match msg.kind {
-                IpcMessageKind::FetchResponse(FetchResponseParams {
-                    request_id: rid,
-                    status_code,
-                    body,
-                    headers: response_headers,
-                }) if rid == request_id => {
-                    if !(200..300).contains(&status_code) {
-                        return Err(ipc_fetch_error(status_code, &body));
+    wait: &mut IpcFetchWait,
+) -> Result<IpcFetchStep, String> {
+    loop {
+        let msg = if let Some(m) = deferred.pop_front() {
+            m
+        } else {
+            match inbound_rx.recv_timeout(IPC_FETCH_WAIT_SLICE) {
+                Ok(msg) => msg,
+                Err(RecvTimeoutError::Timeout) => {
+                    if Instant::now() >= wait.deadline {
+                        return Ok(IpcFetchStep::Done(Err(format!(
+                            "fetch 等待超过 {IPC_FETCH_WAIT_MAX:?} 上限（rid={}）",
+                            wait.request_id
+                        ))));
                     }
-                    let final_url = response_headers
-                        .iter()
-                        .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
-                        .map(|(_, value)| value.clone());
-                    return Ok((body, final_url));
+                    continue;
                 }
-                IpcMessageKind::Heartbeat => {
-                    let reply = IpcMessage {
-                        id: msg.id,
-                        kind: IpcMessageKind::Heartbeat,
-                    };
-                    outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
+                Err(RecvTimeoutError::Disconnected) => return Err("IPC 接收失败".into()),
+            }
+        };
+        match msg.kind {
+            IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: rid,
+                status_code,
+                body,
+                headers: response_headers,
+            }) if rid == wait.request_id => {
+                if !(200..300).contains(&status_code) {
+                    return Ok(IpcFetchStep::Done(Err(ipc_fetch_error(status_code, &body))));
                 }
-                other => {
-                    skipped.push_back(IpcMessage {
-                        id: msg.id,
-                        kind: other,
-                    });
-                }
+                let final_url = response_headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("x-zero-final-url"))
+                    .map(|(_, value)| value.clone());
+                return Ok(IpcFetchStep::Done(Ok((body, final_url))));
+            }
+            IpcMessageKind::Heartbeat => {
+                let reply = IpcMessage {
+                    id: msg.id,
+                    kind: IpcMessageKind::Heartbeat,
+                };
+                outbound.send(reply).map_err(|e| format!("IPC 发送失败: {e}"))?;
+            }
+            // T27-P35 优先通道（t2-pb1 fix#14 Navigate 抢占的输入版）：点击/输入类
+            // IPC 在 fetch 等待期即时让位主循环派发，不再扣压到 fetch 链走完——否则
+            // 点击反馈冻结整条 fetch 链（症状：点击后数分钟无反应且低 CPU）。
+            IpcMessageKind::DispatchDomEvent(_)
+            | IpcMessageKind::KeyboardEvent(_)
+            | IpcMessageKind::MouseEvent(_)
+            | IpcMessageKind::ImeEvent(_) => return Ok(IpcFetchStep::Yield(Box::new(msg))),
+            other => {
+                wait.skipped.push_back(IpcMessage {
+                    id: msg.id,
+                    kind: other,
+                });
             }
         }
-    })();
-    deferred.append(&mut skipped);
-    result
-}
-
-/// GET 便捷封装（R3055：转发到泛化 [`ipc_fetch`]，无 headers/body）。既有调用点（字体/图片/预取）不变。
-fn ipc_fetch_get(
-    outbound: &mut IpcOutbound,
-    inbound_rx: &Receiver<IpcMessage>,
-    next_fetch_id: &mut u64,
-    deferred: &mut VecDeque<IpcMessage>,
-    url: &str,
-) -> Result<Vec<u8>, String> {
-    ipc_fetch(outbound, inbound_rx, next_fetch_id, deferred, url, "GET", &[], None)
+    }
 }
 
 fn ipc_scheme_to_engine(scheme: IpcColorScheme) -> PrefersColorSchemeValue {
@@ -4945,11 +4987,24 @@ mod runtime_smoke {
         );
     }
 
+    /// 测试驱动：单步 [`ipc_fetch_wait_step`]，Done 取结果；出现让位即失败
+    ///（让位续等由 t27p35 让位钉单独验证）。
+    fn step_until_done(
+        outbound: &mut IpcOutbound,
+        rx: &Receiver<IpcMessage>,
+        deferred: &mut VecDeque<IpcMessage>,
+        wait: &mut IpcFetchWait,
+    ) -> Result<(Vec<u8>, Option<String>), String> {
+        match ipc_fetch_wait_step(outbound, rx, deferred, wait)? {
+            IpcFetchStep::Done(result) => result,
+            IpcFetchStep::Yield(msg) => panic!("非预期让位: {:?}", msg.kind),
+        }
+    }
+
     #[test]
     fn ipc_fetch_get_skips_deferred_messages_without_spinning() {
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
         let (tx, rx) = mpsc::channel();
-        let mut next_fetch_id = 7;
         let mut deferred = VecDeque::from([IpcMessage {
             id: 11,
             kind: IpcMessageKind::SetViewport(SetViewportParams {
@@ -4968,18 +5023,18 @@ mod runtime_smoke {
             }),
         })
         .unwrap();
+        let mut wait = IpcFetchWait {
+            request_id: 7,
+            skipped: VecDeque::new(),
+            deadline: Instant::now() + IPC_FETCH_WAIT_MAX,
+        };
 
-        let body = ipc_fetch_get(
-            &mut outbound,
-            &rx,
-            &mut next_fetch_id,
-            &mut deferred,
-            "https://example.test/image.png",
-        )
-        .expect("target fetch response");
+        let (body, _) = step_until_done(&mut outbound, &rx, &mut deferred, &mut wait).expect("target fetch response");
 
         assert_eq!(body, b"image");
-        assert_eq!(next_fetch_id, 8);
+        // 扣压在 wait.skipped，由调用方（ipc_fetch_via_browser）收尾回填 deferred。
+        assert!(deferred.is_empty());
+        deferred.append(&mut wait.skipped);
         assert!(matches!(
             deferred.pop_front().map(|m| m.kind),
             Some(IpcMessageKind::SetViewport(SetViewportParams {
@@ -4991,14 +5046,13 @@ mod runtime_smoke {
         assert!(deferred.is_empty());
     }
 
-    /// bing-t3（C1）：POST→30x 重定向后，`ipc_fetch_with_final_url` 须捕获
-    /// fetch_proxy 附加的 `X-Zero-Final-URL` 响应头（navigate_with POST 分支以此
-    /// 作为文档 URL；修复前该头被整体丢弃，文档 URL 停在请求 URL）。
+    /// bing-t3（C1）：POST→30x 重定向后，等待循环须捕获 fetch_proxy 附加的
+    /// `X-Zero-Final-URL` 响应头（navigate_with POST 分支以此作为文档 URL；
+    /// 修复前该头被整体丢弃，文档 URL 停在请求 URL）。
     #[test]
     fn ipc_fetch_post_final_url_captured_on_redirect() {
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
         let (tx, rx) = mpsc::channel();
-        let mut next_fetch_id = 3;
         let mut deferred = VecDeque::new();
         tx.send(IpcMessage {
             id: 4,
@@ -5016,18 +5070,14 @@ mod runtime_smoke {
             }),
         })
         .unwrap();
+        let mut wait = IpcFetchWait {
+            request_id: 3,
+            skipped: VecDeque::new(),
+            deadline: Instant::now() + IPC_FETCH_WAIT_MAX,
+        };
 
-        let (body, final_url) = ipc_fetch_with_final_url(
-            &mut outbound,
-            &rx,
-            &mut next_fetch_id,
-            &mut deferred,
-            "https://example.test/session",
-            "POST",
-            &[("Content-Type", "application/x-www-form-urlencoded")],
-            Some("user=1"),
-        )
-        .expect("target fetch response");
+        let (body, final_url) =
+            step_until_done(&mut outbound, &rx, &mut deferred, &mut wait).expect("target fetch response");
 
         assert_eq!(body, b"<html>redirected</html>");
         assert_eq!(
@@ -5043,7 +5093,6 @@ mod runtime_smoke {
     fn ipc_fetch_post_final_url_none_without_redirect() {
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
         let (tx, rx) = mpsc::channel();
-        let mut next_fetch_id = 5;
         let mut deferred = VecDeque::new();
         tx.send(IpcMessage {
             id: 6,
@@ -5055,19 +5104,88 @@ mod runtime_smoke {
             }),
         })
         .unwrap();
+        let mut wait = IpcFetchWait {
+            request_id: 5,
+            skipped: VecDeque::new(),
+            deadline: Instant::now() + IPC_FETCH_WAIT_MAX,
+        };
 
-        let (_, final_url) = ipc_fetch_with_final_url(
-            &mut outbound,
-            &rx,
-            &mut next_fetch_id,
-            &mut deferred,
-            "https://example.test/plain",
-            "POST",
-            &[],
-            None,
-        )
-        .expect("target fetch response");
+        let (_, final_url) =
+            step_until_done(&mut outbound, &rx, &mut deferred, &mut wait).expect("target fetch response");
 
         assert_eq!(final_url, None);
+    }
+
+    /// T27-P35 优先通道钉：fetch 等待期到达的鼠标/键盘类消息即时让位（Yield），
+    /// 而非扣压到 fetch 完成才放行——修复前无界 `recv()` 把点击扣进 skipped，
+    /// 12s POST 臂实测扣压 8.1s、20s 字体串行窗输入全部滞留。续等不重发请求
+    ///（request_id 不变），目标响应仍可到达。
+    #[test]
+    fn t27p35_input_yields_during_fetch_wait() {
+        use zero_protocol::message::MouseEventType;
+
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (tx, rx) = mpsc::channel();
+        let mut deferred = VecDeque::new();
+        // 先一条点击（须让位），再一条目标响应（续等后 Done）。
+        tx.send(IpcMessage {
+            id: 21,
+            kind: IpcMessageKind::MouseEvent(MouseEventParams {
+                x: 100.0,
+                y: 30.0,
+                button: 0,
+                event_type: MouseEventType::Down,
+            }),
+        })
+        .unwrap();
+        tx.send(IpcMessage {
+            id: 22,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: 9,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"late".to_vec(),
+            }),
+        })
+        .unwrap();
+        let mut wait = IpcFetchWait {
+            request_id: 9,
+            skipped: VecDeque::new(),
+            deadline: Instant::now() + IPC_FETCH_WAIT_MAX,
+        };
+
+        let yielded = ipc_fetch_wait_step(&mut outbound, &rx, &mut deferred, &mut wait).expect("step ok");
+        let IpcFetchStep::Yield(click) = yielded else {
+            panic!("点击应即时让位而非扣压");
+        };
+        assert!(matches!(click.kind, IpcMessageKind::MouseEvent(_)), "让位的是点击本身");
+        assert!(wait.skipped.is_empty(), "点击不进 skipped");
+
+        let (body, _) = step_until_done(&mut outbound, &rx, &mut deferred, &mut wait).expect("续等拿到目标响应");
+        assert_eq!(body, b"late", "让位派发后续等拿到同一 request_id 的响应");
+    }
+
+    /// T27-P35 有界等待钉：通道既无目标响应也无让位消息时，等待在总上限收场
+    ///（Err），渲染主循环不再无限冻结（deadline 已过 + 首个 250ms 切片超时即触发）。
+    #[test]
+    fn t27p35_fetch_wait_deadline_bounds_idle_channel() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (_tx, rx) = mpsc::channel::<IpcMessage>();
+        let mut deferred = VecDeque::new();
+        let mut wait = IpcFetchWait {
+            request_id: 1,
+            skipped: VecDeque::new(),
+            deadline: Instant::now(),
+        };
+
+        let started = Instant::now();
+        let result = step_until_done(&mut outbound, &rx, &mut deferred, &mut wait);
+        let elapsed = started.elapsed();
+
+        assert!(result.is_err(), "空通道超总上限须 Err 收场");
+        assert!(
+            elapsed < IPC_FETCH_WAIT_SLICE * 2,
+            "deadline 已过时首个切片超时即收场，实测 {elapsed:?}"
+        );
     }
 }

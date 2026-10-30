@@ -1,21 +1,21 @@
 //! 发布路径图片批量取回（P14，2026-10-25）。
 //!
 //! [`crate::paint_export::fetch_image_payloads_with_cache`] 的两阶段宿主实现：
-//! `issue` 先把全部缺图以与 [`crate::runtime::ipc_fetch_get`] 完全相同的线型
+//! `issue` 先把全部缺图以与既有阻塞 fetch（runtime `fetch_get` 线型）完全相同的
 //! （GET、无附加头——资源类型/优先级由 browser 侧按 URL 推断，既有负缓存与
 //! 安全检查语义不变）非阻塞发出；首个 `resolve` 统一阻塞收齐全部在途
 //! `FetchResponse`。同 origin 并发由 zero-net 调度器按每来源上限展开——旧逐发
 //! 逐收形态下 renderer 侧恒 max-in-flight=1（cnblogs 107 请求 106 串行的第一根因）。
 //!
-//! 收包 defer 语义与 `ipc_fetch_with_final_url` 一致：非本批消息暂存局部队列、
+//! 收包 defer 语义与既有阻塞 fetch 等待循环一致：非本批消息暂存局部队列、
 //! 结束回填 `deferred`（不得吞 AsyncPageLoad 等在途 fetch 的响应）；Heartbeat
 //! 就地回包；IPC 断开放弃剩余在途（对应 URL `resolve` 返回 `None`，图片按既有
 //! 宽松降级跳过）。信任 browser 对每个请求恰回一个 `FetchResponse`（错误路径
-//! immediate_err/队列满/负缓存均有回包），与既有 `ipc_fetch` 相同，不加超时。
+//! immediate_err/队列满/负缓存均有回包），与既有阻塞 fetch 相同，不加超时。
 //!
 //! 信任前提披露（DF-F1，2026-10-25）：上句「恰一回响应」在导航取消路径不成立——
 //! browser `cancel_tab` 以 retain 丢弃在途 PendingFetch 且不补发 `FetchResponse`，
-//! `drain_all` 的无超时 `recv` 遂存在挂起窗口；旧逐图 `ipc_fetch_get` 同型，属既有
+//! `drain_all` 的无超时 `recv` 遂存在挂起窗口；旧逐图阻塞收单张同型，属既有
 //! 隐患（P21 入池），留作后续修复面，本披露不改任何可执行代码。
 
 use std::collections::{HashMap, VecDeque};
@@ -89,7 +89,7 @@ impl<'a> IpcImageBatch<'a> {
                     headers,
                 }) => {
                     if let Some(url) = self.pending.remove(&rid) {
-                        // 非 2xx 与旧路径 `ipc_fetch_get(..).ok()` 同效果：None（跳过该图）。
+                        // 非 2xx 与旧路径阻塞 `fetch_get(..).ok()` 同效果：None（跳过该图）。
                         if (200..300).contains(&status_code) {
                             self.collected.insert(url, body);
                         }
@@ -129,7 +129,7 @@ impl<'a> IpcImageBatch<'a> {
 
 impl ImageBatchFetcher for IpcImageBatch<'_> {
     fn issue(&mut self, url: &str) {
-        // 线型与 `ipc_fetch_get` 完全一致：GET、无附加头、无 body。
+        // 线型与既有阻塞 `fetch_get` 完全一致：GET、无附加头、无 body。
         let request_id = *self.next_fetch_id;
         *self.next_fetch_id += 1;
         let msg = IpcMessage {
@@ -257,7 +257,7 @@ mod tests {
     }
 
     /// 非本批 FetchResponse（如 AsyncPageLoad inflight）必须**原样**回填——含
-    /// headers（X-Zero-Final-Url 等语义在 `ipc_fetch_with_final_url` 依赖它）。
+    /// headers（X-Zero-Final-Url 等语义在阻塞 fetch 等待循环依赖它）。
     #[test]
     fn batch_preserves_foreign_fetch_response_headers_in_deferred() {
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
@@ -322,11 +322,11 @@ mod tests {
         assert_eq!(batch.resolve("https://pic.test/b.png"), None, "IPC 断开放弃剩余");
     }
 
-    /// 线型钉（TV-F2/TV-F5）：`issue` 实际发出的帧经反序列化后与 `ipc_fetch_get`
+    /// 线型钉（TV-F2/TV-F5）：`issue` 实际发出的帧经反序列化后与阻塞 `fetch_get`
     /// 同线型——FetchRequest、request_id 顺序对应 pending 登记、GET、无附加头、
     /// 无 body；drain 期间的 Heartbeat 必须就地回包且 id 回显（帧序：请求×N → 回包）。
     #[test]
-    fn batch_issue_wire_matches_ipc_fetch_get_and_heartbeat_reply_echoes_id() {
+    fn batch_issue_wire_matches_blocking_fetch_get_and_heartbeat_reply_echoes_id() {
         let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(buf.clone()) as Box<dyn Write + Send>);
         let (tx, rx) = mpsc::channel();
@@ -365,7 +365,7 @@ mod tests {
             assert_eq!(params.request_id, 41 + index as u64, "request_id 顺序对应 pending 登记");
             assert_eq!(params.url, url);
             assert_eq!(params.method, "GET");
-            assert!(params.headers.is_empty(), "无附加头（ipc_fetch_get 同线型）");
+            assert!(params.headers.is_empty(), "无附加头（阻塞 fetch_get 同线型）");
             assert_eq!(params.body, None);
         }
         assert_eq!(frames[3].id, 77, "Heartbeat 回包 id 回显");

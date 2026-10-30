@@ -98,7 +98,7 @@ pub trait AsyncFetchHost {
 ///
 /// 每次 `fetch_*` 同步调用内部 fetch 取得结果，再包进一次性 `Receiver`（立即可读）。
 /// renderer 无头、加载期阻塞可接受；tabworker 侧不用本类型（用 webview 的 `InProcessFetchHost`）。
-/// renderer（B3）经 per-tick 构造 `BlockingFetchHost::new(\|url\| ipc_fetch_get(...))` 复用 webview 的 `AsyncPageLoad`。
+/// renderer（B3）经 per-tick 构造 `BlockingFetchHost::new(\|url\| fetch_get(...))` 复用 webview 的 `AsyncPageLoad`。
 pub struct BlockingFetchHost<F> {
     /// 同步阻塞 fetch 回调（返回字节）。
     fetch: F,
