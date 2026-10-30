@@ -35,6 +35,7 @@ fn ctx_with_lines(n_runs: usize) -> InlineFormattingContext {
             is_rtl: false,
             bidi_override: None,
             is_plaintext_bidi: false,
+            is_isolated_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
             glyph_ascent: 0.0,

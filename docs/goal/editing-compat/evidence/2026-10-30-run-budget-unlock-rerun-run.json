@@ -1,0 +1,313 @@
+{
+ "corpus": "editing/run",
+ "totals": {
+  "pass": 39885,
+  "fail": 47804,
+  "timeout": 0,
+  "unsupported": 0
+ },
+ "cases": [
+  {
+   "case": "editing/run/backcolor.html",
+   "pass": 269,
+   "fail": 757,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/bold.html",
+   "pass": 1138,
+   "fail": 1910,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/caret-navigation-after-removing-line-break.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/caret-navigation-around-line-break.html",
+   "pass": 0,
+   "fail": 20,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/caretnavigation.html",
+   "pass": 0,
+   "fail": 2,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/createlink-with-selecting-img.html",
+   "pass": 0,
+   "fail": 3,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/createlink.html",
+   "pass": 288,
+   "fail": 153,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/delete-list-items-in-table-cell.html",
+   "pass": 24,
+   "fail": 12,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/delete-to-make-editing-host-empty.html",
+   "pass": 1,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/delete.html",
+   "pass": 1863,
+   "fail": 1850,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/fontname.html",
+   "pass": 927,
+   "fail": 1298,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/fontsize.html",
+   "pass": 920,
+   "fail": 1502,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/forecolor.html",
+   "pass": 883,
+   "fail": 1444,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/formatblock.html",
+   "pass": 2210,
+   "fail": 2836,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/forwarddelete.html",
+   "pass": 1948,
+   "fail": 2277,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/hilitecolor.html",
+   "pass": 329,
+   "fail": 889,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/indent.html",
+   "pass": 708,
+   "fail": 621,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insert-list-items-in-table-cell.html",
+   "pass": 39,
+   "fail": 73,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/inserthorizontalrule.html",
+   "pass": 854,
+   "fail": 494,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/inserthtml.html",
+   "pass": 772,
+   "fail": 793,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insertimage.html",
+   "pass": 465,
+   "fail": 497,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insertlinebreak.html",
+   "pass": 1043,
+   "fail": 648,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insertorderedlist.html",
+   "pass": 848,
+   "fail": 913,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insertparagraph.html",
+   "pass": 3546,
+   "fail": 3159,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/inserttext.html",
+   "pass": 1875,
+   "fail": 1134,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/insertunorderedlist.html",
+   "pass": 938,
+   "fail": 1127,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/italic.html",
+   "pass": 1070,
+   "fail": 1003,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/justifycenter.html",
+   "pass": 2162,
+   "fail": 4041,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/justifyfull.html",
+   "pass": 1555,
+   "fail": 3207,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/justifyleft.html",
+   "pass": 885,
+   "fail": 1618,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/justifyright.html",
+   "pass": 1572,
+   "fail": 3242,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/misc.html",
+   "pass": 272,
+   "fail": 151,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/multitest.html",
+   "pass": 5292,
+   "fail": 3709,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/outdent.html",
+   "pass": 1124,
+   "fail": 1426,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/removeformat.html",
+   "pass": 948,
+   "fail": 884,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/strikethrough.html",
+   "pass": 835,
+   "fail": 1312,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/subscript.html",
+   "pass": 579,
+   "fail": 662,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/superscript.html",
+   "pass": 597,
+   "fail": 676,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/typing-text-in-direct-child-of-editing-host.html",
+   "pass": 6,
+   "fail": 10,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/underline.html",
+   "pass": 836,
+   "fail": 1311,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/undo-redo-after-mutation.html",
+   "pass": 0,
+   "fail": 7,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/undo-redo.html",
+   "pass": 0,
+   "fail": 0,
+   "timeout": 0,
+   "unsupported": 0
+  },
+  {
+   "case": "editing/run/unlink.html",
+   "pass": 264,
+   "fail": 131,
+   "timeout": 0,
+   "unsupported": 0
+  }
+ ],
+ "note": "3-shard full-denominator rerun (s0/s1/s2, ZW_SCRIPT_TIMEOUT_MS=300000, adaptive CASE_WALL_S); shard binary 04:51 (pre-94eb9f0d2); createlink-with-selecting-img rerun on new binary 07:27 (94eb9f0d2+R5340+R5341) after 150s-floor mis-kill; bold spot-check zero displacement"
+}

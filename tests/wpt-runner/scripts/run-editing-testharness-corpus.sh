@@ -24,7 +24,8 @@
 #    解析（共享路径时后启实例启动即 `: > transcript` 截断，先启实例的账丢失、
 #    双方 JSON 互相掺案）。
 #
-# 为何每案另有外部墙钟（CASE_WALL_S，run 通道建议 ≥150）：runner 内部
+# 为何每案另有外部墙钟（CASE_WALL_S，run 通道不设时按案自适应、nv=0 下限
+# 420s）：runner 内部
 # per-case 超时在同步脚本死循环形态下拦不住（css selectors 首跑实证），
 # 外部 timeout 兜底杀单案（rc 124/137 记 Timeout 行，账面不缺案）。
 
@@ -67,8 +68,8 @@ fi
 # 整变体 aborted 无子测试行（declared 0）。实证：bold 四变体 90s 下 12 行，
 # 300s 预算下 3048 行全出（1138P/1910F）——非死循环。CASE_WALL_S 只是外部
 # 兜底杀，调它不解锁变体。run 通道缺省预算 300s/变体；CASE_WALL_S 缺省按案
-# 内变体数计（60 + 变体数×330 + 90 底）——multitest 10 变体需 ~3400s，统一
-# 420s 口径必然外部截断。显式 env 仍优先。
+# 内变体数计（60 + 变体数×330 + 90 底，nv=0 下限 420s）——multitest 10 变体
+# 需 ~3400s，统一 420s 口径必然外部截断。显式 env 仍优先。
 if [[ "${CORPUS}" == "run" && -z "${ZW_SCRIPT_TIMEOUT_MS:-}" ]]; then
   export ZW_SCRIPT_TIMEOUT_MS=300000
 fi
@@ -80,6 +81,11 @@ idx=0
 while read -r f; do
   rel="editing/${CORPUS}/${f#"${DATA_DIR}"/}"
   if [[ "${RESUME}" == "1" && "${done_cases}" == *"${rel}"* ]]; then
+    # 已完成案也必须消费 idx 槽位，否则分片 + 续跑组合下后续案的
+    # idx%shard_n 归属整体左移，本分片会误跑其他分片的案（2026-10-30
+    # createlink-with-selecting-img 误杀案续跑实测：13/14 完成态续跑把
+    # shard 2 名册错位成全名册扫描）。
+    idx=$((idx + 1))
     continue
   fi
   if [[ "${shard_n}" -gt 1 ]]; then
@@ -90,9 +96,24 @@ while read -r f; do
   fi
   idx=$((idx + 1))
   case_wall="${CASE_WALL_S}"
-  if [[ "${CORPUS}" == "run" && "${CASE_WALL_S_SET:-0}" != "1" ]]; then
+  if [[ "${CASE_WALL_S_SET:-0}" != "1" ]]; then
     nv="$(grep -c 'meta name="variant"' "${DATA_DIR}/${f#"${DATA_DIR}"/}" 2>/dev/null || true)"
-    case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+    if [[ "${CORPUS}" == "run" ]]; then
+      case_wall=$(( 60 + ${nv:-0} * 330 + 90 ))
+      # nv=0 大单页案在 300s 脚本预算下真实耗时可超 150s（createlink-with-selecting-img
+      # 曾被 150s 下限 external kill——M2-r1 时代 90s 看门狗先截断才显得 420s 够用），
+      # 下限取 420s（= 单变体口径 60+300+余量，与 run 通道建议一致）。
+      (( case_wall < 420 )) && case_wall=420
+    else
+      # R5342（2026-10-30）：other 面同形自适应——此前平墙 120s 对变体多案过紧：
+      # join-different-white-space-style 三案（nv=60）单案实测 ~150-170s
+      # （R5340-only 与 R5341 双二进制同值，非接线回归），全量复跑被外部截断
+      # 且 runner 按案缓冲零行落盘（Timeout 记账假象）。other 面每变体页
+      # CASE_TIMEOUT=10s 上限，系数取 15s/变体 + 150s 底（nv=0 对齐 run 面
+      # 已知待记的 150s 下限形）。实证见
+      # docs/goal/editing-compat/evidence/2026-10-30-r5341-defect2-completion-wiring.md §3.1。
+      case_wall=$(( 60 + ${nv:-0} * 15 + 90 ))
+    fi
   fi
   out="$(timeout --signal=KILL "${case_wall}" "${RUNNER}" "${SUBCMD}" "${rel}" 2>&1)"
   rc=$?

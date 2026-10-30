@@ -119,6 +119,17 @@ pub struct TableColBgEntry {
     pub segments: Vec<(f32, f32, f32, f32)>,
 }
 
+/// paint Path B 空 styles IFC 的 bidi 旗标恢复集合（R3840 plaintext + R5337 isolate，
+/// 按 inline owner 元素 id 存储；消费见 `collect_items` 的 `unwrap_or_else` 回退臂）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct PathBidiNodes {
+    /// `unicode-bidi: plaintext` owner（HL4 内容 auto-detect）。
+    pub plaintext: NodeIdSet,
+    /// `unicode-bidi: isolate/isolate-override`（含 `<bdi>` UA 规则）owner——段落级
+    /// UBA（`ZW_PARA_BIDI`）回退门。
+    pub isolated: NodeIdSet,
+}
+
 /// 布局盒 — 一个元素在页面上的几何位置与绘制信息（含 R4330 run-in 分裂边框载荷）。
 #[derive(Debug, Clone)]
 pub struct LayoutBox {
@@ -570,8 +581,13 @@ pub struct LayoutBox {
     /// 据此构造 `text_transform_overrides`（re-key 到父元素），让 `collect_inline_items`
     /// 在空 styles 下也能应用 transform。空 map（默认）= None = 原文，零回归。
     pub text_node_text_transform: NodeIdMap<zero_style_system::TextTransformValue>,
-    /// paint Path B 空 styles IFC 中需要恢复 `unicode-bidi: plaintext` 的 inline owner。
-    pub plaintext_bidi_nodes: NodeIdSet,
+    /// Path B bidi 恢复集合（按 inline owner 元素 id）：`plaintext` = 需要恢复
+    /// `unicode-bidi: plaintext`（R3840）；`isolated` = `unicode-bidi:
+    /// isolate/isolate-override`（含 `<bdi>`，R5337）——paint Path B 空 styles 下恢复
+    /// `is_isolated_bidi` run 旗标（段落级 UBA 回退门）。
+    /// `Option<Box<_>>`（8 B，多数盒无 bidi 特例子 = None 零分配，同
+    /// `inline_relpos_shifts` 先例——layout_box_size_pin 堆侧化纪律）。
+    pub path_bidi_nodes: Option<Box<PathBidiNodes>>,
     /// R4310：声明竖排 writing-mode（vertical-rl/lr）的 inline 元素集合（key = 元素
     /// NodeId）。FLAT_CHILD_WALK 的竖排子门信号——walk 不得展开竖排子（其内容有
     /// 自身盒几何/列偏移，扁平化进水平 IFC 会丢失原点，ruby-overhang-spaces-
@@ -865,7 +881,7 @@ impl Default for LayoutBox {
             text_node_line_heights: NodeIdMap::default(),
             text_node_ascent_ratios: HashMap::new(),
             text_node_text_transform: NodeIdMap::default(),
-            plaintext_bidi_nodes: NodeIdSet::default(),
+            path_bidi_nodes: None,
             inline_vertical_nodes: NodeIdSet::default(),
             inline_color_divergent_nodes: NodeIdSet::default(),
             inline_nested_atomic_nodes: NodeIdSet::default(),

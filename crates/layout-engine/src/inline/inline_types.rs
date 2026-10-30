@@ -105,6 +105,12 @@ pub struct TextRun {
     /// CSS `unicode-bidi: plaintext` — 强制 BiDi 段落方向从文本内容自动检测，
     /// 忽略 CSS `direction`（UAX #9 HL4 / CSS Writing Modes §2.2）。
     pub is_plaintext_bidi: bool,
+    /// R5337：该 run 所属元素为 `unicode-bidi: isolate/isolate-override`（含 `<bdi>`
+    /// UA 规则）——隔离边界，段落级 UBA 路径（`ZW_PARA_BIDI`）对该 IFC 整体回退
+    /// per-run 校准路径（isolate 未映射为显式 level 前的保守近似；chromium 探针
+    /// 实证透明拼接把 `<bdi>١٠. </bdi>١٠` 的标记与内容跨边界重排，css3-counter-styles-102
+    /// 回归）。
+    pub is_isolated_bidi: bool,
     /// R3778：该文本 run 的**有效 white-space**（文本节点最近祖先的声明，white-space
     /// 是继承属性按元素生效）。`None` = 沿用 IFC 容器级标志（旧行为，测试/直文本容器
     /// 等价）。生产路径（collect_items）恒 Some——修复「white-space 声明在 inline 包裹层
@@ -175,6 +181,7 @@ impl TextRun {
             is_rtl: false,
             bidi_override: None,
             is_plaintext_bidi: false,
+            is_isolated_bidi: false,
             ws_override: None,
             ruby_rt_ascent: 0.0,
             glyph_ascent: 0.0,
@@ -301,6 +308,10 @@ pub struct TextFragmentSource {
     pub visual_to_logical: Vec<Option<Range<usize>>>,
     /// 与视觉字符一一对应的 UBA resolved level 奇偶方向。
     pub visual_is_rtl: Vec<bool>,
+    /// 与视觉字符一一对应的 UBA resolved level 值（段落级 UBA 路径携带，供行级
+    /// 精确 L2 逐层反转消费——parity 布尔无法区分 ≥2 层嵌套；空 = 未携带，消费方
+    /// 按 level 0（恒等）处理）。
+    pub visual_levels: Vec<u8>,
 }
 
 impl TextFragmentSource {
@@ -782,6 +793,7 @@ mod tests {
             text: Arc::<str>::from("Aé"),
             visual_to_logical: vec![Some(0..1), Some(1..3)],
             visual_is_rtl: vec![false, false],
+            visual_levels: Vec::new(),
         };
         assert_eq!(source.uniform_resolved_rtl(), Some(false));
         assert_eq!(source.logical_range(), Some(0..3));
@@ -794,6 +806,7 @@ mod tests {
             text: Arc::<str>::from("אבג"),
             visual_to_logical: vec![Some(4..6), Some(2..4), Some(0..2)],
             visual_is_rtl: vec![true, true, true],
+            visual_levels: Vec::new(),
         };
         assert_eq!(source.uniform_resolved_rtl(), Some(true));
         assert_eq!(source.logical_range(), Some(0..6));
@@ -806,6 +819,7 @@ mod tests {
             text: Arc::<str>::from("abcd"),
             visual_to_logical: vec![Some(0..1), Some(3..4), Some(2..3)],
             visual_is_rtl: vec![false, true, true],
+            visual_levels: Vec::new(),
         };
         assert_eq!(source.uniform_resolved_rtl(), None);
         assert_eq!(source.logical_slice(), None);
@@ -817,6 +831,7 @@ mod tests {
             text: Arc::<str>::from("abc"),
             visual_to_logical: vec![Some(0..1), None],
             visual_is_rtl: vec![false, false],
+            visual_levels: Vec::new(),
         };
         assert_eq!(synthetic.logical_slice(), None);
 
@@ -824,6 +839,7 @@ mod tests {
             text: Arc::<str>::from("ab"),
             visual_to_logical: vec![Some(0..1), Some(1..2)],
             visual_is_rtl: vec![false],
+            visual_levels: Vec::new(),
         };
         assert_eq!(mismatched_direction.uniform_resolved_rtl(), None);
 
@@ -831,6 +847,7 @@ mod tests {
             text: Arc::<str>::from("אב"),
             visual_to_logical: vec![Some(1..2)],
             visual_is_rtl: vec![true],
+            visual_levels: Vec::new(),
         };
         assert_eq!(invalid_utf8.logical_slice(), None);
     }

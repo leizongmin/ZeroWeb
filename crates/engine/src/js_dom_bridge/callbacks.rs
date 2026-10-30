@@ -1286,6 +1286,21 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s158（html-semantics M2）：shim link rel/href 状态变化后的外链 CSS 活链路——
+    // shim 以 `_zwSsRecomputeExt` 按当前 live stylesheet link 集（helper 取回的表文本
+    // overlay）重算合并文本全量下发，装 [`crate::js_dom_bridge::ACTIVE_EXTERNAL_CSS`]
+    // 同槽（P9-9 快照臂装填点不变，此处是页面期反应面）。css 变化经 gCS 代际缓存键
+    // 分量（computed_style_cache P9-9）驱动级联重收集。生产 renderer 多进程路径的
+    // SetDomSnapshot 恢复臂目前只覆盖 adopted 槽——外链槽的反应面更新与快照恢复的
+    // 组合语义未建模（FIXME，runner/headless 通道先落地）。
+    sandbox.register_callback(
+        "__zw_set_external_css",
+        Box::new(|args: &[String]| {
+            crate::js_dom_bridge::set_active_external_css(args.first().map(String::as_str).unwrap_or_default());
+            String::new()
+        }),
+    );
+
     // R-t2qq 二轮返修 D2：恢复钩子 host 侧——worker SetDomSnapshot 臂以 shim
     // `__zw_adopted_restore_text()` 的返回文本调用，把**当前页面真值**装回
     // [`crate::js_dom_bridge::ACTIVE_ADOPTED_CSS`]（SetDomSnapshot = 恢复而非清空，

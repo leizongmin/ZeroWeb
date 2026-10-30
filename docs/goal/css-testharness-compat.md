@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.4
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1 完成（css-color/css-align/css-sizing 入账 + 根 support 文件修复，六目录统一基线 27,824 子测试 5,593 Pass），M4 未启动
+**版本**: v1.7
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1–4 完成（十四目录统一基线 54,424 子测试 15,396 Pass = 28.3%，批次 2/3/4 八目录 parity 全 IDENTICAL），M3 剩 css-grid / css-text 重量级轮次，M4 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -132,8 +132,27 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   2026-10-30：css-color/css-align/css-sizing 入账，六目录统一基线
   1,052 案 27,824 子测试 5,593 Pass = 20.1%；顺带修复根 support 文件
   `resources/check-layout-th.js` 缺失——153 个挂起超时清零、2,921 子测试
-  解掩。证据：evidence/2026-10-30-m3-batch1-color-align-sizing.md。批次 2
-  起 top15 其余目录，css-grid / css-text 重量级独立轮次。）
+  解掩。证据：evidence/2026-10-30-m3-batch1-color-align-sizing.md。
+  批次 2 完成 2026-10-30：css-typed-om/css-fonts/css-shapes 入账，九目录
+  统一基线 38,853 子测试 9,583 Pass = 24.7%，parity 全 IDENTICAL；
+  typed-om 单簇 = Typed OM API 面整体未实现（96.7% Fail，引擎缺口挂账）；
+  fonts 幂等快路径漏差以 blob-hash 定向补拉 357 页收口（fresh checkout
+  复现口径见 evidence，M4 CI 接线前须脚本化）。证据：
+  evidence/2026-10-30-m3-batch2-typed-om-fonts-shapes.md。批次 3 完成
+  2026-10-30：css-anchor-position/css-masking/css-backgrounds 入账，十二
+  目录统一基线 53,293 子测试 15,176 Pass = 28.5%，parity 全 IDENTICAL；
+  anchor-size() 序列化参数序颠倒 ~2,500 为最大可修单点（CSSOM 序列化域
+  挂账）；本地深挖首拉须 GITHUB_TOKEN 认证（未认证 60 req/h 会 403 降级
+  跳过）；backgrounds 精选仓 1 页陈旧重拉对齐 pin。证据：
+  evidence/2026-10-30-m3-batch3-anchor-position-masking-backgrounds.md。
+  批次 4 完成 2026-10-30：css-transforms / css-motion 入账，十四目录
+  统一基线 54,424 子测试 15,396 Pass = 28.3%，parity 全 IDENTICAL；
+  transforms 精选仓 2 页陈旧定向重拉（jsdelivr 301 须 `curl -sfL`，
+  "文件数一致 ≠ 内容一致"第三次实证）；`/web-animations/testcommon.js`
+  缺失的 createDiv 簇按 WAAPI 划界归口；interpolation-testcommon.js
+  setup 的 target.style undefined 簇（32+22 子测）引擎域挂账。证据：
+  evidence/2026-10-30-m3-batch4-transforms-motion.md。
+  批次 5 起 top15 其余：css-grid / css-text 重量级独立轮次。）
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）

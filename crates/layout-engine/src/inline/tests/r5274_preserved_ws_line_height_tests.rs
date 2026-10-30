@@ -29,6 +29,7 @@ fn pre_run(text: &str) -> TextRun {
         is_rtl: false,
         bidi_override: None,
         is_plaintext_bidi: false,
+        is_isolated_bidi: false,
         ws_override: Some(RunWhiteSpace {
             preserve: true,
             break_at_newline: true,

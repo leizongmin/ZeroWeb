@@ -4547,6 +4547,103 @@
   var _zwSsFiredMap = {};   // identity key → 最后一次发起取回的解析 URL
   var _zwSsRetryDone = {};  // identity key → 重查已排程（单发）
   var _zwPreloadCache = {}; // s155：identity key → preload 取回完成的解析 URL（rel 转换复用）
+  // s158（html-semantics M2 切片 158）：外链 CSS 活链路——link rel/href 状态 ↔ 级联。
+  // helper 取回完成（load/error）按身份键存表（error/404 → 空串 = 级联空贡献）；rel
+  // 变更（含移除）重算合并文本经 `__zw_set_external_css` 下发 active 外链槽，gCS 代际
+  // 缓存 css 键分量驱动级联重收集（P9-9）。覆盖门：live stylesheet link 全部有表项才
+  // 替换（helper 异步取回未齐时保持快照臂基线文本——部分覆盖不落地，防瞬时丢表）。
+  // FIXME(compat)：表 miss 的 link 不参与替换面（动态 handle link 的 helper 取回通道
+  // 已覆盖、preload 复用臂无文本通道）；@import 内层文本追加在顶层文本之后（原位
+  // 展开未建模——同特异性下相对顶层后继规则的优先级偏差，语料无该形态）；link media
+  // 属性门未建模（级联无 media 求值，stylesheet-media-change-no-fetch 记账 F）。
+  var _zwExtSheetTexts = {}; // identity key → 表文本（'' = 取回失败空贡献）
+  // s159（html-semantics M2 切片 159）：per-link **生效 sheet href**（合成条目 href 通道
+  // ——document.styleSheets R5114 合成条目此前恒 null）。spec link processing 的 sheet
+  // 对象生命周期近似：helper 首次发起取回（fetch 发起，幂等门后）= sheet 创建语义
+  // —— href 挂取回解析 URL（同步断言段即可读，不等 load）；done('load') = 新表生效
+  // 替换（覆写为新 URL）；done('error') 与幂等重入不动（error 失败保持旧——替换未
+  // 发生）；rel 移除臂删除（stylesheet 关联解除）。查询口 `globalThis._zwSsSheetHrefFor`
+  // 返 live 文档序**第一个** rel=stylesheet link 的生效 href（多 link 合并 blob 条目的
+  // href 映射取级联首序；全 miss → null）。案面：stylesheet-not-removed-until-next-
+  // stylesheet-loads——href 变更同步断言段（新取回在飞、未 load）读旧生效值。
+  // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+  var _zwSsSheetHrefMap = {}; // identity key → 生效 sheet href（解析绝对 URL）
+  globalThis._zwSsSheetHrefFor = function () {
+    try {
+      if (typeof __zw_query_all !== 'function') return null;
+      var _shSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
+      for (var _shI = 0; _shI < _shSels.length; _shI++) {
+        var _shSel = _shSels[_shI];
+        var _shRel = '';
+        var _shHref = '';
+        try {
+          _shRel = String((typeof __zw_get_attr_lw === 'function')
+            ? (__zw_get_attr_lw(_shSel, 'rel') || '') : '');
+          _shHref = String((typeof __zw_get_attr_lw === 'function')
+            ? (__zw_get_attr_lw(_shSel, 'href') || '') : '');
+        } catch (_eShR) { continue; }
+        var _shIsSheet = false;
+        var _shParts = _zwLinkRelTokens(_shRel);
+        for (var _shJ = 0; _shJ < _shParts.length; _shJ++) {
+          if (_shParts[_shJ] === 'stylesheet') { _shIsSheet = true; break; }
+        }
+        if (!_shIsSheet || !_shHref) continue;
+        var _shH = null;
+        try {
+          _shH = (typeof __zw_handle_for_selector === 'function')
+            ? (__zw_handle_for_selector(_shSel) || null) : null;
+        } catch (_eShH) {}
+        var _shKey = _shH ? ('@' + _shH) : _shSel;
+        if (_zwSsSheetHrefMap.hasOwnProperty(_shKey)) return _zwSsSheetHrefMap[_shKey];
+      }
+    } catch (_eSh) {}
+    return null;
+  };
+  // s158：rel 分词——spec ASCII whitespace 集（TAB/LF/FF/CR/SPACE）。JS `\s` 含 \v
+  // (U+000B)，tokenization 案面 `test\u000Bstylesheet` 是单 token ≠ stylesheet 应判
+  // miss，旧 `\s+` 误命中。helper rel 门与重算遍历共用。
+  // https://html.spec.whatwg.org/multipage/infrastructure.html#ascii-whitespace
+  var _zwLinkRelTokens = function (_ssRel) {
+    return String(_ssRel || '').split(/[\t\n\x0C\r ]+/).filter(Boolean);
+  };
+  // s158 重算：按 live stylesheet link 集（文档序 query）拼 overlay 表文本下发。身份
+  // 键与 helper 同构（_elKey——handle 优先 '@' 前缀，经 R100 反查补 handle 形）。
+  globalThis._zwSsRecomputeExt = function () {
+    try {
+      if (typeof __zw_query_all !== 'function' || typeof __zw_set_external_css !== 'function') return;
+      var _rcSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
+      var _rcOut = '';
+      for (var _rcI = 0; _rcI < _rcSels.length; _rcI++) {
+        var _rcSel = _rcSels[_rcI];
+        var _rcRead = function (_ssName) {
+          try {
+            return String(typeof __zw_get_attr_lw === 'function'
+              ? (__zw_get_attr_lw(_rcSel, _ssName) || '') : '');
+          } catch (_eRc2) { return ''; }
+        };
+        var _rcParts = _zwLinkRelTokens(_rcRead('rel'));
+        var _rcIsSheet = false;
+        for (var _rcJ = 0; _rcJ < _rcParts.length; _rcJ++) {
+          if (_rcParts[_rcJ] === 'stylesheet') { _rcIsSheet = true; break; }
+        }
+        if (!_rcIsSheet || !_rcRead('href')) continue;
+        var _rcH = null;
+        try {
+          _rcH = (typeof __zw_handle_for_selector === 'function')
+            ? (__zw_handle_for_selector(_rcSel) || null) : null;
+        } catch (_eRc3) {}
+        var _rcKey = _rcH ? ('@' + _rcH) : _rcSel;
+        if (!_zwExtSheetTexts.hasOwnProperty(_rcKey)) return; // 覆盖门：未齐不替换
+        // `;` 分隔（非 `\n`）：无分号 @import 语句（上游 import.css 形）的 preamble
+        // 延伸到下一 `;`/`{`——`\n` 拼接使内层表首条规则被吞进 at-rule 块（106-import
+        // 面 `#test{position:fixed}` 恒缺级联，webview resolve_external_css s89 同款
+        // 教训——彼处在合并侧剥离语句，级联 matcher 对 Import 规则本就跳过，`;` 终止
+        // 后残留语句无级联影响）。
+        _rcOut += _zwExtSheetTexts[_rcKey] + ';\n';
+      }
+      __zw_set_external_css(_rcOut);
+    } catch (_eRc) {}
+  };
   // s157：stylesheet 取回在飞计数——spec stylesheet 加载 delay the document load
   // event（HTML the-link-element styling——加载完成前 window load 不派发）。
   // _ssVisit 每层恰一次 settle（同步门/then 链全路径）→ 包装计数归零；runner
@@ -4577,7 +4674,13 @@
       } catch (_eSsR2) {}
     }, 0);
   };
-  globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj) {
+  // `noOverlay`（s158 第 5 参）：静态扫描臂传 true——扫描 link 的取回文本**不存
+  // overlay 不重算下发**（base 槽已由 webview resolve_external_css 装入同语义文本；
+  // overlay 下发文本与 base 逐字节不等（@import 原文残留 + 分隔符差异），每次下发
+  // 都触发一次全文档级联换代（css 键分量 P9-9）——贴边页（details name-attribute
+  // 等 testharness.css 长页）在全量并发环境下超时。页面期变更面（rel/href 变更、
+  // 动态插入）仍走 overlay：这些状态 base 通道不追踪。
+  globalThis._zwStylesheetMaybeStart = function (sel, handle, prevHref, elObj, noOverlay) {
     try {
       if (typeof _realTag !== 'function') return;
       var _ssKey = (typeof _elKey === 'function') ? _elKey(sel, handle) : null;
@@ -4625,12 +4728,30 @@
       var _ssRel = _ssReadAttr('rel');
       var _ssIsSheet = false;
       var _ssIsPreload = false;
-      var _ssParts = _ssRel.split(/\s+/);
+      // s158：rel 分词收敛到 spec ASCII whitespace 集（`_zwLinkRelTokens`，与重算
+      // 遍历共用；原 `\s+` 含 \v 误命中 tokenization 案面单 token）。
+      var _ssParts = _zwLinkRelTokens(_ssRel);
       for (var _ssI = 0; _ssI < _ssParts.length; _ssI++) {
         if (_ssParts[_ssI] === 'stylesheet') _ssIsSheet = true;
         else if (_ssParts[_ssI] === 'preload') _ssIsPreload = true;
       }
-      if (!_ssIsSheet && !_ssIsPreload) return;
+      if (!_ssIsSheet && !_ssIsPreload) {
+        // s158 移除臂：rel 离开 stylesheet/preload 词集且身份在册（overlay 或取回
+        // 印记有键）→ 清两表 + 重算级联（spec link processing react to mutations
+        // ——无关联类型后样式移除；印记清空使再入 rel=stylesheet 时重新取回并重
+        // 派 load）。幂等同值 rel 写（词集不变）不进此臂。键 null（静态扫描无
+        // 身份形态）无表可清，静默返回。
+        // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+        if (_ssKey != null
+            && (_zwExtSheetTexts.hasOwnProperty(_ssKey)
+                || _zwSsFiredMap.hasOwnProperty(_ssKey))) {
+          delete _zwExtSheetTexts[_ssKey];
+          delete _zwSsFiredMap[_ssKey];
+          delete _zwSsSheetHrefMap[_ssKey];
+          _zwSsRecomputeExt();
+        }
+        return;
+      }
       var _ssHref = _ssReadAttr('href');
       if (!_ssHref || typeof fetch !== 'function') return;
       // 幂等门：解析后绝对 URL 相同（含两者均解析失败的逐字相等回落）→ 不重取。
@@ -4701,6 +4822,9 @@
       // 解析 URL 已 preload 取回完成 → 零网络派 load（spec：转换后按 stylesheet
       // 处理模型从 preload cache 采用资源，load 事件再 fire——上游明示语义）。
       if (_ssKey != null && _zwPreloadCache[_ssKey] === _ssAbs) {
+        // s159：转换面 sheet 从 cache 采用 = sheet 创建生效（零网络）——生效 href
+        // 同步挂取回解析 URL（fetch 发起路径同语义，见 _zwSsSheetHrefMap 注）。
+        if (!_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) _zwSsSheetHrefMap[_ssKey] = _ssAbs;
         setTimeout(function () { _ssFire('load'); }, 0);
         return;
       }
@@ -4712,6 +4836,13 @@
       if (_ssKey != null) {
         if (_zwSsFiredMap[_ssKey] === _ssAbs) return;
         _zwSsFiredMap[_ssKey] = _ssAbs;
+      }
+      // s159：sheet 创建语义——首次发起取回即挂生效 href（spec processing 的 sheet
+      // 对象在 fetch 完成前已存在并可经 document.styleSheets 观察；load/error 完
+      // 成不改写——error 替换未发生保持旧值，load 覆写在 done 包装）。
+      // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+      if (_ssKey != null && !_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) {
+        _zwSsSheetHrefMap[_ssKey] = _ssAbs;
       }
       // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
       // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
@@ -4731,7 +4862,10 @@
       //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
       // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
       // 门不受影响。
-      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDoneRaw) {
+      // s158：`_ssCollect`（可选）——各层取回文本 push（顶层先、@import 内层随后），
+      // 顶层 done 回调按身份键存 overlay 表。error 路径层文本可能缺失（按既有聚合
+      // error 语义整链置空串）。
+      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDoneRaw, _ssCollect) {
         var _ssBlocked = false;
         try {
           var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
@@ -4768,6 +4902,7 @@
           if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
           if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
           _ssR.text().then(function (_ssCss) {
+            if (_ssCollect) _ssCollect.push(_ssCss);
             if (_ssDepth >= 3) { _ssOnDone('load'); return; }
             var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbsUrl);
             if (!_ssUrls.length) { _ssOnDone('load'); return; }
@@ -4778,14 +4913,32 @@
                 if (_ssV !== 'load') _ssFailed = true;
                 _ssPending -= 1;
                 if (_ssPending === 0) _ssOnDone(_ssFailed ? 'error' : 'load');
-              });
+              }, _ssCollect);
             }
           }).catch(function () { _ssOnDone('error'); });
         }).catch(function () {
           _ssOnDone('error');
         });
       };
-      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) { _ssFire(_ssV); });
+      // s158：done 时按身份键存 overlay（load → 收集文本 join；error → 空串=级联空
+      // 贡献）+ 重算级联下发，再走既有 fire 链。键 null（静态扫描无身份形态）不存
+      // 表不重算——覆盖门保持快照臂基线。join 分隔 `;\n`（非 `\n`）——顶层 @import
+      // 无分号形态（上游 import.css）的 preamble 延伸过 `\n` 吞掉内层表首规则
+      //（`#test{position:fixed}` 被吞进 at-rule 块，106-import 面 static；与 recompute
+      // 拼接 `;` 同款，s89 webview 侧教训的双层复现）。
+      // s158：done 存 overlay 表（load → 收集文本 join(';\n')，见上；error → 空串=
+      // 级联空贡献，与 webview resolve「抓取失败不并入」同语义）；`noOverlay`（扫描
+      // 臂）**存表但不下发**——表条目解锁后续变更面 recompute 的覆盖门（多 link 页
+      // 静态 link 未入表会卡住整次替换），下发留给变更臂（税=0，见 noOverlay 注）。
+      var _ssCollect = [];
+      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) {
+        if (_ssKey != null) {
+          _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
+          if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
+          if (!noOverlay) _zwSsRecomputeExt();
+        }
+        _ssFire(_ssV);
+      }, _ssCollect);
     } catch (_eSs) {
       if (typeof globalThis._zwReportListenerError === 'function') {
         try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}
@@ -4853,7 +5006,7 @@
       globalThis.__zwScanCollapseTrickle = true;
       try {
         while (_zwScanFiredCount < _scPrefix) {
-          globalThis._zwStylesheetMaybeStart(_zwScanLinks[_zwScanFiredCount], null, null, null);
+          globalThis._zwStylesheetMaybeStart(_zwScanLinks[_zwScanFiredCount], null, null, null, true);
           _zwScanFiredCount++;
         }
       } finally {

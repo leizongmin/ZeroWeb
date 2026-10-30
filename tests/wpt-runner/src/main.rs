@@ -115,6 +115,24 @@ Commands:
                        API face; css-testharness-compat goal M3)
   testharness-css-sizing  Run upstream css-sizing testharness cases (CSSOM/style
                        API face; css-testharness-compat goal M3)
+  testharness-css-typed-om  Run upstream css-typed-om testharness cases
+                       (CSSOM/style API face; css-testharness-compat goal M3)
+  testharness-css-fonts  Run upstream css-fonts testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-shapes  Run upstream css-shapes testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-anchor-position  Run upstream css-anchor-position testharness
+                       cases (CSSOM/style API face; css-testharness-compat goal
+                       M3)
+  testharness-css-masking  Run upstream css-masking testharness cases (CSSOM/style
+                       API face; css-testharness-compat goal M3)
+  testharness-css-backgrounds  Run upstream css-backgrounds testharness cases
+                       (CSSOM/style API face; css-testharness-compat goal M3)
+  testharness-css-transforms  Run upstream css-transforms testharness cases
+                       (CSSOM/style API face; css-testharness-compat goal M3)
+  testharness-css-motion  Run upstream css motion path testharness cases (scan
+                       root css/motion; CSSOM/style API face;
+                       css-testharness-compat goal M3)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -409,6 +427,14 @@ fn main() {
         "testharness-css-color" => cmd_testharness_css_color(&options, filter.as_deref()),
         "testharness-css-align" => cmd_testharness_css_align(&options, filter.as_deref()),
         "testharness-css-sizing" => cmd_testharness_css_sizing(&options, filter.as_deref()),
+        "testharness-css-typed-om" => cmd_testharness_css_typed_om(&options, filter.as_deref()),
+        "testharness-css-fonts" => cmd_testharness_css_fonts(&options, filter.as_deref()),
+        "testharness-css-shapes" => cmd_testharness_css_shapes(&options, filter.as_deref()),
+        "testharness-css-anchor-position" => cmd_testharness_css_anchor_position(&options, filter.as_deref()),
+        "testharness-css-masking" => cmd_testharness_css_masking(&options, filter.as_deref()),
+        "testharness-css-backgrounds" => cmd_testharness_css_backgrounds(&options, filter.as_deref()),
+        "testharness-css-transforms" => cmd_testharness_css_transforms(&options, filter.as_deref()),
+        "testharness-css-motion" => cmd_testharness_css_motion(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1565,6 +1591,70 @@ fn cmd_testharness_css_align(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_sizing(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_sizing_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-typed-om` / `testharness-css-fonts` / `testharness-css-shapes`
+/// 子命令 — 跑导入的上游 css-typed-om / css-fonts / css-shapes testharness
+/// 用例（css-testharness-compat goal M3 扩面批次 2——top15 分母目录过 M0
+/// 模板；契约与退出码同 `cmd_testharness_css_values`：共享底座 skip 规则
+/// 单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_typed_om(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_typed_om_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_fonts(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_fonts_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_shapes(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_shapes_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-anchor-position` / `testharness-css-masking` /
+/// `testharness-css-backgrounds` 子命令 — 跑导入的上游 css-anchor-position /
+/// css-masking / css-backgrounds testharness 用例（css-testharness-compat
+/// goal M3 扩面批次 3——top15 分母目录过 M0 模板；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_css_anchor_position(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_anchor_position_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_masking(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_masking_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_backgrounds(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_backgrounds_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-transforms` / `testharness-css-motion` 子命令 — 跑导入的
+/// 上游 css-transforms / css motion path testharness 用例（css-testharness-compat
+/// goal M3 扩面批次 4——top15 分母目录过 M0 模板，motion 扫描根为
+/// `css/motion`；契约与退出码同 `cmd_testharness_css_values`：共享底座
+/// skip 规则单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_transforms(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_transforms_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_motion(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_motion_cases(wpt_root, filter)
     });
 }
 

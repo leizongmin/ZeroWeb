@@ -71,9 +71,22 @@ fn plaintext_inline_owner_is_restored_via_override_set() {
     layout_ctx.layout(&doc, p, &styles);
     let mut box_node = LayoutBox::default();
     crate::inline_finalization::store_font_sizes_from_ifc(&layout_ctx, &mut box_node, &doc, &styles);
-    assert!(box_node.plaintext_bidi_nodes.contains(&span));
+    assert!(
+        box_node
+            .path_bidi_nodes
+            .as_ref()
+            .expect("plaintext owner 须入 path_bidi_nodes")
+            .plaintext
+            .contains(&span)
+    );
 
-    let mut ctx = InlineFormattingContext::new(800.0).with_plaintext_bidi_overrides(box_node.plaintext_bidi_nodes);
+    let mut ctx = InlineFormattingContext::new(800.0).with_plaintext_bidi_overrides(
+        box_node
+            .path_bidi_nodes
+            .as_deref()
+            .map(|n| n.plaintext.clone())
+            .unwrap_or_default(),
+    );
     ctx.layout(&doc, p, &HashMap::new());
 
     let span_fragments = ctx

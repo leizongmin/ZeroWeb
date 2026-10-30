@@ -67,10 +67,21 @@ fn store_font_sizes_from_ifc_mode(
             box_node
                 .text_node_font_size_adjust
                 .insert(frag.node_id, style.font_size_adjust);
-            if matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
-                && let Some(owner) = font_owner
+            // R3840/R5337：plaintext 恢复 + isolate（含 `<bdi>`）回退门，按 owner
+            // 元素 id 存 `path_bidi_nodes`（Path B 空 styles 恢复通道）。
+            if matches!(
+                style.unicode_bidi,
+                zero_style_system::UnicodeBidiValue::Plaintext
+                    | zero_style_system::UnicodeBidiValue::Isolate
+                    | zero_style_system::UnicodeBidiValue::IsolateOverride
+            ) && let Some(owner) = font_owner
             {
-                box_node.plaintext_bidi_nodes.insert(owner);
+                let nodes = box_node.path_bidi_nodes.get_or_insert_with(Default::default);
+                if matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext) {
+                    nodes.plaintext.insert(owner);
+                } else {
+                    nodes.isolated.insert(owner);
+                }
             }
             // R3840：元素级 bidi-override——按文本节点 id 存方向，paint Path B 恢复
             // per-run 字符反转（collect 的 text-node 分支按 owner 键读取）。
@@ -326,7 +337,7 @@ mod tests {
         assert_eq!(optimized.text_node_word_spacing, legacy.text_node_word_spacing);
         assert_eq!(optimized.text_node_line_heights, legacy.text_node_line_heights);
         assert_eq!(optimized.text_node_text_transform, legacy.text_node_text_transform);
-        assert_eq!(optimized.plaintext_bidi_nodes, legacy.plaintext_bidi_nodes);
+        assert_eq!(optimized.path_bidi_nodes, legacy.path_bidi_nodes);
         assert_eq!(optimized.text_node_font_families, legacy.text_node_font_families);
         assert_eq!(optimized.text_node_font_size_adjust, legacy.text_node_font_size_adjust);
         assert_eq!(optimized.inline_element_metrics, legacy.inline_element_metrics);

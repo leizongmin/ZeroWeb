@@ -1684,7 +1684,23 @@ impl super::Painter {
                             zero_style_system::property::types::TextAlignValue::Start
                         ),
                     )
-                    .with_plaintext_bidi_overrides(box_node.plaintext_bidi_nodes.clone())
+                    // R5337：plaintext + isolate（`<bdi>`/unicode-bidi:isolate）owner
+                    // 信号——Path B 空 styles 下按 layout 期存储复现判定（isolate 为
+                    // 段落级 UBA 回退门）。
+                    .with_plaintext_bidi_overrides(
+                        box_node
+                            .path_bidi_nodes
+                            .as_deref()
+                            .map(|n| n.plaintext.clone())
+                            .unwrap_or_default(),
+                    )
+                    .with_isolated_bidi_overrides(
+                        box_node
+                            .path_bidi_nodes
+                            .as_deref()
+                            .map(|n| n.isolated.clone())
+                            .unwrap_or_default(),
+                    )
                     // R4310：竖排 writing-mode 元素信号——FLAT_CHILD_WALK 竖排子门在
                     // paint Path B（空 styles）下按 layout 期存储复现判定。
                     .with_vertical_walk_nodes(box_node.inline_vertical_nodes.clone())

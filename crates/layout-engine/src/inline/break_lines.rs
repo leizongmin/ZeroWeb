@@ -1316,36 +1316,40 @@ impl InlineFormattingContext {
     }
 
     /// R5122（css-writing-modes-3 §2.4 bidi box model slice·phase 2）：段落级 UBA
-    /// 的**行级视觉重排**（parity 近似）——断行已按逻辑序消费
+    /// 的**行级视觉重排**——断行已按逻辑序消费
     ///（`BidiFragmentCursor::with_levels_logical`），本 pass 在行断后把每行重排为
     /// 视觉序（规范顺序：先逻辑序断行，再逐行 bidi）。
     ///
-    /// 两步，均按 `TextFragmentSource::visual_is_rtl` 携带的逐字符段落级 parity：
-    /// ① **片段内**逐字符 parity L2（`para_bidi::parity_l2_permutation`）——反转
-    /// 片段内极大奇 parity 字符 run（uniform 奇片段整体反转；混合片段反转内部
-    /// 奇段）；字符集恒等 → 宽度不变，source 映射随置换同步。
-    /// ② **片段序列** parity L2——`uniform_resolved_rtl` 分类（identity/mixed →
-    /// 偶），极大连续奇 parity 片段 run 整段反序并在原占用跨度内镜像重排 x
-    /// （段间几何 gap 随反序镜像；跨度守恒 → text-align 前后皆稳定）。
+    /// 两步，自 R5337 起按 `TextFragmentSource::visual_levels` 携带的**完整 level
+    /// 值**精确化（原 parity 近似的 ≥2 层嵌套组序缺口已收口，bidi-011 实证）：
+    /// ① **片段内**逐字符精确 L2（`para_bidi::exact_l2_permutation`）——按 level
+    /// 值逐层反转极大 ≥L 连续段；字符集恒等 → 宽度不变，source 映射随置换同步。
+    /// ② **片段序列** L2——按行最高层 L 自高到低（含中间偶层）迭代：极大连续
+    /// 「全字符 ≥L」片段 run 整段反序并在原占用跨度内镜像重排 x（段间几何 gap
+    /// 随反序镜像；跨度守恒 → text-align 前后皆稳定）。偶层（≥2）片段随本层
+    /// 序列反序移动、内容已由 ① 在本层反转，与 ≥1 层组序反序抵消 = chrome
+    /// 探针模型（`X⦿RLO RW⦿⦿LRO IL⦿` → `XILWR`）。
     ///
-    /// 基 LTR（level 0/1）下与 UAX #9 L2 精确一致；近似面（FIXME 谱系）：奇偶
-    /// 嵌套 ≥2 层的组序、混合 parity 片段参与跨片段反序（按偶处理）、反转片段
-    /// 的 shaped kerning 级宽度漂移（reftest 主面 Ahem 等宽零差异）。
+    /// 近似面（FIXME 谱系）：反转片段的 shaped kerning 级宽度漂移（reftest 主面
+    /// Ahem 等宽零差异）；无 level 数据片段（per-run 路径产物）按 level 0 恒等。
     /// UAX #9 L2：https://unicode.org/reports/tr9/#L2
     pub(crate) fn reorder_lines_l2_for_para_bidi(&mut self) {
         for line in &mut self.lines {
-            // ① 片段内逐字符 parity L2（identity/无 source → 恒等）。
+            // ① 片段内逐字符精确 L2（identity/无 source/无 level 数据 → 恒等）。
             for run in &mut line.runs {
                 let Some(source) = run.source.as_mut() else {
                     continue;
                 };
-                let Some(perm) = para_bidi::parity_l2_permutation(&source.visual_is_rtl) else {
+                if source.visual_levels.is_empty() {
+                    continue;
+                }
+                let Some(perm) = para_bidi::exact_l2_permutation(&source.visual_levels) else {
                     continue;
                 };
                 debug_assert_eq!(
                     run.text.chars().count(),
-                    source.visual_is_rtl.len(),
-                    "片段字符与 parity 映射必须逐字符对齐"
+                    source.visual_levels.len(),
+                    "片段字符与 level 映射必须逐字符对齐"
                 );
                 let chars: Vec<char> = run.text.chars().collect();
                 run.text = perm.iter().map(|&i| chars[i]).collect();
@@ -1353,29 +1357,71 @@ impl InlineFormattingContext {
                 source.visual_to_logical = perm.iter().map(|&i| ranges[i].clone()).collect();
                 let rtl = source.visual_is_rtl.clone();
                 source.visual_is_rtl = perm.iter().map(|&i| rtl[i]).collect();
+                let levels = source.visual_levels.clone();
+                source.visual_levels = perm.iter().map(|&i| levels[i]).collect();
                 // 宽度不变：字符集恒等（advance 求和可交换；shaped kerning 级
                 // 漂移为接受近似，见函数头注）。
             }
-            // ② 极大连续奇 parity 片段 run 整段反序 + x 镜像。
-            let is_rtl: Vec<bool> = line
+            // ② 片段序列 L2：L 自行最高层降（含偶层），极大连续「全字符 ≥L」
+            // 片段 run 反序 + x 镜像。预取各片段最低/最高 level（levels 数据 ② 期
+            // 不变），借用不跨可变重排。
+            // **straddle 守卫（R5337）**：≥L 字符 run 若跨片段边界（边界片段含
+            // 部分字符 ≥L），字符级精确 L2 需要把该片段按 level 拆分后反序——片段
+            // 原子模型表达不了（F1=[0,1] F2=[1,2] 的 ≥1 run [b,x,y] 跨界实证，
+            // 无守卫时 bidi-005/006 深嵌套页回归 1.24%）。守卫 = 仅当两侧边界片段
+            // **无任何字符 ≥L**（run 恰好等于片段序列）才反序；不满足 → 跳过
+            // （该 run 维持逻辑序 = parity 时代行为，深嵌套页挂账拆分拆片段）。
+            // **混合 level 守卫（R5337）**：run 内片段自身混合 level（min≠max）时
+            // ①+② 复合 ≠ 全局 L2——片段内 ① 按「片段即整段」先完整 L2，行级 ② 再
+            // 序列反序会对片段内字符双重计账（clone-nowrap-intrinsic-size-bidi 实证：
+            // LRO 作用域跨元素令 F2=[2,3,4]，复合 = [efd][bca]，chromium 真值 =
+            // 全局 L2 `bcdfea`，1.27% 回归）。一致 level（min==max）片段在 ①+② 下
+            // 精确复合（F1=[2,2] F2=[3,3] F3=[2,2] → vubayx 与全局 L2 恒等实证），
+            // 故仅对全一致 run 反序；含混合片段的 run 维持逻辑序，精确性挂账按
+            // level 拆片段（= box-decoration-break:clone 拆分家族 FIXME）。
+            let frag_min_max: Vec<Option<(u8, u8)>> = line
                 .runs
                 .iter()
-                .map(|r| para_bidi::fragment_is_rtl_parity(r.source.as_ref()))
+                .map(|r| {
+                    r.source.as_ref().and_then(|s| {
+                        (!s.visual_levels.is_empty())
+                            .then(|| {
+                                let min = s.visual_levels.iter().copied().min()?;
+                                let max = s.visual_levels.iter().copied().max()?;
+                                Some((min, max))
+                            })
+                            .flatten()
+                    })
+                })
                 .collect();
-            let mut i = 0;
-            while i < is_rtl.len() {
-                if !is_rtl[i] {
-                    i += 1;
-                    continue;
+            let line_max = frag_min_max.iter().flatten().map(|&(_, max)| max).max().unwrap_or(0);
+            let mut l = line_max;
+            while l >= 1 {
+                let in_seq: Vec<bool> = frag_min_max.iter().map(|mm| mm.is_some_and(|(min, _)| min >= l)).collect();
+                let touches: Vec<bool> =
+                    frag_min_max.iter().map(|mm| mm.is_some_and(|mm| mm.1 >= l)).collect();
+                let mut i = 0;
+                while i < in_seq.len() {
+                    if !in_seq[i] {
+                        i += 1;
+                        continue;
+                    }
+                    let mut j = i + 1;
+                    while j < in_seq.len() && in_seq[j] {
+                        j += 1;
+                    }
+                    // 守卫：run 两侧紧邻片段不得含任何 ≥L 字符（straddle 检测）；
+                    // run 内片段须全一致 level（混合检测，见上方守卫注）。
+                    let clean_left = i == 0 || !touches[i - 1];
+                    let clean_right = j == touches.len() || !touches[j];
+                    let all_uniform =
+                        frag_min_max[i..j].iter().all(|mm| mm.is_none_or(|(min, max)| min == max));
+                    if j - i >= 2 && clean_left && clean_right && all_uniform {
+                        mirror_reverse_fragment_xs(&mut line.runs[i..j]);
+                    }
+                    i = j;
                 }
-                let mut j = i + 1;
-                while j < is_rtl.len() && is_rtl[j] {
-                    j += 1;
-                }
-                if j - i >= 2 {
-                    mirror_reverse_fragment_xs(&mut line.runs[i..j]);
-                }
-                i = j;
+                l -= 1;
             }
         }
     }
@@ -1591,20 +1637,32 @@ impl InlineFormattingContext {
 /// R5122（phase 2）：反序片段序列并在原占用跨度内镜像重排 x——新序
 /// `[n-1, n-2, …, 0]`，新相邻对 (old k+1, old k) 的物理 gap = 原 (k, k+1) 间隙
 /// （gap 序列随反序镜像）；宽度序列不变 → 占用跨度守恒，后续内容零位移。
+///
+/// R5337 装饰感知：水平装饰（margin+padding；R5248 口径 horizontal border
+/// advance 已折进 margin 字段）随**属主片段**移动，不再按 gap 镜像分给邻居
+/// ——bidi-011 span（margin 1em ×2 + padding 1em ×2）原 gap 镜像把 span 盒
+/// 左装饰遗留在原位、盒与内容错位 64px 实证。单元 = [左装饰|内容|右装饰]，
+/// 链起点 = 首单元装饰外缘；净 gap = 相邻内容间隙剥去两侧装饰（钳 0）。
 fn mirror_reverse_fragment_xs(runs: &mut [TextFragment]) {
     let n = runs.len();
+    let left_ext: Vec<f32> = runs.iter().map(|r| r.margin_left + r.padding_left).collect();
+    let right_ext: Vec<f32> = runs.iter().map(|r| r.padding_right + r.margin_right).collect();
     let widths: Vec<f32> = runs.iter().map(|r| r.width).collect();
-    let gaps: Vec<f32> = (1..n)
-        .map(|k| runs[k].x - (runs[k - 1].x + runs[k - 1].width))
+    // 相邻内容间隙 − 右片段左装饰 − 左片段右装饰 = 装饰外净间隙（负 = 装饰
+    // 重叠/紧贴，钳 0——反序后仍紧贴）。
+    let plain_gaps: Vec<f32> = (1..n)
+        .map(|k| {
+            (runs[k].x - (runs[k - 1].x + runs[k - 1].width) - right_ext[k - 1] - left_ext[k]).max(0.0)
+        })
         .collect();
-    let mut cursor = runs[0].x;
+    let mut cursor = runs[0].x - left_ext[0];
     for new_pos in 0..n {
         let old = n - 1 - new_pos;
         if new_pos > 0 {
-            cursor += gaps[old];
+            cursor += plain_gaps[old];
         }
-        runs[old].x = cursor;
-        cursor += widths[old];
+        runs[old].x = cursor + left_ext[old];
+        cursor += left_ext[old] + widths[old] + right_ext[old];
     }
 }
 
@@ -1757,6 +1815,13 @@ fn vertical_local_source(
         text: span.source_text.clone(),
         visual_to_logical,
         visual_is_rtl: mapping.source.as_ref()?.visual_is_rtl.get(start..end)?.to_vec(),
+        visual_levels: mapping
+            .source
+            .as_ref()?
+            .visual_levels
+            .get(start..end)
+            .map(|levels| levels.to_vec())
+            .unwrap_or_default(),
     })
 }
 

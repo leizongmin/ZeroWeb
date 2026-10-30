@@ -20,6 +20,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # selectors 历史命名特殊。
 case "${CORPUS}" in
   selectors) SUBCMD=testharness-selectors ;;
+  # motion 上游目录名无 css- 前缀（css/motion），历史命名特例同 selectors。
+  motion) SUBCMD=testharness-css-motion ;;
   css-*) SUBCMD="testharness-${CORPUS}" ;;
   *) echo "usage: $0 <css-values|selectors|css-variables|css-color|...> <filter-substr> [runner]" >&2; exit 2 ;;
 esac

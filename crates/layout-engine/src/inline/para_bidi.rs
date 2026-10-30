@@ -12,25 +12,28 @@
 //! `BidiFragmentCursor::with_levels_logical`——**断行消费逻辑序文本**（规范顺序：
 //! 先按逻辑序断行，再逐行 bidi 重排；R5121 v3 的断行前视觉重排使贪心折行点
 //! 偏离，bidi-004 2.07%→6.19% 实证），视觉重排延迟到行级
-//! `reorder_lines_l2_for_para_bidi`：片段内逐字符 parity L2 +
-//! 极大奇 parity 片段序列反序（x 镜像）。
+//! `reorder_lines_l2_for_para_bidi`：片段内逐字符精确 L2 + 跨片段逐层序列反序
+//!（x 镜像）——R5337 起 parity 近似收口，见 `exact_l2_permutation`。
 //!
 //! 边界（FIXME 谱系，翻默认前置逐项收口）：
 //! - 段落基方向取**首个** Text run 的 CSS direction（未直读容器 style；direction
 //!   为继承属性，无 inline 覆盖页等价）；
-//! - 行级 L2 为 **parity 近似**（`uniform_resolved_rtl` 布尔）——基 LTR（level
-//!   0/1 两级）精确；RTL 基内嵌套 ≥2 层偶 level 的组序不重排；混合 parity
-//!   片段按偶处理（不参与序列反序，仅片段内反转）；
-//! - 元素级 `unicode-bidi: embed/isolate` 未映射为显式 level（UAX #9 X5-X8）；
-//!   含 `bidi_override`/`plaintext` run 的 IFC **整体回退**既有 per-run 校准路径；
+//! - 行级 L2 自 R5337 起**精确**（`exact_l2_permutation` 逐层反转 + 行级跨片段
+//!   逐层序列反序，`visual_levels` 携带完整 level 值）——R5122 parity 近似的
+//!   ≥2 层嵌套组序缺口（bidi-011 LRO 偶层跨片段反序实证）已收口；精确性以
+//!   片段一致 level（min==max）为前提，混合 level 片段（如 RLO/LRO 作用域跨
+//!   元素页）保守维持逻辑序，精确性挂账按 level 拆片段（见 break_lines ② 守卫注）；
+//! - 元素级 `unicode-bidi: embed` 未映射为显式 level（UAX #9 X5-X8）；含
+//!   `bidi_override`/`plaintext`/`isolate`（R5337，含 `<bdi>`）run 的 IFC
+//!   **整体回退**既有 per-run 校准路径——isolate 显式 level 映射前保守不混排；
 //! - 仅当至少一个 run 段落级 level 非 0 才激活——纯 LTR 信号面零扰动；
 //! - 反转片段宽度不变（字符集恒等，advance 求和可交换）；shaped kerning 级
 //!   度量漂移为接受近似（reftest 主面 Ahem 等宽零差异）。
 //!
-//! kill-switch `ZW_PARA_BIDI`（opt-in `=1`，**默认关**）——dormant 同 R5120
-//! `ZW_INLINE_SINGLE_FRAG_BOX_BORDER`：翻默认前置 = 旗标开全量 A/B 零新红。
+//! kill-switch `ZW_PARA_BIDI`（R5337 起**默认开**，`=0` 回退 per-run 校准路径）
+//! ——翻默认前置已满足：行级 L2 精确化 + 旗标开全量 corpus A/B 零新红。
 
-use super::inline_types::{InlineItem, TextFragmentSource};
+use super::inline_types::InlineItem;
 
 /// UAX #9 信号面：bidi 控制符（LRE/RLE/LRO/RLO/PDF + 隔离符 FSI/LRI/RLI/PDI）
 /// 或 RTL 脚本区段。与 `bidi_reorder_with_direction` 的 `has_rtl_script` 同口径。
@@ -61,7 +64,9 @@ pub(crate) struct ParaBidiPlan {
 /// 对 IFC 全部 Text run 做段落级 UBA 解析。
 ///
 /// 门（任一不满足 → `None` = 回退既有 per-run 路径）：
-/// ① 无 `bidi_override`/`is_plaintext_bidi` run（特例路径各自校准，phase 1 不混排）；
+/// ① 无 `bidi_override`/`is_plaintext_bidi`/`is_isolated_bidi` run（特例路径各自
+/// 校准，不混排；isolate 为 R5337 补——未映射 X5-X8 前透明拼接会把 `<bdi>` 标记
+/// 文本与后继内容跨边界重排，chromium 探针 `X⦿RW⦿⦿IL⦿` B/C 行分叉实证）；
 /// ② 至少一个 run 文本含 bidi 信号（控制符/RTL 脚本）；
 /// ③ 至少一个 run 段落级 level 非全 0（有真实改写）。
 pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
@@ -69,7 +74,7 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
     let mut base_is_rtl: Option<bool> = None;
     for item in items {
         if let InlineItem::Text(run) = item {
-            if run.bidi_override.is_some() || run.is_plaintext_bidi {
+            if run.bidi_override.is_some() || run.is_plaintext_bidi || run.is_isolated_bidi {
                 return None;
             }
             texts.push(&run.text);
@@ -86,11 +91,17 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
     // 容器 style 直读基方向）。
     // https://unicode.org/reports/tr9/#P1
     let paragraph: String = texts.concat();
-    let base_level = if base_is_rtl.unwrap_or(false) {
-        Some(unicode_bidi::Level::rtl())
+    // R5337：基方向显式取首个 Text run 的 CSS direction（HL1）——`None` 是
+    // unicode_bidi 的 P2/P3 首强字符 auto-detect 而非 LTR，R-first 内容的 LTR
+    // 块会被误判 RTL 段整段反转（R5244 修 per-run 路径同款缺陷，`ZW_BIDI_LTR_PARA_BASE`
+    // 锚点；翻默认后由 r5244_css_ltr_para_base 单测暴露）。plaintext 例外已在上
+    // 方门①整体回退，此处两态都显式传 level。
+    // https://unicode.org/reports/tr9/#HL1
+    let base_level = Some(if base_is_rtl.unwrap_or(false) {
+        unicode_bidi::Level::rtl()
     } else {
-        None
-    };
+        unicode_bidi::Level::ltr()
+    });
     let bidi_info = unicode_bidi::BidiInfo::new(&paragraph, base_level);
 
     // 逐 item 取逐字符 level（levels 按 byte 索引，char 取其起始 byte 的 level——
@@ -133,33 +144,39 @@ pub(crate) fn resolve(items: &[InlineItem]) -> Option<ParaBidiPlan> {
     Some(ParaBidiPlan { item_levels, has_rtl })
 }
 
-/// 取 fragment 的 uniform resolved parity（`None` = identity/mixed → 偶）。
-pub(crate) fn fragment_is_rtl_parity(source: Option<&TextFragmentSource>) -> bool {
-    source.and_then(|s| s.uniform_resolved_rtl()).unwrap_or(false)
-}
-
-/// R5122（phase 2）：片段内 parity L2——反转极大奇 parity 字符 run，返回
-/// 视觉位 → 逻辑字符索引的置换（`None` = 恒等：无奇字符或反转无变化）。
-/// 基 LTR（level 0/1）下与 UAX #9 L2 精确一致；奇偶嵌套（≥2 层）为 parity
-/// 近似（FIXME：完整 level 栈按层反转）。
+/// R5122（phase 2）/ R5337（精确化）：片段内完整 L2——按 level 值逐层反转极大
+/// 连续 ≥L 段（L 自最高层降到最低奇层），返回视觉位 → 逻辑字符索引的置换
+/// （`None` = 恒等：全 0 层或反转无变化）。
+///
+/// parity 近似（R5122 原实现）只反转奇 parity 段——≥2 层嵌套（如 bidi-011 的
+/// LRO 偶层内容随 ≥1 层组序跨片段移动）不可达，chrome 探针实证精确模型
+/// （`X⦿RLO RW⦿⦿LRO IL⦿` → `XILWR`：偶层内容先层内反转、再随 ≥1 层序列反序，
+/// 两次反转抵消 = 内容保持逻辑序、位置移到奇层段之前）。
 /// https://unicode.org/reports/tr9/#L2
-pub(crate) fn parity_l2_permutation(parities: &[bool]) -> Option<Vec<usize>> {
-    if !parities.iter().any(|&p| p) {
+pub(crate) fn exact_l2_permutation(levels: &[u8]) -> Option<Vec<usize>> {
+    let max = levels.iter().copied().max()?;
+    if max == 0 {
         return None;
     }
-    let mut order: Vec<usize> = (0..parities.len()).collect();
-    let mut i = 0;
-    while i < parities.len() {
-        if !parities[i] {
-            i += 1;
-            continue;
+    let mut order: Vec<usize> = (0..levels.len()).collect();
+    // L 自最高层降到最低奇层（= 1；含中间偶层——level ≥2 偶层段在自己的层先
+    // 反转、再随 ≥1 层组序参与反序）。
+    let mut l = max;
+    while l >= 1 {
+        let mut i = 0;
+        while i < levels.len() {
+            if levels[i] < l {
+                i += 1;
+                continue;
+            }
+            let mut j = i + 1;
+            while j < levels.len() && levels[j] >= l {
+                j += 1;
+            }
+            order[i..j].reverse();
+            i = j;
         }
-        let mut j = i + 1;
-        while j < parities.len() && parities[j] {
-            j += 1;
-        }
-        order[i..j].reverse();
-        i = j;
+        l -= 1;
     }
     (order.iter().enumerate().any(|(a, b)| a != *b)).then_some(order)
 }
@@ -236,16 +253,60 @@ mod tests {
         assert!(resolve(&items).is_none());
     }
 
-    /// R5122 phase 2：片段内 parity L2——奇字符 run 反转，偶字符不动。
+    /// R5337：`<bdi>`/`unicode-bidi: isolate` run 在场 → 整体回退 per-run 路径
+    /// （X5-X8 显式 level 映射前的保守近似——chromium 探针实证透明拼接把隔离标记
+    /// 文本与后继内容跨边界重排，css3-counter-styles-102 ref 回归）。
     #[test]
-    fn parity_l2_reverses_odd_runs_only() {
-        // [偶×3, 奇×3, 偶×1] → 奇段反转，其余原位。
-        let perm = parity_l2_permutation(&[false, false, false, true, true, true, false]).expect("含奇字符必有置换");
+    fn isolated_run_bails_out() {
+        let mut isolated = TextRun {
+            text: "\u{0661}\u{0660}. ".to_string(),
+            ..TextRun::simple(
+                String::new(),
+                NodeId::default(),
+                16.0,
+                19.0,
+                VerticalAlignValue::Baseline,
+            )
+        };
+        isolated.is_isolated_bidi = true;
+        let items = vec![InlineItem::Text(isolated), text_item("\u{0661}\u{0660}")];
+        assert!(resolve(&items).is_none());
+        // 守卫腿：无 isolate run 的同形页照常激活（翻默认主面不收窄）。
+        let plain = vec![text_item("\u{0661}\u{0660}. "), text_item("\u{0661}\u{0660}")];
+        assert!(resolve(&plain).is_some());
+    }
+
+    /// R5122 phase 2 / R5337 精确化：片段内完整 L2——逐层反转 ≥L 连续段。
+    #[test]
+    fn exact_l2_reverses_by_level() {
+        // [0×3, 1×3, 0×1] → 奇段反转，其余原位（单层 = parity 特例）。
+        let perm = exact_l2_permutation(&[0, 0, 0, 1, 1, 1, 0]).expect("含奇层必有置换");
         assert_eq!(perm, vec![0, 1, 2, 5, 4, 3, 6]);
-        // 无奇字符 → 恒等（None）。
-        assert_eq!(parity_l2_permutation(&[false, false]), None);
+        // 全 0 层 → 恒等（None）。
+        assert_eq!(exact_l2_permutation(&[0, 0]), None);
         // 单一奇 run 恰跨全串 → 整体反转。
-        let perm = parity_l2_permutation(&[true, true, true]).expect("全奇串有置换");
+        let perm = exact_l2_permutation(&[1, 1, 1]).expect("全奇串有置换");
         assert_eq!(perm, vec![2, 1, 0]);
+    }
+
+    /// R5337：≥2 层嵌套组序——chrome 探针模型（bidi-011 形态）。
+    /// [T(0) E(0) | TSET(1) | ST(2)]：L=2 反转偶层段 [ST]→[TS]；L=1 反转整个
+    /// ≥1 连续段 [TSET][TS] → 视觉序 = TE + ST + TEST（chrome `XILWR` 同构）。
+    #[test]
+    fn exact_l2_handles_nested_level_two() {
+        let levels = [0, 0, 1, 1, 1, 1, 2, 2];
+        let perm = exact_l2_permutation(&levels).expect("多层必有置换");
+        let src: Vec<char> = "TETSETST".chars().collect();
+        let visual: String = perm.iter().map(|&i| src[i]).collect();
+        assert_eq!(visual, "TESTTEST");
+        // 纯偶层（LRO only，无 RLO）：L=2 与 L=1 两次反转抵消 = 恒等。
+        let levels = [0, 2, 2];
+        assert_eq!(exact_l2_permutation(&levels), None);
+        // 探针同构：X(0) RW(1) IL(2) → XILWR。
+        let levels = [0, 1, 1, 2, 2];
+        let perm = exact_l2_permutation(&levels).expect("多层必有置换");
+        let src: Vec<char> = "XRWIL".chars().collect();
+        let visual: String = perm.iter().map(|&i| src[i]).collect();
+        assert_eq!(visual, "XILWR");
     }
 }

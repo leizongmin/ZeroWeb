@@ -29,7 +29,7 @@ mod inline_types;
 pub use inline_types::*;
 
 // R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
-// 裂解 + 行级 L2 组序重排。dormant（`ZW_PARA_BIDI` opt-in，默认关）——见模块头。
+// 裂解 + 行级 L2 组序重排。R5337 起默认开（`ZW_PARA_BIDI=0` 回退）——见模块头。
 mod para_bidi;
 
 // Phase A §12.6 step-1：font-metric 桥接，默认 dormant。
@@ -76,6 +76,9 @@ pub struct InlineFormattingContext {
     pub plaintext_bidi_override: bool,
     /// paint IFC 无 style map 时按 inline owner 恢复 plaintext。
     pub plaintext_bidi_overrides: NodeIdSet,
+    /// paint IFC 无 style map 时按 inline owner 恢复 `is_isolated_bidi`（R5337，
+    /// `<bdi>`/isolate——段落级 UBA 回退门信号）。见 `LayoutBox.isolated_bidi_nodes`。
+    pub isolated_bidi_overrides: NodeIdSet,
     /// R4310：竖排 writing-mode inline 元素集合——FLAT_CHILD_WALK 竖排子门在
     /// paint Path B（空 styles）下的判定信号。layout IFC 有 styles 直判不消费。
     /// 见 `LayoutBox.inline_vertical_nodes`。
@@ -419,8 +422,8 @@ pub struct InlineFormattingContext {
     /// `Some` = step-2 在 `break_items_into_lines` 后按本上下文把行盒分配到列
     /// （respected 列高 budget，整行不裁断）。step-1 仅持有字段、不读取 → 行为不变。
     pub column_fragmentation: Option<ColumnFragmentationContext>,
-    /// R5121：段落级 UBA 计划（`ZW_PARA_BIDI` opt-in，默认 `None` = 既有 per-run
-    /// bidi 路径）。`layout()` 期 `para_bidi::resolve` 产物（与 items 逐位平行的
+    /// R5121：段落级 UBA 计划（R5337 起默认启用；`ZW_PARA_BIDI=0` 时 `None` =
+    /// 既有 per-run bidi 路径）。`layout()` 期 `para_bidi::resolve` 产物（与 items 逐位平行的
     /// 逐字符 level）；`break_items_into_lines` 开头 `take()` 消费（Text run 改走
     /// `BidiFragmentCursor::with_levels`），`has_rtl` 供行级 L2 组序重排门。
     pub(crate) para_bidi_plan: Option<para_bidi::ParaBidiPlan>,
@@ -440,6 +443,7 @@ impl InlineFormattingContext {
             bidi_override_direction: None,
             plaintext_bidi_override: false,
             plaintext_bidi_overrides: NodeIdSet::default(),
+            isolated_bidi_overrides: NodeIdSet::default(),
             vertical_walk_nodes: NodeIdSet::default(),
             block_child_walk_nodes: NodeIdSet::default(),
             display_none_walk_nodes: NodeIdSet::default(),
@@ -577,6 +581,12 @@ impl InlineFormattingContext {
     /// 注入 paint Path B 的 per-inline plaintext owner。
     pub fn with_plaintext_bidi_overrides(mut self, overrides: NodeIdSet) -> Self {
         self.plaintext_bidi_overrides = overrides;
+        self
+    }
+
+    /// 注入 paint Path B 的 per-inline isolate owner（R5337）。
+    pub fn with_isolated_bidi_overrides(mut self, overrides: NodeIdSet) -> Self {
+        self.isolated_bidi_overrides = overrides;
         self
     }
 
@@ -1326,7 +1336,7 @@ impl InlineFormattingContext {
         let items = self.collect_inline_items(doc, container, styles);
         self.capture_downloaded_font_metrics(&items, doc, styles);
         // R5121（css-writing-modes-3 §2.4 bidi box model slice·phase 1）：段落级 UBA
-        //（ZW_PARA_BIDI opt-in，默认关）。门：容器级 bidi-override 关闭（R3319/R3836
+        //（R5337 起默认开）。门：容器级 bidi-override 关闭（R3319/R3836
         // 校准路径不混排）+ resolve 内部门（无元素级 override/plaintext run + 存在
         // bidi 信号 + 任一 run level 非 0）。不拆分 items（拆分会新增词间折行机会），
         // 计划经 `para_bidi_plan` 字段交 `break_items_into_lines` 消费（with_levels
