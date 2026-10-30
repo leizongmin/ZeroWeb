@@ -57,6 +57,9 @@ libc = "0.2"
 
 [dev-dependencies]
 serial_test = { workspace = true }
+# T28-P37 生产泵 e2e 钉：Xvfb 无 WM 时窗口收不到键盘焦点（Unfocused 把生产渲染
+# 与续帧全关），测试侧经 X11 SetInputFocus 强制聚焦。0.13 已在依赖树（winit）。
+x11rb = "0.13"
 # P1a gBCR driving test：解析 html 取 NodeId 填 rect snapshot（与渲染管线确定性一致）。
 zero-dom = { workspace = true }
 zero-webview = { workspace = true, features = ["quickjs"] }

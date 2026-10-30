@@ -2101,6 +2101,113 @@ fn context_menu_fades_in_on_open() {
     );
 }
 
+/// T28-P37 S1/S2 单元面：菜单渐入泵 tick——打开即起表（S2），完成帧上屏前置位
+/// needs_redraw（Poll 心跳连帧的来源），完成帧绘制后自终止，关闭零行为。
+#[test]
+fn menu_fade_pump_tick_requests_redraw_during_fade_only() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+
+    // S2：打开即起表——不依赖任何 build_scene 兜底同步。
+    app.show_context_menu_for_test(400.0, 300.0);
+    assert!(
+        app.menu_anim_start_for_test().is_some(),
+        "打开菜单即须启动渐入时钟（时钟在打开点，不在首次 build_scene）"
+    );
+
+    // 首帧前（drawn=None）：tick 置位 needs_redraw（main.rs 渲染返回后的清除会吞掉
+    // build_scene 的续帧旗标，Poll tick 是唯一的连帧来源）。
+    app.needs_redraw = false;
+    app.tick_menu_fade();
+    assert!(app.needs_redraw, "渐入期 tick 应置位 needs_redraw（Poll 连帧）");
+
+    // 中途帧已绘制（drawn=0.5）：继续续帧直至完成帧。
+    app.needs_redraw = false;
+    app.menu_anim_drawn_opacity_set_for_test(Some(0.5));
+    app.tick_menu_fade();
+    assert!(app.needs_redraw, "渐入未完成（drawn<1.0）tick 应继续置位");
+
+    // 完成帧已绘制（drawn=1.0）：tick 自终止，不再置位（帧循环归零，不空转）。
+    // 终止判定看已绘制透明度而非墙钟——按 150ms 停表会让尾帧（~0.9→1.0）落在
+    // 停表线之后，菜单停在中间态（实机实测 0.91 停帧 356ms）。
+    app.needs_redraw = false;
+    app.menu_anim_drawn_opacity_set_for_test(Some(1.0));
+    app.tick_menu_fade();
+    assert!(!app.needs_redraw, "完成帧上屏后 tick 应自终止");
+
+    // 关闭态：tick 零行为。
+    let mut idle = BrowserApp::new(RenderMode::Cpu);
+    idle.physical_size = (1024, 768);
+    idle.needs_redraw = false;
+    idle.tick_menu_fade();
+    assert!(!idle.needs_redraw, "菜单关闭时 tick 应零行为");
+}
+
+/// T28-P37 S3 像素等价：菜单可见帧的 can_reuse 组合（条带照常重绘 + 菜单并集
+/// 包围盒 scratch 白底全场景重放后矩形拷回）与全量光栅一致——包围盒内逐像素
+/// 相等（半透明渐入菜单恰好合成一次，无 alpha 叠加、无残影），包围盒外允许
+/// 既有 S1b 条带阴影冲刷残差（页面视口投影 skip-only 全幅绘制，非本次引入）。
+#[test]
+fn menu_visible_reuse_composition_matches_full_raster() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0;background:#2a6e3f"><h1>reuse equivalence</h1></body></html>"#,
+        None,
+    );
+    app.show_context_menu_for_test(500.0, 350.0);
+
+    // 渐入中段（半透明）：alpha 叠加对等价性破坏最敏感的窗口。
+    std::thread::sleep(std::time::Duration::from_millis(75));
+    let (full, reuse) = app.menu_reuse_equivalence_pair_for_test(1024, 768);
+    assert_eq!(full.data.len(), reuse.data.len());
+    // 与生产同款：菜单并集包围盒（build_scene 后菜单仍可见）。
+    let bbox = app.menu_overlay_bbox(1024.0, 768.0);
+    let w = full.width as usize;
+    let x0 = (bbox.origin.x.max(0.0).floor() as usize).min(w);
+    let x1 = ((bbox.origin.x + bbox.size.width).ceil() as usize).min(w);
+    let y0 = (bbox.origin.y.max(0.0).floor() as usize).min(full.height as usize);
+    let y1 = ((bbox.origin.y + bbox.size.height).ceil() as usize).min(full.height as usize);
+    let mut bbox_max = 0i32;
+    let mut outside_max = 0i32;
+    let mut outside_pos = 0usize;
+    for y in 0..full.height as usize {
+        for x in 0..w {
+            let base = (y * w + x) * 4;
+            let in_bbox = x >= x0 && x < x1 && y >= y0 && y < y1;
+            for c in 0..4 {
+                let d = (full.data[base + c] as i32 - reuse.data[base + c] as i32).abs();
+                if in_bbox {
+                    bbox_max = bbox_max.max(d);
+                } else if d > outside_max {
+                    outside_max = d;
+                    outside_pos = base + c;
+                }
+            }
+        }
+    }
+    // 包围盒内 scratch 白底重放（region=bbox）后拷回，绘制顺序与全量一致，
+    // 必须逐位一致——半透明渐入菜单叠加/残像/漏绘都会在这里爆掉。
+    assert_eq!(
+        bbox_max, 0,
+        "菜单并集包围盒内 reuse 组合与全量光栅差 {bbox_max}（渐入菜单叠加/残像/漏绘）"
+    );
+    // 包围盒外仅允许既有条带直绘的页面视口阴影重复合成差（S1b 既有行为，
+    // 实测 ≤40 量级）；更大差异 = 新路径污染区外像素。
+    assert!(
+        outside_max <= 48,
+        "包围盒外像素差 {outside_max} > 48（新路径污染区外像素）；首差位置 x={} y={} ch={}",
+        (outside_pos / 4) % w,
+        (outside_pos / 4) / w,
+        outside_pos % 4
+    );
+}
+
 /// 悬停链接时在左下角显示浮动 URL 状态栏（宽度随内容，不占布局）。
 #[test]
 fn floating_link_status_shows_on_link_hover() {

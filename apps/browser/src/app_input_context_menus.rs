@@ -219,6 +219,8 @@ impl BrowserApp {
             link_url,
             link_text,
         };
+        // T28-P37 S2：渐入时钟在打开点起表——打开→首帧的调度/光栅延迟不计入 150ms 窗口。
+        self.menu_fade_begin();
         self.needs_redraw = true;
     }
 
@@ -516,6 +518,8 @@ impl BrowserApp {
             link_url: None,
             link_text: None,
         };
+        // T28-P37 S2：渐入时钟在打开点起表——打开→首帧的调度/光栅延迟不计入 150ms 窗口。
+        self.menu_fade_begin();
         self.needs_redraw = true;
     }
 

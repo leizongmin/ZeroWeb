@@ -1645,6 +1645,9 @@ fn main() {
         app.expire_scrollbar_overlay();
         // T26：推进滚轮平滑滚动动画（动画期间置 needs_redraw → 下方 request_redraw 连续成帧）。
         app.tick_smooth_scroll();
+        // T28-P37：推进菜单渐入动画（渐入期置 needs_redraw 连帧；build_scene 的
+        // 续帧旗标会被渲染返回后的清除吞掉，Poll tick 不经过该清除点）。
+        app.tick_menu_fade();
         // M2-S3c：推进 env 门控点击注入（armed 期置 needs_redraw 同款自续；禁用零行为）。
         app.tick_click_injector();
         #[cfg(target_os = "windows")]
