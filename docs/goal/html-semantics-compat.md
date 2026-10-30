@@ -12,6 +12,12 @@
 > **挂账更新**：FIXME 新记——color_scheme_decl 继承序列化偏差（无声明后代 parent-copy vs spec used/normal 表达，语料无形态）；跨批 handle 引用边界（增量通道仍限八类，树级全量重建为规避非结构化修复）。承袭：CSSOM 规则接口族、视口 1280×800、R51c、@import 原位语义、动态 style @import 臂、link 通道 recompute media wrap 死代码。
 > **下一步 s166 候选**：①R51c 查询视图扩展（动态 link 对 query_all 可见——stylesheet-media-change 断言 2 结构化修法）；②shadow DOM 级联面（link-rel-attribute shadow 案）；③link 通道 recompute media wrap 死代码修复 + 外链槽位级联序；④color_scheme_decl 继承序列化面勘根。
 > **账本**：[evidence/2026-10-31-m2s165-meta-color-scheme.md](html-semantics-compat/evidence/2026-10-31-m2s165-meta-color-scheme.md)
+> **并发撞号注记（2026-10-31 第二会话）**：本机另一 rally 会话同候选独立实现 s165 静态面
+>（合成注入 + 深色表 + page_scheme 线程，20P/4F，全量 join P2BAD 0，css-color light-dark/
+> system-color 池 stash A/B 逐位一致），rebase 时发现本刀已先行推送且覆盖更全（文档级
+> scan 替代合成注入 + gCS 树级结构重放，24 靶全绿）——重复实现弃用（本地备份分支
+> `wip/s165-duplicate-superseded`，commit 09589c837，reflog 可溯），其独立产出价值仅在
+> 交叉验证：上游 HEAD color-scheme 池 24P/0F/0T 本机复现确认。
 > **▶ 上轮状态（2026-10-31 M2 切片 164 施工收口，静态 style 元素 @import 取回通道——靶面 F→P + style_events 文件级 Timeout 搭车兑现 + 全量 join 零坏位移）**：
 > **入场定刀位**：s164 候选① style-element-media-match-block-script 1F（s163 记账面——
 > `<style>@import url('stylesheet.py?delay=1')</style>` 后随同步 script 断言 styleExists
