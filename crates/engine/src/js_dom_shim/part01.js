@@ -8159,16 +8159,146 @@
     });
     el.dispatchEvent(input);
   };
+  // —— 块界 join（white-space join 簇，editing-compat goal 2026-10-30）——
+  // 语料 join-different-white-space-style-*（3 案）：caret 在块边界时 Backspace/
+  // Delete 应把**后块第一行**并入**前块**，异 white-space 内容以
+  // `<span style="white-space:…">` 保留壳包裹（assert_in_array 期望数组均含
+  // 单 span 形态）。spec 参考 https://w3c.github.io/editing/execCommand.html
+  // （delete 命令的块合并步；white-space 保留壳为 UA 惯例——Chrome/Gecko 行为）。
+  // FIXME: 块级判定用标签白名单近似（style 系统未解析 white-space/display，
+  // computed 值不可用）；CSS display 解析落地后换计算样式判定。
+  function _zwCeIsBlockEl(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var t = String(n.tagName || '').toUpperCase();
+    return ['DIV','P','H1','H2','H3','H4','H5','H6','BLOCKQUOTE','LI','UL','OL',
+      'TABLE','THEAD','TBODY','TFOOT','TR','TD','TH','SECTION','ARTICLE','ASIDE',
+      'HEADER','FOOTER','NAV','MAIN','FIGURE','FIGCAPTION','DL','DT','DD','PRE',
+      'FORM','FIELDSET','ADDRESS'].indexOf(t) >= 0;
+  }
+  // white-space 保留值来源：style attr 原始串扫描 → class 名映射（语料
+  // pre/preWrap/preLine/nowrap）→ 无（host 级 run，CSS 初始值 normal）。
+  function _zwCeWsOf(n) {
+    try {
+      var st = n.getAttribute && n.getAttribute('style');
+      if (st) {
+        var m = String(st).match(/white-space\s*:\s*([a-z-]+)/i);
+        if (m) return m[1];
+      }
+      var cl = n.getAttribute && n.getAttribute('class');
+      if (cl) {
+        var c = String(cl);
+        if (/\bpreWrap\b/.test(c)) return 'pre-wrap';
+        if (/\bpreLine\b/.test(c)) return 'pre-line';
+        if (/\bnowrap\b/.test(c)) return 'nowrap';
+        if (/\bpre\b/.test(c)) return 'pre';
+      }
+    } catch (_eWs) {}
+    return 'normal';
+  }
+  // 从 parent 的 startNode 起提取「第一行」inline 内容（节点脱离原父）。
+  // 行界：文本内 `\n`（换行符移除，余段保留）、`<br>`（移除）、块级子元素
+  // （界即停；若为首内容则递归取其首行、块壳解除——嵌套段落语义）。inline
+  // 容器深入提取，提取部分保壳（克隆壳随行迁出；原壳提取尽则移除）。
+  // 返回 {nodes:[], ws:sourceEl}。
+  function _zwCeTakeLineFrom(parent, startNode) {
+    var out = [], ended = false, n = startNode, srcEl = null;
+    while (n && !ended) {
+      var nxt = n.nextSibling;
+      if (n.nodeType === 3 || n.__zwIsText) {
+        var v = String(n.nodeValue || '');
+        var i = v.indexOf('\n');
+        if (i < 0) {
+          parent.removeChild(n); out.push(n);
+        } else {
+          var head = v.slice(0, i), tail = v.slice(i + 1);
+          if (head) out.push(document.createTextNode(head));
+          if (tail) n.nodeValue = tail; else parent.removeChild(n);
+          ended = true;
+        }
+      } else if (n.nodeType === 1) {
+        var tag = String(n.tagName || '').toUpperCase();
+        if (tag === 'BR') { parent.removeChild(n); ended = true; }
+        else if (_zwCeIsBlockEl(n)) {
+          // 首内容块子 → 取其首行（壳解除，空壳移除）；否则块界即行界
+          if (out.length === 0) {
+            var r = _zwCeTakeLineFrom(n, n.firstChild);
+            out = out.concat(r.nodes);
+            if (r.ws && !srcEl) srcEl = r.ws;
+            if (!n.firstChild) parent.removeChild(n);
+          }
+          if (!srcEl) srcEl = n;
+          ended = true;
+        } else {
+          // inline 容器：克隆壳随提取内容迁出；提取尽则原壳移除
+          var shell = n.cloneNode(false);
+          var r2 = _zwCeTakeLineFrom(n, n.firstChild);
+          for (var k = 0; k < r2.nodes.length; k++) shell.appendChild(r2.nodes[k]);
+          if (!srcEl) srcEl = n;
+          out.push(shell);
+          if (r2.ended) ended = true;
+          else if (!n.firstChild) parent.removeChild(n);
+          else { ended = true; } // 余壳未提取尽（行界在内）——保守停
+        }
+      } else {
+        parent.removeChild(n); // 注释等非内容节点
+      }
+      n = nxt;
+    }
+    return { nodes: out, ws: srcEl };
+  }
+  // join 应用核：beforeinput(inputType) → 首行提取 + span 保留壳入 dst →
+  // caret 落壳前 → input。返回 true=已应用（调用方结束），false=取消/无内容。
+  function _zwCeJoinApply(el, dst, srcParent, startNode, inputType) {
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: null,
+      inputType: inputType, isComposing: false
+    });
+    if (el.dispatchEvent(before) === false) return false;
+    var r = _zwCeTakeLineFrom(srcParent, startNode);
+    if (!r.nodes.length) return false;
+    var shell = document.createElement('span');
+    shell.setAttribute('style', 'white-space:' + _zwCeWsOf(r.ws || srcParent));
+    for (var k2 = 0; k2 < r.nodes.length; k2++) shell.appendChild(r.nodes[k2]);
+    dst.appendChild(shell);
+    var nr = document.createRange();
+    nr.setStart(dst, Array.prototype.indexOf.call(dst.childNodes, shell));
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, composed: true, data: null,
+      inputType: inputType, isComposing: false
+    }));
+    return true;
+  }
   // CE Backspace：beforeinput(deleteContentBackward) → 变更 → input。变更路径：
   // ① 选区非空且同文本节点 → 区间 splice；② collapsed 在文本节点内 → caret 前退
-  // 一个 UTF-16 单元（代理对安全）splice；③ caret 在元素边界/文本节点起点 →
-  // no-op（跨节点回退 best-effort 不做，记录限制）。caret 回落删除点。
+  // 一个 UTF-16 单元（代理对安全）splice；③ collapsed 文本起点 → 块界 join
+  //（white-space join 簇：后块首行包保留壳入前块/前行容器；几何——从 caret 链上
+  // 找最近前邻：块 → 该块接收；inline（caret 块为前 run 后的首块）→ 容器接收）。
+  // caret 回落删除点。
   globalThis.__zw_ce_delete = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
     var sc = range.startContainer, so = range.startOffset | 0;
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return; // 元素边界 caret 不回退
+    if (range.collapsed && so === 0) {
+      // ③ 块界 join 臂：链上找前邻（同上几何）。dst=host 级容器时要求 src 是
+      // 末子（防错序——语料形态恒满足）。
+      var bn = sc, bc = sc.parentNode, bp = null;
+      while (true) {
+        bp = bn.previousSibling;
+        if (bp) break;
+        if (bc === el) return; // 宿主起点，无前内容
+        bn = bc; bc = bc.parentNode;
+        if (!bc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      if (bn === sc && !_zwCeIsBlockEl(bp)) return; // run 中段 caret（inline 前邻）
+      var bdst = _zwCeIsBlockEl(bp) ? bp : bc;
+      if (bdst === bc && bn.nextSibling) return; // src 非容器末子，保守不并
+      _zwCeJoinApply(el, bdst, bc, bn, 'deleteContentBackward');
+      return;
+    }
     var v = String(sc.nodeValue || '');
     var start = so, end = range.collapsed ? so : (range.endOffset | 0);
     if (start === end) {
@@ -8197,14 +8327,52 @@
   // CE ForwardDelete（尾簇 32——Delete 键的 CE 面，deleteContentForward 语义；WPT
   // uievents/textInput delete.html CE div 案「caret@1 删光标后一字符 → 'ac'」断言面）。
   // mirror __zw_ce_delete：选区非空删选区；collapsed 删 caret **后**一个 UTF-16 单元
-  //（代理对安全）；caret 吸附原位（删除点不变）。文本节点边界（终点无后单元）no-op。
+  //（代理对安全）；caret 吸附原位（删除点不变）。文本节点边界（终点无后单元）→
+  // 块界 join 臂（white-space join 簇：后块首行包保留壳入 caret 块/前行容器；
+  // 几何——链上找后邻：块或 dst 为块时的 inline 首容器 → join；caret 同级 inline
+  // 后邻 = run 中段 → no-op）。跨容器选区（select-boundary 形态）同 join 几何。
   globalThis.__zw_ce_forward_delete = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
     var sc = range.startContainer, so = range.startOffset | 0;
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
+    var ec = range.endContainer;
     var v = String(sc.nodeValue || '');
+    if (ec && (ec.nodeType === 3 || ec.__zwIsText) && ec !== sc) {
+      // 跨容器选区 join 臂（select-boundary）：sc 侧 run 所在块/容器接收后邻首行。
+      // 仅接**空界选区**（sc 在文本尾、ec 在文本头）——真跨块选区删除 defer。
+      if (so < v.length) return;
+      var cn = sc, cc = sc.parentNode, cnx = null;
+      while (true) {
+        cnx = cn.nextSibling;
+        if (cnx) break;
+        if (cc === el) return;
+        cn = cc; cc = cc.parentNode;
+        if (!cc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      if (cn === sc && !_zwCeIsBlockEl(cnx)) return; // run 中段
+      var cdst = (cn === sc) ? cc : cn;
+      if (cdst === cc && cnx.nextSibling) return; // src 非容器末子，保守不并
+      _zwCeJoinApply(el, cdst, cc, cnx, 'deleteContentForward');
+      return;
+    }
+    if (range.collapsed && so >= v.length) {
+      // 块界 join 臂：链上找后邻。
+      var fn = sc, fc = sc.parentNode, fnx = null;
+      while (true) {
+        fnx = fn.nextSibling;
+        if (fnx) break;
+        if (fc === el) return; // 宿主终点，无后内容
+        fn = fc; fc = fc.parentNode;
+        if (!fc) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      if (fn === sc && !_zwCeIsBlockEl(fnx)) return; // run 中段 caret（inline 后邻）
+      var fdst = (fn === sc) ? fc : fn;
+      if (fdst === fc && fnx.nextSibling) return; // src 非容器末子，保守不并
+      _zwCeJoinApply(el, fdst, fc, fnx, 'deleteContentForward');
+      return;
+    }
     var start = so, end = range.collapsed ? so : (range.endOffset | 0);
     if (start === end) {
       if (end >= v.length) return; // 文本节点终点无后单元

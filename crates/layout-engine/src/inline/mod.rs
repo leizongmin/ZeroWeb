@@ -1384,6 +1384,51 @@ impl InlineFormattingContext {
                 // `line_clamp` 作 cap；旧行为只置 clamped 不记 cap 值）。
                 self.line_clamp = Some(n);
                 self.apply_line_clamp_cap(n);
+                // R5342（css-overflow-4 §block-ellipsis）：ellipsis 插入自行末逐
+                // min-content 单元置换内容；**整行内容被置换**的行盒视为仅含 strut
+                //——高度取容器 used line-height（R5298 捕获），不依赖被置换内容。
+                // 判据 = 保留首单元仍放不下 ellipsis（first.width + ellipsis 宽 >
+                // 可用宽）；ZW 词内不可断（overflow-wrap normal，break_lines
+                // need_char_break 仅 break-word/break-all 臂），溢出长词即单单元行
+                //（block-ellipsis-018：span 1.5em 独占 9 字溢出词被整体置换，行盒
+                // 37.5→25）。判据用片段**宽度**而非 x（center/right 对齐的保留内容
+                // 重对齐后 fit 条件同为宽度比较）。被置换片段照旧存储/绘制（可见性
+                // 处理属 paint 侧 ellipsis 域，FIXME: 置换内容不绘 + ellipsis 落位）；
+                // float 推压行（with-floats 系列）与 line-height:0 容器不入判据
+                //（可用宽含 float 间隙语义、strut 高 0 两义，均 FIXME）。
+                if self.clamped
+                    && runtime_flags::clamp_strut_displaced()
+                    && self.container_strut_line_height > 0.0
+                    && let Some(first) = self.lines.last().and_then(|l| l.runs.first())
+                {
+                    let ellipsis_w = self.advance_of(
+                        '\u{2026}',
+                        self.font_id_for_style(Some(style)),
+                        self.container_font_size,
+                        self.container_strut_is_ahem,
+                    );
+                    let first_w = first.width;
+                    if first_w + ellipsis_w > self.container_width + 0.5
+                        && let Some(line) = self.lines.last_mut()
+                    {
+                        let strut_fs = self.container_font_size;
+                        let strut_ratio = ascent_ratio_lookup(
+                            &self.ascent_ratio_overrides,
+                            self.container_node_id.unwrap_or_default(),
+                            self.container_strut_is_ahem,
+                        );
+                        let strut_half_leading = if runtime_flags::strut_neg_leading() {
+                            (self.container_strut_line_height - strut_fs) / 2.0
+                        } else {
+                            ((self.container_strut_line_height - strut_fs) / 2.0).max(0.0)
+                        };
+                        let strut_ascent = strut_half_leading + strut_fs * strut_ratio;
+                        line.height = self.container_strut_line_height;
+                        line.ascent = strut_ascent;
+                        line.descent = self.container_strut_line_height - strut_ascent;
+                        line.baseline_y = strut_ascent;
+                    }
+                }
             }
         }
     }
