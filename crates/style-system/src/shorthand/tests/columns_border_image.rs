@@ -370,3 +370,46 @@ fn test_border_image_shorthand_with_slash() {
     assert!(result.iter().any(|d| d.0 == "border-image-slice" && d.1 == "25"));
     assert!(result.iter().any(|d| d.0 == "border-image-width" && d.1 == "2"));
 }
+
+// css-cascade-4 §6.4：简写省略分量重置为初值（css-backgrounds-3 slice 100% / width 1 /
+// outset 0 / repeat stretch）。R5354：此前省略分量不发射声明，前置 longhand 穿越简写
+// 继续生效（driving: border-image-shorthand-003 —— `border-image-width: 3` 后接
+// `border-image: … / / 2 stretch` 未被重置）。
+#[test]
+fn test_r5354_border_image_shorthand_omitted_components_reset_to_initial() {
+    let result = expand_one(
+        "border-image",
+        "url(test.png) 40% 15% 20% 5% / / 2 stretch",
+        false,
+        (0, 0, 1),
+    );
+    assert!(
+        result.iter().any(|d| d.0 == "border-image-width" && d.1 == "1"),
+        "omitted width must reset to initial 1: {result:?}"
+    );
+    assert!(result.iter().any(|d| d.0 == "border-image-outset" && d.1 == "2"));
+    assert!(
+        result
+            .iter()
+            .any(|d| d.0 == "border-image-slice" && d.1 == "40% 15% 20% 5%")
+    );
+    assert!(result.iter().any(|d| d.0 == "border-image-repeat" && d.1 == "stretch"));
+}
+
+#[test]
+fn test_r5354_border_image_shorthand_full_reset_each_component() {
+    // 仅 slice：width/outset/repeat 全部重置初值。
+    let result = expand_one("border-image", "url(test.png) 25", false, (0, 0, 1));
+    assert!(result.iter().any(|d| d.0 == "border-image-width" && d.1 == "1"));
+    assert!(result.iter().any(|d| d.0 == "border-image-outset" && d.1 == "0"));
+    assert!(result.iter().any(|d| d.0 == "border-image-repeat" && d.1 == "stretch"));
+
+    // `border-image: none` 同样重置其余四个 longhand（此前仅发射 source）。
+    let none = expand_one("border-image", "none", false, (0, 0, 1));
+    assert_eq!(none.len(), 5, "none must reset all five longhands: {none:?}");
+    assert!(none.iter().any(|d| d.0 == "border-image-source" && d.1 == "none"));
+    assert!(none.iter().any(|d| d.0 == "border-image-slice" && d.1 == "100%"));
+    assert!(none.iter().any(|d| d.0 == "border-image-width" && d.1 == "1"));
+    assert!(none.iter().any(|d| d.0 == "border-image-outset" && d.1 == "0"));
+    assert!(none.iter().any(|d| d.0 == "border-image-repeat" && d.1 == "stretch"));
+}

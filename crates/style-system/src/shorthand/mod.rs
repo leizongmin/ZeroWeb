@@ -968,10 +968,8 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         );
     }
 
-    // 特殊值 "none" → 仅设置 source（R2354：关键字大小写不敏感，CSS Syntax §）
-    if value.eq_ignore_ascii_case("none") {
-        return vec![mk("border-image-source", "none")];
-    }
+    // 特殊值 "none"（R2354：关键字大小写不敏感，CSS Syntax §）——走下方统一展开：
+    // source 认领 + 省略分量按初值重置（css-cascade-4 §6.4，同简写其余形态）。
 
     let tokens = split_outside_parens(value);
 
@@ -1064,7 +1062,7 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         }
     }
 
-    let repeat_val = repeat_tokens.join(" ");
+    let mut repeat_val = repeat_tokens.join(" ");
     if zero_css_parser::values::parse_border_image_source(&source_val).is_none() {
         return vec![];
     }
@@ -1081,21 +1079,31 @@ fn expand_border_image(value: &str, important: bool, specificity: (u32, u32, u32
         return vec![];
     }
 
-    let mut result = Vec::new();
-    result.push(mk("border-image-source", &source_val));
-    if !slice_val.is_empty() {
-        result.push(mk("border-image-slice", &slice_val));
+    // css-cascade-4 §6.4：简写声明的省略分量 = 重置为初值，前置 longhand 不得穿越简写
+    // 继续生效（driving: border-image-shorthand-003 —— `border-image-width: 3` 后接
+    // `border-image: … / / 2 stretch`，width 未被重置 → 3×border-width 角厚渲染）。
+    // 初值出处：slice `100%`（css-backgrounds-3 §5.2）/ width `1`（§7.3）/ outset `0`
+    //（§8.2）/ repeat `stretch`（§6）。
+    if slice_val.is_empty() {
+        slice_val = "100%".to_string();
     }
-    if !width_val.is_empty() {
-        result.push(mk("border-image-width", &width_val));
+    if width_val.is_empty() {
+        width_val = "1".to_string();
     }
-    if !outset_val.is_empty() {
-        result.push(mk("border-image-outset", &outset_val));
+    if outset_val.is_empty() {
+        outset_val = "0".to_string();
     }
-    if !repeat_val.is_empty() {
-        result.push(mk("border-image-repeat", &repeat_val));
+    if repeat_val.is_empty() {
+        repeat_val = "stretch".to_string();
     }
-    result
+
+    vec![
+        mk("border-image-source", &source_val),
+        mk("border-image-slice", &slice_val),
+        mk("border-image-width", &width_val),
+        mk("border-image-outset", &outset_val),
+        mk("border-image-repeat", &repeat_val),
+    ]
 }
 
 pub(crate) fn border_image_shorthand_supported(value: &str) -> bool {
