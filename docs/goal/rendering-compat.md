@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5343 修复轮（korean-hanja-informal Drop ones 组域收窄——css-counter-styles-3 §7.1.2：counter-korean-hanja-informal-extended ✗1.26% → ✓FIXED 0.00%；corpus 793F→792F FIXED=1 REGRESSED=∅，通过率 15798/16590 = 95.23%）**（2026-10-30）
+>
+> - **定性**（792F 账本续扫，counter 域 R3835/R4314 回归案）：`cjk_compose_grouped` 的组值 1 省略在 R4314 落为全组生效（`g==1 && omit_group_one` 无组位限定），与规范 Drop ones「if the value of the **ten-thousands group** is 1, drop the digit」不符——仅萬组（k=1）可省。三处实际错渲染：①**个位组**（k=0）组值 1 被省 → counter 值 1 渲染**空串**、-1 只剩 `마이너스 `（basic 案 1=一 因 1 行缺失 glyph 落在 1% 像素容差内而假通过）；②**億/兆组**（k=2/3）组值 1 被省 → 10^8=億、10^12=兆（规范/Chromium = 一億/一兆）；③级联错染（10001=「萬 ␣」尾空格、123456789=億 二千三百四十五萬… 等 extended ref 约 9 行）。组内省一（`OmitOne::AllUnits`：100=百、11000=萬 千）经 basic+extended 双 ref 核对**维持正确**。
+> - **交付**：判据收窄 `g == 1 && omit_ten_thousands_one && k == 1`（text_list.rs `cjk_compose_grouped`，字段改名 `omit_group_one`→`omit_ten_thousands_one` 承载语义，仅 KOREAN_HANJA_INFORMAL 置 true 家族面不变）；japanese-informal 全组保留「一」（一万/一億/一兆）与中文系 bridge_zero 路径不受影响（家族对照锁入测试）。无 kill-switch——纯字符串合成正确性修复，无 layout/热路径面。
+> - **门禁**：fmt 0；clippy zero-engine --all-targets 0；**corpus 同树 A/B FIXED=1 REGRESSED=∅**（失败集路径级 diff 仅移除 extended 案一行，792F=/tmp/r5343-fail-fix.txt vs 基线 /tmp/r5342-fail-fix.txt）；本地 reftest **724/725**（float-shrink-inline-children-zw-001 预存零位移）；zero-engine lib 3616P/9F（js_dom_bridge fetch wire R5340 定谳预存，失败集逐字同）；layout-engine 2275P / css-parser 3003P / style-system 2457P；product-smoke **PASS**；make test engine 腿同源预存 9F 中止；bench-gate **豁免**——新增仅 2 次布尔比较于 CJK 计数器字符串合成路径，无 layout/paint 热环命中面。
+> - **挂账**：018 全链 slice 2+（盒高链 + paint 置换隐藏 + `1lh` 精确上下文）；block-ellipsis-021（3.39%）/032（1.82%）/bidi-003（2.18%）独立案维持；R5341 及更早挂账全维持。**下一步 R5344**：①792F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root 域）②R5336 下一步① paint 侧切片带重锚五件套（插桩模板已记录）③R4383 strut 域预研。证据：[`rendering-compat/evidence/r5343-korean-hanja-informal-drop-ones-2026-10-30.md`](rendering-compat/evidence/r5343-korean-hanja-informal-drop-ones-2026-10-30.md)。
+>
 > **▶ R5342 实现轮（line-clamp 整行置换行盒 strut slice 1——css-overflow-4 §block-ellipsis：block-ellipsis-018 全链定谳，本切片 corpus 中性 793F 持平；新 kill-switch `ZW_CLAMP_STRUT=0`）**（2026-10-30）
 >
 > - **定性**（接手 rate-limit 中断会话的未提交切片 + layout 探针定谳 018 全链）：018（1.19%）三机制账本判定维持——本轮实证全链四处：①IFC 行盒 strut（37.5→25、基线 20）**本轮交付**；②**盒高链挂账**——abspos clamp 盒高取 span 子盒 43.65 非 strut 行 25、`bottom:0` 按截断前高 74 解析（y=26 非 75；变体矩阵实证 bottom/top 定位本身无 bug，病灶 = cap 与 abspos 定位/盒高推导时序+来源）；③**paint 置换内容照绘挂账**（被置换 span 红 glyph 覆盖 bg 绿行；规范 = 置换内容不绘 + ellipsis 落位）；④gradient stop `1lh` 走 1.2em 近似回退（①②修复后近似值 30px>盒高 25 恰全绿，精确 used line-height 上下文另账）。

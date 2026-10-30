@@ -157,9 +157,11 @@ struct CjkNumSymbols {
     group_sep: &'static str,
     /// 组间零桥（中文系「一亿零一」；日韩系无零桥「一億一」）。
     bridge_zero: bool,
-    /// R4314：组值为 1 时整组数字体省略（仅 korean-hanja-informal：10000=萬；
-    /// japanese-informal 同为 AllUnits 但保留「一万」——家族特例非 omit_one 推论）。
-    omit_group_one: bool,
+    /// R5343：仅萬组（十千组，k=1）组值为 1 时省数字体（CSS Counter Styles 3
+    /// §7.1.2 Drop ones——仅 korean-hanja-informal：10000=萬；亿/兆组与个位组
+    /// 组值 1 保留「一」= 一億/一兆/萬 一；japanese-informal 同为 AllUnits 但
+    /// 全组保留「一万」——家族特例非 omit_one 推论）。
+    omit_ten_thousands_one: bool,
 }
 
 /// 数字 1 在位符前的省略规则。
@@ -216,7 +218,7 @@ const JAPANESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["万", "億", "兆"],
     group_sep: "",
     bridge_zero: false,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const JAPANESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: JAPANESE_FORMAL_DIGITS,
@@ -229,7 +231,7 @@ const JAPANESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["萬", "億", "兆"],
     group_sep: "",
     bridge_zero: false,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const SIMP_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -242,7 +244,7 @@ const SIMP_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["万", "亿", "万亿"],
     group_sep: "",
     bridge_zero: true,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const SIMP_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_FORMAL_DIGITS,
@@ -255,7 +257,7 @@ const SIMP_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["万", "亿", "万亿"],
     group_sep: "",
     bridge_zero: true,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const TRAD_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -268,7 +270,7 @@ const TRAD_CHINESE_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["万", "亿", "万亿"],
     group_sep: "",
     bridge_zero: true,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const TRAD_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: TRAD_CHINESE_FORMAL_DIGITS,
@@ -281,7 +283,7 @@ const TRAD_CHINESE_FORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["万", "亿", "万亿"],
     group_sep: "",
     bridge_zero: true,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const KOREAN_HANGUL_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: KOREAN_HANGUL_DIGITS,
@@ -294,7 +296,7 @@ const KOREAN_HANGUL_FORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["만", "억", "조"],
     group_sep: " ",
     bridge_zero: false,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 const KOREAN_HANJA_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: SIMP_CHINESE_DIGITS,
@@ -307,7 +309,7 @@ const KOREAN_HANJA_INFORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["萬", "億", "兆"],
     group_sep: " ",
     bridge_zero: false,
-    omit_group_one: true,
+    omit_ten_thousands_one: true,
 };
 const KOREAN_HANJA_FORMAL: CjkNumSymbols = CjkNumSymbols {
     digits: &['零', '壹', '貳', '參', '四', '五', '六', '七', '八', '九'],
@@ -320,7 +322,7 @@ const KOREAN_HANJA_FORMAL: CjkNumSymbols = CjkNumSymbols {
     groups: ["萬", "億", "兆"],
     group_sep: " ",
     bridge_zero: false,
-    omit_group_one: false,
+    omit_ten_thousands_one: false,
 };
 
 /// 按家族符号表合成 CJK 数字文本（`value` ≥ 1；0/负值由调用方按家族表处理）。
@@ -393,7 +395,9 @@ fn dec_trailing_zero_digits(mut g: u64) -> u32 {
 ///   一万亿零十亿零一百万一千零一 = 1001001001001）。
 /// - korean 系 `group_sep` 空格（일만 일천；구억 구천구백구십구만 …）。
 /// - 日系两者皆无（一億一；一兆十億百万千一）。
-/// - 组值为 1 且 `omit_group_one` 的组仅落组符（korean-hanja-informal 10000=萬）。
+/// - 仅萬组（k=1）组值为 1 且 `omit_ten_thousands_one` 时只落组符
+///   （korean-hanja-informal 10000=萬；个位组与億/兆组保留「一」= 萬 一、一億、
+///   一兆——CSS Counter Styles 3 §7.1.2 Drop ones「ten-thousands group」限定）。
 ///
 /// range 上限 10^16-1（9999999999999999 = 九千九百九十九万九千九百九十九万亿…），
 /// 越界由调用方走 cjk-decimal 逐字映射（10^16 = 一〇〇…〇）。
@@ -414,7 +418,11 @@ fn cjk_compose_grouped(value: u64, sym: &CjkNumSymbols) -> String {
                 out.push_str(sym.group_sep);
             }
         }
-        let body = if g == 1 && sym.omit_group_one {
+        // CSS Counter Styles 3 §7.1.2 Drop ones：「if the value of the ten-thousands
+        // group is 1, drop the digit」——仅十千组（k=1）生效（10000=萬）；个位组组值
+        // 1 = 萬 一（10001），億/兆组组值 1 = 一億/一兆（10^8/10^12，WPT extended
+        // refs ground-truth）。R5343 前误全组生效致个位组 1 渲染空串。
+        let body = if g == 1 && sym.omit_ten_thousands_one && k == 1 {
             String::new()
         } else {
             cjk_compose(g as usize, sym)
@@ -2169,6 +2177,7 @@ mod tests {
     use super::CJK_EARTHLY_BRANCH;
     use super::JAPANESE_INFORMAL;
     use super::KOREAN_HANJA_FORMAL;
+    use super::KOREAN_HANJA_INFORMAL;
     use super::SIMP_CHINESE_FORMAL;
     use super::counter_style_body;
     use super::counter_style_body_with_registry;
@@ -2747,6 +2756,52 @@ mod tests {
             counter_suffix(&zero_css_parser::values::ListStyleTypeValue::Decimal),
             "."
         );
+    }
+
+    /// §7.1.2 korean-hanja-informal extended range（R5343；ground-truth = WPT
+    /// counter-korean-hanja-informal-extended{-ref,}.html 全值表）。Drop ones 的
+    /// 「ten-thousands group」限定：仅萬组组值 1 省数字体（10000=萬）；个位组
+    /// （1=一、10001=萬 一）与億/兆组（10^8=一億、10^12=一兆）组值 1 保留「一」。
+    #[test]
+    fn test_r5343_cjk_korean_hanja_informal_extended() {
+        // 个位组组值 1（R5343 前误省略渲染空串——basic 案 1=一 仅像素容差内通过）。
+        assert_eq!(to_cjk_num(1, &KOREAN_HANJA_INFORMAL).unwrap(), "一");
+        assert_eq!(to_cjk_num(-1, &KOREAN_HANJA_INFORMAL).unwrap(), "마이너스 一");
+        // 萬组组值 1 → 仅组符（唯一省略位）；组内省一不变（11000=萬 千）。
+        assert_eq!(to_cjk_num(10000, &KOREAN_HANJA_INFORMAL).unwrap(), "萬");
+        assert_eq!(to_cjk_num(10001, &KOREAN_HANJA_INFORMAL).unwrap(), "萬 一");
+        assert_eq!(to_cjk_num(10010, &KOREAN_HANJA_INFORMAL).unwrap(), "萬 十");
+        assert_eq!(to_cjk_num(11000, &KOREAN_HANJA_INFORMAL).unwrap(), "萬 千");
+        assert_eq!(to_cjk_num(-10000, &KOREAN_HANJA_INFORMAL).unwrap(), "마이너스 萬");
+        // 億/兆组组值 1 → 保留「一」。
+        assert_eq!(to_cjk_num(100000000, &KOREAN_HANJA_INFORMAL).unwrap(), "一億");
+        assert_eq!(to_cjk_num(100000001, &KOREAN_HANJA_INFORMAL).unwrap(), "一億 一");
+        assert_eq!(to_cjk_num(100010000, &KOREAN_HANJA_INFORMAL).unwrap(), "一億 萬");
+        assert_eq!(to_cjk_num(1000000000000, &KOREAN_HANJA_INFORMAL).unwrap(), "一兆");
+        assert_eq!(to_cjk_num(1000000010000, &KOREAN_HANJA_INFORMAL).unwrap(), "一兆 萬");
+        assert_eq!(to_cjk_num(-100000000, &KOREAN_HANJA_INFORMAL).unwrap(), "마이너스 一億");
+        // 跨组交互与组内省一组合（ref 全值表）。
+        assert_eq!(
+            to_cjk_num(1234567890123, &KOREAN_HANJA_INFORMAL).unwrap(),
+            "一兆 二千三百四十五億 六千七百八十九萬 百二十三"
+        );
+        assert_eq!(
+            to_cjk_num(1010101010101, &KOREAN_HANJA_INFORMAL).unwrap(),
+            "一兆 百一億 百一萬 百一"
+        );
+        assert_eq!(
+            to_cjk_num(9999999999999999, &KOREAN_HANJA_INFORMAL).unwrap(),
+            "九千九百九十九兆 九千九百九十九億 九千九百九十九萬 九千九百九十九"
+        );
+        // range 上限 10^16 → cjk-decimal 逐字（ref 与 formal 家族同值）。
+        assert_eq!(
+            to_cjk_num(10000000000000000, &KOREAN_HANJA_INFORMAL).unwrap(),
+            "一〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇〇"
+        );
+        // 家族对照锁：japanese-informal 全组保留「一」（一万/一億/一兆），非本判据域。
+        assert_eq!(to_cjk_num(10000, &JAPANESE_INFORMAL).unwrap(), "一万");
+        assert_eq!(to_cjk_num(100000000, &JAPANESE_INFORMAL).unwrap(), "一億");
+        assert_eq!(to_cjk_num(1000000000000, &JAPANESE_INFORMAL).unwrap(), "一兆");
     }
 
     // ── R4384：marker strut 镜像与 layout strut 同源 ────────────────────────
