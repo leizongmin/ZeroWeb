@@ -1955,12 +1955,42 @@
           }
         }
       }
+      // s164（html-semantics M2）：style 元素 @import 子表通道——静态扫描臂落表文本
+      //（part03 `_zwStyleImportTexts`，经 `_zwStyleImportEntries` 查询口）以
+      // CSSImportRule 形态注入 cssRules 头部（源序：@import 在 style 规则前——逆序
+      // unshift）。`styleSheet` 子表 = 落表文本 per-sheet 条目（上游 support/utils.js
+      // styleExists 经 `rule instanceof CSSImportRule` → `rule.styleSheet` 递归逐字节
+      // 比对 `rule.cssText`——style-element-media-match-block-script 断言面）。引擎
+      // wire 对 @-rule defer，此为读取面唯一 CSSOM 载体。`__zwImport` 标记供
+      // flushToOwner 过滤（import 条目不回写 `<style>` 文本——引擎文本以 @-rule
+      // defer 解析，回写既污染元素文本又零级联收益）。error 空贡献（''）无条目。
+      // https://drafts.csswg.org/cssom-1/#cssimportrule
+      if (!external && typeof globalThis._zwStyleImportEntries === 'function') {
+        var _siEntries = null;
+        try { _siEntries = globalThis._zwStyleImportEntries(sel); } catch (_eSiR) { _siEntries = null; }
+        if (_siEntries && _siEntries.length) {
+          for (var _siI = _siEntries.length - 1; _siI >= 0; _siI--) {
+            var _siE = _siEntries[_siI];
+            var _siProto = (globalThis.CSSImportRule && globalThis.CSSImportRule.prototype)
+              || Object.prototype;
+            var _siRule = Object.create(_siProto);
+            _siRule.type = 3; // CSSRule.IMPORT_RULE
+            _siRule.cssText = _siE.cssText;
+            _siRule.href = _siE.href;
+            _siRule.__zwImport = true;
+            _siRule.styleSheet = _makeStyleSheet(null, _siE.text, _siE.href);
+            rulesCache.unshift(_siRule);
+          }
+        }
+      }
       return rulesCache;
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
       if (external) return; // R5114：外部表只读——blob 由 runtime 管线同步管，无宿主写回。
-      var text = getRules().map(function (r) { return r.cssText; }).join('\n');
+      // s164：`__zwImport` 条目（@import 子表 face）过滤——不回写 `<style>` 文本。
+      var text = getRules().filter(function (r) { return !r.__zwImport; })
+        .map(function (r) { return r.cssText; }).join('\n');
       if (sel && typeof __zw_set_text === 'function') {
         try { __zw_set_text(sel, text); } catch (_e) {}
       } else if (handle && typeof __zw_set_text_handle === 'function') {
