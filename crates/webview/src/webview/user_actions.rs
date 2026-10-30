@@ -953,6 +953,18 @@ impl WebView {
         if let Some(html) = html_snapshot {
             self.cached_html = html;
         }
+        // R379/pa2b（editing-compat D2 簇补账）：第 4 应用路径（execute_dom_script /
+        // 用户动作脚本尾批）此前 apply+换基座后**漏发 shim 换代通知**——base 已含
+        // apply 结果而 `_zwApplyGeneration` 未 bump，R380/R381 桶级代际门的前提
+        // （「base 含 apply 结果 ⇒ gen 已换代、gate 关」）在本路径被破坏：本脚本
+        // 尾批入桶的条目（如 CE join 壳 span）stamp === gen 判「同 turn」继续并入
+        // 融合视图，而 base 重读已含同内容 → 双计（WPT editing join 语料探针实证
+        // div1 双 span）。与其余 3 条应用路径（webview.rs 两处 + apply_pending_shared_
+        // mutations）对齐，apply 后统一换代。失败静默（钩子缺失 = 旧 shim 版本）。
+        // https://dom.spec.whatwg.org/#concept-node-tree
+        let _ = self.execute_script(
+            "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+        );
         // slice33 缺陷轮 S-1：第 4 应用路径（execute_dom_script）补 R100 失效面清理——
         // 结构性 Remove/RemoveHandle 后清 selector_handle_map（sel→handle 残账，与其余
         // 3 条应用路径同契约）。

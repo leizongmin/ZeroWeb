@@ -343,6 +343,12 @@ pub fn bump_dom_view_gen() {
     DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// editing-compat D1：`"0,3,7"` 形式的 child-index 下行路径 → `Vec<u32>`。任一段
+/// 空/非数字整条拒绝返 None（半条路径会静默定位到错节点，不部分接受）。
+fn parse_child_index_path(s: &str) -> Option<Vec<u32>> {
+    s.split(',').map(|seg| seg.trim().parse::<u32>().ok()).collect()
+}
+
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -2802,6 +2808,51 @@ pub fn register_dom_callbacks(
                         .push(DomMutation::RemoveChildAt {
                             parent_selector: args[0].clone(),
                             child_index: idx,
+                        });
+                }
+                "ok".into()
+            }),
+        );
+    }
+
+    // editing-compat D1（marker 语料管线）：sel 域 innerHTML= 解析子树的 CharacterData
+    // 写/移除持久化——定位 = 锚 sel + child-index 下行路径（解析子树中间层元素无唯一
+    // selector，单级 child_index 不够；路径由 shim 自目标节点上行收集）。kill-switch：
+    // `ZW_SEL_PATH_MUTATION=0` 回退（off 臂不注册回调，shim stamping 的 typeof guard
+    // 整体关闭——写回本地快照旧行为，caret 重锚登记表不建立），照 `ZW_REMOVE_CHILD_AT`
+    // 先例。
+    // https://dom.spec.whatwg.org/#concept-node-pre-insert
+    if std::env::var("ZW_SEL_PATH_MUTATION").as_deref() != Ok("0") {
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_set_child_text_path",
+            Box::new(move |args| {
+                if args.len() >= 3
+                    && let Some(path) = parse_child_index_path(&args[1])
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::SetChildTextByPath {
+                            anchor_selector: args[0].clone(),
+                            path,
+                            text: args[2].clone(),
+                        });
+                }
+                "ok".into()
+            }),
+        );
+        let m = Arc::clone(mutations);
+        sandbox.register_callback(
+            "__zw_remove_child_at_path",
+            Box::new(move |args| {
+                if args.len() >= 2
+                    && let Some(path) = parse_child_index_path(&args[1])
+                {
+                    m.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .push(DomMutation::RemoveChildAtPath {
+                            anchor_selector: args[0].clone(),
+                            path,
                         });
                 }
                 "ok".into()

@@ -3617,6 +3617,91 @@ fn test_parsed_text_characterdata_r48() {
 }
 
 #[test]
+fn test_sel_parse_subtree_chardata_path_d1() {
+    // editing-compat D1（marker 语料管线）：sel 域 innerHTML= 解析子树的文本节点
+    // .data 写/移除持久化（此前写只落本地快照，引擎 doc 保持带标记原串）——
+    // ① accessor 化后本地读链同步（data/length/innerHTML getter 不变）
+    // ② 写/移除按「锚 sel + child-index 路径」入队（SetChildTextByPath/RemoveChildAtPath）
+    // ③ 全批 apply 后引擎 doc 与快照收敛（`[]` 标记消失——剥离在引擎侧生效）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"host\" contenteditable=\"\">X</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var host = document.querySelector('#host');\n\
+             host.innerHTML = '<p>a[bc]d</p><p>e</p>';\n\
+             var tn = host.firstChild.firstChild;\n\
+             globalThis.__d0 = tn.data;\n\
+             tn.data = tn.data.substring(0, 1) + tn.data.substring(2);\n\
+             globalThis.__d1 = tn.data;\n\
+             globalThis.__len = tn.length;\n\
+             globalThis.__ih = host.innerHTML;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__d0").unwrap().value,
+        "a[bc]d",
+        "① 解析快照 data 初读（带标记原串）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__d1").unwrap().value,
+        "abc]d",
+        "① accessor 写后本地 data 同步"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__len").unwrap().value,
+        "5",
+        "① length getter 经 accessor 读（abc]d）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__ih").unwrap().value,
+        "<p>abc]d</p><p>e</p>",
+        "① innerHTML getter 读本地快照（剥离后无标记）"
+    );
+    // ② 移除按锚 + 路径入队。
+    sandbox
+        .execute("host.childNodes[1].firstChild.remove();")
+        .unwrap();
+    let m = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let wrote = m.iter().any(|mm| {
+        matches!(mm, DomMutation::SetChildTextByPath { anchor_selector, path, text }
+            if anchor_selector.contains("host") && path == &vec![0u32, 0] && text == "abc]d")
+    });
+    assert!(wrote, "② SetChildTextByPath(#host, [0,0], \"abc]d\") 必须入队");
+    let removed = m.iter().any(|mm| {
+        matches!(mm, DomMutation::RemoveChildAtPath { anchor_selector, path }
+            if anchor_selector.contains("host") && path == &vec![1u32, 0])
+    });
+    assert!(removed, "② RemoveChildAtPath(#host, [1,0]) 必须入队");
+    // ③ 引擎侧全批 apply 收敛：SetInnerHtml（带标记原串）→ 剥离写/移除逐条应用，
+    // 序列化 = 快照读值（无标记、第二段文本已删）。
+    let mut doc = parse_html(
+        "<html><body><div id=\"host\" contenteditable=\"\">X</div></body></html>",
+    );
+    apply_dom_mutations(&mut doc, &m).expect("D1 batch must apply");
+    let host = find_by_selector(&doc, "#host").expect("host must resolve");
+    assert_eq!(
+        doc.inner_html(host),
+        "<p>abc]d</p><p></p>",
+        "③ 引擎 doc 收敛：标记消失、移除生效"
+    );
+}
+
+#[test]
 fn test_mo_observe_options_and_textcontent_records_r49() {
     // R49：MutationObserver 语义四件（WPT sanity 11→16P/0F + takeRecords 1→3P/0F + attributes
     // 38→40P/0F + childList 15→18P/1F 驱动）：
@@ -3977,4 +4062,77 @@ fn test_p99s_el_style_custom_property_case_sensitive() {
     let out = apply_mutations_to_html(&dom_html.lock().unwrap(), &ms).unwrap();
     assert!(out.contains("--foo: blue"), "删除后 `--foo` 声明保留\n{out}");
     assert!(!out.contains("--Foo"), "`--Foo` 声明应被精确移除\n{out}");
+}
+#[test]
+fn test_send_pipeline_join_mutation_queue_d1d2() {
+    // editing-compat D1/D2/D3 send 管线复现：sel 域 innerHTML=（marker 剥离持久化）→
+    // 全批 apply + 换基座（重同步语义）→ 新回调绑定 → `__zw_ce_delete`（caret 重锚 +
+    // join）→ 批 apply → 最终 HTML。定位 join 后引擎侧多余空 span 的产生环节。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let mut dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div contenteditable=\"\">X</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ── turn 1：setup（corpus setupEditingHost 等价：innerHTML= + 标记剥离写/删）──
+    sandbox
+        .execute(
+            "var host = document.querySelector('div[contenteditable]');\n\
+             host.innerHTML = '<div style=\"white-space:normal\">abc</div><div style=\"white-space:pre\">[]def</div>';\n\
+             var tn = host.childNodes[1].firstChild;\n\
+             tn.data = tn.data.substring(1);\n\
+             var rr = document.createRange();\n\
+             rr.setStart(tn, 0); rr.setEnd(tn, 0);\n\
+             getSelection().addRange(rr);\n\
+             globalThis.__host1 = host;",
+        )
+        .unwrap();
+    let m1 = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    eprintln!("=== turn1 queue ({} mutations):", m1.len());
+    for (i, mm) in m1.iter().enumerate() {
+        eprintln!("  [{i}] {mm:?}");
+    }
+    // apply + 换基座（execute_dom_script 重同步语义：apply_dom_mutations_full → 新 html）
+    let mut doc = parse_html("<html><body><div contenteditable=\"\">X</div></body></html>");
+    apply_dom_mutations(&mut doc, &m1).expect("turn1 must apply");
+    let new_html = doc.outer_html(doc.root());
+    eprintln!("=== after turn1 apply: {new_html}");
+    *dom_html.lock().unwrap_or_else(|e| e.into_inner()) = new_html;
+
+    // ── turn 2：send Backspace（execute_dom_script：代际 bump + 新队列绑定 + CE delete）──
+    let mutations2: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    register_dom_callbacks(&mut sandbox, &mutations2, &dom_html, &page_url, &canvas_registry, None);
+    sandbox
+        .execute("if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();{}")
+        .unwrap();
+    sandbox.execute("__zw_ce_delete('div[contenteditable]')").unwrap();
+    let m2 = mutations2.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    eprintln!("=== turn2 queue ({} mutations):", m2.len());
+    for (i, mm) in m2.iter().enumerate() {
+        eprintln!("  [{i}] {mm:?}");
+    }
+    apply_dom_mutations(&mut doc, &m2).expect("turn2 must apply");
+    let final_html = doc.outer_html(doc.root());
+    eprintln!("=== after turn2 apply: {final_html}");
+    assert!(
+        !final_html.contains("<span style=\"white-space:pre\"></span>"),
+        "join must not produce an empty ws-span; got {final_html}"
+    );
+
+    // 视图层（融合视图去重/ghost 条目清算）不在本测试范围：沙箱的手工 dom_html 换基
+    // 序列与 runner 的 execute 优先通道重同步（set_dom_snapshot / applied_cursor / 换代
+    // 通知）包装体身份语义不同，沙箱读值不可迁移（实测 post-apply 读 "abc" 无 span）。
+    // 该面由真实管线钉死：join-different 语料常驻文件（修复后 Pass）+ webview.rs
+    // execute_dom_script_path_generation_bump_call_site_present_d2 源码钉。
 }

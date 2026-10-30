@@ -8306,6 +8306,28 @@ mod tests {
             "execute_dom_script 第 4 应用路径的 evict_removed_identities 调用点必须存在（删行/注释化即红）"
         );
     }
+
+    // R379/pa2b（editing-compat D2 簇补账）：第 4 应用路径（apply_dom_script_result /
+    // execute_dom_script 尾批）apply+换基座后必须补发 `__zw_apply_generation_bump`
+    // 换代通知——漏发则 base 已含 apply 结果而 `_zwApplyGeneration` 未换代，R380/R381
+    // 桶级代际门前提破坏，本脚本尾批入桶条目被当同 turn 并入融合视图（CE join 语料
+    // 实证 div1 双 span）。与其余 3 条应用路径（s35 两钉 + webview.rs 直 apply）对齐。
+    #[test]
+    fn execute_dom_script_path_generation_bump_call_site_present_d2() {
+        let src = include_str!("webview/user_actions.rs");
+        let live = src
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_eq!(
+            // 判别子串取独立脚本形态（`();",` 结尾）——s143 的 format! 前拼形态是
+            // `();{}",`（`{}` 占位），不混计。
+            live.matches("globalThis.__zw_apply_generation_bump();\"").count(),
+            1,
+            "execute_dom_script 第 4 应用路径 apply 后的 __zw_apply_generation_bump 换代通知调用点必须存在（删行/注释化即红）"
+        );
+    }
 }
 
 #[cfg(test)]

@@ -8083,11 +8083,93 @@
     }
     return false;
   };
+  // editing-compat D3（marker 语料管线）：send_keys 动作管线 fused-view 重同步
+  //（execute_dom_script 换 dom_html 基座，R381 代际门）后 live Selection
+  // `_ranges[0]` 仍持 setup 期 innerHTML= 解析快照代理——CE 编辑 walk 走分离树
+  //（ws-join evidence §3）。重锚：自端点沿 parentNode 链（身份查找仅限解析子树
+  // 内部——mock childNodes 稳定）找 `__zwSelPendingTops` 登记表命中的顶层解析节点
+  //（`_zwSelPendingParent` 槽点被 apply 记账清除，不可作 CE 期标记），按登记表
+  // regIdx + 子树路径下行 el live childNodes 到 live 包装，同 offset 建新 range。
+  // 任一步失败返 null（调用方回退原 range，零回归）。D1 kill-switch
+  //（`ZW_SEL_PATH_MUTATION=0`）下登记表不建立，恒返 null。
+  function _zwCeChainTop(node, el) {
+    // 检测锚 = **登记表身份命中**（非 `_zwSelPendingParent`——apply 记账会清槽点，
+    // CE 期不可依赖；登记表是 stamping 建立的稳定身份源）。身份查找仅在解析子树
+    // 内部做（mock childNodes 稳定）；顶层位置由登记表给（regIdx），宿主 fused 视图
+    //（重同步后 = live 包装族）对解析对象身份恒 miss，绝不跨域查找。
+    var reg = globalThis.__zwSelPendingTops;
+    var path = [];
+    var cur = node;
+    var guard = 0;
+    while (cur && guard++ < 256) {
+      if (reg) {
+        for (var k in reg) {
+          var tops = reg[k] && reg[k].tops;
+          if (!tops) continue;
+          var ri = tops.indexOf(cur);
+          if (ri >= 0) return { top: cur, path: path, entry: reg[k], regIdx: ri };
+        }
+      }
+      if (cur === el) return null;
+      var p = cur.parentNode;
+      if (!p) return null;
+      var kids = p.childNodes;
+      var idx = -1;
+      if (kids) {
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i] === cur) { idx = i; break; }
+        }
+      }
+      if (idx < 0) return null;
+      path.unshift(idx);
+      cur = p;
+    }
+    return null;
+  }
+  function _zwCeRemapEndpoint(node, off, el) {
+    var hit = _zwCeChainTop(node, el);
+    if (!hit) return null;
+    var kids = el.childNodes;
+    if (!kids || hit.regIdx >= kids.length) return null;
+    var cur = kids[hit.regIdx];
+    for (var d = 0; d < hit.path.length; d++) {
+      var ck = cur && cur.childNodes;
+      if (!ck || hit.path[d] >= ck.length) return null;
+      cur = ck[hit.path[d]];
+    }
+    return cur ? { node: cur, offset: off } : null;
+  }
+  function _zwCeReanchorRange(r0, el) {
+    if (!r0 || !el) return null;
+    try {
+      var sc = r0.startContainer, so = r0.startOffset | 0;
+      var ec = r0.endContainer, eo = r0.endOffset | 0;
+      var ms = _zwCeRemapEndpoint(sc, so, el);
+      if (!ms) return null;
+      var me = r0.collapsed ? ms : _zwCeRemapEndpoint(ec, eo, el);
+      if (!me) return null;
+      var nr = document.createRange();
+      nr.setStart(ms.node, ms.offset);
+      nr.setEnd(me.node, me.offset);
+      return nr;
+    } catch (_eRe) {
+      return null;
+    }
+  }
   // CE caret range：selection 有 range 用之；无 → 宿主内容起点（selectNodeContents +
-  // collapse 到 start——键入落在宿主开头）。
+  // collapse 到 start——键入落在宿主开头）。取用前 D3 重锚（端点为解析快照代理时
+  // 换 live 包装，失败回退原 range）。
   globalThis.__zw_ce_caret_range = function(el) {
     var s = (typeof _getSelection === 'function') ? _getSelection() : null;
-    if (s && s.rangeCount > 0) return s._ranges[0];
+    if (s && s.rangeCount > 0) {
+      var r0 = s._ranges[0];
+      var r2 = (typeof _zwCeReanchorRange === 'function') ? _zwCeReanchorRange(r0, el) : null;
+      if (r2) {
+        try { s._ranges[0] = r2; } catch (_eCa) {}
+        return r2;
+      }
+      return r0;
+    }
     var r = document.createRange();
     r.selectNodeContents(el);
     r.collapse(true);
@@ -8258,7 +8340,20 @@
     if (!r.nodes.length) return false;
     var shell = document.createElement('span');
     shell.setAttribute('style', 'white-space:' + _zwCeWsOf(r.ws || srcParent));
-    for (var k2 = 0; k2 < r.nodes.length; k2++) shell.appendChild(r.nodes[k2]);
+    for (var k2 = 0; k2 < r.nodes.length; k2++) {
+      var nd = r.nodes[k2];
+      // handle 壳 + 无 handle 子（live 文本包装，非 handle/非 sel 身份）——
+      // appendChild trap 对「handle 父 + 无 handle 子」静默丢子（AppendChildByHandle
+      // 要求子 handle，文本无 SetTextOnHandle 等价入队面）→ 引擎侧空壳（send 管线
+      // 复现实证）。文本改以新建同值节点入壳（CreateTextNode+AppendChildByHandle
+      // 链完整，同 flat 插入臂）；元素（inline 克隆壳自带 handle）走原路径。
+      // FIXME：appendChild trap 的 handle 父 + live 文本子丢子面是通用缺口，待立项。
+      if (nd.nodeType === 3 || nd.__zwIsText) {
+        shell.appendChild(document.createTextNode(String(nd.nodeValue != null ? nd.nodeValue : (nd.data != null ? nd.data : ''))));
+      } else {
+        shell.appendChild(nd);
+      }
+    }
     dst.appendChild(shell);
     var nr = document.createRange();
     nr.setStart(dst, Array.prototype.indexOf.call(dst.childNodes, shell));

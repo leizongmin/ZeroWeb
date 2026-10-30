@@ -10695,6 +10695,26 @@
       }
       if (!nd || !link) continue;
       if (link.parentSel !== sel) continue;
+      // R382（editing-compat D2 簇）：apply+换代后被快照收编的 handle ghost 条目不并入
+      // ——live 列表已随 fused-view 重同步重建为快照包装，本条目 seen 恒 miss，照旧并入
+      // 即双计（CE join 探针实证 div1 双 span；R380 桶级代际门被 R322 查询物化的桶
+      // 记账重盖 stamp 后失效，按条目代际兜住）。年龄源 `_zwPaGen`（桶首登戳，R382）
+      // 缺失回退 `_zwPaGen45`（全局表首登戳，slice45）——两戳皆 first-only。同 turn
+      // 条目（戳 === 代际）零成本直过——R51c 热路径无桥回调；跨代际才走 host 快照真含
+      // 判定（桥未注册/查不到返 false → 保持并入，零回归——slice45 消零门同构）。确认
+      // ghost 即从桶剔除（一次性成本，防每次读重复桥查；节点若他处 re-append 会以新
+      // 代际重新登记）。
+      // https://dom.spec.whatwg.org/#concept-node-children
+      var _g382age = (nd._zwPaGen != null) ? nd._zwPaGen : nd._zwPaGen45;
+      if (nd.__zwHandle && _g382age != null
+          && _g382age !== (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0)
+          && typeof _zwHandleInHostSnapshot === 'function'
+          && _zwHandleInHostSnapshot(nd.__zwHandle)) {
+        var _g382i = bucket.added.indexOf(nd);
+        if (_g382i >= 0) bucket.added.splice(_g382i, 1);
+        if (bucket.addedSet) bucket.addedSet.delete(nd);
+        continue;
+      }
       // R182：sel 子**重定位**语义——快照内既有节点被移到新位置（同父移动：旧位剔除
       // + 新位插入；seen 检查会使快照旧位永远胜出——WPT insertAdjacentElement 的
       // beforebegin 同父移动形态）。handle 子保持 seen 跳过（快照不含 pending 节点，
@@ -11737,7 +11757,12 @@
       }
       for (var pb2 = 0; pb2 < addFlat.length; pb2++) {
         var _pa = addFlat[pb2];
-        if (!_pb.addedSet.has(_pa)) { _pb.added.push(_pa); _pb.addedSet.add(_pa); }
+        if (!_pb.addedSet.has(_pa)) {
+          _pb.added.push(_pa); _pb.addedSet.add(_pa);
+          // R382（editing-compat D2 簇）：首次桶登记代际戳（first-only，同 `_zwPaGen45`
+          // 语义——重登记不得刷新，否则消费面的跨代际判定把已 apply 条目误判同 turn）。
+          try { if (_pa && _pa._zwPaGen == null) _pa._zwPaGen = (typeof _zwApplyGeneration === 'function' ? _zwApplyGeneration() : 0); } catch (_ePbg) {}
+        }
         if (_pb.removedSet.has(_pa)) {
           _pb.removedSet.delete(_pa);
           var _pri = _pb.removed.indexOf(_pa);

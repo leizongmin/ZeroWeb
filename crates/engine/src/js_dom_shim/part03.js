@@ -20981,6 +20981,132 @@
     return !event._defaultPrevented;
   }
 
+  // editing-compat D1（marker 语料管线，ws-join evidence §3/§6）：sel 域 innerHTML=
+  // 解析子树的 CharacterData 写/移除持久化。解析文本/注释节点是 _zwMBuildBodyTree
+  // 静态快照（无 handle/selector，data 为 own 字段）——editor-test-utils
+  // .setupEditingHost 的标记剥离写 .data 只落本地，引擎 doc 保持带 `[]` 标记原串；
+  // send_keys 动作管线 fused-view 重同步后标记「回滚」、解析代理成孤儿（D2 放大）。
+  // 本 helper 给子树文本/注释节点装 data/nodeValue accessor + remove() 覆盖：写时
+  // (a) 本地字段同步（快照读链/innerHTML getter 不变）；(b) 自目标上行收集
+  // child-index 路径（解析树写时状态 = 引擎逐条 apply 后状态），经
+  // `__zw_set_child_text_path`/`__zw_remove_child_at_path` 入队，apply 后引擎 doc
+  // 与快照收敛——重同步无害。顶层节点登记 `__zwSelPendingTops[sel]`（`{tops,round}`
+  // ，同 sel 再 innerHTML= 换代整体替换），供 caret 重锚（part01 `__zw_ce_caret_range`
+  // D3）按索引下行 live 包装。写/移除前双重活性门（登记表换代 identity + remove 置
+  // 空 `__zwSelPathWrite`/parentNode）：孤儿节点写回退本地旧行为，不按陈旧路径污染
+  // 新子树。kill-switch：`ZW_SEL_PATH_MUTATION=0`（回调不注册，本 helper 的 typeof
+  // guard 整体关闭）。
+  // FIXME：祖先元素经既有 mock removeChild 摘除后后代未标死，其后代写仍按路径入队
+  // ——现行消费面（setupEditingHost 剥离只删文本节点）不触达。
+  function _zwSelStampParseTree(added, sel, hostProxy) {
+    if (!sel || !hostProxy || typeof __zw_set_child_text_path !== 'function') return;
+    var reg = globalThis.__zwSelPendingTops || (globalThis.__zwSelPendingTops = {});
+    var prev = reg[sel];
+    var entry = { tops: [], round: prev ? prev.round + 1 : 1 };
+    reg[sel] = entry;
+    for (var i = 0; i < added.length; i++) {
+      if (!added[i]) continue;
+      entry.tops.push(added[i]);
+      _zwSelStampSubtree(added[i], sel, hostProxy, entry);
+    }
+  }
+  function _zwSelStampSubtree(node, sel, hostProxy, entry) {
+    var nt = node.nodeType;
+    if (nt === 3 || nt === 8) {
+      _zwSelStampCharData(node, sel, hostProxy, entry);
+      return;
+    }
+    var kids = node.childNodes;
+    if (!kids || !kids.length) return;
+    for (var i = 0; i < kids.length; i++) _zwSelStampSubtree(kids[i], sel, hostProxy, entry);
+  }
+  function _zwSelStampCharData(node, sel, hostProxy, entry) {
+    if (node.__zwSelPathWrite) return;
+    node.__zwSelPathWrite = true;
+    // _zwMText 的 data/nodeValue/textContent 为 plain 字段、length getter 读
+    // n.data.length——accessor 化后经 getter 读 __nv（length/wholeText 消费面不变）。
+    var cur = '';
+    try { cur = node.data != null ? String(node.data) : ''; } catch (_eSp0) {}
+    node.__nv = cur;
+    var alive = function () {
+      return !!node.__zwSelPathWrite && !!globalThis.__zwSelPendingTops
+        && globalThis.__zwSelPendingTops[sel] === entry;
+    };
+    var write = function (v) {
+      var nv = v == null ? '' : String(v);
+      node.__nv = nv;
+      // textContent 保持 plain 字段同步；data/nodeValue 直写 __nv 不经 setter（防
+      // accessor 互递归）。
+      try { node.textContent = nv; } catch (_eSp1) {}
+      if (!alive()) return;
+      var path = _zwSelPathOf(node, hostProxy, entry);
+      if (path) {
+        try { __zw_set_child_text_path(sel, path.join(','), nv); } catch (_eSp2) {}
+      }
+    };
+    try {
+      Object.defineProperty(node, 'data', {
+        get: function () { return node.__nv; },
+        set: function (v) { write(v); },
+        configurable: true
+      });
+      Object.defineProperty(node, 'nodeValue', {
+        get: function () { return node.__nv; },
+        set: function (v) { write(v); },
+        configurable: true
+      });
+    } catch (_eSp3) { return; }
+    node.remove = function () {
+      var path = alive() ? _zwSelPathOf(node, hostProxy, entry) : null;
+      var p = node.parentNode;
+      if (p && typeof p.removeChild === 'function') {
+        try { p.removeChild(node); } catch (_eSp4) {}
+      }
+      node.__zwSelPathWrite = false;
+      try { node.parentNode = null; } catch (_eSp5) {}
+      if (path) {
+        try { __zw_remove_child_at_path(sel, path.join(',')); } catch (_eSp6) {}
+      }
+      var reg = globalThis.__zwSelPendingTops;
+      if (reg && reg[sel] === entry) {
+        var ri = entry.tops.indexOf(node);
+        if (ri >= 0) entry.tops.splice(ri, 1);
+      }
+    };
+  }
+  // 自目标上行收集 child-index 路径。身份查找仅限解析子树内部（mock childNodes
+  // 稳定）；顶层锚两臂：hostProxy 身份命中（setup 期——fused 视图仍供解析子，
+  // part04 R304 槽点 parentNode 重指）或登记表命中（重同步后——宿主 fused 视图
+  // 已换代 live 包装族，解析对象身份恒 miss，用登记表 regIdx 换算宿主级首段）。
+  function _zwSelPathOf(node, hostProxy, entry) {
+    var path = [];
+    var cur = node;
+    var guard = 0;
+    while (cur && guard++ < 64) {
+      if (entry && entry.tops) {
+        var regIdx = entry.tops.indexOf(cur);
+        if (regIdx >= 0) {
+          path.unshift(regIdx);
+          return path;
+        }
+      }
+      var p = cur.parentNode;
+      if (!p) return null;
+      var kids = p.childNodes;
+      var idx = -1;
+      if (kids) {
+        for (var i = 0; i < kids.length; i++) {
+          if (kids[i] === cur) { idx = i; break; }
+        }
+      }
+      if (idx < 0) return null;
+      path.unshift(idx);
+      if (p === hostProxy) return path;
+      cur = p;
+    }
+    return null;
+  }
+
   // R370（js-dom M4）：detached/iframe 子文档 body 的 childList 独立派发（R189 轻量
   // 元素同款模式——observe() 经 R189 分支注册 `__r189:BODY:<seq>` 键后，本形态 body
   // 的本地 appendChild/removeChild 无 sel/handle 标识，主汇流点 _mo_notify 无法寻址；

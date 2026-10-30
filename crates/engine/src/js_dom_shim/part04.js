@@ -13052,6 +13052,13 @@
                 }
               }
             } catch (_e304s) {}
+            // editing-compat D1：sel 域解析子树 CharacterData 写/移除持久化（marker
+            // 语料管线——见 part03 `_zwSelStampParseTree` 注释）。置于 R304 槽点后：
+            // 上行路径收集依赖 parentNode 重指、登记表/重锚依赖 `_zwSelPendingParent`
+            // 已盖。host 路径（handle 域）不走此门（R48/`_textHandles` 既有写路径）。
+            if (sel && typeof _zwSelStampParseTree === 'function') {
+              try { _zwSelStampParseTree(_ihAdded, sel, _r304HostProxy); } catch (_eSpT) {}
+            }
             // M3 扩批 X：innerHTML 整体替换后 textTracks 集合同步（track-remove-by-setting-
             // innerHTML 断言面）。置于本地子视图/父槽更新之后——helper 读 `_childNodeList`
             //（handle registry `_handleChildren` 与 `_zwSelPendingParent` 挂槽的解析

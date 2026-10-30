@@ -323,6 +323,30 @@ pub enum DomMutation {
         /// childNodes 中的索引（含文本/注释的全节点序）。
         child_index: usize,
     },
+    /// editing-compat D1（marker 语料管线）：对 sel 域 `innerHTML=` 解析子树的文本/
+    /// 注释节点按「锚 selector + child-index 下行路径」整体替换数据。与
+    /// [`DomMutation::SetChildText`] 的差异：解析子树的中间层元素无稳定唯一
+    /// selector，parsed CharacterData 亦无 handle——唯一定位 = 锚 + 全节点序路径
+    ///（[`walk_child_path`] 口径）。路径由 shim 自目标节点上行收集，按解析树写时
+    /// 状态计算 = 批内逐条 apply 后的引擎树状态。
+    SetChildTextByPath {
+        /// 锚元素唯一选择器（解析子树的挂载点）。
+        anchor_selector: String,
+        /// 自锚起的 child-index 下行路径（全节点序，终点为目标节点）。
+        path: Vec<u32>,
+        /// 新数据。
+        text: String,
+    },
+    /// 同 [`DomMutation::SetChildTextByPath`] 定位并移除（`ChildNode.remove` 的
+    /// sel-path 路径；记账口径同 [`DomMutation::RemoveChildAt`]——元素子可被后续
+    /// sel insert 引用，纯文本/注释不记账）。
+    /// https://dom.spec.whatwg.org/#dom-childnode-remove
+    RemoveChildAtPath {
+        /// 锚元素唯一选择器（解析子树的挂载点）。
+        anchor_selector: String,
+        /// 自锚起的 child-index 下行路径（全节点序，终点为待移除节点）。
+        path: Vec<u32>,
+    },
     /// 对 create 句柄设置 innerHTML。
     SetInnerHtmlOnHandle {
         /// 节点句柄。
@@ -794,6 +818,14 @@ fn rewrite_pending_id_selectors(
             }
             | DomMutation::RemoveChildAt {
                 parent_selector: selector,
+                ..
+            }
+            | DomMutation::SetChildTextByPath {
+                anchor_selector: selector,
+                ..
+            }
+            | DomMutation::RemoveChildAtPath {
+                anchor_selector: selector,
                 ..
             } => selector,
             _ => continue,
@@ -1437,6 +1469,61 @@ pub fn apply_dom_mutations_full(
                     None => {
                         tracing::warn!(
                             "apply DOM mutations: remove_child_at index out of range, skipped: {parent_selector}[{child_index}]"
+                        );
+                    }
+                }
+            }
+            // editing-compat D1：按锚 selector + child-index 路径定位解析子树文本/注释
+            // 节点并整体替换数据。锚 miss/路径越界 lenient warn+跳过（同 SetChildText
+            // 口径：JS 侧快照已收敛，跳过只影响下一回合快照，不中止整批）。
+            DomMutation::SetChildTextByPath {
+                anchor_selector,
+                path,
+                text,
+            } => {
+                let Some(anchor) = find_by_selector(doc, &anchor_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: set_child_text_path anchor no match, skipped: {anchor_selector}"
+                    );
+                    continue;
+                };
+                match walk_child_path(doc, anchor, &path) {
+                    Some(node) => {
+                        doc.set_text_content(node, &text);
+                    }
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: set_child_text_path path out of range, skipped: {anchor_selector}[{}]",
+                            path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
+                        );
+                    }
+                }
+            }
+            // editing-compat D1：同上定位并移除（记账口径同 RemoveChildAt——无唯一
+            // selector 的文本/注释子不记账）。
+            // https://dom.spec.whatwg.org/#dom-childnode-remove
+            DomMutation::RemoveChildAtPath { anchor_selector, path } => {
+                let Some(anchor) = find_by_selector(doc, &anchor_selector) else {
+                    tracing::warn!(
+                        "apply DOM mutations: remove_child_at_path anchor no match, skipped: {anchor_selector}"
+                    );
+                    continue;
+                };
+                match walk_child_path(doc, anchor, &path) {
+                    Some(child) => {
+                        if let Some(parent) = doc.get(child).and_then(|n| n.parent) {
+                            doc.remove_child(parent, child).map_err(|e| e.to_string())?;
+                            if let Some(child_sel) = unique_selector_for_node(doc, child)
+                                && let Some(stash) = detached.as_mut()
+                            {
+                                stash.insert(child_sel, doc.outer_html(child));
+                            }
+                        }
+                    }
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: remove_child_at_path path out of range, skipped: {anchor_selector}[{}]",
+                            path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(",")
                         );
                     }
                 }
