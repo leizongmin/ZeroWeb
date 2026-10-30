@@ -155,7 +155,7 @@ fn flex_item_child_percent_with_measure() {
         width: taffy::AvailableSpace::Definite(200.0),
         height: taffy::AvailableSpace::Definite(200.0),
     };
-    let _ = tree.compute_layout_with_measure(container, available_space, |_, _, _, _, _| taffy::Size::ZERO);
+    let _ = tree.compute_layout_with_measure(container, available_space, |_, _, _, _, _| (taffy::Size::ZERO, None));
     let h = tree.layout(child).unwrap().size.height;
     println!("with-measure: child h = {h}");
     assert!(

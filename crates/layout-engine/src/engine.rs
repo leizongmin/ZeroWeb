@@ -262,6 +262,46 @@ pub struct LayoutEngine {
     font_resolver: Option<std::rc::Rc<HashMap<String, u32>>>,
 }
 
+/// R5338（css-flexbox-1 §4.2）：叶首行基线换算 border 系——taffy `first_baselines.y`
+/// 自 border-box 顶起算，`measure_text_content_with_baseline` 产出为内容系，补
+/// border/padding 顶距。Px 顶距直取；Em/Percent/其他保守 0（基线略偏，不劣于
+/// 既有合成基线；测试族用 Px/无框盒，主面无影响）。
+fn leaf_first_baseline_border_relative(
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    content_baseline: Option<f32>,
+) -> Option<f32> {
+    // kill-switch `ZW_FLEX_LEAF_BASELINE`（R5338，default-on）：=0 回退 taffy
+    // 合成基线（border-box 底边），基线通道整体旁路（双向可判）。
+    if std::env::var("ZW_FLEX_LEAF_BASELINE").as_deref() == Ok("0") {
+        return None;
+    }
+    use zero_css_parser::values::LengthValue;
+    let px = |v: &LengthValue| match v {
+        LengthValue::Px(p) if p.is_finite() => *p as f32,
+        _ => 0.0,
+    };
+    let style = styles.get(&dom_id)?;
+    // css-contain-1 §3.1：layout containment（layout/content/strict）元素视作
+    // 无基线，flex 对齐走 border-box 合成（contain-layout-baseline-002 族）。
+    use zero_style_system::property::types::ContainComputedValue;
+    if matches!(
+        style.contain,
+        ContainComputedValue::Strict | ContainComputedValue::Content | ContainComputedValue::Layout
+    ) {
+        return None;
+    }
+    // css-align-3 baseline-export：multicol 容器基线 = 首列首行基线；ZW 列片断
+    // 感知基线未实现，保守回退合成（multicol/baseline-001 族，main 隐式现状）。
+    // FIXME: try_measure_fragment_segment 出列感知基线后接入。
+    use zero_style_system::property::types::{ColumnCountComputedValue, ColumnWidthComputedValue};
+    if !matches!(style.column_count, ColumnCountComputedValue::Auto)
+        || !matches!(style.column_width, ColumnWidthComputedValue::Auto)
+    {
+        return None;
+    }
+    Some(content_baseline? + px(&style.padding_top) + px(&style.border_top_width))
+}
 impl LayoutEngine {
     /// 创建新的布局引擎实例。
     ///
@@ -486,13 +526,14 @@ impl LayoutEngine {
         };
         let font_overrides = self.collect_font_overrides_for_pass(doc, styles);
         let inline_fonts = self.inline_font_context(&font_overrides);
+
         let _ = taffy_tree.compute_layout_with_measure(
             root_id,
             available_space,
             |known_dimensions, available_space, node_id, context, _style| {
                 let dom_id = match context {
                     Some(id) => *id,
-                    None => return Size::ZERO,
+                    None => return (Size::ZERO, None),
                 };
                 // R4489：R109 匿名块片段叶按**片段级 IFC**测量（与 compute_final R3770
                 // 重测/paint 同源，消除 Text-arm line_height 常数比与真实行盒的亚像素
@@ -519,10 +560,12 @@ impl LayoutEngine {
                             inline_fonts,
                         )
                     {
-                        return size;
+                        // 片段级测量基线未映射（FIXME：try_measure_fragment_segment
+                        // 出首行基线后接入）→ None = taffy 合成基线（原行为）。
+                        return (size, None);
                     }
                 }
-                measure_text_content(
+                let (size, baseline) = measure_text_content_with_baseline(
                     doc,
                     styles,
                     dom_id,
@@ -532,7 +575,8 @@ impl LayoutEngine {
                     inline_fonts,
                     // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
                     r109.run_in_prepended.get(&dom_id).copied(),
-                )
+                );
+                (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
             },
         );
 
@@ -895,9 +939,9 @@ impl LayoutEngine {
                 |known_dimensions, available_space, _node_id, context, _style| {
                     let dom_id = match context {
                         Some(id) => *id,
-                        None => return Size::ZERO,
+                        None => return (Size::ZERO, None),
                     };
-                    measure_text_content(
+                    let (size, baseline) = measure_text_content_with_baseline(
                         doc,
                         styles,
                         dom_id,
@@ -907,7 +951,8 @@ impl LayoutEngine {
                         inline_fonts,
                         // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
                         r109.run_in_prepended.get(&dom_id).copied(),
-                    )
+                    );
+                    (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
                 },
             );
             root_box = Self::extract_layout(
@@ -1625,9 +1670,9 @@ impl LayoutEngine {
             |known_dimensions, available_space, _node_id, context, _style| {
                 let dom_id = match context {
                     Some(id) => *id,
-                    None => return Size::ZERO,
+                    None => return (Size::ZERO, None),
                 };
-                measure_text_content(
+                let (size, baseline) = measure_text_content_with_baseline(
                     doc,
                     styles,
                     dom_id,
@@ -1637,7 +1682,8 @@ impl LayoutEngine {
                     inline_fonts,
                     // R4332：并入 run-in 前缀参与测量（后继块内容高含前缀首行）。
                     cached.r109.run_in_prepended.get(&dom_id).copied(),
-                )
+                );
+                (size, leaf_first_baseline_border_relative(styles, dom_id, baseline))
             },
         );
 

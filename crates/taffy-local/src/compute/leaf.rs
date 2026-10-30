@@ -19,7 +19,9 @@ pub fn compute_leaf_layout<MeasureFunction>(
     measure_function: MeasureFunction,
 ) -> LayoutOutput
 where
-    MeasureFunction: FnOnce(Size<Option<f32>>, Size<AvailableSpace>) -> Size<f32>,
+    // R5338（css-flexbox-1 §4.2）：测量附带首行基线（内容系），供 flex 基线对齐消费；
+    // None = 无基线（taffy 回退 border-box 底边合成，行为同前）。
+    MeasureFunction: FnOnce(Size<Option<f32>>, Size<AvailableSpace>) -> (Size<f32>, Option<f32>),
 {
     let LayoutInput { known_dimensions, parent_size, available_space, sizing_mode, run_mode, .. } = inputs;
 
@@ -132,7 +134,7 @@ where
     };
 
     // Measure node
-    let measured_size = measure_function(
+    let (measured_size, first_baseline) = measure_function(
         match run_mode {
             RunMode::ComputeSize => known_dimensions,
             RunMode::PerformLayout => Size::NONE,
@@ -154,7 +156,8 @@ where
         size,
         #[cfg(feature = "content_size")]
         content_size: measured_size + padding.sum_axes(),
-        first_baselines: Point::NONE,
+        // R5338：叶首行基线（border-box 系，测量方换算）；None 回退合成基线。
+        first_baselines: Point { x: None, y: first_baseline },
         top_margin: CollapsibleMarginSet::ZERO,
         bottom_margin: CollapsibleMarginSet::ZERO,
         margins_can_collapse_through: !has_styles_preventing_being_collapsed_through
