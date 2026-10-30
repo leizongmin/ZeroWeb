@@ -4452,12 +4452,15 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
 }
 
 /// form-url-encoding-compat goal：encode 面案面规则（面单见
-/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
-/// 只放行 form 提交编码序列化面（`*-encode-form*.html`，含 label 变体与
-/// errors 面）与 href URL 序列化面（`*-encode-href*.html` + schinese
-/// `*-encoder.html` inline a.href 面 + `big5-enc-ascii.html`）；decode 面
-/// / chars / errors fixture / `.any.js` 全 skip——与 [`encoding_legacy_mb_case_skipped`]
-/// face 互斥（31 号 decode 通道规则与基线不动，零回归底线）。
+/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22；
+/// encoding-compat-v2 goal M1 增根面 2 文件）。只放行 form 提交编码序列化面
+/// （`*-encode-form*.html`，含 label 变体与 errors 面）与 href URL 序列化面
+/// （`*-encode-href*.html` + schinese/根面 `*-encoder.html` inline a.href 面 +
+/// `big5-enc-ascii.html`）；decode 面 / chars / errors fixture / `.any.js` 全
+/// skip——与 [`encoding_legacy_mb_case_skipped`] face 互斥（31 号 decode 通道
+/// 规则与基线不动，零回归底线）。根面只此 `big5-encoder.html` /
+/// `iso-2022-jp-encoder.html` 匹配放行规则（bom/sniffing/utf-32/eof/ref 等
+/// 文档面均不匹配，30 号 M4 划界挂账 html-syntax-compat）。
 fn form_url_encoding_case_skipped(relative: &str, _source: &str) -> bool {
     if relative.ends_with(".any.js") {
         return true;
@@ -4469,15 +4472,31 @@ fn form_url_encoding_case_skipped(relative: &str, _source: &str) -> bool {
         || name == "big5-enc-ascii.html")
 }
 
-/// Run the legacy-mb encode-face pages（form-url-encoding-compat goal M0/M1——
-/// 通道）。语料与 decode 通道同源（[`ENCODING_LEGACY_MB_CORPUS_SUBDIRS`]）。
-/// filter 按路径子串透传（如 `euc-jp/`、`encode-form`、`encoder.html`——按面/
-/// 族分批出数）。variant 展开（encode-form/href 页 8 variant 分片，decode
-/// 通道同款）。
+/// form-url encode 面通道语料叶目录（31 号 fetch 脚本 DIRS + encoding-compat-v2
+/// goal M1 追加 `encoding` 根——根面 big5/iso-2022-jp-encoder inline a.href 面
+/// 与 schinese `*-encoder.html` 同机制，[`ENCODING_LEGACY_MB_CORPUS_SUBDIRS`]
+/// 为 31/30 号通道共用不动，此处独立常量零回归；flat 扫描，与 fetch depth 布局
+/// 对齐）。
+pub const ENCODING_FORM_URL_CORPUS_SUBDIRS: &[&str] = &[
+    "encoding",
+    "encoding/legacy-mb-japanese/euc-jp",
+    "encoding/legacy-mb-japanese/iso-2022-jp",
+    "encoding/legacy-mb-japanese/shift_jis",
+    "encoding/legacy-mb-korean/euc-kr",
+    "encoding/legacy-mb-schinese/gb18030",
+    "encoding/legacy-mb-schinese/gbk",
+    "encoding/legacy-mb-tchinese/big5",
+];
+
+/// Run the legacy-mb + 根面 encode-face pages（form-url-encoding-compat goal
+/// M0/M1 + encoding-compat-v2 goal M1——通道）。语料见
+/// [`ENCODING_FORM_URL_CORPUS_SUBDIRS`]。filter 按路径子串透传（如 `euc-jp/`、
+/// `encode-form`、`encoder.html`——按面/族分批出数）。variant 展开
+/// （encode-form/href 页 8 variant 分片，decode 通道同款）。
 pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_any_js_corpus_subdirs_with_helpers_variants(
         wpt_root,
-        ENCODING_LEGACY_MB_CORPUS_SUBDIRS,
+        ENCODING_FORM_URL_CORPUS_SUBDIRS,
         filter,
         form_url_encoding_case_skipped,
         &[],
