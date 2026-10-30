@@ -25,8 +25,8 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::process::{Child, Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -52,6 +52,9 @@ struct DelaySite {
     font_started: Arc<AtomicUsize>,
     font_done: Arc<AtomicUsize>,
     p2_served: Arc<AtomicUsize>,
+    form_served: Arc<AtomicUsize>,
+    /// `/submit` 请求台账（method, body）——POST 完整性钉的服务端观测口径。
+    submit_log: Arc<Mutex<Vec<(String, String)>>>,
     shutdown: Arc<AtomicBool>,
     accept_loop: Option<std::thread::JoinHandle<()>>,
 }
@@ -65,12 +68,16 @@ impl DelaySite {
         let font_started = Arc::new(AtomicUsize::new(0));
         let font_done = Arc::new(AtomicUsize::new(0));
         let p2_served = Arc::new(AtomicUsize::new(0));
+        let form_served = Arc::new(AtomicUsize::new(0));
+        let submit_log = Arc::new(Mutex::new(Vec::new()));
         let shutdown = Arc::new(AtomicBool::new(false));
         let accept_loop = {
             let index_served = Arc::clone(&index_served);
             let font_started = Arc::clone(&font_started);
             let font_done = Arc::clone(&font_done);
             let p2_served = Arc::clone(&p2_served);
+            let form_served = Arc::clone(&form_served);
+            let submit_log = Arc::clone(&submit_log);
             let shutdown = Arc::clone(&shutdown);
             std::thread::spawn(move || {
                 while !shutdown.load(Ordering::Relaxed) {
@@ -80,8 +87,18 @@ impl DelaySite {
                             let font_started = Arc::clone(&font_started);
                             let font_done = Arc::clone(&font_done);
                             let p2_served = Arc::clone(&p2_served);
+                            let form_served = Arc::clone(&form_served);
+                            let submit_log = Arc::clone(&submit_log);
                             std::thread::spawn(move || {
-                                serve(stream, &index_served, &font_started, &font_done, &p2_served);
+                                serve(
+                                    stream,
+                                    &index_served,
+                                    &font_started,
+                                    &font_done,
+                                    &p2_served,
+                                    &form_served,
+                                    &submit_log,
+                                );
                             });
                         }
                         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -98,6 +115,8 @@ impl DelaySite {
             font_started,
             font_done,
             p2_served,
+            form_served,
+            submit_log,
             shutdown,
             accept_loop: Some(accept_loop),
         }
@@ -117,23 +136,52 @@ impl Drop for DelaySite {
     }
 }
 
-/// 单连接服务：`/slowfont` 计 started → 持流 → 计 done；`/p2` 计数即时应答；其余
-/// 按链接页应答（load+200ms 后发起字体取——绝对 URL 用 `location.origin` 拼，
-/// 相对 URL 在 zero-net FontFace src 解析已证不通）。
+/// 单连接服务：`/slowfont` 计 started → 持流 → 计 done；`/p2` 计数即时应答；
+/// `/form` 返回 POST 表单页（load+200ms 后发起字体取）；`/submit` 记录（method,
+/// body）台账；其余按链接页应答（load+200ms 后发起字体取——绝对 URL 用
+/// `location.origin` 拼，相对 URL 在 zero-net FontFace src 解析已证不通）。
 fn serve(
     mut stream: TcpStream,
     index_served: &AtomicUsize,
     font_started: &AtomicUsize,
     font_done: &AtomicUsize,
     p2_served: &AtomicUsize,
+    form_served: &AtomicUsize,
+    submit_log: &Mutex<Vec<(String, String)>>,
 ) {
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
-    let Some(head) = read_request_head(&mut stream) else {
+    let Some(mut raw) = read_request_head(&mut stream) else {
         return;
     };
+    // 头/体切分：read_request_head 按 `\r\n\r\n` 截停但可能多读，超出部分归 body；
+    // POST 体按 Content-Length 补读（同连接单写或分写均覆盖）。
+    let Some(split) = raw.windows(4).position(|w| w == b"\r\n\r\n").map(|pos| pos + 4) else {
+        return;
+    };
+    let mut body = raw.split_off(split);
+    let head = raw;
     let request = String::from_utf8_lossy(&head);
-    let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
+    let request_line = request.lines().next().unwrap_or("");
+    let method = request_line.split_whitespace().next().unwrap_or("GET").to_string();
+    let path = request_line.split_whitespace().nth(1).unwrap_or("/").to_string();
+    if let Some(len) = request
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("Content-Length:")
+                .or_else(|| line.strip_prefix("content-length:"))
+        })
+        .and_then(|v| v.trim().parse::<usize>().ok())
+    {
+        while body.len() < len {
+            let mut buf = [0_u8; 4096];
+            match stream.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => body.extend_from_slice(&buf[..n]),
+            }
+        }
+        body.truncate(len);
+    }
     if path.starts_with("/slowfont") {
         font_started.fetch_add(1, Ordering::Relaxed);
         std::thread::sleep(FONT_DELAY);
@@ -142,6 +190,31 @@ fn serve(
     } else if path.starts_with("/p2") {
         p2_served.fetch_add(1, Ordering::Relaxed);
         let body = "<!DOCTYPE html><html><head><title>T27P35 p2</title></head><body>p2</body></html>";
+        write_response(&mut stream, "text/html; charset=utf-8", body.as_bytes());
+    } else if path.starts_with("/submit") {
+        submit_log
+            .lock()
+            .expect("submit log")
+            .push((method, String::from_utf8_lossy(&body).into_owned()));
+        let body = "<!DOCTYPE html><html><head><title>T27P35 submit</title></head><body>submit-result</body></html>";
+        write_response(&mut stream, "text/html; charset=utf-8", body.as_bytes());
+    } else if path.starts_with("/form") {
+        form_served.fetch_add(1, Ordering::Relaxed);
+        let body = concat!(
+            "<!DOCTYPE html><html><head><title>T27P35 form</title></head>",
+            r#"<body style="margin:0">"#,
+            r#"<form id="f" method="POST" action="/submit">"#,
+            r#"<input name="q" value="t27-body-marker">"#,
+            r#"<input id="go" type="submit" value="go""#,
+            r#" style="position:fixed;left:10px;top:10px;width:200px;height:60px;display:block">"#,
+            r#"</form>"#,
+            r#"<script>setTimeout(function () {"#,
+            r#"  const f = new FontFace('T27P35PostFont', location.origin + '/slowfont');"#,
+            r#"  document.fonts.add(f);"#,
+            r#"  f.load().then(function () {}).catch(function () {});"#,
+            r#"}, 200);</script>"#,
+            "</body></html>"
+        );
         write_response(&mut stream, "text/html; charset=utf-8", body.as_bytes());
     } else {
         index_served.fetch_add(1, Ordering::Relaxed);
@@ -399,6 +472,74 @@ fn t27p35_click_nav_starts_within_bound_during_font_fetch() {
     );
 
     // 收尾前提：字体臂最终完成（否则上述测量发生在页面未加载的空洞上）。
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while site.font_done.load(Ordering::Relaxed) < 1 {
+        assert!(Instant::now() < deadline, "font fetch never completed within 60s");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// T27 返修钉（DF1-F1）：阻塞 fetch（FontFace.load）等待窗内的 POST 表单提交须以
+/// POST + body 完整到达服务端。修复前：提交点击即时让位派发后经 navigate_with 的
+/// POST 臂再入 ipc_fetch_via_browser，深度守卫返回的 busy Err 被 `let Ok(bytes)`
+/// 混同真实 fetch 失败，落入 `AsyncPageLoad::start` 裸 GET 回落——表单 body 静默
+/// 丢失（服务端只见无 body 的 GET /submit）。修复后：busy 恢复扣压语义（意图暂存
+/// `deferred_post_nav`，主循环顶部在外层 fetch 收场后执行），服务端见 POST /submit
+/// 且 body 完整、无 GET 回落。观测口径同主钉：fixture 服务端 `/submit` 台账，不
+/// 依赖冻结窗内 CDP evaluate。前提自证同主钉（字体臂 started ≥1 / done =0）。
+#[test]
+fn t27p35_post_integrity() {
+    let site = DelaySite::spawn();
+    let (port, _browser) = spawn_browser(&site.url("/form"));
+    let mut cdp = CdpClient::connect(port);
+
+    // 等表单页就绪（fixture 口径）。
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while site.form_served.load(Ordering::Relaxed) < 1 {
+        assert!(Instant::now() < deadline, "fixture form page not served within 30s");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // 字体取在 load+200ms 发起；+1.5s 提交，确保落在冻结窗内。
+    std::thread::sleep(Duration::from_millis(1500));
+    assert!(
+        site.font_started.load(Ordering::Relaxed) >= 1,
+        "premise: font fetch must have started before the submit"
+    );
+    assert_eq!(
+        site.font_done.load(Ordering::Relaxed),
+        0,
+        "premise: font fetch must still be in flight (main loop frozen window open)"
+    );
+
+    cdp.click(100.0, 30.0); // submit 按钮热区（left:10 top:10 200x60）
+
+    // 提交结果观测：POST+body 到达且无 GET 回落即绿；无 body GET 先到即红
+    // （修前形态快速失败）。绿态 POST 在字体臂（{FONT_DELAY:?}）收场后到达。
+    let deadline = Instant::now() + Duration::from_secs(45);
+    loop {
+        let logged = site.submit_log.lock().expect("submit log").clone();
+        if let Some((_, body)) = logged.iter().find(|(method, _)| method == "POST") {
+            assert!(
+                body.contains("q=t27-body-marker"),
+                "POST /submit body must carry the form field value, got {body:?}"
+            );
+            assert!(
+                !logged.iter().any(|(method, _)| method == "GET"),
+                "POST submit must not be accompanied by a body-less GET fallback, got {logged:?}"
+            );
+            break;
+        }
+        if logged.iter().any(|(method, _)| method == "GET") {
+            panic!(
+                "POST form submit degraded to a body-less GET fallback — form data silently lost \
+                 (DF1-F1 pre-fix shape): {logged:?}"
+            );
+        }
+        assert!(Instant::now() < deadline, "no /submit request within 45s of the click");
+        std::thread::sleep(Duration::from_millis(25));
+    }
+
+    // 收尾前提：字体臂最终完成（冻结窗真实在途）。
     let deadline = Instant::now() + Duration::from_secs(60);
     while site.font_done.load(Ordering::Relaxed) < 1 {
         assert!(Instant::now() < deadline, "font fetch never completed within 60s");

@@ -492,6 +492,11 @@ pub(crate) struct RendererRuntime {
     /// T27-P35：在途阻塞 fetch 等待深度（0 = 无）。>0 时再入阻塞 fetch 返回 Err，
     /// 防输入派发触发嵌套等待吞走外层 FetchResponse。
     ipc_fetch_depth: u8,
+    /// T27 返修（DF1-F1）：等待期扣压的 POST 导航意图。depth>0 时 navigate_with 不再
+    /// 入 fetch_post（深度守卫必 Err，此前被混同真实失败落入 GET 回落），意图暂存于
+    /// 此；主循环顶部在外层 fetch 收场后执行（晚于 reload_history_entry 的
+    /// run_staged_load 等同拍收尾，不被覆盖）。
+    deferred_post_nav: Option<DeferredPostNav>,
     /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复（worker 长臂时主循环 2s 放行，
     /// 主循环每轮轮询补答；automation::PendingAutomationReply）。
     pending_automation_replies: Vec<automation::PendingAutomationReply>,
@@ -826,6 +831,7 @@ impl RendererRuntime {
             history_index: 0,
             deferred_inbound: VecDeque::new(),
             ipc_fetch_depth: 0,
+            deferred_post_nav: None,
             pending_automation_replies: Vec::new(),
             compositor_publish,
             animation_export: AnimationExportState::new(0),
@@ -3092,9 +3098,11 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 让位 [`Self::dispatch_message`]（与主循环同款分发；字段借用随 step 返回结束，
     /// 此处 `&mut self` 合法），其余非目标消息扣压、收尾回填 [`Self::deferred_inbound`]。
     ///
-    /// 深度守卫：输入派发可运行任意页面脚本，若再入阻塞 fetch（当前无此路径，防御
-    /// 未知页面行为），返回 Err 而非嵌套等待——嵌套时内层可能吞走外层的
-    /// FetchResponse 到自己的 skipped，时序耦合不可控；POST 重发还会二次提交表单。
+    /// 深度守卫：输入派发可运行任意页面脚本，若再入阻塞 fetch，返回 Err 而非嵌套
+    /// 等待——嵌套时内层可能吞走外层的 FetchResponse 到自己的 skipped，时序耦合
+    /// 不可控；POST 重发还会二次提交表单。已知再入路径（等待期 POST 表单提交触发
+    /// 的 POST 导航）已在 [`Self::navigate_with`] 顶部扣压至 [`Self::deferred_post_nav`]，
+    /// 本守卫仅防御未知页面行为。
     fn ipc_fetch_via_browser(
         &mut self,
         url: &str,
@@ -3251,7 +3259,23 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// **POST** → 同步 [`Self::fetch_post`] body → [`AsyncPageLoad::from_html`]（绕过异步主文档 GET 路径——
     /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
+    /// 阻塞 fetch 等待期（depth>0）到达的 POST 导航先于此扣压（DF1-F1），见 [`Self::deferred_post_nav`]。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
+        // T27 返修（DF1-F1）：阻塞 fetch 等待期（ipc_fetch_depth > 0）到达的 POST 导航会
+        // 经下方 fetch_post 再入 ipc_fetch_via_browser，深度守卫必返 Err；此前 `let Ok(bytes)`
+        // 把该 busy Err 混同真实 fetch 失败，落入尾部 GET 回落——表单 body 静默丢失（修复
+        // 前该输入整体扣压、外层 fetch 完成后正常 POST）。busy 恢复扣压语义：意图暂存
+        // deferred_post_nav，由主循环顶部 drain；届时 depth == 0，fetch_post 携 body 正确提交。
+        // GET 导航走 AsyncPageLoad::start 异步主文档（不再入阻塞 fetch），维持 T27-P35 即时
+        // 派发语义；判据仅为「该导航需要阻塞 fetch 臂」，无 URL/站点特判。
+        if self.ipc_fetch_depth > 0 && method.eq_ignore_ascii_case("POST") {
+            self.deferred_post_nav = Some(DeferredPostNav {
+                params,
+                method: method.to_string(),
+                body: body.map(str::to_string),
+            });
+            return Ok(());
+        }
         // T62-D1 返修：zero:// 内部页由浏览器生成与装载（load_local_tab_url 分派），
         // 渲染端网络栈无 zero:// scheme 处理（fetch builder error → 错误页）。
         // GET 无 body 的 zero:// 导航转交浏览器（与单进程 worker 回执
@@ -4256,6 +4280,25 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // dispatch）阻塞的直接证据，与 deferred-reply 补答延迟对轴。
         let mut p106_last_tick: Option<std::time::Instant> = None;
         loop {
+            // T27 返修（DF1-F1）：drain 等待期扣压的 POST 导航——此刻外层 fetch 已收场
+            //（depth 回 0），且晚于 reload_history_entry 的 run_staged_load 等同一拍收尾，
+            // 不被覆盖（修复前该输入整体扣压经 deferred_inbound 派发，同为此刻执行）。
+            // epoch 取当前值重算（与 Navigate intent 构造点同式）；错误处置同主循环派发
+            //（断连退出、其余记录不中断）。
+            if let Some(nav) = self.deferred_post_nav.take() {
+                let params = NavigateParams {
+                    url: nav.params.url,
+                    referrer: nav.params.referrer,
+                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
+                };
+                if let Err(e) = self.navigate_with(params, &nav.method, nav.body.as_deref()) {
+                    if browser_ipc_disconnected(&e) {
+                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                        return Ok(());
+                    }
+                    tracing::warn!("等待期扣压的 POST 导航执行失败: {e}");
+                }
+            }
             if automation::automation_trace_enabled() {
                 let now = std::time::Instant::now();
                 if let Some(last) = p106_last_tick {
@@ -4705,6 +4748,15 @@ struct IpcFetchWait {
     deadline: Instant,
 }
 
+/// T27 返修（DF1-F1）：阻塞 fetch 等待期扣压的 POST 导航意图（[`RendererRuntime::navigate_with`]
+/// busy 臂入队，主循环顶部 drain 执行——`Navigate` IPC 消息固定走 GET，无法承载
+/// method+body，故以专用结构暂存）。
+struct DeferredPostNav {
+    params: NavigateParams,
+    method: String,
+    body: Option<String>,
+}
+
 /// [`ipc_fetch_wait_step`] 的单步结果。
 enum IpcFetchStep {
     /// 等到目标 `FetchResponse`（非 2xx 已转 Err）或等待超过总上限（Err）。
@@ -4726,20 +4778,21 @@ fn ipc_fetch_wait_step(
     wait: &mut IpcFetchWait,
 ) -> Result<IpcFetchStep, String> {
     loop {
+        // T27 返修（DF1-F4）：总上限在任意消息流下复核——此前仅在 250ms 空闲切片
+        // 超时臂检查，非让位消息以 <250ms 间隔持续到达（或滞留 deferred 待搬运）
+        // 期间永不触发，「总上限」实为静默时长上限。
+        if Instant::now() >= wait.deadline {
+            return Ok(IpcFetchStep::Done(Err(format!(
+                "fetch 等待超过 {IPC_FETCH_WAIT_MAX:?} 上限（rid={}）",
+                wait.request_id
+            ))));
+        }
         let msg = if let Some(m) = deferred.pop_front() {
             m
         } else {
             match inbound_rx.recv_timeout(IPC_FETCH_WAIT_SLICE) {
                 Ok(msg) => msg,
-                Err(RecvTimeoutError::Timeout) => {
-                    if Instant::now() >= wait.deadline {
-                        return Ok(IpcFetchStep::Done(Err(format!(
-                            "fetch 等待超过 {IPC_FETCH_WAIT_MAX:?} 上限（rid={}）",
-                            wait.request_id
-                        ))));
-                    }
-                    continue;
-                }
+                Err(RecvTimeoutError::Timeout) => continue,
                 Err(RecvTimeoutError::Disconnected) => return Err("IPC 接收失败".into()),
             }
         };
@@ -5186,6 +5239,46 @@ mod runtime_smoke {
         assert!(
             elapsed < IPC_FETCH_WAIT_SLICE * 2,
             "deadline 已过时首个切片超时即收场，实测 {elapsed:?}"
+        );
+    }
+
+    /// T27 返修钉（DF1-F4）：总上限在任意消息流下生效——非让位消息滞留 deferred
+    /// （模拟消息风暴期间的持续供给）时，deadline 到点须立即 Err 收场，不得先逐条
+    /// 搬运滞留消息、再等一个空闲切片超时。修复前 deadline 仅在 250ms 切片超时臂
+    /// 复核：本钉断言「零搬运、零切片等待」在修前翻红（skipped 被填入 3 条滞留
+    /// 消息且耗时 ≥1 个切片）。
+    #[test]
+    fn t27p35_fetch_wait_deadline_holds_under_pending_traffic() {
+        let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
+        let (_tx, rx) = mpsc::channel::<IpcMessage>();
+        let foreign = |id: u64, rid: u64| IpcMessage {
+            id,
+            kind: IpcMessageKind::FetchResponse(FetchResponseParams {
+                request_id: rid,
+                status_code: 200,
+                headers: Vec::new(),
+                body: b"foreign".to_vec(),
+            }),
+        };
+        let mut deferred = VecDeque::from([foreign(1, 999), foreign(2, 998), foreign(3, 997)]);
+        let mut wait = IpcFetchWait {
+            request_id: 1,
+            skipped: VecDeque::new(),
+            deadline: Instant::now(),
+        };
+
+        let started = Instant::now();
+        let result = step_until_done(&mut outbound, &rx, &mut deferred, &mut wait);
+        let elapsed = started.elapsed();
+
+        assert!(result.is_err(), "deadline 已过须立即 Err 收场");
+        assert!(
+            wait.skipped.is_empty(),
+            "deadline 已过不得再消费滞留消息（修前 skipped 被填入 3 条）"
+        );
+        assert!(
+            elapsed < IPC_FETCH_WAIT_SLICE,
+            "deadline 已过不得等切片超时才收场，实测 {elapsed:?}"
         );
     }
 }
