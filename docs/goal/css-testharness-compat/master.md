@@ -11,7 +11,7 @@
 | M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
 | M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)；CI 快照运行 40935989794 闭环——58 files / 232 passes） |
 | M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | **完成**（批次 1–5 全落 2026-10-30，top15 分母目录 15/15 入账；十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%；evidence/2026-10-30-m3-batch{1..5}-*.md） |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | **进行中**（css-face a/b/c 三分片 + CSS_FETCH_ONLY 定向 fetch 已合入 62064f318；DC-4 数据由 weekly 运行 41000541561 产出，轮询收口中） |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | **进行中**（三分片接线 62064f318 + fetch 白名单补 css/support e425f845a；DC-4 数据由修复后运行 41005658107 产出，轮询收口中） |
 
 ## 本轮记录（2026-10-30，M3 批次 2–5 收口 + M4 分片接线）
 
@@ -31,10 +31,14 @@
   css 顶目录首次入快照口径）；35 号脚本加 `CSS_FETCH_ONLY` 白名单过滤
   （缺省不设 = 全量，本地 rally 行为不变），三分组 fetch target 按语料体量
   均分；css 分片 job timeout 210min、per-suite time_limit 3600。
-- **在途**：首次接线运行 40997740139 被姊妹流 weekly 运行并发取消
-  （concurrency cancel-in-progress）；DC-4 数据改由运行 41000541561
-  （HEAD 含接线，css-face 三分片随跑）产出，轮询收口中——快照 css 面
-  数字核验 + wpt-suites.csv 汇总行待其完成后落账。
+- **在途（白名单修复，e425f845a）**：首次带接线运行 41000541561 的
+  css-face-b 产物早期对账实证 fetch 白名单漏 `css/support`——案数与本地
+  逐目录一致（253/61/121/348）但 helper 引用页子测试坍缩（masking 544→63、
+  anchor-position 12,811→3,059、backgrounds 1,085→190；typed-om 零引用
+  750=750 反证根因唯一；idl_test 4 页缺 /resources/idlharness.js 与本地
+  同界非 CI 洞）。运行已取消（避免聚合落污染快照），三分片白名单补
+  css/support 后重派运行 41005658107，轮询收口中——快照 css 面数字核验 +
+  wpt-suites.csv 汇总行待其完成后落账。
 
 ## 上一轮记录（2026-10-30，M3 批次 1 + DC-3 CI 闭环）
 
