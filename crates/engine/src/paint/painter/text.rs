@@ -1919,6 +1919,11 @@ impl super::Painter {
             // 同源 -11 是「test/ref 同错用例的诚实化暴露」（DC-14 视角为进步），非真退步；
             // product-smoke（真实网站）维度此修复为正收益。故统一对所有 Path B 应用 with_line_y。
             let mut frag_line_tops: Vec<f32> = Vec::new();
+            // R5350：片段 → 所属行**真基线**（line.y + line.baseline_y，R816）平行表——
+            // 扩张轴选区行 fill 的内容区带锚（≡ A 门 r5120 的基线锚，几何恒等式
+            // `baseline = line_top + a + hl` 在布局 strut 度量 ≠ paint fallback 度量时
+            // 不成立，027 双页 3px 错位实证）。仅扩张轴选区/高亮臂消费。
+            let mut frag_baselines: Vec<f32> = Vec::new();
             let fragments: Vec<zero_layout_engine::TextFragment> = if use_stored {
                 Vec::new()
             } else {
@@ -1928,6 +1933,7 @@ impl super::Painter {
                 //（frag.y + v_offset，R3856 契约）落字高中部。
                 for line in &inline_ctx.lines {
                     frag_line_tops.extend(std::iter::repeat_n(line.y, line.runs.len()));
+                    frag_baselines.extend(std::iter::repeat_n(line.y + line.baseline_y, line.runs.len()));
                 }
                 let mut fragments = inline_ctx.all_fragments_with_line_y();
                 // R5250（CSS2 §9.3.2）：relative inset 视觉位移——纯 inline 非替换盒无
@@ -1942,6 +1948,9 @@ impl super::Painter {
                             frag.y += dy;
                             if let Some(t) = frag_line_tops.get_mut(i) {
                                 *t += dy;
+                            }
+                            if let Some(b) = frag_baselines.get_mut(i) {
+                                *b += dy;
                             }
                         }
                     }
@@ -3141,6 +3150,23 @@ impl super::Painter {
                                     //（backdrop-filter-inline-positioning）。
                                     single_frag_box_border_enabled()
                                         && owner_style.backdrop_filter.is_empty()
+                                    // R5350 扩张轴 fragment 施画路径接入（R5171 FIXME ②）：
+                                    // 扩张轴（默认开，`ZW_INLINE_CA_EXPAND=0` 关）下
+                                    // **无边框**单行 owner 的 bg/选区 fill 同步走 R5120
+                                    // 内容区锚整盒几何——负半 leading 域（line-height <
+                                    // A+D）行内 bg 按内容区施画（CSS2 §10.8.1/§10.6.2；
+                                    // driving: line-height-125，active-selection-027 ref
+                                    // 页）。有边框 owner 维持基线口径：整盒边框臂（R5120
+                                    // dormant 域）在 bidi 重排序页（bidi-005/006/010a
+                                    // 边框 span）与 backdrop-filter 边框案 corpus A/B
+                                    // 实证翻红，不入本轴；box-level 同款边框守卫见
+                                    // inline_ca_paint_override。
+                                    || (self.inline_ca_expand_enabled
+                                        && bt_w == 0.0
+                                        && bb_w == 0.0
+                                        && bl_w == 0.0
+                                        && br_w == 0.0
+                                        && owner_style.backdrop_filter.is_empty())
                                 };
                                 let legacy_line_top = content_y + $frag_y + $baseline_offset + ty;
                                 // R5120（CSS2.1 §10.8.1 content area）：整盒竖直锚 = **内容区**
@@ -3165,8 +3191,13 @@ impl super::Painter {
                                 // R5299：单行整盒 + 段命中 = band 域矩形（覆盖段内全部
                                 // 片段），仅由首个触达该段的片段绘制一次；多行 slice /
                                 // 逐词 legacy 轨维持逐片段绘制（矩形不跨片段，无覆盖）。
-                                let r5299_band_once =
-                                    r4332_whole_box && !r4332_is_multi_line && r5299_seg_hit;
+                                let r5299_band_once = r4332_whole_box
+                                    && !r4332_is_multi_line
+                                    && (r5299_seg_hit
+                                        // R5350：扩张轴整盒单行（SFBB 关，段表恒空 →
+                                        // seg_hit 恒 false）同样带域 once——重复涂同 rect
+                                        // 在半透明选区色下双重叠加深（α 合成两次）。
+                                        || !single_frag_box_border_enabled());
                                 let r5299_draw_band = !r5299_band_once
                                     || r5299_band_drawn.insert((
                                         r4332_owner,
@@ -3834,6 +3865,9 @@ impl super::Painter {
                     // 行分组（活跃路径片段 → (owner, 行盒顶) 组，含行内横向范围）——
                     // R5258 起选区门与 ::first-line 门共用；两门皆不需要时跳过构建
                     //（paint_text 热路径零闲置分配）。
+                    // R5350：行组真基线映射（键 ≡ line_ranges 组键；扩张轴选区站
+                    // 内容区带锚，见臂内注释）。随下方行分组构建填充。
+                    let mut line_baselines: HashMap<(NodeId, u32), f32> = HashMap::new();
                     let line_ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = if style.first_line_pseudo.is_some()
                         || sel_owned.is_some()
                         // R5269（css-pseudo-4 §highlight-cascading）：owner 自持选区
@@ -3869,11 +3903,20 @@ impl super::Painter {
                             }
                             any
                         }) {
-                        // 活跃路径的 (node_id, 行盒顶, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
-                        let active_frags: Vec<(NodeId, f32, &str, f32, f32)> = if use_stored {
+                        // 活跃路径的 (node_id, 行盒顶, 行基线, 片段文本, x, 宽) 序列（渲染序 ≈ 文档序）。
+                        let active_frags: Vec<(NodeId, f32, f32, &str, f32, f32)> = if use_stored {
                             stored_fragments
                                 .iter()
-                                .map(|f| (f.node_id, f.line_top_rel, f.text.as_str(), f.x, f.width))
+                                .map(|f| {
+                                    (
+                                        f.node_id,
+                                        f.line_top_rel,
+                                        f.baseline_y_abs,
+                                        f.text.as_str(),
+                                        f.x,
+                                        f.width,
+                                    )
+                                })
                                 .collect()
                         } else {
                             fragments
@@ -3883,6 +3926,7 @@ impl super::Painter {
                                     (
                                         f.node_id,
                                         frag_line_tops.get(gi).copied().unwrap_or(0.0),
+                                        frag_baselines.get(gi).copied().unwrap_or(0.0),
                                         f.text.as_str(),
                                         f.x,
                                         f.width,
@@ -3902,7 +3946,10 @@ impl super::Painter {
                         // 首片段前偏移即行起点）+ 行内横向范围。
                         let mut owner_off: HashMap<NodeId, usize> = HashMap::new();
                         let mut ranges: Vec<((NodeId, u32), usize, usize, f32, f32)> = Vec::new();
-                        for (nid, line_top, text, fx, fw) in &active_frags {
+                        for (nid, line_top, line_baseline, text, fx, fw) in &active_frags {
+                            line_baselines
+                                .entry((owner_of(*nid), line_top.to_bits()))
+                                .or_insert(*line_baseline);
                             let owner = owner_of(*nid);
                             let off = owner_off.entry(owner).or_insert(0);
                             // R5275：R1447 tab 片段 text="" 但在 textContent 占 1 个 utf16
@@ -4049,6 +4096,13 @@ impl super::Painter {
                                 zero_style_system::computed::resolve_length(length, font_size as f64, None, None) as f32
                             }
                         };
+                        // R5350 扩张轴选区站 content-area 校准（R5171 FIXME ①）：
+                        // css-pseudo-4 §highlight-bounds「overlay ≥ em box」——扩张轴
+                        //（默认开，`ZW_INLINE_CA_EXPAND=0` 关）下行 fill 由行盒域改铺
+                        // 内容区带 [基线−a, 基线+d]（行组真基线锚 + owner 字体度量，
+                        // ≡ A 门 r5120 同式；active-selection-027 双页 line-height:1
+                        // 实证行盒域 fill 与内容区 bg 错位）。度量缺失回退行盒域。
+                        // kill-switch 关断时字节不变。
                         let mut any_line = false;
                         let mut all_selected = true;
                         for ((owner, ltb), line_start, line_end, min_x, max_xw) in &line_ranges {
@@ -4089,13 +4143,35 @@ impl super::Painter {
                                 };
                                 sel_line_colors.insert((*owner, *ltb), line_color);
                                 if !owner_is_text_control && line_bg.a > 0 {
+                                    // R5350：内容区带 [基线−a, 基线+d]（owner 字体度量，
+                                    // ≡ 扩轴后 A 门 r5120 内容区锚；行盒顶锚仅在关/度量
+                                    // 缺失回退时使用）。
+                                    let (fill_y, fill_h) = if self.inline_ca_expand_enabled {
+                                        line_baselines
+                                            .get(&(*owner, *ltb))
+                                            .copied()
+                                            .and_then(|bl| {
+                                                let os = styles.and_then(|st| st.get(owner));
+                                                let (fam, fs) = match os {
+                                                    Some(o) => (
+                                                        &o.font_family,
+                                                        match o.font_size {
+                                                            zero_style_system::LengthValue::Px(v) => v as f32,
+                                                            _ => font_size,
+                                                        },
+                                                    ),
+                                                    None => (&style.font_family, font_size),
+                                                };
+                                                let fids = self.resolve_style_font_ids(fam, os.unwrap_or(style));
+                                                zero_layout_engine::fallback_line_metrics_for_paint(&fids, " ", fs)
+                                                    .map(|(a, d)| (content_y + bl - a, a + d))
+                                            })
+                                            .unwrap_or((content_y + f32::from_bits(*ltb), line_h))
+                                    } else {
+                                        (content_y + f32::from_bits(*ltb), line_h)
+                                    };
                                     sel_line_fills.push((
-                                        Rect::new(
-                                            content_x + min_x,
-                                            content_y + f32::from_bits(*ltb),
-                                            (max_xw - min_x).max(0.0),
-                                            line_h,
-                                        ),
+                                        Rect::new(content_x + min_x, fill_y, (max_xw - min_x).max(0.0), fill_h),
                                         line_bg,
                                     ));
                                 }
@@ -4209,12 +4285,32 @@ impl super::Painter {
                                         ) as f32
                                     }
                                 };
+                                // R5350 扩张轴同式校准（R5171 FIXME ①，盒级臂同几何）：
+                                // 带 [基线−a, 基线+d]（行组真基线锚 + owner 字体度量，
+                                // ≡ A 门 r5120 内容区锚）；度量缺失回退行盒域。
+                                let (owner_fill_y, owner_fill_h) = if self.inline_ca_expand_enabled {
+                                    line_baselines
+                                        .get(&(*owner, *ltb))
+                                        .copied()
+                                        .and_then(|bl| {
+                                            let ofs = match os.font_size {
+                                                zero_style_system::LengthValue::Px(v) => v as f32,
+                                                _ => font_size,
+                                            };
+                                            let ofids = self.resolve_style_font_ids(&os.font_family, os);
+                                            zero_layout_engine::fallback_line_metrics_for_paint(&ofids, " ", ofs)
+                                                .map(|(a, d)| (content_y + bl - a, a + d))
+                                        })
+                                        .unwrap_or((content_y + f32::from_bits(*ltb), owner_line_h))
+                                } else {
+                                    (content_y + f32::from_bits(*ltb), owner_line_h)
+                                };
                                 sel_line_fills.push((
                                     Rect::new(
                                         content_x + min_x,
-                                        content_y + f32::from_bits(*ltb),
+                                        owner_fill_y,
                                         (*max_xw - *min_x).max(0.0),
-                                        owner_line_h,
+                                        owner_fill_h,
                                     ),
                                     line_bg,
                                 ));

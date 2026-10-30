@@ -98,10 +98,14 @@ fn r5296_single_line_inflated_lh_span_bg_box_level_content_anchored() {
 
     // 相位② kill-switch=0（门关）：回退高度代理 → fragment 路径旧 frag.y 位
     //（背景 = [baseline−200, baseline]，高 200、上溢出树盒）。
+    // R5350：扩张轴（默认开）把 fragment bg 站整盒化（内容区锚），本相位钉
+    // R5296 门关旧几何——同钉轴关态（`ZW_INLINE_CA_EXPAND=0`）。
     // Rust 2024：set_var/remove_var 为 unsafe（进程全局可变）。
     unsafe { std::env::set_var("ZW_INLINE_BG_ML_GATE", "0") };
+    unsafe { std::env::set_var("ZW_INLINE_CA_EXPAND", "0") };
     let (prims_off, span_off) = paint_inflated_span_page("200px");
     unsafe { std::env::remove_var("ZW_INLINE_BG_ML_GATE") };
+    unsafe { std::env::remove_var("ZW_INLINE_CA_EXPAND") };
     let fills_off = blue_fills(&prims_off);
     assert_eq!(fills_off.len(), 1, "kill-switch 相位应恰一背景矩形，实得 {fills_off:?}");
     let (_, y_off, _, h_off) = fills_off[0];

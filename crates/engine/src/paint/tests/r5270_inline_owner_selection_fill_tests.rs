@@ -64,8 +64,14 @@ fn sel_fill_rect_matches_element_bg_rect_and_paints_above() {
 
 /// 透明元素 bg 的 owner 仍铺选区 fill（门扩展臂，非 has_bg 搭载）；逐 run 矩形
 /// 同行不连体（词间隙留空，R5269 行级连体回归锚）。
+/// R5350：本测钉 R5270 站**逐 run**几何——扩张轴（默认开）把站 fill 与元素
+/// bg 同公式整盒化（带域），逐 run 锚钉在轴关态（`ZW_INLINE_CA_EXPAND=0`，
+/// Rust 2024 set_var 为 unsafe；扩张轴几何锚在 crates/engine/tests/
+/// r5350_inline_ca_expand_axis.rs 独立进程——R3858 教训：进程内 set_var 与
+/// 并行单测互踩）。
 #[test]
 fn transparent_bg_owner_still_gets_selection_fill() {
+    unsafe { std::env::set_var("ZW_INLINE_CA_EXPAND", "0") };
     let mut pipeline = RenderPipeline::new(800.0, 600.0);
     pipeline.set_text_selections(vec![("#test".to_string(), 0, 13)]);
     let result = pipeline.render_html(
@@ -96,6 +102,7 @@ fn transparent_bg_owner_still_gets_selection_fill() {
         "逐 run 矩形不连体（词间隙不铺），实际 {:?}",
         greens
     );
+    unsafe { std::env::remove_var("ZW_INLINE_CA_EXPAND") };
 }
 
 /// clip:text 恒色 owner 与元素 bg 同款抑制——站触发（orphan 形）下选区 fill

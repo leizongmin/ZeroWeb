@@ -98,13 +98,12 @@ pub struct Painter {
     /// R5349：内容区锚定绘制的**扩张轴**（显式 line-height < 主字体 A+D，报告盒高于
     /// 树盒——负半 leading 下背景/边框按 content area 外溢行盒；CSS2 §10.6.2/§10.8.1，
     /// driving: line-height-125：lh 10/fs 50，span bg 应按内容区高盖住前序 span）。
-    /// R5171 只做收缩轴并挂账扩张轴。**默认关**（`ZW_INLINE_CA_EXPAND=1` 启用）：
-    /// 全量 corpus A/B 实证单开本轴净 +1F（785F）——ref 页 span bg 扩轴而选区/高亮站
-    ///（R5052/R5054 行盒缘口径）与 R2197/R639 fragment 施画路径未同步
-    ///（active-selection-027 翻红：ref 页 `.highlight_reftest{line-height:1}` + span
-    /// 黄底被扩到内容区高，test 页选区黄仍行盒高；line-height-125 驱动案 test 页
-    /// span bg 走 fragment 路径，override 不可达）。解锁三件 = 选区站 content-area
-    /// 校准 + fragment 路径接入 + insert-009 归因。构造期单次读取。
+    /// R5171 只做收缩轴并挂账扩张轴。R5350 解锁三件落地后**默认开**
+    ///（kill-switch `ZW_INLINE_CA_EXPAND=0` 回退 R5349 只收缩口径）：解锁 =
+    /// 选区站 content-area 校准（行组真基线锚，≡ R5120 内容区带）+ fragment
+    /// 施画路径接入（border-free 单行 owner，有边框盒不入轴——insert-009
+    /// nosplit-ref 嵌套边框栈 3px 平移实证）+ box-level 同款边框守卫。
+    /// 全量 corpus A/B（782F vs 783F 基线）零回归 +1F。构造期单次读取。
     pub(crate) inline_ca_expand_enabled: bool,
     /// R5296：inline box-level 背景/边框与 R639 per-fragment 臂的多行判据升级
     /// （`content_height > max(fs, 自身 line-height 解析值, run 行高最大值)×1.5`，
@@ -989,7 +988,7 @@ impl Painter {
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
-            inline_ca_expand_enabled: std::env::var("ZW_INLINE_CA_EXPAND").as_deref() == Ok("1"),
+            inline_ca_expand_enabled: std::env::var("ZW_INLINE_CA_EXPAND").as_deref() != Ok("0"),
             inline_bg_ml_gate_enabled: std::env::var("ZW_INLINE_BG_ML_GATE").as_deref() != Ok("0"),
             inline_owner_max_lh: HashMap::new(),
             mc_paint_nesting: 0,
@@ -2264,13 +2263,26 @@ impl Painter {
         let (reported_y, reported_h) = box_node.inline_reported_rect?;
         // 收缩轴：显式 line-height > 主字体 A+D 的半 leading 多涂带（R5171，
         // inline-non-replaced-height-002/003：报告盒矮于树盒）。
-        // 扩张轴（line-height < A+D，报告盒高于树盒）：R5349 探针轴，默认关
-        //（`ZW_INLINE_CA_EXPAND=1` 启用）——单开净 +1F（785F）：选区/高亮站
-        //（R5052/R5054 行盒缘口径）与 R2197/R639 fragment 施画路径未同步，
-        // active-selection-027 翻红、line-height-125 驱动案 override 不可达。
-        // 关断时维持只收缩不扩张的 R5171 口径。
-        if reported_h > box_node.height - 0.25 && !self.inline_ca_expand_enabled {
-            return None;
+        // 扩张轴（line-height < A+D，报告盒高于树盒）：R5349 探针轴，R5350
+        // 解锁三件（选区站 content-area 校准 + fragment 路径接入 + insert-009
+        // 边框归因）落地后默认开，kill-switch `ZW_INLINE_CA_EXPAND=0` 回退
+        // 只收缩口径。
+        if reported_h > box_node.height - 0.25 {
+            if !self.inline_ca_expand_enabled {
+                return None;
+            }
+            // R5350 扩张轴边框守卫：报告盒高于树盒时重写 y/h 会平移盒框带
+            //（border 横条锚树盒 y——insert-009 nosplit-ref 蓝青嵌套边框栈
+            // 3px 下移实证，dy=+1 两级叠加）。有边框盒不入轴，≡ fragment
+            // A 门 border-free 口径；收缩轴维持 R5171 原口径（其驱动案语义在
+            // 报告盒本身，含边框案 corpus 既有绿灯不动）。
+            if box_node.border_top > 0.0
+                || box_node.border_bottom > 0.0
+                || box_node.border_left > 0.0
+                || box_node.border_right > 0.0
+            {
+                return None;
+            }
         }
         if (reported_y - box_node.y).abs() <= 0.25 && (reported_h - box_node.height).abs() <= 0.25 {
             return None;
