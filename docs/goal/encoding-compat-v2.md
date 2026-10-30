@@ -1,19 +1,26 @@
 # encoding 二期 — legacy-mb 未导入族 + 根面 labels/API 残余 + streams 收口
 
-**版本**: v1.3（M4 复测在跑）
+**版本**: v1.4（M4 form 面证得引擎阻塞，decode/href/encoder 面推进中）
 **日期**: 2026-10-31（立项；同日 M0 对账 + 降级落定、M1 可导入集入通道）
 **状态**: Active——M0 + M1 完成（DC-2 达成：big5-encoder 13P 新证 +
 iso-2022-jp-encoder 2P、10F 流式模型簇挂账，见
 [M1 证据](encoding-compat-v2/evidence/2026-10-31-m1-importable-set-wiring.md)）。
-M4 coverage 复测进行中：三源分片管道在跑（`/tmp/zw-enc2-m4/`，test-guard
-逐分片包裹；enc30 已齐 12,075 = 12,072P/3F 与 30 号在册残差逐一吻合；
-form36 八分片 70 文件精确不相交覆盖已模拟验证 + enc31 队尾），
-tally 判读脚本 `/tmp/zw-enc2-m4/tally_dc4.py` 就位（分片缺口报 MISSING）。
-预期口径：本地三源 1,139,490 子测试、passes 1,139,476 = 天花板（非 P 恰
-14 = 3F SAB 残差 + 10F 流式模型簇 + 1T data:iframe 契约挂案）。
-**卡点**：无。
-**下一步**：分片齐（`/tmp/zw-enc2-m4/ALL-DONE`）→ tally 判读（DC-4 门
-≥98.8%）→ M4 evidence + wpt-suites.csv 37 号行 + 收口提交。
+M4 coverage 复测推进中（`/tmp/zw-enc2-m4/`，test-guard 逐分片包裹）：
+enc30 已齐 12,075 = 12,072P/3F；enc31 decode 面（385 文件）六族分片在跑；
+href 面 euc-jp/iso-2022-jp/shift_jis 已回收（sjis 逐文件隔离恢复），
+euc-kr/big5 href 面 + 4 个 encoder API 页 + big5-enc-ascii 与 enc31 并行
+补跑（全部脚本 face，12 文件）。
+**卡点**：form36 form 面被引擎共享路径缺陷阻塞——上游标准 helper
+`encode-form-common.js` 的「脚本建 DOM + load 后重查询 + collection[0]
+submit」形态必挂：① load 时 apply 路径缺 `__zw_apply_generation_bump` →
+shim pending 条目 ghost 不驱逐 → 文档级枚举双计；② apply-materialized
+form 的 sel-proxy `form.submit` 静默无效。完整根因链、探针台账与修复方向
+见 [evidence/2026-10-31-m4-form-face-engine-bug.md]
+(encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)。
+**下一步**：enc31 + 补跑批收齐 → tally 判读（口径改为「非 form 面」：
+DC-4 数值门按 form 面排除后的分母/天花板重算并记 engine-blocked 挂账）→
+引擎修复独立立项（两缺陷 + 全量回归验证）→ 修复落地后 m4-form-batch.sh
+重跑 form 面 → wpt-suites.csv 37 号行 + 收口提交。
 **执行模式**: WPT 驱动（上游 encoding 语料为验收标尺）+ 一期通道复用（testharness 编码读取点 + 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码/文本处理面）
 
