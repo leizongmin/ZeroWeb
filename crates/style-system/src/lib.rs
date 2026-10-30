@@ -1074,11 +1074,15 @@ impl StyleSystem {
             // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
             // 据此注入 <img>（R1988 机制），旧 gate 漏 Url 致 ::before/::after content:url()
             // 整体失配（content-004 族 driving）。
+            // R5340：单值 Counters（`content: counters(c, ".", style)`，CSS Lists 3
+            // §counter-functions）同样保留——旧 gate 漏该臂致伪元素整体无生成内容
+            //（counter-hebrew-nested driving；多 item List 形态经 List 臂本就保留）。
             if matches!(
                 before.content,
                 property::types::ContentComputedValue::String(_)
                     | property::types::ContentComputedValue::Attr(_)
                     | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::Counters { .. }
                     | property::types::ContentComputedValue::List(_)
                     | property::types::ContentComputedValue::Url(_)
             ) {
@@ -1096,6 +1100,7 @@ impl StyleSystem {
                 property::types::ContentComputedValue::String(_)
                     | property::types::ContentComputedValue::Attr(_)
                     | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::Counters { .. }
                     | property::types::ContentComputedValue::List(_)
                     | property::types::ContentComputedValue::Url(_)
             ) {

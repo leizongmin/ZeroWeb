@@ -322,6 +322,37 @@ fn test_before_pseudo_computed_from_counter_content() {
     }
 }
 
+// R5340：单值 counters() 的 ::before/::after 伪元素样式须保留（旧 gate 漏
+// Counters 臂 → 伪元素整体无生成内容，counter-hebrew-nested driving；多 item
+// List 形态经 List 臂本就保留，CSS Lists 3 §counter-functions）。
+#[test]
+fn test_before_pseudo_computed_from_counters_content() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: counters(x, ".", hebrew); }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    let before = s.before_pseudo.expect("counters() 的 before 伪元素样式应保留");
+    match &before.content {
+        crate::property::types::ContentComputedValue::Counters { name, separator, style } => {
+            assert_eq!(name, "x");
+            assert_eq!(separator, ".");
+            assert_eq!(style.as_deref(), Some("hebrew"));
+        }
+        other => panic!("before content 应为 Counters，实际 {other:?}"),
+    }
+    // after gate 同臂：content: counters(...) 的 ::after 同样保留。
+    let css_after = r#"div:after { content: counters(x, "."); }"#;
+    let s2 = compute_style_from_css(&doc, css_after, div);
+    let after = s2.after_pseudo.expect("counters() 的 after 伪元素样式应保留");
+    assert!(
+        matches!(
+            after.content,
+            crate::property::types::ContentComputedValue::Counters { .. }
+        ),
+        "after content 应为 Counters，实际 {:?}",
+        after.content
+    );
+}
+
 #[test]
 fn test_after_pseudo_and_content_none_no_box() {
     let (doc, _html, _body, div, _p) = make_test_dom();
