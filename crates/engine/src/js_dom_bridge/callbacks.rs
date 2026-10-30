@@ -2627,6 +2627,43 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s168（html-semantics M2）：attachShadow 物化通道——宿主按身份分双回调（镜像
+    // append_child / append_child_handle 对偶）。mode 枚举与二次 attach 校验在 shim
+    // 侧（spec attach a shadow root 步骤），engine 收到即物化。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_attach_shadow",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AttachShadow {
+                        host_selector: args[0].clone(),
+                        root_handle: args[1].clone(),
+                        mode: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_attach_shadow_handle",
+        Box::new(move |args| {
+            if args.len() >= 3 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AttachShadowOnHandle {
+                        host_handle: args[0].clone(),
+                        root_handle: args[1].clone(),
+                        mode: args[2].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_append_fragment_children",

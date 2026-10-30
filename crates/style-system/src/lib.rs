@@ -50,6 +50,34 @@ use zero_css_parser::Stylesheet;
 use zero_css_parser::media_query::{MediaType, PrefersColorSchemeValue};
 use zero_dom::{Document, NodeId, NodeKind, QuirksMode};
 
+/// s168（html-semantics M2）：shadow 树作者级联作用域——一个 shadow root 的样式表
+/// 集（CSS Scoping：shadow 树的作者级联源 = 其树内 link/style 引入的表，树序；
+/// 与文档表互不可见）。经 [`StyleSystem::compute_styles_with_shadow`] 进入走查。
+pub struct ShadowScopeStylesheets {
+    /// shadow root 节点。
+    pub root: NodeId,
+    /// 本树样式表（树序）。
+    pub sheets: Vec<Stylesheet>,
+}
+
+/// s168：走查期作用域视图——scopes 与预建索引的并行表 + 空表兜底（无记录
+/// shadow root = UA + host 继承）。生命周期：一次 compute 调用内。
+struct ShadowScopeView<'a> {
+    scopes: &'a [ShadowScopeStylesheets],
+    indexes: &'a [matcher::StylesheetIndex],
+    empty_index: &'a matcher::StylesheetIndex,
+}
+
+impl ShadowScopeView<'_> {
+    /// shadow root 的级联源 `(sheets, index)`；无记录 → 空表兜底。
+    fn for_root(&self, root: NodeId) -> (&[Stylesheet], &matcher::StylesheetIndex) {
+        match self.scopes.iter().position(|s| s.root == root) {
+            Some(i) => (&self.scopes[i].sheets, &self.indexes[i]),
+            None => (&[], self.empty_index),
+        }
+    }
+}
+
 /// 返回 HTML 元素的 UA 默认 display 值。
 ///
 /// 根据 HTML 规范，不同元素有不同的默认 display 类型。
@@ -518,6 +546,21 @@ impl StyleSystem {
     ///
     /// 返回一个 HashMap，键为元素 NodeId，值为对应的 ComputedStyle。
     pub fn compute_styles(&mut self, doc: &Document, stylesheets: &[Stylesheet]) -> HashMap<NodeId, ComputedStyle> {
+        self.compute_styles_with_shadow(doc, stylesheets, &[])
+    }
+
+    /// s168（html-semantics M2）：shadow 作用域变体——每个 shadow root 子树的作者
+    /// 级联源 = 本树样式表（CSS Scoping：文档表与 shadow 表互不可见，
+    /// https://drafts.csswg.org/css-scoping/#shadow-cascade）；无记录/空表 shadow
+    /// root = UA 默认 + host 继承。`shadow_scopes` 空（默认 [`Self::compute_styles`]）
+    /// 时文档表路径与旧全量逐位一致——ShadowRoot 子树下降处仅切到空表（不命中
+    /// 任何作者规则）。
+    pub fn compute_styles_with_shadow(
+        &mut self,
+        doc: &Document,
+        stylesheets: &[Stylesheet],
+        shadow_scopes: &[ShadowScopeStylesheets],
+    ) -> HashMap<NodeId, ComputedStyle> {
         let mut styles = if std::env::var("ZW_STYLE_MAP_EXACT_CAPACITY").as_deref() == Ok("0") {
             HashMap::new()
         } else {
@@ -531,8 +574,18 @@ impl StyleSystem {
         // 预扫描所有样式表的 `@property` 规则，注册自定义属性（syntax/inherits/initial-value）。
         // 注册信息在 `gather_custom_properties` 中为未显式声明的注册属性提供 initial-value
         // 兜底默认值（CSS Properties and Values API）。
-        self.registered_properties = collect_registered_properties(stylesheets);
-        self.font_feature_values = collect_font_feature_values(stylesheets);
+        // s168：并集含 shadow 作用域表（漏并集会错注册兜底默认/错跳过 per-元素伪
+        // 计算；scopes 空时 chain 迭代零开销）。
+        self.registered_properties = collect_registered_properties(
+            stylesheets
+                .iter()
+                .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
+        );
+        self.font_feature_values = collect_font_feature_values(
+            stylesheets
+                .iter()
+                .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
+        );
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
@@ -545,14 +598,26 @@ impl StyleSystem {
         // ::before/::after/::marker 伪元素规则。无则完全跳过每元素的伪元素计算
         //（旧实现每元素仍执行 2 次 collect_pseudo_declarations 全规则扫描——
         // medium 4400 元素 × 2 次 × 全规则扫描是 style 阶段的大头）。
-        let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
+        // s168：四旗标均为「任一表命中」语义，并集 shadow 表。
+        let has_pseudo_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_pseudo_rules(&s.rules));
         // R4262：scroll-button 规则预扫描（S10 同型）——无则跳过每元素按钮探针。
-        let has_scroll_button_rules = stylesheets.iter().any(|s| stylesheet_has_scroll_button_rules(&s.rules));
+        let has_scroll_button_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_scroll_button_rules(&s.rules));
         // R5054：`::selection` 规则在页扫描——通用元素 owner 伪样式存储的零成本门禁
         //（无规则页逐元素伪计算跳过；≡ has_scroll_button_rules S10 同型）。
-        let has_selection_rules = stylesheets.iter().any(|s| stylesheet_has_selection_rules(&s.rules));
-        // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）
-        let cache_safe = stylesheet_cache_safe(stylesheets);
+        let has_selection_rules = stylesheets
+            .iter()
+            .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter()))
+            .any(|s| stylesheet_has_selection_rules(&s.rules));
+        // S11：样式键缓存可用性（无属性选择器/伪类/var——计算样式仅依赖键）。
+        // s168：键安全旗标保守并集（shadow 表含键外依赖时禁用缓存）。
+        let cache_safe =
+            stylesheet_cache_safe(stylesheets) && shadow_scopes.iter().all(|s| stylesheet_cache_safe(&s.sheets));
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
@@ -561,6 +626,19 @@ impl StyleSystem {
         // P124：随构建预计算 @media 命中表（本轮渲染 media_ctx 固定，命中与元素无关）。
         let media_ctx = self.media_ctx_for();
         let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
+
+        // s168：per-scope 索引一次预建（shadow 表很小，每代一次）；空表兜底索引
+        // 共享一份（无记录 shadow root = UA + host 继承）。
+        let scope_indexes: Vec<matcher::StylesheetIndex> = shadow_scopes
+            .iter()
+            .map(|s| matcher::build_stylesheet_index_with_media(&s.sheets, media_ctx.as_ref()))
+            .collect();
+        let empty_index = matcher::build_stylesheet_index_with_media(&[], media_ctx.as_ref());
+        let shadow_view = ShadowScopeView {
+            scopes: shadow_scopes,
+            indexes: &scope_indexes,
+            empty_index: &empty_index,
+        };
 
         // 从文档根开始 DFS
         let root = doc.root();
@@ -581,6 +659,7 @@ impl StyleSystem {
             delay_parent_insert,
             None,
             0, // R4322：根的祖先链指纹空
+            &shadow_view,
         );
 
         styles
@@ -616,6 +695,13 @@ impl StyleSystem {
         let scanned_scheme_dark = self.scan_document_color_scheme(doc);
         if scanned_scheme_dark != self.document_color_scheme_dark {
             self.document_color_scheme_dark = scanned_scheme_dark;
+            *styles = self.compute_styles(doc, stylesheets);
+            return;
+        }
+        // s168：shadow 树内变更 → 退化全量（增量走查按文档表求值，对 shadow 子树
+        // 会错级联作用域；shadow 页稀少，退化可接受。全量空 scopes = shadow 内容
+        // UA + host 继承，与 compute_styles 语义一致）。
+        if changed.iter().any(|&n| Self::is_shadow_enclosed(doc, n)) {
             *styles = self.compute_styles(doc, stylesheets);
             return;
         }
@@ -694,6 +780,14 @@ impl StyleSystem {
             }
             // 变更节点 + 子树重算（含伪元素与既有递归完整逻辑）。递归内部按
             // 下行语义自行压/弹变更节点自身条目，这里先弹回链走压入的部分。
+            // s168：增量路径无 shadow 作用域输入——shadow 封闭变更已在入口退全量，
+            // 此处恒 light 子树，空视图即可（ShadowRoot 分支不可达）。
+            let incremental_empty_index = matcher::build_stylesheet_index_with_media(&[], None);
+            let incremental_shadow_view = ShadowScopeView {
+                scopes: &[],
+                indexes: &[],
+                empty_index: &incremental_empty_index,
+            };
             self.compute_styles_recursive(
                 doc,
                 nid,
@@ -711,11 +805,24 @@ impl StyleSystem {
                 delay_parent_insert,
                 None,
                 0, // R4322：增量起点祖先链指纹空（局部 style_cache）
+                &incremental_shadow_view,
             );
             for _ in 0..pushed_containers {
                 self.container_chain.pop();
             }
         }
+    }
+
+    /// s168：节点是否处于 shadow 树内（父链含 ShadowRoot）——增量退化门用。
+    fn is_shadow_enclosed(doc: &Document, node: NodeId) -> bool {
+        let mut cur = doc.parent_node(node);
+        while let Some(p) = cur {
+            if matches!(doc.get(p).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+                return true;
+            }
+            cur = doc.parent_node(p);
+        }
+        false
     }
 
     /// R4322：祖先属性链指纹累积——把本元素的 (tag, attrs) 混入父链哈希。
@@ -1244,6 +1351,9 @@ impl StyleSystem {
         // R4322：父链属性指纹——从根到本元素父的 (tag, attrs) 逐级哈希累积。
         // 本元素不可键时，子元素键以它为 unkeyed_parent_chain 组件。
         chain_hash: u64,
+        // s168：shadow 作用域视图——子代下降遇 ShadowRoot 时切级联源（见
+        // [`Self::compute_styles_with_shadow`]）。
+        shadow_view: &ShadowScopeView,
     ) {
         let node_data = match doc.get(node) {
             Some(n) => n,
@@ -1399,11 +1509,21 @@ impl StyleSystem {
         // 属性选择器/伪类/伪元素等键外依赖）。
         let child_chain = Self::mix_chain_hash(chain_hash, node_data);
         for child in children {
+            // s168：ShadowRoot 边界切换级联源——shadow 子树只用本树样式表
+            //（CSS Scoping：文档表不匹配 shadow 内容；无记录/空表 = UA + host
+            // 继承，ShadowRoot 节点非元素不产样式，继承链经 parent_ref 自然贯通）。
+            // light 子沿用当前作用域。
+            let (child_sheets, child_index) =
+                if matches!(doc.get(child).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+                    shadow_view.for_root(child)
+                } else {
+                    (stylesheets, rule_index)
+                };
             self.compute_styles_recursive(
                 doc,
                 child,
-                stylesheets,
-                rule_index,
+                child_sheets,
+                child_index,
                 parent_ref,
                 &current_custom,
                 styles,
@@ -1416,6 +1536,7 @@ impl StyleSystem {
                 delay_parent_insert,
                 cache_key.clone(),
                 child_chain,
+                shadow_view,
             );
         }
         if pushed_container.is_some() {
@@ -3325,7 +3446,9 @@ struct RegisteredProperty {
 ///
 /// 后注册的同名属性覆盖先注册者（CSS Properties and Values API：后者胜出）。仅顶层
 /// `@property` 规则有效（不递归进入 @media 等条件块——@property 是全局注册，无作用域）。
-fn collect_registered_properties(stylesheets: &[Stylesheet]) -> HashMap<String, RegisteredProperty> {
+fn collect_registered_properties<'a>(
+    stylesheets: impl IntoIterator<Item = &'a Stylesheet>,
+) -> HashMap<String, RegisteredProperty> {
     use zero_css_parser::ast::Rule;
     let mut map: HashMap<String, RegisteredProperty> = HashMap::new();
     for ss in stylesheets {

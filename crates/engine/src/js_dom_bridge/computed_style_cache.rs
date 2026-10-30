@@ -747,9 +747,16 @@ pub(super) fn computed_style_by_handle(
         let nid = match nodes.get(handle) {
             Some(&nid) => nid,
             // 跨批 handle：正置表锚 selector → 视图 doc 回定位（见函数头注）。
+            // s168：miss 后 shadow 包含查找——shadow 树内 handle 元素对 light 查询
+            // 封装不可见（zero-dom 查询门），gCS by handle 是对象身份通道（页面持
+            // 元素对象），经 `query_selector_including_shadow` 补面。
             None => {
                 let sel = forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
-                match sel.as_deref().and_then(|sel| super::find_by_selector(doc, sel)) {
+                let hit = sel
+                    .as_deref()
+                    .and_then(|sel| super::find_by_selector(doc, sel))
+                    .or_else(|| sel.as_deref().and_then(|sel| doc.query_selector_including_shadow(sel)));
+                match hit {
                     Some(nid) => nid,
                     None => return String::new(),
                 }

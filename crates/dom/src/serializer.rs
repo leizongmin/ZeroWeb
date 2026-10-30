@@ -158,10 +158,27 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push_str(&pi.data);
             output.push_str("?>");
         }
-        NodeKind::DocumentFragment | NodeKind::ShadowRoot(_) => {
+        NodeKind::DocumentFragment => {
             for &child in &node_data.children {
                 serialize_node_inner(doc, child, output);
             }
+        }
+        NodeKind::ShadowRoot(data) => {
+            // s168：shadow 树按声明式 Shadow DOM 形态序列化（`<template
+            // shadowrootmode>`，https://html.spec.whatwg.org/multipage/scripting.html
+            // #the-template-element）——裸子直出会把 shadow 内容当 light 子泄漏进
+            // 快照/序列化产物；声明式形态由 parse 侧 fixup（parser.rs）重建 ShadowRoot，
+            // drain 重序列化 → 视图重放回环闭合。
+            output.push_str("<template shadowrootmode=\"");
+            output.push_str(match data.mode {
+                crate::node::ShadowRootMode::Open => "open",
+                crate::node::ShadowRootMode::Closed => "closed",
+            });
+            output.push_str("\">");
+            for &child in &node_data.children {
+                serialize_node_inner(doc, child, output);
+            }
+            output.push_str("</template>");
         }
     }
 }
@@ -195,6 +212,15 @@ pub fn inner_html(doc: &Document, id: NodeId) -> String {
         return output;
     }
     for &child in &node_data.children {
+        // s168：shadow 树不进 innerHTML/outerHTML（封装边界——host.children 里的
+        // ShadowRoot 对标记面不可见；full-doc 序列化走 serialize_node_inner 的
+        // ShadowRoot 声明式分支，不经此处）。
+        if doc
+            .get(child)
+            .is_some_and(|n| matches!(n.kind, NodeKind::ShadowRoot(_)))
+        {
+            continue;
+        }
         serialize_node_inner_ctx(doc, child, parent_tag_ref, &mut output);
     }
     output

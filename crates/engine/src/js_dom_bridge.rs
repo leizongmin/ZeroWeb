@@ -443,6 +443,29 @@ pub enum DomMutation {
         /// 稳定句柄（`__n1` 等）。
         handle: String,
     },
+    /// `element.attachShadow(init)`（s168 html-semantics M2）——为宿主附加 ShadowRoot。
+    /// engine 侧 `doc.attach_shadow` 物化 ShadowRoot 节点（挂在宿主 children 下，封装边界
+    /// 由查询/序列化既有过滤保证），并把 `root_handle` 注册为 ShadowRoot NodeId——此后
+    /// [`Self::AppendFragmentChildrenByHandle`] flatten（shadow 容器复用 fragment handle）
+    /// 与 [`Self::AppendChildByHandle`] 按常规 parent 解析自然落入 shadow 树。
+    /// https://dom.spec.whatwg.org/#dom-element-attachshadow
+    AttachShadow {
+        /// 宿主元素选择器。
+        host_selector: String,
+        /// shadow root 容器句柄（shim 侧 fragment handle，`_shadowRoots[host].handle`）。
+        root_handle: String,
+        /// 封装模式（`"open"`/`"closed"`；shim 侧已校验枚举与二次 attach）。
+        mode: String,
+    },
+    /// [`Self::AttachShadow`] 的句柄宿主对偶（create 句柄宿主无 selector）。
+    AttachShadowOnHandle {
+        /// 宿主元素句柄。
+        host_handle: String,
+        /// shadow root 容器句柄。
+        root_handle: String,
+        /// 封装模式。
+        mode: String,
+    },
     /// `parent.appendChild(fragment)`（P1a）——把 fragment 的**子节点移动**到 parent（flatten，
     /// fragment 自身不入树）。区别于 [`Self::AppendChild`]（append 节点自身）。父为选择器。
     AppendFragmentChildren {
@@ -1118,6 +1141,21 @@ pub fn apply_dom_mutations_full(
                 });
                 continue;
             }
+            // s168：句柄宿主 attachShadow 跨批未入表时，经持久表翻译成 selector 变体
+            //（镜像既有 *OnHandle 翻译口径；宿主是 markup 元素时 shim 直接发 selector
+            // 变体，不经此处）。
+            DomMutation::AttachShadowOnHandle {
+                ref host_handle,
+                ref root_handle,
+                ref mode,
+            } if !handles.contains_key(host_handle) && persistent_sel(host_handle).is_some() => {
+                pending.push_front(DomMutation::AttachShadow {
+                    host_selector: persistent_sel(host_handle).unwrap_or_default(),
+                    root_handle: root_handle.clone(),
+                    mode: mode.clone(),
+                });
+                continue;
+            }
             other => other,
         };
         match mutation {
@@ -1747,6 +1785,31 @@ pub fn apply_dom_mutations_full(
             DomMutation::CreateDocumentFragment { handle } => {
                 let id = doc.create_document_fragment();
                 handles.insert(handle.clone(), id);
+            }
+            DomMutation::AttachShadow {
+                host_selector,
+                root_handle,
+                mode,
+            } => {
+                // s168：宿主失配硬错（同 AppendChildByHandle 口径——shim attachShadow 已过
+                // spec 校验序列：二次 attach NotSupportedError / mode TypeError / 非 HTML ns
+                // 均不入队，失配暴露 replay 真 bug）。ShadowRoot 节点挂宿主 children 下；
+                // root_handle 注册后，后续 flatten/append 按常规 parent 解析入 shadow 树。
+                let host = find_by_selector(doc, &host_selector)
+                    .ok_or_else(|| format!("attach_shadow: no host {host_selector}"))?;
+                let mode = if mode == "open" {
+                    zero_dom::ShadowRootMode::Open
+                } else {
+                    zero_dom::ShadowRootMode::Closed
+                };
+                let root = doc.attach_shadow(host, mode).map_err(|e| e.to_string())?;
+                handles.insert(root_handle.clone(), root);
+            }
+            DomMutation::AttachShadowOnHandle { host_handle, .. } => {
+                // s168：翻译臂未接住（宿主句柄既不在 ephemeral 表也无持久 selector 锚）
+                // → lenient warn+跳过（R125 口径：host 与 JS 解析视图分歧不中止整批，
+                // 跳过即修复前形态）。
+                tracing::warn!("apply DOM mutations: attach_shadow handle host unanchored, skipped: {host_handle}");
             }
             DomMutation::AppendFragmentChildren {
                 parent_selector,

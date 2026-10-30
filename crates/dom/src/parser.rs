@@ -597,6 +597,11 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     opts.tree_builder.scripting_enabled = scripting_enabled;
     let parser = html5ever::parse_document(builder, opts);
     let mut doc = parser.one(html);
+    // s168：声明式 Shadow DOM 重建——序列化面（serializer ShadowRoot 分支）以
+    // `<template shadowrootmode>` 形态落盘，此处解析后还原为 ShadowRoot 节点，
+    // drain 重序列化 → 视图重放回环闭合。spec 声明式 shadow DOM：
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    doc.materialize_declarative_shadow_roots();
     doc.set_encoding_label(encoding_label);
     doc.set_scripting_enabled(scripting_enabled);
     doc

@@ -14,12 +14,17 @@ pub(crate) type FontFeatureValuesRegistry = HashMap<String, HashMap<FontFeatureA
 /// 扫描并按 family / cascade layer / 源序合并 `@font-feature-values` alias。
 ///
 /// 无层规则优先于有层规则；有层规则按声明层顺序后层优先；同优先级后声明覆盖。
-pub(crate) fn collect_font_feature_values(stylesheets: &[Stylesheet]) -> FontFeatureValuesRegistry {
+pub(crate) fn collect_font_feature_values<'a>(
+    stylesheets: impl IntoIterator<Item = &'a Stylesheet>,
+) -> FontFeatureValuesRegistry {
     if std::env::var("ZW_FONT_FEATURE_VALUES").as_deref() == Ok("0") {
         return HashMap::new();
     }
+    // s168：IntoIterator 形态（调用方传文档表 ∧ shadow 表 chain 迭代）——两轮
+    // 消费需复用，物化一次引用表。
+    let stylesheets: Vec<&Stylesheet> = stylesheets.into_iter().collect();
     let mut layer_order = Vec::<String>::new();
-    for stylesheet in stylesheets {
+    for stylesheet in &stylesheets {
         collect_layer_names(&stylesheet.rules, &mut layer_order);
     }
     let layer_priority: HashMap<String, usize> = layer_order
@@ -32,7 +37,7 @@ pub(crate) fn collect_font_feature_values(stylesheets: &[Stylesheet]) -> FontFea
     type Candidate = (usize, usize, Vec<u32>);
     let mut candidates: HashMap<(String, FontFeatureAliasKey), Candidate> = HashMap::new();
     let mut source_order = 0usize;
-    for stylesheet in stylesheets {
+    for stylesheet in &stylesheets {
         collect_candidates(
             &stylesheet.rules,
             None,

@@ -5076,6 +5076,16 @@
     var delegatesFocus = !!init.delegatesFocus;
     _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment, delegatesFocus: delegatesFocus };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
+    // s168（html-semantics M2）：engine 物化通道——AttachShadow wire（宿主按身份分
+    // 双回调，镜像 append_child / append_child_handle 对偶；mode 枚举与二次 attach
+    // 已在上方 spec 校验序列拦截，不入队即不物化）。engine 侧 doc.attach_shadow 建
+    // ShadowRoot 节点并把 rootHandle 注册为该节点——后续 fragment flatten /
+    // appendChild 按常规 parent 解析落入 shadow 树（layout 既有 slot 解析随之激活）。
+    // https://dom.spec.whatwg.org/#dom-element-attachshadow
+    try {
+      if (sel) __zw_attach_shadow(sel, rootHandle, mode);
+      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode);
+    } catch (_e168aw) {}
     return _wrapHandle(rootHandle);
   }
 

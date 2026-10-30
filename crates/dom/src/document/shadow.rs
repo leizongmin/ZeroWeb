@@ -61,6 +61,74 @@ impl Document {
         self.shadow_roots.get(&host).copied()
     }
 
+    /// s168：全部 ShadowRoot 节点（创建序 = slotmap 插入序，稳定）。供 engine handle
+    /// 视图的 shadow 包含回落查询（gCS by handle 是对象身份通道——页面持元素对象
+    /// 访问 shadow 内容合法，不受 light DOM 查询封装约束）。
+    pub fn shadow_root_ids(&self) -> Vec<NodeId> {
+        self.nodes
+            .iter()
+            .filter(|(_, n)| matches!(n.kind, NodeKind::ShadowRoot(_)))
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// s168：shadow 包含的选择器查询——light 域先查（复用封装版 [`Self::query_selector`]），
+    /// miss 后逐 shadow root 子树查询（rooting 在 shadow root 上，封装门不剪根自身）。
+    /// 嵌套 shadow（shadow 树内再 attach）不在本遍历面（FIXME 级联切片）。
+    pub fn query_selector_including_shadow(&self, selector: &str) -> Option<NodeId> {
+        if let Some(hit) = self.query_selector(self.root(), selector) {
+            return Some(hit);
+        }
+        for sid in self.shadow_root_ids() {
+            if let Some(hit) = self.query_selector(sid, selector) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    /// s168：声明式 Shadow DOM 重建——`<template shadowrootmode=open|closed>`（本仓
+    /// 序列化面产物；页面直写的声明式形态同样适用）解析后还原为 ShadowRoot 节点：
+    /// mode 属性合法时在宿主（template 的父元素）attach_shadow、contents 子移入
+    /// shadow 树、摘除 template 元素。属性缺省/非法 → 保留普通 template（spec：
+    /// 无有效 shadowrootmode 按普通 template 处理）。同宿主二次声明或嵌套声明
+    ///（shadow 树内层）暂不重建（attach Err / 文档域枚举不见 shadow 内 template
+    /// ——FIXME 嵌套 shadow 级联切片）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    pub fn materialize_declarative_shadow_roots(&mut self) {
+        let templates = self.get_elements_by_tag_name("template");
+        for tid in templates {
+            let Some(mode_str) = self
+                .get_attribute(tid, "shadowrootmode")
+                .map(|s| s.to_ascii_lowercase())
+            else {
+                continue;
+            };
+            let mode = match mode_str.as_str() {
+                "open" => ShadowRootMode::Open,
+                "closed" => ShadowRootMode::Closed,
+                _ => continue,
+            };
+            let Some(host) = self.parent_node(tid) else {
+                continue;
+            };
+            if !matches!(self.nodes.get(host).map(|n| &n.kind), Some(NodeKind::Element(_))) {
+                continue;
+            }
+            let Some(frag) = self.template_contents(tid) else {
+                continue;
+            };
+            let Ok(root) = self.attach_shadow(host, mode) else {
+                continue;
+            };
+            let kids = self.nodes.get(frag).map(|n| n.children.clone()).unwrap_or_default();
+            for k in kids {
+                let _ = self.append_child(root, k);
+            }
+            let _ = self.remove_child(host, tid);
+        }
+    }
+
     /// 获取 ShadowRoot 的封装模式。
     ///
     /// 如果节点不是 ShadowRoot，返回 `None`。

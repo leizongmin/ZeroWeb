@@ -1030,7 +1030,21 @@ impl Document {
 
     /// 根据 ID 查找元素节点（O(1) 通过索引）。
     pub fn get_element_by_id(&self, id: &str) -> Option<NodeId> {
-        self.id_map.get(id).copied()
+        let hit = self.id_map.get(id).copied()?;
+        // s168 封装边界：shadow 树内的 id 不参与 light DOM getElementById（spec
+        // shadow tree 查询封装）。shadow_roots 空表快门——现有页零成本；命中后才
+        // 沿父链判定 enclosure。
+        if self.shadow_roots.is_empty() {
+            return Some(hit);
+        }
+        let mut cur = Some(hit);
+        while let Some(node) = cur {
+            if matches!(self.nodes.get(node).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+                return None;
+            }
+            cur = self.parent_node(node);
+        }
+        Some(hit)
     }
 
     /// 根据标签名查找所有匹配的元素节点。
@@ -1703,6 +1717,9 @@ impl Document {
             result.push(id);
         }
         for &child in &node_data.children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_by_tag_names(child, tags, result);
         }
     }
@@ -1720,6 +1737,9 @@ impl Document {
         }
 
         for &child in &node_data.children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_by_tag_name(child, tag, result);
         }
     }
@@ -1744,6 +1764,9 @@ impl Document {
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_by_tag_name_ns(child, namespace, local_name, result);
         }
     }
@@ -1763,6 +1786,9 @@ impl Document {
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_by_class_name(child, class, result);
         }
     }
@@ -1808,6 +1834,16 @@ impl Document {
         // 函数与调用点保留——skip_templates 形态留给 shim 老路径过渡期）。
         let _ = id;
         false
+    }
+
+    /// s168：节点是否为 ShadowRoot（文档域查询/收集的封装边界门——ShadowRoot 挂
+    /// 宿主 children 下，裸递归会穿透；spec shadow tree 不参与 light DOM 查询，
+    /// https://dom.spec.whatwg.org/#shadow-trees）。查询族在子代下降处跳过整个
+    /// shadow 子树；`collect_descendants` 为裸工具不设门（消费者自决）。
+    fn is_shadow_root_node(&self, id: NodeId) -> bool {
+        self.nodes
+            .get(id)
+            .is_some_and(|n| matches!(n.kind, NodeKind::ShadowRoot(_)))
     }
 
     /// 节点是否为 `<template>` 元素（R328，供 engine 提取层判定 template 内容
@@ -1866,6 +1902,9 @@ impl Document {
         }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             if let Some(found) = self.find_first_matching_opt(child, selector, skip_templates) {
                 return Some(found);
             }
@@ -1891,6 +1930,9 @@ impl Document {
         }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             if let Some(found) = self.find_first_matching_chain_opt(child, chain, skip_templates) {
                 return Some(found);
             }
@@ -1916,6 +1958,9 @@ impl Document {
         }
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             if let Some(found) = self.find_first_matching_chains_opt(child, chains, skip_templates) {
                 return Some(found);
             }
@@ -2275,6 +2320,9 @@ impl Document {
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_matching_opt(child, selector, result, skip_templates);
         }
     }
@@ -2303,6 +2351,9 @@ impl Document {
 
         let children: Vec<NodeId> = node_data.children.to_vec();
         for child in children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
             self.collect_matching_chains_opt(child, chains, result, skip_templates);
         }
     }
