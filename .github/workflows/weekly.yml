@@ -810,11 +810,17 @@ jobs:
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
             time_limit: 7200
+            # decode wrapper 每 variant 对 chars 文档全量 span 做桥调用密集断言
+            # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
+            # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
+            script_timeout: 600000
           - name: form-encode
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
             time_limit: 7200
+            # encode-form 页每 variant ~1000 async_test 分窗断言，同上提额。
+            script_timeout: 600000
           - name: timing
             suites: >-
               resource-timing navigation-timing event-timing longtask-timing
@@ -921,6 +927,12 @@ jobs:
       # 输出说明 runner 崩了或语料残缺，shard 应当红。
       - name: Run suites (test-guard wrapped, JSON captured)
         shell: bash
+        env:
+          # runner 看门狗缺省 90s（testharness.rs script_timeout_ms）；大页面
+          # 通道按 shard 提额（script_timeout 字段），未设 shard 取 90000 与
+          # runner 缺省相同——零行为变化。缺提额时 encode-form 页（每 variant
+          # ~1000 async_test）语料修好后仍会成批 Timeout 假失败。
+          ZW_SCRIPT_TIMEOUT_MS: ${{ matrix.shard.script_timeout || 90000 }}
         run: |
           mkdir -p /tmp/zw-results
           for s in ${{ matrix.shard.suites }}; do
