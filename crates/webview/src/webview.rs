@@ -523,6 +523,13 @@ pub struct WebView {
     http_client: HttpClient,
     /// 进程内 JavaScript 沙箱（`external_script` 为 None 时使用）。
     js_sandbox: Option<Box<dyn zero_script_sandbox::Sandbox>>,
+    /// 裸 [`Self::execute_script`] 入口的 shim host 桥是否已武装（T26 修复的
+    /// 逐调用重注册回归，2026-10-31）：`register_dom_callbacks` 以新 Arc 重绑
+    /// shim DOM 桥状态，runner 探测环高频调用下会打断 iframe 文档异步物化
+    /// （form-url-encoding 面 iframe onload 全体不达、encode-form 0P）。
+    /// 武装一次后跳过；`ensure_sandbox` 重建沙箱时复位，每页 `run_page_scripts`
+    /// 的常规武装不受此旗标影响。
+    dom_bridge_host_armed: bool,
     /// IndexedDB 同步宿主桥（进程内 sandbox 路径）。
     indexed_db_bridge: zero_engine::IndexedDbBridge,
     /// CacheStorage 同步宿主桥（进程内 sandbox 路径）。
@@ -807,6 +814,7 @@ impl WebView {
             config,
             pipeline,
             canvas_registry,
+            dom_bridge_host_armed: false,
             selector_handle_map: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -2666,24 +2674,34 @@ impl WebView {
         // 经 `new Request` → `_zwRequestValidate` → `new URL` 恒抛 TypeError。
         // 镜像 execute_script_with_dom 的武装集：mutation 游标发布 + DOM 回调 +
         // identity/pointer 桥（嵌入宿主桥面与页面 runtime 契约逐脚本执行入口对齐）。
-        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
-        {
-            let mutations = self.shared_mutations.clone();
-            let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
-                std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
-            let page_url = self.page_url_wire.clone();
-            let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
-            register_dom_callbacks(
-                &mut **sandbox,
-                &mutations,
-                &dom_html,
-                &page_url,
-                &self.canvas_registry,
-                Some(&self.layout_rect_snapshot),
-            );
-            Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
-            Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
-            Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+        // 回归修（2026-10-31，form-url-encoding CI 面 0P）：武装只做一次——本入口被
+        // runner 探测环每轮多次调用，逐调用重注册以新 Arc（dom_html 快照等）重绑
+        // shim DOM 桥状态，会打断 iframe 文档异步物化（form.submit 后 iframe onload
+        // 永不派发，encode-form 全体挂到页级超时）。旗标见
+        // [`Self::dom_bridge_host_armed`]；每页 run_page_scripts 的常规重武装
+        // 不走本入口、不受影响。
+        let arm_bridge_now = !self.dom_bridge_host_armed;
+        if arm_bridge_now {
+            zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
+            {
+                let mutations = self.shared_mutations.clone();
+                let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
+                    std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+                let page_url = self.page_url_wire.clone();
+                let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
+                register_dom_callbacks(
+                    &mut **sandbox,
+                    &mutations,
+                    &dom_html,
+                    &page_url,
+                    &self.canvas_registry,
+                    Some(&self.layout_rect_snapshot),
+                );
+                Self::register_identity_bridge_callback(&self.selector_handle_map, &mut **sandbox);
+                Self::register_pointer_lock_state_callback(&self.pointer_lock, &mut **sandbox);
+                Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
+            }
+            self.dom_bridge_host_armed = true;
         }
         self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
         let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
@@ -2701,6 +2719,9 @@ impl WebView {
                 self.sync_render_after_native_dom();
                 // T26：本入口已武装 shim 写桥，执行期记录的新增 DOM 变更在此应用
                 //（游标尾部；不 apply 会把变更滞留共享队列——镜像 execute_script_with_dom）。
+                // 回归修（2026-10-31）：与入口武装同门——只在本次调用完成武装时收尾
+                // apply；稳态调用不触碰共享队列（对齐 T26 之前的裸入口语义，探测环
+                // 不再逐轮打扰异步文档物化）。
                 // T26（DF1-F1）：apply 重入护栏——本调用可能处于 apply_pending_shared_
                 // mutations 尾部换代通知的嵌套栈内（applying_mutations 置位，round 2
                 // DF2-F1 起单步与两步路径全程持有）。此时外层 apply 尚未收口，此处 apply
@@ -2837,6 +2858,7 @@ impl WebView {
             sandbox.set_timeout_ms(self.config.script_timeout_ms);
         }
         self.js_sandbox = Some(sandbox);
+        self.dom_bridge_host_armed = false;
         Ok(())
     }
 
