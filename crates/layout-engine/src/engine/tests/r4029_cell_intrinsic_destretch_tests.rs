@@ -73,3 +73,22 @@ fn r4029_auto_cell_empty_div_does_not_inflate_column() {
     // 空列：cell = border-box（20 边框）+ 内容 0；表不应被 taffy 拉伸到容器宽。
     assert!(w < 60.0, "R4029: 空内容 cell 不应被拉伸宽污染（<60），实际 {w}");
 }
+
+/// R5345（css-sizing-3 §5 intrinsic sizing，blocks-025 判例）：cell 内**百分比**指定宽
+/// 的块级子在列固有测量中按 auto 解析——列宽贡献 = 内容 max-content（空 div = 0），
+/// 非 post-taffy 对可用宽解析的拉伸值。旧行为：td 内 div width:20% 读 152px 拉伸宽，
+/// 列/表被撑爆（blocks-025 表 160 vs chromium 88，cell 空带漏出表底色）。
+#[test]
+fn r5345_percent_width_child_contributes_zero_to_cell_intrinsic() {
+    let html = r#"<html><body style="margin:0">
+<table><tr><td style="padding: 0"><div style="width: 80px; height: 20px"></div><div style="width: 20%; height: 20px"></div></td></tr></table>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let table = doc.get_elements_by_tag_name("table").into_iter().next().expect("table");
+    let (table_w, _h) = find_box(&result.root, table).expect("table box");
+    // 列宽 = 显式宽子（80）；% 宽子贡献 0。表 border-box = 80（无边框无 padding）。
+    assert!(
+        (table_w - 80.0).abs() < 1.0,
+        "R5345: 列固有宽应只取显式宽子 80px（% 宽子按 auto 贡献 0），实际表宽 {table_w}"
+    );
+}

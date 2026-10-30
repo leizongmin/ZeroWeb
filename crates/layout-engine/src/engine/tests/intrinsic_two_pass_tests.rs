@@ -942,3 +942,54 @@ fn test_nested_flex_column_max_content_takes_max() {
         col.width
     );
 }
+
+/// R5345（CSS §10.1 + css-sizing-3 §5 intrinsic sizing，blocks-025 判例）：
+/// 根 margin≠0 时 fixed/absolute（无 positioned 祖先）的 Px inset 视口重解析
+/// 须从根盒 border-box 原点起算链上 content origin。旧实现 pass 11.5 以 (0,0)
+/// 起遍历，根 margin-left 偏移漏算，Px left/top 臂把子写偏 +根偏移
+///（html margin-left:1em + left:7.5em → 136 而非 120，且覆盖 pass 4 已扣对值）。
+#[test]
+fn r5345_oof_viewport_inset_resolves_from_root_origin() {
+    let html = r#"<html style="margin: 0 0 0 1em"><body style="margin: 0 0 0 1em">
+        <div id="fx" style="position:fixed; left:7.5em; top:4em; width:80px; height:80px"></div>
+        <div id="ab" style="position:absolute; left:7.5em; top:9.5em; width:80px; height:80px"></div>
+    </body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+    let styles = sys.compute_styles(&doc, &[]);
+    let mut engine = LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+    // 视口绝对坐标（paint 链累计）：fixed/abspos CB = ICB，left:7.5em = 120px，
+    // 与 body/html margin 无关。根 border-box origin = root.x/y（margin 已烤入）。
+    let b_fx = find("fx", &doc, &result.root).expect("#fx");
+    let b_ab = find("ab", &doc, &result.root).expect("#ab");
+    let abs_x = |target: &LayoutBox| -> f32 {
+        // 栈项 = 父内容盒视口原点；节点 border-box 原点 = 父内容原点 + node.x。
+        let mut stack = vec![(0.0f32, &*result.root)];
+        while let Some((ox, node)) = stack.pop() {
+            let border_origin = ox + node.x;
+            if std::ptr::eq(node, target) {
+                return border_origin;
+            }
+            let cox = border_origin + node.padding_left + node.border_left;
+            for c in &node.children {
+                stack.push((cox, c));
+            }
+        }
+        f32::NAN
+    };
+    let _ = (b_fx, b_ab);
+    // fixed：left:7.5em=120 → 视口 x=120（旧 136=+html margin 16）。
+    let fx = abs_x(b_fx);
+    assert!(
+        (fx - 120.0).abs() < 1.0,
+        "R5345: fixed left:7.5em should land at viewport x=120, got {fx}"
+    );
+    // absolute：同 CB=ICB → x=120。
+    let ab = abs_x(b_ab);
+    assert!(
+        (ab - 120.0).abs() < 1.0,
+        "R5345: absolute left:7.5em should land at viewport x=120, got {ab}"
+    );
+}

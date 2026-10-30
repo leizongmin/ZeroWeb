@@ -783,7 +783,20 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
             inline_run_active = false;
         }
 
-        if child_has_explicit_width {
+        // R5345（css-sizing-3 §5 intrinsic sizing）：百分比（及 min/max/fit-content）
+        // 指定宽在固有测量中按 auto 解析——块级 % 宽子的列宽贡献 = 内容 max-content
+        // （R4028 递归），而非 post-taffy 对可用宽解析的拉伸值（blocks-025：td 内
+        // div width:20% 旧读 152px 拉伸宽撑爆列/表，cell 空带漏出表底色）。
+        // definite 判据与 R4568 box_content_max_width_inner 块支同源
+        //（resolve_intrinsic_real_length：Percentage/MinContent/MaxContent/FitContent
+        // → None）；inline 级 run 臂维持旧径（R5261 契约面不动）。
+        let child_width_definite = child
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(|s| crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.width, s).is_some())
+            .unwrap_or(false);
+
+        if child_has_explicit_width && child_width_definite {
             // 有显式 width 的子元素：使用其 outer width（taffy 忠实保留显式宽）
             content_width = content_width.max(child.width + child.margin_left + child.margin_right);
             has_explicit_child = true;

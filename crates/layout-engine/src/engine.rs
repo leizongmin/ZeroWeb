@@ -1259,10 +1259,19 @@ impl LayoutEngine {
         // 初始包含块（视口）。taffy 用静态父作为 containing block，导致 width:50% 等百分比
         // 按父宽度解析。本步骤仅重解析百分比（Length/Auto 不动），避免旧版
         // adjust_absolute_to_initial_containing_block 同时调整 x/y 与 auto 宽高导致的回归。
+        // R5345：遍历起点传根盒 **border-box 原点**（含此前步骤烤入的根 margin/居中偏移）
+        // ——函数约定 current_content_origin = 当前盒 border-box 原点（递归式
+        // `current + border + padding + child.x`），旧传 (0,0) 时根 margin≠0 的页面
+        // （blocks-025：html margin-left 1em）整条链 content origin 少算根偏移，Px
+        // left/top 视口重解析臂把 fixed/abspos 子写偏 +根偏移（136 vs chromium 120），
+        // 且覆盖 pass 4 adjust_fixed_to_viewport 已扣对的值。根无偏移时传值不变
+        //（(0,0)），存量页面零扰动。
+        let root_origin_x = root_box.x;
+        let root_origin_y = root_box.y;
         adjust_absolute_pct_to_viewport(
             &mut root_box,
-            0.0,
-            0.0,
+            root_origin_x,
+            root_origin_y,
             self.viewport_width,
             self.viewport_height,
             styles,
