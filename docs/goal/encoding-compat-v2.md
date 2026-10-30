@@ -49,7 +49,7 @@ bom-handling/sniffing/json-document-utf8 的 `document.characterSet`/默认
 SAB/https 1）。逐文件 disposition 与干跑双臂基线见
 [evidence/2026-10-31-m0-family-adjudication.md](encoding-compat-v2/evidence/2026-10-31-m0-family-adjudication.md)。
 
-**降级决策（按下方立项规则第二档，地址池 12,442 < 100k）**：收尾 goal——
+**降级决策（按下方立项规则第二档，地址池 25 < 100k）**：收尾 goal——
 只做 M1（DC-2 可导入集入通道）与 M4（coverage 复测 + csv 行）；legacy-mb
 剩余面不重开，DC-3 撤销、改挂账口径；富余产能转 css-testharness 二期。
 
@@ -60,9 +60,8 @@ SAB/https 1）。逐文件 disposition 与干跑双臂基线见
    （big5/iso-2022-jp-encoder inline `a.href` 面）——36 号通道扫描域加
    `encoding` 根（谓词放行规则既有，仅此两文件匹配）；新面定向干跑，
    big5 若暴露编码器表缺口按「引擎可修」簇归账。
-3. ~~legacy-mb 三目录批量入账~~（M2 撤销，降级）：无未导入案面，残余
-   worker/sw/shared 腿 12,872 子测试落挂账清单（见 evidence 分族账本），
-   不重开。
+3. ~~legacy-mb 三目录批量入账~~（M2 撤销，降级）：无未导入案面，结构
+   挂账池 12,889 子测试（M1 后口径，见 evidence 分族账本），不重开。
 4. **复测收口**（M4）：coverage 复测落 DC-4 数值门；wpt-suites.csv 回填
    汇总行。
 
@@ -126,8 +125,8 @@ iso-2022-jp-encoder 10F 为流式模型簇归挂账）<< 100k → 第二档生�
   通道扫描域加 `encoding` 根；big5-encoder 13P 新证，iso-2022-jp-encoder
   2P/10F（10F 流式模型簇挂账）；weekly 两分片接线。
 - ~~**M2/M3**~~ **撤销（降级）**：legacy-mb 无未导入案面；引擎可修簇 0；
-  挂账池 12,872 记 evidence 分族账本，不重开。
-- **M4**：coverage 复测收口（DC-4 数值门 ≥ 98.8%，天花板 1,139,486）+
+  挂账池 12,889 记 evidence 分族账本，不重开。
+- **M4**：coverage 复测收口（DC-4 数值门 ≥ 98.8%，天花板 1,139,476）+
   wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）
