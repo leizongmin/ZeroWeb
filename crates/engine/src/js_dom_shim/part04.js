@@ -7515,6 +7515,26 @@
                 }
               }
             }
+            // s162：STYLE 元素 style block 更新触发臂（spec update a style block
+            // 的 queue 步——子变更与元素自身连接即再处理 + load 派发；task 异步使
+            // 同 turn 后挂的 onload/addEventListener 可收——style-load-after-mutate
+            // 先 append style 再 append 文本节点后赋 onload 的形态单 tick 合并单
+            // 派）。两臂：STYLE 父（子文本入 style）+ STYLE 子（style 本身插入
+            // 文档）。去重/type/连接门在 helper（part03 _zwStyleBlockQueueUpdate）。
+            try {
+              if (typeof globalThis._zwStyleBlockQueueUpdate === 'function') {
+                if (_realTag(sel, handle) === 'STYLE') {
+                  globalThis._zwStyleBlockQueueUpdate(sel, handle, false);
+                } else if (child && child.nodeType === 1
+                    && String(child.localName || '').toLowerCase() === 'style') {
+                  var _sqCSel = child.__zwSelector || null;
+                  var _sqCHdl = !child.__zwSelector ? (child.__zwHandle || null) : null;
+                  if (_sqCSel || _sqCHdl) {
+                    globalThis._zwStyleBlockQueueUpdate(_sqCSel, _sqCHdl, false);
+                  }
+                }
+              }
+            } catch (_eS162q) {}
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277tap) {}
             // s131 after 面：同 insertBefore trap tail——form owner 键变更且该
             // INPUT radio checkedness 为 true → 新组排他 sweep（DIV 对照案 owner
@@ -13221,6 +13241,16 @@
             if (!_tcSame) {
               if (handle) __zw_set_text_handle(handle, _tcVal);
               else __zw_set_text(sel, _tcVal);
+              // s162：STYLE textContent 写 → style block 更新（spec queue a task
+              // update a style block——文本变更即再处理 + load 派发；task 异步使
+              // 同 turn 后挂的监听可收——style_load_event textContent 变更段）。
+              // 去重/type/连接门在 helper（part03 _zwStyleBlockQueueUpdate）。
+              try {
+                if (typeof globalThis._zwStyleBlockQueueUpdate === 'function'
+                    && _realTag(sel, handle) === 'STYLE') {
+                  globalThis._zwStyleBlockQueueUpdate(sel, handle, false);
+                }
+              } catch (_eS162t) {}
               // js-dom M4 R81：textContent= 替换全部子——**清空 handle 元素的 registry 子**（R2927
               // _handleChildren 记录的 appendChild 子在融合 childNodes 视图仍可见 → `el.textContent=null`
               // 后 childNodes 非空、firstChild 残留，WPT Node-textContent "set to null" 簇）。spec

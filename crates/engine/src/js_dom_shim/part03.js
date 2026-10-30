@@ -4660,6 +4660,61 @@
       __zw_set_external_css(_rcOut);
     } catch (_eRc) {}
   };
+  // s162（html-semantics M2 切片 162）：**style 元素 load 事件面**——spec update a
+  // style block 的派发半：style sheet 就绪即向元素 fire load（inline 文本同步就绪，
+  // 但更新走「queue a task」——派发延迟到 task 尾，写入同 turn 后挂的 onload/
+  // addEventListener 才能收到）。此前该面整体缺位：style_load_event 初始段
+  // （loadCount 0≠1）与 textContent 变更段、style-load-after-mutate 动态插入段
+  //（await style.onload 永挂 → 文件级 Timeout）三形态全红。
+  // 三触发臂共享本队列 helper（pending 印记按元素同 tick 去重——spec 单 task 更新
+  // 语义；fire 点现读 type 门 + 连接门）：
+  //   ①解析静态臂：_zwStylesheetStaticScanUpto 越界（尾扫）形对快照 style 全量
+  //     首派（_zwStyleLoadFired 印记防多尾扫重复派，动态臂派发后同样置印记——
+  //     尾扫不再补派，insert/update 一 update 一 load）；
+  //   ②动态插入/子变更臂：part04 appendChild trap 的 STYLE 父臂 + STYLE 子臂入队；
+  //   ③textContent setter 臂：part04 set trap textContent 写后臂入队。
+  // type 门（style-eligible，s156/s160 精确匹配口径）：type 存在且非空且非 ASCII
+  // 大小写不敏感 `text/css` → sheet 未创建 → 不派 load（spec update a style block
+  // 的 eligible 早退先于 fire 步）。连接门（fire 点重查——入队后元素移出文档不派；
+  // spec 更新仅在 shadow-including document 内运行）。
+  // FIXME(compat)：type/title 属性变更触发面、非 textContent 子变更（insertBefore/
+  // append() 入 style、textContent 以外 CharacterData 写）未挂臂——语料无形态。
+  // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+  var _zwStyleLoadFired = {}; // identity key → 已派 load 印记（尾扫去重 + 动态臂置位）
+  var _zwStyleUpdatePending = {}; // identity key → 变更臂同 tick 入队去重印记
+  globalThis._zwStyleBlockQueueUpdate = function (sel, handle, first) {
+    try {
+      if (typeof _elKey !== 'function') return;
+      var _sqKey = _elKey(sel, handle);
+      if (_sqKey == null) return;
+      if (first) {
+        if (_zwStyleLoadFired[_sqKey]) return;
+        _zwStyleLoadFired[_sqKey] = true;
+      } else {
+        if (_zwStyleUpdatePending[_sqKey]) return;
+        _zwStyleUpdatePending[_sqKey] = true;
+      }
+      setTimeout(function () {
+        try {
+          // 变更臂印记释放（首派臂无 pending 键，delete 无害）。
+          delete _zwStyleUpdatePending[_sqKey];
+          var _sqProxy = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+          if (!_sqProxy || _sqProxy.isConnected !== true) return;
+          var _sqType = '';
+          try {
+            _sqType = String((handle ? __zw_get_attr_handle(handle, 'type')
+              : (typeof __zw_get_attr_lw === 'function'
+                ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))) || '');
+          } catch (_eSqT) { _sqType = ''; }
+          if (_sqType !== '' && _sqType.toLowerCase() !== 'text/css') return;
+          if (typeof _dispatchWithBubble !== 'function' || typeof _makeEvent !== 'function') return;
+          _zwStyleLoadFired[_sqKey] = true;
+          _dispatchWithBubble(_sqKey, sel, handle,
+            _makeEvent('load', { bubbles: false, cancelable: false }));
+        } catch (_eSqF) {}
+      }, 0);
+    } catch (_eSq) {}
+  };
   // s157：stylesheet 取回在飞计数——spec stylesheet 加载 delay the document load
   // event（HTML the-link-element styling——加载完成前 window load 不派发）。
   // _ssVisit 每层恰一次 settle（同步门/then 链全路径）→ 包装计数归零；runner
@@ -5033,6 +5088,21 @@
       // loadStep5275 持有面。
       if (_zwScanFiredCount > _scFrom && _ord >= _zwScanScriptPrefix.length) {
         _zwSsTailFired = true;
+      }
+      // s162：解析静态臂——越界（尾扫）形对快照 style 元素全量首派 load（spec
+      // update a style block：解析处理即更新即派，inline 同步就绪；触发点在脚本
+      // 流末尾/window load 前——style_load_event 初始段 loadCount 断言在
+      // window.onload 检查）。与 link 前缀游标无关——无尾随 link 的页面同样进入
+      //（_ord 越界即脚本流末尾语义）；零 script 页面的首次调用即末尾（prefix 表
+      // 空 0 ≥ 0）。多尾扫/动态臂已派由 _zwStyleLoadFired 印记去重；type/连接门
+      // 在 fire 点（helper 内）。
+      if (_ord >= _zwScanScriptPrefix.length
+          && typeof globalThis._zwStyleBlockQueueUpdate === 'function') {
+        var _sqSels = (typeof __zw_query_all === 'function')
+          ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
+        for (var _sqI = 0; _sqI < _sqSels.length; _sqI++) {
+          globalThis._zwStyleBlockQueueUpdate(_sqSels[_sqI], null, true);
+        }
       }
     } catch (_eScan) {
       if (typeof globalThis._zwReportListenerError === 'function') {
