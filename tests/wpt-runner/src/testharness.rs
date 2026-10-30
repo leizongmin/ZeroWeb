@@ -11288,6 +11288,35 @@ fn apply_testdriver_command(
                 let _ = webview.execute_script(&click_script);
                 return None;
             }
+            // editing-compat insertparagraph 簇（2026-10-30）：Actions 键盘链的 CE 宿主
+            // ENTER 默认动作——此前落 InsertText{'\u{E007}'}（PUA 字面插入，无编辑效果），
+            // inline-editing-host 语料 sendEnterKey(kShift)（Actions 路径）全红。CE 宿主
+            // → Submit（webview 侧 CE 优先消费 → __zw_ce_insert_paragraph 段落核心）；
+            // 非 CE 目标维持既有路径。FIXME: Actions 步骤无修饰键状态——kShift 链与裸
+            // Enter 同汇 Submit（块级宿主上 Shift+Enter 拆段而非换行；现无语料分压）。
+            if key == "\u{E007}"
+                && webview
+                    .execute_script(&zero_engine::script_contenteditable_probe(&selector))
+                    .map(|v| v.trim() == "1")
+                    .unwrap_or(false)
+            {
+                if let Some(error) = dispatch_action(webview, target, HtmlUserAction::Submit) {
+                    return Some(error);
+                }
+                // 既有字符键路径同款 keypress 后随（keydown → 默认动作 → keypress 序
+                // 保持——Actions 链 keypress 断言面不动）。
+                let keypress_ce = zero_engine::script_dispatch_dom_event(
+                    &selector,
+                    "keypress",
+                    Some(&zero_engine::DomEventDetail {
+                        key: Some(key.clone()),
+                        code: Some(key.clone()),
+                        ..Default::default()
+                    }),
+                );
+                let _ = webview.execute_script(&keypress_ce);
+                return None;
+            }
             if key.chars().count() == 1 {
                 if let Some(error) = dispatch_action(webview, target, HtmlUserAction::InsertText { text: key.clone() })
                 {

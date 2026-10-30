@@ -6,10 +6,10 @@ use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
     script_contenteditable_enter, script_contenteditable_forward_delete, script_contenteditable_insert,
-    script_contenteditable_probe, script_dispatch_dom_event, script_pointer_move, script_reset_form_controls,
-    script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
-    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
-    script_text_input_without_event,
+    script_contenteditable_insert_paragraph, script_contenteditable_probe, script_dispatch_dom_event,
+    script_pointer_move, script_reset_form_controls, script_set_control_checked, script_set_open,
+    script_set_option_selected, script_set_text_control_state, script_text_control_snapshot, script_text_delete,
+    script_text_delete_without_event, script_text_input, script_text_input_without_event,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -409,11 +409,15 @@ impl WebView {
             }
             HtmlUserAction::Submit => {
                 // R3254-K1（keyboard goal M1）：Enter 默认动作分发序——**编辑宿主优先
-                // 消费**（CE 宿主 → __zw_ce_enter 换行，即使宿主在表单内也不提交）；
-                // 未消费才走表单隐式提交管线（enclosing form → submit 事件+导航意图）。
+                // 消费**（CE 宿主 → insertParagraph 语义就地拆分/退化，editing-compat
+                // insertparagraph 簇 2026-10-30 前为 __zw_ce_enter 换行；宿主在表单内
+                // 也不提交）；未消费才走表单隐式提交管线（enclosing form → submit
+                // 事件+导航意图）。FIXME: submit 通道无修饰载荷，Shift+Enter 未区分
+                //（runner Actions 路径同汇于此；inline 宿主退化后输出一致，无语料分压）。
                 let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
                 if ce_probe.value.trim() == "1" {
-                    let result = self.execute_dom_script(executor, &script_contenteditable_enter(&selector))?;
+                    let result =
+                        self.execute_dom_script(executor, &script_contenteditable_insert_paragraph(&selector))?;
                     return Ok(WebViewUserActionResult {
                         changed: result.changed,
                         canceled: false,

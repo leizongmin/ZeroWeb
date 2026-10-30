@@ -8195,7 +8195,9 @@
   // 真键盘输入分流——Chromium execCommand insertText 只派 beforeinput/input；
   // WPT textInput/api 的 reject listener 断言面）。缺省（真键盘路径）照派。
   globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
-    var el = document.querySelector(sel);
+    // sel 兼容元素直传（execCommand CE 分支 activeElement——动态创建宿主无
+    // __zwSelector，selector 往返失效）。
+    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var ins = String(text == null ? '' : text);
     if (ins === '') return;
@@ -8213,6 +8215,16 @@
         bubbles: true, cancelable: true, view: globalThis, data: ins
       });
       if (el.dispatchEvent(ti31) === false) return;
+    }
+    // insertparagraph 语料等价规则：insertText '\n' ≡ insertParagraph 变更（语料
+    // 只断言内容；事件序保持 insertText 面）。核心未应用（caret 不在宿主子树等）
+    // → 落回下方字面 '\n' splice 旧径。
+    if (ins === '\n' && typeof globalThis.__zw_ce_paragraph_split_at === 'function'
+        && globalThis.__zw_ce_paragraph_split_at(el, range, false)) {
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
+      }));
+      return;
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
@@ -8583,7 +8595,9 @@
     for (var bi = 0; bi < kids.length; bi++) {
       if (kids[bi] === sc) { brIdx = bi; break; }
     }
-    sc.nodeValue = v.slice(0, so) + v.slice(eo);
+    // 头段留在原节点；尾段成独立节点插 <br> 后（不可回拼进头段——2026-10-31 修
+    // 旧版 `v.slice(0, so) + v.slice(eo)` 回拼：collapsed caret 下尾段双写）。
+    sc.nodeValue = v.slice(0, so);
     var br = document.createElement('br');
     var _pEnter = sc.parentNode || el;
     try { _pEnter.insertBefore(br, sc.nextSibling || null); } catch (_eB34) {}
@@ -8600,84 +8614,275 @@
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
     }));
   };
-  // CE insertParagraph 块级拆分（R3254-M3 切片 5，editing goal，2026-09-07）：
-  // caret 处把宿主**拆为两个同型兄弟块**（Chromium 语义——div 宿主拆两 div；非
-  // 宿主内 Enter 走 __zw_ce_enter 的 <br> 语义）。实现：宿主 outerHTML 重写——
-  // head 段 + 闭合 + 新开同型标签 + tail 段（SetOuterHtml mutation 流转宿主重解析，
-  // 同 caret 偏移扫描与 __zw_ce_enter 同款实体感知）。caret 在宿主直子文本节点内
-  // 才应用（flat 模型）；事件序 beforeinput(insertParagraph, cancelable) → 变更 →
-  // input（target=原宿主——拆分后原 selector 失效，事件在拆分前宿主派发）。
-  // caret 落新块首（range 对新宿主同 selector 重建）。
+  // CE insertParagraph（editing-compat goal 2026-10-30 换代）：caret 处 **live
+  // childList 就地拆分**（宿主/块存活——旧 outerHTML 重写模型使原宿主脱树，turn 内
+  // 融合视图不可见（语料探针证明），且无退化规则）。语料退化规则
+  //（editing/other insertparagraph 家族期望矩阵）：
+  //   ① 宿主 div + display 块级（'' 视为默认 block）+ caret 宿主级（直子文本或
+  //      宿主元素边界）→ 拆分：新 separator 元素（defaultParagraphSeparator，默认
+  //      div）接管 caret 尾段与后续兄弟，空则 <br> 填充；caret 在内容起点 → 改插
+  //      空 separator+<br> 占位于最前、尾内容原地不动（white-space-style 语料
+  //      `[]abc` → `<sep><br></sep>abc` 形态；display 块级时 white-space 不参与——
+  //      语料 block 行一律 separator 拆分）。
+  //   ② caret 在宿主内块级后代（div/p/h1-h6/li）且边界在该块直下（直子文本或元素
+  //      子）→ **同型**就地拆该块（p 不能含 div——same-tag；两侧拆空则 <br> 填充
+  //      ——void-element 语料 `<div><br></div><div><img></div>` 形）。
+  //   ③ 其余（span/p 宿主、div 宿主非块 display、inline 后代内 caret）→ 行断退化：
+  //      white-space 显著（pre/pre-line/pre-wrap——caret 链自下而上最近声明）→
+  //      '\n' 文本，否则 <br> 元素；断点后同父无后续节点 → 补可见性第二条断
+  //      （inline-editing-host 语料全矩阵：`{}` → `<br><br>`、`{}<br>` → 单断、
+  //      `ab[]cd` → 单断、`abcd[]` → 双断）。
+  // 事件序（fireEvents=true，键盘/宿主入口）：beforeinput(insertParagraph,
+  // cancelable) → textInput('\n') → 变更 → input——uievents textInput basic.sub.js
+  // 契约（1 textInput data='\n' + 内容含 <br>——空新块 <br> 填充满足）。execCommand
+  // 臂（beforeinput 已派）与 __zw_ce_insert('\n')（自带 insertText 序）走 false。
+  // FIXME: inline 包裹临时样式保留未实现——`<b>abc[]</b>` display=block 拆分后
+  // 后续输入落新块裸文本（white-space-style italic/bold 组期望 `<b>def</b>` 保持红）。
+  // FIXME: Shift+Enter 修饰键未贯通 submit 通道——一律 insertParagraph 语义
+  //（inline 宿主退化后与 insertLineBreak 输出一致，无语料分压）。
   // https://w3c.github.io/input-events/#interface-InputEvent-Types
-  globalThis.__zw_ce_insert_paragraph = function(sel) {
-    var el = document.querySelector(sel);
-    if (!el || !globalThis.__zw_is_ce_host(el)) return;
-    var range = globalThis.__zw_ce_caret_range(el);
-    var sc = range.startContainer, so = range.startOffset | 0;
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === el)) return;
-    var v = String(sc.nodeValue || '');
-    var eo = range.collapsed ? so : (range.endOffset | 0);
-    var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
-    });
-    if (el.dispatchEvent(before) === false) return;
-    var kids = el.childNodes || [];
-    var textOffset = 0;
-    for (var i = 0; i < kids.length; i++) {
-      var k = kids[i];
-      if (k === sc) break;
-      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
-    }
-    var html = String(el.innerHTML || '');
-    var want = textOffset + so;
-    var seen = 0;
-    var splitAt = -1;
-    for (var j = 0; j < html.length; j++) {
-      if (seen === want) { splitAt = j; break; }
-      if (html.charAt(j) === '&') {
-        var semi = html.indexOf(';', j);
-        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+  // https://w3c.github.io/editing/execCommand.html#defaultparagraphseparator
+  function _zwCeIsBlockTagName(t) {
+    return ['div','p','h1','h2','h3','h4','h5','h6','li'].indexOf(t) >= 0;
+  }
+  // display 读数：CSSStyleDeclaration 面板（R3254-E2）优先，style attr 扫描兜底。
+  function _zwCeDisplayOf(el) {
+    try {
+      if (el.style && typeof el.style.display === 'string' && el.style.display !== '') {
+        return String(el.style.display);
       }
-      seen++;
+    } catch (_eDisp1) {}
+    try {
+      var stDisp = el.getAttribute && el.getAttribute('style');
+      if (stDisp) {
+        var mDisp = String(stDisp).match(/display\s*:\s*([a-z-]+)/i);
+        if (mDisp) return mDisp[1];
+      }
+    } catch (_eDisp2) {}
+    return '';
+  }
+  // 元素自身声明的 white-space（style 面板优先，style attr 扫描兜底）；未声明 →
+  // null（与「无声明走继承」区分——normal 声明即止继承链，cannot-have-div 语料：
+  // pre 宿主内 ws:normal span → <br>）。
+  function _zwCeWsDeclared(n) {
+    try {
+      if (n.style && typeof n.style.whiteSpace === 'string' && n.style.whiteSpace !== '') {
+        return String(n.style.whiteSpace);
+      }
+    } catch (_eWsD1) {}
+    try {
+      var stWs = n.getAttribute && n.getAttribute('style');
+      if (stWs) {
+        var mWs = String(stWs).match(/white-space\s*:\s*([a-z-]+)/i);
+        if (mWs) return mWs[1];
+      }
+    } catch (_eWsD2) {}
+    return null;
+  }
+  // white-space 显著性：自 caret 容器沿父链向宿主取**最近声明**（含 normal——声明
+  // 即止继承链；全链无声明 → 初始 normal 不显著）。
+  function _zwCeWsSignificant(from, host) {
+    var n = (from && from.nodeType === 1) ? from : (from ? from.parentNode : null);
+    var g = 0;
+    while (n && g++ < 256) {
+      var ws = _zwCeWsDeclared(n);
+      if (ws != null) return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+      if (n === host) break;
+      n = n.parentNode;
     }
-    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
-    if (splitAt < 0) return;
-    var cutEnd = splitAt; // collapsed：tail = caret 起整段（选区非空才前推 cutEnd）
-    if (eo > so) {
-      var seen2 = seen, want2 = want + (eo - so);
-      for (var j2 = splitAt; j2 < html.length; j2++) {
-        if (seen2 === want2) { cutEnd = j2; break; }
-        if (html.charAt(j2) === '&') {
-          var semi2 = html.indexOf(';', j2);
-          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
+    return false;
+  }
+  // ③ 行断退化（② 非 blockish 后代与兜底共用）。forceLf → 一律 '\n'（② inline
+  // div 语料形），否则按 white-space 声明链裁决。
+  function _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf) {
+    var wsSig = !!forceLf || _zwCeWsSignificant(boundaryText || boundaryNode || boundaryParent, host);
+    var brk3 = wsSig ? document.createTextNode('\n') : document.createElement('br');
+    if (boundaryText) {
+      // 头段留在原节点（尾段成独立节点随断点后移——不可回拼进头段，否则尾重复）。
+      var v3 = String(boundaryText.nodeValue || '');
+      boundaryText.nodeValue = v3.slice(0, boundaryOff);
+      boundaryParent.insertBefore(brk3, boundaryText.nextSibling || null);
+      var tail3 = v3.slice(eo);
+      if (tail3) {
+        boundaryParent.insertBefore(document.createTextNode(tail3), brk3.nextSibling || null);
+      }
+    } else {
+      boundaryParent.insertBefore(brk3, boundaryNode
+        || ((boundaryParent.childNodes || [])[boundaryOff] || null));
+    }
+    // 可见性补断：断点后同父无后续节点 → 新行不可见，补第二条（同型）。
+    if (!brk3.nextSibling) {
+      var brk3b = wsSig ? document.createTextNode('\n') : document.createElement('br');
+      boundaryParent.insertBefore(brk3b, brk3.nextSibling || null);
+    }
+    var kids3 = boundaryParent.childNodes || [];
+    var idx3 = 0;
+    for (var i3 = 0; i3 < kids3.length; i3++) {
+      if (kids3[i3] === brk3) { idx3 = i3; break; }
+    }
+    var nr3 = document.createRange();
+    nr3.setStart(boundaryParent, idx3 + 1);
+    nr3.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr3]; }
+    return true;
+  }
+  // 变更核心：返回 true 表示已应用（选区已重锚）。三分支见上。
+  function _zwCeParagraphMutate(host, rng) {
+    var sc = rng.startContainer, so = rng.startOffset | 0;
+    var eo = rng.collapsed ? so : (rng.endOffset | 0);
+    var isText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
+    // caret 所在宿主直子块：直子文本/宿主自身元素 caret → 宿主本身；否则父链上溯
+    // 到宿主直子（不在宿主子树内 → 不应用）。
+    var block = null;
+    if (sc === host || (isText && sc.parentNode === host)) {
+      block = host;
+    } else {
+      var w = isText ? sc.parentNode : sc;
+      var g = 0;
+      while (w && w !== host && w.parentNode !== host && g++ < 256) w = w.parentNode;
+      if (!w || w === host || w.nodeType !== 1) return false;
+      block = w;
+    }
+    // caret 边界归一：(boundaryParent, boundaryText|boundaryNode, boundaryOff)。
+    // 文本边界 → (父, 文本节点, so)；宿主元素边界 → (host, null, so)；元素 caret
+    // 在块内 → (父, 该元素, 0)（语义=该元素位置前，void-element 语料形）。
+    var boundaryParent, boundaryText = null, boundaryNode = null, boundaryOff = 0;
+    if (isText) {
+      boundaryParent = sc.parentNode; boundaryText = sc; boundaryOff = so;
+    } else if (sc === host) {
+      boundaryParent = host; boundaryOff = so;
+    } else {
+      boundaryParent = sc.parentNode; boundaryNode = sc;
+    }
+    var hostTag = String(host.tagName || '').toLowerCase();
+    var dispHost = _zwCeDisplayOf(host);
+    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // ① 宿主级拆分。
+    if (block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
+        && boundaryParent === host && (isText || boundaryNode === null)) {
+      var sep1 = document.createElement(sepTag);
+      var refAfter1 = null;
+      if (boundaryText) {
+        var v1 = String(boundaryText.nodeValue || '');
+        var tail1 = v1.slice(eo);
+        if (boundaryOff === 0) {
+          // caret 在内容起点：删选中段后空 separator+<br> 占位插最前，尾内容原地。
+          boundaryText.nodeValue = tail1;
+          sep1.appendChild(document.createElement('br'));
+          host.insertBefore(sep1, boundaryText || null);
+        } else {
+          // 尾段+后续兄弟移入新块；新块空 → <br> 填充（语料 abc[] 形态）。
+          if (tail1) sep1.appendChild(document.createTextNode(tail1));
+          boundaryText.nodeValue = v1.slice(0, boundaryOff);
+          refAfter1 = boundaryText.nextSibling;
+          host.insertBefore(sep1, refAfter1 || null);
+          if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
         }
-        seen2++;
+      } else {
+        // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
+        refAfter1 = (host.childNodes || [])[so] || null;
+        var mv1 = refAfter1;
+        while (mv1) {
+          var nx1 = mv1.nextSibling;
+          sep1.appendChild(mv1);
+          mv1 = nx1;
+        }
+        if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
+        host.insertBefore(sep1, refAfter1 || null);
+      }
+      var nr1 = document.createRange();
+      nr1.setStart(sep1, 0);
+      nr1.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr1]; }
+      return true;
+    }
+    // ② 块级后代同型就地拆分（边界须在该块直下）。块级判定：display 显式 block，
+    // 或未声明且标签默认块级（div/p/h1-h6/li）——display:inline/inline-block 的
+    // div 后代不拆（cannot-have-div 语料：退化行断）；display:block 的 span 后代
+    // 同型拆（语料 `<span display:block>a[]b</span>` → 两 span）。
+    if (block !== host && boundaryParent === block) {
+      var tag2 = String(block.tagName || '').toLowerCase();
+      var dispB = _zwCeDisplayOf(block);
+      var blockish2 = dispB === 'block' || (dispB === '' && _zwCeIsBlockTagName(tag2));
+      if (!blockish2) {
+        // 落 ③ 行断（跳过 ② 剩余体）。display:inline 且自身无 ws 声明 → 一律 '\n'
+        //（cannot-have-div 语料 Blink 行为：inline div 内 <br> 会跳出 inline 盒，
+        // UA 插真实 LF——宿主 ws 无关；自身有声明 → 按声明裁决）。
+        var forceLf2 = dispB === 'inline' && _zwCeWsDeclared(block) == null;
+        return _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf2);
+      }
+      // 同型拆分复制 style 属性（新块保留块级样式——cannot-have-div 语料
+      // `<span display:block>` 拆分两半都带原 style）。
+      var sep2 = document.createElement(tag2);
+      try {
+        var stB = block.getAttribute && block.getAttribute('style');
+        if (stB != null) sep2.setAttribute('style', String(stB));
+      } catch (_eSty2) {}
+      if (boundaryText) {
+        var v2 = String(boundaryText.nodeValue || '');
+        var tail2 = v2.slice(eo);
+        if (tail2) sep2.appendChild(document.createTextNode(tail2));
+        boundaryText.nodeValue = v2.slice(0, boundaryOff);
+        var mv2 = boundaryText.nextSibling;
+        while (mv2) {
+          var nx2 = mv2.nextSibling;
+          sep2.appendChild(mv2);
+          mv2 = nx2;
+        }
+      } else {
+        // 元素边界：boundaryNode（含）起移入新块。
+        var mv2b = boundaryNode || ((block.childNodes || [])[boundaryOff] || null);
+        while (mv2b) {
+          var nx2b = mv2b.nextSibling;
+          sep2.appendChild(mv2b);
+          mv2b = nx2b;
+        }
+      }
+      // 拆空侧 <br> 填充（块级拆分两侧都是真块——与 ① 占位形不同）。
+      if (!(block.childNodes || []).length) block.appendChild(document.createElement('br'));
+      if (!(sep2.childNodes || []).length) sep2.appendChild(document.createElement('br'));
+      block.parentNode.insertBefore(sep2, block.nextSibling || null);
+      var nr2 = document.createRange();
+      nr2.setStart(sep2, 0);
+      nr2.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2]; }
+      return true;
+    }
+    // ③ 行断退化（兜底）。
+    return _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host);
+  }
+  // 共享入口：fireEvents=false 时仅变更（execCommand 臂事件已派 / insertText('\n')
+  // 自带序）；true 走完整事件序。变更核心不应用（caret 不在宿主子树等）→ false
+  //（键盘调用方回落既有路径）。
+  globalThis.__zw_ce_paragraph_split_at = function (host, range, fireEvents) {
+    if (!host || !globalThis.__zw_is_ce_host(host)) return false;
+    var rng = range || globalThis.__zw_ce_caret_range(host);
+    if (!rng || !rng.startContainer) return false;
+    if (fireEvents !== false) {
+      var beforeIp = new InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
+      });
+      if (host.dispatchEvent(beforeIp) === false) return false;
+      if (globalThis._zwTextEventCtorRef) {
+        host.dispatchEvent(new globalThis._zwTextEventCtorRef('textInput', {
+          bubbles: true, cancelable: true, view: globalThis, data: '\n'
+        }));
       }
     }
-    // 同型开标签复制：tag 名 + contenteditable 保留（拆分出的两半都是 editing host）。
-    var tag = String(el.tagName || 'DIV').toLowerCase();
-    var ceAttr = el.getAttribute && el.getAttribute('contenteditable');
-    var openTag = '<' + tag + (ceAttr !== null ? ' contenteditable="' + String(ceAttr).replace(/"/g, '&quot;') + '"' : ' contenteditable');
-    var head = html.slice(0, splitAt);
-    var tail = html.slice(cutEnd);
-    el.outerHTML = openTag + '>' + head + '</' + tag + '>' + openTag + '>' + tail + '</' + tag + '>';
-    // caret → 新块（同 selector 重建——SetOuterHtml 后 selector 命中前块；caret 落
-    // 后块：查询同型兄弟不可靠（selector 失配），落前块末（元素边界）best-effort）。
-    try {
-      var el2 = document.querySelector(sel);
-      if (el2) {
-        var nr = document.createRange();
-        nr.setStart(el2, (el2.childNodes || []).length);
-        nr.collapse(true);
-        if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-      }
-    } catch (_eIpCaret) {}
-    try {
-      el2 = document.querySelector(sel);
-      if (el2) el2.dispatchEvent(new InputEvent('input', {
+    if (!_zwCeParagraphMutate(host, rng)) return false;
+    if (fireEvents !== false) {
+      host.dispatchEvent(new InputEvent('input', {
         bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
       }));
-    } catch (_eIpEv) {}
+    }
+    return true;
+  };
+  // 键盘/宿主入口（selector 签名保持——script_gen 生成器与旧调用方不变；元素
+  // 直传兼容同 __zw_ce_insert）。
+  globalThis.__zw_ce_insert_paragraph = function(sel) {
+    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
+    if (!el) return;
+    globalThis.__zw_ce_paragraph_split_at(el, null, true);
   };
   // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint

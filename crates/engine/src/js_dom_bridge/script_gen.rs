@@ -1562,6 +1562,17 @@ pub fn script_contenteditable_enter(selector: &str) -> String {
     format!("__zw_ce_enter('{esc_sel}')")
 }
 
+/// 构造「contenteditable 宿主 Enter 段落拆分」的宿主脚本（editing-compat
+/// insertparagraph 簇，2026-10-30）。
+///
+/// shim `__zw_ce_insert_paragraph(sel)`：caret 处 live 就地拆分/行断退化（语料
+/// 规则见 part01 `__zw_ce_paragraph_split_at`）——普通 Enter（insertParagraph
+/// 语义）默认动作；Shift+Enter 仍走 `script_contenteditable_enter`（insertLineBreak）。
+pub fn script_contenteditable_insert_paragraph(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    format!("__zw_ce_insert_paragraph('{esc_sel}')")
+}
+
 /// 构造「Esc 默认动作——dialog cancel/close」的宿主脚本（R3254-K3，keyboard
 /// default-actions goal M2 切片 2）。
 ///
