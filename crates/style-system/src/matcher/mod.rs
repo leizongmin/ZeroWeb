@@ -2147,6 +2147,12 @@ struct NestedBlock {
     /// 子树含伪元素尾选择器（`::before`/`::after`/`::marker` 等）——P124 pseudo pass
     /// 的 @media 子树递归门禁（不含则候选必空，整棵跳过）。
     has_pseudo: bool,
+    /// 子树（本层规则表或任意深度嵌套块）含 `@layer` 规则（语句或块形式）——
+    /// P124/DEF-1：层名首次注册是遍历副作用（R4246 按 CSS Cascade 5 §6.4 首现
+    /// 顺序建层序，layer_counter/layer_map 每次 collect 新建），pseudo pass 的
+    /// `has_pseudo` 门跳过子树会连注册一起丢掉，伪元素级联层序相对 merge-base
+    /// 翻转。含层子树禁用门禁，回退旧无条件递归。
+    contains_layer: bool,
     /// @supports 块：`Some(条件求值结果)`——条件为元素无关纯函数（P124：旧路径
     /// 逐元素 × 逐 pass 现场求值，`is_property_supported` 每次值解析分配，GitHub
     /// 页实测热点），随索引构造求值一次；非 @supports：None（collect 侧回退现算）。
@@ -2230,6 +2236,11 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                         // P124：子树伪元素尾选择器存在性（pseudo pass 递归门禁）。
                         let has_pseudo =
                             !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                        // P124/DEF-1：子树层注册副作用存在性（见 NestedBlock.contains_layer）。
+                        let contains_layer = inner_rules
+                            .iter()
+                            .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                            || index.nested.values().any(|b| b.contains_layer);
                         nested.insert(
                             ri,
                             NestedBlock {
@@ -2238,6 +2249,7 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                                 // 时 None 与非 @media 块同义（collect 侧回退现场解析后同样跳过）。
                                 media_queries: zero_css_parser::media_query::parse_media_query(&at_rule.prelude),
                                 has_pseudo,
+                                contains_layer,
                                 supports_hit: None,
                             },
                         );
@@ -2250,12 +2262,18 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             zero_css_parser::ast::Rule::Layer(layer_rule) if !layer_rule.rules.is_empty() => {
                 let index = build_rule_list_index(&layer_rule.rules);
                 let has_pseudo = !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                let contains_layer = layer_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
                         index,
                         media_queries: None,
                         has_pseudo,
+                        contains_layer,
                         supports_hit: None,
                     },
                 );
@@ -2266,12 +2284,18 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                 // P124：@supports 条件元素无关——构造时求值一次（旧路径逐元素 × 逐
                 // pass 现场求值为 GitHub 页热点，见 NestedBlock.supports_hit 文档）。
                 let supports_hit = Some(evaluate_supports_condition(&supports_rule.condition));
+                let contains_layer = supports_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
                         index,
                         media_queries: None,
                         has_pseudo,
+                        contains_layer,
                         supports_hit,
                     },
                 );
@@ -2279,12 +2303,18 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             zero_css_parser::ast::Rule::Container(container_rule) => {
                 let index = build_rule_list_index(&container_rule.rules);
                 let has_pseudo = !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                let contains_layer = container_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
                         index,
                         media_queries: None,
                         has_pseudo,
+                        contains_layer,
                         supports_hit: None,
                     },
                 );
@@ -2692,12 +2722,22 @@ fn collect_from_rules(
                                         },
                                     };
                                     // P124：pseudo pass 额外要求子树含伪元素尾规则
-                                    //（has_pseudo 预计算）——不含则候选必空，整棵跳过。
-                                    // 被跳过的块不贡献候选，层号仅以相对序参与级联，
-                                    // 删除非伪块不改变候选间相对序 → 结果逐点一致。
+                                    //（has_pseudo 预计算）——两者皆无则候选与副作用
+                                    // 皆空，整棵跳过。被跳过的块不贡献候选，层号仅以
+                                    // 相对序参与级联，删除非伪块不改变候选间相对序 →
+                                    // 结果逐点一致。
+                                    // P124/DEF-1：该论证只覆盖候选，不覆盖层名首次
+                                    // 注册副作用（R4246，layer_map 每次 collect 新建
+                                    // 无跨 pass 补偿）——含 `@layer` 子树必须照常下钻
+                                    //（has_pseudo || contains_layer），保注册序与
+                                    // merge-base 一致。
                                     // 索引缺失（防御分支无 has_pseudo）保持旧递归。
-                                    let pseudo_subtree_possible =
-                                        pseudo.is_none() || idx.nested.get(&ri).map(|b| b.has_pseudo).unwrap_or(true);
+                                    let pseudo_subtree_possible = pseudo.is_none()
+                                        || idx
+                                            .nested
+                                            .get(&ri)
+                                            .map(|b| b.has_pseudo || b.contains_layer)
+                                            .unwrap_or(true);
                                     if hit && pseudo_subtree_possible {
                                         let nested_index = idx.nested.get(&ri).map(|b| &b.index);
                                         collect_from_rules(
@@ -2779,12 +2819,15 @@ fn collect_from_rules(
                         // build_rule_list_index @supports 分支）；索引缺失（防御分支）
                         // 回退现场求值，语义不变。pseudo pass 另要求子树含伪元素尾
                         // 规则（has_pseudo 门，与 @media 分支同论证：被跳过子树不
-                        // 贡献候选，非伪块删除不改变候选相对序）。
+                        // 贡献候选，非伪块删除不改变候选相对序；含 @layer 子树因
+                        // R4246 首现注册副作用必须照常下钻，析取式
+                        // has_pseudo || contains_layer，见 NestedBlock.contains_layer）。
                         let block = idx.nested.get(&ri);
                         let supports_hit = block
                             .and_then(|b| b.supports_hit)
                             .unwrap_or_else(|| evaluate_supports_condition(&supports_rule.condition));
-                        let pseudo_subtree_possible = pseudo.is_none() || block.map(|b| b.has_pseudo).unwrap_or(true);
+                        let pseudo_subtree_possible =
+                            pseudo.is_none() || block.map(|b| b.has_pseudo || b.contains_layer).unwrap_or(true);
                         if supports_hit && pseudo_subtree_possible {
                             collect_from_rules(
                                 doc,

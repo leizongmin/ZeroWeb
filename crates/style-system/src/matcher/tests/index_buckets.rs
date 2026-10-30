@@ -100,6 +100,10 @@ em::after { content: "A"; }
       .item { color: khaki; }
     }
   }
+  /* P124/DEF-1：层名首现于条件块内、块外复现且与他层交错——pseudo 门跳过
+     本块时不得丢 R4246 首现注册（含层子树禁用门禁）。 */
+  @layer condreg { .card { color: sienna; } }
+  @layer condstmt;
 }
 @media print and (min-width: 2000px) {
   .card { color: silver; }
@@ -118,6 +122,10 @@ em::after { content: "A"; }
 @layer {
   .item { color: gold; }
 }
+/* P124/DEF-1：条件块内首现层的块外复现（伪元素规则与他层交错） */
+@layer base { .card::before { content: "base-before"; } }
+@layer condreg { .card::before { content: "condreg-before"; } }
+@layer condstmt { .card::after { content: "condstmt-after"; } }
 /* @supports 真/假 */
 @supports (display: block) {
   .text { letter-spacing: 1px; }

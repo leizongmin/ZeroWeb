@@ -11,8 +11,8 @@
 //! 全 Vec 比较为准。
 
 use crate::matcher::{
-    build_stylesheet_index, build_stylesheet_index_with_media, collect_matching_declarations_with_media,
-    collect_pseudo_declarations_with_media,
+    build_stylesheet_index, build_stylesheet_index_with_media, collect_from_rules,
+    collect_matching_declarations_with_media, collect_pseudo_declarations_with_media,
 };
 use zero_css_parser::Parser;
 use zero_css_parser::media_query::MediaContext;
@@ -166,4 +166,89 @@ fn p124_no_pseudo_rules_page_unchanged() {
         before.is_empty(),
         "P124: 无伪元素规则页 ::before 应为空，实际 {before:?}"
     );
+}
+
+/// P124/DEF-1：命名层首次注册位于 hit 但无伪元素的 @media/@supports 子树内、
+/// 同名层块外复现且与其他层交错——pseudo pass 的 has_pseudo 门跳过子树会丢
+/// R4246 首现注册（layer_map 每次 collect 新建，无跨 pass 补偿），伪元素级联
+/// 层序相对 merge-base 翻转。判据：索引路径（伪元素门生效）与无门禁全量走查
+///（collect_from_rules 传 None 索引）在伪元素 pass 上收集结果全等。
+/// 判据有牙：修复前门跳过含层子树 → 层号字段翻转，本测试红。
+/// 注意：`build_stylesheet_index` 与 `build_stylesheet_index_with_media` 两个
+/// 索引变体的伪元素门行为相同，互比无牙（无修复树上同样通过）——参照必须是
+/// 无门禁全量走查。
+const LAYER_REG_CSS: &str = "\
+@media (min-width: 1px) { @layer aaa { .a { color: green; } } } \
+@layer bbb { .a::before { content: \"from-bbb\"; } } \
+@layer aaa { .a::before { content: \"from-aaa\"; } } \
+@supports (display: grid) { @layer s1 { .a { color: olive; } } } \
+@layer s2 { .a::after { content: \"from-s2\"; } } \
+@layer s1 { .a::after { content: \"from-s1\"; } } \
+@media (min-width: 2px) { @layer ccc; .a { color: teal; } } \
+@layer ccc { .a::marker { content: \"from-ccc\"; } } \
+";
+
+/// 无门禁全量参考：直接走 collect_from_rules(None)（伪元素门只在索引路径生效）。
+fn full_walk(
+    sheet: &zero_css_parser::Stylesheet,
+    doc: &zero_dom::Document,
+    el: zero_dom::NodeId,
+    media_ctx: &MediaContext,
+    pseudo: &str,
+) -> Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+    let mut layer_map = std::collections::HashMap::new();
+    collect_from_rules(
+        doc,
+        el,
+        &sheet.rules,
+        None,
+        &mut results,
+        Some(media_ctx),
+        None,
+        None,
+        &mut layer_counter,
+        &mut layer_map,
+        Some(pseudo),
+    );
+    results
+}
+
+#[test]
+fn p124_pseudo_gate_preserves_named_layer_registration() {
+    let sheet = Parser::parse_stylesheet(LAYER_REG_CSS);
+    let doc = parse_html(HTML);
+    let div = *doc.get_elements_by_tag_name("div").last().expect("div");
+    let ctx = MediaContext::new(550.0, 600.0);
+    let sheets = std::slice::from_ref(&sheet);
+    let index = build_stylesheet_index_with_media(sheets, Some(&ctx));
+
+    // 形态在场：@media/@supports 命中（normal pass 有 green/olive/teal）。
+    let normal = collect_matching_declarations_with_media(&doc, div, sheets, &index, Some(&ctx), None);
+    for v in ["green", "olive", "teal"] {
+        assert!(
+            normal.iter().any(|(p, val, ..)| p == "color" && val == v),
+            "P124/DEF-1: normal pass 应命中条件块内规则（{v}），实际 {normal:?}"
+        );
+    }
+
+    for (pseudo, expect) in [
+        ("before", ["\"from-aaa\"", "\"from-bbb\""].as_slice()),
+        ("after", ["\"from-s1\"", "\"from-s2\""].as_slice()),
+        ("marker", ["\"from-ccc\""].as_slice()),
+    ] {
+        let gated = collect_pseudo_declarations_with_media(&doc, div, sheets, &index, Some(&ctx), None, pseudo);
+        let walk = full_walk(&sheet, &doc, div, &ctx, pseudo);
+        assert_eq!(
+            gated, walk,
+            "P124/DEF-1: pseudo={pseudo:?} 伪元素门禁不得改变层注册序（索引路径==无门禁全量走查全等）"
+        );
+        for v in expect {
+            assert!(
+                walk.iter().any(|(_, val, ..)| val == v),
+                "P124/DEF-1: pseudo={pseudo:?} 候选须含 {v}（形态在场），实际 {walk:?}"
+            );
+        }
+    }
 }
