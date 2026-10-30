@@ -2346,6 +2346,62 @@ fn test_add_event_listener_non_callable_r5323() {
     );
 }
 
+// R5301（site-opt p118）attachEvent 面补测（site-opt p123，池②）：_attachEventForKey 的
+// `fn == null` 静默守卫此前零断言——守卫一旦回归，undefined 将越过 R5301 在 R5323
+// 检查点（_zwRequireCallback5323）注册点抛 TypeError，null 则滑过该检查（typeof null
+// === "object"）入 _listenerStore 并在每次 dispatch 时报 R113「handleEvent property is
+// not a function」window error——两者同为 github.com js-error 目标类（A/B 红证
+// evidence/p123-test-red.log：守卫移除后注册点即抛 TypeError）。
+// 断言 element/document 两 attachEvent 面（window attachEvent 已按 R376 移除）
+// null/undefined 注册静默且不入表（error 监听零命中）、真函数经 attachEvent 照常派发。
+// attachEvent 无现行规范，取 addEventListener 同参行为镜像（p118 既定决策）。
+// https://dom.spec.whatwg.org/#add-an-event-listener
+#[test]
+fn test_attach_event_null_callback_r5301() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\">x</div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    let out = sandbox
+        .execute(
+            "var parts = [];\
+             var errObj = null;\
+             window.addEventListener('error', function (e) { errObj = e; });\
+             var d = document.getElementById('d');\
+             d.attachEvent('boom', null);\
+             d.attachEvent('boom', undefined);\
+             document.attachEvent('boom', null);\
+             document.attachEvent('boom', undefined);\
+             d.dispatchEvent(new Event('boom'));\
+             document.dispatchEvent(new Event('boom'));\
+             parts.push('null-silent:' + (errObj === null));\
+             var hit = 0;\
+             d.attachEvent('boom', function () { hit++; });\
+             d.dispatchEvent(new Event('boom'));\
+             parts.push('fn-still-fires:' + hit);\
+             parts.join('|');",
+        )
+        .unwrap()
+        .value;
+    assert_eq!(
+        out, "null-silent:true|fn-still-fires:1",
+        "R5301 attachEvent 两面（element/document）null/undefined 注册静默不入表，真函数经 attachEvent 照常派发"
+    );
+}
+
 // R140（js-dom M4）：live childNodes（spec `dom-node-childnodes` 返 live NodeList）——
 // ① 同节点重复读同一对象（caching）② append/insert/remove 后旧引用反映（live）③
 // item()/迭代器（真数组承载——Array 原生 keys/values/entries/forEach/Symbol.iterator
