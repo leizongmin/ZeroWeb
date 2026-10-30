@@ -92,6 +92,27 @@ pub fn rounded_corner_polygon_in_box(x0: f32, y0: f32, box_w: f32, box_h: f32, r
     corner_polygon_with_kinds([CornerShapeKind::Round; 4], x0, y0, box_w, box_h, radii4)
 }
 
+/// R5339（css-filters-2 #BackdropFilter）：backdrop-filter 滤区多边形——shaped 形角
+/// 优先；corner-shape 初始态（全 round）回退 plain 圆角多边形（plain border-radius
+/// 元素滤区同样按圆角轮廓裁剪，backdrop-filter-clip-rect-2 实证方角）；无半径返
+/// None（矩形滤区，不裁）。
+pub fn backdrop_filter_clip_polygon(
+    style: &ComputedStyle,
+    x0: f32,
+    y0: f32,
+    box_w: f32,
+    box_h: f32,
+) -> Option<Vec<(f32, f32)>> {
+    let radii4 = shaped_radius_spec(style, box_w, box_h);
+    shaped_corner_polygon_in_box(style, x0, y0, box_w, box_h, radii4).or_else(|| {
+        if radii4.iter().any(|r| *r > 0.0) {
+            Some(rounded_corner_polygon_in_box(x0, y0, box_w, box_h, radii4))
+        } else {
+            None
+        }
+    })
+}
+
 /// 弧带 even-odd 顶点串联（keyhole 切点）。各多边形先在闭合边（末点→首点）中点
 /// 插入切点顶点再串联：外圈末点与内圈首点为同一切点对，两条桥边几何重合互为
 /// 反向，even-odd 扫描交点逐对抵消，仅填环带。朴素串联（外末→内首直连）两条桥
