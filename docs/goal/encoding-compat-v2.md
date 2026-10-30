@@ -1,8 +1,14 @@
 # encoding 二期 — legacy-mb 未导入族 + 根面 labels/API 残余 + streams 收口
 
-**版本**: v1.0
-**日期**: 2026-10-31（立项，coverage-2026-10-30 对账驱动）
-**状态**: Active——立项，M0 未启动
+**版本**: v1.1（M0 降级决策落定）
+**日期**: 2026-10-31（立项；同日 M0 对账完成，按立项决策规则第二档降级为收尾 goal）
+**状态**: Active——M0 完成：**地址池 12,442 << 100k 决策门，降级收尾**（三分
+归因见 [M0 结论](#m0-对账结论2026-10-31) 与
+[evidence/2026-10-31-m0-family-adjudication.md](encoding-compat-v2/evidence/2026-10-31-m0-family-adjudication.md)）。
+**卡点**：无。
+**下一步**：M1——DC-2 收尾：可导入集 25 子测试（big5-encoder /
+iso-2022-jp-encoder inline `a.href` 面）经 36 号通道扫描域加 `encoding`
+根入账，新面定向干跑验证。
 **执行模式**: WPT 驱动（上游 encoding 语料为验收标尺）+ 一期通道复用（testharness 编码读取点 + 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码/文本处理面）
 
@@ -26,42 +32,73 @@ encoding topdir 全量分母 **1,152,394 子测试 / 1,345 文件**，zw 578,483
 变体 / io 表 / API 面 / 异常分支 / 规范不支持面）**未经甄别**，M0 必须先
 对账再定数字。
 
-## Mission
+## M0 对账结论（2026-10-31）
 
-把 encoding 域从一期「选定族面收口」推进到「全族面入账」：
+上表「缺口 573,911」经甄别为**覆盖测量假象，非引擎缺口**，三分归因：
+form-encode 分片旧预算超限（encode 面只捕 28%，2167d9ca6/12deb8557 已修）、
+根面/streams 分片假低（`net` 分片只捕 790，本地全量干跑 12,072P/3F 逐字
+复现 30 号收口账）、分母侧 pin 漂移 25 子测试。legacy-mb 三目录 + schinese
+1,206 文件全部对账闭合（decode 34 文件 360,431 = 31 号 100%P；encode 68
+文件 766,959 = 36 号 99.9999%；gbk/gb18030-decoder 窗口腿 30 号在收）；
+encoding 域 224 案文件 / 1,152,394 子测试无一处于「导入即可跑而未跑」状态。
 
-1. **对账甄别**（M0）：三目录 + 根面 + streams 剩余族的构成甄别——哪些是
-   导入即得（解码管道已覆盖）、哪些是引擎缺口、哪些是规范不支持面
-   （TextEncoder 仅 UTF-8，legacy encode 无规范路径）。产出族清单、干跑
-   基线和 DC-4 数值门。
-2. **根面与 streams 收口**（M1）：71 个零覆盖文件（labels 列表、
-   TextDecoder/TextEncoder API、异常分支）+ streams 残余入常驻通道。
-3. **legacy-mb 三目录批量入账**（M2）：按族分批过 M0 模板（导入 → 干跑
-   基线 → 失败簇归因），复用 goal-35 M3 五批次先例的节奏与产物形状。
-4. **缺口归因与复测收口**（M3/M4）：引擎缺口簇逐簇归账；coverage 复测
-   落数值门；wpt-suites.csv 回填汇总行。
+真实地址池 = 可导入集 25 子测试（big5/iso-2022-jp-encoder inline `a.href`
+面，36 号同机制），结构挂账池 12,879（worker 11,821 + sw/shared 632 +
+window-form 342 + idlharness 57 + doc-iframe 19 + 文档管道面 7——
+bom-handling/sniffing/json-document-utf8 的 `document.characterSet`/默认
+编码探测耦合，源码实核 + 30 号 M4 划界挂账 html-syntax-compat——+
+SAB/https 1）。逐文件 disposition 与干跑双臂基线见
+[evidence/2026-10-31-m0-family-adjudication.md](encoding-compat-v2/evidence/2026-10-31-m0-family-adjudication.md)。
 
-## Done Criteria
+**降级决策（按下方立项规则第二档，地址池 12,442 < 100k）**：收尾 goal——
+只做 M1（DC-2 可导入集入通道）与 M4（coverage 复测 + csv 行）；legacy-mb
+剩余面不重开，DC-3 撤销、改挂账口径；富余产能转 css-testharness 二期。
 
-- **DC-1（M0 对账）**：剩余族构成甄别落
-  `docs/goal/encoding-compat-v2/evidence/`；语料 FORCE 续拉对齐 pin
-  （新文件清单 + missing=0）；通道复用干跑基线（文本 + JSON 双形状）；
-  DC-4 数值门按下方决策规则落定并回填本文件。
-- **DC-2（根面 + streams）**：encoding 根 71 个零覆盖文件入常驻通道且
-  covered>0；streams 残余（37 文件）入账；通道与 Makefile target 落地
-  （test-guard 包裹）。
-- **DC-3（legacy-mb 入账）**：三目录未导入族全部进通道与 weekly coverage
-  分片；快照三目录 zw_passes 达 DC-1 数值门（决策规则见下）。
-- **DC-4（coverage 复测）**：encoding topdir 从 50.2% 升至 M0 落定的数值
-  门；30/31/36 零回归门全绿（见划界）；wpt-suites.csv 回填数据行。
+## Mission（v1.1 收尾口径）
 
-**DC-4 数值门决策规则（立项即定）**：M0 甄别后按地址池大小分档——
+1. ~~对账甄别~~（M0，已完成）：见上节与 evidence。
+2. **根面可导入集收口**（M1）：M0 甄别出的 25 子测试入通道且 covered>0
+   （big5/iso-2022-jp-encoder inline `a.href` 面）——36 号通道扫描域加
+   `encoding` 根（谓词放行规则既有，仅此两文件匹配）；新面定向干跑，
+   big5 若暴露编码器表缺口按「引擎可修」簇归账。
+3. ~~legacy-mb 三目录批量入账~~（M2 撤销，降级）：无未导入案面，残余
+   worker/sw/shared 腿 12,872 子测试落挂账清单（见 evidence 分族账本），
+   不重开。
+4. **复测收口**（M4）：coverage 复测落 DC-4 数值门；wpt-suites.csv 回填
+   汇总行。
+
+## Done Criteria（v1.1 收尾口径）
+
+- ~~**DC-1（M0 对账）**~~ **已完成（2026-10-31）**：分族账本与逐文件
+  disposition、干跑双臂基线（12,072P/3F，与 30 号收口账逐字吻合）、
+  「缺口 573,911」三分归因落 evidence；DC-4 数值门已落定并回填下文。
+- **DC-2（可导入集收口）**：big5/iso-2022-jp-encoder 25 子测试（2 文件）
+  入 36 号常驻通道且 covered>0（扫描域加 `encoding` 根）；legacy 七目录
+  扫描代码与谓词恒等（仅追加根目录）+ 新面定向干跑零回归；weekly
+  form-encode 分片接线核对新面归属与预算（依赖约束见下）。
+- ~~**DC-3（legacy-mb 入账）**~~ **撤销（M0 降级）**：改挂账口径——
+  worker 11,821 / sw+shared 632 / window-form 342 / idlharness 57 /
+  doc-iframe 19 / SAB+https 1 子测试记录在案，dedicated-worker 腿 re-entry
+  留待 workers 通道评估。
+- **DC-4（coverage 复测）**：encoding topdir 通过率 ≥ **98.8%**（对
+  2026-10-30 分母 1,152,394 即 ≥ 1,138,566 通过）；全可收口天花板 =
+  分母 − 挂账池 12,879 − pin 漂移带 25 − API 结构残差 3 − encode 契约
+  挂案 1 = **1,139,486（98.87%）**，可导入集 25 全过即达（分母滚动时按
+  evidence 口径重算）；36 号零回归门全绿（legacy 扫描恒等 + 新面干跑 +
+  weekly 分片计数对账）；30/31 号通道零改动；wpt-suites.csv 回填数据行。
+
+**DC-4 数值门决策规则（立项即定；M0 判定为第二档）**：M0 甄别后按地址池
+大小分档——
 
 - 地址池（导入即得 + 引擎可修）≥ 100k 子测试：全量推进，数值门 = 地址池
   × 一期同类族通过率（M0 实测后填入）。
 - 地址池 < 100k：降级为收尾 goal，只做 DC-2（根面 + streams），legacy-mb
   剩余面甄别后挂账，富余产能转 css-testharness 二期（见
   `docs/goal/archive/css-testharness-compat.md` 挂账清单）。
+
+**M0 实测落定**：地址池 = 可导入集 25 + 引擎可修 0（干跑 3F 全为在册
+SAB/transferred 残差，无新簇；big5-encoder 干跑若暴露编码器表缺口按
+「引擎可修」簇重估）<< 100k → 第二档生效。
 
 ## 划界
 
@@ -78,13 +115,17 @@ encoding topdir 全量分母 **1,152,394 子测试 / 1,345 文件**，zw 578,483
   rendering-compat、editing-compat（在跑 rally）、selection-compat、
   dom-expansion、webcrypto-compat 二期全部无交集。
 
-## 里程碑
+## 里程碑（v1.1 收尾口径）
 
-- **M0**：对账甄别 + 数值门落定（DC-1）。
-- **M1**：根面 + streams 收口（DC-2）。
-- **M2**：legacy-mb 三目录按族批量入账（DC-3 数值门达成）。
-- **M3**：引擎缺口簇归因收敛（如 M0 甄别出可修簇；无则并入 M2 批次）。
-- **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
+- ~~**M0**~~ **已完成（2026-10-31）**：对账甄别 + 数值门落定（DC-1，
+  evidence 已落）。
+- **M1**：可导入集 25 子测试入通道（DC-2）——36 号通道扫描域加
+  `encoding` 根，big5/iso-2022-jp-encoder inline `a.href` 面定向干跑；
+  weekly form-encode 分片接线核对。
+- ~~**M2/M3**~~ **撤销（降级）**：legacy-mb 无未导入案面；引擎可修簇 0；
+  挂账池 12,872 记 evidence 分族账本，不重开。
+- **M4**：coverage 复测收口（DC-4 数值门 ≥ 98.8%，天花板 1,139,486）+
+  wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）
 
