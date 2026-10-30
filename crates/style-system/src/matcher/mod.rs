@@ -2144,6 +2144,19 @@ struct NestedBlock {
     /// @media 块：`Some(已解析查询列表)`（逗号分隔 OR；prelude 不可解析亦为 None）；
     /// 非 @media：None。
     media_queries: Option<Vec<zero_css_parser::media_query::MediaQuery>>,
+    /// 子树含伪元素尾选择器（`::before`/`::after`/`::marker` 等）——P124 pseudo pass
+    /// 的 @media 子树递归门禁（不含则候选必空，整棵跳过）。
+    has_pseudo: bool,
+    /// 子树（本层规则表或任意深度嵌套块）含 `@layer` 规则（语句或块形式）——
+    /// P124/DEF-1：层名首次注册是遍历副作用（R4246 按 CSS Cascade 5 §6.4 首现
+    /// 顺序建层序，layer_counter/layer_map 每次 collect 新建），pseudo pass 的
+    /// `has_pseudo` 门跳过子树会连注册一起丢掉，伪元素级联层序相对 merge-base
+    /// 翻转。含层子树禁用门禁，回退旧无条件递归。
+    contains_layer: bool,
+    /// @supports 块：`Some(条件求值结果)`——条件为元素无关纯函数（P124：旧路径
+    /// 逐元素 × 逐 pass 现场求值，`is_property_supported` 每次值解析分配，GitHub
+    /// 页实测热点），随索引构造求值一次；非 @supports：None（collect 侧回退现算）。
+    supports_hit: Option<bool>,
 }
 
 /// 单一规则列表的索引（桶 + 嵌套块子索引）。
@@ -2151,6 +2164,15 @@ struct RuleListIndex {
     buckets: RuleListBuckets,
     /// 规则下标 → 内层块索引（@media/@layer/@supports/@container 有内层规则的规则）。
     nested: std::collections::HashMap<usize, NestedBlock>,
+    /// P124：@media 规则下标 → 命中预计算（`build_stylesheet_index_with_media`
+    /// 按渲染期 media_ctx 填充；空表 = 未预计算，collect_from_rules 回退现场求值）。
+    media_hits: std::collections::HashMap<usize, bool>,
+    /// P124：含伪元素尾选择器的顶层规则下标（升序）——pseudo pass 候选门。
+    pseudo_rule_set: Vec<usize>,
+    /// P124：候选驱动走查需访问的规则下标（升序）——嵌套块（@media/@layer/
+    /// @supports/@container 有内层规则）∪ 空 `@layer` 语句（层序注册副作用）。
+    /// Style 规则候选只经桶产生，其下标必在 collect 侧由候选流按序消费。
+    walk_ris: Vec<usize>,
 }
 
 /// 全样式表的选择器索引（compute_styles 每帧构建一次，元素共享）。
@@ -2203,19 +2225,32 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
     let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
     let mut universal: Vec<(usize, usize)> = Vec::new();
     let mut nested = std::collections::HashMap::new();
+    let mut pseudo_rule_set: Vec<usize> = Vec::new();
     for (ri, rule) in rules.iter().enumerate() {
         // 带内层规则表的块随走查预建子索引（@media 另预解析查询）。
         match rule {
             zero_css_parser::ast::Rule::At(at_rule) => {
                 if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body {
                     if at_rule.name.eq_ignore_ascii_case("media") {
+                        let index = build_rule_list_index(inner_rules);
+                        // P124：子树伪元素尾选择器存在性（pseudo pass 递归门禁）。
+                        let has_pseudo =
+                            !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                        // P124/DEF-1：子树层注册副作用存在性（见 NestedBlock.contains_layer）。
+                        let contains_layer = inner_rules
+                            .iter()
+                            .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                            || index.nested.values().any(|b| b.contains_layer);
                         nested.insert(
                             ri,
                             NestedBlock {
-                                index: build_rule_list_index(inner_rules),
+                                index,
                                 // parse_media_query 返回 Option<Vec<_>>：prelude 不可解析
                                 // 时 None 与非 @media 块同义（collect 侧回退现场解析后同样跳过）。
                                 media_queries: zero_css_parser::media_query::parse_media_query(&at_rule.prelude),
+                                has_pseudo,
+                                contains_layer,
+                                supports_hit: None,
                             },
                         );
                     } else {
@@ -2225,29 +2260,62 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                 }
             }
             zero_css_parser::ast::Rule::Layer(layer_rule) if !layer_rule.rules.is_empty() => {
+                let index = build_rule_list_index(&layer_rule.rules);
+                let has_pseudo = !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                let contains_layer = layer_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
-                        index: build_rule_list_index(&layer_rule.rules),
+                        index,
                         media_queries: None,
+                        has_pseudo,
+                        contains_layer,
+                        supports_hit: None,
                     },
                 );
             }
             zero_css_parser::ast::Rule::Supports(supports_rule) => {
+                let index = build_rule_list_index(&supports_rule.rules);
+                let has_pseudo = !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                // P124：@supports 条件元素无关——构造时求值一次（旧路径逐元素 × 逐
+                // pass 现场求值为 GitHub 页热点，见 NestedBlock.supports_hit 文档）。
+                let supports_hit = Some(evaluate_supports_condition(&supports_rule.condition));
+                let contains_layer = supports_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
-                        index: build_rule_list_index(&supports_rule.rules),
+                        index,
                         media_queries: None,
+                        has_pseudo,
+                        contains_layer,
+                        supports_hit,
                     },
                 );
             }
             zero_css_parser::ast::Rule::Container(container_rule) => {
+                let index = build_rule_list_index(&container_rule.rules);
+                let has_pseudo = !index.pseudo_rule_set.is_empty() || index.nested.values().any(|b| b.has_pseudo);
+                let contains_layer = container_rule
+                    .rules
+                    .iter()
+                    .any(|r| matches!(r, zero_css_parser::ast::Rule::Layer(_)))
+                    || index.nested.values().any(|b| b.contains_layer);
                 nested.insert(
                     ri,
                     NestedBlock {
-                        index: build_rule_list_index(&container_rule.rules),
+                        index,
                         media_queries: None,
+                        has_pseudo,
+                        contains_layer,
+                        supports_hit: None,
                     },
                 );
             }
@@ -2256,6 +2324,16 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
         let zero_css_parser::ast::Rule::Style(style_rule) = rule else {
             continue; // At 规则不进选择器桶（collect_from_rules 原样遍历）
         };
+        // P124：含伪元素尾选择器的规则进 pseudo_rule_set（pseudo pass 候选门判据，
+        // 与 matches_selector_for_pseudo 的尾部检查同源——按规则粗粒度收录，
+        // 尾部精判仍由 collect_style_rule_decls 做）。
+        if style_rule
+            .selectors
+            .iter()
+            .any(|s| selector_pseudo_element(s).is_some())
+        {
+            pseudo_rule_set.push(ri);
+        }
         for (si, selector) in style_rule.selectors.iter().enumerate() {
             match selector_rightmost_key(selector) {
                 RightmostKey::Id(id) => ids.entry(id).or_default().push((ri, si)),
@@ -2269,6 +2347,18 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
         bucket.sort_unstable();
     }
     universal.sort_unstable();
+    // P124：候选驱动走查的访问集（升序）——嵌套块下标 ∪ 空 @layer 语句下标
+    //（`@layer a, b;` / 匿名空层不在 nested，但走查时承担层序注册副作用 R4246，
+    // 候选驱动遍历必须显式覆盖）。
+    let mut walk_ris: Vec<usize> = nested.keys().copied().collect();
+    for (ri, rule) in rules.iter().enumerate() {
+        if let zero_css_parser::ast::Rule::Layer(layer_rule) = rule
+            && layer_rule.rules.is_empty()
+        {
+            walk_ris.push(ri);
+        }
+    }
+    walk_ris.sort_unstable();
     RuleListIndex {
         buckets: RuleListBuckets {
             ids,
@@ -2277,6 +2367,9 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             universal,
         },
         nested,
+        media_hits: std::collections::HashMap::new(),
+        pseudo_rule_set,
+        walk_ris,
     }
 }
 
@@ -2284,6 +2377,88 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
 pub fn build_stylesheet_index(stylesheets: &[zero_css_parser::Stylesheet]) -> StylesheetIndex {
     let sheets = stylesheets.iter().map(|s| build_rule_list_index(&s.rules)).collect();
     StylesheetIndex { sheets }
+}
+
+/// 同 [`build_stylesheet_index`]，并预计算全部 @media 块在 `media_ctx` 下的命中表。
+///
+/// P124（性能）：collect_from_rules 旧路径对每元素 × 每 @media 块现场求值
+///（GitHub pricing 实测 ~12k 元素 × 1,230 块的求值热点）；一轮 compute_styles
+/// 内 media_ctx 固定，命中与元素无关——预计算后 collect 侧 O(1) 查表。
+/// compute_styles 主路径用本构造；测试与旧调用方用 [`build_stylesheet_index`]
+///（空表 → collect 回退现场求值，语义逐点一致）。
+pub fn build_stylesheet_index_with_media(
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> StylesheetIndex {
+    let mut index = build_stylesheet_index(stylesheets);
+    for (sheet_index, sheet) in index.sheets.iter_mut().zip(stylesheets) {
+        fill_media_hits(sheet_index, &sheet.rules, media_ctx);
+    }
+    index
+}
+
+/// 递归预计算单一规则列表内所有 @media 块的命中表（P124）。
+///
+/// 本层 @media 块（`media_queries` Some，或 prelude 不可解析的 None）写入命中；
+/// 随后**对全部嵌套块类型**（@media 命中时 / @layer、@supports、@container 恒时）
+/// 递归下钻——内层规则表的 @media 块同样需要命中表（GitHub CSS 的 @media 大多
+/// 嵌在 @layer 内，不下钻则内层 @media 逐元素回退求值，实测热点）。@media 未
+/// 命中不下钻：元素走查遇该路径时父层已短路，不会查询内层块。
+fn fill_media_hits(
+    idx: &mut RuleListIndex,
+    rules: &[zero_css_parser::ast::Rule],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) {
+    let RuleListIndex {
+        buckets: _,
+        nested,
+        media_hits,
+        pseudo_rule_set: _,
+        walk_ris: _,
+    } = idx;
+    for (ri, block) in nested.iter_mut() {
+        let hit = match block.media_queries.as_deref() {
+            Some(queries) => media_ctx
+                .map(|ctx| {
+                    queries
+                        .iter()
+                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                })
+                .unwrap_or(false),
+            // prelude 不可解析的 @media（如含未知媒体特征 `(hover:…)`)：collect 回退
+            // 路径 parse→None→空表→any=false，此处同样恒 false——缓存该结果，避免
+            // 逐元素 × 逐 pass 重解析（GitHub 页 ~100 块 hover/forced-colors 系热点）。
+            // 非 @media 块的条目不会进 @media 分支查询（按 ri 对应）。
+            None => false,
+        };
+        media_hits.insert(*ri, hit);
+        // 下钻判据：@media 仅命中时（未命中子树在 collect 侧不可达，不查内层表）；
+        // @layer/@supports/@container 恒下钻（其内层 @media 同样需要命中表）。
+        let is_media_block = matches!(
+            &rules[*ri],
+            zero_css_parser::ast::Rule::At(at_rule)
+                if at_rule.name.eq_ignore_ascii_case("media")
+                    && matches!(at_rule.body, zero_css_parser::ast::AtRuleBody::Block(_))
+        );
+        let descend = if is_media_block { hit } else { true };
+        if descend && let Some(inner_rules) = nested_block_inner_rules(&rules[*ri]) {
+            fill_media_hits(&mut block.index, inner_rules, media_ctx);
+        }
+    }
+}
+
+/// 嵌套块规则的内层规则表（@media/@supports 的 At-Block 与 @layer/@container）。
+fn nested_block_inner_rules(rule: &zero_css_parser::ast::Rule) -> Option<&[zero_css_parser::ast::Rule]> {
+    match rule {
+        zero_css_parser::ast::Rule::At(at_rule) => match &at_rule.body {
+            zero_css_parser::ast::AtRuleBody::Block(inner_rules) => Some(inner_rules),
+            _ => None,
+        },
+        zero_css_parser::ast::Rule::Layer(layer_rule) => Some(&layer_rule.rules),
+        zero_css_parser::ast::Rule::Supports(supports_rule) => Some(&supports_rule.rules),
+        zero_css_parser::ast::Rule::Container(container_rule) => Some(&container_rule.rules),
+        _ => None,
+    }
 }
 
 /// 元素在单一规则表内的候选 (规则, 选择器) 集：各主键精确桶 + universal，
@@ -2429,6 +2604,38 @@ fn register_layer_name(
     idx
 }
 
+/// P124：候选流单条消费——定位候选 (ri, si) 指向的 Style 规则并尝试第 si 个
+/// 选择器；同规则命中一次后其余选择器跳过（旧全量走查的 last_matched_rule 语义）。
+#[allow(clippy::too_many_arguments)]
+#[inline]
+fn drain_style_candidate(
+    rules: &[zero_css_parser::ast::Rule],
+    doc: &Document,
+    element: NodeId,
+    (ri, si): (usize, usize),
+    results: &mut Vec<MatchingDecl>,
+    current_layer: Option<usize>,
+    pseudo: Option<&str>,
+    last_matched_rule: &mut usize,
+) {
+    let Some(zero_css_parser::ast::Rule::Style(style_rule)) = rules.get(ri) else {
+        return;
+    };
+    if ri != *last_matched_rule
+        && collect_style_rule_decls(
+            doc,
+            element,
+            style_rule,
+            &style_rule.selectors[si],
+            results,
+            current_layer,
+            pseudo,
+        )
+    {
+        *last_matched_rule = ri;
+    }
+}
+
 /// 递归从规则中收集匹配的声明。
 ///
 /// `current_layer` 为 `None` 表示未分层的声明，`Some(idx)` 表示当前级联层索引。
@@ -2458,32 +2665,36 @@ fn collect_from_rules(
     // 同规则多选择器匹配时只收集一次（原语义 break）。
     match index {
         Some(idx) => {
-            let candidates = element_candidates(idx, doc, element);
+            let mut candidates = element_candidates(idx, doc, element);
+            if pseudo.is_some() {
+                // P124（性能）：pseudo pass 候选门——只有含伪元素尾选择器的规则可能
+                // 匹配（matches_selector_for_pseudo 尾部精判同源），非伪元素规则候选
+                // 整批剔除。GitHub 页伪元素规则占少数，常规 pass 的元素级联不受影响。
+                candidates.retain(|(ri, _)| idx.pseudo_rule_set.binary_search(ri).is_ok());
+            }
             let mut last_matched_rule = usize::MAX;
             let mut ci = 0usize; // 候选流游标
-            for (ri, rule) in rules.iter().enumerate() {
-                // 该规则的候选选择器：候选流按 (ri, si) 升序，顺序消费 ri 相同段
-                while ci < candidates.len() && candidates[ci].0 == ri {
-                    let si = candidates[ci].1;
+            // P124（性能）：候选驱动走查——只下钻嵌套块与空层语句（walk_ris，
+            // 源码序升序）；每个 At 位之前按 (ri, si) 序消费全部位于其前的 Style
+            // 候选，走查结束后消费余量。旧实现每元素全量枚举 rules（O(总规则)，
+            // GitHub 页 ~2 万选择器 × 每元素 × 每 pass 的走查热点）；现
+            // O(候选 + At 规则数)，Style 规则体不再逐条访问。候选流有序、At 位
+            // 升序 → 收集序仍为源码序 → 级联逐点一致。
+            for &ri in &idx.walk_ris {
+                while ci < candidates.len() && candidates[ci].0 < ri {
+                    drain_style_candidate(
+                        rules,
+                        doc,
+                        element,
+                        candidates[ci],
+                        results,
+                        current_layer,
+                        pseudo,
+                        &mut last_matched_rule,
+                    );
                     ci += 1;
-                    let zero_css_parser::ast::Rule::Style(style_rule) = &rules[ri] else {
-                        continue;
-                    };
-                    if ri != last_matched_rule
-                        && collect_style_rule_decls(
-                            doc,
-                            element,
-                            style_rule,
-                            &style_rule.selectors[si],
-                            results,
-                            current_layer,
-                            pseudo,
-                        )
-                    {
-                        last_matched_rule = ri;
-                    }
                 }
-                // 该规则候选耗尽后仍可能处于 last_matched_rule（由上面收集）——At 分支无关。
+                let rule = &rules[ri];
                 match rule {
                     zero_css_parser::ast::Rule::Style(_) => {}
                     zero_css_parser::ast::Rule::At(at_rule) => {
@@ -2495,21 +2706,39 @@ fn collect_from_rules(
                                 // 此处仅做布尔求值；索引缺失（无嵌套表的防御分支）回退
                                 // 现场解析，语义不变。
                                 if let Some(ctx) = media_ctx {
-                                    // P11 返修（TV-4/DF-1）：预解析查询借用求值，省去
-                                    // 每元素×每 @media 块一次 Vec clone（GitHub pricing
-                                    // ~12k 元素 × 1,230 块的分配热点）。索引侧 None
-                                    // （构建时不可解析）与块缺失同样回退现场解析，语义
-                                    // 与旧 clone 版逐点相同。
-                                    let hit = match idx.nested.get(&ri).and_then(|b| b.media_queries.as_deref()) {
-                                        Some(queries) => queries
-                                            .iter()
-                                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
-                                        None => zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
-                                            .unwrap_or_default()
-                                            .iter()
-                                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+                                    // P124：@media 命中预计算（build_stylesheet_index_with_media
+                                    // 填充，每帧一次）；未预计算（空表/旧调用方）回退现场求值，
+                                    // 语义与旧 clone 版逐点相同。
+                                    let hit = match idx.media_hits.get(&ri) {
+                                        Some(hit) => *hit,
+                                        None => match idx.nested.get(&ri).and_then(|b| b.media_queries.as_deref()) {
+                                            Some(queries) => queries
+                                                .iter()
+                                                .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+                                            None => zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                                                .unwrap_or_default()
+                                                .iter()
+                                                .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+                                        },
                                     };
-                                    if hit {
+                                    // P124：pseudo pass 额外要求子树含伪元素尾规则
+                                    //（has_pseudo 预计算）——两者皆无则候选与副作用
+                                    // 皆空，整棵跳过。被跳过的块不贡献候选，层号仅以
+                                    // 相对序参与级联，删除非伪块不改变候选间相对序 →
+                                    // 结果逐点一致。
+                                    // P124/DEF-1：该论证只覆盖候选，不覆盖层名首次
+                                    // 注册副作用（R4246，layer_map 每次 collect 新建
+                                    // 无跨 pass 补偿）——含 `@layer` 子树必须照常下钻
+                                    //（has_pseudo || contains_layer），保注册序与
+                                    // merge-base 一致。
+                                    // 索引缺失（防御分支无 has_pseudo）保持旧递归。
+                                    let pseudo_subtree_possible = pseudo.is_none()
+                                        || idx
+                                            .nested
+                                            .get(&ri)
+                                            .map(|b| b.has_pseudo || b.contains_layer)
+                                            .unwrap_or(true);
+                                    if hit && pseudo_subtree_possible {
                                         let nested_index = idx.nested.get(&ri).map(|b| &b.index);
                                         collect_from_rules(
                                             doc,
@@ -2585,14 +2814,27 @@ fn collect_from_rules(
                         // @import 规则不参与样式匹配，跳过（实际导入由引擎处理）
                     }
                     zero_css_parser::ast::Rule::Supports(supports_rule) => {
-                        // @supports 规则：评估条件，条件为真时递归进入
-                        if evaluate_supports_condition(&supports_rule.condition) {
+                        // @supports 规则：评估条件，条件为真时递归进入。
+                        // P124：条件元素无关，优先查索引构造时预计算结果（构造点见
+                        // build_rule_list_index @supports 分支）；索引缺失（防御分支）
+                        // 回退现场求值，语义不变。pseudo pass 另要求子树含伪元素尾
+                        // 规则（has_pseudo 门，与 @media 分支同论证：被跳过子树不
+                        // 贡献候选，非伪块删除不改变候选相对序；含 @layer 子树因
+                        // R4246 首现注册副作用必须照常下钻，析取式
+                        // has_pseudo || contains_layer，见 NestedBlock.contains_layer）。
+                        let block = idx.nested.get(&ri);
+                        let supports_hit = block
+                            .and_then(|b| b.supports_hit)
+                            .unwrap_or_else(|| evaluate_supports_condition(&supports_rule.condition));
+                        let pseudo_subtree_possible =
+                            pseudo.is_none() || block.map(|b| b.has_pseudo || b.contains_layer).unwrap_or(true);
+                        if supports_hit && pseudo_subtree_possible {
                             collect_from_rules(
                                 doc,
                                 element,
                                 &supports_rule.rules,
                                 // P11：内层规则表随索引树预分桶
-                                idx.nested.get(&ri).map(|b| &b.index),
+                                block.map(|b| &b.index),
                                 results,
                                 media_ctx,
                                 container_ctx,
@@ -2643,6 +2885,20 @@ fn collect_from_rules(
                         // 消费层从 CSS 提取并注入），跳过。
                     }
                 }
+            }
+            // 最后一个 At 规则之后的 Style 候选余量
+            while ci < candidates.len() {
+                drain_style_candidate(
+                    rules,
+                    doc,
+                    element,
+                    candidates[ci],
+                    results,
+                    current_layer,
+                    pseudo,
+                    &mut last_matched_rule,
+                );
+                ci += 1;
             }
         }
         None => {
