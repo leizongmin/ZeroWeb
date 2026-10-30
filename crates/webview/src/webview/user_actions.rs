@@ -853,6 +853,19 @@ impl WebView {
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
             let result = self.apply_dom_script_result(value, recorded)?;
             executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
+            // R379/pa2b 换代通知对偶（editing join dup 修复，2026-10-30）：用户动作
+            // 私有批 apply 落地后须向 shim 下发换代通知——其余 apply 路径
+            // （apply_mutations_subset / apply_pending_shared_mutations）尾部同契约，
+            // 本路径此前只有脚本头部 pre-bump（s143 刀 A′），apply 后桶补偿仍持
+            // fresh stamp（stamp === gen），动作 resolve 后的立即读命中「host 快照
+            // 已含子 + overlay 副本」双计（WPT editing join 语料 sendBackspaceKey →
+            // assert innerHTML 的 span 逐测试递增实证）。
+            if result.changed {
+                let _ = executor.execute_script_priority_bounded(
+                    "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+                    zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+                );
+            }
             return Ok(result);
         }
         self.ensure_sandbox()?;
@@ -936,6 +949,13 @@ impl WebView {
                 Some(&self.layout_rect_snapshot),
             );
             zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+        }
+        // 换代通知对偶（sandbox 直执分支，契约同上方 executor 分支注记）——回灌/
+        // 重注册完成后下发，bump 清算窗口覆盖本批 apply 的全部桶补偿。
+        if result.changed {
+            let _ = self.js_sandbox.as_mut().expect("js sandbox").execute(
+                "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+            );
         }
         Ok(result)
     }

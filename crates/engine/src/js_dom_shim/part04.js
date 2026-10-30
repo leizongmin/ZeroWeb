@@ -8929,6 +8929,20 @@
                 try { _r5058fc = _makeProxy(sel, handle).firstChild; } catch (_e5058f) {}
                 var _r5058pos = (refNode === _r5058fc) ? 'afterbegin' : 'beforeend';
                 try { __zw_insert_adjacent_text(sel, _r5058pos, _r5058t); } catch (_e5058w) {}
+              } else if (sel && refNode && newNode.__zwHandle && refNode.nodeType === 1
+                  && typeof _zwPosSelOf === 'function') {
+                // D3 世界同步面（2026-10-30）：**plain 元素 ref 的位置串插入**——ref 为
+                // 补偿子树/innerHTML 解析产物（CE 世界同步回灌、模板注入等，无
+                // `__zwSelector` 印）时上方 wire 分支全不命中 → 变异静默本地化（引擎
+                // 侧壳永久丢失；join 语料同页第二动作实案：壳 span 建成但落位丢弃）。
+                // 位置串由 `_zwPosSelOf` 渲染（锚 sel + 元素序链），引擎按当前树态
+                // 解析 ref 落位——与 RemoveChildAtPath/SetChildTextByPath 的
+                // plain 寻址对偶，补 insertBefore 半边。
+                var _posRef = _zwPosSelOf(refNode);
+                if (_posRef) {
+                  ceAdded = [newNode];
+                  try { __zw_insert_before(sel, newNode.__zwHandle, _posRef); } catch (_ePosIns) {}
+                }
               }
               // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，

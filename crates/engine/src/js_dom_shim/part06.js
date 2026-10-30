@@ -10123,6 +10123,19 @@
     _selection._zwSync = function (aNode, aOff, fNode, fOff) {
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
+      // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
+      // 边界点的路径快照。同 turn 内 childNodes 索引必然有效；flush+重注册（fused-view
+      // resync）后陈旧顶层补偿节点被移出宿主 childNodes 视图，届时上行锚定必断
+      //（探针实证 stale div 在宿主 childNodes 里 indexOf=-1）。快照 {sel, path} 存
+      // range（`_zwStaleAnchor`），`__zw_ce_caret_range`（part01）重解析消费。
+      try {
+        var rg0 = this._ranges && this._ranges[0];
+        if (rg0 && !rg0._zwStaleAnchor && typeof _zwFragSelPathOf === 'function') {
+          var sa = _zwFragSelPathOf(aNode);
+          var sf = (fNode === aNode) ? sa : _zwFragSelPathOf(fNode);
+          if (sa && sf) rg0._zwStaleAnchor = { start: sa, end: sf };
+        }
+      } catch (_eD3sy) {}
       _zwScheduleSelectionChange(globalThis.document);
     };
     // selection-compat M2 切片 2：**节点移除时保存边界点随 live range 吸附**——

@@ -3224,6 +3224,15 @@ pub fn clear_mutation_history() {
     MUTATION_HISTORY.with(|h| h.borrow_mut().clear());
 }
 
+/// editing-compat D1（2026-10-30）：逗号分隔 child-index 链解析（`"0,2,1"` →
+/// `[0, 2, 1]`）；任一段非数字或整串为空 → `None`（回调侧静默丢弃，与
+/// `__zw_set_child_text` 的 idx parse 失败口径一致）。
+fn parse_child_index_path(csv: &str) -> Option<Vec<u32>> {
+    let path: Option<Vec<u32>> = csv.split(',').map(|seg| seg.trim().parse::<u32>().ok()).collect();
+    let path = path?;
+    if path.is_empty() { None } else { Some(path) }
+}
+
 /// js-dom M3 R100：读回调的跨注册回落——当前批 miss 时查历史批（CreateElement/TextNode/
 /// SetTextOnHandle 等 latest-wins 重放语义与 HEAD 的未清空 Vec 一致）。
 fn query_history_text(handle: &str) -> String {

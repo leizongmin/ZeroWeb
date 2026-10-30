@@ -19419,6 +19419,19 @@
       // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
       try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
       node.childNodes.splice(i, 1);
+      // editing-compat D1：sel 锚定补偿子树内子移除穿透（marker strip 对写空的文本
+      // 节点 `node.remove()` → 本函数——引擎 doc 同步移除面）。寻址同
+      // `_zwD1PersistData`（path 末位 = 被移除子自身，i 取 splice 前序）；身份印
+      // 排除 handle/sel 子（t7 host 对偶摘除已覆盖，重复入队会双删）与远端
+      // stamping 印 `__zwSelPathWrite`（D1 stamping 域走其 accessor 自带移除面）。
+      // 2026-10-31 撞车合并：wire 统一远端名 `__zw_remove_child_at_path`。
+      try {
+        if (!(c.__zwHandle || c.__zwSelector || c.__zwSelPathWrite)
+          && typeof globalThis.__zw_remove_child_at_path === 'function') {
+          var _d1fp = _zwFragSelPathOf(node);
+          if (_d1fp) globalThis.__zw_remove_child_at_path(_d1fp.sel, _d1fp.path.concat(i).join(','));
+        }
+      } catch (_eD1rm) {}
       // WC-M3 切片 3：反链强写（_zwForceParentLink——R84 getter-only 反链的子摘除后
       // parentNode 残留旧父，slots-fallback 'Remove a slot' 的 s1.assignedNodes()
       // 上溯死树仍命中 c1——spec：slot 出 shadow 树后分配清空）。
@@ -20758,6 +20771,76 @@
     } catch (_e263a) {}
   }
   try { globalThis.__zwAdjustRangesForInsert = _zwAdjustRangesForInsert; } catch (_eR263ex) {}
+  // editing-compat D1（2026-10-30）：补偿子树（innerHTML= 进 sel 容器的解析树，plain
+  // 视图——中间层元素与文本子均无 selector/handle/写路径身份印，evidence
+  // 2026-10-30-ws-join-impl-and-pipeline-blocker §3-D1）内 CharacterData 写/子移除的
+  // 引擎持久化寻址。沿 parentNode 链上行至首个 `__zwSelector` 祖先（sel 容器——live
+  // 宿主本身有 selector），逐级 childNodes 序收集 child-index 链（锚下行、**末位 =
+  // 目标节点自身**，与引擎 `walk_child_path` 全节点序口径一致）。返回 null = 不在 sel
+  // 锚定的补偿子树内（DOMParser/detached/handle 容器域）——维持既有本地快照行为。
+  function _zwFragSelPathOf(t) {
+    try {
+      var up = null, cur = t, guard = 0;
+      while (cur && guard++ < 64) {
+        if (cur.__zwSelector != null && cur.__zwSelector !== '') {
+          return { sel: cur.__zwSelector, path: up ? up.reverse() : [] };
+        }
+        var p = cur.parentNode;
+        if (!p || !p.childNodes || typeof p.childNodes.indexOf !== 'function') return null;
+        var idx = p.childNodes.indexOf(cur);
+        if (idx < 0) return null;
+        (up = up || []).push(idx);
+        cur = p;
+      }
+    } catch (_eD1p) {}
+    return null;
+  }
+  // D3 世界同步面（2026-10-30）：plain ref 的位置串渲染——自 ref 上行至首个
+  // `__zwSelector` 祖先（锚 sel 即引擎可解析的完整位置链），逐级按**元素序**
+  //（`:nth-child` 口径，只数元素兄弟，与引擎 fastpath 计数一致）收集 child-index
+  // 与标签，渲染 `anchor > tag:nth-child(pos) > …` 位置链。引擎
+  // `find_by_selector` 按当前树态解析（insertBefore apply 臂 lenient skip 兜底
+  // 同批前序 remove 的索引漂移）。文本 ref / detached 无锚 → null（维持既有
+  // 本地-only 行为）。 accompanying insertBefore plain-ref 臂见 part04。
+  function _zwPosSelOf(n) {
+    try {
+      var segs = [], cur = n, guard = 0;
+      while (cur && guard++ < 64) {
+        if (cur.__zwSelector != null && cur.__zwSelector !== '') {
+          if (!segs.length) return cur.__zwSelector; // ref 自身 stamped
+          var out = cur.__zwSelector;
+          for (var i = segs.length - 1; i >= 0; i--) out += ' > ' + segs[i];
+          return out;
+        }
+        if (cur.nodeType !== 1) return null;
+        var p = cur.parentNode;
+        if (!p || !p.childNodes) return null;
+        var eIdx = 0, hit = -1;
+        for (var k = 0; k < p.childNodes.length; k++) {
+          var sib = p.childNodes[k];
+          if (sib === cur) { hit = eIdx; break; }
+          if (sib && sib.nodeType === 1) eIdx++;
+        }
+        if (hit < 0) return null;
+        segs.push(String(cur.nodeName || '').toLowerCase() + ':nth-child(' + (hit + 1) + ')');
+        cur = p;
+      }
+    } catch (_ePos) {}
+    return null;
+  }
+  // D1 写穿透入队。身份印排除：part05 sel 域 `_wrapNodeEntry` 文本（`__zwWriteChildText`，
+  // R48 写路径）、handle 域节点（R3034 `_textHandles`）与远端 stamping 印
+  // `__zwSelPathWrite`（D1 stamping 域 data/nodeValue accessor 自带持久化，重复入队
+  // 双写）已有各自持久化面；仅 plain 补偿节点（无任何身份印）走本路径。
+  // 2026-10-31 撞车合并：wire 统一远端名 `__zw_set_child_text_path`。
+  function _zwD1PersistData(n, nv) {
+    try {
+      if (n.__zwWriteChildText || n.__zwHandle || n.__zwSelector || n.__zwSelPathWrite) return;
+      if (typeof globalThis.__zw_set_child_text_path !== 'function') return;
+      var fp = _zwFragSelPathOf(n);
+      if (fp) globalThis.__zw_set_child_text_path(fp.sel, fp.path.join(','), nv);
+    } catch (_eD1pd) {}
+  }
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
     // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
@@ -20766,7 +20849,16 @@
       nv = String(nv == null ? '' : nv);
       n.__nv = nv; n.textContent = nv;
     };
+    var _writeRaw = _write;
     _write(n.data != null ? n.data : '');
+    // D1：构造期初始化写必须直落本地快照（此时树刚建/解析中，入队只产生与
+    // SetInnerHtml 冗余的 mutation）；accessor 与 appendData 族闭包捕获 `_write`
+    // 变量——此处换装后全部用户写（.data=/.nodeValue=/appendData/insertData/
+    // deleteData/replaceData/splitText 半程）经 D1 写穿透。
+    _write = function (nv) {
+      _writeRaw(nv);
+      _zwD1PersistData(n, nv);
+    };
     n.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
     // R209（js-dom M4）：叶子节点 mutation 族抛 HierarchyRequestError（spec
     // `dom-node-pre-insert`「parent 不是 Element/Document/DocumentFragment」——
