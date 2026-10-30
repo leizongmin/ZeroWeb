@@ -10008,6 +10008,75 @@
     })(cac);
     return out;
   }
+  if (!globalThis.__zwSelectionFollowRemoval) {
+    globalThis.__zwSelectionFollowRemoval = function (removed262, oldParent262, oldIndex262) {
+      try {
+        if (!_selection || !_selection._ranges || _selection._ranges.length === 0) return;
+        if (!removed262 || !oldParent262 || !(oldIndex262 >= 0)) return;
+        var hKey = null, sKey = null;
+        try { hKey = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_eHk) {}
+        try { sKey = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_eSk) {}
+        var same = function (n) {
+          if (n === removed262) return true;
+          if (!n) return false;
+          try {
+            if (hKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === hKey) return true;
+            if (sKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === sKey) return true;
+          } catch (_eKc) {}
+          // NA 族桥：锚点/removed 分属树族、proxy 域、named-prop 族时直键皆不命中
+          // ——双侧经 _zwSelNAHome 重投影到 named-prop 族再比 identity（拖选 caret
+          // 锚点为树族、removed 为 proxy 域的 anchor-removal 实证面）。
+          try {
+            var nh262 = _zwSelNAHome(n);
+            var rh262 = _zwSelNAHome(removed262);
+            if (nh262 && rh262 && nh262 === rh262) return true;
+          } catch (_eKna) {}
+          return false;
+        };
+        var inSubtree = function (n) {
+          var cur = n, hops = 0;
+          while (cur && hops++ < 128) {
+            if (same(cur)) return true;
+            try { cur = cur.parentNode; } catch (_eUp) { return false; }
+          }
+          return false;
+        };
+        // oldParent 三键（identity / handle / selector——R262 sameParent262 同源）。
+        var phKey = null, psKey = null;
+        try { phKey = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_ePh) {}
+        try { psKey = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_ePs) {}
+        var sameParent = function (n) {
+          if (n === oldParent262) return true;
+          if (!n) return false;
+          try {
+            if (phKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === phKey) return true;
+            if (psKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === psKey) return true;
+          } catch (_ePc) {}
+          try {
+            var nh262p = _zwSelNAHome(n);
+            var ph262p = _zwSelNAHome(oldParent262);
+            if (nh262p && ph262p && nh262p === ph262p) return true;
+          } catch (_ePna) {}
+          return false;
+        };
+        var adj = function (isAnchor) {
+          var n = isAnchor ? _selection._anchorNode : _selection._focusNode;
+          var off = isAnchor ? _selection._anchorOffset : _selection._focusOffset;
+          // 吸附目标保持 oldParent262 原对象：R262 上行路径的 parent 与 live
+          // range 吸附同源（part03 同一 oldParent），identity 面天然一致；
+          // 不做 NA 重投影——globalThis[id] 即便连通也可能是异族孪生（parse
+          // wrapper vs 查询 proxy），换对象反而丢 identity（bridge test 实证）。
+          if (inSubtree(n)) { n = oldParent262; off = oldIndex262; }
+          else if (sameParent(n) && off > oldIndex262) { off = off - 1; }
+          else { return; }
+          if (isAnchor) { _selection._anchorNode = n; _selection._anchorOffset = off; }
+          else { _selection._focusNode = n; _selection._focusOffset = off; }
+        };
+        adj(true); adj(false);
+      } catch (_eSelFollow) {}
+    };
+  }
+
   function _getSelection() {
     if (_selection) return _selection;
     _selection = Object.create(globalThis.Selection.prototype);
@@ -10045,74 +10114,6 @@
     // 身份匹配与 R262 同源四域键：identity / __zwHandle / __zwSelector；
     // oldParent 匹配加键旁路（sameParent262 同款）。子树判定沿 parentNode 上行。
     // https://dom.spec.whatwg.org/#concept-node-pre-remove
-    if (!globalThis.__zwSelectionFollowRemoval) {
-      globalThis.__zwSelectionFollowRemoval = function (removed262, oldParent262, oldIndex262) {
-        try {
-          if (!_selection || !_selection._ranges || _selection._ranges.length === 0) return;
-          if (!removed262 || !oldParent262 || !(oldIndex262 >= 0)) return;
-          var hKey = null, sKey = null;
-          try { hKey = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_eHk) {}
-          try { sKey = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_eSk) {}
-          var same = function (n) {
-            if (n === removed262) return true;
-            if (!n) return false;
-            try {
-              if (hKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === hKey) return true;
-              if (sKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === sKey) return true;
-            } catch (_eKc) {}
-            // NA 族桥：锚点/removed 分属树族、proxy 域、named-prop 族时直键皆不命中
-            // ——双侧经 _zwSelNAHome 重投影到 named-prop 族再比 identity（拖选 caret
-            // 锚点为树族、removed 为 proxy 域的 anchor-removal 实证面）。
-            try {
-              var nh262 = _zwSelNAHome(n);
-              var rh262 = _zwSelNAHome(removed262);
-              if (nh262 && rh262 && nh262 === rh262) return true;
-            } catch (_eKna) {}
-            return false;
-          };
-          var inSubtree = function (n) {
-            var cur = n, hops = 0;
-            while (cur && hops++ < 128) {
-              if (same(cur)) return true;
-              try { cur = cur.parentNode; } catch (_eUp) { return false; }
-            }
-            return false;
-          };
-          // oldParent 三键（identity / handle / selector——R262 sameParent262 同源）。
-          var phKey = null, psKey = null;
-          try { phKey = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_ePh) {}
-          try { psKey = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_ePs) {}
-          var sameParent = function (n) {
-            if (n === oldParent262) return true;
-            if (!n) return false;
-            try {
-              if (phKey != null && typeof n.__zwHandle === 'string' && n.__zwHandle === phKey) return true;
-              if (psKey != null && typeof n.__zwSelector === 'string' && n.__zwSelector === psKey) return true;
-            } catch (_ePc) {}
-            try {
-              var nh262p = _zwSelNAHome(n);
-              var ph262p = _zwSelNAHome(oldParent262);
-              if (nh262p && ph262p && nh262p === ph262p) return true;
-            } catch (_ePna) {}
-            return false;
-          };
-          var adj = function (isAnchor) {
-            var n = isAnchor ? _selection._anchorNode : _selection._focusNode;
-            var off = isAnchor ? _selection._anchorOffset : _selection._focusOffset;
-            // 吸附目标保持 oldParent262 原对象：R262 上行路径的 parent 与 live
-            // range 吸附同源（part03 同一 oldParent），identity 面天然一致；
-            // 不做 NA 重投影——globalThis[id] 即便连通也可能是异族孪生（parse
-            // wrapper vs 查询 proxy），换对象反而丢 identity（bridge test 实证）。
-            if (inSubtree(n)) { n = oldParent262; off = oldIndex262; }
-            else if (sameParent(n) && off > oldIndex262) { off = off - 1; }
-            else { return; }
-            if (isAnchor) { _selection._anchorNode = n; _selection._anchorOffset = off; }
-            else { _selection._focusNode = n; _selection._focusOffset = off; }
-          };
-          adj(true); adj(false);
-        } catch (_eSelFollow) {}
-      };
-    }
     Object.defineProperties(_selection, {
       rangeCount: { get: function () { return this._ranges.length; } },
       isCollapsed: { get: function () { return this._ranges.length === 0 || this._ranges.every(function (r) { return r.collapsed; }); } },
