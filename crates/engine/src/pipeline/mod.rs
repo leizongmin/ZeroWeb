@@ -3631,76 +3631,25 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
     // 现由 style-system `scan_document_color_scheme` 在 compute 入口统一扫描
     //（used-scheme fallback；author CSS 经元素级联自然覆盖文档 scheme）。
     let style_ids = doc.get_elements_by_tag_name("style");
-    if !css.is_empty() {
-        match parsed_css {
-            Some(sheet) => stylesheets.push(sheet.clone()),
-            None => stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css)),
-        }
-    }
-    for style_id in style_ids {
-        // s160（html-semantics M2）：style 元素 sheet 三门。ID 属性变更（IDL 反射写内容
-        // 属性 → SetAttr/RemoveAttr mutation → gCS 代际换代 dirty 重收集，见
-        // computed_style_cache `apply_inline_style_overrides` + `is_style_or_meta`）自动
-        // 反应，无需 shim 触发臂。
-        // ① style-eligible（type 门）：type 属性存在且非空且非 ASCII 大小写不敏感
-        // `text/css` → sheet 未创建（规则不入级联）。spec 精确匹配（无 trimming、无
-        // parameters）——WPT style_type_html 钉："" 应用、TEXT/CsS 应用、" text/css " /
-        // "text/css; charset=utf-8" 不应用。
-        // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
-        if let Some(t) = doc.get_attribute(style_id, "type")
-            && !t.is_empty()
-            && !t.eq_ignore_ascii_case("text/css")
-        {
-            continue;
-        }
-        // ② media 门：media 属性存在且非空 → 按媒体查询列表对 screen 环境求值，全不
-        // 匹配 → sheet 已创建（仍入 document.styleSheets）但**不应用**（级联排除）。
-        // cssom：sheet 注册与 media 匹配无关（style_non_matching_media「media=unknown
-        // 长度 1」钉 shim 注册面不过滤），应用才查 media。
-        // FIXME: 求值视口取 compute_styles_for_doc 同款默认 1280×800——会话真 viewport
-        // 未传入本函数，宽度/高度条件媒体查询按默认视口求值。
-        // https://drafts.csswg.org/cssom/#dom-stylesheet-media
-        // https://drafts.csswg.org/mediaqueries/#evaluating
-        if let Some(m) = doc.get_attribute(style_id, "media") {
-            let m = m.trim();
-            if !m.is_empty() {
-                let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
-                let matches = zero_css_parser::media_query::parse_media_query(m).is_some_and(|qs| {
-                    qs.iter()
-                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
-                });
-                if !matches {
-                    continue;
-                }
+    // s167：外链结构化条目在槽 → 文档序交错装配（link 在 `<style>` 之后的页，
+    // 同特异度 link 规则后到后胜——blob 形态整体前置恒输给文档 `<style>`，s161
+    // 外链槽位级联序 FIXME 的槽侧根）。条目集由 shim 覆盖门保证为全量；条目空
+    // 回落 blob 前置形态（静态解析路径 / 未触发 recompute 的页逐位不变）。
+    let entries = crate::js_dom_bridge::active_external_css_entries();
+    if entries.is_empty() {
+        if !css.is_empty() {
+            match parsed_css {
+                Some(sheet) => stylesheets.push(sheet.clone()),
+                None => stylesheets.push(zero_css_parser::Parser::parse_stylesheet(css)),
             }
         }
-        // ③ disabled 门：disabled 内容属性存在 = sheet disabled flag（shim 布尔反射以
-        // 内容属性存储的既有近似——R2998/R5006 通道）。CSSOM：disabled 只禁应用、不销
-        // sheet 对象（styleSheets 注册面不过滤，同②）。
-        // FIXME: spec sheet.disabled 是 sheet 态非内容属性——setAttribute('disabled')
-        // 亦触发禁用（语义偏差），语料无负案形态。
-        // https://drafts.csswg.org/cssom/#dom-stylesheet-disabled
-        if doc.get_attribute(style_id, "disabled").is_some() {
-            continue;
+        for style_id in &style_ids {
+            if let Some(sheet) = style_sheet_if_eligible(doc, *style_id) {
+                stylesheets.push(sheet);
+            }
         }
-        let Some(css_text) = doc.text_content(style_id) else {
-            continue;
-        };
-        let css_text = strip_cdata(css_text.trim());
-        // R4022（XML #PCDATA 实体解码）：XHTML 文档（content_is_xml）的 <style> 内容
-        // 按 XML 语义是 **已解析字符数据**——`&gt;` 等实体应在文档解析期解码。ZW 对
-        // .xht 用 HTML tokenizer（<style> = raw text，实体保留），致 `body &gt; div`
-        // 以实体串进入 CSS 解析器（选择器损坏：inline-table-width-001a/001b/002a/002b
-        // 的 width/display 规则错位命中父子 div）。纯 HTML 文档 <style> raw text
-        // 不解码实体（HTML 语义，chromium 同），故仅 content_is_xml gate。
-        let css_text = if doc.content_is_xml() {
-            decode_xml_char_references(&css_text)
-        } else {
-            css_text.to_string()
-        };
-        if !css_text.is_empty() {
-            stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&css_text));
-        }
+    } else {
+        stylesheets = collect_interleaved_external(doc, &entries, &style_ids);
     }
     // Constructable stylesheets（CSSOM）：`document.adoptedStyleSheets` /
     // `ShadowRoot.adoptedStyleSheets` 的汇总规则文本（进程级共享槽：js worker 经
@@ -3715,6 +3664,144 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
         stylesheets.push(zero_css_parser::Parser::parse_stylesheet(&adopted_css));
     }
     stylesheets
+}
+
+/// `<style>` sheet 装配三门（s160）：①type 门（精确匹配 `text/css`）、②media 门
+///（不匹配 → 不入级联）、③disabled 内容属性门；过门后取文本（CDATA 剥除 + XML
+/// #PCDATA 实体解码，R4022）产表。s167 从 [`collect_stylesheets_with_parsed_external`]
+/// 提取——blob 路径与交错路径（[`collect_interleaved_external`]）共用。
+fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Stylesheet> {
+    // ① style-eligible（type 门）：type 属性存在且非空且非 ASCII 大小写不敏感
+    // `text/css` → sheet 未创建（规则不入级联）。spec 精确匹配（无 trimming、无
+    // parameters）——WPT style_type_html 钉："" 应用、TEXT/CsS 应用、" text/css " /
+    // "text/css; charset=utf-8" 不应用。
+    // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+    if let Some(t) = doc.get_attribute(style_id, "type")
+        && !t.is_empty()
+        && !t.eq_ignore_ascii_case("text/css")
+    {
+        return None;
+    }
+    // ② media 门：media 属性存在且非空 → 按媒体查询列表对 screen 环境求值，全不
+    // 匹配 → sheet 已创建（仍入 document.styleSheets）但**不应用**（级联排除）。
+    // cssom：sheet 注册与 media 匹配无关（style_non_matching_media「media=unknown
+    // 长度 1」钉 shim 注册面不过滤），应用才查 media。
+    // FIXME: 求值视口取 compute_styles_for_doc 同款默认 1280×800——会话真 viewport
+    // 未传入本函数，宽度/高度条件媒体查询按默认视口求值。
+    // https://drafts.csswg.org/cssom/#dom-stylesheet-media
+    // https://drafts.csswg.org/mediaqueries/#evaluating
+    if let Some(m) = doc.get_attribute(style_id, "media") {
+        let m = m.trim();
+        if !m.is_empty() {
+            let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
+            let matches = zero_css_parser::media_query::parse_media_query(m).is_some_and(|qs| {
+                qs.iter()
+                    .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
+            });
+            if !matches {
+                return None;
+            }
+        }
+    }
+    // ③ disabled 门：disabled 内容属性存在 = sheet disabled flag（shim 布尔反射以
+    // 内容属性存储的既有近似——R2998/R5006 通道）。CSSOM：disabled 只禁应用、不销
+    // sheet 对象（styleSheets 注册面不过滤，同②）。
+    // FIXME: spec sheet.disabled 是 sheet 态非内容属性——setAttribute('disabled')
+    // 亦触发禁用（语义偏差），语料无负案形态。
+    // https://drafts.csswg.org/cssom/#dom-stylesheet-disabled
+    if doc.get_attribute(style_id, "disabled").is_some() {
+        return None;
+    }
+    let css_text = doc.text_content(style_id)?;
+    let css_text = strip_cdata(css_text.trim());
+    // R4022（XML #PCDATA 实体解码）：XHTML 文档（content_is_xml）的 <style> 内容
+    // 按 XML 语义是 **已解析字符数据**——`&gt;` 等实体应在文档解析期解码。ZW 对
+    // .xht 用 HTML tokenizer（<style> = raw text，实体保留），致 `body &gt; div`
+    // 以实体串进入 CSS 解析器（选择器损坏：inline-table-width-001a/001b/002a/002b
+    // 的 width/display 规则错位命中父子 div）。纯 HTML 文档 <style> raw text
+    // 不解码实体（HTML 语义，chromium 同），故仅 content_is_xml gate。
+    let css_text = if doc.content_is_xml() {
+        decode_xml_char_references(&css_text)
+    } else {
+        css_text.to_string()
+    };
+    if css_text.is_empty() {
+        return None;
+    }
+    Some(zero_css_parser::Parser::parse_stylesheet(&css_text))
+}
+
+/// s167：外链条目**文档序交错**装配——`get_elements_by_tag_names(&["style","link"])`
+/// 单次 DFS 即文档序元素序列；link 条目经 selector 回锚节点（`find_by_selector`，与
+/// gCS 跨批回落同源；s145 祖先锚定保证结构路径跨代稳定），按节点位次插入级联
+///（https://drafts.csswg.org/css-cascade-5/#cascade-sort——author origin 按引入元素
+/// 文档序）。
+/// - style 节点：先消费锚定其上的 @import 取回条目（s164 通道文本；spec import 表
+///   先于该表自身后继规则级联——旧合并通道 blob 前置对单 style 页同相对序，多源页
+///   由本装配归位），再推 base sheet（三门共用 [`style_sheet_if_eligible`]）。
+/// - link 节点：消费锚定条目文本；走查期再核 rel/href 资格（下发与换代间 rel 变更
+///   窗口——不合格消费即弃，不尾接复活已移除表）。
+/// - 未锚定条目尾接（selector 漂移/节点已移除——保留「表在场」注册语义，位置近似；
+///   漂移暴露面与 pipeline rescue/slice33 同源记账）。
+///
+/// 媒体门不在 link 条目侧重复：shim 下发文本已按 live media wrap（s161 overlay 门），
+/// 静态路径在 webview 取回期门（s161 加载期门）。
+fn collect_interleaved_external(doc: &Document, entries: &[(String, String)], style_ids: &[NodeId]) -> Vec<Stylesheet> {
+    let mut entry_by_node: HashMap<NodeId, usize> = HashMap::new();
+    for (idx, (sel, _)) in entries.iter().enumerate() {
+        if let Some(nid) = crate::js_dom_bridge::find_by_selector(doc, sel) {
+            entry_by_node.insert(nid, idx);
+        }
+    }
+    let style_set: std::collections::HashSet<NodeId> = style_ids.iter().copied().collect();
+    let link_set: std::collections::HashSet<NodeId> = doc.get_elements_by_tag_name("link").into_iter().collect();
+    let mut consumed = vec![false; entries.len()];
+    let mut out = Vec::new();
+    for id in doc.get_elements_by_tag_names(&["style", "link"]) {
+        if style_set.contains(&id) {
+            // s164 style @import 取回条目：锚定消费，先于 base sheet（import 位次）。
+            if let Some(&idx) = entry_by_node.get(&id)
+                && !consumed[idx]
+            {
+                consumed[idx] = true;
+                let text = &entries[idx].1;
+                if !text.is_empty() {
+                    out.push(zero_css_parser::Parser::parse_stylesheet(text));
+                }
+            }
+            if let Some(sheet) = style_sheet_if_eligible(doc, id) {
+                out.push(sheet);
+            }
+        } else if link_set.contains(&id) {
+            let Some(&idx) = entry_by_node.get(&id) else {
+                continue;
+            };
+            consumed[idx] = true;
+            if !link_entry_eligible(doc, id) {
+                continue;
+            }
+            let text = &entries[idx].1;
+            if !text.is_empty() {
+                out.push(zero_css_parser::Parser::parse_stylesheet(text));
+            }
+        }
+    }
+    for (idx, (_, text)) in entries.iter().enumerate() {
+        if !consumed[idx] && !text.is_empty() {
+            out.push(zero_css_parser::Parser::parse_stylesheet(text));
+        }
+    }
+    out
+}
+
+/// s167：link 条目走查期资格复核——rel 分词含 `stylesheet`（WHATWG ASCII whitespace
+/// 五字符集，不含 U+000B——s158 shim `_zwLinkRelTokens` 同口径）且 href 非空。
+fn link_entry_eligible(doc: &Document, id: NodeId) -> bool {
+    let rel = doc.get_attribute(id, "rel").unwrap_or_default();
+    let is_sheet = rel
+        .split(['\t', '\n', '\x0C', '\r', ' '])
+        .any(|t| t.eq_ignore_ascii_case("stylesheet"));
+    is_sheet && doc.get_attribute(id, "href").is_some_and(|h| !h.is_empty())
 }
 
 /// R4022：解码 XML 字符引用（`&gt;` `&lt;` `&amp;` `&quot;` `&apos;` + 十进制/

@@ -84,12 +84,47 @@ thread_local! {
     /// 空串 = 无外部 CSS（纯快照/测试线程、LoadHtml 内联形态），行为与修复前逐位一致。
     /// 与代际槽同架构（host 回调仅 js worker 单线程执行，thread_local 规避 `Send`）。
     static ACTIVE_EXTERNAL_CSS: RefCell<Arc<str>> = RefCell::new(Arc::from(""));
+
+    /// s167：本代外链**结构化条目**——`(link selector, 表文本)` 按文档序排列
+    ///（shim overlay recompute 经 `__zw_set_external_css_entries` 下发）。与合并 blob
+    ///（[`ACTIVE_EXTERNAL_CSS`]）的差别：collector 可按 selector 回锚 link 节点做
+    /// **文档序交错**级联（link 在 `<style>` 之后的页，同特异度 link 规则后到后胜；
+    /// blob 形态整体前置、恒输给文档 `<style>`——s161 外链槽位级联序 FIXME 的槽侧根）。
+    /// 非空时 collector 忽略 blob 参数走交错装配（条目集 = 覆盖门全量，shim 侧保证）。
+    /// 派生不变式：写入时同步把条目文本按序 concat（`;\n` 分隔）装 [`ACTIVE_EXTERNAL_CSS`]
+    /// ——CSSOM rules wire（`__zw_style_rules_external`）与代际槽 css 键分量消费 blob，
+    /// 字节序 = 条目序（shim 枚举序），与旧合并通道输出逐位同构。
+    static ACTIVE_EXTERNAL_CSS_ENTRIES: RefCell<Arc<Vec<(String, String)>>> =
+        RefCell::new(Arc::new(Vec::new()));
 }
 
 /// js worker `SetDomSnapshot` 臂调用：装本代外部 CSS。每次快照无条件覆盖
 ///（含清空——跨文档残留不可能存活），先于同代 gCS 查询生效（同通道 FIFO）。
+/// s167：blob 写者独占槽——同步清结构化条目（静态解析路径与 overlay 交错条目
+/// 互斥拥有；导航/换页经本点复位，旧页条目不跨文档泄漏）。
 pub fn set_active_external_css(css: &str) {
     ACTIVE_EXTERNAL_CSS.with(|cell| *cell.borrow_mut() = Arc::from(css));
+    ACTIVE_EXTERNAL_CSS_ENTRIES.with(|cell| {
+        let non_empty = !cell.borrow().is_empty();
+        if non_empty {
+            *cell.borrow_mut() = Arc::new(Vec::new());
+        }
+    });
+}
+
+/// s167：shim overlay recompute 条目下发（`__zw_set_external_css_entries` 宿主回调）。
+/// 写条目槽并派生 blob（条目文本按序 `;\n` concat——与旧合并通道字节同构，见
+/// [`ACTIVE_EXTERNAL_CSS_ENTRIES`] 注）。空条目 = 清空（等价 blob 写 ""）。
+pub fn set_active_external_css_entries(entries: Vec<(String, String)>) {
+    let derived: String = entries.iter().map(|(_, text)| format!("{};\n", text)).collect();
+    let entries = Arc::new(entries);
+    ACTIVE_EXTERNAL_CSS.with(|cell| *cell.borrow_mut() = Arc::from(derived.as_str()));
+    ACTIVE_EXTERNAL_CSS_ENTRIES.with(|cell| *cell.borrow_mut() = entries);
+}
+
+/// s167：读本代外链结构化条目（collector 交错装配 + 代际槽键分量）。
+pub fn active_external_css_entries() -> Arc<Vec<(String, String)>> {
+    ACTIVE_EXTERNAL_CSS_ENTRIES.with(|cell| cell.borrow().clone())
 }
 
 thread_local! {
@@ -298,6 +333,7 @@ fn try_sync_with_drain_record(
         Vec<Stylesheet>,
         Arc<str>,
         Arc<str>,
+        Arc<Vec<(String, String)>>,
     ),
     html: &str,
     drain_gen: usize,
@@ -514,6 +550,7 @@ fn finish_generation_update(
         Vec<Stylesheet>,
         Arc<str>,
         Arc<str>,
+        Arc<Vec<(String, String)>>,
     ),
     html: &str,
     drain_gen: usize,
@@ -533,14 +570,19 @@ fn finish_generation_update(
     // 先于同代 gCS 装填，同代内稳定）。
     // R-t2qq：adopted 样式表文本（constructable stylesheets，shim 经
     // `__zw_set_adopted_css` 全量重推）同为级联源键分量——变化判脏重收集。
+    // s167：外链条目表（sel/text 结构化 overlay，`ACTIVE_EXTERNAL_CSS_ENTRIES`）与
+    // blob 派生文本非同源更新（双写者所有权互斥），单独作键分量——派生 blob 字节
+    // 巧合相等（静态 blob == shim concat）时仍须换代。
     let css = active_external_css();
     let adopted = active_adopted_css();
-    let sheets_dirty = sheets_dirty || slot.6 != css || slot.7 != adopted;
+    let entries = active_external_css_entries();
+    let sheets_dirty = sheets_dirty || slot.6 != css || slot.7 != adopted || slot.8 != entries;
     if sheets_dirty {
         let parsed = memoized_external_sheet(&css);
         slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref());
         slot.6 = css;
         slot.7 = adopted;
+        slot.8 = entries;
         match slot.3.get_elements_by_tag_names(&["html"]).first().copied() {
             Some(root) => changed.push(root),
             None => return false,
@@ -560,12 +602,12 @@ fn finish_generation_update(
 
 thread_local! {
     /// `(html 快照, drain 代际, style_version, parsed doc, NodeId→ComputedStyle,
-    /// stylesheets, 外部 CSS, adopted CSS)` 代际槽。stylesheets 随 doc 缓存（html 未变的
-    /// 增量换代不重收集/重解析 CSS）；外部 CSS 与 adopted CSS 作键分量（P9-9 / R-t2qq：
-    /// 变化 ⇒ sheets 重收集 + 全文档重算）。非 `Send` 类型（`Document`）仅存于创建线程
-    ///（js worker），无跨线程共享。
+    /// stylesheets, 外部 CSS, adopted CSS, 外链条目表)` 代际槽。stylesheets 随 doc 缓存
+    ///（html 未变的增量换代不重收集/重解析 CSS）；外部 CSS、adopted CSS 与外链条目表
+    /// 作键分量（P9-9 / R-t2qq / s167：变化 ⇒ sheets 重收集 + 全文档重算）。非 `Send`
+    /// 类型（`Document`）仅存于创建线程（js worker），无跨线程共享。
     static GENERATION_CACHE: RefCell<
-        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>, Arc<str>, Arc<str>)>,
+        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>, Arc<str>, Arc<str>, Arc<Vec<(String, String)>>)>,
     > = const { RefCell::new(None) };
 
     /// 测试观测点：本线程换代重算次数（全量或增量；仅 `cfg(test)` 编译，生产零开销）。
@@ -597,10 +639,11 @@ pub fn clear_generation_cache() {
 
 thread_local! {
     /// s161（html-semantics M2）：动态元素 handle 视图槽——`(html 快照, drain 代际,
-    /// style_version, dom_view_gen, applied 游标, 外部 CSS, adopted CSS, parsed doc,
-    /// handle→NodeId, NodeId→ComputedStyle)`。与 [`GENERATION_CACHE`] 同架构
-    ///（host 回调仅 js worker 单线程执行，thread_local 规避 `Document` 非 `Send`），
-    /// 独立成槽：静态路径不重放 handle 链（R51c），两视图 doc 内容不同，不得互占。
+    /// style_version, dom_view_gen, applied 游标, 外部 CSS, adopted CSS, 外链条目表,
+    /// parsed doc, handle→NodeId, NodeId→ComputedStyle)`。与 [`GENERATION_CACHE`]
+    /// 同架构（host 回调仅 js worker 单线程执行，thread_local 规避 `Document` 非
+    /// `Send`），独立成槽：静态路径不重放 handle 链（R51c），两视图 doc 内容不同，
+    /// 不得互占。
     static HANDLE_VIEW_CACHE: RefCell<
         Option<(
             String,
@@ -610,6 +653,7 @@ thread_local! {
             usize,
             Arc<str>,
             Arc<str>,
+            Arc<Vec<(String, String)>>,
             Document,
             HashMap<String, NodeId>,
             HashMap<NodeId, ComputedStyle>,
@@ -627,10 +671,11 @@ thread_local! {
 /// `[0..applied)` 落地效果；查询视图不应用 handle 链是身份理由，本视图恰需
 /// handle 链物化）+ 全文档级联 + 固有尺寸覆盖，`nodes[handle] → styles → serialize`。
 ///
-/// **键**：`(html, drain_gen, style_version, dom_view_gen, applied, css, adopted)`
-/// ——前三与代际缓存同理由（E14/R3030），view_gen 快照就地换代失效（R358/R-baidu3
-///），applied 进键：重放区间起点变化即视图输入变化（游标推进与基座换代配对发布，
-/// 防御非配对站点），css/adopted 级联源键分量（P9-9/R-t2qq 同理）。
+/// **键**：`(html, drain_gen, style_version, dom_view_gen, applied, css, adopted,
+/// entries)`——前三与代际缓存同理由（E14/R3030），view_gen 快照就地换代失效
+///（R358/R-baidu3），applied 进键：重放区间起点变化即视图输入变化（游标推进与基座
+/// 换代配对发布，防御非配对站点），css/adopted/外链条目表 级联源键分量（P9-9 /
+/// R-t2qq/s167 同理）。
 ///
 /// **跨批 handle（s166/R51c）**：前批创建已 drain 物化进基座 html 的 handle 不在
 /// 重放区间（基座序列化无 handle 标记，`nodes` 只覆盖 `[applied..count)`）——miss
@@ -653,12 +698,13 @@ pub(super) fn computed_style_by_handle(
 ) -> String {
     let css = active_external_css();
     let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
     HANDLE_VIEW_CACHE.with(|cell| {
         {
             let mut slot = cell.borrow_mut();
             let same = matches!(
                 &*slot,
-                Some((h, g, v, vg, ap, c, a, ..))
+                Some((h, g, v, vg, ap, c, a, e, ..))
                     if h == html
                         && *g == drain_gen
                         && *v == style_version
@@ -666,6 +712,7 @@ pub(super) fn computed_style_by_handle(
                         && *ap == applied
                         && **c == *css
                         && **a == *adopted
+                        && **e == *entries
             );
             if !same {
                 let mut doc = parse_html(html);
@@ -686,6 +733,7 @@ pub(super) fn computed_style_by_handle(
                     applied,
                     css,
                     adopted,
+                    entries,
                     doc,
                     nodes,
                     styles,
@@ -714,17 +762,18 @@ pub(super) fn computed_style_by_handle(
     })
 }
 
-/// 代际槽键是否与 (html, drain_gen, style_version) 全匹配（含外部 CSS 与 adopted
-/// 分量）。谓词与 [`with_cached_document_styles`] 的 `same_gen` 判定逐字一致（两处
-/// 同文件，改一处须同步另一处；预检漏分量会在该分量单独变化时误报命中，致变更
-/// 队列被空切片顶替——坏方向不可接受）。
+/// 代际槽键是否与 (html, drain_gen, style_version) 全匹配（含外部 CSS、adopted 与
+/// 外链条目表分量）。谓词与 [`with_cached_document_styles`] 的 `same_gen` 判定逐字
+/// 一致（两处同文件，改一处须同步另一处；预检漏分量会在该分量单独变化时误报命中，
+/// 致变更队列被空切片顶替——坏方向不可接受）。
 fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) -> bool {
     let css = active_external_css();
     let adopted = active_adopted_css();
+    let entries = active_external_css_entries();
     GENERATION_CACHE.with(|cell| {
         matches!(
             &*cell.borrow(),
-            Some((h, g, v, .., c, a)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted
+            Some((h, g, v, .., c, a, e)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries
         )
     })
 }
@@ -785,13 +834,16 @@ pub fn with_cached_document_styles<T>(
         // P9-9：当前代外部 CSS（快照臂装填）作键分量——css 变化即换代（走下方
         // html 同分支，finish_generation_update 经 css 对比判 sheets 脏重收集）。
         // R-t2qq：adopted 文本同为键分量（页面 setter 全量重推，变化即换代）。
+        // s167：外链条目表同为键分量（与 blob 派生文本非同源更新，见
+        // finish_generation_update 注）。
         let css = active_external_css();
         let adopted = active_adopted_css();
+        let entries = active_external_css_entries();
         {
             let mut slot = cell.borrow_mut();
             let same_gen = matches!(
                 &*slot,
-                Some((h, g, v, .., c, a)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted
+                Some((h, g, v, .., c, a, e)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries
             );
             if !same_gen {
                 #[cfg(test)]
@@ -818,8 +870,8 @@ pub fn with_cached_document_styles<T>(
                     if tree_dirty {
                         let (doc, styles, sheets) =
                             compute_document_styles_with_inline_overrides_css(html, mutations, &css);
-                        // css/adopted Arc 克隆进槽（Arc 增引用廉价）——外层后续全量兜底
-                        // 分支仍需移入原值。
+                        // css/adopted/entries Arc 克隆进槽（Arc 增引用廉价）——外层
+                        // 后续全量兜底分支仍需移入原值。
                         *s = (
                             html.to_string(),
                             drain_gen,
@@ -829,6 +881,7 @@ pub fn with_cached_document_styles<T>(
                             sheets,
                             css.clone(),
                             adopted.clone(),
+                            entries.clone(),
                         );
                         true
                     } else {
@@ -856,7 +909,7 @@ pub fn with_cached_document_styles<T>(
                     // P9-9：css 变体一次 parse 同时产出级联与代际槽 sheets。
                     let (doc, styles, sheets) =
                         compute_document_styles_with_inline_overrides_css(html, mutations, &css);
-                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted));
+                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries));
                 }
             }
         }

@@ -1313,6 +1313,30 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s167（html-semantics M2）：外链 overlay 的结构化条目通道——shim `_zwSsRecomputeExt`
+    // 以 wire（`\u{1}` 分记录、`\u{0}` 分 selector/text）下发按源序收集的 (selector,
+    // 表文本) 条目，装 [`crate::js_dom_bridge::ACTIVE_EXTERNAL_CSS_ENTRIES`] 槽（内部
+    // 同步派生 blob 文本，legacy 通道字节同构）。回调缺失（旧 shim）回落
+    // `__zw_set_external_css` blob 通道，语义同现状。
+    sandbox.register_callback(
+        "__zw_set_external_css_entries",
+        Box::new(|args: &[String]| {
+            let wire = args.first().map(String::as_str).unwrap_or_default();
+            let entries: Vec<(String, String)> = wire
+                .split('\u{1}')
+                .filter(|rec| !rec.is_empty())
+                .filter_map(|rec| {
+                    let mut fields = rec.splitn(2, '\u{0}');
+                    let sel = fields.next()?.to_string();
+                    let text = fields.next()?.to_string();
+                    (!sel.is_empty()).then_some((sel, text))
+                })
+                .collect();
+            crate::js_dom_bridge::set_active_external_css_entries(entries);
+            String::new()
+        }),
+    );
+
     // R-t2qq 二轮返修 D2：恢复钩子 host 侧——worker SetDomSnapshot 臂以 shim
     // `__zw_adopted_restore_text()` 的返回文本调用，把**当前页面真值**装回
     // [`crate::js_dom_bridge::ACTIVE_ADOPTED_CSS`]（SetDomSnapshot = 恢复而非清空，
@@ -1715,8 +1739,21 @@ pub fn register_dom_callbacks(
     // 时 per-selector 短路不得返旧代样式。
     // R-t2qq：键并入 adopted CSS（constructable stylesheets，页面 setter 全量重推）——
     // 同理，短路线不含 adopted 键会返 stale 旧代样式。
-    let cs_cache: Arc<Mutex<Option<(String, usize, usize, Arc<str>, Arc<str>, HashMap<String, ComputedStyle>)>>> =
-        Arc::new(Mutex::new(None));
+    // s167：键并入外链条目表（结构化 overlay 槽）——派生 blob 字节巧合相等时仍须
+    // 换代，理由同 computed_style_cache 键分量。
+    let cs_cache: Arc<
+        Mutex<
+            Option<(
+                String,
+                usize,
+                usize,
+                Arc<str>,
+                Arc<str>,
+                Arc<Vec<(String, String)>>,
+                HashMap<String, ComputedStyle>,
+            )>,
+        >,
+    > = Arc::new(Mutex::new(None));
     sandbox.register_callback(
         "__zw_get_computed_style",
         Box::new(move |args| {
@@ -1743,13 +1780,20 @@ pub fn register_dom_callbacks(
             let css = crate::js_dom_bridge::active_external_css();
             // R-t2qq：当前代 adopted 规则文本（shim `__zw_set_adopted_css` 重推）。
             let adopted = crate::js_dom_bridge::active_adopted_css();
+            // s167：当前代外链条目表（结构化 overlay 槽，与 blob 非同源更新）。
+            let entries = crate::js_dom_bridge::active_external_css_entries();
             let mut cache = cs_cache.lock().unwrap_or_else(|e| e.into_inner());
-            // html 变 / drain 前进 / style_version 变 / 外部 CSS 变 / adopted 变 → 清空
-            // per-selector 缓存，重置 key。drain_gen 并键（PR #83 复核遗留收口）：drain 后
-            // 队列重长回同 len 但内容可不同，已缓存 selector 走本 map 短路先于 doc 级代际
-            // 缓存，键不含 drain_gen 则返 stale。
-            let need_reset = cache.as_ref().is_none_or(|(h, g, v, c, a, _)| {
-                h != &*snap || *g != doc_drain_gen || *v != style_version || *c != css || *a != adopted
+            // html 变 / drain 前进 / style_version 变 / 外部 CSS 变 / adopted 变 /
+            // 外链条目表变 → 清空 per-selector 缓存，重置 key。drain_gen 并键（PR #83
+            // 复核遗留收口）：drain 后队列重长回同 len 但内容可不同，已缓存 selector
+            // 走本 map 短路先于 doc 级代际缓存，键不含 drain_gen 则返 stale。
+            let need_reset = cache.as_ref().is_none_or(|(h, g, v, c, a, e, _)| {
+                h != &*snap
+                    || *g != doc_drain_gen
+                    || *v != style_version
+                    || *c != css
+                    || *a != adopted
+                    || **e != *entries
             });
             if need_reset {
                 *cache = Some((
@@ -1758,10 +1802,11 @@ pub fn register_dom_callbacks(
                     style_version,
                     css,
                     adopted,
+                    entries,
                     HashMap::new(),
                 ));
             }
-            let (_, _, _, _, _, map) = cache.as_mut().expect("cs cache populated");
+            let (_, _, _, _, _, _, map) = cache.as_mut().expect("cs cache populated");
             // 同 selector 命中 → 直接 serialize（O(1)）。
             if let Some(style) = map.get(sel) {
                 return serialize_computed_property(style, prop);

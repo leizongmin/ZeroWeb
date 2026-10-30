@@ -4690,6 +4690,12 @@
       if (typeof __zw_query_all !== 'function' || typeof __zw_set_external_css !== 'function') return;
       var _rcSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
       var _rcOut = '';
+      // s167：结构化条目通道——(selector, 表文本) 按源序收集，经
+      // `__zw_set_external_css_entries` wire 下发（`\u0001` 分记录、`\u0000` 分
+      // selector/text；text 内 NUL→U+FFFD 与 CSS preprocessing 同语义）。引擎侧
+      // collector 按文档序锚定 selector 交错装配（级联序修正主通道）；blob `_rcOut`
+      // 保留为回调缺失回落 + legacy 派生基座（派生序 link→style 与旧下发序逐位同构）。
+      var _rcEntries = [];
       for (var _rcI = 0; _rcI < _rcSels.length; _rcI++) {
         var _rcSel = _rcSels[_rcI];
         var _rcRead = function (_ssName) {
@@ -4749,14 +4755,16 @@
         // 后残留语句无级联影响）。
         // s166/R51c：下发消费 wrap 后文本（s161 引入的 `_rcText` 装填未消费死代码
         // 修复——旧形态恒发裸文本，media=none 的 link 表文本无条件入级联）。
+        _rcEntries.push(_rcSel + '\u0000' + String(_rcText).replace(/\u0000/g, '�'));
         _rcOut += _rcText + ';\n';
       }
       // s164：style 元素 @import 落表文本并入合并文本（overlay 是该文本唯一级联载
       // 体——引擎 base 槽不追踪 style @import，引擎解析对 @-rule defer）。逐 style
       // live media 属性 wrap（同 link 面：no-match 文本级联零应用；空/缺省/'all'
-      // 不 wrap）。级联序：追加在 link 文本之后（文档序交错未建模——承 s161 外链
-      // 槽位级联序 FIXME 同债）。error 空贡献条目跳过。s166/R51c：link 条目侧
-      // `_rcText` wrap 已消费下发（s161 死代码修复，见上）。
+      // 不 wrap）。级联序：s167 起 entries 通道携带 selector，引擎 collector 按文档
+      // 序锚定交错（style @import 条目锚定其 style 节点位次）；blob 派生序仍
+      // link→style（legacy 路径序不变）。error 空贡献条目跳过。s166/R51c：link
+      // 条目侧 `_rcText` wrap 已消费下发（s161 死代码修复，见上）。
       var _rcStyles = String(__zw_query_all('style') || '').split('|').filter(Boolean);
       for (var _rcSi = 0; _rcSi < _rcStyles.length; _rcSi++) {
         var _rcSSel = _rcStyles[_rcSi];
@@ -4772,9 +4780,14 @@
         if (_rcSMl !== '' && _rcSMl !== 'all') {
           _rcSText = '@media ' + _rcSMedia.replace(/[{}]/g, ' ') + ' {' + _rcSText + '}';
         }
+        _rcEntries.push(_rcSSel + '\u0000' + String(_rcSText).replace(/\u0000/g, '�'));
         _rcOut += _rcSText + ';\n';
       }
-      __zw_set_external_css(_rcOut);
+      if (typeof __zw_set_external_css_entries === 'function') {
+        __zw_set_external_css_entries(_rcEntries.join('\u0001'));
+      } else {
+        __zw_set_external_css(_rcOut);
+      }
     } catch (_eRc) {}
   };
   // s164（html-semantics M2 切片 164）：**静态 style 元素 @import 取回通道**——此前
