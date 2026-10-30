@@ -22,7 +22,7 @@ fn has_vert(verts: &[f32], px: f32, py: f32) -> bool {
 /// TL start = (0,25)，采样点落在以 C=(25,25) 为心的圆上（弦线中点在弧内侧）。
 #[test]
 fn test_r5180_rounded_polygon_arc_samples() {
-    let pts = rounded_corner_polygon_in_box(0.0, 0.0, 100.0, 100.0, [25.0; 4]);
+    let pts = rounded_corner_polygon_in_box(0.0, 0.0, 100.0, 100.0, [25.0; 4], [25.0; 4]);
     assert_eq!(pts.len(), 36, "四角 × [start, 7 采样, end]，got {pts:?}");
     assert_eq!(pts[0], (0.0, 25.0), "TL start = 左缘端点");
     for (x, y) in &pts[1..8] {
@@ -107,7 +107,7 @@ fn test_r5180_dotted_falls_back_to_strips() {
 /// 端点弦在内的全部弦中点矢高 ≤ 0.12px（n=25 → 200(1−cos(1.8°)) ≈ 0.099）。
 #[test]
 fn test_r5254_round_arc_adaptive_density_extreme_radius() {
-    let pts = rounded_corner_polygon_in_box(0.0, 0.0, 200.0, 200.0, [200.0, 0.0, 0.0, 0.0]);
+    let pts = rounded_corner_polygon_in_box(0.0, 0.0, 200.0, 200.0, [200.0, 0.0, 0.0, 0.0], [200.0, 0.0, 0.0, 0.0]);
     // TL = start + 24 采样 + end = 26；TR/BR/BL r=0 仍 8 段（1+7+1=9，退化重复点）。
     assert_eq!(
         pts.len(),

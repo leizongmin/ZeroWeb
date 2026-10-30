@@ -186,6 +186,13 @@ pub struct Painter {
     /// RefCell：热循环常处于 `&mut self.primitives` 借用区，缓存须经 &self 访问。
     pub(crate) font_id_cache:
         std::cell::RefCell<std::collections::HashMap<(Vec<String>, u8, u8, (u32, u64)), (u32, bool)>>,
+    /// OPTIMIZATION（2026-10-27）：resolve_font_ids（face **列表**版）结果 memoize——
+    /// 镜像 font_id_cache。paint 每文本片段经 fragment_shaping_font_ids 调用一次；
+    /// 不可解析 family 触发 available_widths 全表扫描，cnblogs styled 帧 2913 次
+    /// ≈38ms/帧（T17 emit 分解探针实测）。键含完整解析输入（family 列表 + bool×2
+    /// + stretch/oblique 位串），不做语义归并；值返回克隆（调用方会改写返回值）。
+    pub(crate) font_ids_cache:
+        std::cell::RefCell<std::collections::HashMap<(Vec<String>, u8, u8, (u32, u64)), Vec<u32>>>,
     /// generic family（含粗体/斜体变体）解析到的字体 ID 集。
     generic_font_ids: HashSet<u32>,
     /// 视口宽度（像素）。用于 CSS §14.2 画布背景传播——根元素（html）的背景
@@ -996,6 +1003,7 @@ impl Painter {
             font_resolver: HashMap::new(),
             font_resolver_lower: HashMap::new(),
             font_id_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
+            font_ids_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
             generic_font_ids: HashSet::new(),
             viewport_w: 0.0,
             viewport_h: 0.0,
@@ -1407,7 +1415,11 @@ impl Painter {
     /// 设置 CSS font-family 查找表。
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
+    /// 同时使旧字体表的主 face 与 fallback 列表解析缓存失效。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        // 缓存依赖字体表；复用 Painter 时不能沿用旧 ID 或缺失字体的回退结果。
+        self.font_id_cache.get_mut().clear();
+        self.font_ids_cache.get_mut().clear();
         const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
         self.generic_font_ids = resolver
             .iter()
@@ -5417,6 +5429,9 @@ impl Painter {
                             top_right: clamp_half(inner(radii.top_right, cut), w, h),
                             bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
                             bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                            // R5341：滚动扩展段内圆角垂直轴同式递减（FIXME：content 盒
+                            // 椭圆角越界裁剪的逐轴钳制细化，无 corpus 驱动案）。
+                            ry: radii.ry.map(|r| clamp_half(inner(r, cut), w, h)),
                         });
                     }
                     _ => {
@@ -5428,6 +5443,7 @@ impl Painter {
                             top_right: clamp_half(inner(radii.top_right, cut), w, h),
                             bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
                             bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                            ry: radii.ry.map(|r| clamp_half(inner(r, cut), w, h)),
                         });
                         clip_x = abs_x + box_node.border_left;
                         clip_y = abs_y + box_node.border_top;
@@ -5515,22 +5531,37 @@ impl Painter {
                 if cut <= 0.0 {
                     radii
                 } else {
+                    // R5341：padding/content 盒裁剪内半径垂直轴同式（§5.5 max(0, r−cut)）。
                     super::helpers::BorderRadiusSpec {
                         top_left: (radii.top_left - cut).max(0.0),
                         top_right: (radii.top_right - cut).max(0.0),
                         bottom_right: (radii.bottom_right - cut).max(0.0),
                         bottom_left: (radii.bottom_left - cut).max(0.0),
+                        ry: radii.ry.map(|r| (r - cut).max(0.0)),
                     }
                 }
             });
-            self.primitives.add_rounded_rect(RoundedRectPrimitive {
-                rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
-                color: resolve_color_current(&style.background_color, &style.color),
-                top_left_radius: r.top_left,
-                top_right_radius: r.top_right,
-                bottom_right_radius: r.bottom_right,
-                bottom_left_radius: r.bottom_left,
-            });
+            // R5341（css-backgrounds-3 §5.5 椭圆角）：ry ≠ rx 时 RoundedRectPrimitive
+            // 单轴圆角不足以表达（原语半径无垂直分量）——降级路径填充多边形
+            //（rounded_corner_polygon_in_box 椭圆弧采样，与 R5180 边框弧带同光栅化
+            // 路径）；ry == rx（常态 + kill-switch）维持圆角矩形原语逐位不变。
+            let rx4 = [r.top_left, r.top_right, r.bottom_right, r.bottom_left];
+            if r.ry != rx4 {
+                let poly =
+                    crate::paint::helpers::rounded_corner_polygon_in_box(clip_x, clip_y, clip_w, clip_h, rx4, r.ry);
+                let flat: Vec<f32> = poly.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                self.primitives
+                    .add_path_fill(flat, resolve_color_current(&style.background_color, &style.color));
+            } else {
+                self.primitives.add_rounded_rect(RoundedRectPrimitive {
+                    rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
+                    color: resolve_color_current(&style.background_color, &style.color),
+                    top_left_radius: r.top_left,
+                    top_right_radius: r.top_right,
+                    bottom_right_radius: r.bottom_right,
+                    bottom_left_radius: r.bottom_left,
+                });
+            }
         }
     }
 

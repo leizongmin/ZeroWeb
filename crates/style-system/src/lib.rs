@@ -438,6 +438,21 @@ impl StyleSystem {
         self.prefers_color_scheme
     }
 
+    /// 当前渲染的 media 查询上下文（P124：viewport + 深浅色 + 媒体类型；无视口 → None）。
+    /// 一轮 compute_styles 内不变——@media 命中预计算（build_stylesheet_index_with_media）
+    /// 与各 collect 调用点共用同一上下文。
+    fn media_ctx_for(&self) -> Option<zero_css_parser::media_query::MediaContext> {
+        match (self.viewport_width, self.viewport_height) {
+            (Some(w), Some(h)) => {
+                let mut ctx = zero_css_parser::media_query::MediaContext::new(w, h);
+                ctx.prefers_color_scheme = self.prefers_color_scheme;
+                ctx.media_type = self.media_type;
+                Some(ctx)
+            }
+            _ => None,
+        }
+    }
+
     /// 为整个文档计算样式。
     ///
     /// 遍历文档中的所有元素节点，为每个元素计算完整的计算样式。
@@ -486,8 +501,10 @@ impl StyleSystem {
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
 
-        // 选择器 tag 分桶索引（每帧一次，元素共享——见 matcher::build_stylesheet_index）
-        let rule_index = matcher::build_stylesheet_index(stylesheets);
+        // 选择器 tag 分桶索引（每帧一次，元素共享——见 matcher::build_stylesheet_index）。
+        // P124：随构建预计算 @media 命中表（本轮渲染 media_ctx 固定，命中与元素无关）。
+        let media_ctx = self.media_ctx_for();
+        let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
 
         // 从文档根开始 DFS
         let root = doc.root();
@@ -550,7 +567,9 @@ impl StyleSystem {
         let delay_parent_insert = std::env::var("ZW_STYLE_DELAY_PARENT_INSERT").as_deref() != Ok("0");
         let mut style_cache: std::collections::HashMap<std::rc::Rc<StyleKey>, ComputedStyle> =
             std::collections::HashMap::new();
-        let rule_index = matcher::build_stylesheet_index(stylesheets);
+        // P124：增量路径同样预计算 @media 命中表。
+        let media_ctx = self.media_ctx_for();
+        let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
         for &nid in changed {
             // 祖先链（父级及以上）单节点重算 → 恢复父 style + custom 继承链。
             let mut chain: Vec<NodeId> = Vec::new();
@@ -1074,11 +1093,15 @@ impl StyleSystem {
             // R3806：Url（content:url() 图片）也保留——pipeline inject_pseudo_text_nodes
             // 据此注入 <img>（R1988 机制），旧 gate 漏 Url 致 ::before/::after content:url()
             // 整体失配（content-004 族 driving）。
+            // R5340：单值 Counters（`content: counters(c, ".", style)`，CSS Lists 3
+            // §counter-functions）同样保留——旧 gate 漏该臂致伪元素整体无生成内容
+            //（counter-hebrew-nested driving；多 item List 形态经 List 臂本就保留）。
             if matches!(
                 before.content,
                 property::types::ContentComputedValue::String(_)
                     | property::types::ContentComputedValue::Attr(_)
                     | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::Counters { .. }
                     | property::types::ContentComputedValue::List(_)
                     | property::types::ContentComputedValue::Url(_)
             ) {
@@ -1096,6 +1119,7 @@ impl StyleSystem {
                 property::types::ContentComputedValue::String(_)
                     | property::types::ContentComputedValue::Attr(_)
                     | property::types::ContentComputedValue::Counter { .. }
+                    | property::types::ContentComputedValue::Counters { .. }
                     | property::types::ContentComputedValue::List(_)
                     | property::types::ContentComputedValue::Url(_)
             ) {
@@ -1460,7 +1484,9 @@ impl StyleSystem {
     ) -> ComputedStyle {
         self.registered_properties = collect_registered_properties(stylesheets);
         self.font_feature_values = collect_font_feature_values(stylesheets);
-        let rule_index = matcher::build_stylesheet_index(stylesheets);
+        // P124：单元素重算同样预计算 @media 命中表。
+        let media_ctx = self.media_ctx_for();
+        let rule_index = matcher::build_stylesheet_index_with_media(stylesheets, media_ctx.as_ref());
         *self.compute_element_style_internal(
             doc,
             element,

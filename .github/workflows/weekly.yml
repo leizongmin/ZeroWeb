@@ -819,7 +819,12 @@ jobs:
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
-            time_limit: 7200
+            # 817 页，同族 mb-decode 385 页实测 61min，线性外推 ~2.2h——7200s
+            # 预算必超（run 40985139206 整点被 test-guard 杀树，JSON 未落盘，
+            # 聚合连带 skip）。取 4h 留一倍余量；job_timeout 同步上提，
+            # 否则 GH 在 150min 缺省先杀 job，time_limit 形同虚设。
+            time_limit: 14400
+            job_timeout: 270
             # encode-form 页每 variant ~1000 async_test 分窗断言，同上提额。
             script_timeout: 600000
           - name: timing

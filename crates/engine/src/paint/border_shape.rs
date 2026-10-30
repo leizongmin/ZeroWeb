@@ -282,6 +282,9 @@ pub(crate) fn border_shape_round_inset_equivalent_radii(
         top_right: r,
         bottom_right: r,
         bottom_left: r,
+        // FIXME(R5341)：border-shape inset round 等价半径维持单轴（垂直轴随水平）；
+        // 椭圆 inset round 域无 corpus 驱动案。
+        ry: [r; 4],
     })
 }
 
@@ -635,7 +638,15 @@ fn border_shape_vertices(shape: &ClipPathValue, bx: f32, by: f32, bw: f32, bh: f
             {
                 let corner = resolve_inset_length(v, iw.min(ih), font_size).min(iw.min(ih) / 2.0);
                 if corner > 0.0 {
-                    return super::helpers::rounded_corner_polygon_in_box(bx + l, by + t, iw, ih, [corner; 4]);
+                    // FIXME(R5341)：单值圆角两轴同值传入（垂直百分比解析椭圆角域仍单值近似）。
+                    return super::helpers::rounded_corner_polygon_in_box(
+                        bx + l,
+                        by + t,
+                        iw,
+                        ih,
+                        [corner; 4],
+                        [corner; 4],
+                    );
                 }
             }
             // FIXME: round 关键词半径与非均匀椭圆角未支持，回退方角四顶点。
@@ -816,6 +827,7 @@ mod tests {
             top_right: 0.0,
             bottom_right: 0.0,
             bottom_left: 0.0,
+            ry: [0.0; 4],
         };
         assert!(spec.is_zero());
     }
@@ -827,6 +839,7 @@ mod tests {
             top_right: 0.0,
             bottom_right: 0.0,
             bottom_left: 0.0,
+            ry: [5.0, 0.0, 0.0, 0.0],
         };
         assert!(!spec.is_zero());
     }

@@ -191,10 +191,19 @@ fn round_band_row_strips(
     spec: crate::paint::helpers::BorderRadiusSpec,
 ) -> Vec<Rect> {
     let full_r = [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left];
+    // R5341：内圈垂直半径同式 max(0, ry − b)（等宽弧带，§5.5 内半径式）。
     let inner_r = full_r.map(|r| (r - b).max(0.0));
+    let inner_ry = spec.ry.map(|r| (r - b).max(0.0));
     let ring = crate::paint::helpers::concat_ring_vertices(
-        crate::paint::helpers::rounded_corner_polygon_in_box(bx, by, bw, bh, full_r),
-        crate::paint::helpers::rounded_corner_polygon_in_box(bx + b, by + b, bw - 2.0 * b, bh - 2.0 * b, inner_r),
+        crate::paint::helpers::rounded_corner_polygon_in_box(bx, by, bw, bh, full_r, spec.ry),
+        crate::paint::helpers::rounded_corner_polygon_in_box(
+            bx + b,
+            by + b,
+            bw - 2.0 * b,
+            bh - 2.0 * b,
+            inner_r,
+            inner_ry,
+        ),
     );
     let n = ring.len();
     let (mut min_y, mut max_y) = (f32::MAX, f32::MIN);
@@ -453,18 +462,33 @@ impl super::Painter {
                         (spec.bottom_right - br_.max(bb)).max(0.0),
                         (spec.bottom_left - bb.max(bl)).max(0.0),
                     ];
+                    // R5341：padding 边内半径垂直轴同式（相邻边宽取 max 与水平同对）。
+                    let ry_pad = [
+                        (spec.ry[0] - bl.max(bt)).max(0.0),
+                        (spec.ry[1] - bt.max(br_)).max(0.0),
+                        (spec.ry[2] - br_.max(bb)).max(0.0),
+                        (spec.ry[3] - bb.max(bl)).max(0.0),
+                    ];
                     let s = shadow.spread_radius;
                     let pw = (box_node.width - bl - br_).max(0.0);
                     let ph = (box_node.height - bt - bb).max(0.0);
                     if pw - 2.0 * s > 0.0 && ph - 2.0 * s > 0.0 {
                         let ring = crate::paint::helpers::concat_ring_vertices(
-                            crate::paint::helpers::rounded_corner_polygon_in_box(abs_x + bl, abs_y + bt, pw, ph, r_pad),
+                            crate::paint::helpers::rounded_corner_polygon_in_box(
+                                abs_x + bl,
+                                abs_y + bt,
+                                pw,
+                                ph,
+                                r_pad,
+                                ry_pad,
+                            ),
                             crate::paint::helpers::rounded_corner_polygon_in_box(
                                 abs_x + bl + s,
                                 abs_y + bt + s,
                                 pw - 2.0 * s,
                                 ph - 2.0 * s,
                                 r_pad.map(|r| (r - s).max(0.0)),
+                                ry_pad.map(|r| (r - s).max(0.0)),
                             ),
                         );
                         let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();
@@ -503,12 +527,15 @@ impl super::Painter {
                             (spec.bottom_right + s).max(0.0),
                             (spec.bottom_left + s).max(0.0),
                         ];
+                        // R5341：spread 外扩平行曲线垂直轴同式（r+s，负 spread max(0,·)）。
+                        let radii_ry = spec.ry.map(|r| (r + s).max(0.0));
                         let shadow_shape = crate::paint::helpers::rounded_corner_polygon_in_box(
                             abs_x - s + shadow.offset_x,
                             abs_y - s + shadow.offset_y,
                             ew,
                             eh,
                             radii,
+                            radii_ry,
                         );
                         let punch = crate::paint::helpers::rounded_corner_polygon_in_box(
                             abs_x,
@@ -516,6 +543,7 @@ impl super::Painter {
                             box_node.width,
                             box_node.height,
                             [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left],
+                            spec.ry,
                         );
                         let ring = crate::paint::helpers::concat_ring_vertices(shadow_shape, punch);
                         let flat: Vec<f32> = ring.into_iter().flat_map(|(x, y)| [x, y]).collect();

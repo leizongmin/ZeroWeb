@@ -158,6 +158,43 @@ R5341 load 形态缺陷不影响 run 面变体案（bold 零位移为证）。
 重跑；分片退出前**禁止重建** target/release/zero-wpt-runner（cargo 以
 rename 换新 inode，后继案静默切新二进制 → 混二进制账）。
 
+## 四案簇 A 修复后复测终账（2026-10-30 收口）
+
+上节「四案残余分母缺口（对 M1 -8,289 行）挂簇 A 修复后复测」收口。二进制
+fc12a1ff8（R5340+R5341+R263b/R262b 预筛门）+ ZW_SCRIPT_TIMEOUT_MS=300000 +
+按案自适应墙单案直跑（实测墙钟 delete 43min / forwarddelete 42min /
+insertparagraph 31min / multitest 52min）。逐案账（变体级 P/F 见
+[JSON 存档](2026-10-30-cluster-a-4case-retest.json)）：
+
+| 案 | R5340 轮 | 本轮（簇 A 修复后） | Δ行 | 对 M1 缺口 |
+|---|---|---|---:|---:|
+| delete | 4,483r 2,014P/2,469F | 4,354r 2,061P/2,293F | -129 | -3,488 |
+| forwarddelete | 4,582r 2,028P/2,554F | 5,398r 2,447P/2,951F | +816 | -2,093 |
+| insertparagraph | 6,531r 3,423P/3,108F | 7,195r 3,774P/3,421F | +664 | **0（全分母）** |
+| multitest | 8,735r 5,109P/3,626F | 9,497r 5,653P/3,844F | +762 | -595 |
+| 合计 | 24,331r | **26,444r 13,935P/12,509F** | +2,113 | **-8,289→-6,176** |
+
+结构性结论：
+
+1. **insertparagraph/multitest 全分母收回**：script timeout 1→0 / 1→0，
+   全部变体预算内完成（insertparagraph ?7001-last 195 行、multitest
+   ?9001-last 497 行均自然收尾）——证实 R5340 轮归因：两案缺口主体是
+   R5340 分支开销 × 300s 预算的吞吐截断，簇 A 修复购回吞吐即全额恢复。
+2. **forwarddelete 部分恢复（+816）**：frontier 推进至重区（4001-5000
+   @852/1000、5001-6000 @544/1000），仍 4 变体 300s 中止。
+3. **delete 无实质恢复（-129）**：重区实测 ~2.3s/行（完成区 <0.3s/行），
+   中止集 {4001,5001,6001,7001}。瓶颈已证非 range 注册表——R263b/R262b
+   pass1 预筛为 O(R≤8192) 廉判、命中时增量可忽略；残余归簇 A fix
+   evidence §7 分布式 glue 桶（removeChild trap ~390µs/次、s111 臂、
+   CE loop、execCommand glue、逐断言 setup parse）。M1 全分母系 setup
+   快败产物（断言快速 Fail 不做真功），真执行下全分母回收须重区每行
+   成本降约一个量级。
+4. **跨截断集不做翻转推断**（与上节同纪律）：delete 对 R5340 轮 -129
+   为中止集位移（两轮中止变体集合不同），完成区确定性由 bold 全矩阵
+   零位移先例 + 本轮完成变体零 timeout 背书。
+5. **run 面现行账**（43 案分片账的四案位替换为本轮）：
+   **41,171P / 49,318F / 90,489 行**，对 M1 96,663 缺口 **-6,174**。
+
 ## 运行入口
 
 `make testharness-editing-run` / `make testharness-editing-other`（分片

@@ -761,8 +761,9 @@ pub fn translate_primitives_since(primitives: &mut RenderPrimitives, from: &Prim
         s.x2 += tx;
         s.y2 += ty;
     }
-    // path_fills/path_strokes：PrimitiveCounts 无对应计数（path 来自 canvas/SVG 桥，
-    // 与 CSS transform 组合罕见），不覆盖。
+    // path_fills/path_strokes：path 来自 canvas/SVG 桥与 R5341 椭圆角背景降级发射，
+    // 与 CSS transform 组合罕见；PrimitiveCounts 虽已计 path_fills（R5341，供事后
+    // 裁剪定界），本变换仍不覆盖。FIXME：变换元素 ry≠rx 背景不随 transform 位移。
 }
 
 /// R5305（css-transforms-1 §transform-rendering）：均匀轴对齐 scale 的图元级直映。

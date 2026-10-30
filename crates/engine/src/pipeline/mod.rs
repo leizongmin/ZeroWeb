@@ -2659,28 +2659,36 @@ fn counter_value_before_paint_by_name(
     Some(value.unwrap_or(0))
 }
 
+/// R5340：计数器作用域栈条目——值 + 作用域建立元素。`counters()` 嵌套链只沿祖先轴
+///（css-lists-3 §counter-inheritance），兄弟轴 reset 须替换而非叠层，故条目须携带
+/// 创建者以供 walk 的 reset 臂做祖先判定（`simulate_document_counters` 内部用；
+/// 对外快照 `CounterStackMaps` 仍存纯值表）。
+type CounterScopeStack = Vec<(i64, NodeId)>;
+
 /// R3888：静态（无 Painter 状态）counter 动作应用——reset 压栈 / set 覆盖 / increment
 /// 累加（spec 求值顺序），记录压栈的作用域名供 `pop_counter_scopes_static` 弹出。
+/// 伪元素无子树且作用域快照后立即弹出（R3888 语义不变），不做 R5340 祖先轴替换。
 fn apply_counter_actions(
-    counters: &mut HashMap<String, Vec<i64>>,
+    counters: &mut HashMap<String, CounterScopeStack>,
     resets: &[zero_css_parser::values::CounterActionValue],
     sets: &[zero_css_parser::values::CounterActionValue],
     increments: &[zero_css_parser::values::CounterActionValue],
     pushed: &mut Vec<String>,
+    creator: NodeId,
 ) {
     for action in resets {
         counters
             .entry(action.name.clone())
             .or_default()
-            .push(action.value.unwrap_or(0));
+            .push((action.value.unwrap_or(0), creator));
         pushed.push(action.name.clone());
     }
     for action in sets {
         let stack = counters.entry(action.name.clone()).or_default();
         match stack.last_mut() {
-            Some(top) => *top = action.value.unwrap_or(0),
+            Some(top) => top.0 = action.value.unwrap_or(0),
             None => {
-                stack.push(action.value.unwrap_or(0));
+                stack.push((action.value.unwrap_or(0), creator));
                 pushed.push(action.name.clone());
             }
         }
@@ -2689,9 +2697,9 @@ fn apply_counter_actions(
         let v = action.value.unwrap_or(1);
         let stack = counters.entry(action.name.clone()).or_default();
         match stack.last_mut() {
-            Some(top) => *top += v,
+            Some(top) => top.0 += v,
             None => {
-                stack.push(v);
+                stack.push((v, creator));
                 pushed.push(action.name.clone());
             }
         }
@@ -2699,7 +2707,7 @@ fn apply_counter_actions(
 }
 
 /// R3888：弹出 `apply_counter_actions` 压入的作用域（伪元素无子树 → 快照后立即弹）。
-fn pop_counter_scopes_static(counters: &mut HashMap<String, Vec<i64>>, pushed: &[String]) {
+fn pop_counter_scopes_static(counters: &mut HashMap<String, CounterScopeStack>, pushed: &[String]) {
     for name in pushed {
         if let Some(stack) = counters.get_mut(name) {
             stack.pop();
@@ -2773,12 +2781,13 @@ fn simulate_document_counters(
         doc: &Document,
         id: NodeId,
         styles: &HashMap<NodeId, ComputedStyle>,
-        counters: &mut HashMap<String, Vec<i64>>,
+        counters: &mut HashMap<String, CounterScopeStack>,
+        ancestors: &mut Vec<NodeId>,
         need_names: &HashMap<NodeId, (Vec<String>, Vec<String>)>,
         out: &mut CounterValueMaps,
         stacks: &mut CounterStackMaps,
-    ) {
-        let Some(node) = doc.get(id) else { return };
+    ) -> Vec<String> {
+        let Some(node) = doc.get(id) else { return Vec::new() };
         let is_element = matches!(node.kind, zero_dom::NodeKind::Element(_));
         let children: Vec<NodeId> = node.children.clone();
         let my_resets: Vec<String> = if is_element {
@@ -2789,29 +2798,41 @@ fn simulate_document_counters(
         } else {
             Vec::new()
         };
+        if is_element {
+            ancestors.push(id);
+        }
 
         if is_element {
             // 1. 应用本元素 counter 动作（reset → set → increment；spec 顺序）。
+            //    R5340：reset 压栈前先弹出栈顶所有「创建者非本元素祖先」的既有作用域
+            //   （css-lists-3 §counter-inheritance：counters() 嵌套链只沿**祖先轴**建立；
+            //    后续兄弟的 reset 对同名计数器是**替换**而非再嵌套——counter-hebrew-nested
+            //    实证：span18 reset 19 后期望 א.כ="1.20"，叠层会渲染 "1.17.20"）。
             if let Some(st) = styles.get(&id) {
                 for action in &st.counter_reset {
-                    counters
-                        .entry(action.name.clone())
-                        .or_default()
-                        .push(action.value.unwrap_or(0));
+                    let stack = counters.entry(action.name.clone()).or_default();
+                    while let Some((_, creator)) = stack.last() {
+                        if !ancestors.contains(creator) {
+                            stack.pop();
+                        } else {
+                            break;
+                        }
+                    }
+                    stack.push((action.value.unwrap_or(0), id));
                 }
                 for action in &st.counter_set {
                     let stack = counters.entry(action.name.clone()).or_default();
                     match stack.last_mut() {
-                        Some(top) => *top = action.value.unwrap_or(0),
-                        None => stack.push(action.value.unwrap_or(0)),
+                        Some(top) => top.0 = action.value.unwrap_or(0),
+                        None => stack.push((action.value.unwrap_or(0), id)),
                     }
                 }
                 for action in &st.counter_increment {
                     let v = action.value.unwrap_or(1);
                     let stack = counters.entry(action.name.clone()).or_default();
                     match stack.last_mut() {
-                        Some(top) => *top += v,
-                        None => stack.push(v),
+                        Some(top) => top.0 += v,
+                        None => stack.push((v, id)),
                     }
                 }
             }
@@ -2831,17 +2852,18 @@ fn simulate_document_counters(
                         &pseudo.counter_set,
                         &pseudo.counter_increment,
                         &mut pushed,
+                        id,
                     );
                 }
                 let mut snapshot: HashMap<String, i64> = HashMap::new();
                 let mut stack_snapshot: HashMap<String, Vec<i64>> = HashMap::new();
                 for name in before_names {
-                    if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
+                    if let Some(&(v, _)) = counters.get(name).and_then(|s| s.last()) {
                         snapshot.insert(name.clone(), v);
                     }
                     // R3891：counters() 需要整栈（嵌套作用域由外到内 join）。
                     if let Some(stack) = counters.get(name) {
-                        stack_snapshot.insert(name.clone(), stack.clone());
+                        stack_snapshot.insert(name.clone(), stack.iter().map(|(v, _)| *v).collect());
                     }
                 }
                 pop_counter_scopes_static(counters, &pushed);
@@ -2854,9 +2876,13 @@ fn simulate_document_counters(
             }
         }
 
-        // 3. 递归子树（文档序）。
+        // 3. 递归子树（文档序）。R5340：子元素 reset 的作用域收集到本层退出时再弹
+        //（CSS2 §12.4 / css-lists-3 §counter-scoping：reset 作用域覆盖元素、后代
+        // 与**后续兄弟**及其后代——counter-hebrew-nested driving：#test 首 span 的
+        // reset 须对全部后继兄弟 span 存活，否则嵌套 counters() 退化为单层）。
+        let mut child_resets: Vec<String> = Vec::new();
         for child in &children {
-            walk(doc, *child, styles, counters, need_names, out, stacks);
+            child_resets.extend(walk(doc, *child, styles, counters, ancestors, need_names, out, stacks));
         }
 
         // 4. ::after 快照（子树结束、作用域弹出前——本元素 reset 的作用域仍存活）。
@@ -2874,16 +2900,17 @@ fn simulate_document_counters(
                     &pseudo.counter_set,
                     &pseudo.counter_increment,
                     &mut pushed,
+                    id,
                 );
             }
             let mut snapshot: HashMap<String, i64> = HashMap::new();
             let mut stack_snapshot: HashMap<String, Vec<i64>> = HashMap::new();
             for name in after_names {
-                if let Some(v) = counters.get(name).and_then(|s| s.last()).copied() {
+                if let Some(&(v, _)) = counters.get(name).and_then(|s| s.last()) {
                     snapshot.insert(name.clone(), v);
                 }
                 if let Some(stack) = counters.get(name) {
-                    stack_snapshot.insert(name.clone(), stack.clone());
+                    stack_snapshot.insert(name.clone(), stack.iter().map(|(v, _)| *v).collect());
                 }
             }
             pop_counter_scopes_static(counters, &pushed);
@@ -2899,8 +2926,10 @@ fn simulate_document_counters(
             }
         }
 
-        // 5. 弹出本元素 reset 的作用域（CSS2 §12.4.1）。
-        for name in my_resets {
+        // 5. 弹出子元素层的作用域（R5340 前弹本元素自身——旧语义在元素子树结束即
+        // 弹，reset 作用域不覆盖后续兄弟，与 CSS2 §12.4 相悖；本元素自身的作用域
+        // 交由父层第 5 步弹出）。
+        for name in child_resets {
             if let Some(stack) = counters.get_mut(&name) {
                 stack.pop();
                 if stack.is_empty() {
@@ -2908,16 +2937,23 @@ fn simulate_document_counters(
                 }
             }
         }
+        if is_element {
+            ancestors.pop();
+        }
+        my_resets
     }
 
-    let mut counters: HashMap<String, Vec<i64>> = HashMap::new();
+    let mut counters: HashMap<String, CounterScopeStack> = HashMap::new();
+    let mut ancestors: Vec<NodeId> = Vec::new();
     let mut out: CounterValueMaps = HashMap::new();
     let mut stacks: CounterStackMaps = HashMap::new();
-    walk(
+    // 根层 reset 作用域无父层可弹（模拟结束即废弃），返回值丢弃。
+    let _ = walk(
         doc,
         doc.root(),
         styles,
         &mut counters,
+        &mut ancestors,
         &need_names,
         &mut out,
         &mut stacks,
@@ -3974,6 +4010,89 @@ mod pseudo_tests {
         }
         let inj_style = styles.get(&first_child).expect("注入节点有样式");
         assert!(matches!(inj_style.content, ContentComputedValue::Normal));
+    }
+
+    /// R5340（CSS2 §12.4 / css-lists-3 §counter-inheritance）：reset 作用域覆盖元素、
+    /// 后代与**后续兄弟**，且 counters() 嵌套链只沿祖先轴——兄弟轴 reset 是替换而非叠层。
+    /// 镜像 counter-hebrew-nested 形：body reset + p 预增外层 → 值序 "1.1","1.2"（旧
+    /// 「元素退出即弹」退化 "1","2"）；替换腿 span3 reset c 9 替换兄弟作用域 → "1.10"
+    /// （旧语义 "10"；规范字面「嵌套进全部同名列」则 "1.2.10"，ref 取替换）。
+    #[test]
+    fn counters_scope_extends_to_following_siblings_r5340() {
+        use zero_css_parser::values::CounterActionValue;
+        let html = r#"<html><body><p></p><div><span></span><span></span><span></span></div></body></html>"#;
+        let mut doc = zero_dom::parse_html(html);
+        let div = find_element(&doc, doc.root(), "div").expect("div 存在");
+        let spans: Vec<NodeId> = doc.get(div).unwrap().children.clone();
+        assert_eq!(spans.len(), 3);
+        let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
+        // body: counter-reset: c（祖先轴外层作用域，镜像驱动案 `body` 选择器）。
+        let body = find_element(&doc, doc.root(), "body").expect("body 存在");
+        let mut body_style = ComputedStyle::default();
+        body_style.counter_reset = vec![CounterActionValue {
+            name: "c".to_string(),
+            value: None,
+        }];
+        styles.insert(body, body_style);
+        // p: counter-increment: c（外层预增至 1，镜像驱动案 `p` 选择器）。
+        let p = doc.get(body).unwrap().children[0];
+        let mut p_style = ComputedStyle::default();
+        p_style.counter_increment = vec![CounterActionValue {
+            name: "c".to_string(),
+            value: None,
+        }];
+        styles.insert(p, p_style);
+        for (i, &sp) in spans.iter().enumerate() {
+            let mut st = ComputedStyle::default();
+            st.counter_increment = vec![CounterActionValue {
+                name: "c".to_string(),
+                value: None,
+            }];
+            // span1：counter-reset: c（嵌套作用域源）；span3：counter-reset: c 9（替换腿）。
+            match i {
+                0 => {
+                    st.counter_reset = vec![CounterActionValue {
+                        name: "c".to_string(),
+                        value: None,
+                    }]
+                }
+                2 => {
+                    st.counter_reset = vec![CounterActionValue {
+                        name: "c".to_string(),
+                        value: Some(9),
+                    }]
+                }
+                _ => {}
+            }
+            st.before_pseudo = Some(Box::new(ComputedStyle {
+                content: ContentComputedValue::Counters {
+                    name: "c".to_string(),
+                    separator: ".".to_string(),
+                    style: Some("decimal".to_string()),
+                },
+                ..ComputedStyle::default()
+            }));
+            styles.insert(sp, st);
+        }
+
+        inject_pseudo_text_nodes(&mut doc, &mut styles, &[]);
+
+        let read_text = |doc: &Document, sp: NodeId| -> String {
+            let first = doc
+                .get(sp)
+                .and_then(|n| n.children.first().copied())
+                .expect("span 有子节点");
+            match &doc.get(first).unwrap().kind {
+                zero_dom::NodeKind::Text(t) => t.content.clone(),
+                other => panic!("span 首子应为注入文本节点，实际 {other:?}"),
+            }
+        };
+        assert_eq!(read_text(&doc, spans[0]), "1.1");
+        // 兄弟延续腿：span1 的作用域对 span2 存活（旧语义此处为 "2"）。
+        assert_eq!(read_text(&doc, spans[1]), "1.2");
+        // 祖先轴替换腿：span3 的 reset 9 替换 span1 的兄弟作用域（旧弹出语义 "10"；
+        // 规范字面「嵌套进全部同名列」则 "1.2.10"，ref 取替换）。
+        assert_eq!(read_text(&doc, spans[2]), "1.10");
     }
 
     /// R1307：需要独立盒的伪元素（position != static / float / display != inline）且

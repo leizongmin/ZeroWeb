@@ -1210,6 +1210,7 @@ fn test_border_radius_spec_debug_clone() {
         top_right: 10.0,
         bottom_right: 15.0,
         bottom_left: 20.0,
+        ry: [5.0, 10.0, 15.0, 20.0],
     };
     let debug_str = format!("{:?}", spec);
     assert!(debug_str.contains("5"));

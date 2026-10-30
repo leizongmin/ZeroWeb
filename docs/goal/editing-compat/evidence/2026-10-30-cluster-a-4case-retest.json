@@ -1,0 +1,178 @@
+{
+ "corpus": "editing/run",
+ "binary": "fc12a1ff8 (R5340+R5341+R263b/R262b cluster-A prescreen)",
+ "budget": {
+  "ZW_SCRIPT_TIMEOUT_MS": 300000,
+  "case_wall": "adaptive 60+nv*330+90"
+ },
+ "totals": {
+  "pass": 13935,
+  "fail": 12509
+ },
+ "cases": [
+  {
+   "case": "editing/run/delete.html",
+   "pass": 2061,
+   "fail": 2293,
+   "variants": {
+    "2001-3000": {
+     "pass": 459,
+     "fail": 541
+    },
+    "5001-6000": {
+     "pass": 100,
+     "fail": 123
+    },
+    "6001-7000": {
+     "pass": 0,
+     "fail": 1
+    },
+    "1001-2000": {
+     "pass": 636,
+     "fail": 364
+    },
+    "7001-last": {
+     "pass": 0,
+     "fail": 1
+    },
+    "1-1000": {
+     "pass": 638,
+     "fail": 362
+    },
+    "3001-4000": {
+     "pass": 172,
+     "fail": 828
+    },
+    "4001-5000": {
+     "pass": 56,
+     "fail": 73
+    }
+   }
+  },
+  {
+   "case": "editing/run/forwarddelete.html",
+   "pass": 2447,
+   "fail": 2951,
+   "variants": {
+    "2001-3000": {
+     "pass": 468,
+     "fail": 532
+    },
+    "5001-6000": {
+     "pass": 273,
+     "fail": 271
+    },
+    "6001-7000": {
+     "pass": 0,
+     "fail": 1
+    },
+    "1001-2000": {
+     "pass": 662,
+     "fail": 338
+    },
+    "7001-last": {
+     "pass": 0,
+     "fail": 1
+    },
+    "1-1000": {
+     "pass": 607,
+     "fail": 393
+    },
+    "3001-4000": {
+     "pass": 201,
+     "fail": 799
+    },
+    "4001-5000": {
+     "pass": 236,
+     "fail": 616
+    }
+   }
+  },
+  {
+   "case": "editing/run/insertparagraph.html",
+   "pass": 3774,
+   "fail": 3421,
+   "variants": {
+    "2001-3000": {
+     "pass": 564,
+     "fail": 436
+    },
+    "5001-6000": {
+     "pass": 561,
+     "fail": 439
+    },
+    "6001-7000": {
+     "pass": 570,
+     "fail": 430
+    },
+    "1001-2000": {
+     "pass": 568,
+     "fail": 432
+    },
+    "7001-last": {
+     "pass": 126,
+     "fail": 69
+    },
+    "1-1000": {
+     "pass": 572,
+     "fail": 428
+    },
+    "3001-4000": {
+     "pass": 530,
+     "fail": 470
+    },
+    "4001-5000": {
+     "pass": 283,
+     "fail": 717
+    }
+   }
+  },
+  {
+   "case": "editing/run/multitest.html",
+   "pass": 5653,
+   "fail": 3844,
+   "variants": {
+    "2001-3000": {
+     "pass": 606,
+     "fail": 394
+    },
+    "5001-6000": {
+     "pass": 560,
+     "fail": 440
+    },
+    "6001-7000": {
+     "pass": 530,
+     "fail": 470
+    },
+    "1001-2000": {
+     "pass": 584,
+     "fail": 416
+    },
+    "7001-8000": {
+     "pass": 574,
+     "fail": 426
+    },
+    "8001-9000": {
+     "pass": 651,
+     "fail": 349
+    },
+    "1-1000": {
+     "pass": 610,
+     "fail": 390
+    },
+    "9001-last": {
+     "pass": 361,
+     "fail": 136
+    },
+    "3001-4000": {
+     "pass": 579,
+     "fail": 421
+    },
+    "4001-5000": {
+     "pass": 598,
+     "fail": 402
+    }
+   }
+  }
+ ]
+}

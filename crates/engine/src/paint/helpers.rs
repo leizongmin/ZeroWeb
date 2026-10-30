@@ -82,14 +82,24 @@ pub fn shaped_corner_polygon_in_box(
         box_w,
         box_h,
         radii4,
+        // FIXME(R5341)：形角（superellipse/scoop）曲线的椭圆双轴缩放未实现——
+        // shaped 路径维持单轴 r（ry=rx），与 R4248 起行为一致。
+        radii4,
     ))
 }
 
 /// R5180（css-backgrounds-3 §5.5 弧带）：plain border-radius（corner-shape 初始态，
 /// 全 round）的圆角矩形多边形——与 [`CornerShapeKind::Round`] 臂同一 8 段圆弧采样，
 /// 供边框弧带（外圈+内圈 even-odd 环）复用 shaped 采样体。
-pub fn rounded_corner_polygon_in_box(x0: f32, y0: f32, box_w: f32, box_h: f32, radii4: [f32; 4]) -> Vec<(f32, f32)> {
-    corner_polygon_with_kinds([CornerShapeKind::Round; 4], x0, y0, box_w, box_h, radii4)
+pub fn rounded_corner_polygon_in_box(
+    x0: f32,
+    y0: f32,
+    box_w: f32,
+    box_h: f32,
+    radii4: [f32; 4],
+    ry4: [f32; 4],
+) -> Vec<(f32, f32)> {
+    corner_polygon_with_kinds([CornerShapeKind::Round; 4], x0, y0, box_w, box_h, radii4, ry4)
 }
 
 /// R5339（css-filters-2 #BackdropFilter）：backdrop-filter 滤区多边形——shaped 形角
@@ -106,7 +116,7 @@ pub fn backdrop_filter_clip_polygon(
     let radii4 = shaped_radius_spec(style, box_w, box_h);
     shaped_corner_polygon_in_box(style, x0, y0, box_w, box_h, radii4).or_else(|| {
         if radii4.iter().any(|r| *r > 0.0) {
-            Some(rounded_corner_polygon_in_box(x0, y0, box_w, box_h, radii4))
+            Some(rounded_corner_polygon_in_box(x0, y0, box_w, box_h, radii4, radii4))
         } else {
             None
         }
@@ -147,6 +157,8 @@ pub fn cut_polygon_at_closing_edge(pts: &[(f32, f32)]) -> Vec<(f32, f32)> {
 }
 
 /// 按 per-corner 形状构建形角多边形（shaped 入口与 plain round 入口共用采样体）。
+/// R5341：椭圆角——每角携带 (rx, ry)，弧采样 y 分量按 ry 缩放；ry=rx 时逐位等
+/// 旧圆弧（kill-switch `ZW_ELLIPTIC_RADIUS=0` 落在此前解析层）。
 fn corner_polygon_with_kinds(
     kinds: [CornerShapeKind; 4],
     x0: f32,
@@ -154,19 +166,22 @@ fn corner_polygon_with_kinds(
     box_w: f32,
     box_h: f32,
     radii4: [f32; 4],
+    ry4: [f32; 4],
 ) -> Vec<(f32, f32)> {
     let radii = BorderRadiusSpec {
         top_left: radii4[0],
         top_right: radii4[1],
         bottom_right: radii4[2],
         bottom_left: radii4[3],
+        ry: ry4,
     };
     let x1 = x0 + box_w;
     let y1 = y0 + box_h;
-    // (kind, r, start=前一边缘端点, end=后一边缘端点, C=圆弧心, P=盒角点, 弧起角, 弧终角)
+    // (kind, r, ry, start=前一边缘端点, end=后一边缘端点, C=圆弧心, P=盒角点, 弧起角, 弧终角)
     // 段方向沿顺时针多边形；弧角按极角（相对 C）自 start 到 end。
     let corners: [(
         CornerShapeKind,
+        f32,
         f32,
         (f32, f32),
         (f32, f32),
@@ -175,46 +190,50 @@ fn corner_polygon_with_kinds(
         f64,
         f64,
     ); 4] = [
-        // TL：左缘端 (x0,y0+r) → 顶缘端 (x0+r,y0)；C=(x0+r,y0+r)；弧 180°→270°
+        // TL：左缘端 (x0,y0+ry) → 顶缘端 (x0+rx,y0)；C=(x0+rx,y0+ry)；弧 180°→270°
         (
             kinds[0],
             radii.top_left,
-            (x0, y0 + radii.top_left),
+            radii.ry[0],
+            (x0, y0 + radii.ry[0]),
             (x0 + radii.top_left, y0),
-            (x0 + radii.top_left, y0 + radii.top_left),
+            (x0 + radii.top_left, y0 + radii.ry[0]),
             (x0, y0),
             std::f64::consts::PI,
             3.0 * std::f64::consts::FRAC_PI_2,
         ),
-        // TR：顶缘端 (x1-r,y0) → 右缘端 (x1,y0+r)；C=(x1-r,y0+r)；弧 270°→360°
+        // TR：顶缘端 (x1-rx,y0) → 右缘端 (x1,y0+ry)；C=(x1-rx,y0+ry)；弧 270°→360°
         (
             kinds[1],
             radii.top_right,
+            radii.ry[1],
             (x1 - radii.top_right, y0),
-            (x1, y0 + radii.top_right),
-            (x1 - radii.top_right, y0 + radii.top_right),
+            (x1, y0 + radii.ry[1]),
+            (x1 - radii.top_right, y0 + radii.ry[1]),
             (x1, y0),
             3.0 * std::f64::consts::FRAC_PI_2,
             2.0 * std::f64::consts::PI,
         ),
-        // BR：右缘端 (x1,y1-r) → 底缘端 (x1-r,y1)；C=(x1-r,y1-r)；弧 0°→90°
+        // BR：右缘端 (x1,y1-ry) → 底缘端 (x1-rx,y1)；C=(x1-rx,y1-ry)；弧 0°→90°
         (
             kinds[2],
             radii.bottom_right,
-            (x1, y1 - radii.bottom_right),
+            radii.ry[2],
+            (x1, y1 - radii.ry[2]),
             (x1 - radii.bottom_right, y1),
-            (x1 - radii.bottom_right, y1 - radii.bottom_right),
+            (x1 - radii.bottom_right, y1 - radii.ry[2]),
             (x1, y1),
             0.0,
             std::f64::consts::FRAC_PI_2,
         ),
-        // BL：底缘端 (x0+r,y1) → 左缘端 (x0,y1-r)；C=(x0+r,y1-r)；弧 90°→180°
+        // BL：底缘端 (x0+rx,y1) → 左缘端 (x0,y1-ry)；C=(x0+rx,y1-ry)；弧 90°→180°
         (
             kinds[3],
             radii.bottom_left,
+            radii.ry[3],
             (x0 + radii.bottom_left, y1),
-            (x0, y1 - radii.bottom_left),
-            (x0 + radii.bottom_left, y1 - radii.bottom_left),
+            (x0, y1 - radii.ry[3]),
+            (x0 + radii.bottom_left, y1 - radii.ry[3]),
             (x0, y1),
             std::f64::consts::FRAC_PI_2,
             std::f64::consts::PI,
@@ -230,12 +249,13 @@ fn corner_polygon_with_kinds(
     // 既有行为不变。
     let n_samples_for = |r: f32| -> usize { 8usize.max((r / 8.0).ceil() as usize).min(64) };
     let mut pts: Vec<(f32, f32)> = Vec::new();
-    for (kind, r, start, end, c, corner_pt, a0, a1) in corners {
-        let n_samples = n_samples_for(r);
+    for (kind, r, ry, start, end, c, corner_pt, a0, a1) in corners {
+        let n_samples = n_samples_for(r.max(ry));
         pts.push(start);
         match kind {
             CornerShapeKind::Round => {
-                // round ≡ superellipse(1)：指数 n = 2K = 2（圆）。
+                // round ≡ superellipse(1)：指数 n = 2K = 2（圆）。R5341：椭圆弧——
+                // y 分量按 ry 缩放（ry=r 时逐位等圆弧）。
                 for k in 1..n_samples {
                     let t = k as f64 / n_samples as f64;
                     let ang = a0 + (a1 - a0) * t;
@@ -243,13 +263,14 @@ fn corner_polygon_with_kinds(
                     let (sx, sy) = ((ang.cos()).signum(), (ang.sin()).signum());
                     let (ca, sa) = (ang.cos().abs(), ang.sin().abs());
                     let px = c.0 as f64 + sx * r as f64 * ca;
-                    let py = c.1 as f64 + sy * r as f64 * sa;
+                    let py = c.1 as f64 + sy * ry as f64 * sa;
                     pts.push((px as f32, py as f32));
                 }
             }
             CornerShapeKind::Superellipse(k_arg) if k_arg > 0.0 => {
                 // 凸侧（css-borders-4 §3.7/§3.9.4.2）：指数 n = 2K，曲线心 = C；
                 // |dx/r|^n + |dy/r|^n = 1（K=1 退化为圆即 round，K→大逼近 square）。
+                // R5341：y 分量按 ry 缩放（椭圆 superellipse；ry=r 逐位等旧）。
                 let n = 2.0 * k_arg;
                 for k in 1..n_samples {
                     let t = k as f64 / n_samples as f64;
@@ -257,7 +278,7 @@ fn corner_polygon_with_kinds(
                     let (sx, sy) = ((ang.cos()).signum(), (ang.sin()).signum());
                     let (ca, sa) = (ang.cos().abs(), ang.sin().abs());
                     let px = c.0 as f64 + sx * r as f64 * ca.powf(2.0 / n);
-                    let py = c.1 as f64 + sy * r as f64 * sa.powf(2.0 / n);
+                    let py = c.1 as f64 + sy * ry as f64 * sa.powf(2.0 / n);
                     pts.push((px as f32, py as f32));
                 }
             }
@@ -334,57 +355,107 @@ pub struct BorderRadiusSpec {
     pub bottom_right: f32,
     /// 左下角半径。
     pub bottom_left: f32,
+    /// 四角垂直半径 [tl, tr, br, bl]（css-backgrounds-3 §5.5 椭圆角；R5341）。
+    /// 垂直百分比按 border-box 高解析；单值声明的垂直半径 = 水平声明值重解析（§5.1
+    /// 两轴各自相对对应边）。kill-switch `ZW_ELLIPTIC_RADIUS=0` 时随水平值（旧
+    /// 单轴渲染，逐位等 R5341 前）。
+    pub ry: [f32; 4],
 }
 
 impl BorderRadiusSpec {
-    /// 从 ComputedStyle 提取圆角半径。
+    /// 水平半径数组 [tl, tr, br, bl]。
+    pub fn rx4(&self) -> [f32; 4] {
+        [self.top_left, self.top_right, self.bottom_right, self.bottom_left]
+    }
+
+    /// 从 ComputedStyle 提取圆角半径（无盒尺寸上下文——垂直半径随水平原始值）。
     pub fn from_style(style: &ComputedStyle) -> Self {
+        let rx = [
+            length_to_f32(&style.border_top_left_radius),
+            length_to_f32(&style.border_top_right_radius),
+            length_to_f32(&style.border_bottom_right_radius),
+            length_to_f32(&style.border_bottom_left_radius),
+        ];
         Self {
-            top_left: length_to_f32(&style.border_top_left_radius),
-            top_right: length_to_f32(&style.border_top_right_radius),
-            bottom_right: length_to_f32(&style.border_bottom_right_radius),
-            bottom_left: length_to_f32(&style.border_bottom_left_radius),
+            top_left: rx[0],
+            top_right: rx[1],
+            bottom_right: rx[2],
+            bottom_left: rx[3],
+            ry: rx,
         }
     }
 
     /// 从 ComputedStyle 提取圆角半径，按 border-box 尺寸解析百分比与含百分比 calc。
     ///
     /// `box_w`/`box_h` 为元素 border-box 尺寸（layout 后已知）。CSS Backgrounds §5.1：
-    /// border-radius 百分比相对于 border-box 对应轴。百分比与含百分比的
-    /// calc()/min()/max()/clamp() 在 computed 阶段无法解析（需容器尺寸），此处按
-    /// border-box 解析。不含百分比的长度（含 calc）已在 computed 阶段解析为 Px，
-    /// 经此路径原值返回（byte-identical 于 [`Self::from_style`]）。
+    /// border-radius 百分比相对于 border-box 对应轴（水平按宽、垂直按高）。百分比与
+    /// 含百分比的 calc()/min()/max()/clamp() 在 computed 阶段无法解析（需容器尺寸），
+    /// 此处按 border-box 解析。不含百分比的长度（含 calc）已在 computed 阶段解析为
+    /// Px，经此路径原值返回（byte-identical 于 [`Self::from_style`]）。
+    ///
+    /// R5341（css-backgrounds-3 §5.5 椭圆角）：垂直半径取 `border_radius_y` 槽位按
+    /// `box_h` 解析；槽位缺省（纯单值声明）时垂直 = 水平**声明值**重按 `box_h` 解析
+    /// ——`border-radius: 50%` 于非方盒为椭圆角（rx=50%宽、ry=50%高），非胶囊。
+    /// kill-switch `ZW_ELLIPTIC_RADIUS=0` 回退 ry=rx（旧单轴渲染）。
     ///
     /// 解析后按 css-backgrounds-3 §5.5 对相邻圆角做重叠收缩（见
     /// [`Self::shrink_overlapping_corners`]）。
     ///
-    /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc。
+    /// driving：R2314 border-radius 百分比（`border-radius: 50%` 圆形）与含百分比 calc；
+    /// R5341 counter-hebrew-nested 之外的 border-shape-outline-with-border-double-ellipse
+    /// （corpus ref 侧 40×100 `border-radius: 50%` 误渲染胶囊）。
     pub fn from_style_with_box(style: &ComputedStyle, box_w: f32, box_h: f32) -> Self {
         let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+        let rx_declared = [
+            &style.border_top_left_radius,
+            &style.border_top_right_radius,
+            &style.border_bottom_right_radius,
+            &style.border_bottom_left_radius,
+        ];
         let mut spec = Self {
-            top_left: resolve_radius_length(&style.border_top_left_radius, box_w, font_size_px),
-            top_right: resolve_radius_length(&style.border_top_right_radius, box_w, font_size_px),
-            bottom_right: resolve_radius_length(&style.border_bottom_right_radius, box_w, font_size_px),
-            bottom_left: resolve_radius_length(&style.border_bottom_left_radius, box_w, font_size_px),
+            top_left: resolve_radius_length(rx_declared[0], box_w, font_size_px),
+            top_right: resolve_radius_length(rx_declared[1], box_w, font_size_px),
+            bottom_right: resolve_radius_length(rx_declared[2], box_w, font_size_px),
+            bottom_left: resolve_radius_length(rx_declared[3], box_w, font_size_px),
+            ry: [0.0; 4],
         };
+        match &style.border_radius_y {
+            // 槽位在：各角垂直声明值（显式双值或单值哨兵已存声明副本，apply.rs）按高解析。
+            Some(slot) => {
+                for (i, v) in slot.iter().enumerate() {
+                    spec.ry[i] = resolve_radius_length(v, box_h, font_size_px);
+                }
+            }
+            // 槽位缺省：全部单值声明——垂直 = 水平声明值重按高解析（§5.1）。
+            None => {
+                for (i, v) in rx_declared.iter().enumerate() {
+                    spec.ry[i] = resolve_radius_length(v, box_h, font_size_px);
+                }
+            }
+        }
+        if std::env::var("ZW_ELLIPTIC_RADIUS").as_deref() == Ok("0") {
+            spec.ry = spec.rx4();
+        }
         spec.shrink_overlapping_corners(box_w, box_h);
         spec
     }
 
     /// css-backgrounds-3 §5.5（corner overlap）：相邻两角半径之和超过所在边长时，
     /// 四角半径按 f = min(Li/Si) 等比收缩（Li = 边长：上/下取宽、左/右取高；
-    /// Si = 该边两角半径之和；Si=0 的边不参与）。
+    /// Si = 该边两角半径之和；Si=0 的边不参与）。R5341 椭圆角：Si 逐轴取值——
+    /// 上/下边用水平半径和、左/右边用垂直半径和，单一 f 同缩两轴。
     ///
     /// 圆角光栅化以「角部曲线不重叠（半径 ≤ 半边长）」为前提——pill 习语
     /// `border-radius: 999px` 依赖本收缩：未收缩半径会使每个像素都落入角部
     /// 判定分支且距圆心远超半径，背景整体丢失（welcome 页 v0.1.0 徽章根因）。
-    /// 不重叠（f ≥ 1 或全零）时保持原值。
+    /// 不重叠（f ≥ 1 或全零）时保持原值。ry=rx（kill-switch/单值方盒）时 8 项
+    /// 与旧 4 项逐项重复，f 逐位一致。
     fn shrink_overlapping_corners(&mut self, box_w: f32, box_h: f32) {
         let sides = [
             (box_w, self.top_left + self.top_right),
-            (box_h, self.top_right + self.bottom_right),
+            (box_h, self.ry[1] + self.ry[2]),
             (box_w, self.bottom_right + self.bottom_left),
-            (box_h, self.bottom_left + self.top_left),
+            (box_h, self.ry[3] + self.ry[0]),
         ];
         let mut scale = f32::INFINITY;
         for (length, sum) in sides {
@@ -397,12 +468,19 @@ impl BorderRadiusSpec {
             self.top_right *= scale;
             self.bottom_right *= scale;
             self.bottom_left *= scale;
+            for r in &mut self.ry {
+                *r *= scale;
+            }
         }
     }
 
     /// 所有圆角都为零。
     pub fn is_zero(&self) -> bool {
-        self.top_left == 0.0 && self.top_right == 0.0 && self.bottom_right == 0.0 && self.bottom_left == 0.0
+        self.top_left == 0.0
+            && self.top_right == 0.0
+            && self.bottom_right == 0.0
+            && self.bottom_left == 0.0
+            && self.ry.iter().all(|&r| r == 0.0)
     }
 }
 

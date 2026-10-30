@@ -16247,6 +16247,27 @@
         }
       } catch (_e) {}
     }
+    // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：handle-only 先查 O(1) 本地
+    // 表再走 host 批扫描——`__zw_get_tag_handle`（query_tag_from_mutations）逆序扫
+    // 当前批 mutations，物化热循环（innerHTML/cloneNode 逐节点 appendChild）批随
+    // append 线性增长，每次 `_realTag` O(batch) → append 链整体 O(n²)（探针
+    // p3-append-text 4.1ms/append 实证，
+    // docs/goal/editing-compat/evidence/2026-10-30-cluster-a-clone-perf-attribution.md）。
+    // ① text 句柄在 tag 查询上恒 miss（CreateTextNode 无 tag 记录，R100 只登记
+    //   已应用句柄、印章只盖元素）→ 直接落 `_tagFromSel` 兜底：返回值与原 miss
+    //   链逐位一致（'DIV'），仅省两次必 miss 的 host 往返。
+    // ② t8f 创建印章前移——印章即创建 tag（spec tagName 不可变，原尾分支同源
+    //   注记），与 host 批内 CreateElement 记录同值；miss（createElementNS 等
+    //   未盖章形态）落回原链零变化。
+    if (handle && !sel) {
+      try { if (_textHandles && _textHandles[handle]) return _tagFromSel(sel); } catch (_eTxH) {}
+      if (globalThis._zwHandleCreateTag) {
+        try {
+          var _hctFast = globalThis._zwHandleCreateTag[String(handle)];
+          if (_hctFast) return _zwAsciiUpper(String(_hctFast));
+        } catch (_eHctFast) {}
+      }
+    }
     if (handle && typeof __zw_get_tag_handle === 'function') {
       try { var ht = __zw_get_tag_handle(handle); if (ht) return _zwAsciiUpper(ht); } catch (_e) {}
     }
@@ -16272,18 +16293,13 @@
     // （bilibili 搜索页 hydration 恢复爆发根因，Vue insertStaticContent）。
     // 修：创建时 tag 印章（`_zwHandleCreateTag`，`_zwHandleBirthGen` 同款惰性全局表）。
     // spec tagName 不可变（https://dom.spec.whatwg.org/#dom-element-tagname），印章无
-    // 陈旧风险；本分支仅在 host 批查询与 R100 反查双 miss 后兜底，既有命中路径零变化。
+    // 陈旧风险；本分支已前移到 host 批查询之前（2026-10-30 簇 A，语义不变仅省
+    // O(batch) 扫描——见本函数 handle-only 分支头注记），此处不再重复兜底。
     // 换代（__zw_reset_pending_state）不清本表——跨 execute 持久正是目的。表随 tab
     // 的 sandbox 存续（url_changed 在**同一 sandbox** 执行 __zw_reset_form_state——
     // JS 世界跨导航存活，js_worker.rs），append-only 单调增长（审查 B 发现 3：非
     // 「无泄漏面」，量级同 _zwHandleBirthGen 既有先例）；句柄 "__n{n}" 计数器
     // thread-local 单调不复用（callbacks.rs E14/R100），无过期印章误读面。
-    if (handle && !sel && globalThis._zwHandleCreateTag) {
-      try {
-        var _hct = globalThis._zwHandleCreateTag[String(handle)];
-        if (_hct) return _zwAsciiUpper(String(_hct));
-      } catch (_eHct) {}
-    }
     // R4200：sel tag 印章兜底（上方 host 命中点存档；detach 窗口 miss 服务，见注记）。
     if (sel && globalThis._zwSelSeenTag) {
       try {
@@ -19974,13 +19990,26 @@
   // 外加子孙判定（沿 parentNode 上行命中 removed 即子孙）。消费方：各域
   // removeChild 站点（part03 doc/docEl/body/_zwMEl + part04 proxy 域）。
   // https://dom.spec.whatwg.org/#concept-node-pre-remove
+    var _zwRemDbg = { ms: 0, n: 0, t: null, g1: 0, g2: 0, g3: 0, g4: 0 };
   function _zwAdjustRangesForRemove(removed262) {
     try {
       var regs262 = globalThis.__zwLiveRanges;
       if (!regs262 || !regs262.length || !removed262) return;
       // R350：被移除节点所在树之外的条目不可能匹配（跨树守卫，见 _zwRangeRootDiffers 文档；
       // 调用时机契约 = 先于树状态变化，被移除节点此时仍在树内，根即当前树）。
-      var rmRoot262 = _zwRangeRootOf(removed262);
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：rmRoot 惰性计算——根游走
+      // 末跳 link-miss 落 `_parentNodeFor` R155 全 registry 反查（每条目 proxy
+      // `__zwHandle` get-trap 读），detached 父（innerHTML 重设后的旧父等）每次
+      // removeChild O(registry)（探针装饰实测 rem 24-27ms/move 主体）。仅 sel 键
+      // 匹配/inRemovedSubtree 根门真正需要时才走。
+      var rmRoot262 = null, rmRootReady262 = false;
+      var ensureRmRoot262 = function () {
+        if (!rmRootReady262) {
+          rmRootReady262 = true;
+          try { rmRoot262 = _zwRangeRootOf(removed262); } catch (_e262rr) { rmRoot262 = null; }
+        }
+        return rmRoot262;
+      };
       // R262b（OPTIMIZATION，簇 A tape 2026-10-30，R263b 同款）：候选预筛前置——
       // 原实现注册表非空即无条件 childNodes live-NL refresh + 索引扫（O(n)）再逐
       // 条目过滤，移除序列整体 O(n²)（innerHTML= 重设的移除侧同病）。预筛谓词取
@@ -20027,11 +20056,11 @@
           var scPre262 = rgPre262.startContainer;
           if (scPre262 && !_zwDeadContainer352(scPre262)
               && (preNode262(scPre262) || preParent262(scPre262)
-                  || _zwEntryRootOf(rgPre262, scPre262, 0) === rmRoot262)) { preHit262 = true; break; }
+                  || _zwEntryRootOf(rgPre262, scPre262, 0) === ensureRmRoot262())) { preHit262 = true; break; }
           var ecPre262 = rgPre262.endContainer;
           if (ecPre262 && !_zwDeadContainer352(ecPre262)
               && (preNode262(ecPre262) || preParent262(ecPre262)
-                  || _zwEntryRootOf(rgPre262, ecPre262, 1) === rmRoot262)) { preHit262 = true; break; }
+                  || _zwEntryRootOf(rgPre262, ecPre262, 1) === ensureRmRoot262())) { preHit262 = true; break; }
         } catch (_e262pre) {}
       }
       if (!preHit262) return;
@@ -20039,12 +20068,30 @@
       var oldParent262 = null, oldIndex262 = -1;
       try {
         oldParent262 = removed262.parentNode || null;
-        // t8c：同 `_zwAdjustRangesForInsert`——live NL 每次属性读 refresh O(n)，
-        // 承载数组提到循环外（契约下首次读已含被移除节点，循环内树不变）。
-        var _nl262 = oldParent262 && oldParent262.childNodes;
-        if (_nl262) {
-          for (var _r262i = 0; _r262i < _nl262.length; _r262i++) {
-            if (_nl262[_r262i] === removed262) { oldIndex262 = _r262i; break; }
+        // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：oldIndex 定位快道——
+        // handle-only 父走 plain registry indexOf（登记序 = DOM 序，insertBefore 同位
+        // splice 维持）。原 live NL 扫描每次属性读 refresh O(n)（R140，叠加 pending
+        // bucket overlay seen-scan），2000 子父单次 removeChild 实测 ~24ms 主体即此
+        //（探针 p3t 装饰 rem=24.6ms/move，
+        // docs/goal/editing-compat/evidence/2026-10-30-cluster-a-clone-perf-attribution.md）。
+        // registry 缺该子（textEl 物化注销/plain 工厂子）退回 live NL 扫描。
+        // t8c 注记保留：live NL 路径下承载数组循环外、首次读已含被移除节点。
+        var _oph262 = null;
+        try { _oph262 = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_e262oh) {}
+        var _odone262 = false;
+        if (_oph262 != null && typeof _handleChildren !== 'undefined' && _handleChildren) {
+          var _oreg262 = _handleChildren[_oph262];
+          if (_oreg262) {
+            var _oi262 = _oreg262.indexOf(removed262);
+            if (_oi262 >= 0) { oldIndex262 = _oi262; _odone262 = true; }
+          }
+        }
+        if (!_odone262) {
+          var _nl262 = oldParent262 && oldParent262.childNodes;
+          if (_nl262) {
+            for (var _r262i = 0; _r262i < _nl262.length; _r262i++) {
+              if (_nl262[_r262i] === removed262) { oldIndex262 = _r262i; break; }
+            }
           }
         }
       } catch (_e262p) {}
@@ -20064,21 +20111,24 @@
         try { ph262 = typeof oldParent262.__zwHandle === 'string' ? oldParent262.__zwHandle : null; } catch (_e262ph) {}
         try { ps262 = typeof oldParent262.__zwSelector === 'string' ? oldParent262.__zwSelector : null; } catch (_e262ps) {}
       }
-      var sameNode262 = function (cont) {
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：键命中分级根校验——identity
+      // / handle 命中必为同一节点（handle 全局唯一不复用），跨树巧合不可能，免根校验；
+      // 仅 sel 键（可跨文档同值）保留 `_zwRangeRootDiffers`（rmRoot 惰性）。R350 语义
+      // 保留。
+      var sameNode262Verified = function (cont) {
         if (cont === removed262) return true;
         if (!cont) return false;
+        var keyHit262n = false, viaSel262n = false;
         try {
-          if (h262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h262) return true;
-          if (s262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === s262) return true;
-        } catch (_e262c) {}
-        return false;
-      };
-      // R350：键命中后根验证（跨树同键条目不得应用——与 R260 sameNode260Verified 同设计；
-      // root walk 只在键命中时付，常态路径 identity/键 miss 短路）。
-      var sameNode262Verified = function (cont) {
-        if (!sameNode262(cont)) return false;
-        if (cont === removed262) return true;
-        return !_zwRangeRootDiffers(cont, rmRoot262);
+          if (h262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === h262) {
+            keyHit262n = true;
+          } else if (s262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === s262) {
+            keyHit262n = true;
+            viaSel262n = true;
+          }
+        } catch (_e262c) { return false; }
+        if (!keyHit262n) return false;
+        return viaSel262n ? !_zwRangeRootDiffers(cont, ensureRmRoot262()) : true;
       };
       // spec「node is removed node or a descendant of it」——沿 parentNode 上行
       //（128 跳防环；proxy 域 parentNode 经 trap 返父 proxy，identity 由父级
@@ -20093,7 +20143,8 @@
         // R352：removed 标记容器快道（见 _zwDeadContainer352 文档）——容器在已摘
         // 子树 → 其祖先链不含本次 removed 的活树节点，直接 false。
         if (_zwDeadContainer352(cont)) return false;
-        if (_zwEntryRootOf(rg351, cont, slot351) !== rmRoot262) return false;
+        // 根门改惰性（同上）——条目容器全 null/键 miss 形态不触发根游走。
+        if (_zwEntryRootOf(rg351, cont, slot351) !== ensureRmRoot262()) return false;
         var cur = cont, hops = 0;
         while (cur && hops++ < 128) {
           if (sameNode262Verified(cur)) return true;
@@ -20101,24 +20152,25 @@
         }
         return false;
       };
-      // 边界容器是否逻辑等于 oldParent（三键：identity / handle / sel）。
-      var sameParent262 = function (cont) {
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：同 insert 侧——identity
+      // / handle 命中免根校验（handle 全局唯一），仅 sel 键保留（rmRoot 惰性）。
+      // R350/R352 语义保留：dead 快道仍在键命中后、根校验前。
+      var sameParent262Verified = function (cont) {
         if (cont === oldParent262) return true;
         if (!cont || !keyed262) return false;
+        var keyHit262p = false, viaSel262p = false;
         try {
-          if (ph262 == null && ps262 == null) return false;
-          if (ph262 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph262;
-          if (ps262 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps262;
-        } catch (_e262pc) {}
-        return false;
-      };
-      // R350：sameParent 命中后根验证（同上——防跨树同 selector 键误命中）。
-      var sameParent262Verified = function (cont) {
-        if (!sameParent262(cont)) return false;
-        if (cont === oldParent262) return true;
+          if (ph262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === ph262) {
+            keyHit262p = true;
+          } else if (ps262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === ps262) {
+            keyHit262p = true;
+            viaSel262p = true;
+          }
+        } catch (_e262pc) { return false; }
+        if (!keyHit262p) return false;
         // R352：removed 标记容器快道（键命中后的跨树防误判——见 _zwDeadContainer352）。
         if (_zwDeadContainer352(cont)) return false;
-        return !_zwRangeRootDiffers(cont, rmRoot262);
+        return viaSel262p ? !_zwRangeRootDiffers(cont, ensureRmRoot262()) : true;
       };
       for (var _r262r = 0; _r262r < regs262.length; _r262r++) {
         var rg262 = regs262[_r262r];
@@ -20132,7 +20184,7 @@
             rg262.startContainer = oldParent262;
             rg262._startOffsetBase = oldIndex262;
             rg262._mode = null;
-            rg262._rzk0 = oldParent262; rg262._rzr0 = rmRoot262;
+            rg262._rzk0 = oldParent262; rg262._rzr0 = ensureRmRoot262();
           } else if (sameParent262Verified(rg262.startContainer)) {
             // ② 边界在 oldParent 且 offset > oldIndex → −1。
             var so262 = rg262._startOffsetBase != null ? rg262._startOffsetBase : rg262.startOffset;
@@ -20142,7 +20194,7 @@
             rg262.endContainer = oldParent262;
             rg262._endOffsetBase = oldIndex262;
             rg262._mode = null;
-            rg262._rzk1 = oldParent262; rg262._rzr1 = rmRoot262;
+            rg262._rzk1 = oldParent262; rg262._rzr1 = ensureRmRoot262();
           } else if (sameParent262Verified(rg262.endContainer)) {
             var eo262 = rg262._endOffsetBase != null ? rg262._endOffsetBase : rg262.endOffset;
             if (eo262 > oldIndex262) rg262._endOffsetBase = eo262 - 1;
@@ -20213,23 +20265,60 @@
       }
       if (!preHit263) return;
       // R350：插入节点所在树之外的条目不可能匹配（跨树守卫，同上）。
-      var insRoot263 = _zwRangeRootOf(inserted263);
-      var newParent263 = null, newIndex263 = -1;
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：insRoot 惰性计算——根游走
+      // 末跳 link-miss 落 `_parentNodeFor` R155 全 registry 反查（`_handleChildren`
+      // 每条目 proxy `__zwHandle` get-trap 读），registry 随物化线性增长 → 每次
+      // insert O(registry)、append 链整体 O(n²)（探针装饰实测本函数 4.4ms/append、
+      // 置空游走 0.14ms/append）。仅 sel 键匹配（可跨文档同值）需要根校验时才走。
+      var insRoot263 = null, insRootReady263 = false;
+      var ensureInsRoot263 = function () {
+        if (!insRootReady263) {
+          insRootReady263 = true;
+          try { insRoot263 = _zwRangeRootOf(inserted263); } catch (_e263rw) { insRoot263 = null; }
+        }
+        return insRoot263;
+      };
+      var newParent263 = null;
       try {
         newParent263 = inserted263.parentNode || null;
-        // t8c：childNodes 承载数组提到循环外——live NL（R140）每次属性读都 refresh
-        //（registry slice+concat，O(n)）；n 迭代 × 2 读 = 每次 insert O(n²)，append
-        // 循环线性项主源（沙箱消融实测：置空本钩子 400 append 6170→78ms 的剩余
-        // 项即此）。本循环内树不再变、首次读已含本次插入（mutation 先于边界调整），
-        // 承载数组 identity 稳定，索引内容循环内无需重读。
-        var _nl263 = newParent263 && newParent263.childNodes;
-        if (_nl263) {
-          for (var _r263i = 0; _r263i < _nl263.length; _r263i++) {
-            if (_nl263[_r263i] === inserted263) { newIndex263 = _r263i; break; }
-          }
-        }
       } catch (_e263p) {}
-      if (!newParent263 || newIndex263 < 0) return;
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：newIndex 定位惰性化——仅当
+      // 确有容器键命中本父的条目时才扫描。物化热循环（innerHTML/cloneNode/appendChild
+      // 链）里 childNodes 是 live NL（R140 每次属性读 refresh：registry slice+concat，
+      // O(n)，叠加 pending bucket overlay 的 seen-scan），定位扫描 n 读 = 每次 insert
+      // O(n²)、append 链整体 O(n²)（探针消融：整钩子置空 p3-append-text 8.6s→0.28s；
+      // 装饰实测本函数 4.4ms/append，
+      // docs/goal/editing-compat/evidence/2026-10-30-cluster-a-clone-perf-attribution.md）。
+      // 语义逐位保留：无匹配条目时原实现也因 `newIndex < 0` 前置 return 不做任何
+      // bump；首个匹配条目触发扫描后 <0 时消费点 `return`（同原前置早退）。
+      // t8c 承载数组注记保留：扫描至多执行一次、循环内树不再变、首次读已含本次
+      // 插入（mutation 先于边界调整），identity 稳定无需重读。
+      var newIndex263 = -1, newIndexReady263 = false;
+      var ensureNewIndex263 = function () {
+        if (newIndexReady263) return newIndex263;
+        newIndexReady263 = true;
+        try {
+          // 快道：handle-only 父走 plain registry indexOf——登记序 = DOM 序
+          //（appendChild push / insertBefore 同位 splice，part04 R97 续/insertAdjacent
+          // 同款）。registry 缺该子（textEl 物化注销形态/plain 工厂子）退回 live NL。
+          var _ph263i = null;
+          try { _ph263i = typeof newParent263.__zwHandle === 'string' ? newParent263.__zwHandle : null; } catch (_e263ph2) {}
+          if (_ph263i != null && typeof _handleChildren !== 'undefined' && _handleChildren) {
+            var _reg263 = _handleChildren[_ph263i];
+            if (_reg263) {
+              var _ri263 = _reg263.indexOf(inserted263);
+              if (_ri263 >= 0) { newIndex263 = _ri263; return newIndex263; }
+            }
+          }
+          var _nl263 = newParent263 && newParent263.childNodes;
+          if (_nl263) {
+            for (var _r263i = 0; _r263i < _nl263.length; _r263i++) {
+              if (_nl263[_r263i] === inserted263) { newIndex263 = _r263i; break; }
+            }
+          }
+        } catch (_e263p) {}
+        return newIndex263;
+      };
       // 父匹配（与 R262 sameParent262 同款三键：identity / handle / sel）。
       // R350：键读提出循环外 + 键域快道——newParent 无 handle/sel 键时（plain 工厂域
       // append；探针 W7/W18 实测 60 条目 × 30 append：native 9.86ms vs 快道 0.21ms）
@@ -20239,41 +20328,47 @@
       try { ph263 = typeof newParent263.__zwHandle === 'string' ? newParent263.__zwHandle : null; } catch (_e263ph) {}
       try { ps263 = typeof newParent263.__zwSelector === 'string' ? newParent263.__zwSelector : null; } catch (_e263ps) {}
       var keyed263 = ph263 != null || ps263 != null;
-      var sameParent263 = function (cont) {
-        if (cont === newParent263) return true;
-        if (!cont || !keyed263) return false;
-        try {
-          if (ph263 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === ph263;
-          if (ps263 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === ps263;
-        } catch (_e263pc) {}
-        return false;
-      };
-      // R350：sameParent 命中后根验证（跨树同键条目不得应用——与 R262 同设计；
-      // root walk 穿 proxy parentNode 每跳 host 往返 ~5µs[W21]，从「每条目前置」
-      // 改为「键命中后」，常态路径 O(1)）。
-      // R351：**根快道前置**（与 R262 inRemovedSubtree 同款）——键读之前先比条目
-      // 容器的缓存根（identity 校验）：与插入树根不同 → 键命中必为跨树巧合，直接
-      // false，省去每条目 2 容器 × 键读 trap（跨树条目主档成本，见 `_zwEntryRootOf`）。
+      // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：根校验按键分级——identity
+      // / handle 命中必为同一节点（handle 由 thread-local 单调计数器生成、全局唯一
+      // 不复用），跨树巧合不可能，免 `_zwEntryRootOf`/`_zwRangeRootOf`（其末跳
+      // link-miss 落 R155 全 registry 反查，物化热循环 O(n²) 主源，消融见上）；仅
+      // sel 键（可跨文档同值）保留根校验且 insRoot 惰性计算。R350/R351/R352 语义
+      // 保留：dead 快道仍最先、sel 键命中仍过缓存根比较。
       var sameParent263Verified = function (cont, rg351, slot351) {
         if (!cont) return false;
-        // R352：removed 标记容器快道（先于根缓存——见 _zwDeadContainer352 文档）。
+        // R352：removed 标记容器快道（先于键读——见 _zwDeadContainer352 文档）。
         if (_zwDeadContainer352(cont)) return false;
-        if (_zwEntryRootOf(rg351, cont, slot351) !== insRoot263) return false;
-        if (!sameParent263(cont)) return false;
         if (cont === newParent263) return true;
-        return true; // 同根 + 键命中——root walk 已被缓存根比较替代
+        if (!keyed263) return false;
+        var viaHandle263 = false;
+        try {
+          if (ph263 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === ph263) {
+            viaHandle263 = true;
+          } else if (ps263 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === ps263) {
+            if (_zwEntryRootOf(rg351, cont, slot351) !== ensureInsRoot263()) return false;
+          } else {
+            return false;
+          }
+        } catch (_e263pc) { return false; }
+        return viaHandle263 ? true : true; // handle 命中即同节点；sel 命中已过根校验
       };
       for (var _r263r = 0; _r263r < regs263.length; _r263r++) {
         var rg263 = regs263[_r263r];
         if (!rg263) continue;
         try {
+          // ni263 哨兵：-2 未计算 / -1 已计算未找到（<0 → 终止，同原前置早退）。
+          var ni263 = -2;
           if (sameParent263Verified(rg263.startContainer, rg263, 0)) {
+            if (ni263 === -2) ni263 = ensureNewIndex263();
+            if (ni263 < 0) return;
             var so263 = rg263._startOffsetBase != null ? rg263._startOffsetBase : rg263.startOffset;
-            if (so263 > newIndex263) rg263._startOffsetBase = so263 + 1;
+            if (so263 > ni263) rg263._startOffsetBase = so263 + 1;
           }
           if (sameParent263Verified(rg263.endContainer, rg263, 1)) {
+            if (ni263 === -2) ni263 = ensureNewIndex263();
+            if (ni263 < 0) return;
             var eo263 = rg263._endOffsetBase != null ? rg263._endOffsetBase : rg263.endOffset;
-            if (eo263 > newIndex263) rg263._endOffsetBase = eo263 + 1;
+            if (eo263 > ni263) rg263._endOffsetBase = eo263 + 1;
           }
         } catch (_e263rg) {}
       }

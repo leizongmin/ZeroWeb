@@ -1,6 +1,6 @@
 # css-testharness-compat master
 
-**状态**: Active——M0/M1/M2 完成（DC-1/DC-2/DC-3 全落，DC-3 CI 快照已闭环）；M3 批次 1 完成（2026-10-30）；M4 未启动
+**状态**: Active——M0/M1/M2/M3 完成（DC-1~DC-3 全落，DC-3 CI 快照已闭环；M3 批次 1–5，top15 收口 15/15）；M4 进行中——css-face 三分片接线已合入（62064f318），DC-4 数据由姊妹流 weekly 运行 41000541561（HEAD 含接线）产出，轮询收口中
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
@@ -10,10 +10,37 @@
 | M0 | 试点通道（css-values + selectors：语料深拉 + runner 子命令 + 干跑基线 + 形态分簇） | DC-1 | **完成**（2026-10-30，[基线 evidence](evidence/2026-10-30-m0-pilot-baseline.md)） |
 | M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
 | M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)；CI 快照运行 40935989794 闭环——58 files / 232 passes） |
-| M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | **进行中**（批次 1 完成 2026-10-30，[批次 evidence](evidence/2026-10-30-m3-batch1-color-align-sizing.md)——css-color/css-align/css-sizing 入账 + check-layout support 修复；批次 2 = top15 其余目录） |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | 未启动（css 面已入 CI 快照口径，weekly 分片批量接线待做） |
+| M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | **完成**（批次 1–5 全落 2026-10-30，top15 分母目录 15/15 入账；十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%；evidence/2026-10-30-m3-batch{1..5}-*.md） |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | **进行中**（三分片接线 62064f318 + fetch 白名单补 css/support e425f845a；DC-4 数据由修复后运行 41005658107 产出，轮询收口中） |
 
-## 本轮记录（2026-10-30，M3 批次 1 + DC-3 CI 闭环）
+## 本轮记录（2026-10-30，M3 批次 2–5 收口 + M4 分片接线）
+
+- **M3 批次 2–5 入账（top15 收口 15/15）**：typed-om / fonts / shapes →
+  anchor-position / masking / backgrounds → transforms / motion → grid /
+  text 逐批过 M0 模板（子命令 + CORPUS 映射 + Makefile target + DIRS），
+  十六目录统一基线 **65,157 子测试 / 17,747 Pass = 27.2%**，每批 parity 全
+  IDENTICAL。大簇挂账：typed-om API 面整体未实现（96.7% Fail）、
+  anchor-size() 序列化参数序 ~2,500、grid 布局探测簇 3,280（top15 之最）、
+  text 断行 approx 543。分批证据：
+  [batch2](evidence/2026-10-30-m3-batch2-typed-om-fonts-shapes.md) /
+  [batch3](evidence/2026-10-30-m3-batch3-anchor-position-masking-backgrounds.md) /
+  [batch4](evidence/2026-10-30-m3-batch4-transforms-motion.md) /
+  [batch5](evidence/2026-10-30-m3-batch5-grid-text.md)。
+- **M4 接线合入（62064f318）**：weekly coverage matrix 新增 css-face-a/b/c
+  三分片（suite 名 = runner 子命令去前缀，aggregate 按案路径归 topdir，
+  css 顶目录首次入快照口径）；35 号脚本加 `CSS_FETCH_ONLY` 白名单过滤
+  （缺省不设 = 全量，本地 rally 行为不变），三分组 fetch target 按语料体量
+  均分；css 分片 job timeout 210min、per-suite time_limit 3600。
+- **在途（白名单修复，e425f845a）**：首次带接线运行 41000541561 的
+  css-face-b 产物早期对账实证 fetch 白名单漏 `css/support`——案数与本地
+  逐目录一致（253/61/121/348）但 helper 引用页子测试坍缩（masking 544→63、
+  anchor-position 12,811→3,059、backgrounds 1,085→190；typed-om 零引用
+  750=750 反证根因唯一；idl_test 4 页缺 /resources/idlharness.js 与本地
+  同界非 CI 洞）。运行已取消（避免聚合落污染快照），三分片白名单补
+  css/support 后重派运行 41005658107，轮询收口中——快照 css 面数字核验 +
+  wpt-suites.csv 汇总行待其完成后落账。
+
+## 上一轮记录（2026-10-30，M3 批次 1 + DC-3 CI 闭环）
 
 - **DC-3 正式闭环**：workflow_dispatch coverage 运行 40935989794 全绿
   （17 shard success / misc 1,795s）；聚合快照 `css/css-variables`
@@ -152,19 +179,16 @@
 - **零回归底线**：css 值语义修复若触 `zero-engine`/`style-system`，与
   rendering-compat 的 reftest 回归门（716/716）同窗验证，防两账互相打红。
 
-## 下一步（M3 批次 2 / M4 检查单）
+## 下一步（M4 收口检查单）
 
-1. ~~DC-3 CI 快照落账~~（本轮闭环：40935989794，58 files / 232 passes）。
-2. **M3 批次 2**：top15 其余目录逐个过 M0 模板（35 号 DIRS 追加 →
-   FORCE=1 首拉 → 子命令 → blob hash 对账 → 基线 → 分簇 → csv 行）；
-   重量级 css-grid（15,841 分母 / 2,523 文件）与 css-text（5,714 / 1,983）
-   独立轮次；cssom-view / geometry 落地前按 run-rules §9 与
-   rendering-compat 控制面协调划界。
-3. **失败簇归口评估**：color 的 Color-4 计算值面（7,199，最大单簇）评估
-   引擎工作项归属；align/sizing 指定值展开族归 CSSOM 序列化、布局几何族
-   与 rendering-compat 同窗；sizing stretch 族跨案状态残留（6 子测）入
-   engine 布局账本。
-4. **M4（DC-4）**：weekly coverage 分片批量接线（values/selectors/color/
-   align/sizing 入 shard + fetch 入口 + 时间预算——本地合计 ~71s 单进程、
-   CI ~2-3 倍的经验数据点已录）→ 正式 css 面复测快照 → wpt-suites.csv
-   汇总行收口。
+1. ~~DC-3 CI 快照落账~~（闭环：40935989794，58 files / 232 passes）。
+2. ~~M3 批次 2–5~~（top15 收口 15/15，见本轮记录）。
+3. **M4（DC-4）收口**：weekly 运行 41000541561 完成后——快照
+   coverage-2026-10-30 核验（css 顶目录 covered>0 且 16 目录全入组、
+   试点目录未覆盖子测试清零路径成立）→ evidence 落账 →
+   wpt-suites.csv 汇总行（十六目录 65,157/17,747 run-face 口径 + DC-4
+   快照注记）→ 控制面状态收口。
+4. **失败簇归口评估**（后续 goal 素材，不阻 M4）：color 的 Color-4 计算
+   值面（7,199，最大单簇）评估引擎工作项归属；align/sizing 指定值展开族
+   归 CSSOM 序列化、布局几何族与 rendering-compat 同窗；grid 布局探测
+   3,280 体量之最；typed-om API 面（96.7% Fail）整体挂账。

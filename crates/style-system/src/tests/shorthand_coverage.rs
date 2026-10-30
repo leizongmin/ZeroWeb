@@ -322,6 +322,37 @@ fn test_before_pseudo_computed_from_counter_content() {
     }
 }
 
+// R5340：单值 counters() 的 ::before/::after 伪元素样式须保留（旧 gate 漏
+// Counters 臂 → 伪元素整体无生成内容，counter-hebrew-nested driving；多 item
+// List 形态经 List 臂本就保留，CSS Lists 3 §counter-functions）。
+#[test]
+fn test_before_pseudo_computed_from_counters_content() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let css = r#"div:before { content: counters(x, ".", hebrew); }"#;
+    let s = compute_style_from_css(&doc, css, div);
+    let before = s.before_pseudo.expect("counters() 的 before 伪元素样式应保留");
+    match &before.content {
+        crate::property::types::ContentComputedValue::Counters { name, separator, style } => {
+            assert_eq!(name, "x");
+            assert_eq!(separator, ".");
+            assert_eq!(style.as_deref(), Some("hebrew"));
+        }
+        other => panic!("before content 应为 Counters，实际 {other:?}"),
+    }
+    // after gate 同臂：content: counters(...) 的 ::after 同样保留。
+    let css_after = r#"div:after { content: counters(x, "."); }"#;
+    let s2 = compute_style_from_css(&doc, css_after, div);
+    let after = s2.after_pseudo.expect("counters() 的 after 伪元素样式应保留");
+    assert!(
+        matches!(
+            after.content,
+            crate::property::types::ContentComputedValue::Counters { .. }
+        ),
+        "after content 应为 Counters，实际 {:?}",
+        after.content
+    );
+}
+
 #[test]
 fn test_after_pseudo_and_content_none_no_box() {
     let (doc, _html, _body, div, _p) = make_test_dom();
@@ -554,6 +585,50 @@ fn test_border_side_radius_slash_per_corner_pair() {
     assert_eq!(ry[1], LengthValue::Px(48.0)); // tr 3em @ 16px
     assert_eq!(ry[2], LengthValue::Px(0.0)); // br 未触及
     assert_eq!(ry[3], LengthValue::Px(0.0)); // bl 未触及
+}
+
+#[test]
+/// R5341：纯单值声明无槽位；先 `border-radius: 50%` 后双值长hand覆盖建槽时，
+/// 未覆盖角存**水平声明值副本**（Percent 原样保留，paint 按高重解析）——
+/// 旧 Px(0) 哨兵使这些角垂直轴误 0。
+fn test_r5341_slot_creation_captures_declared_rx() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(
+        &doc,
+        div,
+        &[("border-radius", "50%"), ("border-top-right-radius", "10px 5px")],
+    );
+    assert_eq!(s.border_top_left_radius, LengthValue::Percentage(50.0));
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(10.0));
+    let ry = s.border_radius_y.as_ref().expect("双值覆盖应建槽");
+    assert_eq!(ry[1], LengthValue::Px(5.0), "tr 显式垂直分量");
+    assert_eq!(ry[0], LengthValue::Percentage(50.0), "tl 建槽捕获声明副本（非 Px(0)）");
+    assert_eq!(ry[2], LengthValue::Percentage(50.0), "br 同上");
+    assert_eq!(ry[3], LengthValue::Percentage(50.0), "bl 同上");
+}
+
+#[test]
+/// R5341：纯单值声明不建槽（垂直轴由 paint 按声明值重解析）；显式 `h 0` 双值
+/// 建槽且槽位确为 Px(0)——「未声明」与「声明 0」不再共享哨兵。
+fn test_r5341_no_slot_for_single_value_explicit_zero_declared() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-radius", "20px")]);
+    assert!(s.border_radius_y.is_none(), "纯单值声明不建槽");
+
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-radius", "20px / 0px")]);
+    let ry = s.border_radius_y.as_ref().expect("显式 0 双值应建槽");
+    assert_eq!(
+        ry.as_ref(),
+        &[
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0)
+        ],
+        "显式垂直 0 逐角入槽"
+    );
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(20.0));
 }
 
 #[test]

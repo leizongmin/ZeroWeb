@@ -6,6 +6,7 @@ mod coverage_round3;
 mod coverage_round4;
 mod index_buckets;
 mod nth_container;
+mod p124_media_pseudo_gate;
 mod pseudo;
 mod source_order_at_rules;
 mod uncovered_paths;

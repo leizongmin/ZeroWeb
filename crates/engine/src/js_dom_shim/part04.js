@@ -6661,7 +6661,10 @@
             // 变化）→ 变异代际推进（探测环悬停重结算判据；WPT
             // mouse_boundary_events_on_image_map "new <area> is available" 断言面）。
             try {
-              var _ptrTag9a = (child && child.__zwHandle && typeof _realTag === 'function')
+              // OPTIMIZATION（editing-compat 簇 A，2026-10-30）：tag 解析限元素子——
+              // 消费门本就要求 nodeType===1，text/comment 子的解析值从不被读；
+              // 物化热循环（text 子占半）逐 append 省一次 `_realTag` 调用。
+              var _ptrTag9a = (child && child.nodeType === 1 && child.__zwHandle && typeof _realTag === 'function')
                 ? _realTag(null, child.__zwHandle) : (child && child.tagName);
               if (typeof _zwPtrState !== 'undefined' && _zwPtrState && child && child.nodeType === 1
                   && String(_ptrTag9a || '').toLowerCase() === 'area') {
@@ -12953,12 +12956,18 @@
                   // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
                   var _ihPc = _ceParentConnected(sel, handle);
                   if (_ihFallback.length) globalThis.__zwCeAttachForAdded(_ihFallback, _ihPc);
-                  for (var _ihCi = 0; _ihCi < _ihMat.length; _ihCi++) {
-                    var _ihCw = _ihMat[_ihCi];
-                    if (_ihCw && _ihCw.__zwHandle) {
-                      var _ihCpc = _ihPc === true;
-                      if (!_ihCpc) { try { _ihCpc = _elConnected(_ihCw); } catch (_eIhCp) { _ihCpc = _ihCpc; } }
-                      if (_ihCpc && typeof _ceApplyConn === 'function') {
+                  // 连接态继承父判定（DOM spec `concept-connected`：节点 connected ⇔
+                  // shadow-including root 是 document；子代刚装入本容器，root 与父同一，
+                  // 父断 ⇒ 子必断，per-child 树上行冗余）。且 bulk 桶替换不记
+                  // _zwNodeParent 反链，per-child `parentNode` 读在 `_parentNodeFor` 落
+                  // R155 全表反查 O(registry)（innerHTML 2000 子实测 6022 次全 miss，
+                  // ≈2.5ms/次，纯浪费）；R155 miss → null 父 → false，原升级路径在批量
+                  // 解析流恒不触发。子代独立连接态（如 subtree 移入）由对应 mutation
+                  // 路径的 `_ceApplyConn` 显式派发，不经此处。
+                  if (_ihPc === true) {
+                    for (var _ihCi = 0; _ihCi < _ihMat.length; _ihCi++) {
+                      var _ihCw = _ihMat[_ihCi];
+                      if (_ihCw && _ihCw.__zwHandle && typeof _ceApplyConn === 'function') {
                         try { _ceApplyConn(_ihCw, true); } catch (_eIhCc) {}
                       }
                     }

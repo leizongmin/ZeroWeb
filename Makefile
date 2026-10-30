@@ -589,15 +589,18 @@ fetch-wpt-css-testharness:
 # 35 号脚本 DIRS。CI runner 每次全新 checkout（wpt-data gitignored），全量
 # ~2 万文件顺序深挖单 job 装不下 150min 预算——按语料体量三分（本地实测
 # ~1.4 文件/s：A 试点+批次1+transforms ~4.5k、B 批次2+批次3 ~6.2k、
-# C 批次4/5 大目录 motion+grid+text ~6.6k）。本地全量拉取用无后缀 target。
+# C 批次4/5 大目录 motion+grid+text ~6.6k）。css/support 共享 helper 目录
+# （parsing/computed/interpolation-testcommon.js 等，15/16 目录引用）必须
+# 随片携带，漏带则引用页全数坍缩为单 Fail（运行 41000541561 实证）。
+# 本地全量拉取用无后缀 target。
 fetch-wpt-css-testharness-a:
-	CSS_FETCH_ONLY="css/css-values css/selectors css/css-color css/css-align css/css-sizing css/css-transforms" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
+	CSS_FETCH_ONLY="css/css-values css/selectors css/css-color css/css-align css/css-sizing css/css-transforms css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
 fetch-wpt-css-testharness-b:
-	CSS_FETCH_ONLY="css/css-typed-om css/css-fonts css/css-shapes css/css-anchor-position css/css-masking css/css-backgrounds" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
+	CSS_FETCH_ONLY="css/css-typed-om css/css-fonts css/css-shapes css/css-anchor-position css/css-masking css/css-backgrounds css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
 fetch-wpt-css-testharness-c:
-	CSS_FETCH_ONLY="css/motion css/css-grid css/css-text" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
+	CSS_FETCH_ONLY="css/motion css/css-grid css/css-text css/support" bash tests/wpt-runner/scripts/goals/35-css-testharness-compat.sh
 
 testharness-css-values: fetch-wpt-css-testharness target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-css-testharness-corpus.sh css-values ./target/release/zero-wpt-runner
