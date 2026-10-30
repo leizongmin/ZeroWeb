@@ -749,6 +749,17 @@ COVERAGE_GROUP_KEYS = (
     "den_subtests", "zw_passes", "zw_env_fails",
 )
 
+# 环比护栏阈值：语料缺失类事故产出合法 JSON（tests:0 Timeout / 页面级 Fail），
+# 分片 job 与聚合 job 都不会红——coverage-2026-10-29 的 encoding 面
+# 361578P→1317P 塌了两天无人知晓，靠人眼对账才发现。这里与同目录最近一份
+# 既有快照按 topdir 比对通过数，跌幅同时越过相对与绝对地板才记回归（滤掉
+# 上游刷新、skip 变动等小抖动）。命中即打 ::error 注解、快照打回归旗标、
+# 以 GUARD_EXIT 退出——weekly.yml 的快照回写步骤 if: success() 会跳过提交，
+# 坏快照不覆盖上一份，artifact（if: always()）仍保留现场。
+GUARD_DROP_RATIO = 0.2
+GUARD_DROP_FLOOR = 1000
+GUARD_EXIT = 3
+
 
 def build_universe(summaries: dict[str, dict]) -> dict[str, int]:
     """全量分母清单：三家 summary 的并集路径 → 子测试基准（三家 c[1] 最大值）。
@@ -821,6 +832,41 @@ def aggregate_groups_to_topdir(groups: dict[str, dict]) -> dict[str, dict]:
         for k in COVERAGE_GROUP_KEYS:
             target[k] += stats[k]
     return dict(tops)
+
+
+def guard_against_previous(out_md: Path, groups: dict[str, dict]) -> list[str]:
+    """与 out_md 同目录最近一份既有快照比对 topdir 通过数，返回回归描述列表。
+
+    「既有」排除本次输出同名 .json（同日重跑对比的是更早一份）；目录里没有
+    既有快照（首跑/新目录）或解析失败时跳过护栏——护栏自身不得成为出数障碍。
+    """
+    previous_name = out_md.with_suffix(".json").name
+    candidates = sorted(
+        p for p in out_md.parent.glob("coverage-*.json") if p.name != previous_name
+    )
+    if not candidates:
+        return []
+    try:
+        previous = json.loads(candidates[-1].read_text(encoding="utf-8"))
+        old_tops = aggregate_groups_to_topdir(previous["groups"])
+    except (OSError, ValueError, KeyError, TypeError):
+        print(
+            f"::warning::环比护栏跳过：无法解析既有快照 {candidates[-1].name}",
+        )
+        return []
+    new_tops = aggregate_groups_to_topdir(groups)
+    regressions = []
+    for topdir in sorted(new_tops):
+        old_passes = old_tops.get(topdir, {}).get("zw_passes", 0)
+        if old_passes <= 0:
+            continue
+        drop = old_passes - new_tops[topdir]["zw_passes"]
+        if drop >= GUARD_DROP_FLOOR and drop >= old_passes * GUARD_DROP_RATIO:
+            regressions.append(
+                f"{topdir}: {old_passes}→{new_tops[topdir]['zw_passes']}"
+                f"（−{drop}，跌幅 {drop / old_passes:.0%}）"
+            )
+    return regressions
 
 
 def browser_totals(summaries: dict[str, dict]) -> dict[str, dict]:
@@ -912,13 +958,16 @@ def cmd_coverage(args: argparse.Namespace) -> None:
     }
 
     out_md.parent.mkdir(parents=True, exist_ok=True)
+    regressions = (
+        [] if args.no_guard else guard_against_previous(out_md, groups)
+    )
     out_md.write_text(
         render_coverage_markdown(
             runs, totals, dict(groups),
             browser_totals({**summaries, **compare_summaries}),
             zw_files=len(zw_merged), suspicious=suspicious,
             multi_suite=multi_suite, zw_only=zw_only,
-            compare_runs=compare_runs,
+            compare_runs=compare_runs, regressions=regressions,
         ),
         encoding="utf-8",
     )
@@ -945,6 +994,16 @@ def cmd_coverage(args: argparse.Namespace) -> None:
         ),
         encoding="utf-8",
     )
+    if regressions:
+        for item in regressions:
+            print(f"::error::coverage 环比回归，本次快照不回写 main：{item}")
+        print(
+            f"错误: 环比护栏命中 {len(regressions)} 项回归，输出已写入但以 "
+            f"退出码 {GUARD_EXIT} 终止；确认语料/分片完整性，如属预期可用 "
+            "--no-guard 重出快照",
+            file=sys.stderr,
+        )
+        raise SystemExit(GUARD_EXIT)
     print(f"报告: {out_md}\n数据: {out_json}")
     print(
         f"全量 {den_files} 文件 / {den_subtests} 子测试；ZW 覆盖 "
@@ -963,6 +1022,7 @@ def render_coverage_markdown(
     multi_suite: int,
     zw_only: int,
     compare_runs: list[dict] | None = None,
+    regressions: list[str] | None = None,
 ) -> str:
     def pct(rate: float) -> str:
         return f"{rate * 100:.2f}%"
@@ -971,6 +1031,14 @@ def render_coverage_markdown(
     lines.append("# ZeroWeb 全量 WPT 对账")
     lines.append("")
     lines.append(f"生成时间：{datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    if regressions:
+        lines.append("")
+        lines.append(
+            "> **⚠️ 环比回归警报：本次运行较上一份快照存在 topdir 通过数大幅"
+            "下跌，快照只入 artifact 不回写 main。**"
+        )
+        for item in regressions:
+            lines.append(f"> - {item}")
     lines.append("")
     lines.append("## 口径")
     lines.append("")
@@ -1455,6 +1523,7 @@ def run_self_test() -> None:
                 results=str(results),
                 out=str(out),
                 env_marker=list(DEFAULT_ENV_MARKERS),
+                no_guard=False,
             )
         )
         data = json.loads(out.with_suffix(".json").read_text())
@@ -1501,6 +1570,41 @@ def run_self_test() -> None:
             raise AssertionError("coverage 空 --env-marker 未被拒绝")
         except ToolError as error:
             assert "--env-marker" in error.message, error.message
+
+    # 环比护栏：与同目录最近一份快照按 topdir 比对，跌幅越过双阈值才记回归
+    with tempfile.TemporaryDirectory() as tmp:
+        cov_dir = Path(tmp)
+        group = lambda passes, den: {  # noqa: E731  测试辅助构造
+            "den_files": 1, "covered_files": 1, "full_pass_files": 1,
+            "den_subtests": den, "zw_passes": passes, "zw_env_fails": 0,
+        }
+        # 更早一份健康基线不应被取用（验证 sorted() 取最近一份）
+        (cov_dir / "coverage-2026-10-27.json").write_text(json.dumps(
+            {"groups": {"encoding/japanese": group(200, 10000)}}
+        ))
+        # 最近一份：encoding 9000P、dom 400P
+        (cov_dir / "coverage-2026-10-28.json").write_text(json.dumps(
+            {"groups": {
+                "encoding/japanese": group(9000, 10000),
+                "dom/x": group(400, 500),
+            }}
+        ))
+        out = cov_dir / "coverage-2026-10-29.md"
+        regressions = guard_against_previous(out, {
+            "encoding/japanese": group(200, 10000),  # −8800，双阈值均越 → 回归
+            "dom/x": group(380, 500),                # −20 < 1000 地板 → 放行
+            "new/top": group(50, 100),               # 无基线 → 放行
+        })
+        assert len(regressions) == 1, regressions
+        assert "encoding" in regressions[0] and "9000" in regressions[0]
+        # 输出自身同名 .json 不算「既有」；目录无既有快照时护栏静默放行
+        empty_dir = cov_dir / "fresh"
+        empty_dir.mkdir()
+        assert guard_against_previous(empty_dir / "coverage-2026-10-29.md", {}) == []
+        (empty_dir / "coverage-2026-10-29.json").write_text("{}")
+        assert guard_against_previous(
+            empty_dir / "coverage-2026-10-29.md", {"a/b": group(1, 1)}
+        ) == []
 
     # WPT_REV 解析（合成脚本目录）
     with tempfile.TemporaryDirectory() as tmp:
@@ -1565,6 +1669,11 @@ def main() -> None:
         default=None,
         help="环境受限标记子串（可重复）；提供时替换默认集 "
         f"（默认 {','.join(DEFAULT_ENV_MARKERS)}）",
+    )
+    p_cov.add_argument(
+        "--no-guard",
+        action="store_true",
+        help="跳过环比回归护栏（确认下跌属预期后重出快照时使用）",
     )
     p_cov.set_defaults(func=cmd_coverage)
 
