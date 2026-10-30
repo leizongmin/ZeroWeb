@@ -55,19 +55,30 @@ pub fn compute_inherited_style(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
 ) -> ComputedStyle {
-    compute_inherited_style_with_quirks(parent_style, cascaded, &HashMap::new(), QuirksMode::NoQuirks, false)
+    compute_inherited_style_with_quirks(
+        parent_style,
+        cascaded,
+        &HashMap::new(),
+        QuirksMode::NoQuirks,
+        false,
+        false,
+    )
 }
 
 /// 为元素计算继承样式（支持 quirks mode）。
 ///
 /// `prefers_dark` 为用户颜色偏好（`prefers-color-scheme` 媒体查询 = dark），
 /// 参与 `color-scheme` 属性的 used-scheme 合成（见 `parse_color_scheme_dark`）。
+/// `document_scheme_dark` 为文档级 meta color-scheme 扫描结果（根元素自身
+/// color-scheme 为 normal 时的 used-scheme fallback——css-color-adjust-1 §used
+/// color scheme：根的 parent scheme = 文档 scheme；非根路径不受影响，继承父链）。
 pub fn compute_inherited_style_with_quirks(
     parent_style: Option<&ComputedStyle>,
     cascaded: &HashMap<String, String>,
     cascade_orders: &HashMap<String, CascadeOrder>,
     quirks_mode: QuirksMode,
     prefers_dark: bool,
+    document_scheme_dark: bool,
 ) -> ComputedStyle {
     let mut style = ComputedStyle::default();
 
@@ -76,14 +87,36 @@ pub fn compute_inherited_style_with_quirks(
     // 主循环仍会按既有路径处理 color-scheme（idempotent）；未显式声明则继承父元素。
     if let Some(cs) = cascaded.get("color-scheme") {
         style.color_scheme_dark = match resolve_keyword(cs, "color-scheme", parent_style) {
-            KeywordResolution::Concrete(v) => crate::property::apply::parse_color_scheme_dark(v, prefers_dark),
+            KeywordResolution::Concrete(v) => {
+                style.color_scheme_decl = Some(v.to_string());
+                let (has_light, has_dark) = crate::property::apply::color_scheme_tokens(v);
+                if !has_light && !has_dark {
+                    // `normal`（及任何无 light/dark token 的声明）：used scheme 回落文档
+                    // scheme——css-color-adjust-1 §color-scheme：normal 的 used = 文档
+                    // color-scheme（非 parent——语料 normal-descendant-change 钉死：
+                    // meta 改 light 后显式 normal 的后代须离开父元素 dark scheme）。
+                    document_scheme_dark
+                } else {
+                    crate::property::apply::parse_color_scheme_dark(v, prefers_dark)
+                }
+            }
             KeywordResolution::Inherit | KeywordResolution::Unset | KeywordResolution::Revert => {
-                parent_style.map(|p| p.color_scheme_dark).unwrap_or(false)
+                let inherited = parent_style
+                    .map(|p| p.color_scheme_dark)
+                    .unwrap_or(document_scheme_dark);
+                style.color_scheme_decl = parent_style.and_then(|p| p.color_scheme_decl.clone());
+                inherited
             }
             KeywordResolution::Initial | KeywordResolution::RevertLayer => false,
         };
     } else if let Some(parent) = parent_style {
         style.color_scheme_dark = parent.color_scheme_dark;
+        style.color_scheme_decl = parent.color_scheme_decl.clone();
+    } else {
+        // 根元素自身未声明 color-scheme：used-scheme fallback = 文档级 scheme
+        //（meta color-scheme；computed color-scheme 本身保持 normal——meta 不改
+        // 根元素 computed 属性，仅改系统色解析所用的 used scheme）。
+        style.color_scheme_dark = document_scheme_dark;
     }
 
     // 先处理所有级联属性

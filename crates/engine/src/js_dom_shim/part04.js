@@ -8903,6 +8903,18 @@
                     }
                   } catch (_eR265p) {}
                 } catch (_eR265m) {}
+              } else if (sel && refNode && refNode.__zwHandle && newNode.nodeType !== 3
+                  && typeof __zw_insert_before === 'function') {
+                // s165（html-semantics M2）：**sel 父 + handle-only ref**——createElement
+                // 产物（无 selector）作 ref、静态 sel 容器作父的 insertBefore。旧形态
+                // 全 wire 分支 miss → 降级 append 尾部，ref 锚序丢失（meta color-scheme
+                // 语料 insert「before existing in head」expected light got dark 钉死）。
+                // ref 字段填 handle 字符串：applier 侧 InsertBefore arm selector miss 后
+                // 经 handle 表解析（批内创建已注册；跨批引用同 handle 视图边界 miss
+                // 跳过）。JS 视图经尾部 R140 live sync 自 host 收敛（同 refNode.
+                // __zwSelector 分支，无本地 splice）。
+                ceAdded = [newNode];
+                try { __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwHandle); } catch (_e164ib) {}
               } else if (sel && refNode && newNode.nodeType === 3
                   && typeof __zw_insert_adjacent_text === 'function') {
                 // R5058：**sel 父 + 文本子 ref**——静态元素 childNodes 的文本代理无

@@ -146,6 +146,21 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
         return Some(ColorValue::ContrastColor(Box::new(arg)));
     }
 
+    // 系统颜色 dark used-scheme 面板（CSS Color 4 §system-colors：系统色按元素 used
+    // color-scheme 取 light/dark 面板值；Chrome dark CanvasText=白 先例）。dark=true 仅覆
+    // CanvasText 族五键；light 面板 = 既有静态值（parse_color 恒 dark=false，既有调用方
+    // 零回归）。driving: html/semantics meta color-scheme 语料 assert 经 CanvasText
+    // light(黑)/dark(白) 差分判定文档 scheme（compute-root-color-scheme.js）。
+    if dark {
+        let l = value.to_ascii_lowercase();
+        if matches!(
+            l.as_str(),
+            "canvastext" | "captiontext" | "infotext" | "menutext" | "windowtext"
+        ) {
+            return Some(ColorValue::Rgba(255, 255, 255, 255));
+        }
+    }
+
     // 命名颜色
     parse_named_color(value)
 }

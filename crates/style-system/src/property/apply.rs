@@ -63,7 +63,10 @@ pub fn apply_property_value_with_quirks(
     property: &str,
     value: &str,
     quirks_mode: bool,
-    prefers_dark: bool,
+    // meta color-scheme 落地后 used-scheme 判定收口到 inheritance 预解析臂（含
+    // normal→文档 scheme 回落），此处的 prefers 不再直接参与——保留参数以兼容
+    // 调用点签名。
+    _prefers_dark: bool,
 ) -> bool {
     // 不在此 trim：声明值经 consume_declaration deferred-whitespace 已无首尾空白 token
     // （inline style 经 parse_inline_style 自行 trim，presentational hints 产 clean 值，
@@ -536,10 +539,11 @@ pub fn apply_property_value_with_quirks(
             }
         }
         "color-scheme" => {
-            // color-scheme 影响本元素 light-dark() 解析，须在颜色属性应用前确定
-            //（compute_inherited_style_with_quirks 的预解析已先行设置；此处对显式声明同步）。
-            // used-scheme 与 prefers-color-scheme 合成（见 parse_color_scheme_dark）。
-            style.color_scheme_dark = parse_color_scheme_dark(value, prefers_dark);
+            // used-scheme 已由 compute_inherited_style_with_quirks 的预解析臂权威设定
+            //（同一 cascaded 值先行流经该臂，含 normal→文档 scheme 回落与 inherit 语义；
+            // color-scheme 影响本元素 light-dark() 解析故须在颜色属性应用前确定）。
+            // 此臂只确认属性可应用——覆写会丢 normal/inherit 语义（语料
+            // normal-descendant-change 钉死），decl 同步亦在预解析臂完成。
             return true;
         }
         "opacity" => {
@@ -1592,7 +1596,7 @@ pub(crate) fn margin_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 /// `prefers_dark` 来自 `prefers-color-scheme` 媒体查询（自渲染 reftest 恒为 light=false，
 /// 故合成对 reftest 字节级等价、零回归；仅真实浏览器暗 OS / 单测 prefers=true 时激活）。
 /// driving: css-variables registered-property-light-dark + 全局暗模式 theming。
-pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
+pub(crate) fn color_scheme_tokens(value: &str) -> (bool, bool) {
     let mut has_light = false;
     let mut has_dark = false;
     for tok in value.split_whitespace() {
@@ -1602,6 +1606,11 @@ pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
             has_dark = true;
         }
     }
+    (has_light, has_dark)
+}
+
+pub(crate) fn parse_color_scheme_dark(value: &str, prefers_dark: bool) -> bool {
+    let (has_light, has_dark) = color_scheme_tokens(value);
     match (has_light, has_dark) {
         (true, true) => prefers_dark, // 两种均可用 → 用户偏好决定
         (false, true) => true,        // 仅 dark

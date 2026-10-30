@@ -1340,9 +1340,23 @@ pub fn apply_dom_mutations_full(
                     .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
-                    tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
-                    continue;
+                // s165：ref selector miss → handle 表回落——ref 为 handle-only 元素
+                //（createElement 产物无 selector，静态 sel 父 insertBefore(new, createdRef)
+                // 形态；shim 侧 ref 字段直接填 handle 字符串。selector 域不会与 handle
+                // 字面撞形，先 selector 后 handle 的次序无歧义。meta color-scheme 语料
+                // insert 文件「before existing in head」钉死；跨批引用同 handle 视图边界
+                // miss 跳过。
+                let ref_node = match find_by_selector(doc, &ref_selector) {
+                    Some(n) => n,
+                    None => match handles.get(&ref_selector).copied() {
+                        Some(n) => n,
+                        None => {
+                            tracing::warn!(
+                                "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
+                            );
+                            continue;
+                        }
+                    },
                 };
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
@@ -1359,10 +1373,19 @@ pub fn apply_dom_mutations_full(
                     .get(&child_handle)
                     .copied()
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
-                // siteopt t4 P19：ref selector 失配 lenient warn+跳过（不变式见 SetAttr arm）。
-                let Some(ref_node) = find_by_selector(doc, &ref_selector) else {
-                    tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
-                    continue;
+                // s165：ref handle 回落同 [`DomMutation::InsertBefore`] arm（handle-only
+                // ref 形态对称面）。
+                let ref_node = match find_by_selector(doc, &ref_selector) {
+                    Some(n) => n,
+                    None => match handles.get(&ref_selector).copied() {
+                        Some(n) => n,
+                        None => {
+                            tracing::warn!(
+                                "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
+                            );
+                            continue;
+                        }
+                    },
                 };
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
             }
