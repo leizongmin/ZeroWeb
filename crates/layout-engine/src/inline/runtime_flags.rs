@@ -36,6 +36,16 @@ pub(super) fn pre_newline_strut() -> bool {
     selected(*VALUE, || default_on("ZW_PRE_NEWLINE_STRUT"))
 }
 
+/// R5342（css-overflow-4 §block-ellipsis）：line-clamp 截断后，末保留行的内容被
+/// ellipsis **整行置换**时行盒改写为 strut（高度 = 容器 used line-height，R5298
+/// 捕获），不再由被置换内容撑高（block-ellipsis-018 判例：span 1.5em 溢出长词整行
+/// 被置换，行盒 37.5→25）。default-on；`ZW_CLAMP_STRUT=0` 回退旧行为（行盒保持
+/// 内容高度）。置换内容的片段存储/绘制语义不变（paint 侧 ellipsis 域）。
+pub(super) fn clamp_strut_displaced() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CLAMP_STRUT"));
+    selected(*VALUE, || default_on("ZW_CLAMP_STRUT"))
+}
+
 pub(super) fn skip_oof() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IFC_SKIP_OOF"));
     selected(*VALUE, || default_on("ZW_IFC_SKIP_OOF"))

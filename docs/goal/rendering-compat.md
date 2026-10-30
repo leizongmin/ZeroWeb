@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5342 实现轮（line-clamp 整行置换行盒 strut slice 1——css-overflow-4 §block-ellipsis：block-ellipsis-018 全链定谳，本切片 corpus 中性 793F 持平；新 kill-switch `ZW_CLAMP_STRUT=0`）**（2026-10-30）
+>
+> - **定性**（接手 rate-limit 中断会话的未提交切片 + layout 探针定谳 018 全链）：018（1.19%）三机制账本判定维持——本轮实证全链四处：①IFC 行盒 strut（37.5→25、基线 20）**本轮交付**；②**盒高链挂账**——abspos clamp 盒高取 span 子盒 43.65 非 strut 行 25、`bottom:0` 按截断前高 74 解析（y=26 非 75；变体矩阵实证 bottom/top 定位本身无 bug，病灶 = cap 与 abspos 定位/盒高推导时序+来源）；③**paint 置换内容照绘挂账**（被置换 span 红 glyph 覆盖 bg 绿行；规范 = 置换内容不绘 + ellipsis 落位）；④gradient stop `1lh` 走 1.2em 近似回退（①②修复后近似值 30px>盒高 25 恰全绿，精确 used line-height 上下文另账）。
+> - **交付**：`apply_line_clamp_cap` 后判据 = 末保留行首单元宽 + ellipsis 宽 > 容器可用宽（判据用**宽度**非 x，对齐无关）→ 行盒改写 strut（height = 容器 used line-height（R5298 捕获），ascent/descent/baseline 同源 `ascent_ratio_lookup`，负 half-leading 门同口径）。ZW 词内不可断（overflow-wrap normal）→ 溢出长词即单 min-content 单元行（018 驱动形态）。kill-switch `ZW_CLAMP_STRUT=0` 回退；float 推压行/line-height:0 容器不入判据（FIXME）；被置换片段存储/绘制不变（paint 域挂账）。
+> - **门禁**：fmt 0；clippy zero-layout-engine --all-targets 0；corpus 同树 A/B **FIXED=0 REGRESSED=0** 失败集逐字相同（793F，/tmp/r5342-fail-{fix,base}.txt）；本地 reftest **724/725**（float-shrink-inline-children-zw-001 预存零位移）；crate lib 2275P/2I；product-smoke **PASS** + legacy 42 fixtures struct 0；make test workspace 腿 layout-engine 874P（9F = js_dom_bridge fetch wire R5340 定谳预存）；bench-gate 定向 zero-layout-engine **GATE PASS 25 指标 NEW=0**（新代码仅 line-clamp 声明路径执行，bench 零命中面）。
+> - **挂账**：018 全链 slice 2+（盒高链 + paint 置换隐藏 + `1lh` 精确上下文）；block-ellipsis-021（3.39%）/032（1.82%）/bidi-003（2.18%）独立案维持；R5341 及更早挂账全维持。**下一步 R5343**：①793F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root 域）②R5336 下一步① paint 侧切片带重锚五件套（插桩模板已记录）③R4383 strut 域预研。证据：[`rendering-compat/evidence/r5342-clamp-strut-displaced-2026-10-30.md`](rendering-compat/evidence/r5342-clamp-strut-displaced-2026-10-30.md)。
+>
 > **▶ R5341 修复轮（椭圆圆角双轴解析——css-backgrounds-3 §5.1/§5.5：border-shape-outline-with-border-double-ellipse ✗0.67% → ✓FIXED；新 kill-switch `ZW_ELLIPTIC_RADIUS=0`；corpus 794F→793F FIXED=1 REGRESSED=∅，通过率 15797/16590 = 95.2%）**（2026-10-30）
 >
 > - **定性**（794F 账本 0-1% 带续扫，避开 va/OOF 锚/writing-mode/backdrop-root/Arabic shaping/appearance/vertical-rl 域）：clip-text-background-table-cell（0.28%）= gradient 字形掩模结构域挂账不重开。取 border-shape-outline-with-border-double-ellipse（0.67%）——像素探针（40×100 盒）定谳 **corpus ref 侧自源渲染即错**：`border-radius: 50%` 渲染胶囊（宽度 y=16..80 恒 40、端帽半径 20）而非椭圆 rx=20/ry=50，test/ref 双侧同错不相消。根因链：R4574 `border_radius_y` 槽位存储后 **paint 零消费端**；`BorderRadiusSpec` 单轴全按 border-box 宽解析；槽位 Px(0) 哨兵「未声明随 rx」与显式 `h 0` 声明零不可区分。

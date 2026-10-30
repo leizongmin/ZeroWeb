@@ -33,6 +33,8 @@ mod r5323_ws_seq_pure_run_collapse_tests;
 mod r5324_float_line_overflow_descent_tests;
 /// R5325 text-wrap: balance 断点重排（css-text-4 §text-wrap-balance）。
 mod r5325_text_wrap_balance_tests;
+/// R5342 line-clamp 整行置换行盒取 strut（css-overflow-4 §block-ellipsis）。
+mod r5342_clamp_displaced_strut_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
