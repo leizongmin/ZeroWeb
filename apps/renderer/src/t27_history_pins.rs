@@ -1,15 +1,16 @@
-//! T27 返修2 常驻钉（DF2-F1/F2）：以 `run()` 全主循环驱动真实时序的单测钉。
+//! T27 返修2/3 常驻钉（DF2-F1/F2 + RC2-F1）：以 `run()` 全主循环驱动真实时序的单测钉。
 //!
 //! headless e2e 不可达性（钉位选型的依据，red5 实测）：`GoBack` IPC 仅 GUI 工具栏
 //! 发送，headless `session.history_traverse` 走 shell 跳转不经
 //! [`RendererRuntime::reload_history_entry`]；而 `fetch_post` 开的 dispatch 臂窗内
-//! `cached_html` 已清、输入无法派发（窗内二次点击不产生任何导航意图）。故两钉下沉
+//! `cached_html` 已清、输入无法派发（窗内二次点击不产生任何导航意图）。故各钉下沉
 //! 到 renderer 单测：`run()` 跑在独立线程、出站帧写入共享缓冲、测试线程按帧应答
-//! fetch 并注入消息——覆盖真实主循环顶部 drain、deferred_inbound 回放序与
-//! reload 等待窗（含 F1 的 epoch 复核、F2 的到达序语义）。两钉只用 HEAD 既有
-//! 消息面（LoadHtml/GoBack/MouseEvent/FetchResponse），修前形态可编译、行为翻红。
+//! fetch 并注入消息——覆盖真实统一命令队列回放（返修3 RC2-F1：扣压 POST 与消息
+//! 同队 FIFO）、deferred_inbound 回放序与 reload 等待窗（含 F1 的 epoch 复核、
+//! F2/RC2-F1 的到达序语义）。各钉只用 HEAD 既有消息面
+//!（LoadHtml/GoBack/Navigate/MouseEvent/FetchResponse），修前形态可编译、行为翻红。
 //!
-//! 时序骨架（两钉共用）：LoadHtml A → LoadHtml B（B 承载交互面）→ GoBack 开
+//! 时序骨架（各钉共用）：LoadHtml A → LoadHtml B（B 承载交互面）→ GoBack 开
 //! reload 慢窗（测试扣住 reload 响应控窗）→ 窗内注入 → 应答关窗 → 终态判定。
 
 use super::*;
@@ -297,8 +298,8 @@ fn t27p35_history_reload_click_not_clobbered() {
 /// Navigate(/p2) 先到（非让位类，扣压入 deferred_inbound）→ 点击提交后到（POST 意图
 /// 暂存）。修复前（红）：drain 先执行 POST（/submit 入口消息先发）、随后回放更早的
 /// Navigate——终态=旧命令目标 /p2，提交副作用已发而被覆盖（且单槽时同窗第二个 POST
-/// 意图静默丢失，DF2-F3 同形态）。修复后（绿）：drain 门控 deferred_inbound 为空——
-/// Navigate 先回放、POST 后执行，终态=POST 结果。返修1 收益同钉保持：POST 携完整
+/// 意图静默丢失，DF2-F3 同形态）。修复后（绿）：返修3 统一命令队列按到达序回放
+///（Navigate 先、POST 后），终态=POST 结果。返修1 收益同钉保持：POST 携完整
 /// body、无 GET 回落。
 #[test]
 fn t27p35_post_nav_arrival_order() {
@@ -388,6 +389,120 @@ fn t27p35_post_nav_arrival_order() {
         "final state must be the stashed POST result (DF2-F2 pre-fix shape: drain jumped the \
          arrival order and the earlier-arriving Navigate replayed over the POST result) — \
          final url {last}, changes {changes:?}"
+    );
+    let posts: Vec<_> = fetch_requests(&messages)
+        .into_iter()
+        .filter(|(_, url, method, _)| method == "POST" && url.ends_with("/submit"))
+        .collect();
+    assert_eq!(posts.len(), 1, "exactly one POST /submit expected: {posts:?}");
+    let body = posts[0].3.clone().unwrap_or_default();
+    assert!(
+        String::from_utf8_lossy(&body).contains("q=t27-body-marker"),
+        "POST body must carry the form field value, got {:?}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(
+        !fetch_requests(&messages)
+            .iter()
+            .any(|(_, url, method, _)| method == "GET" && url.ends_with("/submit")),
+        "parked POST must not degrade to a body-less GET fallback"
+    );
+}
+
+/// T27 返修3钉（RC2-F1，case B 反向）：POST 先暂存 T1、导航命令后到 T2 时，后到导航
+/// 不得被 drain 的 T1 POST 反超覆盖——终态=最后到达的导航意图。时序与
+/// [`t27p35_post_nav_arrival_order`]（case A）镜像：GoBack 开 reload 慢窗 → 点击提交
+/// 先到（POST 意图暂存，出站静默）→ Navigate(/p2) 后到（等待窗扣压）。修复前（红，
+/// 返修2 代码）：积压非空时 drain 跳过 → 回放 T2 导航 → 次拍积压空 drain 弹出 T1
+/// POST 反超——终态=POST，T1<T2 到达序要求终态=/p2。修复后（绿）：扣压 POST 按到达
+/// 时刻并入统一命令队列，单一 FIFO 回放——T1 POST 先执行、T2 导航后执行，终态=/p2。
+/// 返修1/2 收益同钉保持：恰 1 次 POST、body 携表单字段、无 GET 回落（多意图全数执行）。
+#[test]
+fn t27p35_parked_post_yields_to_later_nav() {
+    let buf = SharedBuf(Arc::new(Mutex::new(Vec::new())));
+    let tx = spawn_pinned_runtime(&buf);
+    load_two_pages(&buf, &tx, PAGE_B_FORM);
+
+    // GoBack → reload A 慢窗（dispatch 臂，测试扣住 reload 响应控窗）。
+    send(&tx, IpcMessageKind::GoBack);
+    let mut answered = HashSet::new();
+    wait_until(
+        &buf,
+        &tx,
+        &mut answered,
+        "reload fetch request",
+        Duration::from_secs(30),
+        &pin_responder,
+        |ms| {
+            fetch_requests(ms)
+                .iter()
+                .any(|(_, url, method, _)| method == "GET" && url.ends_with("/hist_a"))
+        },
+    );
+
+    // 窗内先到的 POST 意图：点击提交（T1，暂存不产生出站请求帧）。
+    send(
+        &tx,
+        IpcMessageKind::MouseEvent(MouseEventParams {
+            x: 100.0,
+            y: 30.0,
+            button: 0,
+            event_type: MouseEventType::Click,
+        }),
+    );
+    // 到达序确定性余量：点击暂存先落，Navigate 后到。
+    std::thread::sleep(Duration::from_millis(200));
+    // 窗内后到的导航命令（T2）：等待窗扣压（非让位类，与 POST 意图同队按到达序）。
+    send(
+        &tx,
+        IpcMessageKind::Navigate(NavigateParams {
+            url: URL_P2.to_string(),
+            referrer: Some(URL_B.to_string()),
+            navigation_epoch: 3,
+        }),
+    );
+    // 让点击派发与 Navigate 入队收尾，留足余量后关窗。
+    std::thread::sleep(Duration::from_millis(400));
+
+    // 关窗：reload 应答（epoch 未变——两条意图均未执行，staged load 合法放行）。
+    let rid_a = fetch_requests(&outbound(&buf))
+        .iter()
+        .rev()
+        .find(|(_, url, method, _)| method == "GET" && url.ends_with("/hist_a"))
+        .map(|(rid, _, _, _)| *rid)
+        .expect("reload fetch request id");
+    send(
+        &tx,
+        IpcMessageKind::FetchResponse(FetchResponseParams {
+            request_id: rid_a,
+            status_code: 200,
+            headers: Vec::new(),
+            body: PAGE_A.as_bytes().to_vec(),
+        }),
+    );
+
+    // 终态判定：两条意图都须执行（POST /submit 与 Navigate /p2 都发 UrlChanged），
+    // 末个 UrlChanged=后到导航 /p2。POST 完整性同 case A 钉。
+    wait_until(
+        &buf,
+        &tx,
+        &mut answered,
+        "both commands executed",
+        Duration::from_secs(60),
+        &pin_responder,
+        |ms| {
+            let changes = url_changes(ms);
+            changes.iter().any(|u| u.ends_with("/submit")) && changes.iter().any(|u| u.ends_with("/p2"))
+        },
+    );
+    let messages = outbound(&buf);
+    let changes = url_changes(&messages);
+    let last = changes.last().expect("at least one UrlChanged");
+    assert!(
+        last.ends_with("/p2"),
+        "final state must be the later-arriving Navigate (RC2-F1 case B pre-fix shape: drain \
+         replayed the earlier stashed POST over the later navigation) — final url {last}, \
+         changes {changes:?}"
     );
     let posts: Vec<_> = fetch_requests(&messages)
         .into_iter()

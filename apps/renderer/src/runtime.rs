@@ -487,18 +487,16 @@ pub(crate) struct RendererRuntime {
     history: Vec<String>,
     /// 当前历史索引。
     history_index: usize,
-    /// 等待处理的浏览器侧消息（fetch 阻塞 recv 时暂存）。
-    deferred_inbound: VecDeque<IpcMessage>,
+    /// 等待处理的浏览器侧命令统一队列（fetch 阻塞 recv 时暂存）。T27 返修3（RC2-F1）：
+    /// 元素从裸 `IpcMessage` 改为 [`DeferredCommand`]——等待窗扣压的 POST 导航意图按
+    /// 到达时刻并入同一队列，主循环按单一 FIFO 回放，所有交错（先 POST 后导航/先导航
+    /// 后 POST/多 POST 混合）终态=最后到达的导航意图。此前「独立 POST 队列 + drain
+    /// 门控 deferred_inbound 为空」只保证积压先于 POST：POST 先暂存、导航后到时
+    /// （导航先回放、drain 弹出 POST 反超），终态错。
+    deferred_inbound: VecDeque<DeferredCommand>,
     /// T27-P35：在途阻塞 fetch 等待深度（0 = 无）。>0 时再入阻塞 fetch 返回 Err，
     /// 防输入派发触发嵌套等待吞走外层 FetchResponse。
     ipc_fetch_depth: u8,
-    /// T27 返修（DF1-F1）：等待期扣压的 POST 导航意图。depth>0 时 navigate_with 不再
-    /// 入 fetch_post（深度守卫必 Err，此前被混同真实失败落入 GET 回落），意图暂存于
-    /// 此；主循环顶部在外层 fetch 收场后执行（晚于 reload_history_entry 的
-    /// run_staged_load 等同拍收尾，不被覆盖）。T27 返修2（DF2-F2/F3）：改队列入栈——
-    /// 同窗多意图不互覆，且 drain 前须待 [`Self::deferred_inbound`] 既有积压（同窗更早
-    /// 到达的导航命令）回放完毕，恢复到达序语义。
-    deferred_post_navs: VecDeque<DeferredPostNav>,
     /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复（worker 长臂时主循环 2s 放行，
     /// 主循环每轮轮询补答；automation::PendingAutomationReply）。
     pending_automation_replies: Vec<automation::PendingAutomationReply>,
@@ -833,7 +831,6 @@ impl RendererRuntime {
             history_index: 0,
             deferred_inbound: VecDeque::new(),
             ipc_fetch_depth: 0,
-            deferred_post_navs: VecDeque::new(),
             pending_automation_replies: Vec::new(),
             compositor_publish,
             animation_export: AnimationExportState::new(0),
@@ -1009,6 +1006,9 @@ impl RendererRuntime {
         }
         // 预注入先于本阶段（P-B1 让路中止时注册表跨文档持久，新文档会再次执行）。
         self.execute_pre_document_scripts(js_enabled, &current_url);
+        // T27 返修3（RC2-F1）：阶段期间到达消息的暂存队列（借给 ScriptPhaseYield，
+        // 收尾并入统一命令队列）——声明在块外供收尾合并。
+        let mut phase_staging: VecDeque<IpcMessage> = VecDeque::new();
         let phase = {
             let mut ctx = PageScriptContext {
                 html: &mut self.cached_html,
@@ -1023,7 +1023,8 @@ impl RendererRuntime {
                     .ok_or_else(|| format!("script fetch failed: {url}"))
             };
             // P-B1 导航让路：脚本间扫描 staging 队列 + inbound，导航命令即中止剩余脚本。
-            // 字段不相交：ctx 借 cached_html/js_worker/webview，yield 借 inbound_rx/deferred_inbound。
+            // 字段不相交：ctx 借 cached_html/js_worker/webview，yield 借 inbound_rx 与
+            // 局部 staging 队列（返修3 起 deferred_inbound 不再直接出借，见下方注）。
             // t-p106：yield 另带自动化 hook 闭包——①阶段中到达的 staged eval 借
             // js_worker + 当前 html 快照直接 dispatch（宿主动作语义，DevTools/CDP 同款，
             // 详见 automation::dispatch_staged_automation_evals）；②挂起自动化回复交付
@@ -1049,9 +1050,14 @@ impl RendererRuntime {
                         *document_generation,
                     )
                 };
+            // T27 返修3（RC2-F1）：deferred_inbound 元素已是统一命令队列，而
+            // ScriptPhaseYield 契约为 `VecDeque<IpcMessage>`（page_scripts 侧只做
+            // 扫描/暂存，不必感知命令包装）——阶段期间到达的消息先落块外声明的
+            // staging 队列，收尾按到达序并入统一队列（staging 条目均晚于队列既有
+            // 条目，append 即保序），page_scripts 零改动。
             let yield_to_commands = page_scripts::ScriptPhaseYield {
                 inbound_rx: &self.inbound_rx,
-                deferred: &mut self.deferred_inbound,
+                deferred: &mut phase_staging,
                 automation_hook: Some(&mut automation_hook),
             };
             page_scripts::run_page_scripts_interruptible(
@@ -1061,9 +1067,14 @@ impl RendererRuntime {
                 Some(yield_to_commands),
             )
         };
+        if !phase_staging.is_empty() {
+            self.deferred_inbound
+                .extend(phase_staging.into_iter().map(|m| DeferredCommand::Message(Box::new(m))));
+        }
         if let Some(nav) = phase.aborted {
             // 回灌队首：主循环下一轮 recv 优先派发（先于阶段期间暂存的其他消息）。
-            self.deferred_inbound.push_front(nav);
+            self.deferred_inbound
+                .push_front(DeferredCommand::Message(Box::new(nav)));
             return Ok(false);
         }
         if phase.changed {
@@ -2497,7 +2508,15 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     fn drain_inflight_fetch_responses(&mut self) {
         loop {
             let msg = if let Some(m) = self.deferred_inbound.pop_front() {
-                m
+                match m {
+                    // 扣压 POST 意图不能完成任何在途 fetch：原位放回并停——队首
+                    // 不可越过（t3-pd6 同款保序），其执行仍按队列序位在主循环派发。
+                    DeferredCommand::PostNav(_) => {
+                        self.deferred_inbound.push_front(m);
+                        break;
+                    }
+                    DeferredCommand::Message(m) => *m,
+                }
             } else {
                 match self.inbound_rx.try_recv() {
                     Ok(m) => m,
@@ -2510,7 +2529,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // t3-pd6：push_front 保持 deferred 队列顺序——此前 push_back 将非 fetch
             // 消息移到队尾，负载下键盘事件被无限轮转延迟到尾部不可达（DDG 实测：
             // 键入 "rust" 仅落 "rs"，keyDown u/t 被 3 次旋转推到队尾永不消费）。
-            self.deferred_inbound.push_front(msg);
+            self.deferred_inbound
+                .push_front(DeferredCommand::Message(Box::new(msg)));
             break;
         }
         if let Some(final_url) = self.inflight_fetches.take_document_url() {
@@ -2892,48 +2912,63 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// ZRG-2026-10-03-01 陈旧加载丢弃）。返回提升/保序后的队首；`None` 仅当 `head` 为空
     /// 且排干与积压中均无 Navigate。见 [`promote_pending_navigation`]。
     fn promote_pending_navigation(
-        head: Option<IpcMessage>,
-        deferred: &mut VecDeque<IpcMessage>,
+        head: Option<DeferredCommand>,
+        deferred: &mut VecDeque<DeferredCommand>,
         mut drain_inbound: impl FnMut() -> Vec<IpcMessage>,
-    ) -> Option<IpcMessage> {
+    ) -> Option<DeferredCommand> {
         // 队首已是导航命令：无需抢占（后续导航按 FIFO 依序处理，语义不变）。
-        if matches!(head.as_ref().map(|m| &m.kind), Some(IpcMessageKind::Navigate(_))) {
+        if matches!(
+            head.as_ref(),
+            Some(DeferredCommand::Message(m)) if matches!(m.kind, IpcMessageKind::Navigate(_))
+        ) {
             return head;
         }
         for later in drain_inbound() {
-            deferred.push_back(later);
+            deferred.push_back(DeferredCommand::Message(Box::new(later)));
         }
         let Some(idx) = deferred
             .iter()
-            .position(|m| matches!(m.kind, IpcMessageKind::Navigate(_)))
+            .position(|d| matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::Navigate(_))))
         else {
             return head;
         };
-        let nav = deferred.remove(idx).expect("idx 由 position 取得，必在界内");
+        let nav = match deferred.remove(idx).expect("idx 由 position 取得，必在界内") {
+            DeferredCommand::Message(m) => *m,
+            DeferredCommand::PostNav(_) => unreachable!("position 只匹配 Message 臂"),
+        };
         // 先于被提升导航入队的加载命令全部陈旧（Chrome 导航语义：后到者胜），
         // 照常派发会用旧文档覆盖在途新文档的 pending load，其迟到生命周期报告
         // 又被宿主 pending 校验拒收——导航永不提交、零帧产出（parity smoke
         // 首帧 4/4 超时根因：welcome LoadHtml 覆盖 fixture Navigate）。
         // 输入等非加载消息保持相对顺序继续保留（fix#14 语义不变）。
+        // T27 返修3（RC2-F1）：同窗更早到达的扣压 POST 意图同判陈旧——尚未上路
+        //（未发任何请求），随被覆盖的导航命令一并放弃，终态仍=后到导航。
         let mut superseded = Vec::new();
-        if let Some(head_msg) = head {
-            superseded.push(head_msg);
+        if let Some(head_cmd) = head {
+            superseded.push(head_cmd);
         }
         superseded.extend(deferred.drain(..idx));
-        for msg in superseded.into_iter().rev() {
-            if !matches!(msg.kind, IpcMessageKind::LoadHtml(_) | IpcMessageKind::Navigate(_)) {
-                deferred.push_front(msg);
+        for cmd in superseded.into_iter().rev() {
+            match cmd {
+                DeferredCommand::PostNav(_) => {
+                    tracing::info!("被提升导航取代等待窗扣压 POST 意图（后到者胜），放弃提交");
+                }
+                DeferredCommand::Message(msg)
+                    if matches!(msg.kind, IpcMessageKind::LoadHtml(_) | IpcMessageKind::Navigate(_)) => {}
+                DeferredCommand::Message(msg) => {
+                    deferred.push_front(DeferredCommand::Message(msg));
+                }
             }
         }
-        Some(nav)
+        Some(DeferredCommand::Message(Box::new(nav)))
     }
 
-    fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<IpcMessage>, String> {
-        let mut head = if let Some(msg) = self.deferred_inbound.pop_front() {
-            Some(msg)
+    fn recv_next_or_timeout(&mut self, timeout: Duration) -> Result<Option<DeferredCommand>, String> {
+        let mut head = if let Some(cmd) = self.deferred_inbound.pop_front() {
+            Some(cmd)
         } else {
             match self.inbound_rx.recv_timeout(timeout) {
-                Ok(msg) => Some(msg),
+                Ok(msg) => Some(DeferredCommand::Message(Box::new(msg))),
                 Err(RecvTimeoutError::Timeout) => None,
                 Err(RecvTimeoutError::Disconnected) => return Err("IPC 通道已关闭".into()),
             }
@@ -2943,7 +2978,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // Navigate IPC 滞留 106s，宿主侧 15s 导航超时必炸。队首非 Navigate 时非阻塞排干
         // 入站通道（保持到达序），若队列中有 Navigate 则提前到队首先派发，其余消息相对
         // 顺序不变。输入事件不被丢弃，仅在导航后继续处理（导航本身会复位文档状态）。
-        if let Some(msg) = head.as_ref()
+        // T27 返修3（RC2-F1）：队首为扣压 POST 意图时不抢占——它是更早到达的导航
+        // 意图，按统一 FIFO 先执行、后到导航随后执行即「终态=最后到达」；若提升
+        // 后到导航反使旧 POST 终态反超。
+        if let Some(DeferredCommand::Message(msg)) = head.as_ref()
             && !matches!(msg.kind, IpcMessageKind::Navigate(_))
         {
             head = Self::promote_pending_navigation(head, &mut self.deferred_inbound, || {
@@ -2959,15 +2997,14 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // 陈旧 resize 在入站队列线性堆积（1s 拖拽 → 级联数十秒追帧，"幻灯片"）。
         // 队首是 SetViewport 时吸收后续连续 SetViewport（latest-wins），遇首个非
         // SetViewport 消息即停（其后消息保持到达序，避免输入读到超前视口）。
-        if let Some(msg) = head.as_ref()
+        if let Some(DeferredCommand::Message(msg)) = head.as_ref()
             && matches!(msg.kind, IpcMessageKind::SetViewport(_))
         {
             let mut dropped = 0usize;
             loop {
-                let front_is_set_viewport = self
-                    .deferred_inbound
-                    .front()
-                    .is_some_and(|later| matches!(later.kind, IpcMessageKind::SetViewport(_)));
+                let front_is_set_viewport = self.deferred_inbound.front().is_some_and(
+                    |d| matches!(d, DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::SetViewport(_))),
+                );
                 if !front_is_set_viewport {
                     break;
                 }
@@ -2976,16 +3013,17 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
             while let Ok(later) = self.inbound_rx.try_recv() {
                 if matches!(later.kind, IpcMessageKind::SetViewport(_)) {
-                    head = Some(later);
+                    head = Some(DeferredCommand::Message(Box::new(later)));
                     dropped += 1;
                 } else {
                     // 迟于 head 到达：排在 deferred 队尾，下一轮先于更新入站消息派发。
-                    self.deferred_inbound.push_back(later);
+                    self.deferred_inbound
+                        .push_back(DeferredCommand::Message(Box::new(later)));
                     break;
                 }
             }
             if dropped > 0
-                && let Some(head_msg) = head.as_ref()
+                && let Some(DeferredCommand::Message(head_msg)) = head.as_ref()
                 && let IpcMessageKind::SetViewport(params) = &head_msg.kind
             {
                 resize_trace(format!(
@@ -3098,12 +3136,13 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 阻塞 fetch 生产入口（POST form 导航 / 后退前进整页重取 / FontFace.load 字节）。
     /// 发 `FetchRequest` 后进入 [`ipc_fetch_wait_step`] 等待循环：点击/输入类消息即时
     /// 让位 [`Self::dispatch_message`]（与主循环同款分发；字段借用随 step 返回结束，
-    /// 此处 `&mut self` 合法），其余非目标消息扣压、收尾回填 [`Self::deferred_inbound`]。
+    /// 此处 `&mut self` 合法），其余非目标消息与被扫到的扣压 POST 意图暂存
+    /// `wait.skipped`，收尾按到达序回填 [`Self::deferred_inbound`] 队首。
     ///
     /// 深度守卫：输入派发可运行任意页面脚本，若再入阻塞 fetch，返回 Err 而非嵌套
     /// 等待——嵌套时内层可能吞走外层的 FetchResponse 到自己的 skipped，时序耦合
     /// 不可控；POST 重发还会二次提交表单。已知再入路径（等待期 POST 表单提交触发
-    /// 的 POST 导航）已在 [`Self::navigate_with`] 顶部扣压至 [`Self::deferred_post_navs`]，
+    /// 的 POST 导航）已在 [`Self::navigate_with`] 顶部扣压至 [`Self::deferred_inbound`]，
     /// 本守卫仅防御未知页面行为。
     fn ipc_fetch_via_browser(
         &mut self,
@@ -3156,7 +3195,13 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
         };
         self.ipc_fetch_depth -= 1;
-        self.deferred_inbound.append(&mut wait.skipped);
+        // T27 返修3（RC2-F1）：按到达序回填队首——skipped 是本窗从队首扫出的条目，
+        // 均早于窗收场后仍留在队列中的条目，须回到它们之前（append 会把早到者压到
+        // 迟到者之后，终态错）。统一队列后 skipped 还可能含扣压 POST 意图（窗内
+        // 输入派发暂存、下一步被扫出），与消息同序回填。
+        for cmd in wait.skipped.into_iter().rev() {
+            self.deferred_inbound.push_front(cmd);
+        }
         result
     }
 
@@ -3256,29 +3301,42 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.navigate_with(params, "GET", None)
     }
 
+    /// 执行等待窗扣压的 POST 导航意图（统一命令队列回放到 [`DeferredCommand::PostNav`]）。
+    /// 此刻外层 fetch 已收场（depth 回 0），fetch_post 携完整 method+body 提交不落
+    /// GET 回落（返修1）；epoch 取当前值重算（与 Navigate intent 构造点同式）。
+    fn execute_deferred_post_nav(&mut self, nav: DeferredPostNav) -> Result<(), String> {
+        let params = NavigateParams {
+            url: nav.params.url,
+            referrer: nav.params.referrer,
+            navigation_epoch: self.navigation_epoch.wrapping_add(1),
+        };
+        self.navigate_with(params, &nav.method, nav.body.as_deref())
+    }
+
     /// 导航内部核心（R3055 参数化 method+body）。共享导航态设置（history/URL/清缓存/焦点/epoch/document state），
     /// 然后按 method 取主文档：**GET** → [`AsyncPageLoad::start`]（异步主文档，既有路径）；
     /// **POST** → 同步 [`Self::fetch_post`] body → [`AsyncPageLoad::from_html`]（绕过异步主文档 GET 路径——
     /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
-    /// 阻塞 fetch 等待期（depth>0）到达的 POST 导航先于此扣压（DF1-F1），见 [`Self::deferred_post_navs`]。
+    /// 阻塞 fetch 等待期（depth>0）到达的 POST 导航先于此扣压（DF1-F1），见 [`Self::deferred_inbound`]。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
         // T27 返修（DF1-F1）：阻塞 fetch 等待期（ipc_fetch_depth > 0）到达的 POST 导航会
         // 经下方 fetch_post 再入 ipc_fetch_via_browser，深度守卫必返 Err；此前 `let Ok(bytes)`
         // 把该 busy Err 混同真实 fetch 失败，落入尾部 GET 回落——表单 body 静默丢失（修复
-        // 前该输入整体扣压、外层 fetch 完成后正常 POST）。busy 恢复扣压语义：意图入队
-        // deferred_post_navs，由主循环顶部在 deferred_inbound 积压回放完毕后 drain；
-        // 届时 depth == 0，fetch_post 携 body 正确提交。GET 导航走 AsyncPageLoad::start
-        // 异步主文档（不再入阻塞 fetch），维持 T27-P35 即时派发语义；判据仅为「该导航
-        // 需要阻塞 fetch 臂」，无 URL/站点特判。
+        // 前该输入整体扣压、外层 fetch 完成后正常 POST）。busy 恢复扣压语义：意图按到达
+        // 时刻入统一命令队列（T27 返修3 RC2-F1，见 [`DeferredCommand`]），主循环在队列
+        // 序位回放执行；届时 depth == 0，fetch_post 携 body 正确提交。GET 导航走
+        // AsyncPageLoad::start 异步主文档（不再入阻塞 fetch），维持 T27-P35 即时派发
+        // 语义；判据仅为「该导航需要阻塞 fetch 臂」，无 URL/站点特判。
         if self.ipc_fetch_depth > 0 && method.eq_ignore_ascii_case("POST") {
             // T27 返修2（DF2-F3）：入队而非单槽覆盖——同窗第二个 POST 意图不再令首个
-            // 静默丢失（修前基线两次回放各自发出），drain 按到达序逐条执行。
-            self.deferred_post_navs.push_back(DeferredPostNav {
-                params,
-                method: method.to_string(),
-                body: body.map(str::to_string),
-            });
+            // 静默丢失（修前基线两次回放各自发出），统一队列按到达序逐条执行。
+            self.deferred_inbound
+                .push_back(DeferredCommand::PostNav(DeferredPostNav {
+                    params,
+                    method: method.to_string(),
+                    body: body.map(str::to_string),
+                }));
             return Ok(());
         }
         // T62-D1 返修：zero:// 内部页由浏览器生成与装载（load_local_tab_url 分派），
@@ -4303,30 +4361,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // dispatch）阻塞的直接证据，与 deferred-reply 补答延迟对轴。
         let mut p106_last_tick: Option<std::time::Instant> = None;
         loop {
-            // T27 返修（DF1-F1）：drain 等待期扣压的 POST 导航——此刻外层 fetch 已收场
-            //（depth 回 0），且晚于 reload_history_entry 的 run_staged_load 等同一拍收尾，
-            // 不被覆盖。T27 返修2（DF2-F2）：drain 门控在 deferred_inbound 为空——扣压
-            // 期间先于 POST 意图到达的导航命令（Navigate/GoBack 等）已在积压队列，须按
-            // 到达序先回放、POST 才执行（终态=POST；修复前 drain 跳队先 POST，随后旧
-            // 命令覆盖其结果，提交副作用已发但用户看到旧页面）。每次迭代至多 drain 一条
-            //（队列保到达序，DF2-F3）。epoch 取当前值重算（与 Navigate intent 构造点
-            // 同式）；错误处置同主循环派发（断连退出、其余记录不中断）。
-            if self.deferred_inbound.is_empty()
-                && let Some(nav) = self.deferred_post_navs.pop_front()
-            {
-                let params = NavigateParams {
-                    url: nav.params.url,
-                    referrer: nav.params.referrer,
-                    navigation_epoch: self.navigation_epoch.wrapping_add(1),
-                };
-                if let Err(e) = self.navigate_with(params, &nav.method, nav.body.as_deref()) {
-                    if browser_ipc_disconnected(&e) {
-                        tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
-                        return Ok(());
-                    }
-                    tracing::warn!("等待期扣压的 POST 导航执行失败: {e}");
-                }
-            }
+            // T27 返修3（RC2-F1）：等待窗扣压的 POST 导航不再单独 drain——意图按到达
+            // 时刻在统一命令队列（[`Self::deferred_inbound`]）中排队，主循环单一 FIFO
+            // 回放：轮到即经下方 recv 派发臂执行（返修1/2 收益保持——depth 已归零
+            // fetch_post 携 body 提交不落 GET 回落；同窗多意图全数执行；执行时点仍在
+            // 前一拍窗口收场 staged load 之后，不被覆盖）。「独立队列 + 门控 drain」
+            // 只保证积压先于 POST：POST 先暂存、导航后到时 drain 反超，终态错（case B）。
             if automation::automation_trace_enabled() {
                 let now = std::time::Instant::now();
                 if let Some(last) = p106_last_tick {
@@ -4510,7 +4550,20 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }
 
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
-                Ok(Some(msg)) => {
+                Ok(Some(DeferredCommand::PostNav(nav))) => {
+                    // T27 返修3（RC2-F1）：统一队列回放到扣压 POST 意图——按到达序位
+                    // 执行（此前返修1/2 为独立队列的主循环顶部 drain）。错误处置沿
+                    // drain 语义：断连退出；其余记录不中断、不回错（POST 失败非协议
+                    // 错误，宿主侧以导航超时感知）。
+                    if let Err(e) = self.execute_deferred_post_nav(nav) {
+                        if browser_ipc_disconnected(&e) {
+                            tracing::info!("Browser IPC disconnected, renderer {} exiting", self.renderer_id);
+                            return Ok(());
+                        }
+                        tracing::warn!("等待期扣压的 POST 导航执行失败: {e}");
+                    }
+                }
+                Ok(Some(DeferredCommand::Message(msg))) => {
                     if self.inflight_fetches.try_complete(&msg) {
                         continue;
                     }
@@ -4518,7 +4571,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     let mainloop_t0 = MAINLOOP_TRACE_FILE.lock().is_ok().then(std::time::Instant::now);
                     let mainloop_kind =
                         mainloop_t0.map(|_| format!("{:?}", msg.kind).chars().take(64).collect::<String>());
-                    let dispatch_result = self.dispatch_message(msg);
+                    let dispatch_result = self.dispatch_message(*msg);
                     if let Some(t0) = mainloop_t0 {
                         let elapsed = t0.elapsed();
                         if elapsed > std::time::Duration::from_millis(200)
@@ -4560,7 +4613,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
 /// t-p106：regular 消息经发布线程/直写通道落盘——[`RendererRuntime::send_regular_msg`]
 /// 与页面脚本阶段中交付闭包共用（闭包只借 `compositor_publish`/`outbound` 字段，
-/// 不借整个 `self`：阶段同时借 cached_html/js_worker/webview/inbound_rx/deferred_inbound，
+/// 不借整个 `self`：阶段同时借 cached_html/js_worker/webview/inbound_rx/staging 队列，
 /// 字段不相交）。
 fn send_regular_via(
     compositor_publish: Option<&compositor_publish_thread::CompositorPublishThread>,
@@ -4772,17 +4825,25 @@ const IPC_FETCH_WAIT_MAX: Duration = Duration::from_secs(60);
 ///（请求已发出，续等不重发——POST 重发会二次提交表单）。
 struct IpcFetchWait {
     request_id: u64,
-    skipped: VecDeque<IpcMessage>,
+    skipped: VecDeque<DeferredCommand>,
     deadline: Instant,
 }
 
-/// T27 返修（DF1-F1）：阻塞 fetch 等待期扣压的 POST 导航意图（[`RendererRuntime::navigate_with`]
-/// busy 臂入队，主循环顶部待 deferred_inbound 积压回放完毕后按到达序 drain 执行
-/// （DF2-F2/F3）——`Navigate` IPC 消息固定走 GET，无法承载 method+body，故以专用结构暂存）。
-struct DeferredPostNav {
+/// 等待窗扣压的 POST 导航意图（`Navigate` IPC 消息固定走 GET，无法承载 method+body，
+/// 故以专用结构暂存）。T27 返修（DF1-F1）引入；返修2（DF2-F3）队列化防覆盖；返修3
+/// （RC2-F1）并入统一命令队列 [`DeferredCommand`]，按到达序位在主循环回放执行。
+pub(crate) struct DeferredPostNav {
     params: NavigateParams,
     method: String,
     body: Option<String>,
+}
+
+/// 统一命令队列元素（T27 返修3 RC2-F1）：浏览器侧消息回放或等待窗扣压的 POST 导航
+/// 意图。两者同队按到达序 FIFO 回放，保证任意交错下终态=最后到达的导航意图。
+pub(crate) enum DeferredCommand {
+    /// 装箱压变体尺寸（IpcMessage ≈368B，PostNav 臂仅 104B；同 IpcFetchStep::Yield 先例）。
+    Message(Box<IpcMessage>),
+    PostNav(DeferredPostNav),
 }
 
 /// [`ipc_fetch_wait_step`] 的单步结果。
@@ -4795,14 +4856,14 @@ enum IpcFetchStep {
 }
 
 /// 等待循环单步：先耗尽 `deferred`，再有界等待入站通道，直到 [`IpcFetchStep`] 就绪。
-/// 目标 `FetchResponse` 与心跳在本步内消费；点击/输入类即时让位；其余非目标消息
-/// 扣入 `wait.skipped`（由调用方收尾统一回填 `deferred`——若直接放回 `deferred`，
-/// 下一轮会立刻 pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，
-/// 导致单核自旋）。
+/// 目标 `FetchResponse` 与心跳在本步内消费；点击/输入类即时让位；其余非目标消息与
+/// 被扫到的扣压 POST 意图（窗内输入派发暂存、下一步被扫出）扣入 `wait.skipped`
+///（由调用方收尾按到达序回填 `deferred` 队首——若直接放回 `deferred`，下一轮会立刻
+/// pop 出同一条消息并再次放回，永远无法等待目标 FetchResponse，导致单核自旋）。
 fn ipc_fetch_wait_step(
     outbound: &mut IpcOutbound,
     inbound_rx: &Receiver<IpcMessage>,
-    deferred: &mut VecDeque<IpcMessage>,
+    deferred: &mut VecDeque<DeferredCommand>,
     wait: &mut IpcFetchWait,
 ) -> Result<IpcFetchStep, String> {
     loop {
@@ -4815,8 +4876,16 @@ fn ipc_fetch_wait_step(
                 wait.request_id
             ))));
         }
-        let msg = if let Some(m) = deferred.pop_front() {
-            m
+        let msg = if let Some(cmd) = deferred.pop_front() {
+            match cmd {
+                DeferredCommand::Message(m) => *m,
+                // 扣压 POST 意图不能在等待窗内执行（depth>0，执行即再暂存自旋）：
+                // 与非目标消息同入 skipped，收尾按到达序回填，主循环统一回放执行。
+                DeferredCommand::PostNav(_) => {
+                    wait.skipped.push_back(cmd);
+                    continue;
+                }
+            }
         } else {
             match inbound_rx.recv_timeout(IPC_FETCH_WAIT_SLICE) {
                 Ok(msg) => msg,
@@ -4855,10 +4924,10 @@ fn ipc_fetch_wait_step(
             | IpcMessageKind::MouseEvent(_)
             | IpcMessageKind::ImeEvent(_) => return Ok(IpcFetchStep::Yield(Box::new(msg))),
             other => {
-                wait.skipped.push_back(IpcMessage {
+                wait.skipped.push_back(DeferredCommand::Message(Box::new(IpcMessage {
                     id: msg.id,
                     kind: other,
-                });
+                })));
             }
         }
     }
@@ -5076,7 +5145,7 @@ mod runtime_smoke {
     fn step_until_done(
         outbound: &mut IpcOutbound,
         rx: &Receiver<IpcMessage>,
-        deferred: &mut VecDeque<IpcMessage>,
+        deferred: &mut VecDeque<DeferredCommand>,
         wait: &mut IpcFetchWait,
     ) -> Result<(Vec<u8>, Option<String>), String> {
         match ipc_fetch_wait_step(outbound, rx, deferred, wait)? {
@@ -5089,14 +5158,14 @@ mod runtime_smoke {
     fn ipc_fetch_get_skips_deferred_messages_without_spinning() {
         let mut outbound = PipeTransport::new(std::io::empty(), Box::new(std::io::sink()) as Box<dyn Write + Send>);
         let (tx, rx) = mpsc::channel();
-        let mut deferred = VecDeque::from([IpcMessage {
+        let mut deferred = VecDeque::from([DeferredCommand::Message(Box::new(IpcMessage {
             id: 11,
             kind: IpcMessageKind::SetViewport(SetViewportParams {
                 width: 1024,
                 height: 768,
                 device_scale_factor: 1.0,
             }),
-        }]);
+        }))]);
         tx.send(IpcMessage {
             id: 12,
             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
@@ -5116,16 +5185,14 @@ mod runtime_smoke {
         let (body, _) = step_until_done(&mut outbound, &rx, &mut deferred, &mut wait).expect("target fetch response");
 
         assert_eq!(body, b"image");
-        // 扣压在 wait.skipped，由调用方（ipc_fetch_via_browser）收尾回填 deferred。
+        // 扣压在 wait.skipped，由调用方（ipc_fetch_via_browser）收尾按到达序回填队首。
         assert!(deferred.is_empty());
         deferred.append(&mut wait.skipped);
         assert!(matches!(
-            deferred.pop_front().map(|m| m.kind),
-            Some(IpcMessageKind::SetViewport(SetViewportParams {
-                width: 1024,
-                height: 768,
-                device_scale_factor: 1.0,
-            }))
+            deferred.pop_front(),
+            Some(DeferredCommand::Message(m)) if matches!(m.kind, IpcMessageKind::SetViewport(
+                SetViewportParams { width: 1024, height: 768, device_scale_factor: 1.0 }
+            ))
         ));
         assert!(deferred.is_empty());
     }
@@ -5291,7 +5358,11 @@ mod runtime_smoke {
                 body: b"foreign".to_vec(),
             }),
         };
-        let mut deferred = VecDeque::from([foreign(1, 999), foreign(2, 998), foreign(3, 997)]);
+        let mut deferred = VecDeque::from([
+            DeferredCommand::Message(Box::new(foreign(1, 999))),
+            DeferredCommand::Message(Box::new(foreign(2, 998))),
+            DeferredCommand::Message(Box::new(foreign(3, 997))),
+        ]);
         let mut wait = IpcFetchWait {
             request_id: 1,
             skipped: VecDeque::new(),

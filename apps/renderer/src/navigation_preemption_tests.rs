@@ -38,11 +38,15 @@ fn key_event() -> IpcMessage {
     }
 }
 
-fn url_of(msg: &IpcMessage) -> &str {
-    match &msg.kind {
-        IpcMessageKind::Navigate(p) => &p.url,
-        IpcMessageKind::LoadHtml(p) => p.url.as_deref().unwrap_or(""),
-        _ => "",
+fn url_of(cmd: &DeferredCommand) -> &str {
+    match cmd {
+        DeferredCommand::Message(msg) => match &msg.kind {
+            IpcMessageKind::Navigate(p) => &p.url,
+            IpcMessageKind::LoadHtml(p) => p.url.as_deref().unwrap_or(""),
+            _ => "",
+        },
+        // 扣压 POST 意图同有目标 URL（提升钉不产生该形态，兜底返回）。
+        DeferredCommand::PostNav(nav) => &nav.params.url,
     }
 }
 
@@ -50,8 +54,8 @@ fn url_of(msg: &IpcMessage) -> &str {
 /// 胜出，welcome LoadHtml 按陈旧丢弃（否则覆盖在途 fixture 加载 → 零帧超时）。
 #[test]
 fn promoted_navigation_drops_stale_queued_load() {
-    let mut deferred = VecDeque::from([load_html("zero://newtab", 1)]);
-    let head = Some(load_html("about:blank", 0));
+    let mut deferred = VecDeque::from([DeferredCommand::Message(Box::new(load_html("zero://newtab", 1)))]);
+    let head = Some(DeferredCommand::Message(Box::new(load_html("about:blank", 0))));
     let next =
         RendererRuntime::promote_pending_navigation(head, &mut deferred, || vec![nav("file:///fixture.html", 2)]);
     let next = next.expect("Navigate 应被提升为下一派发对象");
@@ -66,15 +70,19 @@ fn promoted_navigation_drops_stale_queued_load() {
 /// 输入等非加载消息不被丢弃，且保持相对顺序位于提升导航之后继续处理（fix#14 语义）。
 #[test]
 fn promoted_navigation_preserves_non_load_messages_in_order() {
-    let mut deferred = VecDeque::from([key_event(), load_html("zero://newtab", 1)]);
-    let head = Some(key_event());
+    let mut deferred = VecDeque::from([
+        DeferredCommand::Message(Box::new(key_event())),
+        DeferredCommand::Message(Box::new(load_html("zero://newtab", 1))),
+    ]);
+    let head = Some(DeferredCommand::Message(Box::new(key_event())));
     let next =
         RendererRuntime::promote_pending_navigation(head, &mut deferred, || vec![nav("file:///fixture.html", 2)]);
     assert_eq!(url_of(next.as_ref().expect("导航被提升")), "file:///fixture.html");
     let kept: Vec<&str> = deferred.iter().map(url_of).collect();
     assert_eq!(kept, vec!["", ""], "两个非加载消息应保留");
     assert!(
-        matches!(deferred[0].kind, IpcMessageKind::GoBack) && matches!(deferred[1].kind, IpcMessageKind::GoBack),
+        matches!(&deferred[0], DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::GoBack))
+            && matches!(&deferred[1], DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::GoBack)),
         "保留消息相对顺序不变"
     );
 }
@@ -82,12 +90,12 @@ fn promoted_navigation_preserves_non_load_messages_in_order() {
 /// 积压与入站均无导航：head 原样返回，排干消息追加不丢。
 #[test]
 fn no_pending_navigation_returns_head_and_keeps_drained() {
-    let mut deferred = VecDeque::from([key_event()]);
-    let head = Some(load_html("zero://newtab", 1));
+    let mut deferred = VecDeque::from([DeferredCommand::Message(Box::new(key_event()))]);
+    let head = Some(DeferredCommand::Message(Box::new(load_html("zero://newtab", 1))));
     let next = RendererRuntime::promote_pending_navigation(head, &mut deferred, || vec![key_event()]);
     assert!(matches!(
-        next.as_ref().expect("head 原样").kind,
-        IpcMessageKind::LoadHtml(_)
+        next.as_ref().expect("head 原样"),
+        DeferredCommand::Message(m) if matches!(m.kind, IpcMessageKind::LoadHtml(_))
     ));
     assert_eq!(deferred.len(), 2, "排干消息应追加至积压尾");
 }
@@ -95,8 +103,8 @@ fn no_pending_navigation_returns_head_and_keeps_drained() {
 /// 队首已是导航命令：不抢占、不排干、原样返回（后续导航 FIFO 依序处理）。
 #[test]
 fn navigation_head_short_circuits_without_draining() {
-    let mut deferred = VecDeque::from([load_html("zero://newtab", 1)]);
-    let head = Some(nav("file:///first.html", 1));
+    let mut deferred = VecDeque::from([DeferredCommand::Message(Box::new(load_html("zero://newtab", 1)))]);
+    let head = Some(DeferredCommand::Message(Box::new(nav("file:///first.html", 1))));
     let mut drained = 0;
     let next = RendererRuntime::promote_pending_navigation(head, &mut deferred, || {
         drained += 1;
@@ -110,7 +118,10 @@ fn navigation_head_short_circuits_without_draining() {
 /// head 为空且积压中有导航：导航应从积压中提升（非阻塞排干后 recv 空转的窗口）。
 #[test]
 fn empty_head_promotes_navigation_from_deferred() {
-    let mut deferred = VecDeque::from([load_html("zero://newtab", 1), nav("file:///f.html", 2)]);
+    let mut deferred = VecDeque::from([
+        DeferredCommand::Message(Box::new(load_html("zero://newtab", 1))),
+        DeferredCommand::Message(Box::new(nav("file:///f.html", 2))),
+    ]);
     let next = RendererRuntime::promote_pending_navigation(None, &mut deferred, Vec::new);
     assert_eq!(url_of(&next.expect("积压中导航被提升")), "file:///f.html");
     assert!(deferred.is_empty(), "陈旧 welcome LoadHtml 随提升一并丢弃");

@@ -26,6 +26,7 @@ use zero_protocol::message::{FetchParams, FetchResponseParams, IpcMessage, IpcMe
 use zero_protocol::transport::PipeTransport;
 
 use crate::paint_export::ImageBatchFetcher;
+use crate::runtime::DeferredCommand;
 
 /// 渲染进程 → 浏览器 IPC 发送端（stdout）。与 `runtime::IpcOutbound` 同型别名。
 type IpcOutbound = PipeTransport<std::io::Empty, Box<dyn std::io::Write + Send>>;
@@ -35,7 +36,7 @@ pub struct IpcImageBatch<'a> {
     outbound: &'a mut IpcOutbound,
     inbound_rx: &'a Receiver<IpcMessage>,
     next_fetch_id: &'a mut u64,
-    deferred: &'a mut VecDeque<IpcMessage>,
+    deferred: &'a mut VecDeque<DeferredCommand>,
     /// 已发起未收齐：request_id → resolved URL。
     pending: HashMap<u64, String>,
     /// 已收齐的 2xx 响应体：URL → body（发送失败/非 2xx 不入表，`resolve` → `None`）。
@@ -50,7 +51,7 @@ impl<'a> IpcImageBatch<'a> {
         outbound: &'a mut IpcOutbound,
         inbound_rx: &'a Receiver<IpcMessage>,
         next_fetch_id: &'a mut u64,
-        deferred: &'a mut VecDeque<IpcMessage>,
+        deferred: &'a mut VecDeque<crate::runtime::DeferredCommand>,
     ) -> Self {
         Self {
             outbound,
@@ -72,8 +73,15 @@ impl<'a> IpcImageBatch<'a> {
         // 造成单核自旋。
         let mut skipped = VecDeque::new();
         while !self.pending.is_empty() {
-            let msg = if let Some(m) = self.deferred.pop_front() {
-                m
+            let msg = if let Some(cmd) = self.deferred.pop_front() {
+                match cmd {
+                    // 扣压 POST 导航意图与本批无关：同入 skipped 原序回填（T27 返修3）。
+                    DeferredCommand::PostNav(_) => {
+                        skipped.push_back(cmd);
+                        continue;
+                    }
+                    DeferredCommand::Message(m) => *m,
+                }
             } else {
                 match self.inbound_rx.recv() {
                     Ok(m) => m,
@@ -95,7 +103,7 @@ impl<'a> IpcImageBatch<'a> {
                         }
                     } else {
                         // 非本批请求的响应（如 AsyncPageLoad inflight）：原样暂存回填。
-                        skipped.push_back(IpcMessage {
+                        skipped.push_back(DeferredCommand::Message(Box::new(IpcMessage {
                             id: msg.id,
                             kind: IpcMessageKind::FetchResponse(FetchResponseParams {
                                 request_id: rid,
@@ -103,7 +111,7 @@ impl<'a> IpcImageBatch<'a> {
                                 body,
                                 headers,
                             }),
-                        });
+                        })));
                     }
                 }
                 IpcMessageKind::Heartbeat => {
@@ -116,14 +124,19 @@ impl<'a> IpcImageBatch<'a> {
                     }
                 }
                 other => {
-                    skipped.push_back(IpcMessage {
+                    skipped.push_back(DeferredCommand::Message(Box::new(IpcMessage {
                         id: msg.id,
                         kind: other,
-                    });
+                    })));
                 }
             }
         }
-        self.deferred.append(&mut skipped);
+        // T27 返修3（RC2-F1）：按到达序回填队首——skipped 是从队首扫出的条目（早于
+        // 窗收场仍留在队列中的条目），须回到它们之前；append 会把早到者压到迟到者
+        // 之后，重排到达序。
+        for cmd in skipped.into_iter().rev() {
+            self.deferred.push_front(cmd);
+        }
     }
 }
 
@@ -250,7 +263,10 @@ mod tests {
         assert_eq!(next_fetch_id, 3, "issue 三次各分配一个 request_id");
         // 非本批消息回填 deferred（不得吞）。
         assert!(matches!(
-            deferred.pop_front().map(|m| m.kind),
+            deferred.pop_front().map(|cmd| match cmd {
+                DeferredCommand::Message(m) => m.kind,
+                DeferredCommand::PostNav(_) => panic!("图片批量钉无 PostNav 形态"),
+            }),
             Some(IpcMessageKind::SetViewport(_))
         ));
         assert!(deferred.is_empty());
@@ -280,7 +296,10 @@ mod tests {
         drop(tx);
 
         assert_eq!(batch.resolve("https://pic.test/a.png"), Some(b"A".to_vec()));
-        let Some(kind) = deferred.pop_front().map(|m| m.kind) else {
+        let Some(kind) = deferred.pop_front().map(|cmd| match cmd {
+            DeferredCommand::Message(m) => m.kind,
+            DeferredCommand::PostNav(_) => panic!("图片批量钉无 PostNav 形态"),
+        }) else {
             panic!("外来 FetchResponse 必须回填 deferred");
         };
         let IpcMessageKind::FetchResponse(params) = kind else {
