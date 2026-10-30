@@ -1781,4 +1781,64 @@ mod tests {
         assert_eq!(shaped_first, shaped_second);
         assert_eq!(first, vec![7]);
     }
+
+    /// 替换字体表后，主 face、fallback 列表及先前未匹配字体的缓存必须失效。
+    #[test]
+    fn replacing_font_resolver_invalidates_font_caches() {
+        use crate::paint::painter::Painter;
+
+        let mut painter = Painter::new();
+        painter.set_font_resolver(HashMap::from([
+            ("Primary".to_string(), 7),
+            ("Secondary".to_string(), 9),
+            ("sans-serif".to_string(), 3),
+            ("serif".to_string(), 3),
+        ]));
+        let mut style = ComputedStyle::default();
+        style.font_family = vec!["primary".to_string(), "Secondary".to_string()];
+        let mut pending_style = ComputedStyle::default();
+        pending_style.font_family = vec!["Pending".to_string()];
+
+        // 先填充两种缓存，包括尚未注册字体的 generic 回退结果。
+        assert_eq!(
+            painter.resolve_style_font_id(&style.font_family, &style),
+            (FontId(7), false)
+        );
+        assert_eq!(painter.resolve_style_font_ids(&style.font_family, &style), vec![7, 9]);
+        assert_eq!(
+            painter.resolve_style_font_id(&pending_style.font_family, &pending_style),
+            (FontId(3), false)
+        );
+        assert_eq!(
+            painter.resolve_style_font_ids(&pending_style.font_family, &pending_style),
+            vec![3]
+        );
+
+        painter.set_font_resolver(HashMap::from([
+            ("Primary".to_string(), 17),
+            ("Secondary".to_string(), 19),
+            ("Pending".to_string(), 23),
+        ]));
+        assert_eq!(painter.resolve_style_font_ids(&style.font_family, &style), vec![17, 19]);
+        assert_eq!(
+            painter.resolve_style_font_id(&style.font_family, &style),
+            (FontId(17), false)
+        );
+        assert_eq!(
+            painter.resolve_style_font_ids(&pending_style.font_family, &pending_style),
+            vec![23]
+        );
+        assert_eq!(
+            painter.resolve_style_font_id(&pending_style.font_family, &pending_style),
+            (FontId(23), false)
+        );
+
+        // 移除全部字体后，不得继续返回上一张字体表的 ID。
+        painter.set_font_resolver(HashMap::new());
+        assert_eq!(painter.resolve_style_font_ids(&style.font_family, &style), vec![0]);
+        assert_eq!(
+            painter.resolve_style_font_id(&style.font_family, &style),
+            (FontId(0), false)
+        );
+    }
 }

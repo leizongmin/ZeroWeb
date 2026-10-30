@@ -1364,7 +1364,11 @@ impl Painter {
     /// 设置 CSS font-family 查找表。
     ///
     /// 由调用方从 `FontLoader::build_font_resolver()` 构建并传入。
+    /// 同时使旧字体表的主 face 与 fallback 列表解析缓存失效。
     pub fn set_font_resolver(&mut self, resolver: HashMap<String, u32>) {
+        // 缓存依赖字体表；复用 Painter 时不能沿用旧 ID 或缺失字体的回退结果。
+        self.font_id_cache.get_mut().clear();
+        self.font_ids_cache.get_mut().clear();
         const GENERIC_FAMILIES: [&str; 6] = ["sans-serif", "serif", "monospace", "cursive", "fantasy", "system-ui"];
         self.generic_font_ids = resolver
             .iter()
