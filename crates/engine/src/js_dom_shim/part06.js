@@ -1865,6 +1865,16 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
+  // s163（html-semantics M2）：CSSImportRule 接口全局——上游 support/utils.js
+  // styleExistsInSheet 对每条规则 `rule instanceof CSSImportRule`（递归 @import 子
+  // 表）。wire 通道 @-rule defer（cssRules 读仅 StyleRule，见上）→ 无 import 规则
+  // 产生，instanceof 恒 false（递归分支死路）——全局缺位使首个规则比对即 Reference
+  // Error（conditionally-block 靶面 styleExists 全灭）。构造器空壳满足 interface
+  // reference；FIXME(compat)：CSSOM 规则接口族（CSSRule/CSSStyleRule/CSSImportRule/
+  // CSSMediaRule…）常量与 instanceof 面整体建模未做，语料扩展时按案补。
+  if (typeof globalThis.CSSImportRule !== 'function') {
+    globalThis.CSSImportRule = function CSSImportRule() {};
+  }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
   // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
@@ -5954,9 +5964,22 @@
     // R5114（P9-9 切片 2）：外部样式表（合并 blob）以**单条合成条目**置于表头（级联源
     // 同序，cssom/#document-stylesheets 顺序语义 = 级联应用序）；空外部 CSS 不产条目
     //（既有 WPT/测试语义逐位不变）。
+    // s163（html-semantics M2）：**per-sheet 模式**——part03 `_zwSsExtSheetEntries`
+    // 枚举（live 文档序 rel=stylesheet link + 取回文本表）有条目时逐条
+    // `_makeStyleSheet(null, text, href)` 替代合并 blob（cssom document-stylesheets：
+    // 每 link 元素一个 sheet 条目——conditionally-block 案 `styleSheets[0]` 需指向
+    // 单 sheet 且 `sheet.cssRules` 只含本 sheet 规则）。media/disabled 不过滤注册
+    //（同 style 元素条目口径，cssom）。零条目 → R5114 blob fallback 原样（无 link
+    // 页/枚举通道缺席嵌入方零行为差）。
     get styleSheets() {
       var out = [];
-      if (typeof __zw_style_rules_external === 'function') {
+      var _esPerSheet = (typeof globalThis._zwSsExtSheetEntries === 'function')
+        ? globalThis._zwSsExtSheetEntries() : null;
+      if (_esPerSheet && _esPerSheet.length) {
+        for (var _esI = 0; _esI < _esPerSheet.length; _esI++) {
+          out.push(_makeStyleSheet(null, _esPerSheet[_esI].text, _esPerSheet[_esI].href));
+        }
+      } else if (typeof __zw_style_rules_external === 'function') {
         var _extWire = '';
         try { _extWire = String(__zw_style_rules_external()); } catch (_eExtR) { _extWire = ''; }
         if (_extWire) {

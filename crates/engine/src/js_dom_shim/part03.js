@@ -4601,6 +4601,81 @@
     } catch (_eSh) {}
     return null;
   };
+  // s163（html-semantics M2 切片 163）：per-sheet 枚举口——document.styleSheets 的
+  // 外链条目从 R5114 单条合并 blob 换 per-sheet 结构化条目（`{text, href}` 逐 sheet
+  // 一条；part06 getter 消费）。枚举与 `_zwSsSheetHrefFor` 同构：live 文档序
+  // query_all('link') + rel 分词 stylesheet 门 + href 非空门 + 同款身份键派生
+  //（`__zw_handle_for_selector` 命中 R100 身份表才 '@handle' 形，静态 parse 元素
+  // 不在表 → plain sel——与静态扫描 `_elKey(sel,null)` 键同形，无错位）。条目门：
+  // 表有键且文本非空（'' = 取回 error = sheet 未注册——spec 失败取回不入
+  // styleSheets；blob fallback 的「空外部 css 不产条目」同语义）。href 取生效
+  // sheet href 表（s159 语义——首次发起挂解析 URL）。FIXME(compat)：R51c 查询
+  // 视图对动态 link 不可见 → 表内残留键（动态 link）按表插入序尾追（近似文档
+  // 序，该序不可得）；link type essence 门未建模（fetch 通道同缺，语料无形态）。
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  // https://drafts.csswg.org/cssom-1/#extensions-to-the-document-interface
+  globalThis._zwSsExtSheetEntries = function () {
+    var _esOut = [];
+    var _esSeen = {};
+    try {
+      if (typeof __zw_query_all === 'function') {
+        var _esSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
+        for (var _esI = 0; _esI < _esSels.length; _esI++) {
+          var _esSel = _esSels[_esI];
+          var _esRel = '';
+          var _esHref = '';
+          try {
+            _esRel = String((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(_esSel, 'rel') || '') : '');
+            _esHref = String((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(_esSel, 'href') || '') : '');
+          } catch (_eEsR) { continue; }
+          var _esIsSheet = false;
+          var _esParts = _zwLinkRelTokens(_esRel);
+          for (var _esJ = 0; _esJ < _esParts.length; _esJ++) {
+            if (_esParts[_esJ] === 'stylesheet') { _esIsSheet = true; break; }
+          }
+          if (!_esIsSheet || !_esHref) continue;
+          var _esH = null;
+          try {
+            _esH = (typeof __zw_handle_for_selector === 'function')
+              ? (__zw_handle_for_selector(_esSel) || null) : null;
+          } catch (_eEsH) {}
+          var _esKey = _esH ? ('@' + _esH) : _esSel;
+          if (_esSeen[_esKey]) continue;
+          _esSeen[_esKey] = true;
+          if (!_zwExtSheetTexts.hasOwnProperty(_esKey)) continue;
+          var _esText = String(_zwExtSheetTexts[_esKey] || '');
+          if (_esText === '') continue;
+          // 表存 fetch 原文——`_makeStyleSheet` 消费 wire 形（\x1f/\x1e），桥 absent
+          // 回落原文（part06 split 无分隔符单块退化，解析面同 blob 无桥形态）。
+          if (typeof __zw_style_rules_text === 'function') {
+            try { _esText = String(__zw_style_rules_text(_esText) || ''); } catch (_eEsW) {}
+          }
+          _esOut.push({
+            text: _esText,
+            href: _zwSsSheetHrefMap.hasOwnProperty(_esKey) ? _zwSsSheetHrefMap[_esKey] : null
+          });
+        }
+      }
+      // 表内残留键（动态 link——query_all 视图不可见）尾追：跳过已枚举键与空
+      // 贡献（error 置空），插入序近似文档序（FIXME 见上）。
+      for (var _esK in _zwExtSheetTexts) {
+        if (!_zwExtSheetTexts.hasOwnProperty(_esK) || _esSeen[_esK]) continue;
+        var _esT2 = String(_zwExtSheetTexts[_esK] || '');
+        if (_esT2 === '') continue;
+        _esSeen[_esK] = true;
+        if (typeof __zw_style_rules_text === 'function') {
+          try { _esT2 = String(__zw_style_rules_text(_esT2) || ''); } catch (_eEsW2) {}
+        }
+        _esOut.push({
+          text: _esT2,
+          href: _zwSsSheetHrefMap.hasOwnProperty(_esK) ? _zwSsSheetHrefMap[_esK] : null
+        });
+      }
+    } catch (_eEs) {}
+    return _esOut;
+  };
   // s158：rel 分词——spec ASCII whitespace 集（TAB/LF/FF/CR/SPACE）。JS `\s` 含 \v
   // (U+000B)，tokenization 案面 `test\u000Bstylesheet` 是单 token ≠ stylesheet 应判
   // miss，旧 `\s+` 误命中。helper rel 门与重算遍历共用。
@@ -5002,14 +5077,41 @@
       // 臂）**存表但不下发**——表条目解锁后续变更面 recompute 的覆盖门（多 link 页
       // 静态 link 未入表会卡住整次替换），下发留给变更臂（税=0，见 noOverlay 注）。
       var _ssCollect = [];
-      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) {
-        if (_ssKey != null) {
-          _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
-          if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
-          if (!noOverlay) _zwSsRecomputeExt();
-        }
-        _ssFire(_ssV);
-      }, _ssCollect);
+      // s163（html-semantics M2 切片 163）：media 不匹配 → **推迟取回发起**（setTimeout 0
+      // ——mixed 门 setTimeout error 同款异步形态）。spec：media 不匹配的 stylesheet 照常
+      // 加载注册（cssom 注册与 media 无关），但**不阻塞**其后的 parsing script 与 load
+      //（HTML render-blocking 语义 media 门）。同步契约路径（`__zw_fetch` 同求值清空）
+      // 下，匹配 link 的 load/级联先于脚本体 fire（s152 交错触发语义保持）；不匹配 link
+      // 推迟到后续 pump（脚本间 drain / loadStep5275 轮询）——delay 端点（runner
+      // interactions stylesheet.py sleep）不再挡住脚本体时序。media 求值经宿主
+      // `__zw_match_media`（part05 matchMedia 同桥），视口 1280×800 与 s160/s161 静态
+      // 路径门同约定（FIXME：真实视口 debt 承袭）。空串/`all`（归一后）恒匹配不推迟；
+      // 宿主桥缺席嵌入方回落恒匹配（零行为差）。
+      // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+      // https://html.spec.whatwg.org/multipage/rendering.html#render-blocking
+      var _ssDoVisit = function () {
+        _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) {
+          if (_ssKey != null) {
+            _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
+            if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
+            if (!noOverlay) _zwSsRecomputeExt();
+          }
+          _ssFire(_ssV);
+        }, _ssCollect);
+      };
+      var _ssMediaRaw = _ssReadAttr('media');
+      var _ssMediaNorm = String(_ssMediaRaw || '')
+        .replace(/[\x09\x0a\x0c\x0d\x20]+/g, ' ').trim().toLowerCase();
+      var _ssMediaBlocks = true;
+      if (_ssMediaNorm !== '' && _ssMediaNorm !== 'all'
+          && typeof __zw_match_media === 'function') {
+        try {
+          var _ssMqJson = JSON.parse(__zw_match_media(_ssMediaRaw, 1280, 800) || '{}');
+          _ssMediaBlocks = !!_ssMqJson.matches;
+        } catch (_eSsMq) { _ssMediaBlocks = true; }
+      }
+      if (_ssMediaBlocks) _ssDoVisit();
+      else setTimeout(_ssDoVisit, 0);
     } catch (_eSs) {
       if (typeof globalThis._zwReportListenerError === 'function') {
         try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}

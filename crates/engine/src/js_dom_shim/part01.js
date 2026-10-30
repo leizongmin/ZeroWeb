@@ -5618,6 +5618,18 @@
     // send 计时器判定共用——`D < T` 时 load 先至、不挂 timeout 计时器，见彼处注记）。
     globalThis._zwFetchSimDelay = function (_us) {
       try {
+        // s163（html-semantics M2 切片 163）：interactions stylesheet.py 端点 delay
+        // 参数（秒）——runner 端点已即时交付（host sleep 冻结 JS 求值，同步契约下
+        // 取回时点对页面不后移，script-created-link 两案 assert_false「still pending」
+        // 恒红的根因），延迟语义由本函数发题侧承载（M4-S20 delay.py 同款）。静态
+        // 扫描窗折叠为 0（s152 trickle 同款——script-blocking stylesheet 的「load
+        // 先于后继脚本体」语义优先；该语料 delay 面 link 均 media 不匹配，走 media
+        // defer 不入窗）。
+        if (_us.indexOf('interactions-of-styling-and-scripting/stylesheet.py') >= 0) {
+          if (globalThis.__zwScanCollapseTrickle === true) return 0;
+          var _isd = /[?&]delay=(\d+)/.exec(_us);
+          return Math.min((_isd ? (parseInt(_isd[1], 10) || 0) : 0) * 1000, 30000);
+        }
         var _dm = /[?&]ms=(\d+)/.exec(_us);
         if (_dm && _us.indexOf('delay.py') >= 0) {
           return Math.min(parseInt(_dm[1], 10) || 0, 30000);

@@ -131,19 +131,26 @@ fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
     out
 }
 
-/// CSS Declaration 列表 → `prop: value; prop2: value2`（!important 追加）。供 [`style_rules_wire`]。
+/// CSS Declaration 列表 → `prop: value; prop2: value2;`（!important 追加）。供 [`style_rules_wire`]。
+/// s163（html-semantics M2）：每条声明带**尾随分号**（CSSOM serialize a declaration
+/// block——每条声明序列化以 `;` 结尾、空格连写，real UA `rule.cssText` 实测
+/// `h1 { color: purple; }` 形）。WPT interactions-of-styling-and-scripting
+/// styleExists 逐字节比对（`"h1 { color: purple; }" == rule.cssText`）钉该形态；
+/// 旧无分号形态使 styleExists 恒 false。下游 `_parseDeclarations` 按 `;` 切分，
+/// 尾空段无 `:` 跳过——读取面零波及。
+/// https://drafts.csswg.org/cssom-1/#serialize-a-declaration-block
 fn css_declarations_to_string(decls: &[zero_css_parser::Declaration]) -> String {
     decls
         .iter()
         .map(|d| {
             if d.important {
-                format!("{}: {} !important", d.property, d.value)
+                format!("{}: {} !important;", d.property, d.value)
             } else {
-                format!("{}: {}", d.property, d.value)
+                format!("{}: {};", d.property, d.value)
             }
         })
         .collect::<Vec<_>>()
-        .join("; ")
+        .join(" ")
 }
 
 /// `<style>` 元素解析的规则 → `\x1f`（规则间）/`\x1e`（selectorText/cssText 间）wire 串

@@ -1247,6 +1247,18 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s163（html-semantics M2）：原始 CSS 文本 → 规则 wire（`style_rules_text`）——
+    // per-sheet styleSheets 通道（part03 `_zwSsExtSheetEntries`）的取回文本是 fetch
+    // 原文（非 wire），part06 `_makeStyleSheet` 消费前经此转换（R5114 blob 通道的
+    // `__zw_style_rules_external` 已在引擎侧转换，per-sheet 入口缺等价桥）。
+    sandbox.register_callback(
+        "__zw_style_rules_text",
+        Box::new(|args: &[String]| {
+            let css = args.first().map(String::as_str).unwrap_or_default();
+            style_rules_text(css)
+        }),
+    );
+
     // js-dom M4 R113：`CSSStyleSheet.cssRules` 的 handle 版——createElement('style') 后 append 入
     // head 的 CSS-in-JS / WPT prefixed-animation 形态（无 selector，owner 是 handle）。规则源 =
     // mutation 历史（CreateElement 后的 SetTextOnHandle / SetInnerHtmlOnHandle latest-wins），

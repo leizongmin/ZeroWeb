@@ -4973,6 +4973,25 @@ fn is_long_timeout_case(source: &str) -> bool {
 
 /// R34xx：headless 图片源获取器——`https://wpt.test/<path>`（wpt-data 相对路径）→
 /// `wpt_root/<path>` 本地文件读取（PNG 等解码由 webview decode_image 完成）。
+/// s163（html-semantics M2 切片 163）：conditionally-block-rendering-on-link-media-attr
+/// 的参数化 CSS 端点体——上游 stylesheet.py 行为等价（pin master 逐字核对）：
+/// `stylesNotMatchingEnvironment` 查询参数存在 → 体 `h1 {color: brown;}`，否则
+/// `h1 {color: purple;}`（逐字节上游原形——styleExists 走 rule.cssText 序列化
+/// 比对）。返 `(content_type, body)`。**`delay` 参数不在此 sleep**——同步契约下
+/// host sleep 冻结 JS 求值（同 execute 内结算，取回时点对页面不后移），延迟语义
+/// 由 shim `_zwFetchSimDelay` 发题侧延迟承载（net-api M4-S20 delay.py 同款——
+/// runner 端点即时交付，shim setTimeout 延后发起）。
+/// https://github.com/web-platform-tests/wpt/blob/master/html/semantics/
+/// document-metadata/interactions-of-styling-and-scripting/stylesheet.py
+fn serve_interactions_stylesheet(query: &str) -> (String, String) {
+    let body = if wpt_query_value(query, "stylesNotMatchingEnvironment").is_some() {
+        "h1 {color: brown;}".to_string()
+    } else {
+        "h1 {color: purple;}".to_string()
+    };
+    ("text/css".to_string(), body)
+}
+
 fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ImageSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |url: &str| {
@@ -4990,6 +5009,15 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
         let clean = path_part.split(['?', '#']).next()?;
         if clean.is_empty() {
             return None;
+        }
+        // s163：动态 .py 端点先行（引擎 base 槽外链 CSS 通道不过 fetch 桥闭包——
+        // 文件映射把 .py 源码当 CSS 读，conditionally-block 的 purple 表恒缺级联；
+        // 与 fetch 桥同体 [`serve_interactions_stylesheet`]）。content-type 由调用方
+        // （resolve_external_css）对 stylesheet 通道硬编码 text/css。
+        if clean == "html/semantics/document-metadata/interactions-of-styling-and-scripting/stylesheet.py" {
+            let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+            let (_, body) = serve_interactions_stylesheet(query);
+            return Some(body.into_bytes());
         }
         std::fs::read(root.join(clean)).ok()
     }))
@@ -6299,6 +6327,26 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     }
                     ("text/css".into(), "body {color: red;}".to_string())
                 };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), content_type));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/interactions-of-styling-and-scripting/stylesheet.py" {
+                // s163（html-semantics M2 切片 163）：conditionally-block-rendering-on-link-
+                // media-attr 的参数化 CSS 端点——上游 stylesheet.py 行为等价（pin master 逐字
+                // 核对）。响应体/延迟逻辑在 [`serve_interactions_stylesheet`]（引擎 base 槽
+                // 外链 CSS 通道共用——该通道不过 fetch 桥，见其注）。
+                // https://github.com/web-platform-tests/wpt/blob/master/html/semantics/
+                // document-metadata/interactions-of-styling-and-scripting/stylesheet.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let (content_type, body) = serve_interactions_stylesheet(query);
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), content_type));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
