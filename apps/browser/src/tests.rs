@@ -2334,13 +2334,19 @@ fn t28p37_menu_close_leaves_no_ink_on_subsequent_frames() {
     }
 }
 
-/// T28-P37 R1（DF-F3 等价钉）：含 CSS box-shadow 页面元素的菜单重放帧与全量
-/// 光栅在「包围盒内、菜单面外」区域逐位一致——阴影按来源区分剔除（含于 bbox
-/// 者保留、相交不含于者剔除）后，重放与全量在该区域不得出现任何阴影处理差异；
-/// 剔除集宽严两端（多剔元素阴影/漏剔页框投影）在此都会爆掉。
-/// 注：本地合成 typed-bucket 绘制序下 webview box-shadow 的全量墨迹本就被
-/// 不透明 page_bg 覆盖（先于本任务存在，见返修1回执偏离），本钉的断言面是
-/// 重放↔全量等价性而非墨迹可见性；修前钉面同样绿（红腿不可达已留档探针证）。
+/// T28-P37 R1（DF-F3 等价钉，返修2 reshape）：两帧形制真驱动 can_reuse+bbox
+/// 重放臂——首帧无菜单全量光栅建立保留回存，次帧开菜单走条带+bbox 重放
+/// （replay_menu_shadows 真实执行，哨兵像素证明未落全量臂）；重放帧与同场景
+/// 纯全量光栅在「包围盒内、菜单面外」垫圈逐位一致。
+///
+/// 判别力为条件判别（RT-F1 纠偏，返修1 注释「剔除集宽严两端都会爆掉」失实）：
+/// 当前 typed-bucket 绘制序下（阴影桶先于不透明 page_bg 绘制，webview
+/// box-shadow 全量墨迹本就被覆盖，见返修1回执 deviations[0] 与探针
+/// t28r1-probe2.log），重放↔全量在垫圈内同为零阴影墨迹，replay_menu_shadows
+/// 的任一变异（如 →Vec::new() 多剔）钉面恒绿；typed-bucket 阴影可见性修复
+/// 落地后本钉自动获得判别力——元素阴影墨迹布局上越过菜单面边界落入垫圈
+/// （下方布局推导），多剔即垫圈字节差即红。本钉当前价值=重放路径真实执行 +
+/// 重放↔全量等价前提 + 场景阴影含于断言。
 #[test]
 fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
     let mut app = BrowserApp::new(RenderMode::Cpu);
@@ -2356,8 +2362,13 @@ fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
     let bbox = app.menu_overlay_bbox(1024.0, 768.0);
     app.close_context_menu_for_test();
 
-    // 元素置于包围盒内（页坐标换算：device - content origin，scale 1）。
-    let el_left = (menu_x + 20.0 - content_x) as i32;
+    // 元素重位（RD-F1 原因二）：右缘贴菜单面右边界内 1px——阴影 rect（=元素
+    // rect，0 offset，探针实测无外扩字段）仍整含于 bbox（面含于 bbox 外扩
+    // 2px），而 blur 12 的墨迹越过面右边界 x=menu_x+W 落入垫圈列，垫圈不再
+    // 零阴影像素。布局推导：contained 要求 rect ⊆ bbox（元素在面内即满足）；
+    // ring-ink 要求 rect 边界与面边界间距 < blur 跨距（12px），取 1px 留裕量。
+    // 页坐标换算：device - content origin，scale 1。
+    let el_left = (menu_x + layout::CONTEXT_MENU_WIDTH - 60.0 - 1.0 - content_x) as i32;
     let el_top = (menu_y + 20.0 - content_y) as i32;
     let tab_id = app.shell.active_tab_id().expect("startup tab");
     app.ensure_webview(tab_id);
@@ -2383,10 +2394,31 @@ fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
         extras.shadows.len()
     );
 
-    // 渐入极早期驱动生产重放帧，紧接同一场景生产全量光栅（透明度漂移仅影响
-    // 菜单面内像素——断言面已排除菜单面及其 1px AA 缘）。
+    // 两帧形制（RD-F1 原因一）：帧 1 无菜单全量光栅建立保留回存（can_reuse
+    // 前提）——单帧驱动时 retained_fb=None 令 can_reuse 恒假，重放臂不可达
+    // （返修1 形制实为全量 vs 全量）。帧 2 开菜单走条带+bbox 重放臂。
+    let _ = app.render_cpu_frame_for_test(1024, 768);
+    // 哨兵写入保留帧页面区（bbox 外）：帧 2 若误落全量臂会被覆写为页面底色。
+    let sentinel = (900usize, 650usize);
+    let sentinel_base = (sentinel.1 * 1024 + sentinel.0) * 4;
+    {
+        let retained = app.retained_fb_mut_for_test().expect("retained fb after full raster");
+        retained.data[sentinel_base..sentinel_base + 3].copy_from_slice(&[255, 0, 255]);
+    }
     app.show_context_menu_for_test(500.0, 350.0);
     let replayed = app.render_cpu_frame_for_test(1024, 768);
+    // engagement：哨兵存活（色相判据）= 帧 2 确走 can_reuse+bbox 重放臂。
+    let (sr, sg, sb) = (
+        replayed.data[sentinel_base],
+        replayed.data[sentinel_base + 1],
+        replayed.data[sentinel_base + 2],
+    );
+    assert!(
+        sr > 150 && sg < 60 && sb > 150,
+        "重放帧覆写页面区哨兵（r={sr} g={sg} b={sb}）——未走 can_reuse+bbox 重放臂（全量帧），钉面失效"
+    );
+    // 紧接同场景生产全量光栅（渐入透明度漂移仅影响菜单面内像素——断言面已
+    // 排除菜单面及其 1px AA 缘）。
     let full = app.render_full_scene_with_webview_for_test(1024, 768);
 
     let x0 = bbox.origin.x.max(0.0) as usize;
@@ -2411,7 +2443,7 @@ fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
                 assert_eq!(
                     replayed.data[base + c],
                     full.data[base + c],
-                    "包围盒内菜单面外像素 ({x},{y}) ch{c} 重放与全量不一致（阴影剔除集宽严失当）"
+                    "包围盒内菜单面外像素 ({x},{y}) ch{c} 重放与全量不一致（阴影剔除集差异——当前管线不可达，出现即先排查阴影可见性或剔除集回归）"
                 );
                 compared += 1;
             }
@@ -2419,7 +2451,8 @@ fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
     }
     assert!(compared > 0, "断言面为空——包围盒/菜单面几何异常");
     // 元素面须被包围盒重放绘制（渐入极早期菜单近透明，白色元素面可见）。
-    let base = (((menu_y + 20.0) as usize) * 1024 + ((menu_x + 50.0) as usize)) * 4;
+    // 采样元素内部（右缘内 30px、顶缘下 20px）。
+    let base = (((menu_y + 40.0) as usize) * 1024 + ((menu_x + layout::CONTEXT_MENU_WIDTH - 31.0) as usize)) * 4;
     assert!(
         replayed.data[base] > 200 && replayed.data[base + 1] > 200,
         "包围盒重放未绘制元素面（px={:?}）",
@@ -2431,6 +2464,9 @@ fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
 /// 进度条 + spinner）时，chrome UI 转发不得冻结包围盒外的进度条。修前
 /// ui_chrome_retained 重放只拷回包围盒行，进度条冻结在打开前状态；修后该态
 /// 跳过 retained 快速路径走全量光栅，进度条随时间推进。
+/// 环境依赖披露（RD-F3）：ZW_COMPOSITOR_UI_FRAMES=0（文档化 kill-switch，默认
+/// 开）关闭 UI 帧转发时 forward_compositor_chrome_ui 提前返回，本钉在 forward
+/// 帧缓存的 expect 处确定性 panic——kill-switch 语义的显式暴露，非 flake。
 #[test]
 fn t28p37_menu_open_with_loading_keeps_chrome_animating() {
     let mut app = BrowserApp::new(RenderMode::Cpu);

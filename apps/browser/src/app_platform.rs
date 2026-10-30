@@ -543,6 +543,9 @@ impl BrowserApp {
         // T28-P37 R1（DF-F2）：菜单打开期存在菜单外 chrome 动画源（加载中：进度
         // 条 + 标签 spinner）时重放只刷新 bbox，bbox 外 chrome 冻结在打开前状态
         // → 跳过 retained 快速路径走全量（有界失效：仅菜单打开且加载中）。
+        // 成本披露（RT-F2）：loading∩menu 暂态区间整窗回全量重光栅（~115ms/帧，
+        // P37 原症状量级），渐入帧率按设计回退换 bbox 外 chrome 不冻结；加载结束
+        // 即恢复 retained 快速路径，非暂态无常驻开销。
         let retained_matches = self
             .ui_chrome_retained
             .as_ref()
@@ -801,6 +804,8 @@ impl BrowserApp {
             && (self.context_menu.visible || !self.retained_fb_menu_ink)
             // T28-P37 R1（DF-F2）：菜单打开期存在菜单外 chrome 动画源（加载中）
             // 时保留路径只重绘条带+菜单包围盒，条带外的进度条会冻结 → 走全量。
+            // 成本披露（RT-F2）：loading∩menu 暂态区间回全量光栅（~115ms/帧级，
+            // P37 原症状量级），加载结束即恢复条带+bbox 重放快速路径。
             && !(self.context_menu.visible && self.chrome_animating_outside_menu());
         let can_blit = blit_enabled
             && self.retained_fb.is_some()
