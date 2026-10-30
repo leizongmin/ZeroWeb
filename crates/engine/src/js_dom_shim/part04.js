@@ -11921,17 +11921,18 @@
         if (prop === 'sheet') {
           var _shTag = _realTag(sel, handle);
           if (_shTag === 'STYLE' || _shTag === 'LINK') {
-            // s156：CSSOM 创建门——type essence 门（CSSOM create a CSS style sheet：
-            // type 属性存在且 essence 非 text/css → 不创建返 null；ASCII 案面
-            // TeXt/CsS 小写归一创建、text/cſs 不创建）。type 缺省不设门（缺省即
-            // text/css 语义）。style4 type="text/html" 断言面。
-            // https://drafts.csswg.org/cssom/#create-a-css-style-sheet
+            // s156：CSSOM 创建门——type 门（HTML update a style block style-eligible：
+            // type 属性存在且非空且非 ASCII 大小写不敏感 `text/css` → 不创建返 null；
+            // ASCII 案面 TeXt/CsS 小写归一创建、text/cſs 不创建；type 缺省与空串不设门
+            //（空串 = 无 type 语义，style_type_html test2 钉））。s160（html-semantics
+            // M2）essence 语义收紧为**精确匹配**（无 trimming、无 parameters——WPT
+            // style_type_html 钉：" text/css " / "text/css; charset=utf-8" 不创建），
+            // 与宿主级联门（pipeline collect_stylesheets）+ styleSheets 列表门同规则。
+            // style4 type="text/html" 断言面。
+            // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
             var _shType = (handle ? __zw_get_attr_handle(handle, 'type')
               : (sel ? __zw_get_attr(sel, 'type') : '')) || '';
-            if (String(_shType).trim() !== '') {
-              var _shEssence = String(_shType).split(';')[0].trim().toLowerCase();
-              if (_shEssence !== 'text/css') return null;
-            }
+            if (String(_shType) !== '' && String(_shType).toLowerCase() !== 'text/css') return null;
             if (_shTag === 'LINK') {
               var _lrel = (handle ? __zw_get_attr_handle(handle, 'rel') : (sel ? __zw_get_attr(sel, 'rel') : '')) || '';
               if (!/\bstylesheet\b/i.test(_lrel)) return null; // link 非 stylesheet → null

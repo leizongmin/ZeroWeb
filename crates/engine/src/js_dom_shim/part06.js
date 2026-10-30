@@ -5971,7 +5971,22 @@
       }
       var sels = (typeof __zw_query_all === 'function')
         ? String(__zw_query_all('style')).split('|').filter(Boolean) : [];
-      for (var i = 0; i < sels.length; i++) out.push(_makeStyleSheet(_wrapSelector(sels[i])));
+      for (var i = 0; i < sels.length; i++) {
+        // s160（html-semantics M2）：style-eligible 门——type 属性存在且非空且非 ASCII
+        // 大小写不敏感 `text/css` → sheet 未创建不入列（spec 精确匹配无 trimming/参数，
+        // WPT style_type_html/style_type_change「no/mime 长度 0」钉）。media/disabled
+        // **不过滤列表**（cssom：sheet 注册与 media 匹配/disabled 无关——仅级联应用门，
+        // style_non_matching_media「media=unknown 长度 1」钉）。lw 读保证同批 IDL 写
+        // （`style.type='text/css'` 反射写）同步断言立即可见——style_type_change t2 面。
+        // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+        var _ssT = '';
+        try {
+          _ssT = (typeof __zw_get_attr_lw === 'function')
+            ? String(__zw_get_attr_lw(sels[i], 'type') || '') : '';
+        } catch (_eSsT) { _ssT = ''; }
+        if (_ssT !== '' && _ssT.toLowerCase() !== 'text/css') continue;
+        out.push(_makeStyleSheet(_wrapSelector(sels[i])));
+      }
       return out;
     },
     // DocumentOrShadowRoot.adoptedStyleSheets（CSSOM）：constructable CSSStyleSheet 数组。

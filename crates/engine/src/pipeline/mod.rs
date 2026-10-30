@@ -3653,6 +3653,51 @@ pub(crate) fn collect_stylesheets_with_parsed_external(
         }
     }
     for style_id in style_ids {
+        // s160（html-semantics M2）：style 元素 sheet 三门。ID 属性变更（IDL 反射写内容
+        // 属性 → SetAttr/RemoveAttr mutation → gCS 代际换代 dirty 重收集，见
+        // computed_style_cache `apply_inline_style_overrides` + `is_style_or_meta`）自动
+        // 反应，无需 shim 触发臂。
+        // ① style-eligible（type 门）：type 属性存在且非空且非 ASCII 大小写不敏感
+        // `text/css` → sheet 未创建（规则不入级联）。spec 精确匹配（无 trimming、无
+        // parameters）——WPT style_type_html 钉："" 应用、TEXT/CsS 应用、" text/css " /
+        // "text/css; charset=utf-8" 不应用。
+        // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+        if let Some(t) = doc.get_attribute(style_id, "type")
+            && !t.is_empty()
+            && !t.eq_ignore_ascii_case("text/css")
+        {
+            continue;
+        }
+        // ② media 门：media 属性存在且非空 → 按媒体查询列表对 screen 环境求值，全不
+        // 匹配 → sheet 已创建（仍入 document.styleSheets）但**不应用**（级联排除）。
+        // cssom：sheet 注册与 media 匹配无关（style_non_matching_media「media=unknown
+        // 长度 1」钉 shim 注册面不过滤），应用才查 media。
+        // FIXME: 求值视口取 compute_styles_for_doc 同款默认 1280×800——会话真 viewport
+        // 未传入本函数，宽度/高度条件媒体查询按默认视口求值。
+        // https://drafts.csswg.org/cssom/#dom-stylesheet-media
+        // https://drafts.csswg.org/mediaqueries/#evaluating
+        if let Some(m) = doc.get_attribute(style_id, "media") {
+            let m = m.trim();
+            if !m.is_empty() {
+                let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
+                let matches = zero_css_parser::media_query::parse_media_query(m).is_some_and(|qs| {
+                    qs.iter()
+                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
+                });
+                if !matches {
+                    continue;
+                }
+            }
+        }
+        // ③ disabled 门：disabled 内容属性存在 = sheet disabled flag（shim 布尔反射以
+        // 内容属性存储的既有近似——R2998/R5006 通道）。CSSOM：disabled 只禁应用、不销
+        // sheet 对象（styleSheets 注册面不过滤，同②）。
+        // FIXME: spec sheet.disabled 是 sheet 态非内容属性——setAttribute('disabled')
+        // 亦触发禁用（语义偏差），语料无负案形态。
+        // https://drafts.csswg.org/cssom/#dom-stylesheet-disabled
+        if doc.get_attribute(style_id, "disabled").is_some() {
+            continue;
+        }
         let Some(css_text) = doc.text_content(style_id) else {
             continue;
         };
