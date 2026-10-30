@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.7
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1–4 完成（十四目录统一基线 54,424 子测试 15,396 Pass = 28.3%，批次 2/3/4 八目录 parity 全 IDENTICAL），M3 剩 css-grid / css-text 重量级轮次，M4 未启动
+**版本**: v1.8
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）；2026-10-30（M3 批次 5——top15 收口）
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 完成（**top15 分母目录 15/15 全部入账**，十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%，批次 2–5 十目录 parity 全 IDENTICAL），M4（DC-4 coverage 复测收口）未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -152,7 +152,13 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   缺失的 createDiv 簇按 WAAPI 划界归口；interpolation-testcommon.js
   setup 的 target.style undefined 簇（32+22 子测）引擎域挂账。证据：
   evidence/2026-10-30-m3-batch4-transforms-motion.md。
-  批次 5 起 top15 其余：css-grid / css-text 重量级独立轮次。）
+  批次 5 完成 2026-10-30（**top15 收口 15/15**）：css-grid/css-text
+  入账，十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%，parity 全
+  IDENTICAL；grid 布局探测簇 3,280（布局引擎未实现挂账，体量 top15
+  之最）+ text 断行 approx 543 / Selection×text-transform ~390 归引擎
+  专项；CDN 突发限流（jsdelivr 403）后补拉改走 git blobs API（3,313
+  文件零失败）——通道脚本化与 fonts 差补一并挂 M4 前债务。证据：
+  evidence/2026-10-30-m3-batch5-grid-text.md。）
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）

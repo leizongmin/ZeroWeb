@@ -271,3 +271,17 @@ pub fn run_css_transforms_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(S
 pub fn run_css_motion_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/motion", filter)
 }
+
+/// Run the pinned upstream css-grid testharness subset（css-testharness-compat
+/// goal M3 扩面批次 5——grid 布局属性解析/计算值断言面，top15 分母
+/// 15,841 子测试）。filter 按路径子串过滤。
+pub fn run_css_grid_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-grid", filter)
+}
+
+/// Run the pinned upstream css-text testharness subset（css-testharness-compat
+/// goal M3 扩面批次 5——text 排版属性（line-break/hyphens/text-transform 等）
+/// 解析与计算值断言面，top15 分母 5,714 子测试）。filter 按路径子串过滤。
+pub fn run_css_text_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-text", filter)
+}

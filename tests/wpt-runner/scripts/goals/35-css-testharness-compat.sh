@@ -73,6 +73,13 @@ DIRS=(
   # ——transforms 若已含顶层 .html 会走幂等快路径，补差口径同 fonts）。
   "css/css-transforms"
   "css/motion"
+  # M3 扩面批次 5（top15 收尾，重量级语料独立轮次）：css-grid（15,841 子
+  # 测试 / grid 布局属性断言，上游 3,359 html）+ css-text（5,714 / text
+  # 排版属性断言，2,811 html）。两目录精选仓大概率已含 reftest 口径存量页
+  # ——幂等快路径会漏差，首拉后按 pin 树清单 blob hash 定向补差（不 FORCE
+  # 全量重拉，fonts/backgrounds/transforms 先例）。
+  "css/css-grid"
+  "css/css-text"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
