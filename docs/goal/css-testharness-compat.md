@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.9
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）；2026-10-30（M3 批次 5——top15 收口）；2026-10-30（M4 fetch 白名单修复）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 完成（**top15 分母目录 15/15 全部入账**，十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%，批次 2–5 十目录 parity 全 IDENTICAL）；M4 进行中——css-face 三分片接线合入（62064f318）后，首次带接线运行 41000541561 的 css-face-b 产物对账实证 **CSS_FETCH_ONLY 白名单漏 css/support**（案数与本地逐目录一致 253/61/121/348，但 helper 引用页子测试坍缩如 masking 544→63；typed-om 零引用计数 750=750 反证根因唯一），运行已取消、修复 e425f845a 三分片白名单补 css/support，DC-4 数据改由修复后运行 41005658107 产出，轮询收口中
+**版本**: v1.10
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）；2026-10-30（M3 批次 5——top15 收口）；2026-10-30（M4 fetch 白名单修复）；2026-10-30（M4 收口，DC-1~DC-4 全落）
+**状态**: Completed（2026-10-30）——DC-1~DC-4 全落。M4 收口：修复后 coverage 运行 41005658107 的 css-face-a/b/c + misc 分片全绿，16 目录案数与本地基线逐一一致（CI 子测试合计 65,446 / 17,759，对修正后本地 65,501 / 17,781 偏差 −0.08%/−0.12%，纯时序带）；coverage 快照 coverage-2026-10-30 落账——css 顶目录 61 files / 232 passes / 0.12% → **3,293 files / 17,750 passes / 9.08%**，试点目录 zw_passes>0 清零路径成立。CI aggregate 因 form-encode 分片（form/url-encoding 域，非 css）超 14400s per-suite 限制失败被 needs 门跳过，快照由本地聚合同运行 17 分片产物产出并按 CI 同款提交（6102d71c3）。证据：[evidence/2026-10-30-m4-coverage-dc4.md](css-testharness-compat/evidence/2026-10-30-m4-coverage-dc4.md)。失败簇挂账（typed-om API 面、anchor-size() 序列化、grid 布局探测、color Color-4 计算值、text 断行等）为后续 goal 素材，见 M3 各批 evidence。
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -100,7 +100,12 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   判据 + CI 快照运行 40935989794——css/css-variables covered_files=58 /
   zw_passes=232 / zw_env_fails=0，css 顶目录自 0 入账。）
 - **DC-4（coverage 复测）**：重跑 coverage 对账，css 面从 0 到有数字；
-  试点目录未覆盖子测试清零路径成立。
+  试点目录未覆盖子测试清零路径成立。（2026-10-30 全落：快照
+  coverage-2026-10-30——css 顶目录 3,293 files / 17,750 passes / 9.08%
+  （自 61 / 232 / 0.12%），16 目录全入组、zw_env_fails 全 0；css-values
+  736 / selectors 2,001 passes > 0。运行 41005658107；CI aggregate 因
+  form-encode 分片失败被跳过，快照由本地聚合 17 分片产物产出，
+  提交 6102d71c3。）
 
 ## 划界
 
@@ -159,7 +164,10 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   专项；CDN 突发限流（jsdelivr 403）后补拉改走 git blobs API（3,313
   文件零失败）——通道脚本化与 fonts 差补一并挂 M4 前债务。证据：
   evidence/2026-10-30-m3-batch5-grid-text.md。）
-- **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
+- **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。（2026-10-30
+  完成——三分片接线 62064f318、白名单修复 e425f845a、运行 41005658107
+  对账与快照落账、csv 汇总行；详见
+  [evidence/2026-10-30-m4-coverage-dc4.md](css-testharness-compat/evidence/2026-10-30-m4-coverage-dc4.md)。）
 
 ## 依赖约束（run-rules §9）
 

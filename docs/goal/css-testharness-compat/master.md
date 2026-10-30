@@ -1,6 +1,6 @@
 # css-testharness-compat master
 
-**状态**: Active——M0/M1/M2/M3 完成（DC-1~DC-3 全落，DC-3 CI 快照已闭环；M3 批次 1–5，top15 收口 15/15）；M4 进行中——css-face 三分片接线已合入（62064f318），DC-4 数据由姊妹流 weekly 运行 41000541561（HEAD 含接线）产出，轮询收口中
+**状态**: Completed（2026-10-30）——M0–M4 全落，DC-1~DC-4 全部满足。终值：十六目录统一基线 65,501 子测试 / 17,781 Pass = 27.1%（sizing 分母重测修正口径）；coverage 快照 coverage-2026-10-30 css 顶目录 3,293 files / 17,750 passes / 9.08%（自 0 入账）。失败簇挂账为后续 goal 素材，见控制面与 M3 各批 evidence
 **入口**: [css-testharness-compat.md](../css-testharness-compat.md)
 
 ## 里程碑状态表
@@ -11,9 +11,9 @@
 | M1 | runner 通道治理（RSS 归因 → 选型 → coverage 分片消费管道） | DC-2 | **完成**（2026-10-30，[归因 evidence](evidence/2026-10-30-m1-rss-attribution.md)——归因否证线性累积，交付分片 JSON 通道 + 恒等复验 + 全量端到端） |
 | M2 | css-variables 病态案排除 + 解禁入账 | DC-3 | **完成**（2026-10-30，[解禁 evidence](evidence/2026-10-30-m2-css-variables-unban.md)；CI 快照运行 40935989794 闭环——58 files / 232 passes） |
 | M3 | 按簇扩面（top15 逐目录过 M0 模板；cssom-view / geometry 先协调划界） | — | **完成**（批次 1–5 全落 2026-10-30，top15 分母目录 15/15 入账；十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%；evidence/2026-10-30-m3-batch{1..5}-*.md） |
-| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | **进行中**（三分片接线 62064f318 + fetch 白名单补 css/support e425f845a；DC-4 数据由修复后运行 41005658107 产出，轮询收口中） |
+| M4 | coverage 复测收口 + wpt-suites.csv 汇总行 | DC-4 | **完成**（2026-10-30，[收口 evidence](evidence/2026-10-30-m4-coverage-dc4.md)——运行 41005658107 对账 16/16 一致 + 快照 css 顶目录 3,293 files / 17,750 passes / 9.08% + csv 汇总行） |
 
-## 本轮记录（2026-10-30，M3 批次 2–5 收口 + M4 分片接线）
+## 本轮记录（2026-10-30，M3 批次 2–5 收口 + M4 收口，DC-1~DC-4 全落）
 
 - **M3 批次 2–5 入账（top15 收口 15/15）**：typed-om / fonts / shapes →
   anchor-position / masking / backgrounds → transforms / motion → grid /
@@ -31,14 +31,28 @@
   css 顶目录首次入快照口径）；35 号脚本加 `CSS_FETCH_ONLY` 白名单过滤
   （缺省不设 = 全量，本地 rally 行为不变），三分组 fetch target 按语料体量
   均分；css 分片 job timeout 210min、per-suite time_limit 3600。
-- **在途（白名单修复，e425f845a）**：首次带接线运行 41000541561 的
+- **白名单修复（e425f845a）**：首次带接线运行 41000541561 的
   css-face-b 产物早期对账实证 fetch 白名单漏 `css/support`——案数与本地
   逐目录一致（253/61/121/348）但 helper 引用页子测试坍缩（masking 544→63、
   anchor-position 12,811→3,059、backgrounds 1,085→190；typed-om 零引用
   750=750 反证根因唯一；idl_test 4 页缺 /resources/idlharness.js 与本地
   同界非 CI 洞）。运行已取消（避免聚合落污染快照），三分片白名单补
-  css/support 后重派运行 41005658107，轮询收口中——快照 css 面数字核验 +
-  wpt-suites.csv 汇总行待其完成后落账。
+  css/support 后重派运行 41005658107。
+- **M4/DC-4 收口**：修复后运行 41005658107 的 css-face-a/b/c + misc
+  分片全绿，三分片产物对账 16/16 目录案数与本地基线一致；CI 子测试合计
+  65,446 / 17,759，对修正后本地 65,501 / 17,781 偏差 −0.08%/−0.12%（纯
+  时序带，无坍缩形态）。**css-sizing 分母重测**：fresh 本地单进程
+  168 案 / 2,238 子测试 / 735 Pass 与 CI 逐案全等——批次 1 记录的 1,894
+  系单进程跑序残留压低页面声明数（stretch 族同因），十六目录合计由
+  65,157 / 17,747 修正为 **65,501 / 17,781 = 27.1%**。coverage 快照
+  coverage-2026-10-30：css 顶目录 **3,293 files / 17,750 passes /
+  9.08%**（自 61 / 232 / 0.12%），16 目录全入组、zw_env_fails 全 0，
+  试点目录 css-values 736 / selectors 2,001 passes > 0；form-encode
+  分片（form/url-encoding 域）超 14400s per-suite 限制失败使 CI
+  aggregate 被 needs 门跳过，快照由本地聚合同运行 17 分片产物产出（同
+  脚本同输入形状）并按 CI 同款提交（6102d71c3）；csv 汇总行追加，
+  trend_csv_check 8/8 过。证据：
+  [evidence/2026-10-30-m4-coverage-dc4.md](evidence/2026-10-30-m4-coverage-dc4.md)。
 
 ## 上一轮记录（2026-10-30，M3 批次 1 + DC-3 CI 闭环）
 
@@ -179,16 +193,16 @@
 - **零回归底线**：css 值语义修复若触 `zero-engine`/`style-system`，与
   rendering-compat 的 reftest 回归门（716/716）同窗验证，防两账互相打红。
 
-## 下一步（M4 收口检查单）
+## 下一步
 
-1. ~~DC-3 CI 快照落账~~（闭环：40935989794，58 files / 232 passes）。
-2. ~~M3 批次 2–5~~（top15 收口 15/15，见本轮记录）。
-3. **M4（DC-4）收口**：weekly 运行 41000541561 完成后——快照
-   coverage-2026-10-30 核验（css 顶目录 covered>0 且 16 目录全入组、
-   试点目录未覆盖子测试清零路径成立）→ evidence 落账 →
-   wpt-suites.csv 汇总行（十六目录 65,157/17,747 run-face 口径 + DC-4
-   快照注记）→ 控制面状态收口。
-4. **失败簇归口评估**（后续 goal 素材，不阻 M4）：color 的 Color-4 计算
-   值面（7,199，最大单簇）评估引擎工作项归属；align/sizing 指定值展开族
-   归 CSSOM 序列化、布局几何族与 rendering-compat 同窗；grid 布局探测
-   3,280 体量之最；typed-om API 面（96.7% Fail）整体挂账。
+goal 判据 DC-1~DC-4 已全部满足，本 goal 收口。遗留面（后续 goal 素材，
+不属本 goal 判据）：
+
+1. **失败簇归口评估**：color 的 Color-4 计算值面（7,199，最大单簇）评估
+   引擎工作项归属；align/sizing 指定值展开族归 CSSOM 序列化、布局几何族
+   与 rendering-compat 同窗；grid 布局探测 3,280 体量之最；typed-om API
+   面（96.7% Fail）整体挂账；anchor-size() 序列化参数序 ~2,500 为引擎
+   可修单点。
+2. **encoding 域基建遗留（他域账）**：form-encode 分片单套件单进程超
+   14400s（前次 7200s 即撞），需套件级分批或豁免归口；本轮快照 form/
+   url-encoding 记 0 属实。
