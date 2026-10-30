@@ -1829,7 +1829,8 @@
               // R3254-E2 切片 8：子树脏门同 innerHTML（`_zwPendingSubtreeDirty`）。
               if ((_r3oBucket && (_r3oBucket.added.length || _r3oBucket.removed.length)
                   && (!globalThis._zwApplyGeneration || _r3oBucket.stamp === globalThis._zwApplyGeneration()))
-                  || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))) {
+                  || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))
+                  || (typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel))) {
                 var _r3oTag = (typeof __zw_get_tag === 'function') ? String(__zw_get_tag(sel) || '').toUpperCase() : '';
                 if (_r3oTag) {
                   var _r3oOut = '<' + _r3oTag.toLowerCase();

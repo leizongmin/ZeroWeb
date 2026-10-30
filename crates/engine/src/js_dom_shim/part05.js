@@ -10630,7 +10630,8 @@
       ? _zwPendingByParent.get(sel) : null;
     if (!(((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
         && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
-        || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))))) return null;
+        || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))
+        || (typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel))))) return null;
     try {
       var _r380Kids = _childNodeList(sel, null);
       var _r380Out = '';
@@ -10680,6 +10681,24 @@
     // 全局表空则零成本快出。
     var bucket = _zwPendingByParent.get(sel);
     if (!bucket || (!bucket.added.length && !bucket.removed.length)) return out;
+    // R383（editing-compat attr 门轮归因，2026-10-31）：**跨代际桶不并入视图**——R381 的
+    // 桶级代际门只护「是否走融合」决策（R380 门），门内 `_childNodeList` 经本函数并桶时
+    // 不再看代际：apply 换代后桶为 identity 记账保留（pa2b 只作废不清桶），条目已落
+    // 快照，再并入 = 基底 + 幽灵双计。子树脏（R3254-E2 后代键）或 pending attr
+    // （`_zwPendingAttrDirty`）开门而本桶 stamp 已跨代时双计暴露（inline-host 语料 t4
+    // 实证 4 br：2 基底 void 形 + 2 幽灵 `_zwMOuterHtml` 非闭合计）。登记时盖章、
+    // 同批 mutation 刷新（`_zwHCLiveInvalidate`），同代新变异会重盖 stamp 恢复并入；
+    // apply 后 re-append 移动语义由新登记的当前 stamp 覆盖，补偿链不受损。
+    // R383a（t8r-4 臂②归因收口）：跳并以「apply 配对环境」为前提——生产 webview 的
+    // apply 与换代成对（apply 后必发 `__zw_apply_generation_bump`），且共享队列 FIFO
+    // 消费保证「跨代际桶条目必已落基座」（登记先于换代，换代即整批消费）；engine
+    // 纯测试环境直调 bump 无配对 apply（游标恒 0），跨代际条目仍 pending，桶须照并
+    // （「apply 代际 bump 后 pending 子不消失」，t8r-4 臂②）。两域判别用游标闩：
+    // `__zw_pending_attr_sels` 版本戳的 cursor 分量 > 0（本页发生过 apply 发布）即
+    // 置闩恒跳并；engine 测试游标永 0 恒并。桥未注册（老宿主/裸 shim）→ 视作配对
+    // 环境保持无条件跳并（语料修复语义优先）。R382 按条目判定保留作桶内精度兜底。
+    if (globalThis._zwApplyGeneration && bucket.stamp !== globalThis._zwApplyGeneration()
+        && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
     for (var r = 0; r < bucket.removed.length; r++) {
@@ -11507,7 +11526,10 @@
         var _psdRel = key.indexOf(prefix) === 0;
         if (!_psdRel) {
           try {
-            _psdRel = typeof __zw_contains === 'function' && !!__zw_contains(sel, key);
+            // R383 续修（attr 门轮归因，2026-10-31）：`__zw_contains` 返串 `"1"`/`"0"`，
+            // `"0"` 真值——旧 `!!` 形态使任意非前缀键恒命中（无关键桶连坐 → 融合门页级
+            // 误开），字符串比对回到「key ∈ sel 子树」本义。
+            _psdRel = typeof __zw_contains === 'function' && __zw_contains(sel, key) === '1';
           } catch (_e3kPsdC) { _psdRel = false; }
         }
         if (!_psdRel) continue;
@@ -11527,6 +11549,66 @@
       for (var i = 0; i < _zwPendingAdded.length; i++) _zwPendingAddedSet.add(_zwPendingAdded[i]);
     }
     return _zwPendingAddedSet;
+  }
+  // editing-compat（insertParagraph 轮归因，2026-10-31）：**pending 属性变更脏判定**——
+  // 属性类变更（SetAttr/RemoveAttr/SetStyle/RemoveStyle，selector 键）只入引擎 journal
+  // 不进 childList 桶，R380/R3254-E2 融合序列化门（桶非空/subtreeDirty）对纯 attr 变更
+  // 不开 → 回落基树快照（drain 前 attr 未落基树 → stale）。attr 读路径
+  // （`__zw_attr_names`/`__zw_get_attr_lw`）本就 latest-wins，开门即产出新串。
+  // 数据源 `__zw_pending_attr_sels`（callbacks.rs）：`"len:cursor|sel…"`——只扫未应用
+  // 尾 `[cursor..)`（共享队列 append-only，drain 推游标不删条目），版本戳含 cursor，
+  // 防「apply 后未应用尾已空」被（apply 代际，len）缓存钉住 stale 清单。祖先维度：后代 attr 变更须开祖先 innerHTML 门（container.innerHTML
+  // 断言面），经 `__zw_contains` 后代判定（同 `_zwPendingSubtreeDirty` 键补漏形态）。
+  // OPTIMIZATION：无 pending attr 时 sel 清单为空 O(1) 快出（dom/html-syntax 热电池
+  // 主态）；含 pending 时按条目 `__zw_contains`，条目数 = 本 turn 属性变更元素数（小）。
+  var _zwPASeCache = { gen: -1, len: '', sels: [] };
+  function _zwPendingAttrSels() {
+    if (globalThis.__zwAttrGateOff) return null;
+    if (typeof __zw_pending_attr_sels !== 'function') return null;
+    var gen = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+    var raw = String(__zw_pending_attr_sels() || '');
+    var sep = raw.indexOf('|');
+    var len = sep < 0 ? raw : raw.slice(0, sep);
+    if (_zwPASeCache.gen !== gen || _zwPASeCache.len !== len) {
+      var list = sep < 0 ? '' : raw.slice(sep + 1);
+      _zwPASeCache = { gen: gen, len: len, sels: list ? list.split('|').filter(Boolean) : [] };
+    }
+    return _zwPASeCache.sels;
+  }
+  function _zwPendingAttrDirty(sel) {
+    if (!sel) return false;
+    var sels = _zwPendingAttrSels();
+    if (!sels || !sels.length) return false;
+    for (var i = 0; i < sels.length; i++) {
+      if (sels[i] === sel) return true;
+    }
+    for (var j = 0; j < sels.length; j++) {
+      try {
+        // `__zw_contains` 返串 `"1"`/`"0"`——`"0"` 真值（仅空串 falsy），恒真判定会把
+        // 全页每次门开（truthy-"0" 连坐——inline-host 语料慢 6×+ `<br></br>` 非闭合串
+        // 的根因），须字符串比对（同 `_zwHandleInHostSnapshot` 的 `!== '1'` 惯例）。
+        if (typeof __zw_contains === 'function' && __zw_contains(sel, sels[j]) === '1') return true;
+      } catch (_ePAdC) {}
+    }
+    return false;
+  }
+  // editing-compat（R383a 归因收口，2026-10-31）：**apply 配对环境闩**——R383 跨代际
+  // 跳并的域判别。数据源复用 `__zw_pending_attr_sels` 版本戳（`"len:cursor|…"` 头，
+  // 无须新桥）：cursor 分量 = 本页已应用前缀长度，生产 webview 首次 apply 即 > 0
+  // （webview apply 点配对发布 `publish_mut_applied_cursor`），engine 纯测试环境
+  // （register_dom_callbacks 直连、无 webview flush）永 0。闩语义：一旦见过 cursor>0
+  // 本页恒 true——游标单调不回退（导航换代整页重建），读侧无须逐次问询。
+  var _zwPairedLatch = false;
+  function _zwApplyPairedEnv() {
+    if (typeof __zw_pending_attr_sels !== 'function') return true;
+    if (_zwPairedLatch) return true;
+    var raw = String(__zw_pending_attr_sels() || '');
+    var sep = raw.indexOf('|');
+    var head = sep < 0 ? raw : raw.slice(0, sep);
+    var ci = head.indexOf(':');
+    var cursor = ci >= 0 ? parseInt(head.slice(ci + 1), 10) || 0 : 0;
+    if (cursor > 0) _zwPairedLatch = true;
+    return _zwPairedLatch;
   }
   function _zwPRSet() {
     if (!_zwPendingRemovedSet) {

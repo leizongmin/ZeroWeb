@@ -2612,6 +2612,9 @@ impl WebView {
             }
         };
         self.applied_mutations += subset.len();
+        // R383a 配对发布（同 apply_pending_shared_mutations：apply 与游标发布之间的
+        // 同 turn 窗口使跨代际桶判定读到滞后前缀）。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
         }
@@ -4904,6 +4907,12 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             self.cached_html = mutated;
         }
         self.applied_mutations += tail.len();
+        // R383a 配对发布（editing-compat attr 门轮，2026-10-31）：游标此前只在 R348
+        // 重绑注册站发布——apply 换代（`__zw_apply_generation_bump`）与游标发布之间
+        // 存在同 turn 窗口：shim 侧跨代际桶判定（R383/R383a）在该窗口读到的已应用
+        // 前缀滞后一批，已落基座的条目被当 pending 重并（语料 inline-host 多子测页
+        // 实证 60 案退化）。apply 即发布同值（随后的注册站发布幂等），窗口收口。
+        zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
         self.merge_handle_selectors(&handles);
         // slice33：apply 成功即履行 R100 失效契约（见 evict_removed_identities 文档）。
         self.evict_removed_identities(&tail, &handles);

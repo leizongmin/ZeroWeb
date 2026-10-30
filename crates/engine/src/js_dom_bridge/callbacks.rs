@@ -1945,6 +1945,50 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // editing-compat（insertParagraph 轮归因，2026-10-31）：**pending 属性变更判定**——
+    // journal 内 selector 键属性类变更（SetAttr/RemoveAttr/SetStyle/RemoveStyle）的
+    // 去重 sel 清单，供 shim 融合序列化门（R380 `_zwFusedInnerHtmlSel` / R3254-E2
+    // outerHTML sel 分支）纳入纯属性变更：attr 读路径 latest-wins（`__zw_attr_names`）
+    // pending 感知，而门对纯 attr 变更不开 → 回落基树快照 stale（语料
+    // insertparagraph-in-inline-editing-host 880F 的唯一 delta 根因）。
+    // journal 即 pending 集（边界 drain 清空），无需 JS 侧盖章。返回
+    // `"len|sel1|sel2…"`——首字段为 journal 长度版本戳，JS 侧以（apply 代际，len）
+    // 缓存扫描结果（journal turn 内只增，drain 后 len 复位由代际区分）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_pending_attr_sels",
+        Box::new(move |_args| {
+            let list = m.lock().unwrap_or_else(|e| e.into_inner());
+            // 只扫**未应用尾** `[applied..)`：共享队列 append-only、drain 只推游标不删
+            // 条目（导航才整体清空）——全队列扫描会把早已 apply 进基树的 SetAttr 当
+            // pending，attr 门对整页后续每次序列化读恒开（语料 inline-host 子跑内从
+            // 首个 setAttribute 起每读走融合路径：per-read 开销膨胀 + 已应用内容被
+            // overlay 重并成倍增串）。
+            let applied = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(list.len());
+            let mut sels: Vec<&str> = Vec::new();
+            for mm in list[applied..].iter() {
+                let s = match mm {
+                    DomMutation::SetAttr { selector, .. }
+                    | DomMutation::RemoveAttr { selector, .. }
+                    | DomMutation::SetStyle { selector, .. }
+                    | DomMutation::RemoveStyle { selector, .. } => selector.as_str(),
+                    _ => continue,
+                };
+                if !sels.contains(&s) {
+                    sels.push(s);
+                }
+            }
+            // 版本戳 = `len:cursor`——队列 append-only，drain 只动 cursor 不动 len，
+            // 单 len 区分不了「apply 后未应用尾变空」，缓存会钉住 stale 清单。
+            let mut out = format!("{}:{}", list.len(), applied);
+            for s in sels {
+                out.push('|');
+                out.push_str(s);
+            }
+            out
+        }),
+    );
+
     // P1a select：读 `<select>` 当前选中 option 的 value（HTML spec 语义：首个 selected option，
     // 无则首 option）。shim `select.value` getter 对 tag=SELECT 调此（非 value 属性）。R3000：先 consult
     // 最新 `SelectOption` mutation（`select.value=` 编程选中），无则回落快照（旧不 consult → stale）。
