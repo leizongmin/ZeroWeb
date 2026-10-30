@@ -59,15 +59,17 @@ fix9 追加块间分隔空白消费与 `ended` 出参（数字见 §6）。
 
 ## 4. 剩余长尾（本轮定位不改）
 
-- **lrlp host 级 join `abcabc` 双计（~396 案，fix7 起既有）**：
-  `abc<div style=ws><b>[]def<br>ghi</b></div>` backspace 实际
-  `abcabc<div style=ws><b>ghi</b></div>`——引擎侧 caret 侧文本双计 + 壳
-  insert 丢失（JS 侧形状已正确：insertBefore(shell, 右块)）。世界同步/
-  落位 wire 的引擎收敛域，独立排查。
-- **lrlp/paragraphs forwarddelete 残余（各 ~396/316 案）**：dst=host 几何
-  下 per-run 文本壳落引擎丢失（`<b>[]def</b>ghi<br>jkl` → ghi 消失，期望
-  `<span style=ws>ghi</span>` 兄弟壳）——handle 壳 t8r/append wire 在
-  dst=el 本体时的收敛缺口。
+- **lrlp host 级 join 引擎收敛簇（三方法各 396 案 = 1,188，fix7 起既有）**：
+  两种实际形态同域——①`abcabc` 双计（`abc<div style=ws><b>[]def<br>ghi</b></div>`
+  backspace 实际 `abcabc<div style=ws><b>ghi</b></div>`，caret 侧文本双计 +
+  壳 insert 丢失，56 案/方法）；②行内 run 后继文本壳落引擎丢失
+  （`<b>[]def</b>ghi<br>jkl` → ghi 消失，期望 `<span style=ws>ghi</span>`
+  兄弟壳）。JS 侧形状均已正确（Node 复算 + 落位路径推演）。
+- **paragraphs forwarddelete/select-boundary（各 316 案 = 632）**：dst=兄弟块
+  几何引擎侧反相——`<div normal>abc[]</div>\n<div nowrap>def</div>` fd 实际
+  `"\n<div nowrap>def</div>"`：**左块整体消失、`\n` 分隔残留、壳丢失**（期望
+  `<div normal>abc<span nowrap>def</span></div>`）——引擎侧移除命中错位节点
+  的疑似 stale-path 形态，与 lrlp 簇同属 D1/apply 引擎收敛域。
 - lprl 面已清零（§6 分面账）。
 
 ## 5. 回归门
@@ -85,13 +87,20 @@ fix9 追加块间分隔空白消费与 `ended` 出参（数字见 §6）。
 |---|---|---|---|
 | paragraphs | backspace | 676 | **0** |
 | paragraphs | forwarddelete | 676 | 316 |
-| paragraphs | select-boundary | 0 | 0 |
+| paragraphs | select-boundary | 0 | 316 |
 | lprl | backspace / forwarddelete | 85 / 85 | **0 / 0** |
 | lprl | select-boundary | 0 | 0 |
 | lrlp | backspace | 517 | 396 |
 | lrlp | forwarddelete | 805 | 396 |
-| lrlp | select-boundary | 0 | 0 |
+| lrlp | select-boundary | 0 | 396 |
 
-- `cargo fmt --all --check` ✓（本轮零 .rs 变更）；make test 见
-  /tmp/make-test-fix9.log（结果记运行账）。
+（初版表 select-boundary 行因统计脚本 `method=(\w+)` 截断连字符误记 0，
+已更正——总量 1,820 恒等。）
+
+- **合并终验（rebase 拉入并行流 a897d536b（part03 计算样式锚定）+
+  84811327c（webview form 面）后 union 树复跑）**：**5,698P/1,820F 逐位
+  复现，7,518/7,518 对拍 drift=0**——本轮账与 union 树无交互漂移。
+- `cargo fmt --all --check` ✓（本轮零 .rs 变更）；make test（guard
+  首轮 10.07GB 超限被杀，`CARGO_BUILD_JOBS=2` 复跑）engine lib
+  **3,611P/11F = 已知红集**（9 fetch 域 + 2 渲染流债 r113/s24）零新增。
 
