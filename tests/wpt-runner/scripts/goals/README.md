@@ -42,6 +42,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
 | 35 | [css-testharness-compat](../../../../docs/goal/archive/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **已收口**（2026-10-30 DC-1~4：css testharness 面 0.12%→9.08%（快照 coverage-2026-10-30），十六目录基线 65,501/17,781 = 27.1%，已归档；失败簇挂账见 goal M3 各批 evidence；渲染面归 rendering-compat） |
 | 36 | [form-url-encoding-compat](../../../../docs/goal/archive/form-url-encoding-compat.md) | encoding/legacy-mb encode 面（form 46 + href 22） | **已收口**（2026-10-29 DC-1~4：encode 面 766,958/766,959 = 99.9999%，全量头条 24.19% → 58.02%，已归档；唯一非 P = data: iframe Timeout 契约挂案） |
+| 37 | [encoding-compat-v2](../../../../docs/goal/encoding-compat-v2.md) | encoding 根面残余；encoding/legacy-mb-{japanese,korean,tchinese} 未导入族；encoding/streams 残余 | **coverage 驱动立项**（2026-10-31，coverage-2026-10-30 对账：encoding 缺口 573,911 全 WPT 最大且无活跃 owner；一期 30/31/36 通道复用，零回归门在册；M0 族甄别后落 DC-4 数值门） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |
 | 60 | [navigation-compat](../../../../docs/goal/archive/navigation-compat.md) | history; navigation-api; html/browsers | **已收口**（2026-10-21 M3 收口，M2 437/476 = 91.8%、全量 473P/584 案行，已归档）；残余超口径记账池挂账 |
