@@ -1,26 +1,27 @@
 # encoding 二期 — legacy-mb 未导入族 + 根面 labels/API 残余 + streams 收口
 
-**版本**: v1.4（M4 form 面证得引擎阻塞，decode/href/encoder 面推进中）
+**版本**: v1.5（M4 可跑面收口：589,436 案 / 非 P 恰 13 全对账；form 面
+550,054 池挂引擎修复）
 **日期**: 2026-10-31（立项；同日 M0 对账 + 降级落定、M1 可导入集入通道）
-**状态**: Active——M0 + M1 完成（DC-2 达成：big5-encoder 13P 新证 +
-iso-2022-jp-encoder 2P、10F 流式模型簇挂账，见
+**状态**: Active——M0 + M1 完成（DC-2 达成，见
 [M1 证据](encoding-compat-v2/evidence/2026-10-31-m1-importable-set-wiring.md)）。
-M4 coverage 复测推进中（`/tmp/zw-enc2-m4/`，test-guard 逐分片包裹）：
-enc30 已齐 12,075 = 12,072P/3F；enc31 decode 面（385 文件）六族分片在跑；
-href 面 euc-jp/iso-2022-jp/shift_jis 已回收（sjis 逐文件隔离恢复），
-euc-kr/big5 href 面 + 4 个 encoder API 页 + big5-enc-ascii 与 enc31 并行
-补跑（全部脚本 face，12 文件）。
-**卡点**：form36 form 面被引擎共享路径缺陷阻塞——上游标准 helper
-`encode-form-common.js` 的「脚本建 DOM + load 后重查询 + collection[0]
-submit」形态必挂：① load 时 apply 路径缺 `__zw_apply_generation_bump` →
-shim pending 条目 ghost 不驱逐 → 文档级枚举双计；② apply-materialized
-form 的 sel-proxy `form.submit` 静默无效。完整根因链、探针台账与修复方向
-见 [evidence/2026-10-31-m4-form-face-engine-bug.md]
+**M4 可跑面已收口**：enc30 12,075（12,072P/3F）+ enc31 decode 385 cases
+**360,431P/0F**（与 M0 判读账精确吻合；euc-kr 族分片静默黑死一次，逐文件
+隔离 22/22 恢复）+ form36 非 form 面（href 三族旧分片剔合成行 + euc-kr/
+big5 href/encoder API/big5-enc-ascii 补跑 12 文件 87,095P/10F）。
+tally 汇总 **589,436 子测试 / 589,423P / 非 P 恰 13** = 3F SAB + 10F
+iso-2022 流式簇，与在册残差逐条吻合零意外，可跑面通过率 99.9978%。
+**卡点**：DC-4 全分母门 FAIL（51.15%）——form36 form 面 **550,054 子测试**
+被引擎共享路径缺陷阻塞：上游标准 helper「脚本建 DOM + load 后重查询 +
+collection[0] submit」形态必挂。① load 时 apply 路径缺
+`__zw_apply_generation_bump` → shim pending ghost 不驱逐 → 文档级枚举双计；
+② apply-materialized form 的 sel-proxy `form.submit` 静默无效。根因链、
+探针台账、收口数字与修复方向见
+[evidence/2026-10-31-m4-form-face-engine-bug.md]
 (encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)。
-**下一步**：enc31 + 补跑批收齐 → tally 判读（口径改为「非 form 面」：
-DC-4 数值门按 form 面排除后的分母/天花板重算并记 engine-blocked 挂账）→
-引擎修复独立立项（两缺陷 + 全量回归验证）→ 修复落地后 m4-form-batch.sh
-重跑 form 面 → wpt-suites.csv 37 号行 + 收口提交。
+**下一步**：引擎两缺陷修复独立立项（改 shim 兼容骨架 + make test/reftest
++ enc30/31/36 零回归验证）→ 落地后 `m4-form-batch.sh` 重跑 form 面
+（env 就绪）→ 重算 DC-4 → wpt-suites.csv 37 号行 + 收口提交。
 **执行模式**: WPT 驱动（上游 encoding 语料为验收标尺）+ 一期通道复用（testharness 编码读取点 + 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码/文本处理面）
 
@@ -101,6 +102,11 @@ SAB/https 1）。逐文件 disposition 与干跑双臂基线见
   （98.86%）**（分母滚动时按 evidence 口径重算）；36 号零回归门全绿
   （legacy 扫描恒等 + 新面干跑 + weekly 分片计数对账）；30/31 号通道零
   改动；wpt-suites.csv 回填数据行。
+  **当前判定（2026-10-31 M4 可跑面收口）**：门暂不可达——form36 form 面
+  550,054 子测试池被引擎双缺陷阻塞（见
+  [evidence](encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)），
+  可跑面已全绿收口（589,436 案 / 非 P 恰 13 与在册残差逐条吻合）；修复
+  落地重跑 form 面后按 evidence 口径重算。
 
 **DC-4 数值门决策规则（立项即定；M0 判定为第二档）**：M0 甄别后按地址池
 大小分档——

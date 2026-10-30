@@ -65,6 +65,30 @@ getElementsByTagName 重查询 + collection[0] submit」形态在本引擎当前
 
 - shift_jis 整分片 03:16 静默黑死一次（rc=1、0B 输出、无守卫消息、无内核
   OOM 记录）；逐文件隔离重跑 15/15 恢复 href 面数据，死因未定（单次环境性）。
+- enc31 euc-kr 族分片 05:45 再现静默黑死（rc=0、0B stdout+stderr、~10 分钟，
+  同族形态）；逐文件隔离重跑 22/22 恢复（11 个 decode 页全真数据 1.8MB/页，
+  `_chars-*`/errors 页 `[]` 为一期 31 号已收口族、runner 谓词不匹配，符合
+  预期）。两次黑死均无守卫消息与内核 OOM 记录，疑与该族数据规模相关，
+  逐文件隔离为既证恢复手段。
 - rally 双 spawn 竞态再现一轮，按 memory 规则处置（终止重复体、弃半成品），
   处置细则已沉淀 `rally-double-spawn-race`。
 - 本轮 diag 探针 18 页全部落在 wpt-data gitignored 区，未入库，收尾清理。
+
+## M4 可跑面收口数字（2026-10-31 判读）
+
+- **enc31 decode 面**：385 cases / **360,431P / 0F**——与 M0 判读账
+  「decode 34 文件 360,431 = 31 号 100%P」精确吻合（euc-jp/iso-2022-jp/
+  shift_jis/big5 整族分片 + euc-kr 逐文件恢复；schinese 族 `[]` 为预期：
+  gb18030/gbk-decoder 为 `.any.js` 窗口腿，30 号在收）。
+- **form36 非 form 面（href + encoder API + big5-enc-ascii）**：12 文件
+  补跑 + 三族旧分片 href 剔除合成行后 43,275×3 + 43,264 + 43,513 +
+  303 + 13 + 12 = **228,955 案账**（Pass 228,945 / Fail 10）。
+- **tally 汇总**：grand 589,436 子测试 / 589,423P / **非 P 恰 13** = 3F SAB
+  （decode-utf8 transferred-buffer ×2 + textdecoder-copy ×1）+ 10F
+  iso-2022-jp-encoder 流式模型簇——与在册 14 项残差之 13 项逐条吻合，
+  零意外残差；第 14 项（1T data:iframe）位于 engine-blocked form 面池内。
+  可跑面通过率 99.9978%。
+- **DC-4 全分母门**：FAIL（589,423 / 1,152,394 = 51.15% < 98.8%）。
+  engine-blocked 池 = 1,139,490（预期本地三源）− 589,436（实跑）=
+  **550,054 子测试**（form36 form 面 + data:iframe），待引擎两缺陷修复
+  落地后由 `m4-form-batch.sh` 重跑补齐，再重算 DC-4。
