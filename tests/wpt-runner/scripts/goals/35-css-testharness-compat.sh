@@ -86,6 +86,21 @@ DIRS=(
   "css/support"
 )
 
+# CI coverage 分片定向（css-testharness-compat M4）：CSS_FETCH_ONLY 空格分隔
+# 的 DIRS 白名单，只拉子集（weekly css-face 三分片按语料体量均分，~2 万文件
+# 顺序拉取单 job 装不下 150min 预算；本地 rally 轮不设则全量，行为不变）。
+if [[ -n "${CSS_FETCH_ONLY:-}" ]]; then
+  want=" ${CSS_FETCH_ONLY} "
+  FILTERED=()
+  for d in "${DIRS[@]}"; do
+    if [[ $want == *" $d "* ]]; then
+      FILTERED+=("$d")
+    fi
+  done
+  echo "CSS_FETCH_ONLY 过滤：${#FILTERED[@]}/${#DIRS[@]} 目录（${CSS_FETCH_ONLY}）"
+  DIRS=("${FILTERED[@]}")
+fi
+
 goals_fetch_all
 
 # 根级 support 单文件定向补拉（不入 DIRS——上游根 resources/ 目录体量大，按需
