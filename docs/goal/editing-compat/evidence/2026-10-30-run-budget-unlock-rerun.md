@@ -72,6 +72,18 @@ createlink-with-selecting-img.html（150s external kill，transcript 第 6-8 行
 二进制时点实测：runner mtime 04:51:27 < 94eb9f0d2 落时 05:42:54，在途分片
 确为落前二进制。
 
+## 自旋四案新二进制复跑（R5340 收敛轮，2026-10-30 在途）
+
+分片二进制无 R5340 导致的四案分母缺口（-8,974 行）按簇序复跑：四案以
+新二进制（mtime 07:30:11，含 94eb9f0d2 + R5340 + R5341；终账上节标
+07:27:58 系同源重建前一 inode，源码同含三笔修复，零位移结论不变）+
+ZW_SCRIPT_TIMEOUT_MS=300000 + 按案自适应墙（multitest nv=10→3,450s、
+insertparagraph nv=8→2,790s、delete/forwarddelete nv=8→2,790s）单案
+直跑。并行分工：delete/forwarddelete 由镜像流在跑（/tmp/spot-*.log，
+已核 ZST=300000 同预算口径），multitest/insertparagraph 本侧在途
+（/tmp/ed-r5340-*.out）。四案新账出齐后合并为 R5340 收敛轮账面，
+对照预算窗四案旧账逐案核对分母回收与 Fail 形态。
+
 ## run 面全分母重跑终账（2026-10-30 收口）
 
 三分片全部 exit=0（43 案全出，零 case 级 Timeout），合并终账
