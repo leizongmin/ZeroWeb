@@ -17,7 +17,7 @@ use zero_style_system::{
 };
 
 use super::super::color::{color_value_to_render, resolve_color_current};
-use super::super::helpers::image_resource_key;
+use super::super::helpers::{image_resource_key, inline_box_vertical_bleed};
 
 /// 边框边缘规格 — 描述一条边框的几何位置和方向。
 pub(super) struct BorderEdgeSpec {
@@ -1944,8 +1944,12 @@ impl super::Painter {
     ) {
         let bl = box_node.border_left;
         let br = box_node.border_right;
-        let bt = box_node.border_top;
-        let bb = box_node.border_bottom;
+        // R5353：竖框带厚用缺口口径（box 字段 + ComputedStyle 缺失量，R4297 同源）——
+        // R5336 竖框清零后 box fields bt/bb=0，带绘制按 ComputedStyle 补齐；
+        // 未清零时缺口恒 0 不双计。
+        let (host_bleed_top, host_bleed_bottom) = inline_box_vertical_bleed(style, box_node);
+        let bt = box_node.border_top + host_bleed_top;
+        let bb = box_node.border_bottom + host_bleed_bottom;
         let current = &style.color;
         let left_color = color_value_to_render(&resolve_border_current_color(style.border_left_color.clone(), current));
         let right_color =
@@ -2068,9 +2072,20 @@ fn resolve_border_current_color(color: ColorValue, current: &ColorValue) -> Colo
 /// 边界不计 slice（其区域外层 inline 无边框——nosplit-ref div 区无上下带实证）。
 /// 中间 inline 层（R109 split 宿主壳）继续深入；原子盒（replaced）不深入。
 /// 返回 None = 子树无片段盒（调用方不进切片绘制路径）。
-pub(crate) fn collect_block_in_inline_slices(box_node: &LayoutBox) -> Option<Vec<(f32, f32, f32)>> {
+pub(crate) fn collect_block_in_inline_slices(
+    box_node: &LayoutBox,
+    host_vframe_top: f32,
+) -> Option<Vec<(f32, f32, f32)>> {
     let mut out: Vec<(f32, f32, f32)> = Vec::new();
-    collect_slice_regions(box_node, 0.0, 0.0, 0, &mut out);
+    // R5353：根基座 = 内容区原点——x 照旧含 pl/bl（带右缘口径不变），cy 由调用方
+    // 按缺口口径传全值（R5336 清零后 `inline_box_vertical_bleed` 补齐原始头部偏移）。
+    collect_slice_regions(
+        box_node,
+        box_node.padding_left + box_node.border_left,
+        host_vframe_top,
+        0,
+        &mut out,
+    );
     if out.is_empty() {
         None
     } else {
@@ -2079,15 +2094,17 @@ pub(crate) fn collect_block_in_inline_slices(box_node: &LayoutBox) -> Option<Vec
     }
 }
 
+/// base = 本盒内容区原点（**已含**自身 pt/bt——根由 `collect_block_in_inline_slices`
+/// 传入缺口口径全值，子层在递归调用点累加）。R5353：R109 split 中间壳层的 pt/bt 不
+/// 累加——壳.y 重写（any-text 臂 line_y − bt）已把自身竖框折进 y（壳.y + 壳.bt = 0
+/// 净偏移），再叠加 box fields 会双计 +bt（insert-010 host 蓝带 8 vs 壳 cyan 带 5 实证）。
 fn collect_slice_regions(box_node: &LayoutBox, base_x: f32, base_y: f32, depth: usize, out: &mut Vec<(f32, f32, f32)>) {
     if depth > 32 {
         return;
     }
-    let cx = base_x + box_node.padding_left + box_node.border_left;
-    let cy = base_y + box_node.padding_top + box_node.border_top;
     for c in &box_node.children {
-        let x = cx + c.x;
-        let y = cy + c.y;
+        let x = base_x + c.x;
+        let y = base_y + c.y;
         if c.is_absolute || c.is_fixed {
             continue;
         }
@@ -2099,7 +2116,12 @@ fn collect_slice_regions(box_node: &LayoutBox, base_x: f32, base_y: f32, depth: 
             continue;
         }
         if !c.is_replaced {
-            collect_slice_regions(c, x, y, depth + 1, out);
+            let (cx2, cy2) = if c.is_r109_split {
+                (x, y)
+            } else {
+                (x + c.padding_left + c.border_left, y + c.padding_top + c.border_top)
+            };
+            collect_slice_regions(c, cx2, cy2, depth + 1, out);
         }
     }
 }

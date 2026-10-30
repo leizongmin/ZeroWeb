@@ -3486,13 +3486,28 @@ impl Painter {
                 // 如 insert-009/010 的 outer span）时，box-level 全边 border 会画成
                 // 贯穿全部块的连续竖带；抑制盒级绘制，改按 slice 描绘（left 仅首
                 // slice / right 仅末 slice / 上下带每 slice，见 border.rs 绘制函数）。
+                // R5353：R5336 域（kill-switch 开）放行 is_r109_split 壳走 slice 带——
+                // 壳盒级 border 被 skip_split_inline_deco 抑制（R5335 防贯穿竖带），
+                // 但 nosplit-ref 对应段壳的带 = 盒级 border 外锚（insert-010 REF 顶带
+                // 5–7 实证），TEST 壳带改经 slice 机制逐段外锚补齐（带位 = 段区间外
+                // 侧，与 REF 各段盒级带同位）。collect 对无片段盒子树返 None——老
+                // R109 多行壳（无片段盒）保持抑制语义不变。kill-switch off 时壳维持
+                // 旧抑制（彼时片段盒盒级 border bt=3 照画，无双画）。
+                static R5336_SLICE_BAND_ON: std::sync::LazyLock<bool> =
+                    std::sync::LazyLock::new(|| std::env::var("ZW_R109_SLICE_VFRAME_OVERFLOW").as_deref() != Ok("0"));
                 let r5335_block_slices = if matches!(style.display, DisplayValue::Inline)
-                    && !box_node.is_r109_split
+                    && (*R5336_SLICE_BAND_ON || !box_node.is_r109_split)
                     && !box_node.is_absolute
                     && !box_node.is_fixed
                     && !box_node.is_replaced
                 {
-                    border::collect_block_in_inline_slices(box_node)
+                    // R5353：宿主层 cy 基座 = box fields + ComputedStyle 缺口（R5336
+                    // 竖框清零后补齐原始头部偏移，R4297 同源口径）。
+                    let (bleed_top, _) = super::helpers::inline_box_vertical_bleed(style, box_node);
+                    border::collect_block_in_inline_slices(
+                        box_node,
+                        box_node.padding_top + box_node.border_top + bleed_top,
+                    )
                 } else {
                     None
                 };

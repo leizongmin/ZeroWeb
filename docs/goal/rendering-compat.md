@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5353 修复轮（带域收敛——R5352 §4 五件清单落地：E1 host taffy 位锚定 + E2 壳 slice 带 + 竖框缺口口径，block-in-inline-insert-010 ✗0.89% → ✗0.24%；corpus 781F→782F = 基线 + insert-011 假绿揭穿；kill-switch 沿用 `ZW_R109_SLICE_VFRAME_OVERFLOW`）**（2026-10-31）
+>
+> - **方向定谳**：五件清单收敛方向经实证从「方向 B（8–10 对齐 REF）」演化为 **chromium 位自动达成**——host 锚定 taffy 流位后 slice 带外锚 = 5–7 = chromium 位，REF 壳盒级带同位，TEST/REF 双页顶部带（x=100 CYN 5–7 + 26–28）完美同位同色，无需人为对齐。
+> - **交付**（三文件）：①inline_finalization empty-inline 臂宿主判定 `has_fragment_descendant`（后代扫描，直接子未携带 fragment 标记、片段在孙层）跳过 y 重写与竖框恢复——R5352 清零后宿主 taffy 位即流位，run.y 锚会把宿主提到行顶上方；**split 壳（any-text 臂）竖框恢复保留**（壳 bt field 承担内容链 child_off +bt 语义，清零实证文本 −3px 进带区）；②border.rs bt/bb 改缺口口径 `inline_box_vertical_bleed`（box fields + ComputedStyle 缺失量，R4297 同源）+ collect_slice_regions 重构「调用点加 frames」约定（is_r109_split 子层不累加 pt/bt 防双计——壳.y 重写已折入竖框）；③painter/mod.rs R5335 门放行 split 壳走 slice 带（无片段盒子树 collect 返 None，老 R109 多行壳维持抑制；kill-switch off 维持旧行为防双画）。
+> - **insert-011 假绿揭穿**：家族回归 011 翻红 1.23%（基线 0.86% 过案）——stash roundtrip 实证塌缩树一模一样，TEST 页 47px 塌缩（应 476px 完整树）是既有 bug，0.86% 过案 = 塌缩 TEST vs 完整 REF 的 diff 恰 <1% 互补假绿；正确带画上后打破。塌缩机制未定位挂账（删尾空 span 无效）。
+> - **门禁**：corpus 全量 **782F**，fail 集逐位 diff = 恰 {+insert-011}（基线 781F 零位移）；layout-engine lib 2286P/0F；make test 3611P/11F（唯一红 = 既有 fetch 11 挂账零位移）+ clippy 清零；product-smoke welcome 14.59% ≤ 20% + 全 struct-check PASS + legacy 0 失败；家族回归 127 案 5F = 基线 4 + 011。证据：[`rendering-compat/evidence/r5353-slice-band-convergence-2026-10-31.md`](rendering-compat/evidence/r5353-slice-band-convergence-2026-10-31.md)。
+> - **挂账**：**insert-011 塌缩域**（TEST 页 47px 塌缩既有 bug，机制未定位）；带域微残差 0.24%（x=9 蓝左带角部 3px、中段色差 BLU vs CYN、±1px = R4383 strut 级）；既有挂账（R5336 五件套余项、outer background 切片化、R4383 strut 预研、fmt 漂移三文件、R5341 及更早）全维持。**下一步 R5354**：①insert-011 塌缩域定位（LAYOUT_DUMP + 缩减 case）②带域微残差收官评估 ③782F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root/shadow-scoped/multicol/ref-chromium 冲突域）④R4383 strut 域预研。
+>
 > **▶ R5352 修复轮（§10.8.1 竖框不占块轴谓词放宽——第四层竖框膨胀收口：block-in-inline-insert-010 ✗1.09% → ✓0.89%；corpus 782F→781F FIXED=1 REGRESSED=0；kill-switch 沿用 `ZW_R109_SLICE_VFRAME_OVERFLOW=0`）**（2026-10-31）
 >
 > - **账本扫描**（782F 择轻）：0.00–1.5% 全带无独立轻案全归域——fullwidth-004/005 = vertical-rl（R5301）、clip-text = gradient（R5219/R5302）、highlight-paired = ::target-text（R5321）、file-selector-button = form widget 域、outline-028/corner-shape = 外观缺席、ligatures-005 = Arabic shaping、3D/backdrop/multicol/shadow-host = 既排除域；insert-010 = R4383 strut + 带域残差（R5335 条目既记）与 R5336 五件套 ② 会师 → 本轮主交付即其谓词余量。

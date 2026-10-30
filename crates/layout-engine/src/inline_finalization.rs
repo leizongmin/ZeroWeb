@@ -1266,13 +1266,28 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         // 位置来自 layout IFC（使用真实样式），而 paint 阶段运行独立的 paint IFC（使用
         // 空样式），两者行断行为不同；空零宽 run 不参与行断，几何可直接采信。
         let metrics = extract_inline_visual_metrics(style);
+        // R5353：R5335 片段链宿主（后代含匿名块片段盒）跳过 y 重写与竖框恢复——
+        // R5352 竖框清零后宿主 taffy 位即流位（块流首 = 容器 content 顶），run.y 锚
+        //（空 paint IFC 行盒顶，first_y = baseline − line_h）会把宿主整体提到行顶
+        // 上方（insert-010 host abs 2.8 vs chromium/壳带锚 5——壳带收敛后带位差
+        // 3px 全带域错位）；竖框恢复同步跳过（box fields 留 taffy 回写值 0，宿主
+        // 带厚/头部偏移由 paint 侧 `inline_box_vertical_bleed` 缺口口径补齐，见
+        // border.rs）。x/宽高/水平框恢复保留——R5335 slice 区间与左竖带（R5248
+        // advance 落账）依赖。片段盒可能嵌在中间壳层之下（本 pass 直接子尚未携带
+        // fragment_node_ids，insert-010 host 实测 nfrag=0/nchild=1 而片段在孙层），
+        // 故用后代扫描。注意 split 壳（any-text 臂）竖框恢复**保留**——壳 bt field
+        // 承担内容链 child_off +bt 语义（清零则文本整体 −3px 进带区，chromium 文本
+        // content_top = 带外侧 +bt 实证）。
+        let is_slice_host = has_fragment_descendant(child);
         // R5335：first_x 含首片段流内折入推进（border advance 落账，R5248 口径同
         // min_box_x）——空 inline 盒 x 语义 = border-box 缘，扣折入落账（与上方
         // any_text 臂 fold_landed 同式），否则 border-left 被双计（盒整体右偏）。
         let raw_ml = InlineFormattingContext::resolve_inline_margin(&style.margin_left, style);
         let fold_landed = (agg.first_ml - raw_ml).max(0.0);
         child.x = agg.first_x - fold_landed;
-        child.y = agg.first_y - metrics.padding_top - metrics.border_top;
+        if !is_slice_host {
+            child.y = agg.first_y - metrics.padding_top - metrics.border_top;
+        }
         child.width =
             agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
         child.height = agg.max_y - agg.min_y
@@ -1284,15 +1299,28 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         child.content_y = metrics.border_top + metrics.padding_top;
         child.content_width = agg.first_w;
         child.content_height = agg.max_y - agg.min_y;
-        child.padding_top = metrics.padding_top;
         child.padding_right = metrics.padding_right;
-        child.padding_bottom = metrics.padding_bottom;
         child.padding_left = metrics.padding_left;
-        child.border_top = metrics.border_top;
         child.border_right = metrics.border_right;
-        child.border_bottom = metrics.border_bottom;
         child.border_left = metrics.border_left;
+        if !is_slice_host {
+            // 竖框恢复跳过（R5353）：box fields 保持 taffy 回写值 0，与清零后的子项
+            // walk origin 一致；slice 带绘制经 `inline_box_vertical_bleed` 缺口口径
+            // 按 ComputedStyle 补齐（R4297 同源，见 border.rs）。
+            child.padding_top = metrics.padding_top;
+            child.padding_bottom = metrics.padding_bottom;
+            child.border_top = metrics.border_top;
+            child.border_bottom = metrics.border_bottom;
+        }
     }
+}
+
+/// R5353：子树是否含 R109 匿名块片段盒（R5335 片段链宿主判据，后代扫描）。
+fn has_fragment_descendant(box_node: &LayoutBox) -> bool {
+    box_node
+        .children
+        .iter()
+        .any(|c| c.fragment_node_ids.is_some() || has_fragment_descendant(c))
 }
 
 /// R4941：child 是否为 R2156 skip 提升的**原子行内级盒**（DOM 父 ≠ 本容器——由被跳过
