@@ -1854,3 +1854,131 @@ fn test_r109_slice_vframe_overflow_zeroes_vertical_frame() {
         );
     }
 }
+
+/// R5352：§10.8.1 竖框不占块轴谓词放宽到全部 inline taffy 项——无块级子的普通
+/// inline span 在 R109 混合容器（body 直含 div，span 被匿名块承载成 taffy 项）
+/// 中同样按块级盒模型把竖框计入块轴（insert-010-nosplit-ref 实证：蓝壳
+/// 3+18+3=24px 占流、页高 164 vs chromium 142，与切片页网格错位 6px/行）。
+/// 替换元素豁免（inline replaced 竖向 padding 计入尺寸——
+/// contain-size-replaced-002 svg padding:50px 0 回归实证）。
+#[test]
+fn test_inline_vframe_overflow_zeroed_without_block_child() {
+    use zero_style_system::BorderStyleValue;
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    // 混合容器：span（纯 inline 嵌套，无块级子）+ 块级兄弟。
+    let span = doc.create_element("span");
+    doc.append_child(body, span).unwrap();
+    let inner = doc.create_element("span");
+    doc.append_child(span, inner).unwrap();
+    let text = doc.create_text_node("x");
+    doc.append_child(inner, text).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let mut styles = HashMap::new();
+    for node in [span, inner] {
+        let mut s = ComputedStyle::default();
+        s.display = DisplayValue::Inline;
+        for (width, style_field) in [
+            (&mut s.border_top_width, &mut s.border_top_style),
+            (&mut s.border_bottom_width, &mut s.border_bottom_style),
+        ] {
+            *width = LengthValue::Px(3.0);
+            *style_field = BorderStyleValue::Solid;
+        }
+        styles.insert(node, s);
+    }
+    let mut div_style = ComputedStyle::default();
+    div_style.display = DisplayValue::Block;
+    styles.insert(div, div_style);
+
+    let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+
+    for dom in [span, inner] {
+        let nodes: Vec<_> = taffy_to_dom
+            .iter()
+            .filter(|(_, d)| **d == dom)
+            .map(|(t, _)| *t)
+            .collect();
+        assert!(!nodes.is_empty(), "span 应产生 taffy 项");
+        for t in &nodes {
+            let style = taffy_tree.style(*t).unwrap();
+            assert_eq!(
+                style.border.top,
+                taffy::style::LengthPercentage::length(0.0),
+                "无块级子 inline span 竖向 border.top 也应清零（R5352 谓词放宽）"
+            );
+            assert_eq!(
+                style.border.bottom,
+                taffy::style::LengthPercentage::length(0.0),
+                "无块级子 inline span 竖向 border.bottom 应清零"
+            );
+        }
+    }
+}
+
+/// R5352：替换元素豁免——inline replaced（svg/img）竖向 padding 计入尺寸
+///（§10.8.1 只限非替换盒；contain-size-replaced-002 回归实证）。
+#[test]
+fn test_inline_vframe_overflow_keeps_replaced_padding() {
+    use zero_style_system::ComputedStyle;
+
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let body = doc.create_element("body");
+    doc.append_child(html, body).unwrap();
+    let svg = doc.create_element("svg");
+    doc.append_child(body, svg).unwrap();
+    let div = doc.create_element("div");
+    doc.append_child(body, div).unwrap();
+
+    let mut styles = HashMap::new();
+    let mut svg_style = ComputedStyle::default();
+    svg_style.display = DisplayValue::Inline;
+    svg_style.padding_top = LengthValue::Px(50.0);
+    svg_style.padding_bottom = LengthValue::Px(50.0);
+    styles.insert(svg, svg_style);
+    let mut div_style = ComputedStyle::default();
+    div_style.display = DisplayValue::Block;
+    styles.insert(div, div_style);
+
+    let (taffy_tree, _root_id, taffy_to_dom) = build_layout_tree(
+        &doc,
+        &styles,
+        800.0,
+        600.0,
+        std::collections::HashMap::new(),
+        std::collections::HashMap::new(),
+    );
+
+    let nodes: Vec<_> = taffy_to_dom
+        .iter()
+        .filter(|(_, d)| **d == svg)
+        .map(|(t, _)| *t)
+        .collect();
+    assert!(!nodes.is_empty(), "svg 应产生 taffy 项");
+    for t in &nodes {
+        let style = taffy_tree.style(*t).unwrap();
+        assert_eq!(
+            style.padding.top,
+            taffy::style::LengthPercentage::length(50.0),
+            "inline replaced 竖向 padding 应保留（替换元素 §10.8.1 豁免）"
+        );
+    }
+}

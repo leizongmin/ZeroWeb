@@ -4679,24 +4679,25 @@ fn build_subtree(
         taffy_style.size.height = taffy::style::Dimension::length(0.0);
     }
     // R5336：CSS2 §10.8.1——inline 级盒的垂直 border/padding 只绘制不占块轴空间。
-    // taffy 无 inline 显示，R109 切片场景中被提升为块盒的 inline（split 壳自身，或
-    // 切片链上的 inline 祖先盒——其 taffy 子含 split parent）继承的盒模型按块级语义
-    // 把竖向框计入块轴（insert-010 实测：壳 3+3、anon 片段 18+6，3 slice 累计 +18px
-    // 页高；chromium 对照：slice 匿名块全为 18px strut 行，边框溢出行盒 −3/+1.5px）。
-    // 水平框保留（R5248 border advance 落账 / R5335 壳 frame 剥离依赖）。块化语境
-    //（float / flex|grid item / OOF）豁免——display:inline 在这些语境块化，竖框照常
-    // 占位。kill-switch 同 anon 片段臂 `ZW_R109_SLICE_VFRAME_OVERFLOW=0`。
+    // taffy 无 inline 显示，被提升为 taffy 项的 inline 继承的盒模型按块级语义把竖向
+    // 框计入块轴（insert-010 实测：壳 3+3、anon 片段 18+6，3 slice 累计 +18px 页高；
+    // chromium 对照：slice 匿名块全为 18px strut 行，边框溢出行盒 −3/+1.5px）。
+    // R5352：谓词从「切片链」（自身含块级子 ∨ taffy 子含 split parent）放宽到全部
+    // inline taffy 项——膨胀只发生在 inline 成为 taffy 项的场合（R109 混合容器匿名块
+    // 内的普通 inline span 同样中招：insert-010-nosplit-ref 蓝壳 3+18+3=24px 占流、
+    // 页高 164 vs chromium 142，与切片页网格错位 6px/行）。纯 inline 页（无块级子）
+    // 的 span 不生成 taffy 项（容器 IFC 直管），本臂本就不触及。水平框保留（R5248
+    // border advance 落账 / R5335 壳 frame 剥离依赖）。块化语境（float / flex|grid
+    // item / OOF）豁免——display:inline 在这些语境块化，竖框照常占位。替换元素
+    //（img/svg 等，contain-size-replaced-002 回归实证：inline replaced 竖向 padding
+    // 计入尺寸，§10.8.1 只限非替换盒）豁免。kill-switch 同 anon 片段臂
+    // `ZW_R109_SLICE_VFRAME_OVERFLOW=0`。
     if ctx.flags.r109_slice_vframe_overflow()
         && matches!(computed.display, DisplayValue::Inline)
         && matches!(computed.float, FloatValue::None)
         && matches!(computed.position, PositionValue::Static | PositionValue::Relative)
         && !is_flex_grid_item(doc, styles, dom_id)
-        && (r109_wired() && inline_has_block_child(doc, styles, dom_id)
-            || child_taffy_ids.iter().any(|&t| {
-                ctx.taffy_to_dom
-                    .get(&t)
-                    .is_some_and(|d| ctx.r109.split_parents.contains(d))
-            }))
+        && !is_replaced_element_tag(doc, dom_id)
     {
         taffy_style.border.top = taffy::style::LengthPercentage::length(0.0_f32);
         taffy_style.border.bottom = taffy::style::LengthPercentage::length(0.0_f32);

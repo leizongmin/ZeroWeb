@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5352 修复轮（§10.8.1 竖框不占块轴谓词放宽——第四层竖框膨胀收口：block-in-inline-insert-010 ✗1.09% → ✓0.89%；corpus 782F→781F FIXED=1 REGRESSED=0；kill-switch 沿用 `ZW_R109_SLICE_VFRAME_OVERFLOW=0`）**（2026-10-31）
+>
+> - **账本扫描**（782F 择轻）：0.00–1.5% 全带无独立轻案全归域——fullwidth-004/005 = vertical-rl（R5301）、clip-text = gradient（R5219/R5302）、highlight-paired = ::target-text（R5321）、file-selector-button = form widget 域、outline-028/corner-shape = 外观缺席、ligatures-005 = Arabic shaping、3D/backdrop/multicol/shadow-host = 既排除域；insert-010 = R4383 strut + 带域残差（R5335 条目既记）与 R5336 五件套 ② 会师 → 本轮主交付即其谓词余量。
+> - **定性**（插桩三站 + LAYOUT_DUMP + 像素 census，模板与数据入 evidence）：R5336 只修切片链三层，**第四层** = R109 混合容器匿名块内普通 inline span（纯嵌套无块级子）仍按块级盒模型把竖框计入块轴——nosplit-ref 蓝壳 3+18+3=24px 占流、页高 164 vs chromium 142、与切片页网格错位 6px/行（reftest 双页网格不一致为 010 主导残差：文本错位 2067px + 带域 3264px）。膨胀只发生在 inline 成为 taffy 项的场合（纯 inline 页 span 不生成 taffy 项）。
+> - **交付**：tree.rs arm ② 谓词从「切片链」放宽到全部 inline taffy 项 + **替换元素豁免**（首轮 corpus REGRESSED=contain-size-replaced-002 实证 inline replaced 竖向 padding 计入尺寸，svg padding:50px 0 案）——782F→**781F** FIXED=1 REGRESSED=0，家族 009 0.98→0.79% 其余持平，block-in-inline 过案 122→123。
+> - **门禁**：pin +2（无块级子 span 竖框清零 / replaced 豁免）+ R5336 既有 pin 仍绿；layout-engine lib 2286P/0F；make test 47 套 ok 唯一红 = 既有 11 挂账零位移；product-smoke welcome 14.59% ≤ 20%（改善）+ legacy 42 fixtures 0；fmt/clippy 清零。证据：[`rendering-compat/evidence/r5352-inline-vframe-widen-2026-10-31.md`](rendering-compat/evidence/r5352-inline-vframe-widen-2026-10-31.md)。
+> - **挂账**：**带域残差 0.89%**（三站锚不一致 + 片段带缺失，收敛方向二选一已评估 37 过案风险后挂起）：host abs_y = empty-inline 臂 run.y 锚（2.848，应 line-top 锚 5 或统一站）；片段盒带绘制读 box fields（R5336 清零后 bt=0 灭带，需改读 ComputedStyle，bl/br 保留边选择编码）；host content offset +3 与 taffy 清零矛盾（片段 abs 11 ≠ chromium 8，五件套④真身）；REF plain span 带锚 8–10 vs chromium 5–7（pure_inline_container 门 + agg-less 祖先，R4383 content-area 轴邻接）。R4383 strut 域（墨迹 +2px）专项维持；既有挂账全维持。**下一步 R5353**：①带域收敛轮（§4 五件清单择向落地，插桩模板与三态 census 数据在 evidence）②781F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root/shadow-scoped/multicol/ref-chromium 冲突域）③R4383 strut 域预研。
+>
 > **▶ R5351 修复轮（orphan inline 文本字体丢失根修——R109 片段盒 IFC 放行：`<p>` 前置 inline div 40px 字形曾回落 16px 默认整形 → ✓40px；corpus 782F 零位移 FIXED=0 REGRESSED=∅，机制案不在账本；kill-switch `ZW_ORPHAN_FRAG_IFC=0`）**（2026-10-31）
 >
 > - **定性**（R5350 末探针发现的机制定向核查，插桩逐站定谳）：layout 趟 flatten run `STYLED fs=40` 正确 → 存储缺失——body（R109 block-mixed 宿主：p 块子 + orphan inline div）被 compute_final `has_text_children` 拒绝（direct 臂无 DOM 直系文本子；PHASEA_STORE_EXT 臂混合排除 `!has_block_elem` 生效）→ **body/片段盒 IFC 不跑不存** → 绘制由 R109 匿名块片段盒（node_id 借 body）的 paint_text → Path B 重建，`inline_element_metrics[div]` miss → flatten run 回落 16px 默认字体（颜色伪样式正常 = paint 期真 styles 与 shaping 度量不同源）。无前缀 inline-first/block 形恒 40px 正常。
