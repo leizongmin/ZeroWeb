@@ -96,6 +96,10 @@ CLONE 现快于 IH——归因文档「clone ≈ 2×set」病征消除。
 - bold <100s 目标：未达（209s）——受上两项 + execCommand 面 glue 限制；
   S5/S8 残差收敛后复测。
 - 修复属纯性能余量项（R5342 后非解锁项），但 dom 面 900s 解锁为额外收益。
+- 自旋四案复测（[rerun evidence 终账节](2026-10-30-run-budget-unlock-rerun.md)）：
+  insertparagraph/multitest 全分母收回（script timeout 清零）、forwarddelete
+  +816 行；delete 无实质恢复（-129，中止集位移）——delete/forwarddelete
+  残余成本不在本修复路径，归上方 glue 桶，四案缺口 -8,289→-6,176。
 
 ## 8. 复验入口
 
