@@ -815,43 +815,71 @@ jobs:
             # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
             # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
             script_timeout: 600000
-          # form-url-encoding encode 面 68 文件按编码族拆四分片：本地
-          # （goal 36 基线机）5400s 守卫内全量跑完，CI 7200s/14400s 两轮
-          # （run 40985139206/41005658107）均在整点被 test-guard 杀树——
-          # form 提交导航密集负载 CI ≈ 本地 3–4×，全套件需 ~4.5–6h，超出
-          # GH job 360min 硬上限，单分片无安全预算。按族互斥拆分（filter
-          # 路径子串透传，runner 形参），聚合按路径取 max 不双记；四片
-          # result_tag 各异——aggregate 产物平铺（merge-multiple），同名
-          # JSON 会互相覆盖。big5-enc-ascii 在 tchinese 目录随 tw 片。
-          # encode-form 页每 variant ~1000 async_test 分窗断言，script
-          # timeout 同 mb-decode 提额。
-          - name: form-encode-jp
+          # form-url-encoding encode 面 68 文件按编码目录拆六分片。两轮教训：
+          # ① 预算（run 40985139206/41005658107 整点杀树）——form 提交导航
+          #   密集负载 CI ≈ 本地 3–4×，全套件 4.5h+ 超 GH job 360min 硬上限；
+          # ② run 41037174647 四族分片全绿但 form 面 550k 子测试贡献 0：
+          #   encode-form-common.js 提交目标 /common/blank.html 不在 CI fresh
+          #   语料（subset 清单已补拉），form 回路不完成 → 全部 async_test
+          #   挂起 → 单案 30s 预算杀掉（合成 Timeout）。本地 goal 时代两文件
+          #   都在位，从不暴露。blank.html 补拉 + case_timeout 提额（600s
+          #   ceiling，预期 CI form 条目 ~60–100s）双修后重分片。
+          # 按目录互斥（filter 路径子串透传），条目分布 euc-kr 254 / big5 204 /
+          # shift_jis 148 / euc-jp 108 / iso-2022-jp 101 / schinese 2（共 817），
+          # 预算按 form 条目 60–100s 配 ≥1.4× 余量；超预算失败形态安全（该脸
+          # 缺贡献 + 分片红，下轮细分）。result_tag 互异——aggregate 产物平铺
+          # （merge-multiple），同名 JSON 会互相覆盖。script timeout 同
+          # mb-decode 提额。
+          - name: form-encode-eucjp
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
-            filter: "legacy-mb-japanese"
-            result_tag: jp
+            filter: "euc-jp/"
+            result_tag: eucjp
+            time_limit: 10800
+            job_timeout: 210
+            script_timeout: 600000
+            case_timeout: 600
+          - name: form-encode-iso2022
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            filter: "iso-2022-jp/"
+            result_tag: iso2022
+            time_limit: 10800
+            job_timeout: 210
+            script_timeout: 600000
+            case_timeout: 600
+          - name: form-encode-sjis
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            filter: "shift_jis/"
+            result_tag: sjis
             time_limit: 14400
             job_timeout: 270
             script_timeout: 600000
-          - name: form-encode-kr
+            case_timeout: 600
+          - name: form-encode-euckr
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
-            filter: "legacy-mb-korean"
-            result_tag: kr
-            time_limit: 10800
-            job_timeout: 210
+            filter: "euc-kr/"
+            result_tag: euckr
+            time_limit: 19800
+            job_timeout: 350
             script_timeout: 600000
-          - name: form-encode-tw
+            case_timeout: 600
+          - name: form-encode-big5
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
-            filter: "legacy-mb-tchinese"
-            result_tag: tw
-            time_limit: 10800
-            job_timeout: 210
+            filter: "big5/"
+            result_tag: big5
+            time_limit: 16200
+            job_timeout: 300
             script_timeout: 600000
+            case_timeout: 600
           - name: form-encode-zh
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
@@ -861,6 +889,7 @@ jobs:
             time_limit: 3600
             job_timeout: 120
             script_timeout: 600000
+            case_timeout: 600
           - name: timing
             suites: >-
               resource-timing navigation-timing event-timing longtask-timing
@@ -1003,6 +1032,11 @@ jobs:
           # runner 缺省相同——零行为变化。缺提额时 encode-form 页（每 variant
           # ~1000 async_test）语料修好后仍会成批 Timeout 假失败。
           ZW_SCRIPT_TIMEOUT_MS: ${{ matrix.shard.script_timeout || 90000 }}
+          # 单案 wall-clock 预算缺省 30s（testharness.rs CORPUS_CASE_TIMEOUT）；
+          # form 通道按 shard 提额（case_timeout 字段），未设 shard 取 30 与
+          # runner 缺省相同——零行为变化。CI form 条目 ~60–100s（本地 3–4×），
+          # 缺提额会复现 run 41037174647 的整条合成 Timeout。
+          ZW_CORPUS_CASE_TIMEOUT_SECS: ${{ matrix.shard.case_timeout || 30 }}
         run: |
           # filter：runner 位置参数（路径子串，同套件按族拆分片时用，如
           # form-encode-jp）；空值展开为无参，既有分片零变化。result_tag：
