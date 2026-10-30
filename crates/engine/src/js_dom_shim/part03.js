@@ -4601,6 +4601,81 @@
     } catch (_eSh) {}
     return null;
   };
+  // s163（html-semantics M2 切片 163）：per-sheet 枚举口——document.styleSheets 的
+  // 外链条目从 R5114 单条合并 blob 换 per-sheet 结构化条目（`{text, href}` 逐 sheet
+  // 一条；part06 getter 消费）。枚举与 `_zwSsSheetHrefFor` 同构：live 文档序
+  // query_all('link') + rel 分词 stylesheet 门 + href 非空门 + 同款身份键派生
+  //（`__zw_handle_for_selector` 命中 R100 身份表才 '@handle' 形，静态 parse 元素
+  // 不在表 → plain sel——与静态扫描 `_elKey(sel,null)` 键同形，无错位）。条目门：
+  // 表有键且文本非空（'' = 取回 error = sheet 未注册——spec 失败取回不入
+  // styleSheets；blob fallback 的「空外部 css 不产条目」同语义）。href 取生效
+  // sheet href 表（s159 语义——首次发起挂解析 URL）。FIXME(compat)：R51c 查询
+  // 视图对动态 link 不可见 → 表内残留键（动态 link）按表插入序尾追（近似文档
+  // 序，该序不可得）；link type essence 门未建模（fetch 通道同缺，语料无形态）。
+  // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+  // https://drafts.csswg.org/cssom-1/#extensions-to-the-document-interface
+  globalThis._zwSsExtSheetEntries = function () {
+    var _esOut = [];
+    var _esSeen = {};
+    try {
+      if (typeof __zw_query_all === 'function') {
+        var _esSels = String(__zw_query_all('link') || '').split('|').filter(Boolean);
+        for (var _esI = 0; _esI < _esSels.length; _esI++) {
+          var _esSel = _esSels[_esI];
+          var _esRel = '';
+          var _esHref = '';
+          try {
+            _esRel = String((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(_esSel, 'rel') || '') : '');
+            _esHref = String((typeof __zw_get_attr_lw === 'function')
+              ? (__zw_get_attr_lw(_esSel, 'href') || '') : '');
+          } catch (_eEsR) { continue; }
+          var _esIsSheet = false;
+          var _esParts = _zwLinkRelTokens(_esRel);
+          for (var _esJ = 0; _esJ < _esParts.length; _esJ++) {
+            if (_esParts[_esJ] === 'stylesheet') { _esIsSheet = true; break; }
+          }
+          if (!_esIsSheet || !_esHref) continue;
+          var _esH = null;
+          try {
+            _esH = (typeof __zw_handle_for_selector === 'function')
+              ? (__zw_handle_for_selector(_esSel) || null) : null;
+          } catch (_eEsH) {}
+          var _esKey = _esH ? ('@' + _esH) : _esSel;
+          if (_esSeen[_esKey]) continue;
+          _esSeen[_esKey] = true;
+          if (!_zwExtSheetTexts.hasOwnProperty(_esKey)) continue;
+          var _esText = String(_zwExtSheetTexts[_esKey] || '');
+          if (_esText === '') continue;
+          // 表存 fetch 原文——`_makeStyleSheet` 消费 wire 形（\x1f/\x1e），桥 absent
+          // 回落原文（part06 split 无分隔符单块退化，解析面同 blob 无桥形态）。
+          if (typeof __zw_style_rules_text === 'function') {
+            try { _esText = String(__zw_style_rules_text(_esText) || ''); } catch (_eEsW) {}
+          }
+          _esOut.push({
+            text: _esText,
+            href: _zwSsSheetHrefMap.hasOwnProperty(_esKey) ? _zwSsSheetHrefMap[_esKey] : null
+          });
+        }
+      }
+      // 表内残留键（动态 link——query_all 视图不可见）尾追：跳过已枚举键与空
+      // 贡献（error 置空），插入序近似文档序（FIXME 见上）。
+      for (var _esK in _zwExtSheetTexts) {
+        if (!_zwExtSheetTexts.hasOwnProperty(_esK) || _esSeen[_esK]) continue;
+        var _esT2 = String(_zwExtSheetTexts[_esK] || '');
+        if (_esT2 === '') continue;
+        _esSeen[_esK] = true;
+        if (typeof __zw_style_rules_text === 'function') {
+          try { _esT2 = String(__zw_style_rules_text(_esT2) || ''); } catch (_eEsW2) {}
+        }
+        _esOut.push({
+          text: _esT2,
+          href: _zwSsSheetHrefMap.hasOwnProperty(_esK) ? _zwSsSheetHrefMap[_esK] : null
+        });
+      }
+    } catch (_eEs) {}
+    return _esOut;
+  };
   // s158：rel 分词——spec ASCII whitespace 集（TAB/LF/FF/CR/SPACE）。JS `\s` 含 \v
   // (U+000B)，tokenization 案面 `test\u000Bstylesheet` 是单 token ≠ stylesheet 应判
   // miss，旧 `\s+` 误命中。helper rel 门与重算遍历共用。
@@ -4657,8 +4732,173 @@
         // 后残留语句无级联影响）。
         _rcOut += _zwExtSheetTexts[_rcKey] + ';\n';
       }
+      // s164：style 元素 @import 落表文本并入合并文本（overlay 是该文本唯一级联载
+      // 体——引擎 base 槽不追踪 style @import，引擎解析对 @-rule defer）。逐 style
+      // live media 属性 wrap（同 link 面：no-match 文本级联零应用；空/缺省/'all'
+      // 不 wrap）。级联序：追加在 link 文本之后（文档序交错未建模——承 s161 外链
+      // 槽位级联序 FIXME 同债）。error 空贡献条目跳过。注：link 条目侧 `_rcText`
+      // 装填未消费（s161 引入的死代码，wrap 未落 `_rcOut`）——既有形态本刀不动，
+      // 仅记账。
+      var _rcStyles = String(__zw_query_all('style') || '').split('|').filter(Boolean);
+      for (var _rcSi = 0; _rcSi < _rcStyles.length; _rcSi++) {
+        var _rcSSel = _rcStyles[_rcSi];
+        if (!_zwStyleImportTexts.hasOwnProperty(_rcSSel)) continue;
+        var _rcSText = String(_zwStyleImportTexts[_rcSSel] || '');
+        if (_rcSText === '') continue;
+        var _rcSMedia = '';
+        try {
+          _rcSMedia = String(typeof __zw_get_attr_lw === 'function'
+            ? (__zw_get_attr_lw(_rcSSel, 'media') || '') : '');
+        } catch (_eRcM4) { _rcSMedia = ''; }
+        var _rcSMl = _rcSMedia.replace(/[\t\n\x0C\r ]+/g, ' ').trim().toLowerCase();
+        if (_rcSMl !== '' && _rcSMl !== 'all') {
+          _rcSText = '@media ' + _rcSMedia.replace(/[{}]/g, ' ') + ' {' + _rcSText + '}';
+        }
+        _rcOut += _rcSText + ';\n';
+      }
       __zw_set_external_css(_rcOut);
     } catch (_eRc) {}
+  };
+  // s164（html-semantics M2 切片 164）：**静态 style 元素 @import 取回通道**——此前
+  // 该面整体缺位：引擎 base 路径对 style 文本 @-rule defer（零取回零级联），shim 取回
+  // 通道只覆盖 link（s150 动态/s152 静态），style-element-media-match-block-script
+  // 断言面（styleExists 经 CSSImportRule.styleSheet 递归 + gCS purple）恒红。spec：
+  // style 元素 sheet 的 @import 规则照常取回，匹配 media 的 sheet **阻塞其后 parsing
+  // script**（脚本断言前表已注册）；取回失败 → 向元素 fire error（style_events tError
+  // 面），成功不重复派 load（s162 静态臂 inline 就绪语义已派——双事件不建模）。
+  // 触发臂 = `_zwStylesheetStaticScanUpto` 交错扫描（s152 同款 prefix 游标：文档序
+  // style 表 + 每 script 累计数，脚本体前触发其前未触发 style——script-blocking 时序
+  // 靠扫描窗同步结算承载：`__zwScanCollapseTrickle` 折叠 delay（s163 stylesheet.py
+  // delay 参数），`__zw_fetch` 同步契约微任务同求值清空 → 落表 + 级联下发先于脚本体）。
+  // 动态创建的 style 元素不在扫描快照（首次调用建表），script-created/
+  // dynamic-render-blocking「不阻塞」案语义天然保持。
+  // 门序（spec update a style block）：type eligible 门（s156/s160 精确匹配口径，非
+  // eligible sheet 不创建不取回）→ media 门（s163 link 同款 `__zw_match_media` 求值，
+  // no-match 推迟 setTimeout(0)——扫描窗外无折叠，delay 端点真延迟落表，断言时点
+  // 语义保持）→ @import 提取（零命中零成本 bail）。取回复用 `_zwSsVisitCss`（mixed
+  // 门/judge/递归/pending 计数同链）；落表文本经 `_zwSsRecomputeExt` 并入 overlay 合并
+  // 文本（级联唯一载体——引擎 base 槽不追踪 style @import）；error 空贡献 + 向元素
+  // 派 error（连接门 fire 点重查，s162 同款）。CSSOM 注入口 = part06 `_makeSheetBuild`
+  //（`_zwStyleImportEntries`，CSSImportRule 形 + styleSheet 子表）。
+  // 键口径：扫描快照 sel 原文直作键（静态 parse 元素身份，无 handle 形——R100 表只收
+  // script-created 元素；recompute/part06 侧 live query sel 同源同形，失配即 miss 跳过
+  // 不串键）。
+  // FIXME(compat)：@import 规则原位语义未建模（取回文本整体追加在 style 规则文本后
+  // ——CSSImportRule.styleSheet 子表 face 读取序正确）；type/title 属性变更、动态
+  // style 的 @import 臂未挂（语料无形态）；link 通道 recompute 的 media wrap 死代码
+  //（`_rcText` 装填未消费，s161 引入——本刀 style 条目 wrap 正确应用，link 条目不在
+  // 本刀范围仅记账）。
+  // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+  // https://drafts.csswg.org/cssom-1/#cssimportrule
+  var _zwStyleImportTexts = {}; // style sel → 落表 import 文本（'' = error 空贡献）
+  var _zwStyleImportUrls = {};  // style sel → 已取回解析 URL 序（CSSOM import rule href 面）
+  var _zwStyleImportFired = {}; // style sel → 已发起/已排程印记（幂等——media defer 排程即置）
+  // part06 `_makeSheetBuild` cssRules 注入口：该 style 的落表文本转 wire（s163
+  // `__zw_style_rules_text` 桥——`_makeStyleSheet` 消费形）+ 解析 URL，逐条产出
+  // CSSImportRule 子表面数据（cssText 上游 real UA 序列化形——引号 url()）。
+  globalThis._zwStyleImportEntries = function (sel) {
+    var _siOut = [];
+    try {
+      var _siKey = String(sel || '');
+      if (!_zwStyleImportTexts.hasOwnProperty(_siKey)) return _siOut;
+      var _siText = String(_zwStyleImportTexts[_siKey] || '');
+      if (_siText === '') return _siOut;
+      if (typeof __zw_style_rules_text === 'function') {
+        try { _siText = String(__zw_style_rules_text(_siText) || ''); } catch (_eSiW) {}
+      }
+      var _siUrls = _zwStyleImportUrls[_siKey] || [];
+      for (var _siI = 0; _siI < _siUrls.length; _siI++) {
+        _siOut.push({
+          cssText: '@import url("' + _siUrls[_siI] + '");',
+          href: _siUrls[_siI],
+          text: _siText
+        });
+      }
+    } catch (_eSi) {}
+    return _siOut;
+  };
+  // 扫描臂（每 style 一次）：门序见块注。多 @import 聚合语义同 link 内层（任一
+  // error → error；文本顶层先、内层随后 join(';\n')——分号分隔防无分号 @import
+  // preamble 吞内层首规则，s158 同款）。
+  globalThis._zwStyleScanVisit = function (sel) {
+    try {
+      var _svKey = String(sel || '');
+      if (!_svKey || _zwStyleImportFired[_svKey]) return;
+      var _svType = '';
+      try {
+        _svType = String(typeof __zw_get_attr_lw === 'function'
+          ? (__zw_get_attr_lw(_svKey, 'type') || '') : '');
+      } catch (_eSvT) { _svType = ''; }
+      if (_svType !== '' && _svType.toLowerCase() !== 'text/css') {
+        _zwStyleImportFired[_svKey] = true;
+        return;
+      }
+      var _svMediaRaw = '';
+      try {
+        _svMediaRaw = String(typeof __zw_get_attr_lw === 'function'
+          ? (__zw_get_attr_lw(_svKey, 'media') || '') : '');
+      } catch (_eSvM) { _svMediaRaw = ''; }
+      var _svText = '';
+      try {
+        _svText = String(typeof __zw_get_text_lw === 'function'
+          ? (__zw_get_text_lw(_svKey) || '') : '');
+      } catch (_eSvX) { _svText = ''; }
+      var _svBase = (typeof globalThis._zwDocBaseURL === 'function')
+        ? globalThis._zwDocBaseURL()
+        : (globalThis.location ? globalThis.location.href : '');
+      var _svUrls = _zwStylesheetImports(_svText, _svBase);
+      if (!_svUrls.length) { _zwStyleImportFired[_svKey] = true; return; }
+      _zwStyleImportFired[_svKey] = true;
+      var _svGo = function () {
+        var _svCollect = [];
+        var _svLeft = _svUrls.length;
+        var _svFailed = false;
+        var _svDone = function (_svV) {
+          if (_svV !== 'load') _svFailed = true;
+          _svLeft -= 1;
+          if (_svLeft !== 0) return;
+          _zwStyleImportTexts[_svKey] = _svFailed ? '' : _svCollect.join(';\n');
+          if (!_svFailed) _zwStyleImportUrls[_svKey] = _svUrls;
+          if (!_svFailed && typeof globalThis._zwSsRecomputeExt === 'function') {
+            globalThis._zwSsRecomputeExt();
+          }
+          if (_svFailed) {
+            // 取回失败 → fire error（连接门 fire 点重查，s162 派发形态同款）。成功
+            // 不派 load——s162 静态臂 inline 就绪语义已派，双事件不建模（FIXME 见块注）。
+            try {
+              var _svProxy = (typeof _makeProxy === 'function') ? _makeProxy(_svKey, null) : null;
+              if (_svProxy && _svProxy.isConnected === true
+                  && typeof _dispatchWithBubble === 'function'
+                  && typeof _makeEvent === 'function') {
+                _dispatchWithBubble(_svKey, _svKey, null,
+                  _makeEvent('error', { bubbles: false, cancelable: false }));
+              }
+            } catch (_eSvE) {}
+          }
+        };
+        for (var _svI = 0; _svI < _svUrls.length; _svI++) {
+          globalThis._zwSsVisitCss(_svUrls[_svI], _svUrls[_svI], 0, _svDone, _svCollect);
+        }
+      };
+      // media 门（s163 link 同款）：非空非 all（ASCII 归一）经宿主 `__zw_match_media`
+      // 求值 no-match → 推迟 setTimeout(0)——扫描窗外执行，delay 折叠失效，落表
+      // 时点在断言后（not-match 案语义保持）。视口 1280×800 FIXME 承袭。
+      var _svMediaNorm = _svMediaRaw.replace(/[\x09\x0a\x0c\x0d\x20]+/g, ' ').trim().toLowerCase();
+      var _svBlocks = true;
+      if (_svMediaNorm !== '' && _svMediaNorm !== 'all'
+          && typeof __zw_match_media === 'function') {
+        try {
+          var _svMq = JSON.parse(__zw_match_media(_svMediaRaw, 1280, 800) || '{}');
+          _svBlocks = !!_svMq.matches;
+        } catch (_eSvQ) { _svBlocks = true; }
+      }
+      if (_svBlocks) _svGo();
+      else setTimeout(_svGo, 0);
+    } catch (_eSv) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_eSv, null); } catch (_eSvR) {}
+      }
+    }
   };
   // s162（html-semantics M2 切片 162）：**style 元素 load 事件面**——spec update a
   // style block 的派发半：style sheet 就绪即向元素 fire load（inline 文本同步就绪，
@@ -4744,6 +4984,84 @@
         globalThis._zwStylesheetMaybeStart(_ssR2Sel, _ssR2H, null, _ssRElObj);
       } catch (_eSsR2) {}
     }, 0);
+  };
+  // s151：stylesheet 取回引擎（原 `_zwStylesheetMaybeStart` 内本地闭包 `_ssVisit`，
+  // s164 平移为模块级供 style @import 扫描臂共用——闭包无调用点特定捕获，平移零
+  // 语义差）。fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
+  // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
+  // quirks-宽容 / broken-CT 无头放行）；通过后解析 @import 内层 URL 逐个取回
+  //（同一判定链），任一 error → 外层 error、全部 load → load。
+  // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
+  // s153 三件：①多层递归展开（s151 一层边界收口——中层体内的第二层 @import
+  // 此前不可见，双层案（nonexistent/non-CSS/http mixed）期望 error 面全部失效
+  // 误 load；_ssDepth 上限 3 兜底环，FIXME(compat)：CSS @import 环检测未建模）。
+  // ②逐层 mixed content 门——@import 内层请求同为子资源取回，https 页 http:
+  // 内层应 block（error），此前只有外层 href 门覆盖；跨源 http 内层在 s153 前
+  // 碰巧由 fetch CORS check 顶住（静态臂无 ACAO），stylesheet 通道 CORS 豁免
+  // （③）后须显式补门（同 spec blocked fetch → error 事件语义）。③调用窗置位
+  // _zwStylesheetChannelDepth（part01 IIFE 局部旗标，页面不可见）——上游
+  // stylesheet 取回是 no-cors 请求不做 CORS check（HTML fetching stylesheets；
+  // 跨源无 ACAO 照常 load），shim fetch(cors) 仿真引入的 check 对跨端口案拒
+  //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
+  // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
+  // 门不受影响。
+  // s158：`_ssCollect`（可选）——各层取回文本 push（顶层先、@import 内层随后），
+  // 顶层 done 回调按身份键存 overlay 表。error 路径层文本可能缺失（按既有聚合
+  // error 语义整链置空串）。
+  globalThis._zwSsVisitCss = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDoneRaw, _ssCollect) {
+    var _ssBlocked = false;
+    try {
+      var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
+        ? globalThis._zwDocBaseURL()
+        : (globalThis.location ? globalThis.location.href : '');
+      if (String(_ssUrl).indexOf('http:') === 0 && String(_ssPageHref || '').indexOf('https:') === 0) {
+        _ssBlocked = true;
+      }
+    } catch (_eMx) {}
+    if (_ssBlocked) {
+      // 同步回调：批内序先于微任务 load 子归零——先标 failed 后再归零，防
+      // 同批可 load 内层的微任务抢先 fire load（聚合语义 error 优先）。
+      _ssOnDoneRaw('error');
+      return;
+    }
+    // s157：取回在飞 pending——每层 _zwSsVisitCss 恰一次 settle（同步门/then 链全
+    // 路径），包装在 settle 点归零；@import 内层递归逐层自计。fetch 同步抛按
+    // 取回拒绝语义归零派 error（旧路径外层 catch 静默无事件——计数平衡优先）。
+    var _ssOnDone = function (_ssV) {
+      _zwSsLoadPending--;
+      _ssOnDoneRaw(_ssV);
+    };
+    _zwSsLoadPending++;
+    var _ssP;
+    try {
+      _zwStylesheetChannelDepth++;
+      try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
+    } catch (_eSsF157) {
+      _zwSsLoadPending--;
+      _ssOnDoneRaw('error');
+      return;
+    }
+    _ssP.then(function (_ssR) {
+      if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
+      if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
+      _ssR.text().then(function (_ssCss) {
+        if (_ssCollect) _ssCollect.push(_ssCss);
+        if (_ssDepth >= 3) { _ssOnDone('load'); return; }
+        var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbsUrl);
+        if (!_ssUrls.length) { _ssOnDone('load'); return; }
+        var _ssPending = _ssUrls.length;
+        var _ssFailed = false;
+        for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
+          _zwSsVisitCss(_ssUrls[_ssI], _ssUrls[_ssI], _ssDepth + 1, function (_ssV) {
+            if (_ssV !== 'load') _ssFailed = true;
+            _ssPending -= 1;
+            if (_ssPending === 0) _ssOnDone(_ssFailed ? 'error' : 'load');
+          }, _ssCollect);
+        }
+      }).catch(function () { _ssOnDone('error'); });
+    }).catch(function () {
+      _ssOnDone('error');
+    });
   };
   // `noOverlay`（s158 第 5 参）：静态扫描臂传 true——扫描 link 的取回文本**不存
   // overlay 不重算下发**（base 槽已由 webview resolve_external_css 装入同语义文本；
@@ -4915,82 +5233,9 @@
       if (_ssKey != null && !_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) {
         _zwSsSheetHrefMap[_ssKey] = _ssAbs;
       }
-      // fetch 结果语义（s151 MIME/nosniff 判定 + @import 内层链）：HTTP ok 后过
-      // CSS 适配色判定（_zwStylesheetJudge——nosniff 严检 / wrong-CT standards-strict
-      // quirks-宽容 / broken-CT 无头放行）；通过后解析 @import 内层 URL 逐个取回
-      //（同一判定链），任一 error → 外层 error、全部 load → load。
-      // https://drafts.csswg.org/css-syntax-3/#the-stylesheet-content-type-error
-      // s153 三件：①多层递归展开（s151 一层边界收口——中层体内的第二层 @import
-      // 此前不可见，双层案（nonexistent/non-CSS/http mixed）期望 error 面全部失效
-      // 误 load；_ssDepth 上限 3 兜底环，FIXME(compat)：CSS @import 环检测未建模）。
-      // ②逐层 mixed content 门——@import 内层请求同为子资源取回，https 页 http:
-      // 内层应 block（error），此前只有外层 href 门覆盖；跨源 http 内层在 s153 前
-      // 碰巧由 fetch CORS check 顶住（静态臂无 ACAO），stylesheet 通道 CORS 豁免
-      // （③）后须显式补门（同 spec blocked fetch → error 事件语义）。③调用窗置位
-      // _zwStylesheetChannelDepth（part01 IIFE 局部旗标，页面不可见）——上游
-      // stylesheet 取回是 no-cors 请求不做 CORS check（HTML fetching stylesheets；
-      // 跨源无 ACAO 照常 load），shim fetch(cors) 仿真引入的 check 对跨端口案拒
-      //「Failed to fetch」≠ 期望 load。窗只罩 fetch() 调用本身（同步段快照进闭包，
-      // trickle/delay 等 setTimeout 异步取回臂同样生效），404/MIME 判定链与 mixed
-      // 门不受影响。
-      // s158：`_ssCollect`（可选）——各层取回文本 push（顶层先、@import 内层随后），
-      // 顶层 done 回调按身份键存 overlay 表。error 路径层文本可能缺失（按既有聚合
-      // error 语义整链置空串）。
-      var _ssVisit = function (_ssUrl, _ssAbsUrl, _ssDepth, _ssOnDoneRaw, _ssCollect) {
-        var _ssBlocked = false;
-        try {
-          var _ssPageHref = (typeof globalThis._zwDocBaseURL === 'function')
-            ? globalThis._zwDocBaseURL()
-            : (globalThis.location ? globalThis.location.href : '');
-          if (String(_ssUrl).indexOf('http:') === 0 && String(_ssPageHref || '').indexOf('https:') === 0) {
-            _ssBlocked = true;
-          }
-        } catch (_eMx) {}
-        if (_ssBlocked) {
-          // 同步回调：批内序先于微任务 load 子归零——先标 failed 后再归零，防
-          // 同批可 load 内层的微任务抢先 fire load（聚合语义 error 优先）。
-          _ssOnDoneRaw('error');
-          return;
-        }
-        // s157：取回在飞 pending——每层 _ssVisit 恰一次 settle（同步门/then 链全
-        // 路径），包装在 settle 点归零；@import 内层递归逐层自计。fetch 同步抛按
-        // 取回拒绝语义归零派 error（旧路径外层 catch 静默无事件——计数平衡优先）。
-        var _ssOnDone = function (_ssV) {
-          _zwSsLoadPending--;
-          _ssOnDoneRaw(_ssV);
-        };
-        _zwSsLoadPending++;
-        var _ssP;
-        try {
-          _zwStylesheetChannelDepth++;
-          try { _ssP = fetch(_ssUrl); } finally { _zwStylesheetChannelDepth--; }
-        } catch (_eSsF157) {
-          _zwSsLoadPending--;
-          _ssOnDoneRaw('error');
-          return;
-        }
-        _ssP.then(function (_ssR) {
-          if (!_ssR || !_ssR.ok) { _ssOnDone('error'); return; }
-          if (_zwStylesheetJudge(_ssR, _ssAbsUrl) !== 'load') { _ssOnDone('error'); return; }
-          _ssR.text().then(function (_ssCss) {
-            if (_ssCollect) _ssCollect.push(_ssCss);
-            if (_ssDepth >= 3) { _ssOnDone('load'); return; }
-            var _ssUrls = _zwStylesheetImports(_ssCss, _ssAbsUrl);
-            if (!_ssUrls.length) { _ssOnDone('load'); return; }
-            var _ssPending = _ssUrls.length;
-            var _ssFailed = false;
-            for (var _ssI = 0; _ssI < _ssUrls.length; _ssI++) {
-              _ssVisit(_ssUrls[_ssI], _ssUrls[_ssI], _ssDepth + 1, function (_ssV) {
-                if (_ssV !== 'load') _ssFailed = true;
-                _ssPending -= 1;
-                if (_ssPending === 0) _ssOnDone(_ssFailed ? 'error' : 'load');
-              }, _ssCollect);
-            }
-          }).catch(function () { _ssOnDone('error'); });
-        }).catch(function () {
-          _ssOnDone('error');
-        });
-      };
+      // s164：取回引擎原为本地闭包 `_ssVisit`——平移为模块级 `globalThis._zwSsVisitCss`
+      //（link 通道与 style 元素 @import 扫描臂共用；原闭包无调用点特定捕获，平移零
+      // 语义差，注释与实现随函数迁移至定义点）。
       // s158：done 时按身份键存 overlay（load → 收集文本 join；error → 空串=级联空
       // 贡献）+ 重算级联下发，再走既有 fire 链。键 null（静态扫描无身份形态）不存
       // 表不重算——覆盖门保持快照臂基线。join 分隔 `;\n`（非 `\n`）——顶层 @import
@@ -5002,14 +5247,41 @@
       // 臂）**存表但不下发**——表条目解锁后续变更面 recompute 的覆盖门（多 link 页
       // 静态 link 未入表会卡住整次替换），下发留给变更臂（税=0，见 noOverlay 注）。
       var _ssCollect = [];
-      _ssVisit(_ssHref, _ssAbs, 0, function (_ssV) {
-        if (_ssKey != null) {
-          _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
-          if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
-          if (!noOverlay) _zwSsRecomputeExt();
-        }
-        _ssFire(_ssV);
-      }, _ssCollect);
+      // s163（html-semantics M2 切片 163）：media 不匹配 → **推迟取回发起**（setTimeout 0
+      // ——mixed 门 setTimeout error 同款异步形态）。spec：media 不匹配的 stylesheet 照常
+      // 加载注册（cssom 注册与 media 无关），但**不阻塞**其后的 parsing script 与 load
+      //（HTML render-blocking 语义 media 门）。同步契约路径（`__zw_fetch` 同求值清空）
+      // 下，匹配 link 的 load/级联先于脚本体 fire（s152 交错触发语义保持）；不匹配 link
+      // 推迟到后续 pump（脚本间 drain / loadStep5275 轮询）——delay 端点（runner
+      // interactions stylesheet.py sleep）不再挡住脚本体时序。media 求值经宿主
+      // `__zw_match_media`（part05 matchMedia 同桥），视口 1280×800 与 s160/s161 静态
+      // 路径门同约定（FIXME：真实视口 debt 承袭）。空串/`all`（归一后）恒匹配不推迟；
+      // 宿主桥缺席嵌入方回落恒匹配（零行为差）。
+      // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+      // https://html.spec.whatwg.org/multipage/rendering.html#render-blocking
+      var _ssDoVisit = function () {
+        globalThis._zwSsVisitCss(_ssHref, _ssAbs, 0, function (_ssV) {
+          if (_ssKey != null) {
+            _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
+            if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
+            if (!noOverlay) _zwSsRecomputeExt();
+          }
+          _ssFire(_ssV);
+        }, _ssCollect);
+      };
+      var _ssMediaRaw = _ssReadAttr('media');
+      var _ssMediaNorm = String(_ssMediaRaw || '')
+        .replace(/[\x09\x0a\x0c\x0d\x20]+/g, ' ').trim().toLowerCase();
+      var _ssMediaBlocks = true;
+      if (_ssMediaNorm !== '' && _ssMediaNorm !== 'all'
+          && typeof __zw_match_media === 'function') {
+        try {
+          var _ssMqJson = JSON.parse(__zw_match_media(_ssMediaRaw, 1280, 800) || '{}');
+          _ssMediaBlocks = !!_ssMqJson.matches;
+        } catch (_eSsMq) { _ssMediaBlocks = true; }
+      }
+      if (_ssMediaBlocks) _ssDoVisit();
+      else setTimeout(_ssDoVisit, 0);
     } catch (_eSs) {
       if (typeof globalThis._zwReportListenerError === 'function') {
         try { globalThis._zwReportListenerError(_eSs, null); } catch (_eSsr) {}
@@ -5037,6 +5309,11 @@
   var _zwScanLinks = null; // 文档序 link selector 表（前缀游标直取）
   var _zwScanScriptPrefix = null; // 每 script 前的 link 累计数（script 文档序）
   var _zwScanFiredCount = 0; // 已触发 link 前缀游标（单调推进）
+  // s164：style @import 扫描臂表（同款 prefix 游标；快照建表——动态创建 style 不入
+  // 表，「script-created 不阻塞」案语义天然保持）。
+  var _zwScanStyles = null;
+  var _zwScanStylePrefix = null;
+  var _zwScanStyleFired = 0;
   globalThis._zwStylesheetStaticScanUpto = function (scriptOrdinal) {
     try {
       var _ord = Number(scriptOrdinal) | 0;
@@ -5045,8 +5322,11 @@
       if (_zwScanScriptPrefix === null) {
         _zwScanLinks = [];
         _zwScanScriptPrefix = [];
+        _zwScanStyles = [];
+        _zwScanStylePrefix = [];
         var _scAll = _zwDocAllElements();
         var _scLinks = 0;
+        var _scStyles = 0;
         for (var _sci = 0; _sci < _scAll.length; _sci++) {
           var _scEl = _scAll[_sci];
           if (!_scEl || _scEl.nodeType !== 1) continue;
@@ -5054,11 +5334,17 @@
           try { _scLn = String(_scEl.localName || ''); } catch (_eLn) {}
           if (_scLn === 'script') {
             _zwScanScriptPrefix.push(_scLinks);
+            _zwScanStylePrefix.push(_scStyles);
           } else if (_scLn === 'link') {
             var _scSel = String(_scEl.__zwSelector || _scEl.__zwHandle || '');
             if (!_scSel) continue;
             _zwScanLinks.push(_scSel);
             _scLinks++;
+          } else if (_scLn === 'style') {
+            var _scSelS = String(_scEl.__zwSelector || _scEl.__zwHandle || '');
+            if (!_scSelS) continue;
+            _zwScanStyles.push(_scSelS);
+            _scStyles++;
           }
         }
       }
@@ -5079,6 +5365,17 @@
         while (_zwScanFiredCount < _scPrefix) {
           globalThis._zwStylesheetMaybeStart(_zwScanLinks[_zwScanFiredCount], null, null, null, true);
           _zwScanFiredCount++;
+        }
+        // s164：style @import 扫描臂（同窗触发——`_zwStyleScanVisit` 门内 media
+        // no-match 自推迟到窗外，delay 折叠失效语义见其块注）。门内零命中/非
+        // eligible 零成本 bail，游标照常推进（槽位语义按 style 元素计数）。
+        var _scStylePrefix = (_ord < _zwScanStylePrefix.length)
+          ? _zwScanStylePrefix[_ord] : _zwScanStyles.length;
+        while (_zwScanStyleFired < _scStylePrefix) {
+          if (typeof globalThis._zwStyleScanVisit === 'function') {
+            globalThis._zwStyleScanVisit(_zwScanStyles[_zwScanStyleFired]);
+          }
+          _zwScanStyleFired++;
         }
       } finally {
         globalThis.__zwScanCollapseTrickle = false;
@@ -19122,6 +19419,19 @@
       // R262：live-range 边界迁移（spec concept-node-pre-remove 末段——先于树状态变化）。
       try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(c); } catch (_eR262m) {}
       node.childNodes.splice(i, 1);
+      // editing-compat D1：sel 锚定补偿子树内子移除穿透（marker strip 对写空的文本
+      // 节点 `node.remove()` → 本函数——引擎 doc 同步移除面）。寻址同
+      // `_zwD1PersistData`（path 末位 = 被移除子自身，i 取 splice 前序）；身份印
+      // 排除 handle/sel 子（t7 host 对偶摘除已覆盖，重复入队会双删）与远端
+      // stamping 印 `__zwSelPathWrite`（D1 stamping 域走其 accessor 自带移除面）。
+      // 2026-10-31 撞车合并：wire 统一远端名 `__zw_remove_child_at_path`。
+      try {
+        if (!(c.__zwHandle || c.__zwSelector || c.__zwSelPathWrite)
+          && typeof globalThis.__zw_remove_child_at_path === 'function') {
+          var _d1fp = _zwFragSelPathOf(node);
+          if (_d1fp) globalThis.__zw_remove_child_at_path(_d1fp.sel, _d1fp.path.concat(i).join(','));
+        }
+      } catch (_eD1rm) {}
       // WC-M3 切片 3：反链强写（_zwForceParentLink——R84 getter-only 反链的子摘除后
       // parentNode 残留旧父，slots-fallback 'Remove a slot' 的 s1.assignedNodes()
       // 上溯死树仍命中 c1——spec：slot 出 shadow 树后分配清空）。
@@ -20461,6 +20771,76 @@
     } catch (_e263a) {}
   }
   try { globalThis.__zwAdjustRangesForInsert = _zwAdjustRangesForInsert; } catch (_eR263ex) {}
+  // editing-compat D1（2026-10-30）：补偿子树（innerHTML= 进 sel 容器的解析树，plain
+  // 视图——中间层元素与文本子均无 selector/handle/写路径身份印，evidence
+  // 2026-10-30-ws-join-impl-and-pipeline-blocker §3-D1）内 CharacterData 写/子移除的
+  // 引擎持久化寻址。沿 parentNode 链上行至首个 `__zwSelector` 祖先（sel 容器——live
+  // 宿主本身有 selector），逐级 childNodes 序收集 child-index 链（锚下行、**末位 =
+  // 目标节点自身**，与引擎 `walk_child_path` 全节点序口径一致）。返回 null = 不在 sel
+  // 锚定的补偿子树内（DOMParser/detached/handle 容器域）——维持既有本地快照行为。
+  function _zwFragSelPathOf(t) {
+    try {
+      var up = null, cur = t, guard = 0;
+      while (cur && guard++ < 64) {
+        if (cur.__zwSelector != null && cur.__zwSelector !== '') {
+          return { sel: cur.__zwSelector, path: up ? up.reverse() : [] };
+        }
+        var p = cur.parentNode;
+        if (!p || !p.childNodes || typeof p.childNodes.indexOf !== 'function') return null;
+        var idx = p.childNodes.indexOf(cur);
+        if (idx < 0) return null;
+        (up = up || []).push(idx);
+        cur = p;
+      }
+    } catch (_eD1p) {}
+    return null;
+  }
+  // D3 世界同步面（2026-10-30）：plain ref 的位置串渲染——自 ref 上行至首个
+  // `__zwSelector` 祖先（锚 sel 即引擎可解析的完整位置链），逐级按**元素序**
+  //（`:nth-child` 口径，只数元素兄弟，与引擎 fastpath 计数一致）收集 child-index
+  // 与标签，渲染 `anchor > tag:nth-child(pos) > …` 位置链。引擎
+  // `find_by_selector` 按当前树态解析（insertBefore apply 臂 lenient skip 兜底
+  // 同批前序 remove 的索引漂移）。文本 ref / detached 无锚 → null（维持既有
+  // 本地-only 行为）。 accompanying insertBefore plain-ref 臂见 part04。
+  function _zwPosSelOf(n) {
+    try {
+      var segs = [], cur = n, guard = 0;
+      while (cur && guard++ < 64) {
+        if (cur.__zwSelector != null && cur.__zwSelector !== '') {
+          if (!segs.length) return cur.__zwSelector; // ref 自身 stamped
+          var out = cur.__zwSelector;
+          for (var i = segs.length - 1; i >= 0; i--) out += ' > ' + segs[i];
+          return out;
+        }
+        if (cur.nodeType !== 1) return null;
+        var p = cur.parentNode;
+        if (!p || !p.childNodes) return null;
+        var eIdx = 0, hit = -1;
+        for (var k = 0; k < p.childNodes.length; k++) {
+          var sib = p.childNodes[k];
+          if (sib === cur) { hit = eIdx; break; }
+          if (sib && sib.nodeType === 1) eIdx++;
+        }
+        if (hit < 0) return null;
+        segs.push(String(cur.nodeName || '').toLowerCase() + ':nth-child(' + (hit + 1) + ')');
+        cur = p;
+      }
+    } catch (_ePos) {}
+    return null;
+  }
+  // D1 写穿透入队。身份印排除：part05 sel 域 `_wrapNodeEntry` 文本（`__zwWriteChildText`，
+  // R48 写路径）、handle 域节点（R3034 `_textHandles`）与远端 stamping 印
+  // `__zwSelPathWrite`（D1 stamping 域 data/nodeValue accessor 自带持久化，重复入队
+  // 双写）已有各自持久化面；仅 plain 补偿节点（无任何身份印）走本路径。
+  // 2026-10-31 撞车合并：wire 统一远端名 `__zw_set_child_text_path`。
+  function _zwD1PersistData(n, nv) {
+    try {
+      if (n.__zwWriteChildText || n.__zwHandle || n.__zwSelector || n.__zwSelPathWrite) return;
+      if (typeof globalThis.__zw_set_child_text_path !== 'function') return;
+      var fp = _zwFragSelPathOf(n);
+      if (fp) globalThis.__zw_set_child_text_path(fp.sel, fp.path.join(','), nv);
+    } catch (_eD1pd) {}
+  }
   function _zwAttachCharacterDataMethods(n) {
     var _cur = function () { return String(n.__nv != null ? n.__nv : ''); };
     // 注意：_write 只写 __nv/textContent/length——data/nodeValue 在下方转为 accessor
@@ -20469,7 +20849,16 @@
       nv = String(nv == null ? '' : nv);
       n.__nv = nv; n.textContent = nv;
     };
+    var _writeRaw = _write;
     _write(n.data != null ? n.data : '');
+    // D1：构造期初始化写必须直落本地快照（此时树刚建/解析中，入队只产生与
+    // SetInnerHtml 冗余的 mutation）；accessor 与 appendData 族闭包捕获 `_write`
+    // 变量——此处换装后全部用户写（.data=/.nodeValue=/appendData/insertData/
+    // deleteData/replaceData/splitText 半程）经 D1 写穿透。
+    _write = function (nv) {
+      _writeRaw(nv);
+      _zwD1PersistData(n, nv);
+    };
     n.appendData = function (s) { _write(_cur() + String(s == null ? '' : s)); return undefined; };
     // R209（js-dom M4）：叶子节点 mutation 族抛 HierarchyRequestError（spec
     // `dom-node-pre-insert`「parent 不是 Element/Document/DocumentFragment」——

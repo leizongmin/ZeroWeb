@@ -1149,6 +1149,37 @@ pub(crate) fn shrink_inline_blocks_to_content(
                     crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.min_width, s).is_some()
                         || crate::intrinsic_sizing::resolve_intrinsic_real_length(&s.max_width, s).is_some()
                 });
+                // R5348（CSS2 §10.3.9 shrink-to-fit）：Auto 单向收缩的 grow 补腿。taffy 0.7 把
+                // width:auto 的 inline-block 拉伸到可用宽，内容更宽时旧「shrink-only」守卫保持
+                // 拉伸值——intrinsic-percent-replaced-014（inner inline-block + padding-top:100%
+                // + canvas h:100% 链 → 子 transferred 100，父应 100 溢出 25 容器，实绘 25）实证。
+                // grow 目标 = 流内块级子**已布局** margin-box 最大者与可用宽取大——definite/
+                // transferred 子在 taffy 终局已按自然尺寸布局（DOM 域 intrinsic 测量解不了 %
+                // 高链，不重测）；可用宽保下限对应 shrink-to-fit 的 min-content 下界：可换行
+                // 文本 IFC 行宽 ≤ 拉伸宽不触发（不强迫 grow）。仅 InlineBlock（flex/grid 与
+                // bg-inline 族另有 R1842/专用 intrinsic 路径）。ZW_IB_SHRINK_GROW=0 还原单向
+                // 收缩。嵌套 inline-block 链父先于子递归处理，内层 grow 不反哺外层（FIXME）。
+                let ib_grow_target = if width_keyword
+                    || std::env::var("ZW_IB_SHRINK_GROW").as_deref() == Ok("0")
+                    || !box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+                        // R4034b 同语义（vertical 臂同款）：contain:size → 元素按
+                        // CIS/0 sized，内容不参与尺寸（contain-size-button-002/
+                        // inline-block-001 回归实证）。
+                        matches!(s.display, DisplayValue::InlineBlock) && !s.contain.has_size()
+                    }) {
+                    0.0
+                } else {
+                    let avail = (box_node.width - frame).max(0.0);
+                    box_node
+                        .children
+                        .iter()
+                        .filter(|c| !c.is_absolute && !c.is_fixed && matches!(c.float, FloatValue::None))
+                        .map(|c| c.margin_left + c.width + c.margin_right)
+                        .fold(avail, f32::max)
+                };
+                let mut write_w = shrink_border_box;
+                let mut write_cw = content_max_w;
+                let mut grew_by_laid_out = false;
                 let should_write = if width_keyword && has_w_constraint {
                     // R4389：约束关键字盒完全跳过——taffy 已按 definite min/max sizing
                     //（intrinsic-size-min-content-box-sizing：min-width:200 → 当前 200，
@@ -1156,12 +1187,19 @@ pub(crate) fn shrink_inline_blocks_to_content(
                     false
                 } else if width_keyword {
                     (shrink_border_box - box_node.width).abs() > 0.5
+                } else if shrink_border_box + 0.5 < box_node.width {
+                    true
+                } else if ib_grow_target > box_node.width + 0.5 {
+                    write_w = ib_grow_target;
+                    write_cw = (ib_grow_target - frame).max(0.0);
+                    grew_by_laid_out = true;
+                    true
                 } else {
-                    shrink_border_box + 0.5 < box_node.width
+                    false
                 };
                 if should_write {
-                    box_node.width = shrink_border_box;
-                    box_node.content_width = content_max_w;
+                    box_node.width = write_w;
+                    box_node.content_width = write_cw;
                     // 父 gate：仅 inline-block 族（§10.3.9-11 真 shrink-to-fit 容器）同步子宽。
                     // R372 bg-inline 的收缩是 ZW 绘制近似（CSS 层子仍是 inline 语义），其「块级子」
                     // 是 ZW 映射伪影，同步反而破坏 list-item/margin 链（008 等 5 案回归实证）。
@@ -1204,9 +1242,12 @@ pub(crate) fn shrink_inline_blocks_to_content(
                             }
                             let child_frame =
                                 child.padding_left + child.padding_right + child.border_left + child.border_right;
-                            let target_border_box =
-                                content_max_w + child.margin_left + child.margin_right + child_frame;
-                            if child.width > target_border_box + 0.5 {
+                            let target_border_box = write_cw + child.margin_left + child.margin_right + child_frame;
+                            // R5348：grow 腿双向同步（auto 块级子 = 新包含块宽，§10.3.3）；
+                            // 收缩路径维持 R4023 单向（child 宽 > 新内容才写）零扰动。
+                            if (grew_by_laid_out && (child.width - target_border_box).abs() > 0.5)
+                                || (!grew_by_laid_out && child.width > target_border_box + 0.5)
+                            {
                                 child.width = target_border_box;
                                 child.content_width = (target_border_box - child_frame).max(0.0);
                             }

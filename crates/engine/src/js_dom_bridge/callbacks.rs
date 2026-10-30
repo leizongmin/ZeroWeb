@@ -343,12 +343,6 @@ pub fn bump_dom_view_gen() {
     DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// editing-compat D1：`"0,3,7"` 形式的 child-index 下行路径 → `Vec<u32>`。任一段
-/// 空/非数字整条拒绝返 None（半条路径会静默定位到错节点，不部分接受）。
-fn parse_child_index_path(s: &str) -> Option<Vec<u32>> {
-    s.split(',').map(|seg| seg.trim().parse::<u32>().ok()).collect()
-}
-
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
@@ -1244,6 +1238,18 @@ pub fn register_dom_callbacks(
                 *cell.borrow_mut() = Some((std::sync::Arc::clone(&css), std::sync::Arc::clone(&wire)));
                 (*wire).clone()
             })
+        }),
+    );
+
+    // s163（html-semantics M2）：原始 CSS 文本 → 规则 wire（`style_rules_text`）——
+    // per-sheet styleSheets 通道（part03 `_zwSsExtSheetEntries`）的取回文本是 fetch
+    // 原文（非 wire），part06 `_makeStyleSheet` 消费前经此转换（R5114 blob 通道的
+    // `__zw_style_rules_external` 已在引擎侧转换，per-sheet 入口缺等价桥）。
+    sandbox.register_callback(
+        "__zw_style_rules_text",
+        Box::new(|args: &[String]| {
+            let css = args.first().map(String::as_str).unwrap_or_default();
+            style_rules_text(css)
         }),
     );
 
@@ -3210,6 +3216,15 @@ pub fn append_mutation_history(batch: &[DomMutation]) {
 /// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。
 pub fn clear_mutation_history() {
     MUTATION_HISTORY.with(|h| h.borrow_mut().clear());
+}
+
+/// editing-compat D1（2026-10-30）：逗号分隔 child-index 链解析（`"0,2,1"` →
+/// `[0, 2, 1]`）；任一段非数字或整串为空 → `None`（回调侧静默丢弃，与
+/// `__zw_set_child_text` 的 idx parse 失败口径一致）。
+fn parse_child_index_path(csv: &str) -> Option<Vec<u32>> {
+    let path: Option<Vec<u32>> = csv.split(',').map(|seg| seg.trim().parse::<u32>().ok()).collect();
+    let path = path?;
+    if path.is_empty() { None } else { Some(path) }
 }
 
 /// js-dom M3 R100：读回调的跨注册回落——当前批 miss 时查历史批（CreateElement/TextNode/

@@ -922,3 +922,8 @@ mod r5338_flex_leaf_baseline_tests;
 /// flex/grid item 链语义——item 入链落账、非 item 后代 definite 链放行、item 自身
 /// CB 不明确时 quirk 不适用。
 mod r5346_quirks_pct_height_flex_item_chain_tests;
+
+/// R5348（CSS2 §10.3.9 shrink-to-fit）：inline-block width:auto 收缩 pass 的 grow
+/// 补腿——definite/transferred 流内子已布局宽喂 grow（014 主驱）、contain:size
+/// 不参与、可换行文本停在可用宽。
+mod r5348_inline_block_shrink_grow_tests;

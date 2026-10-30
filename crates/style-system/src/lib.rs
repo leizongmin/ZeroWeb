@@ -301,6 +301,15 @@ pub struct StyleSystem {
     viewport_height: Option<f64>,
     /// 用户颜色方案偏好（对应 `prefers-color-scheme` 媒体查询）。
     prefers_color_scheme: PrefersColorSchemeValue,
+    /// 文档级 color-scheme（meta color-scheme 扫描结果——html spec §4.2.5.3 meta
+    /// color-scheme：文档树序首个有效 content 决定文档 scheme）。仅作根元素自身
+    /// color-scheme 为 normal（未声明）时 used-scheme 的 fallback（css-color-adjust-1
+    /// §used color scheme：根的 parent scheme = 文档 scheme；meta 不改变根元素自身的
+    /// computed color-scheme——语料断言 gCS(root).colorScheme === 'normal' 钉死）。
+    /// 每次 compute_styles 入口重扫（meta insert/remove/content 变更经全量重算天然反
+    /// 应；增量路径扫得不同值即退全量）。driving: html/semantics the-meta-element/
+    /// color-scheme 24 案。
+    document_color_scheme_dark: bool,
     /// 渲染媒体类型（对应 `@media screen/print/all`）。默认 Screen；
     /// 设为 Print 时 `@media print` 规则生效、`@media screen` 规则失效（CSS §7）。
     media_type: MediaType,
@@ -339,6 +348,7 @@ impl StyleSystem {
             viewport_width: None,
             viewport_height: None,
             prefers_color_scheme: PrefersColorSchemeValue::Light,
+            document_color_scheme_dark: false,
             media_type: MediaType::Screen,
             context_version: 0,
             container_chain: Vec::new(),
@@ -453,6 +463,48 @@ impl StyleSystem {
         }
     }
 
+    /// meta color-scheme 文档级方案扫描：文档树序首个「name ≈ ci color-scheme 且
+    /// content 含 light/dark token」的 meta 决定文档 scheme（HTML §4.2.5.3 meta
+    /// color-scheme：无效 content 跳过继续下一 meta——空串/invalid/仅 'normal'
+    /// 均无 effect，语料三案钉死）。prefers 参与 light dark 双 token 合成（同元素
+    /// used-scheme 语义）。
+    fn scan_document_color_scheme(&self, doc: &Document) -> bool {
+        let prefers_dark = matches!(self.prefers_color_scheme, PrefersColorSchemeValue::Dark);
+        for node in doc.get_elements_by_tag_name("meta") {
+            // shadow tree 内 meta 不参与（HTML §4.2.5.3：meta color-scheme 只作用于
+            // 文档树；shadow-root 节点挂在宿主 children 下，get_elements_by_tag_name
+            // 裸递归会穿透封装边界——语料 shadow-tree 负案钉死，须显式排除）。
+            let mut ancestor = Some(node);
+            let mut in_shadow = false;
+            while let Some(a) = ancestor {
+                if doc.get_shadow_root_mode(a).is_some() {
+                    in_shadow = true;
+                    break;
+                }
+                ancestor = doc.parent_node(a);
+            }
+            if in_shadow {
+                continue;
+            }
+            if !doc
+                .get_attribute(node, "name")
+                .map(|n| n.eq_ignore_ascii_case("color-scheme"))
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let Some(content) = doc.get_attribute(node, "content") else {
+                continue;
+            };
+            let (has_light, has_dark) = crate::property::apply::color_scheme_tokens(&content);
+            if !has_light && !has_dark {
+                continue;
+            }
+            return crate::property::apply::parse_color_scheme_dark(&content, prefers_dark);
+        }
+        false
+    }
+
     /// 为整个文档计算样式。
     ///
     /// 遍历文档中的所有元素节点，为每个元素计算完整的计算样式。
@@ -484,6 +536,10 @@ impl StyleSystem {
 
         // 读取文档 quirks mode
         let quirks_mode = doc.quirks_mode();
+
+        // 文档级 meta color-scheme 扫描（每轮 compute 入口重扫——meta insert/remove/
+        // content 变更经全量重算天然反应；见字段注记）。
+        self.document_color_scheme_dark = self.scan_document_color_scheme(doc);
 
         // 性能门禁优化 S10（2026-08-08）：文档级预扫描——样式表是否含任何
         // ::before/::after/::marker 伪元素规则。无则完全跳过每元素的伪元素计算
@@ -552,6 +608,14 @@ impl StyleSystem {
     ) {
         if stylesheets.iter().any(|s| stylesheet_has_has_selector(&s.rules)) {
             self.incremental_has_fallbacks += 1;
+            *styles = self.compute_styles(doc, stylesheets);
+            return;
+        }
+        // 文档级 meta color-scheme 变更检测：扫描值与既有不同即退全量（scheme 作根
+        // used-scheme fallback 影响全文档系统色/继承链，变更节点子树重算覆盖不了）。
+        let scanned_scheme_dark = self.scan_document_color_scheme(doc);
+        if scanned_scheme_dark != self.document_color_scheme_dark {
+            self.document_color_scheme_dark = scanned_scheme_dark;
             *styles = self.compute_styles(doc, stylesheets);
             return;
         }
@@ -1783,6 +1847,15 @@ impl StyleSystem {
                 "legend" => {
                     ua_decl_inputs.push(("padding".to_string(), "0 2px".to_string(), false, (0, 0, 0), None));
                 }
+                // html 根色 = CanvasText（CSS Color 4 §system-colors：color 初始值
+                // CanvasText，浏览器 UA 对根即系统色；HTML 渲染 UA sheet 不设 color）。
+                // light scheme 解析黑 = 既有默认字节等价零回归；dark scheme（meta
+                // color-scheme）随 used scheme 翻白——根色进 {light, dark} 探针集合
+                //（compute-root-color-scheme.js assert_in_array）。specificity 0,0,0
+                // 可被作者覆盖。driving: html/semantics the-meta-element/color-scheme。
+                "html" => {
+                    ua_decl_inputs.push(("color".to_string(), "canvastext".to_string(), false, (0, 0, 0), None));
+                }
                 // R1690：HTML 渲染规范 UA 块级元素的默认 margin（chromium UA 样式表）。
                 // ZW 此前仅给 display:block 无 margin → blockquote/dd/figure 内容无缩进，
                 // 与 chromium 发散。blockquote/figure margin 1em 40px（上下 1em + 左右 40px），
@@ -2361,6 +2434,7 @@ impl StyleSystem {
             cascade_orders,
             quirks_mode,
             prefers_dark,
+            self.document_color_scheme_dark,
         );
 
         // 6. 解析计算值（相对单位转换）

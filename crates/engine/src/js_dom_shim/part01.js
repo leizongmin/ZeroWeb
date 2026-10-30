@@ -5618,6 +5618,18 @@
     // send 计时器判定共用——`D < T` 时 load 先至、不挂 timeout 计时器，见彼处注记）。
     globalThis._zwFetchSimDelay = function (_us) {
       try {
+        // s163（html-semantics M2 切片 163）：interactions stylesheet.py 端点 delay
+        // 参数（秒）——runner 端点已即时交付（host sleep 冻结 JS 求值，同步契约下
+        // 取回时点对页面不后移，script-created-link 两案 assert_false「still pending」
+        // 恒红的根因），延迟语义由本函数发题侧承载（M4-S20 delay.py 同款）。静态
+        // 扫描窗折叠为 0（s152 trickle 同款——script-blocking stylesheet 的「load
+        // 先于后继脚本体」语义优先；该语料 delay 面 link 均 media 不匹配，走 media
+        // defer 不入窗）。
+        if (_us.indexOf('interactions-of-styling-and-scripting/stylesheet.py') >= 0) {
+          if (globalThis.__zwScanCollapseTrickle === true) return 0;
+          var _isd = /[?&]delay=(\d+)/.exec(_us);
+          return Math.min((_isd ? (parseInt(_isd[1], 10) || 0) : 0) * 1000, 30000);
+        }
         var _dm = /[?&]ms=(\d+)/.exec(_us);
         if (_dm && _us.indexOf('delay.py') >= 0) {
           return Math.min(parseInt(_dm[1], 10) || 0, 30000);
@@ -8156,19 +8168,160 @@
       return null;
     }
   }
+  // editing-compat D3（2026-10-30）：fused-view resync（引擎动作管线 flush + 重注册，
+  // evidence 2026-10-30-ws-join-impl-and-pipeline-blocker §3-D2/D3）后 live Selection
+  // 的 `_ranges[0]` 仍持上一轮补偿 proxy（plain 对象）——caret walk 走分离树，
+  // `__zw_ce_delete`/`__zw_ce_forward_delete` 的 `!bc` 守卫回退 no-op。陈旧判定：
+  // ① startContainer 无任何身份印（`__zwSelector`/`__zwHandle`/`__zwWriteChildText`/
+  // `__zwChildIndex`——part05 sel 域与 handle 域包装节点均带其一）；② joined 语料
+  // 二轮扩面（2026-10-30，zw-join-probe-e Y2 实证）：**stamped 但锚落点非原对象**
+  // ——上一动作世界的 def-in-span（带 `__zwWriteChildText`）在 setup innerHTML 换代
+  // 后 detached，同位已是新对象，plain 门跳过重解析 → walk 仍走陈旧树（g6 早退、
+  // recorded=0、语料同页第二动作起全 no-op）。锚同一性 = `_zwFragSelPathOf` 的
+  // sel+path 在当前文档 query 后下行落点 `!==` 原对象（`_zwCeCaretAnchorStale`）。
+  // 重解析：沿陈旧 parentNode 链上行收集 child-index 链至首个 sel 祖先，按其 query 串
+  // 重解析当前同位节点后在当前视图 childNodes 下行重建 Range；偏移按容器
+  // 类型夹取（文本 data 长度/元素 childNodes 长度），链中途失配（strip 移除等）
+  // 夹到当前层末尾。同轮直调/同轮 addRange 路径上链即当前视图，重解析结果与原
+  // 对象同一——无行为变化。任何一步失败返回 null（调用方保留旧 range，既有
+  // no-op 兜底）。回写 `_ranges[0]`：selection 是 JS 视图对象非 DOM mutation，
+  // 与 `__zw_ce_delete` 编辑后 `_ranges = [nr]` 同口径。
+  function _zwCeCaretIsPlain(n) {
+    return !!(n && typeof n === 'object'
+      && !n.__zwSelector && !n.__zwHandle
+      && !n.__zwWriteChildText && !n.__zwChildIndex);
+  }
+  // 文本/元素容器的合法 offset 夹取。
+  function _zwCeClampOffset(cont, off) {
+    off = off | 0;
+    if (cont.nodeType === 3 || cont.nodeType === 4 || cont.nodeType === 8) {
+      var len = String(cont.data != null ? cont.data : '').length;
+      return off < 0 ? 0 : (off > len ? len : off);
+    }
+    var kc = (cont.childNodes && cont.childNodes.length) || 0;
+    return off < 0 ? 0 : (off > kc ? kc : off);
+  }
+  // 陈旧容器 → 当前视图等位容器。优先消费选区设置时快照（`_zwStaleAnchor`——
+  // `_zwSync` 打点，同 turn 内 childNodes 索引必然有效）；无快照回落 `_zwFragSelPathOf`
+  // 上行（resync 后顶层补偿节点已被移出宿主 childNodes——探针实证 idx=-1——该回落
+  // 仅覆盖同轮未换代场景）。返回 null = 无快照且上行断/锚不可解析；`{container,
+  // offset}`：offset=-1 表示路径完整（offset 由调用方按原偏移夹取），否则为夹取后
+  // 的元素末尾 offset。
+  function _zwCeMapStaleContainer(node, snap) {
+    var anchor = snap || _zwFragSelPathOf(node);
+    if (!anchor) return null;
+    var live = null;
+    try { live = document.querySelector(anchor.sel); } catch (_eD3q) { return null; }
+    if (!live) return null;
+    var c = live;
+    var path = anchor.path;
+    for (var i = 0; i < path.length; i++) {
+      var kids = c.childNodes || [];
+      var k = kids[path[i]];
+      if (k == null) return { container: c, offset: kids.length };
+      c = k;
+    }
+    return { container: c, offset: -1 };
+  }
+  // stamped 节点陈旧判定：`_zwFragSelPathOf` 锚（sel+path）在**当前文档**的解析
+  // 落点非原对象 = resync/setup 换代后旧对象残留（`_ranges[0]` 持上一动作世界的
+  // def-in-span、当前树同位已是新对象——zw-join-probe-e Y2 实证 walk 消费陈旧树
+  // g6 早退、recorded=0）。climb 断/无锚返回 false（交由 plain 臂或保留旧行为）。
+  function _zwCeCaretAnchorStale(n) {
+    try {
+      if (!n || typeof n !== 'object') return false;
+      var fp = _zwFragSelPathOf(n);
+      if (!fp) return false;
+      var live = document.querySelector(fp.sel);
+      if (!live) return false;
+      var c = live;
+      for (var i = 0; i < fp.path.length; i++) {
+        var kids = c.childNodes || [];
+        var k = kids[fp.path[i]];
+        if (k == null) return false;
+        c = k;
+      }
+      return c !== n;
+    } catch (_eSt) {}
+    return false;
+  }
+  function _zwCeReresolveCaret(r0) {
+    try {
+      // plain（补偿域）或 stamped-陈旧（锚落点非原对象）才重解析；live stamped
+      // 保留原 range（同轮语义——重解析对 live 节点是同位对象 churn，无收益）。
+      if (!r0 || (!_zwCeCaretIsPlain(r0.startContainer) && !_zwCeCaretAnchorStale(r0.startContainer))) return null;
+      var sn = r0._zwStaleAnchor || null;
+      var sm = _zwCeMapStaleContainer(r0.startContainer, sn && sn.start);
+      if (!sm) return null;
+      var em = r0.collapsed ? sm : _zwCeMapStaleContainer(r0.endContainer, sn && sn.end);
+      if (!em) return null;
+      var so = sm.offset < 0 ? _zwCeClampOffset(sm.container, r0.startOffset) : sm.offset;
+      var eo = em.offset < 0 ? _zwCeClampOffset(em.container, r0.endOffset) : em.offset;
+      var nr = document.createRange();
+      nr.setStart(sm.container, so);
+      if (r0.collapsed) { nr.collapse(true); }
+      else { nr.setEnd(em.container, eo); }
+      return nr;
+    } catch (_eD3r) {}
+    return null;
+  }
   // CE caret range：selection 有 range 用之；无 → 宿主内容起点（selectNodeContents +
-  // collapse 到 start——键入落在宿主开头）。取用前 D3 重锚（端点为解析快照代理时
-  // 换 live 包装，失败回退原 range）。
+  // collapse 到 start——键入落在宿主开头）。取用前两级 D3 重锚：①登记表身份命中
+  //（D1 stamping 域）走 `_zwCeReanchorRange` 换 live 包装；②未命中（plain/陈旧补偿
+  // proxy）走 `_zwCeReresolveCaret` sel-path 重解析——两级各覆盖对方盲区（D1
+  // kill-switch 下①恒 null，登记表外域②兜底），均失败保留原 range。
   globalThis.__zw_ce_caret_range = function(el) {
+    // editing-compat D3 世界同步（2026-10-30，zw-join-probe-h H2 实证）：CE 动作的
+    // `document.querySelector(sel)` 产物属 query wrapper 家族，其子树视图只在经由
+    // 本家族的 wired 写时前进；页面侧 setup innerHTML 走页面 wrapper 家族后 query
+    // 家族滞留上一动作形态（kid1=上轮 shell span、孙 plain 无写印），CE walk 在
+    // 陈旧树上早退（g6 守卫/recorded=0，join 语料同页第二动作起成片 no-op）。
+    // 同步：raw 选区锚链上的 contenteditable 宿主（页面家族）非 el 本体时，以其
+    // innerHTML 回灌 el 子树——两家族 fused 序列化同源，内容一致时为幂等重建；
+    // 同世界 caret（连续键入流）contains 命中零开销跳过。`_zwSynced`：本轮是否
+    // 发生过世界同步回灌（决定一级重锚是否让位，见下）。
+    var _zwSynced = false;
+    try {
+      var _selSync = (typeof _getSelection === 'function') ? _getSelection() : null;
+      var _scSync = _selSync && _selSync._ranges && _selSync._ranges[0]
+        ? _selSync._ranges[0].startContainer : null;
+      if (_scSync && el && typeof el.contains === 'function' && !el.contains(_scSync)) {
+        var _phSync = _scSync, _gSync = 0;
+        while (_phSync && _gSync++ < 64) {
+          if (_phSync.getAttribute && _phSync.getAttribute('contenteditable') != null) break;
+          _phSync = _phSync.parentNode;
+        }
+        if (_phSync && _phSync !== el) {
+          var _htmlSync = '';
+          try { _htmlSync = String(_phSync.innerHTML || ''); } catch (_eSh) {}
+          if (_htmlSync !== '') {
+            // 撞车合并仲裁（2026-10-31）：回灌子树归本文 plain 补偿域——world-sync
+            // 期间不发 D1 stamping（part04 钩子查 `__zwCeWorldSyncing`；stamp 域
+            // 访问器移除面对回灌子树 remove 有缺口，语料 join 后残留 `<br>` 实证）。
+            _zwSynced = true;
+            globalThis.__zwCeWorldSyncing = true;
+            try { el.innerHTML = _htmlSync; } catch (_eSw) {} finally { globalThis.__zwCeWorldSyncing = false; }
+          }
+        }
+      }
+    } catch (_eSync) {}
     var s = (typeof _getSelection === 'function') ? _getSelection() : null;
     if (s && s.rangeCount > 0) {
       var r0 = s._ranges[0];
-      var r2 = (typeof _zwCeReanchorRange === 'function') ? _zwCeReanchorRange(r0, el) : null;
+      // 两级重锚（2026-10-31 撞车合并）：①登记表身份重锚（marker 语料管线 D1
+      // stamping 域）命中即用；②未命中回落 sel-path 重解析（plain/陈旧补偿
+      // proxy 域）——kill-switch 下①恒 null，②兜底全量面。世界同步换代 el
+      // 子树的本轮调用跳过①：登记表旧代 tops 的 regIdx 指向换代前位次，一级
+      // 重锚把陈旧锚映射到错位节点（join 语料 paragraphs 1,428P→525P 实证），
+      // 交由②按 sel+path 重解析（位置正确）。
+      var r2 = (!_zwSynced && typeof _zwCeReanchorRange === 'function') ? _zwCeReanchorRange(r0, el) : null;
       if (r2) {
         try { s._ranges[0] = r2; } catch (_eCa) {}
         return r2;
       }
-      return r0;
+      var rr = _zwCeReresolveCaret(r0);
+      if (rr) { try { s._ranges[0] = rr; } catch (_eD3w) {} }
+      return rr || r0;
     }
     var r = document.createRange();
     r.selectNodeContents(el);
@@ -8183,7 +8336,9 @@
   // 真键盘输入分流——Chromium execCommand insertText 只派 beforeinput/input；
   // WPT textInput/api 的 reject listener 断言面）。缺省（真键盘路径）照派。
   globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
-    var el = document.querySelector(sel);
+    // sel 兼容元素直传（execCommand CE 分支 activeElement——动态创建宿主无
+    // __zwSelector，selector 往返失效）。
+    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var ins = String(text == null ? '' : text);
     if (ins === '') return;
@@ -8201,6 +8356,16 @@
         bubbles: true, cancelable: true, view: globalThis, data: ins
       });
       if (el.dispatchEvent(ti31) === false) return;
+    }
+    // insertparagraph 语料等价规则：insertText '\n' ≡ insertParagraph 变更（语料
+    // 只断言内容；事件序保持 insertText 面）。核心未应用（caret 不在宿主子树等）
+    // → 落回下方字面 '\n' splice 旧径。
+    if (ins === '\n' && typeof globalThis.__zw_ce_paragraph_split_at === 'function'
+        && globalThis.__zw_ce_paragraph_split_at(el, range, false)) {
+      el.dispatchEvent(new InputEvent('input', {
+        bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
+      }));
+      return;
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
@@ -8258,24 +8423,39 @@
       'FORM','FIELDSET','ADDRESS'].indexOf(t) >= 0;
   }
   // white-space 保留值来源：style attr 原始串扫描 → class 名映射（语料
-  // pre/preWrap/preLine/nowrap）→ 无（host 级 run，CSS 初始值 normal）。
+  // pre/preWrap/preLine/nowrap）→ 祖先链继承（white-space 为继承属性——inline
+  // 容器自身无声明时取容器 run，语料 `<b>def` 形态的壳 ws=右块 div 值）→
+  // 无（host 级 run，CSS 初始值 normal）。
   function _zwCeWsOf(n) {
     try {
-      var st = n.getAttribute && n.getAttribute('style');
-      if (st) {
-        var m = String(st).match(/white-space\s*:\s*([a-z-]+)/i);
-        if (m) return m[1];
-      }
-      var cl = n.getAttribute && n.getAttribute('class');
-      if (cl) {
-        var c = String(cl);
-        if (/\bpreWrap\b/.test(c)) return 'pre-wrap';
-        if (/\bpreLine\b/.test(c)) return 'pre-line';
-        if (/\bnowrap\b/.test(c)) return 'nowrap';
-        if (/\bpre\b/.test(c)) return 'pre';
+      var cur = n, guard = 0;
+      while (cur && guard++ < 16) {
+        var st = cur.getAttribute && cur.getAttribute('style');
+        if (st) {
+          var m = String(st).match(/white-space\s*:\s*([a-z-]+)/i);
+          if (m) return m[1];
+        }
+        var cl = cur.getAttribute && cur.getAttribute('class');
+        if (cl) {
+          var c = String(cl);
+          if (/\bpreWrap\b/.test(c)) return 'pre-wrap';
+          if (/\bpreLine\b/.test(c)) return 'pre-line';
+          if (/\bnowrap\b/.test(c)) return 'nowrap';
+          if (/\bpre\b/.test(c)) return 'pre';
+        }
+        cur = cur.parentNode;
       }
     } catch (_eWs) {}
     return 'normal';
+  }
+  // 块界 walk 的空白文本兄弟跳过（HTML 空白——源码换行/缩进在块间产生纯空白
+  // 文本节点；Chrome join 几何视其为不可见——语料 `</div>\n<div>` 形态的期望
+  // 仍是相邻块相并）。
+  function _zwCeSkipWs(n) {
+    while (n && n.nodeType === 3 && /^\s*$/.test(String(n.nodeValue || ''))) {
+      n = n.previousSibling;
+    }
+    return n;
   }
   // 从 parent 的 startNode 起提取「第一行」inline 内容（节点脱离原父）。
   // 行界：文本内 `\n`（换行符移除，余段保留）、`<br>`（移除）、块级子元素
@@ -8311,15 +8491,43 @@
           if (!srcEl) srcEl = n;
           ended = true;
         } else {
-          // inline 容器：克隆壳随提取内容迁出；提取尽则原壳移除
-          var shell = n.cloneNode(false);
-          var r2 = _zwCeTakeLineFrom(n, n.firstChild);
-          for (var k = 0; k < r2.nodes.length; k++) shell.appendChild(r2.nodes[k]);
-          if (!srcEl) srcEl = n;
-          out.push(shell);
-          if (r2.ended) ended = true;
-          else if (!n.firstChild) parent.removeChild(n);
-          else { ended = true; } // 余壳未提取尽（行界在内）——保守停
+          // inline 容器：克隆壳随提取内容迁出；提取尽则原壳移除。
+          // join 壳身份修复（2026-10-30）：行壳**不含行界**（inline 子树内无 \n
+          // 文本、无 BR——行界可嵌在子 inline 内，如 `<span><b>def<br>ghi</b></span>`
+          // 实证）时整壳即行内容——原壳本体随子树整体迁出（wire 语义 removeChild：
+          // 引擎侧子树随移动），不再 descend 逐子提取——sel 域文本子的 removeChild
+          // 已 wired 引擎侧删除，提取后重挂回 JS 壳不落引擎 → 引擎侧空壳（右线
+          // 语料 `<span style=ws>def</span>` 形态实证：actual 空壳、def 消失）。
+          // 含行界 → 旧行为：克隆壳随提取部分迁出，原壳留余（提取部分保壳）。
+          var _tlHasBoundRec = function (_tlRoot, _tlD) {
+            var _tlScan = _tlRoot.firstChild, _tlG = 0;
+            while (_tlScan && _tlG++ < 256) {
+              if (_tlScan.nodeType === 3 && String(_tlScan.nodeValue || '').indexOf('\n') >= 0) return true;
+              if (_tlScan.nodeType === 1) {
+                if (String(_tlScan.tagName || '').toUpperCase() === 'BR') return true;
+                if (!_zwCeIsBlockEl(_tlScan) && _tlD < 16) {
+                  if (_tlHasBoundRec(_tlScan, _tlD + 1)) return true;
+                }
+              }
+              _tlScan = _tlScan.nextSibling;
+            }
+            return false;
+          };
+          if (!_tlHasBoundRec(n, 0)) {
+            parent.removeChild(n);
+            out.push(n);
+            if (!srcEl) srcEl = n;
+            // 无行界：整壳随行迁出，后续兄弟继续同行扫描（不置 ended）。
+          } else {
+            var shell = n.cloneNode(false);
+            var r2 = _zwCeTakeLineFrom(n, n.firstChild);
+            for (var k = 0; k < r2.nodes.length; k++) shell.appendChild(r2.nodes[k]);
+            if (!srcEl) srcEl = n;
+            out.push(shell);
+            if (r2.ended) ended = true;
+            else if (!n.firstChild) parent.removeChild(n);
+            else { ended = true; } // 余壳未提取尽（行界在内）——保守停
+          }
         }
       } else {
         parent.removeChild(n); // 注释等非内容节点
@@ -8338,23 +8546,84 @@
     if (el.dispatchEvent(before) === false) return false;
     var r = _zwCeTakeLineFrom(srcParent, startNode);
     if (!r.nodes.length) return false;
-    var shell = document.createElement('span');
-    shell.setAttribute('style', 'white-space:' + _zwCeWsOf(r.ws || srcParent));
-    for (var k2 = 0; k2 < r.nodes.length; k2++) {
-      var nd = r.nodes[k2];
-      // handle 壳 + 无 handle 子（live 文本包装，非 handle/非 sel 身份）——
-      // appendChild trap 对「handle 父 + 无 handle 子」静默丢子（AppendChildByHandle
-      // 要求子 handle，文本无 SetTextOnHandle 等价入队面）→ 引擎侧空壳（send 管线
-      // 复现实证）。文本改以新建同值节点入壳（CreateTextNode+AppendChildByHandle
-      // 链完整，同 flat 插入臂）；元素（inline 克隆壳自带 handle）走原路径。
-      // FIXME：appendChild trap 的 handle 父 + live 文本子丢子面是通用缺口，待立项。
-      if (nd.nodeType === 3 || nd.__zwIsText) {
-        shell.appendChild(document.createTextNode(String(nd.nodeValue != null ? nd.nodeValue : (nd.data != null ? nd.data : ''))));
-      } else {
-        shell.appendChild(nd);
+    // editing-compat join 壳形态（2026-10-30）：提取行为**单一元素节点**（take-line
+    // inline 臂的无行界整壳/克隆壳，如右线 = `<span style=ws>def</span>`/`<b>def</b>`）
+    // 时直接用该壳作保留壳——外包 span 会双层嵌套（语料 join-different-white-space-
+    // style-* accept 形态实证：`abc<span style=ws><span style=ws>def</span></span>`
+    // 不被接受，`abc<b style=ws>def</b>` 接受）。行壳缺 white-space 声明时补写（class
+    // 形态右线 accept 要求 class+style 并存）。
+    var _singleLineEl = (r.nodes.length === 1 && r.nodes[0] && r.nodes[0].nodeType === 1) ? r.nodes[0] : null;
+    var shell;
+    if (_singleLineEl) {
+      shell = _singleLineEl;
+      var _shellStyle = '';
+      try { _shellStyle = String(shell.getAttribute('style') || ''); } catch (_eShellAttr) {}
+      if (!/(^|;)\s*white-space\s*:/i.test(_shellStyle)) {
+        try {
+          shell.setAttribute('style',
+            (_shellStyle ? _shellStyle.replace(/;\s*$/, '') + '; ' : '') + 'white-space:' + _zwCeWsOf(r.ws || srcParent));
+        } catch (_eShellWs) {}
       }
+    } else {
+      shell = document.createElement('span');
+      shell.setAttribute('style', 'white-space:' + _zwCeWsOf(r.ws || srcParent));
+      // editing-compat D1 对偶面（2026-10-30）：提取节点并入壳必须经 handle 世界落地
+      // ——live sel 域文本子无 handle，appendChild 只写本地 registry（t7 wire 无法引用
+      // 无 handle 子），引擎侧壳恒空（双读面探针实证：engine=<span></span>、fused 多出
+      // overlay 副本）。整行序列化经 shell.innerHTML 的 t8r 物化路径
+      //（SetInnerHtmlOnHandle + registry 重建），引擎与 JS 视图单点收敛。
+      var _joinHtml = '';
+      for (var k2 = 0; k2 < r.nodes.length; k2++) {
+        var _jn = r.nodes[k2];
+        if (!_jn) continue;
+        if (_jn.nodeType === 3) {
+          _joinHtml += String(_jn.nodeValue != null ? _jn.nodeValue : '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        } else if (_jn.nodeType === 1) {
+          try { _joinHtml += _jn.outerHTML || ''; } catch (_eJoinSer) {}
+        }
+      }
+      if (_joinHtml !== '') shell.innerHTML = _joinHtml;
     }
-    dst.appendChild(shell);
+    // shell 落位（2026-10-30 左线 inline 语料）：**行源位插入**——dst 尾 append
+    // 在 dst=宿主级行容器时把壳排到捐线块之后（`ghi</div><span>def</span>` 错序
+    // 实证）。源位 = srcParent 为 dst 子（右块整体捐线）→ srcParent 位；
+    // srcParent 即 dst（右块首行捐给同容器前置行）→ startNode 位；其余（dst=左
+    // 块接收右块首行，左右块互为兄弟）→ dst 尾 append。ref 失效（空块被提取移除
+    // 的 detached 引用）回落 append。
+    var _shellRef = (srcParent === dst) ? startNode : ((srcParent && srcParent.parentNode === dst) ? srcParent : null);
+    if (_shellRef && _shellRef.parentNode !== dst) _shellRef = null;
+    try {
+      if (_shellRef) dst.insertBefore(shell, _shellRef);
+      else dst.appendChild(shell);
+    } catch (_eShellPos) {
+      try { dst.appendChild(shell); } catch (_eShellPos2) { return false; }
+    }
+    // D3 世界同步面（2026-10-31）：**plain 壳的引擎收敛**——世界同步后 dst/ref/壳均
+    // 为补偿树包装（无 handle/sel 印），universal 落位方法只做本地化（寻址失败静默
+    // 不记批），引擎侧只剩提取 remove、壳内容永 lost（left-paragraph-and-right-line
+    // 整壳迁出族 363 案回归实证：`<div>abc</div><span>[]def</span>` → def 消失）。
+    // 补序列化落地：ref 可寻址 → InsertAdjacentHtml(beforebegin)；否则 dst 位置串 +
+    // beforeend。引擎侧「提取 remove + 此处 copy」= move 语义；handle 壳（createElement
+    // 分支）有既有 wire，跳过防双插。
+    try {
+      if (!shell.__zwHandle && !shell.__zwSelector
+        && typeof _zwPosSelOf === 'function' && typeof __zw_insert_adjacent_html === 'function') {
+        var _shellHtml = String(shell.outerHTML || '');
+        if (_shellHtml !== '') {
+          var _shellSel = null, _shellPos = null;
+          if (_shellRef && _shellRef.nodeType === 1) {
+            var _shellRefSel = _zwPosSelOf(_shellRef);
+            if (_shellRefSel) { _shellSel = _shellRefSel; _shellPos = 'beforebegin'; }
+          }
+          if (!_shellSel) {
+            var _shellDstSel = _zwPosSelOf(dst);
+            if (_shellDstSel) { _shellSel = _shellDstSel; _shellPos = 'beforeend'; }
+          }
+          if (_shellSel) __zw_insert_adjacent_html(_shellSel, _shellPos, _shellHtml);
+        }
+      }
+    } catch (_eShellSer) {}
     var nr = document.createRange();
     nr.setStart(dst, Array.prototype.indexOf.call(dst.childNodes, shell));
     nr.collapse(true);
@@ -8382,7 +8651,7 @@
       // 末子（防错序——语料形态恒满足）。
       var bn = sc, bc = sc.parentNode, bp = null;
       while (true) {
-        bp = bn.previousSibling;
+        bp = _zwCeSkipWs(bn.previousSibling);
         if (bp) break;
         if (bc === el) return; // 宿主起点，无前内容
         bn = bc; bc = bc.parentNode;
@@ -8392,6 +8661,30 @@
       var bdst = _zwCeIsBlockEl(bp) ? bp : bc;
       if (bdst === bc && bn.nextSibling) return; // src 非容器末子，保守不并
       _zwCeJoinApply(el, bdst, bc, bn, 'deleteContentBackward');
+      return;
+    }
+    // ④ select-boundary 空界选区臂（join-different-white-space-style 语料
+    // method=select-boundary，2026-10-30）：非 collapsed 跨容器选区、sc 在文本
+    // 尾、ec 在文本头或元素内容起点（`abc[</div><div class=…><div>]def</div>…`
+    // / `…[</div><div style=…><b>]def`——ec 为元素容器、endOffset 0 同义内容
+    // 起点）——Backspace 语义=左侧块接收后块首行（镜像 __zw_ce_forward_delete
+    // 的同形臂）。sc 不在文本尾 / ec 不在内容起点 = 真跨块选区删除 → defer 不并。
+    var ecD1 = range.endContainer;
+    if (!range.collapsed && ecD1 && (ecD1.nodeType === 3 || ecD1.__zwIsText || ecD1.nodeType === 1)
+      && ecD1 !== sc && (range.endOffset | 0) === 0
+      && so >= String(sc.nodeValue || '').length) {
+      var sn1 = sc, sc1 = sc.parentNode, snx1 = null;
+      while (true) {
+        snx1 = _zwCeSkipWs(sn1.nextSibling);
+        if (snx1) break;
+        if (sc1 === el) return; // 宿主起点，无后内容
+        sn1 = sc1; sc1 = sc1.parentNode;
+        if (!sc1) return; // 链断（分离/陈旧节点树）→ 干净回退 flat no-op
+      }
+      if (sn1 === sc && !_zwCeIsBlockEl(snx1)) return; // run 中段
+      var sdst1 = (sn1 === sc) ? sc1 : sn1;
+      if (sdst1 === sc1 && snx1.nextSibling) return; // src 非容器末子，保守不并
+      _zwCeJoinApply(el, sdst1, sc1, snx1, 'deleteContentBackward');
       return;
     }
     var v = String(sc.nodeValue || '');
@@ -8440,7 +8733,7 @@
       if (so < v.length) return;
       var cn = sc, cc = sc.parentNode, cnx = null;
       while (true) {
-        cnx = cn.nextSibling;
+        cnx = _zwCeSkipWs(cn.nextSibling);
         if (cnx) break;
         if (cc === el) return;
         cn = cc; cc = cc.parentNode;
@@ -8456,7 +8749,7 @@
       // 块界 join 臂：链上找后邻。
       var fn = sc, fc = sc.parentNode, fnx = null;
       while (true) {
-        fnx = fn.nextSibling;
+        fnx = _zwCeSkipWs(fn.nextSibling);
         if (fnx) break;
         if (fc === el) return; // 宿主终点，无后内容
         fn = fc; fc = fc.parentNode;
@@ -8571,7 +8864,9 @@
     for (var bi = 0; bi < kids.length; bi++) {
       if (kids[bi] === sc) { brIdx = bi; break; }
     }
-    sc.nodeValue = v.slice(0, so) + v.slice(eo);
+    // 头段留在原节点；尾段成独立节点插 <br> 后（不可回拼进头段——2026-10-31 修
+    // 旧版 `v.slice(0, so) + v.slice(eo)` 回拼：collapsed caret 下尾段双写）。
+    sc.nodeValue = v.slice(0, so);
     var br = document.createElement('br');
     var _pEnter = sc.parentNode || el;
     try { _pEnter.insertBefore(br, sc.nextSibling || null); } catch (_eB34) {}
@@ -8588,84 +8883,275 @@
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertLineBreak', isComposing: false
     }));
   };
-  // CE insertParagraph 块级拆分（R3254-M3 切片 5，editing goal，2026-09-07）：
-  // caret 处把宿主**拆为两个同型兄弟块**（Chromium 语义——div 宿主拆两 div；非
-  // 宿主内 Enter 走 __zw_ce_enter 的 <br> 语义）。实现：宿主 outerHTML 重写——
-  // head 段 + 闭合 + 新开同型标签 + tail 段（SetOuterHtml mutation 流转宿主重解析，
-  // 同 caret 偏移扫描与 __zw_ce_enter 同款实体感知）。caret 在宿主直子文本节点内
-  // 才应用（flat 模型）；事件序 beforeinput(insertParagraph, cancelable) → 变更 →
-  // input（target=原宿主——拆分后原 selector 失效，事件在拆分前宿主派发）。
-  // caret 落新块首（range 对新宿主同 selector 重建）。
+  // CE insertParagraph（editing-compat goal 2026-10-30 换代）：caret 处 **live
+  // childList 就地拆分**（宿主/块存活——旧 outerHTML 重写模型使原宿主脱树，turn 内
+  // 融合视图不可见（语料探针证明），且无退化规则）。语料退化规则
+  //（editing/other insertparagraph 家族期望矩阵）：
+  //   ① 宿主 div + display 块级（'' 视为默认 block）+ caret 宿主级（直子文本或
+  //      宿主元素边界）→ 拆分：新 separator 元素（defaultParagraphSeparator，默认
+  //      div）接管 caret 尾段与后续兄弟，空则 <br> 填充；caret 在内容起点 → 改插
+  //      空 separator+<br> 占位于最前、尾内容原地不动（white-space-style 语料
+  //      `[]abc` → `<sep><br></sep>abc` 形态；display 块级时 white-space 不参与——
+  //      语料 block 行一律 separator 拆分）。
+  //   ② caret 在宿主内块级后代（div/p/h1-h6/li）且边界在该块直下（直子文本或元素
+  //      子）→ **同型**就地拆该块（p 不能含 div——same-tag；两侧拆空则 <br> 填充
+  //      ——void-element 语料 `<div><br></div><div><img></div>` 形）。
+  //   ③ 其余（span/p 宿主、div 宿主非块 display、inline 后代内 caret）→ 行断退化：
+  //      white-space 显著（pre/pre-line/pre-wrap——caret 链自下而上最近声明）→
+  //      '\n' 文本，否则 <br> 元素；断点后同父无后续节点 → 补可见性第二条断
+  //      （inline-editing-host 语料全矩阵：`{}` → `<br><br>`、`{}<br>` → 单断、
+  //      `ab[]cd` → 单断、`abcd[]` → 双断）。
+  // 事件序（fireEvents=true，键盘/宿主入口）：beforeinput(insertParagraph,
+  // cancelable) → textInput('\n') → 变更 → input——uievents textInput basic.sub.js
+  // 契约（1 textInput data='\n' + 内容含 <br>——空新块 <br> 填充满足）。execCommand
+  // 臂（beforeinput 已派）与 __zw_ce_insert('\n')（自带 insertText 序）走 false。
+  // FIXME: inline 包裹临时样式保留未实现——`<b>abc[]</b>` display=block 拆分后
+  // 后续输入落新块裸文本（white-space-style italic/bold 组期望 `<b>def</b>` 保持红）。
+  // FIXME: Shift+Enter 修饰键未贯通 submit 通道——一律 insertParagraph 语义
+  //（inline 宿主退化后与 insertLineBreak 输出一致，无语料分压）。
   // https://w3c.github.io/input-events/#interface-InputEvent-Types
-  globalThis.__zw_ce_insert_paragraph = function(sel) {
-    var el = document.querySelector(sel);
-    if (!el || !globalThis.__zw_is_ce_host(el)) return;
-    var range = globalThis.__zw_ce_caret_range(el);
-    var sc = range.startContainer, so = range.startOffset | 0;
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === el)) return;
-    var v = String(sc.nodeValue || '');
-    var eo = range.collapsed ? so : (range.endOffset | 0);
-    var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
-    });
-    if (el.dispatchEvent(before) === false) return;
-    var kids = el.childNodes || [];
-    var textOffset = 0;
-    for (var i = 0; i < kids.length; i++) {
-      var k = kids[i];
-      if (k === sc) break;
-      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
-    }
-    var html = String(el.innerHTML || '');
-    var want = textOffset + so;
-    var seen = 0;
-    var splitAt = -1;
-    for (var j = 0; j < html.length; j++) {
-      if (seen === want) { splitAt = j; break; }
-      if (html.charAt(j) === '&') {
-        var semi = html.indexOf(';', j);
-        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
+  // https://w3c.github.io/editing/execCommand.html#defaultparagraphseparator
+  function _zwCeIsBlockTagName(t) {
+    return ['div','p','h1','h2','h3','h4','h5','h6','li'].indexOf(t) >= 0;
+  }
+  // display 读数：CSSStyleDeclaration 面板（R3254-E2）优先，style attr 扫描兜底。
+  function _zwCeDisplayOf(el) {
+    try {
+      if (el.style && typeof el.style.display === 'string' && el.style.display !== '') {
+        return String(el.style.display);
       }
-      seen++;
+    } catch (_eDisp1) {}
+    try {
+      var stDisp = el.getAttribute && el.getAttribute('style');
+      if (stDisp) {
+        var mDisp = String(stDisp).match(/display\s*:\s*([a-z-]+)/i);
+        if (mDisp) return mDisp[1];
+      }
+    } catch (_eDisp2) {}
+    return '';
+  }
+  // 元素自身声明的 white-space（style 面板优先，style attr 扫描兜底）；未声明 →
+  // null（与「无声明走继承」区分——normal 声明即止继承链，cannot-have-div 语料：
+  // pre 宿主内 ws:normal span → <br>）。
+  function _zwCeWsDeclared(n) {
+    try {
+      if (n.style && typeof n.style.whiteSpace === 'string' && n.style.whiteSpace !== '') {
+        return String(n.style.whiteSpace);
+      }
+    } catch (_eWsD1) {}
+    try {
+      var stWs = n.getAttribute && n.getAttribute('style');
+      if (stWs) {
+        var mWs = String(stWs).match(/white-space\s*:\s*([a-z-]+)/i);
+        if (mWs) return mWs[1];
+      }
+    } catch (_eWsD2) {}
+    return null;
+  }
+  // white-space 显著性：自 caret 容器沿父链向宿主取**最近声明**（含 normal——声明
+  // 即止继承链；全链无声明 → 初始 normal 不显著）。
+  function _zwCeWsSignificant(from, host) {
+    var n = (from && from.nodeType === 1) ? from : (from ? from.parentNode : null);
+    var g = 0;
+    while (n && g++ < 256) {
+      var ws = _zwCeWsDeclared(n);
+      if (ws != null) return ws === 'pre' || ws === 'pre-line' || ws === 'pre-wrap';
+      if (n === host) break;
+      n = n.parentNode;
     }
-    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
-    if (splitAt < 0) return;
-    var cutEnd = splitAt; // collapsed：tail = caret 起整段（选区非空才前推 cutEnd）
-    if (eo > so) {
-      var seen2 = seen, want2 = want + (eo - so);
-      for (var j2 = splitAt; j2 < html.length; j2++) {
-        if (seen2 === want2) { cutEnd = j2; break; }
-        if (html.charAt(j2) === '&') {
-          var semi2 = html.indexOf(';', j2);
-          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
+    return false;
+  }
+  // ③ 行断退化（② 非 blockish 后代与兜底共用）。forceLf → 一律 '\n'（② inline
+  // div 语料形），否则按 white-space 声明链裁决。
+  function _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf) {
+    var wsSig = !!forceLf || _zwCeWsSignificant(boundaryText || boundaryNode || boundaryParent, host);
+    var brk3 = wsSig ? document.createTextNode('\n') : document.createElement('br');
+    if (boundaryText) {
+      // 头段留在原节点（尾段成独立节点随断点后移——不可回拼进头段，否则尾重复）。
+      var v3 = String(boundaryText.nodeValue || '');
+      boundaryText.nodeValue = v3.slice(0, boundaryOff);
+      boundaryParent.insertBefore(brk3, boundaryText.nextSibling || null);
+      var tail3 = v3.slice(eo);
+      if (tail3) {
+        boundaryParent.insertBefore(document.createTextNode(tail3), brk3.nextSibling || null);
+      }
+    } else {
+      boundaryParent.insertBefore(brk3, boundaryNode
+        || ((boundaryParent.childNodes || [])[boundaryOff] || null));
+    }
+    // 可见性补断：断点后同父无后续节点 → 新行不可见，补第二条（同型）。
+    if (!brk3.nextSibling) {
+      var brk3b = wsSig ? document.createTextNode('\n') : document.createElement('br');
+      boundaryParent.insertBefore(brk3b, brk3.nextSibling || null);
+    }
+    var kids3 = boundaryParent.childNodes || [];
+    var idx3 = 0;
+    for (var i3 = 0; i3 < kids3.length; i3++) {
+      if (kids3[i3] === brk3) { idx3 = i3; break; }
+    }
+    var nr3 = document.createRange();
+    nr3.setStart(boundaryParent, idx3 + 1);
+    nr3.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr3]; }
+    return true;
+  }
+  // 变更核心：返回 true 表示已应用（选区已重锚）。三分支见上。
+  function _zwCeParagraphMutate(host, rng) {
+    var sc = rng.startContainer, so = rng.startOffset | 0;
+    var eo = rng.collapsed ? so : (rng.endOffset | 0);
+    var isText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
+    // caret 所在宿主直子块：直子文本/宿主自身元素 caret → 宿主本身；否则父链上溯
+    // 到宿主直子（不在宿主子树内 → 不应用）。
+    var block = null;
+    if (sc === host || (isText && sc.parentNode === host)) {
+      block = host;
+    } else {
+      var w = isText ? sc.parentNode : sc;
+      var g = 0;
+      while (w && w !== host && w.parentNode !== host && g++ < 256) w = w.parentNode;
+      if (!w || w === host || w.nodeType !== 1) return false;
+      block = w;
+    }
+    // caret 边界归一：(boundaryParent, boundaryText|boundaryNode, boundaryOff)。
+    // 文本边界 → (父, 文本节点, so)；宿主元素边界 → (host, null, so)；元素 caret
+    // 在块内 → (父, 该元素, 0)（语义=该元素位置前，void-element 语料形）。
+    var boundaryParent, boundaryText = null, boundaryNode = null, boundaryOff = 0;
+    if (isText) {
+      boundaryParent = sc.parentNode; boundaryText = sc; boundaryOff = so;
+    } else if (sc === host) {
+      boundaryParent = host; boundaryOff = so;
+    } else {
+      boundaryParent = sc.parentNode; boundaryNode = sc;
+    }
+    var hostTag = String(host.tagName || '').toLowerCase();
+    var dispHost = _zwCeDisplayOf(host);
+    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // ① 宿主级拆分。
+    if (block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
+        && boundaryParent === host && (isText || boundaryNode === null)) {
+      var sep1 = document.createElement(sepTag);
+      var refAfter1 = null;
+      if (boundaryText) {
+        var v1 = String(boundaryText.nodeValue || '');
+        var tail1 = v1.slice(eo);
+        if (boundaryOff === 0) {
+          // caret 在内容起点：删选中段后空 separator+<br> 占位插最前，尾内容原地。
+          boundaryText.nodeValue = tail1;
+          sep1.appendChild(document.createElement('br'));
+          host.insertBefore(sep1, boundaryText || null);
+        } else {
+          // 尾段+后续兄弟移入新块；新块空 → <br> 填充（语料 abc[] 形态）。
+          if (tail1) sep1.appendChild(document.createTextNode(tail1));
+          boundaryText.nodeValue = v1.slice(0, boundaryOff);
+          refAfter1 = boundaryText.nextSibling;
+          host.insertBefore(sep1, refAfter1 || null);
+          if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
         }
-        seen2++;
+      } else {
+        // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
+        refAfter1 = (host.childNodes || [])[so] || null;
+        var mv1 = refAfter1;
+        while (mv1) {
+          var nx1 = mv1.nextSibling;
+          sep1.appendChild(mv1);
+          mv1 = nx1;
+        }
+        if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
+        host.insertBefore(sep1, refAfter1 || null);
+      }
+      var nr1 = document.createRange();
+      nr1.setStart(sep1, 0);
+      nr1.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr1]; }
+      return true;
+    }
+    // ② 块级后代同型就地拆分（边界须在该块直下）。块级判定：display 显式 block，
+    // 或未声明且标签默认块级（div/p/h1-h6/li）——display:inline/inline-block 的
+    // div 后代不拆（cannot-have-div 语料：退化行断）；display:block 的 span 后代
+    // 同型拆（语料 `<span display:block>a[]b</span>` → 两 span）。
+    if (block !== host && boundaryParent === block) {
+      var tag2 = String(block.tagName || '').toLowerCase();
+      var dispB = _zwCeDisplayOf(block);
+      var blockish2 = dispB === 'block' || (dispB === '' && _zwCeIsBlockTagName(tag2));
+      if (!blockish2) {
+        // 落 ③ 行断（跳过 ② 剩余体）。display:inline 且自身无 ws 声明 → 一律 '\n'
+        //（cannot-have-div 语料 Blink 行为：inline div 内 <br> 会跳出 inline 盒，
+        // UA 插真实 LF——宿主 ws 无关；自身有声明 → 按声明裁决）。
+        var forceLf2 = dispB === 'inline' && _zwCeWsDeclared(block) == null;
+        return _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host, forceLf2);
+      }
+      // 同型拆分复制 style 属性（新块保留块级样式——cannot-have-div 语料
+      // `<span display:block>` 拆分两半都带原 style）。
+      var sep2 = document.createElement(tag2);
+      try {
+        var stB = block.getAttribute && block.getAttribute('style');
+        if (stB != null) sep2.setAttribute('style', String(stB));
+      } catch (_eSty2) {}
+      if (boundaryText) {
+        var v2 = String(boundaryText.nodeValue || '');
+        var tail2 = v2.slice(eo);
+        if (tail2) sep2.appendChild(document.createTextNode(tail2));
+        boundaryText.nodeValue = v2.slice(0, boundaryOff);
+        var mv2 = boundaryText.nextSibling;
+        while (mv2) {
+          var nx2 = mv2.nextSibling;
+          sep2.appendChild(mv2);
+          mv2 = nx2;
+        }
+      } else {
+        // 元素边界：boundaryNode（含）起移入新块。
+        var mv2b = boundaryNode || ((block.childNodes || [])[boundaryOff] || null);
+        while (mv2b) {
+          var nx2b = mv2b.nextSibling;
+          sep2.appendChild(mv2b);
+          mv2b = nx2b;
+        }
+      }
+      // 拆空侧 <br> 填充（块级拆分两侧都是真块——与 ① 占位形不同）。
+      if (!(block.childNodes || []).length) block.appendChild(document.createElement('br'));
+      if (!(sep2.childNodes || []).length) sep2.appendChild(document.createElement('br'));
+      block.parentNode.insertBefore(sep2, block.nextSibling || null);
+      var nr2 = document.createRange();
+      nr2.setStart(sep2, 0);
+      nr2.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2]; }
+      return true;
+    }
+    // ③ 行断退化（兜底）。
+    return _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host);
+  }
+  // 共享入口：fireEvents=false 时仅变更（execCommand 臂事件已派 / insertText('\n')
+  // 自带序）；true 走完整事件序。变更核心不应用（caret 不在宿主子树等）→ false
+  //（键盘调用方回落既有路径）。
+  globalThis.__zw_ce_paragraph_split_at = function (host, range, fireEvents) {
+    if (!host || !globalThis.__zw_is_ce_host(host)) return false;
+    var rng = range || globalThis.__zw_ce_caret_range(host);
+    if (!rng || !rng.startContainer) return false;
+    if (fireEvents !== false) {
+      var beforeIp = new InputEvent('beforeinput', {
+        bubbles: true, cancelable: true, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
+      });
+      if (host.dispatchEvent(beforeIp) === false) return false;
+      if (globalThis._zwTextEventCtorRef) {
+        host.dispatchEvent(new globalThis._zwTextEventCtorRef('textInput', {
+          bubbles: true, cancelable: true, view: globalThis, data: '\n'
+        }));
       }
     }
-    // 同型开标签复制：tag 名 + contenteditable 保留（拆分出的两半都是 editing host）。
-    var tag = String(el.tagName || 'DIV').toLowerCase();
-    var ceAttr = el.getAttribute && el.getAttribute('contenteditable');
-    var openTag = '<' + tag + (ceAttr !== null ? ' contenteditable="' + String(ceAttr).replace(/"/g, '&quot;') + '"' : ' contenteditable');
-    var head = html.slice(0, splitAt);
-    var tail = html.slice(cutEnd);
-    el.outerHTML = openTag + '>' + head + '</' + tag + '>' + openTag + '>' + tail + '</' + tag + '>';
-    // caret → 新块（同 selector 重建——SetOuterHtml 后 selector 命中前块；caret 落
-    // 后块：查询同型兄弟不可靠（selector 失配），落前块末（元素边界）best-effort）。
-    try {
-      var el2 = document.querySelector(sel);
-      if (el2) {
-        var nr = document.createRange();
-        nr.setStart(el2, (el2.childNodes || []).length);
-        nr.collapse(true);
-        if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-      }
-    } catch (_eIpCaret) {}
-    try {
-      el2 = document.querySelector(sel);
-      if (el2) el2.dispatchEvent(new InputEvent('input', {
+    if (!_zwCeParagraphMutate(host, rng)) return false;
+    if (fireEvents !== false) {
+      host.dispatchEvent(new InputEvent('input', {
         bubbles: true, cancelable: false, composed: true, data: null, inputType: 'insertParagraph', isComposing: false
       }));
-    } catch (_eIpEv) {}
+    }
+    return true;
+  };
+  // 键盘/宿主入口（selector 签名保持——script_gen 生成器与旧调用方不变；元素
+  // 直传兼容同 __zw_ce_insert）。
+  globalThis.__zw_ce_insert_paragraph = function(sel) {
+    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
+    if (!el) return;
+    globalThis.__zw_ce_paragraph_split_at(el, null, true);
   };
   // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint

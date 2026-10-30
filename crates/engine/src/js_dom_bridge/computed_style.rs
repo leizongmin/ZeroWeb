@@ -169,7 +169,13 @@ pub(super) fn compute_document_styles_with_inline_overrides_css(
     Vec<zero_css_parser::Stylesheet>,
 ) {
     let mut doc = parse_html(html);
-    apply_inline_style_overrides(&mut doc, mutations);
+    // s165：树/文本级变异并入权威 applier 全量重放（旧 attr/style 四类子集对动态
+    // 插入/移除失明——meta color-scheme 语料 insert/remove 钉死）。队列契约：快照
+    // html 未含 pending 队列效果（drain 时重序列化换代、队列清空重长），故全队列
+    // 重放无重复插入；handle 链批内自洽，跨批引用同 handle 视图边界（miss 跳过）。
+    // Err = 批内失配（已 apply 前缀保留），视图近似不掩盖真 bug。
+    let mut nodes: HashMap<String, NodeId> = HashMap::new();
+    let _ = super::apply_dom_mutations_full(&mut doc, mutations, None, Some(&mut nodes), None, None);
     let (mut styles, sheets) = compute_styles_for_doc(&doc, css);
     apply_intrinsic_size_overrides(&doc, &mut styles);
     (doc, styles, sheets)
@@ -310,6 +316,11 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             }
         }
         "color" => color_to_css(&crate::resolve_color_current(&style.color, element_color)),
+        // color-scheme：显式声明返计算值串；未声明（含根元素 meta color-scheme——meta
+        // 只入 used-scheme fallback 不改 computed 属性，语料 assert
+        // gCS(root).colorScheme === 'normal' 钉死）返初始值 'normal'
+        //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
+        "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
         // ── background 简写（R2757）── 各 longhand 早覆（image/position/size/repeat/attachment/clip/origin）；
         // 简写恒完整规范形重组（无省略），Chromium 150 oracle 锚定。单层正确（多层受 ZW 单值存储限）。

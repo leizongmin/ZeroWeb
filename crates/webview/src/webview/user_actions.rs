@@ -6,10 +6,10 @@ use zero_engine::script_dispatch_native_event;
 use zero_engine::{
     DomEventDetail, DomMutation, register_dom_callbacks, script_call_set_location_hash, script_contenteditable_delete,
     script_contenteditable_enter, script_contenteditable_forward_delete, script_contenteditable_insert,
-    script_contenteditable_probe, script_dispatch_dom_event, script_pointer_move, script_reset_form_controls,
-    script_set_control_checked, script_set_open, script_set_option_selected, script_set_text_control_state,
-    script_text_control_snapshot, script_text_delete, script_text_delete_without_event, script_text_input,
-    script_text_input_without_event,
+    script_contenteditable_insert_paragraph, script_contenteditable_probe, script_dispatch_dom_event,
+    script_pointer_move, script_reset_form_controls, script_set_control_checked, script_set_open,
+    script_set_option_selected, script_set_text_control_state, script_text_control_snapshot, script_text_delete,
+    script_text_delete_without_event, script_text_input, script_text_input_without_event,
 };
 use zero_page_runtime::{
     ActionNoopReason, ActionTargetState, EventDispatchResult, FormNavigationIntent, HtmlActionRequest, HtmlUserAction,
@@ -409,11 +409,15 @@ impl WebView {
             }
             HtmlUserAction::Submit => {
                 // R3254-K1（keyboard goal M1）：Enter 默认动作分发序——**编辑宿主优先
-                // 消费**（CE 宿主 → __zw_ce_enter 换行，即使宿主在表单内也不提交）；
-                // 未消费才走表单隐式提交管线（enclosing form → submit 事件+导航意图）。
+                // 消费**（CE 宿主 → insertParagraph 语义就地拆分/退化，editing-compat
+                // insertparagraph 簇 2026-10-30 前为 __zw_ce_enter 换行；宿主在表单内
+                // 也不提交）；未消费才走表单隐式提交管线（enclosing form → submit
+                // 事件+导航意图）。FIXME: submit 通道无修饰载荷，Shift+Enter 未区分
+                //（runner Actions 路径同汇于此；inline 宿主退化后输出一致，无语料分压）。
                 let ce_probe = self.execute_dom_script(executor, &script_contenteditable_probe(&selector))?;
                 if ce_probe.value.trim() == "1" {
-                    let result = self.execute_dom_script(executor, &script_contenteditable_enter(&selector))?;
+                    let result =
+                        self.execute_dom_script(executor, &script_contenteditable_insert_paragraph(&selector))?;
                     return Ok(WebViewUserActionResult {
                         changed: result.changed,
                         canceled: false,
@@ -849,6 +853,19 @@ impl WebView {
             let recorded = mutations.lock().unwrap_or_else(|error| error.into_inner()).clone();
             let result = self.apply_dom_script_result(value, recorded)?;
             executor.set_dom_snapshot(&self.cached_html, self.current_url.as_deref().unwrap_or("about:blank"));
+            // R379/pa2b 换代通知对偶（editing join dup 修复，2026-10-30）：用户动作
+            // 私有批 apply 落地后须向 shim 下发换代通知——其余 apply 路径
+            // （apply_mutations_subset / apply_pending_shared_mutations）尾部同契约，
+            // 本路径此前只有脚本头部 pre-bump（s143 刀 A′），apply 后桶补偿仍持
+            // fresh stamp（stamp === gen），动作 resolve 后的立即读命中「host 快照
+            // 已含子 + overlay 副本」双计（WPT editing join 语料 sendBackspaceKey →
+            // assert innerHTML 的 span 逐测试递增实证）。
+            if result.changed {
+                let _ = executor.execute_script_priority_bounded(
+                    "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+                    zero_page_runtime::USER_ACTION_SCRIPT_TIMEOUT,
+                );
+            }
             return Ok(result);
         }
         self.ensure_sandbox()?;
@@ -932,6 +949,13 @@ impl WebView {
                 Some(&self.layout_rect_snapshot),
             );
             zero_engine::js_dom_bridge::publish_live_query_doc(self.pipeline.cached_doc_shared());
+        }
+        // 换代通知对偶（sandbox 直执分支，契约同上方 executor 分支注记）——回灌/
+        // 重注册完成后下发，bump 清算窗口覆盖本批 apply 的全部桶补偿。
+        if result.changed {
+            let _ = self.js_sandbox.as_mut().expect("js sandbox").execute(
+                "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+            );
         }
         Ok(result)
     }

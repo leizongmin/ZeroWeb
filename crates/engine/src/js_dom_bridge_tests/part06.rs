@@ -4560,11 +4560,13 @@ globalThis.__other = document.queryCommandState("insertText") + "/" + document.q
 
 #[test]
 fn test_insert_paragraph_split_r3254_m3_slice5() {
-    // R3254-M3 切片 5（editing goal，2026-09-07）：insertParagraph 块级拆分——
-    // ① execCommand('insertparagraph') 对 caret 在宿主直子文本内的 flat 宿主：
-    // outerHTML 重写拆两同型兄弟块（SetOuterHtml mutation）；② beforeinput
-    // (insertParagraph, cancelable) 事件序；③ caret 中点拆分内容正确。
-    // 解除 M2 切片 3 的「insertParagraph 块级拆分 defer」。
+    // R3254-M3 切片 5（editing goal，2026-09-07；2026-10-30 换代 live 就地拆分）：
+    // insertParagraph——① execCommand('insertparagraph') 对 caret 在宿主直子文本内
+    // 的 flat 宿主：本地树 mutation 拆分（SetChildText 头段截断 + CreateElement
+    // separator + AppendChild + 尾段 CreateTextNode/AppendChild——宿主存活，取代旧
+    // SetOuterHtml 重写模型：outerHTML 换代使原宿主脱树，turn 内视图不可见）；
+    // ② beforeinput(insertParagraph, cancelable) 事件序；③ __zw_ce_insert_paragraph
+    // 通道同语义。语料退化规则（行断/同型块拆分）见 part01 __zw_ce_paragraph_split_at。
     use std::sync::{Arc, Mutex};
     use zero_script_sandbox::{Sandbox, V8Sandbox};
     let config = zero_script_sandbox::SandboxConfig {
@@ -4608,11 +4610,21 @@ document.execCommand("insertparagraph", false, "");
         "insertParagraph 须派 cancelable beforeinput（inputType=insertParagraph）"
     );
     {
+        // 换代后：SetChildText（head 截断）+ CreateElement(div separator) +
+        // AppendChild（宿主内）+ 尾段 CreateTextNode/AppendChild——宿主存活。
         let m = mutations.lock().unwrap();
-        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetOuterHtml { selector, .. } if selector.contains("ce"))).cloned();
+        let has_sep = m.iter().any(|mm| {
+            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "div")
+        }) && m.iter().any(|mm| {
+            matches!(mm, DomMutation::AppendChild { parent_selector, .. }
+                if parent_selector.contains("ce"))
+        }) && m.iter().any(|mm| {
+            matches!(mm, DomMutation::SetChildText { parent_selector, .. } if parent_selector.contains("ce"))
+        });
         assert!(
-            matches!(&found, Some(DomMutation::SetOuterHtml { html, .. }) if html.contains(">head</div>") && html.contains("contenteditable")),
-            "insertParagraph 须经 SetOuterHtml 拆两同型块（head 尾闭合 + 新开 contenteditable 块），实际: {found:?}"
+            has_sep,
+            "insertParagraph 须经本地树 mutation 就地拆分（SetChildText+CreateElement+AppendChild），实际: {:?}",
+            m.iter().rev().take(10).collect::<Vec<_>>()
         );
     }
     // ③：__zw_ce_insert_paragraph 通道同语义（初始 dom_html 预置宿主）。
@@ -4631,11 +4643,19 @@ globalThis.__zw_ce_insert_paragraph("#ce2");
         )
         .unwrap();
     {
+        // ③ 同款本地树 mutation 面：CreateElement(div)+AppendChild @ ce2（'b' 尾段
+        // 移入新 separator 块，'a' 头段留在宿主）。
         let m = mutations.lock().unwrap();
-        let found = m.iter().rev().find(|mm| matches!(mm, DomMutation::SetOuterHtml { selector, .. } if selector.contains("ce2"))).cloned();
+        let has_sep = m.iter().any(|mm| {
+            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "div")
+        }) && m.iter().any(|mm| {
+            matches!(mm, DomMutation::AppendChild { parent_selector, .. }
+                if parent_selector.contains("ce2"))
+        });
         assert!(
-            matches!(&found, Some(DomMutation::SetOuterHtml { html, .. }) if html.contains(">a</div>") && html.contains(">b<")),
-            "__zw_ce_insert_paragraph 须拆 'ab' 为 a/b 两块，实际: {found:?}"
+            has_sep,
+            "__zw_ce_insert_paragraph 须就地拆分（CreateElement+AppendChild @ ce2），实际: {:?}",
+            m.iter().rev().take(10).collect::<Vec<_>>()
         );
     }
 }

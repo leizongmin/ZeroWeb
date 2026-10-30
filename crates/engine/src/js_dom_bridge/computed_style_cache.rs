@@ -313,7 +313,8 @@ fn try_sync_with_drain_record(
     // 批次分类 + pre-apply 解析（身份稳定：attr/选择器突变前先锚节点）。
     // 样式面判脏（PR #88 复核 D1）：结构性变体（fragment/append 子树可携带
     // `<style>`/`<meta>`、删除可移除样式元素）无条件脏；attr 变体目标为 meta 时脏
-    //（color-scheme 合成规则）；文本变体目标为 style 时脏（规则文本）。
+    //（meta color-scheme 文档 scheme 扫描——s165 起由 style-system compute 入口
+    // 重扫，换代重算触发）；文本变体目标为 style 时脏（规则文本）。
     let mut changed: Vec<NodeId> = Vec::new();
     let mut sheets_dirty = false;
     let mut post_handle: Vec<(String, bool)> = Vec::new(); // (handle, 无条件结构性脏)
@@ -469,12 +470,34 @@ fn find_in_doc(doc: &Document, selector: &str) -> Option<NodeId> {
     super::find_by_selector(doc, selector)
 }
 
-/// 目标元素是否可能牵动样式表面（`<style>` 规则文本 / `<meta color-scheme>` 合成
-/// 规则）——供增量换代判脏（PR #88 复核 D1）。
+/// 目标元素是否可能牵动样式表面（`<style>` 规则文本 / `<meta color-scheme>` 文档
+/// scheme 扫描）——供增量换代判脏（PR #88 复核 D1）。
 fn is_style_or_meta(doc: &Document, nid: NodeId) -> bool {
     matches!(
         doc.get(nid).map(|n| &n.kind),
         Some(zero_dom::NodeKind::Element(e)) if e.local_name() == "style" || e.local_name() == "meta"
+    )
+}
+
+/// 树/文本级变异判定（s165）：改变文档结构或文本内容的变体——gCS 代际缓存重放
+/// 须走权威 applier（[`super::apply_dom_mutations_full`]）的集合。排除面：attr/style
+/// 四类（[`super::apply_inline_style_overrides`] 精确幂等应用）、handle attr/style
+/// 四类（handle 元素不在快照 doc，重放不解析——契约同前）、表单状态三类（不影响
+/// 样式级联）。新变体入 enum 时默认落本集合（保守——重放比忽略更接近 live 语义）。
+fn is_tree_mutation(m: &DomMutation) -> bool {
+    !matches!(
+        m,
+        DomMutation::SetAttr { .. }
+            | DomMutation::RemoveAttr { .. }
+            | DomMutation::SetStyle { .. }
+            | DomMutation::RemoveStyle { .. }
+            | DomMutation::SetAttrOnHandle { .. }
+            | DomMutation::RemoveAttrOnHandle { .. }
+            | DomMutation::SetStyleOnHandle { .. }
+            | DomMutation::RemoveStyleOnHandle { .. }
+            | DomMutation::SetFormValue { .. }
+            | DomMutation::SetFormComposition { .. }
+            | DomMutation::SelectOption { .. }
     )
 }
 
@@ -501,7 +524,7 @@ fn finish_generation_update(
     changed.sort_unstable();
     changed.dedup();
     // 样式面脏（PR #88 复核 D1）：本批可能改变 `<style>` 文本或 meta color-scheme
-    // 合成规则——沿用旧代 stylesheets 会让脏规则贯穿整个会话（sync 通道持续成功则
+    // 文档 scheme 扫描结果——沿用旧代 stylesheets 会让脏规则贯穿整个会话（sync 通道持续成功则
     // 全量 parse 一次都不发生，无自愈点）。重收集后还需把根元素推入变更集：新规则
     // 可匹配任意元素、根级声明经继承传播，影响面不限于变更子树——根子树=全文档，
     // 免 HTML 重 parse 的全量级联。
@@ -765,10 +788,43 @@ pub fn with_cached_document_styles<T>(
                     // 幂等 replay pending 收集变更节点 → 增量换代。css 变化由
                     // finish_generation_update 的 css 对比判 sheets 脏（重收集 + 根全文档重算）。
                     let s = slot.as_mut().expect("html 匹配守卫已保证槽为 Some");
-                    let changed = apply_inline_style_overrides(&mut s.3, mutations);
-                    // pending attr 写到 meta/style 上会改样式面 → 判脏。
-                    let dirty = changed.iter().any(|&n| is_style_or_meta(&s.3, n));
-                    finish_generation_update(s, html, drain_gen, style_version, changed, dirty)
+                    // s165：树/文本级变异（CreateElement/Append*/Insert*/Remove/SetText/
+                    // SetInnerHtml 等）并入重放——旧 attr/style 四类子集对动态插入/移除
+                    // 失明，meta color-scheme 文档 scheme 扫描据此落进槽 doc（语料
+                    // insert/remove/remove-head 三文件钉死）。
+                    // 树级后缀**不走增量重放**：suffix 间每次 gCS 填槽都推进 s.2（同
+                    // turn 内 gCS 与变异交错即切段），fresh nodes map 不跨应用留存——
+                    // ref = 前缀段创建元素的 InsertBefore 失配丢弃（探针实证）。改为
+                    // 快照 + 全队列从零重放：html 未变 ⇒ 队列 = 原始 parse 起的全部
+                    // mutation，单次 applier 内 handle 链完整可解析，语义与全量兜底路径
+                    // 等价（compute_document_styles_with_inline_overrides_css）。
+                    // drain_gen 前进 ⇒ 队列重长（E14：同 len 可不同内容）⇒ 同走全量
+                    // 重放；同代内 attr/style 后缀维持精确幂等重放（[s.2..]）。
+                    let start = if s.1 == drain_gen { s.2.min(mutations.len()) } else { 0 };
+                    let tree_dirty = mutations[start..].iter().any(is_tree_mutation);
+                    if tree_dirty {
+                        let (doc, styles, sheets) =
+                            compute_document_styles_with_inline_overrides_css(html, mutations, &css);
+                        // css/adopted Arc 克隆进槽（Arc 增引用廉价）——外层后续全量兜底
+                        // 分支仍需移入原值。
+                        *s = (
+                            html.to_string(),
+                            drain_gen,
+                            style_version,
+                            doc,
+                            styles,
+                            sheets,
+                            css.clone(),
+                            adopted.clone(),
+                        );
+                        true
+                    } else {
+                        let suffix = &mutations[start..];
+                        let changed = apply_inline_style_overrides(&mut s.3, suffix);
+                        // pending attr 写到 meta/style 上会改样式面 → 判脏。
+                        let dirty = changed.iter().any(|&n| is_style_or_meta(&s.3, n));
+                        finish_generation_update(s, html, drain_gen, style_version, changed, dirty)
+                    }
                 } else {
                     // html 变：先试 drain 记录同步（cached doc 推进到新代）。
                     slot.is_some()

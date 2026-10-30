@@ -95,6 +95,17 @@ pub struct Painter {
     /// `inline_ca_paint_override`）。`ZW_INLINE_CA_PAINT=0` 关闭（恢复行盒域绘制）。
     /// 构造期单次读取，热路径零 env 查询。
     pub(crate) inline_ca_paint_enabled: bool,
+    /// R5349：内容区锚定绘制的**扩张轴**（显式 line-height < 主字体 A+D，报告盒高于
+    /// 树盒——负半 leading 下背景/边框按 content area 外溢行盒；CSS2 §10.6.2/§10.8.1，
+    /// driving: line-height-125：lh 10/fs 50，span bg 应按内容区高盖住前序 span）。
+    /// R5171 只做收缩轴并挂账扩张轴。**默认关**（`ZW_INLINE_CA_EXPAND=1` 启用）：
+    /// 全量 corpus A/B 实证单开本轴净 +1F（785F）——ref 页 span bg 扩轴而选区/高亮站
+    ///（R5052/R5054 行盒缘口径）与 R2197/R639 fragment 施画路径未同步
+    ///（active-selection-027 翻红：ref 页 `.highlight_reftest{line-height:1}` + span
+    /// 黄底被扩到内容区高，test 页选区黄仍行盒高；line-height-125 驱动案 test 页
+    /// span bg 走 fragment 路径，override 不可达）。解锁三件 = 选区站 content-area
+    /// 校准 + fragment 路径接入 + insert-009 归因。构造期单次读取。
+    pub(crate) inline_ca_expand_enabled: bool,
     /// R5296：inline box-level 背景/边框与 R639 per-fragment 臂的多行判据升级
     /// （`content_height > max(fs, 自身 line-height 解析值, run 行高最大值)×1.5`，
     /// R4332 border 门同式扩展）开关。旧 `1.5×fs` 高度代理把「单行大 line-height
@@ -978,6 +989,7 @@ impl Painter {
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
+            inline_ca_expand_enabled: std::env::var("ZW_INLINE_CA_EXPAND").as_deref() == Ok("1"),
             inline_bg_ml_gate_enabled: std::env::var("ZW_INLINE_BG_ML_GATE").as_deref() != Ok("0"),
             inline_owner_max_lh: HashMap::new(),
             mc_paint_nesting: 0,
@@ -2250,13 +2262,14 @@ impl Painter {
             return None;
         }
         let (reported_y, reported_h) = box_node.inline_reported_rect?;
-        // 只收缩不扩张：本切片只修「显式 line-height > 主字体 A+D」的半 leading 多涂带
-        //（inline-non-replaced-height-002/003：报告盒矮于树盒）。扩张轴（line-height <
-        // A+D）与 highlight overlay 的行盒缘语义（css-pseudo-4 highlight-bounds：选区
-        // 高亮可外延至行盒缘，R5052/R5054 选区站按行盒口径）及 R639/R1442 fragment
-        // 站相交——active-selection-027 A/B 实证扩张致两侧分化翻红，本切片不动
-        //（FIXME 挂账：扩张轴须与 fragment/selection 站同切片校准）。
-        if reported_h > box_node.height - 0.25 {
+        // 收缩轴：显式 line-height > 主字体 A+D 的半 leading 多涂带（R5171，
+        // inline-non-replaced-height-002/003：报告盒矮于树盒）。
+        // 扩张轴（line-height < A+D，报告盒高于树盒）：R5349 探针轴，默认关
+        //（`ZW_INLINE_CA_EXPAND=1` 启用）——单开净 +1F（785F）：选区/高亮站
+        //（R5052/R5054 行盒缘口径）与 R2197/R639 fragment 施画路径未同步，
+        // active-selection-027 翻红、line-height-125 驱动案 override 不可达。
+        // 关断时维持只收缩不扩张的 R5171 口径。
+        if reported_h > box_node.height - 0.25 && !self.inline_ca_expand_enabled {
             return None;
         }
         if (reported_y - box_node.y).abs() <= 0.25 && (reported_h - box_node.height).abs() <= 0.25 {

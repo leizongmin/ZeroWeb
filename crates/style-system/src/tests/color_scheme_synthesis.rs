@@ -102,3 +102,109 @@ fn test_undeclared_color_scheme_stays_light_under_dark_prefers() {
         "未声明 color-scheme（normal）即使 prefers=dark 也应保守取 light"
     );
 }
+
+// ── meta color-scheme 文档 scheme 扫描（HTML §4.2.5.3，s165）────────────
+//
+// 根元素无 color-scheme 声明时 used-scheme 回落文档 scheme（首个树序有效 meta）；
+// 根 computed color-scheme 序列化保持 normal（meta 不改根 computed 属性）；
+// shadow tree 内 meta 不参与；显式 normal 声明回落文档 scheme（非 parent）。
+
+use zero_dom::{Document, NodeId};
+
+/// 组装带 head 内 meta color-scheme 的测试 DOM（meta 挂 html 下——扫描面为
+/// 文档树序任意 light-DOM meta，head/body 位置不影响语义）。
+fn meta_doc(contents: &[&str]) -> (Document, NodeId, Vec<NodeId>) {
+    let mut doc = Document::new();
+    let root = doc.root();
+    let html = doc.create_element("html");
+    doc.append_child(root, html).unwrap();
+    let mut metas = Vec::new();
+    for content in contents {
+        let meta = doc.create_element("meta");
+        doc.set_attribute(meta, "name", "color-scheme");
+        doc.set_attribute(meta, "content", content);
+        doc.append_child(html, meta).unwrap();
+        metas.push(meta);
+    }
+    (doc, html, metas)
+}
+
+#[test]
+/// meta content=dark → 根 used-scheme dark（UA canvastext 翻白）且根 computed
+/// color-scheme 保持 normal（decl 不落根——gCS 序列化断言面）。
+fn test_meta_color_scheme_document_scheme_dark() {
+    let (doc, html, _) = meta_doc(&["dark"]);
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    let root_style = styles.get(&html).expect("根应有计算样式");
+    assert!(root_style.color_scheme_dark, "meta dark → 根 used-scheme dark");
+    assert_eq!(
+        root_style.color_scheme_decl, None,
+        "meta 不落根 decl（序列化保持 normal）"
+    );
+    assert_eq!(
+        root_style.color,
+        ColorValue::Rgba(255, 255, 255, 255),
+        "UA canvastext 在 dark 文档 scheme 下翻白（CSS Color 4 系统色 used-scheme 面板）"
+    );
+}
+
+#[test]
+/// 无效 content（空串/逗号形）跳过继续，首个有效 meta 胜出（树序）。
+fn test_meta_color_scheme_first_valid_wins() {
+    let (doc, html, _) = meta_doc(&["", "light,dark", "light"]);
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    assert!(
+        !styles.get(&html).expect("根应有计算样式").color_scheme_dark,
+        "空串与 light,dark（逗号形无效）应跳过，首个有效 light 胜出"
+    );
+}
+
+#[test]
+/// shadow tree 内 meta 不参与文档 scheme（HTML §4.2.5.3 文档树限定）。
+fn test_meta_color_scheme_shadow_tree_meta_ignored() {
+    use zero_dom::ShadowRootMode;
+    let (mut doc, html, _) = meta_doc(&[]);
+    let host = doc.create_element("div");
+    doc.append_child(html, host).unwrap();
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let meta = doc.create_element("meta");
+    doc.set_attribute(meta, "name", "color-scheme");
+    doc.set_attribute(meta, "content", "dark");
+    doc.append_child(shadow, meta).unwrap();
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    assert!(
+        !styles.get(&html).expect("根应有计算样式").color_scheme_dark,
+        "shadow tree 内 meta color-scheme 不应用——文档 scheme 保持 light"
+    );
+}
+
+#[test]
+/// 显式 `color-scheme: normal` 的后代回落文档 scheme（非 parent）——meta 改变后
+/// 该后代随文档 scheme 翻转（语料 normal-descendant-change 钉死第二断言）。
+fn test_explicit_normal_descendant_follows_document_scheme() {
+    let (mut doc, html, _) = meta_doc(&["dark"]);
+    let inner = doc.create_element("div");
+    doc.set_attribute(inner, "style", "color-scheme: normal");
+    doc.append_child(html, inner).unwrap();
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    assert!(
+        styles.get(&inner).expect("div 应有计算样式").color_scheme_dark,
+        "显式 normal 后代应回落文档 scheme（dark）——继承语义不适用"
+    );
+    // meta 换 light（属性变更 → 全量重算入口重扫）→ 同一元素回落 light。
+    doc.set_attribute(metas_of(&doc)[0], "content", "light");
+    let styles = sys.compute_styles(&doc, &[]);
+    assert!(
+        !styles.get(&inner).expect("div 应有计算样式").color_scheme_dark,
+        "meta 改 light 后显式 normal 后代应随文档 scheme 翻转"
+    );
+}
+
+/// 取回文档树序全部 color-scheme meta（测试辅助）。
+fn metas_of(doc: &Document) -> Vec<NodeId> {
+    doc.get_elements_by_tag_name("meta")
+}

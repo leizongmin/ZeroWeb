@@ -1,0 +1,1122 @@
+{
+ "/encoding/api-basics.any.html": {
+  "subtests": 6,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/api-basics.any.worker.html": {
+  "subtests": 6,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/api-invalid-label.any.html": {
+  "subtests": 3421,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/api-invalid-label.any.worker.html": {
+  "subtests": 3421,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/api-replacement-encodings.any.html": {
+  "subtests": 6,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/api-replacement-encodings.any.worker.html": {
+  "subtests": 6,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/api-surrogates-utf8.any.html": {
+  "subtests": 6,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/api-surrogates-utf8.any.worker.html": {
+  "subtests": 6,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/big5-encoder.html": {
+  "subtests": 13,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/bom-handling.html": {
+  "subtests": 1,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/encodeInto.any.html": {
+  "subtests": 111,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/encodeInto.any.serviceworker.html": {
+  "subtests": 111,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/encodeInto.any.sharedworker.html": {
+  "subtests": 111,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/encodeInto.any.worker.html": {
+  "subtests": 111,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/eof-shift_jis.html": {
+  "subtests": 0,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/eof-utf-8-one.html": {
+  "subtests": 0,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/eof-utf-8-three.html": {
+  "subtests": 0,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/eof-utf-8-two.html": {
+  "subtests": 0,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/idlharness.any.html": {
+  "subtests": 57,
+  "bucket": "idlharness",
+  "disposition": "挂账:WebIDLParser build期资产(net-api/timing先例)"
+ },
+ "/encoding/idlharness.any.serviceworker.html": {
+  "subtests": 57,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/idlharness.any.sharedworker.html": {
+  "subtests": 57,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/idlharness.any.worker.html": {
+  "subtests": 57,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/iso-2022-jp-decoder.any.html": {
+  "subtests": 38,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/iso-2022-jp-decoder.any.worker.html": {
+  "subtests": 38,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/iso-2022-jp-encoder.html": {
+  "subtests": 12,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/json-document-utf8.html": {
+  "subtests": 5,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-decode-cseucpkdfmtjapanese.html": {
+  "subtests": 13459,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-decode-errors.html": {
+  "subtests": 11,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-decode-x-euc-jp.html": {
+  "subtests": 13459,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-decode.html": {
+  "subtests": 13459,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-cseucpkdfmtjapanese.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-errors-misc.html": {
+  "subtests": 3431,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form-x-euc-jp.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-form.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-href-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-href-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-href-errors-misc.html": {
+  "subtests": 3431,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/euc-jp/eucjp-encode-href.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-decode-csiso2022jp.html": {
+  "subtests": 7329,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-decode-errors.html": {
+  "subtests": 8,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-decode.html": {
+  "subtests": 7329,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-csiso2022jp.html": {
+  "subtests": 7329,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-misc.html": {
+  "subtests": 3431,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form-errors-stateful.html": {
+  "subtests": 1,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-form.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-href-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-href-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-href-errors-misc.html": {
+  "subtests": 3431,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/iso-2022-jp/iso2022jp-encode-href.html": {
+  "subtests": 7392,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-csshiftjis.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-errors.html": {
+  "subtests": 10,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-ms932.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-ms_kanji.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-shift-jis.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-sjis.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-windows-31j.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode-x-sjis.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-decode.html": {
+  "subtests": 7393,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-csshiftjis.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-errors-misc.html": {
+  "subtests": 3430,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-ms932.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-ms_kanji.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-shift-jis.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-sjis.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-windows-31j.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form-x-sjis.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-form.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-href-errors-han.html": {
+  "subtests": 21269,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-href-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-href-errors-misc.html": {
+  "subtests": 3430,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-japanese/shift_jis/sjis-encode-href.html": {
+  "subtests": 7393,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-cseuckr.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-csksc56011987.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-errors.html": {
+  "subtests": 8,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-iso-ir-149.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-korean.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-ks_c_5601-1987.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-ks_c_5601-1989.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-ksc5601.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-ksc_5601.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode-windows-949.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-decode.html": {
+  "subtests": 17048,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-cseuckr.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-csksc56011987.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-errors-han.html": {
+  "subtests": 23097,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-errors-misc.html": {
+  "subtests": 3119,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-iso-ir-149.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-korean.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-ks_c_5601-1987.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-ks_c_5601-1989.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-ksc5601.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-ksc_5601.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form-windows-949.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-form.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-href-errors-han.html": {
+  "subtests": 23097,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-href-errors-misc.html": {
+  "subtests": 3119,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-korean/euc-kr/euckr-encode-href.html": {
+  "subtests": 17048,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-schinese/gb18030/gb18030-decoder.any.html": {
+  "subtests": 275,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道在收,gbk/gb18030窗口腿已过)"
+ },
+ "/encoding/legacy-mb-schinese/gb18030/gb18030-decoder.any.worker.html": {
+  "subtests": 275,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿(runner worker桥 re-entry)"
+ },
+ "/encoding/legacy-mb-schinese/gb18030/gb18030-encoder.html": {
+  "subtests": 254,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-schinese/gbk/gbk-decoder.any.html": {
+  "subtests": 82,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道在收,gbk/gb18030窗口腿已过)"
+ },
+ "/encoding/legacy-mb-schinese/gbk/gbk-decoder.any.worker.html": {
+  "subtests": 82,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿(runner worker桥 re-entry)"
+ },
+ "/encoding/legacy-mb-schinese/gbk/gbk-encoder.html": {
+  "subtests": 49,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-big5-hkscs.html": {
+  "subtests": 14651,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-cn-big5.html": {
+  "subtests": 14651,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-csbig5.html": {
+  "subtests": 14651,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-errors.html": {
+  "subtests": 8,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-extra.html": {
+  "subtests": 2472,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode-x-x-big5.html": {
+  "subtests": 14651,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-decode.html": {
+  "subtests": 14651,
+  "bucket": "decode-face",
+  "disposition": "已收口(31号,360431=100%P)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-enc-ascii.html": {
+  "subtests": 123,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-big5-hkscs.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-cn-big5.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-csbig5.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-extBa.html": {
+  "subtests": 21140,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-extBb.html": {
+  "subtests": 21291,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-han.html": {
+  "subtests": 14409,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-misc.html": {
+  "subtests": 3436,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-errors-pua.html": {
+  "subtests": 6399,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form-x-x-big5.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-form.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-href-errors-han.html": {
+  "subtests": 14409,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-href-errors-hangul.html": {
+  "subtests": 11183,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-href-errors-misc.html": {
+  "subtests": 3436,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/legacy-mb-tchinese/big5/big5-encode-href.html": {
+  "subtests": 14362,
+  "bucket": "encode-face",
+  "disposition": "已收口(36号,766958/766959)"
+ },
+ "/encoding/remove-only-one-bom.html": {
+  "subtests": 3,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/replacement-encodings.any.html": {
+  "subtests": 12,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/replacement-encodings.any.worker.html": {
+  "subtests": 12,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/sharedarraybuffer.https.html": {
+  "subtests": 1,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/single-byte-decoder-iframe.window.html": {
+  "subtests": 168,
+  "bucket": "window-form",
+  "disposition": "导入即得(.window.js通道,webcrypto先例;iframe形态待源甄别)"
+ },
+ "/encoding/single-byte-decoder.any.html": {
+  "subtests": 336,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/sniffing.html": {
+  "subtests": 1,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/streams/backpressure.any.html": {
+  "subtests": 4,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/backpressure.any.serviceworker.html": {
+  "subtests": 4,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/backpressure.any.sharedworker.html": {
+  "subtests": 4,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/backpressure.any.worker.html": {
+  "subtests": 4,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/crashtests/from-cross-realm.html": {
+  "subtests": 0,
+  "bucket": "noncase",
+  "disposition": "非案面(crashtest,0子测试)"
+ },
+ "/encoding/streams/decode-attributes.any.html": {
+  "subtests": 28,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-attributes.any.serviceworker.html": {
+  "subtests": 28,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-attributes.any.sharedworker.html": {
+  "subtests": 28,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-attributes.any.worker.html": {
+  "subtests": 28,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-bad-chunks.any.html": {
+  "subtests": 5,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-bad-chunks.any.serviceworker.html": {
+  "subtests": 5,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-bad-chunks.any.sharedworker.html": {
+  "subtests": 5,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-bad-chunks.any.worker.html": {
+  "subtests": 5,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-ignore-bom.any.html": {
+  "subtests": 12,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-ignore-bom.any.serviceworker.html": {
+  "subtests": 12,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-ignore-bom.any.sharedworker.html": {
+  "subtests": 12,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-ignore-bom.any.worker.html": {
+  "subtests": 12,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-incomplete-input.any.html": {
+  "subtests": 2,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-incomplete-input.any.serviceworker.html": {
+  "subtests": 2,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-incomplete-input.any.sharedworker.html": {
+  "subtests": 2,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-incomplete-input.any.worker.html": {
+  "subtests": 2,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-non-utf8.any.html": {
+  "subtests": 13,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-non-utf8.any.serviceworker.html": {
+  "subtests": 13,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-non-utf8.any.sharedworker.html": {
+  "subtests": 13,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-non-utf8.any.worker.html": {
+  "subtests": 13,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-split-character.any.html": {
+  "subtests": 11,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-split-character.any.serviceworker.html": {
+  "subtests": 11,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-split-character.any.sharedworker.html": {
+  "subtests": 11,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-split-character.any.worker.html": {
+  "subtests": 11,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/decode-utf8.any.html": {
+  "subtests": 12,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/decode-utf8.any.serviceworker.html": {
+  "subtests": 12,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/decode-utf8.any.sharedworker.html": {
+  "subtests": 12,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/decode-utf8.any.worker.html": {
+  "subtests": 12,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/encode-bad-chunks.any.html": {
+  "subtests": 6,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/encode-bad-chunks.any.serviceworker.html": {
+  "subtests": 6,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/encode-bad-chunks.any.sharedworker.html": {
+  "subtests": 6,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/encode-bad-chunks.any.worker.html": {
+  "subtests": 6,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/encode-utf8.any.html": {
+  "subtests": 19,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/encode-utf8.any.serviceworker.html": {
+  "subtests": 19,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/encode-utf8.any.sharedworker.html": {
+  "subtests": 19,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/encode-utf8.any.worker.html": {
+  "subtests": 19,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/invalid-realm.window.html": {
+  "subtests": 4,
+  "bucket": "window-form",
+  "disposition": "导入即得(.window.js通道,webcrypto先例;cross-realm形态待源甄别)"
+ },
+ "/encoding/streams/readable-writable-properties.any.html": {
+  "subtests": 2,
+  "bucket": "api-window",
+  "disposition": "导入即得(streams通道窗口腿)"
+ },
+ "/encoding/streams/readable-writable-properties.any.serviceworker.html": {
+  "subtests": 2,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/streams/readable-writable-properties.any.sharedworker.html": {
+  "subtests": 2,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/streams/readable-writable-properties.any.worker.html": {
+  "subtests": 2,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/streams/realms.window.html": {
+  "subtests": 12,
+  "bucket": "window-form",
+  "disposition": "导入即得(.window.js通道,webcrypto先例;cross-realm形态待源甄别)"
+ },
+ "/encoding/streams/stringification-crash.html": {
+  "subtests": 0,
+  "bucket": "noncase",
+  "disposition": "非案面(crashtest,0子测试)"
+ },
+ "/encoding/textdecoder-arguments.any.html": {
+  "subtests": 4,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-arguments.any.worker.html": {
+  "subtests": 4,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-byte-order-marks.any.html": {
+  "subtests": 3,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-byte-order-marks.any.worker.html": {
+  "subtests": 3,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-copy.any.html": {
+  "subtests": 2,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-copy.any.serviceworker.html": {
+  "subtests": 2,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/textdecoder-copy.any.sharedworker.html": {
+  "subtests": 2,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/textdecoder-copy.any.worker.html": {
+  "subtests": 2,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-eof.any.html": {
+  "subtests": 2,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-eof.any.worker.html": {
+  "subtests": 2,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-fatal-single-byte.any.html": {
+  "subtests": 7168,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-fatal-single-byte.any.worker.html": {
+  "subtests": 7168,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-fatal-streaming.any.html": {
+  "subtests": 2,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-fatal-streaming.any.worker.html": {
+  "subtests": 2,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-fatal.any.html": {
+  "subtests": 36,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-fatal.any.worker.html": {
+  "subtests": 36,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-ignorebom.any.html": {
+  "subtests": 4,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-ignorebom.any.worker.html": {
+  "subtests": 4,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-labels.any.html": {
+  "subtests": 222,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-labels.any.worker.html": {
+  "subtests": 222,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-mistakes.any.html": {
+  "subtests": 108,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-mistakes.any.worker.html": {
+  "subtests": 108,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-streaming.any.html": {
+  "subtests": 32,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-streaming.any.serviceworker.html": {
+  "subtests": 32,
+  "bucket": "sw-leg",
+  "disposition": "挂账:runner无ServiceWorker桥"
+ },
+ "/encoding/textdecoder-streaming.any.sharedworker.html": {
+  "subtests": 32,
+  "bucket": "sharedworker-leg",
+  "disposition": "挂账:runner无SharedWorker"
+ },
+ "/encoding/textdecoder-streaming.any.worker.html": {
+  "subtests": 32,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textdecoder-utf16-surrogates.any.html": {
+  "subtests": 10,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textdecoder-utf16-surrogates.any.worker.html": {
+  "subtests": 10,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textencoder-constructor-non-utf.any.html": {
+  "subtests": 79,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textencoder-constructor-non-utf.any.worker.html": {
+  "subtests": 79,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/textencoder-utf16-surrogates.any.html": {
+  "subtests": 7,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/textencoder-utf16-surrogates.any.worker.html": {
+  "subtests": 7,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/unsupported-encodings.any.html": {
+  "subtests": 14,
+  "bucket": "api-window",
+  "disposition": "导入即得(30号通道已收21案面)"
+ },
+ "/encoding/unsupported-encodings.any.worker.html": {
+  "subtests": 14,
+  "bucket": "worker-leg",
+  "disposition": "挂账:dedicated-worker腿"
+ },
+ "/encoding/unsupported-labels.window.html": {
+  "subtests": 158,
+  "bucket": "window-form",
+  "disposition": "导入即得(.window.js通道,webcrypto先例;iframe形态待源甄别)"
+ },
+ "/encoding/utf-32-from-win1252.html": {
+  "subtests": 8,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ },
+ "/encoding/utf-32.html": {
+  "subtests": 8,
+  "bucket": "document-face",
+  "disposition": "划界挂账html-syntax(文档级嗅探/编码耦合,30号M4定稿)"
+ }
+}

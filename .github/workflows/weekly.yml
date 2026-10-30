@@ -824,8 +824,10 @@ jobs:
           #   挂起 → 单案 30s 预算杀掉（合成 Timeout）。本地 goal 时代两文件
           #   都在位，从不暴露。blank.html 补拉 + case_timeout 提额（600s
           #   ceiling，预期 CI form 条目 ~60–100s）双修后重分片。
-          # 按目录互斥（filter 路径子串透传），条目分布 euc-kr 254 / big5 204 /
-          # shift_jis 148 / euc-jp 108 / iso-2022-jp 101 / schinese 2（共 817），
+          # 按目录互斥（filter 路径子串透传），条目分布 euc-kr 254 / big5 205 /
+          # shift_jis 148 / euc-jp 108 / iso-2022-jp 102 / schinese 2（共 819；
+          # encoding-compat-v2 M1：big5/iso2022 两分片 filter 去尾斜杠并入根面
+          # big5/iso-2022-jp-encoder.html，fetch 补 37 号脚本拉根面语料），
           # 预算按 form 条目 60–100s 配 ≥1.4× 余量；超预算失败形态安全（该脸
           # 缺贡献 + 分片红，下轮细分）。result_tag 互异——aggregate 产物平铺
           # （merge-multiple），同名 JSON 会互相覆盖。script timeout 同
@@ -842,9 +844,9 @@ jobs:
             case_timeout: 600
           - name: form-encode-iso2022
             suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch: "fetch-wpt-encoding-legacy-mb fetch-wpt-encoding-compat-v2"
             fetch_scripts: ""
-            filter: "iso-2022-jp/"
+            filter: "iso-2022-jp"
             result_tag: iso2022
             time_limit: 10800
             job_timeout: 210
@@ -872,9 +874,9 @@ jobs:
             case_timeout: 600
           - name: form-encode-big5
             suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch: "fetch-wpt-encoding-legacy-mb fetch-wpt-encoding-compat-v2"
             fetch_scripts: ""
-            filter: "big5/"
+            filter: "big5"
             result_tag: big5
             time_limit: 16200
             job_timeout: 300

@@ -108,3 +108,34 @@ CLONE 现快于 IH——归因文档「clone ≈ 2×set」病征消除。
   `make testharness-dom`（新二进制 ~14-15min，旧二进制 900s 不可完）。
 - R263b/R262b 位于 part03.js `_zwAdjustRangesForInsert` / `_zwAdjustRangesForRemove`
   函数头部，pass2 原文逐字保留（review 时对照 R263b 注释块后的原文段）。
+
+## 9. 合并基座电池（battery-b，2026-10-30 13:55–17:02 systemd 收口）
+
+二进制 = 共享 target main 13:56 build（R263b/R262b + trap 层四笔 6e294cd8a +
+94eb9f0d2 尾扫门控的组合态）；基线 = battery-b-baseline.json（3 分片 JSON +
+簇 A 4case 复测替换）。**零回归结论按面分列**：
+
+- **run 面 43 案**：31/43 有零回归证据，全程零 P 下降。①shard1 全 14 案
+  （含 bold——簇 A 最大消费者）聚合 **10,937P/14,437F 逐位等于基线**；
+  ②shard0 存活 transcript（撞 3600s guard 前的 10 案）逐案对照：13 案逐位
+  EQUAL，delete 家族 4 案为**解锁向增长**（delete +1,781 行、forwarddelete
+  +809、delete-to-make-empty +11——P/F 同向增长零翻转，delete 逐变体核对
+  1-1000~3001-4000 四共享变体逐位相等、尾部变体纯前沿推进，与 trap 层
+  globalThis miss 修复的解锁方向一致）。残余 12 案（multitest/insertparagraph/
+  italic/justify 系列/unlink 等）因分片截断无 battery 账，以 shard1 聚合 +
+  bold 全矩阵零位移（§6）与 4case 复测（§7）背书。
+- **html-syntax 面**：**61,341P/62F/7T/1U 逐位等于 pin 参照账**（§6 R5331
+  跨域对照账）——最强的跨域零回归信号。
+- **dom 面**：guard 内完整出账 56,099P/587F/15T（368 案），但 corpus 经
+  fetch 重拉与 §6 时点漂移（399→368 案），总行数不可比（56,701 vs 56,426），
+  且无逐案基线 JSON 留存——**本电池不新增 dom 零回归结论**，仍以 §6 的
+  ranges A/B 零翻转为准。
+- **selection / web-components 面**：selection 被 900s guard 外杀零输出、
+  web-components 1800s 截断——电池脚本未按面调 TIME_LIMIT，**无账**；
+  复跑需带 `TIME_LIMIT=` 提升（selection 面 ≥1800s、web-components ≥3600s）。
+- 运行缺陷记录：run 面分片撞 guard 的根因是 battery 脚本漏设
+  `TIME_LIMIT`（make 缺省 3600s，此前全分母 3 分片全出走的是更长的显式
+  墙钟）；battery-a（13:49，9 步版）为被 battery-b 取代的失败尝试（step1
+  probe 案缺失 Error 127）。逐案对照脚本与中间产物在 /tmp（battery-b-*），
+  复算入口：`python3 /tmp/battery-b-collect.py`（shard1 聚合行）+
+  delete 逐变体对照见本节①。

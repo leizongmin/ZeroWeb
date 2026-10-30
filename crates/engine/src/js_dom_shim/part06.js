@@ -1865,6 +1865,16 @@
     rule.style = _makeRuleStyle(rule, flushFn);
     return rule;
   }
+  // s163（html-semantics M2）：CSSImportRule 接口全局——上游 support/utils.js
+  // styleExistsInSheet 对每条规则 `rule instanceof CSSImportRule`（递归 @import 子
+  // 表）。wire 通道 @-rule defer（cssRules 读仅 StyleRule，见上）→ 无 import 规则
+  // 产生，instanceof 恒 false（递归分支死路）——全局缺位使首个规则比对即 Reference
+  // Error（conditionally-block 靶面 styleExists 全灭）。构造器空壳满足 interface
+  // reference；FIXME(compat)：CSSOM 规则接口族（CSSRule/CSSStyleRule/CSSImportRule/
+  // CSSMediaRule…）常量与 instanceof 面整体建模未做，语料扩展时按案补。
+  if (typeof globalThis.CSSImportRule !== 'function') {
+    globalThis.CSSImportRule = function CSSImportRule() {};
+  }
   // R5271：`element.sheet` [SameObject] 缓存——CSSOM getter 每次返回同一对象（旧实现
   // 每读重建，跨读 identity 断言必炸）。失效模型按 corpus the-style-element/
   // mutations.window.js 钉定：直接子指纹（nodeType + data/nodeValue 串接）变更
@@ -1945,12 +1955,42 @@
           }
         }
       }
+      // s164（html-semantics M2）：style 元素 @import 子表通道——静态扫描臂落表文本
+      //（part03 `_zwStyleImportTexts`，经 `_zwStyleImportEntries` 查询口）以
+      // CSSImportRule 形态注入 cssRules 头部（源序：@import 在 style 规则前——逆序
+      // unshift）。`styleSheet` 子表 = 落表文本 per-sheet 条目（上游 support/utils.js
+      // styleExists 经 `rule instanceof CSSImportRule` → `rule.styleSheet` 递归逐字节
+      // 比对 `rule.cssText`——style-element-media-match-block-script 断言面）。引擎
+      // wire 对 @-rule defer，此为读取面唯一 CSSOM 载体。`__zwImport` 标记供
+      // flushToOwner 过滤（import 条目不回写 `<style>` 文本——引擎文本以 @-rule
+      // defer 解析，回写既污染元素文本又零级联收益）。error 空贡献（''）无条目。
+      // https://drafts.csswg.org/cssom-1/#cssimportrule
+      if (!external && typeof globalThis._zwStyleImportEntries === 'function') {
+        var _siEntries = null;
+        try { _siEntries = globalThis._zwStyleImportEntries(sel); } catch (_eSiR) { _siEntries = null; }
+        if (_siEntries && _siEntries.length) {
+          for (var _siI = _siEntries.length - 1; _siI >= 0; _siI--) {
+            var _siE = _siEntries[_siI];
+            var _siProto = (globalThis.CSSImportRule && globalThis.CSSImportRule.prototype)
+              || Object.prototype;
+            var _siRule = Object.create(_siProto);
+            _siRule.type = 3; // CSSRule.IMPORT_RULE
+            _siRule.cssText = _siE.cssText;
+            _siRule.href = _siE.href;
+            _siRule.__zwImport = true;
+            _siRule.styleSheet = _makeStyleSheet(null, _siE.text, _siE.href);
+            rulesCache.unshift(_siRule);
+          }
+        }
+      }
       return rulesCache;
     }
     // 从 cache 重建 `<style>` 文本（join cssText）+ 写回 owner 元素（下次 render 重解析 cascade）。
     function flushToOwner() {
       if (external) return; // R5114：外部表只读——blob 由 runtime 管线同步管，无宿主写回。
-      var text = getRules().map(function (r) { return r.cssText; }).join('\n');
+      // s164：`__zwImport` 条目（@import 子表 face）过滤——不回写 `<style>` 文本。
+      var text = getRules().filter(function (r) { return !r.__zwImport; })
+        .map(function (r) { return r.cssText; }).join('\n');
       if (sel && typeof __zw_set_text === 'function') {
         try { __zw_set_text(sel, text); } catch (_e) {}
       } else if (handle && typeof __zw_set_text_handle === 'function') {
@@ -2499,58 +2539,6 @@
     nr.setStart(sc, start);
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-  }
-
-  // R3254-M3 切片 5：insertParagraph 块级拆分（execCommand 臂）——宿主 outerHTML
-  // 重写拆两同型兄弟块（与 __zw_ce_insert_paragraph 同语义；此处直接消费 host2
-  // 元素与当前选区）。caret 在宿主直子文本节点内才应用；caret 落前块末。
-  function _zwExecCmdApplyParagraphSplit(host, range) {
-    var sc = range.startContainer, so = range.startOffset | 0;
-    var ec = range.endContainer, eo = range.collapsed ? so : (range.endOffset | 0);
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === host)) return;
-    var kids = host.childNodes || [];
-    var textOffset = 0;
-    for (var i = 0; i < kids.length; i++) {
-      var k = kids[i];
-      if (k === sc) break;
-      if (k.nodeType === 3 || k.__zwIsText) textOffset += String(k.nodeValue || '').length;
-    }
-    var html = String(host.innerHTML || '');
-    var want = textOffset + so;
-    var seen = 0;
-    var splitAt = -1;
-    for (var j = 0; j < html.length; j++) {
-      if (seen === want) { splitAt = j; break; }
-      if (html.charAt(j) === '&') {
-        var semi = html.indexOf(';', j);
-        if (semi > j && semi - j <= 10) { j = semi; seen++; continue; }
-      }
-      seen++;
-    }
-    if (splitAt < 0) splitAt = (seen === want) ? html.length : -1;
-    if (splitAt < 0) return;
-    var cutEnd = splitAt; // collapsed：tail = caret 起整段
-    if (eo > so) {
-      var seen2 = seen, want2 = want + (eo - so);
-      for (var j2 = splitAt; j2 < html.length; j2++) {
-        if (seen2 === want2) { cutEnd = j2; break; }
-        if (html.charAt(j2) === '&') {
-          var semi2 = html.indexOf(';', j2);
-          if (semi2 > j2 && semi2 - j2 <= 10) { j2 = semi2; seen2++; continue; }
-        }
-        seen2++;
-      }
-    }
-    var tag = String(host.tagName || 'DIV').toLowerCase();
-    var ceAttr = host.getAttribute && host.getAttribute('contenteditable');
-    var openTag = '<' + tag + (ceAttr !== null ? ' contenteditable="' + String(ceAttr).replace(/"/g, '&quot;') + '"' : ' contenteditable');
-    host.outerHTML = openTag + '>' + html.slice(0, splitAt) + '</' + tag + '>' + openTag + '>' + html.slice(cutEnd) + '</' + tag + '>';
-    try {
-      var nr = document.createRange();
-      nr.setStart(host, kids.length);
-      nr.collapse(true);
-      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-    } catch (_eIpCaret2) {}
   }
 
   // R3254-M3 切片 6：insertHTML（execCommand 臂）——选区在宿主直子文本节点内 →
@@ -4244,9 +4232,9 @@
                  })()) {
         try {
           var tgtC = globalThis.document.activeElement;
-          var selC = (tgtC && tgtC.__zwSelector != null) ? String(tgtC.__zwSelector) : null;
-          if (selC && typeof globalThis.__zw_ce_insert === 'function') {
-            globalThis.__zw_ce_insert(selC, String(arguments[2] == null ? '' : arguments[2]), false);
+          // 元素直传（动态创建宿主无 __zwSelector——__zw_ce_insert 兼容元素参）。
+          if (tgtC && typeof globalThis.__zw_ce_insert === 'function') {
+            globalThis.__zw_ce_insert(tgtC, String(arguments[2] == null ? '' : arguments[2]), false);
           }
         } catch (_eC57) {}
       } else if (typeof _zwExecCmdInputType[cmd] !== 'undefined') {
@@ -4316,12 +4304,11 @@
               if ((cmd === 'delete' || cmd === 'forwarddelete') && rng2) {
                 try { _zwExecCmdApplyDelete(rng2, cmd === 'forwarddelete'); } catch (_eDel) {}
               }
-              // R3254-M3 切片 5：insertParagraph 块级拆分——选区已由事件序路径处理
-              //（beforeinput 已派），此处对 flat 宿主（caret 在直子文本内）走
-              // __zw_ce_insert_paragraph 同款拆分（host2/选区现值）。host2 非拆分
-              // 形态（嵌套/跨容器）→ no-op（defer 记录不变）。
+              // R3254-M3 切片 5（2026-10-30 换代 live 就地拆分）：insertParagraph——
+              // beforeinput 已由事件序路径派发，此处仅变更（fireEvents=false）。
+              // 退化规则/宿主存活语义见 part01 `__zw_ce_paragraph_split_at`。
               if (cmd === 'insertparagraph' && rng2 && host2) {
-                try { _zwExecCmdApplyParagraphSplit(host2, rng2); } catch (_eIp) {}
+                try { globalThis.__zw_ce_paragraph_split_at(host2, rng2, false); } catch (_eIp) {}
               }
               // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
               // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
@@ -4364,6 +4351,14 @@
             }
           }
         } catch (_eEdEv) {}
+      } else if (cmd === 'defaultparagraphseparator') {
+        // editing-compat insertparagraph 簇（2026-10-30）：separator 状态存储——
+        // 仅接受 div/p（spec：其余值不应用），供 __zw_ce_paragraph_split_at 拆分
+        // 新块取型。此前 no-op → white-space-style 语料 sep=p 变体全红。
+        // https://w3c.github.io/editing/execCommand.html#defaultparagraphseparator
+        var sepVal = String(arguments[2] == null ? '' : arguments[2]).toLowerCase();
+        if (sepVal !== 'div' && sepVal !== 'p') return false;
+        globalThis.__zwDefaultParagraphSeparator = sepVal;
       } else if (cmd === 'selectall') {
         // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
         // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
@@ -5954,9 +5949,22 @@
     // R5114（P9-9 切片 2）：外部样式表（合并 blob）以**单条合成条目**置于表头（级联源
     // 同序，cssom/#document-stylesheets 顺序语义 = 级联应用序）；空外部 CSS 不产条目
     //（既有 WPT/测试语义逐位不变）。
+    // s163（html-semantics M2）：**per-sheet 模式**——part03 `_zwSsExtSheetEntries`
+    // 枚举（live 文档序 rel=stylesheet link + 取回文本表）有条目时逐条
+    // `_makeStyleSheet(null, text, href)` 替代合并 blob（cssom document-stylesheets：
+    // 每 link 元素一个 sheet 条目——conditionally-block 案 `styleSheets[0]` 需指向
+    // 单 sheet 且 `sheet.cssRules` 只含本 sheet 规则）。media/disabled 不过滤注册
+    //（同 style 元素条目口径，cssom）。零条目 → R5114 blob fallback 原样（无 link
+    // 页/枚举通道缺席嵌入方零行为差）。
     get styleSheets() {
       var out = [];
-      if (typeof __zw_style_rules_external === 'function') {
+      var _esPerSheet = (typeof globalThis._zwSsExtSheetEntries === 'function')
+        ? globalThis._zwSsExtSheetEntries() : null;
+      if (_esPerSheet && _esPerSheet.length) {
+        for (var _esI = 0; _esI < _esPerSheet.length; _esI++) {
+          out.push(_makeStyleSheet(null, _esPerSheet[_esI].text, _esPerSheet[_esI].href));
+        }
+      } else if (typeof __zw_style_rules_external === 'function') {
         var _extWire = '';
         try { _extWire = String(__zw_style_rules_external()); } catch (_eExtR) { _extWire = ''; }
         if (_extWire) {
@@ -10115,6 +10123,19 @@
     _selection._zwSync = function (aNode, aOff, fNode, fOff) {
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
+      // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
+      // 边界点的路径快照。同 turn 内 childNodes 索引必然有效；flush+重注册（fused-view
+      // resync）后陈旧顶层补偿节点被移出宿主 childNodes 视图，届时上行锚定必断
+      //（探针实证 stale div 在宿主 childNodes 里 indexOf=-1）。快照 {sel, path} 存
+      // range（`_zwStaleAnchor`），`__zw_ce_caret_range`（part01）重解析消费。
+      try {
+        var rg0 = this._ranges && this._ranges[0];
+        if (rg0 && !rg0._zwStaleAnchor && typeof _zwFragSelPathOf === 'function') {
+          var sa = _zwFragSelPathOf(aNode);
+          var sf = (fNode === aNode) ? sa : _zwFragSelPathOf(fNode);
+          if (sa && sf) rg0._zwStaleAnchor = { start: sa, end: sf };
+        }
+      } catch (_eD3sy) {}
       _zwScheduleSelectionChange(globalThis.document);
     };
     // selection-compat M2 切片 2：**节点移除时保存边界点随 live range 吸附**——

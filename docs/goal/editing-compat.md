@@ -1,42 +1,36 @@
 # 编辑命令兼容 — editing/run + editing/other
 
-**版本**: v1.13
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）；2026-10-30（M2 次轮收环：缺陷 #2 已修 R5341 + other 面墙钟 R5342，三例 Timeout 全收口）；2026-10-30（预算窗 run 面全分母重跑收口 39,885P/47,804F/0T）；2026-10-30（簇 A 归因收口：填充/物化逐节点 JS glue 定量，修复 scope 定案）；2026-10-30（自旋四案新二进制复跑收口：零翻转，+687 行，残余挂簇 A）；2026-10-30（簇 A 修复落地：R263b/R262b 预筛门，fill/clone 3.6-9.3×）；2026-10-30（自旋四案簇 A 修复后复测收口：+2,113 行，缺口 -8,289→-6,176，insertparagraph/multitest 全分母）；2026-10-30（簇 A trap 层四笔落地：globalThis miss + R155 反查 + 键控根验证 + innerHTML CE 门，与 R263b/R262b 合并，S5 317ms）；2026-10-30（white-space join 实现落地+语义证明：探针直调三形态逐字命中语料期望；0P 根因=语料管线阻塞 D1/D2/D3 非 join 语义，簇序 scoping 修正）；2026-10-30（D1/D2/D3 落地 + 第 4 应用路径漏换代通知补账 + R382 条目级 ghost 兜底，join 语料 0P/7,518F→603P/6,915F）
-**状态**: Active——M2 次轮完成并收环；white-space join 簇**实现已落地并证明**（2026-10-30 七轮：part01 CE 块界 join 三臂——backspace 前邻/forwarddelete 跨容器空界选区+collapsed 终点、首行提取（`\n`/br 行界、inline 克隆壳随迁）、white-space 保留壳（attr 原始串→class 映射→normal fallback）；探针直调三形态与语料 expectedHTML 逐字吻合。**0P 根因修正**：语料走 send_keys 管线非 execCommand，fail 链=setupEditingHost 标记剥离对解析文本节点不持久化（纯快照无 selector/handle，D1）→ send_keys 引擎动作触发 fused-view 重同步标记回滚（D2）→ caret/listener 陈旧走分离树（D3）——全部 marker+send_keys 编辑语料同链受阻，execCommand 族（run 面）不受影响；修复切入见 [evidence](editing-compat/evidence/2026-10-30-ws-join-impl-and-pipeline-blocker.md)，**D1/D2/D3 已落地**（同日八轮，见下方状态块与[落地 evidence](editing-compat/evidence/2026-10-30-d1d2d3-land-join-corpus-acceptance.md)，join 三案 **0P/7,518F→603P/6,915F**））；簇 A（cloneNode 性能）**修复已落地**（tape 插桩收口 villain=R263/R262 range 注册表 O(n²)，pass1 预筛门 + 原路径逐字保留；SPAN/IH/CLONE 3.6-9.3×、RESET 10.5×；bold 209s 计数零位移、make test 9F 已知红集零新增、ranges A/B 零 verdict 翻转；残余 s111 臂/CE loop/removeChild glue 下轮候选）。**trap 层四笔叠加落地（6e294cd8a，与 R263b/R262b 合并互补）**：①part06 `__zwSelectionFollowRemoval` 注册提升（未注册 globalThis 属性 `typeof` 解析 miss **17.6ms/次**，惰性注册页面永不注册；remDbg 17.3→0.009ms/call，p3t move -97.5%）；②part04 innerHTML CE 环抬入 `_ihPc===true` 门（批量桶子代反链缺失，per-child `_elConnected` 落 R155 全表反查 6022 次 0 中 ~2.5ms/次；spec concept-connected 父断⇒子断）；③part03 键控根验证 + indexOf 快道（S4 -87%）；④合并冲突解法保预筛全文 + rmRoot 惰性化（R351 根缓存写侧同步，直引变量惰性化后缓存 null 隐患消除）。合并基座探针三样本：**S5 317.2ms / S8 854.9ms / p1-clone 18.1ms / R155 0×3**，无叠加回退；43 案零回归 + dom/selection/web-components/html-syntax 跨域电池 systemd 在途（结果入簇 A evidence §9）。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**）、runner 完成接线过早置 all_loaded（缺陷 #2，**已修 R5341**：静态尾改 load+setTimeout(0) 门控镜像原生时序，write 注入路径维持直调；回归钉两枚 + 探针双 Pass + scripting-1 verdict 流零影响）。R5340+R5341 双落复跑：预算窗三例 Timeout **全部收口**（① delete-without-unwrapping 200F/0T、② inserttext-last-mutation 64F/0T、③ white-space join 三案实为 other 面平墙 120s 过紧的外部截断假象——corpus 脚本 **R5342** other 面接线自适应墙 60+nv×15+90；R5342 后 other 面全量复跑终账 **2,406P/12,308F/0T**，Timeout 清零、分母完整、总账逐位核对：F = 基线 11,159 + R5340 解锁 1,144 + R5341 回归 5）。**run 面全分母 3 分片重跑收口（同日四轮）**：43 案全出零 case 级 Timeout，**39,885P / 47,804F / 0T（87,689 行，45.51%）**——分母对 M2-r1 15,343 解锁 5.7×、Pass 7,485→39,885（率降为分母效应）；对 M1 96,663 差 -8,974 全部定位自旋四案 delete/forwarddelete/multitest/insertparagraph（分片二进制无 R5340），四案新二进制复跑归 R5340 收敛轮；误杀案 createlink-with-selecting-img 新二进制直跑收口（3 子测试 0P/3F，createLink 未包裹 img，归 createLink 簇）；bold 全矩阵新二进制抽查逐位零位移，账视为现行；分片+续跑 idx 槽位 bug 已修（resume 跳过保序）。明细见 [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)。**自旋四案新二进制复跑收口（同日五轮）**：delete/forwarddelete/multitest/insertparagraph 以 R5340+R5341 二进制直跑，**逐测试 ID 对照零 verdict 翻转**——delete +770 行、forwarddelete +357（removeChild 自旋解锁出真实断言）；insertparagraph -174、multitest -266 为 R5340 分支开销致重型变体吞吐降 ~25%、300s 预算窗内完成测试变少的纯截断（前缀包含证明）；四案残余分母缺口（对 M1 -8,289 行）挂簇 A 修复后复测。**四案簇 A 修复后复测已收口（同日六轮，[rerun evidence 终账节](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)）**：fc12a1ff8 二进制单案直跑，**26,444r 13,935P/12,509F（+2,113 行）**——insertparagraph 7,195r **全分母**（script timeout 清零）、multitest 9,497r 全变体完成（-595）、forwarddelete +816（-2,093）；delete 无实质恢复（4,354r，-129 中止集位移，对 M1 -3,488）——重区实测 ~2.3s/行，瓶颈证非 range 注册表，归簇 A glue 桶（removeChild trap/s111 臂/CE loop/execCommand glue/setup parse），下轮候选同前。run 面现行账更新：**41,171P / 49,318F / 90,489 行（45.50%）**，对 M1 96,663 缺口 -6,174
+**版本**: v1.16
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-10-30（M1 收口）；2026-10-30（R5331 + M2 首轮）；2026-10-30（M2 次轮双窗折叠：预算归因 + other 面复跑收口；自旋簇三分类 + R5340）；2026-10-30（M2 次轮收环：缺陷 #2 已修 R5341 + other 面墙钟 R5342，三例 Timeout 全收口）；2026-10-30（预算窗 run 面全分母重跑收口 39,885P/47,804F/0T）；2026-10-30（簇 A 归因收口：填充/物化逐节点 JS glue 定量，修复 scope 定案）；2026-10-30（自旋四案新二进制复跑收口：零翻转，+687 行，残余挂簇 A）；2026-10-30（簇 A 修复落地：R263b/R262b 预筛门，fill/clone 3.6-9.3×）；2026-10-30（自旋四案簇 A 修复后复测收口：+2,113 行，缺口 -8,289→-6,176，insertparagraph/multitest 全分母）；2026-10-30（簇 A trap 层四笔落地：globalThis miss + R155 反查 + 键控根验证 + innerHTML CE 门，与 R263b/R262b 合并，S5 317ms）；2026-10-30（white-space join 实现落地+语义证明：探针直调三形态逐字命中语料期望；0P 根因=语料管线阻塞 D1/D2/D3 非 join 语义，簇序 scoping 修正）；2026-10-30（D1/D2/D3 落地 + 第 4 应用路径漏换代通知补账 + R382 条目级 ghost 兜底，join 语料 0P/7,518F→603P/6,915F）；2026-10-31（join 语料收口：双 wrapper 家族视图滞后根因 + plain 寻址补全，0P→3,108P/4,410F 零回归，与并行流 D1/D2/D3 撞车合并——D1 写通道统一 sel-path wire + caret 两级重锚）；2026-10-31（撞车仲裁终验：一级重锚让位 + 回灌 stamping 旁路两门落地，join 语料对 fix7 7,518 案零漂移恢复）
+**状态**: Active——**当前（2026-10-31）white-space join 语料收口 + 撞车仲裁终验**：join 三案 **0P→3,108P/4,410F（41.3%）**零回归（双 wrapper 家族视图滞后根因 + 世界同步 + plain 寻址补全，见 [evidence](editing-compat/evidence/2026-10-31-join-corpus-family-resync-and-wired-addressing.md)）；rebase 撞车合并（并行流 D1/D2/D3）组合态曾跌 1,395P，两处域交互缺陷已仲裁终验——**登记表重锚×世界同步换代**（一级重锚 regIdx 指向换代前位次，`_zwSynced` 门让位二级 sel-path 重解析）+ **D1 stamping×回灌子树**（stamp 域移除覆盖缺口致行界 `<br>` 残留，`__zwCeWorldSyncing` 门旁路），落地后 join 语料复跑 **3,108P/4,410F 对 fix7 7,518 案零漂移**；make test engine lib 3,611P/11F=9 已知红零新增 + 2 渲染流债（r113 cssText 尾分号、s24 ua-display flip，stash A/B 实证归 rebase 拉入提交，记档待渲染流认领），见 [evidence §8-§9](editing-compat/evidence/2026-10-31-join-corpus-family-resync-and-wired-addressing.md)；卡点=行内壳变体与真跨块选区长尾；下一步=行内壳 join 形态 → insertparagraph 精细化 → execCommand 簇序。M2 次轮完成并收环；white-space join 簇**实现已落地并证明**（2026-10-30 七轮：part01 CE 块界 join 三臂——backspace 前邻/forwarddelete 跨容器空界选区+collapsed 终点、首行提取（`\n`/br 行界、inline 克隆壳随迁）、white-space 保留壳（attr 原始串→class 映射→normal fallback）；探针直调三形态与语料 expectedHTML 逐字吻合。**0P 根因修正**：语料走 send_keys 管线非 execCommand，fail 链=setupEditingHost 标记剥离对解析文本节点不持久化（纯快照无 selector/handle，D1）→ send_keys 引擎动作触发 fused-view 重同步标记回滚（D2）→ caret/listener 陈旧走分离树（D3）——全部 marker+send_keys 编辑语料同链受阻，execCommand 族（run 面）不受影响；修复切入见 [evidence](editing-compat/evidence/2026-10-30-ws-join-impl-and-pipeline-blocker.md)，**D1/D2/D3 已落地**（同日八轮，见下方状态块与[落地 evidence](editing-compat/evidence/2026-10-30-d1d2d3-land-join-corpus-acceptance.md)，join 三案 **0P/7,518F→603P/6,915F**）；2026-10-31（insertParagraph 簇落地：live-DOM 降解模型）；簇 A（cloneNode 性能）**修复已落地**（tape 插桩收口 villain=R263/R262 range 注册表 O(n²)，pass1 预筛门 + 原路径逐字保留；SPAN/IH/CLONE 3.6-9.3×、RESET 10.5×；bold 209s 计数零位移、make test 9F 已知红集零新增、ranges A/B 零 verdict 翻转；残余 s111 臂/CE loop/removeChild glue 下轮候选）。**trap 层四笔叠加落地（6e294cd8a，与 R263b/R262b 合并互补）**：①part06 `__zwSelectionFollowRemoval` 注册提升（未注册 globalThis 属性 `typeof` 解析 miss **17.6ms/次**，惰性注册页面永不注册；remDbg 17.3→0.009ms/call，p3t move -97.5%）；②part04 innerHTML CE 环抬入 `_ihPc===true` 门（批量桶子代反链缺失，per-child `_elConnected` 落 R155 全表反查 6022 次 0 中 ~2.5ms/次；spec concept-connected 父断⇒子断）；③part03 键控根验证 + indexOf 快道（S4 -87%）；④合并冲突解法保预筛全文 + rmRoot 惰性化（R351 根缓存写侧同步，直引变量惰性化后缓存 null 隐患消除）。合并基座探针三样本：**S5 317.2ms / S8 854.9ms / p1-clone 18.1ms / R155 0×3**，无叠加回退；43 案零回归 + dom/selection/web-components/html-syntax 跨域电池 systemd 在途（结果入簇 A evidence §9）。预算窗：自旋簇主体系 runner V8 看门狗 `ZW_SCRIPT_TIMEOUT_MS` 90s 预算截断（非死循环，corpus 脚本已修 300s/变体 + CASE_WALL_S 自适应），other 面同预算复跑收口 **2,404P/11,159F/3T**；三分类窗：cloneNode 前置成本性能簇（挂账）、removeChild 对 sel 父 pending 解析子静默穿透真自旋（**已修 R5340**）、runner 完成接线过早置 all_loaded（缺陷 #2，**已修 R5341**：静态尾改 load+setTimeout(0) 门控镜像原生时序，write 注入路径维持直调；回归钉两枚 + 探针双 Pass + scripting-1 verdict 流零影响）。R5340+R5341 双落复跑：预算窗三例 Timeout **全部收口**（① delete-without-unwrapping 200F/0T、② inserttext-last-mutation 64F/0T、③ white-space join 三案实为 other 面平墙 120s 过紧的外部截断假象——corpus 脚本 **R5342** other 面接线自适应墙 60+nv×15+90；R5342 后 other 面全量复跑终账 **2,406P/12,308F/0T**，Timeout 清零、分母完整、总账逐位核对：F = 基线 11,159 + R5340 解锁 1,144 + R5341 回归 5）。**run 面全分母 3 分片重跑收口（同日四轮）**：43 案全出零 case 级 Timeout，**39,885P / 47,804F / 0T（87,689 行，45.51%）**——分母对 M2-r1 15,343 解锁 5.7×、Pass 7,485→39,885（率降为分母效应）；对 M1 96,663 差 -8,974 全部定位自旋四案 delete/forwarddelete/multitest/insertparagraph（分片二进制无 R5340），四案新二进制复跑归 R5340 收敛轮；误杀案 createlink-with-selecting-img 新二进制直跑收口（3 子测试 0P/3F，createLink 未包裹 img，归 createLink 簇）；bold 全矩阵新二进制抽查逐位零位移，账视为现行；分片+续跑 idx 槽位 bug 已修（resume 跳过保序）。明细见 [evidence/2026-10-30-run-budget-unlock-rerun.md](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)。**自旋四案新二进制复跑收口（同日五轮）**：delete/forwarddelete/multitest/insertparagraph 以 R5340+R5341 二进制直跑，**逐测试 ID 对照零 verdict 翻转**——delete +770 行、forwarddelete +357（removeChild 自旋解锁出真实断言）；insertparagraph -174、multitest -266 为 R5340 分支开销致重型变体吞吐降 ~25%、300s 预算窗内完成测试变少的纯截断（前缀包含证明）；四案残余分母缺口（对 M1 -8,289 行）挂簇 A 修复后复测。**四案簇 A 修复后复测已收口（同日六轮，[rerun evidence 终账节](editing-compat/evidence/2026-10-30-run-budget-unlock-rerun.md)）**：fc12a1ff8 二进制单案直跑，**26,444r 13,935P/12,509F（+2,113 行）**——insertparagraph 7,195r **全分母**（script timeout 清零）、multitest 9,497r 全变体完成（-595）、forwarddelete +816（-2,093）；delete 无实质恢复（4,354r，-129 中止集位移，对 M1 -3,488）——重区实测 ~2.3s/行，瓶颈证非 range 注册表，归簇 A glue 桶（removeChild trap/s111 臂/CE loop/execCommand glue/setup parse），下轮候选同前。run 面现行账更新：**41,171P / 49,318F / 90,489 行（45.50%）**，对 M1 96,663 缺口 -6,174。**insertParagraph 簇落地（2026-10-31）**：flat outerHTML-rewrite 模型换代 live-DOM in-place 降解模型（part01 三分支——host 分家/blockish 同标签分家带 style 复制/行断 ws 声明链，事件契约 beforeinput→textInput→mutate→input，insertText `\n` 等价路由，defaultParagraphSeparator，键盘 send_keys+Actions 双路接线）；同驱动同参语料账：cannot-have-div **0P/420F→420P/0F 全扫**、white-space-style **36P/1068F→616P/488F**、inline-host **0P/880F 封顶**（既有融合序列化 attr 层 gap：attr 读 pending 感知 vs 序列化回落基树快照两层不同步，HEAD stash A/B 同证；失败行唯一 delta=stale style 属性，语义结构零失败，下轮首位候选）；void 2P/70F DEFERRED；run 面 insertparagraph 回归核对与门禁见 [evidence](editing-compat/evidence/2026-10-31-insertparagraph-cluster-land.md)
 **执行模式**: WPT 驱动（上游 editing corpus 为验收标尺）+ 长线实现推进
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑面）
 
-> **当前状态（2026-10-30 同日八轮收口）：D1/D2/D3 全落地，join 语料解锁**。
-> 本轮三笔：① **D1 标记剥离持久化**——part03 `_zwSelStampParseTree` 访问器
-> 把解析文本节点 `data`/`nodeValue` 写路由为 `__nv` 同步 + `SetChildTextByPath`/
-> `RemoveChildAtPath` 引擎变更（callbacks `parse_child_index_path` 全路径拒绝，
-> `ZW_SEL_PATH_MUTATION` kill-switch；js_dom_bridge 新增两变更臂 +
-> `rewrite_pending_id_selectors` 覆盖）；② **D3 caret 重锚**——part01
-> `_zwCeReanchorRange` 沿注册表身份链上行写回 live Selection `_ranges[0]`；
-> ③ **新缺陷簇：第 4 应用路径漏换代通知**——`apply_dom_script_result`（
-> execute_dom_script/用户动作脚本尾批）apply+换基座后未发
-> `__zw_apply_generation_bump`，R380/R381 桶级代际门前提（「base 含 apply
-> 结果 ⇒ gate 关」）被破坏：本脚本尾批入桶条目（CE join 壳 span）stamp ===
-> gen 判同 turn 继续并入融合视图 → **div1 双 span**（真实管线探针实证，
-> gen 恒 3 不换代）。修复两笔并存：bump 补账（与其余 3 条应用路径对齐，
-> webview 源码钉 `execute_dom_script_path_generation_bump_call_site_present_d2`
-> 常驻，判别子串不混计 s143 format! 位点）+ **R382 条目级 ghost 兜底**
-> （part05 桶首登戳 `_zwPaGen` first-only、缺失回退 `_zwPaGen45`；跨代际且
-> `_zwHandleInHostSnapshot` 真含即剔出桶——childNodes 融合列表无桶级 gate，
-> 条目级判定是唯一拦截面）。探针验收：gen 0→4、`afterSend` 单 span、
-> append-only 对照零回归。**join-different 语料验收：0P/7,518F →
-> 603P/6,915F**（行数分母不变；paragraphs 531P、left-paragraph-right-line
-> 72P、left-line-right-paragraph 0P）。残余失败三族归 **join 语义精细化簇**
-> （新候选）：inline run 合并 `<b></b>` 残壳 + span 重包、host 级 dst 插入
-> 位次（left-line-right-paragraph 全 2,607F 单族）、块间 `\n` 文本节点致
-> previousSibling 几何退化。测试面收窄注记：`test_send_pipeline_join_
-> mutation_queue_d1d2` 沙箱 turn3 删除（沙箱手工换基序列与 runner 优先通道
-> 重同步的包装体身份语义不同，实测不可迁移），视图层去重由语料常驻文件 +
-> 源码钉承担。TEMP 探针/诊断已清（ZW_DBG_DUMP_MUTATIONS 双位点、
-> `__zwCeTrace` 四位点、zz-probe 双页）。明细见
-> [evidence/2026-10-30-d1d2d3-land-join-corpus-acceptance.md](editing-compat/evidence/2026-10-30-d1d2d3-land-join-corpus-acceptance.md)。
-> **下一步**：insertparagraph 簇（原簇序）；join 精细化与簇 A glue 残余
-> （s111 臂/CE loop/removeChild trap）并列入簇候选，按语料账重排。
+> **上一状态（2026-10-31，join 收口之前）：insertParagraph 簇落地——live-DOM 降解模型上线，cannot-have-div 全扫**。现行态见上方状态行（white-space join 语料收口）。
+> 本轮换代：旧 flat outerHTML-rewrite 模型（host 分离、turn 内不可见、无降解规则）→
+> **live-DOM in-place 三分支降解**（part01 `_zwCeParagraphMutate`）：① host div + block-ish +
+> host 级 caret → separator 元素（defaultParagraphSeparator，默认 div）分家，空侧 `<br>` 填充，
+> 内容头 caret 空占位插前；② blockish 后代（显式 display:block 或无声明 + div/p/h1-h6/li）
+> 同标签分家复制 `style` 属性；③ 其余行断——white-space 声明链（声明 normal 即停）判 `\n` vs
+> `<br>`，inline 子代无自有声明 forceLf（Blink quirk）。事件契约 beforeinput→textInput(`\n`)→
+> mutate→input；insertText `\n` 等价路由；键盘 send_keys + Actions keydown 双路接线（FIXME：
+> 无 modifier payload，Shift+Enter 未区分）；execCommand 臂换调核心 + defaultparagraphseparator
+> 案；`__zw_ce_enter` 折叠 caret 尾部双写顺手修（同根因共享路径）。
+> **语料账（同驱动同参 apples-to-apples）**：cannot-have-div **0P/420F → 420P/0F 全扫**；
+> white-space-style **36P/1068F → 616P/488F**（残余主属 italic/bold temporary-inline 保留组）；
+> inline-host **0P/880F 封顶**——既有融合序列化 attr 层 gap（HEAD stash A/B 同证）：
+> attr 读路径 `__zw_has_attr_lw` pending 感知返 false，而 outerHTML 序列化门（part04 桶非空/
+> subtreeDirty 才开）对纯 attr 变更不开 → 回落 `__zw_get_outer_html` 基树快照 stale；
+> 失败行唯一 delta = stale style 属性，语义结构零失败——**下轮首位候选**；void 2P/70F
+> DEFERRED；child-of-head/-html/non-splittable 三案 runner 零结果行（r5342 基线同，非本轮回归）。
+> 门禁：engine lib 3619P/9F 已知红集零新增、webview lib 822P/1F pre-existing、fmt/clippy clean、
+> bench-gate 见 evidence §6；run 面 insertparagraph 逐测试 ID 对照 **F→P 61 / P→F 2**（净 +59，
+> -638 为重型变体预算截断，终版为基线前缀子集）。探针矩阵 + A/B + 失败行逐条核验明细见
+> [evidence/2026-10-31-insertparagraph-cluster-land.md](editing-compat/evidence/2026-10-31-insertparagraph-cluster-land.md)。
+> **下一步**：① 融合序列化 attr 层 gap（inline-host 880F 解封，D1 族 attr 维度）；
+> ② join 精细化三族（inline run 残壳/host 级位次/块间 \n 几何）与簇 A glue 残余
+> （s111 臂/CE loop/removeChild trap）；③ white-space-style italic/bold 组、void-element、
+> 空 li no-op（run 面仅余 2 处 P→F 根因）、Shift+Enter modifier。按语料账重排。
 
 > **M2 首轮当前状态（2026-10-30，R5331 之后的同日续环）**：js_dom_shim
 > 四笔共享路径修复（matches 自含语义 / doc 级查询深层解析产物 in-doc 链上行
@@ -137,6 +131,33 @@
 > 残余（下轮候选）：s111 script 扫描臂 34-46µs/append、CE loop 20-40µs、
 > removeChild trap glue ~390µs/次（S8 比值 2.7 主项）；R5342 后本簇为纯
 > 性能余量项，语料已解锁不受其阻。
+
+> **white-space join 语料收口（2026-10-31，join 三案 0P → 3,108P/4,410F）**：
+> D1/D2/D3 落地后 join 语料从管线阻塞中解锁。**根因定型（H 探针五步实证
+> 链）**：CE 动作 `querySelector` 产物与页面脚本持有的 host wrapper 分属
+> 同 context 内**两族 wrapper 对象图**——页面 setup 的 innerHTML 写走页面
+> 家族后，query 家族子树视图滞留上一动作形态（kid1=上轮 shell span），
+> fused 序列化读引擎态恒 fresh 掩盖陈旧 → 动作 walk 在陈旧树上早退
+> （g6 守卫/recorded=0），同页第二动作起成片 no-op（guideline #32 多族
+> 包装的新面：家族**子树视图滞后**，非仅 identity 失配）。修复链四笔：
+> ①R380 用户动作私有批 apply 后换代通知（executor/sandbox 两分支对偶，
+> 双计根因）；②`_zwCeCaretAnchorStale` + remap 门拓宽（stamped 但锚落点
+> 非原对象同样重解析）；③`__zw_ce_caret_range` 世界同步（raw 选区锚链上
+> 的 CE 宿主非 el 本体时以页面家族 innerHTML 回灌 el——两家族 fused 同源，
+> 内容一致时幂等重建）；④plain 寻址补全：`_zwPosSelOf` 位置串渲染
+> （元素序 nth-child 链，与引擎 structural fastpath 同口径）+ part04
+> insertBefore plain-ref 臂 + join plain 壳序列化收敛（InsertAdjacentHtml
+> beforebegin/beforeend，引擎侧 remove+copy=move）。量化：fix1 R380
+> 1,044P → fix4 壳形态 1,278P → fix6 世界同步 1,701P → fix7 plain 壳
+> **3,108P/4,410F（41.3%）**，逐测试 ID 对拍 fix6/fix4 均零回归；分方法
+> backspace 502→1,228、forwarddelete 406→940、select-boundary 370→940
+> （后两臂同消费 join apply，④两臂同收）。连带面：世界同步暴露 plain 壳
+> append 缺口曾致 left-paragraph-and-right-line 363 案回归，④第三笔清零。
+> 剩余长尾：forwarddelete/select-boundary 各 ~800F（行内壳变体+真跨块选区
+> defer）、`<b>[]def<br>ghi</b>` backspace 形态。全文见
+> [evidence/2026-10-31-join-corpus-family-resync-and-wired-addressing.md](editing-compat/evidence/2026-10-31-join-corpus-family-resync-and-wired-addressing.md)。
+> 下一步：行内壳变体（b/i/span 嵌套）join 形态、真跨块选区、以及 other 面
+> 剩余簇（insertparagraph → execCommand）按簇序立项。
 
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 

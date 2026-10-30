@@ -8903,6 +8903,18 @@
                     }
                   } catch (_eR265p) {}
                 } catch (_eR265m) {}
+              } else if (sel && refNode && refNode.__zwHandle && newNode.nodeType !== 3
+                  && typeof __zw_insert_before === 'function') {
+                // s165（html-semantics M2）：**sel 父 + handle-only ref**——createElement
+                // 产物（无 selector）作 ref、静态 sel 容器作父的 insertBefore。旧形态
+                // 全 wire 分支 miss → 降级 append 尾部，ref 锚序丢失（meta color-scheme
+                // 语料 insert「before existing in head」expected light got dark 钉死）。
+                // ref 字段填 handle 字符串：applier 侧 InsertBefore arm selector miss 后
+                // 经 handle 表解析（批内创建已注册；跨批引用同 handle 视图边界 miss
+                // 跳过）。JS 视图经尾部 R140 live sync 自 host 收敛（同 refNode.
+                // __zwSelector 分支，无本地 splice）。
+                ceAdded = [newNode];
+                try { __zw_insert_before(sel, newNode.__zwHandle, refNode.__zwHandle); } catch (_e164ib) {}
               } else if (sel && refNode && newNode.nodeType === 3
                   && typeof __zw_insert_adjacent_text === 'function') {
                 // R5058：**sel 父 + 文本子 ref**——静态元素 childNodes 的文本代理无
@@ -8917,6 +8929,20 @@
                 try { _r5058fc = _makeProxy(sel, handle).firstChild; } catch (_e5058f) {}
                 var _r5058pos = (refNode === _r5058fc) ? 'afterbegin' : 'beforeend';
                 try { __zw_insert_adjacent_text(sel, _r5058pos, _r5058t); } catch (_e5058w) {}
+              } else if (sel && refNode && newNode.__zwHandle && refNode.nodeType === 1
+                  && typeof _zwPosSelOf === 'function') {
+                // D3 世界同步面（2026-10-30）：**plain 元素 ref 的位置串插入**——ref 为
+                // 补偿子树/innerHTML 解析产物（CE 世界同步回灌、模板注入等，无
+                // `__zwSelector` 印）时上方 wire 分支全不命中 → 变异静默本地化（引擎
+                // 侧壳永久丢失；join 语料同页第二动作实案：壳 span 建成但落位丢弃）。
+                // 位置串由 `_zwPosSelOf` 渲染（锚 sel + 元素序链），引擎按当前树态
+                // 解析 ref 落位——与 RemoveChildAtPath/SetChildTextByPath 的
+                // plain 寻址对偶，补 insertBefore 半边。
+                var _posRef = _zwPosSelOf(refNode);
+                if (_posRef) {
+                  ceAdded = [newNode];
+                  try { __zw_insert_before(sel, newNode.__zwHandle, _posRef); } catch (_ePosIns) {}
+                }
               }
               // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，
@@ -13102,7 +13128,10 @@
             // 语料管线——见 part03 `_zwSelStampParseTree` 注释）。置于 R304 槽点后：
             // 上行路径收集依赖 parentNode 重指、登记表/重锚依赖 `_zwSelPendingParent`
             // 已盖。host 路径（handle 域）不走此门（R48/`_textHandles` 既有写路径）。
-            if (sel && typeof _zwSelStampParseTree === 'function') {
+            // `__zwCeWorldSyncing`：CE 世界同步回灌（part01 `__zw_ce_caret_range`）
+            // 期间不 stamp——回灌子树归 plain 补偿域（join 语料撞车合并仲裁，
+            // 2026-10-31）。
+            if (sel && !globalThis.__zwCeWorldSyncing && typeof _zwSelStampParseTree === 'function') {
               try { _zwSelStampParseTree(_ihAdded, sel, _r304HostProxy); } catch (_eSpT) {}
             }
             // M3 扩批 X：innerHTML 整体替换后 textTracks 集合同步（track-remove-by-setting-

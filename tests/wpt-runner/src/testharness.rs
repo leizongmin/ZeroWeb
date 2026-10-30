@@ -4452,12 +4452,15 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
 }
 
 /// form-url-encoding-compat goal：encode 面案面规则（面单见
-/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22）。
-/// 只放行 form 提交编码序列化面（`*-encode-form*.html`，含 label 变体与
-/// errors 面）与 href URL 序列化面（`*-encode-href*.html` + schinese
-/// `*-encoder.html` inline a.href 面 + `big5-enc-ascii.html`）；decode 面
-/// / chars / errors fixture / `.any.js` 全 skip——与 [`encoding_legacy_mb_case_skipped`]
-/// face 互斥（31 号 decode 通道规则与基线不动，零回归底线）。
+/// docs/goal/archive/form-url-encoding-compat.md DC-1——68 文件 = form 46 + href 22；
+/// encoding-compat-v2 goal M1 增根面 2 文件）。只放行 form 提交编码序列化面
+/// （`*-encode-form*.html`，含 label 变体与 errors 面）与 href URL 序列化面
+/// （`*-encode-href*.html` + schinese/根面 `*-encoder.html` inline a.href 面 +
+/// `big5-enc-ascii.html`）；decode 面 / chars / errors fixture / `.any.js` 全
+/// skip——与 [`encoding_legacy_mb_case_skipped`] face 互斥（31 号 decode 通道
+/// 规则与基线不动，零回归底线）。根面只此 `big5-encoder.html` /
+/// `iso-2022-jp-encoder.html` 匹配放行规则（bom/sniffing/utf-32/eof/ref 等
+/// 文档面均不匹配，30 号 M4 划界挂账 html-syntax-compat）。
 fn form_url_encoding_case_skipped(relative: &str, _source: &str) -> bool {
     if relative.ends_with(".any.js") {
         return true;
@@ -4469,15 +4472,31 @@ fn form_url_encoding_case_skipped(relative: &str, _source: &str) -> bool {
         || name == "big5-enc-ascii.html")
 }
 
-/// Run the legacy-mb encode-face pages（form-url-encoding-compat goal M0/M1——
-/// 通道）。语料与 decode 通道同源（[`ENCODING_LEGACY_MB_CORPUS_SUBDIRS`]）。
-/// filter 按路径子串透传（如 `euc-jp/`、`encode-form`、`encoder.html`——按面/
-/// 族分批出数）。variant 展开（encode-form/href 页 8 variant 分片，decode
-/// 通道同款）。
+/// form-url encode 面通道语料叶目录（31 号 fetch 脚本 DIRS + encoding-compat-v2
+/// goal M1 追加 `encoding` 根——根面 big5/iso-2022-jp-encoder inline a.href 面
+/// 与 schinese `*-encoder.html` 同机制，[`ENCODING_LEGACY_MB_CORPUS_SUBDIRS`]
+/// 为 31/30 号通道共用不动，此处独立常量零回归；flat 扫描，与 fetch depth 布局
+/// 对齐）。
+pub const ENCODING_FORM_URL_CORPUS_SUBDIRS: &[&str] = &[
+    "encoding",
+    "encoding/legacy-mb-japanese/euc-jp",
+    "encoding/legacy-mb-japanese/iso-2022-jp",
+    "encoding/legacy-mb-japanese/shift_jis",
+    "encoding/legacy-mb-korean/euc-kr",
+    "encoding/legacy-mb-schinese/gb18030",
+    "encoding/legacy-mb-schinese/gbk",
+    "encoding/legacy-mb-tchinese/big5",
+];
+
+/// Run the legacy-mb + 根面 encode-face pages（form-url-encoding-compat goal
+/// M0/M1 + encoding-compat-v2 goal M1——通道）。语料见
+/// [`ENCODING_FORM_URL_CORPUS_SUBDIRS`]。filter 按路径子串透传（如 `euc-jp/`、
+/// `encode-form`、`encoder.html`——按面/族分批出数）。variant 展开
+/// （encode-form/href 页 8 variant 分片，decode 通道同款）。
 pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_any_js_corpus_subdirs_with_helpers_variants(
         wpt_root,
-        ENCODING_LEGACY_MB_CORPUS_SUBDIRS,
+        ENCODING_FORM_URL_CORPUS_SUBDIRS,
         filter,
         form_url_encoding_case_skipped,
         &[],
@@ -4973,6 +4992,25 @@ fn is_long_timeout_case(source: &str) -> bool {
 
 /// R34xx：headless 图片源获取器——`https://wpt.test/<path>`（wpt-data 相对路径）→
 /// `wpt_root/<path>` 本地文件读取（PNG 等解码由 webview decode_image 完成）。
+/// s163（html-semantics M2 切片 163）：conditionally-block-rendering-on-link-media-attr
+/// 的参数化 CSS 端点体——上游 stylesheet.py 行为等价（pin master 逐字核对）：
+/// `stylesNotMatchingEnvironment` 查询参数存在 → 体 `h1 {color: brown;}`，否则
+/// `h1 {color: purple;}`（逐字节上游原形——styleExists 走 rule.cssText 序列化
+/// 比对）。返 `(content_type, body)`。**`delay` 参数不在此 sleep**——同步契约下
+/// host sleep 冻结 JS 求值（同 execute 内结算，取回时点对页面不后移），延迟语义
+/// 由 shim `_zwFetchSimDelay` 发题侧延迟承载（net-api M4-S20 delay.py 同款——
+/// runner 端点即时交付，shim setTimeout 延后发起）。
+/// https://github.com/web-platform-tests/wpt/blob/master/html/semantics/
+/// document-metadata/interactions-of-styling-and-scripting/stylesheet.py
+fn serve_interactions_stylesheet(query: &str) -> (String, String) {
+    let body = if wpt_query_value(query, "stylesNotMatchingEnvironment").is_some() {
+        "h1 {color: brown;}".to_string()
+    } else {
+        "h1 {color: purple;}".to_string()
+    };
+    ("text/css".to_string(), body)
+}
+
 fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::ImageSourceFetcher> {
     let root = wpt_root.to_path_buf();
     Some(std::sync::Arc::new(move |url: &str| {
@@ -4990,6 +5028,15 @@ fn wpt_data_image_fetcher(wpt_root: &std::path::Path) -> Option<zero_webview::Im
         let clean = path_part.split(['?', '#']).next()?;
         if clean.is_empty() {
             return None;
+        }
+        // s163：动态 .py 端点先行（引擎 base 槽外链 CSS 通道不过 fetch 桥闭包——
+        // 文件映射把 .py 源码当 CSS 读，conditionally-block 的 purple 表恒缺级联；
+        // 与 fetch 桥同体 [`serve_interactions_stylesheet`]）。content-type 由调用方
+        // （resolve_external_css）对 stylesheet 通道硬编码 text/css。
+        if clean == "html/semantics/document-metadata/interactions-of-styling-and-scripting/stylesheet.py" {
+            let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+            let (_, body) = serve_interactions_stylesheet(query);
+            return Some(body.into_bytes());
         }
         std::fs::read(root.join(clean)).ok()
     }))
@@ -6299,6 +6346,26 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                     }
                     ("text/css".into(), "body {color: red;}".to_string())
                 };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), content_type));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/document-metadata/interactions-of-styling-and-scripting/stylesheet.py" {
+                // s163（html-semantics M2 切片 163）：conditionally-block-rendering-on-link-
+                // media-attr 的参数化 CSS 端点——上游 stylesheet.py 行为等价（pin master 逐字
+                // 核对）。响应体/延迟逻辑在 [`serve_interactions_stylesheet`]（引擎 base 槽
+                // 外链 CSS 通道共用——该通道不过 fetch 桥，见其注）。
+                // https://github.com/web-platform-tests/wpt/blob/master/html/semantics/
+                // document-metadata/interactions-of-styling-and-scripting/stylesheet.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let (content_type, body) = serve_interactions_stylesheet(query);
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), content_type));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
@@ -11238,6 +11305,35 @@ fn apply_testdriver_command(
                 };
                 let click_script = zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                 let _ = webview.execute_script(&click_script);
+                return None;
+            }
+            // editing-compat insertparagraph 簇（2026-10-30）：Actions 键盘链的 CE 宿主
+            // ENTER 默认动作——此前落 InsertText{'\u{E007}'}（PUA 字面插入，无编辑效果），
+            // inline-editing-host 语料 sendEnterKey(kShift)（Actions 路径）全红。CE 宿主
+            // → Submit（webview 侧 CE 优先消费 → __zw_ce_insert_paragraph 段落核心）；
+            // 非 CE 目标维持既有路径。FIXME: Actions 步骤无修饰键状态——kShift 链与裸
+            // Enter 同汇 Submit（块级宿主上 Shift+Enter 拆段而非换行；现无语料分压）。
+            if key == "\u{E007}"
+                && webview
+                    .execute_script(&zero_engine::script_contenteditable_probe(&selector))
+                    .map(|v| v.trim() == "1")
+                    .unwrap_or(false)
+            {
+                if let Some(error) = dispatch_action(webview, target, HtmlUserAction::Submit) {
+                    return Some(error);
+                }
+                // 既有字符键路径同款 keypress 后随（keydown → 默认动作 → keypress 序
+                // 保持——Actions 链 keypress 断言面不动）。
+                let keypress_ce = zero_engine::script_dispatch_dom_event(
+                    &selector,
+                    "keypress",
+                    Some(&zero_engine::DomEventDetail {
+                        key: Some(key.clone()),
+                        code: Some(key.clone()),
+                        ..Default::default()
+                    }),
+                );
+                let _ = webview.execute_script(&keypress_ce);
                 return None;
             }
             if key.chars().count() == 1 {

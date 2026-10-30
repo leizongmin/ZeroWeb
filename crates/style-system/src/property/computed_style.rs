@@ -124,6 +124,9 @@ pub struct ComputedStyle {
     /// color-scheme 属性的暗 scheme 标志（`color-scheme: dark` → true）。
     /// 影响 `light-dark(L, D)` 解析：dark 取第二参。继承属性。
     pub color_scheme_dark: bool,
+    /// color-scheme 显式声明的计算值串（None = 未声明/normal——gCS 序列化为
+    /// 'normal'；根元素 meta color-scheme 不入此字段，仅入 used-scheme fallback）。
+    pub color_scheme_decl: Option<String>,
     /// opacity 属性。
     pub opacity: f64,
     /// visibility 属性。
