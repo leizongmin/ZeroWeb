@@ -186,7 +186,10 @@ const KOREAN_HANGUL_DIGITS: &[char] = &['영', '일', '이', '삼', '사', '오'
 /// 返回不含尾随空格的标点部分；空格间隔由调用方按需补（inside advance）。
 fn counter_suffix(t: &ListStyleTypeValue) -> &'static str {
     match t {
-        ListStyleTypeValue::JapaneseInformal
+        // §6.1 cjk-decimal `suffix: "、"`（css3-counter-styles-004/005 ref
+        // `<bdi>一〇、</bdi>`；R5344 前误落通用 "."）。
+        | ListStyleTypeValue::CjkDecimal
+        | ListStyleTypeValue::JapaneseInformal
         | ListStyleTypeValue::JapaneseFormal
         | ListStyleTypeValue::SimpChineseInformal
         | ListStyleTypeValue::SimpChineseFormal
@@ -476,6 +479,23 @@ const KATAKANA_IROHA: &str =
 const CJK_EARTHLY_BRANCH: &str = "子丑寅卯辰巳午未申酉戌亥";
 const CJK_HEAVENLY_STEM: &str = "甲乙丙丁戊己庚辛壬癸";
 
+/// R5344：§3.1.4.5 system: fixed——1..N → 对应符号，越界（>N）与 0 走 fallback。
+/// §6.2 cjk-earthly-branch/cjk-heavenly-stem `fallback: cjk-decimal`
+///（css3-counter-styles-202/205 ref：13=一三、11=一一；R3835 误落 cyclic 13=子）。
+/// 负值维持 decimal 字面（corpus 无驱动案，paint 臂同源）。
+fn to_fixed_stem_branch(value: i64, table: &str) -> String {
+    if value >= 1
+        && let Some(ch) = table.chars().nth(value as usize - 1)
+    {
+        return ch.to_string();
+    }
+    if value >= 0 {
+        to_cjk_decimal(value as usize)
+    } else {
+        value.to_string()
+    }
+}
+
 /// alphabetic 通用：符号表 base-N 取值（同 format_counter_alpha 语义，表长泛化）。
 /// CSS Counter Styles §3.1.4 system: alphabetic——1→第 1 符号、N→第 N 符号、N+1→"第1第1"。
 fn to_symbol_alpha(value: i64, table: &str) -> Option<String> {
@@ -492,18 +512,6 @@ fn to_symbol_alpha(value: i64, table: &str) -> Option<String> {
     }
     result.reverse();
     Some(result.into_iter().collect())
-}
-
-/// R3835：cyclic 通用（CSS Counter Styles §3.1.4 system: cyclic）——值循环重复符号表：
-/// 1→第 1 符号、N→第 N 符号、N+1→**第 1 符号**（与 alphabetic 的 base-N 进位不同，
-/// 地支 13=子 而非「子子」）。WPT 201：1=子 … 12=亥。
-fn to_symbol_cycle(value: i64, table: &str) -> Option<String> {
-    if value <= 0 {
-        return None;
-    }
-    let chars: Vec<char> = table.chars().collect();
-    let idx = (value - 1) % chars.len() as i64;
-    Some(chars[idx as usize].to_string())
 }
 
 /// R2447：armenian 计数器表示（CSS Counter Styles 3 §6.1 预定义，≡ upper-armenian）。
@@ -1167,7 +1175,7 @@ pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleT
         // R4316：ethiopic-numeric（§6.1 位对专有算法，越界 → decimal fallback）。
         ListStyleTypeValue::EthiopicNumeric => to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()),
         // R3835：§6.2 limited CJK/日/韩 + 假名 + 天干地支。越界（korean 系
-        // range 1-9999、假名/循环 value ≤ 0）→ decimal fallback。
+        // range 1-9999、假名 value ≤ 0）→ decimal fallback。
         ListStyleTypeValue::JapaneseInformal => {
             to_cjk_num(index, &JAPANESE_INFORMAL).unwrap_or_else(|| index.to_string())
         }
@@ -1193,12 +1201,8 @@ pub(crate) fn format_builtin_list_style(value: i64, list_style_type: &ListStyleT
         ListStyleTypeValue::KoreanHanjaFormal => {
             to_cjk_num(index, &KOREAN_HANJA_FORMAL).unwrap_or_else(|| index.to_string())
         }
-        ListStyleTypeValue::CjkEarthlyBranch => {
-            to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string())
-        }
-        ListStyleTypeValue::CjkHeavenlyStem => {
-            to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string())
-        }
+        ListStyleTypeValue::CjkEarthlyBranch => to_fixed_stem_branch(index, CJK_EARTHLY_BRANCH),
+        ListStyleTypeValue::CjkHeavenlyStem => to_fixed_stem_branch(index, CJK_HEAVENLY_STEM),
         ListStyleTypeValue::Hiragana => to_symbol_alpha(index, HIRAGANA).unwrap_or_else(|| index.to_string()),
         ListStyleTypeValue::HiraganaIroha => {
             to_symbol_alpha(index, HIRAGANA_IROHA).unwrap_or_else(|| index.to_string())
@@ -1925,7 +1929,14 @@ impl super::super::Painter {
             ListStyleTypeValue::EthiopicNumeric => {
                 format!("{}.", to_ethiopic_numeric(index).unwrap_or_else(|| index.to_string()))
             }
-            ListStyleTypeValue::CjkDecimal if index >= 0 => format!("{}.", to_cjk_decimal(index as usize)),
+            // §6.1 suffix "、"（R5344；与 counter_suffix 单源）。
+            ListStyleTypeValue::CjkDecimal if index >= 0 => {
+                format!(
+                    "{}{}",
+                    to_cjk_decimal(index as usize),
+                    counter_suffix(&style.list_style_type)
+                )
+            }
             ListStyleTypeValue::Devanagari if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0966)),
             ListStyleTypeValue::Bengali if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x09E6)),
             ListStyleTypeValue::Gujarati if index >= 0 => format!("{}.", to_digit_script(index as usize, 0x0AE6)),
@@ -2009,14 +2020,14 @@ impl super::super::Painter {
             ListStyleTypeValue::CjkEarthlyBranch => {
                 format!(
                     "{}{}",
-                    to_symbol_cycle(index, CJK_EARTHLY_BRANCH).unwrap_or_else(|| index.to_string()),
+                    to_fixed_stem_branch(index, CJK_EARTHLY_BRANCH),
                     counter_suffix(&style.list_style_type)
                 )
             }
             ListStyleTypeValue::CjkHeavenlyStem => {
                 format!(
                     "{}{}",
-                    to_symbol_cycle(index, CJK_HEAVENLY_STEM).unwrap_or_else(|| index.to_string()),
+                    to_fixed_stem_branch(index, CJK_HEAVENLY_STEM),
                     counter_suffix(&style.list_style_type)
                 )
             }
@@ -2096,8 +2107,11 @@ impl super::super::Painter {
             | ListStyleTypeValue::Thai
             | ListStyleTypeValue::Lao
             | ListStyleTypeValue::Khmer
-            | ListStyleTypeValue::Myanmar
-            | ListStyleTypeValue::CjkDecimal => format!("{index}."),
+            | ListStyleTypeValue::Myanmar => format!("{index}."),
+            // CjkDecimal 负值面（paint 臂 = body decimal 字面 + counter_suffix 同源）。
+            ListStyleTypeValue::CjkDecimal => {
+                format!("{index}{}", counter_suffix(&style.list_style_type))
+            }
         };
         let mut advance: f32 = text
             .chars()
@@ -2175,6 +2189,7 @@ fn is_li(doc: &Document, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::CJK_EARTHLY_BRANCH;
+    use super::CJK_HEAVENLY_STEM;
     use super::JAPANESE_INFORMAL;
     use super::KOREAN_HANJA_FORMAL;
     use super::KOREAN_HANJA_INFORMAL;
@@ -2191,9 +2206,9 @@ mod tests {
     use super::to_cjk_decimal;
     use super::to_cjk_num;
     use super::to_digit_script;
+    use super::to_fixed_stem_branch;
     use super::to_georgian;
     use super::to_hebrew;
-    use super::to_symbol_cycle;
     use zero_dom::parse_html;
     use zero_layout_engine::LayoutBox;
     use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
@@ -2737,13 +2752,13 @@ mod tests {
         );
     }
 
-    /// §6.1/§6.2 cyclic/alphabetic 符号循环 + 家族 suffix（WPT 201/204：1=子/甲、
-    /// 13=一三?——否，cyclic 是 12/10 符号循环；katakana 11=ア+第11符号）。
+    /// §6.1/§6.2 天干地支 fixed 符号 + 家族 suffix（WPT 201/204：1=子/甲；
+    /// R5344 订正——两族为 system: fixed + fallback cjk-decimal（202/205 ref
+    /// 13=一三、11=一一），非 R3835 初版的 cyclic 循环）。
     #[test]
     fn test_r3835_symbol_cycle_and_suffix() {
-        assert_eq!(to_symbol_cycle(1, CJK_EARTHLY_BRANCH).unwrap(), "子");
-        assert_eq!(to_symbol_cycle(12, CJK_EARTHLY_BRANCH).unwrap(), "亥");
-        assert_eq!(to_symbol_cycle(13, CJK_EARTHLY_BRANCH).unwrap(), "子");
+        assert_eq!(to_fixed_stem_branch(1, CJK_EARTHLY_BRANCH), "子");
+        assert_eq!(to_fixed_stem_branch(12, CJK_EARTHLY_BRANCH), "亥");
         assert_eq!(
             counter_suffix(&zero_css_parser::values::ListStyleTypeValue::JapaneseFormal),
             "、"
@@ -2755,6 +2770,42 @@ mod tests {
         assert_eq!(
             counter_suffix(&zero_css_parser::values::ListStyleTypeValue::Decimal),
             "."
+        );
+    }
+
+    /// §3.1.4.5 system: fixed + §6.2 天干地支 fallback cjk-decimal + §6.1
+    /// cjk-decimal suffix（R5344；ground-truth = WPT css3-counter-styles-202/205/
+    /// 004/005 refs：天干 11=一一、地支 13=一三、cjk-decimal 标记带「、」）。
+    #[test]
+    fn test_r5344_cjk_stem_branch_fixed_and_decimal_suffix() {
+        // 天干：1..10 = 甲..癸（fixed 首圈）；11+ → cjk-decimal（205 ref 全值表）。
+        assert_eq!(to_fixed_stem_branch(1, CJK_HEAVENLY_STEM), "甲");
+        assert_eq!(to_fixed_stem_branch(10, CJK_HEAVENLY_STEM), "癸");
+        assert_eq!(to_fixed_stem_branch(11, CJK_HEAVENLY_STEM), "一一");
+        assert_eq!(to_fixed_stem_branch(12, CJK_HEAVENLY_STEM), "一二");
+        assert_eq!(to_fixed_stem_branch(43, CJK_HEAVENLY_STEM), "四三");
+        assert_eq!(to_fixed_stem_branch(80, CJK_HEAVENLY_STEM), "八〇");
+        assert_eq!(to_fixed_stem_branch(101, CJK_HEAVENLY_STEM), "一〇一");
+        assert_eq!(to_fixed_stem_branch(999, CJK_HEAVENLY_STEM), "九九九");
+        // 地支：1..12 = 子..亥；13+ → cjk-decimal（202 ref 全值表）。
+        assert_eq!(to_fixed_stem_branch(1, CJK_EARTHLY_BRANCH), "子");
+        assert_eq!(to_fixed_stem_branch(12, CJK_EARTHLY_BRANCH), "亥");
+        assert_eq!(to_fixed_stem_branch(13, CJK_EARTHLY_BRANCH), "一三");
+        assert_eq!(to_fixed_stem_branch(1000, CJK_EARTHLY_BRANCH), "一〇〇〇");
+        assert_eq!(to_fixed_stem_branch(1005, CJK_EARTHLY_BRANCH), "一〇〇五");
+        assert_eq!(to_fixed_stem_branch(0, CJK_EARTHLY_BRANCH), "〇");
+        // suffix 面：cjk-decimal 与天干地支同「、」（005 ref 数字与后缀同列比对）。
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::CjkDecimal),
+            "、"
+        );
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::CjkHeavenlyStem),
+            "、"
+        );
+        assert_eq!(
+            counter_suffix(&zero_css_parser::values::ListStyleTypeValue::CjkEarthlyBranch),
+            "、"
         );
     }
 
