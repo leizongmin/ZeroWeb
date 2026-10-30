@@ -1696,6 +1696,29 @@ pub(crate) fn compute_final_inline_layouts(
         });
         has_text_children = has_inline_elem && !has_block_elem && !inline_child_has_deep_path;
     }
+    // R5351（CSS2 §9.2.1.1 ② anonymous block boxes）：R109 匿名块片段盒的 IFC 收集被
+    // fragment_node_ids 圈定（下方 set_fragment_node_ids → collect_inline_items 只收
+    // 片段成员，不吸收块子树），上方混合排除（!has_block_elem，按容器**全部 DOM 子**
+    // 判定）对片段盒过宽：orphan inline 元素成员（无 LayoutBox，前置块级兄弟触发形）
+    // 所在片段的 DOM 容器仍含 block 子 → 片段 IFC 不跑不存 → paint Path B 重建时
+    // inline_element_metrics 全空，flatten run 回落 16px 默认字体（orphan inline div
+    // 40px 字形 16px 实证，颜色伪样式不受影响——字形颜色走 paint 期真 styles）。
+    // 片段成员含文本节点或 inline 元素即放行。kill-switch `ZW_ORPHAN_FRAG_IFC=0`。
+    if !has_text_children
+        && std::env::var("ZW_ORPHAN_FRAG_IFC").as_deref() != Ok("0")
+        && root.fragment_node_ids.as_ref().is_some_and(|ids| {
+            ids.iter().any(|&id| {
+                doc.get(id).is_some_and(|n| {
+                    matches!(&n.kind, NodeKind::Text(_))
+                        || styles
+                            .get(&id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+                })
+            })
+        })
+    {
+        has_text_children = true;
+    }
     if !has_text_children {
         return;
     }

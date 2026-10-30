@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5351 修复轮（orphan inline 文本字体丢失根修——R109 片段盒 IFC 放行：`<p>` 前置 inline div 40px 字形曾回落 16px 默认整形 → ✓40px；corpus 782F 零位移 FIXED=0 REGRESSED=∅，机制案不在账本；kill-switch `ZW_ORPHAN_FRAG_IFC=0`）**（2026-10-31）
+>
+> - **定性**（R5350 末探针发现的机制定向核查，插桩逐站定谳）：layout 趟 flatten run `STYLED fs=40` 正确 → 存储缺失——body（R109 block-mixed 宿主：p 块子 + orphan inline div）被 compute_final `has_text_children` 拒绝（direct 臂无 DOM 直系文本子；PHASEA_STORE_EXT 臂混合排除 `!has_block_elem` 生效）→ **body/片段盒 IFC 不跑不存** → 绘制由 R109 匿名块片段盒（node_id 借 body）的 paint_text → Path B 重建，`inline_element_metrics[div]` miss → flatten run 回落 16px 默认字体（颜色伪样式正常 = paint 期真 styles 与 shaping 度量不同源）。无前缀 inline-first/block 形恒 40px 正常。
+> - **交付**：compute_final 混合排除后补 R5351 放行臂——`fragment_node_ids` 成员含文本节点/inline 元素 → 放行（片段盒收集本被成员表圈定，混合排除防的「块子树吸收」不成立；orphan 所在片段 DOM 容器恒含 block 子 → 旧判定永拒）。修复后 store fs=40 → Path B `OVERRIDE fs=40`。
+> - **门禁**：新常驻测试 `r5351_orphan_inline_font.rs` 2P（orphan fs=40+advance 40 / 对照形守卫，独立进程 R3858）；**corpus 全量 782F 与 R5350 交付态 diff 空**——账本无此机制案（聚簇假设在 corpus 不成立），修复纯产品面价值零位移；layout-engine lib 2284P/0F；engine lib 3611P/11F（既有挂账集逐位一致）；workspace 47 套 ok（唯一红 = 既有 11）；product-smoke **PASS**；guarded-clippy 清零。
+> - **挂账**：orphan 行盒仍不存（本修复只补度量表不翻 use_stored；行盒域案入账本再评估片段盒行盒存储）；既有挂账（782F 账本续扫、R5336 五件套、R4383 strut 预研、家族 011/030/031/017、first-line-pseudo 五案、floats-wrap-bfc 三案、fmt 漂移三文件、R5341 及更早）全维持。**下一步 R5352**：①782F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root/shadow-scoped/multicol/ref-chromium 冲突域）②R5336 paint 侧切片带重锚五件套 ③R4383 strut 域预研。证据：[`rendering-compat/evidence/r5351-orphan-inline-font-2026-10-31.md`](rendering-compat/evidence/r5351-orphan-inline-font-2026-10-31.md)。
+
 > **▶ R5350 修复轮（R5171 扩张轴解锁三件落地翻默认——line-height-125 ✗1.20% → ✓FIXED；corpus 783F→782F FIXED=1 REGRESSED=∅，通过率 15807/16590 = 95.30%；kill-switch 语义反转 `ZW_INLINE_CA_EXPAND=0` 关轴）**（2026-10-31）
 >
 > - **交付**（R5349 三挂账件按序落地后翻默认）：①选区站 content-area 校准 = **B 门真基线锚**——布局 strut 基线 ≠ paint fallback 常数基线（027 双页 3px 错位实证，两套度量不同源），行 fill 带改 `[真基线−a, 真基线+d]`（新增 `frag_baselines`/`line_baselines` 基建，臂 1/臂 2 同式，≡ A 门 r5120；度量缺失回退行盒域）；②fragment 施画接入 = A 门扩张臂（border-free 单行 owner 的 bg/选区 fill 走 R5120 内容区锚）+ band_once 去重修复（SFBB 关时段表恒空 → 整盒带域逐片段重复涂 α 双重加深）；③insert-009 归因 = box-level override **边框守卫**（报告盒高于树盒的扩张重写平移 border 横条，嵌套边框栈 3px 下移 dy=+1 两级实证 → 有边框盒不入轴；收缩轴原口径不动）。
