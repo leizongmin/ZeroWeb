@@ -181,6 +181,10 @@ pub struct BrowserApp {
     retained_fb: Option<zero_render_foundation::surface::FrameBuffer>,
     fb_cache_scroll: (f32, f32),
     fb_cache_epoch: (u64, u32, u32, f32),
+    /// 保留帧是否含菜单墨迹（菜单可见期回存/全量时置位）。T28-P37 R1（DF-F4）：
+    /// 菜单关闭沿以此禁用保留路径一帧，强制全量光栅回存干净帧——否则含菜单墨迹
+    /// 的保留帧被回存后自我复制，静页面残像无限期驻留。
+    retained_fb_menu_ink: bool,
     /// 页面文本选区（glyph 索引）
     page_selection: HashMap<TabId, GlyphSelection>,
     /// 页面选区拖拽中
@@ -420,6 +424,7 @@ impl BrowserApp {
             retained_fb: None,
             fb_cache_scroll: (0.0, 0.0),
             fb_cache_epoch: (0, 0, 0, 0.0),
+            retained_fb_menu_ink: false,
             page_selection: HashMap::new(),
             page_selection_drag: false,
             left_button_down: false,
@@ -1266,6 +1271,36 @@ impl BrowserApp {
     #[cfg(test)]
     pub fn menu_anim_drawn_opacity_set_for_test(&mut self, opacity: Option<f32>) {
         self.menu_anim_drawn_opacity = opacity;
+    }
+
+    /// 测试用：按生产关闭沿收起上下文菜单（与 Escape/点空白关闭同一状态迁移）。
+    #[cfg(test)]
+    pub fn close_context_menu_for_test(&mut self) {
+        self.context_menu.close();
+    }
+
+    /// 测试用：可变访问保留帧缓冲——红绿钉在帧间写入哨兵像素，证明生产保留路径
+    /// 确实 engaged（全量帧会覆写页面区哨兵）。
+    #[cfg(test)]
+    pub fn retained_fb_mut_for_test(&mut self) -> Option<&mut zero_render_foundation::surface::FrameBuffer> {
+        self.retained_fb.as_mut()
+    }
+
+    /// 测试用：读取最近一次 chrome UI 转发的位图（[`Self::forward_ui_frame_if_changed`]
+    /// 缓存），供 forward 路径红绿钉逐帧比对。
+    #[cfg(test)]
+    pub fn ui_forward_frame_bytes_for_test(&self) -> Option<&[u8]> {
+        self.ui_forward_cache.as_ref().map(|cache| cache.rgba.as_slice())
+    }
+
+    /// 菜单打开期是否存在菜单外的 chrome 动画源（T28-P37 R1，DF-F2 有界失效判据）。
+    ///
+    /// 当前枚举：活跃标签页加载中——它是 `build_scene` 唯一的自驱动 `needs_redraw`
+    /// 源，同时驱动顶部加载进度条与标签 spinner 两处菜单包围盒外的 chrome 动画。
+    /// 有界枚举而非「任何 needs_redraw」判定：后者会把菜单自身渐入连帧计入，
+    /// 等于菜单期整体禁用保留路径。
+    pub(crate) fn chrome_animating_outside_menu(&self) -> bool {
+        self.shell.active_tab().is_some_and(|tab| tab.is_loading())
     }
 
     /// 测试用：当前展开的子菜单父项索引。
