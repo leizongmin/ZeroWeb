@@ -138,7 +138,10 @@ fn test_meta_color_scheme_document_scheme_dark() {
     let styles = sys.compute_styles(&doc, &[]);
     let root_style = styles.get(&html).expect("根应有计算样式");
     assert!(root_style.color_scheme_dark, "meta dark → 根 used-scheme dark");
-    assert_eq!(root_style.color_scheme_decl, None, "meta 不落根 decl（序列化保持 normal）");
+    assert_eq!(
+        root_style.color_scheme_decl, None,
+        "meta 不落根 decl（序列化保持 normal）"
+    );
     assert_eq!(
         root_style.color,
         ColorValue::Rgba(255, 255, 255, 255),

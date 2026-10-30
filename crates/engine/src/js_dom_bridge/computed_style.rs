@@ -320,10 +320,7 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         // 只入 used-scheme fallback 不改 computed 属性，语料 assert
         // gCS(root).colorScheme === 'normal' 钉死）返初始值 'normal'
         //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
-        "color-scheme" => style
-            .color_scheme_decl
-            .clone()
-            .unwrap_or_else(|| "normal".to_string()),
+        "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),
         // ── background 简写（R2757）── 各 longhand 早覆（image/position/size/repeat/attachment/clip/origin）；
         // 简写恒完整规范形重组（无省略），Chromium 150 oracle 锚定。单层正确（多层受 ZW 单值存储限）。
