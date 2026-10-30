@@ -4554,8 +4554,10 @@
   // 替换（helper 异步取回未齐时保持快照臂基线文本——部分覆盖不落地，防瞬时丢表）。
   // FIXME(compat)：表 miss 的 link 不参与替换面（动态 handle link 的 helper 取回通道
   // 已覆盖、preload 复用臂无文本通道）；@import 内层文本追加在顶层文本之后（原位
-  // 展开未建模——同特异性下相对顶层后继规则的优先级偏差，语料无该形态）；link media
-  // 属性门未建模（级联无 media 求值，stylesheet-media-change-no-fetch 记账 F）。
+  // 展开未建模——同特异性下相对顶层后继规则的优先级偏差，语料无该形态）。s161：link
+  // media 门落地（重算遍历按 live media 属性 wrap @media——外链平文本槽无 per-sheet
+  // 结构的轻量近似；外链槽位级联序仍先于页面 `<style>` 表，stylesheet-media-change
+  // 断言 2 的文档序期望记账另立）。
   var _zwExtSheetTexts = {}; // identity key → 表文本（'' = 取回失败空贡献）
   // s159（html-semantics M2 切片 159）：per-link **生效 sheet href**（合成条目 href 通道
   // ——document.styleSheets R5114 合成条目此前恒 null）。spec link processing 的 sheet
@@ -4634,6 +4636,20 @@
         } catch (_eRc3) {}
         var _rcKey = _rcH ? ('@' + _rcH) : _rcSel;
         if (!_zwExtSheetTexts.hasOwnProperty(_rcKey)) return; // 覆盖门：未齐不替换
+        // s161（html-semantics M2）media 门：link[media] 非空且非 'all'（ASCII
+        // case-insensitive）时把本 link 表文本包进 @media 块——级联 matcher 对不匹配
+        // 块零应用（未知 media type 求值 no-match；MediaContext 1280×800 screen 默认
+        // 与宿主级联门同语义——s160 style 元素 media 门同款）。空/缺省/'all' 不 wrap
+        //（blob 逐位不变，零回归）；匹配值（screen 等）wrap 后求值同真值零位移。
+        // 值含 `}` 会截断 at-rule 块（属性值溢出面）——wrap 前剥除花括号（合法 media
+        // query 语法无花括号，语义无损）。
+        // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
+        var _rcMedia = String(_rcRead('media'));
+        var _rcMl = _rcMedia.replace(/[\t\n\x0C\r ]+/g, ' ').trim().toLowerCase();
+        var _rcText = _zwExtSheetTexts[_rcKey];
+        if (_rcMl !== '' && _rcMl !== 'all') {
+          _rcText = '@media ' + _rcMedia.replace(/[{}]/g, ' ') + ' {' + _rcText + '}';
+        }
         // `;` 分隔（非 `\n`）：无分号 @import 语句（上游 import.css 形）的 preamble
         // 延伸到下一 `;`/`{`——`\n` 拼接使内层表首条规则被吞进 at-rule 块（106-import
         // 面 `#test{position:fixed}` 恒缺级联，webview resolve_external_css s89 同款

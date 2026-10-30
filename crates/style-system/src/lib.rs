@@ -1619,6 +1619,16 @@ impl StyleSystem {
         } else {
             None
         };
+        // s161：UA 默认 display 表仅适用于 HTML 命名空间元素。HTML 渲染规范 UA 样式表在
+        // real UA 经 `@namespace xhtml` 限定（Firefox html.css 先例，bug 1470150）——
+        // createElementNS(SVG, "noscript") 等异命名空间同名元素不得吃到 `noscript{display:none}`
+        // 等 HTML 层规则（wpt html/semantics/scripting-1/the-noscript-element/
+        // non-html-noscript.html）。此前 localname 盲匹配 → 异命名空间元素被误隐藏；
+        // 动态 gCS 回落通道（s161 handle 视图）暴露真实计算值后翻红。
+        const HTML_NS: &str = "http://www.w3.org/1999/xhtml";
+        let is_html_ns = doc
+            .get(element)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(elem) if &*elem.name.ns == HTML_NS));
         #[allow(clippy::type_complexity)]
         let mut ua_decl_inputs: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)> = Vec::new();
         // https://html.spec.whatwg.org/multipage/rendering.html#hiddenCSS
@@ -1647,6 +1657,7 @@ impl StyleSystem {
             ua_decl_inputs.push(("display".to_string(), "none".to_string(), true, (0, 0, 0), None));
         }
         if let Some(ref tag) = tag_name
+            && is_html_ns
             && let Some(display) = ua_default_display(tag)
         {
             let display_str = match display {

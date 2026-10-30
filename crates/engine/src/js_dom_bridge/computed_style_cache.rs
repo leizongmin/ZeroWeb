@@ -49,13 +49,14 @@ use std::collections::HashMap;
 use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use zero_css_parser::Stylesheet;
-use zero_dom::{Document, NodeId};
+use zero_dom::{Document, NodeId, parse_html};
 use zero_style_system::{ComputedStyle, StyleSystem};
 
 use super::{
     DomMutation,
     computed_style::{
-        apply_inline_style_overrides, apply_intrinsic_size_overrides, compute_document_styles_with_inline_overrides_css,
+        apply_inline_style_overrides, apply_intrinsic_size_overrides,
+        compute_document_styles_with_inline_overrides_css, compute_styles_for_doc, serialize_computed_property,
     },
 };
 use crate::pipeline::collect_stylesheets_with_parsed_external;
@@ -565,9 +566,116 @@ thread_local! {
 ///（覆盖 webview 就地 clear 不 bump drain_gen 的例外与同线程多沙箱隔离）。
 pub fn clear_generation_cache() {
     GENERATION_CACHE.with(|cell| *cell.borrow_mut() = None);
+    HANDLE_VIEW_CACHE.with(|cell| *cell.borrow_mut() = None);
     if let Ok(mut r) = DRAIN_RECORD.lock() {
         *r = None;
     }
+}
+
+thread_local! {
+    /// s161（html-semantics M2）：动态元素 handle 视图槽——`(html 快照, drain 代际,
+    /// style_version, dom_view_gen, applied 游标, 外部 CSS, adopted CSS, parsed doc,
+    /// handle→NodeId, NodeId→ComputedStyle)`。与 [`GENERATION_CACHE`] 同架构
+    ///（host 回调仅 js worker 单线程执行，thread_local 规避 `Document` 非 `Send`），
+    /// 独立成槽：静态路径不重放 handle 链（R51c），两视图 doc 内容不同，不得互占。
+    static HANDLE_VIEW_CACHE: RefCell<
+        Option<(
+            String,
+            usize,
+            usize,
+            usize,
+            usize,
+            Arc<str>,
+            Arc<str>,
+            Document,
+            HashMap<String, NodeId>,
+            HashMap<NodeId, ComputedStyle>,
+        )>,
+    > = const { RefCell::new(None) };
+}
+
+/// s161：动态元素（`createElement` 产物，`__zwHandle` 身份，无 `__zwSelector`）的
+/// gCS 通道。静态路径（[`with_cached_document_styles`]）只重放 selector 形
+/// attr/style 批次（[`apply_inline_style_overrides`] 契约——handle 元素不在
+/// snapshot，`find_by_selector` 不命中），动态元素在代际缓存 doc 中根本不存在 →
+/// shim gCS 恒 ''。本视图 = parse(基座 html) + 权威全量 applier
+///（[`super::apply_dom_mutations_full`]，结构级 + handle 链 + attr/style 全
+/// apply）重放 pending 区间 `[applied..count)`（s143 同窗——基座已含
+/// `[0..applied)` 落地效果；查询视图不应用 handle 链是身份理由，本视图恰需
+/// handle 链物化）+ 全文档级联 + 固有尺寸覆盖，`nodes[handle] → styles → serialize`。
+///
+/// **键**：`(html, drain_gen, style_version, dom_view_gen, applied, css, adopted)`
+/// ——前三与代际缓存同理由（E14/R3030），view_gen 快照就地换代失效（R358/R-baidu3
+///），applied 进键：重放区间起点变化即视图输入变化（游标推进与基座换代配对发布，
+/// 防御非配对站点），css/adopted 级联源键分量（P9-9/R-t2qq 同理）。
+///
+/// **已知边界（FIXME 记账）**：跨批 handle 引用（前批创建已 drain 物化进基座
+/// html、本批按 handle 引用）不可解析——序列化基座无 handle 标记，applier 按
+/// miss 跳过该变体，目标元素样式查空串回落 shim fallback 链（inline style →
+/// UA 表，不崩）。同批 create+append+写+读（testharness 单脚本主形态）全解析。
+pub(super) fn computed_style_by_handle(
+    html: &str,
+    drain_gen: usize,
+    style_version: usize,
+    view_gen: usize,
+    applied: usize,
+    handle: &str,
+    prop: &str,
+    pending: impl FnOnce() -> Vec<DomMutation>,
+) -> String {
+    let css = active_external_css();
+    let adopted = active_adopted_css();
+    HANDLE_VIEW_CACHE.with(|cell| {
+        {
+            let mut slot = cell.borrow_mut();
+            let same = matches!(
+                &*slot,
+                Some((h, g, v, vg, ap, c, a, ..))
+                    if h == html
+                        && *g == drain_gen
+                        && *v == style_version
+                        && *vg == view_gen
+                        && *ap == applied
+                        && **c == *css
+                        && **a == *adopted
+            );
+            if !same {
+                let mut doc = parse_html(html);
+                let mut nodes: HashMap<String, NodeId> = HashMap::new();
+                let m = pending();
+                let start = applied.min(m.len());
+                // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
+                // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
+                // applier 内部）。
+                let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+                let (mut styles, _) = compute_styles_for_doc(&doc, &css);
+                apply_intrinsic_size_overrides(&doc, &mut styles);
+                *slot = Some((
+                    html.to_string(),
+                    drain_gen,
+                    style_version,
+                    view_gen,
+                    applied,
+                    css,
+                    adopted,
+                    doc,
+                    nodes,
+                    styles,
+                ));
+            }
+        }
+        let binding = cell.borrow();
+        let Some((.., nodes, styles)) = binding.as_ref() else {
+            return String::new();
+        };
+        let Some(&nid) = nodes.get(handle) else {
+            return String::new();
+        };
+        styles
+            .get(&nid)
+            .map(|s| serialize_computed_property(s, prop))
+            .unwrap_or_default()
+    })
 }
 
 /// 代际槽键是否与 (html, drain_gen, style_version) 全匹配（含外部 CSS 与 adopted

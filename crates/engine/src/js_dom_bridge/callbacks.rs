@@ -1786,6 +1786,40 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s161（html-semantics M2）：动态元素 handle gCS 通道——`getComputedStyle(el)` 对
+    // `createElement` 产物（`__zwHandle` 身份，无 `__zwSelector`）的路由面。shim 侧
+    // 无 sel 有 handle 时走本回调：host 在 handle 视图槽（[`HANDLE_VIEW_CACHE`]，键
+    // 同查询视图代际 + applied 游标 + css/adopted）内 parse 基座 + 权威全量 applier
+    // 重放 pending 区间 `[applied..count)`（s143 同窗）后级联查值。miss（跨批 handle
+    // 等边界）返空串回落 shim fallback 链（inline style → UA 表）。
+    let html = Arc::clone(dom_html);
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_get_computed_style_by_handle",
+        Box::new(move |args| {
+            if args.len() < 2 {
+                return String::new();
+            }
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            // R3030：style_version = mutations.len()（同 `__zw_get_computed_style` 键
+            // 契约——inline style 变更单调换代）。
+            let style_version = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+            let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            let view_gen = DOM_VIEW_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            let applied = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+            super::computed_style_cache::computed_style_by_handle(
+                &snap,
+                drain_gen,
+                style_version,
+                view_gen,
+                applied,
+                &args[0],
+                &args[1],
+                || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            )
+        }),
+    );
+
     // P1a checkbox：属性存在性查询（boolean 属性 checked/disabled 靠存在性；getAttribute 返空串
     // 无法区分存在与空值，故 `el.checked` getter / toggle 判定用本回调）。返 "1"/"0"。applied view
     // 读（R57 FV M3：同批插入元素的属性存在性可见；checked/defaultChecked 的稳定语义同

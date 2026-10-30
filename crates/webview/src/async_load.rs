@@ -9,7 +9,7 @@ use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hi
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, MediaResourceElementKind, extract_css_image_urls, extract_font_faces,
     extract_html_css_image_urls, extract_html_style_text, extract_img_resources, extract_import_urls,
-    extract_media_resources, extract_stylesheet_hrefs,
+    extract_media_resources, extract_stylesheet_links,
 };
 use zero_page_runtime::{AsyncFetchHost, ResourceFetchMeta};
 use zero_render_foundation::font::{OpenTypeFeature, OpenTypeVariation};
@@ -666,9 +666,23 @@ impl AsyncPageLoad {
             Some(h) => h.as_str(),
             None => return,
         };
-        let hrefs = extract_stylesheet_hrefs(html);
+        let links = extract_stylesheet_links(html);
         let base = url::Url::parse(&self.url).ok();
-        for href in hrefs {
+        for (href, media) in links {
+            // s161（html-semantics M2）media 门：media 非空且非 'all' → 求值全不匹配
+            // 不取回不入级联（与 webview `resolve_external_css` 门同款语义/视口）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
+            let media = media.trim();
+            if !media.is_empty() && !media.eq_ignore_ascii_case("all") {
+                let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
+                let matches = zero_css_parser::media_query::parse_media_query(media).is_some_and(|qs| {
+                    qs.iter()
+                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
+                });
+                if !matches {
+                    continue;
+                }
+            }
             let abs = match base.as_ref().and_then(|b| b.join(&href).ok()) {
                 Some(u) => u.to_string(),
                 None => href,

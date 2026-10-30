@@ -73,8 +73,9 @@ pub fn compute_document_styles(html: &str) -> (Document, HashMap<NodeId, Compute
 /// [`compute_document_styles`] 的共享尾部：收集 `<style>` 表并计算样式（viewport 1280×800）。
 /// 供纯快照路径与 inline-style override 路径复用。`css` = 外部样式表文本（P9-9：与布局
 /// 管线同源注入；纯路径传空串）。返回 `(styles, sheets)`——sheets 随级联一并产出，供
-/// 代际槽缓存复用（全量兜底免二次 parse）。
-fn compute_styles_for_doc(
+/// 代际槽缓存复用（全量兜底免二次 parse）。s161：handle 视图（动态元素 gCS 通道，
+/// [`super::computed_style_cache::computed_style_by_handle`]）共用。
+pub(super) fn compute_styles_for_doc(
     doc: &Document,
     css: &str,
 ) -> (HashMap<NodeId, ComputedStyle>, Vec<zero_css_parser::Stylesheet>) {

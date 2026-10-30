@@ -22,8 +22,20 @@ use std::collections::HashSet;
 ///   覆盖 `rel="stylesheet"` 与 `rel="stylesheet preload"` 等写法。
 /// - 空 href 与 `rel` 不含 stylesheet 的 link（如 icon / preload 非 stylesheet）被忽略。
 pub fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
+    extract_stylesheet_links(html)
+        .into_iter()
+        .map(|(href, _media)| href)
+        .collect()
+}
+
+/// [`extract_stylesheet_hrefs`] 的 media 属性携带变体（s161）：返回 `(href 原始值,
+/// media 属性原文)`（属性缺失 = 空串）。供 webview 外链样式表加载路径做 media 门
+/// （media 不匹配环境 → 表仍取回语义上前端不并入级联——spec processing the media
+/// attribute）。rel/href 门与 [`extract_stylesheet_hrefs`] 完全一致。
+/// https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
+pub fn extract_stylesheet_links(html: &str) -> Vec<(String, String)> {
     let doc = zero_dom::parse_html(html);
-    let mut hrefs = Vec::new();
+    let mut links = Vec::new();
     for link_id in doc.get_elements_by_tag_name("link") {
         let rel = doc.get_attribute(link_id, "rel").unwrap_or_default();
         let is_stylesheet = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet"));
@@ -33,11 +45,12 @@ pub fn extract_stylesheet_hrefs(html: &str) -> Vec<String> {
         if let Some(href) = doc.get_attribute(link_id, "href") {
             let href = href.trim();
             if !href.is_empty() {
-                hrefs.push(href.to_string());
+                let media = doc.get_attribute(link_id, "media").unwrap_or_default();
+                links.push((href.to_string(), media));
             }
         }
     }
-    hrefs
+    links
 }
 
 /// 页面脚本来源：内联文本或 `<script src>` 原始值。

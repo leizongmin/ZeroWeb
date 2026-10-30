@@ -1148,6 +1148,18 @@
               }
             } catch (_eSsRlI) {}
           }
+          // s161：LINK media IDL 写触发同 part04 setAttribute 臂（link.media= 走
+          // R3069 reflected 臂不经 setAttribute；重算纯下发不取回——media 变更
+          // 即时重求值面）。TAG 门带 handle-only 容忍（createElement 产物 plain
+          // handle _realTag 回落恒 DIV，重算幂等误触发无害——同 helper TAG 门注记）。
+          if (_refAttr === 'media' && typeof globalThis._zwSsRecomputeExt === 'function') {
+            try {
+              var _ssMdTagI = _realTag(sel, handle);
+              if (_ssMdTagI === 'LINK' || (_ssMdTagI === 'DIV' && !sel && handle)) {
+                globalThis._zwSsRecomputeExt();
+              }
+            } catch (_eSsMdI) {}
+          }
           moAttr = _refAttr;
         } else if (typeof prop === 'string' && prop !== ''
                    && _realTag(sel, handle) === 'FORM'

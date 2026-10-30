@@ -8831,10 +8831,21 @@
   // 不抛，同旧 stub 行为）；handle-only（无 sel）→ ''。
   globalThis.getComputedStyle = function(elt, _pseudo) {
     var sel = elt && elt.__zwSelector;
+    // s161（html-semantics M2）：动态元素（createElement 产物，`__zwHandle` 身份，
+    // 无 __zwSelector）宿主 gCS 通道——host 按 handle 重放 pending 区间物化视图后
+    // 级联查值（spec：getComputedStyle 对任意元素返回计算值，
+    // https://drafts.csswg.org/cssom-1/#dom-window-getcomputedstyle ）。miss 返 ''
+    // 落下方 inline style → UA 表回落链（跨批 handle 等边界，见回调侧 FIXME）。
+    var hdl = !sel && elt && elt.__zwHandle;
     var hasHost = sel && typeof __zw_get_computed_style === 'function';
     var query = function(prop) {
-      if (!hasHost) return '';
-      try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
+      if (hasHost) {
+        try { return __zw_get_computed_style(sel, prop); } catch (_e) { return ''; }
+      }
+      if (hdl && typeof __zw_get_computed_style_by_handle === 'function') {
+        try { return __zw_get_computed_style_by_handle(hdl, prop); } catch (_eHcs) { return ''; }
+      }
+      return '';
     };
     // slice24：display 的 UA 默认回落。host 查询只覆盖 **sel 注册元素**（host snapshot
     // 内）；innerHTML 解析产物 / createElement 未落 host 前的 plain 元素（无

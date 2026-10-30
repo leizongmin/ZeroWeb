@@ -11,7 +11,7 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
     extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
-    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_hrefs, generate_js_dom_shim,
+    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_links, generate_js_dom_shim,
     image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
     script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_script_event, script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
@@ -1368,8 +1368,8 @@ impl WebView {
     /// 保持 engine 不直接耦合网络。任一链接抓取失败仅记录日志、不阻断页面加载
     ///（与浏览器宽松行为一致）。
     fn resolve_external_css(&mut self, html: &str, base_url: &str) -> String {
-        let hrefs = extract_stylesheet_hrefs(html);
-        if hrefs.is_empty() {
+        let links = extract_stylesheet_links(html);
+        if links.is_empty() {
             return String::new();
         }
         let base = url::Url::parse(base_url).ok();
@@ -1381,7 +1381,24 @@ impl WebView {
         // Content 门（async_load 既有同态；violation 元素站对导入规则无 link 序号可锚）。
         let mut css_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut queue: std::collections::VecDeque<(Option<usize>, String)> = std::collections::VecDeque::new();
-        for (link_ordinal, href) in hrefs.iter().enumerate() {
+        for (link_ordinal, (href, media)) in links.iter().enumerate() {
+            // s161（html-semantics M2）media 门：media 属性非空且非 'all'（ASCII
+            // 大小写不敏感）→ 按媒体查询列表对默认 screen 环境求值，全不匹配 → 不抓取
+            // 不并入 combined（sheet 不应用）。求值语义与 s160 style 元素 media 门同款
+            //（1280×800 默认视口 FIXME 同——会话真 viewport 未传入）。media 变更后的
+            // 应用翻转走 shim overlay 重算通道（__zw_set_external_css 槽级联键换代）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
+            let media = media.trim();
+            if !media.is_empty() && !media.eq_ignore_ascii_case("all") {
+                let ctx = zero_css_parser::media_query::MediaContext::new(1280.0, 800.0);
+                let matches = zero_css_parser::media_query::parse_media_query(media).is_some_and(|qs| {
+                    qs.iter()
+                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, &ctx))
+                });
+                if !matches {
+                    continue;
+                }
+            }
             let abs = match base.as_ref().and_then(|b| b.join(href).ok()) {
                 Some(u) => u.to_string(),
                 None => href.clone(),

@@ -3788,6 +3788,22 @@
                 }
               } catch (_eSsRl) {}
             }
+            // s161：LINK media 写触发外链级联重下发（spec react to mutations——media
+            // 属性变更即时重求值；取回面不动：重算纯按 live 属性重组 overlay 文本，
+            // fired 印记/取回通道零接触——stylesheet-media-change-no-fetch 不重取
+            // 断言面）。media 门 wrap 在重算遍历（part03 _zwSsRecomputeExt live 读）。
+            // TAG 门带 handle-only 容忍（同 _zwStylesheetMaybeStart TAG 门注记——
+            // createElement 产物 plain handle 宿主表 miss _realTag 回落恒 DIV；
+            // 重算纯幂等下发，误触发零风险）。
+            // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
+            if (n === 'media' && typeof globalThis._zwSsRecomputeExt === 'function') {
+              try {
+                var _ssMdTag = _realTag(sel, handle);
+                if (_ssMdTag === 'LINK' || (_ssMdTag === 'DIV' && !sel && handle)) {
+                  globalThis._zwSsRecomputeExt();
+                }
+              } catch (_eSsMd) {}
+            }
             // navigation-compat M3：setAttribute('src'/'srcdoc') 入已连接 iframe →
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
@@ -4112,6 +4128,16 @@
                 && typeof globalThis._zwStylesheetMaybeStart === 'function') {
               try { globalThis._zwStylesheetMaybeStart(sel, handle, null); }
               catch (_eSsRlRm) {}
+            }
+            // s161：LINK media 移除 → 外链级联重下发（media 缺省 ≡ all——wrap 解除，
+            // 与 setAttribute s161 臂同点分流，重算纯下发不取回）。handle-only 容忍
+            // 同 setAttribute 臂（plain handle _realTag 回落 DIV，重算幂等误触发无害）。
+            if (n === 'media' && typeof globalThis._zwSsRecomputeExt === 'function') {
+              try {
+                if (targetTag === 'LINK' || (targetTag === 'DIV' && !sel && handle)) {
+                  globalThis._zwSsRecomputeExt();
+                }
+              } catch (_eSsMdRm) {}
             }
             // navigation-compat M3：src/srcdoc 移除 → 重新处理 iframe 属性（srcdoc
             // 移除回落 src（srcdoc_process_attributes ③）；src 移除落 about:blank
