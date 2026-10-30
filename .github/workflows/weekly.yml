@@ -815,17 +815,51 @@ jobs:
             # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
             # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
             script_timeout: 600000
-          - name: form-encode
+          # form-url-encoding encode 面 68 文件按编码族拆四分片：本地
+          # （goal 36 基线机）5400s 守卫内全量跑完，CI 7200s/14400s 两轮
+          # （run 40985139206/41005658107）均在整点被 test-guard 杀树——
+          # form 提交导航密集负载 CI ≈ 本地 3–4×，全套件需 ~4.5–6h，超出
+          # GH job 360min 硬上限，单分片无安全预算。按族互斥拆分（filter
+          # 路径子串透传，runner 形参），聚合按路径取 max 不双记；四片
+          # result_tag 各异——aggregate 产物平铺（merge-multiple），同名
+          # JSON 会互相覆盖。big5-enc-ascii 在 tchinese 目录随 tw 片。
+          # encode-form 页每 variant ~1000 async_test 分窗断言，script
+          # timeout 同 mb-decode 提额。
+          - name: form-encode-jp
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
-            # 817 页，同族 mb-decode 385 页实测 61min，线性外推 ~2.2h——7200s
-            # 预算必超（run 40985139206 整点被 test-guard 杀树，JSON 未落盘，
-            # 聚合连带 skip）。取 4h 留一倍余量；job_timeout 同步上提，
-            # 否则 GH 在 150min 缺省先杀 job，time_limit 形同虚设。
+            filter: "legacy-mb-japanese"
+            result_tag: jp
             time_limit: 14400
             job_timeout: 270
-            # encode-form 页每 variant ~1000 async_test 分窗断言，同上提额。
+            script_timeout: 600000
+          - name: form-encode-kr
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            filter: "legacy-mb-korean"
+            result_tag: kr
+            time_limit: 10800
+            job_timeout: 210
+            script_timeout: 600000
+          - name: form-encode-tw
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            filter: "legacy-mb-tchinese"
+            result_tag: tw
+            time_limit: 10800
+            job_timeout: 210
+            script_timeout: 600000
+          - name: form-encode-zh
+            suites: "form-url-encoding"
+            fetch: "fetch-wpt-encoding-legacy-mb"
+            fetch_scripts: ""
+            filter: "legacy-mb-schinese"
+            result_tag: zh
+            time_limit: 3600
+            job_timeout: 120
             script_timeout: 600000
           - name: timing
             suites: >-
@@ -970,13 +1004,19 @@ jobs:
           # ~1000 async_test）语料修好后仍会成批 Timeout 假失败。
           ZW_SCRIPT_TIMEOUT_MS: ${{ matrix.shard.script_timeout || 90000 }}
         run: |
+          # filter：runner 位置参数（路径子串，同套件按族拆分片时用，如
+          # form-encode-jp）；空值展开为无参，既有分片零变化。result_tag：
+          # 同套件多分片的 JSON 文件名后缀——aggregate 产物平铺下载
+          # （merge-multiple: true），同名文件会互相覆盖，同套件多片必须互异。
+          filter="${{ matrix.shard.filter }}"
+          tag="${{ matrix.shard.result_tag }}"
           mkdir -p /tmp/zw-results
           for s in ${{ matrix.shard.suites }}; do
             ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit ${{ matrix.shard.time_limit }} -- \
-              ./target/release/zero-wpt-runner "testharness-$s" --json \
-              > "/tmp/zw-results/testharness-$s.json" \
+              ./target/release/zero-wpt-runner "testharness-$s" $filter --json \
+              > "/tmp/zw-results/testharness-$s${tag:+-$tag}.json" \
               || echo "::warning::testharness-$s 退出码非 0（存在失败用例属预期）"
-            test -s "/tmp/zw-results/testharness-$s.json" \
+            test -s "/tmp/zw-results/testharness-$s${tag:+-$tag}.json" \
               || { echo "::error::testharness-$s 无 JSON 输出"; exit 1; }
           done
 
