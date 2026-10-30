@@ -1,27 +1,21 @@
 # encoding 二期 — legacy-mb 未导入族 + 根面 labels/API 残余 + streams 收口
 
-**版本**: v1.5（M4 可跑面收口：589,436 案 / 非 P 恰 13 全对账；form 面
-550,054 池挂引擎修复）
-**日期**: 2026-10-31（立项；同日 M0 对账 + 降级落定、M1 可导入集入通道）
-**状态**: Active——M0 + M1 完成（DC-2 达成，见
-[M1 证据](encoding-compat-v2/evidence/2026-10-31-m1-importable-set-wiring.md)）。
-**M4 可跑面已收口**：enc30 12,075（12,072P/3F）+ enc31 decode 385 cases
-**360,431P/0F**（与 M0 判读账精确吻合；euc-kr 族分片静默黑死一次，逐文件
-隔离 22/22 恢复）+ form36 非 form 面（href 三族旧分片剔合成行 + euc-kr/
-big5 href/encoder API/big5-enc-ascii 补跑 12 文件 87,095P/10F）。
-tally 汇总 **589,436 子测试 / 589,423P / 非 P 恰 13** = 3F SAB + 10F
-iso-2022 流式簇，与在册残差逐条吻合零意外，可跑面通过率 99.9978%。
-**卡点**：DC-4 全分母门 FAIL（51.15%）——form36 form 面 **550,054 子测试**
-被引擎共享路径缺陷阻塞：上游标准 helper「脚本建 DOM + load 后重查询 +
-collection[0] submit」形态必挂。① load 时 apply 路径缺
-`__zw_apply_generation_bump` → shim pending ghost 不驱逐 → 文档级枚举双计；
-② apply-materialized form 的 sel-proxy `form.submit` 静默无效。根因链、
-探针台账、收口数字与修复方向见
+**版本**: v1.6（M4 全量收口：DC-4 PASS——1,139,476/1,152,394 = 98.879%，
+passes 与天花板 1,139,476 逐位相等，非 P 恰 14 全在册）
+**日期**: 2026-10-31（立项；同日 M0 对账 + 降级落定、M1 可导入集入通道、
+M4 收口）
+**状态**: **完成**——M0 + M1 + M4 全部落账（DC-1/DC-2/DC-4 达成；DC-3
+撤销挂账）。form36 form 面 550,054 池已补齐：引擎共享路径阻塞（pending
+ghost 双计 + 下游 named-target 提交失效）由并行流 s168 `daf3bc4c5`
+（R383 跨代际桶不并入 + R383a apply 配对环境闩 + webview 游标即时发布）
+从 shim 侧收口，本 goal 未改通道/引擎代码；58 job 批跑全 rc=0，终局
+tally 1,139,490 子测试 / 1,139,476P，零回归（68 文件面 766,958P/1T 与
+36 号账逐位一致、enc31 360,431P/0F 恒等、enc30 12,072P/3F 不变）。
+台账与终局判定见
 [evidence/2026-10-31-m4-form-face-engine-bug.md]
 (encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)。
-**下一步**：引擎两缺陷修复独立立项（改 shim 兼容骨架 + make test/reftest
-+ enc30/31/36 零回归验证）→ 落地后 `m4-form-batch.sh` 重跑 form 面
-（env 就绪）→ 重算 DC-4 → wpt-suites.csv 37 号行 + 收口提交。
+**下一步**：无——wpt-suites.csv 37 号行回填与 goal 归档（模式 A）已随
+收口提交落账。
 **执行模式**: WPT 驱动（上游 encoding 语料为验收标尺）+ 一期通道复用（testharness 编码读取点 + 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编码/文本处理面）
 
@@ -95,18 +89,16 @@ SAB/https 1）。逐文件 disposition 与干跑双臂基线见
   worker 11,821 / sw+shared 632 / window-form 342 / idlharness 57 /
   doc-iframe 19 / SAB+https 1 子测试记录在案，dedicated-worker 腿 re-entry
   留待 workers 通道评估。
-- **DC-4（coverage 复测）**：encoding topdir 通过率 ≥ **98.8%**（对
-  2026-10-30 分母 1,152,394 即 ≥ 1,138,566 通过）；全可收口天花板 =
-  分母 − 挂账池 12,889（M0 口径 12,879 + M1 iso-2022-jp 流式模型簇 10）−
-  pin 漂移带 25 − API 结构残差 3 − encode 契约挂案 1 = **1,139,476
-  （98.86%）**（分母滚动时按 evidence 口径重算）；36 号零回归门全绿
-  （legacy 扫描恒等 + 新面干跑 + weekly 分片计数对账）；30/31 号通道零
-  改动；wpt-suites.csv 回填数据行。
-  **当前判定（2026-10-31 M4 可跑面收口）**：门暂不可达——form36 form 面
-  550,054 子测试池被引擎双缺陷阻塞（见
-  [evidence](encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)），
-  可跑面已全绿收口（589,436 案 / 非 P 恰 13 与在册残差逐条吻合）；修复
-  落地重跑 form 面后按 evidence 口径重算。
+- ~~**DC-4（coverage 复测）**~~ **已完成（2026-10-31，M4）**：encoding
+  topdir 通过率 **1,139,476 / 1,152,394 = 98.879% ≥ 98.8%**（通过线
+  1,138,566）；passes 与全可收口天花板 1,139,476 **逐位相等**；非 P 恰
+  14 全部为在册残差（3F SAB + 10F iso-2022-jp-encoder 流式模型簇 + 1T
+  data:iframe 契约挂案），零意外；36 号零回归门全绿（68 文件面
+  766,958P/1T 与在册账逐位一致）；30/31 号通道零改动；form36 form 面
+  550,054 池由并行流 s168 shim 修复解锁后
+  `m4-form-batch.sh` 全量补齐（tally 与台账见
+  [evidence](encoding-compat-v2/evidence/2026-10-31-m4-form-face-engine-bug.md)
+  「复核与收口」节）；wpt-suites.csv 37 号数据行已回填。
 
 **DC-4 数值门决策规则（立项即定；M0 判定为第二档）**：M0 甄别后按地址池
 大小分档——
@@ -145,8 +137,10 @@ iso-2022-jp-encoder 10F 为流式模型簇归挂账）<< 100k → 第二档生�
   2P/10F（10F 流式模型簇挂账）；weekly 两分片接线。
 - ~~**M2/M3**~~ **撤销（降级）**：legacy-mb 无未导入案面；引擎可修簇 0；
   挂账池 12,889 记 evidence 分族账本，不重开。
-- **M4**：coverage 复测收口（DC-4 数值门 ≥ 98.8%，天花板 1,139,476）+
-  wpt-suites.csv 汇总行。
+- ~~**M4**~~ **已完成（2026-10-31）**：coverage 复测收口——DC-4 数值门
+  PASS（98.879%，passes = 天花板 1,139,476，非 P 恰 14 全在册）+
+  wpt-suites.csv 37 号数据行回填。form 面引擎阻塞由并行流 s168
+  （daf3bc4c5）收口，本 goal 纯数据轮次无通道/引擎改动。
 
 ## 依赖约束（run-rules §9）
 

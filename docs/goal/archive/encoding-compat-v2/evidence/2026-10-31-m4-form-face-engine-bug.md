@@ -50,16 +50,68 @@ getElementsByTagName 重查询 + collection[0] submit」形态在本引擎当前
 4. helper 的 `frames[0]`/`forms[0]` 恰取快照侧新 proxy（缺陷①的顺序效应）→
    submit 无效（缺陷②）→ iframe load 永不到 → 全部 form 面测试 pending。
 
-## 修复方向（独立轮次，共享路径）
+## ~~修复方向（独立轮次，共享路径）~~（已被并行流收口，见下节）
 
 1. `apply_dom_mutations_and_render` apply 成功后补发
    `__zw_apply_generation_bump`（对齐既有两处），使 R382 驱逐生效、枚举
-   单一化。
-2. 排查 materialized form 的 submit 静默 no-op 点并修复；验收 = form36
-   任一 form 面单页跑通全 Pass + enc30/31/href 面零回归 + `make test` +
-   `make reftest` 全绿。
+   单一化。——**未实施**：并行流 s168 已从 shim 侧收口同一根因（下节），
+   该点不再改生产路径（工程注记：R383a 闩使 fuse/枚举正确性不再依赖该
+   apply 点的换代通知）。
+2. 排查 materialized form 的 submit 静默 no-op 点并修复。——**缺陷②未
+   独立复现**：为缺陷①同一根因的下游表症（双计状态下 named-target 分支
+   从双渲染 iframe 枚举取首条 proxy，身份态不一致），单一化后自然消失。
 3. 修复落地后重跑 form36 form 面（`/tmp/zw-enc2-m4/m4-form-batch.sh` 就绪，
-   env 已带 case 预算 600s），再走 tally 判读 DC-4。
+   env 已带 case 预算 600s），再走 tally 判读 DC-4。——**已执行，全绿**。
+
+## 复核与收口（2026-10-31，并行流 s168 后）
+
+**上轮诊断时点差异**：本 evidence 的探针与挂死结论基于 01:17 二进制
+（早于 05:58 `daf3bc4c5` 与 06:09 `88ca4f5db` 两笔 s168 提交）。重建
+runner 至 `4740787f5`（06:30 二进制）后按原形态复核：
+
+- **diag19 型最小复现不再成立**：helper 形态页（script 建
+  iframe+form+input，load 后重查询 `forms[0].submit()`，form.target 指名
+  iframe）真实导航 named iframe，iframe load 正常派发；原始 expando
+  proxy 对照路径同通。（探针页用后即删，未入库。）
+- **四族 form 面抽检全绿**：big5 14,362P、euc-jp 7,392P、shift_jis
+  7,393P、euc-kr 17,048P——上轮全灭的同型页面。
+- **全量 58 job 批跑**（`m4-form-batch.sh`，12 lane，env
+  `ZW_SCRIPT_TIMEOUT_MS=600000` + `ZW_CORPUS_CASE_TIMEOUT_SECS=600`）：
+  ~2 分钟全部 rc=0（上轮同批全灭）；per-family merge 8 shard 文件数门
+  全绿（batch 内联 merge 有 `c.split`→`c[0].split` 形状 bug 在统计打印
+  崩一次，独立 `merge-fix.py` 重跑补齐；shard 内容首写即正确）。
+
+**定谳（根因链修正）**：双缺陷为同一根因的两层表症——R51c/R382 机制下
+跨代际 pending 桶并入枚举 overlay 造成 ghost 双计（缺陷①），双计状态下
+named-target 提交分支消费双渲染枚举首条 proxy 静默失效（缺陷②）。
+并行流 `daf3bc4c5` 的 shim 侧 R383（跨代际桶不并入 overlay）+ R383a
+（apply 配对环境闩——游标>0 置闩恒跳并）+ webview 两 apply 点游标即时
+发布（含 runner 页面管线 `run_page_scripts` 路径）使枚举单一化，两层
+表症一并消失。本 goal 未改任何通道/引擎代码，M4 数据为纯数据轮次。
+
+**终局 tally（DC-4 判读，tally_dc4.py 全 shard 汇总）**：
+
+| shard | files | subtests | 状态分布 |
+|---|---:|---:|---|
+| enc30（一期根面） | 36 | 12,075 | 12,072P/3F |
+| enc31 decode | 34 | 360,431 | 360,431P/0F |
+| form36-euc-jp | 10 | 101,334 | 101,334P |
+| form36-iso2022-jp | 10 | 93,880 | 93,879P/1T |
+| form36-shift-jis | 15 | 138,301 | 138,301P |
+| form36-euc-kr | 15 | 239,960 | 239,960P |
+| form36-big5 | 16 | 193,181 | 193,181P |
+| form36-schinese | 2 | 303 | 303P |
+| form36-big5-encoder | 1 | 13 | 13P |
+| form36-iso2022-enc | 1 | 12 | 2P/10F |
+| **合计** | 140 | **1,139,490** | **1,139,476P** |
+
+- **DC-4 全分母门 PASS**：1,139,476 / 1,152,394 = **98.879% ≥ 98.8%**
+  （通过线 1,138,566）；passes 与全可收口天花板 1,139,476 **逐位相等**。
+- 非 Pass 恰 **14** = 3F SAB（decode-utf8 transferred ×2 +
+  textdecoder-copy ×1）+ 10F iso-2022-jp-encoder 流式模型簇（M1 挂账）+
+  1T data:iframe（36 号在册契约挂案）——**全部在册残差，零意外**。
+- **零回归**：68 文件 form/href 面 766,958P/1T 与 36 号在册账逐位一致；
+  enc31 decode 360,431P/0F 与 31 号收口账恒等；enc30 12,072P/3F 不变。
 
 ## 过程事件（非根因，记账）
 
@@ -92,3 +144,5 @@ getElementsByTagName 重查询 + collection[0] submit」形态在本引擎当前
   engine-blocked 池 = 1,139,490（预期本地三源）− 589,436（实跑）=
   **550,054 子测试**（form36 form 面 + data:iframe），待引擎两缺陷修复
   落地后由 `m4-form-batch.sh` 重跑补齐，再重算 DC-4。
+  ——**已补齐并翻绿**，终局判定见上文「复核与收口」节（98.879% PASS，
+  非 P 恰 14 全在册）。
