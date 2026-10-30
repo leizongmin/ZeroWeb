@@ -101,3 +101,44 @@ fix7 终账（对拍 fix6 逐测试 ID）：**+1,407P / 零回归**；对拍 fix
   iframe-service-worker 域），零新增。
 - `cargo fmt --all --check` ✓、`cargo clippy -p zero-webview -p zero-engine
   --all-targets` ✓ 零告警。
+
+## 8. 撞车合并（rebase 遇并行流 D1/D2/D3 落地，2026-10-31）
+
+push 前 `git pull --rebase` 撞上远端并行流 be4874b99（marker 语料管线
+D1/D2/D3 独立落地，与本文 §3 修复链同源异构）。语义判定后合并：
+
+- **D1 数据写通道统一远端**：enum/apply/rewrite 六处取远端命名
+  （`SetChildTextByPath{anchor_selector}`/`RemoveChildAtPath`），删除本文
+  两个变体与 wire 注册；part03 两处调用点（`_zwD1PersistData`/
+  removeChild 穿透）改用远端 wire 名，守卫补 `__zwSelPathWrite` 印排除
+  （远端 stamping 域走其 accessor，kill-switch `ZW_SEL_PATH_MUTATION=0`
+  下远端不 stamp、本路径照常兜底——双域互斥不双写）。本文
+  `_zwFragSelPathOf` 保留（D3 依赖，远端无此名）。
+- **D3 两级重锚并存**：`__zw_ce_caret_range` 内远端登记表身份重锚
+  （`_zwCeReanchorRange`，D1 stamping 域）优先，未命中回落本文 sel-path
+  重解析（`_zwCeReresolveCaret`，plain/陈旧补偿 proxy 域）——两级各覆盖
+  对方盲区；本文世界同步块仍居两级之前（先同步 el 再重锚）。
+- `_zwCeJoinApply` 冲突 hunk 取本文完整版（单元素壳 + innerHTML 物化 +
+  源位落位 + plain 壳引擎收敛，远端侧为旧 handle 子修复）。
+
+合并后复验（shim `node --check` ✓）与撞车仲裁：
+
+- **复跑测得 1,395P/6,123F（对 fix7 -1,713P）**——该账混入并行中间轮同树
+  在途 WIP（双方共用 target-editing 构建树），不能作为本合并的独立验证账；
+  但暴露的两类交互缺陷为真：
+  1. **登记表重锚 × 世界同步换代**：`_zwCeReanchorRange` 的登记表 tops 是
+     setup 代 regIdx，世界同步重建 el 子树后位次指向换代前——一级重锚把
+     陈旧锚映射到错位节点，交由二级 sel-path 重解析才位置正确；
+  2. **D1 stamping × 回灌子树**：世界同步 `el.innerHTML=` 回灌触发远端
+     stamping 钩子，stamp 域访问器的移除覆盖对回灌子树有缺口（行界 br
+     残留引擎树，fused 序列化放大）。
+- **仲裁由并行中间轮落地（同树在途，2026-10-31）**：`__zw_ce_caret_range`
+  世界同步发生的本轮调用跳过一级重锚（`_zwSynced` 门）+ 回灌期间
+  `__zwCeWorldSyncing` 抑制 D1 stamping（part04 钩子门）——回灌子树归
+  plain 补偿域，走本文二级重解析与 D1 路径。合并终验以组合态为准
+  （并行轮 owns 该验证轮）。
+- **make test 口径同注**：本方合并态 make test（同树含并发 WIP）测得
+  engine lib 3,611P/11F——已知红集 9 之外 +2F（`r113` style-sheet、
+  `s24_flip` ua-display），结构推理归属并发 WIP（`computed_style.rs` 正被
+  其编辑，display 计算域与本文触碰面零交叠；编译通过即排除测试引用已删
+  变体），归因由并行轮组合态验证收口。

@@ -1351,9 +1351,7 @@ pub fn apply_dom_mutations_full(
                     None => match handles.get(&ref_selector).copied() {
                         Some(n) => n,
                         None => {
-                            tracing::warn!(
-                                "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
-                            );
+                            tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
                             continue;
                         }
                     },
@@ -1380,9 +1378,7 @@ pub fn apply_dom_mutations_full(
                     None => match handles.get(&ref_selector).copied() {
                         Some(n) => n,
                         None => {
-                            tracing::warn!(
-                                "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
-                            );
+                            tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
                             continue;
                         }
                     },

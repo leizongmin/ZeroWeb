@@ -343,12 +343,6 @@ pub fn bump_dom_view_gen() {
     DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
-/// editing-compat D1：`"0,3,7"` 形式的 child-index 下行路径 → `Vec<u32>`。任一段
-/// 空/非数字整条拒绝返 None（半条路径会静默定位到错节点，不部分接受）。
-fn parse_child_index_path(s: &str) -> Option<Vec<u32>> {
-    s.split(',').map(|seg| seg.trim().parse::<u32>().ok()).collect()
-}
-
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
 ///
 /// 将 [`generate_js_dom_shim`] 产生的 JS shim 与宿主侧 [`DomMutation`] 收集器连接：
