@@ -165,12 +165,13 @@ impl taffy::LayoutPartialTree for Node {
                     &node.style,
                     |_val, _basis| 0.0,
                     |known_dimensions, available_space| {
-                        text_measure_function(
+                        let size = text_measure_function(
                             known_dimensions,
                             available_space,
                             node.text_data.as_ref().unwrap(),
                             &font_metrics,
-                        )
+                        );
+                        (size, None)
                     },
                 ),
                 NodeKind::Image => compute_leaf_layout(
@@ -178,7 +179,10 @@ impl taffy::LayoutPartialTree for Node {
                     &node.style,
                     |_val, _basis| 0.0,
                     |known_dimensions, _available_space| {
-                        image_measure_function(known_dimensions, node.image_data.as_ref().unwrap())
+                        (
+                            image_measure_function(known_dimensions, node.image_data.as_ref().unwrap()),
+                            None,
+                        )
                     },
                 ),
             }

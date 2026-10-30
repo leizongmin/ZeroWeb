@@ -60,7 +60,8 @@ fn main() -> Result<(), taffy::TaffyError> {
         // Note: this closure is a FnMut closure and can be used to borrow external context for the duration of layout
         // For example, you may wish to borrow a global font registry and pass it into your text measuring function
         |known_dimensions, available_space, _node_id, node_context, _style| {
-            measure_function(known_dimensions, available_space, node_context, &font_metrics)
+            let size = measure_function(known_dimensions, available_space, node_context, &font_metrics);
+            (size, None)
         },
     )?;
     taffy.print_tree(root);

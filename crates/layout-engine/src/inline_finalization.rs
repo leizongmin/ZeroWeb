@@ -2389,7 +2389,7 @@ pub(crate) fn try_measure_fragment_segment(
 }
 
 #[allow(clippy::too_many_arguments)] // R4332：run_in_prepended 为可选语义注入，不宜并包
-pub(crate) fn measure_text_content(
+pub(crate) fn measure_text_content_with_baseline(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
@@ -2400,7 +2400,7 @@ pub(crate) fn measure_text_content(
     // R4332：本容器首行并入的 run-in 元素（r109.run_in_prepended 注册表查询结果）——
     // 测量 IFC 须前置收集其 inline 内容（否则后继块少算一行，见 IFC 构造处注释）。
     run_in_prepended: Option<NodeId>,
-) -> Size<f32> {
+) -> (Size<f32>, Option<f32>) {
     let font_metric_provider = inline_fonts.metric_provider;
     let advance_source = inline_fonts.advance_source;
     let font_resolver = inline_fonts.resolver;
@@ -2413,7 +2413,7 @@ pub(crate) fn measure_text_content(
             .get(&dom_id)
             .is_some_and(|s| s.content_visibility_hidden_effective())
     {
-        return Size::ZERO;
+        return (Size::ZERO, None);
     }
 
     // R3992（CSS Display 3 §2.3）：并入态 run-in 的 leaf 盒内容为 0——其 inline 内容已
@@ -2426,7 +2426,7 @@ pub(crate) fn measure_text_content(
             .is_some_and(|s| matches!(s.display, zero_css_parser::values::DisplayValue::RunIn))
         && crate::tree::run_in_following_block_sibling(doc, styles, dom_id).is_some()
     {
-        return Size::ZERO;
+        return (Size::ZERO, None);
     }
 
     // R4034b（CSS Containment 1 §3）：contain:size → 元素按「无内容」sized——本回调是
@@ -2454,10 +2454,13 @@ pub(crate) fn measure_text_content(
                 .and_then(|l| crate::intrinsic_sizing::resolve_intrinsic_real_length(l, s))
                 .unwrap_or(0.0)
         };
-        return Size {
-            width: cis(&s.contain_intrinsic_width),
-            height: cis(&s.contain_intrinsic_height),
-        };
+        return (
+            Size {
+                width: cis(&s.contain_intrinsic_width),
+                height: cis(&s.contain_intrinsic_height),
+            },
+            None,
+        );
     }
 
     // 检查是否为文本节点（匿名 flex/grid item）
@@ -2467,7 +2470,7 @@ pub(crate) fn measure_text_content(
     {
         let text = text_data.content.trim().to_string();
         if text.is_empty() {
-            return Size::ZERO;
+            return (Size::ZERO, None);
         }
         // CSS Pseudo 4: generated-content text uses the computed style of its
         // pseudo element. Normal DOM text nodes still inherit from their parent.
@@ -2586,10 +2589,13 @@ pub(crate) fn measure_text_content(
                 .sum()
         };
 
-        return Size {
-            width: known_dimensions.width.unwrap_or(measured_width),
-            height: known_dimensions.height.unwrap_or(line_height),
-        };
+        return (
+            Size {
+                width: known_dimensions.width.unwrap_or(measured_width),
+                height: known_dimensions.height.unwrap_or(line_height),
+            },
+            None,
+        );
     }
 
     // R4333：并入 run-in 前缀的容器**视作有 inline 内容**——空块合并目标（run-in-block-between-001）
@@ -2675,10 +2681,13 @@ pub(crate) fn measure_text_content(
             }
             style.and_then(|s| resolve_definite_real_length(&s.height, s))
         });
-        return Size {
-            width: explicit_w.unwrap_or(0.0),
-            height: explicit_h.unwrap_or(0.0),
-        };
+        return (
+            Size {
+                width: explicit_w.unwrap_or(0.0),
+                height: explicit_h.unwrap_or(0.0),
+            },
+            None,
+        );
     }
 
     let width = if matches!(available_space.width, AvailableSpace::MinContent) {
@@ -2902,10 +2911,13 @@ pub(crate) fn measure_text_content(
             .iter()
             .map(|f| f.y + f.height)
             .fold(0.0_f32, f32::max);
-        return Size {
-            width: known_dimensions.width.unwrap_or(inline_extent),
-            height: known_dimensions.height.unwrap_or_else(|| inline_ctx.total_height()),
-        };
+        return (
+            Size {
+                width: known_dimensions.width.unwrap_or(inline_extent),
+                height: known_dimensions.height.unwrap_or_else(|| inline_ctx.total_height()),
+            },
+            None,
+        );
     }
     // R4437：orthogonal 自身竖排固有块轴臂——自身 vertical 而父 horizontal（正交；
     // viv 已由上方臂处理）时，测量走水平 advance 模型（measured_width = 全文本单行
@@ -2948,14 +2960,17 @@ pub(crate) fn measure_text_content(
             .iter()
             .map(|f| f.y + f.height)
             .fold(0.0_f32, f32::max);
-        return Size {
-            width: known_dimensions.width.unwrap_or(block_extent),
-            height: known_dimensions.height.unwrap_or(if inline_extent > 0.0 {
-                inline_extent
-            } else {
-                balanced_height
-            }),
-        };
+        return (
+            Size {
+                width: known_dimensions.width.unwrap_or(block_extent),
+                height: known_dimensions.height.unwrap_or(if inline_extent > 0.0 {
+                    inline_extent
+                } else {
+                    balanced_height
+                }),
+            },
+            None,
+        );
     }
     // R5104（CSS2 §10.3.7 shrink-to-fit）：auto 宽 abspos/fixed 叶的 taffy absolute
     // 测量臂以 Definite(CB 宽) 约束跑 ContentSize（max-content）测量——IFC 以该宽排出
@@ -2980,15 +2995,62 @@ pub(crate) fn measure_text_content(
         })
         && std::env::var("ZW_ABSPOS_SHRINK_TO_FIT").as_deref() != Ok("0")
     {
-        return Size {
-            width: measured_width.ceil(),
+        return (
+            Size {
+                width: measured_width.ceil(),
+                height: height_out,
+            },
+            None,
+        );
+    }
+    // R5338（css-flexbox-1 §8.5/§4.2 first baseline）：首行基线随测量一并产出，
+    // 供 flex 叶经 taffy first_baselines 参与基线对齐（此前恒 None → taffy 以
+    // border-box 底边合成基线，align-items: baseline 退化为底对齐阶梯错位，
+    // flexbox_align-items-baseline 实证）。基线坐标 = 行顶 y + 行内基线偏移
+    //（内容系；调用方叠加 border/padding 顶距换算 border 系）。行级垂直域
+    //（vertical writing-mode 臂）早退返回 None，维持合成基线，central 域挂账。
+    // 无字形首行（仅 `<br>` 等空行）不导出：ZW 空行盒度量未按基线语义校准
+    //（chromium 取 br 行基线，ZW br 行高/基线近似值有偏），保守回退合成基线。
+    // FIXME: 行度量校准后放开（css-multicol/baseline-001 族依赖此项：multicol
+    // 列感知基线未实现，双重合成 coincidence 绿，真实基线导出反而暴露缺口）。
+    let first_baseline = inline_ctx
+        .lines
+        .first()
+        .filter(|line| line.runs.iter().any(|f| f.text.chars().any(|c| !c.is_whitespace())))
+        .map(|line| line.y + line.baseline_y);
+    (
+        Size {
+            width: width_out,
             height: height_out,
-        };
-    }
-    Size {
-        width: width_out,
-        height: height_out,
-    }
+        },
+        first_baseline,
+    )
+}
+
+/// 兼容包装：多数调用方只消费尺寸（原 `measure_text_content` 语义不变）。
+/// 基线仅 flex 基线对齐链消费（engine measure 闭包走 [`measure_text_content_with_baseline`]）。
+#[allow(clippy::too_many_arguments)] // 与被包装函数同参（R4332 run_in_prepended 同源）
+pub(crate) fn measure_text_content(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    dom_id: NodeId,
+    known_dimensions: Size<Option<f32>>,
+    available_space: Size<AvailableSpace>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+    run_in_prepended: Option<NodeId>,
+) -> Size<f32> {
+    measure_text_content_with_baseline(
+        doc,
+        styles,
+        dom_id,
+        known_dimensions,
+        available_space,
+        img_intrinsic_sizes,
+        inline_fonts,
+        run_in_prepended,
+    )
+    .0
 }
 
 /// 为包含 float 元素的容器重新测量行内文本，使文本环绕 float 排列。

@@ -913,3 +913,7 @@ mod r5333_flex_infinite_grow_tests;
 /// overflow visible 自动最小保留、row 轴 cross 域既有行为守卫
 ///（fieldset-as-item-overflow）。
 mod r5334_flex_scroll_item_min_tests;
+
+/// R5338（css-flexbox-1 §8.5 baseline alignment）：flex 叶首行基线通道锚——
+/// baseline 对齐三项异高同顶（margin 参与基线偏移）、flex-start 守卫不变。
+mod r5338_flex_leaf_baseline_tests;

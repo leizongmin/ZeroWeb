@@ -742,8 +742,9 @@ jobs:
     runs-on: ubuntu-latest
     # 150 = sec 分片实跑预算（run 40505731836 实证 csp+mixed+secure ≈76min
     # 计时器外）+ build/fetch ~15min + 余量；time_limit 为 per-suite 限时，
-    # job timeout 才是分片硬顶。
-    timeout-minutes: 150
+    # job timeout 才是分片硬顶。css-face 三分片语料深挖体量大（每片 ~5–7k
+    # 文件顺序拉取 1–1.5h），经 job_timeout 字段单独放宽。
+    timeout-minutes: ${{ matrix.shard.job_timeout || 150 }}
     strategy:
       fail-fast: false
       matrix:
@@ -810,11 +811,17 @@ jobs:
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
             time_limit: 7200
+            # decode wrapper 每 variant 对 chars 文档全量 span 做桥调用密集断言
+            # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
+            # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
+            script_timeout: 600000
           - name: form-encode
             suites: "form-url-encoding"
             fetch: "fetch-wpt-encoding-legacy-mb"
             fetch_scripts: ""
             time_limit: 7200
+            # encode-form 页每 variant ~1000 async_test 分窗断言，同上提额。
+            script_timeout: 600000
           - name: timing
             suites: >-
               resource-timing navigation-timing event-timing longtask-timing
@@ -832,6 +839,36 @@ jobs:
               fetch-wpt-css-variables
             fetch_scripts: "fetch-canvas-subset.sh"
             time_limit: 5400
+          # 2026-10-30 css-testharness-compat M4（DC-4）：css 面 15 目录入账
+          # （css-variables 已在 misc——DC-3，不重复）。三片按语料体量均分，
+          # 各自定向 fetch（fetch-wpt-css-testharness-{a,b,c}，CSS_FETCH_ONLY
+          # 白名单——CI 全新 checkout 深挖 ~2 万文件顺序拉取单 job 装不下）。
+          # suite 名 = runner 子命令去 testharness- 前缀（css-motion 扫描根
+          # css/motion；aggregate 按 case 路径归 topdir，suite 名不敏感）。
+          # time_limit 为 per-suite 限时：本地单进程实测最大 grid 169s，
+          # ×2 系数 + 余量取 3600 覆盖全部（耗时只按实跑计）。
+          - name: css-face-a
+            suites: >-
+              css-values selectors css-color css-align css-sizing
+              css-transforms
+            fetch: "fetch-wpt-css-testharness-a"
+            fetch_scripts: ""
+            time_limit: 3600
+            job_timeout: 210
+          - name: css-face-b
+            suites: >-
+              css-typed-om css-fonts css-shapes css-anchor-position
+              css-masking css-backgrounds
+            fetch: "fetch-wpt-css-testharness-b"
+            fetch_scripts: ""
+            time_limit: 3600
+            job_timeout: 210
+          - name: css-face-c
+            suites: "css-motion css-grid css-text"
+            fetch: "fetch-wpt-css-testharness-c"
+            fetch_scripts: ""
+            time_limit: 3600
+            job_timeout: 210
           - name: sec
             suites: "csp mixed-content secure-contexts"
             fetch: "fetch-wpt-security-csp"
@@ -921,6 +958,12 @@ jobs:
       # 输出说明 runner 崩了或语料残缺，shard 应当红。
       - name: Run suites (test-guard wrapped, JSON captured)
         shell: bash
+        env:
+          # runner 看门狗缺省 90s（testharness.rs script_timeout_ms）；大页面
+          # 通道按 shard 提额（script_timeout 字段），未设 shard 取 90000 与
+          # runner 缺省相同——零行为变化。缺提额时 encode-form 页（每 variant
+          # ~1000 async_test）语料修好后仍会成批 Timeout 假失败。
+          ZW_SCRIPT_TIMEOUT_MS: ${{ matrix.shard.script_timeout || 90000 }}
         run: |
           mkdir -p /tmp/zw-results
           for s in ${{ matrix.shard.suites }}; do

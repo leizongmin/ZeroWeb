@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（200）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（202）
 
+- 2026-10-30 [WPT 语料跨目录依赖只在 fresh checkout 假失败，合法 JSON 不红任何 job](bugs/2026-10/2026-10-30-wpt-corpus-fresh-checkout-silent-collapse.md) — wpt-runner, infra/ci
+- 2026-10-30 [corpus 脚本分片+续跑组合：resume 跳过必须消费 idx 槽位](bugs/2026-10/2026-10-30-shard-resume-idx-slot-consumption.md) — zero-wpt-runner
 - 2026-10-30 [守卫杀树总增量按案平摊会伪造"线性内存累积"结论](bugs/2026-10/2026-10-30-guard-kill-total-averaging-fakes-linear-memory-growth.md) — wpt-runner, testing
 - 2026-10-29 [WPT 红腿排查先证上游漂移，再动引擎/runner——一次 stash 冲突假设的证伪](bugs/2026-10/2026-10-29-wpt-red-leg-upstream-drift-first.md) — wpt-runner,net-api-compat
 - 2026-10-29 [官网移动端溢出需要检查网格最小宽度和展开内容](bugs/2026-10/2026-10-29-website-grid-overflow.md) — website, generate-website
@@ -238,8 +240,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（45）
+## Performance — 性能优化经验（46）
 
+- 2026-10-30 [push-only 注册表 + length-only gate 后的 O(n) 预处理 = 填充序列 O(n²)](performance/2026-10/2026-10-30-ring-registry-length-gate-hidden-quadratic.md) — engine/js-dom-shim
 - 2026-10-28 [shim 内 performance.now() 是虚拟时钟——耗时插桩必须 Date.now()](performance/2026-10/2026-10-28-shim-virtual-clock-instrumentation.md) — engine,tests/wpt-runner
 - 2026-10-28 [桥查询路径的 O(结果数 × 树) 三形态——per-result 全局量必须惰性/缓存](performance/2026-10/2026-10-28-bridge-o-results-times-tree.md) — engine
 - 2026-10-16 [bench-gate 必须静机跑——与其他重负载并行 = 测量污染假 FAIL](performance/2026-10/2026-10-16-bench-gate-needs-quiet-machine.md) — bench-gate, rally

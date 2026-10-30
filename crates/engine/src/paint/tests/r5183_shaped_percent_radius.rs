@@ -91,3 +91,43 @@ fn test_r5183_backdrop_element_percent_same_spec_resolution() {
     );
     assert!(!has_vert(&pts, 0.0, 0.0), "backdrop 元素直角点不应在场（bevel 已切削）");
 }
+
+/// R5339（css-filters-2 #BackdropFilter）：plain border-radius（corner-shape 初始态
+/// 全 round）+ backdrop-filter——shaped 入口返 None 后回退 plain 圆角多边形，滤区
+/// 随圆角轮廓（backdrop-filter-clip-rect-2 实证：backdrop 行方角 vs 背景行圆角）。
+#[test]
+fn test_r5339_backdrop_plain_radius_round_clip_fallback() {
+    let mut style = ComputedStyle::default();
+    for (r, expect) in [
+        &mut style.border_top_left_radius,
+        &mut style.border_top_right_radius,
+        &mut style.border_bottom_right_radius,
+        &mut style.border_bottom_left_radius,
+    ]
+    .into_iter()
+    .zip([10.0f32, 20.0, 30.0, 40.0])
+    {
+        *r = LengthValue::Px(expect.into());
+    }
+    style.backdrop_filter = vec![zero_style_system::property::types::FilterComputedValue::Brightness(0.0)];
+    // corner_shape 保持默认（全 round）——旧行为在此返回 None（矩形滤区方角）。
+    let pts = crate::paint::helpers::backdrop_filter_clip_polygon(&style, 0.0, 0.0, 100.0, 100.0)
+        .expect("plain 半径应回退圆角多边形");
+    assert!(
+        has_vert(&pts, 80.0, 0.0) && has_vert(&pts, 100.0, 20.0) && has_vert(&pts, 100.0, 70.0),
+        "TR r=20 弧段 (80,0)→(100,20) 与 BR r=30 弧段起点 (100,70) 应在场，got {pts:?}"
+    );
+    assert!(!has_vert(&pts, 0.0, 0.0), "直角点不应在场（r=10 圆角切削）");
+}
+
+/// R5339 守卫：无半径（radii 全 0）不裁——矩形滤区既有行为不变（全量 corpus
+/// backdrop 族矩形路径零扰动哨）。
+#[test]
+fn test_r5339_backdrop_no_radius_keeps_rect_region() {
+    let mut style = ComputedStyle::default();
+    style.backdrop_filter = vec![zero_style_system::property::types::FilterComputedValue::Brightness(0.0)];
+    assert!(
+        crate::paint::helpers::backdrop_filter_clip_polygon(&style, 0.0, 0.0, 100.0, 100.0).is_none(),
+        "无半径应返回 None（矩形滤区）"
+    );
+}

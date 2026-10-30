@@ -73,11 +73,33 @@ DIRS=(
   # ——transforms 若已含顶层 .html 会走幂等快路径，补差口径同 fonts）。
   "css/css-transforms"
   "css/motion"
+  # M3 扩面批次 5（top15 收尾，重量级语料独立轮次）：css-grid（15,841 子
+  # 测试 / grid 布局属性断言，上游 3,359 html）+ css-text（5,714 / text
+  # 排版属性断言，2,811 html）。两目录精选仓大概率已含 reftest 口径存量页
+  # ——幂等快路径会漏差，首拉后按 pin 树清单 blob hash 定向补差（不 FORCE
+  # 全量重拉，fonts/backgrounds/transforms 先例）。
+  "css/css-grid"
+  "css/css-text"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。
   "css/support"
 )
+
+# CI coverage 分片定向（css-testharness-compat M4）：CSS_FETCH_ONLY 空格分隔
+# 的 DIRS 白名单，只拉子集（weekly css-face 三分片按语料体量均分，~2 万文件
+# 顺序拉取单 job 装不下 150min 预算；本地 rally 轮不设则全量，行为不变）。
+if [[ -n "${CSS_FETCH_ONLY:-}" ]]; then
+  want=" ${CSS_FETCH_ONLY} "
+  FILTERED=()
+  for d in "${DIRS[@]}"; do
+    if [[ $want == *" $d "* ]]; then
+      FILTERED+=("$d")
+    fi
+  done
+  echo "CSS_FETCH_ONLY 过滤：${#FILTERED[@]}/${#DIRS[@]} 目录（${CSS_FETCH_ONLY}）"
+  DIRS=("${FILTERED[@]}")
+fi
 
 goals_fetch_all
 

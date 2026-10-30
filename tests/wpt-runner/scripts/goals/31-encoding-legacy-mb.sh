@@ -33,6 +33,13 @@ DIRS=(
   "encoding/legacy-mb-schinese/gbk"
   "encoding/legacy-mb-schinese/gb18030"
   "encoding/legacy-mb-tchinese/big5"
+  # decode/encode 案面的跨目录脚本依赖（页面 `../../resources/` 引用）：
+  # decode-common.js / ranges.js / encode-form-common.js 等。缺失时 CI fresh
+  # checkout 404——decode 页零测试注册（tests:0 Timeout）、encode 页
+  # `rangesMisc is not defined`，coverage-2026-10-29 快照 encoding 面
+  # 361578P→1317P 回归的根因（22b817e55 只补了 /resources 与 /common 两文件，
+  # 不够）。runner 两通道只平扫上方叶目录，本目录 .html 不会被当案面跑。
+  "encoding/resources"
 )
 
 goals_fetch_all

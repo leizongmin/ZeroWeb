@@ -72,17 +72,37 @@ createlink-with-selecting-img.html（150s external kill，transcript 第 6-8 行
 二进制时点实测：runner mtime 04:51:27 < 94eb9f0d2 落时 05:42:54，在途分片
 确为落前二进制。
 
-## 自旋四案新二进制复跑（R5340 收敛轮，2026-10-30 在途）
+## 自旋四案新二进制复跑终账（R5340 收敛轮，2026-10-30 收口）
 
-分片二进制无 R5340 导致的四案分母缺口（-8,974 行）按簇序复跑：四案以
-新二进制（mtime 07:30:11，含 94eb9f0d2 + R5340 + R5341；终账上节标
-07:27:58 系同源重建前一 inode，源码同含三笔修复，零位移结论不变）+
-ZW_SCRIPT_TIMEOUT_MS=300000 + 按案自适应墙（multitest nv=10→3,450s、
-insertparagraph nv=8→2,790s、delete/forwarddelete nv=8→2,790s）单案
-直跑。并行分工：delete/forwarddelete 由镜像流在跑（/tmp/spot-*.log，
-已核 ZST=300000 同预算口径），multitest/insertparagraph 本侧在途
-（/tmp/ed-r5340-*.out）。四案新账出齐后合并为 R5340 收敛轮账面，
-对照预算窗四案旧账逐案核对分母回收与 Fail 形态。
+四案以新二进制（mtime 07:30:11，含 94eb9f0d2 + R5340 + R5341）+
+ZW_SCRIPT_TIMEOUT_MS=300000 + 按案自适应墙单案直跑（delete/forwarddelete
+镜像流跑，multitest/insertparagraph 本侧）。**逐测试 ID 对照零 verdict
+翻转**——四案全部新行与旧账同行同位同判定，全部增减均为截断前沿移动：
+
+| 案 | 分片账 | R5340 后 | 行差 | 脚本超时变体 old→new |
+|---|---|---|---:|---|
+| delete | 3,713r 1,863P/1,850F | 4,483r 2,014P/2,469F | +770 | 3→3 |
+| forwarddelete | 4,225r 1,948P/2,277F | 4,582r 2,028P/2,554F | +357 | 3→3 |
+| insertparagraph | 6,705r 3,546P/3,159F | 6,531r 3,423P/3,108F | -174 | 1→1 |
+| multitest | 9,001r 5,292P/3,709F | 8,735r 5,109P/3,626F | -266 | 1→1 |
+| 合计 | 23,644r | 24,331r | +687 | 8→8 |
+
+归因两条（互不矛盾，不同案不同主因）：
+
+1. **removeChild 自旋解锁**（delete/forwarddelete +770/+357）：R5340 前
+   自旋变体零行/少行，修复后出真实断言行。但对 M1 基线（7,842/7,491）
+   仍差近半——每案各 3 变体在 300s 脚本预算内 declared-0，与
+   insertparagraph ?7001-last、multitest 各 1 变体同属预算前沿未竟。
+2. **R5340 分支开销的截断前沿左移**（insertparagraph -174/multitest
+   -266）：零翻转 + 前缀包含证明纯截断——R5340 在 part04.js 分支链新增
+   逐操作 identity 检查，重型编辑矩阵变体吞吐降 ~25%（insertparagraph
+   ?6001-7000 每 300s 预算 704→530 行），同一预算窗内完成的测试变少。
+   正确性无损（P/F 分布同前缀一致），是簇 A（cloneNode 逐节点 glue）
+   性能簇定量的同向佐证：分母全面回收系于簇 A 修复，非预算再调优。
+
+**R5340 收敛轮结论**：removeChild 自旋族解锁成立（delete/forwarddelete
+真实断言出账），无任何正确性位移；行数增减均为簇 A 成本维度现象。
+四案残余分母缺口（对 M1 -8,289 行）挂簇 A 修复后复测。
 
 ## run 面全分母重跑终账（2026-10-30 收口）
 
