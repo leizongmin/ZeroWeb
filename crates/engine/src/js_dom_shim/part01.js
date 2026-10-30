@@ -8451,9 +8451,14 @@
   // 块界 walk 的空白文本兄弟跳过（HTML 空白——源码换行/缩进在块间产生纯空白
   // 文本节点；Chrome join 几何视其为不可见——语料 `</div>\n<div>` 形态的期望
   // 仍是相邻块相并）。
-  function _zwCeSkipWs(n) {
+  // 方向参数（2026-10-31）：跳空方向必须与传入起点方向一致——此前恒走
+  // previousSibling，后邻查找臂（fd 块界/fd select/backspace select）在
+  // `</div>\n<div>` 块间空白几何下从空白文本 backward 回走命中**前邻**，
+  // startNode=caret 侧块自提取（引擎删 caret 侧内容，paragraphs fd 316F/
+  // select-boundary 316F 实证）。backspace 前邻臂传 true，后邻臂默认 forward。
+  function _zwCeSkipWs(n, back) {
     while (n && n.nodeType === 3 && /^\s*$/.test(String(n.nodeValue || ''))) {
-      n = n.previousSibling;
+      n = back ? n.previousSibling : n.nextSibling;
     }
     return n;
   }
@@ -8710,7 +8715,7 @@
       // 末子（防错序——语料形态恒满足）。
       var bn = sc, bc = sc.parentNode, bp = null;
       while (true) {
-        bp = _zwCeSkipWs(bn.previousSibling);
+        bp = _zwCeSkipWs(bn.previousSibling, true);
         if (bp) break;
         if (bc === el) return; // 宿主起点，无前内容
         bn = bc; bc = bc.parentNode;
