@@ -60,6 +60,9 @@ backspace 前邻臂传 `true`，三个后邻臂走默认 forward。
   lprl = 0/0/0；lrlp = 396×3（唯一残余）。
 - **插桩移除后干净二进制复跑：逐位复现 drift=0**（7,518 结果行 diff
   为空）——插桩零语义影响确认。
+- **合并终验（rebase 拉入并行流 854629e5c（R5351 orphan inline 字体）+
+  d5ec12d94（s167 外链槽位级联）后 union 树复跑）**：**6,330P/1,188F
+  逐位复现 drift=0**——本轮账与 union 树无交互漂移。
 - `cargo fmt --all --check` ✓；clippy（runner crate）0 warning。
 - make test（`CARGO_BUILD_JOBS=2`）engine lib **3,611P/11F = 已知红集**
   （9 fetch 域 + r113 + s24 渲染流债）零新增。
