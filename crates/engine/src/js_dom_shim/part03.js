@@ -4709,8 +4709,16 @@
           _rcH = (typeof __zw_handle_for_selector === 'function')
             ? (__zw_handle_for_selector(_rcSel) || null) : null;
         } catch (_eRc3) {}
+        // s166/R51c：双键形覆盖门——落表键随取回臂身份形态（动态臂 handle 形
+        // `@__nX`；静态扫描臂 sel 形——noOverlay 扫描在反查表 merge 前后均以
+        // `_scSel` 直作键）。post-drain 反查可锚时 handle 形优先，miss 回落 sel
+        // 形（同 link 两臂先后取回不会双存——印记表 `_zwSsFiredMap` 同身份去重）。
+        // 两形皆缺才维持「未齐不替换」整体 return（partial overlay 语义不变）。
         var _rcKey = _rcH ? ('@' + _rcH) : _rcSel;
-        if (!_zwExtSheetTexts.hasOwnProperty(_rcKey)) return; // 覆盖门：未齐不替换
+        if (!_zwExtSheetTexts.hasOwnProperty(_rcKey)) {
+          if (!_zwExtSheetTexts.hasOwnProperty(_rcSel)) return; // 覆盖门：未齐不替换
+          _rcKey = _rcSel;
+        }
         // s161（html-semantics M2）media 门：link[media] 非空且非 'all'（ASCII
         // case-insensitive）时把本 link 表文本包进 @media 块——级联 matcher 对不匹配
         // 块零应用（未知 media type 求值 no-match；MediaContext 1280×800 screen 默认
@@ -4719,7 +4727,16 @@
         // 值含 `}` 会截断 at-rule 块（属性值溢出面）——wrap 前剥除花括号（合法 media
         // query 语法无花括号，语义无损）。
         // https://html.spec.whatwg.org/multipage/semantics.html#processing-the-media-attribute
-        var _rcMedia = String(_rcRead('media'));
+        // s166/R51c：handle 身份 link（createElement 产物）的**同批** media 翻转
+        // （`link.media = 'all'` → SetAttrOnHandle 挂队未 apply）对 sel-based lw 读
+        // 不可见（`sel_attr_override` 仅认 selector 键）——handle 可锚定时先经
+        // `__zw_get_attr_handle` 读 pending/history 覆盖，空回落 sel lw 读（base 值）。
+        var _rcMedia = '';
+        try {
+          _rcMedia = String((_rcH && typeof __zw_get_attr_handle === 'function')
+            ? (__zw_get_attr_handle(_rcH, 'media') || _rcRead('media'))
+            : _rcRead('media'));
+        } catch (_eRcM1) { _rcMedia = String(_rcRead('media')); }
         var _rcMl = _rcMedia.replace(/[\t\n\x0C\r ]+/g, ' ').trim().toLowerCase();
         var _rcText = _zwExtSheetTexts[_rcKey];
         if (_rcMl !== '' && _rcMl !== 'all') {
@@ -4730,15 +4747,16 @@
         // 面 `#test{position:fixed}` 恒缺级联，webview resolve_external_css s89 同款
         // 教训——彼处在合并侧剥离语句，级联 matcher 对 Import 规则本就跳过，`;` 终止
         // 后残留语句无级联影响）。
-        _rcOut += _zwExtSheetTexts[_rcKey] + ';\n';
+        // s166/R51c：下发消费 wrap 后文本（s161 引入的 `_rcText` 装填未消费死代码
+        // 修复——旧形态恒发裸文本，media=none 的 link 表文本无条件入级联）。
+        _rcOut += _rcText + ';\n';
       }
       // s164：style 元素 @import 落表文本并入合并文本（overlay 是该文本唯一级联载
       // 体——引擎 base 槽不追踪 style @import，引擎解析对 @-rule defer）。逐 style
       // live media 属性 wrap（同 link 面：no-match 文本级联零应用；空/缺省/'all'
       // 不 wrap）。级联序：追加在 link 文本之后（文档序交错未建模——承 s161 外链
-      // 槽位级联序 FIXME 同债）。error 空贡献条目跳过。注：link 条目侧 `_rcText`
-      // 装填未消费（s161 引入的死代码，wrap 未落 `_rcOut`）——既有形态本刀不动，
-      // 仅记账。
+      // 槽位级联序 FIXME 同债）。error 空贡献条目跳过。s166/R51c：link 条目侧
+      // `_rcText` wrap 已消费下发（s161 死代码修复，见上）。
       var _rcStyles = String(__zw_query_all('style') || '').split('|').filter(Boolean);
       for (var _rcSi = 0; _rcSi < _rcStyles.length; _rcSi++) {
         var _rcSSel = _rcStyles[_rcSi];
@@ -4785,9 +4803,7 @@
   // 不串键）。
   // FIXME(compat)：@import 规则原位语义未建模（取回文本整体追加在 style 规则文本后
   // ——CSSImportRule.styleSheet 子表 face 读取序正确）；type/title 属性变更、动态
-  // style 的 @import 臂未挂（语料无形态）；link 通道 recompute 的 media wrap 死代码
-  //（`_rcText` 装填未消费，s161 引入——本刀 style 条目 wrap 正确应用，link 条目不在
-  // 本刀范围仅记账）。
+  // style 的 @import 臂未挂（语料无形态）。
   // https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
   // https://drafts.csswg.org/cssom-1/#cssimportrule
   var _zwStyleImportTexts = {}; // style sel → 落表 import 文本（'' = error 空贡献）

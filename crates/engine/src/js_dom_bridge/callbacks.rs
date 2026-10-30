@@ -1796,8 +1796,9 @@ pub fn register_dom_callbacks(
     // `createElement` 产物（`__zwHandle` 身份，无 `__zwSelector`）的路由面。shim 侧
     // 无 sel 有 handle 时走本回调：host 在 handle 视图槽（[`HANDLE_VIEW_CACHE`]，键
     // 同查询视图代际 + applied 游标 + css/adopted）内 parse 基座 + 权威全量 applier
-    // 重放 pending 区间 `[applied..count)`（s143 同窗）后级联查值。miss（跨批 handle
-    // 等边界）返空串回落 shim fallback 链（inline style → UA 表）。
+    // 重放 pending 区间 `[applied..count)`（s143 同窗）后级联查值。s166/R51c：跨批
+    // handle（前批已物化进基座）经正置表 selector 回落在视图 doc 回定位；仍 miss
+    // （表外/selector 漂移）返空串回落 shim fallback 链（inline style → UA 表）。
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(
@@ -1813,6 +1814,10 @@ pub fn register_dom_callbacks(
             let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
             let view_gen = DOM_VIEW_GEN.load(std::sync::atomic::Ordering::Relaxed);
             let applied = MUT_APPLIED_CURSOR.with(|cursor| cursor.get()).min(style_version);
+            // s166/R51c：跨批 handle 回落源——宿主 apply merge 后发布的正置
+            // handle→selector 表（与 `__zw_get_tag_handle` 同源；未发布/文档换代
+            // 后为空表，miss 走原空串回落）。
+            let forward = sel_handle_map_snapshot();
             super::computed_style_cache::computed_style_by_handle(
                 &snap,
                 drain_gen,
@@ -1821,6 +1826,7 @@ pub fn register_dom_callbacks(
                 applied,
                 &args[0],
                 &args[1],
+                Some(&*forward),
                 || m.lock().unwrap_or_else(|e| e.into_inner()).clone(),
             )
         }),

@@ -632,10 +632,14 @@ thread_local! {
 ///），applied 进键：重放区间起点变化即视图输入变化（游标推进与基座换代配对发布，
 /// 防御非配对站点），css/adopted 级联源键分量（P9-9/R-t2qq 同理）。
 ///
-/// **已知边界（FIXME 记账）**：跨批 handle 引用（前批创建已 drain 物化进基座
-/// html、本批按 handle 引用）不可解析——序列化基座无 handle 标记，applier 按
-/// miss 跳过该变体，目标元素样式查空串回落 shim fallback 链（inline style →
-/// UA 表，不崩）。同批 create+append+写+读（testharness 单脚本主形态）全解析。
+/// **跨批 handle（s166/R51c）**：前批创建已 drain 物化进基座 html 的 handle 不在
+/// 重放区间（基座序列化无 handle 标记，`nodes` 只覆盖 `[applied..count)`）——miss
+/// 时经 `forward`（宿主发布[`super::super::callbacks::publish_forward_handle_map`]
+/// 的正置 handle→selector 表，与 `__zw_get_tag_handle` 跨 execute 回落同源）锚定
+/// selector，在视图 doc 上 `find_by_selector` 回定位（与生产 render 重建后的
+/// rescue 重锚同法）。selector 按文档位次生成，后批结构变更可致位次漂移——与
+/// pipeline rescue/slice33 驱逐同暴露面（已接受近似，Remove 由宿主侧 evict 对冲）。
+/// 同批 create+append+写+读（testharness 单脚本主形态）仍走重放直查。
 pub(super) fn computed_style_by_handle(
     html: &str,
     drain_gen: usize,
@@ -644,6 +648,7 @@ pub(super) fn computed_style_by_handle(
     applied: usize,
     handle: &str,
     prop: &str,
+    forward: Option<&Mutex<HashMap<String, String>>>,
     pending: impl FnOnce() -> Vec<DomMutation>,
 ) -> String {
     let css = active_external_css();
@@ -688,11 +693,19 @@ pub(super) fn computed_style_by_handle(
             }
         }
         let binding = cell.borrow();
-        let Some((.., nodes, styles)) = binding.as_ref() else {
+        let Some((.., doc, nodes, styles)) = binding.as_ref() else {
             return String::new();
         };
-        let Some(&nid) = nodes.get(handle) else {
-            return String::new();
+        let nid = match nodes.get(handle) {
+            Some(&nid) => nid,
+            // 跨批 handle：正置表锚 selector → 视图 doc 回定位（见函数头注）。
+            None => {
+                let sel = forward.and_then(|m| m.lock().ok().and_then(|map| map.get(handle).cloned()));
+                match sel.as_deref().and_then(|sel| super::find_by_selector(doc, sel)) {
+                    Some(nid) => nid,
+                    None => return String::new(),
+                }
+            }
         };
         styles
             .get(&nid)
