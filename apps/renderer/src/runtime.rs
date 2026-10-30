@@ -495,8 +495,10 @@ pub(crate) struct RendererRuntime {
     /// T27 返修（DF1-F1）：等待期扣压的 POST 导航意图。depth>0 时 navigate_with 不再
     /// 入 fetch_post（深度守卫必 Err，此前被混同真实失败落入 GET 回落），意图暂存于
     /// 此；主循环顶部在外层 fetch 收场后执行（晚于 reload_history_entry 的
-    /// run_staged_load 等同拍收尾，不被覆盖）。
-    deferred_post_nav: Option<DeferredPostNav>,
+    /// run_staged_load 等同拍收尾，不被覆盖）。T27 返修2（DF2-F2/F3）：改队列入栈——
+    /// 同窗多意图不互覆，且 drain 前须待 [`Self::deferred_inbound`] 既有积压（同窗更早
+    /// 到达的导航命令）回放完毕，恢复到达序语义。
+    deferred_post_navs: VecDeque<DeferredPostNav>,
     /// t2-pb1 fix#15：挂起中的自动化 Evaluate 回复（worker 长臂时主循环 2s 放行，
     /// 主循环每轮轮询补答；automation::PendingAutomationReply）。
     pending_automation_replies: Vec<automation::PendingAutomationReply>,
@@ -831,7 +833,7 @@ impl RendererRuntime {
             history_index: 0,
             deferred_inbound: VecDeque::new(),
             ipc_fetch_depth: 0,
-            deferred_post_nav: None,
+            deferred_post_navs: VecDeque::new(),
             pending_automation_replies: Vec::new(),
             compositor_publish,
             animation_export: AnimationExportState::new(0),
@@ -3101,7 +3103,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// 深度守卫：输入派发可运行任意页面脚本，若再入阻塞 fetch，返回 Err 而非嵌套
     /// 等待——嵌套时内层可能吞走外层的 FetchResponse 到自己的 skipped，时序耦合
     /// 不可控；POST 重发还会二次提交表单。已知再入路径（等待期 POST 表单提交触发
-    /// 的 POST 导航）已在 [`Self::navigate_with`] 顶部扣压至 [`Self::deferred_post_nav`]，
+    /// 的 POST 导航）已在 [`Self::navigate_with`] 顶部扣压至 [`Self::deferred_post_navs`]，
     /// 本守卫仅防御未知页面行为。
     fn ipc_fetch_via_browser(
         &mut self,
@@ -3259,17 +3261,20 @@ return JSON.stringify({{action:action,name:name,val:val}});\
     /// **POST** → 同步 [`Self::fetch_post`] body → [`AsyncPageLoad::from_html`]（绕过异步主文档 GET 路径——
     /// 主文档 fetch host 不支持 method；POST 响应即文档 HTML，外链子资源仍经 host 异步抓取）。POST fetch 失败 →
     /// 回落 GET `start`（保 load 状态机一致，复用既有 load-failure 处理；documented）。
-    /// 阻塞 fetch 等待期（depth>0）到达的 POST 导航先于此扣压（DF1-F1），见 [`Self::deferred_post_nav`]。
+    /// 阻塞 fetch 等待期（depth>0）到达的 POST 导航先于此扣压（DF1-F1），见 [`Self::deferred_post_navs`]。
     fn navigate_with(&mut self, params: NavigateParams, method: &str, body: Option<&str>) -> Result<(), String> {
         // T27 返修（DF1-F1）：阻塞 fetch 等待期（ipc_fetch_depth > 0）到达的 POST 导航会
         // 经下方 fetch_post 再入 ipc_fetch_via_browser，深度守卫必返 Err；此前 `let Ok(bytes)`
         // 把该 busy Err 混同真实 fetch 失败，落入尾部 GET 回落——表单 body 静默丢失（修复
-        // 前该输入整体扣压、外层 fetch 完成后正常 POST）。busy 恢复扣压语义：意图暂存
-        // deferred_post_nav，由主循环顶部 drain；届时 depth == 0，fetch_post 携 body 正确提交。
-        // GET 导航走 AsyncPageLoad::start 异步主文档（不再入阻塞 fetch），维持 T27-P35 即时
-        // 派发语义；判据仅为「该导航需要阻塞 fetch 臂」，无 URL/站点特判。
+        // 前该输入整体扣压、外层 fetch 完成后正常 POST）。busy 恢复扣压语义：意图入队
+        // deferred_post_navs，由主循环顶部在 deferred_inbound 积压回放完毕后 drain；
+        // 届时 depth == 0，fetch_post 携 body 正确提交。GET 导航走 AsyncPageLoad::start
+        // 异步主文档（不再入阻塞 fetch），维持 T27-P35 即时派发语义；判据仅为「该导航
+        // 需要阻塞 fetch 臂」，无 URL/站点特判。
         if self.ipc_fetch_depth > 0 && method.eq_ignore_ascii_case("POST") {
-            self.deferred_post_nav = Some(DeferredPostNav {
+            // T27 返修2（DF2-F3）：入队而非单槽覆盖——同窗第二个 POST 意图不再令首个
+            // 静默丢失（修前基线两次回放各自发出），drain 按到达序逐条执行。
+            self.deferred_post_navs.push_back(DeferredPostNav {
                 params,
                 method: method.to_string(),
                 body: body.map(str::to_string),
@@ -3597,13 +3602,31 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             .history_url(index)
             .ok_or_else(|| "历史记录为空".to_string())?
             .to_string();
+        // T27 返修2（DF2-F1）：捕获入臂 epoch。阻塞等待窗内让位输入可即时发起新导航
+        //（此刻 cached_html 未清、页面可交互，仓内导航语义「后到者胜」——后发起者
+        // 推进 navigation_epoch，见 navigate_with/handle_load_html），fetch 收场后若
+        // epoch 已推进，说明本次 history 重载已被窗内导航取代，陈旧结果不得覆盖——
+        // 修前基线该输入整体扣压 FIFO 回放、终态=窗内导航目标；无守卫则
+        // run_staged_load/show_error_page 改写 current_url/pending_load，窗内点击
+        // 静默丢失。error page 路径同判。
+        let arm_epoch = self.navigation_epoch;
         self.history_index = index;
         match self.fetch_get(&url) {
             Ok(body) => {
+                if self.navigation_epoch != arm_epoch {
+                    tracing::info!("history 重载被等待窗内新导航取代，放弃陈旧载入: {url}");
+                    return Ok(());
+                }
                 let html = String::from_utf8_lossy(&body).into_owned();
                 self.run_staged_load(url, html, false, true)
             }
-            Err(e) => self.show_error_page(&url, &e),
+            Err(e) => {
+                if self.navigation_epoch != arm_epoch {
+                    tracing::info!("history 重载被等待窗内新导航取代，放弃陈旧错误页: {url}");
+                    return Ok(());
+                }
+                self.show_error_page(&url, &e)
+            }
         }
     }
 
@@ -4282,10 +4305,15 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         loop {
             // T27 返修（DF1-F1）：drain 等待期扣压的 POST 导航——此刻外层 fetch 已收场
             //（depth 回 0），且晚于 reload_history_entry 的 run_staged_load 等同一拍收尾，
-            // 不被覆盖（修复前该输入整体扣压经 deferred_inbound 派发，同为此刻执行）。
-            // epoch 取当前值重算（与 Navigate intent 构造点同式）；错误处置同主循环派发
-            //（断连退出、其余记录不中断）。
-            if let Some(nav) = self.deferred_post_nav.take() {
+            // 不被覆盖。T27 返修2（DF2-F2）：drain 门控在 deferred_inbound 为空——扣压
+            // 期间先于 POST 意图到达的导航命令（Navigate/GoBack 等）已在积压队列，须按
+            // 到达序先回放、POST 才执行（终态=POST；修复前 drain 跳队先 POST，随后旧
+            // 命令覆盖其结果，提交副作用已发但用户看到旧页面）。每次迭代至多 drain 一条
+            //（队列保到达序，DF2-F3）。epoch 取当前值重算（与 Navigate intent 构造点
+            // 同式）；错误处置同主循环派发（断连退出、其余记录不中断）。
+            if self.deferred_inbound.is_empty()
+                && let Some(nav) = self.deferred_post_navs.pop_front()
+            {
                 let params = NavigateParams {
                     url: nav.params.url,
                     referrer: nav.params.referrer,
@@ -4749,8 +4777,8 @@ struct IpcFetchWait {
 }
 
 /// T27 返修（DF1-F1）：阻塞 fetch 等待期扣压的 POST 导航意图（[`RendererRuntime::navigate_with`]
-/// busy 臂入队，主循环顶部 drain 执行——`Navigate` IPC 消息固定走 GET，无法承载
-/// method+body，故以专用结构暂存）。
+/// busy 臂入队，主循环顶部待 deferred_inbound 积压回放完毕后按到达序 drain 执行
+/// （DF2-F2/F3）——`Navigate` IPC 消息固定走 GET，无法承载 method+body，故以专用结构暂存）。
 struct DeferredPostNav {
     params: NavigateParams,
     method: String,
@@ -4986,6 +5014,9 @@ mod navigation_preemption_tests;
 #[cfg(test)]
 #[path = "predoc_script_tests.rs"]
 mod predoc_script_tests;
+#[cfg(test)]
+#[path = "t27_history_pins.rs"]
+mod t27_history_pins;
 #[cfg(test)]
 #[path = "tick_per_task_tests.rs"]
 mod tick_per_task_tests;
