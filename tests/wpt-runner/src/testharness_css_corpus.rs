@@ -5,7 +5,7 @@
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_testharness_html_inner` /
 //! `corpus_case_timeout`）。目标面是 **CSSOM/style API 断言面**
 //! （`getComputedStyle` / `CSSStyleDeclaration` / 支持性判断——goal 契约
-//! docs/goal/css-testharness-compat.md）；reftest 渲染账归 rendering-compat，
+//! docs/goal/archive/css-testharness-compat.md）；reftest 渲染账归 rendering-compat，
 //! 本通道不含渲染断言面。
 //!
 //! 用例由 `scripts/goals/35-css-testharness-compat.sh`（GOAL_FETCH_DEEP=1

@@ -25,7 +25,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 17 | [webmessaging-compat](../../../../docs/goal/archive/webmessaging-compat.md) | webmessaging | 无（2026-10-08 立项；跨 frame 面挂 navigation-compat M3 门槛） |
 | 18 | [cookies-compat](../../../../docs/goal/archive/cookies-compat.md) | cookies |  **已收口**（2026-10-12，533/533 = 100%，已归档） |
 | 19 | [performance-api-compat](../../../../docs/goal/archive/performance-api-compat.md) | performance-api（resource/navigation/event/longtask） | 缺面甄别在 M1（host 数据管道） |
-| 20 | [net-api-compat](../../../../docs/goal/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **二期立项**（2026-10-27，coverage 对账驱动：url/mimesniff/fetch 失败簇收敛 + WebSocket 重估；[一期归档](../../../../docs/goal/archive/net-api-compat.md)） |
+| 20 | [net-api-compat](../../../../docs/goal/archive/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **二期立项**（2026-10-27，coverage 对账驱动：url/mimesniff/fetch 失败簇收敛 + WebSocket 重估；[一期归档](../../../../docs/goal/archive/net-api-compat.md)） |
 | 21 | [console-compat](../../../../docs/goal/archive/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
 | 22 | [touch-events-compat](../../../../docs/goal/archive/touch-events-compat.md) | touch-events | **已收口**（2026-10-14）；注入面挂宿主触摸注入管线重入 |
 | 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | **二期立项**（2026-10-27，coverage 对账驱动：语料 20→101 文件扩面；[一期归档](../../../../docs/goal/archive/selection-compat.md)） |
@@ -40,7 +40,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 32 | [wasm-compat](../../../../docs/goal/archive/wasm-compat.md) | wasm/core; wasm/webapi | **已收口**（2026-10-29 DC-1~4：core 188,280/188,289 = 99.995% / webapi 272/272 = 100%（残差 2F 由 net-api M2-S18 清偿）/ jsapi 底线 878/878，已归档） |
 | 33 | [editing-compat](../../../../docs/goal/editing-compat.md) | editing/run; editing/other | 无（2026-10-27 coverage 立项；长线先语料后引擎，按簇收敛） |
 | 34 | [dom-expansion](../../../../docs/goal/dom-expansion.md) | dom/ranges; html/dom 扩面 | 无（2026-10-27 coverage 立项；40 号划界承接，parser 通道零回归底线） |
-| 35 | [css-testharness-compat](../../../../docs/goal/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **内存治理门控**（2026-10-27 coverage 立项）：M1 分片执行 + coverage 分片管道落地前扩面套件进不了 CI；css-variables 病态内存案解禁在 M2；渲染面归 rendering-compat |
+| 35 | [css-testharness-compat](../../../../docs/goal/archive/css-testharness-compat.md) | css/css-values; css/selectors（M0 试点）；css/* 89 目录面 | **已收口**（2026-10-30 DC-1~4：css testharness 面 0.12%→9.08%（快照 coverage-2026-10-30），十六目录基线 65,501/17,781 = 27.1%，已归档；失败簇挂账见 goal M3 各批 evidence；渲染面归 rendering-compat） |
 | 36 | [form-url-encoding-compat](../../../../docs/goal/archive/form-url-encoding-compat.md) | encoding/legacy-mb encode 面（form 46 + href 22） | **已收口**（2026-10-29 DC-1~4：encode 面 766,958/766,959 = 99.9999%，全量头条 24.19% → 58.02%，已归档；唯一非 P = data: iframe Timeout 契约挂案） |
 | 40 | [html-syntax-compat](../../../../docs/goal/archive/html-syntax-compat.md) | html/syntax; html/dom | **已收口**（2026-10-04） |
 | 50 | [uievents-compat](../../../../docs/goal/archive/uievents-compat.md) | uievents; pointerevents |  **已收口**（2026-10-07 M4；M5 巡检 2026-10-20 收口 1805P/166F/95TO，已归档）；IME 挂账 |

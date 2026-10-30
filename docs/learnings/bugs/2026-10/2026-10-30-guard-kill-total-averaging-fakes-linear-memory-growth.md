@@ -37,4 +37,4 @@ css-values calc，197 案）斜率仅 0.06–0.82 MB/案，单案 60–76MB 峰�
 - 对照实验配平：同二进制、同案序、基线重复两轮、跨臂断言子测试计数相等
   （glibc trim env 只降地板 7–14MB，不改斜率、不改行为）。
 
-实验记录：`docs/goal/css-testharness-compat/evidence/2026-10-30-m1-rss-attribution.md`。
+实验记录：`docs/goal/archive/css-testharness-compat/evidence/2026-10-30-m1-rss-attribution.md`。

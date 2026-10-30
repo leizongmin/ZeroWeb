@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# css-testharness-compat goal（docs/goal/css-testharness-compat.md M0 / DC-1）：
+# css-testharness-compat goal（docs/goal/archive/css-testharness-compat.md M0 / DC-1）：
 # css/values + css/selectors + css/css-variables 语料分片运行器（M3 扩面目录按
 # CORPUS 参数复用）。
 #

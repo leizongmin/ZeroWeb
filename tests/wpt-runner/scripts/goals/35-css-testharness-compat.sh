@@ -8,7 +8,7 @@
 # 本脚本预置 M0 试点两目录：css/css-values（10,364 子测试 / 519 文件，值
 # 与单位语义——贴近引擎 css 值解析强项）+ css/selectors（6,229 / 833，选择
 # 器匹配 API 面）。试点产出「通道 → 基线 → 分簇」模板后再按 top15 顺序
-# 扩面（里程碑见契约 docs/goal/css-testharness-compat.md）。
+# 扩面（里程碑见契约 docs/goal/archive/css-testharness-compat.md）。
 #
 # runner 通道已落地（M0）：子命令 `testharness-css-values` / `testharness-selectors`
 # （tests/wpt-runner/src/testharness_css_corpus.rs），运行面按内容规则筛减

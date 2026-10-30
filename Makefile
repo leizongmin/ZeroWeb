@@ -576,7 +576,7 @@ testharness-css-variables: fetch-wpt-data fetch-wpt-css-variables target-disk-gu
 testharness-css-variables-one: fetch-wpt-css-variables target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-css-variables $(if $(FILTER),$(FILTER),)
 
-# css-testharness-compat goal M0（docs/goal/css-testharness-compat.md DC-1）：上游
+# css-testharness-compat goal M0（docs/goal/archive/css-testharness-compat.md DC-1）：上游
 # css/values + css/selectors testharness 试点通道（CSSOM/style API 断言面）。用例
 # gitignored（goals/35 号脚本 GOAL_FETCH_DEEP=1 深拉）。基线首跑只记录通过率，不设
 # 门禁（css-variables corpus 先例）。全量走每案独立进程分片（runner 单进程长套件
