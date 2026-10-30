@@ -19981,6 +19981,60 @@
       // R350：被移除节点所在树之外的条目不可能匹配（跨树守卫，见 _zwRangeRootDiffers 文档；
       // 调用时机契约 = 先于树状态变化，被移除节点此时仍在树内，根即当前树）。
       var rmRoot262 = _zwRangeRootOf(removed262);
+      // R262b（OPTIMIZATION，簇 A tape 2026-10-30，R263b 同款）：候选预筛前置——
+      // 原实现注册表非空即无条件 childNodes live-NL refresh + 索引扫（O(n)）再逐
+      // 条目过滤，移除序列整体 O(n²)（innerHTML= 重设的移除侧同病）。预筛谓词取
+      // 候选**保守超集**：sameNode（恒等/键，rule① 被移除节点自身命中）∨
+      // sameParent（rule② 容器命中）∨ 同根（rule① 子孙命中必与 removed 同树，
+      // 条目级根缓存 identity 比较）+ R352 dead 快道；无命中直接返回，命中才进
+      // 下方原路径（O(n) 快照 + 完整调整逐字保留）。预筛只做存在性短路。
+      var oldParentPre262 = null;
+      try { oldParentPre262 = removed262.parentNode || null; } catch (_e262pp) { oldParentPre262 = null; }
+      if (!oldParentPre262) return;
+      var hPre262 = null;
+      try { hPre262 = typeof removed262.__zwHandle === 'string' ? removed262.__zwHandle : null; } catch (_e262h) {}
+      var sPre262 = null;
+      try { sPre262 = typeof removed262.__zwSelector === 'string' ? removed262.__zwSelector : null; } catch (_e262s) {}
+      var keyedPre262 = hPre262 != null || sPre262 != null;
+      var phPre262 = null, psPre262 = null;
+      if (keyedPre262) {
+        try { phPre262 = typeof oldParentPre262.__zwHandle === 'string' ? oldParentPre262.__zwHandle : null; } catch (_e262ph) {}
+        try { psPre262 = typeof oldParentPre262.__zwSelector === 'string' ? oldParentPre262.__zwSelector : null; } catch (_e262ps) {}
+      }
+      var preNode262 = function (cont) {
+        if (cont === removed262) return true;
+        if (!cont) return false;
+        try {
+          if (hPre262 != null && typeof cont.__zwHandle === 'string' && cont.__zwHandle === hPre262) return true;
+          if (sPre262 != null && typeof cont.__zwSelector === 'string' && cont.__zwSelector === sPre262) return true;
+        } catch (_e262pc) {}
+        return false;
+      };
+      var preParent262 = function (cont) {
+        if (cont === oldParentPre262) return true;
+        if (!cont || !keyedPre262) return false;
+        try {
+          if (phPre262 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === phPre262;
+          if (psPre262 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === psPre262;
+        } catch (_e262pc) {}
+        return false;
+      };
+      var preHit262 = false;
+      for (var _r262pre = 0; _r262pre < regs262.length; _r262pre++) {
+        var rgPre262 = regs262[_r262pre];
+        if (!rgPre262) continue;
+        try {
+          var scPre262 = rgPre262.startContainer;
+          if (scPre262 && !_zwDeadContainer352(scPre262)
+              && (preNode262(scPre262) || preParent262(scPre262)
+                  || _zwEntryRootOf(rgPre262, scPre262, 0) === rmRoot262)) { preHit262 = true; break; }
+          var ecPre262 = rgPre262.endContainer;
+          if (ecPre262 && !_zwDeadContainer352(ecPre262)
+              && (preNode262(ecPre262) || preParent262(ecPre262)
+                  || _zwEntryRootOf(rgPre262, ecPre262, 1) === rmRoot262)) { preHit262 = true; break; }
+        } catch (_e262pre) {}
+      }
+      if (!preHit262) return;
       // 移除前快照（调用时机契约：先于树状态变化）。
       var oldParent262 = null, oldIndex262 = -1;
       try {
@@ -20121,6 +20175,43 @@
     try {
       var regs263 = globalThis.__zwLiveRanges;
       if (!regs263 || !regs263.length || !inserted263) return;
+      // R263b（OPTIMIZATION，簇 A tape 2026-10-30）：候选预筛前置——原实现注册表
+      // 非空即无条件 parentNode 读 + childNodes live-NL refresh（O(n)）+ 索引扫
+      //（O(n)）再逐条目过滤；R183 环形注册表（8192，基本只进不出）非空时每次
+      // append 都付 O(n)，填充序列整体 O(n²)——cloneNode/innerHTML 物化主成本
+      //（tape 实测 s35 段 147-893µs/append，占物化 wall 63-86%）。先 O(R) 廉价
+      // sameParent 预筛（下方循环同款键域快道 + R352 dead 快道；无命中直接返回），
+      // 命中才进原路径（根验证 + O(n) 定位 + 调整逐字保留）。语义等价：本函数
+      // 匹配面仅「boundary node 逻辑等于 newParent」（无子孙判定），预筛是其
+      // 保守超集；newIndex 仅被命中条目消费；t8c 契约循环内树不变。
+      var newParentPre263 = null;
+      try { newParentPre263 = inserted263.parentNode || null; } catch (_e263pp) { newParentPre263 = null; }
+      if (!newParentPre263) return;
+      var phPre263 = null, psPre263 = null;
+      try { phPre263 = typeof newParentPre263.__zwHandle === 'string' ? newParentPre263.__zwHandle : null; } catch (_e263ph) {}
+      try { psPre263 = typeof newParentPre263.__zwSelector === 'string' ? newParentPre263.__zwSelector : null; } catch (_e263ps) {}
+      var keyedPre263 = phPre263 != null || psPre263 != null;
+      var preParent263 = function (cont) {
+        if (cont === newParentPre263) return true;
+        if (!cont || !keyedPre263) return false;
+        try {
+          if (phPre263 != null && typeof cont.__zwHandle === 'string') return cont.__zwHandle === phPre263;
+          if (psPre263 != null && typeof cont.__zwSelector === 'string') return cont.__zwSelector === psPre263;
+        } catch (_e263pc) {}
+        return false;
+      };
+      var preHit263 = false;
+      for (var _r263pre = 0; _r263pre < regs263.length; _r263pre++) {
+        var rgPre263 = regs263[_r263pre];
+        if (!rgPre263) continue;
+        try {
+          var scPre263 = rgPre263.startContainer;
+          if (scPre263 && !_zwDeadContainer352(scPre263) && preParent263(scPre263)) { preHit263 = true; break; }
+          var ecPre263 = rgPre263.endContainer;
+          if (ecPre263 && !_zwDeadContainer352(ecPre263) && preParent263(ecPre263)) { preHit263 = true; break; }
+        } catch (_e263pre) {}
+      }
+      if (!preHit263) return;
       // R350：插入节点所在树之外的条目不可能匹配（跨树守卫，同上）。
       var insRoot263 = _zwRangeRootOf(inserted263);
       var newParent263 = null, newIndex263 = -1;
