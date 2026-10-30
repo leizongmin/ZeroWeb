@@ -255,3 +255,19 @@ pub fn run_css_masking_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
 pub fn run_css_backgrounds_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-backgrounds", filter)
 }
+
+/// Run the pinned upstream css-transforms testharness subset
+/// （css-testharness-compat goal M3 扩面批次 4——transform/rotate/scale/
+/// translate 解析、序列化与计算值断言面，top15 分母 5,516 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_transforms_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-transforms", filter)
+}
+
+/// Run the pinned upstream css motion path testharness subset（扫描根
+/// `css/motion`——上游目录名无 css- 前缀；css-testharness-compat goal M3
+/// 扩面批次 4——offset-* 运动路径解析与计算值断言面，top15 分母 4,959
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_motion_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/motion", filter)
+}

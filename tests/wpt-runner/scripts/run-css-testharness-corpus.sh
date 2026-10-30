@@ -58,6 +58,8 @@ ONLY_SUBSTR="${CSS_CORPUS_ONLY_SUBSTR:-}"
 # （css-values → testharness-css-values）；selectors 历史命名特殊（无 css- 前缀）。
 case "${CORPUS}" in
   selectors) SUBCMD=testharness-selectors ;;
+  # motion 上游目录名无 css- 前缀（css/motion），历史命名特例同 selectors。
+  motion) SUBCMD=testharness-css-motion ;;
   css-*) SUBCMD="testharness-${CORPUS}" ;;
   *) echo "usage: $0 <css-values|selectors|css-variables|css-color|css-align|css-sizing|...> [runner]" >&2; exit 2 ;;
 esac

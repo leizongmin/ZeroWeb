@@ -67,6 +67,12 @@ DIRS=(
   "css/css-anchor-position"
   "css/css-masking"
   "css/css-backgrounds"
+  # M3 扩面批次 4：css-transforms（5,516 子测试 / transform 解析序列化）+
+  # motion（4,959 / offset-* 运动路径——上游目录名 css/motion 无 css- 前缀，
+  # runner 扫描根同名单点）。两目录均深挖全量首拉（本地原为空/精选仓子集
+  # ——transforms 若已含顶层 .html 会走幂等快路径，补差口径同 fonts）。
+  "css/css-transforms"
+  "css/motion"
   # css 面共享 helper 目录（/css/support/parsing-testcommon.js 等——runner
   # script fetcher 按绝对路径解析到 wpt-data/css/support；selectors focus-visible
   # 解析族 32 子测试依赖。css-testharness-compat M0 试点实测补拉）。

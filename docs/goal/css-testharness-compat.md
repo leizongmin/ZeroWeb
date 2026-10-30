@@ -1,8 +1,8 @@
 # CSS testharness 面 — css/* 目录 CSSOM/style API 语料
 
-**版本**: v1.6
-**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1–3 完成（十二目录统一基线 53,293 子测试 15,176 Pass = 28.5%，批次 2/3 六目录 parity 全 IDENTICAL），M4 未启动
+**版本**: v1.7
+**日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 批次 1–4 完成（十四目录统一基线 54,424 子测试 15,396 Pass = 28.3%，批次 2/3/4 八目录 parity 全 IDENTICAL），M3 剩 css-grid / css-text 重量级轮次，M4 未启动
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
@@ -145,8 +145,14 @@ css-variables variable-s、css-values calc，197 案）实测斜率 0.06–0.82 
   挂账）；本地深挖首拉须 GITHUB_TOKEN 认证（未认证 60 req/h 会 403 降级
   跳过）；backgrounds 精选仓 1 页陈旧重拉对齐 pin。证据：
   evidence/2026-10-30-m3-batch3-anchor-position-masking-backgrounds.md。
-  批次 4 起 top15 其余：css-grid / css-text 重量级独立轮次 +
-  css-transforms（motion 可顺带）。）
+  批次 4 完成 2026-10-30：css-transforms / css-motion 入账，十四目录
+  统一基线 54,424 子测试 15,396 Pass = 28.3%，parity 全 IDENTICAL；
+  transforms 精选仓 2 页陈旧定向重拉（jsdelivr 301 须 `curl -sfL`，
+  "文件数一致 ≠ 内容一致"第三次实证）；`/web-animations/testcommon.js`
+  缺失的 createDiv 簇按 WAAPI 划界归口；interpolation-testcommon.js
+  setup 的 target.style undefined 簇（32+22 子测）引擎域挂账。证据：
+  evidence/2026-10-30-m3-batch4-transforms-motion.md。
+  批次 5 起 top15 其余：css-grid / css-text 重量级独立轮次。）
 - **M4**：coverage 复测收口（DC-4）+ wpt-suites.csv 汇总行。
 
 ## 依赖约束（run-rules §9）
