@@ -125,6 +125,52 @@ pub(crate) fn resolve_tree_definite_real_length(value: &LengthValue, style: &Com
     }
 }
 
+/// R5346：quirks 模式 % 高解析开关（进程级单读，R5108 教训——per-node env::var 进
+/// bench 热路径致微基准超预算）。IFC 侧消费见 inline/collect_items R5346 臂。
+pub(crate) fn quirks_pct_height_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("ZW_QUIRK_PCT_HEIGHT").as_deref() != Ok("0"))
+}
+
+/// R5346：quirks 模式百分比高的解析基准——自 `start` 的父链向上找最近「可解析确定
+/// 高」祖先：height 定值（Px/Em…）→ 即基准；height 百分比 → 对其父链递归同规则解析
+/// 再按比乘；auto/关键字 → 跳过继续向上（quirks height quirk：auto 高 CB 不阻断百分
+/// 比解析，taffy 块级同域臂见 engine/sizing.rs `quirks_nearest_definite`）。
+/// 穿 table 域返回 None（单元格高度模型不同，FIXME 语境语义另案）；无确定祖先返回
+/// None（ICB/视口兜底不实现——FIXME，无确定祖先维持自然尺寸回退零扰动）。
+pub(crate) fn quirks_pct_height_basis(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    start: NodeId,
+    depth: usize,
+) -> Option<f32> {
+    if depth > 32 {
+        return None;
+    }
+    let mut cur = start;
+    while let Some(p) = doc.parent_node(cur) {
+        cur = p;
+        if let Some(node) = doc.get(p)
+            && let NodeKind::Element(e) = &node.kind
+            && matches!(
+                e.local_name(),
+                "table" | "td" | "th" | "tr" | "thead" | "tbody" | "tfoot"
+            )
+        {
+            return None;
+        }
+        let Some(s) = styles.get(&p) else { continue };
+        if let LengthValue::Percentage(pct) = &s.height {
+            let basis = quirks_pct_height_basis(doc, styles, p, depth + 1)?;
+            return Some(basis * (*pct as f32) / 100.0);
+        }
+        if let Some(px) = resolve_tree_definite_real_length(&s.height, s) {
+            return Some(px);
+        }
+    }
+    None
+}
+
 /// R4163：computed 样式的水平 frame（左右 border + padding）——border-box 解析宽扣减
 /// content 宽用。CSS2 §8 box model；replaced ratio 配对维度修正（replaced-element-031）。
 /// R5332：sizing.rs flex stretch 目标（容器 content box cross）同用。

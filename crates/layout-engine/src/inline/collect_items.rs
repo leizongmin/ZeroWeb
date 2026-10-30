@@ -1019,6 +1019,47 @@ is_isolated_bidi: style.is_some_and(|s| {
                                     w = transferred.min(max_w).max(w);
                                 }
                             }
+                            // R5346（quirks 模式 % 高 + CSS2 §10.3.2 auto 侧比回传）：
+                            // quirks 文档中替换元素 CSS height 百分比在 auto 高 CB 链上按
+                            // 最近确定祖先高解析（quirks height quirk；taffy 块级同域臂见
+                            // sizing.rs `quirks_nearest_definite`），CSS 宽 auto 时按有效比
+                            // 回传（§10.3.2：显式侧定值定盒、auto 侧由比推导；attr 宽高仅供
+                            // 比）。driving: intrinsic-percent-replaced-004（flex h200 >
+                            // float h50%→100 > div auto > canvas h:100% → 100×100，旧滞留
+                            // attr 10×10 窄条）。measure/final 双趟同径；视口兜底不实现
+                            //（FIXME——无确定祖先维持自然回退零扰动）。kill-switch
+                            // `ZW_QUIRK_PCT_HEIGHT=0`。
+                            if crate::tree::quirks_pct_height_enabled()
+                                && !self.vertical
+                                && matches!(doc.quirks_mode(), zero_dom::QuirksMode::Quirks)
+                                && let Some(s) = style
+                                && matches!(s.height, LengthValue::Percentage(_))
+                                && elem_data.local_name() != "audio"
+                                && let Some(basis) =
+                                    crate::tree::quirks_pct_height_basis(doc, styles, child_id, 0)
+                            {
+                                let pct = match &s.height {
+                                    LengthValue::Percentage(p) => *p as f32,
+                                    _ => 0.0,
+                                };
+                                h = (basis * pct / 100.0).max(0.0);
+                                // CSS 宽 auto：按比回传（attr 宽失效——§10.3.2 显式高侧定）。
+                                if matches!(s.width, LengthValue::Auto) {
+                                    let attr_w =
+                                        Self::parse_html_dimension_attr(elem_data.get_attribute("width"));
+                                    let attr_h =
+                                        Self::parse_html_dimension_attr(elem_data.get_attribute("height"));
+                                    let ratio = s
+                                        .aspect_ratio
+                                        .filter(|&r| r > 0.0)
+                                        .or_else(|| (attr_w > 0.0 && attr_h > 0.0).then_some(attr_w / attr_h));
+                                    if let Some(r) = ratio
+                                        && r > 0.0
+                                    {
+                                        w = (h * r).max(0.5);
+                                    }
+                                }
+                            }
                             // R3997（css-sizing-4 §4.1/§4.2 transferred size）：CSS aspect-ratio
                             // （或 `auto <ratio>` 的 ratio 部分）+ 恰一侧显式、另一侧 auto 时，
                             // auto 侧由显式侧 ×/÷ ratio 推导（img 分支 R1578 固有比推导的 CSS

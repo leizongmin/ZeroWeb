@@ -917,3 +917,8 @@ mod r5334_flex_scroll_item_min_tests;
 /// R5338（css-flexbox-1 §8.5 baseline alignment）：flex 叶首行基线通道锚——
 /// baseline 对齐三项异高同顶（margin 参与基线偏移）、flex-start 守卫不变。
 mod r5338_flex_leaf_baseline_tests;
+
+/// R5346（quirks.spec #the-percentage-height-calculation-quirk）：quirks % 高的
+/// flex/grid item 链语义——item 入链落账、非 item 后代 definite 链放行、item 自身
+/// CB 不明确时 quirk 不适用。
+mod r5346_quirks_pct_height_flex_item_chain_tests;

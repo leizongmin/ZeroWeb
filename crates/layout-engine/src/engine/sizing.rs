@@ -2551,7 +2551,11 @@ impl LayoutEngine {
             // R2107：最近 definite-height 祖先的内容高度（穿透 auto-height 祖先，
             // 不像 cb_definite 在 auto 上 reset）。CSS Quirks §percentage-height：百分比高度
             // 解析应针对「first ancestor with a defined height」非恒 ICB——有 definite 祖先时
-            // 解析对其高度，否则回退 ICB。None 仅理论（root 起手 Some(viewport)）。
+            // 解析对其高度，否则回退 ICB。R5346：root 种子由 Some(viewport) 改 **None**——
+            // 旧种子使 `is_some()` 恒真，R4129「替换元素无最近 definite 祖先时走 attr 固有
+            // 回退（不虚构 ICB 满高）」的意图被击穿（裸 quirks canvas h:100% 解到视口 600）
+            // 且 flex gate 无法区分真实祖先与 ICB 兜底；None = 链内无真实 definite 祖先，
+            // 非替换块回退语义不变（base = unwrap_or(viewport) 同值）。
             quirks_nearest_definite: Option<f32>,
             quirks_mode: bool,
             viewport_height: f32,
@@ -2611,8 +2615,21 @@ impl LayoutEngine {
                 // 子元素 % 高 compute-to-auto（box-sizing-border-box-003：abspos 400 容器内
                 // height:100% 子塌 79，应 400）。此处 abspos 仅跳过自身百分比解析臂，
                 // definite 臂照常传播。
+                // R5346：flex/grid item 自身 height 百分比在 CB 明确时也入链——旧 gate 整树
+                // 跳过 item 的 % 解析（taffy 原生算 item 高，值同），但 `my_definite` 不落账，
+                // 后代 quirks 最近 definite 祖先停在与 item 无关的容器高（intrinsic-percent-
+                // replaced-004：flex h200 > item(float) h50% → nearest 停 200，canvas h:100%
+                // 解 200 宽 200 方，chromium 应 float 先定 100 → canvas 100×100）。入链写定值
+                // 与 taffy 原生解析同值（明确 CB 下 % 直积），只修复后代链路；CB 不明确时仍
+                // 跳过（R2091 gate 语义不变）。kill-switch `ZW_QUIRK_PCT_HEIGHT=0`（特性总闸，
+                // 与 inline/collect_items R5346 臂共用）。
                 if (is_abs && resolve_sizing_definite_real_length(&s.height, s).is_some())
-                    || (!is_abs && (!parent_is_flex_grid || grid_replaced_pct_indefinite))
+                    || (!is_abs
+                        && (!parent_is_flex_grid
+                            || grid_replaced_pct_indefinite
+                            || (crate::tree::quirks_pct_height_enabled()
+                                && matches!(s.height, LengthValue::Percentage(_))
+                                && cb_definite.is_some())))
                 {
                     match &s.height {
                         // R4086（css-sizing-4 §7）：`stretch` / `-webkit-fill-available` 高度。
@@ -2689,10 +2706,26 @@ impl LayoutEngine {
                             None => {
                                 // R2170 kill-switch：ZW_QUIRKS_PCT_FLEX_GATE=0 禁用 flex/grid gate
                                 //（回退旧行为——flex 子树内仍按 ICB quirks 解析，驱动测试将 fail）。
-                                // R2170：flex/grid 子树内禁用 ICB quirks（kill-switch
-                                // ZW_QUIRKS_PCT_FLEX_GATE=0 回退旧行为）。
-                                let quirk_blocked_by_flex_grid =
-                                    inside_flex_grid && std::env::var("ZW_QUIRKS_PCT_FLEX_GATE").as_deref() != Ok("0");
+                                // R2170：flex/grid 子树内禁用 **ICB 兜底** quirks（驱动案
+                                // flex-aspect-ratio-cross-size-002：嵌套 flex 内后代 height:100%
+                                // 不得按视口高 inflate——chromium quirks 实测 flex 子树内无
+                                // definite 祖先时 % 高 compute-to-auto）。R5346 收窄：链内存在
+                                // 最近 definite 祖先（quirks_nearest_definite=Some）时放行——
+                                // 解析目标是真实 DOM 祖先高非视口，无 inflate 风险，与链外
+                                // R2107 语义一致（chromium 探针：flex h200 > float h50% > div >
+                                // canvas h:100% → 100×100，intrinsic-percent-replaced-004 旧被
+                                // 整门挡到 else 臂 attr 固有 10×10 窄条）。R5346 二次收窄：
+                                // flex/grid **直接子（item）**自身仍整门挡——quirks.spec
+                                // #the-percentage-height-calculation-quirk 对 item 不适用
+                                //（grid-item-percentage-quirk-001：canvas h:200% 作 grid item
+                                // 不得对 100px 祖先解 200 红透，须滞留 attr 固有 10×10）。
+                                // kill-switch：特性总闸 ZW_QUIRK_PCT_HEIGHT=0 还原 R2170 整门；
+                                // ZW_QUIRKS_PCT_FLEX_GATE=0 还原 R2170 之前行为。
+                                let quirk_blocked_by_flex_grid = inside_flex_grid
+                                    && std::env::var("ZW_QUIRKS_PCT_FLEX_GATE").as_deref() != Ok("0")
+                                    && (quirks_nearest_definite.is_none()
+                                        || parent_is_flex_grid
+                                        || !crate::tree::quirks_pct_height_enabled());
                                 // R4129：替换元素 + quirks 同链解析的 gate（见下注）——
                                 // 替换元素仅在 quirks_nearest_definite 有值（最近 definite
                                 // 祖先存在）时入链；无则走 else 臂 attr 固有回退（不虚构
@@ -2963,7 +2996,9 @@ impl LayoutEngine {
             true,
             false,
             false,
-            Some(viewport_height),
+            // R5346：见签名注——None = 链内无真实 definite 祖先（ICB 兜底由
+            // unwrap_or(viewport) 承担）。
+            None,
             quirks_mode,
             viewport_height,
             taffy_tree,
