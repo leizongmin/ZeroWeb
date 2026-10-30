@@ -1632,7 +1632,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
 }
 
 /// R4574：radius 垂直轴槽位同步（`apply_initial_value` 重置/初始语义，角序 [tl, tr, br, bl]）。
-/// 源 None（未声明）→ 该槽位回 Px(0) 哨兵（随 rx）；双侧皆 None 零分配。
+/// 槽位值语义为「该角垂直声明值」（R5341）：重置角随源槽位或初始 0；双侧皆 None 零分配。
 fn inherit_radius_y_slot(style: &mut ComputedStyle, source: &ComputedStyle, index: usize) {
     let ry = source
         .border_radius_y
@@ -1642,12 +1642,19 @@ fn inherit_radius_y_slot(style: &mut ComputedStyle, source: &ComputedStyle, inde
         (None, None) => {}
         (ry, Some(slot)) => slot[index] = ry.unwrap_or(LengthValue::Px(0.0)),
         (Some(ry), None) => {
+            // 建槽默认同 apply.rs：其余角存当前水平声明值副本，不因建槽丢垂直轴。
+            let declared = [
+                &style.border_top_left_radius,
+                &style.border_top_right_radius,
+                &style.border_bottom_right_radius,
+                &style.border_bottom_left_radius,
+            ];
             let slot = style.border_radius_y.get_or_insert_with(|| {
                 Box::new([
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
+                    declared[0].clone(),
+                    declared[1].clone(),
+                    declared[2].clone(),
+                    declared[3].clone(),
                 ])
             });
             slot[index] = ry;

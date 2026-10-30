@@ -460,29 +460,29 @@ pub fn apply_property_value_with_quirks(
         }
         "border-top-left-radius" => {
             if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                set_radius_y_slot(style, 0, ry, &rx);
                 style.border_top_left_radius = rx;
-                set_radius_y_slot(style, 0, ry);
                 return true;
             }
         }
         "border-top-right-radius" => {
             if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                set_radius_y_slot(style, 1, ry, &rx);
                 style.border_top_right_radius = rx;
-                set_radius_y_slot(style, 1, ry);
                 return true;
             }
         }
         "border-bottom-right-radius" => {
             if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                set_radius_y_slot(style, 2, ry, &rx);
                 style.border_bottom_right_radius = rx;
-                set_radius_y_slot(style, 2, ry);
                 return true;
             }
         }
         "border-bottom-left-radius" => {
             if let Some((rx, ry)) = parse_radius_two_axis(value, parse_length_fn) {
+                set_radius_y_slot(style, 3, ry, &rx);
                 style.border_bottom_left_radius = rx;
-                set_radius_y_slot(style, 3, ry);
                 return true;
             }
         }
@@ -1371,7 +1371,7 @@ fn border_radius_length_is_valid(raw: &str, value: &LengthValue) -> bool {
 }
 
 /// R4574：border-*-radius 长hand 双轴值——`<h-radius> [ <v-radius> ]?`（CSS Backgrounds
-/// §5.5 椭圆角；单值 = 两轴同值）。返 (rx, ry)；ry = None 哨兵表「未声明，消费侧随 rx」。
+/// §5.5 椭圆角；单值 = 两轴同值）。返 (rx, ry)；ry = None 表垂直分量未声明，槽位存声明 rx 副本。
 /// https://drafts.csswg.org/css-backgrounds-3/#border-radius
 fn parse_radius_two_axis(
     value: &str,
@@ -1396,19 +1396,30 @@ fn parse_radius_two_axis(
     }
 }
 
-/// R4574：写四角垂直轴槽位（角序 [tl, tr, br, bl]）。ry=None（单值声明）回 Px(0) 哨兵；
+/// R4574：写四角垂直轴槽位（角序 [tl, tr, br, bl]）。ry=None（单值声明）回**水平声明值
+/// 副本**（R5341——css-backgrounds-3 §5.1 两轴百分比各相对对应边，单值声明的垂直
+/// 半径 = 同声明值重按高解析，消费侧按声明值直读无哨兵分支；原 Px(0) 哨兵使
+/// `50%` 于槽位存在时垂直轴误 0）；显式 `h 0` 的 Some(Px(0)) 与哨兵不再歧义。
 /// 双侧皆缺省零分配（None 常态零开销——ComputedStyle 每节点一份，R3867 帧体量纪律）。
-fn set_radius_y_slot(style: &mut ComputedStyle, index: usize, ry: Option<LengthValue>) {
+fn set_radius_y_slot(style: &mut ComputedStyle, index: usize, ry: Option<LengthValue>, rx_declared: &LengthValue) {
     match (ry, style.border_radius_y.as_mut()) {
         (None, None) => {}
-        (ry, Some(slot)) => slot[index] = ry.unwrap_or(LengthValue::Px(0.0)),
+        (ry, Some(slot)) => slot[index] = ry.unwrap_or_else(|| rx_declared.clone()),
         (Some(ry), None) => {
+            // 建槽时其余角存**当前水平声明值副本**（语义：槽位值恒为该角垂直声明值；
+            // 早前单值声明角不因建槽丢垂直轴）。Px(0) 默认仅当该角声明亦为 0。
+            let declared = [
+                &style.border_top_left_radius,
+                &style.border_top_right_radius,
+                &style.border_bottom_right_radius,
+                &style.border_bottom_left_radius,
+            ];
             let slot = style.border_radius_y.get_or_insert_with(|| {
                 Box::new([
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
-                    LengthValue::Px(0.0),
+                    declared[0].clone(),
+                    declared[1].clone(),
+                    declared[2].clone(),
+                    declared[3].clone(),
                 ])
             });
             slot[index] = ry;

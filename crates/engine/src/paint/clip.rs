@@ -502,6 +502,8 @@ pub struct PrimitiveCounts {
     pub glyphs: usize,
     /// 描边图元数量。
     pub strokes: usize,
+    /// 路径填充图元数量（R5341：椭圆角背景降级发射亦入此账，供事后裁剪定界）。
+    pub path_fills: usize,
 }
 
 impl PrimitiveCounts {
@@ -515,6 +517,7 @@ impl PrimitiveCounts {
             images: p.images.len(),
             glyphs: p.glyphs.len(),
             strokes: p.strokes.len(),
+            path_fills: p.path_fills.len(),
         }
     }
 }
@@ -614,6 +617,68 @@ pub fn clip_all_primitives_to_rect(primitives: &mut RenderPrimitives, from: &Pri
             stroke.width = 0.0;
         }
     }
+    // R5341：path_fill 同窗裁剪（Sutherland–Hodgman，凸裁剪窗 = 矩形）——ry≠rx 椭圆
+    // 角背景自发射起即为 path_fill（painter mod.rs 背景发射降级路径），此前 path_fill
+    // 不在事后矩形裁剪覆盖面，clip-path:inset 下整块漏出（inner-border-non-renderable
+    // 实证；R5180 弧带 / border-shape 等既有 path_fill 同类暴露一并闭合）。顶点原地
+    // 收窄，draw_order 的 op 索引与 z 序不变。
+    for pf in primitives.path_fills.iter_mut().skip(from.path_fills) {
+        pf.vertices = clip_polygon_to_rect_flat(&pf.vertices, clip_rect);
+    }
+}
+
+/// Sutherland–Hodgman：subject 多边形（flat `[x0, y0, x1, y1, …]`）对凸裁剪窗 `r` 求交。
+/// 逐半平面裁剪（left/right/top/bottom），顶点序保持 subject 走向；subject 凹时可能
+/// 产生零宽桥边，path_fill even-odd 光栅化下桥边面积抵消（与 R5180 keyhole 切点同理）。
+/// 顶点 < 3（退化/全在窗外）返回空——渲染端见空顶点跳过。
+fn clip_polygon_to_rect_flat(vertices: &[f32], r: &Rect) -> Vec<f32> {
+    let mut poly: Vec<(f32, f32)> = vertices.as_chunks::<2>().0.iter().map(|c| (c[0], c[1])).collect();
+    if poly.len() < 3 {
+        return Vec::new();
+    }
+    // 单半平面裁剪：inside 判定 + 边界交点（沿 prev→cur 线性插值）。
+    fn halfplane(
+        poly: Vec<(f32, f32)>,
+        inside: impl Fn(f32, f32) -> bool,
+        to_clip: impl Fn(f32, f32) -> f32,
+        boundary: f32,
+    ) -> Vec<(f32, f32)> {
+        let mut out = Vec::with_capacity(poly.len() + 1);
+        for i in 0..poly.len() {
+            let cur = poly[i];
+            let prev = poly[(i + poly.len() - 1) % poly.len()];
+            let (ci, pi) = (inside(cur.0, cur.1), inside(prev.0, prev.1));
+            if ci != pi {
+                // 交点：跨越边界的参数 t 沿 prev→cur。
+                let d = to_clip(cur.0, cur.1) - to_clip(prev.0, prev.1);
+                let t = if d.abs() > f32::EPSILON {
+                    (boundary - to_clip(prev.0, prev.1)) / d
+                } else {
+                    0.0
+                };
+                let lerp = |a: f32, b: f32| a + (b - a) * t;
+                out.push((lerp(prev.0, cur.0), lerp(prev.1, cur.1)));
+            }
+            if ci {
+                out.push(cur);
+            }
+        }
+        out
+    }
+    let (l, t, rgt, b) = (r.left(), r.top(), r.right(), r.bottom());
+    poly = halfplane(poly, |x, _| x >= l, |x, _| x, l);
+    poly = halfplane(poly, |x, _| x <= rgt, |x, _| x, rgt);
+    poly = halfplane(poly, |_, y| y >= t, |_, y| y, t);
+    poly = halfplane(poly, |_, y| y <= b, |_, y| y, b);
+    if poly.len() < 3 {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(poly.len() * 2);
+    for (x, y) in poly {
+        out.push(x);
+        out.push(y);
+    }
+    out
 }
 
 /// R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：对快照之后新增的

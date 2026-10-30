@@ -314,16 +314,18 @@ impl super::Painter {
                 let border_color = resolve_color_current(&style.border_top_color, &style.color);
                 let full_r = [spec.top_left, spec.top_right, spec.bottom_right, spec.bottom_left];
                 // 内圈 = padding edge（css-backgrounds-3 §5.5：内半径 max(0, r − bw)；
-                // 等宽时圆心不变，与外圈同心）。
+                // 等宽时圆心不变，与外圈同心）。R5341：垂直轴同式（等宽 → 同 band_b）。
                 let inner_radii = full_r.map(|r| (r - band_b).max(0.0));
+                let inner_ry = spec.ry.map(|r| (r - band_b).max(0.0));
                 let ring = crate::paint::helpers::concat_ring_vertices(
-                    crate::paint::helpers::rounded_corner_polygon_in_box(abs_x, abs_y, w, h, full_r),
+                    crate::paint::helpers::rounded_corner_polygon_in_box(abs_x, abs_y, w, h, full_r, spec.ry),
                     crate::paint::helpers::rounded_corner_polygon_in_box(
                         abs_x + band_b,
                         abs_y + band_b,
                         w - 2.0 * band_b,
                         h - 2.0 * band_b,
                         inner_radii,
+                        inner_ry,
                     ),
                 );
                 // even-odd：外+内顶点串联 → 扫描线仅填环带（同 BorderShapePlan::Fill）。

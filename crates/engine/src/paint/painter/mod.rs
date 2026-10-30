@@ -5429,6 +5429,9 @@ impl Painter {
                             top_right: clamp_half(inner(radii.top_right, cut), w, h),
                             bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
                             bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                            // R5341：滚动扩展段内圆角垂直轴同式递减（FIXME：content 盒
+                            // 椭圆角越界裁剪的逐轴钳制细化，无 corpus 驱动案）。
+                            ry: radii.ry.map(|r| clamp_half(inner(r, cut), w, h)),
                         });
                     }
                     _ => {
@@ -5440,6 +5443,7 @@ impl Painter {
                             top_right: clamp_half(inner(radii.top_right, cut), w, h),
                             bottom_right: clamp_half(inner(radii.bottom_right, cut), w, h),
                             bottom_left: clamp_half(inner(radii.bottom_left, cut), w, h),
+                            ry: radii.ry.map(|r| clamp_half(inner(r, cut), w, h)),
                         });
                         clip_x = abs_x + box_node.border_left;
                         clip_y = abs_y + box_node.border_top;
@@ -5527,22 +5531,37 @@ impl Painter {
                 if cut <= 0.0 {
                     radii
                 } else {
+                    // R5341：padding/content 盒裁剪内半径垂直轴同式（§5.5 max(0, r−cut)）。
                     super::helpers::BorderRadiusSpec {
                         top_left: (radii.top_left - cut).max(0.0),
                         top_right: (radii.top_right - cut).max(0.0),
                         bottom_right: (radii.bottom_right - cut).max(0.0),
                         bottom_left: (radii.bottom_left - cut).max(0.0),
+                        ry: radii.ry.map(|r| (r - cut).max(0.0)),
                     }
                 }
             });
-            self.primitives.add_rounded_rect(RoundedRectPrimitive {
-                rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
-                color: resolve_color_current(&style.background_color, &style.color),
-                top_left_radius: r.top_left,
-                top_right_radius: r.top_right,
-                bottom_right_radius: r.bottom_right,
-                bottom_left_radius: r.bottom_left,
-            });
+            // R5341（css-backgrounds-3 §5.5 椭圆角）：ry ≠ rx 时 RoundedRectPrimitive
+            // 单轴圆角不足以表达（原语半径无垂直分量）——降级路径填充多边形
+            //（rounded_corner_polygon_in_box 椭圆弧采样，与 R5180 边框弧带同光栅化
+            // 路径）；ry == rx（常态 + kill-switch）维持圆角矩形原语逐位不变。
+            let rx4 = [r.top_left, r.top_right, r.bottom_right, r.bottom_left];
+            if r.ry != rx4 {
+                let poly =
+                    crate::paint::helpers::rounded_corner_polygon_in_box(clip_x, clip_y, clip_w, clip_h, rx4, r.ry);
+                let flat: Vec<f32> = poly.into_iter().flat_map(|(x, y)| [x, y]).collect();
+                self.primitives
+                    .add_path_fill(flat, resolve_color_current(&style.background_color, &style.color));
+            } else {
+                self.primitives.add_rounded_rect(RoundedRectPrimitive {
+                    rect: Rect::new(clip_x, clip_y, clip_w, clip_h),
+                    color: resolve_color_current(&style.background_color, &style.color),
+                    top_left_radius: r.top_left,
+                    top_right_radius: r.top_right,
+                    bottom_right_radius: r.bottom_right,
+                    bottom_left_radius: r.bottom_left,
+                });
+            }
         }
     }
 

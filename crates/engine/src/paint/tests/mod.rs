@@ -86,6 +86,8 @@ mod r5320_first_line_bg_tests;
 mod r5321_selection_transparent_bg_tests;
 /// R5322 pre 容器 `\n` 强制断行 strut（CSS Text 3 §5.2 / CSS2 §10.8.1）。
 mod r5322_pre_newline_strut_tests;
+/// R5341 椭圆圆角双轴解析（css-backgrounds-3 §5.1/§5.5，非方盒 50% 椭圆非胶囊）。
+mod r5341_elliptic_radius;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

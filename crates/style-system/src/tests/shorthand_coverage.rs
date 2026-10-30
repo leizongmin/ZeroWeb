@@ -588,6 +588,50 @@ fn test_border_side_radius_slash_per_corner_pair() {
 }
 
 #[test]
+/// R5341：纯单值声明无槽位；先 `border-radius: 50%` 后双值长hand覆盖建槽时，
+/// 未覆盖角存**水平声明值副本**（Percent 原样保留，paint 按高重解析）——
+/// 旧 Px(0) 哨兵使这些角垂直轴误 0。
+fn test_r5341_slot_creation_captures_declared_rx() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(
+        &doc,
+        div,
+        &[("border-radius", "50%"), ("border-top-right-radius", "10px 5px")],
+    );
+    assert_eq!(s.border_top_left_radius, LengthValue::Percentage(50.0));
+    assert_eq!(s.border_top_right_radius, LengthValue::Px(10.0));
+    let ry = s.border_radius_y.as_ref().expect("双值覆盖应建槽");
+    assert_eq!(ry[1], LengthValue::Px(5.0), "tr 显式垂直分量");
+    assert_eq!(ry[0], LengthValue::Percentage(50.0), "tl 建槽捕获声明副本（非 Px(0)）");
+    assert_eq!(ry[2], LengthValue::Percentage(50.0), "br 同上");
+    assert_eq!(ry[3], LengthValue::Percentage(50.0), "bl 同上");
+}
+
+#[test]
+/// R5341：纯单值声明不建槽（垂直轴由 paint 按声明值重解析）；显式 `h 0` 双值
+/// 建槽且槽位确为 Px(0)——「未声明」与「声明 0」不再共享哨兵。
+fn test_r5341_no_slot_for_single_value_explicit_zero_declared() {
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-radius", "20px")]);
+    assert!(s.border_radius_y.is_none(), "纯单值声明不建槽");
+
+    let (doc, _html, _body, div, _p) = make_test_dom();
+    let s = compute_style(&doc, div, &[("border-radius", "20px / 0px")]);
+    let ry = s.border_radius_y.as_ref().expect("显式 0 双值应建槽");
+    assert_eq!(
+        ry.as_ref(),
+        &[
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0),
+            LengthValue::Px(0.0)
+        ],
+        "显式垂直 0 逐角入槽"
+    );
+    assert_eq!(s.border_top_left_radius, LengthValue::Px(20.0));
+}
+
+#[test]
 /// R5181：逻辑侧简写按 horizontal-tb + ltr 映射物理角（inline-start → left 侧：
 /// top-left + bottom-left）；FIXME 垂直书写模式映射见 shorthand dispatcher 注。
 fn test_border_inline_start_radius_logical_mapping() {
