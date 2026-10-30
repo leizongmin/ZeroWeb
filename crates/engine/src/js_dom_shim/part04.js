@@ -13128,7 +13128,10 @@
             // 语料管线——见 part03 `_zwSelStampParseTree` 注释）。置于 R304 槽点后：
             // 上行路径收集依赖 parentNode 重指、登记表/重锚依赖 `_zwSelPendingParent`
             // 已盖。host 路径（handle 域）不走此门（R48/`_textHandles` 既有写路径）。
-            if (sel && typeof _zwSelStampParseTree === 'function') {
+            // `__zwCeWorldSyncing`：CE 世界同步回灌（part01 `__zw_ce_caret_range`）
+            // 期间不 stamp——回灌子树归 plain 补偿域（join 语料撞车合并仲裁，
+            // 2026-10-31）。
+            if (sel && !globalThis.__zwCeWorldSyncing && typeof _zwSelStampParseTree === 'function') {
               try { _zwSelStampParseTree(_ihAdded, sel, _r304HostProxy); } catch (_eSpT) {}
             }
             // M3 扩批 X：innerHTML 整体替换后 textTracks 集合同步（track-remove-by-setting-

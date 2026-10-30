@@ -8278,7 +8278,9 @@
     // 陈旧树上早退（g6 守卫/recorded=0，join 语料同页第二动作起成片 no-op）。
     // 同步：raw 选区锚链上的 contenteditable 宿主（页面家族）非 el 本体时，以其
     // innerHTML 回灌 el 子树——两家族 fused 序列化同源，内容一致时为幂等重建；
-    // 同世界 caret（连续键入流）contains 命中零开销跳过。
+    // 同世界 caret（连续键入流）contains 命中零开销跳过。`_zwSynced`：本轮是否
+    // 发生过世界同步回灌（决定一级重锚是否让位，见下）。
+    var _zwSynced = false;
     try {
       var _selSync = (typeof _getSelection === 'function') ? _getSelection() : null;
       var _scSync = _selSync && _selSync._ranges && _selSync._ranges[0]
@@ -8292,7 +8294,14 @@
         if (_phSync && _phSync !== el) {
           var _htmlSync = '';
           try { _htmlSync = String(_phSync.innerHTML || ''); } catch (_eSh) {}
-          if (_htmlSync !== '') { try { el.innerHTML = _htmlSync; } catch (_eSw) {} }
+          if (_htmlSync !== '') {
+            // 撞车合并仲裁（2026-10-31）：回灌子树归本文 plain 补偿域——world-sync
+            // 期间不发 D1 stamping（part04 钩子查 `__zwCeWorldSyncing`；stamp 域
+            // 访问器移除面对回灌子树 remove 有缺口，语料 join 后残留 `<br>` 实证）。
+            _zwSynced = true;
+            globalThis.__zwCeWorldSyncing = true;
+            try { el.innerHTML = _htmlSync; } catch (_eSw) {} finally { globalThis.__zwCeWorldSyncing = false; }
+          }
         }
       }
     } catch (_eSync) {}
@@ -8301,8 +8310,11 @@
       var r0 = s._ranges[0];
       // 两级重锚（2026-10-31 撞车合并）：①登记表身份重锚（marker 语料管线 D1
       // stamping 域）命中即用；②未命中回落 sel-path 重解析（plain/陈旧补偿
-      // proxy 域）——kill-switch 下①恒 null，②兜底全量面。
-      var r2 = (typeof _zwCeReanchorRange === 'function') ? _zwCeReanchorRange(r0, el) : null;
+      // proxy 域）——kill-switch 下①恒 null，②兜底全量面。世界同步换代 el
+      // 子树的本轮调用跳过①：登记表旧代 tops 的 regIdx 指向换代前位次，一级
+      // 重锚把陈旧锚映射到错位节点（join 语料 paragraphs 1,428P→525P 实证），
+      // 交由②按 sel+path 重解析（位置正确）。
+      var r2 = (!_zwSynced && typeof _zwCeReanchorRange === 'function') ? _zwCeReanchorRange(r0, el) : null;
       if (r2) {
         try { s._ranges[0] = r2; } catch (_eCa) {}
         return r2;

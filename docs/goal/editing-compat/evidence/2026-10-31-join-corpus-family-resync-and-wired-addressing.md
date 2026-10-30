@@ -142,3 +142,23 @@ D1/D2/D3 独立落地，与本文 §3 修复链同源异构）。语义判定后
   `s24_flip` ua-display），结构推理归属并发 WIP（`computed_style.rs` 正被
   其编辑，display 计算域与本文触碰面零交叠；编译通过即排除测试引用已删
   变体），归因由并行轮组合态验证收口。
+
+## 9. 仲裁终验（组合态，2026-10-31）
+
+- **join 语料全套（3 文件，test-guard + `ZW_SCRIPT_TIMEOUT_MS=300000`）**：
+  **3,108P/4,410F**——对 fix7 逐测试 ID 对拍 **7,518/7,518 零漂移**
+  （P→F=0、F→P=0、ID 集合无增减）；paragraphs 单文件先行同值验证
+  （1,428P/2,028F，3,456/3,456 零漂移）。仲裁前组合态 1,395P 中
+  paragraphs 面曾跌至 525P、`ZW_SEL_PATH_MUTATION=0` 关臂探针 0P
+  （本方 D1 持久化已统一远端 wire，关闸同断本方通道——旁证 wire 统一
+  生效），两类交互缺陷的因果链由此锚定。
+- **make test 复验（engine lib 3,611P/11F）**：+2F 归因升级为实证——
+  `git stash` A/B 在撞车合并基座（无任何工作区改动）复跑两案**同样失败**
+  （r113 期望 `rgb(1, 2, 3) }` 实得尾分号形、s24 ua-display flip），即
+  rebase 拉入的渲染流 css/UA 域账（r113 期望形与 Chrome cssText 保留尾
+  分号行为相反，疑似序列化器 Chrome 对齐后测试未随动），本流不改不修，
+  记档待渲染流控制面认领。已知红集 9 逐一对应零新增。
+- `cargo fmt --all --check` ✓（含顺手补齐 s165 落地遗留的
+  `computed_style.rs`/`color_scheme_synthesis.rs` 两处格式化债，单独
+  提交）；`cargo clippy -p zero-webview -p zero-engine --all-targets` ✓
+  零告警。
