@@ -2,7 +2,7 @@
 
 **版本**: v1.8
 **日期**: 2026-10-27（立项，coverage-2026-10-27 对账驱动）；2026-10-30（M0 收口）；2026-10-30（M1 收口）；2026-10-30（M2 收口）；2026-10-30（M3 批次 1 + DC-3 CI 闭环）；2026-10-30（M3 批次 2）；2026-10-30（M3 批次 3）；2026-10-30（M3 批次 4）；2026-10-30（M3 批次 5——top15 收口）
-**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 完成（**top15 分母目录 15/15 全部入账**，十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%，批次 2–5 十目录 parity 全 IDENTICAL），M4（DC-4 coverage 复测收口）未启动
+**状态**: Active——M0/M1/M2 完成；DC-3 已由 CI 快照闭环（运行 40935989794：css/css-variables 58 files / 232 passes）；M3 完成（**top15 分母目录 15/15 全部入账**，十六目录统一基线 65,157 子测试 17,747 Pass = 27.2%，批次 2–5 十目录 parity 全 IDENTICAL）；M4 进行中——css-face 三分片接线已合入（62064f318），首次 coverage 运行 40997740139 被姊妹流 weekly 运行并发取消（concurrency cancel-in-progress），DC-4 数据改由姊妹流运行 41000541561（HEAD 含接线，css-face 三分片随跑）产出，轮询收口中
 **执行模式**: WPT 驱动（上游 css/* testharness corpus 为验收标尺）+ runner 基建（套件内存治理与 coverage 分片管道）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS API 面）
 
