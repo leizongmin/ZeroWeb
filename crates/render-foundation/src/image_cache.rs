@@ -1592,7 +1592,10 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         }
         pos += gct_size * 3;
     }
-    // 扫描块到首个图像描述符（0x2C）
+    // 扫描块到首个图像描述符（0x2C）。Graphic Control Extension（0x21 0xF9）携带
+    // 首帧的透明色标志（packed bit0）与透明色索引（第 5 字节）——spec gif89a §23；
+    // 多帧时每帧各有 GCE，静态首帧解码取图像描述符前最后一个 GCE。
+    let mut transparent: Option<u8> = None;
     loop {
         if pos >= bytes.len() {
             return Err("GIF no image descriptor".into());
@@ -1600,6 +1603,15 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         match bytes[pos] {
             0x2C => break,
             0x21 => {
+                // Graphic Control Extension：packed bit0 = 透明色标志，索引在
+                // [size, packed, delay lo, delay hi, trans idx] 的第 5 字节。
+                if bytes.get(pos + 1) == Some(&0xF9) && bytes.get(pos + 2).copied().unwrap_or(0) >= 4 {
+                    transparent = if bytes[pos + 3] & 0x01 != 0 {
+                        bytes.get(pos + 6).copied()
+                    } else {
+                        None
+                    };
+                }
                 // 扩展块：跳过标签 + 子块
                 pos += 2;
                 while pos < bytes.len() && bytes[pos] != 0 {
@@ -1656,12 +1668,9 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     if indices.len() < (iw * ih) as usize {
         return Err("GIF LZW output too short".into());
     }
-    // 上采样到画布尺寸（左/上偏移 + 透明色索引）
-    let transparent = if iflags & 0x01 != 0 {
-        bytes.get(pos + 1).copied()
-    } else {
-        None
-    };
+    // 上采样到画布尺寸（左/上偏移 + GCE 透明色索引）。
+    // FIXME: 交错存储（image descriptor packed bit6, iflags & 0x40）按顺序解码，
+    // 交错 GIF 像素错位——WPT 语料暂未驱动，遇到时按 spec §22 行序重排。
     let mut data = vec![0u8; (w * h * 4) as usize];
     let palette = if use_lct { &lct } else { &gct };
     for y in 0..ih {
@@ -2295,6 +2304,35 @@ mod decode_tests {
         let bad = b"RIFF\x00\x00\x00\x00WEBPrest is garbage";
         let result = decode_webp_bytes(bad);
         assert!(result.is_err());
+    }
+
+    /// R5347：透明 GIF 按 GCE（Graphic Control Extension）透明色索引解码为
+    /// alpha=0，不透明像素保持色表色 + alpha=255。字节取自 WPT css-sizing
+    /// block-image-percentage-max-height-inside-inline 的内联 1×1 透明 GIF
+    /// （data URI `R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7`）：
+    /// GCT [黑, 白]、GCE packed=0x01 透明索引 0、像素索引 0——修复前读图像
+    /// 描述符 packed bit0（恒 0）误判不透明，输出不透明黑。
+    #[test]
+    fn decode_gif_bytes_transparent_index_resolves_alpha() {
+        let gif: [u8; 42] = [
+            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
+            0x01, 0x00, 0x01, 0x00, // 1×1
+            0x80, 0x00, 0x00, // GCT flag + 2 项
+            0x00, 0x00, 0x00, // GCT[0] 黑
+            0xff, 0xff, 0xff, // GCT[1] 白
+            0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, // GCE：透明索引 0
+            0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, // 图像描述符
+            0x02, 0x01, 0x44, 0x00, // LZW min code 2 + 数据
+            0x3b, // trailer
+        ];
+        let img = decode_gif_bytes(&gif).expect("transparent GIF should decode");
+        assert_eq!(img.width, 1);
+        assert_eq!(img.height, 1);
+        assert_eq!(
+            img.get_pixel(0, 0),
+            [0, 0, 0, 0],
+            "透明索引 0 像素应为 alpha=0（修复前输出不透明黑）"
+        );
     }
 
     /// R1793：`is_webp_magic` 边界（≥12 字节、RIFF+WEBP 双魔数）。
