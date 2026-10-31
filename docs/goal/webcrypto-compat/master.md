@@ -1,23 +1,23 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺口
-`cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
-交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
-（`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步。
-**收口前提轮询（2026-10-31 12:55 → 20:12）**：**fetch/Request 簇已清零**
-——s179 `a3768d3e7`（16 红勘定，engine lib 3625P/10F→3633P/2F）+ s180
-`2e260d532`（XHR credentialed-open 根修，**engine lib 3635P/1F**，fetch 族
-全清；本流 `make guarded-test` 独立复测交叉核证一致）。唯余 1F =
-`test_ua_display_li_list_item_canvas_inline_s24_flip`，git 追溯定性为
-**跨流通道交互 × 渲染流 D4 待裁决冻结面**（s161 handle gCS 通道把裸
-createElement 产物路由到 host 面，host `li→Block` 系渲染流 D4 在册
-冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，ETA 未知，
-本 goal 不越界）。webcrypto 锚正在现 tip 复跑（今日 shim 变更面在语料
-执行路径上，收口前须重核 33,109 锚）。处置路径维持待用户决策表 **D2**，
-ua_display_li 清零即当场收口（详见
-[evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
-**最后更新**: 2026-10-31 20:12（轮询追记见
+build/clippy 绿；33,109 分母零回归锚在现 tip `dc49d1e7c` 逐字节复验一致
+（2026-11-01，s182~s194 + 渲染流变更全吸收，见
+[evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
+唯一缺口 `cargo test` 残余 1F
+`test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
+冻结面（s194 账 engine lib 3642P/1F 在册同键）。收口归档待该 1F 清零
+或 D2② 授权。M1/M2 里程碑已归档（`archive/2026-10-31-m1-m2.md`）。
+**收口前提轮询（2026-10-31 12:55 → 2026-11-01 03:10）**：fetch/Request
+簇 9F 已由 s179 `a3768d3e7` + s180 `2e260d532` 全清；唯余 ua_display_li
+1F——git 追溯定性为**跨流通道交互 × 渲染流 D4 待裁决冻结面**（s161
+handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
+系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
+ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
+**33,109 锚已在现 tip `dc49d1e7c` 复验逐字节一致**（25,788P + 7,320F +
+1T，guard 零干预）；处置路径维持待用户决策表 **D2**，ua_display_li
+清零即当场收口。
+**最后更新**: 2026-11-01 03:10（锚复验 + 轮询追记见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

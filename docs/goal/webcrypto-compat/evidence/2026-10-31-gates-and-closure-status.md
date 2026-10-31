@@ -159,3 +159,33 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ua_display_li 1F（渲染流 D4 待裁决冻结面）。ua_display_li 清零后收口
   序列 = make test 全绿复证 → 锚按最终 tip 复跑（若 runner 二进制面未
   变可引用本锚账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE。
+
+### 2026-11-01 03:10 追记：锚现 tip（dc49d1e7c）复验逐字节一致——s182~s194 零回归核证
+
+- **锚复跑（tip `dc49d1e7c`）**：release runner 重建 32.92s（make
+  `zero-wpt-runner-release`）+ test-guard 直包全语料跑
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json` stdout
+  重定向取干净产物）——**对 M1 终态锚
+  （`2026-10-31-m1-baseline-full.json.gz`）逐字节一致（cmp 全等，
+  7,208,436 B）**：123 文件 / 33,109 子测试 = 25,788P + 7,320F + 1T。
+  guard log 零字节（无击杀），runner EXIT=1 为带预期 7,320F 挂账的
+  常规退出。临时审计件 `/tmp/webcrypto-anchor-run-20261101-0308.json`
+  （不入库）；链路核证：上轮 `20261031-2010` 审计件与 M1 gz 亦逐字节
+  一致，锚链连续。
+- **覆盖窗口**：`6eb020fc2` → `dc49d1e7c` 间 s182~s194（s185
+  form.elements 集合层、s186 click 分派、s187/s188 color/frame、s189
+  range、s190 date/time 消毒、s192 input.list、s193 fieldset
+  willValidate、s194 email/url/tel 消毒 + IDN、CE entry 快路、
+  removeChild 单遍化等引擎/shim 变更）+ 渲染流 R5368/R5369（float
+  收缩适配/嵌套 float clear 预测等布局修复）——全部在语料执行路径上，
+  **33,109 分母零回归锚在现 tip 重新成立**（上轮锚账 `6eb020fc2`
+  不再是最新 tip，本次刷新消掉陈旧窗口）。
+- **轮询面（本轮）**：s194 账 engine lib **3642P/1F（在册同键
+  ua_display_li）**；渲染流 R5368（2026-11-01）记账 make test 既有红
+  中止（ua_display_li，对端 D4 残余账）→ workspace 腿 --skip 补跑
+  ——**D4 双面翻转仍未裁决**。D1/D2 维持待用户拍板
+  （GB-20261031 征询在案），本 goal 零代码变更不变。
+- **收口序列不变**：ua_display_li 清零（渲染流 D4 裁决落地）→ make
+  test 全绿复证 → 锚按届时最终 tip 复跑（若 runner 二进制面未再变可
+  引用本次账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或
+  D2② 授权 standing exclusion 口径收口。
