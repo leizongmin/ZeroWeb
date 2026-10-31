@@ -9564,13 +9564,55 @@
             // 跨批 rebuild 后 persistent NodeId 换代）时 RemoveHandle 对镜像 no-op →
             // 已移除元素在镜像/hit test/ohtml 序列化永久泄漏（WPT image-map 新 area
             // cleanup 后次 case 首移仍命中泄漏拷贝断言面）。有 id 时改派 selector
-            // Remove（镜像按 id 解析移除）；无 id 回落原路径（受限已知偏差，由 shim
-            // html 刷新主同步路径收敛）。
+            // Remove（镜像按 id 解析移除）；无 id 回落原路径 + 下方 R5356 宿主镜像。
             var _r9mId = '';
             try { _r9mId = String(ceSelf.id || ''); } catch (_eR9mi) {}
+            // editing-compat R5356（2026-10-31，inline-host followed-by-`<br>` 幽灵
+            // 兄弟归因，zz-probe-ih-lb s1-s4 忠实复刻）：无 id pending 元素跨批
+            // remove 的宿主镜像——appendChild 批在 Actions 键盘链首个 op 排水（代际
+            // 换代 + 包装器重物化），本批 RemoveHandle 对换代后 persistent NodeId
+            // 解析失败 lenient no-op → 元素在宿主基座跨子测永久滞留，后续子测
+            // container.innerHTML 全部带幽灵 `<br>`/`<div>`（uievents-compat 尾簇 9
+            // 同洞的无 id 元素扩展面）。补发 `__zw_remove_child_at`（父 sel + 基底
+            // 索引——批独立寻址）：索引自基底缓存扫（nodeType+tagName 匹配——同标签
+            // 重复取首见，与 R129 文本路径同弱序）。**journal 顺序在 RemoveHandle
+            // 之前**：RemoveChildAt 先摘除后，RemoveHandle 无论解析成败都落空转
+            // （已摘节点的 if-let parent 缺失 / 批内失效），消除「两 wire 皆中时
+            // 索引平移误删后续兄弟」的窗口。代际门与 R129 文本分支同款（同代
+            // RemoveHandle 同批解析为主；基底查无——未 apply 的 pending 元素不进
+            // 基底缓存——不发，维持同批解析）。
+            // https://dom.spec.whatwg.org/#dom-child-remove
+            var _r5356ElPs = (handle && _zwNodeParent && _zwNodeParent[handle])
+              ? (_zwNodeParent[handle].parentSel || null) : null;
+            var _r5356ElIdx = -1;
+            if (_r9mId === '' && _r5356ElPs) {
+              var _r5356Gen = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+              var _r5356Bkt = (typeof _zwPendingByParent !== 'undefined' && _zwPendingByParent)
+                ? _zwPendingByParent.get(_r5356ElPs) : null;
+              if (typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache
+                  && typeof __zw_remove_child_at === 'function'
+                  && _r5356Bkt && typeof _r5356Bkt.stamp === 'number' && _r5356Bkt.stamp !== _r5356Gen) {
+                var _r5356Base = _zwChildBaseCache.get(_r5356ElPs);
+                if (_r5356Base) {
+                  var _r5356Tag = '';
+                  try { _r5356Tag = String(ceSelf.tagName || ceSelf.nodeName || '').toLowerCase(); } catch (_e5356Tg) {}
+                  for (var _r5356Bj = 0; _r5356Bj < _r5356Base.length; _r5356Bj++) {
+                    var _r5356Bn = _r5356Base[_r5356Bj];
+                    if (_r5356Bn && _r5356Bn.nodeType === 1
+                        && String(_r5356Bn.tagName || _r5356Bn.nodeName || '').toLowerCase() === _r5356Tag) {
+                      _r5356ElIdx = _r5356Bj;
+                      break;
+                    }
+                  }
+                }
+              }
+            }
             if (handle && _r9mId) {
               __zw_remove('#' + _r9mId);
             } else if (handle) {
+              if (_r5356ElIdx >= 0) {
+                try { __zw_remove_child_at(_r5356ElPs, String(_r5356ElIdx)); } catch (_e5356Rca) {}
+              }
               __zw_remove_handle(handle);
             } else {
               __zw_remove(sel);
