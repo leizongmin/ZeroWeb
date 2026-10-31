@@ -31,9 +31,25 @@
 > **卡点/剩余**：160F 单一机制=可见性补断 `<br>` 落宿主 span **之后**（container 子级）
 > 而非内部（EXP `<span…><br><br></span>` vs GOT `<span…><br><br></span><br>`；30 enter +
 > 130 shift-enter），属 insertLineBreak 落位锚点语义。
-> **下一步**：① inline-host 剩余 160F 落位锚点归因收口 → ② white-space-style 488F
-> （italic/bold 组）→ ③ part04 BUILD 路径 void 处理挂账（70F）→ ④ renderer 私有队列
-> 路径 R383a 对账（挂账）→ ⑤ 簇 A glue 残余、execCommand 簇序。
+> **下一步**：① inline-host 剩余 160F 落位锚点归因收口（碰头补记佐证：**分簇**——
+> shift×normal 100F 补断落点；enter×pre* 30F 引擎线 br 消失疑 part04 R5058，「单一机制」
+> 概括对此 30F 存疑）→ ② insertlinebreak-with-white-space-style 首录 0P/552F
+> （insertLineBreak 语义族，碰头补记轮新增分母）→ ③ white-space-style 488F
+> （italic/bold 组）→ ④ part04 BUILD 路径 void 处理挂账（70F）→ ⑤ renderer 私有队列
+> 路径 R383a 对账（挂账）→ ⑥ 簇 A glue 残余、execCommand 簇序。
+> **碰头补记（同日，本流 inline-host 断行主簇轮）：独立实现同判撞车，采纳 R5356 先落地版本，本流同面机制撤改零残留**。本流自同基线 170P/710F 独立归因同两根因并独立实现（R5273 遮罩换代分叉——
+> t12 探针证 rust 读链各时点全对、仅 getter 融合序列化陈旧；Actions 臂修饰键 PUA 抑制——
+> R5356 键名映射+早退的子集），独立验证终点 **720P/160F 恒等**；rebase 撞车按「消费域收敛、
+> 不回退对方修复面」采纳 3b25bb2c7+78601a924，本流 part05 跨代遮罩分叉（含 live 视图内容
+> 相等退役臂）、part06 gen 戳、runner 护栏三处撤改零残留——live 视图语义分叉留档：R5356 判
+> live 种子恒保留为真值，本流相等护栏为已验证候选臂（live 出过时种子反例时启用）。独立佐证
+> 与增量诊断见 [evidence](editing-compat/evidence/2026-10-31-ihost-r5273-mask-and-actions-pua.md)：
+> ① A 簇语料 finally 清场 → 逐测真实非页内级联 + t16 新页 shift 正确 → 状态/落位依赖；
+> ② enter×pre* 30F 引擎线 `[T("\n\n")]` 既有 br 消失（嫌疑 part04 R5058 文本 insertBefore
+> 退化丢锚）；③ **首录 insertlinebreak-with-white-space-style 0P/552F**（合并树复跑见下轮账）；
+> ④ runner 实证 testharness-editing-other **多文件调用只跑首个文件**（join 三案分跑
+> 3456+2607+1455=7,518 对账教训，位移核对须逐文件分跑）。
+
 >
 > **上一状态（2026-10-31，ghost text + 域收缩轮，与并行流 R4620 撞车合并）：inline-host 渗漏根修 80P→170P/710F 零新败 + R383a 域收缩吸收 `__zwCeWalkMerging` 旁路臂**。
 > ① R129 ChildNode.remove sel 父形态跨批补发宿主镜像 `__zw_remove_child_at`（56045919e，
