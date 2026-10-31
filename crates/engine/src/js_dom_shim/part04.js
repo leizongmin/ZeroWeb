@@ -9421,9 +9421,80 @@
               // 后快照融合反映），仅标记 + 通知。
               // R294 试加 record 后回退：MO record 的 _zwNodeParent 清链副作用改变
               // surroundContents HRE 路径的回滚依赖（r259 单测 bodyLast 回归）。
+              // editing-compat（2026-10-31，inline-host followed-by-text 渗漏根修，
+              // zz-probe-abc 探针归因）：本形态此前的两个缺口——
+              // ① 宿主镜像：仅 `__zw_remove_handle` 单 wire。文本已落宿主基座
+              //    （append 批已 apply）时，remove 落**后批**，RemoveHandle 跨批
+              //    rebuild 后 persistent NodeId 换代解析失败 → lenient no-op（
+              //    uievents-compat 尾簇 9 同洞的无 id 扩展面：文本无 id 不可改派
+              //    selector Remove）→ 文本子在宿主树跨子测永久滞留，后续子测
+              //    `container.innerHTML` 全部带幽灵尾巴（inline-host 语料 `abc`/
+              //    `efg` 残留根因）。补发 `__zw_remove_child_at`（父 sel + 宿主基座
+              //    索引——批独立寻址）。索引自基底缓存扫（nodeType+data 匹配——
+              //    基座条目无 handle 身份，同 data 重复文本取首见，与解析文本路径
+              //    同弱序）；**仅基座命中才发**——未 apply 的 pending 文本基座查无，
+              //    RemoveHandle 同批解析为主，误发会按失配索引删无辜兄弟。与
+              //    RemoveHandle 同批时索引因前序移除平移 → 越界 lenient 跳过，
+              //    无副作用；跨批时 RemoveHandle no-op 而本条生效。journal 顺序在
+              //    RemoveHandle 之后（同批先删后跳语义）。
+              // ② 视图补偿（有意不落，见下方门内注记）：sel 父形态桶/反链保持
+              //    HEAD 原状（零桶记账）——桶残留仅身份记账，语料幽灵源是宿主
+              //    基座残留（① 修复后融合序列化不再见幽灵）；remove 时点的视图
+              //    补偿改变 surround leaf-newParent 路径的中间态视图（R294 两版
+              //    实证 r259 `bodyLast` 翻红），不落。
+              // https://dom.spec.whatwg.org/#dom-child-remove
               if (handle) {
                 if (typeof _zwMarkRemovedHandle === 'function') _zwMarkRemovedHandle(handle);
                 try { __zw_remove_handle(handle); } catch (_e129h) {}
+                var _r129Ps = _r129Parent ? (_r129Parent.parentSel || null) : null;
+                if (_r129Ps) {
+                  var _r129SelfData = '';
+                  var _r129Nt = isText ? 3 : (isComment ? 8 : (isPI ? 7 : 0));
+                  try {
+                    var _r129Sp = _makeProxy(sel, handle);
+                    _r129SelfData = String(_r129Sp.data != null ? _r129Sp.data : (_r129Sp.nodeValue != null ? _r129Sp.nodeValue : ''));
+                  } catch (_e129d) {}
+                  // ①a 代际门：仅「条目登记早于当前 apply 代际」（跨代际桶——R383 门
+                  //    同款判据）才补发宿主侧移除。同代（同 turn append+remove，宿主
+                  //    往返前）RemoveHandle 同批解析为主，补发属冗余且有害：基底缓存
+                  //    可能已含 live 查询文档对 pending 批的**重放虚影**（t0 探针实证
+                  //    ——with-xyz 读触发融合物化，基座含 XYZ），按虚影索引补发
+                  //    RemoveChildAt 使融合序列化走岔（after-remove 复现 XYZ）。engine
+                  //    纯测试环境代际恒 0（stamp 同 0）恒同代 → 全块跳过，Range/MO
+                  //    单测面零扰动（r259 bodyLast、extract/insert 位次解析不受影响）。
+                  var _r129Gen = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+                  var _r129Bkt = (typeof _zwPendingByParent !== 'undefined' && _zwPendingByParent)
+                    ? _zwPendingByParent.get(_r129Ps) : null;
+                  if (_r129Nt && typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache
+                      && typeof __zw_remove_child_at === 'function'
+                      && _r129Bkt && typeof _r129Bkt.stamp === 'number' && _r129Bkt.stamp !== _r129Gen) {
+                    var _r129Base = _zwChildBaseCache.get(_r129Ps);
+                    if (_r129Base) {
+                      var _r129Bi = -1;
+                      for (var _r129Bj = 0; _r129Bj < _r129Base.length; _r129Bj++) {
+                        var _r129Bn = _r129Base[_r129Bj];
+                        if (_r129Bn && _r129Bn.nodeType === _r129Nt
+                            && String(_r129Bn.data != null ? _r129Bn.data : '') === _r129SelfData) {
+                          _r129Bi = _r129Bj;
+                          break;
+                        }
+                      }
+                      if (_r129Bi >= 0) {
+                        try { __zw_remove_child_at(_r129Ps, String(_r129Bi)); } catch (_e129rca) {}
+                      }
+                    }
+                  }
+                  // ② 视图补偿（桶级记账）**不落**：R294 两版实证（本段首版直桶操作 +
+                  //    更早 `_mo_notify` 版）同翻 r259 单测 `bodyLast`——leaf-newParent
+                  //    surround 路径「extract → insertNode → 抛」中间态无回滚，终态树
+                  //    依赖被 extract 摘除的文本在**视图**仍可见（insertNode 位次解析
+                  //    读 overlay 视图，ghost 在位使 leaf 插其前——HEAD 断言 bodyLast
+                  //    =#text 的成因）。任何 remove 时点的桶/链补偿都改变该中间态视图。
+                  //    语料幽灵的宿主半区（本段 ① 补发 RemoveChildAt）已足够：apply
+                  //    后基座含幽灵文本是融合序列化与 shim html 回写的幽灵源；桶残留
+                  //    仅身份记账（生产 runner 为 paired env，跨代际桶本就被 R383 门
+                  //    跳并，非幽灵门）。
+                }
               }
               if (globalThis._zwNotifyIteratorsRemove) {
                 try { globalThis._zwNotifyIteratorsRemove(_makeProxy(sel, handle)); } catch (_e129n) {}
