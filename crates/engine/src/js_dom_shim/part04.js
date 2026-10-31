@@ -5695,6 +5695,24 @@
                 if (_r313Dis === '1') return;
               } catch (_e313d) {}
             }
+            // s186（HTML user activation）：INPUT 拾取器类型 click() 消费瞬态激活
+            //（spec §user activation：picker 唤起属 activation 消费端；WPT
+            // the-input-element/click-user-gesture：bless + input.click() + blur 后
+            // navigator.userActivation.isActive 须为 false——旧仅 fullscreen 消费）。
+            // disabled 早退在上，不派发即不消费。preventDefault 不豁免（Chrome 语义：
+            // click() 方法本体触发 picker，非默认动作）。
+            if (_r313Tag === 'INPUT') {
+              var _r186ty = '';
+              try {
+                _r186ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+              } catch (_e186tg) { _r186ty = ''; }
+              _r186ty = String(_r186ty || '').toLowerCase();
+              if (_r186ty === 'color' || _r186ty === 'date' || _r186ty === 'datetime-local'
+                  || _r186ty === 'file' || _r186ty === 'month' || _r186ty === 'time'
+                  || _r186ty === 'week') {
+                _zwTransientActive = false;
+              }
+            }
             if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
             // uievents-compat 尾簇 11：click() API 的 click = **PointerEvent 实例**
             //（PE spec https://www.w3.org/TR/pointerevents2/#the-click-auxclick-and-

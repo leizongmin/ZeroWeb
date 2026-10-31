@@ -18199,6 +18199,22 @@
       } catch (_e5000r) {}
     });
     _zwMDefineBooleanReflected(node);
+    // s186（HTML §4.10.5.1 value IDL 属性）：INPUT 的 value accessor——innerHTML
+    // 同 turn 读 `other.value`（WPT disabled-elements-01 断言 `other.value` 读回
+    // 初始串，旧无 accessor 读 undefined）。_zwMEl plain object 无 get trap（value
+    // 分派在下方 part05 区 proxy get trap，wrapper 不经）——补 attr-backed 近似：
+    // getter 读 value 内容属性（absent → ''，default 值模式）；setter 写回属性
+    //（真实 DOM 写 dirty value 不回写属性——wrapper 无 dirty 追踪，同 turn 读写
+    // 回环优先）。FIXME: select/textarea/output 值模式族按语料需要再补。
+    if (tag === 'input') {
+      try {
+        Object.defineProperty(node, 'value', {
+          configurable: true,
+          get: function () { var v = node.getAttribute('value'); return v == null ? '' : String(v); },
+          set: function (v) { node.setAttribute('value', v == null ? '' : String(v)); },
+        });
+      } catch (_e186v) {}
+    }
     // js-dom M3 R97：hasAttributes/getAttributeNames（lit-html Template 解析对解析子树元素
     // 调 `r.hasAttributes()` + `r.getAttributeNames()` 提取属性 parts——缺方法抛 TypeError
     // 使整条 update 链 reject）。与元素 proxy R3197 语义一致（attrs 数组本地维护）。
@@ -18753,6 +18769,24 @@
               if (at >= 0) _mEvListeners.splice(at, 1);
             }
           }
+          // s186（HTML §event handler IDL attributes，spec
+          // html.spec.whatwg.org/multipage/webappapis.html#event-handler-attributes）：
+          // on* 属性处理器消费——`elem.onclick = fn` 真实 DOM 等价注册 listener，
+          // dispatchEvent 按序激活。_zwMEl plain object 无 set trap，赋值落 expando
+          // 死槽（WPT disabled-elements-01 "synthetic click events should be
+          // dispatched"：onclick 属性处理器旧在 dispatchEvent 不激活）。AT_TARGET
+          // bubble pass 补激活（captureOnly!==true 每次派发恰一次；注册 listener
+          // 之后——属性赋值序近似，语料无同型竞争 listener）。任意 on<type> 通用。
+          if (captureOnly !== true) {
+            var _h186 = node['on' + t];
+            if (typeof _h186 === 'function') {
+              try {
+                ev.currentTarget = node;
+                ev.eventPhase = _s8EffPhase;
+                _h186.call(node, ev);
+              } catch (_e186h) {}
+            }
+          }
           return;
         }
         // R167（d3b）：view 存储（`_zwEvLs`——docEl/body 视图）与 mutTree 节点槽
@@ -18922,6 +18956,18 @@
     //    - A/AREA[href]：location.hash 导航（href 以 # 开头的同文档片段——hashchange
     //      由 `location.hash =` setter 的既有链路派发；非 # href headless 无导航 no-op）
     node.click = function () {
+      // s186：R313 disabled 表单元素 .click() 不派发（与 proxy 侧 part04 click() API
+      // 同规——spec §activation「form-associated element disabled → 返 undefined 跳过
+      // 激活行为」。WPT disabled-elements-01 "click() should not dispatch a click
+      // event"：innerHTML 解析的 wrapper 走本路径，旧无门禁使 inline onclick 与
+      // dispatchEvent 照常执行）。可禁用族与 proxy 侧同口径
+      //（button/input/select/textarea/fieldset/optgroup/option）。
+      var _r186Tag = String(node.tagName || '').toUpperCase();
+      if (_r186Tag === 'BUTTON' || _r186Tag === 'INPUT' || _r186Tag === 'SELECT'
+          || _r186Tag === 'TEXTAREA' || _r186Tag === 'FIELDSET'
+          || _r186Tag === 'OPTGROUP' || _r186Tag === 'OPTION') {
+        if (node.hasAttribute && node.hasAttribute('disabled')) return;
+      }
       if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
       var ev = (typeof _makeEvent === 'function')
         // WC-M3 切片 8：UA 合成 click 为 **composed** 事件（spec click event 定义——

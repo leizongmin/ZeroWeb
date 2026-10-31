@@ -31,7 +31,53 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 185 收口，form.elements 集合层——HTMLFormControlsCollection/RadioNodeList 接口面 + fieldset.elements + form indexed 属性面 + owner 域文档序，11F 翻绿，shim 3 零 rust：part03 接口占位 + part05 集合工厂扩展/新双工厂 + part04 form.elements 重写/新 FIELDSET gate）**
+> **▶ 当前状态（2026-10-31 M2 切片 186 收口，click 分派域合刀——mutTree wrapper 事件面三件 + proxy 拾取器激活消费，15F 翻绿，shim 2 零 rust：part03 on* 属性处理器激活/INPUT value accessor/wrapper click R313 门禁 + part04 picker 消费臂）**
+> **入场定刀位**：s185 账本「下一步候选」首位（disabled click 8 + click
+> 消费激活 7 同 click 分派域合刀）。
+> **勘根（双靶三根）**：① disabled-elements-01 8F——innerHTML 解析元素
+> 是 mutTree `_zwMEl` plain wrapper（探针 fingerprint：R125 接口原型链
+> CTOR=HTMLInputElement、ownKeys 含 `__zwIsMEl`、无 sel/handle 印记非
+> proxy 产物、`root.childNodes[0] === el` 同对象），三缺口：ⅰ) INPUT
+> `.value` 无 accessor 读 undefined（值分派在 proxy get trap，wrapper
+> 不经——语料首断言 `other.value` 8 案全 got undefined）；ⅱ) on* IDL 属
+> 性处理器不激活——`elem.onclick = fn` 落 expando 死槽，wrapper
+> dispatchEvent 只激活注册 listener 与 inline onclick 内容属性（R155）；
+> ⅲ) wrapper `node.click()`（R151/R152/R155）无 R313 disabled 门禁镜像
+> （proxy 侧 part04 有），disabled 元素 click() 照常派发。disabled 反射
+> 在 wrapper 可用（test1/2 基线 P）由 `_zwMDefineBooleanReflected`
+> （R154）闭合，非本刀面。② click-user-gesture 7F——bless + click() +
+> blur 后 `userActivation.isActive` 恒 true：`.click()` API 无激活消费臂
+> （旧仅 fullscreen 消费 `_zwTransientActive`），INPUT 拾取器 7 类型
+>（color/date/datetime-local/file/month/time/week）无消费端。
+> **施工（shim 2）**：part03 三件——dispatchEvent target 站 AT_TARGET
+> bubble pass 尾（captureOnly!==true 恰一次）补 on* 属性处理器激活
+>（`node['on'+ev.type]` function 即 call，任意 on\<type\> 通用——spec
+> event handler IDL attributes 属性赋值等价注册 listener）；factory
+> INPUT `value` accessor（attr-backed 近似 absent→''，setter 写回属性，
+> FIXME 记 select/textarea/output 族）；wrapper `node.click()` 顶部 R313
+> 门禁镜像（可禁用族 + disabled 属性 → return，与 proxy 侧同口径）。
+> part04 一件——`.click()` API R313 门后 INPUT 拾取器类型消费
+> `_zwTransientActive = false`（lw 融合读 type；preventDefault 不豁免
+> ——Chrome 语义 click() 本体触发 picker；disabled 早退在上不派发即不
+> 消费）。
+> **验证**：定向 disabled-elements-01 **16/16 全 Pass**（8F→P 精确）+
+> click-user-gesture **14/14 全 Pass**（7F→P 精确）；**forms 全树
+> 4348P/352F/12T → 4363P/337F/12T**（ΔP=+15/ΔF=−15 精确闭合；文件粒
+> 度状态表 diff 仅两靶标文件翻面、其余 411 文件零变化——多行子测试名
+> 使行级 join 不可靠改文件级对账）；interactive **483 键零位移**
+>（439P/44F bit-exact）；engine lib **3641P/1F**（1F = ua_display_li 在
+> 册同键）；shim node --check SYNTAX_OK；fmt + guarded workspace clippy
+> 全绿；勘根探针 6 页验后删。
+> **残留与边界**：wrapper INPUT `.value` attr-backed 近似（真实 DOM 写
+> dirty 值不回写属性）；on* 激活序 = 注册 listener 之后（赋值时点注册
+> 序近似）；wrapper select/textarea/output `.value` 族缺位 FIXME；wrapper
+> click() 无拾取器激活消费（detached 树 headless 近似语义）。
+> **下一步候选**：color-attributes input.alpha/colorSpace 2F 小反射面；
+> submission-checks 三兄弟连接性面在册；customizable select 177F 挂起
+> 待拍板（GB-20261031 飞书征询在途）。
+> **账本**：[evidence/2026-10-31-m2s186-muttree-click-dispatch-domain.md](html-semantics-compat/evidence/2026-10-31-m2s186-muttree-click-dispatch-domain.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 185 收口，form.elements 集合层——HTMLFormControlsCollection/RadioNodeList 接口面 + fieldset.elements + form indexed 属性面 + owner 域文档序，11F 翻绿，shim 3 零 rust：part03 接口占位 + part05 集合工厂扩展/新双工厂 + part04 form.elements 重写/新 FIELDSET gate）**
 > **入场定刀位**：s184 账本「下一步候选」首位。
 > **勘根（六形态）**：① nameditem-02 has('length') false——part04 ad-hoc
 > Proxy 的 has trap 只有 canonical 索引臂（assert_array_equals 入门
