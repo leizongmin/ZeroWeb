@@ -2579,3 +2579,33 @@ fn render_html_in_rect_swapping_cached_doc_clears_node_id_keyed_maps_s38() {
         "render_html_in_rect 换代后 form_control_compositions 不得残留上一代键"
     );
 }
+
+/// editing-compat（inline-host shift×normal 100F 根修，2026-10-31）：重建重绑歧义守卫
+/// 钉测。注册时唯一的裸 tag selector（append 批 apply 时 `br` 恰为全文唯一）在后续
+/// 变异后失唯一；`rebind_handle_node` 必须跳过而非按 `query_selector` 首见命中猜测
+/// 锚定——错锚使后续 `RemoveHandle` 删无辜同名节点、真目标永生（语料自插 br 经
+/// shim html 刷新在每个后续子测重吸收成幽灵，探针 [rebind] 两跳改锚实录）。唯一
+/// selector 重绑照常回填（正控）。
+#[test]
+fn rebind_handle_node_skips_ambiguous_selector_ihost_ghost_br() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    // 唯一态（语料 append 批形态：div 容器恰一个 br）。
+    pipeline.render_html(r#"<html><body><div><span></span><br></div></body></html>"#, "");
+    pipeline.rebind_handle_node("h1", "br");
+    assert!(
+        pipeline.persistent_handle_nodes.contains_key("h1"),
+        "唯一 selector 重建重绑照常回填（正控）"
+    );
+
+    // 失唯一态（Enter 向 span 补断后）：R100 换代清零 + 歧义 selector 跳过。
+    pipeline.render_html(r#"<html><body><div><span><br><br></span><br></div></body></html>"#, "");
+    assert!(
+        pipeline.persistent_handle_nodes.is_empty(),
+        "前置：全量重建换代清零 handle 表（R100）"
+    );
+    pipeline.rebind_handle_node("h1", "br");
+    assert!(
+        !pipeline.persistent_handle_nodes.contains_key("h1"),
+        "歧义 selector 重建重绑必须跳过——首见命中回填=猜测锚定（幽灵 br 根因）"
+    );
+}

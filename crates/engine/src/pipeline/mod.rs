@@ -1457,10 +1457,23 @@ impl RenderPipeline {
     /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧
     /// handle→selector 正置表，重建后按 selector 在新 doc 重查 NodeId 回填。目标
     /// 缺失（元素确被移除）→ 静默跳过。
+    ///
+    /// editing-compat（2026-10-31，inline-host shift×normal 100F 根修）：注册时唯一
+    /// 的裸 tag selector（append 批 apply 时 `br` 恰为全文唯一——span 刚被
+    /// SetInnerHtml 清空）在后续变异后失唯一（Enter 向 span 补 br）。重建重绑按
+    /// `query_selector` 首见命中回填 = **按猜测锚定**：`__n2` 被改锚到 span 的
+    ///无辜 br，RemoveHandle 随之删错节点、真目标永生（探针 [rebind] 实录
+    /// `sel=br -> 20v1 parent=DIV` → `parent=SPAN` 两跳实证）。selector 在**新
+    /// doc** 非唯一命中时跳过重绑——留空走 unknown-handle 既有 lenient 语义，好于
+    /// 静默锚错。
     pub fn rebind_handle_node(&mut self, handle: &str, selector: &str) {
         if let Some(doc_rc) = &self.cached_doc {
             let doc = doc_rc.borrow();
-            if let Some(id) = doc.query_selector(doc.root(), selector.trim()) {
+            let sel = selector.trim();
+            if doc.query_selector_all(doc.root(), sel).len() != 1 {
+                return;
+            }
+            if let Some(id) = doc.query_selector(doc.root(), sel) {
                 self.persistent_handle_nodes.insert(handle.to_string(), id);
             }
         }
