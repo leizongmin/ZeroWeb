@@ -873,6 +873,8 @@ impl WebView {
         self.install_native_dom_bindings();
         let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
         let dom_html = Arc::new(Mutex::new(self.cached_html.clone()));
+        // s168c：登记本站 Arc 为桥侧同步目标（见 WebView::sync_dom_html_bridge）。
+        self.dom_html_bridge = Some(Arc::clone(&dom_html));
         let page_url = Arc::new(Mutex::new(self.current_url.clone().unwrap_or_default()));
         // s143：私有队列 [0..count) 全为本脚本 pending → 查询视图重放起点 0
         //（见桥侧 MUT_APPLIED_CURSOR）。
@@ -934,6 +936,8 @@ impl WebView {
             let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
             let shared = self.shared_mutations.clone();
             let dom_html_shared = Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+            // s168c：R348 重绑后的 Arc 是最终注册（同名单后者胜）——同步目标随之切换。
+            self.dom_html_bridge = Some(Arc::clone(&dom_html_shared));
             let page_url = Arc::new(std::sync::Mutex::new(self.current_url.clone().unwrap_or_default()));
             // s143：共享队列全史注册 → 发布已应用前缀作查询视图重放起点（R4400 回灌
             // 已含在本游标内——见桥侧 MUT_APPLIED_CURSOR；无此发布则异步续延查询把

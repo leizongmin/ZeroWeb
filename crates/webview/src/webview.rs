@@ -496,6 +496,11 @@ pub struct WebView {
     shared_mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// [`Self::shared_mutations`] 的已应用游标（apply 尾部的起点）。
     applied_mutations: usize,
+    /// 桥侧回调当前持有的 dom_html 快照 Arc——最近一次 `register_dom_callbacks`
+    /// 站点发布（同名单重注册后者胜）。快照 Arc 被回调闭包捕获、无法换装新 Arc
+    ///（engine `DOM_VIEW_GEN` 文档），apply/native 同步经 [`Self::sync_dom_html_bridge`]
+    /// 就地写内容 + bump 宿主视图缓存代际。`None` = 尚无站点注册（同步 no-op）。
+    dom_html_bridge: Option<std::sync::Arc<std::sync::Mutex<String>>>,
     /// T26（DF1-F1）：apply 重入护栏——[`Self::apply_pending_shared_mutations`] 整体
     /// 执行期间置位（round 2 DF2-F1 起：单步与两步路径都覆盖，见该函数入口注记）。
     ///
@@ -819,6 +824,7 @@ impl WebView {
             handle_selector_forward: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
             shared_mutations: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             applied_mutations: 0,
+            dom_html_bridge: None,
             applying_mutations: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             layout_rect_snapshot: zero_engine::rect_bridge::new_layout_rect_snapshot(),
             runner_probe_html: None,
@@ -1187,6 +1193,12 @@ impl WebView {
             return false;
         }
         self.cached_html = html.to_string();
+        // s168c：shim 真相同步进桥 Arc——仅队列无 pending 时安全：shim 序列化已含
+        // `[applied..count)` 的效果，重放会双计（take_probe 在 flush 后调用本函数，
+        // 恒满足；pending 非空的宿主维持既有滞后基座行为）。
+        if self.applied_mutations >= self.shared_mutations.lock().unwrap_or_else(|e| e.into_inner()).len() {
+            self.sync_dom_html_bridge();
+        }
         self.render();
         // R100：全量重建清 persistent_handle_nodes——按 shim 侧正置表（selector→handle）
         // 重绑，页内 createElement 产物的后续 handle 型 mutation 不失配（keyboard
@@ -2617,6 +2629,8 @@ impl WebView {
         zero_engine::js_dom_bridge::publish_mut_applied_cursor(self.applied_mutations);
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
+            // s168c：基座就地换代（游标发布配对——见 sync_dom_html_bridge 文档）。
+            self.sync_dom_html_bridge();
         }
         // R379/pa2b：与 apply_pending_shared_mutations 同款换代通知（两步 apply 的结构
         // 批/样式批各通知一次——第二次 no-op 幂等，标记表已空）。T26（DF1-F1）：通知
@@ -2690,6 +2704,7 @@ impl WebView {
                 let mutations = self.shared_mutations.clone();
                 let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
                     std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+                self.dom_html_bridge = Some(std::sync::Arc::clone(&dom_html));
                 let page_url = self.page_url_wire.clone();
                 let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
                 register_dom_callbacks(
@@ -3199,6 +3214,8 @@ impl WebView {
         if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
             // repaint 只读不改 Document，live_html（repaint 前序列化）仍等于当前 DOM。
             self.cached_html = live_html;
+            // s168c：native 写不经共享队列（无重放双计面），基座可安全就地换代。
+            self.sync_dom_html_bridge();
             self.last_render = Some(self.absorb_render_result(&result));
             // R150：native 写后 repaint——刷新 gBCR 快照（布局可能已变）。
             self.refresh_layout_rect_snapshot();
@@ -3343,6 +3360,7 @@ impl WebView {
         let mutations = self.shared_mutations.clone();
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+        self.dom_html_bridge = Some(std::sync::Arc::clone(&dom_html));
         let page_url = self.page_url_wire.clone();
         // R100：惰性沙箱先行——直接调用方（未跑过 run_page_scripts 的 WebView，如
         // wasm_bridge 集成测试）此前经 execute_script→ensure_sandbox 建沙箱；本函数
@@ -3510,6 +3528,7 @@ impl WebView {
         let mutations = self.shared_mutations.clone();
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(html.clone()));
+        self.dom_html_bridge = Some(std::sync::Arc::clone(&dom_html));
         let page_url = self.page_url_wire.clone();
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
@@ -4709,6 +4728,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         let mutations = self.shared_mutations.clone();
         let dom_html: std::sync::Arc<std::sync::Mutex<String>> =
             std::sync::Arc::new(std::sync::Mutex::new(self.cached_html.clone()));
+        self.dom_html_bridge = Some(std::sync::Arc::clone(&dom_html));
         let page_url = self.page_url_wire.clone();
         // js-dom M1 L2 R102：发布 live 查询源（pipeline cached_doc 共享句柄——查询回调
         // 无 pending structural mutations 时直读 live，消 re-parse；None 回落快照路径）。
@@ -4816,6 +4836,28 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         );
     }
 
+    /// s168c：apply/native 同步的基座换代写入点——`cached_html` 更新后把内容就地
+    /// 写进回调当前持有的快照 Arc 并 bump `DOM_VIEW_GEN`。快照 Arc 被回调闭包捕获
+    /// 无法换装（engine `DOM_VIEW_GEN` 文档），基座刷新此前只发生在「重注册换新
+    /// Arc」站点；runner 探测环武装一次化（form-url-encoding 回归修）后 apply 到
+    /// 下一脚本之间无重注册——s143 契约「查询基座 = 最新 cached_html（已含已应用
+    /// 前缀的落地效果）」在游标已发布、基座滞后的窗口失配：handle 视图重放区间
+    /// `[applied..count)` 为空、基座缺动态元素，gCS-by-handle 恒返空串（WPT
+    /// stylesheet-media-change-no-fetch 实证：drain 后 `gCS(p).color === ''`）。
+    /// 内容相同跳过（差分基线刷新的等值回程不空转换代）。
+    fn sync_dom_html_bridge(&self) {
+        let Some(arc) = self.dom_html_bridge.as_ref() else {
+            return;
+        };
+        let mut guard = arc.lock().unwrap_or_else(|e| e.into_inner());
+        if *guard == self.cached_html {
+            return;
+        }
+        *guard = self.cached_html.clone();
+        drop(guard);
+        zero_engine::js_dom_bridge::bump_dom_view_gen();
+    }
+
     /// js-dom M3 R100：应用共享队列的**新增尾部**（`applied_mutations` 游标起）。
     ///
     /// 共享 append-only 队列使读回调（`__zw_get_text_handle` 等 latest-wins 查询）在
@@ -4905,6 +4947,8 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         let (render_result, html_snapshot, handles) = applied;
         if let Some(mutated) = html_snapshot {
             self.cached_html = mutated;
+            // s168c：基座就地换代（游标发布配对——见 sync_dom_html_bridge 文档）。
+            self.sync_dom_html_bridge();
         }
         self.applied_mutations += tail.len();
         // R383a 配对发布（editing-compat attr 门轮，2026-10-31）：游标此前只在 R348
