@@ -10985,13 +10985,43 @@
         && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
-    for (var r = 0; r < bucket.removed.length; r++) {
-      var rm = bucket.removed[r];
-      for (var ri = res.length - 1; ri >= 0; ri--) {
-        if (res[ri] === rm) { res.splice(ri, 1); break; }
+    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：bulk 移除下
+    // bucket.removed 随 removal 累积（第 k 次 remove 时已 k 条），旧逐条逆序扫对已不在
+    // res 的陈旧条目每次全扫 O(res)——tape v3 实测探针 w2（2000 removals）rmMs
+    // 639-729ms（rmN=1.0M 条·窗）。removedSet 与 removed 数组由记账侧恒成对维护
+    // （_zwHCLiveInvalidate push/add、splice/delete、512 压实三处；桶构造器恒建），
+    // 单遍 has 过滤重建成员与序等价——res 条目 identity 唯一（基底 wrapper 唯一 +
+    // 并入 seen/R182 去重），旧逆序首见剔除恰 = 剔除属于 removed 集的条目。Set 缺失
+    // （防御口径，现无此形态）回落旧循环。
+    if (bucket.removedSet) {
+      // 原地压缩（读指针写回），免第二份分配——成员与序与过滤重建逐位一致。
+      var _rmSet = bucket.removedSet, _w = 0;
+      for (var r = 0; r < res.length; r++) {
+        if (!_rmSet.has(res[r])) res[_w++] = res[r];
+      }
+      res.length = _w;
+    } else {
+      for (var r = 0; r < bucket.removed.length; r++) {
+        var rm = bucket.removed[r];
+        for (var ri = res.length - 1; ri >= 0; ri--) {
+          if (res[ri] === rm) { res.splice(ri, 1); break; }
+        }
       }
     }
     // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
+    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：逐条 added 的
+    // seen 检查与 nextSibling 定位各 O(res) 线性扫，bulk 视图（added ~n × res ~n）单次
+    // 调用 O(added×res)——tape v3 实测探针 w2 addMs 2,548-2,704ms（addN=4.0M 条·窗，
+    // 墙钟主项 ~70%）。进循环前建一次 res identity Set：seen 判定 O(1)；nextSibling 先
+    // O(1) 成员判定、命中才做原定位扫——miss = 旧扫空落尾插（res.length），等价且省
+    // 全扫。插入即 add，Set 与 res 成员恒一致（R182 重定位摘旧位后立即回插，其间无
+    // has 消费；条目经 addedSet 记账去重，identity 唯一）。added 空不建 Set（纯基底读
+    // 快路径零新增成本）。
+    var _resSeen = null;
+    if (bucket.added.length) {
+      _resSeen = new Set();
+      for (var _rsi = 0; _rsi < res.length; _rsi++) _resSeen.add(res[_rsi]);
+    }
     for (var a = 0; a < bucket.added.length; a++) {
       var nd = bucket.added[a];
       // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动——insertAdjacentElement
@@ -11036,15 +11066,13 @@
       // seen 命中即重复记账，R51 原语义）。
       var isSelChild182 = !nd.__zwHandle && !!nd.__zwSelector;
       if (!isSelChild182) {
-        var seen = false;
-        for (var s = 0; s < res.length; s++) { if (res[s] === nd) { seen = true; break; } }
-        if (seen) continue;
+        if (_resSeen.has(nd)) continue; // OPTIMIZATION：identity Set 判定（上注），原 O(res) 线性扫
       }
       // nextSibling 定位（_mo_notify record 的 nextSibling 字段，R47）。ref 已在列表内 → 插其前；
       // 否则（null=append / ref 也 pending）→ 尾部。R182：匹配按**节点 identity**（不再限定
       // __zwSelector——text ref（afterend 的「旧 nextSibling 是文本节点」形态）同样可定位）。
       var pos = res.length;
-      if (link.nextSibling) {
+      if (link.nextSibling && _resSeen.has(link.nextSibling)) { // OPTIMIZATION：miss 直落尾插（原扫空同结果）
         for (var q = 0; q < res.length; q++) {
           if (res[q] === link.nextSibling) { pos = q; break; }
         }
@@ -11067,7 +11095,10 @@
         }
         if (pos > res.length) pos = res.length;
       }
-      res.splice(pos, 0, nd);
+      // OPTIMIZATION：尾插（pos === res.length，bulk 合并常态）走 push 免 O(res) memmove
+      // ——splice(pos,0,nd) 在 pos===res.length 时与 push 逐位等价。
+      if (pos >= res.length) res.push(nd); else res.splice(pos, 0, nd);
+      if (_resSeen) _resSeen.add(nd); // OPTIMIZATION：Set 与 res 成员同步（上注）
     }
     return res;
   }
