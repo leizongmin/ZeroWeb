@@ -179,6 +179,8 @@ impl RenderPipeline {
                     style_ms: 0.0,
                     layout_ms: 0.0,
                     paint_ms: 0.0,
+                    // 命中臂的全部成本（克隆还原+写回）即 commit 级工作。
+                    commit_ms: hit_ms,
                     total_ms: hit_ms,
                     parse_count: 0,
                     style_count: 0,
@@ -317,6 +319,9 @@ impl RenderPipeline {
                         + session.timings.paint_ms;
                     session.step = BudgetStep::Done;
 
+                    // T32 四级分解：commit 级 = 绘制后管线内收尾副作用（缓存写回/
+                    // 换代清零/结果组装/指纹回填），单列计时、不计入 total_ms。
+                    let commit_start = Instant::now();
                     self.cached_doc = session.doc.take().map(|d| Rc::new(RefCell::new(d)));
                     self.cached_styles = session.styles.clone();
                     // DOM 已替换：CSS 解析缓存失效（见 RenderPipeline.cached_css_text 注释）。
@@ -415,6 +420,12 @@ impl RenderPipeline {
                             },
                         );
                     }
+                    session.timings.commit_ms = commit_start.elapsed().as_secs_f64() * 1000.0;
+                    // DF-3 同款覆写（hit 臂同型）：make_render_result 组装时 commit
+                    // 计时尚未闭合（组装自身属 commit 段）——闭合后把最终计时（含
+                    // commit）回写进已组装结果，RenderResult.timings 语义 = 产生该帧
+                    // 的实际耗时。
+                    session.result.as_mut().expect("result set above").timings = session.timings.clone();
                     return BudgetAdvance::Complete;
                 }
                 BudgetStep::Done => return BudgetAdvance::Complete,
@@ -508,6 +519,7 @@ impl RenderPipeline {
                 style_ms,
                 layout_ms,
                 paint_ms,
+                commit_ms: 0.0,
                 total_ms,
                 parse_count: 1,
                 style_count: 1,

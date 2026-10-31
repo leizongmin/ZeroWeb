@@ -1204,3 +1204,40 @@ fn test_render_html_animated_with_transition() {
     let r2 = pipeline.render_html_animated(html, "", 0.25);
     assert!(r2.timings.total_ms >= 0.0);
 }
+
+/// T32 四级分解钉：预算会话 commit 级计时必须被记录且不并入 total_ms——
+/// total 语义 = parse+style+layout+paint 四段和（消费方按四段口径读），
+/// commit_ms 单列（管线内收尾副作用：缓存写回/换代清零/结果组装/指纹回填），
+/// 全量路径（render_html 族）恒 0.0。
+#[test]
+fn test_budget_session_timings_commit_level_recorded() {
+    use crate::pipeline_budget::{BudgetAdvance, BudgetedRenderSession};
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let html = r#"<html><body><div class="box">Hello</div></body></html>"#;
+    let css = r#".box { color: red; width: 100px; height: 50px; }"#;
+    let mut session = BudgetedRenderSession::new(html, css);
+    for _ in 0..16 {
+        if pipeline.advance_budgeted_render(&mut session, 1000.0) == BudgetAdvance::Complete {
+            break;
+        }
+    }
+    let t = session.timings().clone();
+    assert!(t.parse_ms >= 0.0 && t.style_ms >= 0.0 && t.layout_ms >= 0.0 && t.paint_ms >= 0.0);
+    // 严格 >0：预算会话收尾段有真实工作（缓存写回/指纹回填），若计时刻被重构删除
+    // 字段回落 0.0 时本钉必须红（TV-F1：>=0 为恒真，钉不住记录性）。
+    assert!(t.commit_ms > 0.0, "commit 级必须被记录（预算会话收尾恒 >0）");
+    // total_ms 与四段和同表达式同序求值，位级相等。
+    assert_eq!(
+        t.total_ms,
+        t.parse_ms + t.style_ms + t.layout_ms + t.paint_ms,
+        "total 语义 = 四段和，commit 不得并入"
+    );
+    let result = session.take_result().expect("预算会话应完成");
+    assert_eq!(
+        result.timings.commit_ms, t.commit_ms,
+        "commit 计时须随 RenderResult 透出"
+    );
+    // 全量路径未计时 commit，恒 0.0（字段文档口径）。
+    let full = pipeline.render_html(html, css);
+    assert_eq!(full.timings.commit_ms, 0.0, "全量路径 commit 恒 0.0");
+}
