@@ -154,3 +154,41 @@ fn import_expansion_stays_with_root_link_bucket() {
         "fixed"
     );
 }
+
+/// s177：`external_css_entries` getter 镜像 load_html 实际发布形态——静态外链页
+/// 发布后条目非空（多进程 renderer runtime 咽喉读取源，随 SetDomSnapshot 钉版
+/// 下发 js worker）；锚选择器非空、表文本逐字保真。
+#[test]
+fn external_css_entries_getter_mirrors_published_entries_s177() {
+    let mut webview = webview_with_css(HashMap::from([(
+        "https://wpt.test/cascade-order/late.css".to_string(),
+        "#test { position: fixed }".to_string(),
+    )]));
+    load_and_probe(
+        &mut webview,
+        r#"<html><head></head><body>
+<style>#test { position: static }</style>
+<link rel="stylesheet" href="late.css">
+<div id="test">Test</div>
+</body></html>"#,
+    );
+    let entries = webview.external_css_entries();
+    assert_eq!(entries.len(), 1, "静态外链发布后条目表恰一条");
+    assert!(!entries[0].0.is_empty(), "锚选择器非空");
+    assert_eq!(entries[0].1, "#test { position: fixed }\n", "表文本逐字保真（含源文件尾换行）");
+}
+
+/// s177：getter 回落半面——css 参数（嵌入者 custom-css 通道）回落 blob 发布，
+/// 条目表为空；无链接页发布后亦空（Some 空表臂同清）。
+#[test]
+fn external_css_entries_getter_empty_on_blob_fallback_s177() {
+    let mut webview = webview_with_css(HashMap::new());
+    webview.load_html(
+        "<html><body><div id=\"test\">t</div></body></html>",
+        Some("#test { color: red }"),
+    );
+    assert!(
+        webview.external_css_entries().is_empty(),
+        "css 参数回落 blob 发布，条目表为空"
+    );
+}

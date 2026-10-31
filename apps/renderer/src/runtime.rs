@@ -2496,6 +2496,11 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             // fetch_page_images 装入 cached_css 后先于脚本阶段到达）。worker 在下一次
             // set_dom_snapshot 钉版下发；LoadHtml 内联形态 cached_css 为空，行为不变。
             self.js_worker.set_external_css(wv.cached_css());
+            // s177：外链条目同点同步（webview `external_css_entries`——load_html 实际
+            // 发布形态的镜像）。条目非空时 worker 臂走 entries 发布（文档序交错装配），
+            // 空表回落 blob 通道；钉版/换代语义与上行 blob 通道一致。
+            self.js_worker
+                .set_external_css_entries(wv.external_css_entries().to_vec());
         }
     }
 

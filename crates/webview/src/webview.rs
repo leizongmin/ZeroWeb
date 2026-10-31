@@ -670,6 +670,11 @@ pub struct WebView {
     /// 装配，s167 槽语义）。None = 本代无静态外链条目（`load_html` css 参数回落
     /// blob 发布，嵌入者自定义 CSS 通道不变）。
     pending_external_css_entries: Option<(u64, Vec<(String, String)>)>,
+    /// s177：最近一次 [`Self::load_html`] 实际向 engine 发布的外链条目镜像——条目
+    /// 发布时为条目表，blob 回落时为空。多进程 renderer runtime 同步咽喉读取
+    /// （[`Self::external_css_entries`]），随 js worker SetDomSnapshot 钉版下发；
+    /// 每次加载无条件覆盖（含清空），跨文档残留不可能存活。
+    published_external_css_entries: Vec<(String, String)>,
     /// 事件回调列表。
     event_callbacks: Vec<Option<EventCallback>>,
     /// Service Worker 注册表。
@@ -886,6 +891,7 @@ impl WebView {
             cached_html: String::new(),
             cached_css: String::new(),
             pending_external_css_entries: None,
+            published_external_css_entries: Vec::new(),
             event_callbacks: Vec::new(),
             sw_registry: ServiceWorkerRegistry::new(),
             sw_manager: std::sync::Arc::new(std::sync::Mutex::new(ServiceWorkerManager::new())),
@@ -1178,8 +1184,14 @@ impl WebView {
             _ => None,
         };
         match entries {
-            Some(entries) => zero_engine::js_dom_bridge::set_active_external_css_entries(entries),
-            None => zero_engine::js_dom_bridge::set_active_external_css(css_str),
+            Some(entries) => {
+                self.published_external_css_entries = entries.clone();
+                zero_engine::js_dom_bridge::set_active_external_css_entries(entries);
+            }
+            None => {
+                self.published_external_css_entries.clear();
+                zero_engine::js_dom_bridge::set_active_external_css(css_str);
+            }
         }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
@@ -2279,6 +2291,13 @@ impl WebView {
     /// 合成源与布局管线同源——读侧不触发渲染，纯字段访问）。
     pub fn cached_css(&self) -> &str {
         &self.cached_css
+    }
+
+    /// s177：最近一次加载实际向 engine 发布的外链条目（条目发布时非空，blob 回落
+    /// 时空——与 [`Self::cached_css`] 同点由 renderer runtime 同步咽喉读取，随
+    /// js worker SetDomSnapshot 钉版下发；读侧不触发渲染，纯字段访问）。
+    pub fn external_css_entries(&self) -> &[(String, String)] {
+        &self.published_external_css_entries
     }
 
     /// 已缓存图片固有尺寸。

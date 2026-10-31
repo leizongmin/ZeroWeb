@@ -98,6 +98,11 @@ enum JsWorkerCommand {
         /// P9-9/R5107：本代外部样式表文本（webview cached_css 发送时钉版）——js worker
         /// 线程装填线程局部，getComputedStyle 合成源与布局管线同源。空串 = 无外部 CSS。
         external_css: std::sync::Arc<str>,
+        /// s177：本代外链结构化条目（webview `external_css_entries` 发送时钉版）——
+        /// 非空时 worker 臂经 `set_active_external_css_entries` 发布（collector 文档序
+        /// 交错装配，派生 blob 同步装 blob 槽，回落面不变）；空表回落 `external_css`
+        /// blob 通道（既有文档化回落——嵌入者 custom-css / LoadHtml 内联形态）。
+        external_css_entries: std::sync::Arc<Vec<(String, String)>>,
         /// t2-pb1 fix#21：应用完成回执（None = fire-and-forget，优先通道快照用）。
         reply: Option<Sender<()>>,
         /// t2-pb1 F1：文档代际序号（同 [`JsWorkerCommand::Execute`]）。
@@ -185,6 +190,10 @@ pub struct RendererJsWorker {
     /// P9-9/R5107：当前外部样式表文本（webview cached_css 经 runtime sync 推入）。
     /// set_dom_snapshot 提交时钉版进命令（同代快照/脚本读到一致版本，无撕裂）。
     external_css: Arc<std::sync::Mutex<String>>,
+    /// s177：当前外链结构化条目（webview `external_css_entries` 经 runtime sync 同点
+    /// 推入，钉版/换代语义同 [`Self::external_css`]）。空表 = 无条目（快照臂回落
+    /// blob 通道）。
+    external_css_entries: Arc<std::sync::Mutex<Vec<(String, String)>>>,
     /// S11：page console 输出队列（worker 回调推入，runtime drain）。
     console_logs: Arc<std::sync::Mutex<Vec<(String, String, String)>>>,
     /// R-baidu2/P3：未捕获脚本错误队列（page_scripts 推入，runtime drain 后
@@ -490,6 +499,7 @@ impl RendererJsWorker {
             prio_tx: prio_tx_for_struct,
             cmd_seq,
             external_css: Arc::default(),
+            external_css_entries: Arc::default(),
             join: Some(join),
             executor,
             prio_executor,
@@ -752,6 +762,25 @@ impl RendererJsWorker {
             .unwrap_or_default()
     }
 
+    /// s177：更新当前外链结构化条目（webview `external_css_entries`，runtime 同步
+    /// 咽喉推入，与 [`Self::set_external_css`] 同点）。不立即下发——由下一次
+    /// `set_dom_snapshot` 钉版随命令进 worker。空表 = 清空（快照臂回落 blob 通道）。
+    pub fn set_external_css_entries(&self, entries: Vec<(String, String)>) {
+        if let Ok(mut slot) = self.external_css_entries.lock()
+            && *slot != entries
+        {
+            *slot = entries;
+        }
+    }
+
+    /// 当前外链条目的钉版快照（发送时读，进 SetDomSnapshot 命令）。
+    fn pinned_external_css_entries(&self) -> std::sync::Arc<Vec<(String, String)>> {
+        self.external_css_entries
+            .lock()
+            .map(|entries| std::sync::Arc::new(entries.clone()))
+            .unwrap_or_default()
+    }
+
     /// 脚本执行前更新 DOM HTML 快照与页面 URL。
     pub fn set_dom_snapshot(&self, html: &str, url: &str) {
         // T9（perf-mem M2b）：首文档快照免 reply 等待。worker 冷启动（QuickJS context +
@@ -767,6 +796,7 @@ impl RendererJsWorker {
                 html: html.to_string(),
                 url: url.to_string(),
                 external_css: self.pinned_external_css(),
+                external_css_entries: self.pinned_external_css_entries(),
                 reply: Some(reply_tx),
                 seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
             })
@@ -796,6 +826,7 @@ impl RendererJsWorker {
             html: html.to_string(),
             url: url.to_string(),
             external_css: self.pinned_external_css(),
+            external_css_entries: self.pinned_external_css_entries(),
             reply: None,
             seq: self.cmd_seq.fetch_add(1, Ordering::Relaxed),
         });
@@ -833,6 +864,9 @@ impl RendererJsWorker {
         // 会在「复位后、下一次 sync_cached_html_from_webview 覆盖前」的窗口被新文档 gCS
         // 读到。镜像 runtime 侧 cached_css 复位，于此共享复位路径统一清空。
         self.set_external_css("");
+        // s177：条目槽同域文档状态——镜像清空（旧页条目跨导航残留会在「复位后、
+        // 下一次 sync 覆盖前」窗口被新文档 gCS 读到；空表快照臂回落 blob 通道）。
+        self.set_external_css_entries(Vec::new());
         self.async_callbacks_ready.store(false, Ordering::Release);
         // T9（perf-mem M2b）：首命令前跳过 worker 复位往返。worker 线程启动即建 QuickJS
         // context + 全量装 shim（工厂新态），尚无任何页面载荷命令可清；照发
@@ -1844,13 +1878,22 @@ fn js_worker_main(
                 html,
                 url,
                 external_css,
+                external_css_entries,
                 reply,
                 ..
             } => {
                 // P9-9/R5107：装本代外部 CSS 线程局部——getComputedStyle 合成源
                 // （collect_stylesheets css 参数）与布局管线同源。每快照无条件覆盖
                 //（含清空，跨文档残留不可能存活）；先于同代 gCS（同通道 FIFO）。
-                zero_engine::js_dom_bridge::set_active_external_css(&external_css);
+                // s177：条目非空走 entries 发布（collector 文档序交错装配——link 在
+                // `<style>` 之后的页同特异度后到后胜；派生 blob 同步装 blob 槽，回落
+                // 面不变，blob 字段被覆盖条目为权威源）。空表回落 blob 通道（既有
+                // 文档化回落：嵌入者 custom-css / LoadHtml 内联形态）。
+                if external_css_entries.is_empty() {
+                    zero_engine::js_dom_bridge::set_active_external_css(&external_css);
+                } else {
+                    zero_engine::js_dom_bridge::set_active_external_css_entries(external_css_entries.to_vec());
+                }
                 // R-t2qq 二轮返修 D2：adopted 槽随 SetDomSnapshot **恢复而非清空**。
                 // 防回归（为什么清空必须挂 Reset 而不是这里）：生产 renderer
                 // tick_observers_with（page_scripts.rs）**每帧**都发 SetDomSnapshot
@@ -3262,6 +3305,49 @@ mod tests {
                 .unwrap(),
             "",
             "reset_document_state 后旧页外部 CSS 不得残留到新文档 gCS"
+        );
+        worker.shutdown();
+    }
+
+    /// s177（多进程生产路径）：`set_external_css_entries`（runtime 同步咽喉的消费端）
+    /// → `set_dom_snapshot` 钉版下发 → worker 臂 entries 发布 → 页面脚本 gCS 按
+    /// **文档序**交错装配：link 在文档 `<style>` 之前 → 文档表后到后胜 → Arial 胜。
+    /// blob 字段与条目文本刻意分歧（BlobFont）——若臂退化回 blob 发布（整体前置），
+    /// BlobFont 反超文档表，断言即红：同时钉「条目为权威源、blob 字段被忽略」。
+    /// 锚失配条目尾接（collector 回落）使复位残留显形为 GithubMono，空槽显形为 ""。
+    #[test]
+    fn renderer_js_worker_external_css_entries_document_order_s177() {
+        let mut worker = RendererJsWorker::spawn(63);
+        let html = "<html><head><link rel=\"stylesheet\" href=\"late.css\" id=\"ext\">\
+                    <style>#h { font-family: Arial, serif; }</style></head>\
+                    <body><h1 id=\"h\">t</h1></body></html>";
+        // runtime sync 咽喉推入（条目 + 分歧 blob）→ 快照钉版 → 交错装配。
+        worker.set_external_css("#h { font-family: BlobFont, monospace; }");
+        worker.set_external_css_entries(vec![(
+            "#ext".to_string(),
+            "#h { font-family: GithubMono, monospace; }".to_string(),
+        )]);
+        worker.set_dom_snapshot(html, "https://zero.test/s177");
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.getElementById('h')).getPropertyValue('font-family')")
+                .unwrap(),
+            "Arial, serif",
+            "条目按文档序交错：link 先于文档 <style>，同特异度后到后胜"
+        );
+        // P9-9（DEF-1）复位相镜像：reset_document_state 清条目槽——新文档锚失配的
+        // 旧条目若残留会尾接进级联（GithubMono 显形），清空则合成源仅文档（"" 显形）。
+        worker.reset_document_state();
+        worker.set_dom_snapshot(
+            "<html><body><h1 id=\"h\">u</h1></body></html>",
+            "https://zero.test/s177b",
+        );
+        assert_eq!(
+            worker
+                .execute_script_direct("getComputedStyle(document.getElementById('h')).getPropertyValue('font-family')")
+                .unwrap(),
+            "",
+            "reset_document_state 后旧页条目不得残留到新文档 gCS"
         );
         worker.shutdown();
     }

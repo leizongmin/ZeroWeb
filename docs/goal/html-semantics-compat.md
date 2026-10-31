@@ -31,7 +31,15 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 176 收口，shadow 域定位选择器寻址全链路——compound `zwsh<len>:<host>|<local>` + slot 分配接线 + 同树 closest 根修，shadow-slots 段 LOST 20 → 恢复注册 2P/18F，rust 6 + shim 3 + 新模块 + 钉测 2）**
+> **▶ 当前状态（2026-10-31 M2 切片 177 收口，多进程 renderer SetDomSnapshot 臂 entries 化——js worker gCS 文档序交错，s174 挂账⑤收口，rust 4 + 钉测 3，零协议改动零 shim）**
+> **入场勘根**：s174 挂账⑤。多进程链路三层定谳——renderer navigate 自取主文档，s174 entries 发布在 pipeline 线程已通；缺口在 **js worker 线程**（页面 JS gCS 真源）：SetDomSnapshot 臂只携 blob（sync 咽喉只推 cached_css），worker gCS 恒 blob 前置（link 在 `<style>` 后的页同特异度恒输）。LoadHtml IPC 通道不在面内（caller 上游本无位次信息）；`JsWorkerCommand` 为进程内通道——zero-protocol 契约零改动。
+> **施工**（4 文件 +154/−4）：webview 发布形态镜像 `published_external_css_entries` + getter `external_css_entries()`（每次 load 无条件覆盖含清空）；js_worker 命令携条目（普通+优先两构造点钉版）+ worker 槽/setter + 臂分派（条目非空 → `set_active_external_css_entries` 文档序交错、派生 blob 同步装槽回落面不变，空表 → blob 既有回落逐位保留）+ `reset_document_state` 镜像清槽（P9-9 DEF-1 同窗）；runtime sync 咽喉同点推入。
+> **验证**：webview lib **832P/0F**（830+2 钉测）；renderer lib **354P/5F**——5F stash 对照干净 main 同键同态全既有（fetch 契约族 3 与 engine fetch 族同签名；page_scripts 2 案测试体自 2026-08 未动，挂账勘定非本刀面）；s177 worker 钉测 blob 字段刻意分歧（BlobFont）判别——实测 `Arial, serif` = 条目权威 + blob 字段被忽略双钉；interactive-elements **483 键对 s176 终态逐键 bit-exact 零位移**（对 s172 旧基线 4 位移恰为 s176 在册项）；engine lib 免跑（engine 零 diff，entries/collector 语义 s174 已验）；fmt/guarded-clippy（webview+renderer）零告警。
+> **挂账/新记**：renderer lib 首立全量基线 354P/5F——page_scripts 2 案（form fixture / js-disabled default action）失败时点待勘（归因候选 8cb3e919a action transaction 系，2026-08）；行数欠账在册（js_worker 6.9k/runtime 5.4k/webview 9.2k 行超准则线，行数治理专项候选）。
+> **下一步候选**：基线翻拣下一单根面——forms 402F 家族分析 / interactive 44F 归因复读 / renderer page_scripts 2 案勘定。
+> **账本**：[evidence/2026-10-31-m2s177-renderer-worker-css-entries.md](html-semantics-compat/evidence/2026-10-31-m2s177-renderer-worker-css-entries.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 176 收口，shadow 域定位选择器寻址全链路——compound `zwsh<len>:<host>|<local>` + slot 分配接线 + 同树 closest 根修，shadow-slots 段 LOST 20 → 恢复注册 2P/18F，rust 6 + shim 3 + 新模块 + 钉测 2）**
 > **入场定刀位**：s175 FIXME 承接——引擎侧 shadow 寻址（枚举通道重开前置）。s173/s175 定谳 detached 镜像对引擎不可见（shadow-slots 段 0P/20F）。
 > **根因链四层**（逐层修复后 replica 3P/17F 实证）：①shim `_zwLdFlatParent` 把 shadow 节点摊平进宿主 slot——engine parentNode 跳过 SR 非元素父使 shadow 子 parentNode 锚宿主，摊平 = 元素塌进自身 slot 64-hop 环 → doc-order sort 腐败 → light-dismiss 误选；②`parent_selector_for_doc` 经封装门恒空串 → flat 链首槽 hop 截断；③dom `resolve_slots` **全库零调用点**——分配恒空 → layout slot 替换全走回退内容 → 被分配 light 子树无布局盒 → gBCR [0,0,0,0] → 点击坐标塌 body@(0,0)；④runner 页内扫描（封装门）+ hit-test 铸造点对 shadow 内容无地址。
 > **回归勘根（本刀内闭环）**：form-submit-dialog-shadow P2F——s173/s175 凑巧 Pass 系镜像惰性（寻址不着 → click no-op）；实地址化后 click 到达真激活臂，`closest('dialog')` 匹配集从 doc root 求 + parent 链穿 SR→host **跨界命中 light dialog**（spec：closest 祖先不穿 shadow 边界，whatwg/html#7971 即本语料）。修 = closest 匹配域换 `shadow_scope_root`（matches 先例）+ compound 回落；light 调用者逐字节不变。
