@@ -21,8 +21,22 @@ pub fn query_match_selector(html: &str, selector: &str) -> String {
 
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn query_match_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
-    find_by_selector(doc, selector)
-        .and_then(|n| unique_selector_for_node(doc, n))
+    query_match_selector_doc_ctx(doc, None, selector)
+}
+
+/// S1c memo 变体（worker 热查询回调专用，见 [`UniqSelCtx`]）——定位与物化两级
+/// memo 命中与重算逐值等价。
+pub fn query_match_selector_doc_cached(doc: &zero_dom::Document, ctx: UniqSelCtx, selector: &str) -> String {
+    query_match_selector_doc_ctx(doc, Some(ctx), selector)
+}
+
+fn query_match_selector_doc_ctx(doc: &zero_dom::Document, ctx: Option<UniqSelCtx>, selector: &str) -> String {
+    let found = match ctx {
+        Some(c) => find_by_selector_cached(doc, c, selector),
+        None => find_by_selector(doc, selector),
+    };
+    found
+        .and_then(|n| unique_selector_for_node_ctx(doc, ctx, n))
         .unwrap_or_default()
 }
 

@@ -651,12 +651,40 @@ pub fn escape_css_ident(ident: &str) -> String {
     out
 }
 
-/// 为节点生成用于后续变更的稳定选择器（优先 `#id`）。
-pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+/// S1d：stable selector 的结构化形态——唯一性门计数按原始字段直查索引（不经选择
+/// 器串），[`Self::selector_string`] 按原格式重建串（`ctx=None` 引擎路径与既有
+/// caller 所见串逐字节一致）。
+#[derive(Clone, Debug)]
+enum StableSelParts {
+    /// `#<id>`（trim 后 id）。
+    Id(String),
+    /// `<tag>.<class>`（首个非空 class token，Unicode `split_whitespace` 口径——
+    /// 与引擎 `class_list`（ASCII 空白分词）的 token 域差异正是门计数语义的一部分：
+    /// 门 token 直查 class_list 键索引，非 ASCII 空白 token 天然 miss，同引擎）。
+    TagClass(String, String),
+    /// 裸 `<tag>`。
+    Tag(String),
+}
+
+impl StableSelParts {
+    /// 原格式选择器串（`escape_css_ident` 回环节点）。
+    fn selector_string(&self) -> String {
+        match self {
+            Self::Id(id) => format!("#{}", escape_css_ident(id)),
+            Self::TagClass(tag, class) => format!("{}.{}", tag, escape_css_ident(class)),
+            Self::Tag(tag) => tag.clone(),
+        }
+    }
+}
+
+/// [`stable_selector_for_node`] 的结构化内核（S1d）——形态判定逻辑与原实现逐行
+/// 同源（id 取 `get_attribute("id")` trim、tag 取 `local_name`、class 取首个非空
+/// token）。
+fn stable_selector_parts(doc: &Document, node: NodeId) -> Option<StableSelParts> {
     if let Some(id) = doc.get_attribute(node, "id") {
         let id = id.trim();
         if !id.is_empty() {
-            return Some(format!("#{}", escape_css_ident(id)));
+            return Some(StableSelParts::Id(id.to_string()));
         }
     }
     let tag = doc.get(node).and_then(|n| match &n.kind {
@@ -666,10 +694,15 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
     if let Some(class) = doc.get_attribute(node, "class") {
         let first = class.split_whitespace().find(|c| !c.is_empty());
         if let Some(c) = first {
-            return Some(format!("{}.{}", tag, escape_css_ident(c)));
+            return Some(StableSelParts::TagClass(tag, c.to_string()));
         }
     }
-    Some(tag)
+    Some(StableSelParts::Tag(tag))
+}
+
+/// 为节点生成用于后续变更的稳定选择器（优先 `#id`）。
+pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    stable_selector_parts(doc, node).map(|p| p.selector_string())
 }
 
 /// name/target 唯一属性锚（M2 s142）：结构路径钉 `:nth-child` **绝对位置**，后续
@@ -679,18 +712,16 @@ pub fn stable_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
 /// 错位）。name/target 随节点移动、唯一性由 `matches == 1` 门保证（同名多命中仍
 /// 落结构路径）；值域限 `[A-Za-z0-9_-]`（CSS 属性选择器引号串内无转义面，值域外
 /// 回落结构路径）。
-fn unique_attr_anchor(doc: &Document, node: NodeId) -> Option<String> {
+fn unique_attr_anchor_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: NodeId) -> Option<String> {
     if let NodeKind::Element(e) = &doc.get(node)?.kind {
         let tag = e.local_name();
         for attr in ["name", "target"] {
             if let Some(v) = doc.get_attribute(node, attr)
                 && !v.is_empty()
                 && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                && uniq_attr_anchor_count(doc, ctx, tag, attr, &v) == 1
             {
-                let sel = format!("{tag}[{attr}=\"{v}\"]");
-                if doc.query_selector_all(doc.root(), &sel).len() == 1 {
-                    return Some(sel);
-                }
+                return Some(format!("{tag}[{attr}=\"{v}\"]"));
             }
         }
     }
@@ -705,7 +736,285 @@ fn unique_attr_anchor(doc: &Document, node: NodeId) -> Option<String> {
 /// （[`structural_path_selector`]，按 sibling 位置唯一定位，`:nth-child` 经
 /// dom 选择器引擎解析+匹配）。各形态都保证 `find_by_selector` 返回该节点本身——宁可路径
 /// 冗长不错值。文本节点无 tag → `None`。
+// ── t-p126 S1c：worker 查询物化的线程本地 memo（按视图代键）─────────────────
+/// worker 查询物化 memo 的视图代上下文（S1c）。
+///
+/// 五元组与 `__zw_query_all_tagged` 的 TAGGED_ALL_CACHE 键同模式（html `Arc` 指针 +
+/// 变更数 + drain 代 + 视图代）+ `node_count` 内容指纹（S1d）。同 token ⇒
+/// `with_query_view_doc` 单条目视图缓存服务同一 `Document` 实例/内容，memo 命中与
+/// 重算逐值等价。跨页碰撞需 Arc 地址复用**且**单调计数器回卷（drain/view 代恒单调，
+/// 不可能）。
+///
+/// `node_count`（S1d）：文档节点总数 O(1) 指纹——防御「内容就地变化而四元组未动」
+/// 的漏 bump 写入面（callbacks.rs `MUT_DRAIN_GEN` 注记载的生产纪律例外类，r5010
+/// 形状实证：iadj 锚查询先于 mutation 入队（count=0）→ 直写 html 不 bump → drain
+/// 后 count 回 0 四元组复现而内容已变）。结构性变化（iadj/innerHTML 插删）必改
+/// node_count，此类全体 memo/index 一致失效；属性级就地变化仍依赖 bump 纪律（与
+/// TAGGED_ALL_CACHE 等既有缓存同剩余面）。以 [`Document::node_count`] 读取，回调
+/// 闭包内（拿到视图 doc 后）构建 ctx。
+#[derive(Clone, Copy)]
+pub struct UniqSelCtx {
+    html_ptr: usize,
+    mut_count: usize,
+    drain_gen: u64,
+    view_gen: u64,
+    node_count: usize,
+}
+
+impl UniqSelCtx {
+    /// 模块内/测试构造（字段对外不透明；语义见结构体文档）。
+    pub(crate) fn new(html_ptr: usize, mut_count: usize, drain_gen: u64, view_gen: u64, node_count: usize) -> Self {
+        Self {
+            html_ptr,
+            mut_count,
+            drain_gen,
+            view_gen,
+            node_count,
+        }
+    }
+}
+
+thread_local! {
+    /// selector → `find_by_selector` 结果 memo（同 exec 内同 selector 查询塌缩为
+    /// 一次走查；`__zw_query_match`/`__zw_get_attr` 等读回调的公共入口税）。S1d 起
+    /// 原始字符集形态（`#id`/`tag.class`/`tag`）直查 [`DocUniqIndex`] O(1)，此 memo
+    /// 只服务回落形态（nth-child 路径、属性/伪类复合等）。
+    static FIND_SEL_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, String), Option<NodeId>>> =
+        std::cell::RefCell::new(HashMap::new());
+    /// (视图代, node) → 唯一选择器物化结果。页面回调每轮重复查询同一元素
+    ///（github 每派发轮 347 监听器 × 相同 selector 集合），命中即零走查。
+    static UNIQ_NODE_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, NodeId), Option<String>>> =
+        std::cell::RefCell::new(HashMap::new());
+    /// S1d：按 token 单条目的文档唯一性索引（键 = [`UniqSelCtx`] 五元组）——同
+    /// token ⇒ `with_query_view_doc` 服务同一 `Document` 内容 ⇒ 索引计数/首匹配与
+    /// 逐查询走查逐值等价。首门调用时 O(n) 走查建一次，此后门查 O(1)。
+    static DOC_UNIQ_INDEX: std::cell::RefCell<Option<((usize, usize, u64, u64, usize), std::rc::Rc<DocUniqIndex>)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// memo 封顶：溢出整体清空（只损性能不损语义；github 单轮去重 selector 量级 ~1e3）。
+const UNIQ_MEMO_CAP: usize = 8192;
+
+/// [`find_by_selector`] 的 memo 变体（S1c）——`ctx` 同 token 内命中与重算逐值等价
+///（见 [`UniqSelCtx`]）。worker 热读回调专用；低频调用方继续走 uncached 原函数。
+/// S1d 起原始字符集形态先走 [`primitive_find_by_selector`] O(1)（不经 memo）。
+pub fn find_by_selector_cached(doc: &Document, ctx: UniqSelCtx, selector: &str) -> Option<NodeId> {
+    if let Some(n) = primitive_find_by_selector(doc, ctx, selector) {
+        return Some(n);
+    }
+    let key = (
+        ctx.html_ptr,
+        ctx.mut_count,
+        ctx.drain_gen,
+        ctx.view_gen,
+        ctx.node_count,
+        selector.to_string(),
+    );
+    if let Some(hit) = FIND_SEL_MEMO.with(|m| m.borrow().get(&key).copied()) {
+        return hit;
+    }
+    let val = find_by_selector(doc, selector);
+    FIND_SEL_MEMO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= UNIQ_MEMO_CAP {
+            m.clear();
+        }
+        m.insert(key, val);
+    });
+    val
+}
+
+/// S1d：原始字符集选择器 O(1) 直查——严格形态门：`#x` / `tag.class` / `tag`（各段
+/// ∈ `[A-Za-z0-9_-]+`；tag 段另须无 ASCII 大写，见 [`tag_index_lookup`]）。该字符
+/// 域内 `escape_css_ident`/`unescape_css_ident` 恒等（无转义面）、t8b/s176 fastpath
+/// 形态（`:nth-child(`、`zwsh…|`）不可能出现、引擎解析产物为单 SimpleSelector——
+/// 索引 `first`（文档序）与 `query_selector` 先序 DFS 首个同值。字符域外返 None
+/// 回落 memo + 全量 [`find_by_selector`]。
+fn primitive_find_by_selector(doc: &Document, ctx: UniqSelCtx, selector: &str) -> Option<NodeId> {
+    fn plain_ident(s: &str) -> bool {
+        !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    }
+    let sel = zero_dom::trim_ascii_ws(selector);
+    let idx = doc_uniq_index(doc, ctx);
+    if let Some(id) = sel.strip_prefix('#') {
+        // 无点无伪无属性的 `#x`：id raw 相等（大小写敏感，两侧同源无折叠）。
+        if plain_ident(id) {
+            return idx.ids.get(id).map(|h| h.first);
+        }
+        return None;
+    }
+    if plain_ident(sel) && !sel.bytes().any(|b| b.is_ascii_uppercase()) {
+        return idx.tags.get(sel).map(|h| h.first);
+    }
+    // `tag.class`：恰一个 `.`（第二段含 `.` 时 plain_ident 失败），tag/cid 无转义。
+    if let Some((tag, class)) = sel.split_once('.')
+        && plain_ident(tag)
+        && plain_ident(class)
+        && !tag.bytes().any(|b| b.is_ascii_uppercase())
+    {
+        return idx.tag_class.get(tag).and_then(|m| m.get(class)).map(|h| h.first);
+    }
+    None
+}
+
+/// [`unique_selector_for_node`] 的 memo 变体（S1c）——物化结果按 (视图代, node)
+/// 缓存，同 token 内命中与重算逐值等价（见 [`UniqSelCtx`]）。
+pub fn unique_selector_for_node_cached(doc: &Document, ctx: UniqSelCtx, node: NodeId) -> Option<String> {
+    let key = (
+        ctx.html_ptr,
+        ctx.mut_count,
+        ctx.drain_gen,
+        ctx.view_gen,
+        ctx.node_count,
+        node,
+    );
+    if let Some(hit) = UNIQ_NODE_MEMO.with(|m| m.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let val = unique_selector_for_node_ctx(doc, Some(ctx), node);
+    UNIQ_NODE_MEMO.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= UNIQ_MEMO_CAP {
+            m.clear();
+        }
+        m.insert(key, val.clone());
+    });
+    val
+}
+
+/// S1d：文档唯一性索引条目——匹配数 + 文档序首个匹配节点（首匹配供原始形态
+/// find O(1) 直查，与 `query_selector` 先序 DFS 首个同序）。
+#[derive(Clone, Copy)]
+struct IdxHit {
+    count: u32,
+    first: NodeId,
+}
+
+/// S1d：按视图代懒建的文档唯一性计数索引（OPTIMIZATION：v16 定谳 worker 首触物化
+/// 的唯一性门每元素 30-40 次全文档 DFS 是 t-p126 臂 21.8s 的主乘数；每代一次
+/// O(n) 走查 + O(1) 门查取代之）。四个映射全部从 `SimpleSelector::matches` 读取的
+/// **同一原始字段**建键（`ElementData.id` / `class_list` token / 小写 local_name /
+/// `get_attribute` 原值）——索引计数即引擎匹配语义；枚举面 = 门 DFS 同一遍历空间
+/// （`query_selector_all(root, "*")` 文档序），parity by construction。
+#[derive(Default)]
+struct DocUniqIndex {
+    /// 原始 `elem.id`（**不 trim**——matcher raw 比较；门查找键为 trim 后值，带空白
+    /// id 天然 miss，与引擎 `#x` 不匹配 `id=" x "` 一致）→ 计数 + 首个。
+    ids: HashMap<String, IdxHit>,
+    /// 小写 local_name → 计数 + 首个（引擎 tag 匹配 ASCII ci 折叠，键侧小写化）。
+    tags: HashMap<String, IdxHit>,
+    /// 小写 tag → class token（`class_list` 原 token，ASCII 空白分词）→ 计数 + 首个。
+    tag_class: HashMap<String, HashMap<String, IdxHit>>,
+    /// 小写 tag → `name` 属性原值 → 计数（属性锚门只需计数，不需首匹配）。
+    tag_name: HashMap<String, HashMap<String, u32>>,
+    /// 小写 tag → `target` 属性原值 → 计数。
+    tag_target: HashMap<String, HashMap<String, u32>>,
+}
+
+/// 取（必要时建）当前 token 的文档唯一性索引。构建不重入本 TLS，borrow 安全。
+fn doc_uniq_index(doc: &Document, ctx: UniqSelCtx) -> std::rc::Rc<DocUniqIndex> {
+    let token = (ctx.html_ptr, ctx.mut_count, ctx.drain_gen, ctx.view_gen, ctx.node_count);
+    if let Some(hit) = DOC_UNIQ_INDEX.with(|m| {
+        m.borrow()
+            .as_ref()
+            .filter(|(t, _)| *t == token)
+            .map(|(_, i)| std::rc::Rc::clone(i))
+    }) {
+        return hit;
+    }
+    let idx = std::rc::Rc::new(build_doc_uniq_index(doc));
+    DOC_UNIQ_INDEX.with(|m| *m.borrow_mut() = Some((token, idx.clone())));
+    idx
+}
+
+/// 以 `query_selector_all(root, "*")`（文档序全元素，与唯一性门/`query_selector`
+/// 先序 DFS 同一遍历空间）一次走查建索引；字段读取同 `zero_dom` query 匹配器
+///（id raw、class_list token、local_name ci、attr Exact raw）。
+fn build_doc_uniq_index(doc: &Document) -> DocUniqIndex {
+    let mut idx = DocUniqIndex::default();
+    for n in doc.query_selector_all(doc.root(), "*") {
+        let Some(nd) = doc.get(n) else { continue };
+        let NodeKind::Element(e) = &nd.kind else { continue };
+        let tag = e.local_name().to_ascii_lowercase();
+        let hit = idx.tags.entry(tag.clone()).or_insert(IdxHit { count: 0, first: n });
+        hit.count += 1;
+        if let Some(id) = &e.id {
+            let hit = idx.ids.entry(id.clone()).or_insert(IdxHit { count: 0, first: n });
+            hit.count += 1;
+        }
+        for c in &e.class_list {
+            let hit = idx
+                .tag_class
+                .entry(tag.clone())
+                .or_default()
+                .entry(c.clone())
+                .or_insert(IdxHit { count: 0, first: n });
+            hit.count += 1;
+        }
+        for (map, name) in [(&mut idx.tag_name, "name"), (&mut idx.tag_target, "target")] {
+            if let Some(v) = e.get_attribute(name) {
+                let counts = map.entry(tag.clone()).or_default();
+                counts.entry(v).and_modify(|c| *c += 1).or_insert(1);
+            }
+        }
+    }
+    idx
+}
+
+/// tag 键查找：索引键为 `to_ascii_lowercase`（引擎 tag 匹配是 ASCII ci 折叠，非
+/// Unicode）——已是 ASCII 小写的查找串免分配直查；含大写（罕见）分配小写键后查。
+/// 非 ASCII 字符两侧均不折叠，逐值一致。
+fn tag_index_lookup<'a, V>(map: &'a HashMap<String, V>, tag: &str) -> Option<&'a V> {
+    if tag.bytes().all(|b| !b.is_ascii_uppercase()) {
+        map.get(tag)
+    } else {
+        map.get(&tag.to_ascii_lowercase())
+    }
+}
+
+/// 唯一性门匹配数（S1d 结构化）——`ctx = Some` 直查 [`DocUniqIndex`] O(1)，
+/// `None` 为原语义引擎直查。
+fn uniq_stable_count(doc: &Document, ctx: Option<UniqSelCtx>, parts: &StableSelParts) -> usize {
+    let Some(ctx) = ctx else {
+        return doc.query_selector_all(doc.root(), &parts.selector_string()).len();
+    };
+    let idx = doc_uniq_index(doc, ctx);
+    match parts {
+        StableSelParts::Id(id) => idx.ids.get(id.as_str()).map_or(0, |h| h.count as usize),
+        StableSelParts::TagClass(tag, class) => tag_index_lookup(&idx.tag_class, tag)
+            .and_then(|m| m.get(class.as_str()))
+            .map_or(0, |h| h.count as usize),
+        StableSelParts::Tag(tag) => tag_index_lookup(&idx.tags, tag).map_or(0, |h| h.count as usize),
+    }
+}
+
+/// name/target 属性锚唯一性门计数（S1d）——tag 为元素 `local_name()` 原串（内部
+/// 走小写键查找），`attr` 为锚属性名，`value` 为**已过字符域门**的原值（索引按
+/// 原值建键，与引擎 `Exact` raw 比较一致）。
+fn uniq_attr_anchor_count(doc: &Document, ctx: Option<UniqSelCtx>, tag: &str, attr: &str, value: &str) -> usize {
+    let Some(ctx) = ctx else {
+        return doc
+            .query_selector_all(doc.root(), &format!("{tag}[{attr}=\"{value}\"]"))
+            .len();
+    };
+    let idx = doc_uniq_index(doc, ctx);
+    let counts = if attr == "name" { &idx.tag_name } else { &idx.tag_target };
+    tag_index_lookup(counts, tag)
+        .and_then(|m| m.get(value))
+        .copied()
+        .map_or(0, |c| c as usize)
+}
+
+/// 为节点生成在文档中**唯一**的选择器——语义与形态优先级见上方主文档（S1c memo
+/// 小节插入致主文档与本 fn 分离，此处补 `missing_docs` 锚）。
 pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    unique_selector_for_node_ctx(doc, None, node)
+}
+
+/// [`unique_selector_for_node`] 的带 memo 上下文内核（S1c）——`ctx = Some` 时唯一
+/// 性门经 [`uniq_stable_count`]/[`uniq_attr_anchor_count`] 直查 [`DocUniqIndex`]，
+/// `None` 为原语义。
+fn unique_selector_for_node_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: NodeId) -> Option<String> {
     // s175（html-semantics M2）：detached 节点（fragment/声明式 shadow 镜像等，parent
     // 链不达 doc root）**不可寻址**——选择器的语义是「从 root 可解析定位」。detached
     // 节点的 `tag.class` 身份串会盗用在树同身份真元素的唯一选择器：uniqueness 门在
@@ -723,18 +1032,16 @@ pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> 
         }
         cur = doc.get(cur)?.parent?;
     }
-    if let Some(sel) = stable_selector_for_node(doc, node) {
-        let matches = doc.query_selector_all(doc.root(), sel.trim());
-        if matches.len() == 1 {
-            return Some(sel);
-        }
+    if let Some(parts) = stable_selector_parts(doc, node)
+        && uniq_stable_count(doc, ctx, &parts) == 1
+    {
+        return Some(parts.selector_string());
     }
-    if let Some(sel) = unique_attr_anchor(doc, node) {
+    if let Some(sel) = unique_attr_anchor_ctx(doc, ctx, node) {
         return Some(sel);
     }
-    structural_path_selector(doc, node)
+    structural_path_selector_ctx(doc, ctx, node)
 }
-
 /// 节点的元素父（跳过文本等非元素节点）。根元素（`<html>`）→ `None`。
 fn element_parent(doc: &Document, node: NodeId) -> Option<NodeId> {
     let mut cur = doc.get(node)?.parent?;
@@ -766,14 +1073,14 @@ fn element_child_index(doc: &Document, parent: NodeId, node: NodeId) -> Option<u
 /// [`unique_attr_anchor`]（name/target，唯一匹配门）。**裸 `tag` 排除**——不携带
 /// 节点身份，对 afterbegin 位移零稳定增益（`body` 锚与 `html > body` 暴露同一层
 /// 兄弟位），排除后无锚祖先链保持既有 root 形态，形态变化面收敛到真锚子树。
-fn ancestor_anchor_selector(doc: &Document, node: NodeId) -> Option<String> {
-    if let Some(sel) = stable_selector_for_node(doc, node)
-        && (sel.starts_with('#') || sel.contains('.'))
-        && doc.query_selector_all(doc.root(), sel.trim()).len() == 1
+fn ancestor_anchor_selector_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: NodeId) -> Option<String> {
+    if let Some(parts) = stable_selector_parts(doc, node)
+        && !matches!(parts, StableSelParts::Tag(_))
+        && uniq_stable_count(doc, ctx, &parts) == 1
     {
-        return Some(sel);
+        return Some(parts.selector_string());
     }
-    unique_attr_anchor(doc, node)
+    unique_attr_anchor_ctx(doc, ctx, node)
 }
 
 /// 构造 nth-child 结构路径选择器：自 node 上行，**最近唯一身份锚祖先处落根**
@@ -796,6 +1103,12 @@ fn ancestor_anchor_selector(doc: &Document, node: NodeId) -> Option<String> {
 /// t8b 回落钉语义）；锚定路径天然短（锚 + 1–2 段），引擎解析税可忽略，fastpath
 /// 锚首段扩展暂缓。
 pub(crate) fn structural_path_selector(doc: &Document, node: NodeId) -> Option<String> {
+    structural_path_selector_ctx(doc, None, node)
+}
+
+/// [`structural_path_selector`] 的带 memo 上下文内核（S1c）——祖先身份锚门经
+/// [`uniq_stable_count`]/[`uniq_attr_anchor_count`]（`ctx = None` 为原语义）。
+fn structural_path_selector_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: NodeId) -> Option<String> {
     let mut segments: Vec<String> = Vec::new();
     let mut cur = node;
     loop {
@@ -808,7 +1121,7 @@ pub(crate) fn structural_path_selector(doc: &Document, node: NodeId) -> Option<S
             Some(parent) => {
                 let pos = element_child_index(doc, parent, cur)?;
                 segments.push(format!("{tag}:nth-child({pos})"));
-                if let Some(anchor) = ancestor_anchor_selector(doc, parent) {
+                if let Some(anchor) = ancestor_anchor_selector_ctx(doc, ctx, parent) {
                     segments.reverse();
                     return Some(format!("{anchor} > {}", segments.join(" > ")));
                 }
@@ -2452,10 +2765,19 @@ pub fn query_all_selector_list(html: &str, selector: &str) -> String {
 
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
+    query_all_selector_list_doc_ctx(doc, None, selector)
+}
+
+/// S1c memo 变体（worker 热查询回调专用，见 [`UniqSelCtx`]）。
+pub fn query_all_selector_list_doc_cached(doc: &Document, ctx: UniqSelCtx, selector: &str) -> String {
+    query_all_selector_list_doc_ctx(doc, Some(ctx), selector)
+}
+
+fn query_all_selector_list_doc_ctx(doc: &Document, ctx: Option<UniqSelCtx>, selector: &str) -> String {
     let root = doc.root();
     doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
-        .filter_map(|id| unique_selector_for_node(doc, id))
+        .filter_map(|id| unique_selector_for_node_ctx(doc, ctx, id))
         .collect::<Vec<_>>()
         .join("|")
 }
@@ -2476,11 +2798,20 @@ pub fn query_all_selector_list_doc(doc: &Document, selector: &str) -> String {
 /// 保留——ns URI 本身含 `\x1f` 亦不影响逐值一致。
 /// https://dom.spec.whatwg.org/#concept-getelementsbytagnamens
 pub fn query_all_tagged_list_doc(doc: &Document, selector: &str) -> String {
+    query_all_tagged_list_doc_ctx(doc, None, selector)
+}
+
+/// S1c memo 变体（worker 热查询回调专用，见 [`UniqSelCtx`]）。
+pub fn query_all_tagged_list_doc_cached(doc: &Document, ctx: UniqSelCtx, selector: &str) -> String {
+    query_all_tagged_list_doc_ctx(doc, Some(ctx), selector)
+}
+
+fn query_all_tagged_list_doc_ctx(doc: &Document, ctx: Option<UniqSelCtx>, selector: &str) -> String {
     let root = doc.root();
     doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))
         .into_iter()
         .filter_map(|id| {
-            let sel = unique_selector_for_node(doc, id)?;
+            let sel = unique_selector_for_node_ctx(doc, ctx, id)?;
             let node = doc.get(id)?;
             let zero_dom::NodeKind::Element(ref e) = node.kind else {
                 return None;
@@ -3224,6 +3555,14 @@ pub fn query_attr_from_html(html: &str, selector: &str, name: &str) -> String {
 /// 查询 doc 版本（免每次查询重新 parse——见 register_dom_callbacks 查询缓存）。
 pub fn query_attr_from_html_doc(doc: &Document, selector: &str, name: &str) -> String {
     find_by_selector(doc, selector)
+        .and_then(|n| doc.get_attribute(n, name))
+        .unwrap_or_default()
+}
+
+/// S1c memo 变体（worker 热读回调专用，见 [`UniqSelCtx`]）——定位 memo 命中与
+/// 重算逐值等价。
+pub fn query_attr_from_html_doc_cached(doc: &Document, ctx: UniqSelCtx, selector: &str, name: &str) -> String {
+    find_by_selector_cached(doc, ctx, selector)
         .and_then(|n| doc.get_attribute(n, name))
         .unwrap_or_default()
 }

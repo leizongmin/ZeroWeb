@@ -1612,6 +1612,9 @@
         try {
           if (v == null) delete _zwUserProto[key];
           else _zwUserProto[key] = v;
+          // S1e：用户原型变更使该 key 的 R98 CE 原型 memo 失效（下次读重算走
+          // getPrototypeOf trap，_zwUserProto 优先语义不变）。
+          _zwR98ProtoMemoDelete(key);
         } catch (_e128sp) { return false; }
         return true;
       }
@@ -12221,6 +12224,9 @@
           // 遍历的表**——`_handleChildren`/`_zwNodeParent` 保留（invalidate 后的 CE 断连传播
           //（_ceApplyConn 子树展开）仍依赖它们，R2994 测试实证提前清破坏 disconnectedCallback）。
           delete _proxyCache['@' + _rv.__zwHandle];
+          // S1e：R98 CE 原型 memo 与 _proxyCache 同生命周期（同键域 handle 键）——
+          // 消零节点条目同步清，防 memo 沿 subtest 泄漏同 R52 口径。
+          _zwR98ProtoMemoDelete('@' + _rv.__zwHandle);
           if (typeof _clsProxyCache !== 'undefined') delete _clsProxyCache['@' + _rv.__zwHandle];
           // slice47：`_zwAppl45` 压实豁免标记存于 per-element `_expando` 旁表（set trap
           // R3069 fallthrough 落表，part05.js `_ex2[p] = value`）——本清除在豁免标记

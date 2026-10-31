@@ -188,10 +188,54 @@ fn with_query_view_doc<R>(
         // requestsubmit 的需求（同批 insertAdjacentHTML 后 querySelector 命中）由
         // InsertAdjacentHtml 覆盖。
         // 增量步：条目已归我们所有（take 出来原地改，零 clone）；否则全新 parse 基座。
+        // t-p126 S1（R-baidu2 同款预算）：全量重建是软导航后查询风暴的燃烧主力
+        //（github 3.6k 元素档单次 parse 2-6s；drain/view_gen 换代后首个查询必触发，
+        // 页面持续派发 ⇒ 无限重建，v10/v11 双归因 Arc 55）。预算耗尽且退避未到期
+        // 时服务上一条目文档（有界过期，与 [`with_query_doc`] 同一权衡面；
+        // https://dom.spec.whatwg.org/#dom-parentelement-queryselector 要求查询反映
+        // 当前 DOM，此处是「冻结 vs 有界过期」的显式选择，仅病理页面触达——小文档
+        // parse ≪ 预算 ⇒ decide 恒 Parse，零行为变化）。O(1)/链增量路径不设防
+        //（成本 = 分片段解析，量级无关）。
         let mut doc = if chain_hit {
             cache_guard.take().expect("chain_hit implies entry").1
         } else {
-            parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()))
+            let miss_at = std::time::Instant::now();
+            let stale_hit = QUERY_REPARSE.with(|slot| {
+                let decision = match slot.borrow_mut().as_mut() {
+                    Some(g) => g.decide(miss_at),
+                    // 首次重解析：无旧文档可回退，必须解析。
+                    None => ReparseDecision::Parse,
+                };
+                match decision {
+                    ReparseDecision::Parse => false,
+                    ReparseDecision::Stale => {
+                        if cache_guard.is_some() {
+                            true
+                        } else {
+                            // 无旧文档（不应发生：decide 首查即 Parse），记零成本
+                            // 后强制解析。
+                            if let Some(g) = slot.borrow_mut().as_mut() {
+                                g.record(miss_at, Duration::ZERO);
+                            }
+                            false
+                        }
+                    }
+                }
+            });
+            if stale_hit {
+                // 旧条目保持旧键（不换代）：下次查询重新判定，退避到期即刷新。
+                let (_, stale_doc) = cache_guard.as_ref().expect("stale_hit implies entry");
+                return f(stale_doc);
+            }
+            let parse_start = std::time::Instant::now();
+            let doc = parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()));
+            let cost = parse_start.elapsed();
+            QUERY_REPARSE.with(|slot| {
+                slot.borrow_mut()
+                    .get_or_insert_with(|| QueryReparseGuard::new(parse_start))
+                    .record(parse_start, cost)
+            });
+            doc
         };
         let structural: Vec<DomMutation> = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
@@ -341,6 +385,21 @@ pub static DOM_VIEW_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::Ato
 /// dom_html 快照就地写入站点调用（见 [`DOM_VIEW_GEN`]）。
 pub fn bump_dom_view_gen() {
     DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// t-p126 S1c：worker 热查询回调的物化 memo 上下文——html `Arc` 指针 + 变更数 +
+/// drain/view 两代计数 + 文档节点数指纹（S1d，见 [`UniqSelCtx`] 文档），与
+/// TAGGED_ALL_CACHE 键同模式（同 token ⇒ `with_query_view_doc` 单条目视图缓存服务
+/// 同一 Document 内容，memo 命中与重算逐值等价）。在 `with_query_view_doc` 闭包内
+/// 调用（需视图 doc 读 `node_count`）。
+fn uniq_sel_ctx(html: &Arc<Mutex<String>>, m: &Arc<Mutex<Vec<DomMutation>>>, doc: &zero_dom::Document) -> UniqSelCtx {
+    UniqSelCtx::new(
+        Arc::as_ptr(html) as usize,
+        m.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        MUT_DRAIN_GEN.load(Ordering::Relaxed) as u64,
+        DOM_VIEW_GEN.load(Ordering::Relaxed) as u64,
+        doc.node_count(),
+    )
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -559,7 +618,10 @@ pub fn register_dom_callbacks(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_match_selector_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| {
+                let ctx = uniq_sel_ctx(&html, &m, doc);
+                query_match_selector_doc_cached(doc, ctx, &sel)
+            })
         }),
     );
 
@@ -569,7 +631,10 @@ pub fn register_dom_callbacks(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_all_selector_list_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc| {
+                let ctx = uniq_sel_ctx(&html, &m, doc);
+                query_all_selector_list_doc_cached(doc, ctx, &sel)
+            })
         }),
     );
 
@@ -602,7 +667,19 @@ pub fn register_dom_callbacks(
             }) {
                 return hit;
             }
-            let payload = with_query_view_doc(&html, &m, |doc| query_all_tagged_list_doc(doc, &sel));
+            let payload = with_query_view_doc(&html, &m, |doc| {
+                query_all_tagged_list_doc_cached(
+                    doc,
+                    UniqSelCtx::new(
+                        Arc::as_ptr(&html) as usize,
+                        count,
+                        drain_gen as u64,
+                        view_gen as u64,
+                        doc.node_count(),
+                    ),
+                    &sel,
+                )
+            });
             TAGGED_ALL_CACHE.with(|slot| {
                 *slot.borrow_mut() = Some((
                     (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen, sel),
@@ -1612,7 +1689,10 @@ pub fn register_dom_callbacks(
             // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
             // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
             // .value= 不脏污 defaultValue 语义保持）。
-            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc| {
+                let ctx = uniq_sel_ctx(&html, &m, doc);
+                query_attr_from_html_doc_cached(doc, ctx, &args[0], &args[1])
+            })
         }),
     );
 
@@ -3497,8 +3577,9 @@ fn query_tag_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
 ///
 /// - 滚动窗口（5s）内累计重解析耗时 < [`QUERY_REPARSE_BUDGET`]：正常重解析，
 ///   零语义变化（小文档/常规交互页永远不会触达预算）。
-/// - 预算耗尽：进入指数退避（100ms 起，×2 封顶 2s）——退避到期的那次查询
-///   仍刷新文档，期间的查询**服务上一次解析的文档**（有界过期快照）。
+/// - 预算耗尽：进入指数退避（100ms 起，×2 封顶 4s；退避下限挂钩单次解析
+///   成本，见 [`Self::record`]）——退避到期的那次查询仍刷新文档，期间的查询
+///   **服务上一次解析的文档**（有界过期快照）。
 ///   https://dom.spec.whatwg.org/#dom-parentelement-queryselector 要求查询
 ///   反映当前 DOM；此处是「冻结 vs 有界过期」的显式权衡，仅病理页面触达。
 #[derive(Debug)]
@@ -3520,7 +3601,9 @@ enum ReparseDecision {
 const QUERY_REPARSE_WINDOW: std::time::Duration = Duration::from_secs(5);
 const QUERY_REPARSE_BUDGET: std::time::Duration = Duration::from_millis(1200);
 const QUERY_REPARSE_BACKOFF_START: std::time::Duration = Duration::from_millis(100);
-const QUERY_REPARSE_BACKOFF_MAX: std::time::Duration = Duration::from_secs(2);
+/// 封顶取 4s：成本挂钩下限（t-p126 S1）需要容纳「单次解析 2-6s」档（github 软导航
+/// 3.6k 元素），2s 封顶会让下限被截断、病理页 duty 回到 ~65%。
+const QUERY_REPARSE_BACKOFF_MAX: std::time::Duration = Duration::from_secs(4);
 use std::time::Duration;
 
 impl QueryReparseGuard {
@@ -3561,6 +3644,14 @@ impl QueryReparseGuard {
         }
         self.window_spent += cost;
         self.last_parse = now;
+        // t-p126 S1：退避下限挂钩单次解析成本（倍增仍归 [`Self::decide`]，此处
+        // 只抬下限）。预算是前置判定、成本是事后入账——大文档单次全量解析
+        // （github 软导航 3.6k 元素档 2-6s）一击穿透 1200ms 预算后，常数退避
+        // （100ms 起）形同虚设：解析 3s + 退让 100ms ⇒ ~97% 占空比燃烧。下一次
+        // 重解析至少等价于上一次的成本（封顶 [`QUERY_REPARSE_BACKOFF_MAX`]），
+        // 把病理页 duty 压到 ≤50% 并随 decide 倍增继续衰减；零/小成本记录
+        // （常规页面与 WPT 用例）退避序列逐位不变（max(ZERO) 恒等）。
+        self.backoff = self.backoff.max(cost).min(QUERY_REPARSE_BACKOFF_MAX);
     }
 }
 
@@ -3860,8 +3951,10 @@ mod query_reparse_tests {
     fn budget_exhausted_escalates_backoff_with_periodic_refresh() {
         let t0 = std::time::Instant::now();
         let mut g = QueryReparseGuard::new(t0);
-        // 打满预算（单窗口 1200ms）。
-        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        // 打满预算（单窗口 1200ms）。直设 window_spent 而非 record(BUDGET)——
+        // t-p126 S1 起大成本记录会同步抬退避下限（见 backoff_floors_to_last_parse_cost），
+        // 该语义由专项测试覆盖，此处只验证倍增序列。
+        g.window_spent = QUERY_REPARSE_BUDGET;
         // 预算刚好耗尽后的首次 miss：退避尚未设置（0）→ 立即放行一次刷新，退避升至 START。
         assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(2), Duration::ZERO);
@@ -3876,7 +3969,9 @@ mod query_reparse_tests {
         assert_eq!(g.decide(t0 + Duration::from_millis(310)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(310), Duration::ZERO);
         assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 4);
-        // 同一窗口内（<5s）继续：退避到期逐次放行并翻倍，直至 2s 封顶。
+        // 同一窗口内（<5s）继续：退避到期逐次放行并翻倍，直至封顶
+        //（4s 封顶由 backoff_floors_to_last_parse_cost 覆盖——纯倍增序列触及
+        // 4s 需越出 5s 窗口）。
         assert_eq!(g.decide(t0 + Duration::from_millis(560)), ReparseDecision::Stale);
         assert_eq!(g.decide(t0 + Duration::from_millis(810)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(810), Duration::ZERO);
@@ -3884,10 +3979,11 @@ mod query_reparse_tests {
         assert_eq!(g.decide(t0 + Duration::from_millis(1610)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(1610), Duration::ZERO);
         assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 16);
-        // 再翻倍触及 2s 封顶。
+        // 再翻倍至 3200ms（START*32）。4s 封顶在纯倍增序列里需再等 3.2s，先滚过
+        // 5s 窗口——由 backoff_floors_to_last_parse_cost 经成本下限覆盖。
         assert_eq!(g.decide(t0 + Duration::from_millis(3220)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(3220), Duration::ZERO);
-        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 32);
         // 封顶后（仍在窗口内）：退避未到期 → 过期快照。
         assert_eq!(g.decide(t0 + Duration::from_millis(4220)), ReparseDecision::Stale);
         // 窗口滚过（≥5s）：预算与退避复位 → 恢复正常重解析语义。
@@ -3896,12 +3992,32 @@ mod query_reparse_tests {
         assert_eq!(g.backoff, Duration::ZERO);
     }
 
+    /// t-p126 S1：退避下限挂钩单次解析成本——大成本记录后 backoff ≥ cost
+    /// （封顶 [`QUERY_REPARSE_BACKOFF_MAX`]）；零成本记录不改变 decide 的倍增序列
+    /// （R-baidu2 语义保持，见 budget_exhausted_escalates_backoff_with_periodic_refresh）。
+    #[test]
+    fn backoff_floors_to_last_parse_cost() {
+        let t0 = std::time::Instant::now();
+        let mut g = QueryReparseGuard::new(t0);
+        // 单次 3s 解析（github 软导航 3.6k 元素档）一击穿透 1200ms 预算。
+        g.record(t0, Duration::from_secs(3));
+        assert_eq!(g.backoff, Duration::from_secs(3));
+        // 退避到期放行：decide 倍增 3s→6s，被 4s 封顶截断。
+        assert_eq!(g.decide(t0 + Duration::from_secs(3)), ReparseDecision::Parse);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+        // 超大成本（9s）记录：下限抬到 9s 后同样被封顶截断。
+        g.record(t0 + Duration::from_secs(3), Duration::from_secs(9));
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+    }
+
     /// 滚动窗口：窗口滚过后预算与退避复位（风暴平息后自动恢复正常语义）。
     #[test]
     fn window_roll_resets_budget_and_backoff() {
         let t0 = std::time::Instant::now();
         let mut g = QueryReparseGuard::new(t0);
-        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        // 直设 window_spent 打满预算（record(BUDGET) 会同步抬退避下限，见
+        // budget_exhausted_escalates_backoff_with_periodic_refresh 处说明）。
+        g.window_spent = QUERY_REPARSE_BUDGET;
         assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
         assert!(g.backoff >= QUERY_REPARSE_BACKOFF_START);
         // 窗口（5s）过期后的第一次 decide：spent/backoff 复位。
@@ -3948,6 +4064,55 @@ mod query_reparse_tests {
         });
         let seen_fresh = with_query_doc(html_b, count_divs);
         assert_eq!(seen_fresh, 2, "post-backoff miss must reparse to the fresh doc");
+    }
+
+    /// t-p126 S1 集成：视图全量重建在预算耗尽时服务上一条目文档（有界过期），
+    /// 退避到期后刷新到换代基座。操纵 QUERY_REPARSE thread_local 以确定性触达
+    /// 预算（镜像 with_query_doc_serves_stale_doc_while_budget_tripped）。
+    #[test]
+    fn with_query_view_doc_serves_stale_doc_while_budget_tripped() {
+        let count_divs = |doc: &zero_dom::Document| {
+            crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
+                .split('|')
+                .filter(|s| !s.is_empty())
+                .count()
+        };
+        let html = Arc::new(std::sync::Mutex::new(
+            "<html><body><div id=\"a\"></div></body></html>".to_string(),
+        ));
+        let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 首查填充条目（基座 = 换代前快照，1 个 div）。
+        assert_eq!(with_query_view_doc(&html, &mutations, count_divs), 1);
+        // 就地换代（R358 范式）：基座换 2-div 快照 + view_gen bump——正常路径下
+        // 次查询即全量重建到新基座。
+        *html.lock().unwrap_or_else(|e| e.into_inner()) =
+            "<html><body><div id=\"a\"></div><div id=\"b\"></div></body></html>".to_string();
+        bump_dom_view_gen();
+        // 打满预算 + 刚解析过（退避窗内）→ 重建被拦，服务换代前旧条目（1 个 div）。
+        QUERY_REPARSE.with(|slot| {
+            let mut g = slot.borrow_mut();
+            let now = std::time::Instant::now();
+            let guard = g.get_or_insert_with(|| QueryReparseGuard::new(now));
+            guard.window_spent = QUERY_REPARSE_BUDGET;
+            guard.last_parse = now;
+            guard.backoff = QUERY_REPARSE_BACKOFF_MAX;
+        });
+        assert_eq!(
+            with_query_view_doc(&html, &mutations, count_divs),
+            1,
+            "budget-tripped rebuild must serve the stale cached view doc"
+        );
+        // 退避到期 → 全量重建刷新到新基座（2 个 div）。
+        QUERY_REPARSE.with(|slot| {
+            if let Some(g) = slot.borrow_mut().as_mut() {
+                g.backoff = Duration::ZERO;
+            }
+        });
+        assert_eq!(
+            with_query_view_doc(&html, &mutations, count_divs),
+            2,
+            "post-backoff rebuild must reparse to the fresh base"
+        );
     }
 }
 

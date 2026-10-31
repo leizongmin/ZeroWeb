@@ -26052,6 +26052,37 @@ return e;
 
 
 
+  // S1e（t-p126，2026-11-01）：R98 CE 原型解析 memo。R98 分支在**每次字符串属性读**
+  // 上执行 `Object.getPrototypeOf(_makeProxy(sel, handle))`——每读构造一次性 proxy +
+  // 走 getPrototypeOf trap（kind-map 走查 + `_realTag` + customElements.get +
+  // registry 非空时 `is` 属性宿主往返）+ `customElements.getName`（R351 探针实测
+  // ≈78µs/读）；github 软导航 rebinding 数十万属性读 × 78µs ≈ 21s 微任务排水臂
+  //（v19 job-drain/prof 定谳）。memo 键 = 节点 key，值 = { g: registry 世代,
+  // p: trap 结果, ce: 首层 ctor 是否注册 CE }。失效面：`_ce_registry_gen` 自增
+  //（_ceDefine 单点）→ 代键失配重算；setPrototypeOf trap（R128 写 _zwUserProto）
+  // → 单键删；R52 消零 purge → 同步删。`is` 属性创建后变更不改接口——spec 元素
+  // 接口创建时定（https://dom.spec.whatwg.org/#concept-element-interface），
+  // memo 与真浏览器一致。封顶溢出整体清空（性能换语义无损，UNIQ_MEMO_CAP 先例）。
+  var _zwR98ProtoMemo = new Map();
+  function _zwR98ProtoMemoFor(sel, handle, key) {
+    var _m = _zwR98ProtoMemo.get(key);
+    if (_m !== undefined && _m.g === _ce_registry_gen) return _m;
+    // 异常语义与旧路径逐点一致：getPrototypeOf 抛则照旧上抛（不落 memo）；
+    // getName 的 try/catch 原样保留（抛 → ce=false）。
+    var _p = Object.getPrototypeOf(_makeProxy(sel, handle));
+    var _ce = false;
+    try {
+      var _c = _p && _p.constructor;
+      if (globalThis.customElements && typeof globalThis.customElements.getName === 'function'
+          && _c && globalThis.customElements.getName(_c)) _ce = true;
+    } catch (_e98ceM) {}
+    _m = { g: _ce_registry_gen, p: _p, ce: _ce };
+    if (_zwR98ProtoMemo.size >= 16384) _zwR98ProtoMemo.clear();
+    _zwR98ProtoMemo.set(key, _m);
+    return _m;
+  }
+  function _zwR98ProtoMemoDelete(key) { _zwR98ProtoMemo.delete(key); }
+
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -26119,7 +26150,7 @@ return e;
         // 同款 while 原型走查形态。
         if (prop === 'adoptedStyleSheets') {
           var _asrGChain = null;
-          try { _asrGChain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_eAsrGp) { _asrGChain = null; }
+          try { _asrGChain = _zwR98ProtoMemoFor(sel, handle, key).p; } catch (_eAsrGp) { _asrGChain = null; }
           var _asrGGuard = 0;
           while (_asrGChain && _asrGGuard < 8) {
             var _asrGDesc = null;
@@ -26141,7 +26172,7 @@ return e;
         // ctor 链中断、用户 ctor 体不执行）。放顶部（先于一切属性分支）——中间分支会先吞掉
         // 该名（R93 通用回落太靠后，赶不上）。
         if (prop === 'constructor') {
-          var _cChain = Object.getPrototypeOf(_makeProxy(sel, handle));
+          var _cChain = _zwR98ProtoMemoFor(sel, handle, key).p;
           var _cGuard = 0;
           while (_cChain && _cGuard < 8) {
             var _cDesc = Object.getOwnPropertyDescriptor(_cChain, 'constructor');
@@ -26178,17 +26209,13 @@ return e;
         //（R98 set 的 symbol expando 走 R3042 读）。getter 异常吞返 undefined（loose，与 R93
         // 链回落行为一致）。
         if (typeof prop === 'string' && prop.length > 0) {
-          var _r98Proto = Object.getPrototypeOf(_makeProxy(sel, handle));
-          if (_r98Proto) {
-            var _r98IsCE = false;
-            try {
-              var _r98Ctor = _r98Proto.constructor;
-              if (globalThis.customElements && typeof globalThis.customElements.getName === 'function'
-                  && _r98Ctor && globalThis.customElements.getName(_r98Ctor)) _r98IsCE = true;
-            } catch (_e98ce) {}
-            if (_r98IsCE) {
+          // S1e：memo 化（见 _zwR98ProtoMemoFor 注）——每读 78µs 的一次性 proxy 构造 +
+          // getPrototypeOf trap 走查 + getName 注册表查，塌缩为一次 Map 查。
+          var _r98m = _zwR98ProtoMemoFor(sel, handle, key);
+          if (_r98m.p) {
+            if (_r98m.ce) {
               var _r98GDesc;
-              try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98Proto, prop); } catch (_e98g) { _r98GDesc = undefined; }
+              try { _r98GDesc = Object.getOwnPropertyDescriptor(_r98m.p, prop); } catch (_e98g) { _r98GDesc = undefined; }
               if (_r98GDesc && typeof _r98GDesc.get === 'function') {
                 try { return _r98GDesc.get.call(_makeProxy(sel, handle)); } catch (_e98gc) { return undefined; }
               }
