@@ -102,6 +102,23 @@ span，属 insertLineBreak 落位语义，与上述两缺陷无涉。
 等），probe/chd/inline-host/engine lib/webview lib 均已在剥离插桩的干净树复验；
 插桩剥离后探针旗标引用 grep 清零、part04 无 diff。
 
+## 4a. rebase 撞车合并组合态复验（远端 7721142c4 碰头仲裁轮后）
+
+push 前 `git pull --rebase` 撞车并行流 ghost text ①簇碰头仲裁轮（7721142c4：
+part92 钉测入库 + r113 期望同步 eabdd5efa + s172 根修），shim 面零碰撞
+（远端对 js_dom_shim/ 零改动）。合并树全量复验：
+
+| 门 | 账 | 对比 |
+|----|----|------|
+| join 三案 | 7,518P/0F | 恒等 |
+| white-space-style | 616P/488F | 零位移 |
+| cannot-have-div | 420P/0F | 恒等 |
+| inline-host | 720P/160F | comm 对原 710F 集 = 0 新败 |
+| engine lib | 3614P/10F | = 远端新基线（r113 已销账，红集恰为已知 10 条） |
+| webview lib | 825P/0F | = 远端账 |
+
+上文 §4 的 engine lib 3612P/11F / webview lib 824P/0F 为变基前分支树账，保留存证。
+
 ## 5. 提交
 
 - e9fce9466 `fix(engine): R5356 序列化 walk 放行过时 R5273 单文本种子改读基座——inline-host 语料 170P→410P`

@@ -23,7 +23,9 @@
 > cannot-have-div 420P/0F 零位移、engine lib 3612P/11F 已知红逐条 identical、webview lib
 > **824P/0F 新基线**（旧 r3259 红已被并行流 s170 修掉）、inline-host 终树复验 **720P/160F**、
 > 对原 710F 集 comm -13 = 0 新败；插桩树记账说明（join/wss 出插桩二进制，其余剥离树复验）
-> 见 evidence。
+> 见 evidence。**rebase 撞车合并组合态复验**（远端 7721142c4 ghost text ①簇碰头仲裁轮，
+> shim 面零碰撞）：join 7,518P/0F、wss 616P/488F、chd 420P/0F、inline-host 720P/160F
+> 零新败、engine lib 3614P/10F=远端新基线（r113 已销账）、webview lib 825P/0F，全绿。
 > 明细与归因链见
 > [evidence/2026-10-31-r5356-stale-seed-and-actions-modifier.md](editing-compat/evidence/2026-10-31-r5356-stale-seed-and-actions-modifier.md)。
 > **卡点/剩余**：160F 单一机制=可见性补断 `<br>` 落宿主 span **之后**（container 子级）
