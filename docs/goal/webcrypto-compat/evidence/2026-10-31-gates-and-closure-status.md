@@ -218,3 +218,14 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   `+messages-search` 缺 `search:message` scope（app 未申请）、user
   身份读 P2P 需交互式 device-code 授权。回复核验通道收敛为 git
   账面 + 用户主动知会两条。
+
+### 2026-11-01 03:55 追记：锚账延用窗口随 tip 前移至 f6c507297——82eb31b67 为 #[cfg(test)] 面，零二进制影响
+
+- 本流 docs 提交（`f6c507297`）rebase 时吸收并行流 `82eb31b67`
+  （wpt-runner legacy-mb chars 语料缺失假红修复）：改动全部位于
+  `wpt_file_loader.rs:402` `#[cfg(test)] mod tests` 内（删 checked
+  计数与尾断言），不进 runner 二进制、不在语料执行路径；legacy-mb
+  chars 族与 WebCryptoAPI 语料（.any.js/.window.js testharness）亦非
+  同一加载通道。e4e4ebc09 的锚逐字节一致账按二进制面同一性延用至现
+  tip `f6c507297`，本轮不复跑。远端同步（origin/main =
+  `f6c507297`），树 clean。
