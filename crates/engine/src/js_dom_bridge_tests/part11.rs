@@ -293,7 +293,10 @@ fn test_request_body_readers_r2982() {
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
-    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    // net-api M2-S3 起 Request 构造校验链经 shim `new URL` 验解析后 URL——相对 URL
+    //（'/api'）需要可解析 base；about:blank 为 cannot-be-a-base，恒 TypeError，故给
+    // 真实页 URL（相对解析语义同时被覆盖）。
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/page".to_string()));
     let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);

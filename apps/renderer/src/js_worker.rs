@@ -4273,12 +4273,14 @@ mod tests {
         }));
         worker
             .execute_script_direct(
-                "fetch('/hello').then(function(r){ return r.text(); })
+                // 绝对 URL——文档快照 URL 为 about:blank（cannot-be-a-base），相对 URL
+                // 自 net-api M2-S3 起经 fetch 构造校验恒 reject（spec 一致），非本测管路。
+                "fetch('https://wpt.test/hello').then(function(r){ return r.text(); })
                  .then(function(t){ globalThis.__result = t; });",
             )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
-        assert_eq!(r, "body:/hello");
+        assert_eq!(r, "body:https://wpt.test/hello");
         worker.shutdown();
     }
 
@@ -4288,7 +4290,10 @@ mod tests {
         let mut worker = RendererJsWorker::spawn(5);
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         worker
-            .execute_script_direct("fetch('/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });")
+            .execute_script_direct(
+                // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
+                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });",
+            )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
         assert_eq!(r, "ERR");
@@ -4309,7 +4314,8 @@ mod tests {
         }));
         worker
             .execute_script_direct(
-                "fetch('/j').then(function(r){
+                // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
+                "fetch('https://wpt.test/j').then(function(r){
                    globalThis.__shape = r.ok + ':' + r.status;
                    return r.json();
                  }).then(function(o){ globalThis.__result = o.key + '/' + o.n; });",

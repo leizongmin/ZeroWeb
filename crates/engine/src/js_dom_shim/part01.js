@@ -5985,6 +5985,22 @@
     }
     return null;
   }
+  // R3222：clone 复制**内部头列表**——guard 是 Headers 视图过滤非数据删除，forbidden
+  // response 头（Set-Cookie）随内部列表经 getSetCookie 特例在 clone 上保真（spec
+  // clone「a copy of response's headers」；fetch.spec.whatwg.org#dom-response-clone）。
+  // 经 `headers:` init 重填走公开迭代（response guard 隐藏 Set-Cookie）→ clone 丢
+  // cookie——net-api 二期 M2-S3 headers-record 重构移除 _h 特判后的回归（R3222 钉测）。
+  function _zwCloneRawHeaders(src, dst) {
+    var raw = {};
+    for (var hn in src._h) {
+      if (Object.prototype.hasOwnProperty.call(src._h, hn)) raw[hn] = src._h[hn].slice();
+    }
+    dst._h = raw;
+    dst._hCase = {};
+    for (var hc in src._hCase) {
+      if (Object.prototype.hasOwnProperty.call(src._hCase, hc)) dst._hCase[hc] = src._hCase[hc];
+    }
+  }
   globalThis.Response = function Response(body, init) {
     if (!(this instanceof Response)) return new Response(body, init);
     init = init || {};
@@ -6140,6 +6156,7 @@
         self._zwBodyStream = teed[0];
         _zwWireStreamToBody(self, teed[0]);
         var streamCloned = new Response(teed[1], { status: self.status, statusText: self.statusText, headers: self.headers });
+        _zwCloneRawHeaders(self.headers, streamCloned.headers);
         streamCloned.type = self.type;
         streamCloned.url = self.url;
         streamCloned._zwOpaqueStatus = self._zwOpaqueStatus;
@@ -6151,6 +6168,7 @@
       }
       var bodyArg = self._bodyBytes != null ? self._bodyBytes : self._bodyText;
       var cloned = new Response(bodyArg, { status: self.status, statusText: self.statusText, headers: self.headers });
+      _zwCloneRawHeaders(self.headers, cloned.headers);
       cloned.type = self.type;
       cloned.url = self.url;
       cloned._zwOpaqueStatus = self._zwOpaqueStatus;

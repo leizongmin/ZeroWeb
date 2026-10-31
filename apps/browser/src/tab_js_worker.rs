@@ -1109,12 +1109,14 @@ mod tests {
         }));
         worker
             .execute_script_direct(
-                "fetch('/hello').then(function(r){ return r.text(); })
+                // 绝对 URL——文档快照 URL 为 about:blank（cannot-be-a-base），相对 URL
+                // 自 net-api M2-S3 起经 fetch 构造校验恒 reject（spec 一致），非本测管路。
+                "fetch('https://wpt.test/hello').then(function(r){ return r.text(); })
                  .then(function(t){ globalThis.__result = t; });",
             )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
-        assert_eq!(r, "body:/hello");
+        assert_eq!(r, "body:https://wpt.test/hello");
         worker.shutdown();
     }
 
@@ -1125,7 +1127,10 @@ mod tests {
         worker.set_dom_snapshot("<html><body></body></html>", "about:blank");
         // 不调 set_fetch_handler。
         worker
-            .execute_script_direct("fetch('/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });")
+            .execute_script_direct(
+                // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
+                "fetch('https://wpt.test/x').then(function(r){ globalThis.__result = r.ok ? 'OK' : 'ERR'; });",
+            )
             .unwrap();
         let r = wait_for_global(&worker, "__result", 1000);
         assert_eq!(r, "ERR");
@@ -1147,7 +1152,8 @@ mod tests {
         }));
         worker
             .execute_script_direct(
-                "fetch('/j').then(function(r){
+                // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
+                "fetch('https://wpt.test/j').then(function(r){
                    globalThis.__shape = r.ok + ':' + r.status;
                    return r.json();
                  }).then(function(o){ globalThis.__result = o.key + '/' + o.n; });",
@@ -1231,7 +1237,8 @@ mod tests {
         }));
         worker
             .execute_script_direct(
-                "fetch('/api/echo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{\"x\":1}' })\
+                // 绝对 URL（about:blank 基不可解析相对 URL——同 resolves_via_handler 注记）。
+                "fetch('https://wpt.test/api/echo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{\"x\":1}' })\
                  .then(function(r){\
                    globalThis.__status = r.status + ':' + r.statusText + ':' + (r.ok ? 'ok' : 'no');\
                    globalThis.__hdr = r.headers.get('X-Test');\
@@ -1246,7 +1253,7 @@ mod tests {
         assert_eq!(hdr, "r2923", "Response.headers 从 wire 解析（X-Test 头）");
         let r = wait_for_global(&worker, "__result", 2000);
         assert_eq!(
-            r, "POST|/api/echo|{\"x\":1}|true",
+            r, "POST|https://wpt.test/api/echo|{\"x\":1}|true",
             "请求 method/url/body/headers 全透传 + Response.text() 返响应 body"
         );
         worker.shutdown();

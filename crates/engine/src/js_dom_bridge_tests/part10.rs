@@ -962,18 +962,26 @@ fn test_request_signal_passthrough_r3045() {
             "globalThis.__ctrl = new AbortController();\
              globalThis.__aborted = 'pending';\
              var req = new Request('http://test.local/a', { signal: globalThis.__ctrl.signal });\
-             globalThis.__reqSigSame = (req.signal === globalThis.__ctrl.signal);\
+             globalThis.__reqSigDiff = (req.signal !== globalThis.__ctrl.signal);\
              fetch(req)\
                .then(function(r){ globalThis.__aborted = 'resolved:' + r.status; })\
                .catch(function(e){ globalThis.__aborted = 'rejected:' + (e && e.name ? e.name : String(e)); });\
-             globalThis.__ctrl.abort();",
+             globalThis.__ctrl.abort();\
+             globalThis.__reqSigFollows = String(req.signal.aborted);",
         )
         .unwrap();
     sandbox.execute("1;").unwrap(); // drain microtask
+    // net-api M2-S8：Request.signal 改关联克隆（引用直挂为 abort/general 4F 根因——
+    // 「Signal state is cloned」spec 面）——对象身份独立、abort 状态跟随源。
     assert_eq!(
-        sandbox.execute("globalThis.__reqSigSame").unwrap().value,
+        sandbox.execute("globalThis.__reqSigDiff").unwrap().value,
         "true",
-        "new Request(url,{{signal}}).signal === 传入 controller.signal（透传同一对象）"
+        "Request.signal 为关联克隆（对象身份独立，非引用直挂）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__reqSigFollows").unwrap().value,
+        "true",
+        "源 controller abort 后 Request.signal.aborted 状态跟随"
     );
     assert_eq!(
         sandbox.execute("globalThis.__aborted").unwrap().value,
@@ -987,13 +995,20 @@ fn test_request_signal_passthrough_r3045() {
             "globalThis.__ctrl2 = new AbortController();\
              var orig = new Request('http://test.local/b', { signal: globalThis.__ctrl2.signal });\
              var cloned = new Request(orig);\
-             globalThis.__clonedSame = (cloned.signal === orig.signal);",
+             globalThis.__clonedDiff = (cloned.signal !== orig.signal);\
+             globalThis.__ctrl2.abort();\
+             globalThis.__clonedFollows = String(cloned.signal.aborted);",
         )
         .unwrap();
     assert_eq!(
-        sandbox.execute("globalThis.__clonedSame").unwrap().value,
+        sandbox.execute("globalThis.__clonedDiff").unwrap().value,
         "true",
-        "new Request(otherReq) 继承 otherReq.signal（input.signal 回落）"
+        "new Request(otherReq) 的 signal 为关联克隆（身份独立）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__clonedFollows").unwrap().value,
+        "true",
+        "源 abort 后克隆 signal.aborted 跟随（input.signal 回落语义保持）"
     );
 
     // ④ fetch(request, {signal: override}) —— init.signal 优先于 request.signal（spec）。
@@ -1117,15 +1132,23 @@ fn test_response_request_constructors_r2968() {
              globalThis.__qUrl = q.url;\
              globalThis.__qMethod = q.method;\
              globalThis.__qHdr = q.headers.get('Content-Type');\
-             globalThis.__qBody = q.body;\
+             globalThis.__qBodyIsStream = (q.body instanceof ReadableStream);\
              globalThis.__qCloneUrl = q.clone().url;\
-             globalThis.__qCloneMethod = q.clone().method;",
+             globalThis.__qCloneMethod = q.clone().method;\
+             q.text().then(function(t){ globalThis.__qBody = t; });",
         )
         .unwrap();
+    sandbox.execute("1;").unwrap(); // drain microtask
     assert_eq!(sandbox.execute("String(globalThis.__qUrl)").unwrap().value, "http://test.local/api", "Request.url");
     assert_eq!(sandbox.execute("String(globalThis.__qMethod)").unwrap().value, "POST", "Request.method 大写归一");
     assert_eq!(sandbox.execute("String(globalThis.__qHdr)").unwrap().value, "text/plain", "Request.headers plain dict");
-    assert_eq!(sandbox.execute("String(globalThis.__qBody)").unwrap().value, "hello", "Request.body");
+    // net-api 二期 M2-S3：body getter 返 ReadableStream（spec Body mixin）——体内容经 text() 消费还原。
+    assert_eq!(
+        sandbox.execute("String(globalThis.__qBodyIsStream)").unwrap().value,
+        "true",
+        "Request.body 为 ReadableStream"
+    );
+    assert_eq!(sandbox.execute("String(globalThis.__qBody)").unwrap().value, "hello", "Request.text() 还原 body");
     assert_eq!(sandbox.execute("String(globalThis.__qCloneUrl)").unwrap().value, "http://test.local/api", "Request.clone().url");
     assert_eq!(sandbox.execute("String(globalThis.__qCloneMethod)").unwrap().value, "POST", "Request.clone().method");
     sandbox
@@ -1207,6 +1230,16 @@ fn test_fetch_appends_cross_origin_request_origin() {
         "__zw_get_page_url",
         Box::new(|_args: &[String]| "https://www.example.test/page.html".to_string()),
     );
+    // net-api M2-S3 起 fetch 构造校验链经 shim `new URL` 验 URL——shim URL 构造器
+    // 委托宿主 `__zw_parse_url`（R2778），裸 sandbox 须注册解析回调。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
     sandbox.execute(generate_js_dom_shim()).unwrap();
 
     let captured: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(vec![]));
@@ -1245,8 +1278,9 @@ fn test_fetch_appends_cross_origin_request_origin() {
         "跨域 cors fetch 须追加 Origin：{:?}",
         wires[0]
     );
+    // 头名大小写不敏感（Fetch §5.1 sort-and-combine）——实现以 title-case 追加，字面量对齐 wire。
     assert!(
-        wires[0].contains("origin\x1ehttps://www.example.test"),
+        wires[0].contains("Origin\x1ehttps://www.example.test"),
         "Origin 值 = 文档 origin：{:?}",
         wires[0]
     );
@@ -1257,8 +1291,8 @@ fn test_fetch_appends_cross_origin_request_origin() {
     );
     assert!(
         has_origin_header(&wires[2])
-            && wires[2].contains("origin\x1ehttps://www.example.test")
-            && !wires[2].contains("evil.example"),
+            && wires[2].contains("Origin\x1ehttps://www.example.test")
+            && !wires[2].to_ascii_lowercase().contains("evil.example"),
         "页面伪造 Origin 被 guard 剥离，实现补文档 origin：{:?}",
         wires[2]
     );
@@ -2259,6 +2293,16 @@ fn test_fetch_forbidden_headers_r3221_r3222() {
         ..Default::default()
     };
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // net-api M2-S3 起 fetch 构造校验链经 shim `new URL` 验 URL——shim URL 构造器
+    // 委托宿主 `__zw_parse_url`（R2778），裸 sandbox 须注册解析回调。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
     sandbox.execute(generate_js_dom_shim()).unwrap();
 
     // —— R3221：捕获 fetch 投递的 headersWire（args[3]），验禁止头被剥离、允许头保留 ——
@@ -2623,6 +2667,16 @@ fn test_request_headers_guard_r3223() {
         ..Default::default()
     };
     let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    // net-api M2-S3 起 Request 构造校验链经 shim `new URL` 验 URL——shim URL 构造器
+    // 委托宿主 `__zw_parse_url`（R2778），裸 sandbox 须注册解析回调。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
     sandbox.execute(generate_js_dom_shim()).unwrap();
 
     // Request guard：构造时禁止请求头被过滤（guard 先于 fill）。

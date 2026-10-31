@@ -129,6 +129,17 @@ fn fetch_sync_wire_preserves_response_contract() {
         ..Default::default()
     })
     .unwrap();
+    // net-api M2-S3 起 fetch 构造校验链经 shim `new URL` 验 URL（_zwRequestValidate），
+    // 而 shim URL 构造器委托宿主 `__zw_parse_url`（R2778）——裸 sandbox 须注册解析
+    // 回调，否则 fetch 构造恒 TypeError('Invalid URL')，同步 wire 契约不可达。
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
     sandbox.register_callback(
         "__zw_fetch",
         Box::new(|_| {

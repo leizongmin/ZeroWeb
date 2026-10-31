@@ -522,6 +522,21 @@ fn test_fetch_passes_request_credentials_to_host() {
         ..Default::default()
     })
     .unwrap();
+    // net-api M2-S3 起 fetch 构造校验链经 shim `new URL` 验解析后 URL——M4-S17 的
+    // 相对 URL 形态需要可解析 base（about:blank 为 cannot-be-a-base），注册页 URL +
+    // 解析回调（同源判定语义随真实 origin 自洽，原管路断言保持）。
+    sandbox.register_callback(
+        "__zw_get_page_url",
+        Box::new(|_args: &[String]| "https://wpt.test/cred-page".to_string()),
+    );
+    sandbox.register_callback(
+        "__zw_parse_url",
+        Box::new(|args: &[String]| -> String {
+            let input = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str);
+            parse_url_to_json(input, base)
+        }),
+    );
     sandbox.execute(generate_js_dom_shim()).unwrap();
     let calls: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let calls_for_callback = calls.clone();
@@ -557,9 +572,9 @@ fn test_fetch_passes_request_credentials_to_host() {
     assert_eq!(
         calls.lock().unwrap().as_slice(),
         &[
-            "/default|same-origin".to_string(),
-            "/request|omit".to_string(),
-            "/init|include".to_string(),
+            "https://wpt.test/default|same-origin".to_string(),
+            "https://wpt.test/request|omit".to_string(),
+            "https://wpt.test/init|include".to_string(),
         ]
     );
 }
