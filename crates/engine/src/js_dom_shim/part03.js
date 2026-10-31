@@ -26556,6 +26556,26 @@ return e;
             return _parseHtmlDateValue(vadV, vadT); // null = 无效 / Date 对象 = 有效
           } catch (_e) { return null; }
         }
+        // `input.list`（HTMLInputElement，s192）——current suggestions source
+        // element（HTML §4.10.5.3.8 the list attribute）：list 属性缺省/空 →
+        // null；getElementById 文档序首命中且为 datalist 元素才返回该元素
+        //（非 datalist / id 无元素 / 首命中非 datalist → null；后位重复 id 不
+        // 波及首命中——input-list.html 6 案钉态面）。同树约束（跨 iframe 文档
+        // 侧）语料无面，FIXME 不建模。
+        // https://html.spec.whatwg.org/multipage/input.html#attr-input-list
+        if (prop === 'list' && _realTag(sel, handle) === 'INPUT') {
+          var _lstA = handle ? __zw_get_attr_handle(handle, 'list')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'list') : __zw_get_attr(sel, 'list'));
+          if (_lstA == null || _lstA === '') return null;
+          var _lstEl = null;
+          try {
+            _lstEl = (globalThis.document && globalThis.document.getElementById(String(_lstA))) || null;
+          } catch (_eLst) { _lstEl = null; }
+          if (!_lstEl) return null;
+          var _lstTag = '';
+          try { _lstTag = String(_lstEl.tagName || '').toUpperCase(); } catch (_eLstT) { _lstTag = ''; }
+          return (_lstTag === 'DATALIST') ? _lstEl : null;
+        }
         // `input.alpha`（HTMLInputElement，s187——color state `alpha` 内容属性反射
         // 布尔，spec html.spec.whatwg.org/multipage/input.html#color-state-(type=color)
         // `attr-input-alpha` + IDL `dom-input-alpha`）：presence 读返 boolean。不入

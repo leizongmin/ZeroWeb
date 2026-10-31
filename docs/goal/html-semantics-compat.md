@@ -31,7 +31,26 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 191 收口，time/datetime-local 毫秒序列化——stepUp/Down fractional 2F 翻绿，shim 1 文件 2 处零 rust：`_formatHtmlDateValue` 两分支补 `.fff` 输出）**
+> **▶ 当前状态（2026-11-01 M2 切片 192 收口，input.list IDL getter——6F 翻绿 + hidden/text 同根红利 3F 共 9F，shim 1 臂零 rust：get trap list 臂 = lw 属性读 + getElementById 文档序首命中 + DATALIST tag 门）**
+> **入场定刀位**：s191 后全树失败集中度重勘定——select 拍板簇 177F
+> 之外最大非门禁簇 input-list.html 6F。
+> **勘根**：`input.list` IDL getter 整体缺位（不在平面反射表、无臂，
+> 落 expando 恒 undefined）。spec §4.10.5.3.8：list 属性值 id 文档序
+> 首命中且为 datalist 才返回，否则 null。红利 3F 同根（hidden 1F +
+> text 2F 的「must return null」案 undefined≠null）。
+> **施工（shim 1 臂零 rust）**：part03 get trap `prop === 'list'` 臂
+> （lw 读 → getElementById 首命中 → tagName DATALIST 门），getter 身份
+> 复用 getElementById proxy 缓存。
+> **验证**：定向 input-list 6/6；forms 全树 4409P/291F/12T →
+> **4418P/282F/12T**（ΔP=+9/ΔF=−9 精确闭合，逐文件 diff 恰 3 文件）；
+> interactive 439P/44F + engine lib 3642P/1F（在册同键，总数 +1 为并
+> 行流新用例）bit-exact；node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **下一步候选**：fieldset disabled-001 5F → email/url/tel IDN 12F →
+> focus 时序域（负载敏感嫌疑）；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）；fix#19c 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s192-input-list-idl.md](html-semantics-compat/evidence/2026-11-01-m2s192-input-list-idl.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 191 收口，time/datetime-local 毫秒序列化——stepUp/Down fractional 2F 翻绿，shim 1 文件 2 处零 rust：`_formatHtmlDateValue` 两分支补 `.fff` 输出）**
 > **入场定刀位**：s190 在册残差 time.html step=0.001 亚秒步进 2F。
 > **勘根**：步进计算体健在（allowedStep=1ms、在格 ±1ms 正确）——
 > 根因在写回序列化器 `_formatHtmlDateValue`：time/datetime-local 两
