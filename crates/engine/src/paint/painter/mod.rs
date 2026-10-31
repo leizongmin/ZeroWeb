@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 use slotmap::Key;
 use zero_css_parser::values::{
-    ColorValue, FloatValue, LengthValue, TransformFunction, TransformValue, VisibilityValue,
+    ColorValue, FloatValue, LengthValue, PositionValue, TransformFunction, TransformValue, VisibilityValue,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_layout_engine::LayoutBox;
@@ -25,7 +25,7 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
     PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
 };
-use zero_style_system::property::types::DisplayValue;
+use zero_style_system::property::types::{DirectionValue, DisplayValue, FlexDirectionValue};
 use zero_style_system::{
     AccentColorComputedValue, AppearanceComputedValue, BackgroundAttachmentComputedValue, BackgroundClipComputedValue,
     BorderCollapseValue, BorderImageSourceComputedValue, CaretColorComputedValue, ClipPathComputedValue, ComputedStyle,
@@ -545,6 +545,116 @@ fn resolve_clip_rect_side(value: &LengthValue, font_size_px: f32, auto_edge: f32
 /// 元素按 tag/type 解析原生值，非表单元素回 Auto（无 widget chrome）。**仅绘制侧
 /// 消费**：computed value（JS getComputedStyle 序列化）不经过本解析。
 /// kill-switch `ZW_APPEARANCE_NATIVE_USED=0` 回退声明值逐字语义（R5304 前）。
+/// R5365（cssom-view-1 §11.2）：滚动容器轴约定——内联轴反向 = RTL（direction）XOR
+/// row-reverse（flex-direction，仅 flex 容器生效）：双反转（rtl + row-reverse）=
+/// 正向约定（scrollLeft ∈ [0, max]，rtl-and-flex-row-reverse 案实证）。column-reverse
+/// 反转块轴（仅 flex 容器）。反向容器 script 值域 [-scrollAmount, 0]（0 = 流 origin
+/// 初始位）。FIXME: 竖排 writing-mode 下块/内联轴与物理轴交换未建模
+///（css-writing-modes-3 §2 域挂账）。
+pub(crate) fn reversed_scroll_axes(style: &ComputedStyle) -> (bool, bool) {
+    let is_flex = matches!(style.display, DisplayValue::Flex | DisplayValue::InlineFlex);
+    let row_reverse = is_flex && matches!(style.flex_direction, FlexDirectionValue::RowReverse);
+    let rev_x = matches!(style.direction, DirectionValue::Rtl) ^ row_reverse;
+    let rev_y = is_flex && matches!(style.flex_direction, FlexDirectionValue::ColumnReverse);
+    (rev_x, rev_y)
+}
+
+/// R5365：传递性 scrollable overflow 跨度（box_node content-box 系）——直接子项
+/// 不足以表达滚动溢出（table-cell-background-local：td 直子 100×100，孙代
+/// 3000×3000 才是可滚内容）。递归下钻；遇溢出裁剪子树（hidden/scroll/auto/clip、
+/// line-clamp）则以该子 border-box 为界（内部不外溢）；contain:layout 子树同界
+///（css-contain-1 §3.1：超界溢出为 ink overflow 不达滚动机制，
+/// contain-layout-ink-overflow-019 实证）；abspos/fixed 子盒只计自身矩形不递归
+///（其 CB/transform 归属需专项分析，position-absolute-scrollable-overflow-zero
+/// 实证挂账）。反向烘排的负向位置经 min 侧表达。
+pub(crate) fn scrollable_overflow_extent(
+    box_node: &LayoutBox,
+    styles: Option<&HashMap<NodeId, ComputedStyle>>,
+) -> (f32, f32, f32, f32) {
+    /// CB 边界自持：该子盒自身为其 abspos 后代（含直接 abspos 子）的 CB，子树
+    /// overflow 不逃逸到外层滚动容器。
+    fn cb_boundary_for_abspos(child: &LayoutBox, styles: Option<&HashMap<NodeId, ComputedStyle>>) -> bool {
+        child.is_absolute
+            || child.is_fixed
+            || child.hoisted_atomic
+            || styles
+                .and_then(|m| child.node_id.and_then(|id| m.get(&id)))
+                .is_some_and(|s| {
+                    s.contain.has_layout()
+                        || !matches!(s.transform, TransformValue::None)
+                        || s.position != PositionValue::Static
+                })
+    }
+    fn walk(
+        node: &LayoutBox,
+        base_x: f32,
+        base_y: f32,
+        styles: Option<&HashMap<NodeId, ComputedStyle>>,
+        acc: &mut (f32, f32, f32, f32),
+        positioned_only: bool,
+    ) {
+        for child in &node.children {
+            let cx = base_x + child.x;
+            let cy = base_y + child.y;
+            if positioned_only {
+                // R5365：裁剪子树内的 positioned-only 收集。static 盒的 overflow 裁剪
+                // 只作用于「CB 链穿过它」的后代（CSS2 §11.1.1）；abspos 后代的 CB 是
+                // 最近 positioned 祖先、跳过 static 裁剪盒，仍计入外层滚动容器的
+                // scrollable overflow（css-overflow-3 §2.2。驱动：
+                // position-absolute-under-non-containing-stacking-context——ref 侧
+                // in-flow green extent 350 / test 侧 abspos green 被剪枝 → 250，
+                // 双侧 scroll 钳制非对称失配致误报）。
+                if child.is_absolute {
+                    acc.0 = acc.0.min(cx);
+                    acc.1 = acc.1.min(cy);
+                    acc.2 = acc.2.max(cx + child.width);
+                    acc.3 = acc.3.max(cy + child.height);
+                    // abspos 盒自身为其 positioned 后代的 CB：子树不逃逸，不继续下探。
+                    continue;
+                }
+                if child.is_fixed || child.hoisted_atomic {
+                    // fixed 的 CB = 视口，不入任何滚动容器 overflow
+                    //（FIXME：transform 祖先内 fixed 按 abspos 语义归挂未建）。
+                    continue;
+                }
+                // contain:layout/transform/positioned 中间盒为 abspos 后代的 CB 边界，
+                // 其子树 overflow 是否向外传播归 css-contain-1 域（019/020 挂账），
+                // 保守不穿过（FIXME: filter/will-change 建 CB 同未判）。
+                if cb_boundary_for_abspos(child, styles) {
+                    continue;
+                }
+                walk(child, cx + child.content_x, cy + child.content_y, styles, acc, true);
+                continue;
+            }
+            acc.0 = acc.0.min(cx);
+            acc.1 = acc.1.min(cy);
+            acc.2 = acc.2.max(cx + child.width);
+            acc.3 = acc.3.max(cy + child.height);
+            let clips = child.overflow_x != OverflowClip::Visible
+                || child.overflow_y != OverflowClip::Visible
+                || child.line_clamp_clip
+                || child.is_absolute
+                || child.is_fixed
+                || child.hoisted_atomic
+                || styles
+                    .and_then(|m| child.node_id.and_then(|id| m.get(&id)))
+                    .is_some_and(|s| s.contain.has_layout());
+            if !clips {
+                walk(child, cx + child.content_x, cy + child.content_y, styles, acc, false);
+            } else if styles.is_some() && !cb_boundary_for_abspos(child, styles) {
+                // R5365：static 裁剪盒（overflow ≠ visible / line-clamp）不裁其 abspos
+                // 后代（CB 链不过它），这些后代仍计入本滚动容器 scrollable overflow
+                // ——positioned-only 模式继续下探收集。styles 缺失（effects 局部背景
+                // 路径传 None）时无 CB 边界信息，保守维持剪枝（FIXME）。
+                walk(child, cx + child.content_x, cy + child.content_y, styles, acc, true);
+            }
+        }
+    }
+    let mut acc = (f32::INFINITY, f32::INFINITY, 0.0f32, 0.0f32);
+    walk(box_node, 0.0, 0.0, styles, &mut acc, false);
+    acc
+}
+
 pub(super) fn effective_appearance(
     style: &ComputedStyle,
     box_node: &LayoutBox,
@@ -690,6 +800,9 @@ fn overflow_clip_radii(
     abs_x: f32,
     abs_y: f32,
 ) -> Option<[f32; 4]> {
+    // R5201：仅 clip 轴（hidden 面/backdrop-filter 祖先裁剪域挂账——R5365 A/B 实证
+    // hidden 接账会扰动 backdrop-filter 快照输入：backdrop-filter-nested-border-
+    // radius-clip 对 0.11% 回归，待 backdrop 域专项再接）。
     if box_node.overflow_x != OverflowClip::Clip && box_node.overflow_y != OverflowClip::Clip {
         return None;
     }
@@ -1682,6 +1795,7 @@ impl Painter {
                     None,
                     true,
                     Some((anchor_x, anchor_y, origin_w.max(0.0), origin_h.max(0.0))),
+                    None,
                     None,
                     None,
                     None,
@@ -3640,6 +3754,12 @@ impl Painter {
         let (child_offset_x, child_offset_y) = child_content_origin(box_node, abs_x, abs_y);
         // R4353：脚本化滚动（scrollTop/scrollLeft）——hidden 容器同为程序化可滚动容器
         //（css-overflow-3：hidden = clip + programmatic scroll）。内容 origin 平移偏移量。
+        // R5365：轴约定归一（cssom-view-1 §11.2）——反向容器（RTL/row-reverse/column-
+        // reverse）script 值域 [-range, 0]，可滚动范围两侧量取（反向溢出在负向）。
+        let node_scroll_axes = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .map(reversed_scroll_axes);
         let (child_offset_x, child_offset_y) = box_node
             .node_id
             .and_then(|id| self.scroll_offsets.get(&id))
@@ -3653,14 +3773,27 @@ impl Painter {
             })
             .map(|(sx, sy)| {
                 // spec：scrollTop 钳到可滚动溢出范围（scrollHeight − clientHeight）——
-                // 脚本超设（scrollTo(50,250) 超出实际溢出）不得过冲。
-                let child_extent_w = box_node.children.iter().map(|c| c.x + c.width).fold(0.0f32, f32::max);
-                let child_extent_h = box_node.children.iter().map(|c| c.y + c.height).fold(0.0f32, f32::max);
+                // 脚本超设（scrollTo(50,250) 超出实际溢出）不得过冲。R5365：反向轴
+                // 钳 [-range, 0]（范围 = 传递性可滚溢出跨度 − client，两侧量取）。
+                let (rev_x, rev_y) = node_scroll_axes.unwrap_or((false, false));
+                let (min_ox, min_oy, ex_w, ex_h) = scrollable_overflow_extent(box_node, Some(styles));
                 let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
                 let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
-                let max_sx = (child_extent_w - client_w).max(0.0);
-                let max_sy = (child_extent_h - client_h).max(0.0);
-                (child_offset_x - sx.min(max_sx), child_offset_y - sy.min(max_sy))
+                let nsx = if rev_x {
+                    let range = ((ex_w - min_ox) - client_w).max(0.0);
+                    sx.clamp(-range, 0.0)
+                } else {
+                    let max_sx = (ex_w - client_w).max(0.0);
+                    sx.clamp(0.0, max_sx)
+                };
+                let nsy = if rev_y {
+                    let range = ((ex_h - min_oy) - client_h).max(0.0);
+                    sy.clamp(-range, 0.0)
+                } else {
+                    let max_sy = (ex_h - client_h).max(0.0);
+                    sy.clamp(0.0, max_sy)
+                };
+                (child_offset_x - nsx, child_offset_y - nsy)
             })
             .unwrap_or((child_offset_x, child_offset_y));
 
@@ -5255,6 +5388,7 @@ impl Painter {
                         None,
                         None,
                         None,
+                        None,
                     );
                 }
             }
@@ -5319,6 +5453,7 @@ impl Painter {
                         0.0,
                         None,
                         false,
+                        None,
                         None,
                         None,
                         None,
@@ -5449,7 +5584,7 @@ impl Painter {
             .iter()
             .any(|a| matches!(a, BackgroundAttachmentComputedValue::Local))
             && let Some((lx, ly, lw, lh)) =
-                self.local_scrolled_paint_extension(box_node, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
+                self.local_scrolled_paint_extension(box_node, style, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
         {
             if radii.is_zero() {
                 // 无圆角：union(静态 clip, 扩展段) 再整体裁进 padding 盒窗口。

@@ -1668,7 +1668,8 @@
   // 本切片改 JS-side 状态追踪：`scrollTo/scrollBy` + `scrollTop/scrollLeft` set 更新此 map，get 读回 → 程序化滚动
   // round-trip 一致（`scrollTo(0,100); scrollY` → 100）。无真视口滚动（headless），仅 JS-observable 状态自洽。
   // `_scrollOffsets`：per-element-key → { top, left }；`_winScroll`：window → { top, left }（scrollX=left / scrollY=top）。
-  // 负值 clamp 0（spec scroll 不可负）。导航经 __zw_reset_form_state 重置。
+  // 值原样保留（R5365：反向滚动容器值域 [-scrollAmount, 0]，范围钳制在 paint 侧归一）。
+  // 导航经 __zw_reset_form_state 重置。
   var _scrollOffsets = {};
   var _winScroll = { top: 0, left: 0 };
   // M2-S4D（navigation-compat）：scroll 代次——任意程序滚动 +1（Navigation API intercept 链的

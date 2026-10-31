@@ -698,7 +698,11 @@
             } catch (_eVSs) {}
           }
           var _sv = Number(value);
-          if (isNaN(_sv) || _sv < 0) _sv = 0;
+          // R5365：负值保留（cssom-view-1 §11.2——RTL/row-reverse 内联轴与 column-reverse
+          // 块轴的滚动容器 scrollLeft/scrollTop 值域为 [-scrollAmount, 0]，0 = 流 origin
+          // 初始位；此前一律钳 0 使反向容器脚本滚动整链失效）。NaN → 0；范围钳制按
+          // 容器轴约定在 paint 侧归一（painter normalized_scroll_offset——shim 无布局信息）。
+          if (isNaN(_sv)) _sv = 0;
           var _sss = _scrollOffsets[key] || (_scrollOffsets[key] = { top: 0, left: 0 });
           if (p === 'scrollTop') _sss.top = _sv; else _sss.left = _sv;
           _zwFireScroll(key, sel, handle);

@@ -1265,7 +1265,10 @@ fn test_scroll_position_tracking_r3047() {
     assert_eq!(sandbox.execute("globalThis.__px").unwrap().value, "300", "pageXOffset=scrollX=300（别名）");
     assert_eq!(sandbox.execute("globalThis.__sy2").unwrap().value, "25", "scrollBy(0,25) → scrollY=0+25=25（增量，scrollTo(300,0) 重置 y）");
 
-    // ④ window.scroll（scrollTo 别名）+ 负值 clamp 0（spec scroll 不可负）。
+    // ④ window.scroll（scrollTo 别名）负值 clamp 0（视口滚动不可负）；R5365：element
+    // scrollTop 负值原样保留（cssom-view-1 §11.2 反向滚动容器 rtl ^ row-reverse 内联
+    // 轴 / column-reverse 块轴值域 [-scrollAmount, 0]——shim 无布局信息，范围钳制在
+    // paint 侧归一，painter normalized_scroll_offset）。
     sandbox
         .execute(
             "window.scroll(0, 0);\
@@ -1276,7 +1279,7 @@ fn test_scroll_position_tracking_r3047() {
         )
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__neg").unwrap().value, "0", "scroll(0,-100) 负值 clamp → scrollY=0");
-    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "0", "scrollTop=-50 负值 clamp → 0");
+    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "-50", "scrollTop=-50 负值保留（反向容器值域，paint 侧归一）");
 
     // ⑤ 回归守卫：scrollIntoView 为 no-op（不抛）；多元素 scroll 状态隔离。
     sandbox
@@ -1290,7 +1293,7 @@ fn test_scroll_position_tracking_r3047() {
         .unwrap();
     assert_eq!(sandbox.execute("globalThis.__siv").unwrap().value, "ok", "scrollIntoView() no-op 不抛");
     assert_eq!(sandbox.execute("globalThis.__iso").unwrap().value, "7", "createElement 元素 scrollTop round-trip");
-    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "0", "d.scrollTop 独立（④ 设 -50→0），不串 b");
+    assert_eq!(sandbox.execute("globalThis.__negEl").unwrap().value, "-50", "d.scrollTop 独立（④ 设 -50 保留），不串 b");
 }
 
 #[test]

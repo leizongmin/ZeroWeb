@@ -673,13 +673,13 @@ impl super::Painter {
                 .collect(),
         };
 
-        // R4353：本元素脚本化滚动偏移 → local 层背景相位。
-        let layer_scroll = box_node.node_id.and_then(|id| self.scroll_offsets.get(&id)).copied();
+        // R4353：本元素脚本化滚动偏移 → local 层背景相位（R5365：归一含反向容器负值）。
+        let layer_scroll = self.normalized_scroll_offset(box_node, style);
         // R4354：local 层 painting area = union(静态 clip, 扩展段) ∩ padding 盒窗口
         //（scrolled contents clip——image-1 oracle 虚线缝隙全白实证：border-box clip 亦被
         // 裁进 padding 盒；语义详见 paint_background 同注）。仅 local 层消费。
         let local_paint_area = self
-            .local_scrolled_paint_extension(box_node, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
+            .local_scrolled_paint_extension(box_node, style, abs_x, abs_y, clip_x, clip_y, clip_w, clip_h)
             .map(|(lx, ly, lw, lh)| {
                 let ux = clip_x.min(lx);
                 let uy = clip_y.min(ly);
@@ -692,6 +692,9 @@ impl super::Painter {
                 let cy = uy.max(py0);
                 (cx, cy, (ur.min(px1) - cx).max(0.0), (ub.min(py1) - cy).max(0.0))
             });
+        // R5365：local 层定位区扩展（scrollable overflow 锚定流 origin——size/position
+        // % 解析基准 + 随内容滚动；非溢出 None = 维持 origin 盒）。仅 local 层消费。
+        let local_positioning_area = self.local_scrolled_positioning_area(box_node, style, abs_x, abs_y);
         self.paint_bg_image_in_origin(
             origin_x,
             origin_y,
@@ -711,6 +714,7 @@ impl super::Painter {
             None,
             layer_scroll,
             local_paint_area,
+            local_positioning_area,
             Some(&layer_areas),
         );
     }
@@ -790,7 +794,84 @@ impl super::Painter {
             None,
             None,
             None,
+            None,
         );
+    }
+
+    /// R5365（cssom-view-1 §11.2 + css-backgrounds-3 §3.1）：本元素脚本化滚动偏移的
+    /// 轴约定归一——正向容器钳 [0, range]（可滚溢出范围 = 传递性跨度 − client），
+    /// 反向容器（reversed_scroll_axes）钳 [-range, 0]，0 = 流 origin 初始位。无记录
+    /// 返回 None（调用方维持静态）。
+    pub(crate) fn normalized_scroll_offset(&self, box_node: &LayoutBox, style: &ComputedStyle) -> Option<(f32, f32)> {
+        let (sx, sy) = box_node.node_id.and_then(|id| self.scroll_offsets.get(&id)).copied()?;
+        let (rev_x, rev_y) = super::reversed_scroll_axes(style);
+        let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
+        let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+        // R5365：范围量取传递性可滚溢出（table-cell-background-local 孙代 3000×3000）。
+        // FIXME: 无 styles 上下文，contain:layout 边界在此路未生效（bg 相位消费面暂无案）。
+        let (min_ox, min_oy, ex_w, ex_h) = super::scrollable_overflow_extent(box_node, None);
+        let nx = if rev_x {
+            let range = ((ex_w - min_ox) - client_w).max(0.0);
+            sx.clamp(-range, 0.0)
+        } else {
+            let max_sx = (ex_w - client_w).max(0.0);
+            sx.clamp(0.0, max_sx)
+        };
+        let ny = if rev_y {
+            let range = ((ex_h - min_oy) - client_h).max(0.0);
+            sy.clamp(-range, 0.0)
+        } else {
+            let max_sy = (ex_h - client_h).max(0.0);
+            sy.clamp(0.0, max_sy)
+        };
+        Some((nx, ny))
+    }
+
+    /// R5365（css-backgrounds-3 §3.1 attachment:local）：local 层定位区扩展——chromium
+    /// ref 像素实证（local-attachment-rtl-scroll 三窗蓝/半/黄边界定位）定位区 =
+    /// scrollable overflow 矩形：background-size/position 的 % 对其解析、原点随内容
+    /// 滚动。锚定 background-origin 盒左上角（随属性取 border/padding/content box），
+    /// 子项坐标经传递性可滚溢出（content-box 系）换算到 origin 盒系后仅负向
+    /// （反向烘排溢出侧）外扩原点，正向最大 extent 延伸进尺寸。非溢出返回 None =
+    /// 维持 origin 盒默认。
+    pub(crate) fn local_scrolled_positioning_area(
+        &self,
+        box_node: &LayoutBox,
+        style: &ComputedStyle,
+        abs_x: f32,
+        abs_y: f32,
+    ) -> Option<(f32, f32, f32, f32)> {
+        // origin 盒相对 border-box 原点的偏移与盒尺寸。
+        let (base_x, base_y, base_w, base_h) = match style.background_origin {
+            BackgroundOriginComputedValue::BorderBox => (0.0, 0.0, box_node.width, box_node.height),
+            BackgroundOriginComputedValue::PaddingBox => (
+                box_node.border_left,
+                box_node.border_top,
+                box_node.width - box_node.border_left - box_node.border_right,
+                box_node.height - box_node.border_top - box_node.border_bottom,
+            ),
+            BackgroundOriginComputedValue::ContentBox => (
+                box_node.content_x,
+                box_node.content_y,
+                box_node.content_width,
+                box_node.content_height,
+            ),
+        };
+        // 子项 content-box 系 → origin 盒系：+ (content 偏移 − origin 盒偏移)。
+        // 跨度取传递性可滚溢出（table-cell-background-local 孙代 3000×3000 实证）。
+        // FIXME: 无 styles 上下文，contain:layout 边界在此路未生效。
+        let shift_x = box_node.content_x - base_x;
+        let shift_y = box_node.content_y - base_y;
+        let (min_cx, min_cy, ex_w, ex_h) = super::scrollable_overflow_extent(box_node, None);
+        // 负向延伸（反向流烘排侧；正向起点恒 origin 盒左上角）+ 正向 extent 进尺寸。
+        let ext_x = (min_cx + shift_x).min(0.0);
+        let ext_y = (min_cy + shift_y).min(0.0);
+        let span_w = (ex_w + shift_x).max(base_w) - ext_x;
+        let span_h = (ex_h + shift_y).max(base_h) - ext_y;
+        if ext_x >= 0.0 && ext_y >= 0.0 && span_w <= base_w + 0.5 && span_h <= base_h + 0.5 {
+            return None;
+        }
+        Some((abs_x + base_x + ext_x, abs_y + base_y + ext_y, span_w, span_h))
     }
 
     /// R4354（css-backgrounds-3 §3.1 attachment:local；chromium 自建 probe 像素实证）：
@@ -804,6 +885,7 @@ impl super::Painter {
     pub(crate) fn local_scrolled_paint_extension(
         &self,
         box_node: &LayoutBox,
+        style: &ComputedStyle,
         abs_x: f32,
         abs_y: f32,
         clip_x: f32,
@@ -828,17 +910,11 @@ impl super::Painter {
         let child_ex_h = box_node.children.iter().map(|c| c.y + c.height).fold(0.0f32, f32::max);
         let scroll_w = (child_ex_w - box_node.border_left - box_node.padding_left).max(box_node.content_width);
         let scroll_h = (child_ex_h - box_node.border_top - box_node.padding_top).max(box_node.content_height);
-        // 脚本化滚动偏移（有则平移；钳位口径与 paint_node 子内容平移一致——超设不过冲）。
-        let (sx, sy) = box_node
-            .node_id
-            .and_then(|id| self.scroll_offsets.get(&id))
-            .copied()
-            .unwrap_or((0.0, 0.0));
+        // 脚本化滚动偏移（R5365：normalized_scroll_offset 归一——反向容器负值域与
+        // 传递性范围钳位与 paint_node 子内容平移同源）。
         let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
         let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
-        let max_sx = (child_ex_w - client_w).max(0.0);
-        let max_sy = (child_ex_h - client_h).max(0.0);
-        let (sx, sy) = (sx.min(max_sx), sy.min(max_sy));
+        let (sx, sy) = self.normalized_scroll_offset(box_node, style).unwrap_or((0.0, 0.0));
         // padding 盒窗口（扩展段不得越出元素可视区；border 区由静态 clip 盒负责）。
         let win_x = abs_x + box_node.border_left;
         let win_y = abs_y + box_node.border_top;
@@ -898,6 +974,10 @@ impl super::Painter {
         // R4354：local 层 painting area 扩展段（local_scrolled_paint_extension 产物）——
         // 仅 local 层消费（与静态 clip 并集）；scroll/fixed 层恒静态盒。
         local_paint_area: Option<(f32, f32, f32, f32)>,
+        // R5365：local 层定位区扩展（local_scrolled_positioning_area 产物）——size/
+        // position 解析基准随 scrollable overflow 扩展 + 原点随内容滚动；仅 local 层
+        // 消费（非溢出 None = 维持 origin 盒）；scroll/fixed 层恒 origin 盒。
+        local_positioning_area: Option<(f32, f32, f32, f32)>,
         // R4529：逐层 painting area + 环带（常规元素路径；标量 clip_* 作 local 层回退基线）。
         layer_areas: Option<&LayerPaintAreas>,
     ) {
@@ -973,12 +1053,17 @@ impl super::Painter {
                 }
                 None => (origin_x, origin_y, origin_w, origin_h),
             };
-            // R4353：local 层背景随内容滚动——origin 平移 -滚动偏移（scroll 层不动）。
+            // R4353：local 层背景随内容滚动——定位区换 scrollable overflow 锚定流 origin
+            //（R5365：size/position % 解析与负向延伸基准），再平移 -滚动偏移（归一后
+            // 反向容器为负值 = origin 反向平移；scroll 层不动）。
             let (origin_x, origin_y, origin_w, origin_h) = if is_local {
+                let (ox, oy, ow, oh) = local_positioning_area
+                    .filter(|p| p.2 > 0.0 && p.3 > 0.0)
+                    .unwrap_or((origin_x, origin_y, origin_w, origin_h));
                 if let Some((sx, sy)) = layer_scroll {
-                    (origin_x - sx, origin_y - sy, origin_w, origin_h)
+                    (ox - sx, oy - sy, ow, oh)
                 } else {
-                    (origin_x, origin_y, origin_w, origin_h)
+                    (ox, oy, ow, oh)
                 }
             } else {
                 (origin_x, origin_y, origin_w, origin_h)
@@ -1260,9 +1345,17 @@ impl super::Painter {
                             && rect.origin.x < x1
                             && rect.origin.y >= y0
                             && rect.origin.y < y1
-                            && let Some(prim) =
+                            && let Some(mut prim) =
                                 gradient_to_primitive_with_font_size(gradient, &rect, &style.color, font_size as f32)
                         {
+                            // R5365：主 tile 同样裁进 painting area——local 定位区扩展后
+                            // % 定位 tile 可越出元素盒（rtl-scroll 三窗案实证）；完全内含
+                            // 时保持 clip=None = 既有 prim 形态 byte-identical。
+                            if let Some(main_rc) = rect.intersection(&paint_area)
+                                && main_rc != rect
+                            {
+                                prim.clip = Some(main_rc);
+                            }
                             self.primitives.add_gradient(prim);
                             if let Some(filters) = layer_filters {
                                 self.emit_image_layer_filter(rect, filters);

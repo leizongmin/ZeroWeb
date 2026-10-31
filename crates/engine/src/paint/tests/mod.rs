@@ -88,6 +88,8 @@ mod r5321_selection_transparent_bg_tests;
 mod r5322_pre_newline_strut_tests;
 /// R5341 椭圆圆角双轴解析（css-backgrounds-3 §5.1/§5.5，非方盒 50% 椭圆非胶囊）。
 mod r5341_elliptic_radius;
+/// R5365 scrollable overflow 传递遍历（abspos 逃逸 static 裁剪盒）+ 反向滚动轴真值表。
+mod r5365_scroll_overflow_extent;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
