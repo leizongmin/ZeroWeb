@@ -1,8 +1,9 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿；33,109 分母零回归锚在现 tip `65de5f28e` 逐字节复验一致
-（2026-11-01，s182~s196 + justify 簇两轮 + 渲染流变更全吸收，见
+build/clippy 绿；33,109 分母零回归锚在现 tip `b0a6f9174` 逐字节复验一致
+（2026-11-01，s182~s196 + justify 簇两轮 + 渲染流/html-semantics 流
+`:active` 通道变更全吸收，见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
 唯一缺口 `cargo test` 残余 1F
 `test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
@@ -14,17 +15,19 @@ build/clippy 绿；33,109 分母零回归锚在现 tip `65de5f28e` 逐字节复�
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现 tip `65de5f28e` 复验逐字节一致**（25,788P + 7,320F +
-1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e，渲染流
-R5370 table OOF child layout + s196 `_zwMEl` 安装面共享化 perf +
-editing 流 justify 查询面兜底（`part01c.js` +105 行）+ docs 轮全
-吸收，见 evidence 2026-11-01 04:25/04:35/06:20 追记）；处置路径维持待用户
-决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 06:20（锚复跑现 tip `65de5f28e` 逐字节一致
-——editing 流 justify 查询面 uplink 兜底为语料执行路径变更，按纪律
-复跑：25.71s 重建 + test-guard 直包，25,788P+7,320F+1T 复证；其自账
-engine lib 3,642P/1F 同键，ua_display_li 未清，D4/D1/D2 无变化，见
-[evidence](evidence/2026-10-31-gates-and-closure-status.md)）
+**33,109 锚已在现 tip `b0a6f9174` 复验逐字节一致**（25,788P + 7,320F +
+1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→b0a6f9174，
+渲染流 R5370 table OOF child layout + s196 `_zwMEl` 安装面共享化 perf +
+editing 流 justify 查询面兜底（`part01c.js` +105 行）+ html-semantics
+流 s196 `:active` 伪类通道（dom active_element 槽 + engine 查询面注入 +
+shim part04/part06 +112 行）+ docs 轮全吸收，见 evidence 2026-11-01
+04:25/04:35/06:20/06:27 追记）；处置路径维持待用户决策表 **D2**，
+ua_display_li 清零即当场收口。
+**最后更新**: 2026-11-01 06:27（锚复跑现 tip `b0a6f9174` 逐字节一致
+——html-semantics 流 s196 `:active` 伪类通道为语料执行路径变更，按纪律
+复跑：30.59s 重建 + test-guard 直包 1m26s，25,788P+7,320F+1T 复证；
+其自账 engine lib 3,642P/1F 同键，ua_display_li 未清，D4/D1/D2 无
+变化，见 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
 

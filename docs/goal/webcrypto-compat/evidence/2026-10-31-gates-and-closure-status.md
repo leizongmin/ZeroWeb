@@ -344,3 +344,27 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   后续无触及）。收口序列不变：ua_display_li 清零 → make test 全绿
   复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记
   → 推送 → DONE；或 D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 06:27 追记：锚复跑现 tip（b0a6f9174）逐字节一致——html-semantics 流 s196 `:active` 伪类通道吸收
+
+- `git pull --rebase` 吸入 html-semantics 流 `b0a6f9174`（s196
+  `:active` 伪类通道——dom `active_element` 槽 + engine
+  `js_dom_bridge`/`selector_match` 查询面注入 + shim `part04.js`
+  +8/`part06.js` +104 行，定向 8F 翻绿 3 + flake 域 3）：shim +
+  查询/选择器匹配面系语料执行路径代码，runner 二进制面前移，按
+  纪律对现 tip 复跑锚——release runner 重建 30.59s + test-guard
+  直包同参数（`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，
+  `--json` 重定向，跑时 1m26s）——**对 M1 终态锚逐字节一致
+  （cmp 全等，7,208,436 B）**，计数复核 123 文件 / 25,788P +
+  7,320F + 1T = 33,109；guard log 零字节（无击杀），runner EXIT=1
+  为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-s196.json`（不入库）。
+- 至此锚窗口推进为 **65de5f28e → b0a6f9174**，33,109 分母零回归
+  在现 tip 成立。
+- **轮询面**：s196 自账 zero-engine **3,642P/1F**（ua_display_li
+  同键在册，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)）
+  + zero-dom 880P/0F——`:active` 通道非 li→Block 双面翻转，渲染流
+  D4 仍未裁决；git 无 D1/D2 决策新账面，维持待拍板。收口序列不变：
+  ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
+  → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
+  standing exclusion 口径收口。
