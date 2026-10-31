@@ -333,8 +333,11 @@ fn test_document_scrolling_element_r3259() {
     let mut wv = WebView::new(WebViewConfig::default());
     // classic 脚本执行期（shim document 已初始化）记录 scrollingElement 信息——execute_script
     // 直读 document 会 ReferenceError（shim 仅 run_page_scripts 路径注入）。
+    // s170 归位：fixture 原缺 doctype → 解析 quirks（spec BackCompat），standards 面
+    // 断言的锚（compatMode==='CSS1Compat'）前提不成立——补 doctype 钉 standards 面；
+    // quirks 面分派见 test_document_scrolling_element_quirks_s170。
     wv.load_html(
-        "<html><head><title>t</title></head><body><div>hi</div>\
+        "<!DOCTYPE html><html><head><title>t</title></head><body><div>hi</div>\
          <script>\
          globalThis.__seNonNull = (document.scrollingElement !== null && document.scrollingElement !== undefined);\
          globalThis.__seTag = String(document.scrollingElement.tagName);\
@@ -364,6 +367,46 @@ fn test_document_scrolling_element_r3259() {
         wv.execute_script("String(globalThis.__cm)").unwrap(),
         "CSS1Compat",
         "compatMode === 'CSS1Compat'（standards，scrollingElement 走 documentElement 分支的依据）"
+    );
+}
+
+#[test]
+/// s170：quirks 文档（无 doctype）→ compatMode BackCompat + scrollingElement === body
+///（HTML §3.1.1 scrollingElement quirks 分派；s151 compatMode 真值化 + shim 分派补全）。
+/// 旧实现无视 compatMode 恒返 documentElement——本案权威钉分派面。
+fn test_document_scrolling_element_quirks_s170() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<html><head><title>t</title></head><body><div>hi</div>\
+         <script>\
+         globalThis.__cm = String(document.compatMode);\
+         globalThis.__seTag = String(document.scrollingElement.tagName);\
+         globalThis.__seBody = (document.scrollingElement === document.body);\
+         globalThis.__seNotHtml = (document.scrollingElement !== document.documentElement);\
+         </script></body></html>",
+        None,
+    );
+    let r = wv.run_page_scripts_strict();
+    assert!(r.is_ok(), "classic script 应无异常执行, got: {:?}", r.err());
+    assert_eq!(
+        wv.execute_script("String(globalThis.__cm)").unwrap(),
+        "BackCompat",
+        "无 doctype → quirks（spec：compatMode BackCompat）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seTag)").unwrap(),
+        "BODY",
+        "quirks 模式 scrollingElement.tagName === 'BODY'"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seBody)").unwrap(),
+        "true",
+        "quirks 模式 scrollingElement === document.body（identity）"
+    );
+    assert_eq!(
+        wv.execute_script("String(globalThis.__seNotHtml)").unwrap(),
+        "true",
+        "quirks 模式 scrollingElement 不再是 documentElement"
     );
 }
 

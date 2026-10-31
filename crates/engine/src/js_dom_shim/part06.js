@@ -4925,10 +4925,22 @@
     documentElement: _wrapSelector('html'),
     // `document.scrollingElement`（HTML §3.1.1）——返回文档视口滚动元素。standards 模式
     //（compatMode==='CSS1Compat'）→ documentElement；quirks 模式（'BackCompat'）→ body；无则 null。
-    // headless 恒 CSS1Compat（无 quirks 跟踪）→ documentElement。scroll 库/框架读视口滚动容器的高频 API
-    //（locomotive-scroll / smoothscroll / lazy-load / 视口滚动监听）——此前缺 → 返 undefined 致
+    // s170：s151 compatMode 真值化补全——旧实现无视 compatMode（「headless 恒
+    // CSS1Compat」时代注记），quirks 文档（无 doctype）误返 documentElement（wv 测试
+    // test_document_scrolling_element_r3259 无 doctype fixture 实证：scrollingElement
+    // 断言走 documentElement 分支而 compatMode 真值 BackCompat）。分派按 compatMode
+    // getter（宿主 quirks_mode 真值，桥缺席回落 CSS1Compat）：BackCompat → body
+    // element（body getter 已含 frameset 分派，spec「the body element」语义）。
+    // scroll 库/框架读视口滚动容器的高频 API（locomotive-scroll / smoothscroll /
+    // lazy-load / 视口滚动监听）——此前缺 → 返 undefined 致
     // `document.scrollingElement.scrollTop` 抛 TypeError。
-    get scrollingElement() { return globalThis.document.documentElement || null; },
+    // https://html.spec.whatwg.org/multipage/dom.html#dom-document-scrollingelement
+    get scrollingElement() {
+      try {
+        if (globalThis.document.compatMode === 'BackCompat') return globalThis.document.body || null;
+      } catch (_eSE) {}
+      return globalThis.document.documentElement || null;
+    },
     // s104（html-semantics-compat）：spec dom.html#dom-document-body——body element =
     // html 元素的**第一个 body 或 frameset 子元素**（frameset 文档的 body element 是
     // frameset 元素）。引擎解析树（html5ever spec 树构造）frameset 文档无 body 元素
