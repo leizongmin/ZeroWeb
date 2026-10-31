@@ -41,3 +41,10 @@ css/css-borders/corner-shape/resources/render-corner-shape.js
 # runner fetch handler 通用静态臂交付。
 html/semantics/document-metadata/the-link-element/resources/good.css
 html/semantics/document-metadata/the-link-element/style.css
+# R5361：web-animations 共享支撑脚本——初始抓取无 web-animations 目录，缺 →
+# 42 个引用页（color-mix-currentcolor-*-repaint 6 案、background-color-animation
+# 系、scroll-state container-queries 系等）的 `await waitForCompositorReady()`
+# ReferenceError 中止，reftest-wait 移除前的 DOM setup 永不执行（test 页定格初态）。
+# 上游 master 逐字节导入；runner fetch_external_script 绝对路径臂（wpt_root=wpt-data）
+# 交付，无 runner 改动。
+web-animations/testcommon.js
