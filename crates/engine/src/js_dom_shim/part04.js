@@ -1846,7 +1846,16 @@
                     }
                   }
                   _r3oOut += '>';
-                  var _r3oKids = _childNodeList(sel, null);
+                  // R5355（join 归因轮，2026-10-31）：同 `_zwFusedInnerHtmlSel`——序列化
+                  // walk 期间置跨代际桶滤除标志（R383a 域收缩），walk 后恢复。
+                  var _r3oSv = (typeof _zwSerSkipCrossGen !== 'undefined') ? _zwSerSkipCrossGen : false;
+                  if (typeof _zwSerSkipCrossGen !== 'undefined') _zwSerSkipCrossGen = true;
+                  var _r3oKids;
+                  try {
+                    _r3oKids = _childNodeList(sel, null);
+                  } finally {
+                    if (typeof _zwSerSkipCrossGen !== 'undefined') _zwSerSkipCrossGen = _r3oSv;
+                  }
                   for (var _r3oi = 0; _r3oi < _r3oKids.length; _r3oi++) {
                     var _r3on = _r3oKids[_r3oi];
                     if (!_r3on) continue;

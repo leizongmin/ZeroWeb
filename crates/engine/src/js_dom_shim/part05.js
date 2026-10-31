@@ -10643,7 +10643,17 @@
         || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))
         || (typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel))))) return null;
     try {
-      var _r380Kids = _childNodeList(sel, null);
+      // R5355（join 归因轮，2026-10-31）：序列化 walk 期间开启跨代际桶滤除（R383a
+      // 桶级跳并语义收缩至此——原整桶早退把 live 视图消费面一并致盲，见合并处注记），
+      // walk 结束即恢复；try/finally 保证异常路径不泄漏标志。
+      var _r380Sv = _zwSerSkipCrossGen;
+      _zwSerSkipCrossGen = true;
+      var _r380Kids;
+      try {
+        _r380Kids = _childNodeList(sel, null);
+      } finally {
+        _zwSerSkipCrossGen = _r380Sv;
+      }
       var _r380Out = '';
       for (var _r380i = 0; _r380i < _r380Kids.length; _r380i++) {
         var _r380n = _r380Kids[_r380i];
@@ -10691,9 +10701,9 @@
     // 全局表空则零成本快出。
     var bucket = _zwPendingByParent.get(sel);
     if (!bucket || (!bucket.added.length && !bucket.removed.length)) return out;
-    // R383（editing-compat attr 门轮归因，2026-10-31）：**跨代际桶不并入视图**——R381 的
-    // 桶级代际门只护「是否走融合」决策（R380 门），门内 `_childNodeList` 经本函数并桶时
-    // 不再看代际：apply 换代后桶为 identity 记账保留（pa2b 只作废不清桶），条目已落
+    // R383（editing-compat attr 门轮归因，2026-10-31）：**跨代际桶不并入序列化视图**——
+    // R381 的桶级代际门只护「是否走融合」决策（R380 门），门内 `_childNodeList` 经本函数
+    // 并桶时不再看代际：apply 换代后桶为 identity 记账保留（pa2b 只作废不清桶），条目已落
     // 快照，再并入 = 基底 + 幽灵双计。子树脏（R3254-E2 后代键）或 pending attr
     // （`_zwPendingAttrDirty`）开门而本桶 stamp 已跨代时双计暴露（inline-host 语料 t4
     // 实证 4 br：2 基底 void 形 + 2 幽灵 `_zwMOuterHtml` 非闭合计）。登记时盖章、
@@ -10714,8 +10724,16 @@
     // pending 壳对象从视图摘除后锚重解析失配 → 整动作 no-op（join 语料 lrlp
     // 2,343P→48P 实证）。序列化读（inline-host t4 幽灵面）不置位，R383 照常生效；
     // R382 条目级 ghost 确认在本行之下照常运行，不因旁路失效。
-    if (globalThis._zwApplyGeneration && bucket.stamp !== globalThis._zwApplyGeneration()
-        && !globalThis.__zwCeWalkMerging
+    // R5355（join 归因轮，2026-10-31）**域收缩**（rebase 撞车合并，覆盖 R4620 诉求）：
+    // 本跳并原为全消费面无条件——探针实证 apply 后任何桶（identity 记账 stamp 滞后）
+    // 都被跳并，live 视图消费面（childNodes/firstChild/编辑 join walk）读到基树残影
+    // 成片 no-op（join lrlp 1,371F stale-base 回退，zz-probe-lrlp r2 复现）。跳并语义
+    // 收缩到序列化 walk（`_zwSerSkipCrossGen` 标志，`_zwFusedInnerHtmlSel`/part04
+    // outerHTML sel 分支置位）——双计只在序列化层暴露，live 视图恢复全并（死条目由
+    // link 断链 + R382 按条目代际兜底剔除）。CE walk 不置序列化标志，R4620 的 walk
+    // 旁路由本收缩自然覆盖，条件不再单列 `!__zwCeWalkMerging`。
+    if (_zwSerSkipCrossGen
+        && globalThis._zwApplyGeneration && bucket.stamp !== globalThis._zwApplyGeneration()
         && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
@@ -11515,6 +11533,10 @@
   var _zwPSDScan = null;
   var _zwPSDScanEpoch = -1;
   var _zwPSDEpoch = 0;
+  // R5355（join 归因轮，2026-10-31）：R383a 跨代际桶跳并的域标志——仅序列化 walk
+  // （`_zwFusedInnerHtmlSel`/part04 outerHTML sel 分支）置位；live 视图消费面恒 false
+  // （全并语义，见 `_zwOverlayPendingChildNodes` R5355 注记）。
+  var _zwSerSkipCrossGen = false;
   function _zwPendingSubtreeDirty(sel) {
     if (typeof _zwPendingByParent !== 'object' || !_zwPendingByParent || !sel) return false;
     var own = _zwPendingByParent.get(sel);
