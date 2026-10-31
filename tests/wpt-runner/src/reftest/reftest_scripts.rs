@@ -70,17 +70,23 @@ pub(super) fn apply_scripted_dom_mutations(
         persistent_context: true,
         ..Default::default()
     };
-    #[cfg(feature = "v8")]
-    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = match zero_script_sandbox::V8Sandbox::with_config(config) {
-        Ok(s) => Box::new(s),
-        Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
-    };
-    #[cfg(feature = "quickjs")]
-    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> =
-        match zero_script_sandbox::QuickJSSandbox::with_config(config) {
-            Ok(s) => Box::new(s),
+    // 两 sandbox feature 单开时各取其一；--all-features 同开时按平台惯例 v8 优先
+    // （旧双 let 声明阴影在此组合下触发 unused 告警 + config move E0382，R5363
+    // 改单绑定 cfg 内选择，config 每组合恰好消费一次）。
+    #[cfg(any(feature = "v8", feature = "quickjs"))]
+    let mut sandbox: Box<dyn zero_script_sandbox::Sandbox> = {
+        #[cfg(feature = "v8")]
+        let sandbox = match zero_script_sandbox::V8Sandbox::with_config(config) {
+            Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
             Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
         };
+        #[cfg(not(feature = "v8"))]
+        let sandbox = match zero_script_sandbox::QuickJSSandbox::with_config(config) {
+            Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
+        };
+        sandbox
+    };
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
