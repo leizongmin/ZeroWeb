@@ -9310,6 +9310,37 @@
           if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2b]; }
           return true;
         }
+        // ②c（editing-compat wrap 簇，2026-10-31）：宿主 div 时 caret 在宿主直子
+        // 块标签 inline 盒（div/p display:inline/inline-block）→ Chromium 把拆分
+        // 段落包进新匿名块：原盒截尾段保留，新 separator **恒 div**（p 不能含
+        // p/div，语料注释明确忽略 defaultParagraphSeparator）插原盒后，壳副本
+        // （cloneNode 保 style）装尾段，尾空补占位 br；caret 在内容起点时新段落
+        // 在前（壳副本+占位 br），原盒全留。仅文本边界（元素 caret 形不在语料
+        // 面，落 ③）；非 div 宿主仍落 ③（chd 期望 `a<br>b` 行断形）。
+        if (hostBlockish2b && _zwCeIsBlockTagName(tag2) && boundaryText) {
+          var v2c = String(boundaryText.nodeValue || '');
+          var atStart2c = boundaryOff === 0 && eo === 0;
+          var tail2c = '';
+          if (!atStart2c) {
+            tail2c = v2c.slice(eo);
+            boundaryText.nodeValue = v2c.slice(0, boundaryOff);
+          }
+          var sep2c = document.createElement('div');
+          var shell2c = block.cloneNode(false);
+          if (tail2c) shell2c.appendChild(document.createTextNode(tail2c));
+          if (!(shell2c.childNodes || []).length) {
+            var phbr2c = document.createElement('br');
+            phbr2c.__zwPlaceholderBr = true;
+            shell2c.appendChild(phbr2c);
+          }
+          host.insertBefore(sep2c, atStart2c ? block : (block.nextSibling || null));
+          sep2c.appendChild(shell2c);
+          var nr2c = document.createRange();
+          nr2c.setStart(shell2c, tail2c ? 1 : 0);
+          nr2c.collapse(true);
+          if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2c]; }
+          return true;
+        }
         // 落 ③ 行断（跳过 ② 剩余体）。display:inline 且自身无 ws 声明 → 一律 '\n'
         //（cannot-have-div 语料 Blink 行为：inline div 内 <br> 会跳出 inline 盒，
         // UA 插真实 LF——宿主 ws 无关；自身有声明 → 按声明裁决）。
