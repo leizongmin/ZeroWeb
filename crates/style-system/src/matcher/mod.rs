@@ -1193,10 +1193,12 @@ pub fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsCon
                 // 额外验证：检查解析结果没有因为容错解析产生无效结构
                 is_valid_selector_parse(selector_text, &style_rule.selectors)
                     // selector() 语义 = UA 支持「选择器的全部组成」。容错解析器把任意
-                    // `::name` 收为 Standard(String)，未知伪元素/伪类（::-webkit-unknown-pseudo、
-                    // ::picker() 等）会被误判为支持（CSS Conditional §11：不识别即不支持）。
+                    // `::name` 收为 Standard(String)，未知伪元素/伪类（::-webkit-unknown-pseudo
+                    // 等）会被误判为支持（CSS Conditional §11：不识别即不支持）。
                     // driving: at-supports-selector-003（not selector(::-webkit-unknown-pseudo)
-                    // 须为 true）。
+                    // 须为 true）。R5359：`:is()`/`:where()`/`:has()` 实参也是「组成」——
+                    // 容错解析已把非法实参从 AST 丢弃，须文本级逐实参严格裁决。
+                    && logical_combo_args_supported(selector_text)
                     && style_rule.selectors.iter().all(selector_features_supported)
             } else {
                 false
@@ -1212,12 +1214,164 @@ pub fn evaluate_supports_condition(condition: &zero_css_parser::ast::SupportsCon
     }
 }
 
-/// selector() 接受的伪元素名单（Chrome 150 定向探针矩阵，2026-09-01）。
+/// selector() 文本级实参裁决：`:is()`/`:where()`/`:has()` 的实参也是选择器的「组成」
+/// ——css-conditional-4 要求 UA 支持**全部**组成；selectors-4 的 forgiving 解析只在
+/// 样式匹配时忽略非法实参，supports 判定仍须报不支持（chromium 对
+/// `selector(:is(:foo, .a))` 报 false；driving:
+/// at-supports-selector-detecting-invalid-in-logical-combinations）。容错解析已把
+/// 非法实参从 AST 丢弃（`:is(:foo, .a)` 只剩 `.a`），AST 递归不可见 → 文本级找出全部
+/// 逻辑组合伪类实参、逐个逗号段严格重解析 + 递归下探嵌套（`:not()` 非法实参在解析层
+/// 已整链拒绝，此裁决对其冗余无害）。
+fn logical_combo_args_supported(selector_text: &str) -> bool {
+    for arg in logical_combo_args(selector_text) {
+        if !logical_combo_args_supported(&arg) {
+            return false;
+        }
+        for seg in split_top_level_commas(&arg) {
+            let css = format!("{seg} {{ }}");
+            let parsed = matches!(
+                zero_css_parser::Parser::parse_stylesheet(&css).rules.first(),
+                Some(zero_css_parser::ast::Rule::Style(style_rule))
+                    if !style_rule.selectors.is_empty()
+            );
+            if !parsed {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// 抽取 selector 文本中 `:is(`/`:where(`/`:has(`/`:not(` 的实参：伪名 ASCII 大小写
+/// 不敏感；方括号与引号内容不参与识别（`[title=":is("]`）；实参按括号平衡整体截取，
+/// 嵌套组合由调用方递归下探处理。
+fn logical_combo_args(selector_text: &str) -> Vec<String> {
+    const COMBOS: [&str; 4] = ["is", "where", "has", "not"];
+    let chars: Vec<char> = selector_text.chars().collect();
+    let mut args = Vec::new();
+    let mut i = 0;
+    let mut quote: Option<char> = None;
+    let mut bracket = 0i32;
+    while i < chars.len() {
+        let ch = chars[i];
+        if let Some(q) = quote {
+            if ch == '\\' {
+                i += 2;
+                continue;
+            }
+            if ch == q {
+                quote = None;
+            }
+            i += 1;
+            continue;
+        }
+        match ch {
+            '"' | '\'' => quote = Some(ch),
+            '[' => bracket += 1,
+            ']' => bracket = bracket.saturating_sub(1),
+            ':' if bracket == 0 => {
+                let mut j = i + 1;
+                while j < chars.len() && (chars[j].is_ascii_alphabetic() || chars[j] == '-') {
+                    j += 1;
+                }
+                let name: String = chars[i + 1..j].iter().collect();
+                if COMBOS.contains(&name.to_ascii_lowercase().as_str()) {
+                    let mut k = j;
+                    while k < chars.len() && chars[k].is_whitespace() {
+                        k += 1;
+                    }
+                    if k < chars.len() && chars[k] == '(' {
+                        if let Some(end) = balanced_paren_end(&chars, k) {
+                            args.push(chars[k + 1..end].iter().collect());
+                            i = end + 1;
+                            continue;
+                        }
+                    }
+                }
+                i = j;
+                continue;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    args
+}
+
+/// 从开括号位置截取配对闭括号下标（引号内容跳过；未闭合 → None）。
+fn balanced_paren_end(chars: &[char], open: usize) -> Option<usize> {
+    let mut depth = 1i32;
+    let mut quote: Option<char> = None;
+    for (off, &c) in chars.iter().enumerate().skip(open + 1) {
+        if let Some(q) = quote {
+            if c == '\\' {
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' => quote = Some(c),
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(off);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 顶层逗号切分（括号/方括号深度与引号感知）——`a, :foo` → `["a", ":foo"]`。
+fn split_top_level_commas(text: &str) -> Vec<String> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut segs = Vec::new();
+    let mut start = 0usize;
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut quote: Option<char> = None;
+    for (i, &c) in chars.iter().enumerate() {
+        if let Some(q) = quote {
+            if c == '\\' {
+                continue;
+            }
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        match c {
+            '"' | '\'' => quote = Some(c),
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            ',' if paren == 0 && bracket == 0 => {
+                segs.push(chars[start..i].iter().collect::<String>().trim().to_string());
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail: String = chars[start..].iter().collect();
+    segs.push(tail.trim().to_string());
+    segs.into_iter().filter(|s| !s.is_empty()).collect()
+}
+
+/// selector() 接受的伪元素名单（Chrome 定向探针矩阵，2026-09-01；R5359 复探
+/// 2026-10-31：`::picker(select)` 已转正——本地 chrome 探针页绿，R3879 时点的
+/// 「默认关」记录过时）。
 ///
 /// 语义是「UA 是否识别该伪元素」（CSS Conditional §11），非 ZW 是否消费——
 /// chrome 对 `selector(::placeholder)` 报 true（探针绿）即使实现层不同。名单外
-/// （`::-webkit-asdf` 假名、`::picker`（chrome 150 默认关）、`::details-content-before`
-/// 等不存在名）→ false；driving: at-supports-selector-003/004/picker-icon 等。
+/// （`::-webkit-asdf` 假名、`::details-content-before` 等不存在名）→ false；裸
+/// `::picker` 不经本名单（解析层即非法，js 判据 CSS-supports-selector-picker）；
+/// driving: at-supports-selector-003/004 等。
 const SUPPORTED_PSEUDO_ELEMENTS: &[&str] = &[
     // 标准 ::before/::after/排版/UI/高亮/草案
     "before",

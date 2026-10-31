@@ -972,3 +972,41 @@ fn test_nth_child_no_parent() {
         "orphan has no parent → nth-child fails"
     );
 }
+
+// ── R5359：selector() 逻辑组合实参严格裁决 + ::picker 识别 ──
+// （css-conditional-4：实参也是选择器「组成」；css-select-6 §picker。driving:
+// at-supports-selector-detecting-invalid-in-logical-combinations / -picker /
+// -picker-icon。）
+
+#[test]
+fn test_supports_selector_logical_combo_args_strict() {
+    let eval = |text: &str| evaluate_supports_condition(&SupportsCondition::Selector(text.to_string()));
+    // 合法实参（forgiving 解析不影响 supports 判定，合法即 true）
+    assert!(eval(":is(.a)"), "合法 :is 实参 → true");
+    assert!(eval(":where(.a, .b)"), "多合法实参 → true");
+    assert!(eval(":has(.a)"), "合法 :has 实参 → true");
+    assert!(eval(":not(.a)"), "合法 :not 实参 → true");
+    // 非法实参混入 → false（chromium 同判；容错解析丢弃非法实参，须文本级裁决）
+    assert!(!eval(":is(:foo, .a)"), ":is 混入非法实参 → false");
+    assert!(!eval(":where(:foo, .a)"), ":where 混入非法实参 → false");
+    assert!(!eval(":has(:foo, .a)"), ":has 混入非法实参 → false");
+    assert!(!eval(":not(:foo, .a)"), ":not 混入非法实参 → false");
+    // 嵌套组合下探
+    assert!(!eval(":is(:has(:foo))"), "嵌套组合深层非法实参 → false");
+    assert!(eval(":is(:has(.a))"), "嵌套组合全合法 → true");
+    // 实参内引号逗号不切分
+    assert!(eval(":is([title=\"a,b\"])"), "属性值内逗号非切分点 → true");
+}
+
+#[test]
+fn test_supports_selector_picker_recognized() {
+    let eval = |text: &str| evaluate_supports_condition(&SupportsCondition::Selector(text.to_string()));
+    // css-select-6 §picker + JS 判据 CSS-supports-selector-picker（chrome 2026-10-31 探针绿）
+    assert!(eval("select::picker(select)"), "::picker(select) 带宿主 → true");
+    assert!(eval("::picker(select)"), "::picker(select) 裸 → true");
+    assert!(eval("select::picker-icon"), "::picker-icon → true");
+    assert!(eval("::picker-icon"), "::picker-icon 裸 → true");
+    assert!(!eval("select::picker"), "裸 ::picker → false");
+    assert!(!eval("select::picker()"), "空参 ::picker() → false");
+    assert!(!eval("select::picker(input)"), "非 select 宿主 → false");
+}

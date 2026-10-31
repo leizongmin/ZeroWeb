@@ -1113,6 +1113,9 @@ impl<'a> Parser<'a> {
                 | "spelling-error"
                 | "file-selector-button"
                 | "details-content"
+                // R5359（css-select-6 §picker）：`::picker-icon` 裸形式放行（无参伪元素；
+                // 支持性由 style-system supports 名单按 chrome 探针矩阵裁决）。
+                | "picker-icon"
                 | "search-text"
                 | "target-text"
                 | "view-transition"
@@ -1130,8 +1133,22 @@ impl<'a> Parser<'a> {
     }
 
     /// R4262（CSS Overflow 5 §scroll-buttons）：带参伪元素白名单——`::scroll-button(<arg>)`。
+    /// R5359（css-select-6 §picker）：`::picker(<select>)` 加入（裸 `::picker` 仍不在此
+    /// 列 = 非法，JS 判据 CSS-supports-selector-picker：chrome 对 selector(select::picker)
+    /// 报 false）。
     fn is_known_functional_pseudo_element(name: &str) -> bool {
-        matches!(name, "scroll-button")
+        matches!(name, "scroll-button" | "picker")
+    }
+
+    /// R5359：带参伪元素参数合法性按名分派——scroll-button 方向关键字族（R4262）/
+    /// picker 仅接受 `select`（css-select-6：现行规范仅 select 提供可拾取控件，
+    /// chromium 同；FIXME: 规范扩展其他宿主元素时同步放宽）。
+    fn is_valid_functional_pseudo_element_arg(name: &str, arg: &str) -> bool {
+        match name {
+            "scroll-button" => Self::is_valid_scroll_button_arg(arg),
+            "picker" => arg == "select",
+            _ => false,
+        }
     }
 
     /// R4262：`::scroll-button(<arg>)` 方向关键字合法性（CSS Overflow 5：非法参数 =
@@ -1251,7 +1268,7 @@ impl<'a> Parser<'a> {
                                     Token::Delim('*') => "*".to_string(),
                                     _ => return None,
                                 };
-                                if !Self::is_valid_scroll_button_arg(&arg) {
+                                if !Self::is_valid_functional_pseudo_element_arg(&name, &arg) {
                                     return None;
                                 }
                                 self.advance();
@@ -1280,7 +1297,7 @@ impl<'a> Parser<'a> {
                                 Token::Delim('*') => "*".to_string(),
                                 _ => return None,
                             };
-                            if !Self::is_valid_scroll_button_arg(&arg) {
+                            if !Self::is_valid_functional_pseudo_element_arg(&name, &arg) {
                                 return None;
                             }
                             self.advance();
