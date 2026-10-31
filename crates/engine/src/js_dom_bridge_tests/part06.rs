@@ -4660,6 +4660,9 @@ globalThis.__zw_ce_insert_paragraph("#ce2");
     }
 }
 
+// R5356b 临时探针已剥离——见 part04 注册叶内容门 + live-list 钩子、part05 种子消费、
+// part06 _zwLocalChildNodes frag 分支与 _zwRegisterFragEl。
+
 #[test]
 fn test_insert_html_r3254_m3_slice6() {
     // R3254-M3 切片 6（editing goal，2026-09-07）：execCommand('insertHTML')——

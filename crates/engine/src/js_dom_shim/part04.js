@@ -8976,6 +8976,30 @@
                   try { __zw_insert_before(sel, newNode.__zwHandle, _posRef); } catch (_ePosIns) {}
                 }
               }
+              // R5356b（editing-compat inline-host B 簇，2026-10-31）：frag 种子宿主
+              // live-list 同步——插入节点 splice 进种子 nodes（ref identity 定位；
+              // miss/null 尾追）。种子即宿主子列表的 shim 侧权威拷贝：send_keys 管线
+              // 每脚本 execute_dom_script 的 apply+gen bump（pa2a reset）清 pending
+              // 桶后序列化仅剩种子可吐（b1 探针实证：LF 只在桶 → got `<br>` 丢 LF）。
+              // 同 turn 桶活路无双计——overlay 并桶的 seen identity 跳过（R182 handle
+              // 臂）先于插入定位生效；`_zwNodeParent` 反链不随 pa2a 清空（part05
+              // __zw_reset_pending_state 清单无此表），splice 成员的 parentNode 判定
+              // 跨代际存活，种子消费侧过滤不受影响。
+              try {
+                if (sel && typeof _zwTextElsBySel !== 'undefined' && _zwTextElsBySel) {
+                  var _r5356fe = _zwTextElsBySel.get(sel);
+                  if (_r5356fe && _r5356fe.nodes) {
+                    var _r5356adds = ceAdded || [newNode];
+                    var _r5356at = (refNode != null) ? _r5356fe.nodes.indexOf(refNode) : -1;
+                    for (var _r5356ai = 0; _r5356ai < _r5356adds.length; _r5356ai++) {
+                      var _r5356an = _r5356adds[_r5356ai];
+                      if (!_r5356an) continue;
+                      if (_r5356at >= 0) _r5356fe.nodes.splice(_r5356at + _r5356ai, 0, _r5356an);
+                      else _r5356fe.nodes.push(_r5356an);
+                    }
+                  }
+                }
+              } catch (_e5356li) {}
               // refNode 为 create 句柄（无 selector）且父非 handle 时不支持（罕见）。
               // js-dom M4 R47：fragment flatten record——addedNodes 用 ceAdded（fragment 子节点，
               // spec insertBefore(fragment) record 不含 fragment 自身）。nextSibling=refNode
@@ -13141,6 +13165,35 @@
                   || (sel && _zwTextElsBySel && _zwTextElsBySel.get(sel));
                 if (_r294te && _r294te.node) _ihAdded = [_r294te.node];
               } catch (_e294t) {}
+            } else if (typeof _zwRegisterFragEl === 'function' && _ihVal.indexOf('<') >= 0
+                && !handle && sel && _ihAdded.length) {
+              // R5356b（editing-compat inline-host B 簇归因轮，2026-10-31）：markup
+              // 内容的 sel 形 innerHTML= 注册**元素种子**（解析顶层代理列表）——与
+              // R5273 单文本种子对称补齐「string replace all」视图锚。动作中途 live
+              // 视图自 pre-batch 基底重建后解析产物失锚（inline-host `{}<br>` 语料：
+              // CE enter 时 kids=0 → LBA 空视图插 LF + 可见性补断 = `\n\n` ≠
+              // `\n<br>`）；种子在场 LBA 的插入按 nextSibling 链落位、断点后继可见
+              // 无补断。t8r-4 的 sel 路径不物化语义不变——种子只作 overlay 替换基，
+              // 不建 handle 树。切片副本：后续 R294 形赋值/R3254-E2 挂父槽改写
+              // `_ihAdded` 数组不别名种子。
+              // R5356b 叶内容门（join 复归归因，同日轮）：片段顶层全为文本/无子元素
+              // （`{}<br>` 语料形）才登记——含容器元素的片段（join/wss/chd 语料的
+              // `<div>`/`<b>` 嵌套形）不登记：健全基座域里种子权威化会遮蔽引擎树
+              // 推进（join 三案 got=setup 原文 7,518 全 F 实证）。门失败回退末分支
+              // unregister，pre-R5356b 链语义不变。
+              var _r5356leaf = true;
+              for (var _r5356li = 0; _r5356li < _ihAdded.length; _r5356li++) {
+                var _r5356ln = _ihAdded[_r5356li];
+                if (!_r5356ln || _r5356ln.nodeType !== 1) continue;
+                try {
+                  if (_r5356ln.childNodes && _r5356ln.childNodes.length) { _r5356leaf = false; break; }
+                } catch (_e5356lf) { _r5356leaf = false; break; }
+              }
+              if (_r5356leaf) {
+                _zwRegisterFragEl(_makeProxy(sel, handle), handle, sel, _ihAdded.slice());
+              } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
+                _zwUnregisterTextEl(_makeProxy(sel, handle));
+              }
             } else if (typeof _zwUnregisterTextEl === 'function' && typeof _makeProxy === 'function') {
               _zwUnregisterTextEl(_makeProxy(sel, handle));
             }

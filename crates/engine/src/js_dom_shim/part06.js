@@ -17812,6 +17812,25 @@ function _zwUnregisterTextEl(el) {
   var i = _zwTextEls.indexOf(e);
   if (i >= 0) _zwTextEls.splice(i, 1);
 }
+// R5356b（editing-compat inline-host B 簇归因轮，2026-10-31）：**元素内容种子**——
+// sel 形 innerHTML= 带 markup 时（`{}<br>` 语料形）R5273 单文本种子门
+//（`_ihVal.indexOf('<') < 0`）不覆盖，动作中途 live 视图自 pre-batch 基底重建后
+// 解析产物失锚（CE enter 时 kids=0 → LBA 空视图插 LF + 可见性补断 = `\n\n` ≠
+// `\n<br>`）。注册解析顶层代理列表（`_zwFragmentAdded` 产物，R3254-E2 已挂父槽）
+// 为 frag 条目——消费面（`_zwOverlayPendingChildNodes`/`_zwLocalChildNodes`）按
+// `nodes` 列表整体替换，生命周期与文本种子同表同注销路径。
+// 条目只进 Map 不进 `_zwTextEls` 数组：数组消费者全是文本几何扫描
+//（_zwRangeClientRects/_zwTextElBoundingRect/_zwCaretFromPoint），元素种子无
+// text 度量语义，缺席即天然跳过；注销经 indexOf miss 安全落空。
+function _zwRegisterFragEl(el, handle, sel, nodes) {
+  _zwUnregisterTextEl(el);
+  var entry = { el: el, handle: handle, sel: sel, text: null,
+    node: (nodes && nodes.length) ? nodes[0] : null, nodes: nodes || [],
+    gen: (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0 };
+  _zwTextElsByEl.set(el, entry);
+  if (handle) _zwTextElsByHandle.set(handle, entry);
+  if (sel) _zwTextElsBySel.set(sel, entry);
+}
 // js-dom M4 R51c：**子树注销**——removeChild(el) 只注销 el 自身的注册文本，el 子树内元素
 //（textContent= 建的本地文本视图）泄漏：WPT testharness 每 subtest `setupRangeTests()` 全量
 //重建（remove testDiv + 重 createElement 6 paras），旧实现每 subtest 泄漏 6 条 `_zwTextEls`
@@ -17865,6 +17884,9 @@ var _zwTextElsBySel = new Map();
 function _zwLocalChildNodes(sel, handle) {
   var e = (handle && _zwTextElsByHandle.get(handle)) || (sel && _zwTextElsBySel.get(sel)) || null;
   if (!e) return null;
+  // R5356b：frag 条目（元素内容种子）按注册序整体返回；已摘离成员剔除
+  //（同 part05 种子消费注记——本地 remove() 不落标记面，detached 不滞留视图）。
+  if (e.nodes) return e.nodes.filter(function (_r5356n) { return _r5356n && _r5356n.parentNode != null; });
   // WC-M3 切片 8 第九增量（web-components goal）：空文本注册（innerHTML=''/textContent=''
   // 覆写先前的非空文本）**不构成子节点**——spec string-replace-all：空串 → node null →
   // 无子。否则注册表残留 [text('')] 使 childNodes/assignedNodes 虚报 1 子（WPT

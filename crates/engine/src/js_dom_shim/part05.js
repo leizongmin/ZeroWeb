@@ -10808,12 +10808,28 @@
       // 可信，engine 纯测试环境代际直调 bump 无配对 apply）放行过时种子改用基座；
       // live 视图种子恒保留——种子+桶修正即 live 真值（R5273 原语义，v2 探针
       // live=[T:"", br, T:abcd] 正确）。登记代际缺失（旧条目/无桥）按保留处理。
-      if (_r5273e && _r5273e.node) {
+      if (_r5273e && (_r5273e.node || (_r5273e.nodes && _r5273e.nodes.length))) {
+        // R5356b：frag 条目豁免过时门——种子 nodes 即末次 innerHTML= 的解析产物，
+        // 与 host apply（replace_inner_html 同源解析）落地真相同构，不存在文本种子的
+        // 「原地改写 vs 引擎树推进」分歧面；本地摘离成员已在上方过滤，CE 插入经桶
+        // 照常并入。gen 门维持文本种子语义（R5356 原案）不变。
         var _r5356seedStale = _zwSerSkipCrossGen
+          && !_r5273e.nodes
           && _r5273e.gen != null
           && globalThis._zwApplyGeneration && _r5273e.gen !== globalThis._zwApplyGeneration()
           && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv());
-        if (!_r5356seedStale) out = [_r5273e.node];
+        // R5356b：frag 条目（元素内容种子）按注册序整体替换（多节点 `ab[]<br>` →
+        // [T:ab, br] 语料形）；单文本条目保持原单节点语义。**已摘离成员剔除**——
+        // 解析代理（_zwMText/_zwMEl 无 sel/handle）的本地 remove() 只 splice+置空
+        // parentNode（如 editor-test-utils 标记剥离），不落 pending/removed 标记面，
+        // 种子须自行过滤否则 detached 节点滞留视图（b1 探针：二轮扫描命中已剥离
+        // "{}" 文本 → removeNode parentElement=null 抛）。遮蔽风险由注册面叶内容门
+        // 收敛（part04 同名注记——含容器元素的片段不登记，健全基座域无种子）。
+        if (!_r5356seedStale) {
+          out = _r5273e.nodes
+            ? _r5273e.nodes.filter(function (_r5356n) { return _r5356n && _r5356n.parentNode != null; })
+            : [_r5273e.node];
+        }
       }
     }
     // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
