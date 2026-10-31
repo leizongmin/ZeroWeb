@@ -12064,6 +12064,16 @@
       var cached = _ceEntryByKey[key];
       return cached || null;
     }
+    // OPTIMIZATION（editing-compat 簇 A 插入侧，2026-10-31）：registry 空时 entry 恒
+    // null——tag 直查 `_ce_registry[tag]` 与 is 反查（`__zwCERegistryLookup` 同读
+    // `_ce_registry`）双双结构性 miss，`_realTag` + host `is` 属性读（每个未缓存 key
+    // 一次；innerHTML 物化/连接环 2000 子 = 2000 次纯浪费往返，探针 zz-s5 seg15
+    // ~41ms 主项）全可省。`_ce_registry_gen` 只在 `_ceDefine` 递增、从不清零，
+    // =0 ⟺ 从未 define ⟹ registry 结构性空（part04:12920 `_ce_registry_gen ?`
+    // 同款先例）。不写缓存不盖 `_ceIsChecked`（缺席 ≠ 已查——define 后 gen bump
+    // 使后续调用照走原链，is 反查语义不变）。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
+    if (_ce_registry_gen === 0) return null;
     var tag = _realTag(sel, handle).toLowerCase();
     var entry = _ce_registry[tag] || null;
     // WC-M1 切片 4：customized built-in——is 内容属性命中（localName 匹配）。结果入
