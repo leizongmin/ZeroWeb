@@ -35,3 +35,15 @@ runner 复制语料探针（hook globalThis 互斥入口 + PROBE throw dump）�
 
 - s171 挂账「name-attribute 跨群互斥误关」**resolved**——语义面反转（非互斥 bug，是 gEBI 幽灵 proxy），根修落 `_r4006LiveRooted` 三臂 + overrides 门链。
 - 新观察（未挂账为 FIXME）：selection-pointer forms 域 Fail→Pass 22 案的确切归因（修复收益 vs 负载差）未逐案勘定，域后续若回红再查。
+- FIXME 新记：`test_style_sheet_from_handle_style_element_r113` 期望面与 s163 CSSOM 尾随分号序列化失同步（期望 `div { color: rgb(1, 2, 3) }`，现序列化尾分号 `...; }`——Chrome/Firefox 同形尾分号，序列化侧浏览器向正确，测试期望陈旧；期望同步小刀候选）。
+- 既有维持：`test_ua_display_li_list_item_canvas_inline_s24_flip`（li computed display 'block'≠'list-item'，s166 起基线在集，勘根归 style-system li UA 表，跨流碰头候选）。
+
+## 并发会话复证（同树双写记账，2026-10-31 10:42）
+
+另一 rally 会话同树推进同一切片：本会话恢复 WIP 后独立复跑全部验证（其间对方先行 commit+push 8d29b5d6a，工作树内容经 stash 往返字节一致，复证即对已推代码生效）：
+
+- 定向 `FILTER=the-details-element/name-attribute` **18/18 全 Pass**、域 **439P/44F/0T**——(key,state) 对严格 join 对 s171 solo 基线：**唯一位移 = 靶键 F→P**，P2F/P2T/LOST/GAINED 全 0（483 键对 483 键）。
+- webview lib **825P/0F** solo（较上节 824P/1F 更净：image_decoder 环境案与 service_worker flaky 本轮均绿，佐证两案负载敏感定性）。
+- `make test` 在 workspace 腿 engine lib 处中止（exit 101 = 基线 11F 所在腿）；`--no-fail-fast` 复跑仍止于该目标（cargo 不续跑后续目标），webview 腿单独跑齐。fetch 族红 = editing-compat 10-30 stash 复证 main 既有（留 net 流归因）——make test 全绿恢复前，分腿验证为现行口径。
+- fmt 零 diff、guarded-clippy workspace `--all-targets -D warnings` exit 0 复证。
+- 既有观察（不随刀处理）：js_dom_shim 各 part 远超 2000 行准则（part03 28K/part06 18.7K，R2963 拆分后 170+ 切片再膨胀；字节精确拼接契约使再拆分有独立风险面，留专项讨论）。

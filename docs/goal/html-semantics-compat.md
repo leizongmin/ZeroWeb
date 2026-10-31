@@ -25,7 +25,8 @@
 > **施工**（part06.js 单文件 + 钉案）：新增 `_r4006LiveRooted` 正向位次验证（每跳先验子在实际父 childNodes、达 document 即 rooted、链断无 pending 槽即出树）补 pending 索引三臂（fast/pool/R334 resel）；overrides 臂补 R125 门链逐字同口径；探针形态矩阵转常驻钉案 `test_get_element_by_id_stale_replacement_s171`。spec 同向收紧：gEBI 只搜文档树。
 > **验证**：name-attribute 整案 **18 案全绿**（五连 F 销）；details 目录 42P/1F（布局既有）；interactive-elements **439P/44F/0T** F 集合逐键 diff 零位移唯靶案翻绿；webview lib **824P/1F**（+1 钉案绿，image_decoder 既有）；engine lib **3612P/11F** stash 二分同名 SAME 零回归；全域 **7250P/753F/84T** join s167 full1——Fail→Pass 36（靶案 + closedby simple ×3 + selection-pointer ~22 意外收益域）、Pass→Fail 2（css-module/json-src stash 对照 HEAD 同态，零归因本刀）、新报出 126、Timeout 键互换 3。fmt/guarded-clippy 全绿、shim 装配 SYNTAX_OK。
 > **FIXME 销账**：s171「name-attribute 跨群互斥误关」resolved——实为 gEBI 幽灵 proxy（pending 索引 + overrides 臂），根修已落。
-> **下一步候选**：①嵌套 shadow 级联（s168 commit1 FIXME 承接，`_shadowRoots` 顶层遍历嵌套面不入）；②selection-pointer forms 域 22 案翻绿归因勘定（修复收益 vs 负载差，回红再查）；③webview 静态 blob 路径 entries 化（s167 挂账，生产 renderer 多进程组合语义）。
+> **下一步候选**：①嵌套 shadow 级联（s168 commit1 FIXME 承接，`_shadowRoots` 顶层遍历嵌套面不入）；②selection-pointer forms 域 22 案翻绿归因勘定（修复收益 vs 负载差，回红再查）；③webview 静态 blob 路径 entries 化（s167 挂账，生产 renderer 多进程组合语义）；④style_sheet_from_handle_r113 期望同步小刀（s163 尾随分号序列化遗留，测试期望陈旧，账本 s172 FIXME）。
+> **并发复证**：双会话同树推进同一切片（rollover 双触发）——先commit 方落 8d29b5d6a 码+账；复证方（本行）对已推代码独立复跑全绿（定向 18P、域 439P/44F 严格 join 唯靶键 F→P、webview lib 825P/0F solo、clippy/fmt 复证），增量记账并入同账本「并发会话复证」节。
 > **账本**：[evidence/2026-10-31-m2s172-gebi-ghost-nameattr-rootfix.md](html-semantics-compat/evidence/2026-10-31-m2s172-gebi-ghost-nameattr-rootfix.md)
 > **▶ 上轮状态（2026-10-31 M2 切片 171 收口，closedby 漂移域 solo 冷却钉态复跑 + name-attribute 跨群分叉勘根——s167 挂账销账 + 新挂账，纯复跑零代码改动）**
 > **入场定刀位**：s167 挂账「closedby/details 漂移域 solo 冷却复跑钉态」——s170 时 load 92 不成立推迟，本轮 load 5.58 冷却态成立。FILTER=interactive-elements solo 复跑 438P/45F/0T（Timeout 0 无截断）。
