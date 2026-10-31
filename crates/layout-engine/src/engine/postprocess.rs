@@ -1465,9 +1465,12 @@ pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &Hash
                         && matches!(s.bottom, LengthValue::Auto)
                 })
             {
-                // 静态位置镜像：左缘 = CB content 右缘 − margin-box（margin_right + width）。
-                let mb = child.margin_right;
-                child.x = (child_cb_w - mb - child.width - child.margin_left).max(0.0);
+                // 静态位置镜像：左缘 = 参照宽右缘 − margin-box（margin_left + width +
+                // margin_right）。R5366：去除 .max(0.0)——参照流父 content 宽小于盒子时
+                // 静态位为负（RTL 行内起点 = 右缘，盒向左溢出参照盒；CSS2 §10.3.7 静态
+                // 位置允许负值）。驱动：containing-block-020/022（span1 width-0 包 96px
+                // abspos 蓝块，钳 0 使蓝块贴 content 左缘、chromium 在左溢 −96）。
+                child.x = child_cb_w - child.margin_left - child.width - child.margin_right;
             }
             walk(child, styles, child_cb_rtl, child_cb_w);
         }
