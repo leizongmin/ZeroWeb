@@ -11671,6 +11671,13 @@
     if (arr.indexOf(nd) < 0) arr.push(nd);
   }
   function _zwPAIdRemove(nd) {
+    // OPTIMIZATION（editing-compat 簇 A 归因轮，2026-10-31）：by-id 索引空表快出——
+    // Map 空时任意 id 的 get 恒 miss（本函数唯一效果就是命中条目剔除），O(1) 等价预筛。
+    // bulk 移除路径（innerHTML 整体重设 ×3 消费点：setter R125 尾扫 2 次 + invalidate
+    // R52 purge）每子付 ~20-32µs 的 `nd.id` get-trap/attr 读链（探针 PA tape：n=6000
+    // idRead 122-195ms），无 pending id 页面全数纯浪费；有 pending id 时 Map 非空走
+    // 原路径零变化。
+    if (!_zwPendingAddedById.size) return;
     // slice45：`nd.id` 跨 apply 读空（`__zw_get_attr_handle` 只查当前批队列）→
     // byId 条目残留 → 换代后 R51c by-id 查询回落（querySelector `#id` 快径 /
     // getElementById pending 面）复活已移除节点（part45 钉 gen2 观测臂实证）。
@@ -12090,16 +12097,36 @@
         _pb.removed = _bc;
         _pb.removedSet = new Set(_bc);
       }
+      // OPTIMIZATION（editing-compat 簇 A 归因轮，2026-10-31）：bulk 对冲密集时逐命中
+      // indexOf+splice 是 O(桶²)（innerHTML 整体重设 4000 remFlat 全命中 4000 桶 added
+      // ——探针 pb1 实测 13.4ms/次且随桶规模线性涨）。命中收集到数组，密集（≥8）单遍
+      // filter 重建（按命中 Set 精确剔除，成员与序等价——非命中条目原样保留），稀疏
+      // 保持原逐命中定点 splice（常数最小）。单遍 O(桶) 不劣于旧路径单次命中成本。
+      var _pbHits = null, _pbHitN = 0;
       for (var pb1 = 0; pb1 < remFlat.length; pb1++) {
         var _pr = remFlat[pb1];
         if (_pb.addedSet.has(_pr)) {
           // R51c 消零：曾 pending-added → 对冲（同全局表语义），不记 removed。
           _pb.addedSet.delete(_pr);
-          var _pai = _pb.added.indexOf(_pr);
-          if (_pai >= 0) _pb.added.splice(_pai, 1);
+          if (_pbHitN === 0) _pbHits = [];
+          _pbHits.push(_pr);
+          _pbHitN++;
           continue;
         }
         if (!_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
+      }
+      if (_pbHitN >= 8) {
+        var _pbHitSet = new Set(_pbHits);
+        var _pbKept = [];
+        for (var pb1b = 0; pb1b < _pb.added.length; pb1b++) {
+          if (!_pbHitSet.has(_pb.added[pb1b])) _pbKept.push(_pb.added[pb1b]);
+        }
+        _pb.added = _pbKept;
+      } else if (_pbHits) {
+        for (var pb1c = 0; pb1c < _pbHits.length; pb1c++) {
+          var _pai = _pb.added.indexOf(_pbHits[pb1c]);
+          if (_pai >= 0) _pb.added.splice(_pai, 1);
+        }
       }
       for (var pb2 = 0; pb2 < addFlat.length; pb2++) {
         var _pa = addFlat[pb2];
@@ -12165,13 +12192,20 @@
       // R52：惰性剔除——旧全表 keep 过滤每 remove O(pa)（testharness 每 subtest +10 泄漏条目
       // → O(n²) 残余增长根源）。改为 Set 命中才定点 splice（indexOf O(pa) 仅在命中时发生，
       // 未命中零成本——多数 remove 的节点不在 pa 表）。
+      // OPTIMIZATION（editing-compat 簇 A 归因轮，2026-10-31）：R52 稀疏假设在 bulk 移除
+      // （innerHTML 整体重设替换全部旧子）下反转——每子全命中 pa 表，逐命中 indexOf+splice
+      // O(n²)（探针 4000 remFlat × 4000 pa 表实测 r2b 63-84ms，且含 `_zwPAIdRemove` 的
+      // `.id` get-trap 读链成本，见该函数空表预筛）。命中收集，密集（≥8）单遍 filter 重建
+      //（按命中 Set 精确剔除，成员与序等价），稀疏保持逐命中定点 splice。
+      var _paHits = null, _paHitN = 0;
       for (var r2b = 0; r2b < remFlat.length; r2b++) {
         var _rv = remFlat[r2b];
         if (!_zwPASet().has(_rv)) continue;
         _zwPASet().delete(_rv);
         _zwPAIdRemove(_rv);
-        var _ri = _zwPendingAdded.indexOf(_rv);
-        if (_ri >= 0) _zwPendingAdded.splice(_ri, 1);
+        if (_paHitN === 0) _paHits = [];
+        _paHits.push(_rv);
+        _paHitN++;
         // R52：消零节点（从未真入树、已从 pending 剔除）的 proxy 缓存同步清——`_proxyCache`
         // 强引用旧 handle proxy 永不回收 → V8 堆随 subtest 线性涨 → GC 成本线性涨 → 总时间
         // 二次（GR3 探针 tc/apc/ib 三段同涨的根源）。仅 handle 键（'@h'）可安全清：同 handle
@@ -12210,6 +12244,21 @@
           // 见 PR #115 交付卡（F-2，PR #115 缺陷首轮）。
           var _ex47 = _expando['@' + _rv.__zwHandle];
           if (!_ex47 || !_ex47._zwAppl45) delete _expando['@' + _rv.__zwHandle];
+        }
+      }
+      // 命中条目出 pa 数组——密集单遍重建 / 稀疏定点 splice（见上方 OPTIMIZATION 注）。
+      // 数组与 `_zwPASet()` 的成员一致性保持：命中已从 Set 删除，重建只移除同一批命中。
+      if (_paHitN >= 8) {
+        var _paHitSet = new Set(_paHits);
+        var _paKept = [];
+        for (var r2c = 0; r2c < _zwPendingAdded.length; r2c++) {
+          if (!_paHitSet.has(_zwPendingAdded[r2c])) _paKept.push(_zwPendingAdded[r2c]);
+        }
+        _zwPendingAdded = _paKept;
+      } else if (_paHits) {
+        for (var r2d = 0; r2d < _paHits.length; r2d++) {
+          var _ri2 = _zwPendingAdded.indexOf(_paHits[r2d]);
+          if (_ri2 >= 0) _zwPendingAdded.splice(_ri2, 1);
         }
       }
       for (var r3 = 0; r3 < remFlat.length; r3++) {
