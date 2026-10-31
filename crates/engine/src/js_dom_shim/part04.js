@@ -11125,69 +11125,103 @@
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
         // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
-        // `_formControls(sel, handle)` child 链 walk + host 视图合并（tree order，见 part05）。
+        // `_formControls(sel, handle)` host 视图 + child 链 walk 合并（owner 域文档序，见 part05）。
         // t8f（siteopt bilibili r1）：**活集合**——spec form.elements 是 live HTMLFormControlsCollection
         //（https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements），此前返快照数组，
         // held ref 看不见 hydration 同 turn 插入的控件（namedItem miss → 站点恢复路径
         // insertBefore(undefined) TypeError）。每次属性读经 `_formControls` 现取（live）；
         // 集合对象按元素缓存（t8e 同机制，`f.elements === f.elements` 恒等 + 长页零重建）。
+        // S185（html-semantics M2）：改走 `_zwMakeHTMLCollection` 通用活集合形态——
+        // ① protoCtor=HTMLFormControlsCollection：instanceof 双真（interfaces-01「should
+        //    exist」+ prototype 链面，此前 ad-hoc Proxy 无接口原型恒 false）；
+        // ② namedFn 多匹配臂：named 命中恰 1 → 元素；>1 → live RadioNodeList
+        //    （nameditem-01「elements collection should return elements or
+        //    RadioNodeLists」+ RadioNodeList live 断言面）；'' → undefined
+        //    （R38 空串非 supported property name）；
+        // ③ has('length')/gOPD 索引描述符/ownKeys 索引表：assert_array_equals 依赖面
+        //    （nameditem-02「length property should be own and enumerable」）。
         if (prop === 'elements' && _realTag(sel, handle) === 'FORM') {
           var _fcKind = (!sel && handle) ? 'h' : 's';
           var _fcCached = _zwFormCollCache.get(proxy);
           if (_fcCached && _fcCached.k === _fcKind) return _fcCached.c;
-          var _fcColl = new Proxy({ length: 0 }, {
-            get: function (_t, p) {
-              // symbol 键守卫（审查 B 发现 1）：parseInt(Symbol) 抛 TypeError——迭代协议
-              // （for...of/spread/Array.from 经 Symbol.iterator、String() 经
-              // Symbol.toPrimitive）无守卫时从可用变抛错（Angular forms/serialize 类
-              // 站点常见模式）。iterator 逐步现取列表（live 语义）。
-              if (typeof p !== 'string') {
-                if (p === Symbol.iterator) {
-                  return function () {
-                    var i = 0;
-                    return { next: function () {
-                      var l = _formControls(sel, handle);
-                      return i < l.length ? { value: l[i++], done: false } : { value: undefined, done: true };
-                    } };
-                  };
-                }
-                return undefined;
+          // FCC.prototype → _zwHCPrototype 单例惰性接线（单例在 part05，加载序不依赖；
+          // 首个 form.elements 构造时接通）+ FCC namedItem（HTML §dom-htmlformcontrolscollection
+          // nameditem：恰 1 → 元素；>1 → 快照集合——live 语料无面，FIXME 随面升级；
+          // miss → null；'' → null 与 part03 同款）。
+          try {
+            var _fccC = globalThis.HTMLFormControlsCollection;
+            if (_fccC && typeof _zwHCPrototype === 'function') {
+              if (Object.getPrototypeOf(_fccC.prototype) !== _zwHCPrototype()) {
+                Object.setPrototypeOf(_fccC.prototype, _zwHCPrototype());
               }
-              var list = _formControls(sel, handle);
-              if (p === 'length') return list.length;
-              if (p === 'item') return function (i) { return list[i] || null; };
-              // namedItem（HTMLFormControlsCollection：id 或 name 首匹配，miss → null，
-              // 空串 → null——审查 B 发现 4，与 part03 两处实现同款）。列表闭包内现取
-              // （先取方法后调用的时序不持旧快照）。
-              if (p === 'namedItem') {
-                return function (name) {
-                  var n = String(name);
-                  if (n === '') return null;
-                  var cur = _formControls(sel, handle);
-                  for (var i = 0; i < cur.length; i++) {
-                    var c = cur[i];
-                    if (c && c.id === n) return c;
-                    try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
-                  }
-                  return null;
-                };
+              if (!_fccC.prototype.__zwFccWired) {
+                Object.defineProperty(_fccC.prototype, '__zwFccWired',
+                  { value: true, enumerable: false, configurable: false });
+                Object.defineProperty(_fccC.prototype, 'namedItem', {
+                  value: function (name) {
+                    if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+                    var s = String(name);
+                    if (s === '') return null;
+                    var els = this.__zwHC();
+                    var hits = [];
+                    for (var k = 0; k < els.length; k++) {
+                      var e = els[k];
+                      if (!e) continue;
+                      try {
+                        if (e.getAttribute) {
+                          if (e.getAttribute('id') === s) hits.push(e);
+                          else if (_zwIsHTMLNamespace(e) && e.getAttribute('name') === s) hits.push(e);
+                        }
+                      } catch (_eFNI) {}
+                    }
+                    if (hits.length === 1) return hits[0];
+                    if (hits.length > 1) return _zwMakeCollection(hits, false);
+                    return null;
+                  },
+                  writable: true, enumerable: false, configurable: true,
+                });
               }
-              var idx = parseInt(p, 10);
-              if (!isNaN(idx) && String(idx) === String(p)) return list[idx];
-              return list[p];
-            },
-            has: function (_t, p) {
-              if (typeof p !== 'string') return false;
-              var idx = parseInt(p, 10);
-              if (!isNaN(idx) && String(idx) === String(p)) {
-                var list = _formControls(sel, handle);
-                return idx >= 0 && idx < list.length;
-              }
-              return false;
             }
+          } catch (_eFccW) {}
+          // named 语义（HTMLFormControlsCollection supported property names + 多匹配
+          // live RadioNodeList）：恰 1 → 元素；>1 → live RadioNodeList（每次读现取，
+          // removeChild 同 turn 反映）；'' → undefined（get 臂；namedItem 臂另返 null）。
+          var _fcNamed = function (name) {
+            if (name === '') return undefined;
+            var cur = _formControls(sel, handle);
+            var hits = 0;
+            for (var fi = 0; fi < cur.length; fi++) {
+              var c = cur[fi];
+              if (!c) continue;
+              try {
+                if (c.id === name || (c.getAttribute && c.getAttribute('name') === name)) hits++;
+              } catch (_eFNM) {}
+            }
+            if (hits > 1) return _zwMakeRadioNodeListLive(sel, handle, name);
+            return _zwFormNamedLookup(sel, handle, name) || undefined;
+          };
+          var _fcColl = _zwMakeHTMLCollection([], {
+            rebuild: function () { return _formControls(sel, handle); },
+            protoCtor: globalThis.HTMLFormControlsCollection || null,
+            namedFn: _fcNamed,
           });
           try { _zwFormCollCache.set(proxy, { k: _fcKind, c: _fcColl }); } catch (_eFcC) {}
           return _fcColl;
+        }
+        // S185（html-semantics M2）：`fieldset.elements`（HTMLFieldSetElement.html「elements
+        // should be HTMLCollection」+ content/root 集合断言）——后代 listed 控件活集合
+        //（spec #dom-fieldset-elements：rooted at fieldset、filter = descendants ∩ listed；
+        // 无 form-owner 条件、legend 子不豁免、嵌套 fieldset 本体在册）。成员表
+        // `_zwFieldsetListed`（见 part05）；集合对象按元素缓存（form.elements 同机制）。
+        if (prop === 'elements' && _realTag(sel, handle) === 'FIELDSET') {
+          var _fsKind = (!sel && handle) ? 'h' : 's';
+          var _fsCached = _zwFormCollCache.get(proxy);
+          if (_fsCached && _fsCached.k === _fsKind) return _fsCached.c;
+          var _fsColl = _zwMakeHTMLCollection([], {
+            rebuild: function () { return _zwFieldsetListed(sel, handle); },
+          });
+          try { _zwFormCollCache.set(proxy, { k: _fsKind, c: _fsColl }); } catch (_eFsC) {}
+          return _fsColl;
         }
         // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {

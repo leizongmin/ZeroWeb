@@ -31,7 +31,62 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 184 收口，form 提交编码 text/plain + multipart 臂落地——12F 双根刀翻绿，shim 2 + rust 2：part04 accept-charset 字节化桥消费 + part01 text/plain iframe 字面渲染门）**
+> **▶ 当前状态（2026-10-31 M2 切片 185 收口，form.elements 集合层——HTMLFormControlsCollection/RadioNodeList 接口面 + fieldset.elements + form indexed 属性面 + owner 域文档序，11F 翻绿，shim 3 零 rust：part03 接口占位 + part05 集合工厂扩展/新双工厂 + part04 form.elements 重写/新 FIELDSET gate）**
+> **入场定刀位**：s184 账本「下一步候选」首位。
+> **勘根（六形态）**：① nameditem-02 has('length') false——part04 ad-hoc
+> Proxy 的 has trap 只有 canonical 索引臂（assert_array_equals 入门
+> 探测失败）；② matches `["03"]` 非 canonical 数字串名 miss——无
+> named 字符串臂；③ interfaces-01——HTMLFormControlsCollection 全局
+> 缺位 + ad-hoc Proxy 无接口原型 instanceof 恒 false；④ nameditem-01——
+> RadioNodeList 全局缺位 + named 无多匹配臂 + 取集后 removeChild 无
+> live 收缩面；⑤ filter.html 文档序——`_formControls` walk-first 使
+> form 子树控件恒排前，`form=` 跨树关联（before-*/after-* 期望文档
+> 序）错序；⑥ form-indexed-element——元素 proxy gOPD 无 FORM indexed
+> 臂（返 undefined）+ deleteProperty 无拒绝臂；⑦ HTMLFieldSetElement——
+> `fieldset.elements` getter 整体缺位。
+> **施工（shim 3）**：part03——HTMLFormControlsCollection/RadioNodeList
+> 接口占位 + RadioNodeList.prototype→NodeList.prototype 直链（R198 已
+> 链 Array.prototype，Array 迭代器经链可达）；part05
+> `_zwMakeHTMLCollection`——protoCtor（target 直链接口原型，缺省回落
+> 通用 HC 实例原型零变化）+ namedFn 覆盖（get/set/defineProperty/
+> deleteProperty/gOPD/has 六 trap named 命中共用）；新
+> `_zwMakeRadioNodeListLive`——多匹配 live RadioNodeList（`__zwNL`
+> 印记 R140 Symbol.hasInstance 认 + target 链 RNL.prototype + gOPD
+> indexed 描述符/has/ownKeys 索引表断言面）；新 `_zwFieldsetListed`——
+> 后代 listed 控件 pre-order 文档序（无 form-owner 条件、嵌套 fieldset
+> 本体在册、legend 子不豁免、input[type=image] 排除）；part04
+> form.elements——ad-hoc Proxy 替换为 `_zwMakeHTMLCollection` 活集合
+>（rebuild=R5267 形态 + protoCtor=FCC + namedFn：恰 1→元素、>1→live
+> RNL、''→undefined；FCC.prototype→_zwHCPrototype 惰性接线 + FCC
+> namedItem 恰1/多>1 快照/空串 null）+ 新 FIELDSET gate（成员表
+> `_zwFieldsetListed`，`_zwFormCollCache` 同缓存恒等机制）；part05
+> `_formControls`——host-first 重排（`__zw_form_controls` 文档序 owner
+> 枚举先推、walk 后推补 same-turn 新增，push 去重）+ host 条目
+> `_zwPendingRemoved` 过滤（R50 同款，same-turn remove stale 消除）；
+> part05 元素 proxy——gOPD FORM indexed 臂（{value, writable:false,
+> enumerable:true, configurable:true}，索引先于 named，WebIDL
+> #LegacyPlatformObjectGetOwnProperty 序）+ deleteProperty FORM indexed
+> 臂（恒 false：sloppy 静默 no-op + strict TypeError，臂形与 named 同
+> 款）。spec #htmlformcontrolscollection/#radiolist/#dom-fieldset-elements。
+> **验证**：定向 the-form-element **105P/3F**（3F 全在册承袭：
+> override builtins 1F fix#19c + base-url reflection 2F）；the-fieldset-
+> element HTMLFieldSetElement.html **3P/1F**（type attribute 在册独立
+> 面）；**forms 全树 join F2P = 11 恰靶案、P2F = 0**（4337P/363F/12T →
+> **4348P/352F/12T**，12T 不变）；interactive **483 键零位移**（439P/
+> 44F bit-exact）；engine lib **3641P/1F**（1F = ua_display_li 渲染流
+> 在册同键；form.elements 4 契约测试 t8f 全过——host-first 重排对
+> t8f live/三态/可迭代/image 排除逐位兼容）；node --check SYNTAX_OK
+>（114358 行）；cargo fmt --all --check + guarded workspace clippy 全绿。
+> **残留与边界**：RadioNodeList.value（checked radio 值聚合）与 FCC
+> namedItem 多匹配 live 形语料无面 FIXME 挂；form.elements named 多匹
+> 配每读新 live RNL 实例（身份不稳定，无语料面）；fix#19c override
+> builtins 1F 挂待决承袭。
+> **下一步候选**：disabled click 8 + click 消费激活 7（同 click 分派域
+> 可合刀）；color-attributes input.alpha/colorSpace 2F 小反射面可搭车；
+> submission-checks 三兄弟连接性面在册。
+> **账本**：[evidence/2026-10-31-m2s185-form-elements-collection-layer.md](html-semantics-compat/evidence/2026-10-31-m2s185-form-elements-collection-layer.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 184 收口，form 提交编码 text/plain + multipart 臂落地——12F 双根刀翻绿，shim 2 + rust 2：part04 accept-charset 字节化桥消费 + part01 text/plain iframe 字面渲染门）**
 > **入场勘根（两层根因）**：① 提交编码未消费——enctypes-helper 面
 > accept-charset 选出的提交编码从不参与串位字节化（text/plain 与
 > multipart `_mpPushStr` 均 `_zw_utf8_encode` 直通）；期望 mappable

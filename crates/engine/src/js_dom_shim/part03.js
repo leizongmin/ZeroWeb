@@ -1560,6 +1560,22 @@
     });
   } catch (_e140hi) {}
   globalThis.HTMLCollection = globalThis.HTMLCollection || function HTMLCollection() {};
+  // S185（html-semantics M2）：HTMLFormControlsCollection / RadioNodeList 接口占位——
+  // form.elements 的接口面（WPT form-elements-interfaces-01「Interface should exist」+
+  // instanceof 断言、form-elements-nameditem-01「RadioNodeList should exist」）。
+  // FCC.prototype → HTMLCollection.prototype 链在首个 form.elements 构造点惰性接线
+  //（_zwHCPrototype 单例在 part05，part03 加载序不依赖）；RadioNodeList.prototype →
+  // NodeList.prototype 直链（R198 已把 NodeList.prototype 链到 Array.prototype，Array
+  // 迭代器经链可达）。spec：HTML §common-dom-geometry #htmlformcontrolscollection 与
+  // #radiolist（https://html.spec.whatwg.org/multipage/form-control-infrastructure.html）。
+  globalThis.HTMLFormControlsCollection = globalThis.HTMLFormControlsCollection || function HTMLFormControlsCollection() {};
+  globalThis.RadioNodeList = globalThis.RadioNodeList || function RadioNodeList() {};
+  try {
+    if (globalThis.NodeList && globalThis.NodeList.prototype
+        && Object.getPrototypeOf(globalThis.RadioNodeList.prototype) !== globalThis.NodeList.prototype) {
+      Object.setPrototypeOf(globalThis.RadioNodeList.prototype, globalThis.NodeList.prototype);
+    }
+  } catch (_eRnlP) {}
   // R3024：Attr 构造器占位——_zwMakeAttr 经 Object.create(Attr.prototype) 建真实例，使 `attr instanceof Attr`
   // 为 true（闭合 R3023 限制①；消费者按 nodeType===2 / instanceof Attr 校验属性节点）。
   globalThis.Attr = globalThis.Attr || function Attr() {};
