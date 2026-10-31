@@ -13062,11 +13062,20 @@ addEventListener("load", function() {
 });
 </script>
 "#;
+        // vendored harness 不入库（wpt-data gitignored，`make fetch-wpt-data` 补拉）：
+        // 编译期 include_str! 会锁死新 checkout（CI）的 clippy/test 编译，改运行期
+        // 读取，缺失时跳过本钉。
+        let Ok(harness_js) =
+            read_corpus_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/resources/testharness.js"))
+        else {
+            eprintln!("skip: wpt-data/resources/testharness.js 未 vendored（gitignored）");
+            return;
+        };
         let results = run_testharness_html(
             Path::new("/nonexistent-wpt-root-for-tests"),
             "defect2-load-handler-sync.html",
             html,
-            include_str!("../wpt-data/resources/testharness.js"),
+            &harness_js,
             // R5005 谱系：workspace 全量并行负载下 JS 启动 + 事件泵间歇超 2s，取宽。
             Duration::from_secs(6),
         );
