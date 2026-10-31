@@ -35,7 +35,7 @@ runner 复制语料探针（hook globalThis 互斥入口 + PROBE throw dump）�
 
 - s171 挂账「name-attribute 跨群互斥误关」**resolved**——语义面反转（非互斥 bug，是 gEBI 幽灵 proxy），根修落 `_r4006LiveRooted` 三臂 + overrides 门链。
 - 新观察（未挂账为 FIXME）：selection-pointer forms 域 Fail→Pass 22 案的确切归因（修复收益 vs 负载差）未逐案勘定，域后续若回红再查。
-- FIXME 新记：`test_style_sheet_from_handle_style_element_r113` 期望面与 s163 CSSOM 尾随分号序列化失同步（期望 `div { color: rgb(1, 2, 3) }`，现序列化尾分号 `...; }`——Chrome/Firefox 同形尾分号，序列化侧浏览器向正确，测试期望陈旧；期望同步小刀候选）。
+- FIXME 新记：`test_style_sheet_from_handle_style_element_r113` 期望面与 s163 CSSOM 尾随分号序列化失同步（期望 `div { color: rgb(1, 2, 3) }`，现序列化尾分号 `...; }`——Chrome/Firefox 同形尾分号，序列化侧浏览器向正确，测试期望陈旧）——**同日增刀 resolved**（eabdd5efa 期望同步，非行为变更零产品代码；engine lib 基线 3614P/**10F**，余 fetch 族 9 + ua_display_li）。
 - 既有维持：`test_ua_display_li_list_item_canvas_inline_s24_flip`（li computed display 'block'≠'list-item'，s166 起基线在集，勘根归 style-system li UA 表，跨流碰头候选）。
 
 ## 并发会话复证（同树双写记账，2026-10-31 10:42）
