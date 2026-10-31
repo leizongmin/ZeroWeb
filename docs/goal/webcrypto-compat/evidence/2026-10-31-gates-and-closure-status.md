@@ -189,3 +189,17 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   test 全绿复证 → 锚按届时最终 tip 复跑（若 runner 二进制面未再变可
   引用本次账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或
   D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 03:40 追记：锚随 tip 前移复验（e4e4ebc09）——justify shim 簇吸收
+
+- **锚复跑（tip `e4e4ebc09`，release runner 重建 24.29s）**：test-guard
+  直包同参数——对 M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**，
+  guard log 零字节，EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-0335.json`（不入库）。
+- **动机**：`b171ddbf9` justify 首簇新增 shim `part01c.js`（+1290 行）+
+  `part06.js` + bridge ——语料执行路径面，其自证门禁（justifycenter/
+  bold 真页 + engine lib 零位移）未覆盖 webcrypto 语料；本次复跑消掉
+  dc49d1e7c→e4e4ebc09 的锚窗口。DC-1~4 证据链在位性同步复核（四件
+  evidence 均在 `5894374c1` 提交，工作树干净）。
+- **轮询面无变化**：远端无新 s 系/渲染流推进；ua_display_li（渲染流
+  D4）与 D1/D2 维持原状。
