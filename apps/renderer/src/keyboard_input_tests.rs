@@ -719,6 +719,11 @@ fn busy_worker_bounded_input_call_degrades_instead_of_blocking_t8() {
 /// 输出——点击聚焦（focus_target）、失焦（blur_focused）必须发布新帧，否则合成器
 /// 沿用旧帧，用户看不到任何焦点反馈（对照 focus_via_tab 既有先例；HTML §6.6.1
 /// 焦点反馈）。焦点所有者未变的重复聚焦不得重复发布（R3254-H1 同语义）。
+///
+/// T33 返修 TV-F1：断言对象从「出站字节总量」改为**线级解码 ViewPainted 帧数**——
+/// 同管 FocusOwnerChanged 回执也会增字节，字节总量断言在删掉修复后依然全绿
+///（无法抓住其命名的回归）。帧格式 = 4 字节 LE 长度前缀 + bincode IpcMessage
+///（zero-protocol transport 同款）。
 struct FrameRecordingWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
 
 impl std::io::Write for FrameRecordingWriter {
@@ -729,6 +734,31 @@ impl std::io::Write for FrameRecordingWriter {
     fn flush(&mut self) -> std::io::Result<()> {
         Ok(())
     }
+}
+
+/// 从录制流解帧并统计帧发布消息（`RendererRuntime::new` 默认 Compositor 模式 =
+/// CompositorFrame；Legacy = ViewPainted。半帧/解不动不计）。
+fn count_frame_publications(buf: &[u8]) -> usize {
+    use zero_protocol::message::IpcMessageKind;
+    let mut i = 0usize;
+    let mut frames = 0usize;
+    while i + 4 <= buf.len() {
+        let len = u32::from_le_bytes([buf[i], buf[i + 1], buf[i + 2], buf[i + 3]]) as usize;
+        i += 4;
+        if i + len > buf.len() {
+            break;
+        }
+        if let Ok(msg) = zero_protocol::serialize::deserialize(&buf[i..i + len])
+            && matches!(
+                msg.kind,
+                IpcMessageKind::ViewPainted(_) | IpcMessageKind::CompositorFrame { .. }
+            )
+        {
+            frames += 1;
+        }
+        i += len;
+    }
+    frames
 }
 
 #[test]
@@ -747,31 +777,33 @@ fn focus_change_publishes_frame_for_focus_feedback_p38() {
     runtime.webview.as_mut().unwrap().prepare_document_state(url);
     runtime.webview.as_mut().unwrap().load_html(html, None);
 
-    let bytes = || {
-        std::sync::Arc::clone(&written)
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+    let frames = || {
+        count_frame_publications(
+            &std::sync::Arc::clone(&written)
+                .lock()
+                .unwrap_or_else(|e| e.into_inner()),
+        )
     };
-    let before_focus = bytes();
-    runtime.focus_target("#name").unwrap();
-    assert!(
-        bytes() > before_focus,
-        "点击聚焦文本输入必须发布新帧（焦点环/caret 是 paint 输出，不发布则合成器沿用旧帧）"
-    );
-
-    let after_focus = bytes();
+    let before_focus = frames();
     runtime.focus_target("#name").unwrap();
     assert_eq!(
-        bytes(),
+        frames(),
+        before_focus + 1,
+        "点击聚焦文本输入必须发布恰好一帧（焦点环/caret 是 paint 输出，不发布则合成器沿用旧帧）"
+    );
+
+    let after_focus = frames();
+    runtime.focus_target("#name").unwrap();
+    assert_eq!(
+        frames(),
         after_focus,
         "重复聚焦同一目标（焦点所有者未变）不得重复发布帧（R3254-H1 同语义）"
     );
 
     runtime.focus_target("#other").unwrap();
-    assert!(bytes() > after_focus, "焦点转移到另一目标须再次发布帧");
+    assert_eq!(frames(), after_focus + 1, "焦点转移到另一目标须再次发布帧");
 
-    let after_second_focus = bytes();
+    let after_second_focus = frames();
     runtime.blur_focused().unwrap();
-    assert!(bytes() > after_second_focus, "失焦清除焦点环同样必须发布新帧");
+    assert_eq!(frames(), after_second_focus + 1, "失焦清除焦点环同样必须发布新帧");
 }

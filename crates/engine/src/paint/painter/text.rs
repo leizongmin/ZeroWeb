@@ -503,20 +503,25 @@ impl super::Painter {
             current_value_empty && placeholder.as_deref().is_some_and(|placeholder| placeholder == label);
         let has_text_boundaries = elem.local_name().eq_ignore_ascii_case("textarea")
             || matches!(itype.as_str(), "" | "text" | "search" | "url" | "tel" | "password");
-        if label.is_empty() && !has_text_boundaries {
-            return;
-        }
-
         // 文本插入 caret（P38/T33 B2）：聚焦可编辑文本控件绘制静态插入点线（点击/
         // 键盘聚焦均显示——:focus-visible 对文本输入控件恒匹配，同 painter
         // is_text_entry_control）。位置 = 文本末尾；blink 动画未实现（FIXME）。
         // https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
+        // 只读控件无编辑能力，不出现插入点（css-ui-4 caret 作用于可编辑文本：
+        // https://drafts.csswg.org/css-ui-4/#caret-color）。
         let caret_editable = elem.local_name().eq_ignore_ascii_case("textarea")
             || matches!(
                 itype.as_str(),
                 "" | "text" | "search" | "email" | "url" | "tel" | "number" | "password"
             );
-        let show_caret = caret_editable && self.focused_node == Some(node_id);
+        let show_caret =
+            caret_editable && self.focused_node == Some(node_id) && elem.get_attribute("readonly").is_none();
+        // 空值且无占位符的 caret_editable 控件（email/number 等非 has_text_boundaries
+        // 类型）不得提前返回——聚焦插入点是其唯一绘制面（T33 返修 DF-F1：P38
+        // 「看不到光标」在该常见形态残留）。
+        if label.is_empty() && !has_text_boundaries && !show_caret {
+            return;
+        }
         let mut caret: Option<(f32, f32)> = None;
 
         let font_size: f32 = match style.font_size {
@@ -2647,10 +2652,14 @@ impl super::Painter {
                             // 键盘焦点环（UA 默认）：a/span 等行内元素无独立盒、不经
                             // paint_node 盒路径的焦点环块——在此按片段行盒逐行绘制。
                             // 作者已声明 outline 的 owner 不叠加（focus_ring_applicable
-                            // 与盒路径同判定）；focused_from_keyboard=false 时零开销短路。
-                            if self.focused_from_keyboard
-                                && !$frag_text.is_empty()
+                            // 与盒路径同判定）。:focus-visible 文本输入类（含行内
+                            // contenteditable）无论焦点来源恒适用，与盒路径 4957 同判定
+                            //（T33 返修 DF-F2：点击聚焦行内 contenteditable 无环）。
+                            // 焦点所有者先行短路——无焦点页零开销。
+                            if !$frag_text.is_empty()
                                 && self.focused_node == Some(owner_id)
+                                && (self.focused_from_keyboard
+                                    || super::is_text_entry_node(owner_id, Some(doc)))
                                 && owner_style_opt.is_none_or(|s| {
                                     // 仅行内 display 走片段环：inline-block 等原子内联
                                     // 有独立盒，由 paint_node 盒路径焦点环覆盖，避免双环。

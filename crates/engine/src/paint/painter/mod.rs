@@ -321,15 +321,9 @@ fn is_positioned_child(box_node: &LayoutBox) -> bool {
     box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
 }
 
-/// :focus-visible 文本输入控件启发式：input（文本类 type）/textarea/select/
-/// contenteditable 元素无论焦点来源（键盘/点击/JS）恒匹配 :focus-visible，
-/// 显示 UA 焦点反馈。按钮类/隐藏/开关类 input type 不适用。
-/// https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
-/// https://drafts.csswg.org/selectors-4/#the-focus-visible-pseudo
-fn is_text_entry_control(box_node: &LayoutBox, doc: Option<&Document>) -> bool {
-    let Some(node_id) = box_node.node_id else {
-        return false;
-    };
+/// :focus-visible 文本输入控件启发式（节点级，盒级入口 [`is_text_entry_control`]
+/// 与行内片段环路径共用）。
+fn is_text_entry_node(node_id: NodeId, doc: Option<&Document>) -> bool {
     let Some(node) = doc.and_then(|d| d.get(node_id)) else {
         return false;
     };
@@ -351,6 +345,18 @@ fn is_text_entry_control(box_node: &LayoutBox, doc: Option<&Document>) -> bool {
     // 仅元素自身的 contenteditable 属性（祖先继承不在此判定，最小切片）。
     elem.get_attribute("contenteditable")
         .is_some_and(|v| !v.eq_ignore_ascii_case("false"))
+}
+
+/// :focus-visible 文本输入控件启发式：input（文本类 type）/textarea/select/
+/// contenteditable 元素无论焦点来源（键盘/点击/JS）恒匹配 :focus-visible，
+/// 显示 UA 焦点反馈。按钮类/隐藏/开关类 input type 不适用。
+/// https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
+/// https://drafts.csswg.org/selectors-4/#the-focus-visible-pseudo
+fn is_text_entry_control(box_node: &LayoutBox, doc: Option<&Document>) -> bool {
+    let Some(node_id) = box_node.node_id else {
+        return false;
+    };
+    is_text_entry_node(node_id, doc)
 }
 
 /// R5176（css-transforms-1 §4 + CSS 2.1 Appendix E step 8）：变换元素（transform ≠
