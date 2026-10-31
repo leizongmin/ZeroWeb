@@ -27,9 +27,10 @@ use zero_style_system::{
 /// 将逻辑 `float` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`
 /// （CSS Logical §float-clear）。物理值（Left/Right/None）原样返回。
 ///
-/// `is_rtl` 取自元素 `direction`（继承自 containing block）。driving: WPT css-logical
-/// logical-values-float-clear-1/3。
-fn resolve_float_physical(float: &FloatValue, is_rtl: bool) -> FloatValue {
+/// `direction` = 包含块（最近块容器祖先）direction（见 `containing_block_direction`）。
+/// driving: WPT css-logical logical-values-float-clear-1/3。
+fn resolve_float_physical(float: &FloatValue, direction: &DirectionValue) -> FloatValue {
+    let is_rtl = matches!(direction, DirectionValue::Rtl);
     match float {
         FloatValue::InlineStart => {
             if is_rtl {
@@ -50,7 +51,8 @@ fn resolve_float_physical(float: &FloatValue, is_rtl: bool) -> FloatValue {
 }
 
 /// 将逻辑 `clear` 值（`inline-start`/`inline-end`）按方向解析为物理 `left`/`right`。
-fn resolve_clear_physical(clear: &ClearValue, is_rtl: bool) -> ClearValue {
+fn resolve_clear_physical(clear: &ClearValue, direction: &DirectionValue) -> ClearValue {
+    let is_rtl = matches!(direction, DirectionValue::Rtl);
     match clear {
         ClearValue::InlineStart => {
             if is_rtl {
@@ -68,6 +70,29 @@ fn resolve_clear_physical(clear: &ClearValue, is_rtl: bool) -> ClearValue {
         }
         other => other.clone(),
     }
+}
+
+/// float/clear 逻辑值解析用的**包含块** direction（CSS Logical §float-clear：物理映射
+/// 取包含块的 direction，与浮动/清除元素自身 direction 无关；CSS2 §10.1：float 的
+/// 包含块 = 最近**块容器**祖先——`display:inline` / `display:contents` 祖先不建包含块，
+/// 跳过上溯）。driving: WPT css-logical logical-values-float-clear-reftest（ref 以
+/// containerDirection 定物理值，float 自身 direction 与 inline wrapper direction 均
+/// 为扰动项）。链上无带样式块容器祖先（None）→ 调用方回退元素自身 direction。
+fn containing_block_direction(
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    id: NodeId,
+) -> Option<DirectionValue> {
+    let mut cur = doc.parent_node(id);
+    while let Some(pid) = cur {
+        if let Some(s) = styles.get(&pid) {
+            if !matches!(s.display, DisplayValue::Inline | DisplayValue::Contents) {
+                return Some(s.direction.clone());
+            }
+        }
+        cur = doc.parent_node(pid);
+    }
+    None
 }
 
 fn resolve_definite_width_border_box(style: &ComputedStyle, padding_border_w: f32) -> Option<f32> {
@@ -1984,6 +2009,10 @@ impl LayoutEngine {
                         DisplayValue::Inline | DisplayValue::Contents | DisplayValue::None
                     ))
         });
+        // float/clear 逻辑值（inline-start/end）的物理映射方向 = 包含块（最近块容器
+        // 祖先）的 direction，非元素自身（reftest 以 float-direction ≠ container-direction
+        // 组钉此语义）；无块容器祖先时回退元素自身 direction（旧行为）。
+        let cb_direction = dom_id.and_then(|id| containing_block_direction(doc, styles, id));
         let float = computed.map_or(FloatValue::None, |s| {
             // R4019（CSS2 §9.7 + CSS Tables §2）：float 不适用于 **table-internal boxes**
             //（row/cell/column/group——table 结构化盒，float/clear 声明被结构忽略；
@@ -2002,11 +2031,13 @@ impl LayoutEngine {
             ) {
                 FloatValue::None
             } else {
-                // CSS Logical §float-clear：`inline-start`/`inline-end` 按元素 direction（继承自
-                // containing block）解析为物理 left/right（LTR: start=left,end=right；RTL 反之）。
+                // CSS Logical §float-clear：`inline-start`/`inline-end` 按**包含块**
+                // direction 解析为物理 left/right（LTR: start=left,end=right；RTL 反之），
+                // 与元素自身 direction 无关（见上方 cb_direction 注）。
                 // float_positioning 仅识别 Left/Right，未解析的 InlineStart/InlineEnd 会被当 None
                 // 忽略。driving: WPT css-logical logical-values-float-clear-*。
-                resolve_float_physical(&s.float, matches!(s.direction, DirectionValue::Rtl))
+                let direction = cb_direction.as_ref().unwrap_or(&s.direction);
+                resolve_float_physical(&s.float, direction)
             }
         });
         // R5245（CSS2 §9.2.1.1）：R109 匿名块片段是 block 容器混排时生成的**流内**匿名盒，
@@ -2039,7 +2070,8 @@ impl LayoutEngine {
             ) {
                 ClearValue::None
             } else {
-                resolve_clear_physical(&s.clear, matches!(s.direction, DirectionValue::Rtl))
+                let direction = cb_direction.as_ref().unwrap_or(&s.direction);
+                resolve_clear_physical(&s.clear, direction)
             }
         });
         // 现代 CSS Overflow 行为（Mozilla bug 1880550 / csswg-drafts）：table cell 的

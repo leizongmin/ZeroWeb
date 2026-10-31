@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5356 修复轮（float/clear 逻辑值按包含块 direction 解析——CSS Logical §float-clear：logical-values-float-clear-reftest ✗2.00% → ✓FIXED 0.00%；corpus 779F→778F FIXED=1 REGRESSED=∅，通过率 15812/16590 = 95.31%；无 kill-switch——方向源语义修正）**（2026-10-31）
+>
+> - **定性**（779F 账本 0–2.2% 带扫描：373 案全归已知域，非域候选三案逐一排除——revert-layer-011 = animation origin 回滚域、display-contents-fieldset-002 = fieldset UA 域、firefox-bug-1881495 = grid intrinsic 域；reftest 2.00% 为唯一可轻修独立案）：ref 页 `physicalValue(value, containerDirection)` 定谳——float/clear 逻辑值物理映射取**包含块** direction，float 自身 direction 与 inline wrapper direction 均为刻意扰动项；R2234 原实现取元素自身 direction，float-direction ≠ container-direction 组全错。
+> - **交付**：`containing_block_direction` 助手（DOM 祖先链找最近带样式块容器，`display:inline`/`display:contents` 不建包含块跳过，None 回退元素自身 = 旧行为）；float/clear 两处调用改换方向源；`resolve_float/clear_physical` 签名 `is_rtl: bool` → `direction: &DirectionValue`。+1 pin（rtl 块容器穿透 inline/contents 双包装、无样式祖先 None、物理映射消费包含块方向）；r2234 三既有 pin 适配签名断言不变。
+> - **门禁**：corpus 同树 A/B 779F→**778F** FIXED={float-clear-reftest} REGRESSED=∅ 778 共同案 diff% 零漂移（FILTER 单跑 ✓0.00%，family -1/-4 绿维持）；layout-engine lib **2287P/0F**（+1 pin）；fmt/clippy 清零；make test zero-engine lib 3612P/11F（11 红集逐名同 = 既有挂账零位移）+ 47 套 ok；product-smoke **PASS**（14.59% + struct PASS×3）；bench-gate 定向 zero-layout-engine **GATE PASS 25 指标 NEW=0**（祖先链扫描仅逻辑值元素触发，物理值元素零新增工作）。证据：[`rendering-compat/evidence/r5356-logical-float-clear-cb-direction-2026-10-31.md`](rendering-compat/evidence/r5356-logical-float-clear-cb-direction-2026-10-31.md)。
+> - **挂账**：insert-011 wrapper 链段模型（待用户决策）；ruby 域 ~10 案（解析器零支持）；带域微残差 0.24%（R4383 strut 级）；border-image 渐变源 slice 口径 / 绘制区-viewBox 长宽比 meet 黑边（FIXME 无驱动案）；既有挂账（R5336 五件套、outer background 切片化、R4383 strut 预研、fmt 漂移三文件、R5341 及更早）全维持。**下一步 R5357**：①778F 账本续扫择轻（避开 va/OOF 锚/writing-mode/backdrop-root/shadow-scoped/multicol/ruby/ref-chromium 冲突域，0–2.2% 带本轮已证饱和——重点扫 2–5% 带）②R4383 strut 域预研 ③带域微残差 0.24% 收官评估。
+>
 > **▶ R5355 修复轮（border-image intrinsic 缺失源 Number 切片按绘制区栅格解析——css-backgrounds-3 §5.2：image-type-001 ✗1.43% → ✓FIXED 0.00%；corpus 780F→779F FIXED=1 REGRESSED=∅，对 R5353 基线 782F 三案连清零漂移；无 kill-switch——切片口径正确性修复）**（2026-10-31）
 >
 > - **定性**（R5354 挂账案按既定修复面落地，chromium oracle 探针 R5354 已定谳）：viewBox-only SVG 无固有尺寸，chromium 先按 border-image 绘制区栅格化（200×200 区 → viewBox 100 放大 2×），slice 数字 = 栅格像素（40/30/20/10 切在 20/15/10/5 viewBox 单位）；ZW 原按 usvg tree.size（viewBox）1:1 切 → 切分沿色块边界 → 纯色网格 ≠ chromium 条带拼贴。
