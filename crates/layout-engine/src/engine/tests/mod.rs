@@ -934,3 +934,7 @@ mod r5369_zero_width_floats_clear_tests;
 /// R5370 探针：table/inline-table 内 OOF 子不生成匿名 cell（WPT transform-abspos-
 /// 006/007 驱动）。
 mod r5370_table_oof_child_tests;
+
+/// R5372 回归测试：嵌套 CB 重解析（static 中间层）长度 inset 定位方程计入对应
+/// margin（CSS2 §10.3.7/§10.6.4；WPT abspos-non-replaced-width-margin-000 驱动）。
+mod r5372_abspos_nested_cb_margin_tests;
