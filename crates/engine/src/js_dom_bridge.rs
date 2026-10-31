@@ -63,6 +63,11 @@ pub use canvas::*;
 mod selector_match;
 pub use selector_match::*;
 
+// s176（html-semantics M2）shadow 域定位选择器寻址（compound `zwsh<len>:<host>|<local>`
+// ——声明式 shadow 内容的引擎侧寻址，枚举通道重开前置）。
+mod shadow_address;
+pub(crate) use shadow_address::*;
+
 // HTML label 与 labelable control 关联解析。
 mod label;
 pub use label::*;
@@ -546,6 +551,11 @@ pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
     // × 此税 = e() 单次 ~1s 大头）。
     if let Some(n) = try_structural_path_fastpath(doc, sel) {
         return Some(n);
+    }
+    // s176：shadow 域定位选择器（`zwsh<len>:<host>|<local>`）——识别即权威
+    //（host 失配/local 失配返 None，不回落通用引擎：compound 串非合法 CSS）。
+    if let Some(scoped) = try_shadow_scoped_fastpath(doc, sel) {
+        return scoped;
     }
     let root = doc.root();
     doc.query_selector(root, sel)
@@ -2660,7 +2670,10 @@ fn node_entry_json(doc: &Document, id: NodeId) -> Option<String> {
     let node = doc.get(id)?;
     Some(match &node.kind {
         NodeKind::Element(_) => {
-            let sel = unique_selector_for_node(doc, id)?;
+            // s176：shadow 内容无全局唯一选择器（封装门），回落 shadow 域定位选择器
+            //（[`shadow_content_entry_selector`]，host = 父链 ShadowRoot 的宿主）——
+            // shadow 子树深层枚举（shim `_childNodeList` 下钻）不再丢条目。
+            let sel = unique_selector_for_node(doc, id).or_else(|| shadow_content_entry_selector(doc, id))?;
             format!("{{\"k\":\"E\",\"s\":{}}}", json_str(&sel))
         }
         NodeKind::Text(t) => format!("{{\"k\":\"T\",\"v\":{}}}", json_str(&t.content)),
@@ -2920,7 +2933,9 @@ pub fn template_contents_deep_json_doc(doc: &Document, elem_sel: &str) -> String
 /// form-indexed-element-shadow / form-submit-dialog-shadow 红面根因）。shim getter
 /// 首读经本回调取 `{mode, nodes:[deep_entry_json]}` 深子树，以 imperative
 /// attachShadow 同形态（fragment 句柄 + 注册表 + handle 元素镜像）登记 JS 视图。
-/// host miss / 无 shadow root → 空串（shim 跳过登记）。
+/// host miss / 无 shadow root → 空串（shim 跳过登记）。s176：元素条目增 `"sel"`
+/// （shadow 域定位选择器，[`shadow_address`]）——shim 枚举通道以真实地址 selector
+/// proxy 重开（替代镜像构建）；镜像通道消费同 JSON 只读既有字段，零影响。
 pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> String {
     let Some(host) = find_by_selector(doc, elem_sel) else {
         return String::new();
@@ -2938,7 +2953,7 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
     let entries: Vec<String> = doc
         .child_nodes(root)
         .iter()
-        .filter_map(|&k| deep_entry_json(doc, k))
+        .filter_map(|&k| ds_scoped_entry(doc, k, host))
         .collect();
     format!("{{\"mode\":\"{mode}\",\"nodes\":[{}]}}", entries.join(","))
 }

@@ -126,6 +126,15 @@ impl Document {
                 let _ = self.append_child(root, k);
             }
             let _ = self.remove_child(host, tid);
+            // s176（html-semantics M2）：物化后即解析该宿主的 slot 分配——布局树
+            // shadow 分支经 `get_assigned_nodes` 消费分配表替换 slot；此前
+            // `resolve_slots` 无任何调用点，分配恒空 → slot 全走回退内容 → 被分配的
+            // light 子树（含嵌套宿主链）无布局盒（gBCR 零 rect、命中测试不可达——
+            // closedby-complex shadow 点击坐标塌 (0,0) 根因）。
+            // FIXME: 命令式 attachShadow 与宿主 childlist 后续变异（appendChild/
+            // removeChild/slot 属性改名）不触发重解析——动态场景分配过期，待变异
+            // 应用臂统一挂接。
+            self.resolve_slots(host);
         }
     }
 

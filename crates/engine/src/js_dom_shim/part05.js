@@ -5086,6 +5086,35 @@
     } catch (_eDsd) {}
   }
 
+  // s176（html-semantics M2）：声明式根**内容绑定**——枚举通道以真实地址 selector
+  // proxy 重开。engine 深条目带 `sel`（compound 定位选择器 `zwsh<len>:<host>|<local>`，
+  // engine shadow_address 模块铸造；host 段轻树宿主唯一选择器 + local 段 shadow 根子
+  // 树内唯一），元素 proxy 走普通 selector 寻址进既有读写通道（mutations/读回调/
+  // matches/几何全经 find_by_selector 单漏斗解析真实节点）——非 s173 detached 镜像
+  //（身份盗用根修 s175 + 镜像对引擎 light-dismiss/hit-test 不可见零增益）。仅 shadow
+  // 根→首层子这一跳经深 JSON 桥接（shadow 根自身无 selector）；下钻不走本函数——带
+  // sel proxy 的子读走既有 `_childNodeList(sel)`，engine 按 compound sel 解析真实子树。
+  // 文本/注释条目无地址（k==='T'/'C'）不入枚举（FIXME: 文本子地址化另刀）。
+  function _zwDeclarativeShadowEnsureContent(rootHandle) {
+    var meta = _shadowHandleMeta[rootHandle];
+    if (!meta || !meta.declarative || meta.contentBound) return;
+    meta.contentBound = true; // 先置位：构建中途异常不重入（半绑定面同失败态）
+    if (typeof __zw_declarative_shadow_deep !== 'function') return;
+    var _dsRaw176 = '';
+    try { _dsRaw176 = __zw_declarative_shadow_deep(meta.hostSel) || ''; } catch (_eDs176) { return; }
+    var _dsInfo176 = null;
+    try { _dsInfo176 = JSON.parse(_dsRaw176); } catch (_eDs176j) { return; }
+    if (!_dsInfo176 || !_dsInfo176.nodes || !_dsInfo176.nodes.length) return;
+    var kids176 = [];
+    for (var _dsi176 = 0; _dsi176 < _dsInfo176.nodes.length; _dsi176++) {
+      var _entry176 = _dsInfo176.nodes[_dsi176];
+      if (_entry176 && _entry176.k === 'E' && _entry176.sel) {
+        kids176.push(_wrapSelector(String(_entry176.sel)));
+      }
+    }
+    if (kids176.length) _handleChildren[rootHandle] = kids176;
+  }
+
   // R2926 Shadow DOM：`element.attachShadow(init)` → ShadowRoot。host 元素专用（get trap 仅对元素
   // 暴露 attachShadow，fragment/comment/text/shadow 不暴露）。spec：init.mode 须 'open'/'closed'
   //（否则 TypeError）；host 已挂 shadow → NotSupportedError。复用 DocumentFragment handle 容器
@@ -5832,9 +5861,12 @@
   // 存在选择器身份盗用（根修见 engine `unique_selector_for_node` detached 门），
   // 且 shadow 段 4 键基线侥幸 Pass（未渲染内容零 rect 点击=全关）翻转 P2F；镜像
   // detached 域对引擎 light-dismiss/hit-test 不可见，注册恢复零 Pass 增益。
-  // FIXME(s176): 枚举通道重开须走引擎侧 shadow 寻址（物化 shadow 根的 handle 化），
-  // 非 detached 镜像（dialog-popover-closedby-complex shadow 段 20 键恢复面）。
+  // s176：枚举通道以引擎侧 shadow 寻址重开——声明式根首枚举前惰性内容绑定
+  //（`_zwDeclarativeShadowEnsureContent`，真实地址 selector proxy），非镜像。
   function _handleChildNodes(h) {
+    if (h && _shadowHandles[h] && typeof _zwDeclarativeShadowEnsureContent === 'function') {
+      _zwDeclarativeShadowEnsureContent(h);
+    }
     return (h && _handleChildren[h]) ? _handleChildren[h] : [];
   }
   // 容器的**元素**子 proxy 列表（过滤 text/comment，按 nodeType）。

@@ -536,7 +536,11 @@ fn collect_hit_test_nodes(
                     // FIXME(R3254-L8)：每节点唯一选择器随每帧 PaintSnapshot 全量传输——
                     // 深 DOM 结构路径显著膨胀 IPC 负载且构建为 O(N²)（每节点一次全文档
                     // query_selector_all）。已评估按需生成/截断方案收益风险比低，deferred。
+                    // s176：shadow 内容封装查询门使唯一选择器恒 None → compound 定位
+                    // 选择器回落（find_by_selector 单漏斗可解析；此前回落裸 tag 名，
+                    // 同 tag 多实例定位歧义）。
                     selector: crate::unique_selector_for_node(doc, node_id)
+                        .or_else(|| crate::js_dom_bridge::shadow_content_entry_selector(doc, node_id))
                         .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
                     href,
                     src,
@@ -919,7 +923,10 @@ fn element_hit_from_node(doc: &Document, layout: &LayoutBox, node: NodeId) -> Op
         tag_name: elem.local_name().to_ascii_lowercase(),
         id: doc.get_attribute(element, "id"),
         class_name: doc.get_attribute(element, "class"),
+        // s176：shadow 内容 compound 定位选择器回落（封装门使唯一选择器恒 None；
+        // elementFromPoint 命中 shadow 元素此前回落裸 tag 名——runner 命中解析歧义）。
         selector: crate::unique_selector_for_node(doc, element)
+            .or_else(|| crate::js_dom_bridge::shadow_content_entry_selector(doc, element))
             .unwrap_or_else(|| elem.local_name().to_ascii_lowercase()),
         x,
         y,

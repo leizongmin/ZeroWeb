@@ -1964,15 +1964,12 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            if with_query_view_doc(&html, &m, |doc| {
+            let r = with_query_view_doc(&html, &m, |doc| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
-            }) {
-                "1".into()
-            } else {
-                "0".into()
-            }
+            });
+            if r { "1".into() } else { "0".into() }
         }),
     );
 

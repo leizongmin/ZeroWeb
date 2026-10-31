@@ -1247,6 +1247,17 @@ impl WebView {
         }
     }
 
+    /// s176（html-semantics M2）：`(x, y)` 处命中元素的稳定选择器——进程内原生
+    /// elementFromPoint。多进程宿主经 [`zero_engine::ElementFromPointBridge`] 注册的
+    /// 回调走同源 [`zero_engine::selector_at_point`]；runner headless 无该桥——宿主
+    /// 命中解析（resolve_pointer_target）直接调本方法（现点现建缓存，布局树为准）。
+    /// 无缓存布局 / 无命中 → `None`。shadow 内容命中返 compound 定位选择器（
+    /// [`zero_engine::selector_at_point`] → hit_test s176 回落）。
+    pub fn element_from_point(&self, x: f32, y: f32) -> Option<String> {
+        let cache = self.pipeline.build_hit_test_cache()?;
+        zero_engine::selector_at_point(&cache, x, y)
+    }
+
     /// 脚本修改 DOM 后重新加载 HTML（保留已缓存 CSS，并刷新图片子资源）。
     pub fn reload_html_after_script(&mut self, html: &str) -> WebViewRenderResult {
         self.document_generation = self.document_generation.wrapping_add(1);

@@ -10984,6 +10984,19 @@ return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):msel)+'|'+px+'|
     let hit = parts.next().unwrap_or_default().trim().to_string();
     let x = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
     let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+    // s176（html-semantics M2）：shadow 内容命中回落——页内扫描 `body, body *` 走
+    // 封装查询门（shadow 内容不可枚举），shadow 盒上的落点此前塌回 body/空命中，
+    // click 坐标与 light-dismiss 目标全错（closedby-complex shadow 20 行根因之二）。
+    // 引擎原生 elementFromPoint（布局树命中，含 shadow 盒）结果**仅 compound 定位
+    // 选择器**（`zwsh` 前缀，引擎铸造命名空间）时采信——引擎命中 light 元素时维持
+    // 既有扫描语义（z 序/backdrop/usemap 特例不动），light 路径零改动。
+    let hit = match (x, y) {
+        (Some(px), Some(py)) => match webview.element_from_point(px, py) {
+            Some(engine_hit) if engine_hit.starts_with("zwsh") => engine_hit,
+            _ => hit,
+        },
+        _ => hit,
+    };
     match (x, y) {
         (Some(x), Some(y)) if !hit.is_empty() => (hit, x, y),
         // uievents-compat 尾簇 18：命中为空但坐标有效 → 以 body 落点 + **计算坐标**

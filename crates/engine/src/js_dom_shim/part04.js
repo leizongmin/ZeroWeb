@@ -2116,6 +2116,12 @@
           var _chCached = _zwChildrenCollCache.get(proxy);
           if (_chCached && _chCached.k === _chKind) return _chCached.c;
           if (!sel && handle) {
+            // s176（html-semantics M2）：声明式根的 children 读同走内容绑定——children
+            // getter 直读 `_handleChildren`，不经 `_handleChildNodes` 的惰性钩，首枚举
+            // 在此补触发（真实地址 selector proxy，见 part05 `_zwDeclarativeShadowEnsureContent`）。
+            if (_shadowHandles[handle] && typeof _zwDeclarativeShadowEnsureContent === 'function') {
+              _zwDeclarativeShadowEnsureContent(handle);
+            }
             var _r81Kids = (function () {
               var _cl = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
               var _ck = (_handleChildren[handle] || []).slice();

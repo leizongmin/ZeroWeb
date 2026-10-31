@@ -1795,3 +1795,108 @@ fn test_detached_node_unique_selector_is_none_s175() {
     let sel = unique_selector_for_node(&doc, real.unwrap());
     assert_eq!(sel.as_deref(), Some("dialog.dialogA"), "真元素选择器应稳定");
 }
+
+/// s176（html-semantics M2）：shadow 域定位选择器寻址钉案——compound
+/// `zwsh<len>:<host>|<local>` 往返（铸造 → `find_by_selector` 解析回同一 NodeId，
+/// 首层与深层）、不可解析面（host 失配/无根 host 返 None）、深条目 `sel` 字段、
+/// child_nodes 条目 shadow 回落（深层枚举不丢条目）、matches 树作用域（shadow 内容
+/// 以 shadow 根为匹配域）、s175 门不回退（shadow 内容仍无全局唯一选择器）。
+#[test]
+fn test_shadow_scoped_selector_addressing_s176() {
+    use crate::js_dom_bridge::{
+        child_nodes_json_doc, declarative_shadow_deep_json_doc, element_matches_test_selector, find_by_selector,
+        shadow_scoped_selector, unique_selector_for_node,
+    };
+    let html = "<html><body>\
+                <div id='host'><template shadowrootmode='open'>\
+                <dialog class='dialogA'><div class='wrapA'><button class='ctaA'>b</button></div></dialog>\
+                </template></div>\
+                <div id='plain'>light</div>\
+                </body></html>";
+    let doc = zero_dom::parse_html(html);
+    let host = find_by_selector(&doc, "#host").expect("host 应可寻址");
+    let sr = doc.shadow_root(host).expect("声明式根应已物化");
+    let dlg = doc
+        .query_selector(sr, "dialog.dialogA")
+        .expect("shadow dialog 应在根域可查（rooting 不剪根自身）");
+    // 首层往返：铸造 → 解析回同一 NodeId。
+    let dlg_sel = shadow_scoped_selector(&doc, host, dlg).expect("首层元素应可铸 compound");
+    assert!(dlg_sel.starts_with("zwsh"), "compound 形态: {dlg_sel}");
+    assert!(dlg_sel.contains("|dialog.dialogA"), "local 段应为 tag.class: {dlg_sel}");
+    assert_eq!(find_by_selector(&doc, &dlg_sel), Some(dlg), "compound 应解析回原节点");
+    // 深层往返：dialog 内嵌套 button（隔一层 wrap div）。
+    let btn = doc.query_selector(sr, "button.ctaA").expect("深层 button 应可查");
+    let btn_sel = shadow_scoped_selector(&doc, host, btn).expect("深层元素应可铸 compound");
+    assert_eq!(
+        find_by_selector(&doc, &btn_sel),
+        Some(btn),
+        "深层 compound 应解析回原节点"
+    );
+    // 深条目 sel：declarative_shadow_deep_json_doc 元素条目携带可解析 sel。
+    let raw = declarative_shadow_deep_json_doc(&doc, "#host");
+    assert!(raw.contains("\"sel\":\"zwsh"), "深条目应带 sel 字段: {raw}");
+    // child_nodes 条目 shadow 回落：compound sel 下钻（深层枚举通道）不丢条目。
+    let kids = child_nodes_json_doc(&doc, &dlg_sel);
+    assert!(kids.contains("zwsh"), "shadow 内容子条目应带 compound s: {kids}");
+    let wrap_sel_start = kids.find("\"s\":\"").map(|i| &kids[i + 5..]);
+    if let Some(rest) = wrap_sel_start {
+        let end = rest.find('"').expect("s 字段应有闭合引号");
+        let wrap_sel = &rest[..end];
+        let wrap_id = find_by_selector(&doc, wrap_sel).expect("子条目 s 应可解析");
+        let wrap_tag = doc.get(wrap_id).map(|n| match &n.kind {
+            zero_dom::NodeKind::Element(e) => e.local_name().to_string(),
+            _ => String::new(),
+        });
+        assert_eq!(wrap_tag.as_deref(), Some("div"), "子条目应解析回 wrap div");
+    }
+    // matches 树作用域：shadow 内容以 shadow 根为匹配域（doc root 匹配集被封装门剪空）。
+    assert!(
+        element_matches_test_selector(html, &dlg_sel, ".dialogA"),
+        "shadow 内容 matches 应在其树域求值"
+    );
+    // s175 门不回退：shadow 内容仍拿不到全局唯一选择器（不进 handle_selectors）。
+    assert_eq!(
+        unique_selector_for_node(&doc, dlg),
+        None,
+        "shadow 内容的全局唯一选择器应仍为 None（s175 封装门）"
+    );
+    // 不可解析面：host 失配 / local 失配 / 无根 host。
+    let bad_local = format!("zwsh{}:{}|button.nosuch", "#host".len(), "#host");
+    assert_eq!(find_by_selector(&doc, &bad_local), None, "local 失配应返 None");
+    assert_eq!(
+        find_by_selector(&doc, "zwsh99:nosuchhost|p"),
+        None,
+        "host 失配应返 None"
+    );
+    let plain = find_by_selector(&doc, "#plain").expect("plain 应可寻址");
+    assert_eq!(
+        shadow_scoped_selector(&doc, plain, dlg),
+        None,
+        "无 shadow 根的宿主应不可铸 compound"
+    );
+}
+
+/// s176（html-semantics M2）：local 段阶梯钉案——`#id` 优先、位置链回落（同 tag 无
+/// 身份属性时按元素序唯一定位）。
+#[test]
+fn test_shadow_local_selector_ladder_s176() {
+    use crate::js_dom_bridge::{find_by_selector, shadow_scoped_selector};
+    let html = "<html><body>\
+                <div id='host2'><template shadowrootmode='open'>\
+                <p id='named'>a</p><span>x</span><span>y</span>\
+                </template></div></body></html>";
+    let doc = zero_dom::parse_html(html);
+    let host = find_by_selector(&doc, "#host2").expect("host 应可寻址");
+    let sr = doc.shadow_root(host).expect("声明式根应已物化");
+    let p = doc.query_selector(sr, "#named").expect("p#named 应可查");
+    let p_sel = shadow_scoped_selector(&doc, host, p).expect("id 梯应命中");
+    assert!(p_sel.ends_with("|#named"), "id 应为首选 local 形态: {p_sel}");
+    // 两个同 tag 无属性 span：位置链分别唯一定位。
+    let spans = doc.query_selector_all(sr, "span");
+    assert_eq!(spans.len(), 2, "应有两个 span: {}", spans.len());
+    let s1 = shadow_scoped_selector(&doc, host, spans[0]).expect("span[0] 应可铸");
+    let s2 = shadow_scoped_selector(&doc, host, spans[1]).expect("span[1] 应可铸");
+    assert_ne!(s1, s2, "位置链应区分同身份兄弟: {s1} vs {s2}");
+    assert_eq!(find_by_selector(&doc, &s1), Some(spans[0]), "span[0] 往返");
+    assert_eq!(find_by_selector(&doc, &s2), Some(spans[1]), "span[1] 往返");
+}

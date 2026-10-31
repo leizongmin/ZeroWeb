@@ -15,8 +15,12 @@ pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str)
     let Some(node) = find_by_selector(&doc, elem_sel) else {
         return false;
     };
-    let root = doc.root();
-    doc.query_selector_all(root, zero_dom::trim_ascii_ws(test_sel))
+    // s176（html-semantics M2）：匹配域 = 元素所在树（spec：matches 按元素 root 的
+    // tree 求值）。shadow 内容经 compound 定位选择器寻址进 shadow 树后，匹配集若从
+    // doc root 求会被封装门剪空（shadow 子树缺席）——元素在 shadow 树内时以 shadow
+    // 根为求值根。https://dom.spec.whatwg.org/#dom-element-matches
+    let scope = shadow_scope_root(&doc, node);
+    doc.query_selector_all(scope, zero_dom::trim_ascii_ws(test_sel))
         .into_iter()
         .any(|n| n == node)
 }
@@ -45,18 +49,32 @@ pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> 
     } else {
         sel_raw.to_string()
     };
-    let root = doc.root();
+    // s176（html-semantics M2）：匹配域 = 调用元素所在树（spec：closest 沿祖先链
+    // 求值，祖先不穿 shadow 边界——ShadowRoot 的 spec 父为 null，宿主链不入祖先集）。
+    // 匹配集从树作用域根求值：shadow 调用者的命中候选只在其 shadow 树内（light 树的
+    // dialog 不入选），物理 parent_node 链虽经 SR→host 续走但命中集不含界外节点，
+    // 结果与 spec 同树祖先语义一致。此前匹配集恒从 doc root 求 + parent 链跨界 →
+    // shadow 内 form method=dialog 的 `closest('dialog')` 命中 light 宿主链上的
+    // dialog（form-submit-dialog-shadow 跨界提交——s176 实地址化后暴露的真缺口）。
+    // https://dom.spec.whatwg.org/#dom-element-closest
+    // https://dom.spec.whatwg.org/#shadow-trees
+    let root = shadow_scope_root(&doc, start);
     let matched: std::collections::HashSet<NodeId> = doc
         .query_selector_all(root, zero_dom::trim_ascii_ws(&resolved_sel))
         .into_iter()
         .collect();
+    let doc_root = doc.root();
     let mut cur = Some(start);
     while let Some(n) = cur {
-        if n == root {
+        if n == doc_root {
             break; // 文档根非元素，不可匹配选择器。
         }
         if matched.contains(&n) {
-            return unique_selector_for_node(&doc, n).unwrap_or_default();
+            // shadow 内容命中：全局唯一选择器被封装门拒识——回落 compound 定位
+            // 选择器（[`shadow_content_entry_selector`]，同 `node_entry_json` 口径）。
+            return unique_selector_for_node(&doc, n)
+                .or_else(|| shadow_content_entry_selector(&doc, n))
+                .unwrap_or_default();
         }
         cur = doc.parent_node(n);
     }
@@ -233,6 +251,13 @@ pub fn parent_selector_for_doc(doc: &Document, elem_sel: &str) -> String {
         return String::new();
     };
     element_parent(doc, node)
-        .and_then(|p| unique_selector_for_node(doc, p))
+        .and_then(|p| {
+            // s176：父是 shadow 内容（封装查询门使 [`unique_selector_for_node`] 恒
+            // None——slot.parentNode === dialog 面）→ compound 定位选择器回落（与
+            // s176 读写通道同命名空间，[`find_by_selector`] 单漏斗可解析）。嵌套
+            // shadow 内容回落不着（[shadow_content_entry_selector] 守卫）→ 空串，
+            // 与本模块 shadow 定位边界一致。
+            unique_selector_for_node(doc, p).or_else(|| shadow_content_entry_selector(doc, p))
+        })
         .unwrap_or_default()
 }

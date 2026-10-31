@@ -1361,18 +1361,199 @@
   //   down 腿单发（R5234 绿面不动）。
   // https://html.spec.whatwg.org/multipage/interactive-elements.html#dialog-light-dismiss
   // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
+  // s176（html-semantics M2）：light-dismiss 盘点/寻的面扩 shadow。dialog 枚举 =
+  // light 域既有 `document.querySelectorAll`（零改动，shim sel 命名空间/state key
+  // 不变）+ 已登记声明式根的内容树收集（`_handleChildren` 真实地址 selector proxy，
+  // part05 `_zwDeclarativeShadowEnsureContent` 绑定；引擎侧枚举会换 engine canonical
+  // sel，与 shim state key 漂移——实测 normal 段 12 键 P2F 后撤）。compound target
+  // 解析走同一内容树 sel 同串比对（light sel 仍走 document.querySelector）。枚举
+  // 文档序归一（`_zwLdDocOrderCompare`，注册序≠树序）+ 包含判定 flat tree 化
+  // （`_zwLdFlatContains`，slot 摊平归属——见该函数注）。
+  // s176：声明式 shadow 的 flat-tree（composed tree）近似——宿主的 light 子经其 SR 内
+  // 首个 slot 摊平（https://dom.spec.whatwg.org/#concept-shadow-tree-slot；默认 slot
+  // 近似，具名 slot 分配 FIXME——closedby-complex shadow 语料只用默认 slot）。light
+  // dismiss 的包含判定与文档序枚举按 flat tree 语义（popover light dismiss「nearest
+  // open popover ancestor」、dialog「clicked dialog 祖先」跨 shadow 树经 slot 归属）。
+  // 封装查询门使 shadow 内容不可 qSA，链一律走 shim proxy 树（_handleChildren 注册表）。
+  function _zwLdFindSlot(kids, depth) {
+    if (depth > 8 || !kids || !kids.length) return null;
+    for (var i176f = 0; i176f < kids.length; i176f++) {
+      var k176f = kids[i176f];
+      if (!k176f || k176f.nodeType !== 1) continue;
+      try {
+        if (String(k176f.tagName || '').toLowerCase() === 'slot') return k176f;
+        var sub176f = _zwLdFindSlot(k176f.children, depth + 1);
+        if (sub176f) return sub176f;
+      } catch (_e176f) {}
+    }
+    return null;
+  }
+  function _zwLdSlotForHost(hostEl) {
+    try {
+      if (!hostEl || hostEl.nodeType !== 1) return null;
+      var keys176s = Object.keys(_shadowRoots);
+      for (var i176s = 0; i176s < keys176s.length; i176s++) {
+        var info176s = _shadowRoots[keys176s[i176s]];
+        if (!info176s || !info176s.handle || info176s.mode !== 'open') continue;
+        var meta176s = _shadowHandleMeta[info176s.handle];
+        if (!meta176s || !meta176s.declarative || !meta176s.hostSel) continue;
+        if (hostEl.__zwSelector === meta176s.hostSel) {
+          return _zwLdFindSlot(_handleChildNodes(info176s.handle), 0);
+        }
+      }
+    } catch (_e176sl) {}
+    return null;
+  }
+  // flat parent：light 父持有已登记声明式 open SR 且其内有 slot → slot（摊平归属）。
+  // **shadow 内容不摊平**（compound `zwsh` sel 直通 parentNode——engine 父链跳过
+  // ShadowRoot 非元素父，shadow 子的 parentNode 已锚宿主；再摊平 = 元素塌进自身
+  // slot 成环，链序全错、pick 选错 dialog——shadow-only 首测 dialogA 误关根因）。
+  // SR/文档等非元素 hop 同样直通，由链构建按 0 计位。
+  function _zwLdFlatParent(node) {
+    try {
+      var p176p = node.parentNode;
+      if (node.nodeType !== 1) return p176p;
+      var s176n = node.__zwSelector;
+      if (typeof s176n === 'string' && s176n.indexOf('zwsh') === 0) return p176p;
+      if (p176p && p176p.nodeType === 1) {
+        var slot176p = _zwLdSlotForHost(p176p);
+        if (slot176p) return slot176p;
+      }
+      return p176p;
+    } catch (_e176fp) { return null; }
+  }
+  // flat 链：root→node 各 hop 的元素序（1-based；SR/文档 hop 计 0）。shadow 内容文档
+  // 序比较（R5263 反文档序 pick 依赖列表树序）与跨树包含判定共用。
+  function _zwLdFlatChain(node) {
+    var hops176c = [];
+    var cur176c = node;
+    try {
+      for (var d176c = 0; cur176c && d176c < 64; d176c++) {
+        var fp176c = _zwLdFlatParent(cur176c);
+        if (!fp176c || fp176c === cur176c) break;
+        var idx176c = 0;
+        if (fp176c.nodeType === 1) {
+          try {
+            var kids176c = fp176c.children;
+            for (var j176c = 0; j176c < kids176c.length; j176c++) {
+              if (kids176c[j176c] === cur176c) { idx176c = j176c + 1; break; }
+            }
+          } catch (_e176ck) {}
+        }
+        hops176c.push(idx176c);
+        cur176c = fp176c;
+        try { if (cur176c.nodeType === 9) break; } catch (_e176cd) { break; }
+      }
+    } catch (_e176fc) {}
+    hops176c.reverse();
+    return hops176c;
+  }
+  // 文档序比较（升序）：flat 链逐位比对，前缀（祖先）在先；相等保持稳定排序原序。
+  function _zwLdDocOrderCompare(a, b) {
+    if (a === b) return 0;
+    try {
+      var ca176o = _zwLdFlatChain(a), cb176o = _zwLdFlatChain(b);
+      var n176o = Math.min(ca176o.length, cb176o.length);
+      for (var i176o = 0; i176o < n176o; i176o++) {
+        if (ca176o[i176o] !== cb176o[i176o]) return ca176o[i176o] - cb176o[i176o];
+      }
+      return ca176o.length - cb176o.length;
+    } catch (_e176oc) { return 0; }
+  }
+  // flat-tree 包含判定（spec light dismiss 跨 shadow 树经 slot 归属——composed tree
+  // 祖先链；纯 shim 树 contains 在跨 SR 时恒 false，closedby-complex modal 组合
+  // 「popoverA 经 slot 含 dialogB」断言面根因）。
+  // https://html.spec.whatwg.org/multipage/popover.html#popover-light-dismiss
+  function _zwLdFlatContains(anc, node) {
+    if (!anc || !node) return false;
+    if (anc === node) return true;
+    var cur176n = node;
+    try {
+      for (var d176n = 0; cur176n && d176n < 64; d176n++) {
+        cur176n = _zwLdFlatParent(cur176n);
+        if (!cur176n) return false;
+        if (cur176n === anc) return true;
+        try { if (cur176n.nodeType === 9) return false; } catch (_e176cn) { return false; }
+      }
+    } catch (_e176ct) {}
+    return false;
+  }
+  function _zwLdCollectTag(kids, tag, out, depth) {
+    if (depth > 16 || !kids || !kids.length) return;
+    for (var i176c = 0; i176c < kids.length; i176c++) {
+      var k176c = kids[i176c];
+      if (!k176c || k176c.nodeType !== 1) continue;
+      try {
+        if (String(k176c.tagName || '').toLowerCase() === tag) out.push(k176c);
+        _zwLdCollectTag(k176c.children, tag, out, depth + 1);
+      } catch (_e176c) {}
+    }
+  }
+  function _zwLdShadowByTag(tag) {
+    var out = [];
+    try {
+      var keys = Object.keys(_shadowRoots);
+      for (var i176 = 0; i176 < keys.length; i176++) {
+        var info = _shadowRoots[keys[i176]];
+        if (!info || !info.handle || info.mode !== 'open') continue;
+        var meta = _shadowHandleMeta[info.handle];
+        if (!meta || !meta.declarative) continue;
+        _zwLdCollectTag(_handleChildNodes(info.handle), tag, out, 0);
+      }
+    } catch (_e176s) {}
+    return out;
+  }
+  function _zwLdDialogList() {
+    var out;
+    try { out = Array.prototype.slice.call(document.querySelectorAll('dialog')); } catch (_eLdQ3) { out = []; }
+    var shadow176 = _zwLdShadowByTag('dialog');
+    for (var j176 = 0; j176 < shadow176.length; j176++) {
+      if (out.indexOf(shadow176[j176]) < 0) out.push(shadow176[j176]);
+    }
+    // s176：文档序归一——shadow 收集随 `_shadowRoots` 注册序（非树序；宿主 hydration
+    // 时序决定），R5263 反文档序 pick 要求列表升序（反走 = 内层先）。稳定排序保
+    // light qSA 既有序（实测 shadow-only 页 dialogA 被误选误关、dialogB 漏关根因）。
+    try { out.sort(_zwLdDocOrderCompare); } catch (_eLdSo) {}
+    return out;
+  }
+  function _zwLdResolveTarget(targetSel) {
+    if (!targetSel) return null;
+    if (String(targetSel).indexOf('zwsh') === 0) {
+      // compound 定位选择器：light 查询通道解析不着，内容树同串寻址。
+      var found = null;
+      var scan = function (kids) {
+        if (found || !kids || !kids.length) return;
+        for (var i176t = 0; i176t < kids.length; i176t++) {
+          var k176t = kids[i176t];
+          if (!k176t || k176t.nodeType !== 1) continue;
+          try {
+            if (k176t.__zwSelector === targetSel) { found = k176t; return; }
+            scan(k176t.children);
+          } catch (_e176t) {}
+        }
+      };
+      try {
+        var keysT = Object.keys(_shadowRoots);
+        for (var q176 = 0; q176 < keysT.length && !found; q176++) {
+          var infoT = _shadowRoots[keysT[q176]];
+          if (!infoT || !infoT.handle || infoT.mode !== 'open') continue;
+          var metaT = _shadowHandleMeta[infoT.handle];
+          if (!metaT || !metaT.declarative) continue;
+          scan(_handleChildNodes(infoT.handle));
+        }
+      } catch (_e176t2) {}
+      return found;
+    }
+    try { return document.querySelector(targetSel); } catch (_eLdT4) { return null; }
+  }
   globalThis.__zw_dialog_light_dismiss_check = function (targetSel, px, py) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
     // R5263：down 腿终态必写槽（无 dialog / target 解析不到的早退也清）——
     // 防 up 腿读到上一交互的残留分类。
     _zwDialogLdDown = null;
-    var dialogs;
-    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ) { return; }
+    var dialogs = _zwLdDialogList();
     if (!dialogs || !dialogs.length) return;
-    var target = null;
-    if (targetSel) {
-      try { target = document.querySelector(targetSel); } catch (_eLdT) { target = null; }
-    }
+    var target = _zwLdResolveTarget(targetSel);
     // R5234：targetSel 非空但解析不到（shadow 内元素 sel 不在文档树 / stale）→
     // 保守跳过 light dismiss（shadow 内点击占比面大——complex 影域 testcase 全部
     // clickOn 落 shadow 元素；真空区点击 targetSel 为空照常 dismiss）。
@@ -1400,7 +1581,9 @@
         if (_zwReadPopover(_ldPs, _ldPh) === null) continue; // 属性已摘 → 非 popover
         try { if (!_ldPp.isConnected) continue; } catch (_eLdPi) { continue; }
         var _ldPin = false;
-        try { _ldPin = !!target && (target === _ldPp || (_ldPp.contains ? !!_ldPp.contains(target) : false)); } catch (_eLdPc) { _ldPin = false; }
+        // s176：包含判定按 flat tree（slot 摊平归属）——跨 SR 树的 popover/dialog
+        // 嵌套（closedby-complex shadow 结构）纯树 contains 恒 false。
+        try { _ldPin = !!target && (target === _ldPp || _zwLdFlatContains(_ldPp, target)); } catch (_eLdPc) { _ldPin = false; }
         if (_ldPin) break; // 包含点 → 级联停（其下全保持）
         try { _zwHidePopover(_ldK, _ldPs, _ldPh); } catch (_eLdPh) {}
       }
@@ -1422,7 +1605,8 @@
       if (_zwDialogClosedByState(ds, dh, dk) !== 'any') continue;
       if (backdropHit && ds && targetSel === ds) return { dk: dk, ds: ds, dh: dh, state: 'out' };
       var contains = false;
-      try { contains = !!target && (target === d || (d.contains ? !!d.contains(target) : false)); } catch (_eLdC) { contains = false; }
+      // s176：flat tree 包含（同 popover pass——clicked dialog 祖先判定跨 SR 经 slot）。
+      try { contains = !!target && (target === d || _zwLdFlatContains(d, target)); } catch (_eLdC) { contains = false; }
       if (contains) return { dk: dk, ds: ds, dh: dh, state: 'in' };
       return { dk: dk, ds: ds, dh: dh, state: 'out' };
     }
@@ -1439,13 +1623,9 @@
     var down = _zwDialogLdDown;
     _zwDialogLdDown = null;
     if (down == null) return;
-    var dialogs;
-    try { dialogs = document.querySelectorAll('dialog'); } catch (_eLdQ2) { return; }
+    var dialogs = _zwLdDialogList();
     if (!dialogs || !dialogs.length) return;
-    var target = null;
-    if (targetSel) {
-      try { target = document.querySelector(targetSel); } catch (_eLdT2) { target = null; }
-    }
+    var target = _zwLdResolveTarget(targetSel);
     if (targetSel && !target) return;
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
