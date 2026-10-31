@@ -52,6 +52,13 @@
 - 嵌套 shadow 级联（s168 commit1 FIXME 承接）+ 镜像写穿 render 树——均 defer。
 - FIXME(html5ever) 0.38 升级后移除 prepass（模块文档在案）。
 
+## 并行合并复证（2026-10-31 push 时）
+
+commit 221e718ad push 前 rebase 并入并行流 5e3da508b（editing-compat pre/br 双删让位——part04.js + docs，零 Rust）。合并树复证：
+
+- engine lib **3614P/11F**：10F 基线同键 + 新面孔 `paint::r5296_single_line_inflated_lh_span_bg_box_level_content_anchored`——上游仅 JS/docs 改动不可能翻 Rust paint 单测，单测 solo 复跑 **Pass**，定谳全量轮负载敏感 flake（在册先例同形），零归因两刀。
+- 本刀全量域/家族跑（12:33-12:50 窗）先于该上游提交，结论不受影响。
+
 ## 下一步候选
 
 ①声明式根内容枚举（本刀 LOST 20 直接承接）；②webview 静态 blob 路径 entries 化（s167 挂账）；③ua_display_li（style-system 跨流）；④selection-pointer forms 域 22 案翻绿归因勘定（s172 记）。
