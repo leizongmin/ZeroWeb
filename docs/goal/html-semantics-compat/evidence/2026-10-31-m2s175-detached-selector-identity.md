@@ -93,3 +93,11 @@ handle 升级写全部打在镜像上。s173 首刀 18 键 P2F 的「代际偏�
 `Write` 工具对既有文件误报 created）——发现于 diff 审计（+1749 deletions 异常），
 `git checkout HEAD` 恢复全文后重附钉测，engine 测试总数复证 3627（3626+1）。
 无内容丢失。
+
+## 并行合并复证（rebase 并入 zero-web 流 4 commit）
+
+push 前 `git pull --rebase` 并入并行流 editing 簇（c81777413 insertlinebreak /
+93c02bd3c R5356b / 345140946 inline-host 镜像补发等，同触 part04/part05 不同
+区域，自动合并无冲突）。合并树复证：shim 装配序 node --check MERGED_SYNTAX_OK；
+engine lib **3617P/10F**、webview lib **830P/0F**（同键）；interactive-elements
+**437P/26F** join 仅 F2P=2——三项与本刀验证逐键同态，零跨流扰动。
