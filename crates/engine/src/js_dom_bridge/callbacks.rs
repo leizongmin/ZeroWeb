@@ -4145,7 +4145,10 @@ mod query_reparse_tests {
             served_stale_q2 = stale;
             count_divs(doc)
         });
-        assert_eq!(n2, 2, "budget-tripped rebuild after view-gen bump must reparse the fresh base");
+        assert_eq!(
+            n2, 2,
+            "budget-tripped rebuild after view-gen bump must reparse the fresh base"
+        );
         assert!(!served_stale_q2, "换代后旧条目必须拒绝 stale 服务（DEF-2 同键校验）");
         // 退避到期 → 全量重建刷新到新基座（2 个 div）。
         QUERY_REPARSE.with(|slot| {
