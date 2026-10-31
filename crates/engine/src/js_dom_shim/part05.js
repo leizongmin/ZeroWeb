@@ -10638,10 +10638,11 @@
   function _zwFusedInnerHtmlSel(sel) {
     var _r380Bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
       ? _zwPendingByParent.get(sel) : null;
-    if (!(((_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
-        && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()))
-        || (typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel))
-        || (typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel))))) return null;
+    var _r380Arm1 = !!(_r380Bucket && (_r380Bucket.added.length || _r380Bucket.removed.length)
+        && (!globalThis._zwApplyGeneration || _r380Bucket.stamp === globalThis._zwApplyGeneration()));
+    var _r380Arm2 = !!(typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel));
+    var _r380Arm3 = !!(typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel));
+    if (!(_r380Arm1 || _r380Arm2 || _r380Arm3)) return null;
     try {
       // R5355（join 归因轮，2026-10-31）：序列化 walk 期间开启跨代际桶滤除（R383a
       // 桶级跳并语义收缩至此——原整桶早退把 live 视图消费面一并致盲，见合并处注记），
@@ -10690,7 +10691,22 @@
     // 真文本子，种子恒取注册单节点不双计——bucket added 的同节点无 link 不再并入）。
     if (sel && typeof _zwTextElsBySel !== 'undefined' && _zwTextElsBySel) {
       var _r5273e = _zwTextElsBySel.get(sel);
-      if (_r5273e && _r5273e.node) out = [_r5273e.node];
+      // R5356（editing-compat inline-host 归因轮，2026-10-31）：**序列化 walk 内过时
+      // 种子不替换**——种子登记后引擎树被子列表 mutation 推进并 apply 换代（登记
+      // 代际 ≠ 当前代际）时，种子不再是「string replace all」状态（inline-host 实证：
+      // setup 登记 T:abcd 被 CE enter 拆分写成 ""，快照已是 [br, T:abcd]，序列化
+      // walk 吐种子即丢 br/尾段——语料 got=头段文本形态的根源）。此时 R383a 跳并
+      // 又拦掉桶修正，故仅在序列化 walk（`_zwSerSkipCrossGen`）+ 配对环境（快照
+      // 可信，engine 纯测试环境代际直调 bump 无配对 apply）放行过时种子改用基座；
+      // live 视图种子恒保留——种子+桶修正即 live 真值（R5273 原语义，v2 探针
+      // live=[T:"", br, T:abcd] 正确）。登记代际缺失（旧条目/无桥）按保留处理。
+      if (_r5273e && _r5273e.node) {
+        var _r5356seedStale = _zwSerSkipCrossGen
+          && _r5273e.gen != null
+          && globalThis._zwApplyGeneration && _r5273e.gen !== globalThis._zwApplyGeneration()
+          && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv());
+        if (!_r5356seedStale) out = [_r5273e.node];
+      }
     }
     // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
     // 调用方 concat/原地写不得污染缓存。

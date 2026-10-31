@@ -17789,7 +17789,15 @@ function _zwRegisterTextEl(el, handle, sel, text) {
   // R81：parentElement 仅当父为 Element（spec Node.parentElement——父非元素（document 等）→
   // null；WPT Node-properties 文本节点 parentElement 族）。
   Object.defineProperty(node, 'parentElement', { get: function () { try { return (el && el.nodeType === 1) ? el : null; } catch (_e) { return null; } }, enumerable: true, configurable: true });
-  var entry = { el: el, handle: handle, sel: sel, text: text, node: node };
+  // R5356（editing-compat inline-host 归因轮，2026-10-31）：登记代际戳——R5273 单文本
+  // 种子在 apply 换代后可能整体过时（inline-host：setup 纯文本 innerHTML 登记 T:abcd，
+  // CE enter 的文本拆分经 R48 CharacterData 写路径把注册节点 data 原地改 ""，引擎树
+  // 已是 [br, T:abcd]）；序列化 walk（`_zwFusedInnerHtmlSel`/part04 outerHTML sel 分支）
+  // 在 R383a 跳并下不再有桶修正兜底，种子原样吐出即 stale 头段视图。消费侧按
+  // 「登记代际 ≠ 当前 apply 代际 + 配对环境」判过时（`_zwOverlayPendingChildNodes`
+  // R5273 块）；live 视图种子恒保留（种子+桶修正即 live 真值，R5273 原语义）。
+  var entry = { el: el, handle: handle, sel: sel, text: text, node: node,
+    gen: (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0 };
   _zwTextEls.push(entry);
   _zwTextElsByEl.set(el, entry);
   if (handle) _zwTextElsByHandle.set(handle, entry);
