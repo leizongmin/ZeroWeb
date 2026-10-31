@@ -20,7 +20,14 @@
 > 并发 rally 期漂移域取证须 solo 窗口（run-rules 候选①对齐）。
 > **账本**：[evidence/2026-10-31-corpus-css-text-module-resources.md](html-semantics-compat/evidence/2026-10-31-corpus-css-text-module-resources.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 171 收口，closedby 漂移域 solo 冷却钉态复跑 + name-attribute 跨群分叉勘根——s167 挂账销账 + 新挂账，纯复跑零代码改动）**
+> **▶ 当前状态（2026-10-31 M2 切片 172 收口，getElementById 幽灵命中根修——name-attribute 五连 F 销账，pending 索引出树候选剔除 + overrides 门链，shim 单文件 + 钉案）**
+> **入场定刀位**：s171 挂账归因+根修。runner 语料探针五层剥开：①互斥扫描无罪（单次 Scan 零 Exclusivity、全树无 ghost、e2 open 属性在树上）——「跨群误关」语义面反转；②读侧分裂（gEBI proxy 读 open=0/attr=null vs 树实节点 open=1，sameObj=0）；③身份铁证（gEBI 结果 handle `__n0` = 前案 createElement 版 e2 幽灵 proxy）；④路径（旗标插桩）= pending-ID 索引 poolN 臂，`_r4006TreeCmp` 出树候选不可比返 0 插入序保旧；⑤根因双层 = innerHTML= 替换不走 removeChild 流（无 pending-removed 登记）+ in-doc 门走宿主快照 stale 且 handle 反链悬指旧挂载点；伴生 `_zwIdOverridesEntries` 臂裸返零门。
+> **施工**（part06.js 单文件 + 钉案）：新增 `_r4006LiveRooted` 正向位次验证（每跳先验子在实际父 childNodes、达 document 即 rooted、链断无 pending 槽即出树）补 pending 索引三臂（fast/pool/R334 resel）；overrides 臂补 R125 门链逐字同口径；探针形态矩阵转常驻钉案 `test_get_element_by_id_stale_replacement_s171`。spec 同向收紧：gEBI 只搜文档树。
+> **验证**：name-attribute 整案 **18 案全绿**（五连 F 销）；details 目录 42P/1F（布局既有）；interactive-elements **439P/44F/0T** F 集合逐键 diff 零位移唯靶案翻绿；webview lib **824P/1F**（+1 钉案绿，image_decoder 既有）；engine lib **3612P/11F** stash 二分同名 SAME 零回归；全域 **7250P/753F/84T** join s167 full1——Fail→Pass 36（靶案 + closedby simple ×3 + selection-pointer ~22 意外收益域）、Pass→Fail 2（css-module/json-src stash 对照 HEAD 同态，零归因本刀）、新报出 126、Timeout 键互换 3。fmt/guarded-clippy 全绿、shim 装配 SYNTAX_OK。
+> **FIXME 销账**：s171「name-attribute 跨群互斥误关」resolved——实为 gEBI 幽灵 proxy（pending 索引 + overrides 臂），根修已落。
+> **下一步候选**：①嵌套 shadow 级联（s168 commit1 FIXME 承接，`_shadowRoots` 顶层遍历嵌套面不入）；②selection-pointer forms 域 22 案翻绿归因勘定（修复收益 vs 负载差，回红再查）；③webview 静态 blob 路径 entries 化（s167 挂账，生产 renderer 多进程组合语义）。
+> **账本**：[evidence/2026-10-31-m2s172-gebi-ghost-nameattr-rootfix.md](html-semantics-compat/evidence/2026-10-31-m2s172-gebi-ghost-nameattr-rootfix.md)
+> **▶ 上轮状态（2026-10-31 M2 切片 171 收口，closedby 漂移域 solo 冷却钉态复跑 + name-attribute 跨群分叉勘根——s167 挂账销账 + 新挂账，纯复跑零代码改动）**
 > **入场定刀位**：s167 挂账「closedby/details 漂移域 solo 冷却复跑钉态」——s170 时 load 92 不成立推迟，本轮 load 5.58 冷却态成立。FILTER=interactive-elements solo 复跑 438P/45F/0T（Timeout 0 无截断）。
 > **钉态定谳**：closedby complex+simple 46 键与 s166 full1 基线**逐键一致**（30P/16F）——s167 重载态 P2F 11 键（complex 8 + simple 3）全部 Fail→Pass 回绿，漂移定谳环境时序抖动（hit-test 落点），域钉态回归 s166 基线；auto-expand IDENTICAL。s167 挂账 **resolved**。
 > **新挂账（未定谳）**：P2F 13 余下 name-attribute 1 键 solo 态**保持 Fail 不回绿**——`handling of name attribute changes` expected `[1,0,1]` got `[1,0,0]`，语义 = innerHTML 注入**跨 name 群独立性**（`name="a"` 群 + `name="b"` 群，b 群 e2 被 a 群互斥误伤 closed）；同目录其余 name 群案全绿。时间线：s161/s162/s164/s166 四基线 P → s167 stash 二分（a897d536b）起五连 F 稳定（solo 全域 + 定向×2 同二进制）——非单跑抖动，s166 full1 二进制与 s167 重建二进制间持续分叉。c1f8e9b63（03:00 并发流撞车仲裁）已排除：diff 全在 CE caret 世界同步路径，门 try/finally 无泄漏面，与 details 零交集。嫌疑面：s166 树本身已 F（需 bisect s164↔s166）或 release 重建时序分叉（同二进制稳定 F 反驳随机抖动形态）；解析面 `__zwDetailsScan4100` given-prong 分群逻辑读毕正确，误关路径未定位。

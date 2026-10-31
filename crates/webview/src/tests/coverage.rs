@@ -1720,3 +1720,94 @@ fn test_abort_signal_reason_realm_identity_r384() {
         "abort 默认 reason 为 iframe realm 的 DOMException（AbortError）"
     );
 }
+
+#[test]
+/// s171：gEBI 幽灵命中钉案——innerHTML= 替换销毁旧子树（无 pending-removed 登记）
+/// 后同 id 新节点注入，getElementById 经 pending 索引多候选池化须返回树上真节点
+/// 而非出树旧 proxy（`_r4006LiveRooted` 正向位次先验 + overrides 臂 R125 门链）。
+/// runner 面 = WPT name-attribute「handling of name attribute changes」states
+/// [1,0,0] 断言根因；本案权威钉跨 name 群独立性（HTML exclusive accordions 组
+/// 口径按 name 值分群互不干扰）与同 id 替换语义。
+fn test_get_element_by_id_stale_replacement_s171() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    wv.load_html(
+        "<!DOCTYPE html><html><head><title>t</title></head><body>\
+         <div id=\"c\"></div><script></script></body></html>",
+        None,
+    );
+    let _ = wv.run_page_scripts_strict();
+    // 形态 A：原案一次注入（a 群 e0 open/e1 + b 群 e2 open）。
+    wv.execute_script(
+        "var c = document.getElementById('c');\
+         c.innerHTML = '<details name=\\\"a\\\" id=\\\"e0\\\" open></details>\
+         <details name=\\\"a\\\" id=\\\"e1\\\"></details>\
+         <details name=\\\"b\\\" id=\\\"e2\\\" open></details>';\
+         var st = function(id){ return document.getElementById(id).open ? 1 : 0; };\
+         globalThis.__pa = [st('e0'), st('e1'), st('e2')].join(',');",
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script("globalThis.__pa").unwrap(),
+        "1,0,1",
+        "形态 A：一次注入三元素，b 群 e2 应保持 open（WPT expected [1,0,1]）"
+    );
+    wv.execute_script("document.getElementById('c').innerHTML = '';")
+        .unwrap();
+    // 形态 B：单群隔离——只注入 b 群 e2。
+    wv.execute_script(
+        "var c = document.getElementById('c');\
+         c.innerHTML = '<details name=\\\"b\\\" id=\\\"e2\\\" open></details>';\
+         globalThis.__pb = document.getElementById('e2').open ? 1 : 0;",
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script("globalThis.__pb").unwrap(),
+        "1",
+        "形态 B：单 b 群隔离，e2 open"
+    );
+    wv.execute_script("document.getElementById('c').innerHTML = '';")
+        .unwrap();
+    // 形态 C：a 群先行注入（已结算），再二次 innerHTML 注入 b 群。
+    wv.execute_script(
+        "var c = document.getElementById('c');\
+         c.innerHTML = '<details name=\\\"a\\\" id=\\\"e0\\\" open></details>\
+         <details name=\\\"a\\\" id=\\\"e1\\\"></details>';\
+         c.innerHTML += '<details name=\\\"b\\\" id=\\\"e2\\\" open></details>';\
+         globalThis.__pc = [document.getElementById('e0').open ? 1 : 0,\
+         document.getElementById('e1').open ? 1 : 0,\
+         document.getElementById('e2').open ? 1 : 0].join(',');",
+    )
+    .unwrap();
+    assert_eq!(
+        wv.execute_script("globalThis.__pc").unwrap(),
+        "1,0,1",
+        "形态 C：a 群结算后二次注入 b 群，e2 open"
+    );
+
+    wv.execute_script("document.getElementById('c').innerHTML = '';")
+        .unwrap();
+    // 形态 D（案序泄漏复刻）：先注入 scenario 案形态（open details 排程 parser
+    // toggle task），仅冲微任务（task 滞后），再 innerHTML= 替换 + target 三元素
+    // 注入——若前案 toggle/互斥 task 按复用身份打到新节点，e2 被误关。
+    wv.execute_script(
+        "var c = document.getElementById('c');\
+         c.innerHTML = '<details name=\"st\" open></details><details name=\"st\"></details>';\
+         globalThis.__pd = 'unset';\
+         Promise.resolve().then(function(){ return Promise.resolve().then(function(){\
+           c.innerHTML = '<details name=\"a\" id=\"e0\" open></details>\
+             <details name=\"a\" id=\"e1\"></details>\
+             <details name=\"b\" id=\"e2\" open></details>';\
+           globalThis.__pd = [document.getElementById('e0') ? (document.getElementById('e0').open?1:0) : 'x',\
+             document.getElementById('e1') ? (document.getElementById('e1').open?1:0) : 'x',\
+             document.getElementById('e2') ? (document.getElementById('e2').open?1:0) : 'x'].join(',');\
+         }); });",
+    )
+    .unwrap();
+    // 等 task 排空后读形态 D 结果。
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    assert_eq!(
+        wv.execute_script("globalThis.__pd").unwrap(),
+        "1,0,1",
+        "形态 D：案序泄漏复刻——前案 open details 注入 + 微任务后 innerHTML 替换 + target 注入，e2 应保持 open"
+    );
+}

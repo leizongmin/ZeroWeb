@@ -2975,6 +2975,30 @@
     for (var fi = 1; fi < list.length; fi++) if (_r4006TreeCmp(list[fi], first) < 0) first = list[fi];
     return first;
   }
+  // s171（html-semantics M2）：pending 索引候选的 live 出树先验——innerHTML= 替换
+  // 销毁旧子树不走 removeChild mutation 流（视图直换，无 pending-removed 登记），
+  // 同 turn 内 `_zwMutationInDoc` 的宿主快照仍列旧节点（未 apply/未换代）且
+  // parentNode getter 的 handle 反链悬指旧挂载点（父链不可靠）→ gEBI pending
+  // 索引对「前案 createElement 同 id 节点已被替换销毁」的旧条目误判 in-doc，
+  // 多候选池化按插入序保旧（`_r4006TreeCmp` 对出树候选不可比返 0）→ 幽灵 proxy
+  // 胜出、attr live 读链全空（WPT name-attribute "handling of name attribute
+  // changes" states [1,0,0] 断言面）。补正向位次验证：每跳先验「子在实际父的
+  // childNodes 里」（反链悬指时位次必 -1），达 document 即 rooted；链断且无
+  // `_zwSelPendingParent` 槽（wire 未 drain 的解析产物挂载凭证）→ 出树剔除。
+  // spec getElementById 只搜文档树（shadow/未挂载孤儿不可见），本先验收紧方向
+  // 与 spec 同向不放松。
+  // https://dom.spec.whatwg.org/#dom-document-getelementbyid
+  function _r4006LiveRooted(nd) {
+    var n = nd, guard = 0;
+    while (n && guard++ < 64) {
+      if (n.nodeType === 9) return true;
+      var p = _r4006ParentOf(n);
+      if (p && _r4006ChildIdx(p, n) < 0) return false;
+      n = p;
+    }
+    try { if (nd && nd._zwSelPendingParent) return true; } catch (_e6lr) {}
+    return false;
+  }
   // editing-compat M1（R5331）：pending in-doc 门对解析插入产物的补偿判定——R145
   // 纯 tag / R3902b 复合回落的既有门直接把节点 sel/handle 喂 `_zwMutationInDoc`，
   // 而 innerHTML/insertAdjacentHTML 解析 wrapper 无 `__zwSelector`/`__zwHandle`
@@ -3291,8 +3315,8 @@
           if (pen1 && !_zwPRSet().has(pen1) && !_r125AncestorRemoved(pen1) && !_r125Overridden(pen1)) {
             var pe1Sel = pen1.__zwSelector || null;
             var pe1H = pen1.__zwHandle || null;
-            if (pe1H && _zwMutationInDoc(null, pe1H)) return pen1;
-            if (pe1Sel && _zwMutationInDoc(pe1Sel, null)) return pen1;
+            if (pe1H && _zwMutationInDoc(null, pe1H) && _r4006LiveRooted(pen1)) return pen1;
+            if (pe1Sel && _zwMutationInDoc(pe1Sel, null) && _r4006LiveRooted(pen1)) return pen1;
             if (!pe1Sel && !pe1H && pen1._zwSelPendingParent) {
               var pe1Pl = pen1._zwSelPendingParent;
               if (pe1Pl.parentSel && _zwMutationInDoc(pe1Pl.parentSel, null)) return pen1;
@@ -3306,8 +3330,8 @@
             if (!pen || _zwPRSet().has(pen) || _r125AncestorRemoved(pen) || _r125Overridden(pen)) continue;
             var peSel = pen.__zwSelector || null;
             var peH = pen.__zwHandle || null;
-            if (peH && _zwMutationInDoc(null, peH)) pePool.push(pen);
-            else if (peSel && _zwMutationInDoc(peSel, null)) pePool.push(pen);
+            if (peH && _zwMutationInDoc(null, peH) && _r4006LiveRooted(pen)) pePool.push(pen);
+            else if (peSel && _zwMutationInDoc(peSel, null) && _r4006LiveRooted(pen)) pePool.push(pen);
             else if (!peSel && !peH && pen._zwSelPendingParent) {
               var pePl = pen._zwSelPendingParent;
               if (pePl.parentSel && _zwMutationInDoc(pePl.parentSel, null)) pePool.push(pen);
@@ -3329,7 +3353,7 @@
           var r7Pl = resel7._zwSelPendingParent;
           if ((r7Pl.parentSel && _zwMutationInDoc(r7Pl.parentSel, null))
               || (r7Pl.parentHandle && _zwMutationInDoc(null, r7Pl.parentHandle))) {
-            return resel7;
+            if (_r4006LiveRooted(resel7)) return resel7; resel7 = null;
           }
         }
       }
@@ -3358,12 +3382,24 @@
       // order 的下一候选）——removeChild 的 Remove mutation 不入查询视图（R3029 removed
       // proxy 属性读回落快照的约束），getElementById 侧定点消费 pending-removed。
       if (hit && !_r125Overridden(hit) && !_zwPRSet().has(hit) && !_r125AncestorRemoved(hit)) return hit;
+      // s171（html-semantics M2）：override 表命中条目同过 R125 门链——节点出树销毁
+      // 后 id override 表条目残留（前案 createElement 节点 innerHTML= 替换移除），
+      // 裸返 `_proxyCache` 条目成幽灵命中：attr live 读链按新代视图返 null/false，
+      // 而 plain DFS/互斥扫描见树上真节点（WPT name-attribute "handling of name
+      // attribute changes" 的 gEBI 幽灵 → states [1,0,0] 断言面）。门链与 hit 臂
+      // 逐字同口径（改名反向 + pending-removed + 祖先移除 + in-doc 快照门），任一
+      // 拦截即跳过该条目继续找。
       if (globalThis._zwIdOverridesEntries && idText !== '') {
         var ents = globalThis._zwIdOverridesEntries();
         for (var ei = 0; ei < ents.length; ei++) {
           if (ents[ei][1] === idText) {
             var pr = _proxyCache[ents[ei][0]];
-            if (pr) return pr;
+            if (pr && !_r125Overridden(pr) && !_zwPRSet().has(pr) && !_r125AncestorRemoved(pr)) {
+              var prSel = null, prHnd = null;
+              try { prSel = pr.__zwSelector || null; } catch (_ePrS) {}
+              try { prHnd = pr.__zwHandle || null; } catch (_ePrH) {}
+              if (_zwMutationInDoc(prSel, prHnd)) return pr;
+            }
           }
         }
       }
