@@ -87,3 +87,17 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 本轮组合态 tip `d50631d28`：本 goal 零代码变更不受扰；33,109 分母锚
   仍系 `5894374c1` 复验账（s173/s174/s175 引擎变更后按收口序列在 ① 命中
   时于当时 tip 复跑，不提前消耗全量语料跑）。D2 维持待拍板 + 低成本轮询。
+
+### 17:52 轮询追记：s176 落地，10F 同键未清，节奏放缓
+
+- s176 17:45 `3bbc7ca56`（shadow 域定位选择器寻址全链路，shadow-slots
+  LOST 20→2P/18F）；节奏 s175 14:48 → s176 17:45 ≈ 3h/轮（s173→s175
+  为 ~1h15m/轮，s176 刀位为引擎侧 shadow 寻址物化重活，轮时拉长）。
+- s176 自账 engine lib **3619P/10F**（3617 + 2 钉测；10F 基线同键：
+  [s176 账](../../html-semantics-compat/evidence/2026-10-31-m2s176-shadow-addressing.md)）
+  ——10F 未清；s177 队列仍是 shadow 域（命令式 attachShadow + 宿主
+  childlist 变异），fetch/Request 簇（s 系候选③「恢复质量门禁基线」）
+  仍未入队可见部分，ETA 未知。
+- 期间并行流编辑/渲染簇 5+3 笔（typing-state/inline 盒 wrap/void caret/
+  RTL/paint）经 `git pull --rebase` 吸入，均不触 fetch/Request 键；本 goal
+  仍零代码变更，组合态 tip `3bbc7ca56`。D2 维持待拍板 + 低成本轮询。
