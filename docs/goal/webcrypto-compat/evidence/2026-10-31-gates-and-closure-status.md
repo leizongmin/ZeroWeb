@@ -394,3 +394,44 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
   → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
   standing exclusion 口径收口。
+
+### 2026-11-01 07:50 追记：锚复跑现 tip（`ba4c74fcb`）状态账逐位一致 ×3——html-semantics 流 s197 fieldset disabled 焦点域吸收 + W4 超时诊断臂竞态首采
+
+- `git pull --rebase` 吸入 html-semantics 流 `ba4c74fcb`（s197
+  fieldset disabled 置位焦点内含检查——shim `part03/04/05/06.js` 净
+  +110/−4 行写通道钩，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md)）：
+  shim 系语料执行路径代码，runner 二进制面前移，按纪律对现 tip 复跑
+  锚——release runner 重建 25.55s（engine/shim 重编译入包）+
+  test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`，`--json` 重定向）三连跑，guard log 零字节
+  （无击杀），runner EXIT=1 为预期挂账常规退出。
+- **状态账 33,109 分母逐 (case, subtest) 对照零差异 ×3**（键集全等 +
+  status 逐位相等；123 文件 / 25,788P + 7,320F + 1T）；RUN2/RUN3 对
+  M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**，墙钟 1m27.3s /
+  1m26.5s 与历史持平。
+- **新发现（W4 追加定性，不改变挂账归属）**：RUN1 首采
+  `algorithm-discards-context.https.window.js` 超时诊断走 **deadline
+  臂**（`testharness completion callback was not called (..., phase=2,
+  test_wait=false)`——`CORPUS_CASE_TIMEOUT` 30s 燃尽击杀），RUN2/RUN3
+  回落既有 **completion 臂**（phase=4 空结果，与锚逐字节）。两臂均为
+  runner 既有代码路径（`testharness.rs` deadline 检查 vs completion
+  空结果臂），30s 收敛边界竞态，本 tip 采样频率 1/3，此前锚链 6+ 连续
+  采样未见翻转；归因未定谳（s197 全局写通道钩开销推移分布 vs 既有低频
+  竞态首次命中）。全语料墙钟无净变化，两臂均记 Timeout 同键，状态账
+  不受影响，**W4 定性维持**（runner/shim DOM 域边界——iframe 跨帧
+  注入 + `top` 回调链），33,109 零回归底线无损。**后续锚验收口径**：
+  状态账逐位一致为主判据；逐字节一致在采样复现时并列记录（RUN1 型
+  竞态翻转不构成回归）。
+- 至此锚窗口推进为 **3f1399195 → ba4c74fcb**，实锚链 7065ea39f→
+  1b6b9b291→65de5f28e→b0a6f9174→3f1399195→ba4c74fcb，33,109 分母
+  零回归在现 tip 成立。
+- **轮询面**：s197 自账 zero-engine **3,642P/1F**（ua_display_li 同键
+  在册）+ zero-dom 886P/0F 逐位——fieldset 焦点域变更非 li→Block
+  双面翻转，渲染流 D4 仍未裁决（渲染流 rally 进程未在跑，D4 落地依赖
+  其重启，已飞书补充告知）；git 无 D1/D2 决策新账面，维持待拍板
+  （GB-20261031 征询在案，核验只认 git 账面 + 用户主动知会）。DC-1~4
+  四件 evidence 在位（后续无触及）。收口序列不变：ua_display_li 清零
+  → make test 全绿复证 → 锚按届时最终 tip 处置 → 归档迁移 +
+  README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing exclusion
+  口径收口。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-s197.json`（不入库）。
