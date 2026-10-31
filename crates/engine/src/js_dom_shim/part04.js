@@ -7668,6 +7668,16 @@
           return out;
         }
         // s97：同款导出——part06 document.write 写入脚本执行面复用 for/event 门。
+        // R5340-glue（editing-compat 簇 A 归因轮，2026-10-31）：同调用融合列表复用。
+        // removeChild 入口 `_r126IsChildOf` 与 R5340 臂各做一次
+        // `_childNodeList(sel, handle)` 全量物化（host 串 + JSON.parse + 逐子 wrapper
+        // 构造），两者之间只有纯 stamp/门条件读（无 mutation、无用户回调）——填充
+        // 容器上每 removal 重复物化是 tape 实测 O(n²) 主项（探针 w2：2000 removals
+        // `_childNodeList` 6001 次共 6641ms 占墙钟 98%，均值 ~2000 条/次）。
+        // 复用生命周期：trap 闭包体作用域（每次属性访问独立实例，跨访问天然隔离）
+        // + removeChild 入口清 + R5340 消费即清；replaceChild 等他消费者只置不清，
+        // 随闭包实例消亡。键 = (sel,handle) 拼接串，不匹配照旧重建。
+        var _r126FuseMemo = null, _r126FuseMemoKey = null;
         function _r126IsChildOf(parentSel, parentHandle, target) {
           // R126：已移除节点（sel 标记 / pending-removed——同批先前 removeChild 后
           // shim 的 parentNode 读 host 快照仍指旧父，调用方按旧父再 remove 是 shim
@@ -7694,6 +7704,7 @@
           // sel 父：融合 childNodes（快照 ∪ pending）identity 含 target。
           if (parentSel) {
             var kids = _childNodeList(parentSel, parentHandle);
+            _r126FuseMemo = kids; _r126FuseMemoKey = parentSel + '\u0000' + parentHandle;
             for (var i = 0; i < kids.length; i++) if (kids[i] === target) return true;
             // R126：parentNode 融合视图残留（移动后 __zw_parent 快照仍指旧父——
             // host mutation 未 apply；WPT Event-dispatch-target-moved 的 listener 以
@@ -7712,6 +7723,10 @@
         }
         if (prop === 'removeChild') {
           return function(child) {
+            // R5340-glue：入口清同调用复用 memo——同一闭包被页面留存复用时
+            // （`var rm = el.removeChild`），两次调用之间必有 mutation，融合视图
+            // 已换代，跨调用复用不成立。
+            _r126FuseMemo = null; _r126FuseMemoKey = null;
             // R126：spec `dom-node-pre-remove` 步骤 1-2——① WebIDL Node 类型校验：
             // null / 非 Node（无 nodeType 数字）抛 TypeError（WPT "Passing a value that
             // is not a Node reference to removeChild should throw TypeError"）。
@@ -7865,7 +7880,14 @@
             if (child && sel && !child.__zwHandle && !child.__zwSelector) {
               var _pvIdx = -1, _pvKids = null;
               try {
-                _pvKids = _childNodeList(sel, handle);
+                // R5340-glue：同调用 R126 已物化的融合列表直接复用（键匹配时），
+                // 消费即清——见 `_r126FuseMemo` 声明处注记。
+                if (_r126FuseMemoKey === sel + '\u0000' + handle && _r126FuseMemo) {
+                  _pvKids = _r126FuseMemo;
+                } else {
+                  _pvKids = _childNodeList(sel, handle);
+                }
+                _r126FuseMemo = null; _r126FuseMemoKey = null;
                 for (var _pvi = 0; _pvi < _pvKids.length; _pvi++) {
                   if (_pvKids[_pvi] === child) { _pvIdx = _pvi; break; }
                 }
