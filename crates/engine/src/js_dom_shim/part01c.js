@@ -1151,6 +1151,18 @@
     var range = _zwJusActiveRange();
     if (!range) return false;
 
+    // 查询面宿主 stash（apply 时点 startContainer 上行链完好——wrap 前节点）：
+    // 后续 queryCommandValue/State 若端点为 setter 产物孤儿（parentNode null，
+    // 爬链找宿主即断），`_zwJusQueryRoot` 以此兜底下钻。换代写覆盖，陈旧 stash
+    // 下钻不中 → 链 null → 保留直读缺省，无副作用。
+    (function () {
+      var n = range.startContainer, g = 0;
+      while (n && g++ < 256) {
+        if (_zwJusIsEditingHost(n)) { globalThis.__zwJusLastHost = n; break; }
+        n = n.parentNode;
+      }
+    })();
+
     // ① 块延伸 + 对齐清理 pass（element list：align attr / style text-align /
     // center 元素；Contained 全收含嵌套——参考 getAllContainedNodes）。
     var newRange = _zwJusBlockExtend(range);
@@ -1253,6 +1265,93 @@
   // spec Indeterm：可见 editable 无子节点叶集合中「有命中且有未命中」→ true；
   // State：叶非空且全命中；Value：首叶对齐值（无叶 → "left"）。
   // https://w3c.github.io/editing/execCommand.html#the-justifycenter-command
+  //
+  // 对齐读数 uplink 断裂兜底（zz-jrprobe span-caret 实证）：wrap 走 `host.innerHTML=`
+  // setter（sanctioned 写路径——裸 DOM 搬运不回流读数），setter 产物子 wrapper 是
+  // 孤儿——div.childNodes 可枚举（nKids=2）而 child.parentNode=null、兄弟链 null，
+  // `_zwJusGetAlignmentValue` 的 parentNode 爬链与 `_zwJusIsContained` 的 BpCompare
+  // 祖先链双双失效 → 查询面 Value 恒 'left' / State 恒 false（justifycenter 同形
+  // 127 例、right/full 同构）。兜底只对「直读返缺省 'left' 且上行链不可达宿主」的
+  // 节点触发：自宿主下钻 DFS 合成祖先链，读链上显式提示（style text-align / align
+  // 属性映射集 / center 标签）；链上无显式提示 → null（保留直读缺省——真左对齐
+  // 不受影响）。健康路径可达性爬链 O(depth) 即返回，无 DFS 成本。
+  function _zwJusQueryRoot(range) {
+    var n = range.startContainer;
+    var g = 0;
+    while (n && g++ < 256) {
+      if (_zwJusIsEditingHost(n)) return n;
+      n = n.parentNode;
+    }
+    var stash = globalThis.__zwJusLastHost;
+    return stash && _zwJusIsEditingHost(stash) ? stash : null;
+  }
+  function _zwJusChainDown(root, target) {
+    if (root === target) return [root];
+    var kids = root.childNodes;
+    if (!kids) return null;
+    for (var i = 0; i < kids.length; i++) {
+      var sub = _zwJusChainDown(kids[i], target);
+      if (sub) { sub.unshift(root); return sub; }
+    }
+    return null;
+  }
+  // 合成链读数（镜像 `_zwJusGetAlignmentValue` 判序，链替代 parentNode 爬行）：
+  // 自内向外（target 端先）跳过非元素/inline 显示节点 → 最近块级元素 computed
+  // text-align；缺字面值（''/start/end）时继续沿链外扩做显式提示补读（style
+  // text-align / align 属性映射集 / center 标签——`_zwJusAlignmentHint` 的
+  // parentNode 爬行对孤儿不可用，链外扩等价替代）。无提示 → null。
+  function _zwJusAvFromChain(chain) {
+    var bi = -1;
+    for (var i = chain.length - 1; i >= 0; i--) {
+      var nd = chain[i];
+      if (!nd || nd.nodeType !== 1) continue;
+      if (['inline', 'none'].indexOf(_zwJusCs(nd, 'display')) !== -1) continue;
+      bi = i;
+      var resolved = _zwJusCs(nd, 'textAlign')
+        .replace(/^-(moz|webkit)-/, '')
+        .replace(/^auto$/, 'start');
+      if (['center', 'justify', 'left', 'right'].indexOf(resolved) !== -1) return resolved;
+      break;
+    }
+    if (bi < 0) return null;
+    for (var j = bi; j >= 0; j--) {
+      var hn = chain[j];
+      if (!hn || hn.nodeType !== 1) continue;
+      var own = hn.getAttribute && hn.getAttribute('style');
+      if (own) {
+        var m = /(?:^|;)\s*text-align\s*:\s*([^;\s]+)/i.exec(String(own));
+        if (m) {
+          var tv = String(m[1]).toLowerCase();
+          if (['center', 'justify', 'left', 'right'].indexOf(tv) !== -1) return tv;
+        }
+      }
+      var t = _zwJusTag(hn);
+      if (t === 'center') return 'center';
+      if (t !== 'table' && _zwJusAlignMapped[t] && hn.getAttribute) {
+        var al = hn.getAttribute('align');
+        if (al != null) {
+          var av = String(al).trim().toLowerCase();
+          if (av === 'left' || av === 'right' || av === 'justify') return av;
+          if (av === 'center' || av === 'middle') return 'center';
+        }
+      }
+    }
+    return null;
+  }
+  function _zwJusQueryAlignment(root, node, directAv) {
+    if (directAv !== 'left' || !root || !node) return directAv;
+    var up = node, reachable = false, g = 0;
+    while (up && g++ < 256) {
+      if (up === root) { reachable = true; break; }
+      up = up.parentNode;
+    }
+    if (reachable) return directAv;
+    var chain = _zwJusChainDown(root, node);
+    if (!chain) return directAv;
+    var av = _zwJusAvFromChain(chain);
+    return av == null ? directAv : av;
+  }
+
   globalThis.__zw_ce_justify_query_face = function (alignment) {
     var range = _zwJusActiveRange();
     if (!range) return { indeterm: false, state: false, value: '' };
@@ -1262,9 +1361,10 @@
         && _zwJusIsEditable(node)
         && (node.childNodes ? node.childNodes.length : 0) === 0;
     });
+    var qroot = _zwJusQueryRoot(range);
     var hit = 0, miss = 0, value = 'left';
     for (var i = 0; i < leaves.length; i++) {
-      var av = _zwJusGetAlignmentValue(leaves[i]);
+      var av = _zwJusQueryAlignment(qroot, leaves[i], _zwJusGetAlignmentValue(leaves[i]));
       if (i === 0) value = av;
       if (av === alignment) hit++; else miss++;
     }
@@ -1278,7 +1378,7 @@
           || scQ.childNodes[range.startOffset];
         if (anchorQ) scQ = anchorQ;
       }
-      if (scQ) value = _zwJusGetAlignmentValue(scQ);
+      if (scQ) value = _zwJusQueryAlignment(qroot, scQ, _zwJusGetAlignmentValue(scQ));
       return { indeterm: false, state: value === alignment, value: value };
     }
     return {
@@ -1287,4 +1387,3 @@
       value: value
     };
   };
-
