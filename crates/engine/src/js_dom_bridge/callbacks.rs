@@ -3277,6 +3277,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // S183（html-semantics M2）：`input type=color` 值清洗算法的 CSS `<color>` 解析臂
+    //（HTML §4.10.5.1.19 color state；WPT forms/the-input-element/color.html 钉态）。
+    // 入参为 shim 已 strip newlines + trim 的原串；复用 canvas 同源解析
+    //（[`super::canvas::try_parse_canvas_color`]：zero_css_parser parse_color →
+    // render Color，覆盖关键词/3-8 位 hex/rgb()/hsl()/color(display-p3)/系统颜色/
+    // transparent/currentColor）。成功返 "r,g,b,a"（0-255 u8 sRGB），失败/空返空串
+    //（shim 判空回落 '#000000'）。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_parse_color_rgba",
+        Box::new(|args: &[String]| -> String {
+            let raw = args.first().map(String::as_str).unwrap_or("");
+            match super::canvas::try_parse_canvas_color(raw) {
+                Some(c) => format!("{},{},{},{}", c.r, c.g, c.b, c.a),
+                None => String::new(),
+            }
+        }),
+    );
+
     // M3-S1a（compositor-animation-continuity RFC §2.1/§3）：真线程 worker 宿主命令
     // 通道 `__zw_worker_host_op(op, ...args)`。ZW_THREADED_WORKERS flag **注册期**读取
     //（R3858：本函数每次 execute 重入，测试可 set_var 后重注册；进程内 flag 翻转随

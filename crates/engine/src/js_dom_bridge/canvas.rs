@@ -79,7 +79,8 @@ fn parse_canvas_color(s: &str) -> zero_render_foundation::color::Color {
 }
 
 /// R34xx：可失败颜色解析（无效返回 None，调用方保持旧值——spec 忽略无效 strokeStyle/fillStyle）。
-fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Color> {
+/// S183 起供 callbacks 的 `__zw_parse_color_rgba`（input type=color 清洗）复用同源解析。
+pub(super) fn try_parse_canvas_color(s: &str) -> Option<zero_render_foundation::color::Color> {
     zero_css_parser::values::parse_color(s.trim()).map(|cv| crate::color_value_to_render(&cv))
 }
 

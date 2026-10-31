@@ -2309,8 +2309,29 @@
         if (n < mn) return String(mn);
         return v;
       }
-      case 'color':
-        return /^#[0-9a-f]{6}$/.test(v) ? v : '#000000';
+      case 'color': {
+        // S183（html-semantics M2）：color 状态清洗算法（HTML §4.10.5.1.19）——
+        // strip newlines → trim → 合法小写 simple color 原样返回；否则走 CSS <color>
+        // 解析（宿主回调 __zw_parse_color_rgba，zero_css_parser parse_color 同源：
+        // 关键词/3 位 hex/rgb()/hsl()/color(display-p3)/系统颜色）→ 小写 #rrggbb
+        // 序列化（丢 alpha——语料未钉 alpha<255 面），失败 → '#000000'（WPT
+        // the-input-element/color.html 钉态：crimson→#dc143c、hsl(150deg 100 53.5)
+        // →#12ff88、color(display-p3 .5 0 0)→#8c0000、' #ffffff'→#ffffff、
+        // transparent/currentColor/inherit→#000000）。
+        // FIXME(html-semantics M2)：解析期创建/内容属性变更臂未挂清洗（语料仅钉
+        // IDL set 面）。
+        var _cvClr = String(v).replace(/[\n\r]/g, '')
+          .replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+        if (/^#[0-9a-f]{6}$/.test(_cvClr)) return _cvClr;
+        if (typeof __zw_parse_color_rgba !== 'function') return '#000000';
+        var _cvRgba = String(__zw_parse_color_rgba(_cvClr) || '').split(',');
+        if (_cvRgba.length !== 4) return '#000000';
+        var _cvHex = '#';
+        for (var _cvI = 0; _cvI < 3; _cvI++) {
+          _cvHex += ('0' + parseInt(_cvRgba[_cvI], 10).toString(16)).slice(-2);
+        }
+        return _cvHex;
+      }
       default:
         return v;
     }
