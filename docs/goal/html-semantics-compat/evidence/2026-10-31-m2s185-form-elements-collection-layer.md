@@ -96,6 +96,14 @@ filter/indexed/fieldset 关联面）。
 - **shim node --check SYNTAX_OK**（114358 行，+203）；cargo fmt
   --all --check 过 + guarded workspace clippy 零告警。
 
+## 复验（push 后 rebase 并入 origin 4 提交——site-opt nth-child 修复
+## PR #263 两 fix + 三 docs——合并树快速复核）
+
+- 定向 the-form-element **105P/3F 逐位一致**（3F 同上在册承袭）；
+  engine lib 复跑 3/4 次 **3641P/1F**（1F 同在册键；run 1 出现 1 例
+  未命名瞬态 flaky 2F，连续 3 轮不可复现，非本刀面——shim 契约测试
+  4 键全过）。
+
 ## 残留与边界
 
 - RadioNodeList.value（checked radio 值聚合）与 FCC namedItem 多匹配
