@@ -11257,12 +11257,26 @@ fn apply_testdriver_command(
         "keydown" | "keyup" => {
             let key = command.text.as_deref().unwrap_or_default().to_string();
             let event_type = command.operation.clone();
+            // R5356（editing-compat inline-host 归因轮，2026-10-31）：Actions 链修饰键步
+            // 二分修——①事件 key/code 用 WebDriver 键名（旧透传 PUA 原字符，页
+            // `e.key === 'Shift'` 过滤恒 miss）；②修饰键步不落字符默认动作（旧单字符
+            // 命中下方 InsertText 分支把 uE008 字面插进 CE 宿主——inline-host 语料
+            // shift-enter 全族 got 前缀 U+E008，440F 根因；UI Events：修饰键 keydown
+            // 无字符默认动作、不产 keypress）。键名映射与 send_keys 修饰键表同源。
+            let modifier_name = match key.as_str() {
+                "\u{E008}" => Some("Shift"),
+                "\u{E009}" => Some("Control"),
+                "\u{E00A}" => Some("Alt"),
+                "\u{E03D}" => Some("Meta"),
+                _ => None,
+            };
+            let event_key = modifier_name.map(String::from).unwrap_or_else(|| key.clone());
             let script = zero_engine::script_dispatch_dom_event(
                 &selector,
                 &event_type,
                 Some(&zero_engine::DomEventDetail {
-                    key: Some(key.clone()),
-                    code: Some(key.clone()),
+                    key: Some(event_key.clone()),
+                    code: Some(event_key.clone()),
                     ..Default::default()
                 }),
             );
@@ -11276,6 +11290,13 @@ fn apply_testdriver_command(
             if result == "prevented" {
                 // 页面 keydown listener preventDefault → 字符默认动作被抑制
                 //（UI Events cancelable 语义；value 不变、editing 事件不派发）。
+                return None;
+            }
+            // R5356：修饰键步止于事件（无字符默认动作/keypress——见上方映射注记）。
+            // FIXME: Actions 步骤仍无修饰键**状态**——kShift+Enter 链在块级 CE 宿主
+            // 与裸 Enter 同汇 Submit（拆段而非换行）；inline-host 语料只压行内宿主
+            // （两路同降级行断），块级分压出现时须把 sticky 位接入本臂。
+            if modifier_name.is_some() {
                 return None;
             }
             // uievents-compat 尾簇 11（2026-10-05）：Actions 键盘链的 **ENTER** 默认动作
