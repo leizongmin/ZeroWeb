@@ -123,3 +123,28 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - D2①（fetch/Request 簇清零→当场收口）进入射程：s180 落地 iframe XHR
   根修 + 渲染流清 ua_display_li 后 make test 即应全绿。期间继续低成本
   轮询；本 goal 仍零代码变更，组合态 tip `a3768d3e7`。
+
+### 20:12 追记：fetch 簇全清 + 残余 1F 精确定性 + 锚复跑启动
+
+- s180 19:50 `2e260d532`（XHR credentialed-open 根修——URL 凭证 send 层
+  提取为 Basic Authorization）：**engine lib 3635P/1F**（fetch 族全清，
+  唯余 ua_display_li；renderer lib 361P/0F、browser bin 39P/0F）。
+- **本流独立复测交叉核证**（`make guarded-test`，tip `a3768d3e7`+s181）：
+  engine lib **3635P/1F** 与 s180 自账一致；唯一 FAIL 输出——
+  `li 计算 display 应为 'list-item'` 实得 `"block"`（part32.rs:1029）。
+- **残余 1F 根因定性**（git 追溯）：slice25 `af677d7f0`（10-03，渲染流）
+  翻 shim 面 `_zwUaDisplay` li→list-item 时钉测绿（彼时裸 createElement
+  无 host 通道，回落 shim 表）；s161 `ee2dc953b`（10-30 23:21，s 系）新增
+  handle gCS 通道（`__zw_get_computed_style_by_handle`）后，裸 createElement
+  产物改路由 host 面——host 面 `ua_default_display("li")=Block` 系渲染流
+  **D4 在册待裁决冻结值**（style-system `ua_display_tests.rs` D4 注：
+  「双面裁决前冻结 host 现状，未来修复须同提交双面翻转并带
+  reftest/product-smoke 门控」）。即残余 1F = 跨流通道交互 × 渲染流
+  D4 待裁决面，非任何单流简单欠账；修复归属渲染流 D4 裁决落地（双面
+  同提交翻转），ETA 未知（用户裁决门禁，本 goal 不越界）。
+- **webcrypto 锚复跑启动**（tip `6eb020fc2`）：今日 shim/引擎面并行变更
+  多笔（s161 gCS 通道、s179 `_zwCloneRawHeaders` clone 根修等）均在
+  webcrypto 语料执行路径上，33,109 分母锚须在收口前于现 tip 重核——
+  `make zero-wpt-runner-release` + test-guard 包裹
+  `zero-wpt-runner testharness-webcrypto --json`，结果与
+  M1 基线（m6 终态 25,788P/7,320F/1T）对照后落账。
