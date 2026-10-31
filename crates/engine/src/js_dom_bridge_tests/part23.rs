@@ -1008,10 +1008,11 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
                 "__zwfr:200\x1fOK\x1f\x1f<script></script>".to_string()
             } else {
                 xhr_fetches_for_callback.lock().unwrap().push(format!(
-                    "{}|{}|{}",
+                    "{}|{}|{}|{}",
                     args.get(2).cloned().unwrap_or_default(),
                     args.get(5).cloned().unwrap_or_default(),
-                    args.get(6).cloned().unwrap_or_default()
+                    args.get(6).cloned().unwrap_or_default(),
+                    args.get(3).cloned().unwrap_or_default()
                 ));
                 "__zwfr:200\x1fOK\x1f\x1fbody".to_string()
             }
@@ -1064,11 +1065,25 @@ fn test_iframe_service_worker_messages_dispatch_to_iframe_container() {
         "body",
         "iframe XMLHttpRequest should expose DONE and complete after a credentialed open()"
     );
+    // s180 根修语义（fetch §HTTP-network fetch 凭证提取臂）：open() 凭证入 URL
+    //（xhr.spec 步骤 14-15），send 网络层取走作 Basic 认证、以无凭证 URL 分派——
+    // M2-S3 fetch 构造校验（Request URL cannot include credentials）不受 XHR 影响。
     assert!(
-        xhr_fetches.lock().unwrap().contains(
-            &"https://aa:bb@wpt.test/service-workers/cache-storage/resources/file.txt|iframe:iframe|https://wpt.test/service-workers/cache-storage/resources/credentials-iframe.html".to_string()
-        ),
-        "iframe XMLHttpRequest should preserve username/password in the request URL"
+        xhr_fetches.lock().unwrap().iter().any(|r| r.starts_with(
+            "https://wpt.test/service-workers/cache-storage/resources/file.txt|iframe:iframe|\
+             https://wpt.test/service-workers/cache-storage/resources/credentials-iframe.html|",
+        )),
+        "iframe credentialed XHR should dispatch a credential-free URL (userinfo extracted \
+         at send, not preserved in the wire URL)"
+    );
+    assert!(
+        xhr_fetches
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|r| r.contains("authorization\x1eBasic YWE6YmI=")),
+        "URL userinfo should travel as Basic Authorization (base64('aa:bb') = 'YWE6YmI=', \
+         RFC 7617) with author-set Authorization taking precedence"
     );
     assert_eq!(
         posted.lock().unwrap().as_slice(),

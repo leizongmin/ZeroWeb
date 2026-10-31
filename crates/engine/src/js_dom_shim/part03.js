@@ -764,6 +764,34 @@
             new ProgressEvent('loadstart', { lengthComputable: uComp0, loaded: 0, total: uComp0 ? ulen : 0 }));
         } catch (_eUls) {}
       }
+      // net-api M5-S12：URL 凭证 → Basic Authorization（fetch §HTTP-network fetch
+      // 「request's URL includes credentials」提取臂——XHR open() 凭证写入 URL
+      // （xhr.spec §the open()-method 步骤 14-15），网络层取走作 Basic 认证、以无
+      // 凭证 URL 分派；fetch() API 层「Request URL cannot include credentials」
+      // 构造校验（M2-S3）只面 fetch/Request，XHR 运输不经该校验。三处出口共用
+      // _zwXhrUrl/_zwXhrHeaders（sync 主发/preflight/async fetchFn），单点归一；
+      // 作者 Authorization 优先不覆写；strip 后重 send 幂等（URL 已无凭证）。
+      // s180 红钉 credentials-iframe：iframeFetch 经 globalThis.fetch → 构造校验恒拒
+      // → 网络错误（主窗 async XHR 同面——fetchFn 亦 globalThis.fetch）。
+      if (self._zwXhrUrl && self._zwXhrUrl.indexOf('@') !== -1) {
+        try {
+          var _zwCredUrl = new globalThis.URL(self._zwXhrUrl);
+          if (_zwCredUrl.username || _zwCredUrl.password) {
+            var _zwHasAuth = false;
+            for (var _zwHn in self._zwXhrHeaders) {
+              if (Object.prototype.hasOwnProperty.call(self._zwXhrHeaders, _zwHn) &&
+                  _zwHn === 'authorization') { _zwHasAuth = true; break; }
+            }
+            if (!_zwHasAuth) {
+              self._zwXhrHeaders['authorization'] =
+                'Basic ' + globalThis.btoa(_zwCredUrl.username + ':' + _zwCredUrl.password);
+            }
+            _zwCredUrl.username = '';
+            _zwCredUrl.password = '';
+            self._zwXhrUrl = _zwCredUrl.href;
+          }
+        } catch (_eXhrCredUrl) {}
+      }
       // net-api M3-S2：同步 XHR（open async=false）——host `__zw_fetch` 同步契约直返
       //（runner 路径；异步 host 回空 wire → error 路径，浏览器同步 XHR 已知限制）。
       // net-api M4-S14：同步 XHR scheme 分派先行（data:/blob: shim 侧 store 视角——
