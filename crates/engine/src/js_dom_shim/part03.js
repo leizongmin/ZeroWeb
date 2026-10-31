@@ -26420,9 +26420,10 @@ return e;
           if (_realTag(sel, handle) === 'INPUT') {
             // type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见——
             // 快照读恒 miss，同 `_reflectedTypeEnum` 的理由）。
-            var _rvMdG = _zwInputValueMode(_zwNormalizeInputType(
+            var _rvTyG = _zwNormalizeInputType(
               handle ? __zw_get_attr_handle(handle, 'type')
-              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))));
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));
+            var _rvMdG = _zwInputValueMode(_rvTyG);
             // filename（file）：getter 返 fakepath 形，**与 value 内容属性无关**（attr
             // 存在也返 ''——valueMode 'file with value attribute' 断言面）。本引擎无文件
             // 选择，选中文件集恒空 → 恒 ''。
@@ -26434,6 +26435,19 @@ return e;
               var _rvRawG = handle ? __zw_get_attr_handle(handle, 'value')
                 : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value'));
               return (_rvRawG == null) ? '' : String(_rvRawG);
+            }
+            // s189（html-semantics M2）：range 状态 value getter 消毒面——HTML
+            // §4.10.5.1.16 value sanitization algorithm（非法 fp → default 值
+            // min+(max−min)/2、min/max 夹取、step 对齐 base=min half-up、best
+            // representation）。读侧单点挂接：解析/setAttribute/IDL set 三写径
+            // 天然覆盖（脏缓存优先，属性回落走 lw）。type-change-state/stepping
+            // 等邻接绿面对 step 对齐值幂等（已对齐值不受扰动）。
+            if (_rvTyG === 'range') {
+              var _rvRgSrc = (_inputValuesSet[key] === true && _inputValues[key] != null)
+                ? String(_inputValues[key])
+                : (handle ? __zw_get_attr_handle(handle, 'value')
+                  : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value')));
+              return _zwSanitizeInputValue(_rvRgSrc == null ? '' : _rvRgSrc, 'range', sel, handle);
             }
           }
           // P1a form input：value get——per-element 缓存，lazy-init。

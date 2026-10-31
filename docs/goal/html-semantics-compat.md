@@ -31,7 +31,35 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 188 收口，frame content navigable——submission-checks 三兄弟 3F 精确翻绿，shim 5 刀零 rust：R115 臂 FRAME 归一 + 插入步/src 双钩子/URL 分支排除清单门放宽）**
+> **▶ 当前状态（2026-11-01 M2 切片 189 收口，range value sanitization——10F 钉态翻绿 + range-2 同根 3F 红利，shim 2 刀零 rust：part01 消毒算法补全 + part03 getter 消毒读臂）**
+> **入场定刀位**：s188 收口后失败集中度勘定，最大可动面 range.html 10F。
+> **勘根**：10F 同根——range 状态 value 消毒算法缺位。既有
+> `case 'range'`（part01）有夹取+default 中点但无 step 对齐、无
+> best-representation，且未挂 value getter 链（value 模式 getter 落
+> P1a 裸属性读，"ppp"/-10/" 123"/缺省原样透出）。语料逐案反推：非法
+> fp/缺省 → default（max<min → min，否则中点）**仍走 step 对齐**
+> （"ppp" → 2.5 → "3" half-up）；base=min nearest half-up（1.7→2/
+> 1.4→1/2.8→3）；k 封顶 floor((max−min)/step) 防越 max；浮点尾差
+> 1e12 归一（5.3+1.5 → "6.8"）。
+> **施工（shim 2）**：part01 `case 'range'` 重写（step 读/strict fp →
+> default/夹取/封顶对齐/best representation）；part03 INPUT value
+> getter type 捕获重构 + range 消毒读臂（脏缓存优先/属性 lw 回落）——
+> 读侧单点，三写径天然覆盖。
+> **验证**：定向 range.html **25/25 全 Pass**（10F→P 精确 + 15 既有
+> 零回归）；forms 全树 4368P/332F/12T → **4381P/319F/12T**（ΔP=+13/
+> ΔF=−13，diff 仅 range.html + range-2.html 3F **同根红利**翻面）；
+> 邻接 bit-exact（type-change-state 462P / stepping 7P 定向 +
+> interactive 439P/44F）；engine lib **3641P/1F**（在册同键）；shim
+> 拼接序 node --check + fmt + guarded clippy 全绿；无探针页。
+> **残留与边界**：`_controlValue` 表单序列化仍读原始存储（range 提交
+> 编码面未消毒，语料无面挂 FIXME）；value setter 不消毒（读侧统一，
+> 观察面等价）；date/time 三兄弟（8F×3）次席候选待独立勘根。
+> **下一步候选**：date/time 消毒三兄弟在册；customizable select
+> 177F 挂起待拍板（GB-20261031 征询在途）；fix#19c 挂待决承袭；
+> s186-era FIXME 无语料在册。
+> **账本**：[evidence/2026-11-01-m2s189-range-value-sanitization.md](html-semantics-compat/evidence/2026-11-01-m2s189-range-value-sanitization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 188 收口，frame content navigable——submission-checks 三兄弟 3F 精确翻绿，shim 5 刀零 rust：R115 臂 FRAME 归一 + 插入步/src 双钩子/URL 分支排除清单门放宽）**
 > **入场定刀位**：s187 账本「下一步候选」首位。
 > **勘根**：submission-checks 三案失败形态非「提交乱导航」而是测试体
 > 异常（contentWindow/contentDocument undefined）——三案全部以

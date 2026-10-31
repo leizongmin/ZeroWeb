@@ -2295,19 +2295,38 @@
       case 'number':
         return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v) ? v : '';
       case 'range': {
+        // s189（html-semantics M2）：range 状态清洗算法补全（HTML
+        // §4.10.5.1.16 value sanitization algorithm）——既有夹取/default 面上
+        // 补 step 对齐 + best representation 序列化。语料钉态（range.html
+        // 10F）：非法 fp/缺省 → default 值（max<min → min；否则
+        // min+(max−min)/2）后仍走 step 对齐（"ppp" min=0 max=5 → 2.5 → "3"）；
+        // step 对齐 base=min、nearest half-up（1.7→2、1.4→1、2.8→3、
+        // 3.5→4）；k 封顶 floor((max−min)/step) 防对齐值越 max（spec 未钉
+        // 越界折向，语料无面，保守不越界）；best representation 浮点尾差
+        // 归一（5.3+1.5 → "6.8" 非 "6.7999…98"）。
         var mn = parseFloat(handle ? __zw_get_attr_handle(handle, 'min')
           : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'min') : __zw_get_attr(sel, 'min')));
         if (isNaN(mn)) mn = 0;
         var mx = parseFloat(handle ? __zw_get_attr_handle(handle, 'max')
           : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'max') : __zw_get_attr(sel, 'max')));
         if (isNaN(mx)) mx = 100;
-        var n = parseFloat(v);
-        if (v === '' || isNaN(n) || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)) {
-          return String(mn > mx ? mn : (mn + mx) / 2);
+        var st = parseFloat(handle ? __zw_get_attr_handle(handle, 'step')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'step') : __zw_get_attr(sel, 'step')));
+        if (isNaN(st) || st <= 0) st = 1;
+        var n;
+        if (v === '' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)) {
+          n = mn > mx ? mn : mn + (mx - mn) / 2;
+        } else {
+          n = parseFloat(v);
+          if (n > mx) n = mx;
+          if (n < mn) n = mn;
         }
-        if (n > mx) return String(mx);
-        if (n < mn) return String(mn);
-        return v;
+        var k = Math.round((n - mn) / st);
+        var kMax = Math.floor((mx - mn) / st);
+        if (kMax < 0) kMax = 0;
+        if (k < 0) k = 0;
+        if (k > kMax) k = kMax;
+        return String(Math.round((mn + k * st) * 1e12) / 1e12);
       }
       case 'color': {
         // S183（html-semantics M2）：color 状态清洗算法（HTML §4.10.5.1.19）——
