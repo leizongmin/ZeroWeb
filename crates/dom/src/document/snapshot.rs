@@ -47,6 +47,7 @@ impl Document {
             slot_assignments: self.slot_assignments.clone(),
             focus_element: self.focus_element,
             modal_dialogs: self.modal_dialogs.clone(),
+            active_element: self.active_element,
         }
     }
 }

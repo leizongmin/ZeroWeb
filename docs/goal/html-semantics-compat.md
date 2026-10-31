@@ -31,7 +31,51 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 195 收口，focus 时序域 radio 焦点导航——8F 翻绿 + 1 文件 Timeout 解体，runner Actions 键盘链 4 面 + shim 1 臂：Tab 顺序焦点导航 + selector 缺失降级 live 键通道 + UI Events 键名/Shift 粘滞位 + radio 箭头键焦点移动语义）**
+> **▶ 当前状态（2026-11-01 M2 切片 196 收口，`:active` 伪类通道——定向 8F：稳定翻绿 3（with-click radio 本体 + checkbox/radio 后随 label，收口后 6 轮全 Pass）+ flake 域翻绿 3（onblur 键盘 ×2 对照窗双 Pass + checkbox 本体指针全树跑 Pass——runner 单命令链竞速负载敏感）+ 恒 F 2（父 label ×2 layout 缺口挂账）；dom `Document.active_element` 槽 + engine 字符串槽查询面注入 + shim 指针/键盘/焦点三可信钩子）**
+> **入场定刀位**：s195 在册首席候选 checkable-active 族 8F——s195 定谳
+> 「`:active` 通道整体缺位」（`matches_pseudo_class` 落 false、无 Document
+> active 态、无指针/键盘钩子）。
+> **勘根**：缺口四根——(1) 无按压态通道（上游 HTML §interaction
+> `#selector-active`：按住即匹配）；(2) 查询面 Document 皆查询期临时构建
+> （with_query_view_doc 三臂 + 字符串路径现 parse），直写字段不跨查询存活
+> → 必须**槽 + 注入**架构（渲染面 `inject_focus_state` 同型）；(3) 宿主
+> 回调早绑定 shim 作用域——页侧包装 `__zw_set_doc_active` 截不到 shim 内部
+> 直呼，写通道只挂可信 UA 面；(4) PUA 字面量（U+E00D/U+E004）日志与
+> Edit 工具不可见，须 python 字节级写入（Space 键面曾静默回归即此坑）。
+> **施工**（9 文件）：dom 4——`Document.active_element` 槽 +
+> `set_active_element` + `element_matches_selector` Active 臂（两阶段再评）
+> + `matches_full` deferred true + focus steps 联动清钩 + pristine 快照
+> 携带；engine 5——`DOC_ACTIVE_SELECTOR` 字符串槽 + `sync_active_state`
+> （selector→NodeId，失败按无按压态）+ `with_query_view_doc` 三臂注入
+> （live try_borrow_mut 同步后释放/缓存命中臂先注入/rebuild 臂落缓存前
+> 注入）+ 字符串路径 `__zw_matches`/`__zw_closest` 注入（DOMParser 惰性
+> 文档有意不注入）+ shim part06 指针 PRE-dispatch 标记（选择器解析
+> `__zwSelector`→proxyCache 反查→id 兜底→未路由原 sel 兜底）+ pointerup
+> 清 + `__zwKeyActiveGate`（**keyup 无条件终结前置**，Space keydown
+> POST-dispatch 标记 prevented 不标）+ part04 焦点 commit/blur 双臂清。
+> **验证**：stash 隔离基线 vs WIP 对照（s195 同法）——forms 全树
+> 4443P/258F/11T（复现 s195 逐位一致）→ **4448P/253F/11T**（ΔP=+5/ΔF=−5
+> 精确闭合），逐测试键 diff **恰 5 键 F→P 零 P2F 零键增减**（onblur 键盘
+> 2 + with-click 3）；余 3 键定谳既有缺口——checkbox 本体指针键 = runner
+> 单命令链 probe-tick 竞速 flake（全树跑同键 Pass 实证），父 label 2 键 =
+> 含控件 label 零矩形 Actions 误路由 BODY（layout 面，3 轮恒 F）；
+> interactive 439P/44F 基线 WIP bit-exact；lib zero-engine 3642P/1F（在册
+> 同键）+ zero-dom 880P/0F 逐位一致；全域参考跑 7414P/613F/91T 靶族仅父
+> label 2F 在败列；fmt + guarded-clippy workspace 过 + shim 拼接
+> node --check 过；fmt 双向对照（还原 pre-fmt 字节复跑同 F）证明收口后
+> onblur 键盘 2 面 6 连 F 与格式化无关——负载敏感 runner 竞速（并行流
+> bench/测试负载期），对照窗双 Pass 证据保持；探针语料逐通道钉面验后删。
+> **残留**：父 label 零矩形 layout 缺口 2F；runner 单命令链时序竞速 flake
+> 域（onblur 键盘 2 面 + checkbox 本体指针面，负载敏感 0-100% 摆动）；
+> CSS 渲染面 `:active` per-frame 注入未做；`:not(:active)`
+> 否定面同限；inert-svg-hittest 第 2 子测 SVG hit-test retarget；at-active
+> wrapper activeElement 不稳（s195 seam）；Space 激活行为（checkedness
+> 翻转）未实现。
+> **下一步候选**：disabled-003 crash/hang 2F 独立勘根 → customizable
+> select 177F 挂起待拍板（GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s196-active-pseudo-channel.md](html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 195 收口，focus 时序域 radio 焦点导航——8F 翻绿 + 1 文件 Timeout 解体，runner Actions 键盘链 4 面 + shim 1 臂：Tab 顺序焦点导航 + selector 缺失降级 live 键通道 + UI Events 键名/Shift 粘滞位 + radio 箭头键焦点移动语义）**
 > **入场定刀位**：s194 在册次席候选 focus 时序域 12F——勘根拆分，radio
 > 族单根面本刀收口（4 files 8 subtest F + scrolled 文件 Timeout 解体）；
 > checkable-active 8F 独立根因（`:active` 通道缺位）留 s196。

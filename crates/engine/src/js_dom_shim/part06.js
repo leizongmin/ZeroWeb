@@ -2745,6 +2745,9 @@
           ev._zwUaDispatch = true;
         }
         var ok = el.dispatchEvent(ev);
+        // M2-S196：键盘 Space 按压面（wrapper 直派分支——R148 解析节点形态的
+        // trusted 通道；post-dispatch 门槛见 `__zwKeyActiveGate` 注记）。
+        if (typeof __zwKeyActiveGate === 'function') __zwKeyActiveGate(type, detail, '', ok === false, el);
         return ok ? 'ok' : 'prevented';
       } catch (_eDkW) { /* 构造/派发失败 → 落 body 回落 */ }
     }
@@ -15390,6 +15393,11 @@
         }
       }
     }
+    // M2-S196：键盘 Space 按压面（trusted UA 通道收口——页 dispatchEvent 不经本
+    // 函数；post-dispatch 门槛见 `__zwKeyActiveGate` 注记）。
+    if ((type === 'keydown' || type === 'keyup') && detail && typeof __zwKeyActiveGate === 'function') {
+      __zwKeyActiveGate(type, detail, sel, !ok, null);
+    }
     return ok ? 'ok' : 'prevented';
   };
   // uievents-compat M3：捕获释放站后处理——lostpointercapture（不冒泡 PointerEvent）
@@ -16622,6 +16630,95 @@
     } catch (_e18ra) {}
   }
 
+  // ── M2-S196（html-semantics focus 时序域，2026-11-01）：`:active` 按压态通道 ──
+  // https://html.spec.whatwg.org/multipage/interaction.html#selector-active
+  // 状态宿 = retained Document `active_element`（engine 桥 `__zw_set_doc_active` 直写）；
+  // 页面 untrusted dispatchEvent 不经本组钩子（trusted UA 通道专用）。清除三面：
+  // pointer 释放（up 序列头）、Space keyup（激活结算）、焦点迁移（part04 focus/blur
+  // 臂 + dom `set_focus_element` 钩——blur 无 keyup/pointerup 到达即终结）。
+  // sel 键 → 元素解析（_proxyCache 活身份优先——selector 形态 fallback qSA 快照；
+  // key_at_active 反查同源）。
+  function _zwActiveSelEl(sel) {
+    var el = null;
+    try { el = (_proxyCache && _proxyCache[sel]) ? _proxyCache[sel] : null; } catch (_eA1) { el = null; }
+    if (!el) { try { el = document.querySelector(sel); } catch (_eA2) { el = null; } }
+    return el;
+  }
+  // 元素 → sel 键（__zwSelector 正向 → _proxyCache 反查 → id 兜底）。全失 → null
+  //（不写态）。id 兜底：getElementById/activeElement 形态 proxy 无 __zwSelector 且
+  // 反查失命（getter 每次新 proxy 对象，身份不等——key_at_active wrapper 直派分支
+  // R148 同款缺口，语料 checkbox.focus() + Actions Space 钉面）。
+  function _zwActiveElSel(el) {
+    if (!el) return null;
+    try { if (el.__zwSelector) return el.__zwSelector; } catch (_eA3) {}
+    try {
+      for (var k in _proxyCache) { if (_proxyCache[k] === el) return k; }
+    } catch (_eA4) {}
+    try {
+      if (el.id) return '#' + String(el.id).replace(/([^A-Za-z0-9_-])/g, '\\$1');
+    } catch (_eA14) {}
+    return null;
+  }
+  // 指压面标记（**pre-dispatch**——down listener 内 matches(':active') 即 observable，
+  // active-observable/select-picker-hover 语料钉面）。目标解析：self/祖先最近 LABEL
+  // → labeled control（R4003 label.control——htmlFor 与包含式均由 getter 面）；按下
+  // 控件自身时 control == 控件（同值）。disabled 控件不进按压态（激活门槛，键盘同门）。
+  globalThis.__zwSetActiveFromSel = function (sel, on) {
+    try {
+      if (!on) { __zw_set_doc_active(''); return; }
+      var el = _zwActiveSelEl(sel);
+      if (!el) return;
+      var dis = false;
+      try { dis = !!el.disabled; } catch (_eA5) { dis = false; }
+      if (dis) return;
+      var tgt = el;
+      var cur = el;
+      for (var g = 0; cur && g < 8; g++) {
+        var tn = '';
+        try { tn = String(cur.tagName).toUpperCase(); } catch (_eA6) { tn = ''; }
+        if (tn === 'LABEL') {
+          try { if (cur.control) tgt = cur.control; } catch (_eA7) {}
+          break;
+        }
+        try { cur = cur.parentElement; } catch (_eA8) { cur = null; }
+      }
+      var tsel = _zwActiveElSel(tgt);
+      // 未路由（tgt 即命中元素）时 sel 就是目标选择器——__zwSelector/反查/id 全失
+      // 的兜底（_proxyCache 缓存 proxy 不必然带 __zwSelector 属性）。
+      if (!tsel && tgt === el) tsel = sel;
+      if (tsel) __zw_set_doc_active(tsel);
+    } catch (_eA9) {}
+  };
+  // 键盘 Space 按压面（**post-dispatch**——prevented/disabled 语料钉面以派发后状态
+  // 复评：keydown listener 期间 preventDefault/置 disabled 均不入态，being-disabled/
+  // prevented-default 语料）。目标 = 激活行为元素族（BUTTON / INPUT checkbox|radio|
+  // button|submit|reset——Space 默认动作 = 激活的元素；文本输入 Space 是字符键不入
+  // 态）。keyup 无条件终结（目标失焦/易主后 keyup 仍到达——onblur 语料 cleanup 面）。
+  globalThis.__zwKeyActiveGate = function (type, detail, sel, prevented, el) {
+    try {
+      var key = detail ? String(detail.key || detail.code || '') : '';
+      if (type === 'keyup') { __zw_set_doc_active(''); return; }
+      if (key !== '' && key !== ' ') return;
+      if (type !== 'keydown' || prevented) return;
+      var target = el || _zwActiveSelEl(sel);
+      if (!target) return;
+      var dis = false;
+      try { dis = !!target.disabled; } catch (_eA10) { dis = false; }
+      if (dis) return;
+      var tag = '';
+      try { tag = String(target.tagName).toUpperCase(); } catch (_eA11) {}
+      var ty = '';
+      try { ty = String(target.getAttribute('type') || '').toLowerCase(); } catch (_eA12) {}
+      var act = tag === 'BUTTON'
+        || (tag === 'INPUT'
+            && (ty === 'checkbox' || ty === 'radio' || ty === 'button'
+                || ty === 'submit' || ty === 'reset'));
+      if (!act) return;
+      var tsel = _zwActiveElSel(target) || sel;
+      if (tsel) __zw_set_doc_active(tsel);
+    } catch (_eA13) {}
+  };
+
   // `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`——UI Events §5.2.2
   // 指针事件序 down 半段：悬停迁移（跨界序 + move 对）→ pointerdown →（未取消时）
   // mousedown → [contextmenu（右键）]。compat mouse 抑制：pointerdown preventDefault
@@ -16700,6 +16797,10 @@
     st.downSel = sel;
     st.downButton = button;
     _zwSetButtons(st.buttons | _zwButtonMask(button));
+    // M2-S196：`:active` **预派发**标记（down listener 内 matches(':active') 即
+    // observable——active-observable/select-picker-hover 钉面；label 路由 + disabled
+    // 门在 `__zwSetActiveFromSel` 内。chorded/portal 早返路径不入态——无 down 事件序）。
+    if (typeof __zwSetActiveFromSel === 'function') __zwSetActiveFromSel(sel, true);
     var prevented = __zw_dispatch_event(sel, 'pointerdown', {
       clientX: x || 0, clientY: y || 0, button: button,
       buttons: _zwButtonMask(button), pointerType: pointerType || 'mouse', pressure: 0.5
@@ -16781,6 +16882,9 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    // M2-S196：`:active` 终结（pointer 释放即出按压态——inert-svg-hittest 族
+    // 「click 完成后无残留」面；portal/hold 早返路径同清，故置于函数头）。
+    if (typeof __zwSetActiveFromSel === 'function') __zwSetActiveFromSel('', false);
     // 尾簇 23：外层真实捕获生效时常规路径接管（up 随捕获目标 + 隐式释放），
     // portal 不劫持（pointercapture_in_frame subtest 3 面——down@outer 捕获后
     // move/up 进 iframe 区域须重定向捕获目标而非入 inner frame）。

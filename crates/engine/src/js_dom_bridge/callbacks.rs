@@ -123,7 +123,15 @@ fn with_query_view_doc<R>(
         let live_hit = LIVE_QUERY_DOC.with(|slot| {
             slot.borrow()
                 .as_ref()
-                .and_then(|rc| rc.try_borrow().ok())
+                .and_then(|rc| {
+                    // M2-S196：live doc 同步按压态槽（可变借用于同步后即释放——
+                    // 查询闭包仍走不可变借用，重入约束面不变）。借用冲突回落视图
+                    // 路径，与原 `try_borrow().ok()` miss 同型。
+                    let mut w = rc.try_borrow_mut().ok()?;
+                    sync_active_state(&mut w);
+                    drop(w);
+                    rc.try_borrow().ok()
+                })
                 .and_then(|doc| f.take().map(|f| f(&doc)))
         });
         if let Some(r) = live_hit {
@@ -146,13 +154,18 @@ fn with_query_view_doc<R>(
     // 的 thread_local 约束面（`f` 纯文档遍历，不得再入查询回调）。
     VIEW_DOC_CACHE.with(|slot| {
         let mut cache_guard = slot.borrow_mut();
-        if let Some((key, doc)) = cache_guard.as_ref()
-            && Arc::ptr_eq(&key.dom_arc, html)
-            && Arc::ptr_eq(&key.mut_arc, mutations)
-            && key.count == count
-            && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
-            && key.view_gen == view_gen
-        {
+        let hit = cache_guard.as_ref().is_some_and(|(key, _)| {
+            Arc::ptr_eq(&key.dom_arc, html)
+                && Arc::ptr_eq(&key.mut_arc, mutations)
+                && key.count == count
+                && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+                && key.view_gen == view_gen
+        });
+        if hit {
+            // M2-S196：缓存条目跨查询复用，而按压态可随键盘/指针事件在无 DOM 突变
+            // 时翻转——命中臂同样先注入再执行查询（[`sync_active_state`] 幂等覆盖）。
+            let (_, doc) = cache_guard.as_mut().expect("hit implies entry");
+            sync_active_state(doc);
             return f(doc);
         }
         let prev_count = {
@@ -265,6 +278,9 @@ fn with_query_view_doc<R>(
             // 同型）。当前元素属性由 `__zw_has_attr_lw` latest-wins 兜底。
             let _ = apply_dom_mutations(&mut doc, &structural);
         }
+        // M2-S196：视图产物（解析基座 + 结构重放）不含运行时事件态——落缓存与
+        // 执行查询前注入按压态（live/命中臂各自注入，此处覆盖 rebuild+链增量臂）。
+        sync_active_state(&mut doc);
         *cache_guard = Some((
             ViewDocKey {
                 dom_arc: Arc::clone(html),
@@ -2363,6 +2379,24 @@ pub fn register_dom_callbacks(
             m.lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .push(DomMutation::FocusChanged { selector });
+            "ok".into()
+        }),
+    );
+
+    // M2-S196（html-semantics focus 时序域，2026-11-01）：`:active` 按压态写通道——
+    // shim trusted UA 按压面（键盘 Space 激活族 / 指针 down 序列，label 路由后在
+    // shim 侧算好最终目标 selector）写入字符串槽（空串 = 清除：pointerup/Space
+    // keyup/焦点迁移终结）。与 `__zw_focus_changed` 的 mutation 队列不同：焦点有
+    // renderer 侧 retained 状态消费面，按压态无（渲染样式面挂账，见 dom
+    // `active_element` 注记）。查询面无 retained Document 可直写——qSA/matches 的
+    // Document 均查询期临时构建，故经 [`DOC_ACTIVE_SELECTOR`] 槽 +
+    // [`sync_active_state`] 在查询构建点注入（渲染面 `inject_focus_state` 同型）。
+    // https://html.spec.whatwg.org/multipage/interaction.html#selector-active
+    sandbox.register_callback(
+        "__zw_set_doc_active",
+        Box::new(|args| {
+            let selector = args.first().map(String::from).unwrap_or_default();
+            *DOC_ACTIVE_SELECTOR.lock().unwrap_or_else(|e| e.into_inner()) = selector;
             "ok".into()
         }),
     );

@@ -4745,6 +4745,10 @@
               } catch (_eS128oc) {}
             }
             _activeElKey = key; // 获焦相位落新（focus handler 内 activeElement 已是新元素）
+            // M2-S196（html-semantics focus 时序域，2026-11-01）：焦点迁移终结按压态
+            //（:active 单槽——Space 按住/pointer 按住时 Tab 离开的清除面：blur 无
+            // keyup/pointerup 到达即终结；已聚焦 no-op 守卫在上方早返，不误清）。
+            if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
             // s128：text control change 基线捕获（blur 提交时净值比较用）。
             if (globalThis.__zw_text_change_baseline) globalThis.__zw_text_change_baseline(key, sel, handle);
             // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
@@ -4840,6 +4844,8 @@
                 proxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false }));
               } catch (_e114bl) {}
               if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
+              // M2-S196：失焦终结按压态（:active 单槽，同焦点迁移面）。
+              if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
               return;
             }
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
@@ -4863,6 +4869,8 @@
             }
             // R3254-M7'：通知宿主失焦（空串表示 blur）。
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
+            // M2-S196：失焦终结按压态（:active 单槽，同焦点迁移面）。
+            if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
           };
         }
         // R2938 + WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）`el.requestFullscreen(options)`
