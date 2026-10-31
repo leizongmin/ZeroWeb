@@ -2322,7 +2322,7 @@
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
   // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
   //   应用）∪ 编辑类（_zwExecCmdInputType 表——format/insert/delete 族，事件序 M2
-  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/justify*/indent/outdent
+  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/indent/outdent
   //   等）未接 → false。
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
@@ -2360,6 +2360,20 @@
          (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host, rng.endContainer))));
     } catch (_eQc) {}
     return { supported: true, enabled: enabled };
+  }
+
+  // editing-compat justify 簇（2026-10-31）：justify* 查询前置 dispatch——命中四
+  // 命令时 Indeterm/State/Value 经 part01c __zw_ce_justify_query_face 一次
+  // blockExtend 共享算（混对齐判定 + 对齐值读数）；未命中返 null（调用方回落
+  // 既有 format/state 面）。异常回落左对齐缺省（legacy 语义不抛）。
+  function _zwQueryJustifyFace(cmd) {
+    var al = ({ justifycenter: 'center', justifyfull: 'justify',
+      justifyleft: 'left', justifyright: 'right' })[String(cmd == null ? '' : cmd).toLowerCase()];
+    if (!al || !globalThis.__zw_ce_justify_query_face) return null;
+    try {
+      var q = globalThis.__zw_ce_justify_query_face(al);
+      return q || { indeterm: false, state: false, value: 'left' };
+    } catch (_eJqf) { return { indeterm: false, state: false, value: 'left' }; }
   }
 
   // spec：insertText/insertHTML/insertImage 的 data = 插入内容；format 族 data = null。
@@ -4162,6 +4176,11 @@
     // 「number of input events fired expected 1/0」+ 事件属性八断言）。
     execCommand: function (commandId /*, showUI, value*/) {
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      // editing-compat justify 簇（2026-11-01）：Chrome 的 queryCommandState
+      // ("styleWithCSS") 滞后一拍——快照在每个 execCommand 入口从当前模式同步
+      // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
+      // state_after 显 justifycenter 执行时的模式）。
+      globalThis.__zwStyleWithCSSQuery = !!globalThis.__zwStyleWithCSS;
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
           // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
@@ -4368,6 +4387,17 @@
               if (cmd === 'insertlinebreak' && rng2 && host2) {
                 try { globalThis.__zw_ce_line_break_mutate(host2, rng2); } catch (_eIlb) {}
               }
+              // editing-compat justify 簇（2026-10-31）：justify* 实应用——此前
+              // _zwExecCmdInputType 含四命令（事件照派）但零变更臂，justify 族
+              // 12,108F 为 run 语料最大单命令块。变更核心在 part01c
+              // __zw_ce_justify_apply（blockExtend + 对齐清理 + wrap，参考实现
+              // 移植，选区经 movePreservingRanges 保持）；事件口径同上
+              // insertparagraph/insertlinebreak 臂。
+              var jusAl = ({ justifycenter: 'center', justifyfull: 'justify',
+                justifyleft: 'left', justifyright: 'right' })[cmd];
+              if (jusAl && rng2 && host2) {
+                try { globalThis.__zw_ce_justify_apply(jusAl); } catch (_eJus) {}
+              }
               // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
               // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
               // 选区非空先删选中段）。data=arguments[2]（_zwExecCmdEventData 既有
@@ -4417,6 +4447,14 @@
         var sepVal = String(arguments[2] == null ? '' : arguments[2]).toLowerCase();
         if (sepVal !== 'div' && sepVal !== 'p') return false;
         globalThis.__zwDefaultParagraphSeparator = sepVal;
+      } else if (cmd === 'stylewithcss') {
+        // editing-compat justify 簇（2026-11-01）：styleWithCSS 状态存储——值按
+        // boolean 语义（true/"true" → true，其余 false）存 globalThis，供
+        // queryCommandState 滞后快照读数。CSS 化 wrap 行为未接（状态先记账）。
+        // https://w3c.github.io/editing/execCommand.html#stylewithcss-command
+        globalThis.__zwStyleWithCSS =
+          arguments[2] === true
+          || String(arguments[2] == null ? '' : arguments[2]).toLowerCase() === 'true';
       } else if (cmd === 'selectall') {
         // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
         // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
@@ -4448,8 +4486,34 @@
     queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
     // R3254-M3 切片 4：queryCommandState 真实反射——format 命令按选区起点包裹态
     //（祖先链 tagName 匹配）；其余命令 false（状态面未接，documented）。
-    queryCommandState: function (commandId) { return _zwQueryFormatState(commandId); },
-    queryCommandValue: function (_commandId) { return ''; },
+    // editing-compat justify 簇（2026-10-31）：justify* 前置 dispatch；Indeterm
+    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭），非 justify
+    // 命令按 legacy 语义返 false（run 语料无 justify 之外的 indeterm 断言面）。
+    queryCommandIndeterm: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      return jf ? jf.indeterm : false;
+    },
+    queryCommandState: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      if (jf) return jf.state;
+      // editing-compat justify 簇（2026-11-01）：styleWithCSS 状态面——反射
+      // execCommand 入口快照（滞后一拍，Chrome 录制口径，见 execCommand 入口注）。
+      var cLow = String(commandId == null ? '' : commandId).toLowerCase();
+      if (cLow === 'stylewithcss') return !!globalThis.__zwStyleWithCSSQuery;
+      return _zwQueryFormatState(commandId);
+    },
+    queryCommandValue: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      if (jf) return jf.value;
+      // editing-compat justify 簇（2026-11-01）：defaultparagraphseparator → 当前
+      // 分隔符（缺省 'div'，spec；语料 before/after 值=上一行/本行 applied 值）。
+      // styleWithCSS 值面 Chrome 恒 ''（录制 250/250），不暴露模式。
+      var cLow = String(commandId == null ? '' : commandId).toLowerCase();
+      if (cLow === 'defaultparagraphseparator') {
+        return globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';
+      }
+      return '';
+    },
     // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
     // getter 返存储值（默认 'off'）；setter 'on'→'on'，'off'/'inherit'/其它→'off'（spec case-insensitive）。
     // headless 不真启用编辑 → 惰性 setter（仅存储），documented。覆盖 execCommand 富文本编辑器 feature-detect。

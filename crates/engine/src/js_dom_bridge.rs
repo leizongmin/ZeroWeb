@@ -4979,6 +4979,14 @@ pub fn generate_js_dom_shim() -> &'static str {
         s.push_str(include_str!("js_dom_shim/part04.js"));
         s.push_str(include_str!("js_dom_shim/part05.js"));
         s.push_str(include_str!("js_dom_shim/part06.js"));
+        // part01c（2026-10-31 editing-compat justify 簇）：execCommand justify* 实
+        // 应用引擎（blockExtend + 对齐清理 + wrap，参考 implementation.js 移植）+
+        // Indeterm/State/Value 共享查询算。文件名缘由：part01b/part02 边界在
+        // crypto.subtle 对象字面量内部（字节精确切分残留），无顶层语句边界可插，
+        // 故挂 part06 尾（外层 IIFE 内干净语句边界，_getSelection 闭包同域可见）；
+        // part06 经 globalThis.__zw_ce_justify_* 单点调用，R54xx 同款 plain 工厂
+        // 语义（先 removeChild 再插入）。
+        s.push_str(include_str!("js_dom_shim/part01c.js"));
         s.push_str(include_str!("js_dom_shim/part07.js"));
         // part08a（2026-10-22 M3-S1 拆分）：WebGL 接口面**数据表**（IDL 派生，
         // 勿手改）——2000 行准则拆分，经 globalThis._zwWglIdlTables 单点交接，
