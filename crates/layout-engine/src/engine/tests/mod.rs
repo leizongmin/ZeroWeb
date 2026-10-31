@@ -930,3 +930,7 @@ mod r5348_inline_block_shrink_grow_tests;
 
 /// R5369 探针：zero-width floats + clear 几何（WPT zero-width-floats 驱动）。
 mod r5369_zero_width_floats_clear_tests;
+
+/// R5370 探针：table/inline-table 内 OOF 子不生成匿名 cell（WPT transform-abspos-
+/// 006/007 驱动）。
+mod r5370_table_oof_child_tests;

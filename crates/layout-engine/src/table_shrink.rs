@@ -4,11 +4,12 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue};
+use zero_css_parser::values::{BoxSizingValue, DisplayValue, LengthValue, PositionValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 
 use crate::table::is_table_internal;
+use crate::table_grid::TABLE_OOF_CHILD_EXCLUDE;
 use crate::types::LayoutBox;
 
 /// R5159 kill-switch：`ZW_TABLE_CAPTION_SHRINK=0` 回退空 grid 表收缩的 caption
@@ -77,6 +78,12 @@ pub(crate) fn shrink_table_to_block_content(table_box: &mut LayoutBox, styles: &
             }
             // 排除 display:none / contents / table-internal（这些不该走此路径）
             if matches!(s.display, DisplayValue::None | DisplayValue::Contents) || is_table_internal(&s.display) {
+                return false;
+            }
+            // R5370（css-position-3 §9.1）：OOF 子（absolute/fixed）不是流内 block
+            // 内容——计入会收缩/覆写其 definite 宽高（build_grid R3815 匿名 cell
+            // 包裹同款排除，见 TABLE_OOF_CHILD_EXCLUDE 文档）。
+            if *TABLE_OOF_CHILD_EXCLUDE && matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) {
                 return false;
             }
             // block 级显示类型（body、div 等流内 block 子元素）

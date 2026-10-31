@@ -7,12 +7,22 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{DisplayValue, FloatValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, PositionValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 
 use crate::table_types::*;
 use crate::types::LayoutBox;
+
+/// R5370 kill-switch（css-position-3 §9.1 absolute/fixed + CSS2 §17.2.1）：OOF 子
+/// （absolute/fixed）不参与 table 匿名盒生成——build_grid 的 R3815 匿名 cell 包裹
+/// 与 table_shrink 的空 grid block 内容收缩均按流内语义消费块级子，abspos 子被
+/// 包成 cell 后 cell 布局覆写其 definite 宽高为表/格几何（transform-abspos-006/
+/// 007：200×100 + left/top 被 100×200@表原点覆写，6.28%）。同 R3817 float 先例
+/// 按样式判（权威源）。`ZW_TABLE_OOF_CHILD_EXCLUDE=0` 回退旧「OOF 也包裹/收缩」
+/// 行为，default-on。
+pub(crate) static TABLE_OOF_CHILD_EXCLUDE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_OOF_CHILD_EXCLUDE").as_deref() != Ok("0"));
 
 /// 从 table 容器的子元素中构建 grid 结构。
 ///
@@ -558,7 +568,15 @@ pub(crate) fn build_grid(
                     && child
                         .node_id
                         .and_then(|id| styles.get(&id))
-                        .is_some_and(|s| matches!(s.float, FloatValue::None)) =>
+                        .is_some_and(|s| {
+                            matches!(s.float, FloatValue::None)
+                                // R5370（css-position-3 §9.1）：OOF 子不生成匿名 cell
+                                //（cell 布局按流内语义覆写 definite 宽高，见
+                                // TABLE_OOF_CHILD_EXCLUDE 文档）；sticky 仍在流内，
+                                // 维持包裹。
+                                && (!*TABLE_OOF_CHILD_EXCLUDE
+                                    || !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed))
+                        }) =>
             {
                 if !direct_cells.is_empty() {
                     max_cols = max_cols.max(direct_col_cursor);
