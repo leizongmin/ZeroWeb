@@ -31,7 +31,29 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 192 收口，input.list IDL getter——6F 翻绿 + hidden/text 同根红利 3F 共 9F，shim 1 臂零 rust：get trap list 臂 = lw 属性读 + getElementById 文档序首命中 + DATALIST tag 门）**
+> **▶ 当前状态（2026-11-01 M2 切片 193 收口，disabled fieldset 祖先 willValidate 传导——disabled-001 5F 翻绿，shim 1 臂零 rust：祖先走查扩展 FIELDSET disabled 门 + 首 legend 子豁免）**
+> **入场定刀位**：s192 在册次席候选 disabled-001.html 5F。
+> **勘根**：探针钉态——`fs.disabled` IDL 已在（通用臂），缺口单一 =
+> willValidate 无 disabled fieldset 祖先传导（spec §4.10.5.2.2 barred
+> 条款 + 首 legend 元素子豁免）。语料 5 案全形：legend 包 p/嵌 fieldset
+> 隔层不豁免、第 2+ legend 不豁免、豁免不穿透自身 disabled、豁免后
+> 继续上行。
+> **施工（shim 1 臂零 rust）**：part04 willValidate 臂祖先走查重构
+> （路径节点/父链同步行进：DATALIST 原样 + FIELDSET disabled →
+> children 枚举首 LEGEND 直子，路径直子身份相等才豁免否则 false）。
+> **验证**：定向 the-fieldset-element 目录 disabled-001 5/5 + 邻接
+> 与基线逐位一致；forms 全树 4418P/282F/12T → **4423P/277F/12T**
+> （ΔP=+5/ΔF=−5 精确闭合，探针验后删，逐文件 diff 恰 disabled-001）；
+> interactive 439P/44F + engine lib 3642P/1F（在册同键）bit-exact；
+> node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **残留**：willValidate 其余三实现位未同步（mutTree wrapper 面语料
+> 无案 FIXME）；disabled-003 crash/hang 2F 既有待勘。
+> **下一步候选**：email/url/tel IDN 簇 12F → focus 时序域 12F（负载
+> 敏感嫌疑）；customizable select 177F 挂起待拍板（GB-20261031 征询
+> 在途）；fix#19c 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s193-fieldset-disabled-willvalidate.md](html-semantics-compat/evidence/2026-11-01-m2s193-fieldset-disabled-willvalidate.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 192 收口，input.list IDL getter——6F 翻绿 + hidden/text 同根红利 3F 共 9F，shim 1 臂零 rust：get trap list 臂 = lw 属性读 + getElementById 文档序首命中 + DATALIST tag 门）**
 > **入场定刀位**：s191 后全树失败集中度重勘定——select 拍板簇 177F
 > 之外最大非门禁簇 input-list.html 6F。
 > **勘根**：`input.list` IDL getter 整体缺位（不在平面反射表、无臂，

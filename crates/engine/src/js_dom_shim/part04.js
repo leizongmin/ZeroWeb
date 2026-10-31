@@ -6008,15 +6008,36 @@
           // R57（FV M1）：willValidate 排除（barred from constraint validation——
           // spec §4.10.5.2.2）：disabled、readonly（text 类）、type ∈ {hidden,
           // button, reset}、**datalist 祖先**（willValidate-datalist——spec
-          // §4.10.5.2.2：datalist 元素的后代被 barred）。
-          // datalist 祖先：parentNode 链（sel/handle 两路径——_parentNodeFor；
-          // 经 proxy 的 parentNode getter 统一）。
+          // §4.10.5.2.2：datalist 元素的后代被 barred）、**disabled fieldset
+          // 祖先**（s193，同条款）。
+          // 祖先走查：parentNode 链（sel/handle 两路径——经 proxy 的
+          // parentNode getter 统一）。s193：disabled fieldset 传导豁免仅限
+          // 其**首个 legend 元素子**的后代——上行路径直子即该 legend 才豁免
+          //（legend 包 p/嵌 fieldset 隔层、第 2+ legend 均不豁免，
+          // disabled-001 语料 5 案钉态）；豁免后继续上行（更外层 disabled
+          // fieldset 仍可 barred）。
           var _wv = _makeProxy(sel, handle);
+          var _wvNode = _wv;
           var _wp = _wv.parentNode;
           var _guard = 0;
           while (_wp && _guard < 64) {
-            try { if (String(_wp.tagName).toLowerCase() === 'datalist') return false; } catch (_e) {}
-            try { _wp = _wp.parentNode; } catch (_e) { break; }
+            try {
+              var _wpTagU = String(_wp.tagName).toUpperCase();
+              if (_wpTagU === 'DATALIST') return false;
+              if (_wpTagU === 'FIELDSET' && _wp.disabled) {
+                var _fsLeg = null;
+                try {
+                  var _fsKids = _wp.children;
+                  for (var _fsI = 0; _fsI < _fsKids.length; _fsI++) {
+                    if (String(_fsKids[_fsI].tagName).toUpperCase() === 'LEGEND') { _fsLeg = _fsKids[_fsI]; break; }
+                  }
+                } catch (_eFsK) {}
+                var _fsExempt = false;
+                try { _fsExempt = (_fsLeg != null && _wvNode === _fsLeg); } catch (_eFsI) {}
+                if (!_fsExempt) return false;
+              }
+            } catch (_e) {}
+            try { _wvNode = _wp; _wp = _wp.parentNode; } catch (_e) { break; }
             _guard++;
           }
           if (handle) {
