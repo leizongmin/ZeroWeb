@@ -20,6 +20,17 @@
 > 并发 rally 期漂移域取证须 solo 窗口（run-rules 候选①对齐）。
 > **账本**：[evidence/2026-10-31-corpus-css-text-module-resources.md](html-semantics-compat/evidence/2026-10-31-corpus-css-text-module-resources.md)
 >
+> **▶ 勘定轮（2026-10-31，非施工切片——候选④ selection-pointer forms 域翻绿归因勘定，零源码改动）**：
+> 三态 A/B 矩阵定谳**环境漂移非修复收益**：①main s176 全量 21P；②s172 gEBI
+> 修复逆补丁（code-only，part06.js+coverage.rs）solo 仍 21P——修复非本域门；
+> ③s167 时代树 d5ec12d94（full1 记红基点）今日 solo 仍 21P——红不可由时代代码
+> 复现。红时代失败签名（`anchorNode expected Text node "foo" but got Text node
+> "foo"` 打印同串身份分裂）= ghost/双视图类症状的机器级暂态显形，与 s160「与
+> 刀无关环境漂移」/s171「负载敏感暂态」在册结论同形互证。候选④销案；回红再查
+> 方法升级：先历史树对照再 s172 逆补丁对照，两步定环境/代码归因后进勘根。
+> **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
+> **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
+>
 > **▶ 当前状态（2026-10-31 M2 切片 176 收口，shadow 域定位选择器寻址全链路——compound `zwsh<len>:<host>|<local>` + slot 分配接线 + 同树 closest 根修，shadow-slots 段 LOST 20 → 恢复注册 2P/18F，rust 6 + shim 3 + 新模块 + 钉测 2）**
 > **入场定刀位**：s175 FIXME 承接——引擎侧 shadow 寻址（枚举通道重开前置）。s173/s175 定谳 detached 镜像对引擎不可见（shadow-slots 段 0P/20F）。
 > **根因链四层**（逐层修复后 replica 3P/17F 实证）：①shim `_zwLdFlatParent` 把 shadow 节点摊平进宿主 slot——engine parentNode 跳过 SR 非元素父使 shadow 子 parentNode 锚宿主，摊平 = 元素塌进自身 slot 64-hop 环 → doc-order sort 腐败 → light-dismiss 误选；②`parent_selector_for_doc` 经封装门恒空串 → flat 链首槽 hop 截断；③dom `resolve_slots` **全库零调用点**——分配恒空 → layout slot 替换全走回退内容 → 被分配 light 子树无布局盒 → gBCR [0,0,0,0] → 点击坐标塌 body@(0,0)；④runner 页内扫描（封装门）+ hit-test 铸造点对 shadow 内容无地址。
