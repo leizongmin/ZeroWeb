@@ -1009,8 +1009,9 @@ pub fn extract_import_urls(css: &str) -> Vec<String> {
 /// R1794：从 CSS 文本提取所有**图片类** `url(...)` 引用。
 ///
 /// 与 `extract_font_faces` 互补：本函数扫描**全部** `url(...)`，但**排除**
-/// `@font-face` 块内的 url（字体由 `extract_font_faces` 单独处理，避免重复抓取）
-/// 与 `data:` URI（调用方识别，此处亦过滤以保持集合干净）。结果去重并保留首次出现顺序。
+/// `@font-face` 块内的 url（字体由 `extract_font_faces` 单独处理，避免重复抓取）。
+/// `data:` URI 自 R5357 起纳入（fetch 层解码 + key 与 painter 查找一致，见 Url 臂内
+/// 注释）。结果去重并保留首次出现顺序。
 ///
 /// 覆盖 `background-image` / `list-style-image` / `border-image-source` 等所有
 /// CSS 图片引用——它们都经 `decode_image_bytes` 解码后入 `image_cache`，painter
@@ -1057,7 +1058,14 @@ pub fn extract_css_image_urls(css: &str) -> Vec<String> {
                 // R2411：@import 的 url() 是样式表引用（由 @import 路径单独抓取），非图片——跳过，
                 // 否则会被当作 background/list/border-image 重复抓取并解码失败（浪费）。
                 let raw = u.trim();
-                if !raw.is_empty() && !raw.starts_with("data:") && !urls.iter().any(|x: &String| x == raw) {
+                // R5357：data: URI 不再排除——R1794 过滤时调用方（fetch_image_subresources /
+                // runner build_image_cache）尚未支持 data:，R1987 补齐调用方解码后此处成为
+                // 陈旧缺口：CSS url(data:…) 图片（background/border-image 等）既不抓取也不
+                // 入缓存，painter 按 key 查不到 → 整图静默不绘（driving:
+                // border-image-repeat-005 `border-image: url("data:image/svg+xml,…") …`
+                // 全白）。fetch 层 data: 解码与 key（image_resource_key 对非相对 href 原样
+                // 哈希）均与 painter 查找一致，链条闭合。
+                if !raw.is_empty() && !urls.iter().any(|x: &String| x == raw) {
                     urls.push(raw.to_string());
                 }
             }
@@ -1118,7 +1126,7 @@ fn extract_html_style_blocks(html: &str) -> (Vec<String>, Vec<String>) {
 
 /// R1794/R1796：文档级 CSS `url()` **图片**引用——`<style>` 块与 inline `style=`
 /// 属性逐块独立过 [`extract_css_image_urls`]（每块一个 EOF 边界），跨块去重保首次
-/// 出现序，@font-face / data: / @import 排除与单文本扫描一致。
+/// 出现序，@font-face / @import 排除与单文本扫描一致（data: 自 R5357 起纳入）。
 ///
 /// 与「[`extract_html_style_text`] 拼接后一次扫描」的分道原因：块尾未终止 url( 的
 /// 终止判定——tokenizer（`consume_url`）在字符串被块界换行截断后要求下一非空白字符

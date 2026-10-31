@@ -1064,8 +1064,9 @@ impl AsyncPageLoad {
         // border-image-source）一并异步抓取——与 sync 路径（webview.rs fetch_image_subresources）
         // 对齐。外链 CSS 与文档内 CSS 分开扫：文档内侧走 extract_html_css_image_urls
         // 逐块 EOF 边界（块尾未终止 url() 恢复——拼接扫描靠分隔符终止，注释分隔符对
-        // tokenizer 不可见即丢块尾 url），extract_css_image_urls 已排除 @font-face 与
-        // data:。CSS url 非 lazy，直接入 img_pending；fetch+decode+key 复用 poll_images
+        // tokenizer 不可见即丢块尾 url），extract_css_image_urls 已排除 @font-face
+        //（data: 自 R5357 起不再排除，下方 R1987 分支真正收到流）。CSS url 非 lazy，
+        // 直接入 img_pending；fetch+decode+key 复用 poll_images
         // 现有路径（painter 查找经 R1794 Part A 已按 image_resource_key 对齐）。
         let css_urls: Vec<String> = extract_css_image_urls(&self.css)
             .into_iter()

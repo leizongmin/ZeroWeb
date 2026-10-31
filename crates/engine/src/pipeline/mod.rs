@@ -5179,8 +5179,10 @@ mod css_image_url_tests {
             .b { background-image: url(data:image/png;base64,iVBOR=); }
         "#;
         let urls = extract_css_image_urls(css);
-        // 字体 url 与 data: URI 均排除，仅保留 real.png。
-        assert_eq!(urls, vec!["real.png"]);
+        // 字体 url 排除（字体路径单独抓取）；data: 自 R5357 起纳入（fetch 层
+        // decode_data_uri + key 与 painter 查找一致）——此前 R1794 过滤在调用方
+        // R1987 补齐 data: 解码后成为陈旧缺口，CSS data: 图片整图静默不绘。
+        assert_eq!(urls, vec!["real.png", "data:image/png;base64,iVBOR="]);
     }
 
     /// R2411：@import 的 url() 是样式表引用，不当图片抓取（否则被当 background 重复 fetch+解码失败）。

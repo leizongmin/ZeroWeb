@@ -307,8 +307,8 @@ fn get_support_image_color(key: &ImageKey) -> Option<[u8; 4]> {
 fn extract_css_urls(html: &str) -> Vec<String> {
     // 与生产同源：DOM 抽 `<style>` 块 + inline `style=` 逐块独立过生产
     // [`zero_engine::extract_html_css_image_urls`]（tokenizer 识别 url()：函数名大小写
-    // 不敏感且可含转义 `URL(` / `U\r\4c (`，内容转义已解码 consume_escape，跳过 @font-face
-    // 与 data:，与 painter image key 对齐）。
+    // 不敏感且可含转义 `URL(` / `U\r\4c (`，内容转义已解码 consume_escape，跳过
+    // @font-face，data: 自 R5357 起纳入，与 painter image key 对齐）。
     //
     // 原「对 HTML 整体 tokenize」会在未终止 url() 字符串处吞掉 `</style>` 及后续 HTML：
     // driving uri-017 `background: url("support/swatch-green.png</style>` 经 HTML 整体
