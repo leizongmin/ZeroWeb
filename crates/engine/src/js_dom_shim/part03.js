@@ -26457,14 +26457,19 @@ return e;
               return _zwSanitizeInputValue(_rvRgSrc == null ? '' : _rvRgSrc, 'range', sel, handle);
             }
             // s190（html-semantics M2）：date/month/week/time/datetime-local
-            // 时间族 value getter 消毒面（HTML §4.10.5.1.7-§4.10.5.1.17 各
-            // 状态 value sanitization algorithm）——同 range 臂读侧单点挂接：
-            // 脏缓存优先 / 属性 lw 回落 → `_zwSanitizeInputValue`。修复解析
-            // 期/setAttribute 非法值（"2013-13"、≥4 位小数）原样透出（month
-            // /datetime-local 语料钉态）；合法串 date 族 verbatim、
-            // datetime-local canonical 重序列化（part01 case 同源）。
+            // 时间族 + s194 tel/url/email 值族 value getter 消毒面（HTML
+            // §4.10.5.1.3-§4.10.5.1.17 各状态 value sanitization
+            // algorithm）——同 range 臂读侧单点挂接：脏缓存优先 / 属性 lw
+            // 回落 → `_zwSanitizeInputValue`。修复解析期/setAttribute 非法值
+            // （"2013-13"、≥4 位小数）原样透出（month/datetime-local 语料
+            // 钉态）；合法串 date 族 verbatim、datetime-local canonical 重
+            // 序列化（part01 case 同源）；tel 剥换行、url/email 剥换行 +
+            // trim、email multiple 重组 + 域部 IDN 转换（telephone/url/
+            // email.html 钉态）。text/search/password 未挂读侧（语料无钉面，
+            // FIXME(s194)：扩面前先勘 setter 存量行为面）。
             if (_rvTyG === 'date' || _rvTyG === 'month' || _rvTyG === 'week'
-              || _rvTyG === 'time' || _rvTyG === 'datetime-local') {
+              || _rvTyG === 'time' || _rvTyG === 'datetime-local'
+              || _rvTyG === 'tel' || _rvTyG === 'url' || _rvTyG === 'email') {
               var _rvDtSrc = (_inputValuesSet[key] === true && _inputValues[key] != null)
                 ? String(_inputValues[key])
                 : (handle ? __zw_get_attr_handle(handle, 'value')

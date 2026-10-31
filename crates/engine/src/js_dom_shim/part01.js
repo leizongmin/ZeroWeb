@@ -85,6 +85,14 @@
   // 指向不同元素），但 setter 写入的值（SetFormValue 在 applied view no-op）必须可读回——
   // 双源区分：set 标记条目始终可用，lazy-init 条目仅稳定键（#id/@handle）可用。
   var _inputValuesSet = {};
+  // s194（html-semantics M2）：类型变更步骤写入的缓存键标记（R3901
+  // `_zwApplyInputTypeChange` 置位，value IDL set / setAttribute('value') /
+  // removeAttribute('value') 清除）。spec type change steps **不设 dirty value
+  // flag**（HTML §4.10.5.4）；R3901「缓存即值」模型把 `_inputValuesSet` 复载为
+  // 脏标记，变更后的 setAttribute('value') 走 R3902b 脏守卫被拒——detached 新建
+  // input 先 type 后 setAttribute('value') 的值永久丢失（email-value-idn
+  // dynamically-set 钉态）。属性变更面以本标记区分「类型变更默认值」与真脏。
+  var _typeChangeTainted = {};
   // R2996 input.defaultValue 独立追踪（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=初始 value 属性）。
   // shim 的 `.value=` 仍写 value 属性供 render（paint_input_value 读属性），故属性被「污染」；为使 defaultValue
   // 不被污染，单独追踪「真默认值」：首次 `.value=` 前捕获当前 value 属性（=真默认），setAttribute('value')/
@@ -2274,6 +2282,17 @@
     var lo = (raw == null || raw === '') ? '' : _zwASCIILower(String(raw));
     return (lo !== '' && _INPUT_TYPE_KEYWORDS.indexOf(' ' + lo + ' ') >= 0) ? lo : 'text';
   }
+  // s194（html-semantics M2）：email 单值清洗——trim 首尾 ASCII 空白 +
+  // 域部（最后一个 '@' 之后）经 `__zw_domain_to_ascii` IDN→punycode
+  //（HTML §4.10.5.5 E-mail state value；email-value-idn.html 钉态）。
+  // 无 '@' / 宿主未注册 / 转换失败原串返回（spec 清洗算法不淘汰非法值）。
+  function _zwEmailTokenSanitize(tok) {
+    tok = String(tok).replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+    var _emAt = tok.lastIndexOf('@');
+    if (_emAt < 0 || typeof __zw_domain_to_ascii !== 'function') return tok;
+    var _emDom = String(__zw_domain_to_ascii(tok.slice(_emAt + 1)));
+    return _emDom === '' ? tok : tok.slice(0, _emAt + 1) + _emDom;
+  }
   // R3901：value 净化算法（HTML §4.10.5.5，按状态分派）。文本族剥 \r\n；url/email 再剥
   // 首尾 ASCII 空白；date/month/week/time 非法串 → ''；datetime-local 非法 → ''；number
   // 非法浮点 → ''；range 夹取 [min,max]（非法 → (min+max)/2，min>max → min；缺省
@@ -2286,8 +2305,33 @@
     switch (type) {
       case 'text': case 'search': case 'tel': case 'password':
         return v.replace(/[\r\n]/g, '');
-      case 'url': case 'email':
+      case 'url':
         return v.replace(/[\r\n]/g, '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+      case 'email': {
+        // s194（html-semantics M2）：email 状态清洗算法补全（HTML
+        // §4.10.5.1.5 value sanitization algorithm + §4.10.5.5 E-mail
+        // state）——基面同 url（剥 \r\n + 首尾 ASCII 空白）；multiple
+        // 感知：有 multiple 按逗号分割逐 token 清洗后重组（读写两侧同过
+        // 本函数；同批 setAttribute('multiple') 后读侧重消毒靠 lw 属性
+        // 读面，email.html "multiple set" 钉态）；域部（最后一个 '@'
+        // 之后）经 `__zw_domain_to_ascii` 转 ASCII（punycode，
+        // email-value-idn.html 钉态）——无 '@'、宿主未注册或转换失败
+        // 保持原串（清洗算法不淘汰非法值）。
+        var _emV = v.replace(/[\r\n]/g, '');
+        var _emMulti = false;
+        try {
+          _emMulti = (handle ? __zw_has_attr_handle(handle, 'multiple')
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'multiple') : __zw_has_attr(sel, 'multiple'))) === '1';
+        } catch (_eEm) { _emMulti = false; }
+        if (_emMulti) {
+          var _emParts = _emV.split(',');
+          for (var _emI = 0; _emI < _emParts.length; _emI++) {
+            _emParts[_emI] = _zwEmailTokenSanitize(_emParts[_emI]);
+          }
+          return _emParts.join(',');
+        }
+        return _zwEmailTokenSanitize(_emV);
+      }
       case 'date': case 'month': case 'week': case 'time':
         return _parseHtmlDateValue(v, type) != null ? v : '';
       case 'datetime-local': {
@@ -2404,6 +2448,10 @@
     next = _zwSanitizeInputValue(next, newTy, sel, handle);
     _inputValues[key] = next;
     _inputValuesSet[key] = true;
+    // s194：变更后缓存非真脏（spec 步骤不设 dirty value flag）——打标记供
+    // 属性变更面（part04 setAttribute/removeAttribute 'value' 同步块）绕行
+    // R3902b 脏守卫；value IDL set / 用户键入即真脏，写点清除本标记。
+    _typeChangeTainted[key] = true;
     // 读回面：default/default-on 存储即内容属性（步骤 1 已写；attr 缺省的 "on"/''
     // 回落由 getter 判 attr 存在性——此处不补写，避免把缺省面读成空串）。value/filename
     // 目标走 dirty 缓存读回，sel 路径同步渲染面 form-value。

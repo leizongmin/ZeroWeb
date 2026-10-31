@@ -3311,6 +3311,32 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // S194（html-semantics M2）：`input type=email` 值清洗的域部 IDN 转换臂
+    //（HTML §4.10.5.5 E-mail state；WPT forms/the-input-element/email-value-idn.html
+    // 钉态）。入参为 email 值最后一个 '@' 之后的域部原串；合成 http:// 前缀
+    // 经 url crate 整体解析复用同源 IDNA（[`super::url_idna`] 同依赖面）取
+    // host——非 ASCII 域转 punycode、大写折叠。解析结果形状校验（无端口/
+    // 路径/查询/片段）——'b:8080'/'b/c' 类非法域串视为转换失败返空串
+    //（shim 判空原样保留：spec 清洗算法不淘汰非法值，仅规范化可转换域）。
+    // 成功返 ASCII 域串，失败/空返空串。纯函数，无 DOM 状态。
+    sandbox.register_callback(
+        "__zw_domain_to_ascii",
+        Box::new(|args: &[String]| -> String {
+            let raw = args.first().map(String::as_str).unwrap_or("");
+            let parsed = if raw.is_empty() {
+                None
+            } else {
+                url::Url::parse(&format!("http://{raw}")).ok()
+            };
+            match parsed {
+                Some(u) if u.port().is_none() && u.path() == "/" && u.query().is_none() && u.fragment().is_none() => {
+                    u.host_str().unwrap_or("").to_string()
+                }
+                _ => String::new(),
+            }
+        }),
+    );
+
     // M3-S1a（compositor-animation-continuity RFC §2.1/§3）：真线程 worker 宿主命令
     // 通道 `__zw_worker_host_op(op, ...args)`。ZW_THREADED_WORKERS flag **注册期**读取
     //（R3858：本函数每次 execute 重入，测试可 set_var 后重注册；进程内 flag 翻转随

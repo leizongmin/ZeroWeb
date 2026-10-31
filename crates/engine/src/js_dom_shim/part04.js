@@ -3771,9 +3771,13 @@
               // 「setAttribute doesn't affect the cloned input's/textarea's value」断言面；
               // textarea 无 value 内容属性，setAttribute('value') 惰性——HTML §4.10.6.4）。
               if (_inputValuesSet[key] !== true
+                  || _typeChangeTainted[key] === true
                   || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
                 _inputValues[key] = v;
                 _inputValuesSet[key] = true;
+                // s194：属性值落定即真脏（spec：dirty flag false 时内容属性变更
+                // 直接改变元素值——类型变更默认值不挡路），清类型变更标记。
+                delete _typeChangeTainted[key];
               }
               _clearInputDefault(key);
             }
@@ -4148,9 +4152,12 @@
               // 不覆写 `_inputValues`（spec：属性增删只改 default value，脏值优先——同
               // setAttribute 面）。
               if (_inputValuesSet[key] !== true
+                  || _typeChangeTainted[key] === true
                   || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
                 _inputValues[key] = '';
                 _inputValuesSet[key] = true;
+                // s194：同 setAttribute 面——脏 flag false 时属性移除改变元素值。
+                delete _typeChangeTainted[key];
               }
               _clearInputDefault(key);
             }
@@ -14335,6 +14342,9 @@
             // 缓存 + 净化算法（part01 _zwSanitizeInputValue）。cursor-to-end（值变更移
             // 光标）略——无实时光标面。
             _captureInputDefault(key, sel, handle); // R2996/R3049：首次写前捕获 defaultValue
+            // s194：value IDL set 即真脏（spec value setter 置 dirty value flag）——
+            // 清类型变更默认值标记（此后 setAttribute('value') 脏守卫正常拒绝）。
+            delete _typeChangeTainted[key];
             // type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见）。
             var _ivTy = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));

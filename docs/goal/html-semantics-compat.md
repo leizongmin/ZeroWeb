@@ -31,7 +31,39 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 193 收口，disabled fieldset 祖先 willValidate 传导——disabled-001 5F 翻绿，shim 1 臂零 rust：祖先走查扩展 FIELDSET disabled 门 + 首 legend 子豁免）**
+> **▶ 当前状态（2026-11-01 M2 切片 194 收口，email/url/tel 消毒链路 + 域部 IDN——12F 翻绿 + R3901 缓存污染修复，shim 3 面 + rust 宿主回调 1：value getter 消毒臂扩展 tel/url/email + email case multiple 感知分裂 + `__zw_domain_to_ascii`）**
+> **入场定刀位**：s193 在册次席候选 email/url/tel 簇 12F（email 3F +
+> telephone 3F + url 2F + email-value-idn 4F）。
+> **勘根**：缺口两根——(1) value getter per-type 分派无 tel/url/email
+> 臂（解析期 attr LF/CR/首尾空白/multiple 逗号串原样透出）；(2) email
+> 域部 IDN→punycode 缺位（url_idna.rs 仅整体 URL 面）。validity 零改
+> （typeMismatch 读原始存储，正则对非 ASCII 原样匹配）。基线同键发现：
+> R3901 type change 无条件置脏缓存——spec 不设 dirty value flag，detached
+> 新建 input 先 type 后 setAttribute('value') 被 R3902b 脏守卫拒
+> （email-value-idn dynamically-set 基线即 F）。
+> **施工**：rust `__zw_domain_to_ascii`（url crate 合成解析走同源
+> IDNA + 形状校验防结构剥除，失败空串 shim 保原串）；part01 email
+> case 分裂（`_zwEmailTokenSanitize` trim + last-'@' 域转 + multiple
+> 逗号分割逐 token，lw 读面保读侧重消毒）；part03 getter 臂条件扩展
+> tel/url/email（text/search/password 不扩 FIXME）；R3901 污染修复
+> （`_typeChangeTainted` 标记 map + 真脏写点清标 + 属性变更面绕行脏
+> 守卫）。
+> **验证**：定向 email 8/8 + email-value-idn 4/4 全 Pass；forms 全树
+> 4423P/277F/12T → **4435P/265F/12T**（ΔP=+12 精确；ΔF=−14 = 12 翻
+> 绿 + s193probe 2F 行随探针删除消失，逐文件 diff 恰 5 处，
+> type-change-state bit-exact）；interactive 439P/44F + engine lib
+> 3642P/1F（在册同键）bit-exact；node --check + fmt + clippy（.rs
+> 触碰必跑）过。
+> **残留**：text/search/password 读侧未挂（语料无钉面 FIXME）；
+> email-set-value 1F 同键推进至 selection 面（键入可见内容未建模）；
+> 克隆传播不带污染标记（语料无面 FIXME）。
+> **下一步候选**：focus 时序域 12F（checkable-active-onblur 6F +
+> radio-focus-navigation 6F，负载敏感嫌疑 s171 先例）→ disabled-003
+> crash/hang 2F 独立勘根；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s194-email-url-tel-sanitize-idn.md](html-semantics-compat/evidence/2026-11-01-m2s194-email-url-tel-sanitize-idn.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 193 收口，disabled fieldset 祖先 willValidate 传导——disabled-001 5F 翻绿，shim 1 臂零 rust：祖先走查扩展 FIELDSET disabled 门 + 首 legend 子豁免）**
 > **入场定刀位**：s192 在册次席候选 disabled-001.html 5F。
 > **勘根**：探针钉态——`fs.disabled` IDL 已在（通用臂），缺口单一 =
 > willValidate 无 disabled fieldset 祖先传导（spec §4.10.5.2.2 barred
