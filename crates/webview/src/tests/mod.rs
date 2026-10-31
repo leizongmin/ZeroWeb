@@ -16,6 +16,11 @@ mod load_contiguous_advance;
 
 /// T32：进程级 env 串行锁——`ZW_LOAD_CONTIGUOUS_ADVANCE` 用例互斥（进程级全局
 /// 资源跨用例串行化纪律）。
+///
+/// DF-F3 口径：与 `async_load` 模块既有的 `ENV_TEST_LOCK` 是两把独立锁（后者
+/// 覆盖 async_load 自身 env 用例的断言面，先于本纪律存在）。持本锁改 env 的窗口
+/// 内，async_load 用例仍可能并发读 env——但其用例持自有锁且断言的是各自分支
+/// 行为，读到的值无论新旧都回落有效路径（连续推进或逐拍），断言安全。
 pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())

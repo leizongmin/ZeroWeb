@@ -223,6 +223,10 @@ fn load_contiguous_advance_enabled() -> bool {
 
 /// T32/G1：带内连续推进的墙钟帽（毫秒）——单次 tick 调用内连续推进渲染步的上界；
 /// 到帽即退，剩余步沿既有逐拍路径续推（防病态页面无限占用主循环）。
+///
+/// DF-F1 口径：帽按调用点各自计（每次进入 [`advance_session_contiguous`] 重置），
+/// 同一 tick 内两个调用点（styled 带启动与图像重绘续推）都触发时最坏连续占用
+/// ~2×帽，仍有限不失控；若需 tick 级总帽另行加预算门，不在此常量上扩义。
 const LOAD_ADVANCE_CONTIGUOUS_CAP_MS: u128 = 300;
 
 /// T20/G1：取 `css_pending` 队首表的 fetch 结果——已决（Ok 值或 Err 失败）返回

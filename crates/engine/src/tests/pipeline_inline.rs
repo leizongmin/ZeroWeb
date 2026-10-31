@@ -1223,7 +1223,9 @@ fn test_budget_session_timings_commit_level_recorded() {
     }
     let t = session.timings().clone();
     assert!(t.parse_ms >= 0.0 && t.style_ms >= 0.0 && t.layout_ms >= 0.0 && t.paint_ms >= 0.0);
-    assert!(t.commit_ms >= 0.0, "commit 级必须被记录（>=0）");
+    // 严格 >0：预算会话收尾段有真实工作（缓存写回/指纹回填），若计时刻被重构删除
+    // 字段回落 0.0 时本钉必须红（TV-F1：>=0 为恒真，钉不住记录性）。
+    assert!(t.commit_ms > 0.0, "commit 级必须被记录（预算会话收尾恒 >0）");
     // total_ms 与四段和同表达式同序求值，位级相等。
     assert_eq!(
         t.total_ms,
