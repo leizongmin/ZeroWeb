@@ -4346,6 +4346,13 @@
               if (cmd === 'insertparagraph' && rng2 && host2) {
                 try { globalThis.__zw_ce_paragraph_split_at(host2, rng2, false); } catch (_eIp) {}
               }
+              // editing-compat insertlinebreak-wss 簇（2026-10-31）：insertLineBreak
+              // 实应用——此前 _zwExecCmdInputType 含该命令（事件照派）但零变更臂，
+              // ilb 语料 0P/552F 全灭（expected "abc<br><br>" got "abc"）。行断变更
+              // 核心（不拆块），事件口径同上 insertparagraph 臂（fireEvents 已派）。
+              if (cmd === 'insertlinebreak' && rng2 && host2) {
+                try { globalThis.__zw_ce_line_break_mutate(host2, rng2); } catch (_eIlb) {}
+              }
               // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
               // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
               // 选区非空先删选中段）。data=arguments[2]（_zwExecCmdEventData 既有

@@ -8389,8 +8389,12 @@
         node = target;
         caretOff = at + ins.length;
       } else {
+        // 元素边界两侧无文本子 → 新文本节点插 offset 位（kids[idx] 前）——旧版
+        // appendChild 尾追使 caret 落元素子间隙时文本跳到元素尾
+        //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
+        // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
         node = document.createTextNode(ins);
-        sc.appendChild(node);
+        sc.insertBefore(node, kids[idx] || null);
         caretOff = ins.length;
       }
     } else {
@@ -9105,8 +9109,9 @@
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr3]; }
     return true;
   }
-  // 变更核心：返回 true 表示已应用（选区已重锚）。三分支见上。
-  function _zwCeParagraphMutate(host, rng) {
+  // 变更核心：返回 true 表示已应用（选区已重锚）。三分支见上。lineBreakOnly →
+  // 跳过 ①② 块拆分直达 ③（insertLineBreak 语义——变更面即行断，不拆块）。
+  function _zwCeParagraphMutate(host, rng, lineBreakOnly) {
     var sc = rng.startContainer, so = rng.startOffset | 0;
     var eo = rng.collapsed ? so : (rng.endOffset | 0);
     var isText = !!(sc && (sc.nodeType === 3 || sc.__zwIsText));
@@ -9136,8 +9141,8 @@
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
     var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
-    // ① 宿主级拆分。
-    if (block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
+    // ① 宿主级拆分（insertLineBreak 模式跳过块拆分面）。
+    if (!lineBreakOnly && block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
         && boundaryParent === host && (isText || boundaryNode === null)) {
       var sep1 = document.createElement(sepTag);
       var refAfter1 = null;
@@ -9179,7 +9184,7 @@
     // 或未声明且标签默认块级（div/p/h1-h6/li）——display:inline/inline-block 的
     // div 后代不拆（cannot-have-div 语料：退化行断）；display:block 的 span 后代
     // 同型拆（语料 `<span display:block>a[]b</span>` → 两 span）。
-    if (block !== host && boundaryParent === block) {
+    if (!lineBreakOnly && block !== host && boundaryParent === block) {
       var tag2 = String(block.tagName || '').toLowerCase();
       var dispB = _zwCeDisplayOf(block);
       var blockish2 = dispB === 'block' || (dispB === '' && _zwCeIsBlockTagName(tag2));
@@ -9202,6 +9207,12 @@
         var tail2 = v2.slice(eo);
         if (tail2) sep2.appendChild(document.createTextNode(tail2));
         boundaryText.nodeValue = v2.slice(0, boundaryOff);
+        // 头段全切（caret 在内容起点）→ 空文本节点摘除——滞留使下方「拆空侧
+        // <br> 填充」的 childNodes.length 检查误判非空，新块占位断缺失
+        //（white-space-style 语料 `[]abc` 形：got `<p></p><p>abc</p>`）。
+        if (!(v2.slice(0, boundaryOff))) {
+          try { boundaryText.parentNode.removeChild(boundaryText); } catch (_eEmpt2) {}
+        }
         var mv2 = boundaryText.nextSibling;
         while (mv2) {
           var nx2 = mv2.nextSibling;
@@ -9227,7 +9238,7 @@
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2]; }
       return true;
     }
-    // ③ 行断退化（兜底）。
+    // ③ 行断退化（兜底；insertLineBreak 模式直达——行断即变更面）。
     return _zwCeLineBreakAt(boundaryParent, boundaryText, boundaryNode, boundaryOff, eo, host);
   }
   // 共享入口：fireEvents=false 时仅变更（execCommand 臂事件已派 / insertText('\n')
@@ -9262,6 +9273,16 @@
     var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
     if (!el) return;
     globalThis.__zw_ce_paragraph_split_at(el, null, true);
+  };
+  // insertLineBreak 变更桥（editing-compat insertlinebreak-wss 簇，2026-10-31）：
+  // execCommand 臂专用——beforeinput/input 已由 R3254-M2 事件序路径派发，此处仅
+  // 变更（同 __zw_ce_paragraph_split_at(…, false) 口径）；行断模式直达 ③，不拆块。
+  // 键盘/宿主事件面走既有 __zw_ce_enter（selector 签名），此处不复制事件序。
+  globalThis.__zw_ce_line_break_mutate = function (host, range) {
+    if (!host || !globalThis.__zw_is_ce_host(host)) return false;
+    var rng = range || globalThis.__zw_ce_caret_range(host);
+    if (!rng || !rng.startContainer) return false;
+    return _zwCeParagraphMutate(host, rng, true);
   };
   // 宿主拆分默认动作 transaction 时，延迟 listener 排入的 microtask，直到 commit/rollback 完成。
   // https://html.spec.whatwg.org/multipage/webappapis.html#perform-a-microtask-checkpoint
