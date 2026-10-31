@@ -142,9 +142,20 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   reftest/product-smoke 门控」）。即残余 1F = 跨流通道交互 × 渲染流
   D4 待裁决面，非任何单流简单欠账；修复归属渲染流 D4 裁决落地（双面
   同提交翻转），ETA 未知（用户裁决门禁，本 goal 不越界）。
-- **webcrypto 锚复跑启动**（tip `6eb020fc2`）：今日 shim/引擎面并行变更
-  多笔（s161 gCS 通道、s179 `_zwCloneRawHeaders` clone 根修等）均在
-  webcrypto 语料执行路径上，33,109 分母锚须在收口前于现 tip 重核——
-  `make zero-wpt-runner-release` + test-guard 包裹
-  `zero-wpt-runner testharness-webcrypto --json`，结果与
-  M1 基线（m6 终态 25,788P/7,320F/1T）对照后落账。
+- **webcrypto 锚复跑完成（tip `6eb020fc2`，20:15）**：release runner 重建
+  35s + test-guard 包裹全语料跑（`--json`，产物 7.2MB）——对 M1 终态锚
+  （m6-residual `2026-10-31-m1-baseline-full.json.gz`）**逐字节一致
+  （cmp 全等）**：123 文件 / 25,788P / 7,320F / 1T 逐位相等。今日
+  s161~s181 全部并行 shim/引擎变更（gCS handle 通道、clone Set-Cookie
+  根修、XHR credentialed-open 根修、typing-state、inline 盒 wrap、void
+  caret、RTL、local-attachment 等）后 **33,109 分母零回归锚成立**；
+  runner EXIT=1 为带预期 7,320F 挂账的常规退出（log 无 guard 击杀）。
+  产物：`/tmp/webcrypto-anchor-run-20261031-2010.json`（临时审计件，
+  不入库）。clippy 复验同 tip 完成（20:20）：`make guarded-clippy`
+  （`cargo clippy --workspace --all-targets -- -D warnings`，24G scope）
+  **EXIT=0 全绿**。
+- **收口前置就绪度（tip `6eb020fc2` + 本流 docs）**：DC-1~4 ✅（5894374c1
+  在档）+ 锚逐字节一致 ✅ + clippy ✅ + 独立复测 3635P/1F ✅——唯余
+  ua_display_li 1F（渲染流 D4 待裁决冻结面）。ua_display_li 清零后收口
+  序列 = make test 全绿复证 → 锚按最终 tip 复跑（若 runner 二进制面未
+  变可引用本锚账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE。
