@@ -12,7 +12,7 @@
 
 **归因与取舍（tape v3 三样本，插桩剥离后净树复跑核数）**：splice memmove 与 Proxy trap 读非主项——微修单独 A/B 实测零增量（push 1,526→1,529 同带保留；trap 读复用 910-987 vs 948-967 噪声带，**已回退**——未兑现机制不写收益注记）；残余 ~1.4s = 每 removal 仍 2 次物化的单调用 O(n) 常数（Set 构建 + 过滤 + 逐条 ~240ns 循环体），下一刀 = 单物化/视图缓存面——LiveNLSync 增量化或融合视图缓存需 R55/R304 身份稳定副作用与 `_zwHCLiveInvalidate` 失效覆盖重审（`_r140Refresh` held-array 语义靠 mutation 时点同步维持，惰性化失真 + R382 惰性 ghost 使「上次视图 −1」推导不等价），既有独立整轮 scoping 不变。见 [evidence](editing-compat/evidence/2026-11-01-removechild-residual-overlay-singlepass.md)。
 
-**门禁（十面，systemd 单串行批，净树）**：七语料 join **7,518P/0F/0T** + inline-host **880P/0F** + wss **1,104P/0F** + ilb **552P/0F** + chd **420P/0F** + void 双语料 **72P/0F + 48P/0F** 全零位移；engine lib **3,641P/1F**（s24 已知红唯一，红名 identical）；webview lib **832P/0F**；bench-gate（zero-engine 定向）**PASS**；web-components **4,022P/1,146F/5T** 与 CE 快路轮三跑同计数——计数级恒等（失败集逐位 diff 留该面下次基线复验）。
+**门禁（十面，systemd 单串行批，净树）**：七语料 join **7,518P/0F/0T** + inline-host **880P/0F** + wss **1,104P/0F** + ilb **552P/0F** + chd **420P/0F** + void 双语料 **72P/0F + 48P/0F** 全零位移；engine lib **3,641P/1F**（s24 已知红唯一，红名 identical）；webview lib **832P/0F**；bench-gate（zero-engine 定向）**PASS**；web-components **4,022P/1,146F/5T** 与 CE 快路轮三跑同计数——计数级恒等（失败集逐位 diff 留该面下次基线复验）。组合态复测（推送 rebase 并入并行流 s186-s189 同 shim 四文件 + layout-engine 两笔，part05 hunks 536/855/1126 与本轮 overlay 区不相交）：join 7,518P/0F + ihost 880P/0F 逐位恒等、探针 w2 均值 1,535 净树带内、0F/0T **零位移**。
 
 **下一步**：①（簇 A 流）插入侧残余按 CE 快路轮 evidence §4 现行地图逐项独立轮（解析 `_zwMBuildBodyTree` / t8r 物化 / appendChild trap glue / HCLiveInvalidate / CE 环 details 全树扫五项）；removeChild 侧 O(n²) 已收口至算法等价底线，单物化/视图缓存面（R55/R304 重审）为深水区独立整轮；②（execCommand 簇序流认领不动）run 面现行账按命令族重排定首簇；③ PR #263 已合入（9493a8d8a）——nth-child rebind 探针复验销账归撞头仲裁流执行。
 

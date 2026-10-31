@@ -94,6 +94,17 @@ R5340 臂簿记/notify/LiveNLSync 同步拷贝。
 lib → bench-gate → web-components），规避并发 make 重编译 `target/test-guard` 的自
 exec ENOENT 竞态（[[test-guard-self-exec-race]]）。
 
+## 5.1 组合态复测（推送时 rebase 并入并行流 s186-s189 后）
+
+推送 rebase 将并行流 7 笔（s186 click 分派域 + s187 color IDL + s188 frame
+navigable + s189 range value 消毒 + layout float/intrinsic 两笔 + weekly cron 基线）
+并入组合树 445e89f70——其中 part01/03/04/05 同 shim 拼接二进制。合并语义核对：本提交
+对 3be31af13 的 part05 diff 恰为 +40/−9（hunks 完整落位），并行流 part05 hunks 在
+536/855/1126 行（click 事件面），与本轮 overlay 区（~10,868+）文本与语义均不相交。
+组合树复测（systemd 单批 00:40-00:48）：join 三案 3,456+2,607+1,455 = **7,518P/0F**
++ inline-host **880P/0F** 逐位恒等，探针 w2 1,522/1,502/1,582（均值 1,535，落在门禁
+净树带 1,497-1,629 内），0F/0T——**零位移**。
+
 ## 6. 残余与挂账
 
 - **每 removal 仍 2 次物化**（R126 判定 + LiveNLSync 刷新），单次调用已 O(n)，总量
