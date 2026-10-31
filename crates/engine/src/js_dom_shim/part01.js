@@ -8405,6 +8405,73 @@
         caretOff = so + ins.length;
       }
     } else if (sc && sc.nodeType === 1) {
+      // ⓪ void caret（editing-compat insert-text-in-void 语料，2026-10-31）：
+      // collapsed caret 落 void 元素（(el,0) 唯一合法位）——文本不进 void（void
+      // 序列化丢弃子内容，旧径 appendChild 进 br 形同未插）。按 Blink 形态回溯
+      // 可见插入点（语料期望即 spec）：非空文本 → 接尾追加；带文本元素 → 其末
+      // 文本节点追加；不可见 void（br/embed/wbr）跳过 ws-only 文本与空 inline
+      // 元素继续回溯，耗尽 → void 前插入；img/input（可见 inline）遇 ws-only
+      // 文本停（插 void 前 = ws 后）；hr（块级 void）遇空元素/ws-only 停于
+      // void 前，且消费直接 ws 节点（语料期望无残 ws）。
+      if (_zwCeIsVoidElementTag(sc) && so === 0) {
+        var scTagV = String(sc.tagName || '').toLowerCase();
+        var clsV = scTagV === 'hr' ? 'block' : ((scTagV === 'img' || scTagV === 'input') ? 'vis' : 'invis');
+        var parV = sc.parentNode;
+        var wsV = null;
+        var skipV = null; // 首个被跳过的空 inline 元素（embed/wbr/img 耗尽回落位）
+        var hitV = null; // { text, at } —— 文本接尾形态；null = void 前插入
+        var prevV = sc.previousSibling;
+        var guardV = 0;
+        while (prevV && guardV++ < 256) {
+          if (prevV.nodeType === 3) {
+            if (String(prevV.nodeValue || '').trim() !== '') { hitV = { text: prevV }; break; }
+            if (clsV === 'invis') { prevV = prevV.previousSibling; continue; }
+            if (clsV === 'block') wsV = prevV;
+            break;
+          }
+          if (prevV.nodeType === 1) {
+            var ltV = null;
+            (function _wvLastText(x) {
+              var ks = x.childNodes || [];
+              for (var i = 0; i < ks.length; i++) {
+                if (ks[i].nodeType === 3) ltV = ks[i];
+                else if (ks[i].nodeType === 1) _wvLastText(ks[i]);
+              }
+            })(prevV);
+            if (ltV && String(ltV.nodeValue || '').trim() !== '') {
+              if (clsV === 'block') break; // hr：span 后 void 前插入
+              hitV = { text: ltV };
+              break;
+            }
+            if (clsV === 'block') break; // 空 inline：hr 停于 void 前
+            if (!skipV) skipV = prevV;
+            prevV = prevV.previousSibling;
+            continue;
+          }
+          prevV = prevV.previousSibling;
+        }
+        if (hitV) {
+          var tvV = String(hitV.text.nodeValue || '');
+          hitV.text.nodeValue = tvV + ins;
+          node = hitV.text;
+          caretOff = tvV.length + ins.length;
+        } else {
+          if (wsV && parV && typeof parV.removeChild === 'function') {
+            try { parV.removeChild(wsV); } catch (_eWsV) {}
+          }
+          node = document.createTextNode(ins);
+          // 耗尽回落位：embed/wbr/img 有被跳过的空 inline → 插**首个跳过元素前**
+          //（Blink 形态，T4 `abc<span></span><tag>` 期望）；br/input 插 void 前
+          //（span 后，`<span></span>abc<br>` / input 同款期望）；hr 同 br（其空
+          // 元素/ws 已提前 break）。
+          if (parV && typeof parV.insertBefore === 'function') {
+            parV.insertBefore(node, (skipV && scTagV !== 'br' && scTagV !== 'input') ? skipV : sc);
+          } else {
+            node = null; // 无父（detached void）——best-effort 不做
+          }
+          caretOff = ins.length;
+        }
+      } else {
       var kids = sc.childNodes || [];
       var target = null, idx = so;
       // offset 处子（或前一个子）为文本 → 该节点 splice；否则建新文本节点插位。
@@ -8442,9 +8509,11 @@
         }
         caretOff = ins.length;
       }
+      }
     } else {
       return; // 非 text/element caret 容器（document 级等）——best-effort 不做
     }
+    if (!node) return; // void 臂 detached 形（无父 void）best-effort 不做
     // 插入消费拆分占位 br（wss block 形：新块/inline 壳的占位断在内容进场后
     // 移除——期望 `abc<div><i>def</i></div>` 形，带标 br 见拆分 ① 臂与 ②b
     // inline 盒臂）。**不门 typing state**（preserving 组无 format 前置同样
@@ -9095,6 +9164,12 @@
   function _zwCeIsBlockTagName(t) {
     return ['div','p','h1','h2','h3','h4','h5','h6','li'].indexOf(t) >= 0;
   }
+  // void 元素表（spec HTML void elements 的编辑相关子集——insert-paragraph/text-in-
+  // void 语料 voidElements 全集；area/base 等非内容元素不进编辑 caret 面）。
+  function _zwCeIsVoidElementTag(el) {
+    var t = String((el && el.tagName) || '').toLowerCase();
+    return ['br','img','hr','input','embed','wbr'].indexOf(t) >= 0;
+  }
   // display 读数：CSSStyleDeclaration 面板（R3254-E2）优先，style attr 扫描兜底。
   function _zwCeDisplayOf(el) {
     try {
@@ -9208,6 +9283,67 @@
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
     var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
+    // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
+    // 位置拆分所在块容器——void 及其后兄弟移入新块（spec：selection.collapse 进
+    // void 元素仅 (el, 0) 形合法，语料注释「cannot be tested by editing/run」）。
+    // 新块标签：li 容器 → li（同列表续行，`</li><li>`），其余（div/h1-h6）→ div
+    // （defaultParagraphSeparator 缺省；h1 不可嵌 h1，语料期望 `</h1><div>` 显式
+    // div）。拆分后容器空 → 占位 <br>（`<h1><br></h1><div><img></div>` 期望形，
+    // 与 ① 同款 `__zwPlaceholderBr` 打标）。caret 宿主直子 void（容器=host）不接
+    // （语料面皆包块容器，落 ③ 既有行断形不变）。
+    if (!lineBreakOnly && !isText && boundaryNode
+        && _zwCeIsVoidElementTag(boundaryNode)) {
+      var voidEl0 = boundaryNode;
+      var cont0 = voidEl0.parentNode;
+      var g0 = 0;
+      while (cont0 && cont0 !== host && cont0.nodeType === 1
+             && !_zwCeIsBlockTagName(String(cont0.tagName || '').toLowerCase())
+             && g0++ < 256) {
+        cont0 = cont0.parentNode;
+      }
+      if (cont0 && cont0 !== host && cont0.nodeType === 1 && cont0.parentNode) {
+        var contTag0 = String(cont0.tagName || '').toLowerCase();
+        // 新块标签（语料期望即 spec，Blink 形态）：li → li（同列表续行）；div →
+        // div；标题容器（h1-h6）按语料分支——**可见** void（hr/img/input，渲染盒）
+        // 或 void 后仍有内容（followed-by-text 形）→ 同标签标题（`</h1><h1>`），
+        // 不可见 void 且无后继内容 → div（语料注释自认 hr/embed/wbr 结果不一致，
+        // 分支判定以 visibleTag + 后继内容复刻）。
+        var visibleVoid0 = ['hr','img','input'].indexOf(contTag0 === '' ? '' :
+          String((voidEl0.tagName || '')).toLowerCase()) >= 0;
+        var hasFollowing0 = !!voidEl0.nextSibling;
+        var newTag0;
+        if (contTag0 === 'li') newTag0 = 'li';
+        else if (_zwCeIsBlockTagName(contTag0) && contTag0 !== 'div' && contTag0 !== 'p'
+                 && (visibleVoid0 || hasFollowing0)) newTag0 = contTag0;
+        else newTag0 = 'div';
+        var sep0 = document.createElement(newTag0);
+        // 跨域摘挂：void 及后兄弟是 innerHTML 解析的 plain pending 节点（R54xx 同
+        // 域），宿主桥 appendChild 对 plain 子做序列化拷贝不摘原父（zz-probe-void2
+        // M 臂实证：sepKids=1 且 contKids=1 双现）——先经 cont0.removeChild（plain
+        // 工厂方法）摘除再挂 sep0，保 pending 视图单现。
+        var mv0 = voidEl0;
+        while (mv0) {
+          var nx0 = mv0.nextSibling;
+          if (mv0.parentNode === cont0 && typeof cont0.removeChild === 'function') {
+            try { cont0.removeChild(mv0); } catch (_e0rm) {}
+          }
+          sep0.appendChild(mv0);
+          mv0 = nx0;
+        }
+        if (!(cont0.childNodes || []).length) {
+          var phbr0 = document.createElement('br');
+          phbr0.__zwPlaceholderBr = true;
+          cont0.appendChild(phbr0);
+        }
+        cont0.parentNode.insertBefore(sep0, cont0.nextSibling || null);
+        var nr0 = document.createRange();
+        nr0.setStart(sep0, 0);
+        nr0.collapse(true);
+        if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr0]; }
+        return true;
+      }
+    }
     // ① 宿主级拆分（insertLineBreak 模式跳过块拆分面）。
     if (!lineBreakOnly && block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
         && boundaryParent === host && (isText || boundaryNode === null)) {

@@ -10590,7 +10590,29 @@
                         if (!_r322qn || _r322qn.nodeType !== 1 || _r322qn.__zwSelector
                             || !_r322qn._zwSelPendingParent || _r322qn._zwSelPendingParent.parentSel !== sel) continue;
                         try {
-                          if (!_matchCompoundOf(_r322qn, _r322compQ)) continue;
+                          // R54xx（editing-compat void 簇前置，2026-10-31）：解析顶层不命中时
+                          // **下钻子树**——R322 原版只 compound 匹配桶 added 的顶层解析代理，
+                          // innerHTML 嵌套内容（`<div><br></div>` 的 br/img）恒 miss（
+                          // insert-paragraph-in-void 语料 `editor.querySelector('br')` null
+                          // → caret 不落位假失败 70F 的根因；同 turn host apply 未落、查询
+                          // 面 = pending 视图）。handle 分支既有 `_zwHCCollectSubtree` 下钻
+                          //（下方同款），解析分支对齐之：树序首个命中后代原样返回 plain
+                          // 代理（不物化——消费面 = selection.caret + 编辑命令的 plain 树
+                          // 操作，R309 querySelectorAll 重建产物同款语义；物化会产生
+                          // detached 副本脱离 pending 树）。顶层命中仍优先（树序：顶层先于
+                          // 其后代）。
+                          if (!_matchCompoundOf(_r322qn, _r322compQ)) {
+                            var _r54flat = [];
+                            _zwHCCollectSubtree(_r322qn, _r54flat);
+                            for (var _r54i = 0; _r54i < _r54flat.length; _r54i++) {
+                              var _r54el = _r54flat[_r54i];
+                              if (!_r54el || _r54el.nodeType !== 1) continue;
+                              try {
+                                if (_matchCompoundOf(_r54el, _r322compQ)) return _r54el;
+                              } catch (_e54m) {}
+                            }
+                            continue;
+                          }
                           // noWire 槽（R97 fragment 视图/createContextualFragment 形态）：
                           // 子从未 wire 进 host 快照，K3 apply 代际清除对它不豁免就会在
                           // bump 后从 overlay 整体消失（t8i 同源语义）——匹配命中按代理
