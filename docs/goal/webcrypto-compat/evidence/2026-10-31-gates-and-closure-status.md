@@ -244,6 +244,21 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   33,109 分母零回归在现 tip 成立。轮询面其余无变化：ua_display_li
   （渲染流 D4）与 D1/D2 维持待拍板。
 
+### 2026-11-01 04:35 追记：锚窗口随 rebase 前移至 1b6b9b291 逐字节一致——s196 engine perf 变更吸收
+
+- 04:25 追记落账 push 前的 `git pull --rebase` 吸入并行流两笔：
+  `7d172a211`（s196 `_zwMEl` 安装面共享化，engine/shim 语料执行路径
+  perf 变更，自证七语料全零位移）+ `ddc8668c4`（docs 维护轮，零代码）
+  ——代码面再次前移，按纪律对现 tip `1b6b9b291` 复跑锚：release
+  runner 重建 25.24s + test-guard 直包同参数——**对 M1 终态锚逐字节
+  一致（cmp 全等，7,208,436 B）**，guard log 零字节，EXIT=1 为预期
+  挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-s196-1b6b9b291.json`（不入库）。
+- 至此锚窗口推进为 **7065ea39f → 1b6b9b291**（R5370 + s196 + docs
+  维护轮全吸收），33,109 分母零回归在现 tip 成立。轮询面无变化：
+  ua_display_li（渲染流 D4，s196 自账 engine lib 3642P/1F 同键）与
+  D1/D2 维持待拍板。
+
 ### 2026-11-01 04:25 追记：锚复跑现 tip（650eab54e）逐字节一致——渲染流 R5370 layout 变更吸收
 
 - `git pull --rebase` 吸入渲染流 R5370 两笔：`7c2826ffd`（table/

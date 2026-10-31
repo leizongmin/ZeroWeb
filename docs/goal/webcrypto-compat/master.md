@@ -14,12 +14,13 @@ build/clippy 绿；33,109 分母零回归锚在现 tip `e4e4ebc09` 逐字节复�
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现 tip `650eab54e` 复验逐字节一致**（25,788P + 7,320F +
-1T，guard 零干预；窗口 7065ea39f→650eab54e，渲染流 R5370 table OOF
-child layout 变更 + r5370 钉测全吸收，见 evidence 2026-11-01 04:25
-追记）；处置路径维持待用户决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 04:25（锚随 tip 前移复跑至 `650eab54e`——
-渲染流 R5370 吸收，D4/D1/D2 无变化，见
+**33,109 锚已在现 tip `1b6b9b291` 复验逐字节一致**（25,788P + 7,320F +
+1T，guard 零干预；窗口 7065ea39f→1b6b9b291，渲染流 R5370 table OOF
+child layout 变更 + s196 `_zwMEl` 安装面共享化 perf + docs 维护轮全
+吸收，见 evidence 2026-11-01 04:25/04:35 追记）；处置路径维持待用户
+决策表 **D2**，ua_display_li 清零即当场收口。
+**最后更新**: 2026-11-01 04:35（锚随 tip 前移复跑至 `1b6b9b291`——
+R5370 + s196 吸收，D4/D1/D2 无变化，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
