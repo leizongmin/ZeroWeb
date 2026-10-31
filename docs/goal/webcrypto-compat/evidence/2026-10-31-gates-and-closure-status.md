@@ -298,3 +298,27 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
   最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；
   或 D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 06:05 追记：轮询轮——锚账延用至 42e662bf5，docs-only 两笔零代码；DC-1~4 证据复核在位
+
+- 轮询核验：锚 tip `1b6b9b291` → 现 tip `42e662bf5` 五笔全 docs 面
+  （`811ee5192` / `674a4112f` / `f6c42dd03` 已账 + 本轮新增两笔：
+  `a63f2f263` 上轮台账 2 文件 22+/3−、`42e662bf5` learnings 索引
+  重建 + skill 更新 2 文件 15+/3−，无 .rs、无 Cargo.toml、不在
+  runner 或语料执行路径）——runner 二进制面未变，锚逐字节一致账
+  （`1b6b9b291`，04:35 复跑）**按二进制面同一性延用至
+  `42e662bf5`，本轮不复跑**。远端同步（origin/main =
+  `42e662bf5`），树 clean。
+- DC-1~4 证据在位复核（应用户要求逐项核对文件与关键数字）：DC-1
+  `2026-10-31-m1-corpus-and-baseline.md`（pin 全量 202 blob / 198
+  文件在库 0 失败）；DC-2 `2026-10-31-dc2-promotion-screening.md`
+  （上游 `cb6cc97a`，`.tentative.` 50→0）；DC-3 同 M1 文档 + 原始
+  账 `2026-10-31-m1-baseline-full.json.gz`（25,788P+7,320F+1T，对
+  一期终态锚 `archive/webcrypto-compat/evidence/2026-10-17-m6-residual-full.json.gz`
+  状态变化 0 例）；DC-4 `2026-10-31-dc4-coverage-attribution.md`
+  （与官方快照逐位一致，差值 12,541P + 265 文件逐桶归因）。四件
+  证据文件 + 里程碑归档 `archive/2026-10-31-m1-m2.md` 均在库。
+- 轮询面无变化：`42e662bf5` 为 learnings 维护轮零代码；渲染流无
+  li→Block 双面翻转落地（`git log --grep` 全账仅 ledger 记账，
+  R5370 门禁仍 `--skip ua_display_li` 对端 D4 既有红），D4 裁决与
+  D1/D2 拍板均未见 git 账面。收口序列不变。
