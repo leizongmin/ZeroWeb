@@ -26303,8 +26303,9 @@ return e;
           // **纯内容属性/数值反射**（无 INPUT dirty-flag 语义）——不走本 dirty 缓存
           // getter（lazy-init 缓存曾把 setAttribute 后的 IDL 读钉死在旧串：WPT
           // reflection-* 'li.value/meter.value/param.value/button.value' 全族）。
-          // BUTTON/PARAM/OPTION/PROGRESS 此处直读属性（LI long / METER double 有专用
-          // 数值分支在 part04——置旗跳过本分支余下 dirty 缓存逻辑，让后续分支接手）。
+          // BUTTON/PARAM/OPTION 此处直读属性（LI long / METER double / S182 PROGRESS
+          // double+position 有专用数值分支在 part04——置旗跳过本分支余下 dirty 缓存
+          // 逻辑，让后续分支接手）。
           var _rvTag3 = _realTag(sel, handle);
           var _rvSkip3 = (_rvTag3 === 'BUTTON' || _rvTag3 === 'LI' || _rvTag3 === 'METER'
               || _rvTag3 === 'PROGRESS' || _rvTag3 === 'PARAM' || _rvTag3 === 'OPTION');
@@ -26323,7 +26324,7 @@ return e;
             var _s127TaLive = (!handle && sel) ? (__zw_get_text(sel) || '') : _zwTaLiveText(handle);
             return String(_s127TaLive).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
           }
-          if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER') {
+          if (_rvSkip3 && _rvTag3 !== 'LI' && _rvTag3 !== 'METER' && _rvTag3 !== 'PROGRESS') {
             // R3907：OPTION value = 无 ns value 内容属性（**存在即采纳**——空串采纳）；
             // 缺省回落 child text content（strip-and-collapse，与 .text 同源；此前裸 attr
             // 读 NS 影子可见、裸文本回落无 collapse，option-value 5F）。
@@ -26334,7 +26335,7 @@ return e;
             }
             var _rvAttr3 = handle ? __zw_get_attr_handle(handle, 'value') : (sel ? __zw_get_attr(sel, 'value') : null);
             if (_rvAttr3 != null) return String(_rvAttr3);
-            // BUTTON/PARAM/PROGRESS：attr 缺省 ''。
+            // BUTTON/PARAM：attr 缺省 ''。
             return '';
           }
           if (!_rvSkip3) {

@@ -257,6 +257,41 @@
           if (optimum < min) optimum = min; else if (optimum > max) optimum = max;
           return { value: value, min: min, max: max, low: low, high: high, optimum: optimum };
         }
+        // S182：HTMLProgressElement 实际值算法（HTML §4.10.14 the progress
+        // element）——value getter = value attr「rules for parsing floating-point
+        // number values」前缀解析（缺省/失败 → 0）后 clamp [0,max]；position
+        // getter = value attr 缺席（indeterminate 进度条）→ -1，否则 clamp 值 /
+        // max。max = max attr 同款前缀解析（失败/≤0 → 1）——与下方 R5009 max
+        // 分支同款（该分支保留原样，本 helper 内部独立计算，trailing junk 忽略
+        // 由 reflection-forms 'progress.max setAttribute("7\v")' 钉态承载）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-progress-element
+        function _zwProgressActualValues(sel, handle) {
+          function _pgParse(name) {
+            var raw = handle ? __zw_get_attr_handle(handle, name)
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, name) : __zw_get_attr(sel, name));
+            var s = String(raw == null ? '' : raw);
+            var i = 0, n = s.length;
+            while (i < n && (s.charAt(i) === '\t' || s.charAt(i) === '\n'
+                || s.charAt(i) === '\f' || s.charAt(i) === '\r' || s.charAt(i) === ' ')) i++;
+            var m = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?[0-9]+)?/.exec(s.slice(i));
+            var v = m ? Number(m[0]) : NaN;
+            return (!isNaN(v) && isFinite(v)) ? v : NaN;
+          }
+          var max = _pgParse('max');
+          if (isNaN(max) || max <= 0) max = 1;
+          var present = _pgHasAttr(sel, handle, 'value');
+          var value = _pgParse('value');
+          if (isNaN(value) || value < 0) value = 0;
+          if (value > max) value = max;
+          return { value: value, position: present ? value / max : -1, max: max };
+        }
+        function _pgHasAttr(sel, handle, name) {
+          // 缺属性判定走 has 族（get 族缺属性回落空串非 null——R3901 INPUT
+          // value 模式面同款口径）。
+          var r = handle ? __zw_has_attr_handle(handle, name)
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, name) : __zw_has_attr(sel, name));
+          return r === '1' || r === 1 || r === true;
+        }
         // R4003（html-semantics M2 切片 15）：label.control + labelable el.labels
         //（HTML §4.10.4 the label element）。`_zwIsLabelableSelTag` / `_zwLabeledControl`
         // R4004（切片 16）起上移到 part03 共享作用域（`_zwLabelActivationForward` 的
@@ -12485,6 +12520,15 @@
           var _p5mxM = /^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?[0-9]+)?/.exec(_p5mxT);
           var _p5mxV = _p5mxM ? Number(_p5mxM[0]) : NaN;
           return (!isNaN(_p5mxV) && isFinite(_p5mxV) && _p5mxV > 0) ? _p5mxV : 1;
+        }
+        // S182：progress value/position 实际值 getter（HTML §4.10.14）——算法与
+        // indeterminate 门见 _zwProgressActualValues；setter 走既有泛型反射写
+        // 内容属性（setter 后 attr 在 → determinate 化，progress-2
+        // 'position equals 0' 断言面；window.js 'value > max' setter+getter
+        // clamp 链）。
+        if (_realTag(sel, handle) === 'PROGRESS' && (prop === 'value' || prop === 'position')) {
+          var _p5pg = _zwProgressActualValues(sel, handle);
+          return prop === 'value' ? _p5pg.value : _p5pg.position;
         }
         // R5009：li.value「long」反射（default 0）——同 PRE width 的 signed long 面。
         if (prop === 'value' && _realTag(sel, handle) === 'LI') {
