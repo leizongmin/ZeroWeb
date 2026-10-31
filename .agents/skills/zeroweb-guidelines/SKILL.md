@@ -162,6 +162,10 @@ renderer/worker 进程内任何「页面 JS 正在等结果」的新 IPC 消息�
 
 WebView 等嵌入宿主暴露给 JS shim 的能力桥（`__zw_*` callback/hook、contentWindow API 暴露）缺失、上下文错位（client id/referrer/相对 URL 基准不按当前 global 解析）或未按每个脚本执行入口武装（独立 `execute_script` 不触发 begin-script hook）时，页面侧对象停在 stale 状态或 API 缺失——症状伪装成时序/超时问题，等待和加超时只会掩盖缺失的发现通道。新桥面必须对照页面 runtime 契约逐项核对存在性、client 上下文与武装时机（SW registration 发现桥、Cache API iframe 上下文、投影轮询重装三例同模式）；排查时断言要读底层 manager 状态而非页面侧缓存投影。
 
+武装时机必须双向校验：缺武装 → 页面对象 stale（上述三例）；带副作用的武装（状态发布、缓存换代、全量失效）同样不得落在逐调用入口的 hot path——高频入口每次重复注册会反复打断页面异步流，症状是整面 pending/超时而失败形状指向下游。once 武装语义必须旗标化，且各入口（页面脚本常规武装 / 裸调用首次武装 / 沙箱重建复位）的复位时机逐一写明；入口的逐调用尾部副作用（如 pending mutation 应用）与武装语义分开门控，不能一并省略。
+
+依据：[裸 execute_script 逐调用重注册 DOM 桥撞毁 iframe 文档异步物化](../../../docs/learnings/bugs/2026-10/2026-10-31-execute-script-dom-bridge-rearm.md)——与上述三例缺武装同维度、反方向。
+
 ### 26. shim 热循环内的属性读必须按 proxy trap 域计成本，循环不变量提出循环外
 
 js_dom_shim 中凡对象可能是 `_makeProxy`/`_wrapHandle` 产物，「属性读」即 get trap + 可能的 host 回调往返（`__zw_*`，µs 级），不是纯内存访问——代码看起来是纯 JS，成本完全不可见，扫描循环随条目累积二次方放大成文件级 Timeout（R350：Range-mutations 五用例 90s 只跑 28%，单操作微基准却全部「便宜」）。写 shim 扫描循环前必须先问：每条目读什么、读几次、读的对象属于哪个域；恒定键（尤其另一对象的键）必须读一次提出循环外（trap 域这是 50x 级差异，非常规微优化）；前置守卫本身含昂贵读（如 parentNode 上行）时改为「便宜键比对命中后才做守卫验证」。
