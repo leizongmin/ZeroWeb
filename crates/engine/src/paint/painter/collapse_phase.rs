@@ -147,9 +147,6 @@ impl Painter {
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: Option<&Document>,
     ) {
-        if matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse) {
-            return;
-        }
         // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
         // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
         // R4058：UA display:inline 的**替换元素**（svg 根等）是 atomic inline——
@@ -171,6 +168,20 @@ impl Painter {
         let content_hidden = std::env::var("ZW_CONTENT_VISIBILITY").as_deref() != Ok("0")
             && (style.content_visibility_hidden_effective()
                 || (self_replaced && matches!(style.content_visibility, ContentVisibilityValue::Hidden)));
+
+        // CSS2 §visufx #visibility：hidden 容器**自身**盒装饰/markers/替换内容隐藏，
+        // 但后代可用 visibility:visible 重置继承、仍须绘制——扁平 inline 后代（无独立
+        // 盒）的片段由 paint_text 发射、经 R5098 owner 过滤器逐片段裁决（owner hidden →
+        // 片段灭；owner visible → 片段绘）。旧实现在此整体早退，hidden 容器的可见重置
+        // 后代一并灭绘（driving: CSS2/visufx/visibility-005——div[hidden] 内 span[visible]
+        // 绿 X 全白）。kill-switch `ZW_INLINE_FRAG_VISIBILITY=0` 时回退旧整体早退（过滤
+        // 器同灭，防泄漏）。content-visibility:hidden 按包含语义整树跳过，不在此列。
+        if matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse) {
+            if self.inline_frag_visibility_enabled && !content_hidden {
+                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
+            }
+            return;
+        }
 
         // 4. 列表标记绘制（bullets/numbers，位于文本之前）
         if let Some(doc) = doc {

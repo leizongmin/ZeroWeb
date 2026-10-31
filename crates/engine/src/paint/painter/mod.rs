@@ -2709,6 +2709,17 @@ impl Painter {
                 }
                 // progress/meter 填充条须在 paint_text 之后（盖 fallback 文本）。
                 self.paint_element_specials_after_text(box_node, abs_x, abs_y, style, doc);
+            } else if self.inline_frag_visibility_enabled && !content_hidden {
+                // R5358（CSS2 §visufx #visibility）：visibility:hidden 容器**自身**盒装饰
+                // 与自有文本隐藏，但后代可用 visibility:visible 重置继承、仍须绘制。
+                // 扁平 inline 后代（无独立盒）的片段由 paint_text 发射、经 R5098 owner
+                // 过滤器逐片段裁决（owner hidden → 片段灭；owner visible → 片段绘）。
+                // 旧实现把 paint_text 并入 !hidden 门整体跳过，hidden 容器的可见重置
+                // 后代一并灭绘（driving: CSS2/visufx/visibility-005——div[hidden] 内
+                // span[visible] 绿 X 全白，与已绘的原子 inline 路径不自洽）。kill-switch
+                // `ZW_INLINE_FRAG_VISIBILITY=0` 时回退旧整体跳过（过滤器同灭，防泄漏）。
+                // content-visibility:hidden（R2251）按包含语义整树跳过，不在此列。
+                self.paint_text(box_node, abs_x, abs_y, style, doc, Some(styles));
             }
 
             hidden

@@ -4962,6 +4962,14 @@ impl super::Painter {
             }
         }
 
+        // R5358（CSS2 §visufx #visibility）：占位 glyph 代表盒**自身**无法经 IFC/stored
+        // 解析的文本（owner = 盒自身）——owner hidden/collapse 时不发射，与 R5098 owner
+        // 过滤器同规。R5358 前调用方在内容相位入口对 hidden 整体早退，本路径对 hidden
+        // 样式不可达；R5358 起 hidden 容器放行 paint_text 交逐片段裁决，占位路径须自守。
+        if matches!(style.visibility, VisibilityValue::Hidden | VisibilityValue::Collapse) {
+            return;
+        }
+
         // 退化为单个占位 glyph
         let glyph_x = content_x + tx;
         let glyph_y = content_y + ty;
