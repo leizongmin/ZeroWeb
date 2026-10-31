@@ -16,6 +16,55 @@ mod stats;
 mod target;
 mod validation;
 
+// ── 查询位置索引（p125）──────────────────────────────────────────────
+
+/// p125 每查询位置索引：元素父 → (元素子 → sibling 位置)（type_complexity 拆别名）。
+type QueryPosIndex = HashMap<NodeId, HashMap<NodeId, crate::query::ElementPosition>>;
+
+// 单次查询线程局部的 sibling 位置索引：`元素父 → (元素子 → ElementPosition)`。
+//
+// `query_selector`/`query_selector_all`（含 shadow 变体）入口经 [`QueryPosIndexGuard`]
+// 装载：外层查询装载、嵌套查询（`:has()`/`:nth-child(an+b of S)` 延后复评）复用同一
+// 索引、最外层 Drop 时卸载。装载期间 [`Document::compute_element_position`] 首次访问
+// 某个元素父即一次批量计算其**全部**元素子的位置并回填——宽兄弟页面（github trending
+// select-menu 846 个同父 `<a>`）的链选择器 DFS 从「每节点 O(兄弟) 两次遍历 + Vec 分配」
+// 塌缩为摊销 O(1)/节点。索引未装载的单点调用（`matches`/`closest`）行为不变。
+thread_local! {
+    static QUERY_POS_INDEX: std::cell::RefCell<Option<QueryPosIndex>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// [`QUERY_POS_INDEX`] 的 RAII 守卫：仅最外层查询装载/卸载，嵌套查询复用。
+struct QueryPosIndexGuard {
+    installed: bool,
+}
+
+impl QueryPosIndexGuard {
+    /// 装载索引（已装载则复用，不重复初始化）。
+    fn install() -> Self {
+        let installed = QUERY_POS_INDEX.with(|slot| {
+            let mut borrow = slot.borrow_mut();
+            if borrow.is_some() {
+                false
+            } else {
+                *borrow = Some(HashMap::new());
+                true
+            }
+        });
+        Self { installed }
+    }
+}
+
+impl Drop for QueryPosIndexGuard {
+    fn drop(&mut self) {
+        if self.installed {
+            QUERY_POS_INDEX.with(|slot| {
+                *slot.borrow_mut() = None;
+            });
+        }
+    }
+}
+
 // ── DocumentPosition ─────────────────────────────────────────────────
 
 /// `compare_document_position` 返回的节点位置掩码常量。
@@ -1085,6 +1134,7 @@ impl Document {
     ///（spec `querySelector` 接受列表——R57 FV M3：`form.querySelectorAll('input, button')`
     /// 等子树/文档级列表查询；旧实现把列表当单选择器解析失败 → 空结果）。
     pub fn query_selector(&self, root: NodeId, selector: &str) -> Option<NodeId> {
+        let _pos_index = QueryPosIndexGuard::install();
         if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
@@ -1111,6 +1161,7 @@ impl Document {
     ///
     /// 支持逗号分隔的选择器列表（spec 语义；文档序、去重——每个节点只判一次）。
     pub fn query_selector_all(&self, root: NodeId, selector: &str) -> Vec<NodeId> {
+        let _pos_index = QueryPosIndexGuard::install();
         if let Some(parts) = crate::query::split_top_level_selector_list(crate::trim_ascii_ws(selector))
             && parts.len() > 1
         {
@@ -2019,25 +2070,23 @@ impl Document {
     // 复评延后的伪类；style-system CSS 匹配亦共享之（R3277-R3279 一致化）。
 
     fn element_matches_selector(&self, node: NodeId, selector: &crate::query::SimpleSelector) -> bool {
-        let matched = self
-            .nodes
-            .get(node)
-            .and_then(|n| match &n.kind {
-                NodeKind::Element(elem) => {
-                    // 无伪类选择器不需要 sibling 位置上下文（matches_full 的伪类
-                    // 评估才读 pos）——宽页面（多兄弟）querySelector 从 O(候选×兄弟)
-                    // 降为 O(候选)，否则每候选元素一次兄弟遍历。
-                    let pos = if selector.pseudos.is_empty() {
-                        crate::query::ElementPosition::default()
-                    } else {
-                        self.compute_element_position(node)
-                    };
-                    Some(selector.matches_full(elem, pos))
-                }
-                _ => None,
-            })
-            .unwrap_or(false);
-        if !matched {
+        // OPTIMIZATION(p125)：廉价成分（tag/#id/.class/[attr]）先行——失败即返，免
+        // O(兄弟) `compute_element_position`（matches_full 首步本就是 matches，语义
+        // 等价）。宽兄弟页面（如 846 个同父 `<a>`）链选择器全 DFS miss 从每节点两次
+        // 兄弟遍历的 64ms（github trending 楔死根因）塌缩为亚毫秒级；另一半是
+        // compute_element_position 的每查询位置索引。
+        let elem = match self.nodes.get(node).map(|n| &n.kind) {
+            Some(NodeKind::Element(elem)) => elem,
+            _ => return false,
+        };
+        if !selector.matches(elem) {
+            return false;
+        }
+        if selector.pseudos.is_empty() {
+            return true;
+        }
+        let pos = self.compute_element_position(node);
+        if !selector.matches_full(elem, pos) {
             return false;
         }
         // :has() 需 Document 子树求值（matches_full 延后返 true），此处额外评估。
@@ -2186,12 +2235,11 @@ impl Document {
                 Some(NodeKind::Comment(_)) | Some(NodeKind::ProcessingInstruction(_))
             )
         });
-        let tag = match &node_data.kind {
-            NodeKind::Element(e) => e.local_name(),
-            _ => return pos,
-        };
+        if !matches!(&node_data.kind, NodeKind::Element(_)) {
+            return pos;
+        }
         let Some(parent) = self.parent_element_node(node) else {
-            // 根元素（html）：唯一兄弟、唯一同 tag、是根。
+            // 根元素（html）：唯一兄弟、唯一同 tag、是根。恒定位置，不入批量索引。
             pos.is_root = true;
             pos.child_index = 1;
             pos.child_count = 1;
@@ -2199,36 +2247,132 @@ impl Document {
             pos.type_count = 1;
             return pos;
         };
-        let siblings: Vec<NodeId> = self.nodes.get(parent).map(|p| p.children.to_vec()).unwrap_or_default();
-        let mut child_idx = 0usize;
-        let mut type_idx = 0usize;
+        // OPTIMIZATION(p125)：查询索引装载时先查、miss 则一次批量回填该父的全部
+        // 元素子位置，免逐节点重算（宽兄弟页面每节点两次全兄弟遍历 + Vec 分配，
+        // 846 同父锚点单查询 64ms 的放大器）；未装载（matches/closest 单调用）也走
+        // 同一批量构建一次，逐字段与旧两遍遍历同值。
+        let cached = QUERY_POS_INDEX.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .and_then(|index| index.get(&parent))
+                .and_then(|children| children.get(&node))
+                .copied()
+        });
+        if let Some(pos) = cached {
+            return pos;
+        }
+        let built = self.build_child_positions(parent);
+        let built_pos = built.get(&node).copied();
+        QUERY_POS_INDEX.with(|slot| {
+            if let Some(index) = slot.borrow_mut().as_mut() {
+                index.insert(parent, built);
+            }
+        });
+        match built_pos {
+            Some(p) => p,
+            None => {
+                // p125r1(TV-1) 返修：索引 miss = node 不是 parent 的直接元素子（如
+                // ShadowRoot 直接子：`parent_element_node` 越过非元素父取 host）。旧
+                // 逐节点两遍遍历此时对 parent 子列表跑满（`sib == node` 永不命中不
+                // break），得 {ci=cc=元素子总数, ti=tc=同 tag 数}；这里单遍回填同值，
+                // 与 merge-base 逐值一致（冻结判据见
+                // crates/dom/tests/p125_shadow_position_pseudo.rs）。不写入索引——
+                // 该父的批量表不含 node，写入反而会污染同父成员的缓存查询。
+                // FIXME(selectors-l4)：规范语义应按实际父容器（含 ShadowRoot 等非
+                // 元素父）计位，merge-base 与本路径均未实现，另立任务。
+                let Some(NodeKind::Element(node_el)) = self.nodes.get(node).map(|n| &n.kind) else {
+                    return pos;
+                };
+                let Some(parent_data) = self.nodes.get(parent) else {
+                    return pos;
+                };
+                let lname = node_el.local_name();
+                let mut total = 0usize;
+                let mut same_tag = 0usize;
+                for &child in &parent_data.children {
+                    if let Some(NodeKind::Element(child_el)) = self.nodes.get(child).map(|n| &n.kind) {
+                        total += 1;
+                        if child_el.local_name().eq_ignore_ascii_case(lname) {
+                            same_tag += 1;
+                        }
+                    }
+                }
+                pos.child_index = total;
+                pos.child_count = total;
+                pos.type_index = same_tag;
+                pos.type_count = same_tag;
+                pos
+            }
+        }
+    }
+
+    /// 一次批量计算 `parent` 全部**元素**子的 sibling 位置（p125 每查询索引的回填
+    /// 单元）。逐字段与逐节点两遍遍历同值（child/type 序号与总数；`is_root` 恒
+    /// false；`is_empty` 按各子自身子节点求值——R160 语义与单点路径同源）。
+    fn build_child_positions(&self, parent: NodeId) -> HashMap<NodeId, crate::query::ElementPosition> {
+        let mut positions: HashMap<NodeId, crate::query::ElementPosition> = HashMap::new();
+        let Some(parent_data) = self.nodes.get(parent) else {
+            return positions;
+        };
+        // 第一遍：元素子总数 + 同 tag 总数（eq_ignore_ascii_case 同域，按归一 tag
+        // 分桶；同 tag 兄弟仅首个分配 String）。
         let mut child_total = 0usize;
-        let mut type_total = 0usize;
-        // 先全量统计同 tag 总数 + 定位自身序号。
-        for sib in &siblings {
-            if let Some(NodeKind::Element(e)) = self.nodes.get(*sib).map(|n| &n.kind) {
+        let mut tag_totals: Vec<(String, usize)> = Vec::new();
+        for &child in &parent_data.children {
+            if let Some(NodeKind::Element(e)) = self.nodes.get(child).map(|n| &n.kind) {
                 child_total += 1;
-                if e.local_name().eq_ignore_ascii_case(tag) {
-                    type_total += 1;
+                let lname = e.local_name();
+                match tag_totals.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(lname)) {
+                    Some((_, n)) => *n += 1,
+                    None => tag_totals.push((lname.to_ascii_lowercase(), 1)),
                 }
             }
         }
-        for sib in &siblings {
-            if let Some(NodeKind::Element(e)) = self.nodes.get(*sib).map(|n| &n.kind) {
-                child_idx += 1;
-                if e.local_name().eq_ignore_ascii_case(tag) {
-                    type_idx += 1;
+        // 第二遍：定位各元素子的 child/type 序号（与旧逐节点循环同序同值）。
+        let mut child_idx = 0usize;
+        let mut tag_seen: Vec<(String, usize)> = Vec::new();
+        for &child in &parent_data.children {
+            let Some(child_data) = self.nodes.get(child) else {
+                continue;
+            };
+            let NodeKind::Element(e) = &child_data.kind else {
+                continue;
+            };
+            child_idx += 1;
+            let lname = e.local_name();
+            let type_idx = match tag_seen.iter_mut().find(|(k, _)| k.eq_ignore_ascii_case(lname)) {
+                Some((_, n)) => {
+                    *n += 1;
+                    *n
                 }
-                if *sib == node {
-                    break;
+                None => {
+                    tag_seen.push((lname.to_ascii_lowercase(), 1));
+                    1
                 }
-            }
+            };
+            let type_count = tag_totals
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(lname))
+                .map(|(_, n)| *n)
+                .unwrap_or(0);
+            // R160（js-dom M4）：`:empty` spec 语义（CSS Selectors L4 §boolean-
+            // selectors）——与 compute_element_position 单点路径同源。
+            let pos = crate::query::ElementPosition {
+                is_empty: child_data.children.iter().all(|&c| {
+                    matches!(
+                        self.nodes.get(c).map(|n| &n.kind),
+                        Some(NodeKind::Comment(_)) | Some(NodeKind::ProcessingInstruction(_))
+                    )
+                }),
+                child_index: child_idx,
+                child_count: child_total,
+                type_index: type_idx,
+                type_count,
+                is_root: false,
+            };
+            positions.insert(child, pos);
         }
-        pos.child_index = child_idx;
-        pos.child_count = child_total;
-        pos.type_index = type_idx;
-        pos.type_count = type_total;
-        pos
+        positions
     }
 
     fn parent_element_node(&self, node: NodeId) -> Option<NodeId> {
