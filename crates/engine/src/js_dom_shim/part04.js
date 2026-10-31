@@ -7823,7 +7823,15 @@
                 }
               } catch (_ePvK) {}
               if (_pvIdx >= 0) {
-                if (typeof __zw_remove_child_at === 'function') {
+                // editing-compat（inline-host pre `{}<br>` 断行簇归因，2026-10-31）：
+                // D1 印章子（`__zwSelPathWrite`）的移除由印章 accessor 自带移除面
+                // （part03 `node.remove()` → `__zw_remove_child_at_path`，path 末位=
+                // 被移除子自身）持有，本臂 wire 发射须让位——否则同 turn marker 删除
+                // 双入账（RemoveChildAt(0) 删 T"{}" 后 RemoveChildAtPath([0]) 又删
+                // 0 号位=同父 `<br>`，语料 `<br>` 引擎侧消失 → 全簇红）。与下方 D1 臂
+                // 「身份印排除 handle/sel 子（重复入队会双删）」同一互斥先例；桶
+                // retract/通知簿记与印无关，照常执行。
+                if (!child.__zwSelPathWrite && typeof __zw_remove_child_at === 'function') {
                   try { __zw_remove_child_at(sel, String(_pvIdx)); } catch (_ePvH) {}
                 }
                 var _pvB = null;
