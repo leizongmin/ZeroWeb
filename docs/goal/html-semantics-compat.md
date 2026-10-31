@@ -31,7 +31,52 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 194 收口，email/url/tel 消毒链路 + 域部 IDN——12F 翻绿 + R3901 缓存污染修复，shim 3 面 + rust 宿主回调 1：value getter 消毒臂扩展 tel/url/email + email case multiple 感知分裂 + `__zw_domain_to_ascii`）**
+> **▶ 当前状态（2026-11-01 M2 切片 195 收口，focus 时序域 radio 焦点导航——8F 翻绿 + 1 文件 Timeout 解体，runner Actions 键盘链 4 面 + shim 1 臂：Tab 顺序焦点导航 + selector 缺失降级 live 键通道 + UI Events 键名/Shift 粘滞位 + radio 箭头键焦点移动语义）**
+> **入场定刀位**：s194 在册次席候选 focus 时序域 12F——勘根拆分，radio
+> 族单根面本刀收口（4 files 8 subtest F + scrolled 文件 Timeout 解体）；
+> checkable-active 8F 独立根因（`:active` 通道缺位）留 s196。
+> **勘根**：缺口四根——(1) doc 级 qSA 选择器列表走 detHtml 序列化快照
+> （动态 appendChild 突变 apply 前不可见；裸 tag/compound 单体走 live
+> mutTree 即时可见，s195probe 同 tick 5/4 分歧实证），dispatch_tab_focus
+> 候选枚举用复合清单 → 动态 radio 不在面；(2) Actions key 步 origin =
+> send 时点 activeElement（动态 radio），selectorFor 启发式 + R145
+> forward map（turn 末 merge）全 miss → 整链 "no stable selector" 拒绝；
+> (3) 键事件 key/code 透传 PUA 原字符（页 `e.key==='Tab'` 恒 miss）+
+> 无 Shift 粘滞位（navigateFocusBackward 方向丢失）+ Tab 默认动作落
+> InsertText PUA（text control 脏值、无焦点迁移）；(4) shim radio 箭头
+> 键臂为原地选中语义（焦点不动、事件派旧目标）——group-focusable-focus
+> 新钉面断 focus + checked 同步落新 radio（HTML §4.10.5.6 Chromium
+> convention）。
+> **施工**：runner `dispatch_tab_focus(webview, forward)`（候选按 9 单体
+> 拆查去重合并保同 tick 动态元素在面 + 文档序排序；radio 组代表剔除
+> same form owner + 同 name 只留代表 checked 优先；Shift+Tab 反向；非序
+> 中最近邻选择）；降级键臂（selector None 时 keydown/keyup 改派
+> `__zw_dispatch_key_at_active` live 通道 R4300 同款，Tab 走焦点导航，
+> 需 selector 臂 skip FIXME）；selector 臂键面（Tab/Arrows 键名 UI
+> Events 化 + `td_shift_sticky` 粘滞位 keydown 置位/keyup 清零 + Tab
+> 默认动作 = 顺序焦点导航 + Arrows 经 script_select_key_action 消费判定）；
+> part06 R3254-K5 radio 箭头键改焦点移动语义（focusing steps 先、
+> checkedness 跟随、input+change 派新 checked radio；FIXME 跨 form 并组）。
+> **验证**：定向 radio 族 8/8 全 Pass（checked 4 + disabled 1 +
+> group-first-focus 1 + group-focusable-focus 2）；scrolled 文件 Timeout
+> 解体单测 Fail（scroll-into-view-on-focus 未实现挂账面）；forms 全树
+> 4435P/265F/12T → **4443P/258F/11T**（ΔP=+8/ΔF=−7/ΔT=−1 精确闭合，
+> 逐测试键 diff 恰 8 键 F→P + Timeout→Fail 其余 bit-exact；stash 隔离
+> 基线复现 s194 数字，上游 layout 提交无 forms 位移归因干净）；
+> interactive 439P/44F bit-exact + engine lib 3642P/1F（在册同键）；
+> fmt + clippy（if 折叠修正后 workspace 过，修正后定向复跑全 Pass）+
+> node --check 过。
+> **残留**：checkable-active 8F（`:active` 通道整体缺位，s196 首席）；
+> scrolled 文件 1F（focus scroll-into-view 面未实现）；跨 form 同名
+> radio 并组 FIXME；Actions 链中途夭弃粘滞残留 FIXME；降级臂 arrows/
+> Enter skip FIXME。
+> **下一步候选**：s196 `:active` 通道 8F（Document active 态 + 指针/
+> 键盘钩子 + matcher 臂，镜像 :focus/:modal 先例）→ disabled-003
+> crash/hang 2F 独立勘根；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s195-focus-timing-radio-navigation.md](html-semantics-compat/evidence/2026-11-01-m2s195-focus-timing-radio-navigation.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 194 收口，email/url/tel 消毒链路 + 域部 IDN——12F 翻绿 + R3901 缓存污染修复，shim 3 面 + rust 宿主回调 1：value getter 消毒臂扩展 tel/url/email + email case multiple 感知分裂 + `__zw_domain_to_ascii`）**
 > **入场定刀位**：s193 在册次席候选 email/url/tel 簇 12F（email 3F +
 > telephone 3F + url 2F + email-value-idn 4F）。
 > **勘根**：缺口两根——(1) value getter per-type 分派无 tel/url/email

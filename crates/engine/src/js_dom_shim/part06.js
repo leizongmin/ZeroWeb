@@ -2770,8 +2770,14 @@
     if (!el) return false;
     // R3254-K5 扩展（M3 切片 2）：radio 方向键组内移动——同 name 组（文档序），
     // ArrowDown/Right=下一 enabled、ArrowUp/Left=上一 enabled（Chromium 不回绕——
-    // clamp）；选中 = checked 属性迁移（SetAttr/RemoveAttr latest-wins）+ input +
-    // change 事件。选中新值时旧 checked 移除。
+    // clamp）。M2-S195（html-semantics focus 时序域，2026-11-01）改造为焦点移动
+    // 语义（WPT radio-focus-navigation-group-focusable-focus 钉面：focus + checked
+    // 同步断言）：箭头键 = focusing steps 先（焦点迁新 radio——blur/focus/focusin
+    // 事件序 + activeElement 更新），activation 随后（checkedness 置新目标、旧值
+    // 清除），input + change 派到**新 checked** 的 radio（旧实现焦点不动、事件派
+    // 旧目标——当时语料只断事件序可观察面，无焦点断言）。
+    // FIXME: 组枚举 qSA 不区分 form owner——跨 form 同名 radio 会被并组（spec
+    // radio button group = same form owner + same name；语料无跨 form 钉面）。
     if (String(el.tagName).toUpperCase() === 'INPUT'
         && String(el.getAttribute('type') || '').toLowerCase() === 'radio') {
       var name2 = el.getAttribute('name');
@@ -2794,12 +2800,16 @@
         for (var b2 = cur2 - 1; b2 >= 0; b2--) if (!list[b2].disabled) { nxt2 = b2; break; }
       }
       if (nxt2 < 0 || nxt2 === cur2) return true;
+      var tgt2 = list[nxt2];
+      if (typeof tgt2.focus === 'function') {
+        try { tgt2.focus(); } catch (_eFoc2) { /* focusing steps 失败不阻断选中 */ }
+      }
       for (var w2 = 0; w2 < list.length; w2++) {
         if (w2 === nxt2) list[w2].checked = true;
         else if (list[w2].checked) list[w2].checked = false;
       }
-      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+      tgt2.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
+      tgt2.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
       return true;
     }
     if (String(el.tagName).toUpperCase() !== 'SELECT') return false;
