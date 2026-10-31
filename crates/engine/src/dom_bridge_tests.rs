@@ -1753,3 +1753,45 @@ fn test_declarative_shadow_deep_json_s173() {
     let raw2 = declarative_shadow_deep_json_doc(&doc2, "#h2");
     assert!(raw2.contains("\"mode\":\"closed\""), "closed 模式应透传: {raw2}");
 }
+
+/// s175（html-semantics M2）：detached 节点不可寻址钉案——fragment 内镜像元素的
+/// `unique_selector_for_node` 必须返 `None`，不得盗用在树同 `tag.class` 真元素的
+/// 唯一选择器（修复前实证：镜像 `<dialog class=dialogA>` 拿到 `dialog.dialogA`，
+/// apply 的 handle_selectors 进 sel↔handle 表顶替真元素句柄绑定——WPT
+/// dialog-popover-closedby-complex normal 段 16 键 P2F 根因）。真元素自身寻址不受
+/// 扰（in-tree 面回归钉）。
+#[test]
+fn test_detached_node_unique_selector_is_none_s175() {
+    use crate::js_dom_bridge::{DomMutation, apply_dom_mutations_full, unique_selector_for_node};
+    let html = "<html><body><dialog class='dialogA'><div class='popoverA'>x</div></dialog></body></html>";
+    let mut doc = zero_dom::parse_html(html);
+    let mutations = vec![
+        DomMutation::CreateDocumentFragment { handle: "__ds1".into() },
+        DomMutation::CreateElement {
+            handle: "__n13".into(),
+            tag: "dialog".into(),
+        },
+        DomMutation::SetAttrOnHandle {
+            handle: "__n13".into(),
+            name: "class".into(),
+            value: "dialogA".into(),
+        },
+        DomMutation::AppendChildByHandle {
+            parent_handle: "__ds1".into(),
+            child_handle: "__n13".into(),
+        },
+    ];
+    let handles = apply_dom_mutations_full(&mut doc, &mutations, None, None, None, None).unwrap();
+    // 核心断言：detached 镜像不进 handle→selector 表（None）——修复前此处为
+    // Some("dialog.dialogA")，与真元素同串。
+    assert!(
+        !handles.contains_key("__n13"),
+        "detached 镜像句柄不得获得选择器（盗用真元素身份）: {:?}",
+        handles.get("__n13")
+    );
+    // 真元素寻址不受扰：in-tree dialog 的唯一选择器仍解析回自身。
+    let real = doc.query_selector(doc.root(), "dialog.dialogA");
+    assert!(real.is_some(), "在树真元素应可寻址");
+    let sel = unique_selector_for_node(&doc, real.unwrap());
+    assert_eq!(sel.as_deref(), Some("dialog.dialogA"), "真元素选择器应稳定");
+}

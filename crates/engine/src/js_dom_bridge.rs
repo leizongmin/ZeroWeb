@@ -696,6 +696,23 @@ fn unique_attr_anchor(doc: &Document, node: NodeId) -> Option<String> {
 /// dom 选择器引擎解析+匹配）。各形态都保证 `find_by_selector` 返回该节点本身——宁可路径
 /// 冗长不错值。文本节点无 tag → `None`。
 pub fn unique_selector_for_node(doc: &Document, node: NodeId) -> Option<String> {
+    // s175（html-semantics M2）：detached 节点（fragment/声明式 shadow 镜像等，parent
+    // 链不达 doc root）**不可寻址**——选择器的语义是「从 root 可解析定位」。detached
+    // 节点的 `tag.class` 身份串会盗用在树同身份真元素的唯一选择器：uniqueness 门在
+    // doc 上查询，detached 节点不在 doc，真元素顶替唯一匹配（勘根实证：声明式
+    // shadow 镜像 `<dialog class=dialogA>` 拿到 `dialog.dialogA`，与真元素选择器同串
+    // → apply 的 handle_selectors 进 sel↔handle 表 → 真元素句柄绑定被镜像句柄顶替，
+    // 后续 handle 升级写全部打在镜像上——dialog-popover-closedby-complex normal 段
+    // 16 键 P2F 定谳）。返 None：调用方按不可寻址处理（apply 不进 handle_selectors、
+    // 不 merge、换代后不重锚）。物化 shadow 树 parent 链达 root（attach_shadow 挂
+    // host 子列表），不受此门影响。
+    let mut cur = node;
+    loop {
+        if cur == doc.root() {
+            break;
+        }
+        cur = doc.get(cur)?.parent?;
+    }
     if let Some(sel) = stable_selector_for_node(doc, node) {
         let matches = doc.query_selector_all(doc.root(), sel.trim());
         if matches.len() == 1 {

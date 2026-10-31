@@ -20,7 +20,17 @@
 > 并发 rally 期漂移域取证须 solo 窗口（run-rules 候选①对齐）。
 > **账本**：[evidence/2026-10-31-corpus-css-text-module-resources.md](html-semantics-compat/evidence/2026-10-31-corpus-css-text-module-resources.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 174 收口，webview 静态外链 CSS entries 化——级联文档序，s167 挂账收口，rust 3 零 shim）**
+> **▶ 当前状态（2026-10-31 M2 切片 175 收口，detached 节点选择器身份盗用根修——unique_selector 可达门 + 枚举镜像撤下归因，rust 2 + shim 注 1）**
+> **入场定刀位**：候选①声明式根内容枚举（s173 LOST 20 承接）——shadowRoot childNodes/children/firstChild 族惰性镜像钩。首刀 red→green 4/4 后 WPT 域门 **P2F=16**（dialog-popover-closedby-complex normal 段），两刀勘根定谳（枚举钩 + 管线等值轻量臂均试过并撤下，详见账本）。
+> **定谳**：detached 镜像节点的 `unique_selector_for_node` **盗用**在树同 `tag.class` 真元素的唯一选择器（uniqueness 门在 doc 上查询、detached 节点不在 doc，真元素顶替唯一匹配——探针实证镜像 `__n13` → `dialog.dialogA`）→ apply handle_selectors 进 sel↔handle 表顶替真元素句柄绑定 → normal 段 showModal/close 全打在镜像上（close 打镜像 → 真 dialogB 永不关，失败值逐字吻合）。**s173 首刀 18 键 P2F「代际偏斜」归因不完整，真机制同此**；等值轻量臂实证换代理论与 P2F 无关（light arm 触发而 P2F 不动）。
+> **施工**（3 文件 +66 行）：①engine `js_dom_bridge.rs` `unique_selector_for_node` 顶部可达门——parent 链不达 `doc.root()` 返 `None`（detached 不可寻址；物化 shadow 树链达 root 不受扰，shadow 内容 None 系封装查询门先证非本门）；②engine 钉案 `test_detached_node_unique_selector_is_none_s175`（镜像句柄不得进 handle→selector 表 + 真元素寻址不受扰）；③shim part05 枚举钩撤下留 s176 deferral 注（重开前置：引擎侧 shadow 寻址，非 detached 镜像）。
+> **验证**：engine lib **3617P/10F**（+1 钉测，10F 基线同键）；webview lib **830P/0F**（= s174 基线）；interactive-elements **437P/26F/463** 对 s172 基线 join **P2F=0**、F2P=2（s173 双靶既有）、LOST=20（s173 账面既有归因）——与 s173 终态逐键同态（根修硬化零域扰动）；forms 家族 96P/12F 持平；shim 装配序 node --check SYNTAX_OK。
+> **枚举通道结论**：hooks-on 实证恢复注册零 Pass 增益（shadow 段 20 行 0P/20F，基线 4 假 Pass 未幸存——detached 镜像对引擎 light-dismiss/hit-test 不可见，R2926 渲染/交互语义前无翻绿价值）。
+> **FIXME 新记**：声明式根内容枚举通道重开 = s176 引擎侧 shadow 寻址设计（物化 shadow 根 handle 化）。
+> **下一步候选**：①s176 引擎侧 shadow 寻址（枚举通道重开前置，本刀 FIXME 承接）；③ua_display_li（style-system 跨流）；④selection-pointer forms 域翻绿归因勘定（s172 记）；⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账）。
+> **账本**：[evidence/2026-10-31-m2s175-detached-selector-identity.md](html-semantics-compat/evidence/2026-10-31-m2s175-detached-selector-identity.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 174 收口，webview 静态外链 CSS entries 化——级联文档序，s167 挂账收口，rust 3 零 shim）**
 > **入场定刀位**：候选② s167 挂账——静态发布（`prepare_page_subresources` → `load_html`）把外链表合并**单 blob 整体前置**（`set_active_external_css`），link 在文档 `<style>` 之后的页面同特异度恒输（blob 无位次，违 CSS Cascade 5 author origin 引入元素文档序）；engine collector s167 已有 `collect_interleaved_external` 文档序交错通道但静态侧从未喂 entries。生产影响面核实：browser tabs（tab_manager.rs:1392）与 renderer 运行时均创建 WebView 直调 `load_html`——嵌入式静态路径即生产路径；WPT runner complete_fetched_page 同路径。
 > **施工**（rust 3，零 shim）：①engine `extract_stylesheet_link_anchors`——`(位次结构路径, href, media)` 文档序，rel/href 门与 `extract_stylesheet_links` 逐字一致；`positional_structural_path` 生成 `tag:nth-child(pos)` 段（1-based **元素序**兄弟计数——文本/注释不计，根 `:nth-child(1)`），形态与 engine `structural_path_selector` 逐字同约定 → `find_by_selector` t8b fastpath O(1) 锚定；同 parser（`zero_dom::parse_html`）同树形，位置路径跨树成立；单测 3 案。②webview `resolve_external_css` 返回 `(entries, combined)`——queue 携带**根 link 序号**，@import 子表传播根序号、展开文本归根 link 桶（替换旧平铺队尾尾接）；CSP 门 target 用根序号（原 `unwrap_or(0)`）；空文本桶不入 entries。③**generation 配对 stash**——`prepare_page_subresources` 存 `(document_generation, entries)`，`load_html` 代际 +1 后仅 `stashed_gen+1 == generation` 消费走 `set_active_external_css_entries`，不匹配回落旧 blob 发布（嵌入器 custom-css 通道 + `set_active_external_css` 清 entries 槽的双写者互斥保持；多进程 renderer SetDomSnapshot 臂不动另行挂账）；pub API 零变化（zero-webview 稳定嵌入边界）。④钉测 5 案（link after/before/交错/media 门/import 桶，页内脚本 gCS 探针——gCS 面与布局级联同线程同槽）。
 > **验证**：红→绿 stash 双态对照（保留测试注册只 stash 实现 2 文件）——红态 3 预期红案全 Fail 且失败值逐字吻合推演（`static`×3），2 守卫案红态 Pass（无过度矫正）；webview lib **830P/0F**（基线 825 + 5）；engine lib **3616P/10F**（+1 单测，10F 基线同键 fetch 族 9 + ua_display_li）；WPT 域门（runner 同路径）：interactive-elements **463 键 (key,state) join 对 s173 终态 437P/26F bit-exact**——P2F=0/F2P=0/LOST=0/GAINED=0 零扰动；the-link-element（114 键）/the-style-element（43 键）红绿双态 join 零漂移（两域断言未踩交错形态，F2P=0 属预期，修复价值由钉测红案承载）；forms 家族 96P/12F 持平（12F 全既有已归因）；fmt/guarded-clippy `--all-targets` 全绿。
@@ -5658,6 +5668,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-10-31 M2 切片 175**：detached 节点选择器身份盗用根修轮——枚举
+  镜像钩首刀 P2F=16 勘根两刀（管线等值轻量臂实证换代理论证伪 → mutation
+  日志暴露 showModal/close 打在镜像句柄上）定谳：detached 镜像
+  `unique_selector_for_node` 盗用在树同 `tag.class` 真元素唯一选择器
+  （uniqueness 门 doc 查询、真元素顶替）→ sel↔handle 表顶替 → normal 段
+  全打镜像。根修 = 引擎可达门（parent 链不达 root 返 None）+ 钉测 +
+  枚举钩撤下（hooks-on 实证注册恢复零 Pass 增益，s176 引擎侧 shadow
+  寻址承接）。engine lib 3617P/10F（+1 钉测）/webview lib 830P/0F/
+  interactive-elements 437P/26F P2F=0 与 s173 终态逐键同态/forms
+  96P/12F 持平。账本
+  [2026-10-31-m2s175-detached-selector-identity.md](html-semantics-compat/evidence/2026-10-31-m2s175-detached-selector-identity.md)。
 - **2026-10-28 M2 切片 124**：module 网络面收口轮（link rel=modulepreload
   取回面）——勘根四项定谳：modulepreload referrerpolicy 族三面缺口
   （echo-referrer.py 端点 / shim 取回面 / 元素级 referrerpolicy 通道）+

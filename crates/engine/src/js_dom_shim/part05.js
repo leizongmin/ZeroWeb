@@ -5823,6 +5823,13 @@
     return !!(h && (_shadowHandles[h] || _fragmentHandles[h]));
   }
   // 容器的子节点 proxy 列表（registry 未建 → 空）。
+  // s175（html-semantics M2）勘根留痕：shadowRoot childNodes/children/firstChild 族
+  // 的**枚举**惰性镜像钩在此试过并撤下——detached 镜像批对上树同 tag+class 真元素
+  // 存在选择器身份盗用（根修见 engine `unique_selector_for_node` detached 门），
+  // 且 shadow 段 4 键基线侥幸 Pass（未渲染内容零 rect 点击=全关）翻转 P2F；镜像
+  // detached 域对引擎 light-dismiss/hit-test 不可见，注册恢复零 Pass 增益。
+  // FIXME(s176): 枚举通道重开须走引擎侧 shadow 寻址（物化 shadow 根的 handle 化），
+  // 非 detached 镜像（dialog-popover-closedby-complex shadow 段 20 键恢复面）。
   function _handleChildNodes(h) {
     return (h && _handleChildren[h]) ? _handleChildren[h] : [];
   }
