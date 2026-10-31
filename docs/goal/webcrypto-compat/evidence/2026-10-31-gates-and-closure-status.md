@@ -101,3 +101,9 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 期间并行流编辑/渲染簇 5+3 笔（typing-state/inline 盒 wrap/void caret/
   RTL/paint）经 `git pull --rebase` 吸入，均不触 fetch/Request 键；本 goal
   仍零代码变更，组合态 tip `3bbc7ca56`。D2 维持待拍板 + 低成本轮询。
+- 18:40 s177 `bd040de1c`（多进程 js_worker 外链 CSS entries 化）为纯
+  renderer/webview 轮——**engine 代码零 diff，engine lib 免跑**（
+  [s177 账](../../html-semantics-compat/evidence/2026-10-31-m2s177-renderer-worker-css-entries.md)），
+  10F 基线结构性延续；renderer lib 首立全量基线 354P/5F（含 renderer 侧
+  fetch 契约族 3F，与 engine fetch 9F 同族异面）归 s 流；其下一步候选
+  （forms 402F / interactive 44F / renderer page_scripts 2F）仍非 fetch 簇。
