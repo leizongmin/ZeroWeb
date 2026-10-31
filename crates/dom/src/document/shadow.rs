@@ -264,6 +264,7 @@ impl Document {
     /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_shadow(&self, shadow_root: NodeId, selector: &str) -> Option<NodeId> {
+        let _pos_index = super::QueryPosIndexGuard::install();
         let parsed = crate::query::parse_simple_selector(selector)?;
         self.find_first_matching_shadow(shadow_root, &parsed)
     }
@@ -273,6 +274,7 @@ impl Document {
     /// 类似 `query_selector_all`，但范围限定在 shadow DOM 树内，
     /// 不会穿透到嵌套的 ShadowRoot 边界。
     pub fn query_selector_all_shadow(&self, shadow_root: NodeId, selector: &str) -> Vec<NodeId> {
+        let _pos_index = super::QueryPosIndexGuard::install();
         let parsed = match crate::query::parse_simple_selector(selector) {
             Some(s) => s,
             None => return vec![],
