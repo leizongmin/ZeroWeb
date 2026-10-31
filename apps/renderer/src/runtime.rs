@@ -2305,6 +2305,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             false
         };
         if !self.javascript_enabled {
+            // 失焦清除焦点环需要新帧（对照 focus_via_tab 先例）。
+            self.rerender_publish_webview()?;
             return Ok(());
         }
         let url = self.current_url.as_deref().unwrap_or("about:blank").to_string();
@@ -2333,9 +2335,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     .html_changed;
             }
         }
-        if changed {
-            self.rerender_publish_webview()?;
-        }
+        // 失焦清除焦点环需要新帧——不止页面回调改 DOM 时（对照 focus_via_tab 先例）。
+        let _ = changed;
+        self.rerender_publish_webview()?;
         Ok(())
     }
 
@@ -2351,6 +2353,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         if old.as_deref() != Some(selector) {
             // R3254-H1：焦点回执（仅焦点所有者实际变化时，避免重复聚焦刷屏）。
             self.send_focus_change(Some(selector.to_string()))?;
+            // 焦点转移不改 DOM、不产生样式失效——不主动重发布则合成器沿用旧帧，
+            // 点击聚焦的 UA 焦点环/插入 caret 不会出现（对照 focus_via_tab；HTML
+            // https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic）。
+            self.rerender_publish_webview()?;
         }
         if zero_engine::is_text_input(&self.cached_html, selector) {
             let val = self
@@ -2430,6 +2436,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             if let Err(e) = self.send_focus_change(Some(selector)) {
                 tracing::warn!("send focus change: {e}");
             }
+            // 焦点转移不改 DOM——JS focus() 后同样需要新帧呈现焦点环/caret（对照 focus_via_tab）。
+            if let Err(e) = self.rerender_publish_webview() {
+                tracing::warn!("rerender after js focus: {e}");
+            }
         }
     }
 
@@ -2460,6 +2470,10 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         }
         if let Err(e) = self.send_focus_change(None) {
             tracing::warn!("send focus change: {e}");
+        }
+        // 失焦清除焦点环需要新帧（对照 focus_via_tab 先例）。
+        if let Err(e) = self.rerender_publish_webview() {
+            tracing::warn!("rerender after js blur: {e}");
         }
     }
 
