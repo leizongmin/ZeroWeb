@@ -14,6 +14,7 @@ on:
       - 'docs/perf/trends/benchmark-trend.csv'
       - 'docs/goal/rendering-compat/evidence/wpt-trends/trend.csv'
       - 'docs/compat/trends/wpt-suites.csv'
+      - 'docs/compat/wptfyi/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
