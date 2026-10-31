@@ -5,12 +5,14 @@ build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺
 `cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
 交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
 （`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步。
-**收口前提变化（2026-10-31 12:55 核查）**：goal-25（html-semantics，s 系
-账本）rally 进程**不在跑**（ps 仅存 editing ZeroWeb-3 与本流 ZeroWeb-2；
-tmux 无 server、crontab 空），s 系 shim 推进止于 10:52 `3b25bb2c7`；此后
-远端 main 仅 rendering 流与本流 docs 推进，10F 组合态无变化依据。处置
-路径登记待用户决策表 **D2**，期间维持低成本轮询（`git fetch` + 账面），
-基线清零即当场收口（详见
+**收口前提核查（2026-10-31 12:55/12:58 两轮）**：goal-25（html-semantics，
+s 系账本）rally wrapper 不在跑，但流本身**活跃但慢**——s172 10:36 →
+s173 12:53（`02a689410`，declarative shadow 域，非 fetch 簇；12:55 ps
+核查落在轮次间隙，12:58 修正「驱动缺位」初判）。s173 自账
+engine lib **3615P/10F**（10F 同键：fetch/request/response 契约族 9 +
+ua_display_li）。fetch 簇清零 ETA 未知，处置路径登记待用户决策表
+**D2**，期间维持低成本轮询（`git fetch` + s 系账面），基线清零即当场
+收口（详见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
 **最后更新**: 2026-10-31（门禁与收口状态见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
@@ -60,7 +62,7 @@ v2.1 契约）：
 | # | 事项 | 状态 |
 |---|------|------|
 | D1 | 已转正域按域立项：ML-KEM（12 案/3,480）、ML-DSA（10/1,206）、X448/Ed448（26/3,700）、AES-OCB（10/2,652）、ChaCha20-Poly1305（10/1,044）、KMAC（10/1,418）、Argon2（4/92）、XOF digest（8/838）、Hybrid-KEM（7/2,742）、门禁面（12/880），合计 109 案/18,052 子测试（universe 口径）；切片建议与依赖候选见 [DC-2 甄别清单](evidence/2026-10-31-dc2-promotion-screening.md)（依赖含新 crate：ml-kem/ml-dsa/ocb3/x448/ed448-goldilocks/kangarootwelve 等，选型须用户拍板） | 待用户拍板；不 BLOCK 本 goal 收口 |
-| D2 | 引擎基线 10F 处置路径（收口唯一缺口）：① 等 goal-25 rally 重启后清零（10F 全为 fetch/Request/XHR/ua_display 域，s 系账本面；12:55 核查该流驱动缺位）；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——10F 归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 待用户拍板；期间维持低成本轮询，命中 ① 即当场收口 |
+| D2 | 引擎基线 10F 处置路径（收口唯一缺口）：① 等 s 系（goal-25）推进至 fetch/Request 簇清零（10F = 契约族 9 + ua_display_li 1，s 系活跃但慢，s172→s173 间隔 ~2h15m，fetch 簇清零 ETA 未知）；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——10F 归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 待用户拍板；期间维持低成本轮询，命中 ① 即当场收口 |
 
 ## 碰撞管理记录（run-rules §9）
 

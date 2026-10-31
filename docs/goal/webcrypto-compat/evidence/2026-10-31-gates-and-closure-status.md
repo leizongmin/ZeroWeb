@@ -62,3 +62,13 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   exclusion 口径授权收口，先例 net-api request-cache 98F）。本 goal 仍
   不越界代修；期间维持低成本轮询（`git fetch` + s 系账面），基线清零
   即当场收口。
+
+### 12:58 修正：s 系活跃但慢（非驱动缺位）
+
+- 12:53 `02a689410` s173（declarative shadow prepass，双靶 F→P）落地
+  ——12:55 的 ps 核查落在 s 系轮次间隙，12:53 推进证明流仍活跃；初判
+  「驱动缺位」修正为「活跃但慢」（s172→s173 间隔 ~2h15m）。
+- s173 触及 `js_dom_bridge.rs` + shim part04/05（shadow 域），零
+  fetch/Request 面；其自账 engine lib **3615P/10F**（+1 钉测，10F 同键
+  = fetch/request/response 契约族 9 + ua_display_li s24）——10F 清零
+  尚未进入 s 系已完成的刀位，ETA 未知，D2 维持待拍板。
