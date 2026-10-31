@@ -1086,19 +1086,33 @@ pub fn merge_page_css_pub(
     merge_page_css(html, css, base_dir, media_ctx.as_ref())
 }
 
+/// 既有 blob 合并序（linked 全部前置 + inline/传入 css 尾接）——data: link 触发门
+/// 之外的页维持此路径（R5364 前的 `merge_page_css` 主体，逐位不变）。
+fn merge_page_css_blob_order(html: &str, css: &str, base_dir: Option<&Path>) -> String {
+    let linked_css = load_linked_stylesheets(html, base_dir);
+    if css.is_empty() {
+        linked_css
+    } else if linked_css.is_empty() {
+        css.to_string()
+    } else {
+        format!("{linked_css}\n{css}")
+    }
+}
+
 fn merge_page_css(
     html: &str,
     css: &str,
     base_dir: Option<&Path>,
     media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
 ) -> String {
-    let linked_css = load_linked_stylesheets(html, base_dir);
-    let combined = if css.is_empty() {
-        linked_css
-    } else if linked_css.is_empty() {
-        css.to_string()
-    } else {
-        format!("{linked_css}\n{css}")
+    // R5364：data: link 样式表在场时走文档序交错合并（加载 + 合并序两件套，
+    // layer-stylesheet-sharing 系；窄触发面——其余页维持既有 blob 合并序）。
+    let combined = match base_dir {
+        Some(base) => match resources::merge_page_css_document_order(html, css, base, media_ctx) {
+            Some(ordered) => ordered,
+            None => merge_page_css_blob_order(html, css, base_dir),
+        },
+        None => merge_page_css_blob_order(html, css, base_dir),
     };
     // R2426：展开 passed/linked CSS 内的 @import（harness sync 路径补全——collect_stylesheets
     // 不抓 @import；inline `<style>` 的 @import 由 render 函数的 expand_style_imports 处理）。

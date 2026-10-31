@@ -401,32 +401,7 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
 
     let mut merged = String::new();
     for href in extract_stylesheet_hrefs(html) {
-        if href.starts_with("data:") || href.starts_with("http://") || href.starts_with("https://") {
-            continue;
-        }
-
-        let path = if href.starts_with('/') {
-            Path::new("tests/wpt-runner/wpt-data").join(href.trim_start_matches('/'))
-        } else {
-            base.join(&href)
-        };
-
-        // CSS MIME 类型检查：只有 text/css 才应作为样式表应用（CSS2 §6.2 / conformance——
-        // text/plain 等非 CSS MIME 须忽略，HTML `type` 属性已被现代浏览器废弃，以服务端
-        // Content-Type 为准）。file:// 下 Content-Type 来自 `.headers` sidecar，无 sidecar
-        // 时按扩展名猜测（.css → text/css）。WPT content-type-000（sidecar text/plain）/
-        // content-type-001（.txt 扩展名）。
-        let content_type = read_headers_sidecar_content_type(&path);
-        if !is_css_stylesheet(&path, content_type.as_deref()) {
-            continue;
-        }
-
-        // CSS Syntax §6.2 charset determination：读字节 + `.headers` sidecar 的 Content-Type
-        // charset，按 BOM/@charset/Content-Type 优先级解码（旧 `read_to_string` 强制 UTF-8
-        // 致 ISO-8859-1/UTF-16BE 等 CSS 非 ASCII 字节损坏，WPT at-charset-071~077 /
-        // character-encoding-031~037,041 选择器失配）。
-        if let Ok(bytes) = std::fs::read(&path) {
-            let css = zero_net::charset::decode_css_bytes(&bytes, content_type.as_deref());
+        if let Some(css) = load_stylesheet_by_href(&href, base) {
             if !merged.is_empty() {
                 merged.push('\n');
             }
@@ -434,6 +409,168 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
         }
     }
     merged
+}
+
+/// href 是否 data:text/css 样式表 URL（RFC 2397：header = mediatype `;` 参数，逗号后
+/// 为 payload）。mediatype 精确 `text/css`（ASCII 大小写不敏感；`;charset=…` 参数放行）。
+fn href_is_data_css_stylesheet(href: &str) -> bool {
+    if !(href.len() >= 5 && href[..5].eq_ignore_ascii_case("data:")) {
+        return false;
+    }
+    let Some(comma) = href.find(',') else {
+        return false;
+    };
+    let header = &href[5..comma];
+    let mediatype = header.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    mediatype == "text/css"
+}
+
+/// 单个样式表 href 装载：data:text/css 解码 / 本地文件 sidecar MIME + charset 解码。
+/// http(s): 与非 text/css 的 data: 返回 None（既有跳过语义——非本地资源不抓取）。
+///
+/// - 本地路径约定：`/abs` → `tests/wpt-runner/wpt-data/<abs>`；相对 → `base_dir.join`。
+/// - CSS MIME 类型检查（本地文件）：只有 text/css 才应用（CSS2 §6.2 / conformance），
+///   Content-Type 来自 `.headers` sidecar，无 sidecar 按扩展名猜测。WPT content-type-000/001。
+/// - CSS Syntax §6.2 charset determination：BOM/@charset/Content-Type 优先级解码。
+fn load_stylesheet_by_href(href: &str, base_dir: &Path) -> Option<String> {
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return None;
+    }
+    // R5364（CSS Cascade 5 §layering + RFC 2397）：data:text/css link 样式表装载——
+    // 旧代码 data: 一律 continue（加载缺口）；解码复用 render-foundation
+    // decode_data_uri_bytes（base64/percent 双形态，fetch spec data URL processor）。
+    if href_is_data_css_stylesheet(href) {
+        let bytes = decode_data_uri_bytes(href).ok()?;
+        return Some(zero_net::charset::decode_css_bytes(&bytes, None));
+    }
+    if href.starts_with("data:") {
+        return None;
+    }
+
+    let path = if href.starts_with('/') {
+        Path::new("tests/wpt-runner/wpt-data").join(href.trim_start_matches('/'))
+    } else {
+        base_dir.join(href)
+    };
+
+    let content_type = read_headers_sidecar_content_type(&path);
+    if !is_css_stylesheet(&path, content_type.as_deref()) {
+        return None;
+    }
+
+    let bytes = std::fs::read(&path).ok()?;
+    Some(zero_net::charset::decode_css_bytes(&bytes, content_type.as_deref()))
+}
+
+/// R5364（CSS Cascade 5 §layering）：data: link 样式表装载 + **文档序交错合并**两件套。
+///
+/// 背景（layer-stylesheet-sharing / -important 驱动）：`load_linked_stylesheets` 旧对
+/// data: href 直接跳过（加载缺口），且 blob 合并序为 linked-先-inline-后、不保文档序
+/// ——本案层序 anon1 < A < anon2 依赖 link 与 `<style>` 的文档序交错，展平后成
+/// anon1 < anon2 < A，红层误胜（修加载单层不翻绿；-important 案 important 级联反转
+/// 后要求 anonymous 层**早于** A 层，尾接/前置类刀法同样不成立，唯文档序可行）。
+///
+/// 返回 `Some(文档序合并文本)` 仅当触发门成立：
+/// ①HTML 含 data:text/css 样式表 link（**窄触发面**——全语料仅 6 页；其余 4000+ 含
+/// link 页维持既有 blob 合并序，级联位零漂移）；
+/// ②非 XML 文档（XML `<style>` 的 #PCDATA 实体解码通道 engine 侧 pub(crate)，harness
+/// 副本缺该语义；语料无 .xht + data: link 页，FIXME 记账）。
+///
+/// 合并序 = `get_elements_by_tag_names(["style","link"])` 单次 DFS 文档序（与 engine
+/// s167 交错装配同源；css-cascade-5 §cascade-sort author origin 按引入元素文档序）。
+/// `<style>` 走 engine `style_sheet_if_eligible` 三门镜像（blob 副本只收 engine 会应用
+/// 的表，防排除表经副本双应用）；link 走 [`load_stylesheet_by_href`]。传入 `css`
+///（author 附加表）保持既有尾接相对位。
+pub(super) fn merge_page_css_document_order(
+    html: &str,
+    css: &str,
+    base_dir: &Path,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> Option<String> {
+    // 触发门①：data:text/css 样式表 link 在场（原始 href 文本扫描；未引号 href 形态
+    // 漏检即维持旧路径，无回归面）。
+    let has_data_sheet = extract_stylesheet_hrefs(html)
+        .iter()
+        .any(|href| href_is_data_css_stylesheet(href));
+    if !has_data_sheet {
+        return None;
+    }
+    let doc = zero_dom::parse_html(html);
+    // 触发门②：XML 文档维持旧路径（见函数注释）。
+    if doc.content_is_xml() {
+        return None;
+    }
+
+    let style_set: std::collections::HashSet<zero_dom::NodeId> =
+        doc.get_elements_by_tag_name("style").into_iter().collect();
+    let mut parts: Vec<String> = Vec::new();
+    for id in doc.get_elements_by_tag_names(&["style", "link"]) {
+        if style_set.contains(&id) {
+            if let Some(text) = harness_style_sheet_text(&doc, id, media_ctx) {
+                parts.push(text);
+            }
+        } else if doc
+            .get_attribute(id, "rel")
+            .is_some_and(|rel| rel_tokens_include_stylesheet(&rel))
+            && let Some(href) = doc.get_attribute(id, "href").filter(|h| !h.is_empty())
+            && let Some(text) = load_stylesheet_by_href(&href, base_dir)
+        {
+            parts.push(text);
+        }
+    }
+    if !css.is_empty() {
+        parts.push(css.to_string());
+    }
+    Some(parts.join("\n"))
+}
+
+/// rel 令牌含 `stylesheet`（WHATWG ASCII whitespace 五字符集分词，含 alternate
+/// stylesheet 形态——与既有 `tag_rel_is_stylesheet` 应用语义一致）。
+fn rel_tokens_include_stylesheet(rel: &str) -> bool {
+    rel.split(['\t', '\n', '\x0C', '\r', ' '])
+        .any(|t| t.eq_ignore_ascii_case("stylesheet"))
+}
+
+/// `<style>` 表文本（engine `style_sheet_if_eligible` 三门镜像 + CDATA 剥除）：
+/// ①type 门精确匹配——type 存在且非空且非 ASCII 大小写不敏感 `text/css` → 排除
+///（HTML §4.2.7 update a style block；"" 应用、TEXT/CsS 应用、带参数不应用）；
+/// ②media 门——非空 media 按传入 harness 真实 viewport 求值（engine 侧为 1280×800
+/// 默认 FIXME；media_ctx 缺席的诊断路径保守排除出副本——engine 文档表仍按门应用，
+/// 副本缺位只降级交错完整性，不双应用排除表）；
+/// ③disabled 门——内容属性在场 → 排除。
+/// 文本取 `text_content` + [`zero_engine::strip_cdata`]（与 engine 同源）。
+/// https://html.spec.whatwg.org/multipage/semantics.html#update-a-style-block
+fn harness_style_sheet_text(
+    doc: &zero_dom::Document,
+    id: zero_dom::NodeId,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> Option<String> {
+    if let Some(t) = doc.get_attribute(id, "type")
+        && !t.is_empty()
+        && !t.eq_ignore_ascii_case("text/css")
+    {
+        return None;
+    }
+    if let Some(m) = doc.get_attribute(id, "media") {
+        let m = m.trim();
+        if !m.is_empty() {
+            let matches = media_ctx.is_some_and(|ctx| {
+                zero_css_parser::media_query::parse_media_query(m).is_some_and(|qs| {
+                    qs.iter()
+                        .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                })
+            });
+            if !matches {
+                return None;
+            }
+        }
+    }
+    if doc.get_attribute(id, "disabled").is_some() {
+        return None;
+    }
+    let text = doc.text_content(id)?;
+    let text = zero_engine::strip_cdata(text.trim());
+    (!text.is_empty()).then(|| text.into_owned())
 }
 
 /// R2426：递归展开 CSS 文本中的 `@import` 语句（harness sync 路径补全）。
@@ -1695,5 +1832,186 @@ mod tests {
         assert!(!out2.contains("@import"), "非 text/css data: 导入删除: {out2}");
         assert!(out2.contains("div { color: blue }"), "既有规则保留: {out2}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R5364：触发门——无 data:text/css link 的页返回 None（维持既有 blob 合并序）；
+    /// 非 text/css 的 data: link（如 data:image）同样不触发。
+    #[test]
+    fn document_order_merge_trigger_gate() {
+        let dir = std::env::temp_dir();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        // 无 link。
+        assert_eq!(
+            merge_page_css_document_order("<html><style>p{color:red}</style></html>", "", &dir, Some(&ctx)),
+            None,
+            "无 data: link → None"
+        );
+        // data:image link 不触发（非 text/css MIME）。
+        assert_eq!(
+            merge_page_css_document_order(
+                "<html><link rel=stylesheet href=\"data:image/png,iVBOR\"></html>",
+                "",
+                &dir,
+                Some(&ctx)
+            ),
+            None,
+            "data:image link → None"
+        );
+        // data:text/css link 触发。
+        assert!(
+            merge_page_css_document_order(
+                "<html><link rel=stylesheet href=\"data:text/css,p{color:green}\"></html>",
+                "",
+                &dir,
+                Some(&ctx)
+            )
+            .is_some(),
+            "data:text/css link → Some"
+        );
+    }
+
+    /// R5364（驱动案同构）：文档序交错——`<style>` 与 data: link 按文档位次合并，
+    /// 非 blob 展平序（linked-先-inline-后）。层序 anon < A < anon 依赖该保序。
+    #[test]
+    fn document_order_merge_interleaves_style_and_data_link() {
+        let dir = std::env::temp_dir();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let html = "<html><head>\
+<style>target { display: block }</style>\
+<link rel=stylesheet href=\"data:text/css,@layer{target{background-color:green}}\">\
+<style>@layer A { target { background-color: red } }</style>\
+<link rel=stylesheet href=\"data:text/css,@layer{target{background-color:green}}\">\
+</head></html>";
+        let merged = merge_page_css_document_order(html, "", &dir, Some(&ctx)).expect("data: link 页触发");
+        let parts: Vec<&str> = merged.split('\n').collect();
+        assert_eq!(parts.len(), 4, "四源按文档序逐条合并: {merged}");
+        assert_eq!(
+            parts[0], "target { display: block }",
+            "第 1 位 = inline style 1: {merged}"
+        );
+        assert_eq!(
+            parts[1], "@layer{target{background-color:green}}",
+            "第 2 位 = data: link 1: {merged}"
+        );
+        assert!(parts[2].starts_with("@layer A"), "第 3 位 = inline style 2: {merged}");
+        assert_eq!(
+            parts[3], "@layer{target{background-color:green}}",
+            "第 4 位 = data: link 2: {merged}"
+        );
+    }
+
+    /// R5364：data:text/css link 双形态解码（raw / base64）+ 非 text/css 与 http(s) 跳过。
+    #[test]
+    fn document_order_merge_data_link_payload_forms() {
+        let dir = std::env::temp_dir();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        // raw payload（驱动案形态：`,` `{` `}` 未编码）。
+        let html = "<html><link rel=stylesheet href=\"data:text/css,p{color:green}\"></html>";
+        assert_eq!(
+            merge_page_css_document_order(html, "", &dir, Some(&ctx)).as_deref(),
+            Some("p{color:green}"),
+            "raw payload 解码"
+        );
+        // base64 payload。
+        use base64::Engine;
+        let b64 = base64::engine::general_purpose::STANDARD.encode("p{color:maroon}");
+        let html_b64 = format!("<html><link rel=stylesheet href=\"data:text/css;base64,{b64}\"></html>");
+        assert_eq!(
+            merge_page_css_document_order(&html_b64, "", &dir, Some(&ctx)).as_deref(),
+            Some("p{color:maroon}"),
+            "base64 payload 解码"
+        );
+    }
+
+    /// R5364：`<style>` 三门镜像——type 非 text/css / media 不匹配 / disabled 的表
+    /// 不入 blob 副本（engine 文档表按门排除，副本收进即双应用）。
+    #[test]
+    fn document_order_merge_style_gates_mirror_engine() {
+        let dir = std::env::temp_dir();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let html = "<html><head>\
+<style type=\"text/plain\">.t1 { color: red }</style>\
+<style media=\"print\">.t2 { color: red }</style>\
+<style disabled>.t3 { color: red }</style>\
+<link rel=stylesheet href=\"data:text/css,.ok{color:green}\">\
+</head></html>";
+        let merged = merge_page_css_document_order(html, "", &dir, Some(&ctx)).expect("data: link 页触发");
+        assert_eq!(merged, ".ok{color:green}", "仅过门 style + data: link 入副本: {merged}");
+
+        // media 匹配的 style 入副本；media 属性在场而 media_ctx 缺席 → 保守排除。
+        let html_m = "<html><head>\
+<style media=\"screen\">.scr { color: green }</style>\
+<link rel=stylesheet href=\"data:text/css,.ok{color:green}\">\
+</head></html>";
+        let with_ctx = merge_page_css_document_order(html_m, "", &dir, Some(&ctx)).expect("触发");
+        assert!(
+            with_ctx.contains(".scr { color: green }"),
+            "screen media 匹配 → 入副本: {with_ctx}"
+        );
+        let no_ctx = merge_page_css_document_order(html_m, "", &dir, None).expect("触发");
+        assert_eq!(
+            no_ctx, ".ok{color:green}",
+            "media_ctx 缺席 → media'd style 保守排除（engine 文档表仍应用）: {no_ctx}"
+        );
+    }
+
+    /// R5364：XML 文档维持旧路径（触发门②）——XHTML DOCTYPE 置 content_is_xml，
+    /// XML `<style>` 实体解码通道在 engine 侧，副本缺该语义不入。
+    #[test]
+    fn document_order_merge_xml_documents_keep_blob_path() {
+        let dir = std::env::temp_dir();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let html = "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0//EN\" \"x\">\
+<html><link rel=stylesheet href=\"data:text/css,p{color:green}\"/></html>";
+        assert_eq!(
+            merge_page_css_document_order(html, "", &dir, Some(&ctx)),
+            None,
+            "XHTML 文档 → None（维持 blob 路径）"
+        );
+    }
+
+    /// R5364：既有 blob 合并序路径零漂移——无 data: link 页 merge_page_css 输出
+    /// linked 前置 + 传入 css 尾接（inline `<style>` 由 engine 从 html 自解析，不进
+    /// 合并文本——R5364 前行为逐位不变）。
+    #[test]
+    fn merge_page_css_blob_order_unchanged_without_data_links() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_bloborder_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.css"), ".a { color: red }").unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let html =
+            "<html><head><link rel=\"stylesheet\" href=\"a.css\"><style>.s { color: blue }</style></head></html>";
+        let merged = super::merge_page_css_pub(html, ".x { color: green }", Some(&dir), Some(ctx));
+        assert_eq!(
+            merged, ".a { color: red }\n.x { color: green }",
+            "blob 序：linked 前置 + 传入 css 尾接（inline style 不进合并文本）: {merged}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R5364（驱动案端到端）：layer-stylesheet-sharing 页 merge 输出经 blob 前置
+    /// 注入后层序 anon1 < A < anon2 成立（engine blob 先于文档表；文档副本 @layer A
+    /// 按名并入既有位置）——@layer 匿名层每语句独立计数（matcher 独立 layer_counter），
+    /// anon2-green 在 A-red 之上，normal 与 important（反转后 anon1 最先 = 最高）双案
+    /// 级联均绿。此处直接断言合并文本的层序键，级联行为由 corpus A/B 翻绿收口。
+    #[test]
+    fn layer_stylesheet_sharing_pages_interleave_in_document_order() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data/css/css-cascade");
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        for case in [
+            "layer-stylesheet-sharing.html",
+            "layer-stylesheet-sharing-important.html",
+        ] {
+            let html = std::fs::read_to_string(dir.join(case)).expect("read case");
+            let merged = merge_page_css_document_order(&html, "", &dir, Some(&ctx)).expect("data: link 页触发");
+            let a_pos = merged.find("@layer A").expect("@layer A 在案");
+            let anon_positions: Vec<usize> = merged.match_indices("@layer{").map(|(i, _)| i).collect();
+            assert_eq!(anon_positions.len(), 2, "{case}: 两个 anonymous 层在案: {merged}");
+            assert!(
+                anon_positions[0] < a_pos && a_pos < anon_positions[1],
+                "{case}: 层序 anon1 < A < anon2（文档序保序）: {merged}"
+            );
+        }
     }
 }
