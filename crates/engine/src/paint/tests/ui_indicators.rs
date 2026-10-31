@@ -612,3 +612,104 @@ fn test_scrollbar_no_node_id_no_panic() {
 
     // 不应崩溃
 }
+
+// === P38/T33 B1：点击聚焦文本输入控件画 UA 默认焦点环（:focus-visible 恒匹配）===
+
+#[test]
+fn test_focus_ring_click_focus_on_text_input() {
+    let ring = |f: &zero_render_foundation::color::Color| f.r == 0x1a && f.g == 0x73 && f.b == 0xe8;
+
+    // 点击聚焦（focused_from_keyboard=false）的 text input：文本输入控件恒适用
+    // :focus-visible 启发式，仍画 2px UA 焦点环。
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("input");
+    doc.set_attribute(elem, "type", "text");
+    let layout = make_box(Some(elem), 0.0, 0.0, 120.0, 24.0);
+    let mut styles = HashMap::new();
+    styles.insert(elem, ComputedStyle::default());
+
+    let mut painter = Painter::new();
+    painter.set_focused_node(Some(elem));
+    painter.set_focused_from_keyboard(false);
+    painter.paint(&layout, &styles, Some(&doc));
+    assert!(
+        painter.primitives().fills.iter().any(|f| ring(&f.color)),
+        "点击聚焦的 text input 应绘制 UA 默认焦点环（:focus-visible 恒匹配）"
+    );
+
+    // 按钮类 input 点击聚焦不画（:focus-visible 不适用；无作者 outline 时无环）。
+    let mut btn_doc = zero_dom::Document::new();
+    let btn = btn_doc.create_element("input");
+    btn_doc.set_attribute(btn, "type", "button");
+    let btn_layout = make_box(Some(btn), 0.0, 0.0, 60.0, 24.0);
+    let mut btn_styles = HashMap::new();
+    btn_styles.insert(btn, ComputedStyle::default());
+
+    let mut btn_painter = Painter::new();
+    btn_painter.set_focused_node(Some(btn));
+    btn_painter.set_focused_from_keyboard(false);
+    btn_painter.paint(&btn_layout, &btn_styles, Some(&btn_doc));
+    assert!(
+        !btn_painter.primitives().fills.iter().any(|f| ring(&f.color)),
+        "点击聚焦的 button input 不应画焦点环（:focus-visible 不适用）"
+    );
+
+    // 键盘聚焦（focused_from_keyboard=true）的 button：既有路径回归钉——仍画环。
+    let mut kb_painter = Painter::new();
+    kb_painter.set_focused_node(Some(btn));
+    kb_painter.set_focused_from_keyboard(true);
+    kb_painter.paint(&btn_layout, &btn_styles, Some(&btn_doc));
+    assert!(
+        kb_painter.primitives().fills.iter().any(|f| ring(&f.color)),
+        "键盘聚焦的元素（含 button）应画焦点环（既有路径零变化）"
+    );
+}
+
+// === P38/T33 B2：聚焦可编辑文本控件的静态插入 caret ===
+
+#[test]
+fn test_input_caret_static_paint() {
+    // 聚焦空 input（type=text）：1px 插入 caret 在文本起点，高 = font-size（默认 16）。
+    let mut doc = zero_dom::Document::new();
+    let elem = doc.create_element("input");
+    doc.set_attribute(elem, "type", "text");
+    let layout = make_box(Some(elem), 0.0, 0.0, 120.0, 24.0);
+    let mut styles = HashMap::new();
+    styles.insert(elem, ComputedStyle::default());
+
+    let mut painter = Painter::new();
+    painter.set_focused_node(Some(elem));
+    painter.paint(&layout, &styles, Some(&doc));
+    assert!(
+        painter
+            .primitives()
+            .fills
+            .iter()
+            .any(|f| f.rect.size.width == 1.0 && f.rect.size.height == 16.0),
+        "聚焦空 input 应绘制 1px 静态插入 caret（高 = 默认 font-size 16）"
+    );
+
+    // 未聚焦：无 caret。
+    let mut unfocused = Painter::new();
+    unfocused.paint(&layout, &styles, Some(&doc));
+    assert!(
+        !unfocused.primitives().fills.iter().any(|f| f.rect.size.width == 1.0),
+        "未聚焦 input 不应绘制插入 caret"
+    );
+
+    // 按钮类 input 聚焦：无 caret（非可编辑文本控件）。
+    let mut btn_doc = zero_dom::Document::new();
+    let btn = btn_doc.create_element("input");
+    btn_doc.set_attribute(btn, "type", "button");
+    let btn_layout = make_box(Some(btn), 0.0, 0.0, 60.0, 24.0);
+    let mut btn_styles = HashMap::new();
+    btn_styles.insert(btn, ComputedStyle::default());
+
+    let mut btn_painter = Painter::new();
+    btn_painter.set_focused_node(Some(btn));
+    btn_painter.paint(&btn_layout, &btn_styles, Some(&btn_doc));
+    assert!(
+        !btn_painter.primitives().fills.iter().any(|f| f.rect.size.width == 1.0),
+        "聚焦 button input 不应绘制插入 caret"
+    );
+}

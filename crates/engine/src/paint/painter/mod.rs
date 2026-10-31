@@ -321,6 +321,38 @@ fn is_positioned_child(box_node: &LayoutBox) -> bool {
     box_node.is_absolute || box_node.is_fixed || box_node.is_relative || box_node.is_sticky
 }
 
+/// :focus-visible 文本输入控件启发式：input（文本类 type）/textarea/select/
+/// contenteditable 元素无论焦点来源（键盘/点击/JS）恒匹配 :focus-visible，
+/// 显示 UA 焦点反馈。按钮类/隐藏/开关类 input type 不适用。
+/// https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
+/// https://drafts.csswg.org/selectors-4/#the-focus-visible-pseudo
+fn is_text_entry_control(box_node: &LayoutBox, doc: Option<&Document>) -> bool {
+    let Some(node_id) = box_node.node_id else {
+        return false;
+    };
+    let Some(node) = doc.and_then(|d| d.get(node_id)) else {
+        return false;
+    };
+    let zero_dom::NodeKind::Element(elem) = &node.kind else {
+        return false;
+    };
+    let name = elem.local_name();
+    if matches!(name, "textarea" | "select") {
+        return true;
+    }
+    if name == "input" {
+        // 未知 type 按规范缺省 text（文本类恒适用）；button/hidden/开关类不适用。
+        let itype = elem.get_attribute("type").unwrap_or_default().to_ascii_lowercase();
+        return !matches!(
+            itype.as_str(),
+            "button" | "submit" | "reset" | "hidden" | "image" | "checkbox" | "radio" | "file" | "range" | "color"
+        );
+    }
+    // 仅元素自身的 contenteditable 属性（祖先继承不在此判定，最小切片）。
+    elem.get_attribute("contenteditable")
+        .is_some_and(|v| !v.eq_ignore_ascii_case("false"))
+}
+
 /// R5176（css-transforms-1 §4 + CSS 2.1 Appendix E step 8）：变换元素（transform ≠
 /// none，必然建立堆叠上下文——engine.rs `style_creates_stacking_context`）与 positioned
 /// 后代同属 step 8 绘制组，须按 tree order 混排，而非 steps 3/4/5 in-flow 相位。
@@ -4910,15 +4942,19 @@ impl Painter {
             self.paint_resize_handle(box_node, abs_x, abs_y, style);
         }
 
-        // ── 键盘焦点环（UA 默认 focus ring）──
+        // ── 焦点环（UA 默认 focus ring）──
         // Tab/Shift+Tab 导航聚焦且作者未声明 outline 时画 2px 焦点环（UA 焦点反馈，
         // 非调试指示器——生产 skip_indicators=true，故不放入下方 skip 块）。
-        // 点击/JS 聚焦不画：focused_from_keyboard 仅键盘焦点路径置位，保守替代
-        // :focus-visible 键盘启发式（ZW matcher 无运行时交互信号，见 matcher/mod.rs）。
-        if self.focused_from_keyboard
-            && let Some(node_id) = box_node.node_id
+        // 文本输入控件（input/textarea/select/contenteditable）恒画：:focus-visible
+        // 启发式对文本输入控件无论焦点来源（键盘/点击/JS）恒匹配——P38/T33：
+        // 此前点击聚焦不画（focused_from_keyboard 仅键盘路径置位），站点无作者
+        // :focus 样式时输入框零可见反馈。
+        // https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
+        // https://drafts.csswg.org/selectors-4/#the-focus-visible-pseudo
+        if let Some(node_id) = box_node.node_id
             && self.focused_node == Some(node_id)
             && let Some(style) = styles.get(&node_id)
+            && (self.focused_from_keyboard || is_text_entry_control(box_node, doc))
         {
             self.paint_focus_ring_indicator(box_node, abs_x, abs_y, style);
         }

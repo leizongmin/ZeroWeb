@@ -17,8 +17,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, TextControlBoundary};
 use zero_style_system::{
-    ComputedStyle, MixBlendModeComputedValue, TabSizeValue, TextEmphasisPositionValue, TextEmphasisStyleValue,
-    TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    CaretColorComputedValue, ComputedStyle, MixBlendModeComputedValue, TabSizeValue, TextEmphasisPositionValue,
+    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 /// R4443：ZW_DEBUG_GLYPHS 探针开关（OnceLock 缓存，热路径零 env::var 开销——
 /// block_layout_1000_elements bench +39% 实证 env::var 逐次调用开销）。
@@ -507,6 +507,18 @@ impl super::Painter {
             return;
         }
 
+        // 文本插入 caret（P38/T33 B2）：聚焦可编辑文本控件绘制静态插入点线（点击/
+        // 键盘聚焦均显示——:focus-visible 对文本输入控件恒匹配，同 painter
+        // is_text_entry_control）。位置 = 文本末尾；blink 动画未实现（FIXME）。
+        // https://html.spec.whatwg.org/multipage/interaction.html#focus-visible-heuristic
+        let caret_editable = elem.local_name().eq_ignore_ascii_case("textarea")
+            || matches!(
+                itype.as_str(),
+                "" | "text" | "search" | "email" | "url" | "tel" | "number" | "password"
+            );
+        let show_caret = caret_editable && self.focused_node == Some(node_id);
+        let mut caret: Option<(f32, f32)> = None;
+
         let font_size: f32 = match style.font_size {
             LengthValue::Px(s) => s as f32,
             _ => return,
@@ -743,6 +755,23 @@ impl super::Painter {
             if line_index + 1 < boundary_lines.len() {
                 line_utf16_start += 1;
             }
+            if show_caret {
+                // 占位符展示 = 值为空——插入点在文本起点而非占位文本之后。
+                caret = Some((if is_placeholder { content_x } else { char_x }, line_top));
+            }
+        }
+
+        // 静态插入 caret 绘制：字形盒对齐（垂直居中于行盒、高 = font-size、宽 1px）。
+        // caret-color 显式值优先，auto 回退当前文本色（css-ui-4 §caret-color）。
+        // https://drafts.csswg.org/css-ui-4/#caret-color
+        if let Some((caret_x, caret_top)) = caret {
+            let caret_color = match &style.caret_color {
+                CaretColorComputedValue::Color(c) => super::super::color::color_value_to_render(c),
+                CaretColorComputedValue::Auto => color,
+            };
+            let caret_y = caret_top + (line_height - font_size).max(0.0) / 2.0;
+            self.primitives
+                .add_fill(Rect::new(caret_x, caret_y, 1.0, font_size), caret_color);
         }
     }
 
