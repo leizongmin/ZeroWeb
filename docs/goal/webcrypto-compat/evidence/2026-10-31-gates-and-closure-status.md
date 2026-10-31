@@ -203,3 +203,18 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   evidence 均在 `5894374c1` 提交，工作树干净）。
 - **轮询面无变化**：远端无新 s 系/渲染流推进；ua_display_li（渲染流
   D4）与 D1/D2 维持原状。
+
+### 2026-11-01 03:50 追记：轮询零变化——锚账按代码面同一性延用，飞书回读通道证伪
+
+- **轮询面**：远端零新提交（tip 维持 `463ad8642`），树 clean；
+  `e4e4ebc09..463ad8642` 仅 `f2e90d44d`（wptfyi 快照 cron）与本 goal
+  docs，**零代码变更**——e4e4ebc09 的锚逐字节一致账按代码面同一性
+  延用，本轮不复跑。快照 cron 对 WebCrypto 行数字零位移（diff 无
+  +/- 触及 WebCrypto 行），DC-4 引用口径不变。
+- **D4/D1/D2 原状**：渲染流 R5369（2026-11-01 02:15）账面仍列
+  ua_display_li D4 为对端既有待裁决，未落地；仓库无用户决策记录。
+- **飞书回读通道证伪（后续轮次不再重试）**：D1/D2 征询回复无法无人
+  值守读取——bot 身份 `+messages-mget` 对已发 P2P 消息返回空、
+  `+messages-search` 缺 `search:message` scope（app 未申请）、user
+  身份读 P2P 需交互式 device-code 授权。回复核验通道收敛为 git
+  账面 + 用户主动知会两条。
