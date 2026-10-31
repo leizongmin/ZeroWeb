@@ -281,3 +281,20 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   最终 tip 复跑（若 runner 二进制面未再变可引用本次账）→ 归档迁移
   + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing
   exclusion 口径收口。
+
+### 2026-11-01 05:31 追记：轮询轮——锚账按二进制面同一性延用至 f6c42dd03，docs-only 三笔零代码
+
+- 轮询核验：锚 tip `1b6b9b291` → 现 tip `f6c42dd03` 三笔（`811ee5192`
+  / `674a4112f` / `f6c42dd03`，渲染流 R5371 定谳记账 + 1101 竞速重校
+  + R5371 四案定谳）`git diff --stat` 全为 docs 面（CHANGELOG /
+  README / ROADMAP / goal docs 共 7 文件 35+/11−，无 .rs、无
+  Cargo.toml、不在 runner 或语料执行路径）——runner 二进制面未变，
+  锚逐字节一致账（`1b6b9b291`，2026-11-01 04:35 复跑）**按二进制面
+  同一性延用至 `f6c42dd03`，本轮不复跑**（`f6c507297` docs-only
+  先例同判）。远端同步（origin/main = `f6c42dd03`），树 clean。
+- 轮询面无变化：渲染流 R5371 为零代码定谳轮（IFC float 行缩短深域
+  等四案挂账），ua_display_li（D4 双面翻转）在 R5368~R5370 门禁账
+  仍以 `--skip` 既有红在册，D4 裁决与 D1/D2 拍板均未见 git 账面。
+  收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
+  最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；
+  或 D2② 授权 standing exclusion 口径收口。
