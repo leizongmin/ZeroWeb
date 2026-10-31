@@ -1028,6 +1028,13 @@ pub fn apply_dom_mutations_full(
             | DomMutation::InsertAdjacentText { selector, .. }
             | DomMutation::InsertAdjacentElement { selector, .. }
             | DomMutation::InsertAdjacentSelElement { selector, .. } => selector,
+            // R4620 editing-compat 扩展：InsertBefore 的 ref 同族漂移——join 落位
+            // 批内 plain 壳 iah(beforebegin@ref) 先插入元素兄弟，使同 ref 的
+            // `:nth-child` 索引后移，handle 壳 InsertBefore 的 ref_selector（shim
+            // 落位时点计算）apply 时失配 lenient skip → 壳丢失
+            //（left-paragraph-and-right-line fd 几何 `<b>def</b>` 先落、`__n0`
+            // span 恒失联实证）。ref 与 iah target 同为「批开始时树态」引用。
+            DomMutation::InsertBefore { ref_selector, .. } => ref_selector,
             _ => continue,
         };
         if let Some(id) = find_by_selector(doc, selector) {
@@ -1386,12 +1393,20 @@ pub fn apply_dom_mutations_full(
                 // miss 跳过。
                 let ref_node = match find_by_selector(doc, &ref_selector) {
                     Some(n) => n,
-                    None => match handles.get(&ref_selector).copied() {
-                        Some(n) => n,
-                        None => {
-                            tracing::warn!("apply DOM mutations: insert_before ref no match, skipped: {ref_selector}");
-                            continue;
-                        }
+                    // R4620 editing-compat 扩展：selector 失配（批内前序插入使
+                    // `:nth-child` 索引漂移）→ 批前预解析 NodeId 兜底；ref 已被批内
+                    // 摘除（无父）时维持 skip——语义对齐 JS ref 脱离抛错。
+                    None => match ins_targets.get(&ref_selector).copied() {
+                        Some(id) if doc.get(id).and_then(|n| n.parent).is_some() => id,
+                        _ => match handles.get(&ref_selector).copied() {
+                            Some(n) => n,
+                            None => {
+                                tracing::warn!(
+                                    "apply DOM mutations: insert_before ref no match, skipped: {ref_selector}"
+                                );
+                                continue;
+                            }
+                        },
                     },
                 };
                 doc.insert_before(parent, child, ref_node).map_err(|e| e.to_string())?;
@@ -1663,6 +1678,12 @@ pub fn apply_dom_mutations_full(
                     tracing::warn!("apply DOM mutations: insert_adjacent_html selector no match, skipped: {selector}");
                     continue;
                 };
+                // R4620 editing-compat 扩展：解析成功即刷新同 selector 的预解析表——
+                // 批内 SetInnerHtml 重定基座会更换 NodeId（批前预解析全灭），后续同
+                // ref 的 InsertBefore（join per-run 壳序：plain 壳 iah 先落、handle 壳
+                // InsertBefore 后落同一 ref）兜底须用 re-base 后仍挂树的 NodeId，
+                // 否则 iah 插入元素兄弟后 `:nth-child` 漂移、ref 恒 miss → 壳丢失。
+                ins_targets.insert(selector.clone(), node);
                 insert_adjacent_html(doc, node, &position, &html)?;
             }
             DomMutation::InsertAdjacentText {

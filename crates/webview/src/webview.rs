@@ -8368,12 +8368,13 @@ mod tests {
             .filter(|line| !line.trim_start().starts_with("//"))
             .collect::<Vec<_>>()
             .join("\n");
-        assert_eq!(
+        assert!(
             // 判别子串取独立脚本形态（`();",` 结尾）——s143 的 format! 前拼形态是
-            // `();{}",`（`{}` 占位），不混计。
-            live.matches("globalThis.__zw_apply_generation_bump();\"").count(),
-            1,
-            "execute_dom_script 第 4 应用路径 apply 后的 __zw_apply_generation_bump 换代通知调用点必须存在（删行/注释化即红）"
+            // `();{}",`（`{}` 占位），不混计。当前 3 处 = 0920f3fd8 join 轮扩展后的
+            // 三条应用路径（executor 分支 / sandbox 直执分支 / 第 4 应用路径），
+            // 每处 apply 后均须配对换代通知，任何一处删行/注释化即红。
+            live.matches("globalThis.__zw_apply_generation_bump();\"").count() >= 3,
+            "user_actions.rs 三条应用路径 apply 后的 __zw_apply_generation_bump 换代通知调用点必须齐备（删行/注释化即红）"
         );
     }
 }

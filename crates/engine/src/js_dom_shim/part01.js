@@ -8689,7 +8689,14 @@
       }
     } catch (_eShellSer) {}
     var nr = document.createRange();
-    nr.setStart(_shellDst, Array.prototype.indexOf.call(_shellDst.childNodes, shell));
+    // caret 落位：壳可能不在 _shellDst 融合 childNodes 视图（plain 壳本地落位
+    // 只入 shim 侧数组，registry/sel 融合视图缺席——left-paragraph-and-right-line
+    // bs 几何 IndexSizeError（indexOf=-1 负 offset）→ 整批 wire 永不 drain 根因）。
+    // 缺席时落容器尾（引擎 drain 后壳在 beforebegin/beforeend 语义位，caret 尾落
+    // 与 Chrome join 后 caret=壳后一致面由语料验收）。
+    var _shellIdx = Array.prototype.indexOf.call(_shellDst.childNodes, shell);
+    if (_shellIdx < 0) _shellIdx = _shellDst.childNodes.length;
+    nr.setStart(_shellDst, _shellIdx);
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
     el.dispatchEvent(new InputEvent('input', {
@@ -8704,7 +8711,13 @@
   //（white-space join 簇：后块首行包保留壳入前块/前行容器；几何——从 caret 链上
   // 找最近前邻：块 → 该块接收；inline（caret 块为前 run 后的首块）→ 容器接收）。
   // caret 回落删除点。
-  globalThis.__zw_ce_delete = function(sel) {
+  // R4620（editing-compat join 碰撞仲裁，2026-10-31）：walk 域门置位——CE 动作对
+  // 融合视图做对象 identity 消费（caret 锚链/形状 Node 复算），期间 part05
+  // `_zwOverlayPendingChildNodes` 的 R383 跨代际桶跳并须旁路（__zwCeWalkMerging），
+  // 否则 setup innerHTML 物化的 pending 壳对象从视图摘除 → 锚重解析失配 → 整动作
+  // no-op（join 语料 lrlp 2,343P→48P 实证）。动作结束（含异常）即清位，序列化读
+  // 面不受影响。impl 换名 + wrapper 保持调用点零改动。
+  var __zw_ce_delete_impl = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
@@ -8776,6 +8789,11 @@
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     }));
   };
+  globalThis.__zw_ce_delete = function(sel) {
+    globalThis.__zwCeWalkMerging = true;
+    try { return __zw_ce_delete_impl(sel); }
+    finally { globalThis.__zwCeWalkMerging = false; }
+  };
   // CE ForwardDelete（尾簇 32——Delete 键的 CE 面，deleteContentForward 语义；WPT
   // uievents/textInput delete.html CE div 案「caret@1 删光标后一字符 → 'ac'」断言面）。
   // mirror __zw_ce_delete：选区非空删选区；collapsed 删 caret **后**一个 UTF-16 单元
@@ -8783,7 +8801,8 @@
   // 块界 join 臂（white-space join 簇：后块首行包保留壳入 caret 块/前行容器；
   // 几何——链上找后邻：块或 dst 为块时的 inline 首容器 → join；caret 同级 inline
   // 后邻 = run 中段 → no-op）。跨容器选区（select-boundary 形态）同 join 几何。
-  globalThis.__zw_ce_forward_delete = function(sel) {
+  // R4620：walk 域门同款（见 __zw_ce_delete wrapper 注释）。
+  var __zw_ce_forward_delete_impl = function(sel) {
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
@@ -8848,6 +8867,11 @@
     el.dispatchEvent(new InputEvent('input', {
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentForward', isComposing: false
     }));
+  };
+  globalThis.__zw_ce_forward_delete = function(sel) {
+    globalThis.__zwCeWalkMerging = true;
+    try { return __zw_ce_forward_delete_impl(sel); }
+    finally { globalThis.__zwCeWalkMerging = false; }
   };
   // CE Enter 换行（R3254-M2 切片 3，editing goal，2026-09-07）：caret 处插 `<br>`
   //（insertLineBreak 语义；insertParagraph 的块级拆分 defer——SetInnerHtml 单域内

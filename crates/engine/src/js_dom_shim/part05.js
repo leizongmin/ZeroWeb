@@ -10707,7 +10707,15 @@
     // `__zw_pending_attr_sels` 版本戳的 cursor 分量 > 0（本页发生过 apply 发布）即
     // 置闩恒跳并；engine 测试游标永 0 恒并。桥未注册（老宿主/裸 shim）→ 视作配对
     // 环境保持无条件跳并（语料修复语义优先）。R382 按条目判定保留作桶内精度兜底。
+    // R4620（editing-compat join 碰撞仲裁，2026-10-31）：`__zwCeWalkMerging` 置位期间
+    // 旁路本跳并——CE delete 族 walk（`__zw_ce_delete`/`__zw_ce_forward_delete` 入口
+    // wrapper 置位）对视图做**对象 identity 消费**（caret 锚链持 setup innerHTML
+    // 物化的 JS 侧包装，join 形状 Node 复算逐节点比对），R383 跳并把跨代际桶的
+    // pending 壳对象从视图摘除后锚重解析失配 → 整动作 no-op（join 语料 lrlp
+    // 2,343P→48P 实证）。序列化读（inline-host t4 幽灵面）不置位，R383 照常生效；
+    // R382 条目级 ghost 确认在本行之下照常运行，不因旁路失效。
     if (globalThis._zwApplyGeneration && bucket.stamp !== globalThis._zwApplyGeneration()
+        && !globalThis.__zwCeWalkMerging
         && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
