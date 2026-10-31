@@ -3666,7 +3666,10 @@ mod tests {
     #[test]
     fn apply_generation_notice_sets_host_paired_marker() {
         let mut worker = RendererJsWorker::spawn(83);
-        worker.set_dom_snapshot("<html><body><div id='a'>t</div></body></html>", "https://zero.test/r54xx-b");
+        worker.set_dom_snapshot(
+            "<html><body><div id='a'>t</div></body></html>",
+            "https://zero.test/r54xx-b",
+        );
         let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
         let mut ctx = PageScriptContext {
             html: &mut html,
@@ -3722,9 +3725,7 @@ mod tests {
             webview: None,
         };
         worker
-            .execute_script_direct(
-                "var b=document.getElementById('box');b.appendChild(document.createElement('br'));",
-            )
+            .execute_script_direct("var b=document.getElementById('box');b.appendChild(document.createElement('br'));")
             .expect("脚本 A 须成功");
         // drain apply（HTML 回写臂）→ 基座含 br → 推新快照（下一脚本块前置）。
         let html_snapshot = ctx.html.clone();
