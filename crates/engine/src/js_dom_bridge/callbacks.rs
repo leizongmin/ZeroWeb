@@ -1459,6 +1459,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s173（html-semantics M2）：parse 物化声明式 shadow root 的深 JSON（mode +
+    // deep_entry_json 子树）——shim shadowRoot getter 首读镜像登记的数据源
+    //（`_shadowRoots` 只登记 attachShadow 调用，声明式根此前 JS 视图不可见）。
+    let html = Arc::clone(dom_html);
+    sandbox.register_callback(
+        "__zw_declarative_shadow_deep",
+        Box::new(move |args| {
+            let elem_sel = args.first().map(String::from).unwrap_or_default();
+            let snap = html.lock().unwrap_or_else(|e| e.into_inner());
+            with_query_doc_live_aware(&snap, true, |doc| declarative_shadow_deep_json_doc(doc, &elem_sel))
+        }),
+    );
+
     // 节点级遍历 API（含文本/注释节点）：childNodes/firstChild/lastChild（子列表）、
     // previousSibling/nextSibling（兄弟对）。JSON 序列化（文本内容含任意字符）。
     let html = Arc::clone(dom_html);
@@ -2657,6 +2670,23 @@ pub fn register_dom_callbacks(
                 .unwrap_or_else(|e| e.into_inner())
                 .push(DomMutation::CreateDocumentFragment { handle: handle.clone() });
             handle
+        }),
+    );
+
+    // s173（html-semantics M2）：**给定句柄**的 fragment 绑定——shim 本地句柄（声明式
+    // shadow root register 面的 `__ds{n}`，无 engine 身份）在惰性镜像构建时一次性
+    // 补 engine 绑定（CreateDocumentFragment 给定句柄臂），后续 AppendChildByHandle
+    // 镜像批 parent 正常解析。与自 mint 版的差异仅在句柄来源。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_declare_fragment",
+        Box::new(move |args| {
+            if let Some(handle) = args.first().filter(|handle| !handle.is_empty()) {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::CreateDocumentFragment { handle: handle.clone() });
+            }
+            "ok".into()
         }),
     );
 

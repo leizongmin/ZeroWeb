@@ -2896,6 +2896,36 @@ pub fn template_contents_deep_json_doc(doc: &Document, elem_sel: &str) -> String
     template_contents_json_doc(doc, elem_sel)
 }
 
+/// s173（html-semantics M2）：parse 物化声明式 shadow root 的 JS 视图数据源——
+/// `<template shadowrootmode>` 经 `materialize_declarative_shadow_roots` 在 parse 时
+/// 建 ShadowRoot 节点（渲染/slot 解析已生效），但 shim `_shadowRoots` 只登记
+/// `attachShadow` 调用，host.shadowRoot 对声明式根恒 null（WPT
+/// form-indexed-element-shadow / form-submit-dialog-shadow 红面根因）。shim getter
+/// 首读经本回调取 `{mode, nodes:[deep_entry_json]}` 深子树，以 imperative
+/// attachShadow 同形态（fragment 句柄 + 注册表 + handle 元素镜像）登记 JS 视图。
+/// host miss / 无 shadow root → 空串（shim 跳过登记）。
+pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> String {
+    let Some(host) = find_by_selector(doc, elem_sel) else {
+        return String::new();
+    };
+    let Some(root) = doc.shadow_root(host) else {
+        return String::new();
+    };
+    let mode = match doc.get(root).map(|n| &n.kind) {
+        Some(NodeKind::ShadowRoot(d)) => match d.mode {
+            zero_dom::ShadowRootMode::Open => "open",
+            zero_dom::ShadowRootMode::Closed => "closed",
+        },
+        _ => return String::new(),
+    };
+    let entries: Vec<String> = doc
+        .child_nodes(root)
+        .iter()
+        .filter_map(|&k| deep_entry_json(doc, k))
+        .collect();
+    format!("{{\"mode\":\"{mode}\",\"nodes\":[{}]}}", entries.join(","))
+}
+
 /// WC-M2：参数化 html 串的 template contents **深 JSON**（含 children 嵌套，形态
 /// `{"k":"E","tag":"p","attrs":[...],"children":[...]}`）——iframe/detached shim 文档的
 /// JS 树构建用。contents 子在 fragment（非文档树），selector 无法二次定位（上层

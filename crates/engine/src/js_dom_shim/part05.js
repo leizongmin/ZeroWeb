@@ -4983,6 +4983,105 @@
     return e;
   }
 
+  // s173（html-semantics M2）：parse 物化声明式 shadow root 的 JS 视图镜像登记。
+  // `<template shadowrootmode>` 的根由 engine 在 parse 时物化（crates/dom parser →
+  // materialize_declarative_shadow_roots，渲染/slot 解析已生效），但 `_shadowRoots`
+  // 只登记 `attachShadow` 调用——host.shadowRoot 对声明式根恒 null（WPT
+  // form-indexed-element-shadow「Should have a shadow tree」/ form-submit-dialog-shadow
+  // 红面根因）。首读经 `__zw_declarative_shadow_deep` 取 {mode, nodes:[深 JSON]}，
+  // 以 imperative attachShadow 同形态登记：fragment 句柄 + `_shadowHandleMeta` +
+  // 子树 handle 元素镜像（document.createElement/setAttribute/appendChild 全 mutation
+  // 语义，attr 读经 latest-wins overlay 命中本批 CreateElement/SetAttr）。镜像 fragment
+  // engine 侧 detached——渲染仍由 engine 原生根承担（零双渲染）；已知边界：页面对
+  // 镜像子树的写不回灌渲染树（FIXME 写透切片，声明式内容静态面为主）。
+  // 登记同时武装 attachShadow already-hosted 门（缺登记时二次 attach 走 engine
+  // attach_shadow Err → 整批 mutation apply 报错）。连接态/父链/事件站经既有 R90/R91
+  // `_shadowHandleMeta` host 跳转面（与 imperative 根同判定，零新机制）。
+  //
+  // s173 返修（dialog-popover-closedby-complex 16 normal 子测 P→F 回归勘根）：镜像
+  // 构建批是**结构性 mutation 批**——apply 走 render_with_dom_mutations_persistent
+  // 的全量重建臂（snapshot re-parse，slotmap 换代/NodeIdx 全灭 + retained 面换代）。
+  // 初始脚本期触发（通用 findElements 递归读 `child.shadowRoot` 即命中）使首次
+  // render 前_doc 换代，dialog light-dismiss/几何读面跨代失锚——normal 段 16F。
+  // 拆两段：**register**（本 fn，零 mutation：shim 本地句柄 + 登记 + 负缓存）随
+  // getter/attachShadow 首读武装；**镜像构建**（`_zwDeclarativeShadowEnsureMirrors`）
+  // 挂 R2928 `_handleQueryFirst/_handleQueryAll` 入口惰性触发——只有真实 shadow
+  // 内容查询（querySelector('button') 面）付结构性批代价，通用枚举面零扰动。
+  var _zwDsHandleCounter = 0;
+  var _zwDsRegMiss = {};
+  function _zwDeclarativeShadowHydrate(key, sel, handle) {
+    if (_shadowRoots[key]) return true;
+    if (!sel) return false;
+    // 负缓存：无声明式根的元素首读即记，后续 shadowRoot 读零 wire 开销。
+    if (_zwDsRegMiss[key]) return false;
+    if (typeof __zw_declarative_shadow_deep !== 'function') return false;
+    var _dsRaw = '';
+    try { _dsRaw = __zw_declarative_shadow_deep(sel) || ''; } catch (_eDsw) { _zwDsRegMiss[key] = true; return false; }
+    if (!_dsRaw) { _zwDsRegMiss[key] = true; return false; }
+    var _dsInfo = null;
+    try { _dsInfo = JSON.parse(_dsRaw); } catch (_eDsj) { _zwDsRegMiss[key] = true; return false; }
+    if (!_dsInfo || !_dsInfo.mode) { _zwDsRegMiss[key] = true; return false; }
+    // register 面零 mutation：shim 本地 `__ds{n}` 句柄（不与 engine `__n{n}` 撞形；
+    // 无 engine 绑定——镜像未建，无 mutation 引用它）。engine 绑定在镜像构建时经
+    // `__zw_declare_fragment(rootHandle)` 一次性补上（CreateDocumentFragment 给定
+    // 句柄臂），此后 AppendChildByHandle 镜像批 parent 正常解析。
+    _zwDsHandleCounter++;
+    var rootHandle = '__ds' + _zwDsHandleCounter;
+    var _dsMode = _dsInfo.mode === 'closed' ? 'closed' : 'open';
+    _fragmentHandles[rootHandle] = true;
+    _shadowHandles[rootHandle] = true;
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named', delegatesFocus: false, declarative: true, mirrored: false };
+    _shadowRoots[key] = { handle: rootHandle, mode: _dsMode };
+    return true;
+  }
+
+  // s173：声明式根的**惰性镜像构建**——R2928 查询入口（_handleQueryFirst/_handleQueryAll）
+  // 首触时执行。engine 绑定根句柄 + 深条目 → handle 元素镜像（同 imperative attachShadow
+  // 批形态），一次性（mirrored 旗标幂等）。
+  function _zwDeclarativeShadowEnsureMirrors(rootHandle) {
+    var meta = _shadowHandleMeta[rootHandle];
+    if (!meta || !meta.declarative || meta.mirrored) return;
+    meta.mirrored = true; // 先置位：构建中途异常不重入（半镜像面同失败态）
+    if (typeof __zw_declare_fragment !== 'function' || typeof __zw_declarative_shadow_deep !== 'function') return;
+    var _dsRaw = '';
+    try { _dsRaw = __zw_declarative_shadow_deep(meta.hostSel) || ''; } catch (_eDsw2) { return; }
+    var _dsInfo = null;
+    try { _dsInfo = JSON.parse(_dsRaw); } catch (_eDsj2) { return; }
+    if (!_dsInfo || !_dsInfo.nodes || !_dsInfo.nodes.length) return;
+    try { __zw_declare_fragment(rootHandle); } catch (_eDsd2) { return; }
+    function _dsBuildHandleChild(entry) {
+      if (!entry) return null;
+      if (entry.k === 'T') return globalThis.document.createTextNode(String(entry.v == null ? '' : entry.v));
+      if (entry.k === 'C') return globalThis.document.createComment(String(entry.v == null ? '' : entry.v));
+      if (entry.k !== 'E') return null;
+      var el = globalThis.document.createElement(String(entry.tag || 'div'));
+      var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
+      for (var ai = 0; ai < ats.length; ai++) {
+        if (ats[ai] && ats[ai].n) {
+          try { el.setAttribute(String(ats[ai].n), String(ats[ai].v == null ? '' : ats[ai].v)); } catch (_eAt2) {}
+        }
+      }
+      var kids = Array.isArray(entry.children) ? entry.children : [];
+      for (var ci = 0; ci < kids.length; ci++) {
+        var ck = _dsBuildHandleChild(kids[ci]);
+        if (ck) { try { el.appendChild(ck); } catch (_eAc2) {} }
+      }
+      return el;
+    }
+    var rootWrap = _wrapHandle(rootHandle);
+    var _dsBuilt = [];
+    for (var _dsi = 0; _dsi < _dsInfo.nodes.length; _dsi++) {
+      var _dsEl = _dsBuildHandleChild(_dsInfo.nodes[_dsi]);
+      if (_dsEl) {
+        _dsBuilt.push(_dsEl);
+        try { rootWrap.appendChild(_dsEl); } catch (_eDsa) {}
+      }
+    }
+    try {
+      if (typeof globalThis.__zwDetailsScan4100 === 'function') globalThis.__zwDetailsScan4100(_dsBuilt, true);
+    } catch (_eDsd) {}
+  }
+
   // R2926 Shadow DOM：`element.attachShadow(init)` → ShadowRoot。host 元素专用（get trap 仅对元素
   // 暴露 attachShadow，fragment/comment/text/shadow 不暴露）。spec：init.mode 须 'open'/'closed'
   //（否则 TypeError）；host 已挂 shadow → NotSupportedError。复用 DocumentFragment handle 容器
@@ -4991,6 +5090,11 @@
   // 返 ShadowRoot proxy（nodeType 11 / nodeName '#shadow-root' / host / mode，经 _shadowHandles 标识）。
   function _attachShadow(sel, handle, init) {
     var key = _elKey(sel, handle);
+    // s173：声明式根缺登记时先 consult 镜像——已物化 host 的二次 attach 须在此
+    // NotSupportedError 拦截（engine attach_shadow 对已挂根 Err 会整批 apply 报错）。
+    if (!_shadowRoots[key] && typeof _zwDeclarativeShadowHydrate === 'function') {
+      _zwDeclarativeShadowHydrate(key, sel, handle);
+    }
     if (_shadowRoots[key]) {
       _throwDom('NotSupportedError',
         "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
@@ -6811,6 +6915,9 @@
     return result;
   }
   function _handleQueryFirst(rootHandle, q) {
+    // s173：声明式根惰性镜像——真实内容查询首触付结构性批代价（见
+    // _zwDeclarativeShadowEnsureMirrors 注）；通用枚举面不触发。
+    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') _zwDeclarativeShadowEnsureMirrors(rootHandle);
     var groups = _parseSelectorListOf(q);
     if (!groups.length) return null;
     var nodes = _handleSubtreeNodes(rootHandle);
@@ -6820,6 +6927,7 @@
     return null;
   }
   function _handleQueryAll(rootHandle, q) {
+    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') _zwDeclarativeShadowEnsureMirrors(rootHandle);
     var groups = _parseSelectorListOf(q);
     if (!groups.length) return [];
     var nodes = _handleSubtreeNodes(rootHandle);

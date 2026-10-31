@@ -1,5 +1,6 @@
 //! html5ever 集成 — HTML 解析器和 TreeSink 实现。
 
+mod declarative_shadow;
 mod xhtml_self_close;
 
 use crate::document::Document;
@@ -580,14 +581,11 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
 
     // R5314（XHTML 自闭合桥接）：非 void 自闭合起始标签预变换（机制与判据详见
     // [`xhtml_self_close`] 模块文档）。
-    let owned;
-    let html = match expand_xhtml_self_closing(html) {
-        Cow::Borrowed(s) => s,
-        Cow::Owned(s) => {
-            owned = s;
-            owned.as_str()
-        }
-    };
+    let expanded = expand_xhtml_self_closing(html);
+    // s173（html5ever 0.29.1 声明式 shadow 解析缺陷绕道）：`shadowrootmode` 值
+    // 首字母大写出其精确匹配集（机制与判据详见 [`declarative_shadow`] 模块文档）。
+    let prepassed = declarative_shadow::restore_declarative_shadow_templates(expanded.as_ref());
+    let html: &str = prepassed.as_ref();
 
     let encoding_label = sniff_meta_charset(html);
     let builder = DomBuilder::new();

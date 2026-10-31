@@ -1319,8 +1319,15 @@
         // R2926 Shadow DOM：`element.attachShadow(init)` / `element.shadowRoot`。host 元素专用（非
         // fragment/comment/text/shadow）。attachShadow 建 shadow root（复用 DocumentFragment handle 容器）；
         // shadowRoot 读——open 返 root、closed/未建 返 null（spec）。详见 `_attachShadow`。
+        // s173（html-semantics M2）：登记 miss 时先 consult 声明式镜像（parse 物化的
+        // `<template shadowrootmode>` 根不在 `_shadowRoots`——首读经
+        // `_zwDeclarativeShadowHydrate` 以 imperative 同形态登记后按同口径返回）。
         if (prop === 'shadowRoot') {
           var _sr = _shadowRoots[key];
+          if (!_sr && typeof _zwDeclarativeShadowHydrate === 'function') {
+            _zwDeclarativeShadowHydrate(key, sel, handle);
+            _sr = _shadowRoots[key];
+          }
           return (_sr && _sr.mode === 'open') ? _wrapHandle(_sr.handle) : null;
         }
         if (prop === 'attachShadow') {

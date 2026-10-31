@@ -1718,3 +1718,38 @@ fn test_apply_dangling_child_handle_stays_hard_error_p19() {
         "硬错必须是 handle 表悬垂（unknown child handle），实际: {err}"
     );
 }
+
+/// s173（html-semantics M2）：parse 物化声明式 shadow root 的 JS 视图数据源钉案——
+/// `<template shadowrootmode>` 经 parse_html 物化后，`declarative_shadow_deep_json_doc`
+/// 对 host selector 返回 {mode, nodes:[深 JSON]}；无声明式根返回空串。WPT
+/// form-indexed-element-shadow / form-submit-dialog-shadow 红面（host.shadowRoot 恒
+/// null）的 engine 半边回归钉。
+#[test]
+fn test_declarative_shadow_deep_json_s173() {
+    use crate::js_dom_bridge::{declarative_shadow_deep_json_doc, find_by_selector};
+    let html = "<html><body>\
+                <div id='host'><template shadowrootmode='open'><slot name='first'></slot></template>\
+                <input id='first' slot='second'></div>\
+                </body></html>";
+    let doc = zero_dom::parse_html(html);
+    let host = find_by_selector(&doc, "#host");
+    assert!(host.is_some(), "host 应可寻址");
+    // 物化成功后 template 已摘除（树内 0 个）——摘除即物化面证据之一。
+    let tpls = doc.get_elements_by_tag_name("template");
+    let sr = doc.shadow_root(host.unwrap());
+    assert!(sr.is_some(), "声明式根应已物化（template 树内 {} 个）", tpls.len());
+    let raw_nodes = doc.child_nodes(sr.unwrap());
+    assert_eq!(raw_nodes.len(), 1, "shadow 树应含 1 slot: {}", raw_nodes.len());
+    // 数据源形态：mode + 深子树（slot 条目）。
+    let raw = declarative_shadow_deep_json_doc(&doc, "#host");
+    assert!(raw.contains("\"mode\":\"open\""), "mode 应为 open: {raw}");
+    assert!(raw.contains("slot"), "子树应含 slot 条目: {raw}");
+    // 无根面：无声明式模板的元素返回空串。
+    let empty = declarative_shadow_deep_json_doc(&doc, "body");
+    assert_eq!(empty, "", "无声明式根应返回空串");
+    // closed 模式透传。
+    let html_closed = "<div id='h2'><template shadowrootmode='closed'><p></p></template></div>";
+    let doc2 = zero_dom::parse_html(html_closed);
+    let raw2 = declarative_shadow_deep_json_doc(&doc2, "#h2");
+    assert!(raw2.contains("\"mode\":\"closed\""), "closed 模式应透传: {raw2}");
+}
