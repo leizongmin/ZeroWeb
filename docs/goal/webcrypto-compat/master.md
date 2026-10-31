@@ -5,16 +5,15 @@ build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺
 `cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
 交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
 （`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步。
-**收口前提核查（2026-10-31 12:55/12:58 两轮）**：goal-25（html-semantics，
-s 系账本）rally wrapper 不在跑，但流本身**活跃但慢**——s172 10:36 →
-s173 12:53（`02a689410`，declarative shadow 域，非 fetch 簇；12:55 ps
-核查落在轮次间隙，12:58 修正「驱动缺位」初判）。s173 自账
-engine lib **3615P/10F**（10F 同键：fetch/request/response 契约族 9 +
-ua_display_li）。fetch 簇清零 ETA 未知，处置路径登记待用户决策表
-**D2**，期间维持低成本轮询（`git fetch` + s 系账面），基线清零即当场
-收口（详见
+**收口前提轮询（2026-10-31 12:55 → 14:52）**：goal-25（html-semantics，
+s 系账本）流活跃——s173 12:53 → s174 13:31 → s175 14:48（≈1h15m/轮），
+s175 自账及合并树复证 engine lib **3617P/10F**（10F 同键：fetch/Request
+契约族 9 + ua_display_li，[s175 账](../html-semantics-compat/evidence/2026-10-31-m2s175-detached-selector-identity.md)）。
+s 系刀位仍在 shadow/dialog/dom 域，fetch 簇未进队列可见部分，ETA 未知；
+处置路径维持待用户决策表 **D2**，期间低成本轮询（`git fetch` + s 系账面），
+基线清零即当场收口（详见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
-**最后更新**: 2026-10-31（门禁与收口状态见
+**最后更新**: 2026-10-31 14:52（轮询追记见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

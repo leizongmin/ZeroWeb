@@ -72,3 +72,18 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   fetch/Request 面；其自账 engine lib **3615P/10F**（+1 钉测，10F 同键
   = fetch/request/response 契约族 9 + ua_display_li s24）——10F 清零
   尚未进入 s 系已完成的刀位，ETA 未知，D2 维持待拍板。
+
+### 14:52 轮询追记：s174/s175 落地，10F 同键未清
+
+- `git pull --rebase` 吸入 s 系两轮：s174 13:30 `47370ed94`（webview 静态
+  外链 CSS entries 化）+ s175 14:45 `b5fbe98b9`（detached 节点选择器身份
+  盗用根修，`unique_selector_for_node` 可达门）+ 两轮并行合并复证记
+  （`bbe005e67`/`d50631d28`）。节奏 s173 12:53 → s174 13:31 → s175 14:48
+  ≈ 1h15m/轮，流活跃。
+- s175 自账及合并树复证 engine lib **3617P/10F**——10F 与本 goal
+  [门禁账](#make-test-10f-归因并行流既有账非本-goal) 同键（fetch/Request
+  契约族 9 + ua_display_li），未清；s 系刀位仍在 shadow/dialog/dom 域，
+  fetch/Request 簇未进入队列可见部分，ETA 仍未知。
+- 本轮组合态 tip `d50631d28`：本 goal 零代码变更不受扰；33,109 分母锚
+  仍系 `5894374c1` 复验账（s173/s174/s175 引擎变更后按收口序列在 ① 命中
+  时于当时 tip 复跑，不提前消耗全量语料跑）。D2 维持待拍板 + 低成本轮询。
