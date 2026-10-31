@@ -2262,13 +2262,48 @@ impl Document {
             return pos;
         }
         let built = self.build_child_positions(parent);
-        pos = built.get(&node).copied().unwrap_or(pos);
+        let built_pos = built.get(&node).copied();
         QUERY_POS_INDEX.with(|slot| {
             if let Some(index) = slot.borrow_mut().as_mut() {
                 index.insert(parent, built);
             }
         });
-        pos
+        match built_pos {
+            Some(p) => p,
+            None => {
+                // p125r1(TV-1) 返修：索引 miss = node 不是 parent 的直接元素子（如
+                // ShadowRoot 直接子：`parent_element_node` 越过非元素父取 host）。旧
+                // 逐节点两遍遍历此时对 parent 子列表跑满（`sib == node` 永不命中不
+                // break），得 {ci=cc=元素子总数, ti=tc=同 tag 数}；这里单遍回填同值，
+                // 与 merge-base 逐值一致（冻结判据见
+                // crates/dom/tests/p125_shadow_position_pseudo.rs）。不写入索引——
+                // 该父的批量表不含 node，写入反而会污染同父成员的缓存查询。
+                // FIXME(selectors-l4)：规范语义应按实际父容器（含 ShadowRoot 等非
+                // 元素父）计位，merge-base 与本路径均未实现，另立任务。
+                let Some(NodeKind::Element(node_el)) = self.nodes.get(node).map(|n| &n.kind) else {
+                    return pos;
+                };
+                let Some(parent_data) = self.nodes.get(parent) else {
+                    return pos;
+                };
+                let lname = node_el.local_name();
+                let mut total = 0usize;
+                let mut same_tag = 0usize;
+                for &child in &parent_data.children {
+                    if let Some(NodeKind::Element(child_el)) = self.nodes.get(child).map(|n| &n.kind) {
+                        total += 1;
+                        if child_el.local_name().eq_ignore_ascii_case(lname) {
+                            same_tag += 1;
+                        }
+                    }
+                }
+                pos.child_index = total;
+                pos.child_count = total;
+                pos.type_index = same_tag;
+                pos.type_count = same_tag;
+                pos
+            }
+        }
     }
 
     /// 一次批量计算 `parent` 全部**元素**子的 sibling 位置（p125 每查询索引的回填
