@@ -243,3 +243,26 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   shim 变更 + 渲染流 R5368/R5369 + wpt-runner test 面修复全吸收），
   33,109 分母零回归在现 tip 成立。轮询面其余无变化：ua_display_li
   （渲染流 D4）与 D1/D2 维持待拍板。
+
+### 2026-11-01 04:25 追记：锚复跑现 tip（650eab54e）逐字节一致——渲染流 R5370 layout 变更吸收
+
+- `git pull --rebase` 吸入渲染流 R5370 两笔：`7c2826ffd`（table/
+  inline-table 内 OOF 子不生成匿名 cell + 不入空 grid 收缩，
+  layout-engine 语料执行路径代码 + 常驻测试 2pin）+ `650eab54e`
+  （R5370 轮记账 docs）——代码面前移，按纪律对现 tip `650eab54e`
+  复跑锚：release runner 重建 28.61s + test-guard 直包
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  计数复核 123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log
+  零字节，runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-r5370-650eab54e.json`（不入库）。
+- 至此锚窗口推进为 **7065ea39f → 650eab54e**（R5370 table OOF child
+  排除 + r5370 钉测全吸收），33,109 分母零回归在现 tip 成立。
+- **轮询面**：R5370 自账 make test workspace 腿 **19250P/0F** 仍以
+  `--skip ua_display_li` 跑（对端 D4 既有红 stash 同位复现）——
+  **ua_display_li D4 双面翻转仍未裁决**，D1/D2 维持待拍板
+  （GB-20261031 征询在案，核验只认 git 账面 + 用户主动知会）。
+  收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
+  最终 tip 复跑（若 runner 二进制面未再变可引用本次账）→ 归档迁移
+  + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing
+  exclusion 口径收口。
