@@ -16,7 +16,7 @@ use zero_engine::RenderPipeline;
 use zero_engine::paint::simple_hash;
 use zero_render_foundation::cpu::render_full_scene;
 use zero_render_foundation::font::cache::GlyphCache;
-use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
+use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri, decode_data_uri_bytes};
 use zero_render_foundation::rendering_thread::render_threading_enabled_for_tests;
 use zero_render_foundation::surface::FrameBuffer;
 

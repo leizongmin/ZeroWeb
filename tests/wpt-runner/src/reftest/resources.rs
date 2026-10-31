@@ -468,6 +468,11 @@ pub(super) fn expand_at_imports(
     // driving: css/css-conditional at-supports-045 / at-media-003（@supports 块之后的
     // `@import "support/fail.css"` 被误应用致整页红）。
     let mut prologue_ended = false;
+    // R5362：块深度——@import 仅在块外（depth 0）展开/删除。块内 @import（@media/@supports
+    // 内的非法嵌套）属外层 at-rule 块内容，由真实 parser 按块解析丢弃；文本扫描器若在此
+    // 删除会破坏块内 token 流（at-rule-013 的 invalid-at-rule 恢复序列被删空一处 @import
+    // 后整页样式错乱）。
+    let mut depth: usize = 0;
     while i < n {
         let c = bytes[i];
         if !prologue_ended && c.is_ascii_whitespace() {
@@ -525,8 +530,14 @@ pub(super) fn expand_at_imports(
             out.push_str(&css[start..i.min(n)]);
             continue;
         }
-        // 检测 @import（大小写不敏感；前置须非 ident 边界，后置须非 ident-char）
-        if c == b'@' && is_ident_boundary_before(bytes, i) {
+        // 块深度记账（string/comment 已在上方 continue 跳过，不参与）
+        if c == b'{' {
+            depth += 1;
+        } else if c == b'}' {
+            depth = depth.saturating_sub(1);
+        }
+        // 检测 @import（大小写不敏感；前置须非 ident 边界，后置须非 ident-char；仅块外）
+        if c == b'@' && depth == 0 && is_ident_boundary_before(bytes, i) {
             let rest = &css[i..];
             let lower_rest = rest.to_ascii_lowercase();
             if lower_rest.starts_with("@import") && (rest.len() == 7 || !is_ident_char(rest.as_bytes()[7])) {
@@ -547,7 +558,9 @@ pub(super) fn expand_at_imports(
                     i = (j + 1).min(n);
                     continue;
                 }
-                // 找语句末尾 ';'（跨 string 防 ';' 在串内）
+                // 找语句末尾 ';'（跨 string 防 ';' 在串内；R5362 跨 url( ) token——CSS
+                // Syntax url token 值内未转义 ';' 属 token 值而非语句终结符，
+                // cascade-import-001 的嵌套 data: 导入语句首现 ';' 在 url token 内）。
                 let mut j = i + 7;
                 while j < n && bytes[j] != b';' {
                     if bytes[j] == b'"' || bytes[j] == b'\'' {
@@ -555,6 +568,28 @@ pub(super) fn expand_at_imports(
                         j += 1;
                         while j < n && bytes[j] != q {
                             j += 1;
+                        }
+                    } else if bytes[j] == b'\\' {
+                        // 转义对（如 `\;`）不终结语句
+                        j += 2;
+                    } else if bytes[j] == b'u' || bytes[j] == b'U' {
+                        // url( ) token：跳到未转义 `)`（R5362）
+                        let starts_url = j + 4 <= n
+                            && css[j..j + 4].eq_ignore_ascii_case("url(")
+                            && is_ident_boundary_before(bytes, j);
+                        if starts_url {
+                            j += 4;
+                            while j < n {
+                                match bytes[j] {
+                                    b'\\' => j += 2,
+                                    b')' => {
+                                        j += 1;
+                                        break;
+                                    }
+                                    _ => j += 1,
+                                }
+                            }
+                            continue;
                         }
                     }
                     j += 1;
@@ -596,6 +631,47 @@ pub(super) fn expand_at_imports(
                                     continue;
                                 }
                                 chain.remove(&path);
+                            }
+                        }
+                        // R5362（CSS Cascade §at-import + RFC 2397）：data:text/css 导入——
+                        // R2426 起 data: 一律删除（仅本地文件展开）。cascade-import-001 驱动：
+                        // 嵌套 data: 导入链（外层 data: 内 @import 内层 data:，转义括号 +
+                        // 双重 percent 编码）被删 → `.test` 规则整体缺失 → 页面 fallback 红。
+                        // 解码复用 render-foundation decode_data_uri_bytes（base64/percent 双
+                        // 形态，fetch spec data URL processor）；data: 无基 URL，嵌套相对 URL
+                        // 读失败仍走删除兜底。chain 以原始 URL 伪路径入环保护（self-import
+                        // 防无限递归，与本地路径同一集合）。
+                        if media_ok
+                            && url.len() >= 5
+                            && url[..5].eq_ignore_ascii_case("data:")
+                            && let Some(imported) = url.find(',').and_then(|comma| {
+                                let header = &url[5..comma];
+                                let mediatype = header.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+                                if mediatype != "text/css" {
+                                    return None;
+                                }
+                                decode_data_uri_bytes(&url)
+                                    .ok()
+                                    .map(|bytes| zero_net::charset::decode_css_bytes(&bytes, None))
+                            })
+                        {
+                            let pseudo = std::path::PathBuf::from(&url);
+                            if !chain.contains(&pseudo) {
+                                chain.insert(pseudo.clone());
+                                let expanded = expand_at_imports(&imported, base_dir, media_ctx, chain);
+                                chain.remove(&pseudo);
+                                // supports() 条件包裹语义与本地分支一致（CSS Cascade 5 条件导入）。
+                                match supports {
+                                    Some(cond) => {
+                                        out.push_str("\n@supports (");
+                                        out.push_str(cond.trim());
+                                        out.push_str(") {\n");
+                                        out.push_str(&expanded);
+                                        out.push_str("\n}\n");
+                                    }
+                                    None => out.push_str(&expanded),
+                                }
+                                continue;
                             }
                         }
                         // media 不匹配 / data:http: / 环 / 读失败 → 删除该 @import（不输出）；
@@ -665,8 +741,25 @@ fn parse_import_stmt_body(body: &str) -> Option<(String, Option<String>, Vec<Str
         (body[1..end].to_string(), &body[end + 1..])
     } else if body.to_ascii_lowercase().starts_with("url(") {
         let after = &body[4..];
-        let close = after.find(')')?;
-        let inner = after[..close].trim();
+        // R5362（CSS Syntax §consume-url-token）：url token 值内 `\X` 为转义对，token 在首个
+        // **未转义** `)` 结束——`\(\)`（cascade-import-001 嵌套 data: 导入的转义括号）不是
+        // 终结符；`after.find(')')` 会在 `\)` 处截断。值再做 CSS 转义解码（`\(` → `(`，
+        // 复用 tokenizer 同源 css_unescape，镜像 consume_escape 算法）。
+        let b = after.as_bytes();
+        let mut close = None;
+        let mut k = 0;
+        while k < b.len() {
+            match b[k] {
+                b'\\' => k += 2,
+                b')' => {
+                    close = Some(k);
+                    break;
+                }
+                _ => k += 1,
+            }
+        }
+        let close = close?;
+        let inner = zero_css_parser::Tokenizer::css_unescape(after[..close].trim());
         let url = inner.trim_matches('"').trim_matches('\'').to_string();
         (url, &after[close + 1..])
     } else {
@@ -763,17 +856,22 @@ pub(super) fn expand_style_imports(
     let mut pos = 0;
     while let Some(rel) = html[pos..].find("<style") {
         let abs_open = pos + rel;
-        // open tag 后须紧跟 '>' 或 whitespace（避 `<stylexxx` 误匹配）
-        let after_tag_name = &html[abs_open + 6..];
-        let next_non_ws = after_tag_name.trim_start();
-        let ws_len = after_tag_name.len() - next_non_ws.len();
-        if !next_non_ws.is_empty() && next_non_ws.as_bytes()[0] != b'>' && !(next_non_ws.starts_with('/')) {
+        // open tag 后须紧跟 '>' / whitespace / 属性自闭合 '/'（避 `<stylexyz` 误匹配）。
+        // R5362 修正：判定须看 tag 名后**首字节**（未 trim）——`<style type="text/css">`
+        // 等带属性形态被旧 trim 后判定（首属性字符 ≠ '>'）误判为非法 tag 整块跳过，
+        // 块内 @import 永不展开（cascade-import-001）。
+        let first_after = html.as_bytes().get(abs_open + 6).copied();
+        let legit_open = match first_after {
+            None => false,
+            Some(b'>') | Some(b'/') => true,
+            Some(c) => c.is_ascii_whitespace(),
+        };
+        if !legit_open {
             // 非合法 <style> tag（如 <stylexyz），原样跳过该匹配
             out.push_str(&html[pos..abs_open + 6]);
             pos = abs_open + 6;
             continue;
         }
-        let _ = ws_len; // 属性解析由 find('>') 统一处理
         let Some(rel_gt) = html[abs_open..].find('>') else {
             break;
         };
@@ -1529,6 +1627,73 @@ mod tests {
         assert!(out3.contains(".im\u{E9}port\u{201C}d"), "导入内容 UTF-8 保持: {out3}");
         assert!(out3.contains(".t\u{E9}st"), "展开后文本 UTF-8 保持: {out3}");
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// R5362（CSS Syntax §consume-url-token）：url token 值内 `\X` 为转义对，语句终止
+    /// 扫描与 token 提取均须跳到首个**未转义** `)`——cascade-import-001 的嵌套 data:
+    /// 导入把内层 `url(...)` 以 `\(\)` 转义写入外层 url token，且值内有未转义 `;`。
+    /// `find(')')`/首个 `;` 均截断。
+    #[test]
+    fn import_url_token_escapes_and_raw_semicolon_survive() {
+        // 语句终止扫描：url token 内的 `;` 与 `\)` 不是终点；token 后的 `;` 才是。
+        let css = concat!(
+            "@import url(data:text/css,.t%7Bcolor:maroon;%7D @import url\\(data:text/css,.u%7B%7D\\));\n",
+            "div { color: blue }",
+        );
+        let dir = std::env::temp_dir().join(format!("zw_reftest_urlesc_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        let mut chain = std::collections::HashSet::new();
+        let out = expand_at_imports(css, &dir, &ctx, &mut chain);
+        assert!(
+            out.contains(".t{color:maroon;}"),
+            "data:text/css 展开（token 内 ';' 未截断语句）: {out}"
+        );
+        assert!(
+            out.contains("div { color: blue }"),
+            "后续规则须保留（语句终止于 url token 之后的 ';'）: {out}"
+        );
+        assert!(!out.contains("@import"), "无残留 @import 语句: {out}");
+        let _ = std::fs::remove_dir_all(&dir);
+
+        // parse_import_stmt_body：转义括号 + 尾部未转义 `)` 才是 token 终结。
+        let body = r#" url(data:text/css,@import url\(data:text/css,.t%7B%7D\);.a%7Bcolor:green%7D)"#;
+        let (url, supports, media) = parse_import_stmt_body(body).expect("url token 可解析");
+        assert_eq!(
+            url, r#"data:text/css,@import url(data:text/css,.t%7B%7D);.a%7Bcolor:green%7D"#,
+            "转义括号解码为字面括号，值含未转义 ';'"
+        );
+        assert_eq!(supports, None, "无 supports 子句");
+        assert!(media.is_empty(), "token 终结于最后一个未转义 ')'，无 media 余料");
+    }
+
+    /// R5362（CSS Cascade §at-import + RFC 2397）：data:text/css 导入展开——percent
+    /// 编码 payload 解码 + 递归展开嵌套 data: 导入（内层 url() 转义括号，驱动案同构）；
+    /// 非 text/css media type 仍删除。
+    #[test]
+    fn expand_at_imports_data_text_css_recurses_nested() {
+        let dir = std::env::temp_dir().join(format!("zw_reftest_datacss_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let ctx = zero_css_parser::media_query::MediaContext::new(800.0, 600.0);
+        // 嵌套链：外层 data: 内转义括号包内层 data: 导入；内层 payload 单层 percent 编码。
+        let outer = "@import url\\(data:text/css,.t%7Bcolor:maroon%7D\\);\n.test.test { color: green }";
+        let css = format!("@import url(data:text/css,{outer});\np {{ color: yellow }}");
+        let mut chain = std::collections::HashSet::new();
+        let out = expand_at_imports(&css, &dir, &ctx, &mut chain);
+        assert!(out.contains(".t{color:maroon}"), "内层 data: 导入经两层解码展开: {out}");
+        assert!(out.contains(".test.test { color: green }"), "外层余下规则保留: {out}");
+        assert!(out.contains("p { color: yellow }"), "页面既有规则保留: {out}");
+        assert!(!out.contains("@import"), "无残留 @import 语句: {out}");
+
+        // 非 text/css media type 仍删除（维持 R2426 data: 保守语义）。
+        let css2 = "@import url(data:image/png,iVBOR);\ndiv { color: blue }";
+        let mut chain2 = std::collections::HashSet::new();
+        let out2 = expand_at_imports(css2, &dir, &ctx, &mut chain2);
+        assert!(!out2.contains("@import"), "非 text/css data: 导入删除: {out2}");
+        assert!(out2.contains("div { color: blue }"), "既有规则保留: {out2}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
