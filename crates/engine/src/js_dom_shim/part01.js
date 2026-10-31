@@ -2595,7 +2595,27 @@
       // 启发之外的动态端点（xmldecl trickle.py 等 wptserve text/html 输出）按响应
       // MIME 走 HTML 文档语义（kind 'xml' 会丢 bogus comment 与编码嗅探消费面）。
       if (kind !== 'html' && /^text\/html\b/i.test(String(_zwFrameCt || ''))) kind = 'html';
+      // S184（html-semantics M2）：Content-Type text/plain 子文档按**纯文本文档**
+      // 装载（spec navigate read text：text/plain 响应建 body > pre 文档、解码文本
+      // 字面进树，https://html.spec.whatwg.org/multipage/document-lifecycle.html#read-text
+      // ——真浏览器对 text 文档不做标记解析，`&#NN;` 等字符引用保持字面）。既有
+      // 路径按 URL kind（.py → xml）落标记解析，回显体里的 `&#601;` 被解码成真实
+      // 字符——enctypes-helper unescape 断言面错位（form-submission-0 十二案根因
+      // 之二）。kind 升 'html' + HTML 转义后包 `<pre>` 壳：解析回头即字面文本；
+      // \r\n 经解析器输入流归一成 \n 与真浏览器同型（helper unescape 首步
+      // `\r\n?|\n → \r\n` 归一即为此设）。NUL 交解析器 tokenizer 的 FFFD 替换
+      // （真浏览器 data 态同型）。contentType 回写 text/plain（read text 的 MIME 面）。
+      var _zwIsTextPlain = /^text\/plain\b/i.test(String(_zwFrameCt || ''));
+      if (_zwIsTextPlain) {
+        kind = 'html';
+        body = '<html><head></head><body><pre>'
+          + String(body).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+          + '</pre></body></html>';
+      }
       entry.doc = _zwMakeIframeDoc(kind, body, _zwFrameCharset);
+      // S184：text/plain 面回写文档 MIME（read text——上壳 kind 升 'html' 后工厂
+      // 盖了 text/html；真浏览器 text 文档 contentType 恒 text/plain）。
+      if (_zwIsTextPlain) { try { entry.doc.contentType = 'text/plain'; } catch (_eTpCt) {} }
       // uievents-compat 尾簇 23（2026-10-06）：body id 落视图——`<body id=…>` 的
       // 子文档（pointercapture_in_frame 内页）body 视图 getAttribute 此前恒 null
       //（_zwMakeIframeDoc 的 R159/R255 提取链对 fetch 形态断链）——从原始 markup

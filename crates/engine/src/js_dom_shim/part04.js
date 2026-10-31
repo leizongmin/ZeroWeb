@@ -11723,11 +11723,21 @@
             //（_zwEncodingFromLabel 全 label 表），首个合法者胜；全非法或属性缺席 →
             // 回落文档 character encoding（document.characterSet 同源：host 预扫描
             // 优先）。仅 urlencoded 序列化面消费（_encPair 分派：GET query + POST
-            // body）；text/plain / multipart 不消费提交编码（字面/UTF-8），行为不变。
+            // body）；text/plain / multipart 自 S184 起同样消费（见下方 S184 注）。
             // utf-16 系 label 不在表（_zwEncodingFromLabel 非 htmlMeta 面）→ 回落——
             // 与 spec get-an-output-encoding(UTF-16*)=UTF-8 的可观测差异仅在
             // accept-charset 显式 utf-16 且文档非 UTF-8 场景（无 WPT 覆盖）。FIXME:
             // get-an-encoding 的 utf-16 label 面未实现。
+            // S184（html-semantics M2）：text/plain / multipart 序列化面同样消费
+            // 提交编码（HTML §4.10.22.4/§4.10.22.5 encoding algorithm——编码 =
+            // select a form submission encoding）：name/value/filename 逐 scalar
+            // 编码进 `_fSubmitEnc`，unmappable 落 HTML NCR `&#NNN;`（WPT
+            // text-plain/multipart-formdata windows-1252 钉态：á→0xE1、ə→`&#601;`、
+            // 💩→`&#128169;`、lone surrogate→`&#65533;`）；经
+            // `__zw_text_encode_form_bytes` 出 `__zw_bytes:` 字节体（text/plain
+            // body 整体一次编码；multipart 逐 push 串编码，File 字节体不编码——
+            // spec 只转换字符串位）。UTF-8/桥缺席路径留守既有纯 JS 字节组装零变化
+            //（corpus 非 windows-1252 面字节级同前）。
             var _fSubmitEnc = '';
             try {
               var _fAc = fHandle ? __zw_get_attr_handle(fHandle, 'accept-charset') : (__zw_get_attr(fSel, 'accept-charset') || '');
@@ -11793,10 +11803,18 @@
             }
             var _body = _urlBody;
             var _mpBoundary = '';
+            // S184：非 UTF-8 提交编码 + 桥在位 → 串位按提交编码字节化（UTF-8 面
+            // `_zw_utf8_encode` 同形——well-formed 串 as_bytes 直通）。
+            var _encFormBytes = function (s) {
+              return _zwDecodeBytesPrefix('__zw_bytes:' + __zw_text_encode_form_bytes(_fSubmitEnc, s));
+            };
             if (_fEnc === 'text/plain') {
               _body = '';
               for (var _si = 0; _si < _pairs.length; _si++) {
                 _body += _normNL(_pairs[_si][0]) + '=' + _normNL(_entryStr(_pairs[_si])) + '\r\n';
+              }
+              if (_fSubmitEnc !== 'UTF-8' && typeof __zw_text_encode_form_bytes === 'function') {
+                _body = _zwEncodeBytesPrefix(_encFormBytes(_body));
               }
             } else if (_fEnc === 'multipart/form-data') {
               // boundary：固定前缀 + 随机 24 字符（47 字符总量 < spec 70 上限），
@@ -11825,7 +11843,12 @@
               };
               var _mpBytes = [];
               var _mpPushStr = function (s) {
-                var _ba = _zw_utf8_encode(s);
+                // S184：非 UTF-8 提交编码 + 桥在位 → part 头/值按提交编码字节化
+                //（name/filename/非 File value；boundary/头名 ASCII 两编码同字节；
+                // File 字节体不 经此——下方直 push `_zw_blobBytes`）。
+                var _ba = (_fSubmitEnc !== 'UTF-8' && typeof __zw_text_encode_form_bytes === 'function')
+                  ? _encFormBytes(s)
+                  : _zw_utf8_encode(s);
                 for (var _bi = 0; _bi < _ba.length; _bi++) _mpBytes.push(_ba[_bi]);
               };
               for (var _si = 0; _si < _pairs.length; _si++) {

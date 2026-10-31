@@ -16,7 +16,7 @@
 //! 按同 label+ignoreBOM 重建（透明降级为丢一次跨块状态）。
 //! spec：https://encoding.spec.whatwg.org/#interface-textdecoder
 
-use super::crypto::bytes_from_csv;
+use super::crypto::{bytes_from_csv, bytes_to_csv};
 use super::json_str;
 use encoding_rs::{Decoder, DecoderResult, Encoding};
 use std::collections::{HashMap, VecDeque};
@@ -187,6 +187,51 @@ pub fn text_encode_percent(label: &str, text: &str, mode: &str) -> String {
         encode_percent_bytes(raw, query_mode, &mut out);
     }
     out
+}
+
+/// form 提交编码字节化桥（html-semantics M2 S184，text/plain + multipart
+/// name/value/filename 面）：逐 scalar fresh 编码进提交编码（[`text_encode_percent`]
+/// 同款模型——ISO-2022-JP ESC 伪迹剥除、encoding_rs HTML error mode 出 unmappable
+/// 的 NCR `&#N;` 字节；lone surrogate 经 JS→Rust 损毁转换已落 U+FFFD，windows-1252
+/// 不可映射 → `&#65533;` 同路径），字节 csv 十进制返（crypto 模块 wire，
+/// shim `_zwDecodeBytesPrefix` 对称）。HTML §4.10.22.4/§4.10.22.5 text/plain 与
+/// multipart/form-data encoding algorithm 的提交编码消费臂（WPT
+/// forms/form-submission-0 text-plain/multipart-formdata windows-1252 钉态：
+/// á→0xE1、ə→`&#601;`、💩→`&#128169;`、lone surrogate→`&#65533;`）。
+/// UTF-8 臂 = `as_bytes` 直通（shim 仅非 UTF-8 提交编码调用本桥，UTF-8 路径
+/// 既有纯 JS 字节组装零变化）；未知 label → 空串（shim 归一后方调用）。
+pub fn text_encode_form_bytes(label: &str, text: &str) -> String {
+    let Some(encoding) = Encoding::for_label(label.as_bytes()) else {
+        return String::new();
+    };
+    // get-an-output-encoding：replacement 与 UTF-16 系的输出编码 = UTF-8（与
+    // [`text_encode_percent`] 同门判定）。
+    let encoding = if encoding == encoding_rs::REPLACEMENT
+        || encoding == encoding_rs::UTF_16LE
+        || encoding == encoding_rs::UTF_16BE
+    {
+        encoding_rs::UTF_8
+    } else {
+        encoding
+    };
+    if encoding == encoding_rs::UTF_8 {
+        return bytes_to_csv(text.as_bytes());
+    }
+    let mut bytes = Vec::with_capacity(text.len() + 8);
+    let mut buf = [0u8; 4];
+    for ch in text.chars() {
+        let (encoded, _, _) = encoding.encode(ch.encode_utf8(&mut buf));
+        let raw: &[u8] = encoded.as_ref();
+        // ISO-2022-JP fresh 单 scalar 编码的 end-of-queue flush 尾巴剥除
+        //（[`text_encode_percent`] 同款——per-scalar 输出恒为伪迹非编码产出）。
+        let raw = if encoding == encoding_rs::ISO_2022_JP && raw.ends_with(&[0x1B, 0x28, 0x42]) {
+            &raw[..raw.len() - 3]
+        } else {
+            raw
+        };
+        bytes.extend_from_slice(raw);
+    }
+    bytes_to_csv(&bytes)
 }
 
 /// 字节级 percent-encode set 判定 + 编码（URL standard 序列化语义：输出字节按其
@@ -467,6 +512,40 @@ mod tests {
         // 字面量 `%`（UTF-8 面）query 出 %25；form 面行为不变。
         assert_eq!(text_encode_percent("UTF-8", "a%", "query"), "a%25");
         assert_eq!(text_encode_percent("UTF-8", "a%", "form"), "a%25");
+    }
+
+    #[test]
+    fn test_encode_form_bytes_windows_1252_ncr() {
+        // S184 WPT 钉态（forms/form-submission-0 text-plain/multipart windows-1252）：
+        // mappable á U+00E1 → 0xE1 单字节（echo 往返 U+00E1 同字符）。
+        assert_eq!(text_encode_form_bytes("windows-1252", "\u{e1}"), "225");
+        // € U+20AC → 0x80（text_encode_percent %80 锚点同表反向）。
+        assert_eq!(text_encode_form_bytes("windows-1252", "\u{20ac}"), "128");
+        // unmappable ə U+0259 → HTML NCR `&#601;` 字节（expected a&#601;b 面）。
+        assert_eq!(
+            text_encode_form_bytes("windows-1252", "a\u{259}b"),
+            "97,38,35,54,48,49,59,98"
+        );
+        // U+FFFD（lone surrogate 桥入形态）→ `&#65533;` 五位十进制 NCR（expected
+        // `&#65533;` 面；& # 6 5 5 3 3 ; 八字节）。
+        assert_eq!(
+            text_encode_form_bytes("windows-1252", "\u{fffd}"),
+            "38,35,54,53,53,51,51,59"
+        );
+        // astral 💩 U+1F4A9 → `&#128169;` 码点十进制（filename 面）。
+        assert_eq!(
+            text_encode_form_bytes("windows-1252", "\u{1f4a9}"),
+            "38,35,49,50,56,49,54,57,59"
+        );
+        // ASCII 体（含 CRLF/NUL）两编码同 csv——UTF-8 路径零变化锚。
+        assert_eq!(
+            text_encode_form_bytes("windows-1252", "x=y\r\n"),
+            text_encode_form_bytes("UTF-8", "x=y\r\n")
+        );
+        // UTF-8 臂 = as_bytes 直通（非 ASCII 出 UTF-8 字节序列）。
+        assert_eq!(text_encode_form_bytes("UTF-8", "a\u{e9}"), "97,195,169");
+        // 未知 label → 空串（shim 归一后方调用，正常不达）。
+        assert_eq!(text_encode_form_bytes("no-such-enc", "A"), "");
     }
 }
 

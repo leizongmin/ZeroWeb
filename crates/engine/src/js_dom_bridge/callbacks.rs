@@ -826,6 +826,22 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // S184（html-semantics M2）：form 提交编码字节化桥——text/plain body 与
+    // multipart name/value/filename 头域按提交编码（accept-charset 面，shim
+    // `_fSubmitEnc` 归一规范名）逐 scalar 编码 + unmappable 落 HTML NCR
+    // `&#NNN;`（HTML §4.10.22.4/§4.10.22.5；WPT forms/form-submission-0
+    // text-plain/multipart-formdata windows-1252 钉态）。返 csv 十进制字节
+    //（shim `_zwDecodeBytesPrefix`/`__zw_bytes:` wire 对称）；UTF-8/桥缺席路径
+    // shim 留守既有纯 JS 字节组装零变化。
+    sandbox.register_callback(
+        "__zw_text_encode_form_bytes",
+        Box::new(|args: &[String]| -> String {
+            let label = args.first().map(String::as_str).unwrap_or("");
+            let text = args.get(1).map(String::as_str).unwrap_or("");
+            text_encode_form_bytes(label, text)
+        }),
+    );
+
     // `crypto.subtle.sign/verify("HMAC", ...)`（R2955）——HMAC-SHA-1/256/384/512。
     // arg[0]=hash 名（"SHA-256"），arg[1]=key 字节 csv，arg[2]=data 字节 csv。返 MAC csv（unsupported → 空）。
     sandbox.register_callback(

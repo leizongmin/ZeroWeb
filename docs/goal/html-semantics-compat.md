@@ -31,7 +31,48 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 183 收口，type=color 值清洗算法 CSS `<color>` 解析臂落地——color.html 14F 单根翻绿，shim 1 + rust 2：part01 `case 'color'` 重写 + 宿主回调 `__zw_parse_color_rgba` 复用 canvas 同源解析）**
+> **▶ 当前状态（2026-10-31 M2 切片 184 收口，form 提交编码 text/plain + multipart 臂落地——12F 双根刀翻绿，shim 2 + rust 2：part04 accept-charset 字节化桥消费 + part01 text/plain iframe 字面渲染门）**
+> **入场勘根（两层根因）**：① 提交编码未消费——enctypes-helper 面
+> accept-charset 选出的提交编码从不参与串位字节化（text/plain 与
+> multipart `_mpPushStr` 均 `_zw_utf8_encode` 直通）；期望 mappable
+> á→0xE1、unmappable ə/U+FFFD/💩→HTML NCR `&#NNN;`（HTML
+> §4.10.22.4/§4.10.22.5）。② text/plain iframe 字面渲染门缺位——
+> 首刀接线后 got 变 charref 解码态证明字节已对、错在
+> `_zwFinishIframeEntry` 只对 text/html 升 HTML 解析（URL kind .py→xml
+> 落标记解析）致回显体 `&#601;` 被解码；真浏览器走 spec read text
+>（body > pre 字面）。勘根方法学两记：runner case 源含
+> `createElement("iframe")` 字面量被静默跳过（探针拆串绕过）；
+> helper expectedBuilder 单参 serialized（expected 预绑）。
+> **施工**：rust 2——text_encoding.rs `text_encode_form_bytes`
+> （for_label 缺席空串、replacement/UTF-16 归 UTF-8、UTF-8 as_bytes
+> 直通、非 UTF-8 逐 scalar fresh 编码 + ISO-2022-JP ESC 伪迹剥除，
+> 字节 csv 返）+ callbacks.rs `__zw_text_encode_form_bytes` 注册；
+> shim 2——part04 text/plain body 组装后字节 wire（`__zw_bytes:`
+> R3020 既有 host 通道）+ multipart `_mpPushStr` 编码感知（File
+> 字节体/boundary 不经桥）；part01 `_zwIsTextPlain` 门 kind 升
+> 'html' + body 包 HTML 转义 `<pre>` 壳 + contentType 回写
+> text/plain。spec document-lifecycle #read-text。
+> **验证**：勘根探针 charCode 倾倒钉死根因二（探针收口前已删）；
+> **定向 form-submission-0 299P/3F**（12 靶案全 F→P；残留 3F =
+> submission-checks cannot navigate 三兄弟连接性独立面在册）；
+> **forms 全树 join 4711/4711 键 F2P = 12 恰靶案（6+6）、其他位移
+> 0**（4325P/375F/12T → 4337P/363F/12T）；interactive **483 键零
+> 位移**（439P/44F）；engine lib **3636P/1F**（+1 新单测，1F =
+> ua_display_li 渲染流在册同键）；shim node --check SYNTAX_OK
+>（114133 行）；cargo fmt/clippy 全绿。
+> **复验（同日会话中断恢复后，rebase 并入 origin 7 提交——site-opt
+> caret/paint + R5340 removeChild memo + R5341 runner harness 运行期
+> 读取——门禁全数重跑逐位一致）**：定向 299P/3F、forms 全树
+> 4337P/363F/12T、interactive 439P/44F bit-exact、engine lib
+> **3641P/1F**（渲染流并入 +5 新测试，1F 同键）、node --check
+> SYNTAX_OK（114155 行）、fmt + guarded workspace clippy 全绿。
+> **下一步候选**：form.elements 集合层 12（HTMLFormControlsCollection
+> /RadioNodeList）；disabled click 8 + click 消费激活 7（同 click
+> 分派域可合刀）；color-attributes input.alpha/colorSpace 2F 小反射
+> 面可搭车。
+> **账本**：[evidence/2026-10-31-m2s184-form-encoding.md](html-semantics-compat/evidence/2026-10-31-m2s184-form-encoding.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 183 收口，type=color 值清洗算法 CSS `<color>` 解析臂落地——color.html 14F 单根翻绿，shim 1 + rust 2：part01 `case 'color'` 重写 + 宿主回调 `__zw_parse_color_rgba` 复用 canvas 同源解析）**
 > **入场勘根**：清洗点唯一 = part01 `_zwSanitizeInputValue` case 'color'
 >（type 变更/value setter/R3906 选区校准三调用点同源），旧臂仅
 > `/^#[0-9a-f]{6}$/` 6 位 hex 校验——CSS 颜色面整体缺位（14F 形态：关键词/
