@@ -50,7 +50,7 @@ part04「元素 remove 无 id 臂择路 + 位置寻址补发」。rebase 时发�
 （R5356b 轮前置笔）已独立落地同一幽灵 br 根因的 part04 面：「无 id pending 元素跨批
 remove 宿主镜像补发」（inline-host 720P→820P）——journal 序 childAt 先于
 RemoveHandle，pn miss 时按父基底缓存扫描位置补发删真目标。按「消费域收敛、不回退
-对方修复面」先例仲裁落地，其中翻译守卫在组合态复验中二次撤改。终稿 83b90e689
+对方修复面」先例仲裁落地，其中翻译守卫在组合态复验中二次撤改。终稿 38772a918
 （rebase 并入对方 R5392/R5395/R5398/s176 后落地，翻译门与 part04 同面块在落地前
 撤净，未进入远端；中间态 8c19d8a66 仅本地存在过）：
 
@@ -128,7 +128,7 @@ grep 清零（ZW_APPLY_TRACE / __zwDbgGhostState / [rebind] / [apply-rh] / [pn-w
 `-left-paragraph-and-right-line`——首轮所用短名 `join-left-*` 语料文件不存在，
 启动即败与守卫无关）后 2607P/1455P 全扫零位移。
 
-### 5.3 终树 83b90e689 组合态电池（撤净翻译门 + 并入对方 R5392/R5395/R5398/s176 后）
+### 5.3 终树 38772a918 组合态电池（撤净翻译门 + 并入对方 R5392/R5395/R5398/s176 后）
 
 单干净二进制逐文件分跑（systemd MemoryMax=24G 守卫，空闲机器单流），§5.2 之后又
 rebase 进对方 11 笔（含 R5392/R5395/R5398/s176），amend 撤净翻译门后终树全量复跑：
@@ -150,6 +150,12 @@ wss/ilb 翻绿与 engine +8P 均来自对方树新并面，非本流改动位移
 漂移表第五行。终树 fmt `--all --check` 净、clippy `-p zero-engine --all-targets`
 净。
 
+**合并树复测（再并入对方 R54xx/s177/s178 九笔后，1155ace7f）**：同守卫抽检三面——
+inline-host **880P/0F exit=0** 恒等（rebind 守卫 × 对方 part05/renderer 九笔零冲突）；
+join-different **3454P/0F/1T** exit=1（第六轮，0F，新变体 backspace nowrap×pre-line，
+P 差仍在 3,447–3,455 带内）；engine lib **3,626P/10F**（P 与并入前恒等——对方两枚新钉
+落 renderer lib 非本表，10 已知红逐名 identical）。
+
 ## 6. join-different 残余 T 归因：预算边距截断（基线复证定谳）
 
 合并树复验 join-different 出现残余 Timeout（撤翻译门轮观察 3450P/0F/1T，逐轮 1T/2T
@@ -163,12 +169,13 @@ wss/ilb 翻绿与 engine +8P 均来自对方树新并面，非本流改动位移
 | 合并树首跑 | 两守卫均在 | 3448P/0F/1T | forwarddelete pre-line×pre |
 | 合并树空闲复跑 | 两守卫均在 | 3447P/0F/**2T** | forwarddelete pre×pre-line + pre-line×pre |
 | 合并树撤翻译门 | 仅 rebind 守卫 | 3450P/0F/1T | select-boundary nowrap×pre-line |
-| 终树 83b90e689（§5.3 电池） | 仅 rebind 守卫 | 3447P/0F/**2T** | backspace pre-line×pre-wrap + forwarddelete pre-line×pre |
+| 终树 38772a918（§5.3 电池） | 仅 rebind 守卫 | 3447P/0F/**2T** | backspace pre-line×pre-wrap + forwarddelete pre-line×pre |
+| 合并树 1155ace7f（§5.3 复测，再并对方九笔） | 仅 rebind 守卫 | 3454P/0F/**1T** | backspace nowrap×pre-line |
 
 定谳三点：
 
 1. **基线同样 1T**——无本流任何改动的树同机同语料同样截断一行，1T 非本流守卫引入。
-2. **超时变体逐轮漂移**（五轮五组互不相同，见上表超时变体列）——无固定受害者，
+2. **超时变体逐轮漂移**（六轮六组互不相同，见上表超时变体列）——无固定受害者，
    是 R5342 自适应墙（60+nv×15+90）预算边界的随机截断：语料 3,456 变体恰在墙沿，墙到
    时在跑的变体被标 Timeout，各轮 P 差（3,447–3,455）即被截变体的剩余子测数。
 3. **所有轮次 0F**——只有截断没有失败；历史全扫账 3456P/0F 为更轻树上跑满的分母，
