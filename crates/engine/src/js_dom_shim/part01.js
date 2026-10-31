@@ -8335,6 +8335,19 @@
   // 尾簇 33：withTextInput === false 时**不派 textInput**（execCommand 编辑命令与
   // 真键盘输入分流——Chromium execCommand insertText 只派 beforeinput/input；
   // WPT textInput/api 的 reject listener 断言面）。缺省（真键盘路径）照派。
+  // typing-state 簇（2026-10-31）：collapsed format 命令记录的 typing inline 包裹
+  //（part06 format 臂设置/切换，Selection 方法经 _zwSync 清除）——插入文本按记录
+  // 嵌套包裹（记录序 = 外层在前）。返回 { el: 挂树用根, text: caret 锚文本节点 }。
+  function _zwCeTypingInsert(tags, text) {
+    var tn = document.createTextNode(text);
+    var root = tn;
+    for (var i = tags.length - 1; i >= 0; i--) {
+      var w = document.createElement(String(tags[i]));
+      w.appendChild(root);
+      root = w;
+    }
+    return { el: root, text: tn };
+  }
   globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
     // sel 兼容元素直传（execCommand CE 分支 activeElement——动态创建宿主无
     // __zwSelector，selector 往返失效）。
@@ -8373,9 +8386,23 @@
       // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
       var v = String(sc.nodeValue || '');
       var eo = range.collapsed ? so : (range.endOffset | 0);
-      sc.nodeValue = v.slice(0, so) + ins + v.slice(eo);
-      node = sc;
-      caretOff = so + ins.length;
+      var ttags1 = globalThis.__zwTypingTags;
+      if (ttags1 && ttags1.length) {
+        // typing 包裹（wss/ilb temporary inline style 组）：头段留原节点，插入段
+        // 成 inline 包裹元素，尾段成新文本节点。
+        sc.nodeValue = v.slice(0, so);
+        var tw1 = _zwCeTypingInsert(ttags1, ins);
+        var tp1 = sc.parentNode || el;
+        tp1.insertBefore(tw1.el, sc.nextSibling || null);
+        var tv1 = v.slice(eo);
+        if (tv1) tp1.insertBefore(document.createTextNode(tv1), tw1.el.nextSibling || null);
+        node = tw1.text;
+        caretOff = ins.length;
+      } else {
+        sc.nodeValue = v.slice(0, so) + ins + v.slice(eo);
+        node = sc;
+        caretOff = so + ins.length;
+      }
     } else if (sc && sc.nodeType === 1) {
       var kids = sc.childNodes || [];
       var target = null, idx = so;
@@ -8385,20 +8412,59 @@
       if (target) {
         var v2 = String(target.nodeValue || '');
         var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
-        target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
-        node = target;
+        var ttags2 = globalThis.__zwTypingTags;
+        if (ttags2 && ttags2.length) {
+          target.nodeValue = v2.slice(0, at);
+          var tw2 = _zwCeTypingInsert(ttags2, ins);
+          target.parentNode.insertBefore(tw2.el, target.nextSibling || null);
+          var tv2 = v2.slice(at);
+          if (tv2) target.parentNode.insertBefore(document.createTextNode(tv2), tw2.el.nextSibling || null);
+          node = tw2.text;
+        } else {
+          target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
+          node = target;
+        }
         caretOff = at + ins.length;
       } else {
         // 元素边界两侧无文本子 → 新文本节点插 offset 位（kids[idx] 前）——旧版
         // appendChild 尾追使 caret 落元素子间隙时文本跳到元素尾
         //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
         // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
-        node = document.createTextNode(ins);
-        sc.insertBefore(node, kids[idx] || null);
+        var ttags3 = globalThis.__zwTypingTags;
+        if (ttags3 && ttags3.length) {
+          var tw3 = _zwCeTypingInsert(ttags3, ins);
+          sc.insertBefore(tw3.el, kids[idx] || null);
+          node = tw3.text;
+        } else {
+          node = document.createTextNode(ins);
+          sc.insertBefore(node, kids[idx] || null);
+        }
         caretOff = ins.length;
       }
     } else {
       return; // 非 text/element caret 容器（document 级等）——best-effort 不做
+    }
+    // 插入消费拆分占位 br（wss block 形：新块/inline 壳的占位断在内容进场后
+    // 移除——期望 `abc<div><i>def</i></div>` 形，带标 br 见拆分 ① 臂与 ②b
+    // inline 盒臂）。**不门 typing state**（preserving 组无 format 前置同样
+    // 消费）。扫描自 caret 直接父层起逐层上行到块级/宿主——占位 br 可落
+    // inline 壳内（②b shell）非块层。
+    if (node && node.parentNode) {
+      try {
+        var pbEl = node.parentNode;
+        var pbGuard = 0;
+        while (pbEl && pbEl.nodeType === 1 && pbGuard++ < 32) {
+          var pbKids = pbEl.childNodes || [];
+          for (var pbi = pbKids.length - 1; pbi >= 0; pbi--) {
+            var pbk = pbKids[pbi];
+            if (pbk && pbk.nodeType === 1 && pbk.__zwPlaceholderBr) {
+              try { pbEl.removeChild(pbk); } catch (_ePb) {}
+            }
+          }
+          if (pbEl === el || _zwCeIsBlockTagName(String(pbEl.tagName || '').toLowerCase())) break;
+          pbEl = pbEl.parentNode;
+        }
+      } catch (_ePb2) {}
     }
     // caret → 插入文本尾（新 collapsed range 取代——selection 单例直换）。
     var nr = document.createRange();
@@ -9152,7 +9218,9 @@
         if (boundaryOff === 0) {
           // caret 在内容起点：删选中段后空 separator+<br> 占位插最前，尾内容原地。
           boundaryText.nodeValue = tail1;
-          sep1.appendChild(document.createElement('br'));
+          var phbr1a = document.createElement('br');
+          phbr1a.__zwPlaceholderBr = true;
+          sep1.appendChild(phbr1a);
           host.insertBefore(sep1, boundaryText || null);
         } else {
           // 尾段+后续兄弟移入新块；新块空 → <br> 填充（语料 abc[] 形态）。
@@ -9160,7 +9228,11 @@
           boundaryText.nodeValue = v1.slice(0, boundaryOff);
           refAfter1 = boundaryText.nextSibling;
           host.insertBefore(sep1, refAfter1 || null);
-          if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
+          if (!(sep1.childNodes || []).length) {
+            var phbr1b = document.createElement('br');
+            phbr1b.__zwPlaceholderBr = true;
+            sep1.appendChild(phbr1b);
+          }
         }
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
@@ -9171,7 +9243,11 @@
           sep1.appendChild(mv1);
           mv1 = nx1;
         }
-        if (!(sep1.childNodes || []).length) sep1.appendChild(document.createElement('br'));
+        if (!(sep1.childNodes || []).length) {
+          var phbr1c = document.createElement('br');
+          phbr1c.__zwPlaceholderBr = true;
+          sep1.appendChild(phbr1c);
+        }
         host.insertBefore(sep1, refAfter1 || null);
       }
       var nr1 = document.createRange();
@@ -9189,6 +9265,51 @@
       var dispB = _zwCeDisplayOf(block);
       var blockish2 = dispB === 'block' || (dispB === '' && _zwCeIsBlockTagName(tag2));
       if (!blockish2) {
+        // ②b（editing-compat typing/inline 簇，2026-10-31）：宿主块级（display
+        // ''/block）时 caret 在宿主直子 inline 盒内 → insertParagraph = 原盒截尾
+        // 段保留，新 separator 块内**复制 inline 壳**包尾段（wss preserving inline
+        // style 组 `<b>abc[]</b>` → `<b>abc</b><sep><b>def</b></sep>` 形）。非块级
+        // 宿主（display inline/inline-block）仍落 ③ 行断（行断形现账）；
+        // cannot-have-div 宿主（p/span 等 display:block，chd 语料期望 `a<br>b`
+        // 行断形）同样跳过——守卫与 ① 对齐限定 hostTag === 'div'。
+        var dispH2b = _zwCeDisplayOf(host);
+        var hostBlockish2b = hostTag === 'div' && (dispH2b === '' || dispH2b === 'block');
+        if (hostBlockish2b && !_zwCeIsBlockTagName(tag2)) {
+          var sep2b = document.createElement((globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div');
+          var shell2b = block.cloneNode(false);
+          var caretIn2b = 0;
+          if (boundaryText) {
+            var v2b = String(boundaryText.nodeValue || '');
+            var tail2b = v2b.slice(eo);
+            boundaryText.nodeValue = v2b.slice(0, boundaryOff);
+            if (tail2b) {
+              shell2b.appendChild(document.createTextNode(tail2b));
+              caretIn2b = 1;
+            }
+          } else if (boundaryNode) {
+            var mv2b = boundaryNode;
+            while (mv2b) {
+              var nx2b = mv2b.nextSibling;
+              shell2b.appendChild(mv2b);
+              mv2b = nx2b;
+            }
+            caretIn2b = (shell2b.childNodes || []).length;
+          }
+          if (!(shell2b.childNodes || []).length) {
+            var phbr2b = document.createElement('br');
+            phbr2b.__zwPlaceholderBr = true;
+            shell2b.appendChild(phbr2b);
+          }
+          host.insertBefore(sep2b, block.nextSibling || null);
+          sep2b.appendChild(shell2b);
+          // 原盒空 → br 占位（保留可见性）。
+          if (!(block.childNodes || []).length) block.appendChild(document.createElement('br'));
+          var nr2b = document.createRange();
+          nr2b.setStart(shell2b, caretIn2b);
+          nr2b.collapse(true);
+          if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr2b]; }
+          return true;
+        }
         // 落 ③ 行断（跳过 ② 剩余体）。display:inline 且自身无 ws 声明 → 一律 '\n'
         //（cannot-have-div 语料 Blink 行为：inline div 内 <br> 会跳出 inline 盒，
         // UA 插真实 LF——宿主 ws 无关；自身有声明 → 按声明裁决）。

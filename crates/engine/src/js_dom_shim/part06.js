@@ -4324,6 +4324,21 @@
               // 应用，嵌套结构 defer 记录）；选区起点已在 <tag> 包裹内 → 解除包裹
               //（toggle，切片 4）。非 format 命令不触发 DOM 变更（事件照派）。
               var fmtTag2 = _zwExecCmdFormatTag[cmd];
+              if (fmtTag2 && rng2 && rng2.collapsed) {
+                // editing-compat typing-state 簇（2026-10-31）：collapsed caret 的
+                // format 命令不改 DOM，只切换后续 typing 的 inline 包裹态（draft
+                // spec state of the command——wss/ilb temporary inline style 组）。
+                // 起点已在 <tag> 包裹内 → 从 typing 集移除；否则加入。应用面见
+                // part01 __zw_ce_insert（typing 包裹三插入臂）；清除点见 _zwSync。
+                try {
+                  var ttags = Array.isArray(globalThis.__zwTypingTags)
+                    ? globalThis.__zwTypingTags.slice() : [];
+                  var tat = ttags.indexOf(fmtTag2);
+                  if (_zwQueryFormatState(cmd)) { if (tat >= 0) ttags.splice(tat, 1); }
+                  else if (tat < 0) ttags.push(fmtTag2);
+                  globalThis.__zwTypingTags = ttags;
+                } catch (_eTt) {}
+              }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
                 // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
                 try {
@@ -10176,6 +10191,11 @@
     // 记录式队列（runner probe 泵 / host 定时器均消费），无 host 时 fallback
     // microtask。派发 target = document，bubbles=false。）
     _selection._zwSync = function (aNode, aOff, fNode, fOff) {
+      // typing-state 簇（2026-10-31）：页面脚本显式改 selection → typing 包裹态
+      // 清除（Chromium typing style 随 selection 变更重置——防跨子测泄漏：语料
+      // setupEditingHost 每 case 走 removeAllRanges/addRange）。内部 typing 重锚
+      // 走 `_ranges` 直接赋值不经此，state 存活到下一显式变更。
+      globalThis.__zwTypingTags = null;
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
