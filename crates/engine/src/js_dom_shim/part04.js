@@ -3784,7 +3784,12 @@
             // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
             if (n === 'rel' && typeof globalThis._zwStylesheetMaybeStart === 'function') {
               try {
-                if (_realTag(sel, handle) === 'LINK') {
+                var _ssRlTag = _realTag(sel, handle);
+                // s168：TAG 门带 handle-only 容忍（同 media 臂——shadow 树内 link
+                // 物化后 plain handle 无 sel，宿主 tag 表 miss 回落恒 DIV；helper
+                // 内 TAG 门同款容忍 + rel/href 非空后继门对非 LINK 元素不成立，
+                // 误触发面可忽略）。
+                if (_ssRlTag === 'LINK' || (_ssRlTag === 'DIV' && !sel && handle)) {
                   globalThis._zwStylesheetMaybeStart(sel, handle, null);
                 }
               } catch (_eSsRl) {}
@@ -4124,8 +4129,10 @@
             // mutations——rel 属性移除后 link 无关联类型，helper rel 读缺失走
             // 移除臂：清表 + 级联重算 + 印记清空；与 setAttribute s155 臂同点分流，
             // 本臂此前缺位使 removeAttribute('rel') 后样式滞留、再入 rel 不重取）。
+            // s168：TAG 门带 handle-only 容忍（同 setAttribute rel 臂——shadow 树内
+            // link 物化后 plain handle 回落 DIV）。
             // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
-            if (n === 'rel' && targetTag === 'LINK'
+            if (n === 'rel' && (targetTag === 'LINK' || (targetTag === 'DIV' && !sel && handle))
                 && typeof globalThis._zwStylesheetMaybeStart === 'function') {
               try { globalThis._zwStylesheetMaybeStart(sel, handle, null); }
               catch (_eSsRlRm) {}

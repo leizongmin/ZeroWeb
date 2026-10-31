@@ -50,7 +50,7 @@ use std::sync::{Arc, LazyLock, Mutex, RwLock};
 
 use zero_css_parser::Stylesheet;
 use zero_dom::{Document, NodeId, parse_html};
-use zero_style_system::{ComputedStyle, StyleSystem};
+use zero_style_system::{ComputedStyle, ShadowScopeStylesheets, StyleSystem};
 
 use super::{
     DomMutation,
@@ -96,6 +96,16 @@ thread_local! {
     /// 字节序 = 条目序（shim 枚举序），与旧合并通道输出逐位同构。
     static ACTIVE_EXTERNAL_CSS_ENTRIES: RefCell<Arc<Vec<(String, String)>>> =
         RefCell::new(Arc::new(Vec::new()));
+
+    /// s168（html-semantics M2）：本代 shadow 作用域外链条目——`(host 键, link
+    /// selector, 表文本)` 按宿主发现序排列（shim overlay recompute 经
+    /// `__zw_set_shadow_css_entries` 下发）。host 键 = 宿主 selector（sel 形
+    /// attachShadow）或 `@handle`（handle 形——collector 锚定面仅支持 sel 形，
+    /// handle 形跳过记账）。CSS Scoping：shadow 表只作用于本 shadow 树，与文档
+    /// 表（[`ACTIVE_EXTERNAL_CSS_ENTRIES`]）互不可见——独立槽避免 key 空间混叠。
+    /// 空表 = 无 shadow 级联（纯 light 页逐位不变）。
+    static ACTIVE_SHADOW_CSS_ENTRIES: RefCell<Arc<Vec<(String, String, String)>>> =
+        RefCell::new(Arc::new(Vec::new()));
 }
 
 /// js worker `SetDomSnapshot` 臂调用：装本代外部 CSS。每次快照无条件覆盖
@@ -125,6 +135,18 @@ pub fn set_active_external_css_entries(entries: Vec<(String, String)>) {
 /// s167：读本代外链结构化条目（collector 交错装配 + 代际槽键分量）。
 pub fn active_external_css_entries() -> Arc<Vec<(String, String)>> {
     ACTIVE_EXTERNAL_CSS_ENTRIES.with(|cell| cell.borrow().clone())
+}
+
+/// s168：shim overlay recompute shadow 条目下发（`__zw_set_shadow_css_entries`
+/// 宿主回调）。只写 shadow 槽——文档表派生 blob 不掺 shadow 文本（CSS Scoping
+/// 互不可见；p4 泄漏方向由真案 a2/a4 断言钉）。空条目 = 清空。
+pub fn set_active_shadow_css_entries(entries: Vec<(String, String, String)>) {
+    ACTIVE_SHADOW_CSS_ENTRIES.with(|cell| *cell.borrow_mut() = Arc::new(entries));
+}
+
+/// s168：读本代 shadow 作用域外链条目（collector per-scope 装配 + 各级缓存键分量）。
+pub fn active_shadow_css_entries() -> Arc<Vec<(String, String, String)>> {
+    ACTIVE_SHADOW_CSS_ENTRIES.with(|cell| cell.borrow().clone())
 }
 
 thread_local! {
@@ -334,6 +356,8 @@ fn try_sync_with_drain_record(
         Arc<str>,
         Arc<str>,
         Arc<Vec<(String, String)>>,
+        Arc<Vec<(String, String, String)>>,
+        Vec<ShadowScopeStylesheets>,
     ),
     html: &str,
     drain_gen: usize,
@@ -551,6 +575,8 @@ fn finish_generation_update(
         Arc<str>,
         Arc<str>,
         Arc<Vec<(String, String)>>,
+        Arc<Vec<(String, String, String)>>,
+        Vec<ShadowScopeStylesheets>,
     ),
     html: &str,
     drain_gen: usize,
@@ -573,16 +599,22 @@ fn finish_generation_update(
     // s167：外链条目表（sel/text 结构化 overlay，`ACTIVE_EXTERNAL_CSS_ENTRIES`）与
     // blob 派生文本非同源更新（双写者所有权互斥），单独作键分量——派生 blob 字节
     // 巧合相等（静态 blob == shim concat）时仍须换代。
+    // s168：shadow 作用域条目表（`ACTIVE_SHADOW_CSS_ENTRIES`）同型键分量；scopes
+    // 为其派生缓存（per-host 锚定解析，随 sheets 重收集同步重建）。
     let css = active_external_css();
     let adopted = active_adopted_css();
     let entries = active_external_css_entries();
-    let sheets_dirty = sheets_dirty || slot.6 != css || slot.7 != adopted || slot.8 != entries;
+    let shadow_entries = active_shadow_css_entries();
+    let sheets_dirty =
+        sheets_dirty || slot.6 != css || slot.7 != adopted || slot.8 != entries || slot.9 != shadow_entries;
     if sheets_dirty {
         let parsed = memoized_external_sheet(&css);
         slot.5 = collect_stylesheets_with_parsed_external(&slot.3, &css, parsed.as_ref());
         slot.6 = css;
         slot.7 = adopted;
         slot.8 = entries;
+        slot.9 = shadow_entries;
+        slot.10 = crate::pipeline::collect_shadow_scoped_sheets(&slot.3, &slot.9);
         match slot.3.get_elements_by_tag_names(&["html"]).first().copied() {
             Some(root) => changed.push(root),
             None => return false,
@@ -591,7 +623,14 @@ fn finish_generation_update(
     let mut sys = StyleSystem::new();
     // 视口与全量路径同源（compute_styles_for_doc 的 1280×800 默认）。
     sys.set_viewport(1280.0, 800.0);
-    sys.compute_styles_incremental(&slot.3, &slot.5, &changed, &mut slot.4);
+    if slot.10.is_empty() {
+        sys.compute_styles_incremental(&slot.3, &slot.5, &changed, &mut slot.4);
+    } else {
+        // s168：shadow 作用域在场时禁增量——增量通道对 shadow 包含节点走文档表
+        //（commit 1 退化门语义），per-scope 表会被文档表污染。shadow 页换代走全量
+        //（corpus shadow 面 = 低频 gCS 读写，非热路径）。
+        slot.4 = sys.compute_styles_with_shadow(&slot.3, &slot.5, &slot.10);
+    }
     apply_intrinsic_size_overrides(&slot.3, &mut slot.4);
     slot.0.clear();
     slot.0.push_str(html);
@@ -602,12 +641,14 @@ fn finish_generation_update(
 
 thread_local! {
     /// `(html 快照, drain 代际, style_version, parsed doc, NodeId→ComputedStyle,
-    /// stylesheets, 外部 CSS, adopted CSS, 外链条目表)` 代际槽。stylesheets 随 doc 缓存
-    ///（html 未变的增量换代不重收集/重解析 CSS）；外部 CSS、adopted CSS 与外链条目表
-    /// 作键分量（P9-9 / R-t2qq / s167：变化 ⇒ sheets 重收集 + 全文档重算）。非 `Send`
-    /// 类型（`Document`）仅存于创建线程（js worker），无跨线程共享。
+    /// stylesheets, 外部 CSS, adopted CSS, 外链条目表, shadow 条目表, shadow scopes)`
+    /// 代际槽。stylesheets 随 doc 缓存（html 未变的增量换代不重收集/重解析 CSS）；
+    /// 外部 CSS、adopted CSS、外链条目表与 shadow 条目表作键分量（P9-9 / R-t2qq /
+    /// s167 / s168：变化 ⇒ sheets 重收集 + 全文档重算）；shadow scopes 为 shadow
+    /// 条目的派生缓存（随 sheets 同步重建，非键）。非 `Send` 类型（`Document`）仅存
+    /// 于创建线程（js worker），无跨线程共享。
     static GENERATION_CACHE: RefCell<
-        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>, Arc<str>, Arc<str>, Arc<Vec<(String, String)>>)>,
+        Option<(String, usize, usize, Document, HashMap<NodeId, ComputedStyle>, Vec<Stylesheet>, Arc<str>, Arc<str>, Arc<Vec<(String, String)>>, Arc<Vec<(String, String, String)>>, Vec<ShadowScopeStylesheets>)>,
     > = const { RefCell::new(None) };
 
     /// 测试观测点：本线程换代重算次数（全量或增量；仅 `cfg(test)` 编译，生产零开销）。
@@ -640,10 +681,10 @@ pub fn clear_generation_cache() {
 thread_local! {
     /// s161（html-semantics M2）：动态元素 handle 视图槽——`(html 快照, drain 代际,
     /// style_version, dom_view_gen, applied 游标, 外部 CSS, adopted CSS, 外链条目表,
-    /// parsed doc, handle→NodeId, NodeId→ComputedStyle)`。与 [`GENERATION_CACHE`]
-    /// 同架构（host 回调仅 js worker 单线程执行，thread_local 规避 `Document` 非
-    /// `Send`），独立成槽：静态路径不重放 handle 链（R51c），两视图 doc 内容不同，
-    /// 不得互占。
+    /// shadow 条目表, parsed doc, handle→NodeId, NodeId→ComputedStyle)`。与
+    /// [`GENERATION_CACHE`] 同架构（host 回调仅 js worker 单线程执行，thread_local
+    /// 规避 `Document` 非 `Send`），独立成槽：静态路径不重放 handle 链（R51c），两
+    /// 视图 doc 内容不同，不得互占。
     static HANDLE_VIEW_CACHE: RefCell<
         Option<(
             String,
@@ -654,6 +695,7 @@ thread_local! {
             Arc<str>,
             Arc<str>,
             Arc<Vec<(String, String)>>,
+            Arc<Vec<(String, String, String)>>,
             Document,
             HashMap<String, NodeId>,
             HashMap<NodeId, ComputedStyle>,
@@ -699,12 +741,13 @@ pub(super) fn computed_style_by_handle(
     let css = active_external_css();
     let adopted = active_adopted_css();
     let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
     HANDLE_VIEW_CACHE.with(|cell| {
         {
             let mut slot = cell.borrow_mut();
             let same = matches!(
                 &*slot,
-                Some((h, g, v, vg, ap, c, a, e, ..))
+                Some((h, g, v, vg, ap, c, a, e, se, ..))
                     if h == html
                         && *g == drain_gen
                         && *v == style_version
@@ -713,16 +756,37 @@ pub(super) fn computed_style_by_handle(
                         && **c == *css
                         && **a == *adopted
                         && **e == *entries
+                        && **se == *shadow_entries
             );
             if !same {
                 let mut doc = parse_html(html);
                 let mut nodes: HashMap<String, NodeId> = HashMap::new();
                 let m = pending();
                 let start = applied.min(m.len());
+                // s168（html-semantics M2）：attachShadow 已应用前缀 × 基座未携声明式
+                // shadow → 全量重放。游标发布与基座换代非配对的宿主形态（testharness
+                // runner 的 dom_html 注册期原文：游标已推进而基座不含 JS 落地效果）下，
+                // parse(基座) 缺 [0..applied) 的 shadow 树状态，[applied..] 重放永不及物
+                // ——shadow 树内 handle 全部落空。基座含声明式形态时（drain 重序列化
+                // 回环，serializer ShadowRoot 臂 → parse 侧 materialize），shadow 树已在
+                // 基座，维持 [applied..] 窗语义不变（生产 cached_html 形态，防双计）。
+                // https://dom.spec.whatwg.org/#dom-element-attachshadow
+                let start = if !html.contains("shadowrootmode")
+                    && m[..start].iter().any(|mm| {
+                        matches!(
+                            mm,
+                            DomMutation::AttachShadow { .. } | DomMutation::AttachShadowOnHandle { .. }
+                        )
+                    }) {
+                    0
+                } else {
+                    start
+                };
                 // 权威全量 applier：Err = 批内失配（已 apply 前缀保留）——视图近似，
                 // 同批失配面与 drain 路径一致，不掩盖 applier 真 bug（warn 通道在
                 // applier 内部）。
                 let _ = super::apply_dom_mutations_full(&mut doc, &m[start..], None, Some(&mut nodes), None, None);
+                // s168：compute_styles_for_doc 为三通道共汇点——shadow 条目融合在其内部。
                 let (mut styles, _) = compute_styles_for_doc(&doc, &css);
                 apply_intrinsic_size_overrides(&doc, &mut styles);
                 *slot = Some((
@@ -734,6 +798,7 @@ pub(super) fn computed_style_by_handle(
                     css,
                     adopted,
                     entries,
+                    shadow_entries,
                     doc,
                     nodes,
                     styles,
@@ -777,10 +842,11 @@ fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) 
     let css = active_external_css();
     let adopted = active_adopted_css();
     let entries = active_external_css_entries();
+    let shadow_entries = active_shadow_css_entries();
     GENERATION_CACHE.with(|cell| {
         matches!(
             &*cell.borrow(),
-            Some((h, g, v, .., c, a, e)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries
+            Some((h, g, v, .., c, a, e, se, _)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries && **se == *shadow_entries
         )
     })
 }
@@ -846,11 +912,12 @@ pub fn with_cached_document_styles<T>(
         let css = active_external_css();
         let adopted = active_adopted_css();
         let entries = active_external_css_entries();
+        let shadow_entries = active_shadow_css_entries();
         {
             let mut slot = cell.borrow_mut();
             let same_gen = matches!(
                 &*slot,
-                Some((h, g, v, .., c, a, e)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries
+                Some((h, g, v, .., c, a, e, se, _)) if h == html && *g == drain_gen && *v == style_version && **c == *css && **a == *adopted && **e == *entries && **se == *shadow_entries
             );
             if !same_gen {
                 #[cfg(test)]
@@ -875,9 +942,15 @@ pub fn with_cached_document_styles<T>(
                     let start = if s.1 == drain_gen { s.2.min(mutations.len()) } else { 0 };
                     let tree_dirty = mutations[start..].iter().any(is_tree_mutation);
                     if tree_dirty {
+                        // s168：compute_styles_for_doc 汇点内融合 shadow 条目（scope 感知）。
                         let (doc, styles, sheets) =
                             compute_document_styles_with_inline_overrides_css(html, mutations, &css);
-                        // css/adopted/entries Arc 克隆进槽（Arc 增引用廉价）——外层
+                        // scopes 与槽键同步重建（派生缓存非键）：占位空表会让后续同代
+                        // finish_generation_update 的 `slot.10.is_empty()` 分支谓词失真
+                        //（shadow 页误入增量通道，shadow 树内变更退化走文档表级联）。
+                        let shadow_scopes =
+                            crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
+                        // css/adopted/entries/shadow entries Arc 克隆进槽（Arc 增引用廉价）——外层
                         // 后续全量兜底分支仍需移入原值。
                         *s = (
                             html.to_string(),
@@ -889,6 +962,8 @@ pub fn with_cached_document_styles<T>(
                             css.clone(),
                             adopted.clone(),
                             entries.clone(),
+                            shadow_entries.clone(),
+                            shadow_scopes,
                         );
                         true
                     } else {
@@ -913,10 +988,12 @@ pub fn with_cached_document_styles<T>(
                     // 冷槽 / 记录不衔接 / 批次含不支持变体 / 收尾失败：全量 parse 兜底。
                     #[cfg(test)]
                     GENERATION_FULL_PARSE_COUNT.with(|c| c.set(c.get() + 1));
-                    // P9-9：css 变体一次 parse 同时产出级联与代际槽 sheets。
+                    // P9-9：css 变体一次 parse 同时产出级联与代际槽 sheets（s168：
+                    // compute_styles_for_doc 汇点内融合 shadow 条目）。
                     let (doc, styles, sheets) =
                         compute_document_styles_with_inline_overrides_css(html, mutations, &css);
-                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries));
+                    let shadow_scopes = crate::pipeline::collect_shadow_scoped_sheets(&doc, &shadow_entries);
+                    *slot = Some((html.to_string(), drain_gen, style_version, doc, styles, sheets, css, adopted, entries, shadow_entries, shadow_scopes));
                 }
             }
         }

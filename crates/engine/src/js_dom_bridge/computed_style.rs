@@ -85,7 +85,20 @@ pub(super) fn compute_styles_for_doc(
     let mut sys = StyleSystem::new();
     // 设默认 viewport（length 属性 % 解析需要；首批属性 viewport 无关，但为后续 length 扩展设）。
     sys.set_viewport(1280.0, 800.0);
-    let styles = sys.compute_styles(doc, &sheets);
+    // s168（html-semantics M2）：shadow 作用域条目在场 → per-scope 全量级联（CSS
+    // Scoping：shadow 表只作用本树）。无条目 `compute_styles` 逐位一致——纯 light
+    // 页零开销。本函数是静态/handle 视图/全量兜底三通道共汇点，一处融合全覆盖。
+    let shadow_entries = super::computed_style_cache::active_shadow_css_entries();
+    let styles = if shadow_entries.is_empty() {
+        sys.compute_styles(doc, &sheets)
+    } else {
+        let scopes = crate::pipeline::collect_shadow_scoped_sheets(doc, &shadow_entries);
+        if scopes.is_empty() {
+            sys.compute_styles(doc, &sheets)
+        } else {
+            sys.compute_styles_with_shadow(doc, &sheets, &scopes)
+        }
+    };
     (styles, sheets)
 }
 

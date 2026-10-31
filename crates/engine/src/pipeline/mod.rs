@@ -3804,6 +3804,52 @@ fn link_entry_eligible(doc: &Document, id: NodeId) -> bool {
     is_sheet && doc.get_attribute(id, "href").is_some_and(|h| !h.is_empty())
 }
 
+/// s168（html-semantics M2）：shadow 作用域外链条目 → per-root stylesheets。CSS
+/// Scoping：shadow 表只作用于本 shadow 树（与文档表互不可见）——条目按 host 键
+/// 分组（发现序），宿主锚定（sel 形 `find_by_selector`——宿主在 light 域；miss 回落
+/// `query_selector_including_shadow`——嵌套 shadow 内宿主）后取 `doc.shadow_root`。
+/// `@handle` 形宿主暂不锚定（代际槽路径无 nodes map，FIXME 记账）。表文本按序逐条
+/// parse（同 [`collect_interleaved_external`] 形态；shadow 条目低频）。锚定失败条目
+/// 组跳过（表在场语义——宿主漂移不误入文档级联）。
+pub(crate) fn collect_shadow_scoped_sheets(
+    doc: &Document,
+    entries: &[(String, String, String)],
+) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let mut order: Vec<String> = Vec::new();
+    let mut by_host: HashMap<String, Vec<Stylesheet>> = HashMap::new();
+    for (host_key, _, text) in entries {
+        if !by_host.contains_key(host_key) {
+            order.push(host_key.clone());
+        }
+        if !text.is_empty() {
+            by_host
+                .entry(host_key.clone())
+                .or_default()
+                .push(zero_css_parser::Parser::parse_stylesheet(text));
+        }
+    }
+    let mut out = Vec::new();
+    for host_key in order {
+        let sheets = by_host.remove(&host_key).unwrap_or_default();
+        if host_key.starts_with('@') {
+            continue;
+        }
+        let Some(host_id) = crate::js_dom_bridge::find_by_selector(doc, &host_key)
+            .or_else(|| doc.query_selector_including_shadow(&host_key))
+        else {
+            continue;
+        };
+        let Some(root) = doc.shadow_root(host_id) else {
+            continue;
+        };
+        out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
+    }
+    out
+}
+
 /// R4022：解码 XML 字符引用（`&gt;` `&lt;` `&amp;` `&quot;` `&apos;` + 十进制/
 /// 十六进制数字实体）——XHTML 文档 <style> #PCDATA 语义（HTML tokenizer raw text
 /// 不解码，需在此补齐）。未知实体原样保留（宽容，避免破坏 CSS 内容中的字面 `&`）。

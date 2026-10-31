@@ -4559,6 +4559,10 @@
   // 结构的轻量近似；外链槽位级联序仍先于页面 `<style>` 表，stylesheet-media-change
   // 断言 2 的文档序期望记账另立）。
   var _zwExtSheetTexts = {}; // identity key → 表文本（'' = 取回失败空贡献）
+  // s168（html-semantics M2）：解析 URL → 已取回 sheet 文本（load 才记）——同会话
+  // 内后继 link 的同 URL 同步采用 memo（下 maybeStart 复用臂），镜像真实浏览器
+  // memory-cache 同步语义（动态插入 link 同步断言面 link-rel-attribute shadow a1）。
+  var _zwSsUrlTextMemo = {};
   // s159（html-semantics M2 切片 159）：per-link **生效 sheet href**（合成条目 href 通道
   // ——document.styleSheets R5114 合成条目此前恒 null）。spec link processing 的 sheet
   // 对象生命周期近似：helper 首次发起取回（fetch 发起，幂等门后）= sheet 创建语义
@@ -4683,6 +4687,9 @@
   var _zwLinkRelTokens = function (_ssRel) {
     return String(_ssRel || '').split(/[\t\n\x0C\r ]+/).filter(Boolean);
   };
+  // s168：shadow 槽活动记账——非空下发后置位；后续重算空集时清空下发一次（宿主
+  // 连 shadow root 一起移除的残留防），从未活跃的纯 light 页面零回调。
+  var _zwShadowWireActive = false;
   // s158 重算：按 live stylesheet link 集（文档序 query）拼 overlay 表文本下发。身份
   // 键与 helper 同构（_elKey——handle 优先 '@' 前缀，经 R100 反查补 handle 形）。
   globalThis._zwSsRecomputeExt = function () {
@@ -4696,8 +4703,96 @@
       // collector 按文档序锚定 selector 交错装配（级联序修正主通道）；blob `_rcOut`
       // 保留为回调缺失回落 + legacy 派生基座（派生序 link→style 与旧下发序逐位同构）。
       var _rcEntries = [];
+      // s168（html-semantics M2）：shadow 域级联下发——逐 shadow root 枚举 link
+      // rel=stylesheet 条目，wire `host\u0000sel\u0000text` 记录（`\u0001` 分记录）
+      // 经 `__zw_set_shadow_css_entries` 下发 active shadow 槽。CSS Scoping：shadow
+      // 树表只作用本树——上方文档外链槽不掺 shadow 文本，引擎按宿主锚定成
+      // per-scope 表（`collect_shadow_scoped_sheets` → compute_styles_with_shadow）。
+      // 枚举走 shadow root wrapper 本地 querySelectorAll（flatten 子有 handle 身份，
+      // s168b 探针 p1 钉）；覆盖门键形与取回臂同构（`_elKey(sel, handle)`——shadow
+      // wrapper handle 形）；rel/href 读 prefer `__zw_get_attr_handle`（pending 覆盖
+      // 可见，上方 media 读同款）。表 miss（取回未落/rel 非 stylesheet）静默 skip
+      // ——shadow 无静态扫描臂、无 noOverlay 形态，缺表 = 未取回 = 零贡献。宿主键
+      // hostSel 优先、动态宿主回落 '@handle'（FIXME(compat)：@handle 形宿主引擎侧
+      // 代际文档锚定不可得，collector 跳过——s168 账本记账）。media wrap 镜像 light
+      // 面（no-match 零应用；空/缺省/'all' 不 wrap）。
+      // https://drafts.csswg.org/css-scoping/#scoping-shadow-trees
+      // s168b：本块**前移到 light 枚举前**——shadow 树物化 link 会进 `__zw_query_all`
+      // 文档全域枚举（`#sl1` 实测），其表文本键是 wrapper handle 形（`@__n3`），
+      // 下方 light 覆盖门对它 hitK/hitS 双 miss → 整体 return 拦掉尾部全部下发
+      // （shadow 清空/entries——a4 探针钉：removeAttribute rel 后 recompute 进门即
+      // bail，active 槽不清，div 恒绿）。此处顺带记 shadow link 身份集合，light
+      // 循环按集合跳过（sel 与 '@handle' 双形，防 shadow 表文本漏进 light overlay）。
+      var _rcShadowRecords = [];
+      var _rcShadowSels = {};
+      if (typeof __zw_set_shadow_css_entries === 'function' && typeof _shadowRoots !== 'undefined') {
+        for (var _rcSRKey in _shadowRoots) {
+          if (!_shadowRoots.hasOwnProperty(_rcSRKey)) continue;
+          var _rcSR = _shadowRoots[_rcSRKey];
+          var _rcMeta = (_rcSR && typeof _shadowHandleMeta !== 'undefined') ? _shadowHandleMeta[_rcSR.handle] : null;
+          if (!_rcMeta) continue;
+          var _rcHostWire = _rcMeta.hostSel ? String(_rcMeta.hostSel)
+            : (_rcMeta.hostHandle ? '@' + _rcMeta.hostHandle : '');
+          if (!_rcHostWire) continue;
+          var _rcRoot = null;
+          try { _rcRoot = _makeProxy(null, _rcSR.handle); } catch (_eRcRp) {}
+          if (!_rcRoot || typeof _rcRoot.querySelectorAll !== 'function') continue;
+          var _rcSL = [];
+          try { _rcSL = _rcRoot.querySelectorAll('link') || []; } catch (_eRcQ) {}
+          for (var _rcSLi = 0; _rcSLi < _rcSL.length; _rcSLi++) {
+            var _rcSLel = _rcSL[_rcSLi];
+            if (!_rcSLel) continue;
+            var _rcSLH = null;
+            var _rcSLSel = null;
+            try { _rcSLH = _rcSLel.__zwHandle || null; } catch (_eRcH1) {}
+            try { _rcSLSel = _rcSLel.__zwSelector || null; } catch (_eRcS1) {}
+            if (_rcSLSel) _rcShadowSels[_rcSLSel] = true;
+            if (_rcSLH) _rcShadowSels['@' + _rcSLH] = true;
+            // 文档全域 query 枚举对 handle 身份物化产物的键形补全：`__zwSelector`
+            // null 时引擎按 id 有无发 `#<id>`（探针 `#sl1` 实测）或**裸 tag 小写**
+            //（id-less 形探针钉：枚举 `link`，light 覆盖门 lw 读到 stylesheet+href
+            // → 表键双 miss → 整体 return 拦掉 shadow 清空/下发）。两形一并记入。
+            // 共存 light 同名 id-less link 会被一并跳过（引擎 lw 首匹配在物化序下
+            // 本就可能落 shadow 产物，退化面早于本切片）——FIXME(compat)：spec 侧
+            // document.querySelectorAll 不见 shadow 树，engine 枚举排除 shadow 子树
+            // 才是正解（s168 账本挂账）。
+            // https://dom.spec.whatwg.org/#dom-document-queryselectorall
+            var _rcSLId = '';
+            try { _rcSLId = String(_rcSLel.getAttribute('id') || ''); } catch (_eRcId) {}
+            if (_rcSLId) _rcShadowSels['#' + _rcSLId] = true;
+            var _rcSLTag = '';
+            try { _rcSLTag = String(_rcSLel.tagName || '').toLowerCase(); } catch (_eRcTg) {}
+            if (_rcSLTag) _rcShadowSels[_rcSLTag] = true;
+            var _rcSLRead = function (_ssName) {
+              try {
+                if (_rcSLH && typeof __zw_get_attr_handle === 'function') {
+                  return String(__zw_get_attr_handle(_rcSLH, _ssName) || '');
+                }
+              } catch (_eRcAh) {}
+              try { return String(_rcSLel.getAttribute(_ssName) || ''); } catch (_eRcGa) { return ''; }
+            };
+            var _rcSLParts = _zwLinkRelTokens(_rcSLRead('rel'));
+            var _rcSLIsSheet = false;
+            for (var _rcSLj = 0; _rcSLj < _rcSLParts.length; _rcSLj++) {
+              if (_rcSLParts[_rcSLj] === 'stylesheet') { _rcSLIsSheet = true; break; }
+            }
+            if (!_rcSLIsSheet || !_rcSLRead('href')) continue;
+            var _rcSLKey = _elKey(_rcSLSel, _rcSLH);
+            if (!_rcSLKey || !_zwExtSheetTexts.hasOwnProperty(_rcSLKey)) continue;
+            var _rcSLText = String(_zwExtSheetTexts[_rcSLKey] || '');
+            var _rcSLMedia = _rcSLRead('media');
+            var _rcSLMl = _rcSLMedia.replace(/[\t\n\x0C\r ]+/g, ' ').trim().toLowerCase();
+            if (_rcSLMl !== '' && _rcSLMl !== 'all') {
+              _rcSLText = '@media ' + _rcSLMedia.replace(/[{}]/g, ' ') + ' {' + _rcSLText + '}';
+            }
+            _rcShadowRecords.push(_rcHostWire + '\u0000' + (_rcSLSel || '') + '\u0000'
+              + String(_rcSLText).replace(/\u0000/g, '�'));
+          }
+        }
+      }
       for (var _rcI = 0; _rcI < _rcSels.length; _rcI++) {
         var _rcSel = _rcSels[_rcI];
+        if (_rcShadowSels.hasOwnProperty(_rcSel)) continue; // s168b：shadow link 由上方通道下发，light 覆盖门双 miss 会整体 return
         var _rcRead = function (_ssName) {
           try {
             return String(typeof __zw_get_attr_lw === 'function'
@@ -4783,12 +4878,22 @@
         _rcEntries.push(_rcSSel + '\u0000' + String(_rcSText).replace(/\u0000/g, '�'));
         _rcOut += _rcSText + ';\n';
       }
+      if (typeof __zw_set_shadow_css_entries === 'function') {
+        if (_rcShadowRecords.length > 0) {
+          try { __zw_set_shadow_css_entries(_rcShadowRecords.join('\u0001')); } catch (_eRcSw) {}
+          _zwShadowWireActive = true;
+        } else if (_zwShadowWireActive) {
+          try { __zw_set_shadow_css_entries(''); } catch (_eRcSw2) {}
+          _zwShadowWireActive = false;
+        }
+      }
       if (typeof __zw_set_external_css_entries === 'function') {
         __zw_set_external_css_entries(_rcEntries.join('\u0001'));
       } else {
         __zw_set_external_css(_rcOut);
       }
-    } catch (_eRc) {}
+    } catch (_eRc) {
+    }
   };
   // s164（html-semantics M2 切片 164）：**静态 style 元素 @import 取回通道**——此前
   // 该面整体缺位：引擎 base 路径对 style 文本 @-rule defer（零取回零级联），shim 取回
@@ -5246,6 +5351,27 @@
         setTimeout(function () { _ssFire('load'); }, 0);
         return;
       }
+      // s168（html-semantics M2）：同 URL sheet 文本 memo 同步采用——同会话任一
+      // link 已取回的解析 URL（load 文本在册）直接落表，零网络。真实浏览器
+      // memory-cache 形态：动态插入 link 的同 URL sheet 在后续**同步**脚本断言前
+      // 已生效（link-rel-attribute shadow 面 a1 无 await 断言）。落表 + 生效 href +
+      // 取回印记同步置位（rel 移除臂正常清表——再入 stylesheet 重新取回语义不变，
+      // 印记重置后 memo 臂再次命中）；级联下发同步（wire 先于后续断言）；load
+      // 事件保持异步（setTimeout 0，与 media-defer/mixed 门同形态——EventWatcher
+      // await 面不受影响）。
+      // s168b：同身份同 URL 印记在册（`_zwSsFiredMap[key] === abs`）不进本臂——
+      // 落下方 s154 印记门静默返（同值 attr touch 重入；link-multiple-load-events
+      // 四案 + stylesheet-media-change-no-fetch 钉：memo 臂先行时二次派 load，P→F）。
+      // https://html.spec.whatwg.org/multipage/semantics.html#link-processing-model
+      if (_ssKey != null && _zwSsFiredMap[_ssKey] !== _ssAbs
+          && _zwSsUrlTextMemo.hasOwnProperty(_ssAbs)) {
+        _zwExtSheetTexts[_ssKey] = _zwSsUrlTextMemo[_ssAbs];
+        if (!_zwSsSheetHrefMap.hasOwnProperty(_ssKey)) _zwSsSheetHrefMap[_ssKey] = _ssAbs;
+        _zwSsFiredMap[_ssKey] = _ssAbs;
+        _zwSsRecomputeExt();
+        setTimeout(function () { _ssFire('load'); }, 0);
+        return;
+      }
       // s154 取回印记：同身份同解析 URL 只发起一次（印记在发起前置位）。先赋
       // href（detached bail → s154 重查排程）后 append（插入臂直取）形的重查
       // 与插入臂并发去重；href 变更（重查/attr 臂携 prevHref 幂等门）解析 URL
@@ -5292,7 +5418,10 @@
         globalThis._zwSsVisitCss(_ssHref, _ssAbs, 0, function (_ssV) {
           if (_ssKey != null) {
             _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
-            if (_ssV === 'load') _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
+            if (_ssV === 'load') {
+              _zwSsSheetHrefMap[_ssKey] = _ssAbs; // s159：新表生效替换
+              if (_ssCollect.length) _zwSsUrlTextMemo[_ssAbs] = _zwExtSheetTexts[_ssKey]; // s168：同 URL memo
+            }
             if (!noOverlay) _zwSsRecomputeExt();
           }
           _ssFire(_ssV);

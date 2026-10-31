@@ -11783,6 +11783,17 @@
         return false;
       }
       if (!h) return false;
+      // s168（html-semantics M2）：shadow root 爬升臂——shadow 树内元素的父链终点
+      // = shadow root handle（attachShadow 不入 _zwNodeParent 宿主表，爬升在此断）。
+      // _shadowHandleMeta 有宿主身份 → 跳宿主续爬：连接门语义是「连接到文档」，
+      // shadow 子树经宿主连接成立（spec connected：shadow-including tree 走宿主链）。
+      // https://dom.spec.whatwg.org/#concept-tree-connected
+      var _mdMeta = _shadowHandleMeta ? _shadowHandleMeta[h] : null;
+      if (_mdMeta) {
+        if (_mdMeta.hostSel) { s = _mdMeta.hostSel; h = null; continue; }
+        if (_mdMeta.hostHandle) { h = _mdMeta.hostHandle; continue; }
+        return false;
+      }
       var link = _zwNodeParent[h];
       if (!link) return false;
       if (link.parentSel) { s = link.parentSel; h = null; continue; }
