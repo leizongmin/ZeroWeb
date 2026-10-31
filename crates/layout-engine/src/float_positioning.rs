@@ -2076,8 +2076,6 @@ pub(crate) fn adjust_float_positions_with_context(
                 })
                 .map(|c| c.width)
                 .collect();
-            let content_max_w = content_child_widths.iter().copied().fold(0.0f32, f32::max);
-            // https://www.w3.org/TR/CSS21/visudet.html#float-width
             // In the max-content measurement used by shrink-to-fit, floated siblings may
             // share a line.  Their combined outer widths therefore contribute to the
             // containing float's preferred width; using only the widest child makes a
@@ -2088,7 +2086,6 @@ pub(crate) fn adjust_float_positions_with_context(
                 .filter(|c| !c.is_absolute && !c.is_fixed && !matches!(c.float, FloatValue::None))
                 .map(|c| c.margin_left + c.width + c.margin_right)
                 .sum::<f32>();
-            let content_max_w = content_max_w.max(floated_children_width);
             // 有块级、replaced 或浮动子元素时，按首选内容宽度计算 used width。
             // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
             // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
@@ -2114,26 +2111,82 @@ pub(crate) fn adjust_float_positions_with_context(
                     let _ = delta_w;
                 }
             } else if !content_child_widths.is_empty() || floated_children_width > 0.0 {
-                let preferred_border_box =
-                    content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
-                // R5044（css-sizing-3 shrink-to-fit = min(max(min-content, available),
-                // preferred)）：available < min-content 时地板胜（width:0 容器内带块级子的
-                // float 不塌 0）。仅限本臂（有 block/replaced/floated 子——preferred 可信；
-                // 纯文本/空 float 的 preferred 未测不入——R5043 变体 A 教训）；min-content
-                // 经 R5044 min 模式递归真测量（fit-content 中间层 50 非 max 近似 150）。
-                let min_content_border_box = (crate::intrinsic_sizing::block_min_content_width(child, doc, styles)
-                    + child.padding_left
-                    + child.padding_right
-                    + child.border_left
-                    + child.border_right)
-                    .max(0.0);
-                let used_border_box = preferred_border_box
-                    .min(available_border_box)
-                    .max(min_content_border_box);
-                if used_border_box < child.width || floated_children_width > 0.0 {
-                    child.width = used_border_box;
-                    child.content_width = content_max_w;
+                let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                if std::env::var("ZW_FLOAT_STF_ARM").as_deref() == Ok("0")
+                    // R5368 域门：仅水平书写模式走内在测量臂——vertical-rl/srl float 的
+                    // shrink-to-fit 须轴感知测量（block-flow-direction-vrl-006 四
+                    // vertical-rl float：本臂字形列重排 blue+15200/yellow−15200 实证），
+                    // 旧 R5044 臂（taffy 宽 preferred）对 vertical 维持原样；垂直
+                    // shrink-to-fit 归 writing-mode 深域（既有避让清单）。
+                    || !matches!(child.writing_mode, WritingModeValue::HorizontalTb)
+                {
+                    // R5368 kill-switch：旧 R5044 臂原样（preferred = taffy 子布局宽
+                    // content_max_w，仅收缩、content_width 记 taffy 宽）。A/B 归因用。
+                    let content_max_w = content_child_widths
+                        .iter()
+                        .copied()
+                        .fold(0.0f32, f32::max)
+                        .max(floated_children_width);
+                    let preferred_border_box = content_max_w
+                        + child.padding_left
+                        + child.padding_right
+                        + child.border_left
+                        + child.border_right;
+                    let min_content_border_box =
+                        (crate::intrinsic_sizing::block_min_content_width(child, doc, styles) + frame).max(0.0);
+                    let used_border_box = preferred_border_box
+                        .min(available_border_box)
+                        .max(min_content_border_box);
+                    if used_border_box < child.width || floated_children_width > 0.0 {
+                        child.width = used_border_box;
+                        child.content_width = content_max_w;
+                    }
+                } else {
+                    // R5368（css-sizing-3 §intrinsic-contribution + CSS2 §10.3.5）：preferred/min-
+                    // content 均改内在测量（border-box）——旧 preferred 取 taffy 子布局宽
+                    //（content_max_w）：子含百分比 width/min-width 时 taffy 已按可用宽解析
+                    //（intrinsic-percent-non-replaced-001 实证：raw-percent 行 pref 220 应 120，
+                    // avail=400 时臂把 taffy 正确的 120 抬回 220）。内在测量对循环百分比记
+                    // 忽略 = spec 语义。float 同行并排 R4397 已在 max-content 遍历内
+                    //（float_row/float_max），再 max(floated_children_width + frame) 双保险。
+                    let preferred_border_box = crate::intrinsic_sizing::block_max_content_width(child, doc, styles)
+                        .max(floated_children_width + frame)
+                        .max(0.0);
+                    // R5044（css-sizing-3 shrink-to-fit = min(max(min-content, available),
+                    // preferred)）：available < min-content 时地板胜（width:0 容器内带块级子的
+                    // float 不塌 0）。仅限本臂（有 block/replaced/floated 子——preferred 可信；
+                    // 纯文本/空 float 的 preferred 未测不入——R5043 变体 A 教训）；min-content
+                    // 经 R5044 min 模式递归真测量（fit-content 中间层 50 非 max 近似 150）。
+                    // R5368 两修：① min-content 不再重加自身 frame——block_min_content_width
+                    // 返回 border-box（inner+frame），旧双加 40 致地板虚高（同案行1 测 160 应
+                    // 120）；② 旧式 max(min(pref,avail),minc) 顺序颠倒——minc > pref（两趟能力
+                    // 差异）时地板反超 max-content，spec 应以 pref 收口。
+                    let min_content_border_box =
+                        crate::intrinsic_sizing::block_min_content_width(child, doc, styles).max(0.0);
+                    let used_border_box = min_content_border_box
+                        .max(available_border_box)
+                        .min(preferred_border_box);
+                    // R5368：增长臂已收敛移除——letter-spacing-204 实证「长回」会把 taffy
+                    // 可用宽收缩结果灌回 preferred（测量越界时反向破坏）。旧 R5044 单向
+                    // 收缩条件保留；上抬交给 sizing.rs 钉宽 pass（含 % 触发重跑）。
+                    if used_border_box < child.width || floated_children_width > 0.0 {
+                        child.width = used_border_box;
+                        // R5368（css-sizing-3 shrink-to-fit）：content_width 随 used 收缩——
+                        // 旧 `= content_max_w`（子 taffy 布局宽，avail 收窄/地板生效时 >
+                        // used-frame）与 width 矛盾，后继 IFC 行宽按 140 断行而盒 120
+                        //（intrinsic-percent-non-replaced-001 实证：行不折、内容溢出框）。
+                        // preferred 未被 avail/min 钳时二者同值，宽容器零位移。
+                        // R5368 补充：sizing.rs R1015 钉宽升级 shrink-to-fit 后 taffy 一趟已按
+                        // 公式宽排子，本臂 used==taffy 宽 no-op；此臂保留为 kill-switch/
+                        // 未钉路径（flex float 容器等）的安全网。
+                        child.content_width = (used_border_box
+                            - child.padding_left
+                            - child.padding_right
+                            - child.border_left
+                            - child.border_right)
+                            .max(0.0);
+                    }
                 }
             } else if child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
                 // R5045（css-sizing-4 §4.1）：叶/空 float 的 AR transferred preferred——

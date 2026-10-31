@@ -1499,7 +1499,14 @@ pub fn resolve_grid_placement(
 fn convert_calc_dimension(expr: &zero_css_parser::values::CalcExpr, vw: f32, vh: f32) -> taffy::style::Dimension {
     use zero_css_parser::values::CalcExpr;
     if let Some(pct) = extract_calc_percentage(expr) {
-        return taffy::style::Dimension::percent(pct as f32 / 100.0);
+        // R5368（css-values-4 §8.1.2）：% 系数为 0 的混合 calc 数学上恒等于 px 部分
+        //（calc(40px + 0%) ≡ 40px，与 CB 无关）——按 percent(0) 降级丢 px 项，max-width
+        // 被钳到 0（intrinsic-percent-non-replaced-002/003 calc 行实证：控制盒内容 0）。
+        if pct != 0.0 {
+            return taffy::style::Dimension::percent(pct as f32 / 100.0);
+        }
+        let px = crate::intrinsic_sizing::calc_px_offset(expr);
+        return length(px.max(0.0));
     }
     if let Some(bound) = extract_calc_definite_upper_bound(expr, vw, vh) {
         return length(bound.max(0.0) as f32);
@@ -1590,7 +1597,7 @@ fn calc_expr_has_length(expr: &zero_css_parser::values::CalcExpr) -> bool {
 /// 对于 `calc(100% - 6px)` 这样的简单模式，提取出 `100.0`。
 /// 这使得 taffy 能使用百分比进行布局。
 /// 仅支持 `P% - Npx`、`P% + Npx`、`Npx - P%`、纯 `P%` 模式。
-fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f64> {
+pub(crate) fn extract_calc_percentage(expr: &zero_css_parser::values::CalcExpr) -> Option<f64> {
     use zero_css_parser::values::{CalcExpr, CalcOp, LengthValue};
     match expr {
         CalcExpr::Length(LengthValue::Percentage(pct)) => Some(*pct),

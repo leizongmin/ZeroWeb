@@ -43,6 +43,28 @@ fn resolve_sizing_definite_real_length(value: &LengthValue, style: &ComputedStyl
     }
 }
 
+/// R5368：子树是否含循环 % 宽（width/min-width/max-width 为百分比或含 % 项的 calc）。
+/// taffy 对 auto-float 走 max-content 路径一趟排子时，% 子按内容基测量不重解析
+///（intrinsic-percent-non-replaced-003 infinite 行2：float 宽 120 已对，控件
+/// width:50% 停留内容基 80，应对 definite 父宽 80 重解析为 40）——命中即钉宽
+///（等值也写）触发 mark_dirty 重跑，definite 父宽下 taffy 自然重解析。
+fn subtree_has_cyclic_pct_width(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    let has_pct = |v: &LengthValue| match v {
+        LengthValue::Percentage(_) => true,
+        LengthValue::Calc(expr) => crate::converter::extract_calc_percentage(expr).is_some(),
+        _ => false,
+    };
+    if let Some(cs) = b.node_id.and_then(|id| styles.get(&id))
+        && (has_pct(&cs.width) || has_pct(&cs.min_width) || has_pct(&cs.max_width))
+    {
+        return true;
+    }
+    b.children
+        .iter()
+        .filter(|c| !c.is_absolute && !c.is_fixed)
+        .any(|c| subtree_has_cyclic_pct_width(c, styles))
+}
+
 impl LayoutEngine {
     /// 两趟固有宽度布局的第一趟修正：对 `width:max-content`/`min-content` 的
     /// flex/grid 容器提升宽度到测得的 intrinsic。
@@ -339,6 +361,40 @@ impl LayoutEngine {
             } else {
                 intrinsic
             };
+            // R5368（css-sizing-3 §shrink-to-fit + CSS2 §10.3.5）：block 容器 auto-float 的
+            // taffy 钉宽从 max-content 升级为完整 shrink-to-fit
+            // min(max(min-content, available), max-content)——旧钉 max-content：available
+            // 收窄/子 min-width 地板时 taffy 一趟按过宽排子（intrinsic-percent-non-
+            // replaced-001：width:0 容器 float 钉 180，控制盒 % min-width 按 140 基准解析
+            // 300 应 180、其 IFC 按 120 单行应 60 词级双行 h=40）。min-content 经 R5044
+            // min 模式递归真测量（含 R5368 自身 definite min-width 地板）；available =
+            // CB content 宽 − float 横向 margin（与 float_positioning 臂同基）。钉后
+            // float_positioning 臂 used==taffy 宽 no-op（无双重 shrink），子宽/% 解析/IFC/
+            // 高度全由 taffy 一趟自然求解。仅 block 容器（flex float 容器维持 R1015
+            // max-content 钉——blast radius 控制）。kill-switch `ZW_FLOAT_STF_PIN=0` 回退。
+            // R5368 收敛：sizing.rs 钉宽仅在子树含循环 % 宽时介入——taffy 一趟不重解析
+            // %（等值也须 mark_dirty 强制重跑），钉宽公式 + 重跑正是 % 子按钉后宽解析
+            // 的入口。非 % 形留给 R1015 单臂 + float_positioning R5044 shrink-to-fit 臂
+            //（其测量与钉宽同源于 intrinsic_sizing 走查，text-overflow-012 abs 子泄漏
+            // 在走查层统一修复）。
+            let stf_pin_on = is_auto_float
+                && is_block
+                && std::env::var("ZW_FLOAT_STF_PIN").as_deref() != Ok("0")
+                // R5368 域门：仅水平书写模式——vertical-rl/srl float 的 shrink-to-fit
+                // 须轴感知测量（inline/block 轴互换），本臂 minc/maxc 按水平口径测
+                //（block-flow-direction-vrl-006 四 vertical-rl float：钉宽致字形列
+                // 重排 blue+15200/yellow−15200 实证）。vertical float 维持 R1015 旧臂；
+                // 垂直 shrink-to-fit 归 writing-mode 深域（既有避让清单）。
+                && matches!(b.writing_mode, WritingModeValue::HorizontalTb);
+            let mut float_has_cyclic_pct = false;
+            let intrinsic = if stf_pin_on {
+                float_has_cyclic_pct = subtree_has_cyclic_pct_width(b, styles);
+                let minc = crate::intrinsic_sizing::block_min_content_width(b, doc, styles);
+                let available = (cb_w - b.margin_left - b.margin_right).max(0.0);
+                minc.max(available).min(intrinsic)
+            } else {
+                intrinsic
+            };
             // intrinsic 不可测 → 跳过。否则按上下文判定 apply 条件：
             // - MaxContent/MinContent（grow）：current 比 intrinsic 窄 → grow 到 intrinsic。
             // - Auto+float（R1015 shrink-to-fit）：current 比 intrinsic 宽 → shrink 到 intrinsic。
@@ -392,7 +448,21 @@ impl LayoutEngine {
                     b.width > target + 1.0
                 }
             } else if is_auto_float {
-                b.width > intrinsic + 1.0
+                // R5368：钉宽覆盖全部 block 容器 auto-float（无 % 门）——钉宽窄于
+                // taffy max-content 布局宽时子必须重跑（taffy 一趟按过宽排子：
+                // intrinsic-percent-non-replaced-001 控制行 min-content 86 钉宽下
+                // inner 停留 68 单行，应 46 双行——r5368_probe_page_rows 实证）。
+                // 循环 % 子树**等值也钉**（无条件写公式宽 + mark_dirty 重跑：% 子按
+                // 钉后宽重解析的唯一入口，taffy max-content 一趟排子时 % 子停留内容
+                // 基，宽相等时无重跑则 50% 永停内容基——r5368_pct_child_reresolves
+                // 守卫）。非 % 形仅在真收缩时钉（等值重跑是纯浪费——real 页面 float
+                // 极多，等值 mark_dirty 全子树重排翻倍布局成本）。kill-switch
+                // `ZW_FLOAT_STF_PIN=0` 回退 R1015 单向收缩臂。
+                if stf_pin_on {
+                    b.width > intrinsic + 0.5 || float_has_cyclic_pct
+                } else {
+                    b.width > intrinsic + 1.0
+                }
             } else {
                 b.width < intrinsic + 1.0
             };
