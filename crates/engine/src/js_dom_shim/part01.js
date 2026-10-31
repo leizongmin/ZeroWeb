@@ -8600,7 +8600,25 @@
     // takeLineFrom 的**摘离前快照** wsVal 为准（摘离后 _zwCeWsOf 走断祖先链回落
     // normal，丢右块继承声明——B 族错印实证）。
     var _wsVal = (r.wsVal != null) ? r.wsVal : _zwCeWsOf(r.ws || srcParent);
+    // 落位目标块上提（2026-10-31 normal 降级簇）：壳 ws 印判定需要**落位上下文**
+    // 有效白空间，落位修正只读树结构（srcParent/startNode/dst），先于壳构造计算。
+    var _shellDst = dst;
+    var _shellRef = (srcParent === _shellDst) ? startNode : ((srcParent && srcParent.parentNode === _shellDst) ? srcParent : null);
+    if (!_shellRef && srcParent === _shellDst.parentNode && !_zwCeIsBlockEl(_shellDst)) {
+      _shellRef = _shellDst.nextSibling;
+      _shellDst = srcParent;
+    }
+    if (_shellRef && _shellRef.parentNode !== _shellDst) _shellRef = null;
+    // 壳保留判定（2026-10-31 lrlp 残余 264F 根因）：保留壳只在源行 ws 与**落位
+    // 上下文**有效 ws 不同时才需要——相同则内容迁入后语义不变，Chrome 不加壳
+    //（join-different-white-space-style-left-line-and-right-paragraph 语料
+    // right=normal 变体期望裸文本 `def`/裸元素 `<b>def</b>`，actual 带
+    // `style="white-space:normal"` 88×3 方法全量实证；paragraphs 几何落位左块
+    // 恒异 → 恒壳不受影响，accept 数组 `style="${rightWhiteSpace}"` 参数化实证）。
+    var _dstWsVal = _zwCeWsOf(_shellDst);
+    var _wsNeedsShell = String(_wsVal).toLowerCase() !== String(_dstWsVal).toLowerCase();
     var _stampWs = function (_swEl) {
+      if (!_wsNeedsShell) return;
       var _swStyle = '';
       try { _swStyle = String(_swEl.getAttribute('style') || ''); } catch (_eShellAttr) {}
       if (!/(^|;)\s*white-space\s*:/i.test(_swStyle)) {
@@ -8625,6 +8643,7 @@
           _stampWs(_jn);
           shells.push(_jn);
         } else if (_jn.nodeType === 3) {
+          if (!_wsNeedsShell) { shells.push(_jn); continue; } // 等值降级：裸文本迁入
           var _sh = document.createElement('span');
           _sh.setAttribute('style', 'white-space:' + _wsVal);
           var _jnHtml = String(_jn.nodeValue != null ? _jn.nodeValue : '')
@@ -8646,13 +8665,7 @@
     // **行内 run**（fn=非块，如 `<span style=ws>abc[]</span>` 本体）且行容器=
     // srcParent——壳须落行容器内 run 之后（`abc</span><span style=ws>def</span>`
     // sibling accept 形态），append 进 run 即嵌套（~1,300F 实证）。块 dst 不触发。
-    var _shellDst = dst;
-    var _shellRef = (srcParent === _shellDst) ? startNode : ((srcParent && srcParent.parentNode === _shellDst) ? srcParent : null);
-    if (!_shellRef && srcParent === _shellDst.parentNode && !_zwCeIsBlockEl(_shellDst)) {
-      _shellRef = _shellDst.nextSibling;
-      _shellDst = srcParent;
-    }
-    if (_shellRef && _shellRef.parentNode !== _shellDst) _shellRef = null;
+    //（落位修正已上提至壳构造前，供 _dstWsVal 判定，2026-10-31 normal 降级簇。）
     // D3 世界同步面（2026-10-31）：**plain 壳的引擎收敛**——世界同步后 dst/ref/壳均
     // 为补偿树包装（无 handle/sel 印），universal 落位方法只做本地化（寻址失败静默
     // 不记批），引擎侧只剩提取 remove、壳内容永 lost（left-paragraph-and-right-line
@@ -8674,7 +8687,16 @@
         }
         if (_shP.__zwHandle || _shP.__zwSelector
           || typeof _zwPosSelOf !== 'function' || typeof __zw_insert_adjacent_html !== 'function') continue;
-        var _shellHtml = String(_shP.outerHTML || '');
+        // 等值降级裸文本壳（2026-10-31）：shim 文本节点无 outerHTML（此前空串
+        // continue 跳过序列化）——文本形态走转义 textContent，insertAdjacentHTML
+        // 解析落引擎为文本节点，与元素壳「本地落位 + 序列化 copy」同 move 语义。
+        var _shellHtml = '';
+        if (_shP.nodeType === 3) {
+          _shellHtml = String(_shP.nodeValue != null ? _shP.nodeValue : '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        } else {
+          _shellHtml = String(_shP.outerHTML || '');
+        }
         if (_shellHtml === '') continue;
         var _shellSel = null, _shellPos = null;
         if (_shellRef && _shellRef.nodeType === 1) {
