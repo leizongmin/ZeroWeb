@@ -31,7 +31,15 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 177 收口，多进程 renderer SetDomSnapshot 臂 entries 化——js worker gCS 文档序交错，s174 挂账⑤收口，rust 4 + 钉测 3，零协议改动零 shim）**
+> **▶ 当前状态（2026-10-31 M2 切片 178 收口，radio 组排他 sweep 净件臂 R2998 捕获缺失根修——form reset 恢复落空，s177 新立 renderer 基线两案销账，shim 单点 +8）**
+> **入场勘根**：s177 挂账 page_scripts 2 案（fixture reset 后 `state["plan"]` 应 `"basic"` 实 `""`；js-disabled reset 后 `#basic` checked 属性应恢复实无）。探针三态定谳单根：s125/s131 组排他 sweep `_zwRadioUncheckGroupOthers` 净件臂直接移除 checked 属性**绕过 R2998 捕获**——spec IDL checkedness 置 false 不改 default checkedness（内容属性不动），shim 为 render 移除属性属同款污染，setter 臂先捕获后写而 sweep 臂漏 → `defaultChecked` 回落 live attr（已移除）恒 false → reset 的 `c.checked = c.defaultChecked` 恢复落空。
+> **施工**（part05.js +8）：净件臂移除前补 `_captureBoolDefault`（读数 = 移除前属性存在性 = 真默认；重同步链不变）。脏件臂不动；s132 type 变更/clone/form owner 变更等全部 sweep 调用点走共享出口单点覆盖。
+> **验证**：renderer lib **358P/3F**（354P/5F 基线 +2 转绿，余 3F 在册 fetch 契约族）——两案即常驻回归钉；engine lib **3625P/10F**（+6 并行流新增，10F 与 s176 在册清单逐键 SAME）；**forms 全树 4697 common 键 join 零位移**（402F 同数；LOST 2 = focus-dynamic-type-change-on-blur 单文件 79/80 行截断族非语义位移）；**interactive 483 键 bit-exact**；shim 装配序 node --check SYNTAX_OK 113929 行；rust 零 diff；webview lib 免跑（crate 零 diff）。
+> **边界**：失败时点未逐轮 bisect（机制定谳 + 两案转绿 + 全域零位移承载，8cb3e919a 后即红、本流 s177 才首见）；OPTION selectedness sweep 不在刀（s135 默认层已单独落，无在册红案）。
+> **下一步候选**：renderer 余 3F（fetch 契约族勘定）；forms 全树 402F 家族分析；interactive 44F 归因复读。
+> **账本**：[evidence/2026-10-31-m2s178-radio-sweep-default-capture.md](html-semantics-compat/evidence/2026-10-31-m2s178-radio-sweep-default-capture.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 177 收口，多进程 renderer SetDomSnapshot 臂 entries 化——js worker gCS 文档序交错，s174 挂账⑤收口，rust 4 + 钉测 3，零协议改动零 shim）**
 > **入场勘根**：s174 挂账⑤。多进程链路三层定谳——renderer navigate 自取主文档，s174 entries 发布在 pipeline 线程已通；缺口在 **js worker 线程**（页面 JS gCS 真源）：SetDomSnapshot 臂只携 blob（sync 咽喉只推 cached_css），worker gCS 恒 blob 前置（link 在 `<style>` 后的页同特异度恒输）。LoadHtml IPC 通道不在面内（caller 上游本无位次信息）；`JsWorkerCommand` 为进程内通道——zero-protocol 契约零改动。
 > **施工**（4 文件 +154/−4）：webview 发布形态镜像 `published_external_css_entries` + getter `external_css_entries()`（每次 load 无条件覆盖含清空）；js_worker 命令携条目（普通+优先两构造点钉版）+ worker 槽/setter + 臂分派（条目非空 → `set_active_external_css_entries` 文档序交错、派生 blob 同步装槽回落面不变，空表 → blob 既有回落逐位保留）+ `reset_document_state` 镜像清槽（P9-9 DEF-1 同窗）；runtime sync 咽喉同点推入。
 > **验证**：webview lib **832P/0F**（830+2 钉测）；renderer lib **354P/5F**——5F stash 对照干净 main 同键同态全既有（fetch 契约族 3 与 engine fetch 族同签名；page_scripts 2 案测试体自 2026-08 未动，挂账勘定非本刀面）；s177 worker 钉测 blob 字段刻意分歧（BlobFont）判别——实测 `Arial, serif` = 条目权威 + blob 字段被忽略双钉；interactive-elements **483 键对 s176 终态逐键 bit-exact 零位移**（对 s172 旧基线 4 位移恰为 s176 在册项）；engine lib 免跑（engine 零 diff，entries/collector 语义 s174 已验）；fmt/guarded-clippy（webview+renderer）零告警。

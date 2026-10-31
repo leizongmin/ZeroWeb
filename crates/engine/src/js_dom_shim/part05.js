@@ -1672,6 +1672,14 @@
         if (_checkedDirtyState[_gk131] !== undefined) {
           _checkedDirtyState[_gk131] = false;
         } else {
+          // s178：组排他 sweep 净件臂先补 R2998 捕获再移除属性——spec IDL checkedness
+          // 置 false 不改 default checkedness（内容属性不动，whatwg/html §4.10.5.4）；
+          // shim 为 render 序列化移除属性属 R2998 同款污染，漏捕获使 defaultChecked
+          // 回落 live attr（已移除）恒 false → form.reset() 恢复落空（form-interaction
+          // fixture reset 后 plan=''、js-disabled reset 后 #basic checked 属性丢失，
+          // renderer lib 两案实证）。捕获语义同 `.checked=` setter 臂：移除前属性
+          // 存在性 = 真默认；后续 setAttribute/removeAttribute 重同步链不变。
+          _captureBoolDefault(_gk131, 'checked', _gd131.__zwSelector, _gd131.__zwHandle);
           var _gov131 = null;
           try {
             _gov131 = (_gd131.__zwHandle && typeof __zw_get_attr_handle === 'function')
