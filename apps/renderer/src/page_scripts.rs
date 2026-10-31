@@ -1320,9 +1320,17 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
 /// 通知点同口径：host 真相已更新，shim 同步补偿状态（移除标记、解析补偿节点、
 /// 融合基底缓存）整体作废。有界等待（bump 为微秒级脚本；页面回调积压时不阻塞
 /// 主循环，与 `drain_pending_dom_mutations` 的 200ms 上限同约定）。
+///
+/// R54xx（editing-compat renderer R383a 对账，2026-10-31）：通知脚本置
+/// `__zwHostApplyBumpSeen` 配对标记（shim `_zwApplyPairedEnv` 第二通道）——本路径
+/// journal 边界 drain 清空、游标 thread_local 绑 webview 线程发布不到 js_worker
+/// context，`__zw_pending_attr_sels` 的 cursor 分量恒 0，R383a 跨代际跳并 +
+/// R5356 种子过时判定在该环境此前恒不生效（序列化域幽灵双计面）。标记仅在
+/// js_worker context 的 globalThis 上置位；engine 测试手写的旧形态 bump 模拟串
+/// 不含置位，engine 纯测试环境恒并语义不受扰。
 fn notify_shim_apply_generation(ctx: &mut PageScriptContext<'_>) {
     let _ = ctx.js_worker.execute_script_direct_bounded(
-        "if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();",
+        "if (typeof globalThis.__zw_apply_generation_bump === 'function') { globalThis.__zwHostApplyBumpSeen = true; globalThis.__zw_apply_generation_bump(); }",
         std::time::Duration::from_millis(200),
     );
 }
@@ -3645,6 +3653,97 @@ mod tests {
         let applied = apply_recorded_mutations(&mut ctx, &html_snapshot);
         assert!(applied.is_some(), "补答 apply 须产出新 HTML");
         assert!(ctx.html.contains(">late<"), "挂起求值的 DOM 变更须落入宿主 HTML");
+        worker.shutdown();
+    }
+
+    /// R54xx（editing-compat renderer R383a 对账，2026-10-31）：apply 换代通知须置
+    /// `__zwHostApplyBumpSeen` 配对标记——shim `_zwApplyPairedEnv` 第二通道。本路径
+    /// journal 边界 drain 清空、`publish_mut_applied_cursor` 是 webview 线程
+    /// thread_local 发布不到 js_worker context，`__zw_pending_attr_sels` 的 cursor
+    /// 分量恒 0——R383a 跨代际跳并 + R5356 种子过时判定的环境判别在该生产路径此前
+    /// 恒 false（序列化域幽灵双计面）。驱动：页面脚本改 DOM → drain apply（HTML
+    /// 回写臂）→ 探针标记 apply 前未见 / apply 后置位。
+    #[test]
+    fn apply_generation_notice_sets_host_paired_marker() {
+        let mut worker = RendererJsWorker::spawn(83);
+        worker.set_dom_snapshot("<html><body><div id='a'>t</div></body></html>", "https://zero.test/r54xx-b");
+        let mut html = String::from("<html><body><div id='a'>t</div></body></html>");
+        let mut ctx = PageScriptContext {
+            html: &mut html,
+            url: "about:blank",
+            js_worker: &worker,
+            webview: None,
+        };
+        worker
+            .execute_script_direct("document.getElementById('a').textContent = 'v2';")
+            .expect("页面脚本须成功");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__zwHostApplyBumpSeen)")
+                .unwrap(),
+            "undefined",
+            "apply 前配对标记须未见"
+        );
+        let html_snapshot = ctx.html.clone();
+        assert!(
+            apply_recorded_mutations(&mut ctx, &html_snapshot).is_some(),
+            "apply 须产出新 HTML"
+        );
+        assert!(ctx.html.contains(">v2<"), "DOM 变更须落入宿主 HTML");
+        assert_eq!(
+            worker
+                .execute_script_direct("String(globalThis.__zwHostApplyBumpSeen)")
+                .unwrap(),
+            "true",
+            "apply 换代通知须置 __zwHostApplyBumpSeen 配对标记"
+        );
+        worker.shutdown();
+    }
+
+    /// R54xx（editing-compat renderer R383a 对账，2026-10-31）行为钉：apply 换代后
+    /// 「Arm3 pending attr 门开 × 跨代际结构桶」组合的融合序列化正确性——脚本块 A
+    /// （appendChild 登记结构桶）→ drain apply（br 落基座 + 换代通知）→ 推新快照
+    /// → 脚本块 B setAttribute（Arm3 开门、桶 stamp 滞留旧代——attr 写不经
+    /// `_zwHCLiveInvalidate` 不重盖桶戳）→ outerHTML 恰 1 br 且 attr 落地。**如实
+    /// 注记**：本钉在标记通道撤除（stash A/B）下不红——renderer 纯页面形态该组合
+    /// 由 R382 条目级代际兜底剔除已收编条目防双计，paired 通道的增量暴露面在
+    /// R5356 种子域等编辑域形态（mirror 未构造出修复前红形态）；钉保留为该组合的
+    /// 行为正确性回归位，主钉见 `apply_generation_notice_sets_host_paired_marker`。
+    #[test]
+    fn cross_gen_serialization_skips_bucket_after_apply() {
+        let mut worker = RendererJsWorker::spawn(84);
+        let html0 = "<html><body><div id=box><span>s</span></div></body></html>";
+        worker.set_dom_snapshot(html0, "https://zero.test/r54xx");
+        let mut html = html0.to_string();
+        let mut ctx = PageScriptContext {
+            html: &mut html,
+            url: "https://zero.test/r54xx",
+            js_worker: &worker,
+            webview: None,
+        };
+        worker
+            .execute_script_direct(
+                "var b=document.getElementById('box');b.appendChild(document.createElement('br'));",
+            )
+            .expect("脚本 A 须成功");
+        // drain apply（HTML 回写臂）→ 基座含 br → 推新快照（下一脚本块前置）。
+        let html_snapshot = ctx.html.clone();
+        let new_html = apply_recorded_mutations(&mut ctx, &html_snapshot).expect("apply 须产出新 HTML");
+        assert!(new_html.contains("<br"), "br 须落进基座 HTML");
+        worker.set_dom_snapshot(&new_html, "https://zero.test/r54xx");
+        // 脚本块 B：attr 写开 Arm3 门（journal 未应用尾 SetAttr；结构桶 stamp 滞留
+        // 旧代——attr 写不记账），随后融合序列化读。
+        worker
+            .execute_script_direct("document.getElementById('box').setAttribute('data-x','2');")
+            .expect("attr 写须成功");
+        let out = worker
+            .execute_script_direct("document.getElementById('box').outerHTML")
+            .expect("脚本 B 须成功");
+        assert_eq!(
+            out.matches("<br").count(),
+            1,
+            "跨代际桶条目已落基座，序列化不得双计（R383a 跳并），got {out}"
+        );
         worker.shutdown();
     }
 }

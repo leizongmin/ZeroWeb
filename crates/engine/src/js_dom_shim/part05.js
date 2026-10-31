@@ -11821,10 +11821,20 @@
   // （webview apply 点配对发布 `publish_mut_applied_cursor`），engine 纯测试环境
   // （register_dom_callbacks 直连、无 webview flush）永 0。闩语义：一旦见过 cursor>0
   // 本页恒 true——游标单调不回退（导航换代整页重建），读侧无须逐次问询。
+  // R54xx（editing-compat renderer 对账，2026-10-31）：第二通道 **host 换代标记**——
+  // renderer 私有队列路径（page_scripts `apply_recorded_mutations`，含 webview 在场
+  // 的 `apply_dom_mutations_and_render` 臂）journal 边界 drain 清空、apply 成功后经
+  // `notify_shim_apply_generation` 在 js_worker 线程发换代通知脚本，cursor 恒 0
+  // （thread_local 绑 webview 线程，publish 到不了 js_worker context）——本通道使
+  // 该环境的 R383a 跳并 + R5356 种子过时判定生效（「apply 与换代成对」事实等价：
+  // 通知只在 apply 成功后发）。标记由宿主通知脚本置位（`__zwHostApplyBumpSeen`），
+  // engine 测试手写的旧形态 bump 模拟串不含置位 → 恒并语义（t8r-4 臂②「apply 代际
+  // bump 后 pending 子不消失」）不受扰。
   var _zwPairedLatch = false;
   function _zwApplyPairedEnv() {
     if (typeof __zw_pending_attr_sels !== 'function') return true;
     if (_zwPairedLatch) return true;
+    if (globalThis.__zwHostApplyBumpSeen === true) { _zwPairedLatch = true; return true; }
     var raw = String(__zw_pending_attr_sels() || '');
     var sep = raw.indexOf('|');
     var head = sep < 0 ? raw : raw.slice(0, sep);
