@@ -31,7 +31,40 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 187 收口，color input alpha/colorSpace 反射——IDL 双向缺位单根 2F 翻绿，shim 2 零 rust：part03 get trap 双臂 + part05 set trap 双分支）**
+> **▶ 当前状态（2026-11-01 M2 切片 188 收口，frame content navigable——submission-checks 三兄弟 3F 精确翻绿，shim 5 刀零 rust：R115 臂 FRAME 归一 + 插入步/src 双钩子/URL 分支排除清单门放宽）**
+> **入场定刀位**：s187 账本「下一步候选」首位。
+> **勘根**：submission-checks 三案失败形态非「提交乱导航」而是测试体
+> 异常（contentWindow/contentDocument undefined）——三案全部以
+> **`document.createElement("frame")`** 承载访问面（上游原文，
+> HTMLFrameElement 带 contentDocument/contentWindow IDL + Reflect src），
+> shim 嵌套浏览上下文面四处 IFRAME 硬门全不认 FRAME。spec 勘定
+> （obsolete.html §16.3.2）：frame 与 iframe 同享 content navigable，
+> 插入步建 child navigable + src 属性 set/changed/removed → process
+> the frame attributes。submission 管线无需动：s144 connectedness
+> 近似对三案裁决全对（detached/移除后/死文档内提交全被拦）。
+> **施工（shim 5）**：part04 R115 臂 tag 归一 FRAME→IFRAME（content
+> 访问 + named-window 注册 + fallback win 全管线复用）；part01
+> `_zwStartConnectedIframe` 门放宽（插入建 navigable + 初始 load）；
+> part05 IDL src/srcdoc 写钩子 + part04 setAttribute 钩子同款放宽；
+> part05 URL 反射分支排除清单增 FRAME.src（放行至 R3069 尾部 reload
+> 钩子——FRAME.src 在 `_REFLECTED_URL_TAGS` 在册先被 verbatim 截走，
+> 首轮探针实证导航未发生）。
+> **验证**：定向 submission-checks **3/3 全 Pass**（3F→3P 精确，探针
+> 临时页闭环已删）；forms 全树 4365P/335F/12T → **4368P/332F/12T**
+> （ΔP=+3/ΔF=−3 精确闭合，文件级 diff 仅靶标文件翻面）；interactive
+> **483 键零位移**（439P/44F bit-exact）；engine lib **3641P/1F**（在
+> 册同键）；shim 拼接序 node --check + fmt + guarded clippy 全绿。
+> **残留与边界**：cannot-navigate fully-active 完整定义仍 FIXME（s144
+> 承袭，connectedness 近似过宽面无语料）；`/the-frame-element/` 为
+> runner 设计内排除域（navigation M3 门控）；form-data-set-empty-file
+> 不进跑集系内容判定 skip 命中 `createElement("iframe")` 字样（三兄弟
+> 进跑集恰因上游用词 "frame"）——排除口径差异在册待议。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031
+> 征询在途）；fix#19c override builtins 1F 挂待决承袭；s186-era
+> FIXME（wrapper select/textarea/output `.value` 家族）在册。
+> **账本**：[evidence/2026-11-01-m2s188-frame-content-navigable.md](html-semantics-compat/evidence/2026-11-01-m2s188-frame-content-navigable.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 187 收口，color input alpha/colorSpace 反射——IDL 双向缺位单根 2F 翻绿，shim 2 零 rust：part03 get trap 双臂 + part05 set trap 双分支）**
 > **入场定刀位**：s186 账本「下一步候选」首位。
 > **勘根**：color-attributes.window.js 两案（createElement proxy 形）同单
 > 根——`input.alpha`/`input.colorSpace` IDL 双向缺位读返 undefined；两名

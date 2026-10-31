@@ -875,6 +875,11 @@
           else { __zw_set_attr(sel, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
         } else if (typeof _reflectedUrlAttr === 'function'
             && !(_realTag(sel, handle) === 'IFRAME' && p === 'src')
+            // s188：FRAME.src 同排除——下行 R3069 分支尾部 reload 钩子承载 src 属性
+            // 变更导航（spec obsolete.html #the-frame-element「Whenever a frame
+            // element … has its src attribute set, changed, or removed … process
+            // the frame attributes」）；longDesc 无导航语义留本分支 verbatim。
+            && !(_realTag(sel, handle) === 'FRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
@@ -1146,7 +1151,12 @@
           // navigation-compat M3：srcdoc 与 src 同为 process-the-iframe-attributes 触发
           // 属性（spec #the-iframe-element：set/changed/removed 任一都重新处理；目标
           // 优先级 srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
-          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
+          // s188：frame 的 src/srcdoc IDL 写同触发（spec
+          // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+          // 「Whenever a frame element … has its src attribute set, changed, or
+          // removed … process the frame attributes」——IDL setter 与 setAttribute
+          // 双路径同管线，part04 属性分支同款门）。
+          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && (_realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'FRAME') &&
               typeof globalThis.__zw_reload_iframe === 'function' &&
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {

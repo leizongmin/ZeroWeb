@@ -3339,7 +3339,12 @@
     } catch (_eIframeTag) {
       tag = String(frame.tagName || '');
     }
-    if (String(tag || frame.tagName || '').toUpperCase() !== 'IFRAME') return;
+    var _stTagUp = String(tag || frame.tagName || '').toUpperCase();
+    // s188：frame 插入步同 iframe 建 child navigable（spec
+    // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+    // frame insertion steps——插入已连接树即建 navigable + process the frame
+    // attributes，about:blank 初始插入派 load）。
+    if (_stTagUp !== 'IFRAME' && _stTagUp !== 'FRAME') return;
     // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
     // Dynamic insertion of a connected iframe starts navigation asynchronously.
     _defer(function() {

@@ -1250,6 +1250,13 @@
         // 与 part01 removeClientForNode 的 frame 移除 gate 同语义（两处 inline——
         // part03 的 _realTag 为 closure 内层函数，跨 part 复用未达，探针实证）。
         var _zwIframeTag = _realTag(sel, handle);
+        // s188（html-semantics M2）：frame 元素与 iframe 同享 content navigable
+        //（https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+        // 「The frame element has a content navigable similar to the iframe
+        // element」+ HTMLFrameElement 接口带 contentDocument/contentWindow）——
+        // 归一入 R115 臂同管线（WPT submission-checks 三案以
+        // document.createElement("frame") 承载 contentWindow/contentDocument 访问面）。
+        if (_zwIframeTag === 'FRAME') _zwIframeTag = 'IFRAME';
         if (_zwIframeTag !== 'IFRAME' && handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
             && _nsHandles[handle].namespace === 'http://www.w3.org/1999/xhtml') {
           var _zwNsLocal = String(_nsHandles[handle].qualifiedName || '');
@@ -3871,7 +3878,11 @@
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
             // srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
-            if ((n === 'src' || n === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
+            // s188：frame 的 src/srcdoc 属性变更同触发（spec
+            // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+            // 「Whenever a frame element … has its src attribute set, changed, or
+            // removed … process the frame attributes」——与 iframe 同管线）。
+            if ((n === 'src' || n === 'srcdoc') && (_realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'FRAME') &&
                 typeof globalThis.__zw_reload_iframe === 'function' &&
                 typeof _zwIframeNavigationConnected === 'function' &&
                 _zwIframeNavigationConnected(sel, handle)) {
