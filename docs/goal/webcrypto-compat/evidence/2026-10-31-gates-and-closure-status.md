@@ -229,3 +229,17 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   同一加载通道。e4e4ebc09 的锚逐字节一致账按二进制面同一性延用至现
   tip `f6c507297`，本轮不复跑。远端同步（origin/main =
   `f6c507297`），树 clean。
+
+### 2026-11-01 04:00 追记：锚复跑现 tip（7065ea39f）逐字节一致——s195 engine 变更吸收
+
+- 03:55 追记落账后远端再进 `88b1904f1`（s195 focus 时序域 radio 焦点
+  导航，engine/shim 语料执行路径代码）——按纪律对现 tip `7065ea39f`
+  复跑锚：release runner 重建 26.92s + test-guard 直包
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json` 重
+  定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  guard log 零字节，runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-0359-7065ea39f.json`（不入库）。
+- 至此锚窗口推进为 **e4e4ebc09 → 7065ea39f**（s182~s195 全部引擎/
+  shim 变更 + 渲染流 R5368/R5369 + wpt-runner test 面修复全吸收），
+  33,109 分母零回归在现 tip 成立。轮询面其余无变化：ua_display_li
+  （渲染流 D4）与 D1/D2 维持待拍板。
