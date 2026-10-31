@@ -714,3 +714,64 @@ fn busy_worker_bounded_input_call_degrades_instead_of_blocking_t8() {
     );
     assert!(snap.is_none(), "超时按「结果未知」降级为 None（fix#13 同语义）");
 }
+
+/// P38 缺帧修复钉：焦点转移不改 DOM、不产生样式失效，但焦点环/插入 caret 是 paint
+/// 输出——点击聚焦（focus_target）、失焦（blur_focused）必须发布新帧，否则合成器
+/// 沿用旧帧，用户看不到任何焦点反馈（对照 focus_via_tab 既有先例；HTML §6.6.1
+/// 焦点反馈）。焦点所有者未变的重复聚焦不得重复发布（R3254-H1 同语义）。
+struct FrameRecordingWriter(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for FrameRecordingWriter {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn focus_change_publishes_frame_for_focus_feedback_p38() {
+    let html = r#"<html><body><input id="name" value="base"><input id="other"></body></html>"#;
+    let url = "https://zero.test/focus-frame";
+    let mut runtime = RendererRuntime::new(925);
+    runtime.compositor_publish = None;
+    let written = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    runtime.outbound = PipeTransport::new(
+        std::io::empty(),
+        Box::new(FrameRecordingWriter(std::sync::Arc::clone(&written))),
+    );
+    runtime.current_url = Some(url.to_string());
+    runtime.cached_html = html.to_string();
+    runtime.webview.as_mut().unwrap().prepare_document_state(url);
+    runtime.webview.as_mut().unwrap().load_html(html, None);
+
+    let bytes = || {
+        std::sync::Arc::clone(&written)
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
+    };
+    let before_focus = bytes();
+    runtime.focus_target("#name").unwrap();
+    assert!(
+        bytes() > before_focus,
+        "点击聚焦文本输入必须发布新帧（焦点环/caret 是 paint 输出，不发布则合成器沿用旧帧）"
+    );
+
+    let after_focus = bytes();
+    runtime.focus_target("#name").unwrap();
+    assert_eq!(
+        bytes(),
+        after_focus,
+        "重复聚焦同一目标（焦点所有者未变）不得重复发布帧（R3254-H1 同语义）"
+    );
+
+    runtime.focus_target("#other").unwrap();
+    assert!(bytes() > after_focus, "焦点转移到另一目标须再次发布帧");
+
+    let after_second_focus = bytes();
+    runtime.blur_focused().unwrap();
+    assert!(bytes() > after_second_focus, "失焦清除焦点环同样必须发布新帧");
+}
