@@ -315,6 +315,11 @@ pub struct PipelineTimings {
     pub layout_ms: f64,
     /// 绘制命令生成耗时（毫秒）。
     pub paint_ms: f64,
+    /// 管线内提交段耗时（毫秒）——绘制完成后缓存写回/换代清零/结果组装/指纹回填
+    /// 等收尾副作用。仅预算路径（`advance_budgeted_render`）计时，其余路径恒 0.0；
+    /// 不计入 `total_ms`（total 语义 = parse+style+layout+paint 四段和，冻结不扩，
+    /// 消费方按四段口径读）。
+    pub commit_ms: f64,
     /// 总耗时（毫秒）。
     pub total_ms: f64,
     /// 本次渲染执行 HTML 解析的次数。
@@ -1379,6 +1384,7 @@ impl RenderPipeline {
                 style_ms,
                 layout_ms,
                 paint_ms,
+                commit_ms: 0.0,
                 total_ms,
                 parse_count: 1,
                 style_count: 1,
@@ -1786,6 +1792,7 @@ impl RenderPipeline {
                 style_ms,
                 layout_ms,
                 paint_ms,
+                commit_ms: 0.0,
                 total_ms,
                 parse_count: 1,
                 style_count: 1,

@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::mpsc::Receiver;
+use std::time::Instant;
 
 use zero_engine::image_resource_key;
 use zero_engine::preload::{ResourceHintType, ResourceType, scan_html_resource_hints};
@@ -631,15 +632,34 @@ impl AsyncPageLoad {
         let session = self.render_session.as_mut().expect("session");
         match webview.advance_budget_session(session, budget_ms) {
             BudgetAdvance::Complete => {
+                // T32 四级分解带：per-level 计时随完成日志透出，供 styled 带冷热分解
+                // 测量（parse/style/layout/paint 四段步边界见 engine pipeline_budget.rs
+                // 各 BudgetStep 臂；commit = 绘制后管线内收尾；apply = webview 侧
+                // absorb+发布，本层计时）。total_ms 语义 = 四段和（不含 commit）。
+                let timings = session.timings().clone();
+                let mut apply_ms = 0.0;
                 if let Some(result) = session.take_result() {
                     let done = matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete)
                         && self.img_pending.is_empty()
                         && self.lazy_img_pending.is_empty()
                         && self.resource_pending.is_empty()
                         && self.font_pending.is_empty();
+                    let apply_start = Instant::now();
                     webview.apply_render_result(result, &self.url, done);
+                    apply_ms = apply_start.elapsed().as_secs_f64() * 1000.0;
                 }
-                tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render complete");
+                tracing::info!(
+                    url = %self.url,
+                    stage = ?self.stage,
+                    parse_ms = timings.parse_ms,
+                    style_ms = timings.style_ms,
+                    layout_ms = timings.layout_ms,
+                    paint_ms = timings.paint_ms,
+                    commit_ms = timings.commit_ms,
+                    total_ms = timings.total_ms,
+                    apply_ms,
+                    "page load: budget render complete"
+                );
                 self.render_session = None;
                 self.budget_pending = false;
                 match self.stage {
