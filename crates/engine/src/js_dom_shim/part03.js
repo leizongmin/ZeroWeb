@@ -26449,6 +26449,21 @@ return e;
                   : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value')));
               return _zwSanitizeInputValue(_rvRgSrc == null ? '' : _rvRgSrc, 'range', sel, handle);
             }
+            // s190（html-semantics M2）：date/month/week/time/datetime-local
+            // 时间族 value getter 消毒面（HTML §4.10.5.1.7-§4.10.5.1.17 各
+            // 状态 value sanitization algorithm）——同 range 臂读侧单点挂接：
+            // 脏缓存优先 / 属性 lw 回落 → `_zwSanitizeInputValue`。修复解析
+            // 期/setAttribute 非法值（"2013-13"、≥4 位小数）原样透出（month
+            // /datetime-local 语料钉态）；合法串 date 族 verbatim、
+            // datetime-local canonical 重序列化（part01 case 同源）。
+            if (_rvTyG === 'date' || _rvTyG === 'month' || _rvTyG === 'week'
+              || _rvTyG === 'time' || _rvTyG === 'datetime-local') {
+              var _rvDtSrc = (_inputValuesSet[key] === true && _inputValues[key] != null)
+                ? String(_inputValues[key])
+                : (handle ? __zw_get_attr_handle(handle, 'value')
+                  : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'value') : __zw_get_attr(sel, 'value')));
+              return _zwSanitizeInputValue(_rvDtSrc == null ? '' : _rvDtSrc, _rvTyG, sel, handle);
+            }
           }
           // P1a form input：value get——per-element 缓存，lazy-init。
           // textarea 的 value 是其**文本内容**（非 value 属性，HTML spec）；input 是 value 属性。
@@ -26492,7 +26507,11 @@ return e;
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasnumber
         if (prop === 'valueAsNumber' && _realTag(sel, handle) === 'INPUT') {
           try {
-            var vasT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            // s190（html-semantics M2）：type 读走 latest-wins（R136：同批
+            // setAttribute('type') 后快照读恒 miss → vasT='' → 恒 NaN，
+            // input-seconds-leading-zeroes 8F 根因；同 value getter 口径）。
+            var vasT = (handle ? __zw_get_attr_handle(handle, 'type')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))) || '';
             vasT = vasT.toLowerCase();
             var vasNumeric = vasT === 'number' || vasT === 'range';
             var vasDated = vasT === 'date' || vasT === 'month' || vasT === 'week'
@@ -26518,7 +26537,10 @@ return e;
         // https://html.spec.whatwg.org/multipage/input.html#dom-input-valueasdate
         if (prop === 'valueAsDate' && _realTag(sel, handle) === 'INPUT') {
           try {
-            var vadT = (handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type')) || '';
+            // s190：type 读同 valueAsNumber 臂走 latest-wins（同批 setAttribute
+            // 可见面，R136 口径）。
+            var vadT = (handle ? __zw_get_attr_handle(handle, 'type')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'))) || '';
             vadT = vadT.toLowerCase();
             if (vadT !== 'date' && vadT !== 'month' && vadT !== 'week' && vadT !== 'time') return null;
             var vadV = _inputValues[key];

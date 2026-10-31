@@ -2290,8 +2290,27 @@
         return v.replace(/[\r\n]/g, '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
       case 'date': case 'month': case 'week': case 'time':
         return _parseHtmlDateValue(v, type) != null ? v : '';
-      case 'datetime-local':
-        return /^\d{4,}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(v) ? v : '';
+      case 'datetime-local': {
+        // s190（html-semantics M2）：datetime-local 状态清洗算法（HTML
+        // §4.10.5.1.17 value sanitization algorithm + §4.10.5.18 local date
+        // and time string）——合法串重序列化为 canonical 形：'T' 分隔（空格
+        // 解析接受但不出）；秒仅 sec>0 或 ms>0 输出（"00:00:00.000" →
+        // "T00:00"，datetime-local.html）；毫秒 3 位补零后剥尾零（".010"→
+        // ".01"、".500"→".5"、".003"→".003"，trailing-zeros/
+        // seconds-leading-zeroes 语料钉态）；非法（含 ≥4 位小数）→ ''。
+        // date/month/week/time 保持合法 verbatim 回显（spec 同 canonical 化，
+        // 语料未钉其改写面）。
+        var _dlM = v.match(/^(\d{4,})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
+        if (!_dlM || !_parseHtmlDateValue(v, 'datetime-local')) return '';
+        var _dlOut = _dlM[1] + '-' + _dlM[2] + '-' + _dlM[3] + 'T' + _dlM[4] + ':' + _dlM[5];
+        var _dlS = _dlM[6] ? +_dlM[6] : 0;
+        var _dlMs = _dlM[7] ? +_dlM[7].padEnd(3, '0') : 0;
+        if (_dlS > 0 || _dlMs > 0) {
+          _dlOut += ':' + _dlM[6];
+          if (_dlMs > 0) _dlOut += '.' + ('00' + _dlMs).slice(-3).replace(/0+$/, '');
+        }
+        return _dlOut;
+      }
       case 'number':
         return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v) ? v : '';
       case 'range': {

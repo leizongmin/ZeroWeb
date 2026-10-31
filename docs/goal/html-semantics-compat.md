@@ -31,7 +31,38 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 189 收口，range value sanitization——10F 钉态翻绿 + range-2 同根 3F 红利，shim 2 刀零 rust：part01 消毒算法补全 + part03 getter 消毒读臂）**
+> **▶ 当前状态（2026-11-01 M2 切片 190 收口，date/time 消毒面——三兄弟 24F + trailing-zeros/date 红利各 1F 共 26F 翻绿，shim 2 文件 4 处零 rust：part01 datetime-local canonical 重序列化 + part03 时间族 getter 消毒臂 + valueAsNumber/valueAsDate type 读 lw 化）**
+> **入场定刀位**：s189 在册次席候选 date/time 消毒三兄弟（month/
+> datetime-local/input-seconds-leading-zeroes 各 8F）。探针页钉态
+> （验后删）+ 语料全读。
+> **勘根**：三根分立——①valueAsNumber/valueAsDate type 读非 lw 快照
+> 盲区（R136 同类：同批 setAttribute('type') 恒 miss → 恒 NaN，
+> seconds-leading-zeroes 8F 根因，计算体健在）；②时间族 value getter
+> 消毒链接缺位（range 臂外落 P1a 裸读，非法值原样透出，month 8F 根因
+> 「expected "" but got raw」）；③datetime-local 消毒缺 canonical 重
+> 序列化（'T' 分隔/秒仅 sec>0‖ms>0/毫秒 3 位补零剥尾零——
+> trailing-zeros 与 seconds-leading-zeroes 钉态联合唯一确定，非法 ≥4
+> 位小数 → ''）。
+> **施工（shim 2 文件 4 处零 rust）**：part01 `case 'datetime-local'`
+> 重写（正则取分量 + `_parseHtmlDateValue` 日历校验 → canonical 序列
+> 化）；part03 value getter 时间族消毒臂（range 臂后同构，读侧单点）；
+> part03 valueAsNumber/valueAsDate type 读换 lw 融合读（s136/s148 同形）。
+> **验证**：定向目录二跑逐文件 diff 恰 5 文件翻面（month 15/15、
+> datetime-local 17/17、seconds-leading-zeroes 12/12、trailing-zeros
+> 1F→P + date.html 1F→P 红利，其余 bit-exact）；forms 全树 4381P/319F/
+> 12T → **4407P/293F/12T**（ΔP=+26/ΔF=−26 精确闭合）；interactive
+> 439P/44F + engine lib 3641P/1F（在册同键）bit-exact；node --check +
+> fmt 过（clippy 按 .rs 零触碰跳过）。
+> **残留与边界**：首轮目录跑 focus-dynamic 文件级 Timeout solo+二跑
+> 双复绿定谳负载敏感暂态（s171 同形非回归）；time stepUp/Down
+> fractional-seconds 2F 既有待勘；value setter 写侧不消毒（读侧统一
+> 观察面等价）；date 族 canonical 化未做（语料未钉不扩面）。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031
+> 征询在途）；fix#19c 挂待决承袭；s186-era FIXME 无语料在册；time
+> stepUp/Down fractional 2F 待勘。
+> **账本**：[evidence/2026-11-01-m2s190-datetime-temporal-sanitization.md](html-semantics-compat/evidence/2026-11-01-m2s190-datetime-temporal-sanitization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 189 收口，range value sanitization——10F 钉态翻绿 + range-2 同根 3F 红利，shim 2 刀零 rust：part01 消毒算法补全 + part03 getter 消毒读臂）**
 > **入场定刀位**：s188 收口后失败集中度勘定，最大可动面 range.html 10F。
 > **勘根**：10F 同根——range 状态 value 消毒算法缺位。既有
 > `case 'range'`（part01）有夹取+default 中点但无 step 对齐、无
