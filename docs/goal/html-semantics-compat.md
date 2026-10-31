@@ -31,7 +31,35 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 186 收口，click 分派域合刀——mutTree wrapper 事件面三件 + proxy 拾取器激活消费，15F 翻绿，shim 2 零 rust：part03 on* 属性处理器激活/INPUT value accessor/wrapper click R313 门禁 + part04 picker 消费臂）**
+> **▶ 当前状态（2026-10-31 M2 切片 187 收口，color input alpha/colorSpace 反射——IDL 双向缺位单根 2F 翻绿，shim 2 零 rust：part03 get trap 双臂 + part05 set trap 双分支）**
+> **入场定刀位**：s186 账本「下一步候选」首位。
+> **勘根**：color-attributes.window.js 两案（createElement proxy 形）同单
+> 根——`input.alpha`/`input.colorSpace` IDL 双向缺位读返 undefined；两名
+> 字不在任何反射表面（FLAT/STRING/UINT/BOOL 全查无，零劫持）。设计取舍：
+> **不入 `_REFLECTED_BOOL` 通用表**（全元素生效造 div.alpha 假面 + CE 反
+> 射映射 `_zwCeReflectionAttr` 波及 custom elements 非标准面），取 INPUT
+> tag 门专属臂（valueAsDate/set trap 布尔分支同形）。
+> **施工（shim 2）**：part03 get trap 双臂（valueAsDate 后）——`alpha`
+> presence 读返 boolean（lw R136 融合读）；`colorSpace` enumerated 关键
+> 字反射（ASCII 小写归一，display-p3 命中返 canonical，缺失/无效 →
+> limited-srgb 双 default）。part05 set trap 双分支（`_reflectedBoolAttr`
+> 分支前）——`alpha` truthy→presence 设空/falsy→真移除（R3039 三态同
+> 款含实例层同步）；`colorSpace` verbatim 写属性（String(value)——null
+> →"null" DOMString 转换，DISPLAY-P3 存原串，读侧归一）。spec
+> #color-state-(type=color) 反射不按 type 门（接口面无条件，Chrome 同形）。
+> **验证**：定向 color-attributes **2/2 全 Pass**（2F→P 精确）；forms
+> 全树 4363P/337F/12T → **4365P/335F/12T**（ΔP=+2/ΔF=−2 精确闭合，文
+> 件级 diff 仅靶标文件翻面）；interactive **483 键零位移**（439P/44F
+> bit-exact）；engine lib **3641P/1F**（在册同键）；node --check +
+> fmt + guarded clippy 全绿；无探针页。
+> **残留与边界**：mutTree wrapper 无 alpha/colorSpace accessor（语料
+> proxy 形）；colorSpace 值集仅 spec 现行两关键字。
+> **下一步候选**：submission-checks 三兄弟（连接性面）在册；
+> customizable select 177F 挂起待拍板（GB-20261031 征询在途）；
+> fix#19c override builtins 1F 挂待决承袭。
+> **账本**：[evidence/2026-10-31-m2s187-color-input-alpha-colorspace.md](html-semantics-compat/evidence/2026-10-31-m2s187-color-input-alpha-colorspace.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 186 收口，click 分派域合刀——mutTree wrapper 事件面三件 + proxy 拾取器激活消费，15F 翻绿，shim 2 零 rust：part03 on* 属性处理器激活/INPUT value accessor/wrapper click R313 门禁 + part04 picker 消费臂）**
 > **入场定刀位**：s185 账本「下一步候选」首位（disabled click 8 + click
 > 消费激活 7 同 click 分派域合刀）。
 > **勘根（双靶三根）**：① disabled-elements-01 8F——innerHTML 解析元素

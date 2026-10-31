@@ -26513,6 +26513,33 @@ return e;
             return _parseHtmlDateValue(vadV, vadT); // null = 无效 / Date 对象 = 有效
           } catch (_e) { return null; }
         }
+        // `input.alpha`（HTMLInputElement，s187——color state `alpha` 内容属性反射
+        // 布尔，spec html.spec.whatwg.org/multipage/input.html#color-state-(type=color)
+        // `attr-input-alpha` + IDL `dom-input-alpha`）：presence 读返 boolean。不入
+        // _REFLECTED_BOOL 通用表——alpha 仅 INPUT 接口面，通用表会造非 INPUT 元素
+        // `.alpha` 假面 + CE 反射映射（_zwCeReflectionAttr）波及。读走 lw 融合
+        //（R136：同批 setAttribute 后 IDL 读 latest-wins）。
+        if (prop === 'alpha' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var _alHas = handle ? __zw_has_attr_handle(handle, 'alpha')
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'alpha') : __zw_has_attr(sel, 'alpha'));
+            return _alHas === '1';
+          } catch (_e187al) { return false; }
+        }
+        // `input.colorSpace`（HTMLInputElement，s187——color state `colorspace`
+        // enumerated 关键字反射，同上 spec 节 `attr-input-colorspace` +
+        // `dom-input-colorspace`）：keywords limited-srgb/display-p3，ASCII 大小写
+        // 不敏感匹配；missing-value default 与 invalid-value default 均
+        // "limited-srgb"；getter 返 canonical 小写关键字。setter verbatim 写属性
+        //（DISPLAY-P3 存原串，读侧归一——enumerated 反射标准形）。
+        if (prop === 'colorSpace' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var _csV = (handle ? __zw_get_attr_handle(handle, 'colorspace')
+              : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'colorspace') : __zw_get_attr(sel, 'colorspace'))) || '';
+            var _csL = String(_csV).toLowerCase();
+            return _csL === 'display-p3' ? 'display-p3' : 'limited-srgb';
+          } catch (_e187cs) { return 'limited-srgb'; }
+        }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
         // R3906：读前惰性校准（relevant value 变化 → 钳制/重置，_zwReconcileSel）——无选区
