@@ -5019,3 +5019,70 @@ out.join(' ; ');
          （exc2 原 TypeError 面）"
     );
 }
+
+#[test]
+fn test_change_on_blur_dedup_latch_zrg() {
+    // ZRG-2026-10-31（s128/s129 双账去重）：change-on-blur shim 臂（__zw_host_blur）派发后置
+    // `_zwBlurChangeFiredSel` 闩，宿主 legacy 账（script_dispatch_change_on_blur，renderer
+    // blur_target/sync_js_blur 的 value_changed 补派）闩命中跳过同一失焦的第二次 change；
+    // shim 臂未派（闩不匹配/已清）时宿主账照常兜底派发。复现 production 同 transition 双
+    // change（parity toggle/button events 门禁 FAIL：blur 时 change#name 2 次 vs Chrome 1 次）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><input id=i></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① 宿主通道 transition：host_focus 记基线 → 用户编辑置脏改值 → host_blur 臂派 change + 置闩。
+    sandbox
+        .execute(
+            r##"
+var i = document.getElementById("i");
+globalThis.__chg = 0;
+i.addEventListener("change", function () { globalThis.__chg++; });
+__zw_host_focus("#i");
+globalThis.__zw_mark_user_edited("#i");
+i.value = "Z";
+__zw_host_blur("#i");
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chg)").unwrap().value,
+        "1",
+        "s129 臂失焦派一次 change 并置去重闩"
+    );
+    // ② 同失焦宿主账补派：闩命中 → 消费闩跳过（不再派）。
+    sandbox.execute(&script_dispatch_change_on_blur("#i")).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chg)").unwrap().value,
+        "1",
+        "闩命中：宿主账补派须跳过（防双 change）"
+    );
+    // ③ 新 transition：host_focus 清闩 → 编辑 → 宿主账补派（shim 臂不在环）→ 照常派发不丢事件。
+    sandbox
+        .execute(
+            r##"
+__zw_host_focus("#i");
+globalThis.__zw_mark_user_edited("#i");
+i.value = "Z2";
+"##,
+        )
+        .unwrap();
+    sandbox.execute(&script_dispatch_change_on_blur("#i")).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__chg)").unwrap().value,
+        "2",
+        "无闩：宿主账兜底照常派发"
+    );
+}

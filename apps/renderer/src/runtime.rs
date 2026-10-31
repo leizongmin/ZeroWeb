@@ -2331,8 +2331,9 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     .html_changed;
             }
             if value_changed {
-                changed |= page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None)
-                    .html_changed;
+                // s128/s129 双账去重：shim `__zw_host_blur` change 臂已派（闩命中）则跳过，
+                // 防同一失焦双 change（ZRG-2026-10-31 parity toggle/button events 门禁）。
+                changed |= page_scripts::dispatch_change_on_blur(&mut ctx, self.javascript_enabled, &old).html_changed;
             }
         }
         // 失焦清除焦点环需要新帧——不止页面回调改 DOM 时（对照 focus_via_tab 先例）。
@@ -2464,7 +2465,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 js_worker: &self.js_worker,
                 webview: self.webview.as_mut(),
             };
-            if page_scripts::dispatch_dom_event(&mut ctx, self.javascript_enabled, &old, "change", None).html_changed {
+            // s128/s129 双账去重（同 blur_target）：shim blur() 臂已派则闩命中跳过。
+            if page_scripts::dispatch_change_on_blur(&mut ctx, self.javascript_enabled, &old).html_changed {
                 let _ = self.rerender_publish_webview();
             }
         }

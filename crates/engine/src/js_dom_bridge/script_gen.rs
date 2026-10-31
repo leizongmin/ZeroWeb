@@ -146,6 +146,20 @@ pub fn script_dispatch_dom_event(selector: &str, event_type: &str, detail: Optio
     format!("__zw_dispatch_event('{esc_sel}', '{esc_ty}', {detail_json})")
 }
 
+/// 构造「宿主 change-on-blur 补派（s128/s129 双账去重）」脚本。shim 三处 change-on-blur 臂
+///（part04 `blur()`/焦点迁移、part06 `__zw_host_blur`）派发 change 时置 `_zwBlurChangeFiredSel`
+/// 闩；宿主 legacy 账（`blur_target`/`sync_js_blur` 的 value_changed 补派）用本脚本：同一失焦
+/// 闩命中 → 消费闩跳过（防同 transition 双 change——ZRG-2026-10-31 parity toggle/button
+/// events 门禁双派根因）；shim 臂未派（闩不匹配/缺臂/kill-switch 关断）→ 照常派发，宿主账
+/// 独立兜底不丢事件。获焦相位（part04 focus()/part06 `__zw_host_focus`）落定时清闩防陈旧。
+pub fn script_dispatch_change_on_blur(selector: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let dispatch = script_dispatch_dom_event(selector, "change", None);
+    format!(
+        "if(globalThis._zwBlurChangeFiredSel==='{esc_sel}'){{globalThis._zwBlurChangeFiredSel=null;}}else{{{dispatch}}}"
+    )
+}
+
 /// 构造「设置 document.readyState 状态宿」的脚本（t8m，spec `dom-document-readystate`）。
 /// 写 shim 全局 `__zwReadyState`——页面可见 shim document 的 readyState getter（part06.js）
 /// 读该全局（`dom_bindings/document.rs` native 模板不读它，按 run_script 模型保持固定值），

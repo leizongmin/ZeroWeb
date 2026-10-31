@@ -17361,6 +17361,9 @@
       // getter 回落 body（页面随后读 activeElement 须命中被聚焦元素本身）。
       if (!_proxyCache[k] && typeof _makeProxy === 'function') _makeProxy(sel, null);
       _activeElKey = k;
+      // ZRG-2026-10-31：获焦相位落定即新失焦 transition 之前——清上一失焦的去重闩，
+      // 防陈旧闩压掉后续「shim 臂未派、宿主账应兜底」的 change 补派。
+      globalThis._zwBlurChangeFiredSel = null;
     } catch (_eHF) {}
     // s129（html-semantics M2）：text control change 基线捕获——镜像 part04 focus()
     // 臂（s128 change-on-blur 两钩子之一；宿主 mousedown/Tab 焦点迁移此前只派事件
@@ -17397,6 +17400,10 @@
       if (globalThis.__zw_text_change_due && globalThis.__zw_text_change_due(_s129HbK, sel, null)) {
         _dispatchWithBubble(_s129HbK, sel, null,
           _makeEvent('change', { bubbles: true, cancelable: false, __zwTrusted: true }));
+        // ZRG-2026-10-31 双账去重闩：s129 臂已派 change，宿主 legacy 账（renderer
+        // `blur_target`/`sync_js_blur` 的 value_changed 补派，script_gen
+        // `script_dispatch_change_on_blur`）查此闩跳过同一失焦的第二次 change。
+        globalThis._zwBlurChangeFiredSel = sel;
       }
     } catch (_eHBs129c) {}
   };

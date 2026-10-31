@@ -4756,6 +4756,8 @@
                 if ((_s128OldSel || _s128OldHnd) && globalThis.__zw_text_change_due
                     && globalThis.__zw_text_change_due(oldKey, _s128OldSel, _s128OldHnd)) {
                   oldEl.dispatchEvent(_makeEvent('change', { bubbles: true, cancelable: false }));
+                  // ZRG-2026-10-31 双账去重闩（同 blur() 臂）：迁移臂派发亦置闩。
+                  globalThis._zwBlurChangeFiredSel = _s128OldSel;
                 }
               } catch (_eS128oc) {}
             }
@@ -4764,6 +4766,9 @@
             //（:active 单槽——Space 按住/pointer 按住时 Tab 离开的清除面：blur 无
             // keyup/pointerup 到达即终结；已聚焦 no-op 守卫在上方早返，不误清）。
             if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
+            // ZRG-2026-10-31：获焦相位落定即清失焦去重闩（同 part06 __zw_host_focus——
+            // 新 transition 前清陈旧闩，防压掉后续宿主账兜底补派）。
+            globalThis._zwBlurChangeFiredSel = null;
             // s128：text control change 基线捕获（blur 提交时净值比较用）。
             if (globalThis.__zw_text_change_baseline) globalThis.__zw_text_change_baseline(key, sel, handle);
             // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
@@ -4881,6 +4886,8 @@
             // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-text/input/changed
             if (globalThis.__zw_text_change_due && globalThis.__zw_text_change_due(key, sel, handle)) {
               _dispatchWithBubble(key, sel, handle, _makeEvent('change', { bubbles: true, cancelable: false }));
+              // ZRG-2026-10-31 双账去重闩（同 part06 __zw_host_blur 臂）：sync_js_blur 宿主账查闩跳过。
+              globalThis._zwBlurChangeFiredSel = sel;
             }
             // R3254-M7'：通知宿主失焦（空串表示 blur）。
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');

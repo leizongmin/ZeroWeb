@@ -7,9 +7,9 @@ use tracing::warn;
 use zero_engine::{
     DomEventDetail, DomMutation, PageScript, anchor_hash_target, anchor_javascript_target,
     apply_mutations_to_html_with_handles, extract_page_scripts_indexed, page_script_error_check, resolve_document_url,
-    script_call_set_location_hash, script_commit_resource_element_state, script_dispatch_dom_event,
-    script_dispatch_link_events_batch, script_dispatch_script_event, script_host_focus, script_report_error,
-    script_run_classic_page, script_transition_ready_state,
+    script_call_set_location_hash, script_commit_resource_element_state, script_dispatch_change_on_blur,
+    script_dispatch_dom_event, script_dispatch_link_events_batch, script_dispatch_script_event, script_host_focus,
+    script_report_error, script_run_classic_page, script_transition_ready_state,
 };
 #[cfg(test)]
 use zero_engine::{
@@ -609,13 +609,34 @@ pub fn dispatch_dom_event(
     event_type: &str,
     detail: Option<&DomEventDetail>,
 ) -> DomDispatchResult {
+    let script = script_dispatch_dom_event(selector, event_type, detail);
+    dispatch_scripted_event(ctx, javascript_enabled, selector, event_type, script)
+}
+
+/// change-on-blur 宿主账补派（s128/s129 双账去重）：shim 臂已派（去重闩命中）则跳过，
+/// 否则照常派 change。脚本形状见 [`zero_engine::js_dom_bridge::script_gen::script_dispatch_change_on_blur`]。
+pub fn dispatch_change_on_blur(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    selector: &str,
+) -> DomDispatchResult {
+    let script = script_dispatch_change_on_blur(selector);
+    dispatch_scripted_event(ctx, javascript_enabled, selector, "change", script)
+}
+
+fn dispatch_scripted_event(
+    ctx: &mut PageScriptContext<'_>,
+    javascript_enabled: bool,
+    selector: &str,
+    event_type: &str,
+    script: String,
+) -> DomDispatchResult {
     if !javascript_enabled || should_skip_scripts(ctx.url) {
         return DomDispatchResult {
             default_allowed: true,
             html_changed: false,
         };
     }
-    let script = script_dispatch_dom_event(selector, event_type, detail);
     // t2-pb1 fix#13：用户事件派发走优先通道 + 有界等待（快照与脚本成对同通道 FIFO）。
     // 普通通道同步往返在页面回调洪水下逐个等 28-30s 臂（b1 旅程实测：goto 前的鼠标
     // 四连发让 Navigate IPC 滞留 106s）。超时按「结果未知」降级（默认动作放行、
