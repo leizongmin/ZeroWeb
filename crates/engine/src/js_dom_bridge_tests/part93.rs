@@ -248,3 +248,166 @@ fn s1d_index_rebuilds_on_node_count_change() {
         "同四元组异 node_count 必须重建索引并命中引擎一致结果"
     );
 }
+
+#[test]
+fn s1r2_stale_arm_refuses_cross_document_entry() {
+    use crate::js_dom_bridge::{find_by_selector_cached, DomMutation, UniqSelCtx};
+    use std::sync::{Arc, Mutex};
+    // t-p126 返修 DEF-2 钉：stale 服务臂必须与 O(1)/chain 两臂同键校验（epoch Arc
+    // 身份 + drain/view 代）。webview 宿主导航不清 VIEW_DOC_CACHE，退避窗跨导航时
+    // 旧条目若被无条件服务，页 B 首查拿页 A 文档答案。修复前本测试在 q2 翻红：
+    // served_stale=true 且 div 命中（A 的 div 发给 B）。
+    let drain = || callbacks::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    let view = || callbacks::DOM_VIEW_GEN.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    // 单次 1.3s 成本播种：穿透 1.2s 预算，窗口内 decide 稳定 Stale（backoff 1.3s）。
+    callbacks::seed_query_reparse_cost_for_test(std::time::Duration::from_millis(1300));
+
+    // 页 A（epoch A）：空缓存首查 = 播种 stale + 无条目 → 强制解析并入缓存。
+    let a_html = Arc::new(Mutex::new("<html><body><div id=\"mark\">A</div></body></html>".to_string()));
+    let a_mut: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
+    let html_for_a = Arc::clone(&a_html);
+    let hit_a = callbacks::with_query_view_doc(&a_html, &a_mut, move |doc, served_stale| {
+        assert!(!served_stale, "空缓存首查不可能 stale 服务");
+        let ctx = UniqSelCtx::new(Arc::as_ptr(&html_for_a) as usize, 0, drain(), view(), doc.node_count());
+        find_by_selector_cached(doc, ctx, "div").is_some()
+    });
+    assert!(hit_a, "页 A 预处理：div 必须命中");
+
+    // 页 B（新 epoch，不同 Arc 对）同退避窗内首查：stale 臂必须拒绝 A 条目，落到
+    // B 全量解析。A/B 真值恰互反：A 有 div 无 section，B 有 section 无 div。
+    let b_html = Arc::new(Mutex::new("<html><body><section id=\"mark\">B</section></body></html>".to_string()));
+    let b_mut: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
+    let html_for_b = Arc::clone(&b_html);
+    let (div_in_b, section_in_b) = callbacks::with_query_view_doc(&b_html, &b_mut, move |doc, served_stale| {
+        assert!(!served_stale, "跨 epoch 条目必须拒服（DEF-2），落到 B 解析");
+        let ctx = UniqSelCtx::new(Arc::as_ptr(&html_for_b) as usize, 0, drain(), view(), doc.node_count());
+        (
+            find_by_selector_cached(doc, ctx, "div").is_some(),
+            find_by_selector_cached(doc, ctx, "section").is_some(),
+        )
+    });
+    assert!(!div_in_b, "B 文档无 div——stale 臂服务 A 条目即翻红（DEF-2）");
+    assert!(section_in_b, "B 文档 section 必须由 B 解析命中");
+}
+
+#[test]
+fn s1r2_stale_served_memo_isolated_from_fresh_rebuild() {
+    use crate::js_dom_bridge::{find_by_selector_cached, parse_html, DomMutation, UniqSelCtx};
+    use std::sync::{Arc, Mutex};
+    // t-p126 返修 DEF-1 钉：stale 服务臂写的 memo/index 条目以 stale 快照的
+    // node_count 为指纹；退避到期后等长换内容的新解析复现同 token——共键即把
+    // 旧 slab NodeId 发给新文档（有界过期延长为无界）。修复前 q3 翻红：memo
+    // 命中 q2 的 stale 条目，div 在 content2 中误命中。
+    let content1 = "<html><body><div id=\"mark\">one</div></body></html>";
+    let content2 = "<html><body><span id=\"mark\">two</span></body></html>";
+    let shape1 = parse_html(content1);
+    let shape2 = parse_html(content2);
+    assert_eq!(shape1.node_count(), shape2.node_count(), "等长换内容前置");
+    assert!(shape1.query_selector(shape1.root(), "div").is_some());
+    assert!(shape2.query_selector(shape2.root(), "span").is_some());
+
+    let drain = || callbacks::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    let view = || callbacks::DOM_VIEW_GEN.load(std::sync::atomic::Ordering::Relaxed) as u64;
+    callbacks::seed_query_reparse_cost_for_test(std::time::Duration::from_millis(1300));
+
+    let html = Arc::new(Mutex::new(content1.to_string()));
+    let m: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
+    // count=1：单个 SetInnerHtml（不应用类 mutation）——q1 全量重建时 [0..1) 无
+    // 先行 SIH 也无条目，走强制解析入缓存 @count1。
+    m.lock().unwrap().push(DomMutation::SetInnerHtml {
+        selector: "#mark".to_string(),
+        html: "<b>x</b>".to_string(),
+    });
+    // 实参借外层 Arc；闭包 move 独立克隆，避免 E0505（借用中被移出）。
+    let q1 = {
+        let h = Arc::clone(&html);
+        let mu = Arc::clone(&m);
+        callbacks::with_query_view_doc(&html, &m, move |doc, served_stale| {
+            assert!(!served_stale, "q1 空缓存必须强制解析");
+            let ctx = if served_stale {
+                UniqSelCtx::new_stale_served(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            } else {
+                UniqSelCtx::new(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            };
+            find_by_selector_cached(doc, ctx, "div").is_some()
+        })
+    };
+    assert!(q1, "content1 预处理：div 命中");
+
+    // count=2：第二个 SetInnerHtml 落在 [0..1)（首条目窗内含 SIH）→ O(1)/chain
+    // 双 miss → 全量重建路径 → 退避窗内 = stale 臂服务 content1 快照。
+    m.lock().unwrap().push(DomMutation::SetInnerHtml {
+        selector: "#mark".to_string(),
+        html: "<i>y</i>".to_string(),
+    });
+    let q2 = {
+        let h = Arc::clone(&html);
+        let mu = Arc::clone(&m);
+        callbacks::with_query_view_doc(&html, &m, move |doc, served_stale| {
+            assert!(served_stale, "q2 必须命中 stale 服务臂（退避窗内 chain 断）");
+            let ctx = if served_stale {
+                UniqSelCtx::new_stale_served(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            } else {
+                UniqSelCtx::new(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            };
+            (find_by_selector_cached(doc, ctx, "div").is_some(), find_by_selector_cached(doc, ctx, "span").is_some())
+        })
+    };
+    assert_eq!(q2, (true, false), "stale 快照 = content1 真值");
+
+    // 退避到期（1.3s backoff，留 1.5s 余量；5s 滚动窗未重置），镜头就地换成
+    // 等长异构 content2——q3 全量解析 fresh 代：token 仅在 stale/fresh 共键的
+    // 旧实现下与 q2 条目碰撞。
+    std::thread::sleep(std::time::Duration::from_millis(1500));
+    *html.lock().unwrap() = content2.to_string();
+    let q3 = {
+        let h = Arc::clone(&html);
+        let mu = Arc::clone(&m);
+        callbacks::with_query_view_doc(&html, &m, move |doc, served_stale| {
+            assert!(!served_stale, "q3 退避到期必须全量解析 content2");
+            let ctx = if served_stale {
+                UniqSelCtx::new_stale_served(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            } else {
+                UniqSelCtx::new(
+                    Arc::as_ptr(&h) as usize,
+                    mu.lock().unwrap().len(),
+                    drain(),
+                    view(),
+                    doc.node_count(),
+                )
+            };
+            (find_by_selector_cached(doc, ctx, "div").is_some(), find_by_selector_cached(doc, ctx, "span").is_some())
+        })
+    };
+    assert_eq!(q3, (false, true), "fresh 重建必须反映 content2 真值——stale 期 memo 泄漏即此翻红（DEF-1）");
+}

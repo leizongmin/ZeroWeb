@@ -752,6 +752,12 @@ fn unique_attr_anchor_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: NodeId)
 /// node_count，此类全体 memo/index 一致失效；属性级就地变化仍依赖 bump 纪律（与
 /// TAGGED_ALL_CACHE 等既有缓存同剩余面）。以 [`Document::node_count`] 读取，回调
 /// 闭包内（拿到视图 doc 后）构建 ctx。
+///
+/// `stale_served`（t-p126 返修 DEF-1）：条目是否由退避窗 stale 服务臂写入。stale
+/// 快照的 node_count 属旧内容，同 token 可被退避到期后等长换内容的新解析复现——
+/// 若 stale 与 fresh 共键，stale 期写入会把「有界过期」延长为无界（旧 slab
+/// NodeId 发给新文档）。布尔入键后两代条目天然隔离：stale 窗内重复查询仍 O(1)
+/// 命中，退避到期 fresh 解析换键重算，互不可见。
 #[derive(Clone, Copy)]
 pub struct UniqSelCtx {
     html_ptr: usize,
@@ -759,6 +765,7 @@ pub struct UniqSelCtx {
     drain_gen: u64,
     view_gen: u64,
     node_count: usize,
+    stale_served: bool,
 }
 
 impl UniqSelCtx {
@@ -770,6 +777,26 @@ impl UniqSelCtx {
             drain_gen,
             view_gen,
             node_count,
+            stale_served: false,
+        }
+    }
+
+    /// stale 服务臂专用（t-p126 返修 DEF-1，语义见结构体文档）：与 [`Self::new`]
+    /// 同 token 维度，但键域隔离——只服务/写入 stale 代条目。
+    pub(crate) fn new_stale_served(
+        html_ptr: usize,
+        mut_count: usize,
+        drain_gen: u64,
+        view_gen: u64,
+        node_count: usize,
+    ) -> Self {
+        Self {
+            html_ptr,
+            mut_count,
+            drain_gen,
+            view_gen,
+            node_count,
+            stale_served: true,
         }
     }
 }
@@ -779,16 +806,16 @@ thread_local! {
     /// 一次走查；`__zw_query_match`/`__zw_get_attr` 等读回调的公共入口税）。S1d 起
     /// 原始字符集形态（`#id`/`tag.class`/`tag`）直查 [`DocUniqIndex`] O(1)，此 memo
     /// 只服务回落形态（nth-child 路径、属性/伪类复合等）。
-    static FIND_SEL_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, String), Option<NodeId>>> =
+    static FIND_SEL_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, bool, String), Option<NodeId>>> =
         std::cell::RefCell::new(HashMap::new());
     /// (视图代, node) → 唯一选择器物化结果。页面回调每轮重复查询同一元素
     ///（github 每派发轮 347 监听器 × 相同 selector 集合），命中即零走查。
-    static UNIQ_NODE_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, NodeId), Option<String>>> =
+    static UNIQ_NODE_MEMO: std::cell::RefCell<HashMap<(usize, usize, u64, u64, usize, bool, NodeId), Option<String>>> =
         std::cell::RefCell::new(HashMap::new());
     /// S1d：按 token 单条目的文档唯一性索引（键 = [`UniqSelCtx`] 五元组）——同
     /// token ⇒ `with_query_view_doc` 服务同一 `Document` 内容 ⇒ 索引计数/首匹配与
     /// 逐查询走查逐值等价。首门调用时 O(n) 走查建一次，此后门查 O(1)。
-    static DOC_UNIQ_INDEX: std::cell::RefCell<Option<((usize, usize, u64, u64, usize), std::rc::Rc<DocUniqIndex>)>> =
+    static DOC_UNIQ_INDEX: std::cell::RefCell<Option<((usize, usize, u64, u64, usize, bool), std::rc::Rc<DocUniqIndex>)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -808,6 +835,7 @@ pub fn find_by_selector_cached(doc: &Document, ctx: UniqSelCtx, selector: &str) 
         ctx.drain_gen,
         ctx.view_gen,
         ctx.node_count,
+        ctx.stale_served,
         selector.to_string(),
     );
     if let Some(hit) = FIND_SEL_MEMO.with(|m| m.borrow().get(&key).copied()) {
@@ -866,6 +894,7 @@ pub fn unique_selector_for_node_cached(doc: &Document, ctx: UniqSelCtx, node: No
         ctx.drain_gen,
         ctx.view_gen,
         ctx.node_count,
+        ctx.stale_served,
         node,
     );
     if let Some(hit) = UNIQ_NODE_MEMO.with(|m| m.borrow().get(&key).cloned()) {
@@ -913,7 +942,14 @@ struct DocUniqIndex {
 
 /// 取（必要时建）当前 token 的文档唯一性索引。构建不重入本 TLS，borrow 安全。
 fn doc_uniq_index(doc: &Document, ctx: UniqSelCtx) -> std::rc::Rc<DocUniqIndex> {
-    let token = (ctx.html_ptr, ctx.mut_count, ctx.drain_gen, ctx.view_gen, ctx.node_count);
+    let token = (
+        ctx.html_ptr,
+        ctx.mut_count,
+        ctx.drain_gen,
+        ctx.view_gen,
+        ctx.node_count,
+        ctx.stale_served,
+    );
     if let Some(hit) = DOC_UNIQ_INDEX.with(|m| {
         m.borrow()
             .as_ref()

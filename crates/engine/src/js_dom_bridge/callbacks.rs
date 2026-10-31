@@ -82,10 +82,10 @@ struct ViewDocKey {
 ///
 /// 重入约束：`f` 在持有 cache 锁期间执行——`f` 必须是纯文档遍历（不得再入
 /// `__zw_*` 查询回调；与 [`with_query_doc`] 的 thread_local 借用同一约束面）。
-fn with_query_view_doc<R>(
+pub(crate) fn with_query_view_doc<R>(
     html: &Arc<std::sync::Mutex<String>>,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
-    f: impl FnOnce(&zero_dom::Document) -> R,
+    f: impl FnOnce(&zero_dom::Document, bool) -> R,
 ) -> R {
     // uievents-compat 尾簇 13：视图基座**钉定**在首见时点 html（按 drain_gen 代际——
     // 导航清史即重钉）。dom_html Arc 存在换代写入点（R55 dispatch_event 每次重注册
@@ -124,7 +124,7 @@ fn with_query_view_doc<R>(
             slot.borrow()
                 .as_ref()
                 .and_then(|rc| rc.try_borrow().ok())
-                .and_then(|doc| f.take().map(|f| f(&doc)))
+                .and_then(|doc| f.take().map(|f| f(&doc, false)))
         });
         if let Some(r) = live_hit {
             return r;
@@ -153,7 +153,7 @@ fn with_query_view_doc<R>(
             && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
             && key.view_gen == view_gen
         {
-            return f(doc);
+            return f(doc, false);
         }
         let prev_count = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
@@ -209,11 +209,22 @@ fn with_query_view_doc<R>(
                 match decision {
                     ReparseDecision::Parse => false,
                     ReparseDecision::Stale => {
-                        if cache_guard.is_some() {
+                        // t-p126 返修 DEF-2：stale 服务与 O(1)/chain 两臂同键校验
+                        //（epoch Arc 身份 + drain/view 代）——只允许「同视图内 count
+                        // 漂移」的有界过期；webview 宿主导航不清 VIEW_DOC_CACHE（全仓
+                        // clear 仅 renderer Reset 臂两处），退避窗跨导航时残留旧条目
+                        // 必须拒绝服务并落到全量解析，否则页 B 首查被页 A 文档服务。
+                        if let Some((key, _)) = cache_guard.as_ref()
+                            && Arc::ptr_eq(&key.dom_arc, html)
+                            && Arc::ptr_eq(&key.mut_arc, mutations)
+                            && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+                            && key.view_gen == view_gen
+                        {
                             true
                         } else {
-                            // 无旧文档（不应发生：decide 首查即 Parse），记零成本
-                            // 后强制解析。
+                            // 无旧文档或条目非当前视图（跨 epoch/导航）：记零成本后
+                            // 强制解析（正确性优先于退避；真实成本由下方 parse 路径
+                            // record）。
                             if let Some(g) = slot.borrow_mut().as_mut() {
                                 g.record(miss_at, Duration::ZERO);
                             }
@@ -224,8 +235,10 @@ fn with_query_view_doc<R>(
             });
             if stale_hit {
                 // 旧条目保持旧键（不换代）：下次查询重新判定，退避到期即刷新。
+                // 第二参 = stale 服务标记（t-p126 返修 DEF-1）：memo/index 走隔离
+                // 键域，stale 期写入不污染 fresh 代。
                 let (_, stale_doc) = cache_guard.as_ref().expect("stale_hit implies entry");
-                return f(stale_doc);
+                return f(stale_doc, true);
             }
             let parse_start = std::time::Instant::now();
             let doc = parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()));
@@ -319,8 +332,21 @@ fn with_query_view_doc<R>(
             },
             doc,
         ));
-        f(&cache_guard.as_ref().expect("entry stored").1)
+        f(&cache_guard.as_ref().expect("entry stored").1, false)
     })
+}
+
+/// 测试播种（part93 stale 臂钉专用，t-p126 返修 DEF-1/DEF-2）：向 [`QUERY_REPARSE`]
+/// 入账一次指定成本的解析——`window_spent` 一击穿透预算且 `backoff = cost`（封顶
+/// 4s），使窗口内后续 `decide` 稳定返回 `Stale`；仅测试构建可见。
+#[cfg(test)]
+pub(crate) fn seed_query_reparse_cost_for_test(cost: std::time::Duration) {
+    let now = std::time::Instant::now();
+    QUERY_REPARSE.with(|slot| {
+        slot.borrow_mut()
+            .get_or_insert_with(|| QueryReparseGuard::new(now))
+            .record(now, cost);
+    });
 }
 
 /// R-baidu3：注册代际计数器——`register_dom_callbacks` 每次（每 execute 重注册）递增。
@@ -392,14 +418,25 @@ pub fn bump_dom_view_gen() {
 /// TAGGED_ALL_CACHE 键同模式（同 token ⇒ `with_query_view_doc` 单条目视图缓存服务
 /// 同一 Document 内容，memo 命中与重算逐值等价）。在 `with_query_view_doc` 闭包内
 /// 调用（需视图 doc 读 `node_count`）。
-fn uniq_sel_ctx(html: &Arc<Mutex<String>>, m: &Arc<Mutex<Vec<DomMutation>>>, doc: &zero_dom::Document) -> UniqSelCtx {
-    UniqSelCtx::new(
+fn uniq_sel_ctx(
+    html: &Arc<Mutex<String>>,
+    m: &Arc<Mutex<Vec<DomMutation>>>,
+    doc: &zero_dom::Document,
+    served_stale: bool,
+) -> UniqSelCtx {
+    let (html_ptr, mut_count, drain_gen, view_gen, node_count) = (
         Arc::as_ptr(html) as usize,
         m.lock().unwrap_or_else(|e| e.into_inner()).len(),
         MUT_DRAIN_GEN.load(Ordering::Relaxed) as u64,
         DOM_VIEW_GEN.load(Ordering::Relaxed) as u64,
         doc.node_count(),
-    )
+    );
+    // stale 服务走隔离键域（t-p126 返修 DEF-1，见 [`UniqSelCtx`] 文档）。
+    if served_stale {
+        UniqSelCtx::new_stale_served(html_ptr, mut_count, drain_gen, view_gen, node_count)
+    } else {
+        UniqSelCtx::new(html_ptr, mut_count, drain_gen, view_gen, node_count)
+    }
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -595,7 +632,7 @@ pub fn register_dom_callbacks(
             let node_id = match node_id {
                 Some(id) => id,
                 None => {
-                    let hit = with_query_view_doc(&rs_html, &rs_mut, |doc| {
+                    let hit = with_query_view_doc(&rs_html, &rs_mut, |doc, _| {
                         crate::js_dom_bridge::find_by_selector(doc, sel).map(crate::hit_test::node_id_to_u64)
                     });
                     match hit {
@@ -618,8 +655,8 @@ pub fn register_dom_callbacks(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| {
-                let ctx = uniq_sel_ctx(&html, &m, doc);
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
                 query_match_selector_doc_cached(doc, ctx, &sel)
             })
         }),
@@ -631,8 +668,8 @@ pub fn register_dom_callbacks(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| {
-                let ctx = uniq_sel_ctx(&html, &m, doc);
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
                 query_all_selector_list_doc_cached(doc, ctx, &sel)
             })
         }),
@@ -667,18 +704,22 @@ pub fn register_dom_callbacks(
             }) {
                 return hit;
             }
-            let payload = with_query_view_doc(&html, &m, |doc| {
-                query_all_tagged_list_doc_cached(
-                    doc,
-                    UniqSelCtx::new(
-                        Arc::as_ptr(&html) as usize,
-                        count,
-                        drain_gen as u64,
-                        view_gen as u64,
-                        doc.node_count(),
-                    ),
-                    &sel,
-                )
+            let payload = with_query_view_doc(&html, &m, |doc, served_stale| {
+                let (html_ptr, mut_count, drain_gen, view_gen, node_count) = (
+                    Arc::as_ptr(&html) as usize,
+                    count,
+                    drain_gen as u64,
+                    view_gen as u64,
+                    doc.node_count(),
+                );
+                let ctx = if served_stale {
+                    // stale 服务走隔离键域（t-p126 返修 DEF-1）；外层 TAGGED_ALL_CACHE
+                    // 键为 PR #33 既有面（无 node_count/stale 维度），维持不动。
+                    UniqSelCtx::new_stale_served(html_ptr, mut_count, drain_gen, view_gen, node_count)
+                } else {
+                    UniqSelCtx::new(html_ptr, mut_count, drain_gen, view_gen, node_count)
+                };
+                query_all_tagged_list_doc_cached(doc, ctx, &sel)
             });
             TAGGED_ALL_CACHE.with(|slot| {
                 *slot.borrow_mut() = Some((
@@ -1480,7 +1521,7 @@ pub fn register_dom_callbacks(
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
             // js-dom M1 L2 R103：helper 类查询 live 化（_doc 变体）。
-            with_query_view_doc(&html, &m, |doc| query_match_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_match_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -1491,7 +1532,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_all_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_all_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -1502,7 +1543,7 @@ pub fn register_dom_callbacks(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| form_control_selectors_doc(doc, &form).join("|"))
+            with_query_view_doc(&html, &m, |doc, _| form_control_selectors_doc(doc, &form).join("|"))
         }),
     );
 
@@ -1514,7 +1555,7 @@ pub fn register_dom_callbacks(
         "__zw_element_children",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| element_children_selectors_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc, _| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -1586,7 +1627,7 @@ pub fn register_dom_callbacks(
             if raw_absent {
                 // R3028 同款锁纪律：snap guard 须在查询视图构建（会再锁 html）前释放。
                 drop(snap);
-                return with_query_view_doc(&html, &m, |doc| child_nodes_json_doc(doc, &elem_sel));
+                return with_query_view_doc(&html, &m, |doc, _| child_nodes_json_doc(doc, &elem_sel));
             }
             with_query_doc_live_aware(&snap, true, |doc| child_nodes_json_doc(doc, &elem_sel))
         }),
@@ -1645,7 +1686,7 @@ pub fn register_dom_callbacks(
         "__zw_parent",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| parent_selector_for_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc, _| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
 
@@ -1689,8 +1730,8 @@ pub fn register_dom_callbacks(
             // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
             // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
             // .value= 不脏污 defaultValue 语义保持）。
-            with_query_view_doc(&html, &m, |doc| {
-                let ctx = uniq_sel_ctx(&html, &m, doc);
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
                 query_attr_from_html_doc_cached(doc, ctx, &args[0], &args[1])
             })
         }),
@@ -1714,7 +1755,7 @@ pub fn register_dom_callbacks(
                 return ov.unwrap_or_default();
             }
             drop(list);
-            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc, _| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -1746,7 +1787,7 @@ pub fn register_dom_callbacks(
             }) {
                 return tag;
             }
-            let tag = with_query_view_doc(&html, &m, |doc| query_tag_from_html_doc(doc, &sel));
+            let tag = with_query_view_doc(&html, &m, |doc, _| query_tag_from_html_doc(doc, &sel));
             TAG_MEMO.with(|slot| {
                 let mut guard = slot.borrow_mut();
                 let stale = guard
@@ -2031,7 +2072,7 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
-            if with_query_view_doc(&html, &m, |doc| {
+            if with_query_view_doc(&html, &m, |doc, _| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -2060,7 +2101,7 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            let r = with_query_view_doc(&html, &m, |doc| {
+            let r = with_query_view_doc(&html, &m, |doc, _| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -2222,7 +2263,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -2252,7 +2293,7 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -3202,7 +3243,7 @@ pub fn register_dom_callbacks(
             // 时走同一 live fast path（with_query_view_doc 的 live_ok 臂），空闲期
             // 零行为/零成本变化；Remove/SetInnerHtml 仍按 R57/R3029 约定排除在
             // 烘焙范围外（removed 子树读回落快照语义不变）。
-            with_query_view_doc(&html, &muts_ih, |doc| query_inner_html_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &muts_ih, |doc, _| query_inner_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -4066,11 +4107,13 @@ mod query_reparse_tests {
         assert_eq!(seen_fresh, 2, "post-backoff miss must reparse to the fresh doc");
     }
 
-    /// t-p126 S1 集成：视图全量重建在预算耗尽时服务上一条目文档（有界过期），
-    /// 退避到期后刷新到换代基座。操纵 QUERY_REPARSE thread_local 以确定性触达
-    /// 预算（镜像 with_query_doc_serves_stale_doc_while_budget_tripped）。
+    /// t-p126 S1 集成（返修 DEF-2 后语义）：stale 服务臂与 O(1)/chain 两臂同键
+    /// 校验——view_gen bump（R358 就地换代 / webview 导航 sync，二者同签名）后
+    /// 旧条目拒绝 stale 服务，退避窗内也强制解析到新基座；同视图内 count 漂移
+    /// 的有界过期由 s1r2_stale_served_memo_isolated_from_fresh_rebuild 钉住。
+    /// 操纵 QUERY_REPARSE thread_local 以确定性触达预算。
     #[test]
-    fn with_query_view_doc_serves_stale_doc_while_budget_tripped() {
+    fn with_query_view_doc_refuses_stale_after_view_gen_bump() {
         let count_divs = |doc: &zero_dom::Document| {
             crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
                 .split('|')
@@ -4082,13 +4125,13 @@ mod query_reparse_tests {
         ));
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
         // 首查填充条目（基座 = 换代前快照，1 个 div）。
-        assert_eq!(with_query_view_doc(&html, &mutations, count_divs), 1);
-        // 就地换代（R358 范式）：基座换 2-div 快照 + view_gen bump——正常路径下
-        // 次查询即全量重建到新基座。
+        assert_eq!(with_query_view_doc(&html, &mutations, |doc, _| count_divs(doc)), 1);
+        // 就地换代（R358 范式）：基座换 2-div 快照 + view_gen bump。
         *html.lock().unwrap_or_else(|e| e.into_inner()) =
             "<html><body><div id=\"a\"></div><div id=\"b\"></div></body></html>".to_string();
         bump_dom_view_gen();
-        // 打满预算 + 刚解析过（退避窗内）→ 重建被拦，服务换代前旧条目（1 个 div）。
+        // 打满预算 + 刚解析过（退避窗内）→ stale 臂键校验失败（view_gen 已换代）
+        // → 强制解析到新基座（2 个 div），不服务换代前旧条目。
         QUERY_REPARSE.with(|slot| {
             let mut g = slot.borrow_mut();
             let now = std::time::Instant::now();
@@ -4097,11 +4140,13 @@ mod query_reparse_tests {
             guard.last_parse = now;
             guard.backoff = QUERY_REPARSE_BACKOFF_MAX;
         });
-        assert_eq!(
-            with_query_view_doc(&html, &mutations, count_divs),
-            1,
-            "budget-tripped rebuild must serve the stale cached view doc"
-        );
+        let mut served_stale_q2 = false;
+        let n2 = with_query_view_doc(&html, &mutations, |doc, stale| {
+            served_stale_q2 = stale;
+            count_divs(doc)
+        });
+        assert_eq!(n2, 2, "budget-tripped rebuild after view-gen bump must reparse the fresh base");
+        assert!(!served_stale_q2, "换代后旧条目必须拒绝 stale 服务（DEF-2 同键校验）");
         // 退避到期 → 全量重建刷新到新基座（2 个 div）。
         QUERY_REPARSE.with(|slot| {
             if let Some(g) = slot.borrow_mut().as_mut() {
@@ -4109,7 +4154,7 @@ mod query_reparse_tests {
             }
         });
         assert_eq!(
-            with_query_view_doc(&html, &mutations, count_divs),
+            with_query_view_doc(&html, &mutations, |doc, _| count_divs(doc)),
             2,
             "post-backoff rebuild must reparse to the fresh base"
         );
@@ -4133,7 +4178,7 @@ mod view_doc_replay_tests {
                 html: "<div id=".into(),
             }]));
         // 不 panic 即达标（截断分片解析产物允许为空）。
-        let ran = with_query_view_doc(&html, &mutations, |_doc| true);
+        let ran = with_query_view_doc(&html, &mutations, |_doc, _| true);
         assert!(ran);
     }
 
@@ -4165,7 +4210,7 @@ mod view_doc_replay_tests {
                 html: "<div id=a>unquoted</div>".into(),
             },
         ]));
-        let div_count = with_query_view_doc(&html, &mutations, |doc| {
+        let div_count = with_query_view_doc(&html, &mutations, |doc, _| {
             crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
                 .split('|')
                 .filter(|s| !s.is_empty())
@@ -4203,7 +4248,7 @@ mod view_doc_replay_tests {
                 html: "<div id=\"two\"></div>".into(),
             },
         ]));
-        let (one, two) = with_query_view_doc(&html, &mutations, |doc| {
+        let (one, two) = with_query_view_doc(&html, &mutations, |doc, _| {
             let sel_list = |sel: &str| {
                 crate::js_dom_bridge::query_all_selector_list_doc(doc, sel)
                     .split('|')
