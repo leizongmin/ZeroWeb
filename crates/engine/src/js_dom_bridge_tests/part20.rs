@@ -132,8 +132,8 @@ fn test_style_sheet_from_handle_style_element_r113() {
         .unwrap()
         .value;
     assert_eq!(
-        out, "has:true,n:1,sel:div,css:div { color: rgb(1, 2, 3) }",
-        "handle-based style.sheet.cssRules 须从 mutation 历史解析出规则"
+        out, "has:true,n:1,sel:div,css:div { color: rgb(1, 2, 3); }",
+        "handle-based style.sheet.cssRules 须从 mutation 历史解析出规则（cssText 尾随分号 = s163 CSSOM serialize a declaration block 浏览器形，期望同步）"
     );
 }
 
