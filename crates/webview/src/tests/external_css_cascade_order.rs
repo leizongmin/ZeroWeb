@@ -175,7 +175,10 @@ fn external_css_entries_getter_mirrors_published_entries_s177() {
     let entries = webview.external_css_entries();
     assert_eq!(entries.len(), 1, "静态外链发布后条目表恰一条");
     assert!(!entries[0].0.is_empty(), "锚选择器非空");
-    assert_eq!(entries[0].1, "#test { position: fixed }\n", "表文本逐字保真（含源文件尾换行）");
+    assert_eq!(
+        entries[0].1, "#test { position: fixed }\n",
+        "表文本逐字保真（含源文件尾换行）"
+    );
 }
 
 /// s177：getter 回落半面——css 参数（嵌入者 custom-css 通道）回落 blob 发布，
