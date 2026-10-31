@@ -1,24 +1,34 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺口
-`cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
-交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
-（`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步。
-**收口前提轮询（2026-10-31 12:55 → 20:12）**：**fetch/Request 簇已清零**
-——s179 `a3768d3e7`（16 红勘定，engine lib 3625P/10F→3633P/2F）+ s180
-`2e260d532`（XHR credentialed-open 根修，**engine lib 3635P/1F**，fetch 族
-全清；本流 `make guarded-test` 独立复测交叉核证一致）。唯余 1F =
-`test_ua_display_li_list_item_canvas_inline_s24_flip`，git 追溯定性为
-**跨流通道交互 × 渲染流 D4 待裁决冻结面**（s161 handle gCS 通道把裸
-createElement 产物路由到 host 面，host `li→Block` 系渲染流 D4 在册
-冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，ETA 未知，
-本 goal 不越界）。webcrypto 锚正在现 tip 复跑（今日 shim 变更面在语料
-执行路径上，收口前须重核 33,109 锚）。处置路径维持待用户决策表 **D2**，
-ua_display_li 清零即当场收口（详见
-[evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
-**最后更新**: 2026-10-31 20:12（轮询追记见
-[evidence](evidence/2026-10-31-gates-and-closure-status.md)）
+build/clippy 绿；33,109 分母零回归锚在现 tip `3f1399195` 逐字节复验一致
+（2026-11-01，s182~s196 + justify 簇两轮 + 渲染流/html-semantics 流
+`:active` 通道 + R5372 abspos margin 变更全吸收，见
+[evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
+唯一缺口 `cargo test` 残余 1F
+`test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
+冻结面（s194 账 engine lib 3642P/1F 在册同键）。收口归档待该 1F 清零
+或 D2② 授权。M1/M2 里程碑已归档（`archive/2026-10-31-m1-m2.md`）。
+**收口前提轮询（2026-10-31 12:55 → 2026-11-01 03:40）**：fetch/Request
+簇 9F 已由 s179 `a3768d3e7` + s180 `2e260d532` 全清；唯余 ua_display_li
+1F——git 追溯定性为**跨流通道交互 × 渲染流 D4 待裁决冻结面**（s161
+handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
+系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
+ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
+**33,109 锚已在现 tip `3f1399195` 复验逐字节一致**（25,788P + 7,320F +
+1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→b0a6f9174→
+3f1399195，渲染流 R5370 table OOF child layout + s196 `_zwMEl` 安装面
+共享化 perf + editing 流 justify 查询面兜底（`part01c.js` +105 行）+
+html-semantics 流 s196 `:active` 伪类通道（dom active_element 槽 +
+engine 查询面注入 + shim part04/part06 +112 行）+ 渲染流 R5372 abspos
+嵌套 CB margin（`abspos.rs` +31 行）+ docs 轮全吸收，见 evidence
+2026-11-01 04:25/04:35/06:20/06:27/07:15 追记）；处置路径维持待用户
+决策表 **D2**，ua_display_li 清零即当场收口。
+**最后更新**: 2026-11-01 07:15（锚复跑现 tip `3f1399195` 逐字节一致
+——渲染流 R5372 abspos 嵌套 CB margin 写点补项为语料执行路径变更，按
+纪律复跑：29.75s 重建 + test-guard 直包 1m28s，25,788P+7,320F+1T 复证；
+R5372 自账 ua_display_li D4 既有账同键在册，未清，D4/D1/D2 无变化，
+见 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
 
@@ -64,8 +74,8 @@ v2.1 契约）：
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 已转正域按域立项：ML-KEM（12 案/3,480）、ML-DSA（10/1,206）、X448/Ed448（26/3,700）、AES-OCB（10/2,652）、ChaCha20-Poly1305（10/1,044）、KMAC（10/1,418）、Argon2（4/92）、XOF digest（8/838）、Hybrid-KEM（7/2,742）、门禁面（12/880），合计 109 案/18,052 子测试（universe 口径）；切片建议与依赖候选见 [DC-2 甄别清单](evidence/2026-10-31-dc2-promotion-screening.md)（依赖含新 crate：ml-kem/ml-dsa/ocb3/x448/ed448-goldilocks/kangarootwelve 等，选型须用户拍板） | 待用户拍板；不 BLOCK 本 goal 收口 |
-| D2 | 引擎基线红处置路径（收口唯一缺口）：**fetch/Request 契约族 9 已由 s179/s180 全清**（engine lib 3635P/1F），唯余 ua_display_li 1F——git 追溯定性为 s161 handle gCS 通道 × 渲染流 D4 待裁决冻结面（host `li→Block` 冻结值盖过 shim 已翻的 list-item 表），修复=渲染流 D4 双面同提交翻转（用户裁决门禁，非本 goal 域）；① 等渲染流 D4 裁决落地后 make test 全绿当场收口；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 待用户拍板；期间维持低成本轮询 + 锚复跑，ua_display_li 清零即当场收口 |
+| D1 | 已转正域按域立项：ML-KEM（12 案/3,480）、ML-DSA（10/1,206）、X448/Ed448（26/3,700）、AES-OCB（10/2,652）、ChaCha20-Poly1305（10/1,044）、KMAC（10/1,418）、Argon2（4/92）、XOF digest（8/838）、Hybrid-KEM（7/2,742）、门禁面（12/880），合计 109 案/18,052 子测试（universe 口径）；切片建议与依赖候选见 [DC-2 甄别清单](evidence/2026-10-31-dc2-promotion-screening.md)（依赖含新 crate：ml-kem/ml-dsa/ocb3/x448/ed448-goldilocks/kangarootwelve 等，选型须用户拍板） | 已飞书征询在案（GB-20261031，msg `om_x100b616bdb6c9ca0dde792fae199471`）；待用户拍板；不 BLOCK 本 goal 收口 |
+| D2 | 引擎基线红处置路径（收口唯一缺口）：**fetch/Request 契约族 9 已由 s179/s180 全清**（engine lib 3635P/1F），唯余 ua_display_li 1F——git 追溯定性为 s161 handle gCS 通道 × 渲染流 D4 待裁决冻结面（host `li→Block` 冻结值盖过 shim 已翻的 list-item 表），修复=渲染流 D4 双面同提交翻转（用户裁决门禁，非本 goal 域）；① 等渲染流 D4 裁决落地后 make test 全绿当场收口；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 已飞书征询在案（GB-20261031，msg `om_x100b616bdb6c9ca0dde792fae199471`）；待用户拍板；期间维持低成本轮询 + 锚复跑，ua_display_li 清零即当场收口。飞书回复无法无人值守读取（bot 无回读权限、user 身份需交互授权，2026-11-01 实证），回复核验只认 git 账面或用户主动知会 |
 
 ## 碰撞管理记录（run-rules §9）
 

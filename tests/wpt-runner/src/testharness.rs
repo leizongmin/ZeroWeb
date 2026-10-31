@@ -9629,6 +9629,13 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     //（dragstart 接受至 dragend；dragstart 取消 = 鼠标流恢复正常）——跨命令持续，
     // 与 td_last_pointer 同生命周期。
     let mut td_drag_mouse_suppressed = false;
+    // M2-S195（html-semantics focus 时序域，2026-11-01）：Actions 键盘链 Shift 粘滞
+    // 位——修饰键 keydown 置位 / keyup 清零，后续 Tab 步按位取方向（Shift+Tab 反向
+    // 焦点导航；focus-utils.js navigateFocusBackward 的 keyDown(kShift)+keyDown(kTab)
+    // 序）。跨命令持续（同链多步），页级同 td_drag_mouse_suppressed。FIXME: 链中途
+    // 夭弃（send() reject/abort）不回灌清零——下链首步前若页未补 keyup 则粘滞残留；
+    // 真实浏览器驱动层按键态同步面，语料无钉前按最简生命周期。
+    let mut td_shift_sticky = false;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -9769,6 +9776,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 &mut td_last_pointer,
                 pointer_injection,
                 &mut td_drag_mouse_suppressed,
+                &mut td_shift_sticky,
             );
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
@@ -11038,6 +11046,7 @@ fn apply_testdriver_command(
     last_pointer: &mut Option<(f32, f32)>,
     pointer_injection: PointerStepInjection,
     drag_mouse_suppressed: &mut bool,
+    shift_sticky: &mut bool,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -11052,14 +11061,68 @@ fn apply_testdriver_command(
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty() && value != "null" && value != "undefined"),
-    };
-    let Some(selector) = selector else {
-        return Some("testdriver target has no stable selector".into());
-    };
-    let selector = selector.trim().to_string();
-    if selector.is_empty() || selector == "null" {
+    }
+    .map(|value| value.trim().to_string())
+    .filter(|value| !value.is_empty() && value != "null" && value != "undefined");
+    // M2-S195（html-semantics focus 时序域，2026-11-01）：键盘链步动态焦点降级——
+    // Actions send 的 key 步 origin = send 时点 activeElement（R3254-K2 先例），
+    // createElement 产物在下一链 send 时 selectorFor 启发式（id/tag/attr/nth 验证
+    // 走 qSA 选择器列表面——detHtml 快照滞后）+ R145 正置表（turn 末 apply 才
+    // merge）都未落位 → __zw_td_selector 恒空，此前整链 "no stable selector" 拒绝
+    // （radio-focus-navigation-checked Tab 落动态 radio 后续步全红）。
+    if selector.is_none() {
+        // keydown/keyup：改派 live activeElement 通道（`__zw_dispatch_key_at_active`
+        // ——R4300 同款，键名映射/Shift 粘滞位与下方 selector 臂同源）；默认动作只
+        // 保留 selector-free 的 Tab 焦点导航。需 selector 的臂（arrows select/radio
+        // 消费、Enter buttonish/CE 探测、InsertText 字符落地）在此路径跳过——无目标
+        // 不落 InsertText；语料出现 live 解析需求钉面时再扩（FIXME）。
+        if matches!(command.operation.as_str(), "keydown" | "keyup") {
+            let key = command.text.as_deref().unwrap_or_default().to_string();
+            let event_type = command.operation.clone();
+            let modifier_name = match key.as_str() {
+                "\u{E008}" => Some("Shift"),
+                "\u{E009}" => Some("Control"),
+                "\u{E00A}" => Some("Alt"),
+                "\u{E03D}" => Some("Meta"),
+                _ => None,
+            };
+            let nav_key_name = match key.as_str() {
+                "\u{E004}" => Some("Tab"),
+                "\u{E013}" => Some("ArrowUp"),
+                "\u{E015}" => Some("ArrowDown"),
+                _ => None,
+            };
+            let event_key = modifier_name
+                .map(String::from)
+                .or_else(|| nav_key_name.map(String::from))
+                .unwrap_or_else(|| key.clone());
+            if key == "\u{E008}" {
+                *shift_sticky = event_type == "keydown";
+            }
+            let detail_json = format!(
+                "{{\"key\":{},\"code\":{},\"shiftKey\":{}}}",
+                serde_json::to_string(&event_key).unwrap_or_else(|_| "\"\"".into()),
+                serde_json::to_string(&event_key).unwrap_or_else(|_| "\"\"".into()),
+                *shift_sticky
+            );
+            let script = zero_engine::script_dispatch_key_at_active(&event_type, &detail_json);
+            let result = webview
+                .execute_script(&script)
+                .map(|v| v.trim().to_string())
+                .unwrap_or_default();
+            if event_type == "keyup" || modifier_name.is_some() || result == "prevented" {
+                return None;
+            }
+            if key == "\u{E004}"
+                && let Some(error) = dispatch_tab_focus(webview, !*shift_sticky)
+            {
+                return Some(error);
+            }
+            return None;
+        }
         return Some("testdriver target has no stable selector".into());
     }
+    let selector = selector.unwrap();
     let target = match webview.page_node_ref_for_selector(&selector) {
         Some(target) => target,
         None => return Some(format!("testdriver target not found: {selector}")),
@@ -11283,13 +11346,31 @@ fn apply_testdriver_command(
                 "\u{E03D}" => Some("Meta"),
                 _ => None,
             };
-            let event_key = modifier_name.map(String::from).unwrap_or_else(|| key.clone());
+            // M2-S195（html-semantics focus 时序域，2026-11-01）：导航键事件名用
+            // UI Events 键名（旧透传 PUA 原字符——页 `e.key === 'Tab'` 过滤恒 miss；
+            // send_keys 编辑键键名先例同款）。其余键维持原字符（可打印字符字面）。
+            let nav_key_name = match key.as_str() {
+                "\u{E004}" => Some("Tab"),
+                "\u{E013}" => Some("ArrowUp"),
+                "\u{E015}" => Some("ArrowDown"),
+                _ => None,
+            };
+            let event_key = modifier_name
+                .map(String::from)
+                .or_else(|| nav_key_name.map(String::from))
+                .unwrap_or_else(|| key.clone());
+            // M2-S195：Shift 粘滞位——修饰键 keydown 置位/keyup 清零（页级状态，
+            // 同链跨命令持续；Tab 步按位取方向 + 后续键事件 shiftKey 继承）。
+            if key == "\u{E008}" {
+                *shift_sticky = event_type == "keydown";
+            }
             let script = zero_engine::script_dispatch_dom_event(
                 &selector,
                 &event_type,
                 Some(&zero_engine::DomEventDetail {
                     key: Some(event_key.clone()),
                     code: Some(event_key.clone()),
+                    shift_key: *shift_sticky,
                     ..Default::default()
                 }),
             );
@@ -11306,11 +11387,39 @@ fn apply_testdriver_command(
                 return None;
             }
             // R5356：修饰键步止于事件（无字符默认动作/keypress——见上方映射注记）。
-            // FIXME: Actions 步骤仍无修饰键**状态**——kShift+Enter 链在块级 CE 宿主
-            // 与裸 Enter 同汇 Submit（拆段而非换行）；inline-host 语料只压行内宿主
-            // （两路同降级行断），块级分压出现时须把 sticky 位接入本臂。
+            // M2-S195：Shift 粘滞位已接入本臂（Tab 步方向 + 键事件 shiftKey 继承）。
+            // FIXME: 块级 CE 宿主的 kShift+Enter 分流仍未接（现与裸 Enter 同汇
+            // Submit——insertLineBreak 语义需 sticky 分支；inline-host 语料两路同
+            // 降级行断，块级分压无语料钉）。
             if modifier_name.is_some() {
                 return None;
+            }
+            // M2-S195：Tab 默认动作 = 顺序/反向焦点导航（HTML §6.6.5 sequential
+            // focus navigation；Shift 粘滞位取方向）。旧版落 InsertText{'\u{E004}'}
+            // ——PUA 字面插进 text control（radio-focus-navigation 语料 start 为
+            // text input，Tab 后 value 被插 PUA）且无焦点迁移。Tab 不产字符、无
+            // keypress（UI Events：非字符键）。
+            // https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
+            if key == "\u{E004}" {
+                if let Some(error) = dispatch_tab_focus(webview, !*shift_sticky) {
+                    return Some(error);
+                }
+                return None;
+            }
+            // M2-S195：radio 焦点上方向键 = 组内移动（focusing steps + checked 跟随，
+            // R3254-K5 M3 切片 2 既有 shim 臂——本刀改造为焦点移动语义，见 part06）。
+            // 消费判定经返回值（radio 目标返 true；非 radio/SELECT 目标落既有
+            // InsertText 路径不动——SELECT/type-ahead 与滚动键面本刀不扩）。
+            if matches!(key.as_str(), "\u{E013}" | "\u{E015}") {
+                let key_name = if key == "\u{E013}" { "ArrowUp" } else { "ArrowDown" };
+                let nav_script = zero_engine::script_select_key_action(&selector, key_name);
+                let consumed = webview
+                    .execute_script(&nav_script)
+                    .map(|v| v.trim() == "true")
+                    .unwrap_or(false);
+                if consumed {
+                    return None;
+                }
             }
             // uievents-compat 尾簇 11（2026-10-05）：Actions 键盘链的 **ENTER** 默认动作
             //——formless buttonish（BUTTON / input type=button|submit|reset）= 激活点击
@@ -11728,7 +11837,7 @@ fn apply_testdriver_command(
                                 zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
                             let _ = webview.execute_script(&click_script);
                         } else if is_tab {
-                            action_error = dispatch_tab_focus(webview);
+                            action_error = dispatch_tab_focus(webview, true);
                         } else {
                             action_error = dispatch_action(webview, target, action);
                         }
@@ -11856,13 +11965,48 @@ fn dispatch_action(
 /// https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
 /// https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
 /// https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
-fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
+fn dispatch_tab_focus(webview: &mut WebView, forward: bool) -> Option<String> {
     // 候选集 = 标准可聚焦面（a/area 带 href、button、input 非 hidden、select、
-    // textarea、summary、[tabindex]）；排除 disabled 与 tabindex=-1。真值读 live 树
-    // ——appendChild 动态元素天然在面（引擎 cached_html 快照路径的窗口期不适用）。
+    // textarea、summary、[tabindex]）；排除 disabled 与 tabindex=-1。
+    // M2-S195（html-semantics focus 时序域，2026-11-01）勘根钉态：doc 级 qSA
+    // **选择器列表**面（逗号清单含空白）走 detHtml 序列化快照 JSON 往返——动态
+    // appendChild 后同步查询 miss 新元素（突变面 apply 才回灌，s195probe 实证：
+    // 本树 walk 5 命中 / 列表 JSON 4 命中同 tick 分歧）；裸 tag 与 compound 单体
+    // 面（R164/R165 `_queryTreeByCompound`）走 live mutTree 即时可见。故候选枚举
+    // 按单体拆查再合并——保同 tick 动态元素在面（radio-focus-navigation-checked
+    // appendChild 后 Tab 钉面），语义同原复合清单。
+    // ①radio 组代表剔除——同
+    // form owner + 同 name 的 radio 组在顺序焦点导航序中只保留代表（checked 优先，
+    // 否则首个可聚焦成员；HTML spec 未规定，Chromium platform-convention 解，
+    // WPT radio-focus-navigation 族钉面；form owner 键复用 R4005 `el.form` 面）；
+    // ②Shift+Tab 反向导航（focus-utils.js navigateFocusBackward 的 Actions 键盘链）；
+    // ③焦点不在序中（body 起点/被剔 radio 代表）→ 文档序最近邻选择（HTML §6.6.5
+    // sequential focus navigation 的 DOM-order 选择机制近似——旧 `next=seq[0]` 只对
+    // body 起点等价，checked 动态切换代表后 Tab from 被剔成员会错落首元素）。
+    // https://html.spec.whatwg.org/multipage/interaction.html#sequential-focus-navigation
     let script = "(function(){\
+        var fwd=__TAB_FWD__;\
         var act=document.activeElement;\
-        var all=document.querySelectorAll('a[href],area[href],button,input,select,textarea,summary,[tabindex],[contenteditable]');\
+        var all=[];\
+        var sels=['a[href]','area[href]','button','input','select','textarea','summary','[tabindex]','[contenteditable]'];\
+        for(var si=0;si<sels.length;si++){\
+            var part=null;\
+            try{part=document.querySelectorAll(sels[si]);}catch(_eQ1){part=null;}\
+            if(!part)continue;\
+            for(var pi=0;pi<part.length;pi++){\
+                var e9=part[pi];\
+                var dup=false;\
+                for(var di=0;di<all.length;di++){\
+                    if(all[di]===e9){dup=true;break;}\
+                    if(e9.__zwHandle!=null&&e9.__zwHandle===all[di].__zwHandle){dup=true;break;}\
+                }\
+                if(!dup)all.push(e9);\
+            }\
+        }\
+        all.sort(function(x9,y9){\
+            if(x9===y9)return 0;\
+            try{return (x9.compareDocumentPosition(y9)&4)?-1:1;}catch(_eS9){return 0;}\
+        });\
         var pos=[],zero=[];\
         for(var i=0;i<all.length;i++){\
             var el=all[i];\
@@ -11883,18 +12027,55 @@ fn dispatch_tab_focus(webview: &mut WebView) -> Option<String> {
         var seq=[];\
         for(var j=0;j<pos.length;j++)seq.push(pos[j][1]);\
         for(var k2=0;k2<zero.length;k2++)seq.push(zero[k2]);\
-        var idx=-1;\
-        for(var m2=0;m2<seq.length;m2++){\
-            if(seq[m2]===act||(act.__zwHandle&&seq[m2].__zwHandle===act.__zwHandle)){idx=m2;break;}\
+        var gmap={};\
+        var meta=[];\
+        for(var r3=0;r3<seq.length;r3++){\
+            var el3=seq[r3];\
+            var isR3=el3.tagName==='INPUT'&&String(el3.type).toLowerCase()==='radio';\
+            var nm3=isR3?(el3.getAttribute('name')||''):'';\
+            var key3='';\
+            if(isR3&&nm3){\
+                var fo3=null;\
+                try{fo3=el3.form||null;}catch(_eF3){fo3=null;}\
+                key3=(fo3?'f':'d')+'|'+nm3;\
+                if(!gmap[key3]||el3.checked)gmap[key3]=el3;\
+            }\
+            meta.push({el:el3,isR:isR3,key:key3});\
         }\
-        var next=null;\
-        if(idx>=0&&idx+1<seq.length)next=seq[idx+1];\
-        else if(idx<0&&seq.length)next=seq[0];\
+        var seq2=[],pos2=[];\
+        for(var s3=0;s3<meta.length;s3++){\
+            var m3=meta[s3];\
+            if(m3.key&&gmap[m3.key]!==m3.el)continue;\
+            seq2.push(m3.el);\
+            var p3=-1;\
+            for(var q3=0;q3<all.length;q3++){if(all[q3]===m3.el){p3=q3;break;}}\
+            pos2.push(p3);\
+        }\
+        var actPos=-1;\
+        for(var a3=0;a3<all.length;a3++){\
+            if(all[a3]===act||(act&&act.__zwHandle&&all[a3].__zwHandle===act.__zwHandle)){actPos=a3;break;}\
+        }\
+        var idx2=-1;\
+        for(var m4=0;m4<seq2.length;m4++){\
+            if(seq2[m4]===act||(act.__zwHandle&&seq2[m4].__zwHandle===act.__zwHandle)){idx2=m4;break;}\
+        }\
+        var next=null,nextPos=-1;\
+        if(idx2>=0){\
+            if(fwd){if(idx2+1<seq2.length){next=seq2[idx2+1];nextPos=pos2[idx2+1];}}\
+            else{if(idx2>0){next=seq2[idx2-1];nextPos=pos2[idx2-1];}}\
+        }else{\
+            for(var q4=0;q4<seq2.length;q4++){\
+                var p4=pos2[q4];\
+                if(fwd){if(p4>actPos&&(next===null||p4<nextPos)){next=seq2[q4];nextPos=p4;}}\
+                else{if(p4>=0&&p4<actPos&&(next===null||p4>nextPos)){next=seq2[q4];nextPos=p4;}}\
+            }\
+        }\
         if(next&&next.focus)next.focus();\
         return JSON.stringify({from:(act===document.body||!act)?'body':'el',moved:next?1:0});\
-    })()";
+    })()"
+    .replace("__TAB_FWD__", if forward { "1" } else { "0" });
     let result = webview
-        .execute_script(script)
+        .execute_script(&script)
         .map(|v| v.trim().to_string())
         .unwrap_or_default();
     if runner_flags().td_debug {

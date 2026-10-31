@@ -268,6 +268,7 @@ mod tests {
                 style_ms: 0.0,
                 layout_ms: 0.0,
                 paint_ms: 0.0,
+                commit_ms: 0.0,
                 total_ms: f64::from(tag),
                 parse_count: 0,
                 style_count: 0,

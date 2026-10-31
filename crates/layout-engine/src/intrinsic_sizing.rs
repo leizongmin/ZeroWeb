@@ -90,6 +90,56 @@ pub(crate) fn resolve_intrinsic_real_length(value: &LengthValue, style: &Compute
     }
 }
 
+/// R5368（css-sizing-3 §5.1/§5.2）：自身 definite width 的内在语义解析——定宽
+/// **替换**内容测量（内容溢出但不撑大内在尺寸；旧合并是 max(内容, 定宽) 下界语义，
+/// 窄定宽盒被内容撑大：intrinsic-percent-non-replaced-002/003 ref 页 width:40px
+/// 控件 + "ppp pp" 文本 min 60/max 120 → float 贡献测 80/100/120 应 60/60/60 实证）。
+/// Calc 混合式按 §cyclic-percentage：含 % 项（系数含 0 在内）即循环 → intrinsic
+/// 语境整体按 auto（内容基）；chromium t003 定谳：width:calc(40px+0%) intrinsic
+/// 贡献 = 内容 60 → float 120，used 才落 40px（content 38-77 宽 40 实测）——px
+/// 部分不参与，与 min-width 的 px 部分地板语义（001 实证，见
+/// `resolve_min_width_intrinsic_floor`）不对称。纯长度 calc 常规实长解析。
+/// 表盒族除外（css-tables-3 §3.4：自动表布局下指定宽是下界、内容可撑宽，保持旧
+/// max 语义）。
+fn resolve_definite_intrinsic_width(style: &ComputedStyle) -> Option<f32> {
+    // R4149/R4151：min/max-width 的 content 关键字（min-content/max-content/fit-content）
+    // = content-based 尺寸关键词，显式要求按内容测量——定宽替换不适用
+    //（width:0 + min-width:min-content 的 min-content 地板仍须按子内容测 100）。
+    if matches!(
+        style.min_width,
+        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+    ) || matches!(
+        style.max_width,
+        LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+    ) {
+        return None;
+    }
+    if matches!(
+        style.display,
+        DisplayValue::Table
+            | DisplayValue::TableRow
+            | DisplayValue::TableRowGroup
+            | DisplayValue::TableHeaderGroup
+            | DisplayValue::TableFooterGroup
+            | DisplayValue::TableColumn
+            | DisplayValue::TableColumnGroup
+            | DisplayValue::TableCaption
+            | DisplayValue::TableCell
+    ) {
+        return None;
+    }
+    match &style.width {
+        LengthValue::Calc(expr) => {
+            if crate::converter::extract_calc_percentage(expr).is_some() {
+                None
+            } else {
+                resolve_intrinsic_real_length(&style.width, style)
+            }
+        }
+        other => resolve_intrinsic_real_length(other, style),
+    }
+}
+
 /// 计算一个盒的「内容最大宽度」（max-content）。
 ///
 /// 递归规则（CSS intrinsic sizing）：
@@ -110,34 +160,67 @@ pub(crate) fn resolve_intrinsic_real_length(value: &LengthValue, style: &Compute
 /// 长度照用（已定值），对 `Calc(P% ± Npx)` 只取 px 部分（% 在内容定尺寸语境无基准，
 /// 应记 0）。driving: WPT css-sizing calc-margins-block（min-content 容器内
 /// `margin-left: calc(10% + 100px)` 的子，容器 max-content 应 = 100px 而非 0/膨胀值）。
-fn intrinsic_margin_contribution(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
-    /// calc 表达式的 px 偏移部分（同 engine/postprocess 的提取语义，P%±Npx 模式）。
-    /// intrinsic 语境 % → 0，仅 px 部分计入（css-sizing-3 #intrinsic-sizes）。
-    fn calc_px_offset(expr: &zero_css_parser::values::CalcExpr) -> f32 {
-        use zero_css_parser::values::{CalcExpr, CalcOp};
-        match expr {
-            CalcExpr::Length(_) => 0.0,
-            CalcExpr::BinaryOp(left, op, right) => {
-                let left_px = match left.as_ref() {
-                    CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
-                    _ => None,
-                };
-                let right_px = match right.as_ref() {
-                    CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
-                    _ => None,
-                };
-                let has_pct = |e: &CalcExpr| matches!(e, CalcExpr::Length(LengthValue::Percentage(_)));
-                match (op, left_px, right_px) {
-                    (CalcOp::Add, Some(px), None) if has_pct(right) => px,
-                    (CalcOp::Add, None, Some(px)) if has_pct(left) => px,
-                    (CalcOp::Subtract, Some(px), None) if has_pct(right) => -px,
-                    (CalcOp::Subtract, None, Some(px)) if has_pct(left) => px,
-                    _ => 0.0,
-                }
+/// calc 表达式的 px 偏移部分（同 engine/postprocess 的提取语义，P%±Npx 模式）。
+/// intrinsic 语境 % → 0，仅 px 部分计入（css-sizing-3 #intrinsic-sizes）。
+pub(crate) fn calc_px_offset(expr: &zero_css_parser::values::CalcExpr) -> f32 {
+    use zero_css_parser::values::{CalcExpr, CalcOp};
+    match expr {
+        CalcExpr::Length(_) => 0.0,
+        CalcExpr::BinaryOp(left, op, right) => {
+            let left_px = match left.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
+                _ => None,
+            };
+            let right_px = match right.as_ref() {
+                CalcExpr::Length(LengthValue::Px(v)) => Some(*v as f32),
+                _ => None,
+            };
+            let has_pct = |e: &CalcExpr| matches!(e, CalcExpr::Length(LengthValue::Percentage(_)));
+            match (op, left_px, right_px) {
+                (CalcOp::Add, Some(px), None) if has_pct(right) => px,
+                (CalcOp::Add, None, Some(px)) if has_pct(left) => px,
+                (CalcOp::Subtract, Some(px), None) if has_pct(right) => -px,
+                (CalcOp::Subtract, None, Some(px)) if has_pct(left) => px,
+                _ => 0.0,
             }
-            _ => 0.0,
+        }
+        _ => 0.0,
+    }
+}
+
+/// R5368（css-sizing-3 §5.1 + css-values-4 §8.1.2）：min-width 的 intrinsic 地板解析。
+/// definite 长度/纯 px calc 照用（`resolve_length` 全解析）；`Calc(P%±Npx)` 混合式取
+/// px 部分（% 分量 intrinsic 语境记 0，同 margin R4136 口径）；%/关键字 → None
+///（循环语境忽略）。不动共享 [`resolve_intrinsic_real_length`]——max-width cap 的
+/// % 语义独立，避免混合 calc 误 cap 到 0。
+fn resolve_min_width_intrinsic_floor(v: &LengthValue, style: &ComputedStyle) -> Option<f32> {
+    match v {
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => None,
+        LengthValue::Percentage(_) => None,
+        LengthValue::Calc(_) => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            match zero_style_system::computed::resolve_length(v, font_size_px, None, None) {
+                px if px.is_finite() && px > 0.0 => Some(px as f32),
+                _ => Some(calc_px_offset_of(v).max(0.0)),
+            }
+        }
+        other => {
+            let font_size_px = zero_style_system::computed::resolve_length(&style.font_size, 16.0, None, None);
+            let px = zero_style_system::computed::resolve_length(other, font_size_px, None, None);
+            px.is_finite().then_some((px as f32).max(0.0))
         }
     }
+}
+
+/// [`LengthValue`] → [`calc_px_offset`] 便捷包装（Calc 以外恒 0）。
+fn calc_px_offset_of(v: &LengthValue) -> f32 {
+    match v {
+        LengthValue::Calc(expr) => calc_px_offset(expr),
+        _ => 0.0,
+    }
+}
+
+fn intrinsic_margin_contribution(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> (f32, f32) {
     let calc_px_margin = |value: &LengthValue| -> f32 {
         match value {
             LengthValue::Calc(expr) => calc_px_offset(expr).max(0.0),
@@ -212,6 +295,14 @@ fn kw_aware_max_width(
     // 时回退第一趟已解析盒宽（替换元素 canvas/img 的 attr/AR 传递尺寸在第一趟已解析
     // ——dynamic-012 canvas h:100%→100 AR→w=100；非替换 auto 子的 child.width 为 taffy
     // 拉伸伪影时可能偏大，只会让 cap 偏弱 no-op，安全方向）。
+    // R5368：纯文本叶盒的词级 min-content 同须入账——无元素子时 content_min 塌 frame
+    //（0），`max-width:min-content` 把 own definite 600 cap 到 0（max < min 不自洽；
+    // shrink-to-fit-sizing-max-width-min-content：float 臂 preferred 测 0 → float 塌 0，
+    // 旧臂 taffy 宽 preferred 掩盖）。text_content_min_width = 词级真值（Ahem 100px
+    // "x" → 100；float 应 100×100 绿方块）。
+    let text_min = box_node
+        .node_id
+        .map_or(0.0, |id| text_content_min_width(id, doc, styles));
     let content_min = box_node
         .children
         .iter()
@@ -223,7 +314,8 @@ fn kw_aware_max_width(
             Some(w + f)
         })
         .fold(0.0_f32, f32::max)
-        .max(frame);
+        .max(frame)
+        .max(text_min);
     // 仅 `max-width:min-content` 收缩贡献（cap = min-content 近似）；`max-width:
     // max-content` 的 cap 就是 max-content 自身（= full），无需收缩——border-box-and-
     // max-content-002 的 .item（无子、max-width:max-content）曾误 cap 到 frame 塌盒。
@@ -315,6 +407,74 @@ fn box_content_max_width_inner(
     // R5152：contain:size multicol → 纯列几何内在宽（见 helper 文档）。
     if let Some(w) = contained_multicol_intrinsic_width(box_node, styles) {
         return w;
+    }
+    // R5368（css-contain-3 §containment-inline-size）：inline-size containment 盒内容
+    // 不贡献 max-content——空盒语义（与 block_intrinsic_width_ex 同门）。本函数返回
+    // border-box（尾部 inner+frame 同口径），空盒 = 纯 frame。
+    if box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| s.contain.has_inline_size())
+    {
+        return (box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right)
+            .max(0.0);
+    }
+    // R4489/R5368：R109 匿名块片段宿主（fragment_node_ids 定界）——内容测量只覆盖
+    // 片段自己的 DOM 节点（fragment_inline_max_width）。旧 walk 从宿主 node_id 出发
+    // 吃到整段 split inline 的全部文本：float 宿主 aaa/<div></div>/bbb 形 max 侧把
+    // 两段拼成连续行测 600 应 300（R5245 实证）——R5368 增长路径（shrink-to-fit
+    // 钉宽双向 / float 臂长回）首次消费该测量，暴露越界。min 侧按词取 max 无求和
+    // 越界，不在此收窄。
+    if let Some(frags) = &box_node.fragment_node_ids
+        && let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+        && std::env::var("ZW_R5368_FRAG").as_deref() != Ok("0")
+    {
+        // R5368：块宿主片段表可含 OOF 子——split 有意把 abspos/fixed/float 子保留为
+        // 片段子节点（converter 定位路径处理，position-absolute-in-inline-* 保护），
+        // 但它们不是本片段的 inline 流内容。fragment_inline_max_width 语境无 styles
+        //（R4367），无从查 position/display，其子树文本整棵入账（text-overflow-012
+        // sizer 片段把 abs #test 的 50px pre 行灌进测量 → 859.5 全宽实证）。入账前
+        // 按 styles 过滤：OOF（abspos/fixed/float，任意 display）与 in-flow 块级条目
+        // 剔除（块级后代 dom_inline_text_walk 同口径停止；OOF 由 converter 定位路径
+        // 处理）；inline 级（Inline/inline-block/inline-flex/inline-table/inline-grid）
+        // 条目保留——001/002/003 的 control 盒是 inline-block 原子，只留纯 Inline 会
+        // 把原子贡献整个滤没。样式缺失保守保留（legacy 片段语境近似）。
+        let filter_oof = std::env::var("ZW_FRAGMENT_OOF_FILTER").as_deref() != Ok("0");
+        let inline_frags: Vec<NodeId> = if filter_oof {
+            frags
+                .iter()
+                .copied()
+                .filter(|&nid| match doc.get(nid).map(|n| &n.kind) {
+                    Some(zero_dom::NodeKind::Text(_)) => true,
+                    Some(zero_dom::NodeKind::Element(_)) => match styles.get(&nid) {
+                        Some(s) => {
+                            !crate::inline_block_split::is_out_of_flow(s)
+                                && !matches!(
+                                    s.display,
+                                    DisplayValue::Block
+                                        | DisplayValue::FlowRoot
+                                        | DisplayValue::ListItem
+                                        | DisplayValue::Table
+                                        | DisplayValue::TableRow
+                                        | DisplayValue::TableRowGroup
+                                        | DisplayValue::TableHeaderGroup
+                                        | DisplayValue::TableFooterGroup
+                                        | DisplayValue::TableCell
+                                        | DisplayValue::TableCaption
+                                        | DisplayValue::Flex
+                                        | DisplayValue::Grid
+                                )
+                        }
+                        None => true,
+                    },
+                    _ => false,
+                })
+                .collect()
+        } else {
+            frags.clone()
+        };
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        return fragment_inline_max_width(style, &inline_frags, doc).max(0.0) + frame;
     }
     // R4946（css-flexbox §9.9 intrinsic main size）：被通用递归测到的 flex/grid 容器
     //（典型：flex item 自身是 flex 行容器 → `flex_item_base_size` 第 3 步落到本函数；
@@ -649,7 +809,20 @@ fn box_content_max_width_inner(
             main.map(|main| aspect_ratio_transferred_width(s.unwrap(), box_node, main, ratio))
         })
         .unwrap_or(0.0);
-    let inner = if !has_in_flow_child {
+    // R5368（css-sizing-3 §5.1）：定宽替换语义（见 resolve_definite_intrinsic_width）。
+    // include_own_width=false（R5037 content-only 口径）不参与——内容基测量本就不含
+    // own_explicit。杀开关 `ZW_INTRINSIC_WIDTH_REPLACES=0` 回退旧 max(内容, 定宽)。
+    let own_definite = if std::env::var("ZW_INTRINSIC_WIDTH_REPLACES").as_deref() != Ok("0") {
+        own_style
+            .and_then(resolve_definite_intrinsic_width)
+            .filter(|_| include_own_width)
+    } else {
+        None
+    };
+    let inner = if let Some(w) = own_definite {
+        // R5368：定宽即 max-content（内容溢出不外延）。
+        w
+    } else if !has_in_flow_child {
         // 叶盒：显式宽或文本内容宽（Round C）。纯文本 item（无 LayoutBox 子元素）
         // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
         let text_w = box_node
@@ -962,6 +1135,35 @@ fn block_intrinsic_width(
     block_intrinsic_width_ex(box_node, doc, styles, min_mode, true)
 }
 
+/// R5368（css-sizing-3 §5.1）：`box_content_max_width` 贡献的自身 max-width cap +
+/// min-width 地板钳（border-box 基，frame 相加）。inline 原子子路径既有逻辑提取复用
+///（absolute-non-replaced-width-017/018 取证：pre-taffy 塌 0 子递归裸值须钳）＋ R5368
+/// 扩至 max 模式 block 子（intrinsic-percent-non-replaced-001/003：float 内子
+/// min-width:160px，float max-content 贡献应 220 测 180）。关键字/百分比由 resolver
+/// 循环语境记 None 天然排除。
+fn clamp_box_max_contribution(
+    child: &LayoutBox,
+    child_style: Option<&zero_style_system::ComputedStyle>,
+    raw: f32,
+) -> f32 {
+    let Some(cs) = child_style else { return raw };
+    let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+    let mut w = raw;
+    // R5368：cap 只认 definite 长度——Calc 混合式含循环 %（css-sizing-3 §cyclic-
+    // percentage：CB 依赖本盒时整体不可解析）→ 无 cap（intrinsic-percent-non-replaced-
+    // 002 取证：chromium max-width:calc(40px+0%) 贡献不钳、float 120；resolve 对混合
+    // calc 返 Some(0) 会把 pref 压塌到 frame）。
+    if !matches!(cs.max_width, LengthValue::Calc(_))
+        && let Some(cap) = resolve_intrinsic_real_length(&cs.max_width, cs)
+    {
+        w = w.min(cap + frame);
+    }
+    if let Some(floor) = resolve_min_width_intrinsic_floor(&cs.min_width, cs) {
+        w = w.max(floor + frame);
+    }
+    w
+}
+
 /// `include_own_width = false`（R5037 content-only 口径）时不把自身 definite CSS 宽计入
 /// intrinsic（`own_explicit` 的 width 臂置 0）——containment CIS 替代与 aspect-ratio
 /// transferred 仍保留（同属内容基内在尺寸语义）。
@@ -972,6 +1174,22 @@ fn block_intrinsic_width_ex(
     min_mode: bool,
     include_own_width: bool,
 ) -> f32 {
+    // R5368（css-contain-3 §containment-inline-size）：inline-size containment 盒的
+    // intrinsic 宽按**空盒**计——内容不贡献 inline 尺寸（仍渲染溢出）。测量源头抑制：
+    // R4195/R4062 后处理只重写 legend 盒宽，fieldset fit-content 的 W_max 仍含 legend
+    // 内容 600（contain-inline-size-legend：R5368 定宽替换修正 ref 侧 width:0 legend
+    // → 104 后，test/ref 双侧对称 604 假 PASS 被打破，test 侧缺口暴露）。min/max 两
+    // 模式同语义；自身定宽（ref legend width:0）/CIS 关键字替代照常生效。contain:size
+    // 双轴形态不走此臂（R4008 既有语义维持，避免扩 blast radius）。
+    let own_style_early = box_node.node_id.and_then(|id| styles.get(&id));
+    if own_style_early.is_some_and(|s| s.contain.has_inline_size()) {
+        let own_definite = own_style_early
+            .and_then(resolve_definite_intrinsic_width)
+            .filter(|_| include_own_width)
+            .unwrap_or(0.0);
+        let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
+        return (own_definite + frame).max(0.0);
+    }
     let mut inline_sum = 0.0f32;
     let mut block_max = 0.0f32;
     // R1431 L3②：spanner-aware multicol intrinsic sizing 须区分 spanner / 非 spanner block 子。
@@ -994,6 +1212,17 @@ fn block_intrinsic_width_ex(
 
     for child in &box_node.children {
         if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        // R5368（css-sizing-3 §min-content）：min 模式跳过**匿名**子盒（无 node_id 的
+        // IFC/taffy 匿名载体）——mid-tree 其 child.width = 整行 max-content 布局宽，
+        // 经 inline/block 分支取 max 会压过本轮末尾 `dom_inline_text_min_width` 的词级
+        // 真值（min-content = 最宽词；intrinsic-percent-non-replaced-001 实证："ppp pp"
+        // mid-tree 测 120 应 60 → float shrink 地板 160 应 120，行不折、内容溢框）。
+        // 其文本属本盒 DOM 子树，已由 DOM walk 词级计入，跳过勿双计；仅匿名才跳
+        //（有元素身份的子走既有 R5044 递归/原子口径）。max 模式不受影响（laid-out
+        // 宽即 max-content 语义）。
+        if min_mode && child.node_id.is_none() {
             continue;
         }
         has_in_flow_child = true;
@@ -1099,16 +1328,7 @@ fn block_intrinsic_width_ex(
                 // 240 须钳至 120，未钳时 preferred 宽翻倍）。关键字不在此钳（min/max-
                 // content 已由递归内 kw_aware_max_width 消费，R4151）、百分比 intrinsic
                 // 语境循环记 None，均被 resolve 返回值天然排除。
-                let mut w = box_content_max_width(child, doc, styles);
-                if let Some(child_cs) = child_style {
-                    let child_frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
-                    if let Some(cap) = resolve_intrinsic_real_length(&child_cs.max_width, child_cs) {
-                        w = w.min(cap + child_frame);
-                    }
-                    if let Some(floor) = resolve_intrinsic_real_length(&child_cs.min_width, child_cs) {
-                        w = w.max(floor + child_frame);
-                    }
-                }
+                let w = clamp_box_max_contribution(child, child_style, box_content_max_width(child, doc, styles));
                 inline_sum += (w + ml + mr).max(0.0);
             } else if min_mode {
                 // 原子盒独立断点（UAX14：atomic inline 前后可断）——取 max 非求和。
@@ -1159,7 +1379,10 @@ fn block_intrinsic_width_ex(
                 // width 子由递归自身 own_explicit 口径处理（R4149：min-content 贡献 =
                 // specified 宽）；include_own_width 透传（content-only 语境同口径）。
                 _ if min_mode => block_intrinsic_width_ex(child, doc, styles, true, include_own_width),
-                _ => box_content_max_width(child, doc, styles),
+                // R5368（css-sizing-3 §5.1）：max 模式 block 子贡献同受自身 max-width cap +
+                // min-width 地板（inline 子路径 R5368 前既有；block 子此前裸测——同案行3/4
+                // float 内子 min-width:160px，float max-content 220 测 180）。
+                _ => clamp_box_max_contribution(child, child_style, box_content_max_width(child, doc, styles)),
             })
             .unwrap_or_else(|| {
                 if min_mode {
@@ -1298,6 +1521,16 @@ fn block_intrinsic_width_ex(
         .filter(|_| include_own_width)
         .unwrap_or(0.0)
         .max(own_cis);
+    // R5368（css-sizing-3 §5.2）：定宽替换语义（见 resolve_definite_intrinsic_width），
+    // 与 max 模式同源同开关 `ZW_INTRINSIC_WIDTH_REPLACES=0`。置臂首：后续 R5044
+    // max-width 钳与本轮 min-width 地板仍按序作用其上。
+    let own_definite = if std::env::var("ZW_INTRINSIC_WIDTH_REPLACES").as_deref() != Ok("0") {
+        own_style
+            .and_then(resolve_definite_intrinsic_width)
+            .filter(|_| include_own_width)
+    } else {
+        None
+    };
     let text_w = box_node.node_id.map_or(0.0, |id| {
         if min_mode {
             text_content_min_width(id, doc, styles)
@@ -1305,7 +1538,10 @@ fn block_intrinsic_width_ex(
             text_content_max_width(id, doc, styles)
         }
     });
-    let mut inner = if !has_in_flow_child {
+    let mut inner = if let Some(w) = own_definite {
+        // R5368：定宽即 min-content/max-content（内容溢出不外延）。
+        w
+    } else if !has_in_flow_child {
         // R5042（css-sizing-4 §4.1）：叶盒 AR transferred——width content-based + ratio +
         // definite height（min/max 钳后）→ transfer 宽（intrinsic-size-003 float：
         // height:100px + ratio 1/1 → shrink-to-fit 贡献 100 而非 0 塌缩）。与
@@ -1373,6 +1609,21 @@ fn block_intrinsic_width_ex(
         if let Some(cap) = max_cap {
             inner = inner.min(cap.max(0.0));
         }
+    }
+    // R5368（css-sizing-3 §5.1）：intrinsic 尺寸受自身 definite min-width 地板
+    //（content-box 基；% 循环语境不可解析照旧忽略）。intrinsic-percent-non-replaced-001/
+    // 003 实证：float 内子 min-width:160px / calc(160px+0%) 的 min/max-content 贡献应
+    // 180（=160+frame20）而非裸内容 140 → float shrink-to-fit 220（=180+frame40）。
+    // min/max 两模式同钳（max-content 贡献同样受 min-width 地板）；置于 max-width 钳
+    // 之后 = CSS2 §10.4 min-width 胳 max-width 序。
+    if let Some(s) = own_style
+        && matches!(
+            s.writing_mode,
+            zero_style_system::property::types::WritingModeValue::HorizontalTb
+        )
+        && let Some(mw) = resolve_min_width_intrinsic_floor(&s.min_width, s)
+    {
+        inner = inner.max(mw.max(0.0));
     }
 
     let frame = box_node.padding_left + box_node.padding_right + box_node.border_left + box_node.border_right;
@@ -2231,6 +2482,10 @@ fn dom_inline_text_walk(
                     continue;
                 }
                 // 块级后代：停止（不属本 inline 流）；其后空白为下一行行首（丢弃）。
+                // R5368：块级子同时是本 inline 流的**强制断行**（CSS2 §9.2.1.1 块盒破坏
+                // 连续 inline 流；css-sizing-3 max-content 按强制断行分行取最宽）——
+                // R5245 形实证：float 宿主 aaa/<div></div>/bbb 两匿名块段，旧 walk 不切段
+                // 把两段拼成连续行 600，应 max(300, 300) = 300。br 同款切段。
                 if matches!(
                     cs.display,
                     DV::Block
@@ -2250,6 +2505,9 @@ fn dom_inline_text_walk(
                 ) {
                     state.pending_space = false;
                     state.line_has_content = false;
+                    if std::env::var("ZW_R5368_SEG").as_deref() != Ok("0") {
+                        segments.push(0.0);
+                    }
                     continue;
                 }
                 // 原子 inline（盒模型/replaced 族）：调用方 LayoutBox 分支负责宽度，跳过
@@ -5614,6 +5872,99 @@ mod r5070_tests {
         assert!(
             (abs_x - 48.0).abs() < 1.0,
             "inline 载体内右浮应对齐块级 CB 右缘（abs 48），实际 {abs_x}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod r5368_tests {
+    /// 按元素 id 深搜 LayoutBox。
+    fn find<'a>(
+        id: &str,
+        doc: &zero_dom::Document,
+        b: &'a crate::types::LayoutBox,
+    ) -> Option<&'a crate::types::LayoutBox> {
+        if let Some(nid) = b.node_id
+            && let Some(n) = doc.get(nid)
+            && let zero_dom::NodeKind::Element(e) = &n.kind
+            && e.get_attribute("id").as_deref() == Some(id)
+        {
+            return Some(b);
+        }
+        b.children.iter().find_map(|c| find(id, doc, c))
+    }
+
+    /// 布局「container > float > control > d(width:200px)」并返回三盒。
+    /// float 左右 border 20px（frame 40）；control 右 border 20px。
+    fn layout_float_case(control_style: &str, container_width: &str) -> (f32, f32) {
+        let html = format!(
+            r#"<body><div style="width: {container_width}; clear: both;">
+                <div id="f" style="float: left; border-left: 20px solid orange; border-right: 20px solid orange;">
+                    <div id="c" style="{control_style} border-right: 20px solid aqua;">
+                        <div style="width: 200px; height: 20px;"></div>
+                    </div>
+                </div>
+            </div></body>"#
+        );
+        let doc = zero_dom::parse_html(&html);
+        let mut sys = zero_style_system::StyleSystem::new();
+        sys.set_viewport(800.0, 600.0);
+        let styles = sys.compute_styles(&doc, &[]);
+        let mut engine = crate::engine::LayoutEngine::new(800.0, 600.0);
+        let result = engine.compute(&doc, &styles);
+        let float = find("f", &doc, &result.root).expect("#f found");
+        let control = find("c", &doc, &result.root).expect("#c found");
+        (float.width, control.width)
+    }
+
+    /// R5368（css-sizing-3 §5.1/§5.2）：非替换块 definite width **替换**内容测量——
+    /// 内容溢出不撑大内在尺寸（旧 max(内容, 定宽) 下界语义把 width:40px 控件按内容
+    /// 200 测 220，float 贡献 260 应 100；intrinsic-percent-non-replaced-002/003 ref
+    /// 页实证）。kill-switch `ZW_INTRINSIC_WIDTH_REPLACES=0` 回退。
+    #[test]
+    fn r5368_definite_width_replaces_content_in_contribution() {
+        // min-content 语境（width:0 容器，shrink 地板 = min-content）与
+        // max-content 语境（400 容器，shrink 顶 = max-content）同值 100：
+        // control border-box 40+20 = 60 + float frame 40。
+        for container in ["0px", "400px"] {
+            let (float_w, _) = layout_float_case("width: 40px;", container);
+            assert!(
+                (float_w - 100.0).abs() < 1.0,
+                "container={container}: 定宽 40 控件的 float 贡献应 100（内容 200 不外延），实际 {float_w}"
+            );
+        }
+    }
+
+    /// R5368（css-sizing-3 §cyclic-percentage + chromium t003 定谳）：width 含 %
+    /// 项的 calc（系数含 0）在 intrinsic 语境整体循环 = auto（内容基 220 + frame 40
+    /// = 260），used 才落 px 部分（converter 0% calc → 40px → border-box 60）——
+    /// intrinsic 与 used 两语义各占一半。
+    #[test]
+    fn r5368_cyclic_calc_width_content_based_intrinsic_px_used() {
+        let (float_w, control_w) = layout_float_case("width: calc(40px + 0%);", "400px");
+        assert!(
+            (float_w - 260.0).abs() < 1.0,
+            "calc(40px+0%) intrinsic 循环按内容基：float 应 260，实际 {float_w}"
+        );
+        assert!(
+            (control_w - 60.0).abs() < 1.0,
+            "used 解析 0% calc ≡ 40px：控件 border-box 应 60，实际 {control_w}"
+        );
+    }
+
+    /// R5368：% 宽后代在 float 内须对 definite 钉宽重解析——taffy max-content 路径
+    /// 一趟排子时 % 子停留内容基 220（intrinsic-percent-non-replaced-003 infinite
+    /// 行2 实证），钉宽 mark_dirty 重跑后 50%×220 = 110 + border 20 = 130。
+    #[test]
+    fn r5368_pct_child_reresolves_against_pinned_float_width() {
+        let (float_w, control_w) = layout_float_case("width: 50%;", "400px");
+        assert!(
+            (float_w - 260.0).abs() < 1.0,
+            "% 忽略的 intrinsic：float 应 260，实际 {float_w}"
+        );
+        assert!(
+            (control_w - 130.0).abs() < 1.0,
+            "50%×float content 220 = 110 + border 20：控件 border-box 应 130，实际 {control_w}"
         );
     }
 }

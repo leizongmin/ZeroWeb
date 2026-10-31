@@ -2322,7 +2322,7 @@
   // 真实反射——按本实现**实际接通的命令面**判定（不再无条件 true）。
   // - supported：copy/cut/paste（ClipboardEvent 路径，R2936）∪ selectAll（R5264 选区
   //   应用）∪ 编辑类（_zwExecCmdInputType 表——format/insert/delete 族，事件序 M2
-  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/justify*/indent/outdent
+  //   切片 1 接通）。其余命令（styleWithCSS/useCSS/undo/redo/indent/outdent
   //   等）未接 → false。
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
@@ -2360,6 +2360,20 @@
          (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host, rng.endContainer))));
     } catch (_eQc) {}
     return { supported: true, enabled: enabled };
+  }
+
+  // editing-compat justify 簇（2026-10-31）：justify* 查询前置 dispatch——命中四
+  // 命令时 Indeterm/State/Value 经 part01c __zw_ce_justify_query_face 一次
+  // blockExtend 共享算（混对齐判定 + 对齐值读数）；未命中返 null（调用方回落
+  // 既有 format/state 面）。异常回落左对齐缺省（legacy 语义不抛）。
+  function _zwQueryJustifyFace(cmd) {
+    var al = ({ justifycenter: 'center', justifyfull: 'justify',
+      justifyleft: 'left', justifyright: 'right' })[String(cmd == null ? '' : cmd).toLowerCase()];
+    if (!al || !globalThis.__zw_ce_justify_query_face) return null;
+    try {
+      var q = globalThis.__zw_ce_justify_query_face(al);
+      return q || { indeterm: false, state: false, value: 'left' };
+    } catch (_eJqf) { return { indeterm: false, state: false, value: 'left' }; }
   }
 
   // spec：insertText/insertHTML/insertImage 的 data = 插入内容；format 族 data = null。
@@ -2731,6 +2745,9 @@
           ev._zwUaDispatch = true;
         }
         var ok = el.dispatchEvent(ev);
+        // M2-S196：键盘 Space 按压面（wrapper 直派分支——R148 解析节点形态的
+        // trusted 通道；post-dispatch 门槛见 `__zwKeyActiveGate` 注记）。
+        if (typeof __zwKeyActiveGate === 'function') __zwKeyActiveGate(type, detail, '', ok === false, el);
         return ok ? 'ok' : 'prevented';
       } catch (_eDkW) { /* 构造/派发失败 → 落 body 回落 */ }
     }
@@ -2756,8 +2773,14 @@
     if (!el) return false;
     // R3254-K5 扩展（M3 切片 2）：radio 方向键组内移动——同 name 组（文档序），
     // ArrowDown/Right=下一 enabled、ArrowUp/Left=上一 enabled（Chromium 不回绕——
-    // clamp）；选中 = checked 属性迁移（SetAttr/RemoveAttr latest-wins）+ input +
-    // change 事件。选中新值时旧 checked 移除。
+    // clamp）。M2-S195（html-semantics focus 时序域，2026-11-01）改造为焦点移动
+    // 语义（WPT radio-focus-navigation-group-focusable-focus 钉面：focus + checked
+    // 同步断言）：箭头键 = focusing steps 先（焦点迁新 radio——blur/focus/focusin
+    // 事件序 + activeElement 更新），activation 随后（checkedness 置新目标、旧值
+    // 清除），input + change 派到**新 checked** 的 radio（旧实现焦点不动、事件派
+    // 旧目标——当时语料只断事件序可观察面，无焦点断言）。
+    // FIXME: 组枚举 qSA 不区分 form owner——跨 form 同名 radio 会被并组（spec
+    // radio button group = same form owner + same name；语料无跨 form 钉面）。
     if (String(el.tagName).toUpperCase() === 'INPUT'
         && String(el.getAttribute('type') || '').toLowerCase() === 'radio') {
       var name2 = el.getAttribute('name');
@@ -2780,12 +2803,16 @@
         for (var b2 = cur2 - 1; b2 >= 0; b2--) if (!list[b2].disabled) { nxt2 = b2; break; }
       }
       if (nxt2 < 0 || nxt2 === cur2) return true;
+      var tgt2 = list[nxt2];
+      if (typeof tgt2.focus === 'function') {
+        try { tgt2.focus(); } catch (_eFoc2) { /* focusing steps 失败不阻断选中 */ }
+      }
       for (var w2 = 0; w2 < list.length; w2++) {
         if (w2 === nxt2) list[w2].checked = true;
         else if (list[w2].checked) list[w2].checked = false;
       }
-      el.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
+      tgt2.dispatchEvent(new Event('input', { bubbles: true, cancelable: false, composed: true }));
+      tgt2.dispatchEvent(new Event('change', { bubbles: true, cancelable: false }));
       return true;
     }
     if (String(el.tagName).toUpperCase() !== 'SELECT') return false;
@@ -4162,6 +4189,11 @@
     // 「number of input events fired expected 1/0」+ 事件属性八断言）。
     execCommand: function (commandId /*, showUI, value*/) {
       var cmd = String(commandId == null ? '' : commandId).toLowerCase();
+      // editing-compat justify 簇（2026-11-01）：Chrome 的 queryCommandState
+      // ("styleWithCSS") 滞后一拍——快照在每个 execCommand 入口从当前模式同步
+      // （justifycenter 语料 250/250 行实测该模型：state_before 显式 stale 值，
+      // state_after 显 justifycenter 执行时的模式）。
+      globalThis.__zwStyleWithCSSQuery = !!globalThis.__zwStyleWithCSS;
       if (cmd === 'copy' || cmd === 'cut' || cmd === 'paste') {
         try {
           // WAB2-M2-s2（web-api-batch2 goal，2026-09-23）：copy/cut 派发携带真 DataTransfer
@@ -4368,6 +4400,17 @@
               if (cmd === 'insertlinebreak' && rng2 && host2) {
                 try { globalThis.__zw_ce_line_break_mutate(host2, rng2); } catch (_eIlb) {}
               }
+              // editing-compat justify 簇（2026-10-31）：justify* 实应用——此前
+              // _zwExecCmdInputType 含四命令（事件照派）但零变更臂，justify 族
+              // 12,108F 为 run 语料最大单命令块。变更核心在 part01c
+              // __zw_ce_justify_apply（blockExtend + 对齐清理 + wrap，参考实现
+              // 移植，选区经 movePreservingRanges 保持）；事件口径同上
+              // insertparagraph/insertlinebreak 臂。
+              var jusAl = ({ justifycenter: 'center', justifyfull: 'justify',
+                justifyleft: 'left', justifyright: 'right' })[cmd];
+              if (jusAl && rng2 && host2) {
+                try { globalThis.__zw_ce_justify_apply(jusAl); } catch (_eJus) {}
+              }
               // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
               // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
               // 选区非空先删选中段）。data=arguments[2]（_zwExecCmdEventData 既有
@@ -4417,6 +4460,14 @@
         var sepVal = String(arguments[2] == null ? '' : arguments[2]).toLowerCase();
         if (sepVal !== 'div' && sepVal !== 'p') return false;
         globalThis.__zwDefaultParagraphSeparator = sepVal;
+      } else if (cmd === 'stylewithcss') {
+        // editing-compat justify 簇（2026-11-01）：styleWithCSS 状态存储——值按
+        // boolean 语义（true/"true" → true，其余 false）存 globalThis，供
+        // queryCommandState 滞后快照读数。CSS 化 wrap 行为未接（状态先记账）。
+        // https://w3c.github.io/editing/execCommand.html#stylewithcss-command
+        globalThis.__zwStyleWithCSS =
+          arguments[2] === true
+          || String(arguments[2] == null ? '' : arguments[2]).toLowerCase() === 'true';
       } else if (cmd === 'selectall') {
         // R5264（M2 切片 57，2026-10-24）：execCommand('selectAll') 选区应用——
         // 此前未接（permissive no-op → toString 恒 ''）。作用域取模态 inert 遮罩：
@@ -4448,8 +4499,34 @@
     queryCommandEnabled: function (commandId) { return _zwQueryCommandState(commandId).enabled; },
     // R3254-M3 切片 4：queryCommandState 真实反射——format 命令按选区起点包裹态
     //（祖先链 tagName 匹配）；其余命令 false（状态面未接，documented）。
-    queryCommandState: function (commandId) { return _zwQueryFormatState(commandId); },
-    queryCommandValue: function (_commandId) { return ''; },
+    // editing-compat justify 簇（2026-10-31）：justify* 前置 dispatch；Indeterm
+    // 此前完全缺失（调用抛 TypeError → run 语料 indeterm 列全灭），非 justify
+    // 命令按 legacy 语义返 false（run 语料无 justify 之外的 indeterm 断言面）。
+    queryCommandIndeterm: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      return jf ? jf.indeterm : false;
+    },
+    queryCommandState: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      if (jf) return jf.state;
+      // editing-compat justify 簇（2026-11-01）：styleWithCSS 状态面——反射
+      // execCommand 入口快照（滞后一拍，Chrome 录制口径，见 execCommand 入口注）。
+      var cLow = String(commandId == null ? '' : commandId).toLowerCase();
+      if (cLow === 'stylewithcss') return !!globalThis.__zwStyleWithCSSQuery;
+      return _zwQueryFormatState(commandId);
+    },
+    queryCommandValue: function (commandId) {
+      var jf = _zwQueryJustifyFace(commandId);
+      if (jf) return jf.value;
+      // editing-compat justify 簇（2026-11-01）：defaultparagraphseparator → 当前
+      // 分隔符（缺省 'div'，spec；语料 before/after 值=上一行/本行 applied 值）。
+      // styleWithCSS 值面 Chrome 恒 ''（录制 250/250），不暴露模式。
+      var cLow = String(commandId == null ? '' : commandId).toLowerCase();
+      if (cLow === 'defaultparagraphseparator') {
+        return globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';
+      }
+      return '';
+    },
     // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
     // getter 返存储值（默认 'off'）；setter 'on'→'on'，'off'/'inherit'/其它→'off'（spec case-insensitive）。
     // headless 不真启用编辑 → 惰性 setter（仅存储），documented。覆盖 execCommand 富文本编辑器 feature-detect。
@@ -15316,6 +15393,11 @@
         }
       }
     }
+    // M2-S196：键盘 Space 按压面（trusted UA 通道收口——页 dispatchEvent 不经本
+    // 函数；post-dispatch 门槛见 `__zwKeyActiveGate` 注记）。
+    if ((type === 'keydown' || type === 'keyup') && detail && typeof __zwKeyActiveGate === 'function') {
+      __zwKeyActiveGate(type, detail, sel, !ok, null);
+    }
     return ok ? 'ok' : 'prevented';
   };
   // uievents-compat M3：捕获释放站后处理——lostpointercapture（不冒泡 PointerEvent）
@@ -16548,6 +16630,95 @@
     } catch (_e18ra) {}
   }
 
+  // ── M2-S196（html-semantics focus 时序域，2026-11-01）：`:active` 按压态通道 ──
+  // https://html.spec.whatwg.org/multipage/interaction.html#selector-active
+  // 状态宿 = retained Document `active_element`（engine 桥 `__zw_set_doc_active` 直写）；
+  // 页面 untrusted dispatchEvent 不经本组钩子（trusted UA 通道专用）。清除三面：
+  // pointer 释放（up 序列头）、Space keyup（激活结算）、焦点迁移（part04 focus/blur
+  // 臂 + dom `set_focus_element` 钩——blur 无 keyup/pointerup 到达即终结）。
+  // sel 键 → 元素解析（_proxyCache 活身份优先——selector 形态 fallback qSA 快照；
+  // key_at_active 反查同源）。
+  function _zwActiveSelEl(sel) {
+    var el = null;
+    try { el = (_proxyCache && _proxyCache[sel]) ? _proxyCache[sel] : null; } catch (_eA1) { el = null; }
+    if (!el) { try { el = document.querySelector(sel); } catch (_eA2) { el = null; } }
+    return el;
+  }
+  // 元素 → sel 键（__zwSelector 正向 → _proxyCache 反查 → id 兜底）。全失 → null
+  //（不写态）。id 兜底：getElementById/activeElement 形态 proxy 无 __zwSelector 且
+  // 反查失命（getter 每次新 proxy 对象，身份不等——key_at_active wrapper 直派分支
+  // R148 同款缺口，语料 checkbox.focus() + Actions Space 钉面）。
+  function _zwActiveElSel(el) {
+    if (!el) return null;
+    try { if (el.__zwSelector) return el.__zwSelector; } catch (_eA3) {}
+    try {
+      for (var k in _proxyCache) { if (_proxyCache[k] === el) return k; }
+    } catch (_eA4) {}
+    try {
+      if (el.id) return '#' + String(el.id).replace(/([^A-Za-z0-9_-])/g, '\\$1');
+    } catch (_eA14) {}
+    return null;
+  }
+  // 指压面标记（**pre-dispatch**——down listener 内 matches(':active') 即 observable，
+  // active-observable/select-picker-hover 语料钉面）。目标解析：self/祖先最近 LABEL
+  // → labeled control（R4003 label.control——htmlFor 与包含式均由 getter 面）；按下
+  // 控件自身时 control == 控件（同值）。disabled 控件不进按压态（激活门槛，键盘同门）。
+  globalThis.__zwSetActiveFromSel = function (sel, on) {
+    try {
+      if (!on) { __zw_set_doc_active(''); return; }
+      var el = _zwActiveSelEl(sel);
+      if (!el) return;
+      var dis = false;
+      try { dis = !!el.disabled; } catch (_eA5) { dis = false; }
+      if (dis) return;
+      var tgt = el;
+      var cur = el;
+      for (var g = 0; cur && g < 8; g++) {
+        var tn = '';
+        try { tn = String(cur.tagName).toUpperCase(); } catch (_eA6) { tn = ''; }
+        if (tn === 'LABEL') {
+          try { if (cur.control) tgt = cur.control; } catch (_eA7) {}
+          break;
+        }
+        try { cur = cur.parentElement; } catch (_eA8) { cur = null; }
+      }
+      var tsel = _zwActiveElSel(tgt);
+      // 未路由（tgt 即命中元素）时 sel 就是目标选择器——__zwSelector/反查/id 全失
+      // 的兜底（_proxyCache 缓存 proxy 不必然带 __zwSelector 属性）。
+      if (!tsel && tgt === el) tsel = sel;
+      if (tsel) __zw_set_doc_active(tsel);
+    } catch (_eA9) {}
+  };
+  // 键盘 Space 按压面（**post-dispatch**——prevented/disabled 语料钉面以派发后状态
+  // 复评：keydown listener 期间 preventDefault/置 disabled 均不入态，being-disabled/
+  // prevented-default 语料）。目标 = 激活行为元素族（BUTTON / INPUT checkbox|radio|
+  // button|submit|reset——Space 默认动作 = 激活的元素；文本输入 Space 是字符键不入
+  // 态）。keyup 无条件终结（目标失焦/易主后 keyup 仍到达——onblur 语料 cleanup 面）。
+  globalThis.__zwKeyActiveGate = function (type, detail, sel, prevented, el) {
+    try {
+      var key = detail ? String(detail.key || detail.code || '') : '';
+      if (type === 'keyup') { __zw_set_doc_active(''); return; }
+      if (key !== '' && key !== ' ') return;
+      if (type !== 'keydown' || prevented) return;
+      var target = el || _zwActiveSelEl(sel);
+      if (!target) return;
+      var dis = false;
+      try { dis = !!target.disabled; } catch (_eA10) { dis = false; }
+      if (dis) return;
+      var tag = '';
+      try { tag = String(target.tagName).toUpperCase(); } catch (_eA11) {}
+      var ty = '';
+      try { ty = String(target.getAttribute('type') || '').toLowerCase(); } catch (_eA12) {}
+      var act = tag === 'BUTTON'
+        || (tag === 'INPUT'
+            && (ty === 'checkbox' || ty === 'radio' || ty === 'button'
+                || ty === 'submit' || ty === 'reset'));
+      if (!act) return;
+      var tsel = _zwActiveElSel(target) || sel;
+      if (tsel) __zw_set_doc_active(tsel);
+    } catch (_eA13) {}
+  };
+
   // `__zw_pointer_down_sequence(sel, x, y, pointerType, button)`——UI Events §5.2.2
   // 指针事件序 down 半段：悬停迁移（跨界序 + move 对）→ pointerdown →（未取消时）
   // mousedown → [contextmenu（右键）]。compat mouse 抑制：pointerdown preventDefault
@@ -16626,6 +16797,10 @@
     st.downSel = sel;
     st.downButton = button;
     _zwSetButtons(st.buttons | _zwButtonMask(button));
+    // M2-S196：`:active` **预派发**标记（down listener 内 matches(':active') 即
+    // observable——active-observable/select-picker-hover 钉面；label 路由 + disabled
+    // 门在 `__zwSetActiveFromSel` 内。chorded/portal 早返路径不入态——无 down 事件序）。
+    if (typeof __zwSetActiveFromSel === 'function') __zwSetActiveFromSel(sel, true);
     var prevented = __zw_dispatch_event(sel, 'pointerdown', {
       clientX: x || 0, clientY: y || 0, button: button,
       buttons: _zwButtonMask(button), pointerType: pointerType || 'mouse', pressure: 0.5
@@ -16707,6 +16882,9 @@
   globalThis.__zw_pointer_up_sequence = function (upSel, downSel, x, y, pointerType, button, ancestorChain) {
     button = button | 0;
     var st = _zwPtrState;
+    // M2-S196：`:active` 终结（pointer 释放即出按压态——inert-svg-hittest 族
+    // 「click 完成后无残留」面；portal/hold 早返路径同清，故置于函数头）。
+    if (typeof __zwSetActiveFromSel === 'function') __zwSetActiveFromSel('', false);
     // 尾簇 23：外层真实捕获生效时常规路径接管（up 随捕获目标 + 隐式释放），
     // portal 不劫持（pointercapture_in_frame subtest 3 面——down@outer 捕获后
     // move/up 进 iframe 区域须重定向捕获目标而非入 inner frame）。
@@ -17258,6 +17436,69 @@
       if (oldSel && typeof __zw_host_blur === 'function') __zw_host_blur(oldSel);
     }
     if (typeof __zw_host_focus === 'function') __zw_host_focus(sel);
+  };
+  // M2-S197（html-semantics focus 域，2026-11-01）：fieldset disabled 置位 → 焦点内含
+  // 检查 + unfocusing。spec：fieldset 变 disabled 即除去其**首 legend 元素子**子树之外
+  // 后代的 focusable area，active element 在被除区内则失焦（activeElement 回落 body）。
+  // 豁免判据与 s193 读面（willValidate 祖先走查）同口径：每层 disabled fieldset 只豁免
+  // 「焦点链直子 = 该 fieldset 首个 legend 元素子」的支路，豁免后继续上行（更外层
+  // disabled fieldset 仍可 barred）。写通道挂 IDL boolean setter 早臂（part05 'disabled'
+  // 拦截面，先于 `_reflectedBoolAttr`）与 setAttribute trap（part04，s150/s155 同款 TAG 门
+  // + 写后触发）；disabled 移除不回焦（spec 无此步）。
+  // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+  // https://html.spec.whatwg.org/multipage/#unfocusing-steps
+  // 焦点态双域取焦点元素（R148 所有权互斥）：解析节点焦点 `_zwMElFocused`（R114 focus()
+  // 直写、activeElement getter 优先域）优先，proxy 态 `_activeElKey`→`_proxyCache` 次之。
+  // 解析节点 proxy 无 `__zwSelector`/`__zwHandle`（innerHTML 物化面，_elKey 重算必 null，
+  // `_zwUnfocusIfFocused` 守卫直 bail——disabled-003 deep-nested 实测）→ 其 unfocus 序就地
+  // 展开（对齐 `_zwUnfocusIfFocused`：清所有权 + `_navMarkFocusChanged` + blur/focusout 落
+  // 焦点元素 + `__zw_focus_changed('')`，无 body focus）；proxy 态仍走共享原语。
+  globalThis._zwFieldsetDisableFocusReset = function () {
+    try {
+      var p = null;
+      var mForm = false;
+      if (globalThis._zwMElFocused) { p = globalThis._zwMElFocused; mForm = true; }
+      else if (_activeElKey != null) p = _proxyCache[_activeElKey] || null;
+      if (!p) return;
+      var child = p;
+      var guard = 0;
+      while (child && guard < 128) {
+        var parent = null;
+        try { parent = child.parentNode; } catch (_eFsP) { break; }
+        if (!parent) break;
+        var tag = '';
+        try { tag = String(parent.tagName).toUpperCase(); } catch (_eFsT) { tag = ''; }
+        if (tag === 'FIELDSET') {
+          var dis = false;
+          try { dis = !!parent.disabled; } catch (_eFsD) {}
+          if (dis) {
+            var exempt = false;
+            try {
+              var leg = null;
+              var kids = parent.children;
+              for (var i = 0; i < kids.length; i++) {
+                if (String(kids[i].tagName).toUpperCase() === 'LEGEND') { leg = kids[i]; break; }
+              }
+              exempt = (leg != null && child === leg);
+            } catch (_eFsL) {}
+            if (!exempt) {
+              if (mForm) {
+                globalThis._zwMElFocused = null;
+                _navMarkFocusChanged();
+                try { p.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_eFsB) {}
+                try { p.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_eFsFo) {}
+                try { if (typeof __zw_focus_changed === 'function') __zw_focus_changed(''); } catch (_eFsH) {}
+              } else {
+                _zwUnfocusIfFocused(p);
+              }
+              return;
+            }
+          }
+        }
+        child = parent;
+        guard++;
+      }
+    } catch (_eFsX) {}
   };
   // security-hardening M2-s1（spec CSP3 §report-the-violation）：宿主 CSP 检查点派发
   // securitypolicyviolation——shim `_makeEvent` 事件 + 违规字段以自有属性附于事件

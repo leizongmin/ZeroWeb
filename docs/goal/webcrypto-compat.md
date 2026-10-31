@@ -8,11 +8,13 @@
 
 **版本**: v2.1
 **日期**: 2026-10-27（二期立项）；2026-10-31（无人值守收口定稿——M2 立项权限落定，
-见「待用户决策」与 Support Envelope 排除项）
+见「待用户决策」与 Support Envelope 排除项）；2026-11-01（收口缺口更正：
+fetch/Request 簇已清零，唯余 ua_display_li 跨流冻结面）
 **状态**: Active——M1/M2 完成、DC-1~4 有据（2026-10-31，控制面
 `webcrypto-compat/master.md`，里程碑归档见 `webcrypto-compat/archive/`）；
-收口待 `cargo test` 引擎基线（并行流 html-semantics 在清的 fetch/Request
-簇 10F，与本 goal 域不相交）清零后 make test 全绿
+收口待 `cargo test` 引擎基线全绿——fetch/Request 簇 9F 已由并行流
+html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 ×
+渲染流 D4 待裁决冻结面，处置路径见 master.md 待用户决策表 D2）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 

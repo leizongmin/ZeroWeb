@@ -199,11 +199,15 @@ pub enum PseudoClass {
     /// DOM 静态解析不可知 → 恒不匹配（镜像 [`PseudoClass::Focus`]；CSS 渲染路径经 focus 子模块
     /// `has_focus_within` 真实匹配）。
     FocusWithin,
-    /// `:active`——用户按下（mousedown/触摸开始到释放间）的元素（CSS Selectors L4 §15）。
-    /// 按压为运行时交互状态，DOM 静态解析不可知 → 静态永不匹配（镜像
-    /// [`PseudoClass::Focus`]；headless 无指针事件信号源）。识别目的：使 `input:active`
-    /// 等不被当无效选择器抛 SyntaxError（WPT checkable-active-space：浏览器 accept
-    /// + 零匹配），与 CSS matcher（`SUPPORTED_SIMPLE_PSEUDO_CLASSES` 含 active）一致。
+    /// `:active`——用户按下（pointerdown/键盘激活按压间）的元素（CSS Selectors L4 §15）。
+    /// M2-S196（html-semantics focus 时序域，2026-11-01）起为运行时真匹配：shim trusted
+    /// UA 按压面（键盘 Space 激活族 / 指针 down 序列——label 路由到 labeled control）
+    /// 经 `Document::set_active_element` 注入，`Document::element_matches_selector`
+    /// 延后复评（同 `:target`/`:valid` 两阶段模式）。与 `:focus` 家族的静态永不匹配
+    /// 不同——正匹配面（WPT checkable-active-onblur 族 `input:active` 查询）是语料
+    /// 钉面；`:not(:active)` 否定嵌套无复评通道（延后 true 在 matches_full 内层泄漏）
+    /// 为该两阶段模型已知局限（同 `:not(:target)`）。CSS 渲染路径暂无逐帧注入通道
+    ///（render Document 每帧重建）→ 样式面另行挂账。
     Active,
     /// `:hover`——指针悬停下的元素（CSS Selectors L4 §15）。悬停为运行时交互状态，
     /// DOM 静态解析不可知 → 静态永不匹配（镜像 [`PseudoClass::Active`]）。识别理由同上：
@@ -511,9 +515,13 @@ impl SimpleSelector {
             // CSS 渲染路径（style-system matcher）不受此限：matcher 持 Document，直接读焦点
             // 状态（`Document::is_focus_element`/`has_focus_within`，focus 子模块权威判定）。
             PseudoClass::Focus | PseudoClass::FocusVisible | PseudoClass::FocusWithin => false,
-            // `:active`/`:hover`——运行时指针交互状态（按下/悬停），静态解析的 DOM 不可知 →
-            // 永不匹配（镜像 :focus 家族；headless 无指针信号源）。
-            PseudoClass::Active | PseudoClass::Hover => false,
+            // `:active`——运行时按压态（M2-S196 起有真通道）：延后返 true，由
+            // Document::element_matches_selector 经 `is_active_element` 复评（镜像
+            // :target/:valid 延后族；`:not(:active)` 否定嵌套局限见枚举注记）。
+            PseudoClass::Active => true,
+            // `:hover`——运行时指针悬停状态，静态解析的 DOM 不可知 → 永不匹配
+            //（headless 无悬停信号源；:active 的按压通道不覆盖 hover）。
+            PseudoClass::Hover => false,
             // `:defined`——纯元素 tag 名求值（静态近似，无需 Document）：合法 custom element 名
             // → parse 时视为未升级 → 不匹配；其余 tag（原生/含大写/无连字符）→ 已定义 → 匹配。
             PseudoClass::Defined => !is_valid_custom_element_name(elem.local_name()),

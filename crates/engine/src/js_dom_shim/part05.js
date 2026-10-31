@@ -526,6 +526,21 @@
             if (handle) __zw_set_attr_handle(handle, p, '');
             else __zw_set_attr(sel, p, '');
             moAttr = p;
+            // s197（html-semantics focus 域）：fieldset disabled 置位 → 焦点元素在
+            // 被除 focusable area 内则 unfocus（activeElement 回落 body）。disabled-003
+            // 钉面（light/deep-nested 双案）。TAG 门走 proxy tagName 读而非 `_realTag`
+            //——innerHTML 物化的 handle-only proxy 宿主 tag 表 miss 回落恒 DIV
+            //（s168 缺口在册），deep-nested 案被 `_realTag` 门误拦。spec
+            // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+            if (p === 'disabled'
+                && typeof globalThis._zwFieldsetDisableFocusReset === 'function') {
+              try {
+                var _fsPr = _makeProxy(sel, handle);
+                if (_fsPr && String(_fsPr.tagName).toUpperCase() === 'FIELDSET') {
+                  globalThis._zwFieldsetDisableFocusReset();
+                }
+              } catch (_eFsIdl) {}
+            }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
             // R2998 修正注：falsy 真移除（`__zw_remove_attr_handle` 已注册 callbacks.rs——旧「不设」使 `.disabled = false` 后属性残留，click() 的 disabled 门与 getter 恒真；WPT Event-dispatch-on-disabled-elements 的 re-enabled 后 `.click() must dispatch` 断言）。与下方 R3039/40 反射表同款。
             __zw_remove_attr_handle(handle, p);
@@ -536,6 +551,26 @@
             __zw_remove_attr(sel, p);
             moAttr = p;
           }
+        } else if (p === 'alpha' && _realTag(sel, handle) === 'INPUT') {
+          // s187（HTML §color state `alpha` 反射布尔，spec 同 get 臂注）：truthy →
+          // presence 设空 / falsy → 真移除（R3039 同款语义；不入通用表，INPUT 门）。
+          if (value) {
+            if (handle) { __zw_set_attr_handle(handle, 'alpha', ''); moAttr = 'alpha'; }
+            else { __zw_set_attr(sel, 'alpha', ''); moAttr = 'alpha'; }
+          } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+            __zw_remove_attr_handle(handle, 'alpha');
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'alpha');
+            moAttr = 'alpha';
+          } else if (!handle && typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(sel, 'alpha');
+            moAttr = 'alpha';
+          }
+        } else if (p === 'colorSpace' && _realTag(sel, handle) === 'INPUT') {
+          // s187（HTML §color state `colorspace` enumerated 反射，spec 同 get 臂注）：
+          // setter verbatim 写属性（WebIDL DOMString 转换——null → "null"，
+          // DISPLAY-P3 存原串；canonical 小写归一在读侧）。
+          if (handle) { __zw_set_attr_handle(handle, 'colorspace', String(value)); moAttr = 'colorspace'; }
+          else { __zw_set_attr(sel, 'colorspace', String(value)); moAttr = 'colorspace'; }
         } else if (_reflectedBoolAttr(p) !== null) {
           // R3039/R3040：布尔 reflected setter（_REFLECTED_BOOL 全表）。旧经 generic fallthrough 写
           // `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；
@@ -855,6 +890,11 @@
           else { __zw_set_attr(sel, _p5mqAttr2, _p5mqStr); moAttr = _p5mqAttr2; }
         } else if (typeof _reflectedUrlAttr === 'function'
             && !(_realTag(sel, handle) === 'IFRAME' && p === 'src')
+            // s188：FRAME.src 同排除——下行 R3069 分支尾部 reload 钩子承载 src 属性
+            // 变更导航（spec obsolete.html #the-frame-element「Whenever a frame
+            // element … has its src attribute set, changed, or removed … process
+            // the frame attributes」）；longDesc 无导航语义留本分支 verbatim。
+            && !(_realTag(sel, handle) === 'FRAME' && p === 'src')
             && !(_realTag(sel, handle) === 'IMG' && p === 'src')
             && !(_realTag(sel, handle) === 'SCRIPT' && p === 'src')
             && _reflectedUrlAttr(_realTag(sel, handle), p) != null) {
@@ -1126,7 +1166,12 @@
           // navigation-compat M3：srcdoc 与 src 同为 process-the-iframe-attributes 触发
           // 属性（spec #the-iframe-element：set/changed/removed 任一都重新处理；目标
           // 优先级 srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
-          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
+          // s188：frame 的 src/srcdoc IDL 写同触发（spec
+          // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+          // 「Whenever a frame element … has its src attribute set, changed, or
+          // removed … process the frame attributes」——IDL setter 与 setAttribute
+          // 双路径同管线，part04 属性分支同款门）。
+          if ((_refAttr === 'src' || _refAttr === 'srcdoc') && (_realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'FRAME') &&
               typeof globalThis.__zw_reload_iframe === 'function' &&
               typeof _zwIframeNavigationConnected === 'function' &&
               _zwIframeNavigationConnected(sel, handle)) {
@@ -1401,6 +1446,22 @@
         if (_exD && Object.prototype.hasOwnProperty.call(_exD, prop)) {
           return { value: _exD[prop], writable: true, enumerable: true, configurable: true };
         }
+        // S185（html-semantics M2）：FORM indexed 属性描述符（legacy platform object
+        // supported property indices——WPT form-indexed-element「delete an indexed
+        // property name should never work」gOPD 面：{value, writable:false,
+        // enumerable:true, configurable:true}）。索引臂先于 named（WebIDL
+        // #LegacyPlatformObjectGetOwnProperty 序）；越界 canonical 落 named 臂（控制
+        // id/name 为同串数字串的面）。R26 成本：仅 canonical 数字串进 _formControls，
+        // 非索引键零新增调用。
+        // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM' && _zwIsCanonicalIndex(prop)) {
+          var _fcD = _formControls(sel, handle);
+          var _nD = Number(prop);
+          if (_nD < _fcD.length) {
+            return { value: _fcD[_nD], writable: false, enumerable: true, configurable: true };
+          }
+        }
         // s137：FORM named property 描述符——legacy named getter 语义：value =
         // 元素/RadioNodeList 集合、writable:false（仅 getter）、enumerable:false
         //（[LegacyUnenumerableNamedProperties]——ownKeys 不含、for-in 不可见）、
@@ -1454,6 +1515,17 @@
         if (_fdelE && Object.prototype.hasOwnProperty.call(_fdelE, prop)) {
           delete _fdelE[prop];
           return true;
+        }
+        // ②b S185（html-semantics M2）：FORM indexed 命中 → false（supported property
+        // indices 不可删——V8 trap 返 false：sloppy 静默 no-op、strict TypeError；WPT
+        // form-indexed-element「delete an indexed property name should never work」
+        // sloppy false + strict assert_throws_js(TypeError) 钉态）。索引先于 named
+        //（WebIDL #LegacyPlatformObjectDelete 序）。臂形与 ③ named 同款（恒 false）。
+        // https://heycam.github.io/webidl/#LegacyPlatformObjectDelete
+        if (typeof prop === 'string' && prop !== ''
+            && _realTag(sel, handle) === 'FORM' && _zwIsCanonicalIndex(prop)) {
+          var _fdelI = _formControls(sel, handle);
+          if (Number(prop) < _fdelI.length) return false;
         }
         // ③ FORM named 命中 → false（WPT l1 案 strict delete TypeError 面）。
         if (typeof prop === 'string' && prop !== ''
@@ -5069,6 +5141,9 @@
       if (entry.k === 'T') return globalThis.document.createTextNode(String(entry.v == null ? '' : entry.v));
       if (entry.k === 'C') return globalThis.document.createComment(String(entry.v == null ? '' : entry.v));
       if (entry.k !== 'E') return null;
+      // R4100 成员资格快路 census（见 part03 __zwDetailsScan4100 门注）：声明式
+      // shadow 树构建走主世界 createElement（非 `_zwMEl`），此处单独 census。
+      if (entry.tag === 'details' || entry.tag === 'DETAILS') globalThis.__zwDetailsEver4100 = true;
       var el = globalThis.document.createElement(String(entry.tag || 'div'));
       var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
       for (var ai = 0; ai < ats.length; ai++) {
@@ -10931,13 +11006,43 @@
         && (typeof _zwApplyPairedEnv !== 'function' || _zwApplyPairedEnv())) return out;
     var res = out.slice();
     // 剔除 pending removed（identity 匹配）。
-    for (var r = 0; r < bucket.removed.length; r++) {
-      var rm = bucket.removed[r];
-      for (var ri = res.length - 1; ri >= 0; ri--) {
-        if (res[ri] === rm) { res.splice(ri, 1); break; }
+    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：bulk 移除下
+    // bucket.removed 随 removal 累积（第 k 次 remove 时已 k 条），旧逐条逆序扫对已不在
+    // res 的陈旧条目每次全扫 O(res)——tape v3 实测探针 w2（2000 removals）rmMs
+    // 639-729ms（rmN=1.0M 条·窗）。removedSet 与 removed 数组由记账侧恒成对维护
+    // （_zwHCLiveInvalidate push/add、splice/delete、512 压实三处；桶构造器恒建），
+    // 单遍 has 过滤重建成员与序等价——res 条目 identity 唯一（基底 wrapper 唯一 +
+    // 并入 seen/R182 去重），旧逆序首见剔除恰 = 剔除属于 removed 集的条目。Set 缺失
+    // （防御口径，现无此形态）回落旧循环。
+    if (bucket.removedSet) {
+      // 原地压缩（读指针写回），免第二份分配——成员与序与过滤重建逐位一致。
+      var _rmSet = bucket.removedSet, _w = 0;
+      for (var r = 0; r < res.length; r++) {
+        if (!_rmSet.has(res[r])) res[_w++] = res[r];
+      }
+      res.length = _w;
+    } else {
+      for (var r = 0; r < bucket.removed.length; r++) {
+        var rm = bucket.removed[r];
+        for (var ri = res.length - 1; ri >= 0; ri--) {
+          if (res[ri] === rm) { res.splice(ri, 1); break; }
+        }
       }
     }
     // 并入 pending added（父 sel 匹配 + 尚未在快照内）。
+    // OPTIMIZATION（editing-compat 簇 A removeChild 残余轮，2026-10-31）：逐条 added 的
+    // seen 检查与 nextSibling 定位各 O(res) 线性扫，bulk 视图（added ~n × res ~n）单次
+    // 调用 O(added×res)——tape v3 实测探针 w2 addMs 2,548-2,704ms（addN=4.0M 条·窗，
+    // 墙钟主项 ~70%）。进循环前建一次 res identity Set：seen 判定 O(1)；nextSibling 先
+    // O(1) 成员判定、命中才做原定位扫——miss = 旧扫空落尾插（res.length），等价且省
+    // 全扫。插入即 add，Set 与 res 成员恒一致（R182 重定位摘旧位后立即回插，其间无
+    // has 消费；条目经 addedSet 记账去重，identity 唯一）。added 空不建 Set（纯基底读
+    // 快路径零新增成本）。
+    var _resSeen = null;
+    if (bucket.added.length) {
+      _resSeen = new Set();
+      for (var _rsi = 0; _rsi < res.length; _rsi++) _resSeen.add(res[_rsi]);
+    }
     for (var a = 0; a < bucket.added.length; a++) {
       var nd = bucket.added[a];
       // R182（js-dom M4）：sel 子形态（静态页面元素的同步移动——insertAdjacentElement
@@ -10982,15 +11087,13 @@
       // seen 命中即重复记账，R51 原语义）。
       var isSelChild182 = !nd.__zwHandle && !!nd.__zwSelector;
       if (!isSelChild182) {
-        var seen = false;
-        for (var s = 0; s < res.length; s++) { if (res[s] === nd) { seen = true; break; } }
-        if (seen) continue;
+        if (_resSeen.has(nd)) continue; // OPTIMIZATION：identity Set 判定（上注），原 O(res) 线性扫
       }
       // nextSibling 定位（_mo_notify record 的 nextSibling 字段，R47）。ref 已在列表内 → 插其前；
       // 否则（null=append / ref 也 pending）→ 尾部。R182：匹配按**节点 identity**（不再限定
       // __zwSelector——text ref（afterend 的「旧 nextSibling 是文本节点」形态）同样可定位）。
       var pos = res.length;
-      if (link.nextSibling) {
+      if (link.nextSibling && _resSeen.has(link.nextSibling)) { // OPTIMIZATION：miss 直落尾插（原扫空同结果）
         for (var q = 0; q < res.length; q++) {
           if (res[q] === link.nextSibling) { pos = q; break; }
         }
@@ -11013,7 +11116,10 @@
         }
         if (pos > res.length) pos = res.length;
       }
-      res.splice(pos, 0, nd);
+      // OPTIMIZATION：尾插（pos === res.length，bulk 合并常态）走 push 免 O(res) memmove
+      // ——splice(pos,0,nd) 在 pos===res.length 时与 push 逐位等价。
+      if (pos >= res.length) res.push(nd); else res.splice(pos, 0, nd);
+      if (_resSeen) _resSeen.add(nd); // OPTIMIZATION：Set 与 res 成员同步（上注）
     }
     return res;
   }
@@ -12451,7 +12557,13 @@
     // 成员表（排序/过滤天然最新），不注册写侧 live 维护（无 matches → 不进
     // _zwLiveCollections）。与 matches 形态互斥：传 rebuild 的调用方不得依赖写侧同步。
     var _rebuild = (liveSpec && typeof liveSpec.rebuild === 'function') ? liveSpec.rebuild : null;
-    var target = Object.create(_zwHCPrototype());
+    // S185（html-semantics M2）：protoCtor（接口构造器）——target 直链其 prototype，
+    // instanceof 该接口成立（form.elements 的 HTMLFormControlsCollection 面）；其
+    // prototype 须链回 _zwHCPrototype 单例（调用点惰性接线，part04 form.elements gate）。
+    // 缺省回落通用 HC 实例原型，既有调用零变化。
+    var target = (liveSpec && liveSpec.protoCtor && liveSpec.protoCtor.prototype)
+      ? Object.create(liveSpec.protoCtor.prototype)
+      : Object.create(_zwHCPrototype());
     // __zwHC：读入口（trap 与 prototype 方法共用）。live 维护在写入侧（_zwHCLiveInvalidate
     // 同步 push/filter state.els），读取零开销。
     function current() {
@@ -12486,6 +12598,10 @@
       }
       return undefined;
     }
+    // S185：namedFn 覆盖（HTMLFormControlsCollection 多匹配语义——namedFn 返元素或
+    // live RadioNodeList，见 part04 form.elements gate；缺省走内建首匹配）。get/set/
+    // defineProperty/deleteProperty/gOPD/has 六 trap 的 named 命中共用此变量。
+    var namedFor = (liveSpec && typeof liveSpec.namedFn === 'function') ? liveSpec.namedFn : namedFor;
     var proxy = new Proxy(target, {
       get: function (t, prop, recv) {
         if (prop === '__zwHC') return current;
@@ -13557,16 +13673,23 @@
     //（_handleChildren registry + host 链融合视图），host 视图仅 sel 身份参与
     //（文档域查询，detached handle form 不在其中）。walk 守卫（嵌套 form 整枝/
     // form= 属性跳过）对两身份同义——读经代理 getAttribute。
-    try { walk(sel ? _wrapSelector(sel) : _makeProxy(null, handle)); } catch (_e) {}
+    // S185：owner 域顺序修正——host 列表（`__zw_form_controls` 文档序 owner 枚举，
+    // 含 form= 跨树关联）先推，walk 后推补 same-turn 新增（t8f live 面，push 去重）。
+    // 原 walk-first 使 form 子树控件恒排前，form= 关联的外部控件（WPT
+    // form-elements-filter 的 before-*/after-* 期望文档序）错序。same-turn remove
+    // 的 stale host 条目经 _zwPendingRemoved 剔除（R50 同款；walk 读链已 live）。
     if (sel && typeof __zw_form_controls === 'function') {
       try {
         var listed = __zw_form_controls(sel);
         if (listed) {
           var arr = listed.split('|').filter(Boolean).map(_wrapSelector);
-          for (var hi = 0; hi < arr.length; hi++) push(arr[hi]);
+          for (var hi = 0; hi < arr.length; hi++) {
+            if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1) push(arr[hi]);
+          }
         }
       } catch (_e) {}
     }
+    try { walk(sel ? _wrapSelector(sel) : _makeProxy(null, handle)); } catch (_e) {}
     return controls;
   }
 
@@ -13580,6 +13703,101 @@
   // **快照集合**：多匹配产物为构建时快照（语料无 live 断言面；spec RadioNodeList
   // live 语义在册挂账）。**past names 近似**由 get 臂调用点记账，本 helper 无状态。
   // https://heycam.github.io/webidl/#LegacyPlatformObjectGetOwnProperty
+  // S185（html-semantics M2）：live RadioNodeList——HTMLFormControlsCollection 多匹配
+  // named 读产物（nameditem-01「elements collection should return elements or
+  // RadioNodeLists」live 断言面：取集后 removeChild 同 turn 集合收缩）。每次属性读经
+  // _formControls 现取按 id/name 过滤；target 链 RadioNodeList.prototype（part03 已链
+  // NodeList.prototype → Array.prototype）+ __zwNL 印记（R140 Symbol.hasInstance 认）→
+  // instanceof RadioNodeList/NodeList 双真；Array 迭代器经原型链可达（length/indexed
+  // 走 trap 现取）。assert_array_equals 依赖面：has('length')、indexed gOPD
+  //（hasOwnProperty 探测）、ownKeys 索引表。spec：
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#radiolist。
+  // RadioNodeList.value（checked radio 值聚合）语料无面不实现（FIXME 随语料面补）。
+  function _zwMakeRadioNodeListLive(lsel, lhandle, lname) {
+    function current() {
+      var list = _formControls(lsel, lhandle);
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        if (!c) continue;
+        try {
+          if (c.id === lname || (c.getAttribute && c.getAttribute('name') === lname)) out.push(c);
+        } catch (_eRNL) {}
+      }
+      return out;
+    }
+    var target = { __zwNL: true };
+    try {
+      Object.setPrototypeOf(target, (globalThis.RadioNodeList && globalThis.RadioNodeList.prototype)
+        || (globalThis.NodeList && globalThis.NodeList.prototype) || Object.prototype);
+    } catch (_eRNLp) {}
+    return new Proxy(target, {
+      get: function (t, prop) {
+        if (typeof prop === 'string') {
+          if (prop === 'length') return current().length;
+          if (prop === 'item') {
+            return function (i) {
+              var l = current();
+              var n = _zwToUint32(i);
+              return n < l.length ? l[n] : null;
+            };
+          }
+          if (_zwIsCanonicalIndex(prop)) {
+            var l2 = current();
+            var n2 = Number(prop);
+            return n2 < l2.length ? l2[n2] : undefined;
+          }
+        }
+        return t[prop];
+      },
+      has: function (t, prop) {
+        if (prop === 'length') return true;
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) return Number(prop) < current().length;
+        return prop in t;
+      },
+      getOwnPropertyDescriptor: function (t, prop) {
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          var l = current();
+          var n = Number(prop);
+          if (n < l.length) return { value: l[n], writable: false, enumerable: true, configurable: true };
+          return undefined;
+        }
+        return Object.getOwnPropertyDescriptor(t, prop);
+      },
+      ownKeys: function () {
+        var out = [];
+        var l = current();
+        for (var i = 0; i < l.length; i++) out.push(String(i));
+        return out;
+      },
+    });
+  }
+  // S185（html-semantics M2）：fieldset.elements 成员表——后代 listed 控件（pre-order
+  // 文档序）。spec HTML #dom-fieldset-elements：rooted at fieldset、filter = descendants
+  // ∩ listed elements（无 form-owner 条件、无嵌套 form 整枝、legend 子不豁免——WPT
+  // HTMLFieldSetElement 钉态 [cb(legend 内), txt, btn, fs_inner(嵌套 fieldset 本体在册),
+  // txt_inner]）；input[type=image] 非 listed（form-elements-matches 同源排除面）。
+  function _zwFieldsetListed(sel, handle) {
+    var out = [];
+    var root = sel ? _wrapSelector(sel) : _makeProxy(null, handle);
+    function walkFs(parentProxy) {
+      var kids = (parentProxy && parentProxy.childNodes) || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (_formControlTags[k.tagName]) {
+          var _fsImg = false;
+          if (k.tagName === 'INPUT') {
+            try { _fsImg = String(k.getAttribute('type') || '').toLowerCase() === 'image'; } catch (_eFsI) {}
+          }
+          if (!_fsImg) out.push(k);
+        }
+        walkFs(k);
+      }
+    }
+    try { walkFs(root); } catch (_eFsW) {}
+    return out;
+  }
   function _zwFormNamedLookup(lsel, lhandle, name) {
     var list = _formControls(lsel, lhandle);
     var hits = [];

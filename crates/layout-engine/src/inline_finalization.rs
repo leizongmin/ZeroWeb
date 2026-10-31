@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use taffy::prelude::*;
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue, VerticalAlignValue};
+use zero_css_parser::values::{ClearValue, DisplayValue, FloatValue, LengthValue, PositionValue, VerticalAlignValue};
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::ComputedStyle;
 
@@ -35,6 +35,12 @@ static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
 /// 可判）据表平移 fragment。`ZW_RELPOS_INLINE_SHIFT=0` 回退静态位行为。
 static RELPOS_INLINE_SHIFT_ON: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_RELPOS_INLINE_SHIFT").as_deref() != Ok("0"));
+
+/// R5369（CSS §9.4.3 / CSS2 §9.5）：R4222 相对 inset 回加范围扩到「float 祖先容器内的
+/// clear 子」开关（`ZW_R4222_FLOAT_ANCESTOR_SCOPE=0` 回退旧「直接子含 float」范围，
+/// default-on）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
+static R4222_FLOAT_ANCESTOR_SCOPE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_R4222_FLOAT_ANCESTOR_SCOPE").as_deref() != Ok("0"));
 
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
@@ -3429,9 +3435,28 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     // 视觉上不再覆盖前置 float。此处对含 float 容器的直接子盒**回加** Px 相对
     // inset（镜像 apply_block_relative_percent_insets 的 Px 语义；Em/% 域仍归该
     // pass 谱系）。仅相对盒回加一次，非相对盒零变化。
-    if has_floats {
+    //
+    // R5369：回加范围从「直接子含 float」扩到「float 祖先容器内的 **clear** 子」——
+    // float walk 对 clear 子的四个臂**无条件重写** child.y（烘焙 inset 必丢），但旧范围
+    // 只认直接 float 子，深层 float 的祖先容器（zero-width-floats：body→container→float，
+    // body 后继 relative 块 g2 clear:both top:-100px）不回加 → g2 停在 clearance 静态位
+    //（painted 250 应 150）。非 clear 子是否被 walk 重写随臂而异（首版扩围回归案
+    // clear-on-parent-with-margins-no-clearance：外层 relative 块 y 未被重写、taffy inset
+    // 仍在，回加 = 双计 top:-51px → 绿块虚高 51px），故维持旧路径不扩。容器门用子树含
+    // float（与 walk 的 active context 同口径；无 float 容器不进 walk、inset 保持烘焙）。
+    // kill-switch `ZW_R4222_FLOAT_ANCESTOR_SCOPE=0` 回退旧范围（default-on）。
+    let ancestor_of_float = *R4222_FLOAT_ANCESTOR_SCOPE && subtree_has_float(box_node);
+    if has_floats || ancestor_of_float {
         for child in box_node.children.iter_mut() {
-            if child.is_relative && !child.is_absolute && !child.is_fixed {
+            let clear_child = !matches!(
+                child.clear,
+                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd
+            );
+            if (has_floats || (ancestor_of_float && clear_child))
+                && child.is_relative
+                && !child.is_absolute
+                && !child.is_fixed
+            {
                 let (dx, dy) = resolve_relative_px_inset(child, styles);
                 if dx != 0.0 || dy != 0.0 {
                     child.x += dx;

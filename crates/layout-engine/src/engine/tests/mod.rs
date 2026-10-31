@@ -927,3 +927,14 @@ mod r5346_quirks_pct_height_flex_item_chain_tests;
 /// 补腿——definite/transferred 流内子已布局宽喂 grow（014 主驱）、contain:size
 /// 不参与、可换行文本停在可用宽。
 mod r5348_inline_block_shrink_grow_tests;
+
+/// R5369 探针：zero-width floats + clear 几何（WPT zero-width-floats 驱动）。
+mod r5369_zero_width_floats_clear_tests;
+
+/// R5370 探针：table/inline-table 内 OOF 子不生成匿名 cell（WPT transform-abspos-
+/// 006/007 驱动）。
+mod r5370_table_oof_child_tests;
+
+/// R5372 回归测试：嵌套 CB 重解析（static 中间层）长度 inset 定位方程计入对应
+/// margin（CSS2 §10.3.7/§10.6.4；WPT abspos-non-replaced-width-margin-000 驱动）。
+mod r5372_abspos_nested_cb_margin_tests;

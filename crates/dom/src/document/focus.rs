@@ -1,4 +1,4 @@
-//! Document `:focus`/`:focus-within` 伪类判定 —— 镜像 `target.rs`（R3283）拆分模式。
+//! Document `:focus`/`:focus-within`/`:active` 伪类判定 —— 镜像 `target.rs`（R3283）拆分模式。
 //!
 //! 本模块为 [`super::Document`] 的「焦点」面（Selectors L4 §14 `:focus-within-pseudo` /
 //! §13 `:focus`）。焦点是运行时状态：engine JS 桥在 `element.focus()`/`element.blur()` 时经
@@ -40,5 +40,15 @@ impl Document {
                 None => return false,
             }
         }
+    }
+
+    /// `:active` 的权威判定（CSS Selectors L4 §15：用户按下——pointerdown/键盘激活
+    /// 按压间）。M2-S196（html-semantics focus 时序域，2026-11-01）：按压为运行时
+    /// 状态，shim trusted UA 按压面（键盘 Space 激活族 / 指针 down 序列——label
+    /// 路由到 labeled control）经 [`super::Document::set_active_element`] 注入；
+    /// 焦点迁移（[`super::Document::set_focus_element`]）终结按压态。解析（re-parse/
+    /// 导航）不携带按压 → 新 Document 初始 `None`（同 `:focus` 语义）。
+    pub fn is_active_element(&self, node: NodeId) -> bool {
+        self.active_element == Some(node)
     }
 }

@@ -1250,6 +1250,13 @@
         // 与 part01 removeClientForNode 的 frame 移除 gate 同语义（两处 inline——
         // part03 的 _realTag 为 closure 内层函数，跨 part 复用未达，探针实证）。
         var _zwIframeTag = _realTag(sel, handle);
+        // s188（html-semantics M2）：frame 元素与 iframe 同享 content navigable
+        //（https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+        // 「The frame element has a content navigable similar to the iframe
+        // element」+ HTMLFrameElement 接口带 contentDocument/contentWindow）——
+        // 归一入 R115 臂同管线（WPT submission-checks 三案以
+        // document.createElement("frame") 承载 contentWindow/contentDocument 访问面）。
+        if (_zwIframeTag === 'FRAME') _zwIframeTag = 'IFRAME';
         if (_zwIframeTag !== 'IFRAME' && handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
             && _nsHandles[handle].namespace === 'http://www.w3.org/1999/xhtml') {
           var _zwNsLocal = String(_nsHandles[handle].qualifiedName || '');
@@ -3764,9 +3771,13 @@
               // 「setAttribute doesn't affect the cloned input's/textarea's value」断言面；
               // textarea 无 value 内容属性，setAttribute('value') 惰性——HTML §4.10.6.4）。
               if (_inputValuesSet[key] !== true
+                  || _typeChangeTainted[key] === true
                   || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
                 _inputValues[key] = v;
                 _inputValuesSet[key] = true;
+                // s194：属性值落定即真脏（spec：dirty flag false 时内容属性变更
+                // 直接改变元素值——类型变更默认值不挡路），清类型变更标记。
+                delete _typeChangeTainted[key];
               }
               _clearInputDefault(key);
             }
@@ -3826,6 +3837,21 @@
             }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // s197（html-semantics focus 域）：fieldset disabled 属性置位（setAttribute
+            // 通道，IDL setter 通道在 part05 布尔臂）→ 焦点内含检查 + unfocus——
+            // active element 落被除 focusable area（首 legend 子树豁免，s193 读面同
+            // 判据）即回落 body。TAG 门走 proxy tagName 读（handle-only proxy
+            // `_realTag` 回落 DIV，s168 缺口同 part05 臂注）。disabled-003 钉面。
+            // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+            if (n === 'disabled'
+                && typeof globalThis._zwFieldsetDisableFocusReset === 'function') {
+              try {
+                var _fsPr = _makeProxy(sel, handle);
+                if (_fsPr && String(_fsPr.tagName).toUpperCase() === 'FIELDSET') {
+                  globalThis._zwFieldsetDisableFocusReset();
+                }
+              } catch (_eFsA) {}
+            }
             // s150：LINK href 变更触发 stylesheet 重取（spec link processing——
             // href 值变更 → re-fetch；幂等比较在 helper 内做解析后绝对 URL 比较，
             // prevHref=null 语义「无写入路径旧值」不发生于此臂——捕获已定，
@@ -3871,7 +3897,11 @@
             // 重新处理 iframe 属性（spec #process-the-iframe-attributes 的内容属性
             // 路径——IDL setter 路径在 part05 set trap 有同款钩子；目标优先级
             // srcdoc > src 在 _zwLoadIframeEntry 入口统一判定）。
-            if ((n === 'src' || n === 'srcdoc') && _realTag(sel, handle) === 'IFRAME' &&
+            // s188：frame 的 src/srcdoc 属性变更同触发（spec
+            // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+            // 「Whenever a frame element … has its src attribute set, changed, or
+            // removed … process the frame attributes」——与 iframe 同管线）。
+            if ((n === 'src' || n === 'srcdoc') && (_realTag(sel, handle) === 'IFRAME' || _realTag(sel, handle) === 'FRAME') &&
                 typeof globalThis.__zw_reload_iframe === 'function' &&
                 typeof _zwIframeNavigationConnected === 'function' &&
                 _zwIframeNavigationConnected(sel, handle)) {
@@ -4137,9 +4167,12 @@
               // 不覆写 `_inputValues`（spec：属性增删只改 default value，脏值优先——同
               // setAttribute 面）。
               if (_inputValuesSet[key] !== true
+                  || _typeChangeTainted[key] === true
                   || (_realTag(sel, handle) !== 'INPUT' && _realTag(sel, handle) !== 'TEXTAREA')) {
                 _inputValues[key] = '';
                 _inputValuesSet[key] = true;
+                // s194：同 setAttribute 面——脏 flag false 时属性移除改变元素值。
+                delete _typeChangeTainted[key];
               }
               _clearInputDefault(key);
             }
@@ -4727,6 +4760,10 @@
               } catch (_eS128oc) {}
             }
             _activeElKey = key; // 获焦相位落新（focus handler 内 activeElement 已是新元素）
+            // M2-S196（html-semantics focus 时序域，2026-11-01）：焦点迁移终结按压态
+            //（:active 单槽——Space 按住/pointer 按住时 Tab 离开的清除面：blur 无
+            // keyup/pointerup 到达即终结；已聚焦 no-op 守卫在上方早返，不误清）。
+            if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
             // s128：text control change 基线捕获（blur 提交时净值比较用）。
             if (globalThis.__zw_text_change_baseline) globalThis.__zw_text_change_baseline(key, sel, handle);
             // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
@@ -4822,6 +4859,8 @@
                 proxy.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false }));
               } catch (_e114bl) {}
               if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
+              // M2-S196：失焦终结按压态（:active 单槽，同焦点迁移面）。
+              if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
               return;
             }
             if (_activeElKey !== key) return; // 非当前焦点元素 → no-op
@@ -4845,6 +4884,8 @@
             }
             // R3254-M7'：通知宿主失焦（空串表示 blur）。
             if (typeof __zw_focus_changed === 'function') __zw_focus_changed('');
+            // M2-S196：失焦终结按压态（:active 单槽，同焦点迁移面）。
+            if (typeof __zw_set_doc_active === 'function') __zw_set_doc_active('');
           };
         }
         // R2938 + WAB2-M3-s1（web-api-batch2 goal M3 切片 1，2026-09-24）`el.requestFullscreen(options)`
@@ -5695,6 +5736,24 @@
                 if (_r313Dis === '1') return;
               } catch (_e313d) {}
             }
+            // s186（HTML user activation）：INPUT 拾取器类型 click() 消费瞬态激活
+            //（spec §user activation：picker 唤起属 activation 消费端；WPT
+            // the-input-element/click-user-gesture：bless + input.click() + blur 后
+            // navigator.userActivation.isActive 须为 false——旧仅 fullscreen 消费）。
+            // disabled 早退在上，不派发即不消费。preventDefault 不豁免（Chrome 语义：
+            // click() 方法本体触发 picker，非默认动作）。
+            if (_r313Tag === 'INPUT') {
+              var _r186ty = '';
+              try {
+                _r186ty = handle ? __zw_get_attr_handle(handle, 'type') : __zw_get_attr(sel, 'type');
+              } catch (_e186tg) { _r186ty = ''; }
+              _r186ty = String(_r186ty || '').toLowerCase();
+              if (_r186ty === 'color' || _r186ty === 'date' || _r186ty === 'datetime-local'
+                  || _r186ty === 'file' || _r186ty === 'month' || _r186ty === 'time'
+                  || _r186ty === 'week') {
+                _zwTransientActive = false;
+              }
+            }
             if (globalThis.__zwR155InlGen != null) globalThis.__zwR155InlGen++;
             // uievents-compat 尾簇 11：click() API 的 click = **PointerEvent 实例**
             //（PE spec https://www.w3.org/TR/pointerevents2/#the-click-auxclick-and-
@@ -5979,15 +6038,36 @@
           // R57（FV M1）：willValidate 排除（barred from constraint validation——
           // spec §4.10.5.2.2）：disabled、readonly（text 类）、type ∈ {hidden,
           // button, reset}、**datalist 祖先**（willValidate-datalist——spec
-          // §4.10.5.2.2：datalist 元素的后代被 barred）。
-          // datalist 祖先：parentNode 链（sel/handle 两路径——_parentNodeFor；
-          // 经 proxy 的 parentNode getter 统一）。
+          // §4.10.5.2.2：datalist 元素的后代被 barred）、**disabled fieldset
+          // 祖先**（s193，同条款）。
+          // 祖先走查：parentNode 链（sel/handle 两路径——经 proxy 的
+          // parentNode getter 统一）。s193：disabled fieldset 传导豁免仅限
+          // 其**首个 legend 元素子**的后代——上行路径直子即该 legend 才豁免
+          //（legend 包 p/嵌 fieldset 隔层、第 2+ legend 均不豁免，
+          // disabled-001 语料 5 案钉态）；豁免后继续上行（更外层 disabled
+          // fieldset 仍可 barred）。
           var _wv = _makeProxy(sel, handle);
+          var _wvNode = _wv;
           var _wp = _wv.parentNode;
           var _guard = 0;
           while (_wp && _guard < 64) {
-            try { if (String(_wp.tagName).toLowerCase() === 'datalist') return false; } catch (_e) {}
-            try { _wp = _wp.parentNode; } catch (_e) { break; }
+            try {
+              var _wpTagU = String(_wp.tagName).toUpperCase();
+              if (_wpTagU === 'DATALIST') return false;
+              if (_wpTagU === 'FIELDSET' && _wp.disabled) {
+                var _fsLeg = null;
+                try {
+                  var _fsKids = _wp.children;
+                  for (var _fsI = 0; _fsI < _fsKids.length; _fsI++) {
+                    if (String(_fsKids[_fsI].tagName).toUpperCase() === 'LEGEND') { _fsLeg = _fsKids[_fsI]; break; }
+                  }
+                } catch (_eFsK) {}
+                var _fsExempt = false;
+                try { _fsExempt = (_fsLeg != null && _wvNode === _fsLeg); } catch (_eFsI) {}
+                if (!_fsExempt) return false;
+              }
+            } catch (_e) {}
+            try { _wvNode = _wp; _wp = _wp.parentNode; } catch (_e) { break; }
             _guard++;
           }
           if (handle) {
@@ -11125,69 +11205,103 @@
         }
         // `form.elements`（HTMLFormControlsCollection，R2829）——表单控件集合（jQuery serialize /
         // FormData / 校验库迭代高频）。仅 HTMLFormElement（_realTag==='FORM' gate）；非 form → undefined。
-        // `_formControls(sel, handle)` child 链 walk + host 视图合并（tree order，见 part05）。
+        // `_formControls(sel, handle)` host 视图 + child 链 walk 合并（owner 域文档序，见 part05）。
         // t8f（siteopt bilibili r1）：**活集合**——spec form.elements 是 live HTMLFormControlsCollection
         //（https://html.spec.whatwg.org/multipage/forms.html#dom-form-elements），此前返快照数组，
         // held ref 看不见 hydration 同 turn 插入的控件（namedItem miss → 站点恢复路径
         // insertBefore(undefined) TypeError）。每次属性读经 `_formControls` 现取（live）；
         // 集合对象按元素缓存（t8e 同机制，`f.elements === f.elements` 恒等 + 长页零重建）。
+        // S185（html-semantics M2）：改走 `_zwMakeHTMLCollection` 通用活集合形态——
+        // ① protoCtor=HTMLFormControlsCollection：instanceof 双真（interfaces-01「should
+        //    exist」+ prototype 链面，此前 ad-hoc Proxy 无接口原型恒 false）；
+        // ② namedFn 多匹配臂：named 命中恰 1 → 元素；>1 → live RadioNodeList
+        //    （nameditem-01「elements collection should return elements or
+        //    RadioNodeLists」+ RadioNodeList live 断言面）；'' → undefined
+        //    （R38 空串非 supported property name）；
+        // ③ has('length')/gOPD 索引描述符/ownKeys 索引表：assert_array_equals 依赖面
+        //    （nameditem-02「length property should be own and enumerable」）。
         if (prop === 'elements' && _realTag(sel, handle) === 'FORM') {
           var _fcKind = (!sel && handle) ? 'h' : 's';
           var _fcCached = _zwFormCollCache.get(proxy);
           if (_fcCached && _fcCached.k === _fcKind) return _fcCached.c;
-          var _fcColl = new Proxy({ length: 0 }, {
-            get: function (_t, p) {
-              // symbol 键守卫（审查 B 发现 1）：parseInt(Symbol) 抛 TypeError——迭代协议
-              // （for...of/spread/Array.from 经 Symbol.iterator、String() 经
-              // Symbol.toPrimitive）无守卫时从可用变抛错（Angular forms/serialize 类
-              // 站点常见模式）。iterator 逐步现取列表（live 语义）。
-              if (typeof p !== 'string') {
-                if (p === Symbol.iterator) {
-                  return function () {
-                    var i = 0;
-                    return { next: function () {
-                      var l = _formControls(sel, handle);
-                      return i < l.length ? { value: l[i++], done: false } : { value: undefined, done: true };
-                    } };
-                  };
-                }
-                return undefined;
+          // FCC.prototype → _zwHCPrototype 单例惰性接线（单例在 part05，加载序不依赖；
+          // 首个 form.elements 构造时接通）+ FCC namedItem（HTML §dom-htmlformcontrolscollection
+          // nameditem：恰 1 → 元素；>1 → 快照集合——live 语料无面，FIXME 随面升级；
+          // miss → null；'' → null 与 part03 同款）。
+          try {
+            var _fccC = globalThis.HTMLFormControlsCollection;
+            if (_fccC && typeof _zwHCPrototype === 'function') {
+              if (Object.getPrototypeOf(_fccC.prototype) !== _zwHCPrototype()) {
+                Object.setPrototypeOf(_fccC.prototype, _zwHCPrototype());
               }
-              var list = _formControls(sel, handle);
-              if (p === 'length') return list.length;
-              if (p === 'item') return function (i) { return list[i] || null; };
-              // namedItem（HTMLFormControlsCollection：id 或 name 首匹配，miss → null，
-              // 空串 → null——审查 B 发现 4，与 part03 两处实现同款）。列表闭包内现取
-              // （先取方法后调用的时序不持旧快照）。
-              if (p === 'namedItem') {
-                return function (name) {
-                  var n = String(name);
-                  if (n === '') return null;
-                  var cur = _formControls(sel, handle);
-                  for (var i = 0; i < cur.length; i++) {
-                    var c = cur[i];
-                    if (c && c.id === n) return c;
-                    try { if (c && c.getAttribute && c.getAttribute('name') === n) return c; } catch (_e2) {}
-                  }
-                  return null;
-                };
+              if (!_fccC.prototype.__zwFccWired) {
+                Object.defineProperty(_fccC.prototype, '__zwFccWired',
+                  { value: true, enumerable: false, configurable: false });
+                Object.defineProperty(_fccC.prototype, 'namedItem', {
+                  value: function (name) {
+                    if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
+                    var s = String(name);
+                    if (s === '') return null;
+                    var els = this.__zwHC();
+                    var hits = [];
+                    for (var k = 0; k < els.length; k++) {
+                      var e = els[k];
+                      if (!e) continue;
+                      try {
+                        if (e.getAttribute) {
+                          if (e.getAttribute('id') === s) hits.push(e);
+                          else if (_zwIsHTMLNamespace(e) && e.getAttribute('name') === s) hits.push(e);
+                        }
+                      } catch (_eFNI) {}
+                    }
+                    if (hits.length === 1) return hits[0];
+                    if (hits.length > 1) return _zwMakeCollection(hits, false);
+                    return null;
+                  },
+                  writable: true, enumerable: false, configurable: true,
+                });
               }
-              var idx = parseInt(p, 10);
-              if (!isNaN(idx) && String(idx) === String(p)) return list[idx];
-              return list[p];
-            },
-            has: function (_t, p) {
-              if (typeof p !== 'string') return false;
-              var idx = parseInt(p, 10);
-              if (!isNaN(idx) && String(idx) === String(p)) {
-                var list = _formControls(sel, handle);
-                return idx >= 0 && idx < list.length;
-              }
-              return false;
             }
+          } catch (_eFccW) {}
+          // named 语义（HTMLFormControlsCollection supported property names + 多匹配
+          // live RadioNodeList）：恰 1 → 元素；>1 → live RadioNodeList（每次读现取，
+          // removeChild 同 turn 反映）；'' → undefined（get 臂；namedItem 臂另返 null）。
+          var _fcNamed = function (name) {
+            if (name === '') return undefined;
+            var cur = _formControls(sel, handle);
+            var hits = 0;
+            for (var fi = 0; fi < cur.length; fi++) {
+              var c = cur[fi];
+              if (!c) continue;
+              try {
+                if (c.id === name || (c.getAttribute && c.getAttribute('name') === name)) hits++;
+              } catch (_eFNM) {}
+            }
+            if (hits > 1) return _zwMakeRadioNodeListLive(sel, handle, name);
+            return _zwFormNamedLookup(sel, handle, name) || undefined;
+          };
+          var _fcColl = _zwMakeHTMLCollection([], {
+            rebuild: function () { return _formControls(sel, handle); },
+            protoCtor: globalThis.HTMLFormControlsCollection || null,
+            namedFn: _fcNamed,
           });
           try { _zwFormCollCache.set(proxy, { k: _fcKind, c: _fcColl }); } catch (_eFcC) {}
           return _fcColl;
+        }
+        // S185（html-semantics M2）：`fieldset.elements`（HTMLFieldSetElement.html「elements
+        // should be HTMLCollection」+ content/root 集合断言）——后代 listed 控件活集合
+        //（spec #dom-fieldset-elements：rooted at fieldset、filter = descendants ∩ listed；
+        // 无 form-owner 条件、legend 子不豁免、嵌套 fieldset 本体在册）。成员表
+        // `_zwFieldsetListed`（见 part05）；集合对象按元素缓存（form.elements 同机制）。
+        if (prop === 'elements' && _realTag(sel, handle) === 'FIELDSET') {
+          var _fsKind = (!sel && handle) ? 'h' : 's';
+          var _fsCached = _zwFormCollCache.get(proxy);
+          if (_fsCached && _fsCached.k === _fsKind) return _fsCached.c;
+          var _fsColl = _zwMakeHTMLCollection([], {
+            rebuild: function () { return _zwFieldsetListed(sel, handle); },
+          });
+          try { _zwFormCollCache.set(proxy, { k: _fsKind, c: _fsColl }); } catch (_eFsC) {}
+          return _fsColl;
         }
         // `form.length`（HTMLFormElement）= 控件数；非 form 透传（不拦截）。
         if (prop === 'length' && _realTag(sel, handle) === 'FORM') {
@@ -14251,6 +14365,9 @@
             // 缓存 + 净化算法（part01 _zwSanitizeInputValue）。cursor-to-end（值变更移
             // 光标）略——无实时光标面。
             _captureInputDefault(key, sel, handle); // R2996/R3049：首次写前捕获 defaultValue
+            // s194：value IDL set 即真脏（spec value setter 置 dirty value flag）——
+            // 清类型变更默认值标记（此后 setAttribute('value') 脏守卫正常拒绝）。
+            delete _typeChangeTainted[key];
             // type 读走 latest-wins（detached 元素 pending SetAttr 只在 lw 变体可见）。
             var _ivTy = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
               : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type')));

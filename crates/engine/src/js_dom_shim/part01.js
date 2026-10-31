@@ -85,6 +85,14 @@
   // 指向不同元素），但 setter 写入的值（SetFormValue 在 applied view no-op）必须可读回——
   // 双源区分：set 标记条目始终可用，lazy-init 条目仅稳定键（#id/@handle）可用。
   var _inputValuesSet = {};
+  // s194（html-semantics M2）：类型变更步骤写入的缓存键标记（R3901
+  // `_zwApplyInputTypeChange` 置位，value IDL set / setAttribute('value') /
+  // removeAttribute('value') 清除）。spec type change steps **不设 dirty value
+  // flag**（HTML §4.10.5.4）；R3901「缓存即值」模型把 `_inputValuesSet` 复载为
+  // 脏标记，变更后的 setAttribute('value') 走 R3902b 脏守卫被拒——detached 新建
+  // input 先 type 后 setAttribute('value') 的值永久丢失（email-value-idn
+  // dynamically-set 钉态）。属性变更面以本标记区分「类型变更默认值」与真脏。
+  var _typeChangeTainted = {};
   // R2996 input.defaultValue 独立追踪（spec：`.value=` 改 dirty 当前态，**不**改 defaultValue=初始 value 属性）。
   // shim 的 `.value=` 仍写 value 属性供 render（paint_input_value 读属性），故属性被「污染」；为使 defaultValue
   // 不被污染，单独追踪「真默认值」：首次 `.value=` 前捕获当前 value 属性（=真默认），setAttribute('value')/
@@ -2274,6 +2282,17 @@
     var lo = (raw == null || raw === '') ? '' : _zwASCIILower(String(raw));
     return (lo !== '' && _INPUT_TYPE_KEYWORDS.indexOf(' ' + lo + ' ') >= 0) ? lo : 'text';
   }
+  // s194（html-semantics M2）：email 单值清洗——trim 首尾 ASCII 空白 +
+  // 域部（最后一个 '@' 之后）经 `__zw_domain_to_ascii` IDN→punycode
+  //（HTML §4.10.5.5 E-mail state value；email-value-idn.html 钉态）。
+  // 无 '@' / 宿主未注册 / 转换失败原串返回（spec 清洗算法不淘汰非法值）。
+  function _zwEmailTokenSanitize(tok) {
+    tok = String(tok).replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+    var _emAt = tok.lastIndexOf('@');
+    if (_emAt < 0 || typeof __zw_domain_to_ascii !== 'function') return tok;
+    var _emDom = String(__zw_domain_to_ascii(tok.slice(_emAt + 1)));
+    return _emDom === '' ? tok : tok.slice(0, _emAt + 1) + _emDom;
+  }
   // R3901：value 净化算法（HTML §4.10.5.5，按状态分派）。文本族剥 \r\n；url/email 再剥
   // 首尾 ASCII 空白；date/month/week/time 非法串 → ''；datetime-local 非法 → ''；number
   // 非法浮点 → ''；range 夹取 [min,max]（非法 → (min+max)/2，min>max → min；缺省
@@ -2286,28 +2305,91 @@
     switch (type) {
       case 'text': case 'search': case 'tel': case 'password':
         return v.replace(/[\r\n]/g, '');
-      case 'url': case 'email':
+      case 'url':
         return v.replace(/[\r\n]/g, '').replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
+      case 'email': {
+        // s194（html-semantics M2）：email 状态清洗算法补全（HTML
+        // §4.10.5.1.5 value sanitization algorithm + §4.10.5.5 E-mail
+        // state）——基面同 url（剥 \r\n + 首尾 ASCII 空白）；multiple
+        // 感知：有 multiple 按逗号分割逐 token 清洗后重组（读写两侧同过
+        // 本函数；同批 setAttribute('multiple') 后读侧重消毒靠 lw 属性
+        // 读面，email.html "multiple set" 钉态）；域部（最后一个 '@'
+        // 之后）经 `__zw_domain_to_ascii` 转 ASCII（punycode，
+        // email-value-idn.html 钉态）——无 '@'、宿主未注册或转换失败
+        // 保持原串（清洗算法不淘汰非法值）。
+        var _emV = v.replace(/[\r\n]/g, '');
+        var _emMulti = false;
+        try {
+          _emMulti = (handle ? __zw_has_attr_handle(handle, 'multiple')
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'multiple') : __zw_has_attr(sel, 'multiple'))) === '1';
+        } catch (_eEm) { _emMulti = false; }
+        if (_emMulti) {
+          var _emParts = _emV.split(',');
+          for (var _emI = 0; _emI < _emParts.length; _emI++) {
+            _emParts[_emI] = _zwEmailTokenSanitize(_emParts[_emI]);
+          }
+          return _emParts.join(',');
+        }
+        return _zwEmailTokenSanitize(_emV);
+      }
       case 'date': case 'month': case 'week': case 'time':
         return _parseHtmlDateValue(v, type) != null ? v : '';
-      case 'datetime-local':
-        return /^\d{4,}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(v) ? v : '';
+      case 'datetime-local': {
+        // s190（html-semantics M2）：datetime-local 状态清洗算法（HTML
+        // §4.10.5.1.17 value sanitization algorithm + §4.10.5.18 local date
+        // and time string）——合法串重序列化为 canonical 形：'T' 分隔（空格
+        // 解析接受但不出）；秒仅 sec>0 或 ms>0 输出（"00:00:00.000" →
+        // "T00:00"，datetime-local.html）；毫秒 3 位补零后剥尾零（".010"→
+        // ".01"、".500"→".5"、".003"→".003"，trailing-zeros/
+        // seconds-leading-zeroes 语料钉态）；非法（含 ≥4 位小数）→ ''。
+        // date/month/week/time 保持合法 verbatim 回显（spec 同 canonical 化，
+        // 语料未钉其改写面）。
+        var _dlM = v.match(/^(\d{4,})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/);
+        if (!_dlM || !_parseHtmlDateValue(v, 'datetime-local')) return '';
+        var _dlOut = _dlM[1] + '-' + _dlM[2] + '-' + _dlM[3] + 'T' + _dlM[4] + ':' + _dlM[5];
+        var _dlS = _dlM[6] ? +_dlM[6] : 0;
+        var _dlMs = _dlM[7] ? +_dlM[7].padEnd(3, '0') : 0;
+        if (_dlS > 0 || _dlMs > 0) {
+          _dlOut += ':' + _dlM[6];
+          if (_dlMs > 0) _dlOut += '.' + ('00' + _dlMs).slice(-3).replace(/0+$/, '');
+        }
+        return _dlOut;
+      }
       case 'number':
         return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v) ? v : '';
       case 'range': {
+        // s189（html-semantics M2）：range 状态清洗算法补全（HTML
+        // §4.10.5.1.16 value sanitization algorithm）——既有夹取/default 面上
+        // 补 step 对齐 + best representation 序列化。语料钉态（range.html
+        // 10F）：非法 fp/缺省 → default 值（max<min → min；否则
+        // min+(max−min)/2）后仍走 step 对齐（"ppp" min=0 max=5 → 2.5 → "3"）；
+        // step 对齐 base=min、nearest half-up（1.7→2、1.4→1、2.8→3、
+        // 3.5→4）；k 封顶 floor((max−min)/step) 防对齐值越 max（spec 未钉
+        // 越界折向，语料无面，保守不越界）；best representation 浮点尾差
+        // 归一（5.3+1.5 → "6.8" 非 "6.7999…98"）。
         var mn = parseFloat(handle ? __zw_get_attr_handle(handle, 'min')
           : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'min') : __zw_get_attr(sel, 'min')));
         if (isNaN(mn)) mn = 0;
         var mx = parseFloat(handle ? __zw_get_attr_handle(handle, 'max')
           : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'max') : __zw_get_attr(sel, 'max')));
         if (isNaN(mx)) mx = 100;
-        var n = parseFloat(v);
-        if (v === '' || isNaN(n) || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)) {
-          return String(mn > mx ? mn : (mn + mx) / 2);
+        var st = parseFloat(handle ? __zw_get_attr_handle(handle, 'step')
+          : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'step') : __zw_get_attr(sel, 'step')));
+        if (isNaN(st) || st <= 0) st = 1;
+        var n;
+        if (v === '' || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)) {
+          n = mn > mx ? mn : mn + (mx - mn) / 2;
+        } else {
+          n = parseFloat(v);
+          if (n > mx) n = mx;
+          if (n < mn) n = mn;
         }
-        if (n > mx) return String(mx);
-        if (n < mn) return String(mn);
-        return v;
+        var k = Math.round((n - mn) / st);
+        var kMax = Math.floor((mx - mn) / st);
+        if (kMax < 0) kMax = 0;
+        if (k < 0) k = 0;
+        if (k > kMax) k = kMax;
+        return String(Math.round((mn + k * st) * 1e12) / 1e12);
       }
       case 'color': {
         // S183（html-semantics M2）：color 状态清洗算法（HTML §4.10.5.1.19）——
@@ -2366,6 +2448,10 @@
     next = _zwSanitizeInputValue(next, newTy, sel, handle);
     _inputValues[key] = next;
     _inputValuesSet[key] = true;
+    // s194：变更后缓存非真脏（spec 步骤不设 dirty value flag）——打标记供
+    // 属性变更面（part04 setAttribute/removeAttribute 'value' 同步块）绕行
+    // R3902b 脏守卫；value IDL set / 用户键入即真脏，写点清除本标记。
+    _typeChangeTainted[key] = true;
     // 读回面：default/default-on 存储即内容属性（步骤 1 已写；attr 缺省的 "on"/''
     // 回落由 getter 判 attr 存在性——此处不补写，避免把缺省面读成空串）。value/filename
     // 目标走 dirty 缓存读回，sel 路径同步渲染面 form-value。
@@ -3339,7 +3425,12 @@
     } catch (_eIframeTag) {
       tag = String(frame.tagName || '');
     }
-    if (String(tag || frame.tagName || '').toUpperCase() !== 'IFRAME') return;
+    var _stTagUp = String(tag || frame.tagName || '').toUpperCase();
+    // s188：frame 插入步同 iframe 建 child navigable（spec
+    // https://html.spec.whatwg.org/multipage/obsolete.html#the-frame-element
+    // frame insertion steps——插入已连接树即建 navigable + process the frame
+    // attributes，about:blank 初始插入派 load）。
+    if (_stTagUp !== 'IFRAME' && _stTagUp !== 'FRAME') return;
     // https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-iframe-element
     // Dynamic insertion of a connected iframe starts navigation asynchronously.
     _defer(function() {

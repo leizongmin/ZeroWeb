@@ -159,3 +159,238 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ua_display_li 1F（渲染流 D4 待裁决冻结面）。ua_display_li 清零后收口
   序列 = make test 全绿复证 → 锚按最终 tip 复跑（若 runner 二进制面未
   变可引用本锚账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE。
+
+### 2026-11-01 03:10 追记：锚现 tip（dc49d1e7c）复验逐字节一致——s182~s194 零回归核证
+
+- **锚复跑（tip `dc49d1e7c`）**：release runner 重建 32.92s（make
+  `zero-wpt-runner-release`）+ test-guard 直包全语料跑
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json` stdout
+  重定向取干净产物）——**对 M1 终态锚
+  （`2026-10-31-m1-baseline-full.json.gz`）逐字节一致（cmp 全等，
+  7,208,436 B）**：123 文件 / 33,109 子测试 = 25,788P + 7,320F + 1T。
+  guard log 零字节（无击杀），runner EXIT=1 为带预期 7,320F 挂账的
+  常规退出。临时审计件 `/tmp/webcrypto-anchor-run-20261101-0308.json`
+  （不入库）；链路核证：上轮 `20261031-2010` 审计件与 M1 gz 亦逐字节
+  一致，锚链连续。
+- **覆盖窗口**：`6eb020fc2` → `dc49d1e7c` 间 s182~s194（s185
+  form.elements 集合层、s186 click 分派、s187/s188 color/frame、s189
+  range、s190 date/time 消毒、s192 input.list、s193 fieldset
+  willValidate、s194 email/url/tel 消毒 + IDN、CE entry 快路、
+  removeChild 单遍化等引擎/shim 变更）+ 渲染流 R5368/R5369（float
+  收缩适配/嵌套 float clear 预测等布局修复）——全部在语料执行路径上，
+  **33,109 分母零回归锚在现 tip 重新成立**（上轮锚账 `6eb020fc2`
+  不再是最新 tip，本次刷新消掉陈旧窗口）。
+- **轮询面（本轮）**：s194 账 engine lib **3642P/1F（在册同键
+  ua_display_li）**；渲染流 R5368（2026-11-01）记账 make test 既有红
+  中止（ua_display_li，对端 D4 残余账）→ workspace 腿 --skip 补跑
+  ——**D4 双面翻转仍未裁决**。D1/D2 维持待用户拍板
+  （GB-20261031 征询在案），本 goal 零代码变更不变。
+- **收口序列不变**：ua_display_li 清零（渲染流 D4 裁决落地）→ make
+  test 全绿复证 → 锚按届时最终 tip 复跑（若 runner 二进制面未再变可
+  引用本次账）→ 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或
+  D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 03:40 追记：锚随 tip 前移复验（e4e4ebc09）——justify shim 簇吸收
+
+- **锚复跑（tip `e4e4ebc09`，release runner 重建 24.29s）**：test-guard
+  直包同参数——对 M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**，
+  guard log 零字节，EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-0335.json`（不入库）。
+- **动机**：`b171ddbf9` justify 首簇新增 shim `part01c.js`（+1290 行）+
+  `part06.js` + bridge ——语料执行路径面，其自证门禁（justifycenter/
+  bold 真页 + engine lib 零位移）未覆盖 webcrypto 语料；本次复跑消掉
+  dc49d1e7c→e4e4ebc09 的锚窗口。DC-1~4 证据链在位性同步复核（四件
+  evidence 均在 `5894374c1` 提交，工作树干净）。
+- **轮询面无变化**：远端无新 s 系/渲染流推进；ua_display_li（渲染流
+  D4）与 D1/D2 维持原状。
+
+### 2026-11-01 03:50 追记：轮询零变化——锚账按代码面同一性延用，飞书回读通道证伪
+
+- **轮询面**：远端零新提交（tip 维持 `463ad8642`），树 clean；
+  `e4e4ebc09..463ad8642` 仅 `f2e90d44d`（wptfyi 快照 cron）与本 goal
+  docs，**零代码变更**——e4e4ebc09 的锚逐字节一致账按代码面同一性
+  延用，本轮不复跑。快照 cron 对 WebCrypto 行数字零位移（diff 无
+  +/- 触及 WebCrypto 行），DC-4 引用口径不变。
+- **D4/D1/D2 原状**：渲染流 R5369（2026-11-01 02:15）账面仍列
+  ua_display_li D4 为对端既有待裁决，未落地；仓库无用户决策记录。
+- **飞书回读通道证伪（后续轮次不再重试）**：D1/D2 征询回复无法无人
+  值守读取——bot 身份 `+messages-mget` 对已发 P2P 消息返回空、
+  `+messages-search` 缺 `search:message` scope（app 未申请）、user
+  身份读 P2P 需交互式 device-code 授权。回复核验通道收敛为 git
+  账面 + 用户主动知会两条。
+
+### 2026-11-01 03:55 追记：锚账延用窗口随 tip 前移至 f6c507297——82eb31b67 为 #[cfg(test)] 面，零二进制影响
+
+- 本流 docs 提交（`f6c507297`）rebase 时吸收并行流 `82eb31b67`
+  （wpt-runner legacy-mb chars 语料缺失假红修复）：改动全部位于
+  `wpt_file_loader.rs:402` `#[cfg(test)] mod tests` 内（删 checked
+  计数与尾断言），不进 runner 二进制、不在语料执行路径；legacy-mb
+  chars 族与 WebCryptoAPI 语料（.any.js/.window.js testharness）亦非
+  同一加载通道。e4e4ebc09 的锚逐字节一致账按二进制面同一性延用至现
+  tip `f6c507297`，本轮不复跑。远端同步（origin/main =
+  `f6c507297`），树 clean。
+
+### 2026-11-01 04:00 追记：锚复跑现 tip（7065ea39f）逐字节一致——s195 engine 变更吸收
+
+- 03:55 追记落账后远端再进 `88b1904f1`（s195 focus 时序域 radio 焦点
+  导航，engine/shim 语料执行路径代码）——按纪律对现 tip `7065ea39f`
+  复跑锚：release runner 重建 26.92s + test-guard 直包
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json` 重
+  定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  guard log 零字节，runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-0359-7065ea39f.json`（不入库）。
+- 至此锚窗口推进为 **e4e4ebc09 → 7065ea39f**（s182~s195 全部引擎/
+  shim 变更 + 渲染流 R5368/R5369 + wpt-runner test 面修复全吸收），
+  33,109 分母零回归在现 tip 成立。轮询面其余无变化：ua_display_li
+  （渲染流 D4）与 D1/D2 维持待拍板。
+
+### 2026-11-01 04:35 追记：锚窗口随 rebase 前移至 1b6b9b291 逐字节一致——s196 engine perf 变更吸收
+
+- 04:25 追记落账 push 前的 `git pull --rebase` 吸入并行流两笔：
+  `7d172a211`（s196 `_zwMEl` 安装面共享化，engine/shim 语料执行路径
+  perf 变更，自证七语料全零位移）+ `ddc8668c4`（docs 维护轮，零代码）
+  ——代码面再次前移，按纪律对现 tip `1b6b9b291` 复跑锚：release
+  runner 重建 25.24s + test-guard 直包同参数——**对 M1 终态锚逐字节
+  一致（cmp 全等，7,208,436 B）**，guard log 零字节，EXIT=1 为预期
+  挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-s196-1b6b9b291.json`（不入库）。
+- 至此锚窗口推进为 **7065ea39f → 1b6b9b291**（R5370 + s196 + docs
+  维护轮全吸收），33,109 分母零回归在现 tip 成立。轮询面无变化：
+  ua_display_li（渲染流 D4，s196 自账 engine lib 3642P/1F 同键）与
+  D1/D2 维持待拍板。
+
+### 2026-11-01 04:25 追记：锚复跑现 tip（650eab54e）逐字节一致——渲染流 R5370 layout 变更吸收
+
+- `git pull --rebase` 吸入渲染流 R5370 两笔：`7c2826ffd`（table/
+  inline-table 内 OOF 子不生成匿名 cell + 不入空 grid 收缩，
+  layout-engine 语料执行路径代码 + 常驻测试 2pin）+ `650eab54e`
+  （R5370 轮记账 docs）——代码面前移，按纪律对现 tip `650eab54e`
+  复跑锚：release runner 重建 28.61s + test-guard 直包
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  计数复核 123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log
+  零字节，runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-r5370-650eab54e.json`（不入库）。
+- 至此锚窗口推进为 **7065ea39f → 650eab54e**（R5370 table OOF child
+  排除 + r5370 钉测全吸收），33,109 分母零回归在现 tip 成立。
+- **轮询面**：R5370 自账 make test workspace 腿 **19250P/0F** 仍以
+  `--skip ua_display_li` 跑（对端 D4 既有红 stash 同位复现）——
+  **ua_display_li D4 双面翻转仍未裁决**，D1/D2 维持待拍板
+  （GB-20261031 征询在案，核验只认 git 账面 + 用户主动知会）。
+  收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
+  最终 tip 复跑（若 runner 二进制面未再变可引用本次账）→ 归档迁移
+  + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing
+  exclusion 口径收口。
+
+### 2026-11-01 05:31 追记：轮询轮——锚账按二进制面同一性延用至 f6c42dd03，docs-only 三笔零代码
+
+- 轮询核验：锚 tip `1b6b9b291` → 现 tip `f6c42dd03` 三笔（`811ee5192`
+  / `674a4112f` / `f6c42dd03`，渲染流 R5371 定谳记账 + 1101 竞速重校
+  + R5371 四案定谳）`git diff --stat` 全为 docs 面（CHANGELOG /
+  README / ROADMAP / goal docs 共 7 文件 35+/11−，无 .rs、无
+  Cargo.toml、不在 runner 或语料执行路径）——runner 二进制面未变，
+  锚逐字节一致账（`1b6b9b291`，2026-11-01 04:35 复跑）**按二进制面
+  同一性延用至 `f6c42dd03`，本轮不复跑**（`f6c507297` docs-only
+  先例同判）。远端同步（origin/main = `f6c42dd03`），树 clean。
+- 轮询面无变化：渲染流 R5371 为零代码定谳轮（IFC float 行缩短深域
+  等四案挂账），ua_display_li（D4 双面翻转）在 R5368~R5370 门禁账
+  仍以 `--skip` 既有红在册，D4 裁决与 D1/D2 拍板均未见 git 账面。
+  收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
+  最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；
+  或 D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 06:05 追记：轮询轮——锚账延用至 42e662bf5，docs-only 两笔零代码；DC-1~4 证据复核在位
+
+- 轮询核验：锚 tip `1b6b9b291` → 现 tip `42e662bf5` 五笔全 docs 面
+  （`811ee5192` / `674a4112f` / `f6c42dd03` 已账 + 本轮新增两笔：
+  `a63f2f263` 上轮台账 2 文件 22+/3−、`42e662bf5` learnings 索引
+  重建 + skill 更新 2 文件 15+/3−，无 .rs、无 Cargo.toml、不在
+  runner 或语料执行路径）——runner 二进制面未变，锚逐字节一致账
+  （`1b6b9b291`，04:35 复跑）**按二进制面同一性延用至
+  `42e662bf5`，本轮不复跑**。远端同步（origin/main =
+  `42e662bf5`），树 clean。
+- DC-1~4 证据在位复核（应用户要求逐项核对文件与关键数字）：DC-1
+  `2026-10-31-m1-corpus-and-baseline.md`（pin 全量 202 blob / 198
+  文件在库 0 失败）；DC-2 `2026-10-31-dc2-promotion-screening.md`
+  （上游 `cb6cc97a`，`.tentative.` 50→0）；DC-3 同 M1 文档 + 原始
+  账 `2026-10-31-m1-baseline-full.json.gz`（25,788P+7,320F+1T，对
+  一期终态锚 `archive/webcrypto-compat/evidence/2026-10-17-m6-residual-full.json.gz`
+  状态变化 0 例）；DC-4 `2026-10-31-dc4-coverage-attribution.md`
+  （与官方快照逐位一致，差值 12,541P + 265 文件逐桶归因）。四件
+  证据文件 + 里程碑归档 `archive/2026-10-31-m1-m2.md` 均在库。
+- 轮询面无变化：`42e662bf5` 为 learnings 维护轮零代码；渲染流无
+  li→Block 双面翻转落地（`git log --grep` 全账仅 ledger 记账，
+  R5370 门禁仍 `--skip ua_display_li` 对端 D4 既有红），D4 裁决与
+  D1/D2 拍板均未见 git 账面。收口序列不变。
+
+### 2026-11-01 06:20 追记：锚复跑现 tip（65de5f28e）逐字节一致——editing 流 justify 查询面兜底变更吸收
+
+- `git pull --rebase` 吸入 editing 流 `65de5f28e`（justify 查询面
+  uplink 断裂兜底——setter 孤儿 wrapper 读数链修复，`js_dom_shim/
+  part01c.js` +105 行，jr/jf +220P 各零回归）：shim 面语料执行路径
+  代码，runner 二进制面前移，按纪律对现 tip 复跑锚——release runner
+  重建 25.71s（engine 重编译入包）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  计数复核 123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log
+  零字节（无击杀），runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-justify-65de5f28e.json`（不入库）。
+- 至此锚窗口推进为 **1b6b9b291 → 65de5f28e**（上轮台账 + justify
+  查询面兜底全吸收），33,109 分母零回归在现 tip 成立。
+- **轮询面**：justify 变更自账 engine lib **3,642P/1F**（s24 已知红
+  同键逐名 identical，[其账](../../editing-compat/evidence/2026-11-01-justify-query-face-orphan-uplink.md)）
+  ——ua_display_li 未清，渲染流 D4 双面翻转仍未裁决；D1/D2 维持
+  待拍板。DC-1~4 四件 evidence 在位复核（均系 `5894374c1` 提交，
+  后续无触及）。收口序列不变：ua_display_li 清零 → make test 全绿
+  复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记
+  → 推送 → DONE；或 D2② 授权 standing exclusion 口径收口。
+
+### 2026-11-01 06:27 追记：锚复跑现 tip（b0a6f9174）逐字节一致——html-semantics 流 s196 `:active` 伪类通道吸收
+
+- `git pull --rebase` 吸入 html-semantics 流 `b0a6f9174`（s196
+  `:active` 伪类通道——dom `active_element` 槽 + engine
+  `js_dom_bridge`/`selector_match` 查询面注入 + shim `part04.js`
+  +8/`part06.js` +104 行，定向 8F 翻绿 3 + flake 域 3）：shim +
+  查询/选择器匹配面系语料执行路径代码，runner 二进制面前移，按
+  纪律对现 tip 复跑锚——release runner 重建 30.59s + test-guard
+  直包同参数（`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，
+  `--json` 重定向，跑时 1m26s）——**对 M1 终态锚逐字节一致
+  （cmp 全等，7,208,436 B）**，计数复核 123 文件 / 25,788P +
+  7,320F + 1T = 33,109；guard log 零字节（无击杀），runner EXIT=1
+  为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-s196.json`（不入库）。
+- 至此锚窗口推进为 **65de5f28e → b0a6f9174**，33,109 分母零回归
+  在现 tip 成立。
+- **轮询面**：s196 自账 zero-engine **3,642P/1F**（ua_display_li
+  同键在册，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)）
+  + zero-dom 880P/0F——`:active` 通道非 li→Block 双面翻转，渲染流
+  D4 仍未裁决；git 无 D1/D2 决策新账面，维持待拍板。收口序列不变：
+  ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
+  → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
+  standing exclusion 口径收口。
+
+### 2026-11-01 07:15 追记：锚复跑现 tip（`3f1399195`）逐字节一致——渲染流 R5372 abspos 嵌套 CB margin 变更吸收
+
+- `git pull --rebase` 吸入渲染流 R5372 两笔：`9bef8608a`（abspos.rs
+  `resolve_abspos_against_nested_cb_inner_m` 长度 inset 锚定写点补
+  margin 项——CSS2 §10.3.7/§10.6.4 定位方程，layout-engine 语料执行
+  路径代码 +31 行 + 常驻测试 `r5372_abspos_nested_cb_margin_tests`
+  7pin）+ `3f1399195`（R5372 轮记账 docs）——代码面前移，按纪律对现
+  tip `3f1399195` 复跑锚：release runner 重建 29.75s（layout-engine
+  重编译入包）+ test-guard 直包同参数（`--per-proc-mem 4
+  --total-mem 8 --time-limit 1800`，`--json` 重定向，跑时 1m28s）
+  ——**对 M1 基线锚逐字节一致（cmp 全等，7,208,436 B）**，计数复核
+  123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log 零字节
+  （无击杀），runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-r5372-3f1399195.json`（不入库）。
+- 至此锚窗口推进为 **b0a6f9174 → 3f1399195**（s196 后 docs 两笔按
+  二进制面同一性延用 + R5372 两笔实跑吸收），33,109 分母零回归在现
+  tip 成立。实锚链 7065ea39f→1b6b9b291→65de5f28e→b0a6f9174→3f1399195。
+- **轮询面**：R5372 自账 make test workspace **3642P/1F** = ua_display_li
+  D4 既有账（stash 干净 main 同位复现）——abspos margin 变更非
+  li→Block 双面翻转，渲染流 D4 仍未裁决；git 无 D1/D2 决策新账面，
+  维持待拍板（GB-20261031 征询在案，核验只认 git 账面 + 用户主动
+  知会）。DC-1~4 四件 evidence 在位（后续无触及）。收口序列不变：
+  ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
+  → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
+  standing exclusion 口径收口。

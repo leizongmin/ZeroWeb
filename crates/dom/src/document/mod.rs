@@ -155,6 +155,12 @@ pub struct Document {
     /// 只存在于 engine shim JS 栈，DOM 序列化不携带），镜像 `focus_element` 注入通道；
     /// CSS matcher 共享同一权威。判定面见 `modal` 子模块（`is_modal_dialog`）。
     modal_dialogs: Vec<NodeId>,
+    /// 运行时按压态元素（`:active`，CSS Selectors L4 §15）。trusted UA 按压面
+    /// （shim 键盘 Space/指针 down 序列）经 engine 桥注入；解析不携带（交互态）。
+    /// 判定面见 `focus` 子模块（`is_active_element`）。FIXME（渲染面挂账）：CSS
+    /// matcher 走每帧重建的 render Document，本字段不随 HTML 序列化 → 渲染样式面
+    /// 须镜像 `inject_focus_state` 逐帧注入后才有真值（语料现只钉 DOM qSA 面）。
+    active_element: Option<NodeId>,
 }
 
 impl Document {
@@ -182,6 +188,7 @@ impl Document {
             slot_assignments: HashMap::new(),
             focus_element: None,
             modal_dialogs: Vec::new(),
+            active_element: None,
         }
     }
 
@@ -209,6 +216,7 @@ impl Document {
             slot_assignments: HashMap::new(),
             focus_element: None,
             modal_dialogs: Vec::new(),
+            active_element: None,
         };
         // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
@@ -1379,6 +1387,18 @@ impl Document {
     /// 判定面见 `focus` 子模块（`is_focus_element`/`has_focus_within`）。
     pub fn set_focus_element(&mut self, id: Option<NodeId>) {
         self.focus_element = id;
+        // M2-S196（html-semantics focus 时序域，2026-11-01）：焦点迁移终结按压态
+        //（:active 单槽——Space 按住 Tab 离开 / pointer 按住 Tab 离开的清除面，
+        // WPT checkable-active-onblur 族钉面；无 keyup/pointerup 到达前 blur 即
+        // 终结）。同元素 no-op 由调用方守卫（`native_element_focus_invoke` 已聚焦
+        // 早返；shim focus `_activeElKey` 同守卫），不在此复判。
+        self.active_element = None;
+    }
+
+    /// 注入运行时按压态元素（`:active`；shim trusted UA 按压面经 engine 桥调）。
+    /// 判定面见 `focus` 子模块（`is_active_element`）。
+    pub fn set_active_element(&mut self, id: Option<NodeId>) {
+        self.active_element = id;
     }
 
     /// 注入运行时模态 dialog 集合（engine 管线 render 后 fresh-parse 时从 retained
@@ -2117,6 +2137,9 @@ impl Document {
             crate::query::PseudoClass::Dir(dir) => self.matches_dir(node, dir),
             // `:target` 须读文档 URL fragment，延后至此经 target 子模块复评（CSS Selectors L3 §6.6.2）。
             crate::query::PseudoClass::Target => self.is_target_element(node),
+            // `:active` 运行时按压态（M2-S196），延后至此经 focus 子模块复评
+            //（CSS Selectors L4 §15；注入通道见 set_active_element 注记）。
+            crate::query::PseudoClass::Active => self.is_active_element(node),
             // `:valid`/`:invalid`/`:in-range`/`:out-of-range` 须约束属性上下文，延后至此经
             // validation 子模块复评（HTML §4.10.20 + CSS Selectors L4）。
             crate::query::PseudoClass::Valid => self.is_valid_element(node),

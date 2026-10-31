@@ -1143,23 +1143,44 @@ fn resolve_abspos_against_nested_cb_inner_m(
                     - box_node.border_top
                     - box_node.padding_top;
             }
+            // 长度 inset 定位方程计入对应 margin（CSS2 §10.3.7/§10.6.4：盒 margin 缘 =
+            // cb_origin + inset，边盒位再 + margin；同 root-CB pass），auto/百分比 margin
+            // 不计。旧写点丢 margin——abspos-non-replaced-width-margin-000 实证：ltr 锚
+            // 丢 +ml（53 应 70）、right 锚丢 −mr（515 应 496）。
+            let margin_left_px =
+                resolve_abspos_real_length(&style.margin_left, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
+            let margin_top_px =
+                resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
-                child.x = cb_origin_x + px - current_box_origin_x - box_node.border_left - box_node.padding_left;
+                child.x = cb_origin_x + px + margin_left_px
+                    - current_box_origin_x
+                    - box_node.border_left
+                    - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
-                child.y = cb_origin_y + px - current_box_origin_y - box_node.border_top - box_node.padding_top;
+                child.y = cb_origin_y + px + margin_top_px
+                    - current_box_origin_y
+                    - box_node.border_top
+                    - box_node.padding_top;
             }
-            // right/bottom 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2）。
+            // right/bottom 且 left/top 为 auto：右/下边对齐 CB 右/下缘（§10.3.18 rule 2），
+            // 对应 margin 同计入方程（盒右缘 = CB 右 − right − margin-right）。
             if matches!(style.left, LengthValue::Auto)
                 && let Some(right) = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, cb_height)
             {
-                let target_x = cb_origin_x + cb_width - right - child.width;
+                let margin_right_px =
+                    resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, cb_height)
+                        .unwrap_or(0.0);
+                let target_x = cb_origin_x + cb_width - right - margin_right_px - child.width;
                 child.x = target_x - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if matches!(style.top, LengthValue::Auto)
                 && let Some(bottom) = resolve_abspos_real_length(&style.bottom, &style.font_size, cb_width, cb_height)
             {
-                let target_y = cb_origin_y + cb_height - bottom - child.height;
+                let margin_bottom_px =
+                    resolve_abspos_real_length(&style.margin_bottom, &style.font_size, cb_width, cb_height)
+                        .unwrap_or(0.0);
+                let target_y = cb_origin_y + cb_height - bottom - margin_bottom_px - child.height;
                 child.y = target_y - current_box_origin_y - box_node.border_top - box_node.padding_top;
             }
             // R4155（css-sizing-4 §6.2 stretch）：abspos 的 `width/height: stretch`——

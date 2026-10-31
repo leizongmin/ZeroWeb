@@ -31,7 +31,450 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-10-31 M2 切片 184 收口，form 提交编码 text/plain + multipart 臂落地——12F 双根刀翻绿，shim 2 + rust 2：part04 accept-charset 字节化桥消费 + part01 text/plain iframe 字面渲染门）**
+> **▶ 当前状态（2026-11-01 M2 切片 197 收口，fieldset disabled 置位焦点内含检查——disabled-003 crash/hang 2F 翻绿（light + deep 双案），forms 全树 keyed diff 恰 2 靶键 F→P 零真 P2F；shim 4 文件 helper + 三写通道钩子，焦点态双域（解析节点 `_zwMElFocused` / proxy `_activeElKey`）分流 unfocus）**
+> **入场定刀位**：s196 在册首席候选 disabled-003 crash/hang 2F——light
+> 案「Disable light-nested fieldsets should not crash」+ deep 案
+> 「Disable deep-nested fieldsets should not hang」（100 级嵌套）。
+> **勘根**：失败语义单根（disable 不失焦——活动元素停留被禁后代，
+> spec #the-fieldset-element 移除后代 focusable area + #unfocusing-steps）
+> 三分支陷阱——(1) part05 早 boolean 分支先于 `_reflectedBoolAttr` 拦截
+> `disabled`（初版钩点恒不可达）；(2) `_realTag` 对 innerHTML 物化
+> handle-only proxy 回落恒 DIV（s168 在册缺口）误拦 TAG 门；(3) 深案真
+> 根 = 焦点态双域——解析节点 `.focus()` 走 R114 置 `_zwMElFocused` 清
+> `_activeElKey`（R148 所有权互斥），且解析节点 proxy 无
+> `__zwSelector`/`__zwHandle` → 共享原语 `_zwUnfocusIfFocused` 的
+> `_elKey` 重算必 null bail（探针 `sel=undefined hdl=undefined` +
+> `manual=still-inp` 实证）；(4) 解析节点面写通道（R154 描述符 →
+> `_zwMElSetAttribute`）两钩子均不在（探针包装计数 `autoCalls=0` 定谳）。
+> **施工**（4 文件 shim，净 +110/−4）：part06 `_zwFieldsetDisableFocusReset`
+> ——parent 链上行走查（≤128 跳）+ 首 legend 元素子豁免（s193 读面同
+> 口径，豁免续上行）；焦点元素双域取（`_zwMElFocused` 优先）；unfocus
+> 分流——proxy 态复用 `_zwUnfocusIfFocused`，解析节点态就地展开同序
+> （清 `_zwMElFocused` + `_navMarkFocusChanged` + blur/focusout +
+> `__zw_focus_changed('')`，事件参数逐字节对齐共享原语）；part05 早分支
+> `if (value)` 臂钩（TAG 门 proxy tagName 读）；part04 setAttribute trap
+> 写后钩（s150/s155 同款）；part03 `_zwMElSetAttribute` 写后共享尾钩
+> （解析节点 IDL + setAttribute 双通道同口）；disabled 移除不回焦。
+> **验证**：shim 拼接 node --check 三复验；探针四轮钉面验后删；stash
+> 隔离 A/B——forms 基线 4448P/253F/11T（复现 s196 HEAD 逐位）→ WIP
+> 4451P/250F/11T，keyed diff F→P 4（靶键 2 + flake 域 2）/P2F 1（flake
+> 域 checkbox onblur，同树三轮 F→F→P 摆动实测非本刀——`:active` onblur
+> 家族在册负载敏感域，与 fieldset disabled 写零机制关联）；fieldset 目录
+> 21P/1F（`type` IDL 既有缺口，A/B 同键）；interactive 439P/44F/0T
+> bit-exact；lib zero-engine 3642P/1F（在册同键）+ zero-dom 886P/0F
+> 逐位一致；fmt（Rust 零改动）+ guarded-clippy workspace 过。
+> **残留**：HTMLFieldSetElement `type` 1F 既有小缺口；`:active` onblur
+> flake 域（s196 在册 +1 键样本）；解析节点 unfocus 无 focusin/focusin
+> 补充面（共享原语同限，语料无形态）；legend 免除区惰性重评未建模
+>（s193 同限）。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031 征询
+> 在途）→ HTMLFieldSetElement `type` 1F 小缺口 → s196 挂账序。
+> **账本**：[evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md](html-semantics-compat/evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 196 收口，`:active` 伪类通道——定向 8F：稳定翻绿 3（with-click radio 本体 + checkbox/radio 后随 label，收口后 6 轮全 Pass）+ flake 域翻绿 3（onblur 键盘 ×2 对照窗双 Pass + checkbox 本体指针全树跑 Pass——runner 单命令链竞速负载敏感）+ 恒 F 2（父 label ×2 layout 缺口挂账）；dom `Document.active_element` 槽 + engine 字符串槽查询面注入 + shim 指针/键盘/焦点三可信钩子）**
+> **入场定刀位**：s195 在册首席候选 checkable-active 族 8F——s195 定谳
+> 「`:active` 通道整体缺位」（`matches_pseudo_class` 落 false、无 Document
+> active 态、无指针/键盘钩子）。
+> **勘根**：缺口四根——(1) 无按压态通道（上游 HTML §interaction
+> `#selector-active`：按住即匹配）；(2) 查询面 Document 皆查询期临时构建
+> （with_query_view_doc 三臂 + 字符串路径现 parse），直写字段不跨查询存活
+> → 必须**槽 + 注入**架构（渲染面 `inject_focus_state` 同型）；(3) 宿主
+> 回调早绑定 shim 作用域——页侧包装 `__zw_set_doc_active` 截不到 shim 内部
+> 直呼，写通道只挂可信 UA 面；(4) PUA 字面量（U+E00D/U+E004）日志与
+> Edit 工具不可见，须 python 字节级写入（Space 键面曾静默回归即此坑）。
+> **施工**（9 文件）：dom 4——`Document.active_element` 槽 +
+> `set_active_element` + `element_matches_selector` Active 臂（两阶段再评）
+> + `matches_full` deferred true + focus steps 联动清钩 + pristine 快照
+> 携带；engine 5——`DOC_ACTIVE_SELECTOR` 字符串槽 + `sync_active_state`
+> （selector→NodeId，失败按无按压态）+ `with_query_view_doc` 三臂注入
+> （live try_borrow_mut 同步后释放/缓存命中臂先注入/rebuild 臂落缓存前
+> 注入）+ 字符串路径 `__zw_matches`/`__zw_closest` 注入（DOMParser 惰性
+> 文档有意不注入）+ shim part06 指针 PRE-dispatch 标记（选择器解析
+> `__zwSelector`→proxyCache 反查→id 兜底→未路由原 sel 兜底）+ pointerup
+> 清 + `__zwKeyActiveGate`（**keyup 无条件终结前置**，Space keydown
+> POST-dispatch 标记 prevented 不标）+ part04 焦点 commit/blur 双臂清。
+> **验证**：stash 隔离基线 vs WIP 对照（s195 同法）——forms 全树
+> 4443P/258F/11T（复现 s195 逐位一致）→ **4448P/253F/11T**（ΔP=+5/ΔF=−5
+> 精确闭合），逐测试键 diff **恰 5 键 F→P 零 P2F 零键增减**（onblur 键盘
+> 2 + with-click 3）；余 3 键定谳既有缺口——checkbox 本体指针键 = runner
+> 单命令链 probe-tick 竞速 flake（全树跑同键 Pass 实证），父 label 2 键 =
+> 含控件 label 零矩形 Actions 误路由 BODY（layout 面，3 轮恒 F）；
+> interactive 439P/44F 基线 WIP bit-exact；lib zero-engine 3642P/1F（在册
+> 同键）+ zero-dom 880P/0F 逐位一致；全域参考跑 7414P/613F/91T 靶族仅父
+> label 2F 在败列；fmt + guarded-clippy workspace 过 + shim 拼接
+> node --check 过；fmt 双向对照（还原 pre-fmt 字节复跑同 F）证明收口后
+> onblur 键盘 2 面 6 连 F 与格式化无关——负载敏感 runner 竞速（并行流
+> bench/测试负载期），对照窗双 Pass 证据保持；探针语料逐通道钉面验后删。
+> **残留**：父 label 零矩形 layout 缺口 2F；runner 单命令链时序竞速 flake
+> 域（onblur 键盘 2 面 + checkbox 本体指针面，负载敏感 0-100% 摆动）；
+> CSS 渲染面 `:active` per-frame 注入未做；`:not(:active)`
+> 否定面同限；inert-svg-hittest 第 2 子测 SVG hit-test retarget；at-active
+> wrapper activeElement 不稳（s195 seam）；Space 激活行为（checkedness
+> 翻转）未实现。
+> **下一步候选**：disabled-003 crash/hang 2F 独立勘根 → customizable
+> select 177F 挂起待拍板（GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s196-active-pseudo-channel.md](html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 195 收口，focus 时序域 radio 焦点导航——8F 翻绿 + 1 文件 Timeout 解体，runner Actions 键盘链 4 面 + shim 1 臂：Tab 顺序焦点导航 + selector 缺失降级 live 键通道 + UI Events 键名/Shift 粘滞位 + radio 箭头键焦点移动语义）**
+> **入场定刀位**：s194 在册次席候选 focus 时序域 12F——勘根拆分，radio
+> 族单根面本刀收口（4 files 8 subtest F + scrolled 文件 Timeout 解体）；
+> checkable-active 8F 独立根因（`:active` 通道缺位）留 s196。
+> **勘根**：缺口四根——(1) doc 级 qSA 选择器列表走 detHtml 序列化快照
+> （动态 appendChild 突变 apply 前不可见；裸 tag/compound 单体走 live
+> mutTree 即时可见，s195probe 同 tick 5/4 分歧实证），dispatch_tab_focus
+> 候选枚举用复合清单 → 动态 radio 不在面；(2) Actions key 步 origin =
+> send 时点 activeElement（动态 radio），selectorFor 启发式 + R145
+> forward map（turn 末 merge）全 miss → 整链 "no stable selector" 拒绝；
+> (3) 键事件 key/code 透传 PUA 原字符（页 `e.key==='Tab'` 恒 miss）+
+> 无 Shift 粘滞位（navigateFocusBackward 方向丢失）+ Tab 默认动作落
+> InsertText PUA（text control 脏值、无焦点迁移）；(4) shim radio 箭头
+> 键臂为原地选中语义（焦点不动、事件派旧目标）——group-focusable-focus
+> 新钉面断 focus + checked 同步落新 radio（HTML §4.10.5.6 Chromium
+> convention）。
+> **施工**：runner `dispatch_tab_focus(webview, forward)`（候选按 9 单体
+> 拆查去重合并保同 tick 动态元素在面 + 文档序排序；radio 组代表剔除
+> same form owner + 同 name 只留代表 checked 优先；Shift+Tab 反向；非序
+> 中最近邻选择）；降级键臂（selector None 时 keydown/keyup 改派
+> `__zw_dispatch_key_at_active` live 通道 R4300 同款，Tab 走焦点导航，
+> 需 selector 臂 skip FIXME）；selector 臂键面（Tab/Arrows 键名 UI
+> Events 化 + `td_shift_sticky` 粘滞位 keydown 置位/keyup 清零 + Tab
+> 默认动作 = 顺序焦点导航 + Arrows 经 script_select_key_action 消费判定）；
+> part06 R3254-K5 radio 箭头键改焦点移动语义（focusing steps 先、
+> checkedness 跟随、input+change 派新 checked radio；FIXME 跨 form 并组）。
+> **验证**：定向 radio 族 8/8 全 Pass（checked 4 + disabled 1 +
+> group-first-focus 1 + group-focusable-focus 2）；scrolled 文件 Timeout
+> 解体单测 Fail（scroll-into-view-on-focus 未实现挂账面）；forms 全树
+> 4435P/265F/12T → **4443P/258F/11T**（ΔP=+8/ΔF=−7/ΔT=−1 精确闭合，
+> 逐测试键 diff 恰 8 键 F→P + Timeout→Fail 其余 bit-exact；stash 隔离
+> 基线复现 s194 数字，上游 layout 提交无 forms 位移归因干净）；
+> interactive 439P/44F bit-exact + engine lib 3642P/1F（在册同键）；
+> fmt + clippy（if 折叠修正后 workspace 过，修正后定向复跑全 Pass）+
+> node --check 过。
+> **残留**：checkable-active 8F（`:active` 通道整体缺位，s196 首席）；
+> scrolled 文件 1F（focus scroll-into-view 面未实现）；跨 form 同名
+> radio 并组 FIXME；Actions 链中途夭弃粘滞残留 FIXME；降级臂 arrows/
+> Enter skip FIXME。
+> **下一步候选**：s196 `:active` 通道 8F（Document active 态 + 指针/
+> 键盘钩子 + matcher 臂，镜像 :focus/:modal 先例）→ disabled-003
+> crash/hang 2F 独立勘根；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s195-focus-timing-radio-navigation.md](html-semantics-compat/evidence/2026-11-01-m2s195-focus-timing-radio-navigation.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 194 收口，email/url/tel 消毒链路 + 域部 IDN——12F 翻绿 + R3901 缓存污染修复，shim 3 面 + rust 宿主回调 1：value getter 消毒臂扩展 tel/url/email + email case multiple 感知分裂 + `__zw_domain_to_ascii`）**
+> **入场定刀位**：s193 在册次席候选 email/url/tel 簇 12F（email 3F +
+> telephone 3F + url 2F + email-value-idn 4F）。
+> **勘根**：缺口两根——(1) value getter per-type 分派无 tel/url/email
+> 臂（解析期 attr LF/CR/首尾空白/multiple 逗号串原样透出）；(2) email
+> 域部 IDN→punycode 缺位（url_idna.rs 仅整体 URL 面）。validity 零改
+> （typeMismatch 读原始存储，正则对非 ASCII 原样匹配）。基线同键发现：
+> R3901 type change 无条件置脏缓存——spec 不设 dirty value flag，detached
+> 新建 input 先 type 后 setAttribute('value') 被 R3902b 脏守卫拒
+> （email-value-idn dynamically-set 基线即 F）。
+> **施工**：rust `__zw_domain_to_ascii`（url crate 合成解析走同源
+> IDNA + 形状校验防结构剥除，失败空串 shim 保原串）；part01 email
+> case 分裂（`_zwEmailTokenSanitize` trim + last-'@' 域转 + multiple
+> 逗号分割逐 token，lw 读面保读侧重消毒）；part03 getter 臂条件扩展
+> tel/url/email（text/search/password 不扩 FIXME）；R3901 污染修复
+> （`_typeChangeTainted` 标记 map + 真脏写点清标 + 属性变更面绕行脏
+> 守卫）。
+> **验证**：定向 email 8/8 + email-value-idn 4/4 全 Pass；forms 全树
+> 4423P/277F/12T → **4435P/265F/12T**（ΔP=+12 精确；ΔF=−14 = 12 翻
+> 绿 + s193probe 2F 行随探针删除消失，逐文件 diff 恰 5 处，
+> type-change-state bit-exact）；interactive 439P/44F + engine lib
+> 3642P/1F（在册同键）bit-exact；node --check + fmt + clippy（.rs
+> 触碰必跑）过。
+> **残留**：text/search/password 读侧未挂（语料无钉面 FIXME）；
+> email-set-value 1F 同键推进至 selection 面（键入可见内容未建模）；
+> 克隆传播不带污染标记（语料无面 FIXME）。
+> **下一步候选**：focus 时序域 12F（checkable-active-onblur 6F +
+> radio-focus-navigation 6F，负载敏感嫌疑 s171 先例）→ disabled-003
+> crash/hang 2F 独立勘根；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **账本**：[evidence/2026-11-01-m2s194-email-url-tel-sanitize-idn.md](html-semantics-compat/evidence/2026-11-01-m2s194-email-url-tel-sanitize-idn.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 193 收口，disabled fieldset 祖先 willValidate 传导——disabled-001 5F 翻绿，shim 1 臂零 rust：祖先走查扩展 FIELDSET disabled 门 + 首 legend 子豁免）**
+> **入场定刀位**：s192 在册次席候选 disabled-001.html 5F。
+> **勘根**：探针钉态——`fs.disabled` IDL 已在（通用臂），缺口单一 =
+> willValidate 无 disabled fieldset 祖先传导（spec §4.10.5.2.2 barred
+> 条款 + 首 legend 元素子豁免）。语料 5 案全形：legend 包 p/嵌 fieldset
+> 隔层不豁免、第 2+ legend 不豁免、豁免不穿透自身 disabled、豁免后
+> 继续上行。
+> **施工（shim 1 臂零 rust）**：part04 willValidate 臂祖先走查重构
+> （路径节点/父链同步行进：DATALIST 原样 + FIELDSET disabled →
+> children 枚举首 LEGEND 直子，路径直子身份相等才豁免否则 false）。
+> **验证**：定向 the-fieldset-element 目录 disabled-001 5/5 + 邻接
+> 与基线逐位一致；forms 全树 4418P/282F/12T → **4423P/277F/12T**
+> （ΔP=+5/ΔF=−5 精确闭合，探针验后删，逐文件 diff 恰 disabled-001）；
+> interactive 439P/44F + engine lib 3642P/1F（在册同键）bit-exact；
+> node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **残留**：willValidate 其余三实现位未同步（mutTree wrapper 面语料
+> 无案 FIXME）；disabled-003 crash/hang 2F 既有待勘。
+> **下一步候选**：email/url/tel IDN 簇 12F → focus 时序域 12F（负载
+> 敏感嫌疑）；customizable select 177F 挂起待拍板（GB-20261031 征询
+> 在途）；fix#19c 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s193-fieldset-disabled-willvalidate.md](html-semantics-compat/evidence/2026-11-01-m2s193-fieldset-disabled-willvalidate.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 192 收口，input.list IDL getter——6F 翻绿 + hidden/text 同根红利 3F 共 9F，shim 1 臂零 rust：get trap list 臂 = lw 属性读 + getElementById 文档序首命中 + DATALIST tag 门）**
+> **入场定刀位**：s191 后全树失败集中度重勘定——select 拍板簇 177F
+> 之外最大非门禁簇 input-list.html 6F。
+> **勘根**：`input.list` IDL getter 整体缺位（不在平面反射表、无臂，
+> 落 expando 恒 undefined）。spec §4.10.5.3.8：list 属性值 id 文档序
+> 首命中且为 datalist 才返回，否则 null。红利 3F 同根（hidden 1F +
+> text 2F 的「must return null」案 undefined≠null）。
+> **施工（shim 1 臂零 rust）**：part03 get trap `prop === 'list'` 臂
+> （lw 读 → getElementById 首命中 → tagName DATALIST 门），getter 身份
+> 复用 getElementById proxy 缓存。
+> **验证**：定向 input-list 6/6；forms 全树 4409P/291F/12T →
+> **4418P/282F/12T**（ΔP=+9/ΔF=−9 精确闭合，逐文件 diff 恰 3 文件）；
+> interactive 439P/44F + engine lib 3642P/1F（在册同键，总数 +1 为并
+> 行流新用例）bit-exact；node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **下一步候选**：fieldset disabled-001 5F → email/url/tel IDN 12F →
+> focus 时序域（负载敏感嫌疑）；customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）；fix#19c 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s192-input-list-idl.md](html-semantics-compat/evidence/2026-11-01-m2s192-input-list-idl.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 191 收口，time/datetime-local 毫秒序列化——stepUp/Down fractional 2F 翻绿，shim 1 文件 2 处零 rust：`_formatHtmlDateValue` 两分支补 `.fff` 输出）**
+> **入场定刀位**：s190 在册残差 time.html step=0.001 亚秒步进 2F。
+> **勘根**：步进计算体健在（allowedStep=1ms、在格 ±1ms 正确）——
+> 根因在写回序列化器 `_formatHtmlDateValue`：time/datetime-local 两
+> 分支丢毫秒分量（S=0/ms=1 → "12:00:00" 缺 ".001"）。spec
+> §4.10.5.18 毫秒非零即输出，格式与 s190 canonical 规则同源（3 位补
+> 零剥尾零）。四消费点语料全核零波及（valueasdate time setter 全
+> ms=0；两 stepping 语料 .value 断言 startsWith 容忍可选秒/毫秒）。
+> **施工（shim 1 文件 2 处零 rust）**：part03 `_formatHtmlDateValue`
+> time/datetime-local 分支各补 ms>0 → '.' + 3 位补零剥尾零。
+> **验证**：定向目录逐文件 diff 恰 time.html 2F→P（32/32）其余
+> bit-exact；forms 全树 4407P/293F/12T → **4409P/291F/12T**（ΔP=+2/
+> ΔF=−2 精确闭合）；interactive 439P/44F + engine lib 3641P/1F
+> bit-exact；node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **下一步候选**：the-input-element 目录内可动面清零——下轮入场先
+> 全树失败集中度重勘定，无新单根面转挂账条目或 interactive 44F 复读；
+> customizable select 177F 挂起待拍板（GB-20261031 征询在途）；fix#19c
+> 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s191-time-fraction-serialization.md](html-semantics-compat/evidence/2026-11-01-m2s191-time-fraction-serialization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 190 收口，date/time 消毒面——三兄弟 24F + trailing-zeros/date 红利各 1F 共 26F 翻绿，shim 2 文件 4 处零 rust：part01 datetime-local canonical 重序列化 + part03 时间族 getter 消毒臂 + valueAsNumber/valueAsDate type 读 lw 化）**
+> **入场定刀位**：s189 在册次席候选 date/time 消毒三兄弟（month/
+> datetime-local/input-seconds-leading-zeroes 各 8F）。探针页钉态
+> （验后删）+ 语料全读。
+> **勘根**：三根分立——①valueAsNumber/valueAsDate type 读非 lw 快照
+> 盲区（R136 同类：同批 setAttribute('type') 恒 miss → 恒 NaN，
+> seconds-leading-zeroes 8F 根因，计算体健在）；②时间族 value getter
+> 消毒链接缺位（range 臂外落 P1a 裸读，非法值原样透出，month 8F 根因
+> 「expected "" but got raw」）；③datetime-local 消毒缺 canonical 重
+> 序列化（'T' 分隔/秒仅 sec>0‖ms>0/毫秒 3 位补零剥尾零——
+> trailing-zeros 与 seconds-leading-zeroes 钉态联合唯一确定，非法 ≥4
+> 位小数 → ''）。
+> **施工（shim 2 文件 4 处零 rust）**：part01 `case 'datetime-local'`
+> 重写（正则取分量 + `_parseHtmlDateValue` 日历校验 → canonical 序列
+> 化）；part03 value getter 时间族消毒臂（range 臂后同构，读侧单点）；
+> part03 valueAsNumber/valueAsDate type 读换 lw 融合读（s136/s148 同形）。
+> **验证**：定向目录二跑逐文件 diff 恰 5 文件翻面（month 15/15、
+> datetime-local 17/17、seconds-leading-zeroes 12/12、trailing-zeros
+> 1F→P + date.html 1F→P 红利，其余 bit-exact）；forms 全树 4381P/319F/
+> 12T → **4407P/293F/12T**（ΔP=+26/ΔF=−26 精确闭合）；interactive
+> 439P/44F + engine lib 3641P/1F（在册同键）bit-exact；node --check +
+> fmt 过（clippy 按 .rs 零触碰跳过）。
+> **残留与边界**：首轮目录跑 focus-dynamic 文件级 Timeout solo+二跑
+> 双复绿定谳负载敏感暂态（s171 同形非回归）；time stepUp/Down
+> fractional-seconds 2F 既有待勘；value setter 写侧不消毒（读侧统一
+> 观察面等价）；date 族 canonical 化未做（语料未钉不扩面）。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031
+> 征询在途）；fix#19c 挂待决承袭；s186-era FIXME 无语料在册；time
+> stepUp/Down fractional 2F 待勘。
+> **账本**：[evidence/2026-11-01-m2s190-datetime-temporal-sanitization.md](html-semantics-compat/evidence/2026-11-01-m2s190-datetime-temporal-sanitization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 189 收口，range value sanitization——10F 钉态翻绿 + range-2 同根 3F 红利，shim 2 刀零 rust：part01 消毒算法补全 + part03 getter 消毒读臂）**
+> **入场定刀位**：s188 收口后失败集中度勘定，最大可动面 range.html 10F。
+> **勘根**：10F 同根——range 状态 value 消毒算法缺位。既有
+> `case 'range'`（part01）有夹取+default 中点但无 step 对齐、无
+> best-representation，且未挂 value getter 链（value 模式 getter 落
+> P1a 裸属性读，"ppp"/-10/" 123"/缺省原样透出）。语料逐案反推：非法
+> fp/缺省 → default（max<min → min，否则中点）**仍走 step 对齐**
+> （"ppp" → 2.5 → "3" half-up）；base=min nearest half-up（1.7→2/
+> 1.4→1/2.8→3）；k 封顶 floor((max−min)/step) 防越 max；浮点尾差
+> 1e12 归一（5.3+1.5 → "6.8"）。
+> **施工（shim 2）**：part01 `case 'range'` 重写（step 读/strict fp →
+> default/夹取/封顶对齐/best representation）；part03 INPUT value
+> getter type 捕获重构 + range 消毒读臂（脏缓存优先/属性 lw 回落）——
+> 读侧单点，三写径天然覆盖。
+> **验证**：定向 range.html **25/25 全 Pass**（10F→P 精确 + 15 既有
+> 零回归）；forms 全树 4368P/332F/12T → **4381P/319F/12T**（ΔP=+13/
+> ΔF=−13，diff 仅 range.html + range-2.html 3F **同根红利**翻面）；
+> 邻接 bit-exact（type-change-state 462P / stepping 7P 定向 +
+> interactive 439P/44F）；engine lib **3641P/1F**（在册同键）；shim
+> 拼接序 node --check + fmt + guarded clippy 全绿；无探针页。
+> **残留与边界**：`_controlValue` 表单序列化仍读原始存储（range 提交
+> 编码面未消毒，语料无面挂 FIXME）；value setter 不消毒（读侧统一，
+> 观察面等价）；date/time 三兄弟（8F×3）次席候选待独立勘根。
+> **下一步候选**：date/time 消毒三兄弟在册；customizable select
+> 177F 挂起待拍板（GB-20261031 征询在途）；fix#19c 挂待决承袭；
+> s186-era FIXME 无语料在册。
+> **账本**：[evidence/2026-11-01-m2s189-range-value-sanitization.md](html-semantics-compat/evidence/2026-11-01-m2s189-range-value-sanitization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 188 收口，frame content navigable——submission-checks 三兄弟 3F 精确翻绿，shim 5 刀零 rust：R115 臂 FRAME 归一 + 插入步/src 双钩子/URL 分支排除清单门放宽）**
+> **入场定刀位**：s187 账本「下一步候选」首位。
+> **勘根**：submission-checks 三案失败形态非「提交乱导航」而是测试体
+> 异常（contentWindow/contentDocument undefined）——三案全部以
+> **`document.createElement("frame")`** 承载访问面（上游原文，
+> HTMLFrameElement 带 contentDocument/contentWindow IDL + Reflect src），
+> shim 嵌套浏览上下文面四处 IFRAME 硬门全不认 FRAME。spec 勘定
+> （obsolete.html §16.3.2）：frame 与 iframe 同享 content navigable，
+> 插入步建 child navigable + src 属性 set/changed/removed → process
+> the frame attributes。submission 管线无需动：s144 connectedness
+> 近似对三案裁决全对（detached/移除后/死文档内提交全被拦）。
+> **施工（shim 5）**：part04 R115 臂 tag 归一 FRAME→IFRAME（content
+> 访问 + named-window 注册 + fallback win 全管线复用）；part01
+> `_zwStartConnectedIframe` 门放宽（插入建 navigable + 初始 load）；
+> part05 IDL src/srcdoc 写钩子 + part04 setAttribute 钩子同款放宽；
+> part05 URL 反射分支排除清单增 FRAME.src（放行至 R3069 尾部 reload
+> 钩子——FRAME.src 在 `_REFLECTED_URL_TAGS` 在册先被 verbatim 截走，
+> 首轮探针实证导航未发生）。
+> **验证**：定向 submission-checks **3/3 全 Pass**（3F→3P 精确，探针
+> 临时页闭环已删）；forms 全树 4365P/335F/12T → **4368P/332F/12T**
+> （ΔP=+3/ΔF=−3 精确闭合，文件级 diff 仅靶标文件翻面）；interactive
+> **483 键零位移**（439P/44F bit-exact）；engine lib **3641P/1F**（在
+> 册同键）；shim 拼接序 node --check + fmt + guarded clippy 全绿。
+> **残留与边界**：cannot-navigate fully-active 完整定义仍 FIXME（s144
+> 承袭，connectedness 近似过宽面无语料）；`/the-frame-element/` 为
+> runner 设计内排除域（navigation M3 门控）；form-data-set-empty-file
+> 不进跑集系内容判定 skip 命中 `createElement("iframe")` 字样（三兄弟
+> 进跑集恰因上游用词 "frame"）——排除口径差异在册待议。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031
+> 征询在途）；fix#19c override builtins 1F 挂待决承袭；s186-era
+> FIXME（wrapper select/textarea/output `.value` 家族）在册。
+> **账本**：[evidence/2026-11-01-m2s188-frame-content-navigable.md](html-semantics-compat/evidence/2026-11-01-m2s188-frame-content-navigable.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 187 收口，color input alpha/colorSpace 反射——IDL 双向缺位单根 2F 翻绿，shim 2 零 rust：part03 get trap 双臂 + part05 set trap 双分支）**
+> **入场定刀位**：s186 账本「下一步候选」首位。
+> **勘根**：color-attributes.window.js 两案（createElement proxy 形）同单
+> 根——`input.alpha`/`input.colorSpace` IDL 双向缺位读返 undefined；两名
+> 字不在任何反射表面（FLAT/STRING/UINT/BOOL 全查无，零劫持）。设计取舍：
+> **不入 `_REFLECTED_BOOL` 通用表**（全元素生效造 div.alpha 假面 + CE 反
+> 射映射 `_zwCeReflectionAttr` 波及 custom elements 非标准面），取 INPUT
+> tag 门专属臂（valueAsDate/set trap 布尔分支同形）。
+> **施工（shim 2）**：part03 get trap 双臂（valueAsDate 后）——`alpha`
+> presence 读返 boolean（lw R136 融合读）；`colorSpace` enumerated 关键
+> 字反射（ASCII 小写归一，display-p3 命中返 canonical，缺失/无效 →
+> limited-srgb 双 default）。part05 set trap 双分支（`_reflectedBoolAttr`
+> 分支前）——`alpha` truthy→presence 设空/falsy→真移除（R3039 三态同
+> 款含实例层同步）；`colorSpace` verbatim 写属性（String(value)——null
+> →"null" DOMString 转换，DISPLAY-P3 存原串，读侧归一）。spec
+> #color-state-(type=color) 反射不按 type 门（接口面无条件，Chrome 同形）。
+> **验证**：定向 color-attributes **2/2 全 Pass**（2F→P 精确）；forms
+> 全树 4363P/337F/12T → **4365P/335F/12T**（ΔP=+2/ΔF=−2 精确闭合，文
+> 件级 diff 仅靶标文件翻面）；interactive **483 键零位移**（439P/44F
+> bit-exact）；engine lib **3641P/1F**（在册同键）；node --check +
+> fmt + guarded clippy 全绿；无探针页。
+> **残留与边界**：mutTree wrapper 无 alpha/colorSpace accessor（语料
+> proxy 形）；colorSpace 值集仅 spec 现行两关键字。
+> **下一步候选**：submission-checks 三兄弟（连接性面）在册；
+> customizable select 177F 挂起待拍板（GB-20261031 征询在途）；
+> fix#19c override builtins 1F 挂待决承袭。
+> **账本**：[evidence/2026-10-31-m2s187-color-input-alpha-colorspace.md](html-semantics-compat/evidence/2026-10-31-m2s187-color-input-alpha-colorspace.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 186 收口，click 分派域合刀——mutTree wrapper 事件面三件 + proxy 拾取器激活消费，15F 翻绿，shim 2 零 rust：part03 on* 属性处理器激活/INPUT value accessor/wrapper click R313 门禁 + part04 picker 消费臂）**
+> **入场定刀位**：s185 账本「下一步候选」首位（disabled click 8 + click
+> 消费激活 7 同 click 分派域合刀）。
+> **勘根（双靶三根）**：① disabled-elements-01 8F——innerHTML 解析元素
+> 是 mutTree `_zwMEl` plain wrapper（探针 fingerprint：R125 接口原型链
+> CTOR=HTMLInputElement、ownKeys 含 `__zwIsMEl`、无 sel/handle 印记非
+> proxy 产物、`root.childNodes[0] === el` 同对象），三缺口：ⅰ) INPUT
+> `.value` 无 accessor 读 undefined（值分派在 proxy get trap，wrapper
+> 不经——语料首断言 `other.value` 8 案全 got undefined）；ⅱ) on* IDL 属
+> 性处理器不激活——`elem.onclick = fn` 落 expando 死槽，wrapper
+> dispatchEvent 只激活注册 listener 与 inline onclick 内容属性（R155）；
+> ⅲ) wrapper `node.click()`（R151/R152/R155）无 R313 disabled 门禁镜像
+> （proxy 侧 part04 有），disabled 元素 click() 照常派发。disabled 反射
+> 在 wrapper 可用（test1/2 基线 P）由 `_zwMDefineBooleanReflected`
+> （R154）闭合，非本刀面。② click-user-gesture 7F——bless + click() +
+> blur 后 `userActivation.isActive` 恒 true：`.click()` API 无激活消费臂
+> （旧仅 fullscreen 消费 `_zwTransientActive`），INPUT 拾取器 7 类型
+>（color/date/datetime-local/file/month/time/week）无消费端。
+> **施工（shim 2）**：part03 三件——dispatchEvent target 站 AT_TARGET
+> bubble pass 尾（captureOnly!==true 恰一次）补 on* 属性处理器激活
+>（`node['on'+ev.type]` function 即 call，任意 on\<type\> 通用——spec
+> event handler IDL attributes 属性赋值等价注册 listener）；factory
+> INPUT `value` accessor（attr-backed 近似 absent→''，setter 写回属性，
+> FIXME 记 select/textarea/output 族）；wrapper `node.click()` 顶部 R313
+> 门禁镜像（可禁用族 + disabled 属性 → return，与 proxy 侧同口径）。
+> part04 一件——`.click()` API R313 门后 INPUT 拾取器类型消费
+> `_zwTransientActive = false`（lw 融合读 type；preventDefault 不豁免
+> ——Chrome 语义 click() 本体触发 picker；disabled 早退在上不派发即不
+> 消费）。
+> **验证**：定向 disabled-elements-01 **16/16 全 Pass**（8F→P 精确）+
+> click-user-gesture **14/14 全 Pass**（7F→P 精确）；**forms 全树
+> 4348P/352F/12T → 4363P/337F/12T**（ΔP=+15/ΔF=−15 精确闭合；文件粒
+> 度状态表 diff 仅两靶标文件翻面、其余 411 文件零变化——多行子测试名
+> 使行级 join 不可靠改文件级对账）；interactive **483 键零位移**
+>（439P/44F bit-exact）；engine lib **3641P/1F**（1F = ua_display_li 在
+> 册同键）；shim node --check SYNTAX_OK；fmt + guarded workspace clippy
+> 全绿；勘根探针 6 页验后删。
+> **残留与边界**：wrapper INPUT `.value` attr-backed 近似（真实 DOM 写
+> dirty 值不回写属性）；on* 激活序 = 注册 listener 之后（赋值时点注册
+> 序近似）；wrapper select/textarea/output `.value` 族缺位 FIXME；wrapper
+> click() 无拾取器激活消费（detached 树 headless 近似语义）。
+> **下一步候选**：color-attributes input.alpha/colorSpace 2F 小反射面；
+> submission-checks 三兄弟连接性面在册；customizable select 177F 挂起
+> 待拍板（GB-20261031 飞书征询在途）。
+> **账本**：[evidence/2026-10-31-m2s186-muttree-click-dispatch-domain.md](html-semantics-compat/evidence/2026-10-31-m2s186-muttree-click-dispatch-domain.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 185 收口，form.elements 集合层——HTMLFormControlsCollection/RadioNodeList 接口面 + fieldset.elements + form indexed 属性面 + owner 域文档序，11F 翻绿，shim 3 零 rust：part03 接口占位 + part05 集合工厂扩展/新双工厂 + part04 form.elements 重写/新 FIELDSET gate）**
+> **入场定刀位**：s184 账本「下一步候选」首位。
+> **勘根（六形态）**：① nameditem-02 has('length') false——part04 ad-hoc
+> Proxy 的 has trap 只有 canonical 索引臂（assert_array_equals 入门
+> 探测失败）；② matches `["03"]` 非 canonical 数字串名 miss——无
+> named 字符串臂；③ interfaces-01——HTMLFormControlsCollection 全局
+> 缺位 + ad-hoc Proxy 无接口原型 instanceof 恒 false；④ nameditem-01——
+> RadioNodeList 全局缺位 + named 无多匹配臂 + 取集后 removeChild 无
+> live 收缩面；⑤ filter.html 文档序——`_formControls` walk-first 使
+> form 子树控件恒排前，`form=` 跨树关联（before-*/after-* 期望文档
+> 序）错序；⑥ form-indexed-element——元素 proxy gOPD 无 FORM indexed
+> 臂（返 undefined）+ deleteProperty 无拒绝臂；⑦ HTMLFieldSetElement——
+> `fieldset.elements` getter 整体缺位。
+> **施工（shim 3）**：part03——HTMLFormControlsCollection/RadioNodeList
+> 接口占位 + RadioNodeList.prototype→NodeList.prototype 直链（R198 已
+> 链 Array.prototype，Array 迭代器经链可达）；part05
+> `_zwMakeHTMLCollection`——protoCtor（target 直链接口原型，缺省回落
+> 通用 HC 实例原型零变化）+ namedFn 覆盖（get/set/defineProperty/
+> deleteProperty/gOPD/has 六 trap named 命中共用）；新
+> `_zwMakeRadioNodeListLive`——多匹配 live RadioNodeList（`__zwNL`
+> 印记 R140 Symbol.hasInstance 认 + target 链 RNL.prototype + gOPD
+> indexed 描述符/has/ownKeys 索引表断言面）；新 `_zwFieldsetListed`——
+> 后代 listed 控件 pre-order 文档序（无 form-owner 条件、嵌套 fieldset
+> 本体在册、legend 子不豁免、input[type=image] 排除）；part04
+> form.elements——ad-hoc Proxy 替换为 `_zwMakeHTMLCollection` 活集合
+>（rebuild=R5267 形态 + protoCtor=FCC + namedFn：恰 1→元素、>1→live
+> RNL、''→undefined；FCC.prototype→_zwHCPrototype 惰性接线 + FCC
+> namedItem 恰1/多>1 快照/空串 null）+ 新 FIELDSET gate（成员表
+> `_zwFieldsetListed`，`_zwFormCollCache` 同缓存恒等机制）；part05
+> `_formControls`——host-first 重排（`__zw_form_controls` 文档序 owner
+> 枚举先推、walk 后推补 same-turn 新增，push 去重）+ host 条目
+> `_zwPendingRemoved` 过滤（R50 同款，same-turn remove stale 消除）；
+> part05 元素 proxy——gOPD FORM indexed 臂（{value, writable:false,
+> enumerable:true, configurable:true}，索引先于 named，WebIDL
+> #LegacyPlatformObjectGetOwnProperty 序）+ deleteProperty FORM indexed
+> 臂（恒 false：sloppy 静默 no-op + strict TypeError，臂形与 named 同
+> 款）。spec #htmlformcontrolscollection/#radiolist/#dom-fieldset-elements。
+> **验证**：定向 the-form-element **105P/3F**（3F 全在册承袭：
+> override builtins 1F fix#19c + base-url reflection 2F）；the-fieldset-
+> element HTMLFieldSetElement.html **3P/1F**（type attribute 在册独立
+> 面）；**forms 全树 join F2P = 11 恰靶案、P2F = 0**（4337P/363F/12T →
+> **4348P/352F/12T**，12T 不变）；interactive **483 键零位移**（439P/
+> 44F bit-exact）；engine lib **3641P/1F**（1F = ua_display_li 渲染流
+> 在册同键；form.elements 4 契约测试 t8f 全过——host-first 重排对
+> t8f live/三态/可迭代/image 排除逐位兼容）；node --check SYNTAX_OK
+>（114358 行）；cargo fmt --all --check + guarded workspace clippy 全绿。
+> **残留与边界**：RadioNodeList.value（checked radio 值聚合）与 FCC
+> namedItem 多匹配 live 形语料无面 FIXME 挂；form.elements named 多匹
+> 配每读新 live RNL 实例（身份不稳定，无语料面）；fix#19c override
+> builtins 1F 挂待决承袭。
+> **下一步候选**：disabled click 8 + click 消费激活 7（同 click 分派域
+> 可合刀）；color-attributes input.alpha/colorSpace 2F 小反射面可搭车；
+> submission-checks 三兄弟连接性面在册。
+> **账本**：[evidence/2026-10-31-m2s185-form-elements-collection-layer.md](html-semantics-compat/evidence/2026-10-31-m2s185-form-elements-collection-layer.md)
+>
+> **▶ 上轮状态（2026-10-31 M2 切片 184 收口，form 提交编码 text/plain + multipart 臂落地——12F 双根刀翻绿，shim 2 + rust 2：part04 accept-charset 字节化桥消费 + part01 text/plain iframe 字面渲染门）**
 > **入场勘根（两层根因）**：① 提交编码未消费——enctypes-helper 面
 > accept-charset 选出的提交编码从不参与串位字节化（text/plain 与
 > multipart `_mpPushStr` 均 `_zw_utf8_encode` 直通）；期望 mappable

@@ -1632,9 +1632,25 @@ pub(crate) fn mark_anonymous_table_roots(
 /// 递归下降时 c_border_y 除累加 child 的 y 外还须加上 child 自身的 border_top +
 /// padding_top（frame 分量），否则中间非 BFC 容器的 frame 把嵌套浮动底边虚减，
 /// 后续 clear 兄弟与嵌套浮动叠压。border-rel 兼容模式 child y 已含 frame，不重复加。
-/// https://www.w3.org/TR/CSS22/visuren.html#clearance
-fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_offset: f32) -> (f32, f32) {
-    use zero_css_parser::values::FloatValue;
+///
+/// R5369（CSS2 §9.5.1 float 自带 clear 的底边预测）：本扫描发生在父 walk 主循环
+/// 内——早于递归子 walk 把嵌套 float 自身的 `clear` 抬升（`line_y` 抬到被清侧
+/// float 底）落实。taffy 期 `c.y` 不含该抬升 → 记录的底边虚短（zero-width-floats：
+/// wrapper 内 float:right clear:left 预位 y=0、walk 后 y=50，扫描记 150 应 200，
+/// 后续 clear:both 兄弟 clearance 短 50）。预测式与 walk 的 float-clear 臂同构：
+/// 自带 clear 的嵌套 float 顶边按 `max(c.y, 被清侧至今底边)` 预测（被清侧至今
+/// 底边 = max(外层 active 底，本扫描已收集同侧底)）；非 clear float 不预测。
+/// 已知余项：[`nested_float_geoms`] 带集仍按 taffy 期位置（float 回避带近似族，
+/// 不影响 clear 底边消费方）。kill-switch `ZW_NESTED_FLOAT_CLEAR_PRED=0` 回退。
+/// https://www.w3.org/TR/CSS22/visuren.html#float-position
+fn nested_float_bottoms(
+    child: &LayoutBox,
+    child_border_y: f32,
+    outer_content_y_offset: f32,
+    outer_left_bottom: f32,
+    outer_right_bottom: f32,
+) -> (f32, f32) {
+    use zero_css_parser::values::{ClearValue, FloatValue};
     let mut left = 0.0f32;
     let mut right = 0.0f32;
     // 下降基点：child 的 content-box 原点（content-rel 模式相对外层 content-box；
@@ -1653,7 +1669,18 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
         // border-box 原点，此时 child_content_y == child_border_y）。
         let c_border_y = child_content_y + c.y;
         if !matches!(c.float, FloatValue::None) {
-            let bottom = c_border_y - outer_content_y_offset + c.height + c.margin_bottom;
+            // R5369：自带 clear 的嵌套 float 按 walk 同款规则预测抬升后顶边。
+            let cleared_side = match c.clear {
+                ClearValue::Left => Some(outer_left_bottom.max(left)),
+                ClearValue::Right => Some(outer_right_bottom.max(right)),
+                ClearValue::Both => Some(outer_left_bottom.max(left).max(outer_right_bottom).max(right)),
+                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => None,
+            };
+            let c_top = match cleared_side {
+                Some(side_bottom) if *NESTED_FLOAT_CLEAR_PRED => c_border_y.max(side_bottom),
+                _ => c_border_y,
+            };
+            let bottom = c_top - outer_content_y_offset + c.height + c.margin_bottom;
             match c.float {
                 FloatValue::Left => left = left.max(bottom),
                 FloatValue::Right => right = right.max(bottom),
@@ -1661,7 +1688,13 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
             }
         } else if !crate::margin_collapse::establishes_bfc(c) {
             // 非 BFC 后代：其内浮动与外层同 BFC，继续递归收集。
-            let (l, r) = nested_float_bottoms(c, c_border_y, outer_content_y_offset);
+            let (l, r) = nested_float_bottoms(
+                c,
+                c_border_y,
+                outer_content_y_offset,
+                outer_left_bottom.max(left),
+                outer_right_bottom.max(right),
+            );
             if l > left {
                 left = l;
             }
@@ -1738,6 +1771,11 @@ fn nested_float_geoms(
 /// 阻断点前遇到不可穿越边界（顶 border/padding、BFC、空块自折叠、非块级首子
 /// 即行内内容、无流内子）→ 不激活，维持既有字段语义（零行为变化）。
 /// https://www.w3.org/TR/CSS22/visuren.html#flow-control
+/// R5369：嵌套 float 自带 clear 的底边预测开关（`ZW_NESTED_FLOAT_CLEAR_PRED=0` 回退，
+/// default-on）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
+static NESTED_FLOAT_CLEAR_PRED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_NESTED_FLOAT_CLEAR_PRED").as_deref() != Ok("0"));
+
 fn chain_clear_break_fold(box_node: &LayoutBox) -> Option<(f32, f32)> {
     use zero_css_parser::values::{ClearValue, FloatValue};
     let no_clear = |c: &ClearValue| matches!(c, ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd);
@@ -2076,8 +2114,6 @@ pub(crate) fn adjust_float_positions_with_context(
                 })
                 .map(|c| c.width)
                 .collect();
-            let content_max_w = content_child_widths.iter().copied().fold(0.0f32, f32::max);
-            // https://www.w3.org/TR/CSS21/visudet.html#float-width
             // In the max-content measurement used by shrink-to-fit, floated siblings may
             // share a line.  Their combined outer widths therefore contribute to the
             // containing float's preferred width; using only the widest child makes a
@@ -2088,7 +2124,6 @@ pub(crate) fn adjust_float_positions_with_context(
                 .filter(|c| !c.is_absolute && !c.is_fixed && !matches!(c.float, FloatValue::None))
                 .map(|c| c.margin_left + c.width + c.margin_right)
                 .sum::<f32>();
-            let content_max_w = content_max_w.max(floated_children_width);
             // 有块级、replaced 或浮动子元素时，按首选内容宽度计算 used width。
             // **content_max_w 可能为 0**（如 visibility:collapse 的 flex item 主尺寸归零，
             // 或空内容块）——旧条件 `content_max_w > 0.0` 在此跳过收缩致 float 撑满全宽
@@ -2114,26 +2149,82 @@ pub(crate) fn adjust_float_positions_with_context(
                     let _ = delta_w;
                 }
             } else if !content_child_widths.is_empty() || floated_children_width > 0.0 {
-                let preferred_border_box =
-                    content_max_w + child.padding_left + child.padding_right + child.border_left + child.border_right;
                 let available_border_box = (container_width - child.margin_left - child.margin_right).max(0.0);
-                // R5044（css-sizing-3 shrink-to-fit = min(max(min-content, available),
-                // preferred)）：available < min-content 时地板胜（width:0 容器内带块级子的
-                // float 不塌 0）。仅限本臂（有 block/replaced/floated 子——preferred 可信；
-                // 纯文本/空 float 的 preferred 未测不入——R5043 变体 A 教训）；min-content
-                // 经 R5044 min 模式递归真测量（fit-content 中间层 50 非 max 近似 150）。
-                let min_content_border_box = (crate::intrinsic_sizing::block_min_content_width(child, doc, styles)
-                    + child.padding_left
-                    + child.padding_right
-                    + child.border_left
-                    + child.border_right)
-                    .max(0.0);
-                let used_border_box = preferred_border_box
-                    .min(available_border_box)
-                    .max(min_content_border_box);
-                if used_border_box < child.width || floated_children_width > 0.0 {
-                    child.width = used_border_box;
-                    child.content_width = content_max_w;
+                let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
+                if std::env::var("ZW_FLOAT_STF_ARM").as_deref() == Ok("0")
+                    // R5368 域门：仅水平书写模式走内在测量臂——vertical-rl/srl float 的
+                    // shrink-to-fit 须轴感知测量（block-flow-direction-vrl-006 四
+                    // vertical-rl float：本臂字形列重排 blue+15200/yellow−15200 实证），
+                    // 旧 R5044 臂（taffy 宽 preferred）对 vertical 维持原样；垂直
+                    // shrink-to-fit 归 writing-mode 深域（既有避让清单）。
+                    || !matches!(child.writing_mode, WritingModeValue::HorizontalTb)
+                {
+                    // R5368 kill-switch：旧 R5044 臂原样（preferred = taffy 子布局宽
+                    // content_max_w，仅收缩、content_width 记 taffy 宽）。A/B 归因用。
+                    let content_max_w = content_child_widths
+                        .iter()
+                        .copied()
+                        .fold(0.0f32, f32::max)
+                        .max(floated_children_width);
+                    let preferred_border_box = content_max_w
+                        + child.padding_left
+                        + child.padding_right
+                        + child.border_left
+                        + child.border_right;
+                    let min_content_border_box =
+                        (crate::intrinsic_sizing::block_min_content_width(child, doc, styles) + frame).max(0.0);
+                    let used_border_box = preferred_border_box
+                        .min(available_border_box)
+                        .max(min_content_border_box);
+                    if used_border_box < child.width || floated_children_width > 0.0 {
+                        child.width = used_border_box;
+                        child.content_width = content_max_w;
+                    }
+                } else {
+                    // R5368（css-sizing-3 §intrinsic-contribution + CSS2 §10.3.5）：preferred/min-
+                    // content 均改内在测量（border-box）——旧 preferred 取 taffy 子布局宽
+                    //（content_max_w）：子含百分比 width/min-width 时 taffy 已按可用宽解析
+                    //（intrinsic-percent-non-replaced-001 实证：raw-percent 行 pref 220 应 120，
+                    // avail=400 时臂把 taffy 正确的 120 抬回 220）。内在测量对循环百分比记
+                    // 忽略 = spec 语义。float 同行并排 R4397 已在 max-content 遍历内
+                    //（float_row/float_max），再 max(floated_children_width + frame) 双保险。
+                    let preferred_border_box = crate::intrinsic_sizing::block_max_content_width(child, doc, styles)
+                        .max(floated_children_width + frame)
+                        .max(0.0);
+                    // R5044（css-sizing-3 shrink-to-fit = min(max(min-content, available),
+                    // preferred)）：available < min-content 时地板胜（width:0 容器内带块级子的
+                    // float 不塌 0）。仅限本臂（有 block/replaced/floated 子——preferred 可信；
+                    // 纯文本/空 float 的 preferred 未测不入——R5043 变体 A 教训）；min-content
+                    // 经 R5044 min 模式递归真测量（fit-content 中间层 50 非 max 近似 150）。
+                    // R5368 两修：① min-content 不再重加自身 frame——block_min_content_width
+                    // 返回 border-box（inner+frame），旧双加 40 致地板虚高（同案行1 测 160 应
+                    // 120）；② 旧式 max(min(pref,avail),minc) 顺序颠倒——minc > pref（两趟能力
+                    // 差异）时地板反超 max-content，spec 应以 pref 收口。
+                    let min_content_border_box =
+                        crate::intrinsic_sizing::block_min_content_width(child, doc, styles).max(0.0);
+                    let used_border_box = min_content_border_box
+                        .max(available_border_box)
+                        .min(preferred_border_box);
+                    // R5368：增长臂已收敛移除——letter-spacing-204 实证「长回」会把 taffy
+                    // 可用宽收缩结果灌回 preferred（测量越界时反向破坏）。旧 R5044 单向
+                    // 收缩条件保留；上抬交给 sizing.rs 钉宽 pass（含 % 触发重跑）。
+                    if used_border_box < child.width || floated_children_width > 0.0 {
+                        child.width = used_border_box;
+                        // R5368（css-sizing-3 shrink-to-fit）：content_width 随 used 收缩——
+                        // 旧 `= content_max_w`（子 taffy 布局宽，avail 收窄/地板生效时 >
+                        // used-frame）与 width 矛盾，后继 IFC 行宽按 140 断行而盒 120
+                        //（intrinsic-percent-non-replaced-001 实证：行不折、内容溢出框）。
+                        // preferred 未被 avail/min 钳时二者同值，宽容器零位移。
+                        // R5368 补充：sizing.rs R1015 钉宽升级 shrink-to-fit 后 taffy 一趟已按
+                        // 公式宽排子，本臂 used==taffy 宽 no-op；此臂保留为 kill-switch/
+                        // 未钉路径（flex float 容器等）的安全网。
+                        child.content_width = (used_border_box
+                            - child.padding_left
+                            - child.padding_right
+                            - child.border_left
+                            - child.border_right)
+                            .max(0.0);
+                    }
                 }
             } else if child.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
                 // R5045（css-sizing-4 §4.1）：叶/空 float 的 AR transferred preferred——
@@ -2430,7 +2521,7 @@ pub(crate) fn adjust_float_positions_with_context(
                     && matches!(c.float, FloatValue::None)
                     && !crate::margin_collapse::establishes_bfc(c)
                     && {
-                        let (nl, nr) = nested_float_bottoms(c, 0.0, 0.0);
+                        let (nl, nr) = nested_float_bottoms(c, 0.0, 0.0, 0.0, 0.0);
                         nl > 0.0 || nr > 0.0
                     }
             }));
@@ -3532,7 +3623,15 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 停在 float 底边之上（baidu hotsearch wrapper pt:21 → ::after 落 93 应 114）。
                 // border-rel 兼容模式（ZW_FLOAT_CLAMP_CONTENT_REL=0）保留旧 offset 换算。
                 // https://www.w3.org/TR/CSS22/visuren.html#clearance
-                let (nl, nr) = nested_float_bottoms(child, cy, if clamp_content_rel { 0.0 } else { content_y_offset });
+                // R5369：外层 active 底作预测基（嵌套 float 自带 clear 时，须连外层
+                // 同侧 float 一并清——预测式基 = max(外层 active，本扫描已收集)）。
+                let (nl, nr) = nested_float_bottoms(
+                    child,
+                    cy,
+                    if clamp_content_rel { 0.0 } else { content_y_offset },
+                    active_left_float_bottom,
+                    active_right_float_bottom,
+                );
                 if nl > 0.0 {
                     nested_left_bottom = nested_left_bottom.max(nl);
                 }
@@ -3832,7 +3931,15 @@ pub(crate) fn adjust_float_positions_with_context(
             && float_subtrees.is_some_and(|m| child.node_id.is_none_or(|id| m.get(&id).copied().unwrap_or(true)))
         {
             let outer_content_y_offset = if clamp_content_rel { 0.0 } else { content_y_offset };
-            let (nl, nr) = nested_float_bottoms(child, child.y, outer_content_y_offset);
+            // R5369：递归定谳位置上预测为幂等 max（walk 正确抬升后 c.y ≥ 被清侧底），
+            // 基取前序兄弟累积底（R5160 文档序原则）。
+            let (nl, nr) = nested_float_bottoms(
+                child,
+                child.y,
+                outer_content_y_offset,
+                inherited_left_bottom.max(nested_left_acc),
+                inherited_right_bottom.max(nested_right_acc),
+            );
             nested_left_acc = nested_left_acc.max(nl);
             nested_right_acc = nested_right_acc.max(nr);
             nested_geoms_acc.extend(nested_float_geoms(child, child.x, child.y, outer_content_y_offset));

@@ -11,7 +11,10 @@ use zero_dom::NodeId;
 /// `element.matches(selector)`——元素是否匹配选择器（含组合器，querySelectorAll 全匹配语义）。
 /// 求全匹配集，判 elem 是否在集中。供 `__zw_matches` 回调 → shim `el.matches()`。
 pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str) -> bool {
-    let doc = parse_html(html);
+    // M2-S196：字符串路径逐次现 parse（快照初态无按压态）——`__zw_matches` 不走
+    // `with_query_view_doc` 注入面，此处补注入（[`sync_active_state`] 幂等覆盖）。
+    let mut doc = parse_html(html);
+    sync_active_state(&mut doc);
     let Some(node) = find_by_selector(&doc, elem_sel) else {
         return false;
     };
@@ -29,7 +32,9 @@ pub fn element_matches_test_selector(html: &str, elem_sel: &str, test_sel: &str)
 /// 无匹配返空串。沿 parent_node 链（含自身）逐层判全匹配集（含组合器）。供 `__zw_closest` 回调
 /// → shim `el.closest()`（返元素 proxy 或 null）。
 pub fn closest_matching_selector(html: &str, elem_sel: &str, test_sel: &str) -> String {
-    let doc = parse_html(html);
+    // M2-S196：同 `element_matches_test_selector`——字符串路径补按压态注入。
+    let mut doc = parse_html(html);
+    sync_active_state(&mut doc);
     let Some(start) = find_by_selector(&doc, elem_sel) else {
         return String::new();
     };

@@ -561,6 +561,33 @@ pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
     doc.query_selector(root, sel)
 }
 
+// M2-S196（html-semantics focus 时序域，2026-11-01）：`:active` 按压态槽——shim
+// trusted UA 按压面（键盘 Space 激活族 / 指针 down 序列，label 路由后在 shim 侧
+// 算好最终目标 selector）经 `__zw_set_doc_active` 写入；空串 = 清除（pointerup/
+// Space keyup/焦点迁移终结）。字符串槽而非 Document 直写：查询面 Document 均为
+// 查询期临时构建（`with_query_view_doc` 的 live doc / 视图缓存、`__zw_matches`
+// 等字符串路径的逐次 re-parse、DOMParser 解析串），无跨查询 retained 实体可写
+// ——逐查询经 [`sync_active_state`] 在构建点注入（渲染面 `inject_focus_state`
+// 同型）。页面 dispatchEvent 等非 trusted 通道不经该回调，不触按压态。JS 回调
+// 与查询同线程串行，`Mutex` 取最简同步原语。渲染样式面挂账（逐帧重建无注入
+// 通道），见 zero-dom `active_element` 字段注记。
+// https://html.spec.whatwg.org/multipage/interaction.html#selector-active
+static DOC_ACTIVE_SELECTOR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+
+/// M2-S196：把按压态槽解析进文档（selector → NodeId，[`find_by_selector`] 求值；
+/// 解析失败 = 目标已离开文档视图，按无按压态处理）。幂等无条件覆盖：每条查询
+/// 路径（live doc / 视图缓存命中 / rebuild+链增量 / 字符串路径 re-parse）执行
+/// 选择器求值前调用。
+fn sync_active_state(doc: &mut Document) {
+    let sel = DOC_ACTIVE_SELECTOR.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let active = if sel.is_empty() {
+        None
+    } else {
+        find_by_selector(doc, &sel)
+    };
+    doc.set_active_element(active);
+}
+
 /// t8b：structural path 快速通道——识别 [`structural_path_selector`] 生成的
 /// `tag:nth-child(pos) > tag:nth-child(pos) > …` 形态并按元素索引下行。
 /// 语义锚点：`:nth-child(pos)` 按**元素序**（1-based，只数元素兄弟）——与生成端
@@ -5354,6 +5381,14 @@ pub fn generate_js_dom_shim() -> &'static str {
         s.push_str(include_str!("js_dom_shim/part04.js"));
         s.push_str(include_str!("js_dom_shim/part05.js"));
         s.push_str(include_str!("js_dom_shim/part06.js"));
+        // part01c（2026-10-31 editing-compat justify 簇）：execCommand justify* 实
+        // 应用引擎（blockExtend + 对齐清理 + wrap，参考 implementation.js 移植）+
+        // Indeterm/State/Value 共享查询算。文件名缘由：part01b/part02 边界在
+        // crypto.subtle 对象字面量内部（字节精确切分残留），无顶层语句边界可插，
+        // 故挂 part06 尾（外层 IIFE 内干净语句边界，_getSelection 闭包同域可见）；
+        // part06 经 globalThis.__zw_ce_justify_* 单点调用，R54xx 同款 plain 工厂
+        // 语义（先 removeChild 再插入）。
+        s.push_str(include_str!("js_dom_shim/part01c.js"));
         s.push_str(include_str!("js_dom_shim/part07.js"));
         // part08a（2026-10-22 M3-S1 拆分）：WebGL 接口面**数据表**（IDL 派生，
         // 勿手改）——2000 行准则拆分，经 globalThis._zwWglIdlTables 单点交接，
