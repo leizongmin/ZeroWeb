@@ -11,7 +11,7 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
     extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
-    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_links, generate_js_dom_shim,
+    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim,
     image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
     script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_script_event, script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
@@ -664,6 +664,12 @@ pub struct WebView {
     cached_html: String,
     /// 缓存的 CSS（用于 render 重新渲染）。
     cached_css: String,
+    /// s174：子资源抓取期暂存的外链 CSS 结构化条目（`(位次结构路径, 表文本)`，文档
+    /// 序），配对本代 document_generation——`load_html` 换代后仅消费同代暂存（直接
+    /// load_html 不受旧页残留影响），发布进 engine entries 槽（collector 文档序交错
+    /// 装配，s167 槽语义）。None = 本代无静态外链条目（`load_html` css 参数回落
+    /// blob 发布，嵌入者自定义 CSS 通道不变）。
+    pending_external_css_entries: Option<(u64, Vec<(String, String)>)>,
     /// 事件回调列表。
     event_callbacks: Vec<Option<EventCallback>>,
     /// Service Worker 注册表。
@@ -879,6 +885,7 @@ impl WebView {
             canvas_fingerprints: HashMap::new(),
             cached_html: String::new(),
             cached_css: String::new(),
+            pending_external_css_entries: None,
             event_callbacks: Vec::new(),
             sw_registry: ServiceWorkerRegistry::new(),
             sw_manager: std::sync::Arc::new(std::sync::Mutex::new(ServiceWorkerManager::new())),
@@ -950,7 +957,10 @@ impl WebView {
     fn prepare_page_subresources(&mut self, html: &str, page_url: &str) -> String {
         self.pipeline.set_document_url(Some(page_url));
         self.pipeline.set_referrer(self.referrer.as_deref());
-        let external_css = self.resolve_external_css(html, page_url);
+        let (external_entries, external_css) = self.resolve_external_css(html, page_url);
+        // s174：条目随本代 generation 暂存，`load_html` 换代后配对消费发布（直接
+        // load_html 无同代暂存 → css 参数回落 blob 发布，通道不变）。
+        self.pending_external_css_entries = Some((self.document_generation, external_entries));
         // R1794：外链 CSS + inline `<style>` 块中的 `url()` 图片引用一并抓取。
         let mut combined_css = external_css.clone();
         combined_css.push('\n');
@@ -1158,7 +1168,19 @@ impl WebView {
         // 拿到的外链样式表文本同步发布给 computed-style 桥（P9-9 `active_external_css`
         // 装填点此前只有单测调用，生产恒空 → 外链规则对 `__zw_get_computed_style`
         // 不可见）。css-less 页传空串复位（旧页规则不跨文档泄漏）。
-        zero_engine::js_dom_bridge::set_active_external_css(css_str);
+        // s174：同代抓取暂存的条目（prepare_page_subresources 配对 generation）→
+        // entries 发布（collector 文档序交错装配——link 在 `<style>` 之后的页同特异
+        // 度后到后胜，s167 槽语义；派生 blob 同步装 blob 槽，render 线程回落面不
+        // 变）。无同代暂存（直接 `load_html` / 嵌入者自定义 css 参数）→ 旧 blob
+        // 发布逐位保留。
+        let entries = match self.pending_external_css_entries.take() {
+            Some((stashed_gen, entries)) if stashed_gen.wrapping_add(1) == self.document_generation => Some(entries),
+            _ => None,
+        };
+        match entries {
+            Some(entries) => zero_engine::js_dom_bridge::set_active_external_css_entries(entries),
+            None => zero_engine::js_dom_bridge::set_active_external_css(css_str),
+        }
         self.sync_pipeline_page_state();
         self.pipeline.set_prefers_color_scheme(self.prefers_color_scheme);
         self.pipeline.set_media_type(self.media_type);
@@ -1379,29 +1401,37 @@ impl WebView {
     /// 通过 zero-net 发起 HTTP 请求，获取 HTML 并渲染。
     /// 整个过程是同步阻塞的。
     /// 如果请求失败，加载状态会被重置，并返回错误。
-    /// 抓取 HTML 中所有外链 `<link rel="stylesheet">` 引用的 CSS 并合并。
+    /// 抓取 HTML 中所有外链 `<link rel="stylesheet">` 引用的 CSS。
     ///
     /// goal doc P1 缺口「外部样式表加载缺失」修复：URL 导航路径下，按 base URL
-    /// 解析每个外链 href，逐个抓取，合并为单个 CSS 字符串（随后随 `load_html`
-    /// 注入级联）。href 解析与抓取由 webview 层（持有 base URL 与 http client）
-    /// 负责，DOM 内 link 提取由 `zero_engine::extract_stylesheet_hrefs` 负责，
-    /// 保持 engine 不直接耦合网络。任一链接抓取失败仅记录日志、不阻断页面加载
-    ///（与浏览器宽松行为一致）。
-    fn resolve_external_css(&mut self, html: &str, base_url: &str) -> String {
-        let links = extract_stylesheet_links(html);
+    /// 解析每个外链 href，逐个抓取。s174：返回 `(结构化条目, 合并文本)`——条目为
+    /// `(位次结构路径, 表文本)` 按文档序（engine collector 文档序交错装配，s167
+    /// 槽语义），合并文本 = 各 link 桶文本拼接（图片/字体子资源提取与 css 参数
+    /// 回落面消费）。href 解析与抓取由 webview 层（持有 base URL 与 http client）
+    /// 负责，DOM 内 link 提取（含锚定路径）由 `zero_engine::extract_stylesheet_link_anchors`
+    /// 负责，保持 engine 不直接耦合网络。任一链接抓取失败仅记录日志、不阻断页面
+    /// 加载（与浏览器宽松行为一致）。
+    ///
+    /// s89 @import 归属（本刀收紧）：导入子表文本归入**根 link 的桶**（队列项携带
+    /// 根 link 序号并逐层传播）——旧合并通道里子表文本落在全队列尾部（可能与导入
+    /// 表隔着后续 link），条目化后子表与导入表同桶同位次（s89「级联顺序近似：导入
+    /// 子表追加在导入表文本之后」的逐字落实）。
+    fn resolve_external_css(&mut self, html: &str, base_url: &str) -> (Vec<(String, String)>, String) {
+        let links = extract_stylesheet_link_anchors(html);
         if links.is_empty() {
-            return String::new();
+            return (Vec::new(), String::new());
         }
         let base = url::Url::parse(base_url).ok();
-        let mut combined = String::new();
+        // 每 link 一个桶（按 links 文档序）；@import 子表文本进根 link 桶。
+        let mut buckets: Vec<String> = vec![String::new(); links.len()];
         // s89：@import 递归抓取（对齐 async_load `poll_stylesheets` R2411 语义——相对
         // **导入表 URL** 解析、`css_seen` 防环；FIFO 保级联文档序）。此前进程内路径只抓
         // 顶层 link，@import 链规则缺失（WPT execution-timing 106-import 面
         // import.css→background.css 规则不入级联）。FIXME：@import 臂不走 CSP/Mixed
         // Content 门（async_load 既有同态；violation 元素站对导入规则无 link 序号可锚）。
         let mut css_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut queue: std::collections::VecDeque<(Option<usize>, String)> = std::collections::VecDeque::new();
-        for (link_ordinal, (href, media)) in links.iter().enumerate() {
+        let mut queue: std::collections::VecDeque<(usize, String)> = std::collections::VecDeque::new();
+        for (link_ordinal, (_sel, href, media)) in links.iter().enumerate() {
             // s161（html-semantics M2）media 门：media 属性非空且非 'all'（ASCII
             // 大小写不敏感）→ 按媒体查询列表对默认 screen 环境求值，全不匹配 → 不抓取
             // 不并入 combined（sheet 不应用）。求值语义与 s160 style 元素 media 门同款
@@ -1424,7 +1454,7 @@ impl WebView {
                 None => href.clone(),
             };
             if css_seen.insert(abs.clone()) {
-                queue.push_back((Some(link_ordinal), abs));
+                queue.push_back((link_ordinal, abs));
             }
         }
         while let Some((link_ordinal, fetch_url)) = queue.pop_front() {
@@ -1440,7 +1470,7 @@ impl WebView {
                     blocked_uri: violation.blocked_uri,
                     original_policy: violation.original_policy,
                     target_tag: "link",
-                    target_ordinal: link_ordinal.unwrap_or(0),
+                    target_ordinal: link_ordinal,
                     target_selector: None,
                     link_error: Some(fetch_url.clone()),
                 });
@@ -1502,22 +1532,32 @@ impl WebView {
                             None => imp,
                         };
                         if css_seen.insert(abs.clone()) {
-                            queue.push_back((None, abs));
+                            // s174：子表携带根 link 序号——文本归入根 link 桶（同位次）。
+                            queue.push_back((link_ordinal, abs));
                         }
                     }
                     // s89：拼接前剥离 @import 语句——子表内容已经队列单独抓取，
                     // 语句文本留在合并文本里会在无分号形态（上游 import.css 即无
                     // `;`）把下一张表的首条规则吞进 at-rule 块（106-import 面：
                     // `#test{position:fixed}` 恒缺级联）。级联顺序近似：导入子表
-                    // 追加在导入表文本之后（async_load poll_stylesheets 既有同态）。
+                    // 文本归入根 link 桶（s174，同位次）。
                     let css = crate::css_urls::strip_import_statements(&css);
-                    combined.push_str(&css);
-                    combined.push('\n');
+                    buckets[link_ordinal].push_str(&css);
+                    buckets[link_ordinal].push('\n');
                 }
                 Err(e) => tracing::warn!("external stylesheet {fetch_url} fetch failed: {e}"),
             }
         }
-        combined
+        // s174：结构化条目 = 取回成功的 link 桶（文档序，选择器锚定原 link 元素）；
+        // 合并文本 = 桶拼接（图片/字体提取与 css 参数回落面消费）。
+        let entries: Vec<(String, String)> = links
+            .iter()
+            .zip(&buckets)
+            .filter(|(_, text)| !text.is_empty())
+            .map(|((sel, _, _), text)| (sel.clone(), text.clone()))
+            .collect();
+        let combined = buckets.concat();
+        (entries, combined)
     }
 
     /// 抓取并解码 HTML 中所有 `<img src>` 引用的图片子资源。

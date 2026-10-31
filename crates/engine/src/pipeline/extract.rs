@@ -53,6 +53,80 @@ pub fn extract_stylesheet_links(html: &str) -> Vec<(String, String)> {
     links
 }
 
+/// s174：link 元素位次结构路径锚定变体（webview 静态外链 CSS entries 化）——返回
+/// `(位次结构路径, href 原始值, media 属性原文)`，文档序。rel/href 门与
+/// [`extract_stylesheet_links`] 完全一致；路径形态与 engine
+/// `structural_path_selector` 逐字同约定（每段 `tag:nth-child(pos)`、pos 为 1-based
+/// 元素序、`" > "` 连接、根元素 `:nth-child(1)`），collector 侧 `find_by_selector`
+/// 对该形态走 t8b fastpath。静态发布与 render 同 parser 同输入 → 位次一致可锚定；
+/// 页脚本改动树后的漂移按 collector 未锚定尾接语义保留（在册）。
+pub fn extract_stylesheet_link_anchors(html: &str) -> Vec<(String, String, String)> {
+    let doc = zero_dom::parse_html(html);
+    let mut links = Vec::new();
+    for link_id in doc.get_elements_by_tag_name("link") {
+        let rel = doc.get_attribute(link_id, "rel").unwrap_or_default();
+        let is_stylesheet = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet"));
+        if !is_stylesheet {
+            continue;
+        }
+        if let Some(href) = doc.get_attribute(link_id, "href") {
+            let href = href.trim();
+            if !href.is_empty() {
+                let media = doc.get_attribute(link_id, "media").unwrap_or_default();
+                let Some(sel) = positional_structural_path(&doc, link_id) else {
+                    continue;
+                };
+                links.push((sel, href.to_string(), media));
+            }
+        }
+    }
+    links
+}
+
+/// s174：零 dom 元素的位次结构路径（形态同 engine `structural_path_selector`——
+/// 该函数工作在 engine 桥的 live 文档上；本 helper 服务静态发布侧的解析期锚定，
+/// 两树同 parser 产出故位次一致）。非元素（root 伪节点/文本）父链终止即以当前
+/// 元素收根段；非元素输入返 None。
+fn positional_structural_path(doc: &zero_dom::Document, node: zero_dom::NodeId) -> Option<String> {
+    let mut segments: Vec<String> = Vec::new();
+    let mut cur = node;
+    loop {
+        let nd = doc.get(cur)?;
+        let zero_dom::NodeKind::Element(e) = &nd.kind else {
+            return None;
+        };
+        let tag = e.local_name().to_string();
+        let parent_elem = nd.parent.and_then(|p| match doc.get(p).map(|n| &n.kind) {
+            Some(zero_dom::NodeKind::Element(_)) => Some(p),
+            _ => None,
+        });
+        match parent_elem {
+            Some(parent) => {
+                let pd = doc.get(parent)?;
+                // `:nth-child(pos)` 按元素序（1-based，只数元素兄弟——文本/注释不计）。
+                let is_elem =
+                    |c: &zero_dom::NodeId| matches!(doc.get(*c).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_)));
+                let pos = pd
+                    .children
+                    .iter()
+                    .take_while(|c| **c != cur)
+                    .filter(|c| is_elem(c))
+                    .count()
+                    + 1;
+                segments.push(format!("{tag}:nth-child({pos})"));
+                cur = parent;
+            }
+            None => {
+                // 根元素（无元素父 = <html>）。
+                segments.push(format!("{tag}:nth-child(1)"));
+                break;
+            }
+        }
+    }
+    segments.reverse();
+    Some(segments.join(" > "))
+}
+
 /// 页面脚本来源：内联文本或 `<script src>` 原始值。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageScript {
@@ -1882,5 +1956,49 @@ mod tests {
         assert!(infos[scripts[1].1].zw_harness);
         assert_eq!(scripts[2].1, 3);
         assert!(!infos[scripts[2].1].zw_harness);
+    }
+
+    #[test]
+    fn link_anchors_positional_paths_s174() {
+        use super::extract_stylesheet_link_anchors;
+        // 嵌套位次：body 第 2 子 div 的第 2 子 link（1-based 元素序）。
+        let anchors = extract_stylesheet_link_anchors(
+            r#"<html><body><p>x</p><div><span>s</span>
+            <link rel="stylesheet" href="a.css"></div></body></html>"#,
+        );
+        assert_eq!(
+            anchors,
+            vec![(
+                "html:nth-child(1) > body:nth-child(2) > div:nth-child(2) > link:nth-child(2)".to_string(),
+                "a.css".to_string(),
+                String::new(),
+            )]
+        );
+        // media 属性原文携带 + 文档序多 link；rel 非 stylesheet / 空 href 不出锚。
+        let anchors = extract_stylesheet_link_anchors(
+            r#"<head>
+            <link rel="alternate" href="no.css">
+            <link rel="stylesheet" href="one.css" media="screen and (min-width: 100px)">
+            <link rel="stylesheet icon" href="">
+            <link rel="STYLESheet" href="two.css">
+            </head>"#,
+        );
+        assert_eq!(
+            anchors,
+            vec![
+                (
+                    "html:nth-child(1) > head:nth-child(1) > link:nth-child(2)".to_string(),
+                    "one.css".to_string(),
+                    "screen and (min-width: 100px)".to_string(),
+                ),
+                (
+                    "html:nth-child(1) > head:nth-child(1) > link:nth-child(4)".to_string(),
+                    "two.css".to_string(),
+                    String::new(),
+                ),
+            ]
+        );
+        // 无 link 页零锚。
+        assert!(extract_stylesheet_link_anchors("<p>no links</p>").is_empty());
     }
 }

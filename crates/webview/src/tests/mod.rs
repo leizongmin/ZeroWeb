@@ -12,6 +12,8 @@ mod edge;
 mod even_more_coverage;
 mod event_dispatch;
 mod execution_timing_css;
+// s174（html-semantics-compat M2）：静态外链 CSS entries 化——级联文档序钉测。
+mod external_css_cascade_order;
 mod final_coverage;
 mod indexed_db_owner;
 mod integration;
