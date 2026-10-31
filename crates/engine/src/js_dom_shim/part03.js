@@ -17260,9 +17260,14 @@
     if (type === 'date') return p4(Y) + '-' + p2(Mo) + '-' + p2(D);
     if (type === 'month') return p4(Y) + '-' + p2(Mo);
     if (type === 'time') {
-      // time 仅取时分秒（1970-01-01 当日），忽略毫秒若为 0
+      // time 仅取时分秒（1970-01-01 当日），秒仅 sec>0‖ms>0 输出；毫秒
+      // 3 位补零后剥尾零（s191：time.html step=0.001 步进断言面
+      // "12:00:00.001"/"11:59:59.999"；与 s190 part01 datetime-local
+      // canonical 规则同源，HTML §4.10.5.18 time string）。
+      var tMs = d.getUTCMilliseconds();
       var t = p2(H) + ':' + p2(Mi);
-      if (S > 0 || d.getUTCMilliseconds() > 0) t += ':' + p2(S);
+      if (S > 0 || tMs > 0) t += ':' + p2(S);
+      if (tMs > 0) t += '.' + ('00' + tMs).slice(-3).replace(/0+$/, '');
       return t;
     }
     if (type === 'week') {
@@ -17284,6 +17289,8 @@
       var dlOut = p4(d.getUTCFullYear()) + '-' + p2(d.getUTCMonth() + 1) + '-' + p2(d.getUTCDate())
         + 'T' + p2(d.getUTCHours()) + ':' + p2(d.getUTCMinutes());
       if (dlS2 > 0 || dlMs2 > 0) dlOut += ':' + p2(dlS2);
+      // s191：毫秒序列化同 time 分支（3 位补零剥尾零，s190 canonical 规则同源）。
+      if (dlMs2 > 0) dlOut += '.' + ('00' + dlMs2).slice(-3).replace(/0+$/, '');
       return dlOut;
     }
     return '';

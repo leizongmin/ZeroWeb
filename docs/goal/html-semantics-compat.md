@@ -31,7 +31,27 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 190 收口，date/time 消毒面——三兄弟 24F + trailing-zeros/date 红利各 1F 共 26F 翻绿，shim 2 文件 4 处零 rust：part01 datetime-local canonical 重序列化 + part03 时间族 getter 消毒臂 + valueAsNumber/valueAsDate type 读 lw 化）**
+> **▶ 当前状态（2026-11-01 M2 切片 191 收口，time/datetime-local 毫秒序列化——stepUp/Down fractional 2F 翻绿，shim 1 文件 2 处零 rust：`_formatHtmlDateValue` 两分支补 `.fff` 输出）**
+> **入场定刀位**：s190 在册残差 time.html step=0.001 亚秒步进 2F。
+> **勘根**：步进计算体健在（allowedStep=1ms、在格 ±1ms 正确）——
+> 根因在写回序列化器 `_formatHtmlDateValue`：time/datetime-local 两
+> 分支丢毫秒分量（S=0/ms=1 → "12:00:00" 缺 ".001"）。spec
+> §4.10.5.18 毫秒非零即输出，格式与 s190 canonical 规则同源（3 位补
+> 零剥尾零）。四消费点语料全核零波及（valueasdate time setter 全
+> ms=0；两 stepping 语料 .value 断言 startsWith 容忍可选秒/毫秒）。
+> **施工（shim 1 文件 2 处零 rust）**：part03 `_formatHtmlDateValue`
+> time/datetime-local 分支各补 ms>0 → '.' + 3 位补零剥尾零。
+> **验证**：定向目录逐文件 diff 恰 time.html 2F→P（32/32）其余
+> bit-exact；forms 全树 4407P/293F/12T → **4409P/291F/12T**（ΔP=+2/
+> ΔF=−2 精确闭合）；interactive 439P/44F + engine lib 3641P/1F
+> bit-exact；node --check + fmt 过（clippy 按 .rs 零触碰跳过）。
+> **下一步候选**：the-input-element 目录内可动面清零——下轮入场先
+> 全树失败集中度重勘定，无新单根面转挂账条目或 interactive 44F 复读；
+> customizable select 177F 挂起待拍板（GB-20261031 征询在途）；fix#19c
+> 挂待决承袭。
+> **账本**：[evidence/2026-11-01-m2s191-time-fraction-serialization.md](html-semantics-compat/evidence/2026-11-01-m2s191-time-fraction-serialization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 190 收口，date/time 消毒面——三兄弟 24F + trailing-zeros/date 红利各 1F 共 26F 翻绿，shim 2 文件 4 处零 rust：part01 datetime-local canonical 重序列化 + part03 时间族 getter 消毒臂 + valueAsNumber/valueAsDate type 读 lw 化）**
 > **入场定刀位**：s189 在册次席候选 date/time 消毒三兄弟（month/
 > datetime-local/input-seconds-leading-zeroes 各 8F）。探针页钉态
 > （验后删）+ 语料全读。
