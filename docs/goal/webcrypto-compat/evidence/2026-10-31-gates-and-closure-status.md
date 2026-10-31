@@ -368,3 +368,29 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
   → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
   standing exclusion 口径收口。
+
+### 2026-11-01 07:15 追记：锚复跑现 tip（`3f1399195`）逐字节一致——渲染流 R5372 abspos 嵌套 CB margin 变更吸收
+
+- `git pull --rebase` 吸入渲染流 R5372 两笔：`9bef8608a`（abspos.rs
+  `resolve_abspos_against_nested_cb_inner_m` 长度 inset 锚定写点补
+  margin 项——CSS2 §10.3.7/§10.6.4 定位方程，layout-engine 语料执行
+  路径代码 +31 行 + 常驻测试 `r5372_abspos_nested_cb_margin_tests`
+  7pin）+ `3f1399195`（R5372 轮记账 docs）——代码面前移，按纪律对现
+  tip `3f1399195` 复跑锚：release runner 重建 29.75s（layout-engine
+  重编译入包）+ test-guard 直包同参数（`--per-proc-mem 4
+  --total-mem 8 --time-limit 1800`，`--json` 重定向，跑时 1m28s）
+  ——**对 M1 基线锚逐字节一致（cmp 全等，7,208,436 B）**，计数复核
+  123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log 零字节
+  （无击杀），runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-r5372-3f1399195.json`（不入库）。
+- 至此锚窗口推进为 **b0a6f9174 → 3f1399195**（s196 后 docs 两笔按
+  二进制面同一性延用 + R5372 两笔实跑吸收），33,109 分母零回归在现
+  tip 成立。实锚链 7065ea39f→1b6b9b291→65de5f28e→b0a6f9174→3f1399195。
+- **轮询面**：R5372 自账 make test workspace **3642P/1F** = ua_display_li
+  D4 既有账（stash 干净 main 同位复现）——abspos margin 变更非
+  li→Block 双面翻转，渲染流 D4 仍未裁决；git 无 D1/D2 决策新账面，
+  维持待拍板（GB-20261031 征询在案，核验只认 git 账面 + 用户主动
+  知会）。DC-1~4 四件 evidence 在位（后续无触及）。收口序列不变：
+  ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
+  → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；或 D2② 授权
+  standing exclusion 口径收口。
