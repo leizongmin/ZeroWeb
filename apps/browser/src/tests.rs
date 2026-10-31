@@ -2101,6 +2101,445 @@ fn context_menu_fades_in_on_open() {
     );
 }
 
+/// T28-P37 S1/S2 单元面：菜单渐入泵 tick——打开即起表（S2），完成帧上屏前置位
+/// needs_redraw（Poll 心跳连帧的来源），完成帧绘制后自终止，关闭零行为。
+#[test]
+fn menu_fade_pump_tick_requests_redraw_during_fade_only() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+
+    // S2：打开即起表——不依赖任何 build_scene 兜底同步。
+    app.show_context_menu_for_test(400.0, 300.0);
+    assert!(
+        app.menu_anim_start_for_test().is_some(),
+        "打开菜单即须启动渐入时钟（时钟在打开点，不在首次 build_scene）"
+    );
+
+    // 首帧前（drawn=None）：tick 置位 needs_redraw（main.rs 渲染返回后的清除会吞掉
+    // build_scene 的续帧旗标，Poll tick 是唯一的连帧来源）。
+    app.needs_redraw = false;
+    app.tick_menu_fade();
+    assert!(app.needs_redraw, "渐入期 tick 应置位 needs_redraw（Poll 连帧）");
+
+    // 中途帧已绘制（drawn=0.5）：继续续帧直至完成帧。
+    app.needs_redraw = false;
+    app.menu_anim_drawn_opacity_set_for_test(Some(0.5));
+    app.tick_menu_fade();
+    assert!(app.needs_redraw, "渐入未完成（drawn<1.0）tick 应继续置位");
+
+    // 完成帧已绘制（drawn=1.0）：tick 自终止，不再置位（帧循环归零，不空转）。
+    // 终止判定看已绘制透明度而非墙钟——按 150ms 停表会让尾帧（~0.9→1.0）落在
+    // 停表线之后，菜单停在中间态（实机实测 0.91 停帧 356ms）。
+    app.needs_redraw = false;
+    app.menu_anim_drawn_opacity_set_for_test(Some(1.0));
+    app.tick_menu_fade();
+    assert!(!app.needs_redraw, "完成帧上屏后 tick 应自终止");
+
+    // 关闭态：tick 零行为。
+    let mut idle = BrowserApp::new(RenderMode::Cpu);
+    idle.physical_size = (1024, 768);
+    idle.needs_redraw = false;
+    idle.tick_menu_fade();
+    assert!(!idle.needs_redraw, "菜单关闭时 tick 应零行为");
+}
+
+/// T28-P37 S3 像素等价：菜单可见帧的 can_reuse 组合（条带照常重绘 + 菜单并集
+/// 包围盒 scratch 白底全场景重放后矩形拷回）与全量光栅一致——包围盒内逐像素
+/// 相等（半透明渐入菜单恰好合成一次，无 alpha 叠加、无残影），包围盒外允许
+/// 既有 S1b 条带阴影冲刷残差（页面视口投影 skip-only 全幅绘制，非本次引入）。
+#[test]
+fn menu_visible_reuse_composition_matches_full_raster() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0;background:#2a6e3f"><h1>reuse equivalence</h1></body></html>"#,
+        None,
+    );
+    app.show_context_menu_for_test(500.0, 350.0);
+
+    // 渐入中段（半透明）：alpha 叠加对等价性破坏最敏感的窗口。
+    std::thread::sleep(std::time::Duration::from_millis(75));
+    let (full, reuse) = app.menu_reuse_equivalence_pair_for_test(1024, 768);
+    assert_eq!(full.data.len(), reuse.data.len());
+    // 与生产同款：菜单并集包围盒（build_scene 后菜单仍可见）。
+    let bbox = app.menu_overlay_bbox(1024.0, 768.0);
+    let w = full.width as usize;
+    let x0 = (bbox.origin.x.max(0.0).floor() as usize).min(w);
+    let x1 = ((bbox.origin.x + bbox.size.width).ceil() as usize).min(w);
+    let y0 = (bbox.origin.y.max(0.0).floor() as usize).min(full.height as usize);
+    let y1 = ((bbox.origin.y + bbox.size.height).ceil() as usize).min(full.height as usize);
+    let mut bbox_max = 0i32;
+    let mut outside_max = 0i32;
+    let mut outside_pos = 0usize;
+    for y in 0..full.height as usize {
+        for x in 0..w {
+            let base = (y * w + x) * 4;
+            let in_bbox = x >= x0 && x < x1 && y >= y0 && y < y1;
+            for c in 0..4 {
+                let d = (full.data[base + c] as i32 - reuse.data[base + c] as i32).abs();
+                if in_bbox {
+                    bbox_max = bbox_max.max(d);
+                } else if d > outside_max {
+                    outside_max = d;
+                    outside_pos = base + c;
+                }
+            }
+        }
+    }
+    // 包围盒内 scratch 白底重放（region=bbox）后拷回，绘制顺序与全量一致，
+    // 必须逐位一致——半透明渐入菜单叠加/残像/漏绘都会在这里爆掉。
+    assert_eq!(
+        bbox_max, 0,
+        "菜单并集包围盒内 reuse 组合与全量光栅差 {bbox_max}（渐入菜单叠加/残像/漏绘）"
+    );
+    // 包围盒外仅允许既有条带直绘的页面视口阴影重复合成差（S1b 既有行为，
+    // 实测 ≤40 量级）；更大差异 = 新路径污染区外像素。
+    assert!(
+        outside_max <= 48,
+        "包围盒外像素差 {outside_max} > 48（新路径污染区外像素）；首差位置 x={} y={} ch={}",
+        (outside_pos / 4) % w,
+        (outside_pos / 4) / w,
+        outside_pos % 4
+    );
+}
+
+/// T28-P37 R1（DF-F1 红绿钉）：菜单渐入期连续多帧驱动生产 render_scene_cpu，
+/// 页面区（菜单包围盒外）采样点亮度必须逐帧稳定。修前 can_reuse 条带直绘保留
+/// 帧，页面视口投影 skip-only 全幅绘制把整页墨迹写进保留帧页面区，回存后逐帧
+/// 复利变暗（alpha 22/255 黑，0.914^N）；修后条带渲染进 scratch、仅拷回条带行，
+/// 页面区零污染。哨兵像素证明生产保留路径确实 engaged（全量帧会覆写页面区哨兵）。
+#[test]
+fn t28p37_menu_fade_page_pixels_stable_across_reuse_frames() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0;background:#2a6e3f"><h1>fade stability</h1></body></html>"#,
+        None,
+    );
+
+    // 首帧全量光栅：建立保留帧基线。
+    let _ = app.render_cpu_frame_for_test(1024, 768);
+    // 哨兵写入保留帧页面区（菜单包围盒外）：保留帧不重绘页面区 → 哨兵逐帧存活。
+    let sentinel = (900usize, 650usize);
+    let sentinel_base = (sentinel.1 * 1024 + sentinel.0) * 4;
+    {
+        let retained = app.retained_fb_mut_for_test().expect("retained fb after full raster");
+        retained.data[sentinel_base..sentinel_base + 3].copy_from_slice(&[255, 0, 255]);
+    }
+
+    // 菜单打开（生产打开点，起渐入时钟）→ 连续 8 帧生产路径渐入。
+    app.show_context_menu_for_test(500.0, 350.0);
+    let sample = (150usize, 600usize);
+    let sample_base = (sample.1 * 1024 + sample.0) * 4;
+    let mut samples: Vec<[u8; 3]> = Vec::new();
+    for frame in 0..8 {
+        let fb = app.render_cpu_frame_for_test(1024, 768);
+        // 色相判据而非全等：修前哨兵会被阴影墨迹 blend（255→191）但仍存活；
+        // 全量帧覆写为页面底色（g=110）则判据立爆。
+        let (sr, sg, sb) = (
+            fb.data[sentinel_base],
+            fb.data[sentinel_base + 1],
+            fb.data[sentinel_base + 2],
+        );
+        assert!(
+            sr > 150 && sg < 60 && sb > 150,
+            "frame {frame}: 页面区哨兵被覆写（r={sr} g={sg} b={sb}）——生产保留路径未 engaged（全量帧），钉失效"
+        );
+        samples.push([fb.data[sample_base], fb.data[sample_base + 1], fb.data[sample_base + 2]]);
+    }
+
+    // 稳定断言：8 帧逐通道极差 ≤ 2。修前复利变暗 6 帧 ≈ ×0.58，极差远超阈。
+    let mut max_delta = 0i32;
+    for a in &samples {
+        for b in &samples {
+            for c in 0..3 {
+                max_delta = max_delta.max((a[c] as i32 - b[c] as i32).abs());
+            }
+        }
+    }
+    assert!(
+        max_delta <= 2,
+        "菜单渐入期页面区像素逐帧漂移 {max_delta} > 2（保留帧阴影墨迹复利污染）：{samples:?}"
+    );
+}
+
+/// T28-P37 R1（DF-F4 红绿钉）：菜单打开→关闭→静页面多帧，菜单墨迹不得驻留。
+/// 修前关闭帧本身是 can_reuse 帧且回存，含菜单墨迹的保留帧自我复制，静页面
+/// 残像无限期驻留；修后关闭沿失效保留帧一帧（全量光栅回存干净帧），后续复用
+/// 帧基于干净帧。哨兵证明关闭后的复用帧确实 engaged。
+#[test]
+fn t28p37_menu_close_leaves_no_ink_on_subsequent_frames() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0;background:#2a6e3f"><h1>close linger</h1></body></html>"#,
+        None,
+    );
+
+    let quiet = app.render_cpu_frame_for_test(1024, 768);
+    app.show_context_menu_for_test(500.0, 350.0);
+    for _ in 0..3 {
+        let _ = app.render_cpu_frame_for_test(1024, 768);
+    }
+    app.close_context_menu_for_test();
+
+    let center = (560usize, 420usize);
+    let center_base = (center.1 * 1024 + center.0) * 4;
+    let quiet_px = [
+        quiet.data[center_base],
+        quiet.data[center_base + 1],
+        quiet.data[center_base + 2],
+    ];
+    let sentinel = (900usize, 650usize);
+    let sentinel_base = (sentinel.1 * 1024 + sentinel.0) * 4;
+
+    for frame in 0..4 {
+        let fb = app.render_cpu_frame_for_test(1024, 768);
+        let px = [fb.data[center_base], fb.data[center_base + 1], fb.data[center_base + 2]];
+        assert_eq!(
+            px, quiet_px,
+            "frame {frame}: 菜单墨迹在关闭后驻留（含墨迹保留帧自我复制）"
+        );
+        if frame == 0 {
+            // 关闭后首帧应为全量失效帧（回存干净帧）——哨兵在此之后写入。
+            let retained = app
+                .retained_fb_mut_for_test()
+                .expect("retained fb after close-edge full raster");
+            retained.data[sentinel_base..sentinel_base + 3].copy_from_slice(&[255, 0, 255]);
+        } else {
+            // 后续帧必须是保留路径（哨兵存活）——干净帧被复用且仍无墨迹。
+            let (sr, sg, sb) = (
+                fb.data[sentinel_base],
+                fb.data[sentinel_base + 1],
+                fb.data[sentinel_base + 2],
+            );
+            assert!(
+                sr > 150 && sg < 60 && sb > 150,
+                "frame {frame}: 页面区哨兵被覆写（r={sr} g={sg} b={sb}）——关闭后未走保留路径，钉断言面失效"
+            );
+        }
+    }
+}
+
+/// T28-P37 R1（DF-F3 等价钉，返修2 reshape）：两帧形制真驱动 can_reuse+bbox
+/// 重放臂——首帧无菜单全量光栅建立保留回存，次帧开菜单走条带+bbox 重放
+/// （replay_menu_shadows 真实执行，哨兵像素证明未落全量臂）；重放帧与同场景
+/// 纯全量光栅在「包围盒内、菜单面外」垫圈逐位一致。
+///
+/// 判别力为条件判别（RT-F1 纠偏，返修1 注释「剔除集宽严两端都会爆掉」失实）：
+/// 当前 typed-bucket 绘制序下（阴影桶先于不透明 page_bg 绘制，webview
+/// box-shadow 全量墨迹本就被覆盖，见返修1回执 deviations[0] 与探针
+/// t28r1-probe2.log），重放↔全量在垫圈内同为零阴影墨迹，replay_menu_shadows
+/// 的任一变异（如 →Vec::new() 多剔）钉面恒绿；typed-bucket 阴影可见性修复
+/// 落地后本钉自动获得判别力——元素阴影墨迹布局上越过菜单面边界落入垫圈
+/// （下方布局推导），多剔即垫圈字节差即红。本钉当前价值=重放路径真实执行 +
+/// 重放↔全量等价前提 + 场景阴影含于断言。
+#[test]
+fn t28p37_menu_replay_keeps_css_box_shadow_inside_bbox() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let (content_x, content_y, _, _) = app.page_content_rect_for(1024, 768);
+
+    // 先开菜单拿精确菜单原点（翻转逻辑同源），再按其装配页面元素。
+    app.show_context_menu_for_test(500.0, 350.0);
+    let menu_x = app.context_menu_x_for_test();
+    let menu_y = app.context_menu_y_for_test();
+    let menu_h = app.context_menu_total_height();
+    let bbox = app.menu_overlay_bbox(1024.0, 768.0);
+    app.close_context_menu_for_test();
+
+    // 元素重位（RD-F1 原因二）：右缘贴菜单面右边界内 1px——阴影 rect（=元素
+    // rect，0 offset，探针实测无外扩字段）仍整含于 bbox（面含于 bbox 外扩
+    // 2px），而 blur 12 的墨迹越过面右边界 x=menu_x+W 落入垫圈列，垫圈不再
+    // 零阴影像素。布局推导：contained 要求 rect ⊆ bbox（元素在面内即满足）；
+    // ring-ink 要求 rect 边界与面边界间距 < blur 跨距（12px），取 1px 留裕量。
+    // 页坐标换算：device - content origin，scale 1。
+    let el_left = (menu_x + layout::CONTEXT_MENU_WIDTH - 60.0 - 1.0 - content_x) as i32;
+    let el_top = (menu_y + 20.0 - content_y) as i32;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        &format!(
+            r#"<html><body style="margin:0;background:#2a6e3f"><div style="position:absolute;left:{el_left}px;top:{el_top}px;width:60px;height:40px;background:#ffffff;box-shadow:0 0 12px 2px rgba(0,0,0,0.85)"></div></body></html>"#
+        ),
+        None,
+    );
+
+    // 场景确含元素阴影图元且 rect 含于 bbox（钉面有效性前提，布局变更时显爆炸）。
+    let extras = app.compositor_primitives_for_test(crate::compositor_client::CompositorStatus::Disconnected);
+    let contained = extras.shadows.iter().any(|s| {
+        s.rect.origin.x >= bbox.origin.x
+            && s.rect.origin.y >= bbox.origin.y
+            && s.rect.origin.x + s.rect.size.width <= bbox.origin.x + bbox.size.width
+            && s.rect.origin.y + s.rect.size.height <= bbox.origin.y + bbox.size.height
+    });
+    assert!(
+        contained,
+        "页面元素阴影 rect 未含于菜单包围盒——钉面失效（shadows={} bbox={bbox:?}）",
+        extras.shadows.len()
+    );
+
+    // 两帧形制（RD-F1 原因一）：帧 1 无菜单全量光栅建立保留回存（can_reuse
+    // 前提）——单帧驱动时 retained_fb=None 令 can_reuse 恒假，重放臂不可达
+    // （返修1 形制实为全量 vs 全量）。帧 2 开菜单走条带+bbox 重放臂。
+    let _ = app.render_cpu_frame_for_test(1024, 768);
+    // 哨兵写入保留帧页面区（bbox 外）：帧 2 若误落全量臂会被覆写为页面底色。
+    let sentinel = (900usize, 650usize);
+    let sentinel_base = (sentinel.1 * 1024 + sentinel.0) * 4;
+    {
+        let retained = app.retained_fb_mut_for_test().expect("retained fb after full raster");
+        retained.data[sentinel_base..sentinel_base + 3].copy_from_slice(&[255, 0, 255]);
+    }
+    app.show_context_menu_for_test(500.0, 350.0);
+    let replayed = app.render_cpu_frame_for_test(1024, 768);
+    // engagement：哨兵存活（色相判据）= 帧 2 确走 can_reuse+bbox 重放臂。
+    let (sr, sg, sb) = (
+        replayed.data[sentinel_base],
+        replayed.data[sentinel_base + 1],
+        replayed.data[sentinel_base + 2],
+    );
+    assert!(
+        sr > 150 && sg < 60 && sb > 150,
+        "重放帧覆写页面区哨兵（r={sr} g={sg} b={sb}）——未走 can_reuse+bbox 重放臂（全量帧），钉面失效"
+    );
+    // 紧接同场景生产全量光栅（渐入透明度漂移仅影响菜单面内像素——断言面已
+    // 排除菜单面及其 1px AA 缘）。
+    let full = app.render_full_scene_with_webview_for_test(1024, 768);
+
+    let x0 = bbox.origin.x.max(0.0) as usize;
+    let x1 = (bbox.origin.x + bbox.size.width).ceil() as usize;
+    let y0 = bbox.origin.y.max(0.0) as usize;
+    let y1 = (bbox.origin.y + bbox.size.height).ceil() as usize;
+    // 菜单面排除矩形（1px 外扩盖 AA）；面内像素随渐入透明度随时间变化，不比。
+    let in_menu = |x: usize, y: usize| {
+        (x as f32) >= menu_x - 1.0
+            && (x as f32) < menu_x + layout::CONTEXT_MENU_WIDTH + 1.0
+            && (y as f32) >= menu_y - 1.0
+            && (y as f32) < menu_y + menu_h + 1.0
+    };
+    let mut compared = 0usize;
+    for y in y0..y1.min(768) {
+        for x in x0..x1.min(1024) {
+            if in_menu(x, y) {
+                continue;
+            }
+            let base = (y * 1024 + x) * 4;
+            for c in 0..3 {
+                assert_eq!(
+                    replayed.data[base + c],
+                    full.data[base + c],
+                    "包围盒内菜单面外像素 ({x},{y}) ch{c} 重放与全量不一致（阴影剔除集差异——当前管线不可达，出现即先排查阴影可见性或剔除集回归）"
+                );
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared > 0, "断言面为空——包围盒/菜单面几何异常");
+    // 元素面须被包围盒重放绘制（渐入极早期菜单近透明，白色元素面可见）。
+    // 采样元素内部（右缘内 30px、顶缘下 20px）。
+    let base = (((menu_y + 40.0) as usize) * 1024 + ((menu_x + layout::CONTEXT_MENU_WIDTH - 31.0) as usize)) * 4;
+    assert!(
+        replayed.data[base] > 200 && replayed.data[base + 1] > 200,
+        "包围盒重放未绘制元素面（px={:?}）",
+        &replayed.data[base..base + 3]
+    );
+}
+
+/// T28-P37 R1（DF-F2 红绿钉）：菜单打开期存在菜单外 chrome 动画源（加载中：
+/// 进度条 + spinner）时，chrome UI 转发不得冻结包围盒外的进度条。修前
+/// ui_chrome_retained 重放只拷回包围盒行，进度条冻结在打开前状态；修后该态
+/// 跳过 retained 快速路径走全量光栅，进度条随时间推进。
+/// 环境依赖披露（RD-F3）：ZW_COMPOSITOR_UI_FRAMES=0（文档化 kill-switch，默认
+/// 开）关闭 UI 帧转发时 forward_compositor_chrome_ui 提前返回，本钉在 forward
+/// 帧缓存的 expect 处确定性 panic——kill-switch 语义的显式暴露，非 flake。
+#[test]
+fn t28p37_menu_open_with_loading_keeps_chrome_animating() {
+    let mut app = BrowserApp::new(RenderMode::Cpu);
+    app.physical_size = (1024, 768);
+    app.scale_factor = 1.0;
+    let tab_id = app.shell.active_tab_id().expect("startup tab");
+    app.ensure_webview(tab_id);
+    app.load_webview_html(
+        tab_id,
+        r#"<html><body style="margin:0;background:#2a6e3f"><h1>loading under menu</h1></body></html>"#,
+        None,
+    );
+    // 生产加载态：build_scene 唯一自驱动动画源（进度条 + 标签 spinner）。
+    if let Some(tab) = app.shell.active_tab_mut() {
+        tab.set_loading(true);
+    }
+    app.show_context_menu_for_test(500.0, 350.0);
+
+    let (_, content_y, _, _) = app.page_content_rect_for(1024, 768);
+    let bbox = app.menu_overlay_bbox(1024.0, 768.0);
+    // 进度条位于页面区顶缘（content_y 起 2px），远在菜单包围盒之上。
+    let bar_y = (content_y as usize).min(767);
+    assert!(
+        (bar_y as f32) < bbox.origin.y,
+        "进度条采样行须在菜单包围盒外（bar_y={bar_y} bbox_top={}）",
+        bbox.origin.y
+    );
+
+    // 帧 A：进度条起点（loading_anim_start 在本次 build_scene 起表）。
+    app.forward_chrome_ui_for_test(1024, 768);
+    let a = app
+        .ui_forward_frame_bytes_for_test()
+        .expect("forward frame A cached")
+        .to_vec();
+    // 进度条前 0.3s 快速段：180ms ≈ 18% 宽度推进，8% 采样点必被扫过。
+    std::thread::sleep(std::time::Duration::from_millis(180));
+    app.forward_chrome_ui_for_test(1024, 768);
+    let b = app
+        .ui_forward_frame_bytes_for_test()
+        .expect("forward frame B cached")
+        .to_vec();
+
+    // 包围盒外差异字节数判据：修前重放只拷回 bbox 行 → 区外逐字节相等（0 差异，
+    // 进度条/spinner 全冻结）；修后该态走全量光栅，进度条推进 + 标签 spinner
+    // 转动 → 区外必然出现差异。逐字节比对对动画源的颜色/位置不敏感。
+    let mut diff_bytes = 0usize;
+    let mut first_diff: Option<(usize, usize, usize)> = None;
+    for y in 0..768usize {
+        for x in 0..1024usize {
+            let in_bbox = (x as f32) >= bbox.origin.x
+                && (x as f32) < bbox.origin.x + bbox.size.width
+                && (y as f32) >= bbox.origin.y
+                && (y as f32) < bbox.origin.y + bbox.size.height;
+            if in_bbox {
+                continue;
+            }
+            let base = (y * 1024 + x) * 4;
+            for c in 0..4 {
+                if a[base + c] != b[base + c] {
+                    diff_bytes += 1;
+                    if first_diff.is_none() {
+                        first_diff = Some((x, y, c));
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        diff_bytes >= 4,
+        "菜单打开期包围盒外 chrome 全帧冻结（ui_chrome_retained 无动画源失效）：A/B 区外差异字节 {diff_bytes}，first={first_diff:?}"
+    );
+}
+
 /// 悬停链接时在左下角显示浮动 URL 状态栏（宽度随内容，不占布局）。
 #[test]
 fn floating_link_status_shows_on_link_hover() {

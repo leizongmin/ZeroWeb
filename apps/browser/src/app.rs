@@ -181,6 +181,10 @@ pub struct BrowserApp {
     retained_fb: Option<zero_render_foundation::surface::FrameBuffer>,
     fb_cache_scroll: (f32, f32),
     fb_cache_epoch: (u64, u32, u32, f32),
+    /// 保留帧是否含菜单墨迹（菜单可见期回存/全量时置位）。T28-P37 R1（DF-F4）：
+    /// 菜单关闭沿以此禁用保留路径一帧，强制全量光栅回存干净帧——否则含菜单墨迹
+    /// 的保留帧被回存后自我复制，静页面残像无限期驻留。
+    retained_fb_menu_ink: bool,
     /// 页面文本选区（glyph 索引）
     page_selection: HashMap<TabId, GlyphSelection>,
     /// 页面选区拖拽中
@@ -209,6 +213,9 @@ pub struct BrowserApp {
     /// 菜单打开动画起始时刻（context_menu.visible false→true 时记录）。
     /// 用于打开时的透明度渐入（150ms 内，Chrome 同款；关闭立即消失）。
     menu_anim_start: Option<Instant>,
+    /// T28-P37：菜单渐入已绘制到的透明度（build_scene 每帧记录）——tick 据此判定
+    /// 完成帧是否已上屏，到达 1.0 后自终止续帧；None 表示完成帧尚未绘制。
+    menu_anim_drawn_opacity: Option<f32>,
     /// 缩放百分比浮层显示起始时刻。None 表示不显示。
     /// zoom_in/out/reset 触发时记录，3 秒后由渲染层清除。
     zoom_indicator_start: Option<Instant>,
@@ -233,6 +240,9 @@ pub struct BrowserApp {
     pending_scroll_restore: Option<(TabId, f32)>,
     /// 最近提交给 compositor 的 UI surface 位图（T36 滚动帧 IPC 跳过用）。
     ui_forward_cache: Option<UiForwardCache>,
+    /// T28-P37：最近一帧 chrome UI 全窗光栅位图（页面区清零前）——菜单渐入帧
+    /// 仅对菜单并集包围盒做区域重放，其余像素直接复用，避免每帧全窗重光栅。
+    ui_chrome_retained: Option<zero_render_foundation::surface::FrameBuffer>,
     /// 上次设置的窗口标题缓存，用于检测变化避免重复 set_title。
     last_window_title: String,
     /// 上次左键点击标签的时间，用于判定双击关闭。
@@ -414,6 +424,7 @@ impl BrowserApp {
             retained_fb: None,
             fb_cache_scroll: (0.0, 0.0),
             fb_cache_epoch: (0, 0, 0, 0.0),
+            retained_fb_menu_ink: false,
             page_selection: HashMap::new(),
             page_selection_drag: false,
             left_button_down: false,
@@ -426,6 +437,7 @@ impl BrowserApp {
             chrome_anim_start: Instant::now(),
             loading_anim_start: None,
             menu_anim_start: None,
+            menu_anim_drawn_opacity: None,
             zoom_indicator_start: None,
             print_setup_panel_rows: [(0.0, 0.0, 0.0, 0.0); 3],
             print_setup_panel_steppers: [(0.0, 0.0); 3],
@@ -435,6 +447,7 @@ impl BrowserApp {
             history_scroll: HashMap::new(),
             pending_scroll_restore: None,
             ui_forward_cache: None,
+            ui_chrome_retained: None,
             last_window_title: String::new(),
             last_tab_click_time: None,
             last_tab_click_id: None,
@@ -1247,6 +1260,49 @@ impl BrowserApp {
         self.context_menu.visible
     }
 
+    /// 测试用：菜单渐入时钟（T28-P37 S2 断言：打开即起表，不依赖 build_scene）。
+    #[cfg(test)]
+    pub fn menu_anim_start_for_test(&self) -> Option<Instant> {
+        self.menu_anim_start
+    }
+
+    /// 测试用：注入菜单渐入已绘制透明度——驱动 [`Self::tick_menu_fade`] 的完成帧
+    /// 自终止判定，无需真实光栅一帧。
+    #[cfg(test)]
+    pub fn menu_anim_drawn_opacity_set_for_test(&mut self, opacity: Option<f32>) {
+        self.menu_anim_drawn_opacity = opacity;
+    }
+
+    /// 测试用：按生产关闭沿收起上下文菜单（与 Escape/点空白关闭同一状态迁移）。
+    #[cfg(test)]
+    pub fn close_context_menu_for_test(&mut self) {
+        self.context_menu.close();
+    }
+
+    /// 测试用：可变访问保留帧缓冲——红绿钉在帧间写入哨兵像素，证明生产保留路径
+    /// 确实 engaged（全量帧会覆写页面区哨兵）。
+    #[cfg(test)]
+    pub fn retained_fb_mut_for_test(&mut self) -> Option<&mut zero_render_foundation::surface::FrameBuffer> {
+        self.retained_fb.as_mut()
+    }
+
+    /// 测试用：读取最近一次 chrome UI 转发的位图（[`Self::forward_ui_frame_if_changed`]
+    /// 缓存），供 forward 路径红绿钉逐帧比对。
+    #[cfg(test)]
+    pub fn ui_forward_frame_bytes_for_test(&self) -> Option<&[u8]> {
+        self.ui_forward_cache.as_ref().map(|cache| cache.rgba.as_slice())
+    }
+
+    /// 菜单打开期是否存在菜单外的 chrome 动画源（T28-P37 R1，DF-F2 有界失效判据）。
+    ///
+    /// 当前枚举：活跃标签页加载中——它是 `build_scene` 唯一的自驱动 `needs_redraw`
+    /// 源，同时驱动顶部加载进度条与标签 spinner 两处菜单包围盒外的 chrome 动画。
+    /// 有界枚举而非「任何 needs_redraw」判定：后者会把菜单自身渐入连帧计入，
+    /// 等于菜单期整体禁用保留路径。
+    pub(crate) fn chrome_animating_outside_menu(&self) -> bool {
+        self.shell.active_tab().is_some_and(|tab| tab.is_loading())
+    }
+
     /// 测试用：当前展开的子菜单父项索引。
     #[cfg(test)]
     pub fn open_sub_menu_for_test(&self) -> Option<usize> {
@@ -1826,6 +1882,37 @@ impl BrowserApp {
         self.needs_redraw = true;
     }
 
+    /// T28-P37：帧循环推进菜单渐入动画——渐入完成帧上屏前置 `needs_redraw`，
+    /// 经 Poll 心跳连续成帧（与 [`Self::tick_smooth_scroll`] 同款自续机制）。渐入期
+    /// `build_scene` 置位的续帧旗标会在渲染返回后被 main.rs 无条件清除（泵链断裂：
+    /// base 实测渐入仅 3 帧、最大断档 425ms），Poll tick 不经过该清除点，故由这里
+    /// 接棒连帧。终止判定看 [`Self::menu_anim_drawn_opacity`] 而非墙钟：若按 150ms
+    /// 停表，尾帧（~0.9→1.0）会落在停表线之后，菜单停在中间态（实测 0.91 停帧、
+    /// 356ms 后才被无关事件补画）；4 倍渐入时长为兜底上限，防帧长期无法调度时
+    /// 无限续帧。
+    pub fn tick_menu_fade(&mut self) {
+        if !self.context_menu.visible {
+            return;
+        }
+        let Some(start) = self.menu_anim_start else {
+            return;
+        };
+        if self.menu_anim_drawn_opacity.is_some_and(|opacity| opacity >= 1.0) {
+            return;
+        }
+        if start.elapsed().as_secs_f32() > MENU_FADE_IN_SECONDS * 4.0 {
+            return;
+        }
+        self.needs_redraw = true;
+    }
+
+    /// T28-P37 S2：渐入时钟在打开点起表——打开→首帧的调度/光栅延迟不计入 150ms
+    /// 窗口；同时清空已绘制透明度，让 [`Self::tick_menu_fade`] 为新一轮渐入续帧。
+    fn menu_fade_begin(&mut self) {
+        self.menu_anim_start = Some(Instant::now());
+        self.menu_anim_drawn_opacity = None;
+    }
+
     /// 测试用：是否有进行中的平滑滚动动画。
     #[cfg(test)]
     pub fn tick_smooth_scroll_has_animation(&self) -> bool {
@@ -1932,6 +2019,32 @@ impl BrowserApp {
     /// 上下文菜单总高度（物理像素），separator 项计入紧凑高度。
     pub(crate) fn context_menu_total_height(&self) -> f32 {
         Self::menu_items_total_height(&self.context_menu.items, self.scale_factor)
+    }
+
+    /// T28-P37：菜单浮层并集包围盒（物理像素）——菜单矩形 ∪ 打开的子菜单面板，
+    /// 外扩 2px 呼吸边捕捉圆角/抗锯齿边，钳制到窗口内。can_reuse 菜单帧以该区域
+    /// 为 scratch 全场景重放范围，仅把矩形内容拷回保留帧，保证渐入菜单每帧恰好
+    /// 合成一次。`pub(crate)` 供等价性测试直接断言包围盒内逐像素一致。
+    pub(crate) fn menu_overlay_bbox(&self, width: f32, height: f32) -> Rect {
+        let s = self.scale_factor;
+        let pad = 2.0 * s;
+        let menu_w = layout::CONTEXT_MENU_WIDTH * s;
+        let mut x0 = self.context_menu.x - pad;
+        let mut y0 = self.context_menu.y - pad;
+        let mut x1 = self.context_menu.x + menu_w + pad;
+        let mut y1 = self.context_menu.y + self.context_menu_total_height() + pad;
+        if let Some(parent) = self.context_menu.open_sub_menu {
+            let (sx, sy, sw, sh) = self.sub_menu_panel_rect(parent);
+            x0 = x0.min(sx - pad);
+            y0 = y0.min(sy - pad);
+            x1 = x1.max(sx + sw + pad);
+            y1 = y1.max(sy + sh + pad);
+        }
+        let x0 = x0.max(0.0);
+        let y0 = y0.max(0.0);
+        let x1 = x1.min(width);
+        let y1 = y1.min(height);
+        Rect::new(x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0))
     }
 
     /// 子菜单面板中第 `child_idx` 项的 y 偏移（物理像素，相对子面板顶部）。

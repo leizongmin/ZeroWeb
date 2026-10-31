@@ -531,19 +531,89 @@ impl BrowserApp {
         let mut scene_primitives = zero_render_foundation::primitive::RenderPrimitives::new();
         scene_primitives.fills = fills;
         scene_primitives.shadows = chrome_shadows;
-        let fb = rasterize_full_scene(
+        // T28-P37：菜单可见帧不整窗重光栅——复用上一帧 chrome UI 位图（页面区
+        // 清零前），仅对菜单并集包围盒做白底 scratch 区域重放后拷回。region 语义
+        // 是「剔除不相交图元」而非裁剪，包围盒内像素与全量光栅逐位一致（机理同
+        // render_scene_cpu 的菜单帧拷回）；渐入每帧只重光栅菜单区域，全窗重光栅
+        // （软光栅 ~120ms）退出渐入关键路径，Poll 心跳得以连续成帧。
+        let menu_bbox = self
+            .context_menu
+            .visible
+            .then(|| self.menu_overlay_bbox(width as f32, height as f32));
+        // T28-P37 R1（DF-F2）：菜单打开期存在菜单外 chrome 动画源（加载中：进度
+        // 条 + 标签 spinner）时重放只刷新 bbox，bbox 外 chrome 冻结在打开前状态
+        // → 跳过 retained 快速路径走全量（有界失效：仅菜单打开且加载中）。
+        // 成本披露（RT-F2）：loading∩menu 暂态区间整窗回全量重光栅（~115ms/帧，
+        // P37 原症状量级），渐入帧率按设计回退换 bbox 外 chrome 不冻结；加载结束
+        // 即恢复 retained 快速路径，非暂态无常驻开销。
+        let retained_matches = self
+            .ui_chrome_retained
+            .as_ref()
+            .is_some_and(|fb| fb.width == width && fb.height == height)
+            && !(menu_bbox.is_some() && self.chrome_animating_outside_menu());
+        let replay = menu_bbox
+            .filter(|_| retained_matches)
+            .map(|b| {
+                let x0 = (b.origin.x.max(0.0).floor() as usize).min(width as usize);
+                let x1 = ((b.origin.x + b.size.width).ceil() as usize).min(width as usize);
+                let y0 = (b.origin.y.max(0.0).floor() as usize).min(height as usize);
+                let y1 = ((b.origin.y + b.size.height).ceil() as usize).min(height as usize);
+                (b, x0, x1, y0, y1)
+            })
+            .filter(|(_, x0, x1, y0, y1)| x1 > x0 && y1 > y0);
+        let fb = if let Some((bbox, x0, x1, y0, y1)) = replay {
+            let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
+            scratch.clear(255, 255, 255, 255);
+            // 重放场景阴影按来源区分剔除（R1 DF-F3）：页面视口投影（blur 6px/
+            // alpha 22，rect 跨整页必属相交不含于集）是 skip-only 全幅绘制，软光栅
+            // 单次 ~80ms，为区域重放的主成本。其墨迹在页面区内被 alpha 清零
+            // （present 路径随后清页面区）、在页面区外仅页顶上缘 ≤3σ 环带存在亚
+            // 可见差异（UI 位图不重绘该环带，其余像素承袭保留位图）。实测剔除后
+            // 渐入帧 ~35ms → 连续成帧；保留则 ~115ms → 渐入仅 2 帧。含于 bbox 的
+            // chrome 阴影保留，拷回行与全量一致。
+            let mut replay_scene = scene_primitives.clone();
+            replay_scene.shadows = Self::replay_menu_shadows(&scene_primitives.shadows, bbox);
+            zero_render_foundation::cpu::render_full_scene_region_into(
+                &mut scratch,
+                &replay_scene,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                None,
+                &glyphs,
+                &overlay_fills,
+                &overlay_glyphs,
+                &overlay_rounded_rects,
+                Some(bbox),
+                1.0,
+            );
+            let mut retained = self.ui_chrome_retained.take().unwrap();
+            let row_bytes = width as usize * 4;
+            for y in y0..y1 {
+                let start = y * row_bytes + x0 * 4;
+                let end = y * row_bytes + x1 * 4;
+                retained.data[start..end].copy_from_slice(&scratch.data[start..end]);
+            }
+            retained
+        } else {
+            rasterize_full_scene(
+                width,
+                height,
+                1.0,
+                &scene_primitives,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                None,
+                &glyphs,
+                &overlay_fills,
+                &overlay_glyphs,
+                &overlay_rounded_rects,
+            )
+        };
+        self.ui_chrome_retained = Some(zero_render_foundation::surface::FrameBuffer {
             width,
             height,
-            1.0,
-            &scene_primitives,
-            &self.font_loader,
-            &mut self.glyph_cache,
-            None,
-            &glyphs,
-            &overlay_fills,
-            &overlay_glyphs,
-            &overlay_rounded_rects,
-        );
+            data: fb.data.clone(),
+        });
         let mut ui = fb.data;
         if crate::compositor_client::present_enabled() {
             let (cx, cy, cw, ch) = self.page_content_rect_for(width, height);
@@ -632,12 +702,42 @@ impl BrowserApp {
         }
     }
 
+    /// T28-P37 R1（DF-F3）：菜单包围盒重放的阴影剔除按来源区分。
+    ///
+    /// 保留 rect 完全含于包围盒的阴影——其全幅墨迹只落 scratch、拷回仅包围盒
+    /// 行，包围盒行与全量光栅逐位一致，同时恢复元素 CSS 阴影；剔除与包围盒相
+    /// 交但不含于者（源内容不在重放面，墨迹不完整）与不相交者（region 语义本
+    /// 就剔除）。页面视口投影（rect 跨整页）恒属剔除集，区域重放的主成本豁免
+    /// 不变。边界：rect 贴包围盒边缘时 blur 溢出（3σ）越界部分不随拷回返回——
+    /// 包围盒行内墨迹仍与全量逐位一致，越界行承袭保留帧（与页框投影环带同一
+    /// 披露口径）。
+    fn replay_menu_shadows(
+        shadows: &[zero_render_foundation::primitive::ShadowPrimitive],
+        bbox: zero_render_foundation::geometry::Rect,
+    ) -> Vec<zero_render_foundation::primitive::ShadowPrimitive> {
+        shadows
+            .iter()
+            .filter(|shadow| {
+                bbox.origin.x <= shadow.rect.origin.x
+                    && bbox.origin.y <= shadow.rect.origin.y
+                    && shadow.rect.origin.x + shadow.rect.size.width
+                        <= bbox.origin.x + bbox.size.width
+                    && shadow.rect.origin.y + shadow.rect.size.height
+                        <= bbox.origin.y + bbox.size.height
+            })
+            .cloned()
+            .collect()
+    }
+
     /// 光栅化场景（性能门禁优化 S1，2026-08-08）。
     ///
     /// 纯滚动帧走 **translate-blit**：平移保留帧缓冲的内容像素 + 只重绘新露出的
     /// 条带（`render_full_scene_region_into`，不清全帧）；任何其他状态变更
     /// （新快照 / 缩放 / 窗口尺寸 / 选区 / 滚动条拖拽 / 亚像素滚动 / 水平滚动）
-    /// 走全量渲染并刷新保留帧。kill-switch：`ZERO_SCROLL_BLIT=0` 回退全量。
+    /// 走全量渲染并刷新保留帧。T28-P37：菜单可见帧同样走保留路径——条带照常
+    /// 重绘后，菜单并集包围盒 scratch 白底重放并拷回，半透明渐入菜单每帧恰好
+    /// 合成一次（替换而非叠加），旧菜单像素被不透明重放覆盖。
+    /// kill-switch：`ZERO_SCROLL_BLIT=0` 回退全量。
     #[allow(clippy::too_many_arguments)] // 光栅化全参数（渲染路径同款）
     fn render_scene_cpu(
         &mut self,
@@ -696,7 +796,17 @@ impl BrowserApp {
             && self.scrollbar_drag.is_none()
             && self.touch_scroll.is_none()
             && !self.shell.find_state().is_active()
-            && !self.context_menu.visible;
+            // T28-P37 S3：菜单可见帧不再整体禁用保留路径——条带照常重绘后由菜单
+            // 并集包围盒的 scratch 重放拷回保证渐入菜单恰好合成一次；平移 blit
+            // （can_blit）仍排除菜单（部分高度 overlay 平移后残留）。
+            // T28-P37 R1（DF-F4）：保留帧含菜单墨迹而菜单现已关闭 → 关闭沿失效
+            // 一帧，全量光栅回存干净帧（否则含墨迹帧自我复制，静页面残像驻留）。
+            && (self.context_menu.visible || !self.retained_fb_menu_ink)
+            // T28-P37 R1（DF-F2）：菜单打开期存在菜单外 chrome 动画源（加载中）
+            // 时保留路径只重绘条带+菜单包围盒，条带外的进度条会冻结 → 走全量。
+            // 成本披露（RT-F2）：loading∩menu 暂态区间回全量光栅（~115ms/帧级，
+            // P37 原症状量级），加载结束即恢复条带+bbox 重放快速路径。
+            && !(self.context_menu.visible && self.chrome_animating_outside_menu());
         let can_blit = blit_enabled
             && self.retained_fb.is_some()
             && epoch == self.fb_cache_epoch
@@ -712,11 +822,19 @@ impl BrowserApp {
             // 部分高度 overlay（查找栏 / 上下文菜单）在平移后会留下残影——
             // 全高滚动条自愈（overlay 每帧重画全覆盖），部分区域 overlay 需禁 blit
             && !self.shell.find_state().is_active()
-            && !self.context_menu.visible;
+            && !self.context_menu.visible
+            // T28-P37 R1（DF-F4）：同关闭沿失效——含菜单墨迹的保留帧不得作平移
+            // 基底（残像随内容搬移）。
+            && !self.retained_fb_menu_ink;
 
         // 活跃标签页 webview 的 ImageCache（绘制 <img> 图元消费）——所有 &self 读取
         // 完成后、渲染调用前获取（self.tabs 与 font_loader/glyph_cache/retained_fb
-        // 为不相交字段借用，可共存）
+        // 为不相交字段借用，可共存）。T28-P37：菜单并集包围盒同属渲染前的 &self
+        // 读取（can_reuse 菜单帧的区域重放范围）。
+        let menu_bbox = self
+            .context_menu
+            .visible
+            .then(|| self.menu_overlay_bbox(width as f32, height as f32));
         let mut image_cache: Option<&mut ImageCache> = match tab_id {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
@@ -780,18 +898,29 @@ impl BrowserApp {
             }
             fb
         } else if can_reuse {
-            // S1b：页面区保留，重绘页面区外的 chrome 条带（顶部 + 底部）
+            // S1b：页面区保留，重绘页面区外的 chrome 条带（顶部 + 底部）。
+            // T28-P37 R1（DF-F1）：条带渲染进 scratch 后仅拷回条带行——region 语义
+            // 是「剔除不相交图元」而非裁剪，页面视口投影（skip-only 全幅）直绘
+            // 保留帧会把整页墨迹写进页面区，回存后逐帧复利变暗（0.914^N）；
+            // scratch 内越界墨迹随拷回范围丢弃，条带行与全量光栅逐位一致。
+            // 与 can_blit 条带、S3 菜单包围盒拷回同一机理。
             let (_cx, cy, _cw, ch) = page_rect.unwrap();
             let mut fb = self.retained_fb.take().unwrap();
+            let row_bytes = width as usize * 4;
+            let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
+            scratch.clear(255, 255, 255, 255);
             let top_strip = zero_render_foundation::geometry::Rect::new(
                 0.0,
                 0.0,
                 width as f32,
                 cy,
             );
+            // 拷贝界取 floor/ceil：region 边界行可能含 AA 半覆盖，交给原保留像素，
+            // 与直绘时代的行范围一致（scale=1 时 floor(cy)==cy，无差异）。
+            let top_rows = (cy.floor() as usize).min(height as usize);
             if top_strip.size.height > 0.0 {
                 zero_render_foundation::cpu::render_full_scene_region_into(
-                    &mut fb,
+                    &mut scratch,
                     scene_primitives,
                     &self.font_loader,
                     &mut self.glyph_cache,
@@ -803,12 +932,17 @@ impl BrowserApp {
                     Some(top_strip),
                     1.0,
                 );
+                for y in 0..top_rows {
+                    let row = y * row_bytes;
+                    fb.data[row..row + row_bytes]
+                        .copy_from_slice(&scratch.data[row..row + row_bytes]);
+                }
             }
             let bottom_top = cy + ch;
             let bottom_h = (height as f32 - bottom_top).max(0.0);
             if bottom_h > 0.0 {
                 zero_render_foundation::cpu::render_full_scene_region_into(
-                    &mut fb,
+                    &mut scratch,
                     scene_primitives,
                     &self.font_loader,
                     &mut self.glyph_cache,
@@ -825,6 +959,53 @@ impl BrowserApp {
                     )),
                     1.0,
                 );
+                let bottom_first = (bottom_top.ceil() as usize).min(height as usize);
+                for y in bottom_first..height as usize {
+                    let row = y * row_bytes;
+                    fb.data[row..row + row_bytes]
+                        .copy_from_slice(&scratch.data[row..row + row_bytes]);
+                }
+            }
+            // T28-P37 S3：菜单可见帧补一步菜单并集包围盒重放——scratch 白底干净
+            // 重放全场景（region=bbox，完整 overlay）后仅把包围盒矩形拷回。半透明
+            // 渐入菜单由此每帧恰好合成一次（替换而非叠加）；保留帧里的旧菜单像素
+            // 被不透明重放覆盖；穿过包围盒的底层半透明图元（页面视口阴影等）不
+            // 污染区外像素——region 语义是「剔除不相交图元」而非裁剪，直绘会污染
+            // 区外，与 can_blit 的 scratch+行拷回同一机理。菜单关闭时跳过，条带
+            // 行为与既有逐位一致。
+            if let Some(bbox) = menu_bbox.filter(|b| b.size.width > 0.0 && b.size.height > 0.0) {
+                let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
+                scratch.clear(255, 255, 255, 255);
+                // 重放场景阴影按来源区分剔除（R1 DF-F3）——页面视口投影（rect 跨
+                // 整页，必与 bbox 相交不含于）skip-only 全幅绘制是区域重放主成本
+                // （软光栅 ~80ms），其墨迹在页面区内被随后绘制的不透明页面内容
+                // 覆盖，页顶上缘 ≤3σ 环带外无差异；含于 bbox 的元素 CSS 阴影保留，
+                // 包围盒行与全量光栅逐位一致。
+                let mut replay_scene = scene_primitives.clone();
+                replay_scene.shadows = Self::replay_menu_shadows(&scene_primitives.shadows, bbox);
+                zero_render_foundation::cpu::render_full_scene_region_into(
+                    &mut scratch,
+                    &replay_scene,
+                    &self.font_loader,
+                    &mut self.glyph_cache,
+                    image_cache.as_deref_mut(),
+                    glyphs,
+                    overlay_fills,
+                    overlay_glyphs,
+                    overlay_rounded_rects,
+                    Some(bbox),
+                    1.0,
+                );
+                let row_bytes = width as usize * 4;
+                let x0 = (bbox.origin.x.max(0.0).floor() as usize).min(width as usize);
+                let x1 = ((bbox.origin.x + bbox.size.width).ceil() as usize).min(width as usize);
+                let y0 = (bbox.origin.y.max(0.0).floor() as usize).min(height as usize);
+                let y1 = ((bbox.origin.y + bbox.size.height).ceil() as usize).min(height as usize);
+                for y in y0..y1 {
+                    let start = y * row_bytes + x0 * 4;
+                    let end = y * row_bytes + x1 * 4;
+                    fb.data[start..end].copy_from_slice(&scratch.data[start..end]);
+                }
             }
             fb
         } else {
@@ -844,15 +1025,62 @@ impl BrowserApp {
             self.retained_fb = Some(fb.clone());
             self.fb_cache_scroll = (scroll.x, scroll.y);
             self.fb_cache_epoch = epoch;
+            // T28-P37 R1（DF-F4）：菜单可见帧的全量光栅含菜单墨迹——记录之，供
+            // 关闭沿失效判据消费。
+            self.retained_fb_menu_ink = self.context_menu.visible;
             fb
         };
 
-        if can_blit {
+        // T28-P37 S3：保留路径帧（can_blit/can_reuse）同样回存保留帧缓冲——此前
+        // can_reuse 分支 take 后不回存，保留帧一次性消费，下一帧被迫全量光栅，
+        // 菜单渐入期呈现「全量↔保留」交替，150ms 窗口只出 2 帧（实测帧间隔
+        // ~148ms）。回存后渐入期每帧都是条带 + 包围盒重放的廉价帧，Poll 心跳
+        // 16ms 连续成帧。
+        if can_blit || can_reuse {
             self.retained_fb = Some(fb.clone());
             self.fb_cache_scroll = (scroll.x, scroll.y);
             self.fb_cache_epoch = epoch;
+            // T28-P37 R1（DF-F4）：记录回存帧是否含菜单墨迹（菜单可见期回存，
+            // bbox 重放已把菜单墨迹写入保留帧）——关闭沿由 can_reuse/can_blit
+            // 的失效判据消费，强制一次全量光栅回存干净帧。
+            self.retained_fb_menu_ink = self.context_menu.visible;
         }
         fb
+    }
+
+    /// 测试用：按生产 `render_cpu` 的装配顺序（sync_page_fonts → build_scene →
+    /// webview extras 合并 → [`Self::render_scene_cpu`]）驱动一帧，返回本地合成
+    /// 位图。与 [`Self::render_full_scene_with_webview_for_test`]（纯全量）不同，
+    /// 本入口走生产 render_scene_cpu 决策树（can_blit / can_reuse / 全量 + 菜单
+    /// 包围盒重放 + 回存），供 T28-P37 R1 生产路径红绿钉逐帧驱动。
+    #[cfg(test)]
+    pub fn render_cpu_frame_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> zero_render_foundation::surface::FrameBuffer {
+        assert!(self.sync_page_fonts(), "invalid test page font resources");
+        let scene = self.build_scene(width, height);
+        let (ref fills, ref glyphs, ref overlay_fills, ref overlay_glyphs, ref chrome_shadows, ref overlay_rounded_rects) =
+            scene;
+        let mut webview_extras = self.get_webview_extra_primitives();
+        webview_extras.fills = [fills.clone(), webview_extras.fills].concat();
+        webview_extras.shadows = [chrome_shadows.clone(), webview_extras.shadows].concat();
+        self.render_scene_cpu(
+            width,
+            height,
+            &webview_extras,
+            glyphs,
+            overlay_fills,
+            overlay_glyphs,
+            overlay_rounded_rects,
+        )
+    }
+
+    /// 测试用：驱动生产 chrome UI 转发一帧（T28-P37 R1 DF-F2 红绿钉）。
+    #[cfg(test)]
+    pub fn forward_chrome_ui_for_test(&mut self, width: u32, height: u32) {
+        self.forward_compositor_chrome_ui(width, height);
     }
 
     /// 测试用：与 `render_cpu` 相同的场景装配（chrome + WebView 图元 + 活跃标签页
@@ -892,6 +1120,133 @@ impl BrowserApp {
             &overlay_glyphs,
             &overlay_rounded_rects,
         )
+    }
+
+    /// 测试用：同一场景的全量光栅与 can_reuse 菜单帧组合（既有条带直绘 + 菜单
+    /// 并集包围盒 scratch 白底重放后拷回）各出一张帧。供 T28-P37 S3 像素等价
+    /// 断言：包围盒内与全量逐位一致（半透明渐入菜单恰好合成一次，无叠加/残像），
+    /// 包围盒外仅存既有条带直绘的页面视口阴影重复合成差（先于本任务存在）。
+    #[cfg(test)]
+    pub fn menu_reuse_equivalence_pair_for_test(
+        &mut self,
+        width: u32,
+        height: u32,
+    ) -> (
+        zero_render_foundation::surface::FrameBuffer,
+        zero_render_foundation::surface::FrameBuffer,
+    ) {
+        assert!(self.sync_page_fonts(), "invalid test page font resources");
+        let (fills, glyphs, overlay_fills, overlay_glyphs, chrome_shadows, overlay_rounded_rects) =
+            self.build_scene(width, height);
+        let webview_extras = self.get_webview_extra_primitives();
+        let mut scene_primitives = webview_extras;
+        scene_primitives.fills = [fills, scene_primitives.fills].concat();
+        scene_primitives.shadows = [chrome_shadows, scene_primitives.shadows].concat();
+
+        let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+            Some(id) => self.tabs.image_cache_mut(id),
+            None => None,
+        };
+        let full = rasterize_full_scene(
+            width,
+            height,
+            1.0,
+            &scene_primitives,
+            &self.font_loader,
+            &mut self.glyph_cache,
+            image_cache,
+            &glyphs,
+            &overlay_fills,
+            &overlay_glyphs,
+            &overlay_rounded_rects,
+        );
+
+        // can_reuse 组合：保留帧（= 全量）之上条带直绘（既有 S1b 方式，整层
+        // overlay）+ 菜单并集包围盒 scratch 重放拷回——与 render_scene_cpu 的
+        // can_reuse 分支同一组合方式。
+        let mut fb = full.clone();
+        let (_cx, cy, _cw, ch) = self.page_content_rect_for(width, height);
+        let top_strip = Rect::new(0.0, 0.0, width as f32, cy);
+        if top_strip.size.height > 0.0 {
+            let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+                Some(id) => self.tabs.image_cache_mut(id),
+                None => None,
+            };
+            zero_render_foundation::cpu::render_full_scene_region_into(
+                &mut fb,
+                &scene_primitives,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                image_cache,
+                &glyphs,
+                &overlay_fills,
+                &overlay_glyphs,
+                &overlay_rounded_rects,
+                Some(top_strip),
+                1.0,
+            );
+        }
+        let bottom_top = cy + ch;
+        let bottom_h = (height as f32 - bottom_top).max(0.0);
+        if bottom_h > 0.0 {
+            let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+                Some(id) => self.tabs.image_cache_mut(id),
+                None => None,
+            };
+            zero_render_foundation::cpu::render_full_scene_region_into(
+                &mut fb,
+                &scene_primitives,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                image_cache,
+                &glyphs,
+                &overlay_fills,
+                &overlay_glyphs,
+                &overlay_rounded_rects,
+                Some(Rect::new(0.0, bottom_top, width as f32, bottom_h)),
+                1.0,
+            );
+        }
+        let menu_bbox = self
+            .context_menu
+            .visible
+            .then(|| self.menu_overlay_bbox(width as f32, height as f32));
+        if let Some(bbox) = menu_bbox.filter(|b| b.size.width > 0.0 && b.size.height > 0.0) {
+            let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
+            scratch.clear(255, 255, 255, 255);
+            // 与生产 render_scene_cpu 的重放同款：剔除投影（skip-only 全幅绘制，
+            // 页面区内被不透明页面内容覆盖，见生产处注释）。
+            let mut replay_scene = scene_primitives.clone();
+            replay_scene.shadows = Vec::new();
+            let image_cache: Option<&mut ImageCache> = match self.shell.active_tab_id() {
+                Some(id) => self.tabs.image_cache_mut(id),
+                None => None,
+            };
+            zero_render_foundation::cpu::render_full_scene_region_into(
+                &mut scratch,
+                &replay_scene,
+                &self.font_loader,
+                &mut self.glyph_cache,
+                image_cache,
+                &glyphs,
+                &overlay_fills,
+                &overlay_glyphs,
+                &overlay_rounded_rects,
+                Some(bbox),
+                1.0,
+            );
+            let row_bytes = width as usize * 4;
+            let x0 = (bbox.origin.x.max(0.0).floor() as usize).min(width as usize);
+            let x1 = ((bbox.origin.x + bbox.size.width).ceil() as usize).min(width as usize);
+            let y0 = (bbox.origin.y.max(0.0).floor() as usize).min(height as usize);
+            let y1 = ((bbox.origin.y + bbox.size.height).ceil() as usize).min(height as usize);
+            for y in y0..y1 {
+                let start = y * row_bytes + x0 * 4;
+                let end = y * row_bytes + x1 * 4;
+                fb.data[start..end].copy_from_slice(&scratch.data[start..end]);
+            }
+        }
+        (full, fb)
     }
 
     /// 对当前生产场景执行严格 GPU 离屏渲染并读回。

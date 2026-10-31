@@ -38,6 +38,27 @@ fn fade_color(color: Color, opacity: f32) -> Color {
     }
 }
 
+/// T28-P37 生产泵 e2e 钉观察窗：`ZW_MENU_FRAME_TRACE=<path>` 门控的菜单渐入帧
+/// 轨迹——菜单可见期每帧追加一行 `menu_frame elapsed_ms=<f> opacity=<f>`。
+/// 行序即帧序：行数 = 渐入期出帧数，末行 opacity = 动画到达的最深透明度。
+/// env 未设零行为；env 进程级一次读取（边界快照，不进逐帧热路径）。
+fn menu_frame_trace(menu_anim_start: Option<Instant>, opacity: f32) {
+    static TRACE_PATH: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
+    let Some(path) = TRACE_PATH
+        .get_or_init(|| std::env::var("ZW_MENU_FRAME_TRACE").ok().map(std::path::PathBuf::from))
+    else {
+        return;
+    };
+    let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) else {
+        return;
+    };
+    use std::io::Write as _;
+    let elapsed_ms = menu_anim_start
+        .map(|start| start.elapsed().as_secs_f32() * 1000.0)
+        .unwrap_or(0.0);
+    let _ = writeln!(file, "menu_frame elapsed_ms={elapsed_ms:.2} opacity={opacity:.4}");
+}
+
 impl BrowserApp {
     /// 鼠标指针是否落在矩形区域内（物理像素坐标）
     fn pointer_in_rect(&self, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -76,13 +97,16 @@ impl BrowserApp {
         }
 
         // 0b. 同步菜单渐入动画起始时刻：context_menu.visible 从 false→true 时记录，
-        //    从 true→false 时清除（关闭无过渡，立即消失，Chrome 同款）。
+        //    从 true→false 时清除（关闭无过渡，立即消失，Chrome 同款）。T28-P37：
+        //    时钟起表/清除同步重置已绘制透明度，tick 的完成帧判定只对本次渐入有效。
         if self.context_menu.visible {
             if self.menu_anim_start.is_none() {
                 self.menu_anim_start = Some(Instant::now());
+                self.menu_anim_drawn_opacity = None;
             }
         } else {
             self.menu_anim_start = None;
+            self.menu_anim_drawn_opacity = None;
         }
 
         // 1. 整体背景
@@ -2270,6 +2294,9 @@ impl BrowserApp {
             Some(start) => (start.elapsed().as_secs_f32() / MENU_FADE_IN_SECONDS).min(1.0),
             None => 1.0,
         };
+        menu_frame_trace(self.menu_anim_start, opacity);
+        // T28-P37：记录已绘制透明度——tick_menu_fade 据此判定完成帧已上屏并自终止。
+        self.menu_anim_drawn_opacity = Some(opacity);
         if opacity < 1.0 {
             self.needs_redraw = true;
         }
