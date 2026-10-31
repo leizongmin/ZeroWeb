@@ -1632,9 +1632,25 @@ pub(crate) fn mark_anonymous_table_roots(
 /// 递归下降时 c_border_y 除累加 child 的 y 外还须加上 child 自身的 border_top +
 /// padding_top（frame 分量），否则中间非 BFC 容器的 frame 把嵌套浮动底边虚减，
 /// 后续 clear 兄弟与嵌套浮动叠压。border-rel 兼容模式 child y 已含 frame，不重复加。
-/// https://www.w3.org/TR/CSS22/visuren.html#clearance
-fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_offset: f32) -> (f32, f32) {
-    use zero_css_parser::values::FloatValue;
+///
+/// R5369（CSS2 §9.5.1 float 自带 clear 的底边预测）：本扫描发生在父 walk 主循环
+/// 内——早于递归子 walk 把嵌套 float 自身的 `clear` 抬升（`line_y` 抬到被清侧
+/// float 底）落实。taffy 期 `c.y` 不含该抬升 → 记录的底边虚短（zero-width-floats：
+/// wrapper 内 float:right clear:left 预位 y=0、walk 后 y=50，扫描记 150 应 200，
+/// 后续 clear:both 兄弟 clearance 短 50）。预测式与 walk 的 float-clear 臂同构：
+/// 自带 clear 的嵌套 float 顶边按 `max(c.y, 被清侧至今底边)` 预测（被清侧至今
+/// 底边 = max(外层 active 底，本扫描已收集同侧底)）；非 clear float 不预测。
+/// 已知余项：[`nested_float_geoms`] 带集仍按 taffy 期位置（float 回避带近似族，
+/// 不影响 clear 底边消费方）。kill-switch `ZW_NESTED_FLOAT_CLEAR_PRED=0` 回退。
+/// https://www.w3.org/TR/CSS22/visuren.html#float-position
+fn nested_float_bottoms(
+    child: &LayoutBox,
+    child_border_y: f32,
+    outer_content_y_offset: f32,
+    outer_left_bottom: f32,
+    outer_right_bottom: f32,
+) -> (f32, f32) {
+    use zero_css_parser::values::{ClearValue, FloatValue};
     let mut left = 0.0f32;
     let mut right = 0.0f32;
     // 下降基点：child 的 content-box 原点（content-rel 模式相对外层 content-box；
@@ -1653,7 +1669,18 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
         // border-box 原点，此时 child_content_y == child_border_y）。
         let c_border_y = child_content_y + c.y;
         if !matches!(c.float, FloatValue::None) {
-            let bottom = c_border_y - outer_content_y_offset + c.height + c.margin_bottom;
+            // R5369：自带 clear 的嵌套 float 按 walk 同款规则预测抬升后顶边。
+            let cleared_side = match c.clear {
+                ClearValue::Left => Some(outer_left_bottom.max(left)),
+                ClearValue::Right => Some(outer_right_bottom.max(right)),
+                ClearValue::Both => Some(outer_left_bottom.max(left).max(outer_right_bottom).max(right)),
+                ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd => None,
+            };
+            let c_top = match cleared_side {
+                Some(side_bottom) if *NESTED_FLOAT_CLEAR_PRED => c_border_y.max(side_bottom),
+                _ => c_border_y,
+            };
+            let bottom = c_top - outer_content_y_offset + c.height + c.margin_bottom;
             match c.float {
                 FloatValue::Left => left = left.max(bottom),
                 FloatValue::Right => right = right.max(bottom),
@@ -1661,7 +1688,13 @@ fn nested_float_bottoms(child: &LayoutBox, child_border_y: f32, outer_content_y_
             }
         } else if !crate::margin_collapse::establishes_bfc(c) {
             // 非 BFC 后代：其内浮动与外层同 BFC，继续递归收集。
-            let (l, r) = nested_float_bottoms(c, c_border_y, outer_content_y_offset);
+            let (l, r) = nested_float_bottoms(
+                c,
+                c_border_y,
+                outer_content_y_offset,
+                outer_left_bottom.max(left),
+                outer_right_bottom.max(right),
+            );
             if l > left {
                 left = l;
             }
@@ -1738,6 +1771,11 @@ fn nested_float_geoms(
 /// 阻断点前遇到不可穿越边界（顶 border/padding、BFC、空块自折叠、非块级首子
 /// 即行内内容、无流内子）→ 不激活，维持既有字段语义（零行为变化）。
 /// https://www.w3.org/TR/CSS22/visuren.html#flow-control
+/// R5369：嵌套 float 自带 clear 的底边预测开关（`ZW_NESTED_FLOAT_CLEAR_PRED=0` 回退，
+/// default-on）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
+static NESTED_FLOAT_CLEAR_PRED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_NESTED_FLOAT_CLEAR_PRED").as_deref() != Ok("0"));
+
 fn chain_clear_break_fold(box_node: &LayoutBox) -> Option<(f32, f32)> {
     use zero_css_parser::values::{ClearValue, FloatValue};
     let no_clear = |c: &ClearValue| matches!(c, ClearValue::None | ClearValue::InlineStart | ClearValue::InlineEnd);
@@ -2483,7 +2521,7 @@ pub(crate) fn adjust_float_positions_with_context(
                     && matches!(c.float, FloatValue::None)
                     && !crate::margin_collapse::establishes_bfc(c)
                     && {
-                        let (nl, nr) = nested_float_bottoms(c, 0.0, 0.0);
+                        let (nl, nr) = nested_float_bottoms(c, 0.0, 0.0, 0.0, 0.0);
                         nl > 0.0 || nr > 0.0
                     }
             }));
@@ -3585,7 +3623,15 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 停在 float 底边之上（baidu hotsearch wrapper pt:21 → ::after 落 93 应 114）。
                 // border-rel 兼容模式（ZW_FLOAT_CLAMP_CONTENT_REL=0）保留旧 offset 换算。
                 // https://www.w3.org/TR/CSS22/visuren.html#clearance
-                let (nl, nr) = nested_float_bottoms(child, cy, if clamp_content_rel { 0.0 } else { content_y_offset });
+                // R5369：外层 active 底作预测基（嵌套 float 自带 clear 时，须连外层
+                // 同侧 float 一并清——预测式基 = max(外层 active，本扫描已收集)）。
+                let (nl, nr) = nested_float_bottoms(
+                    child,
+                    cy,
+                    if clamp_content_rel { 0.0 } else { content_y_offset },
+                    active_left_float_bottom,
+                    active_right_float_bottom,
+                );
                 if nl > 0.0 {
                     nested_left_bottom = nested_left_bottom.max(nl);
                 }
@@ -3885,7 +3931,15 @@ pub(crate) fn adjust_float_positions_with_context(
             && float_subtrees.is_some_and(|m| child.node_id.is_none_or(|id| m.get(&id).copied().unwrap_or(true)))
         {
             let outer_content_y_offset = if clamp_content_rel { 0.0 } else { content_y_offset };
-            let (nl, nr) = nested_float_bottoms(child, child.y, outer_content_y_offset);
+            // R5369：递归定谳位置上预测为幂等 max（walk 正确抬升后 c.y ≥ 被清侧底），
+            // 基取前序兄弟累积底（R5160 文档序原则）。
+            let (nl, nr) = nested_float_bottoms(
+                child,
+                child.y,
+                outer_content_y_offset,
+                inherited_left_bottom.max(nested_left_acc),
+                inherited_right_bottom.max(nested_right_acc),
+            );
             nested_left_acc = nested_left_acc.max(nl);
             nested_right_acc = nested_right_acc.max(nr);
             nested_geoms_acc.extend(nested_float_geoms(child, child.x, child.y, outer_content_y_offset));

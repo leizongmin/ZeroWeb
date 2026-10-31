@@ -927,3 +927,6 @@ mod r5346_quirks_pct_height_flex_item_chain_tests;
 /// 补腿——definite/transferred 流内子已布局宽喂 grow（014 主驱）、contain:size
 /// 不参与、可换行文本停在可用宽。
 mod r5348_inline_block_shrink_grow_tests;
+
+/// R5369 探针：zero-width floats + clear 几何（WPT zero-width-floats 驱动）。
+mod r5369_zero_width_floats_clear_tests;
