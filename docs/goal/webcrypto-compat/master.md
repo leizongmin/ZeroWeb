@@ -64,8 +64,8 @@ v2.1 契约）：
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 已转正域按域立项：ML-KEM（12 案/3,480）、ML-DSA（10/1,206）、X448/Ed448（26/3,700）、AES-OCB（10/2,652）、ChaCha20-Poly1305（10/1,044）、KMAC（10/1,418）、Argon2（4/92）、XOF digest（8/838）、Hybrid-KEM（7/2,742）、门禁面（12/880），合计 109 案/18,052 子测试（universe 口径）；切片建议与依赖候选见 [DC-2 甄别清单](evidence/2026-10-31-dc2-promotion-screening.md)（依赖含新 crate：ml-kem/ml-dsa/ocb3/x448/ed448-goldilocks/kangarootwelve 等，选型须用户拍板） | 待用户拍板；不 BLOCK 本 goal 收口 |
-| D2 | 引擎基线红处置路径（收口唯一缺口）：**fetch/Request 契约族 9 已由 s179/s180 全清**（engine lib 3635P/1F），唯余 ua_display_li 1F——git 追溯定性为 s161 handle gCS 通道 × 渲染流 D4 待裁决冻结面（host `li→Block` 冻结值盖过 shim 已翻的 list-item 表），修复=渲染流 D4 双面同提交翻转（用户裁决门禁，非本 goal 域）；① 等渲染流 D4 裁决落地后 make test 全绿当场收口；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 待用户拍板；期间维持低成本轮询 + 锚复跑，ua_display_li 清零即当场收口 |
+| D1 | 已转正域按域立项：ML-KEM（12 案/3,480）、ML-DSA（10/1,206）、X448/Ed448（26/3,700）、AES-OCB（10/2,652）、ChaCha20-Poly1305（10/1,044）、KMAC（10/1,418）、Argon2（4/92）、XOF digest（8/838）、Hybrid-KEM（7/2,742）、门禁面（12/880），合计 109 案/18,052 子测试（universe 口径）；切片建议与依赖候选见 [DC-2 甄别清单](evidence/2026-10-31-dc2-promotion-screening.md)（依赖含新 crate：ml-kem/ml-dsa/ocb3/x448/ed448-goldilocks/kangarootwelve 等，选型须用户拍板） | 已飞书征询在案（GB-20261031，msg `om_x100b616bdb6c9ca0dde792fae199471`）；待用户拍板；不 BLOCK 本 goal 收口 |
+| D2 | 引擎基线红处置路径（收口唯一缺口）：**fetch/Request 契约族 9 已由 s179/s180 全清**（engine lib 3635P/1F），唯余 ua_display_li 1F——git 追溯定性为 s161 handle gCS 通道 × 渲染流 D4 待裁决冻结面（host `li→Block` 冻结值盖过 shim 已翻的 list-item 表），修复=渲染流 D4 双面同提交翻转（用户裁决门禁，非本 goal 域）；① 等渲染流 D4 裁决落地后 make test 全绿当场收口；② 授权本 goal 按 standing exclusion 口径收口（先例 net-api request-cache 98F——归因已在 [gates evidence](evidence/2026-10-31-gates-and-closure-status.md) 落档，非本 goal 域、33,109 分母零回归不受影响，DONE 的「cargo test 全过」按归因口径豁免并行流账面）。**本 goal 不越界代修**（Mission 边界维持） | 已飞书征询在案（GB-20261031，msg `om_x100b616bdb6c9ca0dde792fae199471`）；待用户拍板；期间维持低成本轮询 + 锚复跑，ua_display_li 清零即当场收口 |
 
 ## 碰撞管理记录（run-rules §9）
 
