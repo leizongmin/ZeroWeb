@@ -149,6 +149,24 @@ fetch_raw "html/interaction/focus/the-autofocus-attribute/resources/utils.js"
 fetch_raw "html/semantics/popovers/resources/popover-utils.js"
 fetch_raw "html/semantics/popovers/resources/toggle-event-source-test.js"
 
+# ③b css/text 数据模块语料资源（s108 待决①销账，用户授权 2026-10-31）：css-module/
+# text-module 用例引用面。缺口机制 = M1 首拉（2026-10-15）时扩展白名单尚无 .css
+#（2026-10-29 才加）且 fetch_dir_html 的 .txt 为 opt-in，此后 css-module/ 已含
+# .html 被幂等快路径整目录跳过——缺口固化（s158 补 link-rel-attribute.css 同坑）。
+# not_found.css / not_found.txt 为负向用例，必须继续缺席，不拉。
+# utf-8.css / utf-8.txt 仅经 serve-with-content-type.py?fn= 引用，runner 未实现
+# 该端点（FIXME 记账），端点落地时再补。
+# 基准变更注记：补语料后 css-module/text-module 引用面预期 F→P 位移，下轮全量
+# join 的对应 GAINED 按语料变更归因，非回归。
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/basic.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/basic-large.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/bad-import.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/malformed.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/parse-error.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/load-relative-url.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/atImported.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.txt"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"
