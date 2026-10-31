@@ -42,6 +42,10 @@ browser tabs（tab_manager.rs:1392）与 renderer 运行时均创建 `zero_webvi
 - 多进程 renderer `SetDomSnapshot` 臂 entries 化（新挂账，低优先——该臂已有 blob 文档化回落）。
 - s167 FIXME 就本刀范围销账：runner + embedded 静态路径已 entries 化。
 
+## 并行合并复证（2026-10-31 push 时）
+
+commit 47370ed94 push 前 rebase 并入并行流 0b7c00f83（site-opt T27 click-latency：apps/renderer + page-runtime/lib.rs 1 行）。page-runtime 在 webview 依赖链上——合并树 webview lib 复跑 **830P/0F** 复证通过，零新面孔。
+
 ## 下一步候选
 
 ①声明式根内容枚举（s173 LOST 20 承接）；③ua_display_li（style-system 跨流）；④selection-pointer forms 域 22 案归因勘定（s172 记）。
