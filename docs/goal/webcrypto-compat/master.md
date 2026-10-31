@@ -3,7 +3,8 @@
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
 build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺口
 `cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
-交、本 goal 零代码变更）——收口归档待该基线清零
+交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
+（`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步
 **最后更新**: 2026-10-31（门禁与收口状态见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
