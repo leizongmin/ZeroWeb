@@ -18229,11 +18229,24 @@
     if (n.toLowerCase() === 'open' || n.toLowerCase() === 'name') {
       try { _r4100Had = node.hasAttribute(n); } catch (_e44100a) { _r4100Had = null; }
     }
-    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _zwMReflectIdl(node, n); _zwMQueueSlotAttr(node, n); _zwMDetailsAttrTail4100(node, n, _r4100Had); return; } }
+    // s197（html-semantics focus 域）：写后共享尾——fieldset disabled 置位 → 焦点内含
+    // 检查 + unfocusing（解析节点面，disabled-003 deep-nested 钉案）。IDL `.disabled=`
+    //（R154 描述符 part03 `_zwDescBoolReflected`）与 setAttribute 双通道同经此口；
+    // 写后触发，helper 读 `parent.disabled`（属性存在性，写序无关值）。
+    var _fsTail = function () {
+      _zwMReflectIdl(node, n); _zwMQueueSlotAttr(node, n); _zwMDetailsAttrTail4100(node, n, _r4100Had);
+      if (n.toLowerCase() === 'disabled'
+          && typeof globalThis._zwFieldsetDisableFocusReset === 'function') {
+        try {
+          if (String(node.localName || node.nodeName || '').toLowerCase() === 'fieldset') {
+            globalThis._zwFieldsetDisableFocusReset();
+          }
+        } catch (_eFsM) {}
+      }
+    };
+    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); return; } }
     attrs.push({ name: n, value: sv });
-    _zwMReflectIdl(node, n);
-    _zwMQueueSlotAttr(node, n);
-    _zwMDetailsAttrTail4100(node, n, _r4100Had);
+    _fsTail();
   }
   // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
   function _zwMElRemoveAttribute(n) {

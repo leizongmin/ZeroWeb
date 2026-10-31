@@ -526,6 +526,21 @@
             if (handle) __zw_set_attr_handle(handle, p, '');
             else __zw_set_attr(sel, p, '');
             moAttr = p;
+            // s197（html-semantics focus 域）：fieldset disabled 置位 → 焦点元素在
+            // 被除 focusable area 内则 unfocus（activeElement 回落 body）。disabled-003
+            // 钉面（light/deep-nested 双案）。TAG 门走 proxy tagName 读而非 `_realTag`
+            //——innerHTML 物化的 handle-only proxy 宿主 tag 表 miss 回落恒 DIV
+            //（s168 缺口在册），deep-nested 案被 `_realTag` 门误拦。spec
+            // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+            if (p === 'disabled'
+                && typeof globalThis._zwFieldsetDisableFocusReset === 'function') {
+              try {
+                var _fsPr = _makeProxy(sel, handle);
+                if (_fsPr && String(_fsPr.tagName).toUpperCase() === 'FIELDSET') {
+                  globalThis._zwFieldsetDisableFocusReset();
+                }
+              } catch (_eFsIdl) {}
+            }
           } else if (handle && typeof __zw_remove_attr_handle === 'function') {
             // R2998 修正注：falsy 真移除（`__zw_remove_attr_handle` 已注册 callbacks.rs——旧「不设」使 `.disabled = false` 后属性残留，click() 的 disabled 门与 getter 恒真；WPT Event-dispatch-on-disabled-elements 的 re-enabled 后 `.click() must dispatch` 断言）。与下方 R3039/40 反射表同款。
             __zw_remove_attr_handle(handle, p);

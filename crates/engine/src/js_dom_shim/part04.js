@@ -3837,6 +3837,21 @@
             }
             if (handle) __zw_set_attr_handle(handle, n, v);
             else __zw_set_attr(sel, n, v);
+            // s197（html-semantics focus 域）：fieldset disabled 属性置位（setAttribute
+            // 通道，IDL setter 通道在 part05 布尔臂）→ 焦点内含检查 + unfocus——
+            // active element 落被除 focusable area（首 legend 子树豁免，s193 读面同
+            // 判据）即回落 body。TAG 门走 proxy tagName 读（handle-only proxy
+            // `_realTag` 回落 DIV，s168 缺口同 part05 臂注）。disabled-003 钉面。
+            // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+            if (n === 'disabled'
+                && typeof globalThis._zwFieldsetDisableFocusReset === 'function') {
+              try {
+                var _fsPr = _makeProxy(sel, handle);
+                if (_fsPr && String(_fsPr.tagName).toUpperCase() === 'FIELDSET') {
+                  globalThis._zwFieldsetDisableFocusReset();
+                }
+              } catch (_eFsA) {}
+            }
             // s150：LINK href 变更触发 stylesheet 重取（spec link processing——
             // href 值变更 → re-fetch；幂等比较在 helper 内做解析后绝对 URL 比较，
             // prevHref=null 语义「无写入路径旧值」不发生于此臂——捕获已定，

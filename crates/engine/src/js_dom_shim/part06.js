@@ -17437,6 +17437,69 @@
     }
     if (typeof __zw_host_focus === 'function') __zw_host_focus(sel);
   };
+  // M2-S197（html-semantics focus 域，2026-11-01）：fieldset disabled 置位 → 焦点内含
+  // 检查 + unfocusing。spec：fieldset 变 disabled 即除去其**首 legend 元素子**子树之外
+  // 后代的 focusable area，active element 在被除区内则失焦（activeElement 回落 body）。
+  // 豁免判据与 s193 读面（willValidate 祖先走查）同口径：每层 disabled fieldset 只豁免
+  // 「焦点链直子 = 该 fieldset 首个 legend 元素子」的支路，豁免后继续上行（更外层
+  // disabled fieldset 仍可 barred）。写通道挂 IDL boolean setter 早臂（part05 'disabled'
+  // 拦截面，先于 `_reflectedBoolAttr`）与 setAttribute trap（part04，s150/s155 同款 TAG 门
+  // + 写后触发）；disabled 移除不回焦（spec 无此步）。
+  // https://html.spec.whatwg.org/multipage/#the-fieldset-element
+  // https://html.spec.whatwg.org/multipage/#unfocusing-steps
+  // 焦点态双域取焦点元素（R148 所有权互斥）：解析节点焦点 `_zwMElFocused`（R114 focus()
+  // 直写、activeElement getter 优先域）优先，proxy 态 `_activeElKey`→`_proxyCache` 次之。
+  // 解析节点 proxy 无 `__zwSelector`/`__zwHandle`（innerHTML 物化面，_elKey 重算必 null，
+  // `_zwUnfocusIfFocused` 守卫直 bail——disabled-003 deep-nested 实测）→ 其 unfocus 序就地
+  // 展开（对齐 `_zwUnfocusIfFocused`：清所有权 + `_navMarkFocusChanged` + blur/focusout 落
+  // 焦点元素 + `__zw_focus_changed('')`，无 body focus）；proxy 态仍走共享原语。
+  globalThis._zwFieldsetDisableFocusReset = function () {
+    try {
+      var p = null;
+      var mForm = false;
+      if (globalThis._zwMElFocused) { p = globalThis._zwMElFocused; mForm = true; }
+      else if (_activeElKey != null) p = _proxyCache[_activeElKey] || null;
+      if (!p) return;
+      var child = p;
+      var guard = 0;
+      while (child && guard < 128) {
+        var parent = null;
+        try { parent = child.parentNode; } catch (_eFsP) { break; }
+        if (!parent) break;
+        var tag = '';
+        try { tag = String(parent.tagName).toUpperCase(); } catch (_eFsT) { tag = ''; }
+        if (tag === 'FIELDSET') {
+          var dis = false;
+          try { dis = !!parent.disabled; } catch (_eFsD) {}
+          if (dis) {
+            var exempt = false;
+            try {
+              var leg = null;
+              var kids = parent.children;
+              for (var i = 0; i < kids.length; i++) {
+                if (String(kids[i].tagName).toUpperCase() === 'LEGEND') { leg = kids[i]; break; }
+              }
+              exempt = (leg != null && child === leg);
+            } catch (_eFsL) {}
+            if (!exempt) {
+              if (mForm) {
+                globalThis._zwMElFocused = null;
+                _navMarkFocusChanged();
+                try { p.dispatchEvent(_makeEvent('blur', { bubbles: false, cancelable: false })); } catch (_eFsB) {}
+                try { p.dispatchEvent(_makeEvent('focusout', { bubbles: true, cancelable: false })); } catch (_eFsFo) {}
+                try { if (typeof __zw_focus_changed === 'function') __zw_focus_changed(''); } catch (_eFsH) {}
+              } else {
+                _zwUnfocusIfFocused(p);
+              }
+              return;
+            }
+          }
+        }
+        child = parent;
+        guard++;
+      }
+    } catch (_eFsX) {}
+  };
   // security-hardening M2-s1（spec CSP3 §report-the-violation）：宿主 CSP 检查点派发
   // securitypolicyviolation——shim `_makeEvent` 事件 + 违规字段以自有属性附于事件
   //（assert_equals 直接属性读取面；native SecurityPolicyViolationEvent 构造实例过不了

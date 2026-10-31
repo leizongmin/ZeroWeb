@@ -31,7 +31,47 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 196 收口，`:active` 伪类通道——定向 8F：稳定翻绿 3（with-click radio 本体 + checkbox/radio 后随 label，收口后 6 轮全 Pass）+ flake 域翻绿 3（onblur 键盘 ×2 对照窗双 Pass + checkbox 本体指针全树跑 Pass——runner 单命令链竞速负载敏感）+ 恒 F 2（父 label ×2 layout 缺口挂账）；dom `Document.active_element` 槽 + engine 字符串槽查询面注入 + shim 指针/键盘/焦点三可信钩子）**
+> **▶ 当前状态（2026-11-01 M2 切片 197 收口，fieldset disabled 置位焦点内含检查——disabled-003 crash/hang 2F 翻绿（light + deep 双案），forms 全树 keyed diff 恰 2 靶键 F→P 零真 P2F；shim 4 文件 helper + 三写通道钩子，焦点态双域（解析节点 `_zwMElFocused` / proxy `_activeElKey`）分流 unfocus）**
+> **入场定刀位**：s196 在册首席候选 disabled-003 crash/hang 2F——light
+> 案「Disable light-nested fieldsets should not crash」+ deep 案
+> 「Disable deep-nested fieldsets should not hang」（100 级嵌套）。
+> **勘根**：失败语义单根（disable 不失焦——活动元素停留被禁后代，
+> spec #the-fieldset-element 移除后代 focusable area + #unfocusing-steps）
+> 三分支陷阱——(1) part05 早 boolean 分支先于 `_reflectedBoolAttr` 拦截
+> `disabled`（初版钩点恒不可达）；(2) `_realTag` 对 innerHTML 物化
+> handle-only proxy 回落恒 DIV（s168 在册缺口）误拦 TAG 门；(3) 深案真
+> 根 = 焦点态双域——解析节点 `.focus()` 走 R114 置 `_zwMElFocused` 清
+> `_activeElKey`（R148 所有权互斥），且解析节点 proxy 无
+> `__zwSelector`/`__zwHandle` → 共享原语 `_zwUnfocusIfFocused` 的
+> `_elKey` 重算必 null bail（探针 `sel=undefined hdl=undefined` +
+> `manual=still-inp` 实证）；(4) 解析节点面写通道（R154 描述符 →
+> `_zwMElSetAttribute`）两钩子均不在（探针包装计数 `autoCalls=0` 定谳）。
+> **施工**（4 文件 shim，净 +110/−4）：part06 `_zwFieldsetDisableFocusReset`
+> ——parent 链上行走查（≤128 跳）+ 首 legend 元素子豁免（s193 读面同
+> 口径，豁免续上行）；焦点元素双域取（`_zwMElFocused` 优先）；unfocus
+> 分流——proxy 态复用 `_zwUnfocusIfFocused`，解析节点态就地展开同序
+> （清 `_zwMElFocused` + `_navMarkFocusChanged` + blur/focusout +
+> `__zw_focus_changed('')`，事件参数逐字节对齐共享原语）；part05 早分支
+> `if (value)` 臂钩（TAG 门 proxy tagName 读）；part04 setAttribute trap
+> 写后钩（s150/s155 同款）；part03 `_zwMElSetAttribute` 写后共享尾钩
+> （解析节点 IDL + setAttribute 双通道同口）；disabled 移除不回焦。
+> **验证**：shim 拼接 node --check 三复验；探针四轮钉面验后删；stash
+> 隔离 A/B——forms 基线 4448P/253F/11T（复现 s196 HEAD 逐位）→ WIP
+> 4451P/250F/11T，keyed diff F→P 4（靶键 2 + flake 域 2）/P2F 1（flake
+> 域 checkbox onblur，同树三轮 F→F→P 摆动实测非本刀——`:active` onblur
+> 家族在册负载敏感域，与 fieldset disabled 写零机制关联）；fieldset 目录
+> 21P/1F（`type` IDL 既有缺口，A/B 同键）；interactive 439P/44F/0T
+> bit-exact；lib zero-engine 3642P/1F（在册同键）+ zero-dom 886P/0F
+> 逐位一致；fmt（Rust 零改动）+ guarded-clippy workspace 过。
+> **残留**：HTMLFieldSetElement `type` 1F 既有小缺口；`:active` onblur
+> flake 域（s196 在册 +1 键样本）；解析节点 unfocus 无 focusin/focusin
+> 补充面（共享原语同限，语料无形态）；legend 免除区惰性重评未建模
+>（s193 同限）。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031 征询
+> 在途）→ HTMLFieldSetElement `type` 1F 小缺口 → s196 挂账序。
+> **账本**：[evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md](html-semantics-compat/evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 196 收口，`:active` 伪类通道——定向 8F：稳定翻绿 3（with-click radio 本体 + checkbox/radio 后随 label，收口后 6 轮全 Pass）+ flake 域翻绿 3（onblur 键盘 ×2 对照窗双 Pass + checkbox 本体指针全树跑 Pass——runner 单命令链竞速负载敏感）+ 恒 F 2（父 label ×2 layout 缺口挂账）；dom `Document.active_element` 槽 + engine 字符串槽查询面注入 + shim 指针/键盘/焦点三可信钩子）**
 > **入场定刀位**：s195 在册首席候选 checkable-active 族 8F——s195 定谳
 > 「`:active` 通道整体缺位」（`matches_pseudo_class` 落 false、无 Document
 > active 态、无指针/键盘钩子）。
