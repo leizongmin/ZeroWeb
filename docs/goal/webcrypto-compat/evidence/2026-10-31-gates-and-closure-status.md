@@ -45,3 +45,20 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 1. 轮询并行流进度（`git fetch` + 引擎基线账面）；
 2. fetch/Request 簇清零后复跑 `make test` 全绿 + clippy 复验；
 3. 执行收口归档迁移与登记，最终提交推送。
+
+## 12:55 追记：10F 清零驱动核查（收口前提变化）
+
+- ps / tmux / crontab 三面核查（12:55）：`rally run
+  docs/goal/html-semantics-compat.md` **无进程**——在跑 rally 仅
+  editing 流（ZeroWeb-3，Oct 29 起）与本流（ZeroWeb-2，10:09 起）；
+  tmux 无 server、用户 crontab 空。s 系 shim 推进止于 10:52
+  `3b25bb2c7`，此后远端 main 仅 rendering 流（11:22 `544616de4`、
+  12:29 `66200548f`、12:45 `7039931b0`）与本流 docs（11:18/11:24）推进。
+- 12:29/12:45 两笔 rendering 推进均只触及 `tests/wpt-runner/src/reftest/`
+  与 rendering docs，不触及 engine lib unit 测试面——10F 组合态在当前
+  tip `7039931b0` 无变化依据，未消耗测试跑复证。
+- 收口前提「并行流在清 fetch/Request 簇」的驱动缺位：处置路径登记
+  master.md 待用户决策表 **D2**（① 等 goal-25 重启清零 / ② standing
+  exclusion 口径授权收口，先例 net-api request-cache 98F）。本 goal 仍
+  不越界代修；期间维持低成本轮询（`git fetch` + s 系账面），基线清零
+  即当场收口。
