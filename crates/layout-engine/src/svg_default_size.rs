@@ -109,6 +109,33 @@ pub(crate) fn svg_default_used_size(
         }
     }
     if parse_abs(&attr_w).is_some() || parse_abs(&attr_h).is_some() || css_abs(&style.width) || css_abs(&style.height) {
+        // R5367（CSS2 §10.6.2 inline/float replaced used height + css-sizing-3
+        // default object size）：宽有 abs 来源、高**全无来源**（attr/CSS 均无）的
+        // width-only 形态——旧 abs 早退交既有路径后 height auto 无内容贡献塌 0
+        //（`<svg width="150">` 实测 150×0；chromium 150×150）。高回退：
+        //   有比（viewBox/CSS ar；attr 单边不立比，R5196）→ w/ratio 比转移
+        //（§10.6.2 height auto + ratio + width 非 auto → width/ratio）；
+        //   无比 → default object size 高 150。
+        // R4000b attr height=0 退化比形态已在其前处理，不进本臂。
+        // contain:size 让路（css-contain-1 §3.1：size containment 下 replaced 的固有
+        // 尺寸按空内容计——viewBox 比转移与 default 150 都是固有输入，回退 0 + padding
+        // 才是正确 used；contain-size-replaced-002 回归实证）。
+        let height_absent = attr_h.is_none() && matches!(style.height, LengthValue::Auto) && !style.contain.has_size();
+        if height_absent && let Some(aw) = parse_abs(&attr_w).or_else(|| css_abs_value(&style.width)) {
+            // R4161 同语义：`aspect-ratio: auto <ratio>` 时 replaced 自然比（viewBox）
+            // 优先于声明比——css-sizing-4 auto 语义下声明比不得遮蔽固有比，无比回落
+            // 声明（svg_ratio_value 的 attr 对/声明序不变）。r3997_ifc_ar_transfer pin。
+            let ratio = if style.aspect_ratio_auto {
+                svg_viewbox_ratio(elem).or_else(|| svg_ratio_value(elem, style))
+            } else {
+                svg_ratio_value(elem, style)
+            };
+            let h = match ratio {
+                Some(r) if r.is_finite() && r > 0.0 => aw / r,
+                _ => SVG_DEFAULT_H,
+            };
+            return Some((Some(aw), h));
+        }
         return None;
     }
     let width_pct =
@@ -194,15 +221,16 @@ pub(crate) fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Opti
     if let Some(r) = style.aspect_ratio.filter(|r| r.is_finite() && *r > 0.0) {
         return Some(r);
     }
-    if let Some(vb) = elem.get_attribute("viewBox").or_else(|| elem.get_attribute("viewbox")) {
-        let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
-        if nums.len() == 4
-            && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
-            && vh > 0.0
-            && vw > 0.0
-        {
-            return Some(vw / vh);
-        }
+    if let Some(r) = svg_viewbox_ratio(elem) {
+        return Some(r);
+    }
+    if elem
+        .get_attribute("viewBox")
+        .or_else(|| elem.get_attribute("viewbox"))
+        .is_some()
+    {
+        // viewBox 在场但非法（非 4 数 / 非正维）→ 比不立且不回退 attr 对
+        //（保持原序：viewBox 臂 fail-closed）。
         return None;
     }
     // R5196 无 viewBox：attr width/height 双在场（均非 %）→ 固有比 = attr 值之比。
@@ -212,6 +240,22 @@ pub(crate) fn svg_ratio_value(elem: &ElementData, style: &ComputedStyle) -> Opti
     let pw = parse_ratio_dim(elem.get_attribute("width")?)?;
     let ph = parse_ratio_dim(elem.get_attribute("height")?)?;
     (pw > 0.0 && ph > 0.0).then_some(pw / ph)
+}
+
+/// viewBox 属性的自然比（w/h，非法/缺省 → None）。R4161/R5367 共用解析。
+fn svg_viewbox_ratio(elem: &ElementData) -> Option<f32> {
+    let vb = elem
+        .get_attribute("viewBox")
+        .or_else(|| elem.get_attribute("viewbox"))?;
+    let nums: Vec<&str> = vb.split([' ', ',']).filter(|t| !t.is_empty()).collect();
+    if nums.len() == 4
+        && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
+        && vh > 0.0
+        && vw > 0.0
+    {
+        return Some(vw / vh);
+    }
+    None
 }
 
 /// attr 尺寸值按比率语义解析：无单位数 / px（% 拒绝——见上 R5196 注）。
@@ -473,6 +517,45 @@ mod tests {
         assert_eq!(svg_ratio_value(&elem4, &style4), None);
         let (elem5, style5) = setup(r#"<html><body><svg width="50%" height="200"></svg></body></html>"#, "");
         assert_eq!(svg_ratio_value(&elem5, &style5), None);
+    }
+
+    /// R5367（CSS2 §10.6.2 + css-sizing-3 default object size）：width-only 形态
+    /// （宽 abs + 高全无来源）→ 高回退。无比 → default 150；有比（viewBox）→
+    /// w/ratio 比转移。修复前 abs 早退交既有路径 height auto 塌 0
+    ///（`<svg width="150">` 实测 150×0；chromium 150×150）。
+    #[test]
+    fn r5367_width_only_height_fallback() {
+        // attr width abs、无 viewBox、无 height → (150, 150)。
+        let (elem, style) = setup(r#"<html><body><svg width="150"></svg></body></html>"#, "");
+        assert_eq!(svg_default_used_size(&elem, &style, None), Some((Some(150.0), 150.0)));
+        // viewBox 2:1 + width=150 → 比转移 (150, 75)。
+        let (elem2, style2) = setup(
+            r#"<html><body><svg width="150" viewBox="0 0 300 150"></svg></body></html>"#,
+            "",
+        );
+        assert_eq!(svg_default_used_size(&elem2, &style2, None), Some((Some(150.0), 75.0)));
+        // CSS width abs（attr 均无）同臂：100px → (100, 150)。
+        let (elem3, style3) = setup(
+            r#"<html><body><svg style="width: 100px"></svg></body></html>"#,
+            "svg { width: 100px }",
+        );
+        assert_eq!(svg_default_used_size(&elem3, &style3, None), Some((Some(100.0), 150.0)));
+        // attr height 在场 → 既有路径（None），不干预。
+        let (elem4, style4) = setup(r#"<html><body><svg width="150" height="300"></svg></body></html>"#, "");
+        assert_eq!(svg_default_used_size(&elem4, &style4, None), None);
+        // CSS height Px + attr width → 既有路径（None）。
+        let (elem5, style5) = setup(
+            r#"<html><body><svg width="150"></svg></body></html>"#,
+            "svg { height: 80px }",
+        );
+        assert_eq!(svg_default_used_size(&elem5, &style5, None), None);
+        // contain:size 让路（css-contain-1 §3.1 固有输入置零）→ None 交既有路径。
+        let (elem6, style6) = setup(
+            r#"<html><body><svg width="100" viewBox="0 0 50 50"></svg></body></html>"#,
+            "svg { contain: size }",
+        );
+        assert!(style6.contain.has_size(), "前置：contain:size 进 ComputedStyle");
+        assert_eq!(svg_default_used_size(&elem6, &style6, None), None);
     }
 
     /// R5319（CSS2 §10.3.2 float-replaced-width）：float svg + margin-left/right:auto +
