@@ -212,6 +212,19 @@ fn font_unicode_range_gate_enabled() -> bool {
     std::env::var("ZW_FONT_UNICODE_RANGE").as_deref() != Ok("0")
 }
 
+/// T32/G1：加载带内连续推进是否启用（env `ZW_LOAD_CONTIGUOUS_ADVANCE`；默认启用，仅 `0` 关闭）。
+///
+/// kill-switch：关闭后各渲染带回退单次 `advance_render`（剩余步沿主循环 16ms recv
+/// 节拍逐拍续推，T32 改前行为），供调度行为回退定位。每 tick 读取一次，非热路径
+///（[`Self::advance_session_contiguous`] 入口一次）。
+fn load_contiguous_advance_enabled() -> bool {
+    std::env::var("ZW_LOAD_CONTIGUOUS_ADVANCE").as_deref() != Ok("0")
+}
+
+/// T32/G1：带内连续推进的墙钟帽（毫秒）——单次 tick 调用内连续推进渲染步的上界；
+/// 到帽即退，剩余步沿既有逐拍路径续推（防病态页面无限占用主循环）。
+const LOAD_ADVANCE_CONTIGUOUS_CAP_MS: u128 = 300;
+
 /// T20/G1：取 `css_pending` 队首表的 fetch 结果——已决（Ok 值或 Err 失败）返回
 /// `Some(result)`；未决（`Empty`）或通道关闭无值（`Disconnected`，宿主异常中止）与
 /// 队列空均返回 `None`（前缀门控下统一视为「前缀到头」）。借用仅限本调用表达式，
@@ -521,7 +534,9 @@ impl AsyncPageLoad {
         }
 
         if self.budget_pending {
-            changed |= self.advance_render(webview, budget_ms);
+            // T32：骨架/styled 各带的续推点（budget_pending 跨拍保持）——带内连续
+            // 推进消步间逐拍等待。
+            changed |= self.advance_session_contiguous(webview, budget_ms);
         }
 
         if self.stage == PageLoadStage::FirstPaint && !self.budget_pending && self.render_session.is_none() {
@@ -542,7 +557,7 @@ impl AsyncPageLoad {
 
         // 图片分批到达后需在本 tick 内重绘，否则 publish 会用到上一帧。
         if self.budget_pending && matches!(self.stage, PageLoadStage::FetchingImages | PageLoadStage::Complete) {
-            changed |= self.advance_render(webview, budget_ms);
+            changed |= self.advance_session_contiguous(webview, budget_ms);
         }
         changed
     }
@@ -604,6 +619,27 @@ impl AsyncPageLoad {
         if count > 0 {
             tracing::info!(url = %self.url, count, "page load: speculative preload hints");
         }
+    }
+
+    /// T32/G1：带内连续推进——budget 预算步原子执行（style/layout 单步常远超单帧
+    /// 预算，步中不可抢占），单次 [`Self::advance_render`] 后剩余步要等主循环下一拍
+    ///（16ms recv 节拍，runtime.rs LOAD_TICK_INTERVAL）才续推，步间等待是纯调度间隙
+    /// （T32 r1+r2 24 样本：cnblogs styled 带墙钟 299ms vs 管线内计时 215ms，~84ms
+    /// 为 3 个 tick 边界等待；骨架带同机制 ~45ms）。本方法以新预算重复推进直到会话
+    /// 完成或墙钟帽（[`LOAD_ADVANCE_CONTIGUOUS_CAP_MS`]）到期；只收敛调度间隙，步序
+    /// 与渲染输出不变（每步输入相同 → 输出逐位相同）。帽到期即退，防病态页面无限
+    /// 占用主循环；连续推进期间输入/IPC 消息排队，帽即最大派发延迟上界（加载窗长
+    /// 任务语义，与 Chrome 加载期行为同级）。
+    fn advance_session_contiguous(&mut self, webview: &mut WebView, budget_ms: f64) -> bool {
+        if !load_contiguous_advance_enabled() {
+            return self.advance_render(webview, budget_ms);
+        }
+        let started = Instant::now();
+        let mut changed = self.advance_render(webview, budget_ms);
+        while self.render_session.is_some() && started.elapsed().as_millis() < LOAD_ADVANCE_CONTIGUOUS_CAP_MS {
+            changed |= self.advance_render(webview, budget_ms);
+        }
+        changed
     }
 
     fn advance_render(&mut self, webview: &mut WebView, budget_ms: f64) -> bool {
@@ -801,7 +837,8 @@ impl AsyncPageLoad {
             self.stage = PageLoadStage::StyledPaint;
             self.budget_pending = true;
             *changed = true;
-            let _ = self.advance_render(webview, budget_ms);
+            // T32：styled 带起点同走连续推进（整带收敛进本 tick，消 3 个 tick 边界等待）。
+            let _ = self.advance_session_contiguous(webview, budget_ms);
             self.begin_font_fetch(host);
         }
     }
