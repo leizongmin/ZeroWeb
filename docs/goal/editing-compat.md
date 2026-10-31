@@ -12,7 +12,7 @@
 
 **归因（tape v2 三窗×3 样本，临时插桩已剥）**：bulk fill 四主项 = 本地解析 `_zwMBuildBodyTree` ~21µs/span + t8r 物化 `_wcRebuildAsHandle` ~21µs/span（架构常数、既有正确性修复面）+ CE 环 seg15 ~41ms（本轮修复面）+ HCLiveInvalidate ~10ms；per-append 两主项 = appendChild trap glue ~85µs + HCLiveInvalidate ~73µs；notify 内部机制段全净 ≤5µs——10-30 trap 层四笔效果保持。**s111 臂残余定谳历史态**：三窗 ≤1-3ms/2000 子、≤4µs/append，「34-46µs/append」系 10-30 归因时点数字，已被 10-30 t8f 印章前移 + `_realTag` handle-only O(1) 表查吸收（与前轮 ~650µs text-child 同款关闭先例）。**顺带修一潜伏边**：旧 `_ceIsChecked` 章跨 gen bump 存活，gen=0 期插入元素 define（customized built-in）后 is 反查被旧章跳过——快路使该形态改走完整反查（更正确）。插入侧残余地图刷新（解析 / t8r / trap glue / HCLiveInvalidate / CE 环 details 全树扫五项），维持既有独立整轮 scoping。见 [evidence](editing-compat/evidence/2026-10-31-insert-side-attribution-and-ce-entry-fast-path.md)。
 
-**门禁（六面，systemd 串行批）**：join 三案 **7,518P/0F/0T**、inline-host **880P/0F**、engine lib **3,641P/1F**（s24 已知红唯一，红名 identical；+6P 他流入账正漂移）、webview lib **832P/0F**、bench-gate（zero-engine 定向）**PASS**、web-components 跨域 pristine-A/B **4,022P/1,146F/5T 三跑逐位一致零位移**。
+**门禁（六面，systemd 串行批）**：join 三案 **7,518P/0F/0T**、inline-host **880P/0F**、engine lib **3,641P/1F**（s24 已知红唯一，红名 identical；+6P 他流入账正漂移）、webview lib **832P/0F**、bench-gate（zero-engine 定向）**PASS**、web-components 跨域 pristine-A/B **4,022P/1,146F/5T 三跑逐位一致零位移**。合并树复测（ba268c969 = s185 三笔 part03/04/05 +414/−53 于门禁后并入同文件）：join 7,518P/0F/0T + inline-host 880P/0F **零位移**。
 
 **下一步**：①（簇 A 流）removeChild 残余 O(n²)（R126 子判定 + LiveNLSync 每 removal 2 次物化）独立整轮 + 插入侧残余按 evidence §4 现行地图逐项独立轮；②（execCommand 簇序流认领不动）run 面现行账按命令族重排定首簇；③ PR #263 已合入（9493a8d8a）——nth-child rebind 探针复验销账归撞头仲裁流执行。
 

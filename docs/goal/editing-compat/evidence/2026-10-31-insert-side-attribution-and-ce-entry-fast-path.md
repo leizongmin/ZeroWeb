@@ -113,6 +113,10 @@ seg15 残余 ~30ms = `__zwDetailsScan4100` 全树扫（R4100 details name 组，
 stash 编排属共享面操作，后续轮次开工前按 [[rally-resume-check-concurrent-rounds]] 先盘
 `systemctl --user list-units 'zw-*'` 与 stash 栈。
 
+**合并树复测（2026-10-31 23:22-23:30，systemd）**：s185 三笔（form.elements 面，part03/04/05
++414/−53）于本轮六门之后并入同一提交树（ba268c969），组合态此前无人门禁——补跑 join
+7,518P/0F/0T + inline-host 880P/0F **零位移**，合并面收口。
+
 ## 6. 复现入口
 
 - 探针页：`tests/wpt-runner/wpt-data/editing/run/zz-probe-s5-insert.html`（gitignore 域保留）。
