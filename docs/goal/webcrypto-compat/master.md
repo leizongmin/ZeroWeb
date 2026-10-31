@@ -5,16 +5,16 @@ build/clippy 绿 + webcrypto 锚在最终 HEAD 逐字节复验一致；唯一缺
 `cargo test` 10F 全部为 html-semantics 并行流在清的引擎既有基线（域不相
 交、本 goal 零代码变更）——收口归档待该基线清零。M1/M2 里程碑已归档
 （`archive/2026-10-31-m1-m2.md`），入口文档状态行已同步。
-**收口前提轮询（2026-10-31 12:55 → 17:52）**：goal-25（html-semantics，
-s 系账本）流活跃但放缓——s173 12:53 → s174 13:31 → s175 14:48
-（≈1h15m/轮）→ s176 17:45（≈3h/轮，shadow 寻址物化重活），s176 自账
-engine lib **3619P/10F**（10F 同键：fetch/Request 契约族 9 +
-ua_display_li，[s176 账](../html-semantics-compat/evidence/2026-10-31-m2s176-shadow-addressing.md)）。
-s 系刀位仍在 shadow 域（s177 队列：命令式 attachShadow），fetch 簇
-（s 系候选③）未进队列可见部分，ETA 未知；处置路径维持待用户决策表
-**D2**，期间低成本轮询（`git fetch` + s 系账面），基线清零即当场收口
-（详见 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
-**最后更新**: 2026-10-31 17:52（轮询追记见
+**收口前提轮询（2026-10-31 12:55 → 19:45）**：goal-25 s 系已进 fetch 簇
+清零刀——s179 19:38 `a3768d3e7` 一次勘定 fetch 契约族 16 红（构造校验链
+测试面对齐 + `Response.clone` Set-Cookie 根修），**engine lib
+3625P/10F → 3633P/2F**（[s179 账](../html-semantics-compat/evidence/2026-10-31-m2s179-fetch-contract-family.md)）。
+余 2F 归属清楚：iframe XHR credentialed-open（真实 shim bug，s 系下刀位
+⑥）+ ua_display_li（渲染流 UA sheet 翻转钉测，渲染流在册）。二者清零后
+make test 即应全绿；处置路径维持待用户决策表 **D2**，期间低成本轮询，
+基线清零即当场收口（详见
+[evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）
+**最后更新**: 2026-10-31 19:45（轮询追记见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

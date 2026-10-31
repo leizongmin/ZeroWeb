@@ -107,3 +107,19 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   10F 基线结构性延续；renderer lib 首立全量基线 354P/5F（含 renderer 侧
   fetch 契约族 3F，与 engine fetch 9F 同族异面）归 s 流；其下一步候选
   （forms 402F / interactive 44F / renderer page_scripts 2F）仍非 fetch 簇。
+
+### 19:45 轮询追记：s179 进 fetch 簇清零刀——10F → 2F，收口路径显形
+
+- s179 19:38 `a3768d3e7`（fetch 契约族 16 红勘定：M2-S3 构造校验链测试面
+  三代际对齐 A/B/C 分类 + `Response.clone` 丢 Set-Cookie 真实 shim 根修，
+  [s179 账](../../html-semantics-compat/evidence/2026-10-31-m2s179-fetch-contract-family.md)）
+  ——**engine lib 3625P/10F → 3633P/2F**（fetch 族 8 转绿），browser bin
+  tab_js_worker 39P/0F、renderer lib 361P/0F 全绿。
+- 余 2F 归属清楚：①`test_iframe_service_worker_messages_dispatch_to_
+  iframe_container`（iframe XHR credentialed-open，真实 shim bug，s 系
+  **下刀位 ⑥**，根修方向已记 XHR spec §4.3）；②`test_ua_display_li_
+  list_item_canvas_inline_s24_flip`（渲染流 UA sheet li/canvas 翻转钉测，
+  s 系记「渲染流在册/style-system 跨流」不越界）。
+- D2①（fetch/Request 簇清零→当场收口）进入射程：s180 落地 iframe XHR
+  根修 + 渲染流清 ua_display_li 后 make test 即应全绿。期间继续低成本
+  轮询；本 goal 仍零代码变更，组合态 tip `a3768d3e7`。
