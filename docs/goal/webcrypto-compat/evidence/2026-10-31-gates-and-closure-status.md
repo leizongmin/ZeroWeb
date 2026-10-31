@@ -322,3 +322,25 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   li→Block 双面翻转落地（`git log --grep` 全账仅 ledger 记账，
   R5370 门禁仍 `--skip ua_display_li` 对端 D4 既有红），D4 裁决与
   D1/D2 拍板均未见 git 账面。收口序列不变。
+
+### 2026-11-01 06:20 追记：锚复跑现 tip（65de5f28e）逐字节一致——editing 流 justify 查询面兜底变更吸收
+
+- `git pull --rebase` 吸入 editing 流 `65de5f28e`（justify 查询面
+  uplink 断裂兜底——setter 孤儿 wrapper 读数链修复，`js_dom_shim/
+  part01c.js` +105 行，jr/jf +220P 各零回归）：shim 面语料执行路径
+  代码，runner 二进制面前移，按纪律对现 tip 复跑锚——release runner
+  重建 25.71s（engine 重编译入包）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）——**对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B）**，
+  计数复核 123 文件 / 25,788P + 7,320F + 1T = 33,109；guard log
+  零字节（无击杀），runner EXIT=1 为预期挂账常规退出。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-justify-65de5f28e.json`（不入库）。
+- 至此锚窗口推进为 **1b6b9b291 → 65de5f28e**（上轮台账 + justify
+  查询面兜底全吸收），33,109 分母零回归在现 tip 成立。
+- **轮询面**：justify 变更自账 engine lib **3,642P/1F**（s24 已知红
+  同键逐名 identical，[其账](../../editing-compat/evidence/2026-11-01-justify-query-face-orphan-uplink.md)）
+  ——ua_display_li 未清，渲染流 D4 双面翻转仍未裁决；D1/D2 维持
+  待拍板。DC-1~4 四件 evidence 在位复核（均系 `5894374c1` 提交，
+  后续无触及）。收口序列不变：ua_display_li 清零 → make test 全绿
+  复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记
+  → 推送 → DONE；或 D2② 授权 standing exclusion 口径收口。
