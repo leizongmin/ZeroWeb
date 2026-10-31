@@ -16460,6 +16460,16 @@
   //——open 变迁已在属性写面排程，重复 notify 由队列 per-element 去重吸收。
   globalThis.__zwDetailsScan4100 = function (roots, isParse) {
     try {
+      // OPTIMIZATION（R4100 成员资格快路，2026-11-01）：解析/物化面（isParse=true）
+      // 的 roots 恒为同同步流内的构建产物——`_zwMEl` 系解析树（`_zwFragmentAdded`/
+      // plain innerHTML/outerHTML、`_zwMBuildDeepEntry` ccf/template contents、t8r
+      // `_wcRebuildAsHandle` 的源树）或 `_dsBuildHandleChild`；两处构建 census（
+      // `__zwDetailsEver4100`，单调不清零）为假 ⟹ 本世界从未构建过 DETAILS ⟹
+      // frag 必空、scan 恒 no-op（frag 循环外无副作用），直接返回。bulk fill
+      // 2000 子实测省 ~15-23ms/窗（handle wrapper 逐根 trap 读 ≈9.5µs/根）。
+      // 移动面（isParse=false）不门：roots 为既有 wrapper——主文档初始树 host 侧
+      // 懒投影（querySelector/getElementById 产物）不经构建工厂，无 census 覆盖。
+      if (isParse && !globalThis.__zwDetailsEver4100) return;
       var list = roots ? (roots.length !== undefined ? roots : [roots]) : [];
       // 片段成员（前序树序；root 自身 inclusive，roots 顺序拼接）。
       var frag = [];
@@ -18076,6 +18086,11 @@
   function _zwMEl(snap, parent) {
     snap = snap || {};
     var tag = snap.tag || '';
+    // R4100 成员资格快路 census（见 __zwDetailsScan4100 门注）：解析/构建产物
+    // tag 已知——host JSON 小写（HTML 解析 tree-construction 小写化）；全大写
+    // 兜底直构形态。XML preserveCase 混合大小写仅直接 createElement 产物，
+    // 不进解析扫描批次（move 面不门）。
+    if (tag === 'details' || tag === 'DETAILS') globalThis.__zwDetailsEver4100 = true;
     // R81：snap.preserveCase（XML 文档 createElement）保持原大小写（WPT Node-properties
     // xmlElement.tagName 期望 "igiveuponcreativenames"）；缺省 HTML 语义大写。
     var _mUp = snap.preserveCase ? tag : tag.toUpperCase();

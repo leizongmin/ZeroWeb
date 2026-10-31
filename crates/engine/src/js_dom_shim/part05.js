@@ -5123,6 +5123,9 @@
       if (entry.k === 'T') return globalThis.document.createTextNode(String(entry.v == null ? '' : entry.v));
       if (entry.k === 'C') return globalThis.document.createComment(String(entry.v == null ? '' : entry.v));
       if (entry.k !== 'E') return null;
+      // R4100 成员资格快路 census（见 part03 __zwDetailsScan4100 门注）：声明式
+      // shadow 树构建走主世界 createElement（非 `_zwMEl`），此处单独 census。
+      if (entry.tag === 'details' || entry.tag === 'DETAILS') globalThis.__zwDetailsEver4100 = true;
       var el = globalThis.document.createElement(String(entry.tag || 'div'));
       var ats = Array.isArray(entry.attrs) ? entry.attrs : [];
       for (var ai = 0; ai < ats.length; ai++) {
