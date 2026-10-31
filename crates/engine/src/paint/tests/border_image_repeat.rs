@@ -603,7 +603,13 @@ fn test_border_image_filter_function_emits_piece_filters() {
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
-    // 解码尺寸在案（真实管线由 image_sizes 缓存提供）→ 9-slice 源子矩形生效。
+    // 解码尺寸在案（真实管线 image_sizes + image_natural_sizes 双表在案——R5355 起
+    // 仅 natural 表 = intrinsic 缺失 SVG，Number 切片改按绘制区栅格解析）→ 固有
+    // 尺寸口径，9-slice 源子矩形生效，Number 切片 = 源图像素。
+    painter.image_sizes.insert(
+        super::super::helpers::image_resource_key("green.png", None),
+        (200.0, 200.0),
+    );
     painter.image_natural_sizes.insert(
         super::super::helpers::image_resource_key("green.png", None),
         (200.0, 200.0),
@@ -782,6 +788,11 @@ fn test_border_image_middle_natural_tile_repeat() {
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
+    // 位图源 = 固有尺寸口径（R5355：双表在案同真实管线，Number 切片 = 源图像素）。
+    painter.image_sizes.insert(
+        super::super::helpers::image_resource_key("big.png", None),
+        (500.0, 500.0),
+    );
     painter.image_natural_sizes.insert(
         super::super::helpers::image_resource_key("big.png", None),
         (500.0, 500.0),
@@ -855,6 +866,11 @@ fn test_border_image_middle_factor_from_top_slice() {
     let mut styles = HashMap::new();
     styles.insert(nid, style);
     let mut painter = Painter::new();
+    // 位图源 = 固有尺寸口径（R5355：双表在案同真实管线，Number 切片 = 源图像素）。
+    painter.image_sizes.insert(
+        super::super::helpers::image_resource_key("mid.png", None),
+        (500.0, 500.0),
+    );
     painter.image_natural_sizes.insert(
         super::super::helpers::image_resource_key("mid.png", None),
         (500.0, 500.0),
@@ -938,6 +954,95 @@ fn test_r5084_border_image_draw_process_kill_switch() {
         images.len(),
         8,
         "kill-switch must restore the legacy 8-piece emission, got {images:?}"
+    );
+}
+
+/// R5355：css-backgrounds-3 §5.2 — intrinsic 缺失源（viewBox-only / %-dim SVG，仅
+/// `image_natural_sizes` 在案、`image_sizes` 无条目——R717 ratio-only 分类）的
+/// Number 切片按 **border-image 绘制区栅格 px** 解析（chromium oracle 探针定谳：
+/// 200×200 绘制区上 40/30/20/10 切在 20/15/10/5 viewBox 单位处；驱动案
+/// border-image-image-type-001 ✗1.43% → ✓0.00%）。固有尺寸源维持源图 px 口径
+///（对照腿：同几何下 image_sizes 在案 → 数字 = 源图 px，切分分数 ×2）。
+#[test]
+fn test_r5355_border_image_intrinsic_less_source_number_slice_raster_space() {
+    use zero_style_system::{
+        BorderImageRepeatComputedMode, BorderImageRepeatComputedValue, BorderImageSliceComputedComponent,
+        BorderImageSliceComputedValue, BorderImageSourceComputedValue,
+    };
+
+    // 驱动案几何：CSS width/height 100 + 四边 50px border → border box（= 绘制区）
+    // 200×200（make_box 宽高为 border-box 口径，无 outset）。
+    let run = |intrinsic: Option<(f32, f32)>| {
+        let mut doc = zero_dom::Document::new();
+        let nid = doc.create_element("div");
+        let mut layout = make_box(Some(nid), 0.0, 0.0, 200.0, 200.0);
+        for b in [
+            &mut layout.border_top,
+            &mut layout.border_right,
+            &mut layout.border_bottom,
+            &mut layout.border_left,
+        ] {
+            *b = 50.0;
+        }
+
+        let mut style = ComputedStyle::default();
+        style.border_image_source = BorderImageSourceComputedValue::Url("nine.svg".to_string());
+        style.border_image_slice = BorderImageSliceComputedValue {
+            top: BorderImageSliceComputedComponent::Number(40.0),
+            right: BorderImageSliceComputedComponent::Number(30.0),
+            bottom: BorderImageSliceComputedComponent::Number(20.0),
+            left: BorderImageSliceComputedComponent::Number(10.0),
+            fill: false,
+        };
+        style.border_image_repeat = BorderImageRepeatComputedValue {
+            horizontal: BorderImageRepeatComputedMode::Stretch,
+            vertical: BorderImageRepeatComputedMode::Stretch,
+        };
+        let mut styles = HashMap::new();
+        styles.insert(nid, style);
+        let mut painter = Painter::new();
+        painter.image_natural_sizes.insert(
+            super::super::helpers::image_resource_key("nine.svg", None),
+            (100.0, 100.0),
+        );
+        if let Some((w, h)) = intrinsic {
+            painter
+                .image_sizes
+                .insert(super::super::helpers::image_resource_key("nine.svg", None), (w, h));
+        }
+        painter.paint(&layout, &styles, None);
+
+        let images = &painter.primitives().images;
+        assert_eq!(images.len(), 8, "4 corners + 4 edges, got {images:?}");
+        let src_at = |x: f32, y: f32| {
+            images
+                .iter()
+                .find(|img| (img.rect.origin.x - x).abs() < 0.5 && (img.rect.origin.y - y).abs() < 0.5)
+                .unwrap_or_else(|| panic!("piece at ({x},{y}) not found, got {images:?}"))
+                .source
+                .expect("piece must carry a normalized source subrect")
+        };
+        (src_at(0.0, 0.0), src_at(50.0, 0.0))
+    };
+
+    // intrinsic 缺失腿（viewBox-only SVG）：源坐标系 = 绘制区 200×200 →
+    // 左上角 src 尺寸 (sl/w, st/h) = (10/200, 40/200)；上边（dest 起点 x = bl = 50）
+    // src 起点 x = 0.05、宽 (200-10-30)/200 = 0.8。
+    let (tl, top) = run(None);
+    assert!(
+        (tl.size.width - 0.05).abs() < 1e-4 && (tl.size.height - 0.2).abs() < 1e-4,
+        "intrinsic-less slice must resolve against the 200×200 drawing area, got tl {tl:?}"
+    );
+    assert!(
+        (top.origin.x - 0.05).abs() < 1e-4 && (top.size.width - 0.8).abs() < 1e-4,
+        "top edge src must span (200-10-30)/200 of the raster, got {top:?}"
+    );
+
+    // 对照腿（固有尺寸源）：数字回源图 px 口径 → 切分分数 = 10/100、40/100。
+    let (tl, _) = run(Some((100.0, 100.0)));
+    assert!(
+        (tl.size.width - 0.1).abs() < 1e-4 && (tl.size.height - 0.4).abs() < 1e-4,
+        "intrinsic source keeps source-px slice caliber, got tl {tl:?}"
     );
 }
 // ── R5085：变换叶实心盒直绘（transform-origin-01 驱动）─────────────────

@@ -753,6 +753,26 @@ impl super::Painter {
 
         let key = image_resource_key(&url, self.document_url.as_deref());
 
+        // border-image-outset（CSS Backgrounds 3 §7.2）：border-image 绘制区向外扩展。
+        // Number = × 对应边框宽度；Length = 已解析 px。各边 outset 把外矩形向外移，
+        // 9 宫格（角/边/中心）相对外矩形定位 → 仅调整 bx/by/w/h 即可（其余公式不变）。
+        let outset_px = |c: &BorderImageOutsetComputedComponent, bw: f32| -> f32 {
+            match c {
+                BorderImageOutsetComputedComponent::Number(n) => n * bw,
+                BorderImageOutsetComputedComponent::Length(l) => *l,
+            }
+        };
+        let o_top = outset_px(&style.border_image_outset.top, bt);
+        let o_right = outset_px(&style.border_image_outset.right, br);
+        let o_bottom = outset_px(&style.border_image_outset.bottom, bb);
+        let o_left = outset_px(&style.border_image_outset.left, bl);
+
+        // 边框区域坐标（含 outset 外扩；默认 outset=0 → bx=abs_x/by=abs_y，旧行为不变）。
+        let bx = abs_x - o_left;
+        let by = abs_y - o_top;
+        let w = box_node.width + o_left + o_right;
+        let h = box_node.height + o_top + o_bottom;
+
         // R3906：9-slice 源矩形（CSS Backgrounds 3 §6.2 border-image-slice）。旧实现忽略
         // slice 偏移——每片把**整张源图**拉伸到目标片（whole-image 拉伸近似），slice 切出的
         // 源区域语义丢失（border-image-slice/repeat 族红）。现按 slice 值把源图切成 9 片，
@@ -760,10 +780,9 @@ impl super::Painter {
         // Number = 源图像素；Percent = 源图对应轴百分比。源图尺寸取 image_sizes 解码缓存，
         // 未解码（None）时回退整图映射（旧行为，不因缺尺寸出黑片）。
         // 源图尺寸优先固有尺寸缓存；ratio-only SVG 等无确定固有尺寸的源回退自然位图
-        // 尺寸（usvg tree.size = viewBox 尺寸——border-image slice 的参照就是源图）。
-        let img_size = self
-            .get_image_size(key)
-            .or_else(|| self.image_natural_sizes.get(&key).copied());
+        // 尺寸（usvg tree.size = viewBox 尺寸，见下方 intrinsic 缺失分支）。
+        let intrinsic_size = self.get_image_size(key);
+        let img_size = intrinsic_size.or_else(|| self.image_natural_sizes.get(&key).copied());
         let slice_src = |c: &BorderImageSliceComputedComponent, total: f32| -> f32 {
             match c {
                 BorderImageSliceComputedComponent::Number(n) => *n,
@@ -777,6 +796,24 @@ impl super::Painter {
 
         // 切片几何 = (iw, ih, st, sr, sb, sl)；nine_slice 与 middle 因子共用。
         let slice_geom: Option<(f32, f32, f32, f32, f32, f32)> = img_size.and_then(|(iw, ih)| {
+            if iw <= 0.0 || ih <= 0.0 {
+                return None;
+            }
+            // R5355（css-backgrounds-3 §5.2）：intrinsic 缺失源（viewBox-only / %-dim SVG，
+            // img_size 来自自然尺寸回退）的 Number 切片按 **border-image 绘制区栅格 px**
+            // 解析——chromium oracle 探针定谳：200×200 绘制区上 40/30/20/10 切在
+            // 20/15/10/5 viewBox 单位处（SVG 先按绘制区栅格化，数字是栅格像素；
+            // driving: border-image-image-type-001，探针 /tmp/r5354-probe/）。实现：
+            // 源坐标系取绘制区 (w,h)——归一化源矩形、§5.2 重叠、§5.6 middle 因子全部
+            // 共径换算；Percent 语义不变（占图像百分比 = 占栅格百分比，同分数）。
+            // 固有尺寸源（位图 / 显式 width-height SVG）维持源图 px 口径。
+            // FIXME: 绘制区与 viewBox 长宽比不一致时 chromium 按 preserveAspectRatio
+            // meet 加黑边栅格化，数字坐标非线性映射——ZW 归一化矩形按拉伸语义，无驱动案。
+            let (iw, ih) = if intrinsic_size.is_some() {
+                (iw, ih)
+            } else {
+                (w.max(0.0), h.max(0.0))
+            };
             if iw <= 0.0 || ih <= 0.0 {
                 return None;
             }
@@ -845,26 +882,6 @@ impl super::Painter {
         };
         // 按片取源矩形的便捷闭包（nine_slice 为 None 时返回 None → 整图映射）。
         let src_of = |pick: fn(&NineSliceSources) -> &Rect| -> Option<Rect> { nine_slice.as_ref().map(|s| *pick(s)) };
-
-        // border-image-outset（CSS Backgrounds 3 §7.2）：border-image 绘制区向外扩展。
-        // Number = × 对应边框宽度；Length = 已解析 px。各边 outset 把外矩形向外移，
-        // 9 宫格（角/边/中心）相对外矩形定位 → 仅调整 bx/by/w/h 即可（其余公式不变）。
-        let outset_px = |c: &BorderImageOutsetComputedComponent, bw: f32| -> f32 {
-            match c {
-                BorderImageOutsetComputedComponent::Number(n) => n * bw,
-                BorderImageOutsetComputedComponent::Length(l) => *l,
-            }
-        };
-        let o_top = outset_px(&style.border_image_outset.top, bt);
-        let o_right = outset_px(&style.border_image_outset.right, br);
-        let o_bottom = outset_px(&style.border_image_outset.bottom, bb);
-        let o_left = outset_px(&style.border_image_outset.left, bl);
-
-        // 边框区域坐标（含 outset 外扩；默认 outset=0 → bx=abs_x/by=abs_y，旧行为不变）。
-        let bx = abs_x - o_left;
-        let by = abs_y - o_top;
-        let w = box_node.width + o_left + o_right;
-        let h = box_node.height + o_top + o_bottom;
 
         // border-image-width（CSS Backgrounds 3 §7.3）：覆盖 9 宫格区域厚度（绘制用）。
         // 默认 Number(1.0) = 1×边框宽度 = 边框宽度 → 区域厚度同边框（旧行为）；显式值则
