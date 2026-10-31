@@ -329,9 +329,10 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
             }
         }
         "color" => color_to_css(&crate::resolve_color_current(&style.color, element_color)),
-        // color-scheme：显式声明返计算值串；未声明（含根元素 meta color-scheme——meta
-        // 只入 used-scheme fallback 不改 computed 属性，语料 assert
-        // gCS(root).colorScheme === 'normal' 钉死）返初始值 'normal'
+        // color-scheme：decl 承载 computed 值串（显式声明存 CSSOM 规范形；无声明后代
+        // 经继承链承父 computed 值——Inherited: yes，输出父值即继承语义；仅根/链首
+        // 未声明（含 meta color-scheme——meta 只入 used-scheme fallback 不改 computed
+        // 属性，语料 assert gCS(root).colorScheme === 'normal' 钉死）返初始值 'normal'
         //（css-color-adjust-1 https://drafts.csswg.org/css-color-adjust-1/#color-scheme-prop ）。
         "color-scheme" => style.color_scheme_decl.clone().unwrap_or_else(|| "normal".to_string()),
         "background-color" => color_to_css(&crate::resolve_color_current(&style.background_color, element_color)),

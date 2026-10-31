@@ -208,3 +208,78 @@ fn test_explicit_normal_descendant_follows_document_scheme() {
 fn metas_of(doc: &Document) -> Vec<NodeId> {
     doc.get_elements_by_tag_name("meta")
 }
+
+// ── color_scheme_decl 继承序列化面（s169，s165 挂账勘根）────────────────
+//
+// 锚点：css-color-adjust-1 §color-scheme-prop——Inherited: yes，无声明后代
+// computed value = 父 computed（gCS 序列化输出父值是继承语义，非偏差）；
+// CSSOM computed value 序列化对 keyword 输出小写规范形、token 以单空格连接
+//（cssom-1 §serializing-css-values）。
+
+#[test]
+/// 父显式 dark、子无声明 → 子 computed 继承父值（decl 同形），dark 位随之。
+fn test_decl_inherits_parent_computed_value() {
+    let (mut doc, html, _) = meta_doc(&[]);
+    let div = doc.create_element("div");
+    doc.append_child(html, div).unwrap();
+    let stylesheets = vec![CssParser::parse_stylesheet("html { color-scheme: dark }")];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.color_scheme_decl.as_deref(),
+        Some("dark"),
+        "无声明子元素 computed color-scheme 应继承父值（序列化输出父值符合继承语义）"
+    );
+    assert!(div_style.color_scheme_dark, "继承父 dark → used-scheme dark");
+}
+
+#[test]
+/// 全链无声明 → decl None（gCS 序列化回落 normal），used 回落文档 scheme。
+fn test_decl_none_through_unstyled_chain() {
+    let (mut doc, html, _) = meta_doc(&[]);
+    let div = doc.create_element("div");
+    doc.append_child(html, div).unwrap();
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &[]);
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(div_style.color_scheme_decl, None, "全链无声明 decl 保持 None");
+    assert!(!div_style.color_scheme_dark, "无 meta → 文档 scheme light");
+}
+
+#[test]
+/// 父显式 normal、子无声明 → 子继承 computed normal（序列化 normal）。
+fn test_decl_inherits_explicit_normal() {
+    let (mut doc, html, _) = meta_doc(&["dark"]);
+    let div = doc.create_element("div");
+    doc.append_child(html, div).unwrap();
+    let stylesheets = vec![CssParser::parse_stylesheet("html { color-scheme: normal }")];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    let div_style = styles.get(&div).expect("div 应有计算样式");
+    assert_eq!(
+        div_style.color_scheme_decl.as_deref(),
+        Some("normal"),
+        "子无声明应继承父显式 normal 的 computed 值"
+    );
+    assert!(
+        div_style.color_scheme_dark,
+        "normal 声明沿链回落文档 scheme（meta dark）——used 面与 computed 面分离"
+    );
+}
+
+#[test]
+/// 显式声明值序列化前归一化：keyword 小写、token 单空格（CSSOM 序列化规范形）。
+fn test_decl_serialization_normalized_lowercase() {
+    let (mut doc, html, _) = meta_doc(&[]);
+    let div = doc.create_element("div");
+    doc.append_child(html, div).unwrap();
+    let stylesheets = vec![CssParser::parse_stylesheet("div { color-scheme: DARK   Light }")];
+    let mut sys = StyleSystem::new();
+    let styles = sys.compute_styles(&doc, &stylesheets);
+    assert_eq!(
+        styles.get(&div).expect("div 应有计算样式").color_scheme_decl.as_deref(),
+        Some("dark light"),
+        "decl 应存 CSSOM 序列化规范形（小写 keyword、单空格分隔）——gCS computed 值断言面"
+    );
+}

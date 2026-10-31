@@ -88,7 +88,15 @@ pub fn compute_inherited_style_with_quirks(
     if let Some(cs) = cascaded.get("color-scheme") {
         style.color_scheme_dark = match resolve_keyword(cs, "color-scheme", parent_style) {
             KeywordResolution::Concrete(v) => {
-                style.color_scheme_decl = Some(v.to_string());
+                // s169：decl 存 CSSOM 序列化规范形（keyword 小写、token 单空格）——
+                // gCS computed 值断言面直接输出该串（cssom-1 §serializing-css-values；
+                // used 面的 token 解析 eq_ignore_ascii_case，不受原形影响）。
+                style.color_scheme_decl = Some(
+                    v.split_whitespace()
+                        .map(|tok| tok.to_ascii_lowercase())
+                        .collect::<Vec<_>>()
+                        .join(" "),
+                );
                 let (has_light, has_dark) = crate::property::apply::color_scheme_tokens(v);
                 if !has_light && !has_dark {
                     // `normal`（及任何无 light/dark token 的声明）：used scheme 回落文档
