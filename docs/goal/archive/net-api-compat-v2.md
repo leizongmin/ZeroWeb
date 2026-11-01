@@ -11,8 +11,8 @@
 > 测试，本 goal 承接失败簇收敛 + WebSocket 挂账重估。
 > **一期零回归底线继续有效**（一期 corpus 分母逐 subtest 对照）。
 
-**版本**: v2.21
-**日期**: 2026-10-29（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16/S17/S18）
+**版本**: v2.22
+**日期**: 2026-11-01（收口后小片 M2-S5/S6/S7/S8/S9/S10/S11/S11b/S12/S13/S14/S15/S16/S17/S18/S19）
 **状态**: ✅ Completed（2026-10-29 收口归档——DC-1/2/3/4 全部满足（[收口档](net-api-compat-v2/evidence/2026-10-29-m-closure-dc4-retest-zero-regression.md)）；一期基线 9354 → **11040**（+1686，含收口后 M2-S5 +39 / M2-S6 +5 / M2-S7 +6 / M2-S8 +4 / M2-S9 +27 / M2-S10 +25 / M2-S11 +40 / M2-S11b +6 / M2-S12 +5 / M2-S16 +11 / M2-S17 +28 / M2-S18 +1；M2-S13 语料巡检红腿 −1 分母 12078→12077；M2-S14 spec 对齐零净账；M2-S18 +1 为基线漂移修正，切片净账 0/0/0，见 S18 档记账 3），全轮零真回归；request-cache 98F 口径待决项挂用户，不阻塞判定）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 失败簇归因收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
@@ -198,6 +198,15 @@
   测试 3592 过/11 败（名单对账 +1 为 rebase 基座预存红，stash 归并行流域）。
   记账 3 项落证据档（语料 403 限流补盘 / 类型门既有承接 / 基线漂移定谳
   与采数教训）。
+- **M2-S19 完成（重入小片，2026-11-01，[证据档](net-api-compat-v2/evidence/2026-11-01-m2-s19-header-case-fidelity-reentry.md)）**：
+  S10 记账 1/2 清偿——Headers 实例作 fetch/Request init 头源与 XHR 异步路
+  （fetchFn dict init）的头名首见原始大小写线上保真（`_hCase` 旁路补齐 +
+  `__zwHeaderCase` 内部通道，fill/计数代理面零改动）：引擎钉 3 件逐 hunk
+  load-bearing，全通道 A/B **净账 0/0/0**（唯一差异 eventsource format-field
+  -retry 负载 flake，隔离 3/3 绿）。同轮基线一致性核查：归档提交 `42c890d81`
+  worktree 同机复测与当前 tip **12,078 行逐 subtest 字节一致**——归档窗口
+  159 commits 零引擎漂移；账面差（11040/12077 → 11035/12078）归因
+  gitignored 语料工作区漂移，同树 A/B 口径（v1 M5-S6 判例）。
 - **待决项（用户）**：request-cache 族（98F）是否维持「HTTP 栈本体」
   排除口径（DC-4 fetch/api ~300 目标按剔除口径已达标；立项设计则需
   HTTP 缓存层方案，挂用户拍板）；语料仓 zeroweb-wpt-data 是否滚动新
@@ -205,7 +214,8 @@
   缺口清单记账，见 [S12 档](net-api-compat-v2/evidence/2026-10-29-m2-s12-preflight-redirect-corpus-drift.md)）。
 - **后续可推进小片**（不阻塞收口，重开时按此入列）：request-cache HTTP
   缓存层（待决项立项后）、abort 目录外 signal 关联体中止（S9 记账 1-2，
-  语料无钉）、Headers 实例/XHR 异步源大小写保真（S10 记账 1-2，语料无钉）。
+  语料无钉）、~~Headers 实例/XHR 异步源大小写保真~~（**S10 记账 1-2 已由
+  M2-S19 清偿，2026-11-01**）。
   **「有钉引擎缺口」存量清零**（M1 归因独立小片三项 BOM/setters/integrity
   已由 S17/S4a/S7 清偿，ReadableStream.from 由 M2-S16 收口）；
   cors-preflight-redirect 五腿已由 M2-S12 语料对齐收口（S11 记账 1 /

@@ -1056,7 +1056,11 @@
         // 消费为 initiatorType 'xmlhttprequest'；仅 globalThis.fetch 通道，iframe
         // _zwXhrFetch 通道不产条目——跨文档 buffer 归属面）。
         if (fetchFn === globalThis.fetch) _zwRtPendingInitiator = 'xmlhttprequest';
-        fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders, body: body,
+        // net-api 二期 M2-S10 记账 2：异步路 setRequestHeader 首见原始大小写随
+        // `__zwHeaderCase` 内部成员旁路（同步路径 `_headersToWire` caseMap 同语义；
+        // 浏览器同型——XHR 线上保用户 case）。
+        fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders,
+          __zwHeaderCase: self._zwXhrHeaderCase, body: body,
           credentials: _zwWithCreds ? 'include' : 'same-origin' })
           .then(function(response) {
             if (reqGen !== self._zwReqGen) return; // 晚到响应（abort/复用后）→ 丢弃

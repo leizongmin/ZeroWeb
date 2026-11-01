@@ -90,3 +90,4 @@ include!("js_dom_bridge_tests/part89.rs");
 include!("js_dom_bridge_tests/part90.rs");
 include!("js_dom_bridge_tests/part91.rs");
 include!("js_dom_bridge_tests/part92.rs");
+include!("js_dom_bridge_tests/part93.rs");
