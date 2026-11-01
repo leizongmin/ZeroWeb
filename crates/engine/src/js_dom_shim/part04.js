@@ -1192,6 +1192,9 @@
             globalThis._zwSelectedSources5277 = {};
             globalThis._zwImgSelPending5277 = {};
             globalThis._zwImgSelScan5277Done = false;
+            // s224：请求代际表同点重置（persistent context 跨案键隔离——同
+            // 选源记录表面；stale 代际会把新文档 decode 的 ep0 比对判假取代）。
+            globalThis._zwImgDecodeEpoch5277 = {};
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];

@@ -3109,6 +3109,16 @@
         // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
         // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
         _zwRtPendingInitiator = 'img';
+        // s224：请求代际 bump——非 defer 重入（语义上**新的一次** update-the-image-data
+        // run）启动新在飞请求 = spec restart 作废 unfinished current request
+        //（relevant mutations 面）。defer 重入是同一 run 的延步不 bump；avail
+        // 同步 settle 臂无新请求不 bump。decode() 调用时捕获代际、决断点比对，
+        // 被取代请求的 promise → EncodingError（image-decode-with-quick-attach
+        // empty-picture in-flight 面）。
+        if (!_imViaDefer) {
+          globalThis._zwImgDecodeEpoch5277 = globalThis._zwImgDecodeEpoch5277 || {};
+          globalThis._zwImgDecodeEpoch5277[_imKey] = (globalThis._zwImgDecodeEpoch5277[_imKey] || 0) + 1;
+        }
         // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
         // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
         // 延迟 window load 语义）。
@@ -3334,7 +3344,9 @@
   // settle 面、跟随调用时的 current request——同 turn 的 adopt 时序
   //（adopted-into-inactive 案，先前同步即决版探针 B/C 实证漏判）与跨任务候选
   // 变异（旧 promise EncodingError，path-changes 族）在决断/复检点可见；settle
-  // 时复检活跃性 + 候选（值比较，同值重赋不算变异）。
+  // 时复检活跃性 + 候选（值比较，同值重赋不算变异）。s224 补请求代际面：
+  // decode 捕获调用时代际，RunUpdate fetch 臂新 run bump——被取代请求
+  //（含同 URL 重启）决断点 EncodingError（quick-attach empty-picture 面）。
   // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-decode
   globalThis.__zwImgDecodeCore = function (self, directCand, key) {
     var enc = function () {
@@ -3369,6 +3381,9 @@
       // 的 attach/变异不改写已捕获请求——quick-attach picture-with-source 案
       // expectReject 面实证 settle 重读会误解析）。
       var url0 = selectedCand();
+      // s224：请求代际同步捕获（executor 同步运行 = 调用时）——RunUpdate fetch
+      // 臂 bump（新 update run 作废旧请求），决断点比对（下）。
+      var ep0 = (globalThis._zwImgDecodeEpoch5277 || {})[key] || 0;
       Promise.resolve().then(function () {
         try {
           if (!url0 || !active()) { rej(enc()); return; }
@@ -3376,6 +3391,9 @@
           // picture 后选中源变化——available-images 命中不豁免，quick-attach
           // picture cached 案）。
           if (selectedCand() !== url0) { rej(enc()); return; }
+          // s224：捕获请求被取代（同 URL 重启也算——empty-picture in-flight 面）
+          // → EncodingError。
+          if (((globalThis._zwImgDecodeEpoch5277 || {})[key] || 0) !== ep0) { rej(enc()); return; }
           var st = key != null ? _resourceStates[key] : null;
           if (st && st.url === url0) {
             if (st.outcome !== 'loaded') { rej(enc()); return; }
@@ -3391,6 +3409,8 @@
               if (typeof bitmapFn !== 'function') { rej(enc()); return; }
               bitmapFn(blob).then(function () {
                 if (!active() || selectedCand() !== url0) { rej(enc()); return; }
+                // s224：fetch 窗口内的 restart 同样判取代。
+                if (((globalThis._zwImgDecodeEpoch5277 || {})[key] || 0) !== ep0) { rej(enc()); return; }
                 res(undefined);
               }, function () { rej(enc()); });
             }, function () { rej(enc()); });
