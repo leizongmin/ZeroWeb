@@ -946,3 +946,12 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计件
   `/tmp/webcrypto-anchor-run-20261101-r5375-tip583ebe1df-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 13:52 追记：上笔账 push 后 rebase 窗口吸入 renderer-trust-boundary 流 `e58201648`（compositor landlock 双根因修复）——核证非执行路径，锚账不复跑
+
+- `git diff 583ebe1df..e58201648 -- crates/ tests/` 为空（仅
+  `apps/compositor/` landlock/seccomp 沙箱 2 文件 + renderer-trust-
+  boundary docs 2 文件，apps/ 不入 release runner 二进制面，12:01 轮
+  PR #266 簇同先例）；现执行路径仍锚 `583ebe1df`，13:45 锚账（×3
+  cmp 全等）现行不变。冻结门末触仍 `c41b0c750`，本地 == origin ==
+  `1fcf8967f`。轮询面无其他变化，D2①/D1 无新账面。
