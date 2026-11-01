@@ -1106,11 +1106,10 @@ fn run_headless(cli: CliArgs) {
     );
 
     let server = std::sync::Arc::new({
-        let server = headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height, cli.startup_url.clone());
+        let server =
+            headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height, cli.startup_url.clone());
         match cli.remote_debugging_token.clone() {
-            Some(token) => server.with_security(
-                headless::HeadlessSecurityConfig::new().with_token(token),
-            ),
+            Some(token) => server.with_security(headless::HeadlessSecurityConfig::new().with_token(token)),
             None => server,
         }
     });

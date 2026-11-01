@@ -3250,7 +3250,10 @@ mod compositor_fallback_tests {
 
         let outbound = take_test_renderer_outbound();
         assert_eq!(
-            outbound.iter().filter(|k| matches!(k, IpcMessageKind::ClearHttpCookies)).count(),
+            outbound
+                .iter()
+                .filter(|k| matches!(k, IpcMessageKind::ClearHttpCookies))
+                .count(),
             2,
             "两个有 renderer 映射的 tab 各收一条 ClearHttpCookies，实得: {outbound:?}"
         );

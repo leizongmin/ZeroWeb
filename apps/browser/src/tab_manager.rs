@@ -7,7 +7,7 @@ use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_protocol::message::{
     AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, DragInputParams, DragInputPhase,
-    IpcMessageKind, ImeEventParams, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase,
+    ImeEventParams, IpcMessageKind, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase,
     TabNavigateRequestParams,
 };
 use zero_render_foundation::image_cache::ImageCache;

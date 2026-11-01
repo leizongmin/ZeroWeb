@@ -54,7 +54,12 @@ fn storage_op_binds_to_committed_origin_not_message_field() {
     backend.handle_storage_op(
         tab_id,
         101,
-        storage_op("https://evil.example", StorageOperation::Set, "session-key", Some("injected")),
+        storage_op(
+            "https://evil.example",
+            StorageOperation::Set,
+            "session-key",
+            Some("injected"),
+        ),
     );
 
     let mut storage = backend.storage.lock().unwrap();
@@ -66,7 +71,10 @@ fn storage_op_binds_to_committed_origin_not_message_field() {
         Some("injected".to_string())
     );
     assert!(
-        storage.local_storage("https://evil.example").get("session-key").is_none(),
+        storage
+            .local_storage("https://evil.example")
+            .get("session-key")
+            .is_none(),
         "消息自带 origin 不得决定存储分区"
     );
 }

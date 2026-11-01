@@ -2221,15 +2221,24 @@ fn test_security_config_empty_origin_allows_all() {
 fn test_extract_host_header() {
     // 常规 Host（带端口）
     let request = b"GET /json HTTP/1.1\r\nHost: 127.0.0.1:9222\r\nOrigin: http://x\r\n\r\n";
-    assert_eq!(HeadlessServer::extract_host_header(request).as_deref(), Some("127.0.0.1:9222"));
+    assert_eq!(
+        HeadlessServer::extract_host_header(request).as_deref(),
+        Some("127.0.0.1:9222")
+    );
 
     // 小写字段名（undici 形状）
     let lowercase = b"GET /json HTTP/1.1\r\nhost: localhost\r\n\r\n";
-    assert_eq!(HeadlessServer::extract_host_header(lowercase).as_deref(), Some("localhost"));
+    assert_eq!(
+        HeadlessServer::extract_host_header(lowercase).as_deref(),
+        Some("localhost")
+    );
 
     // 请求行含 "host:" 字样不得误取（跳过请求行）
     let in_path = b"GET /redirect?to=host:9222 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
-    assert_eq!(HeadlessServer::extract_host_header(in_path).as_deref(), Some("127.0.0.1"));
+    assert_eq!(
+        HeadlessServer::extract_host_header(in_path).as_deref(),
+        Some("127.0.0.1")
+    );
 
     // 无 Host 头 / 空 Host
     assert!(HeadlessServer::extract_host_header(b"GET /json HTTP/1.1\r\n\r\n").is_none());
@@ -2287,7 +2296,9 @@ fn test_http_discovery_rejects_non_local_host_header() {
     };
 
     let read_response = |stream: &mut TcpStream| {
-        stream.set_read_timeout(Some(Duration::from_secs(5))).expect("set read timeout");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("set read timeout");
         let mut buf = [0u8; 256];
         let n = stream.read(&mut buf).expect("read response");
         String::from_utf8_lossy(&buf[..n]).to_string()
@@ -2373,7 +2384,8 @@ fn cdp_token_opt_in_rejects_first_message_without_token() {
 
     let (mut ws, _resp) = tungstenite::connect(format!("ws://{addr}")).expect("ws connect");
     if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
-        s.set_read_timeout(Some(Duration::from_secs(5))).expect("set read timeout");
+        s.set_read_timeout(Some(Duration::from_secs(5)))
+            .expect("set read timeout");
     }
 
     // 无 token 首条消息 → 认证错误 -32001。
