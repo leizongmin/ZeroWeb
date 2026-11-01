@@ -24,10 +24,15 @@ pub(crate) fn mem_probe_enabled() -> bool {
 }
 
 /// T38/G4 归因仪器（`ZEROWEB_MEM_PROBE=1` 且 `ZEROWEB_MEM_PROBE_XML` 设前缀路径时
-/// 生效；缺省两个 env 都关，零调用零开销）：glibc `malloc_info(3)` 落盘 per-arena
+/// 生效；缺省两个 env 都关，不落盘不采样）：glibc `malloc_info(3)` 落盘 per-arena
 /// 统计——每 arena `system`（已提交）与 fast/normal/large/rest 各 bin 的 free 总量，
 /// 用于区分「活分配」与「arena 碎片滞留」。路径 = `<前缀>-<单调序号>.xml`，序号
 /// 进程内累计；写失败仅记 warn，不影响主流程。
+///
+/// 开销口径（如实）：门检查是每次调用一次 env 查表（`enabled_when_true` 走
+/// `std::env::var`，无缓存），频率为导航级（settle/reclaim 臂每次导航 2-4 次）、
+/// 单次 µs 级，开销可忽略；不引入进程内缓存，保留测试内 `set_var` 后立即读取生效
+/// 的语义。
 pub(crate) fn malloc_info_dump_if_enabled() {
     if !mem_probe_enabled() {
         return;
@@ -43,12 +48,13 @@ pub(crate) fn malloc_info_dump_if_enabled() {
 /// `malloc_info(3)` 写 `<前缀>-<单调序号>.xml`，返回落盘路径；非 glibc 目标或
 /// fopen/malloc_info 失败返 `None`（仅 warn，不影响主流程）。
 pub(crate) fn malloc_info_dump_to(prefix: &str) -> Option<String> {
-    use std::os::raw::{c_char, c_int};
-    use std::sync::atomic::{AtomicU64, Ordering};
-    static SEQ: AtomicU64 = AtomicU64::new(0);
     // glibc 符号（musl 无 malloc_info；桌面 glibc 主目标，与 malloc_trim 同判）。
+    // 序号与导入仅 gnu 分支引用，随分支走 cfg（非 gnu 目标零警告）。
     #[cfg(target_env = "gnu")]
     {
+        use std::os::raw::{c_char, c_int};
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         unsafe extern "C" {
             fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::c_void;
             fn malloc_info(options: c_int, stream: *mut libc::c_void) -> c_int;
@@ -271,50 +277,158 @@ pub fn apply_allocator_tuning() -> bool {
 
 #[cfg(all(test, target_os = "linux", target_env = "gnu"))]
 mod allocator_tuning_tests {
-    /// 统计 /proc/self/smaps 中 Size 落在 `[lo_kb, hi_kb]` 窗口的 VMA 数。
-    fn vmas_in_range(lo_kb: u64, hi_kb: u64) -> u32 {
+    // 子进程隔离（TV-1/DF-1 返修）：行为钉不在本进程做进程级 smaps 窗口计数——并行
+    // 套件下并发测试的 ~4MiB 分配污染窗口计数（HEAD 5 轮 2 红）、arena 大自由块 bin
+    // 复用可吸收 4MiB 请求（base=0 during=0 假绿）、隔离单测进程（无前置大分配历史）
+    // 对 mallopt 移除假绿（stock 128KB 阈值本就使 4MiB 走 mmap）。改为
+    // `current_exe()` 重执行自身：子进程内串行执行固定序列，父进程只断言子进程退出
+    // 码，与本进程其他并行测试零串扰；fresh 子进程无 arena 大自由块，红绿两侧确定。
+    //
+    // 变异灵敏度（双向确定）：子进程序列先 malloc 8MiB+free 把 glibc 动态阈值顶到
+    // ≥8MiB（mallopt(3) M_MMAP_THRESHOLD 动态上调，上限 32MB），复现「动态上调已发
+    // 生」前置态；此时若封顶步（apply_allocator_tuning）缺失，后续 4MiB < 已上调阈值
+    // → arena/brk 承载 → 断言红——修复隔离假绿（TV-1 Break-A 隔离臂）。
+
+    /// 父→子重执行门控 env。
+    const PIN_CHILD_ENV: &str = "ZW_T38_PIN_CHILD";
+    /// mmap 段 Size 下界（kB）：4MiB 请求 + glibc 块头进位 ≈ 4100kB；只设下界不设
+    /// 上界——内核会把相邻匿名 VMA 合并（返修首轮全量套件实测：mmap 承载成立但窗口
+    /// 计数 during=0），含 buf 的段 Size ≥ 下界即段形态成立，合并只增不减。
+    const VMA_LO_KB: u64 = 4 * 1024 + 1;
+
+    /// 返回包含 `addr` 的 VMA（`(Size kB, 命名)`；匿名段命名 = `None`）。
+    /// 地址→VMA 包含判定对并行/合并串扰免疫（DF-1 建议），仅在子进程串行序列内调用。
+    fn vma_containing(addr: usize) -> Option<(u64, Option<String>)> {
         let smaps = std::fs::read_to_string("/proc/self/smaps").expect("smaps 可读");
-        let mut count = 0u32;
-        let mut cur_size = 0u64;
+        let mut header: Option<(usize, usize)> = None;
+        let mut size_kb = 0u64;
+        let mut name: Option<String> = None;
+        let mut found = None;
         for line in smaps.lines() {
-            if let Some(rest) = line.strip_suffix(" kB") {
-                if let Some(v) = rest.strip_prefix("Size:") {
-                    cur_size = v.trim().parse().unwrap_or(0);
-                }
-            } else if line.contains('-') && !line.starts_with(' ') {
+            if line.starts_with(' ') {
+                continue;
+            }
+            if let Some((lo, hi)) = line.split_once('-') {
                 // 新 VMA 头：结算上一段
-                if (lo_kb..=hi_kb).contains(&cur_size) {
-                    count += 1;
+                if let Some((plo, phi)) = header.replace((
+                    usize::from_str_radix(lo, 16).ok()?,
+                    usize::from_str_radix(hi.split_whitespace().next()?, 16).ok()?,
+                )) && plo <= addr
+                    && addr < phi
+                {
+                    found = Some((size_kb, name.clone()));
                 }
-                cur_size = 0;
+                name = line.split_whitespace().nth(5).map(str::to_string);
+                size_kb = 0;
+            } else if let Some(v) = line.strip_prefix("Size:") {
+                size_kb = v.trim().trim_end_matches(" kB").parse().unwrap_or(0);
             }
         }
-        if (lo_kb..=hi_kb).contains(&cur_size) {
-            count += 1;
+        if let Some((plo, phi)) = header
+            && plo <= addr
+            && addr < phi
+        {
+            found = Some((size_kb, name));
         }
-        count
+        found
     }
 
-    /// T38/G4 Phase B 行为钉：mmap 阈值封顶后，≥128KB 分配必须走独立 mmap 段
-    /// （free 即 munmap 还 OS）。4MiB 请求的 mmap 段 = 4MiB + glibc 块头进位
-    /// ≈ 4100kB，窗口上界容许页宽/实现出入；若回归为 arena 承载（动态阈值
-    /// 未禁用），分配表现为既有 arena VMA 增长，不出现该窗口内的独立段，
-    /// 或释放后段残留。
+    /// glibc 2.33+ `mallinfo2()` 的 hblkhd 字段——当前经 mmap(2) 承载的字节量
+    /// （mallopt(3)），承载/归还判定的主信号（对 VMA 合并、arena bin 复用均免疫：
+    /// arena/brk 承载不改变 hblkhd）。
+    fn mmap_backed_bytes() -> Option<u64> {
+        // SAFETY：mallinfo2 为 glibc 2.33+ 导出符号（gnu target_env 才编译本模块），
+        // 只读分配器统计，无指针语义。
+        let info = unsafe { libc::mallinfo2() };
+        Some(info.hblkhd as u64)
+    }
+
+    /// T38/G4 Phase B 行为钉：mmap 阈值封顶必须在「动态阈值已被上调」的前置态下
+    /// 可复现——封顶后 4MiB 分配走独立 mmap 段且 free 即 munmap 还 OS。本进程只
+    /// 断言子进程退出码（子进程为自身重执行，见模块注释）。
     #[test]
     fn large_alloc_is_mmap_backed_and_released_on_free() {
+        let exe = std::env::current_exe().expect("current_exe 可解析");
+        let output = std::process::Command::new(exe)
+            .arg("pin_child_sequence")
+            .arg("--test-threads=1")
+            .env(PIN_CHILD_ENV, "1")
+            .output()
+            .expect("子进程（自身重执行）可启动");
+        assert!(
+            output.status.success(),
+            "子进程序列失败（status={:?}）\n--- 子进程 stdout ---\n{}\n--- 子进程 stderr ---\n{}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
+    }
+
+    /// 子进程入口：仅在 [`PIN_CHILD_ENV`]`=1` 时执行固定序列（全量套件下 no-op 直接
+    /// 绿，不递归 spawn）。串行序列：
+    /// ① malloc 8MiB+写+free——stock 阈值下走 mmap，free 触发 glibc 动态阈值上调到
+    ///   ≥8MiB，复现「动态上调已发生」前置态；
+    /// ② `apply_allocator_tuning()`——封顶 128KB + 禁动态上调（本步缺失即 Break 面）；
+    /// ③ malloc 4MiB——断言 mmap 承载：mallinfo2 hblkhd 增量 ≥4MiB（主信号）+ 含
+    ///   buf 地址的 VMA 为 ≥[`VMA_LO_KB`] 的匿名段（段形态）；
+    /// ④ free——断言归还：hblkhd 回落基线 + 原 VMA 消失或缩到下界以下。
+    #[test]
+    fn pin_child_sequence() {
+        if std::env::var(PIN_CHILD_ENV).as_deref() != Ok("1") {
+            return;
+        }
+        // ① 动态阈值上调前置态
+        let trigger = vec![0xA5u8; 8 * 1024 * 1024];
+        std::hint::black_box(&trigger);
+        drop(trigger);
+        // ② 封顶
         assert!(crate::mem_reclaim::apply_allocator_tuning(), "mallopt 必须生效");
-        let (lo_kb, hi_kb) = (4 * 1024 + 1, 4 * 1024 + 128);
-        let base = vmas_in_range(lo_kb, hi_kb);
+        // ③ mmap 承载断言
+        let base_hblkhd = mmap_backed_bytes();
         let buf = vec![0xA5u8; 4 * 1024 * 1024];
         std::hint::black_box(&buf);
-        let during = vmas_in_range(lo_kb, hi_kb);
+        let during_hblkhd = mmap_backed_bytes();
+        let buf_addr = buf.as_ptr() as usize;
+        let during_vma = vma_containing(buf_addr);
+        // ④ 归还断言
         drop(buf);
-        let after = vmas_in_range(lo_kb, hi_kb);
-        assert!(
-            during > base,
-            "分配期间必须出现 ~4MiB mmap VMA（base={base} during={during}）"
-        );
-        assert_eq!(after, base, "释放后 mmap VMA 必须归还 OS（base={base} after={after}）");
+        let after_hblkhd = mmap_backed_bytes();
+        let after_vma = vma_containing(buf_addr);
+        if let (Some(base), Some(during), Some(after)) = (base_hblkhd, during_hblkhd, after_hblkhd) {
+            assert!(
+                during.saturating_sub(base) >= 4 * 1024 * 1024,
+                "mallinfo2 hblkhd 增量必须 ≥4MiB（mmap 承载主信号，base={base} \
+                 during={during}；增量不足说明 4MiB 被 arena/brk 承载——动态阈值未禁用 \
+                 或被既有 arena 大自由块吸收）"
+            );
+            assert_eq!(
+                after, base,
+                "释放后 hblkhd 必须回落到基线（base={base} after={after}；未回落说明 \
+                 mmap 段未 munmap 还 OS）"
+            );
+        }
+        match during_vma {
+            Some((size_kb, name)) => {
+                assert!(
+                    size_kb >= VMA_LO_KB,
+                    "含 buf 地址的 VMA Size 必须 ≥{VMA_LO_KB}kB（实际 {size_kb}kB）"
+                );
+                assert!(
+                    !matches!(&name, Some(n) if n.starts_with('[')),
+                    "含 buf 地址的 VMA 必须是匿名段而非命名段（实际 {name:?}；[heap] \
+                     即 arena/brk 承载）"
+                );
+            }
+            None => panic!("必须存在包含 buf 地址（{buf_addr:#x}）的 VMA"),
+        }
+        match after_vma {
+            None => {}
+            Some((size_kb, _)) => assert!(
+                size_kb < VMA_LO_KB,
+                "释放后原地址所在 VMA 必须消失或缩到 {VMA_LO_KB}kB 以下（实际 {size_kb}kB；\
+                 段残留说明未 munmap 还 OS）"
+            ),
+        }
     }
 }
 
