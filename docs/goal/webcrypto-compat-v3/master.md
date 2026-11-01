@@ -25,6 +25,13 @@ generateKey ×4（D1 域门控）。对照基准更新为
 [m2s4 锚](evidence/2026-11-02-m2s4-full.json.gz)。**M2 无依赖面四切片
 （门禁面/散新案/worker 腿/1T）至此全部收口**。
 
+**F 面具名归因扫查完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-f-attribution-sweep.md)）**：
+m2s4 账全部非 P 逐案族谱归因——F 29,066 = 旧 `.tentative.` 路径 14,150
+（收口重定基退役）+ 新族 14,912（D1 域门控，逐算法分布表落 evidence）
++ stable-root **零红**；T 4 = Hybrid-KEM。签名扫查无散在 shim 缺陷红面、
+无无依赖可修簇（唯一潜伏项：失败路径 `algorithm.name` 二次读，无语料
+面，记录不修）。**DC-5③ 归因闭环预闭合成立**，M2 收口结论复核维持。
+
 **M2-3b worker 腿排干修复完成（2026-11-02，[evidence](evidence/2026-11-02-m2s3b-worker-leg-drain.md)）**：
 hkdf/pbkdf2 worker 腿翻绿，**净增 +12,196 子测试位（全 Pass）、T 7→5**，
 全量分母 360 案 / 81,839 = P 52,768 + F 29,066 + T 5；红线 P→非P 0、
