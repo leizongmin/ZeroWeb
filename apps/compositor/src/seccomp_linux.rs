@@ -227,7 +227,9 @@ mod tests {
     #[test]
     fn gpu_filter_execution_allows_unix_and_blocks_inet() {
         const CHILD: &str = "ZERO_COMPOSITOR_SECCOMP_GPU_CHILD";
-        let test_name = "seccomp_linux::tests::gpu_filter_execution_allows_unix_and_blocks_inet";
+        // 全路径（含模块前缀）：--exact 对短名零匹配会让子进程空跑 exit 0
+        // （M3 实测确证的假绿根因，父进程断言另有 stdout 校验兜底）。
+        let test_name = "sandbox::seccomp_linux::tests::gpu_filter_execution_allows_unix_and_blocks_inet";
         if std::env::var(CHILD).as_deref() == Ok("1") {
             let code = match install_network_exec_filter_gpu_aware() {
                 Err(_) => 1,
@@ -259,15 +261,74 @@ mod tests {
             };
             std::process::exit(code);
         }
-        let status = std::process::Command::new(std::env::current_exe().expect("current test exe"))
+        let output = std::process::Command::new(std::env::current_exe().expect("current test exe"))
             .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
             .env(CHILD, "1")
-            .status()
+            .output()
             .expect("spawn isolated seccomp probe child");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // --exact 名称失配时 libtest 空跑且 exit 0（假绿根因），显式抓住。
         assert!(
-            status.success(),
+            stdout.contains("running 1 test"),
+            "探测子进程未匹配到目标测试，探测未执行：stdout={stdout}"
+        );
+        assert!(
+            output.status.success(),
             "GPU seccomp 过滤器执行行为不符预期（exit={:?}）",
-            status.code()
+            output.status.code()
+        );
+    }
+
+    /// 在隔离子进程中真实安装非 GPU 过滤器并验收受限操作（DC-4/M3：真实
+    /// helper 受限操作验收）。非 GPU 变体黑名单含 `socket`——fd 交付通道只在
+    /// GPU 链路，故 AF_UNIX/AF_INET socket 创建与进程 spawn 全部须被拦。
+    /// 退出码：0=全过；1=安装失败；2=AF_INET 未被拦；3=spawn 未被拦。
+    #[test]
+    fn filter_execution_blocks_sockets_and_spawn() {
+        const CHILD: &str = "ZERO_COMPOSITOR_SECCOMP_PLAIN_CHILD";
+        // 全路径（含模块前缀）：--exact 对短名零匹配会让子进程空跑 exit 0
+        // （M3 实测确证的假绿根因，父进程断言另有 stdout 校验兜底）。
+        let test_name = "sandbox::seccomp_linux::tests::filter_execution_blocks_sockets_and_spawn";
+        if std::env::var(CHILD).as_deref() == Ok("1") {
+            let code = match install_network_exec_filter() {
+                Err(_) => 1,
+                Ok(()) => {
+                    let inet_blocked = unsafe {
+                        let fd = libc::socket(libc::AF_INET, libc::SOCK_STREAM | libc::SOCK_CLOEXEC, 0);
+                        if fd >= 0 {
+                            libc::close(fd);
+                            false
+                        } else {
+                            std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+                        }
+                    };
+                    if !inet_blocked {
+                        2
+                    } else {
+                        // 黑名单含 fork/vfork（std spawn 走 libc::fork）——filter
+                        // 下无法派生新进程即安全契约成立；Err 的具体步序不区分。
+                        let spawn_blocked = std::process::Command::new("/bin/true").status().is_err();
+                        if spawn_blocked { 0 } else { 3 }
+                    }
+                }
+            };
+            std::process::exit(code);
+        }
+        let output = std::process::Command::new(std::env::current_exe().expect("current test exe"))
+            .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
+            .env(CHILD, "1")
+            .output()
+            .expect("spawn isolated seccomp probe child");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        // --exact 名称失配时 libtest 空跑且 exit 0（假绿根因），显式抓住。
+        assert!(
+            stdout.contains("running 1 test"),
+            "探测子进程未匹配到目标测试，探测未执行：stdout={stdout}"
+        );
+        assert!(
+            output.status.success(),
+            "非 GPU seccomp 过滤器执行行为不符预期（exit={:?}）",
+            output.status.code()
         );
     }
 }
