@@ -12427,6 +12427,11 @@
           // textarea-type 断言面）。
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-textarea-type
           if (_realTag(sel, handle) === 'TEXTAREA') return 'textarea';
+          // s198（html-semantics M2）：FIELDSET type 恒 'fieldset'（IDL 常量，无 type
+          // 内容属性——HTMLFieldSetElement.type 断言面；generic 字符串反射回落读属性
+          // 恒 ''）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#dom-fieldset-type
+          if (_realTag(sel, handle) === 'FIELDSET') return 'fieldset';
           var _et = _reflectedTypeEnum(sel, handle);
           if (_et !== null) return _et;
         }

@@ -31,7 +31,36 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 197 收口，fieldset disabled 置位焦点内含检查——disabled-003 crash/hang 2F 翻绿（light + deep 双案），forms 全树 keyed diff 恰 2 靶键 F→P 零真 P2F；shim 4 文件 helper + 三写通道钩子，焦点态双域（解析节点 `_zwMElFocused` / proxy `_activeElKey`）分流 unfocus）**
+> **▶ 当前状态（2026-11-01 M2 切片 198 收口，HTMLFieldSetElement `type` IDL 常量——1F 翻绿，the-fieldset-element 目录 22P/0F **全绿**（s193-s197 累积收口后本目录首个零失败终态）；shim 1 文件 get trap 枚举反射点 FIELDSET 臂（OUTPUT/TEXTAREA 同型））**
+> **入场定刀位**：s197 在册次席候选 HTMLFieldSetElement `type` 1F
+>（`fs_outer.type` 应恒 'fieldset'）；customizable select 177F 挂起待拍板
+>（GB-20261031 征询在途，用户决策门禁不自行扩面）。
+> **勘根**：FIELDSET 无 IDL 常量臂 → part04 get trap `type` 分支
+>（R3189 枚举反射点）落 R3037 generic 字符串反射读 `type` 内容属性恒
+> ''；OUTPUT/TEXTAREA 同点已有常量臂（'output'/'textarea'）；解析节点面
+>（M-El）无对应臂为共享既有限（语料无断言，挂账）。
+> **施工**（1 文件 shim，净 +5）：get trap `type` 分支 FIELDSET 臂——
+> `_realTag === 'FIELDSET'` return 'fieldset'（同型臂位，枚举/通用反射
+> 之前）。
+> **验证**：shim 拼接 node --check 过；靶面 the-fieldset-element 目录
+> 22P/0F 全绿（修复前 21P/1F）；stash 隔离 A/B——forms 基线
+> 4447P/249F/12T → WIP 4452P/246F/11T，keyed diff F→P 恰 1 靶键零真
+> P2F（P2F 1 = button onblur spacebar flake 域在册面；focus-dynamic
+> onblur 文件 Timeout 键 ↔ 5 子测 Pass 键漂移同 flake 域纯有利；
+> customizable-select optional 行形漂移均 Fail 非状态位移）；
+> interactive 439P/44F/0T bit-exact；lib zero-engine 3642P/1F（在册同
+> 键）+ zero-dom 880P/0F 逐位一致；fmt（Rust 零改动）+ guarded-clippy
+> workspace 过。过程注记：首轮 interactive+lib 链误序启动即杀弃重跑；
+> 并行流负载在途与 flake 位移一致。
+> **残留**：M-El 面 FIELDSET/OUTPUT/TEXTAREA type 常量无臂（共享既有
+> 限）；`type` readonly setter 面未建模（语料无形态）；`:active` onblur
+> flake 域（+2 键样本）；customizable select 177F 待拍板。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）→
+> s196 挂账序（父 label 零矩形 layout 2F、inert-svg-hittest 第 2 子测、
+> `:not(:active)` 否定面、Space 激活行为 checkedness 翻转）。
+> **账本**：[evidence/2026-11-01-m2s198-fieldset-type-idl.md](html-semantics-compat/evidence/2026-11-01-m2s198-fieldset-type-idl.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 197 收口，fieldset disabled 置位焦点内含检查——disabled-003 crash/hang 2F 翻绿（light + deep 双案），forms 全树 keyed diff 恰 2 靶键 F→P 零真 P2F；shim 4 文件 helper + 三写通道钩子，焦点态双域（解析节点 `_zwMElFocused` / proxy `_activeElKey`）分流 unfocus）**
 > **入场定刀位**：s196 在册首席候选 disabled-003 crash/hang 2F——light
 > 案「Disable light-nested fieldsets should not crash」+ deep 案
 > 「Disable deep-nested fieldsets should not hang」（100 级嵌套）。
