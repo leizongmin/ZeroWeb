@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5377 修复轮（CSS2 §10.3.7 过约束臂按 CB direction 选边——abspos-non-replaced-width-margin-000 ✗1.58% → 1.09%、abspos-replaced-width-margin-000 ✗2.49% → 1.95%（残差①收口，案仍 F）；corpus 754F 稳定持平 FIXED=∅ REGRESSED=∅ 三跑）**（2026-11-01）
+>
+> - **归因**（R5372 残差①）：§10.3.7 过约束（全 definite 方程不可满足 / 双 auto margin 归零后仍不可满足）ltr 忽略 right、**rtl 忽略 left**；root/nested 两 pass 对 left definite 恒左锚 → rtl nothing-auto 组落 left+ml（WPT adir 组 spec 496 = 700−8−19−177，ZW 70）；taffy 直挂已按方向选边（R5372 pin 470）——嵌套/根路径与直挂劈叉。
+> - **修复**（`abspos.rs` `rtl_overconstrained_right_anchor` helper + 方向穿线）：nested cb 元组扩第 5 位 rtl（递归建 child_cb 时查 positioned 子 computed direction）+ root pass `cb_is_rtl` 参数（engine.rs 查根元素 style）；门 = width/right definite +（双 definite margin｜双 auto 负 slack），单 auto R5376 方程精确解组不入臂；方向来源 = **CB 自身** direction（sdir/edir 不换边）；无新增 kill-switch；**viewport pass 同病第三写点未动**（ICB direction=根元素，保守面挂账）。
+> - **门禁**：corpus 同树 A/B 三跑（基线 RUN0 760F / 修复树 758F+756F）稳定交集 **754F 持平**，REGRESSED 候选 6 案隔离复跑全洗清（table-anonymous-objects 族并行抖动）；layout-engine lib **2325P/0F**（+9 r5377 pin：嵌套 rtl 右锚主 pin 470（旧口径 20）/widewidth 负解 −37/双 auto 负 slack 右锚 −18 + 双 auto 正 slack、right:auto、width:auto、sdir+edir、ltr CB、root-CB rtl 六守卫；R5372/R5376 既有 13 pin 全过）；workspace 腿 8960P/1F = ua_display_li D4 既有账；renderer lib 365P/0F；clippy + fmt 清零；product-smoke struct PASS 双面；bench-gate 定向 zero-layout-engine 静窗（负载排空 9.7→0.41）**GATE PASS（25 指标 NEW=0）**。证据：[`rendering-compat/evidence/r5377-abspos-rtl-overconstrained-2026-11-01.md`](rendering-compat/evidence/r5377-abspos-rtl-overconstrained-2026-11-01.md)。
+> - **对端碰头记**（IPC/fd 通道族环境面，main@517ccefda **净树复现**、非本改，apps/compositor + apps/browser + zero-protocol 归对端流核证）：compositor_gpu_dmabuf/texture_export/partial_dirty ×3 稳定 3F（`SCM_RIGHTS 未携带 fd`）；browser default_actions（净树实锤，表单值丢失+ipc reader 断管）+ bookmark_context_menu/gpu_compositor_path_dispatches（跑间 1F↔3F 波动）；integration image_batch_e2e。与昨日同 commit make test 1F 相比为环境劣化。
+> - **挂账**：残差②（all-auto 静态位 x +29 = 中间层 border-left，taffy 静态悬挂基域未归因，现主导 1.09%）/ viewport pass rtl 过约束第三写点 / R109 段盒簇 / revert-layer-011 / 深域四案 / backdrop-root / color-6 / 其余旧账全维持。**下一步 R5378**：①755F 账本续扫择轻（避开并行流 inline/wrap 面与 writing-mode/multicol 冲突域）②残差② all-auto 静态位 +29 独立归因轮（taffy static-hang 基，MID 骨架探针现成）③backdrop-root 深评（维持）④color-6（维持）。
+>
 > **▶ R5376 修复轮（CSS2 §10.3.7 约束方程 margin 侧——abspos-non-replaced-width-margin-000 ✗2.96% → 1.58%、abspos-replaced-width-margin-000 ✗3.90% → 2.49%（残差③收口，案仍 F）；corpus 755F 稳定持平 FIXED=∅ REGRESSED=∅ 双跑）**（2026-11-01）
 >
 > - **归因**（R5372 残差③，三写点同病）：§10.3.7 约束方程 left/width/right 全 definite 且恰一个 margin auto → 解该 margin（可负）、双 auto → 均分 slack/2（负 → ltr ml=0）；旧 viewport/root-CB/nested-CB 三写点对 auto margin 一律取 0 →「only ml auto」组落过约束左锚 53 应 496。
