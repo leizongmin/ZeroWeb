@@ -79,7 +79,7 @@ media-host IO 面查实:stdio IPC(PipeTransport 双向)+ cpal 音频设备输出
 
 9. cdp-e2e clean HEAD 7 个 click-stability 失败(S1114 2026-09-18 基线后现形,切片 5 已证与 token 无关)——engine 渲染/动画 idle 面另案归因。
 10. browser-compositor-smoke 脚本漂移(M3 切片 1 记档)。
-11. `data:` URL 导航 `net::ERR_FAILED`(本轮复测观察:headless 导航 data: 页失败落 error:// 页,错误面正常无崩溃;engine/navigation 流参考)。
+11. `data:` URL 导航 `net::ERR_FAILED`(本轮复测观察:headless 导航 data: 页失败落 error:// 页,错误面正常无崩溃)。定性(2026-11-02 补查):URL 解析层已支持 data: scheme(`url_parser.rs` 测试在案),engine shim 的 JS fetch 面已支持 data: URL(part03 变更史);缺口在**顶层导航加载器无 data: loader**——engine/navigation 流参考,面窄且明确。
 
 ## 清理证据
 
