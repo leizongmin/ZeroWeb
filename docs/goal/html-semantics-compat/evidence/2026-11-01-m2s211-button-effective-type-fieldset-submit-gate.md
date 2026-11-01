@@ -76,6 +76,10 @@
   位移 0。
 - zero-engine lib：**3671P+0F**（R5378 计入）。
 - fmt 本刀零 diff；guarded-clippy 过（0 警告）。
+- push 前 rebase 带入并行 clone 同文件上游提交 e73eb4cbd（part03 `_zwMEl`
+  attr 写入点索引失效，editing 面）——合并树复验：shim 15 part 按
+  include_str 序拼接 node --check SYNTAX_OK，zero-engine lib 复跑
+  **3671P+0F**，两组改动组合无损。
 
 ## 挂账
 
