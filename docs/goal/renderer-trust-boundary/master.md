@@ -1,9 +1,9 @@
 # Renderer 信任边界控制面
 
 **日期**：2026-11-01
-**状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付；M4 前置基线已交付——平台策略选项已列 + DC 审计快照 + macOS 代码级对照）。
+**状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付；M4 前置基线 + 已交付修复面 DC-5 生产 IPC 复测已交付）。
 **当前卡点**：四项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠；③ helper 完整 OS sandbox（renderer 现为 RFC P3 占位、image-decoder 无钩子）是否补齐；④ 沙箱安装失败平台策略 A/B/C（推荐 C，见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）。
-**下一步**：用户对 ①②③④ 拍板后执行对应修复/设计切片；全部落定后 M4 收口（DC-5 全场景生产 IPC 复测 + 剩余风险报告）；DRI3 显示补验与 macOS 真机验收为环境受限在册项。
+**下一步**：用户对 ①②③④ 拍板后执行对应修复/设计切片；全部落定后 M4 收口（决策面修复复测 + 剩余风险报告；已交付面的 DC-5 复测见 [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md)）；DRI3 显示补验与 macOS 真机验收为环境受限在册项。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -32,7 +32,7 @@
 | M1 | 权限矩阵与双向基线 | DONE（2026-11-01） | [matrix](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
 | M2 | 确认反例、共享路径修复与回归 | 切片 5/多 完成（StorageOp、CDP Host、ClearHttpCookies、CDP opt-in token、多进程 HSTS） | [切片 1](evidence/2026-11-01-m1-matrix-storageop-fix.md) / [切片 2](evidence/2026-11-01-m2-slice2-cdp-host-rebinding.md) / [切片 3](evidence/2026-11-01-m2-slice3-clear-http-cookies.md) / [切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md) / [切片 5](evidence/2026-11-01-m2-slice5-multiprocess-hsts.md) |
 | M3 | helper 实际权限与时序验收 | 切片 1–2 完成（compositor S2/S3 实测 + fd 通道对端信任收口 + helper 时序审计）；余 helper 受限操作验收（依赖决策 ③）与 DRI3 补验 | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) |
-| M4 | DC 审计、门禁、清理和剩余风险 | 前置基线交付（平台策略选项 + DC 审计快照 + macOS 代码级对照 + 清理核查）；收口待决策 ①②③④ | [前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) |
+| M4 | DC 审计、门禁、清理和剩余风险 | 前置基线交付（平台策略选项 + DC 审计快照 + macOS 代码级对照 + 清理核查）；已交付修复面 DC-5 生产 IPC 复测交付；收口待决策 ①②③④ | [前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) / [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) |
 
 ## 验证基线
 
@@ -42,7 +42,7 @@
 | DC-2 | IPC-02-cookie-hsts-privilege | PARTIAL（StorageOp、cookie jar 同步、多进程 HSTS 注册已修附回归；权限 stub 未修；Cookie 头伪造判定非缺口） | 切片 1/3/5 |
 | DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色已核；CDP rebinding 已堵、opt-in token 已交付，默认 token 待决） | 切片 2/4 |
 | DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；fd 通道对端信任收口；helper 线程时序契约审计成立 + macOS 代码级对照——helper 受限操作验收依赖决策 ③，DRI3 补验/真机验收环境受限） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) / [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) |
-| DC-5 | 全部回归与生产接收方复测 | NOT_RUN | 无 |
+| DC-5 | 全部回归与生产接收方复测 | PARTIAL（已交付修复面生产 IPC 复测有报：headless CDP 8/8 + GUI 清除链 3/3；余决策面复测/HSTS 生产面/DRI3 补验收口时补） | [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) |
 
 ## 碰撞与执行记录
 
@@ -63,4 +63,6 @@
 2026-11-01 M3 切片 2：fd 传递通道对端信任收口（M1 矩阵第 5 项）——`fd_socket_linux.rs` 三层防线：socket 0600、双侧 SO_PEERCRED euid 校验（accept 侧跳过陌生连接继续等、connect 侧拒绝报错；macOS 无 SO_PEERCRED 记注释由 ①③ 保障）、socket 名加每发布 /dev/urandom 128-bit token（经既有描述符字段传输，wire 不变）。2 新增常驻回归（token 唯一性/格式、窗口内 0600 mode），既有 roundtrip+R3340 fd 计数 3 测试原样通过。helper 时序审计：renderer apply_early 为 role 入口首语句（先于一切线程）、重启重放成立；image-decoder 无任何钩子记缺口（决策 ③）。环境发现（重要）：X :20 实为用户实时 xfce 桌面，GUI smoke 开窗污染桌面且结果不可靠——本轮在 :20 的 sandbox on/off 分层 bisect（误判 seccomp/landlock 致卡）全部作废，同命令在自起干净 Xvfb 一次通过；Xvfb 无 DRI3，gpu-dmabuf 真实交付无法触发（静默回退 RGBA），fd 通道真实进程 dma-buf 端到端补验记 M4 环境受限项。验证：zero-protocol 335P/0F、zero-compositor 49P/0F、clippy -D warnings 零警告、fmt clean；干净 Xvfb 上 CPU+GPU 两腿真实进程 exit 0 无失败信号。
 
 2026-11-01 M4 前置：平台缺沙箱能力产品策略选项分析（A 维持 fail-open / B compositor fail-closed / C 随决策 ③ 统一拍板，推荐 C）+ DC-1..5 审计快照（均 PARTIAL/NOT_RUN，剩余项全部映射到决策 ①②③④ 与环境受限项）+ macOS 代码级对照（seccomp/landlock/fd 通道均编译门控 Linux-only，降级日志明确；真机验收环境不可达在册）+ 清理核查（无残留进程/Xvfb）。唯一代码触点：fd_socket_linux.rs 一处注释按模块实际 Linux 编译门控修正表述（无行为变化）。决策 ①②③④ 全部落定前无可推进的修复面。
+
+2026-11-01 M4 DC-5 复测（已交付修复面）：不等决策 ①②③④，对已交付面先行生产接收方复测——headless CDP 腿 8/8（evil Host 拒绝/本机放行、JS storage set/read、token 实例发现开门 + 无 token -32001 + 带 token 应答、document.cookie set/read）+ GUI 腿 ClearHttpCookies 全语义链 3/3（Set-Cookie→WS 握手带 Cookie 证 jar 写读；Ctrl+T 输 zero://settings/clear/cookies 证 App 拦截；双 renderer 子进程同刻日志证广播到达）。发现四项如实记档：JS Web Storage 每文档 stub（既有功能缺口非本 goal）、HTTP 请求不附 cookie 为 t8k-delta F1 既有设计（首版 img probe 观察面选错改 WS 握手头）、headless Page.navigate 到 zero://settings/* 阻塞 mux ~15s（自动化面缺口）、evil Host 403/RST 竞速（拒绝语义不受影响）。同腿顺带复核 compositor seccomp+landlock 零降级与 renderer P3 占位现状锚点。环境事故如实记档：早前 `pkill -x Xvfb` 清理误杀 :20 用户实时桌面 Xvfb（非本任务所起），会话无法盲恢复已报告用户；教训固化「只 kill 自起实例 PID，禁按名模式杀 Xvfb」。
 
