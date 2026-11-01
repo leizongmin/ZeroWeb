@@ -31,7 +31,42 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 200 收口，键盘激活 click-only 事件序——uievents keyboard-click-event 4 子测收口，该文件自 M1 基线（2026-10-03）首次绿；forms 全树 keyed diff 零 P2F 零键增减；runner space_buttonish 激活从 webview Activate 全指针/鼠标序合成换 Enter formless 臂既有 click-only 通道）**
+> **▶ 当前状态（2026-11-01 M2 切片 201 收口，SVG 形状 gBCR/命中注入——inert-svg-hittest 第 2 子测翻绿（2/2 targeted 稳定；interactive 全树负载敏感 1/2 同族在册摆动域），forms 全树 keyed diff 净 F→P=2（onblur flake 域顺向）P→F=0；engine 新模块 hit_test_svg viewBox meet 映射合成形状视觉包围盒覆盖退化布局盒，runner/语料零改动）**
+> **入场定刀位**：s196 挂账序「inert-svg-hittest 第 2 子测」——子测 2
+> （dialog close 后 pointerDown 断言到达 `<rect>` + `:active`）恒 Fail；
+> 子测 1 恒 Pass（inert 门先于面积择优，vacuous 绿）。customizable select
+> 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：探针四轮（zz-s201-p1–p4 验后删）定谳——p3 落点转储
+> `hits=[svg,wrapper,body]` 事件在 `<svg>` 止步；p4 gBCR 直读
+> `target=8,8,784×0` **形状布局盒是退化体（h=0）非「无盒」**（勘根假设
+> 施工中被证伪修正）；根因链 = 布局只为 `<svg>` 建替换盒（usvg/resvg 整体
+> 栅格化）→ 形状 gBCR rect 快照不可用 → runner 最小面积命中扫描在形状处
+> 回落 `<svg>` 本体（tie `<=` 文档序后者胜既有语义，本刀未改）。
+> **施工**（rust 2 + 新模块 1，净 +331/−1）：`hit_test_svg.rs` 新模块
+> （310 行；hit_test.rs 2141 行超 2000 规则）——viewBox meet 映射
+> （scale=min + xMidYMid 居中，无/非法回落 1:1）+ rect/circle/ellipse 属性
+> 包围盒 + 嵌套 svg 与其余形状跳过（FIXME）；`HitTestCache.svg_shape_rects`
+> `from_document` 填充、`fill_layout_rect_snapshot` **覆盖**注入（首版
+> or_insert 被退化盒遮蔽，p4 证伪后改覆盖）、`from_snapshot` 留空 FIXME
+> （跨进程路径）；`child_origin` 提 pub(crate) 复用；单测 6。
+> **验证**：hit_test_svg 6/6 + zero-engine 全量 3652P+1F（1F =
+> ua_display_li 渲染流域在册键，stash 基线同败非本刀）；靶面 2/2 ×2
+> targeted；stash A/B keyed diff——interactive 483 键恒定净 F→P=1（靶键）
+> P→F=0 键漂移 0（wip1 靶键 Fail 为负载敏感，同二进制 targeted+wip2 双绿）；
+> forms 4711 键恒定净 F→P=2（onblur 域顺向）P→F=0（wip1
+> radio-focus-navigation-checked 2 键 P→F wip2 复归 Pass——负载抖动非
+> 本刀回归）；fmt + guarded-clippy 过。
+> **残留/挂账新记**：嵌套 svg/path 等几何未建模（语料无驱动）；跨进程
+> 快照未携带形状表（多进程回落，FIXME 在册）；`position:fixed` 静态 div
+> 命中面缺失（探针对照面复现，独立布局缺口语料无驱动留观察）；`:active`
+> 标记负载敏感 +1 样本（interactive 全树 1/2）；onblur 域摆动持续采样。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → s196 挂账序余项（`:not(:active)` 否定面无 corpus 驱动仅能力注记；
+> 父 label 零矩形属渲染流域非本流）→ inert-svg-hittest 全树负载敏感
+> 持续采样。
+> **账本**：[evidence/2026-11-01-m2s201-svg-shape-gbcr-hit-test.md](html-semantics-compat/evidence/2026-11-01-m2s201-svg-shape-gbcr-hit-test.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 200 收口，键盘激活 click-only 事件序——uievents keyboard-click-event 4 子测收口，该文件自 M1 基线（2026-10-03）首次绿；forms 全树 keyed diff 零 P2F 零键增减；runner space_buttonish 激活从 webview Activate 全指针/鼠标序合成换 Enter formless 臂既有 click-only 通道）**
 > **入场定刀位**：s199 挂账勘根——keyboard-click-event 文件级
 > Timeout（`pending:4 phase:4` 零上报）。历史定谳：archive JSON 29
 > 份（2026-10-03 M1 → tail28）**全程 Timeout 从未绿**——s199 账本

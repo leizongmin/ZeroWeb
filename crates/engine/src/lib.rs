@@ -48,6 +48,7 @@ pub mod font_load_bridge;
 #[cfg(feature = "script-runtime")]
 pub mod history_bridge;
 pub mod hit_test;
+pub mod hit_test_svg;
 pub mod indexed_db_bridge;
 pub mod js_dom_bridge;
 #[cfg(feature = "script-runtime")]

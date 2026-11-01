@@ -112,6 +112,14 @@ pub struct HitTestCache {
     /// 构建期 computed `pointer-events: none` 的元素（快照导出为 `pe_none_nodes`，
     /// 跨进程恢复后语义一致）。https://drafts.csswg.org/css-ui-4/#pointer-events
     pe_none: HashSet<NodeId>,
+    /// M2-S201：SVG 形状子元素屏幕矩形（键 = [`node_id_to_u64`]）。布局只为 `<svg>`
+    /// 建替换盒（usvg/resvg 整体栅格化）；形状子元素的盒是退化体（高度 0，几何不参与
+    /// 布局）——gBCR rect 快照对形状不可用，[`Self::from_document`] 按 viewBox 映射
+    /// 从 DOM 属性合成视觉包围盒覆盖（[`crate::hit_test_svg`]）。仅注入 rect 快照
+    /// （gBCR/命中扫描数据源），不改布局/绘制。
+    /// FIXME(M2-S201)：跨进程快照路径（[`Self::from_snapshot`]）未携带该表——多进程
+    /// renderer 下形状命中回落 `<svg>` 本体，需扩展 `HitTestCacheSnapshot` 传输。
+    svg_shape_rects: HashMap<u64, crate::rect_bridge::Rect4>,
 }
 
 #[derive(Debug, Clone)]
@@ -143,11 +151,14 @@ impl HitTestCache {
         let mut nodes = HashMap::new();
         let mut parents = HashMap::new();
         collect_hit_test_nodes(layout_root, doc, &mut nodes, &mut parents);
+        let mut svg_shape_rects = HashMap::new();
+        crate::hit_test_svg::svg_shape_rects_from_layout(doc, layout_root, 0.0, 0.0, &mut svg_shape_rects);
         Self {
             layout_root: layout_root.clone(),
             doc_root: doc.root(),
             nodes,
             parents,
+            svg_shape_rects,
             hidden: styles
                 .iter()
                 .filter(|(id, style)| {
@@ -336,6 +347,9 @@ impl HitTestCache {
             parents: snap.parents.into_iter().collect(),
             hidden: snap.hidden_nodes.into_iter().map(node_id_from_u64).collect(),
             pe_none: snap.pe_none_nodes.into_iter().map(node_id_from_u64).collect(),
+            // FIXME(M2-S201)：跨进程快照未携带 svg 形状几何（见字段文档），恢复后
+            // 形状命中回落 `<svg>` 本体。
+            svg_shape_rects: HashMap::new(),
         }
     }
 
@@ -346,6 +360,11 @@ impl HitTestCache {
         if let Ok(mut map) = snapshot.lock() {
             map.clear();
             fill_rect_from_layout_box(&self.layout_root, 0.0, 0.0, &mut map);
+            // M2-S201：svg 形状子元素的布局盒是退化体（探针实证 h=0，几何未参与布局），
+            // 屏幕矩形由 [`crate::hit_test_svg`] 按 viewBox 映射合成的**视觉包围盒覆盖**。
+            for (id, rect) in &self.svg_shape_rects {
+                map.insert(*id, *rect);
+            }
         }
     }
 }
@@ -889,7 +908,7 @@ fn layout_box_for_node(layout: &LayoutBox, target: NodeId, abs_x: f32, abs_y: f3
     None
 }
 
-fn child_origin(layout: &LayoutBox, box_x: f32, box_y: f32) -> (f32, f32) {
+pub(crate) fn child_origin(layout: &LayoutBox, box_x: f32, box_y: f32) -> (f32, f32) {
     (box_x + child_offset_x(layout), box_y + child_offset_y(layout))
 }
 
