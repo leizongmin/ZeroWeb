@@ -28014,21 +28014,25 @@ return e;
           } else if (prop === 'action') {
             // R5009 M3 片 e（html-syntax-compat）：form.action 是 URL 反射（spec
             // resolveUrl——WPT reflection-forms 'form.action setAttribute to " foo "'
-            // 期望解析绝对 URL）。R5009 片 d：missing/空 → **文档 URL**（spec：form
-            // action 缺省 = 文档地址——WPT 'form.action IDL get with DOM attribute
-            // unset' 期望页面 URL）。与 A/AREA href 同用 `__zw_parse_url`。
-            // net-api M5-S7：解析基 = 文档基 URL（<base href> 优先——spec form
+            // 期望解析绝对 URL）。与 A/AREA href 同用 `__zw_parse_url`。
+            // net-api M5-S7：非空值解析基 = 文档基 URL（<base href> 优先——spec form
             // action 对 document base URL 解析）。
+            // s207：missing/空串特例（HTML §4.10.3 #dom-fs-action 反射例外——content
+            // attribute 缺失或空串时返 **node document's URL**，非文档基 URL，
+            // `<base href>` 不影响；WPT form-action-reflection-with-base-url 空/
+            // 缺失两断言面）。旧实现空值落解析分支被基 URL 吸走（返 <base>
+            // 解析值）；R5009 片 d 的「missing/空 → 文档 URL」仅活在
+            // `__zw_parse_url` 不可用回退分支，M5-S7 后成死路。
             var _fActBase = (typeof globalThis._zwDocBaseURL === 'function')
               ? globalThis._zwDocBaseURL()
               : (globalThis.location ? globalThis.location.href : '');
-            if (typeof __zw_parse_url === 'function') {
+            if (fv === '') {
+              fv = _zwCurrentHref();
+            } else if (typeof __zw_parse_url === 'function') {
               try {
                 var _fActJson = __zw_parse_url(fv, _fActBase);
                 if (_fActJson) fv = JSON.parse(_fActJson).href || _fActBase || fv;
               } catch (_eFAct) {}
-            } else if (fv === '') {
-              fv = _fActBase;
             }
           }
           return fv;

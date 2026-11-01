@@ -2326,6 +2326,75 @@ fn test_r5324_output_value_defaultvalue_live_read_and_reset() {
 }
 
 #[test]
+fn test_r5325_form_action_reflection_document_url_vs_base() {
+    // R5325（s207）：HTMLFormElement.action 反射例外（HTML §4.10.3
+    // #dom-fs-action）——content attribute 缺失或空串时 IDL getter 返
+    // **node document's URL**（非文档基 URL，`<base href>` 不影响）；非空值
+    // 对文档基 URL 解析（net-api M5-S7 语义保留）。WPT
+    // form-action-reflection-with-base-url.html（gitignore 语料）三断言
+    // 等价承载——`<base href>` + 非根 page_url 拉开两值。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><base href=\"/common/blank.html\"></head><body>\
+         <form id=\"f1\" action=\"a.html\"></form>\
+         <form id=\"f2\" action=\"\"></form>\
+         <form id=\"f3\"></form>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__a1 = document.querySelector('#f1').action;\
+             globalThis.__a2 = document.querySelector('#f2').action;\
+             globalThis.__a3 = document.querySelector('#f3').action;\
+             globalThis.__docUrl = document.URL;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a1)").unwrap().value,
+        "http://test.local/common/a.html",
+        "action='a.html' 对文档基 URL（<base href>）解析"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__docUrl)").unwrap().value,
+        "http://test.local/dir/page.html",
+        "document.URL = 页面地址（sanity）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a2)").unwrap().value,
+        "http://test.local/dir/page.html",
+        "action='' → node document's URL（非基 URL /common/blank.html）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a3)").unwrap().value,
+        "http://test.local/dir/page.html",
+        "action 缺失 → node document's URL（非基 URL）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__a2 === globalThis.__docUrl)")
+            .unwrap()
+            .value,
+        "true",
+        "空串 action 与 document.URL 全等"
+    );
+}
+
+#[test]
 fn test_mutation_record_instanceof_spec_fields_r2847() {
     // R2847：MutationObserver 回调收到的 record 须 `instanceof MutationRecord` + `[object MutationRecord]`
     // toStringTag + 完整 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，

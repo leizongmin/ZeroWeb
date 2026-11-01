@@ -31,7 +31,34 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 206 收口，output value/defaultValue 活读模型——mutations.window 2F 翻绿（Descendant mutations + form.reset() 两用例），forms 全树 keyed diff 净 F→P=2（恰两靶键）P→F=0 键漂移 0 timeout 位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 207 收口，form.action 文档 URL 反射特例——form-action-reflection-with-base-url 2F 翻绿（empty-string/missing action 应返 document's URL 非 base URL），forms 全树 keyed diff 净 F→P=2 恰两靶键 + onblur flake 域 ±2 双向摆动（在册），键漂移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s206 后 misc 残面次刀候选序首位 form action 反射
+> base-url 2F。customizable select 177F 挂起待拍板（GB-20261031 征询
+> 在途）。
+> **勘根**：spec §4.10.3 #dom-fs-action 反射例外——content attribute
+> 缺失或空串时 getter 返 **node document's URL**（非文档基 URL，`<base
+> href>` 不影响），非空值对基 URL 解析。根因考古：R5009 片 d 特例只活
+> 在 `__zw_parse_url` 不可用回退分支，net-api M5-S7 解析优先分支使空串
+> 被解析吸走（`__zw_parse_url('', 基URL)` = 基 URL）——无 `<base>` 场景
+> 两值相等掩面，base 变体语料才现形。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part03 FORM action getter
+> 分支重构——`fv === ''` 先判返 `_zwCurrentHref()`（文档 URL 通道），
+> 非空才走解析（M5-S7 语义保留），死路回退分支删除；part09.rs R5325
+> 桥测试（`<base href>` + 非根 page_url 拉开两值，5 断言镜像语料，
+> gitignore 语料常驻承载，s205/s206 先例）。
+> **验证**：拼接 shim node --check SYNTAX_OK；靶面 with-base-url 3/3
+> Pass（stash 基线同键 F）+ reflection.html 3/3 持平 + nameditem 1F
+> 承袭保持；forms 全树 stash A/B 净 F→P=4 中恰 2 靶键 + onblur 域
+> ±2 双向摆动（s204 +3/s205 +4 后再采样，本刀与该域无交互路径），键
+> 漂移 0 timeout 位移 0（两侧 4711 对覆盖全同）；zero-engine 3666P+1F
+>（在册键 + R5325 新测过）；fmt 零 diff + guarded-clippy 过。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → number B 簇 editor-buffer 独立立项（s203 已勘定）或 misc 残面次刀
+> （form owner table 2F / output-validity :valid/:invalid 伪类 1F /
+> input/button formAction `<base>` 同形特例缺口——s207 新记）。
+> **账本**：[evidence/2026-11-01-m2s207-form-action-document-url-reflection.md](html-semantics-compat/evidence/2026-11-01-m2s207-form-action-document-url-reflection.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 206 收口，output value/defaultValue 活读模型——mutations.window 2F 翻绿（Descendant mutations + form.reset() 两用例），forms 全树 keyed diff 净 F→P=2（恰两靶键）P→F=0 键漂移 0 timeout 位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s205 后 misc 残面次刀候选序 output mutations 2F。
 > customizable select 177F 挂起待拍板（GB-20261031 征询在途）。
 > **勘根**：spec §4.10.12 The output element（whatwg live 版逐字核对，
@@ -6576,6 +6603,15 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 207**：form.action 文档 URL 反射特例轮——
+  form-action-reflection-with-base-url 2F 收口。勘根定谳 R5009 片 d
+  特例被 net-api M5-S7 解析优先分支吸走（空串对基 URL 解析=基 URL，
+  无 `<base>` 掩面）；施工 part03 action getter 空值先判返文档 URL +
+  part09.rs R5325 桥测试常驻承载。验证：靶面 3/3 Pass + forms 全树
+  A/B 净 F→P=2 恰靶键 + onblur 域 ±2 双向（在册 flake）+ zero-engine
+  3666P+1F + guarded-clippy 过；formAction `<base>` 同形缺口新记挂账。
+  账本
+  [evidence/2026-11-01-m2s207-form-action-document-url-reflection.md](html-semantics-compat/evidence/2026-11-01-m2s207-form-action-document-url-reflection.md)。
 - **2026-11-01 M2 切片 206**：output value/defaultValue 活读模型轮——
   mutations.window 2F 收口（Descendant mutations + form.reset()）。
   勘根 spec §4.10.12 三缺定谳（getter 缓存盲 / value= 捕获 host 直读 /
