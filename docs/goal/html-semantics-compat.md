@@ -31,7 +31,46 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 208 收口，:valid/:invalid 伪类候选门——output-validity 1F 翻绿（output barred 两伪类均不匹配，含 setCustomValidity 后仍双不匹配；6 断言一次全绿），forms 全树 keyed diff 净 F→P=2 恰 1 靶键 + onblur flake 域 1 键上摆（在册），P→F=0 键漂移 0 timeout 位移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 209 收口，number 编辑器双槽——键入 veto + caret 臂 + badInput 接线：三语料 11/11 Pass（scientific 4/4——`1e-+1`/`1e++1`/`+1e+1` 整键否决、`-` 起点接受 valueAsNumber −10；constraint 5/5——键入 '1.e'→''+badInput true、'1.'→'1'+badInput false、setter 净化无 badInput、required+valueMissing；clobbering 2/2——'123e' 键入 valid false）；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=2 全落 onblur flake 族（基线态当下重跑同 F 已证非本刀），键漂移 0；shim 3 文件 + rust 3 文件，语料零改动）**
+> **入场定刀位**：s208 后 number B 簇 editor-buffer 独立立项落刀
+>（s203 勘定承袭）。customizable select 177F 挂起待拍板（GB-20261031
+> 征询在途）。
+> **勘根**：HTML §4.10.5.1.10 number state 用户交互面——键入无 veto、
+> 无 caret 模型；科学计数测 1-3 经 parseFloat 前缀解析**意外通过**
+>（`'1e+1-'`→10），Insert - at start 无 caret → 尾拼 1F；constraint
+> '1.e'/'1.' 键入后 value 停原文（无暴露换算）→ badInput 断言败；
+> clobbering '123e' 同败。双通道核证：part04 setter 面已有 R3901 skip
+> 旗标 + M2-S203 净化（setter 面正确），缺口纯在键入面与 validity
+> badInput 臂。模型三角定位：键入原文存**编辑器层**（可长于暴露值），
+> value 槽写暴露换算值（严格文法+isFinite→原样；仅尾点→剥点；否则
+> ''）；badInput = 原文非空且换算 ''；不合编辑器文法的键入**整键否
+> 决**。不能伤键：setter 双臂（测 2/4 净化无 badInput）、R3906 选区
+> 复位、text 控件（窄门 `_nTy==='number'`）、maxlength 截断序。
+> **施工**（shim 3 文件 + rust 3 文件）：part01 `_numberEditor` 表 +
+> 文法/换算帮手 + `__zw_text_input` number 分支（veto+暴露槽写）+
+> `__zw_text_delete` 编辑器空间删除 + 新 `__zw_text_caret_move`
+>（Left/Right ±1 UTF-16 代理安全、选区折叠、返消费）+ reset 清表；
+> part03 `_validityState` badInput 臂并入 valid 汇总；part04 value/
+> valueAsNumber/valueAsDate 三 setter 非 skip 写清编辑器（clone/
+> removeAttribute 路径勘定不清）；script_gen.rs caret 桥生成；
+> testharness.rs scroll_key 分支 select_consumed 后插 text_caret_
+> consumed 门（input/textarea ArrowLeft/Right 移 caret 不滚动）；part09.rs
+> R5327 桥测试八腿镜像三语料（gitignore 常驻承载）。
+> **验证**：拼接 shim node --check SYNTAX_OK；R5327 单测 1 passed（首
+> 跑暴露键入臂 `key`→`target.key` 误用，修后过）；三定向 11/11 Pass；
+> forms 全域 A/B（B 侧全域 9080 行取 forms/ 子集对齐 s208 基线 4711
+> 键）净 F→P=4 恰 4 靶键 + onblur 族 1 键上摆回摆；P→F=2 全落同族——
+> WIP 重跑 1 腿回摆 + stash 后基线态当下重跑 spacebar 双腿亦 Fail
+>（环境时序敏感）已证非本刀；zero-engine 3669P+0F（R5327 计入，
+> ua_display_li 本轮转绿）；fmt 零 diff + guarded-clippy 0 警告。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → misc 残面次刀（form-nameditem override builtins 1F fix#19c 挂待
+> 决承袭 / input/button formAction `<base>` 同形特例缺口；form owner
+> table 4F 升格待独立立项）或 ArrowUp/Down textarea 视觉行 caret 模
+> 型（s209 挂账）勘定。
+> **账本**：[evidence/2026-11-01-m2s209-number-editor-buffer.md](html-semantics-compat/evidence/2026-11-01-m2s209-number-editor-buffer.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 208 收口，:valid/:invalid 伪类候选门——output-validity 1F 翻绿（output barred 两伪类均不匹配，含 setCustomValidity 后仍双不匹配；6 断言一次全绿），forms 全树 keyed diff 净 F→P=2 恰 1 靶键 + onblur flake 域 1 键上摆（在册），P→F=0 键漂移 0 timeout 位移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s207 后 misc 残面次刀候选序 output-validity 1F
 >（form owner table 勘定升格 4F 解析器 form element pointer 基建面，
 > 非 misc 次刀量级，退回候选池待独立立项）。customizable select 177F
@@ -6635,6 +6674,18 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 209**：number 编辑器双槽轮——键入 veto + caret
+  臂 + badInput 接线，三语料 11 键收口。勘根定谳键入面无 veto 无
+  caret（科学计数测 1-3 意外过经 parseFloat 前缀解析，Insert - at
+  start 尾拼 1F；constraint/clobbering 键入中间态停原文无暴露换算）；
+  施工 part01 `_numberEditor` 双槽（文法 veto + 暴露换算 + 删除编辑器
+  空间化 + `__zw_text_caret_move` 新桥）+ part03 badInput 臂 + part04
+  三 setter 非 skip 写清槽 + testharness.rs caret 消费门 + part09.rs
+  R5327 八腿常驻承载。验证：三定向 11/11 Pass + forms 全域 A/B 净
+  F→P=4 恰 4 靶键 + P→F=2 全落 onblur flake 族（stash 基线重跑同败
+  已证）键漂移 0 + zero-engine 3669P+0F + fmt 零 diff + guarded-clippy
+  过。账本
+  [evidence/2026-11-01-m2s209-number-editor-buffer.md](html-semantics-compat/evidence/2026-11-01-m2s209-number-editor-buffer.md)。
 - **2026-11-01 M2 切片 208**：:valid/:invalid 伪类候选门轮——
   output-validity 1F 收口。勘根定谳双通道形态（Rust 样式路径
   validation.rs 候选门已正确；失败走 shim matches 通道 `:valid` 臂无

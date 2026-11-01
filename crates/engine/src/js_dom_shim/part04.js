@@ -14454,6 +14454,10 @@
               var _ivSan = (globalThis.__zwSkipValueSanitize === true)
                 ? _ivVal : _zwSanitizeInputValue(_ivVal, _ivTy, sel, handle);
               _inputValues[key] = _ivSan; _inputValuesSet[key] = true;
+              // s209：程序化 IDL set（非键入 skip 通道）清 number 编辑器原文——
+              // badInput 仅用户键入面（语料钉态：set '1.e' 净化 '' 且 badInput
+              // false）。键入通道经 part01 编辑器臂自管双槽，不清。
+              if (globalThis.__zwSkipValueSanitize !== true) delete _numberEditor[key];
               // R3906（HTML §4.10.5.4 value setter 步 5）：值（净化后）变更 → 文本入口
               // 光标移到新值末 + 反选 + 方向复位 'forward'（selection-start-end 'Initial
               // .value set should set selectionStart to end of value' 16 案 + after-
@@ -14544,6 +14548,7 @@
               vsS = (typeof value === 'number' && isNaN(value)) ? '' : _formatHtmlDateValue(new Date(vsN), vsT);
             }
             _inputValues[key] = vsS; _inputValuesSet[key] = true;
+            delete _numberEditor[key]; // s209：程序化写清 number 编辑器原文（badInput 仅用户键入面）
             _captureInputDefault(key, sel, handle); // R2996：valueAsNumber= 等同 .value=，捕获 defaultValue
             if (handle) __zw_set_attr_handle(handle, 'value', vsS);
             else __zw_set_form_value(sel, vsS);
@@ -14572,6 +14577,7 @@
             }
             var vadStr = (value == null || isNaN(value.getTime())) ? '' : _formatHtmlDateValue(value, vadTs);
             _inputValues[key] = vadStr; _inputValuesSet[key] = true;
+            delete _numberEditor[key]; // s209：程序化写清 number 编辑器原文（badInput 仅用户键入面）
             _captureInputDefault(key, sel, handle);
             if (handle) __zw_set_attr_handle(handle, 'value', vadStr);
             else __zw_set_form_value(sel, vadStr);

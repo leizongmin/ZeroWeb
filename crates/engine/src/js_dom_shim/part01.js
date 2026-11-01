@@ -176,6 +176,28 @@
   // headless 无真 caret/选择渲染，故 selection 为纯 JS 跟踪（供文本编辑器 / 自动选择 / Range 算法读状态）。
   // 同 _inputValues/_classCache 经 `__zw_reset_form_state` 清空。
   var _textSelection = {};
+  // s209（html-semantics M2）：number 键入**编辑器原文**双槽（HTML §4.10.5.1.10
+  // number state——用户键入的中间态（'1.'/'1e'/'123e'）由编辑器层保留续键，
+  // value IDL 暴露层另存编辑器换算值（有效前缀/''）；程序化 IDL set 走净化清
+  // 编辑器）。badInput 判据 = 编辑器原文存在且换算暴露值空串。
+  var _numberEditor = {};
+  // s209：number 编辑器候选文法（键入否决门）——宽松形（可续键）：可选 '-'、
+  // 整数/小数（'.' 后可无位）、可选指数（'e'/'e+'/'e-' 后可无位）。语料钉态：
+  // '1.e' 接受（badInput 面）、'1e-+1'/'1e++1'/'+1e+1'/'1e+1-' 否决
+  //（number-invalid-scientific-key-events）。
+  function _zwNumberEditorGrammar(v) {
+    return /^-?\d*\.?\d*(?:[eE][+-]?\d*)?$/.test(v);
+  }
+  // s209：编辑器原文 → value 暴露换算——①spec 有效浮点文法（M2-S203 同款）且
+  // 有限 → 原样；②仅尾点（'1.'）→ 剥点（语料钉态：键入 '1.' 暴露 '1'，
+  // badInput false）；③其余（'1.e'/'123e'/'2e308'）→ ''（badInput 面）。
+  function _zwNumberEditorValue(raw) {
+    if (raw === '') return '';
+    if (/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw) && isFinite(Number(raw))) return raw;
+    var m = /^(-?\d+)\.$/.exec(raw);
+    if (m) return m[1];
+    return '';
+  }
   // R5052：文本选区导出（reftest harness 消费）——非折叠选区条目（'@handle' 键 =
   // detached createElement 元素不在文档不渲染，跳过；折叠 start===end 无高亮，跳过）。
   // 返回 JSON 数组 [{selector, start, end}]（UTF-16 码元区间），随渲染参数回流
@@ -8372,6 +8394,28 @@
       }
       if (inserted.length === 0) return;
     }
+    // s209：number 编辑器双槽——候选 = 编辑器原文按 caret 拼入新字符；不合编辑器
+    // 文法 → **否决**（编辑器/值/事件全不动——Chromium beforeTextInserted 否决位，
+    // number-invalid-scientific-key-events '1e-+1'/'1e++1'/'+1e+1' 拒绝面）；caret
+    // 状态存编辑器原文空间（暴露 '1.' 剥点后编辑器仍 '1.'，续键 '5' → '1.5'）。
+    // 合文法 → 编辑器更新 + value 槽写**暴露换算值**（skip 净化通道——暴露值已是
+    // 消毒形或 ''）。语料钉态：'1.' → 暴露 '1' + badInput false；'1.e'/'123e' →
+    // 暴露 '' + badInput true（number-constraint-validation /
+    // defaultValue-clobbering）。事件 data 仍为键入原字符。
+    var _nTy = '';
+    try { _nTy = _zwNormalizeInputType(el.getAttribute('type')); } catch (_eNTy) { _nTy = ''; }
+    var _nIsNum = false, _nExposed = '', _nTypedLen = inserted.length;
+    if (_nTy === 'number') {
+      var _nEdRaw = (_numberEditor[target.key] != null) ? String(_numberEditor[target.key]) : String(cur);
+      var _nSt = state ? Math.max(0, Math.min(_nEdRaw.length, state.start)) : _nEdRaw.length;
+      var _nEn = state ? Math.max(_nSt, Math.min(_nEdRaw.length, state.end)) : _nEdRaw.length;
+      var _nCand = _nEdRaw.slice(0, _nSt) + inserted + _nEdRaw.slice(_nEn);
+      if (!_zwNumberEditorGrammar(_nCand)) return;
+      _numberEditor[target.key] = _nCand;
+      _nExposed = _zwNumberEditorValue(_nCand);
+      start = _nSt; end = _nEn;
+      _nIsNum = true;
+    }
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: inserted, inputType: 'insertText', isComposing: false
     });
@@ -8389,9 +8433,9 @@
     // part04 value setter。
     globalThis.__zwSkipValueSanitize = true;
     try {
-      el.value = cur.slice(0, start) + inserted + cur.slice(end);
+      el.value = _nIsNum ? _nExposed : (cur.slice(0, start) + inserted + cur.slice(end));
     } finally { globalThis.__zwSkipValueSanitize = false; }
-    var caret = start + inserted.length;
+    var caret = start + (_nIsNum ? _nTypedLen : inserted.length);
     _textSelection[target.key] = { start: caret, end: caret, direction: 'none' };
     // t2-pd2a：用户编辑标记（validity tooShort 面依赖——同计划管道
     // script_set_text_control_state 的 mark_user_edited）。
@@ -8409,7 +8453,14 @@
     var el = target.element;
     // t2-pd2a：readonly（live）——同 plan_text_delete 的 ReadOnlyTarget 语义（原子路径守卫）。
     try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRo) {}
-    var cur = el.value || '';
+    // s209：number 删除走**编辑器原文**空间（暴露层可能剥点缩写）——删除不否决
+    //（Chromium 否决位仅插入面 beforeTextInserted；删除产物合文法性不校验），
+    // 删后 value 槽写暴露换算值。
+    var _dTy = '';
+    try { _dTy = _zwNormalizeInputType(el.getAttribute('type')); } catch (_eDTy) { _dTy = ''; }
+    var _dIsNum = _dTy === 'number';
+    var cur = (_dIsNum && _numberEditor[target.key] != null)
+      ? String(_numberEditor[target.key]) : (el.value || '');
     var state = _textSelection[target.key];
     var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
     var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;
@@ -8432,7 +8483,13 @@
     // R3901：删除组合同不走净化（旗标见 __zw_text_input 注）。
     globalThis.__zwSkipValueSanitize = true;
     try {
-      el.value = cur.slice(0, start) + cur.slice(end);
+      if (_dIsNum) {
+        var _dCand = cur.slice(0, start) + cur.slice(end);
+        _numberEditor[target.key] = _dCand;
+        el.value = _zwNumberEditorValue(_dCand);
+      } else {
+        el.value = cur.slice(0, start) + cur.slice(end);
+      }
     } finally { globalThis.__zwSkipValueSanitize = false; }
     _textSelection[target.key] = { start: start, end: start, direction: 'none' };
     // t2-pd2a：用户编辑标记（同计划管道 script_set_text_control_state）。
@@ -8441,6 +8498,33 @@
       bubbles: true, cancelable: false, composed: true, data: null, inputType: 'deleteContentBackward', isComposing: false
     });
     el.dispatchEvent(input);
+  };
+
+  // s209（html-semantics M2）：ArrowLeft/ArrowRight 文本控件 caret 默认动作（HTML
+  // §4.10.12 UI Events 键默认动作——文本控件焦点时方向键移 caret 不滚动）。折叠
+  // caret ±1 UTF-16 码元（代理对边界取整）；有选区折叠到相应端。位置存编辑器
+  // 原文空间（number 双槽 s209——编辑器原文可能长于暴露值）。返回 true = 消费
+  //（宿主跳过滚动默认动作，select 键消费门 s129 同形）。ArrowUp/Down 多行视觉行
+  // 模型未实现（textarea 回落滚动，挂账）；非文本控件返 false 落滚动。
+  globalThis.__zw_text_caret_move = function (sel, key) {
+    var target = _resolveInputTarget(sel);
+    if (!target) return false;
+    var k = String(key);
+    if (k !== 'ArrowLeft' && k !== 'ArrowRight') return false;
+    var cur = (_numberEditor[target.key] != null) ? String(_numberEditor[target.key])
+      : String(target.element.value || '');
+    var so = _selObj(target.key);
+    var start = Math.max(0, Math.min(cur.length, so.start));
+    var end = Math.max(start, Math.min(cur.length, so.end));
+    var caret;
+    if (start !== end) {
+      caret = (k === 'ArrowLeft') ? start : end;
+    } else {
+      caret = (k === 'ArrowLeft') ? Math.max(0, start - 1) : Math.min(cur.length, start + 1);
+    }
+    so.start = caret; so.end = caret;
+    so.direction = (k === 'ArrowLeft') ? 'backward' : 'forward';
+    return true;
   };
 
   // R3254-M2 切片 2（editing goal，2026-09-07）：contenteditable 宿主键入/删除管线——
@@ -10028,7 +10112,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

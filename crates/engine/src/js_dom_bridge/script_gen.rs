@@ -487,6 +487,18 @@ pub fn script_text_input(selector: &str, key: &str) -> String {
     format!("__zw_text_input('{esc_sel}', '{esc_ch}')")
 }
 
+/// 构造「方向键移动文本控件 caret」的 shim 脚本（s209，html-semantics M2）。
+///
+/// 键盘默认动作：文本控件（input/textarea）焦点时 ArrowLeft/Right 移动 caret
+/// 而非滚动（真实浏览器语义）。shim `__zw_text_caret_move(sel, key)` 消费返回
+/// true（宿主跳过滚动默认动作，select 键消费门 s129 同形）；非文本控件或非
+/// 方向键返 false 落既有滚动臂。
+pub fn script_text_caret_move(selector: &str, key: &str) -> String {
+    let esc_sel = escape_js_string(selector);
+    let esc_key = escape_js_string(key);
+    format!("__zw_text_caret_move && __zw_text_caret_move('{esc_sel}', '{esc_key}')")
+}
+
 /// 构造不派发 `input` listener 的 UA 文本插入脚本。
 ///
 /// 仅用于页面 JavaScript 禁用路径；IDL value/selection 状态仍由用户代理更新。

@@ -13234,12 +13234,22 @@
       };
       return _vs;
     }
+    // s209（html-semantics M2）：badInput——number 编辑器原文不可换算面（HTML
+    // §4.10.5.2.3 suffering from bad input：用户输入无法转为有效值）。编辑器双槽
+    //（part01 s209）仅用户键入路径写入——'1.e'/'123e' 换算暴露 '' → badInput
+    // true；'1.' 换算 '1' → false；程序化 IDL set 清编辑器 → 恒 false（语料
+    // 钉态：setter 写 '1.e' 净化 '' 且 badInput false）。
+    var badInput = false;
+    if (tag === 'INPUT' && ty === 'number' && _numberEditor[key] != null) {
+      var _biRaw = String(_numberEditor[key]);
+      badInput = _biRaw !== '' && _zwNumberEditorValue(_biRaw) === '';
+    }
     var _vs = {
       valueMissing: valueMissing, typeMismatch: typeMismatch, patternMismatch: patternMismatch,
       tooLong: tooLong, tooShort: tooShort, rangeUnderflow: rangeUnderflow, rangeOverflow: rangeOverflow,
-      stepMismatch: stepMismatch, badInput: false, customError: hasCustom,
+      stepMismatch: stepMismatch, badInput: badInput, customError: hasCustom,
       valid: !hasCustom && !valueMissing && !typeMismatch && !patternMismatch && !rangeUnderflow
-        && !rangeOverflow && !stepMismatch && !tooLong && !tooShort,
+        && !rangeOverflow && !stepMismatch && !tooLong && !tooShort && !badInput,
     };
     // R57（FV M1）：ValidityState 实例标识（radio-valueMissing 的
     // assert_class_string——Object.prototype.toString 须 [object ValidityState]）。

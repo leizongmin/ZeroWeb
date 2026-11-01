@@ -2479,6 +2479,233 @@ fn test_r5326_output_matches_valid_invalid_candidate_gate() {
 }
 
 #[test]
+fn test_r5327_number_editor_buffer_keystroke_veto_badinput() {
+    // R5327（s209）：number 编辑器双槽（HTML §4.10.5.1.10 number state 用户交互
+    // 面）——键入原文保留（编辑器层）+ 候选文法否决 + value 暴露换算 + badInput
+    // 接线 + ArrowLeft/Right caret 臂。镜像三语料（gitignore，常驻桥测试承载）：
+    // number-constraint-validation（'1.e'→''+badInput / '1.'→'1'+badInput false /
+    // setter 净化无 badInput）、number-invalid-scientific-key-events（'1e+1' 移位
+    // 插入 '-' 起点→-10 / 'e' 后插入否决→10）、defaultValue-clobbering（键入
+    // '123e' → valid false）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><input id=\"n\" type=\"number\">\
+         <input id=\"r\" type=\"number\" required>\
+         <input id=\"t\" type=\"text\"></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 腿 A（constraint 测 1）：键入 '1.e' → 暴露 '' + badInput true。
+    sandbox
+        .execute(
+            "var n = document.querySelector('#n');\
+             __zw_text_input('#n', '1'); __zw_text_input('#n', '.'); __zw_text_input('#n', 'e');\
+             globalThis.__a1v = n.value; globalThis.__a1bi = n.validity.badInput;\
+             globalThis.__a1val = n.validity.valid;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a1v)").unwrap().value,
+        "",
+        "键入 '1.e'：编辑器保留原文，value 暴露换算 ''（sanitization）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a1bi)").unwrap().value,
+        "true",
+        "键入 '1.e' 不可换算 → badInput true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a1val)").unwrap().value,
+        "false",
+        "badInput → validity.valid false"
+    );
+
+    // 腿 B（constraint 测 3）：复位后键入 '1.' → 暴露 '1' + badInput false。
+    sandbox
+        .execute(
+            "n.value = '';\
+             __zw_text_input('#n', '1'); __zw_text_input('#n', '.');\
+             globalThis.__b1v = n.value; globalThis.__b1bi = n.validity.badInput;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b1v)").unwrap().value,
+        "1",
+        "键入 '1.'（合文法前缀）→ 暴露 '1'（尾点剥除）非原文 '1.'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b1bi)").unwrap().value,
+        "false",
+        "'1.' 是合法前缀 → badInput false"
+    );
+
+    // 腿 B2：编辑器空间续键——'1.' 后 ArrowLeft 移位再键 '5' → '15.'（暴露 '15'）。
+    sandbox
+        .execute(
+            "__zw_text_caret_move('#n', 'ArrowLeft'); __zw_text_input('#n', '5');\
+             globalThis.__b2v = n.value;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b2v)").unwrap().value,
+        "15",
+        "caret 存编辑器空间：'1.' caret 2 → 左移 1 → 键 5 → 编辑器 '15.' 暴露 '15'"
+    );
+
+    // 腿 C（setter 面）：IDL set 净化且无 badInput（编辑器清除）。
+    sandbox
+        .execute(
+            "n.value = '1.e'; globalThis.__c1v = n.value; globalThis.__c1bi = n.validity.badInput;\
+             n.value = '1.'; globalThis.__c2v = n.value; globalThis.__c2bi = n.validity.badInput;\
+             n.value = '5'; globalThis.__c3v = n.value; globalThis.__c3bi = n.validity.badInput;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1v)").unwrap().value,
+        "",
+        "set '1.e' → 净化 ''（M2-S203 文法）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1bi)").unwrap().value,
+        "false",
+        "setter 净化路径不置 badInput"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c2v)").unwrap().value,
+        "",
+        "set '1.' → 净化 ''（spec：'.' 后须数字）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c3bi)").unwrap().value,
+        "false",
+        "程序化写清编辑器——badInput 回落 false"
+    );
+
+    // 腿 D（scientific 测 4）：'1e+1' → ArrowLeft×4 → '-' 起点 → '-1e+1'（−10）。
+    sandbox
+        .execute(
+            "n.value = '';\
+             __zw_text_input('#n', '1'); __zw_text_input('#n', 'e');\
+             __zw_text_input('#n', '+'); __zw_text_input('#n', '1');\
+             __zw_text_caret_move('#n', 'ArrowLeft'); __zw_text_caret_move('#n', 'ArrowLeft');\
+             __zw_text_caret_move('#n', 'ArrowLeft'); __zw_text_caret_move('#n', 'ArrowLeft');\
+             __zw_text_input('#n', '-');\
+             globalThis.__d1v = n.value; globalThis.__d1n = n.valueAsNumber;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1v)").unwrap().value,
+        "-1e+1",
+        "起始 '-' 接受（合文法）→ 编辑器 '-1e+1'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1n)").unwrap().value,
+        "-10",
+        "valueAsNumber = -10"
+    );
+
+    // 腿 E（scientific 测 1）：'e' 后插 '-' → 否决 → '1e+1'（10）。
+    sandbox
+        .execute(
+            "n.value = '';\
+             __zw_text_input('#n', '1'); __zw_text_input('#n', 'e');\
+             __zw_text_input('#n', '+'); __zw_text_input('#n', '1');\
+             __zw_text_caret_move('#n', 'ArrowLeft'); __zw_text_caret_move('#n', 'ArrowLeft');\
+             __zw_text_input('#n', '-');\
+             globalThis.__e1v = n.value; globalThis.__e1n = n.valueAsNumber;\
+             globalThis.__e1val = n.validity.valid;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1v)").unwrap().value,
+        "1e+1",
+        "'1e-+1' 不合编辑器文法 → 否决（编辑器不变）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1n)").unwrap().value,
+        "10",
+        "否决后 valueAsNumber 仍 10"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1val)").unwrap().value,
+        "true",
+        "否决不产生 badInput → valid true"
+    );
+
+    // 腿 F（defaultValue-clobbering）：键入 '123e' → valid false。
+    sandbox
+        .execute(
+            "n.value = '';\
+             __zw_text_input('#n', '1'); __zw_text_input('#n', '2');\
+             __zw_text_input('#n', '3'); __zw_text_input('#n', 'e');\
+             globalThis.__f1val = n.validity.valid; n.defaultValue = n.value;\
+             globalThis.__f2val = n.validity.valid;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__f1val)").unwrap().value,
+        "false",
+        "键入 '123e'（指数不完整）→ badInput → valid false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__f2val)").unwrap().value,
+        "false",
+        "defaultValue 赋值不影响 validity"
+    );
+
+    // 腿 G（required + valueMissing）：键入 '1.e' 暴露 '' → required missing。
+    sandbox
+        .execute(
+            "__zw_text_input('#r', '1'); __zw_text_input('#r', '.'); __zw_text_input('#r', 'e');\
+             globalThis.__g1vm = document.querySelector('#r').validity.valueMissing;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__g1vm)").unwrap().value,
+        "true",
+        "required number 暴露 '' → valueMissing true"
+    );
+
+    // 腿 H（text 控件不受扰 + caret 臂消费语义）：text input 键入原样 + ArrowRight 消费。
+    sandbox
+        .execute(
+            "__zw_text_input('#t', 'a'); __zw_text_input('#t', 'b');\
+             globalThis.__h1v = document.querySelector('#t').value;\
+             globalThis.__h2c = __zw_text_caret_move('#t', 'ArrowRight');\
+             globalThis.__h3c = __zw_text_caret_move('#n2_missing', 'ArrowLeft');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h1v)").unwrap().value,
+        "ab",
+        "text 控件键入原样（无编辑器换算）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h2c)").unwrap().value,
+        "true",
+        "文本控件 ArrowRight → caret 臂消费（宿主跳滚动）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__h3c)").unwrap().value,
+        "false",
+        "非文本控件/不存在目标 → 返 false 落滚动"
+    );
+}
+
+#[test]
 fn test_mutation_record_instanceof_spec_fields_r2847() {
     // R2847：MutationObserver 回调收到的 record 须 `instanceof MutationRecord` + `[object MutationRecord]`
     // toStringTag + 完整 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，

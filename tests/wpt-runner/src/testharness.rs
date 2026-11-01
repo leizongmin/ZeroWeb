@@ -11601,7 +11601,20 @@ fn apply_testdriver_command(
                                 .map(|v| v.trim() == "true")
                                 .unwrap_or(false)
                         };
-                        if !select_consumed {
+                        // s209（html-semantics M2）：文本控件 caret 消费门——目标是
+                        // input/textarea 时 ArrowLeft/Right 移 caret（shim
+                        // `__zw_text_caret_move`，折叠 ±1 UTF-16 码元）而非滚动
+                        //（真实浏览器语义；number-invalid-scientific-key-events 的
+                        // ArrowLeft 移位插入断言面）。
+                        let text_caret_consumed = if select_consumed || selector.is_empty() {
+                            false
+                        } else {
+                            webview
+                                .execute_script(&zero_engine::script_text_caret_move(&selector, key_name))
+                                .map(|v| v.trim() == "true")
+                                .unwrap_or(false)
+                        };
+                        if !select_consumed && !text_caret_consumed {
                             let scroll_script = zero_engine::script_scroll_key_default(&selector, key_name);
                             let _ = webview.execute_script(&scroll_script);
                         }
