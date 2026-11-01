@@ -19,12 +19,13 @@
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 按域切片收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
-## 上游事实（2026-11-01 复证）
+## 上游事实（2026-11-02 复证）
 
 - 语料 pin（`3159769338…`，子树 `ad14e36c81…`，202 blob / 126 test 入口）；
-  上游 HEAD `a0dd301b85…`，WebCryptoAPI 子树 `084495e783…`（216 blob）——
-  **与二期 DC-2 甄别时（`cb6cc97ada…`）逐字节相同**，甄别结论零漂移，
-  `.tentative.` = **0**，未转正域不存在。
+  上游 HEAD `93d221d6…`（2026-11-02 复核时点；11-01 复证时 `a0dd301b85…`），
+  WebCryptoAPI 子树 `084495e783…`（216 blob）——**与二期 DC-2 甄别时
+  （`cb6cc97ada…`）逐字节相同**（11-01/11-02 两次复证零漂移），甄别结论
+  保持，`.tentative.` = **0**，未转正域不存在。
 - pin→HEAD 路径 diff：80 新增 / 65 删除。删除侧 = 全部旧 `.tentative.` 路径
   及其 fixtures；新增侧 = 两新族全部文件 + **5 个散新案**（旧目录下的 stable
   新文件）：`export-key-error-order.https.any.js`、
