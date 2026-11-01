@@ -17,8 +17,8 @@ use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::image_cache::ImageKey;
 use zero_render_foundation::primitive::{GlyphPrimitive, ImagePrimitive, TextControlBoundary};
 use zero_style_system::{
-    CaretColorComputedValue, ComputedStyle, MixBlendModeComputedValue, TabSizeValue, TextEmphasisPositionValue,
-    TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
+    CaretColorComputedValue, CaretShapeComputedValue, ComputedStyle, MixBlendModeComputedValue, TabSizeValue,
+    TextEmphasisPositionValue, TextEmphasisStyleValue, TextOverflowValue, TextTransformValue, WhiteSpaceValue,
 };
 /// R4443：ZW_DEBUG_GLYPHS 探针开关（OnceLock 缓存，热路径零 env::var 开销——
 /// block_layout_1000_elements bench +39% 实证 env::var 逐次调用开销）。
@@ -772,11 +772,101 @@ impl super::Painter {
         if let Some((caret_x, caret_top)) = caret {
             let caret_color = match &style.caret_color {
                 CaretColorComputedValue::Color(c) => super::super::color::color_value_to_render(c),
+                // 两值形式（css-ui-4 §5.2.2）：控件 caret 本体取第一值（auto → 当前文本色）。
+                CaretColorComputedValue::TwoValue(first, _) => match first.as_ref() {
+                    CaretColorComputedValue::Color(c) => super::super::color::color_value_to_render(c),
+                    CaretColorComputedValue::Auto | CaretColorComputedValue::TwoValue(..) => color,
+                },
                 CaretColorComputedValue::Auto => color,
             };
             let caret_y = caret_top + (line_height - font_size).max(0.0) / 2.0;
             self.primitives
                 .add_fill(Rect::new(caret_x, caret_y, 1.0, font_size), caret_color);
+        }
+    }
+
+    /// R5383（css-ui-4 §5.2.3 caret-shape）：contenteditable 宿主子树无文本时的静态插入 caret。
+    ///
+    /// 空编辑宿主无文本片段（宏片段路径不触发），盒级按 caret-shape 补绘：
+    /// block = 1ch 宽 × 行高矩形（「无下一可见字符回退 1ch」）；bar = 1px 竖条
+    ///（垂直居中于行盒、高 = font-size，与控件 caret 同几何）；underscore = 行底细横条。
+    /// 颜色 = caret-color 显式值；整体 auto 且 block = currentcolor 半透明
+    ///（caret-shape block 无 caret-color 时以 50% 不透明度着色，css-ui-4 §5.2.2）。
+    /// https://drafts.csswg.org/css-ui-4/#caret-shape
+    pub(crate) fn paint_empty_editable_caret(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+    ) {
+        let font_size: f32 = match style.font_size {
+            LengthValue::Px(s) => s as f32,
+            _ => return,
+        };
+        if font_size <= 0.0 {
+            return;
+        }
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        // 行高解析与 R5296 ml_gate 同款三分支；Normal 回退 1.164（R639 bg 同口径）。
+        let line_height = match &style.line_height {
+            zero_style_system::LineHeightValue::Normal => font_size * 1.164,
+            zero_style_system::LineHeightValue::Number(n) => font_size * (*n as f32),
+            zero_style_system::LineHeightValue::Length(l) => {
+                zero_style_system::computed::resolve_length(l, font_size as f64, None, None) as f32
+            }
+        };
+        let current = super::super::color::color_value_to_render(&style.color);
+        // 颜色：显式（含两值第一值）优先；整体 auto + block → 50% currentcolor。
+        let caret_color = match &style.caret_color {
+            CaretColorComputedValue::Color(c) => super::super::color::color_value_to_render(c),
+            CaretColorComputedValue::TwoValue(first, _) => match first.as_ref() {
+                CaretColorComputedValue::Color(c) => super::super::color::color_value_to_render(c),
+                _ => current,
+            },
+            CaretColorComputedValue::Auto => {
+                if matches!(style.caret_shape, CaretShapeComputedValue::Block) {
+                    Color {
+                        a: (f32::from(current.a) * 0.5).round() as u8,
+                        ..current
+                    }
+                } else {
+                    current
+                }
+            }
+        };
+        // 1ch 回退宽 = '0' 字符 advance（无下一可见字符时 caret-shape block 的规范宽度）。
+        // Ahem 度量走 is_ahem 旗标（em 方块，R2760 is_ahem_frag 同判定）——
+        // caret-shape-block-empty-001/002 依赖 1ch=1em 铺满盒宽。
+        let is_ahem_family = style
+            .font_family
+            .iter()
+            .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+        let (default_font_id, _) = self.resolve_style_font_id(&style.font_family, style);
+        let one_ch = self.measure_char_cached(default_font_id.0, '0', font_size, is_ahem_family);
+        // RTL：插入点视觉位在行右端（块级空宿主 = 内容盒右缘内收）。
+        let caret_x = if matches!(style.direction, zero_style_system::DirectionValue::Rtl) {
+            content_x + box_node.content_width - one_ch.max(1.0)
+        } else {
+            content_x
+        };
+        match style.caret_shape {
+            CaretShapeComputedValue::Block => {
+                self.primitives
+                    .add_fill(Rect::new(caret_x, content_y, one_ch.max(1.0), line_height), caret_color);
+            }
+            CaretShapeComputedValue::Bar | CaretShapeComputedValue::Auto => {
+                let caret_y = content_y + (line_height - font_size).max(0.0) / 2.0;
+                self.primitives
+                    .add_fill(Rect::new(caret_x, caret_y, 1.0, font_size), caret_color);
+            }
+            CaretShapeComputedValue::Underscore => {
+                let band_h = (font_size * 0.1).max(1.0);
+                let band_y = content_y + (line_height - band_h).max(0.0);
+                self.primitives
+                    .add_fill(Rect::new(caret_x, band_y, one_ch.max(1.0), band_h), caret_color);
+            }
         }
     }
 
@@ -2518,6 +2608,8 @@ impl super::Painter {
                     let mut r5299_band_drawn: std::collections::HashSet<(NodeId, u32, u32)> =
                         std::collections::HashSet::new();
                     let mut first_letter_applied = false;
+                    // R5383：CE 宿主插入 caret 每盒一次（首个非空文本片段发射，宏跨片段存续）。
+                    let mut ce_caret_fired = false;
                     let first_letter_bg_color: Option<Color> = style
                         .first_letter_pseudo
                         .as_deref()
@@ -3515,6 +3607,122 @@ impl super::Painter {
                                     }
                                 }
                             }
+                            // R5383（css-ui-4 §5.2.3 caret-shape / §5.2.2 caret-color 两值）：
+                            // contenteditable 宿主静态插入 caret——焦点宿主的首个非空片段发射
+                            //（每盒一次；本切片无 Selection 管线，插入点恒文档起点，行尾/任意
+                            // 偏移挂账）：
+                            // - block：矩形覆盖插入点后下一可见字符字元格——x/宽 = 首字符 advance
+                            //   （与 R639 非 whole_box bg 同 `measure_char_cached + ls` 口径，与 ref
+                            //   页 span 背景同几何）、y/高 = 行盒（run 顶 + line_h，同 bg 公式）；
+                            //   无 caret-color 时 50% 片段色（.tentative 案 ref rgba(c,0.5)）；两值
+                            //   第二色改写覆盖字形（下方 glyph loop 消费）。
+                            // - bar：1px 竖条（控件 caret 同几何）；underscore：基线下 0.25em 处
+                            //   0.1em 横条。多列/竖排不应用（FIXME）。
+                            // 前置于字形 = caret 不遮字符（css-ui-4 §5.2.3 block 绘制序）。
+                            let mut ce_caret_recolor: Option<Color> = None;
+                            if self.ce_caret_enabled
+                                && !ce_caret_fired
+                                && !char_advance_is_y
+                                && self.focused_node == Some(owner_id)
+                                && super::is_text_entry_node(owner_id, Some(doc))
+                                && let Some(os) = owner_style_opt
+                                && let Some(ch) = transformed.chars().next()
+                            {
+                                ce_caret_fired = true;
+                                let first_adv =
+                                    self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
+                                        + frag_letter_spacing;
+                                let line_h = box_node
+                                    .text_node_line_heights
+                                    .get(&$frag_nid)
+                                    .copied()
+                                    .unwrap_or($frag_fs * 1.164);
+                                // 行盒顶锚（R5383）：caret 覆盖字元格须与 ref 页 span 背景
+                                // 同几何——竖直域 = 内容区 [baseline−ascent, baseline+descent]
+                                //（R5120 同式 `fallback_line_metrics_for_paint`；002.t 探针实证
+                                // ref bg = (14.5, 93.12) 即此域，而 run 顶存储（$frag_y）随 run
+                                // 分片结构分叉：div 直属文本存 baseline−line_h、span 文本存
+                                // baseline−ascent，不可作锚）。度量缺失回退行盒顶。
+                                let run_top = content_y + $frag_line_top + ty;
+                                let (caret_top, caret_h) = match zero_layout_engine::
+                                    fallback_line_metrics_for_paint(
+                                        &shaping_font_ids,
+                                        &transformed,
+                                        $frag_fs,
+                                    ) {
+                                    Some((a, d)) => (frag_base_y - a, a + d),
+                                    None => (run_top, line_h),
+                                };
+                                // RTL：插入点（逻辑偏移 0）的「下一字符」是 run 逻辑首字符，
+                                // 视觉位置在 run **右**端——caret x 取该字符的视觉字元格
+                                //（run 右缘内收 advance）；LTR 取 run 左缘。（caret-shape-
+                                // block-001-rtl 实证：不定向时 caret 落最左字元格翻红。）
+                                let rtl = matches!(
+                                    os.direction,
+                                    zero_style_system::DirectionValue::Rtl
+                                );
+                                let caret_x = if rtl {
+                                    frag_base_x + $frag_width - first_adv
+                                } else {
+                                    frag_base_x
+                                };
+                                let current = frag_color;
+                                let (caret_color, recolor) = match &os.caret_color {
+                                    CaretColorComputedValue::Color(c) => {
+                                        (super::super::color::color_value_to_render(c), None)
+                                    }
+                                    CaretColorComputedValue::TwoValue(first, second) => {
+                                        let fc = match first.as_ref() {
+                                            CaretColorComputedValue::Color(c) => {
+                                                super::super::color::color_value_to_render(c)
+                                            }
+                                            _ => current,
+                                        };
+                                        let rc = match second.as_ref() {
+                                            CaretColorComputedValue::Color(c) => {
+                                                Some(super::super::color::color_value_to_render(c))
+                                            }
+                                            _ => None,
+                                        };
+                                        (fc, rc)
+                                    }
+                                    // 整体 auto + block → 50% 片段色（css-ui-4 §5.2.2）。
+                                    CaretColorComputedValue::Auto => (
+                                        if matches!(os.caret_shape, CaretShapeComputedValue::Block) {
+                                            Color { a: (f32::from(current.a) * 0.5).round() as u8, ..current }
+                                        } else {
+                                            current
+                                        },
+                                        None,
+                                    ),
+                                };
+                                match os.caret_shape {
+                                    CaretShapeComputedValue::Block => {
+                                        ce_caret_recolor = recolor;
+                                        self.primitives.add_fill(
+                                            Rect::new(caret_x, caret_top, first_adv.max(1.0), caret_h),
+                                            caret_color,
+                                        );
+                                    }
+                                    CaretShapeComputedValue::Bar | CaretShapeComputedValue::Auto => {
+                                        let caret_y = run_top + (line_h - $frag_fs).max(0.0) / 2.0;
+                                        self.primitives
+                                            .add_fill(Rect::new(caret_x, caret_y, 1.0, $frag_fs), caret_color);
+                                    }
+                                    CaretShapeComputedValue::Underscore => {
+                                        let band_h = ($frag_fs * 0.1).max(1.0);
+                                        self.primitives.add_fill(
+                                            Rect::new(
+                                                caret_x,
+                                                frag_base_y + $frag_fs * 0.25,
+                                                first_adv.max(1.0),
+                                                band_h,
+                                            ),
+                                            caret_color,
+                                        );
+                                    }
+                                }
+                            }
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
                                 &transformed,
@@ -3580,6 +3788,13 @@ impl super::Painter {
                                 // 且该字形是其中第一个非空白字符时，用伪元素 color（CSS2 §5.12.2）。
                                 let glyph_color = {
                                     let mut c = frag_color;
+                                    // R5383：block caret 覆盖字符文字色（caret-color 两值第二值，
+                                    // css-ui-4 §5.2.2）——插入点后首个字形改写（本切片插入点恒 0
+                                    // → 片段首字形），消费即清（仅覆盖字符着色）。
+                                    if let Some(rc) = ce_caret_recolor {
+                                        c = rc;
+                                        ce_caret_recolor = None;
+                                    }
                                     if let Some(fl) = first_letter_color
                                         && !first_letter_applied
                                     {

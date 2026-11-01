@@ -1982,6 +1982,11 @@ impl super::Painter {
     ) {
         let color = match &style.caret_color {
             CaretColorComputedValue::Auto => return,
+            // 两值形式取第一值（caret 本体色，css-ui-4 §5.2.2）。
+            CaretColorComputedValue::TwoValue(first, _) => match first.as_ref() {
+                CaretColorComputedValue::Color(c) => color_value_to_render(c),
+                CaretColorComputedValue::Auto | CaretColorComputedValue::TwoValue(..) => return,
+            },
             CaretColorComputedValue::Color(c) => color_value_to_render(c),
         };
 

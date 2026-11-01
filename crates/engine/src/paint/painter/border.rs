@@ -1606,14 +1606,15 @@ impl super::Painter {
     /// UA 默认键盘焦点环宽度（px）。paint() 末尾合并冲刷同用。
     pub(super) const FOCUS_RING_WIDTH: f32 = 2.0;
 
-    /// 键盘焦点环适用判定：作者未声明非 none 的 outline-style 即适用。
-    /// outline-width 初始值 = medium（3px，非零），不能作为「作者已声明」信号；
-    /// style=None 时 paint_outline 本就不绘制。「未声明」与「显式 none」在 computed
-    /// 层不可区分，保守按作者去除环的意图处理（声明非 none 由 paint_outline 绘制，
-    /// 不叠加焦点环）。
+    /// 键盘焦点环适用判定：作者未声明 outline-style 即适用（R5383 级联修正）。
+    /// UA 环与作者 outline 的级联关系（css-ui-4 §6.1）：作者声明（**含显式
+    /// `outline: none`**）胜 UA auto → 环压制；未声明（computed None 初值）→ 环适用。
+    /// 旧行为把「显式 none」与「未声明」同判（都画环），WPT 焦点案 `#t:focus
+    /// { outline: none }` 环污染像素（caret 族 002/003 fuzzy 3000px 案实证）。
+    /// outline-width 初始 = medium（3px，非零），不能作为「作者已声明」信号；
+    /// 声明非 none 由 paint_outline 绘制，不叠加焦点环。
     pub(super) fn focus_ring_applicable(&self, style: &ComputedStyle) -> bool {
-        use zero_style_system::OutlineStyleValue;
-        style.outline_style == OutlineStyleValue::None
+        !style.outline_style_declared
     }
 
     /// 绘制 UA 默认键盘焦点环：作者未声明 outline 的聚焦元素外画 2px 实线环。

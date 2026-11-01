@@ -81,6 +81,9 @@ pub struct Painter {
     /// R5098：flat/并入 IFC 片段 visibility 过滤开关（构造期单次读取）。
     /// `ZW_INLINE_FRAG_VISIBILITY=0` 关闭（恢复 hidden 片段照绘旧行为）。
     pub(crate) inline_frag_visibility_enabled: bool,
+    /// R5383（css-ui-4 §5.2.2/§5.2.3）：contenteditable 宿主插入 caret 绘制开关
+    ///（构造期单次读取）。`ZW_CE_CARET=0` 关闭（恢复 CE 宿主不绘 caret 旧行为）。
+    pub(crate) ce_caret_enabled: bool,
     /// R5088：wrapper inline 背景门修正开关（构造期单次读取）。`ZW_INLINE_WRAPPER_BG=0`
     /// 关闭（skip 门回旧 has_direct_paintable_text 判据 + 链补录停用）。
     pub(crate) inline_wrapper_bg_enabled: bool,
@@ -345,6 +348,18 @@ fn is_text_entry_node(node_id: NodeId, doc: Option<&Document>) -> bool {
     // 仅元素自身的 contenteditable 属性（祖先继承不在此判定，最小切片）。
     elem.get_attribute("contenteditable")
         .is_some_and(|v| !v.eq_ignore_ascii_case("false"))
+}
+
+/// R5383：仅 contenteditable 宿主判定（盒级空内容 caret 臂门）——控件
+///（input/textarea/select）归控件 caret 路径，此处不认。语义 =
+/// `is_text_entry_node` 的 CE 分支单取。
+fn is_contenteditable_host(node_id: NodeId, doc: Option<&Document>) -> bool {
+    doc.and_then(|d| d.get(node_id)).is_some_and(|node| match &node.kind {
+        zero_dom::NodeKind::Element(elem) => elem
+            .get_attribute("contenteditable")
+            .is_some_and(|v| !v.eq_ignore_ascii_case("false")),
+        _ => false,
+    })
 }
 
 /// :focus-visible 文本输入控件启发式：input（文本类 type）/textarea/select/
@@ -1136,6 +1151,7 @@ impl Painter {
             pending_inline_bg_pos: HashMap::new(),
             inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
             inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
+            ce_caret_enabled: std::env::var("ZW_CE_CARET").as_deref() != Ok("0"),
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
@@ -4963,6 +4979,23 @@ impl Painter {
             && (self.focused_from_keyboard || is_text_entry_control(box_node, doc))
         {
             self.paint_focus_ring_indicator(box_node, abs_x, abs_y, style);
+        }
+
+        // ── contenteditable 宿主空内容插入 caret（R5383，css-ui-4 §5.2.3 caret-shape）──
+        // 焦点在 CE 宿主且子树无文本时无文本片段 → 宏片段路径不触发，caret 在盒级补绘：
+        // block = 1ch 宽 × 行高矩形（「无下一可见字符回退 1ch」，ref 页 ref-filled-green-
+        // 100px-square 依赖此覆盖）；bar/underscore 同片段路径几何。有文本宿主由片段
+        // 路径绘制（子树非空即跳过，防双绘）。仅 CE 宿主——input/textarea/select 的
+        // caret 是控件路径（paint_input_value）地盘（含 readonly 门），不在此越界
+        //（ui_indicators readonly-input pin 实证：空 value input 双臂重叠翻红）。
+        if let Some(node_id) = box_node.node_id
+            && self.ce_caret_enabled
+            && self.focused_node == Some(node_id)
+            && let Some(style) = styles.get(&node_id)
+            && is_contenteditable_host(node_id, doc)
+            && doc.is_none_or(|d| d.text_content(node_id).is_none_or(|t| t.is_empty()))
+        {
+            self.paint_empty_editable_caret(box_node, abs_x, abs_y, style);
         }
 
         // ── 属性指示器（reftest 模式下跳过，避免干扰像素对比）──

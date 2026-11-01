@@ -24,11 +24,11 @@ use zero_style_system::{
     BorderImageSliceComputedComponent, BorderImageSliceComputedValue, BorderImageSourceComputedValue,
     BorderImageWidthComputedComponent, BorderImageWidthComputedValue, BorderSpacingComputedValue, BorderStyleValue,
     BoxDecorationBreakValue, BoxShadowComputedValue, BreakInsideValue, BreakValue, CaptionSideValue,
-    CaretColorComputedValue, ColumnCountComputedValue, ColumnFillComputedValue, ColumnRuleStyleComputedValue,
-    ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue, ComputedStyle,
-    ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue, CounterActionValue, CursorValue,
-    DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue, FontKerningValue,
-    FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
+    CaretColorComputedValue, CaretShapeComputedValue, ColumnCountComputedValue, ColumnFillComputedValue,
+    ColumnRuleStyleComputedValue, ColumnRuleWidthComputedValue, ColumnSpanComputedValue, ColumnWidthComputedValue,
+    ComputedStyle, ContainComputedValue, ContainerType, ContentComputedValue, ContentVisibilityValue,
+    CounterActionValue, CursorValue, DirectionValue, EmptyCellsComputedValue, FilterComputedValue, FlexBasisValue,
+    FontKerningValue, FontSizeAdjustBasis, FontSizeAdjustMetric, FontSizeAdjustValue, FontVariantAlternatesValue,
     FontVariantNumericValue, FontVariationSettingsValue, GridAutoFlowValue, GridLineValue, HyphensComputedValue,
     ImageRenderingValue, IsolationValue, JustifyItemsValue, JustifySelfValue, LineBreakValue, LineHeightValue,
     ListStyleImageComputedValue, MaskModeComputedValue, MixBlendModeComputedValue, ObjectFitComputedValue,
@@ -609,6 +609,8 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
         "empty-cells" => empty_cells_to_css(&style.empty_cells),
         // ── caret-color / accent-color（R2730）── CSS UI 颜色（auto | <color>，复用 R2705 颜色解析）。
         "caret-color" => caret_color_to_css(&style.caret_color, element_color),
+        // ── caret-shape（R5383）── CSS UI caret 形状（css-ui-4 §5.2.3 关键字枚举）。
+        "caret-shape" => caret_shape_to_css(&style.caret_shape),
         "accent-color" => accent_color_to_css(&style.accent_color, element_color),
         // ── text-wrap / text-align-last / resize / appearance（R2731）── 单值关键字枚举。
         "text-wrap" => text_wrap_to_css(&style.text_wrap),
@@ -798,11 +800,27 @@ fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
 }
 
 /// caret-color：CSS UI 光标颜色（auto | <color>）。Auto→auto（CSS UI 4 初值，Chromium 返 auto）；
-/// Color→经 [`crate::resolve_color_current`] 解析 currentcolor 后 rgb/rgba（复用 R2705 颜色路径）。
+/// Color→经 [`crate::resolve_color_current`] 解析 currentcolor 后 rgb/rgba（复用 R2705 颜色路径）；
+/// 两值形式→空格连接两值序列化（css-ui-4 §5.2.2）。
 fn caret_color_to_css(c: &CaretColorComputedValue, element_color: &ColorValue) -> String {
     match c {
         CaretColorComputedValue::Auto => "auto".to_string(),
         CaretColorComputedValue::Color(col) => color_to_css(&crate::resolve_color_current(col, element_color)),
+        CaretColorComputedValue::TwoValue(a, b) => format!(
+            "{} {}",
+            caret_color_to_css(a, element_color),
+            caret_color_to_css(b, element_color)
+        ),
+    }
+}
+
+/// caret-shape：CSS UI caret 形状（css-ui-4 §5.2.3，auto | bar | block | underscore）。
+fn caret_shape_to_css(s: &CaretShapeComputedValue) -> String {
+    match s {
+        CaretShapeComputedValue::Auto => "auto".to_string(),
+        CaretShapeComputedValue::Bar => "bar".to_string(),
+        CaretShapeComputedValue::Block => "block".to_string(),
+        CaretShapeComputedValue::Underscore => "underscore".to_string(),
     }
 }
 
