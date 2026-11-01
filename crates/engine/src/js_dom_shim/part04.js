@@ -5709,21 +5709,18 @@
               try {
                 var _r106st = _realTag(sel, handle);
                 if (_r106st === 'INPUT' || _r106st === 'BUTTON') {
-                  var _r106ty = '';
-                  try {
-                    // s136：与 .click() API 门同根同修——type IDL 写不落快照，sel 分支
-                    // 换 lw 融合读（R2995 latest-wins），handle 分支不动。
-                    _r106ty = handle ? __zw_get_attr_handle(handle, 'type')
-                      : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
-                  } catch (_e106s1) { _r106ty = ''; }
-                  _r106ty = String(_r106ty || '').toLowerCase();
+                  // s211：type 读走共享帮手 `_zwButtonEffType`——BUTTON 空 type
+                  // 时 command/commandfor 任一存在折叠为 'button'（spec missing
+                  // value default 的 invoker commands 改动；lw 融合读 s136 同源
+                  // 保留在帮手内）。
+                  var _r106ty = _zwButtonEffType(sel, handle, _r106st);
                   var _r106is = (_r106st === 'BUTTON' && (_r106ty === 'submit' || _r106ty === 'reset' || _r106ty === ''))
                     || (_r106st === 'INPUT' && (_r106ty === 'submit' || _r106ty === 'image' || _r106ty === 'reset'));
                   if (_r106is) {
-                    var _r106dis = '0';
-                    try {
-                      _r106dis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled');
-                    } catch (_e106s2) { _r106dis = '0'; }
+                    // s211：disabled 判定走共享帮手 `_zwFeDisabled`——补 disabled
+                    // fieldset 祖先传染（button-click-submits 语料 fieldset 直下
+                    // button .click() 不提交钉面；legend 内豁免仍提交）。
+                    var _r106dis = _zwFeDisabled(sel, handle) ? '1' : '0';
                     if (_r106dis === '1') _r106is = false;
                   }
                   if (_r106is) {
@@ -5840,17 +5837,11 @@
               // M5-S8：form 反查 + 提交走共享入口 `_zwSubmitBtnDefaultAction`。
               var _subTag = _realTag(sel, handle);
               if (_subTag === 'INPUT' || _subTag === 'BUTTON') {
-                var _subTy = '';
-                try {
-                  // s136：type IDL setter 只写 lw 层（R2995 变更列表 latest-wins）不落
-                  // 快照——激活门读纯快照恒空 → BUTTON 空 type 恒判 submit（button-events
-                  // t2/t3 误派发单根）。sel 分支换 lw 融合读（consult 变更列表 → applied
-                  // view 回落）；handle 分支 `__zw_get_attr_handle` 本身 consult 当前批
-                  // mutations（latest-wins）不动。
-                  _subTy = handle ? __zw_get_attr_handle(handle, 'type')
-                    : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
-                } catch (_e6) { _subTy = ''; }
-                _subTy = String(_subTy || '').toLowerCase();
+                // s211：type 读走共享帮手 `_zwButtonEffType`——BUTTON 空 type 时
+                // command/commandfor 任一存在折叠为 'button'（spec missing value
+                // default 的 invoker commands 改动；lw 融合读 s136 同源保留在
+                // 帮手内——type IDL setter 只写 lw 层不落快照的面不回归）。
+                var _subTy = _zwButtonEffType(sel, handle, _subTag);
                 var _subIsBtn = (_subTag === 'BUTTON' && (_subTy === 'submit' || _subTy === ''))
                   || (_subTag === 'INPUT' && (_subTy === 'submit' || _subTy === 'image'));
                 // s134：reset 按钮（INPUT/BUTTON type=reset）激活行为同门——
@@ -5858,11 +5849,12 @@
                 // 复位/清脏）；disabled 门与 submit 同守卫。
                 var _subIsReset = (_subTag === 'BUTTON' || _subTag === 'INPUT') && _subTy === 'reset';
                 if (_subIsBtn || _subIsReset) {
+                  // s211：disabled 判定走共享帮手 `_zwFeDisabled`——补 disabled
+                  // fieldset 祖先传染（button-click-submits 语料 fieldset 直下
+                  // button .click() 不提交钉面；legend 内豁免仍提交）。
                   // disabled 表单控件无激活行为（spec：click() 对 disabled form control 直接 return）。
-                  try {
-                    var _subDis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled');
-                    if (_subDis === '1') { _subIsBtn = false; _subIsReset = false; }
-                  } catch (_e7) {}
+                  var _subDis = _zwFeDisabled(sel, handle);
+                  if (_subDis) { _subIsBtn = false; _subIsReset = false; }
                 }
                 if (_subIsBtn) {
                   // net-api M5-S8：form 反查 + 提交经共享入口（原内联 `.form` 直取 +

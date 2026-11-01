@@ -12774,6 +12774,79 @@
   // Constraint Validation ValidityState（R2825）。customError 由 setCustomValidity 跟踪；tooLong/tooShort
   // 仅对宿主标记的用户编辑值计算，脚本 `.value=` 不触发。其余原生约束仍为 permissive false。
   // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#the-constraint-validation-api
+  // s211（html-semantics M2，2026-11-01）：form control disabled 判定共享帮手
+  //（spec §4.10.5.1.1 #concept-fe-disabled）——自身 disabled 属性 + disabled
+  // fieldset 祖先传染（**首个 legend 元素子**的后代豁免；豁免后继续上行——更
+  // 外层 disabled fieldset 仍可 barred）。s210 `_validityState`、s211 两个
+  // button 激活门（.click() API 门 + R106 dispatchEvent click 默认动作门）
+  // 三处同口径；part04 willValidate 臂（s193，disabled-001 钉面）保留原内联
+  // 走查不动（共享化挂账承袭）。
+  function _zwFeDisabled(sel, handle) {
+    try {
+      // s211：sel 面 latest-wins 融合读（setAttribute/IDL setter 写 lw 层不落
+      // 快照——探针实测 __zw_has_attr('#b1','command') 恒 '0' 而 lw '1'；R4400
+      // 祖先链 / s136 type 读同源口径）。
+      var _fdSelf = handle ? __zw_has_attr_handle(handle, 'disabled')
+        : ((typeof __zw_has_attr_lw === 'function') ? __zw_has_attr_lw(sel, 'disabled') : __zw_has_attr(sel, 'disabled'));
+      if (_fdSelf === '1') return true;
+    } catch (_eFdS) {}
+    try {
+      var _fdNode = _makeProxy(sel, handle);
+      var _fdWalk = _fdNode;
+      var _fdPar = _fdNode.parentNode;
+      var _fdGuard = 0;
+      while (_fdPar && _fdGuard < 64) {
+        var _fdTag = '';
+        try { _fdTag = String(_fdPar.tagName).toUpperCase(); } catch (_eFdT) {}
+        if (_fdTag === 'FIELDSET') {
+          var _fdDis = false;
+          try { _fdDis = !!_fdPar.disabled; } catch (_eFdD) {}
+          if (_fdDis) {
+            var _fdLeg = null;
+            try {
+              var _fdKids = _fdPar.children;
+              for (var _fdI = 0; _fdI < _fdKids.length; _fdI++) {
+                if (String(_fdKids[_fdI].tagName).toUpperCase() === 'LEGEND') { _fdLeg = _fdKids[_fdI]; break; }
+              }
+            } catch (_eFdK) {}
+            var _fdExempt = false;
+            try { _fdExempt = (_fdLeg != null && _fdWalk === _fdLeg); } catch (_eFdI) {}
+            if (!_fdExempt) return true;
+          }
+        }
+        try { _fdWalk = _fdPar; _fdPar = _fdPar.parentNode; } catch (_eFdP) { break; }
+        _fdGuard++;
+      }
+    } catch (_eFdW) {}
+    return false;
+  }
+  // s211：button 有效 type（激活门共享）——显式 type 属性读（lw 融合读，s136
+  // 同源）优先；BUTTON 无显式 type 且 command/commandfor 属性任一存在 →
+  // 'button'（spec §4.10.5.7 #the-button-element missing value default 的
+  // invoker commands 集成改动：Submit Button 缺省仅在**两属性皆缺**时成立——
+  // button-click-submits-with-commandfor 语料 3F 钉面：implicit type + command
+  // 或 commandfor 点击不提交，显式 type=submit 不受影响；part73 R4400 的
+  // invoker command 激活面不经 type 门不受扰）。
+  function _zwButtonEffType(sel, handle, tag) {
+    var _bt = '';
+    try {
+      _bt = handle ? __zw_get_attr_handle(handle, 'type')
+        : ((typeof __zw_get_attr_lw === 'function') ? __zw_get_attr_lw(sel, 'type') : __zw_get_attr(sel, 'type'));
+    } catch (_eBt) { _bt = ''; }
+    _bt = String(_bt || '').toLowerCase();
+    if (tag === 'BUTTON' && _bt === '') {
+      try {
+        // s211：has 读 latest-wins 融合（setAttribute 写 lw 层——快照通道恒
+        // miss，探针实测；同 _zwFeDisabled 注）。
+        var _btHasC = handle ? __zw_has_attr_handle(handle, 'command')
+          : ((typeof __zw_has_attr_lw === 'function') ? __zw_has_attr_lw(sel, 'command') : __zw_has_attr(sel, 'command'));
+        var _btHasCf = handle ? __zw_has_attr_handle(handle, 'commandfor')
+          : ((typeof __zw_has_attr_lw === 'function') ? __zw_has_attr_lw(sel, 'commandfor') : __zw_has_attr(sel, 'commandfor'));
+        if (_btHasC === '1' || _btHasCf === '1') return 'button';
+      } catch (_eBtC) {}
+    }
+    return _bt;
+  }
   function _validityState(key, sel, handle) {
     var hasCustom = _customValidity[key] != null && _customValidity[key] !== '';
     var tooLong = false, tooShort = false;
@@ -12822,46 +12895,15 @@
     // 变）；pattern/range/typeMismatch 等 expectedImmutable 缺省 = expected
     //（disabled 时**仍校验**——WPT 断言 "should be true, when disabled"）。
     var _dis = null;
-    try { _dis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled'); } catch (_e) {}
-    // s210（html-semantics M2）：disabled fieldset 祖先传染——spec §4.10.5.1.1
-    // #concept-fe-disabled：form control disabled 判定含 disabled fieldset 后
-    // 代，其**首个 legend 元素子**的后代豁免；豁免判据与 s193 willValidate 祖
-    // 先走查同口径（上行路径直子即该 fieldset 首 legend 子才豁免，豁免后继续
-    // 上行——更外层 disabled fieldset 仍可 barred）。R57 语义保持：传染 barred
-    // 同样仅豁免 valueMissing（下方 required 门），pattern/range 等仍校验。
-    // form-validation-validate fm3 钉态：fs.disabled 置位 → fieldset 直下
-    // inp2（required 空）valueMissing 豁免 → form.checkValidity true；legend
-    // 内 inp1 不被传染（仍候选，type=url 'aaa' typeMismatch → false）。
-    if (_dis !== '1') {
-      try {
-        var _feDNode = _makeProxy(sel, handle);
-        var _feDWalk = _feDNode;
-        var _feDPar = _feDNode.parentNode;
-        var _feDGuard = 0;
-        while (_feDPar && _feDGuard < 64) {
-          var _feDTag = '';
-          try { _feDTag = String(_feDPar.tagName).toUpperCase(); } catch (_eFeDT) {}
-          if (_feDTag === 'FIELDSET') {
-            var _feDDis = false;
-            try { _feDDis = !!_feDPar.disabled; } catch (_eFeDD) {}
-            if (_feDDis) {
-              var _feDLeg = null;
-              try {
-                var _feDKids = _feDPar.children;
-                for (var _feDI = 0; _feDI < _feDKids.length; _feDI++) {
-                  if (String(_feDKids[_feDI].tagName).toUpperCase() === 'LEGEND') { _feDLeg = _feDKids[_feDI]; break; }
-                }
-              } catch (_eFeDK) {}
-              var _feDExempt = false;
-              try { _feDExempt = (_feDLeg != null && _feDWalk === _feDLeg); } catch (_eFeDI) {}
-              if (!_feDExempt) { _dis = '1'; break; }
-            }
-          }
-          try { _feDWalk = _feDPar; _feDPar = _feDPar.parentNode; } catch (_eFeDP) { break; }
-          _feDGuard++;
-        }
-      } catch (_eFeDW) {}
-    }
+    // s210/s211（html-semantics M2）：disabled 判定走共享帮手 `_zwFeDisabled`
+    //（自身 disabled + disabled fieldset 祖先传染，spec §4.10.5.1.1
+    // #concept-fe-disabled 首 legend 元素子后代豁免；s211 共享化自原内联走查）。
+    // R57 语义保持：传染 barred 同样仅豁免 valueMissing（下方 required 门），
+    // pattern/range 等仍校验。form-validation-validate fm3 钉态：fs.disabled
+    // 置位 → fieldset 直下 inp2（required 空）valueMissing 豁免 → form.check
+    // Validity true；legend 内 inp1 不被传染（仍候选，type=url 'aaa'
+    // typeMismatch → false）。
+    try { _dis = _zwFeDisabled(sel, handle) ? '1' : null; } catch (_e) { _dis = null; }
     var valueMissing = false;
     var reqAttr = null;
     try {

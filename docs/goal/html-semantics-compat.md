@@ -31,7 +31,39 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 211 收口，button 激活门双缺口——command/commandfor 缺省 type + fieldset 传染提交门：button-click-submits-with-commandfor 3F + button-click-submits 1F 翻绿，两语料 16/16 Pass；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=0 键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s210 后域内 misc 残面盘点定刀 button-click-submits
+> 两文件 4F（与 s210 fieldset 传染基建同区）。customizable select
+> 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：缺口一 spec §4.10.5.7 #the-button-element missing value
+> default——invoker commands 集成后 Submit Button 缺省仅在 command 与
+> commandfor **皆缺**时成立，任一存在 → Button state（显式
+> type=submit 不受影响）；两激活门（.click() API 门 + R106
+> dispatchEvent 门）BUTTON 空 type 恒判 submit。缺口二两门 disabled
+> 检查只查自身——fieldset 传染未接（s210 `_zwFeDisabled` 判据已在
+> validity 通道，激活门未用）。勘根深挖：首版帮手 `__zw_has_attr`
+> 纯快照通道读 command **恒 miss**——setAttribute 写 latest-wins 层
+> 不落快照，探针实测 `__zw_has_attr`='0' vs `__zw_has_attr_lw`='1'
+>（R4400/s136 早是 lw 口径）。
+> **施工**（shim 2 文件 + rust 测试 1 文件）：part03 共享帮手 ×2
+>（`_zwFeDisabled`——lw 融合自身读 + fieldset 祖先走查；
+> `_zwButtonEffType`——显式 type 优先 + BUTTON 空 type 且 command/
+> commandfor 任一 lw 命中 → 'button'）；part04 两激活门换帮手；
+> `_validityState` s210 内联走查共享化替换（R5328 复跑钉回归）；
+> part09.rs R5378 六腿桥测试（command/commandfor/显式 submit/fieldset
+> 直下/legend 豁免/缺省回归）。
+> **验证**：拼接 shim node --check SYNTAX_OK；R5378 单测 1 passed
+>（lw miss 探针归因后过）+ R5328 复跑 1 passed；靶面
+> FILTER=button-click-submits 16/16 Pass；forms 全域 A/B 净 F→P=4 恰
+> 4 靶键 + onblur 族 1 键回摆（s210 闭环），P→F=0 键漂移 0 其他位移
+> 0；zero-engine 3671P+0F；fmt 零 diff + guarded-clippy 0 警告。
+> **下一步候选**：misc 残面余量盘点（全域 F 分布 grep 复核）→
+> form-nameditem override builtins 1F fix#19c 挂待决承袭 / form owner
+> table 4F 升格待独立立项 / `__zw_has_attr` 非 lw 存量点位审计挂账；
+> customizable select 177F 挂起待拍板（GB-20261031）。
+> **账本**：[evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md](html-semantics-compat/evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）
 > 定刀 form-validation-validate 3F——FORM 级 checkValidity/reportValidity
 > 面，与 s208 FORM 聚合臂同区。customizable select 177F 挂起待拍板
@@ -6709,6 +6741,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 211**：button 激活门双缺口轮——command/
+  commandfor 缺省 type + fieldset 传染提交门，button-click-submits
+  两文件 4F 收口。勘根定谳缺省 type 缺口（invoker commands 集成后
+  Submit Button 缺省要求两属性皆缺）+ 激活门 disabled 只查自身；勘
+  根深挖实锤 lw 通道坑（`__zw_has_attr` 纯快照对 setAttribute 写恒
+  miss，探针对比 lw='1'）；施工 part03 共享帮手 ×2（lw 融合）+
+  part04 两门换帮手 + `_validityState` 走查共享化 + part09.rs R5378
+  六腿常驻承载。验证：靶面 16/16 Pass + forms 全域 A/B 净 F→P=4 恰
+  4 靶键 P→F=0 键漂移 0 + zero-engine 3671P+0F + fmt 零 diff +
+  guarded-clippy 过。账本
+  [evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md](html-semantics-compat/evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md)。
 - **2026-11-01 M2 切片 210**：FORM 级约束校验双缺口轮——fieldset
   disabled 传染 + invalid 全遍历派发，form-validation-validate 3F 收
   口。勘根定谳双缺口（`_validityState` 无 fieldset 祖先走查——s193

@@ -7113,3 +7113,123 @@ fn test_r5328_form_checkvalidity_fieldset_inherit_invalid_fanout() {
         "fieldset disabled 移除：传染豁免撤销，required 空控件 valueMissing 回归"
     );
 }
+
+#[test]
+fn test_r5378_button_effective_type_command_default_fieldset_submit_gate() {
+    // R5378（s211）：button 激活门双缺口——①BUTTON 无显式 type 时 command/
+    // commandfor 属性任一存在 → missing value default 折叠为 Button state
+    //（spec §4.10.5.7 #the-button-element invoker commands 集成改动——
+    // button-click-submits-with-commandfor 语料 3F 钉面：implicit type 点击不
+    // 提交，显式 type=submit 不受影响）②激活门 disabled 判定接 disabled
+    // fieldset 祖先传染（#concept-fe-disabled——button-click-submits 语料
+    // fieldset 直下 button .click() 不提交，legend 内豁免仍提交）。共享帮手
+    // `_zwButtonEffType`/`_zwFeDisabled`（.click() API 门 + R106 门同口径）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id=\"f1\"><button id=\"b1\">t</button></form>\
+         <form id=\"f2\"><fieldset disabled><button id=\"b2\">t</button></fieldset></form>\
+         <form id=\"f3\"><fieldset disabled><legend><button id=\"b3\">t</button></legend></fieldset></form>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 腿 A（语料测 1）：implicit type + command 属性 → click 不提交。
+    sandbox
+        .execute(
+            "var f1 = document.getElementById('f1'); var b1 = document.getElementById('b1');\
+             f1.addEventListener('submit', function () { globalThis.__c1++; });\
+             globalThis.__c1 = 0;\
+             b1.setAttribute('command', '--foo'); b1.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "0",
+        "implicit type + command 属性 → 默认 Button state，点击不提交"
+    );
+
+    // 腿 B（语料测 2）：移除 command 后 implicit type + commandfor → 不提交。
+    sandbox
+        .execute(
+            "b1.removeAttribute('command'); b1.setAttribute('commandfor', 'whatever');\
+             b1.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "0",
+        "implicit type + commandfor 属性 → 点击不提交"
+    );
+
+    // 腿 C（语料测 6 面）：显式 type=submit + command+commandfor → 仍提交。
+    sandbox
+        .execute(
+            "b1.setAttribute('command', '--foo'); b1.setAttribute('type', 'submit');\
+             b1.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "1",
+        "显式 type=submit 不受 command/commandfor 影响 → 点击提交"
+    );
+
+    // 腿 D（button-click-submits fieldset 面）：disabled fieldset 直下 button
+    // click 不提交。
+    sandbox
+        .execute(
+            "var f2 = document.getElementById('f2');\
+             f2.addEventListener('submit', function () { globalThis.__c2++; });\
+             globalThis.__c2 = 0;\
+             document.getElementById('b2').click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c2)").unwrap().value,
+        "0",
+        "disabled fieldset 直下 button：传染 disabled → 无激活行为不提交"
+    );
+
+    // 腿 E：disabled fieldset 的 legend 内 button → 仍提交（豁免传染）。
+    sandbox
+        .execute(
+            "var f3 = document.getElementById('f3');\
+             f3.addEventListener('submit', function (e) { e.preventDefault(); globalThis.__c3++; });\
+             globalThis.__c3 = 0;\
+             document.getElementById('b3').click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c3)").unwrap().value,
+        "1",
+        "legend 内 button 豁免传染 → 激活行为正常提交"
+    );
+
+    // 腿 F：属性全清后缺省面回归——implicit type 无 command/commandfor → 提交。
+    sandbox
+        .execute(
+            "globalThis.__c1 = 0;\
+             b1.removeAttribute('command'); b1.removeAttribute('commandfor');\
+             b1.removeAttribute('type');\
+             b1.click();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c1)").unwrap().value,
+        "1",
+        "属性全清：Submit Button 缺省回归 → 点击提交（缺省面不回归）"
+    );
+}
