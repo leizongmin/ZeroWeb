@@ -48,6 +48,13 @@
 #     Request）已由 M2-S14 引擎+语料双侧同步对齐（2026-10-29，docs/goal/
 #     net-api-compat/evidence/2026-10-29-m2-s14-request-disturbed-init-body.md）
 #     ——升级新 ref 后该腿为绿，无需人工干预
+#   - images/smiley.png、images/fail.gif 缺失（html/semantics/embedded-content/
+#     the-img-element/update-media.html 依赖；s227 勘根定性该文件级 Timeout 为
+#     语料 404 非引擎缺陷——404 → error 代替 load → async_test 永不 done，探针
+#     p8 fetch 观测 status=404 定谳；已从上游 wpt images/ 原件本地补入 300x150
+#     PNG 1852B + 320x240 GIF 24480B，A/B 恰 1 Timeout→Pass 零其他位移；
+#     docs/goal/html-semantics-compat/evidence/2026-11-02-m2s227-update-media-
+#     corpus-gap.md——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail
