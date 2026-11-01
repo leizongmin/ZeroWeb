@@ -420,7 +420,31 @@
           return !completeSrc && !completeSrcset;
         }
         if ((resourceTag === 'IMG' || resourceTag === 'AUDIO' || resourceTag === 'VIDEO') && prop === 'currentSrc') {
-          if (!resourceState) return '';
+          if (!resourceState) {
+            // s220（html-semantics M2）：selection 记录回落——静态解析 img 至
+            // window load 才 settle，解析期脚本读 currentSrc 以选源记录近似
+            //（spec current request 的 current URL 微任务级先于 settle；helper
+            // 与表见 part03 `__zwImgSelectionRecord5277`）。首读懒扫全文档
+            // img 一次，表随每次 settle 重置。AUDIO/VIDEO 不回落（媒体
+            // currentSrc 恒 resourceState 面）。
+            // https://html.spec.whatwg.org/multipage/images.html#dom-img-currentsrc
+            try {
+              if (!globalThis._zwImgSelScan5277Done && typeof globalThis.__zwImgSelectionScan5277 === 'function') {
+                globalThis.__zwImgSelectionScan5277();
+              }
+            } catch (_eCscan) {}
+            try {
+              var _csRec = globalThis._zwSelectedSources5277;
+              var _csUrl = _csRec ? _csRec[key] : '';
+              if (_csUrl) {
+                if (typeof _zwResolveFetchUrl === 'function') {
+                  try { return _zwResolveFetchUrl(_csUrl); } catch (_eCur5220) {}
+                }
+                return String(_csUrl);
+              }
+            } catch (_eCrec) {}
+            return '';
+          }
           // R5275：IMG currentSrc 为**绝对 URL**（spec
           // https://html.spec.whatwg.org/multipage/images.html#dom-img-currentsrc
           // ——selected source 的 resolved URL；img.complete async src 案
@@ -1156,6 +1180,12 @@
         // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
         globalThis.__zwFireStaticImgSettle = globalThis.__zwFireStaticImgSettle || function () {
           try {
+            // s220：选源记录表/在队计数/旗标 per-document 重置（persistent
+            // context 跨案键隔离——上一文档的记录不得泄入本文档 settle 前的
+            // currentSrc 读；重置后本文档动态面的微任务记录在后续读上重建）。
+            globalThis._zwSelectedSources5277 = {};
+            globalThis._zwImgSelPending5277 = {};
+            globalThis._zwImgSelScan5277Done = false;
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];

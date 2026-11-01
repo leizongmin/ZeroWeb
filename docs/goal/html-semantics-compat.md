@@ -31,7 +31,16 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 219 收口，响应式图片密度面（density-corrected intrinsic dimensions）——current-pixel-density/basic 8 密度案例全翻绿（1.6x→160/2x→128/512w+256px→128/256w+512px→512/256w+1px→1 等，width/clientWidth/naturalWidth 三面同绿），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 零 P→F 键集差 0：密度从未进入 Rust image_sizes 面 + shim 四处密度门缺口；shim 3 点（part03 x 描述符非有限密度弃候选 + part04 natural-dim 两臂 +Infinity 放行）+ 勘根后探针补刀第四处（`__zwFireStaticImgSettle` settle 密度入账 isFinite 拒 Infinity——i0px width 256 定谳断点在 settle 入账非选择链）；Rust extract.rs 新 `img_selected_pixel_density`（srcset/sizes 密度解析选择最小镜像 + 全候选非法无 src → broken +Inf → dim/∞ = 0）+ mod.rs `build_img_intrinsic_all` per-Node 密度折算（no_ratio Option 逐轴 map，比率不折）；R5386 红绿十 img 钉面；zero-engine 3684P+0F；余 3 PNG expect-0 案 clientWidth 红 = layout-engine sizing.rs `w.max(1.0)` 零/亚像素替换盒钳 1px 渲染流车道挂账）**
+> **▶ 当前状态（2026-11-02 M2 切片 220 收口，img 选源记录 currentSrc 时序面——img-picture-ancestor 4F 全翻绿 + current-request-microtask-002 排空语义翻绿（spec update-the-image-data 同元素在队实例早退让位），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 全靶面零 P→F 零其他位移：spec current request 的 current URL 更新微任务级（relevant mutation → microtask → 选源半先落 URL，fetch 半才异步）而我方选中态（resourceState）耦合 window load settle；shim 3 文件 +118/−1 零 Rust——part03 记录/懒扫/入队三帮手（`_zwSelectedSources5277` 表 + pending 计数排空）+ attrMutated 汇流点、part05 src IDL 臂、part04 currentSrc getter 无 resourceState 回落记录表 + settle 扫描 per-document 重置；勘根后两轮补刀（排空计数 + 懒扫 pending 旁路——002 断言 A 首读触发扫描同步近似塌微任务序）；001 停 picture 插入钩挂账断言；zero-engine 3684P+0F）**
+> **入场定刀位**：s219 下一步候选选源响应面另勘根——embedded-content 16F 五簇分型定刀 selection 时序子面（img-picture-ancestor 4F + current-request-microtask 2F）。
+> **勘根**：img-picture-ancestor 4F = 静态解析 img 解析期读 currentSrc，resourceState 未 settle 恒 ''；current-request-microtask 001/002 = 赋值后微任务读断言面（001 另缺 picture 插入钩）。余四簇挂账分型：fail-to-resolve 4F（URL 解析器未拒非法 host `src="//["`）、not-broken 2F（动态插入 attr 尺寸 clientWidth 0≠50）、decode quick-attach 2F、update-the-source-set 1F（`;encodings=` 空 parameter value 被 supported type regex 拒）。
+> **施工**：part03 三帮手（Record 选源链 `__zwSelectImageSource5277` 纯读落表/lazy 与 pending>0 双门；Scan 首读懒扫全文档一次 FIXME: 解析期接线后移除；Queue pending 计数 + queueMicrotask 排空 cancel——spec 同元素在队实例早退让位，计数自增在存在性门后防泄漏）+ 两队列点（part03 attrMutated IMG src/srcset/sizes 汇流臂 + part05 src IDL 臂；part05:1263 通用 trap `moAttr!=='src'` 分流 → 各恰一队）；part04 currentSrc getter 无 resourceState 回落记录表（`_zwResolveFetchUrl` 绝对形，AUDIO/VIDEO 不回落）+ `__zwFireStaticImgSettle` 开头表/计数/旗标 per-document 重置（persistent context 跨案隔离）。
+> **验证**：拼接 node --check（每轮补刀后重跑）；靶语料 solo ancestor 4/4 + 002 F→P + 001 停挂账断言（expected data:,b got data:,c）；zero-engine 全量 **3684P+0F** 基线持平；embedded-content A/B（B = s219 基线日志）共享 1257/1257 漂移恰 5 F→P（ancestor 4 案 + 002）零 P→F 零 Timeout 位移；纯 JS 切片（git diff --stat +118/−1）fmt/clippy 不适用。日志 evidence/logs/s220-zero-engine-full.log + s220-embedded-content-wip.log。
+> **挂账新记**：img-into-picture 插入钩（appendChild trap IMG 直接父 PICTURE → 微任务 re-record，001 断言 4 收口位）；fail-to-resolve 4F（URL 解析器面爆炸半径大独立勘根）；not-broken 2F（attr sizing/rect 面）；decode quick-attach 2F；update-the-source-set `;encodings=` 1F。
+> **下一步候选**：picture 插入钩小刀（001 断言 4 单点收口候选）；update-the-source-set `__zwSourceSupportedType5277` regex 窄刀；fail-to-resolve URL 解析器面独立勘根；not-broken attr sizing/rect 面；forms misc 残面 16F 勘根备选。
+> **账本**：[evidence/2026-11-02-m2s220-selection-record-timing.md](html-semantics-compat/evidence/2026-11-02-m2s220-selection-record-timing.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 219 收口，响应式图片密度面（density-corrected intrinsic dimensions）——current-pixel-density/basic 8 密度案例全翻绿（1.6x→160/2x→128/512w+256px→128/256w+512px→512/256w+1px→1 等，width/clientWidth/naturalWidth 三面同绿），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 零 P→F 键集差 0：密度从未进入 Rust image_sizes 面 + shim 四处密度门缺口；shim 3 点（part03 x 描述符非有限密度弃候选 + part04 natural-dim 两臂 +Infinity 放行）+ 勘根后探针补刀第四处（`__zwFireStaticImgSettle` settle 密度入账 isFinite 拒 Infinity——i0px width 256 定谳断点在 settle 入账非选择链）；Rust extract.rs 新 `img_selected_pixel_density`（srcset/sizes 密度解析选择最小镜像 + 全候选非法无 src → broken +Inf → dim/∞ = 0）+ mod.rs `build_img_intrinsic_all` per-Node 密度折算（no_ratio Option 逐轴 map，比率不折）；R5386 红绿十 img 钉面；zero-engine 3684P+0F；余 3 PNG expect-0 案 clientWidth 红 = layout-engine sizing.rs `w.max(1.0)` 零/亚像素替换盒钳 1px 渲染流车道挂账）**
 > **入场定刀位**：s218 下一步候选响应式图片族——s218 A/B 日志 embedded-content F 分布下钻定刀 current-pixel-density 密度子面（SVG data-URL/error.html/sizes-auto/parse-a-srcset 勘根分型挂账）。
 > **勘根**：basic.html 11F 分型 = 8 PNG 密度案例（spec density-corrected intrinsic dimensions 单根：密度从未进入 Rust image_sizes 面，clientWidth 恒 intrinsic）+ 3 SVG data-URL（decoder 耦合挂账）；error.html 7F 破图 alt 渲染（layout 流挂账）；sizes-auto 文件级 Timeout（68 案独立面挂账）；parse-a-srcset "data:,a " 1F（URL serializer 非 ASCII 百分号编码挂账）。三缺口定刀：shim x 描述符非有限密度弃候选 + shim natural-dim 密度守卫放行 +Infinity + Rust build_img_intrinsic_all 密度折算（per-Node 挂点，URL 解码缓存零触）。首刀后靶面 i0px 档 width/naturalWidth 仍 256——探针分层面拆断言（width/clientWidth/naturalWidth 各立 test）+ 选择链值探针（`__zwParseSizesAttr5277` 0 / `__zwCreateSourceSet5277` Infinity / `__zwSelectImageSource5277` Infinity / currentSrc 同步）锁定断点在 `__zwFireStaticImgSettle` settle 密度入账第四处 isFinite 门（选择链/settle 后读臂均无遮挡），补刀收口。
 > **施工**：shim 2 文件（part03 x 描述符 error 弃候选 + part04 `_zwImgNaturalDim` resourceState 臂 733/快照臂 759 + `__zwFireStaticImgSettle` 1187 三处守卫 `isFinite(d)>0` 形改 `d>0`——+Infinity 放行 dim/∞=0，NaN/≤0 仍回退）+ rust 3 文件（extract.rs 新 `img_selected_pixel_density` ~120 行：候选文法同 shim 收窄、sizes 括号深度切分 px/vw/vh/vmin/vmax/裸 0、密度归一 + default src 补挂 + 同密度去重 ≤DPR 选择、全候选非法无 src → +Inf broken 有 src → None default 密度 1；mod.rs build_img_intrinsic_all 折算接线 f32 除 + no_ratio Option 逐轴 map；tests R5386 十 img 钉面）。语料零改动（探针临时文件已删）。
@@ -177,45 +186,6 @@
 > 承袭 / form owner table 4F 升格待独立立项；customizable select
 > 177F 挂起待拍板（GB-20261031）。
 > **账本**：[evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md](html-semantics-compat/evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 209 收口，number 编辑器双槽——键入 veto + caret 臂 + badInput 接线：三语料 11/11 Pass（scientific 4/4——`1e-+1`/`1e++1`/`+1e+1` 整键否决、`-` 起点接受 valueAsNumber −10；constraint 5/5——键入 '1.e'→''+badInput true、'1.'→'1'+badInput false、setter 净化无 badInput、required+valueMissing；clobbering 2/2——'123e' 键入 valid false）；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=2 全落 onblur flake 族（基线态当下重跑同 F 已证非本刀），键漂移 0；shim 3 文件 + rust 3 文件，语料零改动）**
-> **入场定刀位**：s208 后 number B 簇 editor-buffer 独立立项落刀
->（s203 勘定承袭）。customizable select 177F 挂起待拍板（GB-20261031
-> 征询在途）。
-> **勘根**：HTML §4.10.5.1.10 number state 用户交互面——键入无 veto、
-> 无 caret 模型；科学计数测 1-3 经 parseFloat 前缀解析**意外通过**
->（`'1e+1-'`→10），Insert - at start 无 caret → 尾拼 1F；constraint
-> '1.e'/'1.' 键入后 value 停原文（无暴露换算）→ badInput 断言败；
-> clobbering '123e' 同败。双通道核证：part04 setter 面已有 R3901 skip
-> 旗标 + M2-S203 净化（setter 面正确），缺口纯在键入面与 validity
-> badInput 臂。模型三角定位：键入原文存**编辑器层**（可长于暴露值），
-> value 槽写暴露换算值（严格文法+isFinite→原样；仅尾点→剥点；否则
-> ''）；badInput = 原文非空且换算 ''；不合编辑器文法的键入**整键否
-> 决**。不能伤键：setter 双臂（测 2/4 净化无 badInput）、R3906 选区
-> 复位、text 控件（窄门 `_nTy==='number'`）、maxlength 截断序。
-> **施工**（shim 3 文件 + rust 3 文件）：part01 `_numberEditor` 表 +
-> 文法/换算帮手 + `__zw_text_input` number 分支（veto+暴露槽写）+
-> `__zw_text_delete` 编辑器空间删除 + 新 `__zw_text_caret_move`
->（Left/Right ±1 UTF-16 代理安全、选区折叠、返消费）+ reset 清表；
-> part03 `_validityState` badInput 臂并入 valid 汇总；part04 value/
-> valueAsNumber/valueAsDate 三 setter 非 skip 写清编辑器（clone/
-> removeAttribute 路径勘定不清）；script_gen.rs caret 桥生成；
-> testharness.rs scroll_key 分支 select_consumed 后插 text_caret_
-> consumed 门（input/textarea ArrowLeft/Right 移 caret 不滚动）；part09.rs
-> R5327 桥测试八腿镜像三语料（gitignore 常驻承载）。
-> **验证**：拼接 shim node --check SYNTAX_OK；R5327 单测 1 passed（首
-> 跑暴露键入臂 `key`→`target.key` 误用，修后过）；三定向 11/11 Pass；
-> forms 全域 A/B（B 侧全域 9080 行取 forms/ 子集对齐 s208 基线 4711
-> 键）净 F→P=4 恰 4 靶键 + onblur 族 1 键上摆回摆；P→F=2 全落同族——
-> WIP 重跑 1 腿回摆 + stash 后基线态当下重跑 spacebar 双腿亦 Fail
->（环境时序敏感）已证非本刀；zero-engine 3669P+0F（R5327 计入，
-> ua_display_li 本轮转绿）；fmt 零 diff + guarded-clippy 0 警告。
-> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
-> → misc 残面次刀（form-nameditem override builtins 1F fix#19c 挂待
-> 决承袭 / input/button formAction `<base>` 同形特例缺口；form owner
-> table 4F 升格待独立立项）或 ArrowUp/Down textarea 视觉行 caret 模
-> 型（s209 挂账）勘定。
-> **账本**：[evidence/2026-11-01-m2s209-number-editor-buffer.md](html-semantics-compat/evidence/2026-11-01-m2s209-number-editor-buffer.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 208 收口，:valid/:invalid 伪类候选门——output-validity 1F 翻绿（output barred 两伪类均不匹配，含 setCustomValidity 后仍双不匹配；6 断言一次全绿），forms 全树 keyed diff 净 F→P=2 恰 1 靶键 + onblur flake 域 1 键上摆（在册），P→F=0 键漂移 0 timeout 位移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s207 后 misc 残面次刀候选序 output-validity 1F

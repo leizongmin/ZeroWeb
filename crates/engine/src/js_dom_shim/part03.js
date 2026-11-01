@@ -2726,6 +2726,76 @@
     }
     return best || smallest;
   };
+  // s220（html-semantics M2）：selection 记录面——spec current request 的
+  // current URL 更新是**微任务级**（relevant mutation → microtask → update
+  // the image data 的 select-an-image-source 半先落 URL，fetch 半才异步），
+  // 而本引擎 settle（resourceState）对静态解析 img 推迟到 window load
+  //（__zwFireStaticImgSettle）、对 detached img 延一步。记录表把「选中
+  // URL」与 settle 解耦：currentSrc 无 resourceState 时回落记录
+  //（img-picture-ancestor 解析期读 + current-request-microtask 赋值后微任务
+  // 读断言面）。记录只读属性树，不 fetch/settle/派事件；settle 后
+  // currentSrc 仍以 resourceState 优先（同值无观测差）。lazy img 不记录
+  //（spec 选择推迟到视口门）。
+  // https://html.spec.whatwg.org/multipage/images.html#updates-the-image-data
+  // https://html.spec.whatwg.org/multipage/images.html#dom-img-currentsrc
+  globalThis.__zwImgSelectionRecord5277 = function (sel, handle) {
+    var key = _elKey(sel, handle);
+    globalThis._zwSelectedSources5277 = globalThis._zwSelectedSources5277 || {};
+    try {
+      // 有在队 selection 实例的元素不被记录旁路——current-request-microtask-002
+      // 断言 A 的首读触发懒扫时 src=/srcset= 实例正在队，同步近似记录会塌掉
+      // 微任务序（spec：current URL 由在队微任务按序落，扫描不得越过）。
+      var _sqP = globalThis._zwImgSelPending5277;
+      if (_sqP && _sqP[key] > 0) return;
+      var _srLz = '';
+      try { _srLz = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase(); } catch (_eSrl) {}
+      if (_srLz === 'lazy') {
+        delete globalThis._zwSelectedSources5277[key];
+        return;
+      }
+      var pk = globalThis.__zwSelectImageSource5277 ? globalThis.__zwSelectImageSource5277(sel, handle) : null;
+      if (pk && pk.url) globalThis._zwSelectedSources5277[key] = String(pk.url);
+      else delete globalThis._zwSelectedSources5277[key];
+    } catch (_e5277sr) {}
+  };
+  // s220：selection 记录入队（spec update-the-image-data 排空语义——同一元素
+  // 已有在队实例时，先队实例早退让位最新实例：src 后 srcset 连写，src 的更新
+  // 微任务见 srcset 已排队而 return，由 srcset 的实例落记录；
+  // current-request-microtask-002「the first task should be canceled」断言面）。
+  // 计数随 settle 扫描重置（跨案隔离同记录表）。
+  // https://html.spec.whatwg.org/multipage/images.html#updates-the-image-data
+  globalThis.__zwImgSelectionQueue5277 = function (sel, handle) {
+    try {
+      if (typeof queueMicrotask !== 'function') return;
+      var _sqKey = _elKey(sel, handle);
+      globalThis._zwImgSelPending5277 = globalThis._zwImgSelPending5277 || {};
+      globalThis._zwImgSelPending5277[_sqKey] = (globalThis._zwImgSelPending5277[_sqKey] || 0) + 1;
+      queueMicrotask(function () {
+        try {
+          var p = globalThis._zwImgSelPending5277;
+          if (p && p[_sqKey]) p[_sqKey]--;
+          if (p && p[_sqKey] > 0) return; // 后续实例在队——本实例早退（spec cancel）
+          globalThis.__zwImgSelectionRecord5277(sel, handle);
+        } catch (_e5277sqi) {}
+      });
+    } catch (_e5277sqq) {}
+  };
+  // s220：静态解析 img 全量选源记录（一次性懒扫——首次 currentSrc 读触发；
+  // 当前无「首脚本前」钩位，语料脚本均在文档尾故全量覆盖 FIXME: 随解析期
+  // update-the-image-data 微任务接线改为插入点记录后移除懒扫）。表与旗标
+  // 由每次 window load 的 settle 扫描重置（persistent context 跨案键隔离
+  //——s219 探针实证同一沙箱逐案复用）。
+  globalThis.__zwImgSelectionScan5277 = function () {
+    globalThis._zwImgSelScan5277Done = true;
+    globalThis._zwSelectedSources5277 = {};
+    var imgs;
+    try { imgs = document.querySelectorAll('img'); } catch (_e5277sq) { return; }
+    for (var _si = 0; _si < imgs.length; _si++) {
+      try {
+        globalThis.__zwImgSelectionRecord5277(imgs[_si].__zwSelector, imgs[_si].__zwHandle);
+      } catch (_e5277sri) {}
+    }
+  };
   // s71 F1b：data: SVG payload 抽取——`data:image/svg+xml[,base64],<body>`，
   // 百分号解码（宽松：非法 % 序列保留原串），非 SVG data URL → null。
   globalThis.__zwSvgPayload5277 = function (url) {
@@ -3132,6 +3202,13 @@
     var ln = String(name).toLowerCase();
     if (tag === 'IMG') {
       if (ln === 'src' || ln === 'srcset' || ln === 'sizes') {
+        // s220：selection 记录微任务化（与 part05 src IDL 臂同口径——setAttribute
+        // 及 IDL srcset/sizes 经本汇流点；排空语义见 __zwImgSelectionQueue5277）。
+        try {
+          if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+            globalThis.__zwImgSelectionQueue5277(sel, handle);
+          }
+        } catch (_e5277amq) {}
         globalThis.__zwImgRevalidate5277(sel, handle);
         return;
       }

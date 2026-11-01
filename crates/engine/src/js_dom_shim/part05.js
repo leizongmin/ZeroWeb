@@ -989,6 +989,16 @@
           if (handle) __zw_set_attr_handle(handle, 'src', String(value));
           else __zw_set_attr(sel, 'src', String(value));
           moAttr = 'src';
+          // s220：selection 记录微任务化（spec relevant mutation → microtask →
+          // current request 的 current URL 更新先于 fetch 半——detached img 的
+          // fetch 延一步但 selection 不延；排空语义见 part03
+          // __zwImgSelectionQueue5277）。记录只读属性树，不扰 settle。
+          // https://html.spec.whatwg.org/multipage/images.html#updates-the-image-data
+          try {
+            if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+              globalThis.__zwImgSelectionQueue5277(sel, handle);
+            }
+          } catch (_e5277smq) {}
           // s70：更新核抽至 part03 共享核（R5275 四语义——restart/available-images
           // 同步 settle/broken 终态/生命周期闸门——注释与实现见 __zwImgRunUpdate5277）；
           // src 写入先经选中核归一（srcset/sizes 在场时 src 仅作 default source，
