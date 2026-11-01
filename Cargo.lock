@@ -7427,11 +7427,13 @@ dependencies = [
 name = "zero-image-decoder"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "png 0.17.16",
  "tracing",
  "tracing-subscriber",
  "zero-protocol",
  "zero-render-foundation",
+ "zero-runtime-config",
 ]
 
 [[package]]
