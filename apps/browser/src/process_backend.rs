@@ -50,6 +50,9 @@ mod indexed_db_transactions;
 #[path = "process_backend/service_worker_owner_tests.rs"]
 mod service_worker_owner_tests;
 #[cfg(test)]
+#[path = "process_backend/storage_op_owner_tests.rs"]
+mod storage_op_owner_tests;
+#[cfg(test)]
 #[path = "process_backend/warm_spare_tests.rs"]
 mod warm_spare_tests;
 
@@ -1238,14 +1241,27 @@ impl ProcessTabBackend {
         }
     }
 
-    fn handle_storage_op(&mut self, tab_id: TabId, params: StorageOpParams) {
+    fn handle_storage_op(&mut self, tab_id: TabId, renderer_id: u64, params: StorageOpParams) {
+        // 特权边界（renderer-trust-boundary IPC-02）：存储分区 origin 由 browser
+        // 侧已提交导航推导（同 IndexedDB owner 模型），不采信 renderer 消息自带
+        // origin——被攻破 renderer 不得借此读写其他站点的持久存储。
+        // https://storage.spec.whatwg.org/#storage-keys
+        let Some(origin) = self.indexed_db_origins.get(&renderer_id) else {
+            tracing::warn!(
+                "Rejected storage op before navigation commit tab {} renderer {}",
+                tab_id.0,
+                renderer_id
+            );
+            return;
+        };
+        let origin = origin.clone();
         let Ok(mut storage) = self.storage.lock() else {
             tracing::warn!("Storage manager lock poisoned");
             return;
         };
         let store = match params.storage_type {
-            StorageType::Local => storage.local_storage(&params.origin),
-            StorageType::Session => storage.session_storage(&params.origin),
+            StorageType::Local => storage.local_storage(&origin),
+            StorageType::Session => storage.session_storage(&origin),
         };
         let _result = match params.operation {
             StorageOperation::Get => store.get(&params.key).map(|s| s.to_string()),
@@ -2225,7 +2241,7 @@ impl ProcessTabBackend {
                         self.handle_fetch_request(tab_id, params);
                     }
                     IpcMessageKind::StorageOp(params) => {
-                        self.handle_storage_op(tab_id, params);
+                        self.handle_storage_op(tab_id, rid, params);
                     }
                     IpcMessageKind::IndexedDbRequest(params) => {
                         self.handle_indexed_db_request(tab_id, msg.id, params);

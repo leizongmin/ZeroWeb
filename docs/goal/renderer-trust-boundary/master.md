@@ -1,26 +1,30 @@
 # Renderer 信任边界控制面
 
-**日期**：2026-10-20
-**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；M2+ 修复切片按证据另行确认）；规划资产已创建，产品开发与验收 NOT_RUN。
-**当前卡点**：尚未启动消息权限盘点；静态源码路径不代表已确认漏洞。
-**下一步**：执行 M1，追踪 protocol → browser → net/security/storage 建消息身份与权限矩阵，核对可信身份来源和真实生产接收方；启动前按 run-rules §9–11 核对碰撞。
+**日期**：2026-11-01
+**状态**：Active（M1 已解锁并完成盘点；M2 切片推进中）。M1 消息权限矩阵已建立并入 evidence；M2 切片 1（StorageOp）已修复附常驻回归。
+**当前卡点**：无阻塞。剩余 M2 候选切片按矩阵排序：CDP 默认无 token、renderer 本地 cookie jar 分叉、页面可见权限 stub。
+**下一步**：M2 切片 2——CDP `HeadlessSecurityConfig` 默认无 token 的本地特权面（DC-3），先核实 `with_security` 生产调用缺口与 webdriver 依赖，再定最小修复。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
 
 | 缺口/选择 | 首步 | 状态 |
 |---|---|---|
-| 消息身份、站点、角色与存储所有者矩阵 | 追踪 protocol → browser → net/security/storage | NOT_STARTED |
-| 非法消息与合法请求配对反例 | 优先 Cookie/HSTS，确认缺陷后修复 | NOT_STARTED |
-| helper 沙箱/线程时序与平台降级 | 实测 macOS/Linux，记录 FD/socket/文件权限 | NOT_STARTED |
-| 平台缺沙箱能力的产品策略 | M1 证据后列选项，必要时用户决定 | 待核查 |
+| 消息身份、站点、角色与存储所有者矩阵 | 已完成，见 [evidence](evidence/2026-11-01-m1-matrix-storageop-fix.md) | DONE（2026-11-01） |
+| ~~StorageOp 信任消息 origin~~ | 已修复，服务端绑定 committed origin + 常驻回归 | DONE（2026-11-01） |
+| CDP 默认无 token、空 origin 白名单=全允许 | 核实 with_security 生产缺口与 webdriver 依赖 | NOT_STARTED |
+| renderer 本地 cookie jar 分叉（clear/cookies 清不掉、Cookie 头可伪造直发） | 追踪 ipc_fetch jar 与清理路径 | NOT_STARTED |
+| 权限决策在 renderer（PermissionManager 死代码、__zwSetPermission 页面可自授权） | 核实 fullscreen/clipboard 消费点 | NOT_STARTED |
+| 多进程 HSTS 不注册（兼容缺口） | browser fetch_proxy 补 register 路径 | NOT_STARTED |
+| helper 沙箱/线程时序与平台降级 | 实测 macOS/Linux，记录 FD/socket/文件权限 | NOT_STARTED（M3） |
+| 平台缺沙箱能力的产品策略 | M3 证据后列选项，必要时用户决定 | 待核查 |
 
 ## 里程碑
 
 | 阶段 | 产物 | 状态 | 证据 |
 |---|---|---|---|
-| M1 | 权限矩阵与双向基线 | NOT_STARTED | 无 |
-| M2 | 确认反例、共享路径修复与回归 | NOT_STARTED | 无 |
+| M1 | 权限矩阵与双向基线 | DONE（2026-11-01） | [matrix](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
+| M2 | 确认反例、共享路径修复与回归 | 切片 1/多 完成 | 同上 |
 | M3 | helper 实际权限与时序验收 | NOT_STARTED | 无 |
 | M4 | DC 审计、门禁、清理和剩余风险 | NOT_STARTED | 无 |
 
@@ -28,14 +32,14 @@
 
 | 判据 | 场景 | 状态 | 证据 |
 |---|---|---|---|
-| DC-1 | IPC-01-forged-origin-session | NOT_RUN | 无 |
-| DC-2 | IPC-02-cookie-hsts-privilege | NOT_RUN | 无 |
-| DC-3 | IPC-03-automation-role | NOT_RUN | 无 |
+| DC-1 | IPC-01-forged-origin-session | PARTIAL（导航 epoch/SW 权威矩阵有据；集成测试仅覆盖 StorageOp 面） | matrix |
+| DC-2 | IPC-02-cookie-hsts-privilege | PARTIAL（StorageOp 已修附回归；cookie jar 分叉与权限 stub 未修） | [storage 回归](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
+| DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色已核；CDP 无 token 缺口未修） | matrix |
 | DC-4 | IPC-04-sandbox-thread-order | NOT_RUN | 无 |
 | DC-5 | 全部回归与生产接收方复测 | NOT_RUN | 无 |
 
 ## 碰撞与执行记录
 
-候选共享面：protocol、engine/ws、browser、net/security/storage。实际占用 **NOT_CHECKED**；启动前按 run-rules §9–11 核对，不因本表空白推断无并行流。只写本 goal 控制面。
+候选共享面：protocol、engine/ws、browser、net/security/storage。2026-11-01 核对：并行流为 website 流（`website/`+docs，不重叠）与渲染流（ZeroWeb-2 独立 clone）；本切片只改 `apps/browser`（bin 目标 process_backend）与本 goal 文档，无共享面碰撞。
 
-用户本轮授权文档与脚本；没有提交、推送、通知或发布授权。后续运行按统一协议登记 HEAD/diff、隔离身份、命令、结果和清理；失败证据追加保存到 `evidence/`，完成里程碑追加到 `archive/`。当前没有运行记录。
+2026-11-01 M2 切片 1：`handle_storage_op` origin 改服务端绑定（同 IndexedDB owner 模型）；新增 `storage_op_owner_tests` 两测试，修复前语义 FAILED/修复后 PASS 反例证据在册。zero-browser bin 全量 715P/2F（两 F 经干净 main stash 复测归因为既有红：paste_and_go_blurs_and_clears_preedit、form_fixture_complete_multiprocess_semantics，与本切片无关）；clippy -p zero-browser 0 warning。消息字段 `params.origin` 保留不删（bincode 位置编码 wire 兼容）。
