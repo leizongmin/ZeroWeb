@@ -82,10 +82,10 @@ struct ViewDocKey {
 ///
 /// 重入约束：`f` 在持有 cache 锁期间执行——`f` 必须是纯文档遍历（不得再入
 /// `__zw_*` 查询回调；与 [`with_query_doc`] 的 thread_local 借用同一约束面）。
-fn with_query_view_doc<R>(
+pub(crate) fn with_query_view_doc<R>(
     html: &Arc<std::sync::Mutex<String>>,
     mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
-    f: impl FnOnce(&zero_dom::Document) -> R,
+    f: impl FnOnce(&zero_dom::Document, bool) -> R,
 ) -> R {
     // uievents-compat 尾簇 13：视图基座**钉定**在首见时点 html（按 drain_gen 代际——
     // 导航清史即重钉）。dom_html Arc 存在换代写入点（R55 dispatch_event 每次重注册
@@ -132,7 +132,7 @@ fn with_query_view_doc<R>(
                     drop(w);
                     rc.try_borrow().ok()
                 })
-                .and_then(|doc| f.take().map(|f| f(&doc)))
+                .and_then(|doc| f.take().map(|f| f(&doc, false)))
         });
         if let Some(r) = live_hit {
             return r;
@@ -164,9 +164,10 @@ fn with_query_view_doc<R>(
         if hit {
             // M2-S196：缓存条目跨查询复用，而按压态可随键盘/指针事件在无 DOM 突变
             // 时翻转——命中臂同样先注入再执行查询（[`sync_active_state`] 幂等覆盖）。
+            // served_stale=false：身份校验命中即现行视图，非 stale 服务（t-p126 DEF-2）。
             let (_, doc) = cache_guard.as_mut().expect("hit implies entry");
             sync_active_state(doc);
-            return f(doc);
+            return f(doc, false);
         }
         let prev_count = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
@@ -201,10 +202,67 @@ fn with_query_view_doc<R>(
         // requestsubmit 的需求（同批 insertAdjacentHTML 后 querySelector 命中）由
         // InsertAdjacentHtml 覆盖。
         // 增量步：条目已归我们所有（take 出来原地改，零 clone）；否则全新 parse 基座。
+        // t-p126 S1（R-baidu2 同款预算）：全量重建是软导航后查询风暴的燃烧主力
+        //（github 3.6k 元素档单次 parse 2-6s；drain/view_gen 换代后首个查询必触发，
+        // 页面持续派发 ⇒ 无限重建，v10/v11 双归因 Arc 55）。预算耗尽且退避未到期
+        // 时服务上一条目文档（有界过期，与 [`with_query_doc`] 同一权衡面；
+        // https://dom.spec.whatwg.org/#dom-parentelement-queryselector 要求查询反映
+        // 当前 DOM，此处是「冻结 vs 有界过期」的显式选择，仅病理页面触达——小文档
+        // parse ≪ 预算 ⇒ decide 恒 Parse，零行为变化）。O(1)/链增量路径不设防
+        //（成本 = 分片段解析，量级无关）。
         let mut doc = if chain_hit {
             cache_guard.take().expect("chain_hit implies entry").1
         } else {
-            parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()))
+            let miss_at = std::time::Instant::now();
+            let stale_hit = QUERY_REPARSE.with(|slot| {
+                let decision = match slot.borrow_mut().as_mut() {
+                    Some(g) => g.decide(miss_at),
+                    // 首次重解析：无旧文档可回退，必须解析。
+                    None => ReparseDecision::Parse,
+                };
+                match decision {
+                    ReparseDecision::Parse => false,
+                    ReparseDecision::Stale => {
+                        // t-p126 返修 DEF-2：stale 服务与 O(1)/chain 两臂同键校验
+                        //（epoch Arc 身份 + drain/view 代）——只允许「同视图内 count
+                        // 漂移」的有界过期；webview 宿主导航不清 VIEW_DOC_CACHE（全仓
+                        // clear 仅 renderer Reset 臂两处），退避窗跨导航时残留旧条目
+                        // 必须拒绝服务并落到全量解析，否则页 B 首查被页 A 文档服务。
+                        if let Some((key, _)) = cache_guard.as_ref()
+                            && Arc::ptr_eq(&key.dom_arc, html)
+                            && Arc::ptr_eq(&key.mut_arc, mutations)
+                            && key.drain_gen == MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed)
+                            && key.view_gen == view_gen
+                        {
+                            true
+                        } else {
+                            // 无旧文档或条目非当前视图（跨 epoch/导航）：记零成本后
+                            // 强制解析（正确性优先于退避；真实成本由下方 parse 路径
+                            // record）。
+                            if let Some(g) = slot.borrow_mut().as_mut() {
+                                g.record(miss_at, Duration::ZERO);
+                            }
+                            false
+                        }
+                    }
+                }
+            });
+            if stale_hit {
+                // 旧条目保持旧键（不换代）：下次查询重新判定，退避到期即刷新。
+                // 第二参 = stale 服务标记（t-p126 返修 DEF-1）：memo/index 走隔离
+                // 键域，stale 期写入不污染 fresh 代。
+                let (_, stale_doc) = cache_guard.as_ref().expect("stale_hit implies entry");
+                return f(stale_doc, true);
+            }
+            let parse_start = std::time::Instant::now();
+            let doc = parse_html(&html.lock().unwrap_or_else(|e| e.into_inner()));
+            let cost = parse_start.elapsed();
+            QUERY_REPARSE.with(|slot| {
+                slot.borrow_mut()
+                    .get_or_insert_with(|| QueryReparseGuard::new(parse_start))
+                    .record(parse_start, cost)
+            });
+            doc
         };
         let structural: Vec<DomMutation> = {
             let mut_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
@@ -291,8 +349,21 @@ fn with_query_view_doc<R>(
             },
             doc,
         ));
-        f(&cache_guard.as_ref().expect("entry stored").1)
+        f(&cache_guard.as_ref().expect("entry stored").1, false)
     })
+}
+
+/// 测试播种（part94 stale 臂钉专用，t-p126 返修 DEF-1/DEF-2）：向 [`QUERY_REPARSE`]
+/// 入账一次指定成本的解析——`window_spent` 一击穿透预算且 `backoff = cost`（封顶
+/// 4s），使窗口内后续 `decide` 稳定返回 `Stale`；仅测试构建可见。
+#[cfg(test)]
+pub(crate) fn seed_query_reparse_cost_for_test(cost: std::time::Duration) {
+    let now = std::time::Instant::now();
+    QUERY_REPARSE.with(|slot| {
+        slot.borrow_mut()
+            .get_or_insert_with(|| QueryReparseGuard::new(now))
+            .record(now, cost);
+    });
 }
 
 /// R-baidu3：注册代际计数器——`register_dom_callbacks` 每次（每 execute 重注册）递增。
@@ -357,6 +428,32 @@ pub static DOM_VIEW_GEN: std::sync::atomic::AtomicUsize = std::sync::atomic::Ato
 /// dom_html 快照就地写入站点调用（见 [`DOM_VIEW_GEN`]）。
 pub fn bump_dom_view_gen() {
     DOM_VIEW_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// t-p126 S1c：worker 热查询回调的物化 memo 上下文——html `Arc` 指针 + 变更数 +
+/// drain/view 两代计数 + 文档节点数指纹（S1d，见 [`UniqSelCtx`] 文档），与
+/// TAGGED_ALL_CACHE 键同模式（同 token ⇒ `with_query_view_doc` 单条目视图缓存服务
+/// 同一 Document 内容，memo 命中与重算逐值等价）。在 `with_query_view_doc` 闭包内
+/// 调用（需视图 doc 读 `node_count`）。
+fn uniq_sel_ctx(
+    html: &Arc<Mutex<String>>,
+    m: &Arc<Mutex<Vec<DomMutation>>>,
+    doc: &zero_dom::Document,
+    served_stale: bool,
+) -> UniqSelCtx {
+    let (html_ptr, mut_count, drain_gen, view_gen, node_count) = (
+        Arc::as_ptr(html) as usize,
+        m.lock().unwrap_or_else(|e| e.into_inner()).len(),
+        MUT_DRAIN_GEN.load(Ordering::Relaxed) as u64,
+        DOM_VIEW_GEN.load(Ordering::Relaxed) as u64,
+        doc.node_count(),
+    );
+    // stale 服务走隔离键域（t-p126 返修 DEF-1，见 [`UniqSelCtx`] 文档）。
+    if served_stale {
+        UniqSelCtx::new_stale_served(html_ptr, mut_count, drain_gen, view_gen, node_count)
+    } else {
+        UniqSelCtx::new(html_ptr, mut_count, drain_gen, view_gen, node_count)
+    }
 }
 
 /// 向 V8 sandbox 注册全部 `__zw_*` DOM 桥接回调。
@@ -552,7 +649,7 @@ pub fn register_dom_callbacks(
             let node_id = match node_id {
                 Some(id) => id,
                 None => {
-                    let hit = with_query_view_doc(&rs_html, &rs_mut, |doc| {
+                    let hit = with_query_view_doc(&rs_html, &rs_mut, |doc, _| {
                         crate::js_dom_bridge::find_by_selector(doc, sel).map(crate::hit_test::node_id_to_u64)
                     });
                     match hit {
@@ -575,7 +672,10 @@ pub fn register_dom_callbacks(
         "__zw_query_match",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_match_selector_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                query_match_selector_doc_cached(doc, ctx, &sel)
+            })
         }),
     );
 
@@ -585,7 +685,10 @@ pub fn register_dom_callbacks(
         "__zw_query_all",
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_all_selector_list_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                query_all_selector_list_doc_cached(doc, ctx, &sel)
+            })
         }),
     );
 
@@ -618,7 +721,23 @@ pub fn register_dom_callbacks(
             }) {
                 return hit;
             }
-            let payload = with_query_view_doc(&html, &m, |doc| query_all_tagged_list_doc(doc, &sel));
+            let payload = with_query_view_doc(&html, &m, |doc, served_stale| {
+                let (html_ptr, mut_count, drain_gen, view_gen, node_count) = (
+                    Arc::as_ptr(&html) as usize,
+                    count,
+                    drain_gen as u64,
+                    view_gen as u64,
+                    doc.node_count(),
+                );
+                let ctx = if served_stale {
+                    // stale 服务走隔离键域（t-p126 返修 DEF-1）；外层 TAGGED_ALL_CACHE
+                    // 键为 PR #33 既有面（无 node_count/stale 维度），维持不动。
+                    UniqSelCtx::new_stale_served(html_ptr, mut_count, drain_gen, view_gen, node_count)
+                } else {
+                    UniqSelCtx::new(html_ptr, mut_count, drain_gen, view_gen, node_count)
+                };
+                query_all_tagged_list_doc_cached(doc, ctx, &sel)
+            });
             TAGGED_ALL_CACHE.with(|slot| {
                 *slot.borrow_mut() = Some((
                     (Arc::clone(&html), Arc::clone(&m), count, drain_gen, view_gen, sel),
@@ -1419,7 +1538,7 @@ pub fn register_dom_callbacks(
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
             // js-dom M1 L2 R103：helper 类查询 live 化（_doc 变体）。
-            with_query_view_doc(&html, &m, |doc| query_match_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_match_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -1430,7 +1549,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
             let sel = args.get(1).map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| query_all_in_subtree_doc(doc, &elem_sel, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_all_in_subtree_doc(doc, &elem_sel, &sel))
         }),
     );
 
@@ -1441,7 +1560,7 @@ pub fn register_dom_callbacks(
         "__zw_form_controls",
         Box::new(move |args| {
             let form = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| form_control_selectors_doc(doc, &form).join("|"))
+            with_query_view_doc(&html, &m, |doc, _| form_control_selectors_doc(doc, &form).join("|"))
         }),
     );
 
@@ -1453,7 +1572,7 @@ pub fn register_dom_callbacks(
         "__zw_element_children",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| element_children_selectors_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc, _| element_children_selectors_doc(doc, &elem_sel))
         }),
     );
 
@@ -1525,7 +1644,7 @@ pub fn register_dom_callbacks(
             if raw_absent {
                 // R3028 同款锁纪律：snap guard 须在查询视图构建（会再锁 html）前释放。
                 drop(snap);
-                return with_query_view_doc(&html, &m, |doc| child_nodes_json_doc(doc, &elem_sel));
+                return with_query_view_doc(&html, &m, |doc, _| child_nodes_json_doc(doc, &elem_sel));
             }
             with_query_doc_live_aware(&snap, true, |doc| child_nodes_json_doc(doc, &elem_sel))
         }),
@@ -1584,7 +1703,7 @@ pub fn register_dom_callbacks(
         "__zw_parent",
         Box::new(move |args| {
             let elem_sel = args.first().map(String::from).unwrap_or_default();
-            with_query_view_doc(&html, &m, |doc| parent_selector_for_doc(doc, &elem_sel))
+            with_query_view_doc(&html, &m, |doc, _| parent_selector_for_doc(doc, &elem_sel))
         }),
     );
 
@@ -1628,7 +1747,10 @@ pub fn register_dom_callbacks(
             // R57（FV M3）：快照读用 applied view——同批插入（insertAdjacentHTML 等）的
             // 元素属性可见（type/required 等约束读取；SetFormValue 在 apply 中 no-op——
             // .value= 不脏污 defaultValue 语义保持）。
-            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc, served_stale| {
+                let ctx = uniq_sel_ctx(&html, &m, doc, served_stale);
+                query_attr_from_html_doc_cached(doc, ctx, &args[0], &args[1])
+            })
         }),
     );
 
@@ -1650,7 +1772,7 @@ pub fn register_dom_callbacks(
                 return ov.unwrap_or_default();
             }
             drop(list);
-            with_query_view_doc(&html, &m, |doc| query_attr_from_html_doc(doc, &args[0], &args[1]))
+            with_query_view_doc(&html, &m, |doc, _| query_attr_from_html_doc(doc, &args[0], &args[1]))
         }),
     );
 
@@ -1682,7 +1804,7 @@ pub fn register_dom_callbacks(
             }) {
                 return tag;
             }
-            let tag = with_query_view_doc(&html, &m, |doc| query_tag_from_html_doc(doc, &sel));
+            let tag = with_query_view_doc(&html, &m, |doc, _| query_tag_from_html_doc(doc, &sel));
             TAG_MEMO.with(|slot| {
                 let mut guard = slot.borrow_mut();
                 let stale = guard
@@ -1967,7 +2089,7 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
-            if with_query_view_doc(&html, &m, |doc| {
+            if with_query_view_doc(&html, &m, |doc, _| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -1996,7 +2118,7 @@ pub fn register_dom_callbacks(
                 return if ov.is_some() { "1" } else { "0" }.to_string();
             }
             drop(list);
-            let r = with_query_view_doc(&html, &m, |doc| {
+            let r = with_query_view_doc(&html, &m, |doc, _| {
                 find_by_selector(doc, &args[0])
                     .map(|n| doc.get_attribute(n, &args[1]).is_some())
                     .unwrap_or(false)
@@ -2158,7 +2280,7 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let sel = args.first().map(String::from).unwrap_or_default();
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -2188,7 +2310,7 @@ pub fn register_dom_callbacks(
             }
             drop(list);
             // R57（FV M3）：applied view——同批插入元素的结构文本可见。
-            with_query_view_doc(&html, &m, |doc| query_text_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &m, |doc, _| query_text_from_html_doc(doc, &sel))
         }),
     );
 
@@ -3156,7 +3278,7 @@ pub fn register_dom_callbacks(
             // 时走同一 live fast path（with_query_view_doc 的 live_ok 臂），空闲期
             // 零行为/零成本变化；Remove/SetInnerHtml 仍按 R57/R3029 约定排除在
             // 烘焙范围外（removed 子树读回落快照语义不变）。
-            with_query_view_doc(&html, &muts_ih, |doc| query_inner_html_from_html_doc(doc, &sel))
+            with_query_view_doc(&html, &muts_ih, |doc, _| query_inner_html_from_html_doc(doc, &sel))
         }),
     );
 
@@ -3557,8 +3679,9 @@ fn query_tag_selector_doc(doc: &zero_dom::Document, selector: &str) -> String {
 ///
 /// - 滚动窗口（5s）内累计重解析耗时 < [`QUERY_REPARSE_BUDGET`]：正常重解析，
 ///   零语义变化（小文档/常规交互页永远不会触达预算）。
-/// - 预算耗尽：进入指数退避（100ms 起，×2 封顶 2s）——退避到期的那次查询
-///   仍刷新文档，期间的查询**服务上一次解析的文档**（有界过期快照）。
+/// - 预算耗尽：进入指数退避（100ms 起，×2 封顶 4s；退避下限挂钩单次解析
+///   成本，见 [`Self::record`]）——退避到期的那次查询仍刷新文档，期间的查询
+///   **服务上一次解析的文档**（有界过期快照）。
 ///   https://dom.spec.whatwg.org/#dom-parentelement-queryselector 要求查询
 ///   反映当前 DOM；此处是「冻结 vs 有界过期」的显式权衡，仅病理页面触达。
 #[derive(Debug)]
@@ -3580,7 +3703,9 @@ enum ReparseDecision {
 const QUERY_REPARSE_WINDOW: std::time::Duration = Duration::from_secs(5);
 const QUERY_REPARSE_BUDGET: std::time::Duration = Duration::from_millis(1200);
 const QUERY_REPARSE_BACKOFF_START: std::time::Duration = Duration::from_millis(100);
-const QUERY_REPARSE_BACKOFF_MAX: std::time::Duration = Duration::from_secs(2);
+/// 封顶取 4s：成本挂钩下限（t-p126 S1）需要容纳「单次解析 2-6s」档（github 软导航
+/// 3.6k 元素），2s 封顶会让下限被截断、病理页 duty 回到 ~65%。
+const QUERY_REPARSE_BACKOFF_MAX: std::time::Duration = Duration::from_secs(4);
 use std::time::Duration;
 
 impl QueryReparseGuard {
@@ -3621,6 +3746,14 @@ impl QueryReparseGuard {
         }
         self.window_spent += cost;
         self.last_parse = now;
+        // t-p126 S1：退避下限挂钩单次解析成本（倍增仍归 [`Self::decide`]，此处
+        // 只抬下限）。预算是前置判定、成本是事后入账——大文档单次全量解析
+        // （github 软导航 3.6k 元素档 2-6s）一击穿透 1200ms 预算后，常数退避
+        // （100ms 起）形同虚设：解析 3s + 退让 100ms ⇒ ~97% 占空比燃烧。下一次
+        // 重解析至少等价于上一次的成本（封顶 [`QUERY_REPARSE_BACKOFF_MAX`]），
+        // 把病理页 duty 压到 ≤50% 并随 decide 倍增继续衰减；零/小成本记录
+        // （常规页面与 WPT 用例）退避序列逐位不变（max(ZERO) 恒等）。
+        self.backoff = self.backoff.max(cost).min(QUERY_REPARSE_BACKOFF_MAX);
     }
 }
 
@@ -3920,8 +4053,10 @@ mod query_reparse_tests {
     fn budget_exhausted_escalates_backoff_with_periodic_refresh() {
         let t0 = std::time::Instant::now();
         let mut g = QueryReparseGuard::new(t0);
-        // 打满预算（单窗口 1200ms）。
-        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        // 打满预算（单窗口 1200ms）。直设 window_spent 而非 record(BUDGET)——
+        // t-p126 S1 起大成本记录会同步抬退避下限（见 backoff_floors_to_last_parse_cost），
+        // 该语义由专项测试覆盖，此处只验证倍增序列。
+        g.window_spent = QUERY_REPARSE_BUDGET;
         // 预算刚好耗尽后的首次 miss：退避尚未设置（0）→ 立即放行一次刷新，退避升至 START。
         assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(2), Duration::ZERO);
@@ -3936,7 +4071,9 @@ mod query_reparse_tests {
         assert_eq!(g.decide(t0 + Duration::from_millis(310)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(310), Duration::ZERO);
         assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 4);
-        // 同一窗口内（<5s）继续：退避到期逐次放行并翻倍，直至 2s 封顶。
+        // 同一窗口内（<5s）继续：退避到期逐次放行并翻倍，直至封顶
+        //（4s 封顶由 backoff_floors_to_last_parse_cost 覆盖——纯倍增序列触及
+        // 4s 需越出 5s 窗口）。
         assert_eq!(g.decide(t0 + Duration::from_millis(560)), ReparseDecision::Stale);
         assert_eq!(g.decide(t0 + Duration::from_millis(810)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(810), Duration::ZERO);
@@ -3944,10 +4081,11 @@ mod query_reparse_tests {
         assert_eq!(g.decide(t0 + Duration::from_millis(1610)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(1610), Duration::ZERO);
         assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 16);
-        // 再翻倍触及 2s 封顶。
+        // 再翻倍至 3200ms（START*32）。4s 封顶在纯倍增序列里需再等 3.2s，先滚过
+        // 5s 窗口——由 backoff_floors_to_last_parse_cost 经成本下限覆盖。
         assert_eq!(g.decide(t0 + Duration::from_millis(3220)), ReparseDecision::Parse);
         g.record(t0 + Duration::from_millis(3220), Duration::ZERO);
-        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_START * 32);
         // 封顶后（仍在窗口内）：退避未到期 → 过期快照。
         assert_eq!(g.decide(t0 + Duration::from_millis(4220)), ReparseDecision::Stale);
         // 窗口滚过（≥5s）：预算与退避复位 → 恢复正常重解析语义。
@@ -3956,12 +4094,32 @@ mod query_reparse_tests {
         assert_eq!(g.backoff, Duration::ZERO);
     }
 
+    /// t-p126 S1：退避下限挂钩单次解析成本——大成本记录后 backoff ≥ cost
+    /// （封顶 [`QUERY_REPARSE_BACKOFF_MAX`]）；零成本记录不改变 decide 的倍增序列
+    /// （R-baidu2 语义保持，见 budget_exhausted_escalates_backoff_with_periodic_refresh）。
+    #[test]
+    fn backoff_floors_to_last_parse_cost() {
+        let t0 = std::time::Instant::now();
+        let mut g = QueryReparseGuard::new(t0);
+        // 单次 3s 解析（github 软导航 3.6k 元素档）一击穿透 1200ms 预算。
+        g.record(t0, Duration::from_secs(3));
+        assert_eq!(g.backoff, Duration::from_secs(3));
+        // 退避到期放行：decide 倍增 3s→6s，被 4s 封顶截断。
+        assert_eq!(g.decide(t0 + Duration::from_secs(3)), ReparseDecision::Parse);
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+        // 超大成本（9s）记录：下限抬到 9s 后同样被封顶截断。
+        g.record(t0 + Duration::from_secs(3), Duration::from_secs(9));
+        assert_eq!(g.backoff, QUERY_REPARSE_BACKOFF_MAX);
+    }
+
     /// 滚动窗口：窗口滚过后预算与退避复位（风暴平息后自动恢复正常语义）。
     #[test]
     fn window_roll_resets_budget_and_backoff() {
         let t0 = std::time::Instant::now();
         let mut g = QueryReparseGuard::new(t0);
-        g.record(t0 + Duration::from_millis(1), QUERY_REPARSE_BUDGET);
+        // 直设 window_spent 打满预算（record(BUDGET) 会同步抬退避下限，见
+        // budget_exhausted_escalates_backoff_with_periodic_refresh 处说明）。
+        g.window_spent = QUERY_REPARSE_BUDGET;
         assert_eq!(g.decide(t0 + Duration::from_millis(2)), ReparseDecision::Parse);
         assert!(g.backoff >= QUERY_REPARSE_BACKOFF_START);
         // 窗口（5s）过期后的第一次 decide：spent/backoff 复位。
@@ -4009,6 +4167,62 @@ mod query_reparse_tests {
         let seen_fresh = with_query_doc(html_b, count_divs);
         assert_eq!(seen_fresh, 2, "post-backoff miss must reparse to the fresh doc");
     }
+
+    /// t-p126 S1 集成（返修 DEF-2 后语义）：stale 服务臂与 O(1)/chain 两臂同键
+    /// 校验——view_gen bump（R358 就地换代 / webview 导航 sync，二者同签名）后
+    /// 旧条目拒绝 stale 服务，退避窗内也强制解析到新基座；同视图内 count 漂移
+    /// 的有界过期由 s1r2_stale_served_memo_isolated_from_fresh_rebuild 钉住。
+    /// 操纵 QUERY_REPARSE thread_local 以确定性触达预算。
+    #[test]
+    fn with_query_view_doc_refuses_stale_after_view_gen_bump() {
+        let count_divs = |doc: &zero_dom::Document| {
+            crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
+                .split('|')
+                .filter(|s| !s.is_empty())
+                .count()
+        };
+        let html = Arc::new(std::sync::Mutex::new(
+            "<html><body><div id=\"a\"></div></body></html>".to_string(),
+        ));
+        let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 首查填充条目（基座 = 换代前快照，1 个 div）。
+        assert_eq!(with_query_view_doc(&html, &mutations, |doc, _| count_divs(doc)), 1);
+        // 就地换代（R358 范式）：基座换 2-div 快照 + view_gen bump。
+        *html.lock().unwrap_or_else(|e| e.into_inner()) =
+            "<html><body><div id=\"a\"></div><div id=\"b\"></div></body></html>".to_string();
+        bump_dom_view_gen();
+        // 打满预算 + 刚解析过（退避窗内）→ stale 臂键校验失败（view_gen 已换代）
+        // → 强制解析到新基座（2 个 div），不服务换代前旧条目。
+        QUERY_REPARSE.with(|slot| {
+            let mut g = slot.borrow_mut();
+            let now = std::time::Instant::now();
+            let guard = g.get_or_insert_with(|| QueryReparseGuard::new(now));
+            guard.window_spent = QUERY_REPARSE_BUDGET;
+            guard.last_parse = now;
+            guard.backoff = QUERY_REPARSE_BACKOFF_MAX;
+        });
+        let mut served_stale_q2 = false;
+        let n2 = with_query_view_doc(&html, &mutations, |doc, stale| {
+            served_stale_q2 = stale;
+            count_divs(doc)
+        });
+        assert_eq!(
+            n2, 2,
+            "budget-tripped rebuild after view-gen bump must reparse the fresh base"
+        );
+        assert!(!served_stale_q2, "换代后旧条目必须拒绝 stale 服务（DEF-2 同键校验）");
+        // 退避到期 → 全量重建刷新到新基座（2 个 div）。
+        QUERY_REPARSE.with(|slot| {
+            if let Some(g) = slot.borrow_mut().as_mut() {
+                g.backoff = Duration::ZERO;
+            }
+        });
+        assert_eq!(
+            with_query_view_doc(&html, &mutations, |doc, _| count_divs(doc)),
+            2,
+            "post-backoff rebuild must reparse to the fresh base"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -4028,7 +4242,7 @@ mod view_doc_replay_tests {
                 html: "<div id=".into(),
             }]));
         // 不 panic 即达标（截断分片解析产物允许为空）。
-        let ran = with_query_view_doc(&html, &mutations, |_doc| true);
+        let ran = with_query_view_doc(&html, &mutations, |_doc, _| true);
         assert!(ran);
     }
 
@@ -4060,7 +4274,7 @@ mod view_doc_replay_tests {
                 html: "<div id=a>unquoted</div>".into(),
             },
         ]));
-        let div_count = with_query_view_doc(&html, &mutations, |doc| {
+        let div_count = with_query_view_doc(&html, &mutations, |doc, _| {
             crate::js_dom_bridge::query_all_selector_list_doc(doc, "div")
                 .split('|')
                 .filter(|s| !s.is_empty())
@@ -4098,7 +4312,7 @@ mod view_doc_replay_tests {
                 html: "<div id=\"two\"></div>".into(),
             },
         ]));
-        let (one, two) = with_query_view_doc(&html, &mutations, |doc| {
+        let (one, two) = with_query_view_doc(&html, &mutations, |doc, _| {
             let sel_list = |sel: &str| {
                 crate::js_dom_bridge::query_all_selector_list_doc(doc, sel)
                     .split('|')
