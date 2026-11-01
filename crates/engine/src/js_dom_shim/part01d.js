@@ -861,6 +861,46 @@
     }
   }
 
+  // F6（2026-11-02）：delete/forwarddelete preservesOverrides 等价面——把 stored
+  // range 快照重锚到当前活动选区但**不清** override。vendored override 存储非
+  // range 绑定、preservesOverrides 命令不重置（myExecCommand :8495 包裹）；本仓
+  // 惰性 staleness 清除模型下 delete 必然移动选区 → 下一次 override 读会被误判
+  // 陈旧清空（qV-after-delete 语料期望 override 存活实证）。由 part01f
+  // __zw_ce_delete_apply 在删除落定后单点调用；其余命令的清除行为不变。
+  function _zwVaReanchorOverrides() {
+    var r = null;
+    try { r = _zwVaGetActiveRange(); } catch (_eRa) {}
+    _zwVaStoredRange = r
+      ? { sc: r.startContainer, so: r.startOffset, ec: r.endContainer, eo: r.endOffset }
+      : null;
+  }
+
+  // F6（2026-11-02）：preservesOverrides 包裹的原始快照/回写（不经 staleness
+  // reset）——删除动作内部的 override 读（值查询/effective value 面）会在选区
+  // 位移后触发 reset 误清存储；快照在动作前抓（彼时 stored==current，reset 无
+  // 效），动作后重锚并整体回写。g17 multitest 实证：无包裹时 bold qS-after-
+  // delete 期望 true 得 false（~30 断言）、fontsize qV-after 期望 "4" 得 "3"。
+  function _zwVaOverridesTakeRaw() {
+    var s = {}, v = {}, k;
+    for (k in _zwVaStateOverrides) {
+      if (Object.prototype.hasOwnProperty.call(_zwVaStateOverrides, k)) {
+        s[k] = _zwVaStateOverrides[k];
+      }
+    }
+    for (k in _zwVaValueOverrides) {
+      if (Object.prototype.hasOwnProperty.call(_zwVaValueOverrides, k)) {
+        v[k] = _zwVaValueOverrides[k];
+      }
+    }
+    return { state: s, value: v };
+  }
+
+  function _zwVaOverridesPutRaw(snap) {
+    if (!snap) return;
+    _zwVaStateOverrides = snap.state || {};
+    _zwVaValueOverrides = snap.value || {};
+  }
+
   function _zwVaSetValueOverride(command, newValue) {
     _zwVaOverridesReset();
     _zwVaValueOverrides[command] = newValue;

@@ -5405,6 +5405,15 @@ pub fn generate_js_dom_shim() -> &'static str {
         // _zwJus* 机具与 _zwVaIsAllowedChild；part06 经 globalThis.__zw_ce_list_
         // {toggle,state} 单点调用，事件口径同 justify 臂。
         s.push_str(include_str!("js_dom_shim/part01e.js"));
+        // part01f（2026-11-02 editing-compat F6 delete/forwarddelete 撤壳边界）：
+        // deleteSelection + delete/forwarddelete action 忠实移植（参考
+        // implementation.js :4550-5058/:6193-7052）——跨容器选区、块合并、
+        // canonicalizeWhitespace、qV override 重锚；strip-wrappers Chrome 留壳
+        // delta（原 start 链幸存壳不摘，g16-multitest D1 失败族实证）。挂
+        // part01e 后同闭包复用 _zwJus*/_zwVa*/_zwList* 机具；part06 经
+        // globalThis.__zw_ce_delete_apply 单点调用（flat 模型 _zwExecCmd-
+        // ApplyDelete 同轮摘除）。
+        s.push_str(include_str!("js_dom_shim/part01f.js"));
         // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
         // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
         // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现

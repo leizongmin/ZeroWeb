@@ -2538,44 +2538,6 @@
     } catch (_eFmtCaret) {}
   }
 
-  // R3254-M3 切片 2：delete/forwardDelete 实应用——选区删除（flat 模型：两端点在
-  // 宿主直子文本节点内 → nodeValue splice → SetChildText mutation 流转宿主）。
-  // collapsed：backspace 删起点前一单元、forwardDelete 删终点后一单元（代理对安全）；
-  // caret 回落删除点（selection 单例直换）。
-  function _zwExecCmdApplyDelete(range, forward) {
-    var sc = range.startContainer, so = range.startOffset | 0;
-    var ec = range.endContainer, eo = range.endOffset | 0;
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
-    var v = String(sc.nodeValue || '');
-    var start = so, end = range.collapsed ? so : (ec === sc ? eo : -1);
-    if (end < 0) return; // 跨容器选区 defer（flat 模型限制，记录）
-    if (start === end) {
-      if (forward) {
-        if (end >= v.length) return; // 文本末尾无后单元
-        end++;
-        var nxt = v.charCodeAt(end - 1);
-        if (nxt >= 0xDC00 && nxt <= 0xDFFF && end < v.length) {
-          var after = v.charCodeAt(end);
-          if (after >= 0xDC00 && after <= 0xDFFF) end++;
-        }
-      } else {
-        if (start === 0) return; // 文本起点无前单元
-        start--;
-        var last = v.charCodeAt(start);
-        if (last >= 0xDC00 && last <= 0xDFFF && start > 0) {
-          var prev = v.charCodeAt(start - 1);
-          if (prev >= 0xD800 && prev <= 0xDBFF) start--;
-        }
-      }
-    }
-    if (start === end) return;
-    sc.nodeValue = v.slice(0, start) + v.slice(end);
-    var nr = document.createRange();
-    nr.setStart(sc, start);
-    nr.collapse(true);
-    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-  }
-
   // R3254-M3 切片 6：insertHTML（execCommand 臂）——选区在宿主直子文本节点内 →
   // 宿主 innerHTML 在选区对应串偏移处 splice 插入 fragment 串（选区非空先删选中
   // 段——与 insertParagraph 同款实体感知偏移扫描）。caret 落插入内容后（文本边界
@@ -4429,11 +4391,13 @@
                   }
                 } catch (_eFmt) {}
               }
-              // R3254-M3 切片 2：delete/forwardDelete 实应用——选区删除（flat 模型：
-              // 两端点在宿主直子文本节点内 → SetChildText splice；collapsed →
-              // back/forward 一个 UTF-16 单元，代理对安全）。caret 回落删除点。
-              if ((cmd === 'delete' || cmd === 'forwarddelete') && rng2) {
-                try { _zwExecCmdApplyDelete(rng2, cmd === 'forwarddelete'); } catch (_eDel) {}
+              // F6（2026-11-02 editing-compat）：delete/forwardDelete 撤壳——
+              // part01f deleteSelection + 两 action 忠实移植（跨容器选区、
+              // strip-wrappers Chrome 留壳、块合并、qV override 重锚），替换
+              // R3254-M3 切片 2 flat 模型（同文本节点 splice、跨容器 defer）。
+              if ((cmd === 'delete' || cmd === 'forwarddelete')
+                  && typeof globalThis.__zw_ce_delete_apply === 'function') {
+                try { globalThis.__zw_ce_delete_apply(cmd === 'forwarddelete'); } catch (_eDel) {}
               }
               // R3254-M3 切片 5（2026-10-30 换代 live 就地拆分）：insertParagraph——
               // beforeinput 已由事件序路径派发，此处仅变更（fireEvents=false）。
