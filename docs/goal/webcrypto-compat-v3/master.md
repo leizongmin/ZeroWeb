@@ -5,7 +5,7 @@
 归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（M2-4 完成，M2 无依赖面收口）
+**最后更新**: 2026-11-02（M2 无依赖面收口 + DC-5②③ 前置预检落档）
 
 ---
 
@@ -31,6 +31,14 @@ m2s4 账全部非 P 逐案族谱归因——F 29,066 = 旧 `.tentative.` 路径 
 + stable-root **零红**；T 4 = Hybrid-KEM。签名扫查无散在 shim 缺陷红面、
 无无依赖可修簇（唯一潜伏项：失败路径 `algorithm.name` 二次读，无语料
 面，记录不修）。**DC-5③ 归因闭环预闭合成立**，M2 收口结论复核维持。
+
+**DC-5② 前置预检完成（2026-11-02，[evidence](evidence/2026-11-02-dc5-continuity-precheck.md)）**：
+一期终态锚 → m2s4 单跳对账——123 案全在位，共享 keys 仅 245 个迁移
+**全部 F→P**（精确落 M2-1 门禁面三案 supports/supports-modern/
+getPublicKey.tentative 171+53+21）+ 1T 案级 Timeout 键退役 + 13 新 Pass，
+**P→非P = 0**——五切片两两零回归对账的传递链单跳复验成立，无累积漂移。
+退役清单预编账 = 一期分母内 `.tentative.` 路径 49 案 / m2s4 态 7,340 keys
+（m2s4 全账 98 案 / 14,150 F），M 末收口对终态锚重算为准。
 
 **M2-3b worker 腿排干修复完成（2026-11-02，[evidence](evidence/2026-11-02-m2s3b-worker-leg-drain.md)）**：
 hkdf/pbkdf2 worker 腿翻绿，**净增 +12,196 子测试位（全 Pass）、T 7→5**，
@@ -180,3 +188,5 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   与本切片触面 diff 零交集）；25 号共享清单（part01.js/script_gen.rs/
   testharness.rs）本轮零触碰。engine 共享面回归按 M2-3b 先例以 dom
   通道双二进制 2×2 A/B 承接（见 M2-4 evidence 验证阶梯 5）。
+- 2026-11-02 DC-5 预检轮：纯 docs 改动（连续性预检 evidence + 本文件），
+  零代码触面，无碰撞面。
