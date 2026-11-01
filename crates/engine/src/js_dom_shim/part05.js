@@ -2903,7 +2903,75 @@
       try { Object.setPrototypeOf(tn, globalThis.Text ? globalThis.Text.prototype : Object.prototype); } catch (_eT2) {}
       return tn;
     };
+    // R206b（webcrypto-compat-v3 1T 销案切片，2026-11-02）：iframe 子文档 body 的
+    // **动态插入 script 执行触发**——主文档动态脚本面（part04 s95/s97 trap +
+    // `_zwScriptMaybeStartDynamic`）只覆盖主文档 appendChild 站；iframe 子文档
+    // body 是 `_makeDetachedDocument` 工厂合成体（R112 串行合并/R369 记账域），
+    // SCRIPT 元素 append 此前静默不执行——algorithm-discards-context.https.window.js
+    // 十二 async_test 零完结（子文档注入 getter 脚本从未跑，`top.closeChild` →
+    // `t.done()` 链路断）的直接根因。包装在工厂 appendChild 出口：R112 串行合并/
+    // 通用挂树两分支的记账语义先行保持，SCRIPT 子 append 完成后同步执行。
+    try {
+      var _r206bBaseAppend = doc.body.appendChild;
+      doc.body.appendChild = function (c) {
+        var _r206bR = _r206bBaseAppend.apply(this, arguments);
+        try {
+          if (c && c.nodeType === 1 && String(c.tagName || '').toUpperCase() === 'SCRIPT') {
+            _zwRunIframeDynamicScript(doc, c);
+          }
+        } catch (_e206btr) {}
+        return _r206bR;
+      };
+    } catch (_e206bwrap) {}
     return doc;
+  }
+  // R206b：iframe 子文档 body 动态 script 的执行体（同 IIFE，工厂上方包装消费）。
+  // run-once 记账复用主文档动态面双表（already started 语义同 spec prepare 步骤 1：
+  // `_zwScriptStarted` sel 键 / `_zwRanScripts` handle 键——s95/s96/R387 任一执行过
+  // 即 no-op）；type/language 门沿 s113 分类（module/blocked 不执行不置记账）。
+  // 域绑定沿 R206（markup 脚本合并 Function）同构：window/self 绑 iframe win
+  //（defaultView；未物化时宿主全局近似——about:blank 子 realm 的合成近似），
+  // parent/top 恒绑宿主全局（跨 realm 回调 `top.closeChild` 面），document/location
+  // 绑子文档。内联体执行；外链 src 动态面 FIXME 未接线（既有 corpus 面 markup
+  // 提取走 `_zwRunIframeScripts`，需求面出现时按 `_zwPrepareSrcScript` 接）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  function _zwRunIframeDynamicScript(doc, scriptEl) {
+    try {
+      if (!scriptEl) return;
+      var selKey = null, hdlKey = null;
+      try { selKey = scriptEl.__zwSelector; } catch (_e206bs) {}
+      try { hdlKey = scriptEl.__zwHandle; } catch (_e206bh) {}
+      if (selKey != null && globalThis._zwScriptStarted && globalThis._zwScriptStarted[selKey]) return;
+      if (hdlKey != null && globalThis._zwRanScripts && globalThis._zwRanScripts[hdlKey]) return;
+      if (typeof globalThis._zwScriptTypeClassify === 'function') {
+        var tyCls = null;
+        try { tyCls = globalThis._zwScriptTypeClassify(scriptEl); } catch (_e206bty) {}
+        if (tyCls !== 'classic') return;
+      }
+      try { if (scriptEl.hasAttribute && scriptEl.hasAttribute('nomodule')) return; } catch (_e206bnm) {}
+      var text = '';
+      try { text = String(scriptEl.text != null ? scriptEl.text : ''); }
+      catch (_e206btx) { try { text = String(scriptEl.textContent || ''); } catch (_e206btc) {} }
+      if (!String(text).trim()) return;
+      var src = '';
+      try { src = String(scriptEl.getAttribute('src') || ''); } catch (_e206bsr) {}
+      if (String(src).trim() !== '') return;
+      var win = null;
+      try { win = doc.defaultView || null; } catch (_e206bdv) {}
+      var self = win || globalThis;
+      var loc = null;
+      try { loc = (win && win.location) ? win.location : doc.location; } catch (_e206blc) { loc = null; }
+      try {
+        var fn206b = new Function('window', 'self', 'parent', 'top', 'document', 'location', String(text));
+        fn206b.call(self, self, self, globalThis, globalThis, doc, loc);
+      } catch (_e206bex) {
+        if (typeof globalThis._zwReportListenerError === 'function') {
+          try { globalThis._zwReportListenerError(_e206bex, null); } catch (_e206bre) {}
+        }
+      }
+      if (selKey != null) (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[selKey] = true;
+      else if (hdlKey != null) (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[hdlKey] = true;
+    } catch (_e206b) {}
   }
   // R115：iframe 子文档的 createElement/createTextNode——spec `dom-document-createelement`：
   // XML 文档（XML 解析的 doc）localName/tagName **保持原大小写**、namespaceURI null；HTML/XHTML

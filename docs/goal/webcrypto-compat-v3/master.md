@@ -1,14 +1,29 @@
 # Web Crypto 兼容三期运行时控制面板
 
 **状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
-选型征询落档）；M2 无依赖面四切片完成（M2-1 门禁面 +543P、M2-2 散新案
-归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P，
-均零回归）；余 1T 销案（iframe 子 realm 基建切片），D1 拍板后进域切片
-**最后更新**: 2026-11-02（M2-3b 完成）
+选型征询落档）；M2 无依赖面**全部收口**：M2-1 门禁面 +543P、M2-2 散新案
+归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
+M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4），
+均零回归；余 D1 拍板后域切片 + M 末收口重定基
+**最后更新**: 2026-11-02（M2-4 完成，M2 无依赖面收口）
 
 ---
 
 ## 当前状态
+
+**M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
+algorithm-discards-context（一/二/三期连续 T 案）**13 子测试全 Pass，
+案级 Timeout 键退役，T 5→4**；全量分母 360 案 / 81,851 keys = P 52,781 +
+F 29,066 + T 4，红线 P→非P 0、F 逐位全等、r1/r2/r3 三跑逐项全等。
+根因 = iframe 子文档 body（`_zwMakeIframeDoc` 工厂合成体）SCRIPT append
+静默不执行，主文档动态面（s95/s97）不覆盖该站；修复 = 工厂 appendChild
+出口包装 + `_zwRunIframeDynamicScript` 执行体（run-once 双表记账/s113
+分类门/R206 同构域绑定，+68 行纯插入 part05.js）。dom 通道双二进制
+2×2 A/B 共享键零回归（差异全落 Range-mutations 报告视界漂移 +
+replaceChildren T 案相位漂移两类已记账噪声）。余 T 4 = Hybrid-KEM
+generateKey ×4（D1 域门控）。对照基准更新为
+[m2s4 锚](evidence/2026-11-02-m2s4-full.json.gz)。**M2 无依赖面四切片
+（门禁面/散新案/worker 腿/1T）至此全部收口**。
 
 **M2-3b worker 腿排干修复完成（2026-11-02，[evidence](evidence/2026-11-02-m2s3b-worker-leg-drain.md)）**：
 hkdf/pbkdf2 worker 腿翻绿，**净增 +12,196 子测试位（全 Pass）、T 7→5**，
@@ -80,19 +95,13 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
    0.1.2）；X448/Ed448 仅 pre 线活跃（甄别从严交拍板）。新 crate 建议合计
    12–13 个。
 
-**下一步（M2 余下）**：拍板前推进无新依赖面——① 1T 销案（iframe 子 realm
-基建切片，M2-2 轮 triage 已精化，见下）；② D1 拍板后域切片。worker 腿
-饥饿面已在 M2-3b 销案（归因修正 + runner 域四件套修复，+12,196P 零回归，
-见上）。1T triage 精化（2026-11-01，M2-2 轮）：
-algorithm-discards-context 12 个 async_test 全依赖 iframe 子 realm 脚本
-执行（`contentDocument.body.appendChild(script)`）+ 子内 getter 跨
-realm 回调 `top.closeChild` → `t.done()`；runner harness 记
-`pending:13`（零测试完结）→ 子脚本执行/回调链路未通，销案需
-iframe 子 realm 基建切片（DOM 边界，非 webcrypto 语义面）。拍板后按
-deps evidence 建议定序（依赖就绪度：aes-ocb/chacha20poly1305/argon2 等
-AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，ML-KEM/ML-DSA
-再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 REG 与 getPublicKey
-域面随域切片逐行扩表翻绿）。
+**下一步（D1 拍板后）**：M2 无依赖面已全部收口（M2-1/2/3/3b/4，见上
+各段）——无新依赖可推进面已用尽，余下工作全部依赖 D1 选型拍板。
+拍板后按 deps evidence 建议定序（依赖就绪度：aes-ocb/chacha20poly1305/
+argon2 等 AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，
+ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 REG 与
+getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M 末收口重定基
+（DC-4/DC-5，终账切 HEAD 布局全量双腿账，旧 `.tentative.` 路径退役）。
 
 - 输入：二期 [DC-2 甄别清单](../archive/webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md)（逐域分母/建议范围/依赖候选）
 - 上游复证（2026-11-01）：HEAD `a0dd301b85…`，WebCryptoAPI 子树
@@ -156,3 +165,11 @@ AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，ML-KEM/ML-D
   pull --rebase 对账。同 workspace 观测到兄弟流孤儿验证
   （`/tmp/zw-edit-v/gate16.sh` → testharness-editing-run，02:24 起
   systemd 接管）使用本轮重建二进制——与其零文件冲突，不干预。
+- 2026-11-02 M2-4 轮：触面 `crates/engine/src/js_dom_shim/part05.js`
+  （+68 行纯插入：`_zwMakeIframeDoc` 工厂 appendChild 包装 +
+  `_zwRunIframeDynamicScript` 执行体，作用域 iframe 子文档专属）。
+  开工 pull --rebase 带入 `4dfdf6b78..e0d6948c0`（25 号流 F2
+  insertParagraph/caret 簇 5 提交，触 part01.js/part04/part06/css 面——
+  与本切片触面 diff 零交集）；25 号共享清单（part01.js/script_gen.rs/
+  testharness.rs）本轮零触碰。engine 共享面回归按 M2-3b 先例以 dom
+  通道双二进制 2×2 A/B 承接（见 M2-4 evidence 验证阶梯 5）。
