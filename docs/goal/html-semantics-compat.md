@@ -31,7 +31,37 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 213 收口，option/datalist 元素 API 面——Node.prototype isConnected 访问器 + datalist.options IDL：option-text-setter 1/1 + datalistoptions 2/2 两份靶语料全 Pass；forms 全域 A/B 净 F→P=3（2 靶键 + onblur flake 族 1 键摆回），P→F=0 共享键零漂移，键集差 beforeinput 单文件 Timeout 方差非关联；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 214 收口，host 侧 is_effectively_disabled 边界集模型统一——Document 方法重写（边界集臂镜像 shim `_zwFeDisabled` + fieldset per-fieldset 豁免）+ focus.rs 自由函数委托（quirk 保留）+ 孤儿删除：zero-dom 881P（新增 R5381 七形态钉面）+ zero-engine 3673P 基线持平 + html_compat 集成 22P；clippy 0 警告；零 shim 改动 corpus 不重跑（构造保证零漂移））**
+> **入场定刀位**：s212 挂账承袭——host 侧 disabled 判定平面走查与 shim
+> 边界集模型统一（三处用户门禁项不动）。
+> **勘根**：两套 host 实现三处分歧——Document 方法（form_state.rs，DOM
+> query + CSS + 约束校验三消费面）legend 旗标单合并走查跨层屏蔽外层
+> disabled fieldset（bug）+ 禁用源平面命中（嵌套 optgroup 级联、select
+> 不截断）；自由函数（focus.rs，tab 序 + 点击激活 + collect_form_data
+> 三消费面）同样的两处传播分歧（fieldset 臂本就正确）。shim 参考模型
+> 逐行定谳：边界集臂（SELECT 查属性即断 / OPTGROUP 仅向 option 传播
+> computed 两级 / HR/DATALIST/OPTION 截断 / 包裹穿行）+ fieldset 臂
+> per-fieldset 豁免继续上行，两臂相加。
+> **施工**（host Rust 2 文件 + 测试 1 文件，shim 零改动）：form_state.rs
+> 重写（门 → ①自身属性 → ②新 helper `option_boundary_disabled` 镜像
+> 边界臂 → ③fieldset 臂复用 `is_first_legend_of` per-fieldset 豁免）；
+> focus.rs 自由函数可禁用族委托权威 + div[disabled] quirk 保留（两面
+> 有意分歧，注释言明）+ 删孤儿 `is_descendant_of_first_legend`；
+> tests_1a.rs R5381 边界集七形态 + 委托等价 + quirk 断言。
+> **验证**：zero-dom 881P+0F（R5381 一次过）；zero-engine 3673P+0F
+> 基线持平；html_compat 集成 22P+0F（DisabledTarget 门实证）；guarded-
+> clippy 0 警告；fmt 过。**corpus 不重跑取舍**：零 shim 改动，corpus 走
+> 纯 JS shim 路径与 host walk 无交集，零漂移由构造保证（engine 全绿
+> 佐证）；日志 evidence/logs/s214-host-rust-suites.log。行为变更四项
+> （嵌套 optgroup 启用 / select 截断启用 / optgroup 经 select 禁用 /
+> legend 豁免不再跨层屏蔽）见账本对照清单。
+> **下一步候选**：misc 残面继续（customizable select 177F 挂起待拍板
+> GB-20261031 / form-nameditem override builtins 待决承袭 / form owner
+> table 缓行族用户决策承袭）→ part04 willValidate 臂内联 fieldset 走查
+> 共享化（s211 挂账，host 权威模型已定谳可指同源）。
+> **账本**：[evidence/2026-11-01-m2s214-host-disabled-boundary-model.md](html-semantics-compat/evidence/2026-11-01-m2s214-host-disabled-boundary-model.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 213 收口，option/datalist 元素 API 面——Node.prototype isConnected 访问器 + datalist.options IDL：option-text-setter 1/1 + datalistoptions 2/2 两份靶语料全 Pass；forms 全域 A/B 净 F→P=3（2 靶键 + onblur flake 族 1 键摆回），P→F=0 共享键零漂移，键集差 beforeinput 单文件 Timeout 方差非关联；shim 1 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s212 后 misc 残面复盘（全域 F 逐一定性：177F 挂起族/
 > 缓行族/待决/高风险不入刀/渲染流域/flake 族）——余下可施工孤面 =
 > option/datalist 元素 API 2F。
@@ -58,10 +88,6 @@
 > beforeinput.tentative.html 16 对 = B 侧文件级 Timeout 方差（s202 起
 > 同态，跑全 16F 既有面非关联）；zero-engine 3673P+0F；guarded-clippy
 > 0 警告；cargo fmt -p zero-engine 过。
-> **下一步候选**：misc 残面继续（customizable select 177F 挂起待拍板
-> GB-20261031 / form-nameditem override builtins 待决承袭 / form owner
-> table 缓行族用户决策承袭）→ host 侧 `is_effectively_disabled` 统一
-> （s212 挂账）。
 > **账本**：[evidence/2026-11-01-m2s213-option-text-datalist-options.md](html-semantics-compat/evidence/2026-11-01-m2s213-option-text-datalist-options.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 212 收口，disabled 语义面三缺口——焦点门 + matches 四伪类臂 + select/optgroup 传播边界走查：input-disabled-fieldset-dynamic + number-disabled + option-disabled-optgroup 6/6 + option-disabled-optgroup-wrapper 3/3 四份靶语料 11 键全 Pass；forms 全域 A/B 净 F→P=7 恰 7 靶键，P→F=1 在册 onblur flake 族，键漂移 0 其他位移 0；shim 3 文件 + rust 测试 1 文件，语料零改动）**

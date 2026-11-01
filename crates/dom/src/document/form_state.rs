@@ -17,10 +17,14 @@ impl Document {
     /// `:disabled` 的权威判定（HTML spec §4.10.18「禁用」概念）。
     ///
     /// 表单控件（button/input/select/textarea/option/optgroup）在以下任一情形被视为禁用：
-    /// ① 自身带 `disabled` 布尔属性；② 位于带 `disabled` 属性的「禁用源」祖先元素后代——
-    /// 禁用源含 `<fieldset>`（spec：首个 `<legend>` 内元素豁免）、`<select>`（其 option
-    /// 随之禁用，§4.10.10）、`<optgroup disabled>`（其 option 禁用）。沿祖先链求值（须
-    /// Document 上下文，故 [`crate::query`] `matches_full` 延后返 true，由本方法复评）。
+    /// ① 自身带 `disabled` 布尔属性；② `<option>`/`<optgroup>` 落入 select/optgroup
+    /// 边界集传播（见 [`Self::option_boundary_disabled`]）；③ 位于带 `disabled` 属性的
+    /// `<fieldset>` 内（spec：首个 `<legend>` 内豁免，且豁免仅对**该** fieldset 生效——
+    /// 豁免后继续上行，更外层 disabled fieldset 仍禁用）。边界集模型与 s212 语料验证过的
+    /// JS shim `_zwFeDisabled` 参考模型一致
+    ///（https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled）。
+    /// 沿祖先链求值（须 Document 上下文，故 [`crate::query`] `matches_full` 延后返 true，
+    /// 由本方法复评）。
     ///
     /// 供 DOM `:disabled`/`:enabled` 选择器（`element_matches_selector`）与
     /// style-system `:disabled` CSS 匹配共享，保证选择器与样式一致。
@@ -40,43 +44,72 @@ impl Document {
         if self.get_attribute(node, "disabled").is_some() {
             return true;
         }
-        // ② 祖先链找禁用源（fieldset/select/optgroup 带 disabled），记录是否位于
-        // 禁用 fieldset 的首个 <legend> 内（spec 豁免）。
-        let mut in_first_legend_of_disabled_fieldset = false;
+        // ② option/optgroup 边界集传播（一次性邻接语义）。
+        if matches!(tag.as_str(), "option" | "optgroup") && self.option_boundary_disabled(node, &tag) {
+            return true;
+        }
+        // ③ fieldset 祖先传播：走查位（链上下方直接元素子）为该 fieldset 首个
+        // <legend> 元素子时**该 fieldset** 豁免，继续上行（外层 disabled fieldset 仍生效）。
         let mut current = node;
         while let Some(parent) = self.parent_element_node(current) {
-            let parent_tag = self
-                .nodes
-                .get(parent)
-                .and_then(|n| match &n.kind {
-                    NodeKind::Element(e) => Some(e.local_name()),
-                    _ => None,
-                })
-                .unwrap_or("");
-            if parent_tag == "legend" {
-                // 是否为最近 fieldset 祖先的首个 legend 后代（spec 豁免条件）。
-                // 标记，由后续 fieldset 祖先决定是否豁免。
-                if let Some(fs) = self.parent_element_node(parent) {
-                    let is_fs = self
-                        .nodes
-                        .get(fs)
-                        .and_then(|n| match &n.kind {
-                            NodeKind::Element(e) => Some(e.local_name() == "fieldset"),
-                            _ => None,
-                        })
-                        .unwrap_or(false);
-                    if is_fs && self.is_first_legend_of(fs, parent) {
-                        in_first_legend_of_disabled_fieldset = true;
-                    }
-                }
-            }
-            let is_disabled_source = matches!(parent_tag, "fieldset" | "select" | "optgroup")
-                && self.get_attribute(parent, "disabled").is_some();
-            if is_disabled_source {
-                // fieldset：首个 legend 内元素豁免；select/optgroup：无豁免，后代 option 全禁用。
-                return !(parent_tag == "fieldset" && in_first_legend_of_disabled_fieldset);
+            if self.element_local_name(parent) == Some("fieldset")
+                && self.get_attribute(parent, "disabled").is_some()
+                && !self.is_first_legend_of(parent, current)
+            {
+                return true;
             }
             current = parent;
+        }
+        false
+    }
+
+    /// `<option>`/`<optgroup>` 的 select/optgroup 邻接传播判定（concept-option-disabled
+    /// 边界集，镜像 s212 shim `_zwFeDisabled` 边界臂）——自父元素起上行走查：
+    /// - SELECT：带 `disabled` 即传播禁用，否则截断；
+    /// - OPTGROUP：仅向 option 传播——自身 `disabled` 直判，无属性时取 computed
+    ///   （其 select 链上首个 SELECT 的 `disabled`；嵌套 optgroup 不级联）；对
+    ///   optgroup 自身不传播；
+    /// - HR/DATALIST/OPTION：截断；
+    /// - 其余包裹层（div 等）穿行。fieldset 传染由 [`Self::is_effectively_disabled`]
+    ///   的 fieldset 臂独立承担（两臂相加）。
+    fn option_boundary_disabled(&self, node: NodeId, self_tag: &str) -> bool {
+        let Some(mut boundary) = self.parent_element_node(node) else {
+            return false;
+        };
+        for _ in 0..64 {
+            match self.element_local_name(boundary) {
+                Some("select") => return self.get_attribute(boundary, "disabled").is_some(),
+                Some("optgroup") => {
+                    if self_tag != "option" {
+                        return false; // OPTGROUP 不从 OPTGROUP 级联
+                    }
+                    if self.get_attribute(boundary, "disabled").is_some() {
+                        return true;
+                    }
+                    // computed 两级：optgroup 自身无属性 → 查其 select 链（同边界集）。
+                    let Some(mut chain) = self.parent_element_node(boundary) else {
+                        return false;
+                    };
+                    for _ in 0..64 {
+                        match self.element_local_name(chain) {
+                            Some("select") => return self.get_attribute(chain, "disabled").is_some(),
+                            Some("optgroup" | "option" | "hr" | "datalist") => return false,
+                            _ => {}
+                        }
+                        let Some(next) = self.parent_element_node(chain) else {
+                            return false;
+                        };
+                        chain = next;
+                    }
+                    return false;
+                }
+                Some("hr" | "datalist" | "option") => return false,
+                _ => {}
+            }
+            let Some(next) = self.parent_element_node(boundary) else {
+                return false;
+            };
+            boundary = next;
         }
         false
     }

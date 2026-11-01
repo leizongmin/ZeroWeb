@@ -227,15 +227,19 @@ fn parse_tabindex(value: Option<&str>) -> Option<i32> {
     }
 }
 
-/// 判断元素是否因自身 `disabled` 或 disabled fieldset 祖先而被有效禁用。
+/// 判断元素是否因自身 `disabled` 或禁用祖先传播而被有效禁用。
 ///
-/// disabled fieldset 的首个 legend 元素子树不受该 fieldset 禁用，但仍受更外层
-/// disabled fieldset 约束。
+/// 可禁用元素族（button/input/select/textarea/option/optgroup）委托
+/// [`Document::is_effectively_disabled`] 权威判定（边界集模型，与 JS shim
+/// `_zwFeDisabled` s212、style-system `:disabled` 三面一致）。非可禁用元素带
+/// `disabled` 属性仍按历史行为判 true（R3056 时代形态——`div[disabled]` 不获焦；
+/// `Document` 权威门仅认可禁用族，两面在非可禁用族上有意分歧）。
 /// https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#attr-fe-disabled
 pub fn is_effectively_disabled(doc: &Document, node: NodeId) -> bool {
     let Some(crate::NodeKind::Element(element)) = doc.get(node).map(|node| &node.kind) else {
         return false;
     };
+    // 自身 disabled 前置于 tag 门：非可禁用元素带该属性也判 true（legacy 形态保留）。
     if element.get_attribute("disabled").is_some() {
         return true;
     }
@@ -245,48 +249,7 @@ pub fn is_effectively_disabled(doc: &Document, node: NodeId) -> bool {
     ) {
         return false;
     }
-
-    let mut current = doc.parent_node(node);
-    while let Some(ancestor) = current {
-        if element.local_name() == "option"
-            && doc.get_attribute(ancestor, "disabled").is_some()
-            && matches!(doc.get(ancestor).map(|node| &node.kind), Some(crate::NodeKind::Element(owner)) if matches!(owner.local_name(), "optgroup" | "select"))
-        {
-            return true;
-        }
-        if doc.get_attribute(ancestor, "disabled").is_some()
-            && doc.get(ancestor).is_some_and(
-                |node| matches!(&node.kind, crate::NodeKind::Element(element) if element.local_name() == "fieldset"),
-            )
-            && !is_descendant_of_first_legend(doc, node, ancestor)
-        {
-            return true;
-        }
-        current = doc.parent_node(ancestor);
-    }
-    false
-}
-
-fn is_descendant_of_first_legend(doc: &Document, node: NodeId, fieldset: NodeId) -> bool {
-    let first_legend = doc.child_nodes(fieldset).iter().copied().find(|child| {
-        doc.get(*child).is_some_and(
-            |node| matches!(&node.kind, crate::NodeKind::Element(element) if element.local_name() == "legend"),
-        )
-    });
-    let Some(first_legend) = first_legend else {
-        return false;
-    };
-    let mut current = doc.parent_node(node);
-    while let Some(ancestor) = current {
-        if ancestor == first_legend {
-            return true;
-        }
-        if ancestor == fieldset {
-            return false;
-        }
-        current = doc.parent_node(ancestor);
-    }
-    false
+    doc.is_effectively_disabled(node)
 }
 
 fn is_sequentially_focusable(doc: &Document, node: NodeId, elem: &crate::ElementData) -> bool {

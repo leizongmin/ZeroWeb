@@ -951,6 +951,115 @@ fn test_query_selector_fieldset_disabled_propagation_r3277() {
 }
 
 #[test]
+fn test_form_state_disabled_boundary_set_model_r5381() {
+    // R5381：host 侧 is_effectively_disabled 边界集模型统一（s214，与 s212 语料验证
+    // 过的 shim _zwFeDisabled、style-system :disabled 三面一致，concept-option-disabled）。
+    // 钉面：嵌套 optgroup 不级联、select 截断 optgroup 传播、包裹层穿行、optgroup 自身
+    // 经 select 传播、fieldset 逐层豁免（内层 legend 不屏蔽外层 disabled fieldset）。
+    let doc = parse_html(
+        "<html><body>\
+         <select id='sel'>\
+           <optgroup id='og-a' disabled>\
+             <optgroup id='og-b'><option id='og-nested'>n</option></optgroup>\
+           </optgroup>\
+         </select>\
+         <optgroup id='og-plain' disabled>\
+           <select id='sel-in-og'><option id='opt-in-sel'>s</option></select>\
+           <div id='wrap'><option id='opt-wrapped'>w</option></div>\
+           <select id='sel-dis-in-og' disabled><option id='opt-sel-dis'>d</option></select>\
+           <option id='opt-direct'>o</option>\
+         </optgroup>\
+         <select id='sel-dis' disabled><optgroup id='og-in-sel'>g</optgroup></select>\
+         <fieldset id='fs-outer' disabled>\
+           <legend id='lg-outer'>t</legend>\
+           <fieldset id='fs-inner'>\
+             <legend id='lg-inner'><input id='in-inner-lg'></legend>\
+             <input id='in-inner-body'>\
+           </fieldset>\
+         </fieldset>\
+         <div id='dq' disabled></div>\
+         </body></html>",
+    );
+    let root = doc.root();
+    let ids_of =
+        |sels: &[NodeId]| -> Vec<String> { sels.iter().filter_map(|id| doc.get_attribute(*id, "id")).collect() };
+    let disabled = ids_of(&doc.query_selector_all(root, ":disabled"));
+    let enabled = ids_of(&doc.query_selector_all(root, ":enabled"));
+
+    // 嵌套 optgroup 不级联：og-nested 位于禁用 og-a 的内层未禁用 og-b 中 → 启用。
+    assert!(
+        enabled.contains(&"og-nested".to_string()),
+        "嵌套 optgroup 不级联：内层 optgroup 的 option 不应继承外层禁用"
+    );
+    // OPTGROUP 自身不从 OPTGROUP 级联：og-b 启用。
+    assert!(
+        enabled.contains(&"og-b".to_string()),
+        "嵌套 optgroup 自身不应继承外层 optgroup 禁用"
+    );
+    // select 截断 optgroup 传播：opt-in-sel 位于禁用 og-plain 内未禁用 select 中 → 启用。
+    assert!(
+        enabled.contains(&"opt-in-sel".to_string()),
+        "select 边界应截断外层 optgroup 禁用传播"
+    );
+    // 包裹层穿行：opt-wrapped 经 div 落在禁用 og-plain 内 → 禁用。
+    assert!(
+        disabled.contains(&"opt-wrapped".to_string()),
+        "包裹层应穿行：div 内 option 仍继承 optgroup 禁用"
+    );
+    // select 边界直判：opt-sel-dis 位于禁用 select 内（外层 optgroup 亦禁用）→ 禁用。
+    assert!(
+        disabled.contains(&"opt-sel-dis".to_string()),
+        "禁用 select 内 option 应传播禁用"
+    );
+    // optgroup 直接子 option 传播：opt-direct → 禁用。
+    assert!(
+        disabled.contains(&"opt-direct".to_string()),
+        "禁用 optgroup 直接子 option 应传播禁用"
+    );
+    // optgroup 自身经 select 传播：og-in-sel 位于禁用 sel-dis 内 → 禁用。
+    assert!(
+        disabled.contains(&"og-in-sel".to_string()),
+        "禁用 select 内 optgroup 应传播禁用"
+    );
+    // fieldset 逐层豁免：in-inner-lg 位于内层 fs-inner 首个 legend 内（豁免内层），
+    // 但外层 fs-outer 的走查位是 fs-inner 而非其首个 legend lg-outer → 外层仍禁用。
+    // （旧合并走查把内层 legend 旗标带出、错误豁免外层 disabled fieldset——本断言钉修复。）
+    assert!(
+        disabled.contains(&"in-inner-lg".to_string()),
+        "内层 legend 豁免不应屏蔽外层 disabled fieldset 传播"
+    );
+    assert!(
+        disabled.contains(&"in-inner-body".to_string()),
+        "内层 fieldset body 内控件应传播禁用"
+    );
+    // sanity：外层 select 未禁用 → 启用。
+    assert!(enabled.contains(&"sel".to_string()), "未禁用 select 应匹配 :enabled");
+
+    // 非可禁用元素带 disabled 属性：Document 权威门不认可（不匹配 :disabled）。
+    assert!(!disabled.contains(&"dq".to_string()), "非可禁用元素不应匹配 :disabled");
+
+    // 自由函数（focus 面）委托等价：可禁用族与 Document 权威一致。
+    let find = |sel: &str| -> NodeId { *doc.query_selector_all(root, sel).first().expect("test node 应存在") };
+    assert!(
+        is_effectively_disabled(&doc, find("#opt-wrapped")),
+        "自由函数应与权威一致：包裹穿行禁用"
+    );
+    assert!(
+        !is_effectively_disabled(&doc, find("#opt-in-sel")),
+        "自由函数应与权威一致：select 截断（旧平面走查误判禁用）"
+    );
+    assert!(
+        is_effectively_disabled(&doc, find("#in-inner-lg")),
+        "自由函数应与权威一致：外层 fieldset 传播"
+    );
+    // legacy quirk：非可禁用元素带 disabled 属性在自由函数面判 true（R3056 形态保留）。
+    assert!(
+        is_effectively_disabled(&doc, find("#dq")),
+        "自由函数 quirk：div[disabled] 判 true（与 :disabled 权威门有意分歧）"
+    );
+}
+
+#[test]
 fn test_query_selector_form_state_required_readonly_r3278() {
     // R3278：DOM `:required`/`:optional`/`:read-only`/`:read-write` 选择器（此前仅 style-system CSS 支持，
     // querySelector/querySelectorAll 不识别）。语义与 style-system 同源（HTML spec）：
