@@ -1784,6 +1784,19 @@
   globalThis.__zw_ce_value_query = function (cmd) {
     var five = { fontsize: 1, fontname: 1, forecolor: 1, backcolor: 1, hilitecolor: 1 };
     if (!five[String(cmd)]) return null;
+    // 值 override（part01d，2026-11-01 style-with-value 簇实应用轮）：collapsed
+    // 选区 execCommand 记账、选区变动即作废（reset 在读数侧）。fontsize 的
+    // legacy 映射在导出侧完成（part01d _zwVaLegacyValueOf 两段式——part01c
+    // _zwValLegacyFontSize 只吃 px 串，关键字 override 会错转），此处直返
+    //（vendored myQueryCommandValue :655-663 同序）。
+    try {
+      if (typeof globalThis.__zw_ce_value_override_value === 'function') {
+        var ov = globalThis.__zw_ce_value_override_value(String(cmd));
+        if (ov !== undefined) {
+          return { value: ov == null ? '' : String(ov), indeterm: false };
+        }
+      }
+    } catch (_eOvQ) {}
     try {
       // 选区单例经 globalThis.getSelection（_getSelection 声明域不覆盖本文件
       // 挂载点——同 justify 查询面取区惯用法）。

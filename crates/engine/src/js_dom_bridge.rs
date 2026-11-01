@@ -5389,6 +5389,14 @@ pub fn generate_js_dom_shim() -> &'static str {
         // part06 经 globalThis.__zw_ce_justify_* 单点调用，R54xx 同款 plain 工厂
         // 语义（先 removeChild 再插入）。
         s.push_str(include_str!("js_dom_shim/part01c.js"));
+        // part01d（2026-11-01 editing-compat style-with-value 簇）：execCommand 五
+        // 标准行内值命令（fontsize/fontname/forecolor/backcolor/hilitecolor）实
+        // 应用引擎（setSelectionValue 全流程：边界 splitText + clearValue +
+        // pushDownValues/forceValue + collapsed override 记账，参考
+        // implementation.js 移植）。挂 part01c 后同闭包复用 _zwJus*/_zwVal* 机具
+        // 与 plain 解析器；part06 经 globalThis.__zw_ce_value_{apply,validate} 单
+        // 点调用，part01c 值查询面经 __zw_ce_value_override_value 消费 override。
+        s.push_str(include_str!("js_dom_shim/part01d.js"));
         s.push_str(include_str!("js_dom_shim/part07.js"));
         // part08a（2026-10-22 M3-S1 拆分）：WebGL 接口面**数据表**（IDL 派生，
         // 勿手改）——2000 行准则拆分，经 globalThis._zwWglIdlTables 单点交接，

@@ -4334,6 +4334,18 @@
             (rng2.endContainer === host2 ||
              (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(host2, rng2.endContainer))));
           if (host2 && inHost2 && typeof host2.dispatchEvent === 'function') {
+            // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
+            // （fontsize/fontname/forecolor/backcolor/hilitecolor）无效值校验前置
+            // ——action 校验失败在事件前拒绝（Chrome 口径：零事件、execCommand
+            // 返 false，vendored implementation.js :3265/:3380 action 同序）。
+            // https://w3c.github.io/editing/execCommand.html#value-of-the-command
+            if (typeof globalThis.__zw_ce_value_validate === 'function') {
+              try {
+                if (globalThis.__zw_ce_value_validate(cmd, arguments[2]) === false) {
+                  return false;
+                }
+              } catch (_eVaV) {}
+            }
             var before2 = new InputEvent('beforeinput', {
               bubbles: true, cancelable: true, composed: true,
               data: _zwExecCmdEventData(cmd, arguments[2]),
@@ -4411,6 +4423,16 @@
                 justifyleft: 'left', justifyright: 'right' })[cmd];
               if (jusAl && rng2 && host2) {
                 try { globalThis.__zw_ce_justify_apply(jusAl); } catch (_eJus) {}
+              }
+              // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命
+              // 令实应用——此前 _zwExecCmdInputType 含五命令（事件照派）但零变更
+              // 臂，run 五语料 compare innerHTML 567F。变更核心在 part01d
+              // __zw_ce_value_apply（setSelectionValue 全流程：边界 splitText +
+              // clearValue + pushDownValues/forceValue + collapsed override 记账，
+              // 参考实现移植）；无效值已被入口前置校验挡在事件前（__zw_ce_value_
+              // validate），此处仅应用。事件口径同上 justify 臂。
+              if (rng2 && host2 && typeof globalThis.__zw_ce_value_apply === 'function') {
+                try { globalThis.__zw_ce_value_apply(cmd, arguments[2]); } catch (_eVa) {}
               }
               // R3254-M3 切片 6：insertHTML——选区处 fragment 插入（flat 模型：
               // 选区在宿主直子文本节点内 → SetInnerHtml splice 中插 fragment 串；
