@@ -307,10 +307,17 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // :default / :indeterminate：HTML 静态语义（无 JS 交互状态）
             "default" => is_default(doc, element),
             "indeterminate" => is_indeterminate(doc, element),
-            // :any-link / :link：超链接（a/area/link 带 href）。
-            // :link 静态下等价 :any-link（全当未访问，隐私安全）；:visited 永不匹配（走 _ => false）。
+            // :any-link / :link / :visited：超链接（a/area/link 带 href）。R5382 起
+            // :visited 窄臂匹配**同文档链接**（is_same_document_visited），:link 相应
+            // 排除之（Selectors L4 §18：:link = 未访问超链接，与 :visited 互斥）。
+            // 无文档 URL / 跨页目标维持全当未访问（隐私安全，见 helper 头注）。
             "any-link" => is_any_link(doc, element),
-            "link" => is_any_link(doc, element),
+            "link" => {
+                is_any_link(doc, element) && !(visited_self_match_enabled() && is_same_document_visited(doc, element))
+            }
+            "visited" => {
+                visited_self_match_enabled() && is_any_link(doc, element) && is_same_document_visited(doc, element)
+            }
             // :scope：文档样式表中等价 :root（匹配文档根元素）。
             "scope" => is_root_element(doc, element),
             // :target：当前文档 URL fragment 指向的唯一元素（CSS Selectors L3 §6.6.2）。
@@ -673,6 +680,31 @@ fn is_any_link(doc: &Document, element: NodeId) -> bool {
         return false;
     }
     doc.get_attribute_str(element, "href").is_some()
+}
+
+/// `:visited` 同文档链接窄臂（CSS Selectors L4 §18；driving: css-color-5
+/// color-mix-currentcolor-visited ✗1.15%——`<a href="">` 按 HTML 语义解析为文档
+/// 自身 URL，而当前文档天然已访问，Chromium 同此；a:visited{green} 需命中，
+/// :link 相应不匹配）。窄口径仅认 `href=""` 与纯 fragment href（文档 URL +
+/// fragment，同为同文档引用）；其余相对/绝对跨页目标**维持不匹配**——完整 URL
+/// 解析比对与浏览器历史源（宿主桥）未集成，Selectors L4 privacy 注记下跨页
+/// visited 状态须历史集成后再开（FIXME，挂账 zero-web 流宿主桥；DOM 侧 query
+/// 选择器 `PseudoClass::Visited => false` 镜像开臂同账）。文档 URL 未注入
+/// （管线外直接 compute_styles 的测试/嵌入语境）→ 不匹配（维持 R3281 全当
+/// 未访问，既有断言不翻转）。
+fn is_same_document_visited(doc: &Document, element: NodeId) -> bool {
+    doc.url().is_some()
+        && doc
+            .get_attribute_str(element, "href")
+            .is_some_and(|href| href.is_empty() || href.starts_with('#'))
+}
+
+/// R5382 kill-switch 读取（进程级缓存）：`ZW_VISITED_SELF_MATCH=0` 回退 :visited
+/// 永不匹配 / :link 全匹配旧行为。OnceLock 同 intrinsic_sizing
+/// `mc_contain_size_fix_enabled` 热路径口径（伪类臂逐元素求值，不耐受 env 扫描）。
+fn visited_self_match_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_VISITED_SELF_MATCH").as_deref() != Ok("0"))
 }
 
 /// 检查元素是否是同类型中的第一个。

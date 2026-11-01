@@ -1245,6 +1245,74 @@ fn test_matches_any_link_and_link_pseudo_class() {
 }
 
 #[test]
+fn test_visited_self_link_no_url_legacy() {
+    // R5382 守卫：文档 URL 未注入（管线外直接 compute 的语境）→ :visited 维持
+    // 永不匹配、:link 维持全匹配（R3281 旧行为不翻转）。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+    let a_self = doc.create_element("a");
+    doc.set_attribute(a_self, "href", "");
+    doc.append_child(body, a_self).unwrap();
+
+    let link_sel = simple_pseudo("link");
+    let visited_sel = simple_pseudo("visited");
+    assert!(
+        matches_selector(&doc, a_self, &link_sel),
+        "无文档 URL 时 a[href=\"\"] 应维持 :link 匹配（旧行为）"
+    );
+    assert!(
+        !matches_selector(&doc, a_self, &visited_sel),
+        "无文档 URL 时 :visited 维持不匹配（旧行为）"
+    );
+}
+
+#[test]
+fn test_visited_self_link_same_document() {
+    // R5382（CSS Selectors L4 §18；driving: color-mix-currentcolor-visited）：
+    // 文档 URL 注入后，`href=""` 与纯 fragment href 解析为文档自身 URL——当前
+    // 文档天然已访问 → :visited 匹配、:link 相应排除（互斥）。跨页目标维持
+    // :link（历史源未集成，保守不匹配 :visited）。
+    let (mut doc, _html, body, _div, _p) = make_test_dom();
+    doc.set_url(Some("https://wpt.live/css/color-mix-currentcolor-visited.html".into()));
+
+    let a_empty = doc.create_element("a");
+    doc.set_attribute(a_empty, "href", "");
+    doc.append_child(body, a_empty).unwrap();
+    let a_frag = doc.create_element("a");
+    doc.set_attribute(a_frag, "href", "#top");
+    doc.append_child(body, a_frag).unwrap();
+    let a_cross = doc.create_element("a");
+    doc.set_attribute(a_cross, "href", "other.html");
+    doc.append_child(body, a_cross).unwrap();
+
+    let link_sel = simple_pseudo("link");
+    let visited_sel = simple_pseudo("visited");
+    let any_link_sel = simple_pseudo("any-link");
+
+    for (el, name) in [(a_empty, "href=\"\""), (a_frag, "href=\"#top\"")] {
+        assert!(
+            matches_selector(&doc, el, &visited_sel),
+            "同文档链接（{name}）应匹配 :visited"
+        );
+        assert!(
+            !matches_selector(&doc, el, &link_sel),
+            "同文档链接（{name}）不应匹配 :link（与 :visited 互斥）"
+        );
+        assert!(
+            matches_selector(&doc, el, &any_link_sel),
+            "链接（{name}）应匹配 :any-link"
+        );
+    }
+    assert!(
+        matches_selector(&doc, a_cross, &link_sel),
+        "跨页目标维持 :link 匹配（历史源未集成）"
+    );
+    assert!(
+        !matches_selector(&doc, a_cross, &visited_sel),
+        "跨页目标不匹配 :visited（宿主历史源未集成，保守不匹配）"
+    );
+}
+
+#[test]
 fn test_matches_scope_pseudo_class() {
     // :scope 在文档样式表中等价 :root（匹配文档根元素 html）。
     let (doc, html, _body, div, p) = make_test_dom();
