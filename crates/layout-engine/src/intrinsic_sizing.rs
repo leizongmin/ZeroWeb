@@ -323,6 +323,15 @@ fn kw_aware_max_width(
         let capped = full.min(content_min);
         return capped.max(min_resolved(&min_w, frame, full));
     }
+    if matches!(max_w, LengthValue::MaxContent) {
+        // R5375（css-sizing-3 §5.2 content-based contribution）：`max-width:max-content`
+        // 盒对父 intrinsic 宽的贡献 = **内容基**（own_explicit 不参与——specified 宽在
+        // max-width 使用侧钳制，used = min(200px, max-content 100) = 100，贡献应 100
+        // 而非 specified 200。fit-content-max-inline-size 内盒 cap 后外盒 fit-content
+        // 测 200 应 100 实证）。直接走 inner content-only（不经本包装——防递归重入）；
+        // own_ar（R3792 transferred）与文本/子树内容保留，.item（R4151）不塌。
+        return box_content_max_width_inner(box_node, doc, styles, false);
+    }
     full
 }
 

@@ -265,8 +265,22 @@ impl LayoutEngine {
                 // 包装）——block_max_content_width 无 own_ar，AR 叶盒（border-box-and-
                 // max-content-002 .item height:500 + ratio 1/1）会漏 transferred 测成
                 // frame（40），cap 误塌。
+                // R5375（css-sizing-3 §5.1 content-based size）：纯 max 侧关键字
+                //（kw_max && !kw_min）的 cap 目标按**内容基**测量——specified width
+                // 在 cap 使用侧钳制，不参与 W_max（own_explicit 抬升把 width:200px +
+                // max-width:max-content 盒测成 200 → cap 恒 no-op；
+                // block-size-with-min-or-max-content-7 / fit-content-max-inline-size
+                // 实证）。kw_min（含 max-width:min-content 的 R4151 收缩臂）保持 full
+                // 口径；own_ar（R3792 transferred）两口径都在（content-only 只剥
+                // own_explicit）。
                 if is_kw_clamp {
-                    Some(crate::intrinsic_sizing::box_content_max_width(b, doc, styles))
+                    if kw_max && !kw_min {
+                        Some(crate::intrinsic_sizing::box_content_max_width_content_only(
+                            b, doc, styles,
+                        ))
+                    } else {
+                        Some(crate::intrinsic_sizing::box_content_max_width(b, doc, styles))
+                    }
                 } else {
                     Some(crate::intrinsic_sizing::block_max_content_width(b, doc, styles))
                 }

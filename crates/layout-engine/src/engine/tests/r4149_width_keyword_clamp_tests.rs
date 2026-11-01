@@ -322,3 +322,111 @@ fn r4152b_flex_container_ar_content_clamped_by_max_height() {
         c.height
     );
 }
+
+/// R5375（css-sizing-3 §5.1 content-based size）：abspos 盒 `width:200px` +
+/// `max-width:max-content` 含 100px 定宽子 → cap 目标按**内容基**测量（specified
+/// width 不参与 W_max）——used = min(200, 100) = 100。
+/// driving: css-sizing/block-size-with-min-or-max-content-7（width:200 + max-width/
+/// max-content + max-height:max-content，宽应 100 高应 100）。
+#[test]
+fn r5375_max_width_max_content_caps_abspos_definite_width() {
+    let (mut doc, body) = make_doc_with_body();
+    let parent = doc.create_element("div");
+    doc.append_child(body, parent).unwrap();
+    let child = doc.create_element("div");
+    doc.append_child(parent, child).unwrap();
+
+    let mut parent_style = ComputedStyle::default();
+    parent_style.display = zero_style_system::DisplayValue::Block;
+    parent_style.position = zero_css_parser::values::PositionValue::Absolute;
+    parent_style.width = LengthValue::Px(200.0);
+    parent_style.max_width = LengthValue::MaxContent;
+
+    let mut child_style = ComputedStyle::default();
+    child_style.display = zero_style_system::DisplayValue::Block;
+    child_style.width = LengthValue::Px(100.0);
+    child_style.height = LengthValue::Px(100.0);
+
+    let mut styles = HashMap::new();
+    styles.insert(parent, parent_style);
+    styles.insert(child, child_style);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let p = find(&result.root, parent).expect("parent box");
+    assert!(
+        (p.width - 100.0).abs() < 1.0,
+        "abspos width:200px + max-width:max-content must cap to content-based 100, got {}",
+        p.width
+    );
+}
+
+/// R5375（css-sizing-3 §5.2 content-based contribution）：`max-width:max-content`
+/// 盒对父 fit-content（bare，MaxContent 域）的贡献 = 内容基——内盒 width:200px
+/// cap 后贡献 100，外盒 fit-content = 100。
+/// driving: css-sizing/fit-content-max-inline-size.tentative（外 fit-content 内
+/// max-width:fit-content + width:200px，双盒应 100）。
+#[test]
+fn r5375_max_content_child_contributes_content_based_to_fitcontent_parent() {
+    let (mut doc, body) = make_doc_with_body();
+    let outer = doc.create_element("div");
+    doc.append_child(body, outer).unwrap();
+    let inner = doc.create_element("div");
+    doc.append_child(outer, inner).unwrap();
+
+    let mut outer_style = ComputedStyle::default();
+    outer_style.display = zero_style_system::DisplayValue::Block;
+    outer_style.width = LengthValue::MaxContent; // bare fit-content 经 parser 映射
+    outer_style.height = LengthValue::Px(100.0);
+
+    let mut inner_style = ComputedStyle::default();
+    inner_style.display = zero_style_system::DisplayValue::Block;
+    inner_style.width = LengthValue::Px(200.0);
+    inner_style.max_width = LengthValue::MaxContent;
+
+    let mut styles = HashMap::new();
+    styles.insert(outer, outer_style);
+    styles.insert(inner, inner_style);
+
+    // 内盒内容：两个 inline-block 各 50px（sum 100）——用 span 元素近似（inline-block）。
+    let mut inline_styles = HashMap::new();
+    for _ in 0..2 {
+        let span = doc.create_element("span");
+        doc.append_child(inner, span).unwrap();
+        let mut span_style = ComputedStyle::default();
+        span_style.display = zero_style_system::DisplayValue::InlineBlock;
+        span_style.width = LengthValue::Px(50.0);
+        span_style.height = LengthValue::Px(50.0);
+        inline_styles.insert(span, span_style);
+    }
+    styles.extend(inline_styles);
+
+    let mut engine = crate::LayoutEngine::new(800.0, 600.0);
+    let result = engine.compute(&doc, &styles);
+
+    fn find(root: &crate::LayoutBox, id: NodeId) -> Option<&crate::LayoutBox> {
+        if root.node_id == Some(id) {
+            return Some(root);
+        }
+        root.children.iter().find_map(|c| find(c, id))
+    }
+    let o = find(&result.root, outer).expect("outer box");
+    let i = find(&result.root, inner).expect("inner box");
+    assert!(
+        (i.width - 100.0).abs() < 1.0,
+        "inner width:200px + max-width:max-content must cap to inline content 100, got {}",
+        i.width
+    );
+    assert!(
+        (o.width - 100.0).abs() < 1.0,
+        "outer fit-content must follow capped inner contribution 100, got {}",
+        o.width
+    );
+}
