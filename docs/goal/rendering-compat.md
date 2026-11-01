@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5376 修复轮（CSS2 §10.3.7 约束方程 margin 侧——abspos-non-replaced-width-margin-000 ✗2.96% → 1.58%、abspos-replaced-width-margin-000 ✗3.90% → 2.49%（残差③收口，案仍 F）；corpus 755F 稳定持平 FIXED=∅ REGRESSED=∅ 双跑）**（2026-11-01）
+>
+> - **归因**（R5372 残差③，三写点同病）：§10.3.7 约束方程 left/width/right 全 definite 且恰一个 margin auto → 解该 margin（可负）、双 auto → 均分 slack/2（负 → ltr ml=0）；旧 viewport/root-CB/nested-CB 三写点对 auto margin 一律取 0 →「only ml auto」组落过约束左锚 53 应 496。
+> - **修复**（`abspos.rs` `solved_auto_margin_left` helper + 三写点同臂）：门 = ml auto + width 非 auto（shrink-to-fit 域不入）+ right definite（右缘吸收域不入）；无新增 kill-switch（nested 臂整体有 `ZW_ABSPOS_NESTED_CB`）；垂直轴不动（R2068 已证 taffy 解垂直单 auto）。
+> - **门禁**：corpus 同树 A/B 双跑稳定交集 **755F 持平**（127/128/150/152 + dynamic-005 全隔离复跑 PASS = jitter 面）；layout-engine lib **2316P/0F**（+6 r5376 pin：单 auto 解方程/双 auto 均分/负解/width:auto 回退守卫/definite 守卫/root-CB 臂；R5372 既有 7 pin 全过）；make test workspace 3664P/1F = ua_display_li D4 既有账；clippy + fmt 清零；product-smoke struct PASS；bench-gate 静窗 **GATE PASS（25 指标 NEW=0；前三跑 FAIL/ABORT 环境面——stash 干净树同窗对照更差 5 指标 FAIL 4× 基线）**。证据：[`rendering-compat/evidence/r5376-abspos-auto-margin-equation-2026-11-01.md`](rendering-compat/evidence/r5376-abspos-auto-margin-equation-2026-11-01.md)。
+> - **挂账**：残差①（rtl CB 过约束 ignore-left——taffy 直挂已正确（pin 470），root/nested 两 pass 恒左锚；修法 = CB direction 穿线 nested cb 元组扩 rtl 位 + root 查根 style，过约束臂按 CB direction 选边）/ 残差②（all-auto 静态位 x +29 = 中间层 border-left，taffy 静态悬挂基域未归因）+ 全部旧账维持。**下一步 R5377**：①残差① rtl ignore-left（中等切片，签名扩展，动前核对 R2062 交互面）②755F 账本续扫择轻（避开并行流 inline/wrap 面与 writing-mode/multicol 冲突域）③backdrop-root 深评（维持）④color-6（维持）。
+>
 > **▶ R5375 修复轮（css-sizing-3 §5.1/§5.2 content 关键字内容基测量——block-size-with-min-or-max-content-7 ✗2.08% → ✓0.00%、fit-content-max-inline-size ✗2.08% → ✓0.00%，连带 table-anonymous-objects-151 / incremental-scroll 翻绿；corpus 758F→755F 稳定交集 FIXED=4 REGRESSED=∅ 三跑）**（2026-11-01）
 >
 > - **归因**（758F 账本择轻，双案同根）：content 关键字作 **cap** 使用时测量基应为**内容**（css-sizing-3 §5.1：specified width 在 cap 使用侧钳制，不参与 W_max）——旧 `box_content_max_width` 的 own_explicit 抬升把 `width:200px + max-width:max-content` 测成 200，cap 恒 no-op；fit-content-max-inline-size 的**贡献**侧（§5.2）经 `kw_aware_max_width` own max 关键字臂同根。
