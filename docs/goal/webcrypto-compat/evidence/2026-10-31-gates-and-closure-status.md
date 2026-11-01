@@ -1074,3 +1074,28 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
   件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-m4-tip5a2aafaf9.json`
   （不入库）。
+
+### 2026-11-01 14:35 追记：锚复跑现执行 tip（`517ccefda`）三跑整文件对 M1 终态锚 cmp 全等 ×3——渲染流 R5376 abspos auto margin 解方程吸收，本轮零采样（累计 9/36 轮）
+
+- 14:28 锚账 push 前 rebase 窗口再吸入渲染流 `7dbc0d5bb`（R5376
+  abspos 约束方程 margin 侧——left/width/right 全 definite 时 auto ml
+  解方程，CSS2 §10.3.7，`crates/layout-engine/src/engine/abspos.rs` +
+  tests +[r5376 测试]，[其账](../../rendering-compat/evidence/r5376-abspos-auto-margin-equation-2026-11-01.md)）+
+  `517ccefda`（R5376 轮 docs）——刚推锚账即陈旧，按纪律对新执行 tip
+  复跑：release runner 重建 28.9s（layout-engine 重编译入包，二进制
+  sha256 `4d918822…` 三跑稳定）+ test-guard 直包同参数，起跑前 ps
+  无兄弟进程。guard log 三跑零字节（零击杀），EXIT=1 预期，墙钟
+  97s/93s（RUN1 同窗口）。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**（sha256 同值 `40ea3c8e…`）：123 文件 /
+  33,109 子测试 = 25,788P + 7,320F + 1T 状态账零差异——R5376 对
+  webcrypto 语料面完全吸收。W4 本轮零采样，采样面累计 **9/36 轮**。
+- 锚窗口推进为 **5a2aafaf9 → 517ccefda**，实锚链 ……→4752a00df→
+  5a2aafaf9→517ccefda，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：D4 裁决分支/PR #267 head 仍 `2154ac296`（14:09 落定）、
+  仍 OPEN、未合入 main，D2① 未触发；冻结门 main 侧末触仍
+  `c41b0c750`，ua_display_li 在册未清；git 无 D1/D2 决策新账面。收口
+  序列不变：PR #267 合入 main → make test 全绿复证 → 锚按届时最终
+  tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
+  件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-r5376-tip517ccefda.json`
+  （不入库）。
