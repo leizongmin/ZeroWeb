@@ -801,3 +801,28 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   临时审计件
   `/tmp/webcrypto-anchor-20261101-r5374abspos-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 11:53 追记：锚复跑现 tip（`61720d309`）三跑全 cmp 全等 ×3——html-semantics 流 s204 pattern IDL + v flag 吸收，W4 本轮零采样
+
+- R5374 锚账 push 后 rebase 窗口吸入 html-semantics 流 `61720d309`
+  （s204 pattern IDL 反射 + v flag 编译判定——shim `part03.js`
+  +34/−5、`part05.js` +14，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s204-pattern-idl-v-flag.md)）：
+  push 前重查流程（09:20 补强）核证 shim 系语料执行路径二进制面
+  再前移，刚推锚账即陈旧，随即按纪律对新执行 tip 复跑——release
+  runner 重建 25.51s（shim 重编译入包）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`）三连跑，
+  起跑前 ps 核查无兄弟 run 在跑，二进制 sha256 三跑全程
+  `95dadfa4…` 未变。guard log 三跑零字节，EXIT=1 预期，墙钟
+  89s/88s/89s。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**：123 文件 / 33,109 子测试 = 25,788P +
+  7,320F + 1T 状态账零差异——s204 对 webcrypto 语料面完全吸收。
+  W4 案处预期 Timeout 臂，本轮零采样，采样面累计 5/29 轮。
+- 锚窗口推进为 **a88ab50c6 → 61720d309**，实锚链 ……→66f4871c1→
+  a88ab50c6→61720d309，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：s204 自账 zero-engine **3,664P/1F**（ua_display_li
+  渲染流域在册键同位）；D4 冻结门 `ua_display_tests.rs` 末触仍
+  `c41b0c750`（s204 仅触 engine shim + html-semantics docs）；
+  git 无 D1/D2 决策新账面。收口序列不变。临时审计件
+  `/tmp/webcrypto-anchor-20261101-s204pattern-{r1,r2,r3}.json`
+  （不入库）。
