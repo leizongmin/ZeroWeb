@@ -2218,6 +2218,105 @@ fn test_security_config_empty_origin_allows_all() {
 }
 
 #[test]
+fn test_extract_host_header() {
+    // 常规 Host（带端口）
+    let request = b"GET /json HTTP/1.1\r\nHost: 127.0.0.1:9222\r\nOrigin: http://x\r\n\r\n";
+    assert_eq!(HeadlessServer::extract_host_header(request).as_deref(), Some("127.0.0.1:9222"));
+
+    // 小写字段名（undici 形状）
+    let lowercase = b"GET /json HTTP/1.1\r\nhost: localhost\r\n\r\n";
+    assert_eq!(HeadlessServer::extract_host_header(lowercase).as_deref(), Some("localhost"));
+
+    // 请求行含 "host:" 字样不得误取（跳过请求行）
+    let in_path = b"GET /redirect?to=host:9222 HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n";
+    assert_eq!(HeadlessServer::extract_host_header(in_path).as_deref(), Some("127.0.0.1"));
+
+    // 无 Host 头 / 空 Host
+    assert!(HeadlessServer::extract_host_header(b"GET /json HTTP/1.1\r\n\r\n").is_none());
+    assert!(HeadlessServer::extract_host_header(b"GET /json HTTP/1.1\r\nHost:\r\n\r\n").is_none());
+}
+
+#[test]
+fn test_verify_host_rejects_non_local_names() {
+    let config = HeadlessSecurityConfig::new();
+    // 本机形态全部放行
+    assert!(config.verify_host(None));
+    assert!(config.verify_host(Some("127.0.0.1")));
+    assert!(config.verify_host(Some("127.0.0.1:9222")));
+    assert!(config.verify_host(Some("localhost")));
+    assert!(config.verify_host(Some("localhost:9222")));
+    assert!(config.verify_host(Some("[::1]:9222")));
+    assert!(config.verify_host(Some("::1")));
+    assert!(config.verify_host(Some("0.0.0.0:9222")));
+    // 域名（DNS rebinding 形态）全部拒绝
+    assert!(!config.verify_host(Some("evil.example")));
+    assert!(!config.verify_host(Some("evil.example:9222")));
+    assert!(!config.verify_host(Some("LOCALHOST.evil.example")));
+    // 畸形形态拒绝（fail closed）
+    assert!(!config.verify_host(Some("127.0.0.1:")));
+    assert!(!config.verify_host(Some("[::1")));
+    assert!(!config.verify_host(Some("")));
+}
+
+#[test]
+fn test_http_discovery_rejects_non_local_host_header() {
+    // DNS rebinding 回归：浏览器页面借解析到 127.0.0.1 的域名连 CDP 端口时
+    // Host 为攻击者域名，必须 403；本机客户端（Host 为 IP/localhost）不受影响。
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(HeadlessServer::new(0, 800.0, 600.0, None));
+    let srv = Arc::clone(&server);
+    // run() 不返回；分离线程随测试进程退出回收（同 test_partial_request_does_not_wedge_mux）。
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    let read_response = |stream: &mut TcpStream| {
+        stream.set_read_timeout(Some(Duration::from_secs(5))).expect("set read timeout");
+        let mut buf = [0u8; 256];
+        let n = stream.read(&mut buf).expect("read response");
+        String::from_utf8_lossy(&buf[..n]).to_string()
+    };
+
+    // 攻击者域名 Host → 403
+    let mut rebound = TcpStream::connect(addr).expect("connect rebound conn");
+    rebound
+        .write_all(b"GET /json/version HTTP/1.1\r\nHost: evil.example:9222\r\n\r\n")
+        .expect("write rebinding request");
+    let rejected = read_response(&mut rebound);
+    assert!(
+        rejected.starts_with("HTTP/1.1 403 Forbidden"),
+        "non-local Host must be rejected with 403, got: {rejected}"
+    );
+
+    // 本机 IP Host → 正常 200（合法自动化客户端不回归）
+    let mut local = TcpStream::connect(addr).expect("connect local conn");
+    local
+        .write_all(format!("GET /json/version HTTP/1.1\r\nHost: {addr}\r\n\r\n").as_bytes())
+        .expect("write local request");
+    let served = read_response(&mut local);
+    assert!(
+        served.starts_with("HTTP/1.1 200 OK"),
+        "local IP Host must stay served, got: {served}"
+    );
+}
+
+#[test]
 fn test_extract_origin_header() {
     let request = b"GET /json HTTP/1.1\r\nHost: localhost:9222\r\nOrigin: http://localhost:3000\r\n\r\n";
     let origin = HeadlessServer::extract_origin_header(request);

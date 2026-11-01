@@ -72,6 +72,18 @@ impl HeadlessServer {
         None
     }
 
+    /// 从 HTTP 请求头中提取 Host 值（字段名大小写不敏感，跳过请求行）。
+    /// https://httpwg.org/specs/rfc9110.html#field.host
+    pub(super) fn extract_host_header(data: &[u8]) -> Option<String> {
+        let s = String::from_utf8_lossy(data);
+        s.lines()
+            .skip(1)
+            .filter_map(|line| line.split_once(':'))
+            .find(|(name, _)| name.trim().eq_ignore_ascii_case("host"))
+            .map(|(_, value)| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
     /// 处理 HTTP 发现请求（CDP 风格的 /json 端点）。
     pub(super) fn handle_http_discovery(&self, stream: &std::net::TcpStream, session: &mut HeadlessSession) {
         use std::io::{Read, Write};

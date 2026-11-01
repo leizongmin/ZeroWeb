@@ -381,6 +381,12 @@ impl HeadlessServer {
                             // HTTP 快进快出：请求头已在内核缓冲，回阻塞模式同步读完
                             let _ = conn.stream.set_nonblocking(false);
                             conn.alive = false;
+                            let host = Self::extract_host_header(data);
+                            if !self.security.verify_host(host.as_deref()) {
+                                // DNS rebinding 防护：Host 非 IP 字面量/localhost 一律 403。
+                                Self::reject_http_host(&mut conn.stream, conn.peer);
+                                return;
+                            }
                             let origin = Self::extract_origin_header(data);
                             if !self.security.verify_origin(origin.as_deref()) {
                                 tracing::warn!("HTTP request from disallowed origin: {origin:?} from {}", conn.peer);
@@ -388,6 +394,13 @@ impl HeadlessServer {
                             }
                             self.handle_http_discovery(&conn.stream, session);
                         } else if Self::is_ws_upgrade(data) {
+                            let host = Self::extract_host_header(data);
+                            if !self.security.verify_host(host.as_deref()) {
+                                // 同上：WS 升级同样过 DNS rebinding 防护。
+                                tracing::warn!("WebSocket from non-local Host header rejected from {}", conn.peer);
+                                conn.alive = false;
+                                return;
+                            }
                             let origin = Self::extract_origin_header(data);
                             if !self.security.verify_origin(origin.as_deref()) {
                                 tracing::warn!("WebSocket from disallowed origin: {origin:?} from {}", conn.peer);
@@ -551,6 +564,14 @@ impl HeadlessServer {
             }
             Err(_) => false,
         }
+    }
+
+    /// Host 校验失败的 HTTP 发现请求：回 403 后关闭（尽力写，写失败直接丢弃连接）。
+    fn reject_http_host(stream: &mut std::net::TcpStream, peer: SocketAddr) {
+        tracing::warn!("HTTP discovery from non-local Host header rejected from {peer}");
+        let response = "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+        let _ = std::io::Write::write_all(stream, response.as_bytes());
+        let _ = std::io::Write::flush(stream);
     }
 
     /// WS idle 兜底断开阈值（与旧 600s read timeout 语义一致）。
