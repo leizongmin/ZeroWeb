@@ -633,3 +633,33 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   在案，核验只认 git 账面 + 用户主动知会）。收口序列不变。临时
   审计件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-s200key.json`
   （不入库）。
+
+### 2026-11-01 10:05 追记：锚复跑现 tip（`8e84cb9a2`）三跑全 cmp 全等 ×3——zero-web 流 t-p126 softnav 簇吸收，W4 本轮零采样
+
+- push 前例行 `git pull --rebase` 吸入 zero-web 流 PR #265（t-p126
+  softnav busy-loop 簇落 main：R98 原型 memo 化 `554f668a7` + DEF-1/DEF-2
+  返修 `a6f2c5acd` + rustfmt `87fa201cc` + 两笔 main 入线 merge）：
+  执行路径 7 文件 +1127/−77（`js_dom_bridge.rs` +429、`callbacks.rs`
+  +286、`css_wire.rs` ±18、shim `part03.js` +51、`part05.js` +6、
+  `part94.rs` 测试 +413）——engine bridge/shim 系语料执行路径代码，
+  二进制面前移，按纪律对新 tip 复跑锚。
+- 并行流协调：起跑前 ps 查兄弟进程发现 editing 流 `forecolor` run
+  在跑（同 runner 二进制路径），轮询等待其收尾（约 9.5 min）后再起
+  三连跑，避免 RUN1/RUN2 中途二进制被并行流重建换面；起跑前
+  `make zero-wpt-runner-release` 复验 no-op（0.18s）确认二进制对
+  HEAD 现行（本流重建 25.48s 在前）。
+- test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`，`--json` 重定向）三连跑：runner EXIT=1 为预期
+  挂账常规退出，guard log 零字节（无击杀），墙钟 90/92/88s 与历史
+  持平。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（cmp 全等，7,208,436
+  B）且三跑互等**：123 文件 / 33,109 子测试 = 25,788P + 7,320F + 1T
+  状态账零差异——t-p126 簇对 webcrypto 语料面完全吸收。本轮 W4 零
+  采样，采样面累计 4/20 轮，维持低频竞态定性。
+- 锚窗口推进为 **e2910e933 → 8e84cb9a2**，实锚链 ……→dd0eb2ec8→
+  578240175→e2910e933→8e84cb9a2。
+- **轮询面**：D4 冻结门 `ua_display_tests.rs` 末触仍 `c41b0c750`
+  （PR #265 仅触 engine bridge/shim/tests，未触渲染域 style-system）；
+  ua_display_li 同键在册未清；git 无 D1/D2 决策新账面（GB-20261031
+  在案，核验只认 git 账面 + 用户主动知会）。收口序列不变。临时审计
+  件 `/tmp/webcrypto-anchor-20261101-1003-{r1,r2,r3}.json`（不入库）。
