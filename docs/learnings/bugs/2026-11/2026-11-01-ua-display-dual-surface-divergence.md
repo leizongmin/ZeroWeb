@@ -74,3 +74,28 @@ skip 判据 / 尺寸表收集 / intrinsic pass gate 的枚举位」，不只是�
 taffy 盒路径与 IFC 路径对同一元素可能各持一份几何（taffy min_size 解 100、
 IFC stored 表缺项回退声明宽 10），修复时先定位**最终盒宽的实际来源**再动手，
 不要假定 relayout 结果自然生效。
+
+## 后续 2：双审查返修（D1/D2，同任务）
+
+首轮缺陷审查 2 项阻断发现，返修探针（build_subtree 入口/backtrace 插桩）定位后
+修复，暴露 r1 修复的第 4/5/6 个枚举位：
+
+1. **D1 三层（inline canvas + fallback 子）**：fallback 抑制在三条路径漏
+   display:Inline——`is_replaced_with_fallback` display 门（补 Inline）、
+   `is_inline_r109` 拆分宿主判据 `inline_has_block_child`（直读 DOM，对
+   fallback 抑制元素关闭）、R5251 `inline_child_is_pure_block_carrier`（直读
+   DOM，Fallback replaced 不作纯块载体，否则 p 升格容器层、canvas 整盒消失）。
+   根因形态：**树构建期清空的 children_dom 挡不住下游直读 DOM 的判据/拆分
+   路径**——同一抑制语义必须在每个 DOM 直读者重复施加。
+2. **D2**：`vertical_block_flow.rs` 两处 block-level 子判据 `Block` 漏
+   `ListItem`（:322 vrl 根右缘重锚、:644 vertical_block_child_indices_ex 块轴
+   堆叠）→ vertical 容器 ≥2 个 UA li 全部缺席 restack，滞留 taffy 同列位
+   （实证双 li 同位塌叠 (18,0)×2）。与同文件 R4447 先例（已并列
+   Block|ListItem）不一致即信号。
+
+**避免方式（再补）**：(a) 「children 清空」类抑制不是屏障——审计时
+`command grep` 枚举该元素子树的所有**直读 DOM** 的判据与拆分器（child_nodes/
+data.children 的消费者），逐一施加同一谓词，或把谓词下沉进共享判定函数；
+(b) 同一文件内同一语义判据（block-level 集合）出现多种写法时，先对齐既有
+先例再改；(c) 盒收集测试辅助函数用栈实现先序遍历时要 `.rev()` 入栈保 DOM 序，
+否则兄弟序断言会假红/假绿。
