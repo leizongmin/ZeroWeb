@@ -2395,6 +2395,90 @@ fn test_r5325_form_action_reflection_document_url_vs_base() {
 }
 
 #[test]
+fn test_r5326_output_matches_valid_invalid_candidate_gate() {
+    // R5326（s208）：:valid/:invalid 伪类候选门（HTML §4.10.22.2
+    // #selector-valid/#selector-invalid）——两伪类仅匹配 candidates for
+    // constraint validation；output 为 barred from constraint validation →
+    // 两不匹配，setCustomValidity 后仍两不匹配（barred 元素 validationMessage
+    // 恒空，validity IDL 面保留：customError true / valid false）。WPT
+    // output-validity.html（gitignore 语料）六断言等价承载。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><output id=\"o\"></output>\
+         <input id=\"i\"></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "var o = document.querySelector('#o');\
+             globalThis.__v1 = o.matches(':valid');\
+             globalThis.__iv1 = o.matches(':invalid');\
+             o.setCustomValidity('custom error');\
+             globalThis.__msg = o.validationMessage;\
+             globalThis.__ce = o.validity.customError;\
+             globalThis.__nv = o.validity.valid;\
+             globalThis.__v2 = o.matches(':valid');\
+             globalThis.__iv2 = o.matches(':invalid');\
+             globalThis.__inp = document.querySelector('#i').matches(':valid');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v1)").unwrap().value,
+        "false",
+        "output 不匹配 :valid（非约束校验候选）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iv1)").unwrap().value,
+        "false",
+        "output 不匹配 :invalid（非约束校验候选）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__msg)").unwrap().value,
+        "",
+        "barred 元素 validationMessage 恒空（customError 也不例外）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ce)").unwrap().value,
+        "true",
+        "output.validity.customError = true（setCustomValidity 存储）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__nv)").unwrap().value,
+        "false",
+        "output.validity.valid = false（customError 非 valid）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__v2)").unwrap().value,
+        "false",
+        "setCustomValidity 后 output 仍不匹配 :valid"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__iv2)").unwrap().value,
+        "false",
+        "setCustomValidity 后 output 仍不匹配 :invalid（barred 两侧均排除）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__inp)").unwrap().value,
+        "true",
+        "sanity：input（候选）仍匹配 :valid——门只排除非候选"
+    );
+}
+
+#[test]
 fn test_mutation_record_instanceof_spec_fields_r2847() {
     // R2847：MutationObserver 回调收到的 record 须 `instanceof MutationRecord` + `[object MutationRecord]`
     // toStringTag + 完整 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，

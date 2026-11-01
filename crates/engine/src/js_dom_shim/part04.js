@@ -5379,9 +5379,23 @@
             }
             // R57（FV M1）：:invalid/:valid 伪类——约束校验联动（host 样式引擎
             // 未实现——pattern-dynamic/number-validity-dynamic 用例）。
+            // s208：候选门（HTML §4.10.22.2 #selector-valid/#selector-invalid——
+            // 两伪类仅匹配 **candidates for constraint validation**；output 等
+            // barred 元素两不匹配——output-validity.html 六断言面）。非候选返
+            // false，不落 _validityState 通用汇总（output 无约束旗标 → valid
+            // true 会被 :valid 吸走；setCustomValidity 后 customError → valid
+            // false 会被 :invalid 吸走）。FORM 保留聚合臂（R57 FV M3——
+            // form-requestSubmit 的 form.matches(':invalid')）；候选集与 Rust
+            // 侧 dom validation.rs is_validation_candidate（input/select/
+            // textarea）同源。
             var q = String(selector);
-            if (q === ':invalid') return !_validityState(key, sel, handle).valid;
-            if (q === ':valid') return _validityState(key, sel, handle).valid;
+            if (q === ':invalid' || q === ':valid') {
+              var _pvTag = _realTag(sel, handle);
+              if (_pvTag !== 'INPUT' && _pvTag !== 'SELECT' && _pvTag !== 'TEXTAREA'
+                  && _pvTag !== 'FORM') return false;
+              var _pvValid = _validityState(key, sel, handle).valid;
+              return q === ':valid' ? _pvValid : !_pvValid;
+            }
             // R3902（html-semantics M2）：`:focus`/`:focus-visible` 独立伪类——JS 侧焦点
             // 状态判定（Selectors L4 §13/§14 https://www.w3.org/TR/selectors-4/#focus-pseudo）。
             // host 选择器匹配对快照新 parse 恒 `focus_element: None`（焦点只存 JS

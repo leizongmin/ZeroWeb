@@ -31,7 +31,39 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 207 收口，form.action 文档 URL 反射特例——form-action-reflection-with-base-url 2F 翻绿（empty-string/missing action 应返 document's URL 非 base URL），forms 全树 keyed diff 净 F→P=2 恰两靶键 + onblur flake 域 ±2 双向摆动（在册），键漂移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 208 收口，:valid/:invalid 伪类候选门——output-validity 1F 翻绿（output barred 两伪类均不匹配，含 setCustomValidity 后仍双不匹配；6 断言一次全绿），forms 全树 keyed diff 净 F→P=2 恰 1 靶键 + onblur flake 域 1 键上摆（在册），P→F=0 键漂移 0 timeout 位移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s207 后 misc 残面次刀候选序 output-validity 1F
+>（form owner table 勘定升格 4F 解析器 form element pointer 基建面，
+> 非 misc 次刀量级，退回候选池待独立立项）。customizable select 177F
+> 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：spec §4.10.22.2 #selector-valid/#selector-invalid——两伪类
+> 仅匹配 candidates for constraint validation；output barred → 两不匹
+> 配。双通道核证：Rust 样式路径已正确（matcher → validation.rs
+> `is_validation_candidate` 仅 input/select/textarea）；失败走 shim
+> matches 通道（part04 `:valid` 臂无候选门直返 `_validityState().valid`
+> ——output 落通用汇总无约束旗标 → :valid 误 true；setCustomValidity 后
+> valid:false → :invalid 误 true）。语料 6 断言面核对：validationMessage
+> 空/validity customError/valid 三断言既有实现已 spec-true，仅 matches
+> 门缺口。不能伤键全查：input/select/FORM 聚合（form-requestsubmit:167）
+> 均在用 → 门集 = INPUT/SELECT/TEXTAREA/FORM。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part04 matches 臂
+> `:invalid`/`:valid` 合并候选门——非候选 tag 返 false 不落通用汇总，
+> FORM 聚合臂保留；part09.rs R5326 桥测试八断言镜像语料六断言 + input
+> sanity 对照（gitignore 语料常驻承载，s205-s207 先例）。
+> **验证**：拼接 shim node --check SYNTAX_OK；靶面 FILTER=output-validity
+> 1/1 Pass；forms 全树 A/B（基线侧复用 s207 forms-wip.log=已提交 HEAD
+> shim 态）净 F→P=2 恰 1 靶键 + onblur 域 1 键上摆（checkable-active-
+> onblur-with-click 在册族），P→F=0 键漂移 0 timeout 位移 0（两侧 4711
+> 对覆盖全同）；zero-engine 3667P+1F（在册键 + R5326 新测计入）；fmt
+> 零 diff + guarded-clippy 0 警告。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → number B 簇 editor-buffer 独立立项（s203 已勘定）或 misc 残面次刀
+>（form-nameditem override builtins 1F fix#19c 挂待决承袭 / input/
+> button formAction `<base>` 同形特例缺口；form owner table 4F 升格待
+> 独立立项）。
+> **账本**：[evidence/2026-11-01-m2s208-output-validity-pseudo-candidate-gate.md](html-semantics-compat/evidence/2026-11-01-m2s208-output-validity-pseudo-candidate-gate.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 207 收口，form.action 文档 URL 反射特例——form-action-reflection-with-base-url 2F 翻绿（empty-string/missing action 应返 document's URL 非 base URL），forms 全树 keyed diff 净 F→P=2 恰两靶键 + onblur flake 域 ±2 双向摆动（在册），键漂移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s206 后 misc 残面次刀候选序首位 form action 反射
 > base-url 2F。customizable select 177F 挂起待拍板（GB-20261031 征询
 > 在途）。
@@ -6603,6 +6635,17 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 208**：:valid/:invalid 伪类候选门轮——
+  output-validity 1F 收口。勘根定谳双通道形态（Rust 样式路径
+  validation.rs 候选门已正确；失败走 shim matches 通道 `:valid` 臂无
+  候选门直返 `_validityState().valid`，output 落通用汇总被 :valid 吸
+  走）；施工 part04 matches 臂候选门（非 INPUT/SELECT/TEXTAREA/FORM 返
+  false，FORM 聚合臂保留）+ part09.rs R5326 桥测试八断言常驻承载。
+  验证：靶面 1/1 Pass + forms 全树 A/B 净 F→P=2 恰 1 靶键 + onblur 域
+  1 键上摆（在册 flake）P→F=0 键漂移 0 + zero-engine 3667P+1F（在册
+  键）+ fmt 零 diff + guarded-clippy 过；form owner table 勘定升格 4F
+  解析器基建面退回候选池。账本
+  [evidence/2026-11-01-m2s208-output-validity-pseudo-candidate-gate.md](html-semantics-compat/evidence/2026-11-01-m2s208-output-validity-pseudo-candidate-gate.md)。
 - **2026-11-01 M2 切片 207**：form.action 文档 URL 反射特例轮——
   form-action-reflection-with-base-url 2F 收口。勘根定谳 R5009 片 d
   特例被 net-api M5-S7 解析优先分支吸走（空串对基 URL 解析=基 URL，
