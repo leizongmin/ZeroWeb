@@ -51,20 +51,20 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 14:19（锚复跑现执行 tip `4752a00df` ×3——
-上笔账 push 后 rebase 窗口吸入 renderer-trust-boundary 流 M3 slice2
-fd 传递通道对端信任收口（socket 0600 + SO_PEERCRED euid 校验 + 每发布
-随机 token，`crates/protocol/src/fd_socket_linux.rs` +124/−8，crates/
-执行路径前移且 `cargo tree` 核证 zero-protocol 入 runner 二进制面）：
-release runner 重建 33.4s（二进制 sha256 `42d5d82c…` 三跑稳定）+
-test-guard 直包三连跑（guard 三跑零击杀，墙钟 90s/90s），**RUN2/RUN3
-对 M1 终态锚整文件逐字节一致**（7,208,436 B，sha256 同值）且互等，
-RUN1 落 W4 采样臂（phase=2 message 变体，与上轮采样变体同 sha）但
-status 结构化比对 status-diffs=0：33,109 条状态账 0 差异（25,788P+
-7,320F+1T），采样累计 9/34 轮；**锚窗口推进 e08a4febc → 4752a00df**。
-轮询面：PR #267 head 仍 `2154ac296`（14:09 落定，D4 rebase + s24
-返修已核证）、**仍 OPEN 未合入 main，D2① 未触发**；冻结门 main 侧
-末触仍 `c41b0c750`，ua_display_li 在册未清，D1 无新账面，见
+**最后更新**: 2026-11-01 14:28（锚复跑现执行 tip `5a2aafaf9` ×3——
+上笔账 push 后 rebase 窗口吸入 renderer-trust-boundary 流 M4 前置
+（docs + `crates/protocol/src/fd_socket_linux.rs` **纯注释** 5 行，
+crates/ 面非空触发纪律；二进制核证捷径证伪——重建后 sha256
+`9054e56c…` ≠ 锚 `42d5d82c…`，纯注释改动经重链接仍非字节稳定，
+**crates/ 面注释级改动也不可跳过复跑**）：test-guard 直包三连跑，
+**RUN1/RUN2/RUN3 对 M1 终态锚整文件逐字节一致 ×3 且三跑互等**
+（7,208,436 B，sha256 同值），33,109 条状态账 0 差异（25,788P+
+7,320F+1T），W4 本轮零采样累计 9/35 轮；**锚窗口推进 4752a00df →
+5a2aafaf9**。起跑前 ps 抓到 editing 流 runner 兄弟进程在本 clone
+（碰头信号，按纪律等其自行退出后起跑，未硬解）。轮询面：PR #267
+head 仍 `2154ac296`（14:09 落定）**仍 OPEN 未合入 main，D2① 未
+触发**；冻结门 main 侧末触仍 `c41b0c750`，ua_display_li 在册未清，
+D1 无新账面，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

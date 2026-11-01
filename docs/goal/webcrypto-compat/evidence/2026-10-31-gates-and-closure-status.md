@@ -1040,3 +1040,37 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
   件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-m3s2-tip4752a00df.json`
   （不入库）。
+
+### 2026-11-01 14:28 追记：锚复跑现执行 tip（`5a2aafaf9`）三跑整文件对 M1 终态锚 cmp 全等 ×3——renderer-trust-boundary 流 M4 前置注释面吸收，本轮零采样（累计 9/35 轮）
+
+- 本 goal 上笔账（14:19）push 后 rebase 窗口吸入 renderer-trust-
+  boundary 流 `5a2aafaf9`（M4 前置——沙箱失败平台策略选项 docs +
+  DC 审计快照 + `crates/protocol/src/fd_socket_linux.rs` **纯注释**
+  5 行改动（`peer_same_user` doc-comment 重写，无代码变化），
+  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）：
+  crates/ 面 `git diff` 非空即触发纪律；先试二进制核证捷径——重建
+  release runner 35.4s 后 sha256 `9054e56c…` ≠ 锚二进制 `42d5d82c…`
+  （**纯注释改动经 protocol 重编译 + 重链接仍非字节稳定**，
+  binary-face 字节等证伪）→ 复跑锚 ×3。起跑前 ps 抓到 editing 流
+  runner 兄弟进程在本 clone 跑 `testharness-editing-run`（PID 230283，
+  14:21 起，time-limit 300s）——碰头信号按纪律等待其退出（10s 后
+  自行结束）再起跑，未硬解未杀进程。test-guard 直包同参数，guard
+  log 三跑零字节（零击杀），EXIT=1 预期，墙钟 93s/93s（RUN1 同
+  窗口），二进制 sha256 `9054e56c…` 三跑稳定。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**（sha256 同值 `40ea3c8e…`），结构化
+  复核 status-diffs=0 且非 Timeout message diffs=0：123 文件 / 33,109
+  子测试 = 25,788P + 7,320F + 1T 状态账零差异——M4 前置对 webcrypto
+  语料面完全吸收。W4 本轮零采样，采样面累计 **9/35 轮**。
+- 锚窗口推进为 **4752a00df → 5a2aafaf9**，实锚链 ……→583ebe1df→
+  e08a4febc→4752a00df→5a2aafaf9，33,109 分母零回归在现执行 tip 成立。
+  纪律注记：**crates/ 面注释级改动也不可凭源码「无代码变化」跳过
+  复跑**——二进制 sha 在重链接下非稳定，`git diff -- crates/ tests/`
+  非空仍是唯一可靠触发判据。
+- **轮询面**：D4 裁决分支/PR #267 head 仍 `2154ac296`（14:09 落定）、
+  仍 OPEN、未合入 main，D2① 未触发；冻结门 main 侧末触仍
+  `c41b0c750`，ua_display_li 在册未清；git 无 D1/D2 决策新账面。收口
+  序列不变：PR #267 合入 main → make test 全绿复证 → 锚按届时最终
+  tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
+  件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-m4-tip5a2aafaf9.json`
+  （不入库）。
