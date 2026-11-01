@@ -135,12 +135,15 @@ fn gpu_allowed_syscalls() -> Vec<i64> {
         // dma-buf fd 交付通道（fd_socket_linux.rs：UnixListener bind/accept4 +
         // SCM_RIGHTS sendmsg/recvmsg）。bind/listen/accept 系列的作用面被域门控
         // 限制为 AF_UNIX socket fd——网络域 socket 无法创建，故无网络外联面。
+        // getsockopt 供 accept 侧 SO_PEERCRED 同用户校验（peer_same_user）；漏放行
+        // 会使校验恒 false、合法消费端连接被当陌生连接丢弃（dma-buf 交付必败）。
         libc::SYS_bind,
         libc::SYS_listen,
         libc::SYS_accept,
         libc::SYS_accept4,
         libc::SYS_sendmsg,
         libc::SYS_recvmsg,
+        libc::SYS_getsockopt,
     ];
     blocked.retain(|nr| !allow.contains(nr));
     blocked.retain(|nr| *nr != libc::SYS_socket);
@@ -186,7 +189,8 @@ mod tests {
     #[test]
     fn gpu_filter_keeps_network_blocked_and_gates_socket_domain() {
         let blocked = gpu_allowed_syscalls();
-        // fd 交付通道所需 syscall 不得残留在黑名单。
+        // fd 交付通道所需 syscall 不得残留在黑名单（getsockopt：accept 侧
+        // SO_PEERCRED 同用户校验，2026-11-01 dma-buf e2e 事故正是漏了它）。
         for needed in [
             libc::SYS_bind,
             libc::SYS_listen,
@@ -194,6 +198,7 @@ mod tests {
             libc::SYS_accept4,
             libc::SYS_sendmsg,
             libc::SYS_recvmsg,
+            libc::SYS_getsockopt,
         ] {
             assert!(!blocked.contains(&needed), "GPU 黑名单误含 fd-passing syscall {needed}");
         }
@@ -275,6 +280,86 @@ mod tests {
         assert!(
             output.status.success(),
             "GPU seccomp 过滤器执行行为不符预期（exit={:?}）",
+            output.status.code()
+        );
+    }
+
+    /// 在隔离子进程中安装 GPU 过滤器后走真实 fd 通道发布，父进程消费——
+    /// 端到端钉住「过滤器不得误拦 fd 通道自身 syscall」。2026-11-01 dma-buf
+    /// e2e 事故：黑名单漏放行 getsockopt，accept 侧 SO_PEERCRED 校验恒失败，
+    /// 合法消费端连接被当陌生连接丢弃（浏览器侧报 SCM_RIGHTS 未携带 fd，
+    /// 通道判死回退 legacy）。结构断言发现不了，只有真实执行才可信。
+    /// 子进程退出码：0=发布成功；1=安装失败；2=memfd 失败；3=发布失败。
+    #[test]
+    fn gpu_filter_execution_permits_fd_channel_publish_and_consume() {
+        use std::time::Duration;
+
+        const CHILD: &str = "ZERO_COMPOSITOR_SECCOMP_FD_CHANNEL_CHILD";
+        const NAME_KEY: &str = "ZERO_COMPOSITOR_SECCOMP_FD_CHANNEL_NAME";
+        // 全路径（含模块前缀）：--exact 对短名零匹配会让子进程空跑 exit 0
+        //（同上，父进程断言另有 stdout 校验兜底）。
+        let test_name =
+            "sandbox::seccomp_linux::tests::gpu_filter_execution_permits_fd_channel_publish_and_consume";
+        if std::env::var(CHILD).as_deref() == Ok("1") {
+            let name = std::env::var(NAME_KEY).unwrap_or_default();
+            let code = match install_network_exec_filter_gpu_aware() {
+                Err(_) => 1,
+                Ok(()) => {
+                    // SAFETY: 测试子进程内创建匿名 memfd、写入探针字节后发布。
+                    let fd = unsafe { libc::memfd_create(c"seccomp-fd-probe".as_ptr(), 0) };
+                    if fd < 0 {
+                        2
+                    } else {
+                        let probe = [0xA5_u8];
+                        unsafe {
+                            libc::write(fd, probe.as_ptr().cast(), probe.len());
+                        }
+                        match zero_protocol::fd_socket_linux::publish_fd(&name, fd, Duration::from_secs(5)) {
+                            Ok(()) => 0,
+                            Err(error) => {
+                                eprintln!("publish_fd: {error}");
+                                3
+                            }
+                        }
+                    }
+                }
+            };
+            std::process::exit(code);
+        }
+        let name = zero_protocol::fd_socket_linux::fd_socket_name(4100, std::process::id() as u64);
+        let child = std::process::Command::new(std::env::current_exe().expect("current test exe"))
+            .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
+            .env(CHILD, "1")
+            .env(NAME_KEY, &name)
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn isolated fd-channel seccomp child");
+        let path = zero_protocol::fd_socket_linux::fd_socket_path(&name);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !path.exists() {
+            assert!(std::time::Instant::now() < deadline, "子进程未发布 fd socket: {path:?}");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let fd = zero_protocol::fd_socket_linux::consume_fd(&name, Duration::from_secs(5))
+            .expect("GPU 过滤器下 fd 通道发布/消费必须可达（getsockopt 放行）");
+        use std::io::{Read as _, Seek as _};
+        let mut file = std::fs::File::from(fd);
+        // SCM_RIGHTS 复制的是同一 open file description（与子进程共享偏移，
+        // 子进程写后偏移已到 1），读探针前须回带开头。
+        file.seek(std::io::SeekFrom::Start(0)).expect("memfd 回带");
+        let mut probe = [0_u8; 1];
+        file.read_exact(&mut probe).expect("memfd 探针字节可读");
+        assert_eq!(probe[0], 0xA5, "消费到的 fd 必须是子进程发布的那个 memfd");
+        let output = child.wait_with_output().expect("wait fd-channel child");
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            stdout.contains("running 1 test"),
+            "探测子进程未匹配到目标测试，探测未执行：stdout={stdout}"
+        );
+        assert!(
+            output.status.success(),
+            "子进程 publish 失败（exit={:?}）",
             output.status.code()
         );
     }
