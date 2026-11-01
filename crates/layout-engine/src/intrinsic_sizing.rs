@@ -407,6 +407,14 @@ fn replaced_leaf_intrinsic_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_REPLACED_LEAF_INTRINSIC").as_deref() != Ok("0"))
 }
 
+/// R5381 kill-switch 读取（进程级缓存）：`ZW_INLINE_REPLACED_OUTERW=0` 回退 inline 级
+/// 替换子 outer_w 臂（`box_content_max_width_inner` inline 分支首臂）。OnceLock 同
+/// [`mc_contain_size_fix_enabled`] 热路径口径。
+fn inline_replaced_outerw_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_REPLACED_OUTERW").as_deref() != Ok("0"))
+}
+
 fn box_content_max_width_inner(
     box_node: &LayoutBox,
     doc: &Document,
@@ -526,6 +534,9 @@ fn box_content_max_width_inner(
     // R4408 开门：交错 walk 升 default-on（第七次实测 flag-on 14914 vs default 14900 =
     // 净 +14 零损失，达零新翻红 bar）；`ZW_MIXED_BARE_TEXT=0` 回退旧行为（opt-out）。
     let mixed_walk_on = std::env::var("ZW_MIXED_BARE_TEXT").as_deref() != Ok("0");
+    // R5381：inline 级替换子 outer_w 臂旗标 hoist（循环内每子一次 env 扫描不耐受，
+    // R4407 同款）。
+    let inline_replaced_outerw = inline_replaced_outerw_enabled();
 
     for child in &box_node.children {
         if child.is_absolute || child.is_fixed {
@@ -576,7 +587,12 @@ fn box_content_max_width_inner(
             // 盒零宽）。仅限 display:Inline：inline-block/inline-flex 等有自身盒模型（显式宽或
             // 独立 shrink-to-fit），child.width 真实有效（height-computed-001 的空 inline-block
             // 子 span[width:70px] 须贡献 70px，误判空会塌缩容器宽致回归）。
-            let empty_inline = std::env::var("ZW_EMPTY_INLINE_WIDTH").as_deref() != Ok("0")
+            // R5381：替换子走下方专属臂（outer_w），不参与空盒判定——原子盒无 DOM 子
+            // 无文本，R1298 判定必真，其固有/transferred 宽被误 0（详见臂注）。旗标关
+            // 时维持旧路径（空盒臂吞 replaced → 贡献 0）。
+            let replaced_inline = child.is_replaced && inline_replaced_outerw;
+            let empty_inline = !replaced_inline
+                && std::env::var("ZW_EMPTY_INLINE_WIDTH").as_deref() != Ok("0")
                 && child
                     .node_id
                     .and_then(|cid| styles.get(&cid))
@@ -591,7 +607,19 @@ fn box_content_max_width_inner(
                         None => true,
                     })
                 });
-            if empty_inline {
+            if replaced_inline {
+                // R5381（css-sizing-3 §5.1 max-content contribution：
+                // https://drafts.csswg.org/css-sizing-3/#max-content ）：inline 级替换子
+                // （s24 UA flip 后 canvas 为 display:inline；svg 经初始值同此；img/video
+                // 族 spec 同值，s24 切片显式留待后续翻转）对容器 max-content 的贡献 =
+                // 自身 outer 宽。attr/AR transferred 尺寸第一趟已解析入 child.width，替换
+                // 盒主轴永不 fill-stretch 无拉伸伪影（R5318 同口径）——与尾部 outer_w 臂
+                // 同式，即 flip 前 canvas(UA InlineBlock) 的既有落点；margin 按 R4136
+                // 入账。回归实证 intrinsic-percent-replaced-014：inline-block 内裸
+                // canvas height:100% → transferred 100，旧臂（R1298 空盒）测 0 →
+                // R5348 shrink 臂写 0（先于 grow 臂求值）→ 第二格绿区塌失 ✗1.04%。
+                inline_sum += outer_w.max(0.0);
+            } else if empty_inline {
                 // R1298：空 display:Inline 贡献 0（见上方注释）。
                 // R4134（CSS2 §10.3.9 + inline 盒模型）：空 inline 但带 frame（padding/border，
                 // 如 word-spacing-characters-001 ref 页 `.spacer{padding-left:4em}` 空嵌套

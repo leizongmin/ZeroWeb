@@ -971,6 +971,11 @@ mod r5373_backfill_barrier_margin_tests;
 /// block-level 判据的 ListItem 列。
 mod s24_flip_layout_gap_tests;
 
+/// R5381 回归测试：inline 级替换子（canvas）对 inline-block shrink-to-fit max-content
+/// 的贡献臂——R1298 空盒判定排除 replaced，固有/transferred 宽照常入账
+///（intrinsic-percent-replaced-014）。
+mod r5381_inline_replaced_measure_tests;
+
 /// R5380 回归测试：svg default 尺寸臂 content 派生高在行向 flex item 保交叉轴 auto
 ///（css-flexbox-1 §8.3/§9.6 + SVG2 §7.2 UA overflow:hidden，WPT
 /// display-flex-svg-overflow-default 驱动）。
