@@ -2737,7 +2737,11 @@ fn t8r4_k3_invalidate_nowire_and_ce_subtree() {
   cnw.insertBefore(fw, null);
   var h1 = cnw.querySelector('.nwel');
   r.push('nwPre:' + (h1 ? 'ok' : 'null'));
-  r.push('nwMat:' + (h1 && typeof h1.style === 'object' ? 'wrapper' : 'proxy'));
+  // 形判别（2026-11-01 起）：style IDL 已上 HTMLElement.prototype（style-with-value 簇修复，
+  // 物化 plain 形亦有 style），style 存在性不再区分 wrapper/代理形；改域标记——
+  // M 形（__zwIsMEl，无 selector/handle）= 代理面；trap-proxy（__zwSelector/__zwHandle
+  // 经 trap 应答）= wrapper。
+  r.push('nwMat:' + (h1 && h1.__zwIsMEl !== true && (h1.__zwSelector !== undefined || h1.__zwHandle !== undefined) ? 'wrapper' : 'proxy'));
   if (typeof globalThis.__zw_apply_generation_bump === 'function') globalThis.__zw_apply_generation_bump();
   r.push('nwPost:' + (cnw.querySelector('.nwel') !== null ? 'ok' : 'lost'));
   r.push('nwFc:' + (cnw.firstChild ? 'yes' : 'null'));
@@ -2755,7 +2759,7 @@ fn t8r4_k3_invalidate_nowire_and_ce_subtree() {
             "var c1 = document.getElementById('k3c');\n\
              c1.innerHTML = '<span class=\"k1\">a</span><span class=\"k2\">b</span>';\n\
              var m1 = c1.querySelector('.k1');\n\
-             globalThis.__k3mat = (m1 && typeof m1.style === 'object') ? 'wrapper' : (m1 ? 'proxy' : 'null');",
+             globalThis.__k3mat = (m1 && m1.__zwIsMEl !== true && (m1.__zwSelector !== undefined || m1.__zwHandle !== undefined)) ? 'wrapper' : (m1 ? 'proxy' : 'null');",
         )
         .unwrap();
     assert_eq!(

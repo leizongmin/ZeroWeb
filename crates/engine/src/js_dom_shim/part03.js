@@ -1440,6 +1440,44 @@
     globalThis.Node.prototype = {};
     globalThis.Element.prototype = Object.create(globalThis.Node.prototype);
     globalThis.HTMLElement.prototype = Object.create(globalThis.Element.prototype);
+    // editing-compat style-with-value 簇（2026-11-01）：HTMLElement.prototype style IDL
+    //（spec https://html.spec.whatwg.org/multipage/dom.html#dom-element-style ——反射
+    // style 内容属性，[SameObject]；WebIDL 接口成员在接口原型上）。shim 自建链才挂——
+    // native HTMLElement.prototype 不得覆盖（R3270 边界）。此前 style 仅 _makeProxy get
+    // trap 的 'style' 分支提供；_zwMEl 物化 plain 形（document.querySelector 宿主物化命中
+    // 及其 innerHTML 解析子树）proto 链无 style → WPT editing run 五语料
+    // normalizeSerializedStyle 读 node.style.color 抛 TypeError（setup-exception 族，
+    // 基线 4,162F 中 ~2,000F）。子类原型（HTMLSpanElement.prototype 等）经
+    // Object.create(HTMLElement.prototype)（HTMLFormElement/接口 ctor 表区）全员继承本
+    // accessor；proxy 家族 get trap 先于原型链命中，读数不变。get 返 _zwMStyleProxy
+    //（属性反射读；SameObject 槽缓存）；set 为 PutForwards=cssText 语义。
+    // enumerable:false——shim 约定 proto 面 for...in 零进（R3046 expando 枚举回归钉；
+    // 同 scrollTop/scrollLeft 先例：enumerable:true 曾混入元素 expando 键）。
+    // getAttribute 守卫：原型可被非元素对象继承（CE subclass prototype 注册链），
+    // 无 attr 面对象返 undefined 不抛。
+    try {
+      Object.defineProperty(globalThis.HTMLElement.prototype, 'style', {
+        configurable: true,
+        enumerable: false,
+        get: function () {
+          if (typeof this.getAttribute !== 'function') return undefined;
+          var v = this.__zwMStyleObj;
+          if (!v) {
+            v = _zwMStyleProxy(this);
+            // SameObject 缓存槽非枚举（wrapper 安装面约定：__zw* 槽 gPN own enumerable 零进）。
+            try {
+              Object.defineProperty(this, '__zwMStyleObj',
+                { value: v, enumerable: false, configurable: true, writable: true });
+            } catch (_eMsC) { return v; }
+          }
+          return v;
+        },
+        set: function (v) {
+          if (typeof this.setAttribute !== 'function') return;
+          this.setAttribute('style', v == null ? '' : String(v));
+        },
+      });
+    } catch (_eHpStyle) {}
     // js-dom M4 R80：Node 接口常量（spec dom-node —— 实例经原型链读 `element.ELEMENT_NODE` 等；
     // WPT Document-createElementNS 断言 `element.nodeType === element.ELEMENT_NODE`，缺失 →
     // undefined ≠ 1）。构造器上的静态常量（Node.ELEMENT_NODE）同步定义。
@@ -20016,6 +20054,104 @@
   }
   var _zwDescPrevElementSibling = { get: _zwDescPrevElementSiblingGet, configurable: true };
   var _zwDescNextElementSibling = { get: _zwDescNextElementSiblingGet, configurable: true };
+
+  // editing-compat style-with-value 簇（2026-11-01）：物化元素 style 面板——纯属性反射
+  //（无 sel/handle，读写都落节点自身 style 内容属性）。读数语义与 _styleProxy（本文件
+  // _makeProxy get trap 的 prop === 'style' 分支）同源：camelCase→kebab（_stylePropName）、末次非空
+  // 声明胜（R3213）、getPropertyValue 返值不含 !important（R3193）、-- 自定义属性大小写
+  // 敏感。写序：同名声明移除（常规 ci / 自定义精确）后尾部追加 `name: value`，空值 =
+  // 仅移除（CSSOM set 空串删声明——normalizeSerializedStyle 的 color='' 往返依赖）。
+  function _zwMStyleProxy(node) {
+    var readRaw = function () {
+      var v = node.getAttribute('style');
+      return v == null ? '' : String(v);
+    };
+    var readDeclValue = function (name) {
+      var raw = readRaw();
+      if (!raw) return null;
+      var want = _stylePropName(name);
+      var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
+      var parts = raw.split(';');
+      var found = null;
+      for (var i = 0; i < parts.length; i++) {
+        var decl = parts[i];
+        var colon = decl.indexOf(':');
+        if (colon < 0) continue;
+        var dname = decl.slice(0, colon).trim();
+        if (custom ? dname === want : dname.toLowerCase() === want.toLowerCase()) {
+          var val = decl.slice(colon + 1).trim();
+          if (val) found = val; // 末次非空匹配覆盖（R3213）
+        }
+      }
+      return found;
+    };
+    var readProp = function (name) {
+      var v = readDeclValue(name);
+      return v == null ? '' : _styleValueAndPriority(v).value;
+    };
+    var propNames = function () {
+      return readRaw().split(';').map(function (s) {
+        var c = s.indexOf(':');
+        return (c < 0 ? s : s.slice(0, c)).trim();
+      }).filter(Boolean);
+    };
+    var writeDecl = function (name, value) {
+      var want = _stylePropName(name);
+      var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
+      var parts = readRaw().split(';');
+      var out = [];
+      for (var i = 0; i < parts.length; i++) {
+        var decl = parts[i];
+        var colon = decl.indexOf(':');
+        if (colon < 0) { if (decl.trim()) out.push(decl.trim()); continue; }
+        var dname = decl.slice(0, colon).trim();
+        var keep = custom ? dname !== want : dname.toLowerCase() !== want.toLowerCase();
+        if (keep) out.push(decl.trim());
+      }
+      if (value !== '') out.push(want + ': ' + value);
+      node.setAttribute('style', out.join('; '));
+    };
+    return new Proxy({}, {
+      get: function (_t, p) {
+        var ps = String(p);
+        if (ps === 'cssText') return readRaw();
+        if (ps === 'length') return propNames().length;
+        if (ps === 'getPropertyValue') return function (name) { return readProp(name); };
+        if (ps === 'getPropertyPriority') {
+          return function (name) {
+            var v = readDeclValue(name);
+            return v == null ? '' : _styleValueAndPriority(v).priority;
+          };
+        }
+        if (ps === 'setProperty') {
+          return function (name, value, priority) {
+            var v = String(value == null ? '' : value).replace(/\s*!\s*important\s*$/i, '').trim();
+            if (priority !== undefined && String(priority).trim().toLowerCase() === 'important') v = v + ' !important';
+            writeDecl(name, v);
+            return undefined;
+          };
+        }
+        if (ps === 'removeProperty') {
+          return function (name) {
+            var prev = readProp(name);
+            writeDecl(name, '');
+            return prev;
+          };
+        }
+        if (ps === 'item') return function (i) { return propNames()[i | 0] || ''; };
+        return readProp(ps);
+      },
+      set: function (_t, p, v) {
+        var ps = String(p);
+        if (ps === 'cssText') {
+          node.setAttribute('style', v == null ? '' : String(v));
+          return true;
+        }
+        writeDecl(ps, String(v == null ? '' : v));
+        return true;
+      }
+    });
+  }
 
   function _zwMEl(snap, parent) {
     snap = snap || {};
