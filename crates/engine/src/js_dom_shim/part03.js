@@ -2513,6 +2513,12 @@
           if (width !== undefined || density !== undefined || fch !== undefined) { error = true; break; }
           var dv = parseFloat(m[1]);
           if (!(dv >= 0)) { error = true; break; }
+          // s219：非有限密度弃候选（'9e999…x' parseFloat → +Infinity——spec
+          // valid floating-point number 有限性，候选 validity error 而非
+          // Infinity 密度存活；corpus current-pixel-density '9e999…x' width
+          // 0 定谳面）。
+          // https://html.spec.whatwg.org/multipage/images.html#parse-a-pixel-density-descriptor
+          if (!isFinite(dv)) { error = true; break; }
           density = dv;
         } else if ((m = /^([0-9]+)h$/.exec(d))) {
           // future-compat-h：本就是 parse error（spec 注），解析继续

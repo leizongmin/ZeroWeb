@@ -724,8 +724,13 @@
           if (resourceState && resourceState.outcome === 'loaded') {
             // s70：密度校正（spec density-corrected intrinsic width/height——
             // round(dim / density)；密度非法/0 回退原值，历史状态无 density 按 1）。
+            // s219：+Infinity 密度放行（w 描述符 / sizes 0px → 密度 = w/0 =
+            // Infinity 合法计算态，density-corrected dimension = dim/∞ = 0；
+            // isFinite 回退曾误返原值——corpus current-pixel-density
+            // '256w sizes=0px' width 0 定谳面）。NaN/≤0 仍回退。
+            // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
             var _ndD = Number(resourceState.density);
-            if (_ndD > 0 && isFinite(_ndD)) _ndDen = _ndD;
+            if (_ndD > 0) _ndDen = _ndD;
             // s71 F1b：SVG 固有轴逐轴折算（axes：'none'=默认 300/150 具体对象
             // 轴不校正，'width'/'height' 仅 SVG 自身固有单轴，'both'=w+h 均
             // 固有；raster 无 axes = 全轴校正）。
@@ -749,7 +754,9 @@
                 if (_ndPk && _ndPk.url) {
                   srcAttr = String(_ndPk.url);
                   var _ndSd = Number(_ndPk.density);
-                  if (_ndSd > 0 && isFinite(_ndSd)) _ndDen = _ndSd;
+                  // s219：+Infinity 密度放行（同 resourceState 臂——快照回落
+                  // 路径 sizes 0px 形态同口径）。
+                  if (_ndSd > 0) _ndDen = _ndSd;
                 }
               }
             } catch (_eNdpk) {}
@@ -1177,7 +1184,12 @@
                   if (_zwImPk && _zwImPk.url) {
                     _zwImSrc = String(_zwImPk.url);
                     var _zwImD = Number(_zwImPk.density);
-                    if (_zwImD > 0 && isFinite(_zwImD)) _zwImDen = _zwImD;
+                    // s219：+Infinity 密度放行（静态 settle 臂与 _zwImgNaturalDim
+                    // 两臂同口径——sizes 0px → 密度 = w/0 = Infinity 合法计算态，
+                    // 密度校正 dim/∞ = 0；isFinite 拒曾误存密度 1——corpus
+                    // current-pixel-density '256w sizes=0px' width/naturalWidth 0
+                    // 定谳面）。NaN/≤0 仍回退 1。
+                    if (_zwImD > 0) _zwImDen = _zwImD;
                   }
                 }
               } catch (_eSwPk) {}

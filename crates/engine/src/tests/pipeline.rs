@@ -2609,3 +2609,86 @@ fn rebind_handle_node_skips_ambiguous_selector_ihost_ghost_br() {
         "歧义 selector 重建重绑必须跳过——首见命中回填=猜测锚定（幽灵 br 根因）"
     );
 }
+
+/// s219（html-semantics M2）：srcset 密度描述符作用 layout 固有尺寸——
+/// build_img_intrinsic_all 密度折算（corpus current-pixel-density/basic 8F
+/// 单根：密度从未进入 Rust image_sizes 面，clientWidth 恒 intrinsic 256）。
+/// 钉面：x 描述符折算（1.6x/2x/10000x → 160/128/0.0256）、w+sizes 折算
+///（512w+256px → 128、256w+512px → 512、256w+1px → 1）、sizes 0px →
+/// +Inf 密度 → 0、全候选非法且无 src → 无选中源 broken（'9e999…x' → dim 0，
+/// 同 shim width IDL 0 面）、plain src 无折算。同 URL 多 img 每 Node 密度
+/// 独立（corpus 全用例共用 green-256x256.png 同构）。
+/// https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
+#[test]
+fn test_img_density_corrected_intrinsic_scaling_r5386() {
+    let mut pipeline = RenderPipeline::new(320.0, 400.0);
+    let url = "/images/green-256x256.png";
+    let key = crate::paint::image_resource_key(url, pipeline.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(key, (256.0f32, 256.0f32));
+    pipeline.set_image_sizes(img_sizes);
+
+    let html = format!(
+        "<html><body>\
+         <img id=\"d16\" srcset=\"{u} 1.6x\">\
+         <img id=\"d2\" srcset=\"{u} 2x\">\
+         <img id=\"dbig\" srcset=\"{u} 10000x\">\
+         <img id=\"dinv\" srcset=\"{u} 9e99999999999999999999999x\">\
+         <img id=\"w512\" srcset=\"{u} 512w\" sizes=\"256px\">\
+         <img id=\"w05\" srcset=\"{u} 256w\" sizes=\"512px\">\
+         <img id=\"w1\" srcset=\"{u} 256w\" sizes=\"1px\">\
+         <img id=\"w0\" srcset=\"{u} 256w\" sizes=\"0px\">\
+         <img id=\"dinvc\" src=\"{u}\" srcset=\"{u} 9e99999999999999999999999x\">\
+         <img id=\"plain\" src=\"{u}\">\
+         </body></html>",
+        u = url
+    );
+    let doc = zero_dom::parse_html(&html);
+    let (sizes, _ratios, _no_ratio) = pipeline.build_img_intrinsic_all(&doc);
+    let ids: Vec<_> = doc.get_elements_by_tag_name("img");
+    assert_eq!(ids.len(), 10, "语料十 img 全建（密度面按文档序索引）");
+    let get = |i: usize| sizes.get(&ids[i]).copied().unwrap_or((f32::NAN, f32::NAN));
+    let near = |v: f32, want: f32| (v - want).abs() < 0.01;
+
+    let (w, h) = get(0);
+    assert!(near(w, 160.0) && near(h, 160.0), "1.6x → 256/1.6 = 160（got {w}x{h}）");
+    let (w, h) = get(1);
+    assert!(near(w, 128.0) && near(h, 128.0), "2x → 128（got {w}x{h}）");
+    let (w, h) = get(2);
+    assert!(
+        near(w, 0.0256) && near(h, 0.0256),
+        "10000x → 0.0256（clientWidth 布局圆整 0 面）（got {w}x{h}）"
+    );
+    let (w, h) = get(3);
+    assert!(
+        near(w, 0.0) && near(h, 0.0),
+        "9e999…x 非法候选全弃且无 src → 无选中源 broken → dim 0（got {w}x{h}）"
+    );
+    let (w, h) = get(4);
+    assert!(
+        near(w, 128.0) && near(h, 128.0),
+        "512w sizes=256px → 密度 2 → 128（got {w}x{h}）"
+    );
+    let (w, h) = get(5);
+    assert!(
+        near(w, 512.0) && near(h, 512.0),
+        "256w sizes=512px → 密度 0.5 → 512（got {w}x{h}）"
+    );
+    let (w, h) = get(6);
+    assert!(
+        near(w, 1.0) && near(h, 1.0),
+        "256w sizes=1px → 密度 256 → 1（got {w}x{h}）"
+    );
+    let (w, h) = get(7);
+    assert!(near(w, 0.0) && near(h, 0.0), "sizes=0px → 密度 +Inf → 0（got {w}x{h}）");
+    let (w, h) = get(8);
+    assert!(
+        near(w, 256.0) && near(h, 256.0),
+        "全候选非法但有 src → default source 密度 1 不折算（got {w}x{h}）"
+    );
+    let (w, h) = get(9);
+    assert!(
+        near(w, 256.0) && near(h, 256.0),
+        "plain src 无 srcset → 不折算（got {w}x{h}）"
+    );
+}

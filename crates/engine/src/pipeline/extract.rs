@@ -625,6 +625,198 @@ pub fn srcset_first_url(srcset: &str) -> Option<String> {
     (!url.is_empty()).then(|| url.to_string())
 }
 
+/// s219（html-semantics M2）：img 选中像素密度——img 自身 srcset/sizes 的
+/// 密度描述符解析与选择（spec parse a srcset attribute + select an image
+/// source 的最小镜像，shim `__zwParseSrcsetAttr5277`/`__zwParseSizesAttr5277`
+/// /`__zwSelectImageSource5277` 同口径），供 `build_img_intrinsic_all` 密度
+/// 折算 layout 固有尺寸（corpus current-pixel-density/basic 8F 单根：密度从
+/// 未进入 Rust image_sizes 面，clientWidth 恒 intrinsic）。返 None = 不折算
+///（srcset 缺席 / 密度 ≤ 0 / 空源集但有 src 的 default source 面）；
+/// +Inf = 无选中源 broken（dim/∞ = 0）。
+/// 简化面（FIXME 随选源统一面收编）：候选切分按顶层逗号 + 空白 token（描
+/// 述符内括号分组未建模）；x 描述符数值文法 `parse_srcset_real`（收窄面——
+/// IDL 权威面仍归 shim 正则）；sizes 仅 px/vw/vh/vmin/vmax 字面值（media
+/// condition 前缀项跳过，全不命中回落 100vw = viewport 宽）；DPR 恒 1.0
+///（headless 基准，shim devicePixelRatio 同值）；picture `source` 分支不
+/// 在本面。
+/// https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+pub fn img_selected_pixel_density(
+    doc: &zero_dom::Document,
+    img_id: zero_dom::NodeId,
+    viewport_w: f64,
+    viewport_h: f64,
+) -> Option<f64> {
+    let srcset = doc.get_attribute(img_id, "srcset")?;
+    // 候选解析：(width 描述符, density 描述符)。文法同 shim：w = 纯数字+'w'
+    //（0 → error）、x = HTML 浮点（<0 / 非有限 → error，候选弃——'9e999…x'
+    // parse::<f64>() → +Inf 同 shim isFinite 门拒）、h = 兼容描述符（parse
+    // error 但继续；width 缺席 → error）。
+    let mut candidates: Vec<(Option<f64>, Option<f64>)> = Vec::new();
+    for group in srcset.split(',') {
+        let mut tokens = group.split_ascii_whitespace();
+        let Some(_url) = tokens.next() else { continue };
+        let mut width = None;
+        let mut density = None;
+        let mut fch = false;
+        let mut valid = true;
+        for d in tokens {
+            if let Some(num) = d.strip_suffix('w') {
+                if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                    valid = false;
+                    break;
+                }
+                let wv: f64 = num.parse().unwrap_or(f64::INFINITY);
+                if wv == 0.0 {
+                    valid = false;
+                    break;
+                }
+                width = Some(wv);
+            } else if let Some(num) = d.strip_suffix('x') {
+                if width.is_some() || density.is_some() || fch {
+                    valid = false;
+                    break;
+                }
+                match parse_srcset_real(num) {
+                    Some(v) if v >= 0.0 => density = Some(v),
+                    _ => {
+                        valid = false;
+                        break;
+                    }
+                }
+            } else if let Some(num) = d.strip_suffix('h') {
+                if fch || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                    valid = false;
+                    break;
+                }
+                if matches!(num.parse::<f64>(), Ok(v) if v == 0.0) {
+                    valid = false;
+                    break;
+                }
+                fch = true;
+            } else {
+                valid = false;
+                break;
+            }
+        }
+        if fch && width.is_none() {
+            valid = false;
+        }
+        if valid {
+            candidates.push((width, density));
+        }
+    }
+    let has_src = doc.get_attribute(img_id, "src").is_some_and(|s| !s.trim().is_empty());
+    if candidates.is_empty() {
+        // spec create-a-source-set：全候选 invalid → 空源集；src 非空 → default
+        // source 补挂密度 1（等价不折算）；src 缺席/空 → 无选中源 → broken
+        //（broken 的 density-corrected intrinsic dimension 0——corpus basic
+        // '9e999…x' clientWidth 0 定谳面），以 +Inf 密度表达 dim/∞ = 0。
+        // https://html.spec.whatwg.org/multipage/images.html#create-a-source-set
+        return if has_src { None } else { Some(f64::INFINITY) };
+    }
+    // sizes：顶层逗号切分（括号深度感知），首个纯 <source-size-value> 项生效
+    //（media condition 前缀项跳过）；全不命中回落 100vw。
+    let size = doc
+        .get_attribute(img_id, "sizes")
+        .and_then(|sizes| {
+            split_sizes_entries(&sizes)
+                .into_iter()
+                .find_map(|e| parse_source_size_value(e, viewport_w, viewport_h))
+        })
+        .unwrap_or_else(|| viewport_w.max(0.0));
+    // 密度归一（create a source set）：w 候选 density = w / size（sizes 0px
+    // → +Inf 合法计算态），无描述符 → 1；default src 补挂（无 1x 且无 w 候
+    // 选且 src 非空 → 密度 1）。
+    let mut densities: Vec<f64> = Vec::new();
+    let mut has_d1 = false;
+    let mut has_w = false;
+    for (w, d) in &candidates {
+        let dv = match d {
+            Some(v) => *v,
+            None => match w {
+                Some(wv) => {
+                    has_w = true;
+                    wv / size
+                }
+                None => 1.0,
+            },
+        };
+        if dv == 1.0 {
+            has_d1 = true;
+        }
+        densities.push(dv);
+    }
+    if !has_d1 && !has_w && has_src {
+        densities.push(1.0);
+    }
+    // select an image source：同密度去重（保首）+ DPR 选择（≤ DPR 最大密度，
+    // 无则最小密度；DPR = 1.0）。
+    let mut uniq: Vec<f64> = Vec::new();
+    for d in &densities {
+        if !uniq.contains(d) {
+            uniq.push(*d);
+        }
+    }
+    let mut best: Option<f64> = None;
+    for d in &uniq {
+        if *d <= 1.0 && best.is_none_or(|b| *d > b) {
+            best = Some(*d);
+        }
+    }
+    let density = best.or_else(|| uniq.iter().copied().reduce(f64::min))?;
+    (density > 0.0).then_some(density)
+}
+
+/// sizes 顶层逗号切分（括号深度感知，shim `__zwParseSizesAttr5277` 切分同口径）。
+fn split_sizes_entries(sizes: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in sizes.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&sizes[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&sizes[start..]);
+    parts
+}
+
+/// <source-size-value> 数值解析（px/vw/vh/vmin/vmax 字面值；裸数字仅 0 合法
+/// ——CSS <length>；shim `__zwSourceSizeValue5277` 同口径收窄面）。非法 → None。
+fn parse_source_size_value(v: &str, vw: f64, vh: f64) -> Option<f64> {
+    let s = v.trim();
+    let split = s
+        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '+' || c == '-'))
+        .unwrap_or(s.len());
+    let num: f64 = s[..split].parse().ok()?;
+    match &s[split..] {
+        "" => (num == 0.0).then_some(0.0),
+        "px" => Some(num),
+        "vw" => Some(num / 100.0 * vw),
+        "vh" => Some(num / 100.0 * vh),
+        "vmin" => Some(num / 100.0 * vw.min(vh)),
+        "vmax" => Some(num / 100.0 * vw.max(vh)),
+        _ => None,
+    }
+}
+
+/// x 描述符数值文法（shim 正则同口径收窄面：可选 '-' + 数字[.数字] + 可选
+/// e[±]数字，至少一位数字；'+' 前缀非法同 shim；溢出 → +Inf 由调用方语义
+/// 判负候选——非有限密度弃）。'inf'/'NaN' 字面量经 finite 校验拒。
+fn parse_srcset_real(s: &str) -> Option<f64> {
+    if s.starts_with('+') || s.is_empty() {
+        return None;
+    }
+    s.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
 /// R5275：template contents fragment 递归收集 `<img>`（fragment 不在文档树，
 /// `get_elements_by_tag_name` 不达；嵌套模板/任意深度均覆盖）。s70：img 附带
 /// srcset 候选、`source` srcset 候选一并收集（同文档树 s70 面）。

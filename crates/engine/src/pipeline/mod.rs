@@ -677,6 +677,28 @@ impl RenderPipeline {
                 if let Some(&dims) = self.image_no_ratio.get(&key) {
                     no_ratio.insert(img_id, dims);
                 }
+                // s219：密度折算（spec density-corrected intrinsic dimensions
+                // https://html.spec.whatwg.org/multipage/images.html#density-corrected-intrinsic-width-and-height
+                // ——选中像素密度作用 layout 固有尺寸，布局盒/clientWidth 同源
+                // ；与 shim naturalWidth 密度校正同语义面。比率不折（(w/d)/
+                // (h/d) = w/h）；picture `source` 分支不在本面）。
+                if (sizes.contains_key(&img_id) || no_ratio.contains_key(&img_id))
+                    && let Some(d) = extract::img_selected_pixel_density(
+                        doc,
+                        img_id,
+                        self.viewport_width as f64,
+                        self.viewport_height as f64,
+                    )
+                {
+                    let ds = d as f32;
+                    if let Some(s) = sizes.get_mut(&img_id) {
+                        *s = (s.0 / ds, s.1 / ds);
+                    }
+                    if let Some(nr) = no_ratio.get_mut(&img_id) {
+                        nr.0 = nr.0.map(|v| v / ds);
+                        nr.1 = nr.1.map(|v| v / ds);
+                    }
+                }
             }
         }
         // R34xx：canvas 固有尺寸 = width/height 内容属性（HTML spec §4.8.11——

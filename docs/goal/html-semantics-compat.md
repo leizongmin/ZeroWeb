@@ -31,7 +31,17 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 218 收口，canvas 回退内容 focusable-area 渲染面门——canvas-descendants-focusability 族 19F（001 裸组 4F + 002 hidden canvas 5F + 003 hidden 组 5F + 004 shadow host 5F）单根翻绿：旧 focus() 无渲染判定，非 focusable area 恒可聚焦；part06 新 `_zwFocusableAreaGate`（判定面收 canvas 回退候选：固有可聚焦核心 + flat tree 走查 + canvas 渲染 gBCR + display:none 链，非 canvas 面 undefined 放行保 T55/R114 契约）+ part04 focus() 失连臂后插门；R5385 红绿钉面六断言；靶语料 29/29；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 19 F→P 全靶面零 P→F 键集差 0；zero-engine 3677P+0F）**
+> **▶ 当前状态（2026-11-01 M2 切片 219 收口，响应式图片密度面（density-corrected intrinsic dimensions）——current-pixel-density/basic 8 密度案例全翻绿（1.6x→160/2x→128/512w+256px→128/256w+512px→512/256w+1px→1 等，width/clientWidth/naturalWidth 三面同绿），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 零 P→F 键集差 0：密度从未进入 Rust image_sizes 面 + shim 四处密度门缺口；shim 3 点（part03 x 描述符非有限密度弃候选 + part04 natural-dim 两臂 +Infinity 放行）+ 勘根后探针补刀第四处（`__zwFireStaticImgSettle` settle 密度入账 isFinite 拒 Infinity——i0px width 256 定谳断点在 settle 入账非选择链）；Rust extract.rs 新 `img_selected_pixel_density`（srcset/sizes 密度解析选择最小镜像 + 全候选非法无 src → broken +Inf → dim/∞ = 0）+ mod.rs `build_img_intrinsic_all` per-Node 密度折算（no_ratio Option 逐轴 map，比率不折）；R5386 红绿十 img 钉面；zero-engine 3684P+0F；余 3 PNG expect-0 案 clientWidth 红 = layout-engine sizing.rs `w.max(1.0)` 零/亚像素替换盒钳 1px 渲染流车道挂账）**
+> **入场定刀位**：s218 下一步候选响应式图片族——s218 A/B 日志 embedded-content F 分布下钻定刀 current-pixel-density 密度子面（SVG data-URL/error.html/sizes-auto/parse-a-srcset 勘根分型挂账）。
+> **勘根**：basic.html 11F 分型 = 8 PNG 密度案例（spec density-corrected intrinsic dimensions 单根：密度从未进入 Rust image_sizes 面，clientWidth 恒 intrinsic）+ 3 SVG data-URL（decoder 耦合挂账）；error.html 7F 破图 alt 渲染（layout 流挂账）；sizes-auto 文件级 Timeout（68 案独立面挂账）；parse-a-srcset "data:,a " 1F（URL serializer 非 ASCII 百分号编码挂账）。三缺口定刀：shim x 描述符非有限密度弃候选 + shim natural-dim 密度守卫放行 +Infinity + Rust build_img_intrinsic_all 密度折算（per-Node 挂点，URL 解码缓存零触）。首刀后靶面 i0px 档 width/naturalWidth 仍 256——探针分层面拆断言（width/clientWidth/naturalWidth 各立 test）+ 选择链值探针（`__zwParseSizesAttr5277` 0 / `__zwCreateSourceSet5277` Infinity / `__zwSelectImageSource5277` Infinity / currentSrc 同步）锁定断点在 `__zwFireStaticImgSettle` settle 密度入账第四处 isFinite 门（选择链/settle 后读臂均无遮挡），补刀收口。
+> **施工**：shim 2 文件（part03 x 描述符 error 弃候选 + part04 `_zwImgNaturalDim` resourceState 臂 733/快照臂 759 + `__zwFireStaticImgSettle` 1187 三处守卫 `isFinite(d)>0` 形改 `d>0`——+Infinity 放行 dim/∞=0，NaN/≤0 仍回退）+ rust 3 文件（extract.rs 新 `img_selected_pixel_density` ~120 行：候选文法同 shim 收窄、sizes 括号深度切分 px/vw/vh/vmin/vmax/裸 0、密度归一 + default src 补挂 + 同密度去重 ≤DPR 选择、全候选非法无 src → +Inf broken 有 src → None default 密度 1；mod.rs build_img_intrinsic_all 折算接线 f32 除 + no_ratio Option 逐轴 map；tests R5386 十 img 钉面）。语料零改动（探针临时文件已删）。
+> **验证**：R5386 红绿（stash Rust 折算跑红 1.6x got 256——目标行为失败；pop 跑绿）；拼接 node --check SYNTAX_OK；zero-engine 全量 **3684P+0F**（3677 基线 + R5386 + 并行 main 6 案，零回归）；靶语料 solo 8P/13F（8 密度案例三面全绿；余 3 PNG expect-0 案 width/naturalWidth 半面绿 clientWidth 红 = layout 1px 钳 + 3 SVG + 7 error.html）；embedded-content A/B（B = s218 日志）共享 1257 对漂移恰 5 F→P（1.6x/2x/512w+256px/256w+512px/256w+1px 恰密度非退化五案）P→F=0 键集差 0；clippy 0 警告（needless_borrow/collapsible_if 修复后）fmt 过。日志 evidence/logs/s219-*.log（density-target/zero-engine-full/embedded-content-wip/probe）。
+> **性能注记**：密度解析 `get_attribute("srcset")?` 早退——srcset 缺席 img 零成本，存在时 O(attr 长) 单遍；折算在 build_img_intrinsic_all 既有循环内无新增遍历，zero-engine 无 bench 目标覆盖本面不做 bench-gate。
+> **挂账新记**：layout-engine 替换元素零/亚像素固有盒钳 1px（sizing.rs:2899-2900/3136 `w.max(1.0)`）——3 PNG expect-0 案 clientWidth 1≠0 唯一根（渲染流车道移交）；error.html 破图 alt 7F；sizes-auto Timeout 68 案；parse-a-srcset URL serializer 1F；SVG data-URL intrinsic 3F（decoder 耦合同 viewBox 族）。
+> **下一步候选**：embedded-content 残面续推（选源响应面 update-the-image-data 簇/img-picture-ancestor/update-media/source-relevant-mutations/update-the-source-set 另勘根；decode 2F）；layout 1px 钳面待渲染流侧收口后靶语料 3 案回刀验三面全绿；forms misc 残面 16F 勘根备选。
+> **账本**：[evidence/2026-11-01-m2s219-responsive-image-density.md](html-semantics-compat/evidence/2026-11-01-m2s219-responsive-image-density.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 218 收口，canvas 回退内容 focusable-area 渲染面门——canvas-descendants-focusability 族 19F（001 裸组 4F + 002 hidden canvas 5F + 003 hidden 组 5F + 004 shadow host 5F）单根翻绿：旧 focus() 无渲染判定，非 focusable area 恒可聚焦；part06 新 `_zwFocusableAreaGate`（判定面收 canvas 回退候选：固有可聚焦核心 + flat tree 走查 + canvas 渲染 gBCR + display:none 链，非 canvas 面 undefined 放行保 T55/R114 契约）+ part04 focus() 失连臂后插门；R5385 红绿钉面六断言；靶语料 29/29；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 19 F→P 全靶面零 P→F 键集差 0；zero-engine 3677P+0F）**
 > **入场定刀位**：embedded-content 残面续推——s217 账本挂账候选 canvas
 > focusability 族定刀（001-004 同根；三处用户门禁项不动）。
 > **勘根**：六文件全读定谳 19F 全负案红（不该聚焦的当前可聚焦）。solo
@@ -103,37 +113,6 @@
 > image-decoder 切片工作面相邻暂不入刀避免跨流碰撞）；forms misc 残面
 > 16F（the-input-element/the-select-element 非门禁部分）勘根备选。
 > **账本**：[evidence/2026-11-01-m2s217-img-map-hit-viewport-rect-object-arm.md](html-semantics-compat/evidence/2026-11-01-m2s217-img-map-hit-viewport-rect-object-arm.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 216 收口，`__zw_has_attr` 非 lw 存量点位审计收口（s211 挂账销账）——全量审计 39 命中行 = 2 注释 + 37 代码调用点，修复前唯一真裸点 part06 `_zwMediaAutoplay` sel 面 autoplay 读，修复后 37/37 lw-first 安全形态：R5383 红绿实证；embedded-content 语料 A/B 共享键 1257/1257 零漂移键集差 0；zero-engine 3675P+0F）**
-> **入场定刀位**：s211 挂账本体承袭——`__zw_has_attr`（纯快照读）非 lw
-> 融合存量点位全量审计（探索性评估；三处用户门禁项不动）。
-> **勘根**：审计单元 = 行级 grep（排除 `_lw`/`_handle` 变体）；分类 =
-> 注释/代码分行 + 代码行 ±窗口查 `__zw_has_attr_lw` 同现（同现即
-> lw-first 三元 fallback 臂安全形态）。定稿：39 命中行 = 2 注释 + 37 代码
-> 调用点；修复前 36 lw-first + 1 真裸点（part06 `_zwMediaAutoplay` sel 面
-> 纯快照读）。语义判据：setAttribute 写 lw 层不落快照，同批纯快照读恒
-> miss（s211 探针实测）；身份二分 = handle-only 元素直存直读不受扰（
-> a2fix1 通过即证），裸读暴露面仅在 parsed（sel 身份）+ 同批 lw 写形态。
-> **施工**（shim 1 文件 + rust 测试 1 文件）：part06 `_zwMediaAutoplay`
-> sel 臂改 lw-first 三元（同 `_zwMediaLoadSequence` src 读/loop 读对齐，
-> handle 臂不动）+ s216 留注；part09.rs R5383（a2fix1 同款 timer stub +
-> video bridge 记录 stub，parsed video `setAttribute('autoplay')` + src →
-> checkpoint 断 play 调用 + paused false + 泵后 play,playing,timeupdate
-> 事件链）。
-> **验证**：R5383 红绿（stash 还原跑红 `left:"" right:"play:…"`——旧版
-> 因目标行为失败；pop 跑绿 1 passed）；拼接 node --check SYNTAX_OK；
-> zero-engine 3675P+0F（3674 基线 + R5383；a2fix1 同批绿 handle 臂未受扰
-> ）；embedded-content 域 A/B（A=修复在位 / B=stash pre-fix 基线）共享
-> 1257 对零漂移 + 键集差 0（分歧条件语料零覆盖；205F+30T lazy-loading
-> 族既有面两侧同态）；forms 域零触面不重跑；fmt 过。日志
-> evidence/logs/s216-embedded-content-wip.log（A）+
-> s216-embedded-content-prefix-baseline.log（B）。
-> **下一步候选**：misc 残面勘根续推（剩余 F 面重勘根定刀）——大宗候选
-> 全处用户决策门禁（customizable select 177F GB-20261031 / form-nameditem
-> override builtins / form owner table 缓行族）或高风险挂账（input-type-
-> button click() 返回值面）；观察项（onblur flake 族采样 / beforeinput
-> 录入事件族评估承袭）不动。
-> **账本**：[evidence/2026-11-01-m2s216-has-attr-lw-audit-closeout.md](html-semantics-compat/evidence/2026-11-01-m2s216-has-attr-lw-audit-closeout.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 215 收口，fieldset 禁用传染走查共享化——新共享帮手 `_zwDisabledFieldsetAncestor` 收编 part03 `_zwFeDisabled` fieldset 臂 + part04 willValidate 臂单源（s210/s211 挂账）：zero-engine 3674P+0F（基线 3673 + R5382 对齐钉面）；forms 语料 A/B 共享键 4725/4726 零漂移 + 唯一位移 onblur flake 族在册摆动键，F→P=0 键集零差；重构切片行为保持 + 单点 fieldset 隔层对齐）**
 > **入场定刀位**：s210/s211 挂账承袭——fieldset 禁用传染走查 shim 内同构
