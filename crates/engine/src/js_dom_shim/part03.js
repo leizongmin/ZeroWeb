@@ -18390,7 +18390,9 @@
       if (_zwMNsMatch(attrs[i], ns, local)) attrs.splice(i, 1);
     }
   }
-  function _zwMElSetCustomValidity(m) { this._customValidity = m == null ? '' : String(m); }
+  // spec §4.10.21.3（#dom-cva-setcustomvalidity）步 1：Infra normalize-newlines
+  // ——\r\n/\r 归一 \n 后存（与 part04 proxy 形同面；validationMessage 原样回读）。
+  function _zwMElSetCustomValidity(m) { this._customValidity = m == null ? '' : String(m).replace(/\r\n/g, '\n').replace(/\r/g, '\n'); }
   // R57（FV M1）控件收集（纯递归——共享化直接上提模块级）。
   function _zwMCollectControls(n, out) {
     if (!n || !n.childNodes) return;

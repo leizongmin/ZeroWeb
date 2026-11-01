@@ -5993,7 +5993,10 @@
         }
         if (prop === 'setCustomValidity') {
           return function(msg) {
-            _customValidity[key] = (msg == null) ? '' : String(msg);
+            // spec §4.10.21.3（#dom-cva-setcustomvalidity）步 1：Infra
+            // normalize-newlines——\r\n/\r 归一 \n 后存（validationMessage 原样回读）。
+            _customValidity[key] = (msg == null) ? ''
+              : String(msg).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             return undefined;
           };
         }

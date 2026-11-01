@@ -1172,6 +1172,21 @@ fn test_constraint_validation_r2825() {
         "checkValidity()=false"
     );
 
+    // setCustomValidity 换行归一（spec §4.10.21.3 #dom-cva-setcustomvalidity 步 1，
+    // Infra normalize-newlines）——\r\n 与 \r 均归一 \n 后存（WPT
+    // setCustomValidity-normalize-newlines 同面）。
+    sandbox
+        .execute(
+            "globalThis.__i.setCustomValidity('a\\r\\nb\\rc\\n');\
+             globalThis.__cvNorm = globalThis.__i.validationMessage;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cvNorm)").unwrap().value,
+        "a\nb\nc\n",
+        "setCustomValidity 换行归一 \\r\\n|\\r → \\n"
+    );
+
     // setCustomValidity('') 清空 → 恢复 valid。
     sandbox
         .execute(

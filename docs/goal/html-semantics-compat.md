@@ -31,7 +31,36 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 204 收口，pattern IDL 反射 + v flag 编译判定——pattern_attribute/v_flag 两文件 7 子测全 Pass（has 白名单 pattern 列 INPUT/TEXTAREA tag 门 + v 可用引擎编译 throw 即忽略属性），forms 全树 keyed diff 净 F→P=5（2 靶键 + onblur flake 域 3 键顺向回摆）P→F=0 键漂移 0；shim 2 文件净 +43/−5，rust/语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 205 收口，setCustomValidity 换行归一——setCustomValidity-normalize-newlines 1F 翻绿（misc 残面最小单根刀位），forms 全树 keyed diff 净 F→P=5（1 靶键 + onblur flake 域 4 键顺向回摆）P→F=0 键漂移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s204 后 misc 残面候选序首位 setCustomValidity 换行归一
+> 1F 单根先行。customizable select 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：spec §4.10.21.3（#dom-cva-setcustomvalidity）方法步 ①Infra
+> normalize-newlines（`\r\n`/`\r`→`\n`）②存 custom validity error
+> message——归一在存入时。shim `_customValidity` 写点恰两处同缺（grep
+> 枚举）：part04:5996 proxy 形（runner 到达路径）+ part03:18393
+> plain-node 形均存 `String(msg)` 原串；读侧（6016/18763）原样回读，
+> 归一落点收敛两处存入侧，getter 不动。Rust 侧无同面写点（validation.rs
+> 无 setCustomValidity 通道）。
+> **施工**（shim 2 文件 + rust 测试 1 文件）：两存入点接仓库惯用法内联链
+> `.replace(/\r\n/g,'\n').replace(/\r/g,'\n')`（同面双形同修，s204 R57
+> 先例）；part08.rs R2825 桥测试扩换行归一断言——语料为 gitignore 本地
+> 数据，「常驻测试与修复同一提交」由已提交桥测试等价承载。
+> **验证**：拼接 shim node --check SYNTAX_OK（6.84MB）；靶面 1/1 Pass
+> （stash 基线同键 F）；forms 全树 stash A/B 净 F→P=5 P→F=0 键漂移 0
+> timeout 位移 0（两侧 4711 对、400 文件覆盖全同；onblur 域 4 键顺向回摆
+> ——s204 +3 后连续两轮回升）；zero-engine 3664P+1F（渲染流域在册键，
+> 新增断言在 3664P 内）；fmt 本刀区域零 diff + guarded-clippy 过。
+> **残留/挂账新记**：part03 plain-node 形无独立定向测试（同表达式字面 +
+> 桥测试 proxy 形承载，到达路径为 proxy 形）；runner 静默口径注记——forms
+> 磁盘 822 文件仅 400 产结果行（ref/manual/support/crash 页无 testharness
+> 结果形态），A/B 双侧同覆盖 diff 有效。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → number B 簇 editor-buffer 独立立项（s203 已勘定）或 misc 残面次刀
+> （output mutations 2F / form action 反射 base-url 2F / form owner
+> table 2F）。
+> **账本**：[evidence/2026-11-01-m2s205-setcustomvalidity-newline-normalization.md](html-semantics-compat/evidence/2026-11-01-m2s205-setcustomvalidity-newline-normalization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 204 收口，pattern IDL 反射 + v flag 编译判定——pattern_attribute/v_flag 两文件 7 子测全 Pass（has 白名单 pattern 列 INPUT/TEXTAREA tag 门 + v 可用引擎编译 throw 即忽略属性），forms 全树 keyed diff 净 F→P=5（2 靶键 + onblur flake 域 3 键顺向回摆）P→F=0 键漂移 0；shim 2 文件净 +43/−5，rust/语料零改动）**
 > **入场定刀位**：s203 后 misc 残面单根比对选 pattern 面 2F——s181 分型
 > 「input 其他长尾」，pattern_attribute.html basic 子测 IDL 缺位 +
 > pattern_attribute_v_flag.html breaking-changes 27 案，两文件同域小根。
