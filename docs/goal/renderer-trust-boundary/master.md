@@ -1,9 +1,9 @@
 # Renderer 信任边界控制面
 
 **日期**：2026-11-01
-**状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付——compositor landlock 双根因修复 + fd 传递通道对端信任收口与 helper 沙箱时序审计）。
-**当前卡点**：两项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠。③（M3 新增）helper 完整 OS sandbox（renderer 现为 RFC P3 占位、image-decoder 无钩子）是否补齐属设计决策，见缺口表。
-**下一步**：M4——DC 审计与门禁收口（DC-1/2/3 已 PARTIAL，DC-4 切片 1–2 后仍缺 helper 受限操作验收——依赖决策 ③，fd 通道 DRI3 显示补验；DC-5 全场景复测），或按用户对 ①②③ 的决策先行；`__zw*` 族设计切片待用户拍板装配策略后启动。
+**状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付；M4 前置基线已交付——平台策略选项已列 + DC 审计快照 + macOS 代码级对照）。
+**当前卡点**：四项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠；③ helper 完整 OS sandbox（renderer 现为 RFC P3 占位、image-decoder 无钩子）是否补齐；④ 沙箱安装失败平台策略 A/B/C（推荐 C，见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）。
+**下一步**：用户对 ①②③④ 拍板后执行对应修复/设计切片；全部落定后 M4 收口（DC-5 全场景生产 IPC 复测 + 剩余风险报告）；DRI3 显示补验与 macOS 真机验收为环境受限在册项。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -21,7 +21,7 @@
 | ~~compositor landlock 从未生效（add_rule flags 误传 size + 访问位错位）~~ | 已修复：位/flags 修正 + 真实 restrict 回归 + 真实进程验收（[M3 切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md)） | DONE（2026-11-01） |
 | ~~fd_socket_linux 无 SO_PEERCRED（M1 矩阵第 5 项）~~ | 已修复：socket 0600 + 双侧 SO_PEERCRED euid 校验 + 每发布 128-bit token（wire 不变）+ 2 常驻回归（[M3 切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)） | DONE（2026-11-01） |
 | helper 完整 OS sandbox：renderer 现为 RFC P3 占位（仅 env 剥离）、image-decoder 无任何钩子 | 设计决策（升新能力切片与否）→ 补齐后做 helper 受限操作验收（DC-4 余项）；线程时序契约已审计成立（切片 2） | 待用户决策 ③ |
-| 平台缺沙箱能力的产品策略 | M3 证据后列选项，必要时用户决定 | 待核查（Linux 容器/内核不支持面已有 ENOSYS/EPERM/EINVAL 容忍口径与 fail-open 实证） |
+| 平台缺沙箱能力的产品策略 | 选项已列（A 维持 fail-open / B compositor fail-closed / C 随决策 ③ 统一拍板，推荐 C），见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) | 待用户决定 ④ |
 | fd 通道真实进程 dma-buf 端到端补验 | 需 DRI3-capable 显示（Xvfb 无 DRI3，静默回退 RGBA；本容器硬件显示为用户桌面不可动） | 环境受限（M4 剩余风险在册） |
 | browser-compositor-smoke 脚本漂移（非本 goal）：`ZW_COMPOSITOR_PROCESS` 死变量 + renderer `frame_published` 事件不入父日志，两腿按现码不可绿 | compositor 交付面核对脚本与模式重构的契约漂移后修脚本或断言 | 已记档（M3 切片 1 顺带发现，pre-existing） |
 
@@ -32,7 +32,7 @@
 | M1 | 权限矩阵与双向基线 | DONE（2026-11-01） | [matrix](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
 | M2 | 确认反例、共享路径修复与回归 | 切片 5/多 完成（StorageOp、CDP Host、ClearHttpCookies、CDP opt-in token、多进程 HSTS） | [切片 1](evidence/2026-11-01-m1-matrix-storageop-fix.md) / [切片 2](evidence/2026-11-01-m2-slice2-cdp-host-rebinding.md) / [切片 3](evidence/2026-11-01-m2-slice3-clear-http-cookies.md) / [切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md) / [切片 5](evidence/2026-11-01-m2-slice5-multiprocess-hsts.md) |
 | M3 | helper 实际权限与时序验收 | 切片 1–2 完成（compositor S2/S3 实测 + fd 通道对端信任收口 + helper 时序审计）；余 helper 受限操作验收（依赖决策 ③）与 DRI3 补验 | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) |
-| M4 | DC 审计、门禁、清理和剩余风险 | NOT_STARTED | 无 |
+| M4 | DC 审计、门禁、清理和剩余风险 | 前置基线交付（平台策略选项 + DC 审计快照 + macOS 代码级对照 + 清理核查）；收口待决策 ①②③④ | [前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) |
 
 ## 验证基线
 
@@ -41,7 +41,7 @@
 | DC-1 | IPC-01-forged-origin-session | PARTIAL（导航 epoch/SW 权威矩阵有据；集成测试覆盖 StorageOp 面） | matrix |
 | DC-2 | IPC-02-cookie-hsts-privilege | PARTIAL（StorageOp、cookie jar 同步、多进程 HSTS 注册已修附回归；权限 stub 未修；Cookie 头伪造判定非缺口） | 切片 1/3/5 |
 | DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色已核；CDP rebinding 已堵、opt-in token 已交付，默认 token 待决） | 切片 2/4 |
-| DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；fd 通道对端信任收口；helper 线程时序契约审计成立——helper 受限操作验收依赖决策 ③，DRI3 补验环境受限） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) |
+| DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；fd 通道对端信任收口；helper 线程时序契约审计成立 + macOS 代码级对照——helper 受限操作验收依赖决策 ③，DRI3 补验/真机验收环境受限） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) / [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) |
 | DC-5 | 全部回归与生产接收方复测 | NOT_RUN | 无 |
 
 ## 碰撞与执行记录
@@ -61,4 +61,6 @@
 2026-11-01 M3 切片 1：compositor landlock 从未生效双根因修复——① `landlock_add_rule` 第 4 参误传 size 落入 flags 位（内核无 size 参）→ 安装永远 EINVAL 走 fail-open；② 访问位错位（READ=1 实为 EXECUTE 位）→ 读从未受限且无报错。修正位定义与 flags=0，修正前轮「EXECUTE 不可授予目录 fd」误断言（实测目录+EXECUTE 可装）。errno 判别矩阵证伪中途「容器 seccomp 拦截」假设（fd=-1→EBADF 证 syscall 直达内核），landlock 在本容器环境完整可用。新增真实 restrict 常驻回归；seccomp 三执行型测试补 --exact 全路径 + stdout 兜底收口假绿。真实进程验收：landlock/seccomp (gpu=true) 首次安装成功无降级，帧管线全通无 fallback。zero-compositor 49P/0F、clippy -D warnings 零警告、fmt clean。顺带发现 browser-compositor-smoke 脚本两处 pre-existing 漂移记档不修（死变量 + frame_published 不入父日志）。
 
 2026-11-01 M3 切片 2：fd 传递通道对端信任收口（M1 矩阵第 5 项）——`fd_socket_linux.rs` 三层防线：socket 0600、双侧 SO_PEERCRED euid 校验（accept 侧跳过陌生连接继续等、connect 侧拒绝报错；macOS 无 SO_PEERCRED 记注释由 ①③ 保障）、socket 名加每发布 /dev/urandom 128-bit token（经既有描述符字段传输，wire 不变）。2 新增常驻回归（token 唯一性/格式、窗口内 0600 mode），既有 roundtrip+R3340 fd 计数 3 测试原样通过。helper 时序审计：renderer apply_early 为 role 入口首语句（先于一切线程）、重启重放成立；image-decoder 无任何钩子记缺口（决策 ③）。环境发现（重要）：X :20 实为用户实时 xfce 桌面，GUI smoke 开窗污染桌面且结果不可靠——本轮在 :20 的 sandbox on/off 分层 bisect（误判 seccomp/landlock 致卡）全部作废，同命令在自起干净 Xvfb 一次通过；Xvfb 无 DRI3，gpu-dmabuf 真实交付无法触发（静默回退 RGBA），fd 通道真实进程 dma-buf 端到端补验记 M4 环境受限项。验证：zero-protocol 335P/0F、zero-compositor 49P/0F、clippy -D warnings 零警告、fmt clean；干净 Xvfb 上 CPU+GPU 两腿真实进程 exit 0 无失败信号。
+
+2026-11-01 M4 前置：平台缺沙箱能力产品策略选项分析（A 维持 fail-open / B compositor fail-closed / C 随决策 ③ 统一拍板，推荐 C）+ DC-1..5 审计快照（均 PARTIAL/NOT_RUN，剩余项全部映射到决策 ①②③④ 与环境受限项）+ macOS 代码级对照（seccomp/landlock/fd 通道均编译门控 Linux-only，降级日志明确；真机验收环境不可达在册）+ 清理核查（无残留进程/Xvfb）。唯一代码触点：fd_socket_linux.rs 一处注释按模块实际 Linux 编译门控修正表述（无行为变化）。决策 ①②③④ 全部落定前无可推进的修复面。
 

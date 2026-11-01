@@ -49,8 +49,9 @@ fn random_token() -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
-/// 对端是否同 euid（Linux `SO_PEERCRED`；macOS 无对应结构，恒 true——
-/// 跨用户面由 socket 文件 0600 与不可猜 token 保障）。
+/// 对端是否同 euid（Linux `SO_PEERCRED`）。本模块现由 lib.rs
+/// `#[cfg(target_os = "linux")]` 门控（macOS 不参与构建）；非 Linux 分支为
+/// 门控抬升时的防御：恒 true，跨用户面由 socket 文件 0600 与不可猜 token 保障。
 fn peer_same_user(stream: &UnixStream) -> bool {
     #[cfg(target_os = "linux")]
     {
