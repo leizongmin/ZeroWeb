@@ -663,3 +663,38 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ua_display_li 同键在册未清；git 无 D1/D2 决策新账面（GB-20261031
   在案，核验只认 git 账面 + 用户主动知会）。收口序列不变。临时审计
   件 `/tmp/webcrypto-anchor-20261101-1003-{r1,r2,r3}.json`（不入库）。
+
+### 2026-11-01 10:47 追记：锚复跑现 tip（`ebdfe3939`）状态账零差异 ×3 + RUN1/RUN3 逐字节一致——html-semantics 流 s201 SVG 形状 gBCR 命中注入吸收
+
+- 本轮 `git pull --rebase` 吸入 html-semantics 流 `ebdfe3939`（s201 SVG
+  形状 gBCR 命中注入——inert-svg-hittest 2/2 收口，engine
+  `hit_test.rs` ±21 + 新 `hit_test_svg.rs` +310 + `lib.rs` +1，共 3 文件
+  +331/−1，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s201-svg-shape-gbcr-hit-test.md)）：
+  engine 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
+  锚——release runner 重建 36.8s（engine 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑。
+- 并行流协调：起跑前 ps 查兄弟进程发现 editing 流单案 run 在跑
+  （`testharness-editing-other join-different-white-space-style`，10:24
+  起、timeout 1500s 包裹），90s 间隔轮询至 10:39 收尾后再重建三连跑，
+  避免中途重建换掉在跑二进制面。
+- guard log 三跑零字节（无击杀），runner EXIT=1 为预期挂账常规退出，
+  墙钟 93/88/89s 与历史持平。
+- **状态账 33,109 分母逐 (case, subtest) 对照零差异 ×3**（键集全等 +
+  status 逐位相等；123 文件 / 25,788P + 7,320F + 1T）；RUN1/RUN3 对
+  M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**；RUN2 W4 案
+  deadline 臂采样（`phase=2`「completion callback was not called」，
+  非 phase=4 主臂）——程序化对照确认仅 message 字段差异、状态账零
+  差异，与 07:50/09:33/09:43 各轮同属 runner 既有完成路径竞态（归因
+  未定谳），按主判据**不构成回归**。采样面累计 5/23 轮（本轮 1/3，
+  RUN2 型），维持低频竞态定性。
+- s201 为 SVG 命中测试域新增，对 webcrypto 语料面完全吸收（零状态
+  变化即证）；锚窗口推进为 **8e84cb9a2 → ebdfe3939**，实锚链
+  ……→578240175→e2910e933→8e84cb9a2→ebdfe3939。
+- **轮询面**：D4 冻结门 `ua_display_tests.rs` 末触仍 `c41b0c750`
+  （s201 仅触 engine hit_test 域 + html-semantics docs，未触渲染域
+  style-system）；ua_display_li 同键在册未清；PR #266 仍 OPEN 未合
+  入；git 无 D1/D2 决策新账面（GB-20261031 在案，核验只认 git 账面
+  + 用户主动知会）。收口序列不变。临时审计件
+  `/tmp/webcrypto-anchor-20261101-s201svg-{r1,r2,r3}.json`（不入库）。
