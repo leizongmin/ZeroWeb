@@ -31,7 +31,39 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 216 收口，`__zw_has_attr` 非 lw 存量点位审计收口（s211 挂账销账）——全量审计 39 命中行 = 2 注释 + 37 代码调用点，修复前唯一真裸点 part06 `_zwMediaAutoplay` sel 面 autoplay 读，修复后 37/37 lw-first 安全形态：R5383 红绿实证；embedded-content 语料 A/B 共享键 1257/1257 零漂移键集差 0；zero-engine 3675P+0F）**
+> **▶ 当前状态（2026-11-01 M2 切片 217 收口，image-map 命中面视口矩形修正 + object 不支持 image map 臂——usemap-casing 族 15F（img 7 + object 8）单根翻绿：旧 `_zwImgMapHitSel` (0,0)+IDL w/h 近似边界使文档流后续 img/object 全部 continue 落 null，改 gBCR 真实视口矩形 + coords 原点偏移 + 新 object 臂；R5384 红绿钉面；靶语料 16/16；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 15 F→P 全靶面零 P→F 键集差 0；zero-engine 3676P+0F）**
+> **入场定刀位**：misc 残面勘根续推——s216 A/B 日志 embedded-content F
+> 分布下钻定刀 usemap-casing 15F 单根（三处用户门禁项不动）。
+> **勘根**：15 负案 + object sanity 单跑详情 = `Cannot read properties of
+> null (reading 'parentElement')`——非 map 匹配错，是 elementFromPoint 返
+> null。单根 = s78 `_zwImgMapHitSel` 以 `(0,0)+IDL w/h` 近似 img 边界，
+> runner 布局就绪后 gBCR 有真实视口 rect，语料文档流纵向堆叠除首元素外
+> 全部在旧边界检查即 continue → 命中遍历落空；正案（首元素恰在 (0,0) 近
+> 似域内）恒 Pass 即根因指纹。object 面 = image map 处理模型只定义 img，
+> 命中应返 object 自身，旧实现无臂。map 匹配 `nm === ref || mid === ref`
+> 已精确匹配，大小写负案非缺口。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part06 `_zwImgMapHitSel`：
+> 查询列表 `img,object` + 边界几何 gBCR 真实视口矩形（零矩形回落
+> `(0,0)+IDL w/h` 旧近似保 R5278 钉面）+ area coords 按原点偏移换局部 +
+> 新 object 臂（命中即 object 自身不查 usemap）+ FIXME 收窄（渲染路径
+> 真实 hit-test 归 layout 集成面）；part09.rs R5384（rect bridge mock 按
+> selector 路由三元素纵向堆叠语料同形，四断言：精确命中 / 偏移判别点 /
+> 大小写负案返 img / object 返自身）。
+> **验证**：R5384 红绿（stash 还原跑红② `left:"null"`——旧 shim 因目标
+> 行为失败；pop 跑绿 1 passed）；拼接 node --check SYNTAX_OK；zero-engine
+> 3676P+0F（R5278 既有 image-map 钉面全绿 = 零矩形回落臂兼容实证）；靶
+> 语料 solo 16/16 MAKE_EXIT=0（15F 翻绿 + 正案保持）；embedded-content
+> A/B（B = s216 日志即 pre-s217 基线）共享 1257 对漂移恰 15 F→P 全靶
+> 面，P→F=0 键集差 0；clippy 0 警告 fmt 过。日志 evidence/logs/
+> s217-usemap-target.log + s217-embedded-content-wip.log。
+> **下一步候选**：embedded-content 残面续推（canvas focusability 族
+> ~14F / current-pixel-density·sizes·srcset·decode 响应式图片族 ~29F
+> 候选；img naturalWidth SVG viewBox 族 22F 与 renderer 流 ③A
+> image-decoder 切片工作面相邻暂不入刀避免跨流碰撞）；forms misc 残面
+> 16F（the-input-element/the-select-element 非门禁部分）勘根备选。
+> **账本**：[evidence/2026-11-01-m2s217-img-map-hit-viewport-rect-object-arm.md](html-semantics-compat/evidence/2026-11-01-m2s217-img-map-hit-viewport-rect-object-arm.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 216 收口，`__zw_has_attr` 非 lw 存量点位审计收口（s211 挂账销账）——全量审计 39 命中行 = 2 注释 + 37 代码调用点，修复前唯一真裸点 part06 `_zwMediaAutoplay` sel 面 autoplay 读，修复后 37/37 lw-first 安全形态：R5383 红绿实证；embedded-content 语料 A/B 共享键 1257/1257 零漂移键集差 0；zero-engine 3675P+0F）**
 > **入场定刀位**：s211 挂账本体承袭——`__zw_has_attr`（纯快照读）非 lw
 > 融合存量点位全量审计（探索性评估；三处用户门禁项不动）。
 > **勘根**：审计单元 = 行级 grep（排除 `_lw`/`_handle` 变体）；分类 =
@@ -116,42 +148,6 @@
 > （嵌套 optgroup 启用 / select 截断启用 / optgroup 经 select 禁用 /
 > legend 豁免不再跨层屏蔽）见账本对照清单。
 > **账本**：[evidence/2026-11-01-m2s214-host-disabled-boundary-model.md](html-semantics-compat/evidence/2026-11-01-m2s214-host-disabled-boundary-model.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 212 收口，disabled 语义面三缺口——焦点门 + matches 四伪类臂 + select/optgroup 传播边界走查：input-disabled-fieldset-dynamic + number-disabled + option-disabled-optgroup 6/6 + option-disabled-optgroup-wrapper 3/3 四份靶语料 11 键全 Pass；forms 全域 A/B 净 F→P=7 恰 7 靶键，P→F=1 在册 onblur flake 族，键漂移 0 其他位移 0；shim 3 文件 + rust 测试 1 文件，语料零改动）**
-> **入场定刀位**：s211 后 misc 残面余量——disabled 语义面四份语料 11 键。
-> customizable select 177F 挂起待拍板（GB-20261031 承袭）。
-> **勘根**：缺口一焦点门——mousedown 默认动作聚焦（part06
-> `_zwIsFocusableSel`）与宿主 pre-focus 对 INPUT/TEXTAREA/SELECT/
-> BUTTON 无 actually-disabled 判（spec §6.6.1 focusing steps no-op）。
-> 缺口二 matches 伪类臂——`:disabled`/`:enabled`/`:read-only`/
-> `:read-write` 无 JS 臂，`__zw_matches` 读 applied 快照对同 turn
-> setAttribute/removeAttribute 不可见（R4200 同款）。
-> 缺口三 select/optgroup 传播——`_zwFeDisabled` 只有自身 + fieldset。
-> **传播模型三轮收敛**：①平面走查 → "nested optgroup"/"select in
-> optgroup" 2 案真 P→F（嵌套不级联语料钉死）；②父级单层 computed →
-> wrapper 语料 2 案回红（`<optgroup disabled><div><option>` 期望
-> true，直接父 div 非边界）；③spec concept-option-disabled 原文定谳
-> **边界集走查**——OPTION：SELECT 查属性 / 首个 OPTGROUP 即决（查
-> computed：自身 | 其 select 链）/ HR、DATALIST、OPTION 截断 / 包裹
-> 层穿行；OPTGROUP 不从 OPTGROUP 级联。包裹穿行与嵌套不级联同模型
-> 同时成立。
-> **施工**（shim 3 文件 + rust 测试 1 文件）：part03 `_zwFeDisabled`
-> depth-0 边界走查臂（fieldset 臂独立承担不动）；part04 焦点门（七族
-> tag 门 + `_zwFeDisabled` 命中 no-op）+ matches 四伪类臂（`:read-
-> write` = TEXTAREA 或 13 文本 type 且非 readonly 非 disabled）；
-> part06 `_zwIsFocusableSel` 同谓词门（IFRAME/SUMMARY 不受门）；
-> part09.rs R5379 六腿 → 九腿（新增腿 G wrapper 穿行 + 动态翻转）。
-> **验证**：拼接 shim node --check SYNTAX_OK；R5379 单测 1 passed
->（首轮 grandparent 臂条件 bug 腿 F "11101"≠"10101" 抓住修敛）；四
-> 靶语料全 Pass；forms 全域 A/B（(key,state) 对全测试名 join，4700
-> 对零键漂移）净 F→P=7 恰靶 + P→F=1 onblur 族摆动（上轮 WIP 复跑
-> 同键反向回摆佐证）；zero-engine 3672P+0F；guarded-clippy 0 警告 +
-> cargo fmt -p zero-engine 过（裸 rustfmt 噪声系不读 rustfmt.toml，
-> workspace 唯一漂移 seccomp_linux.rs 归口上游 d4768c825）。
-> **下一步候选**：misc 残面余量复盘 → host 侧 `is_effectively_disabled`
-> 平面走查与 shim 边界集模型统一（挂账新记）/ form-nameditem override
-> builtins 1F fix#19c 挂待决承袭 / customizable select 177F 挂起待拍板。
-> **账本**：[evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md](html-semantics-compat/evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）

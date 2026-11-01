@@ -7785,3 +7785,104 @@ fn test_media_autoplay_setattr_sel_lw_read_r5383() {
         "泵后按 spec 序派 play → playing → timeupdate（与 a2fix1 时序一致）"
     );
 }
+
+#[test]
+fn test_img_map_hit_viewport_rect_object_arm_r5384() {
+    // R5384（s217）：image-map 命中面视口矩形修正 + object 不支持 image map 臂
+    // （语料 the-img-element/the-object-element usemap-casing 15F 单根）。旧
+    // `_zwImgMapHitSel` 以 (0,0)+IDL w/h 近似边界——文档流后续 img（视口
+    // y≥100）在边界检查即 continue → elementFromPoint 恒 null（语料失败形态
+    // 「Cannot read properties of null (reading 'parentElement')」）；object
+    // 面 8F 同根（无 object 臂——object 不支持 image map，命中应返自身）。
+    // 钉面：mock `__zw_getBoundingClientRect` 给真实视口 rect（布局集成面同
+    // 源）后——①map 精确命中正案（area，coords 按原点偏移换局部坐标）；
+    // ②偏移判别点（视口 x 超出 coords 值域但局部 x 在域内 → area）；
+    // ③usemap 大小写不匹配负案（map 名 simple/SIMPLE 均 ≠ #sImPlE）→ img
+    // 自身非 null；④object 命中 → object 自身。
+    // https://html.spec.whatwg.org/multipage/image-maps.html#image-map-processing-model
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <img id=\"a\" src=\"/images/threecolors.png\" usemap=\"#m\" width=\"100\" height=\"100\">\
+         <map name=\"m\"><area id=\"ar\" shape=\"rect\" coords=\"0,0,100,100\"></map>\
+         <img id=\"b\" src=\"/images/threecolors.png\" usemap=\"#sImPlE\" width=\"100\" height=\"100\">\
+         <map name=\"simple\"><area shape=\"rect\" coords=\"0,0,100,100\"></map>\
+         <map name=\"SIMPLE\"><area shape=\"rect\" coords=\"0,0,100,100\"></map>\
+         <object id=\"o\" data=\"/images/threecolors.png\" usemap=\"#m\" width=\"100\" height=\"100\"></object>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // rect bridge mock（layout 集成面同源 wire "x,y,w,h"；不在
+    // register_dom_callbacks，测试注册——R5278 时代三 img/object 纵向堆叠
+    // 语料同形：a (8,8)、b (8,108)、o (8,208)，各 100×100）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| {
+            let s = args.first().cloned().unwrap_or_default();
+            if s.contains("#a") {
+                "8,8,100,100".to_string()
+            } else if s.contains("#b") {
+                "8,108,100,100".to_string()
+            } else if s.contains("#o") {
+                "8,208,100,100".to_string()
+            } else {
+                String::new()
+            }
+        }),
+    );
+
+    sandbox
+        .execute(
+            "globalThis.__r5384 = [];\
+             var d = function (x, y) {\
+               var el = document.elementFromPoint(x, y);\
+               return el ? (String(el.tagName) + '#' + String(el.id || '')) : 'null';\
+             };\
+             // ① 正案：img#a 中心——map name=m 精确匹配 → area。
+             globalThis.__r5384.push(d(58, 58));\
+             // ② 偏移判别：视口 x=105 超出 coords 0..100，减原点 8 后局部 97 在域内 → area\
+             //（无偏移实现此处落 img；旧 shim 边界检查即 continue → null）。
+             globalThis.__r5384.push(d(105, 50));\
+             // ③ 负案：img#b 中心——usemap=#sImPlE 对 simple/SIMPLE 不精确匹配 → img 自身\
+             //（旧 shim 边界检查即 continue → null）。
+             globalThis.__r5384.push(d(58, 158));\
+             // ④ object：不支持 image map → object 自身（旧 shim 无 object 臂 → null）。
+             globalThis.__r5384.push(d(58, 258));",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r5384[{}]", i))
+            .unwrap()
+            .value
+    };
+    assert_eq!(get(&mut sandbox, 0), "AREA#ar", "① map 精确命中 → area（正案）");
+    assert_eq!(
+        get(&mut sandbox, 1),
+        "AREA#ar",
+        "② coords 按视口原点偏移换局部坐标（旧 shim 视口 x=105 边界检查即 continue → null）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 2),
+        "IMG#b",
+        "③ usemap 大小写不匹配 → img 自身（旧 shim 视口 y=158 边界检查即 continue → null）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 3),
+        "OBJECT#o",
+        "④ object 不支持 image map → 命中即 object 自身（旧 shim 无 object 臂 → null）"
+    );
+}
