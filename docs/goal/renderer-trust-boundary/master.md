@@ -2,8 +2,8 @@
 
 **日期**：2026-11-02
 **状态**：Active（**M4 收口已交付**（2026-11-02）：决策面增量复测全过——切片 8 mutator 普通 mode 4 枚不可见/自动化 mode 契约保持、切片 3+4 真实进程链快照 `zero-browser → zero-renderer(默认 seccomp) → zero-image-decoder(默认双沙箱)` 解码全通 + corrupt 错误面 + 零降级日志、DC-13 product-smoke welcome 800px diff 18.14% PASS；[剩余风险报告](evidence/2026-11-02-m4-closing-retests-and-risk-report.md) 交付，media-host 无沙箱为收口期新发现）。M1–M3 全部切片交付（M2 切片 1–8、M3 切片 1–5、fd dma-buf 补验），DC-1/2/3/5 DONE，DC-4 PARTIAL（余项全部为待拍板/环境受限）。
-**当前卡点**：无执行卡点；三项待用户拍板（不阻塞在册记录，阻塞对应修复面开工）：① renderer landlock 默认值 file:// 三选项（缺口表）；② media-host 沙箱切片（③A-media-host 最小档案候选，本轮新发现）；③ DevTools frontend page-direct token 限制后续选项。
-**下一步**：待用户拍板后执行对应切片：file:// 三选项拍板 → 翻 landlock 默认；media-host 拍板 → ③A-media-host 切片；frontend 选项拍板 → token 注入或文档化。其余在册项（macOS 真机、android 编译腿 + service bootstrap 接线）环境受限维持记录；`data:` URL 导航 ERR_FAILED 观察移交 engine/navigation 流。
+**当前卡点**：无执行卡点；三项待用户拍板（选项已细化到可拍板粒度）：① renderer landlock 默认值 file:// 三选项（缺口表）；② media-host 沙箱（[决策包 ⑤](2026-11-02-decision-package-media-host-devtools.md)，推荐 ③A-media-host 最小档案）；③ DevTools frontend page-direct token 限制（[决策包 ⑥](2026-11-02-decision-package-media-host-devtools.md)，推荐文档化接受）。
+**下一步**：待用户拍板后执行对应切片：file:// 三选项拍板 → 翻 landlock 默认；media-host 拍板 A → ③A-media-host 切片（镜像切片 3 模板）；frontend 拍板 A → ws 参数 token 注入、拍板 B → 文档化。其余在册项（macOS 真机、android 编译腿 + service bootstrap 接线）环境受限维持记录；`data:` URL 导航 ERR_FAILED 观察移交 engine/navigation 流。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
