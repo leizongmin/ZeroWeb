@@ -826,3 +826,32 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   git 无 D1/D2 决策新账面。收口序列不变。临时审计件
   `/tmp/webcrypto-anchor-20261101-s204pattern-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 12:01 追记：锚复跑现执行 tip（`ee2ee9ec1`）三跑全 cmp 全等 ×3——html-semantics 流 s205 style-with-value 查询面 + zero-web 流 ClearHttpCookies 吸收，W4 本轮零采样
+
+- s204 锚账 push 后 rebase 窗口再吸入两笔：html-semantics 流
+  `ee2ee9ec1`（s205 style-with-value 簇值查询面——gCS plain 四属性
+  解析器 + 五值命令引擎面接线，shim `part01c.js` +417/`part06.js`
+  +21/−3）+ zero-web 流 `b5ef2f0e8`（ClearHttpCookies 广播，protocol
+  message +4 与 serialize 测试，非 runner 链路面）。push 前重查流程
+  核证 shim 系语料执行路径二进制面再度前移，随即按纪律对新执行 tip
+  复跑（本轮第二次）——release runner 重建 35.9s（shim 重编译入包）
+  + test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`）三连跑，起跑前 ps 核查无兄弟 run 在跑，二进制
+  sha256 三跑全程 `ff63b9d7…` 未变。guard log 三跑零字节，EXIT=1
+  预期，墙钟 87s/101s/90s。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**：123 文件 / 33,109 子测试 = 25,788P +
+  7,320F + 1T 状态账零差异——s205 对 webcrypto 语料面完全吸收。
+  W4 案处预期 Timeout 臂，本轮零采样，采样面累计 5/30 轮。
+- 锚窗口推进为 **61720d309 → ee2ee9ec1**，实锚链 ……→a88ab50c6→
+  61720d309→ee2ee9ec1，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：s205 自账 zero-engine **3,664P+1F**（ua_display_li
+  渲染流域在册键同位）；D4 冻结门 `ua_display_tests.rs` 末触仍
+  `c41b0c750`（s205/b5ef2f0e8 均未触渲染域 style-system 冻结面）；
+  同窗口 site-opt PR #266 合流簇（`4745773c9` 等 5 笔，T36/H3
+  hotnav）经 `git diff ee2ee9ec1..origin/main -- crates/ tests/`
+  核证**非执行路径**（仅 apps/browser、apps/renderer、网站 docs），
+  锚账不因之复跑；git 无 D1/D2 决策新账面。收口序列不变。临时
+  审计件 `/tmp/webcrypto-anchor-20261101-s205styleval-{r1,r2,r3}.json`
+  （不入库）。

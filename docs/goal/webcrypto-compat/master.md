@@ -1,15 +1,16 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿；33,109 分母零回归锚在现执行 tip `61720d309` 三跑整
-文件对锚 cmp 全等 ×3（2026-11-01，s182~s204 + justify 簇两轮 + 渲染流
+build/clippy 绿；33,109 分母零回归锚在现执行 tip `ee2ee9ec1` 三跑整
+文件对锚 cmp 全等 ×3（2026-11-01，s182~s205 + justify 簇两轮 + 渲染流
 R5370/R5372/R5373/R5374 + html-semantics 流 + net-api 流 S19 +
-zero-web 流 change-on-blur + editing 流 sv-setup style IDL + zero-web
-流 t-p126 softnav 簇 + html-semantics 流 s201 SVG 命中注入 + s202
-legend/option form IDL + s203 number 值消毒 + 渲染流 R5374 abspos 表
-available-size 钳 CB + html-semantics 流 s204 pattern IDL/v flag
-（shim `part03/part05.js` +43/−5）变更全吸收；
-W4 案完成路径竞态低频采样（累计 5/29 轮，本轮零采样）
+zero-web 流 change-on-blur/ClearHttpCookies + editing 流 sv-setup
+style IDL + zero-web 流 t-p126 softnav 簇 + html-semantics 流 s201
+SVG 命中注入 + s202 legend/option form IDL + s203 number 值消毒 +
+渲染流 R5374 abspos 表 available-size 钳 CB + html-semantics 流 s204
+pattern IDL/v flag + s205 style-with-value 查询面（shim `part01c/
+part06.js` +438/−3）变更全吸收；
+W4 案完成路径竞态低频采样（累计 5/30 轮，本轮零采样）
 ——均为 runner 既有代码，状态账零差异，见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
 唯一缺口 `cargo test` 残余 1F
@@ -22,11 +23,11 @@ W4 案完成路径竞态低频采样（累计 5/29 轮，本轮零采样）
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现执行 tip `61720d309` 复验状态账逐位一致 ×3**（25,788P +
+**33,109 锚已在现执行 tip `ee2ee9ec1` 复验状态账逐位一致 ×3**（25,788P +
 7,320F + 1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→
 b0a6f9174→3f1399195→ba4c74fcb→edaed928a→0d4966f9d→f05b0efc1→
 e30ab8494→dd0eb2ec8→578240175→e2910e933→8e84cb9a2→ebdfe3939→
-a5a11cd07→66f4871c1→a88ab50c6→61720d309，渲染流 R5370 table OOF child layout +
+a5a11cd07→66f4871c1→a88ab50c6→61720d309→ee2ee9ec1，渲染流 R5370 table OOF child layout +
 s196 `_zwMEl` 安装面共享化 perf + editing 流 justify 查询面兜底
 （`part01c.js` +105 行）+ html-semantics 流 s196 `:active` 伪类通道
 （dom active_element 槽 + engine 查询面注入 + shim part04/part06
@@ -49,16 +50,18 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 11:53（锚复跑现执行 tip `61720d309` 三跑整
-文件对锚 cmp 全等 ×3——R5374 锚账 push 后 rebase 窗口吸入
-html-semantics 流 s204 pattern IDL/v flag（shim `part03/part05.js`
-+43/−5，二进制面再前移），push 前重查流程核证后随即复跑：起跑前
-ps 核查无兄弟 run 在跑 + sha256 括查三跑全程未变，25.51s 重建 +
-test-guard 直包三连跑（guard 三跑零击杀，89/88/89s），RUN1/RUN2/RUN3
-全部对 M1 终态锚逐字节一致 7,208,436 B 且三跑互等，33,109 分母
+**最后更新**: 2026-11-01 12:01（锚复跑现执行 tip `ee2ee9ec1` 三跑整
+文件对锚 cmp 全等 ×3——s204 锚账 push 后 rebase 窗口再吸入
+html-semantics 流 s205 style-with-value 查询面（shim `part01c.js`
++417/`part06.js` +21/−3）+ zero-web 流 ClearHttpCookies（非 runner
+链路），push 前重查流程核证后本轮第二次复跑：起跑前 ps 核查无兄弟
+run 在跑 + sha256 括查三跑全程未变，35.9s 重建 + test-guard 直包
+三连跑（guard 三跑零击杀，87/101/90s），RUN1/RUN2/RUN3 全部对 M1
+终态锚逐字节一致 7,208,436 B 且三跑互等，33,109 分母
 25,788P+7,320F+1T ×3 零回归，W4 处预期 Timeout 臂本轮零采样（累计
-5/29 轮）；D4 冻结门末触仍 `c41b0c750`，ua_display_li 同键在册未清
-（s204 自账 3,664P/1F 同位），D4/D1/D2 无变化，见
+5/30 轮）；同窗口 site-opt PR #266 簇核证非执行路径不复跑；D4 冻结
+门末触仍 `c41b0c750`，ua_display_li 同键在册未清（s205 自账
+3,664P/1F 同位），D4/D1/D2 无变化，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
