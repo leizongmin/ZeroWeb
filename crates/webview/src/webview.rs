@@ -3086,6 +3086,15 @@ impl WebView {
         sandbox
             .execute(generate_js_dom_shim())
             .map_err(|e| WebViewError::Script(format!("DOM shim init: {e}")))?;
+        // ②C'（renderer 信任边界 ②）：库嵌入进程内路径同款 counter-plugin——非测试模式
+        // 在页面脚本前删除 `__zw*` 特权 mutator 页面可见全局。本 crate 单测直调钩子
+        // （pointer_lock 激活门用例），cfg(test) 保留；外部自动化宿主经
+        // ZW_RENDERER_AUTOMATION=1（runner 启动自置）保留。
+        if !cfg!(test) && !zero_engine::shim_test_mode_enabled() {
+            sandbox
+                .execute(zero_engine::counter_plugin_script())
+                .map_err(|e| WebViewError::Script(format!("privilege counter-plugin init: {e}")))?;
+        }
         // 先置位再同步：sync 失败不可触发下次调用重装 shim（重复注入重置 _nodeMap 丢失监听器）。
         self.js_shim_initialized = true;
         // viewport 真值同步（event-loop-spec ④ runner viewport 校准）：shim 常量 stub

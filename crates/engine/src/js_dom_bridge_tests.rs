@@ -92,3 +92,6 @@ include!("js_dom_bridge_tests/part91.rs");
 include!("js_dom_bridge_tests/part92.rs");
 include!("js_dom_bridge_tests/part93.rs");
 include!("js_dom_bridge_tests/part94.rs");
+// renderer 信任边界 ②C'：`__zw*` 特权 mutator counter-plugin 常驻回归（非 part 编号——
+// 跨 part 面：删除策略 + 闭包化非回归 + 激活门不可旁路）。
+include!("js_dom_bridge_tests/privilege_guard.rs");

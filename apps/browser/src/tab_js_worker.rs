@@ -9,9 +9,9 @@ use std::time::Duration;
 use zero_browser_shell::TabId;
 use zero_engine::{
     AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
-    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, generate_js_dom_shim,
-    make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
-    register_dom_callbacks,
+    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, counter_plugin_script,
+    generate_js_dom_shim, make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map,
+    new_layout_rect_snapshot, register_dom_callbacks, shim_test_mode_enabled,
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
@@ -506,6 +506,14 @@ fn js_worker_main(
     let shim = generate_js_dom_shim();
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
+    }
+    // ②C'（renderer 信任边界 ②）：单进程页面上下文同款 counter-plugin——非测试模式在
+    // 页面脚本前删除 `__zw*` 特权 mutator 页面可见全局。tab worker 持久 context 全生命
+    // 周期不做 reset_context，bootstrap 一次即覆盖（renderer worker 的重建处另行跟随）。
+    if !shim_test_mode_enabled() {
+        if let Err(e) = sandbox.execute(counter_plugin_script()) {
+            tracing::error!("JS DOM privilege counter-plugin init failed: {e}");
+        }
     }
 
     while let Ok(cmd) = cmd_rx.recv() {

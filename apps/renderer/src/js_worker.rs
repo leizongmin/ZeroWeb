@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use zero_engine::{
     AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
-    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, generate_js_dom_shim,
-    make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map, new_layout_rect_snapshot,
-    register_dom_callbacks,
+    FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, counter_plugin_script,
+    generate_js_dom_shim, make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map,
+    new_layout_rect_snapshot, register_dom_callbacks, shim_test_mode_enabled,
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
@@ -1683,6 +1683,14 @@ fn js_worker_main(
     if let Err(e) = sandbox.execute(shim) {
         tracing::error!("JS DOM shim init failed: {e}");
     }
+    // ②C'（renderer 信任边界 ②）：非测试模式在页面脚本前删除 `__zw*` 特权 mutator 页面
+    // 可见全局（counter-plugin；shim 定义保留、内部消费闭包化）。测试模式（runner/自动
+    // 化派生链 env）跳过，testdriver stub 钩子原样。context 重建的重装载处同款（下方）。
+    if !shim_test_mode_enabled()
+        && let Err(e) = sandbox.execute(counter_plugin_script())
+    {
+        tracing::error!("JS DOM privilege counter-plugin init failed: {e}");
+    }
     // t2-pb1 fix#19：动态外链脚本由宿主通路取回（runtime execute_new_dynamic_scripts/
     // tick_dynamic_scripts——no-cors 脚本语义 + 元素事件派发）；shim R387b 的页面 fetch
     //（cors 语义）分支让位，避免双执行/双事件（part04 R387b 读此旗标；reset 重建后重置，
@@ -2309,6 +2317,13 @@ fn js_worker_main(
                 }
                 if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
                     tracing::error!("JS DOM shim reinit failed after document reset: {e}");
+                }
+                // ②C'：context 重建重新定义钩子全局，counter-plugin 须随每次 shim 装载
+                // 再执行（同 bootstrap）。
+                if !shim_test_mode_enabled()
+                    && let Err(e) = sandbox.execute(counter_plugin_script())
+                {
+                    tracing::error!("JS DOM privilege counter-plugin reinit failed: {e}");
                 }
                 // t8n：门面补挂——context 重建丢弃一次性 execute 的 `__zwVideoBridge` 全局
                 //（native 回调随回调表自动重挂，门面不会）；不补挂则新文档页面侧

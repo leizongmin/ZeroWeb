@@ -8568,6 +8568,13 @@
     globalThis.PermissionStatus.prototype.dispatchEvent = function () { return false; };
   }
 
+  // ②C'（renderer 信任边界 ②，2026-11-01）：特权 mutator 闭包别名（外层 IIFE 同域）。
+  // counter-plugin（js_dom_counter_plugin.js）非测试模式删除页面可见全局后，request()
+  // 自动授予与 part06 execCommand copy 桥经此二引用继续工作。赋值点在 clipboard IIFE
+  // 内两个钩子定义处（幂等卫后取当前闭包——context 重建 / 重复装载时随最新闭包刷新）。
+  var _zwPermSetState = null;
+  var _zwClipStoreWrite = null;
+
   globalThis.navigator = {
     // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-useragent
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) ZeroBrowser/__ZERO_BUILD_VERSION__ Chrome/120.0.0.0',
@@ -8668,6 +8675,9 @@
           return Promise.resolve();
         };
       }
+      // ②C'：闭包别名（幂等卫后全局必为 function；counter-plugin 删除全局后 request()
+      // 自动授予走此引用，页面侧无入口）。
+      _zwPermSetState = globalThis.__zwSetPermission;
       if (typeof globalThis.__zwPermissionState !== 'function') {
         globalThis.__zwPermissionState = function (name) {
           return _permStates[String(name)] || 'prompt';
@@ -8877,6 +8887,8 @@
           _epoch++;
         };
       }
+      // ②C'：闭包别名（同 _zwPermSetState——part06 execCommand copy 桥的内部消费引用）。
+      _zwClipStoreWrite = globalThis.__zwClipboardStoreWrite;
       return new Clipboard();
     })(),
     // R3314：storage（Storage API + OPFS Origin Private File System）——Done Criteria §3 Tier 2 列项
@@ -9624,8 +9636,8 @@
           var state = (typeof globalThis.__zwPermissionState === 'function')
             ? globalThis.__zwPermissionState(name)
             : 'prompt';
-          if (state === 'prompt' && typeof globalThis.__zwSetPermission === 'function') {
-            globalThis.__zwSetPermission(name, 'granted');
+          if (state === 'prompt' && typeof _zwPermSetState === 'function') {
+            _zwPermSetState(name, 'granted');
           }
           return Promise.resolve(_getStatus(name));
         },

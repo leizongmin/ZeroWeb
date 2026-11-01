@@ -4211,7 +4211,7 @@
             target.dispatchEvent(ev);
           }
           if ((cmd === 'copy' || cmd === 'cut') && ev.defaultPrevented && dt !== null
-              && typeof globalThis.__zwClipboardStoreWrite === 'function') {
+              && typeof _zwClipStoreWrite === 'function') {
             // dnd-compat M2-S2：DataTransfer 事实源改有序 item 列表（_dt_items）——剪贴板
             // 载荷从此导出（string 项 type→内容 map，形状与旧 _dt_data 一致）。
             var _cpPayload = {};
@@ -4219,7 +4219,9 @@
               var _cpIt = dt._dt_items[_cpI];
               if (_cpIt.kind === 'string') _cpPayload[_cpIt.type] = _cpIt._data;
             }
-            globalThis.__zwClipboardStoreWrite(_cpPayload);
+            // ②C'：改闭包别名（part02 clipboard IIFE 赋值）——counter-plugin 删除页面
+            // 可见全局后 copy/cut 桥不回归。
+            _zwClipStoreWrite(_cpPayload);
           }
         } catch (_e) {}
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')

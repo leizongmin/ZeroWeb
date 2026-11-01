@@ -31,6 +31,8 @@ pub mod animation;
 pub mod async_resolver;
 pub mod cache_storage_bridge;
 pub mod composite;
+// renderer 信任边界 ②C'：`__zw*` 特权 mutator counter-plugin（删除面 + 测试模式判定）。
+pub mod counter_plugin;
 pub mod dirty;
 pub mod dom_bridge;
 // P1b S1 原生 DOM 绑定（feature-gated v8；替换 polyfill 字符串桥，RFC p1b-v8-native-bindings）。
@@ -77,6 +79,7 @@ pub use animation::*;
 pub use async_resolver::*;
 pub use cache_storage_bridge::*;
 pub use composite::*;
+pub use counter_plugin::*;
 pub use dirty::*;
 pub use dom_bridge::*;
 pub use element_from_point::*;

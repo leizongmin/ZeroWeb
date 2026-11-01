@@ -248,6 +248,13 @@ enum OutputFormat {
 }
 
 fn main() {
+    // ②A-env（renderer 信任边界 ②）：runner 即自动化——置测试模式信号，本进程 webview
+    // 保留 `__zw*` 测试钩子（counter-plugin 跳过；testdriver stub 依赖）。
+    // SAFETY: main 启动首语句、单线程期，先于一切线程与 WebView 创建。
+    unsafe {
+        std::env::set_var("ZW_RENDERER_AUTOMATION", "1");
+    }
+
     let args: Vec<String> = std::env::args().collect();
 
     if std::env::var("ZW_SHAPED_ADVANCE_TRACE").as_deref() == Ok("1") {
