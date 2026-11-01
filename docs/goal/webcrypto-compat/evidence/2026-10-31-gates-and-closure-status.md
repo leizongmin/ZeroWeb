@@ -766,3 +766,38 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   推送 → DONE；或 D2② 授权 standing exclusion 口径收口。临时审计件
   `/tmp/webcrypto-anchor-20261101-s203number-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 11:44 追记：锚复跑现 tip（`a88ab50c6`）三跑全 cmp 全等 ×3——渲染流 R5374 abspos 表 available-size 钳 CB 吸收，W4 本轮零采样
+
+- 期间数轮零变化轮询后，本轮 `git pull --rebase` 吸入渲染流
+  `a88ab50c6`（R5374 abspos 表 available-size 钳 CB——css-tables-3
+  §abspos/crbug 1122428，layout-engine table 域新增
+  `clamp_abspos_table_available_width` 挂 real-table 臂 + kill-switch
+  `ZW_ABSPOS_TABLE_AVAIL_CLAMP` + `test_r5374_*` ×2）：
+  layout-engine 系语料执行路径代码，runner 二进制面前移，按纪律对新
+  tip 复跑锚——release runner 重建 28.75s（layout-engine 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑，起跑前 ps 核查无兄弟 cargo/runner 在跑，二进制
+  sha256 每跑后复验三跑全程 `dc8aedd8…` 未变。guard log 三跑零字节
+  （无击杀），runner EXIT=1 为预期挂账常规退出，墙钟 91s/88s/87s。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**：123 文件 / 33,109 子测试 = 25,788P +
+  7,320F + 1T 状态账零差异（程序化计数复核）——R5374 对 webcrypto
+  语料面完全吸收。W4 案处预期 Timeout 臂，本轮零采样，采样面累计
+  5/28 轮，维持低频竞态定性。
+- 锚窗口推进为 **66f4871c1 → a88ab50c6**，实锚链 ……→a5a11cd07→
+  66f4871c1→a88ab50c6，33,109 分母零回归在现 tip 成立。
+- **轮询面**：R5374 自账 make test **3,664P/1F = ua_display_li D4
+  既有账**（渲染流同树自验）+ layout-engine lib 2308P/0F + corpus
+  757F→756F FIXED=1 REGRESSED=∅ + product-smoke PASS + bench-gate
+  定向 GATE PASS；D4 冻结门 `ua_display_tests.rs` 末触仍
+  `c41b0c750`（R5374 仅触 layout-engine table 域 + rendering-compat
+  docs，未触渲染域 style-system 冻结面）；ua_display_li 同键在册
+  未清；git 无 D1/D2 决策新账面（GB-20261031 在案，核验只认 git
+  账面 + 用户主动知会）。收口序列不变：ua_display_li 清零 → make
+  test 全绿复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/
+  脚本登记 → 推送 → DONE；或 D2② 授权 standing exclusion 口径收口。
+  临时审计件
+  `/tmp/webcrypto-anchor-20261101-r5374abspos-{r1,r2,r3}.json`
+  （不入库）。
