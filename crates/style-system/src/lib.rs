@@ -96,11 +96,23 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         return Some(DisplayValue::None);
     }
     Some(match tag {
+        // slice25-D4 双面裁决（t-fup-s24-flip-red）：li → list-item（HTML 渲染规范 UA sheet
+        // `li { display: list-item; }`——https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints
+        // ；JS 回落面 part01 `_zwUaDisplay` slice25 已同值，s161 handle 通道使 host 面
+        // 直接可见故两面必须同值）。ZW 布局把 ListItem 归块流盒域（sizing.rs/postprocess.rs
+        // 与 Block 同域 taffy Block 语义），marker 门控 tree.rs `ListItem||is_html_list_item`
+        // 或臂与 paint_list_marker（tag 键）行为不变——翻转零布局差，CSSOM 计算值归位。
+        "li" => DisplayValue::ListItem,
+        // canvas → inline：replaced 元素不在 UA sheet display 集，回落 display 初始值
+        // 'inline'（同上 spec 链接；Chromium gCS(canvas).display='inline'）。块容器内
+        // replaced-inline 由 collect_items R3987 `is_replaced_inline` 原子 inline +
+        // R57 attr 尺寸回退承接，布局不塌缩（svg 为 driving 已在案）。
+        "canvas" => DisplayValue::Inline,
         // 块级元素（对齐 HTML Living Standard UA 样式表的 display:block 列表）
         "html" | "address" | "article" | "aside" | "blockquote" | "body" | "center" | "dd" | "details" | "dir"
         | "div" | "dl" | "dt" | "fieldset" | "figcaption" | "figure" | "footer" | "form" | "h1" | "h2" | "h3"
-        | "h4" | "h5" | "h6" | "header" | "hgroup" | "hr" | "legend" | "li" | "listing" | "main" | "menu" | "nav"
-        | "ol" | "p" | "plaintext" | "pre" | "search" | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
+        | "h4" | "h5" | "h6" | "header" | "hgroup" | "hr" | "legend" | "listing" | "main" | "menu" | "nav" | "ol"
+        | "p" | "plaintext" | "pre" | "search" | "section" | "summary" | "ul" | "xmp" => DisplayValue::Block,
 
         // 表格元素
         "table" => DisplayValue::Table,
@@ -113,9 +125,13 @@ pub fn ua_default_display(tag: &str) -> Option<DisplayValue> {
         "col" => DisplayValue::TableColumn,
         "colgroup" => DisplayValue::TableColumnGroup,
 
-        // 内联块级元素
-        "img" | "video" | "audio" | "canvas" | "iframe" | "embed" | "object" | "input" | "button" | "select"
-        | "textarea" | "keygen" | "progress" | "meter" => DisplayValue::InlineBlock,
+        // 内联块级元素（表单控件组——UA sheet 15.4 控件默认 inline-block，Chromium gCS
+        // input/button/select/textarea 同值）。replaced 非控件族 img/video/audio/iframe/
+        // embed/object 的 spec 值同为 inline（UA sheet 无 display 规则），ZW 暂归本组作
+        // 内在尺寸布局近似——族级两面裁决不在本切片（t-fup-s24-flip-red 只裁 canvas/li
+        // 两面可见分叉），留待后续任务同规翻转。
+        "img" | "video" | "audio" | "iframe" | "embed" | "object" | "input" | "button" | "select" | "textarea"
+        | "keygen" | "progress" | "meter" => DisplayValue::InlineBlock,
 
         // display:none
         // R1669：+ `area`（image map 区域，HTML 渲染规范 area{display:none}——仅定义可点击区不渲染盒）
@@ -1859,6 +1875,9 @@ impl StyleSystem {
                 DisplayValue::TableFooterGroup => "table-footer-group",
                 DisplayValue::InlineBlock => "inline-block",
                 DisplayValue::None => "none",
+                // t-fup-s24-flip-red：li UA 默认 list-item（ua_default_display slice25-D4
+                // 双面裁决臂）须回注原值——catch-all 曾把 ListItem 折成 inline。
+                DisplayValue::ListItem => "list-item",
                 _ => "inline",
             };
             ua_decl_inputs.push(("display".to_string(), display_str.to_string(), false, (0, 0, 0), None));

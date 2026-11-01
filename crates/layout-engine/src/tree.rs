@@ -244,6 +244,21 @@ pub(crate) fn phasea_multi_inline_eligible(
     if !matches!(s.display, DisplayValue::Inline) {
         return false;
     }
+    // R3987/R4489（CSS Display 3 §2.4）：display:inline 的 replaced 类元素是 atomic
+    // inline，不是可跳过的纯文本 inline 包裹层。canvas 的 attr 固有回退（R57）与
+    // min/max-width content 关键字 transferred 臂（R5178）都在 taffy 盒路径承接
+    //（canvas UA 默认原为 inline-block，s24 翻转 t-fup-s24-flip-red 后 CSSOM 报
+    // inline 而布局仍需盒）——跳过会让其丢失 taffy 节点 → LayoutBox 整盒消失
+    //（r5346 replaced_without_definite_ancestor_stays_attr_intrinsic 收 0 盒）。
+    // svg 及其余 replaced 类维持既有 skip 路径（svg 默认即 inline，IFC R3987/R4000
+    // 语义在其上验证在案，本切片不改其行为）。
+    // https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
+    if doc
+        .get(child_id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("canvas")))
+    {
+        return false;
+    }
     if matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) {
         return false;
     }
@@ -2518,22 +2533,29 @@ fn is_summary_element(doc: &Document, id: NodeId) -> bool {
 /// 子节点（含匿名文本），元素盒自身按 image 固有尺寸 sizing + paint 渲染图片（绕 R109 IFC
 /// 不测 inline replaced 的阻塞，见 R2438 child-injection 证伪）。kill-switch `ZW_CONTENT_REPLACE=0`。
 /// R57（M3）：replaced 元素（canvas/video/audio/iframe/embed/object/applet）受支持时
-/// 抑制 fallback 子内容参与布局（HTML §4.8.10）。display 判定用 InlineBlock（UA 表
-/// 中这些元素的内联块映射；非 replaced 的 InlineBlock 不受影响）。
-fn is_replaced_with_fallback(computed: &ComputedStyle, doc: &Document, dom_id: NodeId) -> bool {
+/// 抑制 fallback 子内容参与布局（HTML §4.8.10）。display 判定 Block | InlineBlock |
+/// Inline——任意 display 下 fallback 都不应建盒；标签集无 svg，Inline 路径仅 replaced
+/// 族自身可达，非 replaced 同 display 元素不受影响。
+pub(crate) fn is_replaced_with_fallback(computed: &ComputedStyle, doc: &Document, dom_id: NodeId) -> bool {
     // R57（M3）：display 匹配放宽 InlineBlock → Block | InlineBlock——canvas-grid
     // reftest 的 .grid-cell-content { display: block } 使 canvas 为 block，旧条件
     // 下 fallback 子（<p class="fallback">）仍建盒（撑高 span → grid 行高错——
     // composite.grid 对角线布局 12.86% 之一）。HTML §4.8.10：fallback 仅在元素
     // 不支持时显示——canvas 渲染时任何 display 都应排除 fallback 子。
-    matches!(computed.display, DisplayValue::Block | DisplayValue::InlineBlock)
-        && doc.get(dom_id).is_some_and(|n| match &n.kind {
-            NodeKind::Element(e) => matches!(
-                e.local_name(),
-                "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet"
-            ),
-            _ => false,
-        })
+    // t-fup-s24-flip-red：UA 表 canvas 默认已翻 Inline（非 InlineBlock），display
+    // 判据继续漏 Inline → fallback 子泄漏建盒（fallback margin-collapse 顶移 body、
+    // ghost 盒入 gBCR/hit-testing）。补 Inline 后任意 display 均排 fallback；标签集
+    // 无 svg，Inline 臂仅 replaced 族自身可达。
+    matches!(
+        computed.display,
+        DisplayValue::Block | DisplayValue::InlineBlock | DisplayValue::Inline
+    ) && doc.get(dom_id).is_some_and(|n| match &n.kind {
+        NodeKind::Element(e) => matches!(
+            e.local_name(),
+            "canvas" | "video" | "audio" | "iframe" | "embed" | "object" | "applet"
+        ),
+        _ => false,
+    })
 }
 
 fn is_content_url_element(computed: &ComputedStyle) -> bool {
@@ -3901,7 +3923,15 @@ fn build_subtree(
             // R109 §9.2.1.1（env R109_WIRE=1）：
             // ① inline 元素含 in-flow block-level 子元素 → inline 被拆分为匿名块盒序列
             // ② block 容器含混合 inline+block 子元素 → inline 子元素被匿名块盒包裹
-            let is_inline_r109 = r109_wired() && inline_has_block_child(doc, styles, dom_id);
+            //
+            // t-fup-s24-flip-red：fallback 抑制（is_replaced_with_fallback，上方
+            // children_dom 已清空）的元素不得成为 R109 拆分宿主——inline_has_block_child
+            // 直读 DOM，会复活已抑制的 fallback 子（盒溶解 + fallback 提升建盒）。翻转前
+            // UA canvas 是 InlineBlock，inline 判据（仅 Inline）天然不中；翻转后 UA canvas
+            // 为 Inline，此门缺位使带 fallback 的 inline canvas 整盒消失（HTML §4.8.10：
+            // fallback 仅在元素不支持时显示，任意 display 下都不参与布局）。
+            let fallback_suppressed = is_replaced_with_fallback(&computed, doc, dom_id);
+            let is_inline_r109 = r109_wired() && !fallback_suppressed && inline_has_block_child(doc, styles, dom_id);
             let is_block_mixed = r109_wired() && block_container_has_mixed_content(doc, styles, dom_id);
             let r109_segments = if is_inline_r109 {
                 ctx.r109.split_parents.insert(dom_id);
@@ -4128,13 +4158,25 @@ fn build_subtree(
                             //（hit_test_absolute_positioned_link 回归：div 内 abspos <a> 被 leaf 吞）。
                             let cs = styles.get(&c);
                             let is_inline = cs.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                            // R3987（CSS Display 3 §2.4 / CSS2 §9.2.1.1）：display:inline 的
+                            // canvas 是 atomic inline，非纯 inline 包裹层——s24 翻转
+                            //（t-fup-s24-flip-red）把 canvas UA 默认从 inline-block 翻为 inline
+                            // 后，若仍计入 all_inline，flex item/inline-block 等内容尺寸容器会
+                            // 走 leaf-measure 路径把整棵子树吞进 IFC 测量（无子 taffy 节点），
+                            // canvas 丢 LayoutBox（r5346
+                            // replaced_without_definite_ancestor_stays_attr_intrinsic 收 0 盒）。
+                            // canvas 的 R57 attr 回退/R5178 transferred 臂在 taffy 盒路径承接。
+                            // svg 及其余 replaced 类不计（svg 默认即 inline，维持既有行为）。
+                            let not_canvas_atomic = !doc.get(c).is_some_and(|n| {
+                                matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("canvas"))
+                            });
                             let not_ooflow = cs
                                 .is_some_and(|s| !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed));
                             let no_elem_child = !doc
                                 .child_nodes(c)
                                 .iter()
                                 .any(|&gc| doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Element(_))));
-                            is_inline && not_ooflow && no_elem_child
+                            is_inline && not_canvas_atomic && not_ooflow && no_elem_child
                         }
                         _ => true,
                     }

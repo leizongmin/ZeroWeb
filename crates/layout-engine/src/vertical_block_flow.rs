@@ -309,6 +309,9 @@ fn anchor_vrl_root_children(root: &mut LayoutBox, styles: &HashMap<NodeId, Compu
         return;
     }
     use zero_css_parser::values::DisplayValue;
+    // t-fup-s24-flip-red：UA 默认 li 已翻 ListItem（converter 映射 taffy Block，与
+    // 下方 R4447 判据同列），漏列则 vrl 根下 UA li 不过 block-level 判据、缺席右缘
+    // 重锚组。
     let block_children: Vec<usize> = root
         .children
         .iter()
@@ -319,7 +322,7 @@ fn anchor_vrl_root_children(root: &mut LayoutBox, styles: &HashMap<NodeId, Compu
                 && matches!(c.float, FloatValue::None)
                 && c.node_id
                     .and_then(|id| styles.get(&id))
-                    .is_some_and(|s| matches!(s.display, DisplayValue::Block))
+                    .is_some_and(|s| matches!(s.display, DisplayValue::Block | DisplayValue::ListItem))
         })
         .map(|(i, _)| i)
         .collect();
@@ -631,6 +634,9 @@ pub fn vertical_block_child_indices_ex(
             return None;
         }
     }
+    // t-fup-s24-flip-red：block-level 子判据补 ListItem——UA 默认 li 已翻 ListItem
+    // （converter 映射 taffy Block），漏列则 vertical 容器下 ≥2 个 UA li 全部缺席
+    // 本 pass 的块轴堆叠 → 同位塌叠。
     let block_indices: Vec<usize> = b
         .children
         .iter()
@@ -641,7 +647,7 @@ pub fn vertical_block_child_indices_ex(
             }
             c.node_id
                 .and_then(|id| styles.get(&id))
-                .is_some_and(|s| matches!(s.display, DisplayValue::Block))
+                .is_some_and(|s| matches!(s.display, DisplayValue::Block | DisplayValue::ListItem))
         })
         .map(|(i, _)| i)
         .collect();

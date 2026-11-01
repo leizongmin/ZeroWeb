@@ -947,3 +947,8 @@ mod r5376_abspos_auto_margin_tests;
 /// R5373 回归测试：R1743 父高度回填 extent 计入塌缩屏障（CSS2 §10.6.3/§8.3.1；
 /// WPT background-root-017 驱动）。
 mod r5373_backfill_barrier_margin_tests;
+
+/// t-fup-s24-flip-red 返修回归：UA display 翻转（li=list-item/canvas=inline）暴露的
+/// 布局缺口二则——inline canvas fallback 子抑制（HTML §4.8.10）与 vertical 容器
+/// block-level 判据的 ListItem 列。
+mod s24_flip_layout_gap_tests;

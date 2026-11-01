@@ -46,7 +46,6 @@ fn test_html_block_level_sectioning_elements_default_to_block() {
         "header",
         "hgroup",
         "hr",
-        "li",
         "listing",
         "main",
         "menu",
@@ -81,18 +80,26 @@ fn test_inline_elements_remain_unset() {
     }
 }
 
-/// 现状守卫（slice25 收尾轮，D4 登记）：canvas 在 Rust host 面 `ua_default_display`
-/// 归 InlineBlock（replaced 元素组），而 JS 回落面（part01 `_zwUaDisplay`）slice25 已
-/// 翻转为 spec UA sheet 语义（canvas 不在 block 集 → 初始值 inline）——双面分叉。
-/// host li→Block + marker 门控与 spec `li{display:list-item}` 的语义等价性待裁决
-///（不预设翻转 host 字面值）；双面裁决前冻结 host 现状，未来修复须同提交双面翻转
-/// 并带 reftest/product-smoke 门控。
+/// D4 双面裁决钉（t-fup-s24-flip-red，兑现 slice25 收尾轮冻结契约「未来修复须同提交
+/// 双面翻转并带 reftest/product-smoke 门控」）：host 面 `ua_default_display` 与 JS 回落面
+///（part01 `_zwUaDisplay`，slice25 `af677d7f0` 翻转）同值——li → list-item（HTML 渲染
+/// 规范 UA sheet `li { display: list-item; }`）、canvas → inline（replaced 不在 UA sheet
+/// display 集，回落初始值）。裁决依据：ZW 布局 ListItem 归块流盒域（sizing/postprocess
+/// 与 Block 同域 taffy Block 语义）、marker 门控 `ListItem||is_html_list_item` 或臂与
+/// paint_list_marker（tag 键）行为不变；canvas 块容器内 replaced-inline 由 collect_items
+/// R3987 原子 inline + R57 attr 尺寸回退承接。回归线：engine `test_ua_display_li_list_
+/// item_canvas_inline_s24_flip`（s161 handle 通道后 host 面即 CSSOM 真值源）。
 #[test]
-fn test_canvas_host_inline_block_frozen_until_dual_surface_adjudication() {
+fn test_li_list_item_canvas_inline_dual_surface_adjudicated() {
+    assert_eq!(
+        ua_default_display("li"),
+        Some(DisplayValue::ListItem),
+        "li host 面应 list-item（UA sheet li 规则，双面同值——D4 冻结已裁决翻转）"
+    );
     assert_eq!(
         ua_default_display("canvas"),
-        Some(DisplayValue::InlineBlock),
-        "canvas host 面现状 InlineBlock（D4 双面分叉裁决前冻结现状）"
+        Some(DisplayValue::Inline),
+        "canvas host 面应 inline（replaced 回落初始值，双面同值——D4 冻结已裁决翻转）"
     );
 }
 

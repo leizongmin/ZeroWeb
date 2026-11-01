@@ -104,7 +104,11 @@ impl LayoutEngine {
                 s.display,
                 DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
             );
-            let is_block = matches!(s.display, DisplayValue::Block);
+            // t-fup-s24-flip-red：ListItem 与 Block 同入本 pass——converter 把 ListItem 映射
+            // taffy Block（converter/mod.rs convert_display），intrinsic_sizing/tree.rs 既有
+            // 分组同样并列；缺位则 li width:min-content 不过 R1018 gate，flex item 定尺塌 0
+            //（p114 flex_item_min_content_width_not_overwritten 实证）。
+            let is_block = matches!(s.display, DisplayValue::Block | DisplayValue::ListItem);
             // R4149：宽轴关键字（min/max-width content 关键字）是物理水平轴属性，vertical-rl
             // 的盒同样受钳（flex-item-min-width-min-content：vertical-rl item min-width:
             // min-content 应 floor 到子 100px 块宽）——kw 盒不限书写模式，其余保持 HorizontalTb。

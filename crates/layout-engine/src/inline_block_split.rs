@@ -369,6 +369,14 @@ fn inline_child_is_pure_block_carrier(doc: &Document, styles: &HashMap<NodeId, C
     {
         return false;
     }
+    // t-fup-s24-flip-red：fallback 抑制的 replaced 元素（HTML §4.8.10 七标签集，判定
+    // 同 `crate::tree::is_replaced_with_fallback`）不得作纯块载体——其 DOM 子是不参与
+    // 布局的 fallback 内容（build_subtree children 已清空），载体升格直读 DOM 会复活
+    // 它们：Inline canvas + fallback `<p>` 曾被升格——canvas 整盒消失、p 提升到容器层
+    //（body 高 18 = fallback p 高）。svg 不在 fallback 集（子是真实内容），维持载体资格。
+    if crate::tree::is_replaced_with_fallback(style, doc, child) {
+        return false;
+    }
     let mut has_block = false;
     for gc in doc.child_nodes(child) {
         match doc.get(gc).map(|n| &n.kind) {
