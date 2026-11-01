@@ -2628,13 +2628,27 @@
     return mime === 'image/gif' || mime === 'image/png' || mime === 'image/jpeg'
       || mime === 'image/svg+xml' || mime === 'image/x-icon' || mime === 'image/webp';
   };
+  // s223：候选 URL 绝对化核——WHATWG URL 解析失败返回 null（调用点保持
+  // 原串）。不走 _zwResolveFetchUrl：其手写 fallback 会把 `//[`（bracket
+  // host，URL parser 拒绝）误拼成 https://host/[。base 与 _zwResolveFetchUrl
+  // 同源（文档基 URL，net-api M5-S7）。
+  // https://html.spec.whatwg.org/multipage/images.html#update-the-image-data
+  globalThis.__zwAbsolutizeSourceUrl5277 = function (u) {
+    if (typeof URL !== 'function') return null;
+    var base = (typeof globalThis._zwDocBaseURL === 'function')
+      ? globalThis._zwDocBaseURL()
+      : _zwCurrentHref();
+    try { return new URL(String(u == null ? '' : u), base).href; } catch (_e5277abu) { return null; }
+  };
   // §4.8.4.3.8 create a source set：srcset 候选 + sizes 源尺寸 + default source
   // 补挂（无 1x 密度描述符且无 width 描述符时）+ 密度归一。候选 URL 就地
   // 绝对化（spec select-an-image-source：selected source 是**解析后** URL
   // https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
   // ——available-images 元组键/请求 URL/currentSrc 同源；IDL `.src` 往返会把
   // 绝对形写回属性，raw 键与绝对键并存会把同图拆成两个 avail 表项——
-  // image-loading-lazy-available P→F 实证）。
+  // image-loading-lazy-available P→F 实证）。解析失败候选保持原串（spec
+  // update the image data 步骤 13 broken 臂：current URL = selected source
+  // 原始串——s223 fail-to-resolve 定谳面，__zwAbsolutizeSourceUrl5277）。
   globalThis.__zwCreateSourceSet5277 = function (defaultSource, srcset, sizes) {
     var sources = String(srcset == null ? '' : srcset) !== '' ? globalThis.__zwParseSrcsetAttr5277(srcset) : [];
     var size = globalThis.__zwParseSizesAttr5277(sizes);
@@ -2649,8 +2663,9 @@
       if (sources[k].density === undefined) {
         sources[k].density = sources[k].width !== undefined ? sources[k].width / size : 1;
       }
-      if (sources[k].url && typeof _zwResolveFetchUrl === 'function') {
-        try { sources[k].url = _zwResolveFetchUrl(String(sources[k].url)); } catch (_e5277abs) {}
+      if (sources[k].url && typeof globalThis.__zwAbsolutizeSourceUrl5277 === 'function') {
+        var _zwAbs = globalThis.__zwAbsolutizeSourceUrl5277(sources[k].url);
+        if (_zwAbs !== null) sources[k].url = _zwAbs;
       }
     }
     return { sources: sources, size: size };
@@ -2687,8 +2702,9 @@
       var cSources = globalThis.__zwParseSrcsetAttr5277(cSrcset);
       // source 分支不经 __zwCreateSourceSet5277——绝对化同源（见 create 注记）。
       for (var cs = 0; cs < cSources.length; cs++) {
-        if (cSources[cs].url && typeof _zwResolveFetchUrl === 'function') {
-          try { cSources[cs].url = _zwResolveFetchUrl(String(cSources[cs].url)); } catch (_e5277absc) {}
+        if (cSources[cs].url && typeof globalThis.__zwAbsolutizeSourceUrl5277 === 'function') {
+          var _zwAbsc = globalThis.__zwAbsolutizeSourceUrl5277(cSources[cs].url);
+          if (_zwAbsc !== null) cSources[cs].url = _zwAbsc;
         }
       }
       if (!cSources.length) continue;

@@ -437,9 +437,9 @@
               var _csRec = globalThis._zwSelectedSources5277;
               var _csUrl = _csRec ? _csRec[key] : '';
               if (_csUrl) {
-                if (typeof _zwResolveFetchUrl === 'function') {
-                  try { return _zwResolveFetchUrl(_csUrl); } catch (_eCur5220) {}
-                }
+                // s223：记录值经 __zwAbsolutizeSourceUrl5277 生成——绝对形或
+                // 解析失败原串，直接返回（_zwResolveFetchUrl 手写 fallback
+                // 会把 `//[` 误拼，fail-to-resolve 定谳面）。
                 return String(_csUrl);
               }
             } catch (_eCrec) {}
@@ -449,10 +449,16 @@
           // https://html.spec.whatwg.org/multipage/images.html#dom-img-currentsrc
           // ——selected source 的 resolved URL；img.complete async src 案
           // `new URL(currentSrc).pathname`、adoption 案 `resolve()` 期望绝对形）。
-          // 解析失败回落原串。AUDIO/VIDEO 维持原串（媒体 data: URL currentSrc
-          // 断言面不动）。
-          if (resourceTag === 'IMG' && typeof _zwResolveFetchUrl === 'function') {
-            try { return _zwResolveFetchUrl(String(resourceState.url)); } catch (_eCur5275) {}
+          // s223：解析失败回落原串（spec update the image data 步骤 13 broken
+          // 臂 current URL = selected source 原始串——`//[` 等 bracket host
+          // URL parser 拒绝，不走手写 fallback 拼接）。
+          // https://html.spec.whatwg.org/multipage/images.html#update-the-image-data
+          // AUDIO/VIDEO 维持原串（媒体 data: URL currentSrc 断言面不动）。
+          if (resourceTag === 'IMG') {
+            var _csAbs = (typeof globalThis.__zwAbsolutizeSourceUrl5277 === 'function')
+              ? globalThis.__zwAbsolutizeSourceUrl5277(resourceState.url)
+              : String(resourceState.url);
+            if (_csAbs !== null) return _csAbs;
           }
           return resourceState.url;
         }
