@@ -1099,3 +1099,31 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
   件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-r5376-tip517ccefda.json`
   （不入库）。
+
+### 2026-11-01 14:45 追记：锚复跑现执行 tip（`809a14134`）三跑整文件对 M1 终态锚 cmp 全等 ×3——html-semantics 流 s207 form.action 特例吸收，本轮零采样（累计 9/37 轮）
+
+- 14:35 锚账 push 前 rebase 窗口又吸入 html-semantics 流 `809a14134`
+  （s207 form.action 文档 URL 反射特例——missing/空串返 document's
+  URL，base-url 变体 2F 收口，engine shim `part03.js` + bridge 测试
+  `part09.rs`，shim 入 runner 包，[该流 s207 自账]）——锚再度陈旧，
+  按纪律对新执行 tip 复跑：release runner 重建 27.0s（二进制 sha256
+  `7b7a9939…` 三跑稳定）+ test-guard 直包同参数。起跑前 ps 二遇
+  editing 流 runner 兄弟进程在本 clone 迭代同一 fixture
+  `zz-fc-slice.html`（两连跑 PID 242649/243414）——按纪律逐次等其
+  自行退出（20s/60s）后起跑，未硬解未杀进程。guard log 三跑零字节
+  （零击杀），EXIT=1 预期，墙钟 93s/93s（RUN1 同窗口）。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**（sha256 同值 `40ea3c8e…`）：123 文件 /
+  33,109 子测试 = 25,788P + 7,320F + 1T 状态账零差异——s207 对
+  webcrypto 语料面完全吸收。W4 本轮零采样，采样面累计 **9/37 轮**。
+- 锚窗口推进为 **517ccefda → 809a14134**，实锚链 ……→5a2aafaf9→
+  517ccefda→809a14134，33,109 分母零回归在现执行 tip 成立。本轮连
+  续三个 rebase/push 窗口各吸入一个并行流执行路径前移（M4 注释面 →
+  R5376 → s207），锚三度复跑——并行流活跃期窗口竞速常态，纪律不变。
+- **轮询面**：D4 裁决分支/PR #267 head 仍 `2154ac296`（14:09 落定）、
+  仍 OPEN、未合入 main，D2① 未触发；冻结门 main 侧末触仍
+  `c41b0c750`，ua_display_li 在册未清；git 无 D1/D2 决策新账面。收口
+  序列不变：PR #267 合入 main → make test 全绿复证 → 锚按届时最终
+  tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
+  件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-s207-tip809a14134.json`
+  （不入库）。

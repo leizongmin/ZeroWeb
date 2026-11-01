@@ -51,18 +51,21 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 14:35（锚复跑现执行 tip `517ccefda` ×3——
-14:28 锚账 push 前 rebase 窗口吸入渲染流 R5376 abspos 约束方程
-margin 侧（CSS2 §10.3.7，layout-engine `abspos.rs` + tests，crates/
-执行路径前移）+ R5376 轮 docs：release runner 重建 28.9s（sha256
-`4d918822…` 三跑稳定）+ test-guard 直包三连跑（guard 三跑零击杀，
-墙钟 97s/93s），**RUN1/RUN2/RUN3 对 M1 终态锚整文件逐字节一致 ×3
-且三跑互等**（7,208,436 B，sha256 同值），33,109 条状态账 0 差异
-（25,788P+7,320F+1T），W4 本轮零采样累计 9/36 轮；**锚窗口推进
-5a2aafaf9 → 517ccefda**。轮询面：PR #267 head 仍 `2154ac296`（14:09
-落定）**仍 OPEN 未合入 main，D2① 未触发**；冻结门 main 侧末触仍
-`c41b0c750`，ua_display_li 在册未清，D1 无新账面，见
-[evidence](evidence/2026-10-31-gates-and-closure-status.md)）
+**最后更新**: 2026-11-01 14:45（锚复跑现执行 tip `809a14134` ×3——
+14:35 锚账 push 前 rebase 窗口又吸入 html-semantics 流 s207
+form.action 文档 URL 反射特例（missing/空串返 document's URL，
+base-url 变体 2F 收口，engine shim `part03.js` + `part09.rs`，shim 入
+runner 包）：release runner 重建 27.0s（sha256 `7b7a9939…` 三跑稳定）
++ test-guard 直包三连跑（guard 三跑零击杀，墙钟 93s/93s），**RUN1/
+RUN2/RUN3 对 M1 终态锚整文件逐字节一致 ×3 且三跑互等**（7,208,436 B，
+sha256 同值），33,109 条状态账 0 差异（25,788P+7,320F+1T），W4 本轮
+零采样累计 9/37 轮；**锚窗口推进 517ccefda → 809a14134**。本轮连续
+三窗口各吸一个并行流执行路径前移（M4 注释面→R5376→s207）锚三度
+复跑；起跑前 ps 二遇 editing 流 runner 兄弟进程（zz-fc-slice 迭代），
+按纪律等其自行退出后起跑未硬解。轮询面：PR #267 head 仍
+`2154ac296`（14:09 落定）**仍 OPEN 未合入 main，D2① 未触发**；冻结
+门 main 侧末触仍 `c41b0c750`，ua_display_li 在册未清，D1 无新账面，
+见 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
 
