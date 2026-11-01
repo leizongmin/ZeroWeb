@@ -3086,7 +3086,22 @@
           var _imConn = _makeProxy(sel, handle);
           if (_imConn && _imConn.isConnected === false) {
             _defer(function () {
-              globalThis.__zwImgRunUpdate5277(sel, handle, _imSrc, _imDensity, true);
+              // s225：延步内**重做选源**（spec update-the-image-data 对未连接
+              // img 整体延步运行——whatwg/html#7383：URL 解析随 update
+              // microtask 生效，src 后 <base> 变更在延步内可见，image-base-url
+              // 断言面；_imViaDefer=true 保持同一 update run 语义，s224 纪元
+              // 不 bump）。空选中（延步内 src 已撤）走共享 null-selection 面。
+              var _imPk2 = null;
+              try {
+                _imPk2 = globalThis.__zwSelectImageSource5277 ? globalThis.__zwSelectImageSource5277(sel, handle) : null;
+              } catch (_e5277rs) {}
+              if (_imPk2 && _imPk2.url) {
+                globalThis.__zwImgRunUpdate5277(sel, handle, String(_imPk2.url), _imPk2.density, true);
+                return;
+              }
+              if (typeof globalThis.__zwImgNullSelection5277 === 'function') {
+                globalThis.__zwImgNullSelection5277(sel, handle);
+              }
             });
             return;
           }
@@ -3176,8 +3191,17 @@
       globalThis.__zwImgRunUpdate5277(sel, handle, picked.url, picked.density);
       return;
     }
-    // null selection：仅已有请求（resourceState 在）时写 broken（无请求 img 维持
-    // 既有「无状态」面——sweep 跳过语义）。
+    if (typeof globalThis.__zwImgNullSelection5277 === 'function') {
+      globalThis.__zwImgNullSelection5277(sel, handle);
+    }
+  };
+  // s225：null-selection 面（自 Revalidate 空选中臂抽取共享——RunUpdate
+  // detached 延步重选空臂同语义）。仅已有请求（resourceState 在）时写
+  // broken（无请求 img 维持既有「无状态」面——sweep 跳过语义）；spec：
+  // current request → broken、current URL 清空、error 仅在「有 src/srcset/
+  // picture 关联」时派——'src removed'/'srcset removed' rows 撤除后无关联
+  // → 不派（timeout 面）。
+  globalThis.__zwImgNullSelection5277 = function (sel, handle) {
     var _nkKey = _elKey(sel, handle);
     var _nkPrev = _resourceStates[_nkKey];
     if (!_nkPrev) return;

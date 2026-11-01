@@ -167,6 +167,11 @@ fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/lo
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/atImported.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.txt"
 
+# ③c the-img-element 助资产（s225）：image-base-url 语料经 <base href="resources/">
+# 重写引用 resources/green.png——重写后路径落在域内 resources/，缺席即假 Fail
+# "The image must load"。utf-8.css 同坑变体（幂等快路径整目录跳过后补清单）。
+fetch_raw "html/semantics/embedded-content/the-img-element/resources/green.png"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"
