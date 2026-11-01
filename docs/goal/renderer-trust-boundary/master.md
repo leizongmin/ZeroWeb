@@ -2,8 +2,8 @@
 
 **日期**：2026-11-01
 **状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付；M4 前置基线 + 已交付修复面 DC-5 生产 IPC 复测已交付）。
-**当前卡点**：四项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠；③ helper 完整 OS sandbox（renderer 现为 RFC P3 占位、image-decoder 无钩子）是否补齐；④ 沙箱安装失败平台策略 A/B/C（推荐 C，见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）。
-**下一步**：用户对 ①②③④ 拍板后执行对应修复/设计切片；全部落定后 M4 收口（决策面修复复测 + 剩余风险报告；已交付面的 DC-5 复测见 [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md)）；DRI3 显示补验与 macOS 真机验收为环境受限在册项。
+**当前卡点**：四项待用户/设计决策（选项已细化到可拍板粒度，见 [决策包](2026-11-01-decision-package-1234.md)）：① CDP 默认强制 token（产品时序：默认强/宽限期/维持 opt-in）；② `__zw*` mutator 钩子（`__zwUserActivate`/`__zwSetPermission`/`__zwClipboardStoreWrite`）装配策略——推荐 ②A 反插桩 counter-plugin + env 测试模式（shim 三文件零改动规避 §9 碰撞，合法调用方已查实在页面外 runner 注入）；③ helper 完整 OS sandbox——推荐 ③A 分两切片（image-decoder 先行：纯 stdio 零 fs/socket 面查实，最紧档案；renderer 后行：网络直连须缩限档案）；④ 平台策略（推荐 C 随 ③ 统一拍板，见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）。
+**下一步**：用户对 ①②③④ 拍板（[决策包](2026-11-01-decision-package-1234.md)含推荐与落地顺序）后执行对应修复/设计切片；全部落定后 M4 收口（决策面修复复测 + 剩余风险报告；已交付面的 DC-5 复测见 [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md)）；DRI3 显示补验与 macOS 真机验收为环境受限在册项。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
