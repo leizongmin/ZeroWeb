@@ -53,6 +53,11 @@ fn table_rtl_col_order_enabled() -> bool {
     *TABLE_RTL_COL_ORDER_ON
 }
 
+/// R5374：abspos 表 available-size 钳 CB 开关（default-on；`ZW_ABSPOS_TABLE_AVAIL_CLAMP=0`
+/// 回退 taffy 口径）。LazyLock 单读同 [`TABLE_RTL_COL_ORDER_ON`]。
+static ABSPOS_TABLE_AVAIL_CLAMP_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_ABSPOS_TABLE_AVAIL_CLAMP").as_deref() != Ok("0"));
+
 /// R5241（CSS2 §17.5.2.1/§17.6.2.1 边框中心间距模型补全）：collapse 模式行高贡献
 /// = cell border-box − ½(bt+bb)（与列宽 R4027/R4028 半 border 分摊同构；外缘 cell
 /// 边框胜出时表 border-box 加 ½ 外缘 border）。border-conflict-element-001a 族：
@@ -250,6 +255,20 @@ fn adjust_table_layout_inner(
             } else if child_is_real_table {
                 let old_height = root.children[idx].height;
                 layout_table(&mut root.children[idx], doc, styles, inline_fonts);
+                // R5374：abspos 表 available-size 钳 CB（css-tables-3 §abspos）。须在
+                // recenter 之前——钳宽可能连带表高变化，recenter 以最新高度对 taffy
+                // stretch 高求 leftover。CB 标量先读后借（&mut + & 同根借用冲突）。
+                let cb_pb_width = root.content_width + root.padding_left + root.padding_right;
+                let cb_pb_right_in_content = root.content_width + root.padding_right;
+                clamp_abspos_table_available_width(
+                    &mut root.children[idx],
+                    root.is_abspos_cb,
+                    cb_pb_width,
+                    cb_pb_right_in_content,
+                    doc,
+                    styles,
+                    inline_fonts,
+                );
                 reflow_siblings_after_table_height_change(root, idx, old_height, true);
                 // R2061：abspos table 内容高确定后按 §10.3.7 重算垂直 auto-margin 居中
                 //（old_height = taffy stretch 高 = CB 可用）。在调用方调用覆盖 build_grid
@@ -3395,6 +3414,59 @@ fn recenter_abspos_table_vertically(
         0.0
     };
     table_box.y += shift;
+}
+
+/// R5374（css-tables-3 §abspos × CSS2 §10.3.7）：abspos 表的 given available-size
+/// 不得超过 CB 的 available-size（crbug 1122428；absolute-tables-011 driving：CB
+/// padding-box 100 + `right:-100px` + width auto → taffy shrink-to-fit available 按
+/// 「CB 宽 − right」口径 = 200，表收在 max-content 136 而非 CB 宽内，应 100）。
+///
+/// 门（全部满足才动）：
+/// - `is_absolute` 且非 `is_fixed`（fixed CB = viewport，由根级路径承载，镜像 R2061）；
+/// - 父盒即 CB（`is_abspos_cb`）——static 中间层隔开时坐标换算不成立于保守跳过；
+/// - CSS `width: Auto`（显式宽由 taffy 按其解析）；
+/// - 现宽 > CB padding-box 宽（§abspos 钳 available 只缩不涨；shrink-to-fit 结果
+///   ≤ CB 宽时维持既有值）。
+///
+/// 收缩走 [`layout_table_with_width_constraint`]（R4227 §17.5.2.2 列宽统一缩放）以
+/// CB padding-box 宽重排；随后 §10.3.7 定位方程重定 x：left auto + right definite
+/// 时盒右缘 = CB padding-box 右 − right − margin-right（x 为 CB 内容盒相对坐标，
+/// right 仍定位故钳宽不改右缘）。其余 inset 组合维持 taffy x（本切片只收 driving
+/// 案域）。kill-switch `ZW_ABSPOS_TABLE_AVAIL_CLAMP=0`（LazyLock 单读，R3858 教训）。
+fn clamp_abspos_table_available_width(
+    table_box: &mut LayoutBox,
+    cb_is_abspos_cb: bool,
+    cb_pb_width: f32,
+    cb_pb_right_in_content: f32,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    if !*ABSPOS_TABLE_AVAIL_CLAMP_ON {
+        return;
+    }
+    if !table_box.is_absolute || table_box.is_fixed || !cb_is_abspos_cb {
+        return;
+    }
+    let Some(style) = table_box.node_id.and_then(|id| styles.get(&id)) else {
+        return;
+    };
+    if !matches!(style.width, zero_css_parser::values::LengthValue::Auto) {
+        return;
+    }
+    if table_box.width <= cb_pb_width + 0.5 {
+        return;
+    }
+    layout_table_with_width_constraint(table_box, doc, styles, inline_fonts, Some(cb_pb_width));
+    // §10.3.7 定位方程：left auto + right definite → 右缘定位。padding-box 在内容盒
+    // 坐标系张 [-padding_left, content_width + padding_right]，右缘即后者。
+    if matches!(style.left, zero_css_parser::values::LengthValue::Auto)
+        && let Some(right_px) = resolve_table_used_length(&style.right, style)
+    {
+        let margin_right_px = resolve_table_used_length(&style.margin_right, style).unwrap_or(0.0);
+        let right_edge = cb_pb_right_in_content - right_px - margin_right_px;
+        table_box.x = right_edge - table_box.width;
+    }
 }
 
 /// table-sizing 架构切片 R1570：max-width/max-height 不应压缩 table 的固有内容

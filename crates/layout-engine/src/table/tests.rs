@@ -2394,6 +2394,113 @@ fn test_r2061_recenter_noop_for_inflow_table() {
     assert_eq!(table_box.margin_top, 0.0, "in-flow table margin untouched");
 }
 
+/// R5374（css-tables-3 §abspos × CSS2 §10.3.7）：abspos 表的 given available-size
+/// 不得超过 CB 的 available-size。taffy shrink-to-fit available 按「CB 宽 − right」
+/// 口径计（right 负 → available 超 CB 宽），表收在 max-content 而非 CB 宽内。回归
+/// absolute-tables-011：CB padding-box 100 + `right:-100px` + width auto → 表收
+/// 136，应钳到 100 且按 §10.3.7 右缘重定 x（右缘 = 100 − (−100) − 0 = 200 内容盒
+/// 相对，x = 200 − 100 = 100）。
+#[test]
+fn test_r5374_abspos_table_available_clamped_to_cb() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let row_id = doc.create_element("div");
+    let cell_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut ts = ComputedStyle::default();
+    ts.display = DisplayValue::Table;
+    ts.width = LengthValue::Auto;
+    ts.left = LengthValue::Auto;
+    ts.right = LengthValue::Px(-100.0);
+    ts.height = LengthValue::Px(100.0);
+    styles.insert(table_id, ts);
+    let mut rs = ComputedStyle::default();
+    rs.display = DisplayValue::TableRow;
+    styles.insert(row_id, rs);
+    let mut cs = ComputedStyle::default();
+    cs.display = DisplayValue::TableCell;
+    cs.width = LengthValue::Px(136.0); // 模拟 max-content 136（taffy 未钳口径的收缩结果）
+    styles.insert(cell_id, cs);
+
+    let cell_box = LayoutBox {
+        node_id: Some(cell_id),
+        width: 136.0,
+        ..Default::default()
+    };
+    let row_box = LayoutBox {
+        node_id: Some(row_id),
+        children: vec![cell_box],
+        ..Default::default()
+    };
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        is_absolute: true,
+        x: 64.0, // taffy 解；钳宽后按 §10.3.7 右缘重定
+        width: 136.0,
+        content_width: 136.0,
+        children: vec![row_box],
+        ..Default::default()
+    };
+
+    super::clamp_abspos_table_available_width(
+        &mut table_box,
+        true,  // cb_is_abspos_cb
+        100.0, // cb_pb_width
+        100.0, // cb_pb_right_in_content
+        &doc,
+        &styles,
+        Default::default(),
+    );
+
+    assert!(
+        (table_box.width - 100.0).abs() < 0.01,
+        "abspos table width should clamp to CB padding-box 100, got {}",
+        table_box.width
+    );
+    assert!(
+        (table_box.x - 100.0).abs() < 0.01,
+        "abspos table x should re-solve to 100 (right edge 200 in content coords), got {}",
+        table_box.x
+    );
+}
+
+/// R5374 反向门：in-flow 表（is_absolute=false）不做 available 钳制——CSS2 §10.3.7
+/// 定位方程与 css-tables §abspos 只作用于 abspos；in-flow 表宽由 §17.5.2 承载。
+#[test]
+fn test_r5374_clamp_noop_for_inflow_table() {
+    use zero_css_parser::values::LengthValue;
+    let mut doc = Document::new();
+    let root = doc.root();
+    let table_id = doc.create_element("div");
+    let _ = doc.append_child(root, table_id);
+
+    let mut styles = HashMap::new();
+    let mut s = ComputedStyle::default();
+    s.display = DisplayValue::Table;
+    s.width = LengthValue::Auto;
+    s.left = LengthValue::Auto;
+    s.right = LengthValue::Px(-100.0);
+    styles.insert(table_id, s);
+
+    let mut table_box = LayoutBox {
+        node_id: Some(table_id),
+        is_absolute: false,
+        x: 7.0,
+        width: 136.0,
+        content_width: 136.0,
+        ..Default::default()
+    };
+
+    super::clamp_abspos_table_available_width(&mut table_box, true, 100.0, 100.0, &doc, &styles, Default::default());
+
+    assert_eq!(table_box.width, 136.0, "in-flow table width untouched");
+    assert_eq!(table_box.x, 7.0, "in-flow table x untouched");
+}
+
 #[test]
 fn r3635_abspos_table_recenter_accepts_residual_real_insets() {
     use zero_css_parser::values::LengthValue;
