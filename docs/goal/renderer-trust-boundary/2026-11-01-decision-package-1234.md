@@ -5,19 +5,28 @@
 
 ## ② `__zw*` 测试钩子族装配策略（缺口表在册，DC-1/DC-2 剩余项）
 
-### 现状机制（代码查实）
+### 现状机制（代码查实；2026-11-01 二轮复核，含 5791f2579 shim 变更后行号核验）
 
-- shim 经 `include_str!` 字节拼接注入每文档（`js_dom_bridge.rs:5371-5383`）；钩子以 `globalThis.__zwX = function` 定义、`typeof` 幂等卫，**任何页面无条件可见**。
-- 威胁面 = **页面可调用的特权 mutator**，在册两枚：`__zwUserActivate`（part06.js:446，直置瞬态激活，fullscreen 激活门 part04.js:4966 消费内部 `_zwTransientActive`）、`__zwSetPermission`（part02.js:8656，直写权限注册表）；同型还有 `__zwClipboardStoreWrite`（part02.js:8866，直写剪贴板存储）。`__zw*` 其余为 shim 内部管线约定（数十枚，不授特权，不在本切片范围）。
-- **合法调用方在页面之外**：runner 经注入脚本调用（`tests/wpt-runner/src/testharness.rs:10704/12261`），非页面脚本——测试模式信号可由 runner→renderer 链路携带，页面侧无从伪造。
+- shim 经 `include_str!` 字节拼接注入每文档（`js_dom_bridge.rs:5371-5383`）；钩子以 `globalThis.__zwX = function` 定义、`typeof` 幂等卫，**任何页面无条件可见**。全 shim `globalThis.__zw*` 名共 177 枚，逐一过名分类：绝大多数为内部管线约定（DocWrite/Slot/Ce/Nav 等实现既有页面 API，无新增特权）。
+- **特权 mutator（标准 API 门控旁路面）在册 4 枚**（二轮复核新增 1 枚）：`__zwUserActivate`（part06.js:446，直置瞬态激活；fullscreen 激活门 part04.js:4970 一次性消费 `_zwTransientActive`）、`__zwSetPermission`（part02.js:8656，直写权限注册表；fullscreen 门权限路 part04.js:4966 消费）、`__zwClipboardStoreWrite`（part02.js:8866，直写剪贴板存储）、**`__zwDeleteAllCookies`（part06.js:391，无条件定义，清空 in-JS cookie jar——跨站 cookie 销毁，DC-2 类；runner TESTDRIVER_STUB 转发、钩子缺失 stub 侧拒绝，testharness.rs cookies-compat M1 注释自证）**。
+- **同型 flag 候选（低风险）**：`__zwModalGateBypass`（part01.js:1173/1178 同步窗口置位/清除、part04.js:4662 模态 inert 焦点门消费）——页面可翻 true 但仅自影响焦点语义，非跨站/存储/权限特权；置 non-writable 会破 shim 自身 fixup 写入（不采），倾向记接受残余，② 切片内定。
+- **②A 关键成本（二轮复核查实）**：`__zwSetPermission` 为 load-bearing——`navigator.permissions.request()` headless 自动授予语义（'prompt'→granted，part02.js:9624-9628，注释明示「经 __zwSetPermission 落同一注册表」）在调用时经 `globalThis` 活查找。②A 直接删除则 request() 静默退化为 'prompt' 不授予（非测试页行为变化；WPT 不受影响——测试模式钩子保留）。
+- **合法调用方在页面之外**：runner 经注入脚本调用（`tests/wpt-runner/src/testharness.rs` set_permission/bless/delete_all_cookies 三白名单注释，10704 邻域），非页面脚本——测试模式信号可由 runner→renderer 链路携带，页面侧无从伪造。
 
 ### 选项
 
 | 选项 | 机制 | 优点 | 缺点/风险 |
 |---|---|---|---|
-| **②A 反插桩 counter-plugin（推荐）** | shim 三文件**零改动**（§9 与 html-semantics 流碰撞规避）；本 goal 新增一个 host 侧后置 JS 片段：非测试模式在页面脚本执行前 `delete globalThis.__zwUserActivate/__zwSetPermission/__zwClipboardStoreWrite`（保留内部 reader 钩子如 `__zwPermissionState`——permissions.query 实现自身消费，删除会破正常功能）；测试模式跳过删除 | 碰撞面最小（新文件归本 goal）；mutator 内部状态（`_zwTransientActive`/`_permStates`）仍在，删全局后页面无入口置位；runner 路径零回归（模式开时钩子原样） | 删除时机须钉在 shim 求值后、页面脚本前（既有 shim 求值点之后追加同层注入即可）；「内部 reader 保留清单」须在切片内逐枚核定 |
-| ②B shim 条件化 | 三文件内 `if (测试模式)` 包裹钩子定义 | 单点、无删除时序 | **正面碰撞** html-semantics 流工作文件（§9 不硬解）；每文件改动都需双流协调 |
+| **②A 反插桩 counter-plugin（推荐，范围修订为 4 枚中删 3 枚）** | shim 三文件**零改动**（§9 与 html-semantics 流碰撞规避）；本 goal 新增一个 host 侧后置 JS 片段：非测试模式在页面脚本执行前 `delete globalThis.__zwUserActivate/__zwClipboardStoreWrite/__zwDeleteAllCookies`（`__zwSetPermission` 留守——load-bearing，见上；保留内部 reader 钩子如 `__zwPermissionState`——permissions.query 实现自身消费）；测试模式跳过删除 | 碰撞面最小（新文件归本 goal）；删除面覆盖激活/剪贴板/cookie jar 三特权路；runner 路径零回归（模式开时钩子原样） | **fullscreen 权限路残留**：`__zwSetPermission('fullscreen','granted')` 页面仍可自授（激活路已封、权限路留）——收口半量；「全收口」须选 ②C' 组合（见下） |
+| **②C' 组合：②A 删 3 枚 + `__zwSetPermission` shim 内部闭包化（单点小切口）** | ②A 全套 + part02.js request() 自动授予路改内部闭包引用、`__zwSetPermission` 改测试模式条件定义（part02 单文件 ~10 行） | 特权面全收口；request() 语义不变 | part02.js 单点改动需与 html-semantics 流协调（§9 一次性感撞，非长期并行占用） |
+| ②B shim 全量条件化 | 三文件 `if (测试模式)` 包裹钩子定义 | 单点、无删除时序 | 正面碰撞面最大（part02/04/06 三文件）；每文件改动都需双流协调 |
 | ②C 按 origin 暴露 | 仅测试 origin 注入钩子 | — | 拒绝：runner 页与普通浏览同为 localhost 端口，不可区分，攻击页可直接命中 |
+
+测试模式信号源（②A/②C' 内子选项）不变：**②A-env（推荐）** renderer 进程 env（`ZW_RENDERER_AUTOMATION=1`，runner/browser 派生时注入，进程级不可被页面翻转；wire 不变）；②A-ipc 动 protocol wire，成本高于收益。
+
+### 验收形态（拍板后切片随附常驻回归）
+
+非测试模式：被删 mutator `typeof === 'undefined'` + fullscreen 激活门页面不可自授（激活门回归）+ permissions.query 正常路径不回归 + cookie jar 页面不可清（DC-2 面）；测试模式：runner 既有套件原样绿（html-semantics 流全量由该流自证）。②C' 另验：permissions.request() headless 自动授予语义非测试模式不回归。
 
 ### 测试模式信号源（②A 内子选项）
 
@@ -59,7 +68,7 @@ opt-in `--remote-debugging-token` 已交付（切片 4）。默认强制的取�
 
 ## 落地顺序建议（拍板后）
 
-1. ②（②A-env）：小切片，触点为本 goal 新 counter-plugin 文件 + runner 派生链 env 注入点；不碰 shim 三文件。
+1. ②（②A-env）：小切片，触点为本 goal 新 counter-plugin 文件 + runner 派生链 env 注入点；不碰 shim 三文件（若拍板 ②C' 全收口，另含 part02.js 单点闭包化，需与 html-semantics 流一次协调）。
 2. ③A-image-decoder：最小档案，连同 ④ 的该进程 fail 语义一起落。
 3. ③A-renderer：档案调参面大（网络/字体/缓存/fd socket），独立切片。
 4. ①：随时可做，与 ②③④ 无依赖。
