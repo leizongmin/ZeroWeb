@@ -7645,3 +7645,64 @@ fn test_r5380_option_text_setter_text_isconnected_datalist_options() {
         "datalist 祖先内 select willValidate false（constraint validation barred）"
     );
 }
+
+#[test]
+fn test_r5382_fieldset_walk_shared_helper_alignment() {
+    // R5382（s215）：fieldset 禁用传染走查共享帮手 `_zwDisabledFieldsetAncestor`
+    // 收编钉面——part03 `_zwFeDisabled` fieldset 臂 + part04 willValidate 臂
+    // 单源（s210/s211 挂账）。对齐钉态：option 与其 select 祖先间有 fieldset
+    // 隔层（HTML 解析不可产 fieldset 嵌 select，仅脚手 DOM 面）——原融合循环
+    // else-if 使边界臂在首父为 FIELDSET 时整体缺席（disabled select 不传播），
+    // 拆臂后按 concept-option-disabled「后代」语义传播（与 s214 host 权威模型
+    // 对齐；旧 shim 返 false 因目标行为失败）。willValidate 经共享帮手对同一
+    // 树仍 barred（datalist 早断独立走查保留）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><select id=\"s\" disabled><option id=\"opt\">x</option></select>\
+         <fieldset id=\"fs\" disabled></fieldset></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 脚手 DOM 面构形：select[disabled] > fieldset[disabled] > option（fieldset 隔层）。
+    sandbox
+        .execute(
+            "var _fs = document.getElementById('fs');\
+             var _opt = document.getElementById('opt');\
+             _fs.appendChild(_opt);\
+             document.getElementById('s').appendChild(_fs);\
+             window.__r5382 = [\
+               _opt.matches(':disabled') === true ? '1' : '0',\
+               _opt.willValidate === false ? '1' : '0',\
+               document.getElementById('s').matches(':disabled') === true ? '1' : '0'\
+             ];"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__r5382[0]").unwrap().value,
+        "1",
+        "fieldset 隔层不缺席边界臂：option 经「后代」语义继承 disabled select 禁用（s214 host 对齐）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5382[1]").unwrap().value,
+        "1",
+        "willValidate 经共享帮手 barred（disabled fieldset 祖先，语义与 _zwFeDisabled 单源）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5382[2]").unwrap().value,
+        "1",
+        "sanity：select 自身 disabled 属性直判不受扰"
+    );
+}

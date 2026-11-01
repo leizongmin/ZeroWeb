@@ -6139,31 +6139,21 @@
           // 其**首个 legend 元素子**的后代——上行路径直子即该 legend 才豁免
           //（legend 包 p/嵌 fieldset 隔层、第 2+ legend 均不豁免，
           // disabled-001 语料 5 案钉态）；豁免后继续上行（更外层 disabled
-          // fieldset 仍可 barred）。
-          var _wv = _makeProxy(sel, handle);
-          var _wvNode = _wv;
-          var _wp = _wv.parentNode;
-          var _guard = 0;
-          while (_wp && _guard < 64) {
+          // fieldset 仍可 barred）。s215：fieldset 臂移交共享帮手
+          // `_zwDisabledFieldsetAncestor`（与 part03 `_zwFeDisabled` 单源，
+          // s210/s211 挂账收编，s193 豁免语义原样）；datalist 祖先早断保留
+          // 独立走查（fieldset 臂不掺 datalist 语义）。
+          var _wvDl = _makeProxy(sel, handle);
+          var _wvDlP = _wvDl.parentNode;
+          var _wvDlG = 0;
+          while (_wvDlP && _wvDlG < 64) {
             try {
-              var _wpTagU = String(_wp.tagName).toUpperCase();
-              if (_wpTagU === 'DATALIST') return false;
-              if (_wpTagU === 'FIELDSET' && _wp.disabled) {
-                var _fsLeg = null;
-                try {
-                  var _fsKids = _wp.children;
-                  for (var _fsI = 0; _fsI < _fsKids.length; _fsI++) {
-                    if (String(_fsKids[_fsI].tagName).toUpperCase() === 'LEGEND') { _fsLeg = _fsKids[_fsI]; break; }
-                  }
-                } catch (_eFsK) {}
-                var _fsExempt = false;
-                try { _fsExempt = (_fsLeg != null && _wvNode === _fsLeg); } catch (_eFsI) {}
-                if (!_fsExempt) return false;
-              }
-            } catch (_e) {}
-            try { _wvNode = _wp; _wp = _wp.parentNode; } catch (_e) { break; }
-            _guard++;
+              if (String(_wvDlP.tagName).toUpperCase() === 'DATALIST') return false;
+            } catch (_eWvD) {}
+            try { _wvDlP = _wvDlP.parentNode; } catch (_eWvDb) { break; }
+            _wvDlG++;
           }
+          try { if (_zwDisabledFieldsetAncestor(sel, handle)) return false; } catch (_eWvFs) {}
           if (handle) {
             try { if (__zw_has_attr_handle(handle, 'disabled') === '1') return false; } catch (_e) {}
           } else if (sel) {

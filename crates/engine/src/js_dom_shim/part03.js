@@ -12817,8 +12817,8 @@
   // 查臂注）。
   // s210 `_validityState`、s211 两个 button 激活门（.click() API 门 + R106
   // dispatchEvent click 默认动作门）、s212 焦点门 + matches 伪类臂同口径；
-  // part04 willValidate 臂（s193，disabled-001 钉面）保留原内联走查不动
-  //（共享化挂账承袭）。
+  // part04 willValidate 臂（s193，disabled-001 钉面）s215 起与本臂 fieldset
+  // 走查同源（共享帮手 `_zwDisabledFieldsetAncestor`，s210/s211 挂账收编）。
   function _zwFeDisabled(sel, handle) {
     try {
       // s211：sel 面 latest-wins 融合读（setAttribute/IDL setter 写 lw 层不落
@@ -12830,82 +12830,100 @@
     } catch (_eFdS) {}
     try {
       var _fdNode = _makeProxy(sel, handle);
-      var _fdWalk = _fdNode;
-      var _fdPar = _fdNode.parentNode;
-      var _fdGuard = 0;
       var _fdSelfTag = '';
       try { _fdSelfTag = String(_fdNode.tagName).toUpperCase(); } catch (_eFdST) {}
-      var _fdDepth = 0;
-      while (_fdPar && _fdGuard < 64) {
-        var _fdTag = '';
-        try { _fdTag = String(_fdPar.tagName).toUpperCase(); } catch (_eFdT) {}
-        if (_fdTag === 'FIELDSET') {
-          var _fdDis = false;
-          try { _fdDis = !!_fdPar.disabled; } catch (_eFdD) {}
-          if (_fdDis) {
-            var _fdLeg = null;
-            try {
-              var _fdKids = _fdPar.children;
-              for (var _fdI = 0; _fdI < _fdKids.length; _fdI++) {
-                if (String(_fdKids[_fdI].tagName).toUpperCase() === 'LEGEND') { _fdLeg = _fdKids[_fdI]; break; }
-              }
-            } catch (_eFdK) {}
-            var _fdExempt = false;
-            try { _fdExempt = (_fdLeg != null && _fdWalk === _fdLeg); } catch (_eFdI) {}
-            if (!_fdExempt) return true;
+      // s212（html-semantics M2）：select/optgroup 传播走查（concept-option-
+      // disabled 语义面，customizable-select option-disabled-optgroup +
+      // -wrapper 语料钉死）——边界集：SELECT 查其 disabled 属性；OPTGROUP
+      // 对 OPTION 查 computed 禁用（自身属性 | 其 select 链——嵌套 optgroup
+      // 不级联），对 OPTGROUP 自身截断 false；HR/DATALIST/OPTION 截断
+      // false；其余包裹层（div 等）穿行。fieldset 传染由共享帮手独立承担
+      //（两臂相加）。s215 拆独立走查：原融合循环 else-if 使首父为 FIELDSET
+      // 时边界臂整体缺席，拆出后 fieldset 隔层形态亦按「后代」语义传播
+      // select/optgroup 禁用（与 s214 host 权威模型对齐；HTML 解析不可产
+      // fieldset 嵌 select 形态，仅脚手 DOM 面）。
+      // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+      var _fdB = _fdNode.parentNode, _fdBG = 0;
+      while (_fdB && _fdBG < 64) {
+        var _fdBTag = '';
+        try { _fdBTag = String(_fdB.tagName).toUpperCase(); } catch (_eB) {}
+        if (_fdBTag === 'SELECT') {
+          var _fdSD = false;
+          try { _fdSD = !!_fdB.disabled; } catch (_eS) {}
+          if (_fdSD) return true;
+          break;
+        }
+        if (_fdBTag === 'OPTGROUP') {
+          if (_fdSelfTag !== 'OPTION') break; // OPTGROUP 不从 OPTGROUP 级联
+          var _fdOD = false;
+          try { _fdOD = !!_fdB.disabled; } catch (_eO) {}
+          if (_fdOD) return true;
+          // computed 两级：optgroup 自身无属性 → 查其 select 链（同边界集）。
+          var _fdG = _fdB.parentNode, _fdGG = 0;
+          while (_fdG && _fdGG < 64) {
+            var _fdGTag = '';
+            try { _fdGTag = String(_fdG.tagName).toUpperCase(); } catch (_eG) {}
+            if (_fdGTag === 'SELECT') {
+              var _fdGD = false;
+              try { _fdGD = !!_fdG.disabled; } catch (_eGD) {}
+              if (_fdGD) return true;
+              break;
+            }
+            if (_fdGTag === 'OPTGROUP' || _fdGTag === 'OPTION' || _fdGTag === 'HR'
+                || _fdGTag === 'DATALIST') break;
+            try { _fdG = _fdG.parentNode; } catch (_eGP) { break; }
+            _fdGG++;
           }
-        } else if (_fdDepth === 0 && (_fdSelfTag === 'OPTION' || _fdSelfTag === 'OPTGROUP')) {
-          // s212（html-semantics M2）：select/optgroup 传播走查（concept-option-
-          // disabled 语义面，customizable-select option-disabled-optgroup +
-          // -wrapper 语料钉死）——边界集：SELECT 查其 disabled 属性；OPTGROUP
-          // 对 OPTION 查 computed 禁用（自身属性 | 其 select 链——嵌套 optgroup
-          // 不级联），对 OPTGROUP 自身截断 false；HR/DATALIST/OPTION 截断
-          // false；其余包裹层（div 等）穿行。fieldset 传染仍由外层平面走查
-          // 独立承担（两臂相加）。
-          // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
-          var _fdB = _fdPar, _fdBG = 0;
-          while (_fdB && _fdBG < 64) {
-            var _fdBTag = '';
-            try { _fdBTag = String(_fdB.tagName).toUpperCase(); } catch (_eB) {}
-            if (_fdBTag === 'SELECT') {
-              var _fdSD = false;
-              try { _fdSD = !!_fdB.disabled; } catch (_eS) {}
-              if (_fdSD) return true;
-              break;
-            }
-            if (_fdBTag === 'OPTGROUP') {
-              if (_fdSelfTag !== 'OPTION') break; // OPTGROUP 不从 OPTGROUP 级联
-              var _fdOD = false;
-              try { _fdOD = !!_fdB.disabled; } catch (_eO) {}
-              if (_fdOD) return true;
-              // computed 两级：optgroup 自身无属性 → 查其 select 链（同边界集）。
-              var _fdG = _fdB.parentNode, _fdGG = 0;
-              while (_fdG && _fdGG < 64) {
-                var _fdGTag = '';
-                try { _fdGTag = String(_fdG.tagName).toUpperCase(); } catch (_eG) {}
-                if (_fdGTag === 'SELECT') {
-                  var _fdGD = false;
-                  try { _fdGD = !!_fdG.disabled; } catch (_eGD) {}
-                  if (_fdGD) return true;
-                  break;
-                }
-                if (_fdGTag === 'OPTGROUP' || _fdGTag === 'OPTION' || _fdGTag === 'HR'
-                    || _fdGTag === 'DATALIST') break;
-                try { _fdG = _fdG.parentNode; } catch (_eGP) { break; }
-                _fdGG++;
+          break;
+        }
+        if (_fdBTag === 'HR' || _fdBTag === 'DATALIST' || _fdBTag === 'OPTION') break;
+        try { _fdB = _fdB.parentNode; } catch (_eBP) { break; }
+        _fdBG++;
+      }
+      // s215：fieldset 臂移交共享帮手（part04 willValidate 臂同构收编单源）。
+      if (_zwDisabledFieldsetAncestor(sel, handle)) return true;
+    } catch (_eFdW) {}
+    return false;
+  }
+
+  // s215（html-semantics M2）：fieldset 禁用传染走查共享帮手——`_zwFeDisabled`
+  // fieldset 臂与 part04 willValidate 臂（s193 disabled-001 钉面）同构走查收编
+  // 单源（s210/s211 挂账；s211 已先收编 `_validityState` 面至 `_zwFeDisabled`）。
+  // 每层 disabled fieldset 豁免判据 = 走查位（祖先链直子）为该 fieldset **首个
+  // legend 元素子**（legend 包 p/嵌 fieldset 隔层、第 2+ legend 均不豁免，
+  // disabled-001 语料 5 案钉态）；豁免后继续上行（更外层 disabled fieldset 仍
+  // 可命中）。返回 true = 存在未豁免的 disabled fieldset 祖先（disabled/
+  // barred）。guard 64。
+  // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-disabled
+  function _zwDisabledFieldsetAncestor(sel, handle) {
+    try {
+      var _dfN = _makeProxy(sel, handle);
+      var _dfWalk = _dfN;
+      var _dfP = _dfN.parentNode;
+      var _dfG = 0;
+      while (_dfP && _dfG < 64) {
+        var _dfTag = '';
+        try { _dfTag = String(_dfP.tagName).toUpperCase(); } catch (_eDfT) {}
+        if (_dfTag === 'FIELDSET') {
+          var _dfDis = false;
+          try { _dfDis = !!_dfP.disabled; } catch (_eDfD) {}
+          if (_dfDis) {
+            var _dfLeg = null;
+            try {
+              var _dfKids = _dfP.children;
+              for (var _dfI = 0; _dfI < _dfKids.length; _dfI++) {
+                if (String(_dfKids[_dfI].tagName).toUpperCase() === 'LEGEND') { _dfLeg = _dfKids[_dfI]; break; }
               }
-              break;
-            }
-            if (_fdBTag === 'HR' || _fdBTag === 'DATALIST' || _fdBTag === 'OPTION') break;
-            try { _fdB = _fdB.parentNode; } catch (_eBP) { break; }
-            _fdBG++;
+            } catch (_eDfK) {}
+            var _dfExempt = false;
+            try { _dfExempt = (_dfLeg != null && _dfWalk === _dfLeg); } catch (_eDfI) {}
+            if (!_dfExempt) return true;
           }
         }
-        try { _fdWalk = _fdPar; _fdPar = _fdPar.parentNode; } catch (_eFdP) { break; }
-        _fdDepth++;
-        _fdGuard++;
+        try { _dfWalk = _dfP; _dfP = _dfP.parentNode; } catch (_eDfP) { break; }
+        _dfG++;
       }
-    } catch (_eFdW) {}
+    } catch (_eDf) {}
     return false;
   }
   // s211：button 有效 type（激活门共享）——显式 type 属性读（lw 融合读，s136
