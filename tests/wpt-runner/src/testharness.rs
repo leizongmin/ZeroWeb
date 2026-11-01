@@ -11722,7 +11722,13 @@ fn apply_testdriver_command(
                                 .map(|v| v.trim() == "1")
                                 .unwrap_or(false);
                         if space_buttonish {
-                            dispatch_key_event_script_focused(
+                            // M2-S199（2026-11-01）：keydown defaultPrevented 抑制
+                            // keyup 激活——UI Events 激活语义：取消键即取消其默认
+                            // 动作（含延迟到 keyup 的激活 click），keyup 事件本身
+                            // 照派（scroll-key 既有 `!= "prevented"` 门同款）。
+                            // https://w3c.github.io/uievents/#event-type-keydown
+                            // https://wpt.fyi/html/semantics/forms/the-button-element/button-activate-keyup-prevented.html
+                            let space_keydown_result = dispatch_key_event_script_focused(
                                 webview,
                                 &selector,
                                 "keydown",
@@ -11730,7 +11736,9 @@ fn apply_testdriver_command(
                                 focus_prefix.as_str(),
                             );
                             dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
-                            if let Some(error) = dispatch_action(webview, target, action) {
+                            if space_keydown_result != "prevented"
+                                && let Some(error) = dispatch_action(webview, target, action)
+                            {
                                 return Some(error);
                             }
                             continue;

@@ -31,7 +31,43 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 198 收口，HTMLFieldSetElement `type` IDL 常量——1F 翻绿，the-fieldset-element 目录 22P/0F **全绿**（s193-s197 累积收口后本目录首个零失败终态）；shim 1 文件 get trap 枚举反射点 FIELDSET 臂（OUTPUT/TEXTAREA 同型））**
+> **▶ 当前状态（2026-11-01 M2 切片 199 收口，Space 键激活 keydown preventDefault 抑制——button-activate-keyup-prevented 1F 翻绿，forms 全树 keyed diff F→P 恰 1 靶键零真 P2F；runner send_keys space_buttonish 臂激活门（R3254-K4 切片 2 补口），键事件序 keydown→keyup 不变）**
+> **入场定刀位**：s196 挂账序「Space 激活行为」分型——按钮面 1F
+>（button-activate-keyup-prevented「Button activation submits on keyup,
+> but not if keydown is defaultPrevented」，第二次按键仍 click）；checkbox
+> Space checkedness 翻转分型无 corpus 驱动（非施工候选）。customizable
+> select 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：runner send_keys space_buttonish 臂（R3254-K4 切片 2，
+> testharness.rs）keydown 派发返回值丢弃 → 激活 dispatch_action
+>（webview 递归 Activate 合成 click）无条件执行——文档级 keydown
+> preventDefault 抑制不了 keyup 激活；UI Events 语义 = 取消键即取消其
+> 默认动作（keydown preventDefault → keyup 激活不触发，keyup 事件
+> 本身照派）；同文件 scroll-key 臂既有 `!= "prevented"` 门同型先例。
+> **施工**（1 文件 rust，净 +10/−2）：space_buttonish 臂 keydown 结果
+> 捕获 → keyup 恒派 → 激活 `!= "prevented"` 门（clippy collapsible_if
+> 折叠为 let-chain）。
+> **验证**：靶面双形 Pass（嵌套臂 + 折叠臂终形复验）；stash 隔离
+> A/B（FILTER=semantics/forms 同口径）——基线 4451P/250F/11T → WIP
+> 4452P/249F/11T，keyed diff F→P 2 = 靶键 + flake 域
+> button-active-onblur（有利向）/P2F 1 = checkable-active-onblur
+> checkbox-spacebar（`:active` onblur flake 域在册双向摆动，checkbox
+> 空格路径本刀未触）；LOST/GAINED 0；interactive 439P/44F/0T
+> bit-exact；runner 单元测试 276P/0F/76I（变更面 = runner crate，lib
+> 引擎/dom 测试不经 runner 通道，本轮以 runner 单测承载面守卫）；
+> fmt + guarded-clippy workspace 过（首轮 collapsible_if 修为
+> let-chain）。过程注记：首轮 forms 基线误跑无 FILTER 口径（全树
+> 7404P/599F/83T 不可比），留档后按协议 FILTER 重跑。
+> **残留/挂账新记**：uievents keyboard-click-event 文件级 Timeout
+> 双臂一致（stash 基线同型——tip 现状漂移非本刀引入，R3254-K4/尾簇
+> 32 时代绿面，勘根挂账）；`:active` onblur flake 域 +2 键样本；
+> checkbox Space checkedness 翻转无 corpus 驱动维持挂账。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → uievents keyboard-click-event Timeout 勘根（新挂账，同属 runner
+> 键盘通道）→ s196 挂账序余项（inert-svg-hittest 第 2 子测、
+> `:not(:active)` 否定面；父 label 零矩形属渲染流域非本流）。
+> **账本**：[evidence/2026-11-01-m2s199-button-space-activation-prevented.md](html-semantics-compat/evidence/2026-11-01-m2s199-button-space-activation-prevented.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 198 收口，HTMLFieldSetElement `type` IDL 常量——1F 翻绿，the-fieldset-element 目录 22P/0F **全绿**（s193-s197 累积收口后本目录首个零失败终态）；shim 1 文件 get trap 枚举反射点 FIELDSET 臂（OUTPUT/TEXTAREA 同型））**
 > **入场定刀位**：s197 在册次席候选 HTMLFieldSetElement `type` 1F
 >（`fs_outer.type` 应恒 'fieldset'）；customizable select 177F 挂起待拍板
 >（GB-20261031 征询在途，用户决策门禁不自行扩面）。
