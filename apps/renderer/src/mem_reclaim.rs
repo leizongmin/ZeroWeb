@@ -23,6 +23,90 @@ pub(crate) fn mem_probe_enabled() -> bool {
     zero_runtime_config::enabled_when_true("ZEROWEB_MEM_PROBE")
 }
 
+/// T38/G4 归因仪器（`ZEROWEB_MEM_PROBE=1` 且 `ZEROWEB_MEM_PROBE_XML` 设前缀路径时
+/// 生效；缺省两个 env 都关，零调用零开销）：glibc `malloc_info(3)` 落盘 per-arena
+/// 统计——每 arena `system`（已提交）与 fast/normal/large/rest 各 bin 的 free 总量，
+/// 用于区分「活分配」与「arena 碎片滞留」。路径 = `<前缀>-<单调序号>.xml`，序号
+/// 进程内累计；写失败仅记 warn，不影响主流程。
+pub(crate) fn malloc_info_dump_if_enabled() {
+    if !mem_probe_enabled() {
+        return;
+    }
+    if let Ok(prefix) = std::env::var("ZEROWEB_MEM_PROBE_XML")
+        && !prefix.is_empty()
+    {
+        malloc_info_dump_to(&prefix);
+    }
+}
+
+/// [`malloc_info_dump_if_enabled`] 的核心（env 无关，便于单测）：glibc
+/// `malloc_info(3)` 写 `<前缀>-<单调序号>.xml`，返回落盘路径；非 glibc 目标或
+/// fopen/malloc_info 失败返 `None`（仅 warn，不影响主流程）。
+pub(crate) fn malloc_info_dump_to(prefix: &str) -> Option<String> {
+    use std::os::raw::{c_char, c_int};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    // glibc 符号（musl 无 malloc_info；桌面 glibc 主目标，与 malloc_trim 同判）。
+    #[cfg(target_env = "gnu")]
+    {
+        unsafe extern "C" {
+            fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::c_void;
+            fn malloc_info(options: c_int, stream: *mut libc::c_void) -> c_int;
+            fn fclose(stream: *mut libc::c_void) -> c_int;
+        }
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let path = format!("{prefix}-{n}.xml");
+        let Ok(c_path) = std::ffi::CString::new(path.clone()) else {
+            return None;
+        };
+        let c_mode = std::ffi::CString::new("w").expect("mode 常量");
+        // SAFETY：fopen/malloc_info/fclose 均为 glibc 导出符号；FILE* 以不透明指针
+        // 传递，路径来自本次调用的 CString（调用期间存活）。
+        unsafe {
+            let fp = fopen(c_path.as_ptr(), c_mode.as_ptr());
+            if fp.is_null() {
+                tracing::warn!(path = %path, "mem_probe malloc_info fopen failed");
+                return None;
+            }
+            let rc = malloc_info(0, fp);
+            let _ = fclose(fp);
+            if rc != 0 {
+                tracing::warn!(path = %path, rc = rc as i64, "mem_probe malloc_info failed");
+                return None;
+            }
+        }
+        Some(path)
+    }
+    #[cfg(not(target_env = "gnu"))]
+    {
+        let _ = prefix;
+        None
+    }
+}
+
+#[cfg(all(test, target_env = "gnu"))]
+mod mem_probe_malloc_info_tests {
+    /// T38/G4 仪器钉：malloc_info 落盘必须产出 `<malloc` 开头的 XML（glibc 格式），
+    /// 且包含 per-arena `<heap nr=` 与 `<system type="current"` 统计——归因面
+    /// （活分配 vs arena 碎片）依赖这两个字段存在。
+    #[test]
+    fn malloc_info_dump_writes_per_arena_xml() {
+        let dir = std::env::temp_dir().join(format!("zw-t38-malloc-info-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir 创建");
+        let prefix = dir.join("probe").display().to_string();
+        let path = crate::mem_reclaim::malloc_info_dump_to(&prefix).expect("glibc malloc_info 落盘");
+        let txt = std::fs::read_to_string(&path).expect("落盘文件可读");
+        assert!(
+            txt.starts_with("<malloc"),
+            "malloc_info XML 头，实际 {}",
+            &txt[..40.min(txt.len())]
+        );
+        assert!(txt.contains("<heap nr="), "必须有 per-arena heap 段");
+        assert!(txt.contains("type=\"current\""), "必须有 system current 统计");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
+
 /// T13 R1：延迟回收调度器（renderer 主线程单槽）。
 ///
 /// webview loading 翻转沿经 [`Self::arm`] 重锚 deadline（单槽天然合并相邻导航）；

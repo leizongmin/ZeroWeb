@@ -1835,6 +1835,24 @@ impl WebView {
         (svg_len, canvas_len)
     }
 
+    /// T37/G4 归因探针（`ZEROWEB_MEM_PROBE=1` 观测腿）：图片缓存驻留三元组
+    /// `(主缓存条目数, 主缓存字节, SVG 重栅格字节)`。只读 len/求和，不在
+    /// 探针关闭路径调用。
+    pub fn mem_probe_image_stats(&self) -> (usize, usize, usize) {
+        (
+            self.image_cache.entry_count(),
+            self.image_cache.total_bytes(),
+            self.image_cache.svg_rasterized_bytes(),
+        )
+    }
+
+    /// T38/G4 归因探针（`ZEROWEB_MEM_PROBE=1` 观测腿）：本文档引擎驻留四元组
+    /// `(DOM 节点数, 过渡基线样式条数, 布局盒数, 样式表条数)`。转发管线只读
+    /// 统计，不在探针关闭路径调用。
+    pub fn mem_probe_doc_stats(&self) -> (usize, usize, usize, usize) {
+        self.pipeline.mem_probe_doc_stats()
+    }
+
     /// media-audio M3 切片 2：Web Audio 注册表共享句柄（宿主桥回调注册 /
     /// 音频泵 advance 消费）。
     pub fn webaudio(&self) -> std::sync::Arc<std::sync::Mutex<crate::webaudio_registry::WebAudioRegistry>> {

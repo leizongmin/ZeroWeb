@@ -497,8 +497,16 @@ pub trait Sandbox {
     fn low_memory_reclaim(&mut self) {}
     /// T13 S7 探针：JS heap 在用量（字节；`ZEROWEB_MEM_PROBE=1` reset 臂打点）。
     ///
-    /// **默认 no-op**：QuickJS 后端不支持 heap 统计读取，返 `None`（观测腿不进判据）。
+    /// **默认 no-op**：V8 读 isolate 堆统计；QuickJS 后端读运行时记账存活堆
+    /// （T37/G4 归因探针扩展，返 `None` 仅在读取不可用时）。观测腿不进判据。
     fn heap_used_bytes(&mut self) -> Option<usize> {
+        None
+    }
+    /// T38/G4 归因探针：JS 堆已提交字节（V8 `total_heap_size`，含空闲页；
+    /// `ZEROWEB_MEM_PROBE=1` 观测腿打点）。
+    ///
+    /// **默认 no-op**：QuickJS 后端无「已提交堆」概念，返 `None`。
+    fn heap_total_bytes(&mut self) -> Option<usize> {
         None
     }
     /// 返回沙箱配置的引用。

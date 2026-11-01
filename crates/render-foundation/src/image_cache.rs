@@ -1379,6 +1379,17 @@ impl ImageCache {
         self.svg_rasterized.len()
     }
 
+    /// SVG 重栅格化缓存字节量（T37/G4 归因探针观测腿：`ZEROWEB_MEM_PROBE=1` 打点；
+    /// 上限 8 条 × 4Mpx≈16MB，追踪实际驻留量级）。
+    pub fn svg_rasterized_bytes(&self) -> usize {
+        self.svg_rasterized.values().map(|d| d.byte_size()).sum()
+    }
+
+    /// 主缓存条目数（T37/G4 归因探针观测腿：`ZEROWEB_MEM_PROBE=1` 打点）。
+    pub fn entry_count(&self) -> usize {
+        self.entries.len()
+    }
+
     /// 共享句柄快照供 UI 线程发布路径使用（A3 Fix C4：`Arc` 引用计数替代全缓存
     /// 像素深拷贝——视频播放期每帧发布的 O(entries) clone 曾为全像素复制量级）。
     /// 快照为瞬态只读对象（发布后即弃）；像素在插入后不可变（R3254-M2，
@@ -2824,8 +2835,20 @@ mod tests {
         // 放大（16×16 > 固有 8×8）触发重栅格化入缓存。
         assert!(cache.get_rasterized(&key, 16, 16).is_some(), "放大应命中重栅格化路径");
         assert_eq!(cache.svg_rasterized_len(), 1);
+        // T37/G4 归因探针钉：观测腿三元组与缓存真实内容一致（entry/字节/svg 字节）。
+        let (entries, bytes, svg_bytes) = (cache.entry_count(), cache.total_bytes(), cache.svg_rasterized_bytes());
+        assert_eq!(entries, 1, "插入 1 条后 entry_count 必须为 1");
+        assert!(
+            bytes > 0 && svg_bytes > 0,
+            "探针字节读数必须有效，bytes={bytes} svg_bytes={svg_bytes}"
+        );
         cache.clear();
         assert_eq!(cache.svg_rasterized_len(), 0, "clear 必须一并清 svg_rasterized");
+        assert_eq!(
+            (cache.entry_count(), cache.total_bytes(), cache.svg_rasterized_bytes()),
+            (0, 0, 0),
+            "clear 后探针读数必须归零"
+        );
     }
 
     /// R3762：端到端——无尺寸 SVG 栅格化到目标尺寸后 viewport = 目标（50% 宽 rect

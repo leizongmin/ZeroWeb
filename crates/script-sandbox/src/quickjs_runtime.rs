@@ -448,6 +448,15 @@ impl QuickJSSandbox {
         self.context = None;
     }
 
+    /// T37/G4 归因探针：QuickJS 运行时记账的存活 JS 堆字节
+    /// （`JS_MemoryUsage.memory_used_size`，含运行时/上下文/对象分配）。
+    ///
+    /// 仅 `ZEROWEB_MEM_PROBE=1` 观测腿调用（T13 S7 探针扩展）；QuickJS 内部
+    /// malloc 记账与本读不含 glibc arena 滞留页，读数 = 活跃 JS 对象面。
+    pub fn heap_used_bytes(&self) -> Option<usize> {
+        usize::try_from(self.runtime.memory_usage().memory_used_size).ok()
+    }
+
     /// 将已注册的回调重挂到当前 Context 的全局对象（每次 execute 前调用）。
     fn install_callbacks(&self, ctx: &rquickjs::Ctx) {
         let globals = ctx.globals();
@@ -591,6 +600,9 @@ impl crate::Sandbox for QuickJSSandbox {
     }
     fn reset_context(&mut self) {
         QuickJSSandbox::reset_context(self)
+    }
+    fn heap_used_bytes(&mut self) -> Option<usize> {
+        QuickJSSandbox::heap_used_bytes(self)
     }
     fn config(&self) -> &SandboxConfig {
         &self.config
@@ -1198,5 +1210,18 @@ mod tests {
         sandbox.set_timeout_ms(0);
         let r = sandbox.execute("1 + 1").unwrap();
         assert_eq!(r.value, "2", "超时后 deadline 须清除，后续 execute 不受误伤");
+    }
+
+    /// T37/G4 归因探针钉：heap_used_bytes 返回 QuickJS 运行时记账的存活堆，
+    /// 执行脚本后必须 > 0 且随分配可见（探针观测腿的数据有效性前提）。
+    #[test]
+    fn heap_used_bytes_reports_runtime_accounting() {
+        let mut sandbox = QuickJSSandbox::with_config(SandboxConfig::default()).unwrap();
+        let _ = sandbox.execute("globalThis.__t37 = new Array(1024).fill(0);");
+        let bytes = QuickJSSandbox::heap_used_bytes(&sandbox).expect("QuickJS 记账读取必须可用");
+        assert!(bytes > 0, "执行脚本后存活堆必须 > 0，实际 {bytes}");
+        // 通过 trait 面同样可读（js_worker 探针走 trait 对象）。
+        let via_trait = <QuickJSSandbox as crate::Sandbox>::heap_used_bytes(&mut sandbox).expect("trait 面必须转发");
+        assert!(via_trait > 0, "trait 面读数必须有效，实际 {via_trait}");
     }
 }
