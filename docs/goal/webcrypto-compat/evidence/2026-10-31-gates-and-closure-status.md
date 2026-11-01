@@ -990,3 +990,23 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   DONE。临时审计件
   `/tmp/webcrypto-anchor-run{1,2,3}-20261101-s206-tipe08a4febc.json`
   （不入库）。
+
+### 2026-11-01 14:15 追记：轮询面核证——D4 裁决分支强推前移（`11f6770a4` → `2154ac296`，双审查返修落分支），PR #267 仍 OPEN 未合入，D2① 未触发，锚账不复跑
+
+- `git pull --rebase` 报 `site-opt/s24-flip-red` 强推重写
+  （`11f6770a4...2154ac296` forced update，tip 14:09 +0800）：D4 双面
+  裁决提交 rebase 到最新 main（新 SHA `fc52ed62d`，基含 `e08a4febc` +
+  `74e1234c6`）+ 新增 **s24 返修提交 `2154ac296`**（PR #267 首轮双审查
+  2 阻断发现返修：canvas fallback 三层修复 tree.rs/inline_block_split.rs
+  + vertical 块级判据补 ListItem）。PR #267 head 随之为 `2154ac296`，
+  **仍 OPEN、未合入 main**，D2① 收口序列未触发（触发条件 = 合入 main，
+  不变）。
+- 返修触及**冻结门面**（分支侧）：`crates/style-system/src/lib.rs`
+  +29/−6、`ua_display_tests.rs` +27/−9——main 侧冻结门末触仍
+  `c41b0c750`（本 goal 锚纪律只看 main 执行路径），ua_display_li 在册
+  未清。
+- main 无新提交（tip 仍 `74e1234c6`，docs-only），执行路径仍
+  `e08a4febc`，14:04 锚账（状态账零差异 ×3）现行不变，不复跑。D1/D2
+  决策无新 git 账面。收口序列不变：PR #267 合入 main → make test
+  全绿复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记
+  → 推送 → DONE。
