@@ -26564,6 +26564,37 @@ return e;
   }
   function _zwR98ProtoMemoDelete(key) { _zwR98ProtoMemo.delete(key); }
 
+  // M2-S202（2026-11-01）：LEGEND/OPTION 的 form IDL 值算子（get trap 臂 + part05
+  // has/gOPD 臂三面同源）。legend 返**父 fieldset** 的 form IDL 值（父非 fieldset
+  // → null；legend 非 form-associated，自身 form content attribute 不参与关联——
+  // 语料 HTMLLegendElement.html「no fieldset parent」/legend-form.html 双面）；
+  // option 返**最近 select 祖先**的 form IDL 值（无 → null——语料 option-form.html
+  // detached → null、select 内 → select.form）。父/祖先上行走 JS 视图 parentNode
+  //（R4005 同款三族统一）；命中元素的 .form 读回本 get trap 同名臂（FIELDSET/
+  // SELECT 属 form-associated 名单）。
+  // https://html.spec.whatwg.org/multipage/form-elements.html#the-legend-element
+  // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-form
+  function _zwLegendOptionForm(lsel, lhandle, lpx) {
+    var _loTag;
+    try { _loTag = _realTag(lsel, lhandle); } catch (_eLoT) { return null; }
+    if (_loTag !== 'LEGEND' && _loTag !== 'OPTION') return null;
+    try {
+      if (_loTag === 'LEGEND') {
+        var _lgP = lpx.parentNode;
+        if (_lgP && _lgP.nodeType === 1
+            && String(_lgP.tagName || '').toUpperCase() === 'FIELDSET') {
+          return _lgP.form;
+        }
+        return null;
+      }
+      for (var _opC = lpx.parentNode, _opi = 0; _opi < 64 && _opC; _opi++) {
+        if (_opC.nodeType !== 1) break;
+        if (String(_opC.tagName || '').toUpperCase() === 'SELECT') return _opC.form;
+        _opC = _opC.parentNode;
+      }
+    } catch (_eLoF) { return null; }
+    return null;
+  }
   function _makeProxy(sel, handle) {
     var key = _elKey(sel, handle);
     if (_proxyCache[key]) return _proxyCache[key];
@@ -28027,6 +28058,12 @@ return e;
               try { return lblFormCtl.form; } catch (_eLblForm2) { return null; }
             }
             return null;
+          }
+          // M2-S202（2026-11-01）：LEGEND/OPTION form IDL 臂（值算子见
+          // _zwLegendOptionForm；has/gOPD 可见性见 part05 同名臂——
+          // HTMLLegendElement.html assert_readonly 首断言 `'form' in legend`）。
+          if (fcTag === 'LEGEND' || fcTag === 'OPTION') {
+            return _zwLegendOptionForm(sel, handle, proxy);
           }
           if (fcTag === 'INPUT' || fcTag === 'SELECT' || fcTag === 'TEXTAREA' || fcTag === 'BUTTON' || fcTag === 'OUTPUT' || fcTag === 'FIELDSET' || fcTag === 'OBJECT') {
             try {

@@ -1401,6 +1401,20 @@
             && (function () { try { return _realTag(sel, handle) === 'VIDEO'; } catch (_eVw) { return false; } })()) {
           return true;
         }
+        // M2-S202（2026-11-01）：legend/option form IDL `in` 可见性（tag 门同 media
+        // M2a 形——接口成员归属；值面 = part03 get trap `_zwLegendOptionForm` 臂）。
+        // HTMLLegendElement.html Interface 案 assert_readonly 首断言
+        // `'form' in legend`——has 白名单缺列恒 false。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-legend-element
+        if (prop === 'form'
+            && (function () {
+                 try {
+                   var _t202h = _realTag(sel, handle);
+                   return _t202h === 'LEGEND' || _t202h === 'OPTION';
+                 } catch (_e202h) { return false; }
+               })()) {
+          return true;
+        }
         // R184（js-dom M4）：Node 接口常量 + DOCUMENT_POSITION 常量的 `in` 可见性（spec
         // dom-node-constants——常量定义在 Node 接口上、**实例经继承可枚举命中**；WPT
         // Node-constants 对 Element/Text 实例 `'ELEMENT_NODE' in el` 断言——get trap 返回
@@ -1479,6 +1493,24 @@
           if (_fnhD !== null) {
             return { value: _fnhD, writable: false, enumerable: false, configurable: true };
           }
+        }
+        // M2-S202（2026-11-01）：legend/option form IDL 描述符——assert_readonly
+        // gOPD 链走 get-only accessor（无 [[Set]] 即 readonly 面；值 getter 复用
+        // `_zwLegendOptionForm` 与 get trap 同源）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-legend-element
+        if (prop === 'form'
+            && (function () {
+                 try {
+                   var _t202d = _realTag(sel, handle);
+                   return _t202d === 'LEGEND' || _t202d === 'OPTION';
+                 } catch (_e202d) { return false; }
+               })()) {
+          return {
+            get: function () { return _zwLegendOptionForm(sel, handle, proxy); },
+            set: undefined,
+            enumerable: true,
+            configurable: true,
+          };
         }
         return undefined;
       },

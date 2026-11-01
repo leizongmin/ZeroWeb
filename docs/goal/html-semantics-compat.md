@@ -31,7 +31,43 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 201 收口，SVG 形状 gBCR/命中注入——inert-svg-hittest 第 2 子测翻绿（2/2 targeted 稳定；interactive 全树负载敏感 1/2 同族在册摆动域），forms 全树 keyed diff 净 F→P=2（onblur flake 域顺向）P→F=0；engine 新模块 hit_test_svg viewBox meet 映射合成形状视觉包围盒覆盖退化布局盒，runner/语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 202 收口，legend/option form IDL 反射——HTMLLegendElement/legend-form/option-form 6F 收口（s181 分型「legend.form 5F 单根（小）」后备序首次落刀），forms 全树 keyed diff 净 F→P=8（6 靶键 + gated bonus 1 + onblur 域顺向 1）P→F=0 键漂移 0；interactive bit-exact；shim 2 文件三 trap 面（get/has/gOPD），rust/语料零改动）**
+> **入场定刀位**：s201 forms-wip2 现势 F 集重聚类（250F，除
+> customizable-select 特性门 177F 与 onblur flake 域后 63F）——s181 分型表
+> 「legend.form 5F 单根（小）」后备序从未刀项（s182 起按色清/编码/集合层/
+> click 域序推进悬置至今）。customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **勘根**：语料 expected/got 直读——lgd.form got undefined 应 null（IDL
+> 缺位）；assert_readonly `property "form" not found` 双断言链（①has 白名单
+> 缺列 `'form' in legend` 恒 false——R5249/R5266/media M2a 同款根因；②gOPD
+> 链无描述符）；option detached → null / select 内 → select.form（同 IDL 域
+> 红利同刀）。机制面：live proxy 三 trap（get `prop === 'form'` 臂 form-
+> associated 名单 + LABEL 特臂无 LEGEND/OPTION 分支；has/gOPD 零 form 列）。
+> **施工**（shim 2 文件净 +69/−0）：part03 `_zwLegendOptionForm` 值算子
+> （LEGEND 父 fieldset 的 form IDL 值/父非 fieldset → null；OPTION 最近
+> select 祖先/无 → null；JS 视图 parentNode 上行 R4005 同款）+ get trap 臂；
+> part05 has tag 门臂 + gOPD get-only accessor 描述符（assert_readonly
+> readonly 面）——三 trap 值同源单点。
+> **验证**：拼接 shim node --check SYNTAX_OK；靶面 the-legend-element 5/5 +
+> option-form 1/1 + gated 域 option-form-ancestor-select F→P 1（bonus）；
+> stash A/B keyed diff——forms 4711 键恒定净 F→P=8 P→F=0 键漂移 0、
+> interactive 483 键对 s201 post-rebase 基线 bit-exact；zero-engine 全量
+> 3664P+1F（1F = ua_display_li 渲染流域在册键非本刀）；fmt + guarded-clippy
+> 过。过程注记：part 单文件非独立可解析（拼接序 node --check 方式——
+> part01..08d 按 js_dom_bridge.rs 拼接序 14 件）。
+> **残留/挂账新记**：option-form-ancestor-select 第 2 子测（option 嵌
+> datalist/optgroup/hr 阻断语义——whatwg/html#11708 tentative）保持 F，属
+> customizable-select 特性面 GB-20261031 不越界；镜像面 `_zwFormGet`
+> LEGEND/OPTION 祖先臂未扩（语料无驱动）；onblur 域 +1 顺向样本。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → s181 分型残面单根复读（number 消毒残面簇 8F——number.html 3 +
+> number-constraint-validation 3 + defaultValue-clobbering 1 +
+> scientific-key-events 1；misc 面 textarea wrapping/placeholder-lineheight/
+> output mutations/setCustomValidity 换行归一；pattern IDL 2F；form action
+> 反射 base-url 2F；form owner table 解析邻接 4F）。
+> **账本**：[evidence/2026-11-01-m2s202-legend-option-form-idl.md](html-semantics-compat/evidence/2026-11-01-m2s202-legend-option-form-idl.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 201 收口，SVG 形状 gBCR/命中注入——inert-svg-hittest 第 2 子测翻绿（2/2 targeted 稳定；interactive 全树负载敏感 1/2 同族在册摆动域），forms 全树 keyed diff 净 F→P=2（onblur flake 域顺向）P→F=0；engine 新模块 hit_test_svg viewBox meet 映射合成形状视觉包围盒覆盖退化布局盒，runner/语料零改动）**
 > **入场定刀位**：s196 挂账序「inert-svg-hittest 第 2 子测」——子测 2
 > （dialog close 后 pointerDown 断言到达 `<rect>` + `:active`）恒 Fail；
 > 子测 1 恒 Pass（inert 门先于面积择优，vacuous 绿）。customizable select
