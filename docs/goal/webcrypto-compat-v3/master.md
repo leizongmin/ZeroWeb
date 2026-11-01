@@ -5,11 +5,27 @@
 归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（M2 无依赖面收口 + DC-4/DC-5②③ 前置预检落档）
+**最后更新**: 2026-11-02（D1 拍板前置：deps evidence MSRV 编译预检 + 建议集修正 + KMAC 双案互证落档）
 
 ---
 
 ## 当前状态
+
+**D1 拍板前置证据加固完成（2026-11-02，[evidence](evidence/2026-11-02-dc2-msrv-compile-precheck.md)）**：
+deps evidence（11-01）为 metadata 级证据，本轮 /tmp 隔离 scratch + rustc
+1.85.0 实编译验证，暴露三处记载失真并修正——① PQC 建议值回落
+**ml-kem 0.3.3 / ml-dsa 0.1.2→0.1.1**（0.3.4/0.1.2 要求 rustc 1.87），
+1.85 编译+冒烟全过；② **X448/Ed448 pre 线 1.85 无解**（elliptic-curve
+^0.14 → crypto-bigint ^0.7.5 yanked-only 链），入树即 workspace MSRV
+1.85→1.87，子问题②改三选（pre+1.87 / X448 走 stable x448 0.6.0 但
+Ed448 无 1.85 签名路径 / 域降 scope）；③ KMAC **option b 可行性实证**
+（手写框架 ≡ sha3-kmac oracle 逐位 ×4 用例，encode_string 取 bit 长度
+约定定谳）+ **option a 短 key 合规缺口**（MIN_KEY_SIZE=16B 拒 spec 合法
+输入）。XOF 五连/ocb3/chacha20poly1305/argon2 维持建议值。真正新增共存
+分叉仅 aes 0.9（ocb3）与 rand_core 0.5（x448 stable）；rand_core 0.10/
+getrandom 0.4 workspace 树已在本。仓库零代码触面。
+
+**M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
 
 **M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
 algorithm-discards-context（一/二/三期连续 T 案）**13 子测试全 Pass，
@@ -154,7 +170,7 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)），建议值合计 12–13 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值是否批准；② X448/Ed448 pre 版（0.14.0-pre.12/pre.15）甄别从严交拍板；③ KMAC 两案（sha3-kmac 0.3.0 引入 vs 手写叠官方 cshake）；④ ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替（候选 0.3.3/0.1.1 过时一日）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；11-02 M2 收口进展+催办通知在案（msg `om_x100b614f36f5e8a4cd31575cf2facd6`，附四项拍板子问题）；**待拍板**（evidence 已齐） |
+| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)）并经 **MSRV 编译预检修正**（[2026-11-02-dc2-msrv-compile-precheck.md](evidence/2026-11-02-dc2-msrv-compile-precheck.md)），修正后建议值 12–14 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值（PQC 两域修正为 ml-kem 0.3.3 / ml-dsa 0.1.1——0.3.4/0.1.2 需 rustc 1.87）是否批准；② X448/Ed448 pre 线**三选**——(a) pre + workspace MSRV 1.85→1.87（全能力，pre.15 含 sign/），(b) X448 走 stable x448 0.6.0 且 **Ed448 无 1.85 签名路径**（0.9.0 无 signing 面 / ed448 0.5.0 仅类型），(c) 域降 scope；③ KMAC 两案——option a sha3-kmac 0.3.0（有 MIN_KEY_SIZE=16B 短 key 合规缺口 + sha3 双栈），option b 手写叠官方 cshake（**已实证 ≡ oracle 逐位相等**，无上述缺口，需 NIST 向量单测随切片落仓）；④ ~~ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替~~（**被 1.85 约束否决**，见②修正）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域，已全部收口） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；11-02 M2 收口进展+催办通知在案（msg `om_x100b614f36f5e8a4cd31575cf2facd6`，附四项拍板子问题）；**待拍板**（evidence 已齐并经编译预检修正） |
 
 ## 碰撞管理记录（run-rules §9）
 
@@ -206,3 +222,7 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   复证行），零代码触面，无碰撞面。
 - 2026-11-02 DC-4 预检轮：纯 docs + /tmp 离线对账（coverage 工具只读
   m2s4 锚与 wptfyi 缓存，仓库与缓存零写入），无碰撞面。
+- 2026-11-02 deps 编译预检轮：纯 docs + /tmp 隔离 scratch（rustc 1.85.0
+  minimal 工具链 + test-guard 包裹；仓库 Cargo.toml/源码零触碰，workspace
+  target 零写入），无碰撞面；在跑兄弟流 testharness-editing-run（33 号
+  editing）不受干扰。
