@@ -1,12 +1,28 @@
 # Web Crypto 兼容三期运行时控制面板
 
 **状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
-选型征询落档）；M2 无依赖面切片待启动
-**最后更新**: 2026-11-01（M1 完成）
+选型征询落档）；M2-1 门禁面切片完成（2026-11-01：supports + getPublicKey，
+零回归 +543P）；M2 余下无依赖面推进中
+**最后更新**: 2026-11-01（M2-1 完成）
 
 ---
 
 ## 当前状态
+
+**M2-1 门禁面切片完成（2026-11-01，[evidence](evidence/2026-11-01-m2s1-gate-slice.md)）**：
+`SubtleCrypto.supports(...)` 静态门禁（part02a.js 新增，自包含 IIFE）+
+`getPublicKey(key, usages)` 实例方法（part02.js，零 Rust 改动）。门禁面 6 案
+792 子测试 0P → **543P**（supports 两文件全绿 371/371；supports-modern
+130/241、getPublicKey 42/80 余红全部域门控待 D1 按域切片）；对 M1 基线逐
+(case, subtest) 对照 **零回归**（543 变化全 F→P，P→非P 0 例，精确落 6 触面
+文件）；全量新分母 40,925 = P 26,374 + F 14,548 + T 3。调试定案三根因：
+REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大小
+（512/1024）、getPublicKey OKP `_raw` 契约（raw 公钥 32B 非 SPKI DER）+
+错误检查顺序（算法域先于 key type）。首轮全量 runner segfault 一次
+（WSL2 环境观察，同命令复跑干净 + 结果逐位一致，按 flake 判据记账）。
+
+**M1 完成（2026-11-01，[evidence](evidence/2026-11-01-m1-corpus-and-baseline.md) /
+[deps evidence](evidence/2026-11-01-m1-deps-evidence.md)）**：
 
 **M1 完成（2026-11-01，[evidence](evidence/2026-11-01-m1-corpus-and-baseline.md) /
 [deps evidence](evidence/2026-11-01-m1-deps-evidence.md)）**：
@@ -30,13 +46,13 @@
    0.1.2）；X448/Ed448 仅 pre 线活跃（甄别从严交拍板）。新 crate 建议合计
    12–13 个。
 
-**下一步（M2）**：拍板前推进无新依赖面——① 门禁面切片（supports 门禁语义
-+ getPublicKey，modern-algos 3 案 390 子测试全红的主缺口）；② 散新案
-export-key-error-order / sharedarraybuffer 归因收敛；③ worker 腿接线与
+**下一步（M2 余下）**：拍板前推进无新依赖面——① 散新案
+export-key-error-order / sharedarraybuffer 归因收敛；② worker 腿接线与
 1T 销案穿插（无依赖，触 runner/workers 通道基建——与 25 号流共享
 testharness.rs，落账前对账）。拍板后按 deps evidence 建议定序（依赖就绪度：
 aes-ocb/chacha20poly1305/argon2 等 AEADs+password-hashes 单 crate 域先行，
-XOF 五连引入次之，ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板）。
+XOF 五连引入次之，ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；
+门禁面注册表 REG 与 getPublicKey 域面随域切片逐行扩表翻绿）。
 
 - 输入：二期 [DC-2 甄别清单](../archive/webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md)（逐域分母/建议范围/依赖候选）
 - 上游复证（2026-11-01）：HEAD `a0dd301b85…`，WebCryptoAPI 子树
@@ -72,3 +88,8 @@ XOF 五连引入次之，ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍�
   （`docs/engineering/quality-gates.md`），CI 发射前查在跑实例。
 - 2026-11-01 M1 轮：runner/shim 零代码改动（语料 fetch + 基线 + docs），
   无碰撞面；`git pull --rebase` 后基于 `434e36f44` 推进。
+- 2026-11-01 M2-1 轮：触面 `js_dom_bridge.rs`（part02a include_str 挂载
+  +12 行）、`js_dom_shim/part02.js`（getPublicKey +63 行）、
+  `js_dom_shim/part02a.js`（新增）；25 号流共享面（part01.js/
+  script_gen.rs/testharness.rs）零触碰，main 最新共享面触点仍为 s209
+  `785e8a166`（先于本流 M1 基点 `de7c4aea8`），无对账冲突。

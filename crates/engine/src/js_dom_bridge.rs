@@ -5397,6 +5397,18 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 与 plain 解析器；part06 经 globalThis.__zw_ce_value_{apply,validate} 单
         // 点调用，part01c 值查询面经 __zw_ce_value_override_value 消费 override。
         s.push_str(include_str!("js_dom_shim/part01d.js"));
+        // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
+        // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
+        // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现
+        // 域一律 false）；getPublicKey 实例方法在 part02.js _zwSubtle 字面量内。
+        // 挂 part06 尾（part01c/01d 先例）：part01b/part02 边界在 _zwSubtle 字面量
+        // 内部、part02 尾在语句中间（R2963 字节精确切分残留），均无干净语句边界。
+        // **文件自包含**：crypto helper 所在内层闭包（part05:3818 收口）不覆盖本
+        // 挂载点（part01c _getSelection 同况），引用面仅限 globalThis 契约
+        //（isSecureContext/crypto.subtle/CryptoKey——part02 [SecureContext] 门禁
+        // 已挂），helper 本地镜像。isSecureContext !== true 不挂载（一期 M6 门禁
+        // 不回退）。
+        s.push_str(include_str!("js_dom_shim/part02a.js"));
         s.push_str(include_str!("js_dom_shim/part07.js"));
         // part08a（2026-10-22 M3-S1 拆分）：WebGL 接口面**数据表**（IDL 派生，
         // 勿手改）——2000 行准则拆分，经 globalThis._zwWglIdlTables 单点交接，

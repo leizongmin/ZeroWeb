@@ -756,6 +756,69 @@
         }
         crypto.subtle.importKey(fmt, keyData, unwrappedKeyAlgorithm, extractable, keyUsages).then(resolve, reject);
       });
+    },
+    // getPublicKey(key, usages) → Promise<CryptoKey>（三期 M2-1，goal
+    // webcrypto-compat-v3）。spec：
+    // https://wicg.github.io/webcrypto-modern-algos/#SubtleCrypto-method-getPublicKey。
+    // 非 private CryptoKey → InvalidAccessError（WPT：public key 入参断言该错）；
+    // 非对称域外（AES/HMAC/KDF/摘要族）→ NotSupportedError（WPT：AES-GCM/HMAC key
+    // 断言该错）；usages ⊆ 该算法公钥 usage 面（RSASSA/PSS/ECDSA/Ed25519→verify、
+    // OAEP→encrypt、ECDH/X25519→∅）→ 否则 SyntaxError（WPT：ECDSA+['encrypt']
+    // 断言该错）；空 usages 合法（spec 公共步骤 10 空面仅约束 secret 密钥，WPT
+    // 期望 [] 可用）。结果恒 extractable=true（spec：公钥可导出）、usages 即请求
+    // 值（已校验 ⊆ 公钥面）、algorithm 成员复制私钥。私→公派生走既有 host DER 面
+    //（与 generateKey 内公钥构造同径）：EC/RSA export_der(..., 'spki')（两族公钥
+    // _raw 契约 = SPKI DER，exportKey spki 公透传）；OKP export_der(..., 'raw')
+    //（OKP 公钥 _raw 契约 = raw 公钥字节——存 SPKI DER 会使后续 exportKey('spki')
+    // 以 44 字节输入进 okp_export_der 的 32/48 双宽匹配落空，InvalidAccessError）。
+    // 派生失败 → OperationError。
+    getPublicKey: function (key, usages) {
+      return new Promise(function (resolve, reject) {
+        // 算法域检查先于 key type 检查（WPT 断言面：AES-GCM/HMAC secret 密钥 →
+        // NotSupportedError 而非 InvalidAccessError；非对称 public 密钥经域检查
+        // 后落 InvalidAccessError）。
+        var algName = key && key.algorithm && key.algorithm.name;
+        var isEc = _zw_ecIsFamily(algName);
+        var isOkp = _zw_okpIsFamily(algName);
+        var isRsa = _zw_rsaIsFamily(algName);
+        if (!isEc && !isOkp && !isRsa) {
+          reject(new _zw_subtleDE('Algorithm does not support getPublicKey: ' + algName, 'NotSupportedError')); return;
+        }
+        if (!(key instanceof CryptoKey) || key.type !== 'private') {
+          reject(new _zw_subtleDE('getPublicKey requires a private CryptoKey', 'InvalidAccessError')); return;
+        }
+        var allowed = isRsa
+          ? _zw_rsaTypeUsages(algName, true)
+          : (isEc ? _zw_ecTypeUsages(algName, true) : _zw_okpTypeUsages(algName, true));
+        var u = _zw_normalizeUsages(usages, allowed);
+        if (!u) {
+          reject(new _zw_subtleDE('Invalid key usages for getPublicKey', 'SyntaxError')); return;
+        }
+        var rawCsv = (key._raw || []).join(',');
+        var outCsv;
+        if (isEc) {
+          if (typeof __zw_crypto_subtle_ec_export_der !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
+          }
+          outCsv = __zw_crypto_subtle_ec_export_der(key.algorithm.namedCurve, rawCsv, 'spki');
+        } else if (isOkp) {
+          if (typeof __zw_crypto_subtle_okp_export_der !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
+          }
+          outCsv = __zw_crypto_subtle_okp_export_der(algName, rawCsv, 'raw');
+        } else {
+          if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
+          }
+          outCsv = __zw_crypto_subtle_rsa_export_der(rawCsv, 'spki');
+        }
+        if (!outCsv) {
+          reject(new _zw_subtleDE('Public key derivation failed', 'OperationError')); return;
+        }
+        var outAlg = {};
+        for (var ak in key.algorithm) outAlg[ak] = key.algorithm[ak];
+        resolve(new CryptoKey('public', true, outAlg, u, Array.from(_zw_rsaCsvBytes(outCsv))));
+      });
     }
   };
   // [SecureContext] 暴露门禁（part01b _zwSubtle 注释）：secure 除非 http:/ws:
