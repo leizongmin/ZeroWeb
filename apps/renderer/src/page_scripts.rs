@@ -1762,8 +1762,9 @@ mod tests {
     /// t3 返修 D1（qq-20261016-r1）：worker 长臂跨越导航（文档代际翻转）时，mutation
     /// 非空臂不得把旧文档 mutation apply 进新文档。确定性复现（r2946 忙臂惯用法）：
     /// 忙臂 400ms 后写 mutation、再忙 1100ms 占住 worker；主线程在其间 `reset_document_state`
-    /// ——主线程侧清队后臂才写入（真实滞留），复位命令滞留优先队列 250ms 有界等待超时
-    /// （臂至 t≈1500ms），「未落定」窗 ~1.2s 足够轮询观察。落定前 drain 必须恒 false 且
+    /// ——主线程侧清队后臂才写入（真实滞留），复位命令滞留优先队列，同步有界等待
+    /// （T36 起为 5ms 界）超时 stash（臂至 t≈1500ms），「未落定」窗 ~1.2s 足够轮询观察。
+    /// 落定前 drain 必须恒 false 且
     /// 新文档 HTML 不变；落定即 worker 侧复位臂清队（t8 返修 defect-r1 D1 丢弃语义），
     /// 旧 mutation 不得迟到新文档。
     #[test]
@@ -1782,7 +1783,8 @@ mod tests {
             std::time::Duration::from_millis(50),
         );
         // ② t≈250ms 臂已确然在跑（50ms 放行 + 200ms 裕量）：导航——主线程侧清队（此刻
-        //    队列仍空，臂 t≈400ms 才写入）→ 复位命令滞留优先队列 → 250ms 等待必超时 stash。
+        //    队列仍空，臂 t≈400ms 才写入）→ 复位命令滞留优先队列 → 有界等待（5ms 界）
+        //    必超时 stash。
         std::thread::sleep(std::time::Duration::from_millis(200));
         worker.reset_document_state();
         assert!(

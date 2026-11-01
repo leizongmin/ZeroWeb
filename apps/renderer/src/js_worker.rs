@@ -889,6 +889,15 @@ impl RendererJsWorker {
         // 实测）时同步 reply 等待曾把导航初始化整体挂住（二跳 ERR_FAILED 根因链末级）。
         // 超时放弃等待：复位命令滞留优先队列照常执行（worker 端清队 + reset_context），
         // 主循环继续导航流程（新文档取回/解析不依赖 worker）。
+        //
+        // T36/H3（perf-mem-20261023）：250ms 界本身成为热窗导航派发主成本——worker 忙臂
+        // 典型 ~139ms（cnblogs 旧页 timer/promise 回调）小于界，同步等待整段吞臂：热 P0
+        // 中位 143.6ms（reset_ms 139.7ms 占 97%）、冷 69.8ms（reset_ms 65.9ms 占 94%），
+        // 12/12 launch 逐样本一致。该等待不承载任何排序或正确性：复位命令已按 FIFO 排在
+        // 新文档优先命令之前，滞留臂语义由 deferred-settle 全权兜底（下方 else 臂；t3
+        // 返修 D1 封门 + t8 返修 defect-r1 D1 worker 侧清队，qq-20261016-r1 生产验证）。
+        // 故界缩至 5ms：worker 空闲/短臂仍几乎必然内联落定（拾取 µs 级，冷窗快路径
+        // 保持），忙臂 5ms 即放行导航，热窗只承担固定 5ms 而非整臂。
         let (reply_tx, reply_rx) = mpsc::channel();
         if self
             .prio_tx
@@ -898,7 +907,7 @@ impl RendererJsWorker {
             })
             .is_ok()
         {
-            if reply_rx.recv_timeout(Duration::from_millis(250)).is_ok() {
+            if reply_rx.recv_timeout(Duration::from_millis(5)).is_ok() {
                 // worker 空闲/短臂：复位已在本等待窗内消费——落定，清掉更早滞留的
                 // pending（若有；其 reply 发送端已随 stash 替换丢弃，worker 端
                 // `let _ = reply.send` 静默失败，无碍）。
@@ -4085,6 +4094,47 @@ mod tests {
             0,
             "文档换代须清空 handle→selector 表（陈旧条目使宿主派发命中死键）"
         );
+        worker.shutdown();
+    }
+
+    /// T36/H3 回归钉（perf-mem-20261023）：忙臂跨越导航时，`reset_document_state` 的
+    /// 同步 reply 等待须以 5ms 界放行，导航初始化不得被旧文档臂整段阻塞——修复前
+    /// 250ms 界把 ~139ms 的热窗 busy 臂整段吞进导航派发（cnblogs 热窗 P0 中位 143.6ms、
+    /// reset_ms 139.7ms 占 97%，12/12 launch 一致）。放行与落定解耦：滞留由
+    /// deferred-settle 兜底（正确性另见 page_scripts
+    /// `mutation_arm_does_not_apply_across_document_reset_window` 钉）。
+    #[test]
+    fn nav_path_reset_does_not_block_on_busy_worker_arm() {
+        let mut worker = RendererJsWorker::spawn(64);
+        worker.set_dom_snapshot(
+            r#"<html><body><div id="m">old-doc</div></body></html>"#,
+            "https://zero.test/list",
+        );
+        // 忙臂 800ms 占住 worker（50ms 有界放行，r2946 忙臂惯用法）：远超 5ms 界，
+        // 回退到 250ms 界或任何长界同步等待都会在本钉的 100ms 断言上失败。
+        let _ = worker.execute_script_direct_bounded(
+            "const __t_t36 = Date.now(); while (Date.now() - __t_t36 < 800) {}",
+            std::time::Duration::from_millis(50),
+        );
+        // 200ms 裕量确保臂确然在跑（与 page_scripts 忙臂钉同惯用法）。
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let t0 = std::time::Instant::now();
+        worker.reset_document_state();
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "导航复位同步等待被旧文档忙臂阻塞: {elapsed:?}（界应为 5ms）"
+        );
+        // 放行 ≠ 落定：复位命令滞留优先队列等臂跑完，期间未落定。
+        assert!(
+            !worker.document_reset_settled(),
+            "前置：忙臂下复位命令滞留，未落定（若已落定说明臂提前结束，时序假设失效）"
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !worker.document_reset_settled() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(worker.document_reset_settled(), "10s 内复位未落定（臂悬挂）");
         worker.shutdown();
     }
 
