@@ -4662,6 +4662,23 @@
             if (globalThis.__zwModalGateBypass !== true
                 && typeof _zwDialogModalFocusGateOk === 'function'
                 && !_zwDialogModalFocusGateOk(proxy)) return;
+            // s212（html-semantics M2）：disabled 控件非 focusable area——focusing
+            // steps no-op（activeElement 不动、不派失焦序）。「actually disabled」
+            // 含 disabled fieldset 后代传染（首 legend 元素子豁免），_zwFeDisabled
+            // 共享帮手同口径（s210/s211）；族表同 s186 click 门七族（form-associated
+            // 才有 disabled 语义）。门在模态 inert 之后、detached 臂之前——失连元素
+            // 无祖先链，走查空过不扰 T55 契约。
+            // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-disabled
+            var _focDisTag = '';
+            try { _focDisTag = _realTag(sel, handle); } catch (_eFocT) { _focDisTag = ''; }
+            if (_focDisTag === 'BUTTON' || _focDisTag === 'INPUT' || _focDisTag === 'SELECT'
+                || _focDisTag === 'TEXTAREA' || _focDisTag === 'FIELDSET'
+                || _focDisTag === 'OPTGROUP' || _focDisTag === 'OPTION') {
+              var _focDis = false;
+              try { _focDis = _zwFeDisabled(sel, handle); } catch (_eFocD) { _focDis = false; }
+              if (_focDis) return;
+            }
             // T55（R114/R148 失连面）：未连接元素（createElement 未挂载等）的 focus()
             // 归解析节点所有权（_zwMElFocused，activeElement getter 直读）——M2-S4E
             //（b5e0b5874，2026-10-08）给 getter 加的惰性 isConnected 校验会把
@@ -5425,6 +5442,60 @@
             // https://html.spec.whatwg.org/multipage/popover.html#the-popover-open-pseudo-class
             if (q === ':popover-open') {
               return !!_zwTopLayer[key] && _zwReadPopover(sel, handle) !== null && _zwIsConnected(sel, handle);
+            }
+            // s212（html-semantics M2）：`:disabled`/`:enabled`/`:read-only`/`:read-write`
+            // 伪类——JS 侧 lw 同 turn 判定（host `__zw_matches` 读已 apply 快照——同
+            // turn 的 setAttribute/removeAttribute 不可见，R4200 裸属性臂同款缺口；
+            // input-disabled-fieldset-dynamic 语料 fieldset removeAttribute 后
+            // `matches(':disabled')`/`matches(':read-only')` 应立即翻 false）。
+            // `:disabled` = actually disabled（§4.10.5.1.1 `_zwFeDisabled` 共享帮手
+            // s210/s211——fieldset/select/optgroup 传染 + 首 legend 豁免），适用集限
+            // disableable 七族（§4.10.18；非适用元素两伪类皆不匹配——Selectors L4
+            // §13，host is_disableable_tag 同表）；`:enabled` = 适用集内非 disabled；
+            // `:read-write` = 文本可编辑控件（textarea 或 input 文本 type——host
+            // is_text_editable_input_type 同表）且非 readonly 且非 disabled；
+            // `:read-only` = 其补集（Selectors L4 §16：所有非 read-write 元素）。
+            // 复合选择器（`input:disabled`）仍落 host（:focus 先例，既有缺口不变）。
+            // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#selector-disabled
+            // https://www.w3.org/TR/selectors-4/#enableddisabled
+            // https://www.w3.org/TR/selectors-4/#ro-rw
+            if (q === ':disabled' || q === ':enabled' || q === ':read-only' || q === ':read-write') {
+              var _rdTag = '';
+              try { _rdTag = _realTag(sel, handle); } catch (_eRdT) { _rdTag = ''; }
+              var _rdAble = _rdTag === 'BUTTON' || _rdTag === 'INPUT' || _rdTag === 'SELECT'
+                || _rdTag === 'TEXTAREA' || _rdTag === 'OPTGROUP' || _rdTag === 'OPTION'
+                || _rdTag === 'FIELDSET';
+              var _rdDis = false;
+              try { _rdDis = _rdAble && _zwFeDisabled(sel, handle); } catch (_eRdD) { _rdDis = false; }
+              if (q === ':disabled') return _rdDis;
+              if (q === ':enabled') return _rdAble && !_rdDis;
+              var _rdRw = false;
+              if (_rdTag === 'TEXTAREA') _rdRw = true;
+              else if (_rdTag === 'INPUT') {
+                var _rdTy = '';
+                try {
+                  _rdTy = String((handle && typeof __zw_get_attr_handle === 'function')
+                    ? (__zw_get_attr_handle(handle, 'type') || '')
+                    : ((typeof __zw_get_attr_lw === 'function') ? (__zw_get_attr_lw(sel, 'type') || '')
+                      : (__zw_get_attr(sel, 'type') || ''))).toLowerCase();
+                } catch (_eRdTy) { _rdTy = ''; }
+                _rdRw = _rdTy === '' || _rdTy === 'text' || _rdTy === 'search' || _rdTy === 'url'
+                  || _rdTy === 'tel' || _rdTy === 'email' || _rdTy === 'password' || _rdTy === 'date'
+                  || _rdTy === 'month' || _rdTy === 'week' || _rdTy === 'time'
+                  || _rdTy === 'datetime-local' || _rdTy === 'number';
+              }
+              if (_rdRw) {
+                var _rdRo = false;
+                try {
+                  _rdRo = (handle && typeof __zw_has_attr_handle === 'function')
+                    ? __zw_has_attr_handle(handle, 'readonly') === '1'
+                    : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'readonly') === '1'
+                      : __zw_has_attr(sel, 'readonly') === '1');
+                } catch (_eRdRo) { _rdRo = false; }
+                if (_rdRo) _rdRw = false;
+              }
+              if (_rdRw && _rdDis) _rdRw = false;
+              return q === ':read-write' ? _rdRw : !_rdRw;
             }
             // R4200（html-semantics M2 切片 22）：裸属性选择器（`[name]` / `[name=value]`）——
             // sel 元素经 latest-wins 读（pending set/remove 同步可见）。host `__zw_matches`

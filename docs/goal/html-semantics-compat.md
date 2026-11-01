@@ -31,7 +31,43 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 211 收口，button 激活门双缺口——command/commandfor 缺省 type + fieldset 传染提交门：button-click-submits-with-commandfor 3F + button-click-submits 1F 翻绿，两语料 16/16 Pass；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=0 键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 212 收口，disabled 语义面三缺口——焦点门 + matches 四伪类臂 + select/optgroup 传播边界走查：input-disabled-fieldset-dynamic + number-disabled + option-disabled-optgroup 6/6 + option-disabled-optgroup-wrapper 3/3 四份靶语料 11 键全 Pass；forms 全域 A/B 净 F→P=7 恰 7 靶键，P→F=1 在册 onblur flake 族，键漂移 0 其他位移 0；shim 3 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s211 后 misc 残面余量——disabled 语义面四份语料 11 键。
+> customizable select 177F 挂起待拍板（GB-20261031 承袭）。
+> **勘根**：缺口一焦点门——mousedown 默认动作聚焦（part06
+> `_zwIsFocusableSel`）与宿主 pre-focus 对 INPUT/TEXTAREA/SELECT/
+> BUTTON 无 actually-disabled 判（spec §6.6.1 focusing steps no-op）。
+> 缺口二 matches 伪类臂——`:disabled`/`:enabled`/`:read-only`/
+> `:read-write` 无 JS 臂，`__zw_matches` 读 applied 快照对同 turn
+> setAttribute/removeAttribute 不可见（R4200 同款）。
+> 缺口三 select/optgroup 传播——`_zwFeDisabled` 只有自身 + fieldset。
+> **传播模型三轮收敛**：①平面走查 → "nested optgroup"/"select in
+> optgroup" 2 案真 P→F（嵌套不级联语料钉死）；②父级单层 computed →
+> wrapper 语料 2 案回红（`<optgroup disabled><div><option>` 期望
+> true，直接父 div 非边界）；③spec concept-option-disabled 原文定谳
+> **边界集走查**——OPTION：SELECT 查属性 / 首个 OPTGROUP 即决（查
+> computed：自身 | 其 select 链）/ HR、DATALIST、OPTION 截断 / 包裹
+> 层穿行；OPTGROUP 不从 OPTGROUP 级联。包裹穿行与嵌套不级联同模型
+> 同时成立。
+> **施工**（shim 3 文件 + rust 测试 1 文件）：part03 `_zwFeDisabled`
+> depth-0 边界走查臂（fieldset 臂独立承担不动）；part04 焦点门（七族
+> tag 门 + `_zwFeDisabled` 命中 no-op）+ matches 四伪类臂（`:read-
+> write` = TEXTAREA 或 13 文本 type 且非 readonly 非 disabled）；
+> part06 `_zwIsFocusableSel` 同谓词门（IFRAME/SUMMARY 不受门）；
+> part09.rs R5379 六腿 → 九腿（新增腿 G wrapper 穿行 + 动态翻转）。
+> **验证**：拼接 shim node --check SYNTAX_OK；R5379 单测 1 passed
+>（首轮 grandparent 臂条件 bug 腿 F "11101"≠"10101" 抓住修敛）；四
+> 靶语料全 Pass；forms 全域 A/B（(key,state) 对全测试名 join，4700
+> 对零键漂移）净 F→P=7 恰靶 + P→F=1 onblur 族摆动（上轮 WIP 复跑
+> 同键反向回摆佐证）；zero-engine 3672P+0F；guarded-clippy 0 警告 +
+> cargo fmt -p zero-engine 过（裸 rustfmt 噪声系不读 rustfmt.toml，
+> workspace 唯一漂移 seccomp_linux.rs 归口上游 d4768c825）。
+> **下一步候选**：misc 残面余量复盘 → host 侧 `is_effectively_disabled`
+> 平面走查与 shim 边界集模型统一（挂账新记）/ form-nameditem override
+> builtins 1F fix#19c 挂待决承袭 / customizable select 177F 挂起待拍板。
+> **账本**：[evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md](html-semantics-compat/evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 211 收口，button 激活门双缺口——command/commandfor 缺省 type + fieldset 传染提交门：button-click-submits-with-commandfor 3F + button-click-submits 1F 翻绿，两语料 16/16 Pass；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=0 键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s210 后域内 misc 残面盘点定刀 button-click-submits
 > 两文件 4F（与 s210 fieldset 传染基建同区）。customizable select
 > 177F 挂起待拍板（GB-20261031 征询在途）。

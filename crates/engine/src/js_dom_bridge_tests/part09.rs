@@ -7233,3 +7233,251 @@ fn test_r5378_button_effective_type_command_default_fieldset_submit_gate() {
         "属性全清：Submit Button 缺省回归 → 点击提交（缺省面不回归）"
     );
 }
+
+#[test]
+fn test_r5379_disabled_focus_noop_fieldset_inherit_self() {
+    // R5379（s212）：disabled 控件非 focusable area——focusing steps no-op，
+    // activeElement 不动（HTML §6.5.2 focusing steps + §4.10.5.1.1
+    // #concept-fe-disabled fieldset 传染首 legend 元素子豁免）。两语料同根钉面：
+    // input-disabled-fieldset-dynamic（fieldset disabled 后代 focus() 不动
+    // activeElement，removeAttribute 后可聚焦可键入 + matches(':disabled')/
+    // matches(':read-only') 同 turn 翻转——part04 matches 四伪类 JS 臂）+
+    // number-disabled（自身 disabled number input focus() 不动 activeElement）。
+    // 门挂 part04 focus 臂（模态 inert 后、detached 臂前）+ part06
+    // _zwIsFocusableSel（mousedown 默认动作聚焦与宿主 pre-focus 共用谓词），
+    // _zwFeDisabled 共享帮手同口径（含 s212 select/optgroup 走查臂）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><fieldset id=\"fs\" disabled><input id=\"t1\"></fieldset>\
+         <input id=\"n1\" type=\"number\" disabled></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    let active = "String((document.activeElement && document.activeElement.id) || 'body')";
+
+    // 腿 A（input-disabled-fieldset-dynamic 面）：fieldset disabled 后代 focus()
+    // → activeElement 不动（留 body）。
+    sandbox
+        .execute("document.getElementById('t1').focus();")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute(active).unwrap().value,
+        "body",
+        "fieldset disabled 后代 focus()：传染 disabled → 非 focusable area，activeElement 留 body"
+    );
+
+    // 腿 B（语料 removeAttribute 后半）：解除 disabled → 可聚焦。
+    sandbox
+        .execute(
+            "document.getElementById('fs').removeAttribute('disabled');\
+             document.getElementById('t1').focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute(active).unwrap().value,
+        "t1",
+        "fieldset disabled 解除后 → focus() 正常落焦"
+    );
+
+    // 腿 B2（语料同 turn matches 翻转——part04 matches 伪类臂）：解除后
+    // matches(':disabled') 立即 false（host __zw_matches 读已 apply 快照，
+    // removeAttribute 落 lw 层同 turn 不可见——JS 臂 lw 融合读同 turn 可见）。
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('t1').matches(':disabled') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "0",
+        "removeAttribute 同 turn → matches(':disabled') 立即 false（lw 同 turn 可见）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('t1').matches(':read-only') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "0",
+        "解除后 input 无 readonly → 非 read-only（语料 :read-only 断言面）"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('t1').matches(':read-write') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "1",
+        "解除后文本 input → read-write"
+    );
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('t1').matches(':enabled') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "1",
+        "解除后 → :enabled 命中"
+    );
+
+    // 腿 B3：setAttribute 重禁（动态禁用方向）→ matches(':disabled') 同 turn true。
+    sandbox
+        .execute("document.getElementById('fs').setAttribute('disabled', '');")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('t1').matches(':disabled') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "1",
+        "fieldset setAttribute disabled 同 turn → 后代 matches(':disabled') true"
+    );
+    sandbox
+        .execute("document.getElementById('fs').removeAttribute('disabled');")
+        .unwrap();
+
+    // 腿 C（number-disabled 面）：自身 disabled number input focus() → 不动。
+    sandbox
+        .execute(
+            "document.getElementById('t1').blur();\
+             document.getElementById('n1').focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute(active).unwrap().value,
+        "body",
+        "自身 disabled number input focus()：非 focusable area，activeElement 留 body"
+    );
+
+    // 腿 D：IDL disabled=false 解除（lw 通道）→ 可聚焦。
+    sandbox
+        .execute(
+            "document.getElementById('n1').disabled = false;\
+             document.getElementById('n1').focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute(active).unwrap().value,
+        "n1",
+        "IDL disabled 解除（SetAttr 落 latest-wins 层）→ focus() 正常落焦"
+    );
+
+    // 腿 E（s212 _zwFeDisabled select/optgroup 走查臂）：disabled select 内
+    // option 传染 → matches(':disabled') true + focus() 不动；解除后翻转。
+    sandbox
+        .execute(
+            "var _sel5379 = document.createElement('select'); _sel5379.id = 'sel5379';\
+             var _opt5379 = document.createElement('option'); _opt5379.id = 'opt5379';\
+             _sel5379.appendChild(_opt5379); _sel5379.disabled = true;\
+             document.body.appendChild(_sel5379);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('opt5379').matches(':disabled') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "1",
+        "disabled select 内 option → matches(':disabled') true（select 传染走查臂）"
+    );
+    sandbox
+        .execute(
+            "document.getElementById('sel5379').disabled = false;\
+             document.getElementById('opt5379').focus();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("document.getElementById('opt5379').matches(':disabled') ? '1' : '0'")
+            .unwrap()
+            .value,
+        "0",
+        "select 解除后 option matches(':disabled') 翻 false"
+    );
+
+    // 腿 F（concept-option-disabled 父级单层传播边界——customizable-select
+    // option-disabled-optgroup 语料钉面）：disabled select 直子 option/optgroup
+    // 禁用；嵌套 optgroup 不级联；option/hr 父截断。
+    sandbox
+        .execute(
+            "var _s2 = document.createElement('select'); _s2.disabled = true;\
+             var _og1 = document.createElement('optgroup'); _s2.appendChild(_og1);\
+             var _og2 = document.createElement('optgroup'); _og1.appendChild(_og2);\
+             var _oIn1 = document.createElement('option'); _og1.appendChild(_oIn1);\
+             var _oIn2 = document.createElement('option'); _og2.appendChild(_oIn2);\
+             var _oDirect = document.createElement('option'); _s2.appendChild(_oDirect);\
+             document.body.appendChild(_s2);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute(
+                "[_og1.matches(':disabled'), _og2.matches(':disabled'),\
+                 _oIn1.matches(':disabled'), _oIn2.matches(':disabled'),\
+                 _oDirect.matches(':disabled')].map(b => b ? '1' : '0').join('')"
+            )
+            .unwrap()
+            .value,
+        "10101",
+        "disabled select：直子 optgroup/option 禁用（1_1_1）；嵌套 optgroup 及其 option 不级联（0_0）"
+    );
+    sandbox
+        .execute(
+            "var _og3 = document.createElement('optgroup'); _og3.disabled = true;\
+             var _sel3 = document.createElement('select'); _og3.appendChild(_sel3);\
+             var _o3 = document.createElement('option'); _sel3.appendChild(_o3);\
+             document.body.appendChild(_og3);\
+             window.__zwr5379f = _o3.matches(':disabled') ? '1' : '0';"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__zwr5379f").unwrap().value,
+        "0",
+        "disabled optgroup 内的 select：select 不继承禁用，其 option 不禁用（select 边界截断）"
+    );
+
+    // 腿 G（包裹层穿行——option-disabled-optgroup-wrapper 语料钉面）：option
+    // 与边界祖先间的非边界元素（div 等）不截断传播；optgroup disabled 动态
+    // 翻转穿透 wrapper 可见。
+    sandbox
+        .execute(
+            "var _og4 = document.createElement('optgroup');\
+             var _w4 = document.createElement('div');\
+             var _o4 = document.createElement('option'); _o4.id = 'opt5379w';\
+             _w4.appendChild(_o4); _og4.appendChild(_w4);\
+             document.body.appendChild(_og4);\
+             _og4.disabled = true;\
+             window.__zwr5379g = _o4.matches(':disabled') ? '1' : '0';\
+             _og4.disabled = false;\
+             window.__zwr5379g2 = _o4.matches(':disabled') ? '1' : '0';\
+             var _s5 = document.createElement('select'); _s5.disabled = true;\
+             var _w5 = document.createElement('div');\
+             var _o5 = document.createElement('option'); _o5.id = 'opt5379w2';\
+             _w5.appendChild(_o5); _s5.appendChild(_w5);\
+             document.body.appendChild(_s5);\
+             window.__zwr5379g3 = _o5.matches(':disabled') ? '1' : '0';"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__zwr5379g").unwrap().value,
+        "1",
+        "option 包在 div 里于 disabled optgroup 内 → matches(':disabled') true（wrapper 穿行）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__zwr5379g2").unwrap().value,
+        "0",
+        "optgroup 解除禁用 → wrapper 内 option 同 turn 翻 false"
+    );
+    assert_eq!(
+        sandbox.execute("window.__zwr5379g3").unwrap().value,
+        "1",
+        "disabled select 内 div 包裹 option → 传播穿 wrapper（select 边界查属性）"
+    );
+}

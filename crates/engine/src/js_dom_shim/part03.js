@@ -12777,10 +12777,14 @@
   // s211（html-semantics M2，2026-11-01）：form control disabled 判定共享帮手
   //（spec §4.10.5.1.1 #concept-fe-disabled）——自身 disabled 属性 + disabled
   // fieldset 祖先传染（**首个 legend 元素子**的后代豁免；豁免后继续上行——更
-  // 外层 disabled fieldset 仍可 barred）。s210 `_validityState`、s211 两个
-  // button 激活门（.click() API 门 + R106 dispatchEvent click 默认动作门）
-  // 三处同口径；part04 willValidate 臂（s193，disabled-001 钉面）保留原内联
-  // 走查不动（共享化挂账承袭）。
+  // 外层 disabled fieldset 仍可 barred）+ s212 补 OPTION/OPTGROUP 的 select/
+  // optgroup 传播边界走查（concept-option-disabled 语义面：select/optgroup/
+  // option/hr 为边界，包裹层穿行，optgroup 对 OPTION 按 computed 判——见走
+  // 查臂注）。
+  // s210 `_validityState`、s211 两个 button 激活门（.click() API 门 + R106
+  // dispatchEvent click 默认动作门）、s212 焦点门 + matches 伪类臂同口径；
+  // part04 willValidate 臂（s193，disabled-001 钉面）保留原内联走查不动
+  //（共享化挂账承袭）。
   function _zwFeDisabled(sel, handle) {
     try {
       // s211：sel 面 latest-wins 融合读（setAttribute/IDL setter 写 lw 层不落
@@ -12795,6 +12799,9 @@
       var _fdWalk = _fdNode;
       var _fdPar = _fdNode.parentNode;
       var _fdGuard = 0;
+      var _fdSelfTag = '';
+      try { _fdSelfTag = String(_fdNode.tagName).toUpperCase(); } catch (_eFdST) {}
+      var _fdDepth = 0;
       while (_fdPar && _fdGuard < 64) {
         var _fdTag = '';
         try { _fdTag = String(_fdPar.tagName).toUpperCase(); } catch (_eFdT) {}
@@ -12813,8 +12820,55 @@
             try { _fdExempt = (_fdLeg != null && _fdWalk === _fdLeg); } catch (_eFdI) {}
             if (!_fdExempt) return true;
           }
+        } else if (_fdDepth === 0 && (_fdSelfTag === 'OPTION' || _fdSelfTag === 'OPTGROUP')) {
+          // s212（html-semantics M2）：select/optgroup 传播走查（concept-option-
+          // disabled 语义面，customizable-select option-disabled-optgroup +
+          // -wrapper 语料钉死）——边界集：SELECT 查其 disabled 属性；OPTGROUP
+          // 对 OPTION 查 computed 禁用（自身属性 | 其 select 链——嵌套 optgroup
+          // 不级联），对 OPTGROUP 自身截断 false；HR/DATALIST/OPTION 截断
+          // false；其余包裹层（div 等）穿行。fieldset 传染仍由外层平面走查
+          // 独立承担（两臂相加）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
+          var _fdB = _fdPar, _fdBG = 0;
+          while (_fdB && _fdBG < 64) {
+            var _fdBTag = '';
+            try { _fdBTag = String(_fdB.tagName).toUpperCase(); } catch (_eB) {}
+            if (_fdBTag === 'SELECT') {
+              var _fdSD = false;
+              try { _fdSD = !!_fdB.disabled; } catch (_eS) {}
+              if (_fdSD) return true;
+              break;
+            }
+            if (_fdBTag === 'OPTGROUP') {
+              if (_fdSelfTag !== 'OPTION') break; // OPTGROUP 不从 OPTGROUP 级联
+              var _fdOD = false;
+              try { _fdOD = !!_fdB.disabled; } catch (_eO) {}
+              if (_fdOD) return true;
+              // computed 两级：optgroup 自身无属性 → 查其 select 链（同边界集）。
+              var _fdG = _fdB.parentNode, _fdGG = 0;
+              while (_fdG && _fdGG < 64) {
+                var _fdGTag = '';
+                try { _fdGTag = String(_fdG.tagName).toUpperCase(); } catch (_eG) {}
+                if (_fdGTag === 'SELECT') {
+                  var _fdGD = false;
+                  try { _fdGD = !!_fdG.disabled; } catch (_eGD) {}
+                  if (_fdGD) return true;
+                  break;
+                }
+                if (_fdGTag === 'OPTGROUP' || _fdGTag === 'OPTION' || _fdGTag === 'HR'
+                    || _fdGTag === 'DATALIST') break;
+                try { _fdG = _fdG.parentNode; } catch (_eGP) { break; }
+                _fdGG++;
+              }
+              break;
+            }
+            if (_fdBTag === 'HR' || _fdBTag === 'DATALIST' || _fdBTag === 'OPTION') break;
+            try { _fdB = _fdB.parentNode; } catch (_eBP) { break; }
+            _fdBG++;
+          }
         }
         try { _fdWalk = _fdPar; _fdPar = _fdPar.parentNode; } catch (_eFdP) { break; }
+        _fdDepth++;
         _fdGuard++;
       }
     } catch (_eFdW) {}

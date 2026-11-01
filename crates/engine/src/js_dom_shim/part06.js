@@ -17462,8 +17462,17 @@
       // 本谓词（spec 模态 dialog inertness，focusable-area 切片）。
       if (typeof _zwDialogModalFocusGateOk === 'function' && !_zwDialogModalFocusGateOk(el)) return false;
       var tag = String(el.tagName || '').toUpperCase();
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON'
-          || tag === 'IFRAME' || tag === 'SUMMARY') return true;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') {
+        // s212（html-semantics M2）：disabled 控件非 focusable area（mousedown 默认
+        // 动作聚焦与宿主 pre-focus 步共用本谓词，focusing steps no-op 同门）——
+        // 「actually disabled」含 disabled fieldset 传染（首 legend 元素子豁免），
+        // _zwFeDisabled 共享帮手同口径。仅 form-associated 族（disabled 语义所在，
+        // IFRAME/SUMMARY 不适用）。
+        // https://html.spec.whatwg.org/multipage/form-control-infrastructure.html#concept-fe-disabled
+        try { if (typeof _zwFeDisabled === 'function' && _zwFeDisabled(sel, null)) return false; } catch (_eFAds) {}
+        return true;
+      }
+      if (tag === 'IFRAME' || tag === 'SUMMARY') return true;
       if (tag === 'A' || tag === 'AREA') return el.hasAttribute('href');
       if (el.hasAttribute('tabindex')) return true;
       var ce = el.getAttribute('contenteditable');
