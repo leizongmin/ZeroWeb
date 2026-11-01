@@ -250,4 +250,7 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   （+17 行：`_zw_normalizeFormatAlias` family 条件归一 helper）、
   `part02.js`（+10/-1：importKey/exportKey 入口归一 + unwrapKey 白名单
   放行）。共享清单（part01.js/script_gen.rs/testharness.rs）零触碰；
-  25 号/33 号流共享面零交集。开工 pull --rebase 已是最新（fa5444f60）。
+  25 号/33 号流共享面零交集。开工 pull --rebase 已是最新（fa5444f60）；
+  落账 rebase 带入 `7ddf00c39`（33 号流 F6 delete/forwardDelete，触
+  part01f 新分片 + part01d/part06 editing 面，与本切片触面 diff 零交集，
+  按 M2-3 先例不复跑）。
