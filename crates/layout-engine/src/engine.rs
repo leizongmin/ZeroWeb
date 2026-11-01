@@ -1334,6 +1334,12 @@ impl LayoutEngine {
             let (cb_origin_x, cb_origin_y) = (root_x + root_box.border_left, root_y + root_box.border_top);
             let cb_width = root_box.width - root_box.border_left - root_box.border_right;
             let cb_height = root_box.height - root_box.border_top - root_box.border_bottom;
+            // R5377（CSS2 §10.3.7 过约束）：CB = 根 padding-box，方向取根元素 direction
+            //（rtl 过约束忽略 left、按 right 边锚定；ltr 既有左锚口径）。
+            let cb_is_rtl = root_box
+                .node_id
+                .and_then(|nid| styles.get(&nid))
+                .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
             resolve_abspos_against_root_cb(
                 &mut root_box,
                 root_x,
@@ -1344,6 +1350,7 @@ impl LayoutEngine {
                 cb_height,
                 styles,
                 true,
+                cb_is_rtl,
             );
         } else {
             // 11.7a R3858：根非 positioned 时，最近 positioned 祖先为非根元素的 abspos

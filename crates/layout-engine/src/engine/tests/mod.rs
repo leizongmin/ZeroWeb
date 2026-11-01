@@ -944,6 +944,10 @@ mod r5372_abspos_nested_cb_margin_tests;
 /// 「only ml auto」组驱动）。
 mod r5376_abspos_auto_margin_tests;
 
+/// R5377 回归测试：abspos 约束方程过约束臂按 CB direction 选边——rtl CB 忽略 left、
+/// 按 right 边锚定（CSS2 §10.3.7；WPT abspos-non-replaced-width-margin-000 adir 组驱动）。
+mod r5377_abspos_rtl_overconstrained_tests;
+
 /// R5373 回归测试：R1743 父高度回填 extent 计入塌缩屏障（CSS2 §10.6.3/§8.3.1；
 /// WPT background-root-017 驱动）。
 mod r5373_backfill_barrier_margin_tests;

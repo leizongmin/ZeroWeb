@@ -1174,7 +1174,7 @@ fn test_resolve_abspos_root_cb_relative_length_insets() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    resolve_abspos_against_root_cb(&mut root, 10.0, 20.0, 30.0, 40.0, 500.0, 400.0, &styles, true);
+    resolve_abspos_against_root_cb(&mut root, 10.0, 20.0, 30.0, 40.0, 500.0, 400.0, &styles, true, false);
 
     let abs = &root.children[0];
     assert!(
@@ -1222,7 +1222,7 @@ fn test_resolve_abspos_root_cb_auto_size_stretches_with_relative_insets() {
     let mut styles: HashMap<NodeId, ComputedStyle> = HashMap::new();
     styles.insert(key_id, style);
 
-    resolve_abspos_against_root_cb(&mut root, 0.0, 0.0, 30.0, 40.0, 500.0, 400.0, &styles, true);
+    resolve_abspos_against_root_cb(&mut root, 0.0, 0.0, 30.0, 40.0, 500.0, 400.0, &styles, true, false);
 
     let abs = &root.children[0];
     assert_eq!(abs.width, 440.0, "500 - 20px - 40px");

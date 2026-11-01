@@ -961,7 +961,14 @@ mod r2062_tests {
         // static 位不重定位，但 CB 链须穿过 contain 盒更新为其 padding-box（零 border/padding
         // 时 = (0,0)+mid 偏移）。此处直接验证 child_cb 判定分支：is_abspos_cb 的 contain 盒
         // 使 CB 更新发生（旧判据 positioned-only 时 cb 原样继承）。
-        resolve_abspos_against_nested_cb_inner(&mut mid_box, 0.0, 0.0, Some((10.0, 10.0, 100.0, 100.0)), &styles, true);
+        resolve_abspos_against_nested_cb_inner(
+            &mut mid_box,
+            0.0,
+            0.0,
+            Some((10.0, 10.0, 100.0, 100.0, false)),
+            &styles,
+            true,
+        );
         // contain 盒非 positioned 且有 cb → 重定位分支对 child 生效（child.is_absolute）。
         // top/bottom 均 Auto → 无 inset 重定位，坐标不变；断言递归正常完成且 CB 链可达子节点
         //（无 panic/跳过）即为链路贯通。

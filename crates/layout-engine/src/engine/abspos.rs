@@ -68,6 +68,39 @@ fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, c
     }
 }
 
+/// R5377（CSS2 §10.3.7 过约束臂）：rtl CB 的「nothing-auto」组（left/margins/width/
+/// right 全 definite）与「双 auto margin 负 slack」组——方程不可满足 → 忽略 `left`、
+/// 按 right 边锚定：盒 border 缘 x（相对 CB 原点）= `CB − right − mr − 盒宽`（ltr 忽略
+/// `right` = 既有恒左锚口径）。auto margin 被方程精确解的组（R5376 单 auto、双 auto 正
+/// slack）方程成立，不属过约束 → None 维持左锚。taffy 直挂同语义（R5372 直挂 rtl 双锚
+/// pin 470 对齐）。`child.width` 为 border-box（模块头注）。
+fn rtl_overconstrained_right_anchor(
+    style: &ComputedStyle,
+    cb_width: f32,
+    left_px: f32,
+    child: &LayoutBox,
+) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    if matches!(style.width, LengthValue::Auto) {
+        return None; // width:auto 走 inset-stretch 域（既有口径，左右锚不选边）
+    }
+    let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
+    let ml_auto = matches!(style.margin_left, LengthValue::Auto);
+    let mr_auto = matches!(style.margin_right, LengthValue::Auto);
+    // 过约束组：双 definite margin（方程由 left 侧硬凑）；双 auto 负 slack（归零后仍
+    // 不可满足）。单 auto 已被 R5376 精确解 → 不入臂。
+    let over_constrained = if ml_auto && mr_auto {
+        cb_width - left_px - right_px - child.width < 0.0
+    } else {
+        !ml_auto && !mr_auto
+    };
+    if !over_constrained {
+        return None;
+    }
+    let mr_px = resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, 0.0).unwrap_or(0.0);
+    Some(cb_width - right_px - mr_px - child.width)
+}
+
 pub(super) fn resolve_abspos_real_length(
     value: &zero_css_parser::values::LengthValue,
     font_size: &zero_css_parser::values::LengthValue,
@@ -686,6 +719,7 @@ pub(super) fn resolve_abspos_against_root_cb(
     cb_height: f32,
     styles: &HashMap<NodeId, ComputedStyle>,
     nearest_pos_ancestor_is_root: bool,
+    cb_is_rtl: bool,
 ) {
     use zero_css_parser::values::LengthValue;
     for child in &mut box_node.children {
@@ -764,8 +798,15 @@ pub(super) fn resolve_abspos_against_root_cb(
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
-                child.x =
-                    cb_origin_x + px + ml_used - current_box_origin_x - box_node.border_left - box_node.padding_left;
+                // R5377（CSS2 §10.3.7 过约束）：rtl CB 忽略 left、按 right 边锚定（ltr
+                // 忽略 right = 左锚既有口径；helper 文档）。
+                let x_rel = if cb_is_rtl {
+                    rtl_overconstrained_right_anchor(style, cb_width, px, child)
+                } else {
+                    None
+                }
+                .unwrap_or(px + ml_used);
+                child.x = cb_origin_x + x_rel - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
@@ -814,6 +855,7 @@ pub(super) fn resolve_abspos_against_root_cb(
             cb_height,
             styles,
             child_nearest_is_root,
+            cb_is_rtl,
         );
     }
 }
@@ -827,7 +869,8 @@ pub(super) fn resolve_abspos_against_root_cb(
 /// 绿色覆盖 span 落 y=166.6 而非 216.6，红 img 露出）。
 ///
 /// 机制与 `resolve_abspos_against_root_cb` 同谱系：递归携带最近 positioned 祖先的
-/// padding-box（origin + size）；对「直接父非 positioned」的 absolute 子重解析
+/// padding-box（origin + size + direction，R5377——§10.3.7 过约束按 CB direction 选
+/// 边）；对「直接父非 positioned」的 absolute 子重解析
 /// left/top/right/bottom + 百分比尺寸，再转回父 content 相对坐标。直接父即 positioned
 /// 祖先的（taffy 已正确，inline-replaced-width-014 `top:0` 直连场景）不触，防回归。
 /// 根 positioned 场景由 11.7 root-CB 专项 pass 处理——本 pass 仅在根非 positioned 时
@@ -840,7 +883,7 @@ pub(super) fn resolve_abspos_against_nested_cb(
     box_node: &mut LayoutBox,
     current_box_origin_x: f32,
     current_box_origin_y: f32,
-    cb: Option<(f32, f32, f32, f32)>,
+    cb: Option<(f32, f32, f32, f32, bool)>,
     styles: &HashMap<NodeId, ComputedStyle>,
 ) {
     let enabled = std::env::var("ZW_ABSPOS_NESTED_CB").as_deref() != Ok("0");
@@ -1051,7 +1094,7 @@ pub(super) fn resolve_abspos_against_nested_cb_inner(
     box_node: &mut LayoutBox,
     current_box_origin_x: f32,
     current_box_origin_y: f32,
-    cb: Option<(f32, f32, f32, f32)>,
+    cb: Option<(f32, f32, f32, f32, bool)>,
     styles: &HashMap<NodeId, ComputedStyle>,
     enabled: bool,
 ) {
@@ -1074,7 +1117,7 @@ fn resolve_abspos_against_nested_cb_inner_m(
     current_box_origin_x: f32,
     current_box_origin_y: f32,
     margin_chain: (f32, f32),
-    cb: Option<(f32, f32, f32, f32)>,
+    cb: Option<(f32, f32, f32, f32, bool)>,
     styles: &HashMap<NodeId, ComputedStyle>,
     enabled: bool,
 ) {
@@ -1101,7 +1144,7 @@ fn resolve_abspos_against_nested_cb_inner_m(
         // 仅当已有 positioned 祖先 CB 时重解析；default 下本盒即 CB（直接子场景）维持
         // 旧跳过（taffy 基解析）。R3902：box_is_positioned 实为 is_abspos_cb——
         // contain:layout/paint 盒同样是 CB，其间层不再被视为「static 中间层」。
-        if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height)) = cb
+        if let Some((cb_origin_x, cb_origin_y, cb_width, cb_height, cb_is_rtl)) = cb
             && (direct_cb_reresolve || !box_is_positioned)
             && child.is_absolute
             && let Some(style) = child.node_id.and_then(|nid| styles.get(&nid))
@@ -1185,8 +1228,15 @@ fn resolve_abspos_against_nested_cb_inner_m(
                 // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
                 //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
                 let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
-                child.x =
-                    cb_origin_x + px + ml_used - current_box_origin_x - box_node.border_left - box_node.padding_left;
+                // R5377（CSS2 §10.3.7 过约束）：rtl CB 忽略 left、按 right 边锚定（ltr
+                // 忽略 right = 左锚既有口径；helper 文档）。
+                let x_rel = if cb_is_rtl {
+                    rtl_overconstrained_right_anchor(style, cb_width, px, child)
+                } else {
+                    None
+                }
+                .unwrap_or(px + ml_used);
+                child.x = cb_origin_x + x_rel - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
@@ -1265,11 +1315,18 @@ fn resolve_abspos_against_nested_cb_inner_m(
         let child_box_origin_x = current_box_origin_x + box_node.border_left + box_node.padding_left + child.x;
         let child_box_origin_y = current_box_origin_y + box_node.border_top + box_node.padding_top + child.y;
         let child_cb = if child.is_abspos_cb {
+            // R5377：CB direction 随 cb 元组穿线（§10.3.7 过约束按 CB direction 选边；
+            // positioned 子即其后代 CB）。
+            let child_cb_is_rtl = child
+                .node_id
+                .and_then(|nid| styles.get(&nid))
+                .is_some_and(|s| matches!(s.direction, zero_style_system::property::types::DirectionValue::Rtl));
             Some((
                 child_box_origin_x + child.border_left,
                 child_box_origin_y + child.border_top,
                 (child.width - child.border_left - child.border_right).max(0.0),
                 (child.height - child.border_top - child.border_bottom).max(0.0),
+                child_cb_is_rtl,
             ))
         } else {
             cb
