@@ -1925,6 +1925,16 @@ impl BrowserApp {
         self.menu_anim_drawn_opacity = None;
     }
 
+    /// T28-P37 R2：渐入泵帧判定——菜单开启、渐入时钟已起表且完成帧未上屏
+    /// （drawn < 1.0）。条带重放跳过（app_platform can_reuse）与
+    /// [`Self::tick_menu_fade`] 的续帧终止共用同一判据：首帧未上屏（drawn=None）
+    /// 不在泵窗（条带照常重放），drawn 达 1.0 即出窗恢复条带。
+    fn menu_fade_pumping(&self) -> bool {
+        self.context_menu.visible
+            && self.menu_anim_start.is_some()
+            && self.menu_anim_drawn_opacity.is_some_and(|opacity| opacity < 1.0)
+    }
+
     /// 测试用：是否有进行中的平滑滚动动画。
     #[cfg(test)]
     pub fn tick_smooth_scroll_has_animation(&self) -> bool {

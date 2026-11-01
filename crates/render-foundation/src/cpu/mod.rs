@@ -404,10 +404,11 @@ pub fn render_full_scene_region_into(
     // 包围盒 scratch）只画与 region 相交的 overlay 图元：拷回范围外的墨迹本就
     // 被丢弃，全幅重放是纯废功（实测 1024×768 软光栅下 ~1400 个 overlay fills
     // 令条带重放 ~146ms/帧，渐入期 16ms Poll 心跳被渲染阻塞饿死，菜单渐入
-    // 只出 2 帧）。fills 走 `fill_rect_for_region` 精确裁剪，拷回范围内逐位
-    // 一致；rounded_rects/glyphs 相交者整笔重画（墨迹不越自身矩形，拷回范围
-    // 外由拷回丢弃）。region=None（全量）不过滤，blit 平移后 overlay 修正
-    // 语义不变（相交者照画）。
+    // 只出 2 帧）。fills 走 `fill_rect_for_region` 精确裁剪（逐像素，拷回范围
+    // 内逐位一致）；rounded_rects 相交者整笔重画（墨迹不越自身矩形）；glyphs
+    // 用外扩 1em 的估算盒（全角字形 advance 可达 1em，紧估会跨缘整笔漏画；
+    // 外扩只多画不错画，拷回范围外由拷回丢弃——D2 返修）。region=None（全量）
+    // 不过滤，blit 平移后 overlay 修正语义不变（相交者照画）。
     for fill in overlay_fills {
         fill_rect_for_region(fb, fill, scale, region);
     }
@@ -429,10 +430,11 @@ pub fn render_full_scene_region_into(
 
     for glyph in overlay_glyphs {
         if let Some(r) = region {
-            let gx = glyph.x * scale;
-            let gy = (glyph.baseline_y - glyph.font_size) * scale;
-            let gw = glyph.font_size * scale * 0.6;
-            let gh = glyph.font_size * scale * 1.25;
+            let em = glyph.font_size * scale;
+            let gx = glyph.x * scale - em;
+            let gy = (glyph.baseline_y - glyph.font_size) * scale - em;
+            let gw = glyph.font_size * scale * 0.6 + em * 2.0;
+            let gh = glyph.font_size * scale * 1.25 + em * 2.0;
             if !r.intersects(&Rect::new(gx, gy, gw, gh)) {
                 continue;
             }

@@ -119,3 +119,78 @@ impl BrowserApp {
         result
     }
 }
+
+#[cfg(test)]
+mod ui_text_shape_cache_tests {
+    use super::*;
+
+    /// T28-P37 R2（TV2 返修）：shape 缓存命中路径输出与未命中一致（总宽 +
+    /// 逐字符 (字符, 字体 ID, x 偏移)），draw/measure 两个消费方冷热一致，
+    /// size 参与键隔离（同文本不同 size 不得互串）。
+    #[test]
+    fn ui_text_shape_cache_hits_match_misses_and_sizes_isolate_keys() {
+        let app = BrowserApp::new(RenderMode::Cpu);
+        let text = "打开菜单 Open 42";
+        let size = 14.0;
+        let cold = app.ui_text_shape(text, size);
+        assert!(!cold.1.is_empty(), "有字体时必须产出 shape");
+        assert!(!app.ui_text_shape_cache.borrow().is_empty(), "首跑应写入缓存");
+        let warm = app.ui_text_shape(text, size);
+        assert_eq!(cold, warm, "命中输出必须与未命中一致");
+
+        let glyph_key = |glyphs: &[GlyphDraw]| -> Vec<(char, u32, u32, u32, u32)> {
+            glyphs
+                .iter()
+                .map(|g| {
+                    (
+                        g.ch,
+                        g.font_id,
+                        g.x.to_bits(),
+                        g.baseline_y.to_bits(),
+                        g.font_size.to_bits(),
+                    )
+                })
+                .collect()
+        };
+        let mut cold_glyphs = Vec::new();
+        let mut warm_glyphs = Vec::new();
+        app.draw_ui_text(text, 3.0, 5.0, size, Color::BLACK, &mut cold_glyphs);
+        app.draw_ui_text(text, 3.0, 5.0, size, Color::BLACK, &mut warm_glyphs);
+        assert_eq!(glyph_key(&cold_glyphs), glyph_key(&warm_glyphs), "draw 冷热一致");
+        assert!(!cold_glyphs.is_empty());
+        assert_eq!(
+            app.ui_text_shape(text, size).0,
+            app.measure_ui_text_width(text, size),
+            "measure 与 shape 总宽同源"
+        );
+
+        let other_size = app.ui_text_shape(text, 20.0);
+        assert_eq!(app.ui_text_shape(text, 20.0), other_size, "同 size 命中");
+        assert_eq!(app.ui_text_shape(text, size), cold, "size 键隔离，旧键不变");
+    }
+
+    /// T28-P37 R2（TV2 返修）：字体 registry 变化必须清空 shape 缓存——旧字体
+    /// ID 解析与 advance 全部失效（sync_page_fonts 清空点）；清空后重算可用。
+    #[test]
+    fn sync_page_fonts_invalidates_ui_text_shape_cache() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        let tab = app.shell.active_tab_id().unwrap();
+        app.tabs.ensure_snapshot_for_test(tab);
+        let _ = app.ui_text_shape("GitHub", 14.0);
+        assert!(!app.ui_text_shape_cache.borrow().is_empty(), "前置：缓存已预热");
+        let font = zero_protocol::IpcFontPayload {
+            font_id: 421,
+            face_index: 0,
+            data: include_bytes!("../../../tests/wpt-runner/fonts/Ahem.ttf").to_vec(),
+        };
+        app.tabs.snapshot_mut(tab).unwrap().font_payloads = vec![font];
+        assert!(app.sync_page_fonts());
+        assert!(
+            app.ui_text_shape_cache.borrow().is_empty(),
+            "registry 换代必须清空 shape 缓存"
+        );
+        let refreshed = app.ui_text_shape("GitHub", 14.0);
+        assert!(!refreshed.1.is_empty(), "清空后重算可用");
+        assert_eq!(refreshed, app.ui_text_shape("GitHub", 14.0), "重算后命中一致");
+    }
+}

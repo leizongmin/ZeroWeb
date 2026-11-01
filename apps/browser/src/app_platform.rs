@@ -836,6 +836,9 @@ impl BrowserApp {
             .context_menu
             .visible
             .then(|| self.menu_overlay_bbox(width as f32, height as f32));
+        // T28-P37 R2：渐入泵帧判定同为渲染前的 &self 读取（方法整体借 self，
+        // 须在 image_cache_mut 之前完成）。
+        let menu_fade_pumping = self.menu_fade_pumping();
         let mut image_cache: Option<&mut ImageCache> = match tab_id {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
@@ -918,9 +921,6 @@ impl BrowserApp {
             // 成本披露：跳过窗内（≤150ms + 兜底 4×）落在 chrome 条带的无关变化
             // （如悬停高亮、缩放浮层）延迟到渐入完成帧后的首个非跳过帧补画——自愈
             // 且限于渐入窗，与 DF-F2 的 loading∩menu 回全量同类取舍。
-            let menu_fade_pumping = self.context_menu.visible
-                && self.menu_anim_start.is_some()
-                && self.menu_anim_drawn_opacity.is_some_and(|opacity| opacity < 1.0);
             let top_strip = zero_render_foundation::geometry::Rect::new(
                 0.0,
                 0.0,
@@ -2053,5 +2053,34 @@ mod tests {
                 p[0] == r && p[1] == g && p[2] == b && p[3] == a
             })
             .count()
+    }
+}
+
+#[cfg(test)]
+mod menu_fade_pump_tests {
+    use super::*;
+
+    /// T28-P37 R2（TV3 返修）：渐入泵帧判据边界组合——首帧未上屏不在泵窗、
+    /// drawn 达 1.0 即出窗、渐入中关菜单立即出窗，与 tick_menu_fade 终止一致。
+    #[test]
+    fn menu_fade_pumping_predicate_boundary_combinations() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        assert!(!app.menu_fade_pumping(), "菜单未开不在泵窗");
+        app.context_menu.visible = true;
+        assert!(!app.menu_fade_pumping(), "起表前条带照常重放");
+        app.menu_anim_start = Some(Instant::now());
+        assert!(!app.menu_fade_pumping(), "首帧未上屏（drawn=None）不在泵窗");
+        app.menu_anim_drawn_opacity = Some(0.0);
+        assert!(app.menu_fade_pumping(), "首帧已上屏进入泵窗");
+        app.menu_anim_drawn_opacity = Some(0.5);
+        assert!(app.menu_fade_pumping(), "渐入中持续泵帧");
+        app.menu_anim_drawn_opacity = Some(1.0);
+        assert!(!app.menu_fade_pumping(), "完成帧上屏即出窗，条带恢复");
+        app.menu_anim_drawn_opacity = Some(0.5);
+        app.context_menu.visible = false;
+        assert!(!app.menu_fade_pumping(), "渐入中关菜单立即出窗");
+        app.context_menu.visible = true;
+        app.menu_anim_start = None;
+        assert!(!app.menu_fade_pumping(), "时钟未起表不在泵窗");
     }
 }
