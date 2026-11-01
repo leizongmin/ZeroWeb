@@ -26,8 +26,6 @@ Ed448 无 1.85 签名路径 / 域降 scope）；③ KMAC **option b 可行性实
 getrandom 0.4 workspace 树已在本。仓库零代码触面。
 
 **M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
-
-**M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
 algorithm-discards-context（一/二/三期连续 T 案）**13 子测试全 Pass，
 案级 Timeout 键退役，T 5→4**；全量分母 360 案 / 81,851 keys = P 52,781 +
 F 29,066 + T 4，红线 P→非P 0、F 逐位全等、r1/r2/r3 三跑逐项全等。
