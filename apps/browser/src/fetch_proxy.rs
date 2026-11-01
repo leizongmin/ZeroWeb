@@ -136,6 +136,38 @@ impl TabFetchProxy {
         }
     }
 
+    /// 多进程 HSTS 响应头注册（M1 矩阵在册「多进程 HSTS 不注册」兼容缺口：单进程
+    /// 导航路在 `webview::note_hsts_response` 登记，多进程 document 响应此前不落表）。
+    /// 最终 URL 为 HTTPS 且携带 `Strict-Transport-Security` 头时，按最终 URL 的
+    /// host 登记 per-tab `SecurityContext`，后续 `check_resource_url` 对该 host
+    /// 强制 HTTP→HTTPS 升级。浏览器侧消费面无条件执行 HSTS 升级（无
+    /// `mixed_content_enforcement` 开关），故仅保留 https-only 门；非 HTTPS、
+    /// 无 STS 头、坏头静默跳过。spec https://tools.ietf.org/html/rfc6797#section-6.1
+    /// （host 只认最终 URL）。
+    fn note_hsts_response(&mut self, tab_id: TabId, final_url: &str, headers: &[(String, String)]) {
+        if !final_url.starts_with("https://") {
+            return;
+        }
+        let Some(value) = headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("strict-transport-security"))
+            .map(|(_, value)| value.clone())
+        else {
+            return;
+        };
+        let Some(host) = url::Url::parse(final_url)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string))
+        else {
+            return;
+        };
+        if let Some(ctx) = self.security.get_mut(&tab_id) {
+            if ctx.register_hsts(&host, &value) {
+                tracing::info!("HSTS registered for {host}: {value}");
+            }
+        }
+    }
+
     /// 强制刷新前清除指定 URL 的缓存条目（绕过 HTTP 缓存）。
     /// 仅清除该 tab 对应缓存（普通/无痕）中的主资源条目。
     pub fn invalidate_url(&self, tab_id: TabId, url: &str) {
@@ -507,6 +539,11 @@ impl TabFetchProxy {
                     // 信任边界：响应头来自外部服务器，内部命名空间头（x-zero-*）先剥离
                     // 再推入浏览器实例，保证下游按「唯一浏览器推入实例」做路由决策。
                     strip_spoofed_internal_headers(&mut resp.headers);
+                    // 多进程 HSTS 注册：仅 document（导航）响应登记，对齐单进程
+                    // 导航路（子资源不落表）。
+                    if pending.resource_type == "document" {
+                        self.note_hsts_response(pending.tab_id, &resp.url, &resp.headers);
+                    }
                     resp.headers.push(("X-Zero-Final-URL".to_string(), resp.url.clone()));
                     resp.headers
                         .push(("X-Zero-Resource-Type".to_string(), pending.resource_type.to_string()));
@@ -965,6 +1002,132 @@ mod tests {
         assert_eq!(done.len(), 1);
         assert_eq!(done[0].request_id, 42);
         assert_eq!(done[0].tab_id, TabId(2));
+    }
+
+    /// 多进程 HSTS 注册回归（M2 切片 5，对齐单进程 mixed_content_gate.rs 口径）：
+    /// HTTPS document 响应的 STS 头登记 per-tab `SecurityContext`，后续
+    /// `check_resource_url` 对该 host 强制 HTTP→HTTPS 升级、includeSubDomains
+    /// 覆盖子域；tab 间不串；非 HTTPS/无头/坏头不注册。
+    #[test]
+    fn hsts_document_response_registers_per_tab_security_context() {
+        let mut proxy = TabFetchProxy::new();
+        // http 页面源：无混合内容噪声，Allow/Upgraded 信号纯由 HSTS 决定。
+        proxy.on_navigate(TabId(1), "http://tabs.example/");
+
+        proxy.note_hsts_response(
+            TabId(1),
+            "https://secure.example.com/page",
+            &[(
+                "Strict-Transport-Security".into(),
+                "max-age=31536000; includeSubDomains".into(),
+            )],
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url("http://secure.example.com/api", "connect"),
+            ResourceCheckResult::Upgraded("https://secure.example.com/api".to_string()),
+            "已注册 host 的 HTTP 资源必须升级 HTTPS"
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url("http://sub.secure.example.com/x", "script"),
+            ResourceCheckResult::Upgraded("https://sub.secure.example.com/x".to_string()),
+            "includeSubDomains 须覆盖子域"
+        );
+
+        // per-tab 隔离：未注册 tab 的同 host 资源不升级。
+        proxy.ensure_tab(TabId(2));
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(2))
+                .unwrap()
+                .check_resource_url("http://secure.example.com/api", "connect"),
+            ResourceCheckResult::Allow,
+            "HSTS 为 per-tab SecurityContext，未注册 tab 不得升级"
+        );
+
+        // 非 HTTPS 响应不注册；无 STS 头静默跳过；坏头不注册。
+        proxy.note_hsts_response(
+            TabId(1),
+            "http://plain.example.com/",
+            &[("Strict-Transport-Security".into(), "max-age=31536000".into())],
+        );
+        proxy.note_hsts_response(TabId(1), "https://headerless.example.com/", &[]);
+        proxy.note_hsts_response(
+            TabId(1),
+            "https://bad.example.com/",
+            &[("Strict-Transport-Security".into(), "garbage".into())],
+        );
+        for (host, url) in [
+            ("plain", "http://plain.example.com/x"),
+            ("headerless", "http://headerless.example.com/x"),
+            ("bad", "http://bad.example.com/x"),
+        ] {
+            assert_eq!(
+                proxy
+                    .security
+                    .get_mut(&TabId(1))
+                    .unwrap()
+                    .check_resource_url(url, "document"),
+                ResourceCheckResult::Allow,
+                "{host} host 不得被注册"
+            );
+        }
+    }
+
+    /// drain 接线回归：document 响应确实流经 HSTS 登记点，但 HTTP 响应
+    /// （https-only 门）不注册——真实回环 HTTP 服务端发 STS 头端到端验证。
+    #[test]
+    fn drain_document_response_does_not_register_hsts_over_http() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = std::io::Read::read(&mut conn, &mut buf);
+            let _ = conn.write_all(
+                b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\
+                  Strict-Transport-Security: max-age=31536000\r\n\r\nhi",
+            );
+            let _ = conn.flush();
+        });
+
+        let mut proxy = TabFetchProxy::new();
+        let page_url = format!("http://127.0.0.1:{port}/");
+        proxy.on_navigate(TabId(1), &page_url);
+        let mut request = params(9, &page_url);
+        request.headers = vec![("X-Zero-Resource-Type".into(), "document".into())];
+        proxy.enqueue(TabId(1), &request);
+
+        let mut done = Vec::new();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while done.is_empty() && std::time::Instant::now() < deadline {
+            done.extend(proxy.drain());
+            if done.is_empty() {
+                std::thread::sleep(Duration::from_millis(30));
+            }
+        }
+        server.join().unwrap();
+        // status 200 钉住 Ok(Ok(resp)) 完成路径——失败臂不走 HSTS 登记点，
+        // 不钉则本测试在取流失败时假绿。
+        assert_eq!(done.len(), 1, "document fetch 必须在超时内完成");
+        assert_eq!(done[0].status, 200);
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url(&format!("http://127.0.0.1:{port}/x"), "document"),
+            ResourceCheckResult::Allow,
+            "HTTP 响应的 STS 头不得注册（https-only 门）"
+        );
     }
 
     #[test]
