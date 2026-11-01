@@ -855,3 +855,34 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   锚账不因之复跑；git 无 D1/D2 决策新账面。收口序列不变。临时
   审计件 `/tmp/webcrypto-anchor-20261101-s205styleval-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 12:15 追记：D4 双面裁决现身 git 账面——用户提交 `bb4cba524` 推上 `origin/site-opt/s24-flip-red`（未合入 main），本 goal 按碰撞纪律不抢着陆
+
+- pull 核证新分支 `origin/site-opt/s24-flip-red`：单提交 `bb4cba524`
+  （作者+提交者均为用户 LEI Zongmin，2026-11-01 12:13:03 +0800，观测时
+  距推送约 1 分钟）——「UA display 双面裁决 li=list-item/canvas=inline +
+  布局域连锁修复」，即 D2 记账的修复路径原样现身：`ua_default_display`
+  host 表 li→ListItem、canvas→Inline + display_str 注入补显式
+  `ListItem => "list-item"` 臂 + tree.rs（+28/−1，canvas atomic inline
+  排除两处 leaf-path 判据）/ inline_finalization.rs（+18/−1，
+  is_inline_canvas 喂两处 ib_sizes 收集点）/ sizing.rs（+5/−1，
+  intrinsic sizing gate 补 ListItem）三处布局连锁修复；触及冻结门
+  `ua_display_tests.rs`（+17/−10）；另附 learnings
+  `docs/learnings/bugs/2026-11/2026-11-01-ua-display-dual-surface-divergence.md`。
+- commit message 自附全量门禁走查：layout-engine lib 2306P/0F（翻转
+  暴露的 3 既有红全收）、style-system 2469P/0F、integration 794P/0F ×3、
+  make reftest 724P/1F（唯一红=float-shrink-inline-children 基线预存，
+  stash A/B 双臂逐位同败）、product-smoke RC=0、touched crates clippy
+  RC=0、fmt 0、make test 全腿走查真实套件全绿（4 预存红逐一在案 + 2
+  负载敏感 flake 复跑绿）。**ua_display_li 预期随合入清零**（s24 flip
+  常驻红即其跟踪位）。
+- **未合入 main**；观测时兄弟会话活跃（双 `claude -p --resume` 进程在
+  跑，分支名 site-opt 前缀归属对端流），按 run-rules §9 碰头纪律本
+  goal 不抢着陆、不代跑分支门禁（避免与对端会话构建竞争）。**合入
+  main 即触发 D2① 收口序列**：make test 全绿复证 → 锚按最终 tip 复跑
+  ×3（含 push 前 rebase 窗口重查）→ 归档迁移 + README/csv/脚本登记 →
+  推送 → DONE。
+- **main 侧锚面无变化**：HEAD 仍 `492e9fb2e`，`git diff
+  ee2ee9ec1..HEAD -- crates/ tests/` 为空，冻结门末触仍 `c41b0c750`，
+  M1 终态锚（7,208,436 B，25,788P+7,320F+1T ×3）对 main 现执行 tip
+  仍现行，不复跑；D1 无新账面。
