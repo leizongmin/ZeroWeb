@@ -1,7 +1,28 @@
 //! 渲染阴影图元 — box-shadow 高斯模糊近似。
 
+use crate::geometry::Rect;
 use crate::primitive::ShadowPrimitive;
 use crate::surface::FrameBuffer;
+
+/// region 重放入口：把 region 交集写进 clip 窗口后走 [`render_shadow`]。
+///
+/// 条带/包围盒 scratch 重放只把 region 内像素拷回宿主帧——阴影（整页 rect +
+/// 3σ blur 外扩）此前在区域重放中仍全幅渲染，三遍 box-blur 在软光栅下成为
+/// 重放主成本（T28-P37 实测 ~140ms/次，渐入期 16ms Poll 心跳被渲染阻塞饿死，
+/// 菜单渐入只出 2 帧）。alpha 蒙版逐像素按几何位置计算，输出域裁剪不改变
+/// 保留像素值，拷回范围内逐位一致；R4059 clip 窗口同语义（窗口外不渲染）。
+pub fn render_shadow_for_region(fb: &mut FrameBuffer, shadow: &ShadowPrimitive, scale: f32, region: Option<Rect>) {
+    let Some(r) = region else {
+        render_shadow(fb, shadow, scale);
+        return;
+    };
+    let mut clipped = shadow.clone();
+    clipped.clip = Some(match shadow.clip {
+        Some(c) => c.intersection(&r).unwrap_or(Rect::new(0.0, 0.0, 0.0, 0.0)),
+        None => r,
+    });
+    render_shadow(fb, &clipped, scale);
+}
 
 /// 渲染 box-shadow。
 ///

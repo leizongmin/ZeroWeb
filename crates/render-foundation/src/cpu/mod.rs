@@ -400,17 +400,43 @@ pub fn render_full_scene_region_into(
         draw_glyph(fb, glyph, scale, font_loader, glyph_cache);
     }
 
-    // Overlay 层（始终在最后，独立于主体绘制顺序；不 region 过滤——chrome 静态层
-    // 每帧重画正确位置，滚动条/查找栏在 blit 平移后由本层自动修正）
+    // Overlay 层（始终在最后，独立于主体绘制顺序）。region 重放（条带 / 菜单
+    // 包围盒 scratch）只画与 region 相交的 overlay 图元：拷回范围外的墨迹本就
+    // 被丢弃，全幅重放是纯废功（实测 1024×768 软光栅下 ~1400 个 overlay fills
+    // 令条带重放 ~146ms/帧，渐入期 16ms Poll 心跳被渲染阻塞饿死，菜单渐入
+    // 只出 2 帧）。fills 走 `fill_rect_for_region` 精确裁剪，拷回范围内逐位
+    // 一致；rounded_rects/glyphs 相交者整笔重画（墨迹不越自身矩形，拷回范围
+    // 外由拷回丢弃）。region=None（全量）不过滤，blit 平移后 overlay 修正
+    // 语义不变（相交者照画）。
     for fill in overlay_fills {
-        fill_rect(fb, fill, scale);
+        fill_rect_for_region(fb, fill, scale, region);
     }
 
     for rr in overlay_rounded_rects {
+        if let Some(r) = region {
+            let rect = Rect::new(
+                rr.rect.origin.x * scale,
+                rr.rect.origin.y * scale,
+                rr.rect.size.width * scale,
+                rr.rect.size.height * scale,
+            );
+            if !r.intersects(&rect) {
+                continue;
+            }
+        }
         fill_rounded_rect(fb, rr, scale);
     }
 
     for glyph in overlay_glyphs {
+        if let Some(r) = region {
+            let gx = glyph.x * scale;
+            let gy = (glyph.baseline_y - glyph.font_size) * scale;
+            let gw = glyph.font_size * scale * 0.6;
+            let gh = glyph.font_size * scale * 1.25;
+            if !r.intersects(&Rect::new(gx, gy, gw, gh)) {
+                continue;
+            }
+        }
         draw_glyph(fb, glyph, scale, font_loader, glyph_cache);
     }
 }
@@ -455,7 +481,7 @@ fn render_typed_buckets(
         if !in_region(shadow.rect) {
             continue;
         }
-        shadow::render_shadow(fb, shadow, scale);
+        shadow::render_shadow_for_region(fb, shadow, scale, region);
     }
 
     // 2. 填充矩形（背景色）
@@ -641,7 +667,7 @@ fn render_draw_order(
                 if let Some(p) = primitives.shadows.get(*i)
                     && in_region(p.rect)
                 {
-                    shadow::render_shadow(target, p, scale);
+                    shadow::render_shadow_for_region(target, p, scale, region);
                 }
             }
             DrawOp::Fill(i) => {

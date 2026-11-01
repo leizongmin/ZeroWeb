@@ -1,8 +1,12 @@
 //! 浏览器应用核心状态和事件处理
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
+
+/// T28-P37：UI 文本整串 shape——`(总宽, 逐字符 (字符, 字体 ID, x 偏移))`。
+type UiTextShape = (f32, Vec<(char, u32, f32)>);
 
 use zero_browser_shell::{
     BrowserMenuLabel, BrowserSettings, BrowserShell, ColorThemePreference, ContextMenu, ContextType, FindWrapHint,
@@ -107,6 +111,13 @@ pub struct BrowserApp {
     glyph_cache: GlyphCache,
     /// 已加载的系统字体 ID
     font_id: Option<u32>,
+    /// T28-P37：UI 文本整串 shape 缓存 `(文本, size bits)` → `(总宽, 逐字符 (字符,
+    /// 字体 ID, x 偏移))`。菜单/工具栏标签开启期不变，逐帧重跑逐字符
+    /// rasterize_glyph_with_fallback + measure_advance 是渐入帧 build_scene 的主要
+    /// 增量（实测 scene ~30ms vs 无菜单帧 ~9ms）。命中输出与未命中逐位一致；字体
+    /// registry 变化时清空（[Self::sync_page_fonts]）。RefCell：draw/measure 为
+    /// `&self`（调用方遍布渲染路径），主线程单线程渲染无重入。
+    ui_text_shape_cache: RefCell<HashMap<(String, u32), UiTextShape>>,
     /// 是否已初始化 GPU 表面
     pub surface_configured: bool,
     /// GPU 初始化时的窗口引用（R3254-G5：设备丢失后重建 renderer 用）。
@@ -438,6 +449,7 @@ impl BrowserApp {
             loading_anim_start: None,
             menu_anim_start: None,
             menu_anim_drawn_opacity: None,
+            ui_text_shape_cache: RefCell::new(HashMap::new()),
             zoom_indicator_start: None,
             print_setup_panel_rows: [(0.0, 0.0, 0.0, 0.0); 3],
             print_setup_panel_steppers: [(0.0, 0.0); 3],

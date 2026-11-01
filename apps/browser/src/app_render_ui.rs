@@ -29,6 +29,40 @@ impl BrowserApp {
         (text_top, ascent)
     }
 
+    /// UI 文本整串 shape（总宽 + 逐字符 `(字符, 字体 ID, x 偏移)`），命中
+    /// [`Self::ui_text_shape_cache`] 零解析。字体回退解析每字符一次
+    /// （rasterize_glyph_with_fallback + measure_advance），菜单/工具栏标签不变而
+    /// 逐帧重跑是渐入帧 scene 成本主项（T28-P37）。
+    fn ui_text_shape(&self, text: &str, font_size: f32) -> UiTextShape {
+        const UI_TEXT_SHAPE_CACHE_CAP: usize = 512;
+        let Some(primary) = self.font_id else {
+            return (0.0, Vec::new());
+        };
+        let key = (text.to_string(), font_size.to_bits());
+        if let Some(hit) = self.ui_text_shape_cache.borrow().get(&key) {
+            return hit.clone();
+        }
+        let mut shape = Vec::new();
+        let mut x = 0.0f32;
+        for ch in text.chars() {
+            let font_id = self
+                .font_loader
+                .rasterize_glyph_with_fallback(primary, ch, font_size)
+                .map(|(id, _)| id)
+                .unwrap_or(primary);
+            shape.push((ch, font_id, x));
+            x += self.font_loader.measure_advance(primary, ch, font_size);
+        }
+        {
+            let mut cache = self.ui_text_shape_cache.borrow_mut();
+            if cache.len() >= UI_TEXT_SHAPE_CACHE_CAP {
+                cache.clear();
+            }
+            cache.insert(key, (x, shape.clone()));
+        }
+        (x, shape)
+    }
+
     /// 绘制 UI 文本（使用字体回退链和真实 advance 宽度）
     fn draw_ui_text(
         &self,
@@ -39,22 +73,17 @@ impl BrowserApp {
         color: Color,
         glyphs: &mut Vec<GlyphDraw>,
     ) {
-        let Some(primary) = self.font_id else {
+        if self.font_id.is_none() {
             return;
-        };
+        }
         let (ascent, _) = self.ui_line_metrics(font_size);
         let baseline_y = start_y + ascent;
-        let mut x = start_x;
-        for ch in text.chars() {
-            let font_id = self
-                .font_loader
-                .rasterize_glyph_with_fallback(primary, ch, font_size)
-                .map(|(id, _)| id)
-                .unwrap_or(primary);
+        let (_, shape) = self.ui_text_shape(text, font_size);
+        for (ch, font_id, dx) in shape {
             glyphs.push(GlyphDraw {
                 ch,
                 font_glyph_index: None,
-                x,
+                x: start_x + dx,
                 baseline_y,
                 color,
                 font_id,
@@ -62,18 +91,12 @@ impl BrowserApp {
                 font_size,
                 rotation: 0.0,
             });
-            x += self.font_loader.measure_advance(primary, ch, font_size);
         }
     }
 
     /// 测量 UI 文本总宽度
     fn measure_ui_text_width(&self, text: &str, font_size: f32) -> f32 {
-        let Some(primary) = self.font_id else {
-            return 0.0;
-        };
-        text.chars()
-            .map(|ch| self.font_loader.measure_advance(primary, ch, font_size))
-            .sum()
+        self.ui_text_shape(text, font_size).0
     }
 
     /// 按像素宽度截断 UI 文本
