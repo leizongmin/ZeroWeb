@@ -31,7 +31,38 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 215 收口，fieldset 禁用传染走查共享化——新共享帮手 `_zwDisabledFieldsetAncestor` 收编 part03 `_zwFeDisabled` fieldset 臂 + part04 willValidate 臂单源（s210/s211 挂账）：zero-engine 3674P+0F（基线 3673 + R5382 对齐钉面）；forms 语料 A/B 共享键 4725/4726 零漂移 + 唯一位移 onblur flake 族在册摆动键，F→P=0 键集零差；重构切片行为保持 + 单点 fieldset 隔层对齐）**
+> **▶ 当前状态（2026-11-01 M2 切片 216 收口，`__zw_has_attr` 非 lw 存量点位审计收口（s211 挂账销账）——全量审计 39 命中行 = 2 注释 + 37 代码调用点，修复前唯一真裸点 part06 `_zwMediaAutoplay` sel 面 autoplay 读，修复后 37/37 lw-first 安全形态：R5383 红绿实证；embedded-content 语料 A/B 共享键 1257/1257 零漂移键集差 0；zero-engine 3675P+0F）**
+> **入场定刀位**：s211 挂账本体承袭——`__zw_has_attr`（纯快照读）非 lw
+> 融合存量点位全量审计（探索性评估；三处用户门禁项不动）。
+> **勘根**：审计单元 = 行级 grep（排除 `_lw`/`_handle` 变体）；分类 =
+> 注释/代码分行 + 代码行 ±窗口查 `__zw_has_attr_lw` 同现（同现即
+> lw-first 三元 fallback 臂安全形态）。定稿：39 命中行 = 2 注释 + 37 代码
+> 调用点；修复前 36 lw-first + 1 真裸点（part06 `_zwMediaAutoplay` sel 面
+> 纯快照读）。语义判据：setAttribute 写 lw 层不落快照，同批纯快照读恒
+> miss（s211 探针实测）；身份二分 = handle-only 元素直存直读不受扰（
+> a2fix1 通过即证），裸读暴露面仅在 parsed（sel 身份）+ 同批 lw 写形态。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part06 `_zwMediaAutoplay`
+> sel 臂改 lw-first 三元（同 `_zwMediaLoadSequence` src 读/loop 读对齐，
+> handle 臂不动）+ s216 留注；part09.rs R5383（a2fix1 同款 timer stub +
+> video bridge 记录 stub，parsed video `setAttribute('autoplay')` + src →
+> checkpoint 断 play 调用 + paused false + 泵后 play,playing,timeupdate
+> 事件链）。
+> **验证**：R5383 红绿（stash 还原跑红 `left:"" right:"play:…"`——旧版
+> 因目标行为失败；pop 跑绿 1 passed）；拼接 node --check SYNTAX_OK；
+> zero-engine 3675P+0F（3674 基线 + R5383；a2fix1 同批绿 handle 臂未受扰
+> ）；embedded-content 域 A/B（A=修复在位 / B=stash pre-fix 基线）共享
+> 1257 对零漂移 + 键集差 0（分歧条件语料零覆盖；205F+30T lazy-loading
+> 族既有面两侧同态）；forms 域零触面不重跑；fmt 过。日志
+> evidence/logs/s216-embedded-content-wip.log（A）+
+> s216-embedded-content-prefix-baseline.log（B）。
+> **下一步候选**：misc 残面勘根续推（剩余 F 面重勘根定刀）——大宗候选
+> 全处用户决策门禁（customizable select 177F GB-20261031 / form-nameditem
+> override builtins / form owner table 缓行族）或高风险挂账（input-type-
+> button click() 返回值面）；观察项（onblur flake 族采样 / beforeinput
+> 录入事件族评估承袭）不动。
+> **账本**：[evidence/2026-11-01-m2s216-has-attr-lw-audit-closeout.md](html-semantics-compat/evidence/2026-11-01-m2s216-has-attr-lw-audit-closeout.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 215 收口，fieldset 禁用传染走查共享化——新共享帮手 `_zwDisabledFieldsetAncestor` 收编 part03 `_zwFeDisabled` fieldset 臂 + part04 willValidate 臂单源（s210/s211 挂账）：zero-engine 3674P+0F（基线 3673 + R5382 对齐钉面）；forms 语料 A/B 共享键 4725/4726 零漂移 + 唯一位移 onblur flake 族在册摆动键，F→P=0 键集零差；重构切片行为保持 + 单点 fieldset 隔层对齐）**
 > **入场定刀位**：s210/s211 挂账承袭——fieldset 禁用传染走查 shim 内同构
 > 内联复制收编单源（三处用户门禁项不动）。
 > **勘根**：谓词走查两处（part03 `_zwFeDisabled` fieldset 臂 s212 参考模型
@@ -121,38 +152,6 @@
 > 平面走查与 shim 边界集模型统一（挂账新记）/ form-nameditem override
 > builtins 1F fix#19c 挂待决承袭 / customizable select 177F 挂起待拍板。
 > **账本**：[evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md](html-semantics-compat/evidence/2026-11-01-m2s212-disabled-state-focus-gate-option-propagation.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 211 收口，button 激活门双缺口——command/commandfor 缺省 type + fieldset 传染提交门：button-click-submits-with-commandfor 3F + button-click-submits 1F 翻绿，两语料 16/16 Pass；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=0 键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
-> **入场定刀位**：s210 后域内 misc 残面盘点定刀 button-click-submits
-> 两文件 4F（与 s210 fieldset 传染基建同区）。customizable select
-> 177F 挂起待拍板（GB-20261031 征询在途）。
-> **勘根**：缺口一 spec §4.10.5.7 #the-button-element missing value
-> default——invoker commands 集成后 Submit Button 缺省仅在 command 与
-> commandfor **皆缺**时成立，任一存在 → Button state（显式
-> type=submit 不受影响）；两激活门（.click() API 门 + R106
-> dispatchEvent 门）BUTTON 空 type 恒判 submit。缺口二两门 disabled
-> 检查只查自身——fieldset 传染未接（s210 `_zwFeDisabled` 判据已在
-> validity 通道，激活门未用）。勘根深挖：首版帮手 `__zw_has_attr`
-> 纯快照通道读 command **恒 miss**——setAttribute 写 latest-wins 层
-> 不落快照，探针实测 `__zw_has_attr`='0' vs `__zw_has_attr_lw`='1'
->（R4400/s136 早是 lw 口径）。
-> **施工**（shim 2 文件 + rust 测试 1 文件）：part03 共享帮手 ×2
->（`_zwFeDisabled`——lw 融合自身读 + fieldset 祖先走查；
-> `_zwButtonEffType`——显式 type 优先 + BUTTON 空 type 且 command/
-> commandfor 任一 lw 命中 → 'button'）；part04 两激活门换帮手；
-> `_validityState` s210 内联走查共享化替换（R5328 复跑钉回归）；
-> part09.rs R5378 六腿桥测试（command/commandfor/显式 submit/fieldset
-> 直下/legend 豁免/缺省回归）。
-> **验证**：拼接 shim node --check SYNTAX_OK；R5378 单测 1 passed
->（lw miss 探针归因后过）+ R5328 复跑 1 passed；靶面
-> FILTER=button-click-submits 16/16 Pass；forms 全域 A/B 净 F→P=4 恰
-> 4 靶键 + onblur 族 1 键回摆（s210 闭环），P→F=0 键漂移 0 其他位移
-> 0；zero-engine 3671P+0F；fmt 零 diff + guarded-clippy 0 警告。
-> **下一步候选**：misc 残面余量盘点（全域 F 分布 grep 复核）→
-> form-nameditem override builtins 1F fix#19c 挂待决承袭 / form owner
-> table 4F 升格待独立立项 / `__zw_has_attr` 非 lw 存量点位审计挂账；
-> customizable select 177F 挂起待拍板（GB-20261031）。
-> **账本**：[evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md](html-semantics-compat/evidence/2026-11-01-m2s211-button-effective-type-fieldset-submit-gate.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）

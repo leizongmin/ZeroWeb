@@ -7706,3 +7706,82 @@ fn test_r5382_fieldset_walk_shared_helper_alignment() {
         "sanity：select 自身 disabled 属性直判不受扰"
     );
 }
+
+#[test]
+fn test_media_autoplay_setattr_sel_lw_read_r5383() {
+    // R5383（s216）：__zw_has_attr 非 lw 存量审计收敛末点——`_zwMediaAutoplay`
+    // sel 面 autoplay 存在性读统一 lw 融合（同 `_zwMediaLoadSequence` src 读/
+    // loop 读对齐；s211 探针：setAttribute 写 lw 层不落快照，纯快照读同批恒
+    // miss）。钉面：parsed video（sel 身份）同批 setAttribute('autoplay','') +
+    // .src= 加载 → autoplay 步仍触发（旧纯快照读因目标行为失败）；handle 身份
+    // 直存直读不受扰（a2fix1 钉面）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body><video id=\"v\"></video></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 定时器 stub（play 算法 queued task 泵）+ 记录型桥 stub（a2fix1 同款）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };\
+         globalThis.__calls = [];\
+         globalThis.__zwVideoBridge = {\
+           play: function (src, now) { globalThis.__calls.push('play:' + src); return true; },\
+           pause: function (src) { globalThis.__calls.push('pause:' + src); },\
+           currentTime: function (src) { return 0; },\
+           duration: function (src) { return 5; },\
+           isPlaying: function (src) { return true; }\
+         };",
+    ).unwrap();
+
+    // parsed（sel 身份）video 同批 setAttribute 置 autoplay + src= 触发加载。
+    sandbox.execute(
+        "globalThis.__ev = [];\
+         var v = document.getElementById('v');\
+         globalThis.__vprobe = v;\
+         ['play', 'playing', 'timeupdate'].forEach(function (t) {\
+           v.addEventListener(t, function () { globalThis.__ev.push(t); });\
+         });\
+         v.setAttribute('autoplay', '');\
+         v.src = '/media/movie_5.webm';",
+    ).unwrap();
+    // microtask checkpoint：加载序列跑完 → autoplay sel 读（lw 融合命中）→ play 内核。
+    let _ = sandbox.execute(";");
+    let calls = sandbox.execute("globalThis.__calls.join('|')").unwrap().value;
+    assert_eq!(
+        calls, "play:https://wpt.test/media/movie_5.webm",
+        "setAttribute 置 autoplay（lw 层）应被 sel 面融合读命中并走 play 内核（旧纯快照读 miss）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__vprobe.paused)").unwrap().value,
+        "false",
+        "autoplay 后 playing 态已同步翻转（paused=false）"
+    );
+    sandbox.execute("globalThis.__zw_fire_due_timers();").unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__ev.join(',')").unwrap().value,
+        "play,playing,timeupdate",
+        "泵后按 spec 序派 play → playing → timeupdate（与 a2fix1 时序一致）"
+    );
+}

@@ -11138,9 +11138,12 @@
   function _zwMediaAutoplay(sel, handle, key) {
     var hasAutoplay = false;
     try {
+      // s216（html-semantics M2）：sel 面 lw 融合读（__zw_has_attr 非 lw 存量审计
+      // 收敛末点——setAttribute 写 lw 层不落快照，纯快照读同批恒 miss，s211 探针
+      // 实测；同 _zwMediaLoadSequence src 读/loop 读对齐）。
       hasAutoplay = handle
         ? __zw_has_attr_handle(handle, 'autoplay') === '1'
-        : (typeof __zw_has_attr === 'function') && __zw_has_attr(sel, 'autoplay') === '1';
+        : ((typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'autoplay') : __zw_has_attr(sel, 'autoplay')) === '1');
     } catch (_eAuto) {}
     if (!hasAutoplay) return;
     // A2 Fix 1（media-runtime-isolation DESIGN §6.2，spec ready-states potential
