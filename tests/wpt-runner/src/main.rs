@@ -2921,6 +2921,10 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
 
     let results: Vec<ReftestResult> = parallel_map(&filtered, jobs, |case| {
         let _timer = CaseTimer::new(&case.id);
+        // R5382：注入用例文档 URL（WPT 规范式 wpt.live/<id>，与上游导航语义同源；
+        // test/ref 页各自渲染均按自身 URL 判定）。线程局部随 worker 迭代覆写，
+        // 用例尾清防其他渲染路径（GPU 腿复用线程等）残留。
+        reftest::set_current_case_doc_url(Some(format!("https://wpt.live/{}", case.id)));
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
         config.media_type = options.media_type;
         config.wpt_root = Some(wpt_data_dir.clone());
@@ -2940,6 +2944,7 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         }
         let verdict = wpt_file_loader::combine_multi_ref(&per_ref);
         let rep = &per_ref[verdict.representative].1;
+        reftest::set_current_case_doc_url(None);
         ReftestResult {
             id: case.id.clone(),
             passed: verdict.passed,

@@ -277,6 +277,12 @@ pub struct RenderPipeline {
         Option<std::sync::Arc<std::sync::Mutex<zero_render_foundation::image_cache::ImageCache>>>,
     /// 当前文档 URL（用于解析相对 `<img src>` 与 image_sizes 键）。
     pub(crate) document_url: Option<String>,
+    /// R5382：文档级语义 URL（`:visited` 同文档臂、document.URL native 读等 DOM 层
+    /// 判定专用）——与 [`Self::document_url`]（子资源解析）分离：测试 harness
+    /// （reftest runner）页面无真实导航 URL，图片插入键按 raw src 哈希，若复用
+    /// document_url 注入会让 painter 侧解析键与插入键错位（R4996 链条，corpus
+    /// 2182F 实证）。真实导航两值同源；仅 harness 语境分叉。
+    pub(crate) selector_document_url: Option<String>,
     /// 文档 referrer（来源页 URL；`document.referrer` 读，导航层注入 = 导航前的页面 URL）。
     pub(crate) referrer: Option<String>,
     /// T61：用户打印页面设置（打印预览设置面板注入；None = 沿用 `@page`/引擎默认，
@@ -563,6 +569,7 @@ impl RenderPipeline {
             document_base: None,
             shared_image_cache: None,
             document_url: None,
+            selector_document_url: None,
             referrer: None,
             print_page_setup: None,
             frame_fingerprint_cache: frame_fingerprint::FrameFingerprintCache::new(4),
@@ -572,6 +579,12 @@ impl RenderPipeline {
     /// 设置当前文档 URL（导航时由 webview 传入，供相对路径子资源解析）。
     pub fn set_document_url(&mut self, url: Option<&str>) {
         self.document_url = url.map(str::to_string);
+    }
+
+    /// R5382：设置文档级语义 URL（DOM 层判定专用，见 `selector_document_url` 字段注）。
+    /// 未设置时回落 [`Self::document_url`]（真实导航两值同源）。
+    pub fn set_selector_document_url(&mut self, url: Option<&str>) {
+        self.selector_document_url = url.map(str::to_string);
     }
 
     /// 当前文档 URL。
@@ -1303,6 +1316,12 @@ impl RenderPipeline {
         // 1. 解析 HTML → DOM
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
+        // R5382 补 R3169 同款页面 URL 注入（render_html_in_rect / budget 恢复路径
+        // 均已有，本入口此前漏注入——文档 URL 感知特性如 :visited 同文档臂、
+        // document.URL native 读在本管线恒 None）。优先 selector_document_url
+        //（harness 语境与子资源解析 URL 分离，见字段注），未设置回落 document_url。
+        // 双 None 透传无行为面。
+        doc.set_url(self.selector_document_url.clone().or(self.document_url.clone()));
         self.inject_focus_state(&mut doc);
         self.inject_modal_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;
@@ -1622,6 +1641,12 @@ impl RenderPipeline {
         // 1. 解析 HTML → DOM
         let parse_start = Instant::now();
         let mut doc = zero_dom::parse_html(html);
+        // R5382 补 R3169 同款页面 URL 注入（render_html_in_rect / budget 恢复路径
+        // 均已有，本入口此前漏注入——文档 URL 感知特性如 :visited 同文档臂、
+        // document.URL native 读在本管线恒 None）。优先 selector_document_url
+        //（harness 语境与子资源解析 URL 分离，见字段注），未设置回落 document_url。
+        // 双 None 透传无行为面。
+        doc.set_url(self.selector_document_url.clone().or(self.document_url.clone()));
         self.inject_focus_state(&mut doc);
         self.inject_modal_state(&mut doc);
         let parse_ms = parse_start.elapsed().as_secs_f64() * 1000.0;

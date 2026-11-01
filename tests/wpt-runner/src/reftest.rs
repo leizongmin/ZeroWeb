@@ -597,6 +597,19 @@ static FRESH_LOADER_CACHE: std::sync::OnceLock<
 
 const FRESH_LOADER_CACHE_MAX: usize = 32;
 
+// R5382：上游 reftest 语境的当前用例文档 URL（线程局部）。`parallel_map` 每
+// worker 线程独占一 case（镜像 adopted 渲染覆盖的线程局部前例），cmd_reftest_upstream
+// 循环内按 case 装填、用例尾清。其余渲染路径（product-smoke/layout-dump/golden/
+// 单元测试）不装填 → 恒 None → 文档 URL 不注入（维持旧行为）。
+thread_local! {
+    static CURRENT_CASE_DOC_URL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// 装填当前 worker 线程的用例文档 URL（见 [`CURRENT_CASE_DOC_URL`]）。
+pub fn set_current_case_doc_url(url: Option<String>) {
+    CURRENT_CASE_DOC_URL.with(|slot| *slot.borrow_mut() = url);
+}
+
 fn render_with_layout_inner(
     html: &str,
     css: &str,
@@ -783,6 +796,14 @@ fn render_with_layout_inner(
     pipeline.set_font_loader(Some(std::sync::Arc::new(font_loader.duplicate())));
     // R4279：filter url() 链内 feImage 相对 href 的文档基准目录。
     pipeline.set_document_base(base_dir.map(|p| p.to_path_buf()));
+    // R5382：上游 reftest 注入当前用例文档级语义 URL（线程局部，cmd_reftest_upstream
+    // 按 case 装填；**不可用 set_document_url**——runner 图片插入键按 raw src 哈希，
+    // document_url 参与 painter 侧解析键会大面积错位 miss，corpus 2182F 实证）。
+    // render_html 链路经 selector_document_url 透传 doc.set_url，:visited 同文档
+    // 链接臂等 DOM 层判定在 reftest 语境可判定。非 upstream 路径该线程局部恒 None。
+    if let Some(url) = CURRENT_CASE_DOC_URL.with(|slot| slot.borrow().clone()) {
+        pipeline.set_selector_document_url(Some(url.as_str()));
+    }
 
     let _zw_t5 = std::time::Instant::now();
     let result = runner_text_metrics::with_measure_ctx(font_loader, 0u32, || pipeline.render_html(html, &combined_css));
