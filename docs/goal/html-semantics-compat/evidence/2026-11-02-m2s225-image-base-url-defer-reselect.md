@@ -70,6 +70,14 @@ microtask 生效，src 后 `<base>` 变更在延步内可见（image-base-url �
 - 纯 JS 切片（git diff --stat shim +27/−3、清单 +5）——fmt/clippy 不适
   用；release runner 重编译（28.87s）后跑靶（shim include_str 进二进
   制）。
+- **合并树复验**（rebase 并入并行流 2c10819e1 list 命令簇——part01e 新
+  分片挂拼接序 part03 之前）：release runner 重编译 30.39s 后 decode 目
+  录 60P/0F + image-base-url solo Pass + embedded-content 全域
+  **1077P/151F/30T** 逐位一致 + zero-engine 全量 **3710P+0F** 逐位一致
+  （`test result: FAILED` 0 行）——并行提交零干扰。日志
+  evidence/logs/s225-merged-tree-targets.log +
+  s225-merged-image-base-url-solo.log + s225-merged-embedded-content-
+  wip.log + s225-merged-zero-engine-full.log。
 
 ## 挂账新记
 
