@@ -730,3 +730,39 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   或 D2② 授权 standing exclusion 口径收口。临时审计件
   `/tmp/webcrypto-anchor-20261101-s202legend-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 11:32 追记：锚复跑现 tip（`66f4871c1`）三跑全 cmp 全等 ×3——html-semantics 流 s203 number 值消毒变更吸收，W4 本轮零采样
+
+- 本轮 `git pull --rebase` 吸入 html-semantics 流 `66f4871c1`（s203
+  number 值消毒文法收口——`_zwSanitizeInputValue` number 臂换 spec
+  valid floating-point number 文法，shim `part01.js` +10/−1，
+  [其账](../../html-semantics-compat/evidence/2026-11-01-m2s203-number-value-sanitization.md)）：
+  shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
+  锚——release runner 重建 25.66s（shim 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑。
+- **换面括查强化**：起跑时兄弟 run 在跑（`testharness-html-semantics`
+  733% CPU，11:19 起跑）——`/proc` cwd 读被沙箱挡，改用二进制 mtime
+  旁证归库（ZeroWeb-3 runner 11:07:25 建、ZeroWeb-2 的 10:58:23 系本流
+  上轮重建产物，兄弟起跑晚于前者 → 归 ZeroWeb-3，target 目录独立）；
+  另加二进制 sha256 括查（每跑后复验，三跑全程 `289d771e…` 未变）+
+  锚 cmp 本身为终极换面探测器。guard log 三跑零字节（无击杀），
+  runner EXIT=1 为预期挂账常规退出，墙钟 93s/90s/97s（兄弟 CPU 竞争
+  下与历史持平）。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**：123 文件 / 33,109 子测试 = 25,788P +
+  7,320F + 1T 状态账零差异（程序化计数复核）——s203 对 webcrypto
+  语料面完全吸收。W4 案处预期 Timeout 臂，本轮零采样，采样面累计
+  5/27 轮，维持低频竞态定性。
+- 锚窗口推进为 **a5a11cd07 → 66f4871c1**，实锚链 ……→ebdfe3939→
+  a5a11cd07→66f4871c1，33,109 分母零回归在现 tip 成立。
+- **轮询面**：s203 自账 zero-engine **3,664P/1F**（ua_display_li 渲染
+  流域在册键同位，commit 正文自证）；D4 冻结门 `ua_display_tests.rs`
+  末触仍 `c41b0c750`（s203 仅触 engine shim + html-semantics docs）；
+  git 无 D1/D2 决策新账面（GB-20261031 在案，核验只认 git 账面 +
+  用户主动知会）。收口序列不变：ua_display_li 清零 → make test 全绿
+  复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记 →
+  推送 → DONE；或 D2② 授权 standing exclusion 口径收口。临时审计件
+  `/tmp/webcrypto-anchor-20261101-s203number-{r1,r2,r3}.json`
+  （不入库）。

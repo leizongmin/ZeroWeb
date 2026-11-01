@@ -1,14 +1,13 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿；33,109 分母零回归锚在现 tip `a5a11cd07` 三跑状态账
-零差异 ×3（2026-11-01，s182~s202 + justify 簇两轮 + 渲染流
+build/clippy 绿；33,109 分母零回归锚在现 tip `66f4871c1` 三跑整文件
+对锚 cmp 全等 ×3（2026-11-01，s182~s203 + justify 簇两轮 + 渲染流
 R5370/R5372/R5373 + html-semantics 流 + net-api 流 S19 + zero-web 流
 change-on-blur + editing 流 sv-setup style IDL + zero-web 流 t-p126
 softnav 簇 + html-semantics 流 s201 SVG 命中注入 + s202 legend/option
-form IDL（shim `part03/part05.js` +69 行）变更全吸收；末轮三跑整文件
-对锚 cmp 全等 7,208,436 B ×3，W4 案完成路径竞态低频采样
-（累计 5/26 轮，本轮零采样）
+form IDL + s203 number 值消毒（shim `part01.js` +10/−1）变更全吸收；
+W4 案完成路径竞态低频采样（累计 5/27 轮，本轮零采样）
 ——均为 runner 既有代码，状态账零差异，见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
 唯一缺口 `cargo test` 残余 1F
@@ -21,11 +20,11 @@ form IDL（shim `part03/part05.js` +69 行）变更全吸收；末轮三跑整�
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现 tip `a5a11cd07` 复验状态账逐位一致 ×3**（25,788P +
+**33,109 锚已在现 tip `66f4871c1` 复验状态账逐位一致 ×3**（25,788P +
 7,320F + 1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→
 b0a6f9174→3f1399195→ba4c74fcb→edaed928a→0d4966f9d→f05b0efc1→
 e30ab8494→dd0eb2ec8→578240175→e2910e933→8e84cb9a2→ebdfe3939→
-a5a11cd07，渲染流 R5370 table OOF child layout +
+a5a11cd07→66f4871c1，渲染流 R5370 table OOF child layout +
 s196 `_zwMEl` 安装面共享化 perf + editing 流 justify 查询面兜底
 （`part01c.js` +105 行）+ html-semantics 流 s196 `:active` 伪类通道
 （dom active_element 槽 + engine 查询面注入 + shim part04/part06
@@ -48,15 +47,16 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 11:07（锚复跑现 tip `a5a11cd07` 三跑整文件
-对锚 cmp 全等 ×3——html-semantics 流 s202 legend/option form IDL
-反射入线（shim `part03/part05.js` +69 行，二进制面前移），按纪律
-复跑：起跑前 ps 核查无兄弟 cargo/runner 在跑、两 clone target 目录
-独立，26.56s 重建 + test-guard 直包三连跑（guard 三跑零击杀，
-~90s/跑），RUN1/RUN2/RUN3 全部对 M1 终态锚逐字节一致 7,208,436 B
-且三跑互等，33,109 分母 25,788P+7,320F+1T ×3 零回归，W4 本轮零采样
-（累计 5/26 轮）；D4 冻结门末触仍 `c41b0c750`，ua_display_li 同键
-在册未清（s202 自账 3,664P/1F 同位），D4/D1/D2 无变化，见
+**最后更新**: 2026-11-01 11:32（锚复跑现 tip `66f4871c1` 三跑整文件
+对锚 cmp 全等 ×3——html-semantics 流 s203 number 值消毒文法入线
+（shim `part01.js` +10/−1，二进制面前移），按纪律复跑：兄弟
+html-semantics run 在跑（733% CPU）经二进制 mtime 旁证归 ZeroWeb-3
+（target 目录独立）+ 本流 sha256 括查三跑全程未变，25.66s 重建 +
+test-guard 直包三连跑（guard 三跑零击杀，93/90/97s），RUN1/RUN2/RUN3
+全部对 M1 终态锚逐字节一致 7,208,436 B 且三跑互等，33,109 分母
+25,788P+7,320F+1T ×3 零回归，W4 处预期 Timeout 臂本轮零采样（累计
+5/27 轮）；D4 冻结门末触仍 `c41b0c750`，ua_display_li 同键在册未清
+（s203 自账 3,664P/1F 同位），D4/D1/D2 无变化，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---
