@@ -31,7 +31,41 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 203 收口，number 值消毒文法收口——number.html 3F + number-constraint-validation setter 子测 1F 翻绿（s181 分型「值清洗算法族」number 残面 A 簇单一根），forms 全树 keyed diff 净 F→P=4 双样本稳定、P→F 仅 onblur flake 域摆动（基线侧同败实证：stash 基线样本与交替靶测均有 F 记录）；shim 1 文件净 +9/−1，rust/语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 204 收口，pattern IDL 反射 + v flag 编译判定——pattern_attribute/v_flag 两文件 7 子测全 Pass（has 白名单 pattern 列 INPUT/TEXTAREA tag 门 + v 可用引擎编译 throw 即忽略属性），forms 全树 keyed diff 净 F→P=5（2 靶键 + onblur flake 域 3 键顺向回摆）P→F=0 键漂移 0；shim 2 文件净 +43/−5，rust/语料零改动）**
+> **入场定刀位**：s203 后 misc 残面单根比对选 pattern 面 2F——s181 分型
+> 「input 其他长尾」，pattern_attribute.html basic 子测 IDL 缺位 +
+> pattern_attribute_v_flag.html breaking-changes 27 案，两文件同域小根。
+> number B 簇（editor-buffer 模型）挂账待独立立项。customizable select
+> 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：`assert_idl_attribute` = `!hasOwnProperty + in`（testharness
+> 实读）——`'pattern' in input` 恒 false；值面 pattern 已在
+> `_REFLECTED_STRING_FLAT`（get/set 已通），**唯 has 白名单缺列**
+> （s202 form 同款根因同刀形）。v_flag 面：R57 两处编译 `new RegExp(x,'v')`
+> throw **回退 u**——v 非法形（`[(]`/`[}]`/`[&&]` 等 u 合法 v 非法）约束
+> 误生效，spec §4.10.5.2.5 编译非法 = 属性整体忽略；`_isVInvalidPattern`
+> 启发式只覆盖少数案；前 2 子测 v-only 语法编译 Pass 实证 rusty_v8 支持
+> v——R57 注释「V8 无 v flag 支持」认定有误。探针勘根自伤一课：首版
+> `[\q{ab}\--[cd]]` 语法错乱恒 false → 单验 21 案假 APPLY，修正
+> `[\q{ab}]`（u THROWS / v OK）后 33 案全对。
+> **施工**（shim 2 文件净 +43/−5）：part03 `_zwVFlagSupported()` 一次性
+> 探测 + 两处编译回退改「v 可用引擎 throw 即忽略、仅 v 不可用引擎保留
+> u 回退」+ 错误注释更正；part05 has 白名单 pattern tag 门列（INPUT/
+> TEXTAREA，':' 容差同 R5266）。gOPD 不加——语料无 assert_readonly 面。
+> **验证**：拼接 shim node --check SYNTAX_OK + 编译判定单验 33 案全对；
+> 靶面两文件 7/7 全 Pass（stash 基线同两键 F）；forms 全树 stash A/B
+> 净 F→P=5 P→F=0 键漂移 0（onblur 域上轮 4 键下摆本轮全回升，双向摆动
+> 再证在册 flake 归因）；interactive 域 pattern 唯一命中为 dialog 语料
+> JS 模板串（非属性，不可达）；zero-engine 3664P+1F（渲染流域在册键）；
+> fmt + guarded-clippy 过。
+> **残留/挂账新记**：pattern gOPD 未加（语料无面）；`_isVInvalidPattern`
+> 启发式保留为快速路径（语义一致冗余）；onblur 域 +3 顺向样本。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → number B 簇 editor-buffer 独立立项（s203 已勘定）或 misc 残面
+> （setCustomValidity 换行归一 1F 最小 / output mutations 2F /
+> form action 反射 base-url 2F / form owner table 2F）。
+> **账本**：[evidence/2026-11-01-m2s204-pattern-idl-v-flag.md](html-semantics-compat/evidence/2026-11-01-m2s204-pattern-idl-v-flag.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 203 收口，number 值消毒文法收口——number.html 3F + number-constraint-validation setter 子测 1F 翻绿（s181 分型「值清洗算法族」number 残面 A 簇单一根），forms 全树 keyed diff 净 F→P=4 双样本稳定、P→F 仅 onblur flake 域摆动（基线侧同败实证：stash 基线样本与交替靶测均有 F 记录）；shim 1 文件净 +9/−1，rust/语料零改动）**
 > **入场定刀位**：s202 收口后 number 消毒残面簇 8F 定两簇——A 簇 setter
 > 消毒文法（number.html 3F + 约束测试 setter 1F，单一根）先行；B 簇编辑
 > 路径语义（约束测试 1/3 + defaultValue-clobbering + scientific-key-events，

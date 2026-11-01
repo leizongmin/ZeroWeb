@@ -1351,6 +1351,20 @@
                     try { return (_realTag(sel, handle) || '').split(':').pop() === 'SCRIPT'; }
                     catch (_e5300h) { return false; }
                   })()
+            // M2-S204（html-semantics M2）：input/textarea pattern IDL `in`
+            // 可见性（HTMLInputElement.pattern/HTMLTextAreaElement.pattern
+            // 接口成员——pattern_attribute.html 首断言 assert_idl_attribute
+            // = `'pattern' in input`；get/set 值面走 _REFLECTED_STRING_FLAT
+            // 已通）。tag 门防 FLAT 表全 tag 假阳性（R5249 同款理由：
+            // `'pattern' in div` 应 false）。SCRIPT ':' 后缀容差同 R5266。
+            // https://html.spec.whatwg.org/multipage/input.html#dom-input-pattern
+            || prop === 'pattern'
+               && (function () {
+                    try {
+                      var _t204p = (_realTag(sel, handle) || '').split(':').pop();
+                      return _t204p === 'INPUT' || _t204p === 'TEXTAREA';
+                    } catch (_e204ph) { return false; }
+                  })()
             || prop === 'src' || prop === 'textTracks'
             || prop === 'addTextTrack' || prop === 'track' || prop === 'controlsList'
             // cdp-protocol objectId 桥（PW injectedScript）：节点身份与表单约束面的

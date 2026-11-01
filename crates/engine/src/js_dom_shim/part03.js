@@ -12999,7 +12999,13 @@
             if (pv !== '') patternMismatch = true;
           } else if (!_isVInvalidPattern(String(patAttr))) {
             try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'v'); } catch (_e) {
-              try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'u'); } catch (_e2) { _re = null; }
+              // M2-S204：v 编译非法 = pattern 属性整体忽略（spec §4.10.5.2.5——
+              // 约束不参与，valid 不受 pattern 影响）。u 回退仅限不支持 v flag
+              // 的引擎——v 可用引擎上 `[(]`/`[}]`/`[&&]` 等 u 合法 v 非法形若
+              // 回退会把应忽略的约束误生效（v_flag breaking-changes 27 案根因）。
+              if (!_zwVFlagSupported()) {
+                try { _re = new RegExp('^(?:' + String(patAttr) + ')$', 'u'); } catch (_e2) { _re = null; }
+              }
             }
           }
           if (_re) {
@@ -17113,9 +17119,23 @@
     if (rhs === 0n) return false;
     return lhs % rhs === 0n;
   }
-  // FV（M1）：HTML pattern 编译的 v 模式非法近似（V8 无 v flag 支持——
-  // spec §4.10.5.2.5：v 模式非法正则被忽略）。字符类内未转义特殊字符
-  //（"[(" 等）+ 未配对组（"a)(b"）→ v 非法。
+  // M2-S204（html-semantics M2）：v flag 引擎可用性一次性探测（合法 v-only
+  // 语法探针——`\q{}`/`--[..]` 在 u 模式非法、v 模式合法）。pattern_attribute_
+  // v_flag set-difference/`\q{}` 子测编译通过实证运行引擎（rusty_v8）支持
+  // v——R57 时代「V8 无 v flag 支持」认定有误；探针保底为不支持 v 的引擎
+  // 留 u 回退通道。
+  var _zwVFlagOk = null;
+  function _zwVFlagSupported() {
+    if (_zwVFlagOk === null) {
+      try { new RegExp('[\\q{ab}]', 'v'); _zwVFlagOk = true; }
+      catch (_e204vf) { _zwVFlagOk = false; }
+    }
+    return _zwVFlagOk;
+  }
+  // FV（M1）：HTML pattern 编译的 v 模式非法近似（spec §4.10.5.2.5：v 模式
+  // 非法正则被忽略）。字符类内未转义特殊字符（"[(" 等）+ 未配对组（"a)(b"）
+  // → v 非法。快速路径启发式（M2-S204 后 v 编译 throw 判定为权威判据，本
+  // 启发式仅省编译开销、语义一致）。
   function _isVInvalidPattern(pat) {
     var s = String(pat);
     if (/\[[^\]\\]*[\(\[\{\/]/.test(s)) return true;
@@ -18797,7 +18817,11 @@
         var _re2 = null;
         if (!_isVInvalidPattern(String(pat))) {
           try { _re2 = new RegExp('^(?:' + String(pat) + ')$', 'v'); } catch (_e) {
-            try { _re2 = new RegExp('^(?:' + String(pat) + ')$', 'u'); } catch (_e2) { _re2 = null; }
+            // M2-S204：与 R57 sel/handle 形同款——v 可用引擎 throw 即忽略属性，
+            // u 回退仅限不支持 v 的引擎（v_flag breaking-changes 27 案根因）。
+            if (!_zwVFlagSupported()) {
+              try { _re2 = new RegExp('^(?:' + String(pat) + ')$', 'u'); } catch (_e2) { _re2 = null; }
+            }
           }
         }
         if (_re2) {
