@@ -53,9 +53,13 @@ fn resolve_abspos_pct(
 /// driving：abspos-non-replaced-width-margin-000「only ml auto」组（53 应 496——
 /// auto 当 0 落过约束左锚）。`child.width` 为 border-box（模块头注），即方程的
 /// width+border+padding 项。
+/// R5378（CSS2 §10.3.8）：replaced 的 `width:auto` used width = 内在宽（taffy 已实测
+/// 到 `child.width`）——方程基准 definite，非 shrink-to-fit 域；非 replaced 维持 None。
 fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, child: &LayoutBox) -> Option<f32> {
     use zero_css_parser::values::LengthValue;
-    if !matches!(style.margin_left, LengthValue::Auto) || matches!(style.width, LengthValue::Auto) {
+    if !matches!(style.margin_left, LengthValue::Auto)
+        || (matches!(style.width, LengthValue::Auto) && !child.is_replaced)
+    {
         return None;
     }
     let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
@@ -74,6 +78,9 @@ fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, c
 /// `right` = 既有恒左锚口径）。auto margin 被方程精确解的组（R5376 单 auto、双 auto 正
 /// slack）方程成立，不属过约束 → None 维持左锚。taffy 直挂同语义（R5372 直挂 rtl 双锚
 /// pin 470 对齐）。`child.width` 为 border-box（模块头注）。
+/// R5378（CSS2 §10.3.8）：replaced 的 `width:auto` used width = 内在宽（taffy 已实测
+/// 到 `child.width`）——全 definite inset 下方程过约束照常选边；非 replaced 维持
+/// inset-stretch 域 None（driving：abspos-replaced-width-margin-000 adir 组）。
 fn rtl_overconstrained_right_anchor(
     style: &ComputedStyle,
     cb_width: f32,
@@ -81,8 +88,8 @@ fn rtl_overconstrained_right_anchor(
     child: &LayoutBox,
 ) -> Option<f32> {
     use zero_css_parser::values::LengthValue;
-    if matches!(style.width, LengthValue::Auto) {
-        return None; // width:auto 走 inset-stretch 域（既有口径，左右锚不选边）
+    if matches!(style.width, LengthValue::Auto) && !child.is_replaced {
+        return None; // 非 replaced width:auto 走 inset-stretch 域（既有口径，左右锚不选边）
     }
     let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
     let ml_auto = matches!(style.margin_left, LengthValue::Auto);

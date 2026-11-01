@@ -948,6 +948,15 @@ mod r5376_abspos_auto_margin_tests;
 /// 按 right 边锚定（CSS2 §10.3.7；WPT abspos-non-replaced-width-margin-000 adir 组驱动）。
 mod r5377_abspos_rtl_overconstrained_tests;
 
+/// R5378 回归测试：abspos/fixed 静态位臂父 frame 剥离统一（taffy location border-box
+/// 相对 → 与 in-flow 同剥 content frame；WPT all-auto 组 +29 = 中间层 border-left 驱动）。
+mod r5378_abspos_static_arm_frame_strip_tests;
+
+/// R5378 回归测试：abspos 约束方程 replaced width:auto（§10.3.8 内在宽）覆盖——
+/// R5376 方程解 margin 臂与 R5377 rtl 过约束选边臂对 replaced 的 intrinsic used width
+/// 生效（WPT abspos-replaced-width-margin-000 adir/ml 组驱动）。
+mod r5378_abspos_replaced_intrinsic_equation_tests;
+
 /// R5373 回归测试：R1743 父高度回填 extent 计入塌缩屏障（CSS2 §10.6.3/§8.3.1；
 /// WPT background-root-017 驱动）。
 mod r5373_backfill_barrier_margin_tests;

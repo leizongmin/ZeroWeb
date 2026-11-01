@@ -1478,16 +1478,19 @@ pub(super) fn fix_rtl_abspos_static_position(root: &mut LayoutBox, styles: &Hash
     walk(root, styles, false, root.content_width);
 }
 
-pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    use zero_css_parser::values::PositionValue;
-    // 本盒是否为 positioned（是其直接 abspos 子的 CB）
-    let root_positioned = root.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
-        matches!(
-            s.position,
-            PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
-        )
-    });
-    if root_positioned && std::env::var("ZW_ABSPOS_CB_BORDER").as_deref() != Ok("0") {
+/// R1398/R5378：剥除 taffy 计入 abspos/fixed 子 location 的父 **border**（CSS2 §10.1.4
+/// abspos CB = 祖先 padding-box；§10.3.7 静态位臂 taffy `static_position.x =
+/// content_box_inset.left` 同含父 border）。taffy 对 abs location 一律携带父 border
+///（block `area_offset` = border、flex inset 相对 size−border），extract（R787）只剥
+/// padding → 本 pass 统一剥残差 border：positioned 父（R1398，definite-inset CB 帧与
+/// 静态位臂皆需）与 **static 中间层**（R5378，abspos pass 不覆写的全 auto inset 组
+/// 终绘多加一份父 border——WPT abspos-non-replaced-width-margin-000 all-auto 组 +29 =
+/// 静态中间层 border-left）。本 pass 先于 root/nested abspos pass（engine.rs 11.4），
+/// 被覆写臂的写值不受影响。env `ZW_ABSPOS_CB_BORDER=0` 关闭（kill-switch，default-on）。
+pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox) {
+    // OPTIMIZATION：kill-switch 进程级单读（R5108 教训：per-node env::var 热点）。
+    static ON: OnceLock<bool> = OnceLock::new();
+    if *ON.get_or_init(|| std::env::var("ZW_ABSPOS_CB_BORDER").as_deref() != Ok("0")) {
         let bl = root.border_left;
         let bt = root.border_top;
         if bl > 0.0 || bt > 0.0 {
@@ -1499,9 +1502,9 @@ pub(super) fn fix_abspos_cb_border(root: &mut LayoutBox, styles: &HashMap<NodeId
             }
         }
     }
-    // 递归（深层 positioned 祖先各自处理其直接 abspos 子）
+    // 递归（深层 positioned/static 祖先各自处理其直接 abspos/fixed 子）
     for child in &mut root.children {
-        fix_abspos_cb_border(child, styles);
+        fix_abspos_cb_border(child);
     }
 }
 

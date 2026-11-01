@@ -1274,7 +1274,7 @@ impl LayoutEngine {
         apply_relative_offsets_inline(&mut root_box, styles);
 
         // R1398：修正 abspos CB-border 偏移（taffy 把 positioned 祖先 border 计入 abspos loc）。
-        fix_abspos_cb_border(&mut root_box, styles);
+        fix_abspos_cb_border(&mut root_box);
         // R3905（CSS2 §10.3.7）：rtl CB 中全-auto inset abspos 静态位置镜像（左缘贴 CB 右缘）。
         fix_rtl_abspos_static_position(&mut root_box, styles);
 
@@ -2403,6 +2403,8 @@ impl LayoutEngine {
                     //（border+padding），减去 padding 得 padding-box origin（border），
                     // 仍保持 abspos border-box 相对约定。viewport-CB abspos 由
                     // adjust_absolute_pct_to_viewport 覆写 x/y，此处调整被覆盖，无冲突。
+                    // R5378：残留的父 border 由 fix_abspos_cb_border 统一剥（含 static
+                    // 中间层——R1398 时仅 positioned 父，static 父臂残差②）。
                     child.x -= padding_left;
                     child.y -= padding_top;
                 } else {
