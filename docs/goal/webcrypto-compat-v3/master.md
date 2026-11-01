@@ -5,7 +5,7 @@
 归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（M2 无依赖面收口 + DC-5②③ 前置预检落档）
+**最后更新**: 2026-11-02（M2 无依赖面收口 + DC-4/DC-5②③ 前置预检落档）
 
 ---
 
@@ -27,7 +27,7 @@ generateKey ×4（D1 域门控）。对照基准更新为
 
 **F 面具名归因扫查完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-f-attribution-sweep.md)）**：
 m2s4 账全部非 P 逐案族谱归因——F 29,066 = 旧 `.tentative.` 路径 14,150
-（收口重定基退役）+ 新族 14,912（D1 域门控，逐算法分布表落 evidence）
+（收口重定基退役）+ 新族 14,916（D1 域门控，逐算法分布表落 evidence）
 + stable-root **零红**；T 4 = Hybrid-KEM。签名扫查无散在 shim 缺陷红面、
 无无依赖可修簇（唯一潜伏项：失败路径 `algorithm.name` 二次读，无语料
 面，记录不修）。**DC-5③ 归因闭环预闭合成立**，M2 收口结论复核维持。
@@ -39,6 +39,17 @@ getPublicKey.tentative 171+53+21）+ 1T 案级 Timeout 键退役 + 13 新 Pass�
 **P→非P = 0**——五切片两两零回归对账的传递链单跳复验成立，无累积漂移。
 退役清单预编账 = 一期分母内 `.tentative.` 路径 49 案 / m2s4 态 7,340 keys
 （m2s4 全账 98 案 / 14,150 F），M 末收口对终态锚重算为准。
+
+**DC-4 前置预检完成（2026-11-02，[evidence](evidence/2026-11-02-dc4-coverage-precheck.md)）**：
+`wptfyi_gap.py coverage` 对 m2s4 锚机制验证通过（可疑 0、缓存零写入）——
+coverage 分子 27,209P（二期 DC-4 时 13,247），**worker 腿结构性闭合**
+（125 worker 结果经 `.worker.html` 变体规则全部入分子，二期 uncovered
+13,812 桶清账）；unmapped 108 = 98 tentative（DC-5② 退役面吻合）+ 10
+分片变体主文件（25,042P 全绿隐形，通道基建挂账维持）；universe 未命中
+82 全部具名（sliced 74 + idlharness×6 + secure_context 1 + sharedworker
+1 新形态通道域排除）。分子内非 P = F 14,916 + T 4（全 D1 域门控）+
+形态差 3,334。顺带更正 F 扫查 prose 新族聚合笔误 14,912 → 14,916
+（闭式 29,066−14,150，本预检独立复算吻合）。
 
 **M2-3b worker 腿排干修复完成（2026-11-02，[evidence](evidence/2026-11-02-m2s3b-worker-leg-drain.md)）**：
 hkdf/pbkdf2 worker 腿翻绿，**净增 +12,196 子测试位（全 Pass）、T 7→5**，
@@ -193,3 +204,5 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   零代码触面，无碰撞面。
 - 2026-11-02 上游复证轮：纯 docs 改动（入口文档上游事实节 + 本文件上游
   复证行），零代码触面，无碰撞面。
+- 2026-11-02 DC-4 预检轮：纯 docs + /tmp 离线对账（coverage 工具只读
+  m2s4 锚与 wptfyi 缓存，仓库与缓存零写入），无碰撞面。
