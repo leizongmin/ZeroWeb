@@ -3,6 +3,8 @@
 //! 在资源加载前统一执行 HSTS 升级、混合内容阻止和 CSP 检查。
 //! WebView 和引擎通过 `SecurityContext` 做出安全的资源加载决策。
 
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use crate::csp::ContentSecurityPolicy;
 use crate::hsts::HstsStore;
 use crate::mixed_content::{MixedContentStatus, check_mixed_content, is_mixed_content, upgrade_to_https};
@@ -18,6 +20,13 @@ pub enum ResourceCheckResult {
     /// 阻止加载（混合内容、CSP 违规等）。
     Blocked(String),
 }
+
+/// 跨所有者共享的 HSTS 存储句柄。
+///
+/// 真浏览器把 HSTS 态作为 per-profile 全局状态（RFC6797：动态注册对后续
+/// 所有到该 host 的连接生效）；多进程 fetch 管线借该句柄让普通 tab 共享
+/// 同一份动态注册，无痕 tab 保持独立存储。
+pub type SharedHstsStore = Arc<Mutex<HstsStore>>;
 
 /// 安全上下文 — 在资源加载前统一执行安全检查。
 ///
@@ -38,8 +47,9 @@ pub enum ResourceCheckResult {
 /// ```
 #[derive(Debug, Clone)]
 pub struct SecurityContext {
-    /// HSTS 策略存储。
-    hsts_store: HstsStore,
+    /// HSTS 策略存储（共享句柄——默认独享；多进程普通 tab 经
+    /// [`SecurityContext::share_hsts_store`] 接入全局注册面）。
+    hsts_store: SharedHstsStore,
     /// 当前页面源。
     page_origin: Option<Origin>,
     /// 文档级 CSP 政策集（security-hardening M2-s1）——meta 装配面（响应头装配后续
@@ -65,7 +75,7 @@ impl SecurityContext {
     /// 创建新的安全上下文。
     pub fn new() -> Self {
         let mut ctx = Self {
-            hsts_store: HstsStore::new(),
+            hsts_store: Arc::new(Mutex::new(HstsStore::new())),
             page_origin: None,
             enforced_csp: Vec::new(),
         };
@@ -311,12 +321,12 @@ impl SecurityContext {
     /// 在收到 HTTPS 响应时调用，解析 `Strict-Transport-Security` 头并注册。
     /// 返回 `true` 表示成功解析并注册。
     pub fn register_hsts(&mut self, host: &str, header_value: &str) -> bool {
-        self.hsts_store.register_from_header(host, header_value)
+        self.hsts().register_from_header(host, header_value)
     }
 
     /// 清理过期的 HSTS 记录。
     pub fn cleanup_hsts(&mut self) -> usize {
-        self.hsts_store.cleanup_expired()
+        self.hsts().cleanup_expired()
     }
 
     /// 检查资源 URL 是否可以安全加载。
@@ -331,7 +341,7 @@ impl SecurityContext {
     /// `resource_type` 为资源类型（如 "script", "img", "style", "connect", "font", "media"）。
     pub fn check_resource_url(&mut self, url: &str, resource_type: &str) -> ResourceCheckResult {
         // 阶段 1: HSTS 升级
-        if let Some(upgraded) = self.hsts_store.should_upgrade(url) {
+        if let Some(upgraded) = self.hsts().should_upgrade(url) {
             // HSTS 升级：HTTP → HTTPS
             // 升级后继续检查混合内容（使用升级后的 URL）
             return self.check_mixed_content_stage(&upgraded, resource_type, true);
@@ -449,7 +459,7 @@ impl SecurityContext {
         ];
 
         for &(host, max_age, include_subdomains) in preload_entries {
-            self.hsts_store.register(
+            self.hsts().register(
                 host,
                 crate::hsts::HstsDirective {
                     max_age,
@@ -464,12 +474,31 @@ impl SecurityContext {
 
     /// 返回 HSTS 存储的策略数量（含预加载）。
     pub fn hsts_count(&self) -> usize {
-        self.hsts_store.len()
+        self.hsts().len()
     }
 
-    /// 返回 HSTS 存储的可变引用（用于高级操作）。
-    pub fn hsts_store_mut(&mut self) -> &mut HstsStore {
-        &mut self.hsts_store
+    /// 锁定 HSTS 存储。锁毒化仅在持锁线程 panic 时发生，存储为纯内存
+    /// 映射、操作无中间态，恢复继续（`into_inner`）优于放大失败。
+    fn hsts(&self) -> MutexGuard<'_, HstsStore> {
+        self.hsts_store.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// 返回共享 HSTS 存储句柄（首个普通 tab 捕获为全局面用）。
+    pub fn hsts_store_handle(&self) -> SharedHstsStore {
+        Arc::clone(&self.hsts_store)
+    }
+
+    /// 接入外部共享 HSTS 存储（后续普通 tab 加入全局注册面）。
+    pub fn share_hsts_store(&mut self, shared: SharedHstsStore) {
+        self.hsts_store = shared;
+    }
+
+    /// 脱离共享存储，回到独立存储并重新播种预加载列表。
+    ///
+    /// 无痕切换面：转入无痕的 tab 不得再读写全局注册（注册随无痕会话丢弃）。
+    pub fn detach_hsts_store(&mut self) {
+        self.hsts_store = Arc::new(Mutex::new(HstsStore::new()));
+        self.load_preload_list();
     }
 }
 

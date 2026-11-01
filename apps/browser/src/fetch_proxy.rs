@@ -12,7 +12,7 @@ use zero_net::{
 };
 use zero_protocol::message::FetchParams;
 use zero_script_sandbox::ServiceWorkerFetchRequest;
-use zero_security::{ResourceCheckResult, SecurityContext};
+use zero_security::{ResourceCheckResult, SecurityContext, SharedHstsStore};
 
 /// 已完成、待回传 renderer 的 fetch 结果。
 pub struct CompletedFetch {
@@ -76,6 +76,9 @@ pub struct TabFetchProxy {
     stream_limiter: Arc<Semaphore>,
     tab_epochs: HashMap<TabId, u64>,
     security: HashMap<TabId, SecurityContext>,
+    /// 普通 tab 共享的 HSTS 全局存储（真浏览器 per-profile 语义；无痕 tab
+    /// 独立存储不接入）。首个普通 tab 装配时捕获。
+    global_hsts: Option<SharedHstsStore>,
 }
 
 impl TabFetchProxy {
@@ -93,6 +96,7 @@ impl TabFetchProxy {
             stream_limiter: Arc::new(Semaphore::new(zero_net::max_connections_total())),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
+            global_hsts: None,
         }
     }
 
@@ -100,6 +104,11 @@ impl TabFetchProxy {
     pub fn set_tab_private(&mut self, tab_id: TabId, private: bool) {
         if private {
             self.private_tabs.insert(tab_id);
+            // 转无痕即摘离全局 HSTS 存储（若已接入）：后续注册留在独立
+            // 存储、随无痕会话丢弃，不外泄全局面。
+            if let Some(ctx) = self.security.get_mut(&tab_id) {
+                ctx.detach_hsts_store();
+            }
         } else {
             self.private_tabs.remove(&tab_id);
         }
@@ -122,9 +131,25 @@ impl TabFetchProxy {
     }
 
     /// 新 Tab 或首次 fetch 前初始化安全上下文。
+    ///
+    /// 普通 tab 接入共享 HSTS 全局存储（首个普通 tab 的存储成为全局面，
+    /// 后续 tab 以句柄接入，动态注册跨 tab 生效——真浏览器 per-profile
+    /// 语义）；无痕 tab 维持独立存储：不读全局注册，注册也不外泄。
     pub fn ensure_tab(&mut self, tab_id: TabId) {
         self.tab_epochs.entry(tab_id).or_insert(0);
-        self.security.entry(tab_id).or_default();
+        if self.private_tabs.contains(&tab_id) {
+            self.security.entry(tab_id).or_default();
+            return;
+        }
+        if let Some(shared) = self.global_hsts.clone() {
+            self.security.entry(tab_id).or_default().share_hsts_store(shared);
+            return;
+        }
+        // 首个普通 tab 以全新上下文落座：既有上下文可能携带无痕会话的注册，
+        // 不得提升为全局（无痕注册随会话丢弃，退出无痕不回灌全局面）。
+        let fresh = SecurityContext::new();
+        self.global_hsts = Some(fresh.hsts_store_handle());
+        self.security.insert(tab_id, fresh);
     }
 
     /// 导航开始：更新页面源并 cancel 该 Tab 旧 fetch。
@@ -139,7 +164,8 @@ impl TabFetchProxy {
     /// 多进程 HSTS 响应头注册（M1 矩阵在册「多进程 HSTS 不注册」兼容缺口：单进程
     /// 导航路在 `webview::note_hsts_response` 登记，多进程 document 响应此前不落表）。
     /// 最终 URL 为 HTTPS 且携带 `Strict-Transport-Security` 头时，按最终 URL 的
-    /// host 登记 per-tab `SecurityContext`，后续 `check_resource_url` 对该 host
+    /// host 登记普通 tab 共享的全局存储（无痕 tab 落独立存储），后续
+    /// `check_resource_url` 对该 host
     /// 强制 HTTP→HTTPS 升级。浏览器侧消费面无条件执行 HSTS 升级（无
     /// `mixed_content_enforcement` 开关），故仅保留 https-only 门；非 HTTPS、
     /// 无 STS 头、坏头静默跳过。spec https://tools.ietf.org/html/rfc6797#section-6.1
@@ -1004,12 +1030,13 @@ mod tests {
         assert_eq!(done[0].tab_id, TabId(2));
     }
 
-    /// 多进程 HSTS 注册回归（M2 切片 5，对齐单进程 mixed_content_gate.rs 口径）：
-    /// HTTPS document 响应的 STS 头登记 per-tab `SecurityContext`，后续
-    /// `check_resource_url` 对该 host 强制 HTTP→HTTPS 升级、includeSubDomains
-    /// 覆盖子域；tab 间不串；非 HTTPS/无头/坏头不注册。
+    /// 多进程 HSTS 全局存储对齐回归（真浏览器为 per-profile 全局存储，
+    /// RFC6797 注册对后续连接生效；取代切片 5 的 per-tab 隔离语义）：普通
+    /// tab 动态注册跨 tab 生效、includeSubDomains 覆盖子域；无痕 tab 独立
+    /// 存储（不读全局、注册不外泄、转无痕即摘离、退出无痕不回灌全局）；
+    /// 非 HTTPS/无头/坏头不注册。
     #[test]
-    fn hsts_document_response_registers_per_tab_security_context() {
+    fn hsts_document_response_registration_propagates_across_normal_tabs() {
         let mut proxy = TabFetchProxy::new();
         // http 页面源：无混合内容噪声，Allow/Upgraded 信号纯由 HSTS 决定。
         proxy.on_navigate(TabId(1), "http://tabs.example/");
@@ -1041,7 +1068,7 @@ mod tests {
             "includeSubDomains 须覆盖子域"
         );
 
-        // per-tab 隔离：未注册 tab 的同 host 资源不升级。
+        // 全局共享：未注册的普通 tab 同 host 资源同样升级。
         proxy.ensure_tab(TabId(2));
         assert_eq!(
             proxy
@@ -1049,8 +1076,63 @@ mod tests {
                 .get_mut(&TabId(2))
                 .unwrap()
                 .check_resource_url("http://secure.example.com/api", "connect"),
+            ResourceCheckResult::Upgraded("https://secure.example.com/api".to_string()),
+            "HSTS 为 per-profile 全局存储，动态注册须跨普通 tab 生效"
+        );
+
+        // 无痕 tab 独立存储：不读全局注册，自身注册不外泄全局。
+        proxy.set_tab_private(TabId(3), true);
+        proxy.on_navigate(TabId(3), "http://private.example/");
+        proxy.note_hsts_response(
+            TabId(3),
+            "https://private-only.example/",
+            &[("Strict-Transport-Security".into(), "max-age=31536000".into())],
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(3))
+                .unwrap()
+                .check_resource_url("http://private-only.example/x", "document"),
+            ResourceCheckResult::Upgraded("https://private-only.example/x".to_string()),
+            "无痕 tab 自身注册在独立存储内生效"
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(3))
+                .unwrap()
+                .check_resource_url("http://secure.example.com/api", "connect"),
             ResourceCheckResult::Allow,
-            "HSTS 为 per-tab SecurityContext，未注册 tab 不得升级"
+            "无痕 tab 不读全局注册"
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url("http://private-only.example/x", "document"),
+            ResourceCheckResult::Allow,
+            "无痕注册不得外泄全局存储"
+        );
+
+        // 已接入全局的 tab 转无痕即摘离：后续注册不落全局。
+        proxy.ensure_tab(TabId(4));
+        proxy.set_tab_private(TabId(4), true);
+        proxy.on_navigate(TabId(4), "http://late.example/");
+        proxy.note_hsts_response(
+            TabId(4),
+            "https://late-private.example/",
+            &[("Strict-Transport-Security".into(), "max-age=31536000".into())],
+        );
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url("http://late-private.example/x", "document"),
+            ResourceCheckResult::Allow,
+            "转无痕后注册不得落入全局存储"
         );
 
         // 非 HTTPS 响应不注册；无 STS 头静默跳过；坏头不注册。
@@ -1080,6 +1162,44 @@ mod tests {
                 "{host} host 不得被注册"
             );
         }
+
+        // 退出无痕的首个普通 tab：无痕会话注册不得被提升为全局（真浏览器
+        // 退出无痕即丢弃会话内状态；既有上下文随退出丢弃，落座全新存储）。
+        let mut proxy = TabFetchProxy::new();
+        proxy.set_tab_private(TabId(1), true);
+        proxy.on_navigate(TabId(1), "http://seasoned.example/");
+        proxy.note_hsts_response(
+            TabId(1),
+            "https://seasoned.example/",
+            &[("Strict-Transport-Security".into(), "max-age=31536000".into())],
+        );
+        proxy.set_tab_private(TabId(1), false);
+        proxy.on_navigate(TabId(1), "http://fresh.example/");
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(1))
+                .unwrap()
+                .check_resource_url("http://seasoned.example/x", "document"),
+            ResourceCheckResult::Allow,
+            "退出无痕后无痕会话注册不得保留，更不得升为全局"
+        );
+        // 落座的全新全局存储照常工作：后续普通 tab 注册跨 tab 生效。
+        proxy.note_hsts_response(
+            TabId(1),
+            "https://post-exit.example/",
+            &[("Strict-Transport-Security".into(), "max-age=31536000".into())],
+        );
+        proxy.ensure_tab(TabId(2));
+        assert_eq!(
+            proxy
+                .security
+                .get_mut(&TabId(2))
+                .unwrap()
+                .check_resource_url("http://post-exit.example/x", "document"),
+            ResourceCheckResult::Upgraded("https://post-exit.example/x".to_string()),
+            "退出无痕落座的全局存储正常承接后续普通 tab"
+        );
     }
 
     /// drain 接线回归：document 响应确实流经 HSTS 登记点，但 HTTP 响应
