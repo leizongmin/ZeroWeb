@@ -10621,6 +10621,46 @@
     return _selection;
   }
   globalThis.getSelection = _getSelection;
+  // R5384：Selection 插入点导出（reftest harness 消费，css-ui-4 caret 定位）——取
+  // `_selection` **focus 端点**（spec：caret = selection focus 位，
+  // https://w3c.github.io/selection-api/ #dfn-selection-focus），上行找最近
+  // contenteditable 宿主，输出 {selector, path, offset, isText}：selector = 宿主
+  // `__zwSelector`，path = 宿主 childNodes 索引路径（focus 节点为宿主自身时为空
+  // 数组），offset = 端点偏移（文本节点 = UTF-16 码元；元素 = child 索引），
+  // isText = 端点是否文本节点。非 CE 选区（无宿主/宿主 detached '@handle' 键）
+  // 返回 null。惰性拉取（harness 脚本+rAF 泵后一次调用读最终态），不挂 `_zwSync`
+  // 热路径（编辑语料逐动作 selection 变更零成本）。偏移/路径以数据载荷跨越
+  // serialize→re-parse 边界（wrapper 对象不存活，照 focus_selector R4241 同理）。
+  // 位置约束：本函数体读闭包内 `_getSelection`——shim 外层 IIFE 与 part06 段
+  // Selection 内层 IIFE 不同域（part01/part01c 段均不可见，R5384 探针实证
+  // P1-no-fn），故须定义于本内层域内经 globalThis 导出（与上方 getSelection
+  // 导出同点）。
+  globalThis.__zw_dump_ce_caret = function () {
+    if (typeof _getSelection !== 'function') return null;
+    var sel = _getSelection();
+    var f = sel && sel._focusNode;
+    if (!f) return null;
+    var h = f, d = 0;
+    while (h && d++ < 64) {
+      if (h.nodeType === 1 && h.getAttribute && h.getAttribute('contenteditable') != null) break;
+      h = h.parentNode;
+    }
+    if (!h || h.nodeType !== 1 || !h.getAttribute || h.getAttribute('contenteditable') == null) return null;
+    var hostSel = h.__zwSelector || null;
+    if (!hostSel || hostSel.charAt(0) === '@') return null;
+    var path = [], n = f;
+    while (n && n !== h) {
+      var p = n.parentNode;
+      if (!p) return null;
+      var kids = p.childNodes || [], idx = -1;
+      for (var i = 0; i < kids.length; i++) { if (kids[i] === n) { idx = i; break; } }
+      if (idx < 0) return null;
+      path.unshift(idx);
+      n = p;
+    }
+    if (n !== h) return null;
+    return { selector: hostSel, path: path, offset: sel._focusOffset | 0, isText: f.nodeType === 3 };
+  };
   // R3254-M1：Selection 接口构造器——实例经 Object.create(Selection.prototype) 接原型链
   //（`window.getSelection() instanceof Selection` spec 断言，WPT getSelection.html 首测）。
   // `new Selection()` 本身 spec 非法（无 [[Construct]]）——保持不可构造（V8 普通函数

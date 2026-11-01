@@ -3619,19 +3619,60 @@ impl super::Painter {
                             // - bar：1px 竖条（控件 caret 同几何）；underscore：基线下 0.25em 处
                             //   0.1em 横条。多列/竖排不应用（FIXME）。
                             // 前置于字形 = caret 不遮字符（css-ui-4 §5.2.3 block 绘制序）。
-                            let mut ce_caret_recolor: Option<Color> = None;
-                            if self.ce_caret_enabled
-                                && !ce_caret_fired
+                            // R5384：插入点目标解析——Selection 回流目标命中本片段（宿主 =
+                            // owner 且容器 = $frag_nid）→ 按偏移定位（caret 随
+                            // getSelection()/Range 移动）；否则 R5383 焦点默认位（首个非空
+                            // 片段、偏移 0）。每盒至多一次（ce_caret_fired 共用）。
+                            let ce_caret_off: Option<usize> = if !self.ce_caret_enabled {
+                                None
+                            } else if ce_caret_fired {
+                                None
+                            } else {
+                                match self.ce_caret_sel_target {
+                                    // 容器命中：片段归因 id = 目标文本节点，或 = 其父
+                                    // inline 元素（IFC 对 inline 包裹文本按元素归因——
+                                    // 探针实证 `<span>abc</span>` 片段 nid = span；div 直属
+                                    // 文本 = 文本节点）。多文本子 inline 合并 run 面 FIXME。
+                                    Some((container, alt, off)) => {
+                                        ($frag_nid == container || Some($frag_nid) == alt)
+                                            .then_some(off)
+                                    }
+                                    None => (self.focused_node == Some(owner_id)
+                                        && super::is_text_entry_node(owner_id, Some(doc)))
+                                    .then_some(0),
+                                }
+                            };
+                            let mut ce_caret_recolor: Option<(usize, Color)> = None;
+                            if let Some(caret_off) = ce_caret_off
                                 && !char_advance_is_y
-                                && self.focused_node == Some(owner_id)
-                                && super::is_text_entry_node(owner_id, Some(doc))
                                 && let Some(os) = owner_style_opt
-                                && let Some(ch) = transformed.chars().next()
+                                && !transformed.is_empty()
                             {
                                 ce_caret_fired = true;
-                                let first_adv =
-                                    self.measure_char_cached(frag_font_id.0, ch, $frag_fs, $is_ahem)
-                                        + frag_letter_spacing;
+                                let chars: Vec<char> = transformed.chars().collect();
+                                // 偏移钳制（UTF-16 码元 ≈ char，BMP 语料等价；越界 =
+                                // 行尾，FIXME astral 偏移面）。
+                                let off = caret_off.min(chars.len());
+                                let char_adv = |c: char| {
+                                    self.measure_char_cached(frag_font_id.0, c, $frag_fs, $is_ahem)
+                                        + frag_letter_spacing
+                                };
+                                // 插入位 x = 片段起点 + 前 off 字符 advance 累计（与 R5383
+                                // first_adv 同 measure 口径；shaped run 分歧 FIXME）。
+                                let mut adv_sum = 0.0;
+                                for &c in chars.iter().take(off) {
+                                    adv_sum += char_adv(c);
+                                }
+                                // block/underscore 宽 = 覆盖字符 advance；无覆盖字符
+                                //（行尾/元素边界插入位）回退 1ch = '0' advance（Ahem
+                                // is_ahem 1ch=1em，empty-001 同口径；css-ui-4 §5.2.3
+                                // 「impractical to determine → 1ch」fallback）。
+                                let caret_w = match chars.get(off) {
+                                    Some(&nc) => char_adv(nc),
+                                    None => {
+                                        self.measure_char_cached(frag_font_id.0, '0', $frag_fs, $is_ahem)
+                                    }
+                                };
                                 let line_h = box_node
                                     .text_node_line_heights
                                     .get(&$frag_nid)
@@ -3653,19 +3694,25 @@ impl super::Painter {
                                     Some((a, d)) => (frag_base_y - a, a + d),
                                     None => (run_top, line_h),
                                 };
-                                // RTL：插入点（逻辑偏移 0）的「下一字符」是 run 逻辑首字符，
-                                // 视觉位置在 run **右**端——caret x 取该字符的视觉字元格
-                                //（run 右缘内收 advance）；LTR 取 run 左缘。（caret-shape-
-                                // block-001-rtl 实证：不定向时 caret 落最左字元格翻红。）
+                                // RTL：逻辑偏移 off 的视觉位 = run 右端内收前 off 字符
+                                // advance 与本宽（R5383 off=0 臂同式推广：右端 − 0 − 首字
+                                // advance；插入点后下一字符 = run 逻辑首字符，视觉在右端）。
                                 let rtl = matches!(
                                     os.direction,
                                     zero_style_system::DirectionValue::Rtl
                                 );
-                                let caret_x = if rtl {
-                                    frag_base_x + $frag_width - first_adv
+                                let mut caret_x = if rtl {
+                                    frag_base_x + $frag_width - adv_sum - caret_w
                                 } else {
-                                    frag_base_x
+                                    frag_base_x + adv_sum
                                 };
+                                // 行尾/溢出行插入位钳制到本盒内容区右缘（css-ui-4 §5.2.3
+                                // 「caret 显示在可见行末」——caret-eol-004 12 字符溢出 5ch
+                                // 盒时与 001-003 同视觉位）。仅内收不外扩。
+                                let content_right = content_x + tx + box_node.content_width;
+                                if caret_x > content_right {
+                                    caret_x = content_right;
+                                }
                                 let current = frag_color;
                                 let (caret_color, recolor) = match &os.caret_color {
                                     CaretColorComputedValue::Color(c) => {
@@ -3696,33 +3743,39 @@ impl super::Painter {
                                         None,
                                     ),
                                 };
-                                match os.caret_shape {
+                                let caret_rect = match os.caret_shape {
                                     CaretShapeComputedValue::Block => {
-                                        ce_caret_recolor = recolor;
-                                        self.primitives.add_fill(
-                                            Rect::new(caret_x, caret_top, first_adv.max(1.0), caret_h),
-                                            caret_color,
-                                        );
+                                        // 覆盖字符文字色（两值第二值）在偏移位字形改写
+                                        //（下方 glyph loop 按 index 消费）。
+                                        ce_caret_recolor = recolor.map(|c| (off, c));
+                                        Rect::new(caret_x, caret_top, caret_w.max(1.0), caret_h)
                                     }
                                     CaretShapeComputedValue::Bar | CaretShapeComputedValue::Auto => {
                                         let caret_y = run_top + (line_h - $frag_fs).max(0.0) / 2.0;
-                                        self.primitives
-                                            .add_fill(Rect::new(caret_x, caret_y, 1.0, $frag_fs), caret_color);
+                                        Rect::new(caret_x, caret_y, 1.0, $frag_fs)
                                     }
                                     CaretShapeComputedValue::Underscore => {
                                         let band_h = ($frag_fs * 0.1).max(1.0);
-                                        self.primitives.add_fill(
-                                            Rect::new(
-                                                caret_x,
-                                                frag_base_y + $frag_fs * 0.25,
-                                                first_adv.max(1.0),
-                                                band_h,
-                                            ),
-                                            caret_color,
-                                        );
+                                        Rect::new(
+                                            caret_x,
+                                            frag_base_y + $frag_fs * 0.25,
+                                            caret_w.max(1.0),
+                                            band_h,
+                                        )
                                     }
+                                };
+                                // 偏移落在文本末尾（无覆盖字符）→ fill 暂存（盒级 overflow
+                                // 裁剪后发射，css-ui-4 §5.2.3 行尾 caret 溢出可见，
+                                // caret-eol-001..004）；否则内联前置于字形（不遮字符）。
+                                if off >= chars.len() {
+                                    self.pending_ce_caret_eol = Some((caret_rect, caret_color));
+                                } else {
+                                    self.primitives.add_fill(caret_rect, caret_color);
                                 }
                             }
+                            // R5384：字形序号（recolor 按插入偏移消费——1 字形 1 字符
+                            // 语料等价；shaped 簇分裂面 FIXME）。
+                            let mut ce_caret_glyph_idx = 0usize;
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
                                 &transformed,
@@ -3735,6 +3788,8 @@ impl super::Painter {
                                 &variations,
                                 size_adjust,
                             ) {
+                                let ce_glyph_i = ce_caret_glyph_idx;
+                                ce_caret_glyph_idx += 1;
                                 let ch = glyph.code_point;
                                 let glyph_font_id = glyph.font_id.unwrap_or(frag_font_id);
                                 let glyph_font_size = glyph.font_size.unwrap_or($frag_fs);
@@ -3788,10 +3843,13 @@ impl super::Painter {
                                 // 且该字形是其中第一个非空白字符时，用伪元素 color（CSS2 §5.12.2）。
                                 let glyph_color = {
                                     let mut c = frag_color;
-                                    // R5383：block caret 覆盖字符文字色（caret-color 两值第二值，
-                                    // css-ui-4 §5.2.2）——插入点后首个字形改写（本切片插入点恒 0
-                                    // → 片段首字形），消费即清（仅覆盖字符着色）。
-                                    if let Some(rc) = ce_caret_recolor {
+                                    // R5383/R5384：block caret 覆盖字符文字色（caret-color
+                                    // 两值第二值，css-ui-4 §5.2.2）——插入偏移位字形改写
+                                    //（R5383 插入点恒 0 → 片段首字形；R5384 起按 Selection
+                                    // 偏移），消费即清（仅覆盖字符着色）。
+                                    if let Some((rc_at, rc)) = ce_caret_recolor
+                                        && ce_glyph_i == rc_at
+                                    {
                                         c = rc;
                                         ce_caret_recolor = None;
                                     }

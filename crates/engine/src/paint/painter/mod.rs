@@ -84,6 +84,19 @@ pub struct Painter {
     /// R5383（css-ui-4 §5.2.2/§5.2.3）：contenteditable 宿主插入 caret 绘制开关
     ///（构造期单次读取）。`ZW_CE_CARET=0` 关闭（恢复 CE 宿主不绘 caret 旧行为）。
     pub(crate) ce_caret_enabled: bool,
+    /// R5384：Selection 插入点 caret 定位开关（构造期单次读取）。`ZW_CE_CARET_SEL=0`
+    /// 关闭（管线回流面忽略插入点，恢复 R5383「插入点恒 0/焦点默认位」行为）。
+    pub(crate) ce_caret_sel_enabled: bool,
+    /// R5384：Selection 插入点目标——(文本容器, 归因替身, 字符偏移)（管线
+    /// `inject_ce_caret_target` 解析注入；css-ui-4 caret-shape/caret-color 插入点）。
+    /// 替身 = 文本节点父元素（inline 包裹文本的片段归因 id，探针实证）。
+    /// None 时回落 R5383 焦点默认位（首片段偏移 0）。
+    pub(crate) ce_caret_sel_target: Option<(NodeId, Option<NodeId>, usize)>,
+    /// R5384：行尾插入 caret 暂存——偏移落在片段文本末尾（无覆盖字符）时 fill 不入
+    /// 主图元流（会随 [`super::clip_overflow_children`] 被宿主 padding-box 裁掉，
+    /// css-ui-4 §5.2.3 行尾 caret 溢出可见语义），延后到盒级 overflow 裁剪之后发射。
+    /// (矩形, 颜色)，每盒至多一条（paint_text 内写入，paint_node_inner 消费即清）。
+    pub(crate) pending_ce_caret_eol: Option<(Rect, Color)>,
     /// R5088：wrapper inline 背景门修正开关（构造期单次读取）。`ZW_INLINE_WRAPPER_BG=0`
     /// 关闭（skip 门回旧 has_direct_paintable_text 判据 + 链补录停用）。
     pub(crate) inline_wrapper_bg_enabled: bool,
@@ -1152,6 +1165,9 @@ impl Painter {
             inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
             inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
             ce_caret_enabled: std::env::var("ZW_CE_CARET").as_deref() != Ok("0"),
+            ce_caret_sel_enabled: std::env::var("ZW_CE_CARET_SEL").as_deref() != Ok("0"),
+            ce_caret_sel_target: None,
+            pending_ce_caret_eol: None,
             inline_wrapper_bg_enabled: std::env::var("ZW_INLINE_WRAPPER_BG").as_deref() != Ok("0"),
             inline_bleed_enabled: std::env::var("ZW_INLINE_BLEED").as_deref() == Ok("1"),
             inline_ca_paint_enabled: std::env::var("ZW_INLINE_CA_PAINT").as_deref() != Ok("0"),
@@ -1581,6 +1597,14 @@ impl Painter {
     /// 设置当前焦点是否来自键盘导航（UA 默认键盘焦点环绘制条件；pipeline 透传）。
     pub fn set_focused_from_keyboard(&mut self, from_keyboard: bool) {
         self.focused_from_keyboard = from_keyboard;
+    }
+
+    /// R5384：Selection 插入点目标注入——(文本容器, 归因替身, 字符偏移)。kill-switch
+    /// `ZW_CE_CARET_SEL=0`（构造期旗标）关闭时忽略（保持 R5383 默认位行为）。
+    pub fn set_ce_caret_target(&mut self, container: NodeId, container_alt: Option<NodeId>, offset: usize) {
+        if self.ce_caret_sel_enabled {
+            self.ce_caret_sel_target = Some((container, container_alt, offset));
+        }
     }
 
     /// R2392：从 stylesheets 收集 `@counter-style` 定义注册到 painter。
@@ -4338,6 +4362,14 @@ impl Painter {
         // R5265：裁剪本体抽为 clip_overflow_children（collapse 驱动 cell 的 sweep A
         // 段同属 R792 内容域，需同款 padding-box 裁剪），本处调用语义不变。
         self.clip_overflow_children(box_node, styles, abs_x, abs_y, doc, &counts_before_children);
+
+        // R5384（css-ui-4 §5.2.3 行尾 caret 溢出可见）：偏移落在片段文本末尾的插入
+        // caret 在 paint_text 内暂存（见 pending_ce_caret_eol 注释），此处——本盒
+        // overflow 裁剪之后、子元素绘制之前——发射（逃逸宿主自身裁剪，仍受外层
+        // 祖先裁剪；caret-eol-001..004 依赖）。消费即清。
+        if let Some((rect, color)) = self.pending_ce_caret_eol.take() {
+            self.primitives.add_fill(rect, color);
+        }
 
         // 非 positioned overflow 元素：abspos/fixed 子元素移到裁剪之后绘制，
         // 使其 CB 为祖先时不被本 overflow 误裁（CSS §11.1.1）。

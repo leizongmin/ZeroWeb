@@ -639,7 +639,9 @@ fn render_with_layout_inner(
     // 执行页面 <script>（含 DOM 变更），把 JS 后的最终 HTML 用于后续渲染。
     // R4241：最终焦点 selector 一并取出——serialize→re-parse 边界不携带焦点，
     // 经 pipeline.set_focused_selector 注入 `:focus`/`:focus-within` 样式判定。
-    let (mutated_html, focus_selector, scroll_offsets, text_selections) =
+    // R5384：Selection 插入点一并取出（`getSelection()` collapse/addRange → CE 宿主
+    // caret 定位），照 R5052 文本选区同款回流。
+    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let _zw_t1 = std::time::Instant::now();
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
@@ -687,6 +689,12 @@ fn render_with_layout_inner(
             .iter()
             .map(|r| (r.selector.clone(), r.start, r.end))
             .collect(),
+    );
+    // R5384：Selection 插入点回流（css-ui-4 caret 定位；engine-direct 路径）。
+    pipeline.set_ce_caret(
+        ce_caret
+            .as_ref()
+            .map(|r| (r.selector.clone(), r.path.clone(), r.offset, r.is_text)),
     );
     // R1991：@media print/screen 级联按渲染媒体类型过滤（DC-12）。默认 Screen = 零变更；
     // `--media print` 经 config.media_type 传入使 @media print 生效（量真实 WPT yield）。
@@ -1015,7 +1023,7 @@ pub fn render_via_webview_to_framebuffer_with_base(
         let reg = canvas_registry.lock().unwrap_or_else(|e| e.into_inner());
         *reg.font_loader.lock().unwrap_or_else(|e| e.into_inner()) = create_font_loader();
     }
-    let (mutated_html, focus_selector, scroll_offsets, text_selections) =
+    let (mutated_html, focus_selector, scroll_offsets, text_selections, ce_caret) =
         apply_scripted_dom_mutations(html, base_dir, config.wpt_root.as_deref(), &canvas_registry);
     let media_ctx = zero_css_parser::media_query::MediaContext::with_type(
         config.viewport_width as f64,
@@ -1067,6 +1075,12 @@ pub fn render_via_webview_to_framebuffer_with_base(
             .iter()
             .map(|r| (r.selector.clone(), r.start, r.end))
             .collect(),
+    );
+    // R5384：Selection 插入点回流（webview 路径，≡ engine-direct 同口径）。
+    webview.set_ce_caret(
+        ce_caret
+            .as_ref()
+            .map(|r| (r.selector.clone(), r.path.clone(), r.offset, r.is_text)),
     );
     let result = webview.load_html(
         html,

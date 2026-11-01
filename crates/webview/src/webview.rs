@@ -2397,6 +2397,12 @@ impl WebView {
         self.pipeline.set_text_selections(selections);
     }
 
+    /// R5384：Selection 插入点回流（css-ui-4 caret 定位；照 [`Self::set_text_selections`]
+    /// 同口径——reftest harness 注入，产品路径回流挂账）。
+    pub fn set_ce_caret(&mut self, spec: Option<(String, Vec<usize>, usize, bool)>) {
+        self.pipeline.set_ce_caret(spec);
+    }
+
     /// 从当前 live Document 查询 selector 对应的 opaque node handle。
     pub fn page_node_handle_for_selector(&self, selector: &str) -> Option<u64> {
         self.pipeline.page_node_handle_for_selector(selector)

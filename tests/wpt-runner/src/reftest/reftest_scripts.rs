@@ -31,7 +31,21 @@ pub struct TextSelectionRecord {
     pub end: usize,
 }
 
-/// 返回 (JS 后最终 HTML, 页面最终焦点 selector, 脚本化滚动偏移表, 脚本化文本选区表)。
+/// R5384：Selection 插入点记录（`getSelection()` collapse/addRange 族 → shim
+/// `__zw_dump_ce_caret` 导出；照 R5052 文本选区回流模式）。selector = contenteditable
+/// 宿主；path = 宿主 childNodes 索引路径（端点为宿主自身时空表）；offset = 端点偏移
+///（is_text 时为 UTF-16 码元，否则 child 索引）。
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CeCaretRecord {
+    pub selector: String,
+    pub path: Vec<usize>,
+    pub offset: usize,
+    pub is_text: bool,
+}
+
+/// 返回 (JS 后最终 HTML, 页面最终焦点 selector, 脚本化滚动偏移表, 脚本化文本选区表,
+/// Selection 插入点)。
 /// 焦点 selector 取
 /// FocusChanged 记录的**最后一条**（spec 焦点转移语义：最后一次 focus/blur 胜出），供渲染
 /// 管线 `set_focused_selector` 注入 `:focus`/`:focus-within` 样式判定（R4241——serialize→re-parse
@@ -46,6 +60,7 @@ pub(super) fn apply_scripted_dom_mutations(
     Option<String>,
     Vec<ScrollOffsetRecord>,
     Vec<TextSelectionRecord>,
+    Option<CeCaretRecord>,
 ) {
     // R-t2qq 返修 F2：adopted 槽 case 首清（置于最前——含下方无脚本早退路径）。进程级
     // 槽清空是防御位（本 harness 经下方换装回调正常路径不写它）；线程局部 case 覆盖
@@ -57,7 +72,7 @@ pub(super) fn apply_scripted_dom_mutations(
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return (html.to_string(), None, Vec::new(), Vec::new());
+        return (html.to_string(), None, Vec::new(), Vec::new(), None);
     }
 
     use std::sync::Arc;
@@ -78,12 +93,12 @@ pub(super) fn apply_scripted_dom_mutations(
         #[cfg(feature = "v8")]
         let sandbox = match zero_script_sandbox::V8Sandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
         };
         #[cfg(not(feature = "v8"))]
         let sandbox = match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new()),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
         };
         sandbox
     };
@@ -111,7 +126,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return (html.to_string(), None, Vec::new(), Vec::new());
+        return (html.to_string(), None, Vec::new(), Vec::new(), None);
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -315,7 +330,18 @@ pub(super) fn apply_scripted_dom_mutations(
         eprintln!("  [reftest JS] text selections: {text_selections:?}");
     }
 
-    (current, focus_selector, scroll_offsets, text_selections)
+    // R5384：Selection 插入点导出（shim `__zw_dump_ce_caret`；非 CE 选区 null）。
+    // 惰性拉取——脚本 + 同步 rAF stub 泵后读 `_selection` 最终态（caret = focus 端点）。
+    let ce_caret: Option<CeCaretRecord> = sandbox
+        .execute_json("(typeof __zw_dump_ce_caret === 'function') ? __zw_dump_ce_caret() : null")
+        .ok()
+        .and_then(|r| serde_json::from_str::<Option<CeCaretRecord>>(&r.value).ok())
+        .flatten();
+    if std::env::var("REFTEST_DEBUG").is_ok() {
+        eprintln!("  [reftest JS] ce caret: {ce_caret:?}");
+    }
+
+    (current, focus_selector, scroll_offsets, text_selections, ce_caret)
 }
 
 /// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的

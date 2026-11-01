@@ -231,6 +231,12 @@ pub struct RenderPipeline {
     /// R4241/R4353 模式）——paint 期经 doc 解析 selector → NodeId，消费 ::selection
     /// 伪样式绘制选中行高亮与字形色。
     text_selections: Vec<(String, usize, usize)>,
+    /// R5384：Selection 插入点（reftest harness 自 shim `__zw_dump_ce_caret` 回流，
+    /// 照 R5052 模式；产品 renderer 路径不回流同账挂起）——(CE 宿主 selector, 宿主内
+    /// childNodes 索引路径, 偏移, 端点是否文本)。paint 期经
+    /// [`RenderPipeline::inject_ce_caret_target`] 解析为 NodeId 三元组注入 painter
+    /// （css-ui-4 caret-shape/caret-color 插入点定位）。
+    ce_caret_spec: Option<(String, Vec<usize>, usize, bool)>,
     /// 是否跳过属性指示器（默认跳过：指示器是调试标记，不属于网页内容；
     /// reftest 像素对比与生产渲染均保持关闭，仅指示器专项测试显式开启）。
     pub(crate) skip_indicators: bool,
@@ -464,6 +470,12 @@ impl RenderPipeline {
         self.text_selections = selections;
     }
 
+    /// R5384：Selection 插入点回流（css-ui-4 caret 定位；selector 未解析态；仅
+    /// reftest harness 注入——产品路径不回流，与 text_selections 同账）。
+    pub fn set_ce_caret(&mut self, spec: Option<(String, Vec<usize>, usize, bool)>) {
+        self.ce_caret_spec = spec;
+    }
+
     /// 返回当前宿主焦点 selector。
     pub fn focused_selector(&self) -> Option<&str> {
         self.focused_selector.as_deref()
@@ -478,6 +490,70 @@ impl RenderPipeline {
             && let Some(id) = doc.query_selector(doc.root(), selector)
         {
             doc.set_focus_element(Some(id));
+        }
+    }
+
+    /// R5384：Selection 插入点解析注入——spec（CE 宿主 selector + 宿主内 childNodes
+    /// 索引路径 + 偏移 + 端点是否文本）解析为 (宿主, 文本容器, 字符偏移) 写入 painter
+    /// （css-ui-4 caret-shape/caret-color 插入点定位；shim 端点语义见
+    /// `__zw_dump_ce_caret` 注释）。元素端点（child 索引 k = 插入位在 child[k-1] 与
+    /// child[k] 之间）落相邻文本子：前驱文本 → 其末尾（collapseToEnd/selectAllChildren
+    /// 的行尾形态、block-fallback 的元素前插入位），否则后继文本 → 其起点。stale
+    /// selector / 路径越界 / 无相邻文本 → 不注入（不绘 caret）。
+    fn inject_ce_caret_target(&self, doc: &zero_dom::Document, painter: &mut Painter) {
+        let Some((selector, path, offset, is_text)) = self.ce_caret_spec.as_ref() else {
+            return;
+        };
+        let Some(host) = doc.query_selector(doc.root(), selector) else {
+            return;
+        };
+        let mut container = host;
+        let mut path_ok = true;
+        for &idx in path {
+            match doc.get(container).and_then(|n| n.children.get(idx).copied()) {
+                Some(c) => container = c,
+                None => {
+                    path_ok = false;
+                    break;
+                }
+            }
+        }
+        if !path_ok {
+            return;
+        }
+        let target = if *is_text {
+            // 端点 = 文本节点：偏移即字符位。UTF-16 码元 ≈ char（BMP/ASCII 语料等价；
+            // 代理对面 painter 钳制到片段字符数，FIXME astral）。
+            Some((host, container, *offset))
+        } else {
+            // 端点 = 元素：插入位在 child[k-1] 与 child[k] 之间，落相邻文本子。
+            let kids: Vec<zero_dom::NodeId> = doc.get(container).map(|n| n.children.clone()).unwrap_or_default();
+            let text_len = |id: zero_dom::NodeId| -> usize {
+                match doc.get(id).map(|n| &n.kind) {
+                    Some(zero_dom::NodeKind::Text(t)) => t.content.chars().count(),
+                    _ => 0,
+                }
+            };
+            if *offset > 0
+                && let Some(&prev) = kids.get(offset - 1)
+                && matches!(doc.get(prev).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_)))
+            {
+                Some((host, prev, text_len(prev)))
+            } else if let Some(&next) = kids.get(*offset)
+                && matches!(doc.get(next).map(|n| &n.kind), Some(zero_dom::NodeKind::Text(_)))
+            {
+                Some((host, next, 0))
+            } else {
+                // 两侧均非文本（纯替换元素/空宿主）——插入点无文本锚，不注入
+                //（空宿主 caret 由盒级 paint_empty_editable_caret 路径承担）。
+                None
+            }
+        };
+        // 归因替身 = 文本节点的父元素（IFC 对 inline 包裹文本按父元素归因；div 直属
+        // 文本片段归因文本节点自身——两形探针实证，painter 双臂匹配）。
+        if let Some((_, container_id, char_off)) = target {
+            let alt = doc.parent_node(container_id).filter(|&p| p != container_id);
+            painter.set_ce_caret_target(container_id, alt, char_off);
         }
     }
 
@@ -552,6 +628,7 @@ impl RenderPipeline {
             focused_from_keyboard: false,
             scroll_offsets: Vec::new(),
             text_selections: Vec::new(),
+            ce_caret_spec: None,
             cached_layout: None,
             cached_doc: None,
             cached_css_text: None,
@@ -1374,6 +1451,8 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_focused_from_keyboard(self.focused_from_keyboard);
+        // R5384：Selection 插入点注入（css-ui-4 caret 定位，reftest 回流面）。
+        self.inject_ce_caret_target(&doc, &mut painter);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -1738,6 +1817,8 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_focused_from_keyboard(self.focused_from_keyboard);
+        // R5384：Selection 插入点注入（css-ui-4 caret 定位，reftest 回流面）。
+        self.inject_ce_caret_target(&doc, &mut painter);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -1987,6 +2068,8 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_focused_from_keyboard(self.focused_from_keyboard);
+        // R5384：Selection 插入点注入（css-ui-4 caret 定位，reftest 回流面）。
+        self.inject_ce_caret_target(doc, &mut painter);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -2391,6 +2474,8 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_focused_from_keyboard(self.focused_from_keyboard);
+        // R5384：Selection 插入点注入（css-ui-4 caret 定位，reftest 回流面）。
+        self.inject_ce_caret_target(doc, &mut painter);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
@@ -2529,6 +2614,8 @@ impl RenderPipeline {
                 .and_then(|selector| doc.query_selector(doc.root(), selector)),
         );
         painter.set_focused_from_keyboard(self.focused_from_keyboard);
+        // R5384：Selection 插入点注入（css-ui-4 caret 定位，reftest 回流面）。
+        self.inject_ce_caret_target(doc, &mut painter);
         painter.set_font_resolver(self.font_resolver.clone());
         painter.set_scroll_offsets(self.scroll_offsets.clone());
         // R5052：文本选区随渲染参数回流（照 R4353 滚动偏移模式）。
