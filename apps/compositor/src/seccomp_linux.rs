@@ -298,8 +298,7 @@ mod tests {
         const NAME_KEY: &str = "ZERO_COMPOSITOR_SECCOMP_FD_CHANNEL_NAME";
         // 全路径（含模块前缀）：--exact 对短名零匹配会让子进程空跑 exit 0
         //（同上，父进程断言另有 stdout 校验兜底）。
-        let test_name =
-            "sandbox::seccomp_linux::tests::gpu_filter_execution_permits_fd_channel_publish_and_consume";
+        let test_name = "sandbox::seccomp_linux::tests::gpu_filter_execution_permits_fd_channel_publish_and_consume";
         if std::env::var(CHILD).as_deref() == Ok("1") {
             let name = std::env::var(NAME_KEY).unwrap_or_default();
             let code = match install_network_exec_filter_gpu_aware() {
