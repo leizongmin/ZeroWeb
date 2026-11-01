@@ -10573,6 +10573,40 @@
     }
     return cur;
   });
+  // s213（html-semantics）：`Node.prototype.isConnected` 访问器（spec
+  // https://dom.spec.whatwg.org/#dom-node-isconnected —— shadow-including root 是
+  // Document 则 true）。proxy 元素的 get trap 分支（part04 isConnected 臂，含 shadow
+  // host 上行）先于原型链命中不受扰；本访问器服务 **plain 节点家族**——_wrapNodeEntry
+  // 解析 text/comment（R341 原型链接线 Text/Comment.prototype→CharacterData→Node）、
+  // _zwMText/createTextNode 产物（此前 isConnected undefined）。每跳 membership 核对：
+  // _wrapNodeEntry 的 parentNode 是构造时静态字段，string replace all（option.text=
+  // setter 落 textContent——HTML #dom-option-text）/removeChild 剔除的旧子 parentNode
+  // 仍 stale 指向原父，不核对会误报 connected；indexOf miss 即断链（R84 sibling
+  // getter 同款 live 判据——_zwChildBaseCache 身份稳定面）。guard 64 防环。
+  try {
+    Object.defineProperty(globalThis.Node.prototype, 'isConnected', {
+      get: function () {
+        var _icCur = this;
+        for (var _ici = 0; _ici < 64 && _icCur; _ici++) {
+          var _icP = null;
+          try { _icP = _icCur.parentNode; } catch (_icEp) { return false; }
+          if (!_icP) return false;
+          if (_icP === _icCur) return false; // 环守卫
+          // live membership：cur 仍在父的当前 childNodes 视图才继续上行；视图不可得
+          // （异型父）best-effort 继续走链。
+          try {
+            var _icKids = _icP.childNodes;
+            if (_icKids && typeof _icKids.indexOf === 'function'
+                && _icKids.indexOf(_icCur) < 0) return false;
+          } catch (_icEk) {}
+          try { if (_icP.nodeType === 9) return true; } catch (_icEn) { return false; }
+          _icCur = _icP;
+        }
+        return false;
+      },
+      enumerable: false, configurable: true,
+    });
+  } catch (_eIcDef) {}
   // R136（js-dom M4）：native 叠加路径的原型链补挂——`_zwBuiltNodeChain=false`（native
   // HTMLElement 已注册）时 native HTMLElement.prototype 是 FunctionTemplate 产物，原型链
   // 直连 Object.prototype（不经 polyfill Node.prototype——native 不注册 Node ctor），上方
@@ -25980,6 +26014,112 @@ return e;
     return _ocColl;
   }
 
+  // s213（html-semantics）：HTMLDataListElement.options 的 option 后代全收走查。
+  // spec filter 朴素「option elements」（HTML §4.10.8
+  // https://html.spec.whatwg.org/multipage/form-elements.html#dom-datalist-options
+  // ——HTMLCollection rooted at the datalist node, whose filter matches option
+  // elements，**无排除条款**）：select 子树内 option 计入（语料 datalistoptions 的
+  // 5 个 option 全在 datalist 内 select 里，期望 length 5）。与 select.options 的
+  // concept-select-option-list 排除语义（_zwListOfOptions：select/hr/datalist 子树
+  // 排除 + optgroup 嵌套整枝排除）**不同源**，不复用。
+  function _zwDatalistOptionList(sel, handle) {
+    var out = [];
+    var _dlRoot = null;
+    if (handle) {
+      var _dlL = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+      var _dlK = (_handleChildren[handle] || []).slice();
+      _dlRoot = (_dlL && _dlL.length) ? _dlL.concat(_dlK) : (_dlK.length ? _dlK : (_dlL || []));
+    } else if (sel) {
+      _dlRoot = _childNodeList(sel, null) || [];
+    } else {
+      return out;
+    }
+    var _dlWalk = function (kids, depth) {
+      if (depth > 64 || !kids || !kids.length) return;
+      for (var _dli = 0; _dli < kids.length; _dli++) {
+        var _dln = kids[_dli];
+        if (!_dln) continue;
+        var _dlT = null;
+        try { _dlT = _dln.nodeType; } catch (_dlE) { _dlT = null; }
+        if (_dlT !== 1) continue;
+        if (_realTag(_dln.__zwSelector, _dln.__zwHandle) === 'OPTION') { out.push(_dln); continue; }
+        var _dlSub = null;
+        if (_dln.__zwHandle && _handleChildren[_dln.__zwHandle]) {
+          var _dlSl = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(_dln.__zwSelector, _dln.__zwHandle) : null;
+          var _dlSk = _handleChildren[_dln.__zwHandle];
+          _dlSub = (_dlSl && _dlSl.length) ? _dlSl.concat(_dlSk) : _dlSk;
+        } else {
+          try { _dlSub = _dln.childNodes; } catch (_dlE2) { _dlSub = null; }
+        }
+        _dlWalk(_dlSub, depth + 1);
+      }
+    };
+    _dlWalk(_dlRoot, 0);
+    return out;
+  }
+
+  // s213：HTMLDataListElement.options IDL（spec 同上——[SameObject] HTMLCollection）。
+  // Proxy 镜像 R3908 _zwSelectedOptionsCollection 形态（外层 [SameObject] 缓存 + 每读
+  // 重建内层 live 视图）；复用 _zwOptionsCollCache WeakMap（键为元素 proxy，datalist
+  // 与 select 不同 proxy 零碰撞）。只需读面（length/item/namedItem/索引/迭代器）——
+  // add/remove/selectedIndex 是 HTMLOptionsCollection（select options）专属成员。
+  function _zwDatalistOptionsCollection(sel, handle) {
+    var _px = _makeProxy(sel, handle);
+    var _dlCached = _zwOptionsCollCache.get(_px);
+    if (_dlCached) return _dlCached;
+    var _dlList = function () { return _zwDatalistOptionList(sel, handle); };
+    var _dlColl = new Proxy({}, {
+      get: function (_t, prop) {
+        if (typeof Symbol !== 'undefined' && prop === Symbol.iterator) {
+          return function () {
+            var _di = 0;
+            return { next: function () {
+              var _dl = _dlList();
+              return _di < _dl.length ? { value: _dl[_di++], done: false } : { value: undefined, done: true };
+            } };
+          };
+        }
+        if (prop === 'constructor') return globalThis.HTMLCollection;
+        if (typeof prop !== 'string') return undefined;
+        var _inner = _zwMakeCollection(_dlList(), true, null);
+        if (prop === 'length') return _inner.length;
+        if (prop === 'item') return function (i) { return _inner.item(i); };
+        if (prop === 'namedItem') return function (n) { return _inner.namedItem(n); };
+        if (_zwIsCanonicalIndex(prop)) {
+          var _dn = Number(prop);
+          return _dn < _inner.length ? _inner.item(_dn) : undefined;
+        }
+        if (typeof Symbol !== 'undefined' && prop === Symbol.toStringTag) return 'HTMLCollection';
+        // 未匹配字符串属性回落 target 原型链（R3908 同款——hasOwnProperty 等
+        // Object.prototype 方法可达，裸 undefined 会影子化）。
+        return Reflect.get(_t, prop);
+      },
+      has: function (_t, prop) {
+        if (prop === 'length') return true;
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          return Number(prop) < _dlList().length;
+        }
+        return Reflect.has(_t, prop);
+      },
+      getOwnPropertyDescriptor: function (_t, prop) {
+        if (prop === 'length') {
+          return { value: _dlList().length, enumerable: true, configurable: true, writable: true };
+        }
+        if (typeof prop === 'string' && _zwIsCanonicalIndex(prop)) {
+          var _dn2 = Number(prop);
+          var _dl2 = _dlList();
+          if (_dn2 < _dl2.length) {
+            return { value: _dl2[_dn2], enumerable: true, configurable: true, writable: true };
+          }
+          return undefined;
+        }
+        return Reflect.getOwnPropertyDescriptor(_t, prop);
+      }
+    });
+    _zwOptionsCollCache.set(_px, _dlColl);
+    return _dlColl;
+  }
+
   // R3908：selectedOptions——HTMLCollection 形（item/namedItem/length/索引/迭代器/
   // `constructor === HTMLCollection`）+ [SameObject]（WeakMap 缓存外层代理）+ live
   //（每次读重建内层集合——selectedness 变更非结构写、liveSpec 钩子不触发，外层身份
@@ -27656,6 +27796,12 @@ return e;
             try { return __zw_has_attr(sel, 'selected') === '1'; } catch (_e) {}
           }
           return false;
+        }
+        // s213（html-semantics）：HTMLDataListElement.options IDL（HTML §4.10.8
+        // #dom-datalist-options——[SameObject] HTMLCollection rooted at datalist，
+        // filter 朴素匹配 option 后代；非 HTMLOptionsCollection，无 add/remove 面）。
+        if (prop === 'options' && _realTag(sel, handle) === 'DATALIST') {
+          return _zwDatalistOptionsCollection(sel, handle);
         }
         if (_zwIsSelectTag(sel, handle)) {
           // R3908：options/selectedOptions/namedItem 双形态（sel 解析快照 + handle

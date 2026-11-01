@@ -31,7 +31,40 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 212 收口，disabled 语义面三缺口——焦点门 + matches 四伪类臂 + select/optgroup 传播边界走查：input-disabled-fieldset-dynamic + number-disabled + option-disabled-optgroup 6/6 + option-disabled-optgroup-wrapper 3/3 四份靶语料 11 键全 Pass；forms 全域 A/B 净 F→P=7 恰 7 靶键，P→F=1 在册 onblur flake 族，键漂移 0 其他位移 0；shim 3 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 213 收口，option/datalist 元素 API 面——Node.prototype isConnected 访问器 + datalist.options IDL：option-text-setter 1/1 + datalistoptions 2/2 两份靶语料全 Pass；forms 全域 A/B 净 F→P=3（2 靶键 + onblur flake 族 1 键摆回），P→F=0 共享键零漂移，键集差 beforeinput 单文件 Timeout 方差非关联；shim 1 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s212 后 misc 残面复盘（全域 F 逐一定性：177F 挂起族/
+> 缓行族/待决/高风险不入刀/渲染流域/flake 族）——余下可施工孤面 =
+> option/datalist 元素 API 2F。
+> **勘根**：option-text-setter 根因 = `textChild.isConnected` 返
+> undefined——`_wrapNodeEntry` 解析 text/comment 静态对象与 Node.prototype
+> 均无 isConnected（option.text setter 本体 R3907 已对齐 spec）；旧子
+> false 断言受静态 parentNode stale 指向制约。datalistoptions 根因 =
+> `datalist.options` IDL 完全缺位。spec 定谳：datalist.options filter
+> **朴素匹配 option elements（无排除条款）**（#dom-datalist-options），
+> select 子树内 option 计入——与 select.options 排除语义不同源不复用；
+> isConnected = shadow-including root 是 Document（dom #dom-node-
+> isconnected）。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part03 Node.prototype
+> isConnected 访问器（parentNode 链上行 + **每跳 membership 核对**——
+> indexOf miss 即断链，R84 sibling getter 同款 live 判据兜住静态
+> parentNode stale；nodeType 9 → true；guard 64；元素 proxy trap 臂先
+> 命中不受扰）+ `_zwDatalistOptionList` 朴素后代走查 +
+> `_zwDatalistOptionsCollection`（Proxy 镜像 R3908 形态，[SameObject]
+> 复用 `_zwOptionsCollCache`）+ get trap DATALIST 分发臂；part09.rs
+> R5380 两腿（八断言 + 六断言镜像）。
+> **验证**：拼接 shim node --check SYNTAX_OK；R5380 单测 1 passed；两
+> 靶语料全 Pass；forms 全域 A/B（对 s212 final，LC_ALL=C join，共享键
+> 4700 对零漂移）净 F→P=3（2 靶 + onblur 族摆回闭环）+ P→F=0；键集差
+> beforeinput.tentative.html 16 对 = B 侧文件级 Timeout 方差（s202 起
+> 同态，跑全 16F 既有面非关联）；zero-engine 3673P+0F；guarded-clippy
+> 0 警告；cargo fmt -p zero-engine 过。
+> **下一步候选**：misc 残面继续（customizable select 177F 挂起待拍板
+> GB-20261031 / form-nameditem override builtins 待决承袭 / form owner
+> table 缓行族用户决策承袭）→ host 侧 `is_effectively_disabled` 统一
+> （s212 挂账）。
+> **账本**：[evidence/2026-11-01-m2s213-option-text-datalist-options.md](html-semantics-compat/evidence/2026-11-01-m2s213-option-text-datalist-options.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 212 收口，disabled 语义面三缺口——焦点门 + matches 四伪类臂 + select/optgroup 传播边界走查：input-disabled-fieldset-dynamic + number-disabled + option-disabled-optgroup 6/6 + option-disabled-optgroup-wrapper 3/3 四份靶语料 11 键全 Pass；forms 全域 A/B 净 F→P=7 恰 7 靶键，P→F=1 在册 onblur flake 族，键漂移 0 其他位移 0；shim 3 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s211 后 misc 残面余量——disabled 语义面四份语料 11 键。
 > customizable select 177F 挂起待拍板（GB-20261031 承袭）。
 > **勘根**：缺口一焦点门——mousedown 默认动作聚焦（part06

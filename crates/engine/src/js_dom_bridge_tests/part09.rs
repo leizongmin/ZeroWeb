@@ -7481,3 +7481,167 @@ fn test_r5379_disabled_focus_noop_fieldset_inherit_self() {
         "disabled select 内 div 包裹 option → 传播穿 wrapper（select 边界查属性）"
     );
 }
+
+#[test]
+fn test_r5380_option_text_setter_text_isconnected_datalist_options() {
+    // R5380（s213）：option/datalist 元素 API 面两语料同根钉面。
+    // 腿 A = option-text-setter（HTML §4.10.9 dom-option-text——option.text
+    // setter 走 string replace all（R3907 委托 textContent），旧文本子 node
+    // identity 更替、isConnected 翻 false、`.text = ''` 后无子；isConnected
+    // 断言由 s213 Node.prototype 访问器补——_wrapNodeEntry plain text 子此前
+    // undefined，访问器每跳 membership 核对兜住构造时静态 parentNode 的
+    // stale 指向）+ 腿 B = datalistoptions（HTML §4.10.8 dom-datalist-options
+    // ——[SameObject] HTMLCollection rooted at datalist，filter 朴素匹配
+    // option 后代：select 子树内 option 计入，与 select.options 的
+    // concept-select-option-list 排除语义不同源）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form><select><option value=\"foo\">bar</option></select></form>\
+         <datalist id=\"dl\"><label><select id=\"num\">\
+         <option label=\"zero\" value=\"0\"></option>\
+         <option label=\"one\" value=\"1\"></option>\
+         <option label=\"two\">2</option>\
+         <option label=\"three\" disabled>3</option>\
+         <option></option>\
+         </select></label></datalist></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 腿 A（option-text-setter 八断言面）：语料 option 在文档内（form>select）。
+    sandbox
+        .execute(
+            "var _o = document.querySelector('option');\
+             var _tc = _o.firstChild;\
+             window.__r5380a = [\
+               (_tc && _tc.nodeValue === 'bar') ? '1' : '0',\
+               _tc.isConnected === true ? '1' : '0'\
+             ];"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__r5380a[0]").unwrap().value,
+        "1",
+        "option 首文本子 nodeValue === 'bar'（解析面 Text 子可见）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380a[1]").unwrap().value,
+        "1",
+        "文档内 option 的 Text 子 isConnected === true（Node.prototype 访问器：链上行到 Document）"
+    );
+
+    sandbox
+        .execute(
+            "_o.text = 'baz';\
+             window.__r5380b = [\
+               _tc.nodeValue === 'bar' ? '1' : '0',\
+               _tc.isConnected === false ? '1' : '0',\
+               (_tc !== _o.firstChild) ? '1' : '0',\
+               (_o.firstChild && _o.firstChild.nodeValue === 'baz') ? '1' : '0',\
+               _o.text === 'baz' ? '1' : '0'\
+             ];"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__r5380b[0]").unwrap().value,
+        "1",
+        "option.text='baz' 后旧文本子 nodeValue 不变（string replace all 不复用旧对象）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380b[1]").unwrap().value,
+        "1",
+        "被替换旧文本子 isConnected === false（membership 核对：不在父当前 childNodes 视图）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380b[2]").unwrap().value,
+        "1",
+        "旧子 !== 新 firstChild（node identity 更替）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380b[3]").unwrap().value,
+        "1",
+        "新 firstChild.nodeValue === 'baz'"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380b[4]").unwrap().value,
+        "1",
+        "option.text getter 反映新值（R3907 委托链）"
+    );
+
+    sandbox
+        .execute(
+            "_o.text = '';\
+             window.__r5380c = _o.firstChild === null ? '1' : '0';"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__r5380c").unwrap().value,
+        "1",
+        "option.text='' 后 firstChild === null（空串 replace all 无子）"
+    );
+
+    // 腿 B（datalistoptions 断言面）：datalist.options——5 option 全在
+    // datalist 内 select 里（朴素后代 filter），label/value getter、
+    // item/索引 identity、[SameObject] 缓存、willValidate barred（语料
+    // 测 2 已 Pass，钉面保持）。
+    sandbox
+        .execute(
+            "var _dl = document.getElementById('dl');\
+             var _labels = [], _values = [], _id = true;\
+             window.__r5380d = [];\
+             window.__r5380d.push(_dl.options && _dl.options.length === 5 ? '1' : '0');\
+             for (var i = 0; i < _dl.options.length; i++) {\
+               if (_dl.options[i] !== _dl.options.item(i)) _id = false;\
+               _labels.push(_dl.options[i].label);\
+               _values.push(_dl.options[i].value);\
+             }\
+             window.__r5380d.push(_id ? '1' : '0');\
+             window.__r5380d.push(_labels.join('|'));\
+             window.__r5380d.push(_values.join('|'));\
+             window.__r5380d.push(_dl.options === _dl.options ? '1' : '0');\
+             window.__r5380d.push(document.getElementById('num').willValidate === false ? '1' : '0');"
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("window.__r5380d[0]").unwrap().value,
+        "1",
+        "datalist.options.length === 5（select 子树内 option 计入——朴素后代 filter）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380d[1]").unwrap().value,
+        "1",
+        "options[i] === options.item(i) 全等（HTMLCollection 索引/item 同源）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380d[2]").unwrap().value,
+        "zero|one|two|three|",
+        "label 数组（label 属性存在即采纳，缺省回落 text——R3907 getter）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380d[3]").unwrap().value,
+        "0|1|2|3|",
+        "value 数组（value 属性优先，缺省回落 text）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380d[4]").unwrap().value,
+        "1",
+        "datalist.options === datalist.options（[SameObject] WeakMap 缓存）"
+    );
+    assert_eq!(
+        sandbox.execute("window.__r5380d[5]").unwrap().value,
+        "1",
+        "datalist 祖先内 select willValidate false（constraint validation barred）"
+    );
+}
