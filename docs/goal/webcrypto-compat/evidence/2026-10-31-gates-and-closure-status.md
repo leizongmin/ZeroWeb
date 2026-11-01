@@ -540,3 +540,35 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；
   或 D2② 授权 standing exclusion 口径收口。临时审计件
   `/tmp/webcrypto-anchor-run{,2,3}-20261101-netapi.json`（不入库）。
+
+### 2026-11-01 09:20 追记：锚复跑现 tip（`e30ab8494`，代码 tip `a4f30d2a6`）逐字节一致 ×3——s199 + change-on-blur 变更吸收（上轮 rebase 窗口漏核补账）
+
+- 复盘发现：上轮 push 前 rebase 吸入**两个语料执行路径代码提交**
+  （07:05 `5bc4acc6d` zero-web 流 change-on-blur 双账去重闩——engine
+  桥 + shim；09:04 `a4f30d2a6` html-semantics 流 s199 Space 键激活
+  keydown preventDefault 抑制门——runner `testharness.rs` + shim
+  `part04/part06` + `script_gen.rs`），上轮锚跑于 `f05b0efc1` 且
+  push 前未复核 rebase 新基的代码前移，锚账与所推树存在窗口错位。
+  本轮按纪律补账：对现 tip 复跑锚——release runner 重建 23.7s
+  （runner/shim 重编译入包，`make zero-wpt-runner-release`）+
+  test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`，`--json` 重定向）三连跑，guard log 零字节
+  （无击杀），runner EXIT=1 为预期挂账常规退出。
+- **RUN1/RUN2/RUN3 对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B
+  ×3）**：123 文件 / 25,788P + 7,320F + 1T；33,109 分母零回归在现
+  tip 成立；W4 deadline 臂竞态连续第二轮零采样（累计 2/15 轮）。
+  两提交自账零回归（s199 forms 全树 keyed diff F→P 恰 1 靶键零真
+  P2F；change-on-blur 同一失焦只派一次 change）与本流 33,109 分母
+  面零交集——两侧零回归互证。
+- 锚窗口推进为 **f05b0efc1 → e30ab8494**，实锚链 ……→0d4966f9d→
+  f05b0efc1→e30ab8494。流程补强：push 前 rebase 后必须重查
+  `git diff <末锚tip>..HEAD -- crates/ tests/` 是否有执行路径前移，
+  有则锚复跑先于 push（本轮起执行）。
+- **轮询面**：渲染流 ZRG 巡检落档 ua_display_li bisect 定谳补充
+  （[evidence](../rendering-compat/evidence/ua-display-li-bisect-attribution-2026-11-01.md)：
+  first bad = `ee2dc953b` s161 gCS handle 通道，与本流 D2 归因一致；
+  归属与收口路径不变——渲染流 D4 待裁决，D2 征询在案）；D4 冻结门
+  `ua_display_tests.rs` 末触仍 `c41b0c750`；ua_display_li 同键在册
+  未清；p126 未回流 main；git 无 D1/D2 决策新账面（GB-20261031 在
+  案，核验只认 git 账面 + 用户主动知会）。收口序列不变。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-s199blur.json`（不入库）。
