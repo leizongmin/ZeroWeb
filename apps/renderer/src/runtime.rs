@@ -5172,7 +5172,9 @@ fn run_renderer_runtime(renderer_id: u64) -> Result<(), String> {
 
 /// Runs the renderer role with the desktop stdio bootstrap.
 pub fn run_desktop_role(renderer_id: u64) -> Result<(), String> {
-    sandbox::apply_early_if_enabled();
+    // ④ renderer fail 语义（fail-closed）：沙箱安装失败即拒绝运行，浏览器侧呈现
+    // 为 renderer 启动失败；操作员出口 ZW_RENDERER_SANDBOX/_SECCOMP/_LANDLOCK。
+    sandbox::apply_early_if_enabled()?;
 
     #[cfg(target_os = "macos")]
     let result = if crate::macos_app::is_bundled_app_executable() {
