@@ -505,3 +505,38 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记 →
   推送 → DONE；或 D2② 授权 standing exclusion 口径收口。临时审计件
   `/tmp/webcrypto-anchor-run{,2,3}-20261101-s198.json`（不入库）。
+
+### 2026-11-01 09:09 追记：锚复跑现 tip（`f05b0efc1`）逐字节一致 ×3——net-api 流 S19 Headers 大小写保真变更吸收
+
+- push 前例行 `git pull --rebase` 吸入 net-api 流 `f05b0efc1`（二期归档
+  重入 S19：Headers 实例/XHR 异步源头名大小写线上保真补全，shim
+  `part01.js` +31 行 / `part03.js` +6 行——`_hCase` 旁路四处补齐
+  fetch init/Request-like input/Request ctor/XHR 异步通道，
+  [其账](../../archive/net-api-compat-v2/evidence/2026-11-01-m2-s19-header-case-fidelity-reentry.md)）：
+  shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
+  锚——release runner 重建 25.8s（shim 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑，guard log 零字节（无击杀），runner EXIT=1 为预期
+  挂账常规退出。
+- **RUN1/RUN2/RUN3 对 M1 终态锚逐字节一致（cmp 全等，7,208,436 B
+  ×3）**——较 07:50（s197）/08:35（R5373）/08:50（s198）三轮
+  （状态账逐位一致 + W4 deadline 臂竞态各采 1/3）更强：本轮三跑整
+  文件字节全等、W4 竞态零采样（0/3）；123 文件 / 25,788P + 7,320F +
+  1T；33,109 分母零回归在现 tip 成立。该提交自账 A/B 净账 0 增益/
+  0 回归（net-api 面 12,078 行逐 subtest）与本流 33,109 分母面零
+  交集——两侧零回归互证。
+- 锚窗口推进为 **0d4966f9d → f05b0efc1**，实锚链 7065ea39f→
+  1b6b9b291→65de5f28e→b0a6f9174→3f1399195→ba4c74fcb→edaed928a→
+  0d4966f9d→f05b0efc1。
+- **轮询面**：该提交仅触及 engine shim `part01/part03` + engine
+  测试（`js_dom_bridge_tests` part93）+ net-api 归档 docs，未触渲染
+  域——D4 冻结门 `ua_display_tests.rs` 末触仍 `c41b0c750`（渲染流
+  rally 在跑）；ua_display_li 同键在册未清（该提交自账 engine lib
+  3,645P/1F，同键渲染域在册红，stash 同败非新账）；p126 未回流
+  main；git 无 D1/D2 决策新账面，维持待拍板（GB-20261031 征询在案，
+  核验只认 git 账面 + 用户主动知会）。DC-1~4 四件 evidence 在位。
+  收口序列不变：ua_display_li 清零 → make test 全绿复证 → 锚按届时
+  最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE；
+  或 D2② 授权 standing exclusion 口径收口。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-netapi.json`（不入库）。
