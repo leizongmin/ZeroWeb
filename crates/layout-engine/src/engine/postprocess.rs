@@ -2077,28 +2077,44 @@ fn shift_siblings_after_ifc_grow_inner(
         // 150/90/30/0 同证）。空块仍不可排除（排除会让 mt 也丢失 → 父高 0）。
         // contain-content-002 的 lime=30/blue=90/orange=150 即此语义。非 BFC 父维持 R1771 排除。
         // 负 margin（BFC 内合法内含）由下方 has_negative_margin 守卫与既有 R1746 逃生兜底。
-        let r3754_empty_in_bfc =
-            parent_is_bfc && crate::margin_collapse::is_empty_block(child) && child.margin_bottom.is_finite();
+        let child_is_empty = crate::margin_collapse::is_empty_block(child);
+        let r3754_empty_in_bfc = parent_is_bfc && child_is_empty && child.margin_bottom.is_finite();
         let r1771_exclude_empty = std::env::var("ZW_CLEARANCE_NO_FLOAT_CONTAINMENT").as_deref() != Ok("0")
-            && crate::margin_collapse::is_empty_block(child)
+            && child_is_empty
             && !r3754_empty_in_bfc;
         if parent_backfill_active && child.is_block_level && !r1771_exclude_empty {
             if child.margin_top < 0.0 || child.margin_bottom < 0.0 {
                 has_negative_margin = true;
             }
             // R4068：BFC 父内空块贡献 child.y（含 mt），mb 与父底边折叠不计高。
-            let bottom = child.y + child.height;
+            // R5373（CSS2 §10.6.3）：回填 extent = 末 in-flow 子「可能折叠的 margin」底缘。
+            // 父 bottom 框边（border/padding）阻断父子 bottom 折叠（§8.3.1 adjoining 条件）
+            // 时非空子的 mb 落在父 content 高内，extent 取 margin-box 底；无阻断时子 mb 与
+            // 父 bottom margin 折叠泄到父外，维持 border-box 底（margin-collapse-through 族
+            // 既有语义）。taffy 对含行内元素子的块（p > strong 跨行）欠计块高、本回填是定高
+            // 位，旧式漏 child.mb（background-root-017：body/pb16+bb3 > p/mb16 → 短 16）。
+            // 空子维持 border-box 底：其 mt/mb 自折叠为一组、child.y 已含（R4068，102/103
+            // abspos 空子族实证）；BFC 屏障（无框边）不在此展开——R4068 oracle 域 + 泄漏
+            // trailing 链（collapse-through-percentage-padding）为现行矿区，A/B 5 案回退。
+            let bottom_collapse_blocked =
+                !child_is_empty && (box_node.padding_bottom > 0.0 || box_node.border_bottom > 0.0);
+            let bottom = if bottom_collapse_blocked {
+                child.y + child.height + child.margin_bottom
+            } else {
+                child.y + child.height
+            };
             if bottom > max_in_flow_bottom {
                 max_in_flow_bottom = bottom;
             }
         }
     }
-    // R1743：父高度回填（margin-collapse-safe）。max_in_flow_bottom 是 in-flow 子盒 border-box
-    // 最大底边 = CSS §10.6.3 auto-height 块的内容高（margin 折叠在 border-box 外，不影响此值）。
-    // 仅增大守卫（不收缩）。max_bottom ≥ 旧 content + cumulative_shift（末子 y=原+shift，
-    // height≥taffy 值），故覆盖旧 cumulative_shift 增长。gate=Block/Flow/FlowRoot/ListItem
-    //（shift_active），排除 flex/grid/table/multicol（welcome +12.57pp 回归源 = R1163 broad gate
-    // 触及非 Block 容器；本 gate 仅 Block 谱系）。
+    // R1743：父高度回填（margin-collapse-safe）。max_in_flow_bottom 是 in-flow 子盒「可能
+    // 折叠的 margin」最大底边 = CSS §10.6.3 auto-height 块的内容高：父子 bottom 折叠未被
+    // 框边/BFC 阻断时为 border-box 底（margin 折叠在 border-box 外），被阻断时含子 mb
+    //（R5373）。仅增大守卫（不收缩）。max_bottom ≥ 旧 content + cumulative_shift（末子
+    // y=原+shift，height≥taffy 值），故覆盖旧 cumulative_shift 增长。gate=Block/Flow/
+    // FlowRoot/ListItem（shift_active），排除 flex/grid/table/multicol（welcome +12.57pp
+    // 回归源 = R1163 broad gate 触及非 Block 容器；本 gate 仅 Block 谱系）。
     //
     // R1746 负 margin 逃生（refine）：负 margin 子时 R1743 原 guard 全跳过父 → 单子负 margin +
     // br 长高致父 h=0（div/p h=0，p 内 5 行 br 正确）。但负 margin-bottom 折叠到父**外**（不影
