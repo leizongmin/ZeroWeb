@@ -2356,7 +2356,15 @@
         return _dlOut;
       }
       case 'number':
-        return /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v) ? v : '';
+        // M2-S203（html-semantics M2）：number 状态消毒 = spec「valid
+        // floating-point number」文法 + 有限值检查——前导只容 '-'（'+1'→''）；
+        // '.' 后须至少一位数字（'1.'→''）；解析值须有限（'2e308'→∞→''）。
+        // '.1'/'-0'/'1e2' 等合法面 verbatim 保留。range 状态的同形宽松正则按
+        // s189 钉态原样（非法 → default，语料无更严文法的驱动面）。
+        // https://html.spec.whatwg.org/multipage/infrastructure.html#valid-floating-point-number
+        // https://html.spec.whatwg.org/multipage/input.html#number-state-(type=number)
+        return /^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(v)
+          && isFinite(Number(v)) ? v : '';
       case 'range': {
         // s189（html-semantics M2）：range 状态清洗算法补全（HTML
         // §4.10.5.1.16 value sanitization algorithm）——既有夹取/default 面上

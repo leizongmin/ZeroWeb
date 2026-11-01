@@ -31,7 +31,40 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 202 收口，legend/option form IDL 反射——HTMLLegendElement/legend-form/option-form 6F 收口（s181 分型「legend.form 5F 单根（小）」后备序首次落刀），forms 全树 keyed diff 净 F→P=8（6 靶键 + gated bonus 1 + onblur 域顺向 1）P→F=0 键漂移 0；interactive bit-exact；shim 2 文件三 trap 面（get/has/gOPD），rust/语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 203 收口，number 值消毒文法收口——number.html 3F + number-constraint-validation setter 子测 1F 翻绿（s181 分型「值清洗算法族」number 残面 A 簇单一根），forms 全树 keyed diff 净 F→P=4 双样本稳定、P→F 仅 onblur flake 域摆动（基线侧同败实证：stash 基线样本与交替靶测均有 F 记录）；shim 1 文件净 +9/−1，rust/语料零改动）**
+> **入场定刀位**：s202 收口后 number 消毒残面簇 8F 定两簇——A 簇 setter
+> 消毒文法（number.html 3F + 约束测试 setter 1F，单一根）先行；B 簇编辑
+> 路径语义（约束测试 1/3 + defaultValue-clobbering + scientific-key-events，
+> 需 editor-buffer 模型）挂账。customizable select 177F 挂起待拍板
+> （GB-20261031 征询在途）。
+> **勘根**：`_zwSanitizeInputValue` number case（part01.js:2359）正则三处
+> 宽于 spec「valid floating-point number」文法（§2.4.4.2 + number state
+> 消毒 §4.10.5.1.10）：`[+-]?` 容前导 `+`（spec 只容 `-`）；`\.\d*` 容
+> `.` 后零位（`1.`）；无有限值检查（`2e308`→∞）。宽松同形共 4 处甄别：
+> range（s189 钉态不动）/ part04:243 + part03:2814（属性前缀解析异算法，
+> 现势正确）。
+> **施工**（shim 1 文件净 +9/−1）：number case 换
+> `/^-?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/` + `isFinite(Number(v))`
+> ——三缺陷同刀收口，`.1`/`-0`/`1e2`/`9007199254740993` 合法面 verbatim
+> 保留（语料钉态）；range 同形正则按 s189 钉态原样。
+> **验证**：拼接 shim node --check SYNTAX_OK + 消毒函数 36 案单测全对；
+> 靶面 stash A/B 125 键 F→P=4 P→F=0 键漂移 0；forms 全树 A/B（WIP×2 +
+> 基线×2）F→P=4 双样本稳定恰 4 靶键，P→F 仅 onblur flake 域不稳定子集
+> （b2 stash 基线 checkable spacebar 键 F、交替靶测基线样本 Buttons 键 F
+> 而 WIP 样本 P——双向摆动跨两侧二进制非本刀回归；同载荷配对 w2 vs b2 净
+> F→P=4 P→F=1）；interactive 域 number 邻接面 the-summary-element 20 键
+> bit-exact；zero-engine 全量 3664P+1F（ua_display_li 渲染流域在册键）；
+> fmt + guarded-clippy 过。
+> **残留/挂账新记**：B 簇编辑路径 number 语义（键入原文保留 + 前缀解析 +
+> badInput validity 接线）立刀位已勘定；range 同形宽松正则无语料驱动不动；
+> onblur 域 +5 摆动样本（双侧二进制均有 F）。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → B 簇 editor-buffer 单独立项或 s181 分型 misc 残面（textarea wrapping/
+> placeholder-lineheight/output mutations/setCustomValidity 换行归一；
+> pattern IDL 2F；form action 反射 base-url 2F；form owner table 4F）。
+> **账本**：[evidence/2026-11-01-m2s203-number-value-sanitization.md](html-semantics-compat/evidence/2026-11-01-m2s203-number-value-sanitization.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 202 收口，legend/option form IDL 反射——HTMLLegendElement/legend-form/option-form 6F 收口（s181 分型「legend.form 5F 单根（小）」后备序首次落刀），forms 全树 keyed diff 净 F→P=8（6 靶键 + gated bonus 1 + onblur 域顺向 1）P→F=0 键漂移 0；interactive bit-exact；shim 2 文件三 trap 面（get/has/gOPD），rust/语料零改动）**
 > **入场定刀位**：s201 forms-wip2 现势 F 集重聚类（250F，除
 > customizable-select 特性门 177F 与 onblur flake 域后 63F）——s181 分型表
 > 「legend.form 5F 单根（小）」后备序从未刀项（s182 起按色清/编码/集合层/
