@@ -18332,10 +18332,27 @@
     var node = this;
     for (var g = 0; g < arguments.length; g++) _zwMElR117MVal(node, arguments[g]);
   }
+  // R307 同族（attribute 变体）：attr 写入改变元素 outerHTML → 查询索引/包装缓存
+  //（`_zwNodeIdx`/`_zwQWrapMap`，键含 outer——R355 统一键构造）既有键全部失真；
+  // 不失效则后续查询对树内元素键恒 miss、`_zwMWrapCached` 回落 detached wrapper
+  //（editing conformance setupDiv：data-start 剥离后 [data-end] 查询命中孤儿
+  // wrapper，Range setEnd IndexSizeError——五语料恒定 setup 异常族实证）。
+  // 沿父链向上失效（同 append/remove 的 R307 遍历，depth 64 防环）。
+  function _zwMElQIdxInvalidate(node) {
+    try {
+      var anc = node, guard = 0;
+      while (anc && guard++ < 64) {
+        if (anc._zwNodeIdx) anc._zwNodeIdx = null;
+        if (anc._zwQWrapMap) anc._zwQWrapMap.clear();
+        anc = anc.parentNode;
+      }
+    } catch (_eQinv) {}
+  }
   function _zwMElSetAttribute(n, v) {
     var node = this;
     var attrs = this[_zwAttrsSlotKey];
     n = String(n); var sv = v == null ? '' : String(v);
+    _zwMElQIdxInvalidate(node);
     var _r4100Had = null;
     if (n.toLowerCase() === 'open' || n.toLowerCase() === 'name') {
       try { _r4100Had = node.hasAttribute(n); } catch (_e44100a) { _r4100Had = null; }
@@ -18364,6 +18381,7 @@
     var node = this;
     var attrs = this[_zwAttrsSlotKey];
     n = String(n);
+    _zwMElQIdxInvalidate(node);
     var _r4100Had = null;
     if (n.toLowerCase() === 'open') {
       try { _r4100Had = node.hasAttribute(n); } catch (_e44100b) { _r4100Had = null; }
@@ -20064,6 +20082,7 @@
   function _zwIdSet(v) {
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
+    _zwMElQIdxInvalidate(this);
     for (var i = 0; i < attrs.length; i++) {
       if (attrs[i].name === 'id') { attrs[i].value = sv; return; }
     }
@@ -20077,6 +20096,7 @@
   function _zwClassNameSet(v) {
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
+    _zwMElQIdxInvalidate(this);
     for (var i = 0; i < attrs.length; i++) {
       if (attrs[i].name === 'class') { attrs[i].value = sv; return; }
     }
@@ -20095,6 +20115,7 @@
   function _zwSlotSet(v) {
     var sv = v == null ? '' : String(v);
     var attrs = this[_zwAttrsSlotKey];
+    _zwMElQIdxInvalidate(this);
     for (var i = 0; i < attrs.length; i++) {
       if (attrs[i].name === 'slot') { attrs[i].value = sv; return; }
     }
