@@ -611,6 +611,13 @@
         if (fmt !== 'RAW' && fmt !== 'JWK') {
           reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'raw'/'jwk' supported for symmetric keys)", 'NotSupportedError')); return;
         }
+        // spec exportKey 步 6（算法注册 export 面 → NotSupportedError）先于步 7
+        //（extractable → InvalidAccessError）——HKDF/PBKDF2 未注册 export，双条件
+        // 同时为真时顺序可观察（export-key-error-order 断言面）。
+        var expAlg = key && key.algorithm && key.algorithm.name;
+        if (!_zw_exportRegistered(expAlg)) {
+          reject(new _zw_subtleDE('Algorithm does not support exportKey: ' + expAlg, 'NotSupportedError')); return;
+        }
         if (!key || !key.extractable) {
           reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
         }
@@ -665,6 +672,12 @@
         }
         if (!wrappingKey.usages || wrappingKey.usages.indexOf('wrapKey') < 0) {
           reject(new _zw_subtleDE('Key usages do not include "wrapKey"', 'InvalidAccessError')); return;
+        }
+        // spec wrapKey 步 11（key 算法注册 export 面 → NotSupportedError）先于步 12
+        //（extractable → InvalidAccessError）——与 exportKey 步 6/7 同序
+        //（export-key-error-order 断言面）。
+        if (!_zw_exportRegistered(key && key.algorithm && key.algorithm.name)) {
+          reject(new _zw_subtleDE('Key algorithm does not support exportKey', 'NotSupportedError')); return;
         }
         if (!key || !key.extractable) {
           reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;

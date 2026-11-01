@@ -2281,7 +2281,21 @@
   // **detached buffer → 空字节**（spec：digest 取 buffer source 字节副本，已转移 buffer 为零字节——
   // WPT digest.js「transferred buffer during call」组；V8 对 detached buffer Construct 抛 TypeError，
   // 须捕获转空，不得让操作 reject）。
+  // SharedArrayBuffer 判定（spec BufferSource 无 [AllowShared]——SAB 本体或其视图一律
+  // TypeError；WPT sharedarraybuffer.https.any.js 八组断言面）。经
+  // WebAssembly.Memory({shared:true}).buffer 构造，构造器全局可能缺席 → instanceof
+  // 探测不可依赖，用 Object.prototype.toString 内部槽标签（跨 Realm 稳定）：
+  // SAB 本体 '[object SharedArrayBuffer]'；视图（TypedArray/DataView）查其 .buffer。
+  function _zw_isSharedBuffer(v) {
+    if (v == null || typeof v !== 'object') return false;
+    if (Object.prototype.toString.call(v) === '[object SharedArrayBuffer]') return true;
+    return Object.prototype.toString.call(v.buffer) === '[object SharedArrayBuffer]';
+  }
+
   function _zw_bufToBytes(data) {
+    if (_zw_isSharedBuffer(data)) {
+      throw new TypeError('BufferSource must not be a SharedArrayBuffer or a view onto one');
+    }
     if (typeof data === 'string') data = new TextEncoder().encode(data);
     if (data == null) return [];
     var view;
@@ -3442,6 +3456,18 @@
       return isPublic ? ['verify'] : ['sign'];
     }
     return isPublic ? [] : ['deriveKey', 'deriveBits'];
+  }
+
+  // exportKey/wrapKey 注册面：算法注册 export op 才进入 extractable 检查（spec exportKey
+  // 步 6 NotSupportedError 先于步 7 InvalidAccessError，wrapKey 步 11/12 同序——
+  // HKDF/PBKDF2 双条件同时为真使顺序可观察，WPT export-key-error-order 断言面）。
+  // 注册集 = 三非对称族（helper 分派导出）+ 对称 AES-*/HMAC（part02 exportKey 对称分支）；
+  // 派生域 HKDF/PBKDF2 与摘要域未注册。
+  function _zw_exportRegistered(name) {
+    if (_zw_rsaIsFamily(name) || _zw_ecIsFamily(name) || _zw_okpIsFamily(name)) return true;
+    var n = _zw_upperAscii(String(name == null ? '' : name));
+    return n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-GCM' ||
+      n === 'AES-KW' || n === 'HMAC';
   }
 
   // 类型 usages 子集判定（spki/pkcs8/raw 分支与 jwk d 分支共用）。

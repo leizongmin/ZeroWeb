@@ -1,13 +1,22 @@
 # Web Crypto 兼容三期运行时控制面板
 
 **状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
-选型征询落档）；M2-1 门禁面切片完成（2026-11-01：supports + getPublicKey，
-零回归 +543P）；M2 余下无依赖面推进中
-**最后更新**: 2026-11-01（M2-1 完成）
+选型征询落档）；M2 无依赖面两切片完成（M2-1 门禁面 +543P、M2-2 散新案
+归因 +12P，均零回归）；余 worker 腿接线与 1T 销案，D1 拍板后进域切片
+**最后更新**: 2026-11-01（M2-2 完成）
 
 ---
 
 ## 当前状态
+
+**M2-2 散新案归因收敛完成（2026-11-01，[evidence](evidence/2026-11-01-m2s2-scattered-cases.md)）**：
+export-key-error-order（2/6→6/6，错误检查顺序——`_zw_exportRegistered`
+注册检查前置于 extractable，spec exportKey 步 6/7、wrapKey 步 11/12）+
+sharedarraybuffer（0/8→8/8，BufferSource 未拒 SAB——`_zw_isSharedBuffer`
+toString 标签探测 + `_zw_bufToBytes` 顶部 throw TypeError，单点守卫覆盖
+30 处调用面）。对 M2-1 锚**零回归**（12 变化全 F→P 精确落两靶案，P→非P
+0 例）；新分母 P 26,386 + F 14,536 + T 3；**散新案 5 案全绿**，M2 无依赖
+面第一项收口。对照基准更新为 [m2s2 锚](evidence/2026-11-01-m2s2-full.json.gz)。
 
 **M2-1 门禁面切片完成（2026-11-01，[evidence](evidence/2026-11-01-m2s1-gate-slice.md)）**：
 `SubtleCrypto.supports(...)` 静态门禁（part02a.js 新增，自包含 IIFE）+
@@ -20,9 +29,6 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
 （512/1024）、getPublicKey OKP `_raw` 契约（raw 公钥 32B 非 SPKI DER）+
 错误检查顺序（算法域先于 key type）。首轮全量 runner segfault 一次
 （WSL2 环境观察，同命令复跑干净 + 结果逐位一致，按 flake 判据记账）。
-
-**M1 完成（2026-11-01，[evidence](evidence/2026-11-01-m1-corpus-and-baseline.md) /
-[deps evidence](evidence/2026-11-01-m1-deps-evidence.md)）**：
 
 **M1 完成（2026-11-01，[evidence](evidence/2026-11-01-m1-corpus-and-baseline.md) /
 [deps evidence](evidence/2026-11-01-m1-deps-evidence.md)）**：
@@ -46,8 +52,7 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
    0.1.2）；X448/Ed448 仅 pre 线活跃（甄别从严交拍板）。新 crate 建议合计
    12–13 个。
 
-**下一步（M2 余下）**：拍板前推进无新依赖面——① 散新案
-export-key-error-order / sharedarraybuffer 归因收敛；② worker 腿接线与
+**下一步（M2 余下）**：拍板前推进无新依赖面——① worker 腿接线与
 1T 销案穿插（无依赖，触 runner/workers 通道基建——与 25 号流共享
 testharness.rs，落账前对账）。拍板后按 deps evidence 建议定序（依赖就绪度：
 aes-ocb/chacha20poly1305/argon2 等 AEADs+password-hashes 单 crate 域先行，
@@ -93,3 +98,9 @@ XOF 五连引入次之，ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍�
   `js_dom_shim/part02a.js`（新增）；25 号流共享面（part01.js/
   script_gen.rs/testharness.rs）零触碰，main 最新共享面触点仍为 s209
   `785e8a166`（先于本流 M1 基点 `de7c4aea8`），无对账冲突。
+- 2026-11-01 M2-2 轮：触面 `js_dom_shim/part01b.js`（+27 行：SAB 判定/
+  export 注册面 helper）、`part02.js`（+18 行：错误序前置检查）；共享面
+  （part01.js/script_gen.rs/testharness.rs）零触碰，part01b 为 crypto 域
+  文件（非共享清单）。M2-1 推送时 rebase 带入 s218（part04/part06，无
+  交集）与 7c516159b（webcrypto master.md D1 行，合并共存已核对）；
+  本轮开工 `git pull --rebase` 已是最新。
