@@ -4444,6 +4444,20 @@
               if (cmd === 'inserthtml' && rng2 && host2) {
                 try { _zwExecCmdApplyInsertHtml(host2, rng2, arguments[2]); } catch (_eIh) {}
               }
+              // editing-compat inserttext 簇（2026-11-01）：branch3 此前缺
+              // inserttext 实应用臂——事件照派、DOM 零变异（zz-probe-typing
+              // plain 形零变异实证；forecolor 语料 a[]c typing-override 族与
+              // inserttext 语料 plain 形同根）。变更核复用 part01
+              // __zw_ce_inserttext_mutate（caret 世界同步 + '\n' 分流 + 三臂 +
+              // caret 重锚，与键盘 __zw_ce_insert 同核）；值 override 快照/
+              // 重放挂核内（读侧 reset——变异移动选区后 stored range 失配，
+              // vendored recordCurrentOverrides 同在变异前记录 :4351、
+              // restoreStatesAndValues :4458 在变异后重放）。事件口径同上
+              // insertparagraph 臂（beforeinput 已派、input 由既有事件序尾部
+              // 派发，核零事件）。
+              if (cmd === 'inserttext' && rng2 && host2 && typeof globalThis.__zw_ce_inserttext_mutate === 'function') {
+                try { globalThis.__zw_ce_inserttext_mutate(host2, String(arguments[2] == null ? '' : arguments[2])); } catch (_eIns) {}
+              }
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
               // 现解析（handler 移选到第二 host → input target = 第二 host）。

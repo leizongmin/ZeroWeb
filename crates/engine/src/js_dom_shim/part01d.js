@@ -249,17 +249,21 @@
   }
 
   // —— isAllowedChild（参考实现 :1572）——inline contents 白名单 +
-  // prohibited paragraph child 名单（static 表照录）。
+  // prohibited paragraph child 名单（spec 照录，含 table 全族——tbody/td/tr 等
+  // 缺席使 span 字面父臂对表格元素误 true，forceValue 走 s754 包裹臂产出
+  // font 包 tbody 非法形态；canvas/dialog 非 spec 名，移除）。
+  // https://w3c.github.io/editing/execCommand.html#prohibited-paragraph-child-names
   var _zwVaInlineContents = ['a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'dfn',
     'em', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'i', 'kbd', 'mark', 'p', 'pre', 'q',
     'rp', 'rt', 'ruby', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'u',
     'var', 'acronym', 'listing', 'strike', 'xmp', 'big', 'blink', 'font', 'marquee',
     'nobr', 'tt'];
   var _zwVaProhibitedParagraphChildren = ['address', 'article', 'aside', 'blockquote',
-    'canvas', 'center', 'dd', 'details', 'dialog', 'dir', 'div', 'dl', 'fieldset',
-    'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-    'header', 'hgroup', 'hr', 'li', 'main', 'menu', 'nav', 'ol', 'p', 'pre',
-    'section', 'summary', 'table', 'ul'];
+    'caption', 'center', 'col', 'colgroup', 'dd', 'details', 'dir', 'div', 'dl',
+    'dt', 'fieldset', 'figcaption', 'figure', 'footer', 'form', 'h1', 'h2', 'h3',
+    'h4', 'h5', 'h6', 'header', 'hgroup', 'hr', 'li', 'listing', 'main', 'menu',
+    'nav', 'ol', 'p', 'plaintext', 'pre', 'section', 'summary', 'table', 'tbody',
+    'td', 'tfoot', 'th', 'thead', 'tr', 'ul', 'xmp'];
 
   function _zwVaIsElementWithInlineContents(el) {
     return el && el.nodeType === 1
@@ -288,6 +292,13 @@
       childName = _zwJusTag(child);
     }
     if (childName === null) return true;
+    // spec 终检：table 族 + 文档骨架名对任意 parent 恒 false（prohibited∩inline
+    // 面只覆盖 inline 父；span 字面父臂经此收口）。参考实现 :1682-1689。
+    // https://w3c.github.io/editing/execCommand.html#isallowedchildchild-parent
+    if (['body', 'caption', 'col', 'colgroup', 'frame', 'frameset', 'head',
+      'html', 'tbody', 'td', 'tfoot', 'th', 'thead', 'tr'].indexOf(childName) !== -1) {
+      return false;
+    }
     // 字符串 parent（forceValue 'span' 字面调用）无 DOM 祖先链——vendored
     // 尾段 table 的字符串参与面照录（'span'×prohibited paragraph child →
     // false；此前直接进 DOM 爬升遇字符串 nodeType!==1 即 break 恒 true，p 元
@@ -1008,6 +1019,60 @@
       return _zwVaNormalizeCssColor(v) || v;
     }
     return v;
+  };
+
+  // —— typing 值 override 快照导出（part01 __zw_ce_inserttext_mutate 消费）
+  // ——insertText 变异核开头（世界同步/选区移动前）捕获。读侧 reset 语义同
+  // vendored recordCurrentOverrides（:4351，插入前记录）——变异移动选区后
+  // stored range 失配、事后读恒空，必须快照。fontname/fontsize/forecolor/
+  // hilitecolor 四命令（记录序同 vendored；backcolor 经镜像落 hilitecolor 槽）。
+  globalThis.__zw_ce_value_override_snapshot = function () {
+    var cmds = ['fontname', 'fontsize', 'forecolor', 'hilitecolor'];
+    var snap = null;
+    for (var i = 0; i < cmds.length; i++) {
+      var v = _zwVaGetValueOverride(cmds[i]);
+      if (v !== undefined) {
+        if (!snap) snap = {};
+        snap[cmds[i]] = v;
+      }
+    }
+    return snap;
+  };
+
+  // —— typing 值 override 重放导出（part01 __zw_ce_inserttext_mutate 变异尾
+  // 消费）——vendored insertText action 的 restoreStatesAndValues（:4458）：
+  // 插入后对覆盖插入段的 active range 逐条值 override 等值比较（areEquivalent
+  // 门——forceValue 本体无等值门，缺门会对既有同值内容产生冗余包裹），非等值
+  // 按 command action 重放。引擎侧经临时 range 进 _zwVaSetSelectionValue 主
+  // 流程（边界 splitText 只分出插入段 + clearValue + pushDownValues +
+  // forceValue——就地 splice 使 caret 锚为整节点，直接 forceValue 会过裹全串）
+  // ；fontsize 记录侧已 normalize 关键字，直进主流程（legacy 换算在 attr 臂）。
+  // 尾部 caret 塌到 range 终点（vendored 尾部 collapseToEnd 对应面）。
+  globalThis.__zw_ce_value_restore_overrides = function (node, off0, off1, snap) {
+    if (!node || !snap) return;
+    var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+    if (!sel) return;
+    var cmds = ['fontname', 'fontsize', 'forecolor', 'hilitecolor'];
+    var r = document.createRange();
+    try {
+      r.setStart(node, off0);
+      r.setEnd(node, off1);
+    } catch (_eRr) { return; }
+    sel._ranges = [r];
+    for (var i = 0; i < cmds.length; i++) {
+      var cmd = cmds[i];
+      var v = snap[cmd];
+      if (v === undefined || v === null || v === '') continue;
+      if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v)) continue;
+      try { _zwVaSetSelectionValue(cmd, v); } catch (_eRo) {}
+    }
+    try {
+      var end2 = (sel._ranges && sel._ranges[0]) ? sel._ranges[0] : r;
+      var c = document.createRange();
+      c.setStart(end2.endContainer, end2.endOffset);
+      c.collapse(true);
+      sel._ranges = [c];
+    } catch (_eRo2) {}
   };
 
   // 选区整体是否落在同一 a[href] 内（Chrome foreColor 不改链内样式的 delta

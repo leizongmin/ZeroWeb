@@ -7493,6 +7493,15 @@
               // handle 子树（须递归普通 created 元素的 handle 子），故所有 handle 父都记录。
               if (handle) {
                 _recordHandleChild(handle, child);
+                // s212（editing-compat）：handle 子重挂的 parentNode 反链同步——removeChild
+                // 的 `child.parentNode = null` 落 expando（get trap expando 优先于
+                // `_parentNodeFor` 的 `_zwNodeParent` 槽消费），随后 append 到 handle 父
+                // 只更新槽/registry，stale expando null 遮蔽读面 → `child.parentNode`
+                // 恒 null（editing forceValue 移动语义：移入后读 eff 断继承链，spec :762
+                // 撤销判定误触发 → 文本级递归重包裹，w3/w4 嵌套包裹族根因）。R84 plain
+                // 子臂同款对偶，`_zwForceParentLink` 重指 canonical 父（defineProperty
+                // writable/configurable——后续 removeChild 置 null 与再 append 重指均覆写）。
+                try { _zwForceParentLink(child, _makeProxy(sel, handle)); } catch (_e212pl) {}
               } else if (_fragmentHandles[child.__zwHandle]) {
                 // sel-based 父接 fragment → fragment 清空（spec：fragment append 后空；handle 父已在
                 // _recordHandleChild 内 flatten 清空）。
@@ -9051,7 +9060,12 @@
                 // 旧缺——host 记账后 JS 侧 registry 不含 newNode，容器 childNodes 视图漏子
                 //（lit-html render 的 marker 插入即此形态：container.insertBefore(marker, null)
                 // 后 container.childNodes.length 仍 0）。对齐 appendChild 补记。
-                if (handle) _recordHandleChild(handle, newNode);
+                if (handle) {
+                  _recordHandleChild(handle, newNode);
+                  // s212（editing-compat）：stale expando parentNode 反链同步——appendChild
+                  // 臂同款（removeChild 的 expando null 遮蔽 `_zwNodeParent` 槽读面）。
+                  try { _zwForceParentLink(newNode, _makeProxy(sel, handle)); } catch (_e212pl2) {}
+                }
               } else if (refNode.__zwSelector) {
                 ceAdded = [newNode];
                 if (handle) __zw_insert_before_handle(handle, newNode.__zwHandle, refNode.__zwSelector);

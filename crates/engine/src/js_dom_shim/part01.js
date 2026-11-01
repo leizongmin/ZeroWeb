@@ -8800,37 +8800,27 @@
     }
     return { el: root, text: tn };
   }
-  globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
-    // sel 兼容元素直传（execCommand CE 分支 activeElement——动态创建宿主无
-    // __zwSelector，selector 往返失效）。
-    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
-    if (!el || !globalThis.__zw_is_ce_host(el)) return;
-    var ins = String(text == null ? '' : text);
-    if (ins === '') return;
+  // 变异核导出（editing-compat inserttext 簇 2026-11-01）：R3254-M2 branch3
+  // execCommand 分支（part06 inserttext 臂）与键盘 __zw_ce_insert 共用。事件序
+  // （beforeinput/textInput/input）留在各入口，本核只做变更：caret 世界同步 +
+  // '\n' 分流 + 文本/元素/void 三臂 + 占位 br 消费 + caret 重锚。返回
+  // { ok: 是否变异, text: caret 锚文本节点 }（'\n' 分流 ok=true、text=null）。
+  // 值 override 快照挂核头：世界同步与选区移动都会令 stored range 失配清空
+  // override（读侧 reset），vendored recordCurrentOverrides 同在变异前记录
+  //（:4351）；重放挂核尾（vendored restoreStatesAndValues :4458）。
+  globalThis.__zw_ce_inserttext_mutate = function(el, ins) {
+    if (ins === '') return { ok: false, text: null };
+    var insOvSnap = (typeof globalThis.__zw_ce_value_override_snapshot === 'function')
+      ? globalThis.__zw_ce_value_override_snapshot() : null;
     var range = globalThis.__zw_ce_caret_range(el);
-    var before = new InputEvent('beforeinput', {
-      bubbles: true, cancelable: true, composed: true, data: ins, inputType: 'insertText', isComposing: false
-    });
-    if (el.dispatchEvent(before) === false) return;
-    // 尾簇 31：CE 插入的事件序补 textInput（UI Events legacy——beforeinput →
-    // textInput(TextEvent) → DOM 变更 → input；WPT textInput/basic contenteditable
-    // 断言面）。可取消（取消即中止插入——spec textInput cancelable 语义，CE 路径
-    // 完整保留；text control 管线的 followup 通道近似不回滚）。
-    if (withTextInput !== false && globalThis._zwTextEventCtorRef) {
-      var ti31 = new globalThis._zwTextEventCtorRef('textInput', {
-        bubbles: true, cancelable: true, view: globalThis, data: ins
-      });
-      if (el.dispatchEvent(ti31) === false) return;
-    }
     // insertparagraph 语料等价规则：insertText '\n' ≡ insertParagraph 变更（语料
     // 只断言内容；事件序保持 insertText 面）。核心未应用（caret 不在宿主子树等）
-    // → 落回下方字面 '\n' splice 旧径。
+    // → 落回下方字面 '\n' splice 旧径。FIXME: '\n' 臂不接值 override 重放
+    //（vendored 委托 insertParagraph action 自带 record/restore 周期，本仓拆分
+    // 核未接 override 面）。
     if (ins === '\n' && typeof globalThis.__zw_ce_paragraph_split_at === 'function'
         && globalThis.__zw_ce_paragraph_split_at(el, range, false)) {
-      el.dispatchEvent(new InputEvent('input', {
-        bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
-      }));
-      return;
+      return { ok: true, text: null };
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
@@ -8962,9 +8952,9 @@
       }
       }
     } else {
-      return; // 非 text/element caret 容器（document 级等）——best-effort 不做
+      return { ok: false, text: null }; // 非 text/element caret 容器（document 级等）——best-effort 不做
     }
-    if (!node) return; // void 臂 detached 形（无父 void）best-effort 不做
+    if (!node) return { ok: false, text: null }; // void 臂 detached 形（无父 void）best-effort 不做
     // 插入消费拆分占位 br（wss block 形：新块/inline 壳的占位断在内容进场后
     // 移除——期望 `abc<div><i>def</i></div>` 形，带标 br 见拆分 ① 臂与 ②b
     // inline 盒臂）。**不门 typing state**（preserving 组无 format 前置同样
@@ -8992,10 +8982,42 @@
     nr.setStart(node, caretOff);
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-    var input = new InputEvent('input', {
-      bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
+    // 值 override 重放（快照在核头）：覆盖插入段重放，就地 splice 的整节点
+    // 过裹由重放入口临时 range + setSelectionValue 边界 splitText 消化（只裹
+    // 插入段）；caret 随后塌到插入段尾（vendored 尾部 collapseToEnd 面）。
+    if (insOvSnap && node && caretOff >= ins.length) {
+      try {
+        globalThis.__zw_ce_value_restore_overrides(node, caretOff - ins.length, caretOff, insOvSnap);
+      } catch (_eRo) {}
+    }
+    return { ok: true, text: node };
+  };
+  globalThis.__zw_ce_insert = function(sel, text, withTextInput) {
+    // sel 兼容元素直传（execCommand CE 分支 activeElement——动态创建宿主无
+    // __zwSelector，selector 往返失效）。
+    var el = (sel && sel.nodeType === 1) ? sel : document.querySelector(sel);
+    if (!el || !globalThis.__zw_is_ce_host(el)) return;
+    var ins = String(text == null ? '' : text);
+    if (ins === '') return;
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: ins, inputType: 'insertText', isComposing: false
     });
-    el.dispatchEvent(input);
+    if (el.dispatchEvent(before) === false) return;
+    // 尾簇 31：CE 插入的事件序补 textInput（UI Events legacy——beforeinput →
+    // textInput(TextEvent) → DOM 变更 → input；WPT textInput/basic contenteditable
+    // 断言面）。可取消（取消即中止插入——spec textInput cancelable 语义，CE 路径
+    // 完整保留；text control 管线的 followup 通道近似不回滚）。
+    if (withTextInput !== false && globalThis._zwTextEventCtorRef) {
+      var ti31 = new globalThis._zwTextEventCtorRef('textInput', {
+        bubbles: true, cancelable: true, view: globalThis, data: ins
+      });
+      if (el.dispatchEvent(ti31) === false) return;
+    }
+    var mutIns = globalThis.__zw_ce_inserttext_mutate(el, ins);
+    if (!mutIns || !mutIns.ok) return;
+    el.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
+    }));
   };
   // —— 块界 join（white-space join 簇，editing-compat goal 2026-10-30）——
   // 语料 join-different-white-space-style-*（3 案）：caret 在块边界时 Backspace/
