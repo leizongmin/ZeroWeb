@@ -212,7 +212,6 @@ impl HeadlessServer {
     }
 
     /// 设置安全配置。
-    #[allow(dead_code)]
     pub fn with_security(mut self, config: HeadlessSecurityConfig) -> Self {
         self.security = config;
         self

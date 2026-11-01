@@ -13,13 +13,11 @@ pub struct HeadlessSecurityConfig {
 
 impl HeadlessSecurityConfig {
     /// 创建空安全配置（无限制）。
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// 设置认证令牌。
-    #[allow(dead_code)]
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
         self

@@ -2343,6 +2343,80 @@ fn test_server_with_security_config() {
 }
 
 #[test]
+fn cdp_token_opt_in_rejects_first_message_without_token() {
+    // renderer-trust-boundary：`--remote-debugging-token` opt-in 认证——设 token 后
+    // 首条消息无 `token` 字段拒答 -32001；带 token 的后续消息正常应答。
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(
+        HeadlessServer::new(0, 800.0, 600.0, None)
+            .with_security(HeadlessSecurityConfig::new().with_token("test-token")),
+    );
+    let srv = Arc::clone(&server);
+    // run() 不返回；分离线程随测试进程退出回收（同 test_partial_request_does_not_wedge_mux）。
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+
+    let (mut ws, _resp) = tungstenite::connect(format!("ws://{addr}")).expect("ws connect");
+    if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
+        s.set_read_timeout(Some(Duration::from_secs(5))).expect("set read timeout");
+    }
+
+    // 无 token 首条消息 → 认证错误 -32001。
+    ws.send(tungstenite::Message::text(r#"{"id":1,"method":"Target.getTargets"}"#))
+        .expect("send unauthenticated request");
+    let reply = loop {
+        match ws.read().expect("read auth error") {
+            tungstenite::Message::Text(t) => break t.to_string(),
+            tungstenite::Message::Ping(p) => {
+                ws.send(tungstenite::Message::Pong(p)).ok();
+            }
+            _ => continue,
+        }
+    };
+    let reply: serde_json::Value = serde_json::from_str(&reply).expect("auth error is json");
+    assert_eq!(
+        reply["error"]["code"], -32001,
+        "无 token 首条消息必须拒答 Authentication required，实得: {reply}"
+    );
+
+    // 带 token 消息 → 正常应答（id 回带，非认证错误）。
+    ws.send(tungstenite::Message::text(
+        r#"{"id":2,"method":"Target.getTargets","params":{"token":"test-token"}}"#,
+    ))
+    .expect("send authenticated request");
+    let reply = loop {
+        match ws.read().expect("read authenticated reply") {
+            tungstenite::Message::Text(t) => break t.to_string(),
+            tungstenite::Message::Ping(p) => {
+                ws.send(tungstenite::Message::Pong(p)).ok();
+            }
+            _ => continue,
+        }
+    };
+    let reply: serde_json::Value = serde_json::from_str(&reply).expect("reply is json");
+    assert_eq!(reply["id"], 2, "token 应答 id 回带，实得: {reply}");
+    assert!(
+        reply["error"].is_null() || reply["error"]["code"] != -32001,
+        "带 token 消息不得再拒认证，实得: {reply}"
+    );
+}
+
+#[test]
 fn test_server_binds_to_localhost_only() {
     let server = HeadlessServer::new(0, 800.0, 600.0, None);
     assert_eq!(server.addr().ip(), std::net::IpAddr::from([127, 0, 0, 1]));

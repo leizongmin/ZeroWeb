@@ -97,6 +97,10 @@ struct CliArgs {
     scale_override: Option<f32>,
     headless: bool,
     remote_debugging_port: u16,
+    /// opt-in CDP 认证令牌（renderer-trust-boundary 待决项的非破坏部分）：
+    /// 设置后客户端首条消息须带 `token` 字段，否则拒答 -32001。默认不设（保持
+    /// Chrome 同款本地端口形态，不破坏既有自动化客户端）。
+    remote_debugging_token: Option<String>,
     viewport_width: f32,
     viewport_height: f32,
     /// 与 WPT reftest 对齐：CPU 光栅化 + 1.0 缩放（便于肉眼对比 product-smoke）。
@@ -203,6 +207,7 @@ fn parse_args_from(
     let mut scale_override = None;
     let mut headless = false;
     let mut remote_debugging_port = 0u16;
+    let mut remote_debugging_token = None;
     let mut viewport_width = 800.0f32;
     let mut viewport_height = 600.0f32;
     let mut wpt_parity = false;
@@ -287,6 +292,17 @@ fn parse_args_from(
                 .next()
                 .ok_or_else(|| "--remote-debugging-port requires a port number".to_string())?;
             remote_debugging_port = value.parse::<u16>().map_err(|_| format!("invalid port: {value}"))?;
+        }
+
+        if let Some(value) = arg.strip_prefix("--remote-debugging-token=") {
+            remote_debugging_token = Some(value.to_string());
+        }
+
+        if arg == "--remote-debugging-token" {
+            let value = args
+                .next()
+                .ok_or_else(|| "--remote-debugging-token requires a token value".to_string())?;
+            remote_debugging_token = Some(value.to_string());
         }
 
         if arg == "--wpt-parity" {
@@ -711,6 +727,7 @@ fn parse_args_from(
         scale_override,
         headless,
         remote_debugging_port,
+        remote_debugging_token,
         viewport_width,
         viewport_height,
         wpt_parity,
@@ -1088,12 +1105,15 @@ fn run_headless(cli: CliArgs) {
         cli.viewport_height
     );
 
-    let server = std::sync::Arc::new(headless::HeadlessServer::new(
-        port,
-        cli.viewport_width,
-        cli.viewport_height,
-        cli.startup_url.clone(),
-    ));
+    let server = std::sync::Arc::new({
+        let server = headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height, cli.startup_url.clone());
+        match cli.remote_debugging_token.clone() {
+            Some(token) => server.with_security(
+                headless::HeadlessSecurityConfig::new().with_token(token),
+            ),
+            None => server,
+        }
+    });
     let actual_addr = server.addr();
 
     println!("ZeroWeb headless server: ws://{}", actual_addr);
