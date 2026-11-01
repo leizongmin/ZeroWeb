@@ -3,6 +3,15 @@
 **日期**：2026-11-01　**HEAD 基线**：`34d3ce88a`
 **性质**：设计选项细化（无代码变更）。④ 已有选项表（[M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)，推荐 C）；本文把 ②③ 细化到可拍板粒度，① 归纳产品时序取舍。拍板后按「落地顺序」执行对应切片。
 
+## 拍板记录（2026-11-01，用户逐项确认；拍板基线 `c3a862434`）
+
+- **① 选 a**：CDP 默认强制 token + 迁移说明（仓内消费者已核对可控，同切片更新）。
+- **② 选 ②C'**：全收口——②A-env counter-plugin 删 3 枚（测试模式信号 ②A-env：renderer 进程 env）+ `__zwSetPermission` shim 内闭包化；不留 fullscreen 权限路页面自授残余。
+- **③ 选 ③A**：两切片，image-decoder 先行、renderer 后行；renderer 网络面另立 fetch_proxy 出网收窄切片，不在本切片硬装。
+- **④ 选 C**：分层延迟拍板——compositor 维持 fail-open + warn；image-decoder 新档案即 fail-closed；renderer fail 语义随 ③A-renderer 切片定。
+
+执行按下方「落地顺序建议」：② → ③A-image-decoder → ③A-renderer → ① → M4 收口。
+
 ## ② `__zw*` 测试钩子族装配策略（缺口表在册，DC-1/DC-2 剩余项）
 
 ### 现状机制（代码查实；2026-11-01 二轮复核，含 5791f2579 shim 变更后行号核验）

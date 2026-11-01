@@ -2,8 +2,8 @@
 
 **日期**：2026-11-01
 **状态**：Active（M1 盘点完成；M2 切片 1–7 已交付（切片 7 = HSTS per-profile 全局存储对齐 + 无痕面收口）；M3 切片 1–2 已交付 + fd 通道 dma-buf 端到端补验收口；M4 前置基线 + 已交付修复面 DC-5 生产 IPC 复测已交付）。
-**当前卡点**：四项待用户/设计决策（选项已细化到可拍板粒度，见 [决策包](2026-11-01-decision-package-1234.md)）：① CDP 默认强制 token（产品时序：默认强/宽限期/维持 opt-in）；② `__zw*` 特权 mutator（4 枚，二轮复核新增 `__zwDeleteAllCookies`）装配策略——推荐 ②A 反插桩 counter-plugin 删 3 枚 + env 测试模式（`__zwSetPermission` 留守：permissions.request() headless 语义 load-bearing），全收口选 ②C'（part02 单点闭包化，需与 html-semantics 流一次协调）；③ helper 完整 OS sandbox——推荐 ③A 分两切片（image-decoder 先行：纯 stdio 零 fs/socket 面查实，最紧档案；renderer 后行：网络直连须缩限档案）；④ 平台策略（推荐 C 随 ③ 统一拍板，见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）。
-**下一步**：用户对 ①②③④ 拍板（[决策包](2026-11-01-decision-package-1234.md)含推荐与落地顺序）后执行对应修复/设计切片；全部落定后 M4 收口（决策面修复复测 + 剩余风险报告；已交付面的 DC-5 复测已收口：[DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md)、[HSTS 生产面](evidence/2026-11-01-m4-dc5-hsts-production-retest.md)、[切片 7 跨 tab 生产面](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md)）；门控外存量已清空（矩阵服务端绑定面回归补齐见 [切片 6](evidence/2026-11-01-m2-slice6-identity-binding-regressions.md)；fd 通道 dma-buf 端到端补验连同 GPU seccomp getsockopt 缺陷修复收口见 [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md)）；macOS 真机验收为环境受限在册项（bin 全量归因须 clean main stash 对照，见切片 6 经验记录）。
+**当前卡点**：无。①②③④ 已于 2026-11-01 拍板（逐项记录见 [决策包拍板记录](2026-11-01-decision-package-1234.md)）：①a CDP 默认强制 token；② ②C' 全收口（②A-env 删 3 枚 + `__zwSetPermission` 闭包化）；③ ③A 两切片（image-decoder 先行）；④ C 分层延迟拍板。余下为决策面切片执行。
+**下一步**：①②③④ 已拍板（2026-11-01），按 [决策包落地顺序](2026-11-01-decision-package-1234.md) 执行切片：② ②A-env counter-plugin 删 3 枚 → `__zwSetPermission` 闭包化（②C'，part02 单点，与 html-semantics 流一次碰头）→ ③A-image-decoder（连同 ④ 该进程 fail-closed）→ ③A-renderer（连同 ④ renderer fail 语义）→ ① 默认强制 token；全部落定后 M4 收口（决策面修复复测 + 剩余风险报告；已交付面的 DC-5 复测已收口：[DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md)、[HSTS 生产面](evidence/2026-11-01-m4-dc5-hsts-production-retest.md)、[切片 7 跨 tab 生产面](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md)）；门控外存量已清空（矩阵服务端绑定面回归补齐见 [切片 6](evidence/2026-11-01-m2-slice6-identity-binding-regressions.md)；fd 通道 dma-buf 端到端补验连同 GPU seccomp getsockopt 缺陷修复收口见 [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md)）；macOS 真机验收为环境受限在册项（bin 全量归因须 clean main stash 对照，见切片 6 经验记录）。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -13,17 +13,17 @@
 | 消息身份、站点、角色与存储所有者矩阵 | 已完成，见 [evidence](evidence/2026-11-01-m1-matrix-storageop-fix.md) | DONE（2026-11-01） |
 | ~~StorageOp 信任消息 origin~~ | 已修复，服务端绑定 committed origin + 常驻回归 | DONE（2026-11-01） |
 | ~~CDP 端口 DNS rebinding（Host 头非本机名放行）~~ | 已修复，Chromium 同款 verify_host + 真实 socket 回归 | DONE（2026-11-01） |
-| CDP 默认无 token、空 origin 白名单=全允许 | opt-in `--remote-debugging-token` 已交付（[切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md)）；默认强制 token **待用户决策** | opt-in DONE，默认待决 |
+| CDP 默认无 token、空 origin 白名单=全允许 | opt-in `--remote-debugging-token` 已交付（[切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md)）；默认强制 token **已拍板 ①a**（2026-11-01，见决策包） | 拍板 DONE，切片待执行 |
 | ~~renderer 本地 cookie jar 分叉~~ | 已修复：`ClearHttpCookies` 广播同步（协议末尾追加变体）；Cookie 头伪造经核验为非缺口（JS R3221 已按 fetch spec 挡） | DONE（2026-11-01） |
-| `__zw*` 测试钩子族页面可见（特权 mutator 4 枚：`__zwUserActivate` 直置瞬态激活 + `__zwSetPermission` 自授权（fullscreen 激活门双路可绕）+ `__zwClipboardStoreWrite` 直写剪贴板 + `__zwDeleteAllCookies` 清 cookie jar（DC-2 类，二轮复核新增）） | 设计切片：测试模式判定（renderer automation flag / runner 装配）+ counter-plugin 删除策略（②A 删 3 枚 / ②C' 全收口含 `__zwSetPermission` 闭包化——其为 permissions.request() headless 语义 load-bearing，见 [决策包](2026-11-01-decision-package-1234.md) 二轮复核） | 待用户拍板装配策略 |
+| `__zw*` 测试钩子族页面可见（特权 mutator 4 枚：`__zwUserActivate` 直置瞬态激活 + `__zwSetPermission` 自授权（fullscreen 激活门双路可绕）+ `__zwClipboardStoreWrite` 直写剪贴板 + `__zwDeleteAllCookies` 清 cookie jar（DC-2 类，二轮复核新增）） | 设计切片：测试模式判定（renderer automation flag / runner 装配）+ counter-plugin 删除策略（②A 删 3 枚 / ②C' 全收口含 `__zwSetPermission` 闭包化——其为 permissions.request() headless 语义 load-bearing，见 [决策包](2026-11-01-decision-package-1234.md) 二轮复核；**已拍板 ②C'**（2026-11-01） | 拍板 DONE，切片待执行 |
 | PermissionManager 死代码（app 内零调用点） | 与上条合并设计：真权限决策上收 browser 或明确降级文档 | 待设计 |
 | ~~多进程 HSTS 不注册（兼容缺口）~~ | 已修复：fetch_proxy document 响应落 per-tab SecurityContext + 2 常驻回归 | DONE（2026-11-01） |
 | ~~HSTS 粒度对齐（切片 5 在册）：per-tab 独立存储→per-profile 全局~~ | 已对齐：`SharedHstsStore` 句柄共享（普通 tab 注册跨 tab 生效）+ 无痕独立存储收口（不读全局/不外泄/转无痕摘离/退出无痕不回灌——回灌反例双证），见 [切片 7](evidence/2026-11-01-m2-slice7-hsts-global-store.md) | DONE（2026-11-01） |
 | ~~M1 矩阵服务端权威绑定面缺常驻回归（epoch/URL、SW document_url、自动化角色、fetch 内部头仅代码核查）~~ | 已补齐：7 用例（`identity_binding_tests`）+ `take_automation_response` 先验后取修复（跨 tab 伪造回执毁真回执的可用性面，反例在册），见 [切片 6](evidence/2026-11-01-m2-slice6-identity-binding-regressions.md) | DONE（2026-11-01） |
 | ~~compositor landlock 从未生效（add_rule flags 误传 size + 访问位错位）~~ | 已修复：位/flags 修正 + 真实 restrict 回归 + 真实进程验收（[M3 切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md)） | DONE（2026-11-01） |
 | ~~fd_socket_linux 无 SO_PEERCRED（M1 矩阵第 5 项）~~ | 已修复：socket 0600 + 双侧 SO_PEERCRED euid 校验 + 每发布 128-bit token（wire 不变）+ 2 常驻回归（[M3 切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)） | DONE（2026-11-01） |
-| helper 完整 OS sandbox：renderer 现为 RFC P3 占位（仅 env 剥离）、image-decoder 无任何钩子 | 设计决策（升新能力切片与否）→ 补齐后做 helper 受限操作验收（DC-4 余项）；线程时序契约已审计成立（切片 2） | 待用户决策 ③ |
-| 平台缺沙箱能力的产品策略 | 选项已列（A 维持 fail-open / B compositor fail-closed / C 随决策 ③ 统一拍板，推荐 C），见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) | 待用户决定 ④ |
+| helper 完整 OS sandbox：renderer 现为 RFC P3 占位（仅 env 剥离）、image-decoder 无任何钩子 | 设计决策（升新能力切片与否）→ 补齐后做 helper 受限操作验收（DC-4 余项）；线程时序契约已审计成立（切片 2）；**已拍板 ③A**（2026-11-01） | 拍板 DONE，切片待执行 |
+| 平台缺沙箱能力的产品策略 | 选项已列（A 维持 fail-open / B compositor fail-closed / C 随决策 ③ 统一拍板，推荐 C），见 [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)；**已拍板 C**（2026-11-01，fail 语义随 ③ 各切片定） | 拍板 DONE |
 | ~~fd 通道真实进程 dma-buf 端到端补验~~ | 已补验并修复真实缺陷：GPU seccomp 黑名单漏放行 getsockopt → SO_PEERCRED 校验恒败 → 合法消费端被当陌生连接丢弃 → 浏览器报 `SCM_RIGHTS 未携带 fd` 静默回退 legacy（M3 切片 2 起 dma-buf 交付生产拓扑必败，单测不经过滤器故未暴露）；放行 getsockopt + 隔离子进程 fd 通道 round-trip 回归（反例/修复双证）；DRI3 显示配方与端到端实证（seccomp on，`compositor_dmabuf_adopted` ×2 无回退）见 [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md) | DONE（2026-11-01） |
 | browser-compositor-smoke 脚本漂移（非本 goal）：`ZW_COMPOSITOR_PROCESS` 死变量 + renderer `frame_published` 事件不入父日志，两腿按现码不可绿 | compositor 交付面核对脚本与模式重构的契约漂移后修脚本或断言 | 已记档（M3 切片 1 顺带发现，pre-existing） |
 
@@ -34,7 +34,7 @@
 | M1 | 权限矩阵与双向基线 | DONE（2026-11-01） | [matrix](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
 | M2 | 确认反例、共享路径修复与回归 | 切片 7/多 完成（StorageOp、CDP Host、ClearHttpCookies、CDP opt-in token、多进程 HSTS、矩阵服务端绑定面回归补齐、HSTS 全局存储对齐） | [切片 1](evidence/2026-11-01-m1-matrix-storageop-fix.md) / [切片 2](evidence/2026-11-01-m2-slice2-cdp-host-rebinding.md) / [切片 3](evidence/2026-11-01-m2-slice3-clear-http-cookies.md) / [切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md) / [切片 5](evidence/2026-11-01-m2-slice5-multiprocess-hsts.md) / [切片 6](evidence/2026-11-01-m2-slice6-identity-binding-regressions.md) / [切片 7](evidence/2026-11-01-m2-slice7-hsts-global-store.md) |
 | M3 | helper 实际权限与时序验收 | 切片 1–2 完成（compositor S2/S3 实测 + fd 通道对端信任收口 + helper 时序审计）+ fd 通道 dma-buf 端到端补验收口（连带 seccomp getsockopt 缺陷修复）；余 helper 受限操作验收（依赖决策 ③） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) / [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md) |
-| M4 | DC 审计、门禁、清理和剩余风险 | 前置基线交付（平台策略选项 + DC 审计快照 + macOS 代码级对照 + 清理核查）；已交付修复面 DC-5 生产 IPC 复测交付（含切片 7 跨 tab HSTS 生产面）；收口待决策 ①②③④ | [前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) / [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) / [跨 tab 复测](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md) |
+| M4 | DC 审计、门禁、清理和剩余风险 | 前置基线交付（平台策略选项 + DC 审计快照 + macOS 代码级对照 + 清理核查）；已交付修复面 DC-5 生产 IPC 复测交付（含切片 7 跨 tab HSTS 生产面）；①②③④ 已拍板（2026-11-01），收口待决策面切片执行 | [前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) / [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) / [跨 tab 复测](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md) |
 
 ## 验证基线
 
@@ -42,9 +42,9 @@
 |---|---|---|---|
 | DC-1 | IPC-01-forged-origin-session | PARTIAL（服务端权威绑定面全部常驻回归有据：epoch/URL 双匹配、SW document_url 权威比对、fetch 内部头剥离——切片 1/6；剩余＝决策 ② 权限 stub 面） | matrix / 切片 6 |
 | DC-2 | IPC-02-cookie-hsts-privilege | PARTIAL（StorageOp、cookie jar 同步、多进程 HSTS 注册已修附回归，HSTS 粒度对齐 per-profile 全局 + 无痕面收口；fetch 请求侧内部头剥离已钉；权限 stub 未修；Cookie 头伪造判定非缺口） | 切片 1/3/5/6/7 |
-| DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色、AutomationResponse 跨 tab 绑定均已钉回归（含 take 先验后取修复）；CDP rebinding 已堵、opt-in token 已交付，默认 token 待决） | 切片 2/4/6 |
+| DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色、AutomationResponse 跨 tab 绑定均已钉回归（含 take 先验后取修复）；CDP rebinding 已堵、opt-in token 已交付；默认强制已拍板（①a，2026-11-01）待执行） | 切片 2/4/6 |
 | DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；fd 通道对端信任收口 + 真实 seccomp 拓扑 dma-buf 端到端实证（seccomp getsockopt 缺陷修复后 `compositor_dmabuf_adopted` ×2 无回退）；helper 线程时序契约审计成立 + macOS 代码级对照——helper 受限操作验收依赖决策 ③，真机验收环境受限） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) / [M4 前置](evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md) / [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md) |
-| DC-5 | 全部回归与生产接收方复测 | PARTIAL（已交付修复面生产 IPC 复测有报：headless CDP 8/8 + GUI 清除链 3/3；fd 通道 dma-buf 生产拓扑端到端实证见 [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md)；多进程 HSTS 生产链收口——单 tab 动态注册→升级→https 真实加载见 [HSTS 复测](evidence/2026-11-01-m4-dc5-hsts-production-retest.md)，切片 7 跨 tab 全局注册升级实证（tab 2 无自注册升级先于自身响应）见 [跨 tab 复测](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md)；余决策面复测待 ①②③④ 拍板） | [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) |
+| DC-5 | 全部回归与生产接收方复测 | PARTIAL（已交付修复面生产 IPC 复测有报：headless CDP 8/8 + GUI 清除链 3/3；fd 通道 dma-buf 生产拓扑端到端实证见 [M4 补验](evidence/2026-11-01-m4-dmabuf-fd-channel-e2e-unblock-and-seccomp-getsockopt-fix.md)；多进程 HSTS 生产链收口——单 tab 动态注册→升级→https 真实加载见 [HSTS 复测](evidence/2026-11-01-m4-dc5-hsts-production-retest.md)，切片 7 跨 tab 全局注册升级实证（tab 2 无自注册升级先于自身响应）见 [跨 tab 复测](evidence/2026-11-01-m4-dc5-hsts-crosstab-production-retest.md)；余决策面复测待 ①②③④ 切片执行落定） | [DC-5 复测](evidence/2026-11-01-m4-dc5-production-ipc-retest.md) |
 
 ## 碰撞与执行记录
 
