@@ -39,7 +39,7 @@ headless 无 App 入口（见发现 3），`zero://settings/clear/cookies` 为 A
 ## 四、DC-5 剩余项（M4 收口时补）
 
 - 决策 ①②③④ 对应新修复面的复测（拍板后）。
-- 多进程 HSTS 注册生产面：需受信 TLS + STS 服务端（回环 STS 门回归在册常驻，生产面重放受证书信任所限，记复测方法限制）。
+- 多进程 HSTS 注册生产面：需受信 TLS + STS 服务端。方法限制已查实（2026-11-01 复测轮）：TLS 栈为 reqwest `rustls-tls`（workspace Cargo.toml:101），信任面为编译内嵌 webpki-roots、无运行时 root 注入面（client builder 无 `add_root_certificate`/`danger_accept_invalid_certs` 调用，`SSL_CERT_FILE` 对 webpki-roots 不生效）——本地自签 CA 不可达；加运行时 root 配置属网络栈信任边界扩张，超出本 goal 范围须单独评审。回环 STS 门回归在册常驻。
 - fd 通道 dma-buf 端到端：DRI3 环境受限在册。
 
 ## 五、环境事故（诚实记档）
