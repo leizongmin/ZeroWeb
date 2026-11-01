@@ -1329,6 +1329,22 @@ fn has_fragment_descendant(box_node: &LayoutBox) -> bool {
         .any(|c| c.fragment_node_ids.is_some() || has_fragment_descendant(c))
 }
 
+/// t-fup-s24-flip-red：display:inline 的 canvas——s24 翻转后 UA 默认走 taffy 盒路径
+///（tree.rs phasea/all_inline 双门放行，R57 attr 回退与 R5178 min/max-width transferred
+/// 臂在 taffy min_size 承接），其 used border-box 须同 inline-block 家族一样喂
+/// ib_sizes，IFC collect（collect_items 原子臂 R3987）经 stored_inline_size 取用；
+/// 缺表则 IFC 以声明宽重建原子项，覆写 taffy 已解宽（r5178 canvas min-width:min-content
+/// 收 10 应 100 实证）。仅 canvas：svg 及其余 replaced 类维持既有 IFC 路径，不改行为。
+/// https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
+fn is_inline_canvas(doc: &Document, id: NodeId, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    styles
+        .get(&id)
+        .is_some_and(|s| matches!(s.display, DisplayValue::Inline))
+        && doc
+            .get(id)
+            .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("canvas")))
+}
+
 /// R4941：child 是否为 R2156 skip 提升的**原子行内级盒**（DOM 父 ≠ 本容器——由被跳过
 /// 的 inline 子树提升而来）。收集判据与 tree.rs `collect_atomic_inline_descendants`
 /// 同源：inline-block 家族，或 display:inline 的 replaced 元素（R4489 八类）。
@@ -3248,6 +3264,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                         styles
                             .get(&id)
                             .is_some_and(|s| matches!(s.display, DisplayValue::InlineBlock))
+                            || is_inline_canvas(doc, id, styles)
                     })
                 })
                 .filter_map(|c| {
@@ -4295,7 +4312,7 @@ pub(crate) fn remeasure_inline_only_containers(
                     styles.get(&id).is_some_and(|s| {
                         matches!(s.display, DisplayValue::InlineBlock)
                             || (*INLINE_TABLE_IB_SIZING && matches!(s.display, DisplayValue::InlineTable))
-                    })
+                    }) || is_inline_canvas(doc, id, styles)
                 })
             })
             .filter_map(|c| {

@@ -244,6 +244,21 @@ pub(crate) fn phasea_multi_inline_eligible(
     if !matches!(s.display, DisplayValue::Inline) {
         return false;
     }
+    // R3987/R4489（CSS Display 3 §2.4）：display:inline 的 replaced 类元素是 atomic
+    // inline，不是可跳过的纯文本 inline 包裹层。canvas 的 attr 固有回退（R57）与
+    // min/max-width content 关键字 transferred 臂（R5178）都在 taffy 盒路径承接
+    //（canvas UA 默认原为 inline-block，s24 翻转 t-fup-s24-flip-red 后 CSSOM 报
+    // inline 而布局仍需盒）——跳过会让其丢失 taffy 节点 → LayoutBox 整盒消失
+    //（r5346 replaced_without_definite_ancestor_stays_attr_intrinsic 收 0 盒）。
+    // svg 及其余 replaced 类维持既有 skip 路径（svg 默认即 inline，IFC R3987/R4000
+    // 语义在其上验证在案，本切片不改其行为）。
+    // https://www.w3.org/TR/CSS22/visuren.html#inline-boxes
+    if doc
+        .get(child_id)
+        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("canvas")))
+    {
+        return false;
+    }
     if matches!(s.position, PositionValue::Absolute | PositionValue::Fixed) {
         return false;
     }
@@ -4128,13 +4143,25 @@ fn build_subtree(
                             //（hit_test_absolute_positioned_link 回归：div 内 abspos <a> 被 leaf 吞）。
                             let cs = styles.get(&c);
                             let is_inline = cs.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
+                            // R3987（CSS Display 3 §2.4 / CSS2 §9.2.1.1）：display:inline 的
+                            // canvas 是 atomic inline，非纯 inline 包裹层——s24 翻转
+                            //（t-fup-s24-flip-red）把 canvas UA 默认从 inline-block 翻为 inline
+                            // 后，若仍计入 all_inline，flex item/inline-block 等内容尺寸容器会
+                            // 走 leaf-measure 路径把整棵子树吞进 IFC 测量（无子 taffy 节点），
+                            // canvas 丢 LayoutBox（r5346
+                            // replaced_without_definite_ancestor_stays_attr_intrinsic 收 0 盒）。
+                            // canvas 的 R57 attr 回退/R5178 transferred 臂在 taffy 盒路径承接。
+                            // svg 及其余 replaced 类不计（svg 默认即 inline，维持既有行为）。
+                            let not_canvas_atomic = !doc.get(c).is_some_and(|n| {
+                                matches!(&n.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("canvas"))
+                            });
                             let not_ooflow = cs
                                 .is_some_and(|s| !matches!(s.position, PositionValue::Absolute | PositionValue::Fixed));
                             let no_elem_child = !doc
                                 .child_nodes(c)
                                 .iter()
                                 .any(|&gc| doc.get(gc).is_some_and(|gn| matches!(&gn.kind, NodeKind::Element(_))));
-                            is_inline && not_ooflow && no_elem_child
+                            is_inline && not_canvas_atomic && not_ooflow && no_elem_child
                         }
                         _ => true,
                     }
