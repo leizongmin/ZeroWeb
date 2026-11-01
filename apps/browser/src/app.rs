@@ -4243,13 +4243,15 @@ impl BrowserApp {
     }
 
     /// 清除共享 Cookie jar（`zero://settings/clear/cookies`）。
-    /// 覆盖 browser 进程权威 jar（顶层导航与 fetch 代理路径）；renderer 子进程本地
-    /// jar 的跨进程清理需要新增 IPC 消息，属后续切片。
+    /// 覆盖 browser 进程权威 jar（顶层导航与 fetch 代理路径），并经
+    /// `ClearHttpCookies` 广播同步 renderer 子进程本地 jar（renderer-trust-boundary：
+    /// 否则已清除 cookie 继续附着 renderer 侧 WS 握手）。
     fn apply_settings_clear_cookies(&mut self) {
         zero_net::shared_cookie_store()
             .lock()
             .expect("shared cookie store lock")
             .clear();
+        self.tabs.clear_renderer_http_cookies();
         self.open_settings_page();
     }
 

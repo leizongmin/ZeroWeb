@@ -1694,6 +1694,15 @@ impl ProcessTabBackend {
         }
     }
 
+    /// 向所有有 renderer 映射的 tab 广播消息（无映射的 tab 静默跳过；
+    /// renderer-trust-boundary：`ClearHttpCookies` 等 jar 同步指令用）。
+    pub(crate) fn broadcast_to_renderers(&mut self, kind: IpcMessageKind) {
+        let tab_ids: Vec<TabId> = self.tab_to_renderer.keys().copied().collect();
+        for tab_id in tab_ids {
+            self.send_to_renderer(tab_id, kind.clone());
+        }
+    }
+
     /// 测试：观察 compositor 状态。
     #[cfg(test)]
     pub fn observe_compositor_status_for_test(
@@ -3222,6 +3231,28 @@ mod compositor_fallback_tests {
                 .iter()
                 .any(|(dx, dy, cx, cy)| *dx == 0.0 && *dy == 120.0 && *cx == 320.0 && *cy == 480.0),
             "send_user_scroll 应发 ScrollEvent(delta=0,120, cursor=320,480) IPC，实得出站 ScrollEvent: {scroll_msgs:?}"
+        );
+    }
+
+    /// renderer-trust-boundary：`clear_renderer_http_cookies` 对所有有 renderer 映射的
+    /// tab 广播 `ClearHttpCookies`（`zero://settings/clear/cookies` 同步清理 renderer
+    /// 本地 jar）。经 `TEST_RENDERER_OUTBOUND` 捕获出站 IPC。
+    #[test]
+    #[serial_test::serial]
+    fn clear_cookies_broadcast_reaches_mapped_renderers() {
+        let _multiprocess_guard = lock_multiprocess_tests();
+        let _ = take_test_renderer_outbound(); // 清前序测试残留
+        let mut backend = ProcessTabBackend::with_renderer_bin(PathBuf::from("unused-renderer"));
+        backend.tab_to_renderer.insert(TabId(61), 81);
+        backend.tab_to_renderer.insert(TabId(62), 82);
+
+        backend.broadcast_to_renderers(IpcMessageKind::ClearHttpCookies);
+
+        let outbound = take_test_renderer_outbound();
+        assert_eq!(
+            outbound.iter().filter(|k| matches!(k, IpcMessageKind::ClearHttpCookies)).count(),
+            2,
+            "两个有 renderer 映射的 tab 各收一条 ClearHttpCookies，实得: {outbound:?}"
         );
     }
 

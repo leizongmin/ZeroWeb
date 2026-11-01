@@ -184,6 +184,16 @@ fn test_serialize_deserialize_heartbeat() {
 }
 
 #[test]
+fn test_serialize_deserialize_clear_http_cookies() {
+    let msg = IpcMessage {
+        id: 9,
+        kind: IpcMessageKind::ClearHttpCookies,
+    };
+    let out = roundtrip(msg);
+    assert!(matches!(out.kind, IpcMessageKind::ClearHttpCookies));
+}
+
+#[test]
 fn test_serialize_deserialize_crash() {
     let msg = IpcMessage {
         id: 10,

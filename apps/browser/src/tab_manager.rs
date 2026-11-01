@@ -7,7 +7,8 @@ use zero_browser_shell::TabId;
 use zero_engine::{DomEventDetail, MediaType, PrefersColorSchemeValue, selector_from_element_hit};
 use zero_protocol::message::{
     AutomationOperation, AutomationResult, AutomationValue, DispatchDomEventParams, DragInputParams, DragInputPhase,
-    ImeEventParams, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase, TabNavigateRequestParams,
+    IpcMessageKind, ImeEventParams, PointerLockChangedParams, PointerLockInputParams, PointerLockInputPhase,
+    TabNavigateRequestParams,
 };
 use zero_render_foundation::image_cache::ImageCache;
 
@@ -1127,6 +1128,15 @@ impl TabManager {
             .and_then(|snapshot| snapshot.compositor_submission)
             .map(|submission| submission.frame_id)
             .unwrap_or(0)
+    }
+
+    /// 清空各 live renderer 进程本地 cookie jar（renderer-trust-boundary：
+    /// `zero://settings/clear/cookies` 与 browser 权威 jar 同步清理）。
+    pub fn clear_renderer_http_cookies(&mut self) {
+        let Some(backend) = self.process_backend.as_mut() else {
+            return;
+        };
+        backend.broadcast_to_renderers(IpcMessageKind::ClearHttpCookies);
     }
 
     /// 测试用：当前仍有进程映射的 renderer 数量。

@@ -3732,6 +3732,18 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.send(IpcMessageKind::StorageOp(params))
     }
 
+    /// 清空 renderer 进程本地 HTTP Cookie jar（`ClearHttpCookies`，浏览器指令）。
+    /// renderer-trust-boundary：jar 由 `FetchResponse` Set-Cookie 写入、WS 握手
+    /// `ws_handshake_cookie` 消费；browser 权威 jar 清理时须同步，否则已清除
+    /// cookie 继续附着后续 WS 握手。
+    fn handle_clear_http_cookies(&mut self) -> Result<(), String> {
+        let store = zero_net::shared_cookie_store();
+        let mut jar = store.lock().expect("shared cookie store lock");
+        jar.clear();
+        tracing::info!("renderer 本地 cookie jar 已按浏览器指令清空");
+        Ok(())
+    }
+
     fn handle_heartbeat(&mut self) -> Result<(), String> {
         self.send(IpcMessageKind::Heartbeat)
     }
@@ -4285,6 +4297,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             IpcMessageKind::ImeEvent(params) => self.run_frame_transaction(|runtime| runtime.handle_ime_event(params)),
             IpcMessageKind::ScrollEvent(params) => self.handle_scroll_event(params),
             IpcMessageKind::StorageOp(params) => self.handle_storage_op(params),
+            IpcMessageKind::ClearHttpCookies => self.handle_clear_http_cookies(),
             IpcMessageKind::IndexedDbConnectionEvent(params) => self.handle_indexed_db_connection_event(params),
             IpcMessageKind::ServiceWorkerHostCommand(params) => self.handle_service_worker_host_command(params),
             IpcMessageKind::HitTestLink(params) => self.handle_hit_test_link(msg.id, params),
@@ -5089,6 +5102,9 @@ mod animation_export_tests;
 #[cfg(test)]
 #[path = "compositor_publish_tests.rs"]
 mod compositor_publish_tests;
+#[cfg(test)]
+#[path = "cookie_clear_tests.rs"]
+mod cookie_clear_tests;
 #[cfg(test)]
 #[path = "fetch_cancel_on_reset_tests.rs"]
 mod fetch_cancel_on_reset_tests;

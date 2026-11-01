@@ -424,6 +424,10 @@ pub enum IpcMessageKind {
     MediaFrame(crate::media::MediaFrameParams),
     /// 媒体错误（host → renderer）。
     MediaError(crate::media::MediaErrorParams),
+    /// 清空 renderer 进程本地 HTTP Cookie jar（浏览器 → 渲染；renderer-trust-boundary：
+    /// `zero://settings/clear/cookies` 等清理点与 browser 权威 jar 同步，防已清除
+    /// cookie 继续附着 renderer 侧 WS 握手）。
+    ClearHttpCookies,
 }
 
 /// 页面可见性差分通知参数（浏览器→渲染）。
