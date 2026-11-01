@@ -91,6 +91,29 @@ static MAINLOOP_TRACE_FILE: std::sync::LazyLock<std::sync::Mutex<Option<std::fs:
         _ => std::sync::Mutex::new(None),
     });
 
+/// T36/H3 诊断：导航派发链路分段仪拍总门（`ZW_NAV_DISPATCH_TRACE=1` 启用）。
+/// 进程级惰性快照——主循环/导航路径零 env 读取（同 [`MAINLOOP_TRACE_FILE`] 惯例）。
+/// 开启后三处透出（均 tracing INFO，经 `ZW_RENDERER_STDERR_ECHO=1` 与 T30 装载
+/// 里程碑同管道对时）：
+/// ① 主循环逐迭代 busy 分段表（busy ≥2ms 才落行，`navtrace: iter`）；
+/// ② 导航类消息主循环拾取行（含统一命令队列深度，`navtrace: nav-pickup`）；
+/// ③ `navigate_with` 内部分段（worker 复位等待/发送/文档态准备，`navtrace: nav-internal`）。
+static NAV_DISPATCH_TRACE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| match std::env::var("ZW_NAV_DISPATCH_TRACE") {
+        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+        Err(_) => false,
+    });
+
+/// T36/H3 仪拍辅助：门开取当前时刻，门关恒 `None`（热路径零系统调用）。
+#[inline]
+fn nav_trace_t0() -> Option<std::time::Instant> {
+    if *NAV_DISPATCH_TRACE {
+        Some(std::time::Instant::now())
+    } else {
+        None
+    }
+}
+
 /// ZW_RESIZE_TRACE 诊断输出（epoch 毫秒时间戳，与 browser 侧 trace 对齐时序）。
 fn resize_trace(msg: impl std::fmt::Display) {
     if !*RESIZE_TRACE {
@@ -3373,6 +3396,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             }));
         }
         tracing::info!("导航到: {} ({})", params.url, method);
+        // T36/H3 仪拍：导航内部分段时刻标（preclear→复位→发送→清态→世代→文档态→回收）。
+        let nav_i_start = nav_trace_t0();
         // A submit/click may have dirtied the old document earlier in the same
         // input transaction. Never publish that stale snapshot under the new epoch.
         self.frame_transaction.discard_pending();
@@ -3386,13 +3411,16 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         self.pending_dynamic_scripts = None;
         self.executed_external_scripts.clear();
         self.inflight_fetches.clear();
+        let nav_i_reset = nav_trace_t0();
         self.js_worker.reset_document_state();
+        let nav_i_send = nav_trace_t0();
         self.push_history(&params.url);
         self.send_regular(IpcMessageKind::NavigationStarted(NavigationStartedParams {
             url: params.url.clone(),
             navigation_epoch: params.navigation_epoch,
         }))?;
         self.send_regular(IpcMessageKind::UrlChanged(params.url.clone()))?;
+        let nav_i_clear = nav_trace_t0();
         self.current_url = Some(params.url.clone());
         self.cached_html.clear();
         self.cached_css.clear();
@@ -3402,19 +3430,49 @@ return JSON.stringify({{action:action,name:name,val:val}});\
         // P1a change-on-blur：导航清焦点状态（新页面无焦点）。
         self.form_controls.clear();
         self.interaction.clear();
+        let nav_i_epoch = nav_trace_t0();
 
         self.navigation_epoch = params.navigation_epoch;
         // M3-S1c：共享槽同步（worker patch Register 世代快照源）。
         self.navigation_epoch_shared
             .store(self.navigation_epoch, std::sync::atomic::Ordering::Relaxed);
         self.document_generation = self.document_generation.wrapping_add(1).max(1);
+        let nav_i_prepare = nav_trace_t0();
         let page_url = params.url.clone();
         self.webview
             .as_mut()
             .expect("webview")
             .prepare_document_state(&page_url);
+        let nav_i_reclaim = nav_trace_t0();
         // T13 S2/S4/S6/S7：导航落定增量回收（worker 侧对称臂在 js_worker Reset 尾）。
         self.reclaim_after_document_reset();
+        // T36/H3 仪拍：导航内部分段落行（门关恒跳过）。POST 阻塞 fetch 臂在本行之后，
+        // 其网络时长不计入派发成本（见下方 POST 分支注释）。
+        if *NAV_DISPATCH_TRACE
+            && let (Some(a), Some(b), Some(c), Some(d), Some(e), Some(f), Some(g), Some(h)) = (
+                nav_i_start,
+                nav_i_reset,
+                nav_i_send,
+                nav_i_clear,
+                nav_i_epoch,
+                nav_i_prepare,
+                nav_i_reclaim,
+                nav_trace_t0(),
+            )
+        {
+            let ms = |x: std::time::Instant, y: std::time::Instant| y.duration_since(x).as_secs_f64() * 1000.0;
+            tracing::info!(
+                total_ms = (ms(a, h) * 1000.0).round() / 1000.0,
+                preclear_ms = (ms(a, b) * 1000.0).round() / 1000.0,
+                reset_ms = (ms(b, c) * 1000.0).round() / 1000.0,
+                send_ms = (ms(c, d) * 1000.0).round() / 1000.0,
+                clear_ms = (ms(d, e) * 1000.0).round() / 1000.0,
+                epoch_ms = (ms(e, f) * 1000.0).round() / 1000.0,
+                prepare_ms = (ms(f, g) * 1000.0).round() / 1000.0,
+                reclaim_ms = (ms(g, h) * 1000.0).round() / 1000.0,
+                "navtrace: nav-internal"
+            );
+        }
 
         // R3055：POST 导航——同步 fetch POST body → from_html。POST fetch 失败（stub_network / 网络/HTTP
         // 错误）→ 不命中此分支，回落下方 GET `start`（保 load 状态机一致，复用既有 load-failure 处理）。
@@ -4415,6 +4473,8 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 }
                 p106_last_tick = Some(now);
             }
+            // T36/H3 仪拍：逐迭代 busy 分段时刻标（门关恒 None，零开销）。
+            let nav_t_load = nav_trace_t0();
             if self.pending_load.is_some()
                 || self.pending_script_prefetch.is_some()
                 || self.pending_dynamic_scripts.is_some()
@@ -4452,14 +4512,17 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
             // R2949 FontFace.load()：drain JS 投递的字体加载请求（任意时刻可来，故每轮检查）。
             // fetch_get 字节 + load_font/register/set_resolver + async_resolver.resolve 解析 Promise。
+            let nav_t_font = nav_trace_t0();
             self.tick_font_face_loads();
 
             // 异步页面脚本（例如 HTML5test 的后台检测）可在初始脚本边界之后改 DOM；每轮
             // 原子取出并提交，避免结果节点滞留在 JS worker。
+            let nav_t_mut = nav_trace_t0();
             self.drain_pending_script_mutations()?;
 
             // R3058 JS 跨文档导航：drain location.href=/assign/replace 投递的导航 URL，handle_navigate（fetch 新文档）。
             // 多次导航取最后一条（real browser 亦取最后发起；前者被后者覆盖）。任意时刻可来，故每轮检查。
+            let nav_t_drains = nav_trace_t0();
             self.tick_pending_navigation()?;
 
             // T5/P10 页面 history 遍历：drain history.back/forward/go 越界移交的 delta →
@@ -4480,6 +4543,7 @@ return JSON.stringify({{action:action,name:name,val:val}});\
 
             // R3254-M7'：drain 页面 JS focus()/blur() 变更（任意脚本执行均可产生，故每轮检查）。
             self.sync_focus_from_js();
+            let nav_t_pump = nav_trace_t0();
 
             // media-playback D4（获点名 2026-09-05，事件循环节拍——否决独立泵线程）：
             // 播放帧/音频泵挂在 renderer 主循环节拍上（16ms recv 超时即节拍；镜像
@@ -4583,8 +4647,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 self.fire_deferred_reclaim(gens);
             }
 
+            // T36/H3 仪拍：recv 等待（含 16ms 空闲轮询）与派发分段时刻标。
+            let nav_t_recv = nav_trace_t0();
+            let mut nav_t_disp: Option<std::time::Instant> = None;
             match self.recv_next_or_timeout(LOAD_TICK_INTERVAL) {
                 Ok(Some(DeferredCommand::PostNav(nav))) => {
+                    nav_t_disp = nav_trace_t0();
                     // T27 返修3（RC2-F1）：统一队列回放到扣压 POST 意图——按到达序位
                     // 执行（此前返修1/2 为独立队列的主循环顶部 drain）。错误处置沿
                     // drain 语义：断连退出；其余记录不中断、不回错（POST 失败非协议
@@ -4600,6 +4668,26 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                 Ok(Some(DeferredCommand::Message(msg))) => {
                     if self.inflight_fetches.try_complete(&msg) {
                         continue;
+                    }
+                    nav_t_disp = nav_trace_t0();
+                    // T36/H3 仪拍：导航类消息主循环拾取（入泵→派发时刻）+ 统一命令队列
+                    // 深度。此刻即 recv 返回点——拾取前的占用面看本迭代及此前迭代的
+                    // `navtrace: iter` busy 分段，拾取后的内部段看 `navtrace: nav-internal`。
+                    if *NAV_DISPATCH_TRACE {
+                        let nav_kind: Option<(&str, &str)> = match &msg.kind {
+                            IpcMessageKind::Navigate(p) => Some(("Navigate", p.url.as_str())),
+                            IpcMessageKind::TabNavigateRequest(p) => Some(("TabNavigateRequest", p.url.as_str())),
+                            IpcMessageKind::LoadHtml(p) => Some(("LoadHtml", p.url.as_deref().unwrap_or(""))),
+                            _ => None,
+                        };
+                        if let Some((kind, url)) = nav_kind {
+                            tracing::info!(
+                                kind = kind,
+                                url = url,
+                                depth = self.deferred_inbound.len(),
+                                "navtrace: nav-pickup"
+                            );
+                        }
                     }
                     // t8 诊断基座：分发计时——>200ms 落 kind+耗时（MAINLOOP_TRACE_FILE）。
                     let mainloop_t0 = MAINLOOP_TRACE_FILE.lock().is_ok().then(std::time::Instant::now);
@@ -4640,6 +4728,37 @@ return JSON.stringify({{action:action,name:name,val:val}});\
                     return Ok(());
                 }
                 Err(e) => return Err(e),
+            }
+            // T36/H3 仪拍：逐迭代 busy 分段表（门关恒跳过；busy <2ms 不落行防刷屏）。
+            // inflight 命中臂的 continue 会跳过本行——该臂仅 µs 级通道换手，负载并入
+            // 下一迭代 load 段（iter 行序缺口时以此解释）。
+            if *NAV_DISPATCH_TRACE
+                && let (Some(t_load), Some(t_font), Some(t_mut), Some(t_drains), Some(t_pump), Some(t_recv)) =
+                    (nav_t_load, nav_t_font, nav_t_mut, nav_t_drains, nav_t_pump, nav_t_recv)
+            {
+                let t_end = std::time::Instant::now();
+                let ms = |a: std::time::Instant, b: std::time::Instant| b.duration_since(a).as_secs_f64() * 1000.0;
+                let (load, font, mut_seg) = (ms(t_load, t_font), ms(t_font, t_mut), ms(t_mut, t_drains));
+                let (drains, pump) = (ms(t_drains, t_pump), ms(t_pump, t_recv));
+                let (recv, disp) = match nav_t_disp {
+                    Some(t_d) => (ms(t_recv, t_d), ms(t_d, t_end)),
+                    None => (ms(t_recv, t_end), 0.0),
+                };
+                let busy = load + font + mut_seg + drains + pump + disp;
+                if busy >= 2.0 {
+                    tracing::info!(
+                        busy_ms = (busy * 1000.0).round() / 1000.0,
+                        load_ms = (load * 1000.0).round() / 1000.0,
+                        font_ms = (font * 1000.0).round() / 1000.0,
+                        mut_ms = (mut_seg * 1000.0).round() / 1000.0,
+                        drains_ms = (drains * 1000.0).round() / 1000.0,
+                        pump_ms = (pump * 1000.0).round() / 1000.0,
+                        recv_ms = (recv * 1000.0).round() / 1000.0,
+                        disp_ms = (disp * 1000.0).round() / 1000.0,
+                        depth = self.deferred_inbound.len(),
+                        "navtrace: iter"
+                    );
+                }
             }
         }
     }

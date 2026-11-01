@@ -1151,6 +1151,15 @@ impl HeadlessSession {
     }
 
     pub(super) fn navigate_renderer(&mut self, url: &str) -> Result<(), String> {
+        // T36/H3 仪拍：browser 侧导航中继分段（会话命令进入 → renderer.navigate IPC
+        // 发送毕）。与 renderer 侧 `navtrace: nav-pickup` 同 `ZW_NAV_DISPATCH_TRACE`
+        // 门控对时（进程级快照，本函数每导航仅一次调用，非热路径）。
+        static NAV_DISPATCH_TRACE: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| match std::env::var("ZW_NAV_DISPATCH_TRACE") {
+                Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
+                Err(_) => false,
+            });
+        let nav_relay_t0 = (*NAV_DISPATCH_TRACE).then(std::time::Instant::now);
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
         // 在途导航登记（commit 校验/回声判定依据）：会话命令导航，started_confirmed
         // 待 renderer NavigationStarted 确认。
@@ -1167,9 +1176,16 @@ impl HeadlessSession {
         // 在途任务持有排空后消亡，队列内未启动任务随 reply 通道关闭而终止。
         self.fetch_scheduler = zero_net::PerOriginFetchScheduler::new_shared();
         self.snapshot.begin_navigation(url.to_string());
-        self.renderer
-            .navigate(url, None, self.navigation_epoch)
-            .map_err(|error| error.to_string())?;
+        let nav_send_result = self.renderer.navigate(url, None, self.navigation_epoch);
+        if let Some(t0) = nav_relay_t0 {
+            tracing::info!(
+                url = url,
+                relay_ms = t0.elapsed().as_secs_f64() * 1000.0,
+                send_ok = nav_send_result.is_ok(),
+                "navtrace: browser relay"
+            );
+        }
+        nav_send_result.map_err(|error| error.to_string())?;
         self.wait_for_load()
     }
 

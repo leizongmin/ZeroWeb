@@ -810,8 +810,24 @@ impl RendererJsWorker {
         // <body onload> 永不触发（r2946 单测实证；无脚本页生产窗口同源）。同
         // reset_document_state 的有界等待惯用法；worker 忙臂时超时放行不阻塞导航，
         // 此时快照已排普通队列，后续普通往返天然保持先快照后脚本的顺序。
+        //
+        // T36 双审 DF2 补偿：复位滞留（pending 槽在，即忙臂未被 5ms 复位等待吸收）
+        // 时确认等待扩至 500ms——旧码 250ms 复位等待顺带预烧忙臂，本窗覆盖带达
+        // A ≤ f+500ms；缩界后靠本扩窗恢复原覆盖面（忙臂 A ≤ f+500ms 内确认必达，
+        // body-onload 反射不被抢跑）。回信到达即提前返回，已覆盖场景等待不变；
+        // 超带（A > f+500ms）超时放行，与旧码同边界。
         if !first_document {
-            let _ = reply_rx.recv_timeout(std::time::Duration::from_millis(250));
+            let reset_pending = self
+                .pending_document_reset
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_some();
+            let wait = if reset_pending {
+                std::time::Duration::from_millis(500)
+            } else {
+                std::time::Duration::from_millis(250)
+            };
+            let _ = reply_rx.recv_timeout(wait);
         }
     }
 
@@ -889,6 +905,23 @@ impl RendererJsWorker {
         // 实测）时同步 reply 等待曾把导航初始化整体挂住（二跳 ERR_FAILED 根因链末级）。
         // 超时放弃等待：复位命令滞留优先队列照常执行（worker 端清队 + reset_context），
         // 主循环继续导航流程（新文档取回/解析不依赖 worker）。
+        //
+        // T36/H3（perf-mem-20261023）：250ms 界本身成为热窗导航派发主成本——worker 忙臂
+        // 典型 ~139ms（cnblogs 旧页 timer/promise 回调）小于界，同步等待整段吞臂：热 P0
+        // 中位 143.6ms（reset_ms 139.7ms 占 97%）、冷 69.8ms（reset_ms 65.9ms 占 94%），
+        // 12/12 launch 逐样本一致。该等待不承载复位自身的排序与正确性：复位命令已按
+        // FIFO 排在新文档优先命令之前，滞留臂语义由 deferred-settle 全权兜底（下方 else
+        // 臂；t3 返修 D1 封门 + t8 返修 defect-r1 D1 worker 侧清队，qq-20261016-r1 生产
+        // 验证）。故界缩至 5ms：worker 空闲/短臂仍几乎必然内联落定（拾取 µs 级，冷窗
+        // 快路径保持），忙臂 5ms 即放行导航，热窗只承担固定 5ms 而非整臂。
+        //
+        // T36 双审 DF2（perf-mem-20261023）：旧 250ms 等待在忙臂 A > 250ms 时顺带预烧
+        // 忙臂，使 fix#21 快照确认窗（250ms 自快照提交起算）覆盖带达 A ≤ f+500ms；缩至
+        // 5ms 后收窄到 A ≤ f+255ms——带内（臂 0.3-0.6s 旧页 → 无脚本 onload 新页）
+        // body-onload 反射会被优先通道生命周期派发抢跑丢弃（fix#21 机制）。补偿：复位
+        // 滞留（pending 槽在）期间 `set_dom_snapshot` 确认等待扩至 500ms（= 旧码
+        // 「复位等待 min(A,250) + 确认 250」最坏总预算），恢复原覆盖面且不恢复复位阻塞；
+        // 确认回信到达即提前返回，已覆盖场景等待不变。
         let (reply_tx, reply_rx) = mpsc::channel();
         if self
             .prio_tx
@@ -898,7 +931,7 @@ impl RendererJsWorker {
             })
             .is_ok()
         {
-            if reply_rx.recv_timeout(Duration::from_millis(250)).is_ok() {
+            if reply_rx.recv_timeout(Duration::from_millis(5)).is_ok() {
                 // worker 空闲/短臂：复位已在本等待窗内消费——落定，清掉更早滞留的
                 // pending（若有；其 reply 发送端已随 stash 替换丢弃，worker 端
                 // `let _ = reply.send` 静默失败，无碍）。
@@ -4084,6 +4117,84 @@ mod tests {
             worker.handle_selector_map().lock().unwrap().len(),
             0,
             "文档换代须清空 handle→selector 表（陈旧条目使宿主派发命中死键）"
+        );
+        worker.shutdown();
+    }
+
+    /// T36/H3 回归钉（perf-mem-20261023）：忙臂跨越导航时，`reset_document_state` 的
+    /// 同步 reply 等待须以 5ms 界放行，导航初始化不得被旧文档臂整段阻塞——修复前
+    /// 250ms 界把 ~139ms 的热窗 busy 臂整段吞进导航派发（cnblogs 热窗 P0 中位 143.6ms、
+    /// reset_ms 139.7ms 占 97%，12/12 launch 一致）。放行与落定解耦：滞留由
+    /// deferred-settle 兜底（正确性另见 page_scripts
+    /// `mutation_arm_does_not_apply_across_document_reset_window` 钉）。
+    #[test]
+    fn nav_path_reset_does_not_block_on_busy_worker_arm() {
+        let mut worker = RendererJsWorker::spawn(64);
+        worker.set_dom_snapshot(
+            r#"<html><body><div id="m">old-doc</div></body></html>"#,
+            "https://zero.test/list",
+        );
+        // 忙臂 800ms 占住 worker（50ms 有界放行，r2946 忙臂惯用法）：远超 5ms 界，
+        // 回退到 250ms 界或任何长界同步等待都会在本钉的 100ms 断言上失败。
+        let _ = worker.execute_script_direct_bounded(
+            "const __t_t36 = Date.now(); while (Date.now() - __t_t36 < 800) {}",
+            std::time::Duration::from_millis(50),
+        );
+        // 200ms 裕量确保臂确然在跑（与 page_scripts 忙臂钉同惯用法）。
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let t0 = std::time::Instant::now();
+        worker.reset_document_state();
+        let elapsed = t0.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "导航复位同步等待被旧文档忙臂阻塞: {elapsed:?}（界应为 5ms）"
+        );
+        // 放行 ≠ 落定：复位命令滞留优先队列等臂跑完，期间未落定。
+        assert!(
+            !worker.document_reset_settled(),
+            "前置：忙臂下复位命令滞留，未落定（若已落定说明臂提前结束，时序假设失效）"
+        );
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !worker.document_reset_settled() && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(worker.document_reset_settled(), "10s 内复位未落定（臂悬挂）");
+        worker.shutdown();
+    }
+
+    /// T36 双审 DF2 返修钉（perf-mem-20261023）：忙臂带内（A ∈ (f+255ms, f+500ms]）
+    /// 时快照确认窗须仍覆盖到位——5ms 复位放行取消了对忙臂的预烧，`set_dom_snapshot`
+    /// 确认等待在复位滞留期扩至 500ms 恢复旧覆盖面。回归形态（窗口退回 250ms）下
+    /// 确认在臂结束前超时放行，紧随的优先通道求值抢在滞留快照前被 worker 消费，
+    /// 读到旧文档（即 fix#21 body-onload 反射被抢跑丢弃的机制）→ 本钉红。
+    #[test]
+    fn snapshot_confirm_window_survives_long_busy_arm() {
+        let mut worker = RendererJsWorker::spawn(64);
+        worker.set_dom_snapshot(
+            r#"<html><body><div id="m">old-doc</div></body></html>"#,
+            "https://zero.test/list",
+        );
+        // 忙臂 450ms：sleep 100ms 后臂剩 ~345ms ∈ (255, 500] 带内——250ms 窗超时、
+        // 500ms 窗确认到达（50ms 有界放行惯用法同上钉）。
+        let _ = worker.execute_script_direct_bounded(
+            "const __t_df2 = Date.now(); while (Date.now() - __t_df2 < 450) {}",
+            std::time::Duration::from_millis(50),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        worker.reset_document_state();
+        worker.set_dom_snapshot(
+            r#"<html><body><div id="np">new-doc</div></body></html>"#,
+            "https://zero.test/detail",
+        );
+        // 确认到达 ⇒ worker 空闲后已先消费快照（普通），本求值见新文档。确认超时
+        // 放行 ⇒ 本求值（优先通道，同 fix#12 生命周期派发路径）在臂结束后先于滞留
+        // 快照（普通队列）被消费 → 抢跑见旧文档。
+        let seen = worker
+            .execute_script_direct_priority("String(document.getElementById('np') != null)")
+            .unwrap_or_default();
+        assert_eq!(
+            seen, "true",
+            "快照确认窗未覆盖忙臂带内场景：求值抢跑读到旧文档（body-onload 反射将同机制丢失）"
         );
         worker.shutdown();
     }
