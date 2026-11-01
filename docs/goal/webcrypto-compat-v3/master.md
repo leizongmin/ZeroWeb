@@ -143,7 +143,7 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)），建议值合计 12–13 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值是否批准；② X448/Ed448 pre 版（0.14.0-pre.12/pre.15）甄别从严交拍板；③ KMAC 两案（sha3-kmac 0.3.0 引入 vs 手写叠官方 cshake）；④ ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替（候选 0.3.3/0.1.1 过时一日）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；**待拍板**（evidence 已齐） |
+| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)），建议值合计 12–13 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值是否批准；② X448/Ed448 pre 版（0.14.0-pre.12/pre.15）甄别从严交拍板；③ KMAC 两案（sha3-kmac 0.3.0 引入 vs 手写叠官方 cshake）；④ ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替（候选 0.3.3/0.1.1 过时一日）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；11-02 M2 收口进展+催办通知在案（msg `om_x100b614f36f5e8a4cd31575cf2facd6`，附四项拍板子问题）；**待拍板**（evidence 已齐） |
 
 ## 碰撞管理记录（run-rules §9）
 
