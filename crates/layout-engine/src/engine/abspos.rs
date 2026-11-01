@@ -42,6 +42,32 @@ fn resolve_abspos_pct(
     (border_box, content)
 }
 
+/// R5376（CSS2 §10.3.7 约束方程 margin 侧）：`left`/`width`/`right` 全 definite 时，
+/// auto margin-left 按方程求解——单 auto（ml）解 `ml = CB − left − right − mr − bb`；
+/// 双 auto（ml+mr）均分 `slack/2`，负 slack → ltr 侧 ml=0（右缘吸收，既有口径）。
+/// 返回 None = 不入臂，调用方回退「auto/百分比 margin 当 0」旧口径：
+/// - `width:auto`（§10.3.7 shrink-to-fit 臂未实现，方程基准不稳）；
+/// - `right:auto`（右缘吸收域，ml 与 x 无关）；
+/// - ml 本身非 auto（definite margin 走既有口径）。
+///
+/// driving：abspos-non-replaced-width-margin-000「only ml auto」组（53 应 496——
+/// auto 当 0 落过约束左锚）。`child.width` 为 border-box（模块头注），即方程的
+/// width+border+padding 项。
+fn solved_auto_margin_left(style: &ComputedStyle, cb_width: f32, left_px: f32, child: &LayoutBox) -> Option<f32> {
+    use zero_css_parser::values::LengthValue;
+    if !matches!(style.margin_left, LengthValue::Auto) || matches!(style.width, LengthValue::Auto) {
+        return None;
+    }
+    let right_px = resolve_abspos_real_length(&style.right, &style.font_size, cb_width, 0.0)?;
+    let mr_px = resolve_abspos_real_length(&style.margin_right, &style.font_size, cb_width, 0.0).unwrap_or(0.0);
+    let slack = cb_width - left_px - right_px - mr_px - child.width;
+    if matches!(style.margin_right, LengthValue::Auto) {
+        Some(if slack >= 0.0 { slack / 2.0 } else { 0.0 })
+    } else {
+        Some(slack)
+    }
+}
+
 pub(super) fn resolve_abspos_real_length(
     value: &zero_css_parser::values::LengthValue,
     font_size: &zero_css_parser::values::LengthValue,
@@ -362,11 +388,14 @@ pub(super) fn adjust_absolute_pct_to_viewport(
             // taffy 0.7 对视口-CB（顶层）absolute item 的 location 不含 margin（nested-CB
             // 含），containing-block-008 div1 margin:50px + top:0 应落 y=50 实测 y=0。
             // margin auto/百分比不计（auto margin 另有 R2062 居中；% margin 相对 CB 宽）。
+            // R5376：例外——left/width/right 全 definite 时 auto ml 按方程求解（helper
+            // 文档）；width:auto / right:auto / 非 auto margin 回退当 0 旧口径。
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, viewport_width, viewport_height)
             {
-                let ml =
+                let ml = solved_auto_margin_left(style, viewport_width, px, child).unwrap_or_else(|| {
                     resolve_abspos_real_length(&style.margin_left, &style.font_size, viewport_width, viewport_height)
-                        .unwrap_or(0.0);
+                        .unwrap_or(0.0)
+                });
                 child.x = px + ml - parent_content_origin_x;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, viewport_width, viewport_height)
@@ -732,10 +761,11 @@ pub(super) fn resolve_abspos_against_root_cb(
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
-                child.x = cb_origin_x + px + margin_left_px
-                    - current_box_origin_x
-                    - box_node.border_left
-                    - box_node.padding_left;
+                // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
+                //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
+                let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
+                child.x =
+                    cb_origin_x + px + ml_used - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
@@ -1152,10 +1182,11 @@ fn resolve_abspos_against_nested_cb_inner_m(
             let margin_top_px =
                 resolve_abspos_real_length(&style.margin_top, &style.font_size, cb_width, cb_height).unwrap_or(0.0);
             if let Some(px) = resolve_abspos_real_length(&style.left, &style.font_size, cb_width, cb_height) {
-                child.x = cb_origin_x + px + margin_left_px
-                    - current_box_origin_x
-                    - box_node.border_left
-                    - box_node.padding_left;
+                // R5376（CSS2 §10.3.7）：left/width/right 全 definite 时 auto ml 按方程求解
+                //（helper 文档）；width:auto / right:auto / 非 auto margin 回退旧口径。
+                let ml_used = solved_auto_margin_left(style, cb_width, px, child).unwrap_or(margin_left_px);
+                child.x =
+                    cb_origin_x + px + ml_used - current_box_origin_x - box_node.border_left - box_node.padding_left;
             }
             if let Some(px) = resolve_abspos_real_length(&style.top, &style.font_size, cb_width, cb_height) {
                 child.y = cb_origin_y + px + margin_top_px
