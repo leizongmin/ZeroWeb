@@ -476,7 +476,8 @@ impl BrowserApp {
             self.forward_compositor_chrome_ui(width, height);
         }
         self.maybe_request_compositor_present(width, height);
-        if present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data) {
+        let presented = present_rgba_to_softbuffer(cpu_surface, fb.width, fb.height, &fb.data);
+        if presented {
             Some(fb)
         } else {
             None
@@ -835,6 +836,9 @@ impl BrowserApp {
             .context_menu
             .visible
             .then(|| self.menu_overlay_bbox(width as f32, height as f32));
+        // T28-P37 R2：渐入泵帧判定同为渲染前的 &self 读取（方法整体借 self，
+        // 须在 image_cache_mut 之前完成）。
+        let menu_fade_pumping = self.menu_fade_pumping();
         let mut image_cache: Option<&mut ImageCache> = match tab_id {
             Some(id) => self.tabs.image_cache_mut(id),
             None => None,
@@ -909,6 +913,14 @@ impl BrowserApp {
             let row_bytes = width as usize * 4;
             let mut scratch = zero_render_foundation::surface::FrameBuffer::new(width, height);
             scratch.clear(255, 255, 255, 255);
+            // T28-P37 R2：渐入泵帧（渐入时钟已起表且完成帧未上屏）跳过条带重放——
+            // can_reuse 守卫已排除新快照/滚动/选区/拖拽/查找栏/loading 动画（DF-F2），
+            // 泵帧间唯一场景变化是菜单包围盒内的 alpha（菜单渐变在 render_context_menu
+            // 内逐帧计算，不进条带图元），bbox 重放本就逐帧全画；条带重放是泵帧剩余
+            // 主成本，跳过后渐入帧 ~40ms 一帧，Poll 16ms 心跳在 150ms 窗口内连续成帧。
+            // 成本披露：跳过窗内（≤150ms + 兜底 4×）落在 chrome 条带的无关变化
+            // （如悬停高亮、缩放浮层）延迟到渐入完成帧后的首个非跳过帧补画——自愈
+            // 且限于渐入窗，与 DF-F2 的 loading∩menu 回全量同类取舍。
             let top_strip = zero_render_foundation::geometry::Rect::new(
                 0.0,
                 0.0,
@@ -918,7 +930,7 @@ impl BrowserApp {
             // 拷贝界取 floor/ceil：region 边界行可能含 AA 半覆盖，交给原保留像素，
             // 与直绘时代的行范围一致（scale=1 时 floor(cy)==cy，无差异）。
             let top_rows = (cy.floor() as usize).min(height as usize);
-            if top_strip.size.height > 0.0 {
+            if top_strip.size.height > 0.0 && !menu_fade_pumping {
                 zero_render_foundation::cpu::render_full_scene_region_into(
                     &mut scratch,
                     scene_primitives,
@@ -940,7 +952,7 @@ impl BrowserApp {
             }
             let bottom_top = cy + ch;
             let bottom_h = (height as f32 - bottom_top).max(0.0);
-            if bottom_h > 0.0 {
+            if bottom_h > 0.0 && !menu_fade_pumping {
                 zero_render_foundation::cpu::render_full_scene_region_into(
                     &mut scratch,
                     scene_primitives,
@@ -2041,5 +2053,34 @@ mod tests {
                 p[0] == r && p[1] == g && p[2] == b && p[3] == a
             })
             .count()
+    }
+}
+
+#[cfg(test)]
+mod menu_fade_pump_tests {
+    use super::*;
+
+    /// T28-P37 R2（TV3 返修）：渐入泵帧判据边界组合——首帧未上屏不在泵窗、
+    /// drawn 达 1.0 即出窗、渐入中关菜单立即出窗，与 tick_menu_fade 终止一致。
+    #[test]
+    fn menu_fade_pumping_predicate_boundary_combinations() {
+        let mut app = BrowserApp::new(RenderMode::Cpu);
+        assert!(!app.menu_fade_pumping(), "菜单未开不在泵窗");
+        app.context_menu.visible = true;
+        assert!(!app.menu_fade_pumping(), "起表前条带照常重放");
+        app.menu_anim_start = Some(Instant::now());
+        assert!(!app.menu_fade_pumping(), "首帧未上屏（drawn=None）不在泵窗");
+        app.menu_anim_drawn_opacity = Some(0.0);
+        assert!(app.menu_fade_pumping(), "首帧已上屏进入泵窗");
+        app.menu_anim_drawn_opacity = Some(0.5);
+        assert!(app.menu_fade_pumping(), "渐入中持续泵帧");
+        app.menu_anim_drawn_opacity = Some(1.0);
+        assert!(!app.menu_fade_pumping(), "完成帧上屏即出窗，条带恢复");
+        app.menu_anim_drawn_opacity = Some(0.5);
+        app.context_menu.visible = false;
+        assert!(!app.menu_fade_pumping(), "渐入中关菜单立即出窗");
+        app.context_menu.visible = true;
+        app.menu_anim_start = None;
+        assert!(!app.menu_fade_pumping(), "时钟未起表不在泵窗");
     }
 }

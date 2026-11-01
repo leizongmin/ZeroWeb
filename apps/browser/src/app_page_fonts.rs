@@ -42,6 +42,8 @@ impl BrowserApp {
         }
         self.font_loader = loader;
         self.page_font_imports = mapping;
+        // 字体 registry 已变化：UI 文本 shape 缓存的字体 ID 解析与 advance 全部失效。
+        self.ui_text_shape_cache.borrow_mut().clear();
         self.glyph_cache.clear();
         if let Some(gpu) = self.gpu_renderer.as_mut() {
             gpu.clear_glyph_atlas();

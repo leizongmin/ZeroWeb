@@ -3481,3 +3481,267 @@ fn render_image_clip_radius_rounds_window_bilinear() {
     );
     assert_ne!(fb.get_pixel(10, 10), [255, 255, 255, 255], "圆心应绘制");
 }
+
+/// T28-P37 R2（TV1/D1 返修）：region 重放中阴影的拷回范围必须与全量光栅逐位
+/// 一致。三遍 box_blur 以 alpha 蒙版域为卷积域（定长核窗口截断、零填充），
+/// 把 region 交集写进 clip 会缩小卷积域并改变域内像素值——返修前 clip 窗口法
+/// 在条带切过 blur 渐变时拷回行通道差实测 45–108。常驻等价性回归：条带切过
+/// 纯渐变带 + 条带含墨迹主体 + 足迹完全离带的整影跳过，逐位比对拷回行。
+#[test]
+fn shadow_region_replay_copied_rows_are_byte_identical_to_full_raster() {
+    use crate::cpu::shadow::{render_shadow, render_shadow_for_region};
+    let font_loader = FontLoader::new();
+    let mut glyph_cache = GlyphCache::new(64);
+    let (w, h) = (200u32, 240u32);
+    // 条带 y ∈ [60, 108)：前 20 行是 rect 上缘之外的纯 blur 渐变（卷积域截断
+    // 最敏感区），后 28 行含墨迹主体。
+    let strip = Rect::new(0.0, 60.0, 200.0, 48.0);
+
+    let mut primitives = RenderPrimitives::new();
+    primitives.shadows.push(ShadowPrimitive {
+        rect: Rect::new(60.0, 80.0, 120.0, 100.0),
+        color: Color::rgba(0, 0, 0, 128),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 6.0,
+        spread_radius: 0.0,
+        inset: false,
+        clip: None,
+        clip_out: None,
+    });
+    let full = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        None,
+    );
+    let replay = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &primitives,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(strip),
+    );
+    for y in 60..108u32 {
+        for x in 0..w {
+            assert_eq!(
+                replay.get_pixel(x, y),
+                full.get_pixel(x, y),
+                "shadow region replay diverged from full raster at ({x},{y})"
+            );
+        }
+    }
+    // 阴影 rect 与条带相交时整影全画（含条带外行——rect 预守卫按 rect 判定，
+    // 拷回时丢弃），条带外清洁断言只对远离墨迹的角落成立。
+    for (x, y) in [(3u32, 3u32), (10, 200), (190, 230), (5, 120)] {
+        assert_eq!(
+            replay.get_pixel(x, y),
+            [255, 255, 255, 255],
+            "墨迹外角落应保持背景 ({x},{y})"
+        );
+    }
+
+    // 足迹与条带完全离带（rect 也在带外）：整影跳过，条带保持纯背景。
+    let mut far = RenderPrimitives::new();
+    far.shadows.push(ShadowPrimitive {
+        rect: Rect::new(60.0, 150.0, 120.0, 60.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 8.0,
+        spread_radius: 2.0,
+        inset: false,
+        clip: None,
+        clip_out: None,
+    });
+    let far_replay = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &far,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(strip),
+    );
+    for y in 60..108u32 {
+        for x in (0..w).step_by(7) {
+            assert_eq!(
+                far_replay.get_pixel(x, y),
+                [255, 255, 255, 255],
+                "离带阴影应整影跳过 ({x},{y})"
+            );
+        }
+    }
+    // 足迹剔除直接验证：region 与足迹（含 clip 窗口硬停）不相交时不写任何像素；
+    // 相交时与全量 render_shadow 逐位一致。
+    let far_shadow = &far.shadows[0];
+    let mut untouched = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    let mut touched = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    render_shadow_for_region(&mut untouched, far_shadow, 1.0, Some(strip));
+    assert_eq!(untouched.data, vec![255u8; (w * h * 4) as usize], "足迹离带必须零写入");
+    render_shadow_for_region(&mut touched, far_shadow, 1.0, Some(Rect::new(0.0, 150.0, 200.0, 40.0)));
+    let mut direct_full = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    render_shadow(&mut direct_full, far_shadow, 1.0);
+    assert_eq!(touched.data, direct_full.data, "足迹相交必须与全量渲染逐位一致");
+    // clip 窗口与 region 相交为空：窗口外硬停 ⇒ 零写入。
+    let mut clipped_away = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    let mut windowed = ShadowPrimitive {
+        rect: Rect::new(60.0, 80.0, 120.0, 100.0),
+        color: Color::rgba(0, 0, 0, 255),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 6.0,
+        spread_radius: 0.0,
+        inset: false,
+        clip: Some(Rect::new(0.0, 0.0, 40.0, 40.0)),
+        clip_out: None,
+    };
+    render_shadow_for_region(
+        &mut clipped_away,
+        &windowed,
+        1.0,
+        Some(Rect::new(100.0, 80.0, 60.0, 60.0)),
+    );
+    assert_eq!(
+        clipped_away.data,
+        vec![255u8; (w * h * 4) as usize],
+        "clip 窗口离带必须零写入"
+    );
+    // footprint 覆盖 inset 分支：盒内墨迹，region 相交 ⇒ 与全量一致。
+    windowed.inset = true;
+    let mut inset_direct = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    let mut inset_full_direct = FrameBuffer::new_filled(w, h, 255, 255, 255, 255);
+    render_shadow_for_region(
+        &mut inset_direct,
+        &windowed,
+        1.0,
+        Some(Rect::new(50.0, 90.0, 80.0, 40.0)),
+    );
+    render_shadow(&mut inset_full_direct, &windowed, 1.0);
+    assert_eq!(
+        inset_direct.data, inset_full_direct.data,
+        "inset 相交必须与全量渲染逐位一致"
+    );
+
+    // R4059 clip 窗口与条带并存：窗口内墨迹照常、窗口外硬停——重放与全量仍逐位一致。
+    let mut clipped = RenderPrimitives::new();
+    clipped.shadows.push(ShadowPrimitive {
+        rect: Rect::new(60.0, 80.0, 120.0, 100.0),
+        color: Color::rgba(0, 0, 0, 128),
+        offset_x: 0.0,
+        offset_y: 0.0,
+        blur_radius: 6.0,
+        spread_radius: 0.0,
+        inset: false,
+        clip: Some(Rect::new(40.0, 70.0, 160.0, 30.0)),
+        clip_out: None,
+    });
+    let clipped_full = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &clipped,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        None,
+    );
+    let clipped_replay = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &clipped,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(strip),
+    );
+    for y in 60..108u32 {
+        for x in 0..w {
+            assert_eq!(
+                clipped_replay.get_pixel(x, y),
+                clipped_full.get_pixel(x, y),
+                "clip 窗口阴影 region 重放失配 ({x},{y})"
+            );
+        }
+    }
+
+    // R2476 inset：墨迹限于盒内，重放与全量逐位一致。
+    let mut inset = RenderPrimitives::new();
+    inset.shadows.push(ShadowPrimitive {
+        rect: Rect::new(60.0, 70.0, 120.0, 90.0),
+        color: Color::rgba(0, 0, 0, 200),
+        offset_x: 5.0,
+        offset_y: 5.0,
+        blur_radius: 4.0,
+        spread_radius: 0.0,
+        inset: true,
+        clip: None,
+        clip_out: None,
+    });
+    let inset_full = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &inset,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        None,
+    );
+    let inset_replay = render_full_scene_region(
+        w,
+        h,
+        1.0,
+        &inset,
+        &font_loader,
+        &mut glyph_cache,
+        None,
+        &[],
+        &[],
+        &[],
+        &[],
+        Some(strip),
+    );
+    for y in 60..108u32 {
+        for x in 0..w {
+            assert_eq!(
+                inset_replay.get_pixel(x, y),
+                inset_full.get_pixel(x, y),
+                "inset 阴影 region 重放失配 ({x},{y})"
+            );
+        }
+    }
+}
