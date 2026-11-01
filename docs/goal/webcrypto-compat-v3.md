@@ -13,7 +13,9 @@
 
 **版本**: v1.1（同日二次拍板扩围）
 **日期**: 2026-11-01（立项；同日零遗留扩围）
-**状态**: Active——M1 未启动（控制面 `webcrypto-compat-v3/master.md` 已建）
+**状态**: Active——M1 完成（语料预置 + 分域基线 + deps evidence + 选型征询，
+控制面 `webcrypto-compat-v3/master.md`）；M2 按域收敛待启动（拍板前仅无
+依赖面切片）
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 按域切片收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
