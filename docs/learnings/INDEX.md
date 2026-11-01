@@ -5,8 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（207）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（210）
 
+- 2026-11-01 [UA display 双面分叉：host 表滞后于 JS 回落面，句柄通道 exposing 旧值](bugs/2026-11/2026-11-01-ua-display-dual-surface-divergence.md) — style-system,engine
+- 2026-11-01 [无差别 `pkill -x Xvfb` 误杀开发机远程桌面：批量清理必须按 PID/显示号收窄](bugs/2026-11/2026-11-01-indiscriminate-pkill-xvfb-kills-user-desktop.md) — rally-infra, dev-machine
+- 2026-11-01 [change-on-blur 双账并存：shim 新臂与宿主 legacy 账同失焦双派 change](bugs/2026-11/2026-11-01-dual-book-change-on-blur-dedup-latch.md) — js_dom_shim,renderer
 - 2026-10-31 [walk 辅助函数方向语义反转：skipWs 被反向调用臂复用后删错节点](bugs/2026-10/2026-10-31-walk-helper-direction-reversal.md) — js_dom_shim
 - 2026-10-31 [make browser-build 在 Linux 是 powershell 假入口——release runner 静默陈旧](bugs/2026-10/2026-10-31-make-browser-build-stale-release-runner.md) — layout-engine, wpt-runner
 - 2026-10-31 [js_dom_shim 家族子树视图滞后：CE 动作第二动作成片 no-op 与 plain 寻址补全](bugs/2026-10/2026-10-31-js-dom-family-subtree-view-staleness.md) — js_dom_shim, js_dom_bridge
