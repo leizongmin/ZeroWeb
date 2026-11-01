@@ -1159,7 +1159,7 @@ impl HeadlessSession {
                 Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
                 Err(_) => false,
             });
-        let nav_relay_t0 = (!*NAV_DISPATCH_TRACE).then(std::time::Instant::now);
+        let nav_relay_t0 = (*NAV_DISPATCH_TRACE).then(std::time::Instant::now);
         self.navigation_epoch = self.navigation_epoch.wrapping_add(1).max(1);
         // 在途导航登记（commit 校验/回声判定依据）：会话命令导航，started_confirmed
         // 待 renderer NavigationStarted 确认。
