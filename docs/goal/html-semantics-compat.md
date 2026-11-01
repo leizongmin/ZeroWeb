@@ -31,7 +31,38 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 205 收口，setCustomValidity 换行归一——setCustomValidity-normalize-newlines 1F 翻绿（misc 残面最小单根刀位），forms 全树 keyed diff 净 F→P=5（1 靶键 + onblur flake 域 4 键顺向回摆）P→F=0 键漂移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 206 收口，output value/defaultValue 活读模型——mutations.window 2F 翻绿（Descendant mutations + form.reset() 两用例），forms 全树 keyed diff 净 F→P=2（恰两靶键）P→F=0 键漂移 0 timeout 位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s205 后 misc 残面次刀候选序 output mutations 2F。
+> customizable select 177F 挂起待拍板（GB-20261031 征询在途）。
+> **勘根**：spec §4.10.12 The output element（whatwg live 版逐字核对，
+> 2021 rework 模型）——default value override（初始 null）；default
+> value=override??后代文本；value getter=活读；value setter 步①无条件
+> override := default value；reset algorithm ①String replace all with
+> default value ②override 置 null。shim 旧模型三缺：getter 只读镜像/
+> override 后代突变不可见（R2846 赋值即位）；value= 捕获 host 直读对
+> JS 本地子盲（捕获 ''）；form.reset() 走 value setter 复位后 override
+> 仍非空（innerHTML 后 defaultValue 冻结复位前值——test 2 断言面）。
+> **施工**（shim 2 文件 + rust 测试 1 文件）：part03 value/defaultValue
+> getter OUTPUT 活读臂（镜像/override 非空先回，否则融合视图活读，
+> :26866/:28594）；part04 value setter 捕获改融合视图（:14390 区）+
+> innerHTML/textContent= 删镜像不触 override（:13300/:13651，旧 R2846
+> 覆写纠正）+ form.reset() OUTPUT 单列臂（:12153-12171 读
+> defaultValue→textContent= 写回→override+镜像双清，TEXTAREA 照旧）；
+> part09.rs R5324 桥测试两腿镜像语料全断言序（gitignore 语料常驻承载，
+> s205 先例）。
+> **验证**：拼接 shim node --check SYNTAX_OK（6,866,013 B）；靶面 2/2
+> Pass（stash 基线同键 F）；forms 全树 stash A/B 净 F→P=2 恰两靶键
+> P→F=0 键漂移 0 timeout 位移 0（两侧 4711 对覆盖全同，onblur 域零
+> 采样）；output-validity.html 1F 双侧同败 pre-existing（:valid/:invalid
+> 伪类面，新入候选池）；zero-engine 3665P+1F（在册键 + R5324 新测过）；
+> fmt 零 diff + guarded-clippy 过。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → number B 簇 editor-buffer 独立立项（s203 已勘定）或 misc 残面次刀
+> （form action 反射 base-url 2F / form owner table 2F /
+> output-validity :valid/:invalid 伪类 1F）。
+> **账本**：[evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md](html-semantics-compat/evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 205 收口，setCustomValidity 换行归一——setCustomValidity-normalize-newlines 1F 翻绿（misc 残面最小单根刀位），forms 全树 keyed diff 净 F→P=5（1 靶键 + onblur flake 域 4 键顺向回摆）P→F=0 键漂移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s204 后 misc 残面候选序首位 setCustomValidity 换行归一
 > 1F 单根先行。customizable select 177F 挂起待拍板（GB-20261031 征询在途）。
 > **勘根**：spec §4.10.21.3（#dom-cva-setcustomvalidity）方法步 ①Infra
@@ -6545,6 +6576,16 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 206**：output value/defaultValue 活读模型轮——
+  mutations.window 2F 收口（Descendant mutations + form.reset()）。
+  勘根 spec §4.10.12 三缺定谳（getter 缓存盲 / value= 捕获 host 直读 /
+  reset 未清 override）；施工 shim 2 文件（getter 活读臂 ×2、value setter
+  捕获改融合视图、innerHTML/textContent= 删镜像、reset OUTPUT 单列臂）+
+  part09.rs R5324 桥测试两腿常驻承载。验证：靶面 2/2 Pass + forms 全树
+  A/B 净 F→P=2 恰靶键 P→F=0 键漂移 0 + zero-engine 3665P+1F（在册键）
+  + guarded-clippy 过；output-validity.html 1F 定谳 pre-existing
+  （:valid/:invalid 伪类面）挂账。账本
+  [evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md](html-semantics-compat/evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md)。
 - **2026-10-31 M2 切片 175**：detached 节点选择器身份盗用根修轮——枚举
   镜像钩首刀 P2F=16 勘根两刀（管线等值轻量臂实证换代理论证伪 → mutation
   日志暴露 showModal/close 打在镜像句柄上）定谳：detached 镜像

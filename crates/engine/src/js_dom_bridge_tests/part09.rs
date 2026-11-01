@@ -2234,6 +2234,98 @@ fn test_output_value_default_value_r2846() {
 }
 
 #[test]
+fn test_r5324_output_value_defaultvalue_live_read_and_reset() {
+    // R5324（s206）：HTMLOutputElement value/defaultValue 活读模型（HTML §4.10.12
+    // the-output-element）——value getter=后代文本活读（脏值镜像仅承同 turn 宿主写
+    // pending 期，后代突变即时失效回活读）；value setter 步①捕获 default value
+    // override（融合视图同源，JS 本地子文本可见）②String replace all；form.reset()
+    // 走 reset algorithm（string replace all with default value + override 置
+    // null），复位后 value/defaultValue 均活读后代文本。WPT mutations.window.js
+    //（the-output-element，gitignore 语料）两用例等价承载。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("http://test.local/".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 腿 1：后代突变活读（createElement 本地树，WPT 用例 1 断言序）。
+    sandbox
+        .execute(
+            "var out = document.createElement('output');\
+             var span = out.appendChild(document.createElement('span'));\
+             globalThis.__r1 = out.value + '|' + out.defaultValue;\
+             span.textContent = 'x';\
+             globalThis.__r2 = out.value + '|' + out.defaultValue;\
+             out.value = 'some';\
+             globalThis.__r3 = out.value + '|' + out.defaultValue;\
+             out.textContent = 'y';\
+             globalThis.__r4 = out.value + '|' + out.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "|",
+        "start：空 output value/defaultValue 均 ''"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "x|x",
+        "child.textContent='x' 后代突变活读：value/defaultValue 均 'x'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "some|x",
+        "value='some'：value=镜像，defaultValue=捕获 override 'x'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "y|x",
+        "textContent='y'：value 活读 'y'，override 跨 textContent= 稳定 'x'"
+    );
+
+    // 腿 2：form.reset() 复位算法（createElement form，s133 sel||handle 守卫）。
+    sandbox
+        .execute(
+            "var form = document.createElement('form');\
+             var op = form.appendChild(document.createElement('output'));\
+             op.textContent = 'value';\
+             op.value = 'heya';\
+             form.reset();\
+             globalThis.__r5 = op.value + '|' + op.defaultValue;\
+             op.innerHTML = '<div>something</div>';\
+             globalThis.__r6 = op.value + '|' + op.defaultValue;\
+             form.reset();\
+             globalThis.__r7 = op.value + '|' + op.defaultValue;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r5)").unwrap().value,
+        "value|value",
+        "reset：string replace all 回默认文本 + override 置 null，均活读 'value'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r6)").unwrap().value,
+        "something|something",
+        "innerHTML 后：override 已 null，defaultValue 活读 'something' 非冻结 'value'"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r7)").unwrap().value,
+        "something|something",
+        "再次 reset：默认值=活读文本，复位幂等"
+    );
+}
+
+#[test]
 fn test_mutation_record_instanceof_spec_fields_r2847() {
     // R2847：MutationObserver 回调收到的 record 须 `instanceof MutationRecord` + `[object MutationRecord]`
     // toStringTag + 完整 spec 字段（previousSibling/nextSibling/attributeNamespace/oldValue 缺省 null，

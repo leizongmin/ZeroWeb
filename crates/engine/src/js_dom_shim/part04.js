@@ -12141,21 +12141,33 @@
               // 不在 attr——reset-form rd1 前置 .checked=false 已移除 attr，复位读
               // 捕获恢复），radio 组排他经 setter s125 臂照常触发；清键后 value/
               // checked getter 回落默认读（TEXTAREA child text 活文本 / INPUT 内容
-              // 属性），OUTPUT 无脏键模型（R2846 _outputDefault 赋值即位）。
+              // 属性）；OUTPUT 复位走 §4.10.12 reset algorithm（s206 下臂）——
+              // override 置 null 后 value/defaultValue 均活读后代文本。
               if (sel || handle) {
                 var _fcs = _formControls(sel, handle);
                 for (var i = 0; i < _fcs.length; i++) {
                   var c = _fcs[i];
                   try {
                     var _ct = c.tagName;
-                    // TEXTAREA/OUTPUT 有 defaultValue（OUTPUT R2846 _outputDefault / TEXTAREA s127 live child text content）。
-                    if (_ct === 'TEXTAREA' || _ct === 'OUTPUT') {
+                    // TEXTAREA：defaultValue 为 live child text content（s127），复位 =
+                    // raw value 回默认层 + 脏键清。OUTPUT 单列（s206）：HTML §4.10.12
+                    // reset algorithm for an output element——①string replace all with
+                    // default value ②default value override 置 null。不能并入
+                    // `c.value = c.defaultValue`：value setter 步①无条件 override :=
+                    // default value，复位后 override 仍非空，后代突变下 defaultValue
+                    // 冻结在复位前值而非活读（mutations.window reset 用例断言面）。
+                    if (_ct === 'TEXTAREA') {
                       c.value = c.defaultValue;
-                      if (_ct === 'TEXTAREA') {
-                        var _tk133 = _elKey(c.__zwSelector, c.__zwHandle);
-                        delete _inputValues[_tk133];
-                        delete _inputValuesSet[_tk133];
-                      }
+                      var _tk133 = _elKey(c.__zwSelector, c.__zwHandle);
+                      delete _inputValues[_tk133];
+                      delete _inputValuesSet[_tk133];
+                    }
+                    else if (_ct === 'OUTPUT') {
+                      var _ok206 = _elKey(c.__zwSelector, c.__zwHandle);
+                      var _odv206 = c.defaultValue; // 默认值 = override ?? 后代文本（getter 同源）
+                      c.textContent = _odv206; // 步① string replace all（R49 同值守卫命中即 no-op，活文本已是默认层）
+                      delete _outputDefault[_ok206]; // 步② override := null
+                      delete _outputValue[_ok206]; // 脏值镜像同步清，value/defaultValue getter 回落活读
                     }
                     else if (_ct === 'INPUT') {
                       var _it = c.type;
@@ -13285,6 +13297,12 @@
                 if (_ihTplPx) _ihTplPx._zwTplContentKids = null;
               } catch (_e5241iv) {}
             }
+            if (_realTag(sel, handle) === 'OUTPUT') {
+              // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
+              // spec §4.10.12：innerHTML= 整体替换子树（String replace all 面）——活
+              // 文本变，脏值镜像失效（同 textContent= 臂）；override 不触碰。
+              delete _outputValue[key];
+            }
             // https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-innerhtml
             // Host mutations are applied asynchronously. Keep a parsed local child
             // view for created elements so childNodes/firstChild/lastChild remain
@@ -13632,9 +13650,12 @@
             var _tcVal = (value === null || value === undefined) ? '' : String(value);
             if (_realTag(sel, handle) === 'OUTPUT') {
               // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
-              // Replacing descendants updates defaultValue. In default mode value follows it;
-              // in value mode `_outputValue` keeps the live value.
-              _outputDefault[key] = _tcVal;
+              // spec §4.10.12：textContent= 即 String replace all——活文本变，脏值镜像
+              // 失效（value getter 回活读）；default value override（_outputDefault）
+              // 不触碰——value= 捕获跨 textContent= 稳定（mutations.window
+              // 「after setting textContent again」defaultValue 仍=捕获值断言面）。
+              // 旧 R2846 此处覆写 override，value= 捕获被 textContent= 冲掉。
+              delete _outputValue[key];
             }
             // R49：同值 no-op——textContent 与当前文本相同不重写不发 record（spec set 同值
             // 不产生 mutation；WPT childList "textContent no mutation" 期望仅 id 改名 1 条）。
@@ -14363,9 +14384,14 @@
             }
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-value
-            // Capture default mode before entering value mode, then replace descendants.
+            // spec §4.10.12 value setter 步：①default value override ← default value
+            //（首写捕获当前活文本——融合视图读，与 getter 同源；旧 host 缓存直读对
+            // JS 本地子文本盲，捕获成 '' 偏离，mutations.window「after setting value」
+            // defaultValue 断言面）②String replace all 写文本。镜像 _outputValue 承
+            // 同 turn 读（写宿主 pending 期）；变更面失效镜像即回活读。
             if (_outputDefault[key] == null) {
-              _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
+              var _ovDef = _makeProxy(sel, handle).textContent;
+              _outputDefault[key] = (_ovDef == null) ? '' : String(_ovDef);
             }
             var _ov = String(value);
             _outputValue[key] = _ov;

@@ -26855,14 +26855,18 @@ return e;
             var _hvSel = _zwSelectSelectedView(sel, handle);
             return _hvSel.length ? _zwOptionValue(_hvSel[0]) : '';
           }
-          // HTMLOutputElement.value（R2846）：spec 独立于 textContent——<output> 按 children 渲染非 value，
-          // 设 .value 不触碰 DOM text。dirty（_outputValue 存在）→ 当前值；否则 → defaultValue（lazy textContent）。
+          // HTMLOutputElement.value（R2846/s206）：spec §4.10.12（#dom-output-value）value
+          // getter 恒返 descendant text content（活读——后代文本变更立即可见）。脏值镜像
+          //（_outputValue，value= 写入的同 turn 读态）优先，镜像由变更面失效（textContent/
+          // innerHTML setter、form reset）；无镜像走融合 textContent 活读（R81 融合
+          // childNodes 视图——JS 本地子与宿主同源）。旧 R2846 惰性一次捕获冻结首读，
+          // child.textContent= 等后代变更不可见（mutations.window「Descendant mutations」
+          // 断言面根因）。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#the-output-element
           if (_realTag(sel, handle) === 'OUTPUT') {
             if (_outputValue[key] != null) return _outputValue[key];
-            if (_outputDefault[key] == null) {
-              _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
-            }
-            return _outputDefault[key];
+            var _ovLive = _makeProxy(sel, handle).textContent;
+            return _ovLive == null ? '' : String(_ovLive);
           }
           // R5009 片 d（M4 片 d）：BUTTON/LI/METER/PROGRESS/PARAM/OPTION 的 value 是
           // **纯内容属性/数值反射**（无 INPUT dirty-flag 语义）——不走本 dirty 缓存
@@ -28578,14 +28582,19 @@ return e;
           }
           return false;
         }
-        // HTMLOutputElement.defaultValue（R2846）：初始文本内容（lazy 捕获一次，跨 value 变更保持稳定——
-        // Chromium 150 oracle：value=99 后 defaultValue 仍=初值）。output.value getter/setter 见上方 value 块 +
-        // set-trap。表单计算器 `<output>` 显示结果高频。仅 OUTPUT；htmlFor 为 DOMSettableTokenList（复杂罕见，defer）。
+        // HTMLOutputElement.defaultValue（R2846/s206）：spec §4.10.12 default value =
+        // default value override ?? descendant text content——override（_outputDefault，
+        // value= 首写捕获当前活文本 / defaultValue= 显式覆写）非 null 优先，否则
+        // textContent 活读。跨 value 变更稳定面由 override 承（value=99 后 defaultValue
+        // 仍=捕获值，Chromium oracle 同）；旧惰性一次捕获连无 override 面也冻结，
+        // 后代/子文本变更不可见（mutations.window 断言面，同 value getter 根因）。
+        // output.value getter/setter 见上方 value 块 + set-trap。仅 OUTPUT；htmlFor
+        // 为 DOMSettableTokenList（复杂罕见，defer）。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-defaultvalue
         if (prop === 'defaultValue' && _realTag(sel, handle) === 'OUTPUT') {
-          if (_outputDefault[key] == null) {
-            _outputDefault[key] = handle ? (__zw_get_text_handle(handle) || '') : (__zw_get_text(sel) || '');
-          }
-          return _outputDefault[key];
+          if (_outputDefault[key] != null) return _outputDefault[key];
+          var _odLive = _makeProxy(sel, handle).textContent;
+          return _odLive == null ? '' : String(_odLive);
         }
         // s127（html-semantics M2）：textarea.defaultValue = **child text content**（live
         // ——直接 Text 子数据拼接，handle 形 `_zwTaLiveText` / sel 形 `__zw_get_text`）。
