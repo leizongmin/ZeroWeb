@@ -2386,7 +2386,11 @@
   }
   // R3254-M3 切片 1：format 命令 → inline 包裹标签（Chromium 语义——bold→<b> 而非
   // <span style=font-weight>；其余 format 族 hilitecolor/backcolor 等 CSS 化 defer）。
-  var _zwExecCmdFormatTag = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's' };
+  // editing-compat multitest 状态命令族（2026-11-01）：补 subscript/superscript——
+  // Chrome 对 sub/sup 恒元素形（styleWithCSS 置位也产 <sub>/<sup>，不产
+  // vertical-align span，multitest bootstrap flag=true 下录制仍 `<sub>` 实证）。
+  // sub/sup 互斥切换在 collapsed 臂处理（activating 一方移除另一方）。
+  var _zwExecCmdFormatTag = { bold: 'b', italic: 'i', underline: 'u', strikethrough: 's', subscript: 'sub', superscript: 'sup' };
   // R3254-M3 切片 4（editing goal，2026-09-07）：**toggle 语义 + queryCommandState**——
   // spec（Chromium execCommand 语义）：① format 命令对已包裹选区 = 解除包裹（innerHTML
   // splice 剥 <tag>…</tag>）；② queryCommandState(cmd) = 选区起点所在 inline 包裹链
@@ -2394,7 +2398,7 @@
   // 节点内 → 扫描其前置兄弟的未闭合 <tag>；起点在元素内 → 沿祖先链找 tagName 匹配。
   // https://w3c.github.io/selection-api/#querycommandstate（legacy MDN 语义——每命令
   // bool 态）。
-  function _zwQueryFormatState(cmd) {
+  function _zwQueryFormatStateDom(cmd) {
     var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
     if (!tag) return false;
     try {
@@ -2413,6 +2417,22 @@
         node = node.parentNode;
       }
     } catch (_eQs) {}
+    return false;
+  }
+  function _zwQueryFormatState(cmd) {
+    var tag = _zwExecCmdFormatTag[String(cmd == null ? '' : cmd).toLowerCase()];
+    if (!tag) return false;
+    if (_zwQueryFormatStateDom(cmd)) return true;
+    // editing-compat multitest 状态命令族（2026-11-01）：typing-state fallback——
+    // Chrome stateOverride 语义：collapsed 选区执行 format 命令不改 DOM，但
+    // queryCommandState 立即返 true（typing 包裹态存活，直到 toggle 关闭或
+    // typing 落点离弃包裹）；语料 `[["bold",""],["insertorderedlist",""]]`
+    // qState-after expected true、caret 未动的 `bold+delete` 同面。ttags 是该
+    // 态的既有载体（collapsed 臂维护），读面补兜底。
+    try {
+      var ttagsQ = globalThis.__zwTypingTags;
+      if (Array.isArray(ttagsQ) && ttagsQ.indexOf(tag) >= 0) return true;
+    } catch (_eQsT) {}
     return false;
   }
   // toggle 解除包裹（切片 4）：选区起点祖先链中找到宿主直子的 <tag> 元素，把其
@@ -4381,15 +4401,28 @@
                   var ttags = Array.isArray(globalThis.__zwTypingTags)
                     ? globalThis.__zwTypingTags.slice() : [];
                   var tat = ttags.indexOf(fmtTag2);
-                  if (_zwQueryFormatState(cmd)) { if (tat >= 0) ttags.splice(tat, 1); }
-                  else if (tat < 0) ttags.push(fmtTag2);
+                  // toggle 判定走 DOM-only（gate14 双执行 underline 语义：Chrome
+                  // 第二次 collapsed 执行不关 typing 态——qState expected true——
+                  // ttags fallback 只进 qState 读面，不进臂内判定）。
+                  if (_zwQueryFormatStateDom(cmd)) { if (tat >= 0) ttags.splice(tat, 1); }
+                  else {
+                    // sub/sup 互斥（spec subscript/superscript action 先关对侧；
+                    // multitest `[["superscript",""],["subscript",""],
+                    // ["inserttext","a"]]` expected `foo<sub>a</sub>bar` 实证）。
+                    if (fmtTag2 === 'sub' || fmtTag2 === 'sup') {
+                      var tOther = fmtTag2 === 'sub' ? 'sup' : 'sub';
+                      var tatOther = ttags.indexOf(tOther);
+                      if (tatOther >= 0) ttags.splice(tatOther, 1);
+                    }
+                    if (tat < 0) ttags.push(fmtTag2);
+                  }
                   globalThis.__zwTypingTags = ttags;
                 } catch (_eTt) {}
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
                 // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
                 try {
-                  if (_zwQueryFormatState(cmd)) {
+                  if (_zwQueryFormatStateDom(cmd)) {
                     _zwExecCmdUnwrapFormat(host2, rng2, fmtTag2);
                   } else {
                     _zwExecCmdApplyFormat(host2, rng2, fmtTag2);
