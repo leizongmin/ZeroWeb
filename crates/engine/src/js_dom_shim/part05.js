@@ -16798,8 +16798,6 @@
   // 重写范围：语句位（前向非空白 ∈ {源首, ;, }）+ 全参字面量/常量；其余保留原调用
   // 走运行时 importScripts（Function 隔离、定义不泄漏——限制记账 master.md P4）。
   // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
-  // FIXME(strict-import)：以 "use strict" 指令开头的导入源经 direct eval 落 sloppy
-  //（指令位置失效）——strict 语义差异记账；corpus 命中面（support/name.js 族）边缘。
   // 顶层级 function 声明名扫描（workers-compat M2——Timer.js 面型的字符串定时器回调
   // 需按名访问顶层级函数）。注释/字符串感知的行级近似：深度按行首计（行内 { } 同行
   // 平衡不计入判定），仅语句位（行首 trim 后 `function 名(`）命中。**已知限制**：
@@ -16842,6 +16840,93 @@
       }
     }
     return names;
+  }
+  // 导入源内联扁平化（webcrypto-compat M2 worker 腿——importScripts 源经 direct
+  // eval 内联的两个脚本语义缺口）：
+  // ① 指令位 "use strict"：eval 源指令位生效 → strict direct eval → 顶层
+  //    function/var 声明闭在 eval 作用域（upstream importScripts 为独立脚本——
+  //    指令 strict 化自身但声明仍落全局，后续脚本可见）。处置：指令原文等长空白
+  //    抹除（保行列归因），声明落 sloppy eval 外层变量环境与用例体共享；strict
+  //    内部规则（八进制字面量禁、未声明赋值抛等）随抹除失效——语料面无 strict
+  //    行为断言，FIXME(inline-strict) 记账口径。
+  // ② 顶层级 let/const：direct eval 词法声明永不落 eval 外（upstream 独立脚本落
+  //    全局词法环境，跨脚本 bare 标识符可见）。处置：深度 0 语句位 let/const 等长
+  //    替换为 var（声明落 eval 外层变量环境，多声明符 `,` 形态随 var 语义一并
+  //    可见；同 eval 内函数闭包引用不受影响）。`in self`/重复声明/TDZ 可观测差异
+  //    记账；顶层 class 无法等长替换（仍闭域）——corpus helper 面未现，
+  //    FIXME(toplevel-class) 记账。语句位判定不含 ASI 边界（前一有效符为标识符
+  //    的换行续行 `a = b\nlet c` 不替换）——语料 helper 声明均带分号规范形态。
+  // 与 _zwCollectTopLevelFunctionNames 同级注释/字符串感知近似：正则字面量不识别
+  //（含 { } 的正则可干扰深度）——corpus 面未现，记账。
+  function _zwFlattenToplevelDeclarations(src) {
+    var out = String(src);
+    // ① 指令位抹除：prologue = 源首起空白/注释/指令连续段，首个其他语句终止
+    //（上游 directive prologue 同界定；语料面仅 use strict 单指令形态）。
+    var pi = 0;
+    while (pi < out.length) {
+      var skip = /^(\s+|\/\/[^\n]*|\/\*[\s\S]*?\*\/)+/.exec(out.slice(pi));
+      if (skip) { pi += skip[0].length; continue; }
+      var directive = /^(['"])use strict\1;?/.exec(out.slice(pi));
+      if (!directive) break;
+      for (var bi = pi; bi < pi + directive[0].length; bi++) {
+        if (out.charAt(bi) !== '\n') out = out.slice(0, bi) + ' ' + out.slice(bi + 1);
+      }
+      pi += directive[0].length;
+    }
+    // ② 深度 0 语句位 let/const → var 等长替换（语句位 = 源首或前一有效符为
+    // `;` `}` `{` `)`——_zwInlineImportScripts 语句位判定同源；字符串/注释内的
+    // 同名 token 不动）。
+    var buf = '';
+    var depth = 0;
+    var inBlock = false;
+    var strCh = null;
+    var lastSig = '';
+    var wi = 0;
+    while (wi < out.length) {
+      var c = out.charAt(wi);
+      if (inBlock) {
+        buf += c;
+        if (c === '*' && out.charAt(wi + 1) === '/') { buf += '/'; inBlock = false; wi += 2; lastSig = '/'; continue; }
+        wi++;
+        continue;
+      }
+      if (strCh) {
+        buf += c;
+        if (c === '\\') { buf += out.charAt(wi + 1); wi += 2; continue; }
+        if (c === strCh) { strCh = null; lastSig = c; }
+        wi++;
+        continue;
+      }
+      if (c === '/' && out.charAt(wi + 1) === '*') { buf += c; buf += '*'; inBlock = true; wi += 2; continue; }
+      if (c === '/' && out.charAt(wi + 1) === '/') {
+        var nl = out.indexOf('\n', wi);
+        if (nl < 0) nl = out.length;
+        buf += out.slice(wi, nl);
+        wi = nl;
+        continue;
+      }
+      if (c === '\'' || c === '"' || c === '`') { strCh = c; buf += c; wi++; lastSig = c; continue; }
+      if (c === '{') { depth++; buf += c; wi++; lastSig = c; continue; }
+      if (c === '}') { if (depth > 0) depth--; buf += c; wi++; lastSig = c; continue; }
+      if (depth === 0 && (lastSig === '' || lastSig === ';' || lastSig === '}' || lastSig === '{' || lastSig === ')')) {
+        if (out.slice(wi, wi + 3) === 'let' && !/[A-Za-z0-9_$]/.test(out.charAt(wi + 3))) {
+          buf += 'var';
+          wi += 3;
+          lastSig = 'r';
+          continue;
+        }
+        if (out.slice(wi, wi + 5) === 'const' && !/[A-Za-z0-9_$]/.test(out.charAt(wi + 5))) {
+          buf += 'var  ';
+          wi += 5;
+          lastSig = ' ';
+          continue;
+        }
+      }
+      if (!/\s/.test(c)) lastSig = c;
+      buf += c;
+      wi++;
+    }
+    return buf;
   }
   // callerUrl：当前被扫描脚本的 URL（P7 后半——未内联调用改写为
   // __zwImportTracked 时携带；内联生成的 resolve/fetch 失败 throw 与 eval 包装
@@ -16918,9 +17003,11 @@
       for (var si = 0; si < sources.length; si++) {
         // P7 后半：内联源先递归过内联器（内层未内联形态调用同样改写为
         // __zwImportTracked——report-error helper 的 doImportScripts 调用位归因），
-        // 再 eval 包装——错误打 _zwScriptUrl（解析错 instanceof SyntaxError 判
-        // _zwParseError；行号 1 兜底由 _reportError 消费）。
-        var _inner = _zwInlineImportScripts(sources[si], baseHref, resolved[si]);
+        // 再扁平化（顶层声明可见性——_zwFlattenToplevelDeclarations 双缺口处置，
+        // 嵌套内联源随 _inner 整体覆盖），最后 eval 包装——错误打 _zwScriptUrl
+        //（解析错 instanceof SyntaxError 判 _zwParseError；行号 1 兜底由
+        // _reportError 消费）。
+        var _inner = _zwFlattenToplevelDeclarations(_zwInlineImportScripts(sources[si], baseHref, resolved[si]));
         out += 'try{eval(' + JSON.stringify(_inner) + ');}catch(_zwEE){'
           + 'if(_zwEE&&typeof _zwEE==="object"&&_zwEE._zwScriptUrl===undefined){'
           + '_zwEE._zwScriptUrl=' + JSON.stringify(resolved[si]) + ';'
@@ -17269,6 +17356,13 @@
     wctx.CacheStorage = globalThis.CacheStorage;
     wctx.Cache = globalThis.Cache;
     wctx.caches = globalThis.caches;
+    // webcrypto-compat M2 worker 腿：crypto 全局面 worker 暴露（WebCrypto spec §9
+    // Crypto 接口 [Exposed=(Window,DedicatedWorker,SharedWorker)]，crypto 属性挂
+    // WorkerGlobalScope）。同一实例镜像——getRandomValues/randomUUID/subtle 全
+    // host 桥绑定，[SecureContext] 门禁随页锚 scheme（part01b _zwSubtle 挂载面）：
+    // 非安全页实例无 subtle，historical.any.js worker 腿断言面同 window 腿成立。
+    // https://www.w3.org/TR/WebCryptoAPI/#crypto-interface
+    wctx.crypto = globalThis.crypto;
     // R34xx：CanvasGradient/CanvasPattern 全局（gradient.object.type/return、
     // pattern.basic.type 的 self.CanvasGradient/CanvasPattern 断言——instanceof 与
     // 实例原型链同主全局对象）。CanvasRenderingContext2D **不**入 worker 面（2D 上下文
@@ -17309,7 +17403,15 @@
       'Int16Array', 'Uint16Array', 'Int32Array', 'Uint32Array', 'Float16Array', 'Float32Array',
       'Float64Array', 'DataView',
       'IDBFactory', 'IDBDatabase', 'IDBRequest', 'IDBOpenDBRequest', 'IDBVersionChangeEvent',
-      'IDBObjectStore', 'IDBIndex', 'IDBKeyRange', 'IDBCursor', 'IDBCursorWithValue', 'IDBTransaction'];
+      'IDBObjectStore', 'IDBIndex', 'IDBKeyRange', 'IDBCursor', 'IDBCursorWithValue', 'IDBTransaction',
+      // webcrypto-compat M2 worker 腿：TextEncoder/TextDecoder（Encoding spec
+      // worker 暴露面——getPublicKey/normalize-algorithm-name worker 腿用例面）+
+      // CryptoKey/SubtleCrypto 接口对象（WebCrypto spec worker 暴露面；非安全页
+      // 全局未挂载 → 镜像守卫天然跳过——historical worker 腿 `"in self"` 断言面）+
+      // QuotaExceededError 别名接口（WebIDL DOMException 别名 Window+worker 双
+      // 暴露面——assert_throws_quotaexceedederror 按 self.QuotaExceededError 取
+      // 构造器比对 e.constructor，worker 面缺镜像 → wrong global 误判）。
+      'TextEncoder', 'TextDecoder', 'CryptoKey', 'SubtleCrypto', 'QuotaExceededError'];
     for (var wi = 0; wi < _zwWorkerInterfaces.length; wi++) {
       var iname = _zwWorkerInterfaces[wi];
       if (globalThis[iname] !== undefined && wctx[iname] === undefined) wctx[iname] = globalThis[iname];

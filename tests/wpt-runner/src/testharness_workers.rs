@@ -93,7 +93,7 @@ pub(crate) enum AnyJsLane {
 /// Parse `// META: global=` tokens（多行/逗号并集——上游 `global=` 单行多值 +
 /// 多行同键均为合法形态）。前缀兼容 `//META:` 无空格形态（upstream serve.py
 /// meta 解析按 `//\s*META:`——corpus 实例 Worker-constructor-proto.any.js）。
-fn wpt_meta_globals(source: &str) -> Vec<String> {
+pub(crate) fn wpt_meta_globals(source: &str) -> Vec<String> {
     let mut globals = Vec::new();
     for line in source.lines() {
         let trimmed = line.trim();

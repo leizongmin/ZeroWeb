@@ -27,6 +27,7 @@ mod testharness_page_state;
 mod testharness_pointerlock;
 mod testharness_svg;
 mod testharness_wasm_core;
+mod testharness_webcrypto;
 mod testharness_webmessaging;
 mod testharness_workers;
 mod wpt_file_loader;
@@ -1338,7 +1339,7 @@ fn cmd_testharness_webcrypto(options: &CliOptions, filter: Option<&str>) {
         .as_deref()
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::PathBuf::from("tests/wpt-runner/wpt-data"));
-    let cases = testharness::run_webcrypto_cases(&wpt_root, filter);
+    let cases = testharness_webcrypto::run_webcrypto_cases(&wpt_root, filter);
     let failed = cases.iter().any(|(_, results)| {
         results
             .iter()

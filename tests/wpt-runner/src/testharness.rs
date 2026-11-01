@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use zero_page_runtime::{HtmlActionRequest, HtmlUserAction};
 use zero_webview::{WebView, WebViewConfig};
 
-const CASE_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const CASE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// web-api-batch2 两 corpus（clipboard-apis / fullscreen）单案时限。上游
 /// clipboard-apis basics 族单案串行 ~19 个 test_driver.click 激活周期（waitForUserActivation），
@@ -2966,112 +2966,6 @@ pub fn run_compression_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
     cases
 }
 
-/// webcrypto-compat goal（26 / DC-1）corpus 目录——fetch 脚本
-/// `scripts/goals/26-webcrypto-compat.sh`（同 WPT_REV pin，git trees 深挖
-/// `lib.sh fetch_dir_deep`）拉取 `.any.js`/`.window.js` 用例与 vectors/support
-/// 到 `wpt-data/WebCryptoAPI/`（gitignored）。
-const WEBCRYPTO_TEST_DIR: &str = "WebCryptoAPI";
-
-/// [`WEBCRYPTO_TEST_DIR`] 用例名排除规则（runner 侧记账排除，fetch 侧全量拉取）。
-/// - `idlharness.*`：依赖 /resources/WebIDLParser.js 与 idlharness.js build 期生成
-///   资产，repo 内不存在，window 不可执行（compression idlharness 先例）。
-/// - `secure_context/` 的 `.sub.html` 为 include 资产非用例（扫描只取 .js 形态，
-///   天然排除）。
-fn webcrypto_case_skipped(relative: &str) -> bool {
-    let name = relative.rsplit('/').next().unwrap_or(relative);
-    name.starts_with("idlharness.")
-}
-
-/// Run the pinned upstream WebCryptoAPI window subset
-/// （webcrypto-compat goal M1 / DC-1——getRandomValues/randomUUID/subtle 分域基线）。
-/// 目录**递归**扫描 `.any.js` / `.window.js`（用例入口形态；语料埋二三层子目录），
-/// META script 自动解析（compression 先例；vectors/support 与用例同树，
-/// `/common/subset-tests.js`、`/common/gc.js` 由 fetch 脚本补拉），[`any_js_window_wrapper`]
-/// window 变体执行。排序收集保证基线顺序可复现。filter 按路径子串过滤。
-pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
-        Ok(source) => source,
-        Err(error) => {
-            return vec![(
-                format!("{WEBCRYPTO_TEST_DIR}/"),
-                vec![HarnessSubtestResult {
-                    name: "load testharness.js".into(),
-                    status: HarnessStatus::Fail,
-                    message: Some(error.to_string()),
-                }],
-            )];
-        }
-    };
-    // 递归收集用例路径（含子目录；排序保证跨轮基线可复现）。
-    let mut case_paths = Vec::new();
-    let mut stack = vec![wpt_root.join(WEBCRYPTO_TEST_DIR)];
-    while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                stack.push(path);
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if name.ends_with(".any.js") || name.ends_with(".window.js") {
-                case_paths.push(path);
-            }
-        }
-    }
-    case_paths.sort();
-    let mut cases = Vec::new();
-    for path in case_paths {
-        let relative = match path.strip_prefix(wpt_root) {
-            Ok(relative) => relative.to_string_lossy().to_string(),
-            Err(_) => continue,
-        };
-        if filter.is_some_and(|filter| !relative.contains(filter)) || webcrypto_case_skipped(&relative) {
-            continue;
-        }
-        let Ok(case_source) = read_corpus_to_string(&path) else {
-            continue;
-        };
-        let case_dir = Path::new(&relative).parent().unwrap_or_else(|| Path::new(""));
-        let mut support_sources = Vec::new();
-        let mut support_failed = false;
-        for script in wpt_meta_scripts(&relative, &case_source) {
-            let support_path = match script.strip_prefix('/') {
-                Some(root_relative) => wpt_root.join(root_relative),
-                None => wpt_root.join(case_dir).join(&script),
-            };
-            match read_corpus_to_string(support_path) {
-                Ok(source) => support_sources.push((script, source)),
-                Err(error) => {
-                    cases.push((
-                        relative.clone(),
-                        vec![HarnessSubtestResult {
-                            name: format!("load WebCryptoAPI support {script}"),
-                            status: HarnessStatus::Fail,
-                            message: Some(error.to_string()),
-                        }],
-                    ));
-                    support_failed = true;
-                    break;
-                }
-            }
-        }
-        if support_failed {
-            continue;
-        }
-        let support_refs = support_sources
-            .iter()
-            .map(|(name, source)| (name.as_str(), source.as_str()))
-            .collect::<Vec<_>>();
-        let html = any_js_window_wrapper(&relative, &support_refs, &case_source);
-        let results = run_testharness_html(wpt_root, &relative, &html, &harness_source, CASE_TIMEOUT);
-        cases.push((relative, results));
-    }
-    cases
-}
-
 /// webgl-compat goal（99 / M2）corpus 目录——fetch 脚本
 /// `scripts/goals/99-webgl-compat.sh`（同 WPT_REV pin，`GOAL_PULL_ANY_JS` opt-in +
 /// idlharness 资产补拉）拉取到 `wpt-data/webgl/`（gitignored）。pin rev 处为
@@ -4116,19 +4010,6 @@ fn net_api_case_uses_http_page(case_name: &str) -> bool {
     NET_API_CORPUS_SUBDIRS.iter().any(|dir| case_name.starts_with(dir))
 }
 
-/// WebCryptoAPI corpus 页面 scheme 判定（webcrypto-compat 残留收口）：上游按文件名
-/// `.https.` 中缀双态——带中缀的案（digest/derive/sign_verify 等全部语义案）跑
-/// https 安全上下文，无中缀的案（historical.any.js 断言非安全上下文无
-/// crypto.subtle/CryptoKey、getRandomValues.any.js 与 scheme 无关）跑 http。runner
-/// 页锚同口径翻转，shim 侧 [SecureContext] 门禁（part01b `_zwSubtle`）随之生效。
-fn webcrypto_case_uses_http_page(case_name: &str) -> bool {
-    let Some(name) = case_name.strip_prefix("WebCryptoAPI/") else {
-        return false;
-    };
-    let file = name.rsplit('/').next().unwrap_or(name);
-    !file.contains(".https.")
-}
-
 /// s116：referrer corpus 页面 scheme 判定——referrer-strict-policies 前提「文档
 /// over HTTP」（断言文本与导入链均锚 http：https 文档令 `./resources` 包装导入
 /// https 化、checker 子请求成降级，origin 断言翻红）。webcrypto 同口径先例。
@@ -4800,7 +4681,7 @@ fn indexeddb_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &
     any_js_window_wrapper(path, support, case_source)
 }
 
-fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
+pub(crate) fn any_js_window_wrapper(path: &str, support: &[(&str, &str)], case_source: &str) -> String {
     let mut source = String::new();
     for (name, script) in support {
         let script = apply_wpt_substitutions(script);
@@ -4912,7 +4793,7 @@ fn service_worker_any_js_is_module(source: &str) -> bool {
         .any(|line| line.trim().eq_ignore_ascii_case("// META: global=serviceworker-module"))
 }
 
-fn wpt_js_has_long_timeout(source: &str) -> bool {
+pub(crate) fn wpt_js_has_long_timeout(source: &str) -> bool {
     source
         .lines()
         .any(|line| line.trim().eq_ignore_ascii_case("// META: timeout=long"))
@@ -9102,7 +8983,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // webcrypto-compat 残留收口：WebCryptoAPI 无 `.https.` 中缀案同 http（上游
     // 文件名双态语义，historical.any.js 断言非安全上下文面；webcrypto_case_uses_http_page）。
     let page_scheme = if net_api_case_uses_http_page(case_name)
-        || webcrypto_case_uses_http_page(case_name)
+        || crate::testharness_webcrypto::webcrypto_case_uses_http_page(case_name)
         || referrer_case_uses_http_page(case_name)
         || link_style_error_case_uses_http_page(case_name)
         || crate::testharness_page_state::page_state_case_uses_http_page(case_name)

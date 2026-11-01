@@ -1,13 +1,28 @@
 # Web Crypto 兼容三期运行时控制面板
 
 **状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
-选型征询落档）；M2 无依赖面两切片完成（M2-1 门禁面 +543P、M2-2 散新案
-归因 +12P，均零回归）；余 worker 腿接线与 1T 销案，D1 拍板后进域切片
-**最后更新**: 2026-11-01（M2-2 完成）
+选型征询落档）；M2 无依赖面三切片完成（M2-1 门禁面 +543P、M2-2 散新案
+归因 +12P、M2-3 worker 腿接线 +863P，均零回归）；余 worker 消息泵饥饿
+修复（引擎侧，hkdf/pbkdf2 worker 腿）与 1T 销案，D1 拍板后进域切片
+**最后更新**: 2026-11-02（M2-3 完成）
 
 ---
 
 ## 当前状态
+
+**M2-3 worker 腿接线完成（2026-11-02，[evidence](evidence/2026-11-02-m2s3-worker-leg.md)）**：
+全子树 179 个 `.any.js` 案 window/worker 双腿执行（runner 新增
+testharness_webcrypto.rs 独立模块 + part05.js worker 全局 crypto/镜像补齐）。
+全量新分母 360 案 / 68,645 子测试 = P 40,572 + F 29,066 + T 7；window 腿与
+M2-2 锚逐字节全等（零回归）；worker 腿 P 14,186（接线首轮 +863）与同源
+window 腿状态族 parity 177/179。配套修复导入源内联扁平化
+（`_zwFlattenToplevelDeclarations`——strict direct eval 闭域 + 顶层 let/const
+eval 词法闭域双缺口，supports×4/wrapKey/derived_bits_length 等 6 族 worker
+腿翻绿；全语料静态核查对其余通道 no-op）。worker 残 T 4 = hkdf/pbkdf2
+**worker 消息投递空闲饥饿**（引擎侧缺陷已归因——忙 worker 投递跟 op 节奏
+12 条/s、闲 worker 退化 ~0.7s/条，zzprobe10 最小复现 2110 注册 vs 42 完成，
+窗口腿同案全绿；修复属 script-sandbox/event-loop 独立切片）+ Hybrid-KEM 2
+（域门控随 D1）。对照基准更新为 [m2s3 锚](evidence/2026-11-02-m2s3-full.json.gz)。
 
 **M2-2 散新案归因收敛完成（2026-11-01，[evidence](evidence/2026-11-01-m2s2-scattered-cases.md)）**：
 export-key-error-order（2/6→6/6，错误检查顺序——`_zw_exportRegistered`
@@ -52,9 +67,13 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
    0.1.2）；X448/Ed448 仅 pre 线活跃（甄别从严交拍板）。新 crate 建议合计
    12–13 个。
 
-**下一步（M2 余下）**：拍板前推进无新依赖面——① worker 腿接线与
-1T 销案穿插（无依赖，触 runner/workers 通道基建——与 25 号流共享
-testharness.rs，落账前对账）。1T triage 精化（2026-11-01，M2-2 轮）：
+**下一步（M2 余下）**：拍板前推进无新依赖面——① **worker 消息投递空闲
+饥饿修复切片**（2026-11-02 M2-3 归因：worker→页 result 消息投递与宿主事件
+循环耦合退化，闲 worker ~0.7s/条、忙 worker 跟 op 节奏；zzprobe10 最小复现
+2110 promise_test 注册仅 42 完成/30s，窗口腿同构即时全绿；hkdf/pbkdf2 worker
+腿翻绿 = +12,533 子测试位；属 script-sandbox/event-loop 域，改前全通道
+回归对账）；② 1T 销案（iframe 子 realm 基建切片，M2-2 轮 triage 已精化，
+见下）；③ D1 拍板后域切片。1T triage 精化（2026-11-01，M2-2 轮）：
 algorithm-discards-context 12 个 async_test 全依赖 iframe 子 realm 脚本
 执行（`contentDocument.body.appendChild(script)`）+ 子内 getter 跨
 realm 回调 `top.closeChild` → `t.done()`；runner harness 记
@@ -110,3 +129,11 @@ AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，ML-KEM/ML-D
   文件（非共享清单）。M2-1 推送时 rebase 带入 s218（part04/part06，无
   交集）与 7c516159b（webcrypto master.md D1 行，合并共存已核对）；
   本轮开工 `git pull --rebase` 已是最新。
+- 2026-11-02 M2-3 轮：触面 `tests/wpt-runner/src/testharness_webcrypto.rs`
+  （新增 ~214 行）、`testharness.rs`（webcrypto 块 106 行迁出 + CASE_TIMEOUT/
+  any_js_window_wrapper/wpt_js_has_long_timeout 升 pub(crate)）、
+  `testharness_workers.rs`（wpt_meta_globals 升 pub(crate)）、`main.rs`
+  （mod 声明 + 调用点改道）、`js_dom_shim/part05.js`（+114/-4：worker
+  crypto 镜像 + `_zwFlattenToplevelDeclarations`）。共享面 testharness.rs
+  落账前对账：fetch 远端 `4f044f3fe..22acb33eb`（insertText typing 面 +
+  响应式图片，part04/part06 域），与本切片触面 diff 零交集。
