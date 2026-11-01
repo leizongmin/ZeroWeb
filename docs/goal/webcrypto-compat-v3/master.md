@@ -3,13 +3,27 @@
 **状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
 选型征询落档）；M2 无依赖面**全部收口**：M2-1 门禁面 +543P、M2-2 散新案
 归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
-M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4），
+M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
+M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（D1 拍板前置：deps evidence MSRV 编译预检 + 建议集修正 + KMAC 双案互证落档）
+**最后更新**: 2026-11-02（M2-5 raw 格式别名切片：80 F→P 零回归，F 扫查误桶更正落档）
 
 ---
 
 ## 当前状态
+
+**M2-5 raw 格式别名切片完成（2026-11-02，[evidence](evidence/2026-11-02-m2s5-raw-format-aliases.md)）**：
+`raw-secret`/`raw-public` importKey/exportKey/wrapKey/unwrapKey 格式别名
+（WICG webcrypto-modern-algos KeyFormat 扩展；对称面 raw-secret ≡ raw、
+EC/OKP raw 面 raw-public ≡ raw、RSA 不映射）——**80 F→P**（raw_format_aliases
+新族 + 旧 tentative 路径 × window/worker 双腿 4 案各 20），全量分母 360 案 /
+81,851 keys = P 52,861 + F 28,986 + T 4，对 m2s4 锚逐 (case, subtest) 对照
+**变化精确落 4 靶案、P→非P = 0、键集零漂移**。本切片同时更正 F 扫查一处
+误桶（该案被按目录桶进 D1 域门控，实为只触既有算法的无依赖面；扫查文档已
+加更正注记，supports-modern/getPublicKey 余红经同法复核维持域门控）。
+零 Rust 触面（part01b.js +17 helper / part02.js +10 三接线）；runner 单测
+276P/0F、clippy 干净；r1 V8 fatal 按 M2-1 flake 判据记账（r2 复跑干净）。
+对照基准更新为 [m2s5 锚](evidence/2026-11-02-m2s5-full.json.gz)。
 
 **D1 拍板前置证据加固完成（2026-11-02，[evidence](evidence/2026-11-02-dc2-msrv-compile-precheck.md)）**：
 deps evidence（11-01）为 metadata 级证据，本轮 /tmp 隔离 scratch + rustc
@@ -135,8 +149,10 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
    0.1.2）；X448/Ed448 仅 pre 线活跃（甄别从严交拍板）。新 crate 建议合计
    12–13 个。
 
-**下一步（D1 拍板后）**：M2 无依赖面已全部收口（M2-1/2/3/3b/4，见上
-各段）——无新依赖可推进面已用尽，余下工作全部依赖 D1 选型拍板。
+**下一步（D1 拍板后）**：M2 无依赖面已全部收口（M2-1/2/3/3b/4/5，见上
+各段；M2-5 系逐案算法面复核从 F 扫查误桶中捞回的无依赖案，supports-modern/
+getPublicKey 余红经同法复核维持域门控——无新依赖可推进面已用尽的结论现以
+逐案算法面复核为据）——余下工作全部依赖 D1 选型拍板。
 拍板后按 deps evidence 建议定序（依赖就绪度：aes-ocb/chacha20poly1305/
 argon2 等 AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，
 ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 REG 与
@@ -230,3 +246,8 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   无碰撞面。锚本体本轮复验：m6-residual 锚 123 案 25,788P/7,320F/1T
   = 33,109 逐位成立；m2s4 锚 360 案在位。D1 维持征询等待（git 账面零
   变化，两轮征询在案不重复通知）。
+- 2026-11-02 M2-5 轮：触面 `crates/engine/src/js_dom_shim/part01b.js`
+  （+17 行：`_zw_normalizeFormatAlias` family 条件归一 helper）、
+  `part02.js`（+10/-1：importKey/exportKey 入口归一 + unwrapKey 白名单
+  放行）。共享清单（part01.js/script_gen.rs/testharness.rs）零触碰；
+  25 号/33 号流共享面零交集。开工 pull --rebase 已是最新（fa5444f60）。
