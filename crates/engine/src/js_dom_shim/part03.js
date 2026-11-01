@@ -2609,7 +2609,9 @@
   };
   // source type 属性支持性判定（RFC 7231 MIME 结构 + 图像格式白名单；空/空白
   // 值跳过检查——`type`/`type=' '` rows 选中 source 面）。参数（;k=v）不影响
-  // 本质类型；image/* 通配是结构合法但白名单外 → unsupported。
+  // 本质类型；空 parameter value 合法（mimesniff §parse a MIME type：value 收
+  // 集 not-`;` 序列后可空）https://mimesniff.spec.whatwg.org/#parse-a-mime-type；
+  // image/* 通配是结构合法但白名单外 → unsupported。
   globalThis.__zwSourceSupportedType5277 = function (v) {
     var s = String(v == null ? '' : v).trim();
     if (!s) return true;
@@ -2621,7 +2623,7 @@
     var t = essence.slice(0, slash), st = essence.slice(slash + 1);
     if (!tokenRe.test(t) || !tokenRe.test(st)) return false;
     var rest = sc >= 0 ? s.slice(sc + 1) : '';
-    if (rest && !/^\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+(\s*=\s*("[^"]*"|[!#$%&'*+\-.^_`|~0-9A-Za-z]+))?\s*(;.*)?$/.test(rest)) return false;
+    if (rest && !/^\s*[!#$%&'*+\-.^_`|~0-9A-Za-z]+(\s*=\s*("[^"]*"|[!#$%&'*+\-.^_`|~0-9A-Za-z]*))?\s*(;.*)?$/.test(rest)) return false;
     var mime = (t + '/' + st).toLowerCase();
     return mime === 'image/gif' || mime === 'image/png' || mime === 'image/jpeg'
       || mime === 'image/svg+xml' || mime === 'image/x-icon' || mime === 'image/webp';
