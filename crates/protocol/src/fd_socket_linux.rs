@@ -1,8 +1,15 @@
 //! Linux Unix socket 辅助通道：经 SCM_RIGHTS 传递 dma-buf fd（RFC 4.3 真纹理零拷贝）。
+//!
+//! 对端信任模型（renderer-trust-boundary M3）：socket 落在共享的 `/dev/shm`，
+//! 防线为三层——① socket 文件权限收 owner-only（0600）；② accept/connect 双侧
+//! `SO_PEERCRED` 校验对端 euid（Linux；macOS 无 SO_PEERCRED，交由 ① 与 ③）；
+//! ③ socket 名含每帧发布的 128-bit 随机 token，token 经既有 IPC 描述符送达
+//! 消费端（wire 不变），同机其他进程无法在发布窗口内猜中路径。
 
 use std::io::{IoSlice, IoSliceMut};
 use std::mem::size_of;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::time::Duration;
@@ -16,7 +23,58 @@ pub fn fd_socket_path(name: &str) -> PathBuf {
     PathBuf::from(format!("/dev/shm/{FD_SOCKET_PREFIX}{name}"))
 }
 
-/// compositor 侧：bind 并等待单次连接，经 SCM_RIGHTS 发送 `fd`。
+/// fd socket 名：surface/frame 前缀 + 每次发布重新生成的随机 token。
+/// 名字经 `CompositorFrameDelivery.fd_socket_name`（既有 IPC 描述符）送达消费端。
+pub fn fd_socket_name(surface_id: u64, frame_id: u64) -> String {
+    format!("{surface_id}-{frame_id}-{}", random_token())
+}
+
+/// 128-bit 随机 hex token（`/dev/urandom`；std-only 不引 rand 依赖）。
+/// urandom 不可读时退化为 pid+纳秒组合——仍远优于可预测的 surface-frame 名。
+fn random_token() -> String {
+    use std::io::Read;
+    let mut bytes = [0u8; 16];
+    let ok = std::fs::File::open("/dev/urandom")
+        .and_then(|mut file| file.read_exact(&mut bytes))
+        .is_ok();
+    if !ok {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mixed = (nanos as u64) ^ ((std::process::id() as u64) << 32);
+        bytes[..8].copy_from_slice(&mixed.to_le_bytes());
+        bytes[8..].copy_from_slice(&(mixed.wrapping_mul(0x9E3779B97F4A7C15)).to_le_bytes());
+    }
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+/// 对端是否同 euid（Linux `SO_PEERCRED`；macOS 无对应结构，恒 true——
+/// 跨用户面由 socket 文件 0600 与不可猜 token 保障）。
+fn peer_same_user(stream: &UnixStream) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        let mut cred = libc::ucred { pid: 0, uid: 0, gid: 0 };
+        let mut len = size_of::<libc::ucred>() as libc::socklen_t;
+        let rc = unsafe {
+            libc::getsockopt(
+                stream.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_PEERCRED,
+                (&mut cred as *mut libc::ucred).cast(),
+                &mut len,
+            )
+        };
+        rc == 0 && cred.uid == unsafe { libc::geteuid() }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = stream;
+        true
+    }
+}
+
+/// compositor 侧：bind 并等待首个同用户连接，经 SCM_RIGHTS 发送 `fd`。
 ///
 /// **所有权契约（R3340）**：`fd` 的所有权转入本函数。`SCM_RIGHTS` 会在内核中
 /// 为接收方复制一份新 fd，但**发送方的本地 fd 不会被内核关闭**——必须由本函数显式关闭。
@@ -32,6 +90,9 @@ pub fn publish_fd(name: &str, fd: RawFd, accept_timeout: Duration) -> Result<(),
     }
     let listener =
         UnixListener::bind(&path).map_err(|e| ProtocolError::Channel(format!("fd socket bind 失败: {e}")))?;
+    // bind 默认 0777&~umask；显式收紧 owner-only，挡共享 /dev/shm 上的跨用户连接
+    // （set_permissions 失败不致命：Linux 侧仍有 SO_PEERCRED euid 校验兜底）。
+    let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
     listener
         .set_nonblocking(true)
         .map_err(|e| ProtocolError::Channel(format!("fd socket nonblocking 失败: {e}")))?;
@@ -39,7 +100,16 @@ pub fn publish_fd(name: &str, fd: RawFd, accept_timeout: Duration) -> Result<(),
     let deadline = std::time::Instant::now() + accept_timeout;
     let stream = loop {
         match listener.accept() {
-            Ok((stream, _)) => break stream,
+            Ok((stream, _)) => {
+                if peer_same_user(&stream) {
+                    break stream;
+                }
+                // 非本用户连接：丢弃并继续等合法消费端，不让陌生连接挤占交付窗口。
+                if std::time::Instant::now() >= deadline {
+                    let _ = std::fs::remove_file(&path);
+                    return Err(ProtocolError::Channel("fd socket accept 超时".into()));
+                }
+            }
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                 if std::time::Instant::now() >= deadline {
                     let _ = std::fs::remove_file(&path);
@@ -59,7 +129,7 @@ pub fn publish_fd(name: &str, fd: RawFd, accept_timeout: Duration) -> Result<(),
     Ok(())
 }
 
-/// Browser 侧：connect 并 recv fd。
+/// Browser 侧：connect 并 recv fd；对端（accept 侧）须为同 euid 进程。
 pub fn consume_fd(name: &str, connect_timeout: Duration) -> Result<OwnedFd, ProtocolError> {
     let path = fd_socket_path(name);
     let deadline = std::time::Instant::now() + connect_timeout;
@@ -78,12 +148,12 @@ pub fn consume_fd(name: &str, connect_timeout: Duration) -> Result<OwnedFd, Prot
             Err(error) => return Err(ProtocolError::Channel(format!("fd socket connect 失败: {error}"))),
         }
     };
+    // 连接到的监听者若非本 euid（同用户抢位），拒绝收 fd——失败语义明确优于
+    // 静默接受陌生进程交付的 fd。
+    if !peer_same_user(&stream) {
+        return Err(ProtocolError::Channel("fd socket 对端用户不符，拒绝接收".into()));
+    }
     recv_fd(&stream)
-}
-
-/// fd socket 名。
-pub fn fd_socket_name(surface_id: u64, frame_id: u64) -> String {
-    format!("{surface_id}-{frame_id}-fd")
 }
 
 fn send_fd(stream: &UnixStream, fd: RawFd) -> Result<(), ProtocolError> {
@@ -183,6 +253,52 @@ mod tests {
             .expect("spawn isolated fd count test");
         assert!(status.success(), "隔离 fd 计数测试失败: {status}");
         true
+    }
+
+    /// M3 切片 2：socket 名必须含每次发布重新生成的随机 token——同机其他进程
+    /// 无法在发布窗口内猜中路径（跨 tab 像素面收口）。同 surface/frame 两次
+    /// 生成必须不同，且 token 为 32 位 hex 后缀。
+    #[test]
+    fn fd_socket_name_carries_per_publish_token() {
+        let first = fd_socket_name(7, 9);
+        let second = fd_socket_name(7, 9);
+        assert_ne!(first, second, "同 surface/frame 的两次发布 socket 名不应相同");
+        let token = first.rsplit('-').next().expect("token 段");
+        assert_eq!(token.len(), 32, "token 应为 128-bit hex：{first}");
+        assert!(token.chars().all(|c| c.is_ascii_hexdigit()), "token 应为 hex：{token}");
+    }
+
+    /// M3 切片 2：发布窗口内 socket 文件必须为 owner-only（0600），挡共享
+    /// /dev/shm 上其他用户在 accept 前的连接面。
+    #[test]
+    fn fd_socket_publish_sets_owner_only_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let name = format!("mode-{}", fd_socket_name(1, std::process::id() as u64));
+        let memfd = unsafe { libc::memfd_create(c"zeroweb-fd-mode".as_ptr(), libc::MFD_CLOEXEC) };
+        assert!(memfd >= 0, "memfd_create: {}", std::io::Error::last_os_error());
+
+        let name_clone = name.clone();
+        let handle = thread::spawn(move || publish_fd(&name_clone, memfd, Duration::from_secs(5)));
+        // 等发布端完成 bind（accept 轮询期最长 5s，窗口内路径存在）。
+        let path = fd_socket_path(&name);
+        let mut checked = false;
+        for _ in 0..100 {
+            if let Ok(metadata) = std::fs::metadata(&path) {
+                assert_eq!(
+                    metadata.permissions().mode() & 0o777,
+                    0o600,
+                    "fd socket 文件应 owner-only：{:o}",
+                    metadata.permissions().mode()
+                );
+                checked = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert!(checked, "5s 内未观察到 fd socket 路径");
+        let received = consume_fd(&name, Duration::from_secs(2)).expect("consume fd");
+        handle.join().expect("publish join").expect("publish fd");
+        assert!(received.as_raw_fd() >= 0);
     }
 
     #[test]

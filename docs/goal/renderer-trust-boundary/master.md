@@ -1,9 +1,9 @@
 # Renderer 信任边界控制面
 
 **日期**：2026-11-01
-**状态**：Active（M1 已完成盘点；M2 切片 1–5 已交付；M3 切片 1 已交付——compositor landlock 从未生效双根因修复 + 真实进程沙箱验收）。
-**当前卡点**：两项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠。
-**下一步**：M3 切片 2——helper（renderer/image-decoder）侧沙箱与线程时序实测（Linux 侧 compositor S2/S3 已实测；剩余 macOS 对照、helper 受限操作验收、fd_socket_linux 无 SO_PEERCRED 项），或按用户对 ①② 的决策先行；`__zw*` 族设计切片待用户拍板装配策略后启动。
+**状态**：Active（M1 盘点完成；M2 切片 1–5 已交付；M3 切片 1–2 已交付——compositor landlock 双根因修复 + fd 传递通道对端信任收口与 helper 沙箱时序审计）。
+**当前卡点**：两项待用户/设计决策：① CDP 默认强制 token（破坏既有自动化客户端）；② `__zw*` 测试钩子族页面可见（fullscreen 激活门可被 `__zwUserActivate`/`__zwSetPermission` 双路自授绕过）——修复需测试模式判定，涉及 shim part02/04/06 与 html-semantics 流工作文件正面重叠。③（M3 新增）helper 完整 OS sandbox（renderer 现为 RFC P3 占位、image-decoder 无钩子）是否补齐属设计决策，见缺口表。
+**下一步**：M4——DC 审计与门禁收口（DC-1/2/3 已 PARTIAL，DC-4 切片 1–2 后仍缺 helper 受限操作验收——依赖决策 ③，fd 通道 DRI3 显示补验；DC-5 全场景复测），或按用户对 ①②③ 的决策先行；`__zw*` 族设计切片待用户拍板装配策略后启动。
 **入口**：[目标契约](../renderer-trust-boundary.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
@@ -19,8 +19,10 @@
 | PermissionManager 死代码（app 内零调用点） | 与上条合并设计：真权限决策上收 browser 或明确降级文档 | 待设计 |
 | ~~多进程 HSTS 不注册（兼容缺口）~~ | 已修复：fetch_proxy document 响应落 per-tab SecurityContext + 2 常驻回归 | DONE（2026-11-01） |
 | ~~compositor landlock 从未生效（add_rule flags 误传 size + 访问位错位）~~ | 已修复：位/flags 修正 + 真实 restrict 回归 + 真实进程验收（[M3 切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md)） | DONE（2026-11-01） |
-| helper 沙箱/线程时序与平台降级 | Linux compositor 侧已实测；余 helper 侧受限操作验收 + macOS 对照 + fd_socket_linux 无 SO_PEERCRED 项 | PARTIAL（M3） |
+| ~~fd_socket_linux 无 SO_PEERCRED（M1 矩阵第 5 项）~~ | 已修复：socket 0600 + 双侧 SO_PEERCRED euid 校验 + 每发布 128-bit token（wire 不变）+ 2 常驻回归（[M3 切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)） | DONE（2026-11-01） |
+| helper 完整 OS sandbox：renderer 现为 RFC P3 占位（仅 env 剥离）、image-decoder 无任何钩子 | 设计决策（升新能力切片与否）→ 补齐后做 helper 受限操作验收（DC-4 余项）；线程时序契约已审计成立（切片 2） | 待用户决策 ③ |
 | 平台缺沙箱能力的产品策略 | M3 证据后列选项，必要时用户决定 | 待核查（Linux 容器/内核不支持面已有 ENOSYS/EPERM/EINVAL 容忍口径与 fail-open 实证） |
+| fd 通道真实进程 dma-buf 端到端补验 | 需 DRI3-capable 显示（Xvfb 无 DRI3，静默回退 RGBA；本容器硬件显示为用户桌面不可动） | 环境受限（M4 剩余风险在册） |
 | browser-compositor-smoke 脚本漂移（非本 goal）：`ZW_COMPOSITOR_PROCESS` 死变量 + renderer `frame_published` 事件不入父日志，两腿按现码不可绿 | compositor 交付面核对脚本与模式重构的契约漂移后修脚本或断言 | 已记档（M3 切片 1 顺带发现，pre-existing） |
 
 ## 里程碑
@@ -29,7 +31,7 @@
 |---|---|---|---|
 | M1 | 权限矩阵与双向基线 | DONE（2026-11-01） | [matrix](evidence/2026-11-01-m1-matrix-storageop-fix.md) |
 | M2 | 确认反例、共享路径修复与回归 | 切片 5/多 完成（StorageOp、CDP Host、ClearHttpCookies、CDP opt-in token、多进程 HSTS） | [切片 1](evidence/2026-11-01-m1-matrix-storageop-fix.md) / [切片 2](evidence/2026-11-01-m2-slice2-cdp-host-rebinding.md) / [切片 3](evidence/2026-11-01-m2-slice3-clear-http-cookies.md) / [切片 4](evidence/2026-11-01-m2-slice4-cdp-token-opt-in.md) / [切片 5](evidence/2026-11-01-m2-slice5-multiprocess-hsts.md) |
-| M3 | helper 实际权限与时序验收 | 切片 1 完成（compositor S2 seccomp / S3 landlock 实测 + 真实进程验收）；余 helper 侧 | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) |
+| M3 | helper 实际权限与时序验收 | 切片 1–2 完成（compositor S2/S3 实测 + fd 通道对端信任收口 + helper 时序审计）；余 helper 受限操作验收（依赖决策 ③）与 DRI3 补验 | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) |
 | M4 | DC 审计、门禁、清理和剩余风险 | NOT_STARTED | 无 |
 
 ## 验证基线
@@ -39,7 +41,7 @@
 | DC-1 | IPC-01-forged-origin-session | PARTIAL（导航 epoch/SW 权威矩阵有据；集成测试覆盖 StorageOp 面） | matrix |
 | DC-2 | IPC-02-cookie-hsts-privilege | PARTIAL（StorageOp、cookie jar 同步、多进程 HSTS 注册已修附回归；权限 stub 未修；Cookie 头伪造判定非缺口） | 切片 1/3/5 |
 | DC-3 | IPC-03-automation-role | PARTIAL（服务端不可消息自授角色已核；CDP rebinding 已堵、opt-in token 已交付，默认 token 待决） | 切片 2/4 |
-| DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；helper 受限操作验收与线程时序余 M3 切片 2） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) |
+| DC-4 | IPC-04-sandbox-thread-order | PARTIAL（compositor seccomp/landlock 真实 restrict 与失败降级实测；fd 通道对端信任收口；helper 线程时序契约审计成立——helper 受限操作验收依赖决策 ③，DRI3 补验环境受限） | [切片 1](evidence/2026-11-01-m3-slice1-compositor-sandbox.md) / [切片 2](evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md) |
 | DC-5 | 全部回归与生产接收方复测 | NOT_RUN | 无 |
 
 ## 碰撞与执行记录
@@ -57,4 +59,6 @@
 2026-11-01 M2 切片 5：多进程 HSTS 注册——`TabFetchProxy::note_hsts_response`（https-only 门，镜像 webview.rs:2571）接 `drain()` 响应完成臂，仅 `resource_type == "document"`（P11 显式头契约）落 per-tab SecurityContext；browser 消费面 `check_resource_url` 无条件执行 HSTS 升级故无 mixed_content 开关错位。per-tab `HstsStore` 粒度与单进程 per-WebView 一致，真浏览器为全局存储记后续对齐项。两常驻回归（对齐 mixed_content_gate.rs 口径 + 回环 HTTP STS 头端到端 https-only 门，钉 status==200 防 Err 假绿）。bin 全量 722P/2F（失败集与切片 4 完全一致，无本切片独有成员）；clippy 零警告。
 
 2026-11-01 M3 切片 1：compositor landlock 从未生效双根因修复——① `landlock_add_rule` 第 4 参误传 size 落入 flags 位（内核无 size 参）→ 安装永远 EINVAL 走 fail-open；② 访问位错位（READ=1 实为 EXECUTE 位）→ 读从未受限且无报错。修正位定义与 flags=0，修正前轮「EXECUTE 不可授予目录 fd」误断言（实测目录+EXECUTE 可装）。errno 判别矩阵证伪中途「容器 seccomp 拦截」假设（fd=-1→EBADF 证 syscall 直达内核），landlock 在本容器环境完整可用。新增真实 restrict 常驻回归；seccomp 三执行型测试补 --exact 全路径 + stdout 兜底收口假绿。真实进程验收：landlock/seccomp (gpu=true) 首次安装成功无降级，帧管线全通无 fallback。zero-compositor 49P/0F、clippy -D warnings 零警告、fmt clean。顺带发现 browser-compositor-smoke 脚本两处 pre-existing 漂移记档不修（死变量 + frame_published 不入父日志）。
+
+2026-11-01 M3 切片 2：fd 传递通道对端信任收口（M1 矩阵第 5 项）——`fd_socket_linux.rs` 三层防线：socket 0600、双侧 SO_PEERCRED euid 校验（accept 侧跳过陌生连接继续等、connect 侧拒绝报错；macOS 无 SO_PEERCRED 记注释由 ①③ 保障）、socket 名加每发布 /dev/urandom 128-bit token（经既有描述符字段传输，wire 不变）。2 新增常驻回归（token 唯一性/格式、窗口内 0600 mode），既有 roundtrip+R3340 fd 计数 3 测试原样通过。helper 时序审计：renderer apply_early 为 role 入口首语句（先于一切线程）、重启重放成立；image-decoder 无任何钩子记缺口（决策 ③）。环境发现（重要）：X :20 实为用户实时 xfce 桌面，GUI smoke 开窗污染桌面且结果不可靠——本轮在 :20 的 sandbox on/off 分层 bisect（误判 seccomp/landlock 致卡）全部作废，同命令在自起干净 Xvfb 一次通过；Xvfb 无 DRI3，gpu-dmabuf 真实交付无法触发（静默回退 RGBA），fd 通道真实进程 dma-buf 端到端补验记 M4 环境受限项。验证：zero-protocol 335P/0F、zero-compositor 49P/0F、clippy -D warnings 零警告、fmt clean；干净 Xvfb 上 CPU+GPU 两腿真实进程 exit 0 无失败信号。
 
