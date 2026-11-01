@@ -501,6 +501,9 @@ pub fn apply_property_value_with_quirks(
         "outline-style" => {
             if let Some(v) = parse_outline_style(value) {
                 style.outline_style = v;
+                // R5383：级联胜出的作者声明（含显式 none）压制 UA 焦点环
+                //（css-ui-4 §6.1 级联序；outline 简写展开亦经此处）。
+                style.outline_style_declared = true;
                 return true;
             }
         }

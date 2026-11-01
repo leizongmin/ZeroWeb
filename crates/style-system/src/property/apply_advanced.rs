@@ -11,6 +11,17 @@ use super::parse::*;
 use super::types::*;
 use zero_css_parser::values;
 
+/// caret-color 单值 token → computed 值（两值形式递归展开复用）。
+fn caret_color_computed(v: zero_css_parser::values::CaretColorValue) -> CaretColorComputedValue {
+    match v {
+        zero_css_parser::values::CaretColorValue::Auto => CaretColorComputedValue::Auto,
+        zero_css_parser::values::CaretColorValue::Color(c) => CaretColorComputedValue::Color(c),
+        zero_css_parser::values::CaretColorValue::TwoValue(a, b) => {
+            CaretColorComputedValue::TwoValue(Box::new(caret_color_computed(*a)), Box::new(caret_color_computed(*b)))
+        }
+    }
+}
+
 fn parse_non_negative_time_list(value: &str) -> Option<Vec<f64>> {
     let mut out = Vec::new();
     for part in split_top_level_commas(value)? {
@@ -1715,6 +1726,21 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 style.caret_color = match v {
                     zero_css_parser::values::CaretColorValue::Auto => CaretColorComputedValue::Auto,
                     zero_css_parser::values::CaretColorValue::Color(c) => CaretColorComputedValue::Color(c),
+                    zero_css_parser::values::CaretColorValue::TwoValue(a, b) => CaretColorComputedValue::TwoValue(
+                        Box::new(caret_color_computed(*a)),
+                        Box::new(caret_color_computed(*b)),
+                    ),
+                };
+                return true;
+            }
+        }
+        "caret-shape" => {
+            if let Some(v) = values::parse_caret_shape(value) {
+                style.caret_shape = match v {
+                    zero_css_parser::values::CaretShapeValue::Auto => CaretShapeComputedValue::Auto,
+                    zero_css_parser::values::CaretShapeValue::Bar => CaretShapeComputedValue::Bar,
+                    zero_css_parser::values::CaretShapeValue::Block => CaretShapeComputedValue::Block,
+                    zero_css_parser::values::CaretShapeValue::Underscore => CaretShapeComputedValue::Underscore,
                 };
                 return true;
             }

@@ -74,6 +74,8 @@ impl Default for ComputedStyle {
             // 故默认元素无可见 outline。
             outline_width: LengthValue::Px(3.0),
             outline_style: OutlineStyleValue::None,
+            // R5383：无作者声明 → UA 焦点环适用（见 computed_style 字段注）。
+            outline_style_declared: false,
             // outline-color 初始 = currentColor（CSS UI：invert 无浏览器支持，回落 currentColor；
             // CSSWG #9199 正式化为 currentColor，与 Chromium 一致）。paint 经 resolve_color_current
             // 解析为元素自身 color；默认元素 color=black → currentColor 仍黑，零默认渲染变化。
@@ -334,6 +336,7 @@ impl Default for ComputedStyle {
             appearance: AppearanceComputedValue::Auto,
             accent_color: AccentColorComputedValue::Auto,
             caret_color: CaretColorComputedValue::Auto,
+            caret_shape: CaretShapeComputedValue::Auto,
 
             // Compositing / Scrolling
             mix_blend_mode: MixBlendModeComputedValue::Normal,

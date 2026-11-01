@@ -307,6 +307,7 @@ impl PropertyRegistry {
             "appearance" => Some(Appearance(AppearanceComputedValue::Auto)),
             "accent-color" => Some(AccentColor(AccentColorComputedValue::Auto)),
             "caret-color" => Some(CaretColor(CaretColorComputedValue::Auto)),
+            "caret-shape" => Some(CaretShape(CaretShapeComputedValue::Auto)),
 
             // Compositing / Scrolling
             "mix-blend-mode" => Some(MixBlendMode(MixBlendModeComputedValue::Normal)),

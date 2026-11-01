@@ -923,6 +923,22 @@ pub enum CaretColorComputedValue {
     Auto,
     /// 指定颜色。
     Color(ColorValue),
+    /// 两值形式（css-ui-4 §5.2.2）：第一值 = caret 本体色，
+    /// 第二值 = caret-shape block 时被覆盖字符的文字色（auto = 不改写）。
+    TwoValue(Box<CaretColorComputedValue>, Box<CaretColorComputedValue>),
+}
+
+/// CSS caret-shape 属性值（css-ui-4 §5.2.3）。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaretShapeComputedValue {
+    /// auto（默认值）— UA 自选（常规实现为 bar）。
+    Auto,
+    /// bar — 插入点处细竖条。
+    Bar,
+    /// block — 覆盖插入点后下一可见字符字元格的矩形。
+    Block,
+    /// underscore — 下一可见字符下方细横条。
+    Underscore,
 }
 
 /// CSS mix-blend-mode 属性值。
@@ -1842,6 +1858,8 @@ pub enum PropertyValue {
     AccentColor(AccentColorComputedValue),
     /// caret-color 值。
     CaretColor(CaretColorComputedValue),
+    /// caret-shape 值。
+    CaretShape(CaretShapeComputedValue),
     /// mix-blend-mode 值。
     MixBlendMode(MixBlendModeComputedValue),
     /// scrollbar-width 值。

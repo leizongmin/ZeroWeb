@@ -108,6 +108,12 @@ pub struct ComputedStyle {
     pub outline_width: LengthValue,
     /// outline-style 属性。
     pub outline_style: OutlineStyleValue,
+    /// outline-style 作者声明标记（R5383）——本元素级联胜出的声明含 outline-style
+    ///（longhand 或 outline 简写）时为真。UA 焦点环（:focus-visible auto 环）与作者
+    /// outline 的级联关系模型：作者声明（含显式 `none`）即压制 UA 环（css-ui-4 §6.1
+    /// 级联序——UA 规则败于作者规则）。computed outline-style 初值仍为 none
+    ///（「未声明」与「显式 none」在属性值层不可分，故以旗标承载）。
+    pub outline_style_declared: bool,
     /// outline-color 属性。
     pub outline_color: ColorValue,
     /// outline-offset 属性。
@@ -552,6 +558,8 @@ pub struct ComputedStyle {
     pub accent_color: AccentColorComputedValue,
     /// caret-color 属性。
     pub caret_color: CaretColorComputedValue,
+    /// caret-shape 属性（css-ui-4 §5.2.3，继承）。
+    pub caret_shape: CaretShapeComputedValue,
     /// mix-blend-mode 属性。
     pub mix_blend_mode: MixBlendModeComputedValue,
     /// scrollbar-width 属性。

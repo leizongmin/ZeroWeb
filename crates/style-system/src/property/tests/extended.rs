@@ -1209,6 +1209,36 @@ fn test_apply_property_caret_color_transparent() {
     );
 }
 
+// ── caret-color 两值形式 / caret-shape（css-ui-4 §5.2.2/§5.2.3，R5383）──
+
+#[test]
+fn test_apply_property_caret_color_two_value() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "caret-color", "black white"));
+    assert_eq!(
+        style.caret_color,
+        CaretColorComputedValue::TwoValue(
+            Box::new(CaretColorComputedValue::Color(ColorValue::Rgba(0, 0, 0, 255))),
+            Box::new(CaretColorComputedValue::Color(ColorValue::Rgba(255, 255, 255, 255)))
+        )
+    );
+}
+
+#[test]
+fn test_apply_property_caret_shape_all_values() {
+    let mut style = ComputedStyle::default();
+    assert_eq!(style.caret_shape, CaretShapeComputedValue::Auto);
+    assert!(apply_property_value(&mut style, "caret-shape", "block"));
+    assert_eq!(style.caret_shape, CaretShapeComputedValue::Block);
+    assert!(apply_property_value(&mut style, "caret-shape", "bar"));
+    assert_eq!(style.caret_shape, CaretShapeComputedValue::Bar);
+    assert!(apply_property_value(&mut style, "caret-shape", "underscore"));
+    assert_eq!(style.caret_shape, CaretShapeComputedValue::Underscore);
+    assert!(apply_property_value(&mut style, "caret-shape", "auto"));
+    assert_eq!(style.caret_shape, CaretShapeComputedValue::Auto);
+    assert!(!apply_property_value(&mut style, "caret-shape", "none"));
+}
+
 #[test]
 fn test_apply_property_caret_color_invalid() {
     let mut style = ComputedStyle::default();

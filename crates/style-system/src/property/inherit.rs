@@ -199,6 +199,10 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
             child.caret_color = parent.caret_color.clone();
             true
         }
+        "caret-shape" => {
+            child.caret_shape = parent.caret_shape.clone();
+            true
+        }
         "text-wrap" => {
             child.text_wrap = parent.text_wrap.clone();
             true
@@ -505,6 +509,9 @@ pub fn inherit_property(parent: &ComputedStyle, child: &mut ComputedStyle, prope
         }
         "outline-style" => {
             child.outline_style = parent.outline_style.clone();
+            // R5383：声明标记随 outline_style 同步（ZW outline-style 继承口径一致——
+            // 值来自作者链则 UA 环压制同链传递）。
+            child.outline_style_declared = parent.outline_style_declared;
             true
         }
         "outline-offset" => {
@@ -774,6 +781,7 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "outline-style" => {
             style.outline_style = default_style.outline_style;
+            style.outline_style_declared = false;
             true
         }
         "outline-color" => {
@@ -1488,6 +1496,10 @@ pub fn apply_initial_value(style: &mut ComputedStyle, property: &str) -> bool {
         }
         "caret-color" => {
             style.caret_color = default_style.caret_color;
+            true
+        }
+        "caret-shape" => {
+            style.caret_shape = default_style.caret_shape;
             true
         }
         // Compositing / Scrolling
