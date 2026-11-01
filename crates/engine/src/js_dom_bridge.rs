@@ -5397,6 +5397,14 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 与 plain 解析器；part06 经 globalThis.__zw_ce_value_{apply,validate} 单
         // 点调用，part01c 值查询面经 __zw_ce_value_override_value 消费 override。
         s.push_str(include_str!("js_dom_shim/part01d.js"));
+        // part01e（2026-11-02 editing-compat F1 list 簇）：execCommand
+        // insertorderedlist/insertunorderedlist 实应用引擎（toggleLists 全流程：
+        // blockExtend + 选区状态判定 + other-tag 换型 + sublist 聚合 wrap +
+        // splitParent/fixDisallowedAncestors，参考 implementation.js 移植）+
+        // qState/qIndeterm 读面（getSelectionListState）。挂 part01d 后同闭包复用
+        // _zwJus* 机具与 _zwVaIsAllowedChild；part06 经 globalThis.__zw_ce_list_
+        // {toggle,state} 单点调用，事件口径同 justify 臂。
+        s.push_str(include_str!("js_dom_shim/part01e.js"));
         // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
         // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
         // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现

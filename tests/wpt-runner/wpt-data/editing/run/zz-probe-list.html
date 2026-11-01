@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+var results = [];
+
+function qface() {
+  return ' qStateIol=' + document.queryCommandState('insertorderedlist')
+    + ' qStateIul=' + document.queryCommandState('insertunorderedlist')
+    + ' qIndIol=' + document.queryCommandIndeterm('insertorderedlist')
+    + ' qIndIul=' + document.queryCommandIndeterm('insertunorderedlist');
+}
+
+function caretText(node, off) {
+  var r = document.createRange();
+  r.setStart(node, off); r.setEnd(node, off);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+
+function newHost() {
+  tc.innerHTML = "<div contenteditable></div>";
+  return tc.firstChild;
+}
+
+function findTag(root, tag) {
+  var c = root.firstChild;
+  while (c) {
+    if (c.nodeType === 1 && String(c.tagName).toLowerCase() === tag) return c;
+    var sub = findTag(c, tag);
+    if (sub) return sub;
+    c = c.nextSibling;
+  }
+  return null;
+}
+
+// 1 裸文本 caret 入 ol（iloop 主案形态）
+var d1 = newHost();
+d1.appendChild(document.createTextNode("foobar"));
+caretText(d1.firstChild, 3);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('iol EXC ' + e); }
+results.push('iol-plain html=' + JSON.stringify(d1.innerHTML) + qface());
+
+// 2 裸文本 caret 入 ul（illist 主案形态）
+var d2 = newHost();
+d2.appendChild(document.createTextNode("foobar"));
+caretText(d2.firstChild, 3);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('iul EXC ' + e); }
+results.push('iul-plain html=' + JSON.stringify(d2.innerHTML) + qface());
+
+// 3 ol 内 caret qState 读面（before 期望 Iol=true Iul=false Ind 双 false）
+tc.innerHTML = "<div contenteditable><ol><li>foobar</li></ol></div>";
+var d3 = tc.firstChild;
+caretText(findTag(d3, "li").firstChild, 3);
+results.push('in-ol-qstate html=' + JSON.stringify(d3.innerHTML) + qface());
+
+// 4 ol 内再执行 insertorderedlist → toggle-off 裸文本
+tc.innerHTML = "<div contenteditable><ol><li>foobar</li></ol></div>";
+var d4 = tc.firstChild;
+caretText(findTag(d4, "li").firstChild, 3);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('off EXC ' + e); }
+results.push('iol-toggle-off html=' + JSON.stringify(d4.innerHTML) + qface());
+
+// 5 ol 内执行 insertunorderedlist → 换型 ul
+tc.innerHTML = "<div contenteditable><ol><li>foobar</li></ol></div>";
+var d5 = tc.firstChild;
+caretText(findTag(d5, "li").firstChild, 3);
+try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x EXC ' + e); }
+results.push('ol-to-ul html=' + JSON.stringify(d5.innerHTML) + qface());
+
+// 6 双 p 跨块选区入 ol → 单 ol 双 li
+tc.innerHTML = "<div contenteditable><p>foo</p><p>bar</p></div>";
+var d6 = tc.firstChild;
+var ps = [findTag(d6, "p"), findTag(d6, "p").nextSibling];
+while (ps[1] && !(ps[1].nodeType === 1 && String(ps[1].tagName).toLowerCase() === "p")) ps[1] = ps[1].nextSibling;
+var r6 = document.createRange();
+r6.setStart(ps[0].firstChild, 0); r6.setEnd(ps[1].firstChild, 3);
+getSelection().removeAllRanges(); getSelection().addRange(r6);
+try { document.execCommand("insertorderedlist", false, ""); } catch (e) { results.push('2p EXC ' + e); }
+results.push('two-p html=' + JSON.stringify(d6.innerHTML) + qface());
+
+assert_false(true, results.join(' || '));
+</script>
+</body>

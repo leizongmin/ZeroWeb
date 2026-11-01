@@ -878,9 +878,11 @@
 
     // 选区映射：重建后按 open tag 串匹配定位新包（fresh np 已脱挂）；复用包
     // 直接用原元素。端点偏移 → 包内文本副本同位。
+    // 返回值：fresh np 场景返回 host 内重定位后的新包元素（原 np 引用已脱挂，
+    // list 簇 enable 主循环依赖返回值继续套壳——裸 li 实证），复用包返回原元素。
+    var wEl = wrapper;
     try {
       if (rng && wrapper) {
-        var wEl = wrapper;
         if (wEl.parentNode !== host) {
           var wantOpen = _zwJusSerializeOpenTag(wrapper);
           for (k = 0; k < host.childNodes.length; k++) {
@@ -911,7 +913,7 @@
         }
       }
     } catch (_eJwm) {}
-    return wrapper;
+    return wEl && wEl.parentNode === host ? wEl : wrapper;
   }
 
   function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions) {

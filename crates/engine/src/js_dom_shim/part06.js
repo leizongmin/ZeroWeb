@@ -4459,6 +4459,20 @@
               if (jusAl && rng2 && host2) {
                 try { globalThis.__zw_ce_justify_apply(jusAl); } catch (_eJus) {}
               }
+              // editing-compat F1 list 簇（2026-11-02）：insertorderedlist/
+              // insertunorderedlist 实应用——此前 _zwExecCmdInputType 含两命令
+              //（事件照派）但零变更臂，iloop/illist 全语料 compare ~600F（got 与
+              // 输入恒等）。变更核心在 part01e __zw_ce_list_toggle（toggleLists
+              // 全流程：选区状态判定 + other-tag 换型 + sublist 聚合 wrap +
+              // splitParent/fixDisallowedAncestors，参考实现移植，选区经
+              // movePreservingRanges 保持）；事件口径同上 justify 臂。
+              if ((cmd === 'insertorderedlist' || cmd === 'insertunorderedlist')
+              && rng2 && host2
+              && typeof globalThis.__zw_ce_list_toggle === 'function') {
+                try {
+                  globalThis.__zw_ce_list_toggle(cmd === 'insertorderedlist' ? 'ol' : 'ul');
+                } catch (_eLst) {}
+              }
               // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命
               // 令实应用——此前 _zwExecCmdInputType 含五命令（事件照派）但零变更
               // 臂，run 五语料 compare innerHTML 567F。变更核心在 part01d
@@ -4577,6 +4591,14 @@
     queryCommandIndeterm: function (commandId) {
       var jf = _zwQueryJustifyFace(commandId);
       if (jf) return jf.indeterm;
+      // editing-compat F1 list 簇（2026-11-02）：list 命令 Indeterm——选区跨
+      // ol/ul 混合面（参考实现 /^mixed( ol| ul)?$/ 判定，见 part01e
+      // __zw_ce_list_state）。
+      var liLow = String(commandId == null ? '' : commandId).toLowerCase();
+      if ((liLow === 'insertorderedlist' || liLow === 'insertunorderedlist')
+      && typeof globalThis.__zw_ce_list_state === 'function') {
+        try { return !!globalThis.__zw_ce_list_state(liLow).indeterm; } catch (_eLstI) {}
+      }
       // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
       // Indeterm——含域 formattable 有效值 ≥2 互异（参考实现 :8470 生成块，
       // 算法见 part01c __zw_ce_value_query 挂载注释）。
@@ -4593,6 +4615,12 @@
       // execCommand 入口快照（滞后一拍，Chrome 录制口径，见 execCommand 入口注）。
       var cLow = String(commandId == null ? '' : commandId).toLowerCase();
       if (cLow === 'stylewithcss') return !!globalThis.__zwStyleWithCSSQuery;
+      // editing-compat F1 list 簇（2026-11-02）：list 命令 State——选区 list
+      // 状态恰为本命令 tag（见 part01e __zw_ce_list_state）。
+      if ((cLow === 'insertorderedlist' || cLow === 'insertunorderedlist')
+      && typeof globalThis.__zw_ce_list_state === 'function') {
+        try { return !!globalThis.__zw_ce_list_state(cLow).state; } catch (_eLstS) {}
+      }
       return _zwQueryFormatState(commandId);
     },
     queryCommandValue: function (commandId) {
