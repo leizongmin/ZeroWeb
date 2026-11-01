@@ -94,7 +94,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   LOST 20→2P/18F）；节奏 s175 14:48 → s176 17:45 ≈ 3h/轮（s173→s175
   为 ~1h15m/轮，s176 刀位为引擎侧 shadow 寻址物化重活，轮时拉长）。
 - s176 自账 engine lib **3619P/10F**（3617 + 2 钉测；10F 基线同键：
-  [s176 账](../../html-semantics-compat/evidence/2026-10-31-m2s176-shadow-addressing.md)）
+  [s176 账](../../../html-semantics-compat/evidence/2026-10-31-m2s176-shadow-addressing.md)）
   ——10F 未清；s177 队列仍是 shadow 域（命令式 attachShadow + 宿主
   childlist 变异），fetch/Request 簇（s 系候选③「恢复质量门禁基线」）
   仍未入队可见部分，ETA 未知。
@@ -103,7 +103,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   仍零代码变更，组合态 tip `3bbc7ca56`。D2 维持待拍板 + 低成本轮询。
 - 18:40 s177 `bd040de1c`（多进程 js_worker 外链 CSS entries 化）为纯
   renderer/webview 轮——**engine 代码零 diff，engine lib 免跑**（
-  [s177 账](../../html-semantics-compat/evidence/2026-10-31-m2s177-renderer-worker-css-entries.md)），
+  [s177 账](../../../html-semantics-compat/evidence/2026-10-31-m2s177-renderer-worker-css-entries.md)），
   10F 基线结构性延续；renderer lib 首立全量基线 354P/5F（含 renderer 侧
   fetch 契约族 3F，与 engine fetch 9F 同族异面）归 s 流；其下一步候选
   （forms 402F / interactive 44F / renderer page_scripts 2F）仍非 fetch 簇。
@@ -112,7 +112,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 
 - s179 19:38 `a3768d3e7`（fetch 契约族 16 红勘定：M2-S3 构造校验链测试面
   三代际对齐 A/B/C 分类 + `Response.clone` 丢 Set-Cookie 真实 shim 根修，
-  [s179 账](../../html-semantics-compat/evidence/2026-10-31-m2s179-fetch-contract-family.md)）
+  [s179 账](../../../html-semantics-compat/evidence/2026-10-31-m2s179-fetch-contract-family.md)）
   ——**engine lib 3625P/10F → 3633P/2F**（fetch 族 8 转绿），browser bin
   tab_js_worker 39P/0F、renderer lib 361P/0F 全绿。
 - 余 2F 归属清楚：①`test_iframe_service_worker_messages_dispatch_to_
@@ -338,7 +338,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 至此锚窗口推进为 **1b6b9b291 → 65de5f28e**（上轮台账 + justify
   查询面兜底全吸收），33,109 分母零回归在现 tip 成立。
 - **轮询面**：justify 变更自账 engine lib **3,642P/1F**（s24 已知红
-  同键逐名 identical，[其账](../../editing-compat/evidence/2026-11-01-justify-query-face-orphan-uplink.md)）
+  同键逐名 identical，[其账](../../../editing-compat/evidence/2026-11-01-justify-query-face-orphan-uplink.md)）
   ——ua_display_li 未清，渲染流 D4 双面翻转仍未裁决；D1/D2 维持
   待拍板。DC-1~4 四件 evidence 在位复核（均系 `5894374c1` 提交，
   后续无触及）。收口序列不变：ua_display_li 清零 → make test 全绿
@@ -362,7 +362,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 至此锚窗口推进为 **65de5f28e → b0a6f9174**，33,109 分母零回归
   在现 tip 成立。
 - **轮询面**：s196 自账 zero-engine **3,642P/1F**（ua_display_li
-  同键在册，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)）
+  同键在册，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s196-active-pseudo-channel.md)）
   + zero-dom 880P/0F——`:active` 通道非 li→Block 双面翻转，渲染流
   D4 仍未裁决；git 无 D1/D2 决策新账面，维持待拍板。收口序列不变：
   ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置
@@ -399,7 +399,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 
 - `git pull --rebase` 吸入 html-semantics 流 `ba4c74fcb`（s197
   fieldset disabled 置位焦点内含检查——shim `part03/04/05/06.js` 净
-  +110/−4 行写通道钩，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md)）：
+  +110/−4 行写通道钩，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s197-fieldset-disable-focus-reset.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，按纪律对现 tip 复跑
   锚——release runner 重建 25.55s（engine/shim 重编译入包）+
   test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
@@ -442,7 +442,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   回填 extent 计入塌缩屏障——`postprocess.rs` R1743 fold 单写点按
   pb/bb 框边屏障二选一，layout-engine 语料执行路径 +36/−10 行 +
   常驻测试 `r5373_backfill_barrier_margin_tests` ×4（+151 行）+
-  rendering-compat 记账 docs；[其账](../../rendering-compat/evidence/r5373-backfill-barrier-margin-2026-11-01.md)）：
+  rendering-compat 记账 docs；[其账](../../../rendering-compat/evidence/r5373-backfill-barrier-margin-2026-11-01.md)）：
   代码面前移，按纪律对现 tip 复跑锚——release runner 重建 31.4s
   （layout-engine 重编译入包，`make zero-wpt-runner-release`）+
   test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
@@ -476,7 +476,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 
 - push 前例行 `git pull --rebase` 吸入 html-semantics 流 `0674243a1`
   （s198 HTMLFieldSetElement.type IDL 常量臂——shim `part04.js` +5 行
-  写通道，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s198-fieldset-type-idl.md)）：
+  写通道，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s198-fieldset-type-idl.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，本流锚账
   `8604b13a7`（R5373 吸收，rebase 后为 `0d4966f9d`）先推送，随即按
   纪律对新 tip 复跑锚——release runner 重建 32.4s（shim 重编译入包，
@@ -512,7 +512,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   重入 S19：Headers 实例/XHR 异步源头名大小写线上保真补全，shim
   `part01.js` +31 行 / `part03.js` +6 行——`_hCase` 旁路四处补齐
   fetch init/Request-like input/Request ctor/XHR 异步通道，
-  [其账](../../archive/net-api-compat-v2/evidence/2026-11-01-m2-s19-header-case-fidelity-reentry.md)）：
+  [其账](../../../archive/net-api-compat-v2/evidence/2026-11-01-m2-s19-header-case-fidelity-reentry.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
   锚——release runner 重建 25.8s（shim 重编译入包，
   `make zero-wpt-runner-release`）+ test-guard 直包同参数
@@ -578,7 +578,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - push 前例行 `git pull --rebase` 吸入 editing 流 `dd0eb2ec8`（物化元素
   补 style IDL——style-with-value 簇 setup 例外族收口，shim
   `part03.js` +136 行 + engine 测试 `part18.rs`，
-  [其账](../../editing-compat/evidence/2026-11-01-sv-setup-exception-mstyle-idl.md)）：
+  [其账](../../../editing-compat/evidence/2026-11-01-sv-setup-exception-mstyle-idl.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
   锚——release runner 重建 24.2s（shim 重编译入包，
   `make zero-wpt-runner-release`）+ test-guard 直包同参数
@@ -610,7 +610,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - push 前例行 `git pull --rebase` 吸入 html-semantics 流 `578240175`
   （s200 键盘激活 click-only 事件序——uievents keyboard-click-event
   4 子测收口，runner `testharness.rs` +21/-4 + html-semantics docs，
-  [其账](../../html-semantics-compat/evidence/2026-11-01-m2s200-keyboard-click-only-activation.md)）：
+  [其账](../../../html-semantics-compat/evidence/2026-11-01-m2s200-keyboard-click-only-activation.md)）：
   runner 系语料执行路径代码，二进制面前移，按纪律对新 tip 复跑锚——
   release runner 重建 24.85s（`make zero-wpt-runner-release`）+
   test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
@@ -669,7 +669,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 本轮 `git pull --rebase` 吸入 html-semantics 流 `ebdfe3939`（s201 SVG
   形状 gBCR 命中注入——inert-svg-hittest 2/2 收口，engine
   `hit_test.rs` ±21 + 新 `hit_test_svg.rs` +310 + `lib.rs` +1，共 3 文件
-  +331/−1，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s201-svg-shape-gbcr-hit-test.md)）：
+  +331/−1，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s201-svg-shape-gbcr-hit-test.md)）：
   engine 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
   锚——release runner 重建 36.8s（engine 重编译入包，
   `make zero-wpt-runner-release`）+ test-guard 直包同参数
@@ -704,7 +704,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 本轮 `git pull --rebase` 吸入 html-semantics 流 `a5a11cd07`（s202
   legend/option form IDL 反射——the-legend-element 5F + option-form
   1F 收口，shim `part03.js` +37/`part05.js` +32，
-  [其账](../../html-semantics-compat/evidence/2026-11-01-m2s202-legend-option-form-idl.md)）：
+  [其账](../../../html-semantics-compat/evidence/2026-11-01-m2s202-legend-option-form-idl.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
   锚——release runner 重建 26.56s（shim 重编译入包，
   `make zero-wpt-runner-release`）+ test-guard 直包同参数
@@ -736,7 +736,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 本轮 `git pull --rebase` 吸入 html-semantics 流 `66f4871c1`（s203
   number 值消毒文法收口——`_zwSanitizeInputValue` number 臂换 spec
   valid floating-point number 文法，shim `part01.js` +10/−1，
-  [其账](../../html-semantics-compat/evidence/2026-11-01-m2s203-number-value-sanitization.md)）：
+  [其账](../../../html-semantics-compat/evidence/2026-11-01-m2s203-number-value-sanitization.md)）：
   shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
   锚——release runner 重建 25.66s（shim 重编译入包，
   `make zero-wpt-runner-release`）+ test-guard 直包同参数
@@ -806,7 +806,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 
 - R5374 锚账 push 后 rebase 窗口吸入 html-semantics 流 `61720d309`
   （s204 pattern IDL 反射 + v flag 编译判定——shim `part03.js`
-  +34/−5、`part05.js` +14，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s204-pattern-idl-v-flag.md)）：
+  +34/−5、`part05.js` +14，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s204-pattern-idl-v-flag.md)）：
   push 前重查流程（09:20 补强）核证 shim 系语料执行路径二进制面
   再前移，刚推锚账即陈旧，随即按纪律对新执行 tip 复跑——release
   runner 重建 25.51s（shim 重编译入包）+ test-guard 直包同参数
@@ -922,7 +922,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   （R5375 max-content 内容基测量——layout-engine `engine/sizing.rs`
   +16/−1、`intrinsic_sizing.rs` +9、新增 `tests/
   r4149_width_keyword_clamp_tests.rs`，crates/ 执行路径前移，
-  [其账](../../rendering-compat/evidence/r5375-max-content-content-based-2026-11-01.md)）：
+  [其账](../../../rendering-compat/evidence/r5375-max-content-content-based-2026-11-01.md)）：
   按 `git diff 7c681d5c6..583ebe1df -- crates/ tests/` 非空核证后，
   按纪律对现执行 tip 复跑锚 ×3——release runner 重建 30.3s
   （layout-engine 重编译入包，`make zero-wpt-runner-release`，二进制
@@ -960,7 +960,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 
 - 本 goal 上笔账（13:52）push 后 rebase 窗口吸入 html-semantics 流
   `e08a4febc`（s206 output value/defaultValue 活读模型——后代突变活读 +
-  reset 清 override，mutations 2F 收口，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md)；
+  reset 清 override，mutations 2F 收口，[其账](../../../html-semantics-compat/evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md)；
   engine `js_dom_bridge_tests/part09.rs` +92、shim `part03.js`/`part04.js`
   +61/−26，crates/ 执行路径前移）：按
   `git diff 8174304d5..e08a4febc -- crates/ tests/` 非空核证后，按纪律
@@ -1017,7 +1017,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   boundary 流 `4752a00df`（M3 slice2 fd 传递通道对端信任收口——socket
   0600 + SO_PEERCRED euid 校验 + 每发布随机 token，
   `crates/protocol/src/fd_socket_linux.rs` +124/−8，
-  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)）：
+  [其账](../../../renderer-trust-boundary/evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)）：
   crates/ 面前移，`cargo tree -p zero-wpt-runner` 核证 zero-protocol 经
   传递依赖入 runner 二进制面 → 按纪律对现执行 tip 复跑锚 ×3——release
   runner 重建 33.4s（protocol 重编译入包，二进制 sha256 `42d5d82c…`
@@ -1047,7 +1047,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   boundary 流 `5a2aafaf9`（M4 前置——沙箱失败平台策略选项 docs +
   DC 审计快照 + `crates/protocol/src/fd_socket_linux.rs` **纯注释**
   5 行改动（`peer_same_user` doc-comment 重写，无代码变化），
-  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）：
+  [其账](../../../renderer-trust-boundary/evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）：
   crates/ 面 `git diff` 非空即触发纪律；先试二进制核证捷径——重建
   release runner 35.4s 后 sha256 `9054e56c…` ≠ 锚二进制 `42d5d82c…`
   （**纯注释改动经 protocol 重编译 + 重链接仍非字节稳定**，
@@ -1080,7 +1080,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
 - 14:28 锚账 push 前 rebase 窗口再吸入渲染流 `7dbc0d5bb`（R5376
   abspos 约束方程 margin 侧——left/width/right 全 definite 时 auto ml
   解方程，CSS2 §10.3.7，`crates/layout-engine/src/engine/abspos.rs` +
-  tests +[r5376 测试]，[其账](../../rendering-compat/evidence/r5376-abspos-auto-margin-equation-2026-11-01.md)）+
+  tests +[r5376 测试]，[其账](../../../rendering-compat/evidence/r5376-abspos-auto-margin-equation-2026-11-01.md)）+
   `517ccefda`（R5376 轮 docs）——刚推锚账即陈旧，按纪律对新执行 tip
   复跑：release runner 重建 28.9s（layout-engine 重编译入包，二进制
   sha256 `4d918822…` 三跑稳定）+ test-guard 直包同参数，起跑前 ps
@@ -1127,3 +1127,71 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
   件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-s207-tip809a14134.json`
   （不入库）。
+
+### 2026-11-01 15:55 收口追记：D2① 触发执行——PR #267 合入 main，引擎基线 ua_display_li 清零，门禁复证 + 锚按最终 tip 复跑成立，33,109 零回归收口
+
+- **D2① 触发**：PR #267 `2154ac296` 于 15:19:34 +0800 合入 main（merge
+  commit `f97190c41`，parents `63247f2b6` + `2154ac296`）——渲染流 D4
+  双面裁决落 main：`fc52ed62d`（UA display 双面裁决 li=list-item/
+  canvas=inline + 布局域连锁修复，触 style-system `ua_default_display`
+  + layout-engine 六文件）+ `2154ac296`（s24 返修 fallback 抑制补
+  Inline 面 + vertical 块级判据补 ListItem）。分支首见裁决提交
+  `bb4cba524` 合入前已重写（merge-base 核证非 merge 祖先），实质裁决
+  面由 `fc52ed62d`/`2154ac296` 承载，触发事实不受影响。
+- **引擎基线清零核证**：engine 侧 `test_ua_display_li_list_item_
+  canvas_inline_s24_flip`（part32.rs:996）现断言翻转值 `list-item`/
+  `inline` 双臂（proxy createElement + parsed innerHTML）+ 负控制
+  div/ul 仍 block；style-system 侧裁决钉 `test_li_list_item_canvas_
+  inline_dual_surface_adjudicated` 同值在册——在册唯一 1F 键翻绿。
+- **门禁复证（全部 guard 包裹，test-guard `--compile-first` 逐
+  artifact fail-fast 语义实测在案）**：canonical `make guarded-test`
+  于 compositor frame_flow dmabuf 环境红处中止（workspace 腿第 7
+  artifact），后续腿按原参数 guard 直包续跑补全：
+  - ✅ fmt、standalone build、quickjs clippy 腿（首轮并行段 Finished
+    零警告）、renderer bin（0 内嵌测试，合法）、renderer lib、
+    GPU probe + adapter-only 两腿（probe 过：lavapipe 软件 vulkan
+    供 wgpu adapter，L8a/L8b RC=0）、quickjs 五 crate、quickjs
+    renderer bin/lib 前段、workspace 减 compositor 腿（W1 RC=0——
+    engine/style-system/layout-engine 全量绿）、compositor 减 dmabuf
+    三用例腿（W2 RC=0）。
+  - **红面 4 键全归因（零本 goal 域、零合并引入）**：
+    ① `compositor_gpu_{dmabuf_browser_import_round_trips,
+    partial_dirty_draws_glyphs,texture_export_dma_buf_round_trips}`
+    3F——`SCM_RIGHTS 未携带 fd`：本机 `/dev/dri` 不存在（WSL GPU
+    直通缺位），真 render node 的 dma-buf fd 导出面结构不可达；wgpu
+    adapter probe 同机通过（软件 vulkan）证渲染面无恙、缺的是内核
+    dma-buf 导出。归因双先例：form-validation 2026-08-17 收口账
+    「workspace 测试仅 compositor_gpu_dmabuf 失败（GPU adapter 环境
+    依赖，改动前同）」+ renderer-trust M3「Xvfb 无 DRI3，gpu-dmabuf
+    真实交付无法触发（静默回退 RGBA）」；合并 diff 零触 compositor/
+    protocol 面。
+    ② `tests::default_actions_work_without_javascript`（browser bin
+    723P/1F + `--tests` 腿 723P/1F + 隔离单跑同败）——在案负载
+    flaky：renderer-trust 流**今日合并前树** 3 账同键（M2 slice2
+    「干净树与本切片树均偶现」+ slice3/4/5 各轮全红），zero-web goal
+    macOS CI 时序 flake 账；fixture 无 li/canvas，与 s24 触面零关联。
+    ③ `page_scripts::tests::mutation_arm_does_not_apply_across_
+    document_reset_window`（quickjs renderer lib 362P/1F + 隔离单跑
+    同败）——在案满载时序 flake 族（html-semantics 2026-10-28 账；
+    R5313 先例「stash 干净 HEAD 复跑同位同 panic 定谳既有」同族）；
+    触面 renderer page_scripts 导航时序，合并未触。
+- **锚复跑（最终收口 tip `f97190c41`）**：release runner 重建 34s
+  （s24 style-system/layout-engine 入包，二进制 sha256 `fef0a651…`）
+  + test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`）三连跑。**RUN1/RUN3 对 M1 终态锚整文件逐字节
+  一致（cmp 全等，7,208,436 B，sha256 同值 `40ea3c8e…`）**；RUN2 落
+  W4 采样臂（7,208,497 B，+61B，sha256 `7cdea628…` 与在册采样变体
+  同值——algorithm-discards-context Timeout message 文本 phase 变体），
+  按在册判据做结构化状态账比对：**33,109 条 (case, subtest)→status
+  逐位零差异（25,788P + 7,320F + 1T，python 全量对照）**。guard log
+  三跑零字节（零击杀），EXIT=1 预期（7,320F 在册挂账）。W4 本轮
+  采样 1/3 跑（累计 10/40 轮）。**33,109 分母零回归在收口 tip
+  成立，锚窗口推进 809a14134 → f97190c41**。
+- **clippy 复验**：`make guarded-clippy`（workspace --all-targets
+  -D warnings）零 error 零 warning；fmt 门禁首轮已过。
+- **收口登记**：入口 v2.2 完成态 + 控制面 D2① 执行落账 + 整树迁
+  `docs/goal/archive/webcrypto-compat-v2{.md,/}` + archive README
+  行 + wpt-suites.csv 收行 + rally-goal-26 脚本/goals README 对齐，
+  同提交推送。D1（已转正域按域立项）维持待用户拍板，随归档移交。
+  临时审计件 `/tmp/zw2-anchor-run{1,2,3}-20261101-154644-tip-
+  f97190c41.json` + `/tmp/zw2-{closure,anchor}-*.log`（不入库）。

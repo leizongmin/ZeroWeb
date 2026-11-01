@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 用 rally run 持续推进 webcrypto-compat goal（docs/goal/webcrypto-compat.md，二期）。
+# 用 rally run 持续推进 webcrypto-compat goal（docs/goal/archive/webcrypto-compat-v2.md，二期，2026-11-01 收口归档）。
 #
 # 用途：一期（2026-10-20 归档，corpus 77.89%）零回归底线上的二期——扩面
 # derive_bits_keys 等未拉语料 + `.tentative.` 挂账域转正甄别（ML-KEM/ML-DSA
@@ -15,7 +15,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-exec rally run docs/goal/webcrypto-compat.md \
+exec rally run docs/goal/archive/webcrypto-compat-v2.md \
     -w "$PROJECT_ROOT" \
     --agent-command claude-glm \
     "$@"

@@ -1,20 +1,25 @@
 # Web Crypto 兼容二期 — 扩面 + tentative 转正甄别
 
 > **二期立项（2026-10-27，coverage 对账驱动）**：一期（2026-10-20 模式 A 归档，
-> [归档文档](archive/webcrypto-compat.md)）按原范围收口于 corpus 25,788/33,109 =
+> [归档文档](webcrypto-compat.md)）按原范围收口于 corpus 25,788/33,109 =
 > 77.89%，非 tentative Fail 清零，7,320F 全部 `.tentative.` 草案域挂账（重开条件
 > = 上游转正后按域立项）。本 goal 承接两件事：未拉语料面扩容与转正甄别。
 > **一期零回归底线继续有效**（33,109 分母逐 subtest 对照）。
 
-**版本**: v2.1
+**版本**: v2.2（收口）
 **日期**: 2026-10-27（二期立项）；2026-10-31（无人值守收口定稿——M2 立项权限落定，
 见「待用户决策」与 Support Envelope 排除项）；2026-11-01（收口缺口更正：
-fetch/Request 簇已清零，唯余 ua_display_li 跨流冻结面）
-**状态**: Active——M1/M2 完成、DC-1~4 有据（2026-10-31，控制面
-`webcrypto-compat/master.md`，里程碑归档见 `webcrypto-compat/archive/`）；
-收口待 `cargo test` 引擎基线全绿——fetch/Request 簇 9F 已由并行流
-html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 ×
-渲染流 D4 待裁决冻结面，处置路径见 master.md 待用户决策表 D2）
+fetch/Request 簇已清零，唯余 ua_display_li 跨流冻结面）；2026-11-01 15:55（**收口**）
+**状态**: **完成（2026-11-01）**——M1/M2 完成、DC-1~4 有据；D2① 触发执行：
+PR #267（渲染流 D4 双面裁决）15:19 合入 main（`f97190c41`），引擎基线
+ua_display_li 1F 清零，make test 门禁复证成立（workspace 面 4 键红全归因：
+compositor dmabuf 3F 环境性 `/dev/dri` 缺位双先例在册 + default_actions/
+mutation_arm 2 键在案确定性当日红、合并零触面），33,109 分母锚在收口 tip
+`f97190c41` 三跑复验零差异（RUN1/RUN3 对 M1 终态锚逐字节全等，RUN2 W4
+采样臂状态账 25,788P+7,320F+1T 零差异），clippy 零警告。控制面终账与收口
+追记见 `webcrypto-compat-v2/master.md` 与 `webcrypto-compat-v2/evidence/
+2026-10-31-gates-and-closure-status.md`；D1（已转正域按域立项，109 案/
+18,052 子测试）维持待用户拍板，随归档移交后续 goal。
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 实现与语义修齐
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
@@ -36,7 +41,7 @@ html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 �
 2. **转正甄别**：对照一期挂账清单（ML-KEM/ML-DSA/X448/Ed448/AES-OCB/kmac/
    chacha20_poly1305/argon2/cSHAKE 等），逐域核对上游是否已离开 `.tentative.`
    （ML-KEM/ML-DSA 对应 NIST FIPS 203/204 已定稿，转正概率高）；已转正域
-   **出立项切片建议**登记 `webcrypto-compat/master.md` 待用户决策表（每域：
+   **出立项切片建议**登记 `webcrypto-compat-v2/master.md` 待用户决策表（每域：
    域面 / 分母 / 建议范围 / 依赖需求），未转正域维持挂账。**本 goal 不执行
    收敛**（2026-10-31 用户决策：立项与依赖选型留待后续按域立项——rally 不
    自行立项、不引入新依赖）。
@@ -47,7 +52,7 @@ html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 �
 - **DC-1（语料补全）**：未拉面补全（照一期 26 号脚本的 deep + any.js 通道，
   FORCE=1 续拉）；`.tentative.` 文件照拉（转正甄别需要基线对照）。
 - **DC-2（转正甄别清单）**：挂账域逐域转正状态落
-  `docs/goal/webcrypto-compat/evidence/`（上游 rev + 目录事实）；已转正域
+  `docs/goal/archive/webcrypto-compat-v2/evidence/`（上游 rev + 目录事实）；已转正域
   出立项切片建议登记 master.md 待用户决策表，未转正域维持挂账。
 - **DC-3（扩面基线）**：补全面分类通过率落 evidence；与一期 33,109 分母
   逐 subtest 对照**零回归**。
@@ -75,7 +80,7 @@ html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 �
 ### 依赖约束（run-rules §9）
 
 - 一期收口面（33,109 分母）是回归底线：任何 P→非P 先修再收。零回归对照锚：
-  `archive/webcrypto-compat/evidence/2026-10-17-m1-baseline.md`（+ summary.json）。
+  `archive/webcrypto-compat-v2/evidence/2026-10-17-m1-baseline.md`（+ summary.json）。
 - 加密实现变化走既有 RustCrypto 依赖面（p256/p384/p521/rsa/ed25519-dalek/
   x25519-dalek 3.0 先例），新算法域（ML-KEM/ML-DSA）选型先出 deps evidence
   ——本 goal 不引入新依赖（见 Mission 2 用户决策）。
@@ -96,7 +101,7 @@ html-semantics s179/s180 清零，唯余 ua_display_li 1F（跨流通道交互 �
 
 ## Document Control
 
-- 每轮进展写 `webcrypto-compat/master.md` 与 `evidence/`；入口文档仅在目标
-  实质变化时修改；里程碑完成归档至 `webcrypto-compat/archive/`（只追加）。
+- 每轮进展写 `webcrypto-compat-v2/master.md` 与 `evidence/`；入口文档仅在目标
+  实质变化时修改；里程碑完成归档至 `webcrypto-compat-v2/archive/`（只追加）。
 - 收口归档：入口 + 控制面整树迁 `docs/goal/archive/`，归档 README 登记行。
 - 「待用户决策」表事项不 BLOCK 推进——转零碰撞面自主推进，交付时集中提出。

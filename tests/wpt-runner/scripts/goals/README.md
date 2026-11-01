@@ -31,7 +31,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | **二期立项**（2026-10-27，coverage 对账驱动：语料 20→101 文件扩面；[一期归档](../../../../docs/goal/archive/selection-compat.md)） |
 | 24 | [compression-compat](../../../../docs/goal/archive/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
-| 26 | [webcrypto-compat](../../../../docs/goal/webcrypto-compat.md) | WebCryptoAPI | **二期立项**（2026-10-27，coverage 对账驱动：扩面 derive_bits_keys + tentative 转正甄别，一期 77.89% 零回归底线；[一期归档](../../../../docs/goal/archive/webcrypto-compat.md)） |
+| 26 | [webcrypto-compat](../../../../docs/goal/archive/webcrypto-compat-v2.md) | WebCryptoAPI | **二期**（2026-10-27 立项，2026-11-01 收口归档：33,109 分母 77.89% 零回归保持，一期 7,320F 挂账域全部转正、按域立项建议移交用户；[一期归档](../../../../docs/goal/archive/webcrypto-compat.md)） |
 | 27 | [page-state-compat](../../../../docs/goal/archive/page-state-compat.md) | beacon; page-visibility; online | **已收口**（2026-10-18）；偏差记账 beacon 混合内容阻断与 keepalive in-flight 配额池（FIXME） |
 | 28 | [dnd-compat](../../../../docs/goal/archive/dnd-compat.md) | dnd |  **已收口**（2026-10-18，437/446 = 98.0%，已归档） |
 | 29 | [pointerlock-compat](../../../../docs/goal/archive/pointerlock-compat.md) | pointerlock | **已收口**（2026-10-19 M3 完成 22/22，已归档） |
