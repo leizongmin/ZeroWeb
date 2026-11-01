@@ -231,7 +231,7 @@ fn test_dispatch_script_call_function_missing_declaration() {
 #[test]
 fn test_http_version_json() {
     let addr: SocketAddr = "127.0.0.1:9222".parse().unwrap();
-    let json = HeadlessServer::http_version_json(addr);
+    let json = HeadlessServer::http_version_json(addr, "");
     let parsed: Value = serde_json::from_str(&json).unwrap();
     assert_eq!(parsed["Browser"], format!("ZeroWeb/{}", zero_product_version::VERSION));
     assert_eq!(parsed["User-Agent"], zero_net::HttpClient::default_user_agent());
@@ -672,6 +672,7 @@ fn test_json_targets_enumerates_real_tabs() {
         &session,
         server.addr(),
         server.devtools_serve_enabled(),
+        "",
     ))
     .unwrap();
     assert_eq!(targets.len(), before + 1, "one entry per tab");
@@ -1193,7 +1194,7 @@ fn test_session_starts_with_single_page_target() {
     let server = HeadlessServer::new(0, 800.0, 600.0, None);
     let session = HeadlessSession::new(800.0, 600.0);
     assert_eq!(session.shell.tab_count(), 1, "no ghost about:blank target");
-    let targets = super::discovery::http_targets_json(&session, server.addr(), false);
+    let targets = super::discovery::http_targets_json(&session, server.addr(), false, "");
     let list: Vec<Value> = serde_json::from_str(&targets).unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0]["url"], "about:blank");
@@ -1252,7 +1253,7 @@ fn test_navigation_commit_updates_target_url() {
     assert_eq!(ctx["context"]["auxData"]["isDefault"], true);
 
     // 发现面：/json/list 与 Target.getTargets 报告最终 URL
-    let targets = super::discovery::http_targets_json(&session, server.addr(), false);
+    let targets = super::discovery::http_targets_json(&session, server.addr(), false, "");
     let list: Vec<Value> = serde_json::from_str(&targets).unwrap();
     assert_eq!(list[0]["url"], url);
     let (result, _) = server.dispatch_with_events(&mut session, "Target.getTargets", Value::Null);
@@ -1968,7 +1969,7 @@ fn test_smoke_cdp_command_sequence() {
 
     // 1. 获取版本信息（模拟 HTTP 发现）
     let addr: std::net::SocketAddr = "127.0.0.1:9222".parse().unwrap();
-    let version_json = HeadlessServer::http_version_json(addr);
+    let version_json = HeadlessServer::http_version_json(addr, "");
     let version: serde_json::Value = serde_json::from_str(&version_json).unwrap();
     assert_eq!(version["Browser"], format!("ZeroWeb/{}", zero_product_version::VERSION));
     assert!(version["webSocketDebuggerUrl"].as_str().unwrap().starts_with("ws://"));
@@ -2426,6 +2427,143 @@ fn cdp_token_opt_in_rejects_first_message_without_token() {
         reply["error"].is_null() || reply["error"]["code"] != -32001,
         "带 token 消息不得再拒认证，实得: {reply}"
     );
+}
+
+#[test]
+fn cdp_default_token_authenticates_via_upgrade_query() {
+    // renderer-trust-boundary ①a：CDP 强制 token 后标准客户端（playwright
+    // connectOverCDP、Chrome DevTools frontend）无法注入首消息 params.token——
+    // 升级 URL `?auth_token=`（发现端点发布的 webSocketDebuggerUrl，Chromium 同款
+    // 能力模型）为对等认证通路：query 令牌正确即免首消息认证；错误/缺失仍拒。
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    let server = Arc::new(
+        HeadlessServer::new(0, 800.0, 600.0, None)
+            .with_security(HeadlessSecurityConfig::new().with_token("test-token")),
+    );
+    let srv = Arc::clone(&server);
+    std::thread::spawn(move || {
+        let _ = srv.run();
+    });
+    let addr = {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let guard = server.addr.lock().unwrap();
+            if guard.port() != 0 {
+                break *guard;
+            }
+            drop(guard);
+            assert!(Instant::now() < deadline, "server did not bind in time");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let read_reply = |ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>| {
+        loop {
+            match ws.read().expect("read reply") {
+                tungstenite::Message::Text(t) => break t.to_string(),
+                tungstenite::Message::Ping(p) => {
+                    ws.send(tungstenite::Message::Pong(p)).ok();
+                }
+                _ => continue,
+            }
+        }
+    };
+    let set_timeout = |ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>| {
+        if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
+            s.set_read_timeout(Some(Duration::from_secs(5)))
+                .expect("set read timeout");
+        }
+    };
+
+    // 正确 query 令牌：首消息无 params.token 直接应答（升级期已认证）。
+    let (mut ws, _resp) =
+        tungstenite::connect(format!("ws://{addr}/?auth_token=test-token")).expect("ws connect (valid token)");
+    set_timeout(&mut ws);
+    ws.send(tungstenite::Message::text(r#"{"id":1,"method":"Target.getTargets"}"#))
+        .expect("send post-upgrade-auth request");
+    let reply: serde_json::Value = serde_json::from_str(&read_reply(&mut ws)).expect("reply is json");
+    assert_eq!(reply["id"], 1, "query 令牌认证后应答 id 回带，实得: {reply}");
+    assert!(
+        reply["error"].is_null() || reply["error"]["code"] != -32001,
+        "query 令牌正确不得再拒认证，实得: {reply}"
+    );
+
+    // 错误 query 令牌：首消息无 params.token 仍拒 -32001。
+    let (mut ws, _resp) =
+        tungstenite::connect(format!("ws://{addr}/?auth_token=wrong-token")).expect("ws connect (wrong token)");
+    set_timeout(&mut ws);
+    ws.send(tungstenite::Message::text(r#"{"id":2,"method":"Target.getTargets"}"#))
+        .expect("send unauthenticated request");
+    let reply: serde_json::Value = serde_json::from_str(&read_reply(&mut ws)).expect("auth error is json");
+    assert_eq!(
+        reply["error"]["code"], -32001,
+        "错误 query 令牌必须拒答 Authentication required，实得: {reply}"
+    );
+}
+
+#[test]
+fn cdp_auth_token_generation_is_random_hex() {
+    // ①a：默认令牌 128-bit 随机 hex——不可预测、逐次不同。
+    let first = HeadlessSecurityConfig::generate_auth_token();
+    let second = HeadlessSecurityConfig::generate_auth_token();
+    assert_eq!(first.len(), 32, "128-bit hex 令牌长 32 字符: {first}");
+    assert!(
+        first.chars().all(|c| c.is_ascii_hexdigit()),
+        "令牌须为 hex 字符: {first}"
+    );
+    assert_ne!(first, second, "两次生成必须不同（随机源在环判别式）");
+}
+
+#[test]
+fn cdp_upgrade_query_and_discovery_suffix_pair() {
+    // ①a：升级 query 校验与发现端点后缀互为对偶；无 token 配置两态均放行/空后缀。
+    let config = HeadlessSecurityConfig::new().with_token("t1");
+    assert!(config.verify_upgrade_query(Some("auth_token=t1")));
+    assert!(config.verify_upgrade_query(Some("foo=bar&auth_token=t1")));
+    assert!(!config.verify_upgrade_query(Some("auth_token=t2")));
+    assert!(!config.verify_upgrade_query(Some("authtoken=t1")), "键名须精确匹配");
+    assert!(!config.verify_upgrade_query(None));
+    assert_eq!(config.discovery_ws_suffix(), "?auth_token=t1");
+    assert!(
+        config.verify_upgrade_query(Some(config.discovery_ws_suffix().strip_prefix('?').unwrap())),
+        "发现后缀剥离 '?' 后必须过校验（对偶判别式）"
+    );
+
+    let open = HeadlessSecurityConfig::new();
+    assert!(open.verify_upgrade_query(None));
+    assert!(open.verify_upgrade_query(Some("auth_token=whatever")));
+    assert_eq!(open.discovery_ws_suffix(), "");
+}
+
+#[test]
+fn cdp_discovery_urls_carry_auth_token_suffix() {
+    // ①a：发现端点 webSocketDebuggerUrl 携带认证后缀——标准客户端（playwright、
+    // 捕获代理）按响应体 URL 建连即完成认证，仓内 cdp-e2e 链零迁移。
+    let addr: SocketAddr = "127.0.0.1:9222".parse().unwrap();
+
+    let version: Value = serde_json::from_str(&HeadlessServer::http_version_json(addr, "?auth_token=abc123")).unwrap();
+    assert_eq!(
+        version["webSocketDebuggerUrl"], "ws://127.0.0.1:9222?auth_token=abc123",
+        "version 面须携带认证后缀"
+    );
+
+    let session = HeadlessSession::new(800.0, 600.0);
+    let targets: Value = serde_json::from_str(&super::discovery::http_targets_json(
+        &session,
+        addr,
+        false,
+        "?auth_token=abc123",
+    ))
+    .unwrap();
+    assert_eq!(
+        targets[0]["webSocketDebuggerUrl"], "ws://127.0.0.1:9222?auth_token=abc123",
+        "targets 面须携带认证后缀"
+    );
+
+    // 无 token（显式带外形态或库默认）：后缀空、URL 不含令牌。
+    let version: Value = serde_json::from_str(&HeadlessServer::http_version_json(addr, "")).unwrap();
+    assert_eq!(version["webSocketDebuggerUrl"], "ws://127.0.0.1:9222");
 }
 
 #[test]

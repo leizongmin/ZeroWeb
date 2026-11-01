@@ -1108,10 +1108,19 @@ fn run_headless(cli: CliArgs) {
     let server = std::sync::Arc::new({
         let server =
             headless::HeadlessServer::new(port, cli.viewport_width, cli.viewport_height, cli.startup_url.clone());
-        match cli.remote_debugging_token.clone() {
-            Some(token) => server.with_security(headless::HeadlessSecurityConfig::new().with_token(token)),
-            None => server,
-        }
+        // renderer-trust-boundary ①a（2026-11-01 拍板）：CDP 默认强制 token——未显式
+        // 指定 `--remote-debugging-token` 时生成随机令牌（Chromium 同款能力模型）：
+        // stderr 交付操作员、发现端点 webSocketDebuggerUrl 交付标准 CDP 客户端；
+        // 无令牌 WS 连接一律 -32001，显式令牌仍走首消息 `params.token` 带外通路。
+        let token = match cli.remote_debugging_token.clone() {
+            Some(token) => token,
+            None => {
+                let token = headless::HeadlessSecurityConfig::generate_auth_token();
+                eprintln!("CDP auth token: {token}");
+                token
+            }
+        };
+        server.with_security(headless::HeadlessSecurityConfig::new().with_token(token))
     });
     let actual_addr = server.addr();
 

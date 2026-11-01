@@ -101,7 +101,9 @@ async function resolveUpstreamWsUrl(targetHttp) {
   const info = await res.json()
   const wsUrl = new URL(info.webSocketDebuggerUrl)
   const base = new URL(targetHttp)
-  return `ws://${base.hostname}:${base.port}${wsUrl.pathname}`
+  // search 必须保留：CDP 强制 token 后 webSocketDebuggerUrl 携带 ?auth_token=
+  // （renderer-trust-boundary ①a），丢弃即上游认证失败 -32001。
+  return `ws://${base.hostname}:${base.port}${wsUrl.pathname}${wsUrl.search}`
 }
 
 /** HTTP 发现透传：请求 → 上游，记录请求行与响应体（截断）。

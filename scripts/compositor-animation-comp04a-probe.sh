@@ -71,7 +71,14 @@ grep -q "ws://" "$LOG" || {
 }
 
 echo "comp04a-probe: running dc4 threaded-worker sampling (bounded: 120s wall clock)"
-timeout 120 node "$DRIVER" --url "ws://127.0.0.1:$PORT" --fixture "$FIXTURE" --out "$OUT_DIR"
+# CDP 强制 token（renderer-trust-boundary ①a）：默认随机令牌打在 stderr 日志。
+TOKEN=$(sed -n 's/^CDP auth token: //p' "$LOG" | head -n1)
+[ -n "$TOKEN" ] || {
+    echo "comp04a-probe: no CDP auth token in log" >&2
+    tail -20 "$LOG" >&2 || true
+    exit 1
+}
+timeout 120 node "$DRIVER" --url "ws://127.0.0.1:$PORT/?auth_token=$TOKEN" --fixture "$FIXTURE" --out "$OUT_DIR"
 
 test -s "$OUT_DIR/comp04a-probe.json" || {
     echo "comp04a-probe: missing probe JSON" >&2

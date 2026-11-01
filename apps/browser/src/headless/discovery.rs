@@ -21,6 +21,20 @@ pub(super) fn extract_request_path(data: &[u8]) -> Option<String> {
     Some(path.to_string())
 }
 
+/// 从 HTTP/WS 升级请求字节中提取请求行 query（不含 `?` 与片段；无 query 返回 `None`）。
+/// CDP 认证令牌经升级 URL `?auth_token=` 交付（Chromium 同款能力模型）的解析面。
+pub(super) fn extract_request_query(data: &[u8]) -> Option<String> {
+    let s = String::from_utf8_lossy(data);
+    let raw = s.lines().next()?.split_whitespace().nth(1)?.to_string();
+    let query = raw.split_once('?')?.1;
+    let query = query.split('#').next().unwrap_or("");
+    if query.is_empty() {
+        None
+    } else {
+        Some(query.to_string())
+    }
+}
+
 /// DevTools frontend 每标签页入口 URL（bundle 已配置时）。
 ///
 /// ws 参数指向 per-page 路径（Chrome 同款），frontend 据此建立页面直连 socket。
@@ -114,11 +128,20 @@ impl HeadlessServer {
         }
 
         let (status, content_type, body) = match path {
-            "/json/version" => ("200 OK", "application/json", Self::http_version_json(addr)),
+            "/json/version" => (
+                "200 OK",
+                "application/json",
+                Self::http_version_json(addr, &self.security.discovery_ws_suffix()),
+            ),
             "/json" | "/json/list" => (
                 "200 OK",
                 "application/json",
-                http_targets_json(session, addr, self.devtools_serve_enabled()),
+                http_targets_json(
+                    session,
+                    addr,
+                    self.devtools_serve_enabled(),
+                    &self.security.discovery_ws_suffix(),
+                ),
             ),
             _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
         };
@@ -135,15 +158,18 @@ impl HeadlessServer {
     }
 
     /// HTTP GET /json/version — CDP 风格的浏览器发现端点。
+    ///
+    /// `ws_suffix` 为认证后缀（`?auth_token=<t>`，无 token 时空串）——CDP 强制
+    /// token 后标准客户端（playwright 等）经该 URL 建连即完成认证。
     #[allow(dead_code)]
-    pub fn http_version_json(addr: SocketAddr) -> String {
+    pub fn http_version_json(addr: SocketAddr, ws_suffix: &str) -> String {
         serde_json::json!({
             "Browser": format!("ZeroWeb/{}", zero_product_version::VERSION),
             "Protocol-Version": "1.3",
             "User-Agent": zero_net::HttpClient::default_user_agent(),
             "V8-Version": "12.0",
             "WebKit-Version": "0.1",
-            "webSocketDebuggerUrl": format!("ws://{addr}"),
+            "webSocketDebuggerUrl": format!("ws://{addr}{ws_suffix}"),
         })
         .to_string()
     }
@@ -155,7 +181,13 @@ impl HeadlessServer {
 /// （`zeroweb-tab-<n>`），供后续 Target 域把 targetId 映射回标签页。
 /// `devtools_serve_enabled` = bundle 已配置：devtoolsFrontendUrl 指向本地 serve 的
 /// frontend 并携带 per-page ws 路径；未配置时维持 `devtools://` 占位形态。
-pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr, devtools_serve_enabled: bool) -> String {
+/// `ws_suffix` 语义同 [`HeadlessServer::http_version_json`]。
+pub(super) fn http_targets_json(
+    session: &HeadlessSession,
+    addr: SocketAddr,
+    devtools_serve_enabled: bool,
+    ws_suffix: &str,
+) -> String {
     let targets: Vec<serde_json::Value> = session
         .shell
         .tabs()
@@ -173,7 +205,7 @@ pub(super) fn http_targets_json(session: &HeadlessSession, addr: SocketAddr, dev
                 "title": tab.title().unwrap_or("ZeroWeb"),
                 "type": "page",
                 "url": tab.url().unwrap_or("about:blank"),
-                "webSocketDebuggerUrl": format!("ws://{addr}"),
+                "webSocketDebuggerUrl": format!("ws://{addr}{ws_suffix}"),
             })
         })
         .collect();

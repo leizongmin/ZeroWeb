@@ -32,6 +32,9 @@ use std::time::{Duration, Instant};
 use serde_json::Value;
 use tungstenite::Message;
 
+/// ①a CDP 强制 token 面的测试常量：spawn 显式传入、连接侧 query 携带。
+const TEST_CDP_TOKEN: &str = "zw-integ-test-cdp-token";
+
 /// 1×1 透明 PNG（图片通道最小合法载荷）。
 const PNG_1X1: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
@@ -318,7 +321,10 @@ fn spawn_browser() -> (u16, BrowserProcess) {
 
     let mut cmd = Command::new(browser_bin);
     cmd.arg("--headless")
+        // ①a CDP 强制 token：集成测试显式钉 token（stderr 为 null 取不到默认随机令牌），
+        // 连接侧经升级 URL query 认证（生产客户端同款通路）。
         .arg(format!("--remote-debugging-port={port}"))
+        .arg(format!("--remote-debugging-token={TEST_CDP_TOKEN}"))
         .env("ZERO_STORAGE_DIR", &storage)
         .env("ZERO_CACHE_DIR", &cache_dir)
         .env("ZERO_RENDERER_PATH", &renderer);
@@ -364,7 +370,8 @@ impl CdpClient {
         stream
             .set_write_timeout(Some(Duration::from_secs(10)))
             .expect("write timeout");
-        let (ws, _resp) = tungstenite::client(format!("ws://127.0.0.1:{port}"), stream).expect("ws handshake");
+        let (ws, _resp) = tungstenite::client(format!("ws://127.0.0.1:{port}/?auth_token={TEST_CDP_TOKEN}"), stream)
+            .expect("ws handshake");
         ws.get_ref()
             .set_read_timeout(Some(Duration::from_millis(50)))
             .expect("read timeout");

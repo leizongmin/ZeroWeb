@@ -17,6 +17,21 @@ impl HeadlessSecurityConfig {
         Self::default()
     }
 
+    /// 生成 128-bit 随机认证令牌（32 hex 字符；OS CSPRNG）。
+    ///
+    /// renderer-trust-boundary ①a：CDP 默认强制 token——未显式指定
+    /// `--remote-debugging-token` 时令牌随机生成，经 stderr 交付操作员、发现端点
+    /// `webSocketDebuggerUrl` 交付标准 CDP 客户端（Chromium 同款能力模型，浏览器级
+    /// ws URL 内嵌不可猜 UUID）。CSPRNG 不可用即 panic（fail-closed：拒绝以可预测
+    /// 令牌暴露自动化面）。
+    pub fn generate_auth_token() -> String {
+        let mut bytes = [0u8; 16];
+        if getrandom::fill(&mut bytes).is_err() {
+            panic!("CDP auth token generation failed: OS CSPRNG unavailable");
+        }
+        bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
     /// 设置认证令牌。
     pub fn with_token(mut self, token: impl Into<String>) -> Self {
         self.auth_token = Some(token.into());
@@ -36,6 +51,32 @@ impl HeadlessSecurityConfig {
             None => true,
             Some(expected) => provided.is_some_and(|p| p == expected),
         }
+    }
+
+    /// 验证 WS 升级 URL query 携带的令牌（`?auth_token=<t>`）。
+    ///
+    /// 标准客户端（playwright `connectOverCDP`、Chrome DevTools frontend）无法在
+    /// 首消息注入 `params.token`，能力经发现端点发布的 `webSocketDebuggerUrl`
+    /// query 交付（Chromium 同款）；首消息 `params.token` 通路保留（显式 token
+    /// 的带外交付形态）。
+    pub fn verify_upgrade_query(&self, query: Option<&str>) -> bool {
+        let Some(expected) = &self.auth_token else {
+            return true;
+        };
+        query.is_some_and(|query| {
+            query.split('&').any(|pair| {
+                let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+                key == "auth_token" && value == expected
+            })
+        })
+    }
+
+    /// 发现端点 `webSocketDebuggerUrl` 的认证后缀（无 token 时为空串）。
+    pub fn discovery_ws_suffix(&self) -> String {
+        self.auth_token
+            .as_deref()
+            .map(|token| format!("?auth_token={token}"))
+            .unwrap_or_default()
     }
 
     /// 验证 WebSocket 请求的 Origin 头。

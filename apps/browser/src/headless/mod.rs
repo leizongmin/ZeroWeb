@@ -411,6 +411,11 @@ impl HeadlessServer {
                             if page_direct {
                                 tracing::info!("DevTools frontend page-direct connection from {}", conn.peer);
                             }
+                            // ①a CDP 强制 token：升级 URL `?auth_token=` 认证（标准客户端
+                            // 经发现端点发布的 webSocketDebuggerUrl 交付）。
+                            let upgrade_authed = self
+                                .security
+                                .verify_upgrade_query(discovery::extract_request_query(data).as_deref());
                             let _ = conn.stream.set_nonblocking(false);
                             match accept(conn.stream.try_clone().expect("peek stream clone")) {
                                 Ok(ws) => {
@@ -418,7 +423,7 @@ impl HeadlessServer {
                                     conn.phase = Phase::Ws {
                                         ws,
                                         page_direct,
-                                        authenticated: self.security.auth_token.is_none(),
+                                        authenticated: self.security.auth_token.is_none() || upgrade_authed,
                                         idle_since: std::time::Instant::now(),
                                         wants_network: false,
                                     };

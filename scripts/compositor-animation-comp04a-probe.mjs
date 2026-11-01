@@ -27,7 +27,7 @@ function wsConnect(url) {
     const key = crypto.randomBytes(16).toString("base64");
     const socket = net.connect(Number(u.port), u.hostname, () => {
       socket.write(
-        `GET ${u.pathname || "/"} HTTP/1.1\r\n` +
+        `GET ${u.pathname || "/"}${u.search} HTTP/1.1\r\n` +
           `Host: ${u.host}\r\n` +
           `Upgrade: websocket\r\nConnection: Upgrade\r\n` +
           `Sec-WebSocket-Key: ${key}\r\nSec-WebSocket-Version: 13\r\n\r\n`,
