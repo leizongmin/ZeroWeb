@@ -417,17 +417,68 @@ pub enum CaretColorValue {
     Auto,
     /// 指定颜色。
     Color(ColorValue),
+    /// 两值形式（css-ui-4 §5.2.2 caret-color：`<color>{2}`，各值亦可 auto）——
+    /// 第一值 = caret 本体色，第二值 = caret-shape block 时被覆盖字符的文字色。
+    TwoValue(Box<CaretColorValue>, Box<CaretColorValue>),
 }
 
 /// 解析 CSS caret-color 属性值。
 ///
 /// 支持格式：`auto` 或任意有效 CSS 颜色值。
 pub fn parse_caret_color(value: &str) -> Option<CaretColorValue> {
+    fn parse_one(token: &str) -> Option<CaretColorValue> {
+        if token.eq_ignore_ascii_case("auto") {
+            return Some(CaretColorValue::Auto);
+        }
+        parse_color(token).map(CaretColorValue::Color)
+    }
+    let v = value.trim();
+    let mut parts = v.split_ascii_whitespace();
+    let first = parse_one(parts.next()?)?;
+    match parts.next() {
+        None => Some(first),
+        // 两值形式（css-ui-4 §5.2.2）：第二值 = block caret 覆盖字符的文字色。
+        Some(second) => {
+            if parts.next().is_some() {
+                return None;
+            }
+            let second = parse_one(second)?;
+            Some(CaretColorValue::TwoValue(Box::new(first), Box::new(second)))
+        }
+    }
+}
+
+// ── CSS caret-shape 值类型（css-ui-4 §5.2.3） ─────────────────────────────
+
+/// CSS caret-shape 属性值。
+#[derive(Debug, Clone, PartialEq)]
+pub enum CaretShapeValue {
+    /// auto（默认值）— UA 自选（常规实现为 bar）。
+    Auto,
+    /// bar — 插入点处细竖条。
+    Bar,
+    /// block — 覆盖插入点后下一可见字符字元格的矩形。
+    Block,
+    /// underscore — 下一可见字符下方细横条。
+    Underscore,
+}
+
+/// 解析 caret-shape 属性值（css-ui-4 §5.2.3：auto | bar | block | underscore）。
+pub fn parse_caret_shape(value: &str) -> Option<CaretShapeValue> {
     let v = value.trim();
     if v.eq_ignore_ascii_case("auto") {
-        return Some(CaretColorValue::Auto);
+        return Some(CaretShapeValue::Auto);
     }
-    parse_color(v).map(CaretColorValue::Color)
+    if v.eq_ignore_ascii_case("bar") {
+        return Some(CaretShapeValue::Bar);
+    }
+    if v.eq_ignore_ascii_case("block") {
+        return Some(CaretShapeValue::Block);
+    }
+    if v.eq_ignore_ascii_case("underscore") {
+        return Some(CaretShapeValue::Underscore);
+    }
+    None
 }
 
 // ── CSS Mix Blend Mode 值类型 ──────────────────────────────────────────

@@ -453,6 +453,64 @@ fn test_parse_caret_color_invalid() {
     assert_eq!(parse_caret_color(""), None);
 }
 
+// ── caret-color 两值形式（css-ui-4 §5.2.2，R5383）──
+
+#[test]
+fn test_parse_caret_color_two_value() {
+    assert_eq!(
+        parse_caret_color("black white"),
+        Some(CaretColorValue::TwoValue(
+            Box::new(CaretColorValue::Color(ColorValue::Rgba(0, 0, 0, 255))),
+            Box::new(CaretColorValue::Color(ColorValue::Rgba(255, 255, 255, 255)))
+        ))
+    );
+}
+
+#[test]
+fn test_parse_caret_color_two_value_auto_forms() {
+    // 第一值 auto（caret-color: auto white）与第二值 auto（black auto）均合法。
+    assert_eq!(
+        parse_caret_color("auto white"),
+        Some(CaretColorValue::TwoValue(
+            Box::new(CaretColorValue::Auto),
+            Box::new(CaretColorValue::Color(ColorValue::Rgba(255, 255, 255, 255)))
+        ))
+    );
+    assert_eq!(
+        parse_caret_color("black auto"),
+        Some(CaretColorValue::TwoValue(
+            Box::new(CaretColorValue::Color(ColorValue::Rgba(0, 0, 0, 255))),
+            Box::new(CaretColorValue::Auto)
+        ))
+    );
+}
+
+#[test]
+fn test_parse_caret_color_two_value_invalid() {
+    // 三值非法；第二值非颜色/auto 非法。
+    assert_eq!(parse_caret_color("red green blue"), None);
+    assert_eq!(parse_caret_color("red bogus"), None);
+}
+
+// ── caret-shape（css-ui-4 §5.2.3，R5383）──
+
+#[test]
+fn test_parse_caret_shape_all_values() {
+    assert_eq!(parse_caret_shape("auto"), Some(CaretShapeValue::Auto));
+    assert_eq!(parse_caret_shape("bar"), Some(CaretShapeValue::Bar));
+    assert_eq!(parse_caret_shape("block"), Some(CaretShapeValue::Block));
+    assert_eq!(parse_caret_shape("underscore"), Some(CaretShapeValue::Underscore));
+    // 大小写不敏感（CSS 关键字 ASCII case-insensitive）。
+    assert_eq!(parse_caret_shape("BLOCK"), Some(CaretShapeValue::Block));
+}
+
+#[test]
+fn test_parse_caret_shape_invalid() {
+    assert_eq!(parse_caret_shape("none"), None);
+    assert_eq!(parse_caret_shape(""), None);
+    assert_eq!(parse_caret_shape("block bar"), None);
+}
+
 // ── MixBlendMode 测试 ──
 
 #[test]
