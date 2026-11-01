@@ -1,12 +1,13 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿；33,109 分母零回归锚在现 tip `e30ab8494` 逐字节一致
-×3（2026-11-01，s182~s199 + justify 簇两轮 + 渲染流 R5370/R5372/
+build/clippy 绿；33,109 分母零回归锚在现 tip `dd0eb2ec8` 状态账逐位
+一致 ×3（2026-11-01，s182~s199 + justify 簇两轮 + 渲染流 R5370/R5372/
 R5373 + html-semantics 流 + net-api 流 S19 + zero-web 流
-change-on-blur 变更全吸收；末两轮三跑整文件 cmp 全等 7,208,436 B，
-W4 案超时诊断臂 30s 收敛竞态低频采样（累计 2/15 轮）——两臂均
-runner 既有代码，状态账不受影响，见
+change-on-blur + editing 流 sv-setup style IDL 变更全吸收；末轮
+RUN1/RUN3 整文件 cmp 全等 7,208,436 B，W4 案完成路径竞态低频采样
+（累计 3/18 轮，含 message 臂新变体首采）——均为 runner 既有代码，
+状态账零差异，见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
 唯一缺口 `cargo test` 残余 1F
 `test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
@@ -18,10 +19,10 @@ runner 既有代码，状态账不受影响，见
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现 tip `e30ab8494` 复验逐字节一致 ×3**（25,788P +
+**33,109 锚已在现 tip `dd0eb2ec8` 复验状态账逐位一致 ×3**（25,788P +
 7,320F + 1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→
 b0a6f9174→3f1399195→ba4c74fcb→edaed928a→0d4966f9d→f05b0efc1→
-e30ab8494，渲染流 R5370 table OOF child layout +
+e30ab8494→dd0eb2ec8，渲染流 R5370 table OOF child layout +
 s196 `_zwMEl` 安装面共享化 perf + editing 流 justify 查询面兜底
 （`part01c.js` +105 行）+ html-semantics 流 s196 `:active` 伪类通道
 （dom active_element 槽 + engine 查询面注入 + shim part04/part06
@@ -32,22 +33,22 @@ html-semantics 流 s198 fieldset type IDL（shim `part04.js` +5 行）
 + net-api 流 S19 Headers 大小写保真（shim `part01/part03` +35 行，
 `_hCase` 旁路四处）+ html-semantics 流 s199 Space 键激活抑制门
 （runner `testharness.rs` + shim `part04/part06` + `script_gen.rs`）
-+ zero-web 流 change-on-blur 去重闩（engine 桥 + shim）全吸收，
++ zero-web 流 change-on-blur 去重闩（engine 桥 + shim）+ editing 流
+sv-setup style IDL（shim `part03.js` +136 行）全吸收，
 见 evidence 2026-11-01 04:25/04:35/06:20/06:27/07:15/07:50/08:35/
-08:50/09:09/09:20 追记）；W4 案超时诊断臂竞态低频采样（累计 2/15
-轮，末两轮 0/6，deadline 臂，状态账不受影响，锚验收以状态账逐位/
-整文件 cmp 为主判据）；push 前 rebase 后重查执行路径前移流程补强
-（09:20 追记）；
+08:50/09:09/09:20/09:33 追记）；W4 案完成路径竞态低频采样（累计
+3/18 轮，末轮 1/3 message 臂新变体首采，状态账不受影响，锚验收以
+状态账逐位/整文件 cmp 为主判据）；push 前 rebase 后重查执行路径
+前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 09:20（锚复跑现 tip `e30ab8494` 逐字节一致
-×3 补账——上轮 push 前 rebase 吸入 s199（runner+shim）与
-change-on-blur（engine+shim）两个执行路径提交而未复核，本轮补跑：
-23.7s 重建 + test-guard 直包三连跑，RUN1/RUN2/RUN3 整文件 cmp 全等
-7,208,436 B ×3 = 25,788P+7,320F+1T，W4 竞态连续零采样（累计 2/15）；
-渲染流 ZRG 巡检落档 ua_display_li bisect 定谳（first bad = s161
-ee2dc953b，与本流 D2 归因一致，归属不变）；D4 冻结门末触仍
-`c41b0c750`，ua_display_li 同键在册未清，D4/D1/D2 无变化，
+**最后更新**: 2026-11-01 09:33（锚复跑现 tip `dd0eb2ec8` 状态账逐位
+一致 ×3——editing 流 sv-setup style IDL 为语料执行路径变更（shim
+part03.js +136 行），按纪律复跑：24.2s 重建 + test-guard 直包三连
+跑，RUN1/RUN3 整文件 cmp 全等 7,208,436 B，RUN2 W4 案 message 臂
+新变体首采（completion-callback-not-called，程序化对照仅 message
+字段差异、状态账零差异，不构成回归，累计采样 3/18）；D4 冻结门
+末触仍 `c41b0c750`，ua_display_li 同键在册未清，D4/D1/D2 无变化，
 见 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

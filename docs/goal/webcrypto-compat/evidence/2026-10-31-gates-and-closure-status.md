@@ -572,3 +572,35 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   未清；p126 未回流 main；git 无 D1/D2 决策新账面（GB-20261031 在
   案，核验只认 git 账面 + 用户主动知会）。收口序列不变。临时审计件
   `/tmp/webcrypto-anchor-run{,2,3}-20261101-s199blur.json`（不入库）。
+
+### 2026-11-01 09:33 追记：锚复跑现 tip（`dd0eb2ec8`）状态账逐位一致 ×3——editing 流 sv-setup style IDL 变更吸收
+
+- push 前例行 `git pull --rebase` 吸入 editing 流 `dd0eb2ec8`（物化元素
+  补 style IDL——style-with-value 簇 setup 例外族收口，shim
+  `part03.js` +136 行 + engine 测试 `part18.rs`，
+  [其账](../../editing-compat/evidence/2026-11-01-sv-setup-exception-mstyle-idl.md)）：
+  shim 系语料执行路径代码，runner 二进制面前移，按纪律对新 tip 复跑
+  锚——release runner 重建 24.2s（shim 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑，guard log 零字节（无击杀），runner EXIT=1 为预期
+  挂账常规退出。
+- **状态账 33,109 分母逐 (case, subtest) 对照零差异 ×3**（键集全等 +
+  status 逐位相等；123 文件 / 25,788P + 7,320F + 1T）；RUN1/RUN3 对
+  M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**；RUN2 首采 W4 案
+  message 臂新变体（`completion callback was not called` 文本臂，
+  非 phase=2 deadline 臂、非 phase=4 主臂）——程序化对照确认该案
+  仅 message 字段差异、状态账零差异，与前几轮 deadline 臂同属
+  runner 既有完成路径竞态（归因未定谳），按主判据**不构成回归**。
+  采样面累计 3/18 轮（本轮 1/3，RUN2 型），维持低频竞态定性、不
+  改变挂账归属。
+- 锚窗口推进为 **e30ab8494 → dd0eb2ec8**，实锚链 ……→f05b0efc1→
+  e30ab8494→dd0eb2ec8。该提交自账 style-with-value 簇 setup 例外
+  族收口（editing 面），与本流 33,109 分母面零交集——两侧零回归
+  互证。
+- **轮询面**：D4 冻结门 `ua_display_tests.rs` 末触仍 `c41b0c750`
+  （该提交仅触及 engine shim/测试 + editing docs，未触渲染域）；
+  ua_display_li 同键在册未清；p126 未回流 main；git 无 D1/D2 决策
+  新账面（GB-20261031 在案，核验只认 git 账面 + 用户主动知会）。
+  收口序列不变。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-svmstyle.json`（不入库）。
