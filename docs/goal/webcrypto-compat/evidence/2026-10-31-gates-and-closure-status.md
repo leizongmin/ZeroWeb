@@ -435,3 +435,39 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing exclusion
   口径收口。临时审计件
   `/tmp/webcrypto-anchor-run{,2,3}-20261101-s197.json`（不入库）。
+
+### 2026-11-01 08:35 追记：锚复跑现 tip（`edaed928a`）状态账逐位一致 ×3——渲染流 R5373 父高度回填塌缩屏障变更吸收
+
+- `git pull --rebase` 吸入渲染流 R5373 单笔 `edaed928a`（R1743 父高度
+  回填 extent 计入塌缩屏障——`postprocess.rs` R1743 fold 单写点按
+  pb/bb 框边屏障二选一，layout-engine 语料执行路径 +36/−10 行 +
+  常驻测试 `r5373_backfill_barrier_margin_tests` ×4（+151 行）+
+  rendering-compat 记账 docs；[其账](../../rendering-compat/evidence/r5373-backfill-barrier-margin-2026-11-01.md)）：
+  代码面前移，按纪律对现 tip 复跑锚——release runner 重建 31.4s
+  （layout-engine 重编译入包，`make zero-wpt-runner-release`）+
+  test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`，`--json` 重定向）三连跑，墙钟 94.5s / 92.0s /
+  110.8s，guard log 无击杀（仅 /usr/bin/time 摘要 50-51 B），runner
+  EXIT=1 为预期挂账常规退出。
+- **状态账 33,109 分母逐 (case, subtest) 对照零差异 ×3**（键集全等 +
+  status 逐位相等；123 文件 / 25,788P + 7,320F + 1T）；RUN2/RUN3 对
+  M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**；RUN1 首采 W4 案
+  deadline 臂（`phase=2`「completion callback was not called」）
+  竞态翻转 1/3——与 07:50 首采同款 runner 既有两臂竞态（归因未定谳，
+  状态账零差异），按 07:50 修订验收口径**不构成回归**（状态账逐位为
+  主判据，逐字节在采样复现时并列记录）。
+- 至此锚窗口推进为 **ba4c74fcb → edaed928a**，实锚链 7065ea39f→
+  1b6b9b291→65de5f28e→b0a6f9174→3f1399195→ba4c74fcb→edaed928a，
+  33,109 分母零回归在现 tip 成立。
+- **轮询面**：R5373 自账 make test workspace **3642P/1F** = ua_display_li
+  D4 既有账同位同签名（渲染流同树自验）+ 渲染 corpus 760F→757F
+  FIXED=3 REGRESSED=∅ + layout-engine lib 2306P/0F + bench-gate 定向
+  GATE PASS——**渲染流 rally 已重启在跑**（R5373 落地即证），但冻结门
+  `ua_display_tests.rs` 末触仍 `c41b0c750`（D4 双面翻转未落地）；
+  p126 未回流 main（merge-base 核证）；git 无 D1/D2 决策新账面，维持
+  待拍板（GB-20261031 征询在案，核验只认 git 账面 + 用户主动知会）。
+  DC-1~4 四件 evidence 在位（后续无触及）。收口序列不变：ua_display_li
+  清零 → make test 全绿复证 → 锚按届时最终 tip 处置 → 归档迁移 +
+  README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing exclusion
+  口径收口。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-r5373.json`（不入库）。
