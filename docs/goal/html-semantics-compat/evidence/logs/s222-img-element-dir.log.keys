@@ -1,0 +1,998 @@
+8 test job(s).
+Image.prototype is same as HTMLImageElement.prototype expected object "[object Object]" but got object "[object Object]"
+Should have rejected: undefined Reached unreachable code
+The image request should not load relative to the current (incorrect) base URL. Reached unreachable code
+The image request should successfully load Reached unreachable code
+The in_viewport element should have loaded before window.load(). expected true got false
+The loading=lazy below-viewport image should lazily load its second image, and not load it eagerly when the `src` attribute is changed Reached unreachable code
+The window load event should fire before in_viewport image loads. expected true got false
+The window load event should have fired before below_viewport loaded. expected true got false
+Timed out while waiting for image to load. Reached unreachable code
+Unhandled rejection with value: "The image must load"
+Unhandled rejection with value: "The img should not be loaded from the list of available images because of different 'crossorigin'"
+Unhandled rejection with value: object "EncodingError: Failed to decode image: decoding the image data failed."
+Unhandled rejection with value: object "Error: The img should not fail to load"
+[img1] Second source is chosen after first is removed expected "data:,s2" but got "data:,s1"
+clientWidth expected 0 but got 1
+clientWidth expected 10 but got 784
+clientWidth expected 50 but got 0
+completed without reporting registered tests (state={"loaded":true,"pending":1,"phase":4,"tests":1})
+completed without reporting registered tests (state={"loaded":true,"pending":3,"phase":4,"tests":3})
+completed without reporting registered tests (state={"loaded":true,"pending":4,"phase":4,"tests":4})
+expected "//[" but got "https://wpt.test/["
+expected "data:,a%C2%A0" but got "data:,a "
+expected (string) "/test" but got (undefined) undefined
+expected (undefined) undefined but got (object) null
+expected 255 but got 0
+expected 400 but got 0
+expected object "[object Object]" but got object "[object Object]"
+expected_width got disallowed value 0
+html/semantics/embedded-content/the-img-element/404-response-with-actual-image-data.html :: 404 response with actual image data should be rendered and load event is fired
+html/semantics/embedded-content/the-img-element/Image-constructor.html :: Image and HTMLImageElement share a prototype
+html/semantics/embedded-content/the-img-element/Image-constructor.html :: Image constructor works
+html/semantics/embedded-content/the-img-element/Image-constructor.html :: Image localName is img
+html/semantics/embedded-content/the-img-element/Image-constructor.html :: Image namespace URI is correct
+html/semantics/embedded-content/the-img-element/Image-constructor.html :: NamedConstructor creates the correct object structure.
+html/semantics/embedded-content/the-img-element/adoption.html :: adopt a cloned img in template
+html/semantics/embedded-content/the-img-element/adoption.html :: html/semantics/embedded-content/the-img-element/adoption.html
+html/semantics/embedded-content/the-img-element/already-loaded-image-sync-width.html :: Image dimensions are available synchronously after changing src to an already-loaded image
+html/semantics/embedded-content/the-img-element/available-images-onload.html :: Ensure images from available images list can be drawn to a canvas
+html/semantics/embedded-content/the-img-element/below-viewport-image-loading-lazy-load-event.html :: html/semantics/embedded-content/the-img-element/below-viewport-image-loading-lazy-load-event.html
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img src="/images/green-256x256.png" data-expect="256">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 1.6x" data-expect="160">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 10000x" data-expect="0">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 1x" data-expect="256">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 256w" sizes="0px" data-expect="0">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 256w" sizes="1px" data-expect="1">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 256w" sizes="256px" data-expect="256">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 256w" sizes="512px" data-expect="512">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 2x" data-expect="128">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 512w" sizes="256px" data-expect="128">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="/images/green-256x256.png 9e99999999999999999999999x" data-expect="0">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="data:image/svg+xml,&lt;svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-1%20-1%202%202'%20height='20'&gt;&lt;circle%20r='1'/&gt;&lt;/svg&gt; 2x" data-expect="10">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="data:image/svg+xml,&lt;svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-1%20-1%202%202'%20width='20'%20height='20'&gt;&lt;circle%20r='1'/&gt;&lt;/svg&gt; 2x" data-expect="10">
+html/semantics/embedded-content/the-img-element/current-pixel-density/basic.html :: <img srcset="data:image/svg+xml,&lt;svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-1%20-1%202%202'%20width='20'&gt;&lt;circle%20r='1'/&gt;&lt;/svg&gt; 2x" data-expect="10">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img id="ref" src="404" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img src="404 100w" sizes="500px" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img srcset="404 0.5x" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img srcset="404 100w" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img srcset="404 100w" sizes="500px" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img srcset="404 2x" alt="testing">
+html/semantics/embedded-content/the-img-element/current-pixel-density/error.html :: <img srcset="404" alt="testing">
+html/semantics/embedded-content/the-img-element/currentSrc-blob-cache.html :: currentSrc is right even if underlying image is a shared blob
+html/semantics/embedded-content/the-img-element/data-url.html :: data URL image
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. href changes fail decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. href changes fail decode; following bad decode fails.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. href changes fail decode; following good decode succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. xlink:href changes fail decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. xlink:href changes fail decode; following bad decode fails.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes-svg.tentative.html :: SVGImageElement.prototype.decode(), href mutation tests. xlink:href changes fail decode; following good decode succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. src changes fail decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. src changes fail decode; following bad decode fails.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. src changes fail decode; following good png decode succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. src changes fail decode; following good svg decode succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. src changes to the same path succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. srcset changes fail decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. srcset changes fail decode; following bad decode fails.
+html/semantics/embedded-content/the-img-element/decode/image-decode-path-changes.html :: HTMLImageElement.prototype.decode(), src/srcset mutation tests. srcset changes fail decode; following good decode succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Corrupt image in src fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Image with PNG data URL source decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Image with PNG source decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Image with SVG source decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Image with multiple sources decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Image without srcset fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Multiple decodes for images with src succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode-picture.html :: HTMLImageElement.prototype.decode(), picture tests. Non-existent source fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Corrupt image in href fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Corrupt image in xlink:href fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with PNG data URL href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with PNG data URL xlink:href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with PNG href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with PNG xlink:href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with SVG href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image with SVG xlink:href decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Image without xlink:href or href fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Multiple decodes with a href succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Multiple decodes with a xlink:href succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Non-existent href fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-svg.tentative.html :: SVGImageElement.prototype.decode(), basic tests. Non-existent xlink:href fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach-svg.tentative.html :: SVGImageElement.prototype.decode(), attach to DOM before promise resolves.
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src in empty picture cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src in empty picture not cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src in picture with source cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src in picture with source not cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: src not cached
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: srcset
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: srcset in empty picture
+html/semantics/embedded-content/the-img-element/decode/image-decode-with-quick-attach.html :: HTMLImageElement.prototype.decode(), attach to DOM before promise resolves.: srcset in picture with source
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Adopted active image into inactive document fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Adopted inactive image into active document succeeds.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Corrupt image in src fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image (legacy) without src/srcset fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image with PNG data URL src decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image with PNG src decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image with PNG srcset decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image with SVG src decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image with SVG srcset decodes with undefined.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Image without src/srcset fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Inactive document fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Multiple decodes for images with src succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Multiple decodes for images with srcset succeed.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Non-existent src fails decode.
+html/semantics/embedded-content/the-img-element/decode/image-decode.html :: HTMLImageElement.prototype.decode(), basic tests. Non-existent srcset fails decode.
+html/semantics/embedded-content/the-img-element/delay-load-event-detached.html :: DOMContentLoaded doesn't wait for images
+html/semantics/embedded-content/the-img-element/delay-load-event-detached.html :: load waits for images
+html/semantics/embedded-content/the-img-element/delay-load-event-detached.html :: setting img.src is async
+html/semantics/embedded-content/the-img-element/delay-load-event-until-move-to-empty-source.html :: Image element delays window's load event until the image changes to empty source
+html/semantics/embedded-content/the-img-element/delay-load-event.html :: DOMContentLoaded doesn't wait for images
+html/semantics/embedded-content/the-img-element/delay-load-event.html :: Image element delays window's load event
+html/semantics/embedded-content/the-img-element/delay-load-event.html :: script execution doesn't wait for the image to load
+html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=auto for disconnected image
+html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=eager for disconnected image
+html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=lazy for disconnected image
+html/semantics/embedded-content/the-img-element/empty-src-no-current-request.html :: Without srcset
+html/semantics/embedded-content/the-img-element/empty-src-no-current-request.html :: html/semantics/embedded-content/the-img-element/empty-src-no-current-request.html
+html/semantics/embedded-content/the-img-element/historical-progress-event.window.js :: html/semantics/embedded-content/the-img-element/historical-progress-event.window.js
+html/semantics/embedded-content/the-img-element/historical-progress-event.window.js :: onloadend is not exposed
+html/semantics/embedded-content/the-img-element/image-alternate-no-store.window.js :: Reassigning the same src value should not trigger an extra image fetch
+html/semantics/embedded-content/the-img-element/image-base-url.html :: An image should not be refetched upon insertion asynchronously after its Document's base URL changes
+html/semantics/embedded-content/the-img-element/image-loading-eager.html :: Test that images with loading='eager' load immediately regardless of their position with respect to the viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-available.html :: The list of available images gets checked before deciding to make a load lazy
+html/semantics/embedded-content/the-img-element/image-loading-lazy-base-url-2.html :: When a loading=lazy image is loaded, it loads relative to the document's base URL computed at parse-time.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-base-url.html :: When a loading=lazy image is loaded, it loads relative to the document's base URL computed at parse-time.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-below-viewport-dynamic.html :: Test that below viewport images with loading='lazy' and changed to loading='eager' load and do not block the window load event.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-crossorigin-change.sub.html :: Test that when deferred image is loaded, it uses the latest crossorigin attribute.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-different-crossorigin.html :: Lazyload images cannot load immediately from the list of available images if their tuple doesn't match other images in that list
+html/semantics/embedded-content/the-img-element/image-loading-lazy-empty-src.html :: lazy loaded image and empty src
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-far.html :: Test that lazy-loaded images do not load when far from viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-horizontal-far.html :: Test that lazy-loaded images do not load when far from viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-horizontal.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-2.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-3.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-4.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-5.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller.html :: Test that lazy-loaded images load when near viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-in-viewport-dynamic.html :: Test that in viewport images with loading='lazy' and changed to loading='eager' do not block the window load event.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-multicol.html :: Test that images with loading='lazy' under multicol load once they enter the viewport.
+html/semantics/embedded-content/the-img-element/image-loading-lazy-multiple-times.html :: Images with loading='lazy' can be lazy loaded multiple times
+html/semantics/embedded-content/the-img-element/image-loading-lazy-negative-margin.html :: A loading=lazy image that is pulled into an `overflow: hidden` area by a negative margin will not load because IntersectionObserver sees it as non-intersecting
+html/semantics/embedded-content/the-img-element/image-loading-lazy-referrerpolicy-change.sub.html :: Test that when a deferred image is loaded, it uses the latest referrerpolicy
+html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image crossOrigin mutation does not cause deferred loading=lazy images to be fetched
+html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image referrerPolicy mutation does not cause deferred loading=lazy images to be fetched
+html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image src mutation does not cause deferred loading=lazy images to be fetched
+html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Images are lazyloaded
+html/semantics/embedded-content/the-img-element/image-loading-lazy-srcset.html :: html/semantics/embedded-content/the-img-element/image-loading-lazy-srcset.html
+html/semantics/embedded-content/the-img-element/image-loading-lazy-to-eager.html :: html/semantics/embedded-content/the-img-element/image-loading-lazy-to-eager.html
+html/semantics/embedded-content/the-img-element/image-loading-lazy-use-list-of-available-images.html :: Lazyload images can load immediately from the list of available images
+html/semantics/embedded-content/the-img-element/image-loading-lazy-zero-intersection-area.html :: html/semantics/embedded-content/the-img-element/image-loading-lazy-zero-intersection-area.html
+html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: html/semantics/embedded-content/the-img-element/image-loading-lazy.html
+html/semantics/embedded-content/the-img-element/img-picture-ancestor.html :: currentSrc of img in nested picture element is correct
+html/semantics/embedded-content/the-img-element/img-picture-ancestor.html :: currentSrc of img in nested picture element remains correct when the inner picture is removed from the document
+html/semantics/embedded-content/the-img-element/img-picture-ancestor.html :: currentSrc of img in normally parented picture is correct
+html/semantics/embedded-content/the-img-element/img-picture-ancestor.html :: currentSrc of img with picture ancestor but non-picture parent is correct
+html/semantics/embedded-content/the-img-element/img-src-in-synthetic-document.html :: HTMLImageElement.src should return the string from the attribute in about:blank documents.
+html/semantics/embedded-content/the-img-element/img.complete.html :: IDL attribute complete cannot "randomly" change during a task
+html/semantics/embedded-content/the-img-element/img.complete.html :: async pending request test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async src available image lookup test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async src broken test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async src complete test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async src removal test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async srcset complete test
+html/semantics/embedded-content/the-img-element/img.complete.html :: async srcset removal test
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src and srcset omitted
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src and srcset omitted on image after it started a load
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src and srcset omitted on newly-created image
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src and srcset omitted on newly-created-and-inserted image
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src and srcset omitted on newly-created-via-innerHTML image
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src empty and srcset omitted
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src empty and srcset omitted on newly-created image
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src empty and srcset omitted on newly-created-and-inserted image
+html/semantics/embedded-content/the-img-element/img.complete.html :: img src empty and srcset omitted on newly-created-via-innerHTML image
+html/semantics/embedded-content/the-img-element/img.complete.html :: invalid URL
+html/semantics/embedded-content/the-img-element/img.complete.html :: not loadable
+html/semantics/embedded-content/the-img-element/invalid-src.html :: src=""
+html/semantics/embedded-content/the-img-element/invalid-src.html :: src="http://["
+html/semantics/embedded-content/the-img-element/invisible-image.html :: Test that below-viewport invisible images that are not marked loading=lazy still load, and block the window load event
+html/semantics/embedded-content/the-img-element/list-of-available-images-does-not-coalesce-in-flight-requests.sub.tentative.html :: list of available images does not coalesce in-flight requests
+html/semantics/embedded-content/the-img-element/natural-size-orientation.html :: html/semantics/embedded-content/the-img-element/natural-size-orientation.html
+html/semantics/embedded-content/the-img-element/natural-size-orientation.html :: naturalWidth and naturalHeight return correct values for an image without orientation metadata
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with height attr, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width attr, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image with width/height attrs, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, negative percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, no natural dimensions, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, percengage natural dimensions, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height matching default concrete object size, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0 (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural height, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height matching default concrete object size (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width and height, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width being negative, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width matching default concrete object size, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0 (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width of 0, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, and aspect ratio from viewBox (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: SVG image, with natural width, viewBox with 0 width/height (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image with width/height attributes, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: non existent image, no natural dimensions (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/1x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/1x) (when not rendered)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/2x)
+html/semantics/embedded-content/the-img-element/naturalWidth-naturalHeight-width-height.html :: raster image with width/height attributes (with srcset/2x) (when not rendered)
+html/semantics/embedded-content/the-img-element/non-active-document.html :: <template>
+html/semantics/embedded-content/the-img-element/non-active-document.html :: DOMParser
+html/semantics/embedded-content/the-img-element/non-active-document.html :: createHTMLDocument
+html/semantics/embedded-content/the-img-element/nonexistent-image.html :: Loading an nonexisting image should fail; triggering appropriate events
+html/semantics/embedded-content/the-img-element/not-rendered-below-viewport-image-loading-lazy.html :: Below-viewport loading=lazy not-rendered images should never load, even when scrolled into view
+html/semantics/embedded-content/the-img-element/not-rendered-dimension-getter.html :: html/semantics/embedded-content/the-img-element/not-rendered-dimension-getter.html
+html/semantics/embedded-content/the-img-element/not-rendered-image-loading-lazy.html :: In-viewport loading=lazy not-rendered images should never load
+html/semantics/embedded-content/the-img-element/null-image-source.html :: html/semantics/embedded-content/the-img-element/null-image-source.html
+html/semantics/embedded-content/the-img-element/null-image-source.html :: img with empty srcset
+html/semantics/embedded-content/the-img-element/null-image-source.html :: img with picture parent
+html/semantics/embedded-content/the-img-element/picture-loading-lazy.html :: Test that deferred <picture> element was loaded-in as well, after scrolled down
+html/semantics/embedded-content/the-img-element/picture-loading-lazy.html :: Test that eager <picture> element was loaded
+html/semantics/embedded-content/the-img-element/picture-loading-lazy.html :: Test that the loading=lazy <picture> element below viewport was deferred, on document load.
+html/semantics/embedded-content/the-img-element/picture-loading-lazy.html :: html/semantics/embedded-content/the-img-element/picture-loading-lazy.html
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: being rendered changes
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: display property changes to inline-block
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: height property changes (with aspect-ratio)
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: loading attribute changes to LAZY
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: loading attribute state changes
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: percentage width, CB width changes
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: width attribute changes
+html/semantics/embedded-content/the-img-element/relevant-mutations-lazy.html :: width property changes
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: alt on img set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: ancestor picture has a source inserted
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: ancestor picture has a source removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: ancestor picture; previous sibling source inserted
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: ancestor picture; previous sibling source removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: class on img set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: class on previous sibling source set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to anonymous, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to anonymous, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to empty, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to empty, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to use-credentials, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin absent to use-credentials, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin anonymous to absent, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin anonymous to absent, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin anonymous to use-credentials, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin anonymous to use-credentials, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin empty to absent, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin empty to absent, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin empty to use-credentials, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin empty to use-credentials, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin state not changed: absent, removeAttribute
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin state not changed: anonymous to foobar
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin state not changed: empty to anonymous
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin state not changed: use-credentials to USE-CREDENTIALS
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to absent, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to absent, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to anonymous, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to anonymous, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to empty, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to empty, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to invalid, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: crossorigin use-credentials to invalid, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: inserted into picture
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: inserted into picture ancestor
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: inserted/removed children of img
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: media on img set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following img has sizes set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following img has src set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following img has srcset set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following img inserted
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following img removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following sibling source has srcset set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following sibling source inserted
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, following sibling source removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has media changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has media removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has media set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has sizes changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has sizes removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has sizes set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has srcset changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has srcset removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has srcset set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has type changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has type removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source has type set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source inserted
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: parent is picture, previous source removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is inserted; img has following sibling source
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is inserted; img has previous sibling source
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is inserted; img has src
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is inserted; img has srcset
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is removed; img has following sibling source
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is removed; img has previous sibling source
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is removed; img has src
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: picture is removed; img has srcset
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy absent to no-referrer, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy absent to no-referrer, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy absent to no-referrer-when-downgrade, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy absent to no-referrer-when-downgrade, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy empty to no-referrer, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy empty to no-referrer, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy empty to no-referrer-when-downgrade, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy empty to no-referrer-when-downgrade, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to absent, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to absent, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to empty, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to empty, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to invalid, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to invalid, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to no-referrer-when-downgrade, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer to no-referrer-when-downgrade, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to absent, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to absent, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to empty, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to empty, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to invalid, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to invalid, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to no-referrer, src absent
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy no-referrer-when-downgrade to no-referrer, src already set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: absent to invalid
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: absent, removeAttribute
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: empty to empty
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: empty to invalid
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: invalid to other-invalid
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: referrerpolicy state not changed: no-referrer to NO-REFERRER
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: removed from picture
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: removed from picture ancestor
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: sizes changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: sizes is set to same value
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: sizes removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: sizes set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: src changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: src on previous sibling source set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: src removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: src set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: src set to same value
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: srcset changed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: srcset is set to same value
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: srcset removed
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: srcset set
+html/semantics/embedded-content/the-img-element/relevant-mutations.html :: type on img set
+html/semantics/embedded-content/the-img-element/remove-element-and-scroll.html :: Test that <img> below viewport is not loaded when removed from the document and then scrolled to
+html/semantics/embedded-content/the-img-element/sizes/implicit-sizes-ignores-width.html :: Implicit sizes ignores width
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto-dynamic-attributes.html :: html/semantics/embedded-content/the-img-element/sizes/sizes-auto-dynamic-attributes.html
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto-resize-observer-removes-auto.html :: html/semantics/embedded-content/the-img-element/sizes/sizes-auto-resize-observer-removes-auto.html
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <img loading="eager" sizes="auto" width="10" data-ref="ref2" srcset="/images/green-1x1.png?img17 50w, /images/green-16x16.png?img17 51w">
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <img sizes="" data-ref="ref2" srcset="/images/green-1x1.png?img2 50w, /images/green-16x16.png?img2 51w">
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <img sizes="1px" data-ref="ref1" srcset="/images/green-1x1.png?img1 50w, /images/green-16x16.png?img1 51w">
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <picture><source sizes="" srcset="/images/green-1x1.png?picture2 50w, /images/green-16x16.png?picture2 51w"><img data-ref="ref2"></picture>
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <picture><source sizes="1px" srcset="/images/green-1x1.png?picture1 50w, /images/green-16x16.png?picture1 51w"><img data-ref="ref1"></picture>
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: <picture><source srcset="/images/green-1x1.png?picture17 50w, /images/green-16x16.png?picture17 51w"><img loading="eager" sizes="auto" width="10" data-ref="ref2"></picture>
+html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html :: html/semantics/embedded-content/the-img-element/sizes/sizes-auto.html
+html/semantics/embedded-content/the-img-element/source-relevant-mutations.html :: Neither the removing, moving, nor insertion steps for the source element track the previous 'next sibling' pointer when triggering relevant mutations for remaining child image elements of its old parent
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: " , ,,data:,a"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: " data:,a 1x "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: " data:,a"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: ""
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: ","
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: ",,,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: ",,,data:,a"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\f\fdata:,a\f\f1x\f\f"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\n\ndata:,a\n\n1x\n\n"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\t\tdata:,a\t\t1x\t\t"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\v\vdata:,a\v\v1x\v\v"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\x0e\x0edata:,a\x0e\x0e1x\x0e\x0e"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\x0f\x0fdata:,a\x0f\x0f1x\x0f\x0f"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "\x10\x10data:,a\x10\x101x\x10\x10"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ( , data:,b 1x, ), data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ((( , data:,b 1x, ), data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a (, data:,b"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a +1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a +1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a -.x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a -0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a -1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a -1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a -x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a .5e1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a .5x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a .x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a /*, data:,b, data:,c */"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a //, data:,b"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0X1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0X1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0X1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0x1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0x1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 0x1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1.0w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1.0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1.5e1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1.x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1E0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1W"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1X"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1\x01w" (trailing U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1\x01x" (trailing U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1e-1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1e0w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1e0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h 1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h 1w 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h 1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h foo"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w +1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w +1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w -1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w -1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 0h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1.0h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1.0w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1H"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1W"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1\x01h" (trailing U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1e0h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1e0w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1hhh"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1www"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1‌h" (trailing U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1‍h" (trailing U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1 h" (trailing U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1　h" (trailing U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 1﻿h" (trailing U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w Infinityh"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w Infinityw"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w NaNh"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w NaNw"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w \x011h" (leading U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w ‌1h" (leading U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w ‍1h" (leading U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w  1h" (leading U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w 　1h" (leading U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w ﻿1h" (leading U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1www"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x -0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x -1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1.0x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1.5e1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1e1.5x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1w 1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1x,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1‌w" (trailing U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1‌x" (trailing U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1‍w" (trailing U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1‍x" (trailing U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 w" (trailing U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1 x" (trailing U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1　w" (trailing U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1　x" (trailing U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1﻿w" (trailing U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 1﻿x" (trailing U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a Infinityw"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a Infinityx"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a NaNw"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a NaNx"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a [ , data:,b 1x, ], data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a \" , data:,b 1x, \", data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a \\,data:;\\,b, data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a \x011w" (leading U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a \x011x" (leading U+0001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo 1h"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo 1w foo"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo 1w"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo 1x foo"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo 1x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo foo"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a foo"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a { , data:,b 1x, }, data:,c"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+00A0)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+1680)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2001)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2002)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2003)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2004)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2005)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2006)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2007)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2008)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+2009)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+200A)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ‌1w" (leading U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ‌1x" (leading U+200C)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ‍1w" (leading U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ‍1x" (leading U+200D)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+202F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1w" (leading U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a  1x" (leading U+205F)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 　1w" (leading U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a 　1x" (leading U+3000)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ﻿1w" (leading U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a ﻿1x" (leading U+FEFF)
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, data:,b ( "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, data:,b ("
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, data:,b ()"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, data:,b (,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a, data:,b (x"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a,, , "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a,,,"
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: "data:,a "
+html/semantics/embedded-content/the-img-element/srcset/parse-a-srcset-attribute.html :: " data:,a"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a , data:,b 1x"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a , data:,b"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w 1h, data:,b 1w 2h"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w 1h, data:,b 1w"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w 2h, data:,b 1w 1h"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w, data:,b 1w 1h"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w, data:,b 1w"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w, data:,b 1x" sizes="1px"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1w, data:,b 2x" sizes="0.5px"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1x, data:,b 1w" sizes="1px"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1x, data:,b 1x"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 1x, data:,b"
+html/semantics/embedded-content/the-img-element/srcset/select-an-image-source.html :: "data:,a 2x, data:,b 1w" sizes="0.5px"
+html/semantics/embedded-content/the-img-element/srcset/srcset-media-dynamic.html :: Dynamic media change is handled correctly
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims + 2x density: both scaled
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims + 2x zoom: rendered size scaled, naturalWidth/Height not
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims: baseline
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only + 2x density: width scaled, default height not
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only + 2x zoom: everything scaled
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only: baseline
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims + 2x density: defaults not scaled
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims + 2x zoom: rendered size scaled, naturalWidth/Height not
+html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims: baseline
+html/semantics/embedded-content/the-img-element/update-media.html :: html/semantics/embedded-content/the-img-element/update-media.html
+html/semantics/embedded-content/the-img-element/update-src-complete.html :: html/semantics/embedded-content/the-img-element/update-src-complete.html
+html/semantics/embedded-content/the-img-element/update-the-image-data/current-request-microtask-002.html :: Current request microtask handling with multiple tasks.
+html/semantics/embedded-content/the-img-element/update-the-image-data/current-request-microtask.html :: currentSrc is updated only after the microtask that updates the current request is run
+html/semantics/embedded-content/the-img-element/update-the-image-data/fail-to-resolve.html :: <img src="//[">
+html/semantics/embedded-content/the-img-element/update-the-image-data/fail-to-resolve.html :: <img srcset="//[" src="/images/red.png">
+html/semantics/embedded-content/the-img-element/update-the-image-data/fail-to-resolve.html :: <img srcset="//[">
+html/semantics/embedded-content/the-img-element/update-the-image-data/fail-to-resolve.html :: <img srcset="//[, /images/red.png">
+html/semantics/embedded-content/the-img-element/update-the-image-data/lazy-out-of-band-load.html :: src = /images/green.png
+html/semantics/embedded-content/the-img-element/update-the-image-data/lazy-out-of-band-load.html :: src = /images/not-found
+html/semantics/embedded-content/the-img-element/update-the-image-data/lazy-out-of-band-load.html :: srcset = /images/green.png
+html/semantics/embedded-content/the-img-element/update-the-image-data/lazy-out-of-band-load.html :: srcset = /images/not-found
+html/semantics/embedded-content/the-img-element/update-the-image-data/not-broken-while-load-task-scheduled.html :: run_test("src")
+html/semantics/embedded-content/the-img-element/update-the-image-data/not-broken-while-load-task-scheduled.html :: run_test("srcset")
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: src = /images/green.png 1 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: src = /images/green.png 2 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: src = /images/not-found 1 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: src = /images/not-found 2 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: srcset = /images/green.png 1 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: srcset = /images/green.png 2 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: srcset = /images/not-found 1 time(s)
+html/semantics/embedded-content/the-img-element/update-the-image-data/src-then-lazy-load.html :: srcset = /images/not-found 2 time(s)
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img data-expect="">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="" data-expect="">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" data-expect="data:,a">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 0.0001x, data:,c 1w" sizes="10000px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 1.0x" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 10000w" sizes="1px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 10000w, data:,c 10000x" sizes="1px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 10000x, data:,c 10000w" sizes="1px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 1e0x" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 1w" sizes="10000px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 1w, data:,c 0.0001x" sizes="10000px" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b 1x" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img src="data:,a" srcset="data:,b" data-expect="data:,b"><!-- srcset after src -->
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img srcset="" src="data:,a" data-expect="data:,a">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img srcset="data:,a" data-expect="data:,a">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <img srcset="data:,b" src="data:,a" data-expect="data:,b">
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><!--foo--><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><br><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img data-expect=""><img src="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img data-expect=""><source srcset="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a" data-expect="data:,a"><!--foo--></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a" data-expect="data:,a"><br></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a" data-expect="data:,a"><img src="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a" data-expect="data:,a"><source srcset="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a" data-expect="data:,a">foo</picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><img src="data:,a"><img src="data:,b" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><p></p><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source src="data:,b"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset=""><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset=", ,"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b 1x 1x"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media=""><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media=", all"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media=","><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="all and !"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="all and (!)"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="all and (min-width:0)"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="all"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="all, !"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="not all and !"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="not all and (!)"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="not all and (max-width:0)"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="not all and (min-width:0)"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" media="not all"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type=" "><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type=" image/gif"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type=""><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="*"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="*/*"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type=","><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type=".gif"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="application/octet-stream"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="application/x-shockwave-flash"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="gif"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/*"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/foobarbaz"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif "><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif image/png"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif, image/png"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif;"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif;encodings"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif;encodings="><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/gif;encodings=foobar"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/jpeg"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/png"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/svg+xml"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image/x-icon"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="image\gif"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="text/css"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="text/html"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="text/plain"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="text/xml"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="unknown/unknown"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="video/mp4"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="video/ogg"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b" type="video/webm"><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b"><img data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source srcset="data:,b"><span><img src="data:,a" data-expect="data:,a"></span></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><source><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><span><source srcset="data:,b"></span><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><span><source srcset="data:,b"><img data-expect=""></span></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><span><source srcset="data:,b"><img src="data:,a" data-expect="data:,a"></span></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><svg><!--<font face> tag breaks out of svg--></svg><font face=""></font><source srcset="data:,b"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><svg></svg><source srcset="data:,b"><img src="data:,a" data-expect="data:,b"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><svg><font></font><source srcset="data:,b"></svg><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><svg><source srcset="data:,b"></svg><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture><video><source srcset="data:,b"></video><img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/update-the-source-set.html :: <picture>foo<img src="data:,a" data-expect="data:,a"></picture>
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #blah1 should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #paSSfield-killroyß should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #sImPlE should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #sanityCheck should match the area with map named sanityCheck
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #tÉdz5アパートFi should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #åωk should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #ΣΣ should not match any of the areas
+html/semantics/embedded-content/the-img-element/usemap-casing.html :: Image with usemap of #глупый should not match any of the areas
+image.onerror() was not supposed to be called Reached unreachable code
+naturalHeight expected 100 but got 150
+naturalHeight when not rendered expected 100 but got 150
+page timeout completed the file with 1 test(s) unreported (state={"loaded":true,"pending":1,"phase":4,"tests":2})
+page timeout completed the file with 1 test(s) unreported (state={"loaded":true,"pending":1,"phase":4,"tests":3})
+page timeout completed the file with 1 test(s) unreported (state={"loaded":true,"pending":1,"phase":4,"tests":4})
+page timeout completed the file with 2 test(s) unreported (state={"loaded":true,"pending":2,"phase":4,"tests":3})
+page timeout completed the file with 68 test(s) unreported (state={"loaded":true,"pending":68,"phase":4,"tests":74})
+page timeout completed the file with 7 test(s) unreported (state={"loaded":true,"pending":7,"phase":4,"tests":8})
+read properties of undefined (reading 'querySelector')
+rendered height expected 150 but got 100
+rendered width expected 120 but got 60
+rendered width expected 30 but got 784
+rendered width expected 300 but got 784
+rendered width expected 600 but got 300
+width expected 720 but got 300

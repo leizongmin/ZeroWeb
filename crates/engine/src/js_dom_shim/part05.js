@@ -13357,6 +13357,19 @@
         _r4600nxtFor.push(_r4600nb + 1 < items.length ? items[_r4600nb + 1] : _makeProxy(sel, null));
       }
     }
+    // s226：afterbegin 头插的 per-item 后继链——items 已反序（插入序），第 k 个
+    // 插入项的后继 = 上一个插入项（_r5277abPrev），首个 = 插入前原首子。R4600
+    // 只覆盖 beforebegin 位型，afterbegin 落 null → overlay 尾插近似使 prepended
+    // 节点落 JS 视图末位（probe7/9 实证 kids 序 [img1,img2,s2]），而 source-set
+    // 选择核（__zwUpdateSourceSet5277）按视图序首个 source 命中即返回——位次错
+    // 即断言窗选源错（source-relevant-mutations「picture.prepend(source)」面）。
+    var _r5277abFirst = null, _r5277abPrev = null;
+    if (position === 'afterbegin') {
+      try {
+        var _r5277abKids = _makeProxy(sel, null).children;
+        _r5277abFirst = (_r5277abKids && _r5277abKids.length) ? _r5277abKids[0] : null;
+      } catch (_e5277abk) {}
+    }
     for (var k = 0; k < items.length; k++) {
       var item = items[k];
       try {
@@ -13389,9 +13402,11 @@
                 if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
                   _zwNodeParent[_r321c.__zwHandle] = { parentSel: sel, parentHandle: null,
                     nextSibling: (position === 'beforebegin' && _r321f + 1 < _r321fk.length) ? _r321fk[_r321f + 1]
-                      : ((_r4600nxtFor && _r4600nxtFor[k]) || null) };
+                      : ((position === 'afterbegin') ? (_r5277abPrev || _r5277abFirst)
+                         : ((_r4600nxtFor && _r4600nxtFor[k]) || null)) };
                 }
               } catch (_e321pl) {}
+              if (position === 'afterbegin') _r5277abPrev = _r321c;
               ceInserted.push(_r321c);
               // R377：插入期脚本执行（fragment 展开路径——template clone 的 script 子）。
               _r377runScript(_r321c.__zwHandle);
@@ -13417,9 +13432,12 @@
           // 根因；appendChild 路径 R51 反链齐全故同场景可见）。R371 桶重键同读本反链。
           try {
             if (typeof _zwNodeParent !== 'undefined' && _zwNodeParent) {
-              _zwNodeParent[item.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: (_r4600nxtFor && _r4600nxtFor[k]) || null };
+              _zwNodeParent[item.__zwHandle] = { parentSel: sel, parentHandle: null,
+                nextSibling: (position === 'afterbegin') ? (_r5277abPrev || _r5277abFirst)
+                  : ((_r4600nxtFor && _r4600nxtFor[k]) || null) };
             }
           } catch (_e4600np) {}
+          if (position === 'afterbegin') _r5277abPrev = item;
           ceInserted.push(item);
           // R377：插入期脚本执行（直接 script 项路径）。
           _r377runScript(item.__zwHandle);
@@ -13440,10 +13458,13 @@
           // R334 同款同步可见性：pending 父槽（parentNode getter 在 host 异步 apply
           // 前即返新父）+ 重解析索引（getElementById 同 turn 可见）+ 兄弟基缓存失效。
           try {
-            item._zwSelPendingParent = { parentSel: sel, nextSibling: (_r4600nxtFor && _r4600nxtFor[k]) || null };
+            item._zwSelPendingParent = { parentSel: sel,
+              nextSibling: (position === 'afterbegin') ? (_r5277abPrev || _r5277abFirst)
+                : ((_r4600nxtFor && _r4600nxtFor[k]) || null) };
             if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(item.__zwSelector, item);
             if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
           } catch (_e4200sv) {}
+          if (position === 'afterbegin') _r5277abPrev = item;
           ceInserted.push(item);
         } else {
           // R117：null/undefined → WebIDL DOMString（'null'/'undefined' 文本节点）。
@@ -13459,6 +13480,44 @@
     if (ceInserted.length && typeof _zwHCLiveInvalidate === 'function') {
       try { _zwHCLiveInvalidate(ceInserted.slice(), [], sel, null); } catch (_e321inv) {}
     }
+    // s226：live 集合树序重排——_zwHCLiveInvalidate 的 add 分支保守尾插（t8e 注：
+    // 反链未落账不读动态兄弟），树序靠 _mo_notify 尾叫 _zwHCTreeOrderSync；本漏斗
+    // 不派 _mo_notify（MO 记账由 host apply 异步半承担），同步窗内 children 集合
+    // 恒尾序（probe9 实证 prepended source 落末位）→ source-set 选择核按 children
+    // 序取首个 source 错位。此处直叫重排：锚 = _zwSelPendingParent 槽（本函数已按
+    // afterbegin 后继链写入正确 ref，见 _r5277abFirst/_r5277abPrev）。
+    if (ceInserted.length && typeof _zwHCTreeOrderSync === 'function') {
+      try { _zwHCTreeOrderSync(ceInserted.slice(), sel, null, false); } catch (_e5277tos) {}
+    }
+    // s226：img/source 变族插入 picture → relevant mutation（appendChild R334 /
+    // insertBefore R334b 同钩）——prepend/replaceWith/before/after 漏斗
+    // _insertAdjacentVariadic 原无 img 面，source-relevant-mutations
+    // 「picture.prepend(source)」断言臂 sel 项入 picture 后 img 兄弟不重验。
+    // ceInserted 已含 fragment 展开/handle/sel 三类元素项（文本项不入——非
+    // img/source 契约面）。**必须居树序重排之后**：fetch 半（Revalidate →
+    // RunUpdate）的 restart 判定按选中 URL 比较，读早了见头插前视图判「同
+    // URL 不重启」，resourceState 恒旧值盖过记录表（probe10 实证二轮头插
+    // currentSrc 停 s2）。afterbegin 位次不可靠 → 显式 null 锚走保守全量重验；
+    // beforebegin/afterend 的父是 sel 的父，从插入项 parentNode 反读（此时
+    // wire 已落位）。
+    // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+    try {
+      if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+        for (var ci2 = 0; ci2 < ceInserted.length; ci2++) {
+          var _it5277 = ceInserted[ci2];
+          if (position === 'afterbegin') {
+            globalThis.__zwImgTreeMutated5277(sel, null, _it5277, true, null);
+          } else if (position === 'beforeend') {
+            globalThis.__zwImgTreeMutated5277(sel, null, _it5277, true);
+          } else {
+            var _pp5277 = null;
+            try { _pp5277 = _it5277.parentNode; } catch (_e5277pp) {}
+            globalThis.__zwImgTreeMutated5277(_pp5277 && _pp5277.__zwSelector ? _pp5277.__zwSelector : null,
+              _pp5277 && _pp5277.__zwHandle ? _pp5277.__zwHandle : null, _it5277, true);
+          }
+        }
+      }
+    } catch (_e5277tiv) {}
   }
 
   // append/replaceChildren 共用：variadic 节点/字符串追加到 this 末尾（DocumentFragment flatten）。

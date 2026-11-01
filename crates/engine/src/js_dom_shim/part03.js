@@ -3134,15 +3134,33 @@
           globalThis._zwImgDecodeEpoch5277 = globalThis._zwImgDecodeEpoch5277 || {};
           globalThis._zwImgDecodeEpoch5277[_imKey] = (globalThis._zwImgDecodeEpoch5277[_imKey] || 0) + 1;
         }
+        // s226：settle 代际守卫——链式 fetch 完成序 ≠ run 序（probe12 实证：前 run
+        // 的链在后 run 删除态之后落态，后 run 的 InvalidState 臂见「态已存在」跳写，
+        // 陈旧 URL 永驻 currentSrc）。run 启动捕获代际，各 settle/失败点比对：被
+        // 取代 run 的完成一律丢弃——状态不写、事件不派；在飞计数照平（_imInflightEnd）。
+        // spec restart：被作废的 current request 不再派 load/error。
+        // 纪元对象缺位（纯 detached 流零 bump）= 从未发生取代 → 非陈旧；初版
+        // `!_ep → stale` 连同捕获行对 undefined 对象取键 throw，使每链启动即
+        // _imFail、settle 全失，onload 永挂（image-decode-path-changes 回归实证）。
+        // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+        var _imEpoch = globalThis._zwImgDecodeEpoch5277 ? globalThis._zwImgDecodeEpoch5277[_imKey] : undefined;
+        var _imEpochStale = function () {
+          var _ep = globalThis._zwImgDecodeEpoch5277;
+          if (!_ep) { return false; }
+          return _ep[_imKey] !== _imEpoch;
+        };
         // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
         // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
         // 延迟 window load 语义）。
         _imFetched = true;
         globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
         fetch(_imSrc).then(function (resp) {
+          if (_imEpochStale()) { _imInflightEnd(); return; }
           if (!resp.ok) { _imFail(); return; }
           resp.blob().then(function (blob) {
+            if (_imEpochStale()) { _imInflightEnd(); return; }
             createImageBitmap(blob).then(function (bm) {
+              if (_imEpochStale()) { _imInflightEnd(); return; }
               // R56h：手动 settle（handle 元素）——_zwSettleResourceSelector 只收
               // sel（new Image() 的 handle-based 元素 sel 为 null → key 不匹配
               // listener 槽位，onload 不触发）。resourceState 用 _elKey(sel, handle)
@@ -3158,6 +3176,7 @@
               // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
               // 0，drawImage no-op——2d.drawImage.zerosource.image 期望 onload 且
               // 不绘制）；真解码失败（broken）→ error 事件。
+              if (_imEpochStale()) { _imInflightEnd(); return; }
               if (e && e.name === 'InvalidStateError') {
                 if (!_resourceStates[_imKey]) {
                   _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: 0, height: 0, error: null, density: _imDensity };
@@ -3169,8 +3188,8 @@
                 _imFail();
               }
             });
-          }, _imFail);
-        }, _imFail);
+          }, function (e) { if (_imEpochStale()) { _imInflightEnd(); return; } _imFail(e); });
+        }, function (e) { if (_imEpochStale()) { _imInflightEnd(); return; } _imFail(e); });
       } catch (_e) {
         _imFail();
       }
@@ -3291,6 +3310,12 @@
         for (var si = 0; si < sKids.length; si++) {
           if (sKids[si] === sEl) { after = true; continue; }
           if (after && _zw5277Tag(sKids[si]) === 'IMG') {
+            // s226：记录半与 fetch 半并调——currentSrc 读序 resourceState 优先、
+            // 缺省回落 s220 记录表（settle 前断言窗 fetch 半异步步进未落，记录
+            // 半是唯一真值源；TreeMutated IMG 臂 s221 同模式）。
+            if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+              globalThis.__zwImgSelectionQueue5277(sKids[si].__zwSelector, sKids[si].__zwHandle);
+            }
             globalThis.__zwImgRevalidate5277(sKids[si].__zwSelector, sKids[si].__zwHandle);
           }
         }
@@ -3327,10 +3352,20 @@
       var kids = pEl.children;
       var after = false;
       if (isInsert) {
-        // 插入：node 仍在 kids 中，其后 img 兄弟重验。
+        // 插入：node 仍在 kids 中，其后 img 兄弟重验。afterAnchor 显式 null =
+        // 位次不可靠（_insertAdjacentVariadic afterbegin 的 overlay 尾插近似
+        // 使 prepended source 落 JS 视图末位，probe7 实证）→ 保守全量重验：
+        // 重验幂等，未受影响 img 重算同选源，结果不变仅多扫。
+        after = (afterAnchor === null);
         for (var i = 0; i < kids.length; i++) {
           if (kids[i] === node) { after = true; continue; }
           if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            // s226：记录半与 fetch 半并调（IMG 臂 s221 同模式）——
+            // source-relevant-mutations「source 移除/插入后微任务重选」
+            // 断言窗读 s220 记录表。
+            if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+              globalThis.__zwImgSelectionQueue5277(kids[i].__zwSelector, kids[i].__zwHandle);
+            }
             globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
           }
         }
@@ -3344,6 +3379,10 @@
         for (var i = 0; i < kids.length; i++) {
           if (!after && afterAnchor != null && kids[i] === afterAnchor) after = true;
           if (after && _zw5277Tag(kids[i]) === 'IMG') {
+            // s226：记录半与 fetch 半并调（IMG 臂 s221 同模式，见插入臂注）。
+            if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+              globalThis.__zwImgSelectionQueue5277(kids[i].__zwSelector, kids[i].__zwHandle);
+            }
             globalThis.__zwImgRevalidate5277(kids[i].__zwSelector, kids[i].__zwHandle);
           }
         }

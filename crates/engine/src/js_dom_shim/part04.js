@@ -8430,6 +8430,15 @@
               // 兄弟解析），读值仍是移除前形态。
               var _r188Prev = null, _r188Next = null;
               try { _r188Prev = child.previousSibling || null; _r188Next = child.nextSibling || null; } catch (_e188s) {}
+              // s226：img SOURCE 移除臂的锚须为**元素**——快照兄弟链含空白文本
+              // 节点（探针实证 nodeType=3），文本锚在元素-only children 枚举中
+              // 身份恒 miss，「其后 img 兄弟」全部漏重验。MO record 的 nextSibling
+              // 保持原始节点（spec record 语义不动），仅 img 钩传元素锚。
+              // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+              var _r188NextEl = _r188Next;
+              try {
+                while (_r188NextEl && _r188NextEl.nodeType !== 1) _r188NextEl = _r188NextEl.nextSibling;
+              } catch (_e5277tne) {}
               // M3 扩批 X：track 子移除 → textTracks 集合同步（sel 父分支——移除标记
               // 已设，_childNodeList 的 overlay 不再含该子；静态 HTML 里 querySelector
               // 产物形态的 track 子由此摘除）。
@@ -8455,7 +8464,7 @@
             // 第 5 参传移除前捕获的 former next sibling（R188 `_r188Next`）作
             // 「其后 img 兄弟」位置锚——helper 在节点摘除后调用，kids 已不含
             // 被移节点，无锚无法定位。
-            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false, _r188Next); } catch (_e5277trm2) {}
+            try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, false, _r188NextEl); } catch (_e5277trm2) {}
             return child;
           };
         }
@@ -8729,10 +8738,13 @@
               // R5250：带位变体重插清除 sel 收养章（R334 appendChild 同款对称面）。
               try { if (typeof _zwUnmarkAdoptDocSel === 'function') _zwUnmarkAdoptDocSel(_r334bChildSel); } catch (_e5250um) {}
               try {
-                var _r334bOldSel = null;
+                var _r334bOldSel = null, _r334bOldHnd = null;
                 try {
                   var _r334bop = newNode.parentNode;
-                  if (_r334bop && _r334bop.__zwSelector) _r334bOldSel = _r334bop.__zwSelector;
+                  if (_r334bop && _r334bop.__zwSelector) {
+                    _r334bOldSel = _r334bop.__zwSelector;
+                    _r334bOldHnd = _r334bop.__zwHandle || null;
+                  }
                 } catch (_e334bo) {}
                 var _r334bLink = { parentSel: sel, nextSibling: refNode || null };
                 newNode._zwSelPendingParent = _r334bLink;
@@ -8760,6 +8772,21 @@
               _ceApplyConn(newNode, _r334bpc);
               // s70：img/source 带位插入 picture → relevant mutation（同 appendChild）。
               try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, newNode, true); } catch (_e5277tib) {}
+              // s226：移动形态旧父摘除半 img 钩——insertBefore 移动（moveBefore
+              // 同委派）把 source 移出 picture 时，spec concept-node-remove 的移除
+              // 步同样触发旧父 picture 内「其后 img 兄弟」relevant mutations；此
+              // 分支原只派新父插入钩（_e5277tib），source-relevant-mutations
+              // 「third source is moved」断言面旧父臂缺位。锚 = wire 移动前
+              // nextSibling 快照（_r334bRnext）过滤为元素（removeChild R188 同款，
+              // 文本锚在元素-only children 枚举身份恒 miss）；null = 原为末子不重验。
+              // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+              try {
+                if (_r334bOldSel && typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                  var _r334bNextEl = _r334bRnext;
+                  while (_r334bNextEl && _r334bNextEl.nodeType !== 1) _r334bNextEl = _r334bNextEl.nextSibling;
+                  globalThis.__zwImgTreeMutated5277(_r334bOldSel, _r334bOldHnd, newNode, false, _r334bNextEl);
+                }
+              } catch (_e5277tmb) {}
               return newNode;
             }
             // js-dom M3 R97：无 handle fragment 视图插入（appendChild 同款分支的带位变体）——
@@ -10014,6 +10041,18 @@
                 }
               }
             } catch (_e140rm2) {}
+            // s226：remove() 元素分支与 removeChild 域同钩——spec concept-node-remove
+            // 同一移除步，img/source 自 picture 移除的 relevant mutation 不因 API
+            // 入口分叉（source-relevant-mutations「source1.remove() 后微任务重选」
+            // 面此前整臂缺位）。锚过滤为元素（见 removeChild 域 R188NextEl 同款）。
+            // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+            try {
+              var _rmNextEl = _rmNext;
+              while (_rmNextEl && _rmNextEl.nodeType !== 1) _rmNextEl = _rmNextEl.nextSibling;
+              if (typeof globalThis.__zwImgTreeMutated5277 === 'function') {
+                globalThis.__zwImgTreeMutated5277(_rmParent ? _rmParent.__zwSelector : null, _rmParent ? _rmParent.__zwHandle : null, ceSelf, false, _rmNextEl);
+              }
+            } catch (_e5277trm3) {}
           };
         }
         // `element.replaceWith(...nodesOrStrings)`：用新节点序列替换自身（self 级，区别于
