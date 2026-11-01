@@ -31,7 +31,41 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 199 收口，Space 键激活 keydown preventDefault 抑制——button-activate-keyup-prevented 1F 翻绿，forms 全树 keyed diff F→P 恰 1 靶键零真 P2F；runner send_keys space_buttonish 臂激活门（R3254-K4 切片 2 补口），键事件序 keydown→keyup 不变）**
+> **▶ 当前状态（2026-11-01 M2 切片 200 收口，键盘激活 click-only 事件序——uievents keyboard-click-event 4 子测收口，该文件自 M1 基线（2026-10-03）首次绿；forms 全树 keyed diff 零 P2F 零键增减；runner space_buttonish 激活从 webview Activate 全指针/鼠标序合成换 Enter formless 臂既有 click-only 通道）**
+> **入场定刀位**：s199 挂账勘根——keyboard-click-event 文件级
+> Timeout（`pending:4 phase:4` 零上报）。历史定谳：archive JSON 29
+> 份（2026-10-03 M1 → tail28）**全程 Timeout 从未绿**——s199 账本
+> 「时代绿面漂移」表述有误（勘误记 s199 账本）；尾簇 32 只修了
+> 行为层，余面「EventWatcher 交互层」当时未勘根。
+> **勘根**：探针五轮二分（p1 send_keys 兑现 / p2 空格激活 click /
+> p3 EventWatcher / p4 Actions 构造——全通；p5 真文件同形 + Fail
+> 消息转储）揭根——空格激活走 InsertText→webview Activate 合成
+> **全指针/鼠标序**（eventLog=[pointerdown,mousedown,pointerup,
+> mouseup,click]），UI Events 键盘激活语义 = **只发 click**（同轮
+> p5 Enter 臂经尾簇 11 通道实测 [click] 单事件）；语料在 async
+> executor 内 assert_array_equals——抛错使外层 Promise 永不
+> settle → hang 非 Fail（4 子测全 pending 的机制解释）。
+> **施工**（1 文件 rust，净 +21/−4）：space_buttonish 激活换
+> `script_dispatch_dom_event` click-only（PointerEvent + pointerId
+> -1 + pointerType ''，Enter formless 臂同型同参）；s199
+> preventDefault 门与 keyup 恒派保持；非 buttonish 空格零改动。
+> **验证**：靶面 4/4 Pass（fmt 终形复验）+ s199 靶面保持 Pass；
+> stash 隔离 A/B（FILTER=semantics/forms）4452P/249F/11T → 同数，
+> keyed diff **P2F 0 / LOST 0 / GAINED 0**（唯一位移 F→P 1 =
+> checkable-active-onblur spacebar flake 域有利向）；interactive
+> bit-exact；uievents 域面收窄（grep send_keys 仅 5 文件，
+> buttonish-空格可达面唯靶面，全树 A/B 无判别力——首轮全树跑超
+> Bash 窗口被杀弃）；runner 单测 276P/0F/76I；fmt + guarded-clippy
+> 过。过程注记：PUA 键字面量 Write 不可见坑再踩（uE006 静默空串，
+> python 字节级改写修复）；探针页 5 件验后删语料零改动。
+> **残留**：无新挂账；`:active` onblur flake 域 +1 键样本；
+> customizable select 177F 挂起待拍板。
+> **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
+> → s196 挂账序余项（inert-svg-hittest 第 2 子测、`:not(:active)`
+> 否定面；父 label 零矩形属渲染流域非本流）。
+> **账本**：[evidence/2026-11-01-m2s200-keyboard-click-only-activation.md](html-semantics-compat/evidence/2026-11-01-m2s200-keyboard-click-only-activation.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 199 收口，Space 键激活 keydown preventDefault 抑制——button-activate-keyup-prevented 1F 翻绿，forms 全树 keyed diff F→P 恰 1 靶键零真 P2F；runner send_keys space_buttonish 臂激活门（R3254-K4 切片 2 补口），键事件序 keydown→keyup 不变）**
 > **入场定刀位**：s196 挂账序「Space 激活行为」分型——按钮面 1F
 >（button-activate-keyup-prevented「Button activation submits on keyup,
 > but not if keydown is defaultPrevented」，第二次按键仍 click）；checkbox
@@ -59,7 +93,8 @@
 > 7404P/599F/83T 不可比），留档后按协议 FILTER 重跑。
 > **残留/挂账新记**：uievents keyboard-click-event 文件级 Timeout
 > 双臂一致（stash 基线同型——tip 现状漂移非本刀引入，R3254-K4/尾簇
-> 32 时代绿面，勘根挂账）；`:active` onblur flake 域 +2 键样本；
+> 32 时代绿面——s200 勘误：实为自 M1 从未绿的既有面，已收口）；
+> `:active` onblur flake 域 +2 键样本；
 > checkbox Space checkedness 翻转无 corpus 驱动维持挂账。
 > **下一步候选**：customizable select 177F 挂起待拍板（GB-20261031）
 > → uievents keyboard-click-event Timeout 勘根（新挂账，同属 runner

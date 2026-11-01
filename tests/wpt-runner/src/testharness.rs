@@ -11728,6 +11728,18 @@ fn apply_testdriver_command(
                             // 照派（scroll-key 既有 `!= "prevented"` 门同款）。
                             // https://w3c.github.io/uievents/#event-type-keydown
                             // https://wpt.fyi/html/semantics/forms/the-button-element/button-activate-keyup-prevented.html
+                            // M2-S200（2026-11-01）：键盘激活 click **只发 click**——
+                            // UI Events：Enter/Space 激活不派 pointer/mouse 事件序
+                            //（pointerdown/mousedown/pointerup/mouseup——真指针 click
+                            // 才有；WPT uievents/interface/keyboard-click-event 断言
+                            // eventLog 恰 [click]）。旧版走 InsertText→webview
+                            // Activate 合成全序——探针实测五事件齐发，面恒 hang（该
+                            // 语料在 async executor 内断言，抛错即永挂非 Fail）。改
+                            // Enter formless buttonish 既有 click-only 通道（尾簇 11
+                            // 同款——PointerEvent 实例 + pointerId -1 + pointerType
+                            // ''；R108 pre-click activation 经 PE 原型链接通）。
+                            // https://w3c.github.io/uievents/#activation-event
+                            // https://wpt.fyi/uievents/interface/keyboard-click-event.html
                             let space_keydown_result = dispatch_key_event_script_focused(
                                 webview,
                                 &selector,
@@ -11736,10 +11748,15 @@ fn apply_testdriver_command(
                                 focus_prefix.as_str(),
                             );
                             dispatch_key_event_script(webview, &selector, "keyup", &key_detail);
-                            if space_keydown_result != "prevented"
-                                && let Some(error) = dispatch_action(webview, target, action)
-                            {
-                                return Some(error);
+                            if space_keydown_result != "prevented" {
+                                let click_detail = zero_engine::DomEventDetail {
+                                    pointer_type: Some(String::new()),
+                                    pointer_id: Some(-1),
+                                    ..Default::default()
+                                };
+                                let click_script =
+                                    zero_engine::script_dispatch_dom_event(&selector, "click", Some(&click_detail));
+                                let _ = webview.execute_script(&click_script);
                             }
                             continue;
                         }

@@ -65,6 +65,10 @@ keyup, but not if keydown is defaultPrevented」，失败签名
 - **新记**：uievents keyboard-click-event 文件级 Timeout——本刀
   WIP 与 stash 基线**双臂一致**（tip 现状漂移非本刀引入；R3254-K4
   切片 2 / 尾簇 32 时代绿面），勘根挂账待下轮。
+  **勘误（s200）**：「时代绿面」表述有误——archive JSON 29 份证该
+  文件自 M1 基线（2026-10-03）全程 Timeout 从未绿（非漂移，是
+  never-green 既有面）；双臂一致结论不变。s200 已勘根收口（4/4
+  Pass），根因见 [s200 账本](2026-11-01-m2s200-keyboard-click-only-activation.md)。
 - `:active` onblur flake 域 +2 键样本（F2P 1 + P2F 1）。
 - checkbox Space checkedness 翻转分型无 corpus 驱动（维持挂账）。
 - customizable select 177F 挂起待拍板（GB-20261031 征询在途）。
