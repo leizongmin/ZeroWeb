@@ -452,10 +452,16 @@
         && _zwJusIsHtmlElement(last.nextSibling, 'br')) {
       nodeList.push(last.nextSibling);
     }
-    while (_zwJusIsInvisible(nodeList[0].previousSibling)) {
+    // Chrome delta：拉邻条件放宽——vendored 只拉 invisible 兄弟，空白-only 文本
+    // 兄弟同样随携带（`<span>foo</span> <span>bar</span>` 合并形语料期望空白并入
+    // 单一外层样式化 wrapper：空白先入列 sibCrit 才能沿 nodeList[0].previousSibling
+    // 命中已样式化邻接 wrapper 合并；仅随携带不独获值——forceValue 入口空白门）。
+    while (nodeList[0].previousSibling
+        && (_zwJusIsInvisible(nodeList[0].previousSibling) || _zwVaIsWsText(nodeList[0].previousSibling))) {
       nodeList.unshift(nodeList[0].previousSibling);
     }
-    while (_zwJusIsInvisible(nodeList[nodeList.length - 1].nextSibling)) {
+    while (nodeList[nodeList.length - 1].nextSibling
+        && (_zwJusIsInvisible(nodeList[nodeList.length - 1].nextSibling) || _zwVaIsWsText(nodeList[nodeList.length - 1].nextSibling))) {
       nodeList.push(nodeList[nodeList.length - 1].nextSibling);
     }
 
@@ -509,7 +515,11 @@
       if (!_zwJusIsBlockNode(newParent)
           && inlineKids(visKids[visKids.length - 1])
           && inlineKids(visMembers[0])
-          && !_zwJusIsHtmlElement(newParent.lastChild, 'br')) {
+          && !_zwJusIsHtmlElement(newParent.lastChild, 'br')
+          // Chrome delta：连接点被空白-only 成员隔断时不插 br（`<span>foo</span>
+          // <span>bar</span>` 合并形语料期望无 br——空白已防 run 连字，vendored
+          // br 反成多余可见断行）。
+          && !_zwVaIsWsText(nodeList[0])) {
         newParent.appendChild(document.createElement('br'));
       }
       for (i = 0; i < nodeList.length; i++) {
@@ -527,7 +537,9 @@
       if (!_zwJusIsBlockNode(newParent)
           && inlineKids(firstVis)
           && inlineKids(lastVisMember)
-          && !_zwJusIsHtmlElement(nodeList[nodeList.length - 1], 'br')) {
+          && !_zwJusIsHtmlElement(nodeList[nodeList.length - 1], 'br')
+          // Chrome delta：同上——nodeList 侧端点是空白-only 成员时不插 br。
+          && !_zwVaIsWsText(nodeList[nodeList.length - 1])) {
         newParent.insertBefore(document.createElement('br'), newParent.firstChild);
       }
       for (i = nodeList.length - 1; i >= 0; i--) {
@@ -546,7 +558,9 @@
       if (!_zwJusIsBlockNode(newParent)
           && inlineKids(newParent.lastChild)
           && inlineKids(newParent.nextSibling.firstChild)
-          && !_zwJusIsHtmlElement(newParent.lastChild, 'br')) {
+          && !_zwJusIsHtmlElement(newParent.lastChild, 'br')
+          // Chrome delta：同上——连接点 newParent 侧端点是空白-only 文本时不插 br。
+          && !_zwVaIsWsText(newParent.lastChild)) {
         newParent.appendChild(document.createElement('br'));
       }
       var guardM = 0;
@@ -662,6 +676,14 @@
   function _zwVaForceValue(node, command, newValue) {
     if (!node.parentNode) return;
     if (newValue === null) return;
+    // Chrome delta：空白-only 文本节点不强制赋值（不获独立包裹、不进 children
+    // 递归臂）——`<p>foo</p> <p>bar</p>` 跨块、`<p>…<span>bar</span>…</p>` 块内
+    // 伴形、`<span>foo</span> <span>bar</span>` 行内伴形语料期望空白恒裸或仅随
+    // 邻近结构 wrap 携带（五语料 3 形 × 2 变体实证）。vendored 经 wrap 臂独立
+    // 包值；本门置 forceValue 入口统一覆盖主循环/pushDownValues/children 递归
+    // 各调用点，pushDownValues 本体维持 vendored 全量。_zwJusIsWhitespaceNode
+    // 感知 white-space 属性，pre 格式化空白不受此门。
+    if (node.nodeType === 3 && _zwJusIsWhitespaceNode(node)) return;
     var i;
     if (_zwVaIsAllowedChild(node, 'span')) {
       var sibCrit = function (n) {
@@ -864,6 +886,10 @@
       5: 'x-large', 6: 'xx-large', 7: 'xxx-large' }[num];
   }
 
+  // 空白-only 文本节点判定（wrap 拉邻放宽 / br 抑制共用；white-space 感知）。
+  function _zwVaIsWsText(n) {
+    return !!n && n.nodeType === 3 && _zwJusIsWhitespaceNode(n);
+  }
   // —— setSelectionValue（参考实现 :2965）——五命令主流程。
   function _zwVaSetSelectionValue(command, newValue) {
     var rng = _zwVaGetActiveRange();
@@ -880,28 +906,26 @@
       return;
     }
 
-    // 边界 splitText（start 侧）。
+    // 边界 splitText（start 侧）——vendored 的 removeAllRanges/addRange 舞蹈在其
+    // globalRange 存在时是无效面（getActiveRange 恒返回 globalRange 本体，真机制
+    // = getActiveRange().setStart(newNode, 0) 原位写、end 不动）；本仓无
+    // globalRange，sel._ranges[0] 即该面。半成品 newActiveRange（不同容器臂 end
+    // 未设 → setStart 塌缩）经舞蹈重绑后 rng 丢失真端点 → contained 集空 → 整段
+    // apply 零变异（`foo[bar<b>baz]qoz</b>quz` 族五语料各 2 变体实证）——改为对
+    // rng 全程原位写，不做选区重绑。
     if (_zwJusIsEditable(rng.startContainer)
         && rng.startContainer.nodeType === 3
         && rng.startOffset !== 0
         && rng.startOffset !== _zwJusNodeLength(rng.startContainer)) {
-      var newActiveRange = document.createRange();
-      var newNode;
       if (rng.startContainer === rng.endContainer) {
         var newEndOffset = rng.endOffset - rng.startOffset;
-        newNode = _zwVaSplitText(rng.startContainer, rng.startOffset);
-        newActiveRange.setEnd(newNode, newEndOffset);
+        var newNode = _zwVaSplitText(rng.startContainer, rng.startOffset);
         rng.setEnd(newNode, newEndOffset);
+        rng.setStart(newNode, 0);
       } else {
-        newNode = _zwVaSplitText(rng.startContainer, rng.startOffset);
+        var newNode2 = _zwVaSplitText(rng.startContainer, rng.startOffset);
+        rng.setStart(newNode2, 0);
       }
-      newActiveRange.setStart(newNode, 0);
-      var selS = globalThis.getSelection();
-      selS.removeAllRanges();
-      selS.addRange(newActiveRange);
-      var liveS = _zwVaGetActiveRange();
-      if (liveS) liveS.setStart(newNode, 0);
-      rng = liveS || newActiveRange;
     }
     // 边界 splitText（end 侧）。
     if (_zwJusIsEditable(rng.endContainer)

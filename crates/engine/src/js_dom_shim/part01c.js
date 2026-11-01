@@ -1733,8 +1733,36 @@
     }
     return out;
   }
+  // formattable 可见面 Chrome delta：空白-only 文本节点的 collapsed 判定补前向
+  // 走查（vendored isCollapsedWhitespaceNode :912-1001 双向；_zwJusCollapsed-
+  // WhitespaceNode 结构化重写只保留后向——`<p>[foo</p> <p>bar]</p>` 族
+  // indeterm-after 期望 false 实证裸空白不进 formattable 集）。仅 formattable
+  // 消费面取双向语义；结构面（block boundary、follows/precedesLineBreak）维持
+  // 既有单向语义不动（wss/ilb/join 基线锁定）。
+  // https://w3c.github.io/editing/execCommand.html#collapsed-whitespace-node
+  function _zwJusFormattableVisible(node) {
+    if (node.nodeType !== 3) return _zwJusIsVisible(node);
+    if (_zwJusIsCollapsedWhitespaceNode(node)) return false;
+    if (!_zwJusIsWhitespaceNode(node)) return true;
+    var ancestor = node.parentNode;
+    while (ancestor && !_zwJusIsBlockNode(ancestor) && ancestor.parentNode) {
+      ancestor = ancestor.parentNode;
+    }
+    if (!ancestor) return false;
+    var stop = _zwJusNextNodeDescendants(ancestor);
+    var reference = node;
+    var guard = 0;
+    while (reference !== stop && guard++ < 4096) {
+      reference = _zwJusNextNode(reference);
+      if (!reference) break;
+      if (_zwJusIsBlockNode(reference) || _zwJusIsHtmlElement(reference, 'br')) return false;
+      if ((reference.nodeType === 3 && !_zwJusIsWhitespaceNode(reference))
+          || _zwJusIsHtmlElement(reference, 'img')) break;
+    }
+    return true;
+  }
   function _zwValIsFormattable(node) {
-    return _zwJusIsEditable(node) && _zwJusIsVisible(node)
+    return _zwJusIsEditable(node) && _zwJusFormattableVisible(node)
       && (node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']));
   }
   // getLegacyFontSize 中点表（Chrome UA 缺省标度下界 px；上界 = 下位 +1 档）。
