@@ -90,6 +90,15 @@ mutations——位置锚是**移除前捕获的 former next sibling**。shim 侧
   s226-decode-path-changes-noguard.log（去守卫 Pass，病灶隔离）→
   s226-decode-path-changes-nullsafe.log（修复后 0F/0T）。
 
+## 合并树复验（rebase 并入并行流 e0d6948c0 F2 insertParagraph——part01 分片，与.part03/04/05 零文件交集）
+
+release runner 重编译后四面复验：靶 solo **Pass** +
+decode 目录 **60P/0F/0T** + embedded-content 全域 **1078P/150F/30T**（对 s225
+基线 join 仍恰 1 F→P 零其他位移）+ zero-engine 全量 **3716P+0F**（基线 3710
++ 并行流新钉测 6，零失败）——并行提交零干扰。日志 evidence/logs/s226-merged-
+source-relevant-mutations-solo.log + s226-merged-decode-dir.log +
+s226-merged-embedded-content-wip.log + s226-merged-zero-engine-full.log。
+
 ## 承袭挂账（不动）
 
 update-media 选源响应面余项（**source-relevant-mutations 1F 本轮收口并删**）；
