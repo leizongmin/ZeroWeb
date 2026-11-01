@@ -471,3 +471,37 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   README/csv/脚本登记 → 推送 → DONE；或 D2② 授权 standing exclusion
   口径收口。临时审计件
   `/tmp/webcrypto-anchor-run{,2,3}-20261101-r5373.json`（不入库）。
+
+### 2026-11-01 08:50 追记：锚复跑现 tip（`0d4966f9d`）状态账逐位一致 ×3——html-semantics 流 s198 fieldset type IDL 变更吸收
+
+- push 前例行 `git pull --rebase` 吸入 html-semantics 流 `0674243a1`
+  （s198 HTMLFieldSetElement.type IDL 常量臂——shim `part04.js` +5 行
+  写通道，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s198-fieldset-type-idl.md)）：
+  shim 系语料执行路径代码，runner 二进制面前移，本流锚账
+  `8604b13a7`（R5373 吸收，rebase 后为 `0d4966f9d`）先推送，随即按
+  纪律对新 tip 复跑锚——release runner 重建 32.4s（shim 重编译入包，
+  `make zero-wpt-runner-release`）+ test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向）三连跑，guard log 无击杀（仅 /usr/bin/time 摘要 50 B），
+  runner EXIT=1 为预期挂账常规退出。
+- **状态账 33,109 分母逐 (case, subtest) 对照零差异 ×3**（键集全等 +
+  status 逐位相等；123 文件 / 25,788P + 7,320F + 1T）；RUN1/RUN3 对
+  M1 终态锚**逐字节一致（cmp 全等，7,208,436 B）**；RUN2 首采 W4 案
+  deadline 臂（`phase=2`）竞态翻转 1/3——与 07:50（RUN1 型）/08:35
+  （RUN1 型）采样同款 runner 既有两臂竞态（归因未定谳，状态账零差异），
+  按 07:50 修订验收口径**不构成回归**。采样面累计 2/9 轮命中该臂
+  （s197/R5373/s198 三 tip 各 3 跑），维持低频竞态定性、不改变挂账
+  归属。
+- 至此锚窗口推进为 **edaed928a → 0d4966f9d**，实锚链 7065ea39f→
+  1b6b9b291→65de5f28e→b0a6f9174→3f1399195→ba4c74fcb→edaed928a→
+  0d4966f9d，33,109 分母零回归在现 tip 成立。
+- **轮询面**：s198 自账 zero-engine **3,642P/1F**（ua_display_li 同键
+  在册）+ the-fieldset-element 目录 22P/0F——fieldset type IDL 非
+  li→Block 双面翻转，渲染流 D4 仍未裁决（渲染流 rally 已重启在跑但
+  冻结门 `ua_display_tests.rs` 末触仍 `c41b0c750`）；p126 未回流
+  main；git 无 D1/D2 决策新账面，维持待拍板（GB-20261031 征询在案，
+  核验只认 git 账面 + 用户主动知会）。DC-1~4 四件 evidence 在位
+  （后续无触及）。收口序列不变：ua_display_li 清零 → make test 全绿
+  复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记 →
+  推送 → DONE；或 D2② 授权 standing exclusion 口径收口。临时审计件
+  `/tmp/webcrypto-anchor-run{,2,3}-20261101-s198.json`（不入库）。
