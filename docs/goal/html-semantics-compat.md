@@ -31,7 +31,48 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 217 收口，image-map 命中面视口矩形修正 + object 不支持 image map 臂——usemap-casing 族 15F（img 7 + object 8）单根翻绿：旧 `_zwImgMapHitSel` (0,0)+IDL w/h 近似边界使文档流后续 img/object 全部 continue 落 null，改 gBCR 真实视口矩形 + coords 原点偏移 + 新 object 臂；R5384 红绿钉面；靶语料 16/16；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 15 F→P 全靶面零 P→F 键集差 0；zero-engine 3676P+0F）**
+> **▶ 当前状态（2026-11-01 M2 切片 218 收口，canvas 回退内容 focusable-area 渲染面门——canvas-descendants-focusability 族 19F（001 裸组 4F + 002 hidden canvas 5F + 003 hidden 组 5F + 004 shadow host 5F）单根翻绿：旧 focus() 无渲染判定，非 focusable area 恒可聚焦；part06 新 `_zwFocusableAreaGate`（判定面收 canvas 回退候选：固有可聚焦核心 + flat tree 走查 + canvas 渲染 gBCR + display:none 链，非 canvas 面 undefined 放行保 T55/R114 契约）+ part04 focus() 失连臂后插门；R5385 红绿钉面六断言；靶语料 29/29；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 19 F→P 全靶面零 P→F 键集差 0；zero-engine 3677P+0F）**
+> **入场定刀位**：embedded-content 残面续推——s217 账本挂账候选 canvas
+> focusability 族定刀（001-004 同根；三处用户门禁项不动）。
+> **勘根**：六文件全读定谳 19F 全负案红（不该聚焦的当前可聚焦）。solo
+> 002 失败明细：5F 全焦点断言红、setup 面 getClientRects().length===0
+> 不红——layout 对 canvas 子代无盒记录。单根 = part04 focus() 只有
+> disabled 门 + T55/R114 失连臂，无 focusable area 渲染判定（spec
+> focusing steps 对非 focusable area no-op；canvas 回退豁免语义
+> canvas.html#being-used-as-relevant-canvas-fallback-content）。rect
+> bridge miss 约定核实（callbacks.rs R150）：miss → 空串，零盒 hit 与
+> miss 可区分。**首版回归捕捉**：核心拒绝放 canvas 面之外使 T55/T57/
+> R4600 全量 3 红（持久化上下文 rect mock 泄漏 + 无 tabindex div/body
+> 目标被拒）——修正为非 canvas 恒 undefined 放行，判定面收 canvas 回
+> 退候选。
+> **施工**（shim 1 文件 + rust 测试 1 文件）：part06 `_zwFocusableArea
+> Gate(sel, handle)`（`_zwIsFocusableSel` 后新增）：rect bridge 缺席/
+> handle-only → undefined；非 canvas → undefined（FIXME(rendering) 一
+> 般渲染门在册）；canvas 面 → 核心拒绝 + 祖先链 shadow host 走查
+> （_shadowRoots 键 = hostSel）→ false + canvas gBCR 渲染判定 →
+> display:none 链（hidden 属性 + 计算display 双通道，contents 不截断）
+> → true；FIXME(flat-tree) slot 细化在册；part04 focus() 失连臂后插门
+> （=== false → return，undefined 放行）；part09.rs R5385（三 canvas
+> 同形语料 + rect mock 只给 canvas + attachShadow 命名 slot 建树，六
+> 断言：回退豁免正案 / 核心拒绝 / contents 不截断 / canvas 未渲染 /
+> display:none 链 / shadow host light 子）。
+> **验证**：R5385 红绿（stash shim 两文件跑红② `sec1=true`——旧版因
+> 目标行为失败；pop 跑绿 1 passed）；拼接 node --check SYNTAX_OK；
+> 首版全量 3674P+3F（T55/T57/R4600）→ 修正后 **3677P+0F**（3676 基线
+> + R5385，焦点契约钉面全绿）；靶语料 solo 29/29 MAKE_EXIT=0（19F 翻
+> 绿 + 005/006 既有 Pass 保持）；embedded-content A/B（B = s217 日志
+> 即 pre-s218 基线）共享 1257 对漂移恰 19 F→P 全靶面，P→F=0 键集差 0
+> （A 侧 1057P/171F/30T，ΔF 恰 −19）；clippy 0 警告 fmt 过。日志
+> evidence/logs/s218-canvas-target.log + s218-embedded-content-wip.log。
+> **下一步候选**：embedded-content 残面续推（current-pixel-density·
+> sizes·srcset·decode 响应式图片族 ~29F 候选；img naturalWidth SVG
+> viewBox 族 22F 与 renderer 流 ③A image-decoder 切片工作面相邻暂不
+> 入刀避免跨流碰撞）；forms misc 残面 16F（the-input-element/the-
+> select-element 非门禁部分）勘根备选；非 canvas 面一般渲染门（FIXME
+> (rendering)）待语料面扩展。
+> **账本**：[evidence/2026-11-01-m2s218-canvas-focusable-area-rendering-gate.md](html-semantics-compat/evidence/2026-11-01-m2s218-canvas-focusable-area-rendering-gate.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 217 收口，image-map 命中面视口矩形修正 + object 不支持 image map 臂——usemap-casing 族 15F（img 7 + object 8）单根翻绿：旧 `_zwImgMapHitSel` (0,0)+IDL w/h 近似边界使文档流后续 img/object 全部 continue 落 null，改 gBCR 真实视口矩形 + coords 原点偏移 + 新 object 臂；R5384 红绿钉面；靶语料 16/16；embedded-content 语料 A/B 共享键 1257/1257 漂移恰 15 F→P 全靶面零 P→F 键集差 0；zero-engine 3676P+0F）**
 > **入场定刀位**：misc 残面勘根续推——s216 A/B 日志 embedded-content F
 > 分布下钻定刀 usemap-casing 15F 单根（三处用户门禁项不动）。
 > **勘根**：15 负案 + object sanity 单跑详情 = `Cannot read properties of
@@ -122,32 +163,6 @@
 > table 缓行族用户决策承袭）→ `__zw_has_attr` 非 lw 存量点位审计（s211
 > 挂账，探索性评估）。
 > **账本**：[evidence/2026-11-01-m2s215-fieldset-walk-shared-helper.md](html-semantics-compat/evidence/2026-11-01-m2s215-fieldset-walk-shared-helper.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 214 收口，host 侧 is_effectively_disabled 边界集模型统一——Document 方法重写（边界集臂镜像 shim `_zwFeDisabled` + fieldset per-fieldset 豁免）+ focus.rs 自由函数委托（quirk 保留）+ 孤儿删除：zero-dom 881P（新增 R5381 七形态钉面）+ zero-engine 3673P 基线持平 + html_compat 集成 22P；clippy 0 警告；零 shim 改动 corpus 不重跑（构造保证零漂移））**
-> **入场定刀位**：s212 挂账承袭——host 侧 disabled 判定平面走查与 shim
-> 边界集模型统一（三处用户门禁项不动）。
-> **勘根**：两套 host 实现三处分歧——Document 方法（form_state.rs，DOM
-> query + CSS + 约束校验三消费面）legend 旗标单合并走查跨层屏蔽外层
-> disabled fieldset（bug）+ 禁用源平面命中（嵌套 optgroup 级联、select
-> 不截断）；自由函数（focus.rs，tab 序 + 点击激活 + collect_form_data
-> 三消费面）同样的两处传播分歧（fieldset 臂本就正确）。shim 参考模型
-> 逐行定谳：边界集臂（SELECT 查属性即断 / OPTGROUP 仅向 option 传播
-> computed 两级 / HR/DATALIST/OPTION 截断 / 包裹穿行）+ fieldset 臂
-> per-fieldset 豁免继续上行，两臂相加。
-> **施工**（host Rust 2 文件 + 测试 1 文件，shim 零改动）：form_state.rs
-> 重写（门 → ①自身属性 → ②新 helper `option_boundary_disabled` 镜像
-> 边界臂 → ③fieldset 臂复用 `is_first_legend_of` per-fieldset 豁免）；
-> focus.rs 自由函数可禁用族委托权威 + div[disabled] quirk 保留（两面
-> 有意分歧，注释言明）+ 删孤儿 `is_descendant_of_first_legend`；
-> tests_1a.rs R5381 边界集七形态 + 委托等价 + quirk 断言。
-> **验证**：zero-dom 881P+0F（R5381 一次过）；zero-engine 3673P+0F
-> 基线持平；html_compat 集成 22P+0F（DisabledTarget 门实证）；guarded-
-> clippy 0 警告；fmt 过。**corpus 不重跑取舍**：零 shim 改动，corpus 走
-> 纯 JS shim 路径与 host walk 无交集，零漂移由构造保证（engine 全绿
-> 佐证）；日志 evidence/logs/s214-host-rust-suites.log。行为变更四项
-> （嵌套 optgroup 启用 / select 截断启用 / optgroup 经 select 禁用 /
-> legend 豁免不再跨层屏蔽）见账本对照清单。
-> **账本**：[evidence/2026-11-01-m2s214-host-disabled-boundary-model.md](html-semantics-compat/evidence/2026-11-01-m2s214-host-disabled-boundary-model.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）

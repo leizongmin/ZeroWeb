@@ -7886,3 +7886,124 @@ fn test_img_map_hit_viewport_rect_object_arm_r5384() {
         "④ object 不支持 image map → 命中即 object 自身（旧 shim 无 object 臂 → null）"
     );
 }
+
+#[test]
+fn test_focusable_area_rendering_gate_r5385() {
+    // R5385（s218）：focusable area 渲染面门——element.focus() 连接面渲染判定
+    // （语料 the-canvas-element canvas-descendants-focusability-001..004 19F
+    // 单根：非 focusable area 当前可聚焦——裸无 tabindex 组恒可聚焦、canvas
+    // 后代不问渲染全可聚焦）。旧 focus() 只有 disabled 门 + 失连臂，无渲染
+    // 判定——负案全形态红。钉面：mock `__zw_getBoundingClientRect` 只给
+    // canvas 视口 rect（canvas 回退内容无布局记录——语料 setup 断言
+    // getClientRects().length===0 同证；canvas 子代 miss → 空串）。六断言：
+    // ①渲染 canvas 内 button（回退内容豁免「未渲染」）可聚焦；②canvas 内裸
+    // section（无固有可聚焦核心）不可聚焦；③display:contents 包裹 tabindex
+    // （无盒但仍在 flat tree）可聚焦；④hidden canvas 内 button（canvas 未
+    // 渲染 → 后代非 relevant fallback）不可聚焦；⑤渲染 canvas 内 hidden 元
+    // 素（display:none 链）不可聚焦；⑥渲染 canvas 内 shadow host light 子
+    //（attachShadow + 命名 slot、无默认 slot → 不在 flat tree）不可聚焦。
+    // https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
+    // https://html.spec.whatwg.org/multipage/canvas.html#being-used-as-relevant-canvas-fallback-content
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <canvas id=\"cv1\" width=\"300\" height=\"150\">\
+         <button id=\"btn1\">b1</button>\
+         <section id=\"sec1\">s1</section>\
+         <div id=\"dc1\" style=\"display:contents\" tabindex=\"-1\">dc</div>\
+         </canvas>\
+         <canvas id=\"cvHidden\" width=\"300\" height=\"150\" hidden>\
+         <button id=\"btn2\">b2</button>\
+         </canvas>\
+         <canvas id=\"cv3\" width=\"300\" height=\"150\">\
+         <button id=\"hid1\" hidden tabindex=\"-1\">h1</button>\
+         <div id=\"host3\"><span id=\"span1\" tabindex=\"-1\">sp1</span></div>\
+         </canvas>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // rect bridge mock（layout 集成面同源 wire "x,y,w,h"；不在
+    // register_dom_callbacks，测试注册）。只给渲染中 canvas 视口 rect：
+    // cv1 (8,8)、cv3 (8,300) 各 300×150；hidden canvas 与全部 canvas 子代
+    // 无布局记录 → 空串（真实 bridge miss 约定同形，callbacks.rs R150）。
+    sandbox.register_callback(
+        "__zw_getBoundingClientRect",
+        Box::new(|args| {
+            let s = args.first().cloned().unwrap_or_default();
+            if s.contains("#cv1") {
+                "8,8,300,150".to_string()
+            } else if s.contains("#cv3") {
+                "8,300,300,150".to_string()
+            } else {
+                String::new()
+            }
+        }),
+    );
+
+    // shadow host 形态（语料 004 同形）：host3 attachShadow + 命名 slot、
+    // light 子 span1 无 slot 属性 → 无默认 slot 不分配 → 不在 flat tree。
+    sandbox
+        .execute(
+            "globalThis.__r5385 = [];\
+             var sh = document.getElementById('host3').attachShadow({ mode: 'open' });\
+             var slotEl = document.createElement('slot');\
+             slotEl.setAttribute('name', 'slot');\
+             sh.appendChild(slotEl);\
+             var f = function (id) {\
+               var el = document.getElementById(id);\
+               el.focus();\
+               globalThis.__r5385.push(id + '=' + (document.activeElement === el));\
+             };\
+             f('btn1'); f('sec1'); f('dc1'); f('btn2'); f('hid1'); f('span1');",
+        )
+        .unwrap();
+    let get = |sandbox: &mut V8Sandbox, i: usize| -> String {
+        sandbox
+            .execute(&format!("globalThis.__r5385[{}] || ''", i))
+            .unwrap()
+            .value
+    };
+    assert_eq!(
+        get(&mut sandbox, 0),
+        "btn1=true",
+        "① 渲染 canvas 内 button 回退内容豁免 → 可聚焦（正案不受扰）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 1),
+        "sec1=false",
+        "② canvas 内裸 section 无固有可聚焦核心 → 不可聚焦（旧 shim 无门恒可聚焦）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 2),
+        "dc1=true",
+        "③ display:contents 无盒但仍在 flat tree → 可聚焦（display:none 链不截断 contents）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 3),
+        "btn2=false",
+        "④ hidden canvas 未渲染 → 后代非 relevant fallback → 不可聚焦（旧 shim 恒可聚焦）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 4),
+        "hid1=false",
+        "⑤ 渲染 canvas 内 hidden 元素 display:none 链 → 不可聚焦（旧 shim 恒可聚焦）"
+    );
+    assert_eq!(
+        get(&mut sandbox, 5),
+        "span1=false",
+        "⑥ canvas 内 shadow host light 子无默认 slot 不在 flat tree → 不可聚焦（旧 shim 恒可聚焦）"
+    );
+}

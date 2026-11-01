@@ -4707,6 +4707,18 @@
               try { proxy.dispatchEvent(_makeEvent('focus', { bubbles: false, cancelable: false })); } catch (_e114f) {}
               return;
             }
+            // s218（html-semantics M2）：focusable area 渲染面门——非 focusable
+            // area（裸无 tabindex 元素、未渲染 canvas 后代、canvas 内 display:none
+            // 链 / shadow host 祖先外）focus() no-op（activeElement 不动、不派
+            // 焦点序）。门不可用（undefined——rect bridge 缺席 / 元素无布局记录
+            // 的首次渲染前面）放行保既有环境契约；失连臂（R114/T55）已先行
+            // return 不受扰（detached 焦点所有权契约优先）。判定口径见
+            // _zwFocusableAreaGate（part06）。
+            // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+            try {
+              if (typeof _zwFocusableAreaGate === 'function'
+                  && _zwFocusableAreaGate(sel, handle) === false) return;
+            } catch (_eFagGate) {}
             // M2-S4E：导航期间焦点变更标记（focus changed during ongoing navigation——WPT
             // focus-reset 族「focus() during intercept → 不重置」判定面）。
             if (typeof _navMarkFocusChanged === 'function') { try { _navMarkFocusChanged(); } catch (_eNfc) {} }

@@ -17525,6 +17525,79 @@
       return ce === '' || String(ce).toLowerCase() === 'true';
     } catch (_eFA) { return false; }
   }
+  // s218（html-semantics M2）：focusable area 渲染面门——element.focus() 连接
+  // 面的渲染判定（focusing steps 对非 focusable area no-op）。focusable area
+  // 要求「being rendered 或 being used as relevant canvas fallback content」+
+  // 固有可聚焦核心（_zwIsFocusableSel）。返 true=可聚焦 / false=不可聚焦 /
+  // undefined=门不可用放行。本轮判定面收在 canvas 回退候选（最近 canvas 祖
+  // 先存在）——非 canvas 元素恒 undefined 放行（一般「being rendered」门无语
+  // 料覆盖，且 rect mock 泄漏环境/早期 focus() 不可判，T55/R114/T57 焦点迁
+  // 移契约不受扰）。rect bridge 缺席（bridge/reftest 无渲染环境；约定 miss →
+  // 空串，hit 才有 "x,y,w,h" 条目）同放行。
+  // canvas 回退面：回退内容豁免「未渲染」——固有可聚焦核心（裸无 tabindex
+  // 元素在回退候选面同样非 focusable area）+ canvas 自身渲染中（gBCR 非零）
+  // + 路径无 display:none（hidden 属性/计算 display 双通道；display:contents
+  // 无盒但仍在 flat tree，不截断）+ 无 shadow host 祖先（light 子无默认 slot
+  // 不在 flat tree）→ 可聚焦。
+  // FIXME(flat-tree)：shadow host 祖先判定未做 slot 分配细化（默认 slot 重纳
+  // 入 light 子），有 host 祖先即判出——语料钉 named-slot 形态。
+  // FIXME(rendering)：非 canvas 面一般「being rendered」渲染门（display:none
+  // 普通元素 focus() 拒绝）待语料面扩展，本轮不动。
+  // https://html.spec.whatwg.org/multipage/interaction.html#focusable-area
+  // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+  // https://html.spec.whatwg.org/multipage/canvas.html#being-used-as-relevant-canvas-fallback-content
+  function _zwFocusableAreaGate(sel, handle) {
+    try {
+      if (typeof __zw_getBoundingClientRect !== 'function') return undefined;
+      if (handle && !sel) return undefined; // handle-only 身份无 rect 坐标面，不判
+      var _fagEl = (typeof _makeProxy === 'function') ? _makeProxy(sel, handle) : null;
+      if (!_fagEl) return undefined;
+      var _fagCanvas = null;
+      try { _fagCanvas = _fagEl.closest ? _fagEl.closest('canvas') : null; } catch (_eFagC) {}
+      if (!_fagCanvas) return undefined; // 非 canvas 面：本轮不判（见 FIXME(rendering)）
+      var _fagCore = false;
+      try { _fagCore = _zwIsFocusableSel(sel) === true; } catch (_eFagCore) { _fagCore = false; }
+      if (!_fagCore) return false; // 回退候选面裸无 tabindex 元素恒不可聚焦
+      // flat tree 走查：祖先链 shadow host（_shadowRoots 在册，键 = hostSel，
+      // 同 part05 flat-tree 上溯先例）即不在 flat tree。
+      try {
+        var _fagAnc = _fagEl.parentElement;
+        var _fagAGuard = 0;
+        while (_fagAnc && _fagAGuard++ < 64) {
+          var _fagAncSel = null;
+          try { _fagAncSel = _fagAnc.__zwSelector || null; } catch (_eFagAs) {}
+          if (_fagAncSel && _shadowRoots[_fagAncSel]) return false;
+          _fagAnc = _fagAnc.parentElement;
+        }
+      } catch (_eFagSd) {}
+      // canvas 自身渲染判定（同源 gBCR：非零 = 渲染中；miss/零 = 未渲染）。
+      var _fagCOk = false;
+      try {
+        var _fagCSel = _fagCanvas.__zwSelector || null;
+        var _fagCStr = _fagCSel ? String(__zw_getBoundingClientRect(_fagCSel) || '') : '';
+        if (_fagCStr.indexOf(',') >= 0) {
+          var _fagCP = _fagCStr.split(',');
+          _fagCOk = (Number(_fagCP[2]) > 0 || Number(_fagCP[3]) > 0);
+        }
+      } catch (_eFagCc) {}
+      if (!_fagCOk) return false; // canvas 未渲染 → 后代非 relevant fallback
+      // display:none 链（自身 → canvas 独占路径）：hidden 属性 + 计算display
+      // 双通道（gCS 动态通道）；display:contents 非 none 不截断。
+      var _fagWalk = _fagEl;
+      var _fagWGuard = 0;
+      while (_fagWalk && _fagWGuard++ < 64) {
+        var _fagNone = false;
+        try { _fagNone = !!(_fagWalk.hasAttribute && _fagWalk.hasAttribute('hidden')); } catch (_eFagH) {}
+        if (!_fagNone && typeof globalThis.getComputedStyle === 'function') {
+          try { _fagNone = String(globalThis.getComputedStyle(_fagWalk).display || '') === 'none'; } catch (_eFagD) {}
+        }
+        if (_fagNone) return false;
+        if (_fagWalk === _fagCanvas) break;
+        _fagWalk = _fagWalk.parentElement;
+      }
+      return true;
+    } catch (_eFag) { return undefined; }
+  }
   globalThis._zwFocusSel = function (sel) {
     if (!_zwIsFocusableSel(sel)) return;
     var k = null;
