@@ -510,10 +510,10 @@ fn js_worker_main(
     // ②C'（renderer 信任边界 ②）：单进程页面上下文同款 counter-plugin——非测试模式在
     // 页面脚本前删除 `__zw*` 特权 mutator 页面可见全局。tab worker 持久 context 全生命
     // 周期不做 reset_context，bootstrap 一次即覆盖（renderer worker 的重建处另行跟随）。
-    if !shim_test_mode_enabled() {
-        if let Err(e) = sandbox.execute(counter_plugin_script()) {
-            tracing::error!("JS DOM privilege counter-plugin init failed: {e}");
-        }
+    if !shim_test_mode_enabled()
+        && let Err(e) = sandbox.execute(counter_plugin_script())
+    {
+        tracing::error!("JS DOM privilege counter-plugin init failed: {e}");
     }
 
     while let Ok(cmd) = cmd_rx.recv() {
