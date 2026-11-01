@@ -9838,27 +9838,44 @@
       var sep1 = document.createElement(sepTag);
       var refAfter1 = null;
       if (boundaryText) {
+        // F2（editing-compat insertParagraph 前段包裹簇，2026-11-02）：host 直子
+        // 文本 split 双块输出——Chrome 录制把 caret 行整体成块（vendored splitText
+        // 语义前段留裸，ipara 语料 `foo[bar]baz` expected `<div>foo</div><div>baz
+        // </div>` 实证为 Chrome delta）。前块 = boundaryText 前兄弟 + head 段；后
+        // 块 = tail 段 + 后兄弟；空块占位 <br>（`[]foo` → `<div><br></div><div>
+        // foo</div>`、`foo[]` → `<div>foo</div><div><br></div>` 形）。
         var v1 = String(boundaryText.nodeValue || '');
+        var head1 = v1.slice(0, boundaryOff);
         var tail1 = v1.slice(eo);
-        if (boundaryOff === 0) {
-          // caret 在内容起点：删选中段后空 separator+<br> 占位插最前，尾内容原地。
-          boundaryText.nodeValue = tail1;
+        var headBlock1 = document.createElement(sepTag);
+        var mv1h = boundaryText.previousSibling;
+        while (mv1h) {
+          var nx1h = mv1h.previousSibling;
+          headBlock1.insertBefore(mv1h, headBlock1.firstChild);
+          mv1h = nx1h;
+        }
+        if (head1) headBlock1.appendChild(document.createTextNode(head1));
+        if (!(headBlock1.childNodes || []).length) {
           var phbr1a = document.createElement('br');
           phbr1a.__zwPlaceholderBr = true;
-          sep1.appendChild(phbr1a);
-          host.insertBefore(sep1, boundaryText || null);
-        } else {
-          // 尾段+后续兄弟移入新块；新块空 → <br> 填充（语料 abc[] 形态）。
-          if (tail1) sep1.appendChild(document.createTextNode(tail1));
-          boundaryText.nodeValue = v1.slice(0, boundaryOff);
-          refAfter1 = boundaryText.nextSibling;
-          host.insertBefore(sep1, refAfter1 || null);
-          if (!(sep1.childNodes || []).length) {
-            var phbr1b = document.createElement('br');
-            phbr1b.__zwPlaceholderBr = true;
-            sep1.appendChild(phbr1b);
-          }
+          headBlock1.appendChild(phbr1a);
         }
+        host.insertBefore(headBlock1, boundaryText || null);
+        if (tail1) sep1.appendChild(document.createTextNode(tail1));
+        refAfter1 = boundaryText.nextSibling;
+        host.removeChild(boundaryText);
+        var mv1t = refAfter1;
+        while (mv1t) {
+          var nx1t = mv1t.nextSibling;
+          sep1.appendChild(mv1t);
+          mv1t = nx1t;
+        }
+        if (!(sep1.childNodes || []).length) {
+          var phbr1b = document.createElement('br');
+          phbr1b.__zwPlaceholderBr = true;
+          sep1.appendChild(phbr1b);
+        }
+        host.insertBefore(sep1, headBlock1.nextSibling || null);
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
         refAfter1 = (host.childNodes || [])[so] || null;

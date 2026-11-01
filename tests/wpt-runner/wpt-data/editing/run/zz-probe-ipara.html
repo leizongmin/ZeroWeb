@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+var results = [];
+
+function newHost(txt) {
+  tc.innerHTML = "<div contenteditable></div>";
+  var h = tc.firstChild;
+  if (txt) h.appendChild(document.createTextNode(txt));
+  return h;
+}
+
+function caret(h, a, b) {
+  var r = document.createRange();
+  r.setStart(a, b); r.setEnd(a, b);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+
+// 1 foo[]bar caret3 → <div>foo</div><div>bar</div>
+var h1 = newHost("foobar");
+caret(h1, h1.firstChild, 3);
+document.execCommand("defaultparagraphseparator", false, "div");
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('1 EXC ' + e); }
+results.push('mid html=' + JSON.stringify(h1.innerHTML));
+
+// 2 foo[bar]baz 选区(3,6) → <div>foo</div><div>baz</div>
+var h2 = newHost("foobaz".length === 5 ? "foobarbaz" : "foobarbaz");
+var r2 = document.createRange();
+r2.setStart(h2.firstChild, 3); r2.setEnd(h2.firstChild, 6);
+getSelection().removeAllRanges(); getSelection().addRange(r2);
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('2 EXC ' + e); }
+results.push('range html=' + JSON.stringify(h2.innerHTML));
+
+// 3 []foo caret0 → <div><br></div><div>foo</div>
+var h3 = newHost("foo");
+caret(h3, h3.firstChild, 0);
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('3 EXC ' + e); }
+results.push('start html=' + JSON.stringify(h3.innerHTML));
+
+// 4 foo[] caret3(尾) → <div>foo</div><div><br></div>
+var h4 = newHost("foo");
+caret(h4, h4.firstChild, 3);
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('4 EXC ' + e); }
+results.push('end html=' + JSON.stringify(h4.innerHTML));
+
+// 5 块内形（② 臂已过面）：<div>foo[]bar</div> → <div>foo</div><div>bar</div>
+tc.innerHTML = "<div contenteditable><div>foobar</div></div>";
+var h5 = tc.firstChild;
+var inner5 = h5.firstChild;
+caret(inner5, inner5.firstChild, 3);
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('5 EXC ' + e); }
+results.push('inblock html=' + JSON.stringify(h5.innerHTML));
+
+// 6 p separator：foo[]bar → <p>foo</p><p>bar</p>
+var h6 = newHost("foobar");
+caret(h6, h6.firstChild, 3);
+document.execCommand("defaultparagraphseparator", false, "p");
+try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('6 EXC ' + e); }
+results.push('p-sep html=' + JSON.stringify(h6.innerHTML));
+
+assert_false(true, results.join(' || '));
+</script>
+</body>

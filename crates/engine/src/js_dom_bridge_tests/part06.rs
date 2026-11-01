@@ -4610,8 +4610,10 @@ document.execCommand("insertparagraph", false, "");
         "insertParagraph 须派 cancelable beforeinput（inputType=insertParagraph）"
     );
     {
-        // 换代后：SetChildText（head 截断）+ CreateElement(div separator) +
-        // AppendChild（宿主内）+ 尾段 CreateTextNode/AppendChild——宿主存活。
+        // 换代后（F2 双块语义，2026-11-02 前段包裹 Chrome delta）：CreateElement
+        // (div headBlock + div sep1) + 头/尾段 CreateTextNode + RemoveChildAt 摘旧
+        // 文本节点 + AppendChild（宿主内）——宿主存活，前段不再 nodeValue 截断留
+        // 裸层（ipara 语料 `foo[bar]baz` expected `<div>foo</div><div>baz</div>`）。
         let m = mutations.lock().unwrap();
         let has_sep = m.iter().any(|mm| {
             matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "div")
@@ -4619,11 +4621,11 @@ document.execCommand("insertparagraph", false, "");
             matches!(mm, DomMutation::AppendChild { parent_selector, .. }
                 if parent_selector.contains("ce"))
         }) && m.iter().any(|mm| {
-            matches!(mm, DomMutation::SetChildText { parent_selector, .. } if parent_selector.contains("ce"))
+            matches!(mm, DomMutation::RemoveChildAt { parent_selector, .. } if parent_selector.contains("ce"))
         });
         assert!(
             has_sep,
-            "insertParagraph 须经本地树 mutation 就地拆分（SetChildText+CreateElement+AppendChild），实际: {:?}",
+            "insertParagraph 须经本地树 mutation 双块拆分（CreateElement×2+RemoveChildAt+AppendChild），实际: {:?}",
             m.iter().rev().take(10).collect::<Vec<_>>()
         );
     }
