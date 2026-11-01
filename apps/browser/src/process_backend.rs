@@ -39,6 +39,9 @@ use indexed_db_transactions::{IndexedDbTransactionOwner, parse_transaction_reque
 #[cfg(test)]
 #[path = "process_backend/font_readiness_tests.rs"]
 mod font_readiness_tests;
+#[cfg(test)]
+#[path = "process_backend/identity_binding_tests.rs"]
+mod identity_binding_tests;
 #[path = "process_backend/indexed_db_connections.rs"]
 mod indexed_db_connections;
 #[cfg(test)]
@@ -2395,17 +2398,21 @@ impl ProcessTabBackend {
 
     /// 取出指定请求的自动化回执。
     pub fn take_automation_response(&mut self, tab_id: TabId, request_id: u64) -> Option<AutomationResponse> {
-        let (response_tab, response) = self.pending_automation_responses.remove(&request_id)?;
-        if response_tab == tab_id {
-            Some(response)
-        } else {
+        // 特权边界（renderer-trust-boundary IPC-03）：tab 绑定校验先于消费——被攻破
+        // renderer 可按可预测消息 id 伪造其他 tab 在途请求的回执，若不匹配即删除，
+        // 会把合法 renderer 稍后到达的真回执一并毁掉（跨 tab 自动化拒绝服务）。
+        let (response_tab, _) = self.pending_automation_responses.get(&request_id)?;
+        if *response_tab != tab_id {
             tracing::warn!(
                 "automation response tab mismatch: request={request_id} expected={} actual={}",
                 tab_id.0,
                 response_tab.0
             );
-            None
+            return None;
         }
+        self.pending_automation_responses
+            .remove(&request_id)
+            .map(|(_, response)| response)
     }
 
     /// 异步派发 DOM 事件（fire-and-forget）。
