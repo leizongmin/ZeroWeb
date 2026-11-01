@@ -2162,6 +2162,9 @@ pub fn collect_matching_declarations(
 /// 并在遇到 `@media` 规则时根据媒体上下文决定是否进入。
 ///
 /// `@layer` 规则会为内部声明分配级联层索引。
+///
+/// 与伪元素变体 [`collect_pseudo_declarations_with_media`] 相对：本函数只收
+/// 集无伪元素尾选择器的规则。特异性、源码顺序与层序语义同 [`collect_from_rules`]。
 pub fn collect_matching_declarations_with_media(
     doc: &Document,
     element: NodeId,
@@ -2348,6 +2351,14 @@ struct NestedBlock {
 /// 单一规则列表的索引（桶 + 嵌套块子索引）。
 struct RuleListIndex {
     buckets: RuleListBuckets,
+    /// P124 追加：仅含伪元素尾选择器规则的镜像桶（结构同 `buckets`，条目为
+    /// `pseudo_rule_set` 内规则的各选择器，按同一 `selector_rightmost_key` 分桶）。
+    /// pseudo pass 候选源——选择器带伪元素尾时匹配主体为去尾复合选择器
+    ///（CSS Selectors 4 §pseudo-element，伪元素只追加盒、不收紧主体匹配），
+    /// 主体键分桶对伪元素选择器同样成立。此前 pseudo pass 构建全量候选再
+    /// retain：github.com 每探测 ~1.2k 候选 × 每元素 ~7 探测，构建+排序占
+    /// 伪元素段 97% 时间；镜像桶使探测候选 = 伪元素规则数。
+    pseudo_buckets: RuleListBuckets,
     /// 规则下标 → 内层块索引（@media/@layer/@supports/@container 有内层规则的规则）。
     nested: std::collections::HashMap<usize, NestedBlock>,
     /// P124：@media 规则下标 → 命中预计算（`build_stylesheet_index_with_media`
@@ -2410,6 +2421,11 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
     let mut classes: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
     let mut tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
     let mut universal: Vec<(usize, usize)> = Vec::new();
+    // P124 追加：伪元素尾规则的镜像桶（pseudo pass 候选源，见 RuleListIndex.pseudo_buckets）。
+    let mut pseudo_ids: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut pseudo_classes: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut pseudo_tagged: std::collections::HashMap<String, Vec<(usize, usize)>> = std::collections::HashMap::new();
+    let mut pseudo_universal: Vec<(usize, usize)> = Vec::new();
     let mut nested = std::collections::HashMap::new();
     let mut pseudo_rule_set: Vec<usize> = Vec::new();
     for (ri, rule) in rules.iter().enumerate() {
@@ -2513,11 +2529,11 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
         // P124：含伪元素尾选择器的规则进 pseudo_rule_set（pseudo pass 候选门判据，
         // 与 matches_selector_for_pseudo 的尾部检查同源——按规则粗粒度收录，
         // 尾部精判仍由 collect_style_rule_decls 做）。
-        if style_rule
+        let is_pseudo_rule = style_rule
             .selectors
             .iter()
-            .any(|s| selector_pseudo_element(s).is_some())
-        {
+            .any(|s| selector_pseudo_element(s).is_some());
+        if is_pseudo_rule {
             pseudo_rule_set.push(ri);
         }
         for (si, selector) in style_rule.selectors.iter().enumerate() {
@@ -2527,12 +2543,28 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
                 RightmostKey::Tag(tag) => tagged.entry(tag).or_default().push((ri, si)),
                 RightmostKey::None => universal.push((ri, si)),
             }
+            if is_pseudo_rule {
+                match selector_rightmost_key(selector) {
+                    RightmostKey::Id(id) => pseudo_ids.entry(id).or_default().push((ri, si)),
+                    RightmostKey::Class(cls) => pseudo_classes.entry(cls).or_default().push((ri, si)),
+                    RightmostKey::Tag(tag) => pseudo_tagged.entry(tag).or_default().push((ri, si)),
+                    RightmostKey::None => pseudo_universal.push((ri, si)),
+                }
+            }
         }
     }
     for bucket in ids.values_mut().chain(classes.values_mut()).chain(tagged.values_mut()) {
         bucket.sort_unstable();
     }
     universal.sort_unstable();
+    for bucket in pseudo_ids
+        .values_mut()
+        .chain(pseudo_classes.values_mut())
+        .chain(pseudo_tagged.values_mut())
+    {
+        bucket.sort_unstable();
+    }
+    pseudo_universal.sort_unstable();
     // P124：候选驱动走查的访问集（升序）——嵌套块下标 ∪ 空 @layer 语句下标
     //（`@layer a, b;` / 匿名空层不在 nested，但走查时承担层序注册副作用 R4246，
     // 候选驱动遍历必须显式覆盖）。
@@ -2551,6 +2583,12 @@ fn build_rule_list_index(rules: &[zero_css_parser::ast::Rule]) -> RuleListIndex 
             classes,
             tagged,
             universal,
+        },
+        pseudo_buckets: RuleListBuckets {
+            ids: pseudo_ids,
+            classes: pseudo_classes,
+            tagged: pseudo_tagged,
+            universal: pseudo_universal,
         },
         nested,
         media_hits: std::collections::HashMap::new(),
@@ -2597,6 +2635,7 @@ fn fill_media_hits(
 ) {
     let RuleListIndex {
         buckets: _,
+        pseudo_buckets: _,
         nested,
         media_hits,
         pseudo_rule_set: _,
@@ -2649,7 +2688,7 @@ fn nested_block_inner_rules(rule: &zero_css_parser::ast::Rule) -> Option<&[zero_
 
 /// 元素在单一规则表内的候选 (规则, 选择器) 集：各主键精确桶 + universal，
 /// 按 (规则, 选择器) 升序 = 源码序。collect_from_rules 与测试统计共用。
-fn element_candidates(idx: &RuleListIndex, doc: &Document, element: NodeId) -> Vec<(usize, usize)> {
+fn element_candidates(buckets: &RuleListBuckets, doc: &Document, element: NodeId) -> Vec<(usize, usize)> {
     let elem_tag = element_tag_name(doc, element).unwrap_or_default();
     let elem_id = doc.get_attribute_str(element, "id");
     // class 候选桶按元素 class_list token 精确取（matches_class 同语义：精确串比较）。
@@ -2662,21 +2701,21 @@ fn element_candidates(idx: &RuleListIndex, doc: &Document, element: NodeId) -> V
         .unwrap_or(&[]);
     // 候选 = 各精确桶 + universal，拼接后按 (规则,选择器) 排序即源码序。
     // 桶均为升序有序（构建期排序），候选总量为元素相关选择器数。
-    let mut candidates: Vec<(usize, usize)> = Vec::with_capacity(idx.buckets.universal.len() + 16);
+    let mut candidates: Vec<(usize, usize)> = Vec::with_capacity(buckets.universal.len() + 16);
     if let Some(id) = elem_id
-        && let Some(b) = idx.buckets.ids.get(id)
+        && let Some(b) = buckets.ids.get(id)
     {
         candidates.extend_from_slice(b);
     }
     for cls in elem_classes {
-        if let Some(b) = idx.buckets.classes.get(cls.as_str()) {
+        if let Some(b) = buckets.classes.get(cls.as_str()) {
             candidates.extend_from_slice(b);
         }
     }
-    if let Some(b) = idx.buckets.tagged.get(&elem_tag) {
+    if let Some(b) = buckets.tagged.get(&elem_tag) {
         candidates.extend_from_slice(b);
     }
-    candidates.extend_from_slice(idx.buckets.universal.as_slice());
+    candidates.extend_from_slice(buckets.universal.as_slice());
     candidates.sort_unstable();
     candidates
 }
@@ -2713,7 +2752,7 @@ impl StylesheetIndex {
     pub(crate) fn candidate_count(&self, doc: &Document, element: NodeId) -> usize {
         self.sheets
             .iter()
-            .map(|s| element_candidates(s, doc, element).len())
+            .map(|s| element_candidates(&s.buckets, doc, element).len())
             .sum()
     }
 }
@@ -2851,13 +2890,20 @@ fn collect_from_rules(
     // 同规则多选择器匹配时只收集一次（原语义 break）。
     match index {
         Some(idx) => {
-            let mut candidates = element_candidates(idx, doc, element);
-            if pseudo.is_some() {
-                // P124（性能）：pseudo pass 候选门——只有含伪元素尾选择器的规则可能
-                // 匹配（matches_selector_for_pseudo 尾部精判同源），非伪元素规则候选
-                // 整批剔除。GitHub 页伪元素规则占少数，常规 pass 的元素级联不受影响。
-                candidates.retain(|(ri, _)| idx.pseudo_rule_set.binary_search(ri).is_ok());
-            }
+            // P124（性能）：pseudo pass 候选源 = 伪元素尾规则镜像桶——只有含伪元素
+            // 尾选择器的规则可能匹配（matches_selector_for_pseudo 尾部精判同源）。
+            // OPTIMIZATION：伪元素选择器的匹配主体 = 去伪元素尾的复合选择器
+            //（CSS Selectors 4 §pseudo-elements，
+            // https://drafts.csswg.org/selectors-4/#pseudo-elements），按主体键
+            // 预分桶后候选必含于镜像桶，逐元素构建全量候选再 retain 属纯浪费
+            //——github.com 每探测 ~1.2k 候选构建+排序 × 每元素 ~7 探测，实测
+            // 伪元素段 97% 时间耗在候选构建上；尾部精判仍由匹配权威裁决，
+            // 语义逐点不变。
+            let candidates = if pseudo.is_some() {
+                element_candidates(&idx.pseudo_buckets, doc, element)
+            } else {
+                element_candidates(&idx.buckets, doc, element)
+            };
             let mut last_matched_rule = usize::MAX;
             let mut ci = 0usize; // 候选流游标
             // P124（性能）：候选驱动走查——只下钻嵌套块与空层语句（walk_ris，

@@ -374,6 +374,14 @@ pub struct StyleSystem {
     /// 键 = cascade 输入全源声明序列（hints+matching+inline+UA 注入）+ quirks；
     /// 命中判定做完整序列比对，哈希仅桶定位（零碰撞错样式）。见 [`CascadeCache`]。
     cascade_cache: CascadeCache,
+    /// s220：自定义属性 gather 组合缓存（帧内复用 gather 纯函数段）。真实站点上
+    /// 同 (父表, 自身 `--` 声明组合) 的元素成百上千（github.com 每元素 ~2 条 `--`
+    /// 声明 × 3.5k 元素，全部走 gather 深拷贝 ~2.2k 项父表 = 每轮 3.6s），组合数
+    /// 只有几十。见 [`CustomGatherKey`]。
+    custom_gather_cache: Vec<(CustomGatherKey, CustomProperties)>,
+    /// s220：`@property` 注册表代数——每次从样式表重建自增，作 gather 组合缓存
+    /// 键的一部分（注册表内容变化后旧组合条目自然失效，容量上界内惰性逐出）。
+    registered_properties_gen: u64,
 }
 
 impl StyleSystem {
@@ -401,6 +409,8 @@ impl StyleSystem {
                 enabled: CASCADE_CACHE_DEFAULT_ENABLED.as_ref().copied().unwrap_or(true),
                 map: HashMap::new(),
             },
+            custom_gather_cache: Vec::new(),
+            registered_properties_gen: 0,
         }
     }
 
@@ -597,6 +607,8 @@ impl StyleSystem {
                 .iter()
                 .chain(shadow_scopes.iter().flat_map(|s| s.sheets.iter())),
         );
+        // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
+        self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(
             stylesheets
                 .iter()
@@ -722,6 +734,8 @@ impl StyleSystem {
             return;
         }
         self.registered_properties = collect_registered_properties(stylesheets);
+        // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
+        self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
         let quirks_mode = doc.quirks_mode();
         let has_pseudo_rules = stylesheets.iter().any(|s| stylesheet_has_pseudo_rules(&s.rules));
@@ -1684,6 +1698,8 @@ impl StyleSystem {
         parent_style: Option<&ComputedStyle>,
     ) -> ComputedStyle {
         self.registered_properties = collect_registered_properties(stylesheets);
+        // s220：注册表重建即换代——gather 组合缓存旧条目按键失配惰性逐出。
+        self.registered_properties_gen = self.registered_properties_gen.wrapping_add(1);
         self.font_feature_values = collect_font_feature_values(stylesheets);
         // P124：单元素重算同样预计算 @media 命中表。
         let media_ctx = self.media_ctx_for();
@@ -2552,11 +2568,46 @@ impl StyleSystem {
         self.custom_properties = if parent_shareable {
             parent_custom.clone()
         } else {
-            CustomProperties::new(gather_custom_properties(
-                cascaded,
-                parent_custom,
-                &self.registered_properties,
-            ))
+            // OPTIMIZATION s220：gather 组合记忆化——`gather_custom_properties` 是
+            // (父表, 自身 `--` 子集, 注册表) 的纯函数，而真实站点上同组合的元素
+            // 数量远大于组合数（github.com 上 10.7k 次 gather/轮实际只有 ~10 个
+            // 元素带自身 `--`、注册表 1 项且逐元素注册检查失败，组合数 <20；深拷贝
+            // ~2.2k 项父表每轮累计 3.6s）。键的身份语义见 [`CustomGatherKey`]；
+            // CSS Cascading 5 §custom-properties 继承语义不变
+            //（https://drafts.csswg.org/css-variables/#inheritance）——命中复用的
+            // 表与重算产出逐键相同，未命中才真正 gather。
+            let mut own_custom: Vec<(String, String)> = cascaded
+                .iter()
+                .filter(|(k, _)| k.starts_with("--"))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            own_custom.sort();
+            let cached = self.custom_gather_cache.iter().rev().find(|(k, _)| {
+                k.registered_gen == self.registered_properties_gen
+                    && std::sync::Arc::ptr_eq(&k.parent, parent_custom)
+                    && k.own_custom == own_custom
+            });
+            if let Some((_, hit)) = cached {
+                hit.clone()
+            } else {
+                let built = CustomProperties::new(gather_custom_properties(
+                    cascaded,
+                    parent_custom,
+                    &self.registered_properties,
+                ));
+                if self.custom_gather_cache.len() >= CUSTOM_GATHER_CACHE_CAP {
+                    self.custom_gather_cache.remove(0);
+                }
+                self.custom_gather_cache.push((
+                    CustomGatherKey {
+                        parent: std::sync::Arc::clone(parent_custom),
+                        own_custom,
+                        registered_gen: self.registered_properties_gen,
+                    },
+                    std::sync::Arc::clone(&built),
+                ));
+                built
+            }
         };
 
         // 4.5. 在级联值中解析 var() 引用
@@ -3681,6 +3732,32 @@ struct CascadeOutcome {
     /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
     cascaded: HashMap<String, String>,
     orders: HashMap<String, CascadeOrder>,
+}
+
+/// s220：自定义属性 gather 组合缓存容量上界（FIFO 逐出）。
+///
+/// 每条目持有父表强引用 + 自身 `--` 子集键 + 产出表三个对象（真实站点父表可达
+/// 数千项），64 条 ≈ 十几 MB 上界，远小于一次全量深拷贝路径的内存峰值
+///（R5114 记录的 3000 元素 × 300 变量 ≈ 293MB）。
+const CUSTOM_GATHER_CACHE_CAP: usize = 64;
+
+/// s220：自定义属性 gather 组合缓存的键（见 [`StyleSystem::custom_gather_cache`]）。
+///
+/// `gather_custom_properties` 是 (继承父表, 自身 `--` 级联子集, 注册表) 的纯函数。
+/// 父表是构造后不可变的 `Arc<HashMap>`（R5114），以「Arc 指针 + 缓存持有强引用」
+/// 作身份键：强引用钉住对象生存期，指针相等 ⇔ 同一对象 ⇔ 内容相等——无哈希、
+/// 无碰撞面。自身子集按键值对全量比对（升序规范化，序等价于同集合；T13 同款
+/// 「完整序列比对」纪律），不用整个级联产出作键——非 `--` 声明不参与 gather
+/// 结果，按整产出分键会把同结果组合错切成千键（github.com 实测 ownf=10 而级联
+/// 组合数百）。注册表内容随样式表变化（重建见 `collect_registered_properties`），
+/// 以重建代数入键。
+struct CustomGatherKey {
+    /// 父继承表（强引用，防 Arc 地址复用造成假命中）。
+    parent: CustomProperties,
+    /// 自身 `--` 级联子集（升序规范化的全量比对键）。
+    own_custom: Vec<(String, String)>,
+    /// 注册表代数（`registered_properties_gen` 快照）。
+    registered_gen: u64,
 }
 
 /// 声明组合级联缓存：把「同 cascade 输入」的 expand_shorthands + cascade_with_orders
