@@ -54,10 +54,16 @@ REG 键归一形态（V1_5/ED25519）、HMAC keygen 缺省长度 = hash 块大�
 
 **下一步（M2 余下）**：拍板前推进无新依赖面——① worker 腿接线与
 1T 销案穿插（无依赖，触 runner/workers 通道基建——与 25 号流共享
-testharness.rs，落账前对账）。拍板后按 deps evidence 建议定序（依赖就绪度：
-aes-ocb/chacha20poly1305/argon2 等 AEADs+password-hashes 单 crate 域先行，
-XOF 五连引入次之，ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；
-门禁面注册表 REG 与 getPublicKey 域面随域切片逐行扩表翻绿）。
+testharness.rs，落账前对账）。1T triage 精化（2026-11-01，M2-2 轮）：
+algorithm-discards-context 12 个 async_test 全依赖 iframe 子 realm 脚本
+执行（`contentDocument.body.appendChild(script)`）+ 子内 getter 跨
+realm 回调 `top.closeChild` → `t.done()`；runner harness 记
+`pending:13`（零测试完结）→ 子脚本执行/回调链路未通，销案需
+iframe 子 realm 基建切片（DOM 边界，非 webcrypto 语义面）。拍板后按
+deps evidence 建议定序（依赖就绪度：aes-ocb/chacha20poly1305/argon2 等
+AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，ML-KEM/ML-DSA
+再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 REG 与 getPublicKey
+域面随域切片逐行扩表翻绿）。
 
 - 输入：二期 [DC-2 甄别清单](../archive/webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md)（逐域分母/建议范围/依赖候选）
 - 上游复证（2026-11-01）：HEAD `a0dd301b85…`，WebCryptoAPI 子树
