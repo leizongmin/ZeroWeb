@@ -10194,7 +10194,20 @@
               } catch (_eP1) {}
               return 'static';
             }
-            return query(kp);
+            var _csGV = query(kp);
+            // editing-compat style-with-value 簇（2026-11-01）：plain 元素四属性
+            // 计算值 JS 侧级联解析（inline style → font 表现提示 → 继承走查 →
+            // UA 缺省）。host 通道只覆盖 sel/handle 注册元素，语料 vendored 查询
+            // 机制（myQueryCommandValue → getEffectiveCommandValue → gCS 读数、
+            // getLegacyFontSize 探针、normalizeColor 探针）踩 M 形 plain 面。
+            // 算法与序列化口径见 part01c __zwPlainComputed 挂载注释。
+            if (_csGV === '' && typeof globalThis.__zwPlainComputed === 'function') {
+              try {
+                var _pcGV = globalThis.__zwPlainComputed(elt, kp);
+                if (_pcGV !== '') return _pcGV;
+              } catch (_ePC1) {}
+            }
+            return _csGV;
           };
         }
         if (p === 'getPropertyPriority' || p === 'item') return function() { return ''; };
@@ -10224,6 +10237,17 @@
           // value 'static'——host miss 的 plain 元素真值即初始值）。
           if (p === 'cssFloat' || p === 'float') return 'none';
           if (p === 'position') return 'static';
+          // editing-compat（2026-11-01）：四属性 plain 计算值回落，同
+          // getPropertyValue 臂（见彼处注释）。属性名 camel/kebab 双形态归一
+          // （内部机具 _zwJusCs 以 kebab 访问，vendored 侧 camel）。
+          var _pcP = p.slice(0, 2) === '--' ? '' : _camelToKebab(p);
+          if (_pcP === 'color' || _pcP === 'font-size'
+              || _pcP === 'font-family' || _pcP === 'background-color') {
+            try {
+              var _pcV = globalThis.__zwPlainComputed(elt, _pcP);
+              if (_pcV !== '') return _pcV;
+            } catch (_ePC2) {}
+          }
         }
         return _csV;
       }

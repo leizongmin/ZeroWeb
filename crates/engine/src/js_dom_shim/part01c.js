@@ -1387,3 +1387,420 @@
       value: value
     };
   };
+
+  // ============================================================
+  // editing-compat style-with-value 簇（2026-11-01）：plain 元素四属性计算值
+  // 解析器（getComputedStyle 的 host miss 回落）。
+  //
+  // 缘由：editing/run 语料的查询与比较机制是 vendored tests.js 直呼其实现函数
+  //（myQueryCommandValue → commands.*.value() → getEffectiveCommandValue →
+  // getComputedStyle(node)[relevantCssProperty]，另有 getLegacyFontSize 运行时
+  // 探针、normalizeColor 色归一探针）——全部流经我方 globalThis.getComputedStyle。
+  // host 通道只覆盖 sel/handle 注册元素（probe t16：setupDiv 内容物全 M 形，
+  // fontSize/color/fontFamily/backgroundColor 恒 ''；display 有 UA 表回落故
+  // isVisible 不受扰）。本解析器按 CSS 级联语义 JS 侧补齐四属性：
+  //   inline style → font 表现提示（size/color/face/bgcolor，HTML 渲染节
+  //   https://html.spec.whatwg.org/multipage/rendering.html#fonts-and-colors ）→
+  //   继承走查（color/font-size/font-family 继承；background-color 非继承——
+  //   首个非透明声明即停，透明继续上行，等价 getEffectiveCommandValue 的
+  //   transparent 爬升组合）。无源返空——gCS 通道保 P9-9/R5107 合成源契约
+  //   （无规则即空，englib p99 钉测）；UA 初值（color rgb(0, 0, 0)、
+  //   font-family serif、font-size 16px、background-color 透明）由值面消费点
+  //   __zw_ce_value_query 填（probe tD/tE 与语料裸文本期望）。
+  // 序列化对齐 Chrome 计算值口径（state/indeterm 面做原始串等值比较，不归一）：
+  //   named/hex/hsl → rgb(r, g, b)；alpha≠1 → rgba(r, g, b, a)；
+  //   transparent → rgba(0, 0, 0, 0)；currentColor → 沿父链继承解析；
+  //   font-size 关键字表 px 底数取 Chrome 缺省字号标度（xx-small 9px …
+  //   xxx-large 48px，probe tC 实证；font[size] attr 1-7 → x-small…xxx-large）。
+  // FIXME: 仅逗号式 rgb()/rgba()/hsl()/hsla()；空格式语法 `rgb(0 0 255 / .5)`
+  //   与 font 简写（font: …）未解析。relative size 关键字（smaller/larger）与
+  //   rem 未实现（语料无消费面）。
+  // FIXME: CSS 系统色（canvas/buttontext 等）与 color-mix() 等现代语法未覆盖。
+  var _zwPlainNamedColor = {
+    aliceblue: '240, 248, 255', antiquewhite: '250, 235, 215', aqua: '0, 255, 255',
+    aquamarine: '127, 255, 212', azure: '240, 255, 255', beige: '245, 245, 220',
+    bisque: '255, 228, 196', black: '0, 0, 0', blanchedalmond: '255, 235, 205',
+    blue: '0, 0, 255', blueviolet: '138, 43, 226', brown: '165, 42, 42',
+    burlywood: '222, 184, 135', cadetblue: '95, 158, 160', chartreuse: '127, 255, 0',
+    chocolate: '210, 105, 30', coral: '255, 127, 80', cornflowerblue: '100, 149, 237',
+    cornsilk: '255, 248, 220', crimson: '220, 20, 60', cyan: '0, 255, 255',
+    darkblue: '0, 0, 139', darkcyan: '0, 139, 139', darkgoldenrod: '184, 134, 11',
+    darkgray: '169, 169, 169', darkgreen: '0, 100, 0', darkgrey: '169, 169, 169',
+    darkkhaki: '189, 183, 107', darkmagenta: '139, 0, 139',
+    darkolivegreen: '85, 107, 47', darkorange: '255, 140, 0', darkorchid: '153, 50, 204',
+    darkred: '139, 0, 0', darksalmon: '233, 150, 122', darkseagreen: '143, 188, 143',
+    darkslateblue: '72, 61, 139', darkslategray: '47, 79, 79', darkslategrey: '47, 79, 79',
+    darkturquoise: '0, 206, 209', darkviolet: '148, 0, 211', deeppink: '255, 20, 147',
+    deepskyblue: '0, 191, 255', dimgray: '105, 105, 105', dimgrey: '105, 105, 105',
+    dodgerblue: '30, 144, 255', firebrick: '178, 34, 34', floralwhite: '255, 250, 240',
+    forestgreen: '34, 139, 34', fuchsia: '255, 0, 255', gainsboro: '220, 220, 220',
+    ghostwhite: '248, 248, 255', gold: '255, 215, 0', goldenrod: '218, 165, 32',
+    gray: '128, 128, 128', green: '0, 128, 0', greenyellow: '173, 255, 47',
+    grey: '128, 128, 128', honeydew: '240, 255, 240', hotpink: '255, 105, 180',
+    indianred: '205, 92, 92', indigo: '75, 0, 130', ivory: '255, 255, 240',
+    khaki: '240, 230, 140', lavender: '230, 230, 250', lavenderblush: '255, 240, 245',
+    lawngreen: '124, 252, 0', lemonchiffon: '255, 250, 205', lightblue: '173, 216, 230',
+    lightcoral: '240, 128, 128', lightcyan: '224, 255, 255',
+    lightgoldenrodyellow: '250, 250, 210', lightgray: '211, 211, 211',
+    lightgreen: '144, 238, 144', lightgrey: '211, 211, 211', lightpink: '255, 182, 193',
+    lightsalmon: '255, 160, 122', lightseagreen: '32, 178, 170',
+    lightskyblue: '135, 206, 250', lightslategray: '119, 136, 153',
+    lightslategrey: '119, 136, 153', lightsteelblue: '176, 196, 222',
+    lightyellow: '255, 255, 224', lime: '0, 255, 0', limegreen: '50, 205, 50',
+    linen: '250, 240, 230', magenta: '255, 0, 255', maroon: '128, 0, 0',
+    mediumaquamarine: '102, 221, 170', mediumblue: '0, 0, 205',
+    mediumorchid: '186, 85, 211', mediumpurple: '147, 112, 219',
+    mediumseagreen: '60, 179, 113', mediumslateblue: '123, 104, 238',
+    mediumspringgreen: '0, 250, 154', mediumturquoise: '72, 209, 204',
+    mediumvioletred: '199, 21, 133', midnightblue: '25, 25, 112',
+    mintcream: '245, 255, 250', mistyrose: '255, 228, 225', moccasin: '255, 228, 181',
+    navajowhite: '255, 222, 173', navy: '0, 0, 128', oldlace: '253, 245, 230',
+    olive: '128, 128, 0', olivedrab: '107, 142, 35', orange: '255, 165, 0',
+    orangered: '255, 69, 0', orchid: '218, 112, 214', palegoldenrod: '238, 232, 170',
+    palegreen: '152, 251, 152', paleturquoise: '175, 238, 238',
+    palevioletred: '219, 112, 147', papayawhip: '255, 239, 213',
+    peachpuff: '255, 218, 185', peru: '205, 133, 63', pink: '255, 192, 203',
+    plum: '221, 160, 221', powderblue: '176, 224, 230', purple: '128, 0, 128',
+    red: '255, 0, 0', rosybrown: '188, 143, 143', royalblue: '65, 105, 225',
+    saddlebrown: '139, 69, 19', salmon: '250, 128, 114', sandybrown: '244, 164, 96',
+    seagreen: '46, 139, 87', seashell: '255, 245, 238', sienna: '160, 82, 45',
+    silver: '192, 192, 192', skyblue: '135, 206, 235', slateblue: '106, 90, 205',
+    slategray: '112, 128, 144', slategrey: '112, 128, 144', snow: '255, 250, 250',
+    springgreen: '0, 255, 127', steelblue: '70, 130, 180', tan: '210, 180, 140',
+    teal: '0, 128, 128', thistle: '216, 191, 216', tomato: '255, 99, 71',
+    turquoise: '64, 224, 208', violet: '238, 130, 238', wheat: '245, 222, 179',
+    white: '255, 255, 255', whitesmoke: '245, 245, 245', yellow: '255, 255, 0',
+    yellowgreen: '154, 205, 50'
+  };
+  // font[size] attr → CSS 绝对字号关键字（HTML 渲染节映射）；px 底数 = Chrome
+  // 缺省字号标度（probe tB/tC：10/13/16/18/24/32/48px；xx-small 9px 同证）。
+  var _zwPlainFontAttrKw = { 1: 'x-small', 2: 'small', 3: 'medium', 4: 'large',
+    5: 'x-large', 6: 'xx-large', 7: 'xxx-large' };
+  var _zwPlainFontKwPx = { 'xx-small': 9, 'x-small': 10, small: 13, medium: 16,
+    large: 18, 'x-large': 24, 'xx-large': 32, 'xxx-large': 48 };
+  // UA stylesheet font-family 元素规则（HTML 渲染节 15.3.1.1——`tt, code, kbd,
+  // samp { font-family: monospace }`；pre/listing/xmp/plaintext 同款。元素选择器
+  // 规则 = 每个命中元素的声明，级联中位于继承之上——walk 逐元素内层优先命中）。
+  var _zwPlainUaMono = { tt: 1, code: 1, kbd: 1, samp: 1, pre: 1, listing: 1,
+    xmp: 1, plaintext: 1 };
+  // inline style 属性文本的朴素声明扫描（style IDL 缺位形态的兜底——pending 形
+  // 无 .style）。返 { prop: value }（prop kebab 小写、value trim）。
+  function _zwPlainStyleDecls(el) {
+    var out = {};
+    try {
+      var st = String(el.getAttribute && el.getAttribute('style') || '');
+      var parts = st.split(';');
+      for (var i = 0; i < parts.length; i++) {
+        var seg = parts[i];
+        var at = seg.indexOf(':');
+        if (at <= 0) continue;
+        var k = seg.slice(0, at).trim().toLowerCase();
+        if (k) out[k] = seg.slice(at + 1).trim();
+      }
+    } catch (_ePD) {}
+    return out;
+  }
+  function _zwPlainDecl(el, prop) {
+    // 优先 style IDL（wrapper/M 形均有；getPropertyValue 自带 kebab 归一与
+    // 末次声明语义），缺位回落属性文本扫描。
+    try {
+      if (el.style && typeof el.style.getPropertyValue === 'function') {
+        var v = el.style.getPropertyValue(prop);
+        if (v) return String(v).trim();
+      }
+    } catch (_ePST) {}
+    return _zwPlainStyleDecls(el)[prop] || '';
+  }
+  // hsl(h, s%, l%) → rgb 序列化值（CSS Color 3 算法；h 角度可负可超 360）。
+  function _zwPlainHslToRgb(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    s /= 100; l /= 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    var m = l - c / 2;
+    var r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; } else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+  }
+  // 颜色声明 → Chrome 计算值序列化（rgb(r, g, b) / rgba(r, g, b, a)）。
+  // 无 alpha 或 alpha=1 → rgb() 形（Chrome 序列化口径）；解析失败返 ''。
+  function _zwPlainColorSpec(val, el) {
+    var v = String(val == null ? '' : val).trim();
+    if (!v) return '';
+    var low = v.toLowerCase();
+    if (low === 'transparent') return 'rgba(0, 0, 0, 0)';
+    if (low === 'currentcolor') {
+      // currentColor = 继承的 color 计算值（沿父链解析；缺省黑）。
+      var p = el && el.parentNode;
+      while (p && p.nodeType === 1) {
+        var pv = globalThis.__zwPlainComputed(p, 'color');
+        if (pv) return pv;
+        p = p.parentNode;
+      }
+      return 'rgb(0, 0, 0)';
+    }
+    if (Object.prototype.hasOwnProperty.call(_zwPlainNamedColor, low)) {
+      return 'rgb(' + _zwPlainNamedColor[low] + ')';
+    }
+    if (v.charAt(0) === '#') {
+      var hex = v.slice(1);
+      if (/^[0-9a-fA-F]{3}$/.test(hex)) {
+        hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1)
+          + hex.charAt(2) + hex.charAt(2);
+      }
+      if (!/^[0-9a-fA-F]{6}$/.test(hex)) return '';
+      return 'rgb(' + parseInt(hex.slice(0, 2), 16) + ', '
+        + parseInt(hex.slice(2, 4), 16) + ', ' + parseInt(hex.slice(4, 6), 16) + ')';
+    }
+    var m = /^(rgba?|hsla?)\(([^)]*)\)$/i.exec(v);
+    if (!m) return '';
+    var fn = m[1].toLowerCase();
+    var nums = m[2].split(',').map(function (s) { return s.trim(); });
+    if (nums.length < 3) return '';
+    var comps = [];
+    for (var i = 0; i < 3; i++) {
+      var t = nums[i];
+      var isPct = /%$/.test(t);
+      var n = parseFloat(t);
+      if (isNaN(n)) return '';
+      if (fn === 'rgb' || fn === 'rgba') {
+        comps.push(isPct ? Math.round(n * 255 / 100) : Math.round(n));
+      } else {
+        comps.push(n);
+      }
+    }
+    var rgbv = (fn === 'rgb' || fn === 'rgba')
+      ? comps : _zwPlainHslToRgb(comps[0], comps[1], comps[2]);
+    if (fn === 'rgba' || fn === 'hsla') {
+      var a = parseFloat(nums[3]);
+      if (isNaN(a)) return '';
+      if (a >= 1) return 'rgb(' + rgbv.join(', ') + ')';
+      return 'rgba(' + rgbv.join(', ') + ', ' + String(a) + ')';
+    }
+    return 'rgb(' + rgbv.join(', ') + ')';
+  }
+  // font-size px 解析（数字 = 浏览器缺省标度 16px 基准）。不可解析（含
+  // smaller/larger、rem、简写）返 NaN → 调用方视作无声明。
+  function _zwPlainFontSizePx(el) {
+    var decl = _zwPlainDecl(el, 'font-size');
+    var m = /^([+-]?[0-9]*\.?[0-9]+)([a-z%]*)$/.exec(String(decl).trim());
+    if (m) {
+      var n = parseFloat(m[1]);
+      var u = m[2];
+      if (u === 'px') return n;
+      if (u === 'pt') return n * 96 / 72;
+      if (u === 'pc') return n * 16;
+      if (u === 'in') return n * 96;
+      if (u === 'cm') return n * 96 / 2.54;
+      if (u === 'mm') return n * 96 / 25.4;
+      if (u === 'em' || u === '%') {
+        var par = el.parentNode;
+        var base = 16;
+        var guard = 0;
+        while (par && par.nodeType === 1 && guard++ < 256) {
+          var pv = _zwPlainFontSizePx(par);
+          if (!isNaN(pv)) { base = pv; break; }
+          par = par.parentNode;
+        }
+        return u === 'em' ? n * base : n * base / 100;
+      }
+      return NaN;
+    }
+    var kw = _zwPlainFontKwPx[String(decl).trim().toLowerCase()];
+    if (kw) return kw;
+    // font[size] 表现提示（HTML 渲染节；相对值 ±N 未实现——语料无消费面）。
+    try {
+      var sa = el.getAttribute && el.getAttribute('size');
+      if (sa != null && Object.prototype.hasOwnProperty.call(_zwPlainFontAttrKw, String(parseInt(sa, 10)))) {
+        return _zwPlainFontKwPx[_zwPlainFontAttrKw[String(parseInt(sa, 10))]];
+      }
+    } catch (_ePSA) {}
+    return NaN;
+  }
+  // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
+  globalThis.__zwPlainComputed = function (elt, prop) {
+    if (!elt || elt.nodeType !== 1) return '';
+    var guard = 0;
+    var node = elt;
+    if (prop === 'font-size') {
+      // 继承：自 elt 上行首个可解析声明（或 font[size] 提示）；无源返空。
+      var px = NaN;
+      while (node && node.nodeType === 1 && guard++ < 256) {
+        px = _zwPlainFontSizePx(node);
+        if (!isNaN(px)) break;
+        node = node.parentNode;
+      }
+      if (isNaN(px)) return '';
+      // Chrome 序列化：非整值保 3 位小数（20pt → 26.667px，probe tC）。
+      var r3 = Math.round(px * 1000) / 1000;
+      return String(r3) + 'px';
+    }
+    if (prop === 'color' || prop === 'font-family'
+        || prop === 'background-color') {
+      var isBg = prop === 'background-color';
+      node = elt; guard = 0;
+      while (node && node.nodeType === 1 && guard++ < 256) {
+        var raw = _zwPlainDecl(node, prop);
+        var tagL = String(node.tagName || '').toLowerCase();
+        if (!raw && tagL === 'font') {
+          try {
+            // 表现提示：font[color]/font[face]/font[bgcolor]（HTML 渲染节）。
+            var attrName = prop === 'color' ? 'color'
+              : (prop === 'font-family' ? 'face' : 'bgcolor');
+            var av = node.getAttribute(attrName);
+            if (av != null) raw = String(av);
+          } catch (_ePFA) {}
+        }
+        if (!raw && prop === 'font-family' && _zwPlainUaMono[tagL]) {
+          return 'monospace';
+        }
+        if (raw) {
+          if (prop === 'font-family') return raw;
+          var cv = _zwPlainColorSpec(raw, node);
+          if (cv) {
+            // background-color：透明声明视作无（transparent 爬升等价形——
+            // getEffectiveCommandValue 的 while 组合语义不变）。
+            if (!isBg || cv !== 'rgba(0, 0, 0, 0)') return cv;
+          }
+        }
+        node = node.parentNode;
+      }
+      // 无源返空——gCS 通道保 P9-9/R5107 合成源契约（无规则即空）；UA 初值
+      // 由值面消费点 __zw_ce_value_query 填（englib p99 外部 CSS 钉测回归定谳）。
+      return '';
+    }
+    return '';
+  };
+
+  // ============================================================
+  // editing-compat style-with-value 簇（2026-11-01）：document.queryCommand*
+  // 值面/Indeterm 面——五标准行内值命令（fontsize/fontname/forecolor/
+  // backcolor/hilitecolor）。
+  //
+  // 归因（tests.js conformance 比较列实证）：before/after qV 断言读数走
+  // **document.queryCommandValue**（tests.js:5595/5627 browser 列），非 vendored
+  // myQueryCommandValue（后者只服务 spec 列）——引擎面此前恒 ''。算法按参考实现
+  // 移植（tests/wpt-runner/wpt-data/editing/include/implementation.js）：
+  //   ① effectively contained 文档序首个 formattable node（:1807/:1997），无则
+  //     active range startContainer（standardInlineValueCommand value 生成块
+  //     :8477-8495）；② getEffectiveCommandValue（:2069）——TEXT 归父、
+  //     backcolor/hilitecolor transparent 爬升、其余 gCS relevantCssProperty
+  //     （无声明时 UA 初值在此消费点填——gCS 通道保 P9-9 合成源契约返空）；
+  //   ③ fontsize → getLegacyFontSize（:3309）中点映射（UA 缺省标度
+  //     10/13/16/18/24/32/48px，probe tB/tC 实证）；
+  //   ④ Indeterm = 含域 formattable 有效值 ≥2 个互异（:8470 生成块）。
+  // 选区经 globalThis.getSelection 单例（同 justify 查询面）。
+  // FIXME: 值 override 机制未接——vendored myExecCommand 的 override 写私有闭包
+  //   map，引擎面不可见；collapsed 选区（无 contained formattable）apply 后
+  //   Chrome 期望值来自其原生 override（DOM 不变仍返新值），我方 DOM 走查返
+  //   走查值，该族 qV-after 挂账迭代。
+  function _zwValIsEffectivelyContained(node, range) {
+    if (range.collapsed) return false;
+    if (_zwJusIsContained(node, range)) return true;
+    if (node === range.startContainer && node.nodeType === 3
+        && _zwJusNodeLength(node) !== range.startOffset) return true;
+    if (node === range.endContainer && node.nodeType === 3
+        && range.endOffset !== 0) return true;
+    if (_zwJusHasKids(node)
+        && (! _zwJusIsAncestorOf(node, range.startContainer)
+            || range.startContainer.nodeType !== 3
+            || range.startOffset === 0)
+        && (! _zwJusIsAncestorOf(node, range.endContainer)
+            || range.endContainer.nodeType !== 3
+            || range.endOffset === _zwJusNodeLength(range.endContainer))) {
+      for (var i = 0; i < node.childNodes.length; i++) {
+        if (!_zwValIsEffectivelyContained(node.childNodes[i], range)) return false;
+      }
+      return true;
+    }
+    return false;
+  }
+  function _zwValGetAllEffectivelyContained(range, condition) {
+    var node = range.startContainer;
+    var guard = 0;
+    while (node && guard++ < 256 && _zwValIsEffectivelyContained(node.parentNode, range)) {
+      node = node.parentNode;
+    }
+    var stop = _zwJusNextNodeDescendants(range.endContainer);
+    var out = [];
+    while (node && _zwJusIsBefore(node, stop) && guard++ < 65536) {
+      if (_zwValIsEffectivelyContained(node, range) && condition(node)) {
+        out.push(node);
+      }
+      node = _zwJusNextNode(node);
+    }
+    return out;
+  }
+  function _zwValIsFormattable(node) {
+    return _zwJusIsEditable(node) && _zwJusIsVisible(node)
+      && (node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']));
+  }
+  // getLegacyFontSize 中点表（Chrome UA 缺省标度下界 px；上界 = 下位 +1 档）。
+  var _zwValLegacyBounds = [10, 13, 16, 18, 24, 32];
+  function _zwValLegacyFontSize(pxStr) {
+    var m = /^([0-9]+(\.[0-9]+)?)(px)?$/.exec(String(pxStr == null ? '' : pxStr).trim());
+    if (!m) return '';
+    var px = parseFloat(m[1]);
+    for (var i = 0; i < 6; i++) {
+      // 中点 = (下界[i] + 下界[i+1]) / 2；下界[7] = 48。
+      var next = i < 5 ? _zwValLegacyBounds[i + 1] : 48;
+      if (px < (_zwValLegacyBounds[i] + next) / 2) return String(i + 1);
+    }
+    return '7';
+  }
+  function _zwValEffectiveValue(node, cmd) {
+    if (!node) return null;
+    if (node.nodeType !== 1) {
+      var p = node.parentNode;
+      if (!p || p.nodeType !== 1) return null;
+      node = p;
+    }
+    if (cmd === 'backcolor' || cmd === 'hilitecolor') {
+      // transparent 爬升（参考实现 :2107-2120）；本仓 backgroundColor 解析器
+      // 已含等价爬升，此处保留双保险（空串继续上行）。
+      var g = 0;
+      while (node && node.nodeType === 1 && g++ < 256) {
+        var bg = _zwJusCs(node, 'background-color');
+        if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') return bg;
+        node = node.parentNode;
+      }
+      return 'rgba(0, 0, 0, 0)';
+    }
+    var prop = cmd === 'fontsize' ? 'font-size'
+      : (cmd === 'fontname' ? 'font-family' : 'color');
+    var v = _zwJusCs(node, prop);
+    if (v === '') {
+      // 无声明时 UA 初值（Chrome computed 口径，probe tD/tE 与语料裸行期望）——
+      // gCS 通道保 P9-9 合成源契约返空，初值在此值面消费点填；fontsize 16px
+      // 过 legacy 中点映射落 '3'（medium）。
+      v = cmd === 'fontname' ? 'serif'
+        : (cmd === 'forecolor' ? 'rgb(0, 0, 0)' : '16px');
+    }
+    return v;
+  }
+  // 查询入口：返 { value, indeterm }（命中五命令）或 null（调用方回落）。
+  globalThis.__zw_ce_value_query = function (cmd) {
+    var five = { fontsize: 1, fontname: 1, forecolor: 1, backcolor: 1, hilitecolor: 1 };
+    if (!five[String(cmd)]) return null;
+    try {
+      // 选区单例经 globalThis.getSelection（_getSelection 声明域不覆盖本文件
+      // 挂载点——同 justify 查询面取区惯用法）。
+      var sel = globalThis.getSelection ? globalThis.getSelection() : null;
+      var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
+      if (!rng) return { value: '', indeterm: false };
+      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattable);
+      var indeterm = false;
+      if (nodes.length > 1) {
+        var first = _zwValEffectiveValue(nodes[0], cmd);
+        for (var i = 1; i < nodes.length; i++) {
+          if (_zwValEffectiveValue(nodes[i], cmd) !== first) { indeterm = true; break; }
+        }
+      }
+      var ref = nodes.length ? nodes[0] : rng.startContainer;
+      var v = _zwValEffectiveValue(ref, cmd);
+      if (cmd === 'fontsize') v = _zwValLegacyFontSize(v);
+      return { value: v == null ? '' : String(v), indeterm: indeterm };
+    } catch (_eVQ) { return { value: '', indeterm: false }; }
+  };

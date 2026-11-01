@@ -2327,7 +2327,8 @@
   // - enabled：spec（"queryCommandEnabled"）按命令状态判定——copy/cut 需选区非空
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
   //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
-  //   queryCommandValue 保持 ''（fontSize/formatBlock 值面未接，documented）。
+  //   queryCommandValue：五标准行内值命令经 __zw_ce_value_query 接通（2026-11-01，
+  //   见 queryCommandValue 臂注）；formatBlock 等其余值面未接，documented。
   function _zwExecCmdFindEditingHost(range) {
     if (!range) return null;
     var node = range.startContainer;
@@ -4504,7 +4505,15 @@
     // 命令按 legacy 语义返 false（run 语料无 justify 之外的 indeterm 断言面）。
     queryCommandIndeterm: function (commandId) {
       var jf = _zwQueryJustifyFace(commandId);
-      return jf ? jf.indeterm : false;
+      if (jf) return jf.indeterm;
+      // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
+      // Indeterm——含域 formattable 有效值 ≥2 互异（参考实现 :8470 生成块，
+      // 算法见 part01c __zw_ce_value_query 挂载注释）。
+      var vf = (typeof globalThis.__zw_ce_value_query === 'function')
+        ? globalThis.__zw_ce_value_query(String(commandId == null ? '' : commandId).toLowerCase())
+        : null;
+      if (vf) return vf.indeterm;
+      return false;
     },
     queryCommandState: function (commandId) {
       var jf = _zwQueryJustifyFace(commandId);
@@ -4525,6 +4534,14 @@
       if (cLow === 'defaultparagraphseparator') {
         return globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';
       }
+      // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令值面
+      //（语料 before/after qV 断言读 document.queryCommandValue——tests.js:5595/
+      // 5627 browser 列；effective command value + getLegacyFontSize 映射，算法
+      // 与 FIXME（值 override 不可见）见 part01c __zw_ce_value_query 挂载注释）。
+      var vf = (typeof globalThis.__zw_ce_value_query === 'function')
+        ? globalThis.__zw_ce_value_query(cLow)
+        : null;
+      if (vf) return vf.value;
       return '';
     },
     // `document.designMode`（R3261，HTML §3.2.5）——文档级编辑模式（'on' 使整文档可编辑）。
