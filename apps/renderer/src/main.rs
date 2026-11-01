@@ -22,6 +22,10 @@ fn main() {
         .with_target(false)
         .init();
 
+    // T38/G4 Phase B：mmap 阈值封顶（≥128KB 分配走 mmap、free 即还 OS），遏制
+    // per-thread arena 碎片滞留；须在大块分配/free 循环前调用，详见 mem_reclaim。
+    let _ = zero_renderer::mem_reclaim::apply_allocator_tuning();
+
     let (role, renderer_id) = zero_renderer::parse_renderer_launch();
     if role != ProcessRole::Renderer {
         tracing::error!("zero-renderer must start with --type=renderer");
