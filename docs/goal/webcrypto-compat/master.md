@@ -51,17 +51,20 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 13:45（锚复跑现执行 tip `583ebe1df` ×3——上笔
-账 push 后 rebase 窗口吸入渲染流 R5375 max-content 内容基测量
-（layout-engine `engine/sizing.rs` +16/−1、`intrinsic_sizing.rs` +9 +
-新增 r4149 测试，crates/ 执行路径前移）：release runner 重建 30.3s +
-test-guard 直包三连跑（guard 三跑零击杀，90.6/90.9/89.4s），**RUN1/
-RUN2/RUN3 对 M1 终态锚整文件逐字节一致 ×3 且三跑互等**（7,208,436 B，
-sha256 同值），33,109 条状态账 0 差异（25,788P+7,320F+1T），W4 本轮
-零采样累计 7/32 轮；**锚窗口推进 7c681d5c6 → 583ebe1df**。轮询面：
-PR #267 仍 OPEN、head 仍 `11f6770a4`、未合入 main，合入即触发 D2①
-收口序列；冻结门末触仍 `c41b0c750`，ua_display_li 在册未清，D1 无新
-账面，见
+**最后更新**: 2026-11-01 14:04（锚复跑现执行 tip `e08a4febc` ×3——上笔
+账 push 后 rebase 窗口吸入 html-semantics 流 s206 output value/
+defaultValue 活读模型（engine `js_dom_bridge_tests/part09.rs` +92、
+shim `part03.js`/`part04.js` +61/−26，mutations 2F 收口，crates/ 执行
+路径前移，冻结门未触）：release runner 重建 24.4s（二进制 sha256
+`f8e4ef5f…`）+ test-guard 直包三连跑（guard 三跑零击杀，墙钟 ≈90s×3），
+**RUN1/RUN2/RUN3 三跑互等逐字节一致**（7,208,497 B，sha256 同值），对
+M1 终态锚整文件 cmp +61 B 分歧**仅在 W4 案 `algorithm-discards-context`
+Timeout 消息文本**（三跑同落 phase=2 采样臂变体，12:27 轮同先例），
+status 结构化比对 status-diffs=0：33,109 条状态账 0 差异（25,788P+
+7,320F+1T），W4 采样臂现形累计 8/33 轮；**锚窗口推进 583ebe1df →
+e08a4febc**。轮询面：PR #267 仍 OPEN、head 仍 `11f6770a4`、未合入
+main，合入即触发 D2① 收口序列；冻结门末触仍 `c41b0c750`，
+ua_display_li 在册未清，D1 无新账面，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

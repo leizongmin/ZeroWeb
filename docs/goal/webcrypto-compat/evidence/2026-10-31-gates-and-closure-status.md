@@ -955,3 +955,38 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   PR #266 簇同先例）；现执行路径仍锚 `583ebe1df`，13:45 锚账（×3
   cmp 全等）现行不变。冻结门末触仍 `c41b0c750`，本地 == origin ==
   `1fcf8967f`。轮询面无其他变化，D2①/D1 无新账面。
+
+### 2026-11-01 14:04 追记：锚复跑现执行 tip（`e08a4febc`）状态账零差异 ×3（整文件分歧仅 W4 采样臂文本，累计 8/33 轮）——html-semantics 流 s206 output value/defaultValue 活读模型吸收
+
+- 本 goal 上笔账（13:52）push 后 rebase 窗口吸入 html-semantics 流
+  `e08a4febc`（s206 output value/defaultValue 活读模型——后代突变活读 +
+  reset 清 override，mutations 2F 收口，[其账](../../html-semantics-compat/evidence/2026-11-01-m2s206-output-value-defaultvalue-live-read.md)；
+  engine `js_dom_bridge_tests/part09.rs` +92、shim `part03.js`/`part04.js`
+  +61/−26，crates/ 执行路径前移）：按
+  `git diff 8174304d5..e08a4febc -- crates/ tests/` 非空核证后，按纪律
+  对现执行 tip 复跑锚 ×3——release runner 重建 24.4s（shim 重编译入包，
+  `make zero-wpt-runner-release`，二进制 sha256 `f8e4ef5f…`）+ test-guard
+  直包同参数（`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，
+  `--json` stdout 重定向），起跑前 ps 核查 ZeroWeb 面无兄弟 run/孤儿
+  进程。guard log 三跑零字节（零击杀），EXIT=1 预期，墙钟 ≈90s ×3
+  （JSON 产物 mtime 间隔 91s/90s）。
+- **RUN1/RUN2/RUN3 三跑互等逐字节一致**（sha256 同值 `7cdea628…`，
+  7,208,497 B ×3）；对 M1 终态锚整文件 cmp +61 B 分歧——**分歧仅在
+  W4 案 `algorithm-discards-context` Timeout 消息文本**：本轮三跑同落
+  phase=2 采样臂变体（`testharness completion callback was not called
+  (…phase":2…)`，锚为 phase=4 变体 `completed without reporting
+  registered tests`；12:27 轮同先例），其余全部 status + 非 Timeout
+  message 结构化比对 **status-diffs=0**：123 文件 / 33,109 子测试 =
+  25,788P + 7,320F + 1T 状态账零差异——s206 对 webcrypto 语料面完全
+  吸收。W4 案完成路径竞态采样臂现形，采样面累计 **8/33 轮**。
+- 锚窗口推进为 **583ebe1df → e08a4febc**，实锚链 ……→ee2ee9ec1→
+  7c681d5c6→583ebe1df→e08a4febc，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：D4 裁决分支/PR #267 仍 OPEN、head 仍 `11f6770a4`、未合
+  入 main，合入即触发 D2① 收口序列；冻结门 `ua_display_tests.rs`
+  末触仍 `c41b0c750`（s206 仅触 engine bridge 测试 + shim part03/04，
+  未触 style-system 冻结面），ua_display_li 在册未清；git 无 D1/D2
+  决策新账面。收口序列不变：ua_display_li 清零 → make test 全绿复证
+  → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 →
+  DONE。临时审计件
+  `/tmp/webcrypto-anchor-run{1,2,3}-20261101-s206-tipe08a4febc.json`
+  （不入库）。
