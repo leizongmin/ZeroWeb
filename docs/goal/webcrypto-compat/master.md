@@ -17,7 +17,7 @@ W4 案完成路径竞态低频采样（累计 5/30 轮，本轮零采样）
 `test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
 冻结面（s194 账 engine lib 3642P/1F 在册同键）。收口归档待该 1F 清零
 或 D2② 授权。M1/M2 里程碑已归档（`archive/2026-10-31-m1-m2.md`）。
-**收口前提轮询（2026-10-31 12:55 → 2026-11-01 12:15，观测面自 12:13 起
+**收口前提轮询（2026-10-31 12:55 → 2026-11-01 12:27，观测面自 12:13 起
 扩为 main + D4 裁决分支 `origin/site-opt/s24-flip-red`）**：fetch/Request
 簇 9F 已由 s179 `a3768d3e7` + s180 `2e260d532` 全清；唯余 ua_display_li
 1F——git 追溯定性为**跨流通道交互 × 渲染流 D4 待裁决冻结面**（s161
@@ -51,20 +51,19 @@ s200 键盘激活 click-only 事件序（runner `testharness.rs` +21/-4）
 执行路径前移流程补强（09:20 追记）；
 处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 12:15（**D4 双面裁决现身 git 账面**——用户提交
-`bb4cba524` 推上分支 `origin/site-opt/s24-flip-red`：「UA display 双面
-裁决 li=list-item/canvas=inline + 布局域连锁修复」，`ua_default_display`
-host 表翻转 + display_str 注入补显式 ListItem 臂 + tree/inline_
-finalization/sizing 三处布局连锁（+92/−8 行），触及冻结门
-`ua_display_tests.rs`（+17/−10）；commit 内附全量门禁走查（layout-engine
-lib 2306P/0F、style-system 2469P/0F、integration 794P/0F ×3、make
-reftest 724P/1F 唯一红=预存 float-shrink 基线、make test 全腿走查 4
-预存红逐一在案），ua_display_li 预期随合入清零。**尚未合入 main**：
-观测时距推送约 1 分钟、兄弟会话活跃（双 `claude -p --resume` 在跑），
-按碰撞纪律本 goal 不抢着陆、不代跑分支门禁；**合入 main 即触发 D2①
-收口序列**。main 侧锚面无变化：HEAD 仍 `492e9fb2e`、执行路径仍锚
-`ee2ee9ec1`、冻结门末触仍 `c41b0c750`，锚（7,208,436 B，
-25,788P+7,320F+1T ×3）仍现行不复跑；D1 无新账面，见
+**最后更新**: 2026-11-01 12:27（锚复跑现执行 tip `7c681d5c6` ×3——上笔
+账 push 后 rebase 窗口吸入 html-semantics 流 s205 setCustomValidity
+换行归一（shim `part03/part04.js` + bridge_tests `part08.rs`，执行
+路径前移）：release runner 重建 24.4s + test-guard 直包三连跑（guard
+三跑零击杀，89.5/88.7/92.1s），**RUN1/RUN2 对 M1 终态锚整文件逐字节
+一致**（7,208,436 B，RUN1==RUN2 sha256 同值），**RUN3 整文件 cmp 仅
+W4 案 message 文本分歧**——completion-callback-not-called 臂采样
+（status 仍 Timeout），33,109 条状态账逐位 0 差异（25,788P+7,320F+1T），
+按主判据锚成立，W4 采样面累计 6/31 轮；**锚窗口推进 ee2ee9ec1 →
+7c681d5c6**。轮询面：D4 裁决分支 force-update `bb4cba524`→`11f6770a4`
+核证为同一修复 rebase（内容同 6 文件 +168/−18），仍未合入 main，
+合入即触发 D2① 收口序列；冻结门末触仍 `c41b0c750`，ua_display_li
+在册未清，D1 无新账面，见
 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

@@ -886,3 +886,32 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   ee2ee9ec1..HEAD -- crates/ tests/` 为空，冻结门末触仍 `c41b0c750`，
   M1 终态锚（7,208,436 B，25,788P+7,320F+1T ×3）对 main 现执行 tip
   仍现行，不复跑；D1 无新账面。
+
+### 2026-11-01 12:27 追记：锚复跑现执行 tip（`7c681d5c6`）——s205 setCustomValidity 换行归一吸收，RUN1/RUN2 整文件全等、RUN3 状态账全等 + W4 采样臂现形（累计 6/31 轮）
+
+- 本 goal 上笔账（12:15 D4 分支现身）push 时 rebase 窗口吸入
+  html-semantics 流 `7c681d5c6`（s205 setCustomValidity 换行归一——shim
+  `part03.js`/`part04.js` 双存入点 \r\n|\r→\n + bridge_tests `part08.rs`
+  +15，crates/ 执行路径前移，shim 入 runner 包），按纪律对现执行 tip
+  复跑锚 ×3：release runner 重建 24.4s + test-guard 直包同参数
+  （`--per-proc-mem 4 --total-mem 8 --time-limit 1800`，`--json`
+  重定向），起跑前 ps 核查无兄弟 run/孤儿进程，二进制 sha256
+  `624a6412…` 三跑全程未变。guard log 三跑零字节（零击杀），EXIT=1
+  预期，墙钟 89.5s/88.7s/92.1s。
+- **RUN1/RUN2 对 M1 终态锚整文件逐字节一致**（gunzip 后 cmp 全等，
+  7,208,436 B）且 RUN1==RUN2（sha256 同值 `40ea3c8e…`）；**RUN3 整
+  文件 cmp 在 W4 案 message 文本处分歧**——`algorithm-discards-context`
+  1T 竞态本轮采样：RUN3 走 completion-callback-not-called 臂（phase=2、
+  test_wait=false），锚走 completed-without-reporting 臂（phase=4），
+  **status 双方均 Timeout，33,109 条 (case, subtest) 状态账逐位对照
+  0 差异**（25,788P + 7,320F + 1T），按「状态账逐位为主判据」锚成立；
+  W4 采样面累计 **6/31 轮**。
+- 锚窗口推进为 **ee2ee9ec1 → 7c681d5c6**（s205 setCustomValidity
+  全吸收），33,109 分母零回归在现执行 tip 成立。
+- 轮询面其余：D4 裁决分支 push 窗口内 force-update `bb4cba524` →
+  `11f6770a4`——核证为同一 6 文件修复 rebase 至 `492e9fb2e`（作者
+  日期 12:13:03 不变、内容 +168/−18 同），非内容变化，仍未合入 main；
+  main 侧冻结门末触仍 `c41b0c750`，ua_display_li 同键在册未清；D1
+  无新账面。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-s205setcv-tip7c681d5c6-{r1,r2,r3}.json`
+  （不入库）。
