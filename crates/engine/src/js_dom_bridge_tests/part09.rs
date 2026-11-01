@@ -6967,3 +6967,149 @@ fn test_media_source_mse_audio_face_t8s3() {
         "appendBuffer 轨路由：video SB→mseAppend、audio SB→mseAppendAudio（各 4B）"
     );
 }
+
+#[test]
+fn test_r5328_form_checkvalidity_fieldset_inherit_invalid_fanout() {
+    // R5328（s210）：FORM 级约束校验双缺口——①disabled fieldset 传染（spec
+    // §4.10.5.1.1 #concept-fe-disabled：fieldset 后代 disabled，首 legend 元素
+    // 子后代豁免；_validityState valueMissing 豁免门接祖先走查，s193 willValidate
+    // 同口径）②FORM checkValidity/reportValidity invalid **全遍历派发**（spec
+    // §4.10.21.2 #interactively-validate-the-constraints——旧首个 invalid 即短路
+    // 吃掉后续控件 invalid 事件）。镜像 form-validation-validate 语料（gitignore，
+    // 常驻桥测试承载）：fm3 fieldset child 三态（语料同款无 email 面）+ fm1
+    // invalid 计数 4（fieldset>test1 + email test2 双 invalid 控件）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><form id=\"fm1\">\
+         <fieldset id=\"fs0\"><input id=\"test1\" type=\"text\" required value=\"\"></fieldset>\
+         <input id=\"test2\" type=\"email\" value=\"abc\">\
+         <button id=\"b1\">T</button><select id=\"s1\"></select>\
+         <textarea id=\"t1\"></textarea></form>\
+         <form id=\"fm3\">\
+         <fieldset id=\"fs\"><legend><input id=\"inp1\" type=\"text\"></legend>\
+         <input id=\"inp2\" type=\"text\" required value=\"\"></fieldset></form>\
+         <form id=\"fm2\">\
+         <fieldset id=\"fs2\" disabled><legend><input id=\"q1\" type=\"text\" required value=\"\"></legend>\
+         <input id=\"q2\" type=\"text\" required value=\"\">\
+         <input id=\"q3\" type=\"text\" required value=\"abc\" pattern=\"\\d+\"></fieldset></form>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("http://test.local/dir/page.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 腿 A（语料 fm3 臂 1）：fieldset 未 disabled——inp2 required 空 → false。
+    sandbox
+        .execute(
+            "var fm3 = document.getElementById('fm3');             globalThis.__a = fm3.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__a)").unwrap().value,
+        "false",
+        "fieldset 未 disabled：fieldset 内 required 空控件仍候选 → checkValidity false"
+    );
+
+    // 腿 B（语料 fm3 臂 2）：fs.disabled = true → inp2 传染豁免 → true。
+    sandbox
+        .execute(
+            "document.getElementById('fs').disabled = true;             globalThis.__b = fm3.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__b)").unwrap().value,
+        "true",
+        "fieldset disabled：fieldset 直下 required 空控件传染豁免 valueMissing → true"
+    );
+
+    // 腿 C（语料 fm3 臂 3）：legend 内 inp1 不被传染（仍候选）——type=url
+    // 'aaa' typeMismatch → false。
+    sandbox
+        .execute(
+            "var i1 = document.getElementById('inp1');             i1.value = 'aaa'; i1.type = 'url';             globalThis.__c = fm3.checkValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__c)").unwrap().value,
+        "false",
+        "legend 后代豁免传染（仍候选）：url typeMismatch 不因 fieldset disabled 豁免"
+    );
+
+    // 腿 D：静态 disabled fieldset（fm2）——legend 内 q1 仍候选（false），
+    // 直下 q2 传染豁免（true），q3 patternMismatch 仍校验（R57 传染只豁免
+    // valueMissing）。
+    sandbox
+        .execute(
+            "var fm2 = document.getElementById('fm2');             globalThis.__d1 = fm2.checkValidity();             globalThis.__d2 = document.getElementById('q2').validity.valid;             globalThis.__d3 = document.getElementById('q3').validity.patternMismatch;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d1)").unwrap().value,
+        "false",
+        "静态 disabled fieldset：legend 内 required 空控件仍候选 → false"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d2)").unwrap().value,
+        "true",
+        "fieldset 直下 required 空控件传染豁免 → validity.valid true"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__d3)").unwrap().value,
+        "true",
+        "传染不豁免 patternMismatch（R57 语义：disabled 仅豁免 valueMissing）"
+    );
+
+    // 腿 E（语料 fm1 invalid 计数面）：invalid 全遍历派发——checkValidity 轮
+    // [test1, test2] 各 1，reportValidity 轮再各 1 → 共 4（旧短路实现只得 2）。
+    sandbox
+        .execute(
+            "var fm1 = document.getElementById('fm1');             globalThis.__cnt = 0;             var els = fm1.elements;             for (var ei = 0; ei < els.length; ei++) {               els.item(ei).addEventListener('invalid', function () { globalThis.__cnt++; });             }             globalThis.__e1 = fm1.checkValidity();             globalThis.__cntAfterCheck = globalThis.__cnt;             globalThis.__e2 = fm1.reportValidity();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("String(globalThis.__cntAfterCheck)")
+            .unwrap()
+            .value,
+        "2",
+        "checkValidity 全遍历：invalid 派发 [test1, test2] 两控件（非首个短路 1 次）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__cnt)").unwrap().value,
+        "4",
+        "reportValidity 再派发一轮：总计数 4（语料 times1=4 钉态）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e1)").unwrap().value,
+        "false",
+        "checkValidity 返回 false（存在 invalid 控件）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__e2)").unwrap().value,
+        "false",
+        "reportValidity 返回 false"
+    );
+
+    // 腿 F：disabled 移除恢复候选（falsy 真移除）——inp2 valueMissing 回归。
+    sandbox
+        .execute(
+            "document.getElementById('fs').disabled = true;             document.getElementById('fs').disabled = false;             globalThis.__f = document.getElementById('inp2').validity.valueMissing;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__f)").unwrap().value,
+        "true",
+        "fieldset disabled 移除：传染豁免撤销，required 空控件 valueMissing 回归"
+    );
+}

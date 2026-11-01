@@ -12823,6 +12823,45 @@
     //（disabled 时**仍校验**——WPT 断言 "should be true, when disabled"）。
     var _dis = null;
     try { _dis = handle ? __zw_has_attr_handle(handle, 'disabled') : __zw_has_attr(sel, 'disabled'); } catch (_e) {}
+    // s210（html-semantics M2）：disabled fieldset 祖先传染——spec §4.10.5.1.1
+    // #concept-fe-disabled：form control disabled 判定含 disabled fieldset 后
+    // 代，其**首个 legend 元素子**的后代豁免；豁免判据与 s193 willValidate 祖
+    // 先走查同口径（上行路径直子即该 fieldset 首 legend 子才豁免，豁免后继续
+    // 上行——更外层 disabled fieldset 仍可 barred）。R57 语义保持：传染 barred
+    // 同样仅豁免 valueMissing（下方 required 门），pattern/range 等仍校验。
+    // form-validation-validate fm3 钉态：fs.disabled 置位 → fieldset 直下
+    // inp2（required 空）valueMissing 豁免 → form.checkValidity true；legend
+    // 内 inp1 不被传染（仍候选，type=url 'aaa' typeMismatch → false）。
+    if (_dis !== '1') {
+      try {
+        var _feDNode = _makeProxy(sel, handle);
+        var _feDWalk = _feDNode;
+        var _feDPar = _feDNode.parentNode;
+        var _feDGuard = 0;
+        while (_feDPar && _feDGuard < 64) {
+          var _feDTag = '';
+          try { _feDTag = String(_feDPar.tagName).toUpperCase(); } catch (_eFeDT) {}
+          if (_feDTag === 'FIELDSET') {
+            var _feDDis = false;
+            try { _feDDis = !!_feDPar.disabled; } catch (_eFeDD) {}
+            if (_feDDis) {
+              var _feDLeg = null;
+              try {
+                var _feDKids = _feDPar.children;
+                for (var _feDI = 0; _feDI < _feDKids.length; _feDI++) {
+                  if (String(_feDKids[_feDI].tagName).toUpperCase() === 'LEGEND') { _feDLeg = _feDKids[_feDI]; break; }
+                }
+              } catch (_eFeDK) {}
+              var _feDExempt = false;
+              try { _feDExempt = (_feDLeg != null && _feDWalk === _feDLeg); } catch (_eFeDI) {}
+              if (!_feDExempt) { _dis = '1'; break; }
+            }
+          }
+          try { _feDWalk = _feDPar; _feDPar = _feDPar.parentNode; } catch (_eFeDP) { break; }
+          _feDGuard++;
+        }
+      } catch (_eFeDW) {}
+    }
     var valueMissing = false;
     var reqAttr = null;
     try {

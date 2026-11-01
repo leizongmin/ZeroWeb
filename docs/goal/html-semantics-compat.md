@@ -31,7 +31,42 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-01 M2 切片 209 收口，number 编辑器双槽——键入 veto + caret 臂 + badInput 接线：三语料 11/11 Pass（scientific 4/4——`1e-+1`/`1e++1`/`+1e+1` 整键否决、`-` 起点接受 valueAsNumber −10；constraint 5/5——键入 '1.e'→''+badInput true、'1.'→'1'+badInput false、setter 净化无 badInput、required+valueMissing；clobbering 2/2——'123e' 键入 valid false）；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=2 全落 onblur flake 族（基线态当下重跑同 F 已证非本刀），键漂移 0；shim 3 文件 + rust 3 文件，语料零改动）**
+> **▶ 当前状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
+> **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）
+> 定刀 form-validation-validate 3F——FORM 级 checkValidity/reportValidity
+> 面，与 s208 FORM 聚合臂同区。customizable select 177F 挂起待拍板
+>（GB-20261031 征询在途）。
+> **勘根**：缺口一 spec §4.10.5.1.1 #concept-fe-disabled——disabled
+> fieldset 后代 disabled（首 legend 元素子后代豁免）；`_validityState`
+> 只查自身 disabled 无祖先走查 → fs.disabled 置位后 inp2 valueMissing
+> 不豁免。s193 willValidate 臂已有同口径走查（disabled-001 钉态）+
+> S197 焦点面复用同判据——读面基建齐备仅 validity 通道未接。缺口二
+> spec §4.10.21.2 #interactively-validate-the-constraints——每个
+> invalid 控件都派发 invalid 事件；FORM 臂 `if (!cv) return false`
+> 短路（test1 失败即返，test2 不检查）→ times1=2（runner 实测
+> expected 4 got 2 实锤）。
+> **施工**（shim 2 文件 + rust 测试 1 文件）：part03 `_validityState`
+> `_dis` 后补 fieldset 祖先走查（首 legend 直子豁免 + 豁免后继续上
+> 行，R57 门不动——传染同样仅豁免 valueMissing）；part04 FORM 臂
+> `_fmAnyInvalid` 旗标全遍历；part09.rs R5328 六腿桥测试（fm3 三态 +
+> fm2 静态 disabled 面 + q3 pattern 仍校验 R57 钉面 + invalid 计数 4 +
+> falsy 移除恢复候选）。
+> **验证**：拼接 shim node --check SYNTAX_OK；R5328 单测 1 passed（首
+> 版误并语料 fm1/fm3 双 form——email typeMismatch 掩盖腿 B，探针测试
+> 归因施工 1 正常后拆分重写过）；靶面 FILTER=form-validation-validate
+> 8/8 Pass；forms 全域 A/B 净 F→P=3 恰 3 靶键 + onblur 族 2 键回摆
+>（s209 P→F 原位）+1 键回摆（闭环，s209 基线重跑证据互证）；键漂移
+> 0 其他位移 0；zero-engine 3670P+0F（R5328 计入）；fmt 零 diff +
+> guarded-clippy 0 警告。
+> **下一步候选**：域内 misc 残面次刀——button-click-submits-with-
+> commandfor 3F（invoker commands commandfor 点击不提交门）+ button-
+> click-submits 1F（fieldset disabled 传染对 button 提交门，与 s210
+> 传染基建同区）→ form-nameditem override builtins 1F fix#19c 挂待决
+> 承袭 / form owner table 4F 升格待独立立项；customizable select
+> 177F 挂起待拍板（GB-20261031）。
+> **账本**：[evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md](html-semantics-compat/evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md)
+>
+> **▶ 上轮状态（2026-11-01 M2 切片 209 收口，number 编辑器双槽——键入 veto + caret 臂 + badInput 接线：三语料 11/11 Pass（scientific 4/4——`1e-+1`/`1e++1`/`+1e+1` 整键否决、`-` 起点接受 valueAsNumber −10；constraint 5/5——键入 '1.e'→''+badInput true、'1.'→'1'+badInput false、setter 净化无 badInput、required+valueMissing；clobbering 2/2——'123e' 键入 valid false）；forms 全域 A/B 净 F→P=4 恰 4 靶键，P→F=2 全落 onblur flake 族（基线态当下重跑同 F 已证非本刀），键漂移 0；shim 3 文件 + rust 3 文件，语料零改动）**
 > **入场定刀位**：s208 后 number B 簇 editor-buffer 独立立项落刀
 >（s203 勘定承袭）。customizable select 177F 挂起待拍板（GB-20261031
 > 征询在途）。
@@ -6674,6 +6709,18 @@ M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
 
+- **2026-11-01 M2 切片 210**：FORM 级约束校验双缺口轮——fieldset
+  disabled 传染 + invalid 全遍历派发，form-validation-validate 3F 收
+  口。勘根定谳双缺口（`_validityState` 无 fieldset 祖先走查——s193
+  willValidate 臂读面基建已有同口径仅 validity 未接；FORM 臂短路
+  return 吃掉后续控件 invalid 派发——times 实测 4→2 实锤）；施工
+  part03 走查接入（首 legend 豁免 + R57 门不动）+ part04 全遍历旗标
+  + part09.rs R5328 六腿常驻承载。验证：靶面 8/8 Pass + forms 全域
+  A/B 净 F→P=3 恰 3 靶键 + onblur 族 s209 摆动闭环（2 回摆+1 回摆）
+  键漂移 0 + zero-engine 3670P+0F + fmt 零 diff + guarded-clippy 过；
+  misc 残面盘点新浮现 button-click-submits-with-commandfor 3F +
+  button-click-submits 1F 次刀候选。账本
+  [evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md](html-semantics-compat/evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md)。
 - **2026-11-01 M2 切片 209**：number 编辑器双槽轮——键入 veto + caret
   臂 + badInput 接线，三语料 11 键收口。勘根定谳键入面无 veto 无
   caret（科学计数测 1-3 意外过经 parseFloat 前缀解析，Insert - at

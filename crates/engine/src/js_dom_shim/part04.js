@@ -5992,11 +5992,18 @@
                 var all = _makeProxy(sel, handle).querySelectorAll('input,select,textarea,button');
                 for (var ci = 0; ci < all.length; ci++) ctrls.push(all.item ? all.item(ci) : all[ci]);
               } catch (_e) {}
+              // spec §4.10.21.2 #dom-cva-checkvalidity → #interactively-validate-
+              // the-constraints：对本 form 每个 invalid 且未 barred 控件派发
+              // invalid 事件（cancelable 非冒泡）——**全遍历不短路**（旧首个
+              // invalid 即 return 把后续控件的 invalid 派发吃掉；form-validation-
+              // validate 语料 times1=4 钉态：checkValidity/reportValidity 双轮 ×
+              // test1+test2 全派发）。返回值任一 invalid 即 false。
+              var _fmAnyInvalid = false;
               for (var cj = 0; cj < ctrls.length; cj++) {
                 var cv = ctrls[cj].checkValidity ? ctrls[cj].checkValidity() : true;
-                if (!cv) return false;
+                if (!cv) _fmAnyInvalid = true;
               }
-              return true;
+              return !_fmAnyInvalid;
             }
             var v = _validityState(key, sel, handle);
             if (!v.valid) {
