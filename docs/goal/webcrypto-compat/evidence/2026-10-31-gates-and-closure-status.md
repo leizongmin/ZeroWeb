@@ -915,3 +915,34 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   无新账面。临时审计件
   `/tmp/webcrypto-anchor-run-20261101-s205setcv-tip7c681d5c6-{r1,r2,r3}.json`
   （不入库）。
+
+### 2026-11-01 13:45 追记：锚复跑现执行 tip（`583ebe1df`）三跑整文件对 M1 终态锚 cmp 全等 ×3——渲染流 R5375 max-content 内容基测量吸收，W4 本轮零采样
+
+- 本 goal 上笔账（12:27）push 后 rebase 窗口吸入渲染流 `583ebe1df`
+  （R5375 max-content 内容基测量——layout-engine `engine/sizing.rs`
+  +16/−1、`intrinsic_sizing.rs` +9、新增 `tests/
+  r4149_width_keyword_clamp_tests.rs`，crates/ 执行路径前移，
+  [其账](../../rendering-compat/evidence/r5375-max-content-content-based-2026-11-01.md)）：
+  按 `git diff 7c681d5c6..583ebe1df -- crates/ tests/` 非空核证后，
+  按纪律对现执行 tip 复跑锚 ×3——release runner 重建 30.3s
+  （layout-engine 重编译入包，`make zero-wpt-runner-release`，二进制
+  sha256 `f16be429…`）+ test-guard 直包同参数（`--per-proc-mem 4
+  --total-mem 8 --time-limit 1800`，`--json` 重定向），起跑前 ps
+  核查无兄弟 run/孤儿进程。guard log 三跑零字节（零击杀），EXIT=1
+  预期，墙钟 90.6s/90.9s/89.4s。
+- **RUN1/RUN2/RUN3 对 M1 终态锚全部逐字节一致（gunzip 后 cmp 全等，
+  7,208,436 B ×3）且三跑互等**（sha256 同值 `40ea3c8e…`）：123 文件 /
+  33,109 子测试 = 25,788P + 7,320F + 1T 状态账零差异——R5375 对
+  webcrypto 语料面完全吸收。W4 案处预期 Timeout 臂，本轮零采样，
+  采样面累计 **7/32 轮**。
+- 锚窗口推进为 **7c681d5c6 → 583ebe1df**，实锚链 ……→ee2ee9ec1→
+  7c681d5c6→583ebe1df，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：D4 裁决分支/PR #267 仍 OPEN、head 仍 `11f6770a4`、未合
+  入 main，合入即触发 D2① 收口序列；冻结门 `ua_display_tests.rs`
+  末触仍 `c41b0c750`（R5375 仅触 layout-engine sizing 面 + browser
+  headless tests + rendering docs，未触 style-system 冻结面），
+  ua_display_li 在册未清；git 无 D1/D2 决策新账面。收口序列不变：
+  ua_display_li 清零 → make test 全绿复证 → 锚按届时最终 tip 处置 →
+  归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计件
+  `/tmp/webcrypto-anchor-run-20261101-r5375-tip583ebe1df-{r1,r2,r3}.json`
+  （不入库）。
