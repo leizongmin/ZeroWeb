@@ -1105,6 +1105,25 @@ fn apply_replaced_element_sizing(
                     }
                     _ => taffy::style::Dimension::auto(),
                 }
+            } else if is_flex_row_item
+                && std::env::var("ZW_SVG_FLEX_CROSS_AUTO").as_deref() != Ok("0")
+                && elem.get_attribute("width").is_none()
+                && elem.get_attribute("height").is_none()
+                && matches!(computed.width, LengthValue::Auto)
+                && matches!(computed.height, LengthValue::Auto)
+            {
+                // R5380（css-flexbox-1 §9.6 algo-stretch + §8.3 单行 definite 容器
+                // line cross + §4.5 automatic minimum size + SVG2 §7.2 UA
+                // overflow:hidden）：default 尺寸臂（宽高 attr/CSS 全无来源）的 content
+                // 派生高作 **definite** 写入时，行向 flex item 交叉轴永非 auto →
+                // stretch 被跳过（display-flex-svg-overflow-default：row flex 容器
+                // 100×100 + flex-grow:1 svg，主轴 shrink 至 100 后交叉仍 150；
+                // chromium 交叉 = line cross（容器 inner cross 100）经 stretch +
+                // overflow:hidden → automatic min 0 → 100×100）。行向 flex item 且
+                // 宽高均无来源时交叉轴保 auto——line cross 交 §8.3、钳制交显式
+                // min/max。显式高（R4091）、width-abs（R5367）、column 主轴、attr 形态
+                // 维持 definite 不动。kill-switch `ZW_SVG_FLEX_CROSS_AUTO=0`。
+                taffy::style::Dimension::auto()
             } else {
                 taffy::style::Dimension::length(dh)
             };

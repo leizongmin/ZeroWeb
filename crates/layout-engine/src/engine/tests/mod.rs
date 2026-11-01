@@ -970,3 +970,8 @@ mod r5373_backfill_barrier_margin_tests;
 /// 布局缺口二则——inline canvas fallback 子抑制（HTML §4.8.10）与 vertical 容器
 /// block-level 判据的 ListItem 列。
 mod s24_flip_layout_gap_tests;
+
+/// R5380 回归测试：svg default 尺寸臂 content 派生高在行向 flex item 保交叉轴 auto
+///（css-flexbox-1 §8.3/§9.6 + SVG2 §7.2 UA overflow:hidden，WPT
+/// display-flex-svg-overflow-default 驱动）。
+mod r5380_svg_flex_cross_stretch_tests;
