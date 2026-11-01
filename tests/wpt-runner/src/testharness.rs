@@ -9611,7 +9611,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 let _ = reg.audio_advance_all(now_ms);
             }
         }
-        let probe = match take_probe(&mut webview, &mut td_refresh_ver) {
+        let probe = match take_probe(&mut webview, &mut td_refresh_ver, partial_results.len()) {
             Ok(probe) => probe,
             Err(error) => {
                 return vec![HarnessSubtestResult {
@@ -9644,7 +9644,8 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 let _ = webview.execute_script(&script);
             }
         }
-        partial_results = probe.results;
+        // 探针 results 为增量切片（自上次累计条数起，见 take_probe）——追加累计。
+        partial_results.extend(probe.results);
         last_test_function = probe.test_function;
         last_harness_hook = probe.harness_hook;
         last_state = probe.state;
@@ -9935,37 +9936,60 @@ fn prepare_harness_html(
       // host 真线程，drain_next_async_callback 每 execute 只 resolve 一个、到达序随机
       // → timer 派发顺序随机，WPT textcontrols/selectionchange 断言族 flake 根因）。
       // 专用名不在 host 注册表 → 永不被 rebind，全部 timer 走本 stub 的确定性队列
-      //（push 序 = FIFO，due 分割保序；shim setTimeout 优先探测本名）。
+      //（at 升序，同 at 保 push 序；shim setTimeout 优先探测本名）。
       globalThis.__zw_test_setTimeout = function(id, delay) {\n\
-        globalThis.__zw_timers = globalThis.__zw_timers || [];\n\
-        globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) });\n\
+        var timers = globalThis.__zw_timers = globalThis.__zw_timers || [];\n\
+        var at = Date.now() + (delay | 0);\n\
+        // OPTIMIZATION（webcrypto-compat v3 worker 腿，2026-11-02）：arm 期二分插入保
+        // at 升序不变量，fire 侧只弹队首——取代「每轮全队列 partition + due.sort +
+        // concat 重建」的 O(N² log N) 逐轮失速。worker 腿 relay 定时器约 2× 子测试数
+        // 条目（1500 子测试探针 6017 条），队列 6000+ 时旧实现每轮 6-43ms，90s 案
+        // 预算内只排干约 1/3（hkdf/pbkdf2 worker 腿超时同机制）。同 at 二分取上限位
+        // = ES2019 稳定 sort 的同 at push 序等价，派发序与旧实现逐条一致。
+        var lo = 0, hi = timers.length;\n\
+        while (lo < hi) { var mid = (lo + hi) >> 1; if (timers[mid].at <= at) lo = mid + 1; else hi = mid; }\n\
+        timers.splice(lo, 0, { id: id, at: at });\n\
       };\n\
-      globalThis.__zw_clearTimeout = function() {};\n\
-      globalThis.__zw_fire_due_timers = function() {\n\
-        var timers = globalThis.__zw_timers || [];\n\
-        if (!timers.length) return;\n\
-        var now = Date.now();\n\
-        var rest = [], due = [];\n\
+      // 队列同步移除（part01 clearTimeout/clearInterval probe-gated 调用，与
+      // __zw_test_setTimeout 同款专用名模式；此前 no-op 使已取消条目残留队列，
+      // per-task 模式下每条烧一整轮 fire skip）。清量少，线性扫足够；未命中 =
+      // 条目已 fire（no-op）。
+      globalThis.__zw_clearTimeout = function(id) {\n\
+        var timers = globalThis.__zw_timers;\n\
+        if (!timers) return;\n\
         for (var i = 0; i < timers.length; i++) {\n\
-          if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]);\n\
+          if (timers[i].id === id) { timers.splice(i, 1); return; }\n\
         }\n\
-        // net-api M5-S10：到期序派发（at 升序——HTML event loop timers 语义：先到期
-        // 先跑；push 序在「send() 先挂长 timeout 计时器、后挂 0ms 派发/其回调再挂
-        // fetch-issue」形态下会让未到期判定后的到期集乱序——busy loop 阻塞后
-        // timeout 计时器先于更早到期的 fetch-issue 派发 → 伪 ontimeout。XHR 侧
-        // finite 模型静态判定（D < T 不挂计时器）为主修，此排序为通用事件循环
+      };\n\
+      globalThis.__zw_fire_due_timers = function() {\n\
+        // net-api M5-S10：到期序派发（队列 at 升序不变量——HTML event loop timers
+        // 语义：先到期先跑；与旧 partition + 稳定 sort 的派发序逐条一致。XHR 侧
+        // finite 模型静态判定（D < T 不挂计时器）为主修，此队列序为通用事件循环
         // 语义兜底）。\n\
-        due.sort(function(a, b) { return a.at - b.at; });\n\
+        // due 集取调用时刻快照（与旧实现一致）：fire 期间新到期条目等下一轮。
+        var now = Date.now();\n\
         // event-loop-spec M3-S1：per-task 模式（__ZW_TIMER_PER_TASK，runner env\n\
         // ZW_TESTHARNESS_TIMER_PER_TASK 置位）只派发首个到期 timer——未派发的 due\n\
         // 保留队列（下一 probe 迭代再派），一 timer 一 execute 一 checkpoint。\n\
-        var limit = globalThis.__ZW_TIMER_PER_TASK ? 1 : due.length;\n\
-        var fired = due.splice(0, limit);\n\
-        globalThis.__zw_timers = due.concat(rest);\n\
-        for (var d = 0; d < fired.length; d++) {\n\
-          var fn = globalThis.__zw_pending[fired[d].id];\n\
-          if (fn) { delete globalThis.__zw_pending[fired[d].id]; try { fn(); } catch (_e) {} }\n\
+        var limit = globalThis.__ZW_TIMER_PER_TASK ? 1 : (globalThis.__zw_timers || []).length;\n\
+        // OPTIMIZATION（webcrypto-compat v3 worker 腿，2026-11-02）：relay flood 降级——\n\
+        // 队列 >256 时单轮上限放宽到 256 条 due。sorted-on-insert 修复后 per-task 模式\n\
+        // 仍 ~105ms/轮（sandbox 逐 execute 进出在数千条目堆上的固定成本；854 条/90s\n\
+        // 实测），一 timer 一轮需 ~6000 轮必超 90s 案预算；降级后轮数 ~6000 → ~24。\n\
+        // checkpoint 语义仅在 flood 形态放宽：>256 活跃定时器的页面 = worker relay 聚合\n\
+        //（fetch_tests_from_worker 每 harness 消息一 relay timer），handler 为 harness\n\
+        // 记账无 DOM/modal/媒体交互，事件循环时序断言面（M3-S1 A/B 锚的 dom/editing）\n\
+        // 活跃定时器峰值数十条不触门。派发序由队列 at 升序 + 同 at FIFO 保序不变。\n\
+        if (limit === 1 && (globalThis.__zw_timers || []).length > 256) limit = 256;\n\
+        for (var fired = 0; fired < limit; fired++) {\n\
+          var timers = globalThis.__zw_timers;\n\
+          if (!timers || !timers.length || timers[0].at > now) break;\n\
+          var entry = timers.shift();\n\
+          var fn = globalThis.__zw_pending[entry.id];\n\
+          if (fn) { delete globalThis.__zw_pending[entry.id]; try { fn(); } catch (_e) {} }\n\
         }\n\
+        // 返回队列余量供探测环 flood 门控（见 take_probe）。
+        return (globalThis.__zw_timers || []).length;\n\
       };\n";
     let harness = format!(
         "<script{csp_nonce_attr} data-zw-harness>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>"
@@ -10648,7 +10672,7 @@ fn kind_tag(kind: zero_engine::MediaResourceElementKind) -> &'static str {
     }
 }
 
-fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<HarnessProbe, String> {
+fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usize) -> Result<HarnessProbe, String> {
     // uievents-compat M3 尾簇 7：探测轮首先 flush pending 共享 mutation——上一轮 JS
     //（rAF/timer 回调、事件 listener）排队的结构 wire 在本轮 JS 前落活 DOM（真实
     // 浏览器 DOM 变更同步可见；mouseover-at-removing 30 迭代 remove→re-append 链
@@ -10656,32 +10680,67 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
     let _ = webview.flush_pending_shared_mutations();
     // Pump timer tasks first so the sandbox's microtask checkpoint has flushed
     // testharness result callbacks before the state snapshot is serialized.
-    webview
-        .execute_script("if (typeof globalThis.__zw_fire_due_timers === 'function') globalThis.__zw_fire_due_timers()")
-        .map_err(|error| error.to_string())?;
-    // uievents-compat M3 尾簇 4：shim 序列化 html 驱动的结构性刷新（泵后——shim 的
-    // 序列化状态在 turn 末提交）：页内脚本 remove/appendChild 后 gBCR/命中测试立即可
-    // 见（此前管线布局停留在导航时点——after_target_removed 族断言面）。
-    // mutation 代际门控：无 mutation 批 → 零成本跳过（探测环 ~1ms/拍，无门控的逐拍
-    // 百 KB 级 outerHTML 序列化曾跑穿 test-guard time-limit）。
-    // dialog-s31：模态态轮询先于刷新——showModal/close 的模态性只在 shim JS 栈
-    //（_zwDialogModalAllSels），DOM 序列化不携带；render 每帧 fresh-parse 后由管线
-    // `inject_modal_state` 注入（镜像 :focus 通道），下一行刷新的 render 才能带上
-    // `:modal` UA position:fixed（rendering.html#modal-dialogs）。逐拍一次微脚本
-    //（返回空串零成本），无需 mutation 门控。
-    let modal_sels = webview
+    // 返回值 = fire 后队列余量（stub 缺省 0）——下方 flood 门控输入。
+    let timers_left = webview
         .execute_script(
-            "typeof globalThis._zwDialogModalAllSels === 'function' ? globalThis._zwDialogModalAllSels() : ''",
+            "typeof globalThis.__zw_fire_due_timers === 'function' ? \
+             globalThis.__zw_fire_due_timers() : 0",
         )
-        .unwrap_or_default();
-    webview.set_modal_dialog_selectors(
-        modal_sels
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect(),
-    );
+        .map_err(|error| error.to_string())?
+        .trim()
+        .parse::<u64>()
+        .unwrap_or(0);
+    // webcrypto-compat v3 worker 腿（2026-11-02）：relay flood 排干期门控——队列
+    // >256 时跳过 modal/media/SW 逐轮轮询（每轮 4 次 execute_script；per-task 模式
+    // 下 flood 排干要一 timer 一轮地推进，这些轮询对排干本身无用且占每轮预算，是
+    // worker 腿 90s 只排干约 1/3 的帮凶之一）。门控只对 >256 活跃定时器的页面生效
+    //（常规语料同拍活跃定时器峰值数十条），flood 收尾队列回落即恢复全量轮询；
+    // mutation 门控刷新与环内 observers tick 不受影响。
+    if timers_left <= 256 {
+        // uievents-compat M3 尾簇 4：shim 序列化 html 驱动的结构性刷新（泵后——shim 的
+        // 序列化状态在 turn 末提交）：页内脚本 remove/appendChild 后 gBCR/命中测试立即可
+        // 见（此前管线布局停留在导航时点——after_target_removed 族断言面）。
+        // mutation 代际门控：无 mutation 批 → 零成本跳过（探测环 ~1ms/拍，无门控的逐拍
+        // 百 KB 级 outerHTML 序列化曾跑穿 test-guard time-limit）。
+        // dialog-s31：模态态轮询先于刷新——showModal/close 的模态性只在 shim JS 栈
+        //（_zwDialogModalAllSels），DOM 序列化不携带；render 每帧 fresh-parse 后由管线
+        // `inject_modal_state` 注入（镜像 :focus 通道），下一行刷新的 render 才能带上
+        // `:modal` UA position:fixed（rendering.html#modal-dialogs）。逐拍一次微脚本
+        //（返回空串零成本），无需 mutation 门控。
+        let modal_sels = webview
+            .execute_script(
+                "typeof globalThis._zwDialogModalAllSels === 'function' ? globalThis._zwDialogModalAllSels() : ''",
+            )
+            .unwrap_or_default();
+        webview.set_modal_dialog_selectors(
+            modal_sels
+                .split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .collect(),
+        );
+        // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
+        // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
+        // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
+        webview
+            .execute_script(
+                "if (typeof globalThis._zwMediaTimeMarchesOn === 'function') globalThis._zwMediaTimeMarchesOn()",
+            )
+            .map_err(|error| error.to_string())?;
+        webview
+            .execute_script(
+                "if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') \
+                 globalThis.__zwPollServiceWorkerRegistrations()",
+            )
+            .map_err(|error| error.to_string())?;
+        webview
+            .execute_script(
+                "if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') \
+                 globalThis.__zwPollServiceWorkerMessages()",
+            )
+            .map_err(|error| error.to_string())?;
+    }
     let ver = zero_engine::js_dom_bridge::mutation_version();
     if ver != *last_refresh_ver {
         let shim_html = webview
@@ -10690,36 +10749,18 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
         webview.refresh_if_html_changed(shim_html.trim());
         *last_refresh_ver = ver;
     }
-    // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
-    // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
-    // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
-    webview
-        .execute_script(
-            "if (typeof globalThis._zwMediaTimeMarchesOn === 'function') globalThis._zwMediaTimeMarchesOn()",
-        )
-        .map_err(|error| error.to_string())?;
-    webview
-        .execute_script(
-            "if (typeof globalThis.__zwPollServiceWorkerRegistrations === 'function') \
-             globalThis.__zwPollServiceWorkerRegistrations()",
-        )
-        .map_err(|error| error.to_string())?;
-    webview
-        .execute_script(
-            "if (typeof globalThis.__zwPollServiceWorkerMessages === 'function') \
-             globalThis.__zwPollServiceWorkerMessages()",
-        )
-        .map_err(|error| error.to_string())?;
-    let value = webview
-        .execute_script(
-            "JSON.stringify({\
+    // results 取增量切片（页侧数组只增；probe_seen = 探测环已累计条数）——worker 腿
+    // relay flood 期结果数组达数千条，全量重发是 O(R²) 序列化（8632 子测试的
+    // pbkdf2 worker 腿均摊每轮数百 KB stringify+parse）。`__ZW_PROBE_SEEN__` 由
+    // 调用方按轮内联（避免 format! 对 JS 花括号的转义噪声）。
+    let probe_script = "JSON.stringify({\
              complete:(function(){\
                if (globalThis.__zw_harness_complete) return true;\
                var timers = globalThis.__zw_timers || [];\
                var graceDeadline = Date.now() + 1000;\
                for (var i = 0; i < timers.length; i++) {\
-                 if (timers[i].at <= graceDeadline && globalThis.__zw_pending\
-                     && globalThis.__zw_pending[timers[i].id]) return false;\
+                 if (timers[i].at > graceDeadline) break;\
+                 if (globalThis.__zw_pending && globalThis.__zw_pending[timers[i].id]) return false;\
                }\
                if (typeof globalThis.__zw_harness_state !== 'function') return false;\
                var st = globalThis.__zw_harness_state();\
@@ -10727,15 +10768,16 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64) -> Result<Harne
                return !!(st && st.phase === 4 && st.pending === 0\
                  && (globalThis.__zw_harness_results || []).length === st.tests);\
              })(),\
-             results:globalThis.__zw_harness_results||[],\
+             results:(globalThis.__zw_harness_results||[]).slice(__ZW_PROBE_SEEN__),\
              test_function:typeof globalThis.test,\
              harness_hook:typeof globalThis.__zw_mark_harness_loaded,\
              state:typeof globalThis.__zw_harness_state==='function'?globalThis.__zw_harness_state():null,\
-             due_timer:(globalThis.__zw_timers||[]).some(function(timer){ return timer.at <= Date.now(); }),\
+             due_timer:(globalThis.__zw_timers||[]).length > 0 && (globalThis.__zw_timers||[])[0].at <= Date.now(),\
              test_wait:!!(document.documentElement && document.documentElement.classList\
                && document.documentElement.classList.contains('test-wait')),\
-             commands:(globalThis.__zw_td_queue||[]).splice(0)})",
-        )
+             commands:(globalThis.__zw_td_queue||[]).splice(0)})";
+    let value = webview
+        .execute_script(&probe_script.replacen("__ZW_PROBE_SEEN__", &probe_seen.to_string(), 1))
         .map_err(|error| error.to_string())?;
     serde_json::from_str(&sanitize_lone_surrogate_escapes(&value))
         .map_err(|error| format!("invalid harness probe: {error}: {value}"))

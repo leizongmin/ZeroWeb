@@ -79,6 +79,13 @@ generateKey/failures_AES-CTR 618/618、derive_key_and_encrypt 双腿 parity。
 
 ## 挂账：worker 消息投递空闲饥饿（引擎侧缺陷，非本切片域）
 
+> **⚠ 已被 M2-3b 实证推翻（2026-11-02 同日）**：zzprobe13 仪器化探针钉死
+> 真实机制为 runner timer stub 队列逐轮二次失速 + sandbox 逐 execute 固定
+> 开销（worker→页投递从未饥饿——6011 条 postMessage 2.6s 内全部入队）。
+> 修正归因、四件套修复与验证见
+> [2026-11-02-m2s3b-worker-leg-drain.md](2026-11-02-m2s3b-worker-leg.md)。
+> 下文原假说文本按诊断路径历史保留，量化数据仍有效、机理解释失效。
+
 worker 腿残 T 4 案中 2 案为**新归因引擎缺陷**（hkdf 0/2110、pbkdf2 699/8632+
 case T；窗口腿同案全绿 3661/8632）：
 

@@ -29,8 +29,8 @@
 //! 上报案名 window 腿在前 worker 腿在后逐案相邻，排序收集保证基线顺序可复现。
 
 use crate::testharness::{
-    any_js_window_wrapper, run_testharness_html, wpt_js_has_long_timeout, wpt_meta_scripts,
-    HarnessStatus, HarnessSubtestResult, CASE_TIMEOUT,
+    CASE_TIMEOUT, HarnessStatus, HarnessSubtestResult, any_js_window_wrapper, run_testharness_html,
+    wpt_js_has_long_timeout, wpt_meta_scripts,
 };
 use crate::testharness_workers::wpt_meta_globals;
 use crate::wpt_file_loader::read_corpus_to_string;
@@ -204,8 +204,7 @@ pub fn run_webcrypto_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         cases.push((relative.clone(), results));
         if has_worker_lane {
             let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
-            let worker_results =
-                run_webcrypto_worker_leg(wpt_root, &worker_key, &case_source, &harness_source);
+            let worker_results = run_webcrypto_worker_leg(wpt_root, &worker_key, &case_source, &harness_source);
             cases.push((worker_key, worker_results));
         }
     }

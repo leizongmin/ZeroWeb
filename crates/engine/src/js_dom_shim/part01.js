@@ -7057,12 +7057,27 @@
   // 因 `__zwint:` 项未删而继续 re-arm）——HTML spec 中两族共享同一活动定时器列表。
   // https://html.spec.whatwg.org/multipage/timers-and-user-prompts.html#timer-initialisation-steps
   globalThis.clearTimeout = function(handle) {
-    delete globalThis.__zw_pending[_timerIdKey(handle)];
+    var _ctTk = _timerIdKey(handle);
+    delete globalThis.__zw_pending[_ctTk];
     delete globalThis.__zw_pending[_intervalIdKey(handle)];
+    // runner testharness stub 队列同步移除——stub 挂专用名 `__zw_clearTimeout`（与
+    // `__zw_test_setTimeout` 同款 probe-gated：sandbox 每次 execute 重置原生回调，
+    // 页侧覆写 setTimeout 家族不可靠，见 _zwHostSetTimeout 探测注）。webcrypto
+    // worker 腿定位（2026-11-02）：此前 stub 侧 no-op，已取消条目残留 stub 队列，
+    // per-task 探测环每条烧一轮 fire skip。无 stub 的生产路径 typeof 判定早返零开销。
+    if (typeof globalThis.__zw_clearTimeout === 'function') {
+      try { globalThis.__zw_clearTimeout(_ctTk); } catch (_e) {}
+      try { globalThis.__zw_clearTimeout(_intervalIdKey(handle)); } catch (_e) {}
+    }
   };
   globalThis.clearInterval = function(handle) {
-    delete globalThis.__zw_pending[_intervalIdKey(handle)];
+    var _ciIk = _intervalIdKey(handle);
+    delete globalThis.__zw_pending[_ciIk];
     delete globalThis.__zw_pending[_timerIdKey(handle)];
+    if (typeof globalThis.__zw_clearTimeout === 'function') {
+      try { globalThis.__zw_clearTimeout(_ciIk); } catch (_e) {}
+      try { globalThis.__zw_clearTimeout(_timerIdKey(handle)); } catch (_e) {}
+    }
   };
   // requestIdleCallback/cancelIdleCallback：镜像 setTimeout 机制（host __zw_setTimeout + pending 表；
   // 无 host → _defer 微任务，同 setTimeout fallback）。回调传 IdleDeadline（didTimeout/timeRemaining
