@@ -1010,3 +1010,33 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   决策无新 git 账面。收口序列不变：PR #267 合入 main → make test
   全绿复证 → 锚按届时最终 tip 处置 → 归档迁移 + README/csv/脚本登记
   → 推送 → DONE。
+
+### 2026-11-01 14:19 追记：锚复跑现执行 tip（`4752a00df`）状态账零差异（RUN2/RUN3 对锚整文件逐字节一致、RUN1 落 W4 采样臂，累计 9/34 轮）——renderer-trust-boundary 流 M3 slice2 fd socket 对端信任收口吸收
+
+- 本 goal 上笔账（14:15）push 后 rebase 窗口吸入 renderer-trust-
+  boundary 流 `4752a00df`（M3 slice2 fd 传递通道对端信任收口——socket
+  0600 + SO_PEERCRED euid 校验 + 每发布随机 token，
+  `crates/protocol/src/fd_socket_linux.rs` +124/−8，
+  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)）：
+  crates/ 面前移，`cargo tree -p zero-wpt-runner` 核证 zero-protocol 经
+  传递依赖入 runner 二进制面 → 按纪律对现执行 tip 复跑锚 ×3——release
+  runner 重建 33.4s（protocol 重编译入包，二进制 sha256 `42d5d82c…`
+  三跑稳定）+ test-guard 直包同参数（`--per-proc-mem 4 --total-mem 8
+  --time-limit 1800`，`--json` stdout 重定向），起跑前 ps 核查无兄弟
+  run/孤儿进程。guard log 三跑零字节（零击杀），EXIT=1 预期，墙钟
+  90s/90s（RUN1 同窗口）。
+- **RUN2/RUN3 对 M1 终态锚整文件逐字节一致**（7,208,436 B，sha256
+  同值 `40ea3c8e…`）且互等；**RUN1 落 W4 采样臂**（7,208,497 B，
+  sha256 `7cdea628…` 与上轮采样变体同值，phase=2 message 文本）——
+  结构化比对 status-diffs=0：123 文件 / 33,109 子测试 = 25,788P +
+  7,320F + 1T 状态账零差异——M3 slice2 对 webcrypto 语料面完全吸收。
+  W4 完成路径竞态采样面累计 **9/34 轮**。
+- 锚窗口推进为 **e08a4febc → 4752a00df**，实锚链 ……→7c681d5c6→
+  583ebe1df→e08a4febc→4752a00df，33,109 分母零回归在现执行 tip 成立。
+- **轮询面**：D4 裁决分支/PR #267 head 仍 `2154ac296`（14:09 落定）、
+  仍 OPEN、未合入 main，D2① 未触发；冻结门 main 侧末触仍
+  `c41b0c750`，ua_display_li 在册未清；git 无 D1/D2 决策新账面。收口
+  序列不变：PR #267 合入 main → make test 全绿复证 → 锚按届时最终
+  tip 处置 → 归档迁移 + README/csv/脚本登记 → 推送 → DONE。临时审计
+  件 `/tmp/webcrypto-anchor-run{1,2,3}-20261101-m3s2-tip4752a00df.json`
+  （不入库）。
