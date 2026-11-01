@@ -10210,6 +10210,11 @@
               for (var ci = 0; ci < added.length; ci++) {
                 _ceApplyConn(added[ci], cePconn);
                 _zwStartConnectedIframe(added[ci], cePconn);
+                // s221：append 走 _appendVariadic 专路不经 appendChild trap 尾——
+                // img 树变更汇流在此补齐（7830 同源；picture 成员 relevant
+                // mutation → selection 重记录 + 重验；element/picture 门在
+                // TreeMutated 内，text 节点早退）。
+                try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, added[ci], true); } catch (_e5277tapd) {}
               }
             }
             return undefined;

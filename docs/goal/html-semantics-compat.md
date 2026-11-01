@@ -31,7 +31,16 @@
 > **下一步候选（本流）**：⑤多进程 renderer SetDomSnapshot entries 化（s174 挂账，低优先）。
 > **账本**：[evidence/2026-10-31-selection-pointer-domain-attribution.md](html-semantics-compat/evidence/2026-10-31-selection-pointer-domain-attribution.md)
 >
-> **▶ 当前状态（2026-11-02 M2 切片 220 收口，img 选源记录 currentSrc 时序面——img-picture-ancestor 4F 全翻绿 + current-request-microtask-002 排空语义翻绿（spec update-the-image-data 同元素在队实例早退让位），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 全靶面零 P→F 零其他位移：spec current request 的 current URL 更新微任务级（relevant mutation → microtask → 选源半先落 URL，fetch 半才异步）而我方选中态（resourceState）耦合 window load settle；shim 3 文件 +118/−1 零 Rust——part03 记录/懒扫/入队三帮手（`_zwSelectedSources5277` 表 + pending 计数排空）+ attrMutated 汇流点、part05 src IDL 臂、part04 currentSrc getter 无 resourceState 回落记录表 + settle 扫描 per-document 重置；勘根后两轮补刀（排空计数 + 懒扫 pending 旁路——002 断言 A 首读触发扫描同步近似塌微任务序）；001 停 picture 插入钩挂账断言；zero-engine 3684P+0F）**
+> **▶ 当前状态（2026-11-02 M2 切片 221 收口，picture 成员变更 selection 记录钩 + append 路由补齐——current-request-microtask 001 F→P（断言 4 picture.append(img) 后微任务 currentSrc 随新 picture 上下文翻转 data:,c→data:,b），embedded-content A/B 共享键 1257/1257 漂移恰 1 F→P 全靶面零 P→F 零其他位移：spec picture 成员变更（img 插入/移出 picture 父）是 relevant mutation，TreeMutated IMG 臂只有 fetch 半（Revalidate）缺 s220 selection 记录微任务半；勘根二段定谳——补 Queue 后仍红 → `Element.append()` 走 `_appendVariadic` 专路**不经 appendChild trap 尾**，TreeMutated 从未触发；shim 2 文件 +15 零 Rust：part03 TreeMutated IMG 臂补 Queue（sync 读见旧记录/微任务落新值）+ part04 append impl 既有 added 循环补 TreeMutated 汇流；zero-engine 3684P+0F）**
+> **入场定刀位**：s220 挂账「img-into-picture 插入钩（001 断言 4 收口位）」单点小刀。
+> **勘根**：①钩位段——part03 `__zwImgTreeMutated5277` IMG 臂（s70 起）对「img 插入且父为 picture」已走 `__zwImgRevalidate5277`（fetch 半），001 断言 4 缺 selection 记录微任务半（s220 面同根）；②路由段（补 Queue 后 001 仍红）——二进制新鲜度核对排除陈旧，读 `Element.append()` 实现（part04:10197）：modern API 走 `_appendVariadic` 专路（内部 Rust callback）不经 appendChild trap 尾（7830）。modern API 普查：appendChild/insertBefore/removeChild 已有尾钩；append/replaceChildren 走 `_appendVariadic` 无尾钩；prepend 走 `_insertAdjacentVariadic` 无在手 added 列表；before/after/insertAdjacent* 参考元素非父容器。001 断言 3（append 后 sync 读仍 c）天然保持：入队实例未落记录表持旧值。
+> **施工**：part03 TreeMutated IMG 臂 `__zwImgRevalidate5277` 前补 `__zwImgSelectionQueue5277`（picture 成员变更也是 selection 面 relevant mutation）；part04 `Element.append()` impl 既有 added 循环（_ceApplyConn/_zwStartConnectedIframe 同环）补 TreeMutated 调用（element/picture 门在 TreeMutated 内 text 节点早退）；prepend/replaceChildren/before/after/insertAdjacent* 不入刀——无语料驱动（A/B 零位移实证非当前缺口）。
+> **验证**：拼接 node --check；靶语料 solo 001 F→P + 002 保持 Pass + ancestor 4/4 保持；zero-engine 全量 **3684P+0F**（含并行 main 22acb33eb typing 面合入组合态）；embedded-content A/B（B = s220 基线日志）共享 1257/1257 漂移恰 1 F→P（001）零 P→F 零 Timeout 位移键集差 0；纯 JS 切片（+15/−0）fmt/clippy 不适用。日志 evidence/logs/s221-zero-engine-full.log + s221-embedded-content-wip.log。
+> **挂账新记**：modern API img 树变更面余项（prepend/replaceChildren/before/after/insertAdjacent{HTML,Text,Element} 无 TreeMutated 汇流——无语料驱动，picture 成员语料出现时再收）；TreeMutated IMG 移除臂（img 移出 picture → selection 重记录）未挂 Queue——spec 对称面无语料驱动。
+> **下一步候选**：update-the-source-set `__zwSourceSupportedType5277` `;encodings=` regex 窄刀（1F）；fail-to-resolve URL 解析器面独立勘根（4F 爆炸半径大）；not-broken attr sizing/rect 面（2F）；forms misc 残面 16F 勘根备选。
+> **账本**：[evidence/2026-11-02-m2s221-picture-membership-append-hook.md](html-semantics-compat/evidence/2026-11-02-m2s221-picture-membership-append-hook.md)
+>
+> **▶ 上轮状态（2026-11-02 M2 切片 220 收口，img 选源记录 currentSrc 时序面——img-picture-ancestor 4F 全翻绿 + current-request-microtask-002 排空语义翻绿（spec update-the-image-data 同元素在队实例早退让位），embedded-content A/B 共享键 1257/1257 漂移恰 5 F→P 全靶面零 P→F 零其他位移：spec current request 的 current URL 更新微任务级（relevant mutation → microtask → 选源半先落 URL，fetch 半才异步）而我方选中态（resourceState）耦合 window load settle；shim 3 文件 +118/−1 零 Rust——part03 记录/懒扫/入队三帮手（`_zwSelectedSources5277` 表 + pending 计数排空）+ attrMutated 汇流点、part05 src IDL 臂、part04 currentSrc getter 无 resourceState 回落记录表 + settle 扫描 per-document 重置；勘根后两轮补刀（排空计数 + 懒扫 pending 旁路——002 断言 A 首读触发扫描同步近似塌微任务序）；001 停 picture 插入钩挂账断言；zero-engine 3684P+0F）**
 > **入场定刀位**：s219 下一步候选选源响应面另勘根——embedded-content 16F 五簇分型定刀 selection 时序子面（img-picture-ancestor 4F + current-request-microtask 2F）。
 > **勘根**：img-picture-ancestor 4F = 静态解析 img 解析期读 currentSrc，resourceState 未 settle 恒 ''；current-request-microtask 001/002 = 赋值后微任务读断言面（001 另缺 picture 插入钩）。余四簇挂账分型：fail-to-resolve 4F（URL 解析器未拒非法 host `src="//["`）、not-broken 2F（动态插入 attr 尺寸 clientWidth 0≠50）、decode quick-attach 2F、update-the-source-set 1F（`;encodings=` 空 parameter value 被 supported type regex 拒）。
 > **施工**：part03 三帮手（Record 选源链 `__zwSelectImageSource5277` 纯读落表/lazy 与 pending>0 双门；Scan 首读懒扫全文档一次 FIXME: 解析期接线后移除；Queue pending 计数 + queueMicrotask 排空 cancel——spec 同元素在队实例早退让位，计数自增在存在性门后防泄漏）+ 两队列点（part03 attrMutated IMG src/srcset/sizes 汇流臂 + part05 src IDL 臂；part05:1263 通用 trap `moAttr!=='src'` 分流 → 各恰一队）；part04 currentSrc getter 无 resourceState 回落记录表（`_zwResolveFetchUrl` 绝对形，AUDIO/VIDEO 不回落）+ `__zwFireStaticImgSettle` 开头表/计数/旗标 per-document 重置（persistent context 跨案隔离）。
@@ -151,41 +160,6 @@
 > table 缓行族用户决策承袭）→ `__zw_has_attr` 非 lw 存量点位审计（s211
 > 挂账，探索性评估）。
 > **账本**：[evidence/2026-11-01-m2s215-fieldset-walk-shared-helper.md](html-semantics-compat/evidence/2026-11-01-m2s215-fieldset-walk-shared-helper.md)
->
-> **▶ 上轮状态（2026-11-01 M2 切片 210 收口，FORM 级约束校验双缺口——fieldset disabled 传染 + invalid 全遍历派发：form-validation-validate 3F 翻绿靶面 8/8（fm3 三态 checkValidity/reportValidity 两键 + invalid 事件计数 times1=4 键），forms 全域 A/B 净 F→P=3 恰 3 靶键，onblur flake 族 s209 摆走两键回摆 + 一键摆回（闭环归位），键漂移 0 其他位移 0；shim 2 文件 + rust 测试 1 文件，语料零改动）**
-> **入场定刀位**：s209 后 forms 域 misc 残面盘点（全域 F 分布 grep）
-> 定刀 form-validation-validate 3F——FORM 级 checkValidity/reportValidity
-> 面，与 s208 FORM 聚合臂同区。customizable select 177F 挂起待拍板
->（GB-20261031 征询在途）。
-> **勘根**：缺口一 spec §4.10.5.1.1 #concept-fe-disabled——disabled
-> fieldset 后代 disabled（首 legend 元素子后代豁免）；`_validityState`
-> 只查自身 disabled 无祖先走查 → fs.disabled 置位后 inp2 valueMissing
-> 不豁免。s193 willValidate 臂已有同口径走查（disabled-001 钉态）+
-> S197 焦点面复用同判据——读面基建齐备仅 validity 通道未接。缺口二
-> spec §4.10.21.2 #interactively-validate-the-constraints——每个
-> invalid 控件都派发 invalid 事件；FORM 臂 `if (!cv) return false`
-> 短路（test1 失败即返，test2 不检查）→ times1=2（runner 实测
-> expected 4 got 2 实锤）。
-> **施工**（shim 2 文件 + rust 测试 1 文件）：part03 `_validityState`
-> `_dis` 后补 fieldset 祖先走查（首 legend 直子豁免 + 豁免后继续上
-> 行，R57 门不动——传染同样仅豁免 valueMissing）；part04 FORM 臂
-> `_fmAnyInvalid` 旗标全遍历；part09.rs R5328 六腿桥测试（fm3 三态 +
-> fm2 静态 disabled 面 + q3 pattern 仍校验 R57 钉面 + invalid 计数 4 +
-> falsy 移除恢复候选）。
-> **验证**：拼接 shim node --check SYNTAX_OK；R5328 单测 1 passed（首
-> 版误并语料 fm1/fm3 双 form——email typeMismatch 掩盖腿 B，探针测试
-> 归因施工 1 正常后拆分重写过）；靶面 FILTER=form-validation-validate
-> 8/8 Pass；forms 全域 A/B 净 F→P=3 恰 3 靶键 + onblur 族 2 键回摆
->（s209 P→F 原位）+1 键回摆（闭环，s209 基线重跑证据互证）；键漂移
-> 0 其他位移 0；zero-engine 3670P+0F（R5328 计入）；fmt 零 diff +
-> guarded-clippy 0 警告。
-> **下一步候选**：域内 misc 残面次刀——button-click-submits-with-
-> commandfor 3F（invoker commands commandfor 点击不提交门）+ button-
-> click-submits 1F（fieldset disabled 传染对 button 提交门，与 s210
-> 传染基建同区）→ form-nameditem override builtins 1F fix#19c 挂待决
-> 承袭 / form owner table 4F 升格待独立立项；customizable select
-> 177F 挂起待拍板（GB-20261031）。
-> **账本**：[evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md](html-semantics-compat/evidence/2026-11-01-m2s210-form-checkvalidity-fieldset-inherit-invalid-fanout.md)
 >
 > **▶ 上轮状态（2026-11-01 M2 切片 208 收口，:valid/:invalid 伪类候选门——output-validity 1F 翻绿（output barred 两伪类均不匹配，含 setCustomValidity 后仍双不匹配；6 断言一次全绿），forms 全树 keyed diff 净 F→P=2 恰 1 靶键 + onblur flake 域 1 键上摆（在册），P→F=0 键漂移 0 timeout 位移 0；shim 1 文件 + rust 测试 1 文件，语料零改动）**
 > **入场定刀位**：s207 后 misc 残面次刀候选序 output-validity 1F

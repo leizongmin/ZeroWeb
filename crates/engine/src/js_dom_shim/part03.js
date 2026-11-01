@@ -3257,6 +3257,16 @@
       if (String(pTag).split(':').pop() !== 'PICTURE') return;
       var nTag = _zw5277Tag(node);
       if (nTag === 'IMG') {
+        // s221：picture 成员变更也是 selection 面 relevant mutation（microtask
+        // 半重选源记录；Revalidate 只覆盖 fetch 半）——current-request-microtask
+        // 断言 4「picture.append(img) 后微任务 currentSrc 随新 picture 上下文
+        // 翻转」收口位；sync 读仍见旧记录（在队实例未落）。
+        // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+        try {
+          if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+            globalThis.__zwImgSelectionQueue5277(node.__zwSelector, node.__zwHandle);
+          }
+        } catch (_e5277tmq) {}
         globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
         return;
       }
