@@ -224,3 +224,9 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   minimal 工具链 + test-guard 包裹；仓库 Cargo.toml/源码零触碰，workspace
   target 零写入），无碰撞面；在跑兄弟流 testharness-editing-run（33 号
   editing）不受干扰。
+- 2026-11-02 锚路径修正轮：纯 docs 改动（入口文档依赖约束节 33,109 锚
+  目录笔误 `webcrypto-compat-v2` → `webcrypto-compat` 一期归档目录，
+  终态锚补精确文件名 2026-10-17-m6-residual-full.json.gz），零代码触面，
+  无碰撞面。锚本体本轮复验：m6-residual 锚 123 案 25,788P/7,320F/1T
+  = 33,109 逐位成立；m2s4 锚 360 案在位。D1 维持征询等待（git 账面零
+  变化，两轮征询在案不重复通知）。

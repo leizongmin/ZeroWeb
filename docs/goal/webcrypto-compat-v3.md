@@ -120,9 +120,9 @@ coverage 复测、收口重定基。
 ### 依赖约束（run-rules §9）
 
 - 一期 33,109 分母（25,788P/7,320F/1T）零回归底线：任何 P→非P 先修再收。
-  锚：`archive/webcrypto-compat-v2/evidence/2026-10-17-m1-baseline.md`
-  （+ summary.json，终态锚 m6-residual-full.json.gz 同目录）；二期收口
-  三跑复验在 `f97190c41`。重定基后零回归底线由 DC-5② 终账承接。
+  锚：`archive/webcrypto-compat/evidence/2026-10-17-m1-baseline.md`
+  （+ summary.json，终态锚 2026-10-17-m6-residual-full.json.gz 同目录）；
+  二期收口三跑复验在 `f97190c41`。重定基后零回归底线由 DC-5② 终账承接。
 - 新 crate 引入全部走 deps evidence + 用户拍板；X448/Ed448 pre 版候选
   甄别从严（0.14.0-pre.\* 非 stable）。
 - 既有 RustCrypto 依赖面（rsa 0.9 / p256/p384/p521 0.13 / ed25519-dalek /
