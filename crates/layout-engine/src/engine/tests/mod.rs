@@ -938,3 +938,7 @@ mod r5370_table_oof_child_tests;
 /// R5372 回归测试：嵌套 CB 重解析（static 中间层）长度 inset 定位方程计入对应
 /// margin（CSS2 §10.3.7/§10.6.4；WPT abspos-non-replaced-width-margin-000 驱动）。
 mod r5372_abspos_nested_cb_margin_tests;
+
+/// R5373 回归测试：R1743 父高度回填 extent 计入塌缩屏障（CSS2 §10.6.3/§8.3.1；
+/// WPT background-root-017 驱动）。
+mod r5373_backfill_barrier_margin_tests;

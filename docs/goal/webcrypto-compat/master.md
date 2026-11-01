@@ -1,9 +1,11 @@
 # Web Crypto 兼容二期运行时控制面板
 
 **状态**: DC-1~4 全部落账有据并推送（`5894374c1`，2026-10-31）；门禁
-build/clippy 绿；33,109 分母零回归锚在现 tip `3f1399195` 逐字节复验一致
-（2026-11-01，s182~s196 + justify 簇两轮 + 渲染流/html-semantics 流
-`:active` 通道 + R5372 abspos margin 变更全吸收，见
+build/clippy 绿；33,109 分母零回归锚在现 tip `0d4966f9d` 状态账逐位
+一致 ×3（2026-11-01，s182~s198 + justify 簇两轮 + 渲染流 R5370/R5372/
+R5373 + html-semantics 流变更全吸收；RUN1/RUN3 逐字节一致，W4 案超时
+诊断臂 30s 收敛竞态低频采样（2/9 轮，RUN1/RUN2 型均见）——两臂均
+runner 既有代码，状态账不受影响，见
 [evidence 追记](evidence/2026-10-31-gates-and-closure-status.md)）；
 唯一缺口 `cargo test` 残余 1F
 `test_ua_display_li_list_item_canvas_inline_s24_flip` = 渲染流 D4 待裁决
@@ -15,19 +17,28 @@ build/clippy 绿；33,109 分母零回归锚在现 tip `3f1399195` 逐字节复�
 handle gCS 通道把裸 createElement 产物路由到 host 面，host `li→Block`
 系渲染流 D4 在册冻结值；修复=渲染流 D4 双面同提交翻转，用户裁决门禁，
 ETA 未知，本 goal 不越界；渲染流 R5368 2026-11-01 记账仍挂对端 D4）。
-**33,109 锚已在现 tip `3f1399195` 复验逐字节一致**（25,788P + 7,320F +
-1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→b0a6f9174→
-3f1399195，渲染流 R5370 table OOF child layout + s196 `_zwMEl` 安装面
-共享化 perf + editing 流 justify 查询面兜底（`part01c.js` +105 行）+
-html-semantics 流 s196 `:active` 伪类通道（dom active_element 槽 +
-engine 查询面注入 + shim part04/part06 +112 行）+ 渲染流 R5372 abspos
-嵌套 CB margin（`abspos.rs` +31 行）+ docs 轮全吸收，见 evidence
-2026-11-01 04:25/04:35/06:20/06:27/07:15 追记）；处置路径维持待用户
+**33,109 锚已在现 tip `0d4966f9d` 复验状态账逐位一致 ×3**（25,788P +
+7,320F + 1T，guard 零干预；实锚链 7065ea39f→1b6b9b291→65de5f28e→
+b0a6f9174→3f1399195→ba4c74fcb→edaed928a→0d4966f9d，渲染流 R5370 table OOF child layout +
+s196 `_zwMEl` 安装面共享化 perf + editing 流 justify 查询面兜底
+（`part01c.js` +105 行）+ html-semantics 流 s196 `:active` 伪类通道
+（dom active_element 槽 + engine 查询面注入 + shim part04/part06
++112 行）+ 渲染流 R5372 abspos 嵌套 CB margin（`abspos.rs` +31 行）+
+html-semantics 流 s197 fieldset disabled 焦点域（shim part03/04/05/06
++110 行）+ 渲染流 R5373 父高度回填塌缩屏障（`postprocess.rs` +36 行）+
+html-semantics 流 s198 fieldset type IDL（shim `part04.js` +5 行）
++ docs 轮全吸收，见 evidence 2026-11-01 04:25/04:35/06:20/
+06:27/07:15/07:50/08:35/08:50 追记）；W4 案超时诊断臂竞态低频采样
+（2/9 轮，deadline 臂，状态账不受影响，锚验收以状态账逐位为主判据）；
+处置路径维持待用户
 决策表 **D2**，ua_display_li 清零即当场收口。
-**最后更新**: 2026-11-01 07:15（锚复跑现 tip `3f1399195` 逐字节一致
-——渲染流 R5372 abspos 嵌套 CB margin 写点补项为语料执行路径变更，按
-纪律复跑：29.75s 重建 + test-guard 直包 1m28s，25,788P+7,320F+1T 复证；
-R5372 自账 ua_display_li D4 既有账同键在册，未清，D4/D1/D2 无变化，
+**最后更新**: 2026-11-01 08:50（锚复跑现 tip `0d4966f9d` 状态账逐位
+一致 ×3——html-semantics 流 s198 fieldset type IDL 为语料执行路径
+变更，按纪律复跑：32.4s 重建 + test-guard 直包三连跑，RUN1/RUN3
+逐字节一致 25,788P+7,320F+1T；RUN2 W4 案 deadline 臂竞态翻转 1/3
+（runner 既有两臂，状态账零差异，不构成回归，累计采样 2/9）；渲染流
+rally 在跑但 D4 冻结门未触（末触仍 `c41b0c750`），ua_display_li 同键
+在册未清，D4/D1/D2 无变化，
 见 [evidence](evidence/2026-10-31-gates-and-closure-status.md)）
 
 ---

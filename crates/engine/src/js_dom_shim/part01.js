@@ -4077,6 +4077,19 @@
           h._hCase[ck] = caseMap[ck];
         }
       }
+    } else if (src && typeof src === 'object' && src._hCase) {
+      // net-api 二期 M2-S10 记账 1 清偿：Headers 实例源直读 `_hCase`——fill 经
+      // entries sort-and-combine 只产小写名，实例首见原始大小写在此旁路补齐
+      //（fetch spec fill 对 Headers 对象迭代其 header list 本就保 pair 名；
+      // 数组/record/setRequestHeader 三形态由 fill append 首见记录既有覆盖）。
+      // 计数代理（headers-record）仅现于 new Headers(proxy) 语料面，fetch init
+      // 头源无 Proxy 计数面，属性直读不扰动 trap 计数。
+      for (var sk in src._hCase) {
+        if (Object.prototype.hasOwnProperty.call(src._hCase, sk) &&
+            Object.prototype.hasOwnProperty.call(h._h, sk)) {
+          h._hCase[sk] = src._hCase[sk];
+        }
+      }
     }
     var out = '';
     for (var k in h._h) {
@@ -5211,7 +5224,11 @@
       // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
       // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
       var _zwSsChannel = _zwStylesheetChannelDepth > 0;
-      var headersWire = _headersToWire(init.headers) || (isRequestLike ? _headersToWire(input.headers) : '');
+      // net-api 二期 M2-S10 记账 2 清偿：XHR 异步 fetchFn dict init 的 setRequestHeader
+      // 首见原始大小写经内部 `__zwHeaderCase` 旁路（与 `__zwInternalHeadersWire` 同型
+      // 内部通道；同步路径 caseMap 参数语义对齐）。
+      var headersWire = _headersToWire(init.headers, init && init.__zwHeaderCase) ||
+        (isRequestLike ? _headersToWire(input.headers) : '');
       // net-api M4-S12：内部直设头 wire 旁路（`init.__zwInternalHeadersWire`，\x1e 对齐
       // headersWire 格式）。spec 场景：SSE EventSource 于 request header list **内部直设**
       // `Last-Event-ID`（HTML §9.2.2——值为任意 UTF-8 串，不经 JS 可见的 ByteString 校验；
@@ -6558,6 +6575,18 @@
     this._zwHeaders = new Headers();
     this._zwHeaders._guard = mode === 'no-cors' ? 'request-no-cors' : 'request';
     _fillHeaders(this._zwHeaders, init.headers != null ? init.headers : (isRequestLike ? input.headers : null));
+    // net-api 二期 M2-S10 记账 1：Headers 实例源经 fill 只产小写名——首见原始大小写
+    // 旁路补齐（分发时 _headersToWire 直读实例 `_hCase` 同语义；计数代理语料仅现于
+    // new Headers(proxy) 面，Request init.headers 无 Proxy 计数面）。
+    var _zwReqHdrSrc = init.headers != null ? init.headers : (isRequestLike ? input.headers : null);
+    if (_zwReqHdrSrc && typeof _zwReqHdrSrc === 'object' && _zwReqHdrSrc._hCase) {
+      for (var _rhc in _zwReqHdrSrc._hCase) {
+        if (Object.prototype.hasOwnProperty.call(_zwReqHdrSrc._hCase, _rhc) &&
+            Object.prototype.hasOwnProperty.call(this._zwHeaders._h, _rhc)) {
+          this._zwHeaders._hCase[_rhc] = _zwReqHdrSrc._hCase[_rhc];
+        }
+      }
+    }
     this._bodyUsed = false;
     this._bodyNull = rawBody == null;
     // net-api 二期 M2-S3：用户 ReadableStream 体 → 保 identity 存流（request.body === body 面）+

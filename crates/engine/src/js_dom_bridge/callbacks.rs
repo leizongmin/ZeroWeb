@@ -353,7 +353,7 @@ pub(crate) fn with_query_view_doc<R>(
     })
 }
 
-/// 测试播种（part93 stale 臂钉专用，t-p126 返修 DEF-1/DEF-2）：向 [`QUERY_REPARSE`]
+/// 测试播种（part94 stale 臂钉专用，t-p126 返修 DEF-1/DEF-2）：向 [`QUERY_REPARSE`]
 /// 入账一次指定成本的解析——`window_spent` 一击穿透预算且 `backoff = cost`（封顶
 /// 4s），使窗口内后续 `decide` 稳定返回 `Stale`；仅测试构建可见。
 #[cfg(test)]
