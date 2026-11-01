@@ -1403,6 +1403,23 @@ fn fix_abspos_inline_static_position_walk(
 ) {
     use zero_css_parser::values::LengthValue;
 
+    // R5379：本盒为锚容器时预折算各 absolute 直接子的混合容器块流偏移（不可变
+    // 借用先行结束，避让下方 children.iter_mut()；非锚容器空表零开销）。
+    let block_stream_offsets: crate::NodeIdMap<f32> = match box_node.node_id {
+        Some(id) if anchor_containers.contains(&id) => box_node
+            .children
+            .iter()
+            .filter(|c| c.is_absolute && !c.is_fixed)
+            .map(|c| {
+                (
+                    c.node_id.unwrap(),
+                    hybrid_block_stream_offset(box_node, styles, c.node_id),
+                )
+            })
+            .collect(),
+        _ => crate::NodeIdMap::default(),
+    };
+
     for child in box_node.children.iter_mut() {
         if child.is_absolute && !child.is_fixed && !child.oof_static_mapped {
             let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
@@ -1441,7 +1458,25 @@ fn fix_abspos_inline_static_position_walk(
                 if y_all_auto
                     && resolve_abspos_real_length(&style.margin_top, &style.font_size, 0.0, 0.0).unwrap_or(0.0) <= 0.5
                 {
-                    child.y = ay - dy;
+                    let mut y = ay - dy;
+                    // R5379（CSS2 §10.3.7 static position）：混合容器 IFC 锚 y 块流偏移
+                    // ——断行层锚是 IFC 局部系行顶（current_y 0 基），容器混有前驱
+                    // in-flow 块级子时 IFC 宿主位 = 前驱块流底（taffy 块流），锚 y 须
+                    // 加偏移（WPT remove-block-between-inline-and-abspos：绿块 50 高
+                    // 前驱，锚 y 0 应 50）。仅锚元素为容器直接子（box_node 即锚容器）
+                    // 才折算；嵌套 wrapper 形态与 inline 段穿插形态属 block-in-inline
+                    // 深域维持现状。竖排流行进轴非 y，不适用。
+                    if box_node.node_id == Some(anchor_container)
+                        && !styles
+                            .get(&anchor_container)
+                            .is_some_and(|s| s.writing_mode.is_vertical_block_flow())
+                    {
+                        y += child
+                            .node_id
+                            .and_then(|id| block_stream_offsets.get(&id).copied())
+                            .unwrap_or(0.0);
+                    }
+                    child.y = y;
                 }
             }
         }
@@ -1478,6 +1513,65 @@ fn fix_abspos_inline_static_position_walk(
         };
         fix_abspos_inline_static_position_walk(child, styles, anchors, anchor_containers, child_frame);
     }
+}
+
+/// R5379：混合容器 IFC 锚的块流偏移——锚盒在容器直接子中的位置之前、全部在
+/// 其之后的 in-flow block 级直接子为空（inline 段无穿插）时，返回前驱块级子的
+/// 最大块流底（border-box 底，容器内容系）；否则返回 0（纯 inline 容器原点 =
+/// 容器顶，偏移零；穿插/前驱带正 margin-bottom 的形态属深域不折算）。
+/// 块级判定按 styles display 非 inline 家族，OOF/float 子脱流不计。
+fn hybrid_block_stream_offset(
+    box_node: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    anchor_id: Option<NodeId>,
+) -> f32 {
+    use zero_css_parser::values::DisplayValue;
+    use zero_css_parser::values::FloatValue;
+    let Some(anchor_id) = anchor_id else {
+        return 0.0;
+    };
+    let Some(anchor_idx) = box_node.children.iter().position(|c| c.node_id == Some(anchor_id)) else {
+        return 0.0;
+    };
+    let block_bottom = |c: &LayoutBox| -> Option<f32> {
+        if c.is_absolute || c.is_fixed {
+            return None;
+        }
+        let id = c.node_id?;
+        let style = styles.get(&id)?;
+        if !matches!(style.float, FloatValue::None) {
+            return None;
+        }
+        if matches!(
+            style.display,
+            DisplayValue::Inline
+                | DisplayValue::InlineBlock
+                | DisplayValue::InlineFlex
+                | DisplayValue::InlineGrid
+                | DisplayValue::InlineTable
+        ) {
+            return None;
+        }
+        // 前驱带正 mb 的块流间隔受塌穿链影响（taffy 口径 vs border-box 底分叉），
+        // 深域不折算（本案驱动案前驱无 margin）。
+        if matches!(style.margin_bottom, zero_css_parser::values::LengthValue::Px(v) if v > 0.5) {
+            return None;
+        }
+        Some(c.y + c.height)
+    };
+    let mut offset: Option<f32> = None;
+    for (i, c) in box_node.children.iter().enumerate() {
+        if let Some(bottom) = block_bottom(c) {
+            if i < anchor_idx {
+                offset = Some(offset.map_or(bottom, |o| o.max(bottom)));
+            } else if i > anchor_idx {
+                // 锚后仍有块级子 = inline 段穿插（[inline][block][inline]），IFC
+                // 行堆叠与块流已脱节，属 block-in-inline 深域维持现状。
+                return 0.0;
+            }
+        }
+    }
+    offset.unwrap_or(0.0)
 }
 
 /// R5227（CSS2 §10.3.7 static position × §9.2.1.1）：块容器行内内容之后的块级

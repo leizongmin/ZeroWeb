@@ -100,6 +100,47 @@ impl InlineFormattingContext {
         //（scope 外 / 贪心已参差最优）时零扰动；命中断点由词臂 fit 门之前消费。
         let balance_plan = self.balance_line_break_plan(&items);
 
+        // R5379：OOF 锚行尾语义预扫（主循环 into_iter 消费 items，lookahead 移至此）——
+        // 锚后至断行点/流尾无实质行内容（词 run / atomic）时锚位 = 行尾空白塌缩移除后
+        // 光标（CSS Text §4.1.2 phase-2，remove trailing collapsible space；假想盒位 =
+        // 塌缩后位，css2 §10.3.7 static position）。锚后有词/atomic → 行中空白不移除，
+        // 锚位含空白 advance。纯空白 run 后继保守按实质处理（不扣，维持旧行为；
+        // preserve 语境空白为实质内容，统一保守面）。软断行致锚后词溢出迁行的形态
+        // 罕见无案驱动，先行落位行中语义。
+        let mut oof_line_end_semantics: HashMap<usize, bool> = HashMap::new();
+        for (idx, it) in items.iter().enumerate() {
+            if !matches!(it, InlineItem::OofAnchor(_)) {
+                continue;
+            }
+            // 锚后至断行点/流尾的扫描：可折叠纯空白 run 自身同属行尾移除序列
+            //（跨 OOF 零宽锚的空白连续性，CSS Text §4.1 collapse），不算实质
+            // 行内容——跳过继续找；preserve 语境空白为实质（占宽不移除）。
+            let mut line_end = true;
+            for later in &items[idx + 1..] {
+                match later {
+                    InlineItem::Text(run) => {
+                        let preserve = run
+                            .ws_override
+                            .as_ref()
+                            .map(|w| w.preserve)
+                            .unwrap_or(self.preserve_whitespace);
+                        if run.text.chars().all(char::is_whitespace) && !preserve {
+                            continue;
+                        }
+                        line_end = false;
+                        break;
+                    }
+                    InlineItem::InlineBlock(_) => {
+                        line_end = false;
+                        break;
+                    }
+                    InlineItem::OofAnchor(_) => continue,
+                    InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => break,
+                }
+            }
+            oof_line_end_semantics.insert(idx, line_end);
+        }
+
         // 追踪当前行的 y 偏移量（用于计算浮动排除区域）
         let mut current_y = 0.0_f32;
         // 估算默认行高（用于初始浮动排除计算与非 preserve `<br>` 空行 strut）
@@ -136,6 +177,9 @@ impl InlineFormattingContext {
         // 用于将连续纯空白 run（如 inline-block 之间被注释分隔的两个文本节点）
         // 按 CSS Text §4.1 折叠为单个空格。
         let mut last_was_collapsible_ws = false;
+        // R5379：最近一次折叠空白序列保留的单空格 advance（纯空白 run 臂推进值）——
+        // 行尾 OOF 锚位按行尾空白移除扣回（见 oof_line_end_semantics 预扫注）。
+        let mut last_collapsible_ws_advance = 0.0_f32;
         // R5112/R5115（css-text-3 §5.5）：元素边界折行治理追踪——上一内容词所属
         // run、是否以可折叠空白结尾、该空格所属 run 的 no_wrap。跨 run 边界的断点
         // 由**空格所属 run** 治理；空白词（纯空格 word）按自身 run 治理（§5.5
@@ -301,6 +345,12 @@ impl InlineFormattingContext {
                                 // 臂同模型；旧实现漏计 → c541-word-sp-001 div5 span 前空格
                                 // 25 应 0（ws -1em）。
                                 current_x += self.advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
+                                    + run.letter_spacing
+                                    + run.word_spacing;
+                                // R5379：记录本次折叠序列保留的单空格 advance（行尾
+                                // OOF 锚扣回用；序列后续空格被吞不覆盖此值）。
+                                last_collapsible_ws_advance = self
+                                    .advance_of(' ', run.font_id, run.font_size, run.is_ahem_font)
                                     + run.letter_spacing
                                     + run.word_spacing;
                             }
@@ -1084,7 +1134,18 @@ impl InlineFormattingContext {
                     // FIXME(line-breaking-019)：行尾空白邻接的锚未随软断行迁移到新行行首
                     //（test20 组 ref 形态），先行落位为本行行尾位。
                     if let Some(container) = self.container_node_id {
-                        self.oof_static_positions.insert(oid, (container, current_x, current_y));
+                        // R5379：行尾空白邻接的锚（last_was_collapsible_ws + 预扫行尾
+                        // 语义）扣回折叠序列保留的单空格 advance——行尾可折叠空白
+                        // phase-2 移除后假想盒位 = 塌缩后光标（WPT
+                        // remove-block-between-inline-and-abspos：inline-block 后空白
+                        // + display:none 隔断移除，锚 104 应 100）。
+                        let line_end = oof_line_end_semantics.get(&item_idx).copied().unwrap_or(false);
+                        let anchor_x = if last_was_collapsible_ws && line_end {
+                            current_x - last_collapsible_ws_advance
+                        } else {
+                            current_x
+                        };
+                        self.oof_static_positions.insert(oid, (container, anchor_x, current_y));
                     }
                 }
                 InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {

@@ -957,6 +957,11 @@ mod r5378_abspos_static_arm_frame_strip_tests;
 /// 生效（WPT abspos-replaced-width-margin-000 adir/ml 组驱动）。
 mod r5378_abspos_replaced_intrinsic_equation_tests;
 
+/// R5379 探针：块级隔断 display:none 后 inline 流 abspos 静态位——锚 y 缺前驱块流
+/// 偏移（IFC 局部系当容器系）+ 锚 x 含行尾空白（未塌缩）（WPT
+/// remove-block-between-inline-and-abspos 驱动）。
+mod r5379_remove_block_inline_abspos_tests;
+
 /// R5373 回归测试：R1743 父高度回填 extent 计入塌缩屏障（CSS2 §10.6.3/§8.3.1；
 /// WPT background-root-017 驱动）。
 mod r5373_backfill_barrier_margin_tests;
