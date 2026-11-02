@@ -79,6 +79,13 @@ part02 `_zwParseEl` 构造器尾 OPTION 门三转发 accessor + s242 注记（�
   select，码读盘点在账）——零位移与机理一致；改动臂 = snapshot 物种
   OPTION 门构造器 accessor，其余 tag 与 `_zwMEl`/wrapper 物种零通道。
 
+## 合并基线复核（收口轮）
+
+push 前 `git pull --rebase` 并入并发流提交 4eddf4bda（渲染流 R5392 负 margin
+float earliest-fit——float_positioning.rs + paint tests + rendering-compat.md，
+不触 js_dom_shim 与 option/select 面，无 shim concat 冲突）后重建 release
+runner 复跑 solo：the-option-element **108P/0F/0T** 与原验证逐行同态。
+
 ## 残余挂账（本切不动）
 
 - **snapshot option 邻接 IDL 面**：selected/disabled/index/form 等三联外
