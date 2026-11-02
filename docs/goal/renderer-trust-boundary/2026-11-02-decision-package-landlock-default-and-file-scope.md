@@ -5,7 +5,7 @@
 
 ## 分层执行序（Layer 1 无须拍板，Layer 2 须拍板）
 
-**Layer 1——file:// IPC 臂范围策略（确认缺陷修复，goal 授权范围内）**：按证据文档设计落地 server-authoritative 策略（sanctioned 导航 + last_document_url 锚点；document 面 (a)|(b)、子资源面 file:// 子树）。收口「http 页面读本地文件」与「被攻破 renderer 全量 file:// 读」两确认面，产品流（地址栏/CDP/file 页内导航与子资源）保全。**不依赖 ① 拍板，先行执行。**
+**Layer 1——file:// IPC 臂范围策略（确认缺陷修复，goal 授权范围内；已交付 2026-11-02，`bc719a7dc`）**：按证据文档设计落地 server-authoritative 策略（sanctioned 导航 + last_document_url 锚点；document 面 (a)|(b)、子资源面 file:// 子树）。收口「http 页面读本地文件」与「被攻破 renderer 全量 file:// 读」两确认面，产品流（地址栏/CDP/file 页内导航与子资源）保全。~~不依赖 ① 拍板，先行执行。~~
 
 **Layer 2——landlock 默认翻转（待本包拍板）**：Layer 1 后，file:// 面仅存的无范围读取通路 = renderer landlock 关闭时的模块体动态 import 本地直读臂（`js_worker.rs:2630` → `client.rs:643`）。翻默认即收口最后该臂。
 
