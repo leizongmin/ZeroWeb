@@ -7508,14 +7508,6 @@
     // insertAdjacent/textContent= 等 13 处均经此）。集合下次读取时 lazy 重查（_zwHCLiveInvalidate
     // 在 part05 定义，同一 IIFE 作用域；hoisting 使前向引用安全）。
     if (baseRecord && baseRecord.type === 'childList') {
-      // R3909：ask-for-a-reset 汇流触发（OPTION/OPTGROUP 子树增删 → 受影响 select 跑
-      // selectedness setting；其余 tag 零开销跳过。_mo_notify 是全部 childList 记录的
-      // 单一汇流点——append/remove/insertBefore/replaceChild/options[i]= 等全经此）。
-      try {
-        if (typeof _zwSelectResetOnMutation === 'function') {
-          _zwSelectResetOnMutation(sel, handle, baseRecord.addedNodes, baseRecord.removedNodes);
-        }
-      } catch (_eOpt9Mo) {}
       var _na36flats = _zwHCLiveInvalidate(baseRecord.addedNodes, baseRecord.removedNodes, sel, handle);
       // js-dom M4 R51：同汇流点维护 child→parent 反向链（_zwNodeParent registry 声明于 part01）。
       // added：记父（sel 或 handle，按 mutation 目标）；removed：清链（detached 后 parentNode=null）。
@@ -7536,6 +7528,20 @@
           if (_npD && _npD.__zwHandle) delete _zwNodeParent[_npD.__zwHandle];
         }
       }
+      // s236（html-semantics M2 切片 236）：R3909 ask-for-a-reset 汇流触发——与 s111
+      // 同理移到记账之后（原挂 notify 头部，先于 bucket/HCLive/反链登记）。setting
+      // 走 `_zwListOfOptions(sel, handle)` 读「bucket.added 覆盖缓存基线」的当前列表：
+      // 触发早于记账时，innerHTML 批插入的 pending 节点尚未入 bucket、反链未登记，
+      // 列表仍见旧内容，selectedness setting 按陈旧列表判定 last/affected option
+      // （WPT inserted-or-removed「insertBefore .selected=true」子测 1F 根因——
+      // 插入 B 时列表缺 B，C 未按 last-wins 清脏）。与 script 触发臂共用 s111
+      // 「原子插入」语义：全部记账完成后按 post-mutation 树跑 setting。
+      // https://html.spec.whatwg.org/multipage/form-elements.html#ask-for-a-reset
+      try {
+        if (typeof _zwSelectResetOnMutation === 'function') {
+          _zwSelectResetOnMutation(sel, handle, baseRecord.addedNodes, baseRecord.removedNodes);
+        }
+      } catch (_eOpt9Mo) {}
       // s111（html-semantics M2 切片 111）：script 插入触发臂——s109 引入时挂 notify
       // 头部（先于记账），spec 的「原子插入」语义要求移到链接记账之后：批插入先完成
       // 全部 generic insert（含 child→parent 反链登记），再按文档序逐 script 跑
