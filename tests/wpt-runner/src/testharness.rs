@@ -11331,10 +11331,20 @@ fn apply_testdriver_command(
             }
             // M2-S195：radio 焦点上方向键 = 组内移动（focusing steps + checked 跟随，
             // R3254-K5 M3 切片 2 既有 shim 臂——本刀改造为焦点移动语义，见 part06）。
+            // s230（html-semantics M2，2026-11-02）：补 ArrowLeft/Right（\u{E012}/\u{E014}）
+            // 映射——shim 臂四向齐备（ArrowDown/Right=下一、ArrowUp/Left=上一）而本链
+            // 只派 Up/Down，radio-keyboard-navigation-order 的 ArrowRight 组内导航
+            // 静默落空（按键默认动作分发根本不进 shim 臂）。
             // 消费判定经返回值（radio 目标返 true；非 radio/SELECT 目标落既有
-            // InsertText 路径不动——SELECT/type-ahead 与滚动键面本刀不扩）。
-            if matches!(key.as_str(), "\u{E013}" | "\u{E015}") {
-                let key_name = if key == "\u{E013}" { "ArrowUp" } else { "ArrowDown" };
+            // InsertText 路径不动——SELECT/type-ahead 与滚动键面本刀不扩；SELECT 的
+            // Left/Right 臂返 false 同旧落空行为不变）。
+            if matches!(key.as_str(), "\u{E012}" | "\u{E013}" | "\u{E014}" | "\u{E015}") {
+                let key_name = match key.as_str() {
+                    "\u{E012}" => "ArrowLeft",
+                    "\u{E013}" => "ArrowUp",
+                    "\u{E014}" => "ArrowRight",
+                    _ => "ArrowDown",
+                };
                 let nav_script = zero_engine::script_select_key_action(&selector, key_name);
                 let consumed = webview
                     .execute_script(&nav_script)
