@@ -535,14 +535,15 @@ pub trait Sandbox {
     /// 失败）/ 空串（取回失败；s92 起 CSP 阻止亦返空串 → reject TypeError）。
     /// spec/referrer/nonce 均为宿主解析语义（referrer/nonce 由
     /// [`Sandbox::set_dynamic_import_referrer`] / [`Sandbox::set_dynamic_import_nonce`]
-    /// 每脚本前设定；nonce 空串 = 无 nonce）。须在 `execute` 之前调用；未注册时
+    /// 每脚本前设定；nonce 空串 = 无 nonce）。s249：第四参 = 动态 import 属性
+    /// `with.type` 值（空串 = 无属性）。须在 `execute` 之前调用；未注册时
     /// 动态 import() 维持引擎默认 reject 语义。
     ///
     /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
     #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
     fn set_dynamic_import_resolver(
         &mut self,
-        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync>,
+        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync>,
     ) {
     }
 

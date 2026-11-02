@@ -5248,6 +5248,122 @@ fn wpt_data_script_fetcher(
         } else {
             None
         };
+        // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
+        // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
+        // 形参，s124 `__zw_lp` 同法穿参；真实 HTTP 宿主忽略未知查询参数，本臂消费
+        // 即剥离——json 面由上方既有 intent 通道覆盖，不加标记避免双通道分叉）。
+        // MIME 派生序（wptserve 语义）：serve-with-content-type.py 的 `ct` 查询 →
+        // `pipe=header(Content-Type,…)` → `.headers` sidecar → 扩展名规范映射
+        //（.css→text/css、.txt→text/plain）。type↔MIME 匹配校验（HTML module type
+        // map：css←text/css、text←text/plain）——不匹配 → Err（网络错误语义，
+        // content-type-checking ct=application/css 臂判据）。命中交付文件原文
+        //（UTF-8 lossy——模块响应体恒 UTF-8 解码口径，charset 参数/BOM 嗅探未建模
+        // 挂账）。重定向跟随：`/common/redirect.py?location=T`（wptserve 302 语义，
+        // s248 fetch 通道臂同源）——location 绝对值按 strip_wpt_host_prefix 允许
+        // 名单映射、origin 相对值原样、其余相对值按 redirect.py 目录解析；≤4 跳。
+        // 无标记的 redirect.py 取回不进本臂（维持既有非 scripty 语义，零回归面）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+        if let Some(mtype) = src
+            .split('?')
+            .nth(1)
+            .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype=")))
+        {
+            if mtype != "css" && mtype != "text" {
+                return Err(format!("unsupported data module type marker: {mtype}"));
+            }
+            // 重定向跟随（common/redirect.py 仅在标记臂建模；语料面单跳即终）。
+            let mut hop_src = src.to_string();
+            let mut hop_clean = clean.to_string();
+            for _hop in 0..4 {
+                if hop_clean != "common/redirect.py" {
+                    break;
+                }
+                let query = hop_src.split('?').nth(1).unwrap_or("");
+                let loc = percent_encoding::percent_decode_str(query)
+                    .decode_utf8_lossy()
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("location="))
+                    .unwrap_or("")
+                    .to_string();
+                if loc.is_empty() {
+                    return Err("redirect.py missing location".to_string());
+                }
+                let resolved = if let Some(path) = strip_wpt_host_prefix(&loc) {
+                    path
+                } else if loc.starts_with('/') {
+                    loc
+                } else if loc.starts_with("http://") || loc.starts_with("https://") {
+                    return Err(format!("redirect target host not available: {loc}"));
+                } else {
+                    let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                    normalize_relative(&format!("{dir}/{loc}"))
+                };
+                let path = resolved.split(['?', '#']).next().unwrap_or(&resolved).to_string();
+                hop_clean = path.strip_prefix('/').unwrap_or(&path).to_string();
+                hop_src = resolved;
+            }
+            if hop_clean == "common/redirect.py" {
+                return Err("redirect.py location loop".to_string());
+            }
+            let (file_rel, mime) = if std::path::Path::new(&hop_clean).file_name()
+                == Some(std::ffi::OsStr::new("serve-with-content-type.py"))
+            {
+                let query = hop_src.split('?').nth(1).unwrap_or("");
+                match parse_serve_with_content_type_query(query) {
+                    Some((file, ct)) => {
+                        let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                        (format!("{dir}/{file}"), ct)
+                    }
+                    None => {
+                        return Err(format!("serve-with-content-type.py missing fn/ct: {hop_src}"));
+                    }
+                }
+            } else {
+                let hop_pipe = hop_src.split('?').nth(1).and_then(|query| {
+                    query
+                        .split('&')
+                        .find_map(|kv| kv.strip_prefix("pipe="))
+                        .and_then(|pipe| {
+                            let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                            let (name, value) = inner.split_once(',')?;
+                            name.trim()
+                                .eq_ignore_ascii_case("content-type")
+                                .then(|| value.trim().to_string())
+                        })
+                });
+                let hop_sidecar = read_corpus_to_string(root.join(format!("{hop_clean}.headers")))
+                    .ok()
+                    .and_then(|headers| {
+                        headers.lines().find_map(|line| {
+                            let (key, value) = line.split_once(':')?;
+                            key.trim()
+                                .eq_ignore_ascii_case("content-type")
+                                .then(|| value.trim().to_string())
+                        })
+                    });
+                let mime = hop_pipe.or(hop_sidecar).unwrap_or_else(|| {
+                    if hop_clean.ends_with(".css") {
+                        "text/css".to_string()
+                    } else if hop_clean.ends_with(".txt") {
+                        "text/plain".to_string()
+                    } else {
+                        String::new()
+                    }
+                });
+                (hop_clean.clone(), mime)
+            };
+            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            let matched = match mtype {
+                "css" => essence == "text/css",
+                _ => essence == "text/plain",
+            };
+            if !matched {
+                return Err(format!("data module MIME mismatch for {mtype}: {file_rel} ({mime})"));
+            }
+            return std::fs::read(root.join(&file_rel))
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map_err(|e| format!("data module fetch failed: {file_rel} ({e})"));
+        }
         if let Some((file_rel, mime)) = json_intent {
             if mime_is_json(&mime) {
                 return std::fs::read(root.join(&file_rel))
@@ -12564,6 +12680,19 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn script_fetcher_data_module_marker_s249() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let fetcher = wpt_data_script_fetcher(&root, None).expect("fetcher");
+        let page =
+            "http://wpt.test/html/semantics/scripting-1/the-script-element/css-module/import-css-module-dynamic.html";
+        let css = fetcher(page, "./resources/basic.css?__zw_mtype=css");
+        assert!(css.is_ok(), "css 数据模块取回: {css:?}");
+        assert!(css.as_ref().unwrap().contains("background-color"), "css 原文交付");
+        // 无标记的 .css 维持非 scripty Err（零回归面）
+        let bare = fetcher(page, "./resources/basic.css");
+        assert!(bare.is_err(), "无标记 css 仍拒: {bare:?}");
+    }
 
     // encoding-legacy-mb DC-4 回归钉：sniff 1024 字节窗截断须落在 char
     // boundary——byte 1024 落在多字节字符（'（' 占 1022..1025）内时原 `[..1024]`

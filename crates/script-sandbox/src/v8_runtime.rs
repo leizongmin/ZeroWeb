@@ -74,9 +74,10 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 /// 宿主解析语义（referrer/nonce 由 [`Sandbox::set_dynamic_import_referrer`] /
 /// [`Sandbox::set_dynamic_import_nonce`] 每脚本前设定；nonce 空串 = 无 nonce，
 /// s92 string-compilation CSP nonce 面——宿主据此对外链 module fetch 做 script-src
-/// 检查，阻止返空串 → reject TypeError）。
+/// 检查，阻止返空串 → reject TypeError）。s249：第四参 = 动态 import 属性
+/// `with.type` 值（V8 回调 import_attributes 通道提取，空串 = 无属性）。
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
-pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str) -> String + Send + Sync + 'static>;
+pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync + 'static>;
 
 /// 动态 import() 宿主状态（isolate slot 持有——同线程多 sandbox 状态隔离）。
 #[derive(Default)]
@@ -98,20 +99,57 @@ struct DynamicImportState {
 /// 原异常对象 reject。嵌套动态 import()（IIFE 内重写体）依赖 `__zw_dynamic_import`
 /// 全局 helper——classic 上下文缺席时按需装模块 prelude（空 registry，无急切求值），
 /// helper 自身又依赖宿主注册的 `__zw_compile_module` 全局回调（webview 同块注册）。
-#[allow(unused_variables)]
 fn dynamic_import_callback<'s, 'i>(
     scope: &mut v8::PinScope<'s, 'i>,
-    host_defined_options: v8::Local<'s, v8::Data>,
-    resource_name: v8::Local<'s, v8::Value>,
+    _host_defined_options: v8::Local<'s, v8::Data>,
+    _resource_name: v8::Local<'s, v8::Value>,
     specifier: v8::Local<'s, v8::String>,
     import_attributes: v8::Local<'s, v8::FixedArray>,
 ) -> Option<v8::Local<'s, v8::Promise>> {
     let spec = specifier.to_rust_string_lossy(scope);
+    // s249（动态 import 属性——classic 上下文原生回调通道）：V8 宿主回调以
+    // FixedArray 平铺 [key, value, …] 对携带 import attributes（ModuleRequest
+    // GetImportAttributes 布局；空数组 = 无属性）。提取 `type` 值并按 module type
+    // map 校验（json/css/text——与 prelude `__zw_dynamic_import`、静态
+    // validate_static_import_attributes 同集；违例 → TypeError reject）。
+    // https://tc39.es/proposal-import-attributes/#sec-import-calls
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+    let mut type_attr = String::new();
+    let mut attr_invalid: Option<String> = None;
+    let attr_len = import_attributes.length();
+    let mut attr_idx = 0usize;
+    while attr_idx + 1 < attr_len {
+        // FixedArray::get 返回 Local<Data>——属性键/值恒为字符串（spec IDL），try_cast
+        // 失败按缺省空串（不影响 type 提取的合法性面）。
+        let key = import_attributes
+            .get(scope, attr_idx)
+            .and_then(|v| v8::Local::<v8::String>::try_from(v).ok())
+            .map(|v| v.to_rust_string_lossy(scope))
+            .unwrap_or_default();
+        let value = import_attributes
+            .get(scope, attr_idx + 1)
+            .and_then(|v| v8::Local::<v8::String>::try_from(v).ok())
+            .map(|v| v.to_rust_string_lossy(scope))
+            .unwrap_or_default();
+        if key == "type" {
+            type_attr = value;
+        }
+        attr_idx += 2;
+    }
+    if !type_attr.is_empty() && type_attr != "json" && type_attr != "css" && type_attr != "text" {
+        attr_invalid = Some(format!("Unsupported module type \"{type_attr}\""));
+    }
     let state = scope.get_slot::<Arc<std::sync::Mutex<DynamicImportState>>>().cloned()?;
     let promise_resolver = v8::PromiseResolver::new(scope)?;
+    if let Some(message) = attr_invalid {
+        if let Some(m) = v8::String::new(scope, &message) {
+            promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
+        }
+        return Some(promise_resolver.get_promise(scope));
+    }
     let contract = match state.lock() {
         Ok(st) => match st.resolver.as_ref() {
-            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or("")),
+            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or(""), &type_attr),
             // 未注册宿主：V8 默认行为即 reject 普通 Error("Not supported")（原生效语义）。
             None => {
                 if let Some(msg) = v8::String::new(scope, "Not supported")
@@ -2975,7 +3013,7 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce, _type_attr| {
             calls_cb.lock().unwrap().push((spec.to_string(), referrer.to_string()));
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
@@ -3013,6 +3051,62 @@ mod tests {
         );
     }
 
+    /// s249（动态 import 属性——classic 上下文原生回调通道）：V8 import_attributes
+    /// FixedArray 平铺 [key, value] 对提取 `type` 并穿 resolver；type ∉ module type
+    /// map → TypeError reject（校验在回调内，不触 resolver）。
+    #[test]
+    fn test_native_dynamic_import_attributes_threading_s249() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, _nonce, type_attr| {
+            seen_cb.lock().unwrap().push(type_attr.to_string());
+            format!(
+                "https://zero.test/m.json\u{1f}(function() {{ return (function() {{ \
+                 return {{ default: 'json-value:' + {} }}; }})(); }})()",
+                if type_attr == "json" { "1" } else { "0" }
+            )
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "import('./m.json', { with: { type: 'json' } }).then(\n\
+                   function (m) { __zw_report('fulfilled:' + m.default); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("classic 上下文带属性 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("fulfilled:json-value:1"),
+            "type 属性穿 resolver 且按 type 分派"
+        );
+        assert_eq!(seen.lock().unwrap().as_slice(), ["json"], "resolver 收到 type 串");
+        // type ∉ module type map → TypeError reject，resolver 不触
+        sandbox
+            .execute(
+                "import('./m.json', { with: { type: 'bogus' } }).then(\n\
+                   function (m) { __zw_report('fulfilled:' + m.default); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("rejected:TypeError:Unsupported module type \"bogus\""),
+            "非法 type 在回调内 TypeError reject"
+        );
+        assert_eq!(seen.lock().unwrap().len(), 1, "非法 type 不触 resolver");
+    }
     /// s124（modulepreload 面）：classic 上下文原生 import() 的 module map 记忆化——
     /// 成功条目写 `__moduleCache[resolved]`，二次 import() 命中以缓存值落定且模块体
     /// 恰好一次求值（fetch-a-single-module-script 命中复用）；预播种条目（link
@@ -3030,7 +3124,7 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce, _type_attr| {
             calls_cb.lock().unwrap().push(spec.to_string());
             if spec.ends_with("fail.js") {
                 return String::new(); // 取回失败三态
@@ -3143,7 +3237,7 @@ mod tests {
         let nonces: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let nonces_cb = nonces.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce, _type_attr| {
             nonces_cb.lock().unwrap().push(nonce.to_string());
             String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
         }));
@@ -3204,7 +3298,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_reaches_eval_compiled_string() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
                 .to_string()
@@ -3240,7 +3334,9 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_fetch_failure_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| String::new()));
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+            String::new()
+        }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
         let settled_cb = settled.clone();
@@ -3270,7 +3366,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_graph_cut_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
             "https://zero.test/graphcut.js\u{1f}".to_string()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =

@@ -61,6 +61,12 @@
 #     PNG 1852B + 320x240 GIF 24480B，A/B 恰 1 Timeout→Pass 零其他位移；
 #     docs/goal/html-semantics-compat/evidence/2026-11-02-m2s227-update-media-
 #     corpus-gap.md——升级新 ref 后需重新补）
+#   - html/semantics/scripting-1/the-script-element/css-module/resources/
+#     redirect-target.css 缺失（css-module/redirect.html 依赖；s249 勘根定性
+#     该 3F 为语料 404 非引擎缺陷——redirect.py 终点文件 404 → module 网络
+#     错误 → 三条断言（load 应用/重复 import 同一对象/URL 与终点分 map 条目）
+#     永假；已从上游 wpt 同路径原件本地补入 3 行 CSS（load-relative-url.css
+#     经核与上游一致未动）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

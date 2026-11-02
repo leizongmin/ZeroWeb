@@ -256,7 +256,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // `import()`（Vite 现代浏览器探测 `import("_").catch(()=>1)`）在求值瞬间需要 helper 已定义；
     // 反序时入口模块体在 prelude 第 2 条语句执行 → `__zw_dynamic_import is not defined` ReferenceError，
     // 探测中断、后续语句永不执行 → 站点误回落 legacy 加载路径。
-    out.push_str("globalThis.__zw_load_module = function(spec, parentHint) {\n");
+    out.push_str("globalThis.__zw_load_module = function(spec, parentHint, typeHint) {\n");
     // t8j：parent 优先取调用点穿入的 referrer（rewrite_dynamic_imports 的 `.call({referrer})`），
     // 回退全局 _importMeta（直接调用形态）——模块 IIFE 局部的 _importMeta 在此不可见。
     out.push_str(
@@ -280,7 +280,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     //   （spec：parse error 与 evaluation error 均缓存；instantiation/link 期失败上游
     //   语义为逐次新对象，transform 管线暂并入 ③——WPT 判据 instantiation 行仍红，
     //   归 module 基面切片）。未发标记的宿主（renderer/tab）②退化为 ①，行为不劣化。
-    out.push_str("  var r = __zw_compile_module(spec, parent);\n");
+    out.push_str("  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '');\n");
     out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
@@ -305,9 +305,18 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 走 promise rejection）。同步 throw 发生在调用方 `.catch()` 挂上之前（`import(x).catch(…)`
     // 表达式求值即抛），Vite 现代浏览器探测模块 `import("_").catch(()=>1)` 由此整体中断、
     // 后续语句（`__vite_is_modern_browser=true`）永不执行 → 站点误回落 legacy 加载路径。
-    out.push_str(
-        "globalThis.__zw_dynamic_import = function(spec) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    return Promise.resolve(__zw_load_module(spec, parent));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n",
-    );
+    // s249（动态 import 属性）：第二实参（attributes 对象）旧版被丢弃——`import(x,
+    // { with: { type: "css" } })` 与 `import(x)` 对宿主不可分，css/text/json 数据
+    // 模块无法记账（WPT css-module/text-module/json-module 动态面全族红）。此处按
+    // TC39 import calls phase 2 解析：attributes 在场非对象 → TypeError；`with`
+    // 缺省 → 无属性（JS 模块语义）；`with` 非对象 → TypeError；`type` 值 ∉ module
+    // type map（json/css/text——与 import_attributes.rs VALID_MODULE_TYPES 同集）
+    // → TypeError。校验失败同步 throw 由 `__zw_dynamic_import` 的 try 捕获转
+    // rejected promise（ImportCall 恒返 promise，同上）。type 以第三参穿宿主
+    //（`__zw_compile_module(spec, parent, type)`——合成臂按类型分派）。
+    // https://tc39.es/proposal-import-attributes/#sec-import-calls
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    return Promise.resolve(__zw_load_module(spec, parent, _diType));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
     for spec in registry.specifiers() {
         // R5182：入口跳过急切求值——入口由调用方的转换体求值一次（否则 prelude 急切执行
         // 一遍 + 转换体再执行一遍，模块体副作用翻倍；红态实测入口计数 2）。

@@ -4163,7 +4163,15 @@ impl WebView {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    compile_module_contract(&fetcher_compile, parent, spec)
+                    // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
+                    // type 串；空串 = 无属性，JS 模块语义）。
+                    let type_attr = args.get(2).map(String::as_str).unwrap_or("");
+                    compile_module_contract(
+                        &fetcher_compile,
+                        parent,
+                        spec,
+                        if type_attr.is_empty() { None } else { Some(type_attr) },
+                    )
                 }),
             );
             // s88：V8 原生动态 import() 解析器（classic 上下文——eval 字符串/Function
@@ -4176,28 +4184,37 @@ impl WebView {
             // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
             let csp_ctx = self.security_context.clone();
             let import_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
-            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec: &str, parent: &str, nonce: &str| {
-                if spec.is_empty() {
-                    return String::new();
-                }
-                let abs = resolve_document_url(parent, spec);
-                let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
-                if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
-                    if let Ok(mut queue) = import_violations.lock() {
-                        queue.push(PendingCspStyleViolation {
-                            effective_directive: violation.effective_directive,
-                            blocked_uri: violation.blocked_uri,
-                            original_policy: violation.original_policy,
-                            target_tag: "",
-                            target_ordinal: usize::MAX,
-                            target_selector: None,
-                            link_error: None,
-                        });
+            sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+                move |spec: &str, parent: &str, nonce: &str, type_attr: &str| {
+                    if spec.is_empty() {
+                        return String::new();
                     }
-                    return String::new();
-                }
-                compile_module_contract(&fetcher_native_import, parent, spec)
-            }));
+                    let abs = resolve_document_url(parent, spec);
+                    let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
+                    if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
+                        if let Ok(mut queue) = import_violations.lock() {
+                            queue.push(PendingCspStyleViolation {
+                                effective_directive: violation.effective_directive,
+                                blocked_uri: violation.blocked_uri,
+                                original_policy: violation.original_policy,
+                                target_tag: "",
+                                target_ordinal: usize::MAX,
+                                target_selector: None,
+                                link_error: None,
+                            });
+                        }
+                        return String::new();
+                    }
+                    // s249：V8 原生 import() 属性通道（回调 import_attributes 提取、
+                    // module type map 校验在 v8_runtime 侧）——type 串空 = 无属性。
+                    compile_module_contract(
+                        &fetcher_native_import,
+                        parent,
+                        spec,
+                        if type_attr.is_empty() { None } else { Some(type_attr) },
+                    )
+                },
+            ));
             // s90：__zwSwapImportReferrer——inline/反射事件处理器求值窗换基
             //（shim 侧 _zwCallHandlerDocBase 调用：求值时刻文档基 URL 进 referrer
             // 槽位，finally 换回，零外溢）。s92：__zwSwapImportNonce 同形——事件
@@ -7428,11 +7445,23 @@ enum ModuleGraphFailure {
 /// 期失败）。s87 失败三态语义（WPT dynamic-imports-fetch-error/script-error 对象
 /// 身份判据——HTML spec fetch-a-single-module-script module map 失败记账）见
 /// es_module `__zw_load_module` 与 v8_runtime `dynamic_import_callback` 两侧消费。
-fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str) -> String {
+/// s249：`type_attr` = 动态 import 属性 `with.type`（顶层模块的记账类型——css/text
+/// 合成臂与 json 臂同源；依赖图的属性随各 import 语句自带，见递归内的
+/// `extract_static_module_imports_with_attributes` 通道）。
+fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str, type_attr: Option<&str>) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
     let mut fetched = std::collections::HashMap::new();
-    match collect_module_deps_recursive(fetcher, parent, spec, false, None, &mut reg, &mut visited, &mut fetched) {
+    match collect_module_deps_recursive(
+        fetcher,
+        parent,
+        spec,
+        false,
+        type_attr,
+        &mut reg,
+        &mut visited,
+        &mut fetched,
+    ) {
         Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
             Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
             Err(_) => {
@@ -7490,7 +7519,18 @@ fn collect_module_deps_recursive(
         return Ok(());
     }
     visited.insert(url.clone());
-    let source = fetcher(parent_url, spec).map_err(|_| {
+    // s249：数据模块类型穿参——fetcher 契约 `(page_url, src)` 无类型形参，以内部
+    // 标记查询参数携带（s124 `__zw_lp` 同法；runner fetcher 消费后剥离，真实 HTTP
+    // 宿主忽略未知查询参数）。仅 css/text 需要标记（json 面由 fetcher 既有
+    // .json / serve-with-content-type intent 通道覆盖，加标记反致双通道分叉）。
+    let fetch_spec = match type_attr {
+        Some(t @ ("css" | "text")) => {
+            let sep = if spec.contains('?') { '&' } else { '?' };
+            format!("{spec}{sep}__zw_mtype={t}")
+        }
+        _ => spec.to_string(),
+    };
+    let source = fetcher(parent_url, &fetch_spec).map_err(|_| {
         if is_dep {
             ModuleGraphFailure::DepFetch
         } else {
@@ -7507,8 +7547,14 @@ fn collect_module_deps_recursive(
     registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
     fetched.insert(url.clone(), source.clone());
     // s107（JSON module）：`import … with { type: "json" }` → 响应体校验为合法 JSON
-    //（非法 → 网络错误语义，与取回失败同面）后合成 JS 模块源 `export default <字面量>;`
-    //（serde_json 规范化内嵌；default 导入经既有 export transform/导出扫描自动成立）。
+    // 后合成 JS 模块源 `export default <字面量>;`（serde_json 规范化内嵌；default
+    // 导入经既有 export transform/导出扫描自动成立）。
+    // s249：parse 失败改判——旧版按网络错误（Err(TopFetch)，元素 fire error）；
+    // spec 口径 parse 失败属 internalize 期失败，以 SyntaxError 报告（WPT
+    // json-module/parse-error 判据：window error 事件 error instanceof SyntaxError；
+    // crossorigin-import-parse-error 双页无类型断言，语义变更零位移）。synth 体
+    // throw → 静态面经 prelude 急切求值向 window 报错；动态面经 `__zw_load_module`
+    // catch 入 `__moduleFailures` 复抛同对象（parse 失败入 map 记账，s87 ③ 同口径）。
     // 数据模块无依赖不递归。charset 转换未建模（fetcher 按 UTF-8 lossy 交付）——
     // charset 域页面维持非 P 挂账。
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
@@ -7520,8 +7566,56 @@ fn collect_module_deps_recursive(
                 ModuleGraphFailure::TopFetch
             }
         };
-        let value: serde_json::Value = serde_json::from_str(&source).map_err(|_| fetch_failure())?;
-        let literal = serde_json::to_string(&value).map_err(|_| fetch_failure())?;
+        let synth = match serde_json::from_str::<serde_json::Value>(&source) {
+            Ok(value) => {
+                let literal = serde_json::to_string(&value).map_err(|_| fetch_failure())?;
+                format!("export default {literal};")
+            }
+            Err(e) => {
+                let message = serde_json::to_string(&e.to_string()).map_err(|_| fetch_failure())?;
+                format!("throw new SyntaxError({message});")
+            }
+        };
+        registry.register(spec, &synth);
+        fetched.insert(url.clone(), synth);
+        return Ok(());
+    }
+    // s249（CSS module）：`with { type: "css" }` → 响应体（UTF-8 文本）合成 JS 模块
+    // 源 `export default (function(){ … new CSSStyleSheet().replaceSync(原文) … })();`
+    // ——sheet 构造与 CSS 解析全部复用页面 shim CSSOM（R2809 constructable sheet：
+    // cssRules/insertRule/replaceSync + adoptedStyleSheets 生效链），default 导入得
+    // constructable CSSStyleSheet 实例。CSS parse 错误不拒模块（CSSOM best-effort
+    // 容错，WPT css-module-parse-error 判据）；MIME 校验在 runner fetcher 数据模块
+    // intent 臂（`__zw_mtype` 标记消费侧）。合成 literal 用 serde_json 字符串转义
+    //（合法 JS 字符串字面量）。多行 CSS 原文经转义内嵌单行。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    if type_attr == Some("css") {
+        let fetch_failure = || {
+            if is_dep {
+                ModuleGraphFailure::DepFetch
+            } else {
+                ModuleGraphFailure::TopFetch
+            }
+        };
+        let literal = serde_json::to_string(&source).map_err(|_| fetch_failure())?;
+        let synth =
+            format!("export default (function(){{var s=new CSSStyleSheet();s.replaceSync({literal});return s;}})();");
+        registry.register(spec, &synth);
+        fetched.insert(url.clone(), synth);
+        return Ok(());
+    }
+    // s249（text module）：`with { type: "text" }` → 响应体作字符串字面量合成
+    // `export default <literal>;`（WPT text-module/module 判据：default = 原文串）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    if type_attr == Some("text") {
+        let fetch_failure = || {
+            if is_dep {
+                ModuleGraphFailure::DepFetch
+            } else {
+                ModuleGraphFailure::TopFetch
+            }
+        };
+        let literal = serde_json::to_string(&source).map_err(|_| fetch_failure())?;
         let synth = format!("export default {literal};");
         registry.register(spec, &synth);
         fetched.insert(url.clone(), synth);
@@ -9074,7 +9168,7 @@ mod redirect_tests {
     /// s107 回归钉：JSON 响应体语法非法 → 网络错误语义（元素 fire error、不 fire
     /// load、体不执行，与取回失败同面——WPT parse-error 族错误事件面）。
     #[test]
-    fn json_module_parse_failure_fires_element_error_and_skips_body_s107() {
+    fn json_module_parse_failure_reports_syntax_error_s249() {
         let cfg = WebViewConfig {
             script_source_fetcher: Some(std::sync::Arc::new(
                 |_parent: &str, _spec: &str| -> Result<String, String> { Ok("{\"test\": true".to_string()) },
@@ -9085,6 +9179,8 @@ mod redirect_tests {
         wv.prepare_document_state("https://wpt.test/a/page.html");
         wv.load_html(
             "<!doctype html><body>\
+             <script>window.addEventListener('error', function (e) {\
+               globalThis.__errCtor = e.error && e.error.constructor && e.error.constructor.name; });</script>\
              <script type=\"module\" onload=\"globalThis.__modLoad = 1\"\
              onerror=\"globalThis.__modError = 1\">\
              import v from './module.json' with { type: \"json\" }; globalThis.__bodyRan = 1;</script>\
@@ -9092,22 +9188,31 @@ mod redirect_tests {
              </body>",
             None,
         );
+        // s249：JSON parse 失败改判 spec 语义——取回成功、internalize 失败，synth 体
+        // throw SyntaxError（WPT json-module/parse-error 判据）；引擎走 s102 模块
+        // 执行期异常面：window 报 SyntaxError + 元素 fire load + 页面继续（strict
+        // 不 abort——模块失败非 classic 体抛错，不聚合首错）。
         wv.run_page_scripts_strict()
-            .expect("JSON 语法失败页面须继续（strict 不 abort）");
+            .expect("JSON parse 失败页面须继续（strict 不 abort）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__errCtor)").unwrap(),
+            "SyntaxError",
+            "parse 失败向 window 报 SyntaxError（s102 report 面）"
+        );
         assert_eq!(
             wv.execute_script("String(globalThis.__modError)").unwrap(),
-            "1",
-            "JSON 语法失败属网络错误语义——元素 fire error"
+            "undefined",
+            "取回成功仅 internalize 失败不属网络错误——元素不 fire error"
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__modLoad)").unwrap(),
-            "undefined",
-            "JSON 语法失败元素不 fire load"
+            "1",
+            "parse 失败属执行期异常面——元素照常 fire load（s102 同口径）"
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__bodyRan)").unwrap(),
             "undefined",
-            "JSON 语法失败模块体须不执行"
+            "parse 失败依赖 IIFE 抛错，导入方模块体须不执行"
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__after)").unwrap(),
@@ -9121,6 +9226,42 @@ mod redirect_tests {
     /// script 在抛错的外层 SVG script 之后，整页 abort 使其 onload 断言挂 pending）。
     /// run_page_scripts_strict 仍聚合返回首错（runner declared==0 防假绿短路依据不变）。
     /// https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+    #[test]
+    fn dynamic_css_module_import_yields_stylesheet_s249() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                |_parent: &str, spec: &str| -> Result<String, String> {
+                    assert!(spec.contains("__zw_mtype=css"), "数据模块标记须随取回: {spec}");
+                    Ok("#test { background-color: red; }\n".to_string())
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script type=\"module\">\
+             import('./basic.css', { with: { type: 'css' } }).then(function (m) {\
+               globalThis.__kind = m.default instanceof CSSStyleSheet ? 'sheet' : ('bad:' + typeof m.default);\
+               globalThis.__text = m.default.cssRules[0].cssText;\
+             }, function (e) { globalThis.__kind = 'reject:' + e; });</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("页面不 abort");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__kind)").unwrap(),
+            "sheet",
+            "动态 import type:css 得 CSSStyleSheet default 导出"
+        );
+        assert_eq!(
+            wv.execute_script("String(globalThis.__text)").unwrap(),
+            "#test { background-color: rgb(255, 0, 0); }",
+            "sheet 规则经 shim CSSOM 解析（颜色 Blink rgb() 归一化形态）"
+        );
+    }
+
     #[test]
     fn strict_classic_throw_continues_remaining_scripts_s108() {
         let mut wv = WebView::new(WebViewConfig::default());
