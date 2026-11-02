@@ -981,6 +981,9 @@ mod r5381_inline_replaced_measure_tests;
 ///（css-flexbox-1 §8.3/§9.6 + SVG2 §7.2 UA overflow:hidden，WPT
 /// display-flex-svg-overflow-default 驱动）。
 mod r5380_svg_flex_cross_stretch_tests;
+/// R5395 纯 inline-table 行容器高按 IFC 行盒合成 + auto 宽空 cell 定宽表 cell 臂
+///（CSS2 §9.2.2/§9.7 × §10.6.3，R5096 行内级判例）。
+mod r5395_inline_table_container_line_height_tests;
 
 /// t-trending 伪影 1 回归：float 星数（inline replaced svg + 文本）单行收缩——Σ 臂
 /// replaced 早退放行 + replaced_w 入账 + [`float_text_max_width_adv`] advance 源

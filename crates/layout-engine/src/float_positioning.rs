@@ -506,7 +506,9 @@ pub(crate) fn shrink_pure_text_floats(
                     // 期样式解析（非 taffy 拉伸伪影，可靠）。
                     let frame = c.border_left + c.border_right + c.padding_left + c.padding_right;
                     Some(
-                        (ml + frame + crate::intrinsic_sizing::inline_table_auto_max_content(id, doc, styles) + mr)
+                        (ml + frame
+                            + crate::intrinsic_sizing::inline_table_auto_max_content(id, doc, styles, false)
+                            + mr)
                             .max(0.0),
                     )
                 })

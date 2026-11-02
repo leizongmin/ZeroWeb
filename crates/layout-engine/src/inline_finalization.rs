@@ -3961,10 +3961,26 @@ pub(crate) fn remeasure_inline_only_containers(
     let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
     // R5218：inline-flex/inline-grid 子（is_block_level=true）计入 inline 级——纯原子
     // 族行容器也须进 IFC 重测合成行盒高。
-    let has_inline_children = box_node
-        .children
-        .iter()
-        .any(|c| (!c.is_block_level || is_atomic_inline_family_box(c, styles)) && !c.is_absolute && !c.is_fixed);
+    // R5395：inline-table 子同域计入（CSS2 §9.2.2/§9.7 行内级，R5096 判例同源；
+    // engine.rs 构盒表使其 is_block_level=true）。此前纯 inline-table 行容器
+    //（margin-collapse-134 ref：div > inline-table×2）不入本重测，容器保持 taffy
+    // 块堆叠高（70→124 = 多计一个盒高的块流槽），后继 table 整体下坠一行。与
+    // R5242 ib_sizes 臂同开关：`ZW_INLINE_TABLE_IB_SIZING=0` 回退整链（入口不进、
+    // IFC 不收表尺寸、收缩臂豁免同撤，逐字节旧行为）。
+    static R5395_INLINE_TABLE_ENTRY: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_IB_SIZING").as_deref() != Ok("0"));
+    let has_inline_children = box_node.children.iter().any(|c| {
+        (!c.is_block_level
+            || is_atomic_inline_family_box(c, styles)
+            || (*R5395_INLINE_TABLE_ENTRY
+                && c.node_id.is_some_and(|id| {
+                    styles
+                        .get(&id)
+                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
+                })))
+            && !c.is_absolute
+            && !c.is_fixed
+    });
     // R4108（CSS2 §9.2.1.1 块容器的匿名块序列 + §10.3.2 replaced inline）：容器**同时**有
     // 块级 in-flow 子与 inline 级子、且其 inline 级子**全部为 replaced 类标签**（svg/canvas/
     // img 等——converter 映射 taffy Block 按匿名块序列堆叠，几何已正确）时跳过本 remeasure：
@@ -4323,10 +4339,13 @@ pub(crate) fn remeasure_inline_only_containers(
                 // baseline-009 的 X+inline-table 被断成两行 150 应单行 100）。同 R5243
                 // float Σ 臂解法：auto 宽按 `inline_table_auto_max_content` 独立测量补源
                 //（shrink-to-fit 上限 cap 容器宽）；definite 宽盒值可信，原样。
+                // R5395：cell 臂开启——空 cell 定宽表纯文本 walk 测 0，旧回退 `c.width`
+                // = taffy 拉伸伪影全宽（R4032）喂原子宽必断行（margin-collapse-134
+                // ref 768→两行实证）。
                 let w = if styles.get(&node_id).is_some_and(|s| {
                     matches!(s.display, DisplayValue::InlineTable) && matches!(s.width, LengthValue::Auto)
                 }) {
-                    let mc = crate::intrinsic_sizing::inline_table_auto_max_content(node_id, doc, styles);
+                    let mc = crate::intrinsic_sizing::inline_table_auto_max_content(node_id, doc, styles, true);
                     if mc > 0.0 && container_width > 0.0 {
                         mc.min(container_width)
                     } else if mc > 0.0 {

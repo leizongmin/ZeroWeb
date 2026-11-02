@@ -18,7 +18,9 @@ use zero_css_parser::values::{
 };
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
-use zero_style_system::property::types::{ColumnSpanComputedValue, FlexBasisValue, PositionValue, WhiteSpaceValue};
+use zero_style_system::property::types::{
+    BorderStyleValue, ColumnSpanComputedValue, FlexBasisValue, PositionValue, WhiteSpaceValue,
+};
 
 use crate::types::LayoutBox;
 
@@ -2016,10 +2018,18 @@ pub(crate) fn float_inline_table_exempt(cs: &ComputedStyle) -> bool {
 /// 整表单次 walk 会把多行文本连成一段过测——009 两行 X 实证 100 应 50）。纯 DOM 测量
 /// 无 R4032 taffy 拉伸伪影。近似：忽略列间距/border-spacing/cell padding 表盒模型
 ///（无显式列宽的简单表精确；FIXME(R5243 后继)：表 intrinsic 真测量（列宽和）对接）。
+///
+/// `count_definite_cells`（R5395）：cell 臂——纯文本 walk 对空 cell 定宽表测 0（td
+/// `width:8em` 无文本），调用点回退 `c.width` = taffy Block 拉伸伪影全宽（R4032，
+/// margin-collapse-134 ref 实证 768 喂原子宽 → break_lines 必断行 → IFC 两行 76 应
+/// 单行 38，容器高双计）。臂内按行结构 Σ 定宽 cell（CSS2 §17.3.2 列宽和近似）+ 表自身
+/// 横 border（原子 border-box 口径，style 守卫见函数内注释）。仅 ib_sizes 调用点启用；
+/// float Σ 臂与 R5243 锚测试传 `false` 保持逐字节旧行为（该域 R5243/R5242 门内）。
 pub(crate) fn inline_table_auto_max_content(
     table_dom: NodeId,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
+    count_definite_cells: bool,
 ) -> f32 {
     let mut max_w = 0.0f32;
     for child in doc.child_nodes(table_dom) {
@@ -2031,8 +2041,82 @@ pub(crate) fn inline_table_auto_max_content(
         }
         let w = text_content_max_width_scoped(child, doc, styles, false, false);
         max_w = max_w.max(w);
+        if count_definite_cells {
+            let cw = inline_table_row_definite_width(child, doc, styles);
+            max_w = max_w.max(cw);
+        }
+    }
+    // 表自身横 border 入账（原子 border-box 口径）——style None/Hidden 不计
+    //（R5395 二面实证：009 inline-table span 无 border 但 width=medium 3px 默认，
+    // 无 style 守卫多算 6px → 106>100 断行，0.57%→1.56% 回归）。
+    if count_definite_cells && let Some(cs) = styles.get(&table_dom) {
+        let bl = if matches!(cs.border_left_style, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            0.0
+        } else {
+            resolve_intrinsic_real_length(&cs.border_left_width, cs).unwrap_or(0.0)
+        };
+        let br = if matches!(cs.border_right_style, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            0.0
+        } else {
+            resolve_intrinsic_real_length(&cs.border_right_width, cs).unwrap_or(0.0)
+        };
+        max_w += bl + br;
     }
     max_w
+}
+
+/// R5395：行结构定宽 cell 近似（[`inline_table_auto_max_content`] cell 臂，CSS2
+/// §17.3.2 固定列宽 + max(内文) 混合列近似）。cell/row/组三态递归；其余元素（caption/
+/// colgroup/裸包裹）递归子找行——caption 文本由外层 text walk 另计，此处 0 不双计。
+/// border 计宽带 style 守卫（None/Hidden 归 0——`border-*-width` 初值 medium 不代表
+/// 实际边框，同 table_borders.rs 判定口径）。
+fn inline_table_row_definite_width(node_id: NodeId, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> f32 {
+    let element_children = || {
+        doc.child_nodes(node_id)
+            .into_iter()
+            .filter(|&c| {
+                doc.get(c)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+            })
+            .collect::<Vec<_>>()
+    };
+    let Some(cs) = styles.get(&node_id) else { return 0.0 };
+    let border_h = |width: &LengthValue, style: &BorderStyleValue| -> f32 {
+        if matches!(style, BorderStyleValue::None | BorderStyleValue::Hidden) {
+            0.0
+        } else {
+            resolve_intrinsic_real_length(width, cs).unwrap_or(0.0)
+        }
+    };
+    match cs.display {
+        // cell 盒宽 = max(内文, 定宽内容宽) + 横 padding + 横 border（border-box）。
+        DisplayValue::TableCell => {
+            let text = text_content_max_width_scoped(node_id, doc, styles, false, false);
+            let definite = resolve_intrinsic_real_length(&cs.width, cs).unwrap_or(0.0);
+            let pad = resolve_intrinsic_real_length(&cs.padding_left, cs).unwrap_or(0.0)
+                + resolve_intrinsic_real_length(&cs.padding_right, cs).unwrap_or(0.0);
+            let border = border_h(&cs.border_left_width, &cs.border_left_style)
+                + border_h(&cs.border_right_width, &cs.border_right_style);
+            definite.max(text) + pad + border
+        }
+        // 行 = Σ cell（行内 cell 文本连续计宽=单行 Σ 同口径）。
+        DisplayValue::TableRow => element_children()
+            .iter()
+            .map(|&c| inline_table_row_definite_width(c, doc, styles))
+            .sum(),
+        // 行组 = max row（行间取 max 同源）。
+        DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup => {
+            element_children()
+                .iter()
+                .map(|&c| inline_table_row_definite_width(c, doc, styles))
+                .fold(0.0_f32, f32::max)
+        }
+        // 其他元素递归子找行（colgroup→col 无 cell 得 0）。
+        _ => element_children()
+            .iter()
+            .map(|&c| inline_table_row_definite_width(c, doc, styles))
+            .fold(0.0_f32, f32::max),
+    }
 }
 
 /// R4416（CSS Text 3 §4.1.3）：tab 度量对 (unit, space_advance)——unit = 下一 tab stop

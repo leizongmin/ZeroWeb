@@ -6,8 +6,9 @@
 //! IFC 重测外 → 容器高度保留 taffy 块堆叠累加值（探针实证：2 个 40×20 inline-flex
 //! 子同行排布、容器高却 40 = 2×20）。修后两门按 display 直判豁免 inline-flex/
 //! inline-grid 子（与 postprocess `adjust_inline_block_positions` 的 ib_indices 判据
-//! 同源），容器高收缩到 IFC 行盒高。InlineTable 不入豁免（表格管线专道，
-//! margin-applies-to-014 回归实证）。
+//! 同源），容器高收缩到 IFC 行盒高。InlineTable 起初不入豁免（表格管线专道，
+//! margin-applies-to-014 回归实证），R5395 起同域豁免（见
+//! r5395_inline_table_container_line_height_tests）。
 
 use super::*;
 use zero_css_parser::values::{DisplayValue, LengthValue};
@@ -88,14 +89,16 @@ fn r5218_inline_grid_children_row_height_not_stacked() {
     );
 }
 
-/// InlineTable 子不入豁免（表格管线专道）：容器高维持块堆叠口径 40，
-/// margin-applies-to-014（inline-table + absolute wrapper）依赖现状。
+/// R5395 推翻本判例：InlineTable 子自本轮起同域豁免（R5096 行内级判例 + margin-
+/// collapse-134 ref 容器高双计实证），容器高收缩到行盒高 20——判例迁移至
+/// r5395_inline_table_children_row_height_not_stacked。margin-applies-to-014 由
+/// corpus A/B 复核不回归（R5218 时点顾虑域，非本域重叠）。
 #[test]
-fn r5218_inline_table_child_keeps_block_stacked_height() {
+fn r5218_inline_table_child_joins_inline_exemption() {
     let (container_box, _, _) = atomic_row_case(&[DisplayValue::InlineTable, DisplayValue::InlineTable]);
     assert!(
-        (container_box.height - 40.0).abs() < 0.5,
-        "inline-table 子容器高应维持块堆叠 40（不入豁免），实际 {}",
+        (container_box.height - 20.0).abs() < 0.5,
+        "inline-table 子容器高应收缩到行盒高 20（R5395 起同域豁免），实际 {}",
         container_box.height
     );
 }

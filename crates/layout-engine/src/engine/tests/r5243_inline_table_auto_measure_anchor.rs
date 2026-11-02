@@ -103,8 +103,8 @@ fn r5243_inline_table_auto_max_content_per_row_max() {
     let one_row = build_table(&mut doc, container, 1);
     let two_rows = build_table(&mut doc, container, 2);
 
-    let single = crate::intrinsic_sizing::inline_table_auto_max_content(one_row, &doc, &styles);
-    let double = crate::intrinsic_sizing::inline_table_auto_max_content(two_rows, &doc, &styles);
+    let single = crate::intrinsic_sizing::inline_table_auto_max_content(one_row, &doc, &styles, false);
+    let double = crate::intrinsic_sizing::inline_table_auto_max_content(two_rows, &doc, &styles, false);
 
     assert!(single > 0.0, "单行表 max-content 应非零，实际 {single}");
     assert!(
