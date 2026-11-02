@@ -1,6 +1,6 @@
 {
  "meta": {
-  "generated_at": "2026-11-02T05:43:41+00:00",
+  "generated_at": "2026-11-02T07:36:54+00:00",
   "runs": [
    {
     "browser": "chrome",
@@ -30,22 +30,22 @@
   "compare_runs": [
    {
     "browser": "ladybird",
-    "version": "1.0-8a2fb6725f2",
-    "revision": "4e3292cf4d",
-    "created_at": "2026-11-02T05:38:56.269681Z"
+    "version": "1.0-484d7ce9cac",
+    "revision": "0de04ac4d7",
+    "created_at": "2026-11-02T07:02:21.658403Z"
    }
   ],
   "denominator": "三家 summary 并集路径；子测试分母=三家 c[1] 最大值，ZeroWeb 跑过的文件取 max(浏览器, ZW 实际子测试数)"
  },
  "totals": {
   "den_files": 125864,
-  "covered_files": 12380,
-  "uncovered_files": 113484,
-  "zw_full_pass_files": 7080,
-  "den_subtests": 2266477,
-  "zw_passes": 1517704,
-  "pass_rate": 0.6696,
-  "coverage_file_rate": 0.0984
+  "covered_files": 12954,
+  "uncovered_files": 112910,
+  "zw_full_pass_files": 7438,
+  "den_subtests": 2266480,
+  "zw_passes": 1530796,
+  "pass_rate": 0.6754,
+  "coverage_file_rate": 0.1029
  },
  "browsers": {
   "chrome": {
@@ -70,11 +70,11 @@
    "pass_rate": 0.9421
   },
   "ladybird": {
-   "full_pass_files": 112725,
-   "den_files": 125290,
-   "subtest_passes": 2163392,
-   "den_subtests": 2242336,
-   "pass_rate": 0.9648
+   "full_pass_files": 112740,
+   "den_files": 125298,
+   "subtest_passes": 2163658,
+   "den_subtests": 2242294,
+   "pass_rate": 0.9649
   }
  },
  "groups": {
@@ -145,9 +145,9 @@
   "html/semantics": {
    "den_files": 3130,
    "covered_files": 1332,
-   "full_pass_files": 715,
+   "full_pass_files": 716,
    "den_subtests": 22165,
-   "zw_passes": 6233,
+   "zw_passes": 6235,
    "zw_env_fails": 0
   },
   "cookies/attributes": {
@@ -545,9 +545,9 @@
   "dom/ranges": {
    "den_files": 73,
    "covered_files": 44,
-   "full_pass_files": 39,
+   "full_pass_files": 37,
    "den_subtests": 44726,
-   "zw_passes": 40748,
+   "zw_passes": 40582,
    "zw_env_fails": 0
   },
   "dom/abort": {
@@ -580,6 +580,14 @@
    "full_pass_files": 113,
    "den_subtests": 3220,
    "zw_passes": 216,
+   "zw_env_fails": 0
+  },
+  "editing/other": {
+   "den_files": 510,
+   "covered_files": 462,
+   "full_pass_files": 327,
+   "den_subtests": 16340,
+   "zw_passes": 13124,
    "zw_env_fails": 0
   },
   "encoding/legacy-mb-japanese": {
@@ -769,9 +777,17 @@
   "IndexedDB": {
    "den_files": 816,
    "covered_files": 168,
-   "full_pass_files": 165,
+   "full_pass_files": 166,
    "den_subtests": 5849,
-   "zw_passes": 1071,
+   "zw_passes": 1072,
+   "zw_env_fails": 0
+  },
+  "intersection-observer": {
+   "den_files": 118,
+   "covered_files": 81,
+   "full_pass_files": 23,
+   "den_subtests": 367,
+   "zw_passes": 108,
    "zw_env_fails": 0
   },
   "uievents/keyboard": {
@@ -1110,6 +1126,14 @@
    "zw_passes": 21,
    "zw_env_fails": 0
   },
+  "resize-observer": {
+   "den_files": 39,
+   "covered_files": 33,
+   "full_pass_files": 10,
+   "den_subtests": 133,
+   "zw_passes": 27,
+   "zw_env_fails": 0
+  },
   "resource-timing": {
    "den_files": 117,
    "covered_files": 42,
@@ -1148,14 +1172,6 @@
    "full_pass_files": 0,
    "den_subtests": 180,
    "zw_passes": 176,
-   "zw_env_fails": 0
-  },
-  "editing/other": {
-   "den_files": 510,
-   "covered_files": 2,
-   "full_pass_files": 2,
-   "den_subtests": 16339,
-   "zw_passes": 4,
    "zw_env_fails": 0
   },
   "css/selectors": {
@@ -1955,14 +1971,6 @@
    "covered_files": 0,
    "full_pass_files": 0,
    "den_subtests": 18,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "intersection-observer": {
-   "den_files": 118,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 367,
    "zw_passes": 0,
    "zw_env_fails": 0
   },
@@ -3307,14 +3315,6 @@
    "covered_files": 0,
    "full_pass_files": 0,
    "den_subtests": 47,
-   "zw_passes": 0,
-   "zw_env_fails": 0
-  },
-  "resize-observer": {
-   "den_files": 39,
-   "covered_files": 0,
-   "full_pass_files": 0,
-   "den_subtests": 131,
    "zw_passes": 0,
    "zw_env_fails": 0
   },
@@ -6583,7 +6583,7 @@
    "zw_env_fails": 0
   }
  },
- "zw_only_files": 456,
+ "zw_only_files": 463,
  "suspicious_files": 2,
- "multi_suite_files": 60
+ "multi_suite_files": 62
 }
