@@ -18682,8 +18682,53 @@ function _zwCaretFromPointDoc(x, y) {
   var kids = null;
   try { kids = el.childNodes; } catch (_eKdD) {}
   if (!kids || !kids.length) return null;
-  var lx = x - gr.left;
   var st = _zwTextElStyle({ el: el });
+  // s243（selection-compat M2 拖选切片补面）：级联字体回落——`_zwTextElStyle` 只读
+  // inline style，样式表字体的元素（modal-dialog-selection `font: 10px/1 Ahem`
+  // 钉面）在此落 default 字体度量，text-origin 内缩与下方字形路由随 advance 失真
+  // 整体偏移。inline 空时读 computed fontSize/fontFamily 合成最小形 "<size> <family>"
+  //（规避 computed shorthand "10px / 10px Ahem" 行高段的解析方差；探针实证双键
+  // 可读），direction/spacing 保持 inline 域（级联面无钉不扩）。
+  try {
+    if (!st.font && typeof getComputedStyle === 'function') {
+      var _csF = getComputedStyle(el);
+      var _fs = _csF ? String(_csF.fontSize || '') : '';
+      var _ff = _csF ? String(_csF.fontFamily || '') : '';
+      if (_fs && _ff) st.font = _fs + ' ' + _ff;
+    }
+  } catch (_eCsF) {}
+  // s243：text-origin 内缩——`lx = x - gr.left` 把文本起点当作盒左缘，text-align
+  // center/right 时文本在盒内**居中/右对齐**排布（探针实证：modal dialog UA 居中
+  // 缺面 → 盒=全宽块 [8,8,784,10]，text-align:center 把 100px 文本居中在 350..450，
+  // 未内缩 lx=362 全部字形中点 < lx → down/move 双腿 clamp 末位 offset 10 → 选区
+  // (10,10) 空 → modal-dialog-selection Fail）。内缩 = center → (盒宽-文本总
+  // advance)/2、right/end → 盒宽-总 advance（advance 超盒宽钳 0 不放大位移）；
+  // 其余对齐值 0。总 advance 与下方路由循环同 geom 同滤（非空白文本子、geom 非空）
+  // 自洽。css-ui-4 content-selection 拖选命中底座
+  //（https://drafts.csswg.org/css-ui-4/#content-selection）。
+  var _taInset = 0;
+  try {
+    var _taVal = '';
+    if (typeof getComputedStyle === 'function') {
+      var _csT = getComputedStyle(el);
+      _taVal = _csT ? String(_csT.textAlign || '') : '';
+    }
+    if (_taVal === 'center' || _taVal === 'right' || _taVal === 'end') {
+      var _totW = 0;
+      for (var _wi = 0; _wi < kids.length; _wi++) {
+        var _wn = kids[_wi];
+        if (!_wn || _wn.nodeType !== 3) continue;
+        var _wt = '';
+        try { _wt = String(_wn.data != null ? _wn.data : _wn.textContent || ''); } catch (_eWt3) { continue; }
+        if (!_wt || !/\S/.test(_wt)) continue;
+        var _wg = _zwTextElGeometry(_wt, st.font, st.direction, st.spacing);
+        if (_wg) _totW += _wg.width;
+      }
+      if (_taVal === 'center') _taInset = Math.max((gr.width - _totW) / 2, 0);
+      else _taInset = Math.max(gr.width - _totW, 0);
+    }
+  } catch (_eTaIn) {}
+  var lx = x - gr.left - _taInset;
   var rtl = (st.direction === 'rtl');
   var lastNode = null, lastOff = 0;
   for (var ki = 0; ki < kids.length; ki++) {
@@ -18722,6 +18767,17 @@ function _zwDocDragSelectAllowed(node) {
       if (tag === 'input' || tag === 'textarea') return false;
       var ce = cur.getAttribute ? cur.getAttribute('contenteditable') : null;
       if (ce != null && String(ce) !== 'false') return false;
+      // s243：user-select: none 子树不可拖选（css-ui-4 content-selection——
+      // modal-dialog-selection subtest 3『user-select: none prevents text from
+      // being selected』钉面；subtest 1 修复后拖选真建选区，无此门该面 P→F）。
+      // computed 读面覆盖 inline 与级联（探针实证 inline set → computed "none"）；
+      // 读不到的宿主面按未禁用处理零回归。
+      try {
+        if (typeof getComputedStyle === 'function') {
+          var _usCS = getComputedStyle(cur);
+          if (_usCS && String(_usCS.userSelect || '') === 'none') return false;
+        }
+      } catch (_eUsG) {}
       try { cur = cur.parentNode; } catch (_eUpG) { return true; }
     }
   } catch (_eGd) {}
