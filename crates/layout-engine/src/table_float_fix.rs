@@ -358,10 +358,23 @@ fn fix_inner(
         // 须在「位置变 OR 宽度变」时介入（即使位置已正确，beside 宽度仍须填，故
         // width_change 独立于 pos_change）。
         let mw = fill_w;
+        // R5398（CSS2 §9.5/§10.3.5）：beside 宽语义按 declared 分流——auto-width 表沿
+        // R1613 填 gap（floats-wrap-bfc-002 ref 显式 width:200 实证）；**declared-width
+        // 表旁置保声明宽**（放不下已被 band-step 用 effective_w=declared 推下，能 beside
+        // 即 dw ≤ gap，直接取 dw；min(mw) 钳制防 step5 收缩后残余越界）。旧臂对 beside
+        // 一律填 mw，把定宽表（clear-applies-to-014：inline-table width:1in beside
+        // float，step8 布局本已 96 正确）改写成 float 旁可用宽 464。
+        // kill-switch `ZW_TABLE_FLOAT_BESIDE_KEEP_DECLARED=0` 回退 beside 一律填 mw。
+        let beside_keep_declared = std::env::var("ZW_TABLE_FLOAT_BESIDE_KEEP_DECLARED").as_deref() != Ok("0");
+        let beside_target_w = if beside && beside_keep_declared {
+            declared_w.map_or(mw, |dw| dw.min(mw))
+        } else {
+            mw
+        };
         let width_change = if is_anon_root {
             !beside && table.width > mw + 0.5
         } else if beside {
-            (table.width - mw).abs() > 0.5
+            (table.width - beside_target_w).abs() > 0.5
         } else {
             table.width > mw + 0.5
         };
@@ -377,11 +390,11 @@ fn fix_inner(
                     table.width = dw;
                 }
             }
-            // beside float（nx>0）：auto-width BFC table 填可用宽（非 shrink-to-fit）。
-            // below floats（nx=0）：仅当溢出时 clamp。合并为 `beside || 溢出` → 设 mw。
-            // R5207：匿名表根 beside 不填（保 shrink 宽），溢出 clamp 照旧。
+            // beside float（nx>0）：auto-width BFC table 填可用宽（非 shrink-to-fit）；
+            // declared-width 保声明宽（R5398，beside_target_w）。below floats（nx=0）：
+            // 仅当溢出时 clamp。匿名表根 beside 不填（保 shrink 宽），溢出 clamp 照旧。
             if (!is_anon_root && beside) || table.width > mw {
-                table.width = mw;
+                table.width = beside_target_w;
             }
             pushed = true;
             if dbg {

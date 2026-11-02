@@ -990,6 +990,9 @@ mod r5395_inline_table_container_line_height_tests;
 /// R5396 正 clearance × 自塌缩空块塌穿组差量落位 + 祖先高度传播（CSS 2.1 §8.3.1，
 /// WPT margin-collapse-125 驱动）。
 mod r5396_clear_empty_chain_absorb_tests;
+/// R5398 table-among-floats beside 填 gap 臂 declared-width 分流（CSS2 §9.5/§10.3.5，
+/// WPT clear-applies-to-014 驱动）。
+mod r5398_table_beside_declared_width_tests;
 
 /// t-trending 伪影 1 回归：float 星数（inline replaced svg + 文本）单行收缩——Σ 臂
 /// replaced 早退放行 + replaced_w 入账 + [`float_text_max_width_adv`] advance 源
