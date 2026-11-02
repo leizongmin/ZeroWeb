@@ -571,6 +571,22 @@
           // DISPLAY-P3 存原串；canonical 小写归一在读侧）。
           if (handle) { __zw_set_attr_handle(handle, 'colorspace', String(value)); moAttr = 'colorspace'; }
           else { __zw_set_attr(sel, 'colorspace', String(value)); moAttr = 'colorspace'; }
+        } else if (p === 'switch' && _realTag(sel, handle) === 'INPUT') {
+          // s231（HTML §switch control `switch` 反射布尔，spec 同 get 臂注——
+          // s187 alpha 先例：不入通用表，INPUT 门）：truthy → presence 设空 /
+          // falsy → 真移除（R3039 同款语义：旧 generic fallthrough 写
+          // `attr="false"` → 读恒真 bug 面；detached 亦真移除）。
+          if (value) {
+            if (handle) { __zw_set_attr_handle(handle, 'switch', ''); moAttr = 'switch'; }
+            else { __zw_set_attr(sel, 'switch', ''); moAttr = 'switch'; }
+          } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+            __zw_remove_attr_handle(handle, 'switch');
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'switch');
+            moAttr = 'switch';
+          } else if (!handle && typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(sel, 'switch');
+            moAttr = 'switch';
+          }
         } else if (_reflectedBoolAttr(p) !== null) {
           // R3039/R3040：布尔 reflected setter（_REFLECTED_BOOL 全表）。旧经 generic fallthrough 写
           // `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；
@@ -13861,11 +13877,18 @@
     // 原 walk-first 使 form 子树控件恒排前，form= 关联的外部控件（WPT
     // form-elements-filter 的 before-*/after-* 期望文档序）错序。same-turn remove
     // 的 stale host 条目经 _zwPendingRemoved 剔除（R50 同款；walk 读链已 live）。
+    // s230（html-semantics M2，2026-11-02）：host 条目包装走 `_zwQueryWrapIdentity`
+    //（R331 身份反查）而非裸 `_wrapSelector`——qSA/activeElement 对 R100 动态控件
+    // 返回 canonical handle proxy（probe6 实证 sel=#insideNew|h=null vs sel=null|
+    // h=__n0 双族），`form.elements[k] === newInput`（JS 持有引用）与
+    // `elements[k] === document.activeElement`（WPT radio-keyboard-navigation-order
+    // 断言面）双断裂。R100 教训 #7 的「query 返回点」限定满足：集合重建即查询
+    // 返回点；静态控件无 handle 注册 → 回落原 `_wrapSelector` 零变化。
     if (sel && typeof __zw_form_controls === 'function') {
       try {
         var listed = __zw_form_controls(sel);
         if (listed) {
-          var arr = listed.split('|').filter(Boolean).map(_wrapSelector);
+          var arr = listed.split('|').filter(Boolean).map(_zwQueryWrapIdentity);
           for (var hi = 0; hi < arr.length; hi++) {
             if (arr[hi] && _zwPendingRemoved.indexOf(arr[hi]) === -1) push(arr[hi]);
           }

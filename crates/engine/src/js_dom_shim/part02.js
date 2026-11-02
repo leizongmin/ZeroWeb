@@ -22,6 +22,9 @@
         if (!algo) {
           reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
+        // raw-secret/raw-public 别名归一（M2-5，_zw_normalizeFormatAlias）：对称面
+        // raw-secret ≡ raw、EC/OKP raw 面 raw-public ≡ raw，family 分派拿到有效格式。
+        format = _zw_normalizeFormatAlias(format, algo.name);
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
         // RSA 家族（M4a）：usages 家族/类型子集校验与格式解析整体转入 helper（spki/pkcs8/jwk）。
         if (_zw_rsaIsFamily(algo.name)) {
@@ -592,6 +595,10 @@
     // https://w3c.github.io/webcrypto/#SubtleCrypto-method-exportKey
     exportKey: function (format, key) {
       return new Promise(function (resolve, reject) {
+        // raw-secret/raw-public 别名归一（M2-5）：对称 secret 型 raw-secret ≡ raw、
+        // EC/OKP raw 面 raw-public ≡ raw；family 分派与 fmt 校验拿到有效格式，
+        // 错误检查顺序不变（格式 → 注册 → extractable）。
+        format = _zw_normalizeFormatAlias(format, key && key.algorithm && key.algorithm.name);
         // RSA 家族（M4a）：spki/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
         if (key && key.algorithm && _zw_rsaIsFamily(key.algorithm.name)) {
           _zw_rsaExportKey(format, key, resolve, reject);
@@ -734,7 +741,8 @@
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
         // M4a 起支持 spki/pkcs8（RSA-OAEP 封装的非对称密钥回导，importKey 完成格式校验）。
-        if (fmt !== 'RAW' && fmt !== 'JWK' && fmt !== 'SPKI' && fmt !== 'PKCS8') {
+        // raw-secret/raw-public 别名放行（M2-5）：family 适配归一在 importKey 入口。
+        if (fmt !== 'RAW' && fmt !== 'RAW-SECRET' && fmt !== 'RAW-PUBLIC' && fmt !== 'JWK' && fmt !== 'SPKI' && fmt !== 'PKCS8') {
           reject(new _zw_subtleDE("Unsupported unwrapKey format: '" + fmt + "' (only 'raw'/'jwk'/'spki'/'pkcs8' supported)", 'NotSupportedError')); return;
         }
         var bytes = _zw_bufToBytes(wrappedKey);

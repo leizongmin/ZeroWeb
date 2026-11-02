@@ -13286,7 +13286,7 @@
         for (var _vi = 0; _vi < _vlList.length; _vi++) {
           var _vo = _vlList[_vi];
           if (!_vo) continue;
-          if (_vo.selected === true) { _vlSelCount++; if (!_vlSelOpt) _vlSelOpt = _vo; }
+          if (_zwOptSelOf(_vo) === true) { _vlSelCount++; if (!_vlSelOpt) _vlSelOpt = _vo; }
         }
         if (_vlSelCount === 0 && _vlList.length && !_zwOptAnyDirty(_vlList)
             && _zwSelectDisplaySize(sel, handle) === 1) {
@@ -25569,7 +25569,18 @@ return e;
         var _loT = null;
         try { _loT = _lon.nodeType; } catch (_loE) { _loT = null; }
         if (_loT !== 1) continue;
-        var _loTag = _realTag(_lon.__zwSelector, _lon.__zwHandle);
+        // s236：无身份 pending 解析视图（innerHTML= 直写 select 产物，R304——无 sel 无
+        // handle）tag 解析链死路（_realTag 尾回落 _tagFromSel(null) 恒 'DIV'），
+        // OPTION/OPTGROUP 全落空使 list 空 → selectedOptions 视图空（WPT
+        // inserted-or-removed「Inserted by innerHTML」1F 根因）。两者皆 null 时读本地
+        // tagName（_zwDetailsCollect4100 mixed-tree 统一走查先例；wrapper.tagName 为
+        // 解析期真 tag，spec tagName 不可变无陈旧面）。
+        var _loTag = null;
+        if (_lon.__zwSelector || _lon.__zwHandle) {
+          _loTag = _realTag(_lon.__zwSelector, _lon.__zwHandle);
+        } else {
+          try { _loTag = String(_lon.tagName || '').toUpperCase(); } catch (_loE3) { _loTag = null; }
+        }
         if (_loTag === 'OPTION') { out.push(_lon); continue; }
         // 排除子树（同一条 spec 子句）：select/hr/option/datalist + 「optgroup 且
         // select 与其之间存在 optgroup 祖先」整枝排除（嵌套 optgroup 的 option 不进
@@ -25616,6 +25627,52 @@ return e;
 
   // option 记账 key（part05 selected setter / part03 getter 同口径 `_elKey`）。
   function _zwOptKey(oSel, oHnd) { return oHnd ? ('@' + oHnd) : oSel; }
+
+  // s236：记账 key 的 wrapper 版——身份态（sel/handle 有一）同 `_zwOptKey` 逐位一致；
+  // 无身份 pending 解析视图（innerHTML= 直写产物，R304 `_zwFragmentAdded`——无 sel 无
+  // handle）**按对象身份**盖章惰性合成键。直用 `_zwOptKey(null,null)` 全体同值 null，
+  // dirty/clean 状态层跨元素互踩（`_ceConnKeyFor` 'plain:'+seq 与
+  // `_zwPlainDetailsKey4100` 同款先例；视图 wrapper 由 overlay bucket.added 持有跨读
+  // 稳定，印章不丢——R304 挂父槽同源）。
+  var _zwOptPlainKeySeq = 0;
+  function _zwOptStateKeyOf(o) {
+    var s = null, h = null;
+    try { s = o.__zwSelector || null; } catch (_eOkS) { s = null; }
+    try { h = o.__zwHandle || null; } catch (_eOkH) { h = null; }
+    if (h) return '@' + h;
+    if (s) return s;
+    try {
+      if (o.__zwOptPlainKey === undefined) {
+        _zwOptPlainKeySeq += 1;
+        o.__zwOptPlainKey = 'p' + _zwOptPlainKeySeq;
+      }
+      return 'plainOpt:' + o.__zwOptPlainKey;
+    } catch (_eOkP) { return null; }
+  }
+  // s236：option selectedness 读的 wrapper 版——dirty → clean（条目存在即权威）→
+  // 身份态走 `_zwOptSelState` 既有链（逐位一致）/ 无身份读本地 selected 属性（宿主
+  // 属性链对 null 不可达；getter trap 同层序镜像）。`_zwSelectSelectedView`/
+  // selectedness setting / selectedIndex 双 getter / valueMissing 读点与写侧共用，
+  // 读模型归一——写侧 clean 层清除对读侧可见（plain 视图无此归一则 last-wins 互斥
+  // 失效，subtest 5「C 残留选中」面）。
+  function _zwOptSelOf(o) {
+    var k = _zwOptStateKeyOf(o);
+    if (k != null) {
+      if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+          && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) {
+        return _optSelectedDirty[k] === true;
+      }
+      if (typeof _optSelectedClean === 'object' && _optSelectedClean
+          && Object.prototype.hasOwnProperty.call(_optSelectedClean, k)) {
+        return _optSelectedClean[k] === true;
+      }
+    }
+    var s = null, h = null;
+    try { s = o.__zwSelector || null; } catch (_eOsS) { s = null; }
+    try { h = o.__zwHandle || null; } catch (_eOsH) { h = null; }
+    if (s || h) return _zwOptSelState(s, h, k);
+    try { return o.hasAttribute('selected'); } catch (_eOsA) { return false; }
+  }
 
   // option 属性存在性（handle latest-wins → sel latest-wins → 快照链）。
   function _zwOptHasAttr(oSel, oHnd, name) {
@@ -25728,8 +25785,8 @@ return e;
     for (var i = 0; i < list.length; i++) {
       var o = list[i];
       if (!o) continue;
-      var ok = _zwOptKey(o.__zwSelector, o.__zwHandle);
-      if (_zwOptSelState(o.__zwSelector, o.__zwHandle, ok)) {
+      var ok = _zwOptStateKeyOf(o);
+      if (_zwOptSelOf(o)) {
         if (affTrue) {
           // affected 已在列表序更早处胜出——其余 true 一律清。
           _zwOptWriteSelState(o, false);
@@ -25749,7 +25806,7 @@ return e;
         firstEnabled = o;
       }
     }
-    if (affTrue && last != null && _zwOptKey(last.__zwSelector, last.__zwHandle) !== affKey) {
+    if (affTrue && last != null && _zwOptStateKeyOf(last) !== affKey) {
       // affected 在列表序上晚于既有 true——走查途中 last（受影响前唯一存活 true）未被清，
       // 此处补清（受影响者绝对胜出）。
       _zwOptWriteSelState(last, false);
@@ -25806,28 +25863,32 @@ return e;
             // 让位（非用户态）——回落重选新首项。dirty-selected 保持（Chromium V1
             // 实测 idx 不变）。
             var _insReFallback = false;
-            var _affK = t === 'OPTION' ? _zwOptKey(n.__zwSelector, n.__zwHandle) : undefined;
+            var _affK = t === 'OPTION' ? _zwOptStateKeyOf(n) : undefined;
             if (t === 'OPTION' && !_zwSelectIsMultiple(s.sel, s.hnd)
                 && _zwSelectDisplaySize(s.sel, s.hnd) === 1) {
               var _insList = _zwListOfOptions(s.sel, s.hnd);
               if (_insList.length && _insList[0]
-                  && _zwOptKey(_insList[0].__zwSelector, _insList[0].__zwHandle) === _affK) {
+                  && _zwOptStateKeyOf(_insList[0]) === _affK) {
                 var _insDirty = false;
                 for (var _idi = 0; _idi < _insList.length; _idi++) {
                   var _ido = _insList[_idi];
                   if (!_ido) continue;
-                  if (_zwOptDirtySelected(_zwOptKey(_ido.__zwSelector, _ido.__zwHandle))) { _insDirty = true; break; }
+                  if (_zwOptDirtySelected(_zwOptStateKeyOf(_ido))) { _insDirty = true; break; }
                 }
                 if (!_insDirty) {
                   for (var _idc = 0; _idc < _insList.length; _idc++) {
                     var _ico = _insList[_idc];
                     if (!_ico) continue;
-                    var _ick = _zwOptKey(_ico.__zwSelector, _ico.__zwHandle);
+                    var _ick = _zwOptStateKeyOf(_ico);
                     // 只清 **clean 层**回落真态；selected 内容属性背书的 true 不可在此清——
                     // 批插入（append(first, second)）按序模拟时后续兄弟的 insertion steps
                     // 尚未跑，其属性态须留给下方 setting 走查按 affected/列表序裁定
                     //（清掉曾致 second 在自身步骤读 false，script-mutation「removing
                     // selected attribute」precondition 1F）。
+                    // FIXME(s236)：selState/hasAttr 对无身份 pending 视图仍死路（host 查询
+                    // 不可达）——本清理臂 identified-only；plain 态经下方 setting 走查归一，
+                    // 语料无独立暴露面，不在此扩 `_zwOptSelOf`（plain hasAttr 恒 false 会
+                    // 误清属性背书真态，attr 保护门失效）。
                     if (!_zwOptDirtySelected(_ick) && _zwOptSelState(_ico.__zwSelector, _ico.__zwHandle, _ick)
                         && !_zwOptHasAttr(_ico.__zwSelector, _ico.__zwHandle, 'selected')) {
                       _zwOptWriteSelState(_ico, false);
@@ -25847,12 +25908,25 @@ return e;
       }
     }
     // R3909 追加：容器本身是 SELECT 且本条记录未经上方逐点路径（innerHTML= 直写
-    // select 子树——解析产物为 _zwMEl 包装、无 handle/selector，tag 探测全落空）。
-    // 整体替换 = 旧子移除步 + 新子插入步的合流，容器上跑一次无 affected 的 setting
-    //（selected 属性多真态按列表序 last-wins 归一，WPT inserted-or-removed
-    // 「Inserted by innerHTML」断言面）。
+    // select 子树——解析产物为 _zwMEl 包装、无 handle/selector，逐点臂
+    // `_zwOptNearestSelect` 无身份可解析、恒 miss）。整体替换 = 旧子移除步 +
+    // 新子插入步的合流，容器上跑一次 setting（selected 属性多真态按列表序
+    // last-wins 归一，WPT inserted-or-removed「Inserted by innerHTML」断言面）。
+    // s236：affected 键取 added 内**最后一个 OPTION**（fragment 批插带身份
+    // option 时与逐点臂「受影响者绝对胜出」同语义；plain 批保持 undefined，靠
+    // `_zwOptSelOf` 的属性回落按列表序 last-wins 归一）。
     if (!_ranSetting && (added || removed) && _zwIsSelectTag(pSel, pHnd)) {
-      _zwSelectednessSetting(pSel, pHnd);
+      var _ctAff = undefined;
+      if (added) {
+        for (var _cti = added.length - 1; _cti >= 0; _cti--) {
+          var _ctn = added[_cti];
+          if (!_ctn || _ctn.nodeType !== 1) continue;
+          var _ctt = null;
+          try { _ctt = _realTag(_ctn.__zwSelector, _ctn.__zwHandle); } catch (_ctE) { _ctt = null; }
+          if (_ctt === 'OPTION') { _ctAff = _zwOptStateKeyOf(_ctn); break; }
+        }
+      }
+      _zwSelectednessSetting(pSel, pHnd, _ctAff);
     }
   }
 
@@ -25891,10 +25965,10 @@ return e;
     for (var i = 0; i < list.length; i++) {
       var o = list[i];
       if (!o) continue;
-      var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
-      if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+      var k = _zwOptStateKeyOf(o);
+      if (k != null && typeof _optSelectedDirty === 'object' && _optSelectedDirty
           && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) return true;
-      if (typeof _optSelectedClean === 'object' && _optSelectedClean
+      if (k != null && typeof _optSelectedClean === 'object' && _optSelectedClean
           && Object.prototype.hasOwnProperty.call(_optSelectedClean, k)) return true;
     }
     return false;
@@ -25904,7 +25978,7 @@ return e;
   // ——仅 IDL 面 setter 置 dirty。已脏 option 落 dirty 层；否则落 clean 层，dirtiness
   // 保持 false，selected 属性增删步仍生效）。
   function _zwOptWriteSelState(o, v) {
-    var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
+    var k = _zwOptStateKeyOf(o);
     if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
         && Object.prototype.hasOwnProperty.call(_optSelectedDirty, k)) {
       _optSelectedDirty[k] = v === true;
@@ -25925,8 +25999,8 @@ return e;
       for (var i = 0; i < list.length; i++) {
         var o = list[i];
         if (!o) continue;
-        var k = _zwOptKey(o.__zwSelector, o.__zwHandle);
-        if (typeof _optSelAttrDefault === 'object' && _optSelAttrDefault
+        var k = _zwOptStateKeyOf(o);
+        if (k != null && typeof _optSelAttrDefault === 'object' && _optSelAttrDefault
             && !Object.prototype.hasOwnProperty.call(_optSelAttrDefault, k)) {
           _optSelAttrDefault[k] = _zwOptHasAttr(o.__zwSelector, o.__zwHandle, 'selected');
         }
@@ -25947,7 +26021,8 @@ return e;
       var o = list[i];
       if (!o) continue;
       if (i === n) {
-        _optSelectedDirty[_zwOptKey(o.__zwSelector, o.__zwHandle)] = true;
+        var _ssik = _zwOptStateKeyOf(o);
+        if (_ssik != null) _optSelectedDirty[_ssik] = true;
       } else {
         _zwOptWriteSelState(o, false);
       }
@@ -25965,7 +26040,7 @@ return e;
     var _svHits = [];
     for (var _svi = 0; _svi < _svList.length; _svi++) {
       var _svHit = false;
-      try { _svHit = _svList[_svi].selected === true; } catch (_svE) { _svHit = false; }
+      try { _svHit = _zwOptSelOf(_svList[_svi]) === true; } catch (_svE) { _svHit = false; }
       if (_svHit) _svHits.push(_svList[_svi]);
     }
     if (_zwSelectIsMultiple(sel, handle)) return _svHits;
@@ -26085,7 +26160,7 @@ return e;
           var _svFirst = -1, _svLast = -1;
           for (var _oi2 = 0; _oi2 < _ol.length; _oi2++) {
             var _oi2o = _ol[_oi2];
-            if (_oi2o && _oi2o.selected === true) {
+            if (_oi2o && _zwOptSelOf(_oi2o) === true) {
               if (_svFirst < 0) _svFirst = _oi2;
               _svLast = _oi2;
             }
@@ -27599,6 +27674,20 @@ return e;
             return _csL === 'display-p3' ? 'display-p3' : 'limited-srgb';
           } catch (_e187cs) { return 'limited-srgb'; }
         }
+        // `input.switch`（HTMLInputElement，s231——`switch` 内容属性反射布尔，spec
+        // https://html.spec.whatwg.org/multipage/input.html#switch-control
+        // `attr-input-switch` + IDL `dom-input-switch`，tentative 开关外观提案的
+        // IDL 面）：presence 读返 boolean。同 s187 alpha 先例不入 _REFLECTED_BOOL
+        // 通用表（仅 INPUT 接口面——通用表会造非 INPUT 元素 `.switch` 假面 +
+        // CE 反射映射波及）。读走 lw 融合（R136：同批 setAttribute 后 IDL 读
+        // latest-wins）。setter 在 part05 set 臂同款 INPUT 门。
+        if (prop === 'switch' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var _swHas = handle ? __zw_has_attr_handle(handle, 'switch')
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'switch') : __zw_has_attr(sel, 'switch'));
+            return _swHas === '1';
+          } catch (_e231sw) { return false; }
+        }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
         // R3906：读前惰性校准（relevant value 变化 → 钳制/重置，_zwReconcileSel）——无选区
@@ -27936,7 +28025,7 @@ return e;
             var _siFirst = -1, _siLast = -1;
             for (var _sii = 0; _sii < _siList.length; _sii++) {
               var _siO = _siList[_sii];
-              if (_siO && _siO.selected === true) {
+              if (_siO && _zwOptSelOf(_siO) === true) {
                 if (_siFirst < 0) _siFirst = _sii;
                 _siLast = _sii;
               }

@@ -734,6 +734,13 @@ is_isolated_bidi: style.is_some_and(|s| {
                         // is_block_level 子的 dom id 集），此处查集发 BlockBreak。
                         // UA 默认 display 兜底不可用——页样式可把 div 转 inline
                         //（run-in-contains-block-005 的 #r），空表无法区分。
+                        // FIXME（t-trending DEF-2）：本流块级子谓词未排除 float 块子
+                        //（CSS2 §9.3.1：float 与 abspos 同为离流盒，float:left div 亦
+                        // 命中下方 is_block_level 全集）——与 R109 拆分侧
+                        // `inline_block_split::is_out_of_flow` 的 abspos 显式排除不对称
+                        //（float 仅由下方 R3784 臂后置分流 FloatAnchor）。已证无实害
+                        //（floats 321 例 kill-switch A/B 失败集 IDENTICAL + 首轮 4 组
+                        // 动态探针无文本丢失）；如现伪影再按 OOF 同款在谓词处排除。
                         let is_block_level = style
                             .map(|s| {
                                 matches!(
@@ -1537,14 +1544,55 @@ is_isolated_bidi: style.is_some_and(|s| {
         // local_name=="ruby" 走排除表，其余元素（rbc/rb 基容器、包裹 span）走
         // doc.text_content 把 rt 注音并进 run 文本（improperly-contained-annotation：
         // rbc flatten run="BA" 宽 55.6 vs ruby 26.7，6.5 remeasure 母子宽倒挂实证）。
-        let text = Self::collect_text_excluding(
-            doc,
-            child_id,
-            &["rt", "rp", "rtc"],
-            styles,
-            &self.display_none_walk_nodes,
-            &self.oof_walk_nodes,
-        );
+        // t-trending（CSS2 §9.2.1.1）：含**块级子**的 inline 元素——块级子的文本归属
+        // §9.2.1.1 拆分后的独立块盒（R109 Block 片段/匿名块），不得扁平进宿主 IFC
+        // 行盒。旧 flatten 泄漏块子文本（github trending header [空白+fixed+
+        // <span><div>…] 段把块文本 "b" 计入载体行）→ 空白段行盒获 line-height strut
+        // （14×1.5=21px）= 页顶黑带；fragment 级测量（R4489）与容器 remeasure 双路径
+        // 同泄。载体 span 自身保留「空 inline」零宽 run（§10.8 line-height/边框语义），
+        // 孤立行由 R1476/R57 M3 塌零。竖排不动（R1043 结构域，flatten 为现行为）。
+        // kill-switch `ZW_BLOCK_CHILD_NO_FLATTEN=0` 回退旧扁平化。
+        static BLOCK_CHILD_NO_FLATTEN: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_BLOCK_CHILD_NO_FLATTEN").as_deref() != Ok("0"));
+        // display:none 子不算块级子（None 不入 R109 块流）——其文本由既有
+        // collect_text_excluding display:none 剪枝防线吸收（display_none_leak 回归）。
+        // 离流（position:absolute/fixed）子不算在流块级子（CSS2 §9.2.1.1 匿名块规则只
+        // 围绕**在流**块级盒生成；离流子不入 IFC 亦不触发拆分）——
+        // position-relative-003/004/005（crbug 1058690：relative span>span>fixed/abs
+        // 块子）实证误判会把载体空白文本置空、移 OOF 静态位锚线。
+        let has_flow_block_child = if styles.contains_key(&child_id) {
+            doc.child_nodes(child_id).iter().any(|&gc| {
+                doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                    && styles.get(&gc).is_some_and(|st| {
+                        !matches!(st.position, PositionValue::Absolute | PositionValue::Fixed)
+                            && !matches!(
+                                st.display,
+                                DisplayValue::None
+                                    | DisplayValue::Inline
+                                    | DisplayValue::InlineBlock
+                                    | DisplayValue::InlineFlex
+                                    | DisplayValue::InlineGrid
+                                    | DisplayValue::InlineTable
+                            )
+                    })
+            })
+        } else {
+            // paint Path B（空 styles）：读 layout 趟存储信号——本门专属在流块级子集
+            //（R4312 块子门集合含离流块子，语义更宽，不复用）。
+            self.flow_block_child_walk_nodes.contains(&child_id)
+        };
+        let text = if *BLOCK_CHILD_NO_FLATTEN && !self.vertical && has_flow_block_child {
+            String::new()
+        } else {
+            Self::collect_text_excluding(
+                doc,
+                child_id,
+                &["rt", "rp", "rtc"],
+                styles,
+                &self.display_none_walk_nodes,
+                &self.oof_walk_nodes,
+            )
+        };
         let trimmed = if run_preserves {
             text
         } else if run_ws.is_some_and(|ws| ws.break_at_newline) {

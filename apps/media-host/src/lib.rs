@@ -22,6 +22,7 @@ use zero_protocol::message::{IpcMessage, IpcMessageKind};
 use zero_protocol::{IpcChannel, is_disconnected_channel_message};
 
 pub mod kernel;
+pub mod sandbox;
 
 pub use kernel::MediaKernel;
 

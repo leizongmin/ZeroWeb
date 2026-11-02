@@ -90,6 +90,8 @@ mod r5322_pre_newline_strut_tests;
 mod r5341_elliptic_radius;
 /// R5365 scrollable overflow 传递遍历（abspos 逃逸 static 裁剪盒）+ 反向滚动轴真值表。
 mod r5365_scroll_overflow_extent;
+/// R5386 @property 注册初值在管线 var() 解析（css-properties-values-api-1 §2）。
+mod r5386_registered_var_render_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

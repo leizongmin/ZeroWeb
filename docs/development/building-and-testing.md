@@ -42,6 +42,10 @@ cargo run --bin zero-browser
 cargo run --bin zero-browser -- --headless --remote-debugging-port=9222
 ```
 
+Headless CDP 默认强制认证：未显式传 `--remote-debugging-token` 时，启动即生成 128-bit 随机令牌，经 stderr（`CDP auth token:`）与发现端点 `/json` 的 `webSocketDebuggerUrl` 交付；无令牌的 WebSocket 连接一律被拒（`-32001`）。playwright `connectOverCDP` 等标准客户端从发现端点 URL 取令牌，零改动可连。
+
+`ZW_DEVTOOLS_FRONTEND_DIR` provision 的 Chrome stock frontend 页面直连 URL 不携带令牌，在强制令牌下被拒——frontend provision 与强制令牌互斥，headless 当前没有关闭令牌的出口。需要调试时用自管 CDP 客户端连接；恢复 frontend 完整可用需要令牌随 frontend URL 交付的支持，尚未实现。
+
 想先验证最短渲染链路，可以先跑 `webview-demo`；想直接看浏览器壳、多进程和 GPU 路径，就跑 `make browser`。需要 CPU + scale 1.0 的 WPT 对齐模式时使用 `make browser-cpu`。Windows 对应入口见 [Windows 开发环境](windows.md)。
 
 打包成各平台安装包见 [打包与发布](../releases/packaging.md)。

@@ -2711,6 +2711,23 @@
     return res;
   }
 
+  // raw-secret / raw-public 格式别名归一（WICG webcrypto-modern-algos KeyFormat 扩展，
+  // webcrypto-compat-v3 M2-5）：既有对称算法（secret 型）raw-secret ≡ raw，既有非对称
+  // EC/OKP（public 型 raw 面）raw-public ≡ raw；RSA 无 raw 面两别名均不映射。不改写的
+  // 别名落既有未知格式拒绝面；类型不匹配由既有 raw 分支类型校验承接（EC/OKP export
+  // raw 非 public → InvalidAccessError）。importKey/exportKey 入口各调一次，wrapKey 经
+  // exportKey 直通、unwrapKey 白名单放行后经 importKey 归一。
+  // https://wicg.github.io/webcrypto-modern-algos/#keyformat
+  function _zw_normalizeFormatAlias(format, algoName) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    var isRsa = _zw_rsaIsFamily(algoName);
+    var isEc = _zw_ecIsFamily(algoName);
+    var isOkp = _zw_okpIsFamily(algoName);
+    if (fmt === 'RAW-SECRET' && !isRsa && !isEc && !isOkp) return 'raw';
+    if (fmt === 'RAW-PUBLIC' && (isEc || isOkp)) return 'raw';
+    return format;
+  }
+
   // ===== RSA 家族（RSA-OAEP / RSASSA-PKCS1-v1_5 / RSA-PSS）shim 支撑（webcrypto M4a）=====
   // host 原语见 js_dom_bridge/crypto.rs（rsa 0.9）；字节桥统一 csv（DER/密文/签名/分量），
   // jwk 分量经 `;` 分隔多字段。密钥材料（DER/分量）不落 tracing（零日志纪律）。

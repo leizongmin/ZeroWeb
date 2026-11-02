@@ -1,6 +1,7 @@
 # 决策包:M4 收口新发现 ⑤ media-host 沙箱 / ⑥ DevTools frontend token 限制
 
 **日期**:2026-11-02　**拍板基线**:`97d344e57`
+**拍板(2026-11-02,用户)**:⑤ → **A**(③A-media-host 最小档案);⑥ → **B**(文档化接受);同日 master 缺口表在册项 ①(renderer landlock file:// 取舍)→ **A**(browser 预解析 → LoadHtml)。拍板时补强核查:file:// 子资源已走 browser 侧 fetch_proxy(browser 侧直读),renderer 直读仅主文档+模块脚本,①A 改动面收敛于主文档读迁移 + 模块脚本改代理路径。
 **性质**:设计选项细化(无代码变更)。两项均为 M4 收口/切片 5 交付期发现,原 2026-11-01 [决策包](2026-11-01-decision-package-1234.md) 范围外;细化到可拍板粒度供逐项确认。在册第三项待拍板(renderer landlock 默认值 file:// 三选项)粒度已够,见 [缺口表](master.md),不在此重复。
 
 ## 背景事实(代码查实,2026-11-02)

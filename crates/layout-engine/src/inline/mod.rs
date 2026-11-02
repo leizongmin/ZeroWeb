@@ -86,6 +86,11 @@ pub struct InlineFormattingContext {
     /// R4312：含块级元素子的 inline 元素集合——FLAT_CHILD_WALK 块子门在 paint
     /// Path B（空 styles）下的判定信号。见 `LayoutBox.inline_block_child_nodes`。
     pub block_child_walk_nodes: NodeIdSet,
+    /// t-trending：含在流块级元素子（display 非 inline 级且 position 非 absolute/
+    /// fixed）的 inline 元素集合——flatten 泄漏门（§9.2.1.1 块子文本不扁平进宿主
+    /// IFC）在 paint Path B（空 styles）下的判定信号。见
+    /// `LayoutBox.inline_flow_block_child_nodes`。
+    pub flow_block_child_walk_nodes: NodeIdSet,
     /// display:none 元素集合——FLAT_CHILD_WALK 隐藏子门在 paint Path B（空 styles）
     /// 下的判定信号（layout IFC 有 styles 直判不消费）。CSS2 §9.3 / CSS Display 3
     /// §2.1：display:none 子树不生成任何盒，其文本不得泄入父 IFC。
@@ -446,6 +451,7 @@ impl InlineFormattingContext {
             isolated_bidi_overrides: NodeIdSet::default(),
             vertical_walk_nodes: NodeIdSet::default(),
             block_child_walk_nodes: NodeIdSet::default(),
+            flow_block_child_walk_nodes: NodeIdSet::default(),
             display_none_walk_nodes: NodeIdSet::default(),
             oof_walk_nodes: NodeIdSet::default(),
             color_divergent_walk_nodes: NodeIdSet::default(),
@@ -599,6 +605,12 @@ impl InlineFormattingContext {
     /// R4312：注入 paint Path B 的块级元素子集合（walk 块子门信号）。
     pub fn with_block_child_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
         self.block_child_walk_nodes = nodes;
+        self
+    }
+
+    /// t-trending：注入 paint Path B 的在流块级元素子集合（flatten 泄漏门信号）。
+    pub fn with_flow_block_child_walk_nodes(mut self, nodes: NodeIdSet) -> Self {
+        self.flow_block_child_walk_nodes = nodes;
         self
     }
 

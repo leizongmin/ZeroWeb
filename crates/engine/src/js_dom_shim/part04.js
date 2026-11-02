@@ -6096,7 +6096,11 @@
                 }
               }
             }
-            return notPrevented;
+            // s235（html-semantics input-type-button）：click() 是 void（spec
+            // dom-element-click / HTML §activation behavior——旧
+            // `return notPrevented` 把 dispatchEvent 布尔结果泄成返回值；
+            // WPT input-type-button "default behavior" 断言 click() ===
+            // undefined 钉面）。上方 disabled 早退臂本就返 undefined，口径归一。
           };
         }
         // Constraint Validation API（R2825）——表单校验库（checkValidity gate submit / setCustomValidity
@@ -14726,7 +14730,21 @@
               vsS = (typeof value === 'number' && isNaN(value)) ? ''
                 : _formatHtmlDateValue(new Date(Date.UTC(1970, 0 + vsN, 1)), 'month');
             } else {
-              vsS = (typeof value === 'number' && isNaN(value)) ? '' : _formatHtmlDateValue(new Date(vsN), vsT);
+              if (typeof value === 'number' && isNaN(value)) {
+                vsS = '';
+              } else if (vsT === 'time') {
+                // s233（html-semantics）：出界值 wrap——数字→time 串按 ms 对 24h
+                // 双精度取模上卷（HTML §time state 的 number→string 面，浏览器
+                // 实测语义；WPT valueasnumber setter on type time 钉面：
+                // -3600000→"23:00" 域内 Date 语义天然已过，
+                // 2.7343337071894478e26 直接 new Date 落 Invalid Date（超 JS
+                // Date ±8.64e15 ms 值域）→ value 落空，必须先模——node 实证
+                // fmod 39250944 ms → 精确复现期望 "10:54:10.944"）。仅 time；
+                // date/week/datetime-local 为 epoch 基语义不同不动。
+                vsS = _formatHtmlDateValue(new Date(((vsN % 86400000) + 86400000) % 86400000), vsT);
+              } else {
+                vsS = _formatHtmlDateValue(new Date(vsN), vsT);
+              }
             }
             _inputValues[key] = vsS; _inputValuesSet[key] = true;
             delete _numberEditor[key]; // s209：程序化写清 number 编辑器原文（badInput 仅用户键入面）

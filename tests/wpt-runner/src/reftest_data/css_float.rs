@@ -425,18 +425,28 @@ const REFTESTS: &[InlineReftestDef] = &[
     // inline span 文本 ml2]（baidu 结构，字号 14→42px 等比放大——runner 字体
     // 环境无 CJK 字形，信号由可见字形/背景承载）。邻臂（nb，纯文本 float，
     // Σ = max-child 无需扩臂）独立 header，两 kill-switch 下恒单行 = 邻近变体
-    // 负控制。ref 页 float 去 definite height（走 auto 高常规重测恒单行）+
-    // white-space:nowrap（R4920 参照）；修复态两页逐像素相等。
+    // 负控制。ref 页同样 definite height:48px + white-space:nowrap（R4920 参照
+    // 负控制）；修复态两页逐像素相等。
+    // R5388 chromium oracle 定谳（headless offsetHeight/offsetTop 探针）：float 内
+    // 单行行盒高 = line-height 42（inline 盒 font extent 47 负 leading 溢出、不撑
+    // float 高），故 float **definite 48 vs auto 42 语义不等价**——占位高差把 float2
+    // 顶到 y=60 vs 54，chromium 自身两页也差 2.55%。旧 ref（去 height 走 auto 高）
+    // 的「修复态两页逐像素相等」从不成立（当初绿是双错相消伪绿，ZW 行为与
+    // chromium 一致无回归）；ref 补回 height:48px 对齐占位几何，nowrap 保留为
+    // 收缩宽负控制（test 靠 definite height 重测收敛单行、ref 靠 nowrap 恒单行，
+    // 可见几何在正确实现下全同）。
     // 负控制（800×600=480000px，Layout 阈值 1%，本套件实测口径）：default 0 diff；
-    // ZW_FLOAT_INLINE_SUM=0 → 52887px = 11.02%（11.0×）；
-    // ZW_FLOAT_DEFINITE_H_REMEASURE=0 → 53708px = 11.19%（11.2×）。
+    // ZW_FLOAT_INLINE_SUM=0 → 11.11% 显红（Σ=0 收缩塌宽、异签名）。
+    // ZW_FLOAT_DEFINITE_H_REMEASURE 单臂失效（R5388）：修正后 ref 页同为 definite
+    // height float，关该开关两页同坏仍相等——definite-height 重测 gate 的回归保护
+    // 不再由本案单独承载，待后续轮评估补专门案。
     // 文件孪生（make reftest-upstream 域 + 几何 dump 用）：
     // tests/wpt-runner/local-reftests/css/CSS2/floats/float-shrink-inline-children-zw-001*.html。
     InlineReftestDef {
         id: "css-float/float-shrink-inline-children-zw-001",
         category: ReftestCategory::Layout,
         test_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px}.hot-refresh{float:right;height:48px}.hot-refresh-text{font-size:42px;line-height:42px;margin-left:2px;background:#3fbf3f}.c-icon{display:inline-block;width:48px;height:48px;background:#4e6ef2}</style></head><body><div class=\"header\"><a class=\"hot-refresh\"><span class=\"hot-refresh-text\" style=\"background:#e6a23c\">refresh swap</span></a></div><div class=\"header\"><a class=\"hot-refresh\"><i class=\"c-icon\"></i><span class=\"hot-refresh-text\">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div></body></html>",
-        ref_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px}.hot-refresh{float:right;white-space:nowrap}.hot-refresh-text{font-size:42px;line-height:42px;margin-left:2px;background:#3fbf3f}.c-icon{display:inline-block;width:48px;height:48px;background:#4e6ef2}</style></head><body><div class=\"header\"><a class=\"hot-refresh\"><span class=\"hot-refresh-text\" style=\"background:#e6a23c\">refresh swap</span></a></div><div class=\"header\"><a class=\"hot-refresh\"><i class=\"c-icon\"></i><span class=\"hot-refresh-text\">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div></body></html>",
+        ref_html: "<html><head><style>body{margin:0;font:13px/23px Arial,sans-serif}.header{margin:8px;padding:4px}.hot-refresh{float:right;height:48px;white-space:nowrap}.hot-refresh-text{font-size:42px;line-height:42px;margin-left:2px;background:#3fbf3f}.c-icon{display:inline-block;width:48px;height:48px;background:#4e6ef2}</style></head><body><div class=\"header\"><a class=\"hot-refresh\"><span class=\"hot-refresh-text\" style=\"background:#e6a23c\">refresh swap</span></a></div><div class=\"header\"><a class=\"hot-refresh\"><i class=\"c-icon\"></i><span class=\"hot-refresh-text\">ab cdefghijklmnopqrstuvwxyzabcd</span></a></div></body></html>",
         is_match: true,
     },
     // ── slice12 rework（R4921）：float 内**带文本的定宽**原子 inline 子——Σ 单边入账

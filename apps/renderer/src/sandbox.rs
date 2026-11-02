@@ -14,10 +14,11 @@
 //!   HTTP 磁盘缓存 rw、`/dev/shm` rw（fd 通道 + 后续 media C2 帧路径）、DNS/NSS
 //!   与 JS `Date` 时区所需的 `/etc` 只读、动态库目录 ro+EXECUTE（dlopen/NSS 老
 //!   系统）、helper 二进制所在目录 EXECUTE（execve 路径级收窄）。默认关的原因：
-//!   **file:// 主文档与模块脚本由 renderer 直读**（`zero_net::read_file_url`），
-//!   允许清单不含任意路径读——默认启用会拒绝「打开本地文件」既有产品流（地址栏
-//!   本地文件、gui_smoke/parity_smoke file:// fixtures）。取舍记入控制面待决，
-//!   拍板后翻默认。
+//!   file:// 的 **模块体动态 import** 面由 renderer worker 本地直读
+//!   （`js_worker` 的 `__zw_compile_module` fetch 闭包 → `zero_net::read_file_url`），
+//!   允许清单不含任意路径读——默认启用会拒绝该面（2026-11-02 实证：landlock 开后
+//!   动态 import 被拒）；主文档/子资源/静态模块依赖已全部经 browser fetch_proxy
+//!   （IPC）直读，不受影响。取舍记入控制面待决，拍板后翻默认。
 //! - **④ fail 语义（本切片拍板记录）**：fail-closed——任一安装失败 `Err` 上抛，
 //!   `run_desktop_role` 传播 → main exit(1)，浏览器侧呈现为 renderer 启动失败
 //!   （页面错误可见），不降级裸奔。操作员出口：`ZW_RENDERER_SANDBOX=0`（全关）、

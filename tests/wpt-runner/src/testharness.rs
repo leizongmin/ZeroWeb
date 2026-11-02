@@ -10987,6 +10987,25 @@ fn apply_testdriver_command(
     }
     .map(|value| value.trim().to_string())
     .filter(|value| !value.is_empty() && value != "null" && value != "undefined");
+    // s232（html-semantics focus 时序域，2026-11-02）：键盘链动态锚宿主解析 miss
+    // 回落——`__zw_td_selector` 经 stub selectorFor 启发式（arm4 属性唯一化）可
+    // 产出 **shim 视图可见而宿主 native doc 不可解析**的选择器（IDL checked 写入
+    // 落 shim attr-instance 而 native doc 无投影——radio-focus-navigation-checked
+    // `input[checked]` 双视图分歧，s231 勘根闭环：20 次重入队全 miss 实证该形态
+    // 重试无效）。WebDriver 键盘事件目标 = 活动元素（spec 真），下方 M2-S195
+    // 降级臂（live activeElement 通道）即该语义——本回落是其原意图延伸：仅纯
+    // 键盘链（无显式 selector）且宿主解析 miss 时转降级臂；显式 selector
+    // （test_driver.click/send_keys 指定目标）与指针步 R347 迟到物化重试语义不动。
+    let selector = if matches!(command.operation.as_str(), "keydown" | "keyup")
+        && command.selector.is_none()
+        && selector
+            .as_deref()
+            .is_some_and(|sel| webview.page_node_ref_for_selector(sel).is_none())
+    {
+        None
+    } else {
+        selector
+    };
     // M2-S195（html-semantics focus 时序域，2026-11-01）：键盘链步动态焦点降级——
     // Actions send 的 key 步 origin = send 时点 activeElement（R3254-K2 先例），
     // createElement 产物在下一链 send 时 selectorFor 启发式（id/tag/attr/nth 验证
@@ -11331,10 +11350,20 @@ fn apply_testdriver_command(
             }
             // M2-S195：radio 焦点上方向键 = 组内移动（focusing steps + checked 跟随，
             // R3254-K5 M3 切片 2 既有 shim 臂——本刀改造为焦点移动语义，见 part06）。
+            // s230（html-semantics M2，2026-11-02）：补 ArrowLeft/Right（\u{E012}/\u{E014}）
+            // 映射——shim 臂四向齐备（ArrowDown/Right=下一、ArrowUp/Left=上一）而本链
+            // 只派 Up/Down，radio-keyboard-navigation-order 的 ArrowRight 组内导航
+            // 静默落空（按键默认动作分发根本不进 shim 臂）。
             // 消费判定经返回值（radio 目标返 true；非 radio/SELECT 目标落既有
-            // InsertText 路径不动——SELECT/type-ahead 与滚动键面本刀不扩）。
-            if matches!(key.as_str(), "\u{E013}" | "\u{E015}") {
-                let key_name = if key == "\u{E013}" { "ArrowUp" } else { "ArrowDown" };
+            // InsertText 路径不动——SELECT/type-ahead 与滚动键面本刀不扩；SELECT 的
+            // Left/Right 臂返 false 同旧落空行为不变）。
+            if matches!(key.as_str(), "\u{E012}" | "\u{E013}" | "\u{E014}" | "\u{E015}") {
+                let key_name = match key.as_str() {
+                    "\u{E012}" => "ArrowLeft",
+                    "\u{E013}" => "ArrowUp",
+                    "\u{E014}" => "ArrowRight",
+                    _ => "ArrowDown",
+                };
                 let nav_script = zero_engine::script_select_key_action(&selector, key_name);
                 let consumed = webview
                     .execute_script(&nav_script)

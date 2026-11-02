@@ -465,6 +465,75 @@
     return null;
   }
 
+  // R331b：批表 identity 反查缓存——`__zw_handle_for_selector_all` 一次往返取 host
+  // 倒置表全量（sel→handle），getElementsByTagName 返回点升格零逐元素宿主往返
+  //（单查版 `__zw_handle_for_selector` 逐条往返在 baidu 级全文档枚举面是 R-baidu3
+  // 同款往返风暴源，R77 教训 #7 的保守级）。印章 = (apply 代际, pending
+  // added/removed 长度)——同 `_zwTagCache` 保守级：host 倒置表 merge 发生在 apply
+  //（游标推进），换代/结构记账变化即作废。未注册回调（renderer 直连等宿主）→
+  // null，调用点回落原 sel wrapper 零变化。
+  var _zwHidAllCache = null;
+  function _zwHidAllMap() {
+    if (typeof __zw_handle_for_selector_all !== 'function') return null;
+    var _haGen = (typeof globalThis._zwApplyGeneration === 'function') ? globalThis._zwApplyGeneration() : 0;
+    var _haAdded = (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) ? _zwPendingAdded.length : 0;
+    var _haRemoved = (typeof _zwPendingRemoved !== 'undefined' && _zwPendingRemoved) ? _zwPendingRemoved.length : 0;
+    if (_zwHidAllCache && _zwHidAllCache.gen === _haGen
+        && _zwHidAllCache.added === _haAdded && _zwHidAllCache.removed === _haRemoved) {
+      return _zwHidAllCache.map;
+    }
+    var _haWire = '';
+    try { _haWire = String(__zw_handle_for_selector_all() || ''); } catch (_haE) { return null; }
+    var _haMap = new Map();
+    if (_haWire) {
+      var _haRows = _haWire.split('|');
+      for (var _hai = 0; _hai < _haRows.length; _hai++) {
+        var _haSep = _haRows[_hai].indexOf('\x1f');
+        if (_haSep < 0) continue;
+        _haMap.set(_haRows[_hai].slice(0, _haSep), _haRows[_hai].slice(_haSep + 1));
+      }
+    }
+    _zwHidAllCache = { gen: _haGen, added: _haAdded, removed: _haRemoved, map: _haMap };
+    return _haMap;
+  }
+
+  // R331b：文档级 tag 枚举返回点 identity 升格 + 同身份去重（R100/R331 同族漏配
+  // 收口——querySelector/querySelectorAll 返回点已接 `_zwQueryWrapIdentity` 反查，
+  // getElementsByTagName/getElementsByTagNameNS 漏配）。s168c 后 apply 使动态元素
+  // 进快照查询视图，枚举快照段产出 sel wrapper，而 createElement 原 handle proxy
+  //（`_listenerStore['@'+handle]` 侦听 / `_onHandlers` on* 侧状态宿主）仍存活——
+  // encode-form 的 `iframe.onload=` 落 sel 键、load 派发在 handle 键（`querySelectorAll`
+  // 目标解析走 R331 反查升格），侦听器查空 → iframe.onload 永不触发 → 全链 pending
+  // 页级超时（encoding 面 24 页全 Timeout，全量 WPT 66.39%→42.11% 实证）。升格命中
+  // 返回原 handle proxy（`_proxyCache['@'+handle]` 同对象），按身份键去重——快照
+  // 段与 pending 段同一节点不再双计。未命中/未注册逐条原样。
+  function _zwUpgradeTagEnumIdentity(arr) {
+    var _hiMap = _zwHidAllMap();
+    if (!_hiMap || !_hiMap.size || !arr || !arr.length) return arr;
+    var _hiOut = [];
+    var _hiSeen = {};
+    for (var _hii = 0; _hii < arr.length; _hii++) {
+      var _hiEl = arr[_hii];
+      try {
+        var _hiSel = _hiEl ? _hiEl.__zwSelector : null;
+        var _hiH = (_hiSel && !_hiEl.__zwHandle) ? _hiMap.get(_hiSel) : null;
+        if (_hiH) {
+          // 同 `_zwQueryWrapIdentity` 命中臂：正置登记（`_realTag` 读回锚）+ 原 proxy。
+          _r100Remember(_hiH, _hiSel);
+          _hiEl = _wrapHandle(_hiH);
+        }
+      } catch (_hiE1) {}
+      var _hiK = null;
+      try { _hiK = _elKeyOf(_hiEl) || _hiEl.__zwSelector || _hiEl.__zwHandle || null; } catch (_hiE2) {}
+      if (_hiK) {
+        if (_hiSeen[_hiK]) continue;
+        _hiSeen[_hiK] = 1;
+      }
+      _hiOut.push(_hiEl);
+    }
+    return _hiOut;
+  }
+
   // WAB2-M3-s1：fullscreen steps 异步化——spec「run the fullscreen steps」在渲染机会
   // （update the rendering）执行，非微任务/同步（WPT after-error 案：requestFullscreen 后
   // step_timeout(0) 内移除元素 → step 见 disconnected → 拒绝；同步/微任务 step 会先跑而误进
@@ -2538,44 +2607,6 @@
     } catch (_eFmtCaret) {}
   }
 
-  // R3254-M3 切片 2：delete/forwardDelete 实应用——选区删除（flat 模型：两端点在
-  // 宿主直子文本节点内 → nodeValue splice → SetChildText mutation 流转宿主）。
-  // collapsed：backspace 删起点前一单元、forwardDelete 删终点后一单元（代理对安全）；
-  // caret 回落删除点（selection 单例直换）。
-  function _zwExecCmdApplyDelete(range, forward) {
-    var sc = range.startContainer, so = range.startOffset | 0;
-    var ec = range.endContainer, eo = range.endOffset | 0;
-    if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
-    var v = String(sc.nodeValue || '');
-    var start = so, end = range.collapsed ? so : (ec === sc ? eo : -1);
-    if (end < 0) return; // 跨容器选区 defer（flat 模型限制，记录）
-    if (start === end) {
-      if (forward) {
-        if (end >= v.length) return; // 文本末尾无后单元
-        end++;
-        var nxt = v.charCodeAt(end - 1);
-        if (nxt >= 0xDC00 && nxt <= 0xDFFF && end < v.length) {
-          var after = v.charCodeAt(end);
-          if (after >= 0xDC00 && after <= 0xDFFF) end++;
-        }
-      } else {
-        if (start === 0) return; // 文本起点无前单元
-        start--;
-        var last = v.charCodeAt(start);
-        if (last >= 0xDC00 && last <= 0xDFFF && start > 0) {
-          var prev = v.charCodeAt(start - 1);
-          if (prev >= 0xD800 && prev <= 0xDBFF) start--;
-        }
-      }
-    }
-    if (start === end) return;
-    sc.nodeValue = v.slice(0, start) + v.slice(end);
-    var nr = document.createRange();
-    nr.setStart(sc, start);
-    nr.collapse(true);
-    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
-  }
-
   // R3254-M3 切片 6：insertHTML（execCommand 臂）——选区在宿主直子文本节点内 →
   // 宿主 innerHTML 在选区对应串偏移处 splice 插入 fragment 串（选区非空先删选中
   // 段——与 insertParagraph 同款实体感知偏移扫描）。caret 落插入内容后（文本边界
@@ -3823,8 +3854,9 @@
       // R330：htmlCtx 查询时捕获（主文档 HTML——document 级调用者的 context 是主文档；
       // cross-document 委托已在函数头分流）。
       var _r330Html = _zwCtxIsHtmlDoc(null, null);
-      return _zwMakeCollection(_zwFilterByTagNameNS(_zwDocAllElements(), _r120Tag, undefined, _r330Html), true,
-        { matches: _zwLiveMatchesFor(_r120Tag, undefined, _r330Html) });
+      return _zwMakeCollection(
+        _zwUpgradeTagEnumIdentity(_zwFilterByTagNameNS(_zwDocAllElements(), _r120Tag, undefined, _r330Html)),
+        true, { matches: _zwLiveMatchesFor(_r120Tag, undefined, _r330Html) });
     },
     // `document.getElementsByTagNameNS(ns, localName)`（spec `dom-document-getelementsbytagnamens`，R12）——
     // 命名空间作用域的标签集合查询。polyfill 无 ns 概念（HTML 单 ns），忽略 ns 按 localName 查
@@ -3839,7 +3871,7 @@
       }
       var ln = String(localName == null ? '' : localName);
       var els = _zwDocAllElements();
-      var out = _zwFilterByTagNameNS(els, ln, ns);
+      var out = _zwUpgradeTagEnumIdentity(_zwFilterByTagNameNS(els, ln, ns));
       return _zwMakeCollection(out, true, { matches: _zwLiveMatchesFor(ln, ns) });
     },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
@@ -4400,12 +4432,23 @@
                 try {
                   var ttags = Array.isArray(globalThis.__zwTypingTags)
                     ? globalThis.__zwTypingTags.slice() : [];
+                  // D4（2026-11-02 editing-compat）：显式关账表——caret 在 <tag>
+                  // 上下文内执行 format 命令 = typing 态对该 tag 显式 OFF，typed
+                  // 段不继承该壳（语料 `<div><b>abc[]<br></b></div>`+bold+inserttext
+                  // 期望 `<b>abc</b>d` 形）；state-off 臂撤销。与 ttags 同生命周期
+                  //（_zwSync 清除、delete 包裹快照回写）。
+                  var toff = Array.isArray(globalThis.__zwTypingTagsOff)
+                    ? globalThis.__zwTypingTagsOff.slice() : [];
                   var tat = ttags.indexOf(fmtTag2);
                   // toggle 判定走 DOM-only（gate14 双执行 underline 语义：Chrome
                   // 第二次 collapsed 执行不关 typing 态——qState expected true——
                   // ttags fallback 只进 qState 读面，不进臂内判定）。
-                  if (_zwQueryFormatStateDom(cmd)) { if (tat >= 0) ttags.splice(tat, 1); }
-                  else {
+                  if (_zwQueryFormatStateDom(cmd)) {
+                    if (tat >= 0) ttags.splice(tat, 1);
+                    if (toff.indexOf(fmtTag2) < 0) toff.push(fmtTag2);
+                  } else {
+                    var tatOff = toff.indexOf(fmtTag2);
+                    if (tatOff >= 0) toff.splice(tatOff, 1);
                     // sub/sup 互斥（spec subscript/superscript action 先关对侧；
                     // multitest `[["superscript",""],["subscript",""],
                     // ["inserttext","a"]]` expected `foo<sub>a</sub>bar` 实证）。
@@ -4417,6 +4460,7 @@
                     if (tat < 0) ttags.push(fmtTag2);
                   }
                   globalThis.__zwTypingTags = ttags;
+                  globalThis.__zwTypingTagsOff = toff;
                 } catch (_eTt) {}
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
@@ -4429,11 +4473,13 @@
                   }
                 } catch (_eFmt) {}
               }
-              // R3254-M3 切片 2：delete/forwardDelete 实应用——选区删除（flat 模型：
-              // 两端点在宿主直子文本节点内 → SetChildText splice；collapsed →
-              // back/forward 一个 UTF-16 单元，代理对安全）。caret 回落删除点。
-              if ((cmd === 'delete' || cmd === 'forwarddelete') && rng2) {
-                try { _zwExecCmdApplyDelete(rng2, cmd === 'forwarddelete'); } catch (_eDel) {}
+              // F6（2026-11-02 editing-compat）：delete/forwardDelete 撤壳——
+              // part01f deleteSelection + 两 action 忠实移植（跨容器选区、
+              // strip-wrappers Chrome 留壳、块合并、qV override 重锚），替换
+              // R3254-M3 切片 2 flat 模型（同文本节点 splice、跨容器 defer）。
+              if ((cmd === 'delete' || cmd === 'forwarddelete')
+                  && typeof globalThis.__zw_ce_delete_apply === 'function') {
+                try { globalThis.__zw_ce_delete_apply(cmd === 'forwarddelete'); } catch (_eDel) {}
               }
               // R3254-M3 切片 5（2026-10-30 换代 live 就地拆分）：insertParagraph——
               // beforeinput 已由事件序路径派发，此处仅变更（fireEvents=false）。
@@ -10389,6 +10435,7 @@
       // setupEditingHost 每 case 走 removeAllRanges/addRange）。内部 typing 重锚
       // 走 `_ranges` 直接赋值不经此，state 存活到下一显式变更。
       globalThis.__zwTypingTags = null;
+      globalThis.__zwTypingTagsOff = null; // D4 显式关账表同生命周期
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）

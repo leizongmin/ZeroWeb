@@ -601,6 +601,13 @@ pub struct LayoutBox {
     /// 到 500px，r1153_table_cell_inline_child_not_over_measured 实证）。填充方式同
     /// `inline_vertical_nodes`。
     pub inline_block_child_nodes: NodeIdSet,
+    /// t-trending（CSS2 §9.2.1.1）：含**在流**块级元素子（display 非 inline 级且
+    /// position 非 absolute/fixed——离流块子不入块流、不触发匿名块拆分）的 inline
+    /// 元素集合（key = 元素 NodeId）。flatten 泄漏门（块子文本不扁平进宿主 IFC）的
+    /// paint Path B（空 styles）判定信号——R4312 集合（`inline_block_child_nodes`）
+    /// 语义更宽（含离流块子），不复用。填充方式同 `inline_vertical_nodes`。
+    /// Option<Box> 堆侧化（layout_box_size_pin：per-box 常驻仅极少数盒持有）。
+    pub inline_flow_block_child_nodes: Option<Box<NodeIdSet>>,
     /// R5177（CSS 2.1 §16.1）：computed color 与父元素不同的 inline 元素集合（key =
     /// 元素 NodeId）。FLAT_CHILD_WALK 折回门的 paint Path B（空 styles）判定信号——
     /// color 不一致的纯文本 inline 子折回外层会把子树文本归因外层，paint 侧 R358
@@ -886,6 +893,7 @@ impl Default for LayoutBox {
             inline_color_divergent_nodes: NodeIdSet::default(),
             inline_nested_atomic_nodes: NodeIdSet::default(),
             inline_block_child_nodes: NodeIdSet::default(),
+            inline_flow_block_child_nodes: None,
             text_node_bidi_overrides: NodeIdMap::default(),
             text_node_font_families: NodeIdMap::default(),
             text_node_font_size_adjust: NodeIdMap::default(),

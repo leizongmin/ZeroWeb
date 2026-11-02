@@ -58,3 +58,12 @@ stable-root 全绿佐证（digest sha 族同型 transfer-during-call 子测试
   旧路径退役（14,150）或 D1 域门控（14,916 + T 4），无外挂挂账、
   无无依赖可修红面。
 - M2 无依赖面收口结论经本扫查复核维持：余下工作全部待 D1。
+
+## 更正（2026-11-02 M2-5 轮）
+
+「无无依赖可修红面」一处证伪：`raw_format_aliases`（新族 2 案 + 旧
+tentative 路径 2 案，80 F）被本扫查按目录桶进「modern-algos = D1 域门控」
+（逐算法分布表「其余 684」内），实际该案只触既有算法，失败为 shim 格式
+别名分发缺口——已在 [M2-5](2026-11-02-m2s5-raw-format-aliases.md) 修复
+（80 F→P，零回归）。supports-modern / getPublicKey 余红经同法复核维持
+域门控归因，无第二例误桶；「其余 684」桶余量相应减 80。

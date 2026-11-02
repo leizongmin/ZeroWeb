@@ -6,8 +6,10 @@
 //! 自定义属性声明收集与 `var()` 替换，覆盖静态 CSS（`<style>` 块 + 外链 CSS
 //! inline 化后合并文本）中最常见模式。
 //!
-//! 已知限制（文本级方法固有）：不支持 per-element 继承、不支持运行时动态变更、
-//! 不支持 `@property` 注册。对静态站（bing.com 等）足够恢复正确渲染。
+//! 已知限制（文本级方法固有）：不支持 per-element 继承、不支持运行时动态变更；
+//! `@property` 注册名不做文本级替换（R5386：var() 原样留级联层，注册初值/
+//! 显式声明按级联语义解析，见 [`registered_custom_property_names`]）。对静态站
+//!（bing.com 等）足够恢复正确渲染。
 
 /// 收集 CSS 文本中所有自定义属性声明（`--name: value;`），返回有序去重的
 /// name → value 映射。同名合并按级联语义：`!important` 压过 normal，
@@ -193,6 +195,62 @@ pub fn conflicting_custom_property_names(css: &str) -> Vec<String> {
         .filter(|(_, values)| values.len() > 1)
         .map(|(n, _)| n)
         .collect()
+}
+
+/// R5386（css-properties-values-api-1 §2 + css-variables-1 §2）：`@property`
+/// 注册的自定义属性名收集。注册名的 var() 引用不参与文本级替换（skip 原样
+/// 保留，交由级联层）——注册初值（initial-value）是级联层的兜底语义，文本层
+/// 未声明该名时把 `var(--name, fb)` 直接替换成 fb 会抢跑注册初值
+///（highlight-cascade-004：`@property --bg { initial-value: green }` +
+/// `div::selection { background-color: var(--bg, red) }` 被文本层替成 red，
+/// green 永无机会）。显式声明 `--name: v` 在场时级联层同样按元素正确解析。
+/// 与 [`collect_custom_properties`] 同保真度：跳过块注释；`@property` 匹配
+/// 大小写不敏感（CSS Syntax at-keyword token）；与 `--name` 间须有空白（无
+/// 空白时 at-keyword 是 `@property--name` 整体、非本 at-rule，注册无效）。
+pub fn registered_custom_property_names(css: &str) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let bytes = css.as_bytes();
+    let len = bytes.len();
+    const KEY: &[u8] = b"property";
+    let mut i = 0;
+    while i < len {
+        match bytes[i] {
+            b'/' if i + 1 < len && bytes[i + 1] == b'*' => {
+                // 块注释跳过（同 collect_custom_properties）。
+                i += 2;
+                while i + 1 < len && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            b'@' if bytes[i + 1..].len() >= KEY.len()
+                && bytes[i + 1..i + 1 + KEY.len()].eq_ignore_ascii_case(KEY)
+                && bytes.get(i + 1 + KEY.len()).is_some_and(|b| b.is_ascii_whitespace()) =>
+            {
+                // `@property` + 空白 + `--name`（名读到空白/{/;/} 止）。
+                let mut j = i + 1 + KEY.len();
+                while j < len && bytes[j].is_ascii_whitespace() {
+                    j += 1;
+                }
+                if bytes.get(j) == Some(&b'-') && bytes.get(j + 1) == Some(&b'-') {
+                    let start = j;
+                    j += 2;
+                    while j < len && !bytes[j].is_ascii_whitespace() && !matches!(bytes[j], b'{' | b';' | b'}') {
+                        j += 1;
+                    }
+                    let name = css[start..j].trim();
+                    if is_valid_custom_prop_name(name) && !names.iter().any(|n| n == name) {
+                        names.push(name.to_string());
+                    }
+                }
+                i = j;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    names
 }
 
 /// 替换 CSS 文本中所有 `var(--name)` 和 `var(--name, fallback)` 引用。
@@ -667,5 +725,33 @@ div#c { --foo: 150px/1 Ahem; }
         // 无 skip：空回退被消费（旧行为，即 R5106 前的分量丢失路径）。
         let legacy = substitute_vars(css, &props);
         assert!(!legacy.contains("var(--foo"), "旧行为空回退被消费");
+    }
+
+    /// R5386：@property 注册名收集——基本形态 + 大小写不敏感 + 去重。
+    #[test]
+    fn r5386_registered_names_basic() {
+        let css = "@property --bg { syntax: \"<color>\"; initial-value: green; }\n\
+                   @PROPERTY --Accents { inherits: false; }\n\
+                   div { background: var(--bg, red); }";
+        let names = registered_custom_property_names(css);
+        assert_eq!(names, vec!["--bg".to_string(), "--Accents".to_string()]);
+    }
+
+    /// R5386：`@property` 与名之间无空白不是注册（at-keyword token 整体为
+    /// `@property--bg`）；块注释内的 `@property` 不收集。
+    #[test]
+    fn r5386_registered_names_boundaries() {
+        let css = "@property--bg { initial-value: green; }\n\
+                   /* @property --commented { } */\n\
+                   @property\n\t--ws-sep { }";
+        let names = registered_custom_property_names(css);
+        assert_eq!(names, vec!["--ws-sep".to_string()], "无空白/注释内不收集: {names:?}");
+    }
+
+    /// R5386：无 `@property` 的普通 CSS 返回空（skip 集空 → 文本替换零变化）。
+    #[test]
+    fn r5386_registered_names_empty_without_at_property() {
+        let css = ":root { --plain: blue; } div { color: var(--plain); }";
+        assert!(registered_custom_property_names(css).is_empty());
     }
 }
