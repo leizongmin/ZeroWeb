@@ -28,7 +28,6 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_matrix
     needs: discover-shards
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.shard.job_timeout || 150 }}
     strategy:
       fail-fast: false
       matrix:
