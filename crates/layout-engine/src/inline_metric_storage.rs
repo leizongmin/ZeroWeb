@@ -155,6 +155,36 @@ fn store_font_sizes_from_ifc_mode(
         {
             box_node.inline_block_child_nodes.insert(owner);
         }
+        // t-trending（CSS2 §9.2.1.1）：在流块级元素子信号——flatten 泄漏门（块子文本
+        // 不扁平进宿主 IFC）的 Path B 判定，谓词比 R4312 块子门窄：离流
+        //（position:absolute/fixed）块子不入块流、不触发匿名块拆分
+        //（position-relative-003/004/005 实证），故不计入。经 layout 同一判定门该
+        // 元素必走 flatten 持有 run（owner = 元素自身），覆盖完备同上。
+        if let Some(owner) = font_owner
+            && doc.child_nodes(owner).iter().any(|&gc| {
+                doc.get(gc).is_some_and(|n| matches!(n.kind, NodeKind::Element(_)))
+                    && styles.get(&gc).is_some_and(|st| {
+                        !matches!(
+                            st.position,
+                            zero_css_parser::values::PositionValue::Absolute
+                                | zero_css_parser::values::PositionValue::Fixed
+                        ) && !matches!(
+                            st.display,
+                            zero_css_parser::values::DisplayValue::None
+                                | zero_css_parser::values::DisplayValue::Inline
+                                | zero_css_parser::values::DisplayValue::InlineBlock
+                                | zero_css_parser::values::DisplayValue::InlineFlex
+                                | zero_css_parser::values::DisplayValue::InlineGrid
+                                | zero_css_parser::values::DisplayValue::InlineTable
+                        )
+                    })
+            })
+        {
+            box_node
+                .inline_flow_block_child_nodes
+                .get_or_insert_with(Box::default)
+                .insert(owner);
+        }
         // R5177：color 差异元素信号（FLAT_CHILD_WALK 折回门）——computed color 与父
         // 元素不同的 inline 子被 layout 侧同一判定门拆为独立 run（owner = 元素自身），
         // 故按 owner 复算同一对比较（owner.color vs 父元素 color ≡ 折回臂直判的

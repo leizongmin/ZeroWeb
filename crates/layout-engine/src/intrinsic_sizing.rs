@@ -1307,7 +1307,21 @@ fn block_intrinsic_width_ex(
             // 原子/盒模型 inline（inline-block 族/replaced）维持既有 child.width 口径
             //（replaced 的 attr/AR 宽第一趟已解析进 child.width；DOM 递归对无文本原子盒
             // 测 0 会塌——intrinsic-percent-replaced-001/012/013/dynamic-004 实证回退）。
+            // t-trending（CSS2 §10.3.2 + css-sizing-3）：replaced 子不落 frame-only 臂——
+            // display:inline 的 replaced（img/svg attr 定宽）按 child.width 口径计入（落入
+            // 下方 min/else 原子臂）。R4355 注记本意即「原子/盒模型 inline（inline-block
+            // 族/replaced）维持既有 child.width 口径」，is_plain_inline 先行吞掉 replaced
+            // 与该契约相悖：replaced 宽 0 → block_max_content_width 欠测（github trending
+            // 星数 float：5a.1 Σ 臂扩到 127.3 后被 adjust_float R5368 收缩臂以 preferred
+            // =111.3 缩回，星数仍折行实证）。kill-switch `ZW_INLINE_REPLACED_W=0` 回退
+            //（replaced 重新落 frame-only 臂，宽 0 旧口径）。
+            let inline_replaced_excluded = std::env::var("ZW_INLINE_REPLACED_W").as_deref() != Ok("0")
+                && (child.is_replaced
+                    || child
+                        .node_id
+                        .is_some_and(|cid| crate::tree::is_replaced_element_tag(doc, cid)));
             let is_plain_inline = std::env::var("ZW_INLINE_DOM_INTRINSIC").as_deref() != Ok("0")
+                && !inline_replaced_excluded
                 && child_style.is_some_and(|s| matches!(s.display, DisplayValue::Inline));
             if is_plain_inline {
                 let frame = child.padding_left + child.padding_right + child.border_left + child.border_right;
@@ -1750,6 +1764,7 @@ pub(crate) fn text_content_max_width(node_id: NodeId, doc: &Document, styles: &H
         is_ahem,
         font_id,
         min_mode: false,
+        seam_space: false,
     };
     text_max_width_walk(
         node_id,
@@ -1781,6 +1796,10 @@ pub(crate) fn text_content_max_width_scoped(
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
     stop_at_definite_atomic: bool,
+    // t-trending：原子停止点折叠空格接缝入账（[`DomWalkState::seam_space`]）——仅 float
+    // Σ 臂随 `ZW_FLOAT_INLINE_SUM` 传入；`inline_table_auto_max_content` 等其余调用方
+    // 传 false 维持旧口径。
+    seam_space: bool,
 ) -> f32 {
     let style = styles.get(&node_id);
     let (font_size, _line_height) = crate::inline::resolve_font_metrics(style);
@@ -1804,6 +1823,7 @@ pub(crate) fn text_content_max_width_scoped(
         is_ahem,
         font_id,
         min_mode: false,
+        seam_space,
     };
     text_max_width_walk(
         node_id,
@@ -1849,6 +1869,7 @@ pub(crate) fn text_content_min_width(node_id: NodeId, doc: &Document, styles: &H
         is_ahem,
         font_id,
         min_mode: true,
+        seam_space: false,
     };
     text_max_width_walk(
         node_id,
@@ -1883,6 +1904,20 @@ fn per_font_intrinsic_on() -> bool {
 /// baidu「换一换」float（a.hot-refresh）内 i.c-icon（inline-block width:16px）+
 /// span margin-left:2px 漏计入 → float 收缩到 42 < 单行真值 60 → 内层 IFC 把
 /// 「一换」折到第二行竖排（实证）。
+/// t-trending：float Σ 臂 replaced 计数/跳过共用判定——与 engine.rs 构盒 `is_replaced`
+/// 同表（`is_replaced_element_tag` 8 标签 + R5001 audio）。盒树侧（shrink_pure_text_floats
+/// 的 `replaced_w`，旗标或本标签判定）与 DOM walk 侧（本文件两处 skip/停止点）集合
+/// 必须精确一致，不匹配即双计或漏计。
+pub(crate) fn box_replaced_tag(doc: &Document, dom_id: NodeId) -> bool {
+    doc.get(dom_id).is_some_and(|n| match &n.kind {
+        zero_dom::NodeKind::Element(elem) => matches!(
+            elem.local_name(),
+            "img" | "video" | "iframe" | "embed" | "object" | "svg" | "canvas" | "applet" | "audio"
+        ),
+        _ => false,
+    })
+}
+
 pub(crate) fn inline_children_non_text_width(
     dom_id: NodeId,
     doc: &Document,
@@ -1893,6 +1928,13 @@ pub(crate) fn inline_children_non_text_width(
         let Some(cs) = styles.get(&child) else {
             continue;
         };
+        // t-trending：replaced 标签由 float Σ 臂盒树侧（replaced_w：child.width+margin）
+        // 单边入账——本 walk 按 CSS display 口径再计即双计（svg attr 宽 16：InlineBlock
+        // 分支 + 盒树 Σ 各计 16 = 32 过测）。本函数唯一调用方即 float Σ 臂，skip 随
+        // Σ 开关一同生效；离流（abspos 等）replaced 在盒树侧同样被过滤，两侧一致。
+        if box_replaced_tag(doc, child) {
+            continue;
+        }
         let resolve = |v: &LengthValue| resolve_intrinsic_real_length(v, cs).unwrap_or(0.0);
         match cs.display {
             DisplayValue::InlineBlock
@@ -1987,7 +2029,7 @@ pub(crate) fn inline_table_auto_max_content(
         if !is_element {
             continue;
         }
-        let w = text_content_max_width_scoped(child, doc, styles, false);
+        let w = text_content_max_width_scoped(child, doc, styles, false, false);
         max_w = max_w.max(w);
     }
     max_w
@@ -2164,12 +2206,31 @@ fn text_max_width_walk(
                     if matches!(cs.position, PositionValue::Absolute | PositionValue::Fixed) {
                         continue;
                     }
+                    // t-trending（css-text-3 §white-space-processing + css-sizing-3）：replaced
+                    // 标签（盒树 is_replaced 同表，见 `box_replaced_tag`）停止文本递归——原子
+                    // 占据行内容，与前后 inline 内容间的折叠空格照常渲染（dom walk replaced
+                    // 停止点 flush_space+line_has_content 同语义）；宽度由 float Σ 臂盒树侧
+                    // 单边入账，walk 不计。旧 walk 递归 img/svg 子树（无文本）→
+                    // line_has_content 仍 false → 其后文本行首空格漏计 → preferred 缺
+                    // 原子-文本接缝空格（github trending 星数 float 123.4 < 127.6 仍折行
+                    // 实证）。seam_space 关 = 旧递归口径（`ZW_FLOAT_INLINE_SUM=0` 逐字节
+                    // 回退）。
+                    if state.seam_space && box_replaced_tag(doc, child) {
+                        state.flush_space(segments);
+                        state.line_has_content = true;
+                        continue;
+                    }
                     // R5243：inline-table 无条件停（含 auto 宽）——float Σ 侧对 auto 表按
                     // inline_table_auto_max_content 独立测量补源（`ZW_FLOAT_INLINE_TABLE_
                     // MEASURE` 门），主 walk 再递归内文即双计。表是布局容器（行/列结构），
                     // walk 的连续段近似本就失真（多行连段过测），停得比 inline-block 族
                     // 更早是精确化而非欠测。开关关时回落下方 R4921 既有定宽判定。
                     if float_inline_table_measure_on() && matches!(cs.display, DisplayValue::InlineTable) {
+                        // t-trending：原子占据行内容，其后接缝空格随 seam_space 入账。
+                        if state.seam_space {
+                            state.flush_space(segments);
+                            state.line_has_content = true;
+                        }
                         continue;
                     }
                     if matches!(
@@ -2180,6 +2241,12 @@ fn text_max_width_walk(
                             | DisplayValue::InlineTable
                     ) && resolve_intrinsic_real_length(&cs.width, cs).is_some()
                     {
+                        // t-trending：原子占据行内容，其后接缝空格随 seam_space 入账（同上
+                        // replaced 停止点；原子前 pending 空格「text ␣ 原子」亦在此 flush）。
+                        if state.seam_space {
+                            state.flush_space(segments);
+                            state.line_has_content = true;
+                        }
                         continue;
                     }
                 }
@@ -2295,6 +2362,7 @@ pub(crate) fn dom_inline_content_max_width(
         is_ahem,
         font_id,
         min_mode: false,
+        seam_space: false,
     };
     dom_inline_text_walk(
         id,
@@ -2334,6 +2402,7 @@ fn dom_inline_text_min_width(box_node: &LayoutBox, doc: &Document, styles: &Hash
         is_ahem,
         font_id,
         min_mode: true,
+        seam_space: false,
     };
     dom_inline_text_walk(
         id,
@@ -2368,6 +2437,14 @@ struct DomWalkState {
     is_ahem: bool,
     font_id: Option<u32>,
     min_mode: bool,
+    /// t-trending：原子停止点（R4921 gate / replaced 停止）折叠空格接缝入账开关。
+    /// 仅 float Σ 臂（`text_content_max_width_scoped`）随 `ZW_FLOAT_INLINE_SUM` 启用：
+    /// 原子（inline-block 族/replaced）占据行内容，其前后折叠空格是行中空格照常渲染
+    ///（css-text-3 §white-space-processing），须随 text_max_w 计入 preferred——旧口径
+    /// 原子停止点不置 `line_has_content`，原子后接文本的行首空格漏计（github trending
+    /// 星数 float 123.4 < 127.6 仍折行实证）。关断维持旧口径，保证
+    /// `ZW_FLOAT_INLINE_SUM=0` 逐字节回退。
+    seam_space: bool,
 }
 
 impl DomWalkState {
@@ -2746,6 +2823,7 @@ pub(crate) fn fragment_inline_max_width(
         is_ahem,
         font_id,
         min_mode: false,
+        seam_space: false,
     };
     for nid in fragment_node_ids {
         text_max_width_walk(
