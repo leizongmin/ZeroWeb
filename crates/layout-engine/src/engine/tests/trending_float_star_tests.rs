@@ -9,7 +9,8 @@
 //!
 //! kill-switch 敏感性（返修硬要求，外部 env 实跑取证，见返修证据 r1 日志）：
 //! - `ZW_FLOAT_INLINE_SUM=0`：早退门恢复（svg is_replaced 触发）→ float 滞留 taffy
-//!   max(子盒)=16px 塌缩、文本折行竖排（实測 w=16/h=73 词竖排碎列 = live 修复前形态）→ 红；
+//!   max(子盒)=16px 塌缩、文本自 16px 盒右缘水平溢出（实测 w=16/h=19——nowrap 钉单行，
+//!   红在宽断言；h=73 词竖排碎列为 nowrap 修订前探针旧值）→ 红；
 //! - `ZW_FLOAT_STF_ADV=0`：文本回 scoped walk——harness advance 源为 EstimateAdvance
 //!   启发式（walk/adv 同源），本用例无真实字体度量分裂可复现，实测不改变几何（见
 //!   SUMMARY；VF 窄计场景需真实字体，单测面不可达，如实披露）。
@@ -63,18 +64,21 @@ fn test_trending_float_star_svg_text_single_line() {
     );
     assert_eq!(svg_child.width, 16.0, "svg attr intrinsic width must resolve to 16");
 
-    // 单行：高恰为显式 line-height 19px。旧行为（Σ OFF）塌缩 16px 宽后文本逐词
-    // 折行竖排（实测 h=73 碎列）。
+    // 单行：高恰为显式 line-height 19px。旧行为（Σ OFF）塌缩 16px 宽后文本自盒右缘
+    // 水平溢出，nowrap 仍钉单行 h=19（实测 w=16/h=19，红在宽断言）。
     assert_eq!(
         star.height, 19.0,
         "star float must be single-line (h=line-height 19); got {} \
          (vertical word-fragmentation = artifact 1 regression)",
         star.height
     );
-    // 宽含 svg+文本 Σ（≈116.8）：旧塌缩形态 w=16（taffy max(子盒)，svg 外文本溢出）。
+    // 宽含 svg+文本 Σ（实测 119.8）：旧塌缩形态 w=16（taffy max(子盒)，svg 外文本溢出）。
+    // 断言带 112..=126 钉 Σ 收缩真值：下界排除 replaced_w 单独入账（~101）与塌缩
+    // w=16，上界防文本宽重复入账；余量容 walk/IFC ~0.2px f32 漂移。
     assert!(
-        (100.0..=140.0).contains(&star.width),
-        "star float width must shrink to svg 16 + text sum (~117); got {} (collapsed-to-svg = artifact 1)",
+        (112.0..=126.0).contains(&star.width),
+        "star float width must pin svg 16 + text sum (measured 119.8); got {} \
+         (<112 = collapsed-to-svg 16 or replaced_w-only ~101 = artifact 1)",
         star.width
     );
     // float:right 贴容器右缘（容器 1280，容差 0.5 取整）。
