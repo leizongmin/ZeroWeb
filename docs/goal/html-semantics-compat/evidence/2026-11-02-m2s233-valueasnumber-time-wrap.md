@@ -28,7 +28,9 @@ number→string 算法定义、浏览器实测语义、WPT 两例锚：-3600000�
   lost/gained 各恰 2：目标键 F→P + checkable-active-onblur-with-click
   following-label F→P（在册 s196/197 flake 族幸运侧回翻——该键近四轮
   P→F→F→P 摆动，与本刀 time 格式化臂无通道，不归因）。全树
-  7502P/518F/81T 与基线逐位同分布（日志 s233-ab.log）。
+  7506P/514F/81T，对 s232 基线 7504P/516F/81T 差恰 +2P/-2F = 上述两翻
+  转键（日志 s233-ab.log；s234 轮勘误——原稿误抄 s231 分布数字，
+  「逐位同分布」措辞一并修正）。
 - 零插桩零探针。
 
 ## 散单预勘根新账（等待窗口产出，下轮候选）

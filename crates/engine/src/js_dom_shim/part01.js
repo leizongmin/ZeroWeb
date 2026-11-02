@@ -2459,6 +2459,15 @@
     var newTy = _zwNormalizeInputType(newTypeRaw);
     var newM = _zwInputValueMode(newTy);
     var cur = _inputValues[key];
+    // s234（html-semantics input-type-change-value）：变更链污染值不携带——
+    // 前次变更步物化的净化默认（如 color ''→'#000000'，见下方写入 +
+    // `_inputValuesSet` 置位）非真脏（s194 标记语义：spec 类型变更步不设
+    // dirty value flag），本步 cur 须按 value 内容属性回落（spec input type
+    // change 步骤 2：非真脏 = 内容属性值），否则 color 默认 '#000000' 被当
+    // 真值搬进新 state（WPT 钉态：color→text 期望 '' 而非 '#000000'）。
+    // 真脏（value IDL set / setAttribute('value') / 用户键入）写点已清标记
+    // → 走原 store 携带（如 dirty '#ffffff' 跨 type 保持，同测试步骤 4 断言）。
+    if (_typeChangeTainted[key] === true) cur = null;
     if (cur == null || !(_inputValuesSet[key] === true || _stableValueKey(key))) {
       // attr 回落读走 latest-wins（detached 元素的 pending SetAttr 只在 lw 变体可见——
       // 快照读恒 miss，同 `_reflectedTypeEnum` 用 `__zw_get_attr_lw` 的理由）。
