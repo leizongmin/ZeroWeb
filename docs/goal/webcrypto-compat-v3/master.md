@@ -322,3 +322,8 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   REGRESSED/FIXED/FLIPPED/DRIFT 全 0），runner 单测 276P/0F，m2s5 锚
   对照基准维持；零代码触面无碰撞。D1 飞书线再核无回复（pos 851 后
   无用户消息，两轮征询在案不重复催办）。
+- 2026-11-02 复验续轮 2：`70fc23d7b`（25 号流 radio-focus 键盘链 miss
+  回落——触**共享 testharness.rs** +19，本流通道执行底座同文件）；
+  r5 全量对 m2s5 锚再证 **逐位 CLEAN**（总账同 r4），runner 单测
+  276P/0F，对照基准维持；零代码触面无碰撞。D1 飞书线三核无回复
+  （chat 顶仍 pos 851 全 bot 通知，维持不重复催办）。
