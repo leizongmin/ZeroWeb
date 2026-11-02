@@ -5067,6 +5067,135 @@
         set: function (v) { this._ensureMutTree().text = v; },
         configurable: true, enumerable: true,
       });
+      // s244（html-semantics M2）：快照 OPTION 邻接 IDL 面 selected/disabled/
+      // defaultSelected/index/form（HTML §4.10.9 dom-option-*，s242 三联外接口——
+      // 探针实证四读全 undefined、selected/disabled 写落 expando 读/写源分裂）。
+      // 语义镜像 wrapper 世界既有机器（spec 锚 part05 R3908b/R5009 片 d +
+      // part03 `_zwLegendOptionForm`），但**不走物化**（`hasAttribute` 物化前读
+      // `_attrs`、物化后经 R3019 rewire 读 live 树，两态单源一致）：
+      // ① disabled/defaultSelected = 纯布尔反射（R5009 片 d：defaultSelected 写
+      //    即反射 selected 属性；非脏时 selectedness 读序自动跟随）；
+      // ② selected = 脏 selectedness（R3908b 同构：IDL setter 只置 selectedness
+      //    + dirtiness **不反射** selected 属性——option-selectedness-script-
+      //    mutation「IDL selected does not reflect」钉面；读序 dirty → 属性即
+      //    wrapper dirty → clean → attr 序的快照两层形）。状态挂
+      //    `_zwParsedOptSel`（R5254 身份键表——查询每 query 产新实例，实例级
+      //    expando 跨实例分裂，键级状态重解析可读）。ask-for-reset 互斥清兄弟
+      //    步未携带（快照树无 selectedness 全景遍历通道，语料无钉面 FIXME）。
+      // ③ index = 祖先 SELECT 检测 + 位次：doc 级产物现带 `_zwRootHtml`（本次
+      //    工厂补面），经宿主 `__zw_parse_html_query` 取 option/select 全行
+      //    （行含宿主派生 `path`），**`\x1f` 边界严格前缀**判祖先（select 行
+      //    全路径键串为本元素全路径键串的前缀——id/sig 键形态无关，免 tag 反
+      //    查），位次 = select 内 option 行文档序计数（optgroup 嵌套行同前缀
+      //    命中即计）。无 SELECT 容器回落 0（part03 index 臂同锚——
+      //    option-index.html「no container → 0」、datalist 内亦 0）；同 sig
+      //    孪生 option 键串同串取首个（宿主路径架构固有限度）。
+      // ④ form = list owner 的 form owner（`_zwLegendOptionForm` 同构：最深
+      //    SELECT 祖先行前缀确定后，其上方最深 FORM 祖先行经同款前缀判定位，
+      //    行重建实例返回；无 SELECT 或无 FORM → null）。
+      var _s244Self = this;
+      var _s244Rows = function (sel) {
+        try {
+          var root = _s244Self._zwRootHtml;
+          if (!root || typeof __zw_parse_html_query !== 'function') return null;
+          return JSON.parse(__zw_parse_html_query(String(root), sel, '1')) || [];
+        } catch (_eS244q) { return null; }
+      };
+      var _s244RowFull = function (row) {
+        if (!row) return '';
+        var key = row.id ? 'id:' + row.id
+          : 'sig:' + String(row.tag || '').toUpperCase() + '|' + String(row.cls || '') + '|' + String(row.outer || '').slice(0, 64);
+        return String(row.path || '') + '\x1f' + key;
+      };
+      var _s244MyFull = function () {
+        return (_s244Self._zwPath || []).join('\x1f') + '\x1f' + _s244Self._zwEvKey();
+      };
+      var _s244SelAncestorFull = function () {
+        var srows = _s244Rows('select');
+        if (!srows) return '';
+        var myFull = _s244MyFull();
+        var selFull = '';
+        for (var i = 0; i < srows.length; i++) {
+          var f = _s244RowFull(srows[i]);
+          if (f && myFull.length > f.length && myFull.charAt(f.length) === '\x1f' && myFull.slice(0, f.length) === f) {
+            selFull = f;
+          }
+        }
+        return selFull;
+      };
+      Object.defineProperty(this, 'disabled', {
+        get: function () { return _s244Self.hasAttribute('disabled'); },
+        set: function (v) {
+          if (v) _s244Self.setAttribute('disabled', '');
+          else _s244Self.removeAttribute('disabled');
+        },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'defaultSelected', {
+        get: function () { return _s244Self.hasAttribute('selected'); },
+        set: function (v) {
+          if (v) _s244Self.setAttribute('selected', '');
+          else _s244Self.removeAttribute('selected');
+        },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'selected', {
+        get: function () {
+          try {
+            var _st = globalThis._zwParsedOptSel[_s244Self._zwEvKey()];
+            if (_st && _st.d) return _st.v;
+          } catch (_eS244sg) {}
+          return _s244Self.hasAttribute('selected');
+        },
+        set: function (v) {
+          try { globalThis._zwParsedOptSel[_s244Self._zwEvKey()] = { v: !!v, d: true }; } catch (_eS244ss) {}
+        },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'index', {
+        get: function () {
+          try {
+            var _selFull = _s244SelAncestorFull();
+            if (!_selFull) return 0;
+            var _rows = _s244Rows('option');
+            if (!_rows) return 0;
+            var _myFull = _s244MyFull();
+            var _pos = 0;
+            for (var _oi = 0; _oi < _rows.length; _oi++) {
+              var _rf = _s244RowFull(_rows[_oi]);
+              if (_rf === _myFull) return _pos;
+              if (_rf.length > _selFull.length && _rf.charAt(_selFull.length) === '\x1f' && _rf.slice(0, _selFull.length) === _selFull) _pos++;
+            }
+            return 0;
+          } catch (_eS244idx) { return 0; }
+        },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'form', {
+        get: function () {
+          try {
+            var _selFull = _s244SelAncestorFull();
+            if (!_selFull) return null;
+            var _frows = _s244Rows('form');
+            if (!_frows) return null;
+            // select 上方最深 FORM 祖先：form 行全路径键串为 select 全路径键串
+            // 的 \x1f 边界严格前缀（取最深——form 嵌套非法，取最长稳妥）。
+            var _formFull = '';
+            for (var _k = 0; _k < _frows.length; _k++) {
+              var _ff = _s244RowFull(_frows[_k]);
+              if (_ff && _selFull.length > _ff.length && _selFull.charAt(_ff.length) === '\x1f' && _selFull.slice(0, _ff.length) === _ff) {
+                _formFull = _ff;
+              }
+            }
+            if (!_formFull) return null;
+            for (var _m = 0; _m < _frows.length; _m++) {
+              if (_s244RowFull(_frows[_m]) === _formFull) return new _zwParseEl(_frows[_m]);
+            }
+            return null;
+          } catch (_eS244f3) { return null; }
+        },
+        configurable: true, enumerable: true,
+      });
     }
   }
   // R156（js-dom M4）：Node 接口常量挂解析元素原型（WPT interfaceCheckMatches 的
@@ -5408,6 +5537,11 @@
   //（赋值即注册）。
   // https://html.spec.whatwg.org/multipage/webappapis.html#handler-event-types
   globalThis._zwParsedToggleH = {};
+  // s244（html-semantics M2）：快照 OPTION 脏 selectedness 状态表（R5254 视图
+  // 注册表同款身份键寻址——detached 查询每 query 产新 `_zwParseEl` 实例，实例级
+  // expando 跨实例分裂；`_zwEvKey`（id 优先/sig 兜底，宿主派生重解析稳定）作
+  // 键。消费方 = 快照 `selected` accessor（本 part `_zwParseEl` 构造器 OPTION 门）。
+  globalThis._zwParsedOptSel = {};
   Object.defineProperty(_zwParseEl.prototype, 'ontoggle', {
     configurable: true,
     get: function () {
@@ -5555,13 +5689,24 @@
   _zwParsedDoc.prototype.querySelector = function (sel) {
     if (typeof __zw_parse_html_query !== 'function') return null;
     var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '0'));
-    return arr.length ? new _zwParseEl(arr[0]) : null;
+    if (!arr.length) return null;
+    // s244（html-semantics M2）：doc 级查询产物挂根上下文（元素级 `_zwWrapQ`
+    // 同口径——快照 OPTION 邻接面 index/form 经根 html 行前缀解析祖先链，
+    // matches 亦获文档上下文组合器面；此前产物无 `_zwRootHtml`，ownerDocument
+    // 回落主 document，文档内祖先解析无通道）。
+    var _e = new _zwParseEl(arr[0]);
+    try { _e._zwRootHtml = this._html; } catch (_eS244rh) {}
+    return _e;
   };
   _zwParsedDoc.prototype.querySelectorAll = function (sel) {
     if (typeof __zw_parse_html_query !== 'function') return [];
     var arr = JSON.parse(__zw_parse_html_query(this._html, String(sel), '1'));
     var out = [];
-    for (var i = 0; i < arr.length; i++) out.push(new _zwParseEl(arr[i]));
+    for (var i = 0; i < arr.length; i++) {
+      var e = new _zwParseEl(arr[i]);
+      try { e._zwRootHtml = this._html; } catch (_eS244rh2) {}
+      out.push(e);
+    }
     return out;
   };
   _zwParsedDoc.prototype.getElementById = function (id) {
