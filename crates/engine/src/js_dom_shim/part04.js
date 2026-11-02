@@ -6096,7 +6096,11 @@
                 }
               }
             }
-            return notPrevented;
+            // s235（html-semantics input-type-button）：click() 是 void（spec
+            // dom-element-click / HTML §activation behavior——旧
+            // `return notPrevented` 把 dispatchEvent 布尔结果泄成返回值；
+            // WPT input-type-button "default behavior" 断言 click() ===
+            // undefined 钉面）。上方 disabled 早退臂本就返 undefined，口径归一。
           };
         }
         // Constraint Validation API（R2825）——表单校验库（checkValidity gate submit / setCustomValidity
