@@ -737,16 +737,43 @@ jobs:
             echo "Gap snapshot committed and pushed."
           fi
 
+  # 分片自动发现：runner 源码 match 臂提取全部 testharness-* 套件，diff
+  # ci-shards.yml 手调分片，剩余套件按 ci-catchall.tsv（fetch 目标覆写）
+  # 自动打包成 catch-all 分片追加进 matrix——新 runner 套件零 CI 编辑即
+  # 入全量对账。纯 Python 标准库读源码，无需构建。
+  discover-shards:
+    if: >
+      github.event_name == 'schedule'
+      || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      shards_json: ${{ steps.discover.outputs.shards_json }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - id: discover
+        run: |
+          python3 tests/wpt-runner/scripts/ci_discover_shards.py \
+            --runner-src tests/wpt-runner/src/main.rs \
+            --tuned tests/wpt-runner/ci-shards.yml \
+            --registry tests/wpt-runner/ci-catchall.tsv \
+            --out-shards /tmp/shards.json
+          echo "shards_json=$(cat /tmp/shards.json)" >> "$GITHUB_OUTPUT"
+
   # wpt.fyi 全量对账（docs/compat/wptfyi-gap-analysis.md「全量对账」节）：
   # matrix 分片跑全部已导入 testharness 套件；未跑的测试在三家并集全量清单上
   # 记 0。aggregate 合并产物 + 拉 wpt.fyi 清单，产出 coverage-<日期>.md/.json
   # 快照提交回 docs/compat/wptfyi/——网站「全量 WPT 通过率」与缺口地图数据源。
   # 语料坑同 wptfyi-gap（GITHUB_TOKEN 认证 + resources 引导）；clipboard/
-  # fullscreen 等套件需要 X display，装 xvfb 提供。
+  # fullscreen 等套件需要 X display，装 xvfb 提供。分片清单由 discover-shards
+  # 动态生成（手调 + catch-all），调预算/组合改 ci-shards.yml，不改这里。
   wptfyi-coverage:
     if: >
       github.event_name == 'schedule'
       || (github.event_name == 'workflow_dispatch' && inputs.run_wptfyi_coverage)
+    needs: discover-shards
     runs-on: ubuntu-latest
     # 150 = sec 分片实跑预算（run 40505731836 实证 csp+mixed+secure ≈76min
     # 计时器外）+ build/fetch ~15min + 余量；time_limit 为 per-suite 限时，
@@ -756,213 +783,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard:
-          # time_limit（秒）按 2026-10-27 本地实测 ×2 系数定：html-semantics 4732s、
-          # csp 3494s、uievents 1513s、dom 900s。css-variables 曾因病态内存
-          # （单进程 >8.8GB 三跑被杀）不进 CI——2026-10-30 M2 解禁：病态案
-          # （variable-exponential-blowup.html 单案 4.9GB + *-crash.html）由
-          # runner 谓词名级排除后单进程入账（css-testharness-compat DC-3）。
-          # 原 sec-render 五套件一 job 撞 90min timeout（svg 被杀 webgl 未跑，
-          # aggregate 连带 skip）→ 拆 sec/render 两分片（run 40505731836）。
-          - name: syntax-dom
-            suites: "html-syntax dom"
-            fetch: "fetch-wpt-html-syntax fetch-wpt-dom"
-            fetch_scripts: ""
-            time_limit: 3600
-          - name: crypto
-            suites: "webcrypto"
-            fetch: "fetch-wpt-webcrypto"
-            fetch_scripts: ""
-            time_limit: 1800
-          - name: html-sem
-            suites: "html-semantics web-components"
-            fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
-            fetch_scripts: ""
-            time_limit: 10800
-          - name: ui-edit
-            suites: "selection uievents touch-events keyboard pointerlock dnd"
-            fetch: >-
-              fetch-wpt-selection fetch-wpt-uievents fetch-wpt-touch-events
-              fetch-wpt-keyboard fetch-wpt-pointerlock fetch-wpt-dnd
-            fetch_scripts: ""
-            time_limit: 3600
-          - name: forms-clip
-            suites: "constraints clipboard-apis fullscreen html"
-            fetch: "fetch-wpt-clipboard-apis fetch-wpt-fullscreen"
-            fetch_scripts: "fetch-constraints-subset.sh"
-            time_limit: 1800
-          - name: storage
-            suites: "webstorage cookies indexeddb cache-storage fs fileapi"
-            fetch: >-
-              fetch-wpt-webstorage fetch-wpt-cookies fetch-wpt-indexeddb
-              fetch-wpt-cache-storage fetch-wpt-fs fetch-wpt-fileapi
-            fetch_scripts: ""
-            time_limit: 3600
-          - name: net
-            suites: "net-api encoding wasm workers webmessaging page-state navigation"
-            fetch: >-
-              fetch-wpt-net-api fetch-wpt-encoding fetch-wpt-wasm
-              fetch-wpt-workers fetch-wpt-webmessaging fetch-wpt-page-state
-              fetch-wpt-navigation
-            fetch_scripts: ""
-            time_limit: 3600
-          # 2026-10-29 后新入账的三个大子测试面（合计 ~110 万，缺任一都会让
-          # coverage 头条显著失真）：wasm-core 188k（32 号已归档）、legacy-mb
-          # decode 360k（31 号已归档）、form-url encode 550k（36 号 M1）。
-          - name: wasm-core
-            suites: "wasm-core"
-            fetch: "fetch-wpt-wasm fetch-wpt-wasm-core"
-            fetch_scripts: ""
-            time_limit: 7200
-          - name: mb-decode
-            suites: "encoding-legacy-mb"
-            fetch: "fetch-wpt-encoding-legacy-mb"
-            fetch_scripts: ""
-            time_limit: 7200
-            # decode wrapper 每 variant 对 chars 文档全量 span 做桥调用密集断言
-            # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
-            # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
-            script_timeout: 600000
-          # form-url-encoding encode 面 68 文件按编码目录拆六分片。两轮教训：
-          # ① 预算（run 40985139206/41005658107 整点杀树）——form 提交导航
-          #   密集负载 CI ≈ 本地 3–4×，全套件 4.5h+ 超 GH job 360min 硬上限；
-          # ② run 41037174647 四族分片全绿但 form 面 550k 子测试贡献 0：
-          #   encode-form-common.js 提交目标 /common/blank.html 不在 CI fresh
-          #   语料（subset 清单已补拉），form 回路不完成 → 全部 async_test
-          #   挂起 → 单案 30s 预算杀掉（合成 Timeout）。本地 goal 时代两文件
-          #   都在位，从不暴露。blank.html 补拉 + case_timeout 提额（600s
-          #   ceiling，预期 CI form 条目 ~60–100s）双修后重分片。
-          # 按目录互斥（filter 路径子串透传），条目分布 euc-kr 254 / big5 205 /
-          # shift_jis 148 / euc-jp 108 / iso-2022-jp 102 / schinese 2（共 819；
-          # encoding-compat-v2 M1：big5/iso2022 两分片 filter 去尾斜杠并入根面
-          # big5/iso-2022-jp-encoder.html，fetch 补 37 号脚本拉根面语料），
-          # 预算按 form 条目 60–100s 配 ≥1.4× 余量；超预算失败形态安全（该脸
-          # 缺贡献 + 分片红，下轮细分）。result_tag 互异——aggregate 产物平铺
-          # （merge-multiple），同名 JSON 会互相覆盖。script timeout 同
-          # mb-decode 提额。
-          - name: form-encode-eucjp
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
-            fetch_scripts: ""
-            filter: "euc-jp/"
-            result_tag: eucjp
-            time_limit: 10800
-            job_timeout: 210
-            script_timeout: 600000
-            case_timeout: 600
-          - name: form-encode-iso2022
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb fetch-wpt-encoding-compat-v2"
-            fetch_scripts: ""
-            filter: "iso-2022-jp"
-            result_tag: iso2022
-            time_limit: 10800
-            job_timeout: 210
-            script_timeout: 600000
-            case_timeout: 600
-          - name: form-encode-sjis
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
-            fetch_scripts: ""
-            filter: "shift_jis/"
-            result_tag: sjis
-            time_limit: 14400
-            job_timeout: 270
-            script_timeout: 600000
-            case_timeout: 600
-          - name: form-encode-euckr
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
-            fetch_scripts: ""
-            filter: "euc-kr/"
-            result_tag: euckr
-            time_limit: 19800
-            job_timeout: 350
-            script_timeout: 600000
-            case_timeout: 600
-          - name: form-encode-big5
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb fetch-wpt-encoding-compat-v2"
-            fetch_scripts: ""
-            filter: "big5"
-            result_tag: big5
-            time_limit: 16200
-            job_timeout: 300
-            script_timeout: 600000
-            case_timeout: 600
-          - name: form-encode-zh
-            suites: "form-url-encoding"
-            fetch: "fetch-wpt-encoding-legacy-mb"
-            fetch_scripts: ""
-            filter: "legacy-mb-schinese"
-            result_tag: zh
-            time_limit: 3600
-            job_timeout: 120
-            script_timeout: 600000
-            case_timeout: 600
-          - name: timing
-            suites: >-
-              resource-timing navigation-timing event-timing longtask-timing
-              hr-time performance-timeline user-timing web-animations
-            fetch: "fetch-wpt-performance-api fetch-wpt-timing-animation"
-            fetch_scripts: ""
-            time_limit: 3600
-          - name: misc
-            suites: >-
-              console compression canvas canvas-worker media
-              webaudio css-variables
-            fetch: >-
-              fetch-wpt-console fetch-wpt-compression
-              fetch-wpt-media fetch-wpt-webaudio
-              fetch-wpt-css-variables
-            fetch_scripts: "fetch-canvas-subset.sh"
-            time_limit: 5400
-          # 2026-10-30 css-testharness-compat M4（DC-4）：css 面 15 目录入账
-          # （css-variables 已在 misc——DC-3，不重复）。三片按语料体量均分，
-          # 各自定向 fetch（fetch-wpt-css-testharness-{a,b,c}，CSS_FETCH_ONLY
-          # 白名单——CI 全新 checkout 深挖 ~2 万文件顺序拉取单 job 装不下）。
-          # suite 名 = runner 子命令去 testharness- 前缀（css-motion 扫描根
-          # css/motion；aggregate 按 case 路径归 topdir，suite 名不敏感）。
-          # time_limit 为 per-suite 限时：本地单进程实测最大 grid 169s，
-          # ×2 系数 + 余量取 3600 覆盖全部（耗时只按实跑计）。
-          - name: css-face-a
-            suites: >-
-              css-values selectors css-color css-align css-sizing
-              css-transforms
-            fetch: "fetch-wpt-css-testharness-a"
-            fetch_scripts: ""
-            time_limit: 3600
-            job_timeout: 210
-          - name: css-face-b
-            suites: >-
-              css-typed-om css-fonts css-shapes css-anchor-position
-              css-masking css-backgrounds
-            fetch: "fetch-wpt-css-testharness-b"
-            fetch_scripts: ""
-            time_limit: 3600
-            job_timeout: 210
-          - name: css-face-c
-            suites: "css-motion css-grid css-text"
-            fetch: "fetch-wpt-css-testharness-c"
-            fetch_scripts: ""
-            time_limit: 3600
-            job_timeout: 210
-          - name: sec
-            suites: "csp mixed-content secure-contexts"
-            fetch: "fetch-wpt-security-csp"
-            fetch_scripts: ""
-            time_limit: 7200
-          - name: render
-            suites: "svg webgl"
-            fetch: "fetch-wpt-svg fetch-wpt-webgl"
-            fetch_scripts: ""
-            time_limit: 5400
-          - name: service-workers
-            suites: >-
-              service-workers service-workers-fetch service-workers-cache-storage
-            fetch: ""
-            fetch_scripts: ""
-            time_limit: 1800
+        shard: ${{ fromJSON(needs.discover-shards.outputs.shards_json) }}
     steps:
       - uses: actions/checkout@v7
         with:

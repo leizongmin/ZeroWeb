@@ -1,0 +1,9 @@
+# ci-catchall.tsv — catch-all 分片 fetch 目标覆写表（ci_discover_shards.py 读）。
+# 缺省约定：套件 fetch 目标 = make fetch-wpt-<suite>；仅当套件没有同名目标
+# （多套件共用一条目标，如 observers/editing）时在此登记，列：suite<TAB>目标
+# （空格分隔多个）。未登记且无约定目标 → 分片 fetch 步骤 make 失败显式红，
+# 按报错补一行即可。手调预算/组合调整请改 ci-shards.yml。
+intersection-observer	fetch-wpt-observers
+resize-observer	fetch-wpt-observers
+editing-run	fetch-wpt-editing
+editing-other	fetch-wpt-editing
