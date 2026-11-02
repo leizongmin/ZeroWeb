@@ -2518,7 +2518,7 @@ pub fn register_dom_callbacks(
         "__zw_set_doc_active",
         Box::new(|args| {
             let selector = args.first().map(String::from).unwrap_or_default();
-            *DOC_ACTIVE_SELECTOR.lock().unwrap_or_else(|e| e.into_inner()) = selector;
+            DOC_ACTIVE_SELECTOR.with(|slot| *slot.borrow_mut() = selector);
             "ok".into()
         }),
     );

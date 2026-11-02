@@ -568,18 +568,25 @@ pub fn find_by_selector(doc: &Document, selector: &str) -> Option<NodeId> {
 // 查询期临时构建（`with_query_view_doc` 的 live doc / 视图缓存、`__zw_matches`
 // 等字符串路径的逐次 re-parse、DOMParser 解析串），无跨查询 retained 实体可写
 // ——逐查询经 [`sync_active_state`] 在构建点注入（渲染面 `inject_focus_state`
-// 同型）。页面 dispatchEvent 等非 trusted 通道不经该回调，不触按压态。JS 回调
-// 与查询同线程串行，`Mutex` 取最简同步原语。渲染样式面挂账（逐帧重建无注入
-// 通道），见 zero-dom `active_element` 字段注记。
+// 同型）。页面 dispatchEvent 等非 trusted 通道不经该回调，不触按压态。
+// **thread_local 而非共享 `static Mutex`**：按压态是 per-document 状态，而
+// runner 多 job（rayon 线程池）与同进程多 webview 下多页并发共享进程——static
+// 槽会把 A 页写入的按压选择器串进 B 页查询（s229 实证：并发页写入串槽，button
+// 页断言读得别页 body 假匹配）。与 [`LIVE_QUERY_DOC`]/[`VIEW_DOC_CACHE`] 同一
+// 归属模型（`zero_dom::Document` 非 Send，按压槽与查询闭包同线程消费，
+// thread_local 即正确归属）。渲染样式面挂账（逐帧重建无注入通道），见 zero-dom
+// `active_element` 字段注记。
 // https://html.spec.whatwg.org/multipage/interaction.html#selector-active
-static DOC_ACTIVE_SELECTOR: std::sync::Mutex<String> = std::sync::Mutex::new(String::new());
+thread_local! {
+    static DOC_ACTIVE_SELECTOR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
 
 /// M2-S196：把按压态槽解析进文档（selector → NodeId，[`find_by_selector`] 求值；
 /// 解析失败 = 目标已离开文档视图，按无按压态处理）。幂等无条件覆盖：每条查询
 /// 路径（live doc / 视图缓存命中 / rebuild+链增量 / 字符串路径 re-parse）执行
 /// 选择器求值前调用。
 fn sync_active_state(doc: &mut Document) {
-    let sel = DOC_ACTIVE_SELECTOR.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let sel = DOC_ACTIVE_SELECTOR.with(|slot| slot.borrow().clone());
     let active = if sel.is_empty() {
         None
     } else {
