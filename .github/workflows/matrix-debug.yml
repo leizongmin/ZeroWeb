@@ -1,0 +1,31 @@
+name: Matrix Debug
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      shards_json: ${{ steps.d.outputs.shards_json }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: d
+        run: |
+          python3 tests/wpt-runner/scripts/ci_discover_shards.py \
+            --runner-src tests/wpt-runner/src/main.rs \
+            --tuned tests/wpt-runner/ci-shards.yml \
+            --registry tests/wpt-runner/ci-catchall.tsv \
+            --out-shards /tmp/shards.json
+          echo "shards_json=$(cat /tmp/shards.json)" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(wc -c < /tmp/shards.json)" >> "$GITHUB_OUTPUT"
+      - run: python3 -c "import json; d=json.load(open('/tmp/shards.json')); print('parsed', len(d), 'shards')"
+  fanout:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs['setup'].outputs.shards_json) }}
+    steps:
+      - run: echo "shard=${{ matrix.shard.name }} suites=[${{ matrix.shard.suites }}]"
