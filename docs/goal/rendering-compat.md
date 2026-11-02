@@ -9,6 +9,13 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5397 归因轮（clearance × 塌穿机器两案取证未修复——negative-clearance-after-bottom-margin 2.55% chromium 语义全分解 + margin-collapse-104 BFC 逃逸签名；均深结构挂账）**（2026-11-03）
+>
+> - **范围**：R5396 收口后按账本续扫，两案归因均落深结构方向，按协议记档跳过，无代码变更（corpus 真态 731F 不变）。
+> - **案一 negative-clearance-after-bottom-margin（2.55%）**：chromium oracle 三探针定谳五条语义链——①§8.3.1 兄弟塌穿在「下一兄弟有 clearance」处打断（empty mb:49 ∪ cleared mt:98 不合并）②自塌缩首子 margin 逃逸父上方（inner 顶 = content 顶 + 49 = rel 50）③负 clearance 不拉上（mt=300 变体留假设位 301 实证）④cleared 落点 = max(content 顶 + collapse(前 mb, 自 mt), float 底)——ZW C1/C2 臂同构本身正确 ⑤底侧塌穿父高合成。**ZW 主缺口 = 规则①未实现**（整链 98 被当逃逸量下推 inner）；修复须动共享兄弟塌穿语义（taffy 预布局 + float adjust + containment 跨层），牵动 margin-collapse 全族绿案基线，深结构挂账。
+> - **案二 margin-collapse-104（4.17%）**：float BFC 内空子自塌缩 margin 未 contained——ZW float 被推下 100（margin 逃逸到 BFC 上方，§8.3.1 BFC 违例），float 高 100 正确；同根域深结构挂账。
+> - **挂账**：新增上述两案（语义链与签名存 [`evidence/r5397-negative-clearance-attribution-2026-11-03.md`](rendering-compat/evidence/r5397-negative-clearance-attribution-2026-11-03.md)）；R5396 及以前挂账全维持。**下一步 R5398**：①floats-clear 族择轻侦察 clear-applies-to-014（7.36%）、floats-031（3.89%）、floats-145（2.06%）②731F 真态账本续扫择轻（避开对端面）③backdrop-root 深评（维持）④color-6（维持）。
+>
 > **▶ R5396 修复轮（正 clearance × 自塌缩空块塌穿组差量落位 + 祖先高度传播——margin-collapse-125 ✗2.80%→✓0.00% 真通过-可信，corpus 真态 731F FIXED=1 REGRESSED=∅）**（2026-11-03）
 >
 > - **承接**：修复代码与测试成形于上轮 session 429 中断时（工作树遗留），本轮完成复验、corpus A/B、全门禁与落账。
