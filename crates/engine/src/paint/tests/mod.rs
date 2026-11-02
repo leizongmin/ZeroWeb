@@ -98,6 +98,9 @@ mod r5389_selection_partial_line_tests;
 /// R5391 嵌套裁剪器携带矩形取交集（css-overflow-3：迟延 positioned 后代可视域 =
 /// 沿途裁剪矩形组合；单裁剪器 None 分支/空交集零面积承载守卫）。
 mod r5391_nested_clip_intersect_tests;
+/// R5392 负 margin float earliest-fit 下探（CSS 2.1 §9.5.1：候选带高
+/// max(margin 盒高, border 盒高)，负总 margin float 不再漏避让更早 float）。
+mod r5392_negative_margin_float_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5392 修复轮（负 margin float earliest-fit 下探——fit 候选带高取 max(margin 盒高, border 盒高)，负总 margin float 不再漏避让更早 float；overhanging-float-paint-order ✗1.83%→✗1.25%，几何与 chromium oracle 全对齐，残余=绘制序挂账）**（2026-11-02）
+>
+> - **归因**（chromium oracle 探针 + ZW 布局树 fills dump + placed_bands 调试）：oracle 定谳 red y=0 h=60 / blue y=40 h=60 / green y=0 h=80；ZW green y=−40。根因：green margin 盒高 = −100+80+0 = **−20**，earliest-fit 候选带 `[band_y, band_y+outer_h)` 倒置为空 → 相交测试恒假 → blue 带 [60,100) 不约束 green → 卡 band_y=60 回拉 −40。oracle 交叉验证 fit 试探以 border 盒高为下界（green 带顶 60 时 [60,140) ∩ blue 带 → 下探 100 → top 0 ✓）。
+> - **修复**（float_positioning.rs earliest-fit 分支一处 + 两处相交测试共用）：`fit_probe_height = child_outer_height.max(child.height)`；mt+mb ≥ 0 时 outer ≥ border 高，max 恒取 outer——**正 margin float 落位零扰动**，仅负总 margin float 行为改变。FLOAT_EARLIEST_FIT 既有 kill-switch 门内，无新增 env。
+> - **常驻测试**：`paint/tests/r5392_negative_margin_float_tests.rs` 2 针（三 float 堆叠几何钉 oracle 坐标 + 无前序带负 margin float 直落 −20）。
+> - **验证**：目标案 ✗1.83%→**✗1.25%**（几何修复后 ZW 三盒与 oracle 全一致；残余 1.25% = 绘制序，见挂账）；corpus 736F→735F 差异仅 table-anonymous-objects-127/149/152 抖动（隔离 3/3 全绿洗清，真态 FIXED=∅ REGRESSED=∅）；fmt ✓ / guarded-clippy 全工作区 EXIT=0 / test-guard 零 layout-engine+engine 28 腿全绿 / product-smoke 全子页 PASS / bench-gate 定向 zero-layout-engine **GATE PASS 25 指标**（首跑 loadavg 19 自拒，静窗 3.9 复跑）。证据：[`rendering-compat/evidence/r5392-negative-margin-float-fit-probe-2026-11-02.md`](rendering-compat/evidence/r5392-negative-margin-float-fit-probe-2026-11-02.md)。
+> - **挂账**：**新增 ①overhanging-float-paint-order 残余 1.25% = Appendix E 步 4 绘制序**——float 须同 stacking context 全局 tree order 绘制（red→blue→green），ZW `child_paint_sort_key` 逐父分相使 container 子树 blue/green 先行、body 层 red 最后；修复需 float 仿 positioned 机制在 scope 根全局迟延收集（携 R3922/R5391 同款裁剪矩形透传），架构级另轮。**新增 ②overflow-clip-margin-border-radius 2.76% 评估归档**：spread-only 阴影被 R4059 方形 clip 窗口硬裁，ShadowPrimitive.clip 扩 radii + CPU/GPU 圆角掩蔽为跨边界中等工程，案驱动暂搁。R5391 挂账全维持（多圆角裁剪器交集合成、abspos/fixed CB 保守口径）；R5390/R5389 挂账全维持；对端账（mutation_arm/default_actions/paste_and_go）维持。**下一步 R5393**：①float 全局 tree-order 绘制深评（或 735F 真态账本续扫择轻，避开对端面）②backdrop-root 深评（维持）③color-6（维持）。
+>
 > **▶ R5391 修复轮（嵌套裁剪器携带矩形取交集——迟延 positioned 后代外层裁剪丢失修复；clipped-scroller-add-content ✗1.25%→✓0.00% 真通过-可信，corpus 真态 734F→731F 稳定交集 FIXED=3 REGRESSED=∅）**（2026-11-02）
 >
 > - **承接注记**：修复代码成形于上轮 session 429 中断时（工作树遗留未验证改动），本轮完成验证、kill-switch、常驻测试与全门禁。

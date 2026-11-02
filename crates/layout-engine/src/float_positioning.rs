@@ -2463,6 +2463,15 @@ pub(crate) fn adjust_float_positions_with_context(
             let mut band_y = line_y;
             let mut resolved: Option<(f32, f32)> = None; // (左缘, 右缘)
             let is_right_float = matches!(child.float, FloatValue::Right);
+            // R5392：fit 试探的候选带高取 max(margin 盒高, border 盒高)——负 margin
+            // float（如 margin-top:−100 + height 80，margin 盒高 −20）margin 盒区间
+            // 倒置为空，下探测试恒不相交、永不避让更早 float。CSS 2.1 §9.5.1 落位
+            // 「moved down until it fits」以实际占用为界；chromium oracle 探针
+            //（overhanging-float-paint-order：green 带顶 60 时 [60,60+80) 与 blue
+            // margin 带 [60,100) 相交 → 下探 100 → border top = 100 + (−100) = 0）
+            // 实证候选带至少覆盖 border 盒高。mt+mb ≥ 0 时 outer ≥ border 高，max
+            // 恒取 outer——既有落位零扰动。
+            let fit_probe_height = child_outer_height.max(child.height);
             for _ in 0..(placed_bands.len() + 2) {
                 // 相交带联合墙：左系带右缘最大值 / 右系带左缘最小值（±∞ 无相交）。
                 let mut left_wall = f32::NEG_INFINITY;
@@ -2470,7 +2479,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 let mut has_left_neighbor = false;
                 let mut has_right_neighbor = false;
                 for b in &placed_bands {
-                    if b.3 < band_y + child_outer_height && band_y < b.4 {
+                    if b.3 < band_y + fit_probe_height && band_y < b.4 {
                         if b.0 {
                             // 右系 float：其 margin 左缘（b.1）收紧区间右界。
                             has_right_neighbor = true;
@@ -2506,7 +2515,7 @@ pub(crate) fn adjust_float_positions_with_context(
                 // 迭代数以 float 数为上界（+2 余量）。
                 let next_band = placed_bands
                     .iter()
-                    .filter(|b| b.3 < band_y + child_outer_height && band_y < b.4)
+                    .filter(|b| b.3 < band_y + fit_probe_height && band_y < b.4)
                     .map(|b| b.4)
                     .fold(f32::INFINITY, f32::min);
                 if !next_band.is_finite() {
