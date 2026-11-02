@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
 **版本**：v1.1 / 2026-11-02（对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–5、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为两项已拍板切片待执行（⑤ media-host 最小档案 / ① file:// browser 预解析 → LoadHtml 后翻 renderer landlock 默认）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑥ DevTools frontend 文档化已交付（2026-11-02，操作文档互斥记档）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为已拍板切片 ① 待执行（file:// browser 预解析 → LoadHtml 后翻 renderer landlock 默认）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
@@ -23,7 +23,7 @@
 - image-decoder：seccomp + landlock 双沙箱默认开，fail-closed（`apps/image-decoder/src/sandbox.rs`）。
 - compositor landlock 已修复生效；fd 通道对端信任 = socket 0600 + 双侧 SO_PEERCRED + 每发布 128-bit token（`crates/protocol/src/fd_socket_linux.rs`）。
 - 页面特权面：`__zw*` 4 枚特权 mutator 非测试模式删除（`ZW_RENDERER_AUTOMATION=1` 测试模式跳过；`crates/engine/src/counter_plugin.rs`）；HSTS per-profile 全局共享 + 无痕独立（`SharedHstsStore`，`crates/security/src/context.rs`）。
-- media-host：零沙箱钩子，IO 面 = stdio IPC + cpal 音频 feature（默认关），网络 socket 零命中——已拍板 ③A-media-host 最小档案，待执行切片（`apps/media-host`）。
+- media-host：默认双沙箱已交付（seccomp 网络/exec 黑名单 + landlock 空 allowed-set；audio-cpal feature 档授予 `/dev/snd` 读写）+ fail-closed，opt-out 有显式「未沙箱运行」警告；IO 面 = stdio IPC + cpal 音频 feature（默认关），网络 socket 零命中（`apps/media-host`）。
 
 范围：Cookie/HttpOnly、HSTS、存储、权限、自动化角色的可信身份；renderer/worker 与 browser/helper 请求权限；macOS/Linux 沙箱实际生效时机。
 
