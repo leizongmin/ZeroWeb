@@ -106,3 +106,13 @@ env RUSTUP_TOOLCHAIN=1.85.0 cargo build && env RUSTUP_TOOLCHAIN=1.85.0 cargo run
 
 输出：ML-KEM 3/3 PASS、ML-DSA 3/3 PASS、KMAC 6/6 both candidates、
 X448 KAT + 5/5 small-order PASS。
+
+## 补记（2026-11-02）：SHA3/SHAKE 定长族无既有依赖承接，XOF 域 D1 门控终局成立
+
+[先行四域预检](2026-11-02-d2-domain-slice-corpus-face-precheck.md) 对
+SHA3/SHAKE 族标注「未另探（低风险）」。本日核实：workspace Cargo.lock
+**零 keccak 面**（sha3/tiny-keccak/keccak 均不在树，digest 域内只有
+sha2），host `crypto_subtle_digest` 分派仅 SHA-2 族——SHA3-224/256/384/
+512 与 SHAKE128/256 注册必须引入 XOF 域既列候选 `sha3 0.12 + shake
+0.1.0`（新依赖，D1 范围内）。无既有依赖吸收路径，XOF 域整体（含定长族）
+随 D1 拍板承接，无依赖面无遗留终局成立。
