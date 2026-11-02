@@ -314,3 +314,11 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   r3 逐位 CLEAN 零回归（见当前状态段）。开工时工作面有 33 号流在途草稿
   （part01f.js delKeepChainShells），已 stash 记账
   （`typing-style-round-1102`）不硬解。
+- 2026-11-02 复验续轮：r3 基点（`dbd4ef9e8`）后 main 又入 `5248566a3`
+  （css_vars +90）与 `aac5e481f`（part03/part05.js switch 反射——与本流
+  part05.js worker crypto 面同文件目录级分域，变更臂 scoped
+  `input.switch` forms 面）两笔 engine 修复；r4 全量对 m2s5 锚再证
+  **逐位 CLEAN**（360 案/81,851 keys = P 52,861 + F 28,986 + T 4，
+  REGRESSED/FIXED/FLIPPED/DRIFT 全 0），runner 单测 276P/0F，m2s5 锚
+  对照基准维持；零代码触面无碰撞。D1 飞书线再核无回复（pos 851 后
+  无用户消息，两轮征询在案不重复催办）。
