@@ -117,6 +117,12 @@ pub(super) struct HeadlessSession {
     /// 在途导航登记（命令时点建立、NavigationStarted 确认、commit 消费），见
     /// [`PendingNavigation`]。
     pub(super) pending_navigation: Option<PendingNavigation>,
+    /// 最近实际服务给本会话的文档 URL（document 代理 fetch 完成时锚定）。与 GUI
+    /// fetch_proxy 的 last_document_urls 同款：file:// 范围策略的服务端权威锚点。
+    pub(super) last_document_url: Option<String>,
+    /// 在途 document 代理 fetch（request_id → 发起 URL）：完成时锚定
+    /// [`Self::last_document_url`]，非 document fetch 不改锚。
+    pub(super) doc_fetch_inflight: std::collections::HashMap<u64, String>,
     #[cfg(not(test))]
     pub(super) next_request_id: u64,
     /// addScriptToEvaluateOnNewDocument 注册的脚本（新文档加载后重放）。
@@ -255,6 +261,8 @@ impl HeadlessSession {
             next_frame_seq: 1,
             navigation_epoch: 0,
             pending_navigation: None,
+            last_document_url: None,
+            doc_fetch_inflight: std::collections::HashMap::new(),
             gpu_renderer: None,
             paint_fonts: new_session_paint_fonts(),
         }
@@ -299,6 +307,8 @@ impl HeadlessSession {
             snapshot: crate::tab_snapshot::TabSnapshot::default(),
             navigation_epoch: 0,
             pending_navigation: None,
+            last_document_url: None,
+            doc_fetch_inflight: std::collections::HashMap::new(),
             next_request_id: 1,
             injected_scripts: Vec::new(),
             cookie_store: zero_net::shared_cookie_store(),
@@ -779,6 +789,11 @@ impl HeadlessSession {
         let parsed_url = zero_net::parse_url(&params.url).ok();
         // Cookie 注入（Storage jar → 请求头）+ UA override
         let mut headers = params.headers;
+        // 资源面（document/子资源）来自 renderer 显式 `x-zero-resource-type`，缺失时
+        // 按 URL 推断——file:// 范围策略按面分级（见下方 file:// 臂）。
+        let (_, resource_type) = zero_net::FetchPriority::from_fetch_headers(&headers, &params.url);
+        // Renderer routing hints are browser-internal metadata, never origin request headers.
+        headers.retain(|(name, _)| !name.to_ascii_lowercase().starts_with("x-zero-"));
         if let Some(parsed) = &parsed_url {
             let cookie_header = self
                 .cookie_store
@@ -841,12 +856,51 @@ impl HeadlessSession {
         let request_id = params.request_id;
         let net_request_id_clone = net_request_id.clone();
         let network_enabled = self.network_enabled;
+        // document 面登记在途（file 与 HTTP 两臂共用）：完成回发时锚定
+        // last_document_url——renderer 无从伪造的「browser 实际服务过该文档」证据。
+        if resource_type == "document" {
+            self.doc_fetch_inflight.insert(request_id, params.url.clone());
+        }
         // file:// 直读臂与 GUI fetch_proxy.enqueue 同款（is_file_url → read_file_url，
         // 旁路 HTTP 缓存/调度）：headless 代理此前缺失该臂，文档与子资源 file:// 全部
         // 落 reqwest builder error 错误页——headless CDP 导航本地文件恒失败的先存缺口
         // （renderer 信任边界 ① file:// 生产链验收解锁时修复）。本地文件读取快，同步
-        // 完成同「线程创建失败」兜底的 inline 形态。
+        // 完成同「线程创建失败」兜底的 inline 形态。范围策略同 GUI（DC-2，2026-11-02）：
+        // 锚点 = 会话命令导航（client_initiated，等价 GUI sanctioned）+ 最近服务文档。
         if zero_net::is_file_url(&params.url) {
+            let sanctioned = self
+                .pending_navigation
+                .as_ref()
+                .filter(|nav| nav.client_initiated)
+                .map(|nav| nav.url.as_str());
+            let face = if resource_type == "document" {
+                crate::fetch_proxy::FileFetchFace::Document
+            } else {
+                crate::fetch_proxy::FileFetchFace::Subresource
+            };
+            if let Err(reason) = crate::fetch_proxy::check_file_url_scope(
+                &params.url,
+                face,
+                self.last_document_url.as_deref(),
+                sanctioned,
+            ) {
+                tracing::warn!(
+                    "file fetch blocked headless req_id={} {url}: {reason}",
+                    params.request_id,
+                    url = params.url
+                );
+                let outcome = Err(zero_net::NetError::Network(format!(
+                    "blocked by file scope policy: {reason}"
+                )));
+                self.apply_fetch_completion(CompletedFetch {
+                    request_id,
+                    net_request_id,
+                    network_enabled,
+                    origin_url: params.url,
+                    outcome,
+                })?;
+                return Ok(());
+            }
             let outcome = zero_net::read_file_url(&params.url);
             self.apply_fetch_completion(CompletedFetch {
                 request_id,
@@ -992,10 +1046,16 @@ impl HeadlessSession {
             origin_url,
             outcome,
         } = completion;
+        // document 面 fetch 收口：锚定最近服务文档（redirect 后以最终 response.url
+        // 为准）。与 GUI fetch_proxy drain 的 document-response 钩子同款。
+        let served_document = self.doc_fetch_inflight.remove(&request_id);
         let parsed_url = zero_net::parse_url(&origin_url).ok();
         let frame_id = self.active_frame_id();
         match outcome {
             Ok(response) => {
+                if served_document.is_some() {
+                    self.last_document_url = Some(response.url.clone());
+                }
                 // Set-Cookie 捕获（响应 → Storage jar）
                 if let Some(parsed) = &parsed_url {
                     let set_cookies: Vec<String> = response

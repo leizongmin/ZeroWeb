@@ -2010,6 +2010,10 @@ impl ProcessTabBackend {
     pub fn navigate(&mut self, tab_id: TabId, url: &str, navigation_epoch: u64) {
         self.note_host_activity();
         self.fetch_proxy.on_navigate(tab_id, url);
+        // file:// 范围策略 sanctioned 锚点：本函数是 browser 主动导航（地址栏/
+        // 历史/会话恢复/CDP）的唯一多进程汇点；renderer 自报导航（on_navigate 的
+        // 另一调用点）不登记。命中由 fetch_proxy enqueue 消费。
+        self.fetch_proxy.note_sanctioned_navigation(tab_id, url);
         let Some(renderer_id) = self.tab_to_renderer.get(&tab_id).copied() else {
             return;
         };
@@ -2020,6 +2024,12 @@ impl ProcessTabBackend {
         if let Err(e) = renderer.navigate(url, None, navigation_epoch) {
             tracing::warn!("IPC navigate failed: {e}");
         }
+    }
+
+    /// 登记 browser 本地生成的 document（zero:// 内部页装载点；file:// 范围策略
+    /// 「最近服务文档」锚点，见 [`TabFetchProxy::note_browser_document`]）。
+    pub fn note_browser_document(&mut self, tab_id: TabId, url: &str) {
+        self.fetch_proxy.note_browser_document(tab_id, url);
     }
 
     /// 强制刷新前清除该 URL 的缓存条目（绕过 HTTP 缓存）。

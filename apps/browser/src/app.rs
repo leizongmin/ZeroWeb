@@ -2416,6 +2416,9 @@ impl BrowserApp {
     }
 
     fn load_local_tab_url(&mut self, tab_id: TabId, url: &str) {
+        // file:// 范围策略锚点：zero:// 内部页由 browser 本地生成（不经 enqueue
+        // document 响应钩子），装载点显式记录「最近服务文档」防锚点落陈旧值。
+        self.tabs.note_browser_document(tab_id, url);
         match url {
             "zero://settings" => self.open_settings_page(),
             // 历史页（含 `?q=` 过滤形态，F5 刷新走这里而非 try_apply_internal_url）。

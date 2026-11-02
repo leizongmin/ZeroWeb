@@ -5,10 +5,12 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Semaphore;
 
+use std::path::Path;
+
 use zero_browser_shell::TabId;
 use zero_net::{
     CacheLookup, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse, ResourceLoader,
-    ResourceRequest, is_file_url, read_file_url,
+    ResourceRequest, file_url_to_path, is_file_url, read_file_url,
 };
 use zero_protocol::message::FetchParams;
 use zero_script_sandbox::ServiceWorkerFetchRequest;
@@ -26,6 +28,80 @@ pub struct CompletedFetch {
     pub headers: Vec<(String, String)>,
     /// 响应体。
     pub body: Vec<u8>,
+}
+
+/// file:// 直读请求的发起面（范围策略按面分级，见 [`check_file_url_scope`]）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FileFetchFace {
+    /// 主文档导航（renderer `X-Zero-Resource-Type: document`）。
+    Document,
+    /// 页面子资源（图片/样式/字体等）。
+    Subresource,
+    /// Service Worker 拦截的页面 fetch（document 性未知，按保守组合面）。
+    ServiceWorker,
+}
+
+/// file:// 直读臂范围策略（DC-2 缺口修复，2026-11-02；设计与实证见
+/// `docs/goal/renderer-trust-boundary/evidence/2026-11-02-file-url-ipc-arm-scope-finding.md`）。
+///
+/// 锚点全部取 browser 自身知情面（renderer 自报 initiator 不采信——被攻破
+/// renderer 可伪造）：
+/// - `sanctioned_nav_url`：browser 主动导航登记（地址栏/历史/会话恢复/CDP，经
+///   `process_backend::navigate`；headless 侧为会话 `pending_navigation`）；
+/// - `last_document_url`：browser 最近一次**实际服务过**的 document（响应钩子
+///   记录，renderer 无法伪造）。
+///
+/// 规则（Chrome parity）：Document 面 = sanctioned 命中 或 当前已提交文档为
+/// file://（页内链接/JS 导航）；Subresource 面 = 已提交文档为 file:// 且请求
+/// 路径在其目录子树内（same-dir-or-below）；ServiceWorker 面 = sanctioned 命中
+/// 或子树规则（SW 拦截的导航 fetch 走 sanctioned，普通 fetch 走子树）。
+pub(crate) fn check_file_url_scope(
+    url: &str,
+    face: FileFetchFace,
+    last_document_url: Option<&str>,
+    sanctioned_nav_url: Option<&str>,
+) -> Result<(), String> {
+    let sanctioned_hit = sanctioned_nav_url.is_some_and(|sanctioned| sanctioned == url);
+    match face {
+        FileFetchFace::Document => {
+            if sanctioned_hit {
+                return Ok(());
+            }
+            if last_document_url.is_some_and(is_file_url) {
+                // file 页内导航（链接/JS location.href）：Chrome 允许 file→file 顶层导航。
+                return Ok(());
+            }
+            Err("file navigation requires browser-initiated navigation or file:// committed document".into())
+        }
+        FileFetchFace::Subresource | FileFetchFace::ServiceWorker => {
+            if face == FileFetchFace::ServiceWorker && sanctioned_hit {
+                return Ok(());
+            }
+            let Some(doc_url) = last_document_url.filter(|doc| is_file_url(doc)) else {
+                return Err("file subresource requires file:// committed document".into());
+            };
+            let request_path = match file_url_to_path(url) {
+                Ok(path) => path,
+                Err(e) => return Err(format!("file URL unparseable: {e}")),
+            };
+            let Ok(doc_path) = file_url_to_path(doc_url) else {
+                return Err("committed file document URL unparseable".into());
+            };
+            let Some(doc_dir) = doc_path.parent().map(Path::to_path_buf) else {
+                return Err("committed file document has no parent directory".into());
+            };
+            // same-dir-or-below：PathBuf 组件级前缀比较（`..` 已被 url crate
+            // WHATWG 规范化，R3367 属性钉在案）。
+            if request_path.starts_with(&doc_dir) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "file subresource outside committed document directory subtree: {}",
+                    doc_dir.display()
+                ))
+            }
+        }
+    }
 }
 
 struct PendingFetch {
@@ -76,6 +152,12 @@ pub struct TabFetchProxy {
     stream_limiter: Arc<Semaphore>,
     tab_epochs: HashMap<TabId, u64>,
     security: HashMap<TabId, SecurityContext>,
+    /// per-tab 最近一次 browser 实际服务过的 document URL（file:// 范围策略锚点，
+    /// 响应钩子记录——renderer 无法伪造；见 [`check_file_url_scope`]）。
+    last_document_urls: HashMap<TabId, String>,
+    /// per-tab browser 主动导航登记（地址栏/历史/会话恢复/CDP；file:// 范围策略
+    /// sanctioned 锚点，命中即消费）。
+    sanctioned_navs: HashMap<TabId, String>,
     /// 普通 tab 共享的 HSTS 全局存储（真浏览器 per-profile 语义；无痕 tab
     /// 独立存储不接入）。首个普通 tab 装配时捕获。
     global_hsts: Option<SharedHstsStore>,
@@ -96,6 +178,8 @@ impl TabFetchProxy {
             stream_limiter: Arc::new(Semaphore::new(zero_net::max_connections_total())),
             tab_epochs: HashMap::new(),
             security: HashMap::new(),
+            last_document_urls: HashMap::new(),
+            sanctioned_navs: HashMap::new(),
             global_hsts: None,
         }
     }
@@ -119,7 +203,22 @@ impl TabFetchProxy {
         self.private_tabs.remove(&tab_id);
         self.tab_epochs.remove(&tab_id);
         self.security.remove(&tab_id);
+        self.last_document_urls.remove(&tab_id);
+        self.sanctioned_navs.remove(&tab_id);
         self.stream_pending.retain(|(pending_tab, _)| *pending_tab != tab_id);
+    }
+
+    /// 登记 browser 主动导航目标（file:// 范围策略 sanctioned 锚点）。仅在
+    /// browser 发起导航的路径调用（地址栏/历史/会话恢复/CDP，经
+    /// `process_backend::navigate`）；renderer 自报导航不登记。
+    pub fn note_sanctioned_navigation(&mut self, tab_id: TabId, url: &str) {
+        self.sanctioned_navs.insert(tab_id, url.to_string());
+    }
+
+    /// 登记 browser 本地生成的 document（zero:// 内部页：不经 enqueue document
+    /// 响应钩子，装载点显式记录，保持「最近服务文档」锚点不落陈旧值）。
+    pub fn note_browser_document(&mut self, tab_id: TabId, url: &str) {
+        self.last_document_urls.insert(tab_id, url.to_string());
     }
 
     fn loader_for(&self, tab_id: TabId) -> Arc<ResourceLoader> {
@@ -274,6 +373,36 @@ impl TabFetchProxy {
         }
 
         if is_file_url(&url) {
+            // DC-2 范围策略（2026-11-02）：file:// 直读臂原对 renderer 请求无
+            // origin/范围校验——http 页面可 `<img src=file://>` 读本地文件、JS 导航
+            // file:// 渲染本地文件全文（headless 实证在册）。按面分级放行，锚点
+            // 为 browser 自证面（sanctioned 导航 + 最近服务文档）。
+            let last_document = self.last_document_urls.get(&tab_id).map(String::as_str);
+            let sanctioned = self.sanctioned_navs.get(&tab_id).map(String::as_str);
+            let face = if resource_type == "document" {
+                FileFetchFace::Document
+            } else {
+                FileFetchFace::Subresource
+            };
+            if let Err(reason) = check_file_url_scope(&url, face, last_document, sanctioned) {
+                tracing::warn!(
+                    "file fetch blocked tab {} req_id={} {url}: {reason}",
+                    tab_id.0,
+                    params.request_id
+                );
+                self.pending.push(PendingFetch {
+                    tab_id,
+                    request_id: params.request_id,
+                    url,
+                    resource_type,
+                    rx: immediate_err(format!("资源被安全策略阻止: {reason}")),
+                });
+                return;
+            }
+            if face == FileFetchFace::Document && sanctioned == Some(url.as_str()) {
+                // sanctioned 目标命中即消费：一次性凭证，防陈旧登记被后续请求复用。
+                self.sanctioned_navs.remove(&tab_id);
+            }
             let (tx, rx) = channel();
             let _ = tx.send(read_file_url(&url).map_err(|error| error.to_string()));
             self.pending.push(PendingFetch {
@@ -511,6 +640,14 @@ impl TabFetchProxy {
             }
         }
         if is_file_url(&url) {
+            // DC-2 范围策略（2026-11-02）：SW 拦截的页面 fetch 同受 file:// 范围
+            // 约束（document 性未知，保守组合面 = sanctioned 命中或子树规则）。
+            let last_document = self.last_document_urls.get(&tab_id).map(String::as_str);
+            let sanctioned = self.sanctioned_navs.get(&tab_id).map(String::as_str);
+            if let Err(reason) = check_file_url_scope(&url, FileFetchFace::ServiceWorker, last_document, sanctioned) {
+                tracing::warn!("sw file fetch blocked tab {}: {url}: {reason}", tab_id.0);
+                return immediate_err(format!("resource blocked by security policy: {reason}"));
+            }
             let (tx, rx) = channel();
             let _ = tx.send(read_file_url(&url).map_err(|error| error.to_string()));
             return rx;
@@ -569,6 +706,9 @@ impl TabFetchProxy {
                     // 导航路（子资源不落表）。
                     if pending.resource_type == "document" {
                         self.note_hsts_response(pending.tab_id, &resp.url, &resp.headers);
+                        // file:// 范围策略锚点：browser 实际服务过的 document
+                        //（最终 URL；renderer 无法伪造）。
+                        self.last_document_urls.insert(pending.tab_id, resp.url.clone());
                     }
                     resp.headers.push(("X-Zero-Final-URL".to_string(), resp.url.clone()));
                     resp.headers
@@ -1282,6 +1422,17 @@ mod tests {
         let mut request = params(7, &url);
         request.headers = vec![("X-Zero-Resource-Type".into(), "document".into())];
         let mut proxy = TabFetchProxy::new();
+
+        // DC-2 范围策略：无 browser 登记凭证（sanctioned 导航/最近服务文档）时
+        // document 面 file:// 拒绝——renderer 不可自证导航合法性。
+        proxy.enqueue(TabId(1), &request);
+        let denied = proxy.drain();
+        assert_eq!(denied.len(), 1);
+        assert_eq!(denied[0].status, 0, "无凭证 file:// document 不得放行");
+
+        // 登记 browser 发起导航（process_backend.navigate 服务端锚点）后放行：
+        // file:// 直读臂不经 HTTP 调度器，响应带 Final-URL/Resource-Type 回执。
+        proxy.note_sanctioned_navigation(TabId(1), &url);
         proxy.enqueue(TabId(1), &request);
         let completed = proxy.drain();
 
@@ -2256,5 +2407,98 @@ mod tests {
             listener.accept(),
             Err(error) if error.kind() == std::io::ErrorKind::WouldBlock
         ));
+    }
+
+    // ── file:// 范围策略（check_file_url_scope，DC-2 2026-11-02）──
+
+    #[test]
+    fn file_scope_document_face_requires_sanctioned_or_file_document() {
+        let url = "file:///tmp/zw/doc.html";
+        // sanctioned 命中即放行（browser 发起导航，服务端登记凭证）。
+        assert!(
+            check_file_url_scope(
+                url,
+                FileFetchFace::Document,
+                Some("http://example.test/page"),
+                Some(url)
+            )
+            .is_ok()
+        );
+        // 无 sanctioned 且最近服务文档是 file:// → 放行（file 文档间的页面内导航）。
+        assert!(check_file_url_scope(url, FileFetchFace::Document, Some("file:///tmp/zw/other.html"), None).is_ok());
+        // 无 sanctioned 且最近文档是 http → 拒绝（http 页面 JS 导航 file://）。
+        let err =
+            check_file_url_scope(url, FileFetchFace::Document, Some("http://example.test/page"), None).unwrap_err();
+        assert!(err.contains("browser-initiated"), "{err}");
+    }
+
+    #[test]
+    fn file_scope_subresource_confined_to_document_directory_subtree() {
+        let doc = "file:///tmp/zw/page.html";
+        // 同目录与子目录放行（Chrome same-dir-or-below 对齐）。
+        assert!(check_file_url_scope("file:///tmp/zw/img.png", FileFetchFace::Subresource, Some(doc), None).is_ok());
+        assert!(
+            check_file_url_scope(
+                "file:///tmp/zw/assets/img.png",
+                FileFetchFace::Subresource,
+                Some(doc),
+                None
+            )
+            .is_ok()
+        );
+        // 目录外拒绝；PathBuf 组件级前缀使 /tmp/zw2 这类近亲目录同样拒绝。
+        for outside in ["file:///tmp/zw2/secret.txt", "file:///tmp/secret.txt"] {
+            let err = check_file_url_scope(outside, FileFetchFace::Subresource, Some(doc), None).unwrap_err();
+            assert!(err.contains("subtree"), "{err}");
+        }
+    }
+
+    #[test]
+    fn file_scope_subresource_requires_file_document_anchor() {
+        // 锚点缺失或为 http 文档：子资源面 file:// 一律拒绝。
+        let err = check_file_url_scope("file:///tmp/zw/img.png", FileFetchFace::Subresource, None, None).unwrap_err();
+        assert!(err.contains("committed document"), "{err}");
+        let err = check_file_url_scope(
+            "file:///tmp/zw/img.png",
+            FileFetchFace::Subresource,
+            Some("http://example.test/page"),
+            None,
+        )
+        .unwrap_err();
+        assert!(err.contains("committed document"), "{err}");
+    }
+
+    #[test]
+    fn file_scope_service_worker_face_follows_document_or_sanctioned() {
+        let url = "file:///tmp/zw/sw.js";
+        let doc = "file:///tmp/zw/page.html";
+        // SW 面 sanctioned 命中放行（sw 注册由导航面引出）。
+        assert!(
+            check_file_url_scope(
+                url,
+                FileFetchFace::ServiceWorker,
+                Some("http://example.test/"),
+                Some(url)
+            )
+            .is_ok()
+        );
+        // sanctioned 未命中时落子资源同款目录树限制：目录内放行、锚点非 file 拒绝。
+        assert!(
+            check_file_url_scope(
+                "file:///tmp/zw/scope/worker.js",
+                FileFetchFace::ServiceWorker,
+                Some(doc),
+                None
+            )
+            .is_ok()
+        );
+        let err = check_file_url_scope(
+            url,
+            FileFetchFace::ServiceWorker,
+            Some("http://example.test/"),
+            Some("file:///tmp/other/sw.js"),
+        )
+        .unwrap_err();
+        assert!(err.contains("committed document"), "{err}");
     }
 }

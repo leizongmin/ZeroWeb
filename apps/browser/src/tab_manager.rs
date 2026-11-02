@@ -379,6 +379,14 @@ impl TabManager {
         }
     }
 
+    /// 登记 browser 本地生成的 document（zero:// 内部页装载点；file:// 范围策略
+    /// 「最近服务文档」锚点，多进程路透传 process_backend）。
+    pub fn note_browser_document(&mut self, tab_id: TabId, url: &str) {
+        if let Some(ref mut backend) = self.process_backend {
+            backend.note_browser_document(tab_id, url);
+        }
+    }
+
     /// 强制刷新：清除该 URL 的缓存条目后再 navigate（绕过 HTTP 缓存）。
     pub fn navigate_bypass_cache(&mut self, tab_id: TabId, url: String) {
         self.ensure_tab(tab_id);
