@@ -86,6 +86,14 @@ plain 本地写），s240 注记 + HTML §4.10.9 setter 语义链。
   before/after 承担；写面活体消费者（模板/DOMParser 站点形）待 s239 家族
   延伸切片补 accessor 后才有语料触达面。
 
+## 合并基线复核（收口轮）
+
+push 前 `git pull --rebase` 并入并发流提交 7a713912a（webcrypto XOF：crypto.rs/
+crypto_asym.rs + part01b/part02a，不触 part03 与 option/select 面）后重建
+release runner 复跑 solo：the-option-element **108P/0F/0T** 与原验证逐行同态，
+全 shim concat node --check 干净（part03 本地改动与上游 part01b/part02a 拼接
+无冲突）。
+
 ## 残余挂账（本切不动，探针实证在案）
 
 - **wrapper 读/写源分裂**：handle-backed pending 形（template content/
