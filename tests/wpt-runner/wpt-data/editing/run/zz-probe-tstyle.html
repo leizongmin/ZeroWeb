@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+// 语料 setupDiv 文本标记语义：[]/{} 于文本节点 → 文本 offset 选区
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  var cur = host;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function runSeq(tag, html, seq, extra) {
+  try {
+    setupCorp(html);
+    for (var i = 0; i < seq.length; i++) {
+      var cmd = seq[i][0], val = seq[i][1];
+      if (cmd === "inserttext") document.execCommand("insertText", false, val);
+      else document.execCommand(cmd, false, val);
+    }
+    var s = tag + " GOT=" + JSON.stringify(host.innerHTML);
+    if (extra === "qS") s += " qS_after=" + document.queryCommandState("bold");
+    return s;
+  } catch (e) { return tag + " THREW " + e.message; }
+}
+var out = [];
+out.push(runSeq("T1", "<b>X[]<span contenteditable=false>abc</span></b><i>def</i>",
+  [["delete",""],["inserttext","Y"]]));
+out.push(runSeq("T2", "<b><span contenteditable=false>abc</span>X[]</b><i>def</i>",
+  [["delete",""],["inserttext","Y"]]));
+out.push(runSeq("T3", "<b>[]X<span contenteditable=false>abc</span></b><i>def</i>",
+  [["forwarddelete",""],["inserttext","Y"]]));
+out.push(runSeq("T4", "<b><span contenteditable=false>abc</span>[]X</b><i>def</i>",
+  [["forwarddelete",""],["inserttext","Y"]]));
+out.push(runSeq("T5", "<div>abc<b><i>[def]</i></b>ghi</div>",
+  [["delete",""],["inserttext","d"],["inserttext","e"],["inserttext","f"]]));
+out.push(runSeq("T6", "<div>abc<b><i>[def]</i></b>ghi</div>",
+  [["forwarddelete",""],["inserttext","d"],["inserttext","e"],["inserttext","f"]]));
+out.push(runSeq("T7", "<div><b>[abc]</b></div>",
+  [["styleWithCSS","false"],["delete",""],["insertparagraph",""],["inserttext","a"]], "qS"));
+// T1 中间态：仅 delete，看 caret 落点
+try {
+  setupCorp("<b>X[]<span contenteditable=false>abc</span></b><i>def</i>");
+  document.execCommand("delete", false, "");
+  var an = getSelection().anchorNode, fo = getSelection().focusOffset;
+  var desc = an === null ? "null" : (an.nodeType === 3 ? "text:" + JSON.stringify(an.data) : an.nodeName + (an.getAttribute && an.getAttribute("contenteditable") !== null ? "[ce=" + an.getAttribute("contenteditable") + "]" : ""));
+  var inSpan = false, p = an;
+  while (p && p !== host) { if (p.nodeType === 1 && p.getAttribute && p.getAttribute("contenteditable") === "false") inSpan = true; p = p.parentNode; }
+  out.push("T1MID dom=" + JSON.stringify(host.innerHTML) + " anchor=" + desc + "@" + fo + " inCEfalse=" + inSpan);
+} catch (e) { out.push("T1MID THREW " + e.message); }
+// T1B：无 delete，直接 (b,0) 位插 Y（span 在位）
+try {
+  setupCorp("<b>X<span contenteditable=false>abc</span></b>");
+  var bb = host.querySelector("b");
+  var r0 = document.createRange();
+  r0.setStart(bb, 0); r0.setEnd(bb, 0);
+  getSelection().removeAllRanges(); getSelection().addRange(r0);
+  document.execCommand("insertText", false, "Y");
+  out.push("T1B dom=" + JSON.stringify(host.innerHTML));
+} catch (e) { out.push("T1B THREW " + e.message); }
+// T1C：delete 后立即读 caret_range 所见（内部形态）
+try {
+  setupCorp("<b>X[]<span contenteditable=false>abc</span></b><i>def</i>");
+  document.execCommand("delete", false, "");
+  var rr = globalThis.__zw_ce_caret_range(host);
+  var rc = rr.startContainer, ro = rr.startOffset;
+  var rd = rc.nodeType === 3 ? "text:" + JSON.stringify(rc.data) : String(rc.nodeName);
+  out.push("T1C caretRange=" + rd + "@" + ro + " collapsed=" + rr.collapsed);
+} catch (e) { out.push("T1C THREW " + e.message); }
+assert_false(true, out.join(' || '));
+</script>
+</body>

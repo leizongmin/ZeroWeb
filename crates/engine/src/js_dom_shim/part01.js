@@ -8624,8 +8624,18 @@
     var hit = _zwCeChainTop(node, el);
     if (!hit) return null;
     var kids = el.childNodes;
-    if (!kids || hit.regIdx >= kids.length) return null;
-    var cur = kids[hit.regIdx];
+    // TypingStyle 轮（2026-11-02 editing-compat）：登记 top 为宿主本体时
+    //（delete 动作管线把 action 根登记进 tops 的形态），path 语义是 el→node
+    // 的全链索引，必须自 el 起走——旧码恒自 kids[regIdx]（el 的子）起走，整条
+    // 链下移一层：T1 CE-false 语料 (b,0) 被走成 b.childNodes[0]（contenteditable
+    //=false span）@0，typed 段误入不可编辑壳（multitest :3206-:3229 四臂）。
+    var cur;
+    if (hit.top === el) {
+      cur = el;
+    } else {
+      if (!kids || hit.regIdx >= kids.length) return null;
+      cur = kids[hit.regIdx];
+    }
     for (var d = 0; d < hit.path.length; d++) {
       var ck = cur && cur.childNodes;
       if (!ck || hit.path[d] >= ck.length) return null;
@@ -8830,6 +8840,31 @@
     }
     return { el: root, text: tn };
   }
+  // TypingStyle 轮（2026-11-02 editing-compat）：delete 幸存壳链捕获的 typing
+  // 态（part01f __zw_ce_capture_typing_chain）含 caret 仍居其中的壳层——该层
+  // 由 DOM 祖先自然承接，重复包裹会产出 `<b><i><b>d</b></i></b>` 双裹形
+  //（multitest :2521 双壳、:2418 壳内 typing、:2173 sub 壳内 typing 各形）。
+  // 读面滤除 caret 位祖先链（至宿主，含容器自身）上已存在的 tag；显式
+  // collapsed toggle 态不受影响（toggle-on 时 tag 必不在链上，滤除为恒等）。
+  function _zwCeTypingTagsAt(sc, el) {
+    var tags = globalThis.__zwTypingTags;
+    if (!Array.isArray(tags) || !tags.length) return tags;
+    var have = null;
+    var n = sc;
+    var guard = 0;
+    while (n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1) {
+        var tn = String(n.tagName || '').toLowerCase();
+        if (tags.indexOf(tn) >= 0) {
+          if (!have) have = [];
+          have.push(tn);
+        }
+      }
+      n = n.parentNode;
+    }
+    if (!have) return tags;
+    return tags.filter(function (t) { return have.indexOf(t) < 0; });
+  }
   // 变异核导出（editing-compat inserttext 簇 2026-11-01）：R3254-M2 branch3
   // execCommand 分支（part06 inserttext 臂）与键盘 __zw_ce_insert 共用。事件序
   // （beforeinput/textInput/input）留在各入口，本核只做变更：caret 世界同步 +
@@ -8858,7 +8893,7 @@
       // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
       var v = String(sc.nodeValue || '');
       var eo = range.collapsed ? so : (range.endOffset | 0);
-      var ttags1 = globalThis.__zwTypingTags;
+      var ttags1 = _zwCeTypingTagsAt(sc, el);
       // D4（2026-11-02 editing-compat）：typing 拆壳重挂——显式 toggle-off 的
       // tag 仍在 caret 祖先链上时，typed 段不继承该壳（Chrome typing-style
       // 重挂：语料 `<div><b>abc[]<br></b></div>`+bold+inserttext 期望
@@ -8944,12 +8979,37 @@
         if (tailHasText) {
           offSplit.parentNode.insertBefore(tailSeq, dEl.nextSibling || null);
         } else {
-          // 纯占位尾段丢弃（F1/F2/F3/F5 语料期望无 br、F1 双期望其一）；off 壳
-          // 直后的裸 br 占位同消费（F3/F5 形 `<i><b>abc[]</b><br></i>`）。
-          var nxT2 = dEl.nextSibling;
-          if (nxT2 && nxT2.nodeType === 1
-              && String(nxT2.tagName || '').toLowerCase() === 'br') {
-            nxT2.parentNode.removeChild(nxT2);
+          // 纯占位尾段（无非空文本）处理：多 br 嵌套形（F6 `<b><i>abc[]<br></i>
+          // <br></b>` 尾 `<i><br></i><br>` 双占位）重挂——首个 br（文档序，即
+          // caret 行终结符）并入 typed 段壳（期望 `<i>d<br></i>`），其余 br 各
+          // 以 off 壳 clone 承接回挂 typed 段之后（期望 `<b><br></b>`，后行
+          // 占位仍着 off 壳）。FIXME 闭环：此前 F6 整尾丢弃缺双占位形。
+          // 单 br/空尾段丢弃（F1/F2/F3/F5 语料期望无 br、F1 双期望其一）；off
+          // 壳直后的裸 br 占位同消费（F3/F5 形 `<i><b>abc[]</b><br></i>`）。
+          var brsT = [];
+          if (tailSeq && dEl.nodeType === 1) (function _zwD4BrScan(x) {
+            for (var c = x.firstChild; c; c = c.nextSibling) {
+              if (c.nodeType === 1) {
+                if (String(c.tagName || '').toLowerCase() === 'br') brsT.push(c);
+                else _zwD4BrScan(c);
+              }
+            }
+          })(tailSeq);
+          if (brsT.length >= 2) {
+            dEl.appendChild(brsT[0]);
+            var anchT = dEl;
+            for (var bi = 1; bi < brsT.length; bi++) {
+              var bshellT = offSplit.cloneNode(false);
+              bshellT.appendChild(brsT[bi]);
+              offSplit.parentNode.insertBefore(bshellT, anchT.nextSibling || null);
+              anchT = bshellT;
+            }
+          } else {
+            var nxT2 = dEl.nextSibling;
+            if (nxT2 && nxT2.nodeType === 1
+                && String(nxT2.tagName || '').toLowerCase() === 'br') {
+              nxT2.parentNode.removeChild(nxT2);
+            }
           }
         }
         node = dText;
@@ -9046,7 +9106,7 @@
       if (target) {
         var v2 = String(target.nodeValue || '');
         var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
-        var ttags2 = globalThis.__zwTypingTags;
+        var ttags2 = _zwCeTypingTagsAt(sc, el);
         if (ttags2 && ttags2.length) {
           target.nodeValue = v2.slice(0, at);
           var tw2 = _zwCeTypingInsert(ttags2, ins);
@@ -9064,7 +9124,7 @@
         // appendChild 尾追使 caret 落元素子间隙时文本跳到元素尾
         //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
         // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
-        var ttags3 = globalThis.__zwTypingTags;
+        var ttags3 = _zwCeTypingTagsAt(sc, el);
         if (ttags3 && ttags3.length) {
           var tw3 = _zwCeTypingInsert(ttags3, ins);
           sc.insertBefore(tw3.el, kids[idx] || null);

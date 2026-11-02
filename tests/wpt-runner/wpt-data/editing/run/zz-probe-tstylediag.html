@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+function setupCorp(html) {
+  host.innerHTML = html;
+  var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+  var cur = host;
+  (function walk(n) {
+    if (n.nodeType !== 3) { for (var c = n.firstChild; c; c = c.nextSibling) walk(c); return; }
+    var data = n.data;
+    var si = data.indexOf("[");
+    var ei = data.replace(/\[/g, "").indexOf("]");
+    if (si !== -1) { startNode = n; startOffset = si; }
+    if (ei !== -1) { endNode = n; endOffset = ei; }
+    var clean = data.replace(/[\[\]{}]/g, "");
+    if (clean !== data) n.data = clean;
+  })(host);
+  var r = document.createRange();
+  r.setStart(startNode, startOffset); r.setEnd(endNode, endOffset);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function nd(n) {
+  if (!n) return "null";
+  if (n.nodeType === 3) return "text:" + JSON.stringify(n.data);
+  return String(n.nodeName);
+}
+var out = [];
+// D1: delete 后逐层 dump
+try {
+  setupCorp("<b>X[]<span contenteditable=false>abc</span></b><i>def</i>");
+  document.execCommand("delete", false, "");
+  var s = getSelection();
+  var r0 = s._ranges[0];
+  out.push("D1 dom=" + JSON.stringify(host.innerHTML)
+    + " selAnchor=" + nd(s.anchorNode) + "@" + s.anchorOffset
+    + " raw0=" + nd(r0 && r0.startContainer) + "@" + (r0 && r0.startOffset)
+    + " raw0end=" + nd(r0 && r0.endContainer) + "@" + (r0 && r0.endOffset));
+  var rr = globalThis.__zw_ce_caret_range(host);
+  out.push("D1 caretRange=" + nd(rr.startContainer) + "@" + rr.startOffset);
+} catch (e) { out.push("D1 THREW " + e.message); }
+// D2: delete 后立刻手查 reanchor 各级
+try {
+  setupCorp("<b>X[]<span contenteditable=false>abc</span></b><i>def</i>");
+  document.execCommand("delete", false, "");
+  var s2 = getSelection();
+  var r02 = s2._ranges[0];
+  out.push("D2 raw=" + nd(r02.startContainer) + "@" + r02.startOffset
+    + " plain=" + (function (n) { return !!(n && !n.__zwSelector && !n.__zwHandle && !n.__zwWriteChildText && !n.__zwChildIndex); })(r02.startContainer)
+    + " selAnchor=" + nd(s2.anchorNode) + "@" + s2.anchorOffset);
+} catch (e) { out.push("D2 THREW " + e.message); }
+// D3: T2 形（caret 在 span 后）
+try {
+  setupCorp("<b><span contenteditable=false>abc</span>X[]</b><i>def</i>");
+  document.execCommand("delete", false, "");
+  var s3 = getSelection();
+  var r03 = s3._ranges[0];
+  out.push("D3 dom=" + JSON.stringify(host.innerHTML)
+    + " selAnchor=" + nd(s3.anchorNode) + "@" + s3.anchorOffset
+    + " raw0=" + nd(r03 && r03.startContainer) + "@" + (r03 && r03.startOffset)
+    + " caretRange=" + (function () { var rr = globalThis.__zw_ce_caret_range(host); return nd(rr.startContainer) + "@" + rr.startOffset; })());
+} catch (e) { out.push("D3 THREW " + e.message); }
+// D4: 元素位直插（T1B 复现 + 上下文）
+try {
+  setupCorp("<b>X<span contenteditable=false>abc</span></b>");
+  var bb = host.querySelector("b");
+  var r4 = document.createRange();
+  r4.setStart(bb, 0); r4.setEnd(bb, 0);
+  getSelection().removeAllRanges(); getSelection().addRange(r4);
+  var s4 = getSelection();
+  var r04 = s4._ranges[0];
+  out.push("D4 raw=" + nd(r04 && r04.startContainer) + "@" + (r04 && r04.startOffset)
+    + " anchor=" + nd(s4.anchorNode) + "@" + s4.anchorOffset);
+  document.execCommand("insertText", false, "Y");
+  out.push("D4 dom=" + JSON.stringify(host.innerHTML));
+} catch (e) { out.push("D4 THREW " + e.message); }
+assert_false(true, out.join(' || '));
+</script>
+</body>

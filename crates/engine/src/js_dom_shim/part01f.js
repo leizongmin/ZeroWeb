@@ -422,27 +422,9 @@
       startNode.nodeValue = String(startNode.nodeValue || '').slice(0, startOffset);
     }
 
-    // Chrome 留壳预扫：原 start 链（编辑宿主为止）上的 inline 包裹，幸存壳 =
-    // 最外层 <a>（无 a 时链上最外层壳）。g16-multitest D1 实证：
-    //   foo<b>[bar</b>baz] → foo<b>a</b>（链上最外层 b 留）；
-    //   foo<u><a>[bar</a></u>baz] → foo<a>a</a>（最外层 a 留、其上 u 摘）；
-    //   foo<a><font>[bar</font></a>baz] → foo<a>a</a>（a 留、其下 font 摘）。
-    var delKeepShell = null;
-    (function () {
-      var inlineWrappers = [];
-      var m = startNode;
-      while (m && m.parentNode && !_zwJusIsEditingHost(m) && _zwJusIsInlineNode(m)
-          && _zwListInSameEditingHost(m, m.parentNode)) {
-        if (m.nodeType == 1) inlineWrappers.push(m);
-        m = m.parentNode;
-      }
-      for (var wi = 0; wi < inlineWrappers.length; wi++) {
-        if (_zwJusIsHtmlElement(inlineWrappers[wi], 'a')) delKeepShell = inlineWrappers[wi];
-      }
-      if (!delKeepShell && inlineWrappers.length) {
-        delKeepShell = inlineWrappers[inlineWrappers.length - 1];
-      }
-    })();
+    // Chrome 留壳预扫（helper 共享面见 _zwDelKeepShellOf 及其 g16-multitest
+    // D1 实证注释）：幸存壳 = 最外层 <a>（无 a 时链上最外层壳）。
+    var delKeepShell = _zwDelKeepShellOf(startNode);
 
     var nodeList = _zwJusGetContainedNodes(_zwVaGetActiveRange(),
       function (n) {
@@ -958,6 +940,78 @@
     return node.childNodes[i];
   }
 
+  // Chrome 留壳预扫（deleteSelection 与 typing 链捕获共用）：原 start 链（编辑
+  // 宿主为止）上的 inline 包裹，幸存壳 = 最外层 <a>（无 a 时链上最外层壳）。
+  // g16-multitest D1 实证：
+  //   foo<b>[bar</b>baz] → foo<b>a</b>（链上最外层 b 留）；
+  //   foo<u><a>[bar</a></u>baz] → foo<a>a</a>（最外层 a 留、其上 u 摘）；
+  //   foo<a><font>[bar</font></a>baz] → foo<a>a</a>（a 留、其下 font 摘）。
+  function _zwDelKeepShellOf(startNode) {
+    var inlineWrappers = [];
+    var m = startNode;
+    while (m && m.parentNode && !_zwJusIsEditingHost(m) && _zwJusIsInlineNode(m)
+        && _zwListInSameEditingHost(m, m.parentNode)) {
+      if (m.nodeType == 1) inlineWrappers.push(m);
+      m = m.parentNode;
+    }
+    var keep = null;
+    for (var wi = 0; wi < inlineWrappers.length; wi++) {
+      if (_zwJusIsHtmlElement(inlineWrappers[wi], 'a')) keep = inlineWrappers[wi];
+    }
+    if (!keep && inlineWrappers.length) {
+      keep = inlineWrappers[inlineWrappers.length - 1];
+    }
+    return keep;
+  }
+
+  // Chrome delta ⑤——delete 幸存壳 typing 链捕获（2026-11-02 editing-compat
+  // TypingStyle 轮）：非 collapsed 删除后 caret 落幸存壳内或 Paragraph 拆出的
+  // 新块时，Chrome typing style 携带原 start 链的 format 壳层。语料锚点：
+  //   :2521 `<div>abc{<b><i>def</i></b>}ghi</div>`+delete+inserttext 期望
+  //        `<b><i>def</i></b>`（typed 段重裹 i——幸存壳 b 由 caret 自然承接）；
+  //   :2429 `<div><b>[abc]</b></div>`+delete+insertparagraph+inserttext 期望
+  //        `<br><div><b>a</b></div>`（caret 离壳入新块，typing 态仍裹 b）；
+  //   :2163 `foo<a><u>[bar]</u></a>baz` / :2168 `foo<u><a>[bar]</a></u>baz`
+  //        均期望 `foo<a>a[]</a>`（链上有 <a> → typed 段裸奔，捕获置空）。
+  // 捕获规则：自 startContainer 上行至编辑宿主收整链；链上任一 <a> → 空；
+  // 否则内→外收集 format 族壳层（part06 _zwExecCmdFormatTag 同表 b/i/u/s/
+  // sub/sup），行至幸存壳（含）止——幸存壳之上的层删除时已脱离 caret 继承
+  // 链（:2168 u 在 a 上不涉、无 a 形 u>b 的 u 不捕）；记录序 = 外层在前
+  //（_zwCeTypingInsert 包裹序）；显式 off 表（__zwTypingTagsOff，D4）中的
+  // tag 不捕。消费侧由 part01 _zwCeTypingTagsAt 滤除 caret 祖先链既有层
+  //（幸存壳自然承接不双裹）。显式 typing 态（__zwTypingTags 非空）优先，
+  // 捕获仅在态空时补位——接线见 __zw_ce_delete_apply 尾部。
+  var _zwDelFmtTags = { b: 1, i: 1, u: 1, s: 1, sub: 1, sup: 1 };
+  globalThis.__zw_ce_capture_typing_chain = function (ar) {
+    var sc = ar && ar.startContainer;
+    if (!sc) return null;
+    var keep = _zwDelKeepShellOf(sc);
+    var chain = [];
+    var hasA = false;
+    var n = sc;
+    var guard = 0;
+    while (n && n.parentNode && !_zwJusIsEditingHost(n) && guard++ < 256) {
+      if (n.nodeType == 1) {
+        if (String(n.tagName || '').toLowerCase() === 'a') { hasA = true; break; }
+        chain.push(n);
+      }
+      n = n.parentNode;
+    }
+    if (hasA) return [];
+    var tags = [];
+    for (var ci = 0; ci < chain.length; ci++) {
+      var tn = String(chain[ci].tagName || '').toLowerCase();
+      if (_zwDelFmtTags[tn]) tags.push(tn);
+      if (chain[ci] === keep) break;
+    }
+    tags.reverse(); // 记录序 = 外层在前
+    var toff = globalThis.__zwTypingTagsOff;
+    if (Array.isArray(toff) && toff.length) {
+      tags = tags.filter(function (t) { return toff.indexOf(t) < 0; });
+    }
+    return tags;
+  };
+
   // —— execCommand delete/forwarddelete 入口（part06 单点调用）。活动选区非
   // collapsed → deleteSelection；collapsed → 对应 action。preservesOverrides
   // 等价面（vendored myExecCommand :8495 包裹）：动作前抓 override 原始快照
@@ -974,6 +1028,10 @@
     var snap = _zwVaOverridesTakeRaw();
     var tt = globalThis.__zwTypingTags;
     var ttoff = globalThis.__zwTypingTagsOff; // D4 显式关账表同快照
+    // delta ⑤ 幸存壳 typing 链捕获：动作前读 start 链（删后链形已变）；
+    // 仅非 collapsed 面（deleteSelection 留壳路径；collapsed 动作无留壳语义）。
+    var tcap = (!ar.collapsed && typeof globalThis.__zw_ce_capture_typing_chain === 'function')
+      ? globalThis.__zw_ce_capture_typing_chain(ar) : null;
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -983,7 +1041,11 @@
     }
     if (typeof _zwVaReanchorOverrides === 'function') _zwVaReanchorOverrides();
     _zwVaOverridesPutRaw(snap);
-    globalThis.__zwTypingTags = tt;
+    // delta ④ 回写 + delta ⑤ 捕获补位：显式 typing 态存活优先（g18/g19 面），
+    // 态空且捕获非空时落捕获链（Chrome typing style 跨 delete 存续——:2521
+    // 双壳 / :2429 ipara 拆分块两形）。态与捕获俱空保持原值（null）。
+    globalThis.__zwTypingTags = (tt && tt.length) ? tt
+      : (tcap && tcap.length ? tcap : tt);
     globalThis.__zwTypingTagsOff = ttoff;
     return true;
   };
