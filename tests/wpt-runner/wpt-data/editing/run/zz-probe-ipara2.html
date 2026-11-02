@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+var results = [];
+
+// ipara 忠实移植（__zw_ce_ipara_apply）族探针：六机制族各形 + 挂账对照。
+// 期望形：C1-C5/C8 取自 insertparagraph.html / multitest 语料录制（Chrome）；
+// C6/C9 无 corpus fixture，取 vendored implementation.js 参考算法推演形；
+// C7 取 corpus dt→dt 形（bar 文本 contained → endOfLine=false → dt 不改名）。
+function reset(html) {
+  tc.innerHTML = "<div contenteditable>" + html + "</div>";
+  return tc.firstChild;
+}
+function selCaret(n, o) {
+  var r = document.createRange();
+  r.setStart(n, o); r.setEnd(n, o);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function selRange(a, x, b, y) {
+  var r = document.createRange();
+  r.setStart(a, x); r.setEnd(b, y);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function sep(v) {
+  document.execCommand("defaultparagraphseparator", false, v);
+}
+function ipara() {
+  try { document.execCommand("insertparagraph", false, ""); } catch (e) { results.push('EXC ' + e); }
+}
+function del() {
+  try { document.execCommand("delete", false, ""); } catch (e) { results.push('EXC ' + e); }
+}
+
+try {
+  var h1 = reset("<b>foobar</b>");
+  selCaret(h1.firstChild.firstChild, 3);
+  sep("div"); ipara();
+  results.push('C1' + JSON.stringify(h1.innerHTML));
+} catch (e) { results.push('C1 THREW ' + e.message); }
+
+try {
+  var h2 = reset("<p><b>foobar</b></p>");
+  selCaret(h2.firstChild.firstChild.firstChild, 3);
+  sep("div"); ipara();
+  results.push('C2' + JSON.stringify(h2.innerHTML));
+} catch (e) { results.push('C2 THREW ' + e.message); }
+
+try {
+  //   → <ul><li><p>foo</p></li><li><p>bar</p></li></ul>
+  var h3 = reset("<ul><li><p>foobar</p></li></ul>");
+  selCaret(h3.firstChild.firstChild.firstChild.firstChild, 3);
+  sep("div"); ipara();
+  results.push('C3' + JSON.stringify(h3.innerHTML));
+} catch (e) { results.push('C3 THREW ' + e.message); }
+
+try {
+  //   delete+ipara → <div><br></div><ol><li>def</li></ol>
+  var h4 = reset("<ol><li>abc</li><li>def</li></ol>");
+  selRange(h4.firstChild.firstChild.firstChild, 0, h4.firstChild.firstChild.firstChild, 3);
+  del(); ipara();
+  results.push('C4' + JSON.stringify(h4.innerHTML));
+} catch (e) { results.push('C4 THREW ' + e.message); }
+
+try {
+  //   → <h3><br></h3><div><br></div>
+  var h5 = reset("<h3>abc</h3>");
+  selRange(h5.firstChild.firstChild, 0, h5.firstChild.firstChild, 3);
+  del(); ipara();
+  results.push('C5' + JSON.stringify(h5.innerHTML));
+} catch (e) { results.push('C5 THREW ' + e.message); }
+
+try {
+  //   → <td><div><br></div><div>foobar</div></td>（vendored 参考：wrap 后 active
+  //     range 塌 (wrap,0)，div prohibited 不爬升，extract 全含清空 + br 垫底）
+  var h6 = reset("<table><tr><td>foobar</td></tr></table>");
+  selCaret(h6.querySelector('td').firstChild, 3);
+  sep("div"); ipara();
+  results.push('C6' + JSON.stringify(h6.innerHTML));
+} catch (e) { results.push('C6 THREW ' + e.message); }
+
+try {
+  //   → <dl><dt>foo</dt><dt>bar</dt></dl>（corpus dt→dt 形：bar 文本 contained
+  //     → endOfLine=false → dt 不改名 dd）
+  var h7 = reset("<dl><dt>foobar</dt></dl>");
+  selCaret(h7.firstChild.firstChild.firstChild, 3);
+  sep("div"); ipara();
+  results.push('C7' + JSON.stringify(h7.innerHTML));
+} catch (e) { results.push('C7 THREW ' + e.message); }
+
+try {
+  var h8 = reset("<b>foobar</b>");
+  selCaret(h8.firstChild.firstChild, 3);
+  sep("p"); ipara();
+  results.push('C8' + JSON.stringify(h8.innerHTML));
+} catch (e) { results.push('C8 THREW ' + e.message); }
+
+try {
+  //   → <div><i><b>foo</b></i></div><div><i><b>bar</b></i></div>（爬升止于非
+  //     editable host 边界，非 SLC 支路 wrap 出双 div）
+  var h9 = reset("<i><b>foobar</b></i>");
+  selCaret(h9.firstChild.firstChild.firstChild, 3);
+  sep("div"); ipara();
+  results.push('C9' + JSON.stringify(h9.innerHTML));
+} catch (e) { results.push('C9 THREW ' + e.message); }
+
+assert_false(true, results.join(' || '));
+</script>
+</body>

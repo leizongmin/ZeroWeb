@@ -1049,3 +1049,544 @@
     globalThis.__zwTypingTagsOff = ttoff;
     return true;
   };
+
+  // —— insertParagraph action 忠实移植（2026-11-02 editing-compat：ipara
+  // other-cmp 153 嵌套面；参考 implementation.js :7486-7826）——
+  // deleteSelection 前导（collapsed 即中止）→ 文本归一三段（splitText / 尾偏移
+  // 升父 / 文本注释升父）→ 单行容器爬升（p/div 再外爬 dd/dt/li）→ 三支路
+  //（非 SLC blockExtend+wrap / pre 族 br / 空 li dt dd splitParent）→ 主拆分支
+  //（newLineRange 归一提边、endOfLine、newContainer 命名 H1-6→sep / dt⇄dd、
+  // 属性拷贝除 id、insertAfter、extract、frag 非相含后代摘 id、appendChild、
+  // 尾段禁段落子下钻双面 br 垫底、collapse 新块 0）。事件序由 part06 execCommand
+  // 臂派发，此处仅变更（同 __zw_ce_delete_apply 口径）。
+  // newLineRange 的 extract 用本仓 spec 递归实现（_zwIparaExtractRange）：shim
+  // Range.extractContents 跨元素端界缺口（zz-probe-d4x X1-X3 实证——start 点
+  // 后随兄弟不迁移）本轮不修、挂账独立轮；moveIn 以 R241 同款 append 后残留
+  // 强制摘离兜底 shim fragment appendChild 移动语义缺环（X4）。
+  // https://w3c.github.io/editing/execCommand.html#the-insertparagraph-command
+
+  // void 元素表（part01.js `_zwCeIsVoidElementTag` 同表——该文件 IIFE 私有作用
+  // 域不可达，本地复制；insert-paragraph/text-in-void 语料 voidElements 全集）。
+  function _zwIparaIsVoidTag(el) {
+    var t = String((el && el.tagName) || '').toLowerCase();
+    return ['br', 'img', 'hr', 'input', 'embed', 'wbr'].indexOf(t) >= 0;
+  }
+
+  // display 读数（part01.js `_zwCeDisplayOf` 同构——IIFE 私有不可达，本地复制：
+  // style 面板优先（wss 语料经 style IDL 设置），attr 扫描兜底）。
+  function _zwIparaDisplayOf(el) {
+    try {
+      if (el.style && typeof el.style.display === 'string'
+          && el.style.display !== '') {
+        return String(el.style.display);
+      }
+    } catch (_eIpD1) {}
+    try {
+      var stDisp = el.getAttribute && el.getAttribute('style');
+      if (stDisp) {
+        var mDisp = String(stDisp).match(/display\s*:\s*([a-z-]+)/i);
+        if (mDisp) return mDisp[1];
+      }
+    } catch (_eIpD2) {}
+    return '';
+  }
+
+  function _zwIparaIsSingleLineContainer(node) {
+    // "A single-line container is either a non-list single-line container, or
+    // an HTML element with local name li, dt, or dd."
+    // https://w3c.github.io/editing/execCommand.html#single-line-container
+    return _zwJusIsHtmlElement(node, ['address', 'div', 'h1', 'h2', 'h3', 'h4',
+        'h5', 'h6', 'listing', 'p', 'pre', 'xmp'])
+      || _zwJusIsHtmlElement(node, ['li', 'dt', 'dd']);
+  }
+
+  function _zwIparaDeleteData(node, off, count) {
+    var d = String(node.nodeValue == null ? '' : node.nodeValue);
+    try { node.nodeValue = d.slice(0, off) + d.slice(off + count); } catch (_eDd) {}
+  }
+
+  function _zwIparaHasVisibleChild(el) {
+    var ks = (el && el.childNodes) || [];
+    for (var i = 0; i < ks.length; i++) {
+      if (_zwJusIsVisible(ks[i])) return true;
+    }
+    return false;
+  }
+
+  function _zwIparaGetDescendants(root) {
+    var out = [];
+    (function walk(n) {
+      var ks = (n && n.childNodes) || [];
+      for (var i = 0; i < ks.length; i++) { out.push(ks[i]); walk(ks[i]); }
+    })(root);
+    return out;
+  }
+
+  // spec dom-range-extractcontents 递归版：frag 结构 [firstPartial 克隆组树,
+  // contained 子 move, lastPartial 克隆组树]；partially contained 元素子经
+  // 子区间递归承接任意深壳层。移动走 moveIn（append 后源父 childNodes 仍残留
+  // 则强制 removeChild——shim fragment appendChild 只改 wire 不摘源列表，X4）。
+  // https://dom.spec.whatwg.org/#dom-range-extractcontents
+  function _zwIparaExtractRange(rng) {
+    var od = null;
+    try { od = rng.startContainer.ownerDocument
+      || (rng.startContainer.nodeType === 9 ? rng.startContainer : null); } catch (_eOd) {}
+    var f = (od && typeof od.createDocumentFragment === 'function')
+      ? od.createDocumentFragment() : document.createDocumentFragment();
+    if (!rng || !rng.startContainer || !rng.endContainer) return f;
+    var sc = rng.startContainer, ec = rng.endContainer;
+    var so = rng.startOffset | 0, eo = rng.endOffset | 0;
+    var isCd = function (n) {
+      var t = n ? n.nodeType : 0;
+      return t === 3 || t === 4 || t === 7 || t === 8;
+    };
+    var moveIn = function (kid, into) {
+      if (!kid) return;
+      var op = kid.parentNode;
+      var ok = (op && op.childNodes) ? op.childNodes : null;
+      try { into.appendChild(kid); } catch (_eMv) {}
+      try {
+        if (ok && ok.indexOf(kid) >= 0 && op !== into
+            && typeof op.removeChild === 'function') op.removeChild(kid);
+      } catch (_eMr) {}
+    };
+    var cloneSlice = function (n, a, b) {
+      var c = n.cloneNode(false);
+      var d = String(n.nodeValue == null ? '' : n.nodeValue);
+      try { c.nodeValue = d.slice(a, b); } catch (_eCs) {}
+      return c;
+    };
+    if (sc === ec) {
+      var a = Math.min(so, eo), b = Math.max(so, eo);
+      if (isCd(sc)) {
+        if (b > a) {
+          f.appendChild(cloneSlice(sc, a, b));
+          _zwIparaDeleteData(sc, a, b - a);
+        }
+      } else {
+        var snap = [].slice.call(sc.childNodes || []).slice(a, b);
+        for (var i = 0; i < snap.length; i++) {
+          if (snap[i].nodeType === 10) {
+            throw new (globalThis.DOMException || Error)(
+              'The range includes a DocumentType node.', 'HierarchyRequestError');
+          }
+          if (isCd(snap[i])) {
+            var d = String(snap[i].nodeValue == null ? '' : snap[i].nodeValue);
+            f.appendChild(cloneSlice(snap[i], 0, d.length));
+            _zwIparaDeleteData(snap[i], 0, d.length);
+          } else {
+            // 先摘后挂：shim fragment appendChild 只改 wire 父不摘源 childNodes
+            //（zz-probe-d4x X4），先 removeChild 消除双亲窗口再入 frag。
+            try {
+              if (snap[i].parentNode === sc
+                  && typeof sc.removeChild === 'function') sc.removeChild(snap[i]);
+            } catch (_eRm0) {}
+            moveIn(snap[i], f);
+          }
+        }
+      }
+      try { rng.setStart(sc, a); rng.setEnd(sc, a); } catch (_eCl1) {}
+      return f;
+    }
+    // cac：sc 包含链上首个同时包含 ec 的容器。
+    var cac = null, cur = sc, hops = 0;
+    while (cur && hops++ < 256 && !cac) {
+      var probe = ec, h = 0;
+      while (probe && h++ < 256) {
+        if (probe === cur) { cac = cur; break; }
+        probe = probe.parentNode;
+      }
+      cur = cur.parentNode;
+    }
+    if (!cac) return f;
+    var childOnPath = function (node) {
+      var n = node;
+      while (n && n.parentNode !== cac) n = n.parentNode;
+      return n;
+    };
+    var firstPartial = (sc === cac) ? null : childOnPath(sc);
+    var lastPartial = (ec === cac) ? null : childOnPath(ec);
+    var contained = [];
+    var cks = [].slice.call(cac.childNodes || []);
+    for (var ci = 0; ci < cks.length; ci++) {
+      if (_zwJusIsContained(cks[ci], rng)) contained.push(cks[ci]);
+    }
+    if (firstPartial && isCd(firstPartial)) {
+      var dsc = String(sc.nodeValue == null ? '' : sc.nodeValue);
+      f.appendChild(cloneSlice(sc, so, dsc.length));
+      _zwIparaDeleteData(sc, so, dsc.length - so);
+    } else if (firstPartial) {
+      var fc = firstPartial.cloneNode(false);
+      f.appendChild(fc);
+      var sub1 = document.createRange();
+      sub1.setStart(sc, so);
+      sub1.setEnd(firstPartial, _zwJusNodeLength(firstPartial));
+      fc.appendChild(_zwIparaExtractRange(sub1));
+    }
+    for (var k = 0; k < contained.length; k++) {
+      if (contained[k].nodeType === 10) {
+        throw new (globalThis.DOMException || Error)(
+          'The range includes a DocumentType node.', 'HierarchyRequestError');
+      }
+      if (isCd(contained[k])) {
+        var d2 = String(contained[k].nodeValue == null ? '' : contained[k].nodeValue);
+        f.appendChild(cloneSlice(contained[k], 0, d2.length));
+        _zwIparaDeleteData(contained[k], 0, d2.length);
+      } else {
+        try {
+          if (contained[k].parentNode === cac
+              && typeof cac.removeChild === 'function') cac.removeChild(contained[k]);
+        } catch (_eRm3) {}
+        moveIn(contained[k], f);
+      }
+    }
+    if (lastPartial && isCd(lastPartial)) {
+      f.appendChild(cloneSlice(ec, 0, eo));
+      _zwIparaDeleteData(ec, 0, eo);
+    } else if (lastPartial) {
+      var lc = lastPartial.cloneNode(false);
+      var sub2 = document.createRange();
+      sub2.setStart(lastPartial, 0);
+      sub2.setEnd(ec, eo);
+      lc.appendChild(_zwIparaExtractRange(sub2));
+      f.appendChild(lc);
+    }
+    var co = firstPartial ? _zwJusNodeIndex(firstPartial) : so;
+    try { rng.setStart(cac, co); rng.setEnd(cac, co); } catch (_eCl2) {}
+    return f;
+  }
+
+  // spec dom-range-insertnode（insertparagraph 非 SLC/pre 支路用）：端点在
+  // CharData 内先边界化（0 前插 / len 后插 / 中点 splitText），插入后 start/end
+  // 置 (parent, node index + 1)。
+  // https://dom.spec.whatwg.org/#dom-range-insertnode
+  function _zwIparaInsertNode(rng, node) {
+    if (!rng || !rng.startContainer || !node) return;
+    var sc = rng.startContainer, so = rng.startOffset | 0;
+    var parent, ref;
+    if (sc.nodeType === 3 || sc.nodeType === 4 || sc.nodeType === 8) {
+      parent = sc.parentNode;
+      var d = String(sc.nodeValue == null ? '' : sc.nodeValue);
+      if (so === 0) {
+        ref = sc;
+      } else if (so >= d.length) {
+        ref = sc.nextSibling;
+      } else {
+        var right = null;
+        try { right = sc.splitText(so); } catch (_eSp) {}
+        ref = (right && right.parentNode === parent) ? right : sc.nextSibling;
+      }
+    } else {
+      parent = sc;
+      ref = (sc.childNodes && sc.childNodes[so]) || null;
+    }
+    if (!parent) return;
+    try { parent.insertBefore(node, ref); } catch (_eIn) {}
+    var idx = _zwJusNodeIndex(node);
+    try { rng.setStart(parent, idx + 1); rng.setEnd(parent, idx + 1); } catch (_eRs) {}
+  }
+
+  // 混合派发预检（2026-11-02 editing-compat）：本仓约定 `_zwJusIsEditable`
+  // 对编辑宿主本体返 false，上方忠实移植的 SLC 爬升到宿主边界即停——caret
+  // 直挂宿主（裸文本/inline 链/元素偏移）时 container 停在非 SLC 节点，落
+  // spec wrap 臂产出 `<div>整段</div><div><br></div>` 形，而 Chrome/F2 语义
+  // 为宿主内双块拆分（`foo[]bar` → `<div>foo</div><div>bar</div>`）。故
+  // 宿主边界面回落旧 `__zw_ce_paragraph_split_at`（gate21 已知绿：echd/
+  // wss/void/edob/restoration 各面），嵌套单行容器面（p/div/h1-h6/li/dt/
+  // dd/pre 宿主内嵌套，移植 +244 F→P 来源）保留忠实移植。只读预检不
+  // mutate；异常一律返 false 走 legacy。
+  globalThis.__zw_ce_ipara_wants = function () {
+    try {
+      var ar = _zwVaGetActiveRange();
+      if (!ar) return false;
+      // 镜像 spec 文本归一（只读：中点 splitText 后爬升起点不变，跳过）
+      var node = ar.startContainer;
+      var offset = ar.startOffset;
+      if (node.nodeType === 3 && offset != 0 && offset != _zwJusNodeLength(node)) {
+        // 中点：保持文本偏移（与 apply 弃 splitText 后的归一对齐）
+      } else if (node.nodeType === 3 && offset == _zwJusNodeLength(node)) {
+        offset = 1 + _zwJusNodeIndex(node);
+        node = node.parentNode;
+      }
+      if (node.nodeType === 8
+          || (node.nodeType === 3 && offset === 0)) {
+        offset = _zwJusNodeIndex(node);
+        node = node.parentNode;
+      }
+      if (!node || !node.nodeType) return false;
+      var container = node;
+      while (!_zwIparaIsSingleLineContainer(container)
+          && container.parentNode
+          && _zwJusIsEditable(container.parentNode)
+          && _zwListInSameEditingHost(node, container.parentNode)) {
+        container = container.parentNode;
+      }
+      // 接管条件：container 是宿主内**元素**。本仓约定下
+      // `_zwJusIsEditable(container)` 即「严格位于编辑宿主内」——宿主本体
+      // 返 false 自然落 legacy。裸文本面（caret 直挂宿主文本）时 walk 被
+      // 同一约定卡住停在 TEXT 节点（nodeType 3 → legacy，Chrome/F2 宿主内
+      // 双块拆分）；元素 container 两态皆归移植：嵌套单行容器走 SLC 主
+      // 分支，宿主直子 inline 链（`<b>foo[]bar</b>`）走非 SLC wrap 臂产
+      // Chrome `<div><b>foo</b></div>` 形（探针 v4 P3 定谳，SLC 判定对
+      // 路由非必要）。p/div→dd/dt/li 外爬不改变元素/可编辑判定。
+      if (!(container && container.nodeType === 1
+          && _zwJusIsEditable(container)
+          && _zwListInSameEditingHost(container, node))) {
+        return false;
+      }
+      // 三类移植不辖区（gate24 other 对账残差面）回落 legacy——旧
+      // `__zw_ce_paragraph_split_at` 的退化/wss/void 臂已实证 Chrome 绿：
+      // ① caret 挂 void 元素（ipiv 语料 hr/embed 形，移植 wrap 臂产 div 壳）；
+      // ② 宿主本体是不可容块的行内容器（echd 语料 p/h1-6 宿主，Chrome 退化
+      //    `<br>` 插入而非块拆；div 宿主可容块不在此列）；
+      // ③ 宿主带 white-space 声明或 caret 祖先链 display:inline（wss 语料
+      //    host 样式继承/display:inline 块两族，移植 wrap 臂丢样式继承）。
+      if (_zwIparaIsVoidTag(container) || _zwIparaIsVoidTag(node)) {
+        return false;
+      }
+      var ipHost = _zwListEditingHostOf(node);
+      if (ipHost) {
+        if (_zwIparaIsSingleLineContainer(ipHost)
+            && _zwJusTag(ipHost) !== 'div') {
+          return false;
+        }
+        // 宿主 white-space 声明（style 面板优先——wss 语料经 style IDL 设置，
+        // attr 为空；attr 扫描兜底同 part01 wss 簇口径）。
+        var ipWs = null;
+        try {
+          if (ipHost.style && typeof ipHost.style.whiteSpace === 'string'
+              && ipHost.style.whiteSpace !== '') {
+            ipWs = ipHost.style.whiteSpace;
+          }
+        } catch (_eWs) {}
+        if (!ipWs) {
+          var ipHostStyle = String(
+            (ipHost.getAttribute && ipHost.getAttribute('style')) || '');
+          var mWs = ipHostStyle.match(/white-space\s*:\s*([a-z-]+)/i);
+          if (mWs) ipWs = mWs[1];
+        }
+        if (ipWs) {
+          return false;
+        }
+        // caret 祖先链 display:inline / inline-block（wss 语料两族；
+        // _zwCeDisplayOf 面板优先 + attr 兜底）。
+        for (var ipAnc = node; ipAnc && ipAnc !== ipHost; ipAnc = ipAnc.parentNode) {
+          if (ipAnc.nodeType !== 1) continue;
+          var ipDisp = _zwIparaDisplayOf(ipAnc);
+          if (ipDisp === 'inline' || ipDisp === 'inline-block') {
+            return false;
+          }
+        }
+      }
+      return true;
+    } catch (_eWants) {
+      return false;
+    }
+  };
+
+  globalThis.__zw_ce_ipara_apply = function () {
+    var sep = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // preservesOverrides: true——override 快照/重锚/回填同 __zw_ce_delete_apply。
+    var snap = _zwVaOverridesTakeRaw();
+    try {
+      // "Delete the selection."（collapsed 时 spec 中止——不 canonicalize、不删）
+      var ar0 = _zwVaGetActiveRange();
+      if (!ar0) return true;
+      var _zwIpCol = (ar0.startContainer === ar0.endContainer
+        && ar0.startOffset === ar0.endOffset) || !!ar0.collapsed;
+      if (!_zwIpCol) _zwDelDeleteSelection();
+      // "If the active range's start node is neither editable nor an editing
+      // host, return true."
+      ar0 = _zwVaGetActiveRange();
+      if (!ar0) return true;
+      if (!_zwJusIsEditable(ar0.startContainer)
+          && !_zwJusIsEditingHost(ar0.startContainer)) {
+        return true;
+      }
+      // "Let node and offset be the active range's start node and offset." +
+      // 文本归一。中点 splitText 臂不移植：shim 文本包装层 splitText 后
+      // selection 重锚错位（trace 实证 (textL,2)→(div,0)）且 .data 双态
+      // 陈旧（clone 读旧串、定位读真树，语料实证 `abcc` 翻倍）。mid-text
+      // 起点由 _zwIparaExtractRange first-partial CharData 路径（cloneSlice+
+      // deleteData）与 _zwIparaInsertNode 原生消化，语义等价 spec 归一。
+      var node = ar0.startContainer;
+      var offset = ar0.startOffset;
+      if (node.nodeType === 3 && offset == _zwJusNodeLength(node)) {
+        offset = 1 + _zwJusNodeIndex(node);
+        node = node.parentNode;
+      }
+      if (node.nodeType === 8
+          || (node.nodeType === 3 && offset === 0)) {
+        // spec 原臂（text/comment→parent@index）以中点 splitText 消解为前提；
+        // 本仓不 split，mid-text 须保持文本偏移，仅 comment/0 位文本提升。
+        offset = _zwJusNodeIndex(node);
+        node = node.parentNode;
+      }
+      try { globalThis.getSelection().collapse(node, offset); } catch (_eCl) {}
+      // "Let container equal node." + 爬升至单行容器。
+      var container = node;
+      while (!_zwIparaIsSingleLineContainer(container)
+          && container.parentNode
+          && _zwJusIsEditable(container.parentNode)
+          && _zwListInSameEditingHost(node, container.parentNode)) {
+        container = container.parentNode;
+      }
+      // p/div 单行容器再外爬 dd/dt/li。
+      if (_zwJusIsEditable(container)
+          && _zwIparaIsSingleLineContainer(container)
+          && container.parentNode
+          && _zwListInSameEditingHost(node, container.parentNode)
+          && (_zwJusTag(container) === 'p' || _zwJusTag(container) === 'div')) {
+        var outerContainer = container;
+        while (!_zwJusIsHtmlElement(outerContainer, ['dd', 'dt', 'li'])
+            && outerContainer.parentNode
+            && _zwJusIsEditable(outerContainer.parentNode)) {
+          outerContainer = outerContainer.parentNode;
+        }
+        if (_zwJusIsHtmlElement(outerContainer, ['dd', 'dt', 'li'])) {
+          container = outerContainer;
+        }
+      }
+      // 非 SLC 支路：blockExtend + 首个 p 允许子 wrap。
+      if (!_zwJusIsEditable(container)
+          || !_zwListInSameEditingHost(container, node)
+          || !_zwIparaIsSingleLineContainer(container)) {
+        var newRange = _zwJusBlockExtend(_zwVaGetActiveRange());
+        var nodeList = _zwJusGetContainedNodes(newRange, function (n) {
+          return _zwJusIsAllowedChild(n, 'p');
+        }).slice(0, 1);
+        if (!nodeList.length) {
+          if (!_zwJusIsAllowedChild(sep,
+              _zwJusTag(_zwVaGetActiveRange().startContainer))) {
+            return true;
+          }
+          container = document.createElement(sep);
+          _zwIparaInsertNode(_zwVaGetActiveRange(), container);
+          container.appendChild(document.createElement('br'));
+          try { globalThis.getSelection().collapse(container, 0); } catch (_eCl2) {}
+          return true;
+        }
+        while (nodeList[nodeList.length - 1].nextSibling
+            && _zwJusIsAllowedChild(nodeList[nodeList.length - 1].nextSibling, 'p')) {
+          nodeList.push(nodeList[nodeList.length - 1].nextSibling);
+        }
+        container = _zwJusWrap(nodeList, function () { return false; },
+          function () { return document.createElement(sep); });
+        if (!container) return true;
+      }
+      // pre/address/listing 支路：br 插入 + 非"br 后随即块尾"双 br 垫底。
+      if (_zwJusTag(container) === 'address' || _zwJusTag(container) === 'listing'
+          || _zwJusTag(container) === 'pre') {
+        var br = document.createElement('br');
+        _zwIparaInsertNode(_zwVaGetActiveRange(), br);
+        try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl3) {}
+        var nxt = _zwJusNextNode(br);
+        if (!nxt || !_zwJusIsAncestorOf(container, nxt)) {
+          _zwIparaInsertNode(_zwVaGetActiveRange(), document.createElement('br'));
+          try { globalThis.getSelection().collapse(node, offset + 1); } catch (_eCl4) {}
+        }
+        return true;
+      }
+      // 空 li/dt/dd 支路：splitParent + br 垫底 + dd/dt 越界改名 + 祖先修复。
+      if (_zwJusIsHtmlElement(container, ['li', 'dt', 'dd'])
+          && (!_zwJusHasKids(container)
+            || (container.childNodes.length === 1
+              && _zwJusIsHtmlElement(container.firstChild, 'br')))) {
+        _zwListSplitParent([container]);
+        if (!_zwJusHasKids(container)) {
+          container.appendChild(document.createElement('br'));
+        }
+        if (_zwJusIsHtmlElement(container, ['li', 'dt', 'dd'])) {
+          // li/dt/dd 同宿主祖先无 allowed 容身位（li 仅 ol/ul、dd/dt 仅 dl）→
+          // 改名默认单行容器（splitParent 弃列后宿主直挂形；vendored
+          // fixDisallowedAncestors 的 while 臂在本仓 isEditable 宿主排除约定
+          // 下不触发，此处按浏览器语义同宿主走查补位）。
+          var anc = container, allBad = true;
+          while ((anc = anc.parentNode)) {
+            if (_zwListInSameEditingHost(container, anc)
+                && _zwJusIsAllowedChild(container, _zwJusTag(anc))) {
+              allBad = false;
+              break;
+            }
+          }
+          if (allBad) container = _zwJusSetTagName(container, sep);
+        }
+        _zwListFixDisallowedAncestors(container);
+        return true;
+      }
+      // 主拆分支：newLineRange 归一提边（0 位升父 / 尾位升父，遇禁段落子止）。
+      var arMain = _zwVaGetActiveRange();
+      var newLineRange = document.createRange();
+      newLineRange.setStart(arMain.startContainer, arMain.startOffset);
+      newLineRange.setEnd(container, _zwJusNodeLength(container));
+      while (newLineRange.startOffset == 0
+          && newLineRange.startContainer.parentNode
+          && !_zwListIsProhibitedParagraphChild(newLineRange.startContainer)) {
+        newLineRange.setStart(newLineRange.startContainer.parentNode,
+          _zwJusNodeIndex(newLineRange.startContainer));
+      }
+      while (newLineRange.startOffset == _zwJusNodeLength(newLineRange.startContainer)
+          && newLineRange.startContainer.parentNode
+          && !_zwListIsProhibitedParagraphChild(newLineRange.startContainer)) {
+        newLineRange.setStart(newLineRange.startContainer.parentNode,
+          1 + _zwJusNodeIndex(newLineRange.startContainer));
+      }
+      var containedInNewLineRange = _zwJusCollectContainedNodes(newLineRange, null, false);
+      // spec 的 endOfLine 以 splitText 后尾段成整 contained 节点为前提；本仓
+      // 不 split，起点在文本中段即有尾随内容（spec 下尾段必为 contained，
+      // whitespace 与否同判），不得误判行尾触发 h1-6/dt/dd 改名。
+      var startInTail = newLineRange.startContainer.nodeType === 3
+        && newLineRange.startOffset < _zwJusNodeLength(newLineRange.startContainer);
+      var endOfLine = !startInTail
+        && (!containedInNewLineRange.length
+          || (containedInNewLineRange.length === 1
+            && _zwJusIsHtmlElement(containedInNewLineRange[0], 'br')));
+      var newContainerName;
+      if (/^h[1-6]$/.test(_zwJusTag(container)) && endOfLine) {
+        newContainerName = sep;
+      } else if (_zwJusTag(container) === 'dt' && endOfLine) {
+        newContainerName = 'dd';
+      } else if (_zwJusTag(container) === 'dd' && endOfLine) {
+        newContainerName = 'dt';
+      } else {
+        newContainerName = _zwJusTag(container);
+      }
+      var newContainer = document.createElement(newContainerName);
+      var attrs = container.attributes || [];
+      for (var ai = 0; ai < attrs.length; ai++) {
+        try { newContainer.setAttribute(attrs[ai].name, attrs[ai].value); } catch (_eAt) {}
+      }
+      try { newContainer.removeAttribute('id'); } catch (_eRm1) {}
+      container.parentNode.insertBefore(newContainer, container.nextSibling);
+      // 相含节点集先于 extract 记账（extract 后 frag 克隆与原树身份分叉）。
+      var containedNodes = _zwJusCollectContainedNodes(newLineRange, null, false);
+      var frag = _zwIparaExtractRange(newLineRange);
+      // frag 中非相含后代（克隆壳）摘 id。
+      var descendants = _zwIparaGetDescendants(frag);
+      for (var di = 0; di < descendants.length; di++) {
+        if (descendants[di].nodeType === 1
+            && containedNodes.indexOf(descendants[di]) === -1) {
+          try { descendants[di].removeAttribute('id'); } catch (_eRm2) {}
+        }
+      }
+      newContainer.appendChild(frag);
+      // 双面禁段落子下钻 + 不可见面 br 垫底。
+      while (_zwListIsProhibitedParagraphChild(container.lastChild)) {
+        container = container.lastChild;
+      }
+      while (_zwListIsProhibitedParagraphChild(newContainer.lastChild)) {
+        newContainer = newContainer.lastChild;
+      }
+      if (!_zwIparaHasVisibleChild(container)) {
+        container.appendChild(document.createElement('br'));
+      }
+      if (!_zwIparaHasVisibleChild(newContainer)) {
+        newContainer.appendChild(document.createElement('br'));
+      }
+      try { globalThis.getSelection().collapse(newContainer, 0); } catch (_eCl5) {}
+    } finally {
+      if (typeof _zwVaReanchorOverrides === 'function') _zwVaReanchorOverrides();
+      _zwVaOverridesPutRaw(snap);
+    }
+    return true;
+  };

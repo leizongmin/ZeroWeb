@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="tc"></div>
+<script>
+"use strict";
+var results = [];
+function dump(s) { results.push(s); }
+function hostInit(html, hostStyle) {
+  var tc = document.getElementById('tc');
+  tc.innerHTML = '';
+  var h = document.createElement('div');
+  h.setAttribute('contenteditable', '');
+  if (hostStyle) h.setAttribute('style', hostStyle);
+  h.innerHTML = html;
+  tc.appendChild(h);
+  return h;
+}
+function caretIn(host, el, off) {
+  var r = document.createRange();
+  r.setStart(el, off); r.collapse(true);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function rangeIn(host, el, so, eo) {
+  var r = document.createRange();
+  r.setStart(el, so); r.setEnd(el, eo);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+}
+function selInfo() {
+  var s = getSelection();
+  if (!s.rangeCount) return 'norange';
+  var r = s.getRangeAt(0);
+  var sc = r.startContainer, ec = r.endContainer;
+  return '(' + (sc.nodeType === 3 ? 'T"' + sc.data + '"' : sc.nodeName) + '@' + r.startOffset
+    + '-' + (ec.nodeType === 3 ? 'T"' + ec.data + '"' : ec.nodeName) + '@' + r.endOffset
+    + (r.collapsed ? ' col' : ' rng') + ')';
+}
+
+// P1 legacy：caret 直挂宿主裸文本中点 → F2 双块拆分
+try {
+  var h1 = hostInit('foobar');
+  caretIn(h1, h1.firstChild, 3);
+  document.execCommand('defaultparagraphseparator', false, 'div');
+  document.execCommand('insertparagraph', false, '');
+  dump('P1 sel=' + selInfo() + ' html=' + JSON.stringify(h1.innerHTML));
+} catch (e) { dump('P1 THREW ' + e.message); }
+
+// P2 port：嵌套 p 内 caret → spec 主分支
+try {
+  var h2 = hostInit('<p>foobar</p>');
+  caretIn(h2, h2.firstChild.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P2 sel=' + selInfo() + ' html=' + JSON.stringify(h2.innerHTML));
+} catch (e) { dump('P2 THREW ' + e.message); }
+
+// P3 legacy：宿主直子 inline 链
+try {
+  var h3 = hostInit('<b>foobar</b>');
+  caretIn(h3, h3.firstChild.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P3 sel=' + selInfo() + ' html=' + JSON.stringify(h3.innerHTML));
+} catch (e) { dump('P3 THREW ' + e.message); }
+
+// P4 port：li 内裸文本
+try {
+  var h4 = hostInit('<ul><li>foobar</li></ul>');
+  caretIn(h4, h4.firstChild.firstChild.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P4 sel=' + selInfo() + ' html=' + JSON.stringify(h4.innerHTML));
+} catch (e) { dump('P4 THREW ' + e.message); }
+
+// P5 port：嵌套 h3 尾 caret
+try {
+  var h5 = hostInit('<h3>abc</h3>');
+  caretIn(h5, h5.firstChild.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P5 sel=' + selInfo() + ' html=' + JSON.stringify(h5.innerHTML));
+} catch (e) { dump('P5 THREW ' + e.message); }
+
+// P6 legacy：宿主本体是 p（echd 退化面）
+try {
+  var tc6 = document.getElementById('tc');
+  tc6.innerHTML = '';
+  var p6 = document.createElement('p');
+  p6.setAttribute('contenteditable', '');
+  p6.innerHTML = 'a1b';
+  tc6.appendChild(p6);
+  caretIn(p6, p6.firstChild, 1);
+  document.execCommand('insertparagraph', false, '');
+  dump('P6 sel=' + selInfo() + ' html=' + JSON.stringify(p6.innerHTML) + ' parent=' + JSON.stringify(p6.parentNode.innerHTML));
+} catch (e) { dump('P6 THREW ' + e.message); }
+
+// P7 legacy：非塌缩选区 foo[1b]baz
+try {
+  var h7 = hostInit('foo1bbaz');
+  rangeIn(h7, h7.firstChild, 3, 5);
+  document.execCommand('insertparagraph', false, '');
+  dump('P7 sel=' + selInfo() + ' html=' + JSON.stringify(h7.innerHTML));
+} catch (e) { dump('P7 THREW ' + e.message); }
+
+// P8 port：dt 内 caret
+try {
+  var h8 = hostInit('<dl><dt>abcd</dt></dl>');
+  caretIn(h8, h8.firstChild.firstChild.firstChild, 2);
+  document.execCommand('insertparagraph', false, '');
+  dump('P8 sel=' + selInfo() + ' html=' + JSON.stringify(h8.innerHTML));
+} catch (e) { dump('P8 THREW ' + e.message); }
+
+// P9 legacy：wss 宿主面（host 即样式块）
+try {
+  var h9 = hostInit('abc', 'white-space:pre');
+  caretIn(h9, h9.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P9 sel=' + selInfo() + ' html=' + JSON.stringify(h9.innerHTML));
+} catch (e) { dump('P9 THREW ' + e.message); }
+
+// P10 port：嵌套 wss（host > 样式块）
+try {
+  var h10 = hostInit('<div style="white-space:pre">abc</div>');
+  caretIn(h10, h10.firstChild.firstChild, 3);
+  document.execCommand('insertparagraph', false, '');
+  dump('P10 sel=' + selInfo() + ' html=' + JSON.stringify(h10.innerHTML));
+} catch (e) { dump('P10 THREW ' + e.message); }
+
+// P11 port：pre 嵌套
+try {
+  var h11 = hostInit('<pre>abcd</pre>');
+  caretIn(h11, h11.firstChild.firstChild, 2);
+  document.execCommand('insertparagraph', false, '');
+  dump('P11 sel=' + selInfo() + ' html=' + JSON.stringify(h11.innerHTML));
+} catch (e) { dump('P11 THREW ' + e.message); }
+
+// P12 port：空 li（splitParent 臂）
+try {
+  var h12 = hostInit('<ul><li><br></li></ul>');
+  caretIn(h12, h12.firstChild.firstChild, 0);
+  document.execCommand('insertparagraph', false, '');
+  dump('P12 sel=' + selInfo() + ' html=' + JSON.stringify(h12.innerHTML));
+} catch (e) { dump('P12 THREW ' + e.message); }
+
+assert_false(true, results.join(' || '));
+</script>
+</body>

@@ -4481,11 +4481,24 @@
                   && typeof globalThis.__zw_ce_delete_apply === 'function') {
                 try { globalThis.__zw_ce_delete_apply(cmd === 'forwarddelete'); } catch (_eDel) {}
               }
-              // R3254-M3 切片 5（2026-10-30 换代 live 就地拆分）：insertParagraph——
-              // beforeinput 已由事件序路径派发，此处仅变更（fireEvents=false）。
-              // 退化规则/宿主存活语义见 part01 `__zw_ce_paragraph_split_at`。
+              // R3254-M3 切片 5 → F6 后继（2026-11-02）：insertParagraph 混合
+              // 派发——嵌套单行容器面走忠实移植（part01f `__zw_ce_ipara_apply`：
+              // deleteSelection 前导 + 单行容器爬升 + 非 SLC wrap / pre br /
+              // 空 li dt dd splitParent / 主拆分支，参考 implementation.js
+              // :7486-7826）；宿主边界面（caret 直挂宿主裸文本/inline 链/
+              // 元素偏移）回落 live 就地拆分 `__zw_ce_paragraph_split_at`
+              // （Chrome 双块语义，预检 `__zw_ce_ipara_wants` 只读判定）。
+              // beforeinput 已由事件序路径派发，此处仅变更；`__zw_ce_paragraph_
+              // split_at` 保留供 insertText '\n' 分流与键盘面（part01）。
               if (cmd === 'insertparagraph' && rng2 && host2) {
-                try { globalThis.__zw_ce_paragraph_split_at(host2, rng2, false); } catch (_eIp) {}
+                try {
+                  if (typeof globalThis.__zw_ce_ipara_apply === 'function'
+                      && globalThis.__zw_ce_ipara_wants()) {
+                    globalThis.__zw_ce_ipara_apply();
+                  } else {
+                    globalThis.__zw_ce_paragraph_split_at(host2, rng2, false);
+                  }
+                } catch (_eIp) {}
               }
               // editing-compat insertlinebreak-wss 簇（2026-10-31）：insertLineBreak
               // 实应用——此前 _zwExecCmdInputType 含该命令（事件照派）但零变更臂，
