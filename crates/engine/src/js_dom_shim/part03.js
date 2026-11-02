@@ -20666,12 +20666,27 @@
     // accessor）。读经共享 helper 按 sel/handle 在场自动分流：身份态走 R3907 既有
     // 链（材化 adoptNode 后读数与宿主态一致），plain 走本地 getAttribute/
     // childNodes 走查（script 排除 + strip-collapse 同 `_zwOptCollectWalk`）。
-    // setter 面语料无钉面挂账（FIXME(s239)：getter-only 与 iframe
-    // contentDocument 同形；赋值面——value 缺省回落 text 写、label 写属性——
-    // 与 s228 车道交叉评估后立切）。
+    // s240（html-semantics M2）：写三联（HTML §4.10.9 dom-option-value/label/text
+    // setter）。value/label 为**纯内容属性反射**——reflection.js customGetter
+    // 「reflected only on setting」簇 idlDomExpected 钉形：attr 缺省 IDL set 仍写
+    // 属性（'option.value IDL set undefined' → getAttribute "undefined"），s239
+    // 账面「缺省回落 text 写」经勘根推翻；text setter = replace all 单 Text 子
+    //（option-text-setter.html 钉形：旧 Text 子 identity 更替、`.text=''` 后无子）。
+    // 身份态（材化盖章）委托 trap 既有链（R5009 值反射 / R3069 label 反射 /
+    // R3907 text 委托 textContent——MO/CEReactions 记账全继承），plain 态本地写：
+    // value/label verbatim DOMString（null→"null"/undefined→"undefined"，R5009
+    // 逐字钉形同口径），text 经 R310 textContent（null→'' LegacyNullToEmptyString，
+    // 与 R3907 原样委托一致）。
     if (String(tag || '').toLowerCase() === 'option') {
       Object.defineProperty(node, 'value', {
         get: function () { return _zwOptionValue(node); },
+        set: function (v) {
+          var _ovsS = null, _ovsH = null;
+          try { _ovsS = node.__zwSelector || null; } catch (_e240vs) {}
+          try { _ovsH = node.__zwHandle || null; } catch (_e240vh) {}
+          if (_ovsS || _ovsH) { _makeProxy(_ovsS, _ovsH).value = v; return; }
+          node.setAttribute('value', String(v));
+        },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(node, 'label', {
@@ -20689,6 +20704,13 @@
           if (_olp != null) return String(_olp);
           return _zwOptChildTextPlain(node);
         },
+        set: function (v) {
+          var _olsS = null, _olsH = null;
+          try { _olsS = node.__zwSelector || null; } catch (_e240ls) {}
+          try { _olsH = node.__zwHandle || null; } catch (_e240lh) {}
+          if (_olsS || _olsH) { _makeProxy(_olsS, _olsH).label = v; return; }
+          node.setAttribute('label', String(v));
+        },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(node, 'text', {
@@ -20698,6 +20720,13 @@
           try { _otH = node.__zwHandle || null; } catch (_e239th) {}
           if (_otS || _otH) return _zwOptChildText(_otS, _otH);
           return _zwOptChildTextPlain(node);
+        },
+        set: function (v) {
+          var _otwS = null, _otwH = null;
+          try { _otwS = node.__zwSelector || null; } catch (_e240ws) {}
+          try { _otwH = node.__zwHandle || null; } catch (_e240wh) {}
+          if (_otwS || _otwH) { _makeProxy(_otwS, _otwH).text = v; return; }
+          node.textContent = v;
         },
         configurable: true, enumerable: true,
       });
