@@ -53,7 +53,7 @@ fn svg_list_tostringtag_configurable_t42() {
         .unwrap();
     let out = sandbox.execute("globalThis.__r_out").unwrap().value;
     for name in ["SVGLengthList", "SVGNumberList", "SVGPointList", "SVGStringList", "SVGTransformList"] {
-        let seg = out.split('|').find(|s| s.starts_with(name)).unwrap_or(&"");
+        let seg = out.split('|').find(|s| s.starts_with(name)).unwrap_or("");
         assert_eq!(
             seg,
             &format!("{name}:true:{name}"),
