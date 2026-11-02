@@ -1015,6 +1015,68 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.encrypt/decrypt("AES-OCB", ...)`（webcrypto-compat-v3 域切片）——AES-OCB
+    // （RFC 7253）。arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv csv，
+    // arg[3]=data csv，arg[4]=aad csv，arg[5]=tagLength 位（缺省 128）。返 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_aes_ocb",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let iv = args.get(2).map(String::as_str).unwrap_or("");
+            let data = args.get(3).map(String::as_str).unwrap_or("");
+            let aad = args.get(4).map(String::as_str).unwrap_or("");
+            let tag_len: u32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(128);
+            crypto_subtle_aes_ocb(mode, key, iv, data, aad, tag_len)
+        }),
+    );
+
+    // `crypto.subtle.encrypt/decrypt("ChaCha20-Poly1305", ...)`（webcrypto-compat-v3 域切片）
+    // ——AEAD_CHACHA20_POLY1305（RFC 8439）。arg[0]=mode，arg[1]=key csv，arg[2]=iv csv，
+    // arg[3]=data csv，arg[4]=aad csv。tag 恒 128 位。返 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_chacha20_poly1305",
+        Box::new(|args: &[String]| -> String {
+            let mode = args.first().map(String::as_str).unwrap_or("");
+            let key = args.get(1).map(String::as_str).unwrap_or("");
+            let iv = args.get(2).map(String::as_str).unwrap_or("");
+            let data = args.get(3).map(String::as_str).unwrap_or("");
+            let aad = args.get(4).map(String::as_str).unwrap_or("");
+            crypto_subtle_chacha20_poly1305(mode, key, iv, data, aad)
+        }),
+    );
+
+    // `crypto.subtle.deriveBits("Argon2*", ...)`（webcrypto-compat-v3 域切片）——Argon2d/i/id
+    // 密码基派生（RFC 9106）。arg[0]=类型（ARGON2D/I/ID），arg[1]=password csv，
+    // arg[2]=nonce csv，arg[3]=secret csv（空 ≡ 缺席），arg[4]=associatedData csv，
+    // arg[5]=parallelism，arg[6]=memory（KiB），arg[7]=passes，arg[8]=输出字节数。
+    // 返派生位 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_argon2",
+        Box::new(|args: &[String]| -> String {
+            let type_str = args.first().map(String::as_str).unwrap_or("");
+            let password = args.get(1).map(String::as_str).unwrap_or("");
+            let nonce = args.get(2).map(String::as_str).unwrap_or("");
+            let secret = args.get(3).map(String::as_str).unwrap_or("");
+            let ad = args.get(4).map(String::as_str).unwrap_or("");
+            let parallelism: u32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let memory: u32 = args.get(6).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let passes: u32 = args.get(7).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let out_len: usize = args.get(8).and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_subtle_argon2(
+                type_str,
+                password,
+                nonce,
+                secret,
+                ad,
+                parallelism,
+                memory,
+                passes,
+                out_len,
+            )
+        }),
+    );
+
     // `crypto.subtle.encrypt/decrypt("AES-GCM", ...)`（R2957；M3a 矩阵）——AES-128/192/256-GCM。
     // arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv csv，arg[3]=data csv，arg[4]=aad csv，
     // arg[5]=tagLength 位（缺省 128）。返 csv（error → 空）。

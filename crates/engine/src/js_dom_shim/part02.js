@@ -41,15 +41,42 @@
           _zw_okpImportKey(format, keyData, algo, extractable, usages, resolve, reject);
           return;
         }
-        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
+        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
+        var isChaCha = algo.name === 'ChaCha20-Poly1305';
         var isHmac = algo.name === 'HMAC';
+        // Argon2d/i/id（webcrypto-compat-v3 域切片；spec 17.4.2）——专用早臂：format
+        // ≠ raw-secret（别名归一后即 RAW）→ NotSupportedError；usages ⊄ {deriveBits,
+        // deriveKey} → SyntaxError；extractable ≠ false → SyntaxError；key.algorithm =
+        // KeyAlgorithm（仅 name）。password = 密钥材料本身。
+        // https://wicg.github.io/webcrypto-modern-algos/#argon2-import-key
+        var isArgon2 = (algo.name === 'Argon2d' || algo.name === 'Argon2i' || algo.name === 'Argon2id');
+        if (isArgon2) {
+          var aFmt = _zw_upperAscii(String(format == null ? '' : format));
+          if (aFmt !== 'RAW') {
+            reject(new _zw_subtleDE("Unsupported importKey format for " + algo.name + ": '" + format + "' (only 'raw-secret' supported)", 'NotSupportedError')); return;
+          }
+          var aU = _zw_normalizeUsages(usages, ['deriveBits', 'deriveKey']);
+          if (!aU) {
+            reject(new _zw_subtleDE("Invalid key usages for " + algo.name, 'SyntaxError')); return;
+          }
+          if (extractable) {
+            reject(new _zw_subtleDE(algo.name + ' keys cannot be extractable', 'SyntaxError')); return;
+          }
+          // spec 公共步骤 10：secret 密钥空 usages → SyntaxError（与 PBKDF2/HKDF 同断言，
+          // corpus symmetric_importKey.js testEmptyUsages 对全注册算法生效）。
+          if (aU.length === 0) {
+            reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+          }
+          resolve(new CryptoKey('secret', false, { name: algo.name }, aU, Array.from(_zw_bufToBytes(keyData))));
+          return;
+        }
         // HMAC：显式 length 0 → DataError（spec 步骤 1，先于 usages SyntaxError）。
         if (isHmac && algo.length != null && Number(algo.length) === 0) {
           reject(new _zw_subtleDE('HMAC length cannot be 0', 'DataError')); return;
         }
         var allowedUsages = (algo.name === 'PBKDF2' || algo.name === 'HKDF') ? ['deriveBits', 'deriveKey']
           : algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey']
-          : isAes ? ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
+          : (isAes || isChaCha) ? ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']
           : ['sign', 'verify'];
         var u = _zw_normalizeUsages(usages, allowedUsages);
         if (!u) {
@@ -59,7 +86,7 @@
         if (fmt === 'RAW') {
           raw = _zw_bufToBytes(keyData);
         } else if (fmt === 'JWK') {
-          if (!isAes && !isHmac) {
+          if (!isAes && !isHmac && !isChaCha) {
             reject(new _zw_subtleDE("Unsupported importKey format for " + algo.name + ": 'jwk'", 'NotSupportedError')); return;
           }
           // jwk → JsonWebKey 字典（spec：非字典 → TypeError）。kty "oct"（对称），k base64url。
@@ -102,13 +129,17 @@
           if (keyData.ext === false && extractable) {
             reject(new _zw_subtleDE('jwk ext is false but extractable is true', 'DataError')); return;
           }
-          // alg ↔ 算法/长度一致性（A{128|192|256}{CTR|CBC|GCM|KW} / HS{1|256|384|512}）。
+          // alg ↔ 算法/长度一致性（A{128|192|256}{CTR|CBC|GCM|KW|OCB} / C20P /
+          // HS{1|256|384|512}；webcrypto-compat-v3 域切片扩 OCB/ChaCha——spec
+          // jwk alg 注册名 A{bits}OCB、C20P，缺省成员合法）。
           var bits = raw.length * 8;
           var expectAlg = null;
           if (isAes) {
             var suffix = algo.name === 'AES-CTR' ? 'CTR' : algo.name === 'AES-CBC' ? 'CBC'
-              : algo.name === 'AES-GCM' ? 'GCM' : 'KW';
+              : algo.name === 'AES-GCM' ? 'GCM' : algo.name === 'AES-OCB' ? 'OCB' : 'KW';
             expectAlg = 'A' + bits + suffix;
+          } else if (isChaCha) {
+            expectAlg = 'C20P';
           } else {
             expectAlg = algo.hash === 'SHA-1' ? 'HS1' : algo.hash === 'SHA-256' ? 'HS256'
               : algo.hash === 'SHA-384' ? 'HS384' : algo.hash === 'SHA-512' ? 'HS512' : null;
@@ -137,6 +168,14 @@
             reject(new _zw_subtleDE('AES key must be 128, 192 or 256 bits (16/24/32 bytes)', 'DataError')); return;
           }
           keyAlg = { name: algo.name, length: klen * 8 };
+        }
+        // ChaCha20-Poly1305（webcrypto-compat-v3 域切片）：key 恒 256 位（spec raw 分支
+        // 非 256 位 → DataError）；key.algorithm = KeyAlgorithm（仅 name，无 length 成员）。
+        if (isChaCha) {
+          if (raw.length !== 32) {
+            reject(new _zw_subtleDE('ChaCha20-Poly1305 key must be 256 bits (32 bytes)', 'DataError')); return;
+          }
+          keyAlg = { name: algo.name };
         }
         // HMAC key.algorithm.length：显式 length 截取语义（member ∈ (dataBits-8, dataBits]，
         // 取数据前 N 位为密钥材料）；FIXME(spec)：非字节对齐 member spec 合法，此处 DataError
@@ -410,6 +449,15 @@
           resolve(xarr);
           return;
         }
+        // Argon2d/i/id（webcrypto-compat-v3 域切片）：spec 步序——"deriveBits" usage
+        // 校验（InvalidAccessError）→ _zw_argon2Derive 全套参数/长度校验（§17.4.1）。
+        if (name === 'ARGON2D' || name === 'ARGON2I' || name === 'ARGON2ID') {
+          if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
+          }
+          _zw_argon2Derive(algorithm, key, length, resolve, reject);
+          return;
+        }
         if ((name !== 'PBKDF2' && name !== 'HKDF')) {
           reject(new _zw_subtleDE('Unsupported deriveBits algorithm', 'NotSupportedError')); return;
         }
@@ -475,7 +523,10 @@
         name = _zw_upperAscii(String(name == null ? '' : name));
         var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
         var isRsa = (name === 'RSA-OAEP');
-        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
+        // AES-OCB / ChaCha20-Poly1305（webcrypto-compat-v3 域切片）：AeadParams 面同 GCM。
+        var isOcb = (name === 'AES-OCB');
+        var isChacha = (name === 'CHACHA20-POLY1305');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa && !isOcb && !isChacha) {
           reject(new _zw_subtleDE('Unsupported encrypt algorithm: ' + name, 'NotSupportedError')); return;
         }
         if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
@@ -494,6 +545,10 @@
           ? _zw_rsaOaepCall('encrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
           : isBlock
           ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', algorithm, key, bytes, reject)
+          : isOcb
+          ? _zw_ocbCall('encrypt', algorithm, key, bytes, reject)
+          : isChacha
+          ? _zw_chachaCall('encrypt', algorithm, key, bytes, reject)
           : _zw_aesGcmCall('encrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
@@ -508,7 +563,9 @@
         name = _zw_upperAscii(String(name == null ? '' : name));
         var isBlock = (name === 'AES-CBC' || name === 'AES-CTR');
         var isRsa = (name === 'RSA-OAEP');
-        if (name !== 'AES-GCM' && !isBlock && !isRsa) {
+        var isOcb = (name === 'AES-OCB');
+        var isChacha = (name === 'CHACHA20-POLY1305');
+        if (name !== 'AES-GCM' && !isBlock && !isRsa && !isOcb && !isChacha) {
           reject(new _zw_subtleDE('Unsupported decrypt algorithm: ' + name, 'NotSupportedError')); return;
         }
         if (!key || _zw_upperAscii(String(key.algorithm.name)) !== name) {
@@ -522,6 +579,10 @@
           ? _zw_rsaOaepCall('decrypt', key, _zw_rsaKeyHash(key), (algorithm.label != null) ? _zw_bufToBytes(algorithm.label) : [], bytes, reject)
           : isBlock
           ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', algorithm, key, bytes, reject)
+          : isOcb
+          ? _zw_ocbCall('decrypt', algorithm, key, bytes, reject)
+          : isChacha
+          ? _zw_chachaCall('decrypt', algorithm, key, bytes, reject)
           : _zw_aesGcmCall('decrypt', algorithm, key, bytes, reject);
         if (arr) resolve(arr);
       });
@@ -541,7 +602,8 @@
         if (!algo) {
           reject(new _zw_subtleDE('Unsupported or missing algorithm', 'NotSupportedError')); return;
         }
-        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW');
+        var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
+        var isChaCha = algo.name === 'ChaCha20-Poly1305';
         if (isAes) {
           var allowed = algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey'] : ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'];
           var u = _zw_normalizeUsages(usages, allowed);
@@ -555,6 +617,17 @@
             reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
           }
           resolve(new CryptoKey('secret', extractable, { name: algo.name, length: bits }, u, Array.from(_zw_randomBytes(bits / 8))));
+        } else if (isChaCha) {
+          // ChaCha20-Poly1305（webcrypto-compat-v3 域切片；spec 11.3.3）：usages ⊆
+          // {encrypt,decrypt,wrapKey,unwrapKey}（非法 → SyntaxError）→ 恒 256 位随机
+          // 密钥（无 length 成员面）→ 空 usages → SyntaxError（公共步骤 10）；
+          // key.algorithm = KeyAlgorithm（仅 name）。
+          var cu = _zw_normalizeUsages(usages, ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey']);
+          if (!cu) { reject(new _zw_subtleDE('Invalid key usages for ChaCha20-Poly1305', 'SyntaxError')); return; }
+          if (cu.length === 0) {
+            reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+          }
+          resolve(new CryptoKey('secret', extractable, { name: algo.name }, cu, Array.from(_zw_randomBytes(32))));
         } else if (algo.name === 'HMAC') {
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
           if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
@@ -640,6 +713,10 @@
         else if (algName === 'AES-CBC') alg = 'A' + bits + 'CBC';
         else if (algName === 'AES-GCM') alg = 'A' + bits + 'GCM';
         else if (algName === 'AES-KW') alg = 'A' + bits + 'KW';
+        // webcrypto-compat-v3 域切片：AES-OCB jwk alg = A{bits}OCB；ChaCha20-Poly1305
+        // jwk alg = C20P（spec IANA 注册名，WICG webcrypto-modern-algos §18.1）。
+        else if (algName === 'AES-OCB') alg = 'A' + bits + 'OCB';
+        else if (algName === 'ChaCha20-Poly1305') alg = 'C20P';
         else if (algName === 'HMAC') {
           var h = key.algorithm.hash;
           h = (h && typeof h === 'object') ? h.name : h;
@@ -669,12 +746,17 @@
         var wa = (wrapAlgorithm && typeof wrapAlgorithm === 'object') ? wrapAlgorithm : { name: wrapAlgorithm };
         var name = _zw_upperAscii(String(wa && wa.name ? wa.name : ''));
         var isKw = name === 'AES-KW';
-        var isEnc = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
+        // webcrypto-compat-v3 域切片：AES-OCB / ChaCha20-Poly1305 同 GCM 面走 encrypt
+        // fallback（spec wrapKey 步 5；supports REG 不带 wrapKey，fallback 同构）。
+        var isEnc = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR' || name === 'AES-OCB' || name === 'CHACHA20-POLY1305');
         var isOaep = name === 'RSA-OAEP';
         if (!isKw && !isEnc && !isOaep) {
           reject(new _zw_subtleDE('Unsupported wrap algorithm: ' + name, 'NotSupportedError')); return;
         }
-        if (!wrappingKey || !wrappingKey.algorithm || wrappingKey.algorithm.name !== name) {
+        // name 归一匹配：wrapAlgorithm 归一化产物是注册表规范拼写，key.algorithm.name 存的
+        // 也是规范拼写——两侧折 upperAscii 比较（ChaCha20-Poly1305 规范拼写非全大写；注册表
+        // 各名折叠互异，等价 spec 的归一后 name 相等）。
+        if (!wrappingKey || !wrappingKey.algorithm || _zw_upperAscii(String(wrappingKey.algorithm.name)) !== name) {
           reject(new _zw_subtleDE('Algorithm does not match wrapping key', 'InvalidAccessError')); return;
         }
         if (!wrappingKey.usages || wrappingKey.usages.indexOf('wrapKey') < 0) {
@@ -711,6 +793,10 @@
           }
           var arr = (name === 'AES-CTR' || name === 'AES-CBC')
             ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'encrypt', wa, wrappingKey, bytes, reject)
+            : name === 'AES-OCB'
+            ? _zw_ocbCall('encrypt', wa, wrappingKey, bytes, reject)
+            : name === 'CHACHA20-POLY1305'
+            ? _zw_chachaCall('encrypt', wa, wrappingKey, bytes, reject)
             : _zw_aesGcmCall('encrypt', wa, wrappingKey, bytes, reject);
           if (arr) resolve(arr);
         }, reject);
@@ -728,12 +814,15 @@
         var ua = (unwrapAlgorithm && typeof unwrapAlgorithm === 'object') ? unwrapAlgorithm : { name: unwrapAlgorithm };
         var name = _zw_upperAscii(String(ua && ua.name ? ua.name : ''));
         var isKw = name === 'AES-KW';
-        var isDec = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR');
+        // webcrypto-compat-v3 域切片：AES-OCB / ChaCha20-Poly1305 同 GCM 面走 decrypt
+        // fallback（spec unwrapKey 步 5）。
+        var isDec = (name === 'AES-GCM' || name === 'AES-CBC' || name === 'AES-CTR' || name === 'AES-OCB' || name === 'CHACHA20-POLY1305');
         var isOaep = name === 'RSA-OAEP';
         if (!isKw && !isDec && !isOaep) {
           reject(new _zw_subtleDE('Unsupported unwrap algorithm: ' + name, 'NotSupportedError')); return;
         }
-        if (!unwrappingKey || !unwrappingKey.algorithm || unwrappingKey.algorithm.name !== name) {
+        // name 归一匹配同 wrapKey（ChaCha20-Poly1305 规范拼写非全大写）。
+        if (!unwrappingKey || !unwrappingKey.algorithm || _zw_upperAscii(String(unwrappingKey.algorithm.name)) !== name) {
           reject(new _zw_subtleDE('Algorithm does not match unwrapping key', 'InvalidAccessError')); return;
         }
         if (!unwrappingKey.usages || unwrappingKey.usages.indexOf('unwrapKey') < 0) {
@@ -756,6 +845,10 @@
         } else {
           plain = (name === 'AES-CTR' || name === 'AES-CBC')
             ? _zw_aesBlockCall(name === 'AES-CTR' ? 'ctr' : 'cbc', 'decrypt', ua, unwrappingKey, bytes, reject)
+            : name === 'AES-OCB'
+            ? _zw_ocbCall('decrypt', ua, unwrappingKey, bytes, reject)
+            : name === 'CHACHA20-POLY1305'
+            ? _zw_chachaCall('decrypt', ua, unwrappingKey, bytes, reject)
             : _zw_aesGcmCall('decrypt', ua, unwrappingKey, bytes, reject);
           if (!plain) return;
         }

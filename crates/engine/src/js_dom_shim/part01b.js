@@ -2398,6 +2398,27 @@
       if (typeof algo === 'object' && algo && algo.length != null) aesOut.length = Number(algo.length);
       return aesOut;
     }
+    if (name === 'AES-OCB') {
+      // AES-OCB（webcrypto-compat-v3 域切片）：length 成员透传同 AES 家族。
+      var ocbOut = { name: name };
+      if (typeof algo === 'object' && algo && algo.length != null) ocbOut.length = Number(algo.length);
+      return ocbOut;
+    }
+    if (name === 'CHACHA20-POLY1305') {
+      // ChaCha20-Poly1305（webcrypto-compat-v3 域切片）：无参数面（spec keyGen/import
+      // 均裸 name；name 回写注册表规范拼写，upperAscii 折叠了小写与连字符保留部分）。
+      return { name: 'ChaCha20-Poly1305' };
+    }
+    if (name === 'ARGON2D' || name === 'ARGON2I' || name === 'ARGON2ID') {
+      // Argon2d/i/id（webcrypto-compat-v3 域切片）：算法对象整体透传（deriveBits 消费
+      // nonce/parallelism/memory/passes/version/secretValue/associatedData；name 回写
+      // 注册表规范拼写）。
+      var argOut = { name: name === 'ARGON2D' ? 'Argon2d' : name === 'ARGON2I' ? 'Argon2i' : 'Argon2id' };
+      if (typeof algo === 'object' && algo) {
+        for (var m in algo) if (m !== 'name') argOut[m] = algo[m];
+      }
+      return argOut;
+    }
     if (name === 'HKDF') {
       return { name: 'HKDF' };
     }
@@ -2541,6 +2562,119 @@
     return res;
   }
 
+  // AES-OCB 调用（encrypt/decrypt 共用，webcrypto-compat-v3 域切片；WICG
+  // webcrypto-modern-algos §10）：iv 6..=15 字节（spec 拦 >15，RFC 7253 N ≤ 120 位；
+  // 实现密封集下限 6——0..=5 reject OperationError，语料 failing iv [0,16] 均落拦截区）；
+  // tagLength ∈ {64,96,128}（spec 合法集，缺省 128，非法 → OperationError）；decrypt
+  // 密文短于 tag → OperationError（spec 步骤）；AAD 经 algorithm.additionalData（可选）。
+  // host 后调 `__zw_crypto_subtle_aes_ocb`，失败调 reject 返 null。
+  // https://wicg.github.io/webcrypto-modern-algos/#aes-ocb-operations
+  function _zw_ocbCall(op, algorithm, key, dataBytes, reject) {
+    var iv = _zw_bufToBytes(algorithm.iv);
+    if (iv.length < 6 || iv.length > 15) {
+      reject(_zw_subtleDE('AES-OCB iv must be 6-15 bytes', 'OperationError')); return null;
+    }
+    var tagBits = (algorithm.tagLength != null) ? Number(algorithm.tagLength) : 128;
+    if (tagBits !== 64 && tagBits !== 96 && tagBits !== 128) {
+      reject(_zw_subtleDE('Invalid AES-OCB tagLength: ' + algorithm.tagLength, 'OperationError')); return null;
+    }
+    if (op === 'decrypt' && dataBytes.length < tagBits / 8) {
+      reject(_zw_subtleDE('AES-OCB ciphertext shorter than tag', 'OperationError')); return null;
+    }
+    if (typeof __zw_crypto_subtle_aes_ocb !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle AES-OCB requires host callback', 'NotSupportedError')); return null;
+    }
+    var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = __zw_crypto_subtle_aes_ocb(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','), String(tagBits));
+    if (!out) {
+      reject(_zw_subtleDE('AES-OCB ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+    }
+    // host 空明文（密文仅 tag）成功哨兵——空串已约定为失败信号。
+    if (out === ',') return new Uint8Array(0);
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
+  // ChaCha20-Poly1305 调用（encrypt/decrypt 共用，webcrypto-compat-v3 域切片；WICG
+  // webcrypto-modern-algos §11）：iv 恒 12 字节（spec ≠12 → OperationError）；tagLength
+  // 若存在须 =128（缺省合法）；decrypt 密文短于 128 位 → OperationError；AAD 可选。
+  // host 后调 `__zw_crypto_subtle_chacha20_poly1305`，失败调 reject 返 null。
+  // https://wicg.github.io/webcrypto-modern-algos/#chacha20-poly1305-operations
+  function _zw_chachaCall(op, algorithm, key, dataBytes, reject) {
+    var iv = _zw_bufToBytes(algorithm.iv);
+    if (iv.length !== 12) {
+      reject(_zw_subtleDE('ChaCha20-Poly1305 iv must be 12 bytes', 'OperationError')); return null;
+    }
+    if (algorithm.tagLength != null && Number(algorithm.tagLength) !== 128) {
+      reject(_zw_subtleDE('Invalid ChaCha20-Poly1305 tagLength: ' + algorithm.tagLength, 'OperationError')); return null;
+    }
+    if (op === 'decrypt' && dataBytes.length < 16) {
+      reject(_zw_subtleDE('ChaCha20-Poly1305 ciphertext shorter than tag', 'OperationError')); return null;
+    }
+    if (typeof __zw_crypto_subtle_chacha20_poly1305 !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle ChaCha20-Poly1305 requires host callback', 'NotSupportedError')); return null;
+    }
+    var aadBytes = algorithm.additionalData != null ? _zw_bufToBytes(algorithm.additionalData) : [];
+    var keyCsv = (key._raw || []).map(String).join(',');
+    var out = __zw_crypto_subtle_chacha20_poly1305(op, keyCsv, iv.join(','), dataBytes.join(','), aadBytes.join(','));
+    if (!out) {
+      reject(_zw_subtleDE('ChaCha20-Poly1305 ' + op + ' failed (bad key/iv/tag)', 'OperationError')); return null;
+    }
+    // host 空明文（密文仅 tag）成功哨兵——空串已约定为失败信号。
+    if (out === ',') return new Uint8Array(0);
+    var parts = out.split(',');
+    var res = new Uint8Array(parts.length);
+    for (var i = 0; i < parts.length; i++) res[i] = +parts[i];
+    return res;
+  }
+
+  // Argon2d/i/id deriveBits 核心（webcrypto-compat-v3 域切片；WICG webcrypto-modern-algos
+  // §17.4.1）：length null / <32 / 非 8 倍数 → OperationError；version 缺省 19，非 19 →
+  // OperationError；nonce 为 Argon2Params required 成员（WebIDL 缺失 → TypeError）；
+  // parallelism 0 或 >2^24-1 → OperationError；memory < 8·parallelism → OperationError；
+  // passes 0 → OperationError；secretValue/associatedData 可选。password = base key
+  //（raw-secret 导入材料，spec [[handle]] 内槽即消息 P）；host 经 ParamsBuilder 兜底
+  // 同面校验。deriveBits/deriveKey（_zw_performDerive）两路共用。
+  // https://wicg.github.io/webcrypto-modern-algos/#argon2-operations  https://datatracker.ietf.org/doc/html/rfc9106
+  function _zw_argon2Derive(algorithm, key, length, resolve, reject) {
+    if (length == null || length < 32 || length % 8 !== 0) {
+      reject(_zw_subtleDE('Argon2 deriveBits length must be a multiple of 8 >= 32', 'OperationError')); return;
+    }
+    if (algorithm.nonce == null) {
+      reject(new TypeError('Argon2 nonce member is required')); return;
+    }
+    var aVer = (algorithm.version != null) ? Number(algorithm.version) : 19;
+    if (aVer !== 19) {
+      reject(_zw_subtleDE('Argon2 version must be 19 (0x13)', 'OperationError')); return;
+    }
+    var aP = Number(algorithm.parallelism);
+    var aM = Number(algorithm.memory);
+    var aT = Number(algorithm.passes);
+    if (!(aP >= 1) || aP > 16777215 || aP !== Math.floor(aP) ||
+        !(aM >= 8 * aP) || !(aT >= 1) || aT !== Math.floor(aT)) {
+      reject(_zw_subtleDE('Invalid Argon2 parameters', 'OperationError')); return;
+    }
+    if (typeof __zw_crypto_subtle_argon2 !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
+    }
+    var aNonce = _zw_bufToBytes(algorithm.nonce);
+    var aSecret = algorithm.secretValue != null ? _zw_bufToBytes(algorithm.secretValue) : [];
+    var aAd = algorithm.associatedData != null ? _zw_bufToBytes(algorithm.associatedData) : [];
+    var aOut = __zw_crypto_subtle_argon2(_zw_upperAscii(String(algorithm.name)),
+      (key._raw || []).map(String).join(','), aNonce.join(','), aSecret.join(','), aAd.join(','),
+      String(aP), String(aM), String(aT), String(length / 8));
+    if (!aOut) {
+      reject(_zw_subtleDE('Argon2 derivation failed', 'OperationError')); return;
+    }
+    var aParts = aOut.split(',');
+    var aArr = new Uint8Array(aParts.length);
+    for (var ai = 0; ai < aParts.length; ai++) aArr[ai] = +aParts[ai];
+    resolve(aArr);
+  }
+
   // 派生核心（deriveBits/deriveKey 共用）：ECDH/PBKDF2/HKDF 分派 + host 调用 + csv→arr，
   // **不做 usage 校验**（usage 校验由调用方负责——deriveBits 检 "deriveBits"，
   // deriveKey 检 "deriveKey"）。name 匹配 ASCII 折叠；**未知派生算法 reject
@@ -2591,6 +2725,10 @@
         var xdarr = new Uint8Array(xdLen);
         for (var xi = 0; xi < xdLen; xi++) xdarr[xi] = +xdparts[xi];
         resolve(xdarr);
+        return;
+      }
+      if (name === 'ARGON2D' || name === 'ARGON2I' || name === 'ARGON2ID') {
+        _zw_argon2Derive(algorithm, key, length, resolve, reject);
         return;
       }
       if (name !== 'PBKDF2' && name !== 'HKDF') {
@@ -3484,7 +3622,7 @@
     if (_zw_rsaIsFamily(name) || _zw_ecIsFamily(name) || _zw_okpIsFamily(name)) return true;
     var n = _zw_upperAscii(String(name == null ? '' : name));
     return n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-GCM' ||
-      n === 'AES-KW' || n === 'HMAC';
+      n === 'AES-KW' || n === 'AES-OCB' || n === 'CHACHA20-POLY1305' || n === 'HMAC';
   }
 
   // 类型 usages 子集判定（spki/pkcs8/raw 分支与 jwk d 分支共用）。

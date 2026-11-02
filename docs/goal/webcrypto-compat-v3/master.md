@@ -6,12 +6,34 @@
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
-——M2 域切片按依赖就绪度定序待启动 + M 末收口重定基
-**最后更新**: 2026-11-02（D1 拍板落账：①建议集批准 ②X448 stable + Ed448 降 scope ③KMAC 手写叠 cshake ④清单外官方同族替代授权）
+——**域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
+回归）**；余批按依赖就绪度推进：XOF 五连 → PQC 两域 → X448/KMAC →
+M 末收口重定基
+**最后更新**: 2026-11-02（D1 域切片第一轮落账：三域全绿 +6,216 FIXED 落靶 + 锚对照零回归 + 对照基准更新 d1s1）
 
 ---
 
 ## 当前状态
+
+**D1 域切片第一轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s1-argon2-ocb-chacha-slice.md)）**：
+Argon2d/i/id + AES-OCB + ChaCha20-Poly1305 三域全链路（deps 引入 → host
+实现 → shim 八运算接线 → REG 扩表 → 定向翻绿 → 锚对照零回归）——**+6,216
+FIXED 落 48 案（三域靶面无域外）+ 新注册 1,318 全 Pass**，全量分母 360 案 /
+**82,065 keys = P 60,395 + F 21,666 + T 4**，对 m2s5 锚
+**REGRESSED（P→非P）= 0、FLIPPED = 0、case 级零漂移**，subtest 级 drift
+10 案逐项归因（argon2/wrapKey 条件注册新键 + aes_ocb 失败路径命名翻转
+同向量集）；切片内三处修复（空明文解密 wire 哨兵、Argon2 空 usages
+SyntaxError 对齐共享驱动、wrap/unwrap name 折叠匹配）。runner 单测
+276P/0F、clippy/fmt 干净；rebase 到 origin/main `f8925c1e7` 后全量
+复跑逐位复现（总账同、锚对照同 48 案 FIXED + 同 10 案 drift），d1s1
+锚以复跑落盘。make test：workspace/renderer/quickjs clippy 腿全绿，
+browser bin 腿 **737P/1F 预存红**（
+`default_actions_work_without_javascript`，兄弟流 forms/typing 面，
+A/B + bracket ≥ `064dbbeca` 归因在案，本流不代执行——见碰撞管理
+R5389 条与 [d1s1 evidence 预存红归因节](evidence/2026-11-02-d1s1-argon2-ocb-chacha-slice.md)）。
+对照基准更新为
+[d1s1 锚](evidence/2026-11-02-d1s1-argon2-ocb-chacha-full.json.gz)。
+下一批：XOF 五连 → PQC 两域 → X448/KMAC → M 末收口重定基。
 
 **D1 拍板落账（2026-11-02，用户会话拍板，域切片开工令）**：四子问题一次
 拍定——① **批准修正后建议集**（ml-kem 0.3.3 +getrandom / ml-dsa 0.1.1 /
@@ -356,3 +378,31 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   零代码触面，无碰撞面。D1 四子问题用户会话一次拍板（①建议集批准
   ②X448 stable + Ed448 降 scope ③KMAC option b ④清单外官方同族替代
   授权），域切片开工令生效，下一 rally 轮从域切片开工。
+- 2026-11-02 R5389 D1 域切片第一轮（Argon2/OCB/ChaCha）：触面
+  `Cargo.toml`/`Cargo.lock`/`crates/engine/Cargo.toml`（三 workspace 依赖 +
+  aes09 =0.9.2 / ctutils =0.4.2 钉版）、`js_dom_bridge/crypto.rs`（三 host
+  函数）、`js_dom_bridge/callbacks.rs`（三注册）、`js_dom_shim/part01b.js`
+  （归一化三臂 + 三 helper）、`part02.js`（八运算分派臂）、`part02a.js`
+  （REG 五行 + validate 两处）——共享清单（part01.js/script_gen.rs/
+  testharness.rs）零触碰。**Makefile workspace 测试腿阈值校准一处**
+  （per-proc-mem 4→6 / total-mem 8→12）：A/B 归因定谳 HEAD 无改动代码
+  的 runner lib 测试二进制峰值 4.37G 已超原 4G 门限（本切片二进制实测
+  3.91G 未推高），属 shim 全流增长累积的既有结构边际（css-variables/
+  html-semantics 超限先例同因）；真修（runner 测试并发工作集瘦身）挂
+  runner 通道碰头账，处置对照 R5000 片 c 栈 32MiB 同腿加固先例，
+  evidence 门禁补记附三次实测。开工时在途兄弟流草稿
+  （`typing-style-round-1102`，33 号流）维持 stash 记账不动；落账前
+  fetch 对账 origin/main +8 提交（25 号流 typing/select 触 part01.js/
+  part01f/part03 + CI 分片自动发现 + docs），与本切片触面 diff 零交集。
+  - **browser bin 腿预存红转记**：make test 终跑 browser bin 腿
+    737P/1F——`default_actions_work_without_javascript`
+    （assert_url 拿到 `error://...name=&...`）。归因四件在案（本切片
+    d1s1 evidence 预存红归因节）：HEAD 无改动代码同红；窗口 ≥
+    `064dbbeca`（worktree 自洽构建同签名，今日早时点）；带代理/清代理
+    两态同红（非代理假红先例款）；签名分解 = 键入值丢失（name= 空，
+    click/勾选/序列化完好）+ error:// 快照前缀（assert_url 要求提交
+    快照 URL 精确相等，zero.test 不可解析环境导航永不提交真页）。
+    webview 层同名集成测试（html_compat.rs:363）全绿——序列化底座
+    完好，红在 browser 多进程 typing/导航集成面。本流不越界代执行
+    （run-rules #9 先例），归 25 号/33 号 forms/typing 面通道核办；
+    修复后 browser 腿回归绿为准的收口仍属 make test 完整门禁。

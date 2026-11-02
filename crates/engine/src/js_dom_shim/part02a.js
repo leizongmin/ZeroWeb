@@ -63,7 +63,15 @@
       'ED25519': { ops: { sign: 1, verify: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
       'X25519':  { ops: { deriveBits: 1, deriveKey: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
       'HKDF':    { ops: { importKey: 1, deriveBits: 1, deriveKey: 1 } },
-      'PBKDF2':  { ops: { importKey: 1, deriveBits: 1 } }
+      'PBKDF2':  { ops: { importKey: 1, deriveBits: 1 } },
+      // webcrypto-compat-v3 域切片（D1 拍板 2026-11-02）：AES-OCB / ChaCha20-Poly1305
+      // 全加密面注册（wrapKey/unwrapKey 与 AES-CBC/CTR/GCM 同构走 fallback，spec 步 5）；
+      // Argon2d/i/id 派生面（raw-secret import + deriveBits）。
+      'AES-OCB': { ops: { encrypt: 1, decrypt: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
+      'CHACHA20-POLY1305': { ops: { encrypt: 1, decrypt: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
+      'ARGON2D':  { ops: { importKey: 1, deriveBits: 1 } },
+      'ARGON2I':  { ops: { importKey: 1, deriveBits: 1 } },
+      'ARGON2ID': { ops: { importKey: 1, deriveBits: 1 } }
     };
 
     // ASCII 大写映射（a-z → A-Z，非 ASCII 不动）——part01b _zw_upperAscii 同语义
@@ -208,6 +216,24 @@
             (typeof params.tagLength !== 'number' || !GCM_TAG_LENGTHS[params.tagLength])) return false;
         return true;
       }
+      // AES-OCB（webcrypto-compat-v3 域切片）：iv 6..=15 字节（spec 拦 >15，短 nonce
+      // 面按实现密封集收敛）；tagLength 若存在 ∈ {64,96,128}（缺省 128）。
+      if (name === 'AES-OCB') {
+        if (!isBufferSource(params && params.iv) ||
+            params.iv.byteLength < 6 || params.iv.byteLength > 15) return false;
+        if (params.tagLength != null &&
+            (typeof params.tagLength !== 'number' ||
+             (params.tagLength !== 64 && params.tagLength !== 96 && params.tagLength !== 128))) return false;
+        return true;
+      }
+      // ChaCha20-Poly1305（webcrypto-compat-v3 域切片）：iv 恒 12 字节（spec ≠12 →
+      // OperationError）；tagLength 若存在须 =128（缺省合法）。
+      if (name === 'CHACHA20-POLY1305') {
+        if (!isBufferSource(params && params.iv) || params.iv.byteLength !== 12) return false;
+        if (params.tagLength != null &&
+            (typeof params.tagLength !== 'number' || params.tagLength !== 128)) return false;
+        return true;
+      }
       return false;
     }
 
@@ -325,6 +351,17 @@
         if (typeof length !== 'number' || !(length > 0) || length % 8 !== 0) return false;
         if (name === 'HKDF' && length > 255 * SHA_BITS[h]) return false;
         return true;
+      }
+      // Argon2d/i/id（webcrypto-compat-v3 域切片）：length >0、8 倍数且 ≥32 位
+      //（spec：length null/<32/非 8 倍数 → OperationError 域）；Argon2Params required
+      // 成员 nonce/parallelism/memory/passes 存在（version/secretValue/associatedData
+      // 可选——required 完备性属 supports 静态面，运算期数值约束归 deriveBits）。
+      if (name === 'ARGON2D' || name === 'ARGON2I' || name === 'ARGON2ID') {
+        if (typeof length !== 'number' || !(length >= 32) || length % 8 !== 0) return false;
+        return isBufferSource(params && params.nonce) &&
+          typeof (params && params.parallelism) === 'number' &&
+          typeof (params && params.memory) === 'number' &&
+          typeof (params && params.passes) === 'number';
       }
       return false;
     }

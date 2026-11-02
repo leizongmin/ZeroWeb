@@ -506,6 +506,231 @@ pub fn crypto_subtle_aes_kw(mode: &str, key_csv: &str, data_csv: &str) -> String
     }
 }
 
+/// `crypto.subtle.encrypt/decrypt` 的 AES-OCB 实现（webcrypto-compat-v3 域切片；WICG
+/// webcrypto-modern-algos §10）——AES-128/192/256-OCB（RFC 7253）。RustCrypto `ocb3`
+/// crate（构建于 cipher 0.5/aead 0.6 新栈，D1 拍板选型见
+/// docs/goal/webcrypto-compat-v3/master.md 待用户决策表；aes09 =0.9.2 钉版）。mode
+/// "encrypt"（返 ct||tag）/ "decrypt"（输入 ct||tag，返 plaintext）；key 16/24/32 字节；
+/// iv：spec 仅拦 >15 字节（RFC 7253 N ≤ 120 位），crate NonceSize 密封 6..=15 字节
+///（KnoX 短 nonce 防护），0..=5 同 reject OperationError（语料 failing iv [0,16] 均
+/// 落拦截区）；tag_len_bits ∈ {64,96,128}（spec 合法集，缺省 128，由 shim 校验）。nonce
+/// 长度泛型宏分派 6..=15 十档 × tag 三档 × key 三档（NonceSize 编译期固定，RFC 7253
+/// nonce 构造依赖其位长）。返 csv，error（tag 校验失败等）→ 空串。
+/// https://wicg.github.io/webcrypto-modern-algos/#aes-ocb  https://datatracker.ietf.org/doc/html/rfc7253
+pub fn crypto_subtle_aes_ocb(
+    mode: &str,
+    key_csv: &str,
+    iv_csv: &str,
+    data_csv: &str,
+    aad_csv: &str,
+    tag_len_bits: u32,
+) -> String {
+    use ocb3::aead::inout::InOutBuf;
+    let key = bytes_from_csv(key_csv);
+    let iv = bytes_from_csv(iv_csv);
+    let data = bytes_from_csv(data_csv);
+    let aad = bytes_from_csv(aad_csv);
+    if iv.len() < 6 || iv.len() > 15 {
+        return String::new();
+    }
+    if !matches!(tag_len_bits, 64 | 96 | 128) {
+        return String::new();
+    }
+    let tag_bytes = (tag_len_bits / 8) as usize;
+    macro_rules! ocb_call {
+        ($aes:ty, $nonce:ty, $tag:ty) => {{
+            use ocb3::aead::{AeadInOut, KeyInit};
+            type Ocb = ocb3::Ocb3<$aes, $nonce, $tag>;
+            let cipher = Ocb::new(key.as_slice().try_into().expect("key length validated"));
+            if mode == "encrypt" {
+                let mut buf = data.clone();
+                match cipher.encrypt_inout_detached(
+                    iv.as_slice().try_into().expect("nonce length dispatched"),
+                    &aad,
+                    InOutBuf::from(buf.as_mut_slice()),
+                ) {
+                    Ok(tag) => {
+                        buf.extend_from_slice(&tag);
+                        Some(buf)
+                    }
+                    Err(_) => None,
+                }
+            } else if data.len() >= tag_bytes {
+                // spec：ciphertext < tagLength 位 → OperationError（shim 前置拦截，host 兜底）。
+                let ct_len = data.len() - tag_bytes;
+                let mut buf = data[..ct_len].to_vec();
+                match cipher.decrypt_inout_detached(
+                    iv.as_slice().try_into().expect("nonce length dispatched"),
+                    &aad,
+                    InOutBuf::from(buf.as_mut_slice()),
+                    (&data[ct_len..]).try_into().expect("tag length dispatched"),
+                ) {
+                    Ok(()) => Some(buf),
+                    Err(_) => None,
+                }
+            } else {
+                None
+            }
+        }};
+    }
+    macro_rules! by_key {
+        ($nonce:ty, $tag:ty) => {
+            match key.len() {
+                16 => ocb_call!(aes09::Aes128, $nonce, $tag),
+                24 => ocb_call!(aes09::Aes192, $nonce, $tag),
+                32 => ocb_call!(aes09::Aes256, $nonce, $tag),
+                _ => None,
+            }
+        };
+    }
+    macro_rules! by_tag {
+        ($nonce:ty) => {
+            match tag_len_bits {
+                64 => by_key!($nonce, aes09::cipher::consts::U8),
+                96 => by_key!($nonce, aes09::cipher::consts::U12),
+                128 => by_key!($nonce, aes09::cipher::consts::U16),
+                _ => None,
+            }
+        };
+    }
+    // nonce 长度分派：ocb3 NonceSize 密封 6..=15 字节（<6 由前置校验拦）。
+    let result: Option<Vec<u8>> = match iv.len() {
+        6 => by_tag!(aes09::cipher::consts::U6),
+        7 => by_tag!(aes09::cipher::consts::U7),
+        8 => by_tag!(aes09::cipher::consts::U8),
+        9 => by_tag!(aes09::cipher::consts::U9),
+        10 => by_tag!(aes09::cipher::consts::U10),
+        11 => by_tag!(aes09::cipher::consts::U11),
+        12 => by_tag!(aes09::cipher::consts::U12),
+        13 => by_tag!(aes09::cipher::consts::U13),
+        14 => by_tag!(aes09::cipher::consts::U14),
+        15 => by_tag!(aes09::cipher::consts::U15),
+        _ => None,
+    };
+    match result {
+        // 空明文（密文仅 tag）成功输出空字节串，与「失败 → 空串」的 wire 约定冲突——
+        // 返单逗号哨兵（shim 特判为空 Uint8Array）。
+        Some(v) if mode == "decrypt" && v.is_empty() => String::from(","),
+        Some(v) => bytes_to_csv(&v),
+        None => String::new(),
+    }
+}
+
+/// `crypto.subtle.encrypt/decrypt` 的 ChaCha20-Poly1305 实现（webcrypto-compat-v3 域切片；
+/// WICG webcrypto-modern-algos §11）——AEAD_CHACHA20_POLY1305（RFC 8439）。RustCrypto
+/// `chacha20poly1305` crate（aead 0.6 新栈，D1 拍板选型）。mode "encrypt"（返 ct||tag）/
+/// "decrypt"；key 恒 32 字节（KeySize = U32）；iv 恒 12 字节（spec ≠12 → OperationError）；
+/// tag 恒 128 位（spec tagLength 成员若存在须 =128，由 shim 校验）。返 csv，error（tag
+/// 校验失败等）→ 空串。
+/// https://wicg.github.io/webcrypto-modern-algos/#chacha20-poly1305  https://datatracker.ietf.org/doc/html/rfc8439
+pub fn crypto_subtle_chacha20_poly1305(
+    mode: &str,
+    key_csv: &str,
+    iv_csv: &str,
+    data_csv: &str,
+    aad_csv: &str,
+) -> String {
+    use chacha20poly1305::aead::{AeadInOut, KeyInit, inout::InOutBuf};
+    let key = bytes_from_csv(key_csv);
+    let iv = bytes_from_csv(iv_csv);
+    let data = bytes_from_csv(data_csv);
+    let aad = bytes_from_csv(aad_csv);
+    if key.len() != 32 || iv.len() != 12 {
+        return String::new();
+    }
+    let cipher = chacha20poly1305::ChaCha20Poly1305::new(key.as_slice().try_into().expect("key length checked"));
+    let nonce: chacha20poly1305::Nonce = iv.as_slice().try_into().expect("iv length checked");
+    let result = if mode == "encrypt" {
+        let mut buf = data.clone();
+        match cipher.encrypt_inout_detached(&nonce, &aad, InOutBuf::from(buf.as_mut_slice())) {
+            Ok(tag) => {
+                buf.extend_from_slice(&tag);
+                Some(buf)
+            }
+            Err(_) => None,
+        }
+    } else if data.len() >= 16 {
+        // spec：ciphertext < 128 位 → OperationError（shim 前置拦截，host 兜底）。
+        let ct_len = data.len() - 16;
+        let mut buf = data[..ct_len].to_vec();
+        let tag: chacha20poly1305::Tag = (&data[ct_len..]).try_into().expect("tag length checked");
+        match cipher.decrypt_inout_detached(&nonce, &aad, InOutBuf::from(buf.as_mut_slice()), &tag) {
+            Ok(()) => Some(buf),
+            Err(_) => None,
+        }
+    } else {
+        None
+    };
+    match result {
+        // 空明文（密文仅 tag）成功输出空字节串，与「失败 → 空串」的 wire 约定冲突——
+        // 返单逗号哨兵（shim 特判为空 Uint8Array）。
+        Some(v) if mode == "decrypt" && v.is_empty() => String::from(","),
+        Some(v) => bytes_to_csv(&v),
+        None => String::new(),
+    }
+}
+
+/// `crypto.subtle.deriveBits` 的 Argon2 实现（webcrypto-compat-v3 域切片；WICG
+/// webcrypto-modern-algos §17）——Argon2d/i/id 密码基派生（RFC 9106）。RustCrypto
+/// `argon2` crate（D1 拍板选型）。type_str ∈ ARGON2D/ARGON2I/ARGON2ID（shim 归一后形态）；
+/// password = raw-secret 导入的密钥材料（spec [[handle]] 内槽即密码消息 P）；nonce（spec
+/// Argon2Params required）；secret/ad 可选（空 csv ≡ 缺席）；parallelism/memory/passes 由
+/// shim 按规范约束校验（version ≠19 同），host 经 ParamsBuilder::build 兜底（m ≥ 8p、
+/// p ∈ [1,2^24-1]、t ≥ 1、m ≥ 16）；out_len = spec length/8（shim 校验 ≥32 位且 8 倍数）。
+/// version 恒 0x13（spec 唯一定义版本）。返派生位 csv，error → 空串。
+/// https://wicg.github.io/webcrypto-modern-algos/#argon2  https://datatracker.ietf.org/doc/html/rfc9106
+pub fn crypto_subtle_argon2(
+    type_str: &str,
+    password_csv: &str,
+    nonce_csv: &str,
+    secret_csv: &str,
+    ad_csv: &str,
+    parallelism: u32,
+    memory: u32,
+    passes: u32,
+    out_len: usize,
+) -> String {
+    use argon2::{Algorithm, Argon2, ParamsBuilder, Version};
+    let password = bytes_from_csv(password_csv);
+    let nonce = bytes_from_csv(nonce_csv);
+    let secret = bytes_from_csv(secret_csv);
+    let ad = bytes_from_csv(ad_csv);
+    let algorithm = match type_str {
+        "ARGON2D" => Algorithm::Argon2d,
+        "ARGON2I" => Algorithm::Argon2i,
+        "ARGON2ID" => Algorithm::Argon2id,
+        _ => return String::new(),
+    };
+    let mut builder = ParamsBuilder::new();
+    builder.m_cost(memory).t_cost(passes).p_cost(parallelism);
+    if !ad.is_empty() {
+        match argon2::AssociatedData::new(&ad) {
+            Ok(data) => {
+                builder.data(data);
+            }
+            Err(_) => return String::new(),
+        }
+    }
+    let params = match builder.build() {
+        Ok(p) => p,
+        Err(_) => return String::new(),
+    };
+    // secretValue 缺席 ≡ 空 secret（RFC 9106 H0 组装长度 0，两种传法等价）。
+    let ctx = if secret.is_empty() {
+        Argon2::new(algorithm, Version::V0x13, params)
+    } else {
+        match Argon2::new_with_secret(&secret, algorithm, Version::V0x13, params) {
+            Ok(c) => c,
+            Err(_) => return String::new(),
+        }
+    };
+    let mut out = vec![0u8; out_len];
+    if ctx.hash_password_into(&password, &nonce, &mut out).is_err() {
+        return String::new();
+    }
+    out.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
 /// `crypto.subtle.deriveBits` 的 HKDF 实现（R2958）——HKDF-SHA-1/256/384/512（RFC 5869）。**密钥协商派生**
 /// 高频（TLS 1.3 / MLS / WebRTC DTLS-SRTP / E2EE 协议的输入密钥材料→会话密钥）。PRF = HMAC-<hash>（复用
 /// `compute_hmac`）。Extract：`PRK = HMAC(salt, IKM)`（空 salt → HashLen 零）；Expand：`T(i)=HMAC(PRK, T(i-1)||info||i)`，
