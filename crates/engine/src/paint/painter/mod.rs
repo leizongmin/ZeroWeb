@@ -925,6 +925,11 @@ fn overflow_clip_radii(
 ///   维持既有「abspos 逃逸非 positioned overflow 裁剪」语义，收集时清除矩形
 ///   （CSS §11.1.1 + paint_node defer_abspos 注释；relative/sticky 的 CB = overflow
 ///   中间层本身 = static 父，适用裁剪、保留矩形）。
+///
+/// R5391：携带矩形沿途取**交集**（css-overflow-3 可视域 = 裁剪矩形组合）——
+/// 「最近者优先覆盖」使外层裁剪对迟延 positioned 后代丢失
+/// （clipped-scroller-add-content 1.25% 实证）。kill-switch
+/// `ZW_NESTED_CLIP_INTERSECT=0` 回退最近者优先。
 fn collect_positioned_descendants<'a>(
     box_node: &'a LayoutBox,
     abs_x: f32,
@@ -946,6 +951,15 @@ fn collect_positioned_descendants<'a>(
         doc,
         transform_phase,
     );
+}
+
+/// R5391 kill-switch（`ZW_NESTED_CLIP_INTERSECT=0` 回退 R3922 最近者优先覆盖）。
+// OPTIMIZATION：进程内只读一次（R5184 口径）——collect 在 paint 逐子树热路径，
+// `env::var` 每次上锁扫描 environ（R5108 热点教训）。kill-switch 约定进程启动前
+// 设定，读一次与逐次读语义等价。
+fn nested_clip_intersect_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_NESTED_CLIP_INTERSECT").as_deref() != Ok("0"))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -977,6 +991,24 @@ fn collect_positioned_descendants_inner<'a>(
             .node_id
             .and_then(|id| styles.get(&id))
             .and_then(|s| overflow_clip_radii(box_node, s, &rect, abs_x, abs_y));
+        // R5391：嵌套裁剪器矩形取**交集**（css-overflow-3：可视域 = 沿途裁剪
+        // 矩形组合）——R3922「最近者优先覆盖外层」单矩形使外层裁剪丢失
+        //（clipped-scroller-add-content：外层 hidden 对滚动后 relative 内容
+        // 漏裁 20px 带 1.25% 实证；normal flow 路径逐层 clip 双裁都生效，
+        // 携带矩形须同语义）。交集空 = 完全不可见，以零面积矩形承载（None
+        // 在消费端义为「不裁」）。kill-switch `ZW_NESTED_CLIP_INTERSECT=0`
+        // 回退最近者优先。圆角 shaped edge 仍取最近层（多圆角裁剪器交集合成
+        // 未做 FIXME）。
+        let rect = if nested_clip_intersect_enabled() {
+            match clip_rect {
+                Some(outer) => outer
+                    .intersection(&rect)
+                    .unwrap_or_else(|| Rect::new(outer.left(), outer.top(), 0.0, 0.0)),
+                None => rect,
+            }
+        } else {
+            rect
+        };
         (Some(rect), radii)
     } else {
         (clip_rect, clip_radii)

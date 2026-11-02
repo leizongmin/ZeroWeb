@@ -9,6 +9,16 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5391 修复轮（嵌套裁剪器携带矩形取交集——迟延 positioned 后代外层裁剪丢失修复；clipped-scroller-add-content ✗1.25%→✓0.00% 真通过-可信，corpus 真态 734F→731F 稳定交集 FIXED=3 REGRESSED=∅）**（2026-11-02）
+>
+> - **承接注记**：修复代码成形于上轮 session 429 中断时（工作树遗留未验证改动），本轮完成验证、kill-switch、常驻测试与全门禁。
+> - **归因**（stash A/B 逐像素 + R3922 初版考古）：案面外层 hidden 300×300（[0,300)）→ 20px spacer → 内层 scroll 300×300（[20,320)）→ relative 红底 content，`scrollTo(0,100)` 后 relative 子走 R3922 scope flush 迟延路径，携带矩形「最近者优先覆盖」只带内层视口——外层 hidden 对该子完全失效，y∈[300,320) 漏出 20px 带（6000/480000 px diff 逐像素吻合）。normal flow 主循环逐层 clip 双裁都生效，携带矩形须同语义；R3922 初版即覆盖式单矩形（git show 571eebe68），非刻意嵌套语义。
+> - **修复**（painter/mod.rs collect 一处 + kill-switch）：css_overflow_clips 臂携带矩形沿途取**交集**（css-overflow-3 可视域 = 沿途裁剪矩形组合）；交集空 = 零面积矩形承载（None 消费端义为「不裁」）；kill-switch `ZW_NESTED_CLIP_INTERSECT=0` 回退最近者优先（OnceLock 单读）；圆角 radii 仍取最近层（多圆角交集合成 FIXME）；abspos/fixed `!clip_is_scope_root` 清除臂字节不变。
+> - **常驻测试**：`paint/tests/r5391_nested_clip_intersect_tests.rs` 3 针（嵌套交集截断 (0,50,100,50) / 单裁剪器 None 分支原口径 / 交集空全清零）+ `tests/r5391_nested_clip_kill_switch.rs` 独立进程关断锚（R3858 口径）；kill-switch 外部 env corpus 二面验活（关断精确回 1.25%/5.12%）。
+> - **验证**：目标案 ✗1.25%→**✓0.00%（真通过-可信）**；连带翻绿 overflow-clip-margin-002（R3922 初版 17 案簇残留）+ single-axis-overflow-scroll-to-clip（fix 3/3 PASS、stash 2/2 FAIL 双向归因，**稳定交集 FIXED=3**）；REGRESSED 候选 6 案隔离复跑全 3/3 洗清 = 抖动族；本地集 **725/725**；zero-engine lib **3702/3702**（3699+3；r5296 门关针 env 竞态 flaky 既有账两度复现均复跑绿）；make test 腿级全绿或既有账 discharge（t27p35 隔离 3/3、gpu_compositor stash 净树 2/3 同 flake、paste_and_go stash 净树 2/2 恒红 = 对端 standing red、mutation_arm 对端在册、image_batch 二进制前置补建后隔离绿）；GPU adapter 腿 96P+1P；guarded-clippy 全 workspace EXIT=0 + fmt 清零；product-smoke PASS；bench-gate 定向 zero-engine 负载窗 3× first_paint_wall FAIL + INCONCLUSIVE（对端 runner 687% CPU 过境）→ **静窗 GATE PASS 19 指标（NEW=7）**。证据：[`rendering-compat/evidence/r5391-nested-clip-intersect-2026-11-02.md`](rendering-compat/evidence/r5391-nested-clip-intersect-2026-11-02.md)。
+> - **挂账**：**新增 ①多圆角裁剪器交集合成未做**（shaped edge radii 仍取最近层，corpus 未现驱动案）②交集臂 abspos/fixed CB 精度维持 R3922 保守口径（交集含中间层段时对 CB 在中间层上方的 abspos 理论过裁，与旧口径一致未放宽）。R5390 挂账全维持（段 fill 残留 0.83%、多行整盒 slice half-leading 差、整盒系回落 owner、bleed 外延、::selection decoration 段绘制、underline-order 0.35%、highlight-painting-004、Custom Highlights API、Ahem ascent、ZW_FLOAT_DEFINITE_H_REMEASURE 专门案评估、R5386 挂账全维持、mutation_arm/default_actions/paste_and_go 对端账）。**下一步 R5392**：①731F 真态账本续扫择轻（避开对端面）②backdrop-root 深评（维持）③color-6（维持）。
+>
+
 > **▶ R5390 修复轮（部分行选区段 fill 分段——::selection bg 按段域发射叠元素 bg 之上；selection-background-painting-order ✗1.79%→✓0.83% 翻绿；css-pseudo 域 33F→32F 零新增红）**（2026-11-02）
 >
 > - **归因**（dump PNG 对比 + 发射路径勘线）：test 页 span 黑 bg 全条 + 橙 "ii∫∫∫"（80px 斜体），选区 [0,3)、`span::selection { background:#0000FFC0; color:transparent }`；ref1 三层 hrt_layers 叠加且 support/highlights.css 全层 color:transparent——可见面纯 bg 矩形组合（层1 黑全条 + 层2 蓝选区段），test 选区段纯黑 = 蓝 fill 缺失（R5389 完整度门按设计拦住 bg 非透明案）。fill 与字形层序不进双页判定（overhang 夹心序 FIXME）。

@@ -95,6 +95,9 @@ mod r5386_registered_var_render_tests;
 /// R5389 部分行选区分段绘制（css-pseudo-4 §highlight-painting：段内字形与
 /// originating decoration 以 ::selection color 重绘；账平门/UA 回落/整行零触碰守卫）。
 mod r5389_selection_partial_line_tests;
+/// R5391 嵌套裁剪器携带矩形取交集（css-overflow-3：迟延 positioned 后代可视域 =
+/// 沿途裁剪矩形组合；单裁剪器 None 分支/空交集零面积承载守卫）。
+mod r5391_nested_clip_intersect_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;
