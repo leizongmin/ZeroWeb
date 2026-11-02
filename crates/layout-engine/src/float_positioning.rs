@@ -621,6 +621,11 @@ fn float_text_max_width_adv(
         &style.font_style,
         style.font_stretch,
     );
+    // FIXME（t-trending DEF-3）：此处无条件 collapse_whitespace，不消费 float 自身
+    // `white-space:pre`（css-text-3 §white-space-processing：pre 族保留空白不折叠、
+    // `\n` 为强制换行点）——float 自身声明 pre 族时 preferred 窄计（原始空白/换行
+    // 被折叠）。窄面形态未动态复现、欠测；如现伪影按 R3778 run 级有效 white-space
+    // 口径（collect_items.rs 折叠前判定）在测量前分臂。
     let text = crate::inline::collapse_whitespace(&doc.text_content(node_id)?);
     if text.trim().is_empty() {
         return Some(0.0);

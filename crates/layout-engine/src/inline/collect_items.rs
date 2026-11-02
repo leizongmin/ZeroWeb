@@ -734,6 +734,13 @@ is_isolated_bidi: style.is_some_and(|s| {
                         // is_block_level 子的 dom id 集），此处查集发 BlockBreak。
                         // UA 默认 display 兜底不可用——页样式可把 div 转 inline
                         //（run-in-contains-block-005 的 #r），空表无法区分。
+                        // FIXME（t-trending DEF-2）：本流块级子谓词未排除 float 块子
+                        //（CSS2 §9.3.1：float 与 abspos 同为离流盒，float:left div 亦
+                        // 命中下方 is_block_level 全集）——与 R109 拆分侧
+                        // `inline_block_split::is_out_of_flow` 的 abspos 显式排除不对称
+                        //（float 仅由下方 R3784 臂后置分流 FloatAnchor）。已证无实害
+                        //（floats 321 例 kill-switch A/B 失败集 IDENTICAL + 首轮 4 组
+                        // 动态探针无文本丢失）；如现伪影再按 OOF 同款在谓词处排除。
                         let is_block_level = style
                             .map(|s| {
                                 matches!(
