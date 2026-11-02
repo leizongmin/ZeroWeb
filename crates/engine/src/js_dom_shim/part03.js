@@ -20676,6 +20676,49 @@
         configurable: true, enumerable: true,
       });
     }
+    // s239（html-semantics M2）：plain OPTION 的 value/label/text IDL 读三联
+    //（HTML §4.10.9 dom-option-value/label/text getter，身份路径 R3907 同语义——
+    // 解析视图 plain option 三读 undefined 实证面：innerHTML= 直写 option 的宿主
+    // 属性链对 null 不可达，且本工厂此前仅按 tag 装 href/contentDocument 少数
+    // accessor）。读经共享 helper 按 sel/handle 在场自动分流：身份态走 R3907 既有
+    // 链（材化 adoptNode 后读数与宿主态一致），plain 走本地 getAttribute/
+    // childNodes 走查（script 排除 + strip-collapse 同 `_zwOptCollectWalk`）。
+    // setter 面语料无钉面挂账（FIXME(s239)：getter-only 与 iframe
+    // contentDocument 同形；赋值面——value 缺省回落 text 写、label 写属性——
+    // 与 s228 车道交叉评估后立切）。
+    if (String(tag || '').toLowerCase() === 'option') {
+      Object.defineProperty(node, 'value', {
+        get: function () { return _zwOptionValue(node); },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(node, 'label', {
+        get: function () {
+          var _olS = null, _olH = null;
+          try { _olS = node.__zwSelector || null; } catch (_e239ls) {}
+          try { _olH = node.__zwHandle || null; } catch (_e239lh) {}
+          if (_olS || _olH) {
+            var _olV = _zwOptAttrNoNs(_zwOptKey(_olS, _olH), _olS, _olH, 'label');
+            if (_olV != null) return _olV;
+            return _zwOptChildText(_olS, _olH);
+          }
+          var _olp;
+          try { _olp = node.getAttribute('label'); } catch (_e239lp) { _olp = null; }
+          if (_olp != null) return String(_olp);
+          return _zwOptChildTextPlain(node);
+        },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(node, 'text', {
+        get: function () {
+          var _otS = null, _otH = null;
+          try { _otS = node.__zwSelector || null; } catch (_e239ts) {}
+          try { _otH = node.__zwHandle || null; } catch (_e239th) {}
+          if (_otS || _otH) return _zwOptChildText(_otS, _otH);
+          return _zwOptChildTextPlain(node);
+        },
+        configurable: true, enumerable: true,
+      });
+    }
     node.hasAttribute = _zwMElHasAttribute;
     // navigation-compat M3-S7：子文档合成树 IFRAME 元素的 contentDocument/
     // contentWindow 面（spec
@@ -26072,12 +26115,34 @@ return e;
     return _svHits;
   }
 
+  // s239：plain 形 child text（无 sel/handle wrapper——childNodes 本地走查，script
+  // 排除/深度帽同 `_zwOptCollectWalk`；身份态请走 `_zwOptChildText`）。
+  function _zwOptChildTextPlain(el) {
+    var _ocKids = null;
+    try { _ocKids = el.childNodes; } catch (_e239ct) { _ocKids = null; }
+    var _ocOut = [];
+    _zwOptCollectWalk(_ocKids, _ocOut, 0);
+    return _zwOptStripCollapse(_ocOut.join(''));
+  }
   // option value 读（R3907 `_zwOptAttrNoNs`/`_zwOptChildText` 同口径——无 ns value
   // 属性存在即采纳，缺省回落 collapse 后 child text content）。
   function _zwOptionValue(el) {
     var _ovSel = null, _ovHandle = null;
     try { _ovSel = el.__zwSelector || null; } catch (_ovE) { _ovSel = null; }
     try { _ovHandle = el.__zwHandle || null; } catch (_ovE2) { _ovHandle = null; }
+    // s239：无身份 pending 解析视图（innerHTML= 直写 option，R304）宿主属性链对
+    // null 不可达——本地读 value 内容属性（存在即采纳含空串，无 ns 口径同
+    // R122/getAttribute），缺省回落本地 collect text value。材化后（sel/handle 在
+    // 场）自动落身份臂。HTML §dom-option-value。
+    if (!_ovSel && !_ovHandle) {
+      try {
+        if (el.hasAttribute('value')) {
+          var _ovpA = el.getAttribute('value');
+          return (_ovpA == null) ? '' : String(_ovpA);
+        }
+      } catch (_e239ov) {}
+      return _zwOptChildTextPlain(el);
+    }
     var _ovV = _zwOptAttrNoNs(_ovSel || _ovHandle, _ovSel, _ovHandle, 'value');
     if (_ovV != null) return _ovV;
     return _zwOptChildText(_ovSel, _ovHandle);
