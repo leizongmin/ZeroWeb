@@ -6,16 +6,38 @@
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
-——**域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
-回归）**；余批按依赖就绪度推进：XOF 五连 → PQC 两域 → X448/KMAC →
+——域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
+回归）；**域切片第二轮完成（XOF 五连 SHA-3/SHAKE/cSHAKE/KT/TurboSHAKE，
++1,676P 零回归）**；余批按依赖就绪度推进：PQC 两域 → X448/KMAC →
 M 末收口重定基
-**最后更新**: 2026-11-02（D1 域切片第一轮落账：三域全绿 +6,216 FIXED 落靶 + 锚对照零回归 + 对照基准更新 d1s1）
+**最后更新**: 2026-11-02（D1 域切片第二轮落账：XOF 五连 12 算法 digest 面全绿 +1,676 FIXED 落 16 案靶面 + 锚对照零回归 + 对照基准更新 d1s2；KT 24MB 案 heisenbug 专项排查挂账归因）
 
 ---
 
 ## 当前状态
 
-**D1 域切片第一轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s1-argon2-ocb-chacha-slice.md)）**：
+**D1 域切片第二轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s2-xof-slice.md)）**：
+XOF digest 域五连 12 算法全链路（deps 五 crate → host 实现 → shim hex wire
+接线 → REG 12 行 → 定向翻绿 → 锚对照零回归）——SHA3-224/256/384/512 +
+SHAKE128/256 + CSHAKE128/256 + KT128/256 + TURBOSHAKE128/256。**FIXED
+1,676 落 16 案全部 XOF 靶面**（cshake 352 / KT 592 / sha3 192 /
+turboshake 540，tentative+modern × 双腿逐案对称），全量分母 360 案 /
+82,065 keys 不变 = **P 62,071 + F 19,990 + T 4**，对 d1s1 锚 REGRESSED = 0、
+FLIPPED = 0、case/subtest 级零漂移。切片内一处修复：digest name 单次读
+（spec normalizeAlgorithm get "name" 恰一次——cSHAKE 语料 getter 式
+transfer 组暴露二次读触发 detached 再 transfer TypeError）。runner 单测
+276P/0F、clippy/fmt 干净、最终代码复跑全量落 d1s2 锚逐位一致。
+**KT256 24MB 案 heisenbug 专项**（evidence KT flake 节）：唯一复现案
+（间歇 ~1/6，错值为合法摘要形态），排查链 = host 独立计算验证一致 +
+现场三族并行对照（同 buffer KT256 错 / SHAKE256 / SHA3-256 对）+ 13 组
+截断偏移假设全否 + 诊断在位 11+ 连绿抑制——归因 rquickjs 0.7 桥层大串
+参数拷贝或 QuickJS GC 时序（超 D1 修复面），按 DC-3 通过率+归因口径
+挂账不阻塞域收敛，后续全量跑自然复跑（本轮全量两次均未复发）。
+对照基准更新为
+[d1s2 锚](evidence/2026-11-02-d1s2-xof-full.json.gz)。
+下一批：PQC 两域 → X448/KMAC → M 末收口重定基。
+
+**D1 域切片第一轮（2026-11-02，[evidence](evidence/2026-11-02-d1s1-argon2-ocb-chacha-slice.md)）**：
 Argon2d/i/id + AES-OCB + ChaCha20-Poly1305 三域全链路（deps 引入 → host
 实现 → shim 八运算接线 → REG 扩表 → 定向翻绿 → 锚对照零回归）——**+6,216
 FIXED 落 48 案（三域靶面无域外）+ 新注册 1,318 全 Pass**，全量分母 360 案 /
@@ -406,3 +428,20 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
     完好，红在 browser 多进程 typing/导航集成面。本流不越界代执行
     （run-rules #9 先例），归 25 号/33 号 forms/typing 面通道核办；
     修复后 browser 腿回归绿为准的收口仍属 make test 完整门禁。
+- 2026-11-02 R5391 D1 域切片第二轮（XOF 五连）：触面 `Cargo.toml`/
+  `Cargo.lock`/`crates/engine/Cargo.toml`（五 workspace 依赖 sha3/shake/
+  cshake/k12/turboshake）、`js_dom_bridge/crypto.rs`（XOF host 函数 +
+  EC/OKP 段拆出至新文件）、`js_dom_bridge/crypto_asym.rs`（新文件，
+  行数治理纯搬家）、`js_dom_bridge.rs`（mod 挂载 +4 行）、
+  `js_dom_bridge/callbacks.rs`（一注册 +18）、`js_dom_shim/part01b.js`
+  （hex 工具 + digest name 单次读 + XOF 分支 +122）、`part02a.js`
+  （REG 12 行 + 注释更正 +19/-4）——共享清单（part01.js/script_gen.rs/
+  testharness.rs）零触碰。**KT 24MB flake 诊断轮**新增临时探针案
+  （`wpt-data/WebCryptoAPI/digest/xof_flake_probe.https.any.js`）与 host
+  指纹诊断（crypto.rs TEMP-DEBUG 两段，落 /tmp 日志）——均为一次性
+  诊断工件，定位完成后删除，未入任何提交；诊断轮复跑全部走
+  `make testharness-webcrypto` 或 make 同款 test-guard 参数直调
+  （`--json` 账面通道 make target 无挂口，test-guard 守卫等价在位）。
+  `/tmp` scratch（k12 独立验证 probe）用后删除，仓库零残留。开工
+  rebase 已是最新（65cc6a4ca 自身）；make test 前置 `zero-browser`
+  debug 预建（R5389 r2 先例）。

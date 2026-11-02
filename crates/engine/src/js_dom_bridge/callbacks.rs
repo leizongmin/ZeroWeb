@@ -1077,6 +1077,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.digest` XOF 扩展域（webcrypto-compat-v3 域切片）——SHA-3 家族 +
+    // SHAKE/cSHAKE/KT/TurboSHAKE（RFC 9861 / SP 800-185 / FIPS 202）。**hex wire**
+    // （XOF 语料最大输入 24,137,569 字节，csv wire 在 QuickJS 案预算内不保）：arg[0]=
+    // 归一算法名，arg[1]=输入 hex，arg[2]=输出 bit 数（shim 已解析缺省），arg[3]=
+    // customization hex（cSHAKE/KT，空 ≡ 缺席），arg[4]=domainSeparation 字节
+    // （TurboSHAKE，0 ≡ 缺席）。返输出 hex（合法空输出 → "," 哨兵；error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_xof_digest",
+        Box::new(|args: &[String]| -> String {
+            let algo = args.first().map(String::as_str).unwrap_or("");
+            let input_hex = args.get(1).map(String::as_str).unwrap_or("");
+            let output_bits: u32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let param_hex = args.get(3).map(String::as_str).unwrap_or("");
+            let param_num: u32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_subtle_xof_digest(algo, input_hex, output_bits, param_hex, param_num)
+        }),
+    );
+
     // `crypto.subtle.encrypt/decrypt("AES-GCM", ...)`（R2957；M3a 矩阵）——AES-128/192/256-GCM。
     // arg[0]=mode("encrypt"/"decrypt")，arg[1]=key csv，arg[2]=iv csv，arg[3]=data csv，arg[4]=aad csv，
     // arg[5]=tagLength 位（缺省 128）。返 csv（error → 空）。

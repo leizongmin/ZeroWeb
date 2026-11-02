@@ -37,6 +37,10 @@ pub use computed_style_cache::*;
 mod crypto;
 pub use crypto::*;
 
+// WebCrypto 非对称家族（EC + OKP；webcrypto-compat-v3 D1 切片同轮行数治理拆出）。
+mod crypto_asym;
+pub use crypto_asym::*;
+
 // CompressionStream/DecompressionStream host 实现（R2986，gzip/deflate 经 flate2）。复用 crypto byte wire。
 mod compress;
 pub use compress::*;

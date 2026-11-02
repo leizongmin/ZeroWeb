@@ -2311,6 +2311,56 @@
     for (var i = 0; i < view.length; i++) out.push(view[i] & 0xff);
     return out;
   }
+
+  // XOF digest hex wire（webcrypto-compat-v3 D1 域切片：digest SHA-3/SHAKE/cSHAKE/
+  // KT/TurboSHAKE 扩展域）。XOF 语料最大输入 24,137,569 字节（RFC 9861 ptn(17^6)
+  // 向量）——_zw_bufToBytes 的 number[] 中转 + csv join 在该量级的 QuickJS 构成开销
+  // 超案预算（timeout=long 60s），改 hex（2 char/byte ASCII，256 项对码表 + 分块
+  // join）直建；host 逐 nibble 解码快一个量级。view 构造/detached/字符串语义与
+  // _zw_bufToBytes 同构；非 BufferSource 返 null（调用方分流——digest 面按空输入）。
+  var _ZW_HEX_PAIRS = (function () {
+    var H = '0123456789abcdef';
+    var t = [];
+    for (var i = 0; i < 256; i++) t.push(H.charAt(i >> 4) + H.charAt(i & 15));
+    return t;
+  })();
+  function _zw_bytesToHex(data) {
+    if (typeof data === 'string') data = new TextEncoder().encode(data);
+    if (data == null) return '';
+    var view;
+    try {
+      if (data instanceof ArrayBuffer) view = new Uint8Array(data);
+      else if (data && data.buffer) view = new Uint8Array(data.buffer, data.byteOffset || 0, data.byteLength != null ? data.byteLength : data.length);
+      else if (typeof data.length === 'number') view = data;
+      else return null;
+    } catch (_detached) {
+      return ''; // detached ArrayBuffer（buffer transfer 后）→ 零字节输入
+    }
+    var out = [];
+    var CHUNK = 16384;
+    for (var i = 0; i < view.length; i += CHUNK) {
+      var end = Math.min(i + CHUNK, view.length);
+      var parts = new Array(end - i);
+      for (var j = i; j < end; j++) parts[j - i] = _ZW_HEX_PAIRS[view[j]];
+      out.push(parts.join(''));
+    }
+    return out.join('');
+  }
+  function _zw_hexToBytes(hex) {
+    var arr = new Uint8Array(hex.length >> 1);
+    for (var i = 0; i < arr.length; i++) {
+      arr[i] = parseInt(hex.charAt(i * 2), 16) * 16 + parseInt(hex.charAt(i * 2 + 1), 16);
+    }
+    return arr;
+  }
+  // XOF digest 注册面（upperAscii 归一形态；REG part02a 同片扩表——supports 语义）。
+  var _ZW_XOF_DIGEST_NAMES = {
+    'SHA3-224': 1, 'SHA3-256': 1, 'SHA3-384': 1, 'SHA3-512': 1,
+    'SHAKE128': 1, 'SHAKE256': 1,
+    'CSHAKE128': 1, 'CSHAKE256': 1,
+    'KT128': 1, 'KT256': 1,
+    'TURBOSHAKE128': 1, 'TURBOSHAKE256': 1
+  };
   // crypto.subtle（R2793 digest + R2955 HMAC sign/verify/importKey）。digest 委托 host
   // `__zw_crypto_subtle_digest`；HMAC sign/verify 委托 `__zw_crypto_subtle_hmac`（手写 HMAC，复用 sha1/sha2）。
   // **scope**：digest 全 hash；HMAC 全 hash（importKey raw + sign + verify）；其余 WebCrypto（RSA/ECDSA/AES/
@@ -3907,11 +3957,79 @@
       if (typeof algo === 'string') {
         algo = { name: algo };
       }
-      if (algo == null || typeof algo !== 'object' || algo.name == null) {
+      if (algo == null || typeof algo !== 'object') {
         return Promise.reject(new TypeError('Algorithm name is required'));
       }
-      var a = _zw_upperAscii(String(algo.name));
+      // name **单次读**（spec normalizeAlgorithm get "name" 一次）：XOF 语料以 name
+      // getter 为时机探针（digest.js「transferred buffer during call」组——getter 内
+      // transfer buffer），二次读 getter 对已 detach buffer 再 transfer 抛 TypeError。
+      var algoName = algo.name;
+      if (algoName == null) {
+        return Promise.reject(new TypeError('Algorithm name is required'));
+      }
+      var a = _zw_upperAscii(String(algoName));
       return new Promise(function (resolve, reject) {
+        // XOF 扩展域（webcrypto-compat-v3 D1 域切片）——digest SHA-3/SHAKE/cSHAKE/
+        // KT/TurboSHAKE（REG part02a 同片扩表）。hex wire 见 _zw_bytesToHex。
+        if (_ZW_XOF_DIGEST_NAMES[a]) {
+          if (typeof __zw_crypto_subtle_xof_digest !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle.digest requires host callback', 'NotSupportedError'));
+            return;
+          }
+          if (_zw_isSharedBuffer(data)) {
+            throw new TypeError('BufferSource must not be a SharedArrayBuffer or a view onto one');
+          }
+          // outputLength（webcrypto-modern-algos XOF 面）：缺席 → 缺省位长（128 系
+          // 256 / 256 系 512，host 不二次定缺省——cSHAKE 显式 0 bit 合法空输出与缺席
+          // 在此分流）；在席须非负 8 倍数，否则 OperationError（spec normalize
+          // length 检查）。SHA-3 定长家族传 0（host 忽略）。
+          var bits = 0;
+          if (algo.outputLength != null) {
+            if (typeof algo.outputLength !== 'number' || algo.outputLength < 0 || algo.outputLength % 8 !== 0) {
+              reject(new _zw_subtleDE('outputLength must be a non-negative multiple of 8', 'OperationError'));
+              return;
+            }
+            bits = algo.outputLength;
+          } else if (a === 'SHAKE128' || a === 'CSHAKE128' || a === 'KT128' || a === 'TURBOSHAKE128') {
+            bits = 256;
+          } else if (a === 'SHAKE256' || a === 'CSHAKE256' || a === 'KT256' || a === 'TURBOSHAKE256') {
+            bits = 512;
+          }
+          var paramHex = '';
+          var paramNum = 0;
+          if (a === 'CSHAKE128' || a === 'CSHAKE256' || a === 'KT128' || a === 'KT256') {
+            // customization（cSHAKE S / KT C）——BufferSource → hex（空 ≡ 缺席）。
+            if (algo.customization != null) {
+              var cHex = _zw_bytesToHex(algo.customization);
+              if (cHex === null) {
+                reject(new TypeError('customization must be a BufferSource'));
+                return;
+              }
+              paramHex = cHex;
+            }
+          } else if (a === 'TURBOSHAKE128' || a === 'TURBOSHAKE256') {
+            // domainSeparation（RFC 9861 D 字节）：缺席 → 缺省 0x1f（crate
+            // DEFAULT_DS 同值）；在席须 1..=127 整数（spec DS 字节域）。
+            if (algo.domainSeparation != null) {
+              var ds = algo.domainSeparation;
+              if (typeof ds !== 'number' || ds < 1 || ds > 127 || ds % 1 !== 0) {
+                reject(new _zw_subtleDE('domainSeparation must be an integer in [1, 127]', 'OperationError'));
+                return;
+              }
+              paramNum = ds;
+            }
+          }
+          var inHex = _zw_bytesToHex(data);
+          if (inHex === null) inHex = ''; // 非 BufferSource → 与 bufToBytes 同语义空输入
+          var xout = __zw_crypto_subtle_xof_digest(a, inHex, bits, paramHex, paramNum);
+          if (xout === ',') { resolve(new Uint8Array(0)); return; } // 合法空输出哨兵
+          if (!xout) {
+            reject(new _zw_subtleDE("Unsupported hash algorithm: '" + a + "'", 'NotSupportedError'));
+            return;
+          }
+          resolve(_zw_hexToBytes(xout));
+          return;
+        }
         var bytes = _zw_bufToBytes(data);
         if (typeof __zw_crypto_subtle_digest !== 'function') {
           reject(_zw_subtleDE('crypto.subtle.digest requires host callback', 'NotSupportedError'));

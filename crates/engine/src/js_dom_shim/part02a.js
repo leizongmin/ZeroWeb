@@ -38,7 +38,7 @@
 
     // 注册面 = 本实现既有算法（shim part01b/02）× op 真实支持矩阵。supports 语义
     // =「归一成功 + op 注册 + 参数面校验」——**只登记真实现面，不虚报未实现域**：
-    // ML-KEM/ML-DSA/X448/Ed448/KMAC/OCB/ChaCha/XOF/Argon2/Hybrid 未注册 → 全 op
+    // ML-KEM/ML-DSA/X448/Ed448/KMAC/Hybrid 未注册 → 全 op
     // false（supports-modern matrix 期望 true，待三期按域切片逐行扩表）。
     // pub=1：算法支持私→公派生（getPublicKey 域，非对称族）。
     // wrapKey/unwrapKey 直注册仅 AES-KW（RFC 3394 原生封装）；AES-CBC/CTR/GCM、
@@ -71,7 +71,22 @@
       'CHACHA20-POLY1305': { ops: { encrypt: 1, decrypt: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
       'ARGON2D':  { ops: { importKey: 1, deriveBits: 1 } },
       'ARGON2I':  { ops: { importKey: 1, deriveBits: 1 } },
-      'ARGON2ID': { ops: { importKey: 1, deriveBits: 1 } }
+      'ARGON2ID': { ops: { importKey: 1, deriveBits: 1 } },
+      // webcrypto-compat-v3 域切片（D1 拍板 2026-11-02）XOF 摘要面：SHA-3 定长家族
+      // （FIPS 202）+ SHAKE/cSHAKE（SP 800-185）+ KT/TurboSHAKE（RFC 9861）——digest
+      // 唯一 op（host `__zw_crypto_subtle_xof_digest`，hex wire）。
+      'SHA3-224': { ops: { digest: 1 } },
+      'SHA3-256': { ops: { digest: 1 } },
+      'SHA3-384': { ops: { digest: 1 } },
+      'SHA3-512': { ops: { digest: 1 } },
+      'SHAKE128': { ops: { digest: 1 } },
+      'SHAKE256': { ops: { digest: 1 } },
+      'CSHAKE128': { ops: { digest: 1 } },
+      'CSHAKE256': { ops: { digest: 1 } },
+      'KT128': { ops: { digest: 1 } },
+      'KT256': { ops: { digest: 1 } },
+      'TURBOSHAKE128': { ops: { digest: 1 } },
+      'TURBOSHAKE256': { ops: { digest: 1 } }
     };
 
     // ASCII 大写映射（a-z → A-Z，非 ASCII 不动）——part01b _zw_upperAscii 同语义
