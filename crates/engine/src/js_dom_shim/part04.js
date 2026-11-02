@@ -954,6 +954,11 @@
               if (ctx && ctx._inLayer) {
                 throw _zwDomException('toDataURL: not allowed while a layer is open', 'InvalidStateError');
               }
+              // s247：画布 origin-unclean → SecurityError
+              //（https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl）。
+              if (ctx && ctx._zwUnclean) {
+                throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
+              }
               if (!ctx || !ctx._handle) return 'data:,'; // 未 getContext → 无 bitmap
               var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
               if (!csv) return 'data:,';
@@ -973,6 +978,11 @@
                 // R34xx（layers 目录）：层打开期间 toBlob 抛 InvalidStateError。
                 if (_zwCanvasCtx[key] && _zwCanvasCtx[key]._inLayer) {
                   throw _zwDomException('toBlob: not allowed while a layer is open', 'InvalidStateError');
+                }
+                // s247：画布 origin-unclean → SecurityError
+                //（https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob）。
+                if (_zwCanvasCtx[key] && _zwCanvasCtx[key]._zwUnclean) {
+                  throw _zwDomException('toBlob on an origin-unclean canvas', 'SecurityError');
                 }
                 if (!_zwCanvasCtx[key] || !_zwCanvasCtx[key]._handle) {
                   // 惰性建 ctx（镜像 toDataURL getContext 调用）——经 proxy getContext get-trap 建 + 缓存。

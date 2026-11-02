@@ -7811,9 +7811,29 @@
   // R34xx（reset 目录全族）：client 状态镜像复位默认——ctx.reset() 与 canvas
   // width/height setter（spec：设尺寸重置 bitmap + 全部绘图状态）共用。driving:
   // 2d.reset.state.* 全族 + 2d.canvas.host.initial.reset.2dstate。
+  // s247：canvas origin-clean 源判——src 对文档 base 绝对化后与文档 origin 比较
+  //（HTML §4.12.5.1.1 origin-clean 判源）。data:/blob: 透明源不污染
+  //（security.dataURI 断言 data: 图像 drawImage 后仍可读回）；解析失败不污染
+  //（宽容回落，与 part02 pushState 同源判定 best-effort 口径一致）。
+  function _zwCanvasSrcCrossOrigin(src) {
+    try {
+      var s = String(src || '');
+      if (!s || /^(data|blob):/i.test(s)) return false;
+      var base = (globalThis.document && document.location && document.location.href) ||
+        (globalThis.location && location.href) || 'https://wpt.test/';
+      return new URL(s, base).origin !== new URL(base).origin;
+    } catch (_eOc) {
+      return false;
+    }
+  }
+
   function _zwResetCtxMirrors(ctx) {
     ctx._fs = '#000000';
     ctx._ss = '#000000';
+    // s247：位图复位（width/height IDL、reset()、OffscreenCanvas 尺寸 setter）
+    // 同步复位 origin-clean（spec §4.12.5.1.1 resize/reset 步骤集——五调用点
+    // （DOM set-trap/standalone/OffscreenCanvas×4/reset()）均为位图复位语义）。
+    ctx._zwUnclean = false;
     ctx._ga = 1.0;
     ctx._gco = 'source-over';
     ctx._sc = 'rgba(0, 0, 0, 0)';
@@ -8090,6 +8110,11 @@
       if (el._ctx && el._ctx._inLayer) {
         throw _zwDomException('toDataURL: not allowed while a layer is open', 'InvalidStateError');
       }
+      // s247：origin-unclean 画布读回抛 SecurityError（spec §4.12.6.4 toDataURL
+      // 步骤 1——security.* 语料 assert_throws_dom("SECURITY_ERR")）。
+      if (el._ctx && el._ctx._zwUnclean) {
+        throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
+      }
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
       var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
@@ -8111,6 +8136,11 @@
       //（2d.layer.malformed-operations-with-promises）。
       if (el._ctx && el._ctx._inLayer) {
         throw _zwDomException('toBlob: not allowed while a layer is open', 'InvalidStateError');
+      }
+      // s247：origin-unclean 画布读回拒付（spec §4.12.6.5 toBlob——reject
+      // SecurityError；层打开期同款异步派发形态，此处同步抛同 toDataURL 口径）。
+      if (el._ctx && el._ctx._zwUnclean) {
+        throw _zwDomException('toBlob on an origin-unclean canvas', 'SecurityError');
       }
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
@@ -8693,7 +8723,18 @@
         if (flipY) {
           wire = _zwFlipWireY(wire);
         }
+        // s247：origin-clean 捕获——img 源按 src 判跨域；canvas 源继承源画布 _zwUnclean
+        //（HTML #createimagebitmap：源 not origin-clean → 位图 not origin-clean）。
+        var bmUnclean = false;
+        if (src) {
+          if (typeof src.getContext !== 'function' && typeof src.naturalWidth === 'number') {
+            bmUnclean = _zwCanvasSrcCrossOrigin((src.getAttribute ? String(src.getAttribute('src') || '') : '') || String(src.src || ''));
+          } else if (typeof src.getContext === 'function' && src._ctx) {
+            bmUnclean = !!src._ctx._zwUnclean;
+          }
+        }
         var bm = _zwMakeImageBitmap(wire);
+        if (bmUnclean) bm._zwBitmapUnclean = true;
         if (bm.width <= 0 || bm.height <= 0) {
           // R56h：spec 解码失败 → InvalidStateError DOMException（2d.drawImage.broken 的
           // promise_rejects_dom("InvalidStateError")——旧 TypeError 缺 DOMException code）。
@@ -8956,6 +8997,11 @@
         } else if (v && typeof v === 'object' && v._zwPattern) {
           this._fs = v;
           __zw_canvas_op(h, 'setFillStylePattern', String(v._zwPattern));
+          // s247：spec fillStyle/strokeStyle 设非 origin-clean CanvasPattern 即污染画布
+          //（HTML #dom-context-2d-fillstyle 设值步骤——"If value's origin-clean flag is
+          // false, then set this's canvas's origin-clean flag to false"；
+          // security.pattern.* 语料 set 后即换 'red' 仍断言 throw 证 set 时语义）。
+          if (v._zwPatUnclean) this._zwUnclean = true;
         } else if (v && typeof v === 'object') {
           // R34xx：color object（CSSRGB/CSSHSL/plain {r,g,b[,a]}——spec CSS Color 4；
           // 2d.fillStyle.colorObject.* / CSSRGB / CSSHSL）。转换失败（不可转换对象）回落旧行为。
@@ -9003,6 +9049,8 @@
         } else if (v && typeof v === 'object' && v._zwPattern) {
           this._ss = v;
           __zw_canvas_op(h, 'setStrokeStylePattern', String(v._zwPattern));
+          // s247：set 时污染（同 fillStyle 注——HTML #dom-context-2d-strokestyle）。
+          if (v._zwPatUnclean) this._zwUnclean = true;
         } else if (v && typeof v === 'object') {
           // R34xx：color object（同 fillStyle；2d.strokeStyle.colorObject.*）。
           var _cs = _zwColorObjectToString(v);
@@ -9642,6 +9690,10 @@
           if (pid2 && pid2 !== '0') {
             // R34xx：CanvasPattern 全局构造器 + prototype（2d.pattern.basic.type）。
             var pat = { _zwPattern: pid2 };
+            // s247：pattern 创建时快照源清洁度（spec createPattern——创建本身不污染，
+            // 使用面（fillStyle/strokeStyle 设值）按此旗标污染；security.pattern.create.*
+            // 创建后读回合法 / pattern.canvas.timing.* 创建后源转脏仍不污染）。
+            pat._zwPatUnclean = _zwCanvasSrcCrossOrigin(imgSrc2);
             Object.setPrototypeOf(pat, CanvasPattern.prototype);
             return pat;
           }
@@ -9665,6 +9717,9 @@
         throw _zwDomException('createPattern: canvas has zero size', 'InvalidStateError');
       }
       var wire = '';
+      // s247：源清洁度快照（创建时不污染，旗标随 pattern 对象——消费面
+      // fillStyle/strokeStyle 设值按此污染）。ImageData 源恒 clean。
+      var patUnclean = false;
       if (image && typeof image.getContext === 'function') {
         // R34xx（layers 目录）：源 canvas 上下文有打开层 → InvalidStateError
         //（2d.layer.malformed-operations：ctx.beginLayer 后经另一 ctx2.drawImage(canvas)）。
@@ -9690,6 +9745,8 @@
           if (sw > 0 && sh > 0) {
             wire = String(__zw_canvas_op(srcH, 'getImageData', '0', '0', String(sw), String(sh)));
           }
+          // s247：canvas 源创建时快照源 ctx origin-clean 旗标。
+          patUnclean = !!sctx._zwUnclean;
         }
       } else if (image && image._zwBitmapWire) {
         // R34xx：ImageBitmap 源（createImageBitmap 产物——offscreen worker 的
@@ -9705,7 +9762,7 @@
       var pid = String(__zw_canvas_op(h, 'createPattern', wire, String(repetition || '')));
       // R34xx：canvas 源 pattern 同挂 CanvasPattern.prototype（setTransform 可见）。
       if (!globalThis.CanvasPattern) globalThis.CanvasPattern = function CanvasPattern() {};
-      var cpat = { _zwPattern: pid };
+      var cpat = { _zwPattern: pid, _zwPatUnclean: patUnclean };
       Object.setPrototypeOf(cpat, CanvasPattern.prototype);
       return cpat;
     };
@@ -10505,6 +10562,9 @@
         var bmw = image.width | 0;
         var bmh = image.height | 0;
         if (bmw <= 0 || bmh <= 0) return;
+        // s247：非 origin-clean 位图源 → 污染（spec drawImage 步骤——源 origin-clean
+        // false 则设画布 origin-clean false；security 源经 createImageBitmap 捕获）。
+        if (image._zwBitmapUnclean) this._zwUnclean = true;
         if (a.length === 3) {
           __zw_canvas_op(h, 'drawImage', image._zwBitmapWire, String(a[1]), String(a[2]),
             image._zwBitmapCs || 'srgb');
@@ -10531,6 +10591,9 @@
         var imgSrc = (image.getAttribute ? String(image.getAttribute('src') || '') : '') || String(image.src || '');
         var iwire = String(__zw_get_image_wire(imgSrc));
         if (iwire) {
+          // s247：非 origin-clean 图像源 → 污染（spec drawImage 步骤——
+          // security.drawImage.image.*：跨源图（data:/blob: 除外）绘制即污染）。
+          if (_zwCanvasSrcCrossOrigin(imgSrc)) this._zwUnclean = true;
           if (a.length === 3) {
             __zw_canvas_op(h, 'drawImage', iwire, String(a[1]), String(a[2]));
           } else if (a.length === 5) {
@@ -10605,6 +10668,9 @@
         throw _zwDomException('drawImage: source canvas has zero dimension', 'InvalidStateError');
       }
       var wire = String(__zw_canvas_op(srcHandle, 'getImageData', '0', '0', String(sw), String(sh)));
+      // s247：源 canvas origin-unclean → 传染（spec drawImage 步骤——
+      // security.drawImage.canvas.*：非 origin-clean canvas 源绘制即污染）。
+      if (image._ctx._zwUnclean) this._zwUnclean = true;
       if (a.length === 3) {
         __zw_canvas_op(h, 'drawImage', wire, String(a[1]), String(a[2]));
       } else if (a.length === 5) {
@@ -10622,6 +10688,11 @@
       //（2d.layer.malformed-operations——getImageData 打开期调用限制）。
       if (this._inLayer) {
         throw _zwDomException('getImageData: not allowed while a layer is open', 'InvalidStateError');
+      }
+      // s247：origin-unclean 画布读回抛 SecurityError（spec §4.12.6.3 getImageData
+      // 步骤 1——security.* 语料 assert_throws_dom("SECURITY_ERR")）。
+      if (this._zwUnclean) {
+        throw _zwDomException('getImageData on an origin-unclean canvas', 'SecurityError');
       }
 
       // R34xx：x/y/w/h 经 Math.trunc 归一（spec：与 createImageData 同一 WebIDL long 截断语义，

@@ -8532,6 +8532,31 @@ fn wpt_url_path(url: &str) -> &str {
     }
 }
 
+/// s247：data: URL 脚本体解码——`data:[<mediatype>][;base64],<data>`（RFC 2397 /
+/// WHATWG fetch data: URL 处理器）。plain 形按 data: URL 百分号解码；base64 形剥
+/// ASCII 空白后严格解码。非 data: 串或缺逗号返回 None（调用方顺延路径内联面）。
+fn decode_data_url_script(src: &str) -> Option<String> {
+    let rest = src.strip_prefix("data:")?;
+    let (meta, payload) = rest.split_once(',')?;
+    let bytes: Vec<u8> = if meta
+        .rsplit(';')
+        .next()
+        .is_some_and(|token| token.eq_ignore_ascii_case("base64"))
+    {
+        let clean: String = payload.chars().filter(|c| !c.is_ascii_whitespace()).collect();
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD
+            .decode(clean.as_bytes())
+            .ok()?
+    } else {
+        percent_encoding::percent_decode_str(payload)
+            .decode_utf8_lossy()
+            .into_owned()
+            .into_bytes()
+    };
+    Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
 fn wpt_query_value(query: &str, name: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
@@ -10226,6 +10251,18 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 // 假 Fail。`//`（协议相对）与显式 http(s) 维持外部面不内联。
                 if s.starts_with("//") || s.starts_with("http://") || s.starts_with("https://") {
                     return None;
+                }
+                // s247：data: URL classic script 内联交付——data: URL 处理器语义
+                //（fetch a data: URL，HTML §2.6）payload 即脚本字节。canvas security 语料
+                // 以 `data:text/javascript,addCrossOriginYellowImage()` 形态外链助手
+                //（上游 wptserve data: 语义），此前透传外链后运行期取回通道把整个
+                // data: 串当路径读库落空 → 脚本永不执行 → 助手缺席 →
+                // getElementById('yellow.png') 为 null 全批 "missing image source" 假 Fail。
+                // 投递键取完整 data: src（load/error 投递按 src 匹配同 R4300 形）。
+                // FIXME: 运行期 mutation 触发臂（动态 appendChild 的 data: src 外链）不落本面，
+                // 语料无形态。
+                if let Some(body) = decode_data_url_script(s) {
+                    return Some((s.to_string(), 200, body));
                 }
                 // s100：查询串先剥离再归一——.py fixture src 携带 `?test=` 查询（CGI 端点），
                 // 路径归一与语料读面只对路径段，查询由 fixture 仿真面消费。
@@ -14274,6 +14311,45 @@ async_test(function(test) {
         ))
         .unwrap();
         assert_eq!(other.status, 404);
+    }
+
+    #[test]
+    fn decode_data_url_script_r5388_parses_plain_and_base64_forms() {
+        // canvas security 语料形态：data:text/javascript,助脚本()。
+        assert_eq!(
+            decode_data_url_script("data:text/javascript,addCrossOriginYellowImage()").as_deref(),
+            Some("addCrossOriginYellowImage()")
+        );
+        // plain 形百分号解码（data: URL 语义）。
+        assert_eq!(decode_data_url_script("data:,a%20b%25c").as_deref(), Some("a b%c"));
+        // base64 形（允许换行——RFC 2397 编码器常折行）。
+        assert_eq!(
+            decode_data_url_script("data:text/javascript;base64,Zm9vKCk=").as_deref(),
+            Some("foo()")
+        );
+        // 非 data: 串与缺逗号 → None（顺延路径内联面）。
+        assert_eq!(decode_data_url_script("./ok.js"), None);
+        assert_eq!(decode_data_url_script("data:text/javascript"), None);
+    }
+
+    #[test]
+    fn inline_local_scripts_inlines_data_url_script_r5388() {
+        let root = std::env::temp_dir().join("zw-s247-inline-data-script-test");
+        let case_dir = "html/semantics/embedded-content/the-canvas-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        let html = "<!doctype html><body>\
+            <script src=\"data:text/javascript,addCrossOriginYellowImage()\"></script>\
+            </body>";
+        let out = inline_local_scripts(
+            html,
+            &root,
+            &format!("{case_dir}/security.drawImage.image.cross.html"),
+            None,
+        );
+        // data: 脚本体内联交付（此前透传外链永不执行）。
+        assert!(out.contains("addCrossOriginYellowImage()"));
+        // 透传形态（src=data: 外链残留）不复存在。
+        assert!(!out.contains("src=\"data:text/javascript"));
     }
 
     #[test]

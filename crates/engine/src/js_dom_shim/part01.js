@@ -4428,7 +4428,19 @@
   // 影响（期望 error 案语义不变）。FIXME(compat)：crossorigin 属性形态的
   // stylesheet 仍应走 CORS check（语料无该形态，未分型）。
   var _zwStylesheetChannelDepth = 0;
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel) {
+  // s247：img 元素内部取回通道（no-cors 语义）——`__zwImgRunUpdate5277` 的运行时
+  // img 取回走页面 fetch()（默认 cors 模式）→ 跨源图（WPT www1 host 的
+  // addCrossOriginYellowImage 等）被 CORS check 拒（本地静态臂无 ACAO）→ error
+  // 事件、naturalWidth 恒 0。上游语义：img 请求 mode 'no-cors'（HTML
+  // #updating-the-image-data）——跨源无 ACAO 照常 load，仅在绘制进 canvas 时
+  // 污染（污染面由 s247 origin-clean 判定 `_zwCanvasSrcCrossOrigin` 承接）。
+  // 旗标与 s153 stylesheet 通道同型：part03 取回点在 fetch() 调用窗内置位/清位，
+  // _zwFetchMainImpl 同步段快照进闭包（异步 settle 时窗已清）。豁免 = 跳过
+  // cors check（响应保持 basic——体字节仅供 shim 内部解码 naturalWidth，响应
+  // 对象不外泄 JS，无 opaque 暴露面）。FIXME(compat)：真实 opaque 过滤面
+  //（JS 可见 response.type 'opaque'）未建，img 通道响应不走该过滤。
+  var _zwImgNoCorsChannelDepth = 0;
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -4442,7 +4454,7 @@
     if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
-    if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
+    if (!_zwSsChannel && !_zwImgChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
       // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
       // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
       var allowOrigin = response.headers.get('access-control-allow-origin');
@@ -5360,6 +5372,8 @@
       // s153：stylesheet 内部取回通道快照（调用窗旗标在 fetch() 同步段读定，
       // 闭包捕获后 trickle/delay 等 setTimeout 异步取回臂同样豁免 CORS 检查）。
       var _zwSsChannel = _zwStylesheetChannelDepth > 0;
+      // s247：img 内部取回通道快照（同型——运行时 img no-cors 语义豁免）。
+      var _zwImgChannel = _zwImgNoCorsChannelDepth > 0;
       // net-api 二期 M2-S10 记账 2 清偿：XHR 异步 fetchFn dict init 的 setRequestHeader
       // 首见原始大小写经内部 `__zwHeaderCase` 旁路（与 `__zwInternalHeadersWire` 同型
       // 内部通道；同步路径 caseMap 参数语义对齐）。
@@ -5706,7 +5720,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
           if (hopUrl) response.url = hopUrl;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
@@ -5738,7 +5752,7 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
+          response = _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
           response.url = hopUrl;
           return response;
         };
@@ -5771,7 +5785,7 @@
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
             try {
-              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel);
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
             } catch (eHop) {
               settled = true;
               delete globalThis.__zw_pending[id];

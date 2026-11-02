@@ -3226,7 +3226,26 @@
         // 延迟 window load 语义）。
         _imFetched = true;
         globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
-        fetch(_imSrc).then(function (resp) {
+        // s247：img 请求 mode 'no-cors' 语义（HTML #updating-the-image-data）——
+        // 跨源图不经 CORS check 照常 load（自然语言侧污染由绘制点 origin-clean
+        // 判定承接）。crossorigin 属性在场（anonymous/use-credentials）→ cors
+        // 请求语义维持常规 CORS check（image-loading-lazy-crossorigin-change
+        // 「deferred image uses latest crossorigin」面——通道豁免仅限无属性形态）。
+        // 通道旗标 _zwImgNoCorsChannelDepth（part01 IIFE 局部，s153
+        // stylesheet 通道同型）在 fetch() 调用窗内置位/清位，异步 settle 走闭包
+        // 快照。
+        var _imXoAttr = '';
+        try { _imXoAttr = String(_zw5277Attr(sel, handle, 'crossorigin') || ''); } catch (_eXo5277) {}
+        var _imFetchP;
+        try {
+          if (_imXoAttr === '') _zwImgNoCorsChannelDepth++;
+          try { _imFetchP = fetch(_imSrc); } finally { if (_imXoAttr === '') _zwImgNoCorsChannelDepth--; }
+        } catch (_eImgChan) {
+          _imInflightEnd();
+          _imFail();
+          return;
+        }
+        _imFetchP.then(function (resp) {
           if (_imEpochStale()) { _imInflightEnd(); return; }
           if (!resp.ok) { _imFail(); return; }
           resp.blob().then(function (blob) {
