@@ -38,10 +38,14 @@ switch there before consuming it in an application or library crate.
 | `ZW_COMPOSITOR_SCROLL_TRANSFORM` | `0`/`false` disables | enabled | Re-rasterize the current document viewport in compositor when scrolling. |
 | `ZW_COMPOSITOR_ANIMATIONS` | `1`/`true` enables | disabled | Compositor-side CSS animation sampling (renderer exports animation declarations; compositor re-rasterizes sampled paint at frame pull). |
 | `ZW_RENDERER_SECCOMP` | `0`/`false` disables | enabled | Enable renderer seccomp sandbox hook. |
+| `ZW_RENDERER_LANDLOCK` | `1`/`true` enables | disabled | Enable the renderer Landlock allow-list sandbox (fonts and system files read-only, cache and shared memory read-write, helper executables runnable). |
 | `ZW_COMPOSITOR_SANDBOX` | `0`/`false` disables | enabled | Enable compositor environment sanitization. |
 | `ZW_COMPOSITOR_SECCOMP` | `0`/`false` disables | enabled | Enable compositor seccomp filtering on Linux. |
 | `ZW_COMPOSITOR_LANDLOCK` | `0`/`false` disables | enabled | Enable compositor Landlock on Linux. |
-| `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. |
+| `ZW_IMAGE_DECODER_SANDBOX` | `0`/`false` disables | enabled | Image-decoder sandbox master switch. Fail-closed: the decoder process exits if sandbox installation fails. |
+| `ZW_IMAGE_DECODER_SECCOMP` | `0`/`false` disables | enabled | Seccomp filtering in the image-decoder (network-socket and exec/fork/ptrace syscalls blocked). |
+| `ZW_IMAGE_DECODER_LANDLOCK` | `0`/`false` disables | enabled | Landlock in the image-decoder with an empty allowed-set (all filesystem access denied; already-open descriptors keep working). |
+| `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. Mutually exclusive with the default CDP auth token: the stock frontend's page-direct socket carries no token and is rejected; connect with a self-managed CDP client instead (token from the discovery endpoint). |
 | `ZEROWEB_NAV_TRIM` | `0` disables | enabled | Disable the deferred navigation-settle allocator reclaim (`nav_trim`/`worker_trim`); the deferred V8 GC hint is not gated by this switch. |
 | `ZEROWEB_MEM_PROBE` | `1` enables | disabled | Emit memory-fill/PSS probe logs (T13 observation leg; not part of judgment samples). |
 | `ZEROWEB_WARM_IDLE_REARM` | `1` enables | disabled | Automatically re-arm the warm spare after an idle reap (T13 S8 experimental arm). |

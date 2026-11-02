@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
 **版本**：v1.1 / 2026-11-02（对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–5、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为三项已拍板切片待执行（⑤ media-host 最小档案 / ⑥ DevTools frontend 文档化接受 / ① file:// browser 预解析 → LoadHtml 后翻 renderer landlock 默认）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；原「待用户拍板三项」已于 2026-11-02 拍板（⑤→A、⑥→B、①→A），见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–5、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为两项已拍板切片待执行（⑤ media-host 最小档案 / ① file:// browser 预解析 → LoadHtml 后翻 renderer landlock 默认）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑥ DevTools frontend 文档化已交付（2026-11-02，操作文档互斥记档）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
@@ -18,7 +18,7 @@
 运行基线已交付（M1，2026-11-01）：消息身份、站点、角色与存储所有者权限矩阵及双向基线见 [M1 证据](renderer-trust-boundary/evidence/2026-11-01-m1-matrix-storageop-fix.md)；此后确认缺陷的修复与常驻回归逐项状态以 [master.md](renderer-trust-boundary/master.md) 为准，不在此重复。当前信任面事实快照（代码查实，2026-11-02）：
 
 - 服务端权威绑定：StorageOp origin 按 committed origin 判属，自动化身份按 committed URL/epoch 双匹配（`apps/browser/src/process_backend.rs`；`identity_binding_tests` 7 用例常驻）。
-- CDP 默认强制 token：`run_headless` 装配层默认生成 getrandom 128-bit 令牌，stderr 与发现端点 URL 双交付；库 API 默认无 token 不变（`apps/browser/src/headless/security.rs`）。DevTools frontend page-direct 在强制下 fail-closed，已拍板文档化接受。
+- CDP 默认强制 token：`run_headless` 装配层默认生成 getrandom 128-bit 令牌，stderr 与发现端点 URL 双交付；库 API 默认无 token 不变（`apps/browser/src/headless/security.rs`）。DevTools frontend page-direct 在强制下 fail-closed，已文档化接受（`docs/runtime-environment.md`、`docs/development/building-and-testing.md` 互斥记档）。
 - renderer：seccomp 默认开（阻断 execveat/fork/vfork/ptrace，execve 保留供 helper spawn）；landlock 允许清单 opt-in 默认关，默认值待 ① 切片翻转（`apps/renderer/src/sandbox.rs`）。
 - image-decoder：seccomp + landlock 双沙箱默认开，fail-closed（`apps/image-decoder/src/sandbox.rs`）。
 - compositor landlock 已修复生效；fd 通道对端信任 = socket 0600 + 双侧 SO_PEERCRED + 每发布 128-bit token（`crates/protocol/src/fd_socket_linux.rs`）。
