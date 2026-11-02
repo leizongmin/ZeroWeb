@@ -13,9 +13,9 @@
 
 **版本**: v1.1（同日二次拍板扩围）
 **日期**: 2026-11-01（立项；同日零遗留扩围）
-**状态**: Active——M1 完成（语料预置 + 分域基线 + deps evidence + 选型征询，
-控制面 `webcrypto-compat-v3/master.md`）；M2 按域收敛待启动（拍板前仅无
-依赖面切片）
+**状态**: Active——M1 完成 + M2 无依赖面全部收口（控制面
+`webcrypto-compat-v3/master.md`）；**D1 拍板落账（2026-11-02）**，M2 域
+切片按依赖就绪度定序推进
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 按域切片收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
@@ -123,8 +123,13 @@ coverage 复测、收口重定基。
   锚：`archive/webcrypto-compat/evidence/2026-10-17-m1-baseline.md`
   （+ summary.json，终态锚 2026-10-17-m6-residual-full.json.gz 同目录）；
   二期收口三跑复验在 `f97190c41`。重定基后零回归底线由 DC-5② 终账承接。
-- 新 crate 引入全部走 deps evidence + 用户拍板；X448/Ed448 pre 版候选
-  甄别从严（0.14.0-pre.\* 非 stable）。
+- 新 crate 引入走 deps evidence + 用户拍板：**D1 已拍板（2026-11-02）**——
+  修正后建议集（12–14 crate，全 RustCrypto 官方系为主）+ 钉版 aes =0.9.2 /
+  ctutils =0.4.2 / module-lattice =0.2.3 获批；X448/Ed448 选 (b)：X448 走
+  stable x448 0.6.0，Ed448 以「MSRV 1.85 无可用签名实现」降 scope；KMAC
+  选手写框架叠官方 cshake（option b）。清单外新需求限 RustCrypto 官方
+  组织等价 crate 自主引入 + evidence 补账 + 预检同门槛验证（详见控制面
+  待用户决策表 D1 行）。
 - 既有 RustCrypto 依赖面（rsa 0.9 / p256/p384/p521 0.13 / ed25519-dalek /
   x25519-dalek 3.0 / aes-gcm/cbc/ctr / sha2）为复用优先基准。
 
