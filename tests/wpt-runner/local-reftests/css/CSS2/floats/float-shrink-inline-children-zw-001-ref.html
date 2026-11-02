@@ -2,16 +2,19 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>float shrink-to-fit sums inline-level children (ref: auto height + nowrap)</title>
-<!-- 与 float-shrink-inline-children-zw-001.html 同型；参照页 float 两处差异
-     （双 kill-switch 免疫的参照构造）：① 去掉 height:48px——R4920b 重测 gate
-     只钳 definite-height float，auto 高容器走常规重测恒单行（主臂行盒由
-     inline 内容决定，修复态与 test 页显式 48px 渲染逐像素一致，已实证）；
-     ② white-space:nowrap——无论 float 收缩宽是否正确都强制单行（R4920 参照）。 -->
+<title>float shrink-to-fit sums inline-level children (ref: nowrap 负控制)</title>
+<!-- 与 float-shrink-inline-children-zw-001.html 同型；参照页唯一语义差 =
+     white-space:nowrap——无论 float 收缩宽是否正确都强制单行（R4920 参照）。
+     R5388 chromium oracle 定谳（headless f1.h/f2.top 探针）：float 内单行行盒高
+     = line-height 42（inline 盒 font extent 47 负 leading 溢出行盒不撑 float），
+     test 页 definite height:48 与 auto 高（42）**语义不等价**——float1 占位高差
+     把 float2.y 推到 60 vs 54，chromium 自身两页也差 2.55%。旧注释「去掉
+     height:48px……渲染逐像素一致，已实证」不成立（双错相消的伪绿）；故 ref
+     补回 height:48px 对齐占位几何，保留 nowrap 作收缩宽负控制。 -->
 <style>
 body { margin: 0; font: 13px/23px Arial, sans-serif; }
 .header { margin: 8px; padding: 4px; }
-.hot-refresh { float: right; white-space: nowrap; }
+.hot-refresh { float: right; height: 48px; white-space: nowrap; }
 .hot-refresh-text { font-size: 42px; line-height: 42px; margin-left: 2px; background: #3fbf3f; }
 .c-icon { display: inline-block; width: 48px; height: 48px; background: #4e6ef2; }
 </style>
