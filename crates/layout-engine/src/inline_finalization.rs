@@ -4876,7 +4876,13 @@ pub(crate) fn remeasure_inline_only_containers(
             .children
             .iter()
             .any(|c| c.is_block_level && !c.is_absolute && !c.is_fixed);
-        let via_refresh = inline_ctx.refresh_reused_inline_block_metrics(doc, styles, &final_sizes);
+        // r5053：刷新臂同样**限纯 inline 容器**——混排容器的存储 IFC 单一连续行流是
+        // 伪行（R5215 语义，与上方注释同域），refresh 自 line_y=0 重排会丢失段前
+        // 块级子占据的高度（body>p+inline-block div 实证 div y 34→0），sync 覆写 +
+        // claim 跳过 step10 后 step11 相对定位在伪原点上偏移。混排容器保持旧臂：
+        // 预愈后的几何交 step10 以终局容器宽重定位。
+        let via_refresh =
+            pure_inline_container && inline_ctx.refresh_reused_inline_block_metrics(doc, styles, &final_sizes);
         let via_fallback =
             !via_refresh && pure_inline_container && inline_ctx.reuse_positions_valid_without_refresh(&final_sizes);
         if (via_refresh || via_fallback) && sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles) {
