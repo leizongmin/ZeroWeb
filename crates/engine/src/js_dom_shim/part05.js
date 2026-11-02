@@ -7459,7 +7459,7 @@
   globalThis.ImageData = globalThis.ImageData || ImageData;
   // workers-compat M3：原型 toStringTag（structured-clone-imagedata「''+e.data ===
   // '[object ImageData]'」面——Object.prototype.toString 无 toStringTag 落 [object Object]）。
-  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(globalThis.ImageData.prototype, Symbol.toStringTag, { value: 'ImageData' }); } catch (_e5000id) {}
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(globalThis.ImageData.prototype, Symbol.toStringTag, { value: 'ImageData', configurable: true }); } catch (_e5000id) {}
 
 
   // canvas 元素 + 2d 上下文 proxy（R2795，canvas slice 1）。host 持 CanvasContext 注册表，JS 经
@@ -7734,7 +7734,7 @@
     this._zwCanvasFilter = true;
     this._inputs = inputs;
   }
-  Object.defineProperty(CanvasFilter.prototype, Symbol.toStringTag, { value: 'CanvasFilter' });
+  Object.defineProperty(CanvasFilter.prototype, Symbol.toStringTag, { value: 'CanvasFilter', configurable: true });
   if (!globalThis.CanvasFilter) {
     globalThis.CanvasFilter = CanvasFilter;
   }
@@ -8447,7 +8447,7 @@
     this.height = 0;
     this._zwBitmapWire = '';
   };
-  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(ImageBitmap.prototype, Symbol.toStringTag, { value: 'ImageBitmap' }); } catch (_e5000ib) {}
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(ImageBitmap.prototype, Symbol.toStringTag, { value: 'ImageBitmap', configurable: true }); } catch (_e5000ib) {}
   function _zwMakeImageBitmap(wire) {
     return new ImageBitmap(String(wire));
   }
@@ -8854,7 +8854,7 @@
       return new Blob([bytes], { type: 'image/png' });
     });
   };
-  Object.defineProperty(OffscreenCanvas.prototype, Symbol.toStringTag, { value: 'OffscreenCanvas' });
+  Object.defineProperty(OffscreenCanvas.prototype, Symbol.toStringTag, { value: 'OffscreenCanvas', configurable: true });
   if (!globalThis.OffscreenCanvas) {
     globalThis.OffscreenCanvas = OffscreenCanvas;
   }
@@ -14554,7 +14554,7 @@
     if (!_r138EP) return;
     // R5000 片 d：Event.prototype[Symbol.toStringTag]='Event'（spec WebIDL 接口原型
     // 标记——assert_class_string 的 [object Event] 面依赖；浏览器一致）。
-    try { if (typeof Symbol === 'function' && Symbol.toStringTag && !_r138EP[Symbol.toStringTag]) Object.defineProperty(_r138EP, Symbol.toStringTag, { value: 'Event' }); } catch (_e5000tt) {}
+    try { if (typeof Symbol === 'function' && Symbol.toStringTag && !_r138EP[Symbol.toStringTag]) Object.defineProperty(_r138EP, Symbol.toStringTag, { value: 'Event', configurable: true }); } catch (_e5000tt) {}
     var _r138Defs = {
       // WC-M3 切片 8 第二增量：closed shadow tree 隐藏（spec dom-event-composedpath
       // ——per-item 预计算 flags + level 计数；过滤实现见 part03 __zwCpClosedFilter）。
@@ -14856,7 +14856,7 @@
     Ctor.prototype = Object.create(Parent.prototype);
     // R5000 片 d：子类原型 toStringTag（spec WebIDL 接口标记——assert_class_string
     // 的 [object PageTransitionEvent] 等面；closest tag 就近覆盖父 Event 标记）。
-    try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(Ctor.prototype, Symbol.toStringTag, { value: name }); } catch (_e5000st) {}
+    try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(Ctor.prototype, Symbol.toStringTag, { value: name, configurable: true }); } catch (_e5000st) {}
     Ctor.prototype.constructor = Ctor;
     globalThis[name] = Ctor;
     _eventSubclassProps[name] = [props, parentName];
@@ -15509,6 +15509,11 @@
   }
   ProgressEvent.prototype = Object.create(Event.prototype);
   ProgressEvent.prototype.constructor = ProgressEvent;
+  // 接口原型 @@toStringTag（WebIDL 接口原型对象标记——'[object ProgressEvent]' class
+  // string；own 可配置定义同 T42 part03/part05 收口：core-js defineBuiltIn 臂可重定义）。
+  // https://webidl.spec.whatwg.org/#interface-prototype-object
+  Object.defineProperty(ProgressEvent.prototype, Symbol.toStringTag,
+    { value: 'ProgressEvent', configurable: true });
   ['lengthComputable', 'loaded', 'total', 'bubbles', 'cancelable'].forEach(function (name) {
     var store = '_zw' + name.charAt(0).toUpperCase() + name.slice(1);
     Object.defineProperty(ProgressEvent.prototype, name, {
@@ -18200,7 +18205,7 @@
   MessageEvent.prototype.constructor = MessageEvent;
   // R5000 片 d 同款：原型 toStringTag（assert_class_string 的 [object MessageEvent] 面——
   // postMessage_event_properties / DedicatedWorkerGlobalScope/postMessage/message-event）。
-  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, { value: 'MessageEvent' }); } catch (_e5000me) {}
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessageEvent.prototype, Symbol.toStringTag, { value: 'MessageEvent', configurable: true }); } catch (_e5000me) {}
   globalThis.MessageEvent = globalThis.MessageEvent || MessageEvent;
 
   // SubmitEvent——submit 事件（form 提交，R2984）。extends Event，加 `submitter`（触发提交的按钮 proxy / null）。
@@ -18457,7 +18462,7 @@
   MessagePort.prototype.constructor = MessagePort;
   // workers-compat M3：原型 toStringTag（Worker-messageport「String(evt.ports) ===
   // '[object MessagePort]'」面——Array join 逐项 String(port) 走 Object.prototype.toString）。
-  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessagePort.prototype, Symbol.toStringTag, { value: 'MessagePort' }); } catch (_e5000mp) {}
+  try { if (typeof Symbol === 'function' && Symbol.toStringTag) Object.defineProperty(MessagePort.prototype, Symbol.toStringTag, { value: 'MessagePort', configurable: true }); } catch (_e5000mp) {}
   MessagePort.prototype.postMessage = function (message, transfer) {
     // spec port post message steps（#dom-messageport-postmessage）：message 必参（TypeError）。
     if (arguments.length < 1) {
