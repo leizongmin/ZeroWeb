@@ -6,7 +6,7 @@
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（锚对照工具化推送 badaa99f3：后续切片/重定基复用；D1 仍征询中，无依赖面持续无遗留）
+**最后更新**: 2026-11-02（DC-3 收敛基线达成判定落账：四项判据对账闭环，DC-1 ✓ / DC-3 ✓ / DC-2 差拍板；D1 仍征询中，无依赖面持续无遗留）
 
 ---
 
@@ -49,6 +49,16 @@ TurboSHAKE const 泛型 DS、cSHAKE outputLength=0）。暴露：OCB/ChaCha
 依赖树 ctutils 传递 MSRV 坑（需 `aes =0.9.2 + ctutils =0.4.2` 钉版）、
 K12 crate 名更正 `k12`、XOF host 回调需扩参（现 digest 定长签名不支持
 outputLength/customization/domainSeparation）。先行四域拍板即可开工。
+
+**DC-3（收敛基线）达成判定（2026-11-02）**：四项判据逐项对账——① 新域 +
+散新案分母逐案分类账落 evidence（[F 归因扫查](evidence/2026-11-02-m2s4-f-attribution-sweep.md)
+81,851 keys 全归因闭环 + [M2-5 更正](evidence/2026-11-02-m2s5-raw-format-aliases.md)
+逐案算法面复核）；② 门禁面语义落地（M2-1 supports 门禁 +543P，
+getPublicKey 语义面在位、余红为域内新算法未注册的域门控红）；③
+`[SecureContext]` 暴露门禁语义零回退（stable-root 157 案零红，m2s5 锚）；④
+worker 腿双腿账落档（M2-3 +863P / M2-3b +12,196P）。**DC-3 达成**；
+域内余红翻绿随 D1 域切片承接，不构成 DC-3 缺口。DC 进度：DC-1 ✓、
+DC-3 ✓、DC-2 差用户拍板、DC-4/DC-5 待 M 末（前置预检均已落档）。
 
 **M2-4 1T 销案完成（2026-11-02，[evidence](evidence/2026-11-02-m2s4-1t-iframe-dyn-script.md)）**：
 algorithm-discards-context（一/二/三期连续 T 案）**13 子测试全 Pass，
