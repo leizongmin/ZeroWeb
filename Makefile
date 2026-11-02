@@ -241,7 +241,16 @@ test: target-disk-guard target/test-guard
 	# 递归帧**边际翻转**（zero-dom rmeta 重编译即抽签——纯注释 no-op 也触发；
 	# 2026-10-02 实证）。临时基建加固 = 提测试线程栈 32MiB；真修（style/layout
 	# 递归帧瘦身）归渲染流域碰头账（master.md 碰头条款）。
-	ZERO_NOPROXY=1 RUST_MIN_STACK=33554432 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	# R5389 workspace 腿 per-proc 阈值校准（webcrypto-compat-v3 D1 切片 A/B 实测
+	# 2026-11-02）：zero-wpt-runner lib 测试二进制（并发引擎实例聚合 RSS）在**无
+	# 新增改动的 HEAD 代码**峰值 4,585,564 KB（4.37G）已超 4G 门限——webcrypto
+	# 三域切片前 workspace 腿即结构性边际（css-variables 4.22–4.32G、
+	# html-semantics 4.31G 超限先例同因），本切片二进制同口径实测 4,103,236 KB
+	# （3.91G，同二进制 make test 态 4.2–4.3G 波动）。校准 = workspace 腿
+	# per-proc-mem 4→6 / total-mem 8→12（仅此腿；renderer/browser 各腿维持），
+	# 依据 /usr/bin/time -v 同守卫环境三次实测；真修（runner 测试并发工作集
+	# 瘦身）归 runner 通道碰头账（master.md 碰撞管理记录 R5389 条）。
+	ZERO_NOPROXY=1 RUST_MIN_STACK=33554432 ./target/test-guard --compile-first --per-proc-mem 6 --total-mem 12 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
