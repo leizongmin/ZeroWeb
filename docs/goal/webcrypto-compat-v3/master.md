@@ -6,7 +6,7 @@
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（DC-3 收敛基线达成判定落账：四项判据对账闭环，DC-1 ✓ / DC-3 ✓ / DC-2 差拍板；D1 仍征询中，无依赖面持续无遗留）
+**最后更新**: 2026-11-02（D1 前置第三轮：PQC/KMAC/X448 语料面预检全过，1.85 可探域语料面闭环，option a KMAC 短 key 缺口语料实锤；D1 仍征询中）
 
 ---
 
@@ -25,7 +25,7 @@ EC/OKP raw 面 raw-public ≡ raw、RSA 不映射）——**80 F→P**（raw_for
 276P/0F、clippy 干净；r1 V8 fatal 按 M2-1 flake 判据记账（r2 复跑干净）。
 对照基准更新为 [m2s5 锚](evidence/2026-11-02-m2s5-full.json.gz)。
 
-**D1 拍板前置证据加固完成（2026-11-02，两轮）**：
+**D1 拍板前置证据加固完成（2026-11-02，三轮）**：
 
 第一轮 **MSRV 编译预检**（[evidence](evidence/2026-11-02-dc2-msrv-compile-precheck.md)）：
 deps evidence（11-01）为 metadata 级证据，本轮 /tmp 隔离 scratch + rustc
@@ -45,10 +45,16 @@ getrandom 0.4 workspace 树已在本。仓库零代码触面。
 编译通过 ≠ 语料参数面可算——argon2/AES-OCB/ChaCha20-Poly1305/XOF 四域
 真实 WPT 语料向量在 1.85.0 scratch 探针**逐字节复现全过**（OCB 三档截断
 tag + 15B nonce、ChaCha 9 组 AAD 矩阵、XOF 41 断言含 K12 定制串与
-TurboSHAKE const 泛型 DS、cSHAKE outputLength=0）。暴露：OCB/ChaCha
-依赖树 ctutils 传递 MSRV 坑（需 `aes =0.9.2 + ctutils =0.4.2` 钉版）、
-K12 crate 名更正 `k12`、XOF host 回调需扩参（现 digest 定长签名不支持
-outputLength/customization/domainSeparation）。先行四域拍板即可开工。
+TurboSHAKE const 泛型 DS、cSHAKE outputLength=0）。先行四域拍板即可开工。
+
+第三轮 **PQC/KMAC/X448 语料面预检**（[evidence](evidence/2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md)）：
+D1 拍板子问题①③②的语料真实向量面 1.85.0 逐字节复现——ML-KEM
+seed 确定性 + decap KAT 三集全过、ML-DSA verify KAT 三变体全过
+（det_sign ≠ corpus 已归因：驱动未开 katFirst，sign 只查 roundtrip）、
+KMAC 双案 NIST 6/6 全过且 **option a MIN_KEY_SIZE 缺口语料实锤**
+（symmetric_importKey 16B/24B/32B 三档全跑，KMAC256 短 key import 必红）、
+X448 option (b) KAT + 5/5 小阶点拒绝成立（host 两条义务：import 用
+unchecked 解码 + derive 全零后检查）。1.85 可探域语料面预检全部闭环。
 
 **DC-3（收敛基线）达成判定（2026-11-02）**：四项判据逐项对账——① 新域 +
 散新案分母逐案分类账落 evidence（[F 归因扫查](evidence/2026-11-02-m2s4-f-attribution-sweep.md)
@@ -219,7 +225,7 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
 
 | # | 事项 | 状态 |
 |---|------|------|
-| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)）并经 **MSRV 编译预检修正**（[2026-11-02-dc2-msrv-compile-precheck.md](evidence/2026-11-02-dc2-msrv-compile-precheck.md)）与 **先行四域语料面预检**（[2026-11-02-d2-domain-slice-corpus-face-precheck.md](evidence/2026-11-02-d2-domain-slice-corpus-face-precheck.md)：argon2/OCB/ChaCha/XOF 真实语料向量 1.85.0 逐字节复现全过；OCB/ChaCha 需 `aes =0.9.2 + ctutils =0.4.2` 钉版，K12 crate 名更正 `k12`），修正后建议值 12–14 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值（PQC 两域修正为 ml-kem 0.3.3 / ml-dsa 0.1.1——0.3.4/0.1.2 需 rustc 1.87）是否批准；② X448/Ed448 pre 线**三选**——(a) pre + workspace MSRV 1.85→1.87（全能力，pre.15 含 sign/），(b) X448 走 stable x448 0.6.0 且 **Ed448 无 1.85 签名路径**（0.9.0 无 signing 面 / ed448 0.5.0 仅类型），(c) 域降 scope；③ KMAC 两案——option a sha3-kmac 0.3.0（有 MIN_KEY_SIZE=16B 短 key 合规缺口 + sha3 双栈），option b 手写叠官方 cshake（**已实证 ≡ oracle 逐位相等**，无上述缺口，需 NIST 向量单测随切片落仓）；④ ~~ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替~~（**被 1.85 约束否决**，见②修正）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域，已全部收口） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；11-02 M2 收口进展+催办通知在案（msg `om_x100b614f36f5e8a4cd31575cf2facd6`，附四项拍板子问题）；**待拍板**（evidence 已齐并经编译预检 + 语料面预检双重修正） |
+| D1 | 10 域新依赖选型：deps evidence 已落档（[2026-11-01-m1-deps-evidence.md](evidence/2026-11-01-m1-deps-evidence.md)）并经 **MSRV 编译预检修正**（[2026-11-02-dc2-msrv-compile-precheck.md](evidence/2026-11-02-dc2-msrv-compile-precheck.md)）与 **先行四域语料面预检**（[2026-11-02-d2-domain-slice-corpus-face-precheck.md](evidence/2026-11-02-d2-domain-slice-corpus-face-precheck.md)：argon2/OCB/ChaCha/XOF 真实语料向量 1.85.0 逐字节复现全过；OCB/ChaCha 需 `aes =0.9.2 + ctutils =0.4.2` 钉版，K12 crate 名更正 `k12`）与 **PQC/KMAC/X448 语料面预检**（[2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md](evidence/2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md)：ML-KEM/ML-DSA 语料 KAT 全过、KMAC 双案 NIST 6/6、X448 option b 语料面成立；1.85 可探域语料面预检全部闭环），修正后建议值 12–14 crate（全 RustCrypto 官方系为主）。**征询中**：① 总体选型建议值（PQC 两域修正为 ml-kem 0.3.3 / ml-dsa 0.1.1——0.3.4/0.1.2 需 rustc 1.87；两域语料 KAT 已全过）是否批准；② X448/Ed448 pre 线**三选**——(a) pre + workspace MSRV 1.85→1.87（全能力，pre.15 含 sign/），(b) X448 走 stable x448 0.6.0（语料面成立：KAT 逐字节 + 5/5 小阶点拒绝，host 两条义务——import 用 unchecked 解码、derive 全零后检查）且 **Ed448 无 1.85 签名路径**（0.9.0 无 signing 面 / ed448 0.5.0 仅类型），(c) 域降 scope；③ KMAC 两案——option a sha3-kmac 0.3.0（**MIN_KEY_SIZE 缺口已语料实锤：symmetric_importKey 16B/24B/32B 三档全跑，KMAC256 短 key import 必红** + sha3 双栈），option b 手写叠官方 cshake（**NIST 语料 6/6 逐字节全过 + ≡ oracle 逐位相等**，无上述缺口，需 NIST 向量单测随切片落仓）；④ ~~ml-kem 0.3.4 / ml-dsa 0.1.2 版本升替~~（**被 1.85 约束否决**，见②修正）。拍板前收敛切片仅限门禁面/散新案/worker 腿/1T（无新依赖域，已全部收口） | 已飞书征询在案（GB-20261101，msg `om_x100b61408d1ee4a0cffa63121bb8f1e`）；11-02 M2 收口进展+催办通知在案（msg `om_x100b614f36f5e8a4cd31575cf2facd6`，附四项拍板子问题）；**待拍板**（evidence 已齐并经编译预检 + 两轮语料面预检三重修正） |
 
 ## 碰撞管理记录（run-rules §9）
 
