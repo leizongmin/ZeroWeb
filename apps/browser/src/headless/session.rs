@@ -841,6 +841,22 @@ impl HeadlessSession {
         let request_id = params.request_id;
         let net_request_id_clone = net_request_id.clone();
         let network_enabled = self.network_enabled;
+        // file:// 直读臂与 GUI fetch_proxy.enqueue 同款（is_file_url → read_file_url，
+        // 旁路 HTTP 缓存/调度）：headless 代理此前缺失该臂，文档与子资源 file:// 全部
+        // 落 reqwest builder error 错误页——headless CDP 导航本地文件恒失败的先存缺口
+        // （renderer 信任边界 ① file:// 生产链验收解锁时修复）。本地文件读取快，同步
+        // 完成同「线程创建失败」兜底的 inline 形态。
+        if zero_net::is_file_url(&params.url) {
+            let outcome = zero_net::read_file_url(&params.url);
+            self.apply_fetch_completion(CompletedFetch {
+                request_id,
+                net_request_id,
+                network_enabled,
+                origin_url: params.url,
+                outcome,
+            })?;
+            return Ok(());
+        }
         let job_url = params.url.clone();
         let job_method = method.clone();
         let job_headers = headers.clone();
