@@ -1227,7 +1227,10 @@
     var _zwDefs = [
       ['open', ['method', 'url']],
       ['overrideMimeType', ['mimeType']],
-      ['send', ['body']],
+      // xhr.spec send(optional (XMLHttpRequestBodyInit or Document)? body = null)——
+      // body 可选 → 必选参数 0，length=0（双首轮独立证实 + Chrome 活体测量，run-dir
+      // evidence/t43-chrome-arity-live.txt：send:true:true:true:0）。
+      ['send', []],
       ['abort', []],
       ['setRequestHeader', ['name', 'value']],
       ['getResponseHeader', ['name']],
@@ -1237,6 +1240,8 @@
       (function (_zwName, _zwArgs) {
         if (Object.prototype.hasOwnProperty.call(_zwProto, _zwName)) return;
         var _zwFn = _zwIfaceDelegate(_zwName);
+        // WebIDL §create-an-operation-function：name=操作名、length=必选参数数。
+        Object.defineProperty(_zwFn, 'name', { value: _zwName });
         Object.defineProperty(_zwFn, 'length', { value: _zwArgs.length });
         Object.defineProperty(_zwProto, _zwName, {
           value: _zwFn, writable: true, enumerable: true, configurable: true,

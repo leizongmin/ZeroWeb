@@ -160,9 +160,10 @@ fn s229_doc_active_slot_thread_local() {
 // 库（juejin sdk-glue 类 XHR 代理）按 `XMLHttpRequest.prototype.open` 习惯取方法——
 // 修复前实例 own + 原型缺席 → undefined.apply 断链（glue 栈证 `at r.open … .apply`）。
 // xhr.spec interface members 挂 interface prototype object；WebIDL §operations 原型层
-// 描述符 {writable, enumerable, configurable}=true、arity=必选参数个数（Chrome 对照
-// open=2/send=1/abort=0/setRequestHeader=2/getResponseHeader=1/getAllResponseHeaders=0/
-// overrideMimeType=1）。https://xhr.spec.whatwg.org/#interface-xmlhttprequest
+// 描述符 {writable, enumerable, configurable}=true、arity=必选参数个数、name=操作名
+//（WebIDL §create-an-operation-function；Chrome 对照 open=2/send=0（send body 为
+// optional）—abort=0/setRequestHeader=2/getResponseHeader=1/getAllResponseHeaders=0/
+// overrideMimeType=1，name 一一对应操作名）。https://xhr.spec.whatwg.org/#interface-xmlhttprequest
 // https://webidl.spec.whatwg.org/#interface-prototype-object
 #[test]
 fn xhr_iface_methods_prototype_shape_t43() {
@@ -176,21 +177,22 @@ fn xhr_iface_methods_prototype_shape_t43() {
                var n = names[i];
                var d = Object.getOwnPropertyDescriptor(X.prototype, n);
                if (!d || typeof d.value !== 'function') { out.push(n + ':absent'); continue; }
-               out.push(n + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable + ':' + d.value.length);
+               out.push(n + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable + ':' + d.value.length + ':' + d.value.name);
              }
              globalThis.__r = out.join('|');",
         )
         .unwrap();
     let out = sandbox.execute("globalThis.__r").unwrap().value;
-    // 期望段：name:w:e:c:arity（WebIDL operations 全 true；arity=必选参数数）。
+    // 期望段：op:w:e:c:arity:fname（WebIDL operations 全 true；arity=必选参数数——
+    // send body optional → 0；fname=操作名——匿名委派器须显式补挂，否则 name 为 ''）。
     let expect = [
-        "open:true:true:true:2",
-        "overrideMimeType:true:true:true:1",
-        "send:true:true:true:1",
-        "abort:true:true:true:0",
-        "setRequestHeader:true:true:true:2",
-        "getResponseHeader:true:true:true:1",
-        "getAllResponseHeaders:true:true:true:0",
+        "open:true:true:true:2:open",
+        "overrideMimeType:true:true:true:1:overrideMimeType",
+        "send:true:true:true:0:send",
+        "abort:true:true:true:0:abort",
+        "setRequestHeader:true:true:true:2:setRequestHeader",
+        "getResponseHeader:true:true:true:1:getResponseHeader",
+        "getAllResponseHeaders:true:true:true:0:getAllResponseHeaders",
     ];
     let segs: Vec<&str> = out.split('|').collect();
     assert_eq!(segs.len(), expect.len(), "七接口方法逐一在案：{out}");
@@ -256,7 +258,7 @@ fn xhr_prototype_method_detached_this_t43() {
             "var X = globalThis.XMLHttpRequest;
              var detachedErr = '';
              try { X.prototype.open('GET', 'https://zero.test/x', true); }
-             catch (e) { detachedErr = e.constructor.name; }
+             catch (e) { detachedErr = e.constructor.name + ':' + e.message; }
              var xhr = new X();
              var callOk = '';
              try { X.prototype.open.call(xhr, 'GET', 'https://zero.test/call', true); callOk = String(xhr.readyState); }
@@ -266,6 +268,51 @@ fn xhr_prototype_method_detached_this_t43() {
         .unwrap();
     let out = sandbox.execute("globalThis.__r").unwrap().value;
     let parts: Vec<&str> = out.split('|').collect();
-    assert_eq!(parts[0], "TypeError", "分离调用（this 无实现槽）须抛 TypeError");
+    // 仅断言构造器名不足以区分 guard 语义（修复前实例 own+原型缺席时分离调用抛
+    // '… is not a function' 型 TypeError）——message 须为 Illegal invocation（同 Chrome
+    // 拒绝外来 this 的文本），防委派器丢失 guard。
+    assert_eq!(
+        parts[0], "TypeError:Illegal invocation",
+        "分离调用（this 无实现槽）须 TypeError('Illegal invocation')"
+    );
     assert_eq!(parts[1], "1", "prototype.open.call(xhr,…) 委派生效");
+}
+
+// T43 B6 邻近变体（TV-F3）：iframe 包装路。part05.js IframeXMLHttpRequest 构造真实
+// XMLHttpRequest 实例（stamp _zwXhrBaseUrl/_zwXhrFetch own 属性）并共享主 realm 原型——
+// 原型委派不受实例自有附加属性遮蔽（委派器只查 this 的 _zwImpl_<name> 槽），wrapper
+// 侧 open/setRequestHeader 与主 realm 同链同形状（无 own 接口方法）。
+#[test]
+fn xhr_iframe_wrapper_shared_prototype_t43() {
+    let mut sandbox = t42_sandbox!("<html><body><iframe name='cw43'></iframe></body></html>");
+    sandbox
+        .execute(
+            "var cw = document.getElementsByTagName('iframe')[0].contentWindow;
+             var IX = cw.XMLHttpRequest;
+             var ix = new IX();
+             var names = ['open','overrideMimeType','send','abort','setRequestHeader','getResponseHeader','getAllResponseHeaders'];
+             var ownBad = [];
+             for (var i = 0; i < names.length; i++) {
+               if (Object.prototype.hasOwnProperty.call(ix, names[i])) ownBad.push(names[i]);
+             }
+             ix.open('GET', 'sub/page.html', true);
+             ix.setRequestHeader('X-T43', 'gamma');
+             globalThis.__r = [
+               String(Object.getPrototypeOf(ix) === globalThis.XMLHttpRequest.prototype),
+               ownBad.join(','),
+               String(ix.readyState),
+               String(ix._zwXhrHeaders['x-t43'] === 'gamma'),
+               typeof ix._zwXhrBaseUrl,
+               typeof IX.prototype.open,
+             ].join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts[0], "true", "wrapper 实例共享主 realm XHR 原型");
+    assert_eq!(parts[1], "", "wrapper 实例无 own 接口方法（同主 realm 形状）");
+    assert_eq!(parts[2], "1", "wrapper 侧 open 经共享原型委派生效");
+    assert_eq!(parts[3], "true", "wrapper 侧 setRequestHeader 入本实例槽");
+    assert_eq!(parts[4], "string", "wrapper stamp 属性在位（baseUrl）");
+    assert_eq!(parts[5], "function", "共享原型委派器在案");
 }
