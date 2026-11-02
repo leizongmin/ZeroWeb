@@ -170,6 +170,14 @@ getPublicKey 余红经同法复核维持域门控——无新依赖可推进面�
 逐字节复现全过，D1 拍板即可开工无预检残留；OCB/ChaCha 暴露 ctutils 传递
 MSRV 坑需钉版（aes =0.9.2 + ctutils =0.4.2），K12 crate 名更正为 `k12`，
 XOF host 回调需扩参（outputLength/customization/domainSeparation）。
+
+**锚对照工具化（2026-11-02，D1 等待期工程预制）**：`scripts/webcrypto-anchor-diff.py`
+——两份 runner 锚逐 (case, subtest) 对照，三查口径（REGRESSED P→非P 阻断
+exit 1 / FIXED 按案聚计 / FLIPPED 记账 / DRIFT case+subtest 双级 exit 2 /
+未知 status 字面 exit 3 防契约漂移），`.json`/`.gz` 直读。四重验证：
+正向 m2s4→m2s5 复现 M2-5 落账逐位一致（80 FIXED 落 raw_format_aliases
+4 案）、反向 80 REGRESSED exit 1、自对照 clean、注入未知字面 exit 3。
+后续每轮域切片与 M 末重定基（DC-5② 终账）复用，替代逐轮一次性手写对照。
 拍板后按 deps evidence 建议定序（依赖就绪度：aes-ocb/chacha20poly1305/
 argon2 等 AEADs+password-hashes 单 crate 域先行，XOF 五连引入次之，
 ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 REG 与
