@@ -8397,7 +8397,18 @@
     var target = _resolveInputTarget(sel);
     if (!target) return;
     var el = target.element;
-    var cur = el.value || '';
+    // s237（html-semantics M2 切片 237）：cur 读 **RAW 控件值**（_controlValue：
+    // store 脏值/内容属性回落）而非净化 getter——email/url/tel 净化族每键从净化形
+    // 重建会把可净化字符折叠（WPT email-set-value 键入 ' foo@bar   ' 曾折叠成
+    // 'foo@bar '：R3901 旗标只保住「本次写入不净化」，保不住「下次重建的读数」；
+    // 可见文本必须保留键入原文，value getter 读侧净化不变）。text 族
+    // raw===净化形零差异；number 下方编辑器臂自读原文双槽不受此读影响；caret 态
+    // 自此随 raw 空间（email 的选区 API 面被 selection-not-application 门禁为
+    // null，无跨空间读数面）。
+    var cur;
+    try {
+      cur = String(_controlValue(el.__zwSelector, el.__zwHandle, target.key));
+    } catch (_e237ci) { cur = el.value || ''; }
     // t2-pd2a：readonly（live）——同 plan_text_insert 的 ReadOnlyTarget 语义。
     try { if (typeof el.hasAttribute === 'function' && el.hasAttribute('readonly')) return; } catch (_eRo) {}
     var state = _textSelection[target.key];
@@ -8489,8 +8500,15 @@
     var _dTy = '';
     try { _dTy = _zwNormalizeInputType(el.getAttribute('type')); } catch (_eDTy) { _dTy = ''; }
     var _dIsNum = _dTy === 'number';
-    var cur = (_dIsNum && _numberEditor[target.key] != null)
-      ? String(_numberEditor[target.key]) : (el.value || '');
+    // s237：非 number 臂同 __zw_text_input 读 RAW 控件值（净化族删除面同折叠坑）。
+    var cur;
+    if (_dIsNum && _numberEditor[target.key] != null) {
+      cur = String(_numberEditor[target.key]);
+    } else {
+      try {
+        cur = String(_controlValue(el.__zwSelector, el.__zwHandle, target.key));
+      } catch (_e237cd) { cur = el.value || ''; }
+    }
     var state = _textSelection[target.key];
     var start = state ? Math.max(0, Math.min(cur.length, state.start)) : cur.length;
     var end = state ? Math.max(start, Math.min(cur.length, state.end)) : cur.length;

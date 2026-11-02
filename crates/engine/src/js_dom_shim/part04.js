@@ -6261,7 +6261,8 @@
         // oracle：select()→{0, value.length, 'forward'}）；非 text control 仍 no-op（无选区概念）。
         if (prop === 'select') {
           return function() {
-            if (_isTextControl(sel, handle)) {
+            var _selIsText = _isTextControl(sel, handle);
+            if (_selIsText) {
               var so = _zwReconcileSel(sel, handle, key);
               // E2 切片 12（editing goal，2026-09-08）：spec select() = 「Set the
               // selection range with 0 and infinity」→ 同值时（已全选）不排程
@@ -6286,6 +6287,69 @@
                   }
                 } catch (_eSelChSel) {}
               }
+            }
+            // s237（html-semantics M2 切片 237）：select() 普适 + document selection 桥。
+            // select() 本身无 type 门（WPT selection-weekmonth 'month/week should
+            // support the select() method'）；email 有可见文本编辑器（email-set-value
+            // 断言面：select() → getSelection().toString() 读回**可见未净化**原文——
+            // 键入原文落 store 不净化（R3901 旗标绕行），value getter 读侧净化，可见
+            // 文本 = store 原文），但 text field selection API 不适用（selectionStart
+            // 恒 null——selection-not-application email 断言族，内部选区分支上方
+            // _isTextControl 门保持不动）。桥适用 = 文本控件 + email（其余 type 无
+            // 可见文本，保持 no-op）。live-view range：toString 按 _textSelection[key]
+            // 现读（select()/setSelectionRange/键入后续变化免逐次同步写）；email 无
+            // 内部选区态 → 全文；全覆盖（全选）→ 完整可见原文——内部选区偏移在净化值
+            // 空间（R2844/R3906 既有模型），raw≠净化形（email/url/tel 可见面）无逐点
+            // 映射，部分选区按同 offsets 截 raw（语料无钉面，FIXME）。collapsed 自洽
+            // 现读（= toString 空——Range 数据槽端点 (el,0)-(el,0) 恒折叠，否则与
+            // toString 非空矛盾）。直接赋 _ranges/端点不经 _zwSync：文本控件级
+            // selectionchange 已按 changedSel 排程（上方），document 级不双派
+            //（textcontrols/selectionchange 事件计数面），typing 包裹态不清（_zwSync
+            // 显式变更才清）；email 无内部选区面，事件不排程（既有 no-op 口径零回归，
+            // Chromium 行为语料无钉）。跨段作用域注：_makeRange 声明于 part06（独立
+            // 段作用域），part04 不可见——经公开 API document.createRange() 取同一
+            // 产物。
+            var _selTy237 = '';
+            try {
+              _selTy237 = _zwNormalizeInputType(handle ? __zw_get_attr_handle(handle, 'type')
+                : __zw_get_attr(sel, 'type'));
+            } catch (_e237ty) { _selTy237 = ''; }
+            if (_selIsText || _selTy237 === 'email') {
+              try {
+                var _gsel237 = (typeof globalThis.getSelection === 'function') ? globalThis.getSelection() : null;
+                var _tr237 = (globalThis.document && typeof globalThis.document.createRange === 'function')
+                  ? globalThis.document.createRange() : null;
+                var _el237 = _makeProxy(sel, handle);
+                if (_gsel237 && _tr237) {
+                  _tr237.setStart(_el237, 0);
+                  _tr237.setEnd(_el237, 0);
+                  _tr237._zwTextCtl = { sel: sel, handle: handle, key: key, useSelState: _selIsText };
+                  _tr237.toString = function () {
+                    var st = null;
+                    if (this._zwTextCtl && this._zwTextCtl.useSelState) {
+                      try { st = _textSelection[this._zwTextCtl.key]; } catch (_e237t1) { st = null; }
+                    }
+                    var raw = '';
+                    try { raw = String(_controlValue(this._zwTextCtl.sel, this._zwTextCtl.handle, this._zwTextCtl.key)); } catch (_e237t2) { raw = ''; }
+                    var normLen = raw.length;
+                    try { normLen = String(_zwSelNormValue(this._zwTextCtl.sel, this._zwTextCtl.handle, this._zwTextCtl.key)).length; } catch (_e237t3) { normLen = raw.length; }
+                    var s = 0, e = raw.length;
+                    if (st) {
+                      s = Math.max(0, Math.min(raw.length, st.start | 0));
+                      e = Math.max(0, Math.min(raw.length, st.end | 0));
+                      if (st.start === 0 && (st.end | 0) >= normLen) { s = 0; e = raw.length; }
+                    }
+                    if (e < s) { var _t237 = s; s = e; e = _t237; }
+                    return raw.slice(s, e);
+                  };
+                  Object.defineProperty(_tr237, 'collapsed', {
+                    get: function () { return String(this) === ''; }
+                  });
+                  _gsel237._ranges = [_tr237];
+                  _gsel237._anchorNode = _el237; _gsel237._anchorOffset = 0;
+                  _gsel237._focusNode = _el237; _gsel237._focusOffset = 0;
+                }
+              } catch (_eDocSel237) {}
             }
             return undefined;
           };
