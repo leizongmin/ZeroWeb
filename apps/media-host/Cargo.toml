@@ -17,9 +17,13 @@ path = "src/lib.rs"
 # codec 面转发 zero-media（默认关，与 webview 同纪律——D-RFC-2/3 获批面）。
 decode-av1 = ["zero-media/decode-av1"]
 decode-h264 = ["zero-media/decode-h264"]
+# 音频设备输出分档（默认关）：启用时 landlock 授予 /dev/snd 读写（sandbox 模块）。
+audio-cpal = ["zero-media/audio-cpal"]
 
 [dependencies]
 zero-media = { workspace = true }
 zero-protocol = { workspace = true }
+zero-runtime-config = { workspace = true }
+libc = "0.2"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

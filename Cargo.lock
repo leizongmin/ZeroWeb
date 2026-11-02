@@ -7502,10 +7502,12 @@ dependencies = [
 name = "zero-media-host"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "tracing",
  "tracing-subscriber",
  "zero-media",
  "zero-protocol",
+ "zero-runtime-config",
 ]
 
 [[package]]

@@ -45,6 +45,10 @@ switch there before consuming it in an application or library crate.
 | `ZW_IMAGE_DECODER_SANDBOX` | `0`/`false` disables | enabled | Image-decoder sandbox master switch. Fail-closed: the decoder process exits if sandbox installation fails. |
 | `ZW_IMAGE_DECODER_SECCOMP` | `0`/`false` disables | enabled | Seccomp filtering in the image-decoder (network-socket and exec/fork/ptrace syscalls blocked). |
 | `ZW_IMAGE_DECODER_LANDLOCK` | `0`/`false` disables | enabled | Landlock in the image-decoder with an empty allowed-set (all filesystem access denied; already-open descriptors keep working). |
+| `ZW_MEDIA_HOST_SANDBOX` | `0`/`false` disables | enabled | Media-host sandbox master switch. Fail-closed: the process exits if sandbox installation fails. |
+| `ZW_MEDIA_HOST_SECCOMP` | `0`/`false` disables | enabled | Seccomp filtering in the media-host (network-socket and exec/fork/ptrace syscalls blocked). |
+| `ZW_MEDIA_HOST_LANDLOCK` | `0`/`false` disables | enabled | Landlock in the media-host with an empty allowed-set; builds with the `audio-cpal` feature grant read-write access to `/dev/snd` instead. |
+| `ZW_MEDIA_HOST_BIN` | executable path | auto-discovery | Override the media-host executable. |
 | `ZW_DEVTOOLS_FRONTEND_DIR` | directory path | unset | Serve a devtools-frontend bundle over `/devtools/` on the CDP HTTP endpoint and point `devtoolsFrontendUrl` at it. Mutually exclusive with the default CDP auth token: the stock frontend's page-direct socket carries no token and is rejected; connect with a self-managed CDP client instead (token from the discovery endpoint). |
 | `ZEROWEB_NAV_TRIM` | `0` disables | enabled | Disable the deferred navigation-settle allocator reclaim (`nav_trim`/`worker_trim`); the deferred V8 GC hint is not gated by this switch. |
 | `ZEROWEB_MEM_PROBE` | `1` enables | disabled | Emit memory-fill/PSS probe logs (T13 observation leg; not part of judgment samples). |

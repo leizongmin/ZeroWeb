@@ -109,6 +109,26 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
         description: "image-decoder Landlock 空 allowed-set（全 fs 拒绝，已打开 fd 不受影响）",
     },
     EnvironmentVariable {
+        name: "ZW_MEDIA_HOST_SANDBOX",
+        default: "enabled",
+        description: "media-host 沙箱主开关（fail-closed：安装失败进程退出）",
+    },
+    EnvironmentVariable {
+        name: "ZW_MEDIA_HOST_SECCOMP",
+        default: "enabled",
+        description: "media-host seccomp 过滤（网络 socket 与 exec/fork/ptrace 黑名单）",
+    },
+    EnvironmentVariable {
+        name: "ZW_MEDIA_HOST_LANDLOCK",
+        default: "enabled",
+        description: "media-host Landlock 空 allowed-set（audio-cpal 档授予 /dev/snd 读写）",
+    },
+    EnvironmentVariable {
+        name: "ZW_MEDIA_HOST_BIN",
+        default: "auto-discovery",
+        description: "media-host 可执行文件路径",
+    },
+    EnvironmentVariable {
         name: "ZW_COMPOSITOR_BIN",
         default: "automatic discovery",
         description: "compositor 可执行文件路径",

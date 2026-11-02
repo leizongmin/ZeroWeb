@@ -43,10 +43,20 @@ impl RoleIo for StdioRoleIo {
 }
 
 fn main() {
+    // INFO 与 image-decoder 同口径：沙箱安装成功面（seccomp/landlock 档位）进
+    // 日志，供真实进程验收核对；降级/失败面为 WARN/error 本就可见。
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::WARN)
+        .with_max_level(tracing::Level::INFO)
         .with_writer(io::stderr)
         .init();
+
+    // fail-closed（goal ④C 拍板）：沙箱安装失败拒绝运行——renderer 侧呈现为
+    // 媒体错误面，降级显式可见而非静默裸奔。须在 stdin 读线程 spawn 之前
+    // （sandbox 模块时序契约：任何子线程之前）。
+    if let Err(error) = zero_media_host::sandbox::apply_early_if_enabled() {
+        eprintln!("media-host: sandbox install failed, refusing to run: {error}");
+        std::process::exit(1);
+    }
 
     // 读半：stdin 阻塞 recv 专线程（decode 错误/EOF = 对端断开，落线程使
     // mpsc 断开 → 主循环 Disconnected）。写半：stdout 承载回写。
