@@ -1,12 +1,15 @@
-//! R5389（css-pseudo-4 §highlight-painting）：部分行选区分段绘制——行与 owner
-//! 选区相交但未整行覆盖时，段内字形与 originating decoration 以 ::selection
-//! color 重绘（assert「decorations should only recolor to ::selection color in
-//! the selected part」），段外维持 originating 色。整行/不相交行走既有
-//! R5257/R5269/R5272 臂字节不变；账平门拦空白塌缩形态（渲染序累计口径与
-//! textContent 端点错位，保守不染）；UA 默认回落不拆段（作者 ::selection
-//! 声明面才入表）。
+//! R5389/R5390（css-pseudo-4 §highlight-painting）：部分行选区分段绘制——行与
+//! owner 选区相交但未整行覆盖时，段内字形与 originating decoration 以
+//! ::selection color 重绘（assert「decorations should only recolor to
+//! ::selection color in the selected part」），段外维持 originating 色；R5390
+//! 起段域另发射 ::selection bg fill（绘制序 3：盖未选文字、被选中文字盖）。
+//! 整行/不相交行走既有 R5257/R5269/R5272 臂字节不变；账平门拦空白塌缩形态
+//!（渲染序累计口径与 textContent 端点错位，保守不染）；高亮面完整度门只拦
+//! ::selection 自带 decoration；UA 默认回落不拆段（作者 ::selection 声明面
+//! 才入表）。
 //! driving: selection-originating-decoration-color（1.30%→0.00%）、
-//! selection-originating-underline-order（1.68%→0.35% 近似通过）。
+//! selection-originating-underline-order（1.68%→0.35% 近似通过）、
+//! selection-background-painting-order（1.79%→0.83% 近似通过）。
 
 use zero_render_foundation::color::Color;
 
@@ -104,21 +107,37 @@ fn collapsed_whitespace_partial_selection_stays_uncolored() {
     );
 }
 
-/// 高亮面完整度门：::selection 自带非透明 bg（fill 分段未做）→ 保守不拆段
-///（只染字形会放大合成差，highlight-painting-004 0.24%→0.96% 实证；零 blue
-/// glyph 且 bg 分段缺席）。
+/// R5390：::selection 自带非透明 bg → 段 fill 分段（css-pseudo-4 §highlight-painting
+/// 绘制序 3）——段内字形 ::selection 色 + 段域 ::selection bg fill（宽小于元素
+/// 全条 bg，半透明选区色叠色域）。完整度门 R5390 起只拦自带 decoration。
 #[test]
-fn selection_with_author_bg_partial_stays_uncolored() {
+fn selection_with_author_bg_paints_segment_fill() {
     let mut pipeline = RenderPipeline::new(400.0, 300.0);
     pipeline.set_text_selections(vec![("div".to_string(), 0, 1)]);
     let result = pipeline.render_html(
-        r#"<html><body style="margin:0"><div style="margin:0">XX</div></body></html>"#,
+        r#"<html><body style="margin:0"><div style="margin:0;background-color:black">XX</div></body></html>"#,
         "div::selection { background-color: rgb(0, 128, 0); color: blue; }",
     );
     let prims = result.primitives();
     assert!(
-        !prims.glyphs.iter().any(|g| g.color == blue()),
-        "::selection 自带 bg 时段臂应保守不拆段（整行臂也不覆盖部分行），实际出现 blue glyph"
+        prims.glyphs.iter().any(|g| g.color == blue()),
+        "::selection 自带 bg 时段内字形仍应 ::selection 色，实际无 blue glyph"
+    );
+    let green_fill = prims.fills.iter().find(|f| f.color == Color::rgba(0, 128, 0, 255));
+    let black_fill = prims
+        .fills
+        .iter()
+        .find(|f| f.color == black() && f.rect.size.height > 15.0);
+    assert!(
+        green_fill.is_some(),
+        "段域应发射 ::selection bg fill，实际无 green fill"
+    );
+    assert!(black_fill.is_some(), "元素全条 bg 应维持，实际无 black fill");
+    assert!(
+        green_fill.unwrap().rect.size.width < black_fill.unwrap().rect.size.width,
+        "green 段 fill 宽（{:?}）应小于元素全条黑 bg 宽（{:?}）",
+        green_fill.unwrap().rect.size.width,
+        black_fill.unwrap().rect.size.width
     );
 }
 

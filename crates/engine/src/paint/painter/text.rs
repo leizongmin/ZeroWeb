@@ -3503,7 +3503,6 @@ impl super::Painter {
                                     }
                                 }
                             }
-
                             let size_adjust = fragment_font_size_adjustment(
                                 owner_style_opt,
                                 box_node.text_node_font_size_adjust.get(&$frag_nid),
@@ -3785,9 +3784,75 @@ impl super::Painter {
                             // R5384：字形序号（recolor 按插入偏移消费——1 字形 1 字符
                             // 语料等价；shaped 簇分裂面 FIXME）。
                             let mut ce_caret_glyph_idx = 0usize;
+                            // R5390：部分行选区段 fill（css-pseudo-4 §highlight-painting
+                            // 绘制序 3——::selection bg 盖未选文字、被选中文字盖；self-source
+                            // 判定域 ref 页 hrt_layers 字形全透明，可见面 = bg 矩形组合，
+                            // fill 与字形层序不进双页判定——overhang 夹心序 FIXME）。发射
+                            // 点在 glyph 循环前、R4332/R639 多行门外的公共路径——单行案
+                            // 元素 bg 在 box-level（paint_node 先行），多行案 R639 bg 在
+                            // 本点之前发射，两轨蓝段都叠 bg 之上；无 bg owner 段 fill 照画。
+                            // x 域 = 段字符测量累计
+                            //（与 glyph 循环 advance 同式——非 shaped 时 advance_x 恒走
+                            // measure_char_cached 同源；shaped 簇分裂与 bidi 视觉序漂移 FIXME
+                            // 同游标口径）；y/高 = 行盒顶锚（R1442 口径，≡ R5270 非整盒
+                            // line_top 锚同式；R5120 内容区锚在 R4332 块内不可见，多行
+                            // 整盒 slice 案退行盒锚 half-leading 差 FIXME 罕案形）。
+                            // 不随 r5299 band-once 去重：段域 per-fragment
+                            // 切片（r5389_frag_segs），跨片段段各画各的 x 域不重叠。发射序：
+                            // 元素 bg 之后（半透明选区色正确叠色）、字形之前（高亮不盖字，
+                            // R5086 splice 同效）。kill-switch 同 sel_char_segs 门
+                            //（ZW_SEL_PARTIAL_LINE=0 时表空段恒 None）。整盒系回落 owner
+                            //（多行 clone / bg-image / backdrop-filter）不在外层门内，段
+                            // fill 缺席维持整行口径 FIXME。
+                            if let Some((r5390_s0, r5390_s1, _, Some(r5390_fill))) = $frag_sel_seg
+                                && !transformed.is_empty()
+                                && !char_advance_is_y
+                            {
+                                let mut r5390_acc = 0.0f32;
+                                let mut r5390_x0: Option<f32> = None;
+                                let mut r5390_x1 = 0.0f32;
+                                let mut r5390_u16 = 0usize;
+                                for r5390_ch in transformed.chars() {
+                                    let r5390_adv = self.measure_char_cached(frag_font_id.0, r5390_ch, $frag_fs, $is_ahem)
+                                        + frag_letter_spacing
+                                        + if zero_style_system::is_word_separator(r5390_ch) {
+                                            frag_word_spacing
+                                        } else {
+                                            0.0
+                                        };
+                                    let r5390_next = r5390_u16 + r5390_ch.len_utf16();
+                                    if r5390_u16 < r5390_s1 && r5390_s0 < r5390_next && r5390_x0.is_none() {
+                                        r5390_x0 = Some(r5390_acc);
+                                    }
+                                    if r5390_u16 < r5390_s1 && r5390_s0 < r5390_next {
+                                        r5390_x1 = r5390_acc + r5390_adv;
+                                    }
+                                    r5390_u16 = r5390_next;
+                                    r5390_acc += r5390_adv;
+                                }
+                                if let Some(r5390_off0) = r5390_x0
+                                    && r5390_x1 > r5390_off0
+                                {
+                                    let r5390_line_h = box_node
+                                        .text_node_line_heights
+                                        .get(&$frag_nid)
+                                        .copied()
+                                        .unwrap_or($frag_fs * 1.164);
+                                    // 行盒顶锚（R1442 口径：content_y + line.y + ty）——
+                                    // 与 box-level（单行）/ R639（多行）元素 bg 同位（黑条
+                                    // [74,168) 实测 ≡ 行盒）；整盒内容区锚在此不可见，多行
+                                    // 整盒 slice 案退行盒锚（half-leading 差 FIXME 罕案形）。
+                                    let (r5390_y, r5390_h) =
+                                        (content_y + $frag_line_top + ty, r5390_line_h);
+                                    self.primitives.add_fill(
+                                        Rect::new(frag_base_x + r5390_off0, r5390_y, r5390_x1 - r5390_off0, r5390_h),
+                                        r5390_fill,
+                                    );
+                                }
+                            }
                             // R5389：部分行选区段（片段本地 UTF-16 区间 + ::selection 色）
                             // ——per-glyph 染色游标与 decoration 分段 x 域记录。
-                            let r5389_sel_seg: Option<(usize, usize, Color)> = $frag_sel_seg;
+                            let r5389_sel_seg: Option<(usize, usize, Color, Option<Color>)> = $frag_sel_seg;
                             let mut r5389_sel_x0 = f32::INFINITY;
                             let mut r5389_sel_x1 = f32::NEG_INFINITY;
                             let mut r5389_sel_u16 = 0usize;
@@ -3814,7 +3879,7 @@ impl super::Painter {
                                 let r5389_g0 = r5389_sel_u16;
                                 r5389_sel_u16 += ch.len_utf16();
                                 let r5389_seg_hit = match r5389_sel_seg {
-                                    Some((s, e, _)) => r5389_g0 < e && s < r5389_sel_u16,
+                                    Some((s, e, _, _)) => r5389_g0 < e && s < r5389_sel_u16,
                                     None => false,
                                 };
                                 // R4443 临时探针。
@@ -3888,7 +3953,7 @@ impl super::Painter {
                                     // $frag_sel 覆写 frag_color 一致——::first-letter
                                     // 覆写仍胜出）。
                                     if r5389_seg_hit
-                                        && let Some((_, _, sc)) = r5389_sel_seg
+                                        && let Some((_, _, sc, _)) = r5389_sel_seg
                                     {
                                         c = sc;
                                     }
@@ -4071,7 +4136,7 @@ impl super::Painter {
                             // 记录），整条线同 y/thickness 上方重涂；ancestor 链声明盒线的
                             // 段重涂不在本切片（FIXME）。
                             if r5389_sel_x1 > r5389_sel_x0
-                                && let Some((_, _, sc)) = r5389_sel_seg
+                                && let Some((_, _, sc, _)) = r5389_sel_seg
                             {
                                 self.paint_text_decoration_from_style_span(
                                     frag_base_y,
@@ -4210,7 +4275,8 @@ impl super::Painter {
                     // (owner, 行盒顶)，值 = (选区 UTF-16 区间, ::selection color)；仅
                     // 「行与选区相交但未整行覆盖」的行入表（整行走既有 R5257/R5269/R5272
                     // 臂字节不变）。kill-switch `ZW_SEL_PARTIAL_LINE=0` 回退整行口径。
-                    let mut sel_char_segs: HashMap<(NodeId, u32), (usize, usize, Color)> = HashMap::new();
+                    let mut sel_char_segs: HashMap<(NodeId, u32), (usize, usize, Color, Option<Color>)> =
+                        HashMap::new();
                     // R5389：per-fragment (owner, 行盒顶, owner 系 UTF-16 起始, 片段
                     // utf16 长)（active_frags 序平行——渲染序累计，与 line_ranges 同源
                     // 同口径；空白折叠形态偏移 FIXME 同上方 4152 在册口径，账平门见
@@ -4426,30 +4492,40 @@ impl super::Painter {
                             let Some(p) = os.selection_pseudo.as_ref() else {
                                 continue;
                             };
-                            // 高亮面完整度门：::selection 自带非透明 bg（fill 分段未做，
-                            // background-painting-order 1.79 面）或自带 decoration（::selection
-                            // decoration 线绘制未做）时只染字形会放大合成差
-                            //（highlight-painting-004 0.24%→0.96% 实证）——保守不拆段，
-                            // FIXME：fill 分段 + ::selection decoration 段绘制补齐后放开。
-                            if p.background_color != zero_css_parser::values::ColorValue::Transparent
-                                || p.text_decoration_line.has_any()
-                            {
+                            // 高亮面完整度门（R5390 更新）：::selection 自带 decoration
+                            //（::selection decoration 线绘制未做）时只染字形 + fill 会放大
+                            // 合成差（highlight-painting-004 0.24%→0.96% 实证）——保守不
+                            // 拆段；bg 非透明已随 R5390 段 fill 分段放开
+                            //（selection-background-painting-order 翻绿）。FIXME：
+                            // ::selection decoration 段绘制补齐后放开 decoration 侧。
+                            if p.text_decoration_line.has_any() {
                                 continue;
                             }
                             let c = super::super::color::resolve_color_current(&p.color, &os.color);
-                            sel_char_segs.insert((*owner, *ltb), (sel_start, sel_end, c));
+                            // R5390：段 fill 色源 = ::selection background_color——判据
+                            // 与 R5270 owner_sel_fill 同款（Transparent 不拆 fill；字形
+                            // 染色不受影响）。
+                            let seg_bg = if p.background_color != ColorValue::Transparent {
+                                Some(super::super::color::resolve_color_current(
+                                    &p.background_color,
+                                    &os.color,
+                                ))
+                            } else {
+                                None
+                            };
+                            sel_char_segs.insert((*owner, *ltb), (sel_start, sel_end, c, seg_bg));
                         }
                     }
                     // R5389：per-fragment 段裁剪（active_frags 序平行——stored/fragments
                     // 两宏调用点按序取用；段 = 选区区间 ∩ 片段区间，偏移片段本地化；
                     // 空段 → None 不入参）。
-                    let r5389_frag_segs: Vec<Option<(usize, usize, Color)>> = r5389_frag_u16_starts
+                    let r5389_frag_segs: Vec<Option<(usize, usize, Color, Option<Color>)>> = r5389_frag_u16_starts
                         .iter()
                         .map(|&(owner, ltb, fstart, flen)| {
-                            sel_char_segs.get(&(owner, ltb)).and_then(|&(ss, se, c)| {
+                            sel_char_segs.get(&(owner, ltb)).and_then(|&(ss, se, c, bg)| {
                                 let s0 = ss.max(fstart);
                                 let s1 = se.min(fstart + flen);
-                                (s0 < s1).then_some((s0 - fstart, s1 - fstart, c))
+                                (s0 < s1).then_some((s0 - fstart, s1 - fstart, c, bg))
                             })
                         })
                         .collect();

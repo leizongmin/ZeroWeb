@@ -105,9 +105,11 @@ fn inline_owner_without_pseudo_gets_ua_default_highlight() {
     );
 }
 
-/// 部分选区（行未完全落入 owner 选区）→ 不着色（部分行高亮维持挂账）。
+/// 部分选区（行未完全落入 owner 选区）→ R5389/R5390 段臂接管：段内 [0,3)
+/// 字形 aqua + 段域 green fill（::selection bg 分段），段外字形维持元素色
+/// fuchsia（R5269 时代「部分行零处理」挂账已被分段绘制替代）。
 #[test]
-fn partial_selection_on_inline_owner_leaves_line_uncolored() {
+fn partial_selection_on_inline_owner_recolors_segment() {
     let mut pipeline = RenderPipeline::new(400.0, 300.0);
     pipeline.set_text_selections(vec![("#test".to_string(), 0, 3)]);
     let result = pipeline.render_html(
@@ -116,17 +118,18 @@ fn partial_selection_on_inline_owner_leaves_line_uncolored() {
     );
     let prims = result.primitives();
     assert!(
-        prims
-            .glyphs
-            .iter()
-            .filter(|g| g.color != Color::rgba(0, 0, 0, 255))
-            .all(|g| g.color == Color::rgba(255, 0, 255, 255)),
-        "部分选区下字形应保持元素色 fuchsia，实际 {:?}",
+        prims.glyphs.iter().any(|g| g.color == Color::rgba(0, 255, 255, 255)),
+        "段内字形应为 ::selection aqua，实际 {:?}",
         prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
     );
     assert!(
-        !prims.fills.iter().any(|f| f.color == Color::rgba(0, 128, 0, 255)),
-        "部分选区下不应铺 green 行高亮，实际 fills {:?}",
+        prims.glyphs.iter().any(|g| g.color == Color::rgba(255, 0, 255, 255)),
+        "段外字形应维持元素色 fuchsia，实际 {:?}",
+        prims.glyphs.iter().map(|g| g.color).collect::<Vec<_>>()
+    );
+    assert!(
+        prims.fills.iter().any(|f| f.color == Color::rgba(0, 128, 0, 255)),
+        "段域应发射 ::selection bg green fill，实际 fills {:?}",
         prims.fills.iter().map(|f| f.color).collect::<Vec<_>>()
     );
 }
