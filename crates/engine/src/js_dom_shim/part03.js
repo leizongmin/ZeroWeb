@@ -4411,7 +4411,13 @@
       // FIXME）；③"2\\u001f<msg>" → window 报告 + load（属性校验违例，s105 同判
       // ——报告 ctor 保真 FIXME）；④成功 → eval 体、无事件，求值抛错 → window
       // 报告（模块运行期错误面，元素不派事件）。run-once 记账先行（spec
-      // already-started prepare 置位）。事件 setTimeout 异步派发（spec 事件语义）。
+      // already-started prepare 置位）。编译+求值整体 setTimeout 延迟（s251）：
+      // spec 动态插入模块的 evaluate 排在插入脚本完成之后（microtask 近似）——
+      // 同步 eval 会在插入脚本顶层 var 的 accessor 导出（script_run_classic_page
+      // 导出后缀于 eval 尾执行）前求值，体引用同脚 var 即 ReferenceError
+      //（text-module/load-error-events inline,200 动态臂根因；s250「replay 作用
+      // 域不可见」归因误判，s251 探针定谳可见性经 accessor 全通）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
       // __zwHostDynamicScripts 让位（renderer 宿主通路面，R387b 同语义）。
       if (_cls109 === 'module') {
         if (globalThis.__zwHostDynamicScripts
@@ -4421,46 +4427,49 @@
         } else if (_hdl109 != null) {
           (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
         }
-        var _miBase250 = (typeof globalThis._zwDocBaseURL === 'function')
-          ? globalThis._zwDocBaseURL()
-          : ((globalThis.location && globalThis.location.href) || 'about:blank');
-        var _miR250 = '';
-        try {
-          _miR250 = String(globalThis.__zw_compile_inline_module(String(text), _miBase250) || '');
-        } catch (_eMiC250) {}
+        var _miText250 = String(text);
         var _miEl250 = el;
-        if (_miR250 === '') {
-          setTimeout(function () {
-            try { _miEl250.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
-              ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eMiE250) {}
-          }, 0);
-          return;
-        }
-        var _miSep250 = _miR250.indexOf('\u001f');
-        var _miTag250 = _miSep250 >= 0 ? _miR250.slice(0, _miSep250) : '';
-        var _miCode250 = _miSep250 >= 0 ? _miR250.slice(_miSep250 + 1) : _miR250;
-        if (_miTag250 === '2') {
-          if (typeof globalThis._zwReportListenerError === 'function') {
-            try { globalThis._zwReportListenerError(new SyntaxError(_miCode250), null); } catch (_eMiA250) {}
+        setTimeout(function () {
+          var _miBase250 = (typeof globalThis._zwDocBaseURL === 'function')
+            ? globalThis._zwDocBaseURL()
+            : ((globalThis.location && globalThis.location.href) || 'about:blank');
+          var _miR250 = '';
+          try {
+            _miR250 = String(globalThis.__zw_compile_inline_module(_miText250, _miBase250) || '');
+          } catch (_eMiC250) {}
+          if (_miR250 === '') {
+            setTimeout(function () {
+              try { _miEl250.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+                ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eMiE250) {}
+            }, 0);
+            return;
           }
-          setTimeout(function () {
-            try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL250) {}
-          }, 0);
-          return;
-        }
-        if (_miTag250 === '1' && _miCode250 === '') {
-          setTimeout(function () {
-            try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL2b250) {}
-          }, 0);
-          return;
-        }
-        try {
-          (function () { return eval('(' + _miCode250 + ')'); })();
-        } catch (_miEv250) {
-          if (typeof globalThis._zwReportListenerError === 'function') {
-            try { globalThis._zwReportListenerError(_miEv250, null); } catch (_eMiR250) {}
+          var _miSep250 = _miR250.indexOf('\u001f');
+          var _miTag250 = _miSep250 >= 0 ? _miR250.slice(0, _miSep250) : '';
+          var _miCode250 = _miSep250 >= 0 ? _miR250.slice(_miSep250 + 1) : _miR250;
+          if (_miTag250 === '2') {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(new SyntaxError(_miCode250), null); } catch (_eMiA250) {}
+            }
+            setTimeout(function () {
+              try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL250) {}
+            }, 0);
+            return;
           }
-        }
+          if (_miTag250 === '1' && _miCode250 === '') {
+            setTimeout(function () {
+              try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL2b250) {}
+            }, 0);
+            return;
+          }
+          try {
+            (function () { return eval('(' + _miCode250 + ')'); })();
+          } catch (_miEv250) {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(_miEv250, null); } catch (_eMiR250) {}
+            }
+          }
+        }, 0);
         return;
       }
       // 调用点同步 eval（124 形期望序要求嵌套执行发生在 removeAttribute 调用内）

@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 250 施工收口（text-module integrity matches 臂（text 型 spec 无 MIME 校验定谳 + 无扩展名语料 `file` 补）+ load-error-events.py 四风味端点臂（runner fetcher 建模）+ s100 拦截面 `!is_module_type` 豁免（module/ 变体文件 Timeout 解除）+ 动态 src/内联 module prepare（`__zw_compile_inline_module` 四态契约 + `_zwPrepareSrcScriptGate` module 分支 rev3：队位调用时刻 + 延迟编译 + classic 通道执行器/队列复用）；12 键翻绿（7 F→P + 5 N→P）P→F 0 第九个连续完美 A/B，shim 3 处 + webview 1 + runner 3 + 单测 2；承前：M2 切片 249（动态 import 属性三通道 json/css/text，13 F→P + 1 T→P + 2 T→F 预期换形 P→F 0 第八个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 251 施工收口（动态内联 module 延迟求值——s109 内联分派臂编译+求值整体 setTimeout 后置（spec 动态插入模块 evaluate 排插入脚本之后），`inline, 200, not parser-inserted` ×3 + module-inline 页 2 动态内联臂 5 键 N→P 零回归第十个连续完美 A/B；**s250「replay 作用域不可见」归因修正**：strict 页面 var 经 `scan_top_level_decl_exports` globalThis accessor 导出全通，真根因 = 同步 eval 时插入脚本 accessor 导出后缀未执行（同脚 var 引用 ReferenceError），host 侧执行通道/沙盒重入 API 整案不需要；承前：M2 切片 250（text-module integrity + load-error-events 四页 src 臂族 + s100 module 豁免 + 动态 src module rev3，12 键翻绿第九个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,32 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 251**：动态内联 module 延迟求值轮（s250 挂账
+  收口 + 归因修正）——勘根推翻前提：最小探针（前导脚严格 `var` +
+  动态插入内联 module 体静态 import + `onExecute(pv)`）三测全
+  Pass，定谳 strict 页面 var 经 `script_run_classic_page` 间接
+  eval + `scan_top_level_decl_exports` **globalThis accessor 导
+  出**对 shim eval 全可见，s250「replay 作用域不可见」8 探针结论
+  作废；真根因 = 同脚本形态竞态（`var` 声明与 `appendChild` 同
+  `<script>` 内，s109 内联臂同步 eval 时插入脚本 accessor 导出
+  后缀未执行 → 体引用 ReferenceError → onExecute 不达 →
+  pending；spec 动态插入模块 evaluate 排插入脚本之后）。施工
+  shim 1 处（s109 内联 module 臂编译+四态状态机+求值整体
+  `setTimeout(0)`，src 路径 rev3 同型；体文本读/空体门/run-once
+  记账保持插入时刻同步——already-started 属 prepare 同步段；404
+  臂延迟事件派发嵌套保持零时序漂移；classic 内联臂同步 eval 不
+  动——124 形期望序依赖）。验证：solo 984P/79F/25T/5N（对 s250
+  ΔP=+5 ΔN=−5）+ 全树 A/B 键级 **5 N→P 零回归，LOST=GAINED=5
+  同键换形，F/T 零位移——第十个连续完美 A/B**（5 键 = 目标 3 臂
+  text/json/css-module `inline, 200, not parser-inserted` +
+  module/load-error-events-inline.html 2 动态内联臂名为 src 实
+  内联同根同刀）；load-error-events 全家族 5 页 48 臂首次全绿；
+  拼接 shim node --check 干净、Rust 零改动。挂账更新——s250
+  「host 侧执行通道/沙盒重入 API」候选销案；prelude
+  `__zw_load_module` 同型潜伏面假说弱化（动态 import 体经
+  promise 异步求值，同型竞态不适用，归候选 #1 一并核）。账本
+  [evidence/2026-11-03-m2s251-dynamic-inline-module-deferred-eval.md](html-semantics-compat/evidence/2026-11-03-m2s251-dynamic-inline-module-deferred-eval.md)。
+
 - **2026-11-03 M2 切片 250**：text-module integrity matches 臂 +
   load-error-events 四页 src 臂族 + s100 拦截面 module 型豁免 +
   动态 src/内联 module prepare 轮——勘根四根：text 型 spec 无
