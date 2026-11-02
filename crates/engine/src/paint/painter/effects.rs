@@ -1561,6 +1561,89 @@ impl super::Painter {
         }
     }
 
+    /// R5389（css-pseudo-4 §highlight-painting）：选区段 decoration 重涂——
+    /// 选中部分 originating decoration 以 ::selection color 重绘（assert 语义
+    /// 「decorations only recolor to ::selection color in the selected part」），
+    /// 段外维持 originating text-decoration-color（由整条臂先行绘制）。线位置/
+    /// 厚度公式与 [`Self::paint_text_decoration_from_style`] 同源（underline
+    /// post 表度量 + R2522 offset、line-through −0.35em、overline −1em）；
+    /// x 域取字形渲染序实测区间（glyph char_pos 域 ≡ 整条线域基座，天然处于
+    /// inset/skip 之后）。仅 Solid 语义明确（fill 可分段）；其余线型维持整条
+    /// 原色 FIXME。
+    /// https://drafts.csswg.org/css-pseudo-4/#highlight-painting
+    pub(crate) fn paint_text_decoration_from_style_span(
+        &mut self,
+        baseline_y: f32,
+        font_id: u32,
+        font_size: f32,
+        span_x: f32,
+        span_w: f32,
+        color_override: Color,
+        style: &ComputedStyle,
+    ) {
+        if span_w <= 0.0 || !style.text_decoration_line.has_any() {
+            return;
+        }
+        // 仅 Solid 段语义明确（x 域内平铺 fill）；其余线型（wavy/dotted/dashed
+        // 波形与点划按整条域展开相位）分段重绘会相位错位（highlight-painting-004
+        // wavy 段 0.24%→1.14% 实证），维持整条原色 FIXME。
+        if !matches!(style.text_decoration_style, TextDecorationStyleValue::Solid) {
+            return;
+        }
+        let underline_metric = crate::text_metrics::underline_metrics_for_paint(font_id);
+        let line_width = match style.text_decoration_thickness {
+            zero_style_system::TextDecorationThicknessValue::Length(ref lv) => {
+                let px = zero_style_system::resolve_length(lv, font_size as f64, Some(1280.0), Some(800.0));
+                (px as f32).floor().max(1.0)
+            }
+            zero_style_system::TextDecorationThicknessValue::Auto => match underline_metric {
+                Some((_, thick_em)) => (thick_em * font_size).max(1.0),
+                None => (font_size * 0.06).max(1.0),
+            },
+        };
+        let underline_offset_px = match &style.text_underline_offset {
+            zero_css_parser::values::TextUnderlineOffsetValue::Auto => 0.0,
+            zero_css_parser::values::TextUnderlineOffsetValue::Length(lv) => match lv {
+                LengthValue::Px(n) => *n as f32,
+                LengthValue::Em(n) | LengthValue::Rem(n) => *n as f32 * font_size,
+                LengthValue::Percentage(n) => *n as f32 / 100.0 * font_size,
+                _ => 0.0,
+            },
+        };
+        let decor_style = &style.text_decoration_style;
+        if style.text_decoration_line.underline {
+            let underline_gap = underline_metric.map_or(0.15, |(offset_em, _)| offset_em);
+            self.paint_decoration_line(
+                span_x,
+                baseline_y + underline_gap * font_size + underline_offset_px,
+                span_w,
+                line_width,
+                color_override,
+                decor_style,
+            );
+        }
+        if style.text_decoration_line.overline {
+            self.paint_decoration_line(
+                span_x,
+                baseline_y - font_size,
+                span_w,
+                line_width,
+                color_override,
+                decor_style,
+            );
+        }
+        if style.text_decoration_line.line_through {
+            self.paint_decoration_line(
+                span_x,
+                baseline_y - font_size * 0.35,
+                span_w,
+                line_width,
+                color_override,
+                decor_style,
+            );
+        }
+    }
+
     /// 绘制文本装饰线的底层实现。
     ///
     /// 参数已预计算以避免过多参数。

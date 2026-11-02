@@ -324,6 +324,10 @@ pub struct Painter {
     /// `_textSelection` 同语义）。
     pub(crate) pending_text_selections: Vec<(String, usize, usize)>,
     pub(crate) text_selections: HashMap<NodeId, (usize, usize)>,
+    /// R5389：部分行选区分段染（css-pseudo-4 §highlight-painting——选中部分字形
+    /// 与 originating decoration 以 ::selection color 重绘）。构造期单读开关
+    ///（`ZW_SEL_PARTIAL_LINE=0` 回退整行口径），照 R5350 inline_ca_expand 口径。
+    pub(crate) sel_partial_line_enabled: bool,
     /// M2-S1b（compositor-animation-continuity）：元素 → 已导出动画通道（flag 开启时
     /// 由 pipeline 注入；paint 期查表决定 opacity 中性化 / transform 恒等 TP 发射）。
     /// flag 关闭时恒空表，paint 路径仅多一次空表查询。
@@ -1220,6 +1224,7 @@ impl Painter {
             scroll_offsets: HashMap::new(),
             pending_text_selections: Vec::new(),
             text_selections: HashMap::new(),
+            sel_partial_line_enabled: std::env::var("ZW_SEL_PARTIAL_LINE").as_deref() != Ok("0"),
             compositor_channels: HashMap::new(),
             animation_scopes: Vec::new(),
         }

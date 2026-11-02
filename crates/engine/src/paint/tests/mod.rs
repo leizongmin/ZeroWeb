@@ -92,6 +92,9 @@ mod r5341_elliptic_radius;
 mod r5365_scroll_overflow_extent;
 /// R5386 @property 注册初值在管线 var() 解析（css-properties-values-api-1 §2）。
 mod r5386_registered_var_render_tests;
+/// R5389 部分行选区分段绘制（css-pseudo-4 §highlight-painting：段内字形与
+/// originating decoration 以 ::selection color 重绘；账平门/UA 回落/整行零触碰守卫）。
+mod r5389_selection_partial_line_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

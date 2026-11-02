@@ -2625,7 +2625,7 @@ impl super::Painter {
                         .filter(|s| s.background_color != ColorValue::Transparent)
                         .map(|s| color_value_to_render(&s.background_color));
                     macro_rules! render_fragment {
-                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr, $frag_sel:expr, $frag_band_map:expr, $frag_seg_map:expr) => {{
+                        ($frag_x:expr, $frag_y:expr, $frag_line_top:expr, $frag_edge:expr, $frag_width:expr, $baseline_offset:expr, $frag_fs:expr, $frag_text:expr, $frag_nid:expr, $is_ahem:expr, $frag_source:expr, $frag_ls:expr, $frag_sel:expr, $frag_sel_seg:expr, $frag_band_map:expr, $frag_seg_map:expr) => {{
                             // R4233：per-fragment letter-spacing（镜像 R4133 per-fragment
                             // word-spacing）——片段所属 run 声明的 ls 与容器盒不同时
                             //（span{letter-spacing} / 容器内 normal 重置），glyph advance、
@@ -3785,6 +3785,12 @@ impl super::Painter {
                             // R5384：字形序号（recolor 按插入偏移消费——1 字形 1 字符
                             // 语料等价；shaped 簇分裂面 FIXME）。
                             let mut ce_caret_glyph_idx = 0usize;
+                            // R5389：部分行选区段（片段本地 UTF-16 区间 + ::selection 色）
+                            // ——per-glyph 染色游标与 decoration 分段 x 域记录。
+                            let r5389_sel_seg: Option<(usize, usize, Color)> = $frag_sel_seg;
+                            let mut r5389_sel_x0 = f32::INFINITY;
+                            let mut r5389_sel_x1 = f32::NEG_INFINITY;
+                            let mut r5389_sel_u16 = 0usize;
                             for glyph in fragment_glyphs(
                                 &shaping_font_ids,
                                 &transformed,
@@ -3802,6 +3808,15 @@ impl super::Painter {
                                 let ch = glyph.code_point;
                                 let glyph_font_id = glyph.font_id.unwrap_or(frag_font_id);
                                 let glyph_font_size = glyph.font_size.unwrap_or($frag_fs);
+                                // R5389：部分行选区 per-glyph 判定——UTF-16 游标（语料
+                                // 1 字形 = 1 UTF-16 等价；surrogate/shaped 簇分裂与 bidi
+                                // run 视觉序漂移 FIXME，kill-switch 兜底）∩ 段区间。
+                                let r5389_g0 = r5389_sel_u16;
+                                r5389_sel_u16 += ch.len_utf16();
+                                let r5389_seg_hit = match r5389_sel_seg {
+                                    Some((s, e, _)) => r5389_g0 < e && s < r5389_sel_u16,
+                                    None => false,
+                                };
                                 // R4443 临时探针。
                                 if char_advance_is_y && glyph_probe_enabled() {
                                     eprintln!(
@@ -3848,6 +3863,12 @@ impl super::Painter {
                                 } else {
                                     (char_pos + glyph.x_offset, frag_base_y - glyph.y_offset)
                                 };
+                                // R5389：段内字形推进域记录（char_pos 域 ≡ decoration
+                                // 整条线基座；竖排无横向 x 域不记）。
+                                if r5389_seg_hit && !char_advance_is_y {
+                                    r5389_sel_x0 = r5389_sel_x0.min(char_pos);
+                                    r5389_sel_x1 = r5389_sel_x1.max(char_pos + advance);
+                                }
                                 // ::first-letter 逐字形覆色：本片段是容器首个含非空白字符的文本片段、
                                 // 且该字形是其中第一个非空白字符时，用伪元素 color（CSS2 §5.12.2）。
                                 let glyph_color = {
@@ -3861,6 +3882,15 @@ impl super::Painter {
                                     {
                                         c = rc;
                                         ce_caret_recolor = None;
+                                    }
+                                    // R5389：段内字形 ::selection 色（css-pseudo-4
+                                    // §highlight-painting 高亮色重绘文本；槽位与整行
+                                    // $frag_sel 覆写 frag_color 一致——::first-letter
+                                    // 覆写仍胜出）。
+                                    if r5389_seg_hit
+                                        && let Some((_, _, sc)) = r5389_sel_seg
+                                    {
+                                        c = sc;
                                     }
                                     if let Some(fl) = first_letter_color
                                         && !first_letter_applied
@@ -4032,6 +4062,27 @@ impl super::Painter {
                                 skip_s,
                                 skip_e,
                             );
+                            // R5389：部分行选区 decoration 分段重涂（css-pseudo-4
+                            // §highlight-painting highlight decorations——originating
+                            // decoration 选中部分以高亮 color 重绘，assert「decorations
+                            // should only recolor to ::selection color in the selected
+                            // part」；driving: selection-originating-decoration-color ref
+                            // 黑/绿/黑三段线-through）。x 域 = 段内字形推进域（glyph 循环
+                            // 记录），整条线同 y/thickness 上方重涂；ancestor 链声明盒线的
+                            // 段重涂不在本切片（FIXME）。
+                            if r5389_sel_x1 > r5389_sel_x0
+                                && let Some((_, _, sc)) = r5389_sel_seg
+                            {
+                                self.paint_text_decoration_from_style_span(
+                                    frag_base_y,
+                                    frag_font_id.0,
+                                    $frag_fs,
+                                    r5389_sel_x0,
+                                    r5389_sel_x1 - r5389_sel_x0,
+                                    sc,
+                                    style,
+                                );
+                            }
                             // R5300（css-text-decor-3 §2.6 decorating box）：装饰由**声明盒**
                             // 绘制——owner 自身及 owner→容器祖先链上每个声明
                             // text-decoration 的盒各绘一条独立线（CSS 2.1 §16.3.1 各元素
@@ -4154,6 +4205,17 @@ impl super::Painter {
                     let mut sel_line_colors: HashMap<(NodeId, u32), Color> = HashMap::new();
                     let mut sel_padbox_fill: Option<Color> = None;
                     let mut sel_line_fills: Vec<(Rect, Color)> = Vec::new();
+                    // R5389：部分行选区分段染（css-pseudo-4 §highlight-painting——选中部分
+                    // 字形与 originating decoration 以 ::selection color 重绘）。键 =
+                    // (owner, 行盒顶)，值 = (选区 UTF-16 区间, ::selection color)；仅
+                    // 「行与选区相交但未整行覆盖」的行入表（整行走既有 R5257/R5269/R5272
+                    // 臂字节不变）。kill-switch `ZW_SEL_PARTIAL_LINE=0` 回退整行口径。
+                    let mut sel_char_segs: HashMap<(NodeId, u32), (usize, usize, Color)> = HashMap::new();
+                    // R5389：per-fragment (owner, 行盒顶, owner 系 UTF-16 起始, 片段
+                    // utf16 长)（active_frags 序平行——渲染序累计，与 line_ranges 同源
+                    // 同口径；空白折叠形态偏移 FIXME 同上方 4152 在册口径，账平门见
+                    // 下方收集臂）。
+                    let mut r5389_frag_u16_starts: Vec<(NodeId, u32, usize, usize)> = Vec::new();
                     // R5256：整contents 选区的后代 owner 行（R5054 后代 owner FIXME
                     // 首片）——selectNodeContents(盒/祖先) 形下片段行可归 inline 后代
                     // owner（ref 页 `<div 选区><span>text</span></div>` 的 span 文本），
@@ -4286,23 +4348,111 @@ impl super::Painter {
                             } else {
                                 text.encode_utf16().count()
                             };
-                            match ranges
+                            // R5389：捕获片段 owner 系 UTF-16 起始（Some 臂 = 行 end
+                            // 更新前值即行起点 + 行内前序片段累计；None 臂 = 新行起点
+                            // *off）——与 line_ranges 同源同口径。
+                            let frag_u16_start = match ranges
                                 .iter_mut()
                                 .find(|((o, l), _, _, _, _)| *o == owner && *l == line_top.to_bits())
                             {
                                 Some((_, _, end, min_x, max_xw)) => {
+                                    let s = *end;
                                     *end += len16;
                                     *min_x = min_x.min(*fx);
                                     *max_xw = max_xw.max(*fx + *fw);
+                                    s
                                 }
-                                None => ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw)),
-                            }
+                                None => {
+                                    ranges.push(((owner, line_top.to_bits()), *off, *off + len16, *fx, *fx + *fw));
+                                    *off
+                                }
+                            };
+                            r5389_frag_u16_starts.push((owner, line_top.to_bits(), frag_u16_start, len16));
                             *off += len16;
                         }
                         ranges
                     } else {
                         Vec::new()
                     };
+                    // R5389：部分行选区段收集（css-pseudo-4 §highlight-painting）——行与
+                    // owner 选区相交但未整行覆盖的行入 sel_char_segs，供宏内 per-glyph
+                    // 染色与 originating decoration 分段重涂（driving:
+                    // selection-originating-decoration-color ref 黑/绿/黑三段）。整行/
+                    // 不相交行不入表：前者走 R5257/R5269/R5272 既有臂字节不变，后者无段。
+                    // 账平门：owner 渲染序累计总长 == textContent utf16 长——空白折叠形态
+                    // 渲染序口径与 shim textContent 端点错位，保守不染（上方 4152 在册
+                    // FIXME 同口径：渲染序账平 + owner 文本无空白敏感字符）。
+                    // 作者 ::selection 声明面才拆段（UA 默认回落色 ≠
+                    // 继承 color 时同表维护延后 FIXME）；竖排/RTL 不在本切片（FIXME 同
+                    // R5269/R5272 口径）。
+                    if self.sel_partial_line_enabled
+                        && !is_vertical
+                        && matches!(style.direction, zero_style_system::DirectionValue::Ltr)
+                        && !line_ranges.is_empty()
+                    {
+                        let mut rendered_len: HashMap<NodeId, usize> = HashMap::new();
+                        for ((o, _), _, e, _, _) in &line_ranges {
+                            let v = rendered_len.entry(*o).or_insert(0);
+                            *v = (*v).max(*e);
+                        }
+                        for ((owner, ltb), line_start, line_end, _, _) in &line_ranges {
+                            let Some(&(sel_start, sel_end)) = self.text_selections.get(owner) else {
+                                continue;
+                            };
+                            if sel_start <= *line_start && *line_end <= sel_end {
+                                continue; // 整行：R5257/R5269/R5272 既有臂
+                            }
+                            if *line_end <= sel_start || sel_end <= *line_start {
+                                continue; // 不相交
+                            }
+                            // 账平门（owner 级）：①渲染序累计总长 == textContent utf16 长
+                            //（R1447 tab 等形态错位不染）；②textContent 含可折叠/可剥离
+                            // 空白（NBSP 除外）即保守不染——fragment.text 保留原文而折叠
+                            // 剥离发生在 glyph 阶段，渲染序 glyph 序与 utf16 端点错位
+                            //（上方 4152 在册 FIXME 同口径）。
+                            let tl = doc.text_content(*owner).map(|t| t.encode_utf16().count()).unwrap_or(0);
+                            if rendered_len.get(owner).copied().unwrap_or(0) != tl {
+                                continue;
+                            }
+                            let has_fold_ws = doc
+                                .text_content(*owner)
+                                .is_some_and(|t| t.chars().any(|c| c.is_whitespace() && c != '\u{00a0}'));
+                            if has_fold_ws {
+                                continue;
+                            }
+                            let Some(os) = styles.and_then(|st| st.get(owner)) else {
+                                continue;
+                            };
+                            let Some(p) = os.selection_pseudo.as_ref() else {
+                                continue;
+                            };
+                            // 高亮面完整度门：::selection 自带非透明 bg（fill 分段未做，
+                            // background-painting-order 1.79 面）或自带 decoration（::selection
+                            // decoration 线绘制未做）时只染字形会放大合成差
+                            //（highlight-painting-004 0.24%→0.96% 实证）——保守不拆段，
+                            // FIXME：fill 分段 + ::selection decoration 段绘制补齐后放开。
+                            if p.background_color != zero_css_parser::values::ColorValue::Transparent
+                                || p.text_decoration_line.has_any()
+                            {
+                                continue;
+                            }
+                            let c = super::super::color::resolve_color_current(&p.color, &os.color);
+                            sel_char_segs.insert((*owner, *ltb), (sel_start, sel_end, c));
+                        }
+                    }
+                    // R5389：per-fragment 段裁剪（active_frags 序平行——stored/fragments
+                    // 两宏调用点按序取用；段 = 选区区间 ∩ 片段区间，偏移片段本地化；
+                    // 空段 → None 不入参）。
+                    let r5389_frag_segs: Vec<Option<(usize, usize, Color)>> = r5389_frag_u16_starts
+                        .iter()
+                        .map(|&(owner, ltb, fstart, flen)| {
+                            sel_char_segs.get(&(owner, ltb)).and_then(|&(ss, se, c)| {
+                                let s0 = ss.max(fstart);
+                                let s1 = se.min(fstart + flen);
+                                (s0 < s1).then_some((s0 - fstart, s1 - fstart, c))
+                            })
+                        })
+                        .collect();
                     // R5258（CSS2 §5.12.1 切片 1）：::first-line 首格式行字形 color——
                     // 行组 line_top == 组内最小者为首行；组内 inline 后代解析 color ==
                     // 盒 color（≈继承、无显式覆盖）才随伪样式（span{color} 显式声明
@@ -4780,6 +4930,8 @@ impl super::Painter {
                                         frag.line_top_rel.to_bits()
                                     ))
                                     .copied(),
+                                // R5389：部分行选区段（active_frags 序平行表，见上）。
+                                r5389_frag_segs.get(frag_ei).copied().flatten(),
                                 &r5297_band_extents,
                                 &r5299_seg_extents
                             );
@@ -4863,6 +5015,8 @@ impl super::Painter {
                                         frag_line_tops.get(frag_gi).copied().unwrap_or(0.0).to_bits()
                                     ))
                                     .copied(),
+                                // R5389：部分行选区段（active_frags 序平行表，见上）。
+                                r5389_frag_segs.get(frag_gi).copied().flatten(),
                                 &r5297_band_extents,
                                 &r5299_seg_extents
                             );
