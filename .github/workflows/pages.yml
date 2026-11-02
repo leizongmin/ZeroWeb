@@ -17,6 +17,15 @@ on:
       - 'docs/compat/wptfyi/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
+  # weekly 完成即重部署：coverage/gap 快照由 weekly 的 GITHUB_TOKEN 回写
+  # main，而 GITHUB_TOKEN 产生的 push 不触发 push 事件级联（GitHub 防递归），
+  # 仅靠上面 docs/compat/wptfyi/** 路径过滤从未在 CI 回写后生效（2026-11-02
+  # 实证：66.96% 快照 d2ea12b 未部署，站点停在 42.11% 旧快照）。workflow_run
+  # 不受该限制，weekly 无论哪个 job 回写快照，完成后都补一次部署（幂等）。
+  workflow_run:
+    workflows: ["Weekly Build"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
