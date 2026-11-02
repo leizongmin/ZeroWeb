@@ -1830,6 +1830,15 @@ impl super::Painter {
                     .with_vertical_walk_nodes(box_node.inline_vertical_nodes.clone())
                     // R4312：块级元素子信号——walk 块子门同通道恢复。
                     .with_block_child_walk_nodes(box_node.inline_block_child_nodes.clone())
+                    // t-trending：在流块级元素子信号——flatten 泄漏门（§9.2.1.1）Path B
+                    // 同通道恢复（谓词比 R4312 块子门窄：排除离流块子）。
+                    .with_flow_block_child_walk_nodes(
+                        box_node
+                            .inline_flow_block_child_nodes
+                            .as_deref()
+                            .cloned()
+                            .unwrap_or_default(),
+                    )
                     // display:none 元素信号（CSS2 §9.3 / CSS Display 3 §2.1）——Path B
                     // （空 styles）下 author 规则隐藏子门，防 none 文本泄入父 IFC。
                     .with_display_none_walk_nodes(collect_display_none_walk_nodes(box_node, doc, styles))

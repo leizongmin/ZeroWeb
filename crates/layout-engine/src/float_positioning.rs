@@ -395,8 +395,9 @@ pub(crate) fn shrink_pure_text_floats(
     }
     // R4920 Σ 臂开关在本臂前段（R5242 inline-table 早退门）也要消费，提前读一次。
     let float_inline_sum_on = std::env::var("ZW_FLOAT_INLINE_SUM").as_deref() != Ok("0");
-    // 已有 block 级 / replaced 子元素的 float 由 adjust_float_positions 收缩分支处理，
-    // 此处不重复（避免双重 shrink / 与 block 子宽度冲突）。
+    // 已有 block 级子元素的 float 由 adjust_float_positions 收缩分支处理，
+    // 此处不重复（避免双重 shrink / 与 block 子宽度冲突）；t-trending 起 Σ 开时
+    // inline 级 replaced 子不再算此列（见谓词内注）。
     // R5242（CSS2 §9.2.2/§10.3.5）：inline-table 是行内级原子，其 LayoutBox 的
     // is_block_level 旗标是块叠装配的既有简化（postprocess.rs R5011 注在案）——float
     // shrink-to-fit 语义不认：definite 宽 inline-table 子不算 block-level，不早退，
@@ -408,7 +409,14 @@ pub(crate) fn shrink_pure_text_floats(
     let has_block_or_replaced = box_node.children.iter().any(|c| {
         !c.is_absolute
             && !c.is_fixed
-            && (c.is_block_level || c.is_replaced)
+            // t-trending（CSS2 §10.3.5 + css-sizing-3 §max-content）：Σ 开时 inline 级
+            // replaced 子（svg/img 等）不再触发早退——replaced 是行内级原子，参与本臂
+            // inline 流（宽度入下方 replaced_w Σ）；块叠口径只属块级子。taffy 块流
+            // content_size 盲 IFC 文本（docs/learnings 2026-10-23），github trending 星数
+            // float（svg octicon + 文本）早退后滞留 taffy max(子盒) = 16px → 星数文本
+            // 逐词竖排碎片列。Σ 关（`ZW_FLOAT_INLINE_SUM=0` 逐字节回退）维持旧 replaced
+            // 早退（否则 Σ=0 时 replaced 宽不计，float 收缩到纯文本宽致原子外溢）。
+            && (c.is_block_level || (c.is_replaced && !float_inline_sum_on))
             && !(float_inline_sum_on
                 && c.node_id
                     .and_then(|id| styles.get(&id))
@@ -432,11 +440,28 @@ pub(crate) fn shrink_pure_text_floats(
     // gate 仅本臂启用——text_content_max_width 其余消费方（legend/leaf/垂直 float 臂）
     // 无 Σ 配对侧，维持旧口径不扩波及面。kill-switch `ZW_INTRINSIC_ATOMIC_GATE=0` 回退。
     let text_max_w = adjusted_text_max_w.unwrap_or_else(|| {
+        // t-trending（css-sizing-3 §max-content + CSS2 §10.3.5）：Σ 臂文本分量优先走真实
+        // advance 源测量（与 IFC 行断/paint 同源，R4463 注）——per-char intrinsic 度量对
+        // 可变字体系统性窄计（github trending 星数 12px Mona Sans VF：walk 87.8 vs IFC
+        // 真值 96.25 → preferred 108.1 仍折行，[`float_text_max_width_adv`] 文档）。
+        // 适用域受限（有元素子且元素子皆无文本；纯文本/含文本元素子回退 walk 旧口径），
+        // 随 `ZW_FLOAT_STF_ADV=0` 或 `ZW_FLOAT_INLINE_SUM=0` 关断（逐字节回退）。
+        let float_stf_adv_on = std::env::var("ZW_FLOAT_STF_ADV").as_deref() != Ok("0");
+        if float_stf_adv_on
+            && float_inline_sum_on
+            && let (Some(adv), Some(fr)) = (advance_source, font_resolver)
+            && let Some(w) = float_text_max_width_adv(dom_id, doc, styles, adv, fr)
+        {
+            return w;
+        }
         crate::intrinsic_sizing::text_content_max_width_scoped(
             dom_id,
             doc,
             styles,
             std::env::var("ZW_INTRINSIC_ATOMIC_GATE").as_deref() != Ok("0"),
+            // t-trending：原子停止点接缝空格入账随 Σ 开关——`ZW_FLOAT_INLINE_SUM=0`
+            // 时 text_max_w 度量口径也逐字节回退（旧 walk 原子后行首空格漏计）。
+            float_inline_sum_on,
         )
     });
     // R4920（css-sizing-3 §max-content + CSS2 §10.3.5 shrink-to-fit）：float preferred
@@ -451,8 +476,9 @@ pub(crate) fn shrink_pure_text_floats(
     // 真实偏差）；taffy 估值 ≥ Σ 时照旧收缩。adjusted_text_max_w 臂（font-size-adjust
     // 语境）已断言无元素子，Σ=0 恒不触发扩臂。
     // kill-switch `ZW_FLOAT_INLINE_SUM=0` = R4920 逐字节回退：Σ 不计入（收缩阈值还原为
-    // text_max_w+frame）且扩臂关（R4921 gate 不受本开关影响，其归因用
-    // `ZW_INTRINSIC_ATOMIC_GATE`）。
+    // text_max_w+frame）且扩臂关；t-trending 三处同开关扩展随之关断——replaced 早退门
+    // 恢复、replaced_w=0、scoped walk 接缝空格回旧口径（R4921 gate 不受本开关影响，其
+    // 归因用 `ZW_INTRINSIC_ATOMIC_GATE`）。
     let non_text_w = if adjusted_text_max_w.is_none() && float_inline_sum_on {
         // R5243（CSS2 §10.3.5）：auto 宽 inline-table 子按 [`inline_table_auto_max_content`]
         // 独立测量入 Σ（definite 部分仍由 inline_children_non_text_width 计 width+margin）。
@@ -488,7 +514,47 @@ pub(crate) fn shrink_pure_text_floats(
         } else {
             0.0
         };
-        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles) + auto_table_sum
+        // t-trending（CSS2 §10.3.5 + css-sizing-3 §max-content）：inline 级 replaced 子按
+        // 盒树已解析 outer width 计入 Σ——与早退门放开配套（taffy 块流 content_size 取
+        // max(子盒) 与 IFC 求和的真实偏差扩正，同 R4920 inline-block 族逻辑；github
+        // trending 星数 float：svg 16 + 文本 111.6，块流盲 IFC 文本 → 16）。svg 走
+        // R4000 svg_max_content_contribution（attr/CSS abs 宽，% /无来源 → default
+        // object size；此时 child.width 是 taffy 伪影不可用），与 block_intrinsic_width_ex
+        // inline 路径同源防口径分裂，None 回落 child.width（attr/AR 宽第一趟已解析）；
+        // margin 取盒树结果。判定双路：`c.is_replaced` 旗标 ∨ DOM 标签判定
+        //（box_replaced_tag 同表）——fixture 实测 svg 盒子未带旗标（建盒路径差异），
+        // 仅旗标会漏计（v42 A 案例 svg 宽 16 未入 Σ → 111.3 仍折行）。块级 replaced 不计
+        //（早退门未放开，块叠口径）；离流（absolute/fixed/hoisted）不计（CSS2 §9.3.1，
+        // 同 R5243 walk 侧口径）。DOM walk 侧 inline_children_non_text_width 对 replaced
+        // 标签 skip（box_replaced_tag 同表），本侧单边入账防双计。
+        let replaced_w: f32 = box_node
+            .children
+            .iter()
+            .filter(|c| {
+                !c.is_absolute
+                    && !c.is_fixed
+                    && !c.hoisted_atomic
+                    && !c.is_block_level
+                    && (c.is_replaced
+                        || c.node_id
+                            .is_some_and(|id| crate::intrinsic_sizing::box_replaced_tag(doc, id)))
+            })
+            .map(|c| {
+                let svg_contrib = c
+                    .node_id
+                    .and_then(|id| doc.get(id))
+                    .and_then(|n| match &n.kind {
+                        zero_dom::NodeKind::Element(elem) if elem.local_name() == "svg" => c
+                            .node_id
+                            .and_then(|cid| styles.get(&cid))
+                            .and_then(|style| crate::svg_default_size::svg_max_content_contribution(elem, style)),
+                        _ => None,
+                    })
+                    .unwrap_or(c.width);
+                (svg_contrib + c.margin_left + c.margin_right).max(0.0)
+            })
+            .sum();
+        crate::intrinsic_sizing::inline_children_non_text_width(dom_id, doc, styles) + auto_table_sum + replaced_w
     } else {
         0.0
     };
@@ -509,6 +575,70 @@ pub(crate) fn shrink_pure_text_floats(
         box_node.content_height = line_height;
         box_node.height = line_height + frame;
     }
+}
+
+/// t-trending（css-sizing-3 §max-content + CSS2 §10.3.5）：float Σ 臂文本分量的真实
+/// advance 源测量——与 IFC 行断/paint 同源（R4463 注），替代 `measure_intrinsic_char`
+/// per-char 近似。后者对可变字体系统性窄计（github trending 星数 float 12px Mona Sans
+/// VF 实证：walk 87.8 vs IFC 真值 96.25 → preferred 108.1 < 行需求 116.5，星数仍折行）。
+/// 适用域（返回 None = 调用方回退 walk 旧口径）：
+/// - float 有元素子（原子+文本形态）；纯文本 float 维持 walk——行缘空白语义 walk 已
+///   正确（行首折叠空格丢弃），且避免全量纯文本 float 行为漂移；
+/// - 全部元素子无非空白文本——原子内文不得计入（R4921 gate 单边口径在 advance 测量
+///   中无对应停止机制，含文本元素子的形态回退 walk）。
+///
+/// 行缘空白：折叠后**不 trim**——原子后接缝空格是行中空格（css-text-3
+/// §white-space-processing），随真实推进计入 preferred；纯空白子树 → Some(0)（同 walk）。
+/// 与 R4919 per-font 语境近似：以 float 自身 computed font 度量（嵌套异字号文本子树
+/// 已被上方元素子文本门排除，直接文本子继承 float 字体，无语境分裂）。
+fn float_text_max_width_adv(
+    node_id: NodeId,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    advance_source: &crate::inline::AdvanceSourceHandle,
+    font_resolver: &std::rc::Rc<HashMap<String, u32>>,
+) -> Option<f32> {
+    let mut has_element_child = false;
+    for child_id in doc.child_nodes(node_id) {
+        if doc
+            .get(child_id)
+            .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+        {
+            has_element_child = true;
+            if doc.text_content(child_id).is_some_and(|t| !t.trim().is_empty()) {
+                return None;
+            }
+        }
+    }
+    if !has_element_child {
+        return None;
+    }
+    let style = styles.get(&node_id)?;
+    let font_ids = crate::font_resolution::resolve_font_ids_for_style(
+        font_resolver,
+        &style.font_family,
+        &style.font_weight,
+        &style.font_style,
+        style.font_stretch,
+    );
+    // FIXME（t-trending DEF-3）：此处无条件 collapse_whitespace，不消费 float 自身
+    // `white-space:pre`（css-text-3 §white-space-processing：pre 族保留空白不折叠、
+    // `\n` 为强制换行点）——float 自身声明 pre 族时 preferred 窄计（原始空白/换行
+    // 被折叠）。窄面形态未动态复现、欠测；如现伪影按 R3778 run 级有效 white-space
+    // 口径（collect_items.rs 折叠前判定）在测量前分臂。
+    let text = crate::inline::collapse_whitespace(&doc.text_content(node_id)?);
+    if text.trim().is_empty() {
+        return Some(0.0);
+    }
+    let font_size = crate::inline::resolve_inline_font_size_px(style);
+    Some(advance_source.measure_text_with_font_context(
+        &text,
+        &font_ids,
+        font_size,
+        false,
+        &style.font_size_adjust,
+        &style.font_variation_settings,
+    ))
 }
 
 fn adjusted_text_max_width(
@@ -2106,7 +2236,13 @@ pub(crate) fn adjust_float_positions_with_context(
                 .filter(|c| {
                     !c.is_absolute
                         && !c.is_fixed
-                        && (c.is_block_level || c.is_replaced)
+                        // t-trending（与 5a.1 早退门同口径）：Σ 开时 inline 级 replaced 子
+                        //（svg/img 等）不入块叠口径——其 float 的 preferred 已由 5a.1 Σ 臂
+                        // 先行落定（replaced_w Σ + 真实 advance 文本），本臂块叠 max 会以
+                        // 欠测 preferred 撤掉 Σ 结果（R5242 inline-table 同病先例：100→50；
+                        // github trending 星数 float：5a.1 写 116.5 被缩回 108.1 仍折行
+                        // 实证）。Σ 关（逐字节回退）维持旧 replaced 口径。
+                        && (c.is_block_level || (c.is_replaced && !float_inline_sum_on))
                         && !(float_inline_sum_on
                             && c.node_id
                                 .and_then(|id| styles.get(&id))

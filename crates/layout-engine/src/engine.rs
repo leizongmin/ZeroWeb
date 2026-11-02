@@ -2844,6 +2844,7 @@ impl LayoutEngine {
             path_bidi_nodes: None,
             inline_vertical_nodes: Default::default(),
             inline_block_child_nodes: Default::default(),
+            inline_flow_block_child_nodes: None,
             inline_color_divergent_nodes: Default::default(),
             inline_nested_atomic_nodes: Default::default(),
             inline_relpos_shifts: Default::default(),

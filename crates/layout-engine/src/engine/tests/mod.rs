@@ -860,6 +860,7 @@ mod r5294_dyn_trailing_space_tests;
 /// R5295（CSS2 §8.4）：换行 padded 行内盒 border-box 左缘写回——逐片段盒缘
 /// 收敛（run 首片段扣自身 pl、续行/空片段不扣），负偏回归守护。
 mod r5295_wrapped_padding_box_x_tests;
+mod trending_band_strut_tests;
 
 mod r5250_inline_relpos_shift_map;
 
@@ -980,3 +981,9 @@ mod r5381_inline_replaced_measure_tests;
 ///（css-flexbox-1 §8.3/§9.6 + SVG2 §7.2 UA overflow:hidden，WPT
 /// display-flex-svg-overflow-default 驱动）。
 mod r5380_svg_flex_cross_stretch_tests;
+
+/// t-trending 伪影 1 回归：float 星数（inline replaced svg + 文本）单行收缩——Σ 臂
+/// replaced 早退放行 + replaced_w 入账 + [`float_text_max_width_adv`] advance 源
+/// 文本测量（kill-switch `ZW_FLOAT_INLINE_SUM`/`ZW_FLOAT_STF_ADV` OFF 敏感性见
+/// 返修证据 r1-sensitivity 日志）。
+mod trending_float_star_tests;
