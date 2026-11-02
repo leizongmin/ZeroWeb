@@ -393,6 +393,22 @@ fn escape_js_selector(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
+/// s248：ImageData → canvas wire 串编码（`"w:h;r,g,b,a,..."`——shim drawImage/
+/// createPattern/createImageBitmap 的 img 源消费形态，`__zw_get_image_wire`
+/// 返回值契约）。
+fn encode_image_wire(img: &ImageData) -> String {
+    let mut out = format!("{}:{};", img.width, img.height);
+    let mut first = true;
+    for b in &img.pixels {
+        if !first {
+            out.push(',');
+        }
+        first = false;
+        out.push_str(&b.to_string());
+    }
+    out
+}
+
 /// security-hardening M2-s3：待派发的 style 面 CSP 违规（元素站 target + 可选 link
 /// error 事件载荷）。
 struct PendingCspStyleViolation {
@@ -3650,6 +3666,21 @@ impl WebView {
                 if src.is_empty() {
                     return String::new();
                 }
+                // s248：data: URL 图像源（security.dataURI）——data URI 处理器语义
+                //（fetch §data-url-processor）现场解码为字节再交图像解码；键表/抓取
+                // 清单均无 data: 形态条目，快照路径不适用。绘制侧不污染由 shim
+                // `_zwCanvasSrcCrossOrigin` 的 data:/blob: 豁免承接。
+                if src.starts_with("data:") {
+                    let bytes = match zero_render_foundation::image_cache::decode_data_uri_bytes(src) {
+                        Ok(bytes) => bytes,
+                        Err(_) => return String::new(),
+                    };
+                    let img = match zero_render_foundation::image_cache::decode_image_bytes(&bytes) {
+                        Ok(img) => img,
+                        Err(_) => return String::new(),
+                    };
+                    return encode_image_wire(&img);
+                }
                 let base = page_url_wire.lock().unwrap();
                 let abs = zero_engine::resolve_document_url(&base, src);
                 let key = zero_engine::image_resource_key(&abs, None);
@@ -3659,17 +3690,47 @@ impl WebView {
                         // R56h：运行时图片快照 miss → fetch handler 现场抓取 + 解码。
                         drop(base);
                         let fetched = fetch_handler_for_wire.as_ref().and_then(|handler| {
-                            let req = zero_engine::fetch_bridge::FetchRequest {
-                                method: "GET".into(),
-                                url: abs.clone(),
-                                headers: Vec::new(),
-                                body: None,
-                                body_bytes: None,
-                                credentials: None,
-                                mode: None,
-                                redirect: None,
-                            };
-                            handler(&req).ok()
+                            // s248：跟随 3xx 重定向（canvas security `.redirect` 族——
+                            // 同源 redirect.py 302 → 跨源终跳；shim settle fetch 自行
+                            // 跟随，本 host 直连路径缺重定向语义 → 终图 0 字节解不出）。
+                            // 上限 4 跳（HTTP-redirect fetch 上限 20 的直连面收窄——
+                            // 语料重定向链单跳）。location 相对值按请求 URL 解析。
+                            let mut current = abs.clone();
+                            for _hop in 0..4 {
+                                let req = zero_engine::fetch_bridge::FetchRequest {
+                                    method: "GET".into(),
+                                    url: current.clone(),
+                                    headers: Vec::new(),
+                                    body: None,
+                                    body_bytes: None,
+                                    credentials: None,
+                                    mode: None,
+                                    redirect: None,
+                                };
+                                let resp = match handler(&req).ok() {
+                                    Some(resp) => resp,
+                                    None => return None,
+                                };
+                                if !(300..400).contains(&resp.status) {
+                                    return Some(resp);
+                                }
+                                let loc = resp
+                                    .headers
+                                    .iter()
+                                    .find(|(n, _)| n.eq_ignore_ascii_case("location"))
+                                    .map(|(_, v)| v.clone())
+                                    .unwrap_or_default();
+                                if loc.is_empty() {
+                                    return Some(resp);
+                                }
+                                current = if loc.starts_with("http://") || loc.starts_with("https://") {
+                                    loc
+                                } else {
+                                    let base_wire = page_url_wire.lock().unwrap();
+                                    zero_engine::resolve_document_url(&base_wire, &loc)
+                                };
+                            }
+                            None
                         });
                         match fetched.and_then(|resp| resp.body_bytes) {
                             Some(bytes) => match zero_render_foundation::image_cache::decode_image_bytes(&bytes) {
@@ -3680,16 +3741,7 @@ impl WebView {
                         }
                     }
                 };
-                let mut out = format!("{}:{};", img.width, img.height);
-                let mut first = true;
-                for b in &img.pixels {
-                    if !first {
-                        out.push(',');
-                    }
-                    first = false;
-                    out.push_str(&b.to_string());
-                }
-                out
+                encode_image_wire(&img)
             }),
         );
         // R34xx：__zw_get_image_size —— shim img naturalWidth/naturalHeight 查询（G5）。

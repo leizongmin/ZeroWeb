@@ -7821,7 +7821,14 @@
       if (!s || /^(data|blob):/i.test(s)) return false;
       var base = (globalThis.document && document.location && document.location.href) ||
         (globalThis.location && location.href) || 'https://wpt.test/';
-      return new URL(s, base).origin !== new URL(base).origin;
+      // s248：重定向终跳 origin——运行时 img settle（__zwImgRunUpdate5277）把
+      // 最终 URL 记入 `_zwAvailableImages[src].finalUrl`（HTTP-redirect fetch
+      // 跟随后的响应 URL），origin-clean 以其 origin 判定（canvas security
+      // `.redirect` 族：同源 redirect.py 跳跨源图即污染）；无记录回落 src。
+      var effective = s;
+      var _ocAv = globalThis._zwAvailableImages && globalThis._zwAvailableImages[s];
+      if (_ocAv && _ocAv.finalUrl) effective = _ocAv.finalUrl;
+      return new URL(effective, base).origin !== new URL(base).origin;
     } catch (_eOc) {
       return false;
     }

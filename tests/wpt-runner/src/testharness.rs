@@ -8113,11 +8113,14 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
             // wptserve Python 脚本，wpt-data 无静态文件。此处内置等价生成器：读 ?label=
             // 参数，返回 `<!doctype html><meta charset="X">`（上游脚本逐字等价——
             // https://github.com/web-platform-tests/wpt/blob/3159769/dom/nodes/encoding.py）。
-            // R360（js-dom M4）：`/common/redirect.py?location=X`（WPT Document-URL "with
-            // redirect"——iframe.src 经 wptserve 重定向到 blank.html 后 contentDocument.URL
-            // 须为最终 URL）。wpt-data 无静态 redirect.py；内置等价生成器：读 ?location=
-            // 目标路径，取目标文件体 + `X-Zero-Final-URL` 绝对最终 URL（shim 侧消费该头
-            // 覆盖 iframe doc._zwURL）。location 相对路径按当前 URL 原点解析。
+            // s248：`/common/redirect.py?location=X`——上游 wptserve 行为等价：302 +
+            // `Location`（绝对地址），fetch 管道按 HTTP-redirect fetch 跟随。canvas
+            // security `.redirect` 族（addCrossOriginRedirectYellowImage——同源
+            // redirect.py 跳跨源 yellow.png，origin-clean 按最终 URL origin 判定）
+            // 依赖真实重定向跳；旧 200 伪重定向面（目标体直出 + X-Zero-Final-URL）
+            // 无语料消费（R360 Document-URL 消费方为 js_dom_bridge_tests 单测
+            // mock，不经本臂），就地升级。location 相对路径按当前 URL 原点解析。
+            // https://github.com/web-platform-tests/wpt/blob/3159769/tools/wptserve/wptserve/handlers.py
             if clean == "common/redirect.py" {
                 let loc = percent_encoding::percent_decode_str(
                     path_part
@@ -8134,7 +8137,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 .unwrap_or("")
                 .to_string();
                 let final_url = if loc.starts_with("http://") || loc.starts_with("https://") {
-                    loc.clone()
+                    loc
                 } else {
                     // 相对路径按请求原点解析（location.origin）。
                     let origin = req
@@ -8145,19 +8148,15 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                         .unwrap_or_default();
                     format!("{origin}{loc}")
                 };
-                let target_body = match std::fs::read(root.join(loc.trim_start_matches('/'))) {
-                    Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
-                    Err(_) => String::new(),
-                };
-                let mut headers = wpt_pipe_headers(path_part.split_once('?').map(|(_, q)| q).unwrap_or(""));
-                headers.push(("X-Zero-Final-URL".into(), final_url.clone()));
-                headers.push(("X-Zero-Response-Type".into(), wpt_fetch_response_type(req, 200).into()));
+                let mut headers = Vec::new();
+                headers.push(("location".into(), final_url));
+                wpt_add_fetch_metadata(&mut headers, req, 302);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
-                    status: 200,
-                    status_text: "OK".to_string(),
+                    status: 302,
+                    status_text: "Found".to_string(),
                     headers,
-                    body: target_body.clone(),
-                    body_bytes: Some(target_body.into_bytes()),
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
                 });
             }
             if clean == "dom/nodes/encoding.py" {

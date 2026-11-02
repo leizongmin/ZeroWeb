@@ -3261,7 +3261,12 @@
               // setter 前置 delete 承担——mid-flight 二次 fetch 回调后写胜出，
               // 镜像 spec 最后一个 relevant mutation 胜出）。
               _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: bm.width, height: bm.height, error: null, density: _imDensity };
-              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height };
+              // s248：重定向终跳 URL 记账（resp.url = HTTP-redirect fetch 跟随后
+              // 的最终响应 URL）——canvas origin-clean 源判消费（part05
+              // `_zwCanvasSrcCrossOrigin`），无重定向时与 src 同 origin 零位移。
+              var _imFinalUrl = '';
+              try { _imFinalUrl = (resp && resp.url) ? String(resp.url) : ''; } catch (_eImFu) {}
+              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height, finalUrl: _imFinalUrl };
               _zwImgDispatch('load');
             }, function (e) {
               // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth
