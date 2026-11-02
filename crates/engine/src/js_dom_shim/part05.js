@@ -571,6 +571,22 @@
           // DISPLAY-P3 存原串；canonical 小写归一在读侧）。
           if (handle) { __zw_set_attr_handle(handle, 'colorspace', String(value)); moAttr = 'colorspace'; }
           else { __zw_set_attr(sel, 'colorspace', String(value)); moAttr = 'colorspace'; }
+        } else if (p === 'switch' && _realTag(sel, handle) === 'INPUT') {
+          // s231（HTML §switch control `switch` 反射布尔，spec 同 get 臂注——
+          // s187 alpha 先例：不入通用表，INPUT 门）：truthy → presence 设空 /
+          // falsy → 真移除（R3039 同款语义：旧 generic fallthrough 写
+          // `attr="false"` → 读恒真 bug 面；detached 亦真移除）。
+          if (value) {
+            if (handle) { __zw_set_attr_handle(handle, 'switch', ''); moAttr = 'switch'; }
+            else { __zw_set_attr(sel, 'switch', ''); moAttr = 'switch'; }
+          } else if (handle && typeof __zw_remove_attr_handle === 'function') {
+            __zw_remove_attr_handle(handle, 'switch');
+            if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'switch');
+            moAttr = 'switch';
+          } else if (!handle && typeof __zw_remove_attr === 'function') {
+            __zw_remove_attr(sel, 'switch');
+            moAttr = 'switch';
+          }
         } else if (_reflectedBoolAttr(p) !== null) {
           // R3039/R3040：布尔 reflected setter（_REFLECTED_BOOL 全表）。旧经 generic fallthrough 写
           // `attr="false"`（present）→ 读返 true（set-false bug）。修正：truthy → set 空（presence）；

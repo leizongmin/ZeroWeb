@@ -27616,6 +27616,20 @@ return e;
             return _csL === 'display-p3' ? 'display-p3' : 'limited-srgb';
           } catch (_e187cs) { return 'limited-srgb'; }
         }
+        // `input.switch`（HTMLInputElement，s231——`switch` 内容属性反射布尔，spec
+        // https://html.spec.whatwg.org/multipage/input.html#switch-control
+        // `attr-input-switch` + IDL `dom-input-switch`，tentative 开关外观提案的
+        // IDL 面）：presence 读返 boolean。同 s187 alpha 先例不入 _REFLECTED_BOOL
+        // 通用表（仅 INPUT 接口面——通用表会造非 INPUT 元素 `.switch` 假面 +
+        // CE 反射映射波及）。读走 lw 融合（R136：同批 setAttribute 后 IDL 读
+        // latest-wins）。setter 在 part05 set 臂同款 INPUT 门。
+        if (prop === 'switch' && _realTag(sel, handle) === 'INPUT') {
+          try {
+            var _swHas = handle ? __zw_has_attr_handle(handle, 'switch')
+              : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'switch') : __zw_has_attr(sel, 'switch'));
+            return _swHas === '1';
+          } catch (_e231sw) { return false; }
+        }
         // text-control 选区 getter（R2844）：selectionStart / selectionEnd / selectionDirection。
         // 仅 text control（_isTextControl gate）。默认 {0, 0, 'forward'}（Chromium 150 oracle 锚定）。
         // R3906：读前惰性校准（relevant value 变化 → 钳制/重置，_zwReconcileSel）——无选区
