@@ -1949,6 +1949,11 @@ static CLEAR_CHAIN_MT_REFOLD: std::sync::LazyLock<bool> =
 /// default-on，`ZW_FORCED_CLEAR_ABSORB=0` 回退。
 static FORCED_CLEAR_ABSORB: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FORCED_CLEAR_ABSORB").as_deref() != Ok("0"));
+/// R5396（CSS 2.1 §8.3.1 clearance × collapse-through）：正 clearance 打在自塌缩
+/// （空）块上时塌穿延续兄弟的差量落位 kill-switch，default-on，
+/// `ZW_CLEAR_EMPTY_CHAIN_ABSORB=0` 回退旧整链重放行为。
+pub(crate) static CLEAR_EMPTY_CHAIN_ABSORB: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_CLEAR_EMPTY_CHAIN_ABSORB").as_deref() != Ok("0"));
 
 /// R5214：float 摆放 earliest-fit（CSS 2.1 §9.5.1 规则 5「as high as possible」）——
 /// float 放不进当前可用区间时下移到与其纵向带相交 float 的**最近**底边逐带试探，
@@ -2696,6 +2701,14 @@ pub(crate) fn adjust_float_positions_with_context(
     // 验证正确（margin-collapse-clear-012/013、margin-collapse-033/034/035 谱系）；
     // 非空 cleared（如 replaced element）的 containment 几何不同，本轮不处理（避回归）。
     let mut had_empty_clearance = false;
+    // R5396（CSS 2.1 §8.3.1 clearance × collapse-through）：正 clearance 打在自塌缩
+    // （空）块上时，塌穿组 margin（自身 mt∪mb ∪ 后继 mt）作为单一边距被 clearance
+    // 吸收在 clear 空隙内——元素 border 边落 clear_bottom，紧随的塌穿延续兄弟不再
+    // 重放整条链下值，只落 clear_bottom + max(0, 链下值 − 链上值)（chromium 实证：
+    // margin-collapse-125 mt=mb=32 差量 0 → 后继贴 clear_bottom；r1316 形态
+    // mt40/mb80 差量 40 → 后继 clear_bottom+40）。Some(链上值) = 旗标激活并捕获
+    // clearance 假设位所用折叠链值；遇非空块（组终止）或后继自持 clear（链重启）复位。
+    let mut clear_empty_chain_absorbed_above: Option<f32> = None;
     // R1317 §8.3.1 containment：被 clearance「消耗」的 cleared 元素 margin-top
     // 累积（每个正 clearance 子贡献其 margin_top）。计算 contained parent height
     // 时须从 trailing 折叠链中扣除，避免 clearance-absorbed margin 双计。
@@ -3005,6 +3018,9 @@ pub(crate) fn adjust_float_positions_with_context(
             let mut clearance_applied = false;
             match child.clear {
                 ClearValue::Left | ClearValue::Right | ClearValue::Both => {
+                    // R5396：后继自持 clear 的兄弟自成塌穿链（clearance 打断邻接），
+                    // 吸收旗标在重启前复位。
+                    clear_empty_chain_absorbed_above = None;
                     let clear_bottom = match child.clear {
                         ClearValue::Left => active_left_float_bottom,
                         ClearValue::Right => active_right_float_bottom,
@@ -3094,6 +3110,12 @@ pub(crate) fn adjust_float_positions_with_context(
                         if crate::margin_collapse::is_empty_block(child) {
                             clearance_consumed_mt += child.margin_top;
                             had_empty_clearance = true;
+                            // R5396：塌穿组 margin 被 clearance 吸收（§8.3.1）——捕获
+                            // 假设位链上值，紧随的塌穿延续兄弟按差量落位（见旗标声明处
+                            // 与 ClearValue::None 消费点）。kill-switch 关断保持旧整链重放。
+                            if *CLEAR_EMPTY_CHAIN_ABSORB {
+                                clear_empty_chain_absorbed_above = Some(collapsed_margin);
+                            }
                         }
                     } else if (clear_bottom - hypothetical_y).abs() < 0.001 {
                         // 零 clearance（hypothetical_y ≈ clear_bottom）：
@@ -3232,12 +3254,28 @@ pub(crate) fn adjust_float_positions_with_context(
                         // R5210：mt 用链值归位后的本级值（已上折的首子链 margin 不在
                         // 本级重放——旧字段值使 B1/B2/CL 逐级堆叠 +16px）。
                         let collapsed_margin = crate::margin_collapse::collapse_two_margins(last_flow_mb, replay_mt);
-                        let correct_y = flow_bottom + collapsed_margin;
+                        // R5396：塌穿延续兄弟差量落位——正 clearance 打在前序空块上时，
+                        // 塌穿组 margin 已被 clear 空隙吸收，本子只重放「链下值 − 链上值」
+                        //（125：collapse(32,16)−32=0 贴 clear_bottom；chromium 探针
+                        // r1316 形态 80−40=40）。差量为负（链下 < 链上）钳 0：组不回溯。
+                        // 非空块为组终止，消费后复位；空块链继续（012 谱系空链成员同落差量位）。
+                        // 尾链记账（last_flow_mb/flow_bottom）不动——R1317 containment
+                        // 依赖原语义（012 谱系高度合成）。
+                        let correct_y = match clear_empty_chain_absorbed_above {
+                            Some(above) if *CLEAR_EMPTY_CHAIN_ABSORB => {
+                                flow_bottom + (collapsed_margin - above).max(0.0)
+                            }
+                            _ => flow_bottom + collapsed_margin,
+                        };
                         child.y = if clamp_content_rel {
                             correct_y
                         } else {
                             content_y_offset + correct_y
                         };
+                        if clear_empty_chain_absorbed_above.is_some() && !crate::margin_collapse::is_empty_block(child)
+                        {
+                            clear_empty_chain_absorbed_above = None;
+                        }
                         // 更新 float_y_offset 以反映 taffy Y 与正确 Y 的差异
                         float_y_offset = (original_taffy_y - child.y).max(0.0);
                     }

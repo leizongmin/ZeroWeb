@@ -1395,8 +1395,17 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
     let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
     // 仅当当前内容高确实被 float 撑高时收紧。
     if new_content_h + 0.5 < box_node.content_height {
+        // R5396（R5109 对称臂）：clearance 相关容器（clearance_active 已置位）的
+        // float 排除收缩同样须记录缩减量——祖先盒（td）按 taffy 期子 extent 计高，
+        // 不传播则残留泄漏段露红底（margin-collapse-125 的 td 高 134 应 102）。
+        // 与 adjust_float_positions 收缩臂同门；kill-switch 关断保持纯 float 收缩
+        // 不记录的旧行为。
+        let shrink = box_node.content_height - new_content_h;
         box_node.content_height = new_content_h;
         box_node.height = new_content_h + pb;
+        if box_node.clearance_active && *crate::float_positioning::CLEAR_EMPTY_CHAIN_ABSORB {
+            box_node.clearance_extent_reduction += shrink;
+        }
     }
 }
 

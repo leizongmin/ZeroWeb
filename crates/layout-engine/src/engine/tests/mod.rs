@@ -987,6 +987,9 @@ mod r5380_svg_flex_cross_stretch_tests;
 /// R5395 纯 inline-table 行容器高按 IFC 行盒合成 + auto 宽空 cell 定宽表 cell 臂
 ///（CSS2 §9.2.2/§9.7 × §10.6.3，R5096 行内级判例）。
 mod r5395_inline_table_container_line_height_tests;
+/// R5396 正 clearance × 自塌缩空块塌穿组差量落位 + 祖先高度传播（CSS 2.1 §8.3.1，
+/// WPT margin-collapse-125 驱动）。
+mod r5396_clear_empty_chain_absorb_tests;
 
 /// t-trending 伪影 1 回归：float 星数（inline replaced svg + 文本）单行收缩——Σ 臂
 /// replaced 早退放行 + replaced_w 入账 + [`float_text_max_width_adv`] advance 源
