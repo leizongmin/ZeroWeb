@@ -2662,7 +2662,7 @@ pub(super) fn clamp_percentage_max_height(
     styles: &HashMap<NodeId, ComputedStyle>,
     img_sizes: &HashMap<NodeId, (f32, f32)>,
 ) {
-    use zero_css_parser::values::{BoxSizingValue, LengthValue};
+    use zero_css_parser::values::{BoxSizingValue, FlexWrapValue, FloatValue, LengthValue};
     use zero_style_system::property::types::{
         ColumnCountComputedValue, ColumnWidthComputedValue, LineClampComputedValue,
     };
@@ -2954,8 +2954,21 @@ pub(super) fn clamp_percentage_max_height(
     // 即父传入的该值），而非匿名片段自身（auto → taffy 侧 % 不解析，交由行内机制膨胀；
     // anonymous-boxes-001a：img height:50% 应 100px（div 200×50%），旧解析 784×784 全视口）。
     // 仅当本盒是 R109 匿名片段（fragment_node_ids 非 None）时穿透传递。
+    // R5387（css-flexbox-1 §9.8 Cross-Axis Determination）：单行 flex 容器 + height:auto
+    // 的 cross size（height）是 definite（items 最大外 cross size，min/max clamp）——taffy
+    // 已按此定尺（flexbox-definite-sizes-003/004：innerFlex 布局高 100 正确），但 taffy 后
+    // R1743 回填把 item（max-height:100%）撑到子底 9999，本 pass 收紧时 cb 解析断链
+    //（height:auto → None）放过。单行 + 布局 content 高为正时以布局高作 definite cb，
+    // 恢复百分比 max-height 收紧链。
     let cb_for_children = if box_node.fragment_node_ids.is_some() {
         cb_content_height
+    } else if style.is_some_and(|s| {
+        matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+            && matches!(s.height, LengthValue::Auto)
+            && matches!(s.flex_wrap, FlexWrapValue::Nowrap)
+    }) && box_node.content_height > 0.0
+    {
+        Some(box_node.content_height)
     } else {
         my_definite_content_height
     };
@@ -3012,9 +3025,32 @@ pub(super) fn clamp_percentage_max_height(
                     sibling.y += delta;
                 }
             }
-            box_node.content_height = (box_node.content_height + delta).max(0.0);
             let pb = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
-            box_node.height = (box_node.height + delta).max(pb);
+            if delta < 0.0 {
+                // R5387：负 delta（clamp 收缩）退账不得低于剩余 in-flow 子 extent——父若未被
+                // R1743 撑大（flex 容器高 = taffy 原值，从未含子的溢出高），裸退账把父过度
+                // 收缩（flexbox-definite-sizes-003：innerFlex 100 被打到 0）；以子 clamp 后
+                // 的实际覆盖兜底。被撑大 Block 父（content 已含旧 extent）退账后 ≥ 兜底，
+                // 行为不变。
+                let min_ch = box_node
+                    .children
+                    .iter()
+                    .filter(|c| {
+                        !c.is_absolute
+                            && !c.is_fixed
+                            && !c.is_sticky
+                            && c.scroll_button_dir == 255
+                            && matches!(c.float, FloatValue::None)
+                    })
+                    .map(|c| c.y + c.height + c.margin_bottom)
+                    .fold(0.0f32, f32::max);
+                let target = (box_node.content_height + delta).max(0.0).max(min_ch);
+                box_node.content_height = target;
+                box_node.height = (target + pb).max(pb);
+            } else {
+                box_node.content_height = (box_node.content_height + delta).max(0.0);
+                box_node.height = (box_node.height + delta).max(pb);
+            }
         }
     }
 
