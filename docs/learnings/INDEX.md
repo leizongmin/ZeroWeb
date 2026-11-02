@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（210）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（212）
 
+- 2026-11-03 [KMAC newX 拼接是裸 X——把 TupleHash 的逐元素 encode_string 套到 KMAC 上产出全错 MAC](bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md) — zero-engine
+- 2026-11-02 [per-document 运行时状态用进程级 static 槽承载 → 并行测试 job 下跨页串态](bugs/2026-11/2026-11-02-per-doc-state-static-slot-parallel-jobs.md) — engine, js-dom-bridge
 - 2026-11-01 [UA display 双面分叉：host 表滞后于 JS 回落面，句柄通道 exposing 旧值](bugs/2026-11/2026-11-01-ua-display-dual-surface-divergence.md) — style-system,engine
 - 2026-11-01 [无差别 `pkill -x Xvfb` 误杀开发机远程桌面：批量清理必须按 PID/显示号收窄](bugs/2026-11/2026-11-01-indiscriminate-pkill-xvfb-kills-user-desktop.md) — rally-infra, dev-machine
 - 2026-11-01 [change-on-blur 双账并存：shim 新臂与宿主 legacy 账同失焦双派 change](bugs/2026-11/2026-11-01-dual-book-change-on-blur-dedup-latch.md) — js_dom_shim,renderer
@@ -218,8 +220,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（28）
+## Patterns — 可复用代码模式与最佳实践（29）
 
+- 2026-11-03 [密码学语料期望值程序化解析取数，不手抄长 hex 串](patterns/2026-11/2026-11-03-corpus-expected-values-parse-not-transcribe.md) — tests/wpt-runner
 - 2026-10-31 [coverage 面级 0P 断层的提交窗口二分法](patterns/2026-10/2026-10-31-coverage-face-zero-pass-bisect.md) — wpt_runner
 - 2026-10-29 [WPT encode-form 期望按 per-scalar fresh 编码出字节——整串流式编码对 stateful 编码必判 FAIL](patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md) — engine, tests/wpt-runner
 - 2026-10-29 [布局根因排查：单点观测插桩定谳，不用手工推演开局](patterns/2026-10/2026-10-29-diagnose-layout-by-observation-over-simulation.md) — crates/taffy-local,crates/layout-engine
@@ -300,8 +303,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（34）
+## Platform — 平台与环境相关经验（36）
 
+- 2026-11-03 [webcrypto 全量账 24MB 案楔死级联的判别指纹与串行复跑协议](platform/2026-11/2026-11-03-webcrypto-24mb-wedge-cascade-fingerprint.md) — tests/wpt-runner, zero-engine
+- 2026-11-03 [git stat 缓存盲区：同 size 同 mtime 的磁盘内容损坏不报脏](platform/2026-11/2026-11-03-git-stat-cache-blind-same-size-mtime-corruption.md) — engine
 - 2026-10-29 [规范迁移期 JS 语义以 Chrome 实测为地面真值——node 旧 V8 是反例](platform/2026-10/2026-10-29-spec-transition-ground-truth-chrome-first.md) — engine,tests/wpt-runner
 - 2026-10-28 [V8 宿主进程不能用 ulimit -v 封内存——外部 RSS 看门狗替代](platform/2026-10/2026-10-28-v8-ulimit-oilpan-rss-watchdog.md) — tests/wpt-runner,engine
 - 2026-10-19 [rebase/pull 翻新源文件 mtime 会触发 cdp 测试 stale binary 守卫](platform/2026-10/2026-10-19-stale-guard-vs-rebase-mtime.md) — engine,browser

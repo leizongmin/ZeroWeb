@@ -7,14 +7,39 @@ M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
 ——域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
-回归）；域切片第二轮完成（XOF 五连，+1,676P 零回归）；**域切片第三轮
-完成（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归，收尾轮 rebase 复跑落锚）**；
-余批按依赖就绪度推进：X448/KMAC → M 末收口重定基
-**最后更新**: 2026-11-02（D1 域切片第三轮落账：PQC 两域全链路 +9,064 FIXED 落 52 案靶面 + 锚对照零回归 + 对照基准更新 d1s3；KT/TurboSHAKE 24MB heisenbug r1 复发 2 键、r2 干净，挂账口径不变）
+回归）；域切片第二轮完成（XOF 五连，+1,676P 零回归）；域切片第三轮完成
+（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归）；**域切片第四轮完成（X448 +
+KMAC 双域，FIXED 5,868 全落靶面，分母 82,223 keys 零回归，systemd 单发
+安静窗口复跑落锚）**；余批按依赖就绪度推进：Hybrid-KEM（随 ML-KEM 依赖）
+→ M 末收口重定基
+**最后更新**: 2026-11-03（d1s4 X448/KMAC 落账：FIXED 5,868 落 48 案靶面 +
+drift 14 案具名归因，REGRESSED=0；验证收口 = runner 单测 276P +
+make test workspace/renderer 全绿（browser bin 唯一红为 forms/typing 面
+预存红，stash 归因在案）；实现 `6b767a86a`，锚 gz md5
+b32bb16207dc491a4e168611028c0dd9 / 内容 16945280433203e9febb44bff787f5ed）
 
 ---
 
 ## 当前状态
+
+**D1 域切片第四轮完成（2026-11-03，[evidence](evidence/2026-11-03-d1s4-x448-kmac-slice.md)）**：
+X448（RFC 7748 OKP derive 面，stable x448 0.6.0，host 两条拍板义务）+
+KMAC128/KMAC256（SP 800-185 手写组装叠官方 cshake 0.2.1——newX 裸 X 语义
+误读 TupleHash encode_string 致 NIST 全 6 向量不中，对规范原文仲裁修正）全
+链路（deps → host → shim 三文件 → REG 三行 → 定向翻绿 → 锚对照零回归），
+实现 `6b767a86a`（12 文件 872+ 含 3 篇 learnings）。**FIXED 5,868 落 48 案
+全部 X448/KMAC 靶面**（tentative + modern × 双腿对称，无一案域外），
+subtest 级 drift 14 案具名归因（X448/KMAC 注册后条件枚举新键 +
+`importVectorKeys step: ` 前缀命名翻转两族，全 Pass 增益侧），全量分母
+360 案 / **82,223 keys = P 77,569 + F 4,650 + T 4**，REGRESSED = 0、
+FLIPPED = 0、case 级零漂移。定向语料 X448 3408P/0F + kmac 2260P/0F +
+KMAC_importKey 576P/0F（filter 大小写敏感分次跑全）；host 单测 kmac NIST
+6/6 + okp_x448 4/4。竞态插曲（并行规则 9 碰头）：同 session 多进程实例
+（resume 后旧实例未退出）三发全量互踩，r1 塌缩作废后清僵尸 + systemd 单发
+安静窗口复跑落盘（[d1s4 锚](evidence/2026-11-03-d1s4-x448-kmac-full.json.gz)，
+锚 gz md5 `b32bb16207dc491a4e168611028c0dd9`）。教训沉淀：KMAC newX 语义、
+语料期望值程序化取数、24MB 楔死判别指纹（含多实例竞态协议）3 篇 learnings。
+对照基准更新为 d1s4 锚。
 
 **D1 域切片第三轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s3-pqc-slice.md)）**：
 PQC 两域 ML-KEM（FIPS 203）+ ML-DSA（FIPS 204）全链路（deps ml-kem 0.3.3
@@ -478,3 +503,34 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   +149 行，区域仍零交集，二次干净 rebase）——按 M2-5 语料恢复轮先例
   重建 release runner 对推送态（切片 + s244 合成树）全量复跑，
   锚对照 CLEAN 后推送。
+- 2026-11-03 R5416 d1s4 X448/KMAC 轮（含收尾落账轮）：实现触面
+  `Cargo.toml`/`Cargo.lock`/`crates/engine/Cargo.toml`（x448 0.6.0
+  workspace 依赖）、`js_dom_bridge/crypto.rs`（KMAC host +143 含 NIST
+  单测）、`crypto_asym.rs`（OKP 段参数化扩 X448 +342）、`callbacks.rs`
+  （+2 注册）、`js_dom_shim/part01b.js`（+132）/`part02.js`（+115）/
+  `part02a.js`（+66）——共享清单（part01.js/script_gen.rs/testharness.rs）
+  零触碰。**竞态事故两起（并行规则 9 碰头，均同 session 多实例）**：
+  ① 前轮 session 全量锚账阶段三发 webcrypto 全量互踩（r1 产账塌缩形态：
+  Hybrid-KEM T→F 4 案 + 旧域子测试 lost 塌缩），止损清僵尸 + systemd 单发
+  （wait-and-run 双条件守卫）01:23:49 安静窗口复跑落盘；② 本轮落账接手时
+  同 session 双实例近乎同时拉起（01:20，孤儿 resume 实例并行执行同一条
+  收口链），`$PPID` 链定谳后 01:41 pstree 全树击杀（零误伤兄弟流），其
+  产物对账收编：pipeline/extract.rs+mod.rs fmt 修复（s246 遗留 fmt 债，
+  纯格式 2 文件 8+/8-，随本轮单独 fmt 提交）+ anchor-diff.txt（与本轮
+  diff 同源）+ runner 单测 276P/0F 实跑账；文档以其版本为基定稿。复跑
+  窗口与兄弟流 editing inserttext/delete.html 测试并行（跨 clone 既有
+  先例，锚对照 REGRESSED=0 实证无扰）。落账轮 make test 冷重建
+  （target-disk-guard 51GB 触阈分级清理至 50MB，rm deps 竞态一次失败
+  重跑自恢复）；冷重建首轮门禁三连阻均非本轮改动引入：part06.rs
+  磁盘级内容损坏（ELF 段串覆写 + size/mtime 双保留致 git stat 缓存盲区，
+  HEAD blob 完好，rm + checkout 强制恢复 + 全库 4,320 文件 UTF-8 扫描
+  确认孤立；learnings platform 已沉淀）、crypto.rs 测试模块位置 clippy
+  合规移位（纯移动）、rustc SIGSEGV 瞬态（standalone 复跑干净）、
+  e2e_vue_library 编译瞬断（复跑未再现）；第 4 轮 make test
+  workspace 88 套件全绿（含 wpt-runner 276P/0F/76I、engine lib 3719P）
+  ∥ quickjs clippy 零告警 + renderer bin/lib 两腿绿，止于 browser bin
+  预存红 `default_actions_work_without_javascript`（741P/1F，stash 本轮
+  三文件后 HEAD 树同断言复现，归因 forms/typing 面在途、与本轮 diff
+  零交集）；r5296 门关相位并行翻铃单例（隔离 2P + 前轮 3719P 双对照，
+  env-var 测试开关 × libtest 并行串态，变体已补 static 槽 learning）。
+  全账见 d1s4 evidence 验证节 + 过程记录。
