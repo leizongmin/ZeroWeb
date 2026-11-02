@@ -14609,6 +14609,9 @@
             var _rvVal = String(value);
             if (handle) { __zw_set_attr_handle(handle, _rvAttr, _rvVal); moAttr = _rvAttr; }
             else { __zw_set_attr(sel, _rvAttr, _rvVal); moAttr = _rvAttr; }
+            // s241：实例层同步（直写臂不经 setAttribute——`_zwAttrInstSyncNoNs`
+            // 刷新解析种子记录，否则 handle-backed 形读侧实例优先命中旧值）。
+            _zwAttrInstSyncNoNs(key, _rvAttr, _rvVal);
             if (_rvEntry) {
               _ce_dispatchAttrChange(_rvEntry, _makeProxy(sel, handle), _rvAttr, _rvOld, _rvVal, null);
             }

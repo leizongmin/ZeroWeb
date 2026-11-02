@@ -1182,6 +1182,9 @@
           }
           if (handle) __zw_set_attr_handle(handle, _refAttr, _refVal);
           else __zw_set_attr(sel, _refAttr, _refVal);
+          // s241：实例层同步（同 part04 value 族臂——reflected 直写臂不经
+          // setAttribute，`_zwAttrInstSyncNoNs` 刷新实例层读侧种子记录）。
+          _zwAttrInstSyncNoNs(key, _refAttr, _refVal);
           // R4100（html-semantics M2 切片 21）：details name IDL 写面 → given-prong
           // 互斥（spec attribute change steps name 分支「closing the given element」
           // ——subject open 且组内已有 open → 自身让位；同 setAttribute('name') 尾钩
@@ -2162,6 +2165,27 @@
     }
     list.push({ qname: qname, ns: ns != null ? String(ns) : null, prefix: prefix, local: local, value: value });
     return true;
+  }
+  // s241（html-semantics M2）：非 NS 直写臂的实例层同步——R5009 value 族与
+  // R3069 reflected 族（含 OPTION label）的 IDL setter 直写宿主（__zw_set_attr
+  // 系）不经 setAttribute，`_zwAttrInstances` 不刷新 → handle-backed 解析树
+  //（innerHTML/template 解析期种子记录）上读侧实例优先（`_zwOptAttrNoNs`）
+  // 命中陈旧记录：o.value='x2' 后 IDL get 仍 "v1"、getAttribute 读 "x2"（探针
+  // 实证，写落宿主层、读命中实例层种子记录）。与 setAttribute 臂同口径
+  //（qname 命中原位更新 / 否则 upsert——reflected IDL setter 与 setAttribute
+  // 同一 content attribute 写语义，spec HTML 反射 IDL 定义）。
+  function _zwAttrInstSyncNoNs(key, name, value) {
+    try {
+      var _s241List = _zwAttrInstances.get(key);
+      var _s241Hit = null;
+      if (_s241List) {
+        for (var _s241i = 0; _s241i < _s241List.length; _s241i++) {
+          if (String(_s241List[_s241i].qname) === name) { _s241Hit = _s241List[_s241i]; break; }
+        }
+      }
+      if (_s241Hit) _s241Hit.value = value;
+      else _zwAttrInstUpsert(key, name, null, null, name, value);
+    } catch (_eS241Sync) {}
   }
   function _zwAttrInstRemoveNS(elKey, ns, local) {
     var list = _zwAttrInstances.get(elKey);
