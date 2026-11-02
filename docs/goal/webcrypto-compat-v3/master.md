@@ -15,7 +15,7 @@ KMAC 双域，FIXED 5,868 全落靶面，分母 82,223 keys 零回归，systemd 
 **最后更新**: 2026-11-03（d1s4 X448/KMAC 落账：FIXED 5,868 落 48 案靶面 +
 drift 14 案具名归因，REGRESSED=0；验证收口 = runner 单测 276P +
 make test workspace/renderer 全绿（browser bin 唯一红为 forms/typing 面
-预存红，stash 归因在案）；实现 `6b767a86a`，锚 gz md5
+预存红，stash 归因在案）；实现 `1604ee3bc`，锚 gz md5
 b32bb16207dc491a4e168611028c0dd9 / 内容 16945280433203e9febb44bff787f5ed）
 
 ---
@@ -27,7 +27,7 @@ X448（RFC 7748 OKP derive 面，stable x448 0.6.0，host 两条拍板义务）+
 KMAC128/KMAC256（SP 800-185 手写组装叠官方 cshake 0.2.1——newX 裸 X 语义
 误读 TupleHash encode_string 致 NIST 全 6 向量不中，对规范原文仲裁修正）全
 链路（deps → host → shim 三文件 → REG 三行 → 定向翻绿 → 锚对照零回归），
-实现 `6b767a86a`（12 文件 872+ 含 3 篇 learnings）。**FIXED 5,868 落 48 案
+实现 `1604ee3bc`（12 文件 872+ 含 3 篇 learnings）。**FIXED 5,868 落 48 案
 全部 X448/KMAC 靶面**（tentative + modern × 双腿对称，无一案域外），
 subtest 级 drift 14 案具名归因（X448/KMAC 注册后条件枚举新键 +
 `importVectorKeys step: ` 前缀命名翻转两族，全 Pass 增益侧），全量分母
