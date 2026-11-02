@@ -4884,6 +4884,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
         sandbox: &mut dyn zero_script_sandbox::Sandbox,
     ) {
         let sel_map = sel_map.clone();
+        let sel_map_all = std::sync::Arc::clone(&sel_map);
         sandbox.register_callback(
             "__zw_handle_for_selector",
             Box::new(move |args: &[String]| -> String {
@@ -4894,6 +4895,26 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     .get(sel)
                     .cloned()
                     .unwrap_or_default()
+            }),
+        );
+        // R331b：批表形态——一次往返倒出全量倒置表（`sel\x1fhandle|…`，`\x1f`/`|`
+        // 不出现在引擎生成的唯一选择器与 `__n0` 形 handle 中，同 tagged payload
+        // 约定）。getElementsByTagName 返回点升格据此在 shim 本地完成，免逐元素
+        // 单查往返（R-baidu3 全文档枚举面的往返风暴保守）。
+        sandbox.register_callback(
+            "__zw_handle_for_selector_all",
+            Box::new(move |_args: &[String]| -> String {
+                let map = sel_map_all.lock().unwrap_or_else(|e| e.into_inner());
+                let mut out = String::new();
+                for (sel, handle) in map.iter() {
+                    if !out.is_empty() {
+                        out.push('|');
+                    }
+                    out.push_str(sel);
+                    out.push('\x1f');
+                    out.push_str(handle);
+                }
+                out
             }),
         );
     }
