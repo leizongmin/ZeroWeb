@@ -5495,14 +5495,16 @@ mod css_image_url_tests {
         // 逗号仍剥（`a.png,` 形态）。
         // https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
         assert_eq!(
-            srcset_first_url(
-                "data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20width='20'></svg> 2x"
-            )
-            .as_deref(),
+            srcset_first_url("data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20width='20'></svg> 2x")
+                .as_deref(),
             Some("data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20width='20'></svg>"),
             "data: URL header 逗号不切组（URL 到空白停）"
         );
-        assert_eq!(srcset_first_url("data:,a").as_deref(), Some("data:,a"), "空 header data: 整串单候选");
+        assert_eq!(
+            srcset_first_url("data:,a").as_deref(),
+            Some("data:,a"),
+            "空 header data: 整串单候选"
+        );
     }
 
     /// R2419：srcset-only `<img>`（无 src）经 extract_img_resources 回退到 srcset 首 URL。

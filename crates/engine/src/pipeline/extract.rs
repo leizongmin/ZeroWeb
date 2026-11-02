@@ -631,9 +631,7 @@ fn srcset_candidates(srcset: &str) -> Vec<(String, String)> {
         if rest.is_empty() {
             break;
         }
-        let end = rest
-            .find(|c: char| c.is_ascii_whitespace())
-            .unwrap_or(rest.len());
+        let end = rest.find(|c: char| c.is_ascii_whitespace()).unwrap_or(rest.len());
         let url = rest[..end].to_string();
         rest = &rest[end..];
         if url.ends_with(',') {
