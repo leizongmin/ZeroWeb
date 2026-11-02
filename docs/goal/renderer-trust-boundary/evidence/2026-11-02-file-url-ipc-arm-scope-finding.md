@@ -47,4 +47,5 @@ CDP `Page.navigate` 到 file:// 亦成功（该路经 browser `navigate()` 属 s
 ## 范围
 
 - 修复实现 + 常驻回归（策略单元 + cdp 集成反例/对照）为下一切片；本切片仅核查、实证、记档。
+- 策略面 = 多进程 IPC 臂（GUI `fetch_proxy::enqueue` + headless `proxy_fetch`）。单进程嵌入模式（zero-webview 库直连 ResourceLoader，renderer/browser 同进程）不在本面：威胁模型中被攻破对象是独立 renderer 进程，单进程无该信任边界，Threat model 不适用即不适用本策略；headless `#[cfg(test)]` 进程内 webview 同理（仅测试构建）。
 - script-src file:// 未执行的门（哪条路径拦的）记档观察不追；iframe SOP 成立不追。
