@@ -1686,13 +1686,34 @@ impl RenderPipeline {
             let conflicts = &css_conflicts;
             css_props.retain(|(n, _)| !conflicts.contains(n));
         }
-        let css = &crate::pipeline::css_vars::substitute_vars_with_skip(css, &css_props, &css_conflicts);
+        // R5386（css-properties-values-api-1 §2）：@property 注册名的 var() 不参与
+        // 文本级替换——注册初值（initial-value）是级联层兜底，文本层把
+        // `var(--name, fb)` 替成 fb 会抢跑注册初值（highlight-cascade-004 选区绿
+        // 被替红）。注册与引用可分处外链 CSS / `<style>` 块 / style 属性任一侧，
+        // skip 取两侧并集。无冲突名时 css_conflicts 为空，css_skip 只含注册名。
+        // OPTIMIZATION: `@property` 字面先门——无注册页零扫描成本（热路径每页渲染）。
+        // OPTIMIZATION 理由：注册名扫描 O(n) 全文，字面 contains 为 memmem 级。
+        let registered = if css.contains("@property") || html.contains("@property") {
+            let mut names = crate::pipeline::css_vars::registered_custom_property_names(css);
+            for n in crate::pipeline::css_vars::registered_custom_property_names(html) {
+                if !names.contains(&n) {
+                    names.push(n);
+                }
+            }
+            names
+        } else {
+            Vec::new()
+        };
+        let mut css_skip = css_conflicts.clone();
+        css_skip.extend(registered.iter().cloned());
+        let css = &crate::pipeline::css_vars::substitute_vars_with_skip(css, &css_props, &css_skip);
         // 同时替换 HTML <style> 块内的 var()（外链 CSS + 内联 CSS 都受影响）
         let html_owned;
         let html = if html.contains("var(--") {
             let mut css_props = crate::pipeline::css_vars::collect_custom_properties(css);
             let mut html_props = crate::pipeline::css_vars::collect_custom_properties(html);
             let mut skip = css_conflicts.clone();
+            skip.extend(registered.iter().cloned());
             if conflict_gate {
                 let html_conflicts = crate::pipeline::css_vars::conflicting_custom_property_names(html);
                 for hc in &html_conflicts {
