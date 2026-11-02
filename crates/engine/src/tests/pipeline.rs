@@ -2692,3 +2692,54 @@ fn test_img_density_corrected_intrinsic_scaling_r5386() {
         "plain src 无 srcset → 不折算（got {w}x{h}）"
     );
 }
+
+/// s246（html-semantics M2）：srcset 逗号 URL 候选切分（spec URL 收集口径）
+/// 作用 effective src + 密度折算——data: SVG URL 的 header 分隔逗号（
+/// `data:image/svg+xml,`）不切组（旧 split(',') 曾把首候选错切为截断
+/// `data:image/svg+xml` → 宿主解码失败 → image_sizes 无条目 → layout
+/// 拉伸盒 784×0；corpus current-pixel-density/basic 3 SVG clientWidth
+/// 定谳面）。钉面：完整 data: URL 单候选 + 2x 折算；`data:,a`（空 header
+/// payload 非图像）整串单候选密度 1。
+/// https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+#[test]
+fn test_img_srcset_comma_url_density_intrinsic_r5386b() {
+    let mut pipeline = RenderPipeline::new(320.0, 400.0);
+    let svg_url = "data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='-1%20-1%202%202'%20width='20'%20height='20'><circle%20r='1'/></svg>";
+    let key = crate::paint::image_resource_key(svg_url, pipeline.document_url());
+    let mut img_sizes = std::collections::HashMap::new();
+    img_sizes.insert(key, (20.0f32, 20.0f32));
+    pipeline.set_image_sizes(img_sizes);
+
+    let html = format!(
+        "<html><body>\
+         <img id=\"svg2x\" srcset=\"{u} 2x\">\
+         <img id=\"emptyhdr\" srcset=\"data:,a\">\
+         <img id=\"tailcomma\" srcset=\"{u} 2x, {u} 1x\">\
+         </body></html>",
+        u = svg_url
+    );
+    let doc = zero_dom::parse_html(&html);
+    let (sizes, _ratios, _no_ratio) = pipeline.build_img_intrinsic_all(&doc);
+    let ids = doc.get_elements_by_tag_name("img");
+    assert_eq!(ids.len(), 3, "语料三 img 全建");
+
+    // data: SVG 逗号 URL + 2x → effective src 完整串命中快照 → 折算 10×10。
+    let (w, h) = sizes.get(&ids[0]).copied().unwrap_or((f32::NAN, f32::NAN));
+    assert!(
+        (w - 10.0).abs() < 0.01 && (h - 10.0).abs() < 0.01,
+        "data: 逗号 URL 单候选 2x → 20/2 = 10（got {w}x{h}）"
+    );
+    // `data:,a`：空 header data: 整串单候选——快照无条目（payload 非图像宿主
+    // 不入 map）→ sizes 无项（与本函数密度面无关，此处钉切分不产出截断候选
+    // `data:` + `a`——两键皆不入 map 同证）。密度归一臂已由 s219 测试覆盖。
+    assert!(
+        !sizes.contains_key(&ids[1]),
+        "data:,a 快照无条目（宿主解码失败不入 map——切分面截断候选已消失）"
+    );
+    // 组尾逗号形态 `u 2x, u 1x`：两候选同 URL，DPR 1.0 选 1x 密度 → 不折算。
+    let (w, h) = sizes.get(&ids[2]).copied().unwrap_or((f32::NAN, f32::NAN));
+    assert!(
+        (w - 20.0).abs() < 0.01 && (h - 20.0).abs() < 0.01,
+        "尾逗号组切分后次候选 1x 生效 → 20 不折（got {w}x{h}）"
+    );
+}

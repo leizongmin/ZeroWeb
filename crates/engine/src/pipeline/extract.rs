@@ -615,14 +615,52 @@ pub fn extract_media_resources(html: &str) -> Vec<MediaResourceElement> {
     out
 }
 
+/// s246（html-semantics M2）：srcset 候选切分——spec parse-a-srcset-attribute
+/// 的 URL 收集口径：URL = 首个非 ASCII 空白序列（**URL 内逗号合法**——data:
+/// URL 的 header 分隔逗号（`data:image/svg+xml,<svg…>`）不切组，旧 split(',')
+/// 近似把截断 URL（`data:image/svg+xml`）当候选 → 解码失败 → 无固有尺寸快照
+/// → layout 拉伸盒 784×0）；仅「URL 以逗号结尾」剥尾逗号（`a.png,` 形态）。
+/// 随后描述符区跳至顶层逗号（括号分组不感知——与旧切分同简化面）。返
+/// (url, 描述符区原串)——描述符空串 = 无描述符。
+/// https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+fn srcset_candidates(srcset: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = srcset;
+    loop {
+        rest = rest.trim_start_matches(|c: char| c.is_ascii_whitespace() || c == ',');
+        if rest.is_empty() {
+            break;
+        }
+        let end = rest
+            .find(|c: char| c.is_ascii_whitespace())
+            .unwrap_or(rest.len());
+        let url = rest[..end].to_string();
+        rest = &rest[end..];
+        if url.ends_with(',') {
+            let trimmed = url.trim_end_matches(',');
+            if !trimmed.is_empty() {
+                out.push((trimmed.to_string(), String::new()));
+            }
+            continue;
+        }
+        let (desc, next) = match rest.find(',') {
+            Some(i) => (&rest[..i], &rest[i..]),
+            None => (rest, ""),
+        };
+        out.push((url, desc.to_string()));
+        rest = next;
+    }
+    out
+}
+
 /// 从 `srcset` 属性取首个候选 URL（R2419：srcset-only `<img>` 回退 src）。
 ///
-/// `srcset="a.jpg 1x, b.jpg 2x"` → `a.jpg`。仅取首候选首 token（最小正确性修：
+/// `srcset="a.jpg 1x, b.jpg 2x"` → `a.jpg`。仅取首候选（最小正确性修：
 /// srcset-only 图无 src 时用首 URL 作 effective src 抓取+渲染；多分辨率 DPR 选源为后续）。
+/// s246：候选切分按 spec URL 收集口径（`srcset_candidates`——URL 内逗号合法，
+/// data: URL header 逗号不切组）。
 pub fn srcset_first_url(srcset: &str) -> Option<String> {
-    let first = srcset.split(',').next()?.trim();
-    let url = first.split_whitespace().next()?;
-    (!url.is_empty()).then(|| url.to_string())
+    srcset_candidates(srcset).into_iter().next().map(|(u, _)| u)
 }
 
 /// s219（html-semantics M2）：img 选中像素密度——img 自身 srcset/sizes 的
@@ -633,8 +671,9 @@ pub fn srcset_first_url(srcset: &str) -> Option<String> {
 /// 未进入 Rust image_sizes 面，clientWidth 恒 intrinsic）。返 None = 不折算
 ///（srcset 缺席 / 密度 ≤ 0 / 空源集但有 src 的 default source 面）；
 /// +Inf = 无选中源 broken（dim/∞ = 0）。
-/// 简化面（FIXME 随选源统一面收编）：候选切分按顶层逗号 + 空白 token（描
-/// 述符内括号分组未建模）；x 描述符数值文法 `parse_srcset_real`（收窄面——
+/// 简化面（FIXME 随选源统一面收编）：候选切分按 spec URL 口径（s246
+/// `srcset_candidates`；URL 内逗号合法，描述符内括号分组未建模——描述符区
+/// 跳至顶层逗号）；x 描述符数值文法 `parse_srcset_real`（收窄面——
 /// IDL 权威面仍归 shim 正则）；sizes 仅 px/vw/vh/vmin/vmax 字面值（media
 /// condition 前缀项跳过，全不命中回落 100vw = viewport 宽）；DPR 恒 1.0
 ///（headless 基准，shim devicePixelRatio 同值）；picture `source` 分支不
@@ -651,16 +690,15 @@ pub fn img_selected_pixel_density(
     // 候选解析：(width 描述符, density 描述符)。文法同 shim：w = 纯数字+'w'
     //（0 → error）、x = HTML 浮点（<0 / 非有限 → error，候选弃——'9e999…x'
     // parse::<f64>() → +Inf 同 shim isFinite 门拒）、h = 兼容描述符（parse
-    // error 但继续；width 缺席 → error）。
+    // error 但继续；width 缺席 → error）。s246：组切分走 spec URL 收集口径
+    //（srcset_candidates——URL 内逗号合法，data: URL header 逗号不切组）。
     let mut candidates: Vec<(Option<f64>, Option<f64>)> = Vec::new();
-    for group in srcset.split(',') {
-        let mut tokens = group.split_ascii_whitespace();
-        let Some(_url) = tokens.next() else { continue };
+    for (_url, desc_area) in srcset_candidates(&srcset) {
         let mut width = None;
         let mut density = None;
         let mut fch = false;
         let mut valid = true;
-        for d in tokens {
+        for d in desc_area.split_ascii_whitespace() {
             if let Some(num) = d.strip_suffix('w') {
                 if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
                     valid = false;
@@ -845,20 +883,14 @@ fn collect_fragment_imgs(doc: &zero_dom::Document, id: zero_dom::NodeId, srcs: &
     }
 }
 
-/// s70：srcset 属性候选 URL 收集（spec parse-a-srcset 的 URL 提取采集近似——
-/// 逗号分组切分、每组取首个非空白 token、剥除尾部逗号（裸 URL 候选
-/// `"a.png,"` 形态）；描述符 token（`1x`/`2w`）不构成分组首 token 的情形仅
-/// 出现在逗号前无 URL 的病态输入，不入清单即可。over-collection 无害：
-/// 宿主多抓一图只多一条尺寸快照，选中面由 shim 动态判定。
+/// s70：srcset 属性候选 URL 收集（spec parse-a-srcset 的 URL 提取采集——
+/// s246 起按 `srcset_candidates` 的 spec URL 口径：URL = 首个非空白序列
+///（URL 内逗号合法，data: URL header 逗号不切组），组尾逗号剥除（裸 URL
+/// 候选 `"a.png,"` 形态）。over-collection 无害：宿主多抓一图只多一条尺寸
+/// 快照，选中面由 shim 动态判定。
 fn push_srcset_candidates(srcset: &str, srcs: &mut Vec<String>) {
-    for group in srcset.split(',') {
-        let Some(token) = group.trim().split_ascii_whitespace().next() else {
-            continue;
-        };
-        let url = token.trim_end_matches(',');
-        if !url.is_empty() {
-            srcs.push(url.to_string());
-        }
+    for (url, _) in srcset_candidates(srcset) {
+        srcs.push(url);
     }
 }
 

@@ -5490,6 +5490,19 @@ mod css_image_url_tests {
         assert_eq!(srcset_first_url("  c.png 480w, d.png 800w  ").as_deref(), Some("c.png"));
         assert!(srcset_first_url("").is_none());
         assert!(srcset_first_url("  ").is_none());
+        // s246：spec URL 收集口径——URL 内逗号合法（data: URL header 分隔逗号
+        // `svg+xml,` 不切组；旧 split(',') 曾把首候选错切为截断 URL）。组尾
+        // 逗号仍剥（`a.png,` 形态）。
+        // https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+        assert_eq!(
+            srcset_first_url(
+                "data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20width='20'></svg> 2x"
+            )
+            .as_deref(),
+            Some("data:image/svg+xml,<svg%20xmlns='http://www.w3.org/2000/svg'%20width='20'></svg>"),
+            "data: URL header 逗号不切组（URL 到空白停）"
+        );
+        assert_eq!(srcset_first_url("data:,a").as_deref(), Some("data:,a"), "空 header data: 整串单候选");
     }
 
     /// R2419：srcset-only `<img>`（无 src）经 extract_img_resources 回退到 srcset 首 URL。
