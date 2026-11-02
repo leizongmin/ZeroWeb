@@ -683,6 +683,9 @@ mod s19_inline_atomic_geometry_tests;
 
 mod r5047_flex_ar_flexed_main_tests;
 
+/// t-fup-trending-filter-flex：块容器 inline-block 族子 frame-only 塌陷的回归
+///（pre-heal 修复面；kill-switch OFF 反证走独立进程轮，见文件头注）。
+mod filterflex_crush_preheal_tests;
 mod r5048_replaced_kw_border_box_tests;
 /// R5073 abspos float 子 shrink-to-fit（taffy Definite 臂 float 贡献）测试。
 mod r5073_abspos_float_shrink_tests;
