@@ -5041,6 +5041,33 @@
     // R112：祖先链（host path 字段——身份键数组，根→父，\x1f 分隔）。事件派发沿此链
     // 反查注册视图（WPT Event-dispatch-bubbles）。
     this._zwPath = info.path ? String(info.path).split('\x1f') : [];
+    // s242（html-semantics M2）：快照 OPTION 的 value/label/text IDL 三联转发
+    //（HTML §4.10.9 dom-option-value/label/text，s239/s240 同族——`_zwParseEl`
+    // 查询产物此前三读 undefined、三写落 expando 属性不动（探针实证读/写源
+    // 分裂：value.after 读回 expando "x2" 而 getAttribute 仍 "v1"）。沿 R3019
+    // lazy 可变子树桥同款口径：首次 IDL 访问 `_ensureMutTree()` 物化可变
+    // `_zwMEl` 树（解析 attrs 经快照 `_attrs` 播种、子树经 outerHTML 重建），
+    // 转发读写落 `_zwMEl` OPTION 产品的 s239/s240 accessor（读=attr 存在即
+    // 采纳/缺省回落子文本、写=纯内容属性反射/replace-all 单 Text 子）——物化
+    // 同时 rewire getAttribute/innerHTML/textContent 等为 live 树视图，写后同
+    // 对象全脸新鲜（spec 语义零复制）。
+    if (this.localName === 'option') {
+      Object.defineProperty(this, 'value', {
+        get: function () { return this._ensureMutTree().value; },
+        set: function (v) { this._ensureMutTree().value = v; },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'label', {
+        get: function () { return this._ensureMutTree().label; },
+        set: function (v) { this._ensureMutTree().label = v; },
+        configurable: true, enumerable: true,
+      });
+      Object.defineProperty(this, 'text', {
+        get: function () { return this._ensureMutTree().text; },
+        set: function (v) { this._ensureMutTree().text = v; },
+        configurable: true, enumerable: true,
+      });
+    }
   }
   // R156（js-dom M4）：Node 接口常量挂解析元素原型（WPT interfaceCheckMatches 的
   // `obj.nodeType === obj.ELEMENT_NODE` 分支判定——解析元素缺常量走错 "should not
