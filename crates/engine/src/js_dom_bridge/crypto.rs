@@ -101,6 +101,149 @@ pub fn crypto_subtle_hmac(hash_algo: &str, key_csv: &str, data_csv: &str) -> Str
     mac.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
 }
 
+// ---------------------------------------------------------------------------
+// KMAC（crypto.subtle.sign/verify KMAC128/KMAC256，webcrypto-compat-v3 D1 拍板
+// 2026-11-02）：SP 800-185 §4.3 手写框架叠官方 cshake 0.2.1（option b——sha3-kmac
+// MIN_KEY_SIZE 会拒语料 16B/24B key，见预检 evidence 2026-11-02-dc2-msrv-compile-
+// precheck.md）。NIST 向量单测随切片落仓（kmac_nist_tests，6/6 逐字节）。
+// **密钥材料零落日志**：key 仅经 CSV 桥进出，无 tracing 输出。
+// https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-185.pdf
+// ---------------------------------------------------------------------------
+
+/// SP 800-185 `left_encode(n)`：n 大端字节（最少 1 字节）+ 前导长度字节。
+fn enc_left_encode(n: usize) -> Vec<u8> {
+    let be = n.to_be_bytes();
+    let first = be.iter().position(|&b| b != 0).unwrap_or(be.len() - 1);
+    let mut out = Vec::with_capacity(9);
+    out.push((be.len() - first) as u8);
+    out.extend_from_slice(&be[first..]);
+    out
+}
+
+/// SP 800-185 `right_encode(n)`：n 大端字节（最少 1 字节）+ 尾随长度字节。
+fn enc_right_encode(n: usize) -> Vec<u8> {
+    let be = n.to_be_bytes();
+    let first = be.iter().position(|&b| b != 0).unwrap_or(be.len() - 1);
+    let mut out = Vec::with_capacity(9);
+    out.extend_from_slice(&be[first..]);
+    out.push((be.len() - first) as u8);
+    out
+}
+
+/// KMAC（SP 800-185 §4.3）：`KMAC(K, X, L, S) = cSHAKE(bytepad(encode_string(K), rate)
+/// || X || right_encode(L), "KMAC", S)`。encode_string 长度取 **bit**（K 位数）；
+/// rate KMAC128 = 168 / KMAC256 = 136（cSHAKE128/256）；L = 输出位长。key_csv/data_csv/
+/// custom_csv = 逗号分隔十进制字节串（custom 空 ≡ 缺席 customization）。返 MAC csv；
+/// 未知算法名 → 空串。供 `__zw_crypto_subtle_kmac` 回调 → shim KMAC sign/verify 臂。
+pub fn crypto_subtle_kmac(algo: &str, key_csv: &str, data_csv: &str, out_bits: u32, custom_csv: &str) -> String {
+    let key = bytes_from_csv(key_csv);
+    let data = bytes_from_csv(data_csv);
+    let custom = bytes_from_csv(custom_csv);
+    let rate = match algo.to_ascii_uppercase().as_str() {
+        "KMAC128" => 168usize,
+        "KMAC256" => 136,
+        _ => return String::new(),
+    };
+    // 信任边界：回调在沙箱全局暴露，JS 可直调任意 out_bits——输出上限护栏（语料
+    // 最大 512 bit，16 MiB 顶留大裕量防误用 OOM；与 crypto_subtle_xof_digest 同口径）。
+    if out_bits as usize / 8 > 16 * 1024 * 1024 {
+        return String::new();
+    }
+    // new_data = bytepad(encode_string(K), rate) || X || right_encode(L)（SP 800-185
+    // §4.3 原式——仅 K 加 encode_string 位长前缀，X 是裸数据；S 不入 new_data，经
+    // cSHAKE customization 参数传入）。bytepad(X, w) = left_encode(w) || X || 补零至
+    // w 整数倍——K 段后必须对齐 rate 吸收边界（cSHAKE 按 rate 分块）。
+    let mut input = Vec::with_capacity(2 * rate + 18 + key.len() + data.len());
+    input.extend_from_slice(&enc_left_encode(rate));
+    input.extend_from_slice(&enc_left_encode(key.len() * 8));
+    input.extend_from_slice(&key);
+    input.resize(input.len() + (rate - input.len() % rate) % rate, 0);
+    input.extend_from_slice(&data);
+    input.extend_from_slice(&enc_right_encode(out_bits as usize));
+    let mac = match rate {
+        168 => xof_squeeze(
+            cshake::CShake128::new_with_function_name(b"KMAC", &custom),
+            &input,
+            (out_bits / 8) as usize,
+        ),
+        _ => xof_squeeze(
+            cshake::CShake256::new_with_function_name(b"KMAC", &custom),
+            &input,
+            (out_bits / 8) as usize,
+        ),
+    };
+    mac.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+}
+
+#[cfg(test)]
+mod kmac_nist_tests {
+    use super::*;
+
+    /// NIST SP 800-185 KMAC samples 全 6 向量逐字节复现（KMAC128×3 + KMAC256×3；
+    /// 源 = WPT sign_verify/kmac_vectors.js，PDF
+    /// csrc.nist.gov/.../KMAC_samples.pdf）。
+    const KEY: [u8; 32] = [
+        0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51,
+        0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f,
+    ];
+    const MSG4: [u8; 4] = [0x00, 0x01, 0x02, 0x03];
+    const MSG200: [u8; 200] = [0; 200];
+    const CUSTOM: &[u8] = b"My Tagged Application";
+
+    fn csv(bytes: &[u8]) -> String {
+        bytes.iter().map(u8::to_string).collect::<Vec<_>>().join(",")
+    }
+
+    fn mac_hex(algo: &str, data: &[u8], custom: &[u8], bits: u32) -> String {
+        let out = crypto_subtle_kmac(algo, &csv(&KEY), &csv(data), bits, &csv(custom));
+        assert!(!out.is_empty(), "KMAC {algo} failed");
+        let parts: Vec<u8> = out.split(',').map(|s| s.parse().unwrap()).collect();
+        parts.iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn nist_samples_all_six() {
+        // Sample #1：KMAC128 无 customization，256 bit。
+        assert_eq!(
+            mac_hex("KMAC128", &MSG4, &[], 256),
+            "e5780b0d3ea6f7d3a429c5706aa43a00fadbd7d49628839e3187243f456ee14e"
+        );
+        // Sample #2 KMAC128 customization，256 bit。
+        assert_eq!(
+            mac_hex("KMAC128", &MSG4, CUSTOM, 256),
+            "3b1fba963cd8b0b59e8c1a6d71888b7143651af8ba0a7070c0979e2811324aa5"
+        );
+        // Sample #3 KMAC128 200B 数据 + customization，256 bit。
+        let mut m3 = MSG200;
+        for (i, b) in m3.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        assert_eq!(
+            mac_hex("KMAC128", &m3, CUSTOM, 256),
+            "1f5b4e6cca02209e0dcb5ca635b89a15e271ecc760071dfd805faa38f9729230"
+        );
+        // Sample #4 KMAC256 customization，512 bit。
+        assert_eq!(
+            mac_hex("KMAC256", &MSG4, CUSTOM, 512),
+            "20c570c31346f703c9ac36c61c03cb64c3970d0cfc787e9b79599d273a68d2f7f69d4cc3de9d104a351689f27cf6f5951f0103f33f4f24871024d9c27773a8dd"
+        );
+        // Sample #5 KMAC256 200B 数据无 customization，512 bit。
+        let mut m5 = MSG200;
+        for (i, b) in m5.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        assert_eq!(
+            mac_hex("KMAC256", &m5, &[], 512),
+            "75358cf39e41494e949707927cee0af20a3ff553904c86b08f21cc414bcfd691589d27cf5e15369cbbff8b9a4c2eb17800855d0235ff635da82533ec6b759b69"
+        );
+        // Sample #6 KMAC256 200B 数据 + customization，512 bit。
+        assert_eq!(
+            mac_hex("KMAC256", &m5, CUSTOM, 512),
+            "b58618f71f92e1d56c1b8c55ddd7cd188b97b4ca4d99831eb2699a837da2e4d970fbacfde50033aea585f1a2708510c32d07880801bd182898fe476876fc8965"
+        );
+    }
+}
+
 /// `crypto.subtle.deriveBits` 的 PBKDF2 实现（R2956）——PBKDF2-HMAC-SHA-1/256/384/512。**密码派生密钥**
 /// 高频（密码管理器 / 加密备份 / 「用密码加密」流程的密钥派生步骤）。PRF = HMAC-<hash>（复用
 /// `compute_hmac`，block_size 内置于闭包）。password_csv/salt_csv = 逗号分隔十进制字节串；iterations 为

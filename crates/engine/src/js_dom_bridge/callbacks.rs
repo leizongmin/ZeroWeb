@@ -989,6 +989,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // `crypto.subtle.sign/verify("KMAC128"/"KMAC256", ...)`（webcrypto-compat-v3
+    // D1 拍板 2026-11-02）——KMAC（SP 800-185）。arg[0]=算法名，arg[1]=key 字节
+    // csv，arg[2]=data 字节 csv，arg[3]=输出 bit 数（shim 已解析缺省并校验非零），
+    // arg[4]=customization 字节 csv（空 ≡ 缺席）。返 MAC csv（unsupported/超限 → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_kmac",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            let out_bits: u32 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            crypto_subtle_kmac(get(0), get(1), get(2), out_bits, get(4))
+        }),
+    );
+
     // `crypto.subtle.deriveBits("PBKDF2", ...)`（R2956）——PBKDF2-HMAC-SHA-1/256/384/512。
     // arg[0]=hash 名，arg[1]=password csv，arg[2]=salt csv，arg[3]=iterations，arg[4]=dklen（字节）。返派生密钥 csv。
     sandbox.register_callback(
@@ -1410,6 +1423,16 @@ pub fn register_dom_callbacks(
         Box::new(|args: &[String]| -> String {
             let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
             crypto_subtle_x25519(get(0), get(1))
+        }),
+    );
+    // `crypto.subtle.deriveBits({name:"X448"}, ...)`：arg[0]=私钥 pkcs8 csv，
+    // arg[1]=对方 raw 公钥 csv。返共享 u 坐标 56 字节 csv（小阶点/全零结果/解析
+    // 失败 → 空 ≡ OperationError；webcrypto-compat-v3 D1 拍板 2026-11-02）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_x448",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_x448(get(0), get(1))
         }),
     );
 

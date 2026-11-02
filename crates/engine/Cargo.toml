@@ -54,6 +54,7 @@ k12 = { workspace = true }
 turboshake = { workspace = true }
 ml-kem = { workspace = true }
 ml-dsa = { workspace = true }
+x448 = { workspace = true }
 rsa = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }

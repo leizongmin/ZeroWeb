@@ -38,7 +38,7 @@
 
     // 注册面 = 本实现既有算法（shim part01b/02）× op 真实支持矩阵。supports 语义
     // =「归一成功 + op 注册 + 参数面校验」——**只登记真实现面，不虚报未实现域**：
-    // ML-KEM/ML-DSA/X448/Ed448/KMAC/Hybrid 未注册 → 全 op
+    // Ed448/Hybrid 未注册 → 全 op
     // false（supports-modern matrix 期望 true，待三期按域切片逐行扩表）。
     // pub=1：算法支持私→公派生（getPublicKey 域，非对称族）。
     // wrapKey/unwrapKey 直注册仅 AES-KW（RFC 3394 原生封装）；AES-CBC/CTR/GCM、
@@ -62,6 +62,9 @@
       'ECDH':   { ops: { deriveBits: 1, deriveKey: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
       'ED25519': { ops: { sign: 1, verify: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
       'X25519':  { ops: { deriveBits: 1, deriveKey: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
+      // X448（webcrypto-compat-v3 D1 拍板 2026-11-02）：OKP 家族 derive 面，域宽
+      // 448（validateDerive 步 X448 臂）。
+      'X448':    { ops: { deriveBits: 1, deriveKey: 1, generateKey: 1, importKey: 1, exportKey: 1 }, pub: 1 },
       'HKDF':    { ops: { importKey: 1, deriveBits: 1, deriveKey: 1 } },
       'PBKDF2':  { ops: { importKey: 1, deriveBits: 1 } },
       // webcrypto-compat-v3 域切片（D1 拍板 2026-11-02）：AES-OCB / ChaCha20-Poly1305
@@ -92,7 +95,11 @@
       // checkSupport 映射 encapsulate/decapsulate）+ ML-DSA（FIPS 204 签名面）。
       // pub=1 私→公派生（getPublicKey）；ML-KEM encapsulateKey/decapsulateKey
       // 第三参附加算法特化见 supports 步 5（raw-secret 可导入 + 生成密钥长度恰
-      // 256）。未注册清单仅余 X448/Ed448/KMAC/Hybrid。
+      // 256）。未注册清单仅余 Ed448/Hybrid。
+      // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板 2026-11-02）：对称 MAC 面
+      // 同 HMAC 注册形态。
+      'KMAC128': { ops: { sign: 1, verify: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
+      'KMAC256': { ops: { sign: 1, verify: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
       'ML-KEM-512':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
       'ML-KEM-768':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
       'ML-KEM-1024': { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
@@ -230,6 +237,16 @@
           if (!isBufferSource(params.context) || mc == null || mc.length > 255) return false;
         }
       }
+      // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板）：outputLength 若存在须正
+      // 8 倍数（spec KmacParams——字节向实现非整字节输出 NotSupportedError 且
+      // supports false）；customization 若存在须 BufferSource（裸名 true）。
+      if (name === 'KMAC128' || name === 'KMAC256') {
+        if (params.outputLength != null) {
+          var kol = params.outputLength;
+          if (typeof kol !== 'number' || !(kol > 0) || kol % 8 !== 0) return false;
+        }
+        if (params.customization != null && !isBufferSource(params.customization)) return false;
+      }
       return true;
     }
 
@@ -310,7 +327,17 @@
         var c = params ? params.namedCurve : null;
         return typeof c === 'string' && !!EC_CURVE_MAX_BITS[upperAscii(c)];
       }
-      // OKP（Ed25519/X25519）：无参数面。
+      // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板）：length 若存在须正 8 倍数
+      //（spec——字节向实现非整字节密钥 Generate Key NotSupportedError 且 supports
+      // false；语料 128/160/256 全 true）。
+      if (name === 'KMAC128' || name === 'KMAC256') {
+        if (params && params.length != null) {
+          var kl = params.length;
+          return typeof kl === 'number' && kl > 0 && kl % 8 === 0;
+        }
+        return true;
+      }
+      // OKP（Ed25519/X25519/X448）：无参数面。
       return true;
     }
 
@@ -347,6 +374,15 @@
         var c = params ? params.namedCurve : null;
         return typeof c === 'string' && !!EC_CURVE_MAX_BITS[upperAscii(c)];
       }
+      // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板）：length 若存在须正 8 倍数
+      //（spec Import Key 面同 Generate——字节向实现 supports false）。
+      if (name === 'KMAC128' || name === 'KMAC256') {
+        if (params && params.length != null) {
+          var kil = params.length;
+          return typeof kil === 'number' && kil > 0 && kil % 8 === 0;
+        }
+        return true;
+      }
       // RSA 家族：hash 必需合法。
       if (name === 'RSASSA-PKCS1-V1_5' || name === 'RSA-PSS' || name === 'RSA-OAEP') {
         return !!hashNameOf(params && params.hash);
@@ -357,14 +393,15 @@
     }
 
     function validateDerive(name, params, length) {
-      // ECDH/X25519：public 成员存在时校验 key 身份（本实现 CryptoKey、type
+      // ECDH/X25519/X448：public 成员存在时校验 key 身份（本实现 CryptoKey、type
       // public、同算法名、ECDH 曲线已注册——'ECDH rejects a private public
       // property' / 'public property for another algorithm' 断言面）；域宽取
-      // public key 曲线（P-256→256/P-384→384/P-521→528；X25519 恒 256）。裸名/
-      // 无 public → 归一即过（public 成员完备性属运算期——WPT matrix 传裸名
-      // 期望 true）。length 若存在：>0、8 的倍数、≤ 域宽。
-      if (name === 'ECDH' || name === 'X25519') {
-        var maxBits = (name === 'X25519') ? 256 : null;
+      // public key 曲线（P-256→256/P-384→384/P-521→528；X25519 恒 256、X448 恒
+      // 448——webcrypto-compat-v3 D1 拍板）。裸名/无 public → 归一即过（public
+      // 成员完备性属运算期——WPT matrix 传裸名期望 true）。length 若存在：>0、
+      // 8 的倍数、≤ 域宽。
+      if (name === 'ECDH' || name === 'X25519' || name === 'X448') {
+        var maxBits = (name === 'X25519') ? 256 : (name === 'X448') ? 448 : null;
         var pub = params ? params.public : null;
         if (pub != null) {
           var CK = globalThis.CryptoKey;
@@ -424,6 +461,17 @@
           return l;
         }
         return SHA_BLOCK_BITS[h];
+      }
+      // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板）：length 成员（>0 且字节
+      // 对齐）或推荐长度 128/256（spec 16.7.6 get key length——与 generateKey
+      // 缺省同源）。
+      if (name === 'KMAC128' || name === 'KMAC256') {
+        if (params && params.length != null) {
+          var kml = params.length;
+          if (typeof kml !== 'number' || !(kml > 0) || kml % 8 !== 0) return null;
+          return kml;
+        }
+        return (name === 'KMAC256') ? 256 : 128;
       }
       if (name.indexOf('AES-') === 0) {
         if (params && params.length != null) {

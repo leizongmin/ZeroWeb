@@ -1278,7 +1278,7 @@ dependencies = [
  "cpufeatures 0.3.0",
  "curve25519-dalek-derive",
  "digest 0.11.3",
- "fiat-crypto",
+ "fiat-crypto 0.3.0",
  "rustc_version",
  "subtle",
  "zeroize",
@@ -1582,6 +1582,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ed448-goldilocks"
+version = "0.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87b5fa9e9e3dd5fe1369f380acd3dcdfa766dbd0a1cd5b048fb40e38a6a78e79"
+dependencies = [
+ "fiat-crypto 0.1.20",
+ "hex",
+ "subtle",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,6 +1713,12 @@ dependencies = [
  "rand_core 0.6.4",
  "subtle",
 ]
+
+[[package]]
+name = "fiat-crypto"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e825f6987101665dea6ec934c09ec6d721de7bc1bf92248e1d5810c8cd636b77"
 
 [[package]]
 name = "fiat-crypto"
@@ -2155,6 +2172,12 @@ name = "hermit-abi"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
+
+[[package]]
+name = "hex"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
 name = "hkdf"
@@ -4265,6 +4288,12 @@ dependencies = [
  "ppv-lite86",
  "rand_core 0.9.5",
 ]
+
+[[package]]
+name = "rand_core"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90bde5296fc891b0cef12a6d03ddccc162ce7b2aff54160af9338f8d40df6d19"
 
 [[package]]
 name = "rand_core"
@@ -7489,6 +7518,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "x448"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4cd07d4fae29e07089dbcacf7077cd52dce7760125ca9a4dd5a35ca603ffebb"
+dependencies = [
+ "ed448-goldilocks",
+ "hex",
+ "rand_core 0.5.1",
+]
+
+[[package]]
 name = "xcursor"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7728,6 +7768,7 @@ dependencies = [
  "url",
  "v8",
  "x25519-dalek",
+ "x448",
  "zero-canvas",
  "zero-css-parser",
  "zero-dom",

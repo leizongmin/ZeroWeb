@@ -50,6 +50,10 @@
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
         var isChaCha = algo.name === 'ChaCha20-Poly1305';
         var isHmac = algo.name === 'HMAC';
+        // KMAC（webcrypto-compat-v3 D1 拍板）：对称 MAC 面，importKey 镜像 HMAC
+        //（WICG spec 16.7.4——length 成员 ∈ (dataBits-8, dataBits] 取数据前 N 位，
+        // 缺省 = dataBits；usages ⊆ {sign,verify}）。
+        var isKmac = (algo.name === 'KMAC128' || algo.name === 'KMAC256');
         // Argon2d/i/id（webcrypto-compat-v3 域切片；spec 17.4.2）——专用早臂：format
         // ≠ raw-secret（别名归一后即 RAW）→ NotSupportedError；usages ⊄ {deriveBits,
         // deriveKey} → SyntaxError；extractable ≠ false → SyntaxError；key.algorithm =
@@ -92,7 +96,7 @@
         if (fmt === 'RAW') {
           raw = _zw_bufToBytes(keyData);
         } else if (fmt === 'JWK') {
-          if (!isAes && !isHmac && !isChaCha) {
+          if (!isAes && !isHmac && !isChaCha && !isKmac) {
             reject(new _zw_subtleDE("Unsupported importKey format for " + algo.name + ": 'jwk'", 'NotSupportedError')); return;
           }
           // jwk → JsonWebKey 字典（spec：非字典 → TypeError）。kty "oct"（对称），k base64url。
@@ -106,9 +110,10 @@
           if (!raw) {
             reject(new _zw_subtleDE('jwk k is not valid base64url', 'DataError')); return;
           }
-          // use 成员：usages 非空时 AES 强制 "enc"、HMAC 强制 "sig"（JWK RFC 7515 §4.3）。
-          if (u.length > 0 && keyData.use != null && keyData.use !== (isHmac ? 'sig' : 'enc')) {
-            reject(new _zw_subtleDE("jwk use must be '" + (isHmac ? 'sig' : 'enc') + "'", 'DataError')); return;
+          // use 成员：usages 非空时 AES 强制 "enc"、HMAC/KMAC 强制 "sig"（JWK
+          // RFC 7515 §4.3；KMAC use "sig"——WICG spec 16.7.4）。
+          if (u.length > 0 && keyData.use != null && keyData.use !== ((isHmac || isKmac) ? 'sig' : 'enc')) {
+            reject(new _zw_subtleDE("jwk use must be '" + ((isHmac || isKmac) ? 'sig' : 'enc') + "'", 'DataError')); return;
           }
           // key_ops：成员须为合法 KeyUsage 且无重复，且 ⊇ usages（spec 公共 jwk 步骤 +
           // RFC 7515 §4.3；key_ops 对算法的适用性不在此校验——调用方 usages 已约束）。
@@ -146,6 +151,8 @@
             expectAlg = 'A' + bits + suffix;
           } else if (isChaCha) {
             expectAlg = 'C20P';
+          } else if (isKmac) {
+            expectAlg = 'K' + algo.name.substring(4);
           } else {
             expectAlg = algo.hash === 'SHA-1' ? 'HS1' : algo.hash === 'SHA-256' ? 'HS256'
               : algo.hash === 'SHA-384' ? 'HS384' : algo.hash === 'SHA-512' ? 'HS512' : null;
@@ -203,6 +210,27 @@
           // spec HmacKeyAlgorithm：hash 为 KeyAlgorithm 字典对象 {name:"SHA-XXX"}（WPT
           // helpers assert_goodCryptoKey 以 key.algorithm.hash.name 取值）。
           keyAlg = { name: 'HMAC', hash: { name: algo.hash }, length: lenBits };
+        }
+        // KMAC key.algorithm.length（WICG spec 16.7.4 KmacKeyAlgorithm）：镜像 HMAC
+        // 截取语义——显式 length ∈ (dataBits-8, dataBits] 取数据前 N 位；缺省 =
+        // dataBits（语料 16/24/32B 全合法，assert_goodCryptoKey 断言 key.algorithm
+        // .length = 数据位长）；0 → DataError（同窗口判据）。key.algorithm =
+        // KmacKeyAlgorithm {name, length}（无 hash 成员）。
+        if (isKmac) {
+          var kmacDataBits = raw.length * 8;
+          if (kmacDataBits === 0) {
+            reject(new _zw_subtleDE('KMAC key data cannot be empty', 'DataError')); return;
+          }
+          var kmacLenBits = kmacDataBits;
+          if (algo.length != null) {
+            var km = Number(algo.length);
+            if (km > kmacDataBits || km <= kmacDataBits - 8 || km % 8 !== 0) {
+              reject(new _zw_subtleDE('KMAC length ' + km + ' invalid for ' + kmacDataBits + '-bit key data', 'DataError')); return;
+            }
+            kmacLenBits = km;
+            raw = raw.slice(0, kmacLenBits / 8);
+          }
+          keyAlg = { name: algo.name, length: kmacLenBits };
         }
         // spec 公共步骤 10：secret 密钥空 usages → SyntaxError（密钥数据校验之后）。
         if (u.length === 0) {
@@ -311,6 +339,20 @@
           resolve(_zw_rsaCsvBytes(mdsaSig));
           return;
         }
+        if (name === 'KMAC128' || name === 'KMAC256') {
+          // KMAC（webcrypto-compat-v3 D1 拍板，SP 800-185）：校验序同 HMAC——算法
+          // 不匹配 / 无 "sign" usage → InvalidAccessError；outputLength 缺省 256/512、
+          // 0 → OperationError；customization 可选 BufferSource。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          var kmacSig = _zw_kmacMac(name, algorithm, key, _zw_bufToBytes(data), reject);
+          if (kmacSig) resolve(kmacSig);
+          return;
+        }
         if (name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported sign algorithm: ' + name, 'NotSupportedError')); return;
         }
@@ -415,6 +457,27 @@
           resolve(mdsaOk === '1');
           return;
         }
+        if (name === 'KMAC128' || name === 'KMAC256') {
+          // KMAC verify（webcrypto-compat-v3 D1 拍板）：同 HMAC 定长比较（无早退）；
+          // outputLength 不同的签名 → 计算不同 MAC → false 不 reject
+          //（kmac.js wrongVerificationAlgorithm 断言面）；短/坏签名 → false。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          var kmacMac = _zw_kmacMac(name, algorithm, key, _zw_bufToBytes(data), reject);
+          if (!kmacMac) return;
+          var kmacSig = _zw_bufToBytes(signature);
+          if (kmacMac.length !== kmacSig.length) { resolve(false); return; }
+          var kok = 1;
+          for (var ki2 = 0; ki2 < kmacMac.length; ki2++) {
+            if ((kmacMac[ki2] & 0xff) !== (kmacSig[ki2] & 0xff)) kok = 0;
+          }
+          resolve(!!kok);
+          return;
+        }
         if (name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported verify algorithm: ' + name, 'NotSupportedError')); return;
         }
@@ -483,24 +546,26 @@
           resolve(earr);
           return;
         }
-        if (name === 'X25519') {
-          // X25519（M5）：校验序镜像 ECDH（public 缺失 TypeError → baseKey/public
-          // 校验 InvalidAccessError → "deriveBits" usage）。length：null/省略 → 256
-          //（RFC 7748 输出全长）；> 256 → OperationError（derived_bits_length "bigger
-          // than the output size"）；0 → 空；非 8 倍数 → 取左起 length 位。
-          var xPub = _zw_x25519Validate(algorithm, key, reject);
+        if (name === 'X25519' || name === 'X448') {
+          // X25519/X448（M5 + X448 webcrypto-compat-v3 D1 拍板）：校验序镜像 ECDH
+          //（public 缺失 TypeError → baseKey/public 校验 InvalidAccessError →
+          // "deriveBits" usage）。length：null/省略 → 域全宽（256/448，RFC 7748
+          // 输出全长）；> 域宽 → OperationError（derived_bits_length "bigger than
+          // the output size"）；0 → 空；非 8 倍数 → 取左起 length 位。
+          var xPub = _zw_xValidate(name, algorithm, key, reject);
           if (!xPub) return;
           if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
             reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
           }
-          var xLenBits = (length == null) ? 256 : Number(length);
+          var xMaxBits = (name === 'X448') ? 448 : 256;
+          var xLenBits = (length == null) ? xMaxBits : Number(length);
           if (!(xLenBits >= 0)) {
             reject(new TypeError('deriveBits length must be a number')); return;
           }
-          if (xLenBits > 256) {
+          if (xLenBits > xMaxBits) {
             reject(new _zw_subtleDE('deriveBits length must not exceed the output size', 'OperationError')); return;
           }
-          var xparts = _zw_x25519SharedCall(key, xPub, reject);
+          var xparts = _zw_xSharedCall(name, key, xPub, reject);
           if (!xparts) return;
           var xOutBytes = Math.ceil(xLenBits / 8);
           var xarr = new Uint8Array(xOutBytes);
@@ -703,6 +768,25 @@
             reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
           }
           resolve(new CryptoKey('secret', extractable, { name: 'HMAC', hash: { name: algo.hash }, length: lenBits }, hu, Array.from(_zw_randomBytes(lenBits / 8))));
+        } else if (algo.name === 'KMAC128' || algo.name === 'KMAC256') {
+          // KMAC（webcrypto-compat-v3 D1 拍板，WICG spec 16.7.3）：usages ⊆
+          // {sign,verify}（非法 → SyntaxError，failures.js "Bad usages" 序）→ length
+          // 成员透传（任意正 8 倍数合法——语料 128/160/256 全过；缺省 = 推荐长度
+          // 128/256；0/负/非字节对齐 → OperationError——字节向实现 Generate Key 面）→
+          // 空 usages SyntaxError（公共步骤 10）。key.algorithm = KmacKeyAlgorithm
+          // {name, length}（无 hash 成员，helpers assert_goodCryptoKey 167-175 缺省
+          // 断言面）。
+          var ku = _zw_normalizeUsages(usages, ['sign', 'verify']);
+          if (!ku) { reject(new _zw_subtleDE('Invalid key usages for ' + algo.name, 'SyntaxError')); return; }
+          var kbits = (algo.length != null) ? Number(algo.length)
+            : (algo.name === 'KMAC256' ? 256 : 128);
+          if (!(kbits > 0) || kbits % 8 !== 0) {
+            reject(new _zw_subtleDE('Invalid KMAC length: ' + algo.length, 'OperationError')); return;
+          }
+          if (ku.length === 0) {
+            reject(new _zw_subtleDE('Key usages cannot be empty for secret keys', 'SyntaxError')); return;
+          }
+          resolve(new CryptoKey('secret', extractable, { name: algo.name, length: kbits }, ku, Array.from(_zw_randomBytes(kbits / 8))));
         } else if (_zw_rsaIsFamily(algo.name)) {
           // RSA（M4a）→ CryptoKeyPair{publicKey, privateKey}（publicKey 恒 extractable）；
           // 错误序：非法 usage SyntaxError → 生成 OperationError（e<3/偶数，failures
@@ -791,6 +875,11 @@
         // jwk alg = C20P（spec IANA 注册名，WICG webcrypto-modern-algos §18.1）。
         else if (algName === 'AES-OCB') alg = 'A' + bits + 'OCB';
         else if (algName === 'ChaCha20-Poly1305') alg = 'C20P';
+        // KMAC（webcrypto-compat-v3 D1 拍板）：jwk alg = K128/K256（WICG spec
+        // 16.7.5 导出面，IANA "K"+尾缀注册名；WPT symmetric_importKey equalJwk
+        // 断言面）。
+        else if (algName === 'KMAC128') alg = 'K128';
+        else if (algName === 'KMAC256') alg = 'K256';
         else if (algName === 'HMAC') {
           var h = key.algorithm.hash;
           h = (h && typeof h === 'object') ? h.name : h;

@@ -2498,10 +2498,23 @@
       }
       return ecOut;
     }
-    if (name === 'ED25519' || name === 'X25519') {
-      // OKP 家族（M5）：无参数算法（spec Ed25519/X25519 参数字典为空），name 回写
-      // 注册表规范拼写（含小写）。
-      return { name: name === 'ED25519' ? 'Ed25519' : 'X25519' };
+    if (name === 'ED25519' || name === 'X25519' || name === 'X448') {
+      // OKP 家族（M5 + X448 webcrypto-compat-v3 D1 拍板）：无参数算法（spec
+      // Ed25519/X25519/X448 参数字典为空），name 回写注册表规范拼写（含小写）。
+      return {
+        name: name === 'ED25519' ? 'Ed25519'
+          : name === 'X25519' ? 'X25519' : 'X448'
+      };
+    }
+    if (name === 'KMAC128' || name === 'KMAC256') {
+      // KMAC（webcrypto-compat-v3 D1 拍板，SP 800-185）：length 成员透传
+      //（generateKey 消费请求值回写 key.algorithm.length、任意正 8 倍数合法——
+      // 语料 128/160/256 全过；importKey 无 length 成员 → key.algorithm.length =
+      // 数据位长，importKey 面承接；0/负/非 8 倍数由 generateKey/importKey 各臂
+      // OperationError/DataError 拒绝，归一层不设卡）。
+      var kmacOut = { name: name };
+      if (typeof algo === 'object' && algo && algo.length != null) kmacOut.length = Number(algo.length);
+      return kmacOut;
     }
     if (_zw_mlKemIsFamily(name) || _zw_mlDsaIsFamily(name)) {
       // ML 家族（webcrypto-compat-v3 域切片，FIPS 203/204）：无参数算法（spec
@@ -2546,6 +2559,37 @@
     var arr = new Uint8Array(parts.length);
     for (var i = 0; i < parts.length; i++) arr[i] = +parts[i];
     return arr;
+  }
+
+  // KMAC MAC 计算（sign/verify 复用，webcrypto-compat-v3 D1 拍板）：返 Uint8Array；
+  // host 未注册 → NotSupportedError、outputLength 0 → OperationError，均经 reject 返
+  // null。outputLength 缺省 256（KMAC128）/512（KMAC256）（spec KmacParams：缺省
+  // 长度族自适应）；customization 可选 BufferSource（spec KmacParams，字节桥 csv，
+  // 空 ≡ 缺席）。
+  // algoName 由调用方传入（sign/verify 顶部已读一次 algorithm.name）——WPT mac.js
+  // transferred 用例把 name 设为 getter（读一次触发一次 buffer.transfer()），本函数
+  // 不得再读 algo.name，否则第二次 transfer 在 detached ArrayBuffer 上抛错。
+  function _zw_kmacMac(algoName, algo, key, dataBytes, reject) {
+    if (typeof __zw_crypto_subtle_kmac !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle KMAC requires host callback', 'NotSupportedError'));
+      return null;
+    }
+    var outBits = (algo.outputLength != null) ? Number(algo.outputLength)
+      : (algoName === 'KMAC256' ? 512 : 256);
+    if (outBits === 0) {
+      reject(new _zw_subtleDE('KMAC outputLength cannot be 0', 'OperationError'));
+      return null;
+    }
+    var custom = (algo.customization != null) ? _zw_bufToBytes(algo.customization) : [];
+    var macCsv = __zw_crypto_subtle_kmac(algoName, (key._raw || []).map(String).join(','), dataBytes.join(','), String(outBits), (custom || []).join(','));
+    if (!macCsv) {
+      reject(new _zw_subtleDE('KMAC operation failed', 'OperationError'));
+      return null;
+    }
+    var kparts = macCsv.split(',');
+    var karr = new Uint8Array(kparts.length);
+    for (var ki = 0; ki < kparts.length; ki++) karr[ki] = +kparts[ki];
+    return karr;
   }
 
   // AES-GCM 调用（encrypt/decrypt 共用，webcrypto M3a 矩阵）：iv 12/16/32 字节（spec 允许任意
@@ -2764,14 +2808,15 @@
         resolve(earr);
         return;
       }
-      if (name === 'X25519') {
-        // X25519 臂（M5，deriveKey 路径，镜像 ECDH 臂）：调用方已检 "deriveKey"
-        // usage；此处补 base private/public 校验。目标密钥长度（AES/HMAC）恒字节
-        // 对齐；超 32 字节输出 → OperationError。length null（deriveKey 目标
-        // HKDF/PBKDF2 无 length 成员）→ 全长 32 字节。
-        var xPubD = _zw_x25519Validate(algorithm, key, reject);
+      if (name === 'X25519' || name === 'X448') {
+        // X25519/X448 臂（M5 + X448 webcrypto-compat-v3 D1 拍板；deriveKey 路径，
+        // 镜像 ECDH 臂）：调用方已检 "deriveKey" usage；此处补 base private/public
+        // 校验。目标密钥长度（AES/HMAC）恒字节对齐；超域宽（32/56 字节）→
+        // OperationError。length null（deriveKey 目标 HKDF/PBKDF2 无 length 成员）
+        // → 全长。
+        var xPubD = _zw_xValidate(name, algorithm, key, reject);
         if (!xPubD) return;
-        var xdparts = _zw_x25519SharedCall(key, xPubD, reject);
+        var xdparts = _zw_xSharedCall(name, key, xPubD, reject);
         if (!xdparts) return;
         var xdLen = (length == null) ? xdparts.length : Math.floor(length / 8);
         if (xdLen > xdparts.length) {
@@ -3640,15 +3685,18 @@
     return out === '1';
   }
 
-  // ===== OKP 家族（Ed25519/X25519）shim 支撑（webcrypto M5）=====
-  // host 原语见 js_dom_bridge/crypto.rs（ed25519-dalek/x25519-dalek 3.0）；字节桥同
-  // EC（csv 十进制串，多字段 `;` 分隔）。密钥材料不落 tracing（零日志纪律）。
-  // https://w3c.github.io/webcrypto/#ed25519  https://w3c.github.io/webcrypto/#x25519
+  // ===== OKP 家族（Ed25519/X25519/X448）shim 支撑（webcrypto M5 + X448
+  // webcrypto-compat-v3 D1 拍板 2026-11-02）=====
+  // host 原语见 js_dom_bridge/crypto.rs（ed25519-dalek/x25519-dalek 3.0）与
+  // crypto_asym.rs（x448 0.6.0——host 两条义务：import 无贡献性检查 + derive 全零
+  // 拒绝，见 crypto_subtle_x448 注释）；字节桥同 EC（csv 十进制串，多字段 `;` 分隔）。
+  // 密钥材料不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#ed25519  https://w3c.github.io/webcrypto/#x25519  https://wicg.github.io/webcrypto-modern-algos/#x448
 
-  // OKP 家族判定（ASCII 折叠；key.algorithm.name 存规范拼写 "Ed25519"/"X25519"）。
+  // OKP 家族判定（ASCII 折叠；key.algorithm.name 存规范拼写 "Ed25519"/"X25519"/"X448"）。
   function _zw_okpIsFamily(name) {
     var u = _zw_upperAscii(String(name));
-    return u === 'ED25519' || u === 'X25519';
+    return u === 'ED25519' || u === 'X25519' || u === 'X448';
   }
 
   // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
@@ -3659,7 +3707,7 @@
   }
 
   // 按密钥类型的 usages 子集（spec importKey 各格式分支 + generateKey 密钥对拆分：
-  // Ed25519 public ⊆ [verify] / private ⊆ [sign]；X25519 public ⊆ [] / private ⊆
+  // Ed25519 public ⊆ [verify] / private ⊆ [sign]；X25519/X448 public ⊆ [] / private ⊆
   // [deriveKey, deriveBits]）。
   function _zw_okpTypeUsages(name, isPublic) {
     if (_zw_upperAscii(String(name)) === 'ED25519') {
@@ -3677,7 +3725,8 @@
     if (_zw_rsaIsFamily(name) || _zw_ecIsFamily(name) || _zw_okpIsFamily(name)) return true;
     var n = _zw_upperAscii(String(name == null ? '' : name));
     return n === 'AES-CBC' || n === 'AES-CTR' || n === 'AES-GCM' ||
-      n === 'AES-KW' || n === 'AES-OCB' || n === 'CHACHA20-POLY1305' || n === 'HMAC';
+      n === 'AES-KW' || n === 'AES-OCB' || n === 'CHACHA20-POLY1305' || n === 'HMAC' ||
+      n === 'KMAC128' || n === 'KMAC256';
   }
 
   // 类型 usages 子集判定（spki/pkcs8/raw 分支与 jwk d 分支共用）。
@@ -3689,13 +3738,14 @@
     return true;
   }
 
-  // jwk use 取值（usages 非空时强制，RFC 7517 §4.2）：Ed25519 "sig" / X25519 "enc"。
+  // jwk use 取值（usages 非空时强制，RFC 7517 §4.2）：Ed25519 "sig" / X25519/X448 "enc"。
   function _zw_okpJwkUse(name) {
     return (_zw_upperAscii(String(name)) === 'ED25519') ? 'sig' : 'enc';
   }
 
   // jwk alg（RFC 8037 §A.2 无注册名——WPT okp_importKey testJwkAlgBehaviours：Ed25519
-  // 接受 "Ed25519"/"EdDSA" 且导出恒 "Ed25519"；X25519 忽略 alg（导入任意值、导出无成员）。
+  // 接受 "Ed25519"/"EdDSA" 且导出恒 "Ed25519"；X25519/X448 忽略 alg（导入任意值、
+  // 导出无成员——X448 语料 okp_importKey_X448 jwkAlgBehaviours 同断言）。
   function _zw_okpJwkAlg(name) {
     return (_zw_upperAscii(String(name)) === 'ED25519') ? 'Ed25519' : null;
   }
@@ -3709,8 +3759,9 @@
   }
 
   // host csv → CryptoKey。spec 公共步骤 10：private 空 usages → SyntaxError（public
-  // 空 usages 合法——X25519 publicUsages 恒空）。_raw：public = raw 公钥 32 字节、
-  // private = pkcs8 48 字节（规范化存储，export 逐字节稳定）。
+  // 空 usages 合法——X25519/X448 publicUsages 恒空）。_raw：public = raw 公钥
+  //（X25519 32B / X448 56B）、private = 规范 pkcs8（48B / 72B；导入存原标量不钳位，
+  // 生成存钳位后标量——x448 host 契约，round-trip 稳定）。
   function _zw_okpKeyFromDer(resolve, reject, name, derCsv, type, extractable, usages) {
     if (type === 'private' && usages.length === 0) {
       reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
@@ -3911,19 +3962,20 @@
     reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'raw'/'pkcs8'/'jwk' supported for OKP keys)", 'NotSupportedError'));
   }
 
-  // X25519 派生公共校验（deriveBits/deriveKey-performDerive 共用，镜像 ECDH）：
-  // public 成员缺失/非 CryptoKey → TypeError；baseKey 非 X25519 / 非 private、
-  // public 非 public 型 / 非 X25519 → InvalidAccessError。返 public key 或 null（已 reject）。
-  function _zw_x25519Validate(algorithm, key, reject) {
+  // X25519/X448 派生公共校验（deriveBits/deriveKey-performDerive 共用，镜像 ECDH；
+  // name = 'X25519'|'X448'——X448 webcrypto-compat-v3 D1 拍板）：
+  // public 成员缺失/非 CryptoKey → TypeError；baseKey 非同族 / 非 private、
+  // public 非 public 型 / 非同族 → InvalidAccessError。返 public key 或 null（已 reject）。
+  function _zw_xValidate(name, algorithm, key, reject) {
     if (typeof algorithm !== 'object' || !algorithm || algorithm.public == null) {
-      reject(new TypeError('X25519 requires a public member'));
+      reject(new TypeError(name + ' requires a public member'));
       return null;
     }
     if (!(algorithm.public instanceof CryptoKey)) {
-      reject(new TypeError('X25519 public member must be a CryptoKey'));
+      reject(new TypeError(name + ' public member must be a CryptoKey'));
       return null;
     }
-    if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== 'X25519') {
+    if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
       reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError'));
       return null;
     }
@@ -3932,22 +3984,24 @@
       return null;
     }
     var pub = algorithm.public;
-    if (pub.type !== 'public' || _zw_upperAscii(String(pub.algorithm && pub.algorithm.name)) !== 'X25519') {
-      reject(new _zw_subtleDE('X25519 public key invalid or algorithm mismatch', 'InvalidAccessError'));
+    if (pub.type !== 'public' || _zw_upperAscii(String(pub.algorithm && pub.algorithm.name)) !== name) {
+      reject(new _zw_subtleDE(name + ' public key invalid or algorithm mismatch', 'InvalidAccessError'));
       return null;
     }
     return pub;
   }
 
-  // X25519 共享秘密调用（deriveBits/deriveKey-performDerive 共用）：host 派生，
-  // 全零结果/解析失败 → 空串。返字节数组。
-  function _zw_x25519SharedCall(key, pubKey, reject) {
-    if (typeof __zw_crypto_subtle_x25519 !== 'function') {
-      reject(_zw_subtleDE('crypto.subtle X25519 requires host callback', 'NotSupportedError')); return null;
+  // X25519/X448 共享秘密调用（deriveBits/deriveKey-performDerive 共用）：按 name
+  // 分派 host 回调，全零结果/解析失败（含小阶点——x448 host 义务②）→ 空串。
+  // 返字节数组。
+  function _zw_xSharedCall(name, key, pubKey, reject) {
+    var cb = (name === 'X448') ? __zw_crypto_subtle_x448 : __zw_crypto_subtle_x25519;
+    if (typeof cb !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle ' + name + ' requires host callback', 'NotSupportedError')); return null;
     }
-    var shared = __zw_crypto_subtle_x25519((key._raw || []).map(String).join(','), (pubKey._raw || []).join(','));
+    var shared = cb((key._raw || []).map(String).join(','), (pubKey._raw || []).join(','));
     if (!shared) {
-      reject(new _zw_subtleDE('X25519 derivation failed (all-zero shared secret)', 'OperationError')); return null;
+      reject(new _zw_subtleDE(name + ' derivation failed (all-zero shared secret)', 'OperationError')); return null;
     }
     return shared.split(',');
   }
