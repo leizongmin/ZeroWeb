@@ -3567,8 +3567,7 @@
     _zwSvgAnimatedStringCtor = new Function('return function SVGAnimatedString() { this.baseVal = \'\'; this.animVal = \'\'; }')();
     globalThis.SVGAnimatedString = _zwSvgAnimatedStringCtor;
     Object.defineProperty(_zwSvgAnimatedStringCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedString',
-    });
+      value: 'SVGAnimatedString', configurable: true });
   }
   // svg-compat M2 S2a：SVG 值类型底座——SVGLength 单位模型 + SVGAnimatedLength/
   // SVGAnimatedNumber 反射（spec SVG2 types.html §InterfaceSVGLength /
@@ -3600,24 +3599,21 @@
     _zwSvgLengthCtor.SVG_LENGTHTYPE_PT = 9;
     _zwSvgLengthCtor.SVG_LENGTHTYPE_PC = 10;
     Object.defineProperty(_zwSvgLengthCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGLength',
-    });
+      value: 'SVGLength', configurable: true });
   }
   var _zwSvgAnimatedLengthCtor = globalThis.SVGAnimatedLength;
   if (!_zwSvgAnimatedLengthCtor) {
     _zwSvgAnimatedLengthCtor = new Function('return function SVGAnimatedLength() {}')();
     globalThis.SVGAnimatedLength = _zwSvgAnimatedLengthCtor;
     Object.defineProperty(_zwSvgAnimatedLengthCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedLength',
-    });
+      value: 'SVGAnimatedLength', configurable: true });
   }
   var _zwSvgAnimatedNumberCtor = globalThis.SVGAnimatedNumber;
   if (!_zwSvgAnimatedNumberCtor) {
     _zwSvgAnimatedNumberCtor = new Function('return function SVGAnimatedNumber() {}')();
     globalThis.SVGAnimatedNumber = _zwSvgAnimatedNumberCtor;
     Object.defineProperty(_zwSvgAnimatedNumberCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedNumber',
-    });
+      value: 'SVGAnimatedNumber', configurable: true });
   }
   // SVGLength 串解析：`[+-]?数 [单位]?`（单位大小写不敏感——'1pX' 合法；deg/
   // 未知单位/空串/裸垃圾 → null 即 SyntaxError 面）。数支持小数与指数形态。
@@ -5876,56 +5872,49 @@
     _zwSvgAngleCtor.SVG_ANGLETYPE_RAD = 3;
     _zwSvgAngleCtor.SVG_ANGLETYPE_GRAD = 4;
     Object.defineProperty(_zwSvgAngleCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAngle',
-    });
+      value: 'SVGAngle', configurable: true });
   }
   var _zwSvgAnimatedAngleCtor = globalThis.SVGAnimatedAngle;
   if (!_zwSvgAnimatedAngleCtor) {
     _zwSvgAnimatedAngleCtor = new Function('return function SVGAnimatedAngle() {}')();
     globalThis.SVGAnimatedAngle = _zwSvgAnimatedAngleCtor;
     Object.defineProperty(_zwSvgAnimatedAngleCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedAngle',
-    });
+      value: 'SVGAnimatedAngle', configurable: true });
   }
   var _zwSvgAnimatedIntegerCtor = globalThis.SVGAnimatedInteger;
   if (!_zwSvgAnimatedIntegerCtor) {
     _zwSvgAnimatedIntegerCtor = new Function('return function SVGAnimatedInteger() {}')();
     globalThis.SVGAnimatedInteger = _zwSvgAnimatedIntegerCtor;
     Object.defineProperty(_zwSvgAnimatedIntegerCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedInteger',
-    });
+      value: 'SVGAnimatedInteger', configurable: true });
   }
   var _zwSvgAnimatedEnumCtor = globalThis.SVGAnimatedEnumeration;
   if (!_zwSvgAnimatedEnumCtor) {
     _zwSvgAnimatedEnumCtor = new Function('return function SVGAnimatedEnumeration() {}')();
     globalThis.SVGAnimatedEnumeration = _zwSvgAnimatedEnumCtor;
     Object.defineProperty(_zwSvgAnimatedEnumCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedEnumeration',
-    });
+      value: 'SVGAnimatedEnumeration', configurable: true });
   }
   var _zwSvgAnimatedBoolCtor = globalThis.SVGAnimatedBoolean;
   if (!_zwSvgAnimatedBoolCtor) {
     _zwSvgAnimatedBoolCtor = new Function('return function SVGAnimatedBoolean() {}')();
     globalThis.SVGAnimatedBoolean = _zwSvgAnimatedBoolCtor;
     Object.defineProperty(_zwSvgAnimatedBoolCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedBoolean',
-    });
+      value: 'SVGAnimatedBoolean', configurable: true });
   }
   var _zwSvgRectCtor = globalThis.SVGRect;
   if (!_zwSvgRectCtor) {
     _zwSvgRectCtor = new Function('return function SVGRect() {}')();
     globalThis.SVGRect = _zwSvgRectCtor;
     Object.defineProperty(_zwSvgRectCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGRect',
-    });
+      value: 'SVGRect', configurable: true });
   }
   var _zwSvgAnimatedRectCtor = globalThis.SVGAnimatedRect;
   if (!_zwSvgAnimatedRectCtor) {
     _zwSvgAnimatedRectCtor = new Function('return function SVGAnimatedRect() {}')();
     globalThis.SVGAnimatedRect = _zwSvgAnimatedRectCtor;
     Object.defineProperty(_zwSvgAnimatedRectCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedRect',
-    });
+      value: 'SVGAnimatedRect', configurable: true });
   }
   var _zwSvgParCtor = globalThis.SVGPreserveAspectRatio;
   if (!_zwSvgParCtor) {
@@ -5947,40 +5936,35 @@
     _zwSvgParCtor.SVG_MEETORSLICE_MEET = 1;
     _zwSvgParCtor.SVG_MEETORSLICE_SLICE = 2;
     Object.defineProperty(_zwSvgParCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGPreserveAspectRatio',
-    });
+      value: 'SVGPreserveAspectRatio', configurable: true });
   }
   var _zwSvgAnimatedParCtor = globalThis.SVGAnimatedPreserveAspectRatio;
   if (!_zwSvgAnimatedParCtor) {
     _zwSvgAnimatedParCtor = new Function('return function SVGAnimatedPreserveAspectRatio() {}')();
     globalThis.SVGAnimatedPreserveAspectRatio = _zwSvgAnimatedParCtor;
     Object.defineProperty(_zwSvgAnimatedParCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGAnimatedPreserveAspectRatio',
-    });
+      value: 'SVGAnimatedPreserveAspectRatio', configurable: true });
   }
   var _zwSvgMatrixCtor = globalThis.SVGMatrix;
   if (!_zwSvgMatrixCtor) {
     _zwSvgMatrixCtor = new Function('return function SVGMatrix() {}')();
     globalThis.SVGMatrix = _zwSvgMatrixCtor;
     Object.defineProperty(_zwSvgMatrixCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGMatrix',
-    });
+      value: 'SVGMatrix', configurable: true });
   }
   var _zwSvgPointCtor = globalThis.SVGPoint;
   if (!_zwSvgPointCtor) {
     _zwSvgPointCtor = new Function('return function SVGPoint() {}')();
     globalThis.SVGPoint = _zwSvgPointCtor;
     Object.defineProperty(_zwSvgPointCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGPoint',
-    });
+      value: 'SVGPoint', configurable: true });
   }
   var _zwSvgNumberCtor = globalThis.SVGNumber;
   if (!_zwSvgNumberCtor) {
     _zwSvgNumberCtor = new Function('return function SVGNumber() {}')();
     globalThis.SVGNumber = _zwSvgNumberCtor;
     Object.defineProperty(_zwSvgNumberCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGNumber',
-    });
+      value: 'SVGNumber', configurable: true });
   }
   // SVGUnitTypes 常量容器（spec SVG2 types.html；枚举反射 initial/valid 面引用）。
   var _zwSvgUnitTypesCtor = globalThis.SVGUnitTypes;
@@ -5991,8 +5975,7 @@
     _zwSvgUnitTypesCtor.SVG_UNIT_TYPE_USERSPACEONUSE = 1;
     _zwSvgUnitTypesCtor.SVG_UNIT_TYPE_OBJECTBOUNDINGBOX = 2;
     Object.defineProperty(_zwSvgUnitTypesCtor.prototype, Symbol.toStringTag, {
-      value: 'SVGUnitTypes',
-    });
+      value: 'SVGUnitTypes', configurable: true });
   }
   // 接口枚举常量（spec SVG1.1 IDL + SVG2 扩展；WPT enumeration initial-values
   // 按接口名直接引用）。
@@ -6733,37 +6716,37 @@
   if (!_zwSvgLengthListCtor) {
     _zwSvgLengthListCtor = new Function('return function SVGLengthList() {}')();
     globalThis.SVGLengthList = _zwSvgLengthListCtor;
-    Object.defineProperty(_zwSvgLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGLengthList' });
+    Object.defineProperty(_zwSvgLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGLengthList', configurable: true });
   }
   var _zwSvgNumberListCtor = globalThis.SVGNumberList;
   if (!_zwSvgNumberListCtor) {
     _zwSvgNumberListCtor = new Function('return function SVGNumberList() {}')();
     globalThis.SVGNumberList = _zwSvgNumberListCtor;
-    Object.defineProperty(_zwSvgNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGNumberList' });
+    Object.defineProperty(_zwSvgNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGNumberList', configurable: true });
   }
   var _zwSvgPointListCtor = globalThis.SVGPointList;
   if (!_zwSvgPointListCtor) {
     _zwSvgPointListCtor = new Function('return function SVGPointList() {}')();
     globalThis.SVGPointList = _zwSvgPointListCtor;
-    Object.defineProperty(_zwSvgPointListCtor.prototype, Symbol.toStringTag, { value: 'SVGPointList' });
+    Object.defineProperty(_zwSvgPointListCtor.prototype, Symbol.toStringTag, { value: 'SVGPointList', configurable: true });
   }
   var _zwSvgStringListCtor = globalThis.SVGStringList;
   if (!_zwSvgStringListCtor) {
     _zwSvgStringListCtor = new Function('return function SVGStringList() {}')();
     globalThis.SVGStringList = _zwSvgStringListCtor;
-    Object.defineProperty(_zwSvgStringListCtor.prototype, Symbol.toStringTag, { value: 'SVGStringList' });
+    Object.defineProperty(_zwSvgStringListCtor.prototype, Symbol.toStringTag, { value: 'SVGStringList', configurable: true });
   }
   var _zwSvgAnimatedLengthListCtor = globalThis.SVGAnimatedLengthList;
   if (!_zwSvgAnimatedLengthListCtor) {
     _zwSvgAnimatedLengthListCtor = new Function('return function SVGAnimatedLengthList() {}')();
     globalThis.SVGAnimatedLengthList = _zwSvgAnimatedLengthListCtor;
-    Object.defineProperty(_zwSvgAnimatedLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedLengthList' });
+    Object.defineProperty(_zwSvgAnimatedLengthListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedLengthList', configurable: true });
   }
   var _zwSvgAnimatedNumberListCtor = globalThis.SVGAnimatedNumberList;
   if (!_zwSvgAnimatedNumberListCtor) {
     _zwSvgAnimatedNumberListCtor = new Function('return function SVGAnimatedNumberList() {}')();
     globalThis.SVGAnimatedNumberList = _zwSvgAnimatedNumberListCtor;
-    Object.defineProperty(_zwSvgAnimatedNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedNumberList' });
+    Object.defineProperty(_zwSvgAnimatedNumberListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedNumberList', configurable: true });
   }
   // 列表 token 解析（kind → fn(raw) → 态数组）。raw null（属性缺省）→ 空表；
   // 空串按各 kind 语法解析（string 列表 '' → ['']——空串是合法单 token）。
@@ -7164,19 +7147,19 @@
     _zwSvgTransformCtor.SVG_TRANSFORM_ROTATE = 4;
     _zwSvgTransformCtor.SVG_TRANSFORM_SKEWX = 5;
     _zwSvgTransformCtor.SVG_TRANSFORM_SKEWY = 6;
-    Object.defineProperty(_zwSvgTransformCtor.prototype, Symbol.toStringTag, { value: 'SVGTransform' });
+    Object.defineProperty(_zwSvgTransformCtor.prototype, Symbol.toStringTag, { value: 'SVGTransform', configurable: true });
   }
   var _zwSvgTransformListCtor = globalThis.SVGTransformList;
   if (!_zwSvgTransformListCtor) {
     _zwSvgTransformListCtor = new Function('return function SVGTransformList() {}')();
     globalThis.SVGTransformList = _zwSvgTransformListCtor;
-    Object.defineProperty(_zwSvgTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGTransformList' });
+    Object.defineProperty(_zwSvgTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGTransformList', configurable: true });
   }
   var _zwSvgAnimatedTransformListCtor = globalThis.SVGAnimatedTransformList;
   if (!_zwSvgAnimatedTransformListCtor) {
     _zwSvgAnimatedTransformListCtor = new Function('return function SVGAnimatedTransformList() {}')();
     globalThis.SVGAnimatedTransformList = _zwSvgAnimatedTransformListCtor;
-    Object.defineProperty(_zwSvgAnimatedTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedTransformList' });
+    Object.defineProperty(_zwSvgAnimatedTransformListCtor.prototype, Symbol.toStringTag, { value: 'SVGAnimatedTransformList', configurable: true });
   }
   // transform 属性锚定解析（fn 序列 → 态数组）。返回 {type, a..f}；语法残渣
   // （非分隔符）→ []（parse-invalid-clears 语义，对位 S2c-a）。
