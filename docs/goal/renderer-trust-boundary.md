@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
-**版本**：v1.0 / 2026-10-20
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–5、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL（余项全部为待拍板/环境受限）；待用户拍板三项，见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**版本**：v1.1 / 2026-11-02（对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
+**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–5、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为三项已拍板切片待执行（⑤ media-host 最小档案 / ⑥ DevTools frontend 文档化接受 / ① file:// browser 预解析 → LoadHtml 后翻 renderer landlock 默认）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；原「待用户拍板三项」已于 2026-11-02 拍板（⑤→A、⑥→B、①→A），见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
@@ -13,11 +13,21 @@
 
 ## 基线与 Support Envelope
 
-静态核查：`crates/engine/src/ws_bridge.rs` 有 `WsHost::connect`、`WsEvent::SetCookie`、`merge_handshake_cookie`；IPC 底座见 `crates/protocol/src/lib.rs`，接收方见 `apps/browser/src/process_backend.rs`。这些符号证明存在数据路径，不证明可越权。运行基线 **NOT_RUN**，启动后记录 HEAD 与相关差异。
+静态核查（v1.0 入口事实，仍准）：`crates/engine/src/ws_bridge.rs` 有 `WsHost::connect`、`WsEvent::SetCookie`、`merge_handshake_cookie`；IPC 底座见 `crates/protocol/src/lib.rs`，接收方见 `apps/browser/src/process_backend.rs`。这些符号证明存在数据路径，不证明可越权。
+
+运行基线已交付（M1，2026-11-01）：消息身份、站点、角色与存储所有者权限矩阵及双向基线见 [M1 证据](renderer-trust-boundary/evidence/2026-11-01-m1-matrix-storageop-fix.md)；此后确认缺陷的修复与常驻回归逐项状态以 [master.md](renderer-trust-boundary/master.md) 为准，不在此重复。当前信任面事实快照（代码查实，2026-11-02）：
+
+- 服务端权威绑定：StorageOp origin 按 committed origin 判属，自动化身份按 committed URL/epoch 双匹配（`apps/browser/src/process_backend.rs`；`identity_binding_tests` 7 用例常驻）。
+- CDP 默认强制 token：`run_headless` 装配层默认生成 getrandom 128-bit 令牌，stderr 与发现端点 URL 双交付；库 API 默认无 token 不变（`apps/browser/src/headless/security.rs`）。DevTools frontend page-direct 在强制下 fail-closed，已拍板文档化接受。
+- renderer：seccomp 默认开（阻断 execveat/fork/vfork/ptrace，execve 保留供 helper spawn）；landlock 允许清单 opt-in 默认关，默认值待 ① 切片翻转（`apps/renderer/src/sandbox.rs`）。
+- image-decoder：seccomp + landlock 双沙箱默认开，fail-closed（`apps/image-decoder/src/sandbox.rs`）。
+- compositor landlock 已修复生效；fd 通道对端信任 = socket 0600 + 双侧 SO_PEERCRED + 每发布 128-bit token（`crates/protocol/src/fd_socket_linux.rs`）。
+- 页面特权面：`__zw*` 4 枚特权 mutator 非测试模式删除（`ZW_RENDERER_AUTOMATION=1` 测试模式跳过；`crates/engine/src/counter_plugin.rs`）；HSTS per-profile 全局共享 + 无痕独立（`SharedHstsStore`，`crates/security/src/context.rs`）。
+- media-host：零沙箱钩子，IO 面 = stdio IPC + cpal 音频 feature（默认关），网络 socket 零命中——已拍板 ③A-media-host 最小档案，待执行切片（`apps/media-host`）。
 
 范围：Cookie/HttpOnly、HSTS、存储、权限、自动化角色的可信身份；renderer/worker 与 browser/helper 请求权限；macOS/Linux 沙箱实际生效时机。
 
-边界：复用 [security-hardening 历史成果](archive/security-hardening/master.md)和 [cookies-compat](cookies-compat.md)。页面规范兼容仍归兄弟 goal，本 goal负责被攻破进程的权限测试。跨站 iframe 架构变更遵守 navigation-compat 的既有门控；不自动改协议架构或关闭自动化能力。
+边界：复用 [security-hardening 历史成果](archive/security-hardening/master.md)和 [cookies-compat](archive/cookies-compat.md)。页面规范兼容仍归兄弟 goal，本 goal负责被攻破进程的权限测试。跨站 iframe 架构变更遵守 navigation-compat 的既有门控；不自动改协议架构或关闭自动化能力。
 
 碰撞：按 [run-rules §9–11](../rally/run-rules.md)记录 protocol、engine、net、browser 接收方与并行流的占用；共享面暂停一边，不硬解。只写本 goal 控制面；不继承通知、提交、推送授权。
 
@@ -31,7 +41,7 @@
 | DC-4 / IPC-04 | helper 启动线程、重启或遇缺少沙箱能力 | 权限/FD/文件与 socket 策略按实际平台契约生效；失败/降级行为明确。真实 helper 受限操作验收 |
 | DC-5 | 修复后验收全部场景 | 常驻回归、适用质量门禁与生产 IPC 复测有据；报告未支持平台与剩余风险，不能用页面 JS 单测替代 |
 
-未知沙箱能力与拒绝方式在 M1 核查，不先规定全平台强制退出；发现额外产品取舍记待决。
+未知沙箱能力与拒绝方式已在 M1 核查；不采用全平台统一强制退出，fail 语义按决策 ④ 逐进程定：compositor 维持 fail-open + warn，image-decoder、renderer、media-host 新档案 fail-closed，缺能力平台降级日志明确（[决策包 ①–④](renderer-trust-boundary/2026-11-01-decision-package-1234.md)）。发现额外产品取舍记待决。
 
 ## 里程碑与实施交接
 
@@ -48,4 +58,4 @@
 
 统一 CLI、运行守卫、证据协议和授权边界见 [启动说明](ladybird-followups/README.md)。脚本：`./scripts/rally-goal-renderer-trust-boundary.sh`；直接执行启动 Rally，加 `--dry-run` 仅预览。
 
-入口仅目标变化时更新；进展写 master/evidence，里程碑只追加 archive。启动前未获授权不执行 M1 或内核改动。启动后默认 `CONTINUE: <下一可执行切片>`；真实阻塞 `BLOCK: <原因>`；全部 DC 和适用门禁有证才输出 `DONE`。
+入口仅目标变化时更新；进展写 master/evidence，里程碑只追加 archive。M1 启动门控已按 2026-10-23 用户决策解锁并交付；内核改动仍须先获授权。启动后默认 `CONTINUE: <下一可执行切片>`；真实阻塞 `BLOCK: <原因>`；全部 DC 和适用门禁有证才输出 `DONE`。
