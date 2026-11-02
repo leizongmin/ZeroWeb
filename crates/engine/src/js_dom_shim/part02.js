@@ -41,6 +41,12 @@
           _zw_okpImportKey(format, keyData, algo, extractable, usages, resolve, reject);
           return;
         }
+        // ML-KEM/ML-DSA 家族（webcrypto-compat-v3 域切片，FIPS 203/204）：usages +
+        // 格式解析（spki/pkcs8/raw-public/raw-seed/jwk，AKP 配对校验）整体转入 helper。
+        if (_zw_mlKemIsFamily(algo.name) || _zw_mlDsaIsFamily(algo.name)) {
+          _zw_mlImportKey(format, keyData, algo, extractable, usages, resolve, reject);
+          return;
+        }
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
         var isChaCha = algo.name === 'ChaCha20-Poly1305';
         var isHmac = algo.name === 'HMAC';
@@ -275,6 +281,36 @@
           resolve(_zw_rsaCsvBytes(edSig));
           return;
         }
+        if (name === 'ML-DSA-44' || name === 'ML-DSA-65' || name === 'ML-DSA-87') {
+          // ML-DSA（webcrypto-compat-v3 域切片，FIPS 204）：context 可选 BufferSource
+          //（≤255 字节；非 BufferSource 或超限 → OperationError）。校验序同 Ed25519：
+          // 算法不匹配 / 非 private / 无 "sign" usage → InvalidAccessError。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'private') {
+            reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('sign') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "sign"', 'InvalidAccessError')); return;
+          }
+          var mdsaCtx = [];
+          if (algorithm && algorithm.context != null) {
+            mdsaCtx = _zw_bufToBytes(algorithm.context);
+            if (mdsaCtx == null || mdsaCtx.length > 255) {
+              reject(new _zw_subtleDE('The context must be a BufferSource of at most 255 bytes', 'OperationError')); return;
+            }
+          }
+          if (typeof __zw_crypto_subtle_mldsa_sign !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle ML-DSA sign requires host callback', 'NotSupportedError')); return;
+          }
+          var mdsaSig = __zw_crypto_subtle_mldsa_sign(name, (key._raw || []).join(','), _zw_bufToBytes(data).join(','), mdsaCtx.join(','));
+          if (!mdsaSig) {
+            reject(new _zw_subtleDE('ML-DSA sign failed', 'OperationError')); return;
+          }
+          resolve(_zw_rsaCsvBytes(mdsaSig));
+          return;
+        }
         if (name !== 'HMAC') {
           reject(new _zw_subtleDE('Unsupported sign algorithm: ' + name, 'NotSupportedError')); return;
         }
@@ -350,6 +386,33 @@
           }
           var edOk = __zw_crypto_subtle_ed25519_verify((key._raw || []).join(','), _zw_bufToBytes(data).join(','), _zw_bufToBytes(signature).join(','));
           resolve(edOk === '1');
+          return;
+        }
+        if (name === 'ML-DSA-44' || name === 'ML-DSA-65' || name === 'ML-DSA-87') {
+          // ML-DSA verify（webcrypto-compat-v3 域切片，FIPS 204）：校验序同 sign；
+          // 坏签名（长度/范数不过）→ resolve false 不 reject（spec verify 无对应
+          // reject 路径，signature.js 断言 isVerified false）。context 语义同 sign。
+          if (!key || _zw_upperAscii(String(key.algorithm && key.algorithm.name)) !== name) {
+            reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+          }
+          if (key.type !== 'public') {
+            reject(new _zw_subtleDE('Key is not a public key', 'InvalidAccessError')); return;
+          }
+          if (!key.usages || key.usages.indexOf('verify') < 0) {
+            reject(new _zw_subtleDE('Key usages do not include "verify"', 'InvalidAccessError')); return;
+          }
+          var mdsaVCtx = [];
+          if (algorithm && algorithm.context != null) {
+            mdsaVCtx = _zw_bufToBytes(algorithm.context);
+            if (mdsaVCtx == null || mdsaVCtx.length > 255) {
+              reject(new _zw_subtleDE('The context must be a BufferSource of at most 255 bytes', 'OperationError')); return;
+            }
+          }
+          if (typeof __zw_crypto_subtle_mldsa_verify !== 'function') {
+            reject(_zw_subtleDE('crypto.subtle ML-DSA verify requires host callback', 'NotSupportedError')); return;
+          }
+          var mdsaOk = __zw_crypto_subtle_mldsa_verify(name, (key._raw || []).join(','), _zw_bufToBytes(data).join(','), _zw_bufToBytes(signature).join(','), mdsaVCtx.join(','));
+          resolve(mdsaOk === '1');
           return;
         }
         if (name !== 'HMAC') {
@@ -656,6 +719,11 @@
           // 恒 extractable、privateKey 按请求值）；错误序：非法 usage SyntaxError →
           // 私钥空 usages SyntaxError。
           _zw_okpGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
+        } else if (_zw_mlKemIsFamily(algo.name) || _zw_mlDsaIsFamily(algo.name)) {
+          // ML-KEM/ML-DSA（webcrypto-compat-v3 域切片，FIPS 203/204）→ CryptoKeyPair
+          // {publicKey, privateKey}（publicKey 恒 extractable）；错误序同 OKP：非法
+          // usage SyntaxError → 私钥空 usages SyntaxError。
+          _zw_mlGenerateKey(algorithm, extractable, usages, algo, resolve, reject);
         } else {
           reject(new _zw_subtleDE('Unsupported generateKey algorithm', 'NotSupportedError'));
         }
@@ -685,6 +753,12 @@
         // OKP 家族（M5）：spki/raw/pkcs8/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
         if (key && key.algorithm && _zw_okpIsFamily(key.algorithm.name)) {
           _zw_okpExportKey(format, key, resolve, reject);
+          return;
+        }
+        // ML-KEM/ML-DSA 家族（webcrypto-compat-v3 域切片）：spki/pkcs8/raw-public/
+        // raw-seed/jwk 分派整体转入 helper（公/私类型与格式匹配校验在内）。
+        if (key && key.algorithm && (_zw_mlKemIsFamily(key.algorithm.name) || _zw_mlDsaIsFamily(key.algorithm.name))) {
+          _zw_mlExportKey(format, key, resolve, reject);
           return;
         }
         var fmt = _zw_upperAscii(String(format == null ? '' : format));
@@ -895,7 +969,8 @@
         var isEc = _zw_ecIsFamily(algName);
         var isOkp = _zw_okpIsFamily(algName);
         var isRsa = _zw_rsaIsFamily(algName);
-        if (!isEc && !isOkp && !isRsa) {
+        var isMl = _zw_mlKemIsFamily(algName) || _zw_mlDsaIsFamily(algName);
+        if (!isEc && !isOkp && !isRsa && !isMl) {
           reject(new _zw_subtleDE('Algorithm does not support getPublicKey: ' + algName, 'NotSupportedError')); return;
         }
         if (!(key instanceof CryptoKey) || key.type !== 'private') {
@@ -903,7 +978,8 @@
         }
         var allowed = isRsa
           ? _zw_rsaTypeUsages(algName, true)
-          : (isEc ? _zw_ecTypeUsages(algName, true) : _zw_okpTypeUsages(algName, true));
+          : (isEc ? _zw_ecTypeUsages(algName, true)
+          : (isOkp ? _zw_okpTypeUsages(algName, true) : _zw_mlTypeUsages(algName, true)));
         var u = _zw_normalizeUsages(usages, allowed);
         if (!u) {
           reject(new _zw_subtleDE('Invalid key usages for getPublicKey', 'SyntaxError')); return;
@@ -920,6 +996,16 @@
             reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
           }
           outCsv = __zw_crypto_subtle_okp_export_der(algName, rawCsv, 'raw');
+        } else if (isMl) {
+          // ML-KEM/ML-DSA（webcrypto-compat-v3 域切片）：seed → 公钥（KEM raw ek /
+          // DSA raw pk，公钥 _raw 契约同 generateKey——exportKey spki/raw-public 透传）。
+          var mlDerive = _zw_mlKemIsFamily(algName)
+            ? (typeof __zw_crypto_subtle_mlkem_public_from_seed === 'function' ? __zw_crypto_subtle_mlkem_public_from_seed : null)
+            : (typeof __zw_crypto_subtle_mldsa_public_from_seed === 'function' ? __zw_crypto_subtle_mldsa_public_from_seed : null);
+          if (!mlDerive) {
+            reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
+          }
+          outCsv = mlDerive(algName, rawCsv);
         } else {
           if (typeof __zw_crypto_subtle_rsa_export_der !== 'function') {
             reject(_zw_subtleDE('crypto.subtle getPublicKey requires host callback', 'NotSupportedError')); return;
@@ -932,6 +1018,144 @@
         var outAlg = {};
         for (var ak in key.algorithm) outAlg[ak] = key.algorithm[ak];
         resolve(new CryptoKey('public', true, outAlg, u, Array.from(_zw_rsaCsvBytes(outCsv))));
+      });
+    },
+    // encapsulateBits(algorithm, publicKey) → Promise<{sharedKey, ciphertext}>。ML-KEM 专有
+    //（webcrypto-compat-v3 域切片，FIPS 203 Encapsulate，WICG §12.4）：算法须为 ML-KEM
+    // 家族且与密钥 name 折叠匹配（否则 InvalidAccessError）；key 须 public 且 usages 含
+    // "encapsulateBits"。输出 {sharedKey: ArrayBuffer(32B), ciphertext: ArrayBuffer
+    //(768/1088/1568B)}——共享秘密经 host OS RNG 封装（ml-kem Encapsulate trait 内置 RNG）。
+    // https://wicg.github.io/webcrypto-modern-algos/#SubtleCrypto-method-encapsulateBits
+    encapsulateBits: function (algorithm, publicKey) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (!_zw_mlKemIsFamily(name)) {
+          reject(new _zw_subtleDE('Unsupported encapsulateBits algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!publicKey || _zw_upperAscii(String(publicKey.algorithm && publicKey.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+        }
+        if (publicKey.type !== 'public') {
+          reject(new _zw_subtleDE('Key is not a public key', 'InvalidAccessError')); return;
+        }
+        if (!publicKey.usages || publicKey.usages.indexOf('encapsulateBits') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "encapsulateBits"', 'InvalidAccessError')); return;
+        }
+        if (typeof __zw_crypto_subtle_mlkem_encapsulate !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle ML-KEM encapsulate requires host callback', 'NotSupportedError')); return;
+        }
+        var enc = __zw_crypto_subtle_mlkem_encapsulate(name, (publicKey._raw || []).join(','));
+        if (!enc) {
+          reject(new _zw_subtleDE('ML-KEM encapsulation failed', 'OperationError')); return;
+        }
+        // host wire "ct_csv;ss_csv"（首段密文、次段共享秘密，与 host 注释一致）。
+        var semi = String(enc).indexOf(';');
+        resolve({
+          ciphertext: _zw_mlCsvToArrayBuffer(semi < 0 ? '' : String(enc).slice(0, semi)),
+          sharedKey: _zw_mlCsvToArrayBuffer(semi < 0 ? String(enc) : String(enc).slice(semi + 1))
+        });
+      });
+    },
+    // decapsulateBits(algorithm, privateKey, ciphertext) → Promise<ArrayBuffer>。FIPS 203
+    // Decapsulate（WICG §12.5）：算法/密钥匹配 + private + usages 含 "decapsulateBits"；
+    // 密文非法（长度不过）→ OperationError（spec decapsulation failure 面）；成功输出
+    // 32B 共享秘密（与封装侧 sharedKey 逐字节一致）。
+    // https://wicg.github.io/webcrypto-modern-algos/#SubtleCrypto-method-decapsulateBits
+    decapsulateBits: function (algorithm, privateKey, ciphertext) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (!_zw_mlKemIsFamily(name)) {
+          reject(new _zw_subtleDE('Unsupported decapsulateBits algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!privateKey || _zw_upperAscii(String(privateKey.algorithm && privateKey.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+        }
+        if (privateKey.type !== 'private') {
+          reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+        }
+        if (!privateKey.usages || privateKey.usages.indexOf('decapsulateBits') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "decapsulateBits"', 'InvalidAccessError')); return;
+        }
+        if (typeof __zw_crypto_subtle_mlkem_decapsulate !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle ML-KEM decapsulate requires host callback', 'NotSupportedError')); return;
+        }
+        var ss = __zw_crypto_subtle_mlkem_decapsulate(name, (privateKey._raw || []).join(','), _zw_bufToBytes(ciphertext).join(','));
+        if (!ss) {
+          reject(new _zw_subtleDE('ML-KEM decapsulation failed', 'OperationError')); return;
+        }
+        resolve(_zw_mlCsvToArrayBuffer(ss));
+      });
+    },
+    // encapsulateKey(algorithm, publicKey, wrapAlgorithm, extractable, keyUsages) →
+    // Promise<{sharedKey: CryptoKey, ciphertext: ArrayBuffer}>（WICG §12.6）：usage
+    // 校验面向 "encapsulateKey"（非 encapsulateBits——语料以 ['encapsulateKey',
+    // 'decapsulateKey'] 生成密钥对，spec 内部封装步不重复查 Bits usage）；封装后
+    // 以共享秘密为 raw 材料 importKey 到 wrapAlgorithm（AES-*/HMAC 对称面），结果
+    // 对象同时带回密文与导入后的 CryptoKey。
+    // https://wicg.github.io/webcrypto-modern-algos/#SubtleCrypto-method-encapsulateKey
+    encapsulateKey: function (algorithm, publicKey, wrapAlgorithm, extractable, keyUsages) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (!_zw_mlKemIsFamily(name)) {
+          reject(new _zw_subtleDE('Unsupported encapsulateKey algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!publicKey || _zw_upperAscii(String(publicKey.algorithm && publicKey.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+        }
+        if (publicKey.type !== 'public') {
+          reject(new _zw_subtleDE('Key is not a public key', 'InvalidAccessError')); return;
+        }
+        if (!publicKey.usages || publicKey.usages.indexOf('encapsulateKey') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "encapsulateKey"', 'InvalidAccessError')); return;
+        }
+        if (typeof __zw_crypto_subtle_mlkem_encapsulate !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle ML-KEM encapsulate requires host callback', 'NotSupportedError')); return;
+        }
+        var enc = __zw_crypto_subtle_mlkem_encapsulate(name, (publicKey._raw || []).join(','));
+        var semi = enc ? String(enc).indexOf(';') : -1;
+        if (!enc || semi < 0) {
+          reject(new _zw_subtleDE('ML-KEM encapsulation failed', 'OperationError')); return;
+        }
+        // host wire "ct_csv;ss_csv"：首段密文、次段共享秘密（importKey 材料）。
+        crypto.subtle.importKey('raw', new Uint8Array(_zw_rsaCsvBytes(String(enc).slice(semi + 1))), wrapAlgorithm, extractable, keyUsages).then(function (key) {
+          resolve({
+            sharedKey: key,
+            ciphertext: _zw_mlCsvToArrayBuffer(String(enc).slice(0, semi))
+          });
+        }, reject);
+      });
+    },
+    // decapsulateKey(algorithm, privateKey, ciphertext, wrapAlgorithm, extractable,
+    // keyUsages) → Promise<CryptoKey>（WICG §12.7）：usage 校验面向 "decapsulateKey"；
+    // 解封装共享秘密为 raw 材料 importKey 到 wrapAlgorithm → 直接返回 CryptoKey。
+    // https://wicg.github.io/webcrypto-modern-algos/#SubtleCrypto-method-decapsulateKey
+    decapsulateKey: function (algorithm, privateKey, ciphertext, wrapAlgorithm, extractable, keyUsages) {
+      return new Promise(function (resolve, reject) {
+        var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
+        name = _zw_upperAscii(String(name == null ? '' : name));
+        if (!_zw_mlKemIsFamily(name)) {
+          reject(new _zw_subtleDE('Unsupported decapsulateKey algorithm: ' + name, 'NotSupportedError')); return;
+        }
+        if (!privateKey || _zw_upperAscii(String(privateKey.algorithm && privateKey.algorithm.name)) !== name) {
+          reject(new _zw_subtleDE('Algorithm does not match key', 'InvalidAccessError')); return;
+        }
+        if (privateKey.type !== 'private') {
+          reject(new _zw_subtleDE('Key is not a private key', 'InvalidAccessError')); return;
+        }
+        if (!privateKey.usages || privateKey.usages.indexOf('decapsulateKey') < 0) {
+          reject(new _zw_subtleDE('Key usages do not include "decapsulateKey"', 'InvalidAccessError')); return;
+        }
+        if (typeof __zw_crypto_subtle_mlkem_decapsulate !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle ML-KEM decapsulate requires host callback', 'NotSupportedError')); return;
+        }
+        var ss = __zw_crypto_subtle_mlkem_decapsulate(name, (privateKey._raw || []).join(','), _zw_bufToBytes(ciphertext).join(','));
+        if (!ss) {
+          reject(new _zw_subtleDE('ML-KEM decapsulation failed', 'OperationError')); return;
+        }
+        crypto.subtle.importKey('raw', new Uint8Array(_zw_rsaCsvBytes(ss)), wrapAlgorithm, extractable, keyUsages).then(resolve, reject);
       });
     }
   };

@@ -86,7 +86,19 @@
       'KT128': { ops: { digest: 1 } },
       'KT256': { ops: { digest: 1 } },
       'TURBOSHAKE128': { ops: { digest: 1 } },
-      'TURBOSHAKE256': { ops: { digest: 1 } }
+      'TURBOSHAKE256': { ops: { digest: 1 } },
+      // webcrypto-compat-v3 域切片（D1 拍板 2026-11-02）PQC 两域：ML-KEM（FIPS
+      // 203 封装面——supports encapsulateKey/Bits·decapsulateKey/Bits 经
+      // checkSupport 映射 encapsulate/decapsulate）+ ML-DSA（FIPS 204 签名面）。
+      // pub=1 私→公派生（getPublicKey）；ML-KEM encapsulateKey/decapsulateKey
+      // 第三参附加算法特化见 supports 步 5（raw-secret 可导入 + 生成密钥长度恰
+      // 256）。未注册清单仅余 X448/Ed448/KMAC/Hybrid。
+      'ML-KEM-512':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'ML-KEM-768':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'ML-KEM-1024': { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'ML-DSA-44':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 },
+      'ML-DSA-65':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 },
+      'ML-DSA-87':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 }
     };
 
     // ASCII 大写映射（a-z → A-Z，非 ASCII 不动）——part01b _zw_upperAscii 同语义
@@ -178,6 +190,10 @@
         case 'sign':
         case 'verify':
           return validateSignVerify(name, params);
+        case 'encapsulate':
+        case 'decapsulate':
+          // ML-KEM 封装/解封装无参数面（name 唯一成员，归一即过）。
+          return true;
         case 'encrypt':
         case 'decrypt':
           return validateSeal(name, params);
@@ -205,6 +221,15 @@
       // hash 若存在须合法 SHA（sign 归一不强制 hash 存在——supports('sign',
       // {name:'ECDSA'}) 无 hash 期望 true，WPT 断言面）。
       if (params.hash != null && !hashNameOf(params.hash)) return false;
+      // ML-DSA（webcrypto-compat-v3 域切片）：context 若存在须 BufferSource 且
+      // ≤255 字节（spec MlDsaParams context 上限 255——supports-modern 255 true /
+      // 256 false 断言面；裸名 true）。
+      if (name === 'ML-DSA-44' || name === 'ML-DSA-65' || name === 'ML-DSA-87') {
+        if (params.context != null) {
+          var mc = bufBytes(params.context);
+          if (!isBufferSource(params.context) || mc == null || mc.length > 255) return false;
+        }
+      }
       return true;
     }
 
@@ -433,9 +458,15 @@
       // decapsulateKey 查附加算法 importKey 面、wrapKey 查 exportKey 面；其余 op
       // 带第三参 → false。deriveKey 以附加算法生成密钥长度转 deriveBits（步 5.4）。
       if (additional !== null) {
-        if (operation === 'deriveKey' || operation === 'unwrapKey' ||
-            operation === 'encapsulateKey' || operation === 'decapsulateKey') {
+        if (operation === 'deriveKey' || operation === 'unwrapKey') {
           if (!checkSupport('importKey', additional, null)) return false;
+        } else if (operation === 'encapsulateKey' || operation === 'decapsulateKey') {
+          // ML-KEM 附加算法组合（webcrypto-modern-algos）：须 raw-secret 可导入
+          // 且生成密钥长度恰 256（shared secret 恒 32 字节）——HMAC-SHA-256
+          // length 256 / AES 系 256 true；Ed25519（无 raw-secret 导入面，生成
+          // 密钥长度亦无定义）/128/512 false（WPT mlKemImportedKeyCases 断言面）。
+          if (!checkSupport('importKey', additional, null)) return false;
+          if (keyLengthOfAdditional(additional) !== 256) return false;
         } else if (operation === 'wrapKey') {
           if (!checkSupport('exportKey', additional, null)) return false;
         } else {

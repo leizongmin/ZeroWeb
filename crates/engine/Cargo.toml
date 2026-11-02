@@ -41,6 +41,9 @@ ctr = { workspace = true }
 # ctutils 钉版：ocb3/cipher 0.5 传递依赖，0.4.3+ 要求 rustc 1.87（同一预检 evidence）。
 aes09 = { version = "=0.9.2", package = "aes" }
 ctutils = "=0.4.2"
+# module-lattice 钉版：ml-kem/ml-dsa 传递依赖，0.2.4+ 要求 rustc 1.87（D1 拍板
+# 预检 evidence 同面）；钉 =0.2.3 防 cargo update 漂入 1.87+。
+module-lattice = "=0.2.3"
 argon2 = { workspace = true }
 ocb3 = { workspace = true }
 chacha20poly1305 = { workspace = true }
@@ -49,6 +52,8 @@ shake = { workspace = true }
 cshake = { workspace = true }
 k12 = { workspace = true }
 turboshake = { workspace = true }
+ml-kem = { workspace = true }
+ml-dsa = { workspace = true }
 rsa = { workspace = true }
 p256 = { workspace = true }
 p384 = { workspace = true }

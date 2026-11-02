@@ -44,8 +44,15 @@ def short(status):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "--json"]
-    out_json = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
+    argv = sys.argv[1:]
+    out_json = None
+    if "--json" in argv:
+        i = argv.index("--json")
+        if i + 1 >= len(argv):
+            sys.exit(__doc__)
+        out_json = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+    args = argv
     if len(args) != 2:
         sys.exit(__doc__)
     base, head = load(args[0]), load(args[1])

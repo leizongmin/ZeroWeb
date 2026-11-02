@@ -170,6 +170,13 @@ cshake = "0.2.1"
 k12 = "0.5.1"
 turboshake = "0.7.1"
 
+# PQC 两域（crypto.subtle ML-KEM encapsulate*/decapsulate* + ML-DSA sign/verify，
+# webcrypto-compat-v3 D1 拍板 2026-11-02；语料面预检（FIPS 203/204 KAT 逐字节
+# 复现 + seed 导入/钉版拍板）见 docs/goal/webcrypto-compat-v3/evidence/
+# 2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md——RustCrypto 官方最终版线）
+ml-kem = { version = "0.3.3", features = ["getrandom"] }
+ml-dsa = "0.1.1"
+
 # RSA（crypto.subtle RSA-OAEP/RSASSA-PKCS1-v1_5/RSA-PSS，webcrypto M4a；选型见
 # docs/goal/archive/webcrypto-compat/evidence/2026-10-17-m4a-deps.md——RustCrypto 官方
 # RSA 实现，OAEP/PSS/PKCS1v15 + pkcs8/spki 编解码齐备，与既有 sha2/aes 家族同源）

@@ -730,3 +730,649 @@ pub fn crypto_subtle_x25519(priv_csv: &str, pub_csv: &str) -> String {
     }
     bytes_to_csv(shared.as_bytes())
 }
+
+// ---------------------------------------------------------------------------
+// ML（PQC，webcrypto-compat-v3 D1 域切片 2026-11-02）：ML-KEM（FIPS 203）
+// encapsulate/decapsulate + ML-DSA（FIPS 204）sign/verify。委托 ml-kem 0.3.3 /
+// ml-dsa 0.1.1（RustCrypto 官方最终版线；选型、FIPS 203/204 KAT 逐字节复现与
+// 钉版拍板见 docs/goal/webcrypto-compat-v3/evidence/
+// 2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md）。密钥线格式（WebCrypto
+// draft）：raw-seed = 种子原样（KEM 64B / DSA 32B）、raw-public = 原始公钥
+//（ek/pk）、spki = RFC 5280（AlgId + BIT STRING(0x00||key)）、pkcs8 = RFC 5958
+// seed-only（OCTET STRING 包 [0] 上下文标签种子，与 WPT fixtures 形态逐字节
+// 一致）。存储契
+// 约：私钥 = 种子 csv、公钥 = raw 公钥 csv（DER/jwk 导出按需编码，ML-DSA jwk
+// 在 shim 构造——AKP 成员 pub/priv 即两份 csv 的 b64u）。**密钥材料零落日志**：
+// 种子/密钥/签名仅经 CSV 桥进出，无 tracing 输出。所有失败返空串（shim 按操
+// 作映射 NotSupportedError/InvalidAccessError/DataError/OperationError）；
+// verify 失败/坏签名返 "0"。ML-DSA 签名走 FIPS 204 确定性变体
+// sign_deterministic（Algorithm 6，rnd 取零路径——spec ML-DSA.sign 允许的两变
+// 体之一；hedged 仅随机化 rnd，签名可验性等价，语料 round trip 只断言自验）。
+// https://w3c.github.io/webcrypto/#ml-kem  https://w3c.github.io/webcrypto/#ml-dsa
+// https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.203.pdf
+// https://nvlpubs.nist.gov/nistpubs/fips/nist.fips.204.pdf
+// ---------------------------------------------------------------------------
+
+/// DER TLV 编码：tag || 定长内容（长度按 DER 规则短/长形编码，覆盖本域最大
+/// 2.6 kB 内容，两字节长形已足）。
+fn der_tlv_encode(tag: u8, contents: &[u8]) -> Vec<u8> {
+    let mut v = vec![tag];
+    let n = contents.len();
+    if n < 0x80 {
+        v.push(n as u8);
+    } else {
+        v.push(0x82);
+        v.push((n >> 8) as u8);
+        v.push((n & 0xff) as u8);
+    }
+    v.extend_from_slice(contents);
+    v
+}
+
+/// DER TLV 解析：tag 须匹配 want，长度须完整且恰尽声明字节。返 (内容, 余部)。
+///（信任边界：密钥 DER 来自页面输入，解析失败一律拒绝，不做宽松容错。）
+fn der_tlv_parse(buf: &[u8], want: u8) -> Option<(&[u8], &[u8])> {
+    if buf.len() < 2 || buf[0] != want {
+        return None;
+    }
+    let (len, hdr): (usize, usize) = match buf[1] {
+        n if n < 0x80 => (n as usize, 2),
+        0x81 if buf.len() >= 3 => (buf[2] as usize, 3),
+        0x82 if buf.len() >= 4 => (((buf[2] as usize) << 8) | buf[3] as usize, 4),
+        _ => return None,
+    };
+    let end: usize = hdr.checked_add(len)?;
+    if end > buf.len() {
+        return None;
+    }
+    Some((&buf[hdr..end], &buf[end..]))
+}
+
+/// NIST PQC OID 2.16.840.1.101.3.4.fam.var 的 AlgorithmIdentifier：
+/// SEQUENCE(13B) { OID TLV(11B) }（fam 0x04 = KEM / 0x03 = DSA 签名）。
+fn ml_alg_id_seq(fam: u8, var: u8) -> [u8; 13] {
+    let mut v = [0u8; 13];
+    v[0] = 0x30;
+    v[1] = 0x0b;
+    v[2] = 0x06;
+    v[3] = 0x09;
+    v[4..].copy_from_slice(&[0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, fam, var]);
+    v
+}
+
+/// SubjectPublicKeyInfo 编码：SEQ { AlgId, BIT STRING(0x00 || key) }。
+fn ml_spki_encode(alg_id: &[u8; 13], key: &[u8]) -> Vec<u8> {
+    let mut bits = Vec::with_capacity(key.len() + 1);
+    bits.push(0x00);
+    bits.extend_from_slice(key);
+    let mut body = alg_id.to_vec();
+    body.extend_from_slice(&der_tlv_encode(0x03, &bits));
+    der_tlv_encode(0x30, &body)
+}
+
+/// spki 解析：外层 SEQ 恰尽、AlgId 逐字节匹配、BIT STRING 未用位为 0、密钥恰
+/// key_len 字节。返公钥字节（跨变体/截断/尾随垃圾 → None 即 DataError）。
+fn ml_spki_parse(der: &[u8], alg_id: &[u8; 13], key_len: usize) -> Option<Vec<u8>> {
+    let (body, rest) = der_tlv_parse(der, 0x30)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let (alg, r1) = der_tlv_parse(body, 0x30)?;
+    // der_tlv_parse 返回 SEQ 内容（OID TLV 11B），比对注册 AlgId 的 OID 段。
+    if alg != &alg_id[2..] {
+        return None;
+    }
+    let (bits, r2) = der_tlv_parse(r1, 0x03)?;
+    if !r2.is_empty() || bits.first() != Some(&0) || bits.len() != key_len + 1 {
+        return None;
+    }
+    Some(bits[1..].to_vec())
+}
+
+/// PKCS#8（seed-only，RFC 5958 oneAsymmetricKey，与 WPT fixtures 形态一致）编
+/// 码：SEQ { INT 0, AlgId, OCTET STRING { [0] 上下文原语标签(0x80) || seed } }。
+fn ml_pkcs8_seed_encode(alg_id: &[u8; 13], seed: &[u8]) -> Vec<u8> {
+    let mut body = vec![0x02, 0x01, 0x00];
+    body.extend_from_slice(alg_id);
+    body.extend_from_slice(&der_tlv_encode(0x04, &der_tlv_encode(0x80, seed)));
+    der_tlv_encode(0x30, &body)
+}
+
+/// pkcs8 seed-only 解析：结构同上逐层校验。返种子字节（失配 → None 即
+/// DataError；expanded 私钥形态本域不支持——WebCrypto draft 只定义 seed 派生）。
+fn ml_pkcs8_seed_parse(der: &[u8], alg_id: &[u8; 13], seed_len: usize) -> Option<Vec<u8>> {
+    let (body, rest) = der_tlv_parse(der, 0x30)?;
+    if !rest.is_empty() {
+        return None;
+    }
+    let (ver, r1) = der_tlv_parse(body, 0x02)?;
+    if *ver != [0x00] {
+        return None;
+    }
+    let (alg, r2) = der_tlv_parse(r1, 0x30)?;
+    // der_tlv_parse 返回 SEQ 内容（OID TLV 11B），比对注册 AlgId 的 OID 段。
+    if alg != &alg_id[2..] {
+        return None;
+    }
+    let (oct, r3) = der_tlv_parse(r2, 0x04)?;
+    if !r3.is_empty() {
+        return None;
+    }
+    // OCTET 内容 = [0] 上下文原语标签 TLV（0x80 <len> <seed>，与 WPT fixtures
+    // 形态逐字节一致；expanded 私钥形态本域不支持——WebCrypto draft 只定义
+    // seed 派生）。
+    let (seed, r4) = der_tlv_parse(oct, 0x80)?;
+    if !r4.is_empty() || seed.len() != seed_len {
+        return None;
+    }
+    Some(seed.to_vec())
+}
+
+// ------------------------------ ML-KEM（FIPS 203）--------------------------
+
+/// ML-KEM 变体（spec 密钥参数无成员，name 即算法名）。
+#[derive(Clone, Copy)]
+enum MlKemVariant {
+    V512,
+    V768,
+    V1024,
+}
+
+fn parse_mlkem_variant(name: &str) -> Option<MlKemVariant> {
+    match name {
+        "ML-KEM-512" => Some(MlKemVariant::V512),
+        "ML-KEM-768" => Some(MlKemVariant::V768),
+        "ML-KEM-1024" => Some(MlKemVariant::V1024),
+        _ => None,
+    }
+}
+
+/// 变体参数（FIPS 203 §7）：(OID 尾, ek 字节, ct 字节)；种子恒 64B、共享秘密
+/// 恒 32B。
+fn mlkem_params(v: MlKemVariant) -> (u8, usize, usize) {
+    match v {
+        MlKemVariant::V512 => (0x01, 800, 768),
+        MlKemVariant::V768 => (0x02, 1184, 1088),
+        MlKemVariant::V1024 => (0x03, 1568, 1568),
+    }
+}
+
+/// ML-KEM 生成：64 字节随机种子（FIPS 203 KeyGen：d||z）→ "ek csv;seed csv"
+///（公 = ek / 私 = 种子）。随机源失败 → 空串。
+pub fn crypto_subtle_mlkem_generate(name: &str) -> String {
+    use ml_kem::kem::KeyExport;
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let mut seed = [0u8; 64];
+    if getrandom::fill(&mut seed).is_err() {
+        return String::new();
+    }
+    let seed_arr = match ml_kem::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! keygen {
+        ($p:ty) => {
+            bytes_to_csv(
+                ml_kem::DecapsulationKey::<$p>::from_seed(seed_arr)
+                    .encapsulation_key()
+                    .to_bytes()
+                    .as_slice(),
+            )
+        };
+    }
+    let ek = match v {
+        MlKemVariant::V512 => keygen!(ml_kem::MlKem512),
+        MlKemVariant::V768 => keygen!(ml_kem::MlKem768),
+        MlKemVariant::V1024 => keygen!(ml_kem::MlKem1024),
+    };
+    format!("{};{}", ek, bytes_to_csv(&seed))
+}
+
+/// ML-KEM 导入（spki/raw-public 公钥 → ek csv；pkcs8/raw-seed 私钥 → 种子
+/// csv）。解析/长度/跨变体失配 → 空串即 DataError。
+pub fn crypto_subtle_mlkem_import(name: &str, fmt: &str, der_csv: &str) -> String {
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (var, ek_len, _ct_len) = mlkem_params(v);
+    let alg_id = ml_alg_id_seq(0x04, var);
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => match ml_spki_parse(&der, &alg_id, ek_len) {
+            Some(k) => bytes_to_csv(&k),
+            None => String::new(),
+        },
+        "raw-public" => {
+            if der.len() != ek_len {
+                String::new()
+            } else {
+                bytes_to_csv(&der)
+            }
+        }
+        "pkcs8" => match ml_pkcs8_seed_parse(&der, &alg_id, 64) {
+            Some(s) => bytes_to_csv(&s),
+            None => String::new(),
+        },
+        "raw-seed" => {
+            if der.len() != 64 {
+                String::new()
+            } else {
+                bytes_to_csv(&der)
+            }
+        }
+        _ => String::new(),
+    }
+}
+
+/// ML-KEM 导出：输入 ek csv（公）或种子 csv（私，按长度判别）。fmt "spki"/
+/// "raw-public"（公透传或私派生公）、"pkcs8"/"raw-seed"（仅私）。错误 → 空串。
+pub fn crypto_subtle_mlkem_export_der(name: &str, raw_csv: &str, fmt: &str) -> String {
+    use ml_kem::kem::KeyExport;
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (var, ek_len, _ct_len) = mlkem_params(v);
+    let alg_id = ml_alg_id_seq(0x04, var);
+    let stored = bytes_from_csv(raw_csv);
+    let (ek, seed) = if stored.len() == 64 {
+        // 私派生公（getPublicKey / 公钥侧 jwk 导出路径）。
+        let seed_arr = match ml_kem::Seed::try_from(&stored[..]) {
+            Ok(a) => a,
+            Err(_) => return String::new(),
+        };
+        macro_rules! derive {
+            ($p:ty) => {
+                ml_kem::DecapsulationKey::<$p>::from_seed(seed_arr)
+                    .encapsulation_key()
+                    .to_bytes()
+                    .as_slice()
+                    .to_vec()
+            };
+        }
+        let ek = match v {
+            MlKemVariant::V512 => derive!(ml_kem::MlKem512),
+            MlKemVariant::V768 => derive!(ml_kem::MlKem768),
+            MlKemVariant::V1024 => derive!(ml_kem::MlKem1024),
+        };
+        (ek, Some(stored))
+    } else if stored.len() == ek_len {
+        (stored, None)
+    } else {
+        return String::new();
+    };
+    match fmt {
+        "spki" => bytes_to_csv(&ml_spki_encode(&alg_id, &ek)),
+        "raw-public" => bytes_to_csv(&ek),
+        "pkcs8" | "raw-seed" => match seed {
+            Some(s) if fmt == "pkcs8" => bytes_to_csv(&ml_pkcs8_seed_encode(&alg_id, &s)),
+            Some(s) => bytes_to_csv(&s),
+            None => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+/// ML-KEM 封装（FIPS 203 Encapsulate）：ek csv → "ct csv;ss csv"（crate
+/// `encapsulate` 内置 OS 随机源取 m；宿主随机面见 crate getrandom feature）。
+/// ek 长度错/解析失败 → 空串即 OperationError。
+pub fn crypto_subtle_mlkem_encapsulate(name: &str, ek_csv: &str) -> String {
+    use ml_kem::kem::Encapsulate;
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (_var, ek_len, _ct_len) = mlkem_params(v);
+    let ek_bytes = bytes_from_csv(ek_csv);
+    if ek_bytes.len() != ek_len {
+        return String::new();
+    }
+    macro_rules! enc {
+        ($p:ty) => {{
+            let arr = match ml_kem::array::Array::try_from(&ek_bytes[..]) {
+                Ok(a) => a,
+                Err(_) => return String::new(),
+            };
+            let ek = match ml_kem::EncapsulationKey::<$p>::new(&arr) {
+                Ok(k) => k,
+                Err(_) => return String::new(),
+            };
+            let (ct, ss) = ek.encapsulate();
+            format!("{};{}", bytes_to_csv(ct.as_slice()), bytes_to_csv(ss.as_slice()))
+        }};
+    }
+    match v {
+        MlKemVariant::V512 => enc!(ml_kem::MlKem512),
+        MlKemVariant::V768 => enc!(ml_kem::MlKem768),
+        MlKemVariant::V1024 => enc!(ml_kem::MlKem1024),
+    }
+}
+
+/// ML-KEM 解封装（FIPS 203 Decapsulate）：种子 csv + ct csv → ss csv。ct 长度
+/// 错/种子失配 → 空串即 OperationError；损坏 ct 走隐式拒绝路径（FIPS 203 §7.3
+///——确定性伪共享秘密，语料 KAT 按此断言）。
+pub fn crypto_subtle_mlkem_decapsulate(name: &str, seed_csv: &str, ct_csv: &str) -> String {
+    use ml_kem::kem::Decapsulate;
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (_var, _ek_len, ct_len) = mlkem_params(v);
+    let seed = bytes_from_csv(seed_csv);
+    let ct = bytes_from_csv(ct_csv);
+    if seed.len() != 64 || ct.len() != ct_len {
+        return String::new();
+    }
+    let seed_arr = match ml_kem::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! dec {
+        ($p:ty) => {{
+            let dk = ml_kem::DecapsulationKey::<$p>::from_seed(seed_arr);
+            match dk.decapsulate_slice(&ct) {
+                Ok(ss) => bytes_to_csv(ss.as_slice()),
+                Err(_) => String::new(),
+            }
+        }};
+    }
+    match v {
+        MlKemVariant::V512 => dec!(ml_kem::MlKem512),
+        MlKemVariant::V768 => dec!(ml_kem::MlKem768),
+        MlKemVariant::V1024 => dec!(ml_kem::MlKem1024),
+    }
+}
+
+/// ML-KEM 私派生公（getPublicKey / jwk 配对校验用）：种子 csv → ek csv。
+pub fn crypto_subtle_mlkem_public_from_seed(name: &str, seed_csv: &str) -> String {
+    use ml_kem::kem::KeyExport;
+    let v = match parse_mlkem_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let seed = bytes_from_csv(seed_csv);
+    if seed.len() != 64 {
+        return String::new();
+    }
+    let seed_arr = match ml_kem::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! derive {
+        ($p:ty) => {
+            bytes_to_csv(
+                ml_kem::DecapsulationKey::<$p>::from_seed(seed_arr)
+                    .encapsulation_key()
+                    .to_bytes()
+                    .as_slice(),
+            )
+        };
+    }
+    match v {
+        MlKemVariant::V512 => derive!(ml_kem::MlKem512),
+        MlKemVariant::V768 => derive!(ml_kem::MlKem768),
+        MlKemVariant::V1024 => derive!(ml_kem::MlKem1024),
+    }
+}
+
+// ------------------------------ ML-DSA（FIPS 204）---------------------------
+
+/// ML-DSA 变体（spec 密钥参数无成员，name 即算法名）。
+#[derive(Clone, Copy)]
+enum MlDsaVariant {
+    V44,
+    V65,
+    V87,
+}
+
+fn parse_mldsa_variant(name: &str) -> Option<MlDsaVariant> {
+    match name {
+        "ML-DSA-44" => Some(MlDsaVariant::V44),
+        "ML-DSA-65" => Some(MlDsaVariant::V65),
+        "ML-DSA-87" => Some(MlDsaVariant::V87),
+        _ => None,
+    }
+}
+
+/// 变体参数（FIPS 204 §5）：(OID 尾, pk 字节)；种子恒 32B。
+fn mldsa_params(v: MlDsaVariant) -> (u8, usize) {
+    match v {
+        MlDsaVariant::V44 => (0x11, 1312),
+        MlDsaVariant::V65 => (0x12, 1952),
+        MlDsaVariant::V87 => (0x13, 2592),
+    }
+}
+
+/// ML-DSA 生成：32 字节随机种子（FIPS 204 KeyGen ξ）→ "pk csv;seed csv"
+///（公 = pk / 私 = 种子）。随机源失败 → 空串。
+pub fn crypto_subtle_mldsa_generate(name: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let mut seed = [0u8; 32];
+    if getrandom::fill(&mut seed).is_err() {
+        return String::new();
+    }
+    let seed_arr = match ml_dsa::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! keygen {
+        ($p:ty) => {{
+            let sk = ml_dsa::SigningKey::<$p>::from_seed(&seed_arr);
+            bytes_to_csv(sk.expanded_key().verifying_key().encode().as_slice())
+        }};
+    }
+    let pk = match v {
+        MlDsaVariant::V44 => keygen!(ml_dsa::MlDsa44),
+        MlDsaVariant::V65 => keygen!(ml_dsa::MlDsa65),
+        MlDsaVariant::V87 => keygen!(ml_dsa::MlDsa87),
+    };
+    format!("{};{}", pk, bytes_to_csv(&seed))
+}
+
+/// ML-DSA 导入（spki/raw-public 公钥 → pk csv；pkcs8/raw-seed 私钥 → 种子
+/// csv）。解析/长度/跨变体失配 → 空串即 DataError。
+pub fn crypto_subtle_mldsa_import(name: &str, fmt: &str, der_csv: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (var, pk_len) = mldsa_params(v);
+    let alg_id = ml_alg_id_seq(0x03, var);
+    let der = bytes_from_csv(der_csv);
+    match fmt {
+        "spki" => match ml_spki_parse(&der, &alg_id, pk_len) {
+            Some(k) => bytes_to_csv(&k),
+            None => String::new(),
+        },
+        "raw-public" => {
+            if der.len() != pk_len {
+                String::new()
+            } else {
+                bytes_to_csv(&der)
+            }
+        }
+        "pkcs8" => match ml_pkcs8_seed_parse(&der, &alg_id, 32) {
+            Some(s) => bytes_to_csv(&s),
+            None => String::new(),
+        },
+        "raw-seed" => {
+            if der.len() != 32 {
+                String::new()
+            } else {
+                bytes_to_csv(&der)
+            }
+        }
+        _ => String::new(),
+    }
+}
+
+/// ML-DSA 导出：输入 pk csv（公）或种子 csv（私，按长度判别）。fmt "spki"/
+/// "raw-public"（公透传或私派生公）、"pkcs8"/"raw-seed"（仅私）。错误 → 空串。
+pub fn crypto_subtle_mldsa_export_der(name: &str, raw_csv: &str, fmt: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (var, pk_len) = mldsa_params(v);
+    let alg_id = ml_alg_id_seq(0x03, var);
+    let stored = bytes_from_csv(raw_csv);
+    let (pk, seed) = if stored.len() == 32 {
+        let derived = crypto_subtle_mldsa_public_from_seed(name, raw_csv);
+        if derived.is_empty() {
+            return String::new();
+        }
+        (bytes_from_csv(&derived), Some(stored))
+    } else if stored.len() == pk_len {
+        (stored, None)
+    } else {
+        return String::new();
+    };
+    match fmt {
+        "spki" => bytes_to_csv(&ml_spki_encode(&alg_id, &pk)),
+        "raw-public" => bytes_to_csv(&pk),
+        "pkcs8" | "raw-seed" => match seed {
+            Some(s) if fmt == "pkcs8" => bytes_to_csv(&ml_pkcs8_seed_encode(&alg_id, &s)),
+            Some(s) => bytes_to_csv(&s),
+            None => String::new(),
+        },
+        _ => String::new(),
+    }
+}
+
+/// ML-DSA jwk 分量导入：pub 必填 raw pk csv；priv 非空 → 私钥且须与 pub 配对
+///（种子派生公钥 ≠ pub → 空串即 DataError，spec Validate MpJwk 配对检查）。
+/// 输出公 = pk csv / 私 = 种子 csv（jwk 对象在 shim 构造）。
+/// https://w3c.github.io/webcrypto/#dfn-Validate-MpJwk
+pub fn crypto_subtle_mldsa_jwk_import(name: &str, pub_csv: &str, priv_csv: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let (_var, pk_len) = mldsa_params(v);
+    let pk = bytes_from_csv(pub_csv);
+    if pk.len() != pk_len {
+        return String::new();
+    }
+    let priv_seed = bytes_from_csv(priv_csv);
+    if priv_seed.is_empty() {
+        return bytes_to_csv(&pk);
+    }
+    if priv_seed.len() != 32 {
+        return String::new();
+    }
+    let derived = crypto_subtle_mldsa_public_from_seed(name, priv_csv);
+    // csv 编码确定，字符串相等即字节相等。
+    if derived.is_empty() || derived != bytes_to_csv(&pk) {
+        return String::new();
+    }
+    bytes_to_csv(&priv_seed)
+}
+
+/// ML-DSA 私派生公（getPublicKey / jwk 配对校验用）：种子 csv → pk csv。
+pub fn crypto_subtle_mldsa_public_from_seed(name: &str, seed_csv: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let seed = bytes_from_csv(seed_csv);
+    if seed.len() != 32 {
+        return String::new();
+    }
+    let seed_arr = match ml_dsa::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! derive {
+        ($p:ty) => {{
+            let sk = ml_dsa::SigningKey::<$p>::from_seed(&seed_arr);
+            bytes_to_csv(sk.expanded_key().verifying_key().encode().as_slice())
+        }};
+    }
+    match v {
+        MlDsaVariant::V44 => derive!(ml_dsa::MlDsa44),
+        MlDsaVariant::V65 => derive!(ml_dsa::MlDsa65),
+        MlDsaVariant::V87 => derive!(ml_dsa::MlDsa87),
+    }
+}
+
+/// ML-DSA 签名：种子 csv + msg csv + ctx csv（上下文 ≤255 字节由 shim 校验，
+/// 超限 crate 侧亦拒）→ 签名 csv（FIPS 204 sigEncode 定宽）。失败 → 空串。
+pub fn crypto_subtle_mldsa_sign(name: &str, seed_csv: &str, msg_csv: &str, ctx_csv: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return String::new(),
+    };
+    let seed = bytes_from_csv(seed_csv);
+    let msg = bytes_from_csv(msg_csv);
+    let ctx = bytes_from_csv(ctx_csv);
+    if seed.len() != 32 {
+        return String::new();
+    }
+    let seed_arr = match ml_dsa::Seed::try_from(&seed[..]) {
+        Ok(a) => a,
+        Err(_) => return String::new(),
+    };
+    macro_rules! sign {
+        ($p:ty) => {{
+            let sk = ml_dsa::SigningKey::<$p>::from_seed(&seed_arr);
+            match sk.expanded_key().sign_deterministic(&msg, &ctx) {
+                Ok(sig) => bytes_to_csv(sig.encode().as_slice()),
+                Err(_) => String::new(),
+            }
+        }};
+    }
+    match v {
+        MlDsaVariant::V44 => sign!(ml_dsa::MlDsa44),
+        MlDsaVariant::V65 => sign!(ml_dsa::MlDsa65),
+        MlDsaVariant::V87 => sign!(ml_dsa::MlDsa87),
+    }
+}
+
+/// ML-DSA 验签：pk csv + msg csv + sig csv + ctx csv。pk/sig 长度错、sigDecode
+/// 范数拒绝（spec 无 reject 路径）、验签失败 → "0"。返 "1"/"0"。
+pub fn crypto_subtle_mldsa_verify(name: &str, pk_csv: &str, msg_csv: &str, sig_csv: &str, ctx_csv: &str) -> String {
+    let v = match parse_mldsa_variant(name) {
+        Some(v) => v,
+        None => return "0".into(),
+    };
+    let (_var, pk_len) = mldsa_params(v);
+    let pk = bytes_from_csv(pk_csv);
+    let msg = bytes_from_csv(msg_csv);
+    let sig = bytes_from_csv(sig_csv);
+    let ctx = bytes_from_csv(ctx_csv);
+    if pk.len() != pk_len {
+        return "0".into();
+    }
+    macro_rules! verify {
+        ($p:ty) => {{
+            let pk_arr = match ml_dsa::EncodedVerifyingKey::<$p>::try_from(&pk[..]) {
+                Ok(a) => a,
+                Err(_) => return "0".into(),
+            };
+            let vk = ml_dsa::VerifyingKey::<$p>::decode(&pk_arr);
+            // Signature::try_from 含长度与 sigDecode（z 无穷范数/hint 解包）双检
+            //——5 字节短签名等畸形输入在此拒绝，verify 返 false 不抛。
+            let s = match ml_dsa::Signature::<$p>::try_from(&sig[..]) {
+                Ok(s) => s,
+                Err(_) => return "0".into(),
+            };
+            if vk.verify_with_context(&msg, &ctx, &s) {
+                "1".to_string()
+            } else {
+                "0".to_string()
+            }
+        }};
+    }
+    match v {
+        MlDsaVariant::V44 => verify!(ml_dsa::MlDsa44),
+        MlDsaVariant::V65 => verify!(ml_dsa::MlDsa65),
+        MlDsaVariant::V87 => verify!(ml_dsa::MlDsa87),
+    }
+}

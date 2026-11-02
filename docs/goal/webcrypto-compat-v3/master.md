@@ -7,14 +7,31 @@ M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
 ——域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
-回归）；**域切片第二轮完成（XOF 五连 SHA-3/SHAKE/cSHAKE/KT/TurboSHAKE，
-+1,676P 零回归）**；余批按依赖就绪度推进：PQC 两域 → X448/KMAC →
-M 末收口重定基
-**最后更新**: 2026-11-02（D1 域切片第二轮落账：XOF 五连 12 算法 digest 面全绿 +1,676 FIXED 落 16 案靶面 + 锚对照零回归 + 对照基准更新 d1s2；KT 24MB 案 heisenbug 专项排查挂账归因）
+回归）；域切片第二轮完成（XOF 五连，+1,676P 零回归）；**域切片第三轮
+完成（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归，收尾轮 rebase 复跑落锚）**；
+余批按依赖就绪度推进：X448/KMAC → M 末收口重定基
+**最后更新**: 2026-11-02（D1 域切片第三轮落账：PQC 两域全链路 +9,064 FIXED 落 52 案靶面 + 锚对照零回归 + 对照基准更新 d1s3；KT/TurboSHAKE 24MB heisenbug r1 复发 2 键、r2 干净，挂账口径不变）
 
 ---
 
 ## 当前状态
+
+**D1 域切片第三轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s3-pqc-slice.md)）**：
+PQC 两域 ML-KEM（FIPS 203）+ ML-DSA（FIPS 204）全链路（deps ml-kem 0.3.3
++getrandom / ml-dsa 0.1.1 + module-lattice =0.2.3 钉版 → host 13 函数
+（DER spki/pkcs8 seed-only 编解码，信任边界恰尽解析）→ shim 三入口 +
+encapsulateBits/Key、decapsulateBits/Key 四方法 → REG 六算法行 + supports
+encapKey 特化 → 定向翻绿 → 锚对照零回归）——**FIXED 9,064 落 52 案全部
+PQC 靶面**，全量分母 360 案 / 82,065 keys = **P 71,135 + F 10,926 + T 4**，
+对 d1s2 锚 REGRESSED = 0、FLIPPED = 0、case/subtest 级零漂移。切片内三处
+修复（DER AlgId 比对段错位、encapsulateBits ct/ss 拆序、encapKey/decapKey
+usage 面向自身）。前轮 session 提交前中断，收尾轮接手：rebase 到
+`cc097dbc3`（s242/s243/R5392 三笔 engine 修复，触面零交集干净 rebase）
+后复跑全量逐位复现，锚以复跑落盘（[d1s3 锚](evidence/2026-11-02-d1s3-pqc-full.json.gz)）；
+runner 单测 276P/0F。KT/TurboSHAKE 24MB heisenbug r1 复发 2 键（同形状
+vector #9）、r2 干净——挂账口径不变。**encapsulateKey/decapsulateKey
+usage 校验面向自身**为语料实测定谳（spec 内部封装步不重复查 Bits usage）。
+对照基准更新为 d1s3 锚。下一批：X448/KMAC → M 末收口重定基。
 
 **D1 域切片第二轮完成（2026-11-02，[evidence](evidence/2026-11-02-d1s2-xof-slice.md)）**：
 XOF digest 域五连 12 算法全链路（deps 五 crate → host 实现 → shim hex wire
@@ -445,3 +462,19 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   `/tmp` scratch（k12 独立验证 probe）用后删除，仓库零残留。开工
   rebase 已是最新（65cc6a4ca 自身）；make test 前置 `zero-browser`
   debug 预建（R5389 r2 先例）。
+- 2026-11-02 D1 域切片第三轮（PQC 两域，含收尾轮）：前轮 session 触面
+  `Cargo.toml`/`Cargo.lock`/`crates/engine/Cargo.toml`（ml-kem 0.3.3
+  +getrandom / ml-dsa 0.1.1 + module-lattice =0.2.3 钉版）、
+  `js_dom_bridge/crypto_asym.rs`（ML 段 ~650 行）、
+  `js_dom_bridge/callbacks.rs`（13 注册）、`js_dom_shim/part01b.js`（ML
+  家族 helper + 归一分支）、`part02.js`（三入口分派 + 四 encap 方法 +
+  sign/verify 臂）、`part02a.js`（REG 六行 + validate 两处 + supports
+  特化）——共享清单（part01.js/script_gen.rs/testharness.rs）零触碰。
+  收尾轮 commit 在途稿后 rebase 到 `cc097dbc3`：远端 6 提交中
+  `391946340`（s242 DOMParser）同触 part02.js 但区域零交集，**干净
+  rebase 无冲突**；`d0a08fc58`（s240 账本）提到 webcrypto XOF 合并基线
+  复核为对照确认，无触面。复跑验证对 d1s2 锚 ANCHOR DIFF CLEAN。
+  推送前 fetch 又入 `0d6856138`（s244 option accessor，触 part02.js
+  +149 行，区域仍零交集，二次干净 rebase）——按 M2-5 语料恢复轮先例
+  重建 release runner 对推送态（切片 + s244 合成树）全量复跑，
+  锚对照 CLEAN 后推送。

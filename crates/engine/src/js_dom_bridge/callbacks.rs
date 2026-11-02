@@ -1413,6 +1413,118 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // ML 家族（ML-KEM/ML-DSA，webcrypto-compat-v3 D1 域切片）原语。arg[0] 恒算法
+    // 名；字节桥同 OKP——csv 十进制串，多字段 `;` 分隔。密钥材料零 tracing（零日
+    // 志纪律）。
+    // `crypto.subtle.generateKey({name:"ML-KEM-*"|"ML-DSA-*"}, ...)`：返 "raw 公钥
+    // csv;种子 csv"（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_generate",
+        Box::new(|args: &[String]| -> String {
+            crypto_subtle_mlkem_generate(args.first().map(String::as_str).unwrap_or(""))
+        }),
+    );
+    // importKey spki/raw-public/pkcs8/raw-seed：arg[0]=算法名，arg[1]=fmt，
+    // arg[2]=DER/raw csv。返 raw ek / 种子 csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mlkem_import(get(0), get(1), get(2))
+        }),
+    );
+    // exportKey spki/pkcs8/raw-public/raw-seed：arg[0]=算法名，arg[1]=存储 csv，
+    // arg[2]=fmt。返 DER/raw csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_export_der",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mlkem_export_der(get(0), get(1), get(2))
+        }),
+    );
+    // `crypto.subtle.encapsulateBits({name:"ML-KEM-*"}, ...)`：arg[0]=算法名，
+    // arg[1]=ek csv。返 "ct csv;ss csv"（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_encapsulate",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mlkem_encapsulate(get(0), get(1))
+        }),
+    );
+    // `crypto.subtle.decapsulateBits({name:"ML-KEM-*"}, ...)`：arg[0]=算法名，
+    // arg[1]=种子 csv，arg[2]=ct csv。返 ss csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_decapsulate",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mlkem_decapsulate(get(0), get(1), get(2))
+        }),
+    );
+    // getPublicKey / jwk 配对校验：arg[0]=算法名，arg[1]=种子 csv。返 raw ek csv
+    // （error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mlkem_public_from_seed",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mlkem_public_from_seed(get(0), get(1))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_generate",
+        Box::new(|args: &[String]| -> String {
+            crypto_subtle_mldsa_generate(args.first().map(String::as_str).unwrap_or(""))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_import(get(0), get(1), get(2))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_export_der",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_export_der(get(0), get(1), get(2))
+        }),
+    );
+    // importKey jwk 分量：arg[0]=算法名，arg[1]=pub csv，arg[2]=priv csv（公钥
+    // 空）。返 pk / 种子 csv（配对失配/长度错 → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_jwk_import",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_jwk_import(get(0), get(1), get(2))
+        }),
+    );
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_public_from_seed",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_public_from_seed(get(0), get(1))
+        }),
+    );
+    // `crypto.subtle.sign({name:"ML-DSA-*"}, ...)`：arg[0]=种子 csv，arg[1]=消息
+    // csv，arg[2]=context csv（缺省空）。返 sigEncode csv（error → 空）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_sign",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_sign(get(0), get(1), get(2), get(3))
+        }),
+    );
+    // `crypto.subtle.verify({name:"ML-DSA-*"}, ...)`：arg[0]=pk csv，arg[1]=消息
+    // csv，arg[2]=签名 csv，arg[3]=context csv。返 "1"/"0"（坏签名同 "0"——spec
+    // verify 无 reject 路径）。
+    sandbox.register_callback(
+        "__zw_crypto_subtle_mldsa_verify",
+        Box::new(|args: &[String]| -> String {
+            let get = |i: usize| args.get(i).map(String::as_str).unwrap_or("");
+            crypto_subtle_mldsa_verify(get(0), get(1), get(2), get(3), get(4))
+        }),
+    );
+
     // `element.matches(selector)` / `element.closest(selector)`——元素查询 API（直接消费选择器引擎，
     // 含组合器）。elem_sel = 元素唯一选择器（proxy 持有），test_sel = 待测选择器。
     let html = Arc::clone(dom_html);

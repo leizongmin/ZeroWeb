@@ -2503,6 +2503,11 @@
       // 注册表规范拼写（含小写）。
       return { name: name === 'ED25519' ? 'Ed25519' : 'X25519' };
     }
+    if (_zw_mlKemIsFamily(name) || _zw_mlDsaIsFamily(name)) {
+      // ML 家族（webcrypto-compat-v3 域切片，FIPS 203/204）：无参数算法（spec
+      // MlKemKeyGenParams/MlDsaKeyGenParams 仅 name；upperAscii 折叠后即规范拼写）。
+      return { name: name };
+    }
     return null;
   }
 
@@ -3945,6 +3950,242 @@
       reject(new _zw_subtleDE('X25519 derivation failed (all-zero shared secret)', 'OperationError')); return null;
     }
     return shared.split(',');
+  }
+
+  // ===== ML 家族（ML-KEM FIPS 203 / ML-DSA FIPS 204）shim 支撑（webcrypto-compat-v3
+  // D1 域切片 2026-11-02）=====
+  // host 原语见 js_dom_bridge/crypto_asym.rs（ml-kem 0.3.3 / ml-dsa 0.1.1）；字节桥同
+  // OKP（csv 十进制串，多字段 `;` 分隔）。存储契约：private _raw = 种子（KEM 64B /
+  // DSA 32B）、public _raw = raw 公钥（ek/pk）；jwk AKP 在本层构造（pub/priv 即两份
+  // csv 的 b64u）。密钥材料不落 tracing（零日志纪律）。
+  // https://w3c.github.io/webcrypto/#ml-kem  https://w3c.github.io/webcrypto/#ml-dsa
+
+  // 家族判定（ASCII 折叠；algorithm.name 存规范拼写）。Hybrid-KEM 组合名（
+  // MLKEM768-P256 等）不在本域——REG 未注册，归一即 NotSupportedError。
+  function _zw_mlKemIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'ML-KEM-512' || u === 'ML-KEM-768' || u === 'ML-KEM-1024';
+  }
+
+  function _zw_mlDsaIsFamily(name) {
+    var u = _zw_upperAscii(String(name));
+    return u === 'ML-DSA-44' || u === 'ML-DSA-65' || u === 'ML-DSA-87';
+  }
+
+  // 家族全 usages（importKey/generateKey 步骤 2：非法项 → SyntaxError）。
+  function _zw_mlAllowedUsages(name) {
+    if (_zw_mlKemIsFamily(name)) {
+      return ['encapsulateBits', 'encapsulateKey', 'decapsulateBits', 'decapsulateKey'];
+    }
+    return _zw_mlDsaIsFamily(name) ? ['sign', 'verify'] : [];
+  }
+
+  // 按密钥类型 usages 子集（spec generateKey 密钥对拆分 + importKey 各格式分支）：
+  // ML-KEM public ⊆ [encapsulateBits, encapsulateKey] / private ⊆
+  // [decapsulateBits, decapsulateKey]；ML-DSA public ⊆ [verify] / private ⊆ [sign]。
+  function _zw_mlTypeUsages(name, isPublic) {
+    if (_zw_mlKemIsFamily(name)) {
+      return isPublic ? ['encapsulateBits', 'encapsulateKey'] : ['decapsulateBits', 'decapsulateKey'];
+    }
+    return isPublic ? ['verify'] : ['sign'];
+  }
+
+  // 类型 usages 子集判定（import 各格式分支与 generateKey 密钥对拆分共用）。
+  function _zw_mlUsagesFitType(name, isPublic, usages) {
+    var legal = _zw_mlTypeUsages(name, isPublic);
+    for (var i = 0; i < usages.length; i++) {
+      if (legal.indexOf(usages[i]) < 0) return false;
+    }
+    return true;
+  }
+
+  // csv 字节 → ArrayBuffer（ML exportKey 字节格式；同 OKP 语义）。
+  function _zw_mlCsvToArrayBuffer(csv) {
+    var b = _zw_rsaCsvBytes(csv);
+    var u8 = new Uint8Array(b.length);
+    for (var i = 0; i < b.length; i++) u8[i] = b[i];
+    return u8.buffer;
+  }
+
+  // host csv → CryptoKey。spec 公共步骤 10：private 空 usages → SyntaxError（ML-KEM
+  // public 空 usages 合法）。algorithm 对象只含 name（assert_goodCryptoKey 断言
+  // algorithm.length === undefined，ML 系无密钥长度成员）。
+  function _zw_mlKeyFromCsv(resolve, reject, name, csv, type, extractable, usages) {
+    if (type === 'private' && usages.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    resolve(new CryptoKey(type, extractable, { name: name }, usages, Array.from(_zw_rsaCsvBytes(csv))));
+  }
+
+  // importKey ML 分派（part02 importKey 家族判定后整体转入，镜像 OKP）。顺序（spec
+  // ML importKey + 公共步骤）：usages 家族 SyntaxError → 格式分派：spki/raw-public
+  //（公）/pkcs8/raw-seed（私）解析 DataError → 类型 usages 子集 SyntaxError → jwk：
+  // kty='AKP'/alg 精确匹配 → pub 必填 b64u → priv 类型 usages → 私钥配对校验（种子
+  // 派生公钥 == pub，host 比对）。
+  // https://w3c.github.io/webcrypto/#SubtleCrypto-method-importKey
+  function _zw_mlImportKey(format, keyData, algo, extractable, usages, resolve, reject) {
+    var name = algo.name;
+    var kem = _zw_mlKemIsFamily(name);
+    var u = _zw_normalizeUsages(usages, _zw_mlAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    var hostImport = kem ? __zw_crypto_subtle_mlkem_import : __zw_crypto_subtle_mldsa_import;
+    if (typeof hostImport !== 'function' ||
+        (kem && typeof __zw_crypto_subtle_mlkem_public_from_seed !== 'function') ||
+        (!kem && typeof __zw_crypto_subtle_mldsa_jwk_import !== 'function')) {
+      reject(_zw_subtleDE('crypto.subtle ML import requires host callback', 'NotSupportedError')); return;
+    }
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (fmt === 'SPKI' || fmt === 'RAW-PUBLIC' || fmt === 'PKCS8' || fmt === 'RAW-SEED') {
+      var bytes = _zw_bufToBytes(keyData);
+      var outCsv = bytes.length ? hostImport(name, fmt.toLowerCase(), bytes.join(',')) : '';
+      if (!outCsv) {
+        reject(new _zw_subtleDE('Invalid ML ' + fmt.toLowerCase() + ' key data', 'DataError')); return;
+      }
+      var isPublic = (fmt === 'SPKI' || fmt === 'RAW-PUBLIC');
+      if (!_zw_mlUsagesFitType(name, isPublic, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPublic ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      _zw_mlKeyFromCsv(resolve, reject, name, outCsv, isPublic ? 'public' : 'private', extractable, u);
+      return;
+    }
+    if (fmt === 'JWK') {
+      if (!keyData || typeof keyData !== 'object') {
+        reject(new TypeError('jwk key data must be an object')); return;
+      }
+      if (keyData.kty !== 'AKP') {
+        reject(new _zw_subtleDE("jwk kty must be 'AKP'", 'DataError')); return;
+      }
+      if (keyData.alg != null && keyData.alg !== name) {
+        reject(new _zw_subtleDE("jwk alg must equal '" + name + "'", 'DataError')); return;
+      }
+      if (keyData.pub == null) {
+        reject(new _zw_subtleDE('jwk pub member is required', 'DataError')); return;
+      }
+      var pubBytes = _zw_bytesFromB64u(keyData.pub);
+      if (!pubBytes) {
+        reject(new _zw_subtleDE('jwk pub is not valid base64url', 'DataError')); return;
+      }
+      var isPubJwk = (keyData.priv == null);
+      if (!_zw_mlUsagesFitType(name, isPubJwk, u)) {
+        reject(new _zw_subtleDE('Invalid key usages for ' + name + ' ' + (isPubJwk ? 'public' : 'private') + ' key', 'SyntaxError')); return;
+      }
+      var privBytes = [];
+      if (!isPubJwk) {
+        privBytes = _zw_bytesFromB64u(keyData.priv);
+        if (!privBytes) {
+          reject(new _zw_subtleDE('jwk priv is not valid base64url', 'DataError')); return;
+        }
+      }
+      var out;
+      if (kem) {
+        // ML-KEM jwk：pub = raw ek / priv = 种子——公走 raw-public 导入路径，私走
+        // 种子派生配对校验（spec Validate MlKemJwk）。
+        if (isPubJwk) {
+          out = hostImport(name, 'raw-public', pubBytes.join(','));
+        } else {
+          var derivedEk = __zw_crypto_subtle_mlkem_public_from_seed(name, privBytes.join(','));
+          if (!derivedEk || derivedEk !== pubBytes.join(',')) {
+            reject(new _zw_subtleDE('jwk priv/pub key pair mismatch', 'DataError')); return;
+          }
+          out = privBytes.join(',');
+        }
+      } else {
+        // ML-DSA jwk：pub/priv 配对校验在 host（种子派生 pk 比对）。
+        out = __zw_crypto_subtle_mldsa_jwk_import(name, pubBytes.join(','), privBytes.join(','));
+      }
+      if (!out) {
+        reject(new _zw_subtleDE('jwk pub/priv invalid (length or key pair mismatch)', 'DataError')); return;
+      }
+      _zw_mlKeyFromCsv(resolve, reject, name, out, isPubJwk ? 'public' : 'private', extractable, u);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported importKey format: '" + fmt + "' (only 'spki'/'jwk'/'raw-public'/'pkcs8'/'raw-seed' supported for ML keys)", 'NotSupportedError'));
+  }
+
+  // generateKey ML（→ CryptoKeyPair）。顺序镜像 OKP：usages 非法 SyntaxError → 生成
+  // → 私钥空 usages SyntaxError（公共步骤 10，生成后）。publicKey 恒 extractable=
+  // true；privateKey extractable = 请求值。
+  function _zw_mlGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
+    var name = algo.name;
+    var kem = _zw_mlKemIsFamily(name);
+    var u = _zw_normalizeUsages(usages, _zw_mlAllowedUsages(name));
+    if (!u) {
+      reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
+    }
+    var hostGen = kem ? __zw_crypto_subtle_mlkem_generate : __zw_crypto_subtle_mldsa_generate;
+    if (typeof hostGen !== 'function') {
+      reject(_zw_subtleDE('crypto.subtle ML generateKey requires host callback', 'NotSupportedError')); return;
+    }
+    var pairCsv = hostGen(name);
+    if (!pairCsv) {
+      reject(new _zw_subtleDE('ML key generation failed', 'OperationError')); return;
+    }
+    var f = pairCsv.split(';');
+    var pubU = [], privU = [];
+    for (var i = 0; i < u.length; i++) {
+      if (_zw_mlTypeUsages(name, true).indexOf(u[i]) >= 0) pubU.push(u[i]);
+      if (_zw_mlTypeUsages(name, false).indexOf(u[i]) >= 0) privU.push(u[i]);
+    }
+    if (privU.length === 0) {
+      reject(new _zw_subtleDE('Key usages cannot be empty for private keys', 'SyntaxError')); return;
+    }
+    var keyAlg = { name: name };
+    resolve({
+      publicKey: new CryptoKey('public', true, keyAlg, pubU, Array.from(_zw_rsaCsvBytes(f[0]))),
+      privateKey: new CryptoKey('private', !!extractable, keyAlg, privU, Array.from(_zw_rsaCsvBytes(f[1])))
+    });
+  }
+
+  // exportKey ML 分派：spki/raw-public（公透传或私派生公）、pkcs8/raw-seed（仅私）、
+  // jwk（AKP：kty='AKP'/alg/pub[/priv]，私导出派生公）。非 extractable →
+  // InvalidAccessError（spec 公共步骤）。
+  function _zw_mlExportKey(format, key, resolve, reject) {
+    var fmt = _zw_upperAscii(String(format == null ? '' : format));
+    if (!key || !key.extractable) {
+      reject(new _zw_subtleDE('Key is not extractable', 'InvalidAccessError')); return;
+    }
+    var name = key.algorithm.name;
+    var kem = _zw_mlKemIsFamily(name);
+    var raw = key._raw || [];
+    if (fmt === 'SPKI' || fmt === 'RAW-PUBLIC' || fmt === 'PKCS8' || fmt === 'RAW-SEED') {
+      var hostExport = kem ? __zw_crypto_subtle_mlkem_export_der : __zw_crypto_subtle_mldsa_export_der;
+      if (typeof hostExport !== 'function') {
+        reject(_zw_subtleDE('crypto.subtle ML exportKey requires host callback', 'NotSupportedError')); return;
+      }
+      var outCsv = hostExport(name, raw.join(','), fmt.toLowerCase());
+      if (!outCsv) {
+        reject(new _zw_subtleDE('Key type does not match exportKey format', 'InvalidAccessError')); return;
+      }
+      resolve(_zw_mlCsvToArrayBuffer(outCsv));
+      return;
+    }
+    if (fmt === 'JWK') {
+      // AKP：pub = raw 公钥 b64u（公透传 / 私派生公）；priv（私钥）= 种子 b64u。
+      var pubCsv;
+      if (key.type === 'public') {
+        pubCsv = raw.join(',');
+      } else {
+        var pfs = kem ? __zw_crypto_subtle_mlkem_public_from_seed : __zw_crypto_subtle_mldsa_public_from_seed;
+        if (typeof pfs !== 'function') {
+          reject(_zw_subtleDE('crypto.subtle ML exportKey requires host callback', 'NotSupportedError')); return;
+        }
+        pubCsv = pfs(name, raw.join(','));
+        if (!pubCsv) {
+          reject(new _zw_subtleDE('ML jwk export failed', 'InvalidAccessError')); return;
+        }
+      }
+      var jwk = { kty: 'AKP', alg: name, pub: _zw_b64uFromCsv(pubCsv) };
+      if (key.type === 'private') {
+        jwk.priv = _zw_b64uFromCsv(raw.join(','));
+      }
+      jwk.key_ops = (key.usages || []).slice();
+      jwk.ext = !!key.extractable;
+      resolve(jwk);
+      return;
+    }
+    reject(new _zw_subtleDE("Unsupported exportKey format: '" + fmt + "' (only 'spki'/'jwk'/'raw-public'/'pkcs8'/'raw-seed' supported for ML keys)", 'NotSupportedError'));
   }
 
   // SubtleCrypto 构造后按 [SecureContext] 暴露（spec idl：subtle 仅安全上下文暴露；
