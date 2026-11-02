@@ -53,9 +53,10 @@ fn r5303_lh0_container_atomic_only_line_strut_bounds_line_box() {
     assert!((div_h - 48.0).abs() < 0.01, "div 高应 48，实得 {div_h}");
 }
 
-/// 对照锚（legacy 校准域零扰动）：line-height 非 0 容器的仅原子行不接管——
-/// 行盒高仍由原子盒 run 高决定（inline-block 10px → 行高 10），R5298 文本行
-/// 语义与 R5303 新臂均不触发。
+/// 对照锚（R5394 改面）：line-height 非 0 容器的仅原子行**接管容器 strut**——
+/// strut 盒 [B−13.8, B+4.2]（Ahem 16/18：A = 1+12.8，D = 4.2）∪ 空盒 [B−10, B]
+/// → 行盒 18。空 inline-block 无内部行盒，基线 = 底 margin 边（CSS2 §17.5），
+/// chromium 同为 18；旧 R5303 钉的 10（原子盒高）即 R5394 修的欠计面。
 #[test]
 fn r5303_normal_lh_container_atomic_only_line_unchanged() {
     let css = "div { font: 16px/18px Ahem; width: 400px; } \
@@ -66,9 +67,9 @@ fn r5303_normal_lh_container_atomic_only_line_unchanged() {
 
     assert_eq!(lines.len(), 1, "应单行，实得 {lines:?}");
     assert!(
-        (lines[0].height - 10.0).abs() < 0.01,
-        "行盒高应 10（原子盒 run 高，legacy 不接管），实得 {}",
+        (lines[0].height - 18.0).abs() < 0.01,
+        "行盒高应 18（容器 strut 接管，R5394），实得 {}",
         lines[0].height
     );
-    assert!((div_h - 10.0).abs() < 0.01, "div 高应 10，实得 {div_h}");
+    assert!((div_h - 18.0).abs() < 0.01, "div 高应 18，实得 {div_h}");
 }

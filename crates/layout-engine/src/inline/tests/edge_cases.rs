@@ -1874,8 +1874,9 @@ fn r3623_container_strut_resolves_ch_font_size() {
         ctx.container_font_size
     );
     assert!(
-        (run.y - 5.6).abs() < 0.5,
-        "strut ascent 应使用 4ch@16px=32px，把 baseline=20 的 inline-block 下压到约 5.6px，实际 y={:.2}",
+        (run.y - 12.2).abs() < 0.5,
+        "strut ascent 应使用 4ch@16px=32px（R5394 容器 strut：half-leading + 0.928×fs），
+         把 baseline=20 的 inline-block 下压到约 12.2px，实际 y={:.2}",
         run.y
     );
 }

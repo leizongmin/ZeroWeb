@@ -101,6 +101,9 @@ mod r5391_nested_clip_intersect_tests;
 /// R5392 负 margin float earliest-fit 下探（CSS 2.1 §9.5.1：候选带高
 /// max(margin 盒高, border 盒高)，负总 margin float 不再漏避让更早 float）。
 mod r5392_negative_margin_float_tests;
+/// R5394 纯原子行内盒行的 strut 行盒（CSS2 §10.8.1：strut 每行必参与，
+/// va:bottom 原子盒底对齐扩展后行底；line-height:0 容器 R5303 域不回归）。
+mod r5394_atomic_line_strut_tests;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -2565,7 +2565,17 @@ impl InlineFormattingContext {
             // ——行内内容显式压制行盒，legacy 兜底（strut_lh=0 → 行高）已按 corpus 校准
             //（ruby-align-001：ruby 结构自建格式化上下文，anon 容器样式继承自 body 而非
             // ruby，捕获的 48 不属于该内部行的 strut 语义，接管反而偏离 REF）。
-            let (strut_ascent, r5298_strut_descent) = if line.runs.iter().any(|r| r.font_size > 0.0 && r.height > 0.0)
+            // R5394（CSS2 §10.8.1 strut）：**纯原子行内盒行**（img/inline-block 独占行，
+            // 无文本 run）同样有 strut——strut 是块容器每行必参与的假想盒（§10.8.1），
+            // chromium line-height:140px 容器内 100px va:bottom 原子盒行盒 = 140（margin-collapse-clear-014
+            // ref 判例），旧 gate 仅文本行走 R5298 接管、原子行缩至原子盒高。门扩到
+            // 纯原子行：container_strut_line_height > 0（line-height:0 容器仍归 R5303
+            // 负 leading 臂）、行盒未塌 0、且容器 strut ascent 严格胜出 legacy seed
+            //（同 R5298「胜出才接管」纪律）；行盒下限由既有 strut descent 围合臂
+            //（下方 R5298 floor）生长，va:bottom 原子盒随扩展后行底落位。
+            let line_has_text_run = line.runs.iter().any(|r| r.font_size > 0.0 && r.height > 0.0);
+            let line_is_atomic_only = !line.runs.iter().any(|r| r.font_size > 0.0);
+            let (strut_ascent, r5298_strut_descent) = if (line_has_text_run || line_is_atomic_only)
                 && self.container_strut_line_height > 0.0
                 && line.height > 0.0
             {
@@ -2719,20 +2729,32 @@ impl InlineFormattingContext {
             // strut 盒随基线悬挂，同 CSS2 §10.8.1 行盒围合语义）。None（未接管/未捕获/
             // 原子行/空行）不参与，旧行为不变。归因抬升 = 此下限带来的净增量。
             let mut r5298_lift = 0.0_f32;
+            // R5394 精化：纯原子行中**盒驱动基线**（baseline_y > strut ascent，如
+            // 基线对齐 inline-block 独占行）时抑制 strut descent floor——ZW 近似
+            // 「inline-block 基线 = 底边」使盒在基线下 descent = 0，floor 会把行盒
+            // 下扩 D_strut（text-group-align 族每行 +2.75px，chromium 因真实
+            // inline-block 基线 = 内部末行基线、盒自身 descent ≥ D_strut 而 floor
+            // 不咬）。strut 驱动基线（va:top/bottom 独占行、小原子盒行）时 floor
+            // 照常（margin-collapse-clear-014 ref 行盒 140 依赖）。
+            let r5394_box_driven_baseline = line_is_atomic_only && baseline_y > strut_ascent + 0.001;
             if let Some(strut_descent) = r5298_strut_descent {
-                let r5298_h_pre = line.height;
-                // R5303：strut descent 为负（line-height:0 → D = −A，或紧 line-height）
-                // 时行盒围合语义 = 各盒区间并集——底边取 max(D_strut, 其余盒 descent)，
-                // 负 D_strut 不把底边拖到基线之上（line-height-127：max(−48, img 0) =
-                // 0 → 高 = 48 + 0）。正 D 维持旧下限（c42 域已校准，零扰动）。
-                let floor_descent = if strut_descent < 0.0 {
-                    strut_descent.max(max_glyph_descent)
+                if r5394_box_driven_baseline {
+                    // 盒驱动基线：行盒维持盒底 = 基线（旧原子行行为，零扰动）。
                 } else {
-                    strut_descent
-                };
-                line.height = line.height.max(baseline_y + floor_descent);
-                line.descent = line.descent.max(line.height - baseline_y);
-                r5298_lift = line.height - r5298_h_pre;
+                    let r5298_h_pre = line.height;
+                    // R5303：strut descent 为负（line-height:0 → D = −A，或紧 line-height）
+                    // 时行盒围合语义 = 各盒区间并集——底边取 max(D_strut, 其余盒 descent)，
+                    // 负 D_strut 不把底边拖到基线之上（line-height-127：max(−48, img 0) =
+                    // 0 → 高 = 48 + 0）。正 D 维持旧下限（c42 域已校准，零扰动）。
+                    let floor_descent = if strut_descent < 0.0 {
+                        strut_descent.max(max_glyph_descent)
+                    } else {
+                        strut_descent
+                    };
+                    line.height = line.height.max(baseline_y + floor_descent);
+                    line.descent = line.descent.max(line.height - baseline_y);
+                    r5298_lift = line.height - r5298_h_pre;
+                }
             }
             if std::env::var("ZW_DEBUG_IFC").as_deref() == Ok("1") {
                 eprintln!(
@@ -2775,7 +2797,11 @@ impl InlineFormattingContext {
                     VerticalAlignValue::Middle => (line_height - run.height) / 2.0,
                     VerticalAlignValue::Bottom | VerticalAlignValue::TextBottom => {
                         if run.font_size == 0.0 {
-                            line_height - run.height - run.margin_bottom
+                            // R5394：读**扩展后**行盒高（R5298/R5394 strut descent 围合
+                            // 已在上方生效）——va:bottom 原子盒对齐最终行底（margin-collapse-clear-014
+                            // ref：img 底 = strut 行盒底 140，旧 stale 行高贴顶 y=0）。
+                            // 无 strut 接管的行两值相等，零扰动。
+                            line.height - run.height - run.margin_bottom
                         } else {
                             line_height - run.height
                         }
