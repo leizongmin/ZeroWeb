@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
-**版本**：v1.2 / 2026-11-02（① 预执行核查：file:// 直读面事实修正；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/2/3/5 DONE，DC-4 PARTIAL——余项为 landlock 默认翻转：已拍板切片 ① 经预执行核查收窄（主文档/静态模块依赖已 browser 侧，renderer 直读唯余模块体动态 import 一臂），执行受阻于该面取舍新待决（①-a 接受收窄 / ①-b 泵化代理，见 [master.md](renderer-trust-boundary/master.md)）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**版本**：v1.3 / 2026-11-02（file:// IPC 臂范围缺陷发现 + ① 分层决策包；v1.2 ① 预执行核查；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
+**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/3/5 DONE，DC-2 REOPENED-ONE-FACE——file:// IPC 直读臂无范围策略确认缺陷（2026-11-02，http 页面实证读本地文件；Layer 1 修复切片在册无须拍板）；DC-4 PARTIAL——余 landlock 默认翻转（Layer 2 待拍板：①-a 接受收窄（推荐）/①-b 泵化代理/①-c 缓翻，见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md)）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
