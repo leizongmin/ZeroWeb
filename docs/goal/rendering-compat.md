@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5388 案面修正轮（float-shrink-inline-children-zw-001 3.99% 伪红翻绿——ref 页补 definite height 对齐占位几何；chromium oracle 定谳 ZW 无回归、案面自源设计错误；本地集 725/725 全绿）**（2026-11-02）
+>
+> - **归因**（layout-dump 双页对比 + chromium headless oracle 探针 + chromium 两页 compare）：R5387 附注② 的本地案既有红。layout-dump：test 页 float1 定高 48（f2.top=60）vs ref 页 auto 高 42（f2.top=54）——6px float 占位错位 19132px=3.99%。chromium oracle（`google-chrome --headless` 截图 + 页内 JS offsetHeight/offsetTop 探针）：chromium 真实行为 ref 形态 f1.h=42/f2.top=54 **与 ZW 完全一致**（float 内单行行盒高 = line-height 42，inline 盒 font extent 47 负 leading 溢出不撑 float）；chromium 自身两页 compare 也差 17383px=2.55% → **案面期望「修复态两页逐像素相等」与真实语义冲突、从不成立**——旧 ref「去 height 走 auto 高」构造在语义上就不等价（definite 48 vs auto 42），当初绿是双错相消伪绿。**ZW 行为正确无回归，案面（自源案）设计错误。**
+> - **修正**（案面双处同步，无引擎代码变更）：ref 页 `.hot-refresh` 补 `height:48px`（对齐占位几何），保留 `white-space:nowrap` 作收缩宽负控制——test 靠 definite height 重测收敛单行、ref 靠 nowrap 恒单行，可见几何在正确实现下全同 0 diff；孪生文件 `local-reftests/css/CSS2/floats/…-ref.html` 与内嵌案面 `reftest_data/css_float.rs` 注释+ref_html 双处同步，oracle 定谳记档。
+> - **负控制矩阵更新**：default 0 diff（真通过-可信）；`ZW_FLOAT_INLINE_SUM=0` → 11.11% 显红（异签名）；**`ZW_FLOAT_DEFINITE_H_REMEASURE` 单臂失效**——修正后 ref 同为 definite-height float，关开关两页同坏仍相等，definite-height 重测 gate 的回归保护不再由本案单独承载（待后续轮评估补专门案）。
+> - **验证**：单案 0.00% diff ✓ 真通过-可信；make reftest 本地集 **725/725 全绿**（案面数据变更零连带）；guarded-clippy 全 workspace 绿。无引擎代码变更，不触 corpus 基线（736F 真态不变）与 bench-gate 面。
+> - **挂账**：R5387 挂账①（float-shrink-zw-001）本轮出账；highlight-currentcolor-painting-properties-002 维持下轮候选；**新增** ZW_FLOAT_DEFINITE_H_REMEASURE 专门负控制案评估；R5386 挂账全维持（::target-text/scroll-to-text-fragment 特性缺口 ×3、querySelector 根 canonical 键留观、R5384 挂账 2-5、mutation_arm 对端账、旧账全维持）。**下一步 R5389**：①736F 账本续扫择轻（避开对端面）②backdrop-root 深评（维持）③color-6（维持）。
+>
 > **▶ R5387 修复轮（单行 flex 容器 definite cross 传导——R1743 回填把 max-height:100% item 撑回子底后 12.6 clamp 的 cb 解析断链放过；flexbox-definite-sizes-003/004 ✗9.38% ×2 → ✓；corpus 真态 739F→736F FIXED=4 REGRESSED=0）**（2026-11-02）
 >
 > - **归因**（layout-dump + taffy 双形态最小探针 + ZW_TAFFY_TREE_DUMP + kill-switch 逐 pass 二分）：案面 `outerFlex(max-h:100px) > innerFlex(w:100px, align-items:flex-end) > block(max-h:100%) > leaf(9999px 绿)`。dump：outerFlex/innerFlex=100 ✓ **block=9999 ✗**（body/html 未传染=孤立改写）；taffy 探针双形态全对 + ZW 树内 taffy 输出 block=100 ✓ → 改写者在 extract 之后。ZW_IFC_GROW_SHIFT=0 时 block=100（R109_BACKFILL/ZW_BLOCK_MAXH_CLAMP/ZW_AR_COL_CLAMP 禁用无效果）→ **改写者 = shift_siblings_after_ifc_grow 的 R1743 父高回填**（auto 高 block 按子底边撑高，无视 max-height）。12.6 clamp（shift 之后跑）本可救回，但 cb 解析 `my_definite_content_height(innerFlex)` 只认 height Px/Percentage——innerFlex height:auto → None → 臂 1 放过。
