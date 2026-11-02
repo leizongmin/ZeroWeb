@@ -27552,7 +27552,12 @@ return e;
             // FIXME(s194)：扩面前先勘 setter 存量行为面）。
             if (_rvTyG === 'date' || _rvTyG === 'month' || _rvTyG === 'week'
               || _rvTyG === 'time' || _rvTyG === 'datetime-local'
-              || _rvTyG === 'tel' || _rvTyG === 'url' || _rvTyG === 'email') {
+              || _rvTyG === 'tel' || _rvTyG === 'url' || _rvTyG === 'email'
+              // s238：color 入读侧消毒面——color-well 序列化（color.window.js
+              // 钉面：先设 value 后改 colorSpace/alpha 须按最新属性态重序列化；
+              // setAttribute('value') 存原串走本臂补 s183 FIXME 内容属性变更面；
+              // setter/类型迁移存净化形，重净化幂等）。
+              || _rvTyG === 'color') {
               var _rvDtSrc = (_inputValuesSet[key] === true && _inputValues[key] != null)
                 ? String(_inputValues[key])
                 : (handle ? __zw_get_attr_handle(handle, 'value')

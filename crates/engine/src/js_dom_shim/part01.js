@@ -2434,15 +2434,112 @@
         // IDL set 面）。
         var _cvClr = String(v).replace(/[\n\r]/g, '')
           .replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, '');
-        if (/^#[0-9a-f]{6}$/.test(_cvClr)) return _cvClr;
-        if (typeof __zw_parse_color_rgba !== 'function') return '#000000';
-        var _cvRgba = String(__zw_parse_color_rgba(_cvClr) || '').split(',');
-        if (_cvRgba.length !== 4) return '#000000';
-        var _cvHex = '#';
-        for (var _cvI = 0; _cvI < 3; _cvI++) {
-          _cvHex += ('0' + parseInt(_cvRgba[_cvI], 10).toString(16)).slice(-2);
+        // s238（html-semantics M2）：color-well 序列化（HTML §color state
+        // value sanitization + CSS Color 4 color() 序列化；WPT
+        // the-input-element/color.window.js 钉态）——colorspace=display-p3 →
+        // P3 分量 color(display-p3 …) 串；alpha 属性在场 → 保留 alpha 通道，
+        // limited-srgb 序列化也转 color(srgb …) 形。α=1（不透明）省略 alpha
+        // 分量（CSS Color 4 序列化规则；transparent α=0 保留 ' / 0'）。属性
+        // 读走 lw 融合（同 email multiple 臂）：value getter 现读侧净化，先设
+        // value 后改 colorSpace/alpha 的序列即取最新属性态（setter 存净化形 +
+        // getter 读侧重净化幂等，双向覆盖）。解析失败回落不透明黑按同模式
+        // 序列化（语料无非法+宽域钉面，spec 同「失败视同 #000000」锚点）。
+        var _cvIsP3 = false, _cvKeepA = false;
+        try {
+          var _cvCs = (handle ? __zw_get_attr_handle(handle, 'colorspace')
+            : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'colorspace') : __zw_get_attr(sel, 'colorspace')));
+          _cvIsP3 = String(_cvCs || '').toLowerCase() === 'display-p3';
+          _cvKeepA = (handle ? __zw_has_attr_handle(handle, 'alpha')
+            : (typeof __zw_has_attr_lw === 'function' ? __zw_has_attr_lw(sel, 'alpha') : __zw_has_attr(sel, 'alpha'))) === '1';
+        } catch (_e238cw) {}
+        if (!_cvIsP3 && !_cvKeepA) {
+          // S183 limited-srgb 无 alpha 既有臂（color.html 27/27 钉面不动）。
+          if (/^#[0-9a-f]{6}$/.test(_cvClr)) return _cvClr;
+          if (typeof __zw_parse_color_rgba !== 'function') return '#000000';
+          var _cvRgba = String(__zw_parse_color_rgba(_cvClr) || '').split(',');
+          if (_cvRgba.length !== 4) return '#000000';
+          var _cvHex = '#';
+          for (var _cvI = 0; _cvI < 3; _cvI++) {
+            _cvHex += ('0' + parseInt(_cvRgba[_cvI], 10).toString(16)).slice(-2);
+          }
+          return _cvHex;
         }
-        return _cvHex;
+        // s238：color() 语法 shim 侧预解析——宿主 parse_color 经 u8 rgba 会
+        // 钳制越界分量（WPT 钉面 'color(display-p3 3 none .2 / .6)' 期望保 3
+        // 与 none→0），故宽域序列化面先在本层直解 color(srgb|display-p3 …)，
+        // 分量保留原值；非该形回落宿主解析（u8 sRGB + alpha）。
+        // https://drafts.csswg.org/css-color-4/#color-syntax
+        var _cvC = null, _cvSrcP3 = false, _cvA = 1;
+        var _cvM = _cvClr.match(/^color\(\s*(srgb|display-p3)[\s/]+([^)]*)\)$/i);
+        if (_cvM) {
+          var _cvSec = _cvM[2].split('/');
+          var _cvToks = _cvSec[0].trim().split(/\s+/);
+          var _cvOk = _cvToks.length === 3;
+          var _cvCh = [];
+          if (_cvOk) {
+            for (var _cvT = 0; _cvT < 3; _cvT++) {
+              var _cvTk = _cvToks[_cvT];
+              if (_cvTk === 'none') { _cvCh.push(0); continue; }
+              if (!/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(_cvTk)) { _cvOk = false; break; }
+              _cvCh.push(parseFloat(_cvTk));
+            }
+          }
+          if (_cvOk && _cvSec.length === 2) {
+            var _cvAt = _cvSec[1].trim();
+            if (_cvAt === 'none') _cvA = 0;
+            else if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$/.test(_cvAt)) _cvA = parseFloat(_cvAt);
+            else _cvOk = false;
+          } else if (_cvOk && _cvSec.length > 2) _cvOk = false;
+          if (_cvOk) { _cvC = _cvCh; _cvSrcP3 = String(_cvM[1]).toLowerCase() === 'display-p3'; }
+        }
+        if (_cvC == null) {
+          _cvC = [0, 0, 0]; _cvSrcP3 = false; _cvA = 1;
+          if (typeof __zw_parse_color_rgba === 'function') {
+            var _cvP = String(__zw_parse_color_rgba(_cvClr) || '').split(',');
+            if (_cvP.length === 4) {
+              _cvC = [parseInt(_cvP[0], 10) / 255, parseInt(_cvP[1], 10) / 255, parseInt(_cvP[2], 10) / 255];
+              _cvA = parseInt(_cvP[3], 10) / 255;
+            }
+          }
+        }
+        // 色域转换（CSS Color 4 矩阵；sRGB ⊂ display-p3 正向无 gamut clip，
+        // 逆向 p3→srgb 语料无钉面按同矩阵对偶实现）。gamma 曲线两空间同形
+        //（1/2.4 + 线性段 12.92）。
+        function _cvDecode(x) { return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4); }
+        function _cvEncode(y) { return y <= 0.0031308 ? 12.92 * y : 1.055 * Math.pow(y, 1 / 2.4) - 0.055; }
+        var _cvOut = _cvC;
+        if (_cvIsP3 && !_cvSrcP3) {
+          var _cvL = [_cvDecode(_cvC[0]), _cvDecode(_cvC[1]), _cvDecode(_cvC[2])];
+          var _cvX = [
+            0.4123908 * _cvL[0] + 0.3575843 * _cvL[1] + 0.1804808 * _cvL[2],
+            0.2126390 * _cvL[0] + 0.7151687 * _cvL[1] + 0.0721923 * _cvL[2],
+            0.0193308 * _cvL[0] + 0.1191948 * _cvL[1] + 0.9505322 * _cvL[2]
+          ];
+          _cvOut = [
+            _cvEncode(2.4934969 * _cvX[0] - 0.9313836 * _cvX[1] - 0.4027108 * _cvX[2]),
+            _cvEncode(-0.8294890 * _cvX[0] + 1.7626641 * _cvX[1] + 0.0236247 * _cvX[2]),
+            _cvEncode(0.0358458 * _cvX[0] - 0.0761724 * _cvX[1] + 0.9568845 * _cvX[2])
+          ];
+        } else if (!_cvIsP3 && _cvSrcP3) {
+          var _cvLp = [_cvDecode(_cvC[0]), _cvDecode(_cvC[1]), _cvDecode(_cvC[2])];
+          var _cvXp = [
+            0.4865709 * _cvLp[0] + 0.2656677 * _cvLp[1] + 0.1982173 * _cvLp[2],
+            0.2289746 * _cvLp[0] + 0.6917385 * _cvLp[1] + 0.0792869 * _cvLp[2],
+            0.0451134 * _cvLp[1] + 1.0439444 * _cvLp[2]
+          ];
+          _cvOut = [
+            _cvEncode(3.2409699 * _cvXp[0] - 1.5373832 * _cvXp[1] - 0.4986108 * _cvXp[2]),
+            _cvEncode(-0.9692436 * _cvXp[0] + 1.8759675 * _cvXp[1] + 0.0415551 * _cvXp[2]),
+            _cvEncode(0.0556301 * _cvXp[0] - 0.2039770 * _cvXp[1] + 1.0569715 * _cvXp[2])
+          ];
+        }
+        // 分量 6 位小数舍入去尾零（Chromium 同形；语料 fuzzy ε=0.01 容差面，
+        // 精度取高留 spec 对齐余量）。
+        var _cvNum = function (x) { return String(Math.round(x * 1e6) / 1e6); };
+        var _cvS238 = 'color(' + (_cvIsP3 ? 'display-p3' : 'srgb') + ' '
+          + _cvNum(_cvOut[0]) + ' ' + _cvNum(_cvOut[1]) + ' ' + _cvNum(_cvOut[2]);
+        if (_cvKeepA && _cvA < 1) _cvS238 += ' / ' + _cvNum(_cvA);
+        return _cvS238 + ')';
       }
       default:
         return v;

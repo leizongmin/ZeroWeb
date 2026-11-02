@@ -48,6 +48,12 @@
 #     Request）已由 M2-S14 引擎+语料双侧同步对齐（2026-10-29，docs/goal/
 #     net-api-compat/evidence/2026-10-29-m2-s14-request-disturbed-init-body.md）
 #     ——升级新 ref 后该腿为绿，无需人工干预
+#   - css/support/color-testcommon.js 缺失（html/semantics/forms/the-input-element/
+#     color.window.js 依赖；s238 勘根定性该文件 1F「load support …」为语料 404
+#     非引擎缺陷——META script 装载失败 → 顶层 set_up_fuzzy_color_test
+#     ReferenceError → 全文件子测零注册；已从上游 wpt css/support/ 原件本地补入
+#     169 行 JS（自包含无依赖），补后 color.window.js 全量子测起跑（color-well
+#     序列化引擎面同切收口，见同日 m2s238 账本）——升级新 ref 后需重新补）
 #   - images/smiley.png、images/fail.gif 缺失（html/semantics/embedded-content/
 #     the-img-element/update-media.html 依赖；s227 勘根定性该文件级 Timeout 为
 #     语料 404 非引擎缺陷——404 → error 代替 load → async_test 永不 done，探针
