@@ -6,11 +6,22 @@
 M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
 M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
 均零回归；余 D1 拍板后域切片 + M 末收口重定基
-**最后更新**: 2026-11-02（D1 前置第三轮：PQC/KMAC/X448 语料面预检全过，1.85 可探域语料面闭环，option a KMAC 短 key 缺口语料实锤；D1 仍征询中）
+**最后更新**: 2026-11-02（语料面按 clone 漂移恢复 + main 漂移复验锚 CLEAN；D1 仍征询中）
 
 ---
 
 ## 当前状态
+
+**语料面恢复 + 漂移复验完成（2026-11-02，[evidence](evidence/2026-11-02-corpus-restore-drift-reval.md)）**：
+本 clone（ZeroWeb-3）wpt-data 为按 clone gitignored 本地态——转正子树 77 新文件
+只在 ZeroWeb-2（M1–M2-5 执行 clone）取数过，本 clone 全量扫描仅 245 案（非删除，
+目录 mtime 停 10-17 可证）。38 号脚本重跑恢复 **275 文件 = M1 记账精确一致**
+（旧文件 mtime 零触碰幂等实证 + 跨 clone md5 抽样全同）；恢复后全量 r3
+**360 案 / 81,851 keys = P 52,861 + F 28,986 + T 4**，对 m2s5 锚
+`webcrypto-anchor-diff` **全 CLEAN（REGRESSED/FIXED/FLIPPED/DRIFT 全 0）**
+——rebase 带入的 `dbd4ef9e8`（共享 runner 键位 + part05.js forms 面）与
+`59685323f`（editing 面）对 webcrypto 全量账零回归实证，m2s5 锚对照基准不变；
+runner 单测 276P/0F。D1 飞书征询线核实无回复（两轮在案不重复催办）。
 
 **M2-5 raw 格式别名切片完成（2026-11-02，[evidence](evidence/2026-11-02-m2s5-raw-format-aliases.md)）**：
 `raw-secret`/`raw-public` importKey/exportKey/wrapKey/unwrapKey 格式别名
@@ -295,3 +306,11 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   落账 rebase 带入 `7ddf00c39`（33 号流 F6 delete/forwardDelete，触
   part01f 新分片 + part01d/part06 editing 面，与本切片触面 diff 零交集，
   按 M2-3 先例不复跑）。
+- 2026-11-02 语料恢复 + 复验轮：零代码触面（38 号语料脚本重跑 + docs）。
+  开工 rebase 带入 `dbd4ef9e8`（25 号流 radio ArrowRight——触共享
+  testharness.rs 键位四向 + part05.js forms 面，与本流 part05.js worker
+  crypto 面同文件目录级分域）与 `59685323f`（33 号流 D4 typing——触
+  part01/01f/06 editing 面）：两触面按 M2-4 先例以 m2s5 锚全量复验承接，
+  r3 逐位 CLEAN 零回归（见当前状态段）。开工时工作面有 33 号流在途草稿
+  （part01f.js delKeepChainShells），已 stash 记账
+  （`typing-style-round-1102`）不硬解。
