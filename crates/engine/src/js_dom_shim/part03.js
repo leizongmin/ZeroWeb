@@ -1186,7 +1186,64 @@
       }
       return out;
     };
+    // net-api T43-B6（site-optimizer perf-mem T43）：接口方法由实例 own 转挂原型——
+    // xhr.spec §interface XMLHttpRequest 的 interface members 挂 interface prototype
+    // object，Chrome 实例无 own 方法；包装库（站点 sdk-glue 类）按
+    // `XMLHttpRequest.prototype.open` 习惯取方法，实例 own + 原型缺席 → undefined.apply
+    // 断链（juejin glue XHR 代理栈证 `at r.open … .apply`）。实例闭包实现转挂
+    // **非枚举**内部槽（每实例独立，闭包捕获构造期 self 语义不变），原型委派器经
+    // this 路由到本实例槽位（ctor 闭包后统一装配，见下方原型挂载段）。
+    var _zwXhrIfaceNames = ['open', 'overrideMimeType', 'send', 'abort', 'setRequestHeader',
+      'getResponseHeader', 'getAllResponseHeaders'];
+    for (var _zwIi = 0; _zwIi < _zwXhrIfaceNames.length; _zwIi++) {
+      (function (_zwMn) {
+        var _zwFn = self[_zwMn];
+        if (typeof _zwFn !== 'function') return;
+        Object.defineProperty(self, '_zwImpl_' + _zwMn, {
+          value: _zwFn, writable: true, enumerable: false, configurable: true,
+        });
+        delete self[_zwMn];
+      })(_zwXhrIfaceNames[_zwIi]);
+    }
   };
+  // net-api T43-B6：XMLHttpRequest interface prototype object 方法面（WebIDL
+  // §operations：原型层 {writable:true, enumerable:true, configurable:true}；arity =
+  // 必选参数个数，与 Chrome 对照）。委派器 this 为外来对象（分离调用/伪造 this）
+  // → TypeError（Illegal invocation 同型）。spec：
+  // https://xhr.spec.whatwg.org/#interface-xmlhttprequest
+  // https://webidl.spec.whatwg.org/#interface-prototype-object
+  (function () {
+    if (!globalThis.XMLHttpRequest || !globalThis.XMLHttpRequest.prototype) return;
+    var _zwProto = globalThis.XMLHttpRequest.prototype;
+    function _zwIfaceDelegate(_zwName) {
+      return function () {
+        var _zwF = this['_zwImpl_' + _zwName];
+        if (typeof _zwF !== 'function') {
+          throw new TypeError('Illegal invocation');
+        }
+        return _zwF.apply(this, arguments);
+      };
+    }
+    var _zwDefs = [
+      ['open', ['method', 'url']],
+      ['overrideMimeType', ['mimeType']],
+      ['send', ['body']],
+      ['abort', []],
+      ['setRequestHeader', ['name', 'value']],
+      ['getResponseHeader', ['name']],
+      ['getAllResponseHeaders', []],
+    ];
+    for (var _zwDi = 0; _zwDi < _zwDefs.length; _zwDi++) {
+      (function (_zwName, _zwArgs) {
+        if (Object.prototype.hasOwnProperty.call(_zwProto, _zwName)) return;
+        var _zwFn = _zwIfaceDelegate(_zwName);
+        Object.defineProperty(_zwFn, 'length', { value: _zwArgs.length });
+        Object.defineProperty(_zwProto, _zwName, {
+          value: _zwFn, writable: true, enumerable: true, configurable: true,
+        });
+      })(_zwDefs[_zwDi][0], _zwDefs[_zwDi][1]);
+    }
+  })();
   // net-api M4-S21：XMLHttpRequestUpload 全局接口类（EventTarget 形；dispatchEvent 与
   // XHR 本体同走 EventTarget 原型链，addEventListener 注册面一致）。
   globalThis.XMLHttpRequestUpload = globalThis.XMLHttpRequestUpload || function XMLHttpRequestUpload() {

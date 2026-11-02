@@ -155,3 +155,117 @@ fn s229_doc_active_slot_thread_local() {
     // 收尾清槽（测试共用主线程，不给他测试留串态）。
     DOC_ACTIVE_SELECTOR.with(|slot| *slot.borrow_mut() = String::new());
 }
+
+// T43 B6（site-optimizer perf-mem T43）：XMLHttpRequest 接口方法原型形状钉。站点包装
+// 库（juejin sdk-glue 类 XHR 代理）按 `XMLHttpRequest.prototype.open` 习惯取方法——
+// 修复前实例 own + 原型缺席 → undefined.apply 断链（glue 栈证 `at r.open … .apply`）。
+// xhr.spec interface members 挂 interface prototype object；WebIDL §operations 原型层
+// 描述符 {writable, enumerable, configurable}=true、arity=必选参数个数（Chrome 对照
+// open=2/send=1/abort=0/setRequestHeader=2/getResponseHeader=1/getAllResponseHeaders=0/
+// overrideMimeType=1）。https://xhr.spec.whatwg.org/#interface-xmlhttprequest
+// https://webidl.spec.whatwg.org/#interface-prototype-object
+#[test]
+fn xhr_iface_methods_prototype_shape_t43() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var X = globalThis.XMLHttpRequest;
+             var names = ['open','overrideMimeType','send','abort','setRequestHeader','getResponseHeader','getAllResponseHeaders'];
+             var out = [];
+             for (var i = 0; i < names.length; i++) {
+               var n = names[i];
+               var d = Object.getOwnPropertyDescriptor(X.prototype, n);
+               if (!d || typeof d.value !== 'function') { out.push(n + ':absent'); continue; }
+               out.push(n + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable + ':' + d.value.length);
+             }
+             globalThis.__r = out.join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r").unwrap().value;
+    // 期望段：name:w:e:c:arity（WebIDL operations 全 true；arity=必选参数数）。
+    let expect = [
+        "open:true:true:true:2",
+        "overrideMimeType:true:true:true:1",
+        "send:true:true:true:1",
+        "abort:true:true:true:0",
+        "setRequestHeader:true:true:true:2",
+        "getResponseHeader:true:true:true:1",
+        "getAllResponseHeaders:true:true:true:0",
+    ];
+    let segs: Vec<&str> = out.split('|').collect();
+    assert_eq!(segs.len(), expect.len(), "七接口方法逐一在案：{out}");
+    for (seg, want) in segs.iter().zip(expect.iter()) {
+        assert_eq!(seg, want, "XHR 原型方法描述符/arity 须为 WebIDL operations 形：{seg}");
+    }
+}
+
+// T43 B6 邻近变体：实例无 own 接口方法（Chrome parity）+ 双实例独立实现槽 +
+// open→setRequestHeader 功能回路走原型委派。隔离性以实现槽闭包逐实例不同证明；
+// 请求头入实例请求头槽（xhr.spec setRequestHeader 仅入 request headers——未发送时
+// getAllResponseHeaders() 恒 ''，响应头契约）。
+#[test]
+fn xhr_instance_no_own_iface_methods_t43() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var X = globalThis.XMLHttpRequest;
+             var a = new X(), b = new X();
+             var names = ['open','overrideMimeType','send','abort','setRequestHeader','getResponseHeader','getAllResponseHeaders'];
+             var ownBad = [];
+             for (var i = 0; i < names.length; i++) {
+               if (Object.prototype.hasOwnProperty.call(a, names[i])) ownBad.push(names[i]);
+             }
+             a.open('GET', 'https://zero.test/t43-a', true);
+             a.setRequestHeader('X-T43', 'alpha');
+             b.open('POST', 'https://zero.test/t43-b', true);
+             b.setRequestHeader('X-T43', 'beta');
+             globalThis.__r = [
+               ownBad.join(','),
+               String(a.readyState), String(b.readyState),
+               String(a._zwXhrHeaders['x-t43'] === 'alpha'),
+               String(b._zwXhrHeaders['x-t43'] === 'beta'),
+               String(a._zwImpl_open !== b._zwImpl_open),
+               String(a._zwXhrUrl !== b._zwXhrUrl),
+               String(a.getAllResponseHeaders() === ''),
+               String(Object.prototype.hasOwnProperty.call(a, '_zwImpl_send')),
+               typeof X.prototype.open,
+             ].join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts[0], "", "实例不得有 own 接口方法：{}", parts[0]);
+    assert_eq!(parts[1], "1", "open 后 readyState=1（OPENED，功能面经原型委派生效）");
+    assert_eq!(parts[2], "1");
+    assert_eq!(parts[3], "true", "实例 A 请求头入槽（委派生效）");
+    assert_eq!(parts[4], "true", "实例 B 请求头入槽（委派生效）");
+    assert_eq!(parts[5], "true", "实现槽闭包逐实例独立（互不共享）");
+    assert_eq!(parts[6], "true", "请求状态逐实例独立");
+    assert_eq!(parts[7], "true", "未发送时 getAllResponseHeaders() 恒 ''（响应头契约）");
+    assert_eq!(parts[8], "true", "实现槽为实例 own（非枚举内部槽）");
+    assert_eq!(parts[9], "function");
+}
+
+// T43 B6 邻近变体：外来 this（分离调用/伪造宿主对象）→ TypeError（Illegal invocation
+// 同型）；跨实例 .call 正确委派。
+#[test]
+fn xhr_prototype_method_detached_this_t43() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var X = globalThis.XMLHttpRequest;
+             var detachedErr = '';
+             try { X.prototype.open('GET', 'https://zero.test/x', true); }
+             catch (e) { detachedErr = e.constructor.name; }
+             var xhr = new X();
+             var callOk = '';
+             try { X.prototype.open.call(xhr, 'GET', 'https://zero.test/call', true); callOk = String(xhr.readyState); }
+             catch (e) { callOk = 'THROW'; }
+             globalThis.__r = detachedErr + '|' + callOk;",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts[0], "TypeError", "分离调用（this 无实现槽）须抛 TypeError");
+    assert_eq!(parts[1], "1", "prototype.open.call(xhr,…) 委派生效");
+}
