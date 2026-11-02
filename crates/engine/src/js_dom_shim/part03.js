@@ -2824,7 +2824,17 @@
     if (/;base64/i.test(m[1])) {
       try { raw = atob(raw); } catch (_eSvgB64) { return null; }
     } else {
-      try { raw = decodeURIComponent(raw); } catch (_eSvgDec) {}
+      try { raw = decodeURIComponent(raw); } catch (_eSvgDec) {
+        // s245（html-semantics M2 img SVG 密度族）：WHATWG percent-decode 语义——
+        // 整串 decodeURIComponent 遇单个非法 % 序列即抛（`width='400%'` 的 `%'`），
+        // 全 payload 保持编码态 → `_svgAttr` 空白前置匹配全部落空 → viewBox/
+        // width/height 整体缺席回落 300×150 无 AR（naturalWidth-naturalHeight
+        // percentage+viewBox srcset 克隆 4 面 not-rendered 定谳——srcset 变体把
+        // 空格编码成 %20，百分比 src 携字面 %）。修复 = 非法 %（后随非双 hex）
+        // 转义成 %25 再解码，合法 %XX/多字节 UTF-8 序列路径不变。
+        // https://url.spec.whatwg.org/#percent-decode
+        try { raw = decodeURIComponent(raw.replace(/%(?![0-9A-Fa-f]{2})/g, '%25')); } catch (_eSvgDec2) {}
+      }
     }
     return raw;
   };
