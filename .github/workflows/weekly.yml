@@ -779,12 +779,16 @@ jobs:
     # 计时器外）+ build/fetch ~15min + 余量；time_limit 为 per-suite 限时，
     # job timeout 才是分片硬顶。css-face 三分片语料深挖体量大（每片 ~5–7k
     # 文件顺序拉取 1–1.5h），经 job_timeout 字段单独放宽。
-    timeout-minutes: ${{ matrix.shard.job_timeout || 150 }}
+    # Job 级硬顶 360：GH 对动态矩阵（needs.outputs fromJSON）无法求值依赖
+    # matrix 上下文的 timeout-minutes——表达式存在即整个矩阵零展开、无报错
+    # 直接红（run 41401305431 沙箱二分定谳）。故取静态 360（≥ 手调分片最大
+    # job_timeout 350）；分片真实预算仍由 test-guard per-suite time_limit 与
+    # ci-shards.yml 各分片 job_timeout 记录值约束。
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        # job 名含连字符必须用括号语法取属性（点号不合法 → 矩阵零展开，
-        # run 无失败步骤直接红——41399857011 实证）。
+        # job 名含连字符必须用括号语法取属性（点号不合法 → 矩阵零展开）。
         shard: ${{ fromJSON(needs['discover-shards'].outputs.shards_json) }}
     steps:
       - uses: actions/checkout@v7
