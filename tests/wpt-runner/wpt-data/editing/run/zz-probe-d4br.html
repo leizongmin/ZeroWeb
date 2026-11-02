@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+
+function run(src, tag) {
+  var out = tag + " GOT=" + JSON.stringify(host.innerHTML);
+  try {
+    host.innerHTML = src;
+    var txt = null;
+    (function walk(n) {
+      if (txt || n.nodeType !== 1) return;
+      for (var c = n.firstChild; c; c = c.nextSibling) {
+        if (c.nodeType === 3 && c.data === 'abc') { txt = c; return; }
+        walk(c);
+      }
+    })(host);
+    if (!txt) return tag + " NO-TEXT";
+    var r = document.createRange();
+    r.setStart(txt, 3); r.setEnd(txt, 3);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    document.execCommand("stylewithcss", false, "false");
+    document.execCommand("bold");
+    var qsMid = document.queryCommandState("bold");
+    document.execCommand("insertText", false, "d");
+    out = tag + " GOT=" + JSON.stringify(host.innerHTML)
+      + " qS_mid=" + qsMid
+      + " qS_after=" + document.queryCommandState("bold");
+  } catch (e) { out = tag + " THREW " + e.message; }
+  return out;
+}
+
+var out = [];
+out.push(run("<b>abc<br></b>", "F1"));
+out.push(run("<i><b>abc<br></b></i>", "F2"));
+out.push(run("<i><b>abc</b><br></i>", "F3"));
+out.push(run("<b><i>abc<br></i></b>", "F4"));
+out.push(run("<b><i>abc</i><br></b>", "F5"));
+out.push(run("<b><i>abc<br></i><br></b>", "F6"));
+out.push(run("<b>abc</b>", "CTRL-nobr"));
+
+assert_false(true, out.join(' || '));
+</script>
+</body>

@@ -973,6 +973,7 @@
     if (!ar) return true;
     var snap = _zwVaOverridesTakeRaw();
     var tt = globalThis.__zwTypingTags;
+    var ttoff = globalThis.__zwTypingTagsOff; // D4 显式关账表同快照
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -983,5 +984,6 @@
     if (typeof _zwVaReanchorOverrides === 'function') _zwVaReanchorOverrides();
     _zwVaOverridesPutRaw(snap);
     globalThis.__zwTypingTags = tt;
+    globalThis.__zwTypingTagsOff = ttoff;
     return true;
   };

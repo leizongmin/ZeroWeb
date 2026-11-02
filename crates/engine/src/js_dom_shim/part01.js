@@ -8844,7 +8844,102 @@
       var v = String(sc.nodeValue || '');
       var eo = range.collapsed ? so : (range.endOffset | 0);
       var ttags1 = globalThis.__zwTypingTags;
-      if (ttags1 && ttags1.length) {
+      // D4（2026-11-02 editing-compat）：typing 拆壳重挂——显式 toggle-off 的
+      // tag 仍在 caret 祖先链上时，typed 段不继承该壳（Chrome typing-style
+      // 重挂：语料 `<div><b>abc[]<br></b></div>`+bold+inserttext 期望
+      // `<b>abc</b>d</div>`，in-place 得 `<b>abcd<br></b>` 且 qS-after 反）。
+      // 拆最深 off 壳：尾段 extractContents 摘出；typed 段按壳内非 off 链
+      // 重包裹（`<b><i>abc[]</i></b>` 形期望 `<i>d</i>`）；纯占位尾段（无
+      // 非空文本）丢弃（F2/F3/F5 期望无 br、F1 双期望其一）；嵌套尾段原样
+      // 回挂。FIXME: 嵌套尾段重挂形（F6 期望 `<i>d<br></i><b><br></b>` 全形
+      // —— separator br 与 typed 段同壳合并 + 末占位 br 重挂 off 壳）。
+      var offSplit = null;
+      var toff0 = globalThis.__zwTypingTagsOff;
+      if (range.collapsed && Array.isArray(toff0) && toff0.length) {
+        var nOff = sc.parentNode;
+        var guardOff = 0;
+        while (nOff && nOff !== el && guardOff++ < 256) {
+          if (nOff.nodeType === 1
+              && toff0.indexOf(String(nOff.tagName || '').toLowerCase()) >= 0) {
+            offSplit = nOff; // 最深 off 壳（自内向外首见）
+            break;
+          }
+          nOff = nOff.parentNode;
+        }
+      }
+      if (offSplit) {
+        // 尾段手工摘取（shim Range.extractContents 边界缺口——zz-probe-d4x
+        // X1/X3 实证 start 点后同级内容不迁移）：自 sc 上行至 offSplit，逐级摘
+        // 后兄弟；每级以该容器空壳 clone 承接（保持嵌套上下文形，F6 `<i><br>
+        // </i>` 级），空级不建壳（F5 尾级空 i 消失）。文档序深层在前。
+        sc.nodeValue = v.slice(0, so);
+        var tailSeq = null;
+        var nT = sc;
+        var guardT = 0;
+        while (nT && nT !== offSplit && guardT++ < 256) {
+          var pT = nT.parentNode;
+          var seqT = document.createDocumentFragment();
+          if (tailSeq) seqT.appendChild(tailSeq);
+          var sibT = nT.nextSibling;
+          while (sibT) {
+            var nxT = sibT.nextSibling;
+            // 显式摘除后入 fragment——shim DocumentFragment.appendChild 无移动
+            // 语义（zz-probe-d4x X4：源父 childNodes 不脱钩），依赖隐式 detach
+            // 会使尾段原地滞留（首轮探针 F1/F2/F5 br 未摘根因）。
+            if (sibT.parentNode) sibT.parentNode.removeChild(sibT);
+            seqT.appendChild(sibT);
+            sibT = nxT;
+          }
+          if (pT !== offSplit && pT.nodeType === 1 && seqT.firstChild) {
+            var shellT = pT.cloneNode(false);
+            shellT.appendChild(seqT);
+            tailSeq = shellT;
+          } else {
+            tailSeq = (seqT.firstChild || tailSeq) ? seqT : null;
+          }
+          nT = pT;
+        }
+        // 壳内非 off 链（off 壳到 sc 之间，外→内），typed 段重包裹依据
+        var innerTags = [];
+        (function _zwD4Chain(x) {
+          var chain = [];
+          var n = x;
+          while (n && n !== offSplit && n !== el) {
+            if (n.nodeType === 1
+                && toff0.indexOf(String(n.tagName || '').toLowerCase()) < 0) {
+              chain.push(String(n.tagName || '').toLowerCase());
+            }
+            n = n.parentNode;
+          }
+          for (var ci = chain.length - 1; ci >= 0; ci--) innerTags.push(chain[ci]);
+        })(sc);
+        var twD = innerTags.length ? _zwCeTypingInsert(innerTags, ins) : null;
+        var dEl = twD ? twD.el : document.createTextNode(ins);
+        var dText = twD ? twD.text : dEl;
+        offSplit.parentNode.insertBefore(dEl, offSplit.nextSibling || null);
+        var tailHasText = false;
+        if (tailSeq) (function _zwD4Scan(x) {
+          for (var c = x.firstChild; c; c = c.nextSibling) {
+            if (c.nodeType === 3 && String(c.nodeValue || '') !== '') {
+              tailHasText = true; return;
+            }
+            if (c.nodeType === 1) _zwD4Scan(c);
+          }
+        })(tailSeq);
+        if (tailHasText) {
+          offSplit.parentNode.insertBefore(tailSeq, dEl.nextSibling || null);
+        } else {
+          // 纯占位尾段丢弃（F1/F2/F3/F5 语料期望无 br、F1 双期望其一）；off 壳
+          // 直后的裸 br 占位同消费（F3/F5 形 `<i><b>abc[]</b><br></i>`）。
+          var nxT2 = dEl.nextSibling;
+          if (nxT2 && nxT2.nodeType === 1
+              && String(nxT2.tagName || '').toLowerCase() === 'br') {
+            nxT2.parentNode.removeChild(nxT2);
+          }
+        }
+        node = dText;
+        caretOff = ins.length;
+      } else if (ttags1 && ttags1.length) {
         // typing 包裹（wss/ilb temporary inline style 组）：头段留原节点，插入段
         // 成 inline 包裹元素，尾段成新文本节点。
         sc.nodeValue = v.slice(0, so);

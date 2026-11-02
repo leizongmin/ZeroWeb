@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+var out = [];
+// shim extractContents 基线：(text,3) → (b, childCount)
+try {
+  tc.innerHTML = '<div contenteditable><b>abc<br></b></div>';
+  var host = tc.querySelector('div');
+  var b = host.querySelector('b');
+  var txt = b.firstChild;
+  var r = document.createRange();
+  r.setStart(txt, 3);
+  r.setEnd(b, b.childNodes.length);
+  var f = r.extractContents();
+  out.push("X1 host=" + JSON.stringify(host.innerHTML) + " fragKids=" + f.childNodes.length
+    + " frag0=" + (f.firstChild ? String(f.firstChild.nodeName) + ':' + String(f.firstChild.nodeValue).slice(0,10) : 'null'));
+} catch (e) { out.push("X1 THREW " + e.message); }
+// 变体：end = (b, 1) 显式索引
+try {
+  tc.innerHTML = '<div contenteditable><b>abc<br></b></div>';
+  var host2 = tc.querySelector('div');
+  var b2 = host2.querySelector('b');
+  var txt2 = b2.firstChild;
+  var r2 = document.createRange();
+  r2.setStart(txt2, 3);
+  r2.setEnd(b2, 1);
+  var f2 = r2.extractContents();
+  out.push("X2 host=" + JSON.stringify(host2.innerHTML) + " fragKids=" + f2.childNodes.length);
+} catch (e) { out.push("X2 THREW " + e.message); }
+// 变体：嵌套壳 (text,3) → (outer, len)
+try {
+  tc.innerHTML = '<div contenteditable><i><b>abc<br></b></i></div>';
+  var host3 = tc.querySelector('div');
+  var i3 = host3.querySelector('i');
+  var b3 = host3.querySelector('b');
+  var txt3 = b3.firstChild;
+  var r3 = document.createRange();
+  r3.setStart(txt3, 3);
+  r3.setEnd(i3, i3.childNodes.length);
+  var f3 = r3.extractContents();
+  out.push("X3 host=" + JSON.stringify(host3.innerHTML) + " fragKids=" + f3.childNodes.length
+    + " frag0=" + (f3.firstChild ? String(f3.firstChild.nodeName) : 'null'));
+} catch (e) { out.push("X3 THREW " + e.message); }
+
+// X4: DocumentFragment.appendChild 移动语义——live 节点挂入 fragment 后原父是否脱钩
+try {
+  tc.innerHTML = '<div contenteditable><b>abc<br></b></div>';
+  var b4 = tc.querySelector('b');
+  var br4 = b4.lastChild;
+  var fr4 = document.createDocumentFragment();
+  fr4.appendChild(br4);
+  out.push("X4 bAfter=" + JSON.stringify(b4.innerHTML)
+    + " fragKids=" + fr4.childNodes.length
+    + " brParent=" + (br4.parentNode === b4 ? "still-b" : (br4.parentNode ? String(br4.parentNode.nodeName) : "null")));
+} catch (e) { out.push("X4 THREW " + e.message); }
+// X5: text 节点 nextSibling 基线
+try {
+  tc.innerHTML = '<div contenteditable><b>abc<br></b></div>';
+  var b5 = tc.querySelector('b');
+  var t5 = b5.firstChild;
+  out.push("X5 t5Next=" + (t5.nextSibling ? String(t5.nextSibling.nodeName) : "null"));
+} catch (e) { out.push("X5 THREW " + e.message); }
+
+assert_false(true, out.join(' || '));
+</script>
+</body>

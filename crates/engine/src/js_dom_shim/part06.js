@@ -4362,12 +4362,23 @@
                 try {
                   var ttags = Array.isArray(globalThis.__zwTypingTags)
                     ? globalThis.__zwTypingTags.slice() : [];
+                  // D4（2026-11-02 editing-compat）：显式关账表——caret 在 <tag>
+                  // 上下文内执行 format 命令 = typing 态对该 tag 显式 OFF，typed
+                  // 段不继承该壳（语料 `<div><b>abc[]<br></b></div>`+bold+inserttext
+                  // 期望 `<b>abc</b>d` 形）；state-off 臂撤销。与 ttags 同生命周期
+                  //（_zwSync 清除、delete 包裹快照回写）。
+                  var toff = Array.isArray(globalThis.__zwTypingTagsOff)
+                    ? globalThis.__zwTypingTagsOff.slice() : [];
                   var tat = ttags.indexOf(fmtTag2);
                   // toggle 判定走 DOM-only（gate14 双执行 underline 语义：Chrome
                   // 第二次 collapsed 执行不关 typing 态——qState expected true——
                   // ttags fallback 只进 qState 读面，不进臂内判定）。
-                  if (_zwQueryFormatStateDom(cmd)) { if (tat >= 0) ttags.splice(tat, 1); }
-                  else {
+                  if (_zwQueryFormatStateDom(cmd)) {
+                    if (tat >= 0) ttags.splice(tat, 1);
+                    if (toff.indexOf(fmtTag2) < 0) toff.push(fmtTag2);
+                  } else {
+                    var tatOff = toff.indexOf(fmtTag2);
+                    if (tatOff >= 0) toff.splice(tatOff, 1);
                     // sub/sup 互斥（spec subscript/superscript action 先关对侧；
                     // multitest `[["superscript",""],["subscript",""],
                     // ["inserttext","a"]]` expected `foo<sub>a</sub>bar` 实证）。
@@ -4379,6 +4390,7 @@
                     if (tat < 0) ttags.push(fmtTag2);
                   }
                   globalThis.__zwTypingTags = ttags;
+                  globalThis.__zwTypingTagsOff = toff;
                 } catch (_eTt) {}
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
@@ -10353,6 +10365,7 @@
       // setupEditingHost 每 case 走 removeAllRanges/addRange）。内部 typing 重锚
       // 走 `_ranges` 直接赋值不经此，state 存活到下一显式变更。
       globalThis.__zwTypingTags = null;
+      globalThis.__zwTypingTagsOff = null; // D4 显式关账表同生命周期
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）

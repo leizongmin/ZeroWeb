@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<body>
+<div id="test-container"></div>
+<script>
+"use strict";
+var tc = document.getElementById('test-container');
+tc.innerHTML = "<div contenteditable></div>";
+var host = document.querySelector("div[contenteditable]");
+var out = [];
+// F3 分步：DOM 与选区在每步后的快照
+try {
+  host.innerHTML = "<i><b>abc</b><br></i>";
+  var txt = null;
+  (function walk(n) {
+    if (txt || n.nodeType !== 1) return;
+    for (var c = n.firstChild; c; c = c.nextSibling) {
+      if (c.nodeType === 3 && c.data === 'abc') { txt = c; return; }
+      walk(c);
+    }
+  })(host);
+  var r = document.createRange();
+  r.setStart(txt, 3); r.setEnd(txt, 3);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  function sel() {
+    return (getSelection().anchorNode === txt ? "txt" : String(getSelection().anchorNode && getSelection().anchorNode.nodeName)) + "@" + getSelection().anchorOffset;
+  }
+  out.push("S0sel=" + sel() + " S0dom=" + JSON.stringify(host.innerHTML) + " toff0=" + JSON.stringify(globalThis.__zwTypingTagsOff) + " tt=" + JSON.stringify(globalThis.__zwTypingTags));
+  document.execCommand("stylewithcss", false, "false");
+  out.push("S1swc sel=" + sel() + " dom=" + JSON.stringify(host.innerHTML));
+  document.execCommand("bold");
+  out.push("S2bold sel=" + sel() + " dom=" + JSON.stringify(host.innerHTML) + " qS=" + document.queryCommandState("bold") + " toff=" + JSON.stringify(globalThis.__zwTypingTagsOff) + " tt=" + JSON.stringify(globalThis.__zwTypingTags));
+  document.execCommand("insertText", false, "d");
+  out.push("S3it sel=" + sel() + " dom=" + JSON.stringify(host.innerHTML) + " DBG=" + String(globalThis.__zwD4Dbg));
+} catch (e) { out.push("THREW " + e.message); }
+assert_false(true, out.join(' || '));
+</script>
+</body>
