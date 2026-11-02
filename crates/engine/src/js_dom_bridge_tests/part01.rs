@@ -296,6 +296,22 @@ fn test_parent_selector_for_nested() {
 }
 
 #[test]
+fn test_parent_selector_for_root_doc_elem_pinned_bare() {
+    // R5385（reftest caret-eol ×4）：父是根元素时返 shim 钉死的裸名键 `html`——
+    // 根带 id/class 时 unique_selector_for_node 落 `html.foo` 式第二键，该键错过
+    // `_parentNodeFor` 的 document 跳特例且无元素父，parentNode 链在 html→document
+    // 跳断链（document.contains false → Selection in-doc 门 no-op）。body 自身带
+    // id/class 的寻址同被收敛（判定在「父是根」侧）。
+    let html = "<html class=\"foo\"><body id=\"bd\"><div id=\"t\">x</div></body></html>";
+    // body 的父是根 → 裸名 `html`（非 class 锚定的 `html.foo`）。
+    assert_eq!(parent_selector_for(html, "#bd"), "html", "根的子父键钉裸名 html");
+    // div（父 body 非 root）仍走 unique_selector_for_node（body 带 id → `#bd`）。
+    assert_eq!(parent_selector_for(html, "#t"), "#bd", "非根父走原 canonical");
+    // 根自身查询仍无元素父（原契约不变）。
+    assert_eq!(parent_selector_for(html, "html.foo"), "", "根仍无元素父");
+}
+
+#[test]
 fn text_query_includes_pending_appended_child() {
     let mutations = vec![
         DomMutation::CreateElement {

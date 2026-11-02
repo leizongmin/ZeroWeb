@@ -257,6 +257,19 @@ pub fn parent_selector_for_doc(doc: &Document, elem_sel: &str) -> String {
     };
     element_parent(doc, node)
         .and_then(|p| {
+            // R5385（reftest caret-eol ×4）：父是根元素（`<html>`，parent 链直达 doc
+            // root）→ 返 shim 钉死的裸名规范键 `html`。shim 侧 documentElement 恒
+            // `_wrapSelector('html')`（part06 document 常量）、`_parentNodeFor` 的
+            // document 跳（html.parentNode = document）特例亦只认裸名 `html`；id/class
+            // 锚存续时 [`unique_selector_for_node`] 会把根落成 `html.foo` 式第二键——
+            // 该键无元素父（`__zw_parent` 对根返空串）且错过裸名特例，父链在
+            // html→document 跳断链（html.parentNode null → document.contains false →
+            // Selection in-doc 门 no-op）。body/head 自身带 id/class 的寻址同被本门
+            // 收敛（判定在「父是根」侧，与子的寻址形态无关）。
+            let p_is_doc_elem = doc.get(p).is_some_and(|n| n.parent == Some(doc.root()));
+            if p_is_doc_elem {
+                return Some(String::from("html"));
+            }
             // s176：父是 shadow 内容（封装查询门使 [`unique_selector_for_node`] 恒
             // None——slot.parentNode === dialog 面）→ compound 定位选择器回落（与
             // s176 读写通道同命名空间，[`find_by_selector`] 单漏斗可解析）。嵌套
