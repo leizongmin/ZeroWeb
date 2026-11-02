@@ -4329,6 +4329,9 @@ pub(crate) fn remeasure_inline_only_containers(
         // kill-switch `ZW_IB_CRUSH_PREHEAL=0` 回退。
         static CRUSH_PREHEAL: std::sync::LazyLock<bool> =
             std::sync::LazyLock::new(|| std::env::var("ZW_IB_CRUSH_PREHEAL").as_deref() != Ok("0"));
+        // r2：部分塌陷形（② 见下）独立回退——`=0` 只关扩展臂，保留 r1 纯文本臂。
+        static CRUSH_PREHEAL_PARTIAL: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_IB_CRUSH_PREHEAL_PARTIAL").as_deref() != Ok("0"));
         if *CRUSH_PREHEAL {
             let container_has_text = doc.child_nodes(dom_id).into_iter().any(|c| {
                 doc.get(c)
@@ -4348,9 +4351,33 @@ pub(crate) fn remeasure_inline_only_containers(
                                 | DisplayValue::InlineTable
                         )
                     });
+                    // 塌陷伪影 = 子盒高未由自身文本行产生（CSS2 §10.8 行盒至少含自身
+                    // strut；§10.6.7 inline-block auto 高 = 内容行盒高）。两形：
+                    // ① 纯文本形压成 frame（ch≈0；r1 臂）；
+                    // ② r2 部分塌陷形：子树含原子装饰子（如 width:0/height:0 + 边框的
+                    //    inline-block 装饰）时，① 源头的「in-flow LayoutBox 子 max bottom」
+                    //    重算把 ch 锚在原子子底（实测 ≥1）——r1 的 ch<1.0 门漏，父臂
+                    //    ib_sizes 读塌值。判定扩为 ch < 自身行高 strut 且子树有文本
+                    //   （R5215 同源口径）——「缺自身文本行」签名；健康单行盒 ch =
+                    //    line-height = strut 不触发，多行/更大字体行 ch > strut 不触发，
+                    //    纯图标/真空盒不动。kill-switch `ZW_IB_CRUSH_PREHEAL_PARTIAL=0`。
+                    let crushed_frame = child.content_height < 1.0;
+                    let crushed_partial = !crushed_frame
+                        && *CRUSH_PREHEAL_PARTIAL
+                        && child.content_height
+                            < styles
+                                .get(&child_id)
+                                .map(|s| {
+                                    let (_, lh) = crate::inline::resolve_font_metrics_with_provider(
+                                        Some(s),
+                                        inline_fonts.metric_provider,
+                                    );
+                                    lh.max(0.5)
+                                })
+                                .unwrap_or(0.0)
+                        && r5215_atomic_subtree_has_text(doc, child_id);
                     if !atomic_family
-                        // 塌陷伪影 = content_height ≈ 0（taffy 正常盒/定高盒不动）。
-                        || child.content_height >= 1.0
+                        || !(crushed_frame || crushed_partial)
                         // 声明 height:auto 才是重算受害者（definite 高盒不动，§10.5）。
                         || !styles.get(&child_id).is_some_and(|s| matches!(s.height, LengthValue::Auto))
                         // 真空盒 frame-only 是正确值（无 inline 内容可测）。

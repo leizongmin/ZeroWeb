@@ -158,3 +158,40 @@ fn crush_preheal_flex_row_details_live_composition() {
         assert_healed(details, summary, &format!("flex details[{i}]"));
     }
 }
+
+/// r2（t-fup-trending-filter-flex 活体 settled 未愈）：summary 子树含原子装饰子
+/// 时 pre-heal 门未命中的最小形。原子装饰子 = inline-block width:0 height:0 +
+/// 2px 边框（镜像站点下拉 caret ::after 的共享语义形态）：① 源头的「in-flow
+/// LayoutBox 子 max bottom」重算把 summary content_height 锚在装饰子底（≈4 ≥1）
+/// ——r1 的 ch<1.0 门漏 → 父臂 ib_sizes 读塌值 → details 塌 10 而 summary 自愈。
+/// r2 扩展臂（ch < 自身行高 strut 且子树有文本）命中 → 预愈 → details 与 summary
+/// 同高。kill-switch `ZW_IB_CRUSH_PREHEAL_PARTIAL=0` 回退塌陷基线。
+#[test]
+fn crush_preheal_partial_crush_atomic_decor_child_not_crushed() {
+    let html = r#"<html><body style="margin:0;font:14px sans-serif">
+<details><summary style="display:inline-block;padding:3px 8px">Spoken Language: Any<span style="display:inline-block;width:0;height:0;border:2px solid #000;border-bottom-color:transparent;border-left-color:transparent;border-right-color:transparent"></span></summary></details>
+</body></html>"#;
+    let (doc, result) = layout(html);
+    let (_, details) = first_tag(&doc, &result.root, "details");
+    let (_, summary) = first_tag(&doc, &result.root, "summary");
+    assert_healed(details, summary, "r2 details>summary(原子装饰子)");
+}
+
+/// r2 对照：summary 仅含原子装饰子、**无文本**（子树无文本）——扩展臂的子树文本
+/// 守护域不扩（纯图标/真空盒的 frame 高是可测正确值，不进预愈）。details 保持
+/// 塌陷 frame 高（content_height < 一整行 16），证明扩展臂由「子树有文本」门限
+/// 定、非对所有原子子触发。
+#[test]
+fn crush_preheal_partial_crush_no_subtree_text_control_stays_frame() {
+    let html = r#"<html><body style="margin:0;font:14px sans-serif">
+<details><summary style="display:inline-block;padding:3px 8px"><span style="display:inline-block;width:0;height:0;border:2px solid #000;border-bottom-color:transparent;border-left-color:transparent;border-right-color:transparent"></span></summary></details>
+</body></html>"#;
+    let (_, result) = layout(html);
+    let doc = zero_dom::parse_html(html);
+    let (_, details) = first_tag(&doc, &result.root, "details");
+    assert!(
+        details.content_height < 16.0,
+        "对照：无文本 summary 不进扩展臂，details 应保持塌陷 frame 高（<16），实际 {}",
+        details.content_height
+    );
+}
