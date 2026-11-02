@@ -327,3 +327,8 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   r5 全量对 m2s5 锚再证 **逐位 CLEAN**（总账同 r4），runner 单测
   276P/0F，对照基准维持；零代码触面无碰撞。D1 飞书线三核无回复
   （chat 顶仍 pos 851 全 bot 通知，维持不重复催办）。
+- 2026-11-02 复验续轮 3：补上轮挂账 `064dbbeca`（media-host seccomp/
+  landlock fail-closed 沙箱——进程级沙箱触 media host 二进制，runner
+  进程树不经其面）；r6 全量对 m2s5 锚再证 **逐位 CLEAN**（62B 文件差
+  为同 status 消息文本噪声，diff 正确不计），runner 单测 276P/0F，
+  对照基准维持；零代码触面无碰撞。D1 飞书线四核无回复。
