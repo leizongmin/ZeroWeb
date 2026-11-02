@@ -4253,8 +4253,9 @@
   // 不双执行。prepare 拒绝（type 非法/体空/未连接）不置记账——144 形「先
   // textContent=（type 仍 text/plain 拒绝）后 type=""（重触发）」的臂序依赖此。
   // FIXME: 内联编译失败的元素 error 事件派发未做（spec 派 error，现仅上报
-  // window.onerror 面）；module 型动态 prepare 未建模（type 门直接拒绝，不置
-  // 记账）；detached 子树整体的「becomes connected」祖先插入面未挂（addedNodes
+  // window.onerror 面）；s250：module 型动态 prepare 已接（src 形经
+  // _zwPrepareSrcScriptGate module 分支、内联形经下方 module 臂）；detached 子树
+  // 整体的「becomes connected」祖先插入面未挂（addedNodes
   // 臂只看 SCRIPT 节点自身）。
   // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
   // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
@@ -4343,12 +4344,12 @@
       // type/language 门（s113：spec type string 推导 + essence 16 集合，见
       // _zwScriptTypeClassify——旧 indexOf('javascript') 子串放行 bare/javascript1.8/
       // \0 非法 type、language 未建模，script-type-and-language-js 动态 226 缺口）。
-      // blocked 不执行不置 run-once；module 走模块管线不在此面（FIXME 同上）。
-      try { if (_zwScriptTypeClassify(el) === 'blocked') return; } catch (_eTy113m) {}
-      var ty = '';
-      try { ty = el.getAttribute('type'); } catch (_eT109) {}
-      ty = String(ty == null ? '' : ty).trim().toLowerCase();
-      if (ty.indexOf('module') >= 0) return;
+      // blocked 不执行不置 run-once。s250：module 型不再直接拒绝（s109 FIXME
+      // 收口）——src 形落入下方 src 臂经 _zwPrepareSrcScript（gate 内 module
+      // 分支），内联形落入下方内联 module 分支。
+      var _cls109 = '';
+      try { _cls109 = _zwScriptTypeClassify(el); } catch (_eTy113m) {}
+      if (_cls109 === 'blocked') return;
       // nomodule 门（s95/R387 同口径；上行已拒 module 型，nomodule 在场即中止）。
       var _nm109 = false;
       try { _nm109 = !!(el.hasAttribute && el.hasAttribute('nomodule')); } catch (_eN109) {}
@@ -4402,6 +4403,66 @@
         try { text = String(el.textContent || ''); } catch (_eTc109) {}
       }
       if (String(text).trim() === '') return;
+      // s250：内联 module prepare（s109 FIXME 收口）——spec 内联模块无取回、不
+      // fire load/error（text-module/load-error-events.html inline 臂判据）。依赖
+      // 图编译经宿主 __zw_compile_inline_module 四态契约（webview s250 注册）：
+      // ①空 → 元素 error（依赖图取回失败，网络错误语义）；②"1\\u001f" → load
+      //（specifier 解析失败，静态面 ② 同判——window TypeError 报告动态面未建模
+      // FIXME）；③"2\\u001f<msg>" → window 报告 + load（属性校验违例，s105 同判
+      // ——报告 ctor 保真 FIXME）；④成功 → eval 体、无事件，求值抛错 → window
+      // 报告（模块运行期错误面，元素不派事件）。run-once 记账先行（spec
+      // already-started prepare 置位）。事件 setTimeout 异步派发（spec 事件语义）。
+      // __zwHostDynamicScripts 让位（renderer 宿主通路面，R387b 同语义）。
+      if (_cls109 === 'module') {
+        if (globalThis.__zwHostDynamicScripts
+            || typeof globalThis.__zw_compile_inline_module !== 'function') return;
+        if (_sel109 != null) {
+          (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
+        } else if (_hdl109 != null) {
+          (globalThis._zwRanScripts = globalThis._zwRanScripts || {})[_hdl109] = true;
+        }
+        var _miBase250 = (typeof globalThis._zwDocBaseURL === 'function')
+          ? globalThis._zwDocBaseURL()
+          : ((globalThis.location && globalThis.location.href) || 'about:blank');
+        var _miR250 = '';
+        try {
+          _miR250 = String(globalThis.__zw_compile_inline_module(String(text), _miBase250) || '');
+        } catch (_eMiC250) {}
+        var _miEl250 = el;
+        if (_miR250 === '') {
+          setTimeout(function () {
+            try { _miEl250.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+              ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eMiE250) {}
+          }, 0);
+          return;
+        }
+        var _miSep250 = _miR250.indexOf('\u001f');
+        var _miTag250 = _miSep250 >= 0 ? _miR250.slice(0, _miSep250) : '';
+        var _miCode250 = _miSep250 >= 0 ? _miR250.slice(_miSep250 + 1) : _miR250;
+        if (_miTag250 === '2') {
+          if (typeof globalThis._zwReportListenerError === 'function') {
+            try { globalThis._zwReportListenerError(new SyntaxError(_miCode250), null); } catch (_eMiA250) {}
+          }
+          setTimeout(function () {
+            try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL250) {}
+          }, 0);
+          return;
+        }
+        if (_miTag250 === '1' && _miCode250 === '') {
+          setTimeout(function () {
+            try { _miEl250.dispatchEvent(new Event('load')); } catch (_eMiL2b250) {}
+          }, 0);
+          return;
+        }
+        try {
+          (function () { return eval('(' + _miCode250 + ')'); })();
+        } catch (_miEv250) {
+          if (typeof globalThis._zwReportListenerError === 'function') {
+            try { globalThis._zwReportListenerError(_miEv250, null); } catch (_eMiR250) {}
+          }
+        }
+        return;
+      }
       // 调用点同步 eval（124 形期望序要求嵌套执行发生在 removeAttribute 调用内）
       // + 异常上报（s95 同款 window.onerror 面）+ 执行即置 run-once。
       try {
@@ -4636,10 +4697,105 @@
       try { forev = _zwScriptForevBlocked(child); } catch (_eS96fe) {}
       if (forev) return false;
       // s113：type/language 门——blocked（data block：非法 type/language）不发起
-      // 取回、不置 run-once（摘属性重走门）；module 型沿用既有通道照旧。
-      try { if (_zwScriptTypeClassify(child) === 'blocked') return false; } catch (_eTy113g) {}
+      // 取回、不置 run-once（摘属性重走门）。s250：module 型改走模块管线分支
+      //（旧「沿用既有通道」= classic fetch+eval——import 声明 SyntaxError、依赖
+      // 图不闭合；module/load-error-events 动态 src 臂 + css/json/text 三目录
+      // test3 臂判据面）。
+      var _tyCls250 = '';
+      try { _tyCls250 = _zwScriptTypeClassify(child); } catch (_eTy113g) {}
+      if (_tyCls250 === 'blocked') return false;
       var url = '';
       try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
+      // s250：module 型动态 src prepare——宿主 __zw_compile_module 三态契约
+      //（s87 ①②③ 同源），取回编译 setTimeout 延迟（classic 取回时序同形——
+      // load-after-execution 交错断言面；s124 modulepreload 同步取回先例不適
+      // 用），编译体经 classic 通道执行器/队列执行（_zwExecuteFetchedScript
+      // 换 referrer/base 槽位——模块体 import() 解析基 = 模块自身 URL，
+      // string-compilation-base-url-external-module 判据）、事件派发由执行器
+      // 收尾（spec 事件异步语义 + post-assign handler 可见性）。
+      // ①空契约 → error（顶层取回失败，trusted）；②空码 → load（specifier
+      // 解析失败，静态面 ② 同判——window TypeError 报告动态面未建模 FIXME）；
+      // ③成功 → 体 eval、求值抛错 → window 报告仍 load（模块运行期错误面，
+      // s102 同判；队列深层抛错归因不保 FIXME）。async=false 复用 in-order
+      // FIFO——队位取调用时刻（spec list 位次 = 插入序），ready 置位在延迟
+      // 编译尾（execorder dynamic async-ordered 判据）。缓存直写移除：同一
+      // URL 的 script 元素插入与 import() 模块记录独立（spec 每元素新记录），
+      // __zw_load_module 按需自取回。__zwHostDynamicScripts 让位（renderer
+      // 宿主通路面，R387b 同语义——宿主通路动态 module 面维持旧态）。
+      if (_tyCls250 === 'module') {
+        if (globalThis.__zwHostDynamicScripts
+            || typeof globalThis.__zw_compile_module !== 'function' || !url) return false;
+        if (_gwHdl != null) {
+          globalThis._zwRanScripts = globalThis._zwRanScripts || {};
+          globalThis._zwRanScripts[_gwHdl] = true;
+        } else {
+          globalThis._zwScriptStarted = globalThis._zwScriptStarted || {};
+          globalThis._zwScriptStarted[_gwSel] = true;
+        }
+        // s110 队列分支判定同口径（async 属性 / force-async 表）。
+        var _faAsyncQueue250 = true;
+        try {
+          var _faKey250 = _elKey(child.__zwSelector, child.__zwHandle);
+          _faAsyncQueue250 = !!(child.hasAttribute && child.hasAttribute('async'))
+            || !(globalThis._zwScriptForceAsync && _faKey250 != null
+              && globalThis._zwScriptForceAsync[_faKey250] === false);
+        } catch (_eS110q250) {}
+        var _msEntry250 = _faAsyncQueue250 ? null
+          : { ready: false, failed: false, code: '', url: url, el: child, cb: _zwOnRan };
+        if (_msEntry250) {
+          if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
+          globalThis._zwInOrderScriptQueue.push(_msEntry250);
+        }
+        var _msBase250 = (typeof globalThis._zwDocBaseURL === 'function')
+          ? globalThis._zwDocBaseURL()
+          : ((globalThis.location && globalThis.location.href) || 'about:blank');
+        var _msUrl250 = url;
+        var _msEl250 = child;
+        setTimeout(function () {
+          var _msR250 = '';
+          try {
+            _msR250 = String(globalThis.__zw_compile_module(_msUrl250, _msBase250, '') || '');
+          } catch (_eMsC250) {}
+          if (!_msR250) {
+            if (_msEntry250) {
+              _msEntry250.failed = true;
+              _msEntry250.ready = true;
+              globalThis._zwDrainInOrderScriptQueue();
+            } else {
+              try { _msEl250.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+                ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eMsE250) {}
+            }
+            return;
+          }
+          var _msSep250 = _msR250.indexOf('\u001f');
+          var _msCode250 = _msSep250 >= 0 ? _msR250.slice(_msSep250 + 1) : _msR250;
+          if (_msSep250 >= 0 && _msCode250 === '') {
+            // specifier 解析失败 → load（空码经执行器即仅派 load，队列/直执同形）。
+            if (_msEntry250) {
+              _msEntry250.ready = true;
+              globalThis._zwDrainInOrderScriptQueue();
+            } else {
+              try { _msEl250.dispatchEvent(new Event('load')); } catch (_eMsL250) {}
+            }
+            return;
+          }
+          if (_msEntry250) {
+            _msEntry250.ready = true;
+            _msEntry250.code = _msCode250;
+            globalThis._zwDrainInOrderScriptQueue();
+            return;
+          }
+          try {
+            globalThis._zwExecuteFetchedScript(_msUrl250, _msEl250, _msCode250, _zwOnRan);
+          } catch (_eMsRun250) {
+            if (typeof globalThis._zwReportListenerError === 'function') {
+              try { globalThis._zwReportListenerError(_eMsRun250, null); } catch (_eMsRp250) {}
+            }
+            try { _msEl250.dispatchEvent(new Event('load')); } catch (_eMsL2b250) {}
+          }
+        }, 0);
+        return true;
+      }
       if (!url || typeof fetch !== 'function'
           || globalThis.__zwHostOwnsDynamicScripts === true) return false;
       // s110：run-once 记账按身份形态分表（上方门读同口径）——handle 形走

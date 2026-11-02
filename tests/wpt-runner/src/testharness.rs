@@ -5255,7 +5255,8 @@ fn wpt_data_script_fetcher(
         // MIME 派生序（wptserve 语义）：serve-with-content-type.py 的 `ct` 查询 →
         // `pipe=header(Content-Type,…)` → `.headers` sidecar → 扩展名规范映射
         //（.css→text/css、.txt→text/plain）。type↔MIME 匹配校验（HTML module type
-        // map：css←text/css、text←text/plain）——不匹配 → Err（网络错误语义，
+        // map：css←text/css；s250：text 型 spec 无 MIME 校验，见下方匹配处）——
+        // 不匹配 → Err（网络错误语义，
         // content-type-checking ct=application/css 臂判据）。命中交付文件原文
         //（UTF-8 lossy——模块响应体恒 UTF-8 解码口径，charset 参数/BOM 嗅探未建模
         // 挂账）。重定向跟随：`/common/redirect.py?location=T`（wptserve 302 语义，
@@ -5353,9 +5354,15 @@ fn wpt_data_script_fetcher(
                 (hop_clean.clone(), mime)
             };
             let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+            // s250：text 型**无 MIME essence 校验**——spec fetch a single module script
+            // step 7 仅对 css（text/css）/json（JSON MIME type）/js（JavaScript MIME
+            // type）校验响应 MIME，「moduleType 为 text → 无条件创建 text module
+            // script」；上游 text-module/ignore-content-type.any.js 同判据（裸 `file`
+            // 语料 wptserve 实测 application/octet-stream 仍可 import）。误校验会把
+            // integrity.html matches 臂（import "./file" with type:text）打成网络错。
             let matched = match mtype {
                 "css" => essence == "text/css",
-                _ => essence == "text/plain",
+                _ => true,
             };
             if !matched {
                 return Err(format!("data module MIME mismatch for {mtype}: {file_rel} ({mime})"));
@@ -5383,6 +5390,55 @@ fn wpt_data_script_fetcher(
                     .map_err(|e| format!("script fetch failed: {file_rel} ({e})"));
             }
             return Err(format!("non-scripty MIME for script fixture: {file_rel} ({mime})"));
+        }
+        // s250：load-error-events.py 动态端点仿真（上游 wptserve handler 不在语料，
+        // 同 serve-with-content-type.py 口径）——load-error-events 四页（module/ 走
+        // resources/ 素模块风味；css/json/text 三目录各有数据模块风味）的 src 臂
+        // 判据源：`test` 查询参数决定交付体——`*_load` 臂 200 + 单行 module 源
+        //（import 数据模块成功后置 `<test>.executed = true`），`*_error` 臂 200 +
+        // import 404 目标（本体不 404——error 由**内部 import 取回失败**触发，元素
+        // 体不执行）；素模块风味 `*_error` 直接 404（上游 return status, … 字面）。
+        // test 名校验 `^[a-zA-Z0-9_]+$` 与上游 assert(re.match(...)) 同口径，违例 →
+        // Err（500 语义）。三风味数据模块体逐字镜像上游（import 目标/属性字面）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        if std::path::Path::new(clean).file_name() == Some(std::ffi::OsStr::new("load-error-events.py")) {
+            let test = src
+                .split('?')
+                .nth(1)
+                .unwrap_or("")
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("test="))
+                .unwrap_or("");
+            if test.is_empty() || !test.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                return Err(format!("load-error-events.py bad test param: {src}"));
+            }
+            let unreached =
+                format!("{test}.test.step(function() {{ assert_unreached(\"404 script should not be executed\"); }});");
+            let body = if clean.contains("text-module/load-error-events.py") {
+                if test.contains("_load") {
+                    format!("import \"./file.txt\" with {{ type: \"text\"}}; {test}.executed = true;")
+                } else {
+                    format!("import \"./not_found.txt\" with {{ type: \"text\"}}; {unreached}")
+                }
+            } else if clean.contains("json-module/load-error-events.py") {
+                if test.contains("_load") {
+                    format!("import \"./module.json\" with {{ type: \"json\"}}; {test}.executed = true;")
+                } else {
+                    format!("import \"./not_found.json\" with {{ type: \"json\"}}; {unreached}")
+                }
+            } else if clean.contains("css-module/") {
+                if test.contains("_load") {
+                    format!("import \"./basic.css\" with {{ type: \"css\"}}; {test}.executed = true;")
+                } else {
+                    format!("import \"./not_found.css\" with {{ type: \"css\"}}; {unreached}")
+                }
+            } else if test.contains("_load") {
+                format!("\"use strict\"; {test}.executed = true;")
+            } else {
+                // 素模块风味（the-script-element/resources/）：`*_error` 本体 404。
+                return Err(format!("load-error-events.py 404 fixture: {src}"));
+            };
+            return Ok(body);
         }
         // s116：referrer-checker.py 动态端点仿真（上游 wptserve handler 不在语料——
         // `request.headers.referer` → `export const referrer = '<Referer>';`）。仅
@@ -10393,10 +10449,25 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                         normalize_relative(&format!("{case_dir}/{rel}"))
                     }
                 };
+                // s250：module 型判定上移（s115 面复用）——module 外链不进 s100 内联投递
+                // 面：s100 体语义是经典脚本形状（200 执行体 + document.currentScript
+                // 投递尾），module 单元 currentScript 恒 null（spec currentScript getter
+                // 对 module script 返 null）→ load/error 投递尾静默空转，load-error-events
+                // module/ 变体静态 src 臂全批 pending 页面 Timeout（s250 probe 实证）。
+                // module 面维持外链 → 引擎静态模块链 + fetcher 端点臂按 module 语义回
+                // 体/404（load-error-events.py 四风味臂），事件由引擎原生模块机制派发。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+                let is_module_type = zero_engine::attr_from_open_tag(open, "type")
+                    .as_deref()
+                    .map(|t| {
+                        t.trim_matches(|c| matches!(c, '\t' | '\n' | '\x0C' | '\r' | ' '))
+                            .eq_ignore_ascii_case("module")
+                    })
+                    .unwrap_or(false);
                 // s100：load-error-events.py fixture——CGI 端点不在语料 pull 面，按查询串
                 // 仿真服务（wpt_load_error_events_response）；非 200 状态脚本体不执行（error
                 // 事件面），与上游 404 脚本不执行语义一致。
-                if combined == WPT_LOAD_ERROR_EVENTS_PY {
+                if !is_module_type && combined == WPT_LOAD_ERROR_EVENTS_PY {
                     let (status, body) = wpt_load_error_events_response(src_query);
                     return Some((combined, status, body));
                 }
@@ -10410,13 +10481,6 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 // wpt_data_script_fetcher（charset 感知内联会反向翻绿为红——首版乌龙）。
                 // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
                 // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-                let is_module_type = zero_engine::attr_from_open_tag(open, "type")
-                    .as_deref()
-                    .map(|t| {
-                        t.trim_matches(|c| matches!(c, '\t' | '\n' | '\x0C' | '\r' | ' '))
-                            .eq_ignore_ascii_case("module")
-                    })
-                    .unwrap_or(false);
                 if !is_module_type
                     && std::path::Path::new(&combined)
                         .file_name()
@@ -12692,6 +12756,60 @@ mod tests {
         // 无标记的 .css 维持非 scripty Err（零回归面）
         let bare = fetcher(page, "./resources/basic.css");
         assert!(bare.is_err(), "无标记 css 仍拒: {bare:?}");
+    }
+
+    // s250：text 数据模块无 MIME 校验（spec step 7 无条件创建 text module
+    // script）——无扩展名语料 `file`（wptserve 实测 octet-stream）带标记取回
+    // Ok；integrity.html matches 臂判据源。
+    #[test]
+    fn script_fetcher_text_module_mime_agnostic_s250() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let fetcher = wpt_data_script_fetcher(&root, None).expect("fetcher");
+        let page = "http://wpt.test/html/semantics/scripting-1/the-script-element/text-module/integrity.html";
+        let text = fetcher(page, "./file?__zw_mtype=text");
+        assert!(text.is_ok(), "无扩展名 text 模块取回: {text:?}");
+        assert_eq!(text.as_ref().unwrap().trim_end(), "text file", "原文交付");
+    }
+
+    // s250：load-error-events.py 四风味端点——text `_load` 体镜像 + 素模块风味
+    // `*_error` 本体 404（Err）；test 名非法 → Err。
+    #[test]
+    fn script_fetcher_load_error_events_endpoint_s250() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let fetcher = wpt_data_script_fetcher(&root, None).expect("fetcher");
+        let base = "http://wpt.test/html/semantics/scripting-1/the-script-element";
+        let load = fetcher(
+            &format!("{base}/text-module/load-error-events.html"),
+            "./load-error-events.py?test=test2_load",
+        );
+        assert!(load.is_ok(), "text _load 臂: {load:?}");
+        assert!(
+            load.as_ref().unwrap().starts_with("import \"./file.txt\" with"),
+            "text _load 体镜像: {load:?}"
+        );
+        let err_arm = fetcher(
+            &format!("{base}/text-module/load-error-events.html"),
+            "./load-error-events.py?test=test2_error",
+        );
+        assert!(err_arm.is_ok(), "text _error 臂 200（内部 import 落 404）: {err_arm:?}");
+        assert!(err_arm.as_ref().unwrap().contains("not_found.txt"), "镜像目标");
+        // 素模块风味（module/ 页面 ../resources/ 路径）：_error 本体 404。
+        let plain_err = fetcher(
+            &format!("{base}/module/load-error-events.html"),
+            "../resources/load-error-events.py?test=test1_error",
+        );
+        assert!(plain_err.is_err(), "素模块 _error 臂 404: {plain_err:?}");
+        let plain_load = fetcher(
+            &format!("{base}/module/load-error-events.html"),
+            "../resources/load-error-events.py?test=test1_load",
+        );
+        assert!(plain_load.is_ok(), "素模块 _load 臂: {plain_load:?}");
+        // test 名非法（上游 assert(re.match) 违例 → 500 语义）。
+        let bad = fetcher(
+            &format!("{base}/text-module/load-error-events.html"),
+            "./load-error-events.py?test=bad-name",
+        );
+        assert!(bad.is_err(), "非法 test 名: {bad:?}");
     }
 
     // encoding-legacy-mb DC-4 回归钉：sniff 1024 字节窗截断须落在 char

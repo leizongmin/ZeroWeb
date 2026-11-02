@@ -67,6 +67,11 @@
 #     错误 → 三条断言（load 应用/重复 import 同一对象/URL 与终点分 map 条目）
 #     永假；已从上游 wpt 同路径原件本地补入 3 行 CSS（load-relative-url.css
 #     经核与上游一致未动）——升级新 ref 后需重新补）
+#   - html/semantics/scripting-1/the-script-element/text-module/file 缺失
+#     （integrity.html matches 臂依赖——`import text from "./file" with
+#     { type: "text" }`；s250 勘根定性为语料缺口：fetch 按扩展名过滤漏收
+#     无扩展名文件 → 404 → matchesLog 空；已从上游 wpt 同路径原件本地补入
+#     10 字节 `text file\n`——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

@@ -4143,6 +4143,8 @@ impl WebView {
         if let Some(fetcher) = self.script_source_fetcher.clone() {
             let fetcher_compile = fetcher.clone();
             let fetcher_native_import = fetcher.clone();
+            // s250：__zw_compile_inline_module（动态内联 module prepare）第三消费方。
+            let fetcher_inline_module = fetcher.clone();
             sandbox.register_callback(
                 "__zw_fetch_script",
                 Box::new(move |args| {
@@ -4215,6 +4217,61 @@ impl WebView {
                     )
                 },
             ));
+            // s250：__zw_compile_inline_module（动态内联 module prepare）——shim 动态
+            // 插入 type=module 内联脚本（s109 FIXME 收口）按静态面同链编译：属性校验
+            //（s105）→ 静态 import 收集（s107 带属性）→ 依赖图递归（is_dep=true，s103
+            // 失败分类）→ 入口 IIFE。契约四态（\u{1f} 分隔，shim 按态分派事件）：
+            //   ""               依赖图取回失败（网络错误 → 元素 fire error）
+            //   "1\u{1f}"        依赖 specifier 解析失败（静态面 ② 同判——元素 fire
+            //                    load；window TypeError 报告动态面未建模 FIXME）
+            //   "2\u{1f}<msg>"   属性校验违例（静态面 s105 同判——window 报告 + 元素
+            //                    fire load、体不执行；报告 ctor 保真动态面 FIXME）
+            //   "1\u{1f}<iife>"  编译成功（shim eval 求值；内联模块不 fire load/error）
+            // 入口键 = `{parent}#!zw-dyn-inline`（s94 内联缓存键同形——模块体相对
+            // import 的解析基不变；跨调用无 memoization，每次插入为独立模块记录）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            sandbox.register_callback(
+                "__zw_compile_inline_module",
+                Box::new(move |args| {
+                    let body = args.first().map(String::as_str).unwrap_or("");
+                    let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
+                    if body.is_empty() {
+                        return String::new();
+                    }
+                    if let Err(e) = zero_script_sandbox::validate_static_import_attributes(body) {
+                        return format!("2\u{1f}{}", e.message);
+                    }
+                    let specs = zero_script_sandbox::extract_static_module_imports_with_attributes(body);
+                    let mut registry = zero_script_sandbox::ModuleRegistry::new();
+                    let mut visited = std::collections::HashSet::new();
+                    let mut fetched = std::collections::HashMap::new();
+                    for (spec, type_attr) in &specs {
+                        match collect_module_deps_recursive(
+                            &fetcher_inline_module,
+                            parent,
+                            spec,
+                            true,
+                            type_attr.as_deref(),
+                            &mut registry,
+                            &mut visited,
+                            &mut fetched,
+                        ) {
+                            Ok(()) => {}
+                            Err(ModuleGraphFailure::DepResolution) => return "1\u{1f}".to_string(),
+                            Err(_) => return String::new(),
+                        }
+                    }
+                    let entry = format!("{parent}#!zw-dyn-inline");
+                    registry.register(&entry, body);
+                    match zero_script_sandbox::compile_dependency_iife(&entry, &registry) {
+                        Ok(iife) => format!("1\u{1f}{iife}"),
+                        Err(_) => {
+                            tracing::warn!("compile dynamic inline module (parent {parent})");
+                            String::new()
+                        }
+                    }
+                }),
+            );
             // s90：__zwSwapImportReferrer——inline/反射事件处理器求值窗换基
             //（shim 侧 _zwCallHandlerDocBase 调用：求值时刻文档基 URL 进 referrer
             // 槽位，finally 换回，零外溢）。s92：__zwSwapImportNonce 同形——事件

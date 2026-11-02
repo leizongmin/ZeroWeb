@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 249 施工收口（动态 import 属性三通道 json/css/text——prelude `__zw_dynamic_import(spec, attributes)` TC39 import calls 解析 + V8 原生回调 import_attributes 提取 + fetcher `__zw_mtype` 内部标记穿参 + runner 数据模块 intent 臂（MIME 派生序 + redirect 跟随 + type↔MIME 匹配校验）+ JSON parse 失败改判 SyntaxError + css/text 合成臂 + CSSOM 颜色序列化归一 bonus；css-module 10 键 + text-module 2 键 F→P + json parse-error T→P，13 F→P + 1 T→P + 2 T→F 预期换形 P→F 0 第八个连续完美 A/B，shim 1 + rust 4 + runner 1；承前：M2 切片 248（redirect.py 真 302 端点 + data:/重定向臂 + finalUrl 污染通道，security 全族收口 16F 翻绿第七个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 250 施工收口（text-module integrity matches 臂（text 型 spec 无 MIME 校验定谳 + 无扩展名语料 `file` 补）+ load-error-events.py 四风味端点臂（runner fetcher 建模）+ s100 拦截面 `!is_module_type` 豁免（module/ 变体文件 Timeout 解除）+ 动态 src/内联 module prepare（`__zw_compile_inline_module` 四态契约 + `_zwPrepareSrcScriptGate` module 分支 rev3：队位调用时刻 + 延迟编译 + classic 通道执行器/队列复用）；12 键翻绿（7 F→P + 5 N→P）P→F 0 第九个连续完美 A/B，shim 3 处 + webview 1 + runner 3 + 单测 2；承前：M2 切片 249（动态 import 属性三通道 json/css/text，13 F→P + 1 T→P + 2 T→F 预期换形 P→F 0 第八个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,34 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 250**：text-module integrity matches 臂 +
+  load-error-events 四页 src 臂族 + s100 拦截面 module 型豁免 +
+  动态 src/内联 module prepare 轮——勘根四根：text 型 spec 无
+  MIME essence 校验（fetch-a-single-module-script step 7.2 无条件
+  创建 text module script；s249 fetcher 误校验，一行修正 + 无扩
+  展名语料 `text-module/file` 10 字节补入）；load-error-events.py
+  端点缺失（上游 wptserve CGI 不在语料 pull 面，runner fetcher
+  四风味单臂建模：text/json/css 数据模块体镜像 + 素模块 `_load`
+  回体/`_error` 直接 404，`test` 参数 `^[a-zA-Z0-9_]+$` 校验同上
+  游）；s100 拦截面 module 型误伤（`inline_local_scripts` 对
+  the-script-element/resources/load-error-events.py 无条件内联投
+  递 → module 单元 currentScript 恒 null 投递尾静默空转 →
+  module/ 变体 4 静态臂 pending 文件 Timeout；probe 三态实验定谳，
+  `!is_module_type` 豁免修复零波及经典族）；动态 src module 执行
+  通道三版收敛 rev1 裸 eval 丢 referrer/base 槽位（4 P→F）→
+  rev2 同步时序翻 load-after-execution 交错（5 臂 F）→ rev3 队位
+  调用时刻 + 延迟编译 + `_zwExecuteFetchedScript`/in-order 队列
+  复用（基/队列/时序三面复位 + text-module src,200 动态臂随上下
+  文翻绿）；动态内联 module prepare（`__zw_compile_inline_module`
+  四态契约 + s109 内联分派臂）404 臂翻绿、200 臂挂账（严格页面
+  var replay 作用域对 shim eval 不可见，host 侧执行通道待沙盒重
+  入 API 设计）。施工 shim 3 处 + webview 1 回调 + runner 3 处 +
+  单测 2 + scripts 注记。验证：全树 A/B 12 键翻绿（7 F→P + 5 N→P）
+  P→F 0（8313 对，LOST/GAINED 16+13 全归因，第九个连续完美
+  A/B）+ solo 979P/79F/25T/10N（对 s249 postpull ΔP=+16 ΔF=−7）
+  + runner 281 绿 + webview 835 绿 + fmt/clippy 干净。账本
+  [evidence/2026-11-03-m2s250-load-error-events-module-family.md](html-semantics-compat/evidence/2026-11-03-m2s250-load-error-events-module-family.md)。
+
 - **2026-11-03 M2 切片 249**：动态 import 属性三通道（json/css/text）轮——勘根
   定谳动态属性双通道丢弃单点（prelude `__zw_dynamic_import` 单参 + V8 原生回调
   import_attributes `#[allow(unused_variables)]` 弃用）+ fetcher 契约无类型形参
