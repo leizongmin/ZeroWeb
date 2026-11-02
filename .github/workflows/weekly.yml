@@ -783,7 +783,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(needs.discover-shards.outputs.shards_json) }}
+        # job 名含连字符必须用括号语法取属性（点号不合法 → 矩阵零展开，
+        # run 无失败步骤直接红——41399857011 实证）。
+        shard: ${{ fromJSON(needs['discover-shards'].outputs.shards_json) }}
     steps:
       - uses: actions/checkout@v7
         with:
