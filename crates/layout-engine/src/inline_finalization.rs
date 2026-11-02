@@ -4304,6 +4304,74 @@ pub(crate) fn remeasure_inline_only_containers(
         // has_block_children 豁免同开关，OFF 合 ZW_FLOAT_INLINE_SUM=0 = R5242 逐字节回退）。
         static INLINE_TABLE_IB_SIZING: std::sync::LazyLock<bool> =
             std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_IB_SIZING").as_deref() != Ok("0"));
+        // t-fup-trending-filter-flex：frame-only 塌陷原子的**子臂预愈**（pre-heal）。
+        //
+        // 病灶链（探针定谳，fixture div>span + live trending details>summary 双面复现）：
+        // ① `adjust_no_float_page`/`recompute_bfc_auto_height`（float_positioning.rs）对 auto 高
+        //    flow-root 容器按「in-flow LayoutBox 子 max bottom」重算高——is_flow_root 含
+        //    InlineBlock（CSS 2.1 §9.4.1 inline-block 建 BFC），纯 inline 内容不产生 LayoutBox
+        //    子（文本经 IFC 绘制）→ 盒被压成 padding+border 高（探针 A：span 22→6，ch=0）。
+        // ② 本函数对 plain-block 容器**自先递归后**（子递归在函数尾部），父臂 `ib_sizes` 读到
+        //    的子盒高仍是塌陷值 → 容器 IFC 行盒高按塌陷原子解。
+        // ③ 收缩臂（下方「允许减小高度」，CSS2 §10.6.3 纯 inline 容器高 = 行盒高）把容器从
+        //    taffy 正确值砍到塌陷行高（fixture div 22→6；live 过滤条 details→8 可见错位）。
+        //    子盒随后经 needs_dom_text_remeasure GROW 愈到真高，但父不再回访。
+        //
+        // 修复 = 纯原子行流容器（DOM 直接子无非空白文本）在构建 `ib_sizes` 前对塌陷原子子
+        // 预跑既有子臂 remeasure。规范语义：CSS2 §10.6.7（inline-block auto 高 = 内容行盒高，
+        // 非「无盒子=0」）+ §10.8（原子 inline 进线盒）。含文本容器**不进**本臂——R5164
+        // 降级口径的守护域（原子盒「真实化」后 break_lines 的原子断行门替换文本路径的
+        // 字符级禁断，css-text-3 §line-break-details）不扩面；纯原子行流无可替换的字符级
+        // 断行语义，且行形由原子宽决定（高度不参与断行），预愈只修行盒高。
+        // 预跑复用子臂既有 gate（containment/replaced/run-in/float 语境）与测量口径
+        //（content_width 同源），子臂第二次到访时 GROW/SHRINK 等值 no-op（幂等），
+        // 尾部子循环 sibling-shift 记账 delta=0 不扰动。
+        // kill-switch `ZW_IB_CRUSH_PREHEAL=0` 回退。
+        static CRUSH_PREHEAL: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("ZW_IB_CRUSH_PREHEAL").as_deref() != Ok("0"));
+        if *CRUSH_PREHEAL {
+            let container_has_text = doc.child_nodes(dom_id).into_iter().any(|c| {
+                doc.get(c)
+                    .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if !t.content.trim().is_empty()))
+            });
+            if !container_has_text {
+                for child in box_node.children.iter_mut() {
+                    let Some(child_id) = child.node_id else {
+                        continue;
+                    };
+                    let atomic_family = styles.get(&child_id).is_some_and(|s| {
+                        matches!(
+                            s.display,
+                            DisplayValue::InlineBlock
+                                | DisplayValue::InlineFlex
+                                | DisplayValue::InlineGrid
+                                | DisplayValue::InlineTable
+                        )
+                    });
+                    if !atomic_family
+                        // 塌陷伪影 = content_height ≈ 0（taffy 正常盒/定高盒不动）。
+                        || child.content_height >= 1.0
+                        // 声明 height:auto 才是重算受害者（definite 高盒不动，§10.5）。
+                        || !styles.get(&child_id).is_some_and(|s| matches!(s.height, LengthValue::Auto))
+                        // 真空盒 frame-only 是正确值（无 inline 内容可测）。
+                        || !crate::inline_content::has_inline_content(doc, styles, child_id)
+                    {
+                        continue;
+                    }
+                    let child_in_float = inside_float_subtree || !matches!(child.float, FloatValue::None);
+                    remeasure_inline_only_containers(
+                        child,
+                        doc,
+                        styles,
+                        img_intrinsic_sizes,
+                        positioned_inline_blocks,
+                        inline_fonts,
+                        &own_wm,
+                        child_in_float,
+                    );
+                }
+            }
+        }
         let ib_sizes: HashMap<NodeId, (f32, f32)> = box_node
             .children
             .iter()
