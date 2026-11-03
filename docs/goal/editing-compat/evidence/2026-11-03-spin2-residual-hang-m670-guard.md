@@ -157,7 +157,17 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
   语境慢化（跨 variant 污染，假说 C 统一 del/mt 两站点）**：同守卫二进制
   solo 211s 完走 vs in-face >300s 截断（≈1.7× 慢化）；旧代 in-face 1,019
   案 <300s 完走 vs 守卫代 939/990 截断 → 守卫代 in-face 慢化更重（候选
-  机制 = m670 break 混合壳跨页累积 + s26x/R54xx 共变面，待归因）。本流不
+  机制 = m670 break 混合壳跨页累积 + s26x/R54xx 共变面，待归因）。
+  **diag4c 插桩收编（对侧，01:47:29-02:22:11 rc=2，全 8 variant × DIAG4
+  探针）**：del in-face 机制补全——第 8 页 ?7001-last **probe 行出账**
+  （probe 为独立 script tag，看门狗击杀语料脚本后照跑）+ T 行 state
+  （created=637/pending=1，与历代同位）= 语料脚本死于案体执行中段
+  （trace 尾停 `delSel`）——**del = 确定性单案自旋击杀**（s615 排除：
+  splitParent=0；m670 排除：守卫版字节恒等论证——若 m670 环自旋守卫必
+  破环移位截断；spinner = delSel 内未计数环，计数线性无异常：in-face
+  m670×36/c674×42/move×37 vs solo 完走基线 m670×64/c674×59/s615×9），
+  精确定位待更细插桩（对侧 diag 窗）。两站点近端同为 300s 看门狗击杀、
+  形态二分：del 单案自旋（同案恒定）vs mt 慢化截断（漂移）。本流不
   solo 复现避免 CPU 争抢污染对侧近边界页。
 
 ## 4. 方法论教训
