@@ -1038,7 +1038,9 @@
   var _zwDelFmtTags = { b: 1, i: 1, u: 1, s: 1, sub: 1, sup: 1 };
 
   // 选区内首个可见内容（可见文本或 img）节点级查找（链外终点捕获专用）：
-  // 自 start 位下钻/右移行进，候选须被选区整含（头界 ≥ start 且尾界 ≤ end），
+  // 自 start 位下钻/右移行进，候选须被选区整含（GetPosition(start, head)
+  // !== 'after' 即 head ≥ start；GetPosition(end, tail) !== 'before' 即
+  // tail ≤ end——_zwDelGetPosition 返回首参相对次参方位），
   // 部分含节点跳过并继续行进（multitest :2660 族 C11 `abc[<b><i>def</i></b>g]hi`
   // 头部 abc 部分含 → 越过收 def 整含链）。inline 包裹（b/i 等）只作下钻
   // 通道不作候选。行进自带宿主边界与 guard 防护（正常 DOM 无环）。
@@ -1066,9 +1068,9 @@
         || _zwJusIsHtmlElement(n, 'img');
       if (candOk
           && _zwDelGetPosition(ar.startContainer, ar.startOffset, n, 0)
-            !== 'before'
+            !== 'after'
           && _zwDelGetPosition(ar.endContainer, ar.endOffset, n,
-            _zwJusNodeLength(n)) !== 'after') {
+            _zwJusNodeLength(n)) !== 'before') {
         return n;
       }
       if (n.nodeType == 1 && n.firstChild) {
