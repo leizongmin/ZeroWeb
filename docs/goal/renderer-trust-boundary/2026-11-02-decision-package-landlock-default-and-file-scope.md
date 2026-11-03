@@ -1,6 +1,7 @@
 # 决策包：renderer landlock 默认值（① 后续）与 file:// 范围修复分层
 
 **日期**：2026-11-02
+**拍板（2026-11-03，用户）**：① 后续 → **①-a**（接受收窄翻默认）。本 goal 待拍板项随之清零，余 Layer 2 执行与两项环境受限在册。
 **背景**：拍板 ①A（browser file:// 预解析 → LoadHtml 后翻 `ZW_RENDERER_LANDLOCK` 默认）经预执行核查（[证据](evidence/2026-11-02-slice1-preflight-fact-correction-and-headless-file-url-fix.md)）修正执行面后，遗留模块体动态 import 取舍待决；同轮连带发现 file:// IPC 直读臂无范围策略（DC-2 类确认缺陷，[证据](evidence/2026-11-02-file-url-ipc-arm-scope-finding.md)）。本包给出分层执行序与 ①-a/①-b 决策材料。
 
 ## 分层执行序（Layer 1 无须拍板，Layer 2 须拍板）
