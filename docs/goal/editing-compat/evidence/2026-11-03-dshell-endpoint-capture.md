@@ -304,6 +304,41 @@ gate27 211 − 4，严格改善位）。
 COORD-28 实证）。forwarddelete 腿续跑，判读对 g28-fd-g28-fails.txt 215
 行（预期逐位恒 v1）。
 
+**gate28v2 forwarddelete 腿实测（14:47:32 落地）：6,836P/253F/1T rc=2，
+主门通过**——初判对 v1（g28-fd-g28-fails.txt 215）P→F 39 违门假象归因
+截断：39 案全部 ?7001-last（v1 该片 353/491 尾截断 −109 断言，行缺席非
+Pass）；对 E2fd P→F 8（audio/video/meter/progress/iframe void 形 6 +
+`<p>abc{}<br>` 2）同片 artifact（E2fd 双 T）。**干净分片终判（?1-6000 +
+?6001-7000，E2fd 与 v2 分母恒等 6,599 = 6×1000+599）：F→P 5 / P→F 0**——
+恰为 delete 腿同款五案 `foo{<X>bar</X>}baz` 部分含形镜像面（v1 判读
+「真翻转 5」复核一致）。v2 总断言 7,090 = gate21 全账分母（6,831P/258F/1T），
+?7001-last 491 全出账 = **gate21 后首个完整 fd 跑**（39+8 案为其后截断轮
+从未到达的既有败，非回归）。
+
+**gate28v2 other 通道实测（15:01:44 落地）：13,142P/1,436F/1T rc=0，
+fail 行集 1,317 逐位恒等 v1（F→P 0 / P→F 0）**——修复笔对 other 通道
+零扰动，v1 对 gate27 判读（无 P→F，−164F = −156 unwrapping 页 + −8
+并行流改善面）继承。**1T 仍为 delete-without-unwrapping
+-first-line-of-child-block 页 270s 外墙击杀零断言（rc=124）——治愈判定
+不通过，c8188f02c hang 仍在**（存活门回落面不触该案执行路径），按乙
+第廿五轮静态定谳（part01f.js:606 splitParent 非进展自旋，模式 A/B 两
+不收敛形态）独立修复轮执行：探针定谳 → 笔1 进展守卫 → v3 other+
+multitest 行集 diff。
+
+**gate28v2 enginelib 实测（15:02:05 落地）：3,719P/5F rc=101——5F 名单
+逐字恒等 s249**（p56_adopted_snapshot_restore_hook_keeps_page_value /
+test_p99s_rule_style_preserves_custom_property_case /
+test_stylesheet_add_rule_remove_rule_r3276 / test_stylesheets_write_r2809 /
+test_stylesheets_rule_style_r2810），零新增 = caret 存活门修复笔引擎面
+零影响；s249 测试对齐独立轮挂账不变。
+
+**gate28v2 批判读终局：六腿全过门禁**——run 四腿 P→F 0（multitest
+F→P 25 / ipara F→P 20 / delete·fd 对 pre-delta 基干净分片 F→P 5+5 且对
+v1 逐位恒等）、other 恒等、enginelib s249 恒等；**42 案 caret 臂回归
+全数回收**（multitest 22 + ipara 20），五笔 delta 正面翻转面全保持。
+残余：unwrapping hang（独立轮）、grid plain-span ?9001-last 新暴露、
+s249 测试对齐（均挂 §6/下一步）。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
@@ -324,3 +359,12 @@ COORD-28 实证）。forwarddelete 腿续跑，判读对 g28-fd-g28-fails.txt 21
   2026-11-03 v1 battery 发现）：gate27 0F → 5 新败全 js_dom_bridge 规则文本
   序列化断言，签名 = CSSOM 重序列化指纹（§5，首判 82153965c 已排除）；不回
   退 s249，测试对齐独立轮。
+
+**甲终判复核（15:15，独立工件对拍，与上块四腿账互证）**：判读基线
+`g28v2-{mt,ip,del,fd}-v1-base.txt`（自 v1 battery log 归一提取，433/227/292/215）
++ other 全行集 1,437 行（summary+detail 两形）直接对拍——multitest F→P 25/P→F 0、
+ipara F→P 20/P→F 0、delete 292↔292 集恒等、other 1,437↔1,437 逐位恒等
+（F→P 0/P→F 0）、enginelib 5F 与 s249 名单逐名恒等；fd 尾片独立证：
+v2 `?7001-last` 前 353 行与 v1 **elementwise 逐位恒等** + 新深度 138 行
+（99P/39F）零翻转——P→F 39 全系截断深度新暴露，与上块干净分片终判
+（6,599 分母恒等 F→P 5/P→F 0）双路径互证成立。gate28 批判绿终判归账。
