@@ -95,7 +95,8 @@
       // checkSupport 映射 encapsulate/decapsulate）+ ML-DSA（FIPS 204 签名面）。
       // pub=1 私→公派生（getPublicKey）；ML-KEM encapsulateKey/decapsulateKey
       // 第三参附加算法特化见 supports 步 5（raw-secret 可导入 + 生成密钥长度恰
-      // 256）。未注册清单仅余 Ed448/Hybrid。
+      // 256）。Hybrid PQ/T KEM 三组合（d1s5）与 ML-KEM 同注册面（usages/格式
+      // 经同一回调分流，host crypto_hybrid.rs）。未注册清单仅余 Ed448。
       // KMAC128/KMAC256（webcrypto-compat-v3 D1 拍板 2026-11-02）：对称 MAC 面
       // 同 HMAC 注册形态。
       'KMAC128': { ops: { sign: 1, verify: 1, generateKey: 1, importKey: 1, exportKey: 1 } },
@@ -103,6 +104,9 @@
       'ML-KEM-512':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
       'ML-KEM-768':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
       'ML-KEM-1024': { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'MLKEM768-P256':   { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'MLKEM768-X25519': { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
+      'MLKEM1024-P384':  { ops: { generateKey: 1, importKey: 1, encapsulate: 1, decapsulate: 1, exportKey: 1 }, pub: 1 },
       'ML-DSA-44':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 },
       'ML-DSA-65':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 },
       'ML-DSA-87':   { ops: { generateKey: 1, importKey: 1, sign: 1, verify: 1, exportKey: 1 }, pub: 1 }

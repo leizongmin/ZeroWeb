@@ -874,7 +874,7 @@ pub fn crypto_subtle_x448(priv_csv: &str, pub_csv: &str) -> String {
 
 /// DER TLV 编码：tag || 定长内容（长度按 DER 规则短/长形编码，覆盖本域最大
 /// 2.6 kB 内容，两字节长形已足）。
-fn der_tlv_encode(tag: u8, contents: &[u8]) -> Vec<u8> {
+pub(crate) fn der_tlv_encode(tag: u8, contents: &[u8]) -> Vec<u8> {
     let mut v = vec![tag];
     let n = contents.len();
     if n < 0x80 {
@@ -890,7 +890,7 @@ fn der_tlv_encode(tag: u8, contents: &[u8]) -> Vec<u8> {
 
 /// DER TLV 解析：tag 须匹配 want，长度须完整且恰尽声明字节。返 (内容, 余部)。
 ///（信任边界：密钥 DER 来自页面输入，解析失败一律拒绝，不做宽松容错。）
-fn der_tlv_parse(buf: &[u8], want: u8) -> Option<(&[u8], &[u8])> {
+pub(crate) fn der_tlv_parse(buf: &[u8], want: u8) -> Option<(&[u8], &[u8])> {
     if buf.len() < 2 || buf[0] != want {
         return None;
     }
@@ -920,7 +920,7 @@ fn ml_alg_id_seq(fam: u8, var: u8) -> [u8; 13] {
 }
 
 /// SubjectPublicKeyInfo 编码：SEQ { AlgId, BIT STRING(0x00 || key) }。
-fn ml_spki_encode(alg_id: &[u8; 13], key: &[u8]) -> Vec<u8> {
+pub(crate) fn ml_spki_encode(alg_id: &[u8], key: &[u8]) -> Vec<u8> {
     let mut bits = Vec::with_capacity(key.len() + 1);
     bits.push(0x00);
     bits.extend_from_slice(key);
@@ -931,7 +931,7 @@ fn ml_spki_encode(alg_id: &[u8; 13], key: &[u8]) -> Vec<u8> {
 
 /// spki 解析：外层 SEQ 恰尽、AlgId 逐字节匹配、BIT STRING 未用位为 0、密钥恰
 /// key_len 字节。返公钥字节（跨变体/截断/尾随垃圾 → None 即 DataError）。
-fn ml_spki_parse(der: &[u8], alg_id: &[u8; 13], key_len: usize) -> Option<Vec<u8>> {
+pub(crate) fn ml_spki_parse(der: &[u8], alg_id: &[u8], key_len: usize) -> Option<Vec<u8>> {
     let (body, rest) = der_tlv_parse(der, 0x30)?;
     if !rest.is_empty() {
         return None;
@@ -950,7 +950,7 @@ fn ml_spki_parse(der: &[u8], alg_id: &[u8; 13], key_len: usize) -> Option<Vec<u8
 
 /// PKCS#8（seed-only，RFC 5958 oneAsymmetricKey，与 WPT fixtures 形态一致）编
 /// 码：SEQ { INT 0, AlgId, OCTET STRING { [0] 上下文原语标签(0x80) || seed } }。
-fn ml_pkcs8_seed_encode(alg_id: &[u8; 13], seed: &[u8]) -> Vec<u8> {
+pub(crate) fn ml_pkcs8_seed_encode(alg_id: &[u8], seed: &[u8]) -> Vec<u8> {
     let mut body = vec![0x02, 0x01, 0x00];
     body.extend_from_slice(alg_id);
     body.extend_from_slice(&der_tlv_encode(0x04, &der_tlv_encode(0x80, seed)));
@@ -959,7 +959,7 @@ fn ml_pkcs8_seed_encode(alg_id: &[u8; 13], seed: &[u8]) -> Vec<u8> {
 
 /// pkcs8 seed-only 解析：结构同上逐层校验。返种子字节（失配 → None 即
 /// DataError；expanded 私钥形态本域不支持——WebCrypto draft 只定义 seed 派生）。
-fn ml_pkcs8_seed_parse(der: &[u8], alg_id: &[u8; 13], seed_len: usize) -> Option<Vec<u8>> {
+pub(crate) fn ml_pkcs8_seed_parse(der: &[u8], alg_id: &[u8], seed_len: usize) -> Option<Vec<u8>> {
     let (body, rest) = der_tlv_parse(der, 0x30)?;
     if !rest.is_empty() {
         return None;
@@ -1019,6 +1019,10 @@ fn mlkem_params(v: MlKemVariant) -> (u8, usize, usize) {
 /// ML-KEM 生成：64 字节随机种子（FIPS 203 KeyGen：d||z）→ "ek csv;seed csv"
 ///（公 = ek / 私 = 种子）。随机源失败 → 空串。
 pub fn crypto_subtle_mlkem_generate(name: &str) -> String {
+    // Hybrid PQ/T KEM 组合名经同名回调透传分流（shim 家族判定已并入）。
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_generate(name);
+    }
     use ml_kem::kem::KeyExport;
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,
@@ -1053,6 +1057,9 @@ pub fn crypto_subtle_mlkem_generate(name: &str) -> String {
 /// ML-KEM 导入（spki/raw-public 公钥 → ek csv；pkcs8/raw-seed 私钥 → 种子
 /// csv）。解析/长度/跨变体失配 → 空串即 DataError。
 pub fn crypto_subtle_mlkem_import(name: &str, fmt: &str, der_csv: &str) -> String {
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_import(name, fmt, der_csv);
+    }
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,
         None => return String::new(),
@@ -1090,6 +1097,9 @@ pub fn crypto_subtle_mlkem_import(name: &str, fmt: &str, der_csv: &str) -> Strin
 /// ML-KEM 导出：输入 ek csv（公）或种子 csv（私，按长度判别）。fmt "spki"/
 /// "raw-public"（公透传或私派生公）、"pkcs8"/"raw-seed"（仅私）。错误 → 空串。
 pub fn crypto_subtle_mlkem_export_der(name: &str, raw_csv: &str, fmt: &str) -> String {
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_export_der(name, raw_csv, fmt);
+    }
     use ml_kem::kem::KeyExport;
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,
@@ -1140,6 +1150,9 @@ pub fn crypto_subtle_mlkem_export_der(name: &str, raw_csv: &str, fmt: &str) -> S
 /// `encapsulate` 内置 OS 随机源取 m；宿主随机面见 crate getrandom feature）。
 /// ek 长度错/解析失败 → 空串即 OperationError。
 pub fn crypto_subtle_mlkem_encapsulate(name: &str, ek_csv: &str) -> String {
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_encapsulate(name, ek_csv);
+    }
     use ml_kem::kem::Encapsulate;
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,
@@ -1175,6 +1188,9 @@ pub fn crypto_subtle_mlkem_encapsulate(name: &str, ek_csv: &str) -> String {
 /// 错/种子失配 → 空串即 OperationError；损坏 ct 走隐式拒绝路径（FIPS 203 §7.3
 ///——确定性伪共享秘密，语料 KAT 按此断言）。
 pub fn crypto_subtle_mlkem_decapsulate(name: &str, seed_csv: &str, ct_csv: &str) -> String {
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_decapsulate(name, seed_csv, ct_csv);
+    }
     use ml_kem::kem::Decapsulate;
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,
@@ -1208,6 +1224,9 @@ pub fn crypto_subtle_mlkem_decapsulate(name: &str, seed_csv: &str, ct_csv: &str)
 
 /// ML-KEM 私派生公（getPublicKey / jwk 配对校验用）：种子 csv → ek csv。
 pub fn crypto_subtle_mlkem_public_from_seed(name: &str, seed_csv: &str) -> String {
+    if super::crypto_hybrid::is_hybrid(name) {
+        return super::crypto_hybrid::hybrid_public_from_seed(name, seed_csv);
+    }
     use ml_kem::kem::KeyExport;
     let v = match parse_mlkem_variant(name) {
         Some(v) => v,

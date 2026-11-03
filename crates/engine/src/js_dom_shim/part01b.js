@@ -4014,11 +4014,14 @@
   // csv 的 b64u）。密钥材料不落 tracing（零日志纪律）。
   // https://w3c.github.io/webcrypto/#ml-kem  https://w3c.github.io/webcrypto/#ml-dsa
 
-  // 家族判定（ASCII 折叠；algorithm.name 存规范拼写）。Hybrid-KEM 组合名（
-  // MLKEM768-P256 等）不在本域——REG 未注册，归一即 NotSupportedError。
+  // 家族判定（ASCII 折叠；algorithm.name 存规范拼写）。Hybrid PQ/T KEM 组合名
+  //（MLKEM768-P256 / MLKEM768-X25519 / MLKEM1024-P384，webcrypto-compat-v3
+  // d1s5）与 ML-KEM 同 usages/格式面（WICG webcrypto-modern-algos Hybrid KEM
+  // 域），经同一回调按名分流（host crypto_hybrid.rs）。
   function _zw_mlKemIsFamily(name) {
     var u = _zw_upperAscii(String(name));
-    return u === 'ML-KEM-512' || u === 'ML-KEM-768' || u === 'ML-KEM-1024';
+    return u === 'ML-KEM-512' || u === 'ML-KEM-768' || u === 'ML-KEM-1024' ||
+      u === 'MLKEM768-P256' || u === 'MLKEM768-X25519' || u === 'MLKEM1024-P384';
   }
 
   function _zw_mlDsaIsFamily(name) {
