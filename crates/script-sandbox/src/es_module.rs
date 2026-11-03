@@ -185,7 +185,8 @@ impl std::fmt::Debug for EsModuleSandbox {
 /// 重建全局对象（缓存随之消失，无须本脚本）；tab worker 路径（`tab_scripts::script_phase_begin`）
 /// 与 webview 进程内路径（`run_page_scripts_impl`，无 reset_context）持持久 context，
 /// 必须显式执行本脚本——不复位则同 URL 模块在新文档零次求值（D1 回归）。
-pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\n";
+pub const MODULE_CACHE_RESET_SCRIPT: &str =
+    "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\nglobalThis.__zwModuleFetchKeys = {};\n";
 
 /// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
 /// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
@@ -324,7 +325,7 @@ fn static_dependency_specifiers(source: &str, importer_url: &str, registry: &Mod
 /// 后序（s255，[`module_graph_postorder`]——求值序可观察）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
     let mut out = String::from(
-        "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n",
+        "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\nglobalThis.__zwModuleFetchKeys = globalThis.__zwModuleFetchKeys || {};\n",
     );
     // t8j：helper（__zw_load_module / __zw_dynamic_import）必须先于 `__moduleCache[spec] = IIFE`
     // 注册求值——注册右侧的 IIFE **立即执行模块体**（依赖预热 + collect_module_deps 把入口模块
@@ -360,6 +361,21 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     //   link 失败不完成模块记录、不入 module map，逐次新错误对象（WPT
     //   dynamic-imports-script-error「instantiation error」判据 SyntaxError +
     //   differentErrorObjects；s87 ③ 旧口径「暂并入」翻案独立成态）。
+    // s267（动态 import 取回缓存面）：`(spec, parent, type)` → resolved 记账后，
+    // 同键复 import 且命名空间在缓存时**跳过宿主取回**直接回缓存实例——HTML
+    // module map 语义（fetch-a-single-module-script 命中即复用，复 import 不再
+    // 发网络请求；repeated-import 三页判据：成功复 import 服务端计数 0、串行/
+    // 并行 ×5 计数 1）。失败态不记账（宿主返空 ① / 图编译失败 ② 空码 /
+    // parse-eval 抛 ③ / 链接失败 ④ 均不入 `__zwModuleFetchKeys`）——取回失败
+    // 不入 module map，重 import 重新发请求（同上 WPT 判据：404/MIME 步计数 1）。
+    // t8j-r2「webview 进程内路径无宿主缓存，重复动态 import 重复取回——转池候选」
+    // 在此收口：缓存查访在宿主调用之前，宿主重复取回面消除。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    out.push_str(
+        "  var fk = spec + '\\u001f' + parent + '\\u001f' + (typeof typeHint === 'string' ? typeHint : '');\n",
+    );
+    out.push_str("  var kr = __zwModuleFetchKeys[fk];\n");
+    out.push_str("  if (kr !== undefined && __moduleCache[kr]) return __moduleCache[kr];\n");
     out.push_str("  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '');\n");
     out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
@@ -395,6 +411,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     out.push_str("    __moduleFailures[resolved] = e;\n");
     out.push_str("    throw e;\n");
     out.push_str("  }\n");
+    out.push_str("  __zwModuleFetchKeys[fk] = resolved;\n");
     out.push_str("  return __moduleCache[resolved];\n");
     out.push_str("};\n");
     // t8j：动态 import() 失败须以 rejected promise 呈现，不得同步 throw——
@@ -443,6 +460,12 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     Ok(out)
 }
 
+/// JS 标识符续字符的 ASCII 字节面（`[A-Za-z0-9_$]`，ECMA-262 §sec-identifier-names
+/// ID_Continue 的 ASCII 子集）——非 ASCII 续字符前置时该守卫失明（轻量扫描器既限）。
+fn is_identifier_continue_byte(b: u8) -> bool {
+    b == b'_' || b == b'$' || b.is_ascii_alphanumeric()
+}
+
 pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
     // s91（string-compilation module 面）：字符串/模板/注释上下文感知——旧版纯文本
     // 扫描把**字符串字面量内**的 `import(`（eval/Function/setTimeout 字符串、事件处
@@ -461,7 +484,10 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
     let mut i = 0;
     while i < source.len() {
         if stack.is_empty() {
-            if source[i..].starts_with("import(") {
+            // s267：标识符边界守卫——前邻标识符续字符时 `import(` 是标识符后缀
+            // （repeated-import 页 `removeScriptReimport()` 探针实证 mid-identifier
+            // 误重写 → ReferenceError），非 import 关键字，原样拷贝继续。
+            if source[i..].starts_with("import(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
                 // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
                 // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
                 // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
@@ -529,8 +555,8 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
             }
             RewriteCtx::TemplateExpr(depth) => {
                 // 模板 `${}` 表达式区内仍是代码——真实 `import(` 照常重写（仍在模块
-                // IIFE 词法作用域内，发射体 `_importMeta` 合法）。
-                if source[i..].starts_with("import(") {
+                // IIFE 词法作用域内，发射体 `_importMeta` 合法；标识符边界守卫同上）。
+                if source[i..].starts_with("import(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
                     out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
                     i += "import(".len();
                     continue;
@@ -1972,6 +1998,36 @@ mod tests {
             "代码态真实 import( 照常重写：{r}"
         );
         assert_eq!(r.matches("import(").count(), 2, "字面量内两处原样保留：{r}");
+    }
+
+    #[test]
+    fn test_rewrite_skips_import_suffix_of_identifier() {
+        // s267（repeated-import 页探针实证）：`import(` 是标识符后缀时（
+        // `removeScriptReimport()`、`x.myimport(y)` 词法非法仅取合法形）为普通
+        // 标识符引用，非 import 关键字——mid-identifier 误重写发射
+        // `removeScriptRe__zw_dynamic_import...` → 定义/调用分裂 ReferenceError。
+        // 前邻非标识符续字符（`(`、空白、运算符）的真实 import( 照常重写。
+        let r = rewrite_dynamic_imports("removeScriptReimport(); myImport(z); $import(q); import('./real.js');");
+        assert!(r.contains("removeScriptReimport()"), "标识符后缀原样保留: {r}");
+        assert!(
+            r.contains("myImport(z)") && r.contains("$import(q)"),
+            "含 import 前缀的标识符调用原样保留: {r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './real.js')"),
+            "前邻空白的真实 import( 照常重写: {r}"
+        );
+        assert_eq!(r.matches("__zw_dynamic_import").count(), 1, "恰一处重写: {r}");
+        // 模板表达式区内同守卫（`${ removeScriptReimport() }` 不误重写）。
+        let t = rewrite_dynamic_imports("var t = `${ removeScriptReimport() } ${ import('./b.js') }`;");
+        assert!(
+            t.contains("removeScriptReimport()"),
+            "模板表达式区内标识符后缀原样保留: {t}"
+        );
+        assert!(
+            t.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './b.js')"),
+            "模板表达式区内真实 import( 照常重写: {t}"
+        );
     }
 
     #[test]

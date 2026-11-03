@@ -5143,11 +5143,65 @@ fn strip_wpt_host_prefix(src: &str) -> Option<String> {
     matches!(host, "wpt.test" | "www1.wpt.test").then(|| rest[slash..].to_string())
 }
 
+/// s267：serve-custom-response.py 端点 stash（上游 wptserve handler 不在语料——
+/// repeated-import 三页 css-module/repeated-import、module 与 module/dynamic-import
+/// /shared-dependency-repeated-import 的服务端状态面）。wptserve `server.stash`
+/// 为全局表。**案级作用域**：生产路径（case 配置构建点）两闭包（fetch 桥 +
+/// script fetcher）共享同一案级 Arc——页 B/C 语料共用 fixed token 且 runner
+/// 8 job 为同进程线程并行，进程级静态表会跨案互踩（探针实证：B 的 error 步
+/// 拿到 C 的成功配置误 Ok）；单测经 None 回落进程级静态表。键 = 查询 `key`
+/// （token() uuid 案内唯一，fixed-token 页每步 reset-stat 自清）。
+struct ServeCustomResponseState {
+    network_error: bool,
+    run_count: u64,
+    status_code: u16,
+    content_type: String,
+    /// s267：成功交付缓存（endpoint 模块 map 仿真面）——首次 Ok 交付后记账回体
+    /// ，复取回（新 script 元素/新图）直接回缓存不再计数（页 B step5 判据复
+    /// import stat "0"）；失败态不记账（重取回重新计数——step2/3 判据 stat
+    /// "1"）。JS 层 fetchKey 缓存（es_module `__zwModuleFetchKeys`）覆盖动态
+    /// import 面；本字段覆盖元素装载面（runtime 插入 script 元素路径不经 JS
+    /// 层缓存——R5182 预热仅静态文档图）。
+    delivered_ok: Option<String>,
+}
+
+impl Default for ServeCustomResponseState {
+    // 上游缺席 context 缺省：network_error=false / run_count=0 / status_code=200 /
+    // content_type=application/javascript。
+    fn default() -> Self {
+        Self {
+            network_error: false,
+            run_count: 0,
+            status_code: 200,
+            content_type: "application/javascript".to_string(),
+            delivered_ok: None,
+        }
+    }
+}
+
+type ServeCustomResponseStash =
+    std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, ServeCustomResponseState>>>;
+
+/// 单测回调面（生产路径走案级 stash——见 [`wpt_data_script_fetcher_with_stash`]）。
+static SERVE_CUSTOM_RESPONSE_STASH: std::sync::LazyLock<ServeCustomResponseStash> =
+    std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new())));
+
+/// 既有单测签名面——回落进程级静态 stash（见上）。
+#[cfg(test)]
 fn wpt_data_script_fetcher(
     wpt_root: &std::path::Path,
     doc_referrer_policy: Option<String>,
 ) -> Option<zero_webview::ScriptSourceFetcher> {
+    wpt_data_script_fetcher_with_stash(wpt_root, doc_referrer_policy, None)
+}
+
+fn wpt_data_script_fetcher_with_stash(
+    wpt_root: &std::path::Path,
+    doc_referrer_policy: Option<String>,
+    serve_custom_stash: Option<ServeCustomResponseStash>,
+) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
+    let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
         let path_part = match strip_wpt_host_prefix(src) {
             Some(path) => path,
@@ -5248,6 +5302,80 @@ fn wpt_data_script_fetcher(
         } else {
             None
         };
+        // s267：serve-custom-response.py 动态端点模块取回臂（上游 wptserve handler
+        // 不在语料——action 三查询臂在 [`wpt_data_fetch_handler`]，页面 fetch() 面）。
+        // 置于 `__zw_mtype` intent 臂**之前**：css/text 型动态 import 由
+        // collect_module_deps_recursive 追加 `__zw_mtype` 标记（s249），端点 URL
+        // 须先经本臂消费——否则 intent 臂按扩展名 MIME 派生接管（.py 非 css MIME
+        // → Err 不计数，stat 可观察面断裂——solo 探针实证 stat "0"）。
+        // 无 action 的模块取回按 stash 键态回体：network-error=true → 计数 + Err
+        // （上游断连不回响应）；status != 200 → 计数 + Err（fetcher 契约无 status
+        // 通道，非 200 加载失败与网络错误对页面可观察面同形——error 事件/import
+        // 拒绝）；成功 → 计数 + Ok（按 content_type 回体：JS MIME →
+        // `export default 'hello';`、application/json → `{"hello": "world"}`、
+        // text/css → `#test { ... }`、其余 → "42"）。MIME 准入门按 `__zw_mtype`：
+        // text 型无 MIME 校验（s250 同口径）；css 型按 module type map（css←
+        // text/css）；无标记（JS 模块）按 JS MIME ∪ json 数据模块意图集（s107
+        // 同集）。fetcher 契约无 with-type 形参的 intent-blind 面随 s249 标记
+        // 通道收口。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+        if clean == "html/semantics/scripting-1/the-script-element/serve-custom-response.py" {
+            let query = src.split('?').nth(1).unwrap_or("");
+            let key = wpt_query_value(query, "key").unwrap_or_default();
+            let mtype = query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype="));
+            let Ok(mut stash) = serve_custom_stash.lock() else {
+                return Err("serve-custom-response.py stash poisoned".to_string());
+            };
+            let state = stash.entry(key).or_default();
+            if let Some(body) = state.delivered_ok.clone() {
+                return Ok(body);
+            }
+            if state.network_error || state.status_code != 200 {
+                state.run_count += 1;
+                return Err(format!(
+                    "serve-custom-response.py load failure: network_error={} status={}",
+                    state.network_error, state.status_code
+                ));
+            }
+            state.run_count += 1;
+            let essence = state
+                .content_type
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase();
+            let module_mime = matches!(
+                essence.as_str(),
+                "text/javascript"
+                    | "application/javascript"
+                    | "text/ecmascript"
+                    | "application/ecmascript"
+                    | "application/json"
+                    | "text/json"
+                    | "text/css"
+            ) || essence.ends_with("+json");
+            let mime_ok = match mtype {
+                // s250：text 数据模块 spec 无 MIME 校验步。
+                Some("text") => true,
+                Some("css") => essence == "text/css",
+                _ => module_mime,
+            };
+            if !mime_ok {
+                return Err(format!("serve-custom-response.py non-module MIME: {essence}"));
+            }
+            let body = match essence.as_str() {
+                "application/javascript" | "text/javascript" | "text/ecmascript" | "application/ecmascript" => {
+                    "export default 'hello';"
+                }
+                "application/json" | "text/json" => "{\"hello\": \"world\"}",
+                "text/css" => "#test { background-color: rgb(0, 255, 0); }",
+                _ => "42",
+            };
+            state.delivered_ok = Some(body.to_string());
+            return Ok(body.to_string());
+        }
         // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
         // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
         // 形参，s124 `__zw_lp` 同法穿参；真实 HTTP 宿主忽略未知查询参数，本臂消费
@@ -6294,7 +6422,16 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// `fetch('/images/...') + createImageBitmap(blob)` 取图像源——shim fetch 落 ok:false stub
 /// 时无法取源）。接受 `https://wpt.test/<path>`（绝对）与 `<path>`（相对——shim 原样透传
 /// fetch 入参，如 '/images/yellow75.png'）；文件缺失返 Err → shim 落 ok:false（404 语义）。
+/// 既有单测签名面——回落进程级静态 stash（见 [`SERVE_CUSTOM_RESPONSE_STASH`]）。
+#[cfg(test)]
 fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fetch_bridge::FetchHandler> {
+    wpt_data_fetch_handler_with_stash(wpt_root, None)
+}
+
+fn wpt_data_fetch_handler_with_stash(
+    wpt_root: &std::path::Path,
+    serve_custom_stash: Option<ServeCustomResponseStash>,
+) -> Option<zero_engine::fetch_bridge::FetchHandler> {
     let root = wpt_root.to_path_buf();
     // page-state-compat M2：beacon/resources 三端点共享 stash（handler per-case 构建——
     // 每案新 stash 与 wptserve server.stash 语义对齐；id 键 = token()/UUID 案内唯一）。
@@ -6302,6 +6439,7 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
     // s150：the-link-element/stylesheet.py per-id 请求计数（handler per-case 构建——
     // 每案新计数表，键 = `?id=` token，值 = 该 id 的资源请求次数）。
     let link_sheet_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
+    let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
@@ -6421,6 +6559,54 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
                 let (content_type, body) = serve_interactions_stylesheet(query);
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), content_type));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/scripting-1/the-script-element/serve-custom-response.py" {
+                // s267：serve-custom-response.py 动态端点 action 三查询臂（上游
+                // wptserve handler 不在语料；模块取回臂在 [`wpt_data_script_fetcher`]
+                // ——页面 fetch() 与模块取回共享 [`SERVE_CUSTOM_RESPONSE_STASH`]）。
+                // stat 只读回计数（不计数）；reset-stat 归零；set 更新 code/
+                // content-type/network-error（解析失败参数按缺席忽略——corpus 面
+                // 恒合法）。回体 text/plain：stat = 计数十进制，reset/set = "OK"；
+                // 无 action 落空体（页面 fetch() 直取端点无 corpus face）。
+                // https://github.com/web-platform-tests/wpt/blob/master/html/semantics/
+                // scripting-1/the-script-element/serve-custom-response.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let key = wpt_query_value(query, "key").unwrap_or_default();
+                let action = wpt_query_value(query, "action").unwrap_or_default();
+                let mut body = String::new();
+                if let Ok(mut stash) = serve_custom_stash.lock() {
+                    let state = stash.entry(key).or_default();
+                    match action.as_str() {
+                        "stat" => body = state.run_count.to_string(),
+                        "reset-stat" => {
+                            state.run_count = 0;
+                            body = "OK".to_string();
+                        }
+                        "set" => {
+                            if let Some(code) = wpt_query_value(query, "code").and_then(|c| c.parse::<u16>().ok()) {
+                                state.status_code = code;
+                            }
+                            if let Some(ct) = wpt_query_value(query, "content-type") {
+                                state.content_type = ct;
+                            }
+                            if let Some(ne) = wpt_query_value(query, "network-error") {
+                                state.network_error = ne.eq_ignore_ascii_case("true");
+                            }
+                            body = "OK".to_string();
+                        }
+                        _ => {}
+                    }
+                }
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,
@@ -9127,6 +9313,11 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // js-dom M5/M7 收尾（R384）：kill-switch `ZW_NATIVE_DOM` env 已删——原生绑定是唯一
     // 生产路径，runner 经默认配置即走 native（testharness-dom-native 入口的 env 前缀
     // 成为无害 no-op，Makefile 目标保留以维持既有命令面）。
+    // s267：serve-custom-response.py 端点案级 stash——fetch 桥（页面 fetch()
+    // action 面）与 script fetcher（模块取回面）共享同一案级状态（页 B/C 语料
+    // 共用 fixed token，跨案共享会互踩——见 [`ServeCustomResponseState`] 注）。
+    let serve_custom_stash: ServeCustomResponseStash =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
@@ -9154,9 +9345,13 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
         image_source_fetcher: wpt_data_image_fetcher(wpt_root),
         // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
-        fetch_handler: wpt_data_fetch_handler(wpt_root),
+        fetch_handler: wpt_data_fetch_handler_with_stash(wpt_root, Some(std::sync::Arc::clone(&serve_custom_stash))),
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
-        script_source_fetcher: wpt_data_script_fetcher(wpt_root, extract_meta_referrer_policy(source)),
+        script_source_fetcher: wpt_data_script_fetcher_with_stash(
+            wpt_root,
+            extract_meta_referrer_policy(source),
+            Some(std::sync::Arc::clone(&serve_custom_stash)),
+        ),
         // s256（动态 import 延迟决议）：native 通道外链 module 取回延迟——trickle
         // 管道（`?pipe=trickle(dN)`）建模为真实网络秒级延迟。runner 同步 fetcher
         // 忽略 trickle（真网络延迟缺席），不经此 provider 慢模块时序族
@@ -14507,6 +14702,115 @@ async_test(function(test) {
         let resp_bak = handler(&make_req("https://wpt.test/dom/nodes/encoding.py.bak"));
         assert!(resp_bak.is_ok());
         assert_eq!(resp_bak.unwrap().status, 404);
+    }
+
+    #[test]
+    fn serve_custom_response_endpoint_state_machine_s267() {
+        // s267（serve-custom-response.py 端点）：fetch 桥 action 三臂 + script
+        // fetcher 模块取回臂共享 stash 的状态机端到端——repeated-import 三页判据
+        // 面（network error / 404 / 非 module MIME 拒绝且计数；JS MIME 成功回体
+        // 且计数；reset-stat 归零）。fetcher 契约无 status 通道，非 200 与网络
+        // 错误对页面同形 Err；MIME 准入门 = JS MIME ∪ json/css 数据模块意图集
+        //（intent-blind，with 型数据模块执行面 s107 挂账注）。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let fetcher = wpt_data_script_fetcher(Path::new("/nonexistent-wpt-root"), None).unwrap();
+        let make_req = |url: &str| zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+        let endpoint = "https://wpt.test/html/semantics/scripting-1/the-script-element/serve-custom-response.py";
+        let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/shared-dependency-repeated-import.html";
+        let key = "s267-test-token";
+        let stat = |key: &str| {
+            handler(&make_req(&format!("{endpoint}?key={key}&action=stat")))
+                .unwrap()
+                .body
+        };
+        let set = |params: &str| handler(&make_req(&format!("{endpoint}?key={key}&action=set&{params}"))).unwrap();
+        let module_fetch = |key: &str| fetcher(page, &format!("../serve-custom-response.py?key={key}"));
+
+        // stat 起步 0（缺席 context 缺省）；reset-stat 回 "OK"。
+        assert_eq!(stat(key), "0");
+        let resp = handler(&make_req(&format!("{endpoint}?key={key}&action=reset-stat"))).unwrap();
+        assert_eq!(resp.body, "OK");
+
+        // network-error：模块取回 Err + 计数 1（上游断连前计数）。
+        set("network-error=true");
+        assert!(module_fetch(key).is_err());
+        assert_eq!(stat(key), "1");
+
+        // 404：reset 后取回 Err（fetcher 契约无 status 通道，非 200 加载失败
+        // 与网络错误同形）+ 计数 1。
+        handler(&make_req(&format!("{endpoint}?key={key}&action=reset-stat"))).unwrap();
+        set("network-error=false&code=404");
+        assert!(module_fetch(key).is_err());
+        assert_eq!(stat(key), "1");
+
+        // text/plain：非 module MIME 准入门 Err + 计数 1（服务端已回体计数）。
+        handler(&make_req(&format!("{endpoint}?key={key}&action=reset-stat"))).unwrap();
+        set("network-error=false&code=200&content-type=text/plain");
+        assert!(module_fetch(key).is_err());
+        assert_eq!(stat(key), "1");
+
+        // application/javascript：成功回体（上游逐字）+ 计数 1。
+        handler(&make_req(&format!("{endpoint}?key={key}&action=reset-stat"))).unwrap();
+        set("network-error=false&code=200&content-type=application/javascript");
+        assert_eq!(module_fetch(key).unwrap(), "export default 'hello';");
+        assert_eq!(stat(key), "1");
+
+        // text/css：数据模块意图集准入门 Ok + 上游 CSS 回体（css-module 页判据串）
+        // ——fresh key（成功交付缓存按 key 记账，复 key 复取回落缓存回体，与
+        // module map 语义一致；页 A 语料每面组 fresh token 同构）。
+        let key_css = "s267-test-token-css";
+        handler(&make_req(&format!("{endpoint}?key={key_css}&action=reset-stat"))).unwrap();
+        handler(&make_req(&format!(
+            "{endpoint}?key={key_css}&action=set&network-error=false&code=200&content-type=text/css"
+        )))
+        .unwrap();
+        assert_eq!(
+            module_fetch(key_css).unwrap(),
+            "#test { background-color: rgb(0, 255, 0); }"
+        );
+        assert_eq!(stat(key_css), "1");
+
+        // `__zw_mtype` 标记门（s249 穿参通道）：css 型按 module type map——
+        // text/plain 非 css MIME → Err（content-type-checking 同判据）；text 型
+        // 无 MIME 校验步（s250 口径）——text/plain 照回上游 else 体 "42"。
+        let key_mt = "s267-test-token-mtype";
+        handler(&make_req(&format!(
+            "{endpoint}?key={key_mt}&action=set&network-error=false&code=200&content-type=text/plain"
+        )))
+        .unwrap();
+        assert!(
+            fetcher(
+                page,
+                &format!("../serve-custom-response.py?key={key_mt}&__zw_mtype=css")
+            )
+            .is_err()
+        );
+        assert_eq!(
+            fetcher(
+                page,
+                &format!("../serve-custom-response.py?key={key_mt}&__zw_mtype=text")
+            )
+            .unwrap(),
+            "42"
+        );
+
+        // 成功交付缓存（元素装载面 module map 仿真）：复 key 取回落缓存回体且
+        // **不计数**（页 B step5 判据：复 import stat "0"）；失败态不缓存——
+        // network-error 面复取回重新计数（上方 step1 计数 1 同判据）。
+        assert_eq!(
+            module_fetch(key_css).unwrap(),
+            "#test { background-color: rgb(0, 255, 0); }"
+        );
+        assert_eq!(stat(key_css), "1");
     }
 
     #[test]

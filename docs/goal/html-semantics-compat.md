@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 266 施工收口（module 外链 MIME 门：runner 预投递面按 spec fetch a single module script，非 JavaScript MIME 网络错误投递；script-element MIME 三页 **3F→3P**）。勘根：webview `ScriptSourceFetcher` 与 runner `wpt_data_script_fetcher` 的 scripty 门对页面脚本单元是死代码——runner 模式外链脚本全被 `inline_local_scripts` 预投递，末臂读盘在册即 200 投递 + load 尾、无 MIME 检查；探针四臂实证（module .js→load 正常 / module .css→误 fire load=违例本体 / classic .css→双事件皆无=SyntaxError 体杀投递尾形状注记 / `script[src]` 计数 0=面在预投递层）；DOTALL 全树扫描翻转面 25 处 = 3 处读盘在册（恰三页判据全 `assert_array_equals(log, ["error"])` + unreached load）+ 22 处缺席 `.py` 端点透传不变 → 零回归面。施工 1 臂 + 1 钉：末臂 `is_module_type` 派生 scripty（①`?pipe=header(Content-Type,X)` ②`.headers` sidecar ③扩展名 .js/.mjs；非 scripty→`(combined,404,"")` error 尾 + 体不入页；classic 恒 scripty 无 MIME 门；读盘缺席整段透传 fetcher 端点臂 s250 语义不变）+ 钉 `inline_local_scripts_module_non_scripty_src_error_delivery_s266`。验证：红态 dump 误 load 恰合 + inline 组 3/3（fmt 后复跑）+ runner bin 全量 **283P/0F/76I**（4G per-proc 帽 runtime_path_tests 正当触发，按质量门禁升至 `--per-proc-mem 8 --total-mem 16`）+ fmt/clippy 干净 + solo 三页 **3F→3P**（日志 evidence/logs/s266-script-element-mime-gate.log）+ DOTALL 重扫零其他 face → A/B 免跑（s258 先例）。挂账注记（零 corpus face）：classic 外链无 MIME 门为 spec 正确，SyntaxError 体杀投递尾形状不扩面。承前：M2 切片 265（shim CSSOM 规则文本 NUL 预处理）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 267 施工收口（serve-custom-response.py 端点仿真：repeated-import 三页 **3F→3P**，8 job 并行族跑 5/5）。勘根：上游端点语义（stash 按 key 记账，stat/reset-stat/set 三 action，无 action 模块取回按 content-type 回体 + 计数）；投递拓扑 = 页面 fetch() action 面落 fetch handler、运行时元素装载 + 动态 import 落 script fetcher，两端共享案级状态；**跨案竞态实证**（runner 8 job 同进程线程 + 页 B/C 语料共用 fixed token → 进程级全局表互踩，solo B 归因）；`__zw_mtype` intent 臂前置接管 css 端点取回（Err 不计数，stat 观察面断裂）；改写器 `import(` 匹配吃进标识符内部（removeScriptReimport → ReferenceError）；取回序债务 = `__zw_load_module` 先 host 后查缓存 → 动态 import 复取（页 C step5 stat "1"≠"0"）。施工：案级 stash（per-case Arc 两闭包共享，单测回落进程级静态表）+ 端点模块取回臂前置（mtype 感知 MIME 门：text 无校验 s250 口径 / css 按 module type map / 默认 JS∪json∪css 集）+ delivered_ok 交付缓存（首 Ok 记账回体、复取不计数、失败不记账）+ `is_identifier_continue_byte` 守卫两改写点 + `__zwModuleFetchKeys` 取回键缓存（host 调用前先查）。验证：状态机钉 + 改写守卫钉绿 + 沙箱 **396P/0F** + corpus solo A 3P / B 5 步 P / 并行族 5/5（日志 evidence/logs/s267-repeated-import.log）+ 邻域 FILTER="module" 330P/43F 对位 s261 全域基线 **REGRESSED=∅ FIXED=6**（3×s267 + 3×s266）+ runner bin **284P/0F/76I** + fmt/clippy 干净。挂账注记：delivered_ok 为端点域仿真，webview 元素装载面真实 module map 仍缺席（s256 挂账部分收窄保留）；fixed token 跨案共享为语料形态注记，后续端点类挂账沿用案级 stash。承前：M2 切片 266（module 外链 MIME 门）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,39 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 267**：serve-custom-response.py 端点仿真轮
+  （s266 下一步候选 #1，runner 车道 2 文件；repeated-import 三页
+  **3F→3P**）——勘根：上游端点语义（wptserve stash 按 `key` 记账
+  ；stat 读数不计数 / reset-stat 清零 / set 更新配置；无 action 模
+  块取回按 content-type 回体 + 计数，语料端点文件保持缺席 runner
+  仿真）；投递拓扑 = 页面 fetch() action 面落 fetch handler、运
+  行时元素装载 + 动态 import 落 script fetcher，两端共享案级状态
+  ；**跨案竞态实证**（8 job 同进程线程 + 页 B/C fixed token 共用
+  → 进程级全局表互踩：B error 步拿 C success 配置误 Ok，strict
+  solo B 四步全过归因）；`__zw_mtype` intent 臂前置接管 css 端点
+  取回 Err 不计数（页 A stat "0"）；`rewrite_dynamic_imports`
+  `import(` 吃进 `removeScriptReimport(` 标识符 → ReferenceError
+  ；`__zw_load_module` 先 host 后查缓存 → 复 import 重取（页 C
+  stat "1"≠"0"）。施工：案级 stash（per-case Arc，fetch handler +
+  script fetcher 两闭包共享，单测 None 回落进程级静态表、两既有
+  wrapper 转 `#[cfg(test)]`）+ 端点模块取回臂前置 mtype 感知 MIME
+  门（text 无校验 s250 口径 / css 按 module type map / 默认
+  JS∪json∪css s107 同集）+ delivered_ok 交付缓存（首 Ok 记账回体
+  、复取不计数、失败不记账）+ `is_identifier_continue_byte` 守卫
+  两改写点 + `__zwModuleFetchKeys` 取回键缓存（键
+  `spec␟parent␟typeHint`，host 调用前先查、成功记账失败不记）。验
+  证：状态机钉 `serve_custom_response_endpoint_state_machine_s267`
+  + 改写守卫钉 `test_rewrite_skips_import_suffix_of_identifier` 绿
+  + 沙箱 **396P/0F**（395+1）+ solo 页 A 3 子测试全 P（error/404/
+  MIME/成功/串并行 ×5 判据全过——s249 CSSStyleSheet 合成真实通路
+  ）+ solo 页 B 5 步 P + **8 job 并行族 5/5**（日志
+  evidence/logs/s267-repeated-import.log）+ 邻域 FILTER="module"
+  330P/43F 对位 s261-ab 全域基线模块子集 37F **REGRESSED=∅
+  FIXED=6** + runner bin **284P/0F/76I** + fmt/clippy 干净。挂账
+  注记：delivered_ok 端点域仿真——webview 元素装载面真实 module
+  map 仍缺席（s256 部分收窄保留）；fixed token 跨案共享为语料形
+  态注记，后续端点类挂账沿用案级 stash。账本
+  [evidence/2026-11-03-m2s267-serve-custom-response-endpoint.md](html-semantics-compat/evidence/2026-11-03-m2s267-serve-custom-response-endpoint.md)。
 - **2026-11-03 M2 切片 266**：module 外链 MIME 门轮（s265 下一步候选
   #1，1 臂 + 1 钉；script-element MIME 三页 **3F→3P**）——勘根：spec
   fetch a single module script 非 JavaScript MIME = 网络错误（error
