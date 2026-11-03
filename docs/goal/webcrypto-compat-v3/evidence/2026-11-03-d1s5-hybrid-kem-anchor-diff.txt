@@ -1,0 +1,22 @@
+base = docs/goal/webcrypto-compat-v3/evidence/2026-11-03-d1s4-x448-kmac-full.json.gz
+head = docs/goal/webcrypto-compat-v3/evidence/2026-11-03-d1s5-hybrid-kem-full.json.gz
+REGRESSED (P->nonP): 0
+FIXED (nonP->P): 750 in 11 cases
+  WebCryptoAPI/modern-algos/encap_decap/encap_decap_bits.https.any.js: 9
+  WebCryptoAPI/modern-algos/encap_decap/encap_decap_bits.https.any.worker.js: 9
+  WebCryptoAPI/modern-algos/encap_decap/encap_decap_keys.https.any.js: 120
+  WebCryptoAPI/modern-algos/encap_decap/encap_decap_keys.https.any.worker.js: 120
+  WebCryptoAPI/modern-algos/getPublicKey.https.any.js: 6
+  WebCryptoAPI/modern-algos/getPublicKey.https.any.worker.js: 6
+  WebCryptoAPI/modern-algos/import_export/Hybrid-KEM_importKey.https.any.js: 216
+  WebCryptoAPI/modern-algos/import_export/Hybrid-KEM_importKey.https.any.worker.js: 216
+  WebCryptoAPI/modern-algos/serialization/hybridkem.https.window.js: 6
+  WebCryptoAPI/modern-algos/supports-modern.https.any.js: 21
+  WebCryptoAPI/modern-algos/supports-modern.https.any.worker.js: 21
+FLIPPED (nonP->nonP): 0
+DRIFT cases: lost=0 gained=0
+DRIFT subtests (in shared cases): 4
+  WebCryptoAPI/modern-algos/generateKey/failures_Hybrid-KEM.https.any.js: lost=1 gained=684
+  WebCryptoAPI/modern-algos/generateKey/failures_Hybrid-KEM.https.any.worker.js: lost=1 gained=684
+  WebCryptoAPI/modern-algos/generateKey/successes_Hybrid-KEM.https.any.js: lost=1 gained=468
+  WebCryptoAPI/modern-algos/generateKey/successes_Hybrid-KEM.https.any.worker.js: lost=1 gained=468

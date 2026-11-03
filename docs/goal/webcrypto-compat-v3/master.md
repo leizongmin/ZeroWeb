@@ -8,19 +8,57 @@ M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更�
 均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
 ——域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
 回归）；域切片第二轮完成（XOF 五连，+1,676P 零回归）；域切片第三轮完成
-（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归）；**域切片第四轮完成（X448 +
-KMAC 双域，FIXED 5,868 全落靶面，分母 82,223 keys 零回归，systemd 单发
-安静窗口复跑落锚）**；余批按依赖就绪度推进：Hybrid-KEM（随 ML-KEM 依赖）
-→ M 末收口重定基
-**最后更新**: 2026-11-03（d1s4 X448/KMAC 落账：FIXED 5,868 落 48 案靶面 +
-drift 14 案具名归因，REGRESSED=0；验证收口 = runner 单测 276P +
-make test workspace/renderer 全绿（browser bin 唯一红为 forms/typing 面
-预存红，stash 归因在案）；实现 `1604ee3bc`，锚 gz md5
-b32bb16207dc491a4e168611028c0dd9 / 内容 16945280433203e9febb44bff787f5ed）
+（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归）；域切片第四轮完成（X448 +
+KMAC 双域，FIXED 5,868 全落靶面，零回归）；**域切片第五轮完成（Hybrid
+PQ/T KEM 三组合收官批，FIXED 750 全落靶面，T 4→0 全账 T 清零，分母
+84,523 keys REGRESSED=0）——D1 五轮域切片全部收官**；下一步 **M 末收口
+重定基**（DC-4/DC-5 + 归档）
+**最后更新**: 2026-11-03（d1s5 Hybrid PQ/T KEM 落账：MLKEM768-P256 /
+MLKEM768-X25519 / MLKEM1024-P384 全链路，复用 ml-kem 0.3.3 零新增 crate；
+FIXED 750 落 11 案靶面 + T 4→0（Hybrid generateKey ×4 Timeout 键退役），
+REGRESSED=0、FLIPPED=0、F 3,900 全数 Ed448 降 scope 域外（未注册清单
+仅余 Ed448）；r2→r3 复跑恰 1 键差（TurboSHAKE 24MB flake 复归挂账形态），
+rebase 零位移逐位复现；实现 `943c4da1e`，锚 gz md5
+957ec62384623a62715e91a07bbb8699 / 内容 98fec48ca9b5576ee17d86f27038bc2c；
+make test 止于两族兄弟流预存红（engine lib 5 CSSOM 序列化 + quickjs
+renderer lib 1 时序，s249–s253 窗口形变，归因在案不代修））
 
 ---
 
 ## 当前状态
+
+**D1 域切片第五轮完成——Hybrid PQ/T KEM 三组合收官（2026-11-03，[evidence](evidence/2026-11-03-d1s5-hybrid-kem-slice.md)）**：
+MLKEM768-P256 / MLKEM768-X25519 / MLKEM1024-P384 全链路
+（draft-irtf-cfrg-concrete-hybrid-kems-03 §4，CG 框架；复用 d1s3 落树
+ml-kem 0.3.3 与既有 p256/p384/x25519，**零新增 crate**）。宿主
+`crypto_hybrid.rs`（新文件 648 行：三组合参数表 + ExpandSeed §3.2 + P 系
+rejection sampling 标量 + C2PRI combiner SHA3-256(ss_PQ‖ss_T‖ct_T‖ek_T‖
+label)）→ `crypto_asym.rs` 六 mlkem 入口按名分流（part02/callbacks 零
+改动）→ shim `_zw_mlKemIsFamily` 三名并入 + REG 三行 → 定向翻绿 →
+锚对照零回归。**FIXED 750 落 11 案全部靶面**，全量分母 360 案 /
+**84,523 keys = P 80,623 + F 3,900 + T 0**，REGRESSED=0、FLIPPED=0、
+case drift 0；**T 4→0**（Hybrid generateKey ×4 案级 Timeout 键退役，
+684/468 ×双腿全 Pass——「余 T 4」挂账销案，全账 T 清零）。切片内核心
+修复：combiner 公式（初版误写 X-Wing 形含 ct_PQ 缺 ek_T，15 变体枚举 +
+draft 逐字节 diff 排除转录错后，拉 HYBRID-KEMS-09 §5.1.3 C2PRI 定义
+仲裁——含接收方公钥 ek_T、不含 ct_PQ，P256/X25519 两向量同时命中；
+[learning](../../../learnings/bugs/2026-11/2026-11-03-hybrid-kem-c2pri-combiner-includes-ek-t.md)
+沉淀「框架定义优于正文 identical 表述」）；语料对齐（helpers.js /
+algorithm_registry.js 早期波次陈旧副本 → pin rev `cb6cc97a` 逐字节复位，
+registeredAlgorithmNames 清单缺三 hybrid 名即全案红）。r2（rebase 前
+树）→ r3（现行树）复跑恰 1 键差 = TurboSHAKE 24MB heisenbug 复归挂账
+形态（REGRESSED 归零佐证），rebase 零位移逐位复现。F 3,900 全数 Ed448
+降 scope 域外——**未注册清单仅余 Ed448**。make test 止于两族兄弟流
+预存红（engine lib 5 CSSOM 序列化守卫 = s249 `652a78e00` 尾分号 Blink
+形过期期望；quickjs renderer lib 1 时序假设 = s249–s253 module 执行
+时序窗，该腿因 browser bin 预存红 d1s4 起从未达腿、本轮首翻出；均
+隔离复跑确定性红、V8 同面全绿排除本流触面，按 run-rules #9 不代修，
+碰头账在案）；余腿 renderer 368P/quickjs 测试腿/GPU 96P 全绿，runner
+单测 281P/0F/76I（+5 兄弟流增量）、host 单测 5/5。对照基准更新为
+[d1s5 锚](evidence/2026-11-03-d1s5-hybrid-kem-full.json.gz)。
+**D1 五轮域切片全部收官**（Argon2/OCB/ChaCha → XOF 五连 → PQC 两域 →
+X448/KMAC → Hybrid-KEM），下一批 **M 末收口重定基**（DC-4 coverage
+复测 + DC-5 重定基终账/谱系零移交 + 归档模式 A + 38 号启动器删除）。
 
 **D1 域切片第四轮完成（2026-11-03，[evidence](evidence/2026-11-03-d1s4-x448-kmac-slice.md)）**：
 X448（RFC 7748 OKP derive 面，stable x448 0.6.0，host 两条拍板义务）+
@@ -534,3 +572,21 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   零交集）；r5296 门关相位并行翻铃单例（隔离 2P + 前轮 3719P 双对照，
   env-var 测试开关 × libtest 并行串态，变体已补 static 槽 learning）。
   全账见 d1s4 evidence 验证节 + 过程记录。
+- 2026-11-03 R5421 d1s5 Hybrid-KEM 落账轮：实现触面 `crypto_hybrid.rs`
+  （新文件 648 行）+ `crypto_asym.rs`（六入口分流 + pub(crate) 可见性
+  扩面）+ `js_dom_bridge.rs`（+1 mod）+ `part01b.js`（家族三名并入
+  +9）+ `part02a.js`（REG 三行 +6）——共享清单（part01.js/script_gen.rs/
+  testharness.rs）零触碰，part02.js/callbacks.rs 零改动。前轮 session
+  （r2 全量落盘后）中断于证据占位节，本轮接手收口：rebase 带入 2 提交
+  （`7fd64d148` s253 CSP / `e6ba14d7d` 渲染 DC-4 docs）触面零交集。
+  **兄弟流预存红两族翻出（均 s249–s253 窗口形变，本流不代修）**：
+  ① engine lib 5 CSSOM 序列化守卫（p56/p99s/r3276/r2810/r2809）——
+  s249 `652a78e00`（05:17）「CSSOM 颜色归一 + 尾分号 Blink 形」致旧期望
+  过期，d1s4 make test（01:00，3719P/0F）先于该提交；② quickjs
+  renderer lib `mutation_arm...document_reset_window` 时序假设失配——
+  该腿居 browser bin 预存红之后 d1s4 起从未达腿，本轮首翻出，s249–s253
+  module 执行时序窗口归因；两族均隔离复跑确定性红、V8 同面全绿排除
+  crypto 触面。**归渲染/script-sandbox 流域碰头账**：其流下轮 make test
+  将遇同红，期望串更新（尾分号 + 时序断言）由其认领。r3 全量与
+  ZeroWeb-2 editing 电池（delete.html 项）并行落盘（75 分钟 quiet cap
+  PROCEED-ON-TIMEOUT，d1s4 跨 clone 先例 REGRESSED=0 实证无扰）。
