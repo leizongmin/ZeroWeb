@@ -62,6 +62,12 @@ M2 矛盾（早退臂"应"不摘壳但实测 i 被摘）的解释——隐性清
   作下钻通道；guard 双层）+ 捕获尾扩展：主链收空且非 collapsed 时取首个整含
   可见内容，文本 → 复用上行链捕获（collapsed 标记防再入；`<a>` 排除/off 表
   滤/reverse 序全复用），img/部分含 → 空。
+- **Edit F**（13017c0a3，判读轮修复）：Edit E 整含两判方向互换——
+  `_zwDelGetPosition` 返回**首参相对次参**方位（BpCompare −1=A<B），head ≥
+  start 应拒 `'after'`、tail ≤ end 应拒 `'before'`；首版两处恰好反写，判定
+  实际要求「候选横跨整个选区」，本族语料形态恒无候选 → capture 恒 `[]`。
+  分阶段探针（zz-probe-dshell3：capture 直调 / delete 后 tags 存活 /
+  inserttext 消费三段二分）定位断点在 capture 本身，非快照回写或消费面。
 
 ## 3. 探针基线与修复预期（zz-probe-dshell2 九案）
 
@@ -81,6 +87,15 @@ zz-probe-dshell 56 案基线 43F；修复预期 delete/fd 面翻转（C02/C05/C0
 C11-C14/C24-C29/C42-C45 = 16 案），C03/C04/C07-C10/C38/C39/C50-C53 12 案
 PASS 恒等；ipara/ilb 面（C15-C21/C30-C37/C40/C41/C46-C49/C54-C56）失败模式
 可能位移（caret 输入世界变了），仍 FAIL，独立轮归因。
+
+**修复后终判读（13017c0a3 release bin；fix 前首判 dshell 56 案仅 15 翻转、
+typing 面裸奔——归因即 Edit F）**：dshell delete/fd 面 **35/35 全 PASS**——
+整含 typing 链 8 案 C01/C02/C05/C06/C11-C14 typed 段重裹逐字
+`abc<b><i>def</i></b>ghi`，img/部分含/s 空壳面恒等；残余 **21F 全 ipara/ilb
+独立轮面**（ipara 13 + ilb 8，模式位移在 §6 记录）。dshell2 九案 DOM 全合
+修复预期（M2/M5 `abcghi`、M3/M4/M6 树不变、M7/M8 链内不变、M9 `abchi`）；
+caret M2/M4/M6 `t:abc@3`、M7 `b@0`、M8 `ab@2`、M9 `div@1` 精确，M1/M3/M5
+落 `div@1`（§3 表 t:abc@3 的边界等价点表示差异，见 §6）。
 
 ## 4. gate27 补账（勘误定谳：外部 stop + 断言收尾批量打印，非零输出死亡）
 
@@ -108,22 +123,51 @@ kernel trap），非崩溃。判读判据统一为 transcript 行数 + 墙钟，
   归因穷尽，无 bisect 靶，控制面 ⓪ 项按此口径消解。
 - **E4**（bin-g27-battery multitest 全腿，03:12:39 起，pre-delta bin）：−85
   缺口同 bin 归因数据点，结果见 §5。
-
-（E4/E2fd 终态数字待腿落地后补录。）
+- **E4 终态**（zw-g27-e4 复驱，09:13:36→09:47:02 = 33.4 min，pre-delta 电池
+  bin，E2fd 争用）：7,053 行 = **9,546P/428F/1T 干净全量收尾**（1T =
+  `?9001-last :: 1 test unreported (tests:975)`）。切片级 diff（乙实例，
+  COORD 十六轮）：对电池腿 9,569P/430F/1T **除 ?9001-last 外全部切片逐位
+  恒等**，该片 battery=892P/107F → E4=869P/105F（−23P/−2F）＝同 bin 墙钟
+  截断深度漂移；对 gate21 9,647P/437F/1T 的 −85 缺口同源（gate21 该片报满
+  1,084，battery/E4 截断深度递减）——**multitest −85 归因收口：零真实行为
+  差，纯末片页超时截断漂移，无 bisect 靶**。
+- **E2fd 复驱终态**（zw-g27-e2fd，09:13:36→09:46:18 = 32.7 min，pre-delta
+  电池 bin）：7,315 行 = **6,809P/250F/2T 干净全量收尾**——fd 腿 leg8 有效账
+  成立（判据=行数+墙钟，rc=1 系 test-guard 信号映射不作数）。对 gate21
+  6,831P/258F/1T 差 −22P/−8F/+1T：多出的一 T 系 **?6001-7000 新增截断片**
+  （`1 test unreported (tests:599)`，≈30 verdicts 与缺额算术精确自洽；
+  ?7001-last 1T gate21 同有、非缺额载体——勘误：本段初稿挂 ?7001-last 系
+  归因误置）——页超时截断 flake（g19 溢出桶、join-different 1T 漂移同族），
+  且系电池 bin（gate27 树）跨树对照 gate21 bin，不作回归挂账；250F 面为
+  gate21 已知簇（collapsed 跨块合并 compare + foreColor qV）。
 
 ## 5. 门禁（gate28 三腿：run 电池 8 leg + other 通道 + engine lib）
 
 对账基线（pre-delta）：delete.html 7,339P/296F/1T（E1/diag 双 bin 逐位）、
-fd 6,831P/258F/1T（gate21；E2fd 同 bin 复驱确认中）、multitest 9,647P/437F/1T
-（gate21）vs 电池腿 9,569P/430F/1T（−85 归因 = E4）、other 13,134P/1,600F、
-enginelib 3,709P/0F。post-delta 预期：multitest F 430→~410（§3 家族 16 案
-翻转 + 12 案恒等）、delete.html F ≤296（链外边界面部分翻转可能）、fd
-F ≤258、P→F 必须为零、other/enginelib 逐位恒等。TBD（腿落地后补录实测）。
+fd 6,831P/258F/1T（gate21；E2fd 同 bin 复驱确认，§4）、multitest 9,647P/437F/1T
+（gate21）vs 电池腿 9,569P/430F/1T（−85 已收口 = E4 §4，零行为差）、
+other 13,134P/1,600F、enginelib 3,709P/0F。post-delta 预期：multitest
+430F→~410（`<b><i>` 家族 45 compare 行中 delete 10 + fd 10 翻转、ilb 9 +
+ipara 16 允许模式位移；判读以行集 diff 对 `g28-mt-baseline-all.txt`/`g28-bi
+-family-baseline.txt`，计数仅对账——末片截断漂移已知签名）、delete.html
+F ≤296（链外边界面部分翻转可能）、fd F ≤258、P→F 必须为零、other/enginelib
+逐位恒等。
+
+**电池已放（zw-g28-battery，10:09:27 起，bin = 13017c0a3 release + Edit F）**：
+multitest → insertparagraph → inserttext → typing-text → insertlinebreak →
+forecolor → delete.html → forwarddelete 八腿（TIME_LIMIT=10800）→ other 通道
+→ enginelib 顺序，done 标记 gate28-done.txt，预计 ~3h。TBD（腿落地后补录
+实测）。
 
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
   ——本轮 delta 改变其 delete 出口 caret 后失败模式位移，独立轮归因；
+  修复后终判读残余 21F 全落此面（探针维 ipara 13 + ilb 8），第十五轮已认领
+  （前置 part01f.js 提交已落地）；
+- dshell2 M1/M3/M5 caret 落 `div@1`（=t:abc@3 边界等价点表示差异；inserttext
+  同点消费 C01-C14 全绿实证 multitest DOM compare 不可见）——语料面无断言
+  selection 锚点形态，仅记档；未来出现 selection 断言语料再收口；
 - 电池 v1 双腿 SIGSEGV/GPF 一次性崩溃对按「环境性/低频一次性」口径消解
   （E1/diag 双 bin 干净全量，重跑法归因穷尽）——若再现以新样本重开；
 - multitest ?9001-last solo 切片过滤语法（`multitest.html?9001-last` 直跑
