@@ -72,12 +72,14 @@ impl PendingScriptPrefetch {
                             // P6：裸说明符先经本代页面 import map 映射（仅实际命中映射键时改写，
                             // 与 js_worker `collect_module_deps` 同判据）；未命中保持
                             // `resolve_document_url` 原路径（URL 形态说明符零漂移）。
+                            // s260：Blocked → 不预取（解析将在编译面终止，预取被阻断
+                            // URL 属噪声抓取）。
                             for spec in extract_static_module_import_specifiers(&text) {
-                                let dep = self
-                                    .import_map
-                                    .as_ref()
-                                    .and_then(|m| m.resolve_mapped(&spec, url))
-                                    .unwrap_or_else(|| resolve_document_url(url, &spec));
+                                let Some(dep) =
+                                    crate::js_worker::resolve_import_dep(self.import_map.as_ref(), &spec, url)
+                                else {
+                                    continue;
+                                };
                                 if self.seen.insert(dep.clone()) {
                                     self.queue.push_back(dep);
                                 }

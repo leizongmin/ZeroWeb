@@ -2630,12 +2630,13 @@ fn register_module_compile_callback(
             let spec = &args[0];
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
             // P6：动态 import 同样先过本代页面 import map（仅实际命中映射键时改写；
-            // 未命中保持 resolve_document_url 原路径）。
+            // 未命中保持 resolve_document_url 原路径）。s260：Blocked → 空串契约
+            //（TypeError 拒绝面，与 fetch/collect/compile 失败臂同通道）。
             let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-            let url = map_opt
-                .as_ref()
-                .and_then(|m| m.resolve_mapped(spec, parent))
-                .unwrap_or_else(|| zero_engine::resolve_document_url(parent, spec));
+            let Some(url) = resolve_import_dep(map_opt.as_ref(), spec, parent) else {
+                tracing::warn!("module specifier {spec} blocked by import map null entry");
+                return String::new();
+            };
 
             // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
             // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
@@ -2698,11 +2699,24 @@ fn register_module_compile_callback(
     );
 }
 
+/// 页面 import map 依赖说明符解析（renderer 三面共享：静态依赖收集 / 动态编译
+/// 回调 / 脚本预取）：映射命中 → 映射 URL；未命中 → 按基址 join 原路径（URL
+/// 形态说明符零漂移）；Blocked（null 条目）→ `None`——调用方按解析失败终止
+/// （s260：不回退 parent-join 抓取被阻断 URL；spec 要求 null 条目终止全部回退）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+pub(crate) fn resolve_import_dep(import_map: Option<&ImportMap>, spec: &str, base_url: &str) -> Option<String> {
+    match import_map.map(|m| m.resolve_mapped(spec, base_url)) {
+        Some(ImportMapResolution::Resolved(mapped)) => Some(mapped),
+        Some(ImportMapResolution::Blocked) => None,
+        _ => Some(zero_engine::resolve_document_url(base_url, spec)),
+    }
+}
+
 /// 递归抓取模块依赖图（specifier URL → 源码）。
 ///
 /// `import_map` 为本代页面 import map：裸说明符先经映射（仅实际命中映射键时改写，
 /// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径
-/// （URL 形态说明符零漂移）。
+/// （URL 形态说明符零漂移）；Blocked（null 条目）→ 解析错误终止（s260）。
 pub fn collect_module_deps(
     fetch: &dyn Fn(&str) -> Result<String, String>,
     entry_url: &str,
@@ -2719,9 +2733,11 @@ pub fn collect_module_deps(
     // 作为硬依赖中止模块执行。全量提取器把 `import("_")` 能力探测（Vite 现代浏览器检测
     // `import("_").catch(()=>1)`）当静态依赖 → 预取 cache miss → 模块整体不执行。
     for spec in extract_static_module_import_specifiers(source) {
-        let dep_url = import_map
-            .and_then(|m| m.resolve_mapped(&spec, entry_url))
-            .unwrap_or_else(|| zero_engine::resolve_document_url(entry_url, &spec));
+        let Some(dep_url) = resolve_import_dep(import_map, &spec, entry_url) else {
+            return Err(format!(
+                "module specifier '{spec}' is blocked by a null entry in the import map"
+            ));
+        };
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
             collect_module_deps(fetch, &dep_url, &dep_src, registry, import_map)?;
@@ -3160,10 +3176,75 @@ mod tests {
         let map = parse_page_import_map(html, "https://zero.test/page").expect("第二张合法 map 生效");
         assert_eq!(
             map.resolve_mapped("react", "https://zero.test/page"),
-            Some("https://assets.test/react.js".into())
+            ImportMapResolution::Resolved("https://assets.test/react.js".into())
         );
         // 无 map 页面 → None。
         assert!(parse_page_import_map("<p>no map</p>", "https://zero.test/page").is_none());
+    }
+
+    /// s260：null 条目（Blocked）终止依赖解析——collect_module_deps 对被阻断
+    /// 说明符返 Err 且不回退 parent-join 抓取（此前 Blocked 按 None 降级 →
+    /// 按导入方基址 join 继续抓取被阻断 URL，fetchable 即误装载）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+    #[test]
+    fn collect_module_deps_blocked_entry_terminates_s260() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let map =
+            ImportMap::parse_from_page(r#"{"imports": {"https://x.test/gone.js": null}}"#, "https://x.test/").unwrap();
+        let mut reg = HashMap::new();
+        let err = collect_module_deps(
+            &fetch,
+            "https://x.test/m.js",
+            "import 'https://x.test/gone.js';",
+            &mut reg,
+            Some(&map),
+        )
+        .expect_err("被阻断依赖应以解析错误终止");
+        assert!(
+            err.contains("gone.js") && err.contains("null entry"),
+            "被阻断依赖以 null-entry 错误终止：{err}"
+        );
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            !calls.iter().any(|u| u.contains("gone.js")),
+            "被阻断 URL 不得回退抓取：{calls:?}"
+        );
+    }
+
+    /// s260 伴随钉（resolve_mapped 三态化的共享路径）：resolve_import_dep 三态——
+    /// 映射命中返映射 URL、未命中返 base join 原路径、Blocked → None（collect/handler
+    /// 调用点按 None 终止）；无 map 全走 join passthrough。
+    #[test]
+    fn resolve_import_dep_trinity_s260() {
+        let map = ImportMap::parse_from_page(
+            r#"{"imports": {"react": "https://assets.test/react.js", "blocked": null}}"#,
+            "https://x.test/",
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_import_dep(Some(&map), "react", "https://x.test/page").as_deref(),
+            Some("https://assets.test/react.js"),
+            "映射命中 → 映射 URL"
+        );
+        assert_eq!(
+            resolve_import_dep(Some(&map), "./dep.js", "https://x.test/dir/m.js").as_deref(),
+            Some("https://x.test/dir/dep.js"),
+            "未命中 → base join passthrough"
+        );
+        assert_eq!(
+            resolve_import_dep(Some(&map), "blocked", "https://x.test/page"),
+            None,
+            "Blocked → None，调用点终止"
+        );
+        assert_eq!(
+            resolve_import_dep(None, "./dep.js", "https://x.test/dir/m.js").as_deref(),
+            Some("https://x.test/dir/dep.js"),
+            "无 map → join passthrough"
+        );
     }
 
     /// s257（承 s254 挂账）：多进程宿主 import.meta.resolve 接线——`__zw_importmap_resolve`

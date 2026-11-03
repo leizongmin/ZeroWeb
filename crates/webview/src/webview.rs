@@ -4246,8 +4246,11 @@ impl WebView {
                     // type 串；空串 = 无属性，JS 模块语义）。
                     let type_attr = args.get(2).map(String::as_str).unwrap_or("");
                     // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
-                    // 路径零漂移）。
-                    let spec_eff = apply_import_map(&map_compile, parent, spec);
+                    // 路径零漂移）。s260：Blocked → 空契约（TypeError 拒绝面，
+                    // 不回退 parent-join 抓取被阻断 URL）。
+                    let Some(spec_eff) = apply_import_map(&map_compile, parent, spec) else {
+                        return String::new();
+                    };
                     compile_module_contract(
                         &fetcher_compile,
                         parent,
@@ -4270,13 +4273,17 @@ impl WebView {
             // shim `__zw_compile_module` 面不包裹——无语料目标，渲染管线零变化）。
             let fetch_delay = self.dynamic_import_fetch_delay.clone();
             // s254：原生通道 import map 应用（shim __zw_compile_module 同形）。
+            // s260：Blocked → 返空串 → v8_runtime TypeError reject
+            //（与 CSP violation 拒绝同通道；不回退 parent-join）。
             let map_native = page_import_map.clone();
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
                 move |spec: &str, parent: &str, nonce: &str, type_attr: &str| {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    let spec_eff = apply_import_map(&map_native, parent, spec);
+                    let Some(spec_eff) = apply_import_map(&map_native, parent, spec) else {
+                        return String::new();
+                    };
                     let abs = resolve_document_url(parent, &spec_eff);
                     let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
                     if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
@@ -7634,17 +7641,18 @@ enum ModuleGraphFailure {
 /// s249：`type_attr` = 动态 import 属性 `with.type`（顶层模块的记账类型——css/text
 /// 合成臂与 json 臂同源；依赖图的属性随各 import 语句自带，见递归内的
 /// `extract_static_module_imports_with_attributes` 通道）。
-/// s254：动态 import 的 import map 应用——map 阶段命中才改写说明符（映射值按
-/// referring script base join 绝对化；键归一在 `ImportMap::resolve_mapped` 内按
-/// 同基址进行），未命中原样返回（既有 parent-join 路径零漂移）。Blocked 条目按
-/// None 降级——FIXME 余 webview/宿主编译面（`resolve_mapped` `Option` 签名无
-/// 错误通道；spec 要求 TypeError 终止全部回退；es_module transform 面 s259 已
-/// 按解析错误终止）。
+/// s254：动态 import / 编译契约的 import map 应用——map 阶段命中才改写说明符
+/// （映射值按 referring script base join 绝对化；键归一在 `ImportMap::resolve_mapped`
+/// 内按同基址进行），未命中原样返回（既有 parent-join 路径零漂移）。s260：
+/// Blocked 条目（null）→ `None`——调用方按解析失败终止（shim 契约空串 /
+/// native resolver 空串均落 TypeError reject 面；spec：null 条目终止全部回退，
+/// 不得落回 parent-join 抓取被阻断 URL）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
-fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, spec: &str) -> String {
-    match map.as_ref().and_then(|m| m.resolve_mapped(spec, base)) {
-        Some(mapped) => resolve_document_url(base, &mapped),
-        None => spec.to_string(),
+fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, spec: &str) -> Option<String> {
+    match map.as_ref().map(|m| m.resolve_mapped(spec, base)) {
+        Some(zero_script_sandbox::ImportMapResolution::Resolved(mapped)) => Some(resolve_document_url(base, &mapped)),
+        Some(zero_script_sandbox::ImportMapResolution::Blocked) => None,
+        _ => Some(spec.to_string()),
     }
 }
 
@@ -8158,6 +8166,37 @@ impl Drop for WebView {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// s260 伴随钉（签名变更同伴，红态证据承 renderer/tab collect 钉）：apply_import_map
+    /// 三态——映射命中按 base 绝对化、未命中 passthrough、Blocked → None（两个调用点
+    /// let-else 落空契约：shim `__zw_compile_module` 与 native resolver 均返空串 →
+    /// v8_runtime TypeError reject 面；规范：null 条目按解析失败终止，不得回退父 join）。
+    #[test]
+    fn apply_import_map_trinity_s260() {
+        let base = url::Url::parse("https://x.test/page.html").unwrap();
+        let map = Some(
+            zero_script_sandbox::ImportMap::parse(
+                r#"{"imports":{"react":"https://assets.test/react.js","blocked":null}}"#,
+                &base,
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            apply_import_map(&map, "https://x.test/page.html", "react").as_deref(),
+            Some("https://assets.test/react.js"),
+            "映射命中 → 映射 URL"
+        );
+        assert_eq!(
+            apply_import_map(&map, "https://x.test/page.html", "./dep.js").as_deref(),
+            Some("./dep.js"),
+            "未命中 → 原样 passthrough（fetch 侧按 referrer join，本函数只改写映射命中）"
+        );
+        assert_eq!(
+            apply_import_map(&map, "https://x.test/page.html", "blocked"),
+            None,
+            "Blocked（null 条目）→ None，调用点终止不回退"
+        );
+    }
 
     /// C4 钉测：内联 `<svg>` 的栅格像素必须经 webview 暂存暴露给发布侧。
     ///

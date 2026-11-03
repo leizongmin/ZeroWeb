@@ -9,9 +9,9 @@
 //! 与完整规范的已知偏差（本切片边界，见各 FIXME）：
 //! - 映射键迭代顺序为 `serde_json::Map` 的排序序而非 JSON 插入序（serde_json
 //!   未启用 `preserve_order`）；仅在嵌套尾斜杠前缀键 / 多 scope 相互重叠时可观察。
-//! - null 条目（Blocked）规范要求抛 TypeError 并终止全部回退；es_module
-//!   transform 面（s259）已按解析错误通道终止；webview/宿主编译面经
-//!   [`Self::resolve_mapped`]（`Option` 签名）仍按 Miss/None 降级。
+//! - null 条目（Blocked）规范要求抛 TypeError 并终止全部回退：es_module
+//!   transform 面（s259）与 webview/宿主编译·动态解析面（s260，经
+//!   [`ImportMap::resolve_mapped`] 三态直报）均已按错误通道终止。
 
 use serde_json::Value;
 use url::Url;
@@ -113,22 +113,23 @@ impl ImportMap {
         }
     }
 
-    /// 仅当映射表实际命中（精确键或尾斜杠前缀键）时返回映射 URL；未命中与
-    /// Blocked（`Option` 签名无错误通道，按 None 降级——webview/宿主面残余
-    /// FIXME，见模块注释）均返回 `None`。与 [`Self::resolve`] 的差别在
-    /// asURL 回退不参与——调用方（模块抓取/编译接线）借此保证无命中路径的字符串
-    /// 形态与既有 `resolve_document_url` 产物逐字节一致（在跑站点资产零漂移）。
-    pub fn resolve_mapped(&self, specifier: &str, base_url: &str) -> Option<String> {
-        let base = Url::parse(base_url).ok()?;
+    /// 仅当映射表实际命中（精确键或尾斜杠前缀键）时报告三态结果：
+    /// [`ImportMapResolution::Resolved`]（映射 URL）/[`ImportMapResolution::Blocked`]
+    /// （null 条目）/[`ImportMapResolution::Miss`](无命中)。与 [`Self::resolve`]
+    /// 的差别在 asURL 回退不参与（Miss 恒表无命中）——调用方（模块抓取/编译/
+    /// 动态解析接线）借此保证无命中路径的字符串形态与既有 `resolve_document_url`
+    /// 产物逐字节一致（在跑站点资产零漂移），并按 Blocked 终止全部回退
+    /// （spec：null 条目抛 TypeError，不落 asURL/相对解析——s260 三面接线）。
+    pub fn resolve_mapped(&self, specifier: &str, base_url: &str) -> ImportMapResolution {
+        let Ok(base) = Url::parse(base_url) else {
+            return ImportMapResolution::Miss;
+        };
         let as_url = resolve_url_like(specifier, &base);
         let normalized = as_url
             .as_ref()
             .map(|u| u.to_string())
             .unwrap_or_else(|| specifier.to_string());
-        match self.match_map_tables(&base, &normalized, as_url.as_ref()) {
-            ImportMapResolution::Resolved(url) => Some(url),
-            _ => None,
-        }
+        self.match_map_tables(&base, &normalized, as_url.as_ref())
     }
 
     /// resolve a module specifier 的 map 阶段：按序尝试命中的 scopes，再回退顶层
@@ -419,28 +420,49 @@ mod tests {
         );
     }
 
+    // s260：resolve_mapped 返回三态（Resolved/Blocked/Miss）——None 塌缩曾把
+    // Blocked 降级为 Miss，接线侧 parent-join 继续抓取被阻断 URL（bypass 面）。
     #[test]
     fn resolve_mapped_only_reports_actual_matches() {
         let map = parse_at(GITHUB_MAP, "https://github.com/");
         // 裸说明符命中 → 映射 URL。
         assert_eq!(
             map.resolve_mapped("react", "https://github.com/page"),
-            Some("https://github.githubassets.com/assets/react-e27d1b3e03961e68.js".into())
+            ImportMapResolution::Resolved("https://github.githubassets.com/assets/react-e27d1b3e03961e68.js".into())
         );
-        // 未命中裸说明符 → None（调用方走原生解析）。
-        assert_eq!(map.resolve_mapped("left-pad", "https://github.com/page"), None);
-        // 未命中的 URL 形态说明符 → None（asURL 回退不参与——接线侧零漂移的关键）。
+        // 未命中裸说明符 → Miss（调用方走原生解析）。
+        assert_eq!(
+            map.resolve_mapped("left-pad", "https://github.com/page"),
+            ImportMapResolution::Miss
+        );
+        // 未命中的 URL 形态说明符 → Miss（asURL 回退不参与——接线侧零漂移的关键）。
         assert_eq!(
             map.resolve_mapped(
                 "https://github.githubassets.com/assets/entry.js",
                 "https://github.com/page"
             ),
-            None
+            ImportMapResolution::Miss
         );
-        // 相对形态未命中 → None。
+        // 相对形态未命中 → Miss。
         assert_eq!(
             map.resolve_mapped("./dep.js", "https://github.com/assets/entry.js"),
-            None
+            ImportMapResolution::Miss
+        );
+    }
+
+    // s260：null 条目经 resolve_mapped 报 Blocked（此前 Option 签名塌缩为 None =
+    // Miss，接线侧 parent-join 继续抓取被阻断 URL）。精确键与 URL 形态键两臂。
+    #[test]
+    fn resolve_mapped_null_entry_is_blocked_not_miss_s260() {
+        let map = parse_at(r#"{"imports": {"gone": null}}"#, "https://x.test/");
+        assert_eq!(
+            map.resolve_mapped("gone", "https://x.test/page"),
+            ImportMapResolution::Blocked
+        );
+        let map2 = parse_at(r#"{"imports": {"https://x.test/gone.js": null}}"#, "https://x.test/");
+        assert_eq!(
+            map2.resolve_mapped("https://x.test/gone.js", "https://x.test/page"),
+            ImportMapResolution::Blocked
         );
     }
 
@@ -464,7 +486,7 @@ mod tests {
         // resolve_mapped 面（模块抓取/编译接线）同样拿到绝对 URL。
         assert_eq!(
             map.resolve_mapped("utils/a.js", "https://x.test/dir/page"),
-            Some("https://x.test/assets/utils/a.js".into())
+            ImportMapResolution::Resolved("https://x.test/assets/utils/a.js".into())
         );
     }
 

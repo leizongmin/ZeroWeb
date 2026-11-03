@@ -778,11 +778,13 @@ fn register_module_compile_callback(
             let spec = &args[0];
             let parent = args.get(1).map(String::as_str).unwrap_or("about:blank");
             // P6：动态 import 同样先过本代页面 import map（仅实际命中映射键时改写）。
+            // s260：Blocked → 空串契约（TypeError 拒绝面，与 fetch/collect/compile
+            // 失败臂同通道）。
             let map_opt = import_map.lock().ok().and_then(|g| g.clone());
-            let url = map_opt
-                .as_ref()
-                .and_then(|m| m.resolve_mapped(spec, parent))
-                .unwrap_or_else(|| zero_engine::resolve_document_url(parent, spec));
+            let Some(url) = resolve_import_dep(map_opt.as_ref(), spec, parent) else {
+                tracing::warn!("module specifier {spec} blocked by import map null entry");
+                return String::new();
+            };
 
             // t8j-r2（D1）：回传 `resolved\x1fcode`——JS 侧 `__moduleCache` 以宿主解析键为缓存
             // 键（ECMA-262 §sec-hostresolveimportedmodule），跨目录同名相对 spec 不再碰撞。
@@ -845,10 +847,23 @@ fn register_module_compile_callback(
     );
 }
 
+/// 页面 import map 依赖说明符解析（与 renderer `js_worker::resolve_import_dep`
+/// 同形——tab 侧独立实现，跨 crate 无共享面）：映射命中 → 映射 URL；未命中 →
+/// 按基址 join 原路径；Blocked（null 条目）→ `None`——调用方按解析失败终止
+/// （s260：不回退 parent-join 抓取被阻断 URL）。
+fn resolve_import_dep(import_map: Option<&ImportMap>, spec: &str, base_url: &str) -> Option<String> {
+    match import_map.map(|m| m.resolve_mapped(spec, base_url)) {
+        Some(ImportMapResolution::Resolved(mapped)) => Some(mapped),
+        Some(ImportMapResolution::Blocked) => None,
+        _ => Some(zero_engine::resolve_document_url(base_url, spec)),
+    }
+}
+
 /// 递归抓取模块依赖图（specifier URL → 源码）。
 ///
 /// `import_map` 为本代页面 import map：裸说明符先经映射（仅实际命中映射键时改写，
-/// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径。
+/// 见 [`ImportMap::resolve_mapped`]），未命中保持 `resolve_document_url` 原路径；
+/// Blocked（null 条目）→ 解析错误终止（s260）。
 pub fn collect_module_deps(
     fetch: &dyn Fn(&str) -> Result<String, String>,
     entry_url: &str,
@@ -864,9 +879,11 @@ pub fn collect_module_deps(
     // 动态 import() 留给运行时 `__zw_compile_module` fetch，失败以 rejection 呈现，不得作为
     // 硬依赖中止模块执行（Vite `import("_")` 能力探测形态）。
     for spec in extract_static_module_import_specifiers(source) {
-        let dep_url = import_map
-            .and_then(|m| m.resolve_mapped(&spec, entry_url))
-            .unwrap_or_else(|| zero_engine::resolve_document_url(entry_url, &spec));
+        let Some(dep_url) = resolve_import_dep(import_map, &spec, entry_url) else {
+            return Err(format!(
+                "module specifier '{spec}' is blocked by a null entry in the import map"
+            ));
+        };
         if !registry.contains_key(&dep_url) {
             let dep_src = fetch(&dep_url)?;
             collect_module_deps(fetch, &dep_url, &dep_src, registry, import_map)?;
@@ -936,6 +953,39 @@ mod tests {
         assert!(
             !calls.iter().any(|u| u.ends_with("/_")),
             "动态 import spec 不得当依赖收集：{calls:?}"
+        );
+    }
+
+    /// s260：null 条目（Blocked）终止依赖解析——collect_module_deps 对被阻断
+    /// 说明符返 Err 且不回退 parent-join 抓取（此前 Blocked 按 None 降级 →
+    /// 按导入方基址 join 继续抓取被阻断 URL，fetchable 即误装载）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+    #[test]
+    fn tab_collect_module_deps_blocked_entry_terminates_s260() {
+        let calls: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+        let fetch = |url: &str| -> Result<String, String> {
+            calls.lock().unwrap().push(url.to_string());
+            Ok("export default 1".to_string())
+        };
+        let map =
+            ImportMap::parse_from_page(r#"{"imports": {"https://x.test/gone.js": null}}"#, "https://x.test/").unwrap();
+        let mut reg = HashMap::new();
+        let err = collect_module_deps(
+            &fetch,
+            "https://x.test/m.js",
+            "import 'https://x.test/gone.js';",
+            &mut reg,
+            Some(&map),
+        )
+        .expect_err("被阻断依赖应以解析错误终止");
+        assert!(
+            err.contains("gone.js") && err.contains("null entry"),
+            "被阻断依赖以 null-entry 错误终止：{err}"
+        );
+        let calls = calls.into_inner().unwrap();
+        assert!(
+            !calls.iter().any(|u| u.contains("gone.js")),
+            "被阻断 URL 不得回退抓取：{calls:?}"
         );
     }
 
