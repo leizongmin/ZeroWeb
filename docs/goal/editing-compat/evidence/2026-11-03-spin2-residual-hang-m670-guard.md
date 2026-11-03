@@ -1,6 +1,6 @@
 # 残余挂死归因修复轮（spin2）：m670 move 环进展守卫——fd 全页 T 归零 + delete solo 形态治愈、全页形态恒存（battery3 反证）
 
-日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）；2026-11-04（battery3 del 腿判读修订：全页形态反证，diag3 定谳改判）；2026-11-04（battery3 收官 fd/mt 判读 + 对侧 x1/x-del-1 探针收编：mt 系统性 T 两层机制定性〔近端 300s 预算击穿 × 根因 in-face 慢化〕+ 旧代 mt 基线静默早止误账修正 + 尾段 +73 案发现）；2026-11-04（diag6 probe-v3 收编：diag4c「单案自旋」判读撤改——solo 267s 完走 + 全位点零离群，in-face T 改判跨页累积慢化 × 300s 预算耗尽〔del 1.48×/mt 1.65×〕，spin2d 2× 墙钟判别在飞）
+日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）；2026-11-04（battery3 del 腿判读修订：全页形态反证，diag3 定谳改判）；2026-11-04（battery3 收官 fd/mt 判读 + 对侧 x1/x-del-1 探针收编：mt 系统性 T 两层机制定性〔近端 300s 预算击穿 × 根因 in-face 慢化〕+ 旧代 mt 基线静默早止误账修正 + 尾段 +73 案发现）；2026-11-04（diag6 probe-v3 收编：diag4c「单案自旋」判读撤改——solo 267s 完走 + 全位点零离群，in-face T 改判跨页累积慢化 × 300s 预算耗尽〔del 1.48×/mt 1.65×〕，spin2d 2× 墙钟判别在飞）；2026-11-04（diag7 onerror 收编判读：全 8 页 err 空——异常早止证伪、45b「工作到点」定谳，spin2d del 腿 0T/+206 行模型 D 逐字节命中，del 面慢化定谳收口）
 
 ## 0. 范围与站点盘点修正
 
@@ -205,6 +205,39 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
   无 T）与守卫代预算 T（pending=1）签名异通道，diag7 onerror 通道归
   对侧 probe 线。
 
+  **diag7 onerror 收编（验证流 diag7 执行位，03:22-04:00:28 rc=2；zw-g28diag7c
+  unit，TIME_LIMIT=3600 三方重载容噪）**：onerror + unhandledrejection 双钩子
+  安装于 delete.html 全部语料 script 之前（globalThis.__zwDiag7Err，ES5，
+  return false 不改默认行为），页尾 probe 块扩展 'DIAG7 ' payload（trace 尾 40
+  + cnt + err slice(0,3)）。**判读（b37-续流 03:08 轮武装窗口判据）**：全 8 页
+  probe **err 全空**——中止瞬间唯一可见通道零捕获，**「驱动早止 + 未捕获异常」
+  （46 精化）证伪**；T 唯一 ?7001-last（state tests:637/pending=1，截断深度与
+  diag4c/diag6 同位——细化插桩不移深度二次复证）→ **45b「300s 击杀时语料任务
+  仍在执行（工作到点被终止）」实锤**。**细化位点零扰动实证**：挂死页 kill-time
+  cnt 与 diag6 逐字节同一（c1=440/c2=533/c3=111/c4=113/move=37/m670=36/
+  c674=42/ffc=138/restore=60/sameHost=1184/s615=8/splitParent=0），trace 尾
+  [delSel, canon-in, canon-out] 平衡对——甲线增补的 front-check/cbp-check/
+  merge-dispatch/delSel-ret 分段标记不改变任何计数与深度。**与 spin2d del 腿
+  互证（乙续 face，del 腿账 03:10:48-03:51:02 rc=1 仅 probe fail 行）**：
+  **0 Timeout、7,850 行 = 7,636 基线 + 206 尾段恢复 + 8 probe——模型 D del 腿
+  预测逐字节命中**；页 8 = 843 行（842 solo 完走全额 + 1 probe），完走 cnt 命中
+  solo 基线（m670=64/c674=59/s615=9，c1=870 ≈ 2× 击杀时 440 = 全页 canon 工作
+  量翻倍于截断点），err 同空——**del 面慢化非挂死定谳收口**（300s 预算 ×
+  ~1.48× 跨页累积慢化，600s 预算即全量出账）。mt 腿（03:51:02 起在飞）归乙续
+  判读，模型 D 预测 0T + mt 尾段 +153（939→1,092）。**双实例事故（判读不采用）**：
+  zw-g28spin2-diag7b（03:01:12，session 重放孤儿）与 zw-diag7（03:08:52）同
+  face 双跑共写 g28spin2-diag7.log（行级交错 + 前数页 pre-hook 语料混代），
+  03:22 双停，日志归档 g28spin2-diag7.log.polluted-ab 留证。**代际注记**：
+  diag7c 二进制 = 同源码 35.54s 真重建（b6888ce88 + 树内 WIP +30/-1 含甲线细化
+  位点；03:22 轮「无重建」表述与盘上 Finished 35.54s 不符，如实修正）；spin2d
+  del 腿跑 03:09:25 旧 inode（同源码构建），两代语义恒一。**收尾**：delete.html
+  已全洁净还原（先还原 diag7-pre 态、再按甲线 03:30 轮归属指令撤除 diag4 probe
+  块至 corpus-backup 原貌）；multitest.html 实测亦为原貌（甲线「探针已加」注记
+  与盘上不符，如实记档）；四 shim 文件 WIP（+30/-1）待 spin2d mt 腿完走后由本
+  执行位 git checkout 归零（甲线 03:30 轮授权）。**残余开放**：慢化载体归因
+  （m670-revert A/B 反事实判决 + R350 族进程内增长态插桩候选）；spin2d mt 腿
+  判读（乙续）。
+
 ## 4. 方法论教训
 
 1. **throw 式诊断 bail 在 merge/多节点路径不安全**：中途 unwind 撕裂 DOM
@@ -230,3 +263,13 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
    预算边界条件比死循环更省假设——spin2 窗「残余挂死」最终改判为
    300s 预算边界 × ~1.5× 跨页累积慢化，自旋假说（含 m670 零进展环、
    delSel 未计数环两代版本）均被 solo 完走 + 全位点快照撤判。
+6. **异常早止候选必须用页面侧捕获通道裁决**：「驱动早止 + 未捕获异常」的
+   裁判面在页面，不在 runner——V8 看门狗 terminate_execution 在 Rust 层拦截
+   （try_catch.has_terminated → cancel_terminate_execution），不产生 JS
+   error 事件，故 onerror/unhandledrejection 双钩子（安装于全部语料 script
+   之前）是异常逃逸的唯一观测面；且武装窗口约束（v8_runtime.rs Arm/Disarm
+   seq 协议）保证 Timeout 行存在 ⇒ 击杀时必有被武装且持续执行的 JS 窗口，
+   「早止 + 纯空转到看门狗」按字面不成立。判据（b37-续流校准）：err 非空 →
+   异常早止实锤；err 空 + T 在 → 45b「工作到点被终止」。diag7 全 8 页 err 空
+   + T 唯一同位 + kill-time cnt 与 diag6 逐字节同一 + 600s 全量出账四证合流，
+   45b 定谳——插桩轮先装捕获通道，再谈机制归因。
