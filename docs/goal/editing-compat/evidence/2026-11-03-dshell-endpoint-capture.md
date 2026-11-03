@@ -229,7 +229,8 @@ sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F
 - **typing-text-in-direct-child-of-editing-host**：6P/10F/0T rc=2，10 fail
   恒等行集逐位同基线（6P/10F 小面原样）；
 - **insertlinebreak**：50 fail 恒等行集逐位同基线（P→F=0/F→P=0）；
-- **forecolor**：43 fail 恒等行集逐位同基线（P→F=0/F→P=0）。
+- **forecolor**：2,279P/48F/0T，48 fail 恒等行集逐位同基线（P→F=0/F→P=0；
+  11:02 中途快照 43 为腿未完成时读数，11:06 终态复核 48）。
 四腿恒等实证 s254 bin 漂移在编辑 run 语料面噪声 ≈0（漂移注记成立）；回归
 面仍收敛在 multitest 22 + ipara 20 = 42 案。**delete.html/forwarddelete 两
 腿待落（重点核 `[foo<X>bar]</X>baz` 族 P→F 扩散——delete/fd 是 caret 臂
