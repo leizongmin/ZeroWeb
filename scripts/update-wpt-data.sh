@@ -72,6 +72,15 @@
 #     { type: "text" }`；s250 勘根定性为语料缺口：fetch 按扩展名过滤漏收
 #     无扩展名文件 → 404 → matchesLog 空；已从上游 wpt 同路径原件本地补入
 #     10 字节 `text file\n`——升级新 ref 后需重新补）
+#   - html/semantics/scripting-1/the-script-element/css-module/resources/
+#     {utf-8,windows-1250,bom-utf-8,bom-utf-16be,bom-utf-16le}.css 与
+#     text-module/{utf-8.txt,windows-1250.txt} 缺失（charset 家族 5 页依赖；
+#     s264 勘根定性该 5 页 file-Timeout 全为资产缺口——旧白名单注记「端点
+#     落地时再补」，端点 serve-with-content-type.py 已于 s115/s249/s250 落地；
+#     已按 lib.sh WPT_REV pin 从上游补入并入 25-html-semantics-compat.sh
+#     白名单。字节勿用 master：bom-utf-16be.css 上游已重编码为 UTF-8 BOM+
+#     纯文本，与 pin 版真 UTF-16BE 不符，corpus 判据按 pin 字节形写定——
+#     升级新 ref 后 make fetch-wpt-html-semantics 白名单幂等自动补齐）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

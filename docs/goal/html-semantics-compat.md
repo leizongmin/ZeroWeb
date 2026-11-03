@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 262 施工收口（import map 注册序面——映射表与 scope 代码单元降序排列，最长前缀 / 更具体 scope 优先；s260 挂账 #2「import maps 剩余语义面」三面勘根分型：键排序收口，多张 map merge / 动态插入两面架构级缓议挂起）。勘根：spec 精确口径（sort and normalize 两算步收尾均为 descending code unit less than，规范注记明言 `"foo/bar/"` 先于 `"foo/"` 解析期优先）vs 本实现 `normalize_specifier_map` 按 serde_json::Map **升序**迭代入 Vec、`resolve_imports_match`/`match_map_tables` 按序首中——嵌套尾斜杠前缀键最短遮蔽、嵌套 scope 最浅遮蔽，方向恰反；消费方全单点经 `ImportMap::parse` 共享路径；corpus 唯一 importmap 页键全 exact 零排序 face。施工 1 文件 2 刀 + 2 钉 + 1 知识面：`code_unit_cmp`（UTF-16 代码单元精确序）+ 注册收尾 imports/scopes 双降序 + 模块 doc 偏差注记改写（残余微偏差 = 归一化同键取值归属按排序序非 JSON 插入序，preserve_order 架构面不动）+ s258 钉存储序断言随新序更新；钉 `nested_prefix_keys_longest_prefix_wins_s262` / `nested_scopes_most_specific_wins_s262`；知识 modules.md 边界条目重写（s260 三态化欠账一并事实化）。验证：红态两钉 HEAD FAIL（short/shallow 遮蔽恰反序实证）+ script-sandbox **395** / webview **839** / renderer import 过滤 **9** / browser blocked 过滤 **4** 全绿 + fmt/clippy 干净 + 全树 A/B 免跑（s258 先例：corpus 零排序 face，消费面套件兜底）。挂账更新：多张 map merge（resolved module set + 三宿主同布）与动态插入注册通道两面架构级缓议挂起待拍板（corpus 零 face，不阻塞本流）。承前：M2 切片 261（data-zw-harness 投递标记保真）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 264 语料资产轮收口（css-module/text-module charset 家族 5 页 file-Timeout 解封）+ 切片 263 勘定轮销案（data-zw-harness 注入序三子面零观察面，保真族 s255 D 刀→s261 拆分→s263 量化收口）。s264 勘根：5 页 Timeout 根因 = ③b 白名单旧注记「端点落地时再补」失效未销——serve-with-content-type.py 端点 s115/s249/s250 已落地；字节源三重甄别反转：上游 master 已重编 charset fixture（bom-utf-16be.css 变 UTF-8 BOM+纯文本）与 corpus 判据不符，权威源 = lib.sh WPT_REV pin 版（corpus 判据按 pin 字节形写定，windows-1250.* pin 版本即含 U+FFFD 序列）；BOM 刀反转销案——charset-bom 判据（恒 UTF-8 解码 / charset 参数忽略 / BOM 忽略）与既有 runner UTF-8 lossy 解码臂逐位吻合，零引擎刀，「charset 参数/BOM 嗅探未建模」挂账一并销案。施工：7 资产按 pin 版补入 + ③b 白名单 7 条 fetch_raw（幂等 skip-if-exists，本地字节即权威）+ update-wpt-data.sh known-gaps 条目。验证：solo 双跑（test-guard + RAF_FRAME_DRIVEN）css-module/charset **5P** + charset-2 **1P** + charset-bom **1P/2F**、text-module/charset **5P** + charset-2 **1P**——12 子测 Pass；残 2F 归因 = shim CSSOM `_ruleFromText`（part06.js:2041）缺 CSS Syntax §3.3 NUL→FFFD 输入预处理（rust css-parser tokenizer 已有，缺口仅 JS shim 路径；engine 车道 s265 1 刀候选，资产轮引擎刀不混切）。s263 勘定轮：runner 基建注入形 vs 上游双标签装载序三子面全树量化——2759 页双标签 0 页夹内容、宽松 contains 假阳性 0 观察（20 页注释性引用不进 testharness 枚举 + 1 页空格形误命中正常起跑）、属性丢弃仅 1 页 type="text/javascript" 无害——零观察面销案。承前：M2 切片 262（import map 注册序面）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,30 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 264**：css-module/text-module charset 语料资产
+  补拉轮（零引擎刀；2 脚本挂账 + 7 资产本地补入）——勘根：5 页
+  file-Timeout 全为资产缺席（③b 旧注记「端点落地时再补」失效，端点
+  s115/s249/s250 已落地销案）；字节源甄别反转：上游 master 重编
+  bom-utf-16be.css 与 corpus 判据不符，权威源 = lib.sh WPT_REV pin
+  版（windows-1250.* pin 版本即含 U+FFFD 序列，corpus 判据按该形
+  写定）；BOM 刀反转销案——charset-bom 判据（恒 UTF-8 解码 / charset
+  参数忽略 / BOM 忽略）与既有 UTF-8 lossy 解码臂逐位吻合，「charset
+  参数/BOM 嗅探未建模」挂账销案。施工：7 资产按 pin 版补入 + ③b
+  白名单 7 条 fetch_raw + update-wpt-data.sh known-gaps 条目。
+  验证：solo 双跑 **12 子测 Pass**（css-module/charset 5P + charset-2
+  1P + charset-bom 1P/2F；text-module/charset 5P + charset-2 1P），
+  残 2F = shim CSSOM `_ruleFromText` 缺 CSS Syntax §3.3 NUL→FFFD
+  预处理（engine 车道 s265 候选，资产轮引擎刀不混切）。日志
+  evidence/logs/s264-charset-assets-{css,text}.log。账本
+  [evidence/2026-11-03-m2s264-charset-corpus-assets.md](html-semantics-compat/evidence/2026-11-03-m2s264-charset-corpus-assets.md)。
+- **2026-11-03 M2 切片 263**：data-zw-harness 注入序勘定轮（零施工
+  销案；保真族 s255 D 刀→s261 拆分→s263 量化收口）——runner 基建
+  注入形 vs 上游双标签装载序三子面全树量化：2759 页双标签 0 页夹
+  内容（合并注入不可观察）；宽松 contains 假阳性 20 页注释性引用
+  不进 testharness 枚举 + 1 页空格形误命中正常起跑；属性丢弃仅 1 页
+  type="text/javascript" 无害——零观察面销案，s255 D 刀余项清空。
+  账本
+  [evidence/2026-11-03-m2s263-harness-inject-order-closure.md](html-semantics-compat/evidence/2026-11-03-m2s263-harness-inject-order-closure.md)。
 - **2026-11-03 M2 切片 262**：import map 注册序面轮（s260 挂账 #2 三面
   勘根分型，1 文件 2 刀 + 2 钉 + 1 知识面）——勘根：sort and normalize
   两算步收尾均为代码单元降序（规范注记 `"foo/bar/"` 先于 `"foo/"`），

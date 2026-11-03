@@ -154,10 +154,16 @@ fetch_raw "html/semantics/popovers/resources/toggle-event-source-test.js"
 #（2026-10-29 才加）且 fetch_dir_html 的 .txt 为 opt-in，此后 css-module/ 已含
 # .html 被幂等快路径整目录跳过——缺口固化（s158 补 link-rel-attribute.css 同坑）。
 # not_found.css / not_found.txt 为负向用例，必须继续缺席，不拉。
-# utf-8.css / utf-8.txt 仅经 serve-with-content-type.py?fn= 引用，runner 未实现
-# 该端点（FIXME 记账），端点落地时再补。
-# 基准变更注记：补语料后 css-module/text-module 引用面预期 F→P 位移，下轮全量
-# join 的对应 GAINED 按语料变更归因，非回归。
+# charset 家族资产（s264 补入）：css-module/charset{,-2,-bom}.html、
+# text-module/charset{,-2}.html 五页 file-Timeout 勘根均为资产缺席——旧注记
+# 「utf-8.css / utf-8.txt 仅经 serve-with-content-type.py?fn= 引用，runner 未
+# 实现该端点，落地时再补」；端点已于 s115/s249/s250 落地，此销。字节源必须
+# lib.sh WPT_REV pin 版（fetch_raw 同 pin）：上游 master 已重编 bom-utf-16be.css
+# 为 UTF-8 BOM+纯文本，与 pin 版（真 UTF-16BE）不符；windows-1250.* pin 版本即
+# 含 U+FFFD 序列，corpus 判据按该字节形写定。
+# 基准变更注记：补语料后 5 页 Timeout→起跑（12 子测 Pass；charset-bom 残 2F =
+# shim CSSOM 解析缺 CSS Syntax §3.3 NUL→FFFD 预处理，引擎面下切收口），下轮
+# 全量 join 的对应 GAINED 按语料变更归因，非回归。
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/basic.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/basic-large.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/bad-import.css"
@@ -165,7 +171,14 @@ fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/ma
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/parse-error.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/load-relative-url.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/atImported.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/utf-8.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/windows-1250.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/bom-utf-8.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/bom-utf-16be.css"
+fetch_raw "html/semantics/scripting-1/the-script-element/css-module/resources/bom-utf-16le.css"
 fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.txt"
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/utf-8.txt"
+fetch_raw "html/semantics/scripting-1/the-script-element/text-module/windows-1250.txt"
 
 # ③c the-img-element 助资产（s225）：image-base-url 语料经 <base href="resources/">
 # 重写引用 resources/green.png——重写后路径落在域内 resources/，缺席即假 Fail
