@@ -12,8 +12,8 @@ use std::collections::{HashMap, HashSet};
 use taffy::prelude::*;
 
 use zero_css_parser::values::{
-    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue, OverflowClipMarginBox,
-    OverflowValue, PositionValue,
+    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue,
+    OverflowClipMarginBox, OverflowValue, PositionValue, VisibilityValue,
 };
 // ComputedStyle.direction 是 style-system 自有的 DirectionValue（与 css-parser 的不同枚举）。
 use zero_style_system::DirectionValue;
@@ -195,6 +195,12 @@ use postprocess::*;
 // 关联函数（无 &self），经 `Self::method(...)` 调用，impl 块随 `mod sizing;` 激活，
 // 无需 glob import。纯移动，零行为变化。
 mod sizing;
+
+// R5409：visibility:collapse 多线 strut 迁移 pass（css-flexbox §4 Collapsed Items，
+// flexbox-collapsed-item-horiz-002）抽出到 engine/flex_collapse.rs（2000 行规则，
+// sizing.rs 已 3400+ 行）。自由函数，直接调用。
+mod flex_collapse;
+use flex_collapse::apply_flex_collapsed_strut_migration;
 
 /// R5245 kill-switch 读取：`ZW_R109_ANON_NOFLOAT=0` 回退 R109 匿名块片段的 float 旗标
 /// 清除（pre-R5245：匿名块按映射宿主样式继承 float）。
@@ -704,6 +710,7 @@ impl LayoutEngine {
             vertical_wm: bool,
             block_kw: bool,
             caption: bool,
+            flex_collapse_wrap: bool,
         }
         let sizing_targets = SizingTargets {
             intrinsic_kw_or_auto_float: false,
@@ -714,9 +721,14 @@ impl LayoutEngine {
             vertical_wm: false,
             block_kw: false,
             caption: false,
+            flex_collapse_wrap: false,
         };
         let sizing_targets = {
             let mut t = sizing_targets;
+            // R5409：collapsed item 与 wrap flex 容器是不同节点的样式，两信号分开
+            // 累计（任一 style 命中即可），循环出口合成。
+            let mut any_collapse = false;
+            let mut any_wrap_flex = false;
             for s in styles.values() {
                 let intrinsic_kw = matches!(
                     s.width,
@@ -775,6 +787,16 @@ impl LayoutEngine {
                 if matches!(s.display, DisplayValue::TableCaption) {
                     t.caption = true;
                 }
+                // R5409：多线 strut 迁移信号（css-flexbox §4）——collapsed item 与
+                // wrap flex 容器（任一 style 命中即可，pass 内按容器精筛）。
+                if matches!(s.visibility, VisibilityValue::Collapse) {
+                    any_collapse = true;
+                }
+                if matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                    && !matches!(s.flex_wrap, FlexWrapValue::Nowrap)
+                {
+                    any_wrap_flex = true;
+                }
                 if t.intrinsic_kw_or_auto_float
                     && t.pct_height
                     && t.pct_box_side
@@ -783,10 +805,13 @@ impl LayoutEngine {
                     && t.vertical_wm
                     && t.block_kw
                     && t.caption
+                    && any_collapse
+                    && any_wrap_flex
                 {
                     break;
                 }
             }
+            t.flex_collapse_wrap = any_collapse && any_wrap_flex;
             // R4216 修正（corpus 当轮抓获）：AR 的第三源 = 替换元素 HTML width/height
             // 属性（tree.rs attr-match 设 taffy aspect_ratio，flex-aspect-ratio-img-row-006 /
             // flex-aspect-ratio-028 实证）——styles 扫描无此信号，CSS 源缺席时以一次
@@ -845,6 +870,16 @@ impl LayoutEngine {
                 doc,
                 &intrinsic_for_clamp,
             ) || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+        } else {
+            false
+        };
+        // R5409：visibility:collapse 多线 strut 迁移（css-flexbox §4 Collapsed Items，
+        // flexbox-collapsed-item-horiz-002）。首趟布局即 converter strut-basis 形态
+        // （=规范首趟），按 y 分组断线取 strut，patch basis→0 + height→strut 后与
+        // 既有 pass 同一 re-run 组重跑。无 wrap×collapsed 页面整 pass 跳过（预扫描
+        // 位标同源）；kill-switch `ZW_FLEX_COLLAPSE_STRUT_MIGRATE=0`（pass 内单读）。
+        let changed_flex_collapse_strut = if sizing_targets.flex_collapse_wrap {
+            apply_flex_collapsed_strut_migration(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
         } else {
             false
         };
@@ -967,6 +1002,7 @@ impl LayoutEngine {
         if changed_r695
             || changed_pct_padding
             || changed_ratio_img
+            || changed_flex_collapse_strut
             || changed_intrinsic
             || changed_abspos_shrink
             || changed_caption_shrink

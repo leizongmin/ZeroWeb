@@ -1006,3 +1006,7 @@ mod trending_float_star_tests;
 
 /// R5408：替换盒 min/max-height 钳后宽度回传（intrinsic-percent-replaced-017 锚）。
 mod r5408_replaced_clamp_transfer_tests;
+
+/// R5409：visibility:collapse 多线 strut 迁移（css-flexbox §4，002 Row2/Row3 锚 +
+/// 单线守卫）。
+mod r5409_flex_collapse_strut_tests;
