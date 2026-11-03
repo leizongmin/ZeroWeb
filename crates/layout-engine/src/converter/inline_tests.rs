@@ -163,10 +163,13 @@ fn test_computed_style_to_taffy_overflow_auto_no_scrollbar_reservation() {
     style.overflow_y = OverflowValue::Auto;
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
     assert_eq!(result.scrollbar_width, 0.0);
-    // 任一轴显式 scroll 维持预留（classic 恒预留）。
+    // R5413：显式 scroll 同零槽位——ZW 不绘制 classic scrollbar，任何预留都是
+    // 无绘制的死槽位（flexbox-overflow-horiz-001：scroll 容器 15px 双轴内缩
+    // 偏离 scrollbar-less ref）；R4265 预留口径由 `ZW_SCROLLBAR_SLOT_SUPPRESS=0`
+    // kill-switch 腿保留（corpus A/B 覆盖回退）。
     style.overflow_x = OverflowValue::Scroll;
     let result = computed_style_to_taffy(&style, None, 800.0, 600.0);
-    assert_eq!(result.scrollbar_width, 15.0);
+    assert_eq!(result.scrollbar_width, 0.0);
 }
 
 #[test]

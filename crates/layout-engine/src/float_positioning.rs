@@ -3911,25 +3911,40 @@ pub(crate) fn adjust_float_positions_with_context(
         let use_bfc_float_containment = establishes_bfc && !box_node.is_multicol;
 
         if use_bfc_float_containment {
-            // BFC 容器：浮动元素已包含在高度中（taffy 正确计算了含 float 的 auto height）
-            // 不需要收缩。但需要确保高度至少覆盖到最低浮动元素的外底边。
-            let float_bottom = box_node
-                .children
-                .iter()
-                .filter(|c| !matches!(c.float, FloatValue::None) && !c.is_absolute && !c.is_fixed)
-                .fold(0.0f32, |max_y, c| {
-                    let bottom = c.y + c.height + c.margin_bottom;
-                    max_y.max(bottom)
-                });
-            if float_bottom > box_node.content_height {
-                box_node.content_height = float_bottom;
-                let new_total = float_bottom
-                    + box_node.padding_top
-                    + box_node.padding_bottom
-                    + box_node.border_top
-                    + box_node.border_bottom;
-                if new_total > box_node.height {
-                    box_node.height = new_total;
+            // R5413（CSS2 §10.5 × §10.6.7）：containment 补扩仅 auto 高 BFC root——
+            // 显式高度容器的 used height = 显式值，float 超出仅溢出（§10.6.7 的
+            // 「含最低 float 外底边」高度公式限定 auto 高；R1277 ④ 在非 BFC 收缩臂
+            // 的同判守卫在此对称缺失）。flexbox-overflow-horiz-001 ref 页：
+            // height:70 float 容器被 200px float 子撑高 130px，ref 页整体下移
+            // 与 test 页错位（案差主项）。kill-switch `ZW_BFC_CONTAIN_AUTO_ONLY=0`
+            // 回退无条件补扩（default-on；OFF 精确回退由 corpus A/B 双窗覆盖）。
+            static CONTAIN_AUTO_ONLY: OnceLock<bool> = OnceLock::new();
+            let contain_auto_only =
+                *CONTAIN_AUTO_ONLY.get_or_init(|| std::env::var("ZW_BFC_CONTAIN_AUTO_ONLY").as_deref() != Ok("0"));
+            if contain_auto_only && !box_node.declared_height_auto {
+                // 显式高度容器：跳过补扩。
+            } else {
+                // BFC 容器：浮动元素已包含在高度中（taffy 正确计算了含 float 的
+                // auto height）不需要收缩。但需要确保高度至少覆盖到最低浮动元素的
+                // 外底边。
+                let float_bottom = box_node
+                    .children
+                    .iter()
+                    .filter(|c| !matches!(c.float, FloatValue::None) && !c.is_absolute && !c.is_fixed)
+                    .fold(0.0f32, |max_y, c| {
+                        let bottom = c.y + c.height + c.margin_bottom;
+                        max_y.max(bottom)
+                    });
+                if float_bottom > box_node.content_height {
+                    box_node.content_height = float_bottom;
+                    let new_total = float_bottom
+                        + box_node.padding_top
+                        + box_node.padding_bottom
+                        + box_node.border_top
+                        + box_node.border_bottom;
+                    if new_total > box_node.height {
+                        box_node.height = new_total;
+                    }
                 }
             }
         } else {

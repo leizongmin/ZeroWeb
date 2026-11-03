@@ -156,8 +156,9 @@ pub fn computed_style_to_taffy(
     // 面（taffy automatic min size、滚动容器判定）的输入（driving:
     // flexbox-min-width-auto-004：overflow-y:hidden/scroll/auto 使 flex item 的
     // min-width:auto 禁用为 0，item 收缩到容器宽；无传播则 automatic min 按
-    // min-content 撑开）。scrollbar_width 预留门（R4265）维持读原始声明值——传播
-    // 产生的 auto 与 raw auto 同不无条件预留槽位（R4265 bounded 近似口径不变）。
+    // min-content 撑开）。scrollbar_width 槽位自 R5413 起恒 0（ZW 无 classic
+    // scrollbar 绘制，预留即死槽位——见下方 scrollbar_width 接线处）；R4265 的
+    // 「传播产生的 auto 不预留」判例口径并入该恒 0 端点。
     // https://www.w3.org/TR/css-overflow-3/#overflow-properties
     let (overflow_x_computed, overflow_y_computed) = computed_overflow_pair(&style.overflow_x, &style.overflow_y);
     taffy::Style {
@@ -203,13 +204,24 @@ pub fn computed_style_to_taffy(
             x: convert_overflow_computed(&overflow_x_computed, &style.overflow_x),
             y: convert_overflow_computed(&overflow_y_computed, &style.overflow_y),
         },
-        // R4265（CSS Overflow §scrollbar 预留语义）：taffy 仅对 `Overflow::Scroll` 轴预留
-        // `scrollbar_width` 槽位，而 ZW 把 CSS overflow:auto 并入 Scroll 映射 → 每个 auto
-        // 容器无条件获得 15px 槽位（空 overflow:auto 容器高/宽 +15，group-007 实证）。
-        // chromium 语义：auto 仅内容实际溢出才出现滚动条（预布局期不可知）→ CSS overflow
-        // 两轴均非 scroll 时不预留（显式 scrollbar-width:none 恒 0、thin 恒 8 不变；
-        // 任一轴 scroll 维持预留——混合轴近似，bounded）。
-        scrollbar_width: {
+        // R5413（css-scrollbars-1 §scrollbar-width × UA 渲染模型）：ZW 不绘制
+        // classic scrollbar（paint 侧仅右缘 overlay 指示器，消费零布局空间）——
+        // taffy 的 scrollbar_width 槽位在任何声明值下都是无绘制的死槽位：scroll
+        // 容器 15px 双轴内缩使内容几何偏离 scrollbar-less ref
+        // （flexbox-overflow-horiz-001：overflow:scroll 容器 items 41.2/13.8 应
+        // 52.5/17.5）。恒 0 将 R4265 的 auto 抑制判例（chromium auto 滚动条仅内容
+        // 实际溢出出现，预布局期不可知）对齐到全部声明值——overlay-scrollbar
+        // 平台对 scroll 同样零预留。
+        // https://drafts.csswg.org/css-scrollbars-1/#scrollbar-width
+        scrollbar_width: if scrollbar_layout_slot_suppressed() {
+            0.0
+        } else {
+            // R4265 bounded 近似口径（kill-switch OFF 恢复）：taffy 仅对
+            // `Overflow::Scroll` 轴预留 `scrollbar_width` 槽位，而 ZW 把 CSS
+            // overflow:auto 并入 Scroll 映射 → 每个 auto 容器无条件获得 15px 槽位
+            // （空 overflow:auto 容器高/宽 +15，group-007 实证）→ CSS overflow
+            // 两轴均非 scroll 时不预留（显式 scrollbar-width:none 恒 0、thin 恒 8
+            // 不变；任一轴 scroll 维持预留——混合轴近似，bounded）。
             let base = match style.scrollbar_width {
                 zero_style_system::ScrollbarWidthComputedValue::Auto => 15.0,
                 zero_style_system::ScrollbarWidthComputedValue::Thin => 8.0,
@@ -885,6 +897,14 @@ pub(crate) fn computed_overflow_pair(x: &OverflowValue, y: &OverflowValue) -> (O
         (None, Some(ny)) => (x.clone(), ny),
         _ => (x.clone(), y.clone()),
     }
+}
+
+/// R5413 kill-switch：`ZW_SCROLLBAR_SLOT_SUPPRESS=0` 回退 taffy scrollbar_width
+/// 槽位预留（R4265 口径：auto 15px/thin 8px、任一轴声明 scroll 时保留；OFF 精确
+/// 回退由 corpus A/B 双窗覆盖）。
+fn scrollbar_layout_slot_suppressed() -> bool {
+    static SUPPRESSED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPRESSED.get_or_init(|| std::env::var("ZW_SCROLLBAR_SLOT_SUPPRESS").as_deref() != Ok("0"))
 }
 
 /// 转换 overflow 属性（consumed computed 值）。传播产生的 auto（raw 声明为 visible）
