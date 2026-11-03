@@ -183,8 +183,16 @@ rc=2**——对电池基线 9,569P/430F/1T：P +27/F +3/T −1（本轮 ?9001-la
 `direction=='forward'` 分支；same-node strip 臂同面检查（`[bar]baz` 单独形
 同风险）。capture 臂（笔5）对该族首可见=foo 链空返 [] 语义正确，不在修复面。
 multitest 腿判读：主目标面达成、P→F 违门——**gate28 批不得据此判绿，修复笔
-落地后 multitest/delete/fd 三腿需复跑**；电池余腿（ipara/it/typing/ilb/fc/
-delete/fd/other/enginelib）继续取全量 scoping 与恒等数据不中断。
+落地后 multitest/delete/fd/insertparagraph 四腿需复跑**（ipara 腿 P→F 20 同
+caret 臂面，见下）；电池余腿（it/typing/ilb/fc/delete/fd/other/enginelib）
+继续取全量 scoping 与恒等数据不中断。
+**探针 v3 补案与修复前基线（10:55-10:59）**：zz-probe-dualshell.html 扩
+P14 `[foo<b>bar]</b>baz`（22 案核心形）/P15 u 壳/P16 i 壳/P17 `[abcdef]`
+同 text 全选形（same-node 臂 origStart==startNode 面）；修复前基线（bin
+13017c0a3+Edit F，g28-probe-v3-prefix.log）：P14/P15/P16 final
+`<div>baz</div>` typed 整丢（22 案签名复现 ✓）、P17 `<div>a<br></div>`
+（typed 存活但占位 br 滞留形）。修复后复验以 P14-P16 转 `<div>abaz</div>`、
+P17 转净形 + 双壳目标面 35/35 不退为判据。
 
 **bin 漂移注记（10:53 pull --rebase 带入并行流 engine 提交）**：multitest +
 insertparagraph 两腿跑在 pre-s254 bin（13017c0a3 树 10:10 build）；10:53 起
@@ -192,6 +200,26 @@ insertparagraph 两腿跑在 pre-s254 bin（13017c0a3 树 10:10 build）；10:53
 part01f.js**）→ 其后腿（inserttext 起）make 重建拾取 s254。编辑 run 语料面
 无模块系统消费面，噪声预期 ≈0；**enginelib 腿计数将含 s254 自身的 +4 script-
 sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F + s254 面）。
+
+**insertparagraph 腿实测（10:40:43→10:58:17 落地，pre-s254 bin）：6,968P/
+227F/0T rc=2**——对 gate27 基线 6,984P/211F/0T：P −16/F +16（F→P 4、P→F 20，
+行集 diff 定谳）。**P→F 20 全部同 caret 臂前提破面（gate28 delta 新增）**：
+- **ol/li 族 15 案**（`<ol><li>[abc]</li>…` insertparagraph ± inserttext，
+  dps div/p 双系）：签名恒一 `exp <div><br></div> got <ol><li><br></li></ol>`
+  形（li 出列拆分没走通，占位 br 滞留 li）——`[abc]` 全选的 origStart=(abc,0)
+  在删程内被摘，deleteSelection 前导 caret 臂 detached，ipara 主拆分支在坏
+  caret 世界走错臂；
+- **stylewithcss 族 4 案**（`[foo<span style=color>bar]</span>` 与
+  `<span style>[bar]</span>` 形，swcss true/false × dps div/p）：签名恒一
+  `exp <p>foo</p><p>baz</p> got <p>foo</p><p><span style></span>baz</p>`
+  （空壳残留）——同 caret detached 面；
+- **CE-false 族 2 案**（`<p><span contenteditable=false>abc</span>[X]</p>` /
+  镜像形）：修复笔后复跑定谳是否同根回收。
+**F→P 4**：`foo{<span style=color>bar</span>}baz` 形（swcss × dps 4 组合）——
+`{...}` 边界 origStart 在删程外存活，caret 臂正常翻转 = delta 正面在 ipara
+语料连带回收，修复笔存活门不影响该面。
+**复跑腿扩为四腿**：multitest/delete/fd/insertparagraph（ipara 腿 P→F 20
+中 ≥19 案与 multitest 22 案同根，修复笔预期同面回收；CE-false 2 案待验）。
 
 ## 6. 残余与挂账
 
