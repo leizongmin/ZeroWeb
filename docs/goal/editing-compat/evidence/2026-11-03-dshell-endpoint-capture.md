@@ -277,6 +277,25 @@ g27-e2fd.log 252 行 Pass/Fail 集对账。02c724621 提交题述同源勘误。
 
 **gate28v2 复跑放电（12:55:50，zw-g28v2-battery，六腿扩展版）**：caret 存活门修复笔已收编提交 **1aeb3416b**（selSame/selExit 两臂 `origStartContainer.parentNode` 存活门，pre-commit-guard PASS；双实例独立归因互证——甲 multitest desc 行集 diff 26 P→F ↔ 乙 zz-probe-g28reg post0 caret DETACHED 探针 + 修复笔 g28-fix-part01f.js；修复后探针 R1-R3 `final="abaz"` connected、家族控制 R4-R7 恒绿）。首放 12:48:35 四腿版被乙实例 12:53:29 stop 后扩脚本（other + enginelib 补腿，COORD-22乙 口径）重放。判读口径：multitest 22+4 回收、ipara 20 回收（≥19 同根 + CE-false 2 待验）、delete/fd 恒 v1 行集、P→F 归零、F→P 23+4 保持；other = 修复后首个干净读数（delete-without-unwrapping 页完成出账定谳 flake vs delta-hang）；enginelib 5F=s249 名单恒等 + 零新增。done = gate28v2-done.txt。
 
+**gate28v2 multitest 腿实测（13:28:21 落地，12:48 build bin 含 1aeb3416b）：
+9,596P/408F/0T rc=2，主门通过**——对 v1 电池腿行集（g28-mt-current-fails.txt
+433，URL 归一整行 diff，工件 g28-mt-v2-fails.txt 408 行）：**P→F 0（违门项
+清零）**、F→P 25 = 22 真回归 `[foo<X>bar]</X>baz` 族全数回收（22 变体逐位：
+a/font×9/嵌套 a+font/u/sub+font/b/i/s/u/span/sub/sup）+ 双壳新暴露 3 案回收
+（`<b>{abc</b>` 跨块 flex-span/div×2/div 形，v1 got `<b></b><b>gh</b>` 双壳
+形转净形）；对 gate21 case 级复核（g28-mt-baseline-all.txt 356 case，case 级
+归一）：F→P 23 主目标面保持（`<b><i>` 双壳 delete 10 + fd 10 + ipara img 3），
+唯一 P→F = `<div style=display:grid><span>{abc</span><span>def</span>}</div>`
+（?9001-last 片，gate21 轮该片 1T 截断未跑 = 新暴露非回归归因；同片
+flex plain-span 双轮恒败为既有族；keep-shell 存活门对无壳 plain span 不
+适用，挂 §6）。
+
+**gate28v2 insertparagraph 腿实测（13:44:24 落地）：6,988P/207F/0T rc=2，
+主门通过**——对 v1（227）：**P→F 0、F→P 20 全数回收**（ol/li 14 + swcss 4
++ CE-false 2，两案「待验」亦翻转），F→P 4 `foo{<span>` 形保持（v2 207 =
+gate27 211 − 4，严格改善位）。delete.html 腿 13:44 起续跑，判读对
+g28-del-g28-fails.txt 292 行（预期逐位恒 v1）。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
