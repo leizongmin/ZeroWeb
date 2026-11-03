@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5403 归因轮（账本三向侦察无代码变更——letter-spacing-203 / backdrop-root 深评 / color-6 切片全部落特性级缺口，corpus 真态 725F 不变）**（2026-11-03）
+>
+> - **范围**：R5402 落账后按下一步清单三向侦察，全部归因落**特性级/族级缺口**，按协议记档跳过（与 R5397 归因轮同型）。
+> - **①letter-spacing-203（9.94%）定谳**：closest mutual ancestor ls 归属模型（案面 assert + 控制盒 7/8 唯一吻合：A|B 间距 = 最近共同祖先的 ls，非平均非左值）；ZW 现状 = per-run 单值（collect_items 划分 + R4231 词尾 ls）→ 边界间距 = 左 run ls。10 对盒 8 盒依赖新模型无法子集化；修复面 = TextRun 边界归属 + collect_items 父链计算 + break_lines/R5402 联动 + paint fragment 同步——特性级挂账。
+> - **②backdrop-root 深评完成**：四案（root-{filter/mask/mix-blend-mode/opacity} 0.96-1.48%）= backdrop-filter 取样应止于最近隔离根祖先；PNG 定谳右侧半盒被 invert（取样穿透）vs 应显青。ZW `apply_backdrop_filter` 只投 FilterPrimitive、CPU 光栅对主 FB 就地取样无基线概念；isolate 机制仅覆盖 filter url() SourceGraphic。修复面 = 图元模型 BaselineMark + CPU/GPU 双路径 + 快照内存——特性级挂账。
+> - **③color-6 切片侦察完成**（13 案全归因，证据 PNG + chromium oracle）：**.xht XML 解析模式族**（t425 8.92%——head 注释文本被 HTML5 规则挪 body 渲染，chromium oracle file:// .xht 走 XML 页面干净，hsla 数学正确；runner 无 XML 分支）；**WAAPI 动画中间值族**（color-mix-basic-001 19.41%——ZW 色带自洽但 ref 页全白：ref 用 element.animate 取动画态色，ZW 无 WAAPI 脚本中断）；**opacity 原子合成族**（opacity-overlapping-letters 3.75%——test 交替深条 ref 近似正确双页互异，根因铁证 `apply_opacity_to_new_primitives`（paint/clip.rs:783）per-primitive alpha 衰减非原子层，无重叠时数学等价；同域 color-layers-no-blend-mode 40.10%/filters-under-will-change-opacity 4.69%）；**复合特性域**（contrast-color ×2、currentcolor-003 ::first-line × box-decoration-break、tagged-images ×4 ICC 色彩管理）。
+> - **验证**：无代码变更；案面/控制盒推导/REFTEST_DUMP PNG 三件套/chromium oracle 探针（用后即删）。证据：[`rendering-compat/evidence/r5403-ledger-scout-attribution-2026-11-03.md`](rendering-compat/evidence/r5403-ledger-scout-attribution-2026-11-03.md)。
+> - **挂账**：R5402 挂账全维持（206/ligatures-005、floats-031、img/replaced UA display、R5397 两案、floats-clear-multicol 7 案、R5242/R5392/R5391/R5390/R5389）；**新增特性级四面**：letter-spacing-203（mutual ancestor 模型）、backdrop-root 族四案（取样基线）、.xht XML 解析模式族（head 裸文本/CDATA 域）、WAAPI 动画中间值族、opacity 原子合成族（clip.rs per-primitive 衰减）；对端账（js_dom_bridge CSSOM 5 案/bookmark_context_menu/script_fetcher s249/s250/image_batch_e2e/mutation_arm/default_actions/paste_and_go）维持。**下一步 R5404**：①725F 真态账本续扫择轻——css-cascade 域侦察（通过率 69.4% 全 corpus 最低子域之一，15F 集中可能同因）②731F 之外未侦察域候选（避开本轮四面特性级缺口与既有深结构挂账、对端面）③backdrop-root/color-6 已收口不再重复。
+>
 > **▶ R5402 修复轮（css-text-3 §letter-spacing「not applied at the end of a line」——fit 门对词尾 ls 的行宽原谅，letter-spacing-200 ✗5.79%→✓0.00% 真通过-可信，corpus 真态 726F→725F FIXED=1 REGRESSED=∅，可信 10363→10364）**（2026-11-03）
 >
 > - **承接**：修复代码与测试成形于上轮 session 429 中断时（工作树遗留 R5402 在途稿：fit 门减词尾 ls + kill-switch + 2 针），本轮完成语义争议定谳（R4231 count 语义 vs WIP 行尾裁剪方向冲突）、家族/全量 A/B、kill-switch 敏感性、全门禁与落账。
