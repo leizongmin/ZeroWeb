@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 265 施工收口（shim CSSOM 规则文本输入预处理 U+0000→U+FFFD，CSS Syntax §3.3；charset 家族 5 页 **14/14** 全收口）。勘根：s264 残 2F 位对位归因——expected FFFD mojibake vs got NUL 交错串逐位对应（0x00 合法 UTF-8 解码臂保留之，FFFD 化是解析入口预处理职责）；rust css-parser tokenizer 已有该步（tokenizer.rs:280），缺口仅 JS shim `_ruleFromText`（part06.js:2041）——insertRule / adopted 表 / replaceSync 三调用点共享单点；替换不增删 `{}` 与 replaceSync 先切分顺序无涉。施工 1 刀 + 1 钉：`_ruleFromText` 入口 `.replace(/\0/g, FFFD)`（附 spec 链接）+ 钉 `test_p56_css_rule_text_nul_preprocessed_to_fffd_s265`（replaceSync 臂 corpus 原形位对位 + insertRule 臂）。验证：红态 HEAD FAIL `false|false|1` 恰合 + engine lib **3721P/5R**（5 红 = R-t2qq 既有同集，stash 法归因无涉）+ fmt/clippy 干净 + combined shim node --check OK（part06.js 为拼接片，单文件 check 无意义）+ solo charset-bom **3/3**（残 2F 翻绿）+ 全树 NUL 扫描 12 载体分类（4 图像 / 2 bom css=本切 face / 2 bom json+2 bom js=非规则文本路径 / 2 UTF-16 html 无 style 面）→ 零其他 face，A/B 免跑（s258 先例）。挂账新记（零 corpus face）：声明块直读路径（cssText setter / style 属性 → `_parseDeclarations`）未预处，按语料扩展随补。承前：M2 切片 264（charset 语料资产轮）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 266 施工收口（module 外链 MIME 门：runner 预投递面按 spec fetch a single module script，非 JavaScript MIME 网络错误投递；script-element MIME 三页 **3F→3P**）。勘根：webview `ScriptSourceFetcher` 与 runner `wpt_data_script_fetcher` 的 scripty 门对页面脚本单元是死代码——runner 模式外链脚本全被 `inline_local_scripts` 预投递，末臂读盘在册即 200 投递 + load 尾、无 MIME 检查；探针四臂实证（module .js→load 正常 / module .css→误 fire load=违例本体 / classic .css→双事件皆无=SyntaxError 体杀投递尾形状注记 / `script[src]` 计数 0=面在预投递层）；DOTALL 全树扫描翻转面 25 处 = 3 处读盘在册（恰三页判据全 `assert_array_equals(log, ["error"])` + unreached load）+ 22 处缺席 `.py` 端点透传不变 → 零回归面。施工 1 臂 + 1 钉：末臂 `is_module_type` 派生 scripty（①`?pipe=header(Content-Type,X)` ②`.headers` sidecar ③扩展名 .js/.mjs；非 scripty→`(combined,404,"")` error 尾 + 体不入页；classic 恒 scripty 无 MIME 门；读盘缺席整段透传 fetcher 端点臂 s250 语义不变）+ 钉 `inline_local_scripts_module_non_scripty_src_error_delivery_s266`。验证：红态 dump 误 load 恰合 + inline 组 3/3（fmt 后复跑）+ runner bin 全量 **283P/0F/76I**（4G per-proc 帽 runtime_path_tests 正当触发，按质量门禁升至 `--per-proc-mem 8 --total-mem 16`）+ fmt/clippy 干净 + solo 三页 **3F→3P**（日志 evidence/logs/s266-script-element-mime-gate.log）+ DOTALL 重扫零其他 face → A/B 免跑（s258 先例）。挂账注记（零 corpus face）：classic 外链无 MIME 门为 spec 正确，SyntaxError 体杀投递尾形状不扩面。承前：M2 切片 265（shim CSSOM 规则文本 NUL 预处理）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,29 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 266**：module 外链 MIME 门轮（s265 下一步候选
+  #1，1 臂 + 1 钉；script-element MIME 三页 **3F→3P**）——勘根：spec
+  fetch a single module script 非 JavaScript MIME = 网络错误（error
+  事件 + 体不执行），classic 外链无 MIME 门（nosniff 之外）；runner
+  fetcher scripty 门对页面脚本单元是死代码——`inline_local_scripts`
+  （testharness.rs:10385）预投递末臂读盘在册即 200 投递 + load 尾无
+  MIME 检查，module 单元投递尾按 status fire → 误 200 即误 load；
+  探针四臂实证（module .js load / module .css 误 load=违例本体 /
+  classic .css 双事件皆无=SyntaxError 杀尾注记 / `script[src]`=0 面
+  在预投递层）；DOTALL 翻转面扫描 25 处 = 3 在册（css-module
+  script-element-css-src、json-module 与 text-module
+  script-element-json-src，判据全 `["error"]` + unreached load）+
+  22 缺席 `.py` 端点透传不变。施工：末臂 `is_module_type` scripty
+  派生（pipe header / `.headers` sidecar / .js .mjs 扩展名；非
+  scripty→404 error 尾 + 体不入页）+ 钉
+  `inline_local_scripts_module_non_scripty_src_error_delivery_s266`。
+  验证：红态 dump 误 load + inline 组 3/3 + runner bin 全量
+  **283P/0F/76I**（per-proc 帽 runtime_path_tests 正当触发升至
+  `--per-proc-mem 8 --total-mem 16`）+ fmt/clippy 干净 + solo 三页
+  **3F→3P**（日志 evidence/logs/s266-script-element-mime-gate.log）+
+  DOTALL 重扫零其他 face → A/B 免跑（s258 先例）。挂账注记（零
+  corpus face）：classic SyntaxError 体杀投递尾形状不扩面。账本
+  [evidence/2026-11-03-m2s266-module-mime-gate.md](html-semantics-compat/evidence/2026-11-03-m2s266-module-mime-gate.md)。
 - **2026-11-03 M2 切片 265**：shim CSSOM 规则文本输入预处理轮
   （s264 下一步候选 #1，1 刀 + 1 钉；charset 家族 5 页 **14/14**
   收口）——勘根：s264 残 2F 位对位归因（expected FFFD mojibake vs

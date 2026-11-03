@@ -10513,7 +10513,63 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                     } else {
                         c
                     };
-                    (combined, 200, c)
+                    // s266（module MIME 门）：module 外链**静态文件**投递面按 spec
+                    // fetch a single module script——响应非 JavaScript MIME 为网络
+                    // 错误：error 投递尾 + 体不执行（status != 200 → tail "error"
+                    // 既有通道；探针实证 .css/.json/.txt 读盘在册即 200 投递误 fire
+                    // load）。派生序与 wpt_data_script_fetcher scripty 面同构：
+                    // ① `?pipe=header(Content-Type,X)` ② `<file>.headers` sidecar
+                    // ③ 扩展名 .js/.mjs scripty。classic 外链无 MIME 门（nosniff
+                    // 之外）不在本面；读盘缺席的 .py 端点单元不经此臂（.ok() None
+                    // → 整段透传 → fetcher 端点臂 s250 语义不变）。
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                    let scripty = if is_module_type {
+                        let mime = src_query
+                            .split('&')
+                            .find_map(|kv| kv.strip_prefix("pipe="))
+                            .and_then(|pipe| {
+                                let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                                let (name, value) = inner.split_once(',')?;
+                                name.trim()
+                                    .eq_ignore_ascii_case("content-type")
+                                    .then(|| value.trim().to_string())
+                            })
+                            .or_else(|| {
+                                read_corpus_to_string(wpt_root.join(format!("{combined}.headers")))
+                                    .ok()
+                                    .and_then(|headers| {
+                                        headers.lines().find_map(|line| {
+                                            let (key, value) = line.split_once(':')?;
+                                            key.trim()
+                                                .eq_ignore_ascii_case("content-type")
+                                                .then(|| value.trim().to_string())
+                                        })
+                                    })
+                            });
+                        match mime {
+                            Some(mime) => {
+                                let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+                                matches!(
+                                    essence.as_str(),
+                                    "text/javascript"
+                                        | "application/javascript"
+                                        | "text/ecmascript"
+                                        | "application/ecmascript"
+                                )
+                            }
+                            None => matches!(
+                                std::path::Path::new(&combined).extension().and_then(|e| e.to_str()),
+                                Some("js") | Some("mjs")
+                            ),
+                        }
+                    } else {
+                        true
+                    };
+                    if scripty {
+                        (combined, 200, c)
+                    } else {
+                        (combined, 404, String::new())
+                    }
                 })
             })
         };
@@ -14690,6 +14746,55 @@ async_test(function(test) {
         assert!(out.contains("addCrossOriginYellowImage()"));
         // 透传形态（src=data: 外链残留）不复存在。
         assert!(!out.contains("src=\"data:text/javascript"));
+    }
+
+    #[test]
+    fn inline_local_scripts_module_non_scripty_src_error_delivery_s266() {
+        // s266（module MIME 门）：module 外链静态文件投递面按 spec fetch a single
+        // module script——响应非 JavaScript MIME 为网络错误：error 投递尾 + 体不
+        // 执行（探针实证 .css/.json/.txt 读盘在册即 200 投递误 fire load；corpus
+        // 三页 css-module/script-element-css-src、json-module/script-element-json-src、
+        // text-module/script-element-json-src 判据）。classic 外链无 MIME 门
+        //（nosniff 之外）——同输入照旧 200 投递；读盘缺席的 .py 端点单元整段
+        // 透传（fetcher 端点臂），不经本门。
+        let root = std::env::temp_dir().join("zw-s266-module-mime-gate-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        std::fs::write(root.join(case_dir).join("style.css"), "#test { color: red; }").unwrap();
+        std::fs::write(root.join(case_dir).join("ok.js"), "globalThis.ran = true;").unwrap();
+        let html = "<!doctype html><body>\
+            <script type=\"module\" src=\"./style.css\" onerror=\"errored = true\"></script>\
+            <script type=\"module\" src=\"./ok.js\" onload=\"loaded = true\"></script>\
+            <script src=\"./style.css\" onerror=\"classicErrored = true\"></script>\
+            </body>";
+
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/script-element-css-src.html"), None);
+
+        // module .css：error 投递尾 + 体不入页（网络错误语义）。
+        assert!(out.contains("onerror=\"errored = true\""));
+        assert!(
+            out.contains("new Event('error')"),
+            "module .css src 须走 error 投递尾: {out}"
+        );
+        assert!(
+            out.contains(
+                "data-inline=\"html/semantics/scripting-1/the-script-element/style.css\">\n;(function () { var _els"
+            ),
+            "非 scripty module 体不执行（元素直接接 error 投递尾）: {out}"
+        );
+        // module .js：scripty 照旧 200 投递 + load 投递尾。
+        assert!(out.contains("globalThis.ran = true;"));
+        assert!(
+            out.contains("new Event('load')"),
+            "module .js src 仍走 load 投递尾: {out}"
+        );
+        // classic .css：无 MIME 门（行为不变——体入页 200 投递）。
+        assert!(
+            out.contains("classicErrored = true") && out.contains("#test { color: red; }"),
+            "classic 外链无 MIME 门，体照旧入页: {out}"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
