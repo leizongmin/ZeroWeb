@@ -5,9 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（212）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（214）
 
+- 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量并致不可中断自旋](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
 - 2026-11-03 [KMAC newX 拼接是裸 X——把 TupleHash 的逐元素 encode_string 套到 KMAC 上产出全错 MAC](bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md) — zero-engine
+- 2026-11-03 [Hybrid PQ/T KEM combiner 用 CG 框架 C2PRI 定义（含 ek_T、不含 ct_PQ），不是 X-Wing 原式](bugs/2026-11/2026-11-03-hybrid-kem-c2pri-combiner-includes-ek-t.md) — engine
 - 2026-11-02 [per-document 运行时状态用进程级 static 槽承载 → 并行测试 job 下跨页串态](bugs/2026-11/2026-11-02-per-doc-state-static-slot-parallel-jobs.md) — engine, js-dom-bridge
 - 2026-11-01 [UA display 双面分叉：host 表滞后于 JS 回落面，句柄通道 exposing 旧值](bugs/2026-11/2026-11-01-ua-display-dual-surface-divergence.md) — style-system,engine
 - 2026-11-01 [无差别 `pkill -x Xvfb` 误杀开发机远程桌面：批量清理必须按 PID/显示号收窄](bugs/2026-11/2026-11-01-indiscriminate-pkill-xvfb-kills-user-desktop.md) — rally-infra, dev-machine
