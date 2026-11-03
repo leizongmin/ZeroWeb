@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
 **版本**：v1.4 / 2026-11-02（Layer 1 file:// 臂范围策略修复交付；v1.3 file:// IPC 臂范围缺陷发现 + ① 分层决策包；v1.2 ① 预执行核查；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/3/5 DONE，DC-2 DONE（2026-11-02 重开一面——file:// IPC 直读臂无范围策略——已由 Layer 1 范围策略修复复闭，`bc719a7dc`：sanctioned 导航 + last_document_url 服务端权威锚点按面分级，http 页面读本地文件两路收口附常驻回归）；DC-4 PARTIAL——余 landlock 默认翻转（Layer 2 待拍板：①-a 接受收窄（推荐）/①-b 泵化代理/①-c 缓翻，见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md)）与环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/3/5 DONE，DC-2 DONE（2026-11-02 重开一面——file:// IPC 直读臂无范围策略——已由 Layer 1 范围策略修复复闭，`bc719a7dc`：sanctioned 导航 + last_document_url 服务端权威锚点按面分级，http 页面读本地文件两路收口附常驻回归）；DC-4 PARTIAL——余 landlock 默认翻转（Layer 2 已拍板 ①-a，2026-11-03：接受收窄翻默认，见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md)）；环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）已拍板按平台契约降级接受为 DC-4 终态（2026-11-03，真机实证可独立立项补）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
@@ -41,7 +41,7 @@
 | DC-4 / IPC-04 | helper 启动线程、重启或遇缺少沙箱能力 | 权限/FD/文件与 socket 策略按实际平台契约生效；失败/降级行为明确。真实 helper 受限操作验收 |
 | DC-5 | 修复后验收全部场景 | 常驻回归、适用质量门禁与生产 IPC 复测有据；报告未支持平台与剩余风险，不能用页面 JS 单测替代 |
 
-未知沙箱能力与拒绝方式已在 M1 核查；不采用全平台统一强制退出，fail 语义按决策 ④ 逐进程定：compositor 维持 fail-open + warn，image-decoder、renderer、media-host 新档案 fail-closed，缺能力平台降级日志明确（[决策包 ①–④](renderer-trust-boundary/2026-11-01-decision-package-1234.md)）。发现额外产品取舍记待决。
+未知沙箱能力与拒绝方式已在 M1 核查；不采用全平台统一强制退出，fail 语义按决策 ④ 逐进程定：compositor 维持 fail-open + warn，image-decoder、renderer、media-host 新档案 fail-closed，缺能力平台降级日志明确（[决策包 ①–④](renderer-trust-boundary/2026-11-01-decision-package-1234.md)）。发现额外产品取舍记待决。**2026-11-03 用户拍板（DC-4 归档口径 B）**：非 Linux 平台证据按「Linux-only 编译门控 + 显式降级日志」平台契约接受（代码级对照见 M4 前置），真机实证作为接受残余、可独立立项补；Layer 2 执行后 DC-4 转 DONE，goal 按模式 A 归档。
 
 ## 里程碑与实施交接
 
