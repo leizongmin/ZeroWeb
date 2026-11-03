@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 256 施工收口（动态 import 延迟决议——native 通道 deferred contract + 到期 poll 泵，目标键 delay-load-event F→P）。勘根含 **s253 判读勘误**：trickle 冻结 JS 2s 说法不成立——runner fetcher 忽略 trickle 即时返回，真因是 native 通道 dynamic_import_callback 同步取回+求值+resolve，断言微任务早于 load 事件链（classic inline 面 rewrite 不可达，走 s88 V8 原生回调）。施工 8 刀：script-sandbox PendingDynamicImport + PENDING_DYNAMIC_IMPORTS thread_local（Global 非 Send，sandbox_key=Arc::as_ptr 身份过滤）+ 回调延迟包裹臂（`1\x1f<delay>\x1f<inner>`，前缀判定同 s252 `3\x1f` 口径）+ settle_dynamic_import 共享体（四态+s124 缓存+IIFE 求值+决议）+ poll_pending_dynamic_imports（逐条看门狗+checkpoint 逐跳，超时终止臂 cancel+reset 不毒化）+ trait 默认 no-op；webview dynamic_import_fetch_delay 配置 + resolver CSP 后包裹 + 三探针点泵；runner 注册 trickle_delay_ms provider（s112 解析器复用）；单测钉面（红态实证）。script-sandbox 385 全绿（+1 钉）+ webview 834 过（1 失败=HEAD 既有 stash 定谳）+ runner 281 全绿（8 线程撞 4GB guard 上限为既有负载形态，--test-threads=2 干净）；全树 A/B 行级 7793P/440F/77T→7794P/439F/77T，键级 (key,state) 8307→8307 LOST 1/GAINED 1 迁移恰 1 键与目标全等零位移；挂账更新（credentials/shared-dependency 承前 + 并发慢 import dedup 新记档）；承前：M2 切片 255（星号导出歧义 + 求值错原值 + 注册序，3 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 257 施工收口（renderer/tab 宿主 import.meta.resolve 接线——多进程面对称小刀，s254 挂账收口）。两宿主 register_module_compile_callback 补 `__zw_importmap_resolve` 宿主回调（webview s254 五刀同形：map.resolve → resolve_document_url，Miss|Blocked → 空串落 prelude TypeError 守卫臂；map 槽位回调时刻锁定读取，快照换代即生效，与 `__zw_compile_module` 同模式）；钉面 ×2（worker 真装配路径五断言臂：精确键 / 前缀键组合 / asURL 回退 / 裸说明符返空 / 换代失效；红态实证——neutralize 注册名后首断言挂）。验证：renderer 369 全绿（+1 钉）+ browser bin 741 过（5 失败=HEAD 既有 stash 定谳，740 基线 + 1 钉）+ lib 10 全绿；fmt/clippy 两 crate 零告警（v8 + quickjs-only 双形态）；零 runner 路径改动 → 无全树 A/B（钉面即门禁）。新记档：import map 映射值归一化缺口（resolve_imports_match 映射目标裸 Url::parse 无基址——path-absolute/relative 值误 Blocked；webview 面同缺）。承前：M2 切片 256（动态 import 延迟决议——native 通道 deferred contract + 到期 poll 泵，目标键 delay-load-event F→P，含 s253 判读勘误）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,32 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 257**：renderer/tab 宿主 import.meta.resolve 接线轮
+  （s254 挂账收口，多进程面对称小刀）——勘根承 s254：两宿主已 parse map
+  （`parse_page_import_map` → `Arc<Mutex<Option<ImportMap>>>` 槽位，快照
+  换代每代重设）但未注册 `__zw_importmap_resolve`——`import.meta.resolve`
+  落 prelude 守卫臂抛 TypeError（回调缺席与 resolution failure 同落点，
+  es_module.rs:422 typeof 守卫 + 空串守卫）。施工 **2 刀 + 2 钉**：
+  js_worker / tab_js_worker 的 register_module_compile_callback 各补宿主
+  回调（webview s254 五刀同形：`map.resolve` → `resolve_document_url`，
+  Miss|Blocked → 空串；map 回调时刻锁定读取与 `__zw_compile_module` 同
+  模式——锁毒化回落空 map 走 Miss 不放大；宿主 shim 通道 → s256 poll
+  泵不涉）；钉面 `renderer_js_worker_importmap_resolve_wired_s257` /
+  `tab_js_worker_importmap_resolve_wired_s257`（tab 侧沿用 r386 feature
+  gate；worker 真装配路径五断言臂：精确键 / 前缀键组合 / asURL 回退 /
+  裸说明符返空 / 换代失效）。验证：红态实证（neutralize 注册名首断言
+  挂）；renderer **369 全绿**（368 基线 + 1 钉）；browser bin **741 过 +
+  5 失败 = HEAD 既有**（stash 法同跑 HEAD 740 + 同 5 定谳非本轮回归）+
+  lib 10 全绿 + cdp_file_scope_policy 2 失败 HEAD 既有；fmt/clippy 零
+  告警（v8 + quickjs-only 双形态）；零 runner 路径改动 → 无全树 A/B
+  （钉面即门禁）。新记档：**import map 映射值归一化缺口**
+  （resolve_imports_match 映射目标裸 `Url::parse` 无基址——
+  path-absolute/relative 值误 Blocked；规范要求 register 按基址归一化
+  失败整张拒注册；webview 面同缺，钉面用绝对值绕开）。挂账承前不动：
+  data-zw-harness 投递标记保真面（s255）、import maps 剩余语义面（多张
+  map/动态插入/Blocked 降级）、credentials/shared-dependency/microtask
+  时序族/并发慢 import dedup（s256）。账本
+  [evidence/2026-11-03-m2s257-import-meta-resolve-hosts.md](html-semantics-compat/evidence/2026-11-03-m2s257-import-meta-resolve-hosts.md)。
 - **2026-11-03 M2 切片 256**：动态 import 延迟决议轮（s255 候选 #1，
   delay-load 根因切片 + trickle 慢模块时序族）——勘根含 **s253 判读
   勘误**：「trickle 冻结 JS 回合 2 秒」不成立——runner 脚本 fetcher

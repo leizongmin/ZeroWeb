@@ -15,8 +15,8 @@ use zero_engine::{
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
-    ImportMap, ModuleRegistry, SandboxConfig, build_module_runtime_prelude, compile_dependency_iife,
-    compile_module_script, extract_static_module_import_specifiers,
+    ImportMap, ImportMapResolution, ModuleRegistry, SandboxConfig, build_module_runtime_prelude,
+    compile_dependency_iife, compile_module_script, extract_static_module_import_specifiers,
 };
 
 use crate::ipc_service_worker::ServiceWorkerIpcClient;
@@ -2599,6 +2599,28 @@ fn register_module_compile_callback(
     // 静态模块依赖由主线程 prefetch + collect_module_deps 经 IPC 加载；动态 import 经 ResourceLoader。
     let runtime_iifes: Arc<std::sync::Mutex<HashMap<String, String>>> = Arc::new(std::sync::Mutex::new(HashMap::new()));
 
+    // s257（承 s254 挂账——renderer/tab 多进程宿主 import.meta.resolve 接线）：宿主回调
+    // 与 webview 进程内路径（s254 五刀）同形——map 在本代槽位，回调时刻锁定读取（与
+    // `__zw_compile_module` 同模式，SetDomSnapshot 每代无条件重设后新 map 即生效）。
+    // 返空 = resolution failure（裸说明符未映射/阻断）→ prelude `__zwImportMapResolve`
+    // JS 桥抛 TypeError（es_module 守卫臂，回调缺席同落点）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
+    let map_resolve = Arc::clone(&import_map);
+    sandbox.register_callback(
+        "__zw_importmap_resolve",
+        Box::new(move |args| {
+            let spec = args.first().map(String::as_str).unwrap_or("");
+            let base = args.get(1).map(String::as_str).unwrap_or("about:blank");
+            let empty = ImportMap::default();
+            let map_opt = map_resolve.lock().ok().and_then(|g| g.clone());
+            let map = map_opt.as_ref().unwrap_or(&empty);
+            match map.resolve(spec, base) {
+                ImportMapResolution::Resolved(url) => zero_engine::resolve_document_url(base, &url),
+                ImportMapResolution::Miss | ImportMapResolution::Blocked => String::new(),
+            }
+        }),
+    );
+
     sandbox.register_callback(
         "__zw_compile_module",
         Box::new(move |args| {
@@ -3142,6 +3164,61 @@ mod tests {
         );
         // 无 map 页面 → None。
         assert!(parse_page_import_map("<p>no map</p>", "https://zero.test/page").is_none());
+    }
+
+    /// s257（承 s254 挂账）：多进程宿主 import.meta.resolve 接线——`__zw_importmap_resolve`
+    /// 回调按本代 map 解析（精确键映射 / 尾斜杠前缀键组合 / URL-like 未命中 asURL 回退 /
+    /// 裸说明符未映射返空 = prelude 桥 TypeError 守卫臂），快照换代重设后旧键失效。
+    /// 镜像 webview 进程内路径（s254 五刀）与 tab_js_worker 同名钉。
+    #[test]
+    fn renderer_js_worker_importmap_resolve_wired_s257() {
+        let mut worker = RendererJsWorker::spawn(6138);
+        worker.set_dom_snapshot(
+            r#"<script type="importmap">{"imports": {"react": "https://assets.test/react.js", "utils/": "https://assets.test/utils/"}}</script>"#,
+            "https://zero.test/page",
+        );
+        // 精确键命中 → 映射 URL（绝对值原样）。
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_importmap_resolve('react', 'https://zero.test/page')")
+                .unwrap(),
+            "https://assets.test/react.js",
+            "裸键经本代 map 精确命中"
+        );
+        // 尾斜杠前缀键 → 子路径在映射目标下组合。
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_importmap_resolve('utils/a.js', 'https://zero.test/page')")
+                .unwrap(),
+            "https://assets.test/utils/a.js",
+            "前缀键组合子路径"
+        );
+        // URL-like 未命中 → asURL 回退（按 base 解析原路径）。
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_importmap_resolve('./missing.js', 'https://zero.test/page')")
+                .unwrap(),
+            "https://zero.test/missing.js",
+            "URL-like 未命中 asURL 回退"
+        );
+        // 裸说明符未映射 → 空串 = resolution failure（prelude 桥抛 TypeError）。
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_importmap_resolve('unmapped', 'https://zero.test/page')")
+                .unwrap(),
+            "",
+            "裸说明符未映射返空"
+        );
+        // 快照换代重设（无 map 页面）→ 旧键失效，跨代残留不可能存活。
+        worker.set_dom_snapshot("<p>no map</p>", "https://zero.test/page");
+        assert_eq!(
+            worker
+                .execute_script_direct("__zw_importmap_resolve('react', 'https://zero.test/page')")
+                .unwrap(),
+            "",
+            "换代重设后旧映射键失效"
+        );
+        worker.shutdown();
     }
 
     /// fix ⑥（PR #114 审查 A1）：模块 fetch 非 2xx 拒绝——404 错误页 HTML 不得被当
