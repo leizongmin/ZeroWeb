@@ -3413,6 +3413,16 @@
           globalThis.__zwImgRevalidate5277(sel, handle);
         }
       }
+      // spec img loading 属性变更：仅唤醒**未启动**的图（_resourceStates 无记录
+      // ——deferred/未 settle）走 run update（从头选源、过 lazy 视口门含 s271
+      // 距离分流——to-eager 断言面：deferred 图 eager 化装载，主干 chrome/firefox
+      // 双绿）。**relevant mutations 定义不含 loading**（HTML §img-reacting-to-
+      // dom-mutations），已装载/已启动图 loading 变更 no-op 不重启请求（Chromium
+      // LoadDeferredImage 仅唤醒 deferred——relevant-mutations-lazy「should not
+      // invoke update the image data」timeout 断言面）。
+      if (ln === 'loading' && !_resourceStates[_elKey(sel, handle)]) {
+        globalThis.__zwImgRevalidate5277(sel, handle);
+      }
       if (ln === 'width' || ln === 'height') {
         // whatwg/html#8492：loading=lazy 的 img，width/height 内容属性
         // set/changed/removed 是 relevant mutation（重验——同 URL 命中

@@ -4029,9 +4029,12 @@
             // s70：IMG/SOURCE 相关属性 setAttribute → relevant mutation 重验（spec
             // relevant mutations 内容属性路径——IDL 路径在 part05 set trap 汇流点；
             // CSP 阻止臂已 return，重验不达）。触发面语义见 __zwImgAttrMutated5277。
+            // s272：loading 属性变更（spec「set, changed, or removed」run 触发器
+            // ——to-eager 断言面 setAttribute('loading','eager') 内容属性路径）。
             if (typeof globalThis.__zwImgAttrMutated5277 === 'function'
                 && (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
-                    || n === 'referrerpolicy' || n === 'media' || n === 'type')) {
+                    || n === 'referrerpolicy' || n === 'media' || n === 'type'
+                    || n === 'loading')) {
               try { globalThis.__zwImgAttrMutated5277(sel, handle, n, false, _zw5277SetPre); } catch (_e5277sa) {}
             }
             if (n === 'src' && typeof _realTag === 'function'
@@ -4322,9 +4325,12 @@
             }
             // s70：IMG/SOURCE 相关属性移除 → relevant mutation 重验（spec「attributes
             // are set, changed, or removed」的 removed 臂；属性本不存在非变更，不触发）。
+            // s272：loading 属性移除同入 run 触发器（to-eager 断言面
+            // removeAttribute('loading') 内容属性路径）。
             if (_rmExisted && typeof globalThis.__zwImgAttrMutated5277 === 'function'
                 && (n === 'src' || n === 'srcset' || n === 'sizes' || n === 'crossorigin'
-                    || n === 'referrerpolicy' || n === 'media' || n === 'type')) {
+                    || n === 'referrerpolicy' || n === 'media' || n === 'type'
+                    || n === 'loading')) {
               try { globalThis.__zwImgAttrMutated5277(sel, handle, n, true, _zw5277RmPre); } catch (_e5277ra) {}
             }
             // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
