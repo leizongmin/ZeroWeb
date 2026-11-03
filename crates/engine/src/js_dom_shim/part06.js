@@ -2039,7 +2039,13 @@
   }
 
   function _ruleFromText(text, parentSheet, flushFn) {
-    var t = String(text == null ? '' : text).trim();
+    // s265：解析入口预处理——U+0000 → U+FFFD（CSS Syntax §3.3 preprocessing
+    // the input stream；tokenizer 各消费步与转义路径同样将 0 值折算 FFFD）。
+    // CSS 数据模块真 UTF-16 字节经 UTF-8 解码后 \0 合法保留（解码臂职责），
+    // FFFD 化在此（insertRule/replaceSync 共享入口）；替换不增删 {} 字符，
+    // 与 replaceSync 先切分后进这里的顺序无涉。
+    // https://www.w3.org/TR/css-syntax-3/#input-preprocessing
+    var t = String(text == null ? '' : text).replace(/\0/g, '�').trim();
     var brace = t.indexOf('{');
     var rule;
     if (brace >= 0) {

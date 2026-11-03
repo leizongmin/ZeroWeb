@@ -472,3 +472,34 @@ fn p56_adopted_generation_reset_clears_slot() {
     );
     crate::js_dom_bridge::set_active_adopted_css("");
 }
+
+#[test]
+fn test_p56_css_rule_text_nul_preprocessed_to_fffd_s265() {
+    // s265（CSS Syntax §3.3 输入预处理）：规则文本 U+0000 → U+FFFD——CSS 数据模块
+    // 判据（css-module/charset-bom，真 UTF-16 字节经 UTF-8 解码）中 U+0000 是合法
+    // UTF-8，解码臂保留之；FFFD 化是解析入口预处理（preprocessing the input
+    // stream）的职责，insertRule/replaceSync 共享 `_ruleFromText` 单点。
+    // 上游判据 selectorText = `���d�i�v� �`。
+    let _slot_guard = P56_ADOPTED_SLOT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let html = "<html><head></head><body></body></html>";
+    crate::js_dom_bridge::clear_generation_cache();
+    let mut sb = p56_sandbox_with_html(html);
+    // replaceSync 整表替换臂（corpus face 原形——FFFD 翼 \0 交错 selector）。
+    assert_eq!(
+        p56_eval(
+            &mut sb,
+            "(function(){ var s = new CSSStyleSheet(); s.replaceSync('\\ufffd\\ufffd\\0d\\0i\\0v\\0 \\0 { \\0background-color: \\0blue; }'); var sel = s.cssRules[0].selectorText; return [sel === '\\ufffd\\ufffd\\ufffdd\\ufffdi\\ufffdv\\ufffd \\ufffd', sel.indexOf('\\0') < 0, s.cssRules.length].join('|'); })()"
+        ),
+        "true|true|1",
+        "replaceSync 规则文本 U+0000 须在解析入口预处理为 U+FFFD（selectorText 无残留 NUL）"
+    );
+    // insertRule 单规则臂（同 `_ruleFromText` 入口，预处理同面）。
+    assert_eq!(
+        p56_eval(
+            &mut sb,
+            "(function(){ var s = new CSSStyleSheet(); s.insertRule('\\0a\\0b\\0c\\0 { color: red }'); return s.cssRules[0].selectorText; })()"
+        ),
+        "\u{fffd}a\u{fffd}b\u{fffd}c\u{fffd}",
+        "insertRule 规则文本 U+0000 同臂预处理为 U+FFFD"
+    );
+}

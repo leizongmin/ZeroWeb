@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 264 语料资产轮收口（css-module/text-module charset 家族 5 页 file-Timeout 解封）+ 切片 263 勘定轮销案（data-zw-harness 注入序三子面零观察面，保真族 s255 D 刀→s261 拆分→s263 量化收口）。s264 勘根：5 页 Timeout 根因 = ③b 白名单旧注记「端点落地时再补」失效未销——serve-with-content-type.py 端点 s115/s249/s250 已落地；字节源三重甄别反转：上游 master 已重编 charset fixture（bom-utf-16be.css 变 UTF-8 BOM+纯文本）与 corpus 判据不符，权威源 = lib.sh WPT_REV pin 版（corpus 判据按 pin 字节形写定，windows-1250.* pin 版本即含 U+FFFD 序列）；BOM 刀反转销案——charset-bom 判据（恒 UTF-8 解码 / charset 参数忽略 / BOM 忽略）与既有 runner UTF-8 lossy 解码臂逐位吻合，零引擎刀，「charset 参数/BOM 嗅探未建模」挂账一并销案。施工：7 资产按 pin 版补入 + ③b 白名单 7 条 fetch_raw（幂等 skip-if-exists，本地字节即权威）+ update-wpt-data.sh known-gaps 条目。验证：solo 双跑（test-guard + RAF_FRAME_DRIVEN）css-module/charset **5P** + charset-2 **1P** + charset-bom **1P/2F**、text-module/charset **5P** + charset-2 **1P**——12 子测 Pass；残 2F 归因 = shim CSSOM `_ruleFromText`（part06.js:2041）缺 CSS Syntax §3.3 NUL→FFFD 输入预处理（rust css-parser tokenizer 已有，缺口仅 JS shim 路径；engine 车道 s265 1 刀候选，资产轮引擎刀不混切）。s263 勘定轮：runner 基建注入形 vs 上游双标签装载序三子面全树量化——2759 页双标签 0 页夹内容、宽松 contains 假阳性 0 观察（20 页注释性引用不进 testharness 枚举 + 1 页空格形误命中正常起跑）、属性丢弃仅 1 页 type="text/javascript" 无害——零观察面销案。承前：M2 切片 262（import map 注册序面）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 265 施工收口（shim CSSOM 规则文本输入预处理 U+0000→U+FFFD，CSS Syntax §3.3；charset 家族 5 页 **14/14** 全收口）。勘根：s264 残 2F 位对位归因——expected FFFD mojibake vs got NUL 交错串逐位对应（0x00 合法 UTF-8 解码臂保留之，FFFD 化是解析入口预处理职责）；rust css-parser tokenizer 已有该步（tokenizer.rs:280），缺口仅 JS shim `_ruleFromText`（part06.js:2041）——insertRule / adopted 表 / replaceSync 三调用点共享单点；替换不增删 `{}` 与 replaceSync 先切分顺序无涉。施工 1 刀 + 1 钉：`_ruleFromText` 入口 `.replace(/\0/g, FFFD)`（附 spec 链接）+ 钉 `test_p56_css_rule_text_nul_preprocessed_to_fffd_s265`（replaceSync 臂 corpus 原形位对位 + insertRule 臂）。验证：红态 HEAD FAIL `false|false|1` 恰合 + engine lib **3721P/5R**（5 红 = R-t2qq 既有同集，stash 法归因无涉）+ fmt/clippy 干净 + combined shim node --check OK（part06.js 为拼接片，单文件 check 无意义）+ solo charset-bom **3/3**（残 2F 翻绿）+ 全树 NUL 扫描 12 载体分类（4 图像 / 2 bom css=本切 face / 2 bom json+2 bom js=非规则文本路径 / 2 UTF-16 html 无 style 面）→ 零其他 face，A/B 免跑（s258 先例）。挂账新记（零 corpus face）：声明块直读路径（cssText setter / style 属性 → `_parseDeclarations`）未预处，按语料扩展随补。承前：M2 切片 264（charset 语料资产轮）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,24 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 265**：shim CSSOM 规则文本输入预处理轮
+  （s264 下一步候选 #1，1 刀 + 1 钉；charset 家族 5 页 **14/14**
+  收口）——勘根：s264 残 2F 位对位归因（expected FFFD mojibake vs
+  got NUL 交错逐位对应；0x00 合法 UTF-8 解码臂保留，FFFD 化为 CSS
+  Syntax §3.3 解析入口预处理职责）；rust css-parser tokenizer 已有，
+  缺口仅 JS shim `_ruleFromText`（part06.js:2041，insertRule /
+  adopted / replaceSync 三调用点共享单点）；替换不增删 `{}` 与
+  replaceSync 先切分顺序无涉。施工：`_ruleFromText` 入口
+  `.replace(/\0/g, FFFD)` + 钉（replaceSync 臂 corpus 原形位对位 +
+  insertRule 臂）。验证：红态 HEAD FAIL `false|false|1` + engine
+  lib **3721P/5R**（R-t2qq 既有同集，stash 法归因无涉）+
+  fmt/clippy 干净 + combined shim node --check OK + solo
+  charset-bom **3/3**（日志 evidence/logs/
+  s265-charset-bom-after-nul-fix.log）+ 全树 NUL 扫描 12 载体
+  分类零其他 face → A/B 免跑（s258 先例）。挂账新记（零 corpus
+  face）：声明块直读路径（cssText setter / style 属性 →
+  `_parseDeclarations`）未预处，按语料扩展随补。账本
+  [evidence/2026-11-03-m2s265-css-rule-text-nul-preprocessing.md](html-semantics-compat/evidence/2026-11-03-m2s265-css-rule-text-nul-preprocessing.md)。
 - **2026-11-03 M2 切片 264**：css-module/text-module charset 语料资产
   补拉轮（零引擎刀；2 脚本挂账 + 7 资产本地补入）——勘根：5 页
   file-Timeout 全为资产缺席（③b 旧注记「端点落地时再补」失效，端点
