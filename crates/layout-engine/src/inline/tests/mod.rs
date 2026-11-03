@@ -36,6 +36,7 @@ mod r5325_text_wrap_balance_tests;
 /// R5342 line-clamp 整行置换行盒取 strut（css-overflow-4 §block-ellipsis）。
 mod r5342_clamp_displaced_strut_tests;
 mod r5402_ls_line_end_fit_tests;
+mod r5404_first_line_lh_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

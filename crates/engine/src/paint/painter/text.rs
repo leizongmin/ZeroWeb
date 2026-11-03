@@ -1900,6 +1900,12 @@ impl super::Painter {
                     .with_letter_spacing_overrides(parent_letter_spacing)
                     .with_word_spacing_overrides(parent_word_spacing)
                     .with_line_height_overrides(parent_line_heights)
+                    // R5404：节点键 line-height 镜像——::first-line 首行域同父文本节点
+                    // 行高异值时父键通道塌缩（后写覆盖），首行被次行值渲染（003 案首行
+                    // 字形下坠 10px）。与 ws_overrides/glyph_verticals_overrides 同型：
+                    // layout 期按文本节点 id 存储，此处按节点键注入精确恢复；空表 =
+                    // 既有父键行为逐字节不变。
+                    .with_text_node_line_height_overrides(box_node.text_node_line_heights.clone())
                     .with_ascent_ratio_overrides(box_node.text_node_ascent_ratios.clone())
                     .with_text_transform_overrides(parent_text_transforms)
                     .with_inline_element_metrics(inline_metrics)

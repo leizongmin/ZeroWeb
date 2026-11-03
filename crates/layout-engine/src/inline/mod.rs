@@ -328,6 +328,15 @@ pub struct InlineFormattingContext {
     /// line-height 仅影响垂直定位（行盒高度），不影响行断（水平宽度），
     /// 因此传递此覆盖不会改变行断行为。
     pub line_height_overrides: NodeIdMap<f32>,
+    /// R5404：逐**文本节点**的 line-height 覆盖（key = 文本节点自身 NodeId）。
+    ///
+    /// `line_height_overrides` 以文本节点的父元素为键（R2189 父键约定）——同父多文本
+    /// 节点行高异值时 `build_text_parent_override_map` 后写覆盖塌缩（::first-line
+    /// 首行域 run lh=0 + 次行 run lh=40 同父 div，003 案 paint Path B 以 40 渲染两行，
+    /// 首行字形下坠 10px）。本映射从 `LayoutBox.text_node_line_heights` 原样（节点键）
+    /// 注入，查询优先于父键通道；空表时逐字节回退既有父键行为（未注入路径零扰动）。
+    /// 数据仍由 `frag.height → store_font_sizes_from_ifc` 既有链路产出（U1b 谱系）。
+    pub text_node_line_height_overrides: NodeIdMap<f32>,
     /// 内联元素的 (font_size, line_height) 覆盖（key = 元素自身的 NodeId）。
     ///
     /// 与 font_size_overrides/line_height_overrides 不同（以文本节点的父元素为键），
@@ -500,6 +509,7 @@ impl InlineFormattingContext {
             letter_spacing_overrides: NodeIdMap::default(),
             word_spacing_overrides: NodeIdMap::default(),
             line_height_overrides: NodeIdMap::default(),
+            text_node_line_height_overrides: NodeIdMap::default(),
             inline_element_metrics: NodeIdMap::default(),
             baseline_overrides: HashMap::new(),
             margin_overrides: NodeIdMap::default(),
@@ -1087,6 +1097,17 @@ impl InlineFormattingContext {
     /// 因此传递此覆盖是安全的。
     pub fn with_line_height_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
         self.line_height_overrides = overrides;
+        self
+    }
+
+    /// R5404：设置逐文本节点的 line-height 覆盖（paint Path B 使用）。
+    ///
+    /// key 为文本节点自身 NodeId（`LayoutBox.text_node_line_heights` 原样注入，
+    /// 不经 `build_text_parent_override_map` 父键塌缩）。查询优先于父键通道，
+    /// 供 ::first-line 首行域同父文本节点行高异值场景精确恢复；空表 = 既有
+    /// 父键行为逐字节不变。line-height 仅影响行盒高度（垂直定位），不影响行断。
+    pub fn with_text_node_line_height_overrides(mut self, overrides: NodeIdMap<f32>) -> Self {
+        self.text_node_line_height_overrides = overrides;
         self
     }
 

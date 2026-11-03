@@ -321,6 +321,37 @@ impl InlineFormattingContext {
         // R4376：旗标每次 collect 读一次（非每 run——wide_tree 500 run 页 0.25% bench
         // 成本实证，hoist 后每容器一次）。
         let glyph_verticals_enabled = runtime_flags::fallback_line_metrics();
+        // R5404（css-pseudo-4 #first-line-styling 切片 3a）：::first-line line-height 位。
+        // 激活门四重：kill-switch（ZW_FIRST_LINE_LH）+ 有真实 styles（Path B 空 styles
+        // 走 line_height_overrides 传导臂）+ 容器为 block container（CSS Pseudo-4 仅块
+        // 容器生效，inline 容器 span::first-line 无效）+ 伪样式 font-size 与容器一致且
+        // 解析行高不同。字号域差异属切片 3b（first-line-line-height-001/002 伪样式含
+        // font-size 2.5em/16px，仅施行高会全段错置）；行高相同（color/bg-only 页
+        // c25-pseudo-elmnt 族）零操作，既有绿案零扰动。
+        let mut first_line_lh = None;
+        let mut first_line_open = false;
+        if runtime_flags::first_line_lh()
+            && !styles.is_empty()
+            && let Some(cs) = styles.get(&container)
+            && let Some(fl) = &cs.first_line_pseudo
+            && matches!(
+                cs.display,
+                DisplayValue::Block
+                    | DisplayValue::FlowRoot
+                    | DisplayValue::ListItem
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::TableCell
+                    | DisplayValue::TableCaption
+            )
+        {
+            let (container_fs, container_lh) =
+                resolve_font_metrics_with_provider(Some(cs), self.font_metric_provider.as_ref());
+            let (fl_fs, fl_lh) = resolve_font_metrics_with_provider(Some(fl.as_ref()), self.font_metric_provider.as_ref());
+            if fl_fs == container_fs && fl_lh != container_lh {
+                first_line_lh = Some(fl_lh);
+                first_line_open = true;
+            }
+        }
         // R109 §9.2.1.1：匿名块盒片段只收集该片段的 inline 内容（fragment_node_ids），
         // 而非 container 的全部 DOM 子节点。None = 正常遍历 container 子节点。
         // R3991：run-in 并入——先收集 run-in 元素的 inline 内容（其文本/子 inline
@@ -444,7 +475,7 @@ impl InlineFormattingContext {
                             // looking at their parent element.
                             let parent_id = doc.parent_node(child_id);
                             let style = styles.get(&child_id).or_else(|| parent_id.and_then(|pid| styles.get(&pid)));
-                            let (font_size, line_height) = if style.is_some() {
+                            let (font_size, mut line_height) = if style.is_some() {
                                 // U1b：layout IFC（有真实 styles）首消费 font_metric_provider，
                                 // 使 line-height:normal 用 per-font 真实度量。provider 缺省
                                 // （生产默认 None）时逐字节等价于 resolve_font_metrics。
@@ -456,9 +487,15 @@ impl InlineFormattingContext {
                                     // line-height 覆盖：使用 layout IFC 存储的真实 line-height，
                                     // 而非 font_size * 1.2 近似值。line-height 仅影响行盒高度，
                                     // 不影响行断行为，因此传递覆盖是安全的。
+                                    // R5404：节点键镜像优先——::first-line 首行域同父文本
+                                    // 节点行高异值（首行 0 + 次行 40 同父 div），父键通道
+                                    // build_text_parent_override_map 后写覆盖会把首行也渲染
+                                    // 成次行值（003 案 PNG 实证首行字形下坠 10px）；空表时
+                                    // 回退父键，未注入路径逐字节不变。
                                     let lh = self
-                                        .line_height_overrides
-                                        .get(&pid)
+                                        .text_node_line_height_overrides
+                                        .get(&child_id)
+                                        .or_else(|| self.line_height_overrides.get(&pid))
                                         .copied()
                                         .unwrap_or(constant_normal_line_height(fs, NORMAL_LINE_HEIGHT_RATIO));
                                     (fs, lh)
@@ -474,6 +511,19 @@ impl InlineFormattingContext {
                                     constant_normal_line_height(DEFAULT_FONT_SIZE, NORMAL_LINE_HEIGHT_RATIO),
                                 ))
                             };
+                            // R5404：首行域（首个强制断前）文本 run 行高 = ::first-line 伪样式
+                            // 解析行高——ref 页 span 包裹变体的 run 同槽同值，行盒装配/strut
+                            // 交互/glyph 垂直度量逐臂等价；frag.height→text_node_line_heights
+                            // →paint Path B line_height_overrides 自动传导（paint 侧零改动）。
+                            // 域边界：容器直接文本 run（嵌套 inline 子树走 R4300 扁平化等
+                            // 独立路径，FIXME 切片 3b）；软换行定界不可知——首行在首个强制断
+                            // 前软折时伪样式只应施首个视觉行，本切片施整域（FIXME: 断行期
+                            // 第 0 行成员判定）。Path B 父键行高粒度（同父多文本节点行高
+                            // 异值时 build_text_parent_override_map 后写覆盖）为既有局限，
+                            // use_stored 主路径不受影响。
+                            if first_line_open && let Some(lh) = first_line_lh {
+                                line_height = lh;
+                            }
                             // R5223（CSS2 §9.7 × §10.8）：out-of-flow 容器（abspos/fixed）
                             // 计算display 块化 → block-level 盒，其自身 vertical-align 对
                             // 内部根行无语义；根级文本 run（父=IFC 容器）不得继承容器 va
@@ -635,6 +685,8 @@ is_isolated_bidi: style.is_some_and(|s| {
                         // `<br>` 元素产生强制换行条目
                         if elem_data.local_name() == "br" {
                             items.push(InlineItem::Br);
+                            // R5404：强制断终止 ::first-line 首行域（后续行回容器行高）。
+                            first_line_open = false;
                             continue;
                         }
 
@@ -710,6 +762,8 @@ is_isolated_bidi: style.is_some_and(|s| {
                                 .is_some_and(|ids| ids.contains(&child_id))
                         {
                             items.push(InlineItem::FloatAnchor(child_id));
+                            // R5404：float 断行语义同 BlockBreak（R3784），终止首行域。
+                            first_line_open = false;
                             continue;
                         }
 
@@ -788,6 +842,9 @@ is_isolated_bidi: style.is_some_and(|s| {
                             } else {
                                 items.push(InlineItem::BlockBreak);
                             }
+                            // R5404：Br（旧 float 臂）/FloatAnchor（R3784）/BlockBreak 均
+                            // 终止 ::first-line 首行域——块边界后不再有「第一格式行」。
+                            first_line_open = false;
                             continue;
                         }
 

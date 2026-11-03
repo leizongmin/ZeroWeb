@@ -335,6 +335,16 @@ pub(super) fn ls_line_end_fit() -> bool {
     selected(*VALUE, || default_on("ZW_LS_LINE_END_FIT"))
 }
 
+/// R5404（css-pseudo-4 #first-line-styling 切片 3a）：::first-line 伪样式 line-height
+/// 位布局期应用——首行域（首个强制断前）文本 run 行高取伪样式解析值，与 ref 页
+/// span 包裹变体的 run 同槽同值，行盒装配/strut 交互/glyph 垂直度量逐臂等价。
+/// 驱动案 css-pseudo first-line-line-height-003（首行 lh 0 + span 版 ref 双块恒等）。
+/// default-on；`ZW_FIRST_LINE_LH=0` 回退伪样式行高不消费（仅 color/bg 位，旧态）。
+pub(super) fn first_line_lh() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FIRST_LINE_LH"));
+    selected(*VALUE, || default_on("ZW_FIRST_LINE_LH"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;
