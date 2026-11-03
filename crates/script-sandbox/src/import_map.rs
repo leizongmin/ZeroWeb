@@ -7,8 +7,10 @@
 //! resolve a URL-like module specifier）。
 //!
 //! 与完整规范的已知偏差（本切片边界，见各 FIXME）：
-//! - 映射键迭代顺序为 `serde_json::Map` 的排序序而非 JSON 插入序（serde_json
-//!   未启用 `preserve_order`）；仅在嵌套尾斜杠前缀键 / 多 scope 相互重叠时可观察。
+//! - 键迭代顺序为 `serde_json::Map` 的排序序而非 JSON 插入序（serde_json
+//!   未启用 `preserve_order`）：注册收尾已按规范要求重排为代码单元降序
+//!   （s262），仅当多个不同原始键归一化为同一键时，取值归属按排序序而非
+//!   JSON 插入序判定。
 //! - null 条目（Blocked）规范要求抛 TypeError 并终止全部回退：es_module
 //!   transform 面（s259）与 webview/宿主编译·动态解析面（s260，经
 //!   [`ImportMap::resolve_mapped`] 三态直报）均已按错误通道终止。
@@ -75,6 +77,10 @@ impl ImportMap {
                 map.scopes
                     .push((parsed.to_string(), normalize_specifier_map(inner, base_url)));
             }
+            // sort and normalize scopes：scope 前缀同按代码单元降序——更具体
+            // （更长）前缀先迭代命中。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-scopes
+            map.scopes.sort_by(|a, b| code_unit_cmp(&b.0, &a.0));
         }
         Ok(map)
     }
@@ -153,7 +159,7 @@ impl ImportMap {
 }
 
 /// 归一化一张说明符映射（register an import map 的成员处理 + normalize a specifier key
-/// + sorting and normalizing a module specifier map 的值归一化步骤）。
+/// + sorting and normalizing a module specifier map 的值归一化与降序排序步骤）。
 fn normalize_specifier_map(map: &serde_json::Map<String, Value>, base_url: &Url) -> SpecifierMap {
     // https://html.spec.whatwg.org/multipage/webappapis.html#normalize-a-specifier-key
     let mut out = Vec::new();
@@ -182,7 +188,18 @@ fn normalize_specifier_map(map: &serde_json::Map<String, Value>, base_url: &Url)
         };
         out.push((normalized_key, value));
     }
+    // 收尾步骤：按键代码单元降序排列——resolve an imports match 按序首个命中
+    // 生效，降序使嵌套尾斜杠前缀键最长前缀优先（"foo/bar/" 先于 "foo/"）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-a-module-specifier-map
+    out.sort_by(|a, b| code_unit_cmp(&b.0, &a.0));
     out
+}
+
+/// 代码单元序比较（排序步骤的 "code unit less than"）：按 UTF-16 代码单元
+/// 逐一比较；与 Rust 字节序仅在非 BMP 字符与 U+E000..=U+FFFF 区段交错时
+/// 有别，这里按规范精确实现。
+fn code_unit_cmp(a: &str, b: &str) -> std::cmp::Ordering {
+    a.encode_utf16().cmp(b.encode_utf16())
 }
 
 /// resolve a URL-like module specifier：`/`、`./`、`../` 前缀（含 `//` scheme 相对）
@@ -506,12 +523,13 @@ mod tests {
             map.resolve("up", "https://x.test/dir/other.js"),
             ImportMapResolution::Resolved("https://x.test/up.js".into())
         );
-        // 归一化发生在注册期：存储值已是序列化 URL。
+        // 归一化发生在注册期：存储值已是序列化 URL（顺序为 s262 注册收尾的
+        // 代码单元降序排列）。
         assert_eq!(
             map.imports,
             vec![
-                ("shim".into(), Some("https://x.test/dir/shim.js".into())),
                 ("up".into(), Some("https://x.test/up.js".into())),
+                ("shim".into(), Some("https://x.test/dir/shim.js".into())),
             ]
         );
     }
@@ -565,6 +583,50 @@ mod tests {
         assert_eq!(
             map.resolve("lib/util.js", "https://x.test/dir/page"),
             ImportMapResolution::Resolved("https://x.test/a/b/util.js".into())
+        );
+    }
+
+    // ---- s262：映射表与 scope 列表的注册期排序（sort and normalize 两算步的
+    // 降序收尾）——resolve an imports match / scopes 按序首个命中生效，降序使
+    // 嵌套尾斜杠前缀键最长前缀优先、嵌套 scope 更具体前缀优先。此前按
+    // `serde_json::Map` 升序迭代入 `Vec`，最短前缀 / 最浅 scope 遮蔽。----
+    // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-a-module-specifier-map
+    #[test]
+    fn nested_prefix_keys_longest_prefix_wins_s262() {
+        let map = parse_at(
+            r#"{"imports": {"a/": "https://x.test/short/", "a/b/": "https://x.test/long/b/"}}"#,
+            "https://x.test/",
+        );
+        // "a/b/" 代码单元大于 "a/"，降序先迭代 → 最长前缀命中。
+        assert_eq!(
+            map.resolve("a/b/c.js", "https://x.test/page"),
+            ImportMapResolution::Resolved("https://x.test/long/b/c.js".into())
+        );
+        // resolve_mapped 面（模块抓取/编译接线）同经 match_map_tables 顺序。
+        assert_eq!(
+            map.resolve_mapped("a/b/c.js", "https://x.test/page"),
+            ImportMapResolution::Resolved("https://x.test/long/b/c.js".into())
+        );
+    }
+
+    #[test]
+    fn nested_scopes_most_specific_wins_s262() {
+        let map = parse_at(
+            r#"{"imports": {"m": "https://x.test/top.js"}, "scopes": {
+                "/s/": {"m": "https://x.test/shallow.js"},
+                "/s/t/": {"m": "https://x.test/deep.js"}
+            }}"#,
+            "https://x.test/",
+        );
+        // "/s/t/" 代码单元大于 "/s/"，降序先迭代 → 更具体 scope 命中。
+        assert_eq!(
+            map.resolve("m", "https://x.test/s/t/page"),
+            ImportMapResolution::Resolved("https://x.test/deep.js".into())
+        );
+        // 浅层 scope 页面不受影响（判别臂）。
+        assert_eq!(
+            map.resolve("m", "https://x.test/s/page"),
+            ImportMapResolution::Resolved("https://x.test/shallow.js".into())
         );
     }
 }

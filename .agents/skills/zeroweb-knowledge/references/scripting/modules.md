@@ -17,7 +17,7 @@
 - dynamic import helper 捕获同步 fetch/compile 错误并返回 rejected Promise，否则 `import(x).catch(...)` 在挂 catch 前同步抛，站点能力探测被提前中断。 (`crates/script-sandbox/src/es_module.rs`)
 - 动态模块缓存键采用 parent×specifier 解析后的 URL，宿主回传 `resolved\\u001fcode`；按原始 `./config.js` 缓存会让不同目录导入错误地共享副作用与 namespace。 (`crates/script-sandbox/src/es_module.rs`, `apps/renderer/src/js_worker.rs`, `apps/browser/src/tab_js_worker.rs`)
 - import map 必须装到静态依赖预取、主 registry 和动态 compile 新建 registry；只修页面入口 registry，动态 import 仍会把裸说明符错误解析成相对 URL。 (`apps/renderer/src/script_prefetch.rs`, `apps/renderer/src/js_worker.rs`, `apps/browser/src/tab_js_worker.rs`, `git:9786defd3ac7087154bffea875c5c58466d1290d`)
-- `resolve_mapped` 把 Blocked 降成 None，部分消费者随后回退普通 URL 解析；当前 scopes/prefix 的遍历也不能保证规范最长前缀，存在 import map 实现边界，不能按解析器结果枚举推出端到端合规。 (`crates/script-sandbox/src/import_map.rs`, `crates/script-sandbox/src/es_module.rs`, `apps/renderer/src/script_prefetch.rs`)
+- import map null 条目已三态接线（s260：resolve_mapped 直报 Blocked，消费侧不回退 parent-join），映射表与 scope 遍历已按规范代码单元降序排列（s262：最长前缀 / 更具体 scope 优先，核验 2026-11-03）；剩余边界为多张 map 合并注册（现行首张合法生效，规范为 merge + resolved module set）与动态插入不注册（仅静态 HTML 抽取），两面 corpus 零 face、架构级缓议，不能按解析器结果枚举推出端到端合规。 (`crates/script-sandbox/src/import_map.rs`, `apps/renderer/src/js_worker.rs`, `apps/browser/src/tab_js_worker.rs`)
 - 预取仅抽静态 import，动态 `import("_")` 探测留运行时；全量抽取会把探测当网络依赖，产生 404 与 cache 污染。 (`apps/renderer/src/script_prefetch.rs`, `crates/script-sandbox/src/es_module.rs`)
 - 预取 Receiver::Disconnected 是完成失败而不是继续等待；导航/StopLoading 丢 Sender 后不移除 inflight，会让 `is_active()` 永真、脚本阶段不收口。 (`apps/renderer/src/script_prefetch.rs`)
 
