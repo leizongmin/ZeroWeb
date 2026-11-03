@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 252 施工收口（module 链接/instantiation 错误语义——Fix A registry abs-only 注册：`collect_module_deps_recursive` 注册键 raw spec → 解析后 URL（module map 记账口径），跨拼写查找经 `resolve_registered_specifier` URL-join 归一，s101 钻石/自导入环臂补注册删除 + `fetched` 账本参数删除 + **静态入口转换基改 module_dep_base**（s101 钉红实证的波及面）；Fix B 契约 tag 3 `3\x1fresolved\x1fmessage` 链接失败态：prelude `__zw_load_module` + v8 原生回调两侧逐次新 SyntaxError 不入缓存（s87 ③「暂并入」翻案独立成态 ④），instantiation-error-1/2 消息身份 + dynamic-imports-script-error 分类 4 键 F→P 零回归第十一个连续完美 A/B；承前：M2 切片 251（动态内联 module 延迟求值 5 键 N→P 第十个连续完美 A/B + s250「replay 作用域不可见」归因修正）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 253 施工收口（CSP eval 门禁互斥模块编译通道——三探针实证三通道分流：内联 module 转换体动态 import 走 shim 通道，prelude `__zw_load_module` 编译 eval 在 eval 包装窗内被自家 CSP 误拦；外链 module 页 Pass 实为 runner 投递 `data-zw-harness` 误标致包装不装「错进错出」；classic 页走 v8 原生 import() 通道包装不可见。施工 prelude 一行窄豁免——`__zwRealEval`（包装安装点保存的真实 eval）感知形，仅模块编译调用豁免、模块体内嵌套 eval/页面 eval 照拦；spec 口径 module evaluation 非 eval()，script-src 只管模块 fetch。propagate-nonce-inline-module 1 键 F→P，全树 A/B 8306/8306 对迁移恰 2 键 = 目标 F→P + 在册 checkbox `:active` 漂移族 1 子测试 P→F（同跑混态自证先例销账）；delay-load 勘根定谳动态 import 同步取回冻结回合改挂账（异步通道独立切片）；承前：M2 切片 252（module 链接/instantiation 错误语义 4 键 F→P 第十一个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,33 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 253**：CSP eval 门禁互斥模块编译通道轮
+  （s252 候选 #1 收窄：nonce ×1 施工，delay-load ×1 勘根定谳改挂
+  账）——三探针实证（包装安装点/eval-blocked 回调/v8 原生
+  resolver，logs/s253-probe.log）**三通道分流**：内联 module 转换体
+  动态 import 走 shim 通道（prelude `__zw_load_module` 编译 eval 在
+  包装窗内被自家 CSP 误拦，EvalError）；外链 module 页 Pass 实为
+  runner 投递统一打 `data-zw-harness` → 包装不装「错进错出」（新挂
+  账：CSP 页外链页脚本整体豁免 eval 门禁的保真面）；classic 页走 v8
+  原生 import() 通道（Rust 侧编译，包装不可见）。spec 口径：module
+  evaluation 非 eval()，script-src 管模块 fetch（nonce 宿主 resolver
+  已查）不管求值机制。施工 prelude 一行窄豁免——
+  `(typeof __zwRealEval === 'function' ? __zwRealEval : eval)` 感知
+  形（仅模块编译调用豁免；模块体内嵌套 eval/页面 eval 照拦；未装包
+  装回落同形零变化；急切注册臂 IIFE 直嵌不经 eval 波及面封闭）。
+  验证：新钉 `test_dynamic_import_eval_gate_exemption_s253` 三层断
+  言（红态实证旧行 `rejected:EvalError` 同形签名）；script-sandbox
+  380 + webview 835 全绿；solo nonce 四页全 Pass；全树 A/B 行级
+  7782P/447F/77T 双侧同数、键级 **8306/8306 对迁移恰 2 键 = 目标键
+  propagate-nonce-inline-module F→P + checkable-active-onblur 1 子
+  测试 P→F（同跑同文件 3F+4P 混态自证，在册 checkbox `:active` 双向
+  漂移族先例销账记基线态）**。挂账更新：delay-load 根因定谳（宿主
+  resolver 链脚本执行窗内同步阻塞取回——trickle(d2) 冻结回合 2 秒，
+  load 派发与 1s timer 排断言之后，修复需动态 import 异步通道：契约
+  pending 态 + 完成泵，独立切片）；s250 动态内联 module 臂 eval 通道
+  同暴露面记同类待勘。账本
+  [evidence/2026-11-03-m2s253-csp-module-eval-exemption.md](html-semantics-compat/evidence/2026-11-03-m2s253-csp-module-eval-exemption.md)。
+
 - **2026-11-03 M2 切片 252**：module 链接/instantiation 错误语义轮
   （s87 注记预账收口）——全景分型 dynamic-import 族 24+ F 键 7 簇，
   本切 instantiation/link 错误语义 4 键一个根。勘根探针（临时

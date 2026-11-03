@@ -303,7 +303,18 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     out.push_str("    throw graphError;\n");
     out.push_str("  }\n");
     out.push_str("  try {\n");
-    out.push_str("    __moduleCache[resolved] = (function() { return eval('(' + code + ')'); })();\n");
+    // s253（CSP eval 门禁互斥）：模块求值仿真不走页面 eval 门禁。webview 侧 CSP
+    // `script-src` 无 unsafe-eval 时 per-script 装 eval/Function 包装拦页面字符串
+    // 编译 API；spec 上 module evaluation 不是 eval()——script-src 管模块 fetch
+    // （nonce 校验已在宿主 resolver 完成），不管求值机制（propagate-nonce-
+    // inline-module 实测：包装在场时此 eval 抛 EvalError，import 被自家 CSP 误拒）。
+    // 包装在场时经 `__zwRealEval`（包装安装点保存的真实 eval，webview M2-s6）求值
+    // ——仅此编译调用豁免；模块体内嵌套 eval()/Function 仍解析到 globalThis.eval
+    // （包装）照拦，WPT string-compilation-* 页面级 eval 判据不受扰。未装包装
+    // （renderer/tab 宿主、无 CSP 页）回落 eval 同形。
+    // https://w3c.github.io/webappsec-csp/#can-compile-strings
+    // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
+    out.push_str("    __moduleCache[resolved] = (function() { return (typeof __zwRealEval === 'function' ? __zwRealEval : eval)('(' + code + ')'); })();\n");
     out.push_str("  } catch (e) {\n");
     out.push_str("    __moduleFailures[resolved] = e;\n");
     out.push_str("    throw e;\n");
@@ -2155,6 +2166,64 @@ mod tests {
         );
         // 求值错误模块体恰好执行一次（重调不再跑体——module map 记账后零重复求值）。
         assert_eq!(parts[5], "count=1", "求值错误模块体只跑一次：{joined}");
+    }
+
+    /// s253（CSP eval 门禁互斥）：模块求值仿真豁免 eval 包装，页面级 eval 照拦。
+    /// webview M2-s6 在 CSP `script-src` 无 unsafe-eval 时 per-script 装 eval/Function
+    /// 包装（拦页面字符串编译 API）；prelude 的模块编译 eval 经 `__zwRealEval` 豁免
+    /// （spec：module evaluation 非 eval()，script-src 只管模块 fetch——nonce 校验在
+    /// 宿主 resolver）。红态：prelude 直呼 eval → 包装在场时动态 import 抛 EvalError
+    /// （propagate-nonce-inline-module 失败签名）。窄豁免三层钉：①模块体求值豁免
+    /// 照常落地；②模块体内嵌套 eval() 仍拦（页面语义不外溢）；③页面 eval() 照拦。
+    #[test]
+    fn test_dynamic_import_eval_gate_exemption_s253() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        // 模块 IIFE 复刻 compile_dependency_iife 括号包裹形：置位标记 → 体内 try 嵌套
+        // eval（应被包装拦为 EvalError）→ 返回 'ok'。
+        sandbox.register_callback("__zw_compile_module", Box::new(|args| {
+            let spec = args.first().map(String::as_str).unwrap_or("");
+            match spec {
+                "mod.js" => "https://zero.test/mod.js\u{1f}(function() { return (function() { globalThis.__s253_module_ran = true; try { eval('1'); globalThis.__s253_nested_eval_ok = true; } catch (e) { globalThis.__s253_nested_eval_blocked = (e.constructor.name === 'EvalError'); } return 'ok'; })(); })()".to_string(),
+                _ => String::new(),
+            }
+        }));
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        // 复刻 webview M2-s6 包装 eval 半边（Function proxy 同形不涉本钉）：
+        // `__zwCspEvalBlocked` 恒返 '1'（webview 侧为原生违例回调，此处 JS 桩同判）。
+        let wrapper = "\n    globalThis.__zwCspEvalBlocked = function () { return '1'; };\n    globalThis.__zwRealEval = globalThis.eval;\n    globalThis.eval = function (code) { if (typeof __zwCspEvalBlocked === 'function' && __zwCspEvalBlocked() === '1') { throw new EvalError('EvalError: call to eval() blocked by CSP'); } return globalThis.__zwRealEval.apply(this, arguments); };\n";
+        let prelude = build_module_runtime_prelude(&ModuleRegistry::new(), None).unwrap();
+        sandbox
+            .execute(&format!(
+                "{wrapper}\n{prelude}\n\
+                var out = [];\n\
+                __zw_dynamic_import('mod.js').then(\n\
+                  function (m) {{ out.push('resolved:' + m + ':ran=' + !!globalThis.__s253_module_ran + ':nested-blocked=' + !!globalThis.__s253_nested_eval_blocked); }},\n\
+                  function (e) {{ out.push('rejected:' + e.constructor.name + ':' + e.message); }}).then(function () {{\n\
+                  try {{ eval('1'); out.push('page-eval:unblocked'); }} catch (e) {{ out.push('page-eval:' + e.constructor.name); }}\n\
+                  __zw_report(out.join('|'));\n\
+                }});\n"
+            ))
+            .expect("包装在场探针不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("");
+        assert_eq!(
+            joined, "resolved:ok:ran=true:nested-blocked=true|page-eval:EvalError",
+            "模块编译 eval 豁免 + 模块体内嵌套 eval 照拦 + 页面 eval 照拦：{joined}"
+        );
     }
 
     /// t8j F3（site-compat bilibili laputa-home）：prelude 语句顺序钉——helper 定义必须先于
