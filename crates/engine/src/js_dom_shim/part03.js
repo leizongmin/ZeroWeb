@@ -3183,12 +3183,16 @@
       // lazy 决定——image-loading-lazy-available/use-list 断言面，故只拦 fetch
       // 启动不拦 avail settle；deferred lazy img 的 relevant mutations 不触发
       // 请求——image-loading-lazy-relevant-mutations 面）。视口触发近似 =
-      // scrollIntoView 旗标（__zwImgScrollIntoView5277；F5 视口模型收口前）。
+      // scrollIntoView 旗标（__zwImgScrollIntoView5277）+ s271 距离分支
+      //（__zwImgNearViewport5277「接近视口即装载」——mutation/revalidate 触发
+      // 的 run 经此门；解析静态 img 的初始 settle 距离分流在 part04
+      // __zwFireStaticImgSettle lazy skip 点，F5 视口模型收口前）。
       // 曾有请求（已加载 lazy img 换 src）不受门——restart 语义照旧。
       var _imLazy = '';
       try { _imLazy = String(_zw5277Attr(sel, handle, 'loading') || '').toLowerCase(); } catch (_e5277lz) {}
       if (_imLazy === 'lazy' && !_imHadPrev
-          && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])) {
+          && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])
+          && !globalThis.__zwImgNearViewport5277(sel, handle)) {
         return;
       }
       try {
@@ -3357,6 +3361,30 @@
       globalThis._zw5277ViewportFlag[_svKey] = true;
       if (!_resourceStates[_svKey]) globalThis.__zwImgRevalidate5277(sel, handle);
     } catch (_e5277sv) {}
+  };
+  // s271：lazy 视口门距离分支——「接近视口即装载」（spec lazy loading
+  // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
+  // ：deferred 请求于图「将进入视口」时启动；root margin 数值 spec 未定，
+  // Chrome 实现近似 1250px——取单值近似，FIXME 净速分档）。headless 无真
+  // 视口：文档坐标 gBCR（rect_bridge layout 快照，探针实证返回文档坐标未被
+  // overflow 容器裁剪）与视口矩形 (0,0,innerWidth,innerHeight) 外扩 margin
+  // 求交近似；滚动位移未建模（scrollIntoView 旗标路径不受影响，s70 口径
+  // 保留）。零面积（display:none/not-rendered 断言面）与 rect 不可得（快照
+  // 未就绪/未命中）一律判不近——保守 = 现状 deferred（零回归方向）；负
+  // margin 页水平远距天然排除（margin-left:-10000vw → rect 右缘 -7.8M px）。
+  globalThis.__zwImgNearViewport5277 = function (sel, handle) {
+    var vw = globalThis.innerWidth, vh = globalThis.innerHeight;
+    if (!(vw > 0) || !(vh > 0)) return false;
+    var r = null;
+    try {
+      var _nvEl = _makeProxy(sel, handle);
+      r = _nvEl && typeof _nvEl.getBoundingClientRect === 'function'
+        ? _nvEl.getBoundingClientRect() : null;
+    } catch (_e5277nv) { return false; }
+    if (!r) return false;
+    if (!(r.width > 0 && r.height > 0)) return false;
+    var M = 1250;
+    return r.right >= -M && r.left <= vw + M && r.bottom >= -M && r.top <= vh + M;
   };
   // s70：内容属性/IDL 写入触发面（part04 setAttribute/removeAttribute trap 尾、
   // part05 set trap IDL 臂消费）。src/srcset/sizes 恒重验；crossorigin/

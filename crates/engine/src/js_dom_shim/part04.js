@@ -1174,9 +1174,9 @@
         // `.src` IDL setter 通道），naturalWidth 恒 0、load/error 恒不派。此处按
         // `__zw_get_image_size` host 快照（webview fetch_page_images 预抓图，runner/
         // 生产 headless 均注册）逐元素 settle：命中 → loaded + load 事件 + 写
-        // available-images 缓存；未命中 → broken + error 事件。loading=lazy 跳过
-        //（spec https://html.spec.whatwg.org/multipage/images.html#attr-img-loading
-        // ——lazy 延迟到接近视口，headless 近似维持惰性记账面）；无/空 src 跳过
+        // available-images 缓存；未命中 → broken + error 事件。loading=lazy 经
+        // s271 距离分流（__zwImgNearViewport5277 近视口即装载，远图维持惰性记账
+        // ——spec attr-img-loading）；无/空 src 跳过
         //（无当前请求，complete 走 getter `!src && !srcset` 面）。
         // ② drain：R56h 闸门队列（`__zwReadyState === 'loading'` 时入队）——
         // DOMContentLoaded 已派、window load 未派的窗口内统一派发（spec：DCL 不等
@@ -1222,7 +1222,20 @@
               } catch (_eSwP) {}
               var _zwImLoading = '';
               try { _zwImLoading = String(_zwIm.getAttribute('loading') || '').toLowerCase(); } catch (_eSwl) {}
-              if (_zwImLoading === 'lazy') continue;
+              // s271：lazy 视口门 settle 点距离分流——「接近视口即装载」。此处是
+              // 解析静态 img 的初始 settle 通路（__zwImgRunUpdate5277 门只接
+              // mutation/revalidate 触发的 run——插入同步判门时 layout 快照未就绪，
+              // s271 探针实证近图也恒 defer）；本扫描在 window load 派发前执行、
+              // 快照已落地，距离判定单点即可。spec lazy loading
+              // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
+              // （root margin 数值 spec 未定，Chrome ~1250px 近似，FIXME 净速分档）
+              // + https://html.spec.whatwg.org/multipage/images.html#attr-img-loading
+              // 。远/零面积/rect 不可得维持既有惰性记账面（保守 = 现状 deferred；
+              // 负 margin 页水平远距天然排除）。
+              if (_zwImLoading === 'lazy'
+                  && !globalThis.__zwImgNearViewport5277(_zwImSel, _zwImHandle)) {
+                continue;
+              }
               // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/
               // sizes/picture 归一，spec update-the-image-data 步 3-17 的请求 URL；
               // 核心缺失回落 raw src 保底）。密度随状态入账供 naturalWidth 密度校正。
