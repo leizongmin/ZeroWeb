@@ -9,9 +9,9 @@
 
 ## 对账
 
-- 旧锚：[一期终态锚 m6-residual](../../archive/webcrypto-compat/evidence/2026-10-17-m6-residual-full.json.gz)
+- 旧锚：[一期终态锚 m6-residual](../../webcrypto-compat/evidence/2026-10-17-m6-residual-full.json.gz)
   （123 案 / 33,109 keys = P 25,788 + F 7,320 + T 1；与二期收口锚
-  [2026-10-31-m1-baseline-full](../../archive/webcrypto-compat-v2/evidence/2026-10-31-m1-baseline-full.json.gz)
+  [2026-10-31-m1-baseline-full](../../webcrypto-compat-v2/evidence/2026-10-31-m1-baseline-full.json.gz)
   逐位相同）。
 - 新锚：[m2s4](2026-11-02-m2s4-full.json.gz)（360 案 / 81,851 keys）。
 

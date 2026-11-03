@@ -5,7 +5,7 @@
 # 2026-11-01，同日二次拍板扩围）。
 # M1 资产预置：HEAD 布局全子树新增式拉取（两新族 + 散新案）；基线运行
 # （runner 通道 + per-dir skip 规则）= M1 rally 轮落地，契约见
-# docs/goal/webcrypto-compat-v3.md DC-1。
+# docs/goal/archive/webcrypto-compat-v3.md DC-1。
 # 注意：lib.sh WPT_REV pin（3159769…）早于上游转正重排——本脚本锁二期
 # DC-2 查证、2026-11-01 复证零漂移的子树（commit cb6cc97a…，子树
 # 084495e783…），全子树逐文件新增式取数：本地已有文件（pin 语料）经

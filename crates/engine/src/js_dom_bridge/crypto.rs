@@ -583,7 +583,7 @@ pub fn crypto_subtle_aes_kw(mode: &str, key_csv: &str, data_csv: &str) -> String
 /// `crypto.subtle.encrypt/decrypt` 的 AES-OCB 实现（webcrypto-compat-v3 域切片；WICG
 /// webcrypto-modern-algos §10）——AES-128/192/256-OCB（RFC 7253）。RustCrypto `ocb3`
 /// crate（构建于 cipher 0.5/aead 0.6 新栈，D1 拍板选型见
-/// docs/goal/webcrypto-compat-v3/master.md 待用户决策表；aes09 =0.9.2 钉版）。mode
+/// docs/goal/archive/webcrypto-compat-v3/master.md 待用户决策表；aes09 =0.9.2 钉版）。mode
 /// "encrypt"（返 ct||tag）/ "decrypt"（输入 ct||tag，返 plaintext）；key 16/24/32 字节；
 /// iv：spec 仅拦 >15 字节（RFC 7253 N ≤ 120 位），crate NonceSize 密封 6..=15 字节
 ///（KnoX 短 nonce 防护），0..=5 同 reject OperationError（语料 failing iv [0,16] 均

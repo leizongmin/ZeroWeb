@@ -1,31 +1,39 @@
 # Web Crypto 兼容三期运行时控制面板
 
-**状态**: Active——M1 完成（2026-11-01：语料预置 + 分域基线 + deps evidence +
-选型征询落档）；M2 无依赖面**全部收口**：M2-1 门禁面 +543P、M2-2 散新案
-归因 +12P、M2-3 worker 腿接线 +863P、M2-3b worker 腿排干修复 +12,196P、
-M2-4 1T 销案（iframe 子文档动态 script 执行，13 子测试全 Pass，T 5→4）、
-M2-5 raw 格式别名 +80P（raw-secret/raw-public ≡ raw，F 扫查误桶更正），
-均零回归；**D1 已拍板（2026-11-02 用户会话四子问题拍板，见待用户决策表）**
-——域切片第一轮完成（Argon2 + AES-OCB + ChaCha20-Poly1305，+7,534P 零
-回归）；域切片第二轮完成（XOF 五连，+1,676P 零回归）；域切片第三轮完成
-（PQC 两域 ML-KEM/ML-DSA，+9,064P 零回归）；域切片第四轮完成（X448 +
-KMAC 双域，FIXED 5,868 全落靶面，零回归）；**域切片第五轮完成（Hybrid
-PQ/T KEM 三组合收官批，FIXED 750 全落靶面，T 4→0 全账 T 清零，分母
-84,523 keys REGRESSED=0）——D1 五轮域切片全部收官**；下一步 **M 末收口
-重定基**（DC-4/DC-5 + 归档）
-**最后更新**: 2026-11-03（d1s5 Hybrid PQ/T KEM 落账：MLKEM768-P256 /
-MLKEM768-X25519 / MLKEM1024-P384 全链路，复用 ml-kem 0.3.3 零新增 crate；
-FIXED 750 落 11 案靶面 + T 4→0（Hybrid generateKey ×4 Timeout 键退役），
-REGRESSED=0、FLIPPED=0、F 3,900 全数 Ed448 降 scope 域外（未注册清单
-仅余 Ed448）；r2→r3 复跑恰 1 键差（TurboSHAKE 24MB flake 复归挂账形态），
-rebase 零位移逐位复现；实现 `943c4da1e`，锚 gz md5
-957ec62384623a62715e91a07bbb8699 / 内容 98fec48ca9b5576ee17d86f27038bc2c；
-make test 止于两族兄弟流预存红（engine lib 5 CSSOM 序列化 + quickjs
-renderer lib 1 时序，s249–s253 窗口形变，归因在案不代修））
+**状态**: ✅ Completed（2026-11-03 收口归档）——M1 语料预置、M2 无依赖面
+五切片、D1 拍板 + 五轮域切片、M 末收口重定基全部完成，DC-1~5 有据。
+重定基终账（HEAD 布局全量双腿，[r4 锚](evidence/2026-11-03-mend-rebase-final-full.json.gz)）
+**262 案 / 69,795 keys = P 67,845 + F 1,950 + T 0**，对 d1s5 锚切 HEAD
+子集逐位 CLEAN（REGRESSED=0/FIXED=0/FLIPPED=0/subtest drift=0，98 退役
+案出账）；一期 33,109 底线零回归（m6-residual 锚 stable 74 案 / 25,768
+keys 逐位全等）；DC-4 coverage 复测 unmapped 108→10；DC-5③ 谱系零移交
+——非 P 全数 Ed448 降 scope 域外具名（14 案），无后继 goal。整树迁
+`docs/goal/archive/webcrypto-compat-v3/`，38 号启动器随归档删除。
+**最后更新**: 2026-11-03（M 末收口重定基落账：mend r4 全量 + 双锚对照 +
+DC-4 coverage 复测 + 归档执行完毕，收口判定总表与五节账目见
+[evidence/2026-11-03-mend-closure.md](evidence/2026-11-03-mend-closure.md)；
+d1s5 及此前各轮记录见下方当前状态各条）
 
 ---
 
 ## 当前状态
+
+**M 末收口重定基完成——收口归档（2026-11-03，[evidence](evidence/2026-11-03-mend-closure.md)）**：
+HEAD 布局终账 mend r4 全量（systemd 单发 `mend-r4-webcrypto`，guard
+4/8/1800，quiet window 即时清，语料段 3m34s，树 `b3d86b77c`）**262 案 /
+69,795 keys = P 67,845 + F 1,950 + T 0**，对 d1s5 锚切 HEAD 子集逐位
+CLEAN（REGRESSED=0/FIXED=0/FLIPPED=0/shared 案 subtest drift=0，case 级
+lost=98 全数退役 tentative 案/gained=0，实跑与算术闭合互证）；一期
+m6-residual 终态锚连续性（DC-5①）：REGRESSED=0、FLIPPED=0、FIXED=0，
+shared 案键级变化仅三处既记正向（algorithm-discards 1T 键退役 + 13 全
+Pass 新键、wrapKey +138 上游新增全 Pass、188 新案 = worker 变体 130 +
+window 58）；DC-4 coverage 复测（DC-4 节）：unmapped 108→10（tentative
+维度归零）、universe 未命中 82 维持具名；DC-5③ 谱系零移交——F 1,950
+全数 Ed448 降 scope 14 案具名，无挂账外移；make test 红面全归因兄弟流
+（五节账目见 evidence）；归档模式 A 执行完毕（入口 + 控制面整树迁
+archive、archive/README 登记、trends csv 收行、goals README 38 行转
+收口、`rally-goal-38` 启动器随归档删除）。**webcrypto 谱系一/二/三期
+全部闭环，无后继 goal。**
 
 **D1 域切片第五轮完成——Hybrid PQ/T KEM 三组合收官（2026-11-03，[evidence](evidence/2026-11-03-d1s5-hybrid-kem-slice.md)）**：
 MLKEM768-P256 / MLKEM768-X25519 / MLKEM1024-P384 全链路
@@ -355,7 +363,7 @@ ML-KEM/ML-DSA 再之，X448 pre 与 KMAC 两案随拍板；门禁面注册表 RE
 getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M 末收口重定基
 （DC-4/DC-5，终账切 HEAD 布局全量双腿账，旧 `.tentative.` 路径退役）。
 
-- 输入：二期 [DC-2 甄别清单](../archive/webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md)（逐域分母/建议范围/依赖候选）
+- 输入：二期 [DC-2 甄别清单](../webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md)（逐域分母/建议范围/依赖候选）
 - 上游复证（2026-11-01、2026-11-02 二次）：11-02 HEAD `93d221d6…`，
   WebCryptoAPI 子树 `084495e783…` 与甄别时（`cb6cc97ada…`）**逐字节相同**
   （两次复证零漂移）——tentative=0、未转正域 0；pin→HEAD diff 80 增/65 删

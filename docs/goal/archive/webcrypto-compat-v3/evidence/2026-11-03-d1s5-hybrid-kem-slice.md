@@ -43,7 +43,7 @@ keygen/roundtrip 绿 + ss_T 经 python cryptography 独立 ECDH 证实 → 嫌�
 拉 HYBRID-KEMS-09 §5.1.3 得精确式，离线对 P256/X25519 两向量同时命中。
 教训：**「identical to X-Wing」的正文表述与 CG combiner 定义冲突时以框架
 定义与向量为准**；X-Wing 原式（含 ct_PQ 缺 ek_T）是 CK/CG 之外的特化。
-已有沉淀 [kmac-newx-raw-x](../../../learnings/bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md)
+已有沉淀 [kmac-newx-raw-x](../../../../learnings/bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md)
 同类（规范原文仲裁优于记忆）。
 
 ## shim 接线（三文件零新回调）

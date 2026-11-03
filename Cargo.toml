@@ -152,7 +152,7 @@ cbc = { version = "0.1", features = ["alloc", "block-padding"] }
 ctr = "0.9"
 
 # AEAD/派生新栈（webcrypto-compat-v3 D1 拍板 2026-11-02；MSRV 预检见
-# docs/goal/webcrypto-compat-v3/evidence/2026-11-02-dc2-msrv-compile-precheck.md——
+# docs/goal/archive/webcrypto-compat-v3/evidence/2026-11-02-dc2-msrv-compile-precheck.md——
 # 新一代栈构建于 cipher 0.5/aead 0.6，与既有 aes 0.8（cipher 0.4）双 major 共存
 # 为拍板明示方案，既有 aes-gcm/cbc/ctr 面不动）
 argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
@@ -161,7 +161,7 @@ chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["
 
 # XOF 摘要五连（crypto.subtle.digest SHA-3/SHAKE/cSHAKE/KangarooTwelve/TurboSHAKE，
 # webcrypto-compat-v3 D1 拍板 2026-11-02；语料面预检（真实向量 1.85.0 逐字节复现）
-# 见 docs/goal/webcrypto-compat-v3/evidence/2026-11-02-d2-domain-slice-corpus-face-precheck.md
+# 见 docs/goal/archive/webcrypto-compat-v3/evidence/2026-11-02-d2-domain-slice-corpus-face-precheck.md
 # ——KangarooTwelve 官方 crate 名为 `k12`（kangarootwelve 另有其物）；全 RustCrypto
 # digest 0.11 生态）
 sha3 = "0.12"
@@ -172,7 +172,7 @@ turboshake = "0.7.1"
 
 # PQC 两域（crypto.subtle ML-KEM encapsulate*/decapsulate* + ML-DSA sign/verify，
 # webcrypto-compat-v3 D1 拍板 2026-11-02；语料面预检（FIPS 203/204 KAT 逐字节
-# 复现 + seed 导入/钉版拍板）见 docs/goal/webcrypto-compat-v3/evidence/
+# 复现 + seed 导入/钉版拍板）见 docs/goal/archive/webcrypto-compat-v3/evidence/
 # 2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md——RustCrypto 官方最终版线）
 ml-kem = { version = "0.3.3", features = ["getrandom"] }
 ml-dsa = "0.1.1"

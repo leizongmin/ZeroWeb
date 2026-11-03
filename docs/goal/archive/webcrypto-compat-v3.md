@@ -1,7 +1,7 @@
 # Web Crypto 兼容三期 — 转正域收敛 + 谱系零遗留终局（modern-algos + secure-curves）
 
 > **三期立项（2026-11-01，二期 D1 用户拍板）**：二期（2026-11-01 收口归档，
-> [归档文档](archive/webcrypto-compat-v2.md)）DC-2 甄别定谳：一期 7,320F 挂账的
+> [归档文档](webcrypto-compat-v2.md)）DC-2 甄别定谳：一期 7,320F 挂账的
 > `.tentative.` 域在上游已全部转正（`.tentative.` 50→0，迁入 `modern-algos/` +
 > `secure-curves/` 两新目录族），另新增 pin 时不存在的 Hybrid-KEM 域。按域立项
 > 建议（10 域 109 案/18,052 子测试，universe 口径）经用户拍板（2026-11-01，
@@ -11,11 +11,16 @@
 > 收口重定基一并收编（见范围补全节）。**一期 33,109 分母零回归底线全程有效**
 > （25,788P/7,320F/1T），收口重定基后由 HEAD 布局终账承接（过渡判据见 DC-5）。
 
-**版本**: v1.1（同日二次拍板扩围）
-**日期**: 2026-11-01（立项；同日零遗留扩围）
-**状态**: Active——M1 完成 + M2 无依赖面全部收口（控制面
-`webcrypto-compat-v3/master.md`）；**D1 拍板落账（2026-11-02）**，M2 域
-切片按依赖就绪度定序推进
+**版本**: v1.2（收口）
+**日期**: 2026-11-01（立项；同日零遗留扩围）；2026-11-03（**收口归档**）
+**状态**: ✅ Completed（2026-11-03）——M1 语料预置、M2 无依赖面五切片、
+D1 拍板 + 五轮域切片、M 末收口重定基全部完成，DC-1~5 有据。重定基终账
+（HEAD 布局全量双腿）262 案 / 69,795 keys = P 67,845 + F 1,950 + T 0，
+F 全数 Ed448 降 scope 域外具名（14 案清单在案）；一期 33,109 底线零回归
+（stable face 74 案 / 25,768 keys 对 m6-residual 终态锚逐位全等）；
+谱系零移交——webcrypto 一/二/三期全部闭环，无后继 goal。控制面终账与
+收口追记见 `webcrypto-compat-v3/master.md` 与
+`webcrypto-compat-v3/evidence/2026-11-03-mend-closure.md`。
 **执行模式**: WPT 驱动（上游 WebCryptoAPI corpus 为验收标尺）+ 按域切片收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——加密面）
 
@@ -34,7 +39,7 @@
   `sharedarraybuffer.https.any.js`、
   `wrapKey_unwrapKey/aes_kw_unwrapKey_failures.https.any.js`。
 
-## 立项范围（二期 [DC-2 甄别清单](archive/webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md) D1 表）
+## 立项范围（二期 [DC-2 甄别清单](webcrypto-compat-v2/evidence/2026-10-31-dc2-promotion-screening.md) D1 表）
 
 | 域 | 分母（universe） | 建议范围 | 依赖候选 |
 |---|---:|---|---|
@@ -120,7 +125,7 @@ coverage 复测、收口重定基。
 ### 依赖约束（run-rules §9）
 
 - 一期 33,109 分母（25,788P/7,320F/1T）零回归底线：任何 P→非P 先修再收。
-  锚：`archive/webcrypto-compat/evidence/2026-10-17-m1-baseline.md`
+  锚：`webcrypto-compat/evidence/2026-10-17-m1-baseline.md`
   （+ summary.json，终态锚 2026-10-17-m6-residual-full.json.gz 同目录）；
   二期收口三跑复验在 `f97190c41`。重定基后零回归底线由 DC-5② 终账承接。
 - 新 crate 引入走 deps evidence + 用户拍板：**D1 已拍板（2026-11-02）**——

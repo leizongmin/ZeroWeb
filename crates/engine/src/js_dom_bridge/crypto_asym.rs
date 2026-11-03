@@ -854,7 +854,7 @@ pub fn crypto_subtle_x448(priv_csv: &str, pub_csv: &str) -> String {
 // ML（PQC，webcrypto-compat-v3 D1 域切片 2026-11-02）：ML-KEM（FIPS 203）
 // encapsulate/decapsulate + ML-DSA（FIPS 204）sign/verify。委托 ml-kem 0.3.3 /
 // ml-dsa 0.1.1（RustCrypto 官方最终版线；选型、FIPS 203/204 KAT 逐字节复现与
-// 钉版拍板见 docs/goal/webcrypto-compat-v3/evidence/
+// 钉版拍板见 docs/goal/archive/webcrypto-compat-v3/evidence/
 // 2026-11-02-d2-pqc-kmac-x448-corpus-face-precheck.md）。密钥线格式（WebCrypto
 // draft）：raw-seed = 种子原样（KEM 64B / DSA 32B）、raw-public = 原始公钥
 //（ek/pk）、spki = RFC 5280（AlgId + BIT STRING(0x00||key)）、pkcs8 = RFC 5958

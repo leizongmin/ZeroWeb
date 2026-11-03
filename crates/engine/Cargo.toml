@@ -36,7 +36,7 @@ cbc = { workspace = true }
 ctr = { workspace = true }
 # webcrypto-compat-v3 域切片（D1 拍板 2026-11-02）——AES-OCB/ChaCha20-Poly1305/Argon2。
 # aes 0.9 钉版：ocb3 0.2 构建于 cipher 0.5 线，与上方 aes 0.8（cipher 0.4，aes-gcm/cbc/ctr
-# 面）双 major 共存（拍板明示方案，MSRV 预检见 docs/goal/webcrypto-compat-v3/
+# 面）双 major 共存（拍板明示方案，MSRV 预检见 docs/goal/archive/webcrypto-compat-v3/
 # evidence/2026-11-02-dc2-msrv-compile-precheck.md）；钉 =0.9.2 防 cargo update 漂入 1.87+。
 # ctutils 钉版：ocb3/cipher 0.5 传递依赖，0.4.3+ 要求 rustc 1.87（同一预检 evidence）。
 aes09 = { version = "=0.9.2", package = "aes" }
