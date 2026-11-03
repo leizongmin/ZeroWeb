@@ -186,6 +186,13 @@ multitest 腿判读：主目标面达成、P→F 违门——**gate28 批不得�
 落地后 multitest/delete/fd 三腿需复跑**；电池余腿（ipara/it/typing/ilb/fc/
 delete/fd/other/enginelib）继续取全量 scoping 与恒等数据不中断。
 
+**bin 漂移注记（10:53 pull --rebase 带入并行流 engine 提交）**：multitest +
+insertparagraph 两腿跑在 pre-s254 bin（13017c0a3 树 10:10 build）；10:53 起
+工作树含 `5002fa0c1`（s254 import map 接线，script-sandbox 域，**不触
+part01f.js**）→ 其后腿（inserttext 起）make 重建拾取 s254。编辑 run 语料面
+无模块系统消费面，噪声预期 ≈0；**enginelib 腿计数将含 s254 自身的 +4 script-
+sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F + s254 面）。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
