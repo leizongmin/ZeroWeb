@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 258 施工收口（import map 映射值注册期归一化——共享解析层小刀，s257 挂账收口）。normalize_specifier_map 按 sorting and normalizing 步骤 3-6 归一化映射值（字符串值按文档基址解析存序列化 URL；解析失败或尾斜杠键地址不带尾斜杠 → 置 null 阻断条目，成员仍注册）——path-absolute/relative 前缀键值不再误 Blocked，精确键相对值全消费面拿到绝对 URL；webview/renderer/tab 三面共用解析层一并收敛。勘误记档：s257「归一失败整张 map 拒注册」与规范不符——值级失败置 null 并继续，整张拒注仅限 JSON/结构非法。验证：红态实证（5 钉在 HEAD 恰好 5 失败对准目标行为）+ 修复后 zero-script-sandbox 390 全绿（385 基线 + 5 钉，test-guard 守卫）+ fmt/clippy 零告警；无全树 A/B（corpus 零 importmap 面 + 消费面测试 map 全规范形态 + parse Err 面不变）。新记档：resolve_imports_match 回溯臂缺口（规范步骤 8 afterPrefix 越出前缀域应 TypeError，现按成功返回；与 Blocked 降级同域可并刀）。承前：M2 切片 257（renderer/tab 宿主 import.meta.resolve 接线——多进程面对称小刀，s254 挂账收口）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 259 施工收口（import map Blocked 终止回退 + resolve_imports_match 回溯臂同域并刀，s258 挂账收口）。回溯刀：前缀键 afterPrefix 产物补序列化前缀判别，越出映射目标前缀域 → Blocked（规范步骤 6，此前按成功返回越界 URL）；错误通道刀：es_module resolve_registered_specifier String→Result，Blocked（null 条目）→ RuntimeError 终止全部回退（URL 形态说明符不再落回 asURL/相对解析继续内联），transform/export 七臂 `?` 直传、定序链 filter_map 跳过（尽力而为契约不变）、module_provides_export 星号/显式重导出臂 Blocked 按 Missing 继续不消解其他路径。验证：红态实证（HEAD 越界 URL 按成功返回 / "Module not found: blocked" 降级）+ 修复后 zero-script-sandbox 392 全绿（390 基线 + 2 钉，fmt 后复跑同绿）+ clippy 零告警 + zero-webview check 过；无全树 A/B（corpus 零 importmap 面 + 公共 API 签名不变）。宿主 import.meta.resolve 回调面本就规范正确（s257）；webview/宿主编译面 resolve_mapped Option 签名仍按 None 降级——s260 候选（三态化 + resolver 错误通道 + 失败 tag 路由三面一次收口）。承前：M2 切片 258（import map 映射值注册期归一化——共享解析层小刀，含 s257 整张拒注口径勘误）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,27 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 259**：import map Blocked 终止回退 + 回溯臂并刀轮
+  （s258 挂账收口，两刀）——勘根：resolve_imports_match 缺规范步骤 6
+  回溯判别（afterPrefix 产物越出映射目标前缀域按成功返回）；resolve_registered_specifier
+  `String` 签名无错误通道——Blocked 按 Miss 降级（URL 形态说明符命中阻断
+  后落回 asURL/相对解析继续内联，裸键落 "Module not found" 错误原因失真）。
+  施工 **2 刀 + 2 钉**：回溯刀（前缀键臂补序列化前缀判别 → Blocked）+
+  错误通道刀（resolve_registered_specifier String→Result，Blocked →
+  RuntimeError 终止全部回退；transform/export 七臂 `?` 直传；定序链
+  filter_map 跳过遵循 module_graph_postorder 尽力而为契约；module_provides_export
+  星号/显式重导出臂 Blocked 按 Missing 继续不消解其他路径）。钉面 ×2：
+  import_map 回溯钉 + compile_dependency_iife 端到端两臂钉（裸键/URL 形态
+  键 null 条目均 null-entry 错误终止；resolve 级 Err 断言旧签名下无法编译，
+  红态证据落公共 API 钉——编译失败不冒充行为失败）。验证：红态实证（HEAD
+  越界 URL 按成功返回 / "Module not found: blocked" 降级）+ 修复后
+  `zero-script-sandbox` **392 全绿**（390 基线 + 2 钉，fmt 后复跑同绿）
+  + clippy 零告警 + zero-webview check 过；零 corpus 面（s258 grep 承用）
+  + 公共 API 签名不变 → 无全树 A/B。不涉面核对：宿主 import.meta.resolve
+  回调面本就规范正确（s257 空串 → prelude TypeError）；webview/宿主编译面
+  resolve_mapped Option 签名仍降级——收敛为 s260 候选（三态化 + resolver
+  错误通道 + 失败 tag 路由三面一次收口）。账本
+  [evidence/2026-11-03-m2s259-import-map-blocked-fallback-termination.md](html-semantics-compat/evidence/2026-11-03-m2s259-import-map-blocked-fallback-termination.md)。
 - **2026-11-03 M2 切片 258**：import map 映射值注册期归一化轮（s257 挂账
   收口，共享解析层小刀）——勘根：normalize_specifier_map 映射值原样存储，
   resolve_imports_match 对前缀键目标裸 `Url::parse` 无基址——
