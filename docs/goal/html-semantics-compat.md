@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 267 施工收口（serve-custom-response.py 端点仿真：repeated-import 三页 **3F→3P**，8 job 并行族跑 5/5）。勘根：上游端点语义（stash 按 key 记账，stat/reset-stat/set 三 action，无 action 模块取回按 content-type 回体 + 计数）；投递拓扑 = 页面 fetch() action 面落 fetch handler、运行时元素装载 + 动态 import 落 script fetcher，两端共享案级状态；**跨案竞态实证**（runner 8 job 同进程线程 + 页 B/C 语料共用 fixed token → 进程级全局表互踩，solo B 归因）；`__zw_mtype` intent 臂前置接管 css 端点取回（Err 不计数，stat 观察面断裂）；改写器 `import(` 匹配吃进标识符内部（removeScriptReimport → ReferenceError）；取回序债务 = `__zw_load_module` 先 host 后查缓存 → 动态 import 复取（页 C step5 stat "1"≠"0"）。施工：案级 stash（per-case Arc 两闭包共享，单测回落进程级静态表）+ 端点模块取回臂前置（mtype 感知 MIME 门：text 无校验 s250 口径 / css 按 module type map / 默认 JS∪json∪css 集）+ delivered_ok 交付缓存（首 Ok 记账回体、复取不计数、失败不记账）+ `is_identifier_continue_byte` 守卫两改写点 + `__zwModuleFetchKeys` 取回键缓存（host 调用前先查）。验证：状态机钉 + 改写守卫钉绿 + 沙箱 **396P/0F** + corpus solo A 3P / B 5 步 P / 并行族 5/5（日志 evidence/logs/s267-repeated-import.log）+ 邻域 FILTER="module" 330P/43F 对位 s261 全域基线 **REGRESSED=∅ FIXED=6**（3×s267 + 3×s266）+ runner bin **284P/0F/76I** + fmt/clippy 干净。挂账注记：delivered_ok 为端点域仿真，webview 元素装载面真实 module map 仍缺席（s256 挂账部分收窄保留）；fixed token 跨案共享为语料形态注记，后续端点类挂账沿用案级 stash。承前：M2 切片 266（module 外链 MIME 门）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 268 施工收口（css/json/text-module referrer-checker 端点仿真 + 元素级 referrerpolicy 图穿参：三页 **3T→24P**，全树 A/B 零回归）。勘根：上游 checker 体形（css 回 `.referrer{content:"<R>"}` / json 回 `{"referrer":"<R>"}` / text 回裸体、no-referrer 臂裸空体）+ 有效策略三层（元素 referrerpolicy > pipe header > meta > SWCO 默认）；端点臂前置 `__zw_mtype` intent 臂前（s267 同理由）；text 空体撞 fetcher 契约「空体=失败」防线→图收集放宽 text 空体合法；**方案伪影定谳**——runner https 文档锚 vs 语料 http token URL → 跨源 default 臂误落降级臂回空，曾试合成 host 豁免改致 strict-policies P→F（HEAD stash 实证）→ revert 改走 s116 先例 `referrer_case_uses_http_page` 扩 3 页（页期望锚 origin 的 http 形）。施工：engine `extract_script_referrer_policies`（镜像 csp 枚举 + 序数配对钉）+ webview `collect_module_deps_recursive` referrer_policy 穿参递归（静态图位 `script_referrer_policies.get(idx)`；动态 import 三调用点 None + FIXME）+ text 空体放宽 + runner referrer-checker.py 三域端点臂（`__zw_lp` > pipe > doc > SWCO，css/json/text 三体形）+ http 页锚扩 3 页，3 钉（engine 序数配对 / webview 图标记+空体合成 / runner 端点 7 断言）。验证：runner bin **285P/0F/76I** + solo **24/24** + 族跑 **80P/1F**（残红 image-loading-lazy-referrerpolicy-change 为 A/B 双红零位移在册独立面）+ 全树 A/B **7814P/431F/72T→7836P/433F/69T** join 精确 24 翻绿、REGRESSED=∅（checkable ×2 漂移族 B 日志混态自证销账）+ make test **3722P+5F**（R-t2qq 既有，s265 账本同集）+ fmt/clippy 干净。挂账：referrer-policies ×3 销案；新记 dynamic import() 元素级策略穿参（零 corpus face）。承前：M2 切片 267（serve-custom-response.py 端点仿真）——逐轮全账见下方「轮次账」与 evidence/ 目录。勘根：上游端点语义（stash 按 key 记账，stat/reset-stat/set 三 action，无 action 模块取回按 content-type 回体 + 计数）；投递拓扑 = 页面 fetch() action 面落 fetch handler、运行时元素装载 + 动态 import 落 script fetcher，两端共享案级状态；**跨案竞态实证**（runner 8 job 同进程线程 + 页 B/C 语料共用 fixed token → 进程级全局表互踩，solo B 归因）；`__zw_mtype` intent 臂前置接管 css 端点取回（Err 不计数，stat 观察面断裂）；改写器 `import(` 匹配吃进标识符内部（removeScriptReimport → ReferenceError）；取回序债务 = `__zw_load_module` 先 host 后查缓存 → 动态 import 复取（页 C step5 stat "1"≠"0"）。施工：案级 stash（per-case Arc 两闭包共享，单测回落进程级静态表）+ 端点模块取回臂前置（mtype 感知 MIME 门：text 无校验 s250 口径 / css 按 module type map / 默认 JS∪json∪css 集）+ delivered_ok 交付缓存（首 Ok 记账回体、复取不计数、失败不记账）+ `is_identifier_continue_byte` 守卫两改写点 + `__zwModuleFetchKeys` 取回键缓存（host 调用前先查）。验证：状态机钉 + 改写守卫钉绿 + 沙箱 **396P/0F** + corpus solo A 3P / B 5 步 P / 并行族 5/5（日志 evidence/logs/s267-repeated-import.log）+ 邻域 FILTER="module" 330P/43F 对位 s261 全域基线 **REGRESSED=∅ FIXED=6**（3×s267 + 3×s266）+ runner bin **284P/0F/76I** + fmt/clippy 干净。挂账注记：delivered_ok 为端点域仿真，webview 元素装载面真实 module map 仍缺席（s256 挂账部分收窄保留）；fixed token 跨案共享为语料形态注记，后续端点类挂账沿用案级 stash。承前：M2 切片 266（module 外链 MIME 门）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,44 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-04 M2 切片 268**：css/json/text-module referrer-checker
+  端点仿真 + 元素级 referrerpolicy 图穿参轮（s116 挂账
+  "text/css/json-module referrer-policies（3T）"收口，engine +
+  webview + runner 三车道 3 文件 3 刀 3 钉；三页 **3T→24P**）——
+  勘根：上游 checker 体形逐字镜像（css `.referrer{content:"<R>"}`
+  / json `{"referrer":"<R>"}` / text 裸体、no-referrer 臂**裸空
+  体**）+ 有效策略三层（元素 referrerpolicy > pipe header > meta
+  > SWCO 默认）；端点臂须前置 `__zw_mtype` intent 臂前（s267 同
+  理由）；text 空体撞 fetcher 契约「空体=取回失败」防线→图收集
+  放宽 `type=text` 空体合法；**方案伪影定谳**——runner https 文
+  档锚 vs 语料 http token URL，跨源 default 策略臂误落
+  `wpt_referrer_is_downgrade` 降级臂回空（首跑 solo 21P/3F），
+  **曾试合成 host 豁免改 → 8 job 族 strict-policies strict-*
+  P→F 回归**（HEAD stash solo 实证原本 Pass，s116 原口径不可侵）
+  → revert，改走 s116 先例 `referrer_case_uses_http_page` 扩 3
+  页（页期望锚 `(new URL(location.href)).origin` 的 http 形）。
+  施工：engine `extract_script_referrer_policies`（镜像
+  extract_script_csp_info 枚举、trim 空体→None、序数对位）；
+  webview `collect_module_deps_recursive` +`referrer_policy` 形
+  参递归穿参（静态图位 `script_referrer_policies.get(idx)`；
+  动态 import 三调用点 None + FIXME；text 空体放宽；
+  too_many_arguments 8 参形）；runner referrer-checker.py 三域
+  端点臂（`__zw_lp` > pipe > doc policy > SWCO 默认，经既有
+  `compute_module_referer` 回体，css/json/text 三体形）+ http
+  页锚扩 3 页。验证：3 钉绿 + runner bin **285P/0F/76I**（284+1）
+  + solo **24/24**（日志 evidence/logs/s268-solo-final.log）+
+  豁免改回归证据链在档（s268-family-exemption-regression.log）+
+  族跑终态 **80P/1F**（残红 image-loading-lazy-referrerpolicy-
+  change 为 A/B 双红零位移在册独立面；s268-family-final.log）+
+  全树 A/B **7814P/431F/72T→7836P/433F/69T** join 精确 24 翻绿
+  （3 文件 Timeout→24 子测 Pass）、REGRESSED=∅（checkable ×2
+  漂移族 B 日志同文件混态自证销账）+ make test **3722P+5F**
+  （R-t2qq adopted-stylesheets 既有，s265 账本同集，本流不入侵）
+  + fmt/clippy 干净。挂账：referrer-policies ×3 **销案**；新记
+  dynamic import() 元素级 referrerpolicy 穿参（零 corpus face，
+  随语料扩展补）；承前 image-loading-lazy-referrerpolicy-change
+  1F 勘根入候选。账本
+  [evidence/2026-11-04-m2s268-data-module-referrer-checker.md](html-semantics-compat/evidence/2026-11-04-m2s268-data-module-referrer-checker.md)。
 - **2026-11-03 M2 切片 267**：serve-custom-response.py 端点仿真轮
   （s266 下一步候选 #1，runner 车道 2 文件；repeated-import 三页
   **3F→3P**）——勘根：上游端点语义（wptserve stash 按 `key` 记账

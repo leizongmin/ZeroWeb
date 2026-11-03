@@ -4100,7 +4100,15 @@ fn net_api_case_uses_http_page(case_name: &str) -> bool {
 /// over HTTP」（断言文本与导入链均锚 http：https 文档令 `./resources` 包装导入
 /// https 化、checker 子请求成降级，origin 断言翻红）。webcrypto 同口径先例。
 fn referrer_case_uses_http_page(case_name: &str) -> bool {
+    // s268：css/json/text-module referrer-policies.sub.html 同口径——页面期望值锚
+    // `(new URL(location.href)).origin` 的 http 形（upstream wptserve 判据环境页面
+    // 恒 http :8000），跨源臂 `{{domains[www1]}}:{{ports[http][0]}}` 也是 http；
+    // https 页锚下 SWCO 默认策略跨源臂落降级臂（https 源 → http 请求 → 无
+    // Referer），与 upstream 判据面（同 scheme → origin 形）背离。
     case_name.ends_with("module/referrer-strict-policies.sub.html")
+        || case_name.ends_with("css-module/referrer-policies.sub.html")
+        || case_name.ends_with("json-module/referrer-policies.sub.html")
+        || case_name.ends_with("text-module/referrer-policies.sub.html")
 }
 
 /// s151：link-style-error 三文件页面 scheme 判定——上游 css.py 语料假设 http 页
@@ -5461,6 +5469,56 @@ fn wpt_data_script_fetcher_with_stash(
             };
             state.delivered_ok = Some(body.to_string());
             return Ok(body.to_string());
+        }
+        // s268：css/json/text-module referrer-checker.py 动态端点仿真（s116 JS 模块
+        // 臂的数据模块三风味扩展——上游 wptserve handler 不在语料，回体逐字镜像
+        // 上游：css → `.referrer { content: "<Referer>" }`、json →
+        // `{"referrer": "<Referer>"}`、text → 裸 Referer 文本（no-referrer → 空体，
+        // 引擎 text 数据模块空体合成面 s268 放行））。置于 `__zw_mtype` intent 臂
+        // **之前**（同 s267 臂理由：数据模块取回报文携带 `__zw_mtype` 标记，intent
+        // 臂按扩展名 MIME 派生接管 .py 会 Err——import 链断 tests:0）。
+        // 策略链 = `__zw_lp`（webview collect_module_deps_recursive 静态 import 图
+        // 元素级 referrerpolicy 穿参——script 元素属性通道，消费即剥离语义同 s124
+        // echo-referrer 臂）→ pipe → 文档策略 → spec 默认 SWCO（s124 同序）。
+        // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+        // https://fetch.spec.whatwg.org/#determine-request-s-referrer
+        if clean.contains("the-script-element/css-module/resources/referrer-checker.py")
+            || clean.contains("the-script-element/json-module/referrer-checker.py")
+            || clean.contains("the-script-element/text-module/referrer-checker.py")
+        {
+            let full_url = zero_engine::resolve_document_url(page_url, src);
+            let lp_policy = src
+                .split('?')
+                .nth(1)
+                .unwrap_or("")
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("__zw_lp="));
+            let parent_query = page_url.split('?').nth(1).unwrap_or("");
+            let pipe_policy = parent_query.split('&').find_map(|kv| {
+                kv.strip_prefix("pipe=").and_then(|pipe| {
+                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                    let (name, value) = inner.split_once(',')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("referrer-policy")
+                        .then(|| value.trim().to_ascii_lowercase())
+                })
+            });
+            let effective = lp_policy
+                .filter(|p| is_known_referrer_policy(p))
+                .map(|p| p.to_string())
+                .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
+                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+            if clean.contains("css-module/") {
+                let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
+                return Ok(format!(".referrer {{ content: \"{escaped}\" }}"));
+            }
+            if clean.contains("json-module/") {
+                let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
+                return Ok(format!("{{\"referrer\": \"{escaped}\"}}"));
+            }
+            return Ok(referer);
         }
         // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
         // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
@@ -13619,6 +13677,91 @@ mod tests {
             )
             .unwrap(),
             "globalThis.__zwScriptPyLoaded = (globalThis.__zwScriptPyLoaded || 0) + 1;"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s268 回归钉：css/json/text-module referrer-checker.py 数据模块端点仿真——
+    // 回体三风味镜像上游 + `__zw_lp` 元素级策略链（webview 静态 import 图穿参通道）
+    // + 非法 label 剥离顺延 + no-referrer 空 text 体。doc URL 用 http:8000（语料
+    // 替换真值——https 源 → http 请求降级臂不在此钉面）。
+    #[test]
+    fn data_module_referrer_checker_endpoint_sims_s268() {
+        let dir = std::env::temp_dir().join(format!("zw-data-referrer-s268-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let css_page =
+            "http://wpt.test:8000/html/semantics/scripting-1/the-script-element/css-module/referrer-policies.sub.html";
+        let json_page =
+            "http://wpt.test:8000/html/semantics/scripting-1/the-script-element/json-module/referrer-policies.sub.html";
+        let text_page =
+            "http://wpt.test:8000/html/semantics/scripting-1/the-script-element/text-module/referrer-policies.sub.html";
+
+        // ① css 面：默认策略（无 __zw_lp 无 doc）SWCO 同源 → 全 URL；body 逐字上游。
+        let fetch = wpt_data_script_fetcher(&dir, None).unwrap();
+        assert_eq!(
+            fetch(css_page, "./resources/referrer-checker.py?name=A&__zw_mtype=css").unwrap(),
+            ".referrer { content: \"http://wpt.test:8000/html/semantics/scripting-1/the-script-element/css-module/referrer-policies.sub.html\" }"
+        );
+
+        // ② css 面 `__zw_lp=no-referrer`（元素级压文档）→ 空 content。
+        assert_eq!(
+            fetch(
+                css_page,
+                "./resources/referrer-checker.py?name=B&__zw_mtype=css&__zw_lp=no-referrer"
+            )
+            .unwrap(),
+            ".referrer { content: \"\" }"
+        );
+
+        // ③ css 面 `__zw_lp=origin` → origin 形（同源亦 origin）。
+        assert_eq!(
+            fetch(
+                css_page,
+                "./resources/referrer-checker.py?name=C&__zw_mtype=css&__zw_lp=origin"
+            )
+            .unwrap(),
+            ".referrer { content: \"http://wpt.test:8000/\" }"
+        );
+
+        // ④ json 面跨源请求（www1）无 __zw_lp：SWCO 跨源 → 引用源 origin 形。
+        assert_eq!(
+            fetch(
+                json_page,
+                "http://www1.wpt.test:8000/html/semantics/scripting-1/the-script-element/json-module/referrer-checker.py?name=D"
+            )
+            .unwrap(),
+            "{\"referrer\": \"http://wpt.test:8000/\"}"
+        );
+
+        // ⑤ text 面跨源 `__zw_lp=unsafe-url` → 全 URL（unsafe-url 不看跨源）。
+        assert_eq!(
+            fetch(
+                text_page,
+                "http://www1.wpt.test:8000/html/semantics/scripting-1/the-script-element/text-module/referrer-checker.py?name=E&__zw_mtype=text&__zw_lp=unsafe-url"
+            )
+            .unwrap(),
+            "http://wpt.test:8000/html/semantics/scripting-1/the-script-element/text-module/referrer-policies.sub.html"
+        );
+
+        // ⑥ text 面同源 `__zw_lp=no-referrer` → 裸空体（引擎空体 text 合成面）。
+        assert_eq!(
+            fetch(
+                text_page,
+                "./referrer-checker.py?name=F&__zw_mtype=text&__zw_lp=no-referrer"
+            )
+            .unwrap(),
+            ""
+        );
+
+        // ⑦ 非法 __zw_lp label 剥离顺延文档策略（no-referrer doc → 空）。
+        let fetch_nr = wpt_data_script_fetcher(&dir, Some("no-referrer".into())).unwrap();
+        assert_eq!(
+            fetch_nr(
+                css_page,
+                "./resources/referrer-checker.py?name=G&__zw_mtype=css&__zw_lp=bogus-policy"
+            )
+            .unwrap(),
+            ".referrer { content: \"\" }"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

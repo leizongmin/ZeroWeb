@@ -1564,6 +1564,27 @@ pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
         .collect()
 }
 
+/// 提取每个 `<script>` 元素的 `referrerpolicy` 属性原文（html-semantics s268——
+/// referrer-policies.sub 判据面：module 脚本元素级策略 govern 其静态 import 图
+/// 的取回 Referer）。
+///
+/// 返回向量序号口径同 [`extract_script_csp_info`]（全部 script 元素文档序）。属性
+/// 缺失/空 → None（继承文档策略/spec 默认——label 合法性校验在消费侧，非法
+/// label 按 spec 忽略后顺延）。
+/// https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn extract_script_referrer_policies(html: &str) -> Vec<Option<String>> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("script")
+        .into_iter()
+        .map(|script_id| {
+            doc.get_attribute(script_id, "referrerpolicy")
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+        })
+        .collect()
+}
+
 /// 提取每个 `<script>` 元素**内容起始位置**的 1-based 行/列号（security-hardening
 /// M2-s2）——CSP 违规事件 `lineNumber`/`columnNumber` 源（spec CSP3
 /// §securitypolicyviolationevent：被阻止的内联脚本位置 = 内容首字符在文档源的行列）。
@@ -1767,8 +1788,8 @@ pub fn extract_style_elements_csp(html: &str) -> Vec<StyleElementCsp> {
 mod tests {
     use super::{
         MediaResourceElementKind, PageScript, extract_media_resources, extract_meta_csp_policies,
-        extract_page_scripts_indexed, extract_script_csp_info, extract_script_source_positions,
-        extract_style_elements_csp, open_tag_has_attr, script_effective_base_urls,
+        extract_page_scripts_indexed, extract_script_csp_info, extract_script_referrer_policies,
+        extract_script_source_positions, extract_style_elements_csp, open_tag_has_attr, script_effective_base_urls,
     };
 
     const BASE_PAGE: &str = "https://wpt.test/a/b/page.html";
@@ -2200,6 +2221,42 @@ mod tests {
         assert!(!infos[scripts[2].1].zw_harness);
         assert_eq!(scripts[3].1, 4);
         assert!(infos[scripts[3].1].inlined_src.is_some());
+    }
+
+    /// script 元素级 referrerpolicy 提取（html-semantics s268）：全量 script 文档序
+    /// 对齐（同 csp_info 口径含非 JS type 占位）；属性缺失/空白 → None。
+    /// https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+    #[test]
+    fn extract_script_referrer_policies_aligns_with_script_ordinal_s268() {
+        let html = "<html><head>\
+            <script src=\"/resources/testharness.js\"></script>\
+            <script type=\"module\" referrerpolicy=\"origin\">import x from './a.js';</script>\
+            <script type=\"application/json\">{\"x\":1}</script>\
+            </head><body>\
+            <script type=\"module\" referrerpolicy=\"  no-referrer  \">import y from './b.py' with { type: \"text\" };</script>\
+            <script type=\"module\" referrerpolicy=\"   \">globalThis.z = 1;</script>\
+            </body></html>";
+        let policies = extract_script_referrer_policies(html);
+        assert_eq!(policies.len(), 5, "全量 script 元素文档序（含 harness/JSON 占位）");
+        assert_eq!(policies[0], None, "缺属性 → None（继承文档策略链）");
+        assert_eq!(policies[1].as_deref(), Some("origin"));
+        assert_eq!(policies[2], None, "非 JS type 占位");
+        assert_eq!(
+            policies[3].as_deref(),
+            Some("no-referrer"),
+            "属性值 trim（spec 解析非空白包络）"
+        );
+        assert_eq!(policies[4], None, "空白属性 → None（空 label 按 spec 忽略顺延）");
+        // 序号对位消费契约：运行序 script（0 号 classic / 1 号 module / 3 号 module）
+        // 落对应策略——顶层静态图按 script_index O(1) 取元素策略。
+        let scripts = extract_page_scripts_indexed(html);
+        assert_eq!(scripts.len(), 4);
+        assert_eq!(scripts[0].1, 0);
+        assert_eq!(policies[scripts[0].1], None);
+        assert_eq!(scripts[1].1, 1);
+        assert_eq!(policies[scripts[1].1].as_deref(), Some("origin"));
+        assert_eq!(scripts[2].1, 3);
+        assert_eq!(policies[scripts[2].1].as_deref(), Some("no-referrer"));
     }
 
     #[test]

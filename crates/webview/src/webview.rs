@@ -11,11 +11,12 @@ use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
     extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
-    extract_script_source_positions, extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim,
-    image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
-    script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
-    script_dispatch_script_event, script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
-    script_module_eval_error_report, script_report_module_failure, script_run_classic_page, script_set_current_script,
+    extract_script_referrer_policies, extract_script_source_positions, extract_style_elements_csp,
+    extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key, page_script_error_check,
+    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
+    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
+    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
+    script_report_module_failure, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -3618,6 +3619,11 @@ impl WebView {
         } else {
             (Vec::new(), Vec::new())
         };
+        // s268（html-semantics）：script 元素级 referrerpolicy（module 静态 import 图
+        // 的取回 Referer 策略通道——fetcher 契约无策略形参，s124 `__zw_lp` 同法以内部
+        // 标记查询参数穿入）。与 CSP info 同为序号对齐 sidecar（全 script 元素文档序
+        // ），无条件提取（referrer 族页面无 CSP 配置）。
+        let script_referrer_policies = extract_script_referrer_policies(&html);
         let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
         // security-hardening M2-s6：eval 门禁快照（v8 crate 无 codegen 写入面——shim 层
         // eval/Function 包装抛 EvalError + violation 入 connect 共享队列）。
@@ -4256,6 +4262,10 @@ impl WebView {
                         parent,
                         &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
+                        // s268：动态 import() 元素级 referrerpolicy 未穿（回调契约
+                        // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
+                        // 挂账（s116 module-import-referrer 同域）。
+                        None,
                     )
                 }),
             );
@@ -4307,6 +4317,9 @@ impl WebView {
                         parent,
                         &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
+                        // s268：动态 import() 元素级 referrerpolicy 未穿（resolver
+                        // 契约无元素上下文；doc 默认链回落，同上方 shim 面）。
+                        None,
                     );
                     // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
                     // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹
@@ -4355,6 +4368,9 @@ impl WebView {
                             spec,
                             true,
                             type_attr.as_deref(),
+                            // s268：动态插入内联 module 无元素策略属性——doc 默认链
+                            // 回落（同动态 import 面）。
+                            None,
                             &mut registry,
                             &mut visited,
                         ) {
@@ -4677,12 +4693,19 @@ impl WebView {
                     // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
                     let mut graph_failure: Option<(ModuleGraphFailure, String)> = None;
                     for (spec, type_attr) in &specs {
+                        // s268：元素级 referrerpolicy 穿入静态 import 图（spec：图内各
+                        // 请求的 Referrer 策略 = 发起取回的 script 元素策略——即顶层元
+                        // 素属性；descendant 继承同源）。
+                        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                        // https://github.com/whatwg/html/pull/9210
+                        let script_referrer = script_referrer_policies.get(script_index).and_then(|p| p.as_deref());
                         match collect_module_deps_recursive(
                             &fetcher_m,
                             &dep_base_m,
                             spec,
                             true,
                             type_attr.as_deref(),
+                            script_referrer,
                             &mut registry,
                             &mut visited_m,
                         ) {
@@ -7658,10 +7681,25 @@ fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, sp
     }
 }
 
-fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str, type_attr: Option<&str>) -> String {
+fn compile_module_contract(
+    fetcher: &ScriptSourceFetcher,
+    parent: &str,
+    spec: &str,
+    type_attr: Option<&str>,
+    referrer_policy: Option<&str>,
+) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
-    match collect_module_deps_recursive(fetcher, parent, spec, false, type_attr, &mut reg, &mut visited) {
+    match collect_module_deps_recursive(
+        fetcher,
+        parent,
+        spec,
+        false,
+        type_attr,
+        referrer_policy,
+        &mut reg,
+        &mut visited,
+    ) {
         Ok(()) => {
             // s252：入口编译键 = 解析后 URL（registry 同键形，见 collect 注册口径）——
             // 依赖查找经 resolve_registered_specifier 统一归一到解析 URL，跨拼写命中。
@@ -7700,12 +7738,14 @@ fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &s
 /// 解析后同 URL → visited 命中一次取回，两导入方查找同落该键
 ///（module/imports.html imports-self-inner 实证面）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+#[allow(clippy::too_many_arguments)] // s268：策略穿参 +1 形参（8 参——既有图收集签名面）
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
     spec: &str,
     is_dep: bool,
     type_attr: Option<&str>,
+    referrer_policy: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
 ) -> Result<(), ModuleGraphFailure> {
@@ -7728,12 +7768,21 @@ fn collect_module_deps_recursive(
     // 标记查询参数携带（s124 `__zw_lp` 同法；runner fetcher 消费后剥离，真实 HTTP
     // 宿主忽略未知查询参数）。仅 css/text 需要标记（json 面由 fetcher 既有
     // .json / serve-with-content-type intent 通道覆盖，加标记反致双通道分叉）。
+    // s268：元素级 referrerpolicy 同通道穿参（`__zw_lp`，runner fetcher 端点臂消费
+    // 剥离）——spec：图内请求 Referrer 策略 = 发起元素策略，逐层继承。
     let fetch_spec = match type_attr {
         Some(t @ ("css" | "text")) => {
             let sep = if spec.contains('?') { '&' } else { '?' };
             format!("{spec}{sep}__zw_mtype={t}")
         }
         _ => spec.to_string(),
+    };
+    let fetch_spec = match referrer_policy {
+        Some(policy) => {
+            let sep = if fetch_spec.contains('?') { '&' } else { '?' };
+            format!("{fetch_spec}{sep}__zw_lp={policy}")
+        }
+        None => fetch_spec,
     };
     let source = fetcher(parent_url, &fetch_spec).map_err(|_| {
         if is_dep {
@@ -7742,7 +7791,10 @@ fn collect_module_deps_recursive(
             ModuleGraphFailure::TopFetch
         }
     })?;
-    if source.is_empty() {
+    if source.is_empty() && type_attr != Some("text") {
+        // s268：text 数据模块空体合法（上游 referrer-checker 端点 no-referrer 臂回
+        // 裸空 Referer——`export default "";` 合成面照常成立）；其余类型空体维持
+        // 取回失败语义（fetcher 契约既有防线，语料无空体 .js/.json/.css 钉面）。
         return Err(if is_dep {
             ModuleGraphFailure::DepFetch
         } else {
@@ -7825,7 +7877,19 @@ fn collect_module_deps_recursive(
         return Ok(());
     }
     for (imp, attr) in zero_script_sandbox::extract_static_module_imports_with_attributes(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, true, attr.as_deref(), registry, visited)?;
+        // s268：descendant 逐层继承顶层元素的策略（图内请求 Referrer 策略 = 发起
+        // 取回的 script 元素策略；嵌套模块自身属性面语料无钉 FIXME——spec 各请求
+        // 按其发起元素就近取属性，本通道先按顶层继承口径收口三数据模块 face）。
+        collect_module_deps_recursive(
+            fetcher,
+            &url,
+            &imp,
+            true,
+            attr.as_deref(),
+            referrer_policy,
+            registry,
+            visited,
+        )?;
     }
     Ok(())
 }
@@ -9493,6 +9557,51 @@ mod redirect_tests {
             wv.execute_script("String(globalThis.__text)").unwrap(),
             "#test { background-color: rgb(255, 0, 0); }",
             "sheet 规则经 shim CSSOM 解析（颜色 Blink rgb() 归一化形态）"
+        );
+    }
+
+    /// s268 回归钉：script 元素级 referrerpolicy 穿入静态 import 图（`__zw_lp` 标记
+    /// 随取回）+ text 数据模块空体合法（上游 referrer-checker no-referrer 臂裸空
+    /// Referer 面——`export default "";` 照常合成，其余类型空体维持取回失败）。
+    /// https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+    #[test]
+    fn script_referrerpolicy_graph_marker_and_empty_text_module_s268() {
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> = Default::default();
+        let seen_c = std::sync::Arc::clone(&seen);
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(
+                move |_parent: &str, spec: &str| -> Result<String, String> {
+                    seen_c.lock().unwrap().push(spec.to_string());
+                    if spec.contains("__zw_mtype=text") {
+                        Ok(String::new())
+                    } else {
+                        Ok("x".to_string())
+                    }
+                },
+            )),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("http://wpt.test:8000/h/s/referrer-policies.sub.html");
+        wv.load_html(
+            "<!doctype html><body>\
+             <script type=\"module\" referrerpolicy=\"no-referrer\">\
+             import t from \"./checker.py?name=n\" with { type: \"text\" };\
+             globalThis.__t = t;</script>\
+             </body>",
+            None,
+        );
+        wv.run_page_scripts_strict().expect("空体 text 模块页面须正常执行");
+        let specs = seen.lock().unwrap().join("|");
+        assert!(
+            specs.contains("__zw_lp=no-referrer"),
+            "元素级 referrerpolicy 须随图取回穿参: {specs}"
+        );
+        assert!(specs.contains("__zw_mtype=text"), "数据模块类型标记须随取回: {specs}");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__t)").unwrap(),
+            "",
+            "text 数据模块空体 default 导出 = 空串"
         );
     }
 
