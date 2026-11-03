@@ -444,8 +444,14 @@
         }
       }
       var selSame = globalThis.getSelection();
-      if (!origChainHasInline && selSame.rangeCount) {
-        // caret 落原边界（链外语义；原边界节点在删除链外必存活）。
+      if (!origChainHasInline && selSame.rangeCount
+          && origStartContainer.parentNode) {
+        // caret 落原边界（链外语义）。存活门（gate28 multitest 回归修正，
+        // 2026-11-03）：[foo<b>bar]</b>baz 形 start=(foo,0) 文本节点整含被删，
+        // 前提「原边界节点在删除链外必存活」不成立——collapse 进 detached
+        // 节点令 insertText 落空树（?8001-9000 22 断言 expected `abaz` got
+        // `baz`；探针 g28-reg-probe.log post0 caret=3@0c DETACHED 实证）。
+        // 不存活回落 direction 臂既有语义（pre-delta 全绿行为）。
         selSame.collapse(origStartContainer, Math.min(origStartOffset,
           _zwJusNodeLength(origStartContainer)));
         _zwVaGetActiveRange().collapse(true);
@@ -527,10 +533,14 @@
         || !_zwListInSameEditingHost(startBlock, endBlock)
         || startBlock == endBlock) {
       var selExit = globalThis.getSelection();
-      if (!origChainHasInline && selExit.rangeCount) {
+      if (!origChainHasInline && selExit.rangeCount
+          && origStartContainer.parentNode) {
         // Chrome delta（双壳终点边界捕获面）：链外边界 caret 落原边界而非壳内
         // 重锚点——collapseToStart 经已摘壳 remap 产出 (b,0)/(i,0)（multitest
         // :2521 族 M4/M5/M9 形实证），Chrome 落 (abc,3)/(div,1) 原边界。
+        // 存活门（gate28 multitest 回归修正，2026-11-03）：原边界节点整含被删
+        // 时（[foo<X>bar]</X>baz 族 (foo,0) 形）不落 detached 节点，回落
+        // direction 臂既有语义（pre-delta 全绿行为，最小风险恢复面）。
         selExit.collapse(origStartContainer, Math.min(origStartOffset,
           _zwJusNodeLength(origStartContainer)));
         _zwVaGetActiveRange().collapse(true);
