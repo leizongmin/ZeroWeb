@@ -1,6 +1,6 @@
 # 残余挂死归因修复轮（spin2）：m670 move 环进展守卫——fd 全页 T 归零 + delete solo 形态治愈、全页形态恒存（battery3 反证）
 
-日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）；2026-11-04（battery3 del 腿判读修订：全页形态反证，diag3 定谳改判）
+日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）；2026-11-04（battery3 del 腿判读修订：全页形态反证，diag3 定谳改判）；2026-11-04（battery3 收官 fd/mt 判读 + 对侧 x1/x-del-1 探针收编：mt 系统性 T 两层机制定性〔近端 300s 预算击穿 × 根因 in-face 慢化〕+ 旧代 mt 基线静默早止误账修正 + 尾段 +73 案发现）
 
 ## 0. 范围与站点盘点修正
 
@@ -94,7 +94,9 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
 | fd ?6001-7000 solo（diag3） | v2 battery 切片：599 行/1T | 1000 案行 + 1 探针行/0T | 共享行逐位恒等，P→F=0 | +401 案行恢复出账（另有 1 行 spin-diag 探针出账系页内 TEMP-DIAG 产物，非案行） |
 | delete 全页 8 variant（battery3 del 腿，2026-11-04） | v3 全页基线：7,636 行/8 页/1T | 7,636 行/8 页/1T | 全行集逐位恒等（P→F=0、F→P=0、新增 0、消失 0），?7001-last T 同案同位复现 | **0——m670 守卫对全页形态零效果** |
 | fd 全页 8 variant（battery3 fd 腿，2026-11-04） | v2 全页基线：7,090 行/8 页/1T | 7,491 行/8 页/0T | ?6001-7000 +402 案行恢复、其余 7 variant 逐位恒、P→F=0 | **:606 治愈守卫版保持**；battery2 −8 尾截不复现（flake） |
-| mt ?9001-last 全页（battery3 mt 腿，2026-11-04） | v3 基线：1,019 行/0T | 939 案行 + 1T（80 案未报） | 三向共享 939 行前缀逐位恒等，P→F=0 | **新 T 复现（2/2）→ 系统性**；预算击穿 vs 真挂死待探针定谳（对侧 x1-mt-solo 承载） |
+| mt ?9001-last 全页（battery3 mt 腿，2026-11-04） | v3 基线：1,019 行/0T | 939 案行 + 1T | 三向共享 939 行前缀逐位恒等，P→F=0 | **新 T 复现（2/2）→ 系统性**；近端 = 300s 预算击穿（in-face 慢化），根因 = 跨 variant 污染（假说 C）待前缀二分归因 |
+| mt ?9001-last solo 1200s（x1 探针，2026-11-04） | v3 基线：1,019 行/0T | 1,092 行/0T/211s | 前 1,019 行与基线逐位同序恒等 P→F=0，尾段 +73 案全新 | **solo 干净完走 + 旧基线静默早止误账实锤**（页全集 ≥1,092 案） |
+| delete ?7001-last solo 1200s（x-del-1 探针，2026-11-04） | v3 solo 切片：636 行/1T | 842 行/0T | 共享行逐位恒等，P→F=0 | diag3 solo 治愈逐位同幅复证（in-face 挂死恒存不变） |
 
 - 增量行 = 挂死截断压抑的尾部案恢复出账（基线 Timeout 伪行随治愈消失）；行 = runner 断言行（Pass/Fail/Timeout/Unsupported）。delete.html 在 diag3 时已撤 TEMP-DIAG 探针（842 行全案行），fd 页探针后随 corpus 还原撤除。
 - engine lib（守卫版复跑，g28spin2-enginelib.log）：**3,720P/5F**，5 红名单与守卫前 g28fix-enginelib.log 逐名恒一（全 s249 CSSOM 重序列化已知回落，不回退）。
@@ -137,19 +139,26 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
   ws 族尾 8 案静默未报、无 T 伪行）**不复现 → 记 battery2 一次性 flake**
   （行号核验：基线 491 行中丢失的 8 行全落页尾 idx 483-491 ws 族案）。
   **mt 腿（00:46:54→01:19:02 rc=2）判读 = T 复现，样本 #2 定谳系统性**：
-  9,940 行 vs 基线 10,019，?9001-last 939 案行 + 1T（80 案未报），P→F=0；
-  battery2/spin2b 两代守卫二进制三向共享 **939 行前缀逐位恒等**，截断点漂移
-  （spin2b 止于案 idx 939 fontSize/foreColor/insertText 族、battery2 报至
-  idx ~988 `{def</div>}` 族）→ 领先假说 = **页脚本 V8 看门狗 300s 预算击穿**
-  （增量代 cbe96b7ac..HEAD 使该页脚本总时长越过 300s，截断点 = 预算到点时
-  进度位，漂移 = 抖动；与 del/fd 恒定截断点形态〔真自旋〕可区分）；竞争解释
-  = 真挂死且挂死案自身漂移。判别探针已由对侧承载（COORD 卅八轮：x1-mt-solo
-  + x-del-1-solo，守卫二进制 × ZW_SCRIPT_TIMEOUT_MS=1200000 solo 腿，01:23:27
-  起并行）——**本流让位不双跑**（探针脚本已备 g28spin2c-mt-probe.sh 未启动）；
-  探针回收后：完成 0T → 预算击穿实锤，续 m670-revert 重建 A/B 归因慢化源；
-  仍 T → 真挂死形态，归因窗转 variant 裁剪 + SPINDIAG 页尾探针（diag2 形态）。
-  del/fd 判读与对侧 COORD 卅八轮独立互证一致（del 字节恒等 = 守卫未触达推论
-  同；fd −8 存档不追同）。本流不 solo 复现避免 CPU 争抢污染对侧近边界页。
+  9,940 行 vs 基线 10,019，?9001-last 939 案行 + 1T（对旧基线账 80 案未报），
+  P→F=0；battery2/spin2b 两代守卫二进制三向共享 **939 行前缀逐位恒等**，
+  截断点漂移（spin2b 止于案 idx 939 fontSize/foreColor/insertText 族、
+  battery2 报至 idx ~988 `{def</div>}` 族）。**探针收编判读（对侧
+  x1-mt-solo + x-del-1-solo，守卫二进制 × ZW_SCRIPT_TIMEOUT_MS=1200000
+  solo 腿，01:23:27-01:27:54，COORD 卅八轮立项、卅九轮乙续让位）**：
+  **mt ?9001-last solo 211s 完走 1,092 行 0T**——前 1,019 行与 v3 基线
+  逐位同序恒等（P→F=0、vanish=0），尾段 **+73 案全新**（inserttext Y/d/B、
+  ws 族、table th/b 族，含 +9 Fail）——**旧代基线 1,019 行「尾案完整出账」
+  系静默早止误账**（页真实全集 ≥1,092 案；旧代枚举确定性止于 1,019、
+  pending=0 无 T 静默完成，分界点 = g/h 族后首新族 inserttext Y，stop
+  机制待归因）。del ?7001-last solo 842 行 0T（= diag3 逐位同幅复证）。
+  **T 行 state JSON 实锤惰性建测**（corpus JS 随跑随建）：del 636/mt 940/
+  battery2-mt 990 均 pending=1——截断点 = V8 看门狗 300s 到点时的建测/
+  执行进度位，漂移 = 抖动，**预算击穿为近端机制**。**根因方向 = 全文件
+  语境慢化（跨 variant 污染，假说 C 统一 del/mt 两站点）**：同守卫二进制
+  solo 211s 完走 vs in-face >300s 截断（≈1.7× 慢化）；旧代 in-face 1,019
+  案 <300s 完走 vs 守卫代 939/990 截断 → 守卫代 in-face 慢化更重（候选
+  机制 = m670 break 混合壳跨页累积 + s26x/R54xx 共变面，待归因）。本流不
+  solo 复现避免 CPU 争抢污染对侧近边界页。
 
 ## 4. 方法论教训
 
