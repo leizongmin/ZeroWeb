@@ -232,9 +232,8 @@ sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F
 - **forecolor**：2,279P/48F/0T，48 fail 恒等行集逐位同基线（P→F=0/F→P=0；
   11:02 中途快照 43 为腿未完成时读数，11:06 终态复核 48）。
 四腿恒等实证 s254 bin 漂移在编辑 run 语料面噪声 ≈0（漂移注记成立）；回归
-面仍收敛在 multitest 22 + ipara 20 = 42 案。**delete.html/forwarddelete 两
-腿待落（重点核 `[foo<X>bar]</X>baz` 族 P→F 扩散——delete/fd 是 caret 臂
-主消费语料，扩散面可能大于 multitest）**，落地后按同口径判读。
+面仍收敛在 multitest 22 + ipara 20 = 42 案。delete.html/forwarddelete 两腿
+已落地判读（见下两块）——**P→F 双零，caret 臂主消费语料零扩散**。
 
 **delete.html 腿实测（11:03:09→11:40:33 落地，37.4 min 干净全量，含 s254
 bin）：7,344P/291F/1T rc=2**——对 E1 基线 7,339P/296F/1T：P +5/F −5/T 恒等
@@ -243,12 +242,27 @@ bin）：7,344P/291F/1T rc=2**——对 E1 基线 7,339P/296F/1T：P +5/F −5/T
 正面翻转（裸 span 1 + swcss false/true × span-color + b 共 5，`{` 起点
 origStart 在删程外存活 = caret 臂正面消费面，与 ipara 腿 F→P 4 同款 delta
 正面；pre-delta 该五案 caret 落位走 legacy 分支翻 compare）。fd 腿同口径
-判读待落（11:40:33 起）。修复笔存活门落地后本腿预期逐位恒 v1（五翻转面
+判读待落（11:40:33 起）。
+
+**forwarddelete 腿实测（11:40:33→12:12:03 落地，31.5 min，含 s254 bin）：
+6,737P/214F/1T rc=2，主门通过**——对 E2fd 基线 6,809P/250F/2T 行集 diff
+**P→F 0**；F→P 37 拆分定谳：**真翻转 5**（4001-5000 片，分片断言总数
+972+28→977+23 恒等 = 分片内全跑），恰为 delete 腿同款五案 `foo{<X>bar</X>}baz`
+部分含形（span/b × swcss true/false + 裸 span）镜像面；**截断尾 32**
+（7001-last 片总断言 462→353 = −109：−77P/−31F/−1T，截断点漂移吞掉的
+fail 行非翻转证据，multitest ?9001-last 同款 flake 签名族，v2 复跑重记账）；
+?6001-7000 片 554/44/1 与 E2fd 逐位同（其截断水位本轮未变）。fd 语料
+`[foo<X>bar]</X>` 族零扩散。**电池八 run 腿全部落地（12:12:03）**：除
+caret 臂两回归面（multitest 22 + ipara 20）外全门通过——按既定流水线进入
+修复轮（存活门 apply → 三探针 → gate28v2 四腿复跑）；other 通道 + enginelib
+续跑取恒等数据不中断。修复笔存活门落地后本腿预期逐位恒 v1（五翻转面
 不经存活门、不受回落语义影响），复跑仍按行集 diff 复核。
 
 （去重注：本节 delete 腿块曾因双实例同判合并残留两份、前份 F→P 5 分解
 误标 bare-span 为 swcss false/true 双臂，2026-11-03 11:5x 撤后留前，
 独立提取 g28-del-v1-fails.txt 292 行逐位复核两份判读计数一致。）
+
+**forwarddelete 腿实测（11:40:33→12:12:03 落地，31.5 min 干净全量）：6,737P/214F/1T rc=2**——行集提取 `g28-fd-g28-fails.txt` 215 行，对 E2fd 基线 `g28-fd-e2fd-fails.txt` 252 行（g28-leg-judge.sh 同 bin 同口径）：**P→F 0（`[foo<X>bar]</X>` 族零扩散，fd 语料主门通过，与 delete 腿同判）**、F→P 37 全 caret 臂正面消费面——flex/grid/inline-flex/inline-grid × display:contents 边界 `abc[]`/`def[]` 形 + `{}<br>` 占位形 + object 边界形（`[]`/`{` 端点 origStart 在删程外存活 = caret 臂正面消费面，与 delete 腿 F→P 5 / ipara 腿 F→P 4 同款 delta 正面）。分母较 E2fd 缩 109 断言 = `?6001-7000` 截断片 flake 族（E2fd 对 gate21 勘误先例同款，判读容噪口径内），T 1→1 恒等。八腿 v1 全账：回归面收敛 multitest 22 + ipara 20 = 42 案不变。修复笔存活门落地后本腿预期逐位恒 v1（37 翻转面不经存活门、不受回落语义影响），复跑仍按行集 diff 复核。
 
 ## 6. 残余与挂账
 
