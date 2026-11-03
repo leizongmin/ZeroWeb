@@ -667,8 +667,19 @@
 
       values = _zwDelRecordValues([].slice.call(endBlock.childNodes));
 
+      // gate28 spin2 残余挂死修复（2026-11-03）：endBlock 首子为 plain 子树
+      // （CE-false 内层）时 shim 桥 appendChild 走 plain 子「序列化拷贝、不摘
+      // 原父」语义（part01c.js _zwJusMovePreservingRanges 注记），child 数不降
+      // ——本环零进展自旋（delete.html?7001-last CE-false 组首案 300s V8 看门狗
+      // 截断 1 unreported，v1 battery/v2 battery/v3 fix replay 三代恒存；fd 同族
+      // 案 g28spin2-diag2-fd.log 实证 s615 同形破环后页完成）。进展守卫破环：
+      // 合法迭代必令 child 数单降 1，守卫只在恒不进展态触发，回落保留混合壳
+      // （与上方 :606 守卫同哲学：不进展不自旋）。
+      var m670Guard = 0;
       while (endBlock.hasChildNodes()) {
+        var m670Prev = endBlock.childNodes.length;
         _zwJusMovePreservingRanges(endBlock.firstChild, startBlock, -1);
+        if (endBlock.childNodes.length === m670Prev || ++m670Guard > 256) break;
       }
 
       while (!endBlock.hasChildNodes()) {
