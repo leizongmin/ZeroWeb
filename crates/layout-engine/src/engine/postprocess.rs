@@ -2539,23 +2539,25 @@ pub(super) fn fix_column_flex_nonstretch_replaced_main(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     img_sizes: &HashMap<NodeId, (f32, f32)>,
+    img_no_ratio: &HashMap<NodeId, (Option<f32>, Option<f32>)>,
 ) {
     let enabled = PostprocessEnvFlag::new(postprocess_env_snapshot_enabled(), || {
         std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() != Ok("0")
     });
-    fix_column_flex_nonstretch_replaced_main_inner(box_node, styles, img_sizes, enabled);
+    fix_column_flex_nonstretch_replaced_main_inner(box_node, styles, img_sizes, img_no_ratio, enabled);
 }
 
 fn fix_column_flex_nonstretch_replaced_main_inner(
     box_node: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
     img_sizes: &HashMap<NodeId, (f32, f32)>,
+    img_no_ratio: &HashMap<NodeId, (Option<f32>, Option<f32>)>,
     enabled: PostprocessEnvFlag,
 ) {
     use zero_style_system::WritingModeValue;
 
     for child in box_node.children.iter_mut() {
-        fix_column_flex_nonstretch_replaced_main_inner(child, styles, img_sizes, enabled);
+        fix_column_flex_nonstretch_replaced_main_inner(child, styles, img_sizes, img_no_ratio, enabled);
     }
 
     if !enabled.value(|| std::env::var("ZW_FLEX_COL_ASPECT_MAIN").as_deref() != Ok("0")) {
@@ -2667,6 +2669,13 @@ fn fix_column_flex_nonstretch_replaced_main_inner(
         }
         // item cross（width）须已解析 > 0（由 min-width/content 经 taffy 给出）。
         if item.width <= 0.0 {
+            continue;
+        }
+        // R5411（CSS2 §10.3.2 + css-sizing-3 §5.1.1）：no-ratio SVG 无固有比——
+        // bogus 解码 pixmap（usvg 默认 100×100，与 no_ratio 信号并存）不得作 ih/iw
+        // 传递（flex-start item w 300 × 1 → h 300，应 default object size 高 150，
+        // taffy 面已给出）。kill-switch 同包 `ZW_FLEX_NO_RATIO_ITEM=0`。
+        if std::env::var("ZW_FLEX_NO_RATIO_ITEM").as_deref() != Ok("0") && img_no_ratio.contains_key(&id) {
             continue;
         }
         // main（height）= cross × (ih/iw)（固有高宽比）。仅当与 taffy 算出的 main 显著不同时修正。
@@ -4639,7 +4648,7 @@ mod runtime_flag_tests {
         };
         let img_sizes = HashMap::from([(img_id, (20.0_f32, 50.0_f32))]);
 
-        fix_column_flex_nonstretch_replaced_main(&mut root_box, &styles, &img_sizes);
+        fix_column_flex_nonstretch_replaced_main(&mut root_box, &styles, &img_sizes, &HashMap::new());
 
         let item = &root_box.children[0];
         assert_eq!(

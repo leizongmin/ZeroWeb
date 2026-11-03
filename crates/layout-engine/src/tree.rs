@@ -1255,6 +1255,12 @@ fn apply_replaced_element_sizing(
             taffy_style.aspect_ratio = Some(ratio);
         } else if let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id)
             && ih > 0.0
+            // R5411（CSS Sizing 4 §4.1 natural aspect ratio）：no-ratio SVG 无自然比
+            //（CSS §10.3.2）——bogus 解码 pixmap（usvg 100×100 默认）与 no_ratio 并存
+            // 时不得作比注入（flex-start item w 300 × ar 1 → h 300，应 300×150）。
+            // kill-switch 同 R5411 包 `ZW_FLEX_NO_RATIO_ITEM=0`。
+            && (std::env::var("ZW_FLEX_NO_RATIO_ITEM").as_deref() == Ok("0")
+                || !img_intrinsic_no_ratio.contains_key(&dom_id))
         {
             taffy_style.aspect_ratio = Some(iw / ih);
         }
@@ -1447,8 +1453,61 @@ fn apply_replaced_element_sizing(
                 let height_auto = matches!(computed.height, LengthValue::Auto);
                 // 不设 aspect_ratio（no-ratio）
                 if width_auto && height_auto {
-                    taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
-                    taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                    // R5411（css-flexbox §9.4 align-stretch + CSS2 §10.3.2）：flex item 的
+                    // default object size 只入主轴（flex base 语义）；交叉轴仅在 align-stretch
+                    // 确将生效（stretchy + 容器 cross definite——与 sizes 臂 cross_stretch_definite
+                    // 同判据）时留 auto 让位 stretch（column item 宽 300 写死阻断 stretch 到容器
+                    // 150——flex-svg-no-intrinsic-column-001），非 stretch 形态保持 default
+                    // 300/150（CSS2 §10.3.2，align:flex-start 不塌 0）。块流（非 flex item）
+                    // 双维 default 不变。kill-switch `ZW_FLEX_NO_RATIO_ITEM=0`。
+                    let switch_on = std::env::var("ZW_FLEX_NO_RATIO_ITEM").as_deref() != Ok("0");
+                    let cross_is_width = if is_flex_row_item {
+                        Some(false)
+                    } else if is_flex_col_item {
+                        Some(true)
+                    } else {
+                        None
+                    };
+                    if switch_on && let Some(cross_width) = cross_is_width {
+                        // 交叉轴让位判定：align stretchy（self Stretch / Auto + 容器
+                        // Auto/Normal/Stretch）∧ 容器 cross definite（§9.4 stretch 前提）。
+                        let cross_will_stretch =
+                            doc.parent_node(dom_id).and_then(|p| styles.get(&p)).is_some_and(|ps| {
+                                use zero_css_parser::values::AlignmentValue;
+                                let stretchy = match computed.align_self {
+                                    AlignmentValue::Stretch => true,
+                                    AlignmentValue::Auto => matches!(
+                                        ps.align_items,
+                                        AlignmentValue::Auto | AlignmentValue::Normal | AlignmentValue::Stretch
+                                    ),
+                                    _ => false,
+                                };
+                                let container_cross_definite = if cross_width {
+                                    resolve_tree_definite_real_length(&ps.width, ps)
+                                } else {
+                                    resolve_tree_definite_real_length(&ps.height, ps)
+                                };
+                                stretchy && container_cross_definite.is_some()
+                            });
+                        // 主轴 default（flex base 语义，flex 算法掌 shrink/stretch）。
+                        if cross_width {
+                            taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                        } else {
+                            taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                        }
+                        if !cross_will_stretch {
+                            if cross_width {
+                                taffy_style.size.width =
+                                    taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                            } else {
+                                taffy_style.size.height =
+                                    taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                            }
+                        }
+                    } else {
+                        taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
+                        taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                    }
                 } else if !width_auto && height_auto {
                     // width 显式，height auto → 用真实固有高或 default 150
                     taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
@@ -2003,7 +2062,15 @@ fn apply_replaced_element_sizing(
     // spec：auto-min = min(content suggestion, transferred suggestion)，transferred =
     // 明确 cross size × 固有比。此处仅当父是 flex 容器且有明确 cross size 时计算
     // transferred 并设 min_size.main（row + column 对称，仅水平书写模式）。
-    apply_flex_transferred_min_size(taffy_style, computed, doc, styles, dom_id, img_intrinsic_sizes);
+    apply_flex_transferred_min_size(
+        taffy_style,
+        computed,
+        doc,
+        styles,
+        dom_id,
+        img_intrinsic_sizes,
+        img_intrinsic_no_ratio,
+    );
 }
 
 /// R3800（CSS2 §10.4）：替换元素 min/max 约束违反解析表。
@@ -2185,6 +2252,7 @@ fn set_replaced_content_suggestion_min(
     doc: &Document,
     dom_id: NodeId,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    img_intrinsic_no_ratio: &HashMap<NodeId, (Option<f32>, Option<f32>)>,
     is_column: bool,
 ) {
     use zero_css_parser::values::LengthValue;
@@ -2206,14 +2274,26 @@ fn set_replaced_content_suggestion_min(
     if !(is_replaced && min_main_auto && main_auto) {
         return;
     }
-    let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id) else {
+    // R5411（css-flexbox §4.5 content size suggestion + css-sizing-3 §5.1.1 default
+    // object size）：no-ratio SVG 既无确定固有尺寸也无固有比（CSS §10.3.2）——其
+    // min-content 主轴维 = default object size 主轴维（宽 300 / 高 150），非 usvg
+    // 解码 pixmap 默认值（100×100 bogus，flex-svg-no-intrinsic-column-001 旧塌 100）。
+    // kill-switch 同交叉轴纪律 `ZW_FLEX_NO_RATIO_ITEM=0`。
+    let (intrinsic_main, intrinsic_ratio) = if std::env::var("ZW_FLEX_NO_RATIO_ITEM").as_deref() != Ok("0")
+        && let Some(&(w_opt, h_opt)) = img_intrinsic_no_ratio.get(&dom_id)
+    {
+        let dim = if is_column { h_opt } else { w_opt };
+        let default_main = if is_column { 150.0 } else { 300.0 };
+        ((dim.unwrap_or(default_main).max(0.5)), None)
+    } else if let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id) {
+        ((if is_column { ih } else { iw }), Some(iw / ih))
+    } else {
         return;
     };
-    let intrinsic_main = if is_column { ih } else { iw };
     // §4.5：content size suggestion 由 definite max 钳制——含 transferred max（definite
     // max cross × ratio）。flex-aspect-ratio-img-row-010/011：固有 200 + max-height:100
     // → transferred max main = 100 → auto-min 地板 100（非 200），max 钳制不被 min 顶穿。
-    let eff_ratio = taffy_style.aspect_ratio.filter(|r| *r > 0.0).unwrap_or(iw / ih); // w/h 比（row: transferred = max_h × r；column: max_w / r）
+    let eff_ratio = intrinsic_ratio.map(|r| taffy_style.aspect_ratio.filter(|r| *r > 0.0).unwrap_or(r)); // w/h 比（row: transferred = max_h × r；column: max_w / r；no-ratio 无比跳 transferred 钳）
     let max_main = if is_column {
         resolve_tree_definite_real_length(&computed.max_height, computed)
     } else {
@@ -2224,7 +2304,11 @@ fn set_replaced_content_suggestion_min(
     } else {
         resolve_tree_definite_real_length(&computed.max_height, computed)
     };
-    let transferred_max_main = max_cross.map(|mc| if is_column { mc / eff_ratio } else { mc * eff_ratio });
+    let transferred_max_main = eff_ratio.map(|r| {
+        max_cross
+            .map(|mc| if is_column { mc / r } else { mc * r })
+            .unwrap_or(f32::INFINITY)
+    });
     let mut auto_min = intrinsic_main;
     if let Some(t) = transferred_max_main {
         auto_min = auto_min.min(t);
@@ -2265,6 +2349,7 @@ fn apply_flex_transferred_min_size(
     styles: &HashMap<NodeId, ComputedStyle>,
     dom_id: NodeId,
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    img_intrinsic_no_ratio: &HashMap<NodeId, (Option<f32>, Option<f32>)>,
 ) {
     use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
 
@@ -2294,7 +2379,15 @@ fn apply_flex_transferred_min_size(
         Some(r) if r > 0.0 => r,
         _ => {
             // 无 ratio：仅 replaced 内容建议臂可用，其余路径终止。
-            set_replaced_content_suggestion_min(taffy_style, computed, doc, dom_id, img_intrinsic_sizes, is_column);
+            set_replaced_content_suggestion_min(
+                taffy_style,
+                computed,
+                doc,
+                dom_id,
+                img_intrinsic_sizes,
+                img_intrinsic_no_ratio,
+                is_column,
+            );
             return;
         }
     };
@@ -2361,6 +2454,7 @@ fn apply_flex_transferred_min_size(
                         doc,
                         dom_id,
                         img_intrinsic_sizes,
+                        img_intrinsic_no_ratio,
                         is_column,
                     );
                     return;

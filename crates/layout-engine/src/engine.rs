@@ -546,6 +546,9 @@ impl LayoutEngine {
             .chain(img_intrinsic_no_ratio.keys())
             .copied()
             .collect();
+        // R5411 副本：no-ratio 权威信号供 R1411 非 stretch 臂跳过 bogus pixmap 传比
+        //（同 R695 复用副本的 move 前克隆口径）。
+        let intrinsic_no_ratio_for_r1411 = img_intrinsic_no_ratio.clone();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -1445,7 +1448,12 @@ impl LayoutEngine {
             restretch_abspos_flex_replaced_items(&mut root_box, styles, &intrinsic_for_r695);
         }
         // R1411：column-flex 非 stretch 替换 item main（height）修正（绕过 taffy，LayoutBox 层）。
-        fix_column_flex_nonstretch_replaced_main(&mut root_box, styles, &intrinsic_for_r695);
+        fix_column_flex_nonstretch_replaced_main(
+            &mut root_box,
+            styles,
+            &intrinsic_for_r695,
+            &intrinsic_no_ratio_for_r1411,
+        );
 
         // 11.9 R2062：abspos 垂直 margin:auto 居中（§10.6.4）。taffy 不对 positioned-ancestor-CB
         // 的 definite-height abspos（top+bottom Px + margin:auto）做垂直居中。初始 CB：
