@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 260 施工收口（import map Blocked 终止跨面接线——resolve_mapped 三态化，s259 挂账收口）。勘根：resolve_mapped `Option<String>` 签名把 Blocked（null 条目）塌缩为 None 与 Miss 不可区分——webview shim/native resolver、renderer/tab collect 与 handler、script_prefetch 五面接线侧一律按 Miss parent-join 继续抓取被阻断 URL（fetchable 即误装载，规范要求 null 条目按解析失败终止不回退）。施工 5 刀 + 5 钉：resolve_mapped 三态化（Resolved/Blocked/Miss 直报）；webview apply_import_map Option 化 + 两调用点 let-else 落空契约（shim 契约串与 resolver 返空串 → v8_runtime TypeError reject 面）；renderer/tab resolve_import_dep 共享 helper + collect Err + handler String::new()；prefetch Blocked 跳过不预取噪声。验证：红态实证（renderer/tab collect 钉 HEAD 抓取被阻断 URL 且收集成功）+ 修复后 script-sandbox 393 / renderer 371 / webview 836 全绿 + browser bin 740 绿（2 子进程并行负载 flaky 单跑绿 + 5 s257 已知 HEAD 红不计）+ fmt/clippy 四 crate 零告警；无全树 A/B（corpus 零 importmap 面 + 无 map 页面路径逐字节不变）。宿主 import.meta.resolve 回调面本就规范正确（s257）；es_module/compile 面 s259 已终止。承前：M2 切片 259（import map Blocked 终止回退 + resolve_imports_match 回溯臂同域并刀）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 261 施工收口（data-zw-harness 投递标记保真——页面内容单元 `data-zw-inlined` 分型 + CSP 检查点按原始 src 走外链 URL 路径，s260 下一步候选 #1 收口）。勘根：runner `inline_local_scripts` 把页面内容单元与基建（harness/testdriver/inline_extras）统一打 `data-zw-harness`，webview CSP script 检查点与 eval 门禁包装（s253）都以 `!zw_harness` 为豁免门——CSP 页所有外链页脚本借基建标记整体逃逸 `script-src` 约束（s253「错进错出」勘根面），真实浏览器对外链脚本做源匹配（'self' 同源放行/nonce/异源阻止）。施工 3 面 4 文件 + 4 钉：runner 页面单元改打 `data-zw-inlined`（`data-inline` 既有属性记录原始 src，基建保持 harness）；extract `ScriptElementCsp` +inlined_src 字段（全量 script 文档序对齐）；webview 检查点 `external_src.or(inlined_src)` 按原始 src 走既有外链臂（resolve_document_url 绝对化 + URL 路径，nonce 照常参与，纯内联 hash 臂与基建豁免不动；eval 包装门只认 harness 标记自动覆盖）。验证：红态实证（runner 投递钉 + webview 同源/异源双钉 HEAD FAIL——同源被内联 hash 路径阻止、异源被 'unsafe-inline' 放行执行；eval 伴随钉护轨性质 HEAD 即绿与设计一致）+ 修复后 webview **839** / runner **282** 全绿 + engine **3720+5 与 HEAD 逐测试同集**（5 红 = R-t2qq adopted-stylesheets 系列既有，零 delta）+ fmt/clippy 三 crate 零告警 + solo security 24P/1T 与 s248 基线逐位同 + 全树 A/B（s261-ab.log vs s256-ab.log 基线，同命令同 8 job）行级 **7794P/439F/11N/77T 双侧逐数同**、(key,state) 对 **8318/8318 join LOST 0/GAINED 0——完美 A/B（零位移）**，机理一致：改动臂只在 CSP 页生效、corpus 无依赖整体豁免的钉面、非 CSP 页双门不激活。承前：M2 切片 260（import map Blocked 终止跨面接线——resolve_mapped 三态化）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,24 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 261**：data-zw-harness 投递标记保真轮（s260 下一步
+  候选 #1 = s255 候选 #3 收口，3 面 4 文件 + 4 钉）——勘根：runner
+  `inline_local_scripts` 页面内容单元与基建统一打 `data-zw-harness`，
+  webview CSP script 检查点与 eval 门禁包装（s253）均以 `!zw_harness` 为
+  豁免门——CSP 页所有外链页脚本借基建标记整体逃逸 `script-src`（s253
+  「错进错出」面），真实浏览器对外链脚本做源匹配。施工：runner 页面单元
+  改打 `data-zw-inlined`（`data-inline` 记录原始 src，基建保持 harness）+
+  extract `ScriptElementCsp.inlined_src` + webview 检查点
+  `external_src.or(inlined_src)` 按原始 src 走既有外链臂（nonce 照常参与，
+  纯内联 hash 臂与基建豁免不动）。验证：红态实证三面（runner 投递钉 +
+  webview 同源/异源双钉 HEAD FAIL；eval 伴随钉 HEAD 绿 = 护轨性质）+
+  webview 839 / runner 282 全绿 + engine 3720+5 与 HEAD 同集零 delta +
+  fmt/clippy 零告警 + solo security 24P/1T 基线逐位同 + 全树 A/B 行级
+  7794P/439F/11N/77T 双侧逐数同、(key,state) 对 8318/8318 LOST 0/GAINED 0
+  ——完美 A/B 零位移（改动臂只在 CSP 页生效，非 CSP 页双门不激活）。
+  s253「CSP 页外链页脚本整体豁免」挂账销案。新记档：engine lib 5 红
+  （R-t2qq adopted-stylesheets 系列既有，归因该流自查）。账本
+  [evidence/2026-11-03-m2s261-delivery-marker-page-content.md](html-semantics-compat/evidence/2026-11-03-m2s261-delivery-marker-page-content.md)。
 - **2026-11-03 M2 切片 260**：import map Blocked 终止跨面接线轮（s259 挂账
   收口，5 刀 + 5 钉）——勘根：resolve_mapped `Option<String>` 签名把
   Blocked（null 条目）塌缩为 None 与 Miss 不可区分，五面接线侧（webview
