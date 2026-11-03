@@ -603,8 +603,19 @@
 
       values = _zwDelRecordValues(children);
 
+      // gate28 hang 修复（2026-11-03）：_zwListSplitParent 对 detached/碎片父
+      // 静默早退（part01e.js:47-48，_zwJusIsEditable 对 detached/DocumentFragment
+      // 均 false）+ _zwJusMovePreservingRanges 吞异常脱锚（part01c.js:653-663
+      // 三重 try/catch）时本环零进展自旋——诊断笔实证首迭代即无进展、无任何
+      // DOM 变更（g28-hang-diag.log 首变体 no-op）。进展守卫破环：合法迭代
+      // parentNode 单调上移必变，守卫只在恒不进展态触发，回落继续走 children[0]
+      // 现状（detached 时 :610-:612 条件不命中、尾段 restoreValues 按原对象
+      // 恢复，安全域；与上方存活门同哲学：不进展不自旋）。
+      var spinGuard = 0;
       while (children[0].parentNode != startBlock) {
+        var spinPrev = children[0].parentNode;
         _zwListSplitParent(children);
+        if (children[0].parentNode === spinPrev || ++spinGuard > 256) break;
       }
 
       if (_zwJusIsEditable(children[0].previousSibling)

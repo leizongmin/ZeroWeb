@@ -368,3 +368,29 @@ ipara F→P 20/P→F 0、delete 292↔292 集恒等、other 1,437↔1,437 逐位
 v2 `?7001-last` 前 353 行与 v1 **elementwise 逐位恒等** + 新深度 138 行
 （99P/39F）零翻转——P→F 39 全系截断深度新暴露，与上块干净分片终判
 （6,599 分母恒等 F→P 5/P→F 0）双路径互证成立。gate28 批判绿终判归账。
+
+**乙修复窗收口（16:53，v3 五腿 + face 归因；行集工件 /tmp/g28fix-*.txt + g28fix-replay-{mt,ip,del,other}.log）**：
+诊断笔（G28SPIN throw 载荷不可达——execCommand 派发层 try/catch 吞异常）改联合观测定谳：
+hang→完成 + 首变体 no-op + 零 DOM 变更（g28-hang-diag.log 204F/0P）。守卫笔 = part01f.js:606-608
+进展守卫 break 回落（早退态 parentNode 恒不变静态证明 + 诊断笔动态实证；**throw 笔与 break 笔
+行集逐位恒等（204=204）证 break 回落零 DOM 副作用**；与 1aeb3416b 存活门同哲学：不进展不自旋）。
+三探针（15:15:33-15:16:11）rc=1 系 `assert_false(true, dump)` 无条件输出通道（dump 型探针设计），
+内容对期望逐字吻合：g28reg R1-R3 `final html="abaz" caret=1@0c connected` + R4-R7 家族绿面、
+dualshell P14-P16 `<div>abaz</div>`（本节修复后复验期望原档）+ P17 `a<br>`、dshell3 C05/C11/C01
+post-del→type1→type3 `abc<b><i>d…ef</i></b>` 恢复形完整、caret 全 connected。
+
+**v3 五腿行集判读（zw-g28fix-replay，15:26:59→16:53:22，86 min）**：multitest 9,609P/410F/0T——
+408 行逐位恒 v2 + 2 新行（`<div><b>{abc</b></div><div>def</div>}` / `<div>abc</div><div><b>{def</b></div>}`
+compare innerHTML）= **v1 历史败逐位恢复**（v1 全账 g28-mt-leg.txt 同案同判 compare Fail、4P+1F 行形
+一致；v2 缺账系 ?9001-last 页 b 壳变体邻域静默截断——无 Timeout 无 threw 行，v2 止于 grid {abc 后、
+fix 止于 grid {def + 2 b 壳形后，截断点漂移方向有利，零 P→F 翻转）；insertparagraph 207F 对拍 0/0 逐位恒；
+delete 291F+1T 逐位恒（?7001-last 慢性片，同 v2「292↔292」口径）；**other 13,142P/1,640F/0T rc=0——
+v2 1,436 行逐位恒 + 204 新行全落 unwrapping 案、通道外零翻转、P 恒 13,142 = hang 通道级治愈定谳
+（+204F/−1T 预测形态精确命中）**；enginelib 3,720P/5F = s249 名单逐字恒一（3,720P 对 v2 3,719P
++1P，败名单恒一下记读数噪声）。fd 腿静态论证不重放（v2 0T ⇒ 守卫零触发面 ⇒ 行集必恒）。
+
+**unwrapping 案 face 归因（204F 对 gate27 156F；gate27-other-transcript vs g28-hang-fix-run 对拍）**：
+gate27 156 行中 154 行逐位重现（BackspaceKey 50 + DeleteKey 54，br+preformat 全部）——已报面零翻转；
+差异全由 deleteCommand/forwardDeleteCommand × lineBreak=preformat 两页贡献：gate27 各 1 条页级失败行
+（慢页形态、子测试未报全），守卫笔两页全量完成出账 25+25=50 子测试败/0P；156+50−2=204 ✓，
+净 +48 = 报告完整性提升非行为翻转；R5341 F200 属更早语义代（defect2 wiring 时代）不参与本归因。
