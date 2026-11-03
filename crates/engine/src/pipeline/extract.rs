@@ -1528,13 +1528,19 @@ pub fn extract_meta_csp_policies(html: &str) -> Vec<String> {
 pub struct ScriptElementCsp {
     /// `nonce` 属性值（缺失/空 → None）。
     pub nonce: Option<String>,
-    /// `data-zw-harness` 标记（runner 注入/内联的基础设施脚本——harness、testdriver
-    /// stub、inline_local_scripts 产物）。上游这些脚本为同源外链（天然过 'self'），
-    /// 本地无网络投递才内联——属投递形态差异而非页面内容，CSP 检查点豁免。
+    /// `data-zw-harness` 标记（runner 注入的基础设施脚本——harness、testdriver
+    /// stub、inline_extras）。上游这些脚本为同源外链（天然过 'self'），本地无网络
+    /// 投递才内联——属投递形态差异而非页面内容，CSP 检查点豁免。
     pub zw_harness: bool,
+    /// s261：`data-inline` 原始 src 记录（runner 投递内联的**页面内容**脚本——
+    /// `data-zw-inlined` 标记面）。上游为外链（'self'/nonce/hash 按其 URL/属性
+    /// 检查），内联投递丢 src——宿主检查点按此值走外链 URL 检查路径（同源放行/
+    /// 异源阻止），不按内联 hash 路径误判。
+    pub inlined_src: Option<String>,
 }
 
-/// 提取每个 `<script>` 元素的 CSP 检查点输入（nonce + harness 标记）。
+/// 提取每个 `<script>` 元素的 CSP 检查点输入（nonce + harness 标记 + 内联投递
+/// 原始 src）。
 ///
 /// 返回向量按**全部** `<script>` 元素（含非 JS 类型——与
 /// [`extract_page_scripts_indexed`] 的 `this_idx` 序号口径一致）文档序对齐：第 n 项
@@ -1550,6 +1556,10 @@ pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
                 .map(|n| n.trim().to_string())
                 .filter(|n| !n.is_empty()),
             zw_harness: doc.get_attribute(script_id, "data-zw-harness").is_some(),
+            inlined_src: doc
+                .get_attribute(script_id, "data-inline")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
         })
         .collect()
 }
@@ -2136,7 +2146,7 @@ mod tests {
 
     /// script CSP 输入提取序号对齐（security-hardening M2-s1）：全量 script 元素口径
     /// 与 extract_page_scripts_indexed 的 this_idx 一致（含非 JS type）；harness 标记
-    /// 按属性判定。
+    /// 按属性判定；s261 inlined_src 按 data-inline 原始 src 提取。
     #[test]
     fn extract_script_csp_info_aligns_with_script_ordinal_sh1_m2s1() {
         let html = "<html><head>\
@@ -2145,6 +2155,7 @@ mod tests {
             </head><body>\
             <script data-zw-harness>alert(1)</script>\
             <script src=\"x.js\"></script>\
+            <script data-zw-inlined data-inline=\"support/helper.js\">var x=1;</script>\
             </body></html>";
         let infos = extract_script_csp_info(html);
         assert_eq!(
@@ -2152,32 +2163,43 @@ mod tests {
             vec![
                 super::ScriptElementCsp {
                     nonce: Some("abc".to_string()),
-                    zw_harness: false
+                    zw_harness: false,
+                    inlined_src: None
                 },
                 super::ScriptElementCsp {
                     nonce: None,
-                    zw_harness: false
+                    zw_harness: false,
+                    inlined_src: None
                 },
                 super::ScriptElementCsp {
                     nonce: None,
-                    zw_harness: true
+                    zw_harness: true,
+                    inlined_src: None
                 },
                 super::ScriptElementCsp {
                     nonce: None,
-                    zw_harness: false
+                    zw_harness: false,
+                    inlined_src: None
+                },
+                super::ScriptElementCsp {
+                    nonce: None,
+                    zw_harness: false,
+                    inlined_src: Some("support/helper.js".to_string())
                 },
             ],
-            "nonce + harness 标记按全量 script 文档序对齐（含非 JS type 占位）"
+            "nonce + harness 标记 + 内联投递原始 src 按全量 script 文档序对齐（含非 JS type 占位）"
         );
         let scripts = extract_page_scripts_indexed(html);
-        // 页面脚本序列 3 条（JSON type 过滤，占位 1 号），this_idx 与 info 向量对位。
-        assert_eq!(scripts.len(), 3);
+        // 页面脚本序列 4 条（JSON type 过滤，占位 1 号），this_idx 与 info 向量对位。
+        assert_eq!(scripts.len(), 4);
         assert_eq!(scripts[0].1, 0);
         assert_eq!(infos[scripts[0].1].nonce.as_deref(), Some("abc"));
         assert_eq!(scripts[1].1, 2);
         assert!(infos[scripts[1].1].zw_harness);
         assert_eq!(scripts[2].1, 3);
         assert!(!infos[scripts[2].1].zw_harness);
+        assert_eq!(scripts[3].1, 4);
+        assert!(infos[scripts[3].1].inlined_src.is_some());
     }
 
     #[test]

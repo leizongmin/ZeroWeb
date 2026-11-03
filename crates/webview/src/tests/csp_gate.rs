@@ -318,6 +318,121 @@ fn csp_eval_gate_unsafe_eval_allows_sh1_m2s6() {
     assert_eq!(wv.execute_script("String(globalThis.__r)").unwrap(), "2");
 }
 
+/// s261：投递内联页面脚本按 data-inline 原始 src 走**外链 URL 检查路径**——
+/// `script-src 'self'` 下同源原始 src 放行执行、零 violation。runner 内联投递
+///（`data-zw-inlined` + `data-inline` 记录原始 src）此前整体豁免（harness 标记
+/// 塌缩），真实浏览器对外链脚本的 URL 源匹配被跳过。红态：HEAD 无 inlined_src
+/// 通道 → 该脚本按内联 hash 路径检查 → nonce-only 政策无 hash/无 nonce → 阻止。
+/// 监听器带 nonce 保两态可观测。
+#[test]
+fn csp_gate_inlined_page_script_url_path_s261() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'nonce-ok'">
+</head><body>
+<script nonce="ok">
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push(e.blockedURI);
+});
+</script>
+<script data-zw-inlined data-inline="/resources/ok.js">
+globalThis.__ran = 1;
+</script>
+</body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__ran)").unwrap(),
+        "1",
+        "同源原始 src 的投递内联页面脚本必须放行执行（URL 路径）"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert_eq!(vio, "[]", "同源放行零 violation: {vio}");
+}
+
+/// s261：投递内联页面脚本异源原始 src → 阻止 + blockedURI 为绝对 URL
+///（与真外链同口径，csp_gate_external_source_match 镜像）。
+#[test]
+fn csp_gate_inlined_page_script_cross_origin_blocked_s261() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
+</head><body>
+<script>
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push(e.blockedURI);
+});
+</script>
+<script data-zw-inlined data-inline="https://evil.test/evil.js">
+globalThis.__blocked_ran = 1;
+</script>
+</body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__blocked_ran)").unwrap(),
+        "undefined",
+        "异源原始 src 的投递内联页面脚本必须被阻止"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(
+        vio.contains("https://evil.test/evil.js"),
+        "blockedURI 为原始 src 绝对 URL: {vio}"
+    );
+}
+
+/// s261 伴随钉（护轨非红态——标记翻转在 runner 投递面，webview 门禁条件代码
+/// 不变；红态证据承 runner delivery 钉）：投递内联页面脚本（data-zw-inlined）
+/// 装 eval 包装——`script-src 'self'`（无 unsafe-eval）下页面 eval 抛 EvalError
+/// + violation。s253 勘根「CSP 页外链页脚本整体豁免 eval 门禁」面的修复后契约。
+#[test]
+fn csp_eval_gate_wraps_inlined_page_script_s261() {
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline'">
+</head><body>
+<script>
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push(e.blockedURI);
+});
+</script>
+<script data-zw-inlined data-inline="/resources/eval-user.js">
+globalThis.__evalErr = 'no-throw';
+try { eval('1+1'); } catch (e) { globalThis.__evalErr = e.name; }
+</script>
+</body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().expect("run page scripts");
+    assert_eq!(
+        wv.execute_script("String(globalThis.__evalErr)").unwrap(),
+        "EvalError",
+        "投递内联页面脚本的 eval 必须被 eval 门禁阻止（包装须安装）"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert!(vio.contains("eval"), "blockedURI=eval: {vio}");
+}
+
 #[test]
 fn csp_eval_probe_tmp() {
     let mut wv = WebView::new(WebViewConfig {

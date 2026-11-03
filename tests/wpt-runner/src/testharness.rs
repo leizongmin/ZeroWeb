@@ -10589,8 +10589,13 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 } else {
                     String::new()
                 };
+                // s261：页面内容单元打 `data-zw-inlined`（`data-inline` 记录原始 src），
+                // 与基建脚本（data-zw-harness——harness/testdriver/inline_extras 注入块）
+                // 区分：webview CSP 检查点与 eval 门禁据此不再把 CSP 页所有外链页脚本
+                // 整体豁免（s253 勘根「错进错出」面）——内联页脚本按原始 src 走外链
+                // URL 检查路径（同源 'self' 放行 / 异源阻止）并装 eval 包装。
                 output.push_str(&format!(
-                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-harness data-inline=\""
+                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-inlined data-inline=\""
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
@@ -12785,6 +12790,54 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // s261：投递标记保真——内联投递区分 runner 基建与页面脚本。页面内容单元
+    // （case 引用的 helper .js / 页面外链脚本）打 `data-zw-inlined`，基建
+    // （harness/testdriver/inline_extras）保持 `data-zw-harness`。此前统一打
+    // harness 标记 → webview CSP 检查点与 eval 门禁把 CSP 页所有外链页脚本
+    // 整体豁免（s253 勘根「错进错出」面）。红态：HEAD 页面单元打 harness 标记。
+    #[test]
+    fn delivery_marks_page_units_inlined_not_harness_s261() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let harness_source = std::fs::read_to_string(root.join("resources/testharness.js")).expect("harness source");
+        let case_path = "html/semantics/document-metadata/the-meta-element/pragma-directives/\
+                         http-equiv-enumerated-ascii-case-insensitive-lower.html";
+        let html = prepare_harness_html(
+            r#"<html><head>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+</head><body>
+<script src="http-equiv-enumerated-ascii-case-insensitive-message.js"></script>
+</body></html>"#,
+            &harness_source,
+            &[],
+            &root,
+            case_path,
+        );
+        // harness 块保持基建标记。
+        assert!(
+            html.contains("data-zw-harness"),
+            "基建 harness 块保留 data-zw-harness 标记"
+        );
+        // 页面内容单元（本地 helper 内联）→ data-zw-inlined + 原始 src 记录
+        //（data-inline 值 = case 目录归一后的语料相对路径），不再打 harness 标记
+        //（红态：HEAD 两标记都是 data-zw-harness）。
+        let inlined_record = r#"<script data-zw-inlined data-inline="html/semantics/document-metadata/the-meta-element/pragma-directives/http-equiv-enumerated-ascii-case-insensitive-message.js""#;
+        assert!(
+            html.contains(inlined_record),
+            "页面内容单元打 data-zw-inlined 标记并记录原始 src: {}",
+            &html[html.len().saturating_sub(600)..]
+        );
+        let body_start = html
+            .find(
+                "data-inline=\"html/semantics/document-metadata/the-meta-element/pragma-directives/\
+                   http-equiv-enumerated-ascii-case-insensitive-message.js\"",
+            )
+            .expect("内联单元 data-inline 记录在场");
+        let unit = &html[body_start.saturating_sub(200)..body_start];
+        assert!(!unit.contains("data-zw-harness"), "页面内容单元不得打基建标记: {unit}");
+    }
+
     #[test]
     fn script_fetcher_data_module_marker_s249() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");

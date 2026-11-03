@@ -4424,11 +4424,11 @@ impl WebView {
             };
             // security-hardening M2-s1：CSP script 检查点（decision 先于 sandbox 借用
             // 计算，避免双重 self 借用）。被阻止的脚本跳过执行，并在其 script 元素上
-            // 派发 securitypolicyviolation（元素缺失回落 document）。
-            // security-hardening M2-s1：CSP script 检查点（decision 先于 sandbox 借用
-            // 计算，避免双重 self 借用）。被阻止的脚本跳过执行，并在其 script 元素上
-            // 派发 securitypolicyviolation。runner 基础设施脚本（data-zw-harness——
-            // 投递形态差异，非页面内容）豁免检查、照常执行。
+            // 派发 securitypolicyviolation（元素缺失回落 document）。runner 基础设施
+            // 脚本（data-zw-harness——投递形态差异，非页面内容）豁免检查、照常执行；
+            // 投递内联页面脚本（data-zw-inlined + data-inline 原始 src，s261）不豁免
+            // ——按原始 src 走外链 URL 检查路径（真浏览器对外链脚本的源匹配语义），
+            // 不按内联 hash 路径误判。
             let csp_violation = if csp_active && !script_csp_info.get(script_index).is_some_and(|i| i.zw_harness) {
                 let info = script_csp_info.get(script_index);
                 let nonce = info.and_then(|i| i.nonce.as_deref());
@@ -4437,7 +4437,9 @@ impl WebView {
                     | zero_engine::pipeline::PageScript::ExternalModule { src, .. } => Some(src.as_str()),
                     _ => None,
                 };
-                match external_src {
+                // s261：内联投递页面脚本按 data-inline 原始 src 检查（外链语义面）。
+                let inlined_src = info.and_then(|i| i.inlined_src.as_deref());
+                match external_src.or(inlined_src) {
                     Some(src) => {
                         let base = self.current_url.as_deref().unwrap_or("about:blank");
                         let abs = resolve_document_url(base, src);
