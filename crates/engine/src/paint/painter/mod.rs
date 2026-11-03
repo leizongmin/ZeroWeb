@@ -81,6 +81,10 @@ pub struct Painter {
     /// R5098：flat/并入 IFC 片段 visibility 过滤开关（构造期单次读取）。
     /// `ZW_INLINE_FRAG_VISIBILITY=0` 关闭（恢复 hidden 片段照绘旧行为）。
     pub(crate) inline_frag_visibility_enabled: bool,
+    /// R5410（css-flexbox-1 #painting）：static flex item 负 z-index 下沉绘制开关
+    ///（构造期单次读取，热路径零 env 查询）。`ZW_FLEX_ITEM_NEG_Z=0` 关闭（恢复
+    /// 非 positioned 子 z-index 不参与堆叠的 legacy 相位）。
+    pub(crate) flex_item_neg_z_enabled: bool,
     /// R5383（css-ui-4 §5.2.2/§5.2.3）：contenteditable 宿主插入 caret 绘制开关
     ///（构造期单次读取）。`ZW_CE_CARET=0` 关闭（恢复 CE 宿主不绘 caret 旧行为）。
     pub(crate) ce_caret_enabled: bool,
@@ -444,7 +448,15 @@ fn layout_canvas_extent(box_node: &LayoutBox, offset_x: f32, offset_y: f32) -> (
     (max_x, max_y)
 }
 
-fn child_paint_sort_key(box_node: &LayoutBox) -> (u8, i32) {
+fn child_paint_sort_key(box_node: &LayoutBox, parent_is_flex_container: bool) -> (u8, i32) {
+    // R5410（css-flexbox-1 #painting）：flex item 的 z-index 在 position:static 下仍生效
+    //（「z-index applies to flex items even if they are position: static」）——负 z-index
+    // item 下沉到常规流内容之下绘制（CSS 2.1 Appendix E step 2 类比）。门：父为 flex
+    // 容器 + item 非 positioned（kill-switch 由调用方折叠进 parent_is_flex_container）。
+    // 正 z-index 建堆叠上下文域无驱动案，另案挂账。
+    if parent_is_flex_container && !is_positioned_child(box_node) && box_node.z_index < 0 {
+        return (0, box_node.z_index);
+    }
     if is_positioned_child(box_node) {
         if box_node.z_index < 0 {
             // CSS 2.1 Appendix E step 2: negative z-index painted first
@@ -1155,7 +1167,19 @@ fn collect_mapped_oof_in_multicol<'a>(
     }
 }
 
-fn ordered_child_indices<F>(children: &[LayoutBox], mut include: F) -> Vec<usize>
+/// R5410：负 z-index flex item 下沉门的父面判定（kill-switch 折叠进返回值；
+/// 主子循环与 collapse sweep 两循环共用，保证排序序一致）。
+impl Painter {
+    pub(crate) fn flex_neg_z_parent_gate(&self, box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+        self.flex_item_neg_z_enabled
+            && box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex))
+    }
+}
+
+fn ordered_child_indices<F>(children: &[LayoutBox], parent_is_flex_container: bool, mut include: F) -> Vec<usize>
 where
     F: FnMut(&LayoutBox) -> bool,
 {
@@ -1165,8 +1189,8 @@ where
         .filter_map(|(idx, child)| include(child).then_some(idx))
         .collect();
     ordered.sort_by(|&left, &right| {
-        child_paint_sort_key(&children[left])
-            .cmp(&child_paint_sort_key(&children[right]))
+        child_paint_sort_key(&children[left], parent_is_flex_container)
+            .cmp(&child_paint_sort_key(&children[right], parent_is_flex_container))
             .then(left.cmp(&right))
     });
     ordered
@@ -1200,6 +1224,7 @@ impl Painter {
             pending_inline_bg_pos: HashMap::new(),
             inline_bg_z_order_enabled: std::env::var("ZW_INLINE_BG_Z_ORDER").as_deref() != Ok("0"),
             inline_frag_visibility_enabled: std::env::var("ZW_INLINE_FRAG_VISIBILITY").as_deref() != Ok("0"),
+            flex_item_neg_z_enabled: std::env::var("ZW_FLEX_ITEM_NEG_Z").as_deref() != Ok("0"),
             ce_caret_enabled: std::env::var("ZW_CE_CARET").as_deref() != Ok("0"),
             ce_caret_sel_enabled: std::env::var("ZW_CE_CARET_SEL").as_deref() != Ok("0"),
             ce_caret_sel_target: None,
@@ -2969,7 +2994,10 @@ impl Painter {
         // 负 z-index 的 positioned 后代在常规流内容之后方，
         // 非 positioned float 在常规流后代之上，
         // 非负 z-index 的 positioned 后代位于最上层。
-        for child_idx in ordered_child_indices(&box_node.children, |_| true) {
+        // R5410：父为 flex 容器时负 z-index static flex item 亦下沉（css-flexbox-1
+        // #painting），kill-switch `ZW_FLEX_ITEM_NEG_Z=0` 回退 legacy 相位。
+        let parent_is_flex_container = self.flex_neg_z_parent_gate(box_node, styles);
+        for child_idx in ordered_child_indices(&box_node.children, parent_is_flex_container, |_| true) {
             let child = &box_node.children[child_idx];
             self.paint_node_in_rect(child, styles, child_offset_x, child_offset_y, dirty_rect, doc);
         }
@@ -3836,6 +3864,7 @@ impl Painter {
                     paint_as_multicol,
                     defer_abspos,
                     transform_phase_defer,
+                    self.flex_neg_z_parent_gate(box_node, styles),
                 );
                 let (offset_x, offset_y) = child_content_origin(box_node, abs_x, abs_y);
                 self.paint_collapse_deco_sweep_children(box_node, styles, offset_x, offset_y, doc, &in_flow);
@@ -3979,6 +4008,7 @@ impl Painter {
             paint_as_multicol,
             defer_abspos,
             transform_phase_defer,
+            self.flex_neg_z_parent_gate(box_node, styles),
         );
         // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
         // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
@@ -4411,7 +4441,9 @@ impl Painter {
         // 非 positioned overflow 元素：abspos/fixed 子元素移到裁剪之后绘制，
         // 使其 CB 为祖先时不被本 overflow 误裁（CSS §11.1.1）。
         if defer_abspos {
-            for child_idx in ordered_child_indices(&box_node.children, |child| child.is_absolute || child.is_fixed) {
+            for child_idx in
+                ordered_child_indices(&box_node.children, false, |child| child.is_absolute || child.is_fixed)
+            {
                 let child = &box_node.children[child_idx];
                 self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
             }

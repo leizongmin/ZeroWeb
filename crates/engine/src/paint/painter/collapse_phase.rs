@@ -288,8 +288,9 @@ pub(crate) fn collapse_sweep_in_flow(
     paint_as_multicol: bool,
     defer_abspos: bool,
     transform_phase_defer: bool,
+    parent_is_flex_container: bool,
 ) -> Vec<usize> {
-    ordered_child_indices(&box_node.children, |child| {
+    ordered_child_indices(&box_node.children, parent_is_flex_container, |child| {
         (!paint_as_multicol || child.column_span_offsets.is_empty())
             && (!defer_abspos || (!child.is_absolute && !child.is_fixed))
             && !is_positioned_child(child)
