@@ -243,20 +243,12 @@ bin）：7,344P/291F/1T rc=2**——对 E1 基线 7,339P/296F/1T：P +5/F −5/T
 正面翻转（裸 span 1 + swcss false/true × span-color + b 共 5，`{` 起点
 origStart 在删程外存活 = caret 臂正面消费面，与 ipara 腿 F→P 4 同款 delta
 正面；pre-delta 该五案 caret 落位走 legacy 分支翻 compare）。fd 腿同口径
-判读待落（11:40:33 起）。
+判读待落（11:40:33 起）。修复笔存活门落地后本腿预期逐位恒 v1（五翻转面
+不经存活门、不受回落语义影响），复跑仍按行集 diff 复核。
 
-**delete 腿实测（11:03:09→11:40:33 落地，含 s254 bin）：7,344P/291F/1T
-rc=2——P→F = 0，`[foo<X>bar]</X>` 族零扩散**。对基线 E1 7,339P/296F/1T
-（g28-del-e1-fails.txt 297 行，Fail+Timeout 归一化行集 diff）：
-ΔP=+5/ΔF=−5 恰互偿，Timeout 行集同基线（1T 恒等）。F→P 5 全为
-`{...}` 部分含形——`foo{<span>bar</span>}baz` ×2（swcss false/true）+
-`foo{<b>bar</b>}baz` ×2（swcss false/true）+ `<p>foo{<span
-style=color:#aBcDeF>bar</span>}baz` ×1 compare innerHTML——`{...}` 边界
-origStart 在删程外存活、caret 臂正常翻转，与 ipara 腿 F→P 4 同族正面
-连带（deleteSelection 为 ipara 前导 + delete.html 直驱双消费面）。
-**判读：delete 腿过门（P→F 零）**——delta caret 臂在 delete.html 语料
-面净正面；修复笔存活门落地后本腿预期逐位恒 v1（五翻转面不经存活门，
-不受回落语义影响），复跑仍按行集 diff 复核。
+（去重注：本节 delete 腿块曾因双实例同判合并残留两份、前份 F→P 5 分解
+误标 bare-span 为 swcss false/true 双臂，2026-11-03 11:5x 撤后留前，
+独立提取 g28-del-v1-fails.txt 292 行逐位复核两份判读计数一致。）
 
 ## 6. 残余与挂账
 
