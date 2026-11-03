@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 253 施工收口（CSP eval 门禁互斥模块编译通道——三探针实证三通道分流：内联 module 转换体动态 import 走 shim 通道，prelude `__zw_load_module` 编译 eval 在 eval 包装窗内被自家 CSP 误拦；外链 module 页 Pass 实为 runner 投递 `data-zw-harness` 误标致包装不装「错进错出」；classic 页走 v8 原生 import() 通道包装不可见。施工 prelude 一行窄豁免——`__zwRealEval`（包装安装点保存的真实 eval）感知形，仅模块编译调用豁免、模块体内嵌套 eval/页面 eval 照拦；spec 口径 module evaluation 非 eval()，script-src 只管模块 fetch。propagate-nonce-inline-module 1 键 F→P，全树 A/B 8306/8306 对迁移恰 2 键 = 目标 F→P + 在册 checkbox `:active` 漂移族 1 子测试 P→F（同跑混态自证先例销账）；delay-load 勘根定谳动态 import 同步取回冻结回合改挂账（异步通道独立切片）；承前：M2 切片 252（module 链接/instantiation 错误语义 4 键 F→P 第十一个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 254 施工收口（import.meta.resolve + 进程内 import map 接线——import map 基建 s92 起在（import_map.rs 12 单测 + resolve_registered_specifier map 臂），缺 webview 进程内消费面：extract_import_map_json 零调用方。施工 9 刀：es_module prelude `__zwImportMapResolve` 宿主桥（返空 = resolution failure → TypeError；未接线宿主 typeof 守卫同落 TypeError）+ build_module_script/build_dep_iife 两处 `_importMeta.resolve` 恒发射（String(spec) + 本模块 url 穿入）；webview 页面首张合法 map 解析（parse 失败 warn 跳过，js_worker 多进程形态对齐）+ `__zw_importmap_resolve` 回调（resolve 全算法 + 映射值 base join 绝对化）+ 动态 import 两 resolver 闭包 apply_import_map 改写（resolve_mapped 仅实际命中，未命中原样零漂移；CSP nonce/fetch 均用映射后 abs）+ 静态面 registry.set_import_map；语料 ③d 补拉 export-1/2.mjs（幂等固化坑同 ③b，s227 教训先验资产）。import-meta-resolve-importmap.html 4 键 F→P（bare 映射/URL-like 重写/ToString/链式 map 再应用——新 API 较动态 import join 降级更严，裸未映射 TypeError）；全树 A/B 键级 8306→8303 闭合（-5 LOST +2 GAINED）迁移恰 5 键 = 目标 4 + 在册 checkbox `:active` 漂移族 F→P 回摆（先例销账）；两处键形态位移经 solo 复跑证实为 A/B 窗口并发编译负载（focus 页 80/80 复得、select 页回惯常 4F 同形）——**教训：全树 A/B 运行窗口禁并发编译负载**；新挂账 renderer/tab 宿主 import.meta.resolve 接线 + import maps 剩余语义面（多张 map/动态插入/Blocked 降级）；承前：M2 切片 253（CSP eval 门禁互斥模块编译通道 1 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,40 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 254**：import.meta.resolve + 进程内 import map
+  接线轮（s253 候选 #1）——勘根：基建完整（`import_map.rs`
+  parse/resolve/resolve_mapped 12 单测 + `resolve_registered_specifier`
+  map 臂）但 webview 进程内路径零消费面（`extract_import_map_json`
+  无调用方；renderer/tab 宿主已接 js_worker parse_page_import_map）；
+  四键语义（bare 映射/URL-like 重写/ToString/链式 map 再应用）+ 语料
+  import-meta/resources/ 整目录缺失（s227 教训施工前先验）。施工
+  **9 刀**：es_module prelude `__zwImportMapResolve` 宿主桥（返空 =
+  resolution failure → TypeError——spec 较动态 import join 降级更严；
+  未接线宿主 typeof 守卫同落 TypeError 非 ReferenceError）+
+  build_module_script/build_dep_iife 恒发射 `_importMeta.resolve`
+  （String(spec) + 本模块 url 穿入，无 map 即纯 URL 解析零行为差）；
+  webview 首张合法 map 解析 + `__zw_importmap_resolve` 回调（resolve
+  全算法 + 映射值 base join）+ 动态 import 两 resolver 闭包
+  `apply_import_map` 改写（resolve_mapped 仅实际命中——未命中原样，
+  既有 parent-join 零漂移；CSP nonce/fetch 用映射后 abs）+ 静态面
+  registry.set_import_map + helper fn（Blocked 按 Miss 降级 FIXME 同
+  静态面注记）。验证：新钉 `test_import_meta_resolve_s254` 四断言
+  （红态实证撤三处发射/桥行 FAILED）；script-sandbox 381 + webview
+  835 全绿；solo FILTER=import-meta **4 Pass / 0 Fail**（守卫终态复
+  跑）；全树 A/B 行级 7789P/439F/78T、键级 **8306→8303 闭合
+  （-5 LOST +2 GAINED）迁移恰 5 键 = 目标 4 键 F→P + checkable-
+  active-onblur F→P（在册 checkbox `:active` 漂移族回摆，s253 轮
+  P→F 本轮归位基线态）**；两处键形态位移（focus-dynamic-type-change
+  1 子测试→文件级 Timeout / select-home-end-pagedown-pageup 4 子测试
+  Fail→文件级 Fail）solo 复跑证实 **A/B 窗口并发编译负载**（红态编
+  译同机并行 CPU 争抢压时序重页：focus 80/80 复得、select 回惯常
+  4F 同形）——教训记档：**全树 A/B 运行窗口禁并发编译负载**。挂账
+  更新：renderer/tab 宿主 import.meta.resolve 接线（map 已在
+  scope，补回调即同 webview 形）；import maps 剩余语义面（多张 map
+  只取首张合法/动态插入 update/revoke 未实现/Blocked 降级）。
+  账本
+  [evidence/2026-11-03-m2s254-import-meta-resolve.md](html-semantics-compat/evidence/2026-11-03-m2s254-import-meta-resolve.md)。
+
 - **2026-11-03 M2 切片 253**：CSP eval 门禁互斥模块编译通道轮
   （s252 候选 #1 收窄：nonce ×1 施工，delay-load ×1 勘根定谳改挂
   账）——三探针实证（包装安装点/eval-blocked 回调/v8 原生

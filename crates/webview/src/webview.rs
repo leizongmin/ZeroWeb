@@ -4138,6 +4138,46 @@ impl WebView {
                 }),
             );
         }
+        // s254（import maps 进程内接线）：`<script type="importmap">` 首张合法 map 注册
+        //（spec register an import map——首张 JSON 非法 → 告警整张不注册）。静态收集经
+        // registry（resolve_registered_specifier map 阶段）、动态 import 经两 resolver
+        //（__zw_compile_module / V8 原生）、import.meta.resolve 经宿主回调同源；
+        // renderer/tab 多进程宿主既有形态对齐（js_worker parse_page_import_map）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#registering-an-import-map
+        let page_import_map = zero_engine::extract_import_map_json(&html)
+            .into_iter()
+            .find_map(|json| {
+                match zero_script_sandbox::ImportMap::parse_from_page(
+                    &json,
+                    self.current_url.as_deref().unwrap_or("about:blank"),
+                ) {
+                    Ok(map) => Some(map),
+                    Err(e) => {
+                        tracing::warn!("invalid import map ignored: {e}");
+                        None
+                    }
+                }
+            });
+        // s254：import.meta.resolve 宿主回调——HTML import.meta.resolve()：入参 ToString
+        // 在 JS 桥完成后走 resolve a module specifier 全算法（map 命中 → 映射 URL 绝对
+        // 化；URL-like 未命中 → asURL 回退）。返空 = resolution failure（裸说明符未映射/
+        // 阻断）→ JS 桥抛 TypeError。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
+        let map_resolve = page_import_map.clone();
+        sandbox.register_callback(
+            "__zw_importmap_resolve",
+            Box::new(move |args| {
+                let spec = args.first().map(String::as_str).unwrap_or("");
+                let base = args.get(1).map(String::as_str).unwrap_or("about:blank");
+                let empty = zero_script_sandbox::ImportMap::default();
+                let map = map_resolve.as_ref().unwrap_or(&empty);
+                match map.resolve(spec, base) {
+                    zero_script_sandbox::ImportMapResolution::Resolved(url) => resolve_document_url(base, &url),
+                    zero_script_sandbox::ImportMapResolution::Miss
+                    | zero_script_sandbox::ImportMapResolution::Blocked => String::new(),
+                }
+            }),
+        );
         // R3091：__zw_fetch_script（进程内路径，backed by ScriptSourceFetcher）—— 供 shim Worker 构造器
         //（外链 URL）/ 动态 import() fetch 外链脚本源。fetcher 未配 → 不注册（shim typeof-check no-op）。
         if let Some(fetcher) = self.script_source_fetcher.clone() {
@@ -4157,6 +4197,7 @@ impl WebView {
             // 对未缓存 spec 调此回调。fetch 源经 fetcher + compile_dependency_iife（imports 空存根，transitive
             // fetch defer）→ 返 IIFE（__zw_load_module eval 为 namespace）。browser/renderer 多进程模式各自注册
             //（http fetch + collect_module_deps 递归）；本进程内路径用 fetcher + 单层 imports 空存根。
+            let map_compile = page_import_map.clone();
             sandbox.register_callback(
                 "__zw_compile_module",
                 Box::new(move |args| {
@@ -4168,10 +4209,13 @@ impl WebView {
                     // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
                     // type 串；空串 = 无属性，JS 模块语义）。
                     let type_attr = args.get(2).map(String::as_str).unwrap_or("");
+                    // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
+                    // 路径零漂移）。
+                    let spec_eff = apply_import_map(&map_compile, parent, spec);
                     compile_module_contract(
                         &fetcher_compile,
                         parent,
-                        spec,
+                        &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
                     )
                 }),
@@ -4186,12 +4230,15 @@ impl WebView {
             // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
             let csp_ctx = self.security_context.clone();
             let import_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+            // s254：原生通道 import map 应用（shim __zw_compile_module 同形）。
+            let map_native = page_import_map.clone();
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
                 move |spec: &str, parent: &str, nonce: &str, type_attr: &str| {
                     if spec.is_empty() {
                         return String::new();
                     }
-                    let abs = resolve_document_url(parent, spec);
+                    let spec_eff = apply_import_map(&map_native, parent, spec);
+                    let abs = resolve_document_url(parent, &spec_eff);
                     let nonce_opt = if nonce.is_empty() { None } else { Some(nonce) };
                     if let Some(violation) = csp_ctx.check_script(nonce_opt, None, Some(&abs)) {
                         if let Ok(mut queue) = import_violations.lock() {
@@ -4212,7 +4259,7 @@ impl WebView {
                     compile_module_contract(
                         &fetcher_native_import,
                         parent,
-                        spec,
+                        &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
                     )
                 },
@@ -4533,6 +4580,11 @@ impl WebView {
                 // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
                 // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
                 let mut registry = zero_script_sandbox::ModuleRegistry::new();
+                // s254：页面 import map 入册——静态依赖收集的 resolve_registered_specifier
+                // map 阶段生效（多进程宿主 js_worker 同形态）。
+                if let Some(map) = &page_import_map {
+                    registry.set_import_map(map.clone());
+                }
                 // s107：fetcher 路径带 with-type 属性提取（JSON module 按属性分派合成）。
                 let specs = if self.script_source_fetcher.is_some() {
                     zero_script_sandbox::extract_static_module_imports_with_attributes(&code)
@@ -7511,6 +7563,19 @@ enum ModuleGraphFailure {
 /// s249：`type_attr` = 动态 import 属性 `with.type`（顶层模块的记账类型——css/text
 /// 合成臂与 json 臂同源；依赖图的属性随各 import 语句自带，见递归内的
 /// `extract_static_module_imports_with_attributes` 通道）。
+/// s254：动态 import 的 import map 应用——map 阶段命中才改写说明符（映射值按
+/// referring script base join 绝对化；键归一在 `ImportMap::resolve_mapped` 内按
+/// 同基址进行），未命中原样返回（既有 parent-join 路径零漂移）。Blocked 条目按
+/// Miss 降级——FIXME 同 `resolve_registered_specifier`（`String` 返回签名无错误
+/// 通道；spec 要求 TypeError 终止全部回退）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, spec: &str) -> String {
+    match map.as_ref().and_then(|m| m.resolve_mapped(spec, base)) {
+        Some(mapped) => resolve_document_url(base, &mapped),
+        None => spec.to_string(),
+    }
+}
+
 fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str, type_attr: Option<&str>) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();

@@ -338,6 +338,14 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // https://tc39.es/proposal-import-attributes/#sec-import-calls
     // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
     out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    return Promise.resolve(__zw_load_module(spec, parent, _diType));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
+    // s254：import.meta.resolve 宿主桥（HTML #dom-import-meta-resolve——spec 入参经
+    // ToString 后走 resolve a module specifier 全算法：map 命中 → 映射 URL 绝对化；
+    // URL-like 未命中 → asURL 回退）。宿主返空 = resolution failure（裸说明符未映射/
+    // 阻断条目）→ TypeError——spec 面较动态 import 的 join 降级更严（裸未映射本就
+    // 不可解析，动态面 join 行为既有不扰）。回调未注册的宿主（renderer/tab 多进程
+    // 接线未达，FIXME 挂账）同样回落 TypeError 而非 ReferenceError。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
+    out.push_str("globalThis.__zwImportMapResolve = function (spec, base) {\n  if (typeof __zw_importmap_resolve !== 'function') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  var r = __zw_importmap_resolve(spec, base);\n  if (r === '') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  return r;\n};\n");
     for spec in registry.specifiers() {
         // R5182：入口跳过急切求值——入口由调用方的转换体求值一次（否则 prelude 急切执行
         // 一遍 + 转换体再执行一遍，模块体副作用翻倍；红态实测入口计数 2）。
@@ -719,6 +727,13 @@ fn build_module_script(
     output.push_str("  'use strict';\n");
     output.push_str("  var _exports = {};\n");
     output.push_str(&format!("  var _importMeta = {{ url: {} }};\n", json_stringify(url)));
+    // s254：import.meta.resolve（HTML #import-metadata——入参 ToString 后经宿主回调走
+    // resolve a module specifier 全算法；本模块基址穿入）。恒发射：无 map 时即纯
+    // URL 解析（spec 语义），无 map 页面行为面不受扰。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
+    output.push_str(
+        "  _importMeta.resolve = function (spec) { return __zwImportMapResolve(String(spec), _importMeta.url); };\n",
+    );
     // 入口自导入（github.com environment 入口真实形态 `import*as i from"./environment-*.js"`
     // 后 `e.C(i)`，2026-10-08 home-reload 线上证据）：入口自身作为依赖重入时绑定到自身
     // _exports 活对象——不得再内联一份入口体（内层拷贝执行期 typeof 守卫落空 → 空 stub →
@@ -769,6 +784,10 @@ fn build_dep_iife(
         "  var _importMeta = {{ url: {} }};\n",
         json_stringify(specifier)
     ));
+    // s254：依赖模块同型 resolve 面（见 build_module_script 注记）。
+    output.push_str(
+        "  _importMeta.resolve = function (spec) { return __zwImportMapResolve(String(spec), _importMeta.url); };\n",
+    );
     // 依赖模块自导入与入口自导入同型（见 build_module_script）：绑定到自身 _exports 活对象。
     output.push_str(&format!("  var _mod_{} = _exports;\n", safe_ident(specifier)));
     visited.insert(specifier.to_string());
@@ -2223,6 +2242,63 @@ mod tests {
         assert_eq!(
             joined, "resolved:ok:ran=true:nested-blocked=true|page-eval:EvalError",
             "模块编译 eval 豁免 + 模块体内嵌套 eval 照拦 + 页面 eval 照拦：{joined}"
+        );
+    }
+
+    /// s254（import maps 进程内接线）：import.meta.resolve 面——transform 恒发射 +
+    /// prelude 宿主桥 + 模块 IIFE 局部基址穿入三钉。宿主回调桩按 base+spec 合成
+    /// 映射 URL；返空 = resolution failure（裸说明符未映射——spec 面较动态 import
+    /// 的 join 降级更严）→ TypeError。红态：transform 无 resolve 发射 →
+    /// `import.meta.resolve is not a function`。
+    #[test]
+    fn test_import_meta_resolve_s254() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        sandbox.register_callback(
+            "__zw_importmap_resolve",
+            Box::new(|args| {
+                let spec = args.first().map(String::as_str).unwrap_or("");
+                let base = args.get(1).map(String::as_str).unwrap_or("");
+                match spec {
+                    "bare" => format!("https://x.test/mapped?from={base}"),
+                    _ => String::new(),
+                }
+            }),
+        );
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap();
+        let source = "\
+__zw_report('resolve=' + import.meta.resolve('bare'));\n\
+try { import.meta.resolve(); } catch (e) { __zw_report('noarg=' + e.constructor.name); }";
+        let module = build_module_script(source, "https://zero.test/m.js", &registry, false, &mut HashSet::new())
+            .expect("模块编译不得失败");
+        // transform 恒发射 resolve 面（无 map 页面即纯 URL 解析语义，行为不受扰）。
+        assert!(
+            module.contains("_importMeta.resolve = function"),
+            "transform 恒发射 import.meta.resolve"
+        );
+        sandbox
+            .execute(&format!("{prelude}\n{module}"))
+            .expect("import.meta.resolve 探针不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("|");
+        assert_eq!(
+            joined, "resolve=https://x.test/mapped?from=https://zero.test/m.js|noarg=TypeError",
+            "映射命中经宿主桥返回 + IIFE 局部 _importMeta.url 穿入 + ToString 语义（no-arg → 'undefined' 裸键未映射 → TypeError）：{joined}"
         );
     }
 

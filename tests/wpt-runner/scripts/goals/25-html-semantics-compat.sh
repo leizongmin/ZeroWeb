@@ -172,6 +172,14 @@ fetch_raw "html/semantics/scripting-1/the-script-element/text-module/file.txt"
 # "The image must load"。utf-8.css 同坑变体（幂等快路径整目录跳过后补清单）。
 fetch_raw "html/semantics/embedded-content/the-img-element/resources/green.png"
 
+# ③d import-meta resolve-importmap 语料资源（s254）：import-meta-resolve-importmap.html
+# 的链式 map 用例第四键 fetch 面（import("./start") → export-1.mjs，import(resolve)
+# → export-2.mjs）——M1 首拉无 resources/ 子目录（同 ③b 幂等快路径固化坑）。
+# 基准变更注记：补语料后 import-meta 引用面预期 F→P 位移，下轮全量 join 的对应
+# GAINED 按语料变更归因，非回归。
+fetch_raw "html/semantics/scripting-1/the-script-element/module/import-meta/resources/export-1.mjs"
+fetch_raw "html/semantics/scripting-1/the-script-element/module/import-meta/resources/export-2.mjs"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"
