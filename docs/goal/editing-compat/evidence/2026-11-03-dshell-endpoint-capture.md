@@ -352,6 +352,16 @@ s249 测试对齐（均挂 §6/下一步）。
   （E1/diag 双 bin 干净全量，重跑法归因穷尽）——若再现以新样本重开；
 - multitest ?9001-last solo 切片过滤语法（`multitest.html?9001-last` 直跑
   rc=1 即败）未通，−85 缺口以 E4 同 bin 全腿重测对账替代；
+- **残余挂死两站点（v3 :606 守卫破环后仍存，solo 归因修复窗进行）**：
+  multitest ?9001-last 案 9 起（flex/grid+span+b 四案 9-12 未报，挂死跨
+  v1/v2/fix 三代恒存；v3 案 7/8 已由守卫破环转完成出账 = T→F v1 历史败
+  恢复）+ delete.html?7001-last `<p>{}<span contenteditable=false>ab</span></p>`
+  （CE-false 组首案，1 未报，delete.html 语料 ?7001-last 慢性页超时同页）——
+  「唯一静默自旋环 = :606」静态定谳不完整，第二自旋候选 part01f.js:670-672
+  `while (endBlock.hasChildNodes()) { _zwJusMovePreservingRanges(...); }`
+  merge 环（move 走 part01c.js:653-663 吞异常路径则 endBlock 子数不降恒自旋，
+  :606 守卫不覆盖；:674-678 空壳爬升环 parentNode 耗尽 TypeError 异常终止
+  非自旋面），探针定谳后守卫扩展/定点修；
 - qV 残余 ~109F、list FIXME、delete li/dt/dd FIXME、shim
   DocumentFragment.appendChild 移动语义/Range.extractContents 共享根（控制
   面下一步 ②-④ 原样顺延）；
