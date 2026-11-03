@@ -221,6 +221,20 @@ sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F
 **复跑腿扩为四腿**：multitest/delete/fd/insertparagraph（ipara 腿 P→F 20
 中 ≥19 案与 multitest 22 案同根，修复笔预期同面回收；CE-false 2 案待验）。
 
+**inserttext 起四腿实测（11:01:07→11:03:09 落地，含 s254 bin）——fail 行集
+恒等提取 diff 对 gate27 同腿段逐位为零回归**：
+- **inserttext**：2,782P/227F/0T rc=2，对基线 2,782P/227F 总数恒等，P→F=0/
+  F→P=0（?2001-last 正常收尾非截断，2.5 min 为单页语料缓存热）。无 delete
+  前置步骤，不触 caret 臂前提破面，与根因模型一致；
+- **typing-text-in-direct-child-of-editing-host**：6P/10F/0T rc=2，10 fail
+  恒等行集逐位同基线（6P/10F 小面原样）；
+- **insertlinebreak**：50 fail 恒等行集逐位同基线（P→F=0/F→P=0）；
+- **forecolor**：43 fail 恒等行集逐位同基线（P→F=0/F→P=0）。
+四腿恒等实证 s254 bin 漂移在编辑 run 语料面噪声 ≈0（漂移注记成立）；回归
+面仍收敛在 multitest 22 + ipara 20 = 42 案。**delete.html/forwarddelete 两
+腿待落（重点核 `[foo<X>bar]</X>baz` 族 P→F 扩散——delete/fd 是 caret 臂
+主消费语料，扩散面可能大于 multitest）**，落地后按同口径判读。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
