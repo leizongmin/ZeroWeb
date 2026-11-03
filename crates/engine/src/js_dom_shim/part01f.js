@@ -336,6 +336,26 @@
 
     if (!_zwVaGetActiveRange()) return;
 
+    // Chrome delta（双壳终点边界捕获面，2026-11-03 gate28 轮）：等价点归一化
+    // 会把链外 start 边界下钻进 inline 壳（(abc,3)→(div,1)→(b,0)→(i,0)→
+    // (def,0)），keep-shell 与 caret 落位随之按壳内起算——Chrome 语义：原边界
+    // 直下宿主（上行链无 inline 元素）时删除后空包裹全摘、caret 落原边界
+    //（multitest :2521 族 `abc{<b><i>def</i></b>}ghi` recording 实证）。此处留
+    // 原边界快照与链形判据，供 keep-shell 臂与 caret 落位臂使用；链内边界
+    //（原链已有 inline 元素，T5 幸存壳面）行为不变。
+    var origStartContainer = _zwVaGetActiveRange().startContainer;
+    var origStartOffset = _zwVaGetActiveRange().startOffset;
+    var origChainHasInline = false;
+    var ocM = origStartContainer;
+    while (ocM && ocM.parentNode && !_zwJusIsEditingHost(ocM)
+        && _zwListInSameEditingHost(ocM, ocM.parentNode)) {
+      if (ocM.nodeType == 1 && _zwJusIsInlineNode(ocM)) {
+        origChainHasInline = true;
+        break;
+      }
+      ocM = ocM.parentNode;
+    }
+
     _zwDelCanonicalizeWhitespace(_zwVaGetActiveRange().startContainer,
       _zwVaGetActiveRange().startOffset);
     _zwDelCanonicalizeWhitespace(_zwVaGetActiveRange().endContainer,
@@ -404,8 +424,32 @@
       var dSame = String(startNode.nodeValue || '');
       startNode.nodeValue = dSame.slice(0, startOffset) + dSame.slice(endOffset);
       _zwDelCanonicalizeWhitespace(startNode, startOffset, false);
+      // Chrome delta（双壳终点边界捕获面）：链外边界整节点删空时，空文本节点
+      // 连同空 inline 包裹一并摘除（multitest :2521 族 M1/M2/C02/C05 形——
+      // Chrome 空包裹不存活，typed 段由 typing 态重建 `<b><i>def</i></b>`；
+      // 链内边界 T5 面空壳由幸存壳承接，维持原路径不摘）。
+      if (!origChainHasInline && dSame
+          && !String(startNode.nodeValue || '') && startNode.parentNode) {
+        var sameStrip = startNode.parentNode;
+        sameStrip.removeChild(startNode);
+        var sameGuard = 0;
+        while (sameStrip && _zwJusIsEditable(sameStrip)
+            && _zwJusIsInlineNode(sameStrip)
+            && _zwJusNodeLength(sameStrip) == 0
+            && sameStrip !== delKeepShell && sameGuard++ < 256) {
+          var sameGp = sameStrip.parentNode;
+          if (!sameGp) break;
+          sameGp.removeChild(sameStrip);
+          sameStrip = sameGp;
+        }
+      }
       var selSame = globalThis.getSelection();
-      if (direction == 'forward') {
+      if (!origChainHasInline && selSame.rangeCount) {
+        // caret 落原边界（链外语义；原边界节点在删除链外必存活）。
+        selSame.collapse(origStartContainer, Math.min(origStartOffset,
+          _zwJusNodeLength(origStartContainer)));
+        _zwVaGetActiveRange().collapse(true);
+      } else if (direction == 'forward') {
         if (selSame.rangeCount) selSame.collapseToStart();
         _zwVaGetActiveRange().collapse(true);
       } else {
@@ -423,8 +467,11 @@
     }
 
     // Chrome 留壳预扫（helper 共享面见 _zwDelKeepShellOf 及其 g16-multitest
-    // D1 实证注释）：幸存壳 = 最外层 <a>（无 a 时链上最外层壳）。
-    var delKeepShell = _zwDelKeepShellOf(startNode);
+    // D1 实证注释）：幸存壳 = 最外层 <a>（无 a 时链上最外层壳）。链外边界
+    //（原链无 inline 元素）无幸存壳——归一化 startNode 已下钻入壳，按壳内
+    // 起算会错留空壳（:2521 族 M9 形 `abc{<b><i>def</i></b>g]hi` 期望壳全摘）。
+    var delKeepShell = origChainHasInline
+      ? _zwDelKeepShellOf(startNode) : null;
 
     var nodeList = _zwJusGetContainedNodes(_zwVaGetActiveRange(),
       function (n) {
@@ -480,7 +527,14 @@
         || !_zwListInSameEditingHost(startBlock, endBlock)
         || startBlock == endBlock) {
       var selExit = globalThis.getSelection();
-      if (direction == 'forward') {
+      if (!origChainHasInline && selExit.rangeCount) {
+        // Chrome delta（双壳终点边界捕获面）：链外边界 caret 落原边界而非壳内
+        // 重锚点——collapseToStart 经已摘壳 remap 产出 (b,0)/(i,0)（multitest
+        // :2521 族 M4/M5/M9 形实证），Chrome 落 (abc,3)/(div,1) 原边界。
+        selExit.collapse(origStartContainer, Math.min(origStartOffset,
+          _zwJusNodeLength(origStartContainer)));
+        _zwVaGetActiveRange().collapse(true);
+      } else if (direction == 'forward') {
         if (selExit.rangeCount) selExit.collapseToStart();
         _zwVaGetActiveRange().collapse(true);
       } else {
@@ -982,6 +1036,55 @@
   //（幸存壳自然承接不双裹）。显式 typing 态（__zwTypingTags 非空）优先，
   // 捕获仅在态空时补位——接线见 __zw_ce_delete_apply 尾部。
   var _zwDelFmtTags = { b: 1, i: 1, u: 1, s: 1, sub: 1, sup: 1 };
+
+  // 选区内首个可见内容（可见文本或 img）节点级查找（链外终点捕获专用）：
+  // 自 start 位下钻/右移行进，候选须被选区整含（头界 ≥ start 且尾界 ≤ end），
+  // 部分含节点跳过并继续行进（multitest :2660 族 C11 `abc[<b><i>def</i></b>g]hi`
+  // 头部 abc 部分含 → 越过收 def 整含链）。inline 包裹（b/i 等）只作下钻
+  // 通道不作候选。行进自带宿主边界与 guard 防护（正常 DOM 无环）。
+  function _zwDelFirstVisibleInRange(ar) {
+    var guard = 0;
+    var n = ar.startContainer;
+    var no = ar.startOffset;
+    if (n.nodeType == 1 && no < n.childNodes.length) {
+      n = n.childNodes[no];
+      while (n.nodeType == 1 && n.firstChild && guard++ < 256) {
+        n = n.firstChild;
+      }
+    } else if (n.nodeType == 3) {
+      // 文本起点：整节点候选头界检查自会拒绝部分含（:2660 C38 形）。
+    } else {
+      // 元素位超界（no == childNodes.length）：上溯至有右兄弟的层。
+      while (n && !n.nextSibling && n.parentNode
+          && !_zwJusIsEditingHost(n.parentNode) && guard++ < 256) {
+        n = n.parentNode;
+      }
+      n = n && n.nextSibling;
+    }
+    while (n && guard++ < 1024) {
+      var candOk = (n.nodeType == 3 && _zwJusIsVisible(n))
+        || _zwJusIsHtmlElement(n, 'img');
+      if (candOk
+          && _zwDelGetPosition(ar.startContainer, ar.startOffset, n, 0)
+            !== 'before'
+          && _zwDelGetPosition(ar.endContainer, ar.endOffset, n,
+            _zwJusNodeLength(n)) !== 'after') {
+        return n;
+      }
+      if (n.nodeType == 1 && n.firstChild) {
+        n = n.firstChild;
+        continue;
+      }
+      var nx = n.nextSibling;
+      while (!nx && n.parentNode && !_zwJusIsEditingHost(n.parentNode)) {
+        n = n.parentNode;
+        nx = n.nextSibling;
+      }
+      n = nx;
+    }
+    return null;
+  }
+
   globalThis.__zw_ce_capture_typing_chain = function (ar) {
     var sc = ar && ar.startContainer;
     if (!sc) return null;
@@ -1009,7 +1112,24 @@
     if (Array.isArray(toff) && toff.length) {
       tags = tags.filter(function (t) { return toff.indexOf(t) < 0; });
     }
-    return tags;
+    if (tags.length || ar.collapsed) return tags;
+    // Chrome delta（双壳终点边界捕获面，2026-11-03 gate28 轮）：链外边界
+    //（上行链收空）时 typing 态改携选区内**首个可见内容**的 format 壳层——
+    // 仅当其被选区整含。语料锚点（multitest :2521/:2660 族 Chrome recording）：
+    //   :2521 `abc{<b><i>def</i></b>}ghi`+delete+inserttext → `<b><i>def</i></b>`
+    //        （def 整含 → 捕获其 b+i 链，typed 段重裹）；
+    //   :2660 `abc[<b><i>de]f</i></b>ghi`+delete+inserttext →
+    //        `abcde<b><i>f</i></b>ghi`（def 部分含 → 不保留，typed 段裸奔）；
+    //   img 首可见（:2660 C28 形）→ 不保留（期望 `abcdefghi`）。
+    var cand = _zwDelFirstVisibleInRange(ar);
+    if (!cand || cand.nodeType != 3) return tags;
+    // 复用上行链捕获（collapsed 标记防再入扩展）；候选链有 <a> 时该调用自返
+    // 空（:2163/:2168 双向实证语义不变）。
+    return globalThis.__zw_ce_capture_typing_chain({
+      startContainer: cand, startOffset: _zwJusNodeLength(cand),
+      endContainer: cand, endOffset: _zwJusNodeLength(cand),
+      collapsed: true
+    });
   };
 
   // —— execCommand delete/forwarddelete 入口（part06 单点调用）。活动选区非

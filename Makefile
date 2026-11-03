@@ -743,8 +743,11 @@ testharness-editing-other: fetch-wpt-editing target-disk-guard target/test-guard
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- bash tests/wpt-runner/scripts/run-editing-testharness-corpus.sh other ./target/release/zero-wpt-runner
 
 # 单案/子串定向：make testharness-editing-run FILTER=bold / testharness-editing-other FILTER=delete
+# run 通道单案与 corpus 批同款 300s 脚本预算（run-editing-testharness-corpus.sh :73-75；
+# runner 缺省 90s 看门狗截断大同步段变体——2026-11-03 gate27 电池 v1 实证
+# insertparagraph 12min 截断 6,512P/141F/1T rc=2，与 corpus 基线缺 ~542 断言不可比）。
 testharness-editing-run-one: fetch-wpt-editing target-disk-guard target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- ./target/release/zero-wpt-runner testharness-editing-run $(if $(FILTER),$(FILTER),)
+	ZW_SCRIPT_TIMEOUT_MS=300000 ./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),600) -- ./target/release/zero-wpt-runner testharness-editing-run $(if $(FILTER),$(FILTER),)
 
 testharness-editing-other-one: fetch-wpt-editing target-disk-guard target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),300) -- ./target/release/zero-wpt-runner testharness-editing-other $(if $(FILTER),$(FILTER),)
