@@ -217,13 +217,19 @@ pub fn compile_module_script(
     registry: &ModuleRegistry,
 ) -> Result<String, ScriptError> {
     let uses_await = source.contains("await");
-    let body = build_module_script(source, url, registry, uses_await, &mut HashSet::new())?;
+    // s269：async 包裹判定与消费上下文（依赖 await 发射）同源——`import(`（动态
+    // import 重写后的 helper 调用态）也触发 async 包裹（prelude 契约既有行为），此时
+    // TLA 依赖的消费点同样可合法 await。
+    let async_body = source.contains("import(") || uses_await;
+    let body = build_module_script(source, url, registry, async_body, &mut HashSet::new())?;
     // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
     // 不经过 prelude 也能安全使用记忆化发射点。
     let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n";
-    if source.contains("import(") || uses_await {
+    if async_body {
         // FIXME(R5182)：async 入口体暂不记忆化——缓存实例会成 Promise（依赖读取方期望导出
         // 对象）。共享 async 模块的跨元素恰好一次留待后续切片（活体证据：MDN 入口链均同步）。
+        // s269：TLA 依赖的缓存实例即 Promise（build_dep_iife async 包裹），消费方 await
+        // 归一（await_prefix）——缓存 Promise 与缓存导出对象两态消费面自洽。
         Ok(format!("{init}(async function() {{\n{body}\n}})();\n"))
     } else {
         // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
@@ -452,7 +458,8 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
         // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。判定用
-        // `=== undefined`（contains 语义，TV-4）。
+        // `=== undefined`（contains 语义，TV-4）。s269：TLA 依赖缓存 Promise——消费方
+        // await 归一（await_prefix），动态 import() 面 Promise.resolve 天然解包。
         out.push_str(&format!(
             "if (__moduleCache['{escaped}'] === undefined) __moduleCache['{escaped}'] = {iife};\n"
         ));
@@ -854,9 +861,9 @@ fn build_module_script(
             continue;
         }
         if let Some(clause) = strip_import_keyword(trimmed) {
-            output.push_str(&transform_import(clause, url, registry, visited)?);
+            output.push_str(&transform_import(clause, url, registry, visited, async_body)?);
         } else if let Some(clause) = strip_export_keyword(trimmed) {
-            output.push_str(&transform_export(clause, url, registry, visited)?);
+            output.push_str(&transform_export(clause, url, registry, visited, async_body)?);
         } else {
             // 普通语句：替换 import.meta 与动态 import()
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
@@ -872,6 +879,11 @@ fn build_module_script(
 }
 
 /// 为依赖模块构建内联的 IIFE（返回其导出对象）。
+/// s269：依赖源含顶层 await（TLA，[`module_source_has_top_level_await`]）时以
+/// **async IIFE** 包裹——`await` 落在同步 IIFE 内是 SyntaxError（module/
+/// module-import-referrer.js `export const {…} = await import(…)` 实证，页脚
+/// 整案零注册 Timeout）。async IIFE 求值产物是 Promise；消费方 await 归一
+///（[`await_prefix`]），同步消费上下文拿 Promise 本体（FIXME，语料无钉面）。
 fn build_dep_iife(
     specifier: &str,
     registry: &ModuleRegistry,
@@ -879,10 +891,16 @@ fn build_dep_iife(
 ) -> Result<String, ScriptError> {
     let source = registry
         .get(specifier)
-        .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?;
+        .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?
+        .to_string();
+    let is_async = module_source_has_top_level_await(&source);
 
     let mut output = String::new();
-    output.push_str("(function() {\n");
+    if is_async {
+        output.push_str("(async function() {\n");
+    } else {
+        output.push_str("(function() {\n");
+    }
     output.push_str("  'use strict';\n");
     output.push_str("  var _exports = {};\n");
     output.push_str(&format!(
@@ -897,16 +915,16 @@ fn build_dep_iife(
     output.push_str(&format!("  var _mod_{} = _exports;\n", safe_ident(specifier)));
     visited.insert(specifier.to_string());
 
-    let stmts = split_statements(source);
+    let stmts = split_statements(&source);
     for stmt in &stmts {
         let trimmed = stmt.trim();
         if trimmed.is_empty() {
             continue;
         }
         if let Some(clause) = strip_import_keyword(trimmed) {
-            output.push_str(&transform_import(clause, specifier, registry, visited)?);
+            output.push_str(&transform_import(clause, specifier, registry, visited, is_async)?);
         } else if let Some(clause) = strip_export_keyword(trimmed) {
-            output.push_str(&transform_export(clause, specifier, registry, visited)?);
+            output.push_str(&transform_export(clause, specifier, registry, visited, is_async)?);
         } else {
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
             output.push_str("  ");
@@ -929,23 +947,40 @@ fn build_dep_iife(
 /// Visited 为循环/菱形重入——模块体不得重复执行（webpack runtime 等有状态模块二次
 /// 初始化会分裂实例，chunk 注册到 A 实例、require 走 B 实例 → 运行时 TypeError），
 /// 改为对首份导出变量的守卫引用。
+/// `bool` = 依赖源含顶层 await（TLA）→ IIFE 以 async 包裹，求值产物是
+/// **Promise**（resolve 为导出对象）——消费方须 await（仅在 async 消费
+/// 上下文发射；同步消费方拿到 Promise 本体，绑定近似 undefined——spec
+/// 的 TDZ 语义未建模，FIXME 挂账，语料无钉面）。
 enum DepInline {
-    Fresh(String),
-    Visited(String), // safe 变量名（首次内联的 `_mod_{safe}`）
+    Fresh(String, bool),
+    Visited(String, bool), // safe 变量名（首次内联的 `_mod_{safe}`）
 }
 
 impl DepInline {
+    /// 依赖 IIFE 是否 Promise 值（TLA 依赖）。
+    fn is_async(&self) -> bool {
+        match self {
+            DepInline::Fresh(_, a) | DepInline::Visited(_, a) => *a,
+        }
+    }
+
     /// 求值为该模块导出对象的表达式。Visited 用 `typeof` 守卫：变量在当前作用域可见
     /// （首份内联在外层，闭包可见）→ 共享同一导出实例；深层菱形不可见 → 回落空对象
     ///（与旧空占位行为一致，不劣于现状）。
     fn exports_expr(&self) -> String {
         match self {
-            DepInline::Fresh(code) => code.clone(),
-            DepInline::Visited(safe) => {
+            DepInline::Fresh(code, _) => code.clone(),
+            DepInline::Visited(safe, _) => {
                 format!("(typeof _mod_{safe} !== 'undefined' ? _mod_{safe} : (function(){{return {{}};}})())")
             }
         }
     }
+}
+
+/// TLA 依赖在 async 消费上下文的 await 前缀（`memoized_dep_expr` 对 TLA 依赖缓存
+/// Promise——await 归一 Promise/导出对象两态；同步依赖发射串逐字节不变，零回归面）。
+fn await_prefix(dep_is_async: bool, enclosing_async: bool) -> &'static str {
+    if dep_is_async && enclosing_async { "await " } else { "" }
 }
 
 fn inline_dep_once(
@@ -955,10 +990,21 @@ fn inline_dep_once(
 ) -> Result<DepInline, ScriptError> {
     if !visited.contains(specifier) {
         visited.insert(specifier.to_string());
-        return Ok(DepInline::Fresh(build_dep_iife(specifier, registry, visited)?));
+        let source = registry
+            .get(specifier)
+            .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?;
+        let is_async = module_source_has_top_level_await(source);
+        return Ok(DepInline::Fresh(
+            build_dep_iife(specifier, registry, visited)?,
+            is_async,
+        ));
     }
     // 已访问（循环/菱形重入）→ 引用首份内联导出，不重复内联。
-    Ok(DepInline::Visited(safe_ident(specifier)))
+    let is_async = registry
+        .get(specifier)
+        .map(module_source_has_top_level_await)
+        .unwrap_or(false);
+    Ok(DepInline::Visited(safe_ident(specifier), is_async))
 }
 
 /// 转换 import 声明。
@@ -969,6 +1015,7 @@ fn transform_import(
     importer_url: &str,
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
+    enclosing_async: bool,
 ) -> Result<String, ScriptError> {
     // import 'module' — 副作用导入
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
@@ -978,11 +1025,12 @@ fn transform_import(
         let dep = inline_dep_once(&specifier, registry, visited)?;
         return match &dep {
             // R5182：Fresh 内联包记忆化——与 prelude 急切求值共享实例，不重复执行模块体。
-            DepInline::Fresh(code) => Ok(format!(
-                "  var _mod_{safe} = {};\n",
+            DepInline::Fresh(code, _) => Ok(format!(
+                "  var _mod_{safe} = {}{};\n",
+                await_prefix(dep.is_async(), enclosing_async),
                 memoized_dep_expr(&specifier, code)
             )),
-            DepInline::Visited(_) => Ok(String::new()),
+            DepInline::Visited(..) => Ok(String::new()),
         };
     }
 
@@ -1001,20 +1049,25 @@ fn transform_import(
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
-            DepInline::Fresh(_) => format!("_mod_{safe}"),
-            DepInline::Visited(_) => format!("_modref_{safe}"),
+            DepInline::Fresh(..) => format!("_mod_{safe}"),
+            DepInline::Visited(..) => format!("_modref_{safe}"),
         };
         let mut result = String::new();
         match &dep {
-            DepInline::Fresh(code) => {
+            DepInline::Fresh(code, _) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
                 result.push_str(&format!(
-                    "  var {exports_var} = {};\n",
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
                     memoized_dep_expr(&specifier, code)
                 ));
             }
-            DepInline::Visited(_) => {
-                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            DepInline::Visited(..) => {
+                result.push_str(&format!(
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
+                    dep.exports_expr()
+                ));
             }
         }
         result.push_str(&format!("  var {} = {exports_var};\n", ns_name.trim()));
@@ -1040,21 +1093,26 @@ fn transform_import(
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
-            DepInline::Fresh(_) => format!("_mod_{safe}"),
+            DepInline::Fresh(..) => format!("_mod_{safe}"),
             // 重入：首份导出在既有 `_mod_{safe}` 中；守卫引用存入独立名避免遮蔽外层声明
-            DepInline::Visited(_) => format!("_modref_{safe}"),
+            DepInline::Visited(..) => format!("_modref_{safe}"),
         };
         let mut result = String::new();
         match &dep {
-            DepInline::Fresh(code) => {
+            DepInline::Fresh(code, _) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
                 result.push_str(&format!(
-                    "  var {exports_var} = {};\n",
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
                     memoized_dep_expr(&specifier, code)
                 ));
             }
-            DepInline::Visited(_) => {
-                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            DepInline::Visited(..) => {
+                result.push_str(&format!(
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
+                    dep.exports_expr()
+                ));
             }
         }
         result.push_str(&destructure_bindings(bindings, &exports_var));
@@ -1070,20 +1128,25 @@ fn transform_import(
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
-            DepInline::Fresh(_) => format!("_mod_{safe}"),
-            DepInline::Visited(_) => format!("_modref_{safe}"),
+            DepInline::Fresh(..) => format!("_mod_{safe}"),
+            DepInline::Visited(..) => format!("_modref_{safe}"),
         };
         let mut result = String::new();
         match &dep {
-            DepInline::Fresh(code) => {
+            DepInline::Fresh(code, _) => {
                 // R5182：Fresh 内联包记忆化（与 prelude / 其他元素共享实例）。
                 result.push_str(&format!(
-                    "  var {exports_var} = {};\n",
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
                     memoized_dep_expr(&specifier, code)
                 ));
             }
-            DepInline::Visited(_) => {
-                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            DepInline::Visited(..) => {
+                result.push_str(&format!(
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
+                    dep.exports_expr()
+                ));
             }
         }
         result.push_str(&format!("  var {name} = ({exports_var}).default;\n"));
@@ -1190,10 +1253,17 @@ fn module_provides_export(
             return ExportResolution::Provides;
         }
         for declaration in ["const ", "let ", "var ", "function ", "class "] {
-            if let Some(value) = rest.strip_prefix(declaration)
-                && extract_binding_name(value) == name
-            {
-                return ExportResolution::Provides;
+            if let Some(value) = rest.strip_prefix(declaration) {
+                if extract_binding_name(value) == name {
+                    return ExportResolution::Provides;
+                }
+                // s269：解构声明绑定名（`export const { a: b } = …` 导出 b，
+                // tc39 BoundName——module-import-referrer.js 钉面）。
+                if extract_destructuring_export_names(value)
+                    .is_some_and(|names| names.iter().any(|exported| exported == name))
+                {
+                    return ExportResolution::Provides;
+                }
             }
         }
         // export * [as N] from 'module'（压缩形态 export*from"m" 同样命中）
@@ -1306,6 +1376,7 @@ fn transform_export(
     importer_url: &str,
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
+    enclosing_async: bool,
 ) -> Result<String, ScriptError> {
     // export * [as N] from 'module'（压缩形态 export*from"m" / export*as N from"m" 同样命中）
     if let Some(after_star) = clause.strip_prefix('*') {
@@ -1319,20 +1390,25 @@ fn transform_export(
             let safe = safe_ident(&specifier);
             let dep = inline_dep_once(&specifier, registry, visited)?;
             let exports_var = match &dep {
-                DepInline::Fresh(_) => format!("_mod_{safe}"),
-                DepInline::Visited(_) => format!("_modref_{safe}"),
+                DepInline::Fresh(..) => format!("_mod_{safe}"),
+                DepInline::Visited(..) => format!("_modref_{safe}"),
             };
             let mut result = String::new();
             match &dep {
-                DepInline::Fresh(code) => {
+                DepInline::Fresh(code, _) => {
                     // s255：Fresh 内联包记忆化（star-as 同星号臂注记）。
                     result.push_str(&format!(
-                        "  var {exports_var} = {};\n",
+                        "  var {exports_var} = {}{};\n",
+                        await_prefix(dep.is_async(), enclosing_async),
                         memoized_dep_expr(&specifier, code)
                     ));
                 }
-                DepInline::Visited(_) => {
-                    result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+                DepInline::Visited(..) => {
+                    result.push_str(&format!(
+                        "  var {exports_var} = {}{};\n",
+                        await_prefix(dep.is_async(), enclosing_async),
+                        dep.exports_expr()
+                    ));
                 }
             }
             result.push_str(&format!("  _exports.{} = {exports_var};\n", namespace.trim()));
@@ -1353,22 +1429,27 @@ fn transform_export(
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
-            DepInline::Fresh(_) => format!("_mod_{safe}"),
-            DepInline::Visited(_) => format!("_modref_{safe}"),
+            DepInline::Fresh(..) => format!("_mod_{safe}"),
+            DepInline::Visited(..) => format!("_modref_{safe}"),
         };
         let mut result = String::new();
         match &dep {
-            DepInline::Fresh(code) => {
+            DepInline::Fresh(code, _) => {
                 // s255：Fresh 内联包记忆化——与 prelude 急切注册/入口体共享实例，
                 // 依赖体恰好一次求值（R5182 import 侧同型；star 内联此前裸 IIFE，
                 // 急切臂已缓存后仍重跑——ierr-6 got 6c/6d 双份实证）。
                 result.push_str(&format!(
-                    "  var {exports_var} = {};\n",
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
                     memoized_dep_expr(&specifier, code)
                 ));
             }
-            DepInline::Visited(_) => {
-                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            DepInline::Visited(..) => {
+                result.push_str(&format!(
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
+                    dep.exports_expr()
+                ));
             }
         }
         result.push_str(&format!(
@@ -1391,22 +1472,27 @@ fn transform_export(
         }
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
-            DepInline::Fresh(_) => format!("_mod_{safe}"),
-            DepInline::Visited(_) => format!("_modref_{safe}"),
+            DepInline::Fresh(..) => format!("_mod_{safe}"),
+            DepInline::Visited(..) => format!("_modref_{safe}"),
         };
         let mut result = String::new();
         match &dep {
-            DepInline::Fresh(code) => {
+            DepInline::Fresh(code, _) => {
                 // s255：Fresh 内联包记忆化——与 prelude 急切注册/入口体共享实例，
                 // 依赖体恰好一次求值（R5182 import 侧同型；star 内联此前裸 IIFE，
                 // 急切臂已缓存后仍重跑——ierr-6 got 6c/6d 双份实证）。
                 result.push_str(&format!(
-                    "  var {exports_var} = {};\n",
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
                     memoized_dep_expr(&specifier, code)
                 ));
             }
-            DepInline::Visited(_) => {
-                result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
+            DepInline::Visited(..) => {
+                result.push_str(&format!(
+                    "  var {exports_var} = {}{};\n",
+                    await_prefix(dep.is_async(), enclosing_async),
+                    dep.exports_expr()
+                ));
             }
         }
         result.push_str(&format!("  var _reexport_{safe} = {exports_var};\n"));
@@ -1435,19 +1521,16 @@ fn transform_export(
     // 重发前须与普通语句路径（build_dep_iife else 分支）同步重写——IIFE 以经典
     // 脚本执行，import.meta 仅模块可用；动态 import() 须走宿主桥接。
     if let Some(decl) = clause.strip_prefix("const ") {
-        let name = extract_binding_name(decl);
-        let decl = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
-        return Ok(format!("  const {decl};\n  _exports.{name} = {name};\n"));
+        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        return Ok(format!("  const {decl_rw};\n{}", export_binding_wiring(decl)));
     }
     if let Some(decl) = clause.strip_prefix("let ") {
-        let name = extract_binding_name(decl);
-        let decl = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
-        return Ok(format!("  let {decl};\n  _exports.{name} = {name};\n"));
+        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        return Ok(format!("  let {decl_rw};\n{}", export_binding_wiring(decl)));
     }
     if let Some(decl) = clause.strip_prefix("var ") {
-        let name = extract_binding_name(decl);
-        let decl = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
-        return Ok(format!("  var {decl};\n  _exports.{name} = {name};\n"));
+        let decl_rw = rewrite_dynamic_imports(&decl.replace("import.meta", "_importMeta"));
+        return Ok(format!("  var {decl_rw};\n{}", export_binding_wiring(decl)));
     }
     if let Some(decl) = clause.strip_prefix("function ") {
         let name = extract_binding_name(decl);
@@ -1544,6 +1627,169 @@ fn statement_ends_with_from(s: &str) -> bool {
         && !b[..b.len() - 4]
             .last()
             .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$')
+}
+
+/// 模块源是否含**顶层** await（TLA——函数体/对象字面量/类体内的 await 不算，
+/// spec：仅模块体直接 await 是模块级求值暂停点）。
+/// https://tc39.es/ecma262/#sec-moduleevaluation
+/// 判定策略（轻量扫描器，**宁欠勿过**——欠检测维持现状（该面今日即红），过检测
+/// 会把同步依赖 IIFE 翻成 Promise 值、同步消费方绑定静默 undefined）：
+/// - 逐顶层语句（[`split_statements`]，切准后 prev 上下文按语句复位）语句内
+///   上下文感知扫描：字符串/模板/注释/正则内 await 跳过（[`is_regex_literal_start`]
+///   同口径）；模板插值内欠检测不计；
+/// - 深度门：`{`/`(`/`[` 加深，await 仅深度 0 计——函数声明体/箭头块体/对象字面量
+///   （含方法体）/类体天然在括号内被排除；
+/// - `=>` 守卫：语句深度 0 出现箭头后本语句 await 一律不计（表达式体箭头
+///   `async () => await x` 的 await 属函数内；跨逗号同语句欠检测可接受）；
+/// - 前邻 `.`/标识符续字符（成员访问 `obj.await` / 词缀 `xawait`）不计。
+///
+/// 欠检测残面（文档化，均维持现状）：括号内 await（`(await p)` 形）、模板插值内、
+/// 块语句 `{ await x; }`、深度 0 `=>` 后逗号续项。
+fn module_source_has_top_level_await(source: &str) -> bool {
+    split_statements(source)
+        .iter()
+        .any(|statement| statement_scan_has_top_level_await(statement))
+}
+
+/// 单语句扫描（字节面——UTF-8 续字节不与 ASCII 引号/反斜杠/斜杠冲突，
+/// rewrite_dynamic_imports 同纪律）。
+fn statement_scan_has_top_level_await(statement: &str) -> bool {
+    let bytes = statement.as_bytes();
+    let mut i = 0usize;
+    let mut str_q: Option<u8> = None;
+    let mut escaped = false;
+    let mut line_comment = false;
+    let mut block_comment = false;
+    let mut in_regex = false;
+    let mut regex_in_class = false;
+    let mut depth = 0usize;
+    let mut arrow_guard = false;
+    let mut prev: Option<u8> = None;
+    let mut prev_word = String::new();
+    while i < bytes.len() {
+        let b = bytes[i];
+        let next = bytes.get(i + 1).copied();
+        if line_comment {
+            if b == b'\n' {
+                line_comment = false;
+                prev_word.clear();
+            }
+            i += 1;
+            continue;
+        }
+        if block_comment {
+            if b == b'*' && next == Some(b'/') {
+                block_comment = false;
+                i += 2;
+                continue;
+            }
+            i += 1;
+            continue;
+        }
+        if in_regex {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'[' {
+                regex_in_class = true;
+            } else if b == b']' {
+                regex_in_class = false;
+            } else if b == b'/' && !regex_in_class {
+                // 旗标字母一并消费
+                while matches!(bytes.get(i + 1), Some(f) if f.is_ascii_alphabetic()) {
+                    i += 1;
+                }
+                in_regex = false;
+                prev = Some(b')');
+                prev_word.clear();
+            }
+            i += 1;
+            continue;
+        }
+        if let Some(q) = str_q {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == q {
+                str_q = None;
+                prev = Some(q);
+                prev_word.clear();
+            }
+            i += 1;
+            continue;
+        }
+        // 代码态
+        if b == b'/' && next == Some(b'/') {
+            line_comment = true;
+            i += 2;
+            continue;
+        }
+        if b == b'/' && next == Some(b'*') {
+            block_comment = true;
+            i += 2;
+            continue;
+        }
+        if b == b'/' && is_regex_literal_start(prev.map(|p| p as char).as_ref(), &prev_word) {
+            in_regex = true;
+            regex_in_class = false;
+            i += 1;
+            continue;
+        }
+        if b == b'\'' || b == b'"' || b == b'`' {
+            str_q = Some(b);
+            i += 1;
+            continue;
+        }
+        // await token（词边界 + 前邻 `.`/标识符续字符排除）；被深度门/箭头守卫
+        // 排除的 token 跳过继续扫（同语句后续深度 0 await 仍可命中）。
+        if bytes[i..].starts_with(b"await")
+            && !matches!(prev, Some(p) if p == b'.' || is_identifier_continue_byte(p))
+            && !bytes
+                .get(i + 5)
+                .is_some_and(|after| is_identifier_continue_byte(*after))
+        {
+            if arrow_guard || depth > 0 {
+                prev = Some(b't');
+                prev_word = "await".to_string();
+                i += 5;
+                continue;
+            }
+            return true;
+        }
+        match b {
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                prev = Some(b);
+                prev_word.clear();
+            }
+            b')' | b']' | b'}' => {
+                depth = depth.saturating_sub(1);
+                prev = Some(b);
+                prev_word.clear();
+            }
+            b'=' if next == Some(b'>')
+                && depth == 0
+                && !matches!(prev, Some(p) if p == b'=' || p == b'<' || p == b'>' || p == b'!') =>
+            {
+                arrow_guard = true;
+                prev = Some(b'>');
+                prev_word.clear();
+                i += 1;
+            }
+            _ => {
+                if is_identifier_continue_byte(b) {
+                    prev_word.push(b as char);
+                } else {
+                    prev_word.clear();
+                }
+                prev = Some(b);
+            }
+        }
+        i += 1;
+    }
+    false
 }
 
 pub(crate) fn split_statements(source: &str) -> Vec<String> {
@@ -1843,6 +2089,143 @@ fn extract_binding_name(decl: &str) -> &str {
     } else {
         "unknown"
     }
+}
+
+/// s269：export 解构声明的导出名接线发射（`_exports.<n> = <n>;` 每名一行）。
+/// 非解构声明回落 [`extract_binding_name`] 单名接线（现状逐字节不变）。
+fn export_binding_wiring(decl: &str) -> String {
+    match extract_destructuring_export_names(decl) {
+        Some(names) => names
+            .iter()
+            .map(|name| format!("  _exports.{name} = {name};\n"))
+            .collect(),
+        None => {
+            let name = extract_binding_name(decl);
+            format!("  _exports.{name} = {name};\n")
+        }
+    }
+}
+
+/// s269：解构声明的导出名提取（`export const { a, b: c, d = 1 } = …` →
+/// `["a", "c", "d"]`——导出名 = 模式目标绑定名，tc39 BoundName；
+/// https://tc39.es/ecma262/#prod-BindingElement）。对象模式顶层条目形态：
+/// `name` / `key: name` / `name = default`（键引号形 `"k": name` 同析）；
+/// 字符串感知扫描定位条目边界。嵌套模式/数组模式/rest/计算键/非法目标 →
+/// None（回落 extract_binding_name 现状路径）。非模式声明 → None。
+/// 语料钉面：module/module-import-referrer.js `export const { referrer:
+/// referrerExternalDynamic } = await import(…)`（旧发射 `_exports.unknown =
+/// unknown` 在 strict IIFE 内 ReferenceError——模块体零注册面）。
+fn extract_destructuring_export_names(decl: &str) -> Option<Vec<String>> {
+    let mut chars = decl.char_indices().peekable();
+    if chars.peek().map(|(_, c)| *c) != Some('{') {
+        return None;
+    }
+    chars.next();
+    let mut names = Vec::new();
+    let mut entry = String::new();
+    let mut str_q: Option<char> = None;
+    let mut escaped = false;
+    let mut nested = 0usize;
+    let mut closed = false;
+    for (_, c) in chars {
+        if let Some(q) = str_q {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == q {
+                str_q = None;
+            }
+            entry.push(c);
+            continue;
+        }
+        match c {
+            '\'' | '"' | '`' => {
+                str_q = Some(c);
+                entry.push(c);
+            }
+            '{' | '[' | '(' => {
+                nested += 1;
+                entry.push(c);
+            }
+            '}' if nested == 0 => {
+                closed = true;
+                break;
+            }
+            '}' | ']' | ')' => {
+                nested -= 1;
+                entry.push(c);
+            }
+            ',' if nested == 0 => {
+                if !entry.trim().is_empty() {
+                    names.push(pattern_entry_target(entry.trim())?);
+                }
+                entry.clear();
+            }
+            _ => entry.push(c),
+        }
+    }
+    if !closed {
+        return None;
+    }
+    let tail = entry.trim();
+    if !tail.is_empty() {
+        names.push(pattern_entry_target(tail)?);
+    }
+    Some(names)
+}
+
+/// 解构单条目的目标绑定名：默认值剥除（首个字符串外 `=`，取左侧）→
+/// `key: name` 分裂（首个字符串外 `:`，取右侧——引号键 `"k": v` 同析）→
+/// 标识符校验（非空、标识符组成字符、首字符非数字）。任一步失配 → None。
+fn pattern_entry_target(entry: &str) -> Option<String> {
+    let mut cur = entry;
+    if let Some(idx) = top_level_unquoted_char(cur, '=') {
+        cur = cur[..idx].trim_end();
+    }
+    if let Some(idx) = top_level_unquoted_char(cur, ':') {
+        cur = cur[idx + 1..].trim_start();
+    }
+    let target = cur.trim();
+    if target.is_empty() || !is_plain_identifier(target) {
+        return None;
+    }
+    Some(target.to_string())
+}
+
+/// 字符串感知的首个裸字符定位（供默认值剥除）。
+fn top_level_unquoted_char(s: &str, needle: char) -> Option<usize> {
+    let mut str_q: Option<char> = None;
+    let mut escaped = false;
+    for (idx, c) in s.char_indices() {
+        if let Some(q) = str_q {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == q {
+                str_q = None;
+            }
+            continue;
+        }
+        match c {
+            '\'' | '"' | '`' => str_q = Some(c),
+            c if c == needle => return Some(idx),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// 标识符校验（非空、全标识符组成字符、首字符非数字——ASCII 与 Unicode
+/// 字母面同 extract_binding_name 宽松口径）。
+fn is_plain_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) if !c.is_ascii_digit() && (c.is_alphanumeric() || c == '_' || c == '$') => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
 }
 
 pub(crate) fn expose_classic_script_lexicals(source: &str) -> String {
@@ -2992,6 +3375,141 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n(async function() {"
         ));
         assert!(compiled.contains("await Promise.resolve();"));
+    }
+
+    // s269：TLA 探测矩阵——命中面（语句头 await / 解构绑定初始化 await）与
+    // 排除面（async 函数体/async 块体箭头/promise_test 回调形/字符串与注释与
+    // 正则内/成员访问/表达式箭头守卫）。欠检测残面（(await p) 形）钉现状值。
+    #[test]
+    fn test_top_level_await_detection_faces_s269() {
+        assert!(module_source_has_top_level_await(
+            "await import('./x.js');\nexport const y = 1;"
+        ));
+        // module-import-referrer.js 本体形
+        assert!(module_source_has_top_level_await(
+            "export const { referrer: referrerExternalDynamic } = await import('./resources/referrer-checker.py?name=x');"
+        ));
+        // async 函数体内 await（blob-url-workers.window.js promise_test 形）
+        assert!(!module_source_has_top_level_await(
+            "promise_test(async (t) => {\n  await import(moduleBlobUrl);\n  await new Promise((resolve) => {});\n});"
+        ));
+        // async 声明函数体
+        assert!(!module_source_has_top_level_await(
+            "async function f() { await g(); }\nf();"
+        ));
+        // 表达式体箭头（=> 守卫）
+        assert!(!module_source_has_top_level_await(
+            "const f = async () => await g();\nexport { f };"
+        ));
+        // 字符串/注释/正则内
+        assert!(!module_source_has_top_level_await(
+            "const s = \"await later\";\n// await the fetch\nconst re = /await/;\nexport { s, re };"
+        ));
+        // 成员访问
+        assert!(!module_source_has_top_level_await(
+            "const x = obj.await;\nexport { x };"
+        ));
+        // 对象字面量方法体（深度门）
+        assert!(!module_source_has_top_level_await(
+            "const o = { async m() { await g(); } };\nexport { o };"
+        ));
+        // 欠检测残面钉现状：括号内 await（(await p) 形）不计（维持同步编译）。
+        assert!(!module_source_has_top_level_await(
+            "const v = (await p).q;\nexport { v };"
+        ));
+    }
+
+    // s269：TLA 依赖 IIFE async 包裹 + export 解构绑定接线
+    //（module/module-import-referrer.js 钉形）。
+    #[test]
+    fn test_tla_dependency_iife_async_and_destructuring_export_s269() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://example.test/dep.js",
+            "export { r as referrerExternalStatic } from './checker.js?name=external-static'\nexport const { referrer: referrerExternalDynamic } = await import('./checker.js?name=external-dynamic');",
+        );
+        registry.register(
+            "https://example.test/checker.js?name=external-static",
+            "export const r = 'https://example.test/';",
+        );
+        registry.register(
+            "https://example.test/checker.js?name=external-dynamic",
+            "export const r = 'https://example.test/';",
+        );
+        let iife = compile_dependency_iife("https://example.test/dep.js", &registry).unwrap();
+        assert!(iife.starts_with("(async function() {"), "TLA 依赖须 async 包裹: {iife}");
+        // 解构导出名接线（旧发射 _exports.unknown = unknown）
+        assert!(iife.contains("_exports.referrerExternalDynamic = referrerExternalDynamic;"));
+        assert!(iife.contains("_exports.referrerExternalStatic = _reexport"));
+        // await 仍在 async IIFE 内合法（动态 import 已重写为宿主桥调用）
+        assert!(iife.contains("await __zw_dynamic_import.call("));
+        // 同步依赖 IIFE 逐字节不变（零回归面）
+        let sync = compile_dependency_iife("https://example.test/checker.js?name=external-static", &registry).unwrap();
+        assert!(sync.starts_with("(function() {"));
+    }
+
+    // s269：TLA 依赖在 async 入口的消费 await 发射（缓存 Promise 归一）。
+    #[test]
+    fn test_tla_dependency_consumed_with_await_in_async_entry_s269() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://example.test/dep.js",
+            "export const { x } = await import('./x.js');",
+        );
+        registry.register("https://example.test/x.js", "export const x = 1;");
+        let compiled = compile_module_script(
+            "import { x } from './dep.js';\nglobalThis.v = x;\nawait import('./x.js');",
+            "https://example.test/entry.js",
+            "https://example.test/entry.js",
+            &registry,
+        )
+        .unwrap();
+        assert!(compiled.contains("(async function() {"));
+        assert!(
+            compiled.contains("= await (globalThis.__moduleCache"),
+            "async 入口对 TLA 依赖消费须 await: {compiled}"
+        );
+    }
+
+    // s269：解构导出名的 provide 判定（ensure_module_export 链接门不再假报
+    // does not provide an export）。
+    #[test]
+    fn test_provides_export_destructuring_names_s269() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://example.test/dep.js",
+            "export const { a, b: c, d = 1 } = src;\nexport const { e: f } = await import('./x.js');",
+        );
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "a", &registry, &mut HashSet::new()),
+            ExportResolution::Provides
+        );
+        // `b: c` 导出名是目标 c，键 b 不导出
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "c", &registry, &mut HashSet::new()),
+            ExportResolution::Provides
+        );
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "b", &registry, &mut HashSet::new()),
+            ExportResolution::Missing
+        );
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "d", &registry, &mut HashSet::new()),
+            ExportResolution::Provides
+        );
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "f", &registry, &mut HashSet::new()),
+            ExportResolution::Provides
+        );
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "e", &registry, &mut HashSet::new()),
+            ExportResolution::Missing
+        );
+        // 非导出名仍 Missing
+        assert_eq!(
+            module_provides_export("https://example.test/dep.js", "src", &registry, &mut HashSet::new()),
+            ExportResolution::Missing
+        );
     }
 
     #[test]
