@@ -352,7 +352,7 @@ impl<'a> Parser<'a> {
             // advance 一个保证进度；若已前进（如畸形规则恢复消耗了整段），不重复 advance
             // 以免跳过下一条合法规则的首 token（driving: matching-brackets-003）。
             let pos_before_rule = parser.pos();
-            let produced = parser.consume_one_rule(None);
+            let produced = parser.consume_one_rule(None, false);
             if produced.is_empty() && parser.pos() == pos_before_rule {
                 parser.advance();
             }
@@ -397,7 +397,7 @@ impl<'a> Parser<'a> {
     /// 仍按 `:scope` 去糖）。`parent = Some(...)` 用于嵌套样式规则的声明块内（隐式/显式
     /// 嵌套相对父级去糖）。当前嵌套样式规则的解析由 `consume_style_block_with_nesting`
     /// 构造 `ParsedStyleRule` 树后统一编译，本函数的样式分支仅处理 parent=None 的入口。
-    fn consume_one_rule(&mut self, parent: Option<&[Selector]>) -> Vec<Rule> {
+    fn consume_one_rule(&mut self, parent: Option<&[Selector]>, in_block: bool) -> Vec<Rule> {
         match self.peek().clone() {
             Token::AtKeyword(name) => {
                 self.advance(); // @
@@ -498,10 +498,11 @@ impl<'a> Parser<'a> {
                 self.namespace_prologue_ended = true;
                 // 样式规则：选择器 + { 声明块（可能含嵌套）}。parse_style_rule_structure
                 // 解析选择器与块结构；选择器非法或块缺失时返回 None，由调用方做畸形恢复。
+                // 恢复按 qualified rule 规范语义（前奏到 `{`/EOF，`;`/`}` 不重同步）。
                 match self.parse_style_rule_structure(parent.is_some()) {
                     Some(parsed) => Self::compile_parsed_style_rule(parsed, parent),
                     None => {
-                        self.skip_malformed_qualified_rule();
+                        self.skip_malformed_qualified_rule_spec(in_block);
                         vec![]
                     }
                 }
@@ -559,7 +560,7 @@ impl<'a> Parser<'a> {
     }
 
     /// 消耗规则列表直到 `}` / EOF（不消耗 `}`），用于 @media/@layer/@supports/@container
-    /// 块体。内部用 `consume_one_rule(None)` 逐条解析并展平，含进度保证（避免死循环）。
+    /// 块体。内部用 `consume_one_rule(None, true)` 逐条解析并展平，含进度保证（避免死循环）。
     fn consume_rules_until_rbrace(&mut self) -> Vec<Rule> {
         let mut rules = Vec::new();
         loop {
@@ -568,7 +569,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             let pos_before = self.pos();
-            let produced = self.consume_one_rule(None);
+            let produced = self.consume_one_rule(None, true);
             if produced.is_empty() && self.pos() == pos_before {
                 self.advance(); // 进度保证（畸形规则未前进时）
             }
@@ -699,9 +700,25 @@ impl<'a> Parser<'a> {
                 Token::LBrace if group_depth == 0 => {
                     self.advance(); // {
                     let body_start = self.pos;
-                    self.skip_simple_block(); // 消耗到匹配 `}`（含）
-                    // body = `{` 之后到 `}` 之前（不含两端）
-                    let body_end = self.pos.saturating_sub(1);
+                    // 块体消耗只按 `{}` 计深（CSS Syntax L3 consume-a-simple-block：块以
+                    // 匹配 `}` 结束）。不可用 `skip_simple_block`：其开启符在调用内消耗
+                    //（深度从 1 起算），而此处 `{` 已消耗、深度从 0 起算——内容含嵌套
+                    // `{...}` 时首个内部 `}` 归零提前返回，at-rule 自身闭 `}` 泄漏到外层
+                    // 流（旧行为被顶层恢复静默丢弃掩盖；R5400 规范恢复把游离 `}` 当前奏
+                    // 吞掉后即级联吞掉后随规则，driving: css-nesting/supports-rule）。
+                    let mut depth: i32 = 1;
+                    while depth > 0 {
+                        match self.peek() {
+                            Token::Eof => break,
+                            Token::LBrace => depth += 1,
+                            Token::RBrace => depth -= 1,
+                            _ => {}
+                        }
+                        self.advance();
+                    }
+                    // body = `{` 与匹配 `}` 之间（不含两端）；正确闭合时 pos 已越过匹配
+                    // `}`（排除），未闭合（EOF）时 pos 即 body 尽头。
+                    let body_end = if depth == 0 { self.pos - 1 } else { self.pos };
                     let body: Vec<Token> = if body_start <= body_end {
                         self.tokens[body_start..body_end].to_vec()
                     } else {
@@ -2162,6 +2179,54 @@ impl<'a> Parser<'a> {
                 _ => self.advance(),
             }
         }
+    }
+
+    /// 畸形 qualified rule 恢复（CSS Syntax L3 §5.3.2 consume-a-qualified-rule 语义）。
+    ///
+    /// 与 [`Self::skip_malformed_qualified_rule`]（at-rule 残余恢复，`;` 语句边界重同步）
+    /// 的差异：qualified rule 的前奏按规范只到 `{` / EOF——`;` 与游离 `}` 都是前奏
+    /// component value，**不**触发重同步；恢复须吞到下一个 `{...}` 块（含）为止。
+    /// chromium 对 `garbage; body { red }` 的实证语义：body 规则被垃圾前奏整体吞掉
+    ///（`;` 不拯救后随规则；一个 `{...}` 块后重同步，P4 形）。
+    ///
+    /// `in_block = true`（@media/@supports 等块体内，经 `consume_rules_until_rbrace`）时，
+    /// 当前块深度的 `}` 是包块边界而非前奏内容：不消耗即返回，由块闭消费处理——否则
+    /// 游离 `;`（如 `#a { x };` 的尾分号）会把包块 `}` 与后续规则整体级联吞掉
+    ///（driving: at-supports-font-format-001）。顶层（parse_stylesheet）无包块边界，
+    /// `}` 按前奏 component value 吞掉（chromium `junk1 junk2 } body { red }` 实证）。
+    /// driving: font-family-invalid-characters-003（孤儿段 `foo, Ahem; } body { red }`
+    /// 须整体吞掉）。
+    fn skip_malformed_qualified_rule_spec(&mut self, in_block: bool) {
+        if !Self::qualified_rule_spec_recovery() {
+            self.skip_malformed_qualified_rule();
+            return;
+        }
+        loop {
+            match self.peek() {
+                Token::Eof => return,
+                // 包块边界：块体内当前深度的 `}` 终止恢复（不消耗），交还块闭处理。
+                Token::RBrace if in_block => return,
+                Token::LBrace => {
+                    // 前奏终结：消耗整个 {...} 块（§5.3.2 块随规则整体有效或整体丢弃），
+                    // 结束恢复——一个块后重同步（chromium P4 实证）。
+                    self.skip_simple_block();
+                    return;
+                }
+                Token::LParen | Token::LBracket => {
+                    // 前奏内的 ()/[] 块：整块消耗（内部 { } 受保护）
+                    self.skip_simple_block();
+                }
+                // `;` / 顶层游离 `}`：前奏 component value，吞掉继续找块（不重同步）。
+                _ => self.advance(),
+            }
+        }
+    }
+
+    /// qualified rule 规范恢复 kill-switch（default-on）。`ZW_CSS_QRULE_SWALLOW=0` 回退
+    /// `;` / `}` 重同步旧语义。
+    fn qualified_rule_spec_recovery() -> bool {
+        static SWITCH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *SWITCH.get_or_init(|| std::env::var("ZW_CSS_QRULE_SWALLOW").as_deref() != Ok("0"))
     }
 
     /// 消耗声明块。

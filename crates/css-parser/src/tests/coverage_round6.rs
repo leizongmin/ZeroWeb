@@ -540,10 +540,14 @@ fn test_nth_zero_a() {
 
 #[test]
 fn test_stylesheet_with_garbage_tokens() {
-    // 无效 token 在规则开头应被跳过
+    // 无效 token（`;`）开头的 qualified rule：按 CSS Syntax L3 §5.3.2 前奏只到 `{`/EOF，
+    // `;` 不触发重同步——`;;; div { color: red; }` 整条（含块）被垃圾前奏吞掉丢弃。
+    // chromium oracle 实证同语义（2026-11-03，`;;; #x { red }` → 规则不应用）。
+    // 旧断言 `rules.len() >= 1`（`;` 重同步救回 div）为非规范行为，随
+    // R5400 qualified rule 规范恢复（driving: font-family-invalid-characters-003）翻转。
     let css = ";;; div { color: red; } ;;;";
     let sheet = Parser::parse_stylesheet(css);
-    assert!(sheet.rules.len() >= 1);
+    assert!(sheet.rules.is_empty());
 }
 
 #[test]
