@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 257 施工收口（renderer/tab 宿主 import.meta.resolve 接线——多进程面对称小刀，s254 挂账收口）。两宿主 register_module_compile_callback 补 `__zw_importmap_resolve` 宿主回调（webview s254 五刀同形：map.resolve → resolve_document_url，Miss|Blocked → 空串落 prelude TypeError 守卫臂；map 槽位回调时刻锁定读取，快照换代即生效，与 `__zw_compile_module` 同模式）；钉面 ×2（worker 真装配路径五断言臂：精确键 / 前缀键组合 / asURL 回退 / 裸说明符返空 / 换代失效；红态实证——neutralize 注册名后首断言挂）。验证：renderer 369 全绿（+1 钉）+ browser bin 741 过（5 失败=HEAD 既有 stash 定谳，740 基线 + 1 钉）+ lib 10 全绿；fmt/clippy 两 crate 零告警（v8 + quickjs-only 双形态）；零 runner 路径改动 → 无全树 A/B（钉面即门禁）。新记档：import map 映射值归一化缺口（resolve_imports_match 映射目标裸 Url::parse 无基址——path-absolute/relative 值误 Blocked；webview 面同缺）。承前：M2 切片 256（动态 import 延迟决议——native 通道 deferred contract + 到期 poll 泵，目标键 delay-load-event F→P，含 s253 判读勘误）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 258 施工收口（import map 映射值注册期归一化——共享解析层小刀，s257 挂账收口）。normalize_specifier_map 按 sorting and normalizing 步骤 3-6 归一化映射值（字符串值按文档基址解析存序列化 URL；解析失败或尾斜杠键地址不带尾斜杠 → 置 null 阻断条目，成员仍注册）——path-absolute/relative 前缀键值不再误 Blocked，精确键相对值全消费面拿到绝对 URL；webview/renderer/tab 三面共用解析层一并收敛。勘误记档：s257「归一失败整张 map 拒注册」与规范不符——值级失败置 null 并继续，整张拒注仅限 JSON/结构非法。验证：红态实证（5 钉在 HEAD 恰好 5 失败对准目标行为）+ 修复后 zero-script-sandbox 390 全绿（385 基线 + 5 钉，test-guard 守卫）+ fmt/clippy 零告警；无全树 A/B（corpus 零 importmap 面 + 消费面测试 map 全规范形态 + parse Err 面不变）。新记档：resolve_imports_match 回溯臂缺口（规范步骤 8 afterPrefix 越出前缀域应 TypeError，现按成功返回；与 Blocked 降级同域可并刀）。承前：M2 切片 257（renderer/tab 宿主 import.meta.resolve 接线——多进程面对称小刀，s254 挂账收口）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,28 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 258**：import map 映射值注册期归一化轮（s257 挂账
+  收口，共享解析层小刀）——勘根：normalize_specifier_map 映射值原样存储，
+  resolve_imports_match 对前缀键目标裸 `Url::parse` 无基址——
+  path-absolute/relative 值误 Blocked，精确键相对值原样返回（resolve_mapped
+  消费方拿裸相对串按导入方基址错误抓取）。规范核实勘定 s257 口径错误：
+  sorting and normalizing 步骤 3-6 对值级失败是**置 null 条目并继续**
+  （成员仍注册），整张拒注仅限 JSON/结构非法——s257「归一失败整张 map
+  拒注册」勘误记档。施工 **1 刀 + 5 钉 + 1 钉数据校正**：normalize_specifier_map
+  字符串值经 resolve_url_like 按基址解析存序列化 URL，失败或尾斜杠键地址
+  不带尾斜杠 → null（阻断条目）；resolve_imports_match 目标解析失败臂注明
+  对 parse 产物不可达（阻断面收敛），保留不变式守卫；钉面 ×5（前缀键
+  path-absolute / 精确键相对值含存储断言 / 裸串置 null / 尾斜杠一致性 /
+  scope 值）+ non_special 钉数据校正（旧 map 形态不规范，意图不变两侧行为
+  等价）。验证：红态实证——5 钉在 HEAD 恰好 5 失败且模式逐一对准目标行为
+  （误 Blocked / 原样相对串 / Resolved("bar") / 父级路径解析）；修复后
+  `zero-script-sandbox` **390 全绿**（385 基线 + 5 钉，default v8，
+  test-guard 守卫）；fmt 零改写 + clippy all-targets 零告警；无全树 A/B
+  ——corpus 零 importmap 面（grep 证据）+ 消费面测试 map 全规范形态绝对
+  值（三面零漂移）+ parse Err 面不变。新记档：resolve_imports_match 回溯
+  臂缺口（规范步骤 8 afterPrefix 越出前缀域应 TypeError，现按成功返回）。
+  账本
+  [evidence/2026-11-03-m2s258-import-map-value-normalization.md](html-semantics-compat/evidence/2026-11-03-m2s258-import-map-value-normalization.md)。
 - **2026-11-03 M2 切片 257**：renderer/tab 宿主 import.meta.resolve 接线轮
   （s254 挂账收口，多进程面对称小刀）——勘根承 s254：两宿主已 parse map
   （`parse_page_import_map` → `Arc<Mutex<Option<ImportMap>>>` 槽位，快照
