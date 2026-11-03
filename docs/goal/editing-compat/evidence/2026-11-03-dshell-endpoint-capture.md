@@ -262,7 +262,14 @@ caret 臂两回归面（multitest 22 + ipara 20）外全门通过——按既定
 误标 bare-span 为 swcss false/true 双臂，2026-11-03 11:5x 撤后留前，
 独立提取 g28-del-v1-fails.txt 292 行逐位复核两份判读计数一致。）
 
-**forwarddelete 腿实测（11:40:33→12:12:03 落地，31.5 min 干净全量）：6,737P/214F/1T rc=2**——行集提取 `g28-fd-g28-fails.txt` 215 行，对 E2fd 基线 `g28-fd-e2fd-fails.txt` 252 行（g28-leg-judge.sh 同 bin 同口径）：**P→F 0（`[foo<X>bar]</X>` 族零扩散，fd 语料主门通过，与 delete 腿同判）**、F→P 37 全 caret 臂正面消费面——flex/grid/inline-flex/inline-grid × display:contents 边界 `abc[]`/`def[]` 形 + `{}<br>` 占位形 + object 边界形（`[]`/`{` 端点 origStart 在删程外存活 = caret 臂正面消费面，与 delete 腿 F→P 5 / ipara 腿 F→P 4 同款 delta 正面）。分母较 E2fd 缩 109 断言 = `?6001-7000` 截断片 flake 族（E2fd 对 gate21 勘误先例同款，判读容噪口径内），T 1→1 恒等。八腿 v1 全账：回归面收敛 multitest 22 + ipara 20 = 42 案不变。修复笔存活门落地后本腿预期逐位恒 v1（37 翻转面不经存活门、不受回落语义影响），复跑仍按行集 diff 复核。
+（fd 腿去重勘误，2026-11-03 12:2x：fd 块双实例同判残留两份，撤后份——后份
+三处与分片核验不符：①「F→P 37 全 caret 臂正面消费面」实为 **5 真翻转 +
+32 截断尾**，32 行在 current run 全缺席（既非 Fail 亦非 Pass，Pass 集
+逐条核验）；②「分母缩 109 = ?6001-7000 截断片」实为 **?7001-last 尾截断**
+（462→353 断言），?6001-7000 两轮 554/44/1 逐位同、截断水位未变；
+③「T 1→1 恒等」实为 **T 2→1**（E2fd ?6001-7000 与 ?7001-last 双 T，
+本轮仅 ?6001-7000 T）。独立核验工件 g28-fd-g28-raw.txt 215 行 +
+g27-e2fd.log 252 行 Pass/Fail 集对账。02c724621 提交题述同源勘误。）
 
 ## 6. 残余与挂账
 
