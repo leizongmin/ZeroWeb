@@ -200,13 +200,35 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "html/browsers/the-window-object/named-access-on-the-window-object",
 ];
 
-/// Selection goal（editing/contenteditable M1 / DC-1）pinned upstream subset
-/// directories. Cases are fetched by `fetch-selection-subset.sh`（selection/，
+/// Selection goal（editing/contenteditable M1 / DC-1）corpus directories.
+/// `selection/` 一期为主线程 flat 子集；二期扩面（selection-compat v2
+/// DC-1，2026-11-04）由 `scripts/goals/23-selection-compat.sh` deep 模式
+/// 全量拉取后本通道**递归扫描**全子域（textcontrols/caret/bidi/anonymous/
+/// contenteditable/shadow-dom 等，跳过规则见 [`selection_case_skipped`]）。
+/// `editing/` 两目录保持一期 flat 口径——execCommand 编辑面归 33 号
+/// editing-compat，本通道只保留一期锚面做逐 subtest 零回归对照。
+/// Cases are fetched by `fetch-selection-subset.sh`（selection/，
 /// M1 切片 1；selection/textcontrols/，E2 切片 12——selectionchange 全语义面）
 /// 与 `fetch-editing-subset.sh`（editing/，M1 切片 3——beforeinput/
 /// input 事件面 + editing/other 删除/插入行为基线，M2 前置）into
 /// `wpt-data/`（gitignored）。
-pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "selection/textcontrols", "editing", "editing/other"];
+pub const SELECTION_TEST_SUBDIRS: &[&str] = &["selection", "editing", "editing/other"];
+
+/// [`SELECTION_TEST_SUBDIRS`] 中递归扫描的根目录（其余条目保持一期 flat 扫描）。
+const SELECTION_RECURSIVE_ROOT: &str = "selection";
+
+/// selection 二期扩面语料跳过规则（非静默丢弃——记入 evidence 导入清单）：
+/// - `*-manual.html`：需真实拖拽/指针硬件交互（uievents/clipboard/fullscreen 先例）
+/// - `*-ref.html`：reftest 参照页（非 testharness 格式，零子测试）
+/// - `selection/crashtests/`：崩溃回归用例，非 testharness 格式
+///   （uievents pointerevents/crashtests 同款先例）
+fn selection_case_skipped(relative: &str) -> bool {
+    let file_name = relative.rsplit('/').next().unwrap_or(relative);
+    if file_name.ends_with("-manual.html") || file_name.ends_with("-ref.html") {
+        return true;
+    }
+    relative.starts_with("selection/crashtests/")
+}
 
 /// Keyboard goal（keyboard-default-actions M1 / DC-1）pinned upstream subset
 /// directories. Cases are fetched by `fetch-keyboard-subset.sh` into
@@ -1506,11 +1528,12 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
 }
 
 /// Run the upstream `selection/` testharness cases under `wpt_root`
-/// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线）。
+/// （editing/contenteditable goal M1 / DC-1——Selection API 可观察面基线；
+/// 二期扩面后 `selection/` 根全域递归，跳过规则见 [`selection_case_skipped`]）。
 ///
-/// 与 [`run_dom_cases`] 同构：扫描 [`SELECTION_TEST_SUBDIRS`] 下全部主线程
-/// .html 用例；仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
-/// `fetch-selection-subset.sh` 按需拉取（wpt-data gitignored）。
+/// 仅依赖 `testharness.js`。filter 按路径子串过滤。用例由
+/// `fetch-selection-subset.sh` / `scripts/goals/23-selection-compat.sh`
+/// 按需拉取（wpt-data gitignored）。
 pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -1528,47 +1551,110 @@ pub fn run_selection_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
 
     let mut cases = Vec::new();
     for subdir in SELECTION_TEST_SUBDIRS {
-        let dir = wpt_root.join(subdir);
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().is_none_or(|ext| ext != "html" && ext != "htm") {
-                continue;
-            }
-            let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
-            if filter.is_some_and(|filter| !relative.contains(filter)) {
-                continue;
-            }
-            let source = match read_corpus_to_string(&path) {
-                Ok(source) => source,
-                Err(error) => {
-                    cases.push((
-                        relative.clone(),
-                        vec![HarnessSubtestResult {
-                            name: "load WPT case".into(),
-                            status: HarnessStatus::Fail,
-                            message: Some(error.to_string()),
-                        }],
-                    ));
-                    continue;
-                }
-            };
-            let variants = case_variants(&source);
-            if variants.is_empty() {
-                let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
-                cases.push((relative, results));
-                continue;
-            }
-            for variant in variants {
-                let case_name = format!("{relative}{variant}");
-                let results = run_testharness_html(wpt_root, &case_name, &source, &harness_source, CASE_TIMEOUT);
-                cases.push((case_name, results));
-            }
+        if *subdir == SELECTION_RECURSIVE_ROOT {
+            collect_selection_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
+        } else {
+            collect_selection_flat_dir_cases(wpt_root, subdir, filter, &harness_source, &mut cases);
         }
     }
     cases
+}
+
+/// 一期 flat 收集：扫描一个目录 top-level 的主线程 .html 用例（editing/ 两目录
+/// 保持一期口径，锚面相对路径不因扩面漂移）。
+fn collect_selection_flat_dir_cases(
+    wpt_root: &Path,
+    subdir: &str,
+    filter: Option<&str>,
+    harness_source: &str,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "html" && ext != "htm") {
+            continue;
+        }
+        let relative = format!("{}/{}", subdir, entry.file_name().to_string_lossy());
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let source = match read_corpus_to_string(&path) {
+            Ok(source) => source,
+            Err(error) => {
+                cases.push((
+                    relative,
+                    vec![HarnessSubtestResult {
+                        name: "load WPT case".into(),
+                        status: HarnessStatus::Fail,
+                        message: Some(error.to_string()),
+                    }],
+                ));
+                continue;
+            }
+        };
+        push_selection_case_results(wpt_root, &relative, &source, harness_source, cases);
+    }
+}
+
+/// 二期递归收集：深挖一个子域下的主线程 .html 用例（跳过规则见
+/// [`selection_case_skipped`]；variant meta 展开，js-dom R329 先例；uievents
+/// 通道 [`collect_uievents_dir_cases`] 同构）。
+fn collect_selection_dir_cases(
+    wpt_root: &Path,
+    subdir: &str,
+    filter: Option<&str>,
+    harness_source: &str,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let Ok(entries) = std::fs::read_dir(wpt_root.join(subdir)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        let relative = format!("{subdir}/{file_name}");
+        if path.is_dir() {
+            collect_selection_dir_cases(wpt_root, &relative, filter, harness_source, cases);
+            continue;
+        }
+        if !file_name.ends_with(".html") && !file_name.ends_with(".htm") {
+            continue;
+        }
+        if selection_case_skipped(&relative) {
+            continue;
+        }
+        if filter.is_some_and(|filter| !relative.contains(filter)) {
+            continue;
+        }
+        let Ok(source) = read_corpus_to_string(&path) else {
+            continue;
+        };
+        push_selection_case_results(wpt_root, &relative, &source, harness_source, cases);
+    }
+}
+
+/// 单案执行 + variant meta 展开（两收集器共享；展开语义 js-dom R329）。
+fn push_selection_case_results(
+    wpt_root: &Path,
+    relative: &str,
+    source: &str,
+    harness_source: &str,
+    cases: &mut Vec<(String, Vec<HarnessSubtestResult>)>,
+) {
+    let variants = case_variants(source);
+    if variants.is_empty() {
+        let results = run_testharness_html(wpt_root, relative, source, harness_source, CASE_TIMEOUT);
+        cases.push((relative.to_string(), results));
+        return;
+    }
+    for variant in variants {
+        let case_name = format!("{relative}{variant}");
+        let results = run_testharness_html(wpt_root, &case_name, source, harness_source, CASE_TIMEOUT);
+        cases.push((case_name, results));
+    }
 }
 
 /// Run the upstream keyboard testharness cases under `wpt_root`

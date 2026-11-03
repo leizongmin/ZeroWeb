@@ -97,4 +97,33 @@ for rel in "${CASES[@]}" "${HELPERS[@]}" "${EDITING_CASES[@]}" "${TEXTCONTROLS_C
   fetch_raw "$rel"
 done
 
-echo "selection+editing subset ready: ${#CASES[@]}+${#EDITING_CASES[@]}+${#TEXTCONTROLS_CASES[@]} cases + ${#HELPERS[@]} helpers @ ${WPT_REV:0:12}"
+# 二期扩面（selection-compat v2，2026-11-04）：pin 漂移文件对齐上游 HEAD。
+# coverage-2026-10-31 快照 universe（wpt.fyi aligned stable 三家并集，194 文件）
+# 中 14 项在 WPT_REV pin 树不存在——上游 pin 之后新增；照 net-api M2-S12 先例
+# 逐文件对齐 HEAD 并记录 rev，使 selection 面「未覆盖子测试清零」路径成立。
+# HEAD = 43f66fcb72f7ef1b1cacdfc97e789ba5e34f92fb（2026-11-03；升级重拉时按
+# 当期 master 校正）。idlharness.window.js 另有 pin 树内副本（runner 侧按
+# clipboard/timing/net-api idlharness 先例记账排除，不依赖本块）。
+PIN_DRIFT_REV="43f66fcb72f7ef1b1cacdfc97e789ba5e34f92fb"
+PIN_DRIFT_CASES=(
+  "selection/collapse-common-ancestor-1.html"
+  "selection/collapse-common-ancestor-2.html"
+  "selection/collapse-common-ancestor-3.html"
+  "selection/document-selectionchange.html"
+  "selection/longpress-selection.html"
+  "selection/selection-range-painting-after-splitText.html"
+  "selection/crashtests/selection-modify-line-from-optgroup-in-video-to-details-without-summary.html"
+  "selection/shadow-dom/tentative/Selection-deleteFromDocument-around-shadow.html"
+)
+for rel in "${PIN_DRIFT_CASES[@]}"; do
+  target="${WPT_DATA}/${rel}"
+  if [[ -s "${target}" && "${FORCE:-0}" != "1" ]]; then
+    continue
+  fi
+  mkdir -p "$(dirname "${target}")"
+  echo "fetch (pin-drift HEAD ${PIN_DRIFT_REV:0:12}) ${rel}"
+  curl -fsSL --retry 3 --max-time 60 \
+    "https://raw.githubusercontent.com/web-platform-tests/wpt/${PIN_DRIFT_REV}/${rel}" -o "${target}"
+done
+
+echo "selection+editing subset ready: ${#CASES[@]}+${#EDITING_CASES[@]}+${#TEXTCONTROLS_CASES[@]} cases + ${#HELPERS[@]} helpers + ${#PIN_DRIFT_CASES[@]} pin-drift @ ${WPT_REV:0:12}"
