@@ -4210,11 +4210,11 @@ pub(crate) fn adjust_float_positions_with_context(
 /// 原生按「塌穿链 mt」解出的**兄弟间距**（prev mb ∪ 链 mt 取 max）随之丢失前驱块的
 /// mb 份额——容器落到前驱 border-box 底（gap 0）。规范邻接对取 collapse(prev.mb,
 /// 容器声明 mt)（正正取 max），差额 = clamp(prev.mb − 声明 mt, 0, over_collapse)
-///（恰为被 taffy 折进链、又被 unhoist 丢弃的前驱 mb 份）。floats-145 REF 页：p mb 16
-/// + div（首子 img inline-block mt:90 塌穿）→ div 落 p_bb+0 应 p_bb+16（img 124 应
-/// 140，chromium oracle）。prev_sibling_mb = 父帧最近流内前驱块的 margin_bottom
-///（float/abspos 脱流不破坏邻接，调用方单趟跟踪）；无前驱（首子）传 0 —— 原语义。
-/// kill-switch：env `ZW_UNHOIST_SIBLING_GAP=0` 关闭（default-on）。
+///（恰为被 taffy 折进链、又被 unhoist 丢弃的前驱 mb 份）。floats-145 REF 页：
+/// p mb 16 + div（首子 img inline-block mt:90 塌穿）→ div 落 p_bb+0 应 p_bb+16
+///（img 124 应 140，chromium oracle）。prev_sibling_mb = 父帧最近流内前驱块的
+/// margin_bottom（float/abspos 脱流不破坏邻接，调用方单趟跟踪）；无前驱（首子）
+/// 传 0 —— 原语义。kill-switch：env `ZW_UNHOIST_SIBLING_GAP=0` 关闭（default-on）。
 ///
 /// R4217：从 [`adjust_float_positions_with_context`] 原样抽取为 helper——全 walk 与
 /// 无 float 快速路径（[`adjust_no_float_page`]）共用，语义零变化。
