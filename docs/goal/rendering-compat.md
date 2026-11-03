@@ -9,6 +9,16 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5406 修复轮（td/th UA 默认 `padding: 1px`——clip-text-background-table-cell ✗0.28%→✓0.05% + table-cell-width-0 ✗7.73%→✓0.39%，corpus 真态 724F→720F FIXED=2 REGRESSED=∅；同轮五域侦察家族级初判 + rel=mismatch 0.00% 族判据记账）**（2026-11-03）
+>
+> - **缘起**：R5405 下一步五域侦察转修复循环——css-backgrounds clip-text 家族 12+ 案仅 table-cell 一案败（0.28%，max diff 255 真色差）。
+> - **归因（PNG 逐像素 + chromium oracle 双证 + 独立直测探针〔均用后即删〕）**：ZW test（table 路径）文字带顶 y=9 vs ref（inline-block 路径）y=10——1px 垂直错位；chromium 双页带完全对齐（16..43==16..43）＝案面 top:1px/top:2px 偏移补偿在 chromium 配平，配平项即 td UA 默认 1px padding；chrome headless 三 cell 直测：无声明偏移=2px＝显式 padding:1px、padding:0=1px——**chromium UA td 默认 `padding:1px` 直测定谳**（chromium/firefox html.css 同款事实默认，border-collapse 下仍生效）。根因＝ZW UA 样式表缺该声明；corpus 表类案双侧自洽（guidelines #33）长期掩盖，本案恰跨 table/inline-block 两渲染路径暴露。
+> - **修复（单点）**：style-system lib.rs td/th UA 块（R5095 vertical-align 同块邻位）追加 `padding: 1px`；kill-switch `ZW_TD_UA_PADDING=0`（default-on，LazyLock 进程级快照——UA 声明构建在逐元素路径，禁逐次 env 读）。content-box 下 padding 参与 cell 尺寸（width:100px 实宽 102）。
+> - **常驻测试**：`edge.rs::test_td_th_ua_default_padding_1px`（R3763 同型）——td/th 双标 padding=1px ★load-bearing + 作者 padding:0 覆盖锚。
+> - **验证**：corpus 全量 A/B（16594 案双侧重跑二进制）BASE 窗口 726F→FIX 722F，FIXED 候选 4 REGRESSED 候选 0——3×3 双侧隔离洗清 selection-input-011/insert-middle-003（BASE 隔离同样 3× 全绿＝窗口并发抖动族），**真 FIXED={clip-text-background-table-cell、css-tables/table-cell-width-0}，真态 724F→720F FIXED=2 REGRESSED=∅**；kill-switch OFF 双案精确回 ✗0.28%/✗7.73%；FIX 第二窗口 725F mover=恰 table-anon-146/147/148 在册抖动族、余 722 案逐案一致；本地集 **725/725**；product-smoke struct PASS 0 issues + legacy 42 fixtures struct FAIL=0；fmt ✓ / guarded-clippy 全工作区 EXIT 0 / bench-gate 定向 zero-style-system,zero-layout-engine **GATE PASS 25 指标（NEW=8）**；make test 唯一红腿＝js_dom_bridge CSSOM 对端账 5 案其余全绿。证据：[`rendering-compat/evidence/r5406-td-ua-padding-2026-11-03.md`](rendering-compat/evidence/r5406-td-ua-padding-2026-11-03.md)。
+> - **同轮五域侦察家族级初判**（overflow 64F：scroll-markers 22 + line-clamp 16 特性域；flexbox 40F：writing-mode 14 竖排 + baseline-synthesis 5 + collapsed-item 切片；backgrounds 37F：bg-color animation 族 15〔WAAPI 同族〕+ attachment 5；sizing 32F：intrinsic-percent-replaced 7 + abspos-% 4；pseudo 31F：slider 7 + highlight 8 + grammar 4 + ::marker 5）；**rel=mismatch 0.00% 族判据记账**：0.00% 失败＝`rel=mismatch` 案（断言两侧必须不同），ZW 渲染全同＝缺区分特性（pseudo 10 案 + transforms 15 案等），harness 正确判负非 runner bug。
+> - **挂账**：新增家族级初判六面（见证据 §6）；销案 clip-text-background-table-cell / table-cell-width-0；R5405 十面及以前挂账全维持；对端账维持。**下一步 R5407**：①五域余量 misc 案续扫择轻（避开本轮家族初判与在册深域/对端面）②sizing intrinsic-percent-replaced 族深评（7 案同族单一公式域候选——aspect-ratio 传递 % basis）③flexbox collapsed-item 算法切片评估。
+>
 > **▶ R5405 归因轮（账本五域侦察全落特性级——css-conditional 14F 探针链全归因〔cq 尺寸静态声明推导缺口定谳〕/ css-transforms 85F / writing-modes 32F / ruby 19F / counter-styles 全绿剔除，0 net code，corpus 真态 724F 不变）**（2026-11-03）
 >
 > - **范围**：R5404 下一步①五域侦察 + ②完成标准评估；R5403 同型纯取证轮，无代码变更。

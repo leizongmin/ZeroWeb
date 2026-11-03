@@ -1941,6 +1941,17 @@ impl StyleSystem {
                 (0, 0, 0),
                 None,
             ));
+            // R5406（chromium/firefox UA html.css 同款事实默认）：td/th UA `padding: 1px`
+            // ——chrome oracle 直测定谳（无声明 cell 文字偏移 = 显式 padding:1px，
+            // padding:0 少 1px）；clip-text-background-table-cell 案面双侧 1px 错位实证
+            // （chromium 侧 test〔top:1px+td padding〕与 ref〔top:2px〕文字带完全对齐，
+            // ZW 缺 td padding → test 带顶 9 vs ref 10）。content-box 下 padding 参与
+            // cell 尺寸（width:100px 实宽 102），表尺寸面随 A/B 验证。
+            static TD_UA_PADDING: std::sync::LazyLock<bool> =
+                std::sync::LazyLock::new(|| std::env::var("ZW_TD_UA_PADDING").as_deref() != Ok("0"));
+            if *TD_UA_PADDING {
+                ua_decl_inputs.push(("padding".to_string(), "1px".to_string(), false, (0, 0, 0), None));
+            }
         }
 
         // UA 默认样式

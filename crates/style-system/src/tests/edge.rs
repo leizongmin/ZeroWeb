@@ -105,6 +105,76 @@ fn test_table_ua_default_box_sizing_border_box() {
 }
 
 #[test]
+/// R5406：td/th UA 默认 `padding: 1px`（chromium/firefox UA html.css 同款事实默认）——
+/// chrome oracle 直测：无声明 cell 文字偏移 = 显式 padding:1px，padding:0 少 1px。
+/// 作者样式可覆盖（specificity 0,0,0 最低）。★load-bearing：
+/// clip-text-background-table-cell 案面双侧 1px 错位根因。
+fn test_td_th_ua_default_padding_1px() {
+    let html = r#"<html><body><table><tr><td id="c">cell</td><th id="h">head</th></tr></table></body></html>"#;
+    let doc = zero_dom::parse_html(html);
+    let mut sys = StyleSystem::new();
+    sys.set_viewport(800.0, 600.0);
+
+    let root = doc.root();
+    let mut found = std::collections::HashMap::new();
+    let mut stack = vec![root];
+    while let Some(nid) = stack.pop() {
+        if let Some(n) = doc.get(nid) {
+            if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                found.insert(elem.local_name().to_string(), nid);
+            }
+            stack.extend(n.children.iter().copied());
+        }
+    }
+    let td = found.get("td").copied().expect("should find td element");
+    let th = found.get("th").copied().expect("should find th element");
+
+    let td_style = sys.compute_element_style(&doc, td, &[], None);
+    assert_eq!(
+        td_style.padding_top,
+        zero_css_parser::values::LengthValue::Px(1.0),
+        "td UA default should be padding:1px (chromium html.css)"
+    );
+    assert_eq!(
+        td_style.padding_left,
+        zero_css_parser::values::LengthValue::Px(1.0),
+        "td UA padding applies to all four sides"
+    );
+    let th_style = sys.compute_element_style(&doc, th, &[], None);
+    assert_eq!(
+        th_style.padding_top,
+        zero_css_parser::values::LengthValue::Px(1.0),
+        "th shares the td UA padding default"
+    );
+
+    // 作者 padding:0 覆盖 UA 默认（specificity 0,0,0 最低）。
+    let html2 = r#"<html><body><table><tr><td style="padding:0">cell</td></tr></table></body></html>"#;
+    let doc2 = zero_dom::parse_html(html2);
+    let mut sys2 = StyleSystem::new();
+    sys2.set_viewport(800.0, 600.0);
+    let root2 = doc2.root();
+    let mut td2 = None;
+    let mut stack2 = vec![root2];
+    while let Some(nid) = stack2.pop() {
+        if let Some(n) = doc2.get(nid) {
+            if let zero_dom::NodeKind::Element(elem) = &n.kind {
+                if elem.local_name() == "td" {
+                    td2 = Some(nid);
+                }
+            }
+            stack2.extend(n.children.iter().copied());
+        }
+    }
+    let td2 = td2.expect("should find td element");
+    let style2 = sys2.compute_element_style(&doc2, td2, &[], None);
+    assert_eq!(
+        style2.padding_top,
+        zero_css_parser::values::LengthValue::Px(0.0),
+        "author padding:0 should override td UA default"
+    );
+}
+
+#[test]
 /// scroll-snap-type: none 产生默认值（strictness=None, axis=Both）。
 fn test_scroll_snap_type_none() {
     let (doc, _html, _body, div, _p) = make_test_dom();
