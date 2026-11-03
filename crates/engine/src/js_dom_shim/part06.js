@@ -7775,24 +7775,25 @@
             if (ecIdxIn279 >= 0) break;
           }
           // R3254-E2 切片 9：sc === cac 时尾部上界 = ePathIdx（ec 路径子——其子树属
-          // ec 侧，本体/内部由 ec 侧处理）；ec 尾边界（eo === ec 子数）时 ec 自身
-          // contained → **连同 ec 节点整删**（"div@1 → details@2" 形态 expected
-          // "abcjkl"——details 整删；此前 tailEnd 停在 details 前使 details 空壳残留）。
+          // ec 侧，本体/内部由 ec 侧处理）。
+          // selection-compat 二期 M1：撤销 ec 尾边界整删特判（旧版：eo === ec 子数
+          // 时 ec 连同节点整删）。spec 的 contained 判定取节点端界 (parent, idx+1)，
+          // 边界点 (ec, eo) 即使 eo===子数也严格先于该端界（树序 (details,2) <
+          // (div,2)）→ ec 恒 partially contained：本体保留、仅 [0,eo) 子删（下方 ③
+          // 承担）。旧特判使 WPT deleteFromDocument-HTMLDetails
+          // "abc{…ghi}</details>" 腿误删 details 空壳（expected
+          // "abc<details></details>jkl" 得 "abcjkl"）；该腿一期锚面 Pass（当时
+          // text 视图滞后使 helper marker-walk 爬升未命中此臂），引擎 text 视图
+          // 修复后暴露。特判命中面还依赖解析 wrapper childNodes 同步态（同文件
+          // (details,0)-(summary,1) 腿同门不命中）——不确定行为面一并移除，统一
+          // 回归 spec 语义。
+          // https://dom.spec.whatwg.org/#dom-range-deletecontents
+          // https://w3c.github.io/selection-api/#dom-selection-deletefromdocument
           var tailEnd279 = (ecIdxIn279 >= 0) ? ecIdxIn279 : sk279.length;
-          var _r3kEcWholeDel = false;
           if (cac === sc && ePathIdx279 >= 0) {
             tailEnd279 = ePathIdx279;
-            var _ecH279 = cac.childNodes || [];
-            if (ecIsEl && (eo | 0) === (_ecH279[ePathIdx279] && _ecH279[ePathIdx279].childNodes ? _ecH279[ePathIdx279].childNodes.length : -1)
-                && ec === _ecH279[ePathIdx279]) {
-              _r3kEcWholeDel = true;
-            }
           }
           for (var i279 = tailEnd279 - 1; i279 >= so; i279--) rmNode(sk279[i279], sc);
-          if (_r3kEcWholeDel && ePathIdx279 >= 0) {
-            var _ekDel279 = (cac.childNodes || [])[ePathIdx279];
-            if (_ekDel279 === ec) rmNode(_ekDel279, cac);
-          }
           }
           // ② sc 侧爬升：到 cac 前逐级移除路径子右侧兄弟（cac 级跳过——mid 段处理）。
           var lvl279 = sc, lvlPar279 = sc.parentNode, hp279 = 0;
