@@ -1627,6 +1627,12 @@ impl LayoutEngine {
         // R4234/R4941），见 engine/inline_wrapper_box.rs 模块文档。
         inline_wrapper_box::synthesize_inline_wrapper_boxes_final(&mut root_box, doc, styles);
 
+        // R5399（CSS 2.1 §10.6.7）：BFC root auto 高终末 float 包含补扩——float 子内容高
+        // 在 inline 终化（step 6+）物化，晚于 step 5 的 recompute_bfc_auto_height；此后
+        // grow-only max 补扩（floats-145 蓝条整体缺失）。须在全部 float 高/行位定谳后，
+        // LayoutResult 前。
+        postprocess::bfc_float_containment_late(&mut root_box);
+
         LayoutResult {
             root: std::sync::Arc::new(root_box),
             viewport_width: self.viewport_width,

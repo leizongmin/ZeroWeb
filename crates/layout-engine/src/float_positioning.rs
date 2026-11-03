@@ -5,6 +5,7 @@
 //! 垂直书写模式块收缩、inline-block shrink-to-fit、匿名 table 根标记。
 
 use std::collections::HashMap;
+use std::sync::OnceLock;
 use zero_css_parser::values::{ColorValue, DisplayValue, FlexDirectionValue, FloatValue, LengthValue};
 use zero_dom::{Document, NodeId};
 use zero_style_system::{ComputedStyle, WritingModeValue};
@@ -58,7 +59,7 @@ pub(crate) fn adjust_float_positions(
     } else {
         None
     };
-    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc, styles, float_subtrees);
+    adjust_float_positions_with_context(box_node, content_abs_y, 0.0, 0.0, &[], doc, styles, float_subtrees, 0.0);
 }
 
 /// R5307：全树是否含浮动元素（含自身），布尔单趟——无 float 文档零分配快速路径。
@@ -1980,6 +1981,9 @@ pub(crate) fn adjust_float_positions_with_context(
     // R5307：子树含 float 旗标表（[`adjust_float_positions`] 入口预扫）；`None` =
     // 全树无 float（布尔单趟判定），收集器全跳过。
     float_subtrees: Option<&HashMap<NodeId, bool>>,
+    // R5399：父帧最近流内前驱块的 margin_bottom（float/abspos 脱流不破坏 §8.3.1 邻接，
+    // 调用方子循环单趟跟踪）；根容器无前驱传 0。供 unhoist 兄弟间距保留。
+    prev_sibling_mb: f32,
 ) {
     use zero_css_parser::values::ClearValue;
     use zero_css_parser::values::FloatValue;
@@ -2067,7 +2071,7 @@ pub(crate) fn adjust_float_positions_with_context(
     //   4. 容器 margin_top == 该子 margin_top（被折叠到该子的 mt）
     //   5. 该子 margin_top == 声明值（自身未被 taffy 膨胀）
     //   kill-switch：env `ZW_INLINE_FIRST_MT_UNHOIST=0` 关闭（default-on）。
-    unhoist_inline_first_atom_mt(box_node, content_y_offset);
+    unhoist_inline_first_atom_mt(box_node, content_y_offset, prev_sibling_mb);
 
     // 第一阶段：重新定位 float 元素，记录每个 float 在 taffy 布局中占据的垂直空间
     //
@@ -4053,6 +4057,9 @@ pub(crate) fn adjust_float_positions_with_context(
     let mut nested_left_acc = 0.0f32;
     let mut nested_right_acc = 0.0f32;
     let mut nested_geoms_acc: Vec<FloatGeom> = Vec::new();
+    // R5399：最近流内前驱块 mb 单趟跟踪（float/abspos 脱流不破坏 §8.3.1 邻接，
+    // 跳过继续回溯）——供子 walk 的 unhoist 兄弟间距保留。
+    let mut prev_in_flow_mb = 0.0f32;
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         let (left_ctx, right_ctx) = child_float_contexts
             .get(idx)
@@ -4061,9 +4068,20 @@ pub(crate) fn adjust_float_positions_with_context(
         let left_ctx = left_ctx.max(nested_left_acc);
         let right_ctx = right_ctx.max(nested_right_acc);
         let child_content_abs_y = box_content_abs_y + child.y + child.content_y;
+        let child_prev_mb = prev_in_flow_mb;
         if crate::margin_collapse::establishes_bfc(child) {
             // BFC 子：独立浮动上下文，祖先 float 不透传。
-            adjust_float_positions_with_context(child, child_content_abs_y, 0.0, 0.0, &[], doc, styles, float_subtrees);
+            adjust_float_positions_with_context(
+                child,
+                child_content_abs_y,
+                0.0,
+                0.0,
+                &[],
+                doc,
+                styles,
+                float_subtrees,
+                child_prev_mb,
+            );
         } else {
             // 非 BFC 子：其内 float 与外层同 BFC 上下文。R1619 Slice 2 透传祖先带 +
             // R5307 文档序在前的直接 float 带 + 前序兄弟嵌套 float 带（nested_geoms_acc，
@@ -4103,7 +4121,11 @@ pub(crate) fn adjust_float_positions_with_context(
                 doc,
                 styles,
                 float_subtrees,
+                child_prev_mb,
             );
+        }
+        if !child.is_absolute && !child.is_fixed && matches!(child.float, FloatValue::None) {
+            prev_in_flow_mb = child.margin_bottom;
         }
         // 递归定谳后收集该子非 BFC 子树内的嵌套 float（BFC/float/定位子独立上下文
         // 或外溢隔离，不入累加器；帧约定同 nested_float_bottoms/nested_float_geoms）。
@@ -4184,9 +4206,20 @@ pub(crate) fn adjust_float_positions_with_context(
 ///
 ///   kill-switch：env `ZW_INLINE_FIRST_MT_UNHOIST=0` 关闭（default-on）。
 ///
+/// R5399（CSS 2.1 §8.3.1 邻接兄弟对）：unhoist 把容器 y 上提 over_collapse 时，taffy
+/// 原生按「塌穿链 mt」解出的**兄弟间距**（prev mb ∪ 链 mt 取 max）随之丢失前驱块的
+/// mb 份额——容器落到前驱 border-box 底（gap 0）。规范邻接对取 collapse(prev.mb,
+/// 容器声明 mt)（正正取 max），差额 = clamp(prev.mb − 声明 mt, 0, over_collapse)
+///（恰为被 taffy 折进链、又被 unhoist 丢弃的前驱 mb 份）。floats-145 REF 页：p mb 16
+/// + div（首子 img inline-block mt:90 塌穿）→ div 落 p_bb+0 应 p_bb+16（img 124 应
+/// 140，chromium oracle）。prev_sibling_mb = 父帧最近流内前驱块的 margin_bottom
+///（float/abspos 脱流不破坏邻接，调用方单趟跟踪）；无前驱（首子）传 0 —— 原语义。
+/// kill-switch：env `ZW_UNHOIST_SIBLING_GAP=0` 关闭（default-on）。
+///
 /// R4217：从 [`adjust_float_positions_with_context`] 原样抽取为 helper——全 walk 与
 /// 无 float 快速路径（[`adjust_no_float_page`]）共用，语义零变化。
-fn unhoist_inline_first_atom_mt(box_node: &mut LayoutBox, content_y_offset: f32) {
+fn unhoist_inline_first_atom_mt(box_node: &mut LayoutBox, content_y_offset: f32, prev_sibling_mb: f32) {
+    static SIBLING_GAP: OnceLock<bool> = OnceLock::new();
     if std::env::var("ZW_INLINE_FIRST_MT_UNHOIST").as_deref() != Ok("0")
         && content_y_offset == 0.0
         && box_node.margin_top > box_node.declared_margin_top + 0.01
@@ -4201,7 +4234,13 @@ fn unhoist_inline_first_atom_mt(box_node: &mut LayoutBox, content_y_offset: f32)
             let atom_mt_is_clean = (fc.margin_top - fc.declared_margin_top).abs() < 0.01;
             if container_absorbed_atom_mt && atom_mt_is_clean {
                 let over_collapse = box_node.margin_top - box_node.declared_margin_top;
-                box_node.y -= over_collapse;
+                let prev_gap =
+                    if *SIBLING_GAP.get_or_init(|| std::env::var("ZW_UNHOIST_SIBLING_GAP").as_deref() != Ok("0")) {
+                        (prev_sibling_mb - box_node.declared_margin_top).clamp(0.0, over_collapse)
+                    } else {
+                        0.0
+                    };
+                box_node.y -= over_collapse - prev_gap;
                 box_node.margin_top = box_node.declared_margin_top;
             }
         }
@@ -4248,10 +4287,19 @@ fn recompute_bfc_auto_height(box_node: &mut LayoutBox, content_y_offset: f32) {
 /// （float 恒 None）、float-mt 解折叠（需 float 子，不可触发）、Phase 1/2 的
 /// float 定位 / clear 位移（float bottom 恒 0，max 无操作）。
 pub(crate) fn adjust_no_float_page(box_node: &mut LayoutBox) {
+    adjust_no_float_page_inner(box_node, 0.0);
+}
+
+fn adjust_no_float_page_inner(box_node: &mut LayoutBox, prev_sibling_mb: f32) {
     let content_y_offset = box_node.border_top + box_node.padding_top;
-    unhoist_inline_first_atom_mt(box_node, content_y_offset);
+    unhoist_inline_first_atom_mt(box_node, content_y_offset, prev_sibling_mb);
+    // R5399：最近流内前驱块 mb 单趟跟踪（同全 walk 子循环，float/abspos 脱流跳过）。
+    let mut prev_in_flow_mb = 0.0f32;
     for child in &mut box_node.children {
-        adjust_no_float_page(child);
+        adjust_no_float_page_inner(child, prev_in_flow_mb);
+        if !child.is_absolute && !child.is_fixed && matches!(child.float, FloatValue::None) {
+            prev_in_flow_mb = child.margin_bottom;
+        }
     }
     if box_node.declared_height_auto
         && !box_node.is_absolute

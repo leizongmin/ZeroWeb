@@ -1409,6 +1409,55 @@ pub(super) fn exclude_floats_from_non_bfc_auto_height(
     }
 }
 
+/// R5399（CSS 2.1 §10.6.7）：BFC root（flow root / float）auto 高的**终末 float 包含
+/// grow-only 补扩**——step 5 `recompute_bfc_auto_height`（float_positioning.rs）跑时
+/// float 子内容高尚未物化（R3787：taffy 对 float 叶子内容高欠计、子树未终化），其
+/// 「空块子 collapse-through 折叠 mb」臂（R4069）把未测量 float 子按空块折叠 →
+/// BFC root 高塌 0（floats-145：float div 内唯一子为 float span，outer h=0 应
+/// 120=行高 90+mb 30，蓝色背景整体缺失）。float 高在 step 6+ inline 终化物化后
+/// 无人重访 BFC 祖先。本 pass 后序遍历（子高先于父定谳），对 flow-root/float 的
+/// auto 高容器做只增不缩的 max 补扩：content_height < float 子 margin-box 底边时抬到
+/// 该底边。只增不缩：非 BFC 容器的排除收缩语义归 step 5.2
+/// `exclude_floats_from_non_bfc_auto_height`（本 pass 谓词与之互补，不重叠）；豁免面
+/// 镜像 step 5 重算（abspos/fixed、replaced、flex item、contain:size、multicol）。
+/// kill-switch `ZW_BFC_FLOAT_CONTAIN_LATE=0` 回退（default-on）。
+pub(super) fn bfc_float_containment_late(box_node: &mut LayoutBox) {
+    static BFC_FLOAT_CONTAIN_LATE: OnceLock<bool> = OnceLock::new();
+    let enabled =
+        *BFC_FLOAT_CONTAIN_LATE.get_or_init(|| std::env::var("ZW_BFC_FLOAT_CONTAIN_LATE").as_deref() != Ok("0"));
+    for child in &mut box_node.children {
+        bfc_float_containment_late(child);
+    }
+    if !enabled
+        || !box_node.declared_height_auto
+        || box_node.is_absolute
+        || box_node.is_fixed
+        || box_node.is_replaced
+        || box_node.is_flex_grid_item
+        || box_node.has_size_containment
+        || box_node.is_multicol
+        || !(box_node.is_flow_root || !matches!(box_node.float, zero_css_parser::values::FloatValue::None))
+    {
+        return;
+    }
+    let float_bottom = box_node
+        .children
+        .iter()
+        .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None) && !c.is_absolute && !c.is_fixed)
+        .fold(0.0f32, |max_y, c| max_y.max(c.y + c.height + c.margin_bottom));
+    if float_bottom > box_node.content_height + 0.5 {
+        box_node.content_height = float_bottom;
+        let new_total = float_bottom
+            + box_node.padding_top
+            + box_node.padding_bottom
+            + box_node.border_top
+            + box_node.border_bottom;
+        if new_total > box_node.height {
+            box_node.height = new_total;
+        }
+    }
+}
+
 /// R1319 §8.3.1 containment 兄弟位移：`adjust_float_positions` 的 containment 已把 cleared
 /// 元素的 trailing collapse-through 链含入其 content_height（不泄漏到自身 margin_bottom）。
 /// 但 taffy 在 containment 之前已按「泄漏的 mb」定位了后续兄弟，致后续兄弟偏低（如

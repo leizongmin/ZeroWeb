@@ -994,6 +994,10 @@ mod r5396_clear_empty_chain_absorb_tests;
 /// WPT clear-applies-to-014 驱动）。
 mod r5398_table_beside_declared_width_tests;
 
+/// R5399 BFC root auto 高终末 float 包含补扩 + R4140 unhoist 兄弟间距保留（CSS2
+/// §10.6.7/§8.3.1，WPT floats-145 驱动）。
+mod r5399_bfc_float_containment_tests;
+
 /// t-trending 伪影 1 回归：float 星数（inline replaced svg + 文本）单行收缩——Σ 臂
 /// replaced 早退放行 + replaced_w 入账 + [`float_text_max_width_adv`] advance 源
 /// 文本测量（kill-switch `ZW_FLOAT_INLINE_SUM`/`ZW_FLOAT_STF_ADV` OFF 敏感性见
