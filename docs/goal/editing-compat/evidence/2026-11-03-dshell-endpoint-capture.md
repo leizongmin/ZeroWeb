@@ -236,6 +236,19 @@ sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F
 腿待落（重点核 `[foo<X>bar]</X>baz` 族 P→F 扩散——delete/fd 是 caret 臂
 主消费语料，扩散面可能大于 multitest）**，落地后按同口径判读。
 
+**delete 腿实测（11:03:09→11:40:33 落地，含 s254 bin）：7,344P/291F/1T
+rc=2——P→F = 0，`[foo<X>bar]</X>` 族零扩散**。对基线 E1 7,339P/296F/1T
+（g28-del-e1-fails.txt 297 行，Fail+Timeout 归一化行集 diff）：
+ΔP=+5/ΔF=−5 恰互偿，Timeout 行集同基线（1T 恒等）。F→P 5 全为
+`{...}` 部分含形——`foo{<span>bar</span>}baz` ×2（swcss false/true）+
+`foo{<b>bar</b>}baz` ×2（swcss false/true）+ `<p>foo{<span
+style=color:#aBcDeF>bar</span>}baz` ×1 compare innerHTML——`{...}` 边界
+origStart 在删程外存活、caret 臂正常翻转，与 ipara 腿 F→P 4 同族正面
+连带（deleteSelection 为 ipara 前导 + delete.html 直驱双消费面）。
+**判读：delete 腿过门（P→F 零）**——delta caret 臂在 delete.html 语料
+面净正面；修复笔存活门落地后本腿预期逐位恒 v1（五翻转面不经存活门，
+不受回落语义影响），复跑仍按行集 diff 复核。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
