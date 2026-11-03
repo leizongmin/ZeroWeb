@@ -48,3 +48,15 @@ css-color 红案 13 案全归因，无轻量修复点：
 
 三向侦察全部落特性级/族级缺口，与 floats-031 / R5397 两案 / R5213 同级记档。下轮
 账本续扫应转向未侦察域（避开本轮四面缺口与既有深结构挂账）。
+
+## 追加：css-cascade 域前哨侦察（15F 全归因特性级）
+
+| 族 | 案 | 定谳 |
+|---|---|---|
+| @scope 未实现域 | scope-implicit-001..006-print ×5（同构 2.08%）、scope-part 17.97%、scope-shadow-sharing 10.45%、scope-pseudo-element/scope-visited/scope-ua-shadow-host | @scope at-rule + ::slotted/::part shadow 边界选择器域 |
+| revert-layer cascade 架构 | revert-layer-004/011/013/014 | 004 案面实证：light tree author 的 `revert-layer`（无 @layer）应回退到 shadow author context（:host{green}）→ 绿方块；ZW 简化 ≈ unset（inheritance.rs:507 注释在案）→ transparent 显红。根因 = cascade 决胜器平铺 `HashMap<String,String>` 只有胜者声明文本、无 layer/origin 元数据——真语义需声明元数据 + 跳层回退重扫 + light→shadow context 链 |
+| @layer × shadow | layer-slotted-rule 2.08% | ::slotted 规则进 @layer 的层序语义 |
+
+shadow DOM 基础设施在案（s168 attachShadow 物化通道、style-system shadow 作用域
+级联源切换、selector_match shadow 边界不穿透），缺口集中在 cascade 元数据层。
+
