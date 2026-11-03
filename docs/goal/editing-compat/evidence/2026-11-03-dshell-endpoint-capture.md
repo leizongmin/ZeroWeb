@@ -271,6 +271,12 @@ caret 臂两回归面（multitest 22 + ipara 20）外全门通过——按既定
 本轮仅 ?6001-7000 T）。独立核验工件 g28-fd-g28-raw.txt 215 行 +
 g27-e2fd.log 252 行 Pass/Fail 集对账。02c724621 提交题述同源勘误。）
 
+**other 通道实测（12:12→12:26:42，bin 含 s249/s252-s255/82153965c）：13,142P/1,436F/1T rc=0**——对 gate27 基线 13,134P/1,600F/0T：F −164/T +1。**T 1 = delete-without-unwrapping 页 270s 外墙击杀（v1 新增复验点：flake vs delta-hang 以 v2 该页是否完成出账定谳）**，−164F 分解 ≈ −156（该页 fail 未报）+ ~−8 改善向（bin 含 s249 颜色归一/s255 3 键翻绿/82153965c css 修复面，other 语料 CSS/script 相邻案）——改善向按并行流修复面归因记档，不作本轮门禁项。
+
+**enginelib 实测（12:27:31 落地收官，bin = 树 4d3e58230、不含 caret 修复笔）：3,719P/5F rc=101**——对 gate27 基线 3,709P/0F（11-02 23:53 记账，早于窗口内全部引擎提交）：**5 新败全 js_dom_bridge CSSOM 规则文本面**（p56_adopted_snapshot_restore_hook_keeps_page_value / test_p99s_rule_style_preserves_custom_property_case / test_stylesheet_add_rule_remove_rule_r3276 / test_stylesheets_rule_style_r2810 / test_stylesheets_write_r2809），签名全为 CSSOM 重序列化（`color: rgb(9, 105, 218); }` 尾分号出现、cssText `color: blue` 归一丢失等）。归因 **s249**（652a78e00，05:17:10，动态 import 属性三通道 + **CSSOM 颜色归一**，part06.js shim +126 行——首判候选 82153965c 经签名复核排除：parser 恢复面不触 well-formed 规则序列化，分号插入与颜色归一恰为 CSSOM 重序列化指纹，乙实例 COORD-22乙 同判）；处置：**5F 为 s249 已知回落名单，不回退 s249**，测试对齐独立轮。v2 已扩 enginelib 补腿：预期 5F 名单恒等 + caret 修复笔零新增，即定谳。
+
+**gate28v2 复跑放电（12:55:50，zw-g28v2-battery，六腿扩展版）**：caret 存活门修复笔已收编提交 **1aeb3416b**（selSame/selExit 两臂 `origStartContainer.parentNode` 存活门，pre-commit-guard PASS；双实例独立归因互证——甲 multitest desc 行集 diff 26 P→F ↔ 乙 zz-probe-g28reg post0 caret DETACHED 探针 + 修复笔 g28-fix-part01f.js；修复后探针 R1-R3 `final="abaz"` connected、家族控制 R4-R7 恒绿）。首放 12:48:35 四腿版被乙实例 12:53:29 stop 后扩脚本（other + enginelib 补腿，COORD-22乙 口径）重放。判读口径：multitest 22+4 回收、ipara 20 回收（≥19 同根 + CE-false 2 待验）、delete/fd 恒 v1 行集、P→F 归零、F→P 23+4 保持；other = 修复后首个干净读数（delete-without-unwrapping 页完成出账定谳 flake vs delta-hang）；enginelib 5F=s249 名单恒等 + 零新增。done = gate28v2-done.txt。
+
 ## 6. 残余与挂账
 
 - ipara/ilb 家族内容丢失/caret 世界失步（C30 typed 段整丢、C55 ilb 双写形）
@@ -286,4 +292,8 @@ g27-e2fd.log 252 行 Pass/Fail 集对账。02c724621 提交题述同源勘误。
   rc=1 即败）未通，−85 缺口以 E4 同 bin 全腿重测对账替代；
 - qV 残余 ~109F、list FIXME、delete li/dt/dd FIXME、shim
   DocumentFragment.appendChild 移动语义/Range.extractContents 共享根（控制
-  面下一步 ②-④ 原样顺延）。
+  面下一步 ②-④ 原样顺延）；
+- enginelib 5F CSSOM 规则文本面（s249 652a78e00 CSSOM 颜色归一已知回落名单，
+  2026-11-03 v1 battery 发现）：gate27 0F → 5 新败全 js_dom_bridge 规则文本
+  序列化断言，签名 = CSSOM 重序列化指纹（§5，首判 82153965c 已排除）；不回
+  退 s249，测试对齐独立轮。
