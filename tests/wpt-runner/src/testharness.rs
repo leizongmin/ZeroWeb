@@ -9157,6 +9157,11 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         fetch_handler: wpt_data_fetch_handler(wpt_root),
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
         script_source_fetcher: wpt_data_script_fetcher(wpt_root, extract_meta_referrer_policy(source)),
+        // s256（动态 import 延迟决议）：native 通道外链 module 取回延迟——trickle
+        // 管道（`?pipe=trickle(dN)`）建模为真实网络秒级延迟。runner 同步 fetcher
+        // 忽略 trickle（真网络延迟缺席），不经此 provider 慢模块时序族
+        //（delay-load-event）不可观察。
+        dynamic_import_fetch_delay: Some(std::sync::Arc::new(|url: &str| trickle_delay_ms(url))),
         service_worker_script_fetcher: wpt_data_service_worker_script_fetcher(wpt_root),
         // net-api M5-S1：websockets 用例注入 WS 宿主 factory——内嵌 fixture 端点 +
         // 宿主改写委派 default_net_ws_host 真栈（ws_fixture.rs 模块注释）。仅

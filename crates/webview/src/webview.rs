@@ -175,6 +175,11 @@ struct ServiceWorkerHostContext {
 /// None → 走 HTTP 网络）。返回图片字节；返回 None 表示该 URL 无法本地提供（回退网络）。
 pub type ImageSourceFetcher = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
 
+/// s256（动态 import 延迟决议）：外链动态 `import()` 取回延迟提供器（毫秒；
+/// 输入为宿主解析后的 URL）。headless/runner 路径建模 trickle 类慢模块源；
+/// `None` = 无延迟（同步契约照旧）。
+pub type DynamicImportFetchDelay = std::sync::Arc<dyn Fn(&str) -> u64 + Send + Sync>;
+
 /// WebView 配置。
 #[derive(Clone)]
 pub struct WebViewConfig {
@@ -200,6 +205,16 @@ pub struct WebViewConfig {
     pub external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源；None → 外链脚本跳过，离线语义）。
     pub script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：native
+    /// 通道动态 `import()` 取回延迟提供器（classic 上下文；None = 无延迟）。
+    ///
+    /// 语义：宿主 resolver 在 CSP 检查后同步算好契约，按本回调对解析 URL 的
+    /// 返回值（毫秒）以包裹契约挂起——import() promise 在延迟窗内保持 pending，
+    /// 宿主执行探针（execute 头部 / 排空点）经 `poll_pending_dynamic_imports`
+    /// 完成决议。建模 WPT trickle 管道（`?pipe=trickle(dN)`）等慢模块源——
+    /// runner 同步 fetcher 忽略 trickle（真网络延迟缺席），不经此字段慢模块
+    /// 时序族（delay-load-event）不可观察。
+    pub dynamic_import_fetch_delay: Option<DynamicImportFetchDelay>,
     /// Structured Service Worker script responses for embedded/headless hosts.
     ///
     /// When set, Service Worker main and imported script fetches use this callback before
@@ -287,6 +302,7 @@ impl Default for WebViewConfig {
             canvas_registry: None,
             external_script: None,
             script_source_fetcher: None,
+            dynamic_import_fetch_delay: None,
             service_worker_script_fetcher: None,
             image_source_fetcher: None,
             fetch_handler: None,
@@ -308,6 +324,7 @@ impl std::fmt::Debug for WebViewConfig {
             .field("http_timeout_secs", &self.http_timeout_secs)
             .field("external_script", &self.external_script.is_some())
             .field("script_source_fetcher", &self.script_source_fetcher.is_some())
+            .field("dynamic_import_fetch_delay", &self.dynamic_import_fetch_delay.is_some())
             .field(
                 "service_worker_script_fetcher",
                 &self.service_worker_script_fetcher.is_some(),
@@ -604,6 +621,9 @@ pub struct WebView {
     external_script: Option<ExternalScriptExecutor>,
     /// 外链脚本源获取器（进程内/headless 路径 fetch 外链脚本源）。
     script_source_fetcher: Option<ScriptSourceFetcher>,
+    /// s256：native 通道动态 `import()` 取回延迟提供器（headless/runner 建模
+    /// trickle 慢模块源；None = 无延迟）。
+    dynamic_import_fetch_delay: Option<DynamicImportFetchDelay>,
     /// Structured Service Worker script response fetcher.
     service_worker_script_fetcher: Option<ServiceWorkerScriptFetcher>,
     image_source_fetcher: Option<ImageSourceFetcher>,
@@ -818,6 +838,7 @@ impl WebView {
         };
         let external_script = config.external_script.clone();
         let script_source_fetcher = config.script_source_fetcher.clone();
+        let dynamic_import_fetch_delay = config.dynamic_import_fetch_delay.clone();
         let service_worker_script_fetcher = config.service_worker_script_fetcher.clone();
         let image_source_fetcher = config.image_source_fetcher.clone();
         let fetch_handler = config.fetch_handler.clone();
@@ -880,6 +901,7 @@ impl WebView {
             native_installed_for_gen: false,
             external_script,
             script_source_fetcher,
+            dynamic_import_fetch_delay,
             service_worker_script_fetcher,
             image_source_fetcher,
             fetch_handler,
@@ -2813,6 +2835,7 @@ impl WebView {
             }
             self.dom_bridge_host_armed = true;
         }
+        self.poll_pending_dynamic_imports();
         self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
         let sandbox = self.js_sandbox.as_mut().expect("js sandbox");
         sandbox
@@ -3170,6 +3193,17 @@ impl WebView {
         }
     }
 
+    /// s256（动态 import 延迟决议）：到期挂起条目完成泵（native 通道延迟包裹面）。
+    /// 执行探针头部（execute_script / execute_script_with_dom）与定时器排空点调用
+    /// ——到期条目逐条 settle 并排空 `.then` 链，后续探测脚本即见完整事件序列。
+    /// 仅进程内 sandbox 路径生效（external_script 多进程 js_worker 无 pending 态，
+    /// 早退不动）；无延迟配置时 poll 队列恒空零成本。
+    fn poll_pending_dynamic_imports(&mut self) {
+        if let Some(sandbox) = self.js_sandbox.as_mut() {
+            let _ = sandbox.poll_pending_dynamic_imports();
+        }
+    }
+
     /// M3 扩批 LI（2026-09-05）：排空挂起的 host 定时器回调直至队列空/超时。
     ///
     /// runner 静态提交链（execute_script 触发的 media settle → 加载序列 setTimeout 链）的
@@ -3179,6 +3213,7 @@ impl WebView {
     pub fn drain_pending_timers_until_idle(&mut self, timeout_ms: u64) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
         loop {
+            self.poll_pending_dynamic_imports();
             let queued = self.pending_timer_callbacks.load(Ordering::Acquire);
             if queued == 0 {
                 // 队列计数为 0 仍短等一拍，收尾竞态窗口内迟到的注册（注册→send 间隙）。
@@ -3494,6 +3529,7 @@ impl WebView {
             Self::register_forward_identity_bridge_callback(&self.handle_selector_forward, &mut **sandbox);
         }
 
+        self.poll_pending_dynamic_imports();
         self.drain_next_async_callback_if_pending(std::time::Duration::from_millis(20));
         // uievents-compat 回归修复（2026-10-19）：本路径此前缺 native 绑定安装——runner
         // 预热线改走本变体（webcrypto M6）后，warmup 先装 shim（shim 构造器定义全局
@@ -4230,6 +4266,9 @@ impl WebView {
             // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
             let csp_ctx = self.security_context.clone();
             let import_violations = std::sync::Arc::clone(&self.pending_csp_connect_violations);
+            // s256：native 通道取回延迟提供器（headless/runner 建模 trickle 慢模块源；
+            // shim `__zw_compile_module` 面不包裹——无语料目标，渲染管线零变化）。
+            let fetch_delay = self.dynamic_import_fetch_delay.clone();
             // s254：原生通道 import map 应用（shim __zw_compile_module 同形）。
             let map_native = page_import_map.clone();
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
@@ -4256,12 +4295,23 @@ impl WebView {
                     }
                     // s249：V8 原生 import() 属性通道（回调 import_attributes 提取、
                     // module type map 校验在 v8_runtime 侧）——type 串空 = 无属性。
-                    compile_module_contract(
+                    let contract = compile_module_contract(
                         &fetcher_native_import,
                         parent,
                         &spec_eff,
                         if type_attr.is_empty() { None } else { Some(type_attr) },
-                    )
+                    );
+                    // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
+                    // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹
+                    // 只声明延迟时长；CSP 阻止面维持同步（阻止即拒绝，不延迟）。取回
+                    // 失败契约（空串/图失败）同样延迟——慢源失败照慢语义。
+                    if let Some(delay_fn) = fetch_delay.as_ref() {
+                        let delay_ms = delay_fn(&abs);
+                        if delay_ms > 0 {
+                            return format!("1\u{1f}{delay_ms}\u{1f}{contract}");
+                        }
+                    }
+                    contract
                 },
             ));
             // s250：__zw_compile_inline_module（动态内联 module prepare）——shim 动态

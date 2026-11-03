@@ -79,6 +79,36 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
 pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync + 'static>;
 
+/// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：宿主延迟
+/// 回包的挂起条目。宿主 resolver 以包裹契约 `1\u{1f}<delay_ms>\u{1f}<inner>`
+/// （inner 与四态契约同形）声明取回延迟时，回调不立即 settle——暂存内契约 +
+/// promise resolver，到期由 [`V8Sandbox::poll_pending_dynamic_imports`] 完成
+/// 编译/求值/决议（spec：动态 import promise 在 module script 取回完成前保持
+/// pending，HostImportModuleDynamically Retrieve 步不阻塞事件循环）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieve-promise
+struct PendingDynamicImport {
+    /// 所属 sandbox 身份键 = `Arc::as_ptr::<DynamicImportState>`（isolate slot
+    /// 与 sandbox 字段共享同一 Arc 分配——同线程多 sandbox 存活期重叠时 poll
+    /// 只取走本 sandbox 条目，他 sandbox 的 Global 句柄不跨 isolate 触碰；
+    /// sandbox Drop 时按键清空残条，键生命周期 = Arc 分配期）。
+    sandbox_key: usize,
+    /// 到期时刻（回调时刻 + delay_ms）。
+    due: std::time::Instant,
+    /// 宿主解析后的说明符（s124 缓存键与取回失败错误消息用）。
+    spec: String,
+    /// 内层四态契约（`resolved\u{1f}code` / `resolved\u{1f}` / `3\u{1f}resolved\u{1f}message` / 空）。
+    contract: String,
+    /// 待 settle 的 promise resolver。
+    resolver: v8::Global<v8::PromiseResolver>,
+}
+
+thread_local! {
+    // s256：延迟回包挂起队列（thread_local——v8::Global 非 Send，不能进
+    // DynamicImportState 的 Arc<Mutex>；回调线程与 poll 同在 JS 执行线程，
+    // isolate 单线程纪律）。PENDING_REJECTS 同款存放形态。
+    static PENDING_DYNAMIC_IMPORTS: std::cell::RefCell<Vec<PendingDynamicImport>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
 /// 动态 import() 宿主状态（isolate slot 持有——同线程多 sandbox 状态隔离）。
 #[derive(Default)]
 struct DynamicImportState {
@@ -165,13 +195,50 @@ fn dynamic_import_callback<'s, 'i>(
         },
         Err(_) => return None, // 毒化锁（前置 panic）——V8 按 promise 创建失败抛出。
     };
+    // s256：宿主延迟包裹契约 `1\x1f<delay_ms>\x1f<inner>`——取回延迟 >0 时宿主
+    // 已同步算好内契约，回调只挂起 resolver 即刻返回（promise 保持 pending 至
+    // 到期 poll settle，取回不阻塞当前脚本回合——delay-load-event 判据：import()
+    // 的 .then 断言微任务须晚于 window load 事件链）。前缀判定无歧义：未包裹
+    // 契约首段是宿主解析 URL，不会以 `1\x1f` 起头（同 s252 的 `3\x1f` 判据口径）。
+    // 锁毒化（前置 panic）时条目丢失 → promise 恒 pending：与取回挂死同形，
+    // 不放大为异常。
+    if let Some(rest) = contract.strip_prefix("1\u{1f}")
+        && let Some((delay_text, inner)) = rest.split_once('\u{1f}')
+        && let Ok(delay_ms) = delay_text.parse::<u64>()
+    {
+        let resolver_handle = v8::Global::new(scope, promise_resolver);
+        let sandbox_key = Arc::as_ptr(&state) as usize;
+        PENDING_DYNAMIC_IMPORTS.with(|q| {
+            q.borrow_mut().push(PendingDynamicImport {
+                sandbox_key,
+                due: std::time::Instant::now() + std::time::Duration::from_millis(delay_ms),
+                spec,
+                contract: inner.to_string(),
+                resolver: resolver_handle,
+            });
+        });
+        return Some(promise_resolver.get_promise(scope));
+    }
+    settle_dynamic_import(scope, promise_resolver, &spec, &contract);
+    Some(promise_resolver.get_promise(scope))
+}
+
+/// 动态 import() 契约 settle 共享体（回调同步臂与 s256 到期 poll 共用）：四态
+/// 解析 + s124 module map 记忆化 + IIFE 编译求值 + promise 决议。契约语义与
+/// `__zw_load_module` 对齐（见 [`DynamicImportResolver`]）。
+fn settle_dynamic_import<'s>(
+    scope: &mut v8::PinScope<'s, '_>,
+    promise_resolver: v8::Local<'s, v8::PromiseResolver>,
+    spec: &str,
+    contract: &str,
+) {
     // 三态解析（同 __zw_load_module）。
     if contract.is_empty() {
         let msg = format!("Failed to fetch module: '{spec}'");
         if let Some(m) = v8::String::new(scope, &msg) {
             promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
         }
-        return Some(promise_resolver.get_promise(scope));
+        return;
     }
     // s252：tag 3（链接/instantiation 失败，`3\x1fresolved\x1fmessage`）→ 逐次新
     // SyntaxError reject，不入 `__moduleCache`（spec：link 失败不入 module map、
@@ -182,21 +249,21 @@ fn dynamic_import_callback<'s, 'i>(
         if let Some(m) = v8::String::new(scope, message) {
             promise_resolver.reject(scope, v8::Exception::syntax_error(scope, m));
         }
-        return Some(promise_resolver.get_promise(scope));
+        return;
     }
     let Some((resolved, code)) = contract.split_once('\u{1f}') else {
         let msg = format!("Failed to fetch module: '{spec}'");
         if let Some(m) = v8::String::new(scope, &msg) {
             promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
         }
-        return Some(promise_resolver.get_promise(scope));
+        return;
     };
     if code.is_empty() {
         let msg = format!("Failed to fetch module graph: '{resolved}'");
         if let Some(m) = v8::String::new(scope, &msg) {
             promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
         }
-        return Some(promise_resolver.get_promise(scope));
+        return;
     }
     // classic 上下文 helper 缺席面：嵌套动态 import() 走 prelude helper（幂等——
     // 模块脚本先于此执行时已装，presence 检查免重复求值）。
@@ -218,7 +285,7 @@ fn dynamic_import_callback<'s, 'i>(
         .filter(|v| !v.is_undefined());
     if let Some(entry) = cached_entry {
         promise_resolver.resolve(scope, entry);
-        return Some(promise_resolver.get_promise(scope));
+        return;
     }
     let has_helpers = v8::String::new(scope, "__zw_dynamic_import")
         .and_then(|key| context.global(scope).get(scope, key.into()))
@@ -265,7 +332,6 @@ fn dynamic_import_callback<'s, 'i>(
             }
         }
     }
-    Some(promise_resolver.get_promise(tc))
 }
 
 // 宿主回调注册表（线程局部）。FunctionTemplate 回调须为 `Copy`
@@ -902,6 +968,103 @@ impl V8Sandbox {
         }
     }
 
+    /// s256：到期动态 import() 挂起条目的完成泵——宿主延迟包裹契约（见
+    /// [`PendingDynamicImport`])的 poll 臂。取走到期条目后逐条以同步臂同款
+    /// settle（四态解析 + s124 缓存 + 编译求值 + 决议），每条后立即
+    /// `perform_microtask_checkpoint`（t-p103 D2-1 同款逐跳语义——resolve 随后
+    /// 的 `.then` 微任务整链排空，断言时序正确）。
+    ///
+    /// 返回 `true` = 队列仍有未到期条目（宿主可稍后再 poll）；`false` = 队列空。
+    /// 同步臂（回调内即时 settle）不受影响：无延迟包裹的 import() 行为与今恒等。
+    pub fn poll_pending_dynamic_imports(&mut self) -> bool {
+        // 取走本 sandbox 的到期条目（thread_local 键过滤——他 sandbox 的 Global
+        // 句柄不触碰）；本键队空零成本早退——execute 头部每跳调用，热路径不碰
+        // isolate。
+        let sandbox_key = Arc::as_ptr(&self.dynamic_import) as usize;
+        let mut had_pending = false;
+        let due_items: Vec<(String, String, v8::Global<v8::PromiseResolver>)> = PENDING_DYNAMIC_IMPORTS.with(|q| {
+            let mut queue = q.borrow_mut();
+            let now = std::time::Instant::now();
+            let mut due = Vec::new();
+            let mut rest = Vec::new();
+            for p in std::mem::take(&mut *queue) {
+                if p.sandbox_key != sandbox_key {
+                    rest.push(p);
+                } else if p.due <= now {
+                    let PendingDynamicImport {
+                        spec,
+                        contract,
+                        resolver,
+                        ..
+                    } = p;
+                    due.push((spec, contract, resolver));
+                } else {
+                    had_pending = true;
+                    rest.push(p);
+                }
+            }
+            *queue = rest;
+            due
+        });
+        if due_items.is_empty() {
+            return had_pending;
+        }
+        let persistent = self.config.persistent_context;
+        let watchdog_tx = self.watchdog_tx.clone();
+        let Some(isolate) = self.isolate.as_mut() else {
+            return had_pending;
+        };
+        // SAFETY: 与 execute 一致——OwnedIsolate 创建时已 enter，此处配对
+        // IsolateEnterGuard 维持栈式 enter/exit 纪律。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+        let thread_safe_handle = isolate.thread_safe_handle();
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
+        for (spec, contract, resolver) in due_items {
+            // 每条独立看门狗装载（module 体求值可执行任意 JS——与逐次 execute 的
+            // arm/disarm 语义一致；Drop 统一撤除，早退无残留）。
+            let _timeout_guard: Option<WatchdogGuard> = if self.config.timeout_ms > 0 {
+                let seq = self.watchdog_seq;
+                self.watchdog_seq += 1;
+                if let Some(tx) = &watchdog_tx {
+                    let _ = tx.send(WatchdogMsg::Arm {
+                        seq,
+                        timeout_ms: self.config.timeout_ms,
+                        handle: thread_safe_handle.clone(),
+                    });
+                    Some(WatchdogGuard { tx: tx.clone(), seq })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            let resolver_local = v8::Local::<v8::PromiseResolver>::new(try_catch, &resolver);
+            settle_dynamic_import(try_catch, resolver_local, &spec, &contract);
+            // 超时终止（module 体超 watchdog 时限）：解除 isolate 终止态并清
+            // TryCatch，条目 promise 保持 pending（取回挂死同形），不毒化后续
+            // execute。非终止臂照常 checkpoint——本条 resolve 触发的 `.then`
+            // 链整链排空后才处理下一跳。
+            if try_catch.has_terminated() {
+                try_catch.cancel_terminate_execution();
+                try_catch.reset();
+            } else {
+                try_catch.perform_microtask_checkpoint();
+                if try_catch.has_caught() {
+                    try_catch.reset();
+                }
+            }
+        }
+        had_pending
+    }
+
     /// 设置脚本执行超时（毫秒）；0 表示无超时。
     pub fn set_timeout_ms(&mut self, timeout_ms: u64) {
         self.config.timeout_ms = timeout_ms;
@@ -1331,6 +1494,14 @@ impl Drop for V8Sandbox {
         // Isolate" panic，extern "C" 回调内不可 unwind → abort）。排空即清 +
         // drop 即清双保险。
         PENDING_REJECTS.with(|p| p.borrow_mut().clear());
+        // s256：延迟 import 挂起条目持有本 sandbox isolate 的 Global resolver
+        // 句柄；drop 前未 poll 到（页面中途丢弃）时，残留句柄会在后续 poll 中
+        // 触碰已销毁 isolate——按键清空本 sandbox 残条（PENDING_REJECTS 同款
+        // drop 即清保险；键过滤不伤并存 sandbox 的条目）。
+        PENDING_DYNAMIC_IMPORTS.with(|q| {
+            let key = Arc::as_ptr(&self.dynamic_import) as usize;
+            q.borrow_mut().retain(|p| p.sandbox_key != key);
+        });
         if let Some(tx) = &self.watchdog_tx {
             let _ = tx.send(WatchdogMsg::Stop);
         }
@@ -1375,6 +1546,9 @@ impl crate::Sandbox for V8Sandbox {
     }
     fn set_dynamic_import_nonce(&mut self, nonce: Option<&str>) {
         V8Sandbox::set_dynamic_import_nonce(self, nonce)
+    }
+    fn poll_pending_dynamic_imports(&mut self) -> bool {
+        V8Sandbox::poll_pending_dynamic_imports(self)
     }
     fn register_dynamic_import_nonce_swapper(&mut self) {
         V8Sandbox::register_dynamic_import_nonce_swapper(self)
@@ -3418,6 +3592,64 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:TypeError:Failed to fetch module: './missing.js'"),
             "取回失败以携带 spec 的 TypeError rejection 呈现"
+        );
+    }
+
+    /// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：延迟包裹
+    /// 契约 `1\x1f<delay_ms>\x1f<inner>` 挂起 resolver——execute 返回时 promise
+    /// 仍 pending（`.then` 未触发，红态 = 同步臂包裹契约按普通 split 解析成
+    /// SyntaxError rejection），到期 poll settle 完成决议并 checkpoint 排空
+    /// `.then`；未到期 poll 不 settle 且报告仍有挂起。
+    #[test]
+    fn test_dynamic_import_deferred_contract_pending_until_poll_s256() {
+        // persistent_context（生产页面 sandbox 同款，webview ensure_sandbox 一致）
+        // ——poll settle 须落在 import promise 创建的同一 Context（模块体求值与
+        // `.then` 闭包同 realm）。
+        let mut sandbox = V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+            // 40ms 延迟包裹 + 成功契约（IIFE 求值为 namespace；体计数一次求值）。
+            "1\u{1f}40\u{1f}https://zero.test/slow.js\u{1f}(function() { return \
+             (function() { globalThis.__s256 = (globalThis.__s256|0) + 1; \
+             return { from: 'slow.js' }; })(); })()"
+                .to_string()
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(first) = args.first() {
+                    settled_cb.lock().unwrap().push(first.clone());
+                }
+                String::new()
+            }),
+        );
+        sandbox
+            .execute(
+                "import('./slow.js').then(\n\
+                   function (m) { __zw_report('fulfilled:' + JSON.stringify(m) + ':' + globalThis.__s256); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name)); });\n",
+            )
+            .expect("延迟包裹 import() 不得同步 throw");
+        assert!(
+            settled.lock().unwrap().is_empty(),
+            "延迟窗内 .then 不触发（promise pending，红态此处已被同步 reject）"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        assert!(sandbox.poll_pending_dynamic_imports(), "未到期 poll 报告仍有挂起条目");
+        assert!(settled.lock().unwrap().is_empty(), "未到期 poll 不 settle");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!sandbox.poll_pending_dynamic_imports(), "settle 后队列空");
+        assert_eq!(
+            settled.lock().unwrap().as_slice(),
+            ["fulfilled:{\"from\":\"slow.js\"}:1"],
+            "到期 poll 完成决议且模块体恰好一次求值"
         );
     }
 

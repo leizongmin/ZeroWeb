@@ -559,6 +559,19 @@ pub trait Sandbox {
     /// **默认 no-op**：QuickJS 后端降级（同上）。
     fn set_dynamic_import_nonce(&mut self, _nonce: Option<&str>) {}
 
+    /// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：到期动态
+    /// `import()` 挂起条目的完成泵。宿主 resolver 经包裹契约 `1\u{1f}<delay_ms>\u{1f}<inner>`
+    /// 声明取回延迟时，import() promise 在延迟窗内保持 pending（取回不阻塞当前脚本
+    /// 回合）；宿主在后续执行探针（execute 头部 / 定时器与回调排空点）调本方法，
+    /// 到期条目逐条 settle 并紧跟 microtask checkpoint（`.then` 链整链排空）。
+    ///
+    /// 返回 `true` = 队列仍有未到期条目（可稍后再 poll）；`false` = 队列空。
+    ///
+    /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
+    fn poll_pending_dynamic_imports(&mut self) -> bool {
+        false
+    }
+
     /// s90（string-compilation base URL——inline 事件处理器臂）：注册全局函数
     /// `__zwSwapImportReferrer(url)`——返回旧 referrer 并换入新值。JS shim 于
     /// inline/反射事件处理器求值窗调用（体内动态 import() 用求值时刻文档基 URL）。

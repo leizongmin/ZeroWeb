@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 255 施工收口（星号导出歧义检测 + module 求值错原值报告 + 注册序确定化——三目标键 instantiation-error-6/7 + error-type-3 全 F→P。勘根四根因：module_provides_export 布尔归并无歧义语义（tc39 ResolveExport star 臂子解析歧义传播，Node oracle 实证 7 形兄弟臂可消解不豁免）/ transform_export 三处 Fresh star/re-export 内联裸 IIFE 无记忆化（R5182 只做 import 侧，ierr-6 双份求值实证）/ 求值错报告双折损（script_report_module_failure 重构 SyntaxError 丢原值 + shim reportError 非 Error 折 null，spec report the exception 任意 throwable 原值透传）/ prelude 急切注册 registry 哈希序（求值序可观察，spec 依赖图后序，ierr-7 7d/7e 颠倒实证）。施工 A-E 刀：es_module ExportResolution 三态（Provides/Ambiguous/Missing，Ambiguous→CompileError "conflicting star exports"）+ transform_export memoized_dep_expr + module_graph_postorder 注册序（未注册依赖/解析失败跳过，不可达余量字典序保覆盖）；script_gen script_module_eval_error_report 哨兵上报 + shim reportError 原值透传；webview try/catch 哨兵暂存 + post-check + s107 门控防 load 双发；runner data-zw-unit 单元标记查回尾片（弃 currentScript module 恒 null 死代码）。单测 384 全绿（+3 钉：歧义三形/一次求值/注册序）+ engine 3714 过（5 失败 = 82153965c 在账 HEAD 既有对端账，stash 法定谳非本轮回归）+ webview 835 全绿；全树 A/B 键级 8303→8307（LOST 5/GAINED 9）迁移恰 3 键与目标全等，三处页级完成度位移全定性（focus 跑满 +1P/select 回惯常 4F/evaluation-order-1 截断掩盖解除新可见 microtask 排空既有机制 Fail——B 刀去重复求值页面变快，非回归）；新挂账 microtask checkpoint 排空时序族（classic/module 两变体同修面）；承前：M2 切片 254（import.meta.resolve + 进程内 import map 接线 4 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 256 施工收口（动态 import 延迟决议——native 通道 deferred contract + 到期 poll 泵，目标键 delay-load-event F→P）。勘根含 **s253 判读勘误**：trickle 冻结 JS 2s 说法不成立——runner fetcher 忽略 trickle 即时返回，真因是 native 通道 dynamic_import_callback 同步取回+求值+resolve，断言微任务早于 load 事件链（classic inline 面 rewrite 不可达，走 s88 V8 原生回调）。施工 8 刀：script-sandbox PendingDynamicImport + PENDING_DYNAMIC_IMPORTS thread_local（Global 非 Send，sandbox_key=Arc::as_ptr 身份过滤）+ 回调延迟包裹臂（`1\x1f<delay>\x1f<inner>`，前缀判定同 s252 `3\x1f` 口径）+ settle_dynamic_import 共享体（四态+s124 缓存+IIFE 求值+决议）+ poll_pending_dynamic_imports（逐条看门狗+checkpoint 逐跳，超时终止臂 cancel+reset 不毒化）+ trait 默认 no-op；webview dynamic_import_fetch_delay 配置 + resolver CSP 后包裹 + 三探针点泵；runner 注册 trickle_delay_ms provider（s112 解析器复用）；单测钉面（红态实证）。script-sandbox 385 全绿（+1 钉）+ webview 834 过（1 失败=HEAD 既有 stash 定谳）+ runner 281 全绿（8 线程撞 4GB guard 上限为既有负载形态，--test-threads=2 干净）；全树 A/B 行级 7793P/440F/77T→7794P/439F/77T，键级 (key,state) 8307→8307 LOST 1/GAINED 1 迁移恰 1 键与目标全等零位移；挂账更新（credentials/shared-dependency 承前 + 并发慢 import dedup 新记档）；承前：M2 切片 255（星号导出歧义 + 求值错原值 + 注册序，3 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,58 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 256**：动态 import 延迟决议轮（s255 候选 #1，
+  delay-load 根因切片 + trickle 慢模块时序族）——勘根含 **s253 判读
+  勘误**：「trickle 冻结 JS 回合 2 秒」不成立——runner 脚本 fetcher
+  忽略 trickle 管道即时返回（注册处注释自证），真因：native 通道
+  `dynamic_import_callback`（s88 V8 原生回调——classic inline 面
+  rewrite_dynamic_imports 不可达）脚本回合内**同步**取回+求值+resolve，
+  断言微任务早于 window load 事件与 +1s step_timeout 排空（红态
+  `got ["import start","slow"]`，spec 判据：import promise 取回完成前
+  保持 pending、不阻塞 load 链；
+  https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieve-promise
+  ）。施工 **8 刀**：script-sandbox `PendingDynamicImport` +
+  `PENDING_DYNAMIC_IMPORTS` thread_local（`v8::Global` 非 Send 不能进
+  `Arc<Mutex<DynamicImportState>>`；sandbox_key=`Arc::as_ptr::<Dynamic
+  ImportState>` 身份过滤——同线程多 sandbox 存活期重叠只取本条目）+
+  回调延迟包裹臂（宿主契约 `1\x1f<delay_ms>\x1f<inner>`，前缀判定
+  无歧义同 s252 `3\x1f` 口径；CSP 阻止面同步不延迟、失败契约照慢
+  语义）+ `settle_dynamic_import` 共享体（四态 + s124 module map +
+  IIFE 求值 + 决议，回调臂与 poll 臂共用——v8 150.2 API 恒取
+  `&PinScope`，TryCatch deref 单签名覆盖两调用点）+ `poll_pending_
+  dynamic_imports`（本 sandbox 到期条目逐条 settle，IsolateEnterGuard
+  栈纪律 + 逐条 WatchdogGuard Arm/Disarm + 每条后 microtask
+  checkpoint（t-p103 D2-1 逐跳语义）；超时终止臂 cancel+reset、
+  promise 保持 pending 不毒化；队空零成本早退）+ trait 默认 no-op
+  （QuickJS 维持不支持态）+ Drop 按键清残条（PENDING_REJECTS 同款
+  保险）；webview `WebViewConfig::dynamic_import_fetch_delay`（
+  `Arc<dyn Fn(&str)->u64>` 输入解析 URL）+ resolver CSP 后包裹 +
+  三探针点泵（execute_script / execute_script_with_dom 头部 +
+  drain_pending_timers_until_idle 循环头）；runner 注册
+  `trickle_delay_ms` provider（s112 解析器复用，`pipe=trickle((d)N)`
+  秒×1000 30s 封顶——trickle 管道从此建模为真实网络秒级延迟）。钉面
+  `test_dynamic_import_deferred_contract_pending_until_poll_s256`
+  （persistent 镜像生产 sandbox；40ms 包裹三段断言 pending→未到期
+  poll 不 settle→到期 settle 恰一次求值；红态实证——neutralize 包裹
+  臂后首断言挂，旧版本因目标行为失败）。验证：script-sandbox **385
+  全绿**（384 基线 + 1 钉）；webview **834 过 + 1 失败 = HEAD 既有**
+  （image_decoder proxy_mode stash 法定谳非本轮回归）；runner 单测
+  **281 全绿**（--test-threads=2；默认 8 线程 corpus 单测进程峰值
+  4.2GB 撞 guard 4GB 上限被杀——既有负载形态非本切片引入）；fmt/
+  clippy 三 crate 零告警（含 useless_format 钉面返修）；quickjs-only
+  clippy 干净。solo 终态 delay-load-event **F→P**（s256-solo-
+  delayload.log）；module 目录邻接面（s256-solo-module-dir.log 271
+  行）fetch-error 8 子测试全 Pass、credentials/shared-dependency/
+  TLA 家族维持基线态；全树 A/B（窗口独占）行级 7793P/440F/77T →
+  **7794P/439F/77T**，键级 (key,state) **8307→8307 LOST 1/GAINED 1
+  迁移恰 1 键 = 目标键全等零其他位移**。已知简化在账：同 spec 并发
+  慢 import 挂起条目不 dedup（s124 缓存只同步臂命中面）；shim
+  `__zw_compile_module` 通道不包裹（无语料目标）；非持久 context
+  poll 落 resolve_context 所得 context。挂账更新：**并发慢 import
+  dedup**（新记档）；承前不动：credentials 面（×12 + setTimeout 变
+  体）、shared-dependency 取回计数、microtask checkpoint 排空时序
+  族（s255）。账本
+  [evidence/2026-11-03-m2s256-dynamic-import-deferred-poll.md](html-semantics-compat/evidence/2026-11-03-m2s256-dynamic-import-deferred-poll.md)。
 - **2026-11-03 M2 切片 255**：星号导出歧义检测 + module 求值错原值
   报告 + 注册序确定化轮（s254 候选 #1）——勘根四根因：①
   `module_provides_export` 布尔归并无歧义语义（tc39 ResolveExport
