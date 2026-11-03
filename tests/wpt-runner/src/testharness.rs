@@ -10382,6 +10382,9 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
     let case_dir = case_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
     let mut output = String::with_capacity(html.len());
     let mut remaining = html;
+    // s255：投递单元标记计数——module 单元 load/error 尾按 `data-zw-unit` 查回元素
+    // （见 script_event_dispatch_tail_unit）。
+    let mut unit_counter: usize = 0;
     loop {
         let Some(start) = remaining.find("<script") else {
             output.push_str(remaining);
@@ -10568,8 +10571,21 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 // https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
                 let onload_attr = script_event_handler_attr(open, "onload");
                 let onerror_attr = script_event_handler_attr(open, "onerror");
+                // s255：module 单元判定 + 投递单元标记（load/error 尾按标记查回元素
+                // ——currentScript 版尾片在 module 体恒死代码，见尾片函数注记）。
+                let is_module_unit = matches!(
+                    zero_engine::attr_from_open_tag(open, "type"),
+                    Some(t) if t.trim().eq_ignore_ascii_case("module")
+                );
+                let unit_id = unit_counter;
+                unit_counter += 1;
+                let unit_attr = if is_module_unit {
+                    format!(" data-zw-unit=\"{unit_id}\"")
+                } else {
+                    String::new()
+                };
                 output.push_str(&format!(
-                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr} data-zw-harness data-inline=\""
+                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-harness data-inline=\""
                 ));
                 output.push_str(&combined);
                 output.push_str("\">");
@@ -10582,10 +10598,7 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                     // export」编译错（nomodule-set-on-external-module-script 实测）。重写
                     // 相对 spec 为 root-absolute，恢复「相对 requesting module 解析」语义。
                     // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
-                    let content = if matches!(
-                        zero_engine::attr_from_open_tag(open, "type"),
-                        Some(t) if t.trim().eq_ignore_ascii_case("module")
-                    ) {
+                    let content = if is_module_unit {
                         rewrite_inline_module_import_specs(&content, &combined)
                     } else {
                         content
@@ -10621,7 +10634,14 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                         ));
                     }
                     None => {
-                        unit_body.push_str(&script_event_dispatch_tail(tail_event));
+                        // s255：module 单元尾片改标记查回（currentScript 在 module
+                        // 体恒 null——既有尾片死代码，ierr-6/7 onload 标记缺失实证）；
+                        // classic 单元维持 currentScript 形（s100 既有通道不动）。
+                        if is_module_unit {
+                            unit_body.push_str(&script_event_dispatch_tail_unit(tail_event, unit_id));
+                        } else {
+                            unit_body.push_str(&script_event_dispatch_tail(tail_event));
+                        }
                         output.push_str(&unit_body);
                     }
                 }
@@ -10767,6 +10787,22 @@ fn script_event_dispatch_tail_el(event: &str, el_expr: &str) -> String {
 
 fn script_event_dispatch_tail(event: &str) -> String {
     script_event_dispatch_tail_el(event, "document.currentScript")
+}
+
+/// s255：module 投递单元 load/error 事件尾（`data-zw-unit` 标记查回形）——spec
+/// `document.currentScript` 仅 classic 脚本求值期非 null，module 体内恒 null，
+/// 既有 currentScript 版尾片在 module 单元为**死代码**（instantiation-error-6/7
+/// onload 标记缺失实证：外链 module 成功执行后 log 无 onload 推入）。改按标记
+/// 属性查回元素派发；序号口径（`getElementsByTagName` 下标）不采用——JS 字符串
+/// 内 `<script` 文本会令投递期文本计数对 DOM 真实序号膨胀（s112 同族病态面）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+fn script_event_dispatch_tail_unit(event: &str, unit: usize) -> String {
+    format!(
+        "\n;(function () {{ var _els = document.getElementsByTagName('script'); \
+         for (var _i = 0; _i < _els.length; _i++) {{ var _cs = _els[_i]; \
+         if (_cs.getAttribute && _cs.getAttribute('data-zw-unit') === '{unit}') {{ \
+         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} break; }} }} }})();\n"
+    )
 }
 
 /// 从 `<script src="...">` 标签提取 src 值（单/双引号）。

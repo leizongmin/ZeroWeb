@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 254 施工收口（import.meta.resolve + 进程内 import map 接线——import map 基建 s92 起在（import_map.rs 12 单测 + resolve_registered_specifier map 臂），缺 webview 进程内消费面：extract_import_map_json 零调用方。施工 9 刀：es_module prelude `__zwImportMapResolve` 宿主桥（返空 = resolution failure → TypeError；未接线宿主 typeof 守卫同落 TypeError）+ build_module_script/build_dep_iife 两处 `_importMeta.resolve` 恒发射（String(spec) + 本模块 url 穿入）；webview 页面首张合法 map 解析（parse 失败 warn 跳过，js_worker 多进程形态对齐）+ `__zw_importmap_resolve` 回调（resolve 全算法 + 映射值 base join 绝对化）+ 动态 import 两 resolver 闭包 apply_import_map 改写（resolve_mapped 仅实际命中，未命中原样零漂移；CSP nonce/fetch 均用映射后 abs）+ 静态面 registry.set_import_map；语料 ③d 补拉 export-1/2.mjs（幂等固化坑同 ③b，s227 教训先验资产）。import-meta-resolve-importmap.html 4 键 F→P（bare 映射/URL-like 重写/ToString/链式 map 再应用——新 API 较动态 import join 降级更严，裸未映射 TypeError）；全树 A/B 键级 8306→8303 闭合（-5 LOST +2 GAINED）迁移恰 5 键 = 目标 4 + 在册 checkbox `:active` 漂移族 F→P 回摆（先例销账）；两处键形态位移经 solo 复跑证实为 A/B 窗口并发编译负载（focus 页 80/80 复得、select 页回惯常 4F 同形）——**教训：全树 A/B 运行窗口禁并发编译负载**；新挂账 renderer/tab 宿主 import.meta.resolve 接线 + import maps 剩余语义面（多张 map/动态插入/Blocked 降级）；承前：M2 切片 253（CSP eval 门禁互斥模块编译通道 1 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 255 施工收口（星号导出歧义检测 + module 求值错原值报告 + 注册序确定化——三目标键 instantiation-error-6/7 + error-type-3 全 F→P。勘根四根因：module_provides_export 布尔归并无歧义语义（tc39 ResolveExport star 臂子解析歧义传播，Node oracle 实证 7 形兄弟臂可消解不豁免）/ transform_export 三处 Fresh star/re-export 内联裸 IIFE 无记忆化（R5182 只做 import 侧，ierr-6 双份求值实证）/ 求值错报告双折损（script_report_module_failure 重构 SyntaxError 丢原值 + shim reportError 非 Error 折 null，spec report the exception 任意 throwable 原值透传）/ prelude 急切注册 registry 哈希序（求值序可观察，spec 依赖图后序，ierr-7 7d/7e 颠倒实证）。施工 A-E 刀：es_module ExportResolution 三态（Provides/Ambiguous/Missing，Ambiguous→CompileError "conflicting star exports"）+ transform_export memoized_dep_expr + module_graph_postorder 注册序（未注册依赖/解析失败跳过，不可达余量字典序保覆盖）；script_gen script_module_eval_error_report 哨兵上报 + shim reportError 原值透传；webview try/catch 哨兵暂存 + post-check + s107 门控防 load 双发；runner data-zw-unit 单元标记查回尾片（弃 currentScript module 恒 null 死代码）。单测 384 全绿（+3 钉：歧义三形/一次求值/注册序）+ engine 3714 过（5 失败 = 82153965c 在账 HEAD 既有对端账，stash 法定谳非本轮回归）+ webview 835 全绿；全树 A/B 键级 8303→8307（LOST 5/GAINED 9）迁移恰 3 键与目标全等，三处页级完成度位移全定性（focus 跑满 +1P/select 回惯常 4F/evaluation-order-1 截断掩盖解除新可见 microtask 排空既有机制 Fail——B 刀去重复求值页面变快，非回归）；新挂账 microtask checkpoint 排空时序族（classic/module 两变体同修面）；承前：M2 切片 254（import.meta.resolve + 进程内 import map 接线 4 键 F→P）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,57 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 255**：星号导出歧义检测 + module 求值错原值
+  报告 + 注册序确定化轮（s254 候选 #1）——勘根四根因：①
+  `module_provides_export` 布尔归并无歧义语义（tc39 ResolveExport
+  star 臂子解析歧义传播——Node 24 oracle 实证 7 形：7b→7c→{7d,7e}
+  子链歧义 + 兄弟臂 7f 可消解**不豁免**仍 SyntaxError；星号歧义只
+  影响导入方，7b 自身可链接照 evaluate）；② transform_export 三处
+  Fresh star/re-export 内联裸 IIFE 无记忆化（R5182 只做 import 侧
+  ——急切臂已缓存仍重跑，ierr-6 got 6c/6d 双份实证）；③ 求值错报
+  告双折损：module 体抛错走 script_report_module_failure 重构
+  SyntaxError 丢原值对象（error-type-3 `log[1].foo` 对
+  `throw {foo:true}` 断言）+ shim reportError 非 Error 折 null（spec
+  report the exception 任意 throwable 原值透传）；
+  https://html.spec.whatwg.org/multipage/webappapis.html#dom-report-error
+  ④ prelude 急切注册 `registry.specifiers()` 哈希序——求值序可观察
+  （spec 依赖图 depth-first post-order，ierr-7 got [7e,7d,7c,7f,7b]
+  实证）。施工 **A-E 刀**：es_module `ExportResolution` 三态
+  （Provides/Ambiguous/Missing——星号臂 star_provides 计数 +
+  star_ambiguous 传播旗，显式重导出臂仅 Provides 提前返回；
+  Ambiguous→CompileError "conflicting star exports"，s102 通道映射
+  SyntaxError）+ transform_export 三处 `memoized_dep_expr` +
+  `module_graph_postorder` 注册序（静态依赖提取复用 transform 同款
+  helper，动态 import() 非链接依赖不入；未注册/解析失败跳过；不可
+  达余量字典序追加保全量覆盖）；script_gen
+  `script_module_eval_error_report`（JS 侧取哨兵原值 reportError +
+  元素照常 fire load）+ shim reportError error 原值透传（全仓两调
+  用方：s102 臂恒 Error 实例不受扰）；webview try/catch 哨兵暂存
+  **原值对象**（execute Rust Err 只剩文本）+ post-check + s107 门
+  控防 load 双发；runner `data-zw-unit` 投递单元标记查回尾片（弃
+  currentScript——module 体恒 null 死代码；弃序号口径——JS 字符串
+  内 `<script` 文本计数膨胀）。验证：单测 script-sandbox **384 全
+  绿**（+3 钉：`test_star_export_ambiguity_s255` 三形 6/7/对照 +
+  `test_star_inline_dep_evaluated_once_s255` + `test_prelude_
+  registration_postorder_s255`）；engine **3714 过 + 5 失败 = HEAD
+  既有对端账**（js_dom_bridge CSSOM 5 案，82153965c 提交消息在账，
+  stash 法定谳非本轮回归）；webview **835 全绿**；fmt/clippy 四
+  crate 零告警；solo 终态 instantiation-error **7P+1T**（6/7 F→P，
+  8 号 Timeout 既有）+ error-type **3P**（3 F→P）；中间红态两轮记
+  档（ierr-7 仅 7d/7e 颠倒→暴露哈希序→E 刀；error-type-3 仍
+  log[1] null→暴露 shim 折 null→C2 刀）；全树 A/B（窗口独占——
+  s254 教训执行）行级 7793P/440F/77T、键级 **8303→8307（LOST 5 /
+  GAINED 9）迁移恰 3 键与目标全等**，三处页级完成度位移全定性非回
+  归：focus 跑满（Timeout 线消失 +1P，在册抖动族向完成摆动）/
+  select 回惯常 4F（s251 起基线态）/ evaluation-order-1 截断掩盖解
+  除新可见「Module script queueing a microtask」Fail（solo 复现同
+  断言，与页内 classic 变体长期在账同机制——microtask checkpoint
+  排空时序，B 刀去重复求值页面变快截断后移）。挂账更新：**microtask
+  checkpoint 排空时序族**（classic/module 两变体同修面，新记档）；
+  承前不动：renderer/tab import.meta.resolve 接线、import maps 剩
+  余语义面、data-zw-harness 保真面（D 刀后收窄为注入序）、s250 动
+  态内联 module 臂 eval 通道、instantiation-error-8 Timeout。账本
+  [evidence/2026-11-03-m2s255-star-export-ambiguity.md](html-semantics-compat/evidence/2026-11-03-m2s255-star-export-ambiguity.md)。
 - **2026-11-03 M2 切片 254**：import.meta.resolve + 进程内 import map
   接线轮（s253 候选 #1）——勘根：基建完整（`import_map.rs`
   parse/resolve/resolve_mapped 12 单测 + `resolve_registered_specifier`

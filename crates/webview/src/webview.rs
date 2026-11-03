@@ -15,7 +15,7 @@ use zero_engine::{
     image_resource_key, page_script_error_check, register_dom_callbacks, resolve_document_url,
     script_clear_current_script, script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event,
     script_dispatch_script_event, script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation,
-    script_report_module_failure, script_run_classic_page, script_set_current_script,
+    script_module_eval_error_report, script_report_module_failure, script_run_classic_page, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -4677,7 +4677,16 @@ impl WebView {
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
                         let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry, Some(&url))
                             .unwrap_or_default();
-                        format!("__zw_begin_script && __zw_begin_script();\n{prelude}\n{transformed}")
+                        // s255（求值错原值报告面）：try/catch 哨兵暂存**原值抛出对象**
+                        // （execute 的 Rust Err 只剩文本，对象身份/属性丢失——error-type-3
+                        // 判据 `log[1].foo` 对 `throw {foo:true}` 断言；报告经 post-check
+                        // `script_module_eval_error_report` 在 JS 侧取哨兵原样上报）。
+                        // 包装级 parse 失败（体语法错）时整体 execute 仍 Err → 下方
+                        // s102 臂照旧，语义不变。
+                        // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+                        format!(
+                            "__zw_begin_script && __zw_begin_script();\ntry {{\n{prelude}\n{transformed}\n}} catch (__zwModEvalErr) {{ globalThis.__zwModEvalErrObj = __zwModEvalErr; }}"
+                        )
                     }
                     Err(e) => {
                         // s102（module 错误报告面）：编译/链接失败属 fetch 成功后的失败——
@@ -4785,15 +4794,27 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     "if(globalThis.__zwRealEval)globalThis.eval=globalThis.__zwRealEval;if(globalThis.__zwRealFunction)globalThis.Function=globalThis.__zwRealFunction;",
                 );
             }
+            // s255（求值错原值报告面）：post-check 取哨兵原样上报（reportError 原值
+            // 对象 + 元素照常 fire load）。返回 '1' = 求值抛错已报告——s107 成功臂
+            // 须跳过（防 load 双发）；'' = 无抛错。execute Err（包装级 parse 失败）
+            // 时哨兵臂不达，下方 s102 臂照旧。
+            let eval_err_reported = if is_module {
+                sandbox
+                    .execute(&script_module_eval_error_report(script_index))
+                    .map(|r| r.value)
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
             // s107（module 元素 load 面）：**外链**模块取回+编译+求值成功 → 元素 fire
             // load（spec load 事件属 fetch 完成路径——此前仅失败面有派发：s102 report
             // 面附 load、s103/图网络失败面附 error，成功路径无 load）。内联模块成功
             // **不** fire load（load-error-events-inline 四臂判据 assert_unreached
             // 「Load event should not be fired」；内联无 fetch，load/error 不适用）。
             // 求值抛错走上方 s102 面（其附 load），此处仅外链成功臂，按 src 匹配派发
-            //（R2944 同口径）。
+            //（R2944 同口径）；s255 哨兵已报告的求值抛错不再进本臂。
             // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-            if is_module && execution.is_ok() && module_dep_base.is_some() {
+            if is_module && execution.is_ok() && module_dep_base.is_some() && eval_err_reported.is_empty() {
                 let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "load"));
             }
             let script_error = if strict && !is_module && execution.is_ok() {

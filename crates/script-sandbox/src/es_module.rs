@@ -236,6 +236,79 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
     build_dep_iife(specifier, registry, &mut HashSet::new())
 }
 
+/// s255：入口图 depth-first post-order 注册序——模块体求值序按依赖图后序、同层按
+/// 源内声明序（ECMA-262 EvaluateModule 图遍历语义）。旧实现在 registry 哈希序注册
+/// （HashMap 迭代序），多依赖模块的副作用顺序不确定——instantiation-error-7 实测
+/// 7d/7e 颠倒。入口图不可达的 registry 余量按字典序追加（保持全量急切注册覆盖，
+/// 仅定序）；未注册依赖与解析失败说明符跳过（定序尽力而为，链接/语法错误仍由
+/// build 路径如实报告）。
+/// https://tc39.es/ecma262/#sec-moduleevaluation
+fn module_graph_postorder(entry: Option<&str>, registry: &ModuleRegistry) -> Vec<String> {
+    let mut ordered = Vec::new();
+    let mut visited = HashSet::new();
+    if let Some(entry) = entry {
+        postorder_visit(entry, registry, &mut visited, &mut ordered);
+    }
+    let mut leftovers: Vec<&str> = registry
+        .specifiers()
+        .into_iter()
+        .filter(|spec| !visited.contains(*spec))
+        .collect();
+    leftovers.sort_unstable();
+    ordered.extend(leftovers.into_iter().map(str::to_string));
+    ordered
+}
+
+fn postorder_visit(
+    specifier: &str,
+    registry: &ModuleRegistry,
+    visited: &mut HashSet<String>,
+    ordered: &mut Vec<String>,
+) {
+    if !visited.insert(specifier.to_string()) {
+        return;
+    }
+    let Some(source) = registry.get(specifier) else {
+        return;
+    };
+    for dep in static_dependency_specifiers(source, specifier, registry) {
+        postorder_visit(&dep, registry, visited, ordered);
+    }
+    ordered.push(specifier.to_string());
+}
+
+/// s255：模块源静态依赖说明符（import / export-from 的 module request，源内出现序）。
+/// 动态 `import()` 非链接依赖不入（spec：运行时取回，不影响静态图求值序）。解析与
+/// transform 同口径（`resolve_registered_specifier`，过页面 import map）。
+fn static_dependency_specifiers(source: &str, importer_url: &str, registry: &ModuleRegistry) -> Vec<String> {
+    let mut raw = Vec::new();
+    for stmt in split_statements(source) {
+        let trimmed = stmt.trim();
+        let head = trimmed.split(';').next().unwrap_or(trimmed).trim();
+        if let Some(clause) = strip_import_keyword(trimmed) {
+            let clause_head = clause.split(';').next().unwrap_or(clause).trim();
+            if clause_head.starts_with('\'') || clause_head.starts_with('"') || clause_head.starts_with('`') {
+                if let Ok(spec) = extract_string_literal(clause_head) {
+                    raw.push(spec);
+                }
+            } else if let Some((_before, spec_part)) = split_from_clause(clause_head)
+                && let Ok(spec) = extract_import_specifier_from_rest(spec_part)
+            {
+                raw.push(spec);
+            }
+        } else if strip_export_keyword(trimmed).is_some()
+            && (head.starts_with('*') || head.starts_with('{'))
+            && let Some((_before, spec_part)) = split_from_clause(head)
+            && let Ok(spec) = extract_import_specifier_from_rest(spec_part)
+        {
+            raw.push(spec);
+        }
+    }
+    raw.into_iter()
+        .map(|spec| resolve_registered_specifier(&spec, importer_url, registry))
+        .collect()
+}
+
 /// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
 ///
 /// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis` 持久——同文档多个 module
@@ -245,7 +318,8 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 /// [`MODULE_CACHE_RESET_SCRIPT`]（否则跨文档导航后同 URL 模块零次求值——D1 回归）。
 /// `entry` 为入口模块 URL：入口不在 prelude 急切执行（否则入口体跑两遍），由调用方
 /// `compile_module_script` 的转换体承担该入口的求值；非入口注册模块照旧急切求值（转换式
-/// 架构无 live binding，入口的静态导入依赖 prelude 预热的依赖实例）。
+/// 架构无 live binding，入口的静态导入依赖 prelude 预热的依赖实例），注册序为入口图
+/// 后序（s255，[`module_graph_postorder`]——求值序可观察）。
 pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
     let mut out = String::from(
         "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n",
@@ -346,13 +420,16 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 接线未达，FIXME 挂账）同样回落 TypeError 而非 ReferenceError。
     // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
     out.push_str("globalThis.__zwImportMapResolve = function (spec, base) {\n  if (typeof __zw_importmap_resolve !== 'function') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  var r = __zw_importmap_resolve(spec, base);\n  if (r === '') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  return r;\n};\n");
-    for spec in registry.specifiers() {
+    // s255：注册序 = 入口图 depth-first post-order（模块体求值序可观察，见
+    // module_graph_postorder 注记；旧 registry.specifiers() 哈希序致依赖体副作用
+    // 顺序不定——instantiation-error-7 实测 7d/7e 颠倒）。
+    for spec in module_graph_postorder(entry, registry) {
         // R5182：入口跳过急切求值——入口由调用方的转换体求值一次（否则 prelude 急切执行
         // 一遍 + 转换体再执行一遍，模块体副作用翻倍；红态实测入口计数 2）。
-        if entry == Some(spec) {
+        if entry == Some(spec.as_str()) {
             continue;
         }
-        let iife = build_dep_iife(spec, registry, &mut HashSet::new())?;
+        let iife = build_dep_iife(&spec, registry, &mut HashSet::new())?;
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
         // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。判定用
@@ -1021,13 +1098,31 @@ fn ensure_module_export(specifier: &str, name: &str, registry: &ModuleRegistry) 
     if registry.get(specifier).is_none() {
         return Err(ScriptError::RuntimeError(format!("Module not found: {specifier}")));
     }
-    if module_provides_export(specifier, name, registry, &mut HashSet::new()) {
-        Ok(())
-    } else {
-        Err(ScriptError::CompileError(format!(
+    match module_provides_export(specifier, name, registry, &mut HashSet::new()) {
+        ExportResolution::Provides => Ok(()),
+        // s255：星号歧义 = 链接期 SyntaxError（tc39 Instantiate：歧义名不进入导出
+        // 面也不得导入——WPT instantiation-error-6/7 判据；webview 侧 CompileError
+        // 统一映射 SyntaxError 报告面，s102 通道）。
+        // https://tc39.es/ecma262/#sec-moduledeclarationlinking
+        ExportResolution::Ambiguous => Err(ScriptError::CompileError(format!(
+            "Module {specifier} contains conflicting star exports for name '{name}'"
+        ))),
+        ExportResolution::Missing => Err(ScriptError::CompileError(format!(
             "Module {specifier} does not provide an export named {name}"
-        )))
+        ))),
     }
+}
+
+/// s255：具名导出解析三态（tc39 ResolveExport 语义的静态近似）——`Provides` 命中、
+/// `Ambiguous` 星号重导出歧义（同名经 ≥2 条星号路径可达，或子链歧义经星号传播——
+/// Node 实证：7a 经 7b 的星号发现 7c 内 7d/7e 歧义，仍 link 失败）、`Missing` 未提供。
+/// 循环（visited 重入）按 Missing（既有口径——自导入报 not provided）。
+/// https://tc39.es/ecma262/#sec-resolveexport
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExportResolution {
+    Provides,
+    Ambiguous,
+    Missing,
 }
 
 fn module_provides_export(
@@ -1035,13 +1130,15 @@ fn module_provides_export(
     name: &str,
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
-) -> bool {
+) -> ExportResolution {
     if !visited.insert(specifier.to_string()) {
-        return false;
+        return ExportResolution::Missing;
     }
     let Some(source) = registry.get(specifier) else {
-        return false;
+        return ExportResolution::Missing;
     };
+    let mut star_provides = 0usize;
+    let mut star_ambiguous = false;
     for statement in split_statements(source) {
         let Some(rest) = strip_export_keyword(statement.trim()) else {
             continue;
@@ -1050,13 +1147,13 @@ fn module_provides_export(
             && let Some(expr) = rest.strip_prefix("default")
             && !expr.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
         {
-            return true;
+            return ExportResolution::Provides;
         }
         for declaration in ["const ", "let ", "var ", "function ", "class "] {
             if let Some(value) = rest.strip_prefix(declaration)
                 && extract_binding_name(value) == name
             {
-                return true;
+                return ExportResolution::Provides;
             }
         }
         // export * [as N] from 'module'（压缩形态 export*from"m" 同样命中）
@@ -1070,7 +1167,7 @@ fn module_provides_export(
                 if let Some((namespace, _)) = split_from_clause(after_as)
                     && namespace.trim() == name
                 {
-                    return true;
+                    return ExportResolution::Provides;
                 }
                 continue;
             }
@@ -1079,8 +1176,15 @@ fn module_provides_export(
                 && let Ok(raw) = extract_import_specifier_from_rest(spec_part)
             {
                 let dependency = resolve_registered_specifier(&raw, specifier, registry);
-                if module_provides_export(&dependency, name, registry, visited) {
-                    return true;
+                match module_provides_export(&dependency, name, registry, visited) {
+                    ExportResolution::Provides => star_provides += 1,
+                    // s255：星号子链歧义传播——spec ResolveExport 星号臂子解析为
+                    // null（歧义）时整体即 null，不因其他星号路径可命中而消解
+                    //（Node 24 实证：7c 内 7d/7e 歧义经 7b 星号上浮，7a 仍 link
+                    // 失败，尽管 7f 直出同名）。
+                    // https://tc39.es/ecma262/#sec-resolveexport
+                    ExportResolution::Ambiguous => star_ambiguous = true,
+                    ExportResolution::Missing => {}
                 }
             }
         }
@@ -1095,17 +1199,31 @@ fn module_provides_export(
                 let (imported, exported) = item
                     .split_once(" as ")
                     .map_or((item, item), |(imported, exported)| (imported.trim(), exported.trim()));
-                if exported == name
-                    && from_specifier
-                        .as_deref()
-                        .is_none_or(|dependency| module_provides_export(dependency, imported, registry, visited))
-                {
-                    return true;
+                if exported != name {
+                    continue;
+                }
+                match from_specifier.as_deref() {
+                    None => return ExportResolution::Provides,
+                    // s255：显式重导出子链歧义按未绑定继续——spec ResolveExport
+                    // 显式重导出臂 resolution 为 null 时落入后续子句/星号，不就
+                    // 地判歧义（与星号臂传播相对）。
+                    Some(dependency) => {
+                        if module_provides_export(dependency, imported, registry, visited) == ExportResolution::Provides
+                        {
+                            return ExportResolution::Provides;
+                        }
+                    }
                 }
             }
         }
     }
-    false
+    if star_ambiguous || star_provides >= 2 {
+        ExportResolution::Ambiguous
+    } else if star_provides == 1 {
+        ExportResolution::Provides
+    } else {
+        ExportResolution::Missing
+    }
 }
 
 /// 从 `from '...'` 部分提取模块标识符。
@@ -1160,7 +1278,11 @@ fn transform_export(
             let mut result = String::new();
             match &dep {
                 DepInline::Fresh(code) => {
-                    result.push_str(&format!("  var {exports_var} = {code};\n"));
+                    // s255：Fresh 内联包记忆化（star-as 同星号臂注记）。
+                    result.push_str(&format!(
+                        "  var {exports_var} = {};\n",
+                        memoized_dep_expr(&specifier, code)
+                    ));
                 }
                 DepInline::Visited(_) => {
                     result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -1190,7 +1312,13 @@ fn transform_export(
         let mut result = String::new();
         match &dep {
             DepInline::Fresh(code) => {
-                result.push_str(&format!("  var {exports_var} = {code};\n"));
+                // s255：Fresh 内联包记忆化——与 prelude 急切注册/入口体共享实例，
+                // 依赖体恰好一次求值（R5182 import 侧同型；star 内联此前裸 IIFE，
+                // 急切臂已缓存后仍重跑——ierr-6 got 6c/6d 双份实证）。
+                result.push_str(&format!(
+                    "  var {exports_var} = {};\n",
+                    memoized_dep_expr(&specifier, code)
+                ));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -1222,7 +1350,13 @@ fn transform_export(
         let mut result = String::new();
         match &dep {
             DepInline::Fresh(code) => {
-                result.push_str(&format!("  var {exports_var} = {code};\n"));
+                // s255：Fresh 内联包记忆化——与 prelude 急切注册/入口体共享实例，
+                // 依赖体恰好一次求值（R5182 import 侧同型；star 内联此前裸 IIFE，
+                // 急切臂已缓存后仍重跑——ierr-6 got 6c/6d 双份实证）。
+                result.push_str(&format!(
+                    "  var {exports_var} = {};\n",
+                    memoized_dep_expr(&specifier, code)
+                ));
             }
             DepInline::Visited(_) => {
                 result.push_str(&format!("  var {exports_var} = {};\n", dep.exports_expr()));
@@ -3801,6 +3935,169 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             sandbox.execute("String(globalThis.__r5182h)").unwrap().value,
             "2",
             "宿主执行复位脚本后：同 URL 模块在新文档重新求值（恰好一次，D1 修复语义）"
+        );
+    }
+
+    // s255（instantiation-error-6/7 歧义面）：星号重导出歧义 = 链接期 SyntaxError。
+    // ① 6 形：同名经同链两条星号路径可达；② 7 形：歧义子链经星号臂传播——兄弟星号臂
+    // （7f）可消解不豁免（Node oracle：仍 SyntaxError）；③ 对照：单星号路径照常消解。
+    // 红态：无三态判定时 ①② build 成功（歧义名漏进导出面）。
+    #[test]
+    fn test_star_export_ambiguity_s255() {
+        let mut reg = ModuleRegistry::new();
+        reg.register("./ierr-6a.js", "import { foo } from './ierr-6b.js';");
+        reg.register(
+            "./ierr-6b.js",
+            "export * from './ierr-6c.js';\nexport * from './ierr-6d.js';",
+        );
+        reg.register("./ierr-6c.js", "export const foo = 'c';");
+        reg.register("./ierr-6d.js", "export const foo = 'd';");
+        let err = build_module_script(
+            "import { foo } from './ierr-6b.js';",
+            "https://zero.test/6a.js",
+            &reg,
+            false,
+            &mut HashSet::new(),
+        )
+        .expect_err("6 形双星号同名必须链接失败");
+        assert!(
+            matches!(&err, ScriptError::CompileError(m) if m.contains("conflicting star exports")),
+            "歧义走 CompileError（宿主映射 SyntaxError 报告面）：{err:?}"
+        );
+
+        // 7 形（语料 instantiation-error-7a-7f）：7b 星号发现 7c，7c 星号发现 7d/7e
+        // 歧义；7f 臂可消解——ResolveExport 星号臂子解析歧义即整体歧义，传播。
+        // https://tc39.es/ecma262/#sec-resolveexport
+        let mut reg = ModuleRegistry::new();
+        reg.register("./ierr-7a.js", "import { foo } from './ierr-7b.js';");
+        reg.register(
+            "./ierr-7b.js",
+            "export * from './ierr-7c.js';\nexport * from './ierr-7f.js';",
+        );
+        reg.register(
+            "./ierr-7c.js",
+            "export * from './ierr-7d.js';\nexport * from './ierr-7e.js';",
+        );
+        reg.register("./ierr-7d.js", "export let foo = 'd';");
+        reg.register("./ierr-7e.js", "export let foo = 'e';");
+        reg.register("./ierr-7f.js", "export let foo = 'f';");
+        let err = build_module_script(
+            "import { foo } from './ierr-7b.js';",
+            "https://zero.test/7a.js",
+            &reg,
+            false,
+            &mut HashSet::new(),
+        )
+        .expect_err("7 形星号子链歧义必须传播为链接失败");
+        assert!(
+            matches!(&err, ScriptError::CompileError(m) if m.contains("conflicting star exports")),
+            "传播歧义同走 CompileError：{err:?}"
+        );
+
+        // 对照（over-block 防回归）：单星号路径命中照常 build。
+        let mut reg = ModuleRegistry::new();
+        reg.register("./ok-a.js", "import { foo } from './ok-b.js';");
+        reg.register("./ok-b.js", "export * from './ok-c.js';");
+        reg.register("./ok-c.js", "export const foo = 'c';");
+        build_module_script(
+            "import { foo } from './ok-b.js';",
+            "https://zero.test/ok-a.js",
+            &reg,
+            false,
+            &mut HashSet::new(),
+        )
+        .expect("单星号路径必须照常消解");
+    }
+
+    // s255 Fix B（star/re-export 内联记忆化钉）：入口 `import {x}` + `export * from`
+    // 同一依赖——prelude 急切注册求值一次后，import 臂（R5182）与星号内联臂共享
+    // __moduleCache 记忆化，依赖体恰好一次求值。红态：星号臂裸 IIFE → 第二次求值。
+    #[test]
+    fn test_star_inline_dep_evaluated_once_s255() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        let mut reg = ModuleRegistry::new();
+        reg.register(
+            "./s255-dep.js",
+            "globalThis.__s255count = (globalThis.__s255count || 0) + 1;\nexport const foo = 'dep';",
+        );
+        let prelude = build_module_runtime_prelude(&reg, None).expect("prelude 构建不得失败");
+        let entry = "import { foo } from './s255-dep.js';\nexport * from './s255-dep.js';";
+        let module = build_module_script(entry, "https://zero.test/entry.js", &reg, false, &mut HashSet::new())
+            .expect("入口编译不得失败");
+        sandbox
+            .execute(&format!(
+                "{prelude}\n{module}\n__zw_report('count=' + globalThis.__s255count);"
+            ))
+            .expect("探针执行不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("|");
+        assert_eq!(
+            joined, "count=1",
+            "依赖体恰好一次求值（急切注册 + import 臂 + 星号内联臂共享实例）：{joined}"
+        );
+    }
+
+    // s255 Fix B 配套（注册序钉）：prelude 急切注册序 = 入口图 depth-first post-order
+    // ——依赖先于导入方求值，同层按源内声明序。红态：registry 哈希序（HashMap 迭代）
+    // 顺序不定——instantiation-error-7 实测 7d/7e 颠倒。
+    #[test]
+    fn test_prelude_registration_postorder_s255() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let reported: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                if let Some(v) = args.first() {
+                    reported_cb.lock().unwrap().push(v.clone());
+                }
+                String::new()
+            }),
+        );
+        let marker = "globalThis.__s255ord.push(";
+        let mut reg = ModuleRegistry::new();
+        // a 导入 b、c（源内声明序）；入口导入 a——后序 b, c, a。
+        reg.register(
+            "./ord-a.js",
+            &format!(
+                "import {{ b }} from './ord-b.js';\nimport {{ c }} from './ord-c.js';\n{marker}'a');\nexport const a = 1;"
+            ),
+        );
+        reg.register("./ord-b.js", &format!("{marker}'b');\nexport const b = 1;"));
+        reg.register("./ord-c.js", &format!("{marker}'c');\nexport const c = 1;"));
+        let prelude = build_module_runtime_prelude(&reg, Some("./ord-a.js")).expect("prelude 构建不得失败");
+        let entry = "import { a } from './ord-a.js';";
+        let module = build_module_script(entry, "https://zero.test/main.js", &reg, false, &mut HashSet::new())
+            .expect("入口编译不得失败");
+        sandbox
+            .execute(&format!(
+                "globalThis.__s255ord = [];\n{prelude}\n{module}\n__zw_report(globalThis.__s255ord.join(','));"
+            ))
+            .expect("探针执行不得同步 throw");
+        let lines = reported.lock().unwrap();
+        let joined = lines.join("|");
+        assert_eq!(
+            joined, "b,c,a",
+            "急切注册序 = 入口图后序（依赖先于导入方，同层按源内声明序）：{joined}"
         );
     }
 }

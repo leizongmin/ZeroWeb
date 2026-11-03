@@ -10999,6 +10999,10 @@
   // `reportError(reason)`：向 window 派发 ErrorEvent（error 上报库 / Promise catch 转错误事件 / 兜底未捕获错误
   // 报告高频）。经 globalThis.dispatchEvent（R2932）触 window 'error' listener + onerror IDL handler（R2932 注册）。
   // spec reportError 把 reason 转 ErrorEvent 派发到 window error handler；headless 复用 dispatchEvent 路径。
+  // s255（error-type-3 判据）：error 属性须**原值透传**——spec report the exception 对
+  // 任意 throwable（含非 Error 值，`throw {foo:true}`）照传；旧 `(instanceof Error) ? reason : null`
+  // 折 null 丢对象身份（WPT module/error-type-3 `log[1].foo` 断言）。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#dom-report-error
   globalThis.reportError = function (reason) {
     try {
       var msg = (reason && (reason.message || reason.name)) ? String(reason.message || reason.name) : String(reason);
@@ -11007,7 +11011,7 @@
         filename: '',
         lineno: 0,
         colno: 0,
-        error: (reason instanceof Error) ? reason : null
+        error: reason
       });
       if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);
     } catch (_e) {}

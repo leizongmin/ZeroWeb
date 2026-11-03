@@ -715,6 +715,26 @@ if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
     )
 }
 
+/// 构造「module 求值抛错原值报告」shim 脚本（html-semantics M2 s255）：模块体求值
+/// 抛出的**原值对象**（宿主侧 try/catch 哨兵 `globalThis.__zwModEvalErrObj` 暂存）
+/// 经 `reportError` 原样上报 + 元素照常 fire load（spec：评估失败与编译失败同面——
+/// fetch 成功后的失败类）。旧臂 [`script_report_module_failure`] 从 Rust 错误文本
+/// 重构 `new SyntaxError(msg)`——应用数据丢失（WPT error-type-3 判据 `log[1].foo`
+/// 对 `throw {foo:true}` 原值断言）。返回 '1' 表示有哨兵已上报，'' 表示无（宿主据
+/// 此门控 s107 成功臂 load 派发，防双发）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+pub fn script_module_eval_error_report(script_ordinal: usize) -> String {
+    format!(
+        "(function(){{\
+if(globalThis.__zwModEvalErrObj===undefined)return '';\
+var __zwErr=globalThis.__zwModEvalErrObj;globalThis.__zwModEvalErrObj=undefined;\
+try{{reportError(__zwErr);}}catch(_e){{}}\
+try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}\
+return '1';}})()"
+    )
+}
+
 /// 构造「按文档序 script 序号派发元素级 load/error 事件」的 shim 脚本（html-semantics
 /// M2 s103）：module 图网络级取回失败 → 元素 fire error（体不执行、无 window 报告）。
 /// 序号口径同 [`script_report_module_failure`]，适配无 src 的内联模块；有 src 外链
