@@ -399,6 +399,21 @@ fn test_place_content_two_values() {
 }
 
 #[test]
+/// R5401（css-align-3 §overflow-values）：place-content 双值含 safe 前缀——
+/// safe 仅可与位置关键字组合（与 apply_advanced 接受集一致），非法组合整条拒绝。
+fn test_place_content_overflow_position_values() {
+    let result = expand_one("place-content", "safe flex-end center", false, (0, 0, 1));
+    assert_eq!(result.len(), 2);
+    assert_eq!(result[0].0, "align-content");
+    assert_eq!(result[0].1, "safe flex-end");
+    assert_eq!(result[1].0, "justify-content");
+    assert_eq!(result[1].1, "center");
+    // `safe stretch` 非位置组合 → 该侧非法 → 整条简写不展开。
+    let bad = expand_one("place-content", "safe stretch center", false, (0, 0, 1));
+    assert!(bad.is_empty());
+}
+
+#[test]
 /// place-self 单值：stretch
 fn test_place_self_single_value() {
     let result = expand_one("place-self", "stretch", false, (0, 0, 1));

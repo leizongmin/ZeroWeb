@@ -1158,6 +1158,13 @@ fn convert_alignment_to_align_items(value: &AlignmentValue) -> Option<taffy::sty
         // FIXME(css-align-3 §4.2): 容器级 last baseline 应使 item 参与 last-baseline
         // 组并按 safe self-end 回退。
         AlignmentValue::LastBaseline => Some(taffy::style::AlignItems::STRETCH),
+        // R5401（css-align-3 §overflow-values）：safe 修饰传入 taffy，溢出时由
+        // resolve_self_alignment_safety 回退 start 边（flexbox-safe-overflow-position-001）。
+        AlignmentValue::SafeStart => Some(taffy::style::AlignItems::SAFE_START),
+        AlignmentValue::SafeEnd => Some(taffy::style::AlignItems::SAFE_END),
+        AlignmentValue::SafeFlexStart => Some(taffy::style::AlignItems::SAFE_FLEX_START),
+        AlignmentValue::SafeFlexEnd => Some(taffy::style::AlignItems::SAFE_FLEX_END),
+        AlignmentValue::SafeCenter => Some(taffy::style::AlignItems::SAFE_CENTER),
         // space-between, space-around, space-evenly 不适用于 align-items
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
@@ -1181,6 +1188,12 @@ fn convert_alignment_to_align_self(value: &AlignmentValue) -> Option<taffy::styl
         // block 零行为变化）；grid item 的 fallback safe self-end 在 tree.rs
         // build_subtree 父上下文处改写（此处无父 display 可判）。
         AlignmentValue::LastBaseline => None,
+        // R5401：safe 修饰同 align-items（AlignSelf 是 AlignItems 的 type alias）。
+        AlignmentValue::SafeStart => Some(taffy::style::AlignSelf::SAFE_START),
+        AlignmentValue::SafeEnd => Some(taffy::style::AlignSelf::SAFE_END),
+        AlignmentValue::SafeFlexStart => Some(taffy::style::AlignSelf::SAFE_FLEX_START),
+        AlignmentValue::SafeFlexEnd => Some(taffy::style::AlignSelf::SAFE_FLEX_END),
+        AlignmentValue::SafeCenter => Some(taffy::style::AlignSelf::SAFE_CENTER),
         AlignmentValue::SpaceBetween | AlignmentValue::SpaceAround | AlignmentValue::SpaceEvenly => None,
     }
 }
@@ -1204,6 +1217,13 @@ fn convert_alignment_to_justify_content(value: &AlignmentValue) -> Option<taffy:
         // R5154：last baseline 不适用于 justify-content（维持初始 flex-start，
         // ≡ 解析失败时的有效值）。
         AlignmentValue::LastBaseline => None,
+        // R5401（css-align-3 §overflow-values）：safe 修饰传入 taffy，剩余空间为负时
+        // 由 apply_alignment_fallback 回退 start（flexbox-safe-overflow-position-001）。
+        AlignmentValue::SafeStart => Some(taffy::style::JustifyContent::SAFE_START),
+        AlignmentValue::SafeEnd => Some(taffy::style::JustifyContent::SAFE_END),
+        AlignmentValue::SafeFlexStart => Some(taffy::style::JustifyContent::SAFE_FLEX_START),
+        AlignmentValue::SafeFlexEnd => Some(taffy::style::JustifyContent::SAFE_FLEX_END),
+        AlignmentValue::SafeCenter => Some(taffy::style::JustifyContent::SAFE_CENTER),
     }
 }
 
@@ -1264,6 +1284,13 @@ fn convert_align_content(value: &AlignContentValue) -> Option<taffy::style::Alig
         AlignContentValue::Center => Some(taffy::style::AlignContent::CENTER),
         AlignContentValue::Stretch => Some(taffy::style::AlignContent::STRETCH),
         AlignContentValue::Baseline => None,
+        // R5401（css-align-3 §overflow-values）：safe 修饰传入 taffy，剩余空间为负时
+        // 由 apply_alignment_fallback 回退 start（flexbox-safe-overflow-position-001）。
+        AlignContentValue::SafeStart => Some(taffy::style::AlignContent::SAFE_START),
+        AlignContentValue::SafeEnd => Some(taffy::style::AlignContent::SAFE_END),
+        AlignContentValue::SafeFlexStart => Some(taffy::style::AlignContent::SAFE_FLEX_START),
+        AlignContentValue::SafeFlexEnd => Some(taffy::style::AlignContent::SAFE_FLEX_END),
+        AlignContentValue::SafeCenter => Some(taffy::style::AlignContent::SAFE_CENTER),
         AlignContentValue::SpaceBetween => Some(taffy::style::AlignContent::SPACE_BETWEEN),
         AlignContentValue::SpaceAround => Some(taffy::style::AlignContent::SPACE_AROUND),
         AlignContentValue::SpaceEvenly => Some(taffy::style::AlignContent::SPACE_EVENLY),

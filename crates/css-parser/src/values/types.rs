@@ -544,6 +544,17 @@ pub enum AlignmentValue {
     /// 定位（last baseline → safe self-end）；grid item 由 layout-engine 在父
     /// 上下文处消费，flex/block 维持 Auto 语义（未实现基线共享）。
     LastBaseline,
+    /// safe start（css-align-3 §overflow-values）。对齐主体溢出容器时回退 start
+    /// 边对齐（防数据丢失）；`unsafe start` 与裸 `start` 同义（modifier 丢弃）。
+    SafeStart,
+    /// safe end。
+    SafeEnd,
+    /// safe flex-start。
+    SafeFlexStart,
+    /// safe flex-end。
+    SafeFlexEnd,
+    /// safe center。
+    SafeCenter,
 }
 
 /// CSS box-sizing 值。

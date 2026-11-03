@@ -373,7 +373,47 @@ pub fn parse_flex_wrap(value: &str) -> Option<FlexWrapValue> {
 
 /// 解析 CSS justify-content / align-items / align-self 属性值。
 pub fn parse_alignment(value: &str) -> Option<AlignmentValue> {
-    match value.trim().to_ascii_lowercase().as_str() {
+    let lower = value.trim().to_ascii_lowercase();
+    // css-align-3 §overflow-values：`<overflow-position>? <self-position>`——`safe`/
+    // `unsafe` 前缀仅可与位置关键字组合（start/end/flex-start/flex-end/center）；
+    // `safe stretch`/`safe space-between` 等按消费方 grammar 非法（guideline #1 共享
+    // parser 不放宽消费方值域）。`unsafe <position>` 与裸 `<position>` 同义
+    //（Unsafe 为默认），modifier 丢弃；`safe` 前缀保留为 Safe* 变体由布局侧回退。
+    // driving: flexbox-safe-overflow-position-001（R5401）。
+    if lower.starts_with("safe ") || lower.starts_with("unsafe ") {
+        let safe = lower.starts_with("safe ");
+        let keyword = |name: &str| {
+            if safe {
+                match name {
+                    "start" => Some(AlignmentValue::SafeStart),
+                    "end" => Some(AlignmentValue::SafeEnd),
+                    "flex-start" => Some(AlignmentValue::SafeFlexStart),
+                    "flex-end" => Some(AlignmentValue::SafeFlexEnd),
+                    "center" => Some(AlignmentValue::SafeCenter),
+                    _ => None,
+                }
+            } else {
+                // unsafe 前缀同样仅可与位置关键字组合，与裸位置关键字同义。
+                match name {
+                    "start" => Some(AlignmentValue::Start),
+                    "end" => Some(AlignmentValue::End),
+                    "flex-start" => Some(AlignmentValue::FlexStart),
+                    "flex-end" => Some(AlignmentValue::FlexEnd),
+                    "center" => Some(AlignmentValue::Center),
+                    _ => None,
+                }
+            }
+        };
+        // `safe `=5 字符、`unsafe `=7 字符，按实际前缀长度截取关键字段。
+        let prefix_len = if safe { 5 } else { 7 };
+        return keyword(lower[prefix_len..].trim());
+    }
+    parse_alignment_keyword(&lower)
+}
+
+/// 裸对齐关键字（不含 `safe`/`unsafe` 前缀）。
+fn parse_alignment_keyword(value: &str) -> Option<AlignmentValue> {
+    match value {
         "auto" => Some(AlignmentValue::Auto),
         // R2383：CSS Box Align 3 normal（justify-content/align-items/align-self 初始值）。
         "normal" => Some(AlignmentValue::Normal),

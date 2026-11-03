@@ -1330,6 +1330,29 @@ fn test_apply_align_content_invalid() {
     assert!(!apply_property_value(&mut style, "align-content", "bogus-value"));
 }
 
+/// R5401（css-align-3 §overflow-values）：align-content 的 safe/unsafe 前缀。
+/// safe 保留为 Safe* 变体（溢出时 taffy 回退 start 边，非溢出按原位置——不能
+/// 预折算）；unsafe 与裸值同义按 R1412 折算。`safe stretch` 等非位置组合非法。
+#[test]
+fn test_apply_align_content_overflow_position() {
+    let mut style = ComputedStyle::default();
+    assert!(apply_property_value(&mut style, "align-content", "safe flex-end"));
+    assert_eq!(style.align_content, AlignContentValue::SafeFlexEnd);
+    assert!(apply_property_value(&mut style, "align-content", "safe start"));
+    assert_eq!(style.align_content, AlignContentValue::SafeStart);
+    assert!(apply_property_value(&mut style, "align-content", "safe center"));
+    assert_eq!(style.align_content, AlignContentValue::SafeCenter);
+    assert!(apply_property_value(&mut style, "align-content", "SAFE FLEX-START"));
+    assert_eq!(style.align_content, AlignContentValue::SafeFlexStart);
+    assert!(apply_property_value(&mut style, "align-content", "unsafe center"));
+    assert_eq!(style.align_content, AlignContentValue::Center);
+    assert!(apply_property_value(&mut style, "align-content", "unsafe flex-end"));
+    assert_eq!(style.align_content, AlignContentValue::End);
+    // overflow-position 仅与位置关键字组合（消费方 grammar 收紧）。
+    assert!(!apply_property_value(&mut style, "align-content", "safe stretch"));
+    assert!(!apply_property_value(&mut style, "align-content", "safe space-between"));
+}
+
 /// 验证 empty-cells 的 apply_property_value 正确解析 show/hide。
 #[test]
 fn test_apply_empty_cells() {

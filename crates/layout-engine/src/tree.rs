@@ -2908,6 +2908,13 @@ fn grid_last_baseline_end_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_GRID_LAST_BASELINE_END").as_deref() != Ok("0"))
 }
 
+/// R5401 kill-switch 读取：`ZW_WEBKIT_BOX_ALIGN_SELF_IGNORE=0` 回退 legacy
+/// `-webkit-box` 容器对 item `align-self` 的抑制（css-flexbox-safe-overflow-position-006）。
+fn webkit_box_align_self_ignore_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_WEBKIT_BOX_ALIGN_SELF_IGNORE").as_deref() != Ok("0"))
+}
+
 /// R5158 kill-switch 读取：`ZW_BODY_OVERFLOW_VISIBLE=0` 回退 body→viewport overflow
 /// 传播的 taffy 半边（css-overflow-3 §3.3）。
 fn body_overflow_visible_enabled() -> bool {
@@ -2996,6 +3003,23 @@ fn build_subtree(
         })
     {
         taffy_style.align_self = Some(taffy::style::AlignSelf::END);
+    }
+
+    // R5401（css-align-3 legacy box 适用性）：`display:-webkit-box` 水平语义容器
+    // （cascade R3798 映射 flex + 胜者溯源 `legacy_webkit_box_flex`，R5401）忽略 item 的
+    // `align-self`——flexbox-safe-overflow-position-006 assert「align-self:safe has no
+    // effect on -webkit-box」：chromium legacy box 的 item 对齐只由 `-webkit-box-align`
+    // 控制（cascade 已映射为 align-items），R5401 起 `align-self: safe center` 可解析，
+    // 不抑制则旧解析失败态（回退 auto → 容器 align-items）被改写为 safe-center 溢出
+    // 回退 start，✗0.00%→0.42% 回归实证。align_self 置 None（auto）→ 回落容器
+    // align_items，与 legacy box 语义一致。kill-switch
+    // `ZW_WEBKIT_BOX_ALIGN_SELF_IGNORE=0`（default-on）。
+    if webkit_box_align_self_ignore_enabled()
+        && doc
+            .parent_node(dom_id)
+            .is_some_and(|pid| styles.get(&pid).is_some_and(|ps| ps.legacy_webkit_box_flex))
+    {
+        taffy_style.align_self = None;
     }
 
     // R4073（css-position-3 §abspos-auto-size）：abspos 元素按 content-based 尺寸

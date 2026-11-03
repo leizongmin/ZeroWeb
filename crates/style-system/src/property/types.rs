@@ -2144,6 +2144,17 @@ pub enum AlignContentValue {
     Stretch,
     /// baseline。
     Baseline,
+    /// safe start（css-align-3 §overflow-values）。对齐主体溢出容器时回退 start
+    /// 边对齐；`unsafe start` 与裸 `start` 同义（modifier 丢弃）。R5401。
+    SafeStart,
+    /// safe end。R5401。
+    SafeEnd,
+    /// safe flex-start。R5401。
+    SafeFlexStart,
+    /// safe flex-end。R5401。
+    SafeFlexEnd,
+    /// safe center。R5401。
+    SafeCenter,
     /// space-between。
     SpaceBetween,
     /// space-around。

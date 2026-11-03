@@ -407,6 +407,8 @@ fn cascade_impl<'a>(
     // R4184：非 legacy 上下文被丢弃的 `-webkit-line-clamp` 声明中最高 CascadeOrder
     //（供下方与标准 `line-clamp` 槽位的级联竞争判定）。
     let mut dropped_prefixed_best: Option<CascadeOrder> = None;
+    // R5401：水平 legacy `-webkit-box` display 映射虚拟声明的 order 集（供胜者溯源）。
+    let mut mapped_legacy_display_orders: Vec<CascadeOrder> = Vec::new();
     for decl in declarations {
         // `all` 简写（CSS Cascading 4 §3.1 / CSS All 1）：值必须是 CSS-wide 关键字
         // （initial/inherit/unset/revert/revert-layer）。展开为对所有已知 longhand 属性的
@@ -447,6 +449,9 @@ fn cascade_impl<'a>(
                 } else {
                     "flex"
                 };
+                // R5401：记录映射虚拟声明的 order，供胜者溯源——仅当**映射值胜出**时才置
+                // legacy 标记（作者显式 display:flex 胜出 → 元素是真 flex，align-self 照常适用）。
+                mapped_legacy_display_orders.push(decl.order.clone());
                 by_property.entry(canonical).or_default().push(CascadedDeclaration {
                     property: decl.property,
                     value: mapped,
@@ -740,6 +745,17 @@ fn cascade_impl<'a>(
     // 循环后读取置 `line_clamp_legacy_webkit`。
     if prefixed_line_clamp_won {
         result.insert("-webkit-line-clamp-origin".to_string(), "true".to_string());
+    }
+
+    // R5401：legacy `-webkit-box` 水平语义 flex 映射溯源（css-overflow-3 同款机制）。
+    // 仅当 display 槽位胜者的 order 属映射虚拟声明集时置合成键 `-webkit-box-flex-origin`
+    // （inheritance 主循环 apply no-op，循环后读取置 `legacy_webkit_box_flex`）；作者显式
+    // display:flex/inline-flex 胜出时不置——元素是真 flex，现代 align-* 照常适用。
+    if has_legacy_box_horizontal
+        && let Some(w) = winner_orders.get("display")
+        && mapped_legacy_display_orders.iter().any(|o| o == w)
+    {
+        result.insert("-webkit-box-flex-origin".to_string(), "true".to_string());
     }
 
     (result, winner_orders)
@@ -2425,5 +2441,67 @@ mod tests {
         assert_eq!(result.get("display"), None, "无 pack/align 时 -webkit-box 不改写 flex");
         assert_eq!(result.get("justify-content"), None);
         assert_eq!(result.get("align-items"), None);
+    }
+
+    /// R5401：legacy `-webkit-box` 水平语义 flex 映射的胜者溯源键 `-webkit-box-flex-origin`
+    /// （R3771 `-webkit-line-clamp-origin` 同款机制）——仅当**映射值胜出**时置位；作者
+    /// 显式 display:flex 胜出 → 元素是真 flex，不置（现代 align-* 照常适用）。
+    #[test]
+    fn r5401_webkit_box_flex_origin_key_winner_traced() {
+        let order = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, false);
+        // ① 映射值是槽内唯一声明 → 胜出 → origin 键置位。
+        let decls = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-align",
+                value: "end",
+                order: order.clone(),
+            },
+        ];
+        let result = cascade(decls, false);
+        assert_eq!(result.get("display"), Some(&"flex".to_string()));
+        assert_eq!(
+            result.get("-webkit-box-flex-origin").map(String::as_str),
+            Some("true"),
+            "映射值胜出 → 溯源键置位"
+        );
+        // ② 同槽更高优先级作者显式 display:flex 胜出（R3798 既有语义）→ 不置键。
+        let later = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 1, false);
+        let decls2 = vec![
+            CascadedDeclaration {
+                property: "display",
+                value: "-webkit-box",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "-webkit-box-align",
+                value: "end",
+                order: order.clone(),
+            },
+            CascadedDeclaration {
+                property: "display",
+                value: "flex",
+                order: later,
+            },
+        ];
+        let result2 = cascade(decls2, false);
+        assert_eq!(result2.get("display"), Some(&"flex".to_string()));
+        assert!(
+            result2.get("-webkit-box-flex-origin").is_none(),
+            "作者显式 flex 胜出 → 元素是真 flex，不置溯源键"
+        );
+        // ③ 无 box-pack/align（无 flex 意图）→ display 不映射，无键。
+        let decls3 = vec![CascadedDeclaration {
+            property: "display",
+            value: "-webkit-box",
+            order,
+        }];
+        let result3 = cascade(decls3, false);
+        assert_eq!(result3.get("display"), None);
+        assert!(result3.get("-webkit-box-flex-origin").is_none());
     }
 }

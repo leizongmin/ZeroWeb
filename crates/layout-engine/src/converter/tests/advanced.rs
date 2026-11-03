@@ -379,6 +379,56 @@ fn test_convert_alignment_align_self_variants() {
     }
 }
 
+/// R5401（css-align-3 §overflow-values）：safe 修饰传入 taffy SAFE_* 常量，
+/// 由 resolve_self_alignment_safety / apply_alignment_fallback 在溢出时回退
+/// start 边（flexbox-safe-overflow-position-001）。
+#[test]
+fn test_convert_alignment_safe_overflow_position_variants() {
+    let justify: Vec<(AlignmentValue, taffy::style::JustifyContent)> = vec![
+        (AlignmentValue::SafeStart, taffy::style::JustifyContent::SAFE_START),
+        (AlignmentValue::SafeEnd, taffy::style::JustifyContent::SAFE_END),
+        (
+            AlignmentValue::SafeFlexStart,
+            taffy::style::JustifyContent::SAFE_FLEX_START,
+        ),
+        (AlignmentValue::SafeFlexEnd, taffy::style::JustifyContent::SAFE_FLEX_END),
+        (AlignmentValue::SafeCenter, taffy::style::JustifyContent::SAFE_CENTER),
+    ];
+    for (value, expected) in justify {
+        let mut style = ComputedStyle::default();
+        style.justify_content = value;
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(taffy_style.justify_content, Some(expected));
+    }
+
+    let align_self: Vec<(AlignmentValue, taffy::style::AlignSelf)> = vec![
+        (AlignmentValue::SafeStart, taffy::style::AlignSelf::SAFE_START),
+        (AlignmentValue::SafeEnd, taffy::style::AlignSelf::SAFE_END),
+        (AlignmentValue::SafeCenter, taffy::style::AlignSelf::SAFE_CENTER),
+    ];
+    for (value, expected) in align_self {
+        let mut style = ComputedStyle::default();
+        style.align_self = value;
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(taffy_style.align_self, Some(expected));
+    }
+
+    let align_content: Vec<(AlignContentValue, taffy::style::AlignContent)> = vec![
+        (AlignContentValue::SafeStart, taffy::style::AlignContent::SAFE_START),
+        (
+            AlignContentValue::SafeFlexEnd,
+            taffy::style::AlignContent::SAFE_FLEX_END,
+        ),
+        (AlignContentValue::SafeCenter, taffy::style::AlignContent::SAFE_CENTER),
+    ];
+    for (value, expected) in align_content {
+        let mut style = ComputedStyle::default();
+        style.align_content = value;
+        let taffy_style = computed_style_to_taffy(&style, None, 800.0, 600.0);
+        assert_eq!(taffy_style.align_content, Some(expected));
+    }
+}
+
 /// 测试 tokenize_track_list 正确处理嵌套括号。
 #[test]
 fn test_tokenized_track_list_nested_parens() {

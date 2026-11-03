@@ -580,6 +580,13 @@ pub struct ComputedStyle {
     /// webkit-line-clamp-008/009 类用例被误 clamp（其 ref 为不 clamp 全内容）。
     pub line_clamp_legacy_webkit: bool,
 
+    /// R5401：元素是否为 legacy `-webkit-box` 水平语义映射出的 flex 容器（R3798
+    /// `-webkit-box`→flex 且胜者即映射值，cascade 置合成键 `-webkit-box-flex-origin`
+    /// → inheritance 据此置位）。legacy box 的 item 对齐只由 `-webkit-box-align`
+    /// 控制，现代 `align-self` 不适用——layout 侧抑制子项 align_self
+    /// （flexbox-safe-overflow-position-006：「align-self:safe has no effect on -webkit-box」）。
+    pub legacy_webkit_box_flex: bool,
+
     // ── Background Image / Position / Repeat / Size / Attachment ──
     /// background-image 属性（支持多图层，CSS 规范渲染顺序为逆序）。
     pub background_image: Vec<BackgroundImageComputedValue>,

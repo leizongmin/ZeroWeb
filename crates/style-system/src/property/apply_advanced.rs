@@ -2342,6 +2342,18 @@ pub fn apply_advanced_property_value(style: &mut ComputedStyle, property: &str, 
                 "space-between" => AlignContentValue::SpaceBetween,
                 "space-around" => AlignContentValue::SpaceAround,
                 "space-evenly" => AlignContentValue::SpaceEvenly,
+                // R5401（css-align-3 §overflow-values）：safe 前缀仅可与位置关键字组合；
+                // safe 变体保留 flex-start/flex-end 位置语义（溢出时 taffy
+                // apply_alignment_fallback 回退 start 边；非溢出仍按 end 边，不能预折算
+                // 成 Start/End）。unsafe 前缀与裸值同义（Unsafe 为默认），按 R1412 折算。
+                "safe start" => AlignContentValue::SafeStart,
+                "safe end" => AlignContentValue::SafeEnd,
+                "safe flex-start" => AlignContentValue::SafeFlexStart,
+                "safe flex-end" => AlignContentValue::SafeFlexEnd,
+                "safe center" => AlignContentValue::SafeCenter,
+                "unsafe start" | "unsafe flex-start" => AlignContentValue::Start,
+                "unsafe end" | "unsafe flex-end" => AlignContentValue::End,
+                "unsafe center" => AlignContentValue::Center,
                 _ => return false,
             };
             style.align_content = v;

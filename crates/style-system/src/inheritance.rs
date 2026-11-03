@@ -365,6 +365,13 @@ pub fn compute_inherited_style_with_quirks(
         style.line_clamp_legacy_webkit = true;
     }
 
+    // R5401：`-webkit-box-flex-origin` 溯源键（cascade 置，见 R3798 水平映射 + 胜者
+    // 溯源）→ `legacy_webkit_box_flex`。layout 侧据此抑制子项 align_self——legacy box
+    // 的 item 对齐只由 `-webkit-box-align` 映射的 align-items 控制。
+    if cascaded.contains_key("-webkit-box-flex-origin") {
+        style.legacy_webkit_box_flex = true;
+    }
+
     // https://drafts.csswg.org/css-fonts-4/#font-weight-prop
     // `bolder`/`lighter` 的 computed value 依赖父元素，须在继承完成后解析为绝对字重，
     // 使 layout、paint 与 getComputedStyle 消费同一结果。
@@ -1266,6 +1273,23 @@ mod tests {
         cascaded2.insert("line-clamp".to_string(), "3".to_string());
         let style2 = compute_inherited_style(None, &cascaded2);
         assert!(!style2.line_clamp_legacy_webkit, "无 origin 键 → legacy 标记不置位");
+    }
+
+    /// R5401：`-webkit-box-flex-origin` 合成键置 `legacy_webkit_box_flex`
+    /// （legacy `-webkit-box` 水平映射 flex 的胜者溯源；layout 据此抑制子项 align-self）。
+    #[test]
+    fn r5401_webkit_box_flex_origin_sets_legacy_flag() {
+        let mut cascaded = HashMap::new();
+        cascaded.insert("display".to_string(), "flex".to_string());
+        cascaded.insert("-webkit-box-flex-origin".to_string(), "true".to_string());
+        let style = compute_inherited_style(None, &cascaded);
+        assert!(style.legacy_webkit_box_flex, "origin 键存在 → legacy box 标记置位");
+
+        // 真 flex 容器（无 origin 键）→ 标记不置位。
+        let mut cascaded2 = HashMap::new();
+        cascaded2.insert("display".to_string(), "flex".to_string());
+        let style2 = compute_inherited_style(None, &cascaded2);
+        assert!(!style2.legacy_webkit_box_flex, "无 origin 键 → legacy box 标记不置位");
     }
 
     /// R4642 回归锚（css-cascade computed values）：em 长度按元素自身**最终** font-size

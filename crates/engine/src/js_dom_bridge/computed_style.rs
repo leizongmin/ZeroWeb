@@ -1907,6 +1907,12 @@ fn alignment_str(a: &AlignmentValue) -> String {
         AlignmentValue::End => "end",
         AlignmentValue::Baseline => "baseline",
         AlignmentValue::LastBaseline => "last baseline",
+        // R5401（css-align-3 §overflow-values）：computed value = as specified。
+        AlignmentValue::SafeStart => "safe start",
+        AlignmentValue::SafeEnd => "safe end",
+        AlignmentValue::SafeFlexStart => "safe flex-start",
+        AlignmentValue::SafeFlexEnd => "safe flex-end",
+        AlignmentValue::SafeCenter => "safe center",
     }
     .to_string()
 }
@@ -3324,6 +3330,13 @@ fn align_content_to_css(a: &AlignContentValue) -> String {
         AlignContentValue::SpaceBetween => "space-between",
         AlignContentValue::SpaceAround => "space-around",
         AlignContentValue::SpaceEvenly => "space-evenly",
+        // R5401（css-align-3 §overflow-values）：computed value = as specified
+        //（safe flex-start/flex-end 保留位置语义，见 apply_advanced R5401 注）。
+        AlignContentValue::SafeStart => "safe start",
+        AlignContentValue::SafeEnd => "safe end",
+        AlignContentValue::SafeFlexStart => "safe flex-start",
+        AlignContentValue::SafeFlexEnd => "safe flex-end",
+        AlignContentValue::SafeCenter => "safe center",
     }
     .to_string()
 }
@@ -3581,5 +3594,28 @@ fn mixed_len(v: f64, is_pct: bool) -> String {
         format_num(v, "%")
     } else {
         format_num(v, "px")
+    }
+}
+
+#[cfg(test)]
+mod r5401_safe_overflow_serialization_tests {
+    //! R5401（css-align-3 §overflow-values）：safe 修饰的 computed value 序列化
+    //! = as specified（`safe center` 不折算），`place-content` 简写序列化同源。
+
+    use super::{align_content_to_css, alignment_str};
+    use zero_css_parser::values::AlignmentValue;
+    use zero_style_system::AlignContentValue;
+
+    #[test]
+    fn safe_overflow_position_serializes_as_specified() {
+        assert_eq!(alignment_str(&AlignmentValue::SafeCenter), "safe center");
+        assert_eq!(alignment_str(&AlignmentValue::SafeFlexEnd), "safe flex-end");
+        assert_eq!(alignment_str(&AlignmentValue::SafeFlexStart), "safe flex-start");
+        assert_eq!(alignment_str(&AlignmentValue::SafeStart), "safe start");
+        assert_eq!(alignment_str(&AlignmentValue::SafeEnd), "safe end");
+        // unsafe 前缀解析期丢弃（Unsafe 为默认）→ 序列化裸关键字。
+        assert_eq!(alignment_str(&AlignmentValue::Center), "center");
+        assert_eq!(align_content_to_css(&AlignContentValue::SafeFlexEnd), "safe flex-end");
+        assert_eq!(align_content_to_css(&AlignContentValue::SafeStart), "safe start");
     }
 }

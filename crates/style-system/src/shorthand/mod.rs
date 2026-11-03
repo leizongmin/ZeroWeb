@@ -1970,7 +1970,10 @@ fn expand_grid_area(value: &str, important: bool, specificity: (u32, u32, u32)) 
 /// `place-items: center` → align-items: center; justify-items: center
 /// `place-items: start end` → align-items: start; justify-items: end
 ///
-/// 单值时两个子属性获得相同值，双值时分别对应 align 和 justify。
+/// 单值时两个子属性获得相同值，双值时分别对应 align 和 justify。两侧长手值
+/// 各自可为多 token（css-align-3 `first/last baseline`、R5401 `safe/unsafe
+/// <position>`），按 `<align> <justify>?` 语法先试 align 贪婪取最长合法前缀的
+/// 双值形，无合法切分再试单值形（整值同给两侧，如 `place-content: safe center`）。
 fn expand_place(
     value: &str,
     align_prop: &str,
@@ -1983,36 +1986,50 @@ fn expand_place(
         return vec![mk(align_prop, value), mk(justify_prop, value)];
     }
     let parts: Vec<&str> = value.split_whitespace().collect();
-    match parts.len() {
-        1 if is_place_longhand_value(align_prop, parts[0]) && is_place_longhand_value(justify_prop, parts[0]) => {
-            vec![mk(align_prop, parts[0]), mk(justify_prop, parts[0])]
+    for k in (1..parts.len()).rev() {
+        let (align_val, justify_val) = (parts[..k].join(" "), parts[k..].join(" "));
+        if is_place_longhand_value(align_prop, &align_val) && is_place_longhand_value(justify_prop, &justify_val) {
+            return vec![mk(align_prop, &align_val), mk(justify_prop, &justify_val)];
         }
-        2 if is_place_longhand_value(align_prop, parts[0]) && is_place_longhand_value(justify_prop, parts[1]) => {
-            vec![mk(align_prop, parts[0]), mk(justify_prop, parts[1])]
-        }
-        _ => vec![],
     }
+    let whole = parts.join(" ");
+    if is_place_longhand_value(align_prop, &whole) && is_place_longhand_value(justify_prop, &whole) {
+        return vec![mk(align_prop, &whole), mk(justify_prop, &whole)];
+    }
+    vec![]
 }
 
 fn is_place_longhand_value(property: &str, value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     match property {
         "align-items" | "align-self" | "justify-content" => zero_css_parser::values::parse_alignment(value).is_some(),
-        "align-content" => matches!(
-            lower.as_str(),
-            "auto"
-                | "normal"
-                | "start"
-                | "end"
-                | "flex-start"
-                | "flex-end"
-                | "center"
-                | "stretch"
-                | "baseline"
-                | "space-between"
-                | "space-around"
-                | "space-evenly"
-        ),
+        "align-content" => {
+            // R5401（css-align-3 §overflow-values）：safe/unsafe 前缀仅可与位置关键字
+            // 组合（与 apply_advanced 接受集一致，不放宽；`safe stretch` 等仍非法）。
+            let (rest, has_overflow) = if let Some(r) = lower.strip_prefix("safe ") {
+                (r, true)
+            } else if let Some(r) = lower.strip_prefix("unsafe ") {
+                (r, false)
+            } else {
+                (lower.as_str(), false)
+            };
+            let bare = matches!(
+                rest,
+                "auto"
+                    | "normal"
+                    | "start"
+                    | "end"
+                    | "flex-start"
+                    | "flex-end"
+                    | "center"
+                    | "stretch"
+                    | "baseline"
+                    | "space-between"
+                    | "space-around"
+                    | "space-evenly"
+            );
+            bare && (!has_overflow || matches!(rest, "start" | "end" | "flex-start" | "flex-end" | "center"))
+        }
         "justify-items" | "justify-self" => matches!(
             lower.as_str(),
             "auto" | "normal" | "start" | "end" | "center" | "stretch" | "baseline" | "left" | "right"

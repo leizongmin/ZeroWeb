@@ -348,6 +348,7 @@ impl Default for ComputedStyle {
             hyphens: HyphensComputedValue::None,
             line_clamp: LineClampComputedValue::None,
             line_clamp_legacy_webkit: false,
+            legacy_webkit_box_flex: false,
             scroll_marker_group: None,
             scroll_marker_pseudo: None,
             scroll_buttons: None,
