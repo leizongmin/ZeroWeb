@@ -1003,3 +1003,6 @@ mod r5399_bfc_float_containment_tests;
 /// 文本测量（kill-switch `ZW_FLOAT_INLINE_SUM`/`ZW_FLOAT_STF_ADV` OFF 敏感性见
 /// 返修证据 r1-sensitivity 日志）。
 mod trending_float_star_tests;
+
+/// R5408：替换盒 min/max-height 钳后宽度回传（intrinsic-percent-replaced-017 锚）。
+mod r5408_replaced_clamp_transfer_tests;

@@ -1556,6 +1556,7 @@ impl LayoutEngine {
         dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: &Document,
+        intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     ) -> bool {
         use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
 
@@ -1571,6 +1572,24 @@ impl LayoutEngine {
             })
         }
 
+        /// R5408 门：min/max-height 存在真实约束声明。% 的解析结果已含于首趟 laid 高，
+        /// 只需判「有声明」（CSS2 §10.4 约束表触发条件），不在此解析；Auto/固有关键字/
+        /// stretch 非约束；**Px(INFINITY) = none 的内部表示**（default_impl.rs:36，
+        /// resolve_sizing_definite_real_length 同口径）——漏判会把全部 both-auto 替换盒
+        /// 当有 max-height 而错传（corpus 三案 3×3 定谳：045 canvas 100×100 被写 400×400）。
+        fn has_real_min_max_height(s: &ComputedStyle) -> bool {
+            let real = |v: &LengthValue| match v {
+                LengthValue::Auto
+                | LengthValue::MinContent
+                | LengthValue::MaxContent
+                | LengthValue::FitContent(_)
+                | LengthValue::Stretch => false,
+                LengthValue::Px(x) if x.is_infinite() => false,
+                _ => true,
+            };
+            real(&s.max_height) || real(&s.min_height)
+        }
+
         fn walk(
             b: &LayoutBox,
             parent_style: Option<&ComputedStyle>,
@@ -1578,6 +1597,7 @@ impl LayoutEngine {
             dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
             styles: &HashMap<NodeId, ComputedStyle>,
             doc: &Document,
+            intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
         ) -> bool {
             if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
                 return false;
@@ -2100,14 +2120,51 @@ impl LayoutEngine {
                     let _ = taffy_tree.mark_dirty(tid);
                     changed = true;
                 }
+            } else if b.is_replaced
+                && b.children.is_empty()
+                && !b.is_absolute
+                && !b.is_fixed
+                && let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && !matches!(
+                    ps.display,
+                    DisplayValue::Flex | DisplayValue::InlineFlex | DisplayValue::Grid | DisplayValue::InlineGrid
+                )
+                && let Some(item_style) = my_style
+                && matches!(item_style.width, LengthValue::Auto)
+                && matches!(item_style.height, LengthValue::Auto)
+                && crate::intrinsic_sizing::replaced_clamp_transfer_enabled()
+                && has_real_min_max_height(item_style)
+                && let Some(&(iw, ih)) = intrinsic_sizes.get(&id)
+                && iw > 0.5
+                && ih > 0.5
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+            {
+                // R5408（CSS2 §10.4 constraint-violation 表 + css-sizing-4 §4.1 transferred
+                // size 以 used size 为 basis）：R2428 both-auto 注入域（父非 flex/grid）把
+                // 替换盒 size.width/height 写成固有值 definite、不设 aspect_ratio（R325：
+                // taffy 会强制比例覆盖显式值）——min/max-height 钳住 used height 后 taffy
+                // 不按钳后高回传宽（intrinsic-percent-replaced-017：img 固有 200×200 +
+                // max-height:100% 渲 200×100，应 100×100，绿区外溢 ✗1.21%）。laid 高已含
+                // 钳结果，按 used height × 固有比重写 taffy width；无钳（laid == 固有）不
+                // 触发——014/dynamic-012 传递域零扰动。min-height 顶高同表对称成立。
+                let ratio = iw / ih;
+                let target = b.height * ratio;
+                if (b.height - ih).abs() > 0.5 && (b.width - target).abs() > 0.5 {
+                    st.size.width = taffy::style::Dimension::length(target.max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
             }
 
             for c in &b.children {
-                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles, doc);
+                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles, doc, intrinsic_sizes);
             }
             changed
         }
-        walk(root, None, taffy_tree, dom_to_taffy, styles, doc)
+        walk(root, None, taffy_tree, dom_to_taffy, styles, doc, intrinsic_sizes)
     }
 
     /// R4993（css-sizing-4 auto <ratio> + css-flexbox §4.5·Blink 实证矩阵见

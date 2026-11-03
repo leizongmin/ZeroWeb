@@ -425,6 +425,13 @@ pub(crate) fn inline_replaced_ar_transfer_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_REPLACED_AR_TRANSFER").as_deref() != Ok("0"))
 }
 
+/// R5408 kill-switch 读取（进程级缓存）：`ZW_REPLACED_CLAMP_TRANSFER=0` 回退布局期
+/// 替换盒 min/max-height 钳后宽度回传臂（guideline #29 按趟开关，OnceLock 同上）。
+pub(crate) fn replaced_clamp_transfer_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_REPLACED_CLAMP_TRANSFER").as_deref() != Ok("0"))
+}
+
 /// HTML 尺寸属性（width/height）→ 固有比（HTML 规范 dimension attributes 映射
 /// `aspect-ratio: auto w/h`）。canvas 位图尺寸即属性值（最可靠）；img/video 等属性比
 /// 在引擎侧有解码/自然尺寸覆盖时（apply_replaced_element_sizing 注入 taffy）以覆盖为准

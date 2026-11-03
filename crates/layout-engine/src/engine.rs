@@ -529,6 +529,17 @@ impl LayoutEngine {
         // R4216：ratio-only img/svg 输入信号在 move 前捕获（converter 据此设 taffy
         // aspect_ratio，是 AR 子 pass 的非 CSS 源）。
         let has_img_ratio_input = !img_intrinsic_ratios.is_empty() || !img_intrinsic_no_ratio.is_empty();
+        // R5408：比例信号键集（move 前捕获）。img 路径 build_img_intrinsic_all 不做
+        // ratios/no_ratio 互斥（object 路径的 continue 纪律 img 缺席，pipeline/mod.rs
+        // 761-769 三 map 并行 insert），no-ratio/ratio-only SVG 的 bogus 解码尺寸会同时
+        // 落 sizes——clamp-transfer 臂把任何 sizes entry 当可传比会错传（visudet
+        // replaced-elements-min/max-* 六案 ON/OFF A/B 定谳：no-ratio SVG 300×150 被
+        // 传成 150×150）。无固有比者 CSS2 §10.4 本就不得传。
+        let ratio_signal_ids: std::collections::HashSet<NodeId> = img_intrinsic_ratios
+            .keys()
+            .chain(img_intrinsic_no_ratio.keys())
+            .copied()
+            .collect();
         // 1. 构建 taffy 树（含 R109 接线产物，仅 R109_WIRE=1 时非空）
         let (mut taffy_tree, root_id, taffy_to_dom, r109) = build_layout_tree_with_r109(
             doc,
@@ -795,6 +806,13 @@ impl LayoutEngine {
         for (nid, size) in gathered_html_attr {
             intrinsic_for_r695.entry(nid).or_insert(size);
         }
+        // R5408：clamp-transfer 臂专用清洗 map——剔除 ratio/no-ratio 信号键（bogus SVG
+        // sizes entry），attr 对（R3801 content 固有）与 canvas 默认/属性固有保留。R695
+        // % 高 pass 输入保持原样不受清洗影响。
+        let mut intrinsic_for_clamp = intrinsic_for_r695.clone();
+        for id in &ratio_signal_ids {
+            intrinsic_for_clamp.remove(id);
+        }
         let changed_r695 = if sizing_targets.pct_height || !intrinsic_for_r695.is_empty() {
             Self::apply_indefinite_percent_height_to_auto(
                 &mut taffy_tree,
@@ -819,8 +837,14 @@ impl LayoutEngine {
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
         // R4216：无 AR 源（styles aspect_ratio/aspect_ratio_auto + ratio-only img 输入）时跳过。
         let changed_ratio_img = if sizing_targets.ar_source {
-            Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
-                || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+            Self::apply_flex_aspect_ratio_item_size(
+                &mut taffy_tree,
+                &root_box,
+                &dom_to_taffy,
+                styles,
+                doc,
+                &intrinsic_for_clamp,
+            ) || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
         } else {
             false
         };
