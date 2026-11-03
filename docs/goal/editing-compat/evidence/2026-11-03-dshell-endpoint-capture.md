@@ -236,6 +236,15 @@ sandbox 翻绿，恒等复核按面判读不按原始计数**（基线 3,709P/0F
 腿待落（重点核 `[foo<X>bar]</X>baz` 族 P→F 扩散——delete/fd 是 caret 臂
 主消费语料，扩散面可能大于 multitest）**，落地后按同口径判读。
 
+**delete.html 腿实测（11:03:09→11:40:33 落地，37.4 min 干净全量，含 s254
+bin）：7,344P/291F/1T rc=2**——对 E1 基线 7,339P/296F/1T：P +5/F −5/T 恒等
+（`?7001-last` 同页截断受害者逐位同）。行集 diff：**P→F 0（`[foo<X>bar]</X>`
+族零扩散，delete 语料主门通过）**、F→P 5 全为 `foo{<X>bar</X>}baz` 部分含形
+正面翻转（裸 span 1 + swcss false/true × span-color + b 共 5，`{` 起点
+origStart 在删程外存活 = caret 臂正面消费面，与 ipara 腿 F→P 4 同款 delta
+正面；pre-delta 该五案 caret 落位走 legacy 分支翻 compare）。fd 腿同口径
+判读待落（11:40:33 起）。
+
 **delete 腿实测（11:03:09→11:40:33 落地，含 s254 bin）：7,344P/291F/1T
 rc=2——P→F = 0，`[foo<X>bar]</X>` 族零扩散**。对基线 E1 7,339P/296F/1T
 （g28-del-e1-fails.txt 297 行，Fail+Timeout 归一化行集 diff）：
