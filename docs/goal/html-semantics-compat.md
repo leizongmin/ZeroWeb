@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 259 施工收口（import map Blocked 终止回退 + resolve_imports_match 回溯臂同域并刀，s258 挂账收口）。回溯刀：前缀键 afterPrefix 产物补序列化前缀判别，越出映射目标前缀域 → Blocked（规范步骤 6，此前按成功返回越界 URL）；错误通道刀：es_module resolve_registered_specifier String→Result，Blocked（null 条目）→ RuntimeError 终止全部回退（URL 形态说明符不再落回 asURL/相对解析继续内联），transform/export 七臂 `?` 直传、定序链 filter_map 跳过（尽力而为契约不变）、module_provides_export 星号/显式重导出臂 Blocked 按 Missing 继续不消解其他路径。验证：红态实证（HEAD 越界 URL 按成功返回 / "Module not found: blocked" 降级）+ 修复后 zero-script-sandbox 392 全绿（390 基线 + 2 钉，fmt 后复跑同绿）+ clippy 零告警 + zero-webview check 过；无全树 A/B（corpus 零 importmap 面 + 公共 API 签名不变）。宿主 import.meta.resolve 回调面本就规范正确（s257）；webview/宿主编译面 resolve_mapped Option 签名仍按 None 降级——s260 候选（三态化 + resolver 错误通道 + 失败 tag 路由三面一次收口）。承前：M2 切片 258（import map 映射值注册期归一化——共享解析层小刀，含 s257 整张拒注口径勘误）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 260 施工收口（import map Blocked 终止跨面接线——resolve_mapped 三态化，s259 挂账收口）。勘根：resolve_mapped `Option<String>` 签名把 Blocked（null 条目）塌缩为 None 与 Miss 不可区分——webview shim/native resolver、renderer/tab collect 与 handler、script_prefetch 五面接线侧一律按 Miss parent-join 继续抓取被阻断 URL（fetchable 即误装载，规范要求 null 条目按解析失败终止不回退）。施工 5 刀 + 5 钉：resolve_mapped 三态化（Resolved/Blocked/Miss 直报）；webview apply_import_map Option 化 + 两调用点 let-else 落空契约（shim 契约串与 resolver 返空串 → v8_runtime TypeError reject 面）；renderer/tab resolve_import_dep 共享 helper + collect Err + handler String::new()；prefetch Blocked 跳过不预取噪声。验证：红态实证（renderer/tab collect 钉 HEAD 抓取被阻断 URL 且收集成功）+ 修复后 script-sandbox 393 / renderer 371 / webview 836 全绿 + browser bin 740 绿（2 子进程并行负载 flaky 单跑绿 + 5 s257 已知 HEAD 红不计）+ fmt/clippy 四 crate 零告警；无全树 A/B（corpus 零 importmap 面 + 无 map 页面路径逐字节不变）。宿主 import.meta.resolve 回调面本就规范正确（s257）；es_module/compile 面 s259 已终止。承前：M2 切片 259（import map Blocked 终止回退 + resolve_imports_match 回溯臂同域并刀）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,35 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 260**：import map Blocked 终止跨面接线轮（s259 挂账
+  收口，5 刀 + 5 钉）——勘根：resolve_mapped `Option<String>` 签名把
+  Blocked（null 条目）塌缩为 None 与 Miss 不可区分，五面接线侧（webview
+  shim `__zw_compile_module` / native resolver、renderer collect_module_deps
+  与 `__zw_compile_module` handler、tab_js_worker 同形两处、script_prefetch
+  静态依赖展开）一律按 Miss parent-join 继续抓取——页面显式阻断的 URL
+  fetchable 即误装载（规范：null 条目解析失败，不得回退）。施工：resolve_mapped
+  三态化（Resolved/Blocked/Miss 直报，base 解析失败守卫臂保持 Miss）；webview
+  apply_import_map Option 化（映射命中按 base 绝对化 / 未命中原样 passthrough
+  / Blocked None）+ 两调用点 let-else 空契约（shim 契约串与 native resolver
+  返空串 → v8_runtime TypeError reject 面，与 CSP violation 拒绝同通道）；
+  renderer `resolve_import_dep` pub(crate) 共享 helper + collect Err（null
+  entry 错误）+ handler String::new()；tab 本地同形 helper（跨 crate 无共享
+  面）同接线；prefetch Blocked 跳过（被阻断 URL 属噪声抓取）。钉面 ×5：
+  红态钉 renderer/tab collect（HEAD 实证抓取被阻断 URL 且收集成功——bypass
+  在账）+ 签名变更同伴 3 钉（resolve_mapped null→Blocked 精确/URL 形态两臂、
+  renderer helper 三态、webview apply_import_map 三态——旧 Option 签名下
+  无法编译，编译失败不冒充行为失败；webview passthrough 臂勘正为原样契约，
+  fetch 侧 join）。验证：修复后 script-sandbox **393** / renderer **371** /
+  webview **836** 全绿 + browser bin 740 绿（2 子进程并行负载 flaky 单跑绿
+  ——compositor_frame/save_as 不触及 import map 面；5 个 s257 已知 HEAD 红
+  不计）+ fmt/clippy 四 crate（browser 双形态）零告警；image_decoder proxy
+  钉红 = target-disk-guard 删 `zero-image-decoder` 产物，重建后绿——环境缺
+  产物非回归；消费面 grep 核对 resolve_mapped 生产调用仅三处全改造；零
+  corpus 面（s258 grep 承用）+ 无 map 页面路径逐字节不变 → 无全树 A/B。
+  挂账备注：map 只在顶层契约入口应用（传递依赖从不看 map）——既有形态，
+  Blocked 在依赖链终止由 collect Err 传播承担，若 WPT 面要求传递依赖可见
+  map 另立切片。账本
+  [evidence/2026-11-03-m2s260-import-map-blocked-wiring-termination.md](html-semantics-compat/evidence/2026-11-03-m2s260-import-map-blocked-wiring-termination.md)。
 - **2026-11-03 M2 切片 259**：import map Blocked 终止回退 + 回溯臂并刀轮
   （s258 挂账收口，两刀）——勘根：resolve_imports_match 缺规范步骤 6
   回溯判别（afterPrefix 产物越出映射目标前缀域按成功返回）；resolve_registered_specifier
