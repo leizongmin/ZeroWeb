@@ -1,6 +1,6 @@
-# 残余挂死归因修复轮（spin2）：m670 move 环进展守卫——delete/fd 两腿 T 归零零翻转
+# 残余挂死归因修复轮（spin2）：m670 move 环进展守卫——fd 全页 T 归零 + delete solo 形态治愈、全页形态恒存（battery3 反证）
 
-日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）
+日期：2026-11-03（editing 流，控制面下一步 ⑥ 残余挂死两站点 solo 归因修复窗收口）；2026-11-04（battery3 del 腿判读修订：全页形态反证，diag3 定谳改判）
 
 ## 0. 范围与站点盘点修正
 
@@ -18,7 +18,9 @@
 3. **delete.html?7001-last**：真残余。v1/v2/v3 三代 Timeout 恒存（截断于
    delete.js:3183 CE-false 组首案 `<p>{}<span contenteditable=false>ab</span>
    </p>`「Do not delete ancestor blocks which still has non-editable content」，
-   last completed = :3177），**本轮 m670 守卫修复**。
+   last completed = :3177），本轮 m670 守卫修复——**battery3 全页形态反证：
+   守卫仅治愈 solo（variant 裁剪）形态，全页 8-variant 挂死逐位恒等恒存、
+   未解（见 §3 battery3 行与 §1.3 机制修正）**。
 
 ## 1. 归因链
 
@@ -39,7 +41,7 @@ COUNTS 中 m670/c674 各仅 1 次 = 守卫破环后合并路径正常走完。�
 录（不 throw 不改 DOM），守卫本身是 6a3421c88 已提交代码 → 结论对无插桩二进
 制成立（diag3 守卫版纯构建复证，见 §3）。
 
-### 1.2 delete 归因（diag1 反证 + diag3 定谳）
+### 1.2 delete 归因（diag1 反证 + diag3 solo 正结果 + battery3 全页反证）
 
 - **diag1（throw-bail 插桩版）负结果**：环体 tick 4096 次/30s 墙钟双门
   throw 破环 → 页 1500s test-guard 击杀永不完页（zw-g28spin2-diag1.log，
@@ -48,9 +50,12 @@ COUNTS 中 m670/c674 各仅 1 次 = 守卫破环后合并路径正常走完。�
   进入**不可中断自旋**（V8 terminate_execution 打不到 Rust 内部段）——与
   v1/v2/v3 无插桩版「JS 级自旋 300s 可中断出 Timeout 行」形态对照，证
   throw 式诊断 bail 在 merge/多节点操作路径不安全。
-- **diag3（m670 守卫版，无插桩）正结果**：delete.html?7001-last +
+- **diag3（m670 守卫版，无插桩）solo 正结果**：delete.html?7001-last +
   forwarddelete.html?6001-7000 两页（runner FILTER 子串匹配连带，见 §4.2）
-  0 Timeout 全出账（zw-g28spin2-diag3-del.log）→ m670 守卫治愈定谳。
+  0 Timeout 全出账（zw-g28spin2-diag3-del.log）——**仅证 solo（variant
+  裁剪）形态治愈**。初版「m670 守卫治愈定谳」表述经 battery3 del 腿
+  全页判读修订（全页形态逐位恒等复现挂死，见 §3）；diag3 的 +206 行
+  恢复出账为裁剪效应下的真治愈，但对真实挂死形态（全页序）无效。
 
 ### 1.3 机制（delete.js:3183 形）
 
@@ -61,6 +66,14 @@ _zwJusMovePreservingRanges(endBlock.firstChild, startBlock, -1)`（:670-672）
 原父」语义（part01c.js _zwJusMovePreservingRanges 注记）→ child 数不降 →
 零进展 JS 自旋。可中断性形态与 v1/v2/v3 300s Timeout 恒存吻合；:606 守卫只
 覆盖 s615 splitParent 环不覆盖本环，故三代恒存。
+
+**battery3 全页反证后的机制修正（2026-11-04）**：m670 守卫把本环迭代硬界为
+≤256（长度不降即 break，或计数门 break），守卫版二进制（strings 实锤含
+m670Guard）全页形态仍逐位恒等复现挂死 → **全页形态的自旋不在 m670 环体内**
+——要么守卫 break 后回落壳在下游路径（_zwDelRestoreValues/后继 merge 步）
+另入环，要么污染态下同案在更早路径自旋（根本未达 m670 环）。触发案与截断
+点同 solo 形态同案同位，但自旋站点不同；solo/全页分叉指向跨 variant 状态
+污染（假说 C 实证，见 §3 battery3 行与 §4.4）。
 
 ## 2. 修复
 
@@ -75,10 +88,11 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
 
 ## 3. 验证（diag3 solo 双页 vs 基线切片）
 
-| 切片 | 基线 | 守卫版 diag3 | 共享行状态 | 增量 |
+| 切片 | 基线 | 守卫版复验 | 共享行状态 | 增量 |
 |---|---|---|---|---|
-| delete ?7001-last | v3 replay 切片：636 行/1T | 842 行/0T | 共享行逐位恒等，P→F=0 | +206 行恢复出账 |
-| fd ?6001-7000 | v2 battery 切片：599 行/1T | 1000 案行 + 1 探针行/0T | 共享行逐位恒等，P→F=0 | +401 案行恢复出账（另有 1 行 spin-diag 探针出账系页内 TEMP-DIAG 产物，非案行） |
+| delete ?7001-last solo（diag3） | v3 replay 切片：636 行/1T | 842 行/0T | 共享行逐位恒等，P→F=0 | +206 行恢复出账 |
+| fd ?6001-7000 solo（diag3） | v2 battery 切片：599 行/1T | 1000 案行 + 1 探针行/0T | 共享行逐位恒等，P→F=0 | +401 案行恢复出账（另有 1 行 spin-diag 探针出账系页内 TEMP-DIAG 产物，非案行） |
+| delete 全页 8 variant（battery3 del 腿，2026-11-04） | v3 全页基线：7,636 行/8 页/1T | 7,636 行/8 页/1T | 全行集逐位恒等（P→F=0、F→P=0、新增 0、消失 0），?7001-last T 同案同位复现 | **0——m670 守卫对全页形态零效果** |
 
 - 增量行 = 挂死截断压抑的尾部案恢复出账（基线 Timeout 伪行随治愈消失）；行 = runner 断言行（Pass/Fail/Timeout/Unsupported）。delete.html 在 diag3 时已撤 TEMP-DIAG 探针（842 行全案行），fd 页探针后随 corpus 还原撤除。
 - engine lib（守卫版复跑，g28spin2-enginelib.log）：**3,720P/5F**，5 红名单与守卫前 g28fix-enginelib.log 逐名恒一（全 s249 CSSOM 重序列化已知回落，不回退）。
@@ -106,11 +120,17 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
   三代该页完整出账，守卫版构建唯一 T → **潜在 m670 守卫致挂信号待定谳**；
   机制疑点：break 守卫只出不进，新挂死需假设 break 后混合壳引发下游环（或该
   案另有与守卫共变的触发面）；battery2 mt 腿 23:11-23:42 机器低载，300s 看门
-  狗击发非负载解释所能覆盖。**battery3（对侧 zw-g28spin2b，23:46 起）**：守卫
+  狗击发非负载解释所能覆盖。**battery3（zw-g28spin2b，23:46 起）**：守卫
   版 del→fd→mt 全量三腿 `FILTER=editing/run/<f>.html`（带目录前缀修子串连带）
-  TIME_LIMIT=10800，mt 腿 = 守卫致挂 flake 之分的决定性样本 #2；再 T 则插桩
-  归因窗（variant 裁剪 + SPINDIAG 页尾探针，diag2 形态），完成则记 flake。
-  本流不 solo 复现避免 CPU 争抢污染对侧近边界页。
+  TIME_LIMIT=10800。**del 腿 00:16:55 收官判读 = Branch Y 反证**（judge 脚本
+  行级会计 + `strings` 复核二进制含 m670Guard）：8 页 7,636 行/1T 与 v3 守卫
+  前基线全行集逐位恒等（P→F=0、F→P=0、新增 0、消失 0），?7001-last T 同案
+  同位复现——**m670 守卫对全页形态零效果，diag3「治愈定谳」改判为裁剪效应**
+  （solo 形态 +206 行治愈为真，全页形态挂死另有自旋站点，见 §1.3 机制修正；
+  跨 variant 状态污染假说 C 实证）。本腿 23:46-00:16 独占机器无并发电池，
+  复现干净。mt 腿仍为守卫致挂 flake 之分的决定性样本 #2（再 T 则插桩归因
+  窗：variant 裁剪 + SPINDIAG 页尾探针，diag2 形态），fd 腿（00:16:55 起）
+  待判读。本流不 solo 复现避免 CPU 争抢污染对侧近边界页。
 
 ## 4. 方法论教训
 
@@ -124,3 +144,9 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
 3. **fix-land 复验必须覆盖全部受影响命令面**：fd 与 delete 走同一
    `__zw_ce_delete_apply`（part06.js:4600-4602），v3 replay 只跑 mt/ip/del/
    other 漏 fd，致 fd 治愈状态两代未记账、控制面站点盘点失真。
+4. **挂死修复的治愈验证必须覆盖真实挂死形态（全页序），solo 裁剪页不作
+   定谳**：spin2 diag3 solo 双页 0T「定谳」被 battery3 全页 8-variant 逐位
+   恒等复现反证——同一触发案在 solo/全页形态分叉（守卫 ≤256 迭代界证明
+   全页自旋不在守卫覆盖的环体内），跨 variant 状态污染（假说 C）成立。
+   FILTER 裁剪页只适合作机制探针（diag1-3 形态）；归因修复轮的治愈结论
+   必须以电池全量腿为准（至少挂死变体 + 其全部前序 variant 同进程装载）。
