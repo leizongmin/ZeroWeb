@@ -590,3 +590,8 @@ getPublicKey 域面随域切片逐行扩表翻绿）；域切片完成后进 M �
   将遇同红，期望串更新（尾分号 + 时序断言）由其认领。r3 全量与
   ZeroWeb-2 editing 电池（delete.html 项）并行落盘（75 分钟 quiet cap
   PROCEED-ON-TIMEOUT，d1s4 跨 clone 先例 REGRESSED=0 实证无扰）。
+  推送 rebase 带入 gate28 三 docs 提交（`16c141a71`/`052f1f35f`/
+  `e8a9dc9ed`，域外零交集）；**前轮代收的 R5399 style 提交（本流
+  `95d2f3699`，float_positioning 文档段重排）于推送 rebase 中按冗余
+  丢弃**——远端已有同型修复（渲染流自行清偿同笔 clippy doc 债，两版
+  逐语义等价），skip 无损。
