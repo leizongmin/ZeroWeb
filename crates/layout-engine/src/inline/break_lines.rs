@@ -818,7 +818,17 @@ impl InlineFormattingContext {
                         if !hang_trailing_space
                             && wrap_allowed
                             && !atomic_gl_first_word
-                            && current_x + lead_gap + word_width > left_offset + avail_width
+                            // R5402（css-text-3 §letter-spacing「not applied at the start/end
+                            // of a line」）：fit 门赦免词尾字符的 ls——词在「不计其行尾 ls」时
+                            // 放得下则不折行（折行后词尾 ls 由 R4231 行末裁剪臂从片段宽剪除，
+                            // 行宽/对齐语义一致）；行内非末词 current_x 仍按全宽（count 语义）
+                            // 推进，行内施加不受影响。旧门把行尾 ls 计入行宽 → 提前折行
+                            //（letter-spacing-200 盒 1「12三」应为恰 5em 一行，旧折成
+                            // 「12」+「三…」行数膨胀）。kill-switch
+                            // `ZW_LS_LINE_END_FIT=0`（default-on）回退旧门。
+                            && current_x + lead_gap + word_width
+                                - (if runtime_flags::ls_line_end_fit() { run.letter_spacing } else { 0.0 })
+                                > left_offset + avail_width
                             && !current_line.runs.is_empty()
                         {
                             // 当前行放不下，开始新行

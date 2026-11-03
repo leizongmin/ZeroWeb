@@ -325,6 +325,16 @@ pub(super) fn text_wrap_balance() -> bool {
     selected(*VALUE, || default_on("ZW_TEXT_WRAP_BALANCE"))
 }
 
+/// R5402（css-text-3 §letter-spacing「not applied at the start/end of a line」）：
+/// 断行 fit 门赦免词尾字符的 letter-spacing——词在「不计其行尾 ls」时放得下则不折行
+///（letter-spacing-200：「12三」于 5em 盒应恰一行，旧门把行尾 ls 计入行宽提前折行）。
+/// 行内非末词 current_x 仍按全宽推进，行尾片段宽由 R4231 行末裁剪臂剪除，两臂语义闭环。
+/// default-on；`ZW_LS_LINE_END_FIT=0` 回退旧行宽口径 fit 门。
+pub(super) fn ls_line_end_fit() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_LS_LINE_END_FIT"));
+    selected(*VALUE, || default_on("ZW_LS_LINE_END_FIT"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;
