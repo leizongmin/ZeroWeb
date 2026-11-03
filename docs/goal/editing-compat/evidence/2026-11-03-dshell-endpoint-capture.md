@@ -293,8 +293,16 @@ flex plain-span 双轮恒败为既有族；keep-shell 存活门对无壳 plain s
 **gate28v2 insertparagraph 腿实测（13:44:24 落地）：6,988P/207F/0T rc=2，
 主门通过**——对 v1（227）：**P→F 0、F→P 20 全数回收**（ol/li 14 + swcss 4
 + CE-false 2，两案「待验」亦翻转），F→P 4 `foo{<span>` 形保持（v2 207 =
-gate27 211 − 4，严格改善位）。delete.html 腿 13:44 起续跑，判读对
-g28-del-g28-fails.txt 292 行（预期逐位恒 v1）。
+gate27 211 − 4，严格改善位）。
+
+**gate28v2 delete.html 腿实测（14:16:11 落地）：7,344P/291F/1T rc=2，
+对 v1 行集（g28-del-g28-fails.txt 292）逐位恒等——F→P 0 / P→F 0**，与
+预期一致（存活门只改 origStart detached 回落面，delete 语料 `foo[X]bar`
+中选形 origStart 恒存活不经门；v1 五翻转面 `foo{<X>` 形保持）。二进制
+可比性：本腿 make 触发 mtime rebuild 但 content 恒等（git clean 仅 docs
+提交，13:44:57 bin `strings | grep -c origStartContainer.parentNode` = 2，
+COORD-28 实证）。forwarddelete 腿续跑，判读对 g28-fd-g28-fails.txt 215
+行（预期逐位恒 v1）。
 
 ## 6. 残余与挂账
 
