@@ -1942,6 +1942,133 @@ impl LayoutEngine {
                             changed = true;
                         }
                     }
+                    // R5412（css-flexbox §4.5 automatic minimum size + transferred size
+                    // suggestion）：replaced AR 条目 cross min definite 时 automatic
+                    // minimum = min(transferred（min-cross × ratio）, content suggestion)
+                    // ——**cap 非 floor**。flex-minimum-width-flex-items-015：外层 column
+                    // flex-basis 给 row definite 高 100，img min-height:100% × ratio 1 →
+                    // min.main = 100，收缩穿透内容建议地板 200 → 100×100；旧「只抬不降」
+                    // floor 语义留 200×200。% min-cross 基准是 flex 求解后的父 cross
+                    //（父高来自外层 flex-basis，CSS style 无声明）——静态树构建期不可见，
+                    // 在本首趟 laid 修复层解析（taffy 父节点 size − border − padding，
+                    // css-flexbox §4.1 flex 求解 definite；015 meta assert 原文「column
+                    // flexbox's imposed definite size … honored when resolving percentages」）。
+                    // px min-cross 同语义并入（009 assert「content suggestion accounts
+                    // for minimum cross size」；floor 已 ≥ content 的形态 cap no-op）。
+                    // 门：仅 replaced（非替换维持 R3859 静态 floor 臂）；min.main 显式非
+                    // auto 让路（automatic minimum 仅 auto 语义域，R4988 同门）；cross 轴
+                    // padding 非零跳过（R3859 同门：transfer 基准偏移）。
+                    // kill-switch `ZW_FLEX_MIN_CROSS_TRANSFER=0`。
+                    let min_main_auto = if is_column {
+                        matches!(item_style.min_height, LengthValue::Auto)
+                    } else {
+                        matches!(item_style.min_width, LengthValue::Auto)
+                    };
+                    let cross_padding_zeroish = if is_column {
+                        LayoutEngine::is_zeroish_len(&item_style.padding_top)
+                            && LayoutEngine::is_zeroish_len(&item_style.padding_bottom)
+                    } else {
+                        LayoutEngine::is_zeroish_len(&item_style.padding_left)
+                            && LayoutEngine::is_zeroish_len(&item_style.padding_right)
+                    };
+                    let min_cross_css = if is_column {
+                        &item_style.min_width
+                    } else {
+                        &item_style.min_height
+                    };
+                    // min-cross 解析惰性内联（OPTIMIZATION：闭包仅在本臂门链全过才求值，
+                    // 非 replaced/显式 min.main 域零开销——taffy 父布局查询不进热路径）。
+                    let definite_min_cross = || {
+                        if let Some(px) = resolve_sizing_definite_real_length(min_cross_css, item_style) {
+                            return (px > 0.5).then_some(px);
+                        }
+                        // % min-cross：基准 = 首趟 laid 父 content cross（taffy 首趟已把
+                        // flex 求解 definite 写回布局）。
+                        if let LengthValue::Percentage(p) = min_cross_css {
+                            let parent_content_cross = taffy_tree
+                                .parent(tid)
+                                .and_then(|ptid| taffy_tree.layout(ptid).ok())
+                                .map(|l| {
+                                    let (sz, frame) = if is_column {
+                                        (
+                                            l.size.width,
+                                            l.border.left + l.border.right + l.padding.left + l.padding.right,
+                                        )
+                                    } else {
+                                        (
+                                            l.size.height,
+                                            l.border.top + l.border.bottom + l.padding.top + l.padding.bottom,
+                                        )
+                                    };
+                                    sz - frame
+                                })
+                                .filter(|base| *base > 0.5);
+                            return parent_content_cross.map(|base| base * (*p as f32 / 100.0));
+                        }
+                        None
+                    };
+                    if b.is_replaced
+                        && min_main_auto
+                        && cross_padding_zeroish
+                        && std::env::var("ZW_FLEX_MIN_CROSS_TRANSFER").as_deref() != Ok("0")
+                        && let Some(min_cross) = definite_min_cross()
+                        && let Ok(mut st) = taffy_tree.style(tid).cloned()
+                    {
+                        let transferred_min_main = if is_column {
+                            min_cross / ratio
+                        } else {
+                            min_cross * ratio
+                        };
+                        let cur = if is_column {
+                            st.min_size.height
+                        } else {
+                            st.min_size.width
+                        };
+                        let cur_px = if cur.is_auto() { 0.0 } else { cur.value() };
+                        // cap：仅当传递值显著低于当前地板（内容建议）时降；≥ 现值 no-op
+                        //（R3794 floor 语义形态不变）。
+                        if transferred_min_main < cur_px - 0.5 {
+                            if is_column {
+                                st.min_size.height = taffy::style::Dimension::length(transferred_min_main);
+                            } else {
+                                st.min_size.width = taffy::style::Dimension::length(transferred_min_main);
+                            }
+                            // 交叉轴收口（css-flexbox §9.4）：R3794 both-auto 设备把 raw 固有
+                            // cross 钉成 taffy definite，阻断 stretch/min 解析（015 尾差：
+                            // 宽 100 ✓ 高仍 200）。CSS cross auto 且设备值 > min-cross
+                            //（设备指纹：CSS auto 下写 definite cross 的只有该设备）时释放
+                            // 为 auto + min-cross 地板——taffy 二趟按 ratio/stretch 求 cross
+                            // 并钳 min；R3794 记录的塌缩顾虑由该地板兜住（row-003 域 h≥min）。
+                            let css_cross_auto = if is_column {
+                                matches!(item_style.width, LengthValue::Auto)
+                            } else {
+                                matches!(item_style.height, LengthValue::Auto)
+                            };
+                            if css_cross_auto {
+                                let device_cross = if is_column { st.size.width } else { st.size.height };
+                                let device_cross_px = if device_cross.is_auto() {
+                                    0.0
+                                } else {
+                                    device_cross.value()
+                                };
+                                if device_cross_px > min_cross + 0.5 {
+                                    if is_column {
+                                        st.size.width = taffy::style::Dimension::auto();
+                                    } else {
+                                        st.size.height = taffy::style::Dimension::auto();
+                                    }
+                                }
+                                if is_column {
+                                    st.min_size.width = taffy::style::Dimension::length(min_cross);
+                                } else {
+                                    st.min_size.height = taffy::style::Dimension::length(min_cross);
+                                }
+                            }
+                            let _ = taffy_tree.set_style(tid, st);
+                            let _ = taffy_tree.mark_dirty(tid);
+                            changed = true;
+                        }
+                    }
                 } else if !b.is_replaced {
                     // R4988 臂 2（css-flexbox §4.5 + css-sizing-4 §4.1）：definite main
                     // 的 AR 叶条目——容器 main 收缩竞争时 taffy 把 specified size 缩穿
