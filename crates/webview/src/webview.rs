@@ -7637,8 +7637,9 @@ enum ModuleGraphFailure {
 /// s254：动态 import 的 import map 应用——map 阶段命中才改写说明符（映射值按
 /// referring script base join 绝对化；键归一在 `ImportMap::resolve_mapped` 内按
 /// 同基址进行），未命中原样返回（既有 parent-join 路径零漂移）。Blocked 条目按
-/// Miss 降级——FIXME 同 `resolve_registered_specifier`（`String` 返回签名无错误
-/// 通道；spec 要求 TypeError 终止全部回退）。
+/// None 降级——FIXME 余 webview/宿主编译面（`resolve_mapped` `Option` 签名无
+/// 错误通道；spec 要求 TypeError 终止全部回退；es_module transform 面 s259 已
+/// 按解析错误终止）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
 fn apply_import_map(map: &Option<zero_script_sandbox::ImportMap>, base: &str, spec: &str) -> String {
     match map.as_ref().and_then(|m| m.resolve_mapped(spec, base)) {

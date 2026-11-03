@@ -9,8 +9,9 @@
 //! 与完整规范的已知偏差（本切片边界，见各 FIXME）：
 //! - 映射键迭代顺序为 `serde_json::Map` 的排序序而非 JSON 插入序（serde_json
 //!   未启用 `preserve_order`）；仅在嵌套尾斜杠前缀键 / 多 scope 相互重叠时可观察。
-//! - null 条目（Blocked）规范要求抛 TypeError 并终止全部回退；调用方
-//!   （[`crate::es_module`]）当前无错误通道，按 Miss 降级继续。
+//! - null 条目（Blocked）规范要求抛 TypeError 并终止全部回退；es_module
+//!   transform 面（s259）已按解析错误通道终止；webview/宿主编译面经
+//!   [`Self::resolve_mapped`]（`Option` 签名）仍按 Miss/None 降级。
 
 use serde_json::Value;
 use url::Url;
@@ -112,8 +113,9 @@ impl ImportMap {
         }
     }
 
-    /// 仅当映射表实际命中（精确键或尾斜杠前缀键）时返回映射 URL；未命中返回
-    /// `None`（含 Blocked 按模块注释 FIXME 降级）。与 [`Self::resolve`] 的差别在
+    /// 仅当映射表实际命中（精确键或尾斜杠前缀键）时返回映射 URL；未命中与
+    /// Blocked（`Option` 签名无错误通道，按 None 降级——webview/宿主面残余
+    /// FIXME，见模块注释）均返回 `None`。与 [`Self::resolve`] 的差别在
     /// asURL 回退不参与——调用方（模块抓取/编译接线）借此保证无命中路径的字符串
     /// 形态与既有 `resolve_document_url` 产物逐字节一致（在跑站点资产零漂移）。
     pub fn resolve_mapped(&self, specifier: &str, base_url: &str) -> Option<String> {
@@ -210,16 +212,18 @@ fn resolve_imports_match(normalized: &str, as_url: Option<&Url>, map: &Specifier
                 return ImportMapResolution::Blocked;
             };
             let after_prefix = &normalized[key.len()..];
-            // afterPrefix 以映射目标为基址解析；afterPrefix 解析失败 →
-            // 规范要求 TypeError（阻断）。目标解析失败臂对 parse 产物不可达
-            // （映射值在注册期已归一化为绝对 URL，s258 阻断面收敛），保留作
-            // 存储值不变式守卫。
+            // 目标解析失败臂对 parse 产物不可达（映射值在注册期已归一化为绝对
+            // URL，s258 阻断面收敛），保留作存储值不变式守卫。
             let Ok(target) = Url::parse(value) else {
                 return ImportMapResolution::Blocked;
             };
+            // afterPrefix 以映射目标为基址解析；解析失败，或解析产物序列化不以
+            // 目标序列化为代码单元前缀（回溯越出前缀域）→ 规范要求 TypeError
+            // （阻断）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-an-imports-match
             return match Url::options().base_url(Some(&target)).parse(after_prefix) {
-                Ok(url) => ImportMapResolution::Resolved(url.to_string()),
-                Err(_) => ImportMapResolution::Blocked,
+                Ok(url) if url.as_str().starts_with(target.as_str()) => ImportMapResolution::Resolved(url.to_string()),
+                _ => ImportMapResolution::Blocked,
             };
         }
     }
@@ -519,6 +523,26 @@ mod tests {
         assert_eq!(
             map.resolve("utils/a.js", "https://x.test/s/app.js"),
             ImportMapResolution::Resolved("https://x.test/assets/utils/a.js".into())
+        );
+    }
+
+    #[test]
+    fn backtracking_above_prefix_target_blocked_s259() {
+        // resolve an imports match 步骤 6：afterPrefix 解析产物序列化不以映射
+        // 目标序列化为代码单元前缀（回溯越出前缀域）→ TypeError（阻断）；
+        // 此前按成功返回越界 URL。
+        let map = parse_at(
+            r#"{"imports": {"lib/": "https://x.test/a/b/"}}"#,
+            "https://x.test/dir/page",
+        );
+        assert_eq!(
+            map.resolve("lib/../c.js", "https://x.test/dir/page"),
+            ImportMapResolution::Blocked
+        );
+        // 前缀域内组合不受影响（判别臂）。
+        assert_eq!(
+            map.resolve("lib/util.js", "https://x.test/dir/page"),
+            ImportMapResolution::Resolved("https://x.test/a/b/util.js".into())
         );
     }
 }

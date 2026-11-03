@@ -304,8 +304,10 @@ fn static_dependency_specifiers(source: &str, importer_url: &str, registry: &Mod
             raw.push(spec);
         }
     }
+    // s259：Blocked（null 条目）依赖不入定序图（module_graph_postorder 尽力
+    // 而为契约不变——链接/解析错误由 transform/build 路径经 ? 如实报告）。
     raw.into_iter()
-        .map(|spec| resolve_registered_specifier(&spec, importer_url, registry))
+        .filter_map(|spec| resolve_registered_specifier(&spec, importer_url, registry).ok())
         .collect()
 }
 
@@ -945,7 +947,7 @@ fn transform_import(
     // import 'module' — 副作用导入
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
         let raw_specifier = extract_string_literal(clause.split(';').next().unwrap_or(clause).trim())?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         return match &dep {
@@ -967,7 +969,7 @@ fn transform_import(
             return Err(ScriptError::CompileError(format!("unsupported import: {clause}")));
         };
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         // R3398：防循环/菱形 import 无限递归（仅首次访问时内联依赖 IIFE；重入 → 引用首份
         // 导出，避免 a↔b 循环致栈溢出 abort）。镜像 import 'm' 副作用导入的 visited 守卫。
         let safe = safe_ident(&specifier);
@@ -998,7 +1000,7 @@ fn transform_import(
         && let Some((bindings, spec_part)) = split_from_clause(clause)
     {
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         for item in bindings
             .trim_start_matches('{')
             .trim_end_matches('}')
@@ -1037,7 +1039,7 @@ fn transform_import(
     if let Some((name, spec_part)) = split_from_clause(clause) {
         let name = name.trim();
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         ensure_module_export(&specifier, "default", registry)?;
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
@@ -1065,32 +1067,44 @@ fn transform_import(
     Ok(String::new())
 }
 
-fn resolve_registered_specifier(specifier: &str, importer_url: &str, registry: &ModuleRegistry) -> String {
+fn resolve_registered_specifier(
+    specifier: &str,
+    importer_url: &str,
+    registry: &ModuleRegistry,
+) -> Result<String, ScriptError> {
     if registry.get(specifier).is_some() {
-        return specifier.to_string();
+        return Ok(specifier.to_string());
     }
     // 注册表直击未命中时先过页面 import map（HTML 规范 resolve a module specifier
-    // 的 map 阶段）；无 map 或未命中（Miss）按原相对路径解析继续。
-    // FIXME(spec)：Blocked（null 条目）规范要求抛 TypeError 终止全部回退，此处受
-    // `String` 返回签名所限按 Miss 降级；键迭代顺序为 serde_json Map 排序序（非
-    // JSON 插入序），仅嵌套尾斜杠前缀键 / 多 scope 重叠时可观察（见 import_map.rs 模块注释）。
-    if let Some(map) = registry.import_map()
-        && let ImportMapResolution::Resolved(mapped) = map.resolve(specifier, importer_url)
-    {
-        return mapped;
+    // 的 map 阶段）：Resolved 按映射 URL 继续；Blocked（null 条目）→ 解析错误
+    // 终止全部回退（s259——URL 形态说明符不得落回 asURL/相对解析继续抓取）；
+    // Miss 按原相对路径解析继续。键迭代顺序为 serde_json Map 排序序（非
+    // JSON 插入序），仅嵌套尾斜杠前缀键 / 多 scope 重叠时可观察（见 import_map.rs
+    // 模块注释）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+    if let Some(map) = registry.import_map() {
+        match map.resolve(specifier, importer_url) {
+            ImportMapResolution::Resolved(mapped) => return Ok(mapped),
+            ImportMapResolution::Blocked => {
+                return Err(ScriptError::RuntimeError(format!(
+                    "Module specifier '{specifier}' is blocked by a null entry in the import map"
+                )));
+            }
+            ImportMapResolution::Miss => {}
+        }
     }
     let Ok(base) = url::Url::parse(importer_url) else {
-        return specifier.to_string();
+        return Ok(specifier.to_string());
     };
     let Ok(mut resolved) = base.join(specifier) else {
-        return specifier.to_string();
+        return Ok(specifier.to_string());
     };
     resolved.set_fragment(None);
     let resolved = resolved.to_string();
     if registry.get(&resolved).is_some() {
-        resolved
+        Ok(resolved)
     } else {
-        specifier.to_string()
+        Ok(specifier.to_string())
     }
 }
 
@@ -1175,7 +1189,11 @@ fn module_provides_export(
                 && let Some((_, spec_part)) = split_from_clause(after)
                 && let Ok(raw) = extract_import_specifier_from_rest(spec_part)
             {
-                let dependency = resolve_registered_specifier(&raw, specifier, registry);
+                // s259：依赖说明符被 null 条目阻断 → 该星号子链按 Missing 处理
+                //（提供性判定不下探；链路本身在 transform 期经 ? 终止）。
+                let Ok(dependency) = resolve_registered_specifier(&raw, specifier, registry) else {
+                    continue;
+                };
                 match module_provides_export(&dependency, name, registry, visited) {
                     ExportResolution::Provides => star_provides += 1,
                     // s255：星号子链歧义传播——spec ResolveExport 星号臂子解析为
@@ -1202,17 +1220,20 @@ fn module_provides_export(
                 if exported != name {
                     continue;
                 }
-                match from_specifier.as_deref() {
+                match &from_specifier {
                     None => return ExportResolution::Provides,
                     // s255：显式重导出子链歧义按未绑定继续——spec ResolveExport
                     // 显式重导出臂 resolution 为 null 时落入后续子句/星号，不就
                     // 地判歧义（与星号臂传播相对）。
-                    Some(dependency) => {
+                    // s259：依赖说明符被 null 条目阻断 → 该重导出链不提供该名，
+                    // 继续后续子句/星号（链路本身在 transform_export 期经 ? 终止）。
+                    Some(Ok(dependency)) => {
                         if module_provides_export(dependency, imported, registry, visited) == ExportResolution::Provides
                         {
                             return ExportResolution::Provides;
                         }
                     }
+                    Some(Err(_)) => {}
                 }
             }
         }
@@ -1268,7 +1289,7 @@ fn transform_export(
                 return Err(ScriptError::CompileError(format!("unsupported export: {clause}")));
             };
             let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-            let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+            let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
             let safe = safe_ident(&specifier);
             let dep = inline_dep_once(&specifier, registry, visited)?;
             let exports_var = match &dep {
@@ -1302,7 +1323,7 @@ fn transform_export(
             return Err(ScriptError::CompileError(format!("unsupported export: {clause}")));
         };
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
         let dep = inline_dep_once(&specifier, registry, visited)?;
         let exports_var = match &dep {
@@ -1336,7 +1357,7 @@ fn transform_export(
             .find('}')
             .ok_or_else(|| ScriptError::CompileError("invalid re-export list: missing }".into()))?;
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
-        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry);
+        let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
         for item in before[1..end].split(',').map(str::trim).filter(|item| !item.is_empty()) {
             let imported = item.split_once(" as ").map_or(item, |(name, _)| name).trim();
@@ -2040,7 +2061,7 @@ mod tests {
         reg.set_import_map(map);
         reg.register("https://assets.test/react.js", "export default 1;");
         assert_eq!(
-            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            resolve_registered_specifier("react", "https://github.com/page", &reg).unwrap(),
             "https://assets.test/react.js"
         );
     }
@@ -2051,12 +2072,12 @@ mod tests {
         reg.register("https://github.com/react.js", "export default 1;");
         // 无 map：裸说明符按相对路径解析未命中 → 原样返回（既有行为）。
         assert_eq!(
-            resolve_registered_specifier("react", "https://github.com/page", &reg),
+            resolve_registered_specifier("react", "https://github.com/page", &reg).unwrap(),
             "react"
         );
         // 相对路径命中注册模块仍走原路径（无 map 回归保护）。
         assert_eq!(
-            resolve_registered_specifier("./react.js", "https://github.com/page", &reg),
+            resolve_registered_specifier("./react.js", "https://github.com/page", &reg).unwrap(),
             "https://github.com/react.js"
         );
     }
@@ -2087,6 +2108,41 @@ mod tests {
         reg.register("https://assets.test/react.js", react);
         let iife = compile_dependency_iife("https://github.test/chunk.js", &reg).unwrap();
         assert!(iife.contains("19.1.0"));
+    }
+
+    // s259：null 条目（Blocked）终止全部回退——映射键与 URL 形态键两臂均以
+    // null-entry 解析错误终止模块编译，不得降级为 Miss 后按相对解析/asURL
+    // 继续内联抓取。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#resolve-a-module-specifier
+    #[test]
+    fn test_compile_dependency_iife_blocked_entry_terminates_fallbacks_s259() {
+        let base = url::Url::parse("https://x.test/").unwrap();
+        // 臂 1：裸键 null 条目——旧版降级 Miss → 相对解析未命中 →
+        // "Module not found: blocked"。
+        let map = ImportMap::parse(r#"{"imports": {"blocked": null}}"#, &base).unwrap();
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register("https://x.test/chunk.js", "import'blocked';export const x = 1;");
+        let err = compile_dependency_iife("https://x.test/chunk.js", &reg).unwrap_err();
+        assert!(
+            matches!(err, ScriptError::RuntimeError(ref m) if m.contains("blocked") && m.contains("null entry")),
+            "裸键 null 条目以 null-entry 错误终止：{err:?}"
+        );
+
+        // 臂 2：URL 形态键 null 条目——URL 形态说明符命中阻断后不得落回
+        // asURL/相对解析继续（旧版降级 Miss → 按 import 方基址 join 继续）。
+        let map = ImportMap::parse(r#"{"imports": {"https://x.test/gone.js": null}}"#, &base).unwrap();
+        let mut reg = ModuleRegistry::new();
+        reg.set_import_map(map);
+        reg.register(
+            "https://x.test/chunk.js",
+            "import'https://x.test/gone.js';export const x = 1;",
+        );
+        let err = compile_dependency_iife("https://x.test/chunk.js", &reg).unwrap_err();
+        assert!(
+            matches!(err, ScriptError::RuntimeError(ref m) if m.contains("gone.js") && m.contains("null entry")),
+            "URL 形态键 null 条目终止全部回退：{err:?}"
+        );
     }
 
     #[test]
