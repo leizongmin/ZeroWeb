@@ -9,6 +9,15 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5405 归因轮（账本五域侦察全落特性级——css-conditional 14F 探针链全归因〔cq 尺寸静态声明推导缺口定谳〕/ css-transforms 85F / writing-modes 32F / ruby 19F / counter-styles 全绿剔除，0 net code，corpus 真态 724F 不变）**（2026-11-03）
+>
+> - **范围**：R5404 下一步①五域侦察 + ②完成标准评估；R5403 同型纯取证轮，无代码变更。
+> - **css-conditional 14F 全归因（探针链定谳，探针 8 个用后即删）**：驱动案 no-layout-containment-abspos-dynamic（✗2.08%）——R5153 containment 消费面复核（仅尺寸臂，abspos CB 无涉）→ 静态/纯突变探针双败（排除动态重估/脚本时序）→ no-query abspos 探针 ✓0.00%（绘制/containment 无罪）→ 等式与比较两形式规则匹配探针双败（匹配本身失败）→ DOM 手术三探针全败（height:0/样式表声明/position:relative 均非触发点）→ 通过案对照 multiple-conditions-001 容器全带**显式内联 width 声明** → **`container_entry_for`（style-system lib.rs:3833）尺寸轴静态声明推导**：style.width 非 Px → unknown → 条件按规范恒 false → 确认探针补显式 width:100px **✓0.00%** 定谳。**特性级：cq 真语义需「布局后容器尺寸→重跑条件组」两阶段 style↔layout 反馈管线**，波及 4 案（abspos/fixedpos-dynamic + flex-basis 100cqh + cq-units-sharing）。其余 10 案：canvas-as-container ×4（:focus-within×canvas 容器化×rAF 三特性交叉，初判未深归因）、multicol-inside-container（diff 量纲=恰一方块=200 宽绿未分栏→column-count 未实现域）、custom-layout-container（API 未实现）、dialog-backdrop-create（backdrop-root 族邻域）、inline-size-bfc-floats（floats×cq 深交叉）、at-media-dynamic-001（iframe+动态重估多特性）。
+> - **css-transforms 85F 归族（全深域无轻量候选）**：animation/ 18（WAAPI 中间值族同族）+ 3D 渲染上下文 ~50（preserve-3d 扁平化/平面排序/backface/perspective）+ .xht 2（在册族）+ 表格×变换/固定背景×变换/transform-box 动态等零散深域。**css-writing-modes 32F**：31 .xht（在册 XML 解析族）+ available-size-022（正交流自动尺寸×contain 深域）。**css-ruby 19F**：ruby 盒模型域（Ruby Annex：pairing/overhang/box generation/inlinize；ZW 仅 ruby 元素 inline 特判无对盒模型）。**css-counter-styles 240/240 全绿**剔除候选。
+> - **②完成标准评估**：Done Criteria 为 DC-2~5 **100%（范围内零失败，2026-10-17 用户修订）**——特性级天花板停滞**不触发 DONE**，任务继续；特性级归因按协议记档跳过。
+> - **全量残差分布（本轮全量跑 725F 单跑窗口＝真态 724F±在册抖动族，可信 10365）**：css-multicol 103F（深域）/ css-overflow 64F / css-flexbox 40F / css-backgrounds 37F / css-sizing 32F / css-pseudo 31F / css-contain 20F / css-display 13F 等为未侦察余量。证据：[`rendering-compat/evidence/r5405-ledger-scout-attribution-2026-11-03.md`](rendering-compat/evidence/r5405-ledger-scout-attribution-2026-11-03.md)。
+> - **挂账**：**新增特性级十面**：①cq 尺寸静态声明推导缺口（4 案，两阶段反馈管线级）②canvas-as-container ×4（初判）③multicol-inside-container（分栏未实现）④custom-layout-container（API 未实现）⑤dialog-backdrop-create ⑥inline-size-bfc-floats（floats×cq 深交叉）⑦at-media-dynamic-001 ⑧css-ruby 19F（ruby 盒模型域）⑨available-size-022（正交流深域）⑩css-transforms 85F 归族；R5404 及以前挂账全维持；对端账维持。**下一步 R5406**：①残差分布定向续扫择轻——css-overflow 64F / css-flexbox 40F / css-backgrounds 37F / css-sizing 32F / css-pseudo 31F（::first-letter/::marker 族）优先侦察，避开 multicol 103F 深域与已归因十面、对端面 ②发现轻量案即转修复循环。
+>
 > **▶ R5404 修复轮（::first-line line-height 位布局期应用 + Path B 节点键行高镜像——first-line-line-height-003 ✗1.89%→✓0.00% 真通过-可信（双页 PNG 逐字节一致），corpus 真态 725F→724F FIXED=1 REGRESSED=∅）**（2026-11-03）
 >
 > - **承接**：修复代码与测试成形于上轮 session 429 中断时（工作树遗留 R5404 在途稿：collect 期首行域行高覆盖 + kill-switch + 3 针），本轮完成残差取证、Path B 传导缺口第二段修复、corpus A/B、全门禁与落账。
