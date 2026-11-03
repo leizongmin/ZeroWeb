@@ -1338,7 +1338,26 @@ impl super::Painter {
                         Some(NodeKind::Text(t)) if !t.content.is_empty()
                     )
                 });
+            // R5396（CSS2 §9.2.1.1 inline formatting）：R2156 inline-box-model coherence 把
+            // 含嵌套原子行内的 display:inline 子盒从 taffy 树摘除（tree.rs 仅提升原子后代），
+            // 其文本归属容器 IFC（collect_items R1576 递归臂；R5235 信号集
+            // `inline_nested_atomic_nodes` 供 Path B 镜像同一分叉）。此时 R4043 deep-path
+            // 排除（字体度量分歧/嵌套 br 等）的前提「行内子盒自绘」不再成立——子盒已被
+            // 摘除，无绘制可让渡，容器是唯一绘制者；本 gate 早退会把整段行内文本孤儿化
+            // （github trending 标题 h2>a>[svg+span+text] 实证：layout IFC 全量 4 runs，
+            // paint 无任何标题字形，页面标题整体消失）。放行判定按盒树实况：信号集成员
+            // 无 LayoutBox 即已被摘除（ooflow/block 守卫保留盒的成员照旧自绘，不触发）。
+            // kill-switch `ZW_UNBOXED_INLINE_TEXT=0`。
+            static UNBOXED_INLINE_TEXT: std::sync::LazyLock<bool> =
+                std::sync::LazyLock::new(|| std::env::var("ZW_UNBOXED_INLINE_TEXT").as_deref() != Ok("0"));
+            let owns_unboxed_inline_text = *UNBOXED_INLINE_TEXT
+                && !box_node.inline_nested_atomic_nodes.is_empty()
+                && doc.child_nodes(node_id).iter().any(|&c| {
+                    box_node.inline_nested_atomic_nodes.contains(&c)
+                        && !box_node.children.iter().any(|b| b.node_id == Some(c))
+                });
             if box_node.fragment_node_ids.is_none()
+                && !owns_unboxed_inline_text
                 && !has_direct_paintable_text(doc, node_id, styles)
                 && !preserve_direct_text
                 && box_node.run_in_prepended.is_none()
