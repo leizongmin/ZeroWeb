@@ -42,7 +42,7 @@ fn find_box(root: &crate::types::LayoutBox, id: zero_dom::NodeId) -> Option<&cra
 fn r5280_col_bg_origin_is_cell_union_bbox_and_segments_cut_at_gaps() {
     let html = r#"<html><head><style>
 #t { border-spacing: 10px 20px; }
-td { width: 100px; height: 30px; }
+td { width: 100px; height: 30px; padding: 0; }
 col#k { background-color: red; }
 </style></head><body>
 <table id="t"><colgroup><col id="k" /></colgroup>
@@ -92,7 +92,7 @@ col#k { background-color: red; }
 fn r5280_rowgroup_bg_segments_are_cell_rects_in_group_frame() {
     let html = r#"<html><head><style>
 #t { border-spacing: 10px 20px; }
-td { width: 100px; height: 30px; }
+td { width: 100px; height: 30px; padding: 0; }
 tbody#g { background-color: blue; }
 </style></head><body>
 <table id="t"><tbody id="g"><tr><td></td><td></td></tr><tr><td></td><td></td></tr></tbody></table>

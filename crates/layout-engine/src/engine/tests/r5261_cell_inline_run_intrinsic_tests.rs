@@ -61,7 +61,7 @@ fn img_positions(html: &str) -> Vec<(f32, f32)> {
 #[test]
 fn r5261_adjacent_inline_img_run_sums_column() {
     let w = cell_width(
-        r#"<html><body style="margin:0"><table><tr><td><img style="width:20px;height:20px"><img style="width:20px;height:20px"><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
+        r#"<html><body style="margin:0"><table><tr><td style="padding:0"><img style="width:20px;height:20px"><img style="width:20px;height:20px"><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
     );
     assert!(
         (w - 60.0).abs() < 0.5,
@@ -73,7 +73,7 @@ fn r5261_adjacent_inline_img_run_sums_column() {
 #[test]
 fn r5261_br_breaks_inline_run() {
     let w = cell_width(
-        r#"<html><body style="margin:0"><table><tr><td><img style="width:20px;height:20px"><br><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
+        r#"<html><body style="margin:0"><table><tr><td style="padding:0"><img style="width:20px;height:20px"><br><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
     );
     assert!(
         (w - 20.0).abs() < 0.5,
@@ -85,7 +85,7 @@ fn r5261_br_breaks_inline_run() {
 #[test]
 fn r5261_text_gap_breaks_inline_run() {
     let w = cell_width(
-        r#"<html><body style="margin:0"><table><tr><td><img style="width:20px;height:20px">x<img style="width:20px;height:20px"></td></tr></table></body></html>"#,
+        r#"<html><body style="margin:0"><table><tr><td style="padding:0"><img style="width:20px;height:20px">x<img style="width:20px;height:20px"></td></tr></table></body></html>"#,
     );
     assert!(
         (w - 20.0).abs() < 0.5,
@@ -97,7 +97,7 @@ fn r5261_text_gap_breaks_inline_run() {
 #[test]
 fn r5261_td_baseline_imgs_flow_inline() {
     let pos = img_positions(
-        r#"<html><body style="margin:0"><table><tr><td><img style="width:20px;height:20px"><img style="width:20px;height:20px"><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
+        r#"<html><body style="margin:0"><table><tr><td style="padding:0"><img style="width:20px;height:20px"><img style="width:20px;height:20px"><img style="width:20px;height:20px"></td></tr></table></body></html>"#,
     );
     assert_eq!(pos, vec![(0.0, 0.0), (20.0, 0.0), (40.0, 0.0)]);
 }

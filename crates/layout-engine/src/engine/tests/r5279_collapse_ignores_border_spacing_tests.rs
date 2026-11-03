@@ -43,7 +43,7 @@ fn find_box(root: &crate::types::LayoutBox, id: zero_dom::NodeId) -> Option<&cra
 fn r5279_collapse_table_ignores_border_spacing() {
     let html = r#"<html><head><style>
 #t { border-collapse: collapse; border-spacing: 50px; }
-td { width: 100px; }
+td { width: 100px; padding: 0; }
 </style></head><body>
 <table id="t"><tr><td id="c1"></td><td id="c2"></td></tr></table>
 </body></html>"#;
@@ -79,7 +79,7 @@ td { width: 100px; }
 fn r5279_separate_table_keeps_border_spacing() {
     let html = r#"<html><head><style>
 #t { border-spacing: 50px; }
-td { width: 100px; }
+td { width: 100px; padding: 0; }
 </style></head><body>
 <table id="t"><tr><td id="c1"></td><td id="c2"></td></tr></table>
 </body></html>"#;

@@ -819,7 +819,7 @@ impl LayoutEngine {
         // 尺寸（ collapses）。此处按解析出的 cross 尺寸 + ratio 推导 main（CSS §10.3.2 + Flexbox §4.5）。
         // R4216：无 AR 源（styles aspect_ratio/aspect_ratio_auto + ratio-only img 输入）时跳过。
         let changed_ratio_img = if sizing_targets.ar_source {
-            Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
+            Self::apply_flex_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles, doc)
                 || Self::apply_grid_aspect_ratio_item_size(&mut taffy_tree, &root_box, &dom_to_taffy, styles)
         } else {
             false

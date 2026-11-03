@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5407 修复轮（intrinsic-percent-replaced 族深评——循环 % 宽替换盒 AR 传递，intrinsic-percent-replaced-031 ✗2.08%→✓0.00%，corpus 真态 720F→719F FIXED=1 REGRESSED=∅；兼修 R5406 漏网 8 个 table 单测红）**（2026-11-03）
+>
+> - **归因（布局树 dump + 路径核实定谳）**：031 `.flex > .item(h:100px) > canvas(w:100%;h:100%,attr 10×10)` 渲 item/canvas 双 w=0 h=100——高 % 已解析、宽 % 循环归零绿区整体消失。`.flex` 满宽块级容器 → item 基准由 **taffy 自身**测量（不走 ZW `flex_row_intrinsic_width`）；taffy 对 `width:%` 替换叶内容测量解析 0、attr AR 传递不触发（`width:Auto` 时 taffy 传递已生效＝014/dynamic-012 通过）。ZW 侧 R3792/R5040/R5381 臂完整但仅 shrink-to-fit 链可达。**断点＝测量结果未回喂 taffy，非缺公式**。
+> - **修复（双臂单 kill-switch `ZW_INLINE_REPLACED_AR_TRANSFER=0`）**：①walk 臂 `inline_replaced_cyclic_pct_transfer`——R5381 替换 inline 臂内 width∈{Auto,%} + 显式 CSS height（禁 Auto 防拉伸伪影）+ 比例（CSS aspect-ratio 优先，HTML 尺寸属性回落）+ used height>0.5 → 复用 `aspect_ratio_transferred_width`；水平书写限定（R4076 同门）。②sizing 期 flex item 基准臂——`apply_flex_aspect_ratio_item_size` 第三分支：非叶行向 item（宽 auto/basis auto）子树含 % 宽替换盒 → `flex_item_base_size`（升 pub(crate)）算基准写 `flex_basis` + mark_dirty（R4991 同法共用重跑组，pass 签名加 doc）。
+> - **常驻测试**：r5407 传递臂 ★load-bearing + 门控锚（Auto 高不传递/definite 宽直读）两针。**R5406 漏网面**：8 个 table 单测（r5214/r5261×3/r5279×2/r5280×2）R5406 提交即红（td border-box +2px UA padding）而上轮 make test 账面未记（stash 对照 0a0f01720 全绿/adb2f66e7 同 8 红定谳）——本轮按恢复测试隔离意图修复：测试内 td 补 `padding:0`（UA 默认语义由 R5406 自带测试覆盖）。
+> - **验证**：单测 2386/2386（2384+2 新）；族 42 案 38✓5✗——031 翻绿，011/030 竖排域、017 解码比+max-% basis 两阶段、dynamic-009/010 动态改高域如实残留族内零回归；kill-switch OFF 031 精确回 ✗2.08%；corpus 全量 FIX 窗口 723F vs R5406 FIX2 725F：新红候选 2（table-anon-153 在册抖动族/currentcolor-repaint）双双 3×3 全绿洗清（guidelines #35），**真态 720F→719F FIXED={031} REGRESSED=∅**；本地集 **725/725**；product-smoke struct PASS + legacy struct-check failures: 0；fmt ✓ / guarded-clippy EXIT 0 / bench-gate 定向 zero-layout-engine **GATE PASS 25（NEW=0）**；make test 唯一红腿＝js_dom_bridge 对端账 5 案其余 65 腿全绿。证据：[`rendering-compat/evidence/r5407-intrinsic-pct-replaced-2026-11-03.md`](rendering-compat/evidence/r5407-intrinsic-pct-replaced-2026-11-03.md)。
+> - **挂账**：新增 intrinsic-percent-replaced 残留 5 案分层（竖排 AR 传递域 ×2 / img 解码比 plumbing + max-% basis 两阶段 / 动态改高重测量域 ×2）+ R5406 单测账面修正；销案 intrinsic-percent-replaced-031；R5406 家族初判六面（该族 6F→5F）、R5405 十面及以前挂账全维持；对端账维持。**下一步 R5408**：①五域余量 misc 案续扫择轻（避开在册深域/对端面/本轮残留五案）②017 前置探测——LayoutBox 替换元素 ratio 字段（extract 从 taffy style 读统一 attr/解码比）评估 walk 层可达性（max-% basis 两阶段第二断点或特性级挂账）③flexbox collapsed-item 算法切片评估。
+>
 > **▶ R5406 修复轮（td/th UA 默认 `padding: 1px`——clip-text-background-table-cell ✗0.28%→✓0.05% + table-cell-width-0 ✗7.73%→✓0.39%，corpus 真态 724F→720F FIXED=2 REGRESSED=∅；同轮五域侦察家族级初判 + rel=mismatch 0.00% 族判据记账）**（2026-11-03）
 >
 > - **缘起**：R5405 下一步五域侦察转修复循环——css-backgrounds clip-text 家族 12+ 案仅 table-cell 一案败（0.28%，max diff 255 真色差）。

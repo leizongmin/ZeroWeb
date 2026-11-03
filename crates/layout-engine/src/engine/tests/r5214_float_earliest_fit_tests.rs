@@ -116,7 +116,7 @@ fn r5214_right_float_stack_beside_not_overlap() {
 /// float 不被终末载体修正重写到表右缘（floats-wrap-bfc-004 S4：silver x=100 非 200）。
 #[test]
 fn r5214_td_right_floats_not_carrier_rewritten() {
-    let src = "<html><body style=\"margin:0\"><table width=\"300\" style=\"border-spacing:0\"><tbody><tr><td>\
+    let src = "<html><body style=\"margin:0\"><table width=\"300\" style=\"border-spacing:0\"><tbody><tr><td style=\"padding:0\">\
   <div style=\"float:right; width:100px; height:20px\"></div>\
   <div style=\"float:right; width:100px; height:6px\"></div>\
 </td></tr></tbody></table></body></html>";

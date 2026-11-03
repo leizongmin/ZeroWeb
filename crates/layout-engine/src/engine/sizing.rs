@@ -1555,8 +1555,21 @@ impl LayoutEngine {
         root: &LayoutBox,
         dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
         styles: &HashMap<NodeId, ComputedStyle>,
+        doc: &Document,
     ) -> bool {
         use zero_css_parser::values::{DisplayValue, FlexDirectionValue, LengthValue};
+
+        /// R5407 子树扫描：是否含 CSS width 为 % 的替换盒（循环 % 宽候选——shrink-to-fit/
+        /// 内容基准语境 CB 即被测盒，taffy 首趟解析 0）。仅此形态需要基准接管。
+        fn subtree_has_pct_width_replaced(b: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+            b.children.iter().any(|c| {
+                let replaced_pct = c.is_replaced
+                    && c.node_id
+                        .and_then(|id| styles.get(&id))
+                        .is_some_and(|s| matches!(s.width, LengthValue::Percentage(_)));
+                replaced_pct || subtree_has_pct_width_replaced(c, styles)
+            })
+        }
 
         fn walk(
             b: &LayoutBox,
@@ -1564,6 +1577,7 @@ impl LayoutEngine {
             taffy_tree: &mut TaffyTree<NodeId>,
             dom_to_taffy: &HashMap<NodeId, taffy::NodeId>,
             styles: &HashMap<NodeId, ComputedStyle>,
+            doc: &Document,
         ) -> bool {
             if !matches!(b.writing_mode, WritingModeValue::HorizontalTb) {
                 return false;
@@ -2054,14 +2068,46 @@ impl LayoutEngine {
                         changed = true;
                     }
                 }
+            } else if !b.is_replaced
+                && let Some(id) = b.node_id
+                && let Some(ps) = parent_style
+                && matches!(ps.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+                && matches!(
+                    ps.flex_direction,
+                    FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+                )
+                && let Some(item_style) = my_style
+                && matches!(item_style.width, LengthValue::Auto)
+                && matches!(item_style.flex_basis, zero_style_system::FlexBasisValue::Auto)
+                && crate::intrinsic_sizing::inline_replaced_ar_transfer_enabled()
+                && subtree_has_pct_width_replaced(b, styles)
+                && let Some(&tid) = dom_to_taffy.get(&id)
+                && let Ok(mut st) = taffy_tree.style(tid).cloned()
+            {
+                // R5407（css-sizing-3 §5.2 transferred size + css-flexbox §9.2 flex base size）：
+                // 非叶 flex item（宽 auto、basis auto）子树含循环 % 宽替换盒时，taffy 自身
+                // 内容测量把该盒解析 0（% 宽在内容基准语境不可解析）——item 基准被压塌
+                //（intrinsic-percent-replaced-031：.flex > .item(h:100px) > canvas
+                // w:100%;h:100% attr 10×10，dump 实证 item/canvas 双 w=0，绿区整体消失
+                // ✗2.08%）。ZW 测量 walk（flex_item_base_size → box_content_max_width →
+                // R5407 inline 替换臂）用首趟 used height × ratio 传递出正确贡献——写入
+                // flex_basis 让 taffy 以其为基准重解。行向限定（列向 main=height，另一语义
+                // 域）；basis/width 已 definite 时 converter 侧已处理，不覆盖。
+                let base = crate::intrinsic_sizing::flex_item_base_size(b, doc, styles, None);
+                if base > 0.5 && (b.width - base).abs() > 0.5 {
+                    st.flex_basis = taffy::style::Dimension::length(base.max(0.5));
+                    let _ = taffy_tree.set_style(tid, st);
+                    let _ = taffy_tree.mark_dirty(tid);
+                    changed = true;
+                }
             }
 
             for c in &b.children {
-                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles);
+                changed |= walk(c, my_style, taffy_tree, dom_to_taffy, styles, doc);
             }
             changed
         }
-        walk(root, None, taffy_tree, dom_to_taffy, styles)
+        walk(root, None, taffy_tree, dom_to_taffy, styles, doc)
     }
 
     /// R4993（css-sizing-4 auto <ratio> + css-flexbox §4.5·Blink 实证矩阵见

@@ -19,7 +19,7 @@ use zero_css_parser::values::{
 use zero_dom::{Document, NodeId};
 use zero_style_system::ComputedStyle;
 use zero_style_system::property::types::{
-    BorderStyleValue, ColumnSpanComputedValue, FlexBasisValue, PositionValue, WhiteSpaceValue,
+    BorderStyleValue, ColumnSpanComputedValue, FlexBasisValue, PositionValue, WhiteSpaceValue, WritingModeValue,
 };
 
 use crate::types::LayoutBox;
@@ -417,6 +417,80 @@ fn inline_replaced_outerw_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_REPLACED_OUTERW").as_deref() != Ok("0"))
 }
 
+/// R5407 kill-switch 读取（进程级缓存）：`ZW_INLINE_REPLACED_AR_TRANSFER=0` 回退 inline 级
+/// 替换子循环 % 宽 AR 传递臂（含 sizing 期 flex item 基准写入臂）。OnceLock 同
+/// [`replaced_leaf_intrinsic_enabled`] 热路径口径。
+pub(crate) fn inline_replaced_ar_transfer_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_REPLACED_AR_TRANSFER").as_deref() != Ok("0"))
+}
+
+/// HTML 尺寸属性（width/height）→ 固有比（HTML 规范 dimension attributes 映射
+/// `aspect-ratio: auto w/h`）。canvas 位图尺寸即属性值（最可靠）；img/video 等属性比
+/// 在引擎侧有解码/自然尺寸覆盖时（apply_replaced_element_sizing 注入 taffy）以覆盖为准
+/// ——解码比映射未达本 walk（img_intrinsic_ratios 不入参），img 属性比仅兜底无覆盖
+/// 场景；无属性（017 的裸 img）返 None 走旧臂。
+fn replaced_attr_ratio(doc: &Document, node_id: NodeId) -> Option<f32> {
+    let elem = match doc.get(node_id).map(|n| &n.kind) {
+        Some(zero_dom::NodeKind::Element(e)) => e,
+        _ => return None,
+    };
+    match elem.local_name() {
+        "canvas" | "img" | "video" | "iframe" | "embed" | "object" | "applet" => {}
+        _ => return None,
+    }
+    let w = elem.get_attribute("width").and_then(|v| v.trim().parse::<f32>().ok())?;
+    let h = elem
+        .get_attribute("height")
+        .and_then(|v| v.trim().parse::<f32>().ok())?;
+    (w > 0.0 && h > 0.0).then(|| w / h)
+}
+
+/// R5407（css-sizing-3 §5.2 transferred size + §cyclic percentages）：inline 级替换子
+/// width 为循环 %（本函数仅 shrink-to-fit 链调用，CB 即被测盒，R5040 同口径）→ 按 auto
+/// 语义由 used height 经 aspect-ratio 传递固有宽贡献。intrinsic-percent-replaced-031
+/// 实证：flex item 内 `canvas width:100%;height:100%`（属性 10×10）循环 % 宽 taffy
+/// 首趟解析 0 → R5381 臂读 outer_w=0 → item 基准 0 → 绿区整体消失（✗2.08%）。
+/// width:Auto 的 attr/CSS AR 传递 taffy 侧已生效（014/dynamic-012 通过），仅 % 宽是缺口。
+/// 门控：①水平书写模式（R4076 同门——vertical 主/交叉轴互换，传递语义不同）；
+/// ②显式 CSS height 才认 used height 作传递 basis（Auto 高的 used 值可能含 inline→taffy
+/// Block 拉伸伪影，不入账）；③比例 CSS aspect-ratio 优先，HTML 尺寸属性回落
+///（[`replaced_attr_ratio`]）；④main>0.5（R3792 叶回退同阈值）。
+/// https://drafts.csswg.org/css-sizing-3/#intrinsic-sizes
+fn inline_replaced_cyclic_pct_transfer(
+    child: &LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Option<f32> {
+    if !inline_replaced_ar_transfer_enabled() {
+        return None;
+    }
+    let s = child.node_id.and_then(|id| styles.get(&id))?;
+    if !matches!(s.writing_mode, WritingModeValue::HorizontalTb) {
+        return None;
+    }
+    if !matches!(s.width, LengthValue::Auto | LengthValue::Percentage(_)) {
+        return None;
+    }
+    if matches!(s.height, LengthValue::Auto) {
+        return None;
+    }
+    let ratio = s
+        .aspect_ratio
+        .filter(|&r| r.is_finite() && r > 0.0)
+        .or_else(|| replaced_attr_ratio(doc, child.node_id?))?;
+    let vframe = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+    let main = if matches!(s.box_sizing, BoxSizingValue::BorderBox) {
+        child.height
+    } else {
+        child.height - vframe
+    };
+    if main <= 0.5 {
+        return None;
+    }
+    Some(aspect_ratio_transferred_width(s, child, main, ratio))
+}
+
 fn box_content_max_width_inner(
     box_node: &LayoutBox,
     doc: &Document,
@@ -620,7 +694,11 @@ fn box_content_max_width_inner(
                 // 入账。回归实证 intrinsic-percent-replaced-014：inline-block 内裸
                 // canvas height:100% → transferred 100，旧臂（R1298 空盒）测 0 →
                 // R5348 shrink 臂写 0（先于 grow 臂求值）→ 第二格绿区塌失 ✗1.04%。
-                inline_sum += outer_w.max(0.0);
+                // R5407：width 循环 %（taffy 首趟不可解析，child.width=0）时 outer_w
+                // 是伪影——先试 used height 经 AR 传递（css-sizing-3 §5.2），无传递源
+                // 再落 outer_w。
+                let transferred = inline_replaced_cyclic_pct_transfer(child, doc, styles);
+                inline_sum += transferred.unwrap_or_else(|| outer_w.max(0.0));
             } else if empty_inline {
                 // R1298：空 display:Inline 贡献 0（见上方注释）。
                 // R4134（CSS2 §10.3.9 + inline 盒模型）：空 inline 但带 frame（padding/border，
@@ -2939,7 +3017,7 @@ pub(crate) fn fragment_inline_max_width(
 /// - 无法确定（无显式值且内容为 0）→ 返回 0.0（调用方应作 no-op 处理）
 ///
 /// 返回 border-box 贡献（含 item 自身 padding+border，不含 margin——margin 由容器求和时加）。
-fn flex_item_base_size(
+pub(crate) fn flex_item_base_size(
     box_node: &LayoutBox,
     doc: &Document,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -4745,6 +4823,113 @@ AAAA</div></body></html>"#,
             w, 200.0,
             "width:auto + aspect-ratio:2 + height:5em at 20px should transfer to 200px base width"
         );
+    }
+
+    #[test]
+    fn r5407_inline_replaced_cyclic_pct_width_transfers_used_height() {
+        // ★load-bearing：intrinsic-percent-replaced-031 根因锚——flex item（height:100px）
+        // 内 `canvas width="10" height="10"` + `width:100%;height:100%`：循环 % 宽首趟
+        // child.width=0，R5381 outer_w 臂旧测 0 → item 基准 0 → 绿区消失 ✗2.08%。
+        // R5407 臂由 used height 100 × 属性比 1.0 传递贡献 100。
+        let mut doc = zero_dom::Document::new();
+        let item = doc.create_element("div");
+        let canvas = doc.create_element("canvas");
+        doc.set_attribute(canvas, "width", "10");
+        doc.set_attribute(canvas, "height", "10");
+        doc.append_child(item, canvas).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut item_style = ComputedStyle::default();
+        item_style.display = DisplayValue::Block;
+        styles.insert(item, item_style);
+
+        let mut canvas_style = ComputedStyle::default();
+        canvas_style.display = DisplayValue::Inline;
+        canvas_style.width = LengthValue::Percentage(1.0);
+        canvas_style.height = LengthValue::Percentage(1.0);
+        styles.insert(canvas, canvas_style);
+
+        let canvas_box = LayoutBox {
+            node_id: Some(canvas),
+            is_replaced: true,
+            width: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let item_box = LayoutBox {
+            node_id: Some(item),
+            is_block_level: true,
+            children: vec![canvas_box],
+            ..Default::default()
+        };
+
+        let w = flex_item_base_size(&item_box, &doc, &styles, None);
+
+        assert_eq!(
+            w, 100.0,
+            "cyclic % width canvas should transfer used height 100 via attr ratio 1.0, not contribute 0"
+        );
+    }
+
+    #[test]
+    fn r5407_transfer_arm_gates_auto_height_and_definite_width() {
+        // 门控：①height:Auto（used 高可能含 Block 拉伸伪影）不传递——落旧 outer_w=0；
+        // ②width definite Px 有真值，不进传递臂——outer_w=30 直读。
+        let mut doc = zero_dom::Document::new();
+        let item = doc.create_element("div");
+        let canvas = doc.create_element("canvas");
+        doc.set_attribute(canvas, "width", "10");
+        doc.set_attribute(canvas, "height", "10");
+        doc.append_child(item, canvas).unwrap();
+
+        let mut styles = HashMap::new();
+        let mut item_style = ComputedStyle::default();
+        item_style.display = DisplayValue::Block;
+        styles.insert(item, item_style);
+
+        let mut auto_h = ComputedStyle::default();
+        auto_h.display = DisplayValue::Inline;
+        auto_h.width = LengthValue::Percentage(1.0);
+        auto_h.height = LengthValue::Auto;
+        styles.insert(canvas, auto_h);
+
+        let canvas_box = LayoutBox {
+            node_id: Some(canvas),
+            is_replaced: true,
+            width: 0.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let item_box = LayoutBox {
+            node_id: Some(item),
+            is_block_level: true,
+            children: vec![canvas_box],
+            ..Default::default()
+        };
+
+        let w = flex_item_base_size(&item_box, &doc, &styles, None);
+        assert_eq!(w, 0.0, "auto-height canvas must not transfer (stretch artifact guard)");
+
+        let mut def_w = ComputedStyle::default();
+        def_w.display = DisplayValue::Inline;
+        def_w.width = LengthValue::Px(30.0);
+        def_w.height = LengthValue::Percentage(1.0);
+        styles.insert(canvas, def_w);
+        let canvas_box2 = LayoutBox {
+            node_id: Some(canvas),
+            is_replaced: true,
+            width: 30.0,
+            height: 100.0,
+            ..Default::default()
+        };
+        let item_box2 = LayoutBox {
+            node_id: Some(item),
+            is_block_level: true,
+            children: vec![canvas_box2],
+            ..Default::default()
+        };
+        let w2 = flex_item_base_size(&item_box2, &doc, &styles, None);
+        assert_eq!(w2, 30.0, "definite px width uses plain outer_w, no transfer");
     }
 
     #[test]
