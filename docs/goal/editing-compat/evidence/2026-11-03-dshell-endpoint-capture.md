@@ -156,8 +156,35 @@ F ≤296（链外边界面部分翻转可能）、fd F ≤258、P→F 必须为�
 **电池已放（zw-g28-battery，10:09:27 起，bin = 13017c0a3 release + Edit F）**：
 multitest → insertparagraph → inserttext → typing-text → insertlinebreak →
 forecolor → delete.html → forwarddelete 八腿（TIME_LIMIT=10800）→ other 通道
-→ enginelib 顺序，done 标记 gate28-done.txt，预计 ~3h。TBD（腿落地后补录
-实测）。
+→ enginelib 顺序，done 标记 gate28-done.txt，预计 ~3h。
+
+**multitest 腿实测（10:10:09 bin 完成 → 10:41:04 落地）：9,596P/433F/0T
+rc=2**——对电池基线 9,569P/430F/1T：P +27/F +3/T −1（本轮 ?9001-last 未截断
+全片跑完，基线轮该片 1T 截断）。fail 行集 diff（恒等行提取器对 E4 日志对拍
+验证：E4 428 条 ⊆ 基线 430 条，仅差 2 行恰 ?9001-last 截断受害者）：
+
+- **F→P 23**（only-in-baseline）：`<b><i>` 双壳 delete 10 + forwarddelete 10
+  全数翻转（本轮主目标面 ✓）+ insertparagraph img 族 3 连带（deleteSelection
+  为 ipara 前导，部分含 img 形连带回收）；
+- **P→F 26，违门（P→F 必须零）**：
+  - **22 案真回归（?8001-9000 完整片，基线轮该片全跑）**：`[foo<X>bar]</X>baz`
+    族（b/i/s/sub/sup/u/a/font×9/嵌套 a+font/u/sub+font 22 变体）+ delete +
+    inserttext，签名 22/22 一致 `expected "abaz" got "baz"`——**typed 段整丢**。
+    根因：caret 落原边界两臂（selExit/same-node）前提「原边界节点在删除链外
+    必存活」对该形态不成立——origStart=(foo,0) 本身在删程内被全删（detached），
+    collapse 塌到已摘节点使选区世界失效，inserttext 落空。目标面 `abc{...}ghi`
+    形 origStart=(abc 尾)/div 边界在删程外恒存活，故探针 35/35 与 F→P 面不踩；
+  - 4 案（?9001-last，基线轮截断未跑=新暴露非回归归因）：`<b>{abc</b>…}`
+    跨块形 got `<b></b><b>gh</b>` vs exp `<b>gh</b>`——typed 段在但双壳（caret
+    落进幸存空壳内致 typing 重包裹），修复轮与上一条同面收口。
+
+**修复方向（电池落地后修复轮执行，电池窗口内不动 engine JS）**：caret 两臂
+加 origStartContainer 存活门（删后连接性/宿主可达检查），不存活回落 legacy
+`direction=='forward'` 分支；same-node strip 臂同面检查（`[bar]baz` 单独形
+同风险）。capture 臂（笔5）对该族首可见=foo 链空返 [] 语义正确，不在修复面。
+multitest 腿判读：主目标面达成、P→F 违门——**gate28 批不得据此判绿，修复笔
+落地后 multitest/delete/fd 三腿需复跑**；电池余腿（ipara/it/typing/ilb/fc/
+delete/fd/other/enginelib）继续取全量 scoping 与恒等数据不中断。
 
 ## 6. 残余与挂账
 
