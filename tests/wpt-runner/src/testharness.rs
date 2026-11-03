@@ -1187,6 +1187,16 @@ pub const SERVICE_WORKER_CACHE_STORAGE_CASES: &[&str] = &[
 static WPT_TOKEN_STASH: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<String, String>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
 
+/// s270（html-semantics）：1x1 红色像素 PNG（24-bit RGB）——referrer-checker-img.py
+/// 端点臂的 200 回体（上游 `image.png` 资产不在语料，页断言仅 onload 到场无尺寸
+/// 面以最小合法图承载；`createImageBitmap` 解码 settle 链消费）。
+const ZW_ONE_PX_PNG: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49,
+    0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xCF, 0xC0, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0xC9, 0xFE, 0x92, 0xEF,
+    0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HarnessStatus {
     /// The subtest passed.
@@ -6795,6 +6805,43 @@ fn wpt_data_fetch_handler_with_stash(
                     headers,
                     body: body.clone(),
                     body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "html/semantics/embedded-content/the-img-element/resources/referrer-checker-img.py" {
+                // s270（html-semantics）：referrer-checker-img.py 动态端点仿真（上游
+                // wptserve handler 不在语料——`request.headers.referer` 与
+                // `?expected_referrer=` 比对：匹配回 200 image/png 字节，不匹配回
+                // 404 "Not found"）。runner fetcher 无 Referer 头建模（同 s116
+                // module 臂简化面——真实 HTTP 头不合成），actual Referer 恒 ""：语料
+                // 唯一消费者 image-loading-lazy-referrerpolicy-change 的期望值恒空串
+                // （"无 Referer"）→ 引擎 img 取回不发 Referer 恒匹配。「deferred 装载
+                // 用最新 referrerpolicy」的可观察差异仅在 Referer 头有无比对——引擎
+                // relevant mutations 臂已重验（`__zwImgAttrMutated5277`
+                // referrerpolicy/crossorigin 臂），策略值在无头通道不可观察。
+                // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+                // https://github.com/web-platform-tests/wpt/blob/master/
+                // html/semantics/embedded-content/the-img-element/resources/referrer-checker-img.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let expected = wpt_query_value(query, "expected_referrer").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "image/png".into()));
+                if expected.is_empty() {
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(ZW_ONE_PX_PNG.to_vec()),
+                    });
+                }
+                wpt_add_fetch_metadata(&mut headers, req, 404);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 404,
+                    status_text: "Not Found".to_string(),
+                    headers,
+                    body: "Not found".to_string(),
+                    body_bytes: Some(b"Not found".to_vec()),
                 });
             }
             if clean == "beacon/resources/inspect-header.py"
@@ -13764,6 +13811,51 @@ mod tests {
             ".referrer { content: \"\" }"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s270 回归钉：referrer-checker-img.py 图片端点仿真——空/缺 expected_referrer
+    // 期望（fetcher 无 Referer 头 → actual 恒 ""）回 200 image/png 最小图；非空期望
+    // 通道简化面不可满足 → 404 "Not found"（上游 broken 形态，CT 两分支同 image/png）。
+    #[test]
+    fn referrer_checker_img_endpoint_sims_s270() {
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req = |url: String| zero_engine::fetch_bridge::FetchRequest {
+            url,
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+        let endpoint = |query: &str| {
+            handler(&make_req(format!(
+                "https://wpt.test/html/semantics/embedded-content/the-img-element/resources/referrer-checker-img.py{query}"
+            )))
+            .unwrap()
+        };
+        // ① 语料页形态（expected_referrer= 空值）→ 200 + PNG magic + image/png。
+        let ok = endpoint("?expected_referrer=");
+        assert_eq!(ok.status, 200);
+        assert_eq!(ok.body_bytes.as_deref(), Some(ZW_ONE_PX_PNG));
+        assert!(ok.body_bytes.unwrap().starts_with(&[0x89, b'P', b'N', b'G']));
+        assert!(
+            ok.headers
+                .iter()
+                .any(|(n, v)| n.eq_ignore_ascii_case("content-type") && v == "image/png")
+        );
+        // ② 缺参（上游 GET.first 默认 b""）→ 同 200 匹配。
+        assert_eq!(endpoint("").status, 200);
+        // ③ 非空期望（percent-encoded）→ 404 "Not found"。
+        let miss = endpoint("?expected_referrer=https%3A%2F%2Fwpt.test%2F");
+        assert_eq!(miss.status, 404);
+        assert_eq!(miss.body, "Not found");
+        assert!(
+            miss.headers
+                .iter()
+                .any(|(n, v)| n.eq_ignore_ascii_case("content-type") && v == "image/png")
+        );
     }
 
     // s116 回归钉：meta referrer 策略窄解析（小写双引号形；属性序不符/缺 meta → None）。
