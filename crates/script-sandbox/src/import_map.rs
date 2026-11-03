@@ -2,8 +2,9 @@
 //!
 //! 规范：<https://html.spec.whatwg.org/multipage/webappapis.html#import-maps>
 //! 实现映射 JSON 解析（register an import map 的成员归一化，含
-//! normalize a specifier key）与说明符解析（resolve a module specifier，
-//! 含 resolve an imports match / resolve a URL-like module specifier）。
+//! normalize a specifier key 与映射值按基址归一化）与说明符解析
+//! （resolve a module specifier，含 resolve an imports match /
+//! resolve a URL-like module specifier）。
 //!
 //! 与完整规范的已知偏差（本切片边界，见各 FIXME）：
 //! - 映射键迭代顺序为 `serde_json::Map` 的排序序而非 JSON 插入序（serde_json
@@ -41,9 +42,11 @@ pub enum ImportMapResolution {
 impl ImportMap {
     /// 解析 import map JSON（`<script type="importmap">` 的文本内容）。
     ///
-    /// `base_url` 为文档基址，用于归一化 URL 形态的键与 scope 前缀。
-    /// JSON 非法或根/成员结构不符 → `Err`（规范：整张 map 不注册）；
-    /// 空键、不可解析的 scope 前缀等不良成员按规范告警并跳过该成员。
+    /// `base_url` 为文档基址，用于归一化 URL 形态的键、scope 前缀与映射值
+    /// （值按基址解析为地址 URL 存储）。JSON 非法或根/成员结构不符 → `Err`
+    /// （规范：整张 map 不注册）；空键、不可解析的 scope 前缀等不良成员按
+    /// 规范告警并跳过该成员；不可解析的映射值、尾斜杠键的地址不带尾斜杠
+    /// → 置 null（阻断条目），该成员仍注册。
     pub fn parse(json: &str, base_url: &Url) -> Result<Self, String> {
         let root: Value = serde_json::from_str(json).map_err(|e| format!("invalid import map JSON: {e}"))?;
         let Some(obj) = root.as_object() else {
@@ -146,7 +149,8 @@ impl ImportMap {
     }
 }
 
-/// 归一化一张说明符映射（register an import map 的成员处理 + normalize a specifier key）。
+/// 归一化一张说明符映射（register an import map 的成员处理 + normalize a specifier key
+/// + sorting and normalizing a module specifier map 的值归一化步骤）。
 fn normalize_specifier_map(map: &serde_json::Map<String, Value>, base_url: &Url) -> SpecifierMap {
     // https://html.spec.whatwg.org/multipage/webappapis.html#normalize-a-specifier-key
     let mut out = Vec::new();
@@ -159,8 +163,20 @@ fn normalize_specifier_map(map: &serde_json::Map<String, Value>, base_url: &Url)
         let normalized_key = resolve_url_like(key, base_url)
             .map(|u| u.to_string())
             .unwrap_or_else(|| key.clone());
-        // 成员值：字符串保留；其余（含 null）→ 显式阻断条目（规范：非字符串置 null）。
-        let value = value.as_str().map(str::to_string);
+        // 成员值（sorting and normalizing 步骤 3-6）：非字符串（含 null）→ 显式
+        // 阻断条目；字符串按基址解析为地址 URL 并存序列化形式——解析失败、或
+        // 尾斜杠键的地址不以尾斜杠收尾 → 置 null（阻断条目），该成员仍注册。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-a-module-specifier-map
+        let value = match value.as_str() {
+            Some(s) => resolve_url_like(s, base_url).and_then(|url| {
+                if key.ends_with('/') && !url.as_str().ends_with('/') {
+                    None
+                } else {
+                    Some(url.to_string())
+                }
+            }),
+            None => None,
+        };
         out.push((normalized_key, value));
     }
     out
@@ -194,8 +210,10 @@ fn resolve_imports_match(normalized: &str, as_url: Option<&Url>, map: &Specifier
                 return ImportMapResolution::Blocked;
             };
             let after_prefix = &normalized[key.len()..];
-            // afterPrefix 以映射目标为基址解析；目标或 afterPrefix 解析失败
-            // → 规范要求 TypeError（阻断）。
+            // afterPrefix 以映射目标为基址解析；afterPrefix 解析失败 →
+            // 规范要求 TypeError（阻断）。目标解析失败臂对 parse 产物不可达
+            // （映射值在注册期已归一化为绝对 URL，s258 阻断面收敛），保留作
+            // 存储值不变式守卫。
             let Ok(target) = Url::parse(value) else {
                 return ImportMapResolution::Blocked;
             };
@@ -388,8 +406,9 @@ mod tests {
     fn non_special_url_skips_prefix_matching() {
         // data: URL（非 special scheme）形态说明符不参与前缀匹配：
         // 前缀键 "data:text/" 本可命中 normalized 前缀，但 asURL 非 special → 跳过，
-        // 最终按 asURL 原样返回。
-        let map = parse_at(r#"{"imports": {"data:text/": "https://x.test/a"}}"#, "https://x.test/");
+        // 最终按 asURL 原样返回。（映射值须以尾斜杠收尾——尾斜杠键的地址不带
+        // 尾斜杠会在注册期置 null，见 s258 归一化钉面。）
+        let map = parse_at(r#"{"imports": {"data:text/": "https://x.test/"}}"#, "https://x.test/");
         assert_eq!(
             map.resolve("data:text/plain,x", "https://x.test/page"),
             ImportMapResolution::Resolved("data:text/plain,x".into())
@@ -418,6 +437,88 @@ mod tests {
         assert_eq!(
             map.resolve_mapped("./dep.js", "https://github.com/assets/entry.js"),
             None
+        );
+    }
+
+    // ---- s258：映射值注册期归一化（sorting and normalizing a module specifier
+    // map 步骤 4-7）——值按文档基址解析为地址 URL，解析失败或尾斜杠键的地址
+    // 不带尾斜杠 → 置 null（阻断条目），该成员仍注册。----
+    // https://html.spec.whatwg.org/multipage/webappapis.html#sort-and-normalize-a-module-specifier-map
+
+    #[test]
+    fn path_absolute_value_normalized_at_registration_s258() {
+        // 尾斜杠前缀键 + path-absolute 映射值：注册期按文档基址归一化；此前值
+        // 原样保留、resolve 期裸 Url::parse 失败 → 误 Blocked（s258 修复面）。
+        let map = parse_at(
+            r#"{"imports": {"utils/": "/assets/utils/"}}"#,
+            "https://x.test/dir/page",
+        );
+        assert_eq!(
+            map.resolve("utils/a.js", "https://x.test/dir/page"),
+            ImportMapResolution::Resolved("https://x.test/assets/utils/a.js".into())
+        );
+        // resolve_mapped 面（模块抓取/编译接线）同样拿到绝对 URL。
+        assert_eq!(
+            map.resolve_mapped("utils/a.js", "https://x.test/dir/page"),
+            Some("https://x.test/assets/utils/a.js".into())
+        );
+    }
+
+    #[test]
+    fn relative_value_normalized_at_registration_s258() {
+        // 精确键 + 相对映射值：注册期归一化，解析产物为绝对 URL（此前原样返回
+        // 相对串，靠接线侧 resolve_document_url 再拼基址偶然可用）。
+        let map = parse_at(
+            r#"{"imports": {"shim": "./shim.js", "up": "../up.js"}}"#,
+            "https://x.test/dir/page",
+        );
+        assert_eq!(
+            map.resolve("shim", "https://x.test/dir/other.js"),
+            ImportMapResolution::Resolved("https://x.test/dir/shim.js".into())
+        );
+        assert_eq!(
+            map.resolve("up", "https://x.test/dir/other.js"),
+            ImportMapResolution::Resolved("https://x.test/up.js".into())
+        );
+        // 归一化发生在注册期：存储值已是序列化 URL。
+        assert_eq!(
+            map.imports,
+            vec![
+                ("shim".into(), Some("https://x.test/dir/shim.js".into())),
+                ("up".into(), Some("https://x.test/up.js".into())),
+            ]
+        );
+    }
+
+    #[test]
+    fn unresolvable_value_becomes_null_entry_s258() {
+        // 步骤 5：映射值不是 URL 形态（裸串解析失败）→ 置 null（阻断条目），
+        // 该成员仍注册；此前裸串原样保留并按 Resolved 返回。
+        let map = parse_at(r#"{"imports": {"foo": "bar"}}"#, "https://x.test/");
+        assert_eq!(map.resolve("foo", "https://x.test/page"), ImportMapResolution::Blocked);
+    }
+
+    #[test]
+    fn trailing_slash_key_requires_trailing_slash_address_s258() {
+        // 步骤 6：尾斜杠键的地址序列化不以尾斜杠收尾 → 置 null（阻断条目）；
+        // 此前按该地址当基址解析出父级路径（"https://cdn.example/a.js"）。
+        let map = parse_at(r#"{"imports": {"lib/": "https://cdn.example/lib"}}"#, "https://x.test/");
+        assert_eq!(
+            map.resolve("lib/a.js", "https://x.test/page"),
+            ImportMapResolution::Blocked
+        );
+    }
+
+    #[test]
+    fn scope_value_normalized_against_parse_base_s258() {
+        // scope 内映射值同经注册期归一化（normalize_specifier_map 共用）。
+        let map = parse_at(
+            r#"{"imports": {}, "scopes": {"/s/": {"utils/": "/assets/utils/"}}}"#,
+            "https://x.test/dir/page",
+        );
+        assert_eq!(
+            map.resolve("utils/a.js", "https://x.test/s/app.js"),
+            ImportMapResolution::Resolved("https://x.test/assets/utils/a.js".into())
         );
     }
 }
