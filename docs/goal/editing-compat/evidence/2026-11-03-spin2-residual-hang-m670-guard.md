@@ -87,12 +87,30 @@ part01f.js m670 环进展守卫（本轮唯一产品码改动）：
   子串连带 del+fd 16 页，3000s 墙钟击杀（22:05:50 rc=2）——runner 行缓冲在进
   程退出时才 flush，守卫击杀 = 全部行集丢失；fd 腿启动 100s 后随 battery2 换轨
   Terminated，mt 腿未跑。教训：双文件一腿预算必须按页数放大 TIME_LIMIT。
-  **battery2（zw-g28spin2-battery2，22:07:17 起，判读中）**：leg-delfd
-  `FILTER=delete.html` TIME_LIMIT=4500（连带双文件在预算内）+ leg-mt
-  `FILTER=multitest` TIME_LIMIT=3000 两腿。判读 vs g28-v3-del（7,636 行/1T）/
-  g28-v2-fd（7,090 行/1T）/g28-v3-mt（10,019 行/0T）基线，判读脚本
-  .acceptance/ipara-port/judge-spin2-battery.py；落账复核口径：P→F 归零 +
-  新增行全落挂死截断恢复面（delete ?7001-last / fd ?6001-7000）+ mt 逐位恒等。
+  **battery2（zw-g28spin2-battery2，22:07:17→23:42:25 收官，23:48 判读）**：
+  leg-delfd `FILTER=delete.html` TIME_LIMIT=4500 + leg-mt `FILTER=multitest`
+  TIME_LIMIT=3000 两腿。**leg-delfd 溯源定谳守卫前二进制**（COORD 卅六轮三点
+  位：日志 cargo `Finished in 0.19s` 复用 battery1 代 ~21:15 构建；守卫源码
+  22:26:29 才落树晚于构建起点；?7001-last 截断点逐字节同一 v3 基线尾案行）——
+  电池与守卫提交竞速，本腿重定性为守卫前全量基线复现而非守卫验证。判读
+  （judge-spin2-battery2.py）：**delete 面** 7,636 行/8 页与 v3 基线逐位恒等
+  （含 ?7001-last T，恒等 True）；**fd 面** 7,090→7,483 行（+393 恢复出账）、
+  ?6001-7000 T 消失、P→F=0（「共享行恒等 False」系该脚本行级状态集判据对恢复
+  页误伤——T 行消失+新 Pass 行必破状态集恒等，非回归；后继判读已改恢复面白
+  名单判据）；**leg-mt（23:12 重建守卫版二进制，strings 实锤含 m670Guard）**
+  9,990 行 vs v3 基线 10,019——**mt?9001-last 新出 Timeout**：990 行 vs 基线
+  1,019（截断 -29 断言行 +1T 行），截断点 = `<div>abc</div><div>{def</div>}`
+  compare innerHTML 之后，挂死案 = `<div style=display:flex><span>{abc</span>
+  <span>def</span>}</div>` delete（v3 该案完整出账 5P+1 已知 F）；对照
+  v1（守卫前 1,029 行无 T）/v2（1,004 行无 T）/v3（:606-only 1,019 行无 T）
+  三代该页完整出账，守卫版构建唯一 T → **潜在 m670 守卫致挂信号待定谳**；
+  机制疑点：break 守卫只出不进，新挂死需假设 break 后混合壳引发下游环（或该
+  案另有与守卫共变的触发面）；battery2 mt 腿 23:11-23:42 机器低载，300s 看门
+  狗击发非负载解释所能覆盖。**battery3（对侧 zw-g28spin2b，23:46 起）**：守卫
+  版 del→fd→mt 全量三腿 `FILTER=editing/run/<f>.html`（带目录前缀修子串连带）
+  TIME_LIMIT=10800，mt 腿 = 守卫致挂 flake 之分的决定性样本 #2；再 T 则插桩
+  归因窗（variant 裁剪 + SPINDIAG 页尾探针，diag2 形态），完成则记 flake。
+  本流不 solo 复现避免 CPU 争抢污染对侧近边界页。
 
 ## 4. 方法论教训
 
