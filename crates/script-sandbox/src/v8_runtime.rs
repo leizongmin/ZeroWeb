@@ -93,9 +93,10 @@ struct DynamicImportState {
     resolver: Option<DynamicImportResolver>,
 }
 
-/// 动态 import() V8 isolate 回调。失败三态与 es_module `__zw_load_module` 对齐：
+/// 动态 import() V8 isolate 回调。失败四态与 es_module `__zw_load_module` 对齐：
 /// 取回失败 → 新 TypeError（classic 上下无语料身份断言，`__moduleFailures` 记账
-/// 不接线——FIXME: 与模块面共享 module map 失败记账）；IIFE parse/求值异常 →
+/// 不接线——FIXME: 与模块面共享 module map 失败记账）；链接失败 tag 3 → 新
+/// SyntaxError（s252，不入缓存）；IIFE parse/求值异常 →
 /// 原异常对象 reject。嵌套动态 import()（IIFE 内重写体）依赖 `__zw_dynamic_import`
 /// 全局 helper——classic 上下文缺席时按需装模块 prelude（空 registry，无急切求值），
 /// helper 自身又依赖宿主注册的 `__zw_compile_module` 全局回调（webview 同块注册）。
@@ -169,6 +170,17 @@ fn dynamic_import_callback<'s, 'i>(
         let msg = format!("Failed to fetch module: '{spec}'");
         if let Some(m) = v8::String::new(scope, &msg) {
             promise_resolver.reject(scope, v8::Exception::type_error(scope, m));
+        }
+        return Some(promise_resolver.get_promise(scope));
+    }
+    // s252：tag 3（链接/instantiation 失败，`3\x1fresolved\x1fmessage`）→ 逐次新
+    // SyntaxError reject，不入 `__moduleCache`（spec：link 失败不入 module map、
+    // 不记账——WPT dynamic-imports-script-error「instantiation error」判据）。判定
+    // 先于 split_once（解析 URL 不会以 `3\x1f` 起头，无歧义）。
+    if let Some(payload) = contract.strip_prefix("3\u{1f}") {
+        let message = payload.split_once('\u{1f}').map_or(payload, |(_, m)| m);
+        if let Some(m) = v8::String::new(scope, message) {
+            promise_resolver.reject(scope, v8::Exception::syntax_error(scope, m));
         }
         return Some(promise_resolver.get_promise(scope));
     }
@@ -3002,8 +3014,9 @@ mod tests {
     // ── s88（html-semantics-compat）：classic 上下文原生动态 import ──
     // classic 脚本（内联/eval 字符串/setTimeout 字符串/Function 构造器——
     // string-compilation 家族）中的 `import()` 无法经源码重写触达，由 V8
-    // host-import-module-dynamically 回调承载；三态契约与 `__zw_compile_module`
-    // 一致（取回失败返空 / 依赖图断 `resolved\x1f` 空码 / 成功 `resolved\x1fiife`）。
+    // host-import-module-dynamically 回调承载；契约（s252 起四态）与
+    // `__zw_compile_module` 一致（取回失败返空 / 依赖图断 `resolved\x1f` 空码 /
+    // 链接失败 `3\x1fresolved\x1fmessage` / 成功 `resolved\x1fiife`）。
 
     /// classic 上下文 `import()` 成功路径：resolver 返回 `resolved\x1fiife`，
     /// promise 以模块命名空间落定且模块体已执行；resolver 收到 (spec, referrer)。
@@ -3048,6 +3061,53 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [("./a.js".to_string(), "https://zero.test/page.html".to_string())],
             "resolver 收到 (spec, referrer)"
+        );
+    }
+
+    /// s252（链接/instantiation 失败——classic 上下文原生回调通道）：resolver 返回
+    /// tag 3 契约（`3\x1fresolved\x1fmessage`）→ 逐次新 SyntaxError reject（spec：
+    /// link 失败不入 module map、不记账——WPT dynamic-imports-script-error
+    /// 「instantiation error」SyntaxError + differentErrorObjects 判据；红态：
+    /// 空串契约走 TypeError 臂）。
+    #[test]
+    fn test_native_dynamic_import_link_failure_s252() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+            "3\u{1f}https://zero.test/bad.js\u{1f}Compile error: Module https://zero.test/bad.js does not provide an export named default"
+                .to_string()
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        // 同 spec 两次 import：回传 `首错构造器:消息首缀:(首错 === 次错)`——逐次新
+        // 对象直接落在错误对象比较上。
+        sandbox
+            .execute(
+                "var out = [];\n\
+                 function probe() {\n\
+                   return import('./bad.js').then(\n\
+                     function () { out.push('fulfilled'); },\n\
+                     function (e) { out.push(e.constructor.name + ':' + String(e.message).slice(0, 13) + ':' + out.length); return e; });\n\
+                 }\n\
+                 var e1p = probe();\n\
+                 e1p.then(function (e1) {\n\
+                   return probe().then(function (e2) { __zw_report(out.join('|') + '|same=' + (e1 === e2)); });\n\
+                 });\n",
+            )
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("SyntaxError:Compile error:0|SyntaxError:Compile error:1|same=false"),
+            "tag 3 契约按 SyntaxError 逐次新对象 reject 且消息穿传：{:?}",
+            settled.lock().unwrap()
         );
     }
 

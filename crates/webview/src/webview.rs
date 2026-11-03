@@ -4244,7 +4244,6 @@ impl WebView {
                     let specs = zero_script_sandbox::extract_static_module_imports_with_attributes(body);
                     let mut registry = zero_script_sandbox::ModuleRegistry::new();
                     let mut visited = std::collections::HashSet::new();
-                    let mut fetched = std::collections::HashMap::new();
                     for (spec, type_attr) in &specs {
                         match collect_module_deps_recursive(
                             &fetcher_inline_module,
@@ -4254,7 +4253,6 @@ impl WebView {
                             type_attr.as_deref(),
                             &mut registry,
                             &mut visited,
-                            &mut fetched,
                         ) {
                             Ok(()) => {}
                             Err(ModuleGraphFailure::DepResolution) => return "1\u{1f}".to_string(),
@@ -4551,7 +4549,6 @@ impl WebView {
                         .clone()
                         .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
                     let mut visited_m = std::collections::HashSet::new();
-                    let mut fetched_m = std::collections::HashMap::new();
                     // s103：此路径的 spec 均为**被运行模块的依赖**（模块自身已取回/内联，
                     // 不经此处），按 is_dep=true 收集——裸 specifier 归 DepResolution、取回
                     // 失败归 DepFetch（旧版 is_dep=false：裸 specifier 误作相对 URL 取回、
@@ -4577,7 +4574,6 @@ impl WebView {
                             type_attr.as_deref(),
                             &mut registry,
                             &mut visited_m,
-                            &mut fetched_m,
                         ) {
                             Ok(()) => {}
                             Err(failure) => {
@@ -4615,13 +4611,20 @@ impl WebView {
                         registry.register(spec, "");
                     }
                 }
-                let url = self.current_url.as_deref().unwrap_or("about:blank");
-                match zero_script_sandbox::compile_module_script(&code, url, &module_cache_key, &registry) {
+                // s252：入口转换基 = 模块自身绝对 URL（外链；内联 = 页面 URL），与收集基
+                // module_dep_base 同源（spec：import 相对 requesting module 解析）。abs 键
+                // 口径下入口体 import 经 resolve_registered_specifier URL-join 归一到依赖
+                // 注册键——基错即 join 落页目录 → 假 Module not found（s101 钉实证）。
+                // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+                let url = module_dep_base
+                    .clone()
+                    .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
+                match zero_script_sandbox::compile_module_script(&code, &url, &module_cache_key, &registry) {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
-                        let prelude =
-                            zero_script_sandbox::build_module_runtime_prelude(&registry, Some(url)).unwrap_or_default();
+                        let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry, Some(&url))
+                            .unwrap_or_default();
                         format!("__zw_begin_script && __zw_begin_script();\n{prelude}\n{transformed}")
                     }
                     Err(e) => {
@@ -7497,35 +7500,41 @@ enum ModuleGraphFailure {
 
 /// s88：进程内 module 编译契约——`__zw_compile_module` 宿主回调与 V8 原生动态
 /// import() 解析器（classic 上下文）共用。R3094：递归 fetch transitive deps（闭合
-/// module graph），registry 按原 spec 注册源、循环防护按解析后 URL。回传三态标记：
+/// module graph），s252 起 registry 与入口编译键统一按**解析后 URL**（跨拼写查找经
+/// resolve_registered_specifier URL-join 归一）、循环防护按解析后 URL。回传四态标记：
 /// `resolved\x1fcode`（取回成功）/ `resolved\x1f` 空码（依赖解析失败）/ 空串（fetch
-/// 期失败）。s87 失败三态语义（WPT dynamic-imports-fetch-error/script-error 对象
-/// 身份判据——HTML spec fetch-a-single-module-script module map 失败记账）见
-/// es_module `__zw_load_module` 与 v8_runtime `dynamic_import_callback` 两侧消费。
+/// 期失败）/ `3\x1fresolved\x1fmessage`（链接/instantiation 期失败——逐次新
+/// SyntaxError，不入 module map）。s87 失败语义（WPT dynamic-imports-fetch-error/
+/// script-error 对象身份判据——HTML spec fetch-a-single-module-script module map
+/// 失败记账）见 es_module `__zw_load_module` 与 v8_runtime `dynamic_import_callback`
+/// 两侧消费。
 /// s249：`type_attr` = 动态 import 属性 `with.type`（顶层模块的记账类型——css/text
 /// 合成臂与 json 臂同源；依赖图的属性随各 import 语句自带，见递归内的
 /// `extract_static_module_imports_with_attributes` 通道）。
 fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &str, type_attr: Option<&str>) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
-    let mut fetched = std::collections::HashMap::new();
-    match collect_module_deps_recursive(
-        fetcher,
-        parent,
-        spec,
-        false,
-        type_attr,
-        &mut reg,
-        &mut visited,
-        &mut fetched,
-    ) {
-        Ok(()) => match zero_script_sandbox::compile_dependency_iife(spec, &reg) {
-            Ok(iife) => format!("{}\u{1f}{iife}", resolve_document_url(parent, spec)),
-            Err(_) => {
-                tracing::warn!("compile module {spec} (transitive fetch)");
-                String::new()
+    match collect_module_deps_recursive(fetcher, parent, spec, false, type_attr, &mut reg, &mut visited) {
+        Ok(()) => {
+            // s252：入口编译键 = 解析后 URL（registry 同键形，见 collect 注册口径）——
+            // 依赖查找经 resolve_registered_specifier 统一归一到解析 URL，跨拼写命中。
+            let resolved = resolve_document_url(parent, spec);
+            match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
+                Ok(iife) => format!("{resolved}\u{1f}{iife}"),
+                // s252：链接/instantiation 期失败（缺导出等 CompileError）→ tag 3 逐次新
+                // SyntaxError（spec：link 失败不入 module map、不记账，逐次新错误对象——
+                // WPT dynamic-imports-script-error「instantiation error」判据 SyntaxError
+                // + differentErrorObjects）。其余（RuntimeError 等）维持空串 TypeError 面。
+                Err(e @ zero_script_sandbox::ScriptError::CompileError(_)) => {
+                    tracing::warn!("compile module {spec} (transitive fetch): {e}");
+                    format!("3\u{1f}{resolved}\u{1f}{e}")
+                }
+                Err(_) => {
+                    tracing::warn!("compile module {spec} (transitive fetch)");
+                    String::new()
+                }
             }
-        },
+        }
         Err(ModuleGraphFailure::DepResolution) => format!("{}\u{1f}", resolve_document_url(parent, spec)),
         Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
             tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
@@ -7535,19 +7544,15 @@ fn compile_module_contract(fetcher: &ScriptSourceFetcher, parent: &str, spec: &s
 }
 
 /// 递归抓取 module graph（transitive deps），供进程内 `__zw_compile_module`（R3094）闭合 module graph。
-/// registry 按**原始 spec**（importer 引用时写的，匹配 transform_import 按原 spec 查 registry）注册源；
-/// 循环防护按**解析后 URL**（同一 module 经不同 raw spec 引用视为同一，避免死循环）。
+/// s252 起 registry 按**解析后 URL**注册源（与入口编译键、动态面 `__moduleCache` 记账键
+/// 同键形——HTML spec module map 按 URL 记账、同一模块唯一；importer 侧跨拼写查找由
+/// resolve_registered_specifier 的 URL-join 臂统一归一）。循环防护按**解析后 URL**
+/// （同一 module 经不同 raw spec 引用视为同一，避免死循环）。
 /// fetcher 解析 spec 相对 parent_url。`is_dep` 区分顶层/递归调用——失败分类的归属面。
-/// s101：钻石依赖（同 module 经不同 raw spec 引用）按**当前拼写补注册**同一源
-///（`fetched` 按 URL 缓存已取回源）——旧版仅注册首个 raw spec，第二引用循环命中
-/// 被跳过 → lookup 落空 → compile 失败（module/imports.html imports-self-inner
-/// 自导入：顶层重写拼写先注册，内层体 `./` 拼写命中循环防护实证）。spec 模型
-/// module map 按 URL 记账、同一模块唯一；本引擎按导入方体内拼写查表，补注册保
-/// 跨拼写一致，源相同不产生第二实例语义分歧。
+/// s101（钻石依赖/自导入）语义由 URL 归一自然覆盖：同 module 经不同拼写引用 →
+/// 解析后同 URL → visited 命中一次取回，两导入方查找同落该键
+///（module/imports.html imports-self-inner 实证面）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-// 9 形参（fetcher/parent/spec/is_dep + s107 type_attr + 三账本）超 clippy 默认阈值；
-// 账本打包重构波及 s103 失败分类关键路径，暂以 allow 承接（FIXME 挂账）。
-#[allow(clippy::too_many_arguments)]
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
@@ -7556,7 +7561,6 @@ fn collect_module_deps_recursive(
     type_attr: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
-    fetched: &mut std::collections::HashMap<String, String>,
 ) -> Result<(), ModuleGraphFailure> {
     // s87：裸 specifier（无 `./` `../` `/` 前缀、非绝对 URL）无 import map 即解析失败
     // （依赖面归属 DepResolution——parse 期失败随顶层记账；顶层裸 specifier 由 JS 侧
@@ -7568,11 +7572,8 @@ fn collect_module_deps_recursive(
     }
     let url = resolve_document_url(parent_url, spec);
     if visited.contains(&url) {
-        // 循环防护（解析后 URL）；s101：按当前拼写补注册同一源（钻石依赖/自导入——
-        // 同 URL 异 raw spec 拼写，首注册拼写 ≠ 本导入方体内拼写时 lookup 落空）。
-        if let Some(source) = fetched.get(&url) {
-            registry.register(spec, source);
-        }
+        // 循环防护（解析后 URL）；s101 钻石依赖/自导入：同 URL 异拼写引用到此即止，
+        // 导入方查找经 URL-join 归一到同键（s252 abs 键口径，无须按拼写补注册）。
         return Ok(());
     }
     visited.insert(url.clone());
@@ -7601,8 +7602,9 @@ fn collect_module_deps_recursive(
             ModuleGraphFailure::TopFetch
         });
     }
-    registry.register(spec, &source); // key = raw spec（transform_import 按原 spec 查）
-    fetched.insert(url.clone(), source.clone());
+    // s252：key = 解析后 URL（module map 记账口径；importer 侧按原拼写写的 import 由
+    // resolve_registered_specifier URL-join 臂归一到本键）。
+    registry.register(&url, &source);
     // s107（JSON module）：`import … with { type: "json" }` → 响应体校验为合法 JSON
     // 后合成 JS 模块源 `export default <字面量>;`（serde_json 规范化内嵌；default
     // 导入经既有 export transform/导出扫描自动成立）。
@@ -7633,8 +7635,7 @@ fn collect_module_deps_recursive(
                 format!("throw new SyntaxError({message});")
             }
         };
-        registry.register(spec, &synth);
-        fetched.insert(url.clone(), synth);
+        registry.register(&url, &synth);
         return Ok(());
     }
     // s249（CSS module）：`with { type: "css" }` → 响应体（UTF-8 文本）合成 JS 模块
@@ -7657,8 +7658,7 @@ fn collect_module_deps_recursive(
         let literal = serde_json::to_string(&source).map_err(|_| fetch_failure())?;
         let synth =
             format!("export default (function(){{var s=new CSSStyleSheet();s.replaceSync({literal});return s;}})();");
-        registry.register(spec, &synth);
-        fetched.insert(url.clone(), synth);
+        registry.register(&url, &synth);
         return Ok(());
     }
     // s249（text module）：`with { type: "text" }` → 响应体作字符串字面量合成
@@ -7674,12 +7674,11 @@ fn collect_module_deps_recursive(
         };
         let literal = serde_json::to_string(&source).map_err(|_| fetch_failure())?;
         let synth = format!("export default {literal};");
-        registry.register(spec, &synth);
-        fetched.insert(url.clone(), synth);
+        registry.register(&url, &synth);
         return Ok(());
     }
     for (imp, attr) in zero_script_sandbox::extract_static_module_imports_with_attributes(&source) {
-        collect_module_deps_recursive(fetcher, &url, &imp, true, attr.as_deref(), registry, visited, fetched)?;
+        collect_module_deps_recursive(fetcher, &url, &imp, true, attr.as_deref(), registry, visited)?;
     }
     Ok(())
 }

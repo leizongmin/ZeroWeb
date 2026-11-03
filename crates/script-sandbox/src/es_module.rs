@@ -269,7 +269,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 旧契约（无分隔符的裸 code）回退 spec 键（base 语义）。renderer/tab 宿主有 runtime_iifes
     // 编译缓存，重复调用不重复取回；webview 进程内路径无宿主缓存（重复动态 import 同模块
     // 重复取回+编译，副作用不重复——转池候选）。
-    // s87（html-semantics-compat dynamic-import must-reject 面）失败三态（HTML spec
+    // s87（html-semantics-compat dynamic-import must-reject 面）失败四态（HTML spec
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
     // module map 失败记账语义；WPT dynamic-imports-fetch-error/script-error 判据）：
     // ① 宿主返空 = 顶层取回失败（404/500/MIME/跨源/解析失败）→ **每次**调用抛新
@@ -277,12 +277,22 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // ② 宿主返 `resolved\u{1f}`（空码标记）= 顶层已取回、依赖图编译失败 → 首抛新
     //   TypeError 且记入 `__moduleFailures`，重调复抛**同对象**（parse 期失败入 map 记账）；
     // ③ 取回成功但模块体 parse/求值抛错 → 错误对象记入 `__moduleFailures` 复抛同对象
-    //   （spec：parse error 与 evaluation error 均缓存；instantiation/link 期失败上游
-    //   语义为逐次新对象，transform 管线暂并入 ③——WPT 判据 instantiation 行仍红，
-    //   归 module 基面切片）。未发标记的宿主（renderer/tab）②退化为 ①，行为不劣化。
+    //   （spec：parse error 与 evaluation error 均缓存）。未发标记的宿主（renderer/tab）
+    //   ②退化为 ①，行为不劣化。
+    // ④ s252：宿主返 `3\u{1f}resolved\u{1f}message` = 链接/instantiation 期失败
+    //   （缺导出等 CompileError）→ **每次**调用抛新 SyntaxError（不入缓存）——spec：
+    //   link 失败不完成模块记录、不入 module map，逐次新错误对象（WPT
+    //   dynamic-imports-script-error「instantiation error」判据 SyntaxError +
+    //   differentErrorObjects；s87 ③ 旧口径「暂并入」翻案独立成态）。
     out.push_str("  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '');\n");
     out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
+    // s252：tag 3（链接失败）判定须先于缓存/失败表读取（逐次新对象，不入两表）。
+    out.push_str("  if (sep === 1 && r.charCodeAt(0) === 51) {\n");
+    out.push_str("    var p3 = r.slice(2);\n");
+    out.push_str("    var m3 = p3.indexOf('\\u001f');\n");
+    out.push_str("    throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);\n");
+    out.push_str("  }\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
     out.push_str("  if (__moduleCache[resolved]) return __moduleCache[resolved];\n");
     out.push_str("  if (__moduleFailures[resolved]) throw __moduleFailures[resolved];\n");
@@ -2050,12 +2060,14 @@ mod tests {
         );
     }
 
-    /// s87（html-semantics-compat dynamic-import must-reject 面）：取回失败三态身份钉。
+    /// s87（html-semantics-compat dynamic-import must-reject 面）：取回失败四态身份钉。
     /// HTML spec fetch-a-single-module-script：fetch 失败**不入** module map（逐次新
     /// 错误对象——WPT fetch-error `assert_not_equals(error1, error2)`）；parse 期失败
     /// （顶层已取回、依赖图断）与 parse/求值期错误**入 map 记账**（重调同对象——WPT
-    /// script-error `assert_equals(error1, error2)`）。红态：全走 `Module not found`
-    /// 普通 Error、逐次新对象、parse/求值错误不缓存。
+    /// script-error `assert_equals(error1, error2)`）；s252：链接/instantiation 失败
+    /// （tag 3）**不入** map（逐次新 SyntaxError——WPT script-error
+    /// 「instantiation error」SyntaxError + differentErrorObjects 判据）。红态：全走
+    /// `Module not found` 普通 Error、逐次新对象、parse/求值错误不缓存。
     #[test]
     fn test_dynamic_import_failure_identity_semantics() {
         #[cfg(feature = "v8")]
@@ -2064,7 +2076,8 @@ mod tests {
         let mut sandbox = crate::QuickJSSandbox::new().unwrap();
         // 宿主模拟：`missing.js` 返空（①顶层取回失败）；`graphcut.js` 返 `resolved\x1f`
         // 空码标记（②依赖图断）；`parsebad.js` 返可编译 IIFE 但体为语法错；`throwing.js`
-        // 返体抛错的 IIFE（③求值错误）。IIFE 形态复刻 compile_dependency_iife 输出
+        // 返体抛错的 IIFE（③求值错误）；`linkfail.js` 返 tag 3 标记（④链接失败）。
+        // IIFE 形态复刻 compile_dependency_iife 输出
         // （eval('(' + code + ')') 消费的括号包裹函数调用表达式）。
         sandbox.register_callback("__zw_compile_module", Box::new(|args| {
             let spec = args.first().map(String::as_str).unwrap_or("");
@@ -2075,6 +2088,7 @@ mod tests {
                 "throwing.js" => {
                     "https://zero.test/throwing.js\u{1f}(function() { return (function() { globalThis.__s87_eval_count = (globalThis.__s87_eval_count || 0) + 1; throw new Error('boom'); })(); })()".to_string()
                 }
+                "linkfail.js" => "3\u{1f}https://zero.test/linkfail.js\u{1f}Compile error: Module https://zero.test/linkfail.js does not provide an export named default".to_string(),
                 _ => String::new(),
             }
         }));
@@ -2107,13 +2121,13 @@ mod tests {
                         function (e2) {{ out.push(spec + ':' + e1.constructor.name + ':' + (e1 === e2)); }});\n\
                     }});\n\
                 }}\n\
-                Promise.all([probe('missing.js'), probe('graphcut.js'), probe('parsebad.js'), probe('throwing.js')]).then(function () {{ __zw_report(out.join('|') + '|count=' + (globalThis.__s87_eval_count || 0)); }});\n"
+                Promise.all([probe('missing.js'), probe('graphcut.js'), probe('parsebad.js'), probe('throwing.js'), probe('linkfail.js')]).then(function () {{ __zw_report(out.join('|') + '|count=' + (globalThis.__s87_eval_count || 0)); }});\n"
             ))
             .expect("失败身份探针不得同步 throw");
         let lines = reported.lock().unwrap();
         let joined = lines.join("");
         let parts: Vec<&str> = joined.split('|').collect();
-        assert_eq!(parts.len(), 5, "四案探针 + 求值计数全部落定：{joined}");
+        assert_eq!(parts.len(), 6, "五案探针 + 求值计数全部落定：{joined}");
         // ① 顶层取回失败：TypeError × 逐次**新对象**（fetch 失败不入 module map）。
         assert_eq!(
             parts[0], "missing.js:TypeError:false",
@@ -2134,8 +2148,13 @@ mod tests {
             parts[3], "throwing.js:Error:true",
             "求值错误复抛同一错误对象（入 map 记账判据）：{joined}"
         );
+        // ④ 链接/instantiation 失败（tag 3）：SyntaxError × 逐次**新对象**（不入 map）。
+        assert_eq!(
+            parts[4], "linkfail.js:SyntaxError:false",
+            "链接失败恒 SyntaxError 且逐次新对象：{joined}"
+        );
         // 求值错误模块体恰好执行一次（重调不再跑体——module map 记账后零重复求值）。
-        assert_eq!(parts[4], "count=1", "求值错误模块体只跑一次：{joined}");
+        assert_eq!(parts[5], "count=1", "求值错误模块体只跑一次：{joined}");
     }
 
     /// t8j F3（site-compat bilibili laputa-home）：prelude 语句顺序钉——helper 定义必须先于

@@ -2,7 +2,7 @@
 
 **版本**: v2.0
 **日期**: 2026-10-26（v1.0 立项 2026-10-08）
-**状态**: Active——M2 切片 251 施工收口（动态内联 module 延迟求值——s109 内联分派臂编译+求值整体 setTimeout 后置（spec 动态插入模块 evaluate 排插入脚本之后），`inline, 200, not parser-inserted` ×3 + module-inline 页 2 动态内联臂 5 键 N→P 零回归第十个连续完美 A/B；**s250「replay 作用域不可见」归因修正**：strict 页面 var 经 `scan_top_level_decl_exports` globalThis accessor 导出全通，真根因 = 同步 eval 时插入脚本 accessor 导出后缀未执行（同脚 var 引用 ReferenceError），host 侧执行通道/沙盒重入 API 整案不需要；承前：M2 切片 250（text-module integrity + load-error-events 四页 src 臂族 + s100 module 豁免 + 动态 src module rev3，12 键翻绿第九个连续完美 A/B）——逐轮全账见下方「轮次账」与 evidence/ 目录。
+**状态**: Active——M2 切片 252 施工收口（module 链接/instantiation 错误语义——Fix A registry abs-only 注册：`collect_module_deps_recursive` 注册键 raw spec → 解析后 URL（module map 记账口径），跨拼写查找经 `resolve_registered_specifier` URL-join 归一，s101 钻石/自导入环臂补注册删除 + `fetched` 账本参数删除 + **静态入口转换基改 module_dep_base**（s101 钉红实证的波及面）；Fix B 契约 tag 3 `3\x1fresolved\x1fmessage` 链接失败态：prelude `__zw_load_module` + v8 原生回调两侧逐次新 SyntaxError 不入缓存（s87 ③「暂并入」翻案独立成态 ④），instantiation-error-1/2 消息身份 + dynamic-imports-script-error 分类 4 键 F→P 零回归第十一个连续完美 A/B；承前：M2 切片 251（动态内联 module 延迟求值 5 键 N→P 第十个连续完美 A/B + s250「replay 作用域不可见」归因修正）——逐轮全账见下方「轮次账」与 evidence/ 目录。
 
 > **▶ 语料资产轮（2026-10-31，非施工切片——css/text 数据模块资源补拉，待决①销账，零源码改动）**：
 > 用户授权「补语料属基准变更」解除 s108 待决①。缺口机制 = M1 首拉（10-15）无 .css
@@ -6876,6 +6876,30 @@ M1 导入与分域基线（✅ 2026-10-15）→ M2 forms 域（最大杠杆，�
 M3 其余九域依序推进 → M4 总收口归档。
 
 ## 轮次账
+- **2026-11-03 M2 切片 252**：module 链接/instantiation 错误语义轮
+  （s87 注记预账收口）——全景分型 dynamic-import 族 24+ F 键 7 簇，
+  本切 instantiation/link 错误语义 4 键一个根。勘根探针（临时
+  eprintln registry 键 dump）定谳**registry 双键现实**：runner
+  pipeline 外链模块体相对 import 重写为路径绝对形、内层 import 保
+  raw 形，direct 项失败消息 `/html/...` 形 vs nested 项 `./` 形 →
+  instantiation-error-1/2 消息身份断言（log[0] 自引用）红；动态面
+  `Err(CompileError) => String::new()` → TypeError 双红。施工双
+  刀：**Fix A abs-only 注册**（注册键 = 解析后 URL，跨拼写 URL-join
+  归一；s101 环臂补注册删 + `fetched` 参数删 + contract 入口键
+  abs + **静态入口转换基改 module_dep_base**——s101 钉先红后绿
+  实证基错 join 落页目录假 Module not found）；**Fix B 契约 tag 3**
+  （`3\x1fresolved\x1fmessage` 链接失败态，prelude/v8 原生回调两
+  侧逐次新 SyntaxError 不入缓存，s87 ③「暂并入」翻案独立成态
+  ④；s250 动态 src 臂 tag 3 落 ③ 形 eval 语义注释注记）。验证：
+  单测 s87 四态身份钉 + v8 native tag-3 新钉（script-sandbox 379 +
+  webview 835 全绿）；solo 988P/75F/25T/5N（ΔP=+4 ΔF=−4）键级
+  join 4 F→P 全目标零回归；全树 A/B **8317/8317 对迁移恰 4 键
+  全 F→P，LOST=GAINED=0——第十一个连续完美 A/B**；abs 键下
+  raw-hit 不再遮蔽 import map（全树零位移证存量无语料依赖旧序）。
+  新挂账 instantiation-error-6/7 星号导出歧义检测（log 序列形状
+  失败签名，真机制缺口）。账本
+  [evidence/2026-11-03-m2s252-module-link-error-semantics.md](html-semantics-compat/evidence/2026-11-03-m2s252-module-link-error-semantics.md)。
+
 - **2026-11-03 M2 切片 251**：动态内联 module 延迟求值轮（s250 挂账
   收口 + 归因修正）——勘根推翻前提：最小探针（前导脚严格 `var` +
   动态插入内联 module 体静态 import + `onExecute(pv)`）三测全

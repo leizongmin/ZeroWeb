@@ -4724,6 +4724,9 @@
       // 收尾（spec 事件异步语义 + post-assign handler 可见性）。
       // ①空契约 → error（顶层取回失败，trusted）；②空码 → load（specifier
       // 解析失败，静态面 ② 同判——window TypeError 报告动态面未建模 FIXME）；
+      // ④tag 3（s252 链接失败）落 ③ 形执行——体为 `resolved\x1fmessage` 非 JS
+      // 文本，eval 抛 SyntaxError → window 报告 + load（链接失败 = 取回成功后
+      // 失败，spec 事件语义同向 FIXME：报告消息未走 tag 3 message 通道）；
       // ③成功 → 体 eval、求值抛错 → window 报告仍 load（模块运行期错误面，
       // s102 同判；队列深层抛错归因不保 FIXME）。async=false 复用 in-order
       // FIFO——队位取调用时刻（spec list 位次 = 插入序），ready 置位在延迟
