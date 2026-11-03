@@ -250,7 +250,9 @@ fn color_to_canvas_css(c: &zero_render_foundation::color::Color) -> String {
 /// R34xx：alpha 序列化——最短十进制表示使 `round(d*255) == a`（u8 无法精确保存
 /// 0.5*255=127.5，短表示使 'rgba(255,255,255,0.5)' 回读 '0.5' 而非 '0.502'；
 /// driving: 2d.fillStyle.get.halftransparent/semitransparent）。0 特判为 '0'。
-fn serialize_alpha(a: u8) -> String {
+/// pub(super)：computed_style 计算值序列化同口径复用（editing/run 值命令语料
+/// qV 面实证同形 'rgba(0, 0, 255, 0.5)' 曾读 '0.502'）。
+pub(super) fn serialize_alpha(a: u8) -> String {
     if a == 0 {
         return "0".to_string();
     }

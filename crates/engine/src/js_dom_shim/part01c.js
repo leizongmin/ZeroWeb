@@ -1612,11 +1612,33 @@
     }
     var kw = _zwPlainFontKwPx[String(decl).trim().toLowerCase()];
     if (kw) return kw;
-    // font[size] 表现提示（HTML 渲染节；相对值 ±N 未实现——语料无消费面）。
+    // font[size] 表现提示（HTML 渲染节）。
     try {
       var sa = el.getAttribute && el.getAttribute('size');
-      if (sa != null && Object.prototype.hasOwnProperty.call(_zwPlainFontAttrKw, String(parseInt(sa, 10)))) {
-        return _zwPlainFontKwPx[_zwPlainFontAttrKw[String(parseInt(sa, 10))]];
+      if (sa != null) {
+        // 相对值 ±N：相对父链 rendered size 档位 ±N（HTML 渲染节 relative
+        // size 映射——`<font size=+1>` 语料 qV fontsize 期望档 4 实证；裸
+        // parseInt('+1') 会错当档位 1 = x-small）。基准档 = 父链首个可解析
+        // font-size 过 legacy 中点表（缺省 16px → 档 3），结果 clamp 1..7。
+        var mRel = /^([+-])([1-6])$/.exec(String(sa).trim());
+        if (mRel) {
+          var basePx = 16;
+          var par = el.parentNode;
+          var guardRel = 0;
+          while (par && par.nodeType === 1 && guardRel++ < 256) {
+            var pp = _zwPlainFontSizePx(par);
+            if (!isNaN(pp)) { basePx = pp; break; }
+            par = par.parentNode;
+          }
+          var lg = parseInt(_zwValLegacyFontSize(basePx + 'px'), 10);
+          if (isNaN(lg)) lg = 3;
+          lg += (mRel[1] === '+' ? 1 : -1) * parseInt(mRel[2], 10);
+          lg = Math.min(7, Math.max(1, lg));
+          return _zwPlainFontKwPx[_zwPlainFontAttrKw[lg]];
+        }
+        if (Object.prototype.hasOwnProperty.call(_zwPlainFontAttrKw, String(parseInt(sa, 10)))) {
+          return _zwPlainFontKwPx[_zwPlainFontAttrKw[String(parseInt(sa, 10))]];
+        }
       }
     } catch (_ePSA) {}
     return NaN;
@@ -1653,7 +1675,24 @@
               : (prop === 'font-family' ? 'face' : 'bgcolor');
             var av = node.getAttribute(attrName);
             if (av != null) raw = String(av);
+            // legacy 属性色无 '#' hex 形态补 '#'（HTML 渲染节 body 属性映射
+            // 的 legacy parse——font color="0000ff" 语料期望 rgb(0, 0, 255)；
+            // inline style 同形非法，此处仅属性臂消费面）。
+            if (raw && raw.charAt(0) !== '#'
+                && (/^[0-9a-fA-F]{6}$/.test(raw) || /^[0-9a-fA-F]{3}$/.test(raw))) {
+              raw = '#' + raw;
+            }
           } catch (_ePFA) {}
+        }
+        if (!raw && prop === 'color' && tagL === 'a') {
+          // UA stylesheet a:link（HTML 渲染节 15.3.1——`a:link { color: -webkit-link }`，
+          // Chrome 计算值 rgb(0, 0, 255)）：仅带 href 属性命中（:link 域）；
+          // 无 href 不着色。语料 `<a href>foo[bar]baz</a>` qV forecolor before 实证。
+          try {
+            if (node.getAttribute && node.getAttribute('href') != null) {
+              return 'rgb(0, 0, 255)';
+            }
+          } catch (_eUAlink) {}
         }
         if (!raw && prop === 'font-family' && _zwPlainUaMono[tagL]) {
           return 'monospace';

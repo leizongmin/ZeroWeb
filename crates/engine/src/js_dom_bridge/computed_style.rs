@@ -789,13 +789,21 @@ pub fn serialize_computed_property(style: &ComputedStyle, prop: &str) -> String 
 }
 
 /// 把解析后的 [`Color`]（render-foundation，u8 通道）序列化为 CSS 颜色串。不透明 →
-/// `rgb(r, g, b)`；含透明度 → `rgba(r, g, b, a)`（a 为 0-1 小数，对齐 real browser）。
+/// `rgb(r, g, b)`；含透明度 → `rgba(r, g, b, a)`（a 为 0-1 小数，对齐 real browser
+/// ——alpha 用最短十进制 roundtrip 形（Chrome 计算值序列化口径；u8 无法精确保存
+/// 0.5*255=127.5，3 位四舍五入曾读 'rgba(0, 0, 255, 0.502)'，editing/run 值命令
+/// 语料 forecolor qV 面实证；复用 canvas serialize_alpha 同一算法）。
 fn color_to_css(c: &zero_render_foundation::color::Color) -> String {
     if c.a == 255 {
         format!("rgb({}, {}, {})", c.r, c.g, c.b)
     } else {
-        let alpha = ((c.a as f64 / 255.0) * 1000.0).round() / 1000.0;
-        format!("rgba({}, {}, {}, {})", c.r, c.g, c.b, alpha)
+        format!(
+            "rgba({}, {}, {}, {})",
+            c.r,
+            c.g,
+            c.b,
+            super::canvas::serialize_alpha(c.a)
+        )
     }
 }
 
