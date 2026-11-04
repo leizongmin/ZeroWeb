@@ -354,6 +354,18 @@ pub(super) fn first_line_lh() -> bool {
     selected(*VALUE, || default_on("ZW_FIRST_LINE_LH"))
 }
 
+/// R5417（CSS2 §10.3.5 inline-block margin box 参排）：IFC 原子 fit 门占位 =
+/// **margin box**（= ml + border box + mr，与同臂 placement advance 同口径）。
+/// 旧径只计 border box：原子横 margin 越出行缘不折行、强留本行横向溢出
+///（flexbox_first-line ref 页 li5：li4 margin-box 终点 714 + border box 191.2
+/// = 905.2 ≤ 908 旧门「放得下」，margin box 969.2 > 908 应折——flex 侧 margin
+/// box 参排正确折行，双页 4/4 vs 5/3 恒红）。default-on；
+/// `ZW_ATOMIC_MARGIN_BOX_FIT=0` 回退 border box 口径。
+pub(super) fn atomic_margin_box_fit() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_ATOMIC_MARGIN_BOX_FIT"));
+    selected(*VALUE, || default_on("ZW_ATOMIC_MARGIN_BOX_FIT"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::select_value;

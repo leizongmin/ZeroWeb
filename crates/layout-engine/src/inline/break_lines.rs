@@ -1017,6 +1017,15 @@ impl InlineFormattingContext {
                     // inline-block 是原子盒，不可拆分
                     let box_width = box_info.width;
                     let box_height = box_info.height;
+                    // CSS：inline-block 的 margin box 参与行内格式化——margin_left/right
+                    // 推进水平位置，margin_top/bottom 计入行盒高度，margin_top 偏移盒 Y。
+                    // （R5417 提升至 fit 门之前：fit 占位需同口径 ml/mr。）
+                    let (m_left, m_right, m_top, m_bot) = (
+                        box_info.margin_left,
+                        box_info.margin_right,
+                        box_info.margin_top,
+                        box_info.margin_bottom,
+                    );
                     // 行内级盒打破了可折叠空白的连续性
                     last_was_collapsible_ws = false;
                     // R5317（css-text-3 §4.1 collapse + §4.2 atomic inline）：原子盒中断
@@ -1062,6 +1071,19 @@ impl InlineFormattingContext {
                     }
 
                     // 检查当前行是否放得下（当行非空时）
+                    // R5417（CSS2 §10.3.5 inline-block margin box 参排 + §9.4.2）：fit 门
+                    // 占位 = margin box（= ml + border box + mr，与下方 placement advance
+                    // 同口径，含负 margin 符号语义 R5068）——旧径只计 border box，原子横
+                    // margin 越出行缘不折行、强留本行横向溢出（flexbox_first-line ref 页
+                    // li5：li4 margin-box 终点 714 + border box 191.2 = 905.2 ≤ 908 旧门
+                    // 「放得下」，margin box 969.2 > 908 应折——flex 侧 margin box 参排
+                    // 正确折行，双页 4/4 vs 5/3 恒红）。
+                    // kill-switch `ZW_ATOMIC_MARGIN_BOX_FIT=0` 回退 border box 口径。
+                    let atomic_fit_width = if runtime_flags::atomic_margin_box_fit() {
+                        m_left + box_width + m_right
+                    } else {
+                        box_width
+                    };
                     // R5165（css-text-3 §5.5 line-break-details + UAX #14）：前邻原始字符
                     // 属 GL/WJ/ZWJ 类（U+00A0 例外，InlineBlockBox::prev_char_gl 旁带）——
                     // 原子与该字符间无软换行机会，fit 门不折行，随前词横向溢出（chromium
@@ -1069,7 +1091,7 @@ impl InlineFormattingContext {
                     // 第 2 行、透明 span 露红底 2.0833%）。
                     if !self.no_wrap
                         && !(runtime_flags::atomic_gl_no_break() && box_info.prev_char_gl)
-                        && current_x + box_width > left_offset + avail_width
+                        && current_x + atomic_fit_width > left_offset + avail_width
                         && !current_line.runs.is_empty()
                     {
                         // 当前行放不下，开始新行
@@ -1105,14 +1127,6 @@ impl InlineFormattingContext {
                     }
 
                     // inline-block 片段不使用 font_size，设为 0
-                    // CSS：inline-block 的 margin box 参与行内格式化——margin_left/right
-                    // 推进水平位置，margin_top/bottom 计入行盒高度，margin_top 偏移盒 Y。
-                    let (m_left, m_right, m_top, m_bot) = (
-                        box_info.margin_left,
-                        box_info.margin_right,
-                        box_info.margin_top,
-                        box_info.margin_bottom,
-                    );
                     current_x += m_left;
                     current_line.runs.push(TextFragment {
                         ws_override: None,
