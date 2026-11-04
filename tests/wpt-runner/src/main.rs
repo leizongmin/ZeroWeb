@@ -200,6 +200,32 @@ Commands:
                        (CSSOM/style API face; css-testharness-compat-v2 goal M2)
   testharness-css-font-loading  Run upstream css-font-loading testharness cases
                        (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-gaps  Run upstream css-gaps testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M2)
+  testharness-css-flexbox  Run upstream css-flexbox testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-multicol  Run upstream css-multicol testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-position  Run upstream css-position testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-overflow  Run upstream css-overflow testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-tables  Run upstream css-tables testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-lists  Run upstream css-lists testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-inline  Run upstream css-inline testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-scroll-snap  Run upstream css-scroll-snap testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-viewport  Run upstream css-viewport testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-break  Run upstream css-break testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-contain  Run upstream css-contain testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-writing-modes  Run upstream css-writing-modes testharness
+                       cases (CSSOM/style API face; css-testharness-compat-v2 goal M2)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -542,6 +568,19 @@ fn main() {
         "testharness-css-forms" => cmd_testharness_css_forms(&options, filter.as_deref()),
         "testharness-css-link-params" => cmd_testharness_css_link_params(&options, filter.as_deref()),
         "testharness-css-font-loading" => cmd_testharness_css_font_loading(&options, filter.as_deref()),
+        "testharness-css-gaps" => cmd_testharness_css_gaps(&options, filter.as_deref()),
+        "testharness-css-flexbox" => cmd_testharness_css_flexbox(&options, filter.as_deref()),
+        "testharness-css-multicol" => cmd_testharness_css_multicol(&options, filter.as_deref()),
+        "testharness-css-position" => cmd_testharness_css_position(&options, filter.as_deref()),
+        "testharness-css-overflow" => cmd_testharness_css_overflow(&options, filter.as_deref()),
+        "testharness-css-tables" => cmd_testharness_css_tables(&options, filter.as_deref()),
+        "testharness-css-lists" => cmd_testharness_css_lists(&options, filter.as_deref()),
+        "testharness-css-inline" => cmd_testharness_css_inline(&options, filter.as_deref()),
+        "testharness-css-scroll-snap" => cmd_testharness_css_scroll_snap(&options, filter.as_deref()),
+        "testharness-css-viewport" => cmd_testharness_css_viewport(&options, filter.as_deref()),
+        "testharness-css-break" => cmd_testharness_css_break(&options, filter.as_deref()),
+        "testharness-css-contain" => cmd_testharness_css_contain(&options, filter.as_deref()),
+        "testharness-css-writing-modes" => cmd_testharness_css_writing_modes(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1988,6 +2027,93 @@ fn cmd_testharness_css_link_params(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_font_loading(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_font_loading_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-gaps` / `testharness-css-flexbox` / `testharness-css-multicol`
+/// / `testharness-css-position` / `testharness-css-overflow` / `testharness-css-tables`
+/// / `testharness-css-lists` / `testharness-css-inline` / `testharness-css-scroll-snap`
+/// / `testharness-css-viewport` / `testharness-css-break` / `testharness-css-contain`
+/// / `testharness-css-writing-modes`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M2 批次 4——B3 混合布局簇 13 目录；解析/序列化份额入账，布局探测面
+/// 失败归口布局账；契约与退出码同 `cmd_testharness_css_values`：共享底座
+/// skip 规则单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_gaps(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_gaps_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_flexbox(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_flexbox_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_multicol(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_multicol_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_position(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_position_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_overflow(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_overflow_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_tables(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_tables_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_lists(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_lists_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_inline(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_inline_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_scroll_snap(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_scroll_snap_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_viewport(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_viewport_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_break(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_break_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_contain(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_contain_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_writing_modes(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_writing_modes_cases(wpt_root, filter)
     });
 }
 
