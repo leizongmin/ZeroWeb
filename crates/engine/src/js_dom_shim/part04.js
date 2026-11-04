@@ -1303,13 +1303,32 @@
                 // 列，part06 window load listener 跑完后 drain（fetch 通道装载
                 // ——load 事件晚于 window load ✓）。eager 图照旧落穿（阻 load
                 // 语义面不动——delay-load-event 断言）。
+                // s279：队列化按 trickle 分流收窄——队列语义只在「settle 时点
+                // 响应未完成」的图上成立：wptserve pipe=trickle(dN) 真引擎 dN
+                // 秒慢流，window load（lazy 不阻）先发、img load 后至；runner
+                // 同步快回下用 after-load 队列近似该序（时序级 trickle 建模，
+                // 不做真实秒级延迟——d100 档真实延迟撞页脚本上限）。无 trickle
+                // 的近端 lazy 图响应 settle 即完成，装载先于 window load——落
+                // 穿下方内联装载（multicol 页断言 in_viewport 装载先于 window
+                // load：真引擎 slow.py 慢 async script 拖 load 的时序，我侧
+                // settle 内联即达；s274 全量队列化使该页反向红——上游
+                // chrome/firefox 双绿，runner 时序建模缺口 s278 定性）。
+                // https://wptserve.readthedocs.io/en/latest/pipes.html#trickle
+                var _zwImTrick5279 = false;
                 try {
-                  globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
-                  globalThis._zw5277ViewportFlag[_zwImKey] = true;
-                  globalThis._zwImgAfterLoadQueue5277 = globalThis._zwImgAfterLoadQueue5277 || [];
-                  globalThis._zwImgAfterLoadQueue5277.push({ sel: _zwImSel, handle: _zwImHandle });
-                } catch (_e5277alq) {}
-                continue;
+                  _zwImTrick5279 = /[?&]pipe=trickle\(/.test(String((_zwImFz && _zwImFz.url) || _zwIm.getAttribute('src') || ''));
+                } catch (_e5277tk) {}
+                if (_zwImTrick5279) {
+                  try {
+                    globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
+                    globalThis._zw5277ViewportFlag[_zwImKey] = true;
+                    globalThis._zwImgAfterLoadQueue5277 = globalThis._zwImgAfterLoadQueue5277 || [];
+                    globalThis._zwImgAfterLoadQueue5277.push({ sel: _zwImSel, handle: _zwImHandle });
+                  } catch (_e5277alq) {}
+                  continue;
+                }
+                // 非 trickle：落穿内联装载（s277 曾-lazy 判据继续适用——曾
+                // defer 的图仍跳过同步装载）。
               }
               // s277：曾-lazy 图不在 settle 同步装载——loading 动态 eager 化
               //（body script 改 attr 早于 settle，runner 无 trickle）的图现值
