@@ -1162,7 +1162,18 @@ is_isolated_bidi: style.is_some_and(|s| {
                                     w = (h * ratio).max(0.5);
                                 }
                             }
-                            if w > 0.0 && h > 0.0 {
+                            // CSS2 §10.8.1：inline-block 以 margin box 参排行盒。宽有效且
+                            // 作者显式声明零高（CSS height:0）时原子盒仍入列——旧径降级
+                            // 零宽 Text 行 → 行高塌 0 且原子 margin 泄漏块链
+                            //（inline-block-non-replaced-height-002：height:0 +
+                            // margin:0.5in 0 应撑 96px 行盒，蓝橙双块随容器错位）。
+                            // auto/未解析高（含 taffy used 高 0 的 auto 原子——混合模型
+                            // 下纯行内内容子树 taffy 测高 0，R5416 oracle 实证横向流
+                            // 翻转 blast radius 过大）不在此列，仍走零宽 Text 降级。
+                            let definite_zero_h = style.is_some_and(|s| {
+                                matches!(s.height, LengthValue::Px(v) if v.is_finite() && v <= 0.0)
+                            });
+                            if (w > 0.0 && h > 0.0) || (w > 0.0 && definite_zero_h) {
                                 // R5317（CSS2 §10.3.2）：img 原子参排尺寸 = border box。
                                 // 本臂 CSS w/h 为 content 尺寸，补 padding+border（口径与
                                 // border-box 声明豁免、kill-switch 见 img_atom_border_box_extra）；

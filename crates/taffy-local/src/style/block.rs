@@ -39,6 +39,13 @@ pub trait BlockItemStyle: CoreStyle {
         false
     }
 
+    /// ZW R5416：该 item 自身为行内级原子（inline-block 族，taffy 侧已块化
+    /// Block）——其垂直 margin 不并入父容器塌穿集（CSS2 §8.3.1）。默认非行内级。
+    #[inline(always)]
+    fn item_is_inline_level(&self) -> bool {
+        false
+    }
+
     /// Whether the item is a floated
     #[cfg(feature = "float_layout")]
     #[inline(always)]

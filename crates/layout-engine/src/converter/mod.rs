@@ -168,6 +168,14 @@ pub fn computed_style_to_taffy(
         // margin-collapse-110/111：末子 margin 外溢致 cell/表矮一行）。row/rowgroup/
         // table 不立 FC，不在此列；caption 已由引擎侧 is_table_caption 处理。
         item_margins_isolated: matches!(style.display, DisplayValue::TableCell),
+        // R5416（CSS2 §8.3.1）：行内级原子标记——须在块化（convert_display 把
+        // inline-block 族映射 Block）前捕获原始 display。消费点 taffy block.rs：
+        // 全行内级子容器的父子 margin 塌穿禁用（行内级盒 margin 不折叠，
+        // inline-block-non-replaced-height-002 的 48px 链式外溢）。
+        item_is_inline_level: matches!(
+            style.display,
+            DisplayValue::InlineBlock | DisplayValue::InlineFlex | DisplayValue::InlineGrid | DisplayValue::InlineTable
+        ),
         // R5293：table box 仅隔 bottom 侧 margin（caption margin-bottom 留盒内，
         // ZW 表几何已计入；margin-top 照常塌出表顶）。
         item_margins_end_isolated: matches!(style.display, DisplayValue::Table),

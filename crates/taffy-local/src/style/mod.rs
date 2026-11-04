@@ -450,6 +450,13 @@ pub struct Style<S: CheapCloneStr = DefaultCheapStr> {
     /// ZW R5293（CSS2 §8.3.1）：仅 bottom 侧 margin 隔离（table box：caption 的
     /// margin-bottom 不得借塌穿链溢出表 wrapper，margin-top 仍照常外折成顶隙）。
     pub item_margins_end_isolated: bool,
+    /// ZW R5416（CSS2 §8.3.1）：该盒自身为**行内级**原子（inline-block/inline-flex/
+    /// inline-grid/inline-table，taffy 侧已被块化为 Block）。行内级盒的垂直 margin
+    /// **不参与任何 margin 折叠**——作为 block 容器的 item 时不得并入父容器的
+    /// 首/活动/末塌穿集（旧径并入 → 原子 margin 借塌穿链逐级外溢，污染祖先链，
+    /// inline-block-non-replaced-height-002：height:0 + margin:0.5in 0 的原子把
+    /// 48px 泄到父/祖父 margin，abspos 锚随链错位 48px）。
+    pub item_is_inline_level: bool,
     /// Should size styles apply to the content box or the border box of the node
     pub box_sizing: BoxSizing,
     /// Sets the direction of text, table and grid columns, and horizontal overflow.
@@ -601,6 +608,7 @@ impl<S: CheapCloneStr> Style<S> {
         item_is_replaced: false,
         item_margins_isolated: false,
         item_margins_end_isolated: false,
+        item_is_inline_level: false,
         box_sizing: BoxSizing::BorderBox,
         direction: Direction::Ltr,
         overflow: Point { x: Overflow::Visible, y: Overflow::Visible },
@@ -863,6 +871,12 @@ impl<S: CheapCloneStr> BlockItemStyle for Style<S> {
         self.item_margins_end_isolated
     }
 
+    /// ZW R5416：行内级原子标记（inline-block 族块化前的原始 display）。
+    #[inline(always)]
+    fn item_is_inline_level(&self) -> bool {
+        self.item_is_inline_level
+    }
+
     #[cfg(feature = "float_layout")]
     #[inline(always)]
     fn float(&self) -> Float {
@@ -891,6 +905,11 @@ impl<T: BlockItemStyle> BlockItemStyle for &'_ T {
     #[inline(always)]
     fn margins_end_isolated(&self) -> bool {
         (*self).margins_end_isolated()
+    }
+
+    #[inline(always)]
+    fn item_is_inline_level(&self) -> bool {
+        (*self).item_is_inline_level()
     }
 
     #[cfg(feature = "float_layout")]
@@ -1241,6 +1260,7 @@ mod tests {
             item_is_replaced: false,
             item_margins_isolated: false,
             item_margins_end_isolated: false,
+            item_is_inline_level: false,
             box_sizing: Default::default(),
             #[cfg(feature = "float_layout")]
             float: Default::default(),

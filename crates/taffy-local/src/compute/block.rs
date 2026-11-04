@@ -47,6 +47,11 @@ static TABLE_MARGIN_END_ISOLATE: std::sync::LazyLock<bool> =
 static ABSPOS_AUTO_H_PCT_BASE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_ABSPOS_AUTO_H_PCT_BASE").as_deref() != Ok("0"));
 
+/// ZW R5416（CSS2 §8.3.1）：纯行内级子容器父子塌穿禁用开关（kill-switch
+/// `ZW_INLINE_CHILD_NO_COLLAPSE=0` 回退旧行为，default-on）。
+static INLINE_CHILD_NO_COLLAPSE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_CHILD_NO_COLLAPSE").as_deref() != Ok("0"));
+
 /// Context for positioning Block and Float boxes within a Block Formatting Context
 pub struct BlockFormattingContext {
     /// The float positioning context that handles positioning floats within this Block Formatting Context
@@ -235,6 +240,11 @@ struct BlockItem {
     /// ZW R5293：仅 bottom 侧 margin 隔离的盒（table box）——子首 margin 仍
     /// 塌出顶（Line.start=TRUE），末 margin 留盒内（Line.end=FALSE，§8.3.1）。
     margins_end_isolated: bool,
+
+    /// ZW R5416（CSS2 §8.3.1）：该 item 自身为行内级原子（inline-block 族，taffy
+    /// 侧已块化 Block）。其垂直 margin 不并入父容器塌穿集——父容器全部 in-flow
+    /// item 均行内级时父子塌穿整体禁用。
+    is_inline_level: bool,
 
     #[cfg(feature = "float_layout")]
     /// The `float` style of the node
@@ -446,7 +456,7 @@ fn compute_inner(
     let is_scroll_container = overflow.x.is_scroll_container() || overflow.y.is_scroll_container();
 
     // Determine margin collapsing behaviour
-    let own_margins_collapse_with_children = Line {
+    let mut own_margins_collapse_with_children = Line {
         start: vertical_margins_are_collapsible.start
             && !is_scroll_container
             && style.position() == Position::Relative
@@ -476,6 +486,31 @@ fn compute_inner(
 
     // 1. Generate items
     let mut items = generate_item_list(tree, node_id, container_content_box_size);
+
+    // R5416（CSS2 §8.3.1）：全部 in-flow item 均为行内级原子（inline-block 族，
+    // 纯行内内容容器——文本子不入 taffy item 表）且存在非零垂直 margin 时，
+    // 父子 margin 塌穿整体禁用。行内级盒的垂直 margin「不与任何盒折叠」（§8.3.1
+    // 明文），不得借首/末塌穿集借道容器外溢（旧径逐级上提污染祖先链：
+    // inline-block-non-replaced-height-002 的 48px margin 泄到父/祖父 → abspos
+    // 锚随链错位）。塌穿禁用后原子 margin 留在自身槽位（槽高 = mt+h+mb，
+    // bottom 集计入容器内容高 = 既有 else 分支），容器输出 margin 回归自身
+    // 声明值。margin 全零臂为几何 no-op 特意豁免——塌穿与不塌穿几何恒等，
+    // 免触发无谓行为面（body 级全行内子布局形态维持，R5416 corpus A/B 实证
+    // border-shape-geometry-box 假绿保真）。kill-switch
+    // `ZW_INLINE_CHILD_NO_COLLAPSE=0` 恢复旧行为（OFF 精确回退由 corpus A/B
+    // 双窗覆盖）。
+    if *INLINE_CHILD_NO_COLLAPSE {
+        let has_inflow = items.iter().any(|item| item.position != Position::Absolute);
+        let all_inflow_inline =
+            has_inflow && items.iter().all(|item| item.position == Position::Absolute || item.is_inline_level);
+        let any_vert_margin = items.iter().any(|item| {
+            (item.position != Position::Absolute)
+                && (!item.margin.top.0.is_zero() || !item.margin.bottom.0.is_zero())
+        });
+        if all_inflow_inline && any_vert_margin {
+            own_margins_collapse_with_children = Line::FALSE;
+        }
+    }
 
     // 2. Compute container width
     let container_outer_width = known_dimensions.width.unwrap_or_else(|| {
@@ -704,6 +739,7 @@ fn generate_item_list(
                 is_in_same_bfc,
                 margins_isolated: child_style.margins_isolated(),
                 margins_end_isolated: child_style.margins_end_isolated(),
+                is_inline_level: child_style.item_is_inline_level(),
                 #[cfg(feature = "float_layout")]
                 float,
                 #[cfg(feature = "float_layout")]
