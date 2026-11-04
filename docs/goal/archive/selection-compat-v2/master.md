@@ -120,6 +120,13 @@ v2 命名照 webcrypto-compat-v3 先例）；归档链接层级修正 + README �
   agent，9 个 resume 实例已自行退出；自足收尾脚本（finish-run-e.sh /
   run-e runner）不受影响跑完，run-e（09:28–09:40）即为下账 canonical。
   本轮以零重跑采纳其账（FIXES=158/REGRESSIONS=0 与 D′ 全等复核）。
+- 2026-11-04（收口后 tip 确认轮）：commit `7d50a714b` 推送后又爆发一代
+  同 session 孤儿（8 resume + 1 fresh `-p`，含接力拉起的 systemd 复跑
+  unit 与自足 finisher 脚本、adoption-note 交接账），已按预案清理孤儿
+  进程、零重跑采纳其在跑验证。tip 组合态确认全绿（FIXES=158 /
+  REGRESSIONS=0，与 run-e 全等，nested-video Timeout 伪影本轮未现），
+  证据见 evidence 文档「tip 组合态确认」节；rally 驱动器读到 DONE 输出
+  后退出，孤儿源头收束。
 
 ## 待用户决策 / 待转登记
 

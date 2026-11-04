@@ -1,0 +1,17 @@
+== totals ==
+baseline: P=35638 F=16111 T=4 NR=4
+run     : P=35796 F=15954 T=4 NR=4
+cases   : baseline 675 run 675
+
+== faces ==
+baseline selection face: {'Fail': 13751, 'Pass': 22304, 'Timeout': 3, 'NotRun': 4} sum 36062
+run      selection face: {'Fail': 13597, 'Pass': 22459, 'Timeout': 3, 'NotRun': 4} sum 36063
+baseline editing   face: {'Pass': 13334, 'Fail': 2360, 'Timeout': 1} sum 15695
+run      editing   face: {'Pass': 13337, 'Fail': 2357, 'Timeout': 1} sum 15695
+
+FIXES=158  REGRESSIONS=0  nonPass->nonPass status-change=0
+
+NEW subtests=1
+  [Fail] selection/caret/move-around-contenteditable-false.html :: Move caret from empty editable paragraph to editable text following non-editable text in next paragraph: secon
+
+MISSING (baseline-only, compare blind spot)=0

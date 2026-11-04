@@ -234,3 +234,20 @@ run-e 对照输出补充两项诚实账（与判据核对节一致）：
   master.md T1 挂账维持原状（33 号域），editing face +3P 另有来源 =
   focus-propagation ×2 + no-beforeinput ×1（伴随清单），与本批目标域
   一致，无未归因翻转。
+
+## tip 组合态确认（收口后，2026-11-04）
+
+收口提交 `7d50a714b` 推送后按并行纪律 §10（main 为组合态，单树全绿 ≠
+main 全绿）在 origin/main tip 复跑全量对照：**FIXES=158 / REGRESSIONS=0 /
+nonPass→nonPass=0**，totals（35,796P/15,954F/4T/4N）、675 案、faces、
+目标案详情与 run-e canonical 逐段全等。运行时代差一处：run-e 记
+NEW/MISSING 各 1 的 `selection-nested-video` Timeout 记账伪影本轮未出现
+（与基线全对齐），系该 Timeout 案跨跑抖动，非内容变化。
+
+固化：七段对照原件
+[`2026-11-04-m2-c3-compare-tip-r2.txt`](2026-11-04-m2-c3-compare-tip-r2.txt)
+落本文档目录；raw JSON 留 `.acceptance/m2-c3/run-tip-r2.json`。执行 provenance：
+tip 跑进程链曾随 session 回收被杀一次，复跑以 systemd user unit
+（`zw-sel-tip-r2-102124.service`）脱离会话完成（guard 包裹 4/8/7200），
+二进制 = 干净 `7d50a714b` 工作树 release 构建，与 run-e 同树同构建路径；
+过程涉及的双 spawn 孤儿处置记 master.md 碰撞账。
