@@ -285,3 +285,48 @@ pub fn run_css_grid_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
 pub fn run_css_text_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-text", filter)
 }
+
+// css-testharness-compat-v2 goal M1 批次 1（css 二期 B1 值/属性解析序列化簇
+// 首批 6 目录，分母 16,564 子测试——M0 甄别表 docs/goal/css-testharness-compat-v2/
+// evidence/2026-11-04-m0-triage-and-gate.md §3；通道契约与一期 M3 扩面一致）。
+
+/// Run the pinned upstream cssom testharness subset（css 二期 M1 批次 1——
+/// CSSOM 声明值解析/序列化断言面，M0 分母 4,456 子测试）。filter 按路径子串过滤。
+pub fn run_cssom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/cssom", filter)
+}
+
+/// Run the pinned upstream css-images testharness subset（css 二期 M1 批次 1——
+/// image 值类型（gradient/object-fit 等）解析与序列化断言面，M0 分母 3,595
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_images_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-images", filter)
+}
+
+/// Run the pinned upstream filter-effects testharness subset（css 二期 M1
+/// 批次 1——filter/backdrop-filter/drop-shadow 解析与序列化断言面，M0 分母
+/// 3,007 子测试）。filter 按路径子串过滤。
+pub fn run_filter_effects_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/filter-effects", filter)
+}
+
+/// Run the pinned upstream css-ui testharness subset（css 二期 M1 批次 1——
+/// UI 交互属性（outline/cursor/pointer-events 等）解析与计算值断言面，M0
+/// 分母 2,457 子测试）。filter 按路径子串过滤。
+pub fn run_css_ui_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-ui", filter)
+}
+
+/// Run the pinned upstream css-borders testharness subset（css 二期 M1 批次
+/// 1——border 四边/圆角/图像边框解析与序列化断言面，M0 分母 1,601 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_borders_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-borders", filter)
+}
+
+/// Run the pinned upstream css-logical testharness subset（css 二期 M1 批次
+/// 1——逻辑属性（margin-block/padding-inline 等）解析与计算值断言面，M0
+/// 分母 1,448 子测试）。filter 按路径子串过滤。
+pub fn run_css_logical_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-logical", filter)
+}

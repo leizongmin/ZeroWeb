@@ -138,6 +138,18 @@ Commands:
                        face; css-testharness-compat goal M3)
   testharness-css-text  Run upstream css-text testharness cases (CSSOM/style API
                        face; css-testharness-compat goal M3)
+  testharness-cssom  Run upstream cssom testharness cases (CSSOM/style API face;
+                       css-testharness-compat-v2 goal M1)
+  testharness-css-images  Run upstream css-images testharness cases (CSSOM/style
+                       API face; css-testharness-compat-v2 goal M1)
+  testharness-filter-effects  Run upstream filter-effects testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-ui  Run upstream css-ui testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
+  testharness-css-borders  Run upstream css-borders testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-logical  Run upstream css-logical testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -449,6 +461,12 @@ fn main() {
         "testharness-css-motion" => cmd_testharness_css_motion(&options, filter.as_deref()),
         "testharness-css-grid" => cmd_testharness_css_grid(&options, filter.as_deref()),
         "testharness-css-text" => cmd_testharness_css_text(&options, filter.as_deref()),
+        "testharness-cssom" => cmd_testharness_cssom(&options, filter.as_deref()),
+        "testharness-css-images" => cmd_testharness_css_images(&options, filter.as_deref()),
+        "testharness-filter-effects" => cmd_testharness_filter_effects(&options, filter.as_deref()),
+        "testharness-css-ui" => cmd_testharness_css_ui(&options, filter.as_deref()),
+        "testharness-css-borders" => cmd_testharness_css_borders(&options, filter.as_deref()),
+        "testharness-css-logical" => cmd_testharness_css_logical(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1686,6 +1704,48 @@ fn cmd_testharness_css_grid(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_text(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_text_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-cssom` / `testharness-css-images` / `testharness-filter-effects`
+/// / `testharness-css-ui` / `testharness-css-borders` / `testharness-css-logical`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M1 批次 1——B1 值/属性解析序列化簇首批 6 目录；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_cssom(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_cssom_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_images(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_images_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_filter_effects(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_filter_effects_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_ui(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_ui_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_borders(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_borders_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_logical(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_logical_cases(wpt_root, filter)
     });
 }
 
