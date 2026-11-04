@@ -195,6 +195,32 @@ shards:
     fetch_scripts: ""
     time_limit: 3600
     job_timeout: 210
+  # 2026-11-05 css 二期 M2（DC-2 尾件）：v2 已接线 31 套件（B1 24 + B2 7）
+  # 按接线批次两片，各自定向 fetch（fetch-wpt-css-testharness-v2-{a,b}，
+  # 41 号脚本 CSS_FETCH_ONLY 白名单——v2 池 ~18k blob 全量单 job 装不下，
+  # 一期 css-face 先例）。suite 名 = runner 子命令去 testharness- 前缀
+  # （fill-stroke / compositing / mediaqueries / css2 扫描根无 css- 前缀
+  # 或大小写特殊，同 css-motion 先例）。batch 4 的 B3 13 目录接线后新增
+  # css-v2-face-c 片。css/support 共享 helper 由 fetch 白名单随片携带
+  # （一期实证漏带则引用页全数坍缩）。
+  - name: css-v2-face-a
+    suites: >-
+      cssom css-images filter-effects css-ui css-borders css-logical
+      css-text-decor css-box css-pseudo css-display css-mixins css-syntax
+    fetch: "fetch-wpt-css-testharness-v2-a"
+    fetch_scripts: ""
+    time_limit: 3600
+    job_timeout: 210
+  - name: css-v2-face-b
+    suites: >-
+      fill-stroke css-shadow css-size-adjust css-content css-will-change
+      css-color-adjust css-easing compositing css-counter-styles css-nesting
+      css-color-hdr css-env css-conditional mediaqueries css-cascade
+      css2 css-forms css-link-params css-font-loading
+    fetch: "fetch-wpt-css-testharness-v2-b"
+    fetch_scripts: ""
+    time_limit: 3600
+    job_timeout: 210
   - name: sec
     suites: "csp mixed-content secure-contexts"
     fetch: "fetch-wpt-security-csp"

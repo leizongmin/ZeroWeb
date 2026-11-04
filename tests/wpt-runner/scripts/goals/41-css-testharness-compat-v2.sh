@@ -81,6 +81,22 @@ DIRS=(
   "css/support"
 )
 
+# CI coverage 分片定向（css-testharness-compat-v2 M2 / DC-2）：CSS_FETCH_ONLY
+# 空格分隔的 DIRS 白名单，只 sync 子集（weekly css-v2-face 手调分片各自定向
+# fetch——CI 全新 checkout 全量 ~18k 文件顺序拉取单 job 装不下预算，35 号
+# 先例；本地 rally 轮不设则全量，行为不变）。
+if [[ -n "${CSS_FETCH_ONLY:-}" ]]; then
+  want=" ${CSS_FETCH_ONLY} "
+  FILTERED=()
+  for d in "${DIRS[@]}"; do
+    if [[ $want == *" $d "* ]]; then
+      FILTERED+=("$d")
+    fi
+  done
+  echo "CSS_FETCH_ONLY 过滤：${#FILTERED[@]}/${#DIRS[@]} 目录（${CSS_FETCH_ONLY}）"
+  DIRS=("${FILTERED[@]}")
+fi
+
 SYNC_PAR="${SYNC_PAR:-6}"
 export WPT_DATA WPT_REV RAW_ROOT
 
