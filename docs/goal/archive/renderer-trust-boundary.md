@@ -2,14 +2,14 @@
 
 **版本**：v1.5 / 2026-11-04（Layer 2 landlock 默认翻开交付 + DC-4 转 DONE，goal 完成归档；v1.4 / 2026-11-02 Layer 1 file:// 臂范围策略修复交付；v1.3 file:// IPC 臂范围缺陷发现 + ① 分层决策包；v1.2 ① 预执行核查；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
 **状态**：✅ Done——2026-11-04 收口归档（M1–M4 全部交付：M2 切片 1–8、M3 切片 1–6、M4 前置与收口 + Layer 1 file:// 范围策略修复（`bc719a7dc`）+ Layer 2 `ZW_RENDERER_LANDLOCK` 默认翻开（①-a，2026-11-03 拍板，[Layer 2 证据](renderer-trust-boundary/evidence/2026-11-04-layer2-landlock-default-flip-and-dc4-done.md)）；**DC-1~5 全部 DONE**——DC-2 的 file:// IPC 直读臂无范围策略重开面已由 Layer 1 复闭；DC-4 由 Layer 2 收口，真机验收（macOS 真机、android 编译腿）按 2026-11-03 拍板口径 B 降级接受为平台契约终态，真机实证可独立立项补；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md)、[决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md) 与 master.md）
-**父目标**：[zero-web](zero-web.md)
+**父目标**：[zero-web](../zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
 ## 0. 执行摘要与 Mission
 
 按 renderer 已被攻破的威胁模型，检查服务端如何绑定身份、拒绝跨站特权请求并限制 helper 系统权限。先建立真实消息权限矩阵，再复现和修复确认的问题。
 
-拆分依据：2026-10-20 用户要求将 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md)形成 goal 与 scripts，开发后续投入。本 goal 建立验收目标，不宣称已经发现 ZeroWeb 漏洞。
+拆分依据：2026-10-20 用户要求将 [Ladybird 建议](../../research/research-ladybird-progress-2026-10-20.md)形成 goal 与 scripts，开发后续投入。本 goal 建立验收目标，不宣称已经发现 ZeroWeb 漏洞。
 
 ## 基线与 Support Envelope
 
@@ -27,9 +27,9 @@
 
 范围：Cookie/HttpOnly、HSTS、存储、权限、自动化角色的可信身份；renderer/worker 与 browser/helper 请求权限；macOS/Linux 沙箱实际生效时机。
 
-边界：复用 [security-hardening 历史成果](archive/security-hardening/master.md)和 [cookies-compat](archive/cookies-compat.md)。页面规范兼容仍归兄弟 goal，本 goal负责被攻破进程的权限测试。跨站 iframe 架构变更遵守 navigation-compat 的既有门控；不自动改协议架构或关闭自动化能力。
+边界：复用 [security-hardening 历史成果](security-hardening/master.md)和 [cookies-compat](cookies-compat.md)。页面规范兼容仍归兄弟 goal，本 goal负责被攻破进程的权限测试。跨站 iframe 架构变更遵守 navigation-compat 的既有门控；不自动改协议架构或关闭自动化能力。
 
-碰撞：按 [run-rules §9–11](../rally/run-rules.md)记录 protocol、engine、net、browser 接收方与并行流的占用；共享面暂停一边，不硬解。只写本 goal 控制面；不继承通知、提交、推送授权。
+碰撞：按 [run-rules §9–11](../../rally/run-rules.md)记录 protocol、engine、net、browser 接收方与并行流的占用；共享面暂停一边，不硬解。只写本 goal 控制面；不继承通知、提交、推送授权。
 
 ## Done Criteria / 验收场景（P0）
 
@@ -56,6 +56,6 @@
 
 ## 执行与 Document Control
 
-统一 CLI、运行守卫、证据协议和授权边界见 [启动说明](ladybird-followups/README.md)。脚本：`./scripts/rally-goal-renderer-trust-boundary.sh`（**已随 2026-11-04 归档删除，goal 不重启**）；直接执行启动 Rally，加 `--dry-run` 仅预览。
+统一 CLI、运行守卫、证据协议和授权边界见 [启动说明](../ladybird-followups/README.md)。脚本：`./scripts/rally-goal-renderer-trust-boundary.sh`（**已随 2026-11-04 归档删除，goal 不重启**）；直接执行启动 Rally，加 `--dry-run` 仅预览。
 
 入口仅目标变化时更新；进展写 master/evidence，里程碑只追加 archive。M1 启动门控已按 2026-10-23 用户决策解锁并交付；内核改动仍须先获授权。启动后默认 `CONTINUE: <下一可执行切片>`；真实阻塞 `BLOCK: <原因>`；全部 DC 和适用门禁有证才输出 `DONE`。

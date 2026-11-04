@@ -1017,7 +1017,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   boundary 流 `4752a00df`（M3 slice2 fd 传递通道对端信任收口——socket
   0600 + SO_PEERCRED euid 校验 + 每发布随机 token，
   `crates/protocol/src/fd_socket_linux.rs` +124/−8，
-  [其账](../../../renderer-trust-boundary/evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)）：
+  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m3-slice2-fd-socket-peer-trust.md)）：
   crates/ 面前移，`cargo tree -p zero-wpt-runner` 核证 zero-protocol 经
   传递依赖入 runner 二进制面 → 按纪律对现执行 tip 复跑锚 ×3——release
   runner 重建 33.4s（protocol 重编译入包，二进制 sha256 `42d5d82c…`
@@ -1047,7 +1047,7 @@ rally-goal-26 脚本对齐、wpt-suites.csv 收行）**待该基线清零后执�
   boundary 流 `5a2aafaf9`（M4 前置——沙箱失败平台策略选项 docs +
   DC 审计快照 + `crates/protocol/src/fd_socket_linux.rs` **纯注释**
   5 行改动（`peer_same_user` doc-comment 重写，无代码变化），
-  [其账](../../../renderer-trust-boundary/evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）：
+  [其账](../../renderer-trust-boundary/evidence/2026-11-01-m4-preflight-platform-policy-dc-audit.md)）：
   crates/ 面 `git diff` 非空即触发纪律；先试二进制核证捷径——重建
   release runner 35.4s 后 sha256 `9054e56c…` ≠ 锚二进制 `42d5d82c…`
   （**纯注释改动经 protocol 重编译 + 重链接仍非字节稳定**，

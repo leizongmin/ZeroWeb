@@ -42,7 +42,7 @@ pub(crate) enum FileFetchFace {
 }
 
 /// file:// 直读臂范围策略（DC-2 缺口修复，2026-11-02；设计与实证见
-/// `docs/goal/renderer-trust-boundary/evidence/2026-11-02-file-url-ipc-arm-scope-finding.md`）。
+/// `docs/goal/archive/renderer-trust-boundary/evidence/2026-11-02-file-url-ipc-arm-scope-finding.md`）。
 ///
 /// 锚点全部取 browser 自身知情面（renderer 自报 initiator 不采信——被攻破
 /// renderer 可伪造）：

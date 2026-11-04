@@ -1,6 +1,6 @@
 //! Renderer 进程沙箱（goal ③A-renderer + ④ renderer fail 语义，2026-11-01）。
 //!
-//! 前身是 RFC §六 P3 占位（仅 env 剥离）。本轮按 [决策包](../../docs/goal/renderer-trust-boundary/2026-11-01-decision-package-1234.md)
+//! 前身是 RFC §六 P3 占位（仅 env 剥离）。本轮按 [决策包](../../../docs/goal/archive/renderer-trust-boundary/2026-11-01-decision-package-1234.md)
 //! ③A 落地两半：
 //!
 //! - **seccomp（默认开，fail-closed）**：阻断 `execveat`（memfd + AT_EMPTY_PATH

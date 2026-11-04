@@ -15,7 +15,7 @@
 //! 已知收窄（①-a 拍板接受，此处不钉）：模块体动态 import 的 file:// 面经 renderer
 //! worker 本地直读，landlock 默认开后该面被拒——收窄即 Chrome parity（Chrome 对
 //! file:// 页模块加载本按 CORS 拒绝），取舍见
-//! `docs/goal/renderer-trust-boundary/master.md` 缺口表。
+//! `docs/goal/archive/renderer-trust-boundary/master.md` 缺口表。
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
