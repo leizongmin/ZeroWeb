@@ -131,6 +131,11 @@ blob-hash 不符定向重拉 33（一期存量页随上游滚动过期，#31 旧
 
 ## 依赖约束（run-rules §9）
 
+- **共享树碰头留痕（2026-11-05）**：两条 rally 流同仓推进本 goal 时，
+  共享 index 曾致批次 3 docs 提交（5a91111f6）连带带上另一流已暂存的
+  DC-2 分片接线（内容完整）；其 .PHONY 缺空格缺陷当日修复（845b7d372）。
+  约定：共享文件（Makefile/ci-shards.yml/fetch 脚本）提交一律 pathspec
+  限定，DC-2 分片与批次接线由两条流分头做、每笔推送前 pull --rebase。
 - css 通道 DIRS 扩面与 35 号已收口十六目录同通道——每批次后复验十六目录
   基线逐 subtest 零回归（一期 65,501/17,781 台账）。
 - 与 rendering-compat（活跃 rally）共享 cssom-view/geometry 语义面——
