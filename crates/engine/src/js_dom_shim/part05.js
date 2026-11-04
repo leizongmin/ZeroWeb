@@ -10857,7 +10857,9 @@
       var _write = function (nv) {
         var _moTgt = _mo_id(null, parentSel);
         var _old = (_moTgt != null && _mo_any_wants_char_old(_moTgt)) ? _cur() : null;
-        node.__nv = nv; node.textContent = nv; node.length = nv.length;
+        // textContent 不在此回写（下方 R260 accessor 化后 setter 会再进 _write——互递归）；
+        // accessor getter 读 __nv，视图一致。
+        node.__nv = nv; node.length = nv.length;
         __zw_set_child_text(parentSel, String(node.__zwChildIndex || 0), nv);
         _mo_notify(parentSel, null, { type: 'characterData', oldValue: _old, target: node.__zwNotifyTarget || node });
       };
@@ -10932,14 +10934,41 @@
       // data/nodeValue setter（CharacterData data IDL 可写）——写经 _write；getter 读本地（_write 同步）。
       // R129：[LegacyNullToEmptyString] DOMString——null→''、undefined→'undefined'（WPT
       // CharacterData-data 两断言；旧 `v == null ? '' : v` 把 undefined 也吞成 ''）。
+      // R260 dataChange 簇（dom-expansion M2）：`.data=`/`.nodeValue=` 全量替换 =
+      // replace(0, length, new)——上方注释声称「_write 内统一以 (0, 旧长, 新长) 调整」
+      // 但 _write 从未实现调整，live-range 边界失效（Range-mutations-dataChange
+      // wrong start/end offset 273F）。调整先于写（同 insert/delete/replaceData 臂）。
+      // https://dom.spec.whatwg.org/#concept-cd-replace
       Object.defineProperty(node, 'data', {
         get: function () { return node.nodeValue; },
-        set: function (v) { _write(v === null ? '' : String(v)); },
+        set: function (v) {
+          var _cdNew = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _cdNew.length);
+          _write(_cdNew);
+        },
         configurable: true, enumerable: true,
       });
       Object.defineProperty(node, 'nodeValue', {
         get: function () { return node.__nv; },
-        set: function (v) { _write(v === null ? '' : String(v)); },
+        set: function (v) {
+          var _cdNew = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _cdNew.length);
+          _write(_cdNew);
+        },
+        configurable: true, enumerable: true,
+      });
+      // R260 dataChange 簇根因 ②：textContent= 原为构造字面 plain 字段——赋值只改
+      // 本地视图不同步 host（.data 读 __nv 恒旧值 → "data not changed as expected"
+      // 96F）。spec CharacterData.textContent setter 对 CharacterData 即 replace data
+      //（无子可换，非元素「string replace all」语义）。
+      // https://dom.spec.whatwg.org/#dom-node-textcontent
+      Object.defineProperty(node, 'textContent', {
+        get: function () { return node.__nv; },
+        set: function (v) {
+          var _tc5New = v === null ? '' : String(v);
+          _r260adj(0, _cur().length, _tc5New.length);
+          _write(_tc5New);
+        },
         configurable: true, enumerable: true,
       });
       node.__zwWriteChildText = _write;

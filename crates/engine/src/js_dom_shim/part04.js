@@ -13708,6 +13708,15 @@
             // `Text.data = null` 期望 ''），undefined→'undefined'（期望 'undefined'——
             // 旧 null-coalesce 把两者都吞成 ''）。
             var _tdNew = value === null ? '' : String(value);
+            // R260 dataChange 簇（dom-expansion M2）：全量替换 = replace(0, len, new)
+            // ——deleteData/insertData/replaceData 三方法臂均有 R260 边界调整，setter
+            // 臂漏（Range-mutations-dataChange wrong start/end offset 273F 的 handle
+            // 域半边）。调整先于写，同三方法臂。
+            // https://dom.spec.whatwg.org/#concept-cd-replace
+            try {
+              var _tdCur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
+              globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), 0, _tdCur.length, _tdNew.length);
+            } catch (_eR260ds) {}
             // R123：PI 的 data= 同步 _piHandles（属性层解析源——pi.data='' 后
             // hasAttributes()=false，data='blabla=""' 后 getAttribute('blabla')=''，
             // WPT PI-attributes data-resync 簇）。
@@ -13802,6 +13811,24 @@
           return true;
         }
         if (p === 'textContent' || p === 'innerText' || p === 'innerHTML') {
+          // R260 dataChange 簇（dom-expansion M2）：text/comment 节点 textContent= = replace
+          // data（CharacterData 无子可换，落通用元素「string replace all」臂建文本子视图是
+          // 错形态；parsed sel 域同语义修复见 part05 _wrapNodeEntry textContent accessor）。
+          // 写经 R3034 同款持久化 + R260 边界调整 + characterData record。
+          // https://dom.spec.whatwg.org/#dom-node-textcontent
+          if (handle && (_textHandles[handle] || _commentHandles[handle])) {
+            var _tcdNew = value === null ? '' : String(value);
+            try {
+              var _tcdCur = _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); });
+              globalThis.__zwAdjustRangesForData(_makeProxy(sel, handle), 0, _tcdCur.length, _tcdNew.length);
+            } catch (_eR260tcs) {}
+            var _tcdMoId = _mo_id(handle, sel);
+            var _tcdMoOld = _mo_any_wants_char_old(_tcdMoId)
+              ? _zwTextDataGet(handle, function () { return __zw_get_text_handle(handle); }) : null;
+            _zwTextDataSet(handle, _tcdNew, function () { __zw_set_text_handle(handle, _tcdNew); });
+            try { _mo_notify(sel, handle, { type: 'characterData', oldValue: _tcdMoOld, target: _makeProxy(sel, handle) }); } catch (_eR260tcm) {}
+            return true;
+          }
           // R81：PI 节点的 textContent= 直接写 data（spec CharacterData——不建文本子视图、不发
           // childList；WPT "For a ProcessingInstruction, textContent should set the data"）。
           // R123：data 即属性序列化源——setter 后属性层随之重解析（pi.data='blabla=""' →

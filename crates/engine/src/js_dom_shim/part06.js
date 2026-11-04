@@ -18863,7 +18863,9 @@ function _zwRegisterTextEl(el, handle, sel, text) {
   // spec target=文本节点）。写经「父 sel + child 索引 0」（SetChildText，同 R48 _wrapNodeEntry 模式）；
   // handle-only（无 sel）纯本地（旧语义）。
   var _regWrite = function (nv) {
-    node.__nv = nv; node.textContent = nv; node.length = nv.length;
+    // textContent 不在此回写（下方 R260 accessor 化后 setter 会再进 _regWrite——互递归）；
+    // accessor getter 读 __nv，视图一致。
+    node.__nv = nv; node.length = nv.length;
     if (sel && typeof __zw_set_child_text === 'function') {
       __zw_set_child_text(sel, '0', nv);
       // characterData record——经全局 notify 入口（part01 IIFE 私有的 _mo_id/_mo_notify 不在此作用域；
@@ -18873,14 +18875,47 @@ function _zwRegisterTextEl(el, handle, sel, text) {
       }
     }
   };
+  // R260 dataChange 簇（dom-expansion M2）：本域（textContent= 建的本地文本节点，
+  // WPT common.js paras[0].firstChild 主体域）data/nodeValue setter 此前漏 live-range
+  // 边界调整（同域 deleteData/insertData/replaceData 三方法臂已有）——全量替换 =
+  // replace(0, 旧长, 新长)，先调整后写（Range-mutations-dataChange wrong offset
+  // 209F 的 textEl 域半边）。R129：[LegacyNullToEmptyString] DOMString——null→''、
+  // undefined→'undefined'（旧 `v == null` 把两者都吞成 ''）。
+  // https://dom.spec.whatwg.org/#concept-cd-replace
   Object.defineProperty(node, 'data', {
     get: function () { return node.__nv; },
-    set: function (v) { node.__prevForMo = node.__nv; _regWrite(String(v == null ? '' : v)); },
+    set: function (v) {
+      var _cd6New = v === null ? '' : String(v);
+      node.__prevForMo = node.__nv;
+      try { globalThis.__zwAdjustRangesForData(node, 0, node.__nv.length, _cd6New.length); } catch (_eR260ds6) {}
+      _regWrite(_cd6New);
+    },
     enumerable: true, configurable: true,
   });
   Object.defineProperty(node, 'nodeValue', {
     get: function () { return node.__nv; },
-    set: function (v) { node.__prevForMo = node.__nv; _regWrite(String(v == null ? '' : v)); },
+    set: function (v) {
+      var _nv6New = v === null ? '' : String(v);
+      node.__prevForMo = node.__nv;
+      try { globalThis.__zwAdjustRangesForData(node, 0, node.__nv.length, _nv6New.length); } catch (_eR260nv6) {}
+      _regWrite(_nv6New);
+    },
+    enumerable: true, configurable: true,
+  });
+  // R260 dataChange 簇根因 ②（dom-expansion M2）：textContent= 原为构造字面 plain
+  // 字段——赋值只改本地视图，.data 读 __nv 恒旧值（"Sanity check failed: data not
+  // changed as expected" 76F）。spec CharacterData.textContent setter 对 CharacterData
+  // 即 replace data（无子可换，非元素「string replace all」语义）；写经 _regWrite
+  //（其不回写 textContent——防 setter 互递归）。
+  // https://dom.spec.whatwg.org/#dom-node-textcontent
+  Object.defineProperty(node, 'textContent', {
+    get: function () { return node.__nv; },
+    set: function (v) {
+      var _tc6New = v === null ? '' : String(v);
+      node.__prevForMo = node.__nv;
+      try { globalThis.__zwAdjustRangesForData(node, 0, node.__nv.length, _tc6New.length); } catch (_eR260tc6) {}
+      _regWrite(_tc6New);
+    },
     enumerable: true, configurable: true,
   });
   node.appendData = function (s) { node.__prevForMo = node.__nv; _regWrite(node.__nv + String(s == null ? '' : s)); };

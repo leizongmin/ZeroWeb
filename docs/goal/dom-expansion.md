@@ -1,8 +1,8 @@
 # DOM 扩面 — dom/ranges + html/dom
 
-**版本**: v1.1
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）
-**状态**: Active——M1 完成（语料对账 100% + 双通道扩面 + 双面基线落账）；M2 失败簇归因进行中
+**版本**: v1.2
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）
+**状态**: Active——M1 完成；M2 dataChange 簇收口（369F→0F，全 dom 通道 A/B 零回归 + html 通道字节级不变），剩 documents 簇归因
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + 接口完备性收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——DOM 面）
 
@@ -10,7 +10,7 @@
 
 | WPT 面 | 全量分母（子测试） | M1 前覆盖 | M1 后通道面 | 说明 |
 |---|---:|---:|---|---|
-| dom/ranges | 44,726 | 44/73 文件 | 63/73 文件（+19 tentative） | 已实现 API 99.07%；tentative 189F 全接口缺失挂账 |
+| dom/ranges | 44,726 | 44/73 文件 | 63/73 文件（+19 tentative） | 已实现 API 99.97%（M2 dataChange 收口后，M1 时 99.07%）；tentative 189F 全接口缺失挂账 |
 | html/dom | 72,326 | 81/396 文件 | ~230/396 文件（+149 案路径） | 旧面 99.89% 零回归；新面 42.41%（636F 六簇） |
 
 M1 前列来自立项日报（0 覆盖口径过时——js-dom R42 已入 44 顶层案、40 号已入
@@ -48,8 +48,12 @@ Document 的 DOM 接口面（394 文件，含各元素 historical/idlharness 面
   见 evidence/2026-11-05-m1-channel-expansion.md。
 - **M2**：基线分类（ranges：已实现 API 的语义正确率；html/dom：接口存在性
   图）。——首遍随 M1 落账（ranges 99.07%、html/dom 新面 42.41% 六簇 +
-  接口缺失/语义分列）；待做：documents 簇（forms/lastModified/title ~130F）
-  逐 API 归因、mutations dataChange 369F 簇根因定位。
+  接口缺失/语义分列）。dataChange 369F 簇已收口（2026-11-05）：shim 三域
+  （part04/proxy、part06/textEl、part05/parsed sel）data/nodeValue/textContent
+  setter 补 replace-data 边界调整 + accessor 化，定向套件 400P/0F，全 dom
+  通道 A/B 零回归、html 通道字节级不变，见
+  evidence/2026-11-05-m2-datachange-fix.md；待做：documents 簇
+  （forms/lastModified/title ~130F）逐 API 归因。
 - **M3**：可收敛簇修齐或挂账 + coverage 复测收口。——候选簇：documents
   语义簇、dataset 3F、mutations 尾簇 8F；挂账候选：innerText 面（渲染
   依赖，与渲染流域划界）、partial-updates/Sanitizer/OpaqueRange 提案面、
