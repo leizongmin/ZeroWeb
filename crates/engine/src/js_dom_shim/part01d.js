@@ -99,6 +99,30 @@
     return _zwVaNormalizeCssColor(v);
   }
 
+  // peel 克隆 style 属性 CSSOM 归一：Chrome splitTreeNode 经 CSSOM 克隆，attr
+  // 文本走声明块序列化，keyword 色落 rgb 形（语料 kept-half `color:brown` 期望
+  // `color:rgb(165, 42, 42)`、`background-color:aqua/tan` 期望 rgb 形实证）。只
+  // 归一 color/background-color 两属性（语料录面），余声明原文保留；`prop:value`
+  // 形 `; ` 连接（harness `: /; ` 正则同一化面）；!important 色归一失败原文保留。
+  function _zwVaNormalizeStyleAttrCss(raw) {
+    var parts = String(raw == null ? '' : raw).split(';');
+    var out = [];
+    for (var i = 0; i < parts.length; i++) {
+      var d = parts[i];
+      var colon = d.indexOf(':');
+      if (colon <= 0) continue;
+      var pn = d.slice(0, colon).trim().toLowerCase();
+      var pv = d.slice(colon + 1).trim();
+      if (!pn || !pv) continue;
+      if (pn === 'color' || pn === 'background-color') {
+        var nv = _zwVaNormalizeCssColor(pv);
+        if (nv) pv = nv;
+      }
+      out.push(pn + ':' + pv);
+    }
+    return out.join('; ');
+  }
+
   // areEquivalentValues（参考实现 :2008）——五命令子集：fontsize/fontname 无
   // equivalentValues 定义（纯串等值），色三命令 normalizeColor 等值。
   function _zwVaEquivalentValues(cmd, v1, v2) {
@@ -702,12 +726,18 @@
       var spec2 = _zwVaSpecifiedValue(currentAncestor2, command);
       if (spec2 !== null) {
         propagatedValue = spec2;
-        _zwVaClearValue(currentAncestor2, command);
       }
+      // children 快照先于 clearValue（vendored :2652 原文时序）——简单可改性
+      // 祖先（纯属性 font 等）被 clearValue 摘壳（子级上移、元素移除）后
+      // childNodes 恒空，快照后置 = 携带臂零执行（fs4a/font6 push-down 载体
+      // 全丢实证；fix7 前实现时序颠倒）。
       var children = [];
       var i;
       for (i = 0; i < currentAncestor2.childNodes.length; i++) {
         children.push(currentAncestor2.childNodes[i]);
+      }
+      if (spec2 !== null) {
+        _zwVaClearValue(currentAncestor2, command);
       }
       for (i = 0; i < children.length; i++) {
         var child = children[i];
@@ -719,7 +749,13 @@
           continue;
         }
         if (child === ancestorList[ancestorList.length - 1]) continue;
-        _zwVaForceValue(child, command, propagatedValue);
+        // Chrome delta（⑧ push-down 载体形，2026-11-05）：flag=false +
+        // fontsize + font 属性载体（specified）→ wrap 臂带 raw 源（size attr
+        // 原串保留，font6 size="6" ≠ 归一 "7" 实证）；其余走 vendored 归一。
+        var carrySrc2 = (!_zwVaCssFlag() && command === 'fontsize'
+                         && _zwJusTag(currentAncestor2) === 'font'
+                         && spec2 !== null) ? currentAncestor2 : null;
+        _zwVaForceValue(child, command, propagatedValue, carrySrc2);
       }
     }
   }
@@ -727,7 +763,9 @@
   // —— forceValue（参考实现 :2696）——五命令子集：bold/italic/strike/underline/
   // createlink 新 parent 臂不移植（part06 flat 臂域）。CSS flag false →
   // font color/face/size attr；fontsize xxx-large 恒 font attr（spec 特例）。
-  function _zwVaForceValue(node, command, newValue) {
+  // carrySrc（⑧ 可选）：push-down 携带路径传外段载体元素，font 载体 raw attr
+  // 保留形（见 wrap 臂内注释）；主循环/children 递归不传。
+  function _zwVaForceValue(node, command, newValue, carrySrc) {
     if (!node.parentNode) return;
     if (newValue === null) return;
     // Chrome delta：空白-only 文本节点不强制赋值（不获独立包裹、不进 children
@@ -839,9 +877,23 @@
     // fontsize xxx-large 特例（spec :2696 原文 (!cssStylingFlag || newValue ==
     // "xxx-large")；vendored 同）——CSS flag true 也走 font size 属性形。
     if (!_zwVaCssFlag() || (command === 'fontsize' && newValue === 'xxx-large')) {
-      if (command === 'fontsize') {
+      // 关键字成员门（vendored :2860 原文第二条件 newValue ∈ 7 关键字）——
+      // xx-small 等 CSS-only 关键字/2em 等相对值不可映射，落 span+style 臂；
+      // 无门时 `<font size="undefined">` 错形（语料 p xx-small / p 2em fs3
+      // flag=false 实证）。
+      if (command === 'fontsize'
+          && ['x-small', 'small', 'medium', 'large', 'x-large', 'xx-large', 'xxx-large']
+               .indexOf(newValue) !== -1) {
         newParent = document.createElement('font');
-        newParent.setAttribute('size', _zwVaCssSizeToLegacy(newValue));
+        // Chrome delta（⑧ push-down 载体形，2026-11-05）：外段 raw attr 保留——
+        // font 载体 size="6" 语料录形 ≠ cssSizeToLegacy 归一 "7"（font6 fs3
+        // flag=false L604 实证；vendored 归一仅在无 raw 源时走）。仅 push-down
+        // 携带路径传 carrySrc（主循环包裹不带源，恒归一）。
+        if (carrySrc && carrySrc.getAttribute && carrySrc.getAttribute('size') !== null) {
+          newParent.setAttribute('size', carrySrc.getAttribute('size'));
+        } else {
+          newParent.setAttribute('size', _zwVaCssSizeToLegacy(newValue));
+        }
       }
       if (command === 'forecolor' && _zwVaParseSimpleColor(newValue)) {
         newParent = document.createElement('font');
@@ -977,6 +1029,10 @@
   // 内——qCV after 读新值，语料 26 案实证）。
   var _zwVaPeelRestore = [];
 
+  // peel 载体记录：{el}——start 侧 = 属性克隆，end 侧 = 残余 el（外段后缀
+  // 载体）。供 _zwVaRematerializeCarries 嵌套 flag-form 重物化消费。
+  var _zwVaPeelCarry = [];
+
   // 单祖先单侧 peel（无边界重写设计——随动自动保界）。两侧机制不对称：
   // · start 侧：外段前缀 [0..ci) 移入 el 的属性克隆（保样式），克隆以 **ref=el**
   //   插挂（解析元素 ref——M 代理 insertBefore wire 的 sel 印 ref 臂，实证落地面）；
@@ -1009,7 +1065,11 @@
       try {
         var at = el.attributes;
         for (var a = 0; a < at.length; a++) {
-          try { clone.setAttribute(at[a].name, at[a].value); } catch (_ePa) {}
+          try {
+            var an = at[a].name, av = at[a].value;
+            if (an.toLowerCase() === 'style') av = _zwVaNormalizeStyleAttrCss(av);
+            clone.setAttribute(an, av);
+          } catch (_ePa) {}
         }
       } catch (_ePb) {}
       _zwVaShiftEndpointsForInsert(parent, _zwJusNodeIndex(el));
@@ -1017,22 +1077,55 @@
       for (var k = 0; k < ci; k++) {
         _zwJusMovePreservingRanges(kids[k], clone, k);
       }
+      _zwVaPeelCarry.push(clone);
     } else {
       var elIdx = _zwJusNodeIndex(el);
       for (var k2 = 0; k2 < ci; k2++) {
         _zwJusMovePreservingRanges(kids[k2], parent, elIdx + k2);
       }
+      _zwVaPeelCarry.push(el);
     }
   }
 
   // 行内切分主臂：start/end 两边界各自爬升（editing host / 块级 / 不可编辑
   // 祖先截止），收集 specified 冲突的可编辑行内祖先链，自外向内逐层 peel
-  // （外层切分只动外段，内层链元相对位置不变，先外后内保索引）。backcolor/
-  // hilitecolor 不切分——background-color 非继承属性，语料录形为嵌套包裹
-  // （tan span 原样保留、新包裹收进内容侧，fix4 首版 peel 臂 24+ 案回归实证）。
+  // （外层切分只动外段，内层链元相对位置不变，先外后内保索引）。
+  // backcolor/hilitecolor Chrome delta（fix9 复判）：仅当两边界爬升的首个
+  // specified 冲突祖先相同（fcS===fcE——元素整体包住选区、两侧中间无其他
+  // 冲突载体，M1 `b[ar]` 形 fcS=fcE=tan 拆分实证 `foo<span tan>b</span>arbaz`）
+  // 才 peel 该元素；跨界形/嵌套载体形（fcS≠fcE）Chrome 录形恒整壳保留、新
+  // 包裹收进内容侧（L273 `ba[r</span>]`、L298、L243 嵌套 transparent 三形
+  // 实证——fix4 首版禁切 24+ 回归即本族）。forecolor/fontsize/fontname 维持
+  // 逐层 peel-all（跨元素形 Chrome 亦拆 end 侧壳，语料 L647 实证）。全选区
+  // 贴边形由 peel 侧 ci 门天然 no-op。
   function _zwVaSplitConflictingInline(command, newValue) {
-    if (command === 'backcolor' || command === 'hilitecolor') return;
     _zwVaPeelRestore = [];
+    _zwVaPeelCarry = [];
+    var isBg = command === 'backcolor' || command === 'hilitecolor';
+    var fcS = null;
+    if (isBg) {
+      var rng0 = _zwVaGetActiveRange();
+      if (!rng0) return;
+      var firstConflict = function (cont) {
+        var n = cont;
+        var guard = 0;
+        while (n && guard++ < 256) {
+          var par = n.parentNode;
+          if (!par || par.nodeType !== 1) break;
+          if (_zwJusIsEditingHost(par) || _zwJusIsBlockNode(par)
+              || !_zwJusIsEditable(par)) break;
+          var spec = _zwVaSpecifiedValue(par, command);
+          if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)) {
+            return par;
+          }
+          n = par;
+        }
+        return null;
+      };
+      fcS = firstConflict(rng0.startContainer);
+      var fcE = firstConflict(rng0.endContainer);
+      if (!fcS || fcS !== fcE) return;
+    }
     var isStart = false;
     for (var side = 0; side < 2; side++) {
       isStart = side === 0;
@@ -1049,7 +1142,8 @@
         if (_zwJusIsEditingHost(par) || _zwJusIsBlockNode(par)
             || !_zwJusIsEditable(par)) break;
         var spec = _zwVaSpecifiedValue(par, command);
-        if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)) {
+        if (spec !== null && !_zwVaEquivalentValues(command, spec, newValue)
+            && (!isBg || par === fcS)) {
           chain.push(par);
         }
         n = par;
@@ -1057,6 +1151,48 @@
       for (var i = chain.length - 1; i >= 0; i--) {
         _zwVaPeelOne(chain[i], isStart);
       }
+    }
+  }
+
+  // peel 载体嵌套 flag-form 重物化（Chrome delta ⑧，2026-11-05）：flag=true 且
+  // 载体（start 属性克隆 / end 残余 el）为 font 属性形、且载体父链（editable
+  // 行内域）存在 specified 值祖先（嵌套形）→ 转 span style 形。语料分形实证：
+  // 嵌套 font1-in-font4 fs4 flag=true 期望 span x-small 载体（fs4a L433）；flat
+  // font1 fs4 flag=true 期望 font attr 载体恒保形（L378，tA2 恒绿面）；flag=
+  // false 嵌套恒 font attr（fs4b L438）；span/style 载体已 flag-form（克隆归一
+  // 臂 + 祖先规范形直出）不动。
+  function _zwVaRematerializeCarries(command) {
+    if (!_zwVaCssFlag()) return;
+    for (var i = 0; i < _zwVaPeelCarry.length; i++) {
+      var cw = _zwVaPeelCarry[i];
+      if (!cw || !cw.parentNode) continue;
+      if (_zwJusTag(cw) === 'span') continue;
+      var spec = _zwVaSpecifiedValue(cw, command);
+      if (spec === null) continue;
+      var nested = false;
+      var n = cw.parentNode;
+      var guard = 0;
+      while (n && guard++ < 256) {
+        if (n.nodeType !== 1 || !_zwJusIsEditable(n)) break;
+        if (_zwJusIsEditingHost(n) || _zwJusIsBlockNode(n)) break;
+        if (_zwVaSpecifiedValue(n, command) !== null) { nested = true; break; }
+        n = n.parentNode;
+      }
+      if (!nested) continue;
+      var prop = command === 'fontsize' ? 'font-size'
+        : (command === 'fontname' ? 'font-family'
+          : (command === 'forecolor' ? 'color' : 'background-color'));
+      var span = document.createElement('span');
+      _zwVaSetStyleProp(span, prop, spec);
+      var parent = cw.parentNode;
+      var idx = _zwJusNodeIndex(cw);
+      _zwVaShiftEndpointsForInsert(parent, idx);
+      parent.insertBefore(span, cw);
+      var kids = [].slice.call(cw.childNodes);
+      for (var k = 0; k < kids.length; k++) {
+        _zwJusMovePreservingRanges(kids[k], span, k);
+      }
+      parent.removeChild(cw);
     }
   }
 
@@ -1219,6 +1355,32 @@
     return !!n && n.nodeType === 3 && _zwJusIsWhitespaceNode(n);
   }
   // —— setSelectionValue（参考实现 :2965）——五命令主流程。
+  // 祖先链 style 属性规范形直出（刀口 2b）：两边界容器爬升至 editing host
+  // （本体不动——tests.js normalizeSerializedStyle(testDiv) 只归一后代），
+  // 逐层把 style attr 经 _zwVaNormalizeStyleAttrCss 重写为 Chrome cssText
+  // 规范形。空结果保留原文（junk attr 不动，防序列化空 attr 面漂移）。
+  function _zwVaCanonicalizeAncestorStyleAttrs(rng) {
+    var sides = [rng.startContainer, rng.endContainer];
+    for (var s = 0; s < 2; s++) {
+      var n = sides[s];
+      var guard = 0;
+      while (n && guard++ < 256) {
+        if (n.nodeType !== 1) { n = n.parentNode; continue; }
+        if (_zwJusIsEditingHost(n)) break;
+        if (typeof n.getAttribute === 'function') {
+          var raw = n.getAttribute('style');
+          if (raw) {
+            var norm = _zwVaNormalizeStyleAttrCss(raw);
+            if (norm && norm !== raw) {
+              try { n.setAttribute('style', norm); } catch (_eCa) {}
+            }
+          }
+        }
+        n = n.parentNode;
+      }
+    }
+  }
+
   function _zwVaSetSelectionValue(command, newValue) {
     var rng = _zwVaGetActiveRange();
     if (!rng) return;
@@ -1270,11 +1432,22 @@
       selE.addRange(rng);
     }
 
+    // 祖先链 style 属性规范形直出：Chrome 录制端 normalizeSerializedStyle 对
+    // wrapper 后代 [style] 元素恒经 CSSOM 往返归一（Chrome getter 恒可用），语料
+    // 期望串中选区祖先的 keyword 色 attr 恒为 `prop:rgb(...)` 规范形（M3 div
+    // aqua→rgb(0, 255, 255) 实证）。我方 harness 归一器命中面受命令后 sel/查询
+    // 态影响不稳定（zz-probe-nstyle ⑧ 命令后 getter 全空、div 面空间格未剥实证），
+    // 故引擎在 setSelectionValue 入口对两边界祖先链（editing host 本体除外——
+    // tests.js 归一范围 = wrapper 后代）直出规范形，got 与录制面无条件对齐。
+    _zwVaCanonicalizeAncestorStyleAttrs(rng);
+
     // Chromium delta 切分 pass（⑦ 包裹形状，2026-11-04）：部分含选区的
     // specified 冲突祖先行内 peel / 块级 push-down，先于 contained 清值
     // （peel 后中段元素升格 contained → 既有 clearValue 简单可改性摘壳臂
     // （:598 简单可改性分支）自然收口中段裸元素）。
     _zwVaSplitConflictingInline(command, newValue);
+    // peel 载体嵌套 flag-form 重物化（⑧）：见函数注。
+    _zwVaRematerializeCarries(command);
 
     // contained element clearValue pass。
     var elements = _zwValGetAllEffectivelyContained(rng, function (node) {
