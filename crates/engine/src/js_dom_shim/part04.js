@@ -1224,8 +1224,18 @@
           return false;
         };
         // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
-        globalThis.__zwFireStaticImgSettle = globalThis.__zwFireStaticImgSettle || function () {
+        globalThis.__zwFireStaticImgSettle = globalThis.__zwFireStaticImgSettle || function (skipResets) {
           try {
+            // s285（html-semantics M2）：skipResets=true = 等待窗重试路径
+            // （runner loadStep5275 每 100ms 重跑）只跑扫描/drain 不重置表——
+            // 重试期是**同文档**动态窗口，跨案隔离重置在本函数每次文档至多
+            // 两个全量调用点（runner 初始 settle + window load 派发钩子
+            // part06）已足够。逐次重置会把窗口内 defer 臂刚登记的冻结请求
+            // （s275 语义：唤醒面直 fetch 已 set-up 请求）周期性抹掉——
+            // script 创建 lazy img 插入后旗标臂查无冻结 → sweep 全量重验
+            // 回落失去冻结直验面，empty-src "With srcset" 文件级 Timeout
+            // 勘根实证（probe trace：DEFER 后 SETTLE-WIPE 连环）。
+            if (!skipResets) {
             // s220：选源记录表/在队计数/旗标 per-document 重置（persistent
             // context 跨案键隔离——上一文档的记录不得泄入本文档 settle 前的
             // currentSrc 读；重置后本文档动态面的微任务记录在后续读上重建）。
@@ -1266,6 +1276,7 @@
                 }
               }
             } catch (_e5277lv) {}
+            }
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];

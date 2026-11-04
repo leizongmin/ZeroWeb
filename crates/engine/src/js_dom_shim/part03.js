@@ -3673,16 +3673,41 @@
   // 求交近似；s273 滚动折算——rect 快照是文档坐标恒定，滚动态减 scrollX/Y
   // 折算视口坐标再判（spec intersection 按视口坐标；探针实证 scrollIntoView
   // 落位后 scrollY=6068 与 _winScroll 联动）。scrollY=0 页判定恒等零位移。
-  // 零面积（display:none/not-rendered 断言面）与 rect 不可得（快照
-  // 未就绪/未命中）一律判不近——保守 = 现状 deferred（零回归方向）；负
-  // margin 页水平远距天然排除（margin-left:-10000vw → rect 右缘 -7.8M px）。
+  // 零面积（display:none/not-rendered 断言面）判不近；rect 不可得分两支：
+  // body 子树内身份未命中 = 应用时窗未到（快照随后必命中）仍判不近——
+  // 保守 = 现状 deferred（零回归方向）；html 子树内未命中 = 宿主树不物化
+  // （s285 勘根挂账：documentElement 父插入 forward map 无条目，rect 永不
+  // 可判）且 shim 树已连接、渲染可见（display≠none）→ 判近——headless 无
+  // 真视口，无法证明在视口外而 spec 插入即相关变异应启动装载（s70 旗标
+  // 置即开同哲学：视口模型未就绪按可见处理）。负 margin 页水平远距天然
+  // 排除（margin-left:-10000vw → rect 右缘 -7.8M px）。
   globalThis.__zwImgNearViewport5277 = function (sel, handle) {
     var vw = globalThis.innerWidth, vh = globalThis.innerHeight;
     if (!(vw > 0) || !(vh > 0)) return false;
     var r = null;
     try {
       var _nvSel = globalThis.__zwImgResolveIdentity5277(sel, handle);
+      var _nvMiss = (sel == null || sel === '')
+        && (_nvSel == null || _nvSel === '');
       var _nvEl = _makeProxy(_nvSel, _nvSel !== sel ? null : handle);
+      if (_nvMiss) {
+        // 身份未命中：body 子树内是时窗（保持判不近走 rect 路径零变化）；
+        // html 子树内永不命中（宿主不物化）→ 已连接且可见即判近。
+        var _nvVis = false;
+        try {
+          _nvVis = !!(_nvEl && _nvEl.isConnected)
+            && String((globalThis.getComputedStyle(_nvEl) || {}).display) !== 'none';
+        } catch (_e5277nvd) {}
+        if (_nvVis) {
+          var _nvP = _nvEl, _nvInBody = false, _nvG = 0;
+          while (_nvP && _nvG++ < 64) {
+            if (_nvP === globalThis.document.body) { _nvInBody = true; break; }
+            _nvP = _nvP.parentNode;
+          }
+          if (!_nvInBody) return true;
+        }
+        return false;
+      }
       r = _nvEl && typeof _nvEl.getBoundingClientRect === 'function'
         ? _nvEl.getBoundingClientRect() : null;
     } catch (_e5277nv) { return false; }
@@ -3819,6 +3844,29 @@
           }
         } catch (_e5277imq0) {}
         globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
+        return;
+      }
+      // s285（html-semantics M2）：非 auto lazy 图插入后旗标重臂——此类图
+      // 插入时无 RunUpdate（s284 hook 门控 allowsAuto），detach 期旗标已被
+      // sweep 消费即永久 dormant（勘根 probe：frozen 挂而 state 恒 null、
+      // 零事件）。旗标只调度一次 observers_tick sweep：sweep → viewport-
+      // revalidate 有冻结直验（s275 语义）、无冻结全量重验过门（runner 等
+      // 待窗 settle 重试曾周期性抹冻结表——勘根实证，现重试路径已改
+      // drain-only，此臂作二阶兜底不依赖冻结存活）。rect 路径 body 子树
+      // 时窗命中后走真实位置复判——html 子树 miss 判近臂 fetch；body 远位
+      // 图 defer 臂重挂冻结。不对 eager/已启动图重验，规避 ungated hook
+      // 盲重验 5 行 REGRESSED 面（s284 勘根）。parse 身份图已有静态 settle
+      // 通路，state 在册图走 restart 语义，均不臂。
+      if (!isPicture && isInsert && _zw5277Tag(node) === 'IMG') {
+        try {
+          var _lz5285 = String(_zw5277Attr(node.__zwSelector, node.__zwHandle, 'loading') || '').toLowerCase();
+          var _k5285 = _elKey(node.__zwSelector, node.__zwHandle);
+          if (_lz5285 === 'lazy'
+              && !(_resourceStates && _resourceStates[_k5285])
+              && !(globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[_k5285])) {
+            globalThis._zwLazyDeferredAny5277 = true;
+          }
+        } catch (_e5285lz) {}
         return;
       }
       if (!isPicture) return;
