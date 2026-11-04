@@ -1555,8 +1555,35 @@ fn apply_replaced_element_sizing(
                             }
                         }
                     } else {
-                        taffy_style.size.width = taffy::style::Dimension::length(w_opt.unwrap_or(300.0).max(0.5));
-                        taffy_style.size.height = taffy::style::Dimension::length(h_opt.unwrap_or(150.0).max(0.5));
+                        // R5418（css-ui-3 §box-sizing + CSS2 §10.3.2/§10.6.2 replaced sizing）：
+                        // box-sizing:border-box 只改写**显式声明** width/height 的解释盒；
+                        // auto 尺寸（固有维/default object size）恒 content-box 语义（used
+                        // width = intrinsic width，即 content 区）。本臂注入的 (w_opt, h_opt)
+                        // 是 content 语义（真实固有维或 default 300/150），节点 taffy
+                        // box_sizing 已被作者 CSS 设为 BorderBox 时直写会被 taffy 按
+                        // border-box 扣 padding/border（box-sizing-008：img border-box +
+                        // padding-left 20 + 固有宽 100 → chromium border box 120/content
+                        // 100，旧径注入 100 扣成 content 80；t02 padding-bottom 20 +
+                        // default 高 150 → chromium bb 170，旧径 130 致第二行整体上移
+                        // 20px）。折算 bb = content + frame（frame_size 与 R4165 同源）。
+                        // R3801 bb 折算臂不达此处——no-ratio 因 min/max 表假比污染被
+                        // 2105 门整体跳表，frame 折算与之无关，就地补齐。显式侧
+                        //（width:120 等）converter 已按 bb 语义写入不触碰；flex both-auto
+                        // 臂（R5411 主轴/交叉轴让位语义）无驱动案不触碰。
+                        // kill-switch `ZW_REPLACED_NORATIO_BB_FOLD=0`。
+                        let (base_w, base_h) = (w_opt.unwrap_or(300.0).max(0.5), h_opt.unwrap_or(150.0).max(0.5));
+                        if matches!(
+                            computed.box_sizing,
+                            zero_style_system::property::types::BoxSizingValue::BorderBox
+                        ) && std::env::var("ZW_REPLACED_NORATIO_BB_FOLD").as_deref() != Ok("0")
+                        {
+                            let (fx, fy) = frame_size(computed);
+                            taffy_style.size.width = taffy::style::Dimension::length((base_w + fx).max(0.5));
+                            taffy_style.size.height = taffy::style::Dimension::length((base_h + fy).max(0.5));
+                        } else {
+                            taffy_style.size.width = taffy::style::Dimension::length(base_w);
+                            taffy_style.size.height = taffy::style::Dimension::length(base_h);
+                        }
                     }
                 } else if !width_auto && height_auto {
                     // width 显式，height auto → 用真实固有高或 default 150
