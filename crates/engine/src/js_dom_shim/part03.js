@@ -3102,13 +3102,28 @@
         globalThis._zwImgInflight = Math.max(0, (globalThis._zwImgInflight || 0) - 1);
       }
     };
+    // s273：lazy 图装载不阻 window load——spec fetch 步「Let delay load event be
+    // true if the img's lazy loading attribute is in the Eager state ... and false
+    // otherwise」（HTML §updating-the-image-data fetch the image）：delay load 由
+    // loading 态决定，**lazy 态不阻**。判据 = 现值 lazy 或曾处 lazy 态（deferred
+    // 发生点登记——Chromium once-deferred 永不阻口径；eager 化的曾 lazy 图装载
+    // 同样不阻，below-viewport-dynamic 断言面）。eager/缺省装载照旧阻
+    //（delay-load-event trickle(d2) 慢图断言面不动）。
+    var _imNoBlock = function () {
+      try {
+        if (String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase() === 'lazy') return true;
+      } catch (_e5277nb0) {}
+      return !!(globalThis._zwLazyEver5277 && globalThis._zwLazyEver5277[key]);
+    };
     var _zwImgDispatch = function (type) {
       _imInflightEnd();
       if (globalThis.__zwReadyState === 'loading') {
         globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
         globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
         globalThis._zwImgPendingSet[_imKey] = true;
-        globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc });
+        // s273：lazy 图事件入队带 noBlock——__zwImgLoadBlocked 过滤（不阻
+        // window load 等待，spec delay load = Eager 态 true；事件派发面不变）。
+        globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc, noBlock: _imNoBlock() });
         return;
       }
       if (type === 'error' && !_resourceStates[_imKey]) {
@@ -3143,8 +3158,13 @@
       // s71 F1b：SVG 固有轴元数据随 avail 缓存传播（density-corrected 尺寸逐轴
       // 折算——仅 SVG 自身固有轴随密度校正，默认 300/150 轴不校正）。
       _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity, axes: _av5275.axes };
-      _imFetched = true;
-      globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+      // s273：lazy 图不进在飞计数（spec delay load = Eager 态 true——_imNoBlock
+      // 判据含曾 lazy；_imFetched 不置 → 终点不消费，+1/-1 配对保持）。事件
+      // 照常 _defer 派发，仅不阻 window load 等待。
+      if (!_imNoBlock()) {
+        _imFetched = true;
+        globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+      }
       _defer(function () { _zwImgDispatch('load'); });
     } else if (_imSrc && typeof fetch === 'function') {
       // detached 更新延一步（spec update-the-image-data：img 不在 document 时
@@ -3193,6 +3213,12 @@
       if (_imLazy === 'lazy' && !_imHadPrev
           && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])
           && !globalThis.__zwImgNearViewport5277(sel, handle)) {
+        // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻 window load
+        // ——eager 化后装载仍 noBlock，below-viewport-dynamic 断言面）。
+        try {
+          globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
+          globalThis._zwLazyEver5277[_imKey] = true;
+        } catch (_e5277le) {}
         return;
       }
       try {
@@ -3227,9 +3253,13 @@
         };
         // R5275：在飞计数 +1（终点 _zwImgDispatch 消费 _imFetched 后 -1）——
         // window load 派发前 __zwImgLoadBlocked 据此等待（trickle(d2) 慢图
-        // 延迟 window load 语义）。
-        _imFetched = true;
-        globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+        // 延迟 window load 语义）。s273：lazy/曾 lazy 图不计数（spec delay
+        // load = Eager 态 true，_imNoBlock 判据；_imFetched 不置 → 终点不消费，
+        // +1/-1 配对保持）。
+        if (!_imNoBlock()) {
+          _imFetched = true;
+          globalThis._zwImgInflight = (globalThis._zwImgInflight || 0) + 1;
+        }
         // s247：img 请求 mode 'no-cors' 语义（HTML #updating-the-image-data）——
         // 跨源图不经 CORS check 照常 load（自然语言侧污染由绘制点 origin-clean
         // 判定承接）。crossorigin 属性在场（anonymous/use-credentials）→ cors
@@ -3362,14 +3392,38 @@
       if (!_resourceStates[_svKey]) globalThis.__zwImgRevalidate5277(sel, handle);
     } catch (_e5277sv) {}
   };
+  // s273：滚动唤起面——scrollIntoView 落位后重验未启动的 lazy img（近似 spec
+  // IntersectionObserver 回调：滚动后视口原点位移，重新判距离放行滚入视口的
+  // deferred 图——image-loading-lazy.html below 系经 #bottom.scrollIntoView()
+  // 装载断言面，目标非 img 时 s70 旗标臂不覆盖）。只扫未启动图（_resourceStates
+  // 无记录——与 s272 loading 属性刀同一 no-op 判据）且旗标未置图（旗标路径
+  // 已触发过 revalidate，避免 crossorigin-change/referrerpolicy-change 直调页
+  // 双 run）；不置旗标——旗标是无条件放行语义，距离门才是「将进入视口」近似。
+  globalThis.__zwImgSweepDeferredLazy5277 = function () {
+    try {
+      var imgs = globalThis.document.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        var el = imgs[i];
+        var lz = '';
+        try { lz = String(el.getAttribute('loading') || '').toLowerCase(); } catch (_eSwA) {}
+        if (lz !== 'lazy') continue;
+        var k = _elKey(el.__zwSelector, el.__zwHandle);
+        if (_resourceStates[k]) continue;
+        if (globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[k]) continue;
+        globalThis.__zwImgRevalidate5277(el.__zwSelector, el.__zwHandle);
+      }
+    } catch (_eSw5277) {}
+  };
   // s271：lazy 视口门距离分支——「接近视口即装载」（spec lazy loading
   // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
   // ：deferred 请求于图「将进入视口」时启动；root margin 数值 spec 未定，
   // Chrome 实现近似 1250px——取单值近似，FIXME 净速分档）。headless 无真
   // 视口：文档坐标 gBCR（rect_bridge layout 快照，探针实证返回文档坐标未被
   // overflow 容器裁剪）与视口矩形 (0,0,innerWidth,innerHeight) 外扩 margin
-  // 求交近似；滚动位移未建模（scrollIntoView 旗标路径不受影响，s70 口径
-  // 保留）。零面积（display:none/not-rendered 断言面）与 rect 不可得（快照
+  // 求交近似；s273 滚动折算——rect 快照是文档坐标恒定，滚动态减 scrollX/Y
+  // 折算视口坐标再判（spec intersection 按视口坐标；探针实证 scrollIntoView
+  // 落位后 scrollY=6068 与 _winScroll 联动）。scrollY=0 页判定恒等零位移。
+  // 零面积（display:none/not-rendered 断言面）与 rect 不可得（快照
   // 未就绪/未命中）一律判不近——保守 = 现状 deferred（零回归方向）；负
   // margin 页水平远距天然排除（margin-left:-10000vw → rect 右缘 -7.8M px）。
   globalThis.__zwImgNearViewport5277 = function (sel, handle) {
@@ -3383,8 +3437,10 @@
     } catch (_e5277nv) { return false; }
     if (!r) return false;
     if (!(r.width > 0 && r.height > 0)) return false;
+    var sx = globalThis.scrollX || 0, sy = globalThis.scrollY || 0;
     var M = 1250;
-    return r.right >= -M && r.left <= vw + M && r.bottom >= -M && r.top <= vh + M;
+    return r.right - sx >= -M && r.left - sx <= vw + M
+        && r.bottom - sy >= -M && r.top - sy <= vh + M;
   };
   // s70：内容属性/IDL 写入触发面（part04 setAttribute/removeAttribute trap 尾、
   // part05 set trap IDL 臂消费）。src/srcset/sizes 恒重验；crossorigin/

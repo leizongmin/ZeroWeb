@@ -1191,7 +1191,13 @@
         globalThis.__zwImgLoadBlocked = globalThis.__zwImgLoadBlocked || function () {
           if (globalThis._zwImgInflight > 0) return true;
           var _zwBlkQ = globalThis._zwImgPendingEvents;
-          return !!(_zwBlkQ && _zwBlkQ.length > 0);
+          if (!_zwBlkQ) return false;
+          // s273：lazy 图事件带 noBlock（spec delay load = Eager 态 true）——
+          // 过滤后不计阻；eager 图事件照旧阻（delay-load-event 断言面）。
+          for (var _zwBi = 0; _zwBi < _zwBlkQ.length; _zwBi++) {
+            if (!_zwBlkQ[_zwBi].noBlock) return true;
+          }
+          return false;
         };
         // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
         globalThis.__zwFireStaticImgSettle = globalThis.__zwFireStaticImgSettle || function () {
@@ -1234,6 +1240,12 @@
               // 负 margin 页水平远距天然排除）。
               if (_zwImLoading === 'lazy'
                   && !globalThis.__zwImgNearViewport5277(_zwImSel, _zwImHandle)) {
+                // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻
+                // window load——eager 化后装载仍 noBlock）。
+                try {
+                  globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
+                  globalThis._zwLazyEver5277[_zwImKey] = true;
+                } catch (_e5277le2) {}
                 continue;
               }
               // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/
@@ -5328,6 +5340,13 @@
             }
             if (newTop < 0) newTop = 0;
             globalThis.scrollTo(0, newTop); // behavior: instant（smooth 无动画，headless documented）
+            // s273：滚动唤起面——落位后重验未启动 lazy img（近似 IntersectionObserver
+            // 回调：滚动位移后距离门（含 s273 scrollX/Y 折算）放行滚入视口的图）。
+            try {
+              if (typeof globalThis.__zwImgSweepDeferredLazy5277 === 'function') {
+                globalThis.__zwImgSweepDeferredLazy5277();
+              }
+            } catch (_eSw5277) {}
           };
         }
         // `el.scrollIntoViewIfNeeded(centerIfNeeded?)`（R3075）——WebKit-only（Safari/旧 Chrome）。仅不可见时滚；
