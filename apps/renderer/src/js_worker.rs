@@ -10,7 +10,7 @@ use std::time::Duration;
 use zero_engine::{
     AsyncResolver, DomMutation, ElementFromPointBridge, ElementFromPointCache, FetchBridge, FetchHandler, FetchRequest,
     FetchResponse, HandleSelectorMap, LayoutRectSnapshot, RectBridge, TimerBridge, WsBridge, counter_plugin_script,
-    generate_js_dom_shim, make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map,
+    generate_js_dom_shim, make_effective_dom_rect_handler, new_element_from_point_cache, new_handle_selector_map,
     new_layout_rect_snapshot, register_dom_callbacks, shim_test_mode_enabled,
 };
 use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
@@ -395,6 +395,10 @@ impl RendererJsWorker {
         let cmd_for_worker = cmd_tx.clone();
         let mutations_for_worker = Arc::clone(&mutations);
         let rect_snapshot_for_worker = Arc::clone(&rect_snapshot);
+        // 缺陷1（M3）：pending gBCR 布局视口 cell——SetViewportHint 命令臂与本线程 rect
+        // handler 共享（renderer 真实视口同步源，runtime 启动/SetViewport 各发一次）。
+        let rect_viewport: Arc<std::sync::Mutex<(u32, u32)>> = Arc::new(std::sync::Mutex::new((0, 0)));
+        let rect_viewport_for_worker = Arc::clone(&rect_viewport);
         // M3-S1c patch Register：dom_html 提升到 spawn（worker 桥与宿主 rect handler 共享）。
         let dom_html = Arc::new(std::sync::Mutex::new(String::new()));
         let dom_html_for_worker = Arc::clone(&dom_html);
@@ -433,6 +437,7 @@ impl RendererJsWorker {
                     async_callbacks_ready_for_worker,
                     import_map_for_worker,
                     dom_html_for_worker,
+                    rect_viewport_for_worker,
                     page_fetch_inflight_for_worker,
                     raf_interest_for_worker,
                     canvas_registry,
@@ -1458,6 +1463,9 @@ fn js_worker_main(
     import_map: Arc<std::sync::Mutex<Option<ImportMap>>>,
     // M3-S1c：DOM 快照共享槽（spawn 期创建传入——宿主 rect handler 与本线程桥共享）。
     dom_html: Arc<std::sync::Mutex<String>>,
+    // 缺陷1（M3）：pending gBCR 布局视口 cell（spawn 期创建传入；SetViewportHint 命令臂写，
+    // rect handler pending 分支读。renderer 真实视口同步源，(0,0) 未同步回落 shim 缺省）。
+    rect_viewport: Arc<std::sync::Mutex<(u32, u32)>>,
     // BG-03 M2-S1：page fetch 在途登记（fetch 观测包装增减，本线程 Reset 臂 drain）。
     page_fetch_inflight: Arc<std::sync::Mutex<HashMap<String, usize>>>,
     // DC-2/M3：帧驱动 rAF 挂起数（shim `__zw_raf_interest` 回报，本线程 Reset 臂清零）。
@@ -1610,10 +1618,15 @@ fn js_worker_main(
     if real_rect_enabled() {
         let rect_bridge = RectBridge::new();
         rect_bridge.register(&mut *sandbox);
-        rect_bridge.set_handler(make_dom_html_rect_handler(
+        // 缺陷1（M3）：pending 样式写下 worker 侧有效视图布局（CSSOM View update style and
+        // layout steps——同任务 style.X= 后 gBCR 不再读渲染前旧 rect）；无 pending 时与旧纯
+        // snapshot 路径逐字节一致。kill-switch `ZW_RECT_PENDING_LAYOUT=0` 整面回落旧 handler。
+        rect_bridge.set_handler(make_effective_dom_rect_handler(
             Arc::clone(&dom_html),
+            Arc::clone(&mutations),
             Arc::clone(&rect_snapshot),
             Arc::clone(&handle_selector_map),
+            Arc::clone(&rect_viewport),
         ));
     }
     // P1a elementFromPoint：`ElementFromPointBridge` 注 `__zw_elementFromPoint(x, y)` 同步回调。
@@ -2204,6 +2217,10 @@ fn js_worker_main(
             }
             JsWorkerCommand::SetViewportHint { width, height } => {
                 viewport_hint = (width, height);
+                // 缺陷1（M3）：同步 pending gBCR 布局视口 cell（rect handler 读）。
+                if let Ok(mut cell) = rect_viewport.lock() {
+                    *cell = (width, height);
+                }
                 let guard = format!(
                     "if (typeof __zw_user_resize === 'function' && (globalThis.innerWidth !== {width} || globalThis.innerHeight !== {height})) __zw_user_resize({width}, {height});"
                 );
@@ -5962,6 +5979,10 @@ mod tests {
             .unwrap();
         // 模拟 apply_recorded_mutations：取记录的 mutations 应用到 html0，得新 html + handle→selector map。
         let recorded = worker.mutations().lock().unwrap().clone();
+        // 生产 apply 是 drain（consume-once）+ bump_mut_drain_gen 不变式（page_scripts 同款）——
+        // 缺陷1（M3）pending gBCR 判定以「队列空 = 已应用」为前提，模拟须同步收口。
+        worker.mutations().lock().unwrap().clear();
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
         let (html1, handle_map) = apply_mutations_to_html_with_handles(html0, &recorded).unwrap();
         assert!(
             html1.contains("<div id=\"dyn\">"),
@@ -6024,6 +6045,9 @@ mod tests {
             )
             .unwrap();
         let recorded = worker.mutations().lock().unwrap().clone();
+        // 生产 apply 是 drain（consume-once）+ bump_mut_drain_gen 不变式（同 create_element 臂）。
+        worker.mutations().lock().unwrap().clear();
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
         let (html1, handle_map) = apply_mutations_to_html_with_handles(html0, &recorded).unwrap();
         assert_eq!(handle_map.len(), 1, "一个 createElement handle");
         let (handle, sel) = handle_map.iter().next().unwrap();

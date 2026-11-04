@@ -168,21 +168,26 @@ pub fn make_dom_html_rect_handler(
         } else {
             identity.to_string()
         };
-        // html 变化才重 parse；同 html 复用缓存的 Document（消除每 query 一次 parse）。
-        let node_id = RECT_DOC_CACHE.with(|cache| {
-            {
-                let mut c = cache.borrow_mut();
-                let stale = c.as_ref().is_none_or(|(h, _)| h != &html);
-                if stale {
-                    *c = Some((html.clone(), zero_dom::parse_html(&html)));
-                }
-            } // 释放 borrow_mut
-            let c = cache.borrow();
-            let (_, doc) = c.as_ref().expect("cache populated above");
-            crate::js_dom_bridge::find_by_selector(doc, &selector)
-        })?;
+        let node_id = resolve_selector_node_cached(&html, &selector)?;
         let snap = snapshot.lock().ok()?;
         snap.get(&node_id_to_u64(node_id)).copied()
+    })
+}
+
+/// identity(selector) → NodeId——[`RECT_DOC_CACHE`] 复用（html 变化才重 parse；同 html
+/// 复用缓存的 Document，消除每 query 一次 parse）。两个 rect handler 共享。
+fn resolve_selector_node_cached(html: &str, selector: &str) -> Option<zero_dom::NodeId> {
+    RECT_DOC_CACHE.with(|cache| {
+        {
+            let mut c = cache.borrow_mut();
+            let stale = c.as_ref().is_none_or(|(h, _)| h != html);
+            if stale {
+                *c = Some((html.to_string(), zero_dom::parse_html(html)));
+            }
+        } // 释放 borrow_mut
+        let c = cache.borrow();
+        let (_, doc) = c.as_ref().expect("cache populated above");
+        crate::js_dom_bridge::find_by_selector(doc, selector)
     })
 }
 
@@ -207,6 +212,124 @@ pub fn clear_rect_doc_cache() {
     RECT_DOC_CACHE.with(|slot| {
         *slot.borrow_mut() = None;
     });
+}
+
+// ── 缺陷1（M3）：pending mutations 下 gBCR 的 worker 侧有效视图布局 ──
+
+/// pending-布局 kill-switch：默认 on；`ZW_RECT_PENDING_LAYOUT=0` 关闭 worker 侧有效视图
+/// 布局（整面回落 [`make_dom_html_rect_handler`] 纯 snapshot 旧行为）。工厂构造期读一次，
+/// 不进逐查询热路径（准则 #9）。
+fn rect_pending_layout_enabled() -> bool {
+    std::env::var("ZW_RECT_PENDING_LAYOUT").as_deref() != Ok("0")
+}
+
+// 单槽 pending-布局 rect 缓存（per-js_worker-thread TLS，与 computed_style_cache
+// `GENERATION_CACHE` 同线程域）。键 = (html, drain_gen, style_version, vw, vh)；
+// css/adopted/外链条目分量经 [`crate::js_dom_bridge::generation_cache_matches`] 对
+// 代际槽校验（其键含这些分量）。槽值 = NodeId(u64) → rect（Send 纯值）。
+thread_local! {
+    static RECT_LAYOUT_CACHE: RefCell<Option<(String, usize, usize, f32, f32, HashMap<u64, Rect4>)>> =
+        const { RefCell::new(None) };
+}
+
+/// 缺陷1（M3）修复入口：gBCR 反映 pending 样式写。
+///
+/// CSSOM View `getBoundingClientRect` 须先 run the update style and layout steps——即返回前
+/// 反映未提交的样式变更。旧 [`make_dom_html_rect_handler`] 读 renderer 渲染后 snapshot，
+/// JS 同任务内 `style.X=` → gBCR 读到渲染前旧 rect（computed style 正确而 rect stale，
+/// dom-ops DC-1 `geom.write_read.thrash` 语义 FAIL）。修复：mutation 队列存在**未应用尾**
+/// （`queue.len() > applied cursor`；webview 发布游标，renderer 直连恒 0 → 队列非空即
+/// pending）时，worker 线程以有效视图（基座 html + 幂等 replay pending）现算布局取 rect；
+/// 队列已 drain（renderer apply + 重渲染后）回落 snapshot 快路径——与现状逐字节一致，零回归。
+///
+/// **复用面**：有效视图 parse/cascade 走
+/// [`crate::js_dom_bridge::with_cached_document_styles_lazy`]（与 getComputedStyle 同一代际
+/// 缓存——键 (html, drain_gen, style_version) + css/adopted 分量，同代际 gCS/gBCR 共享一次
+/// parse+cascade）；布局 = `zero_layout_engine::LayoutEngine::compute`（renderer 管线同款
+/// 布局相位）；rect 填表 = `HitTestCache::fill_layout_rect_snapshot`（生产渲染同款填表语义，
+/// inline reported rect 消费一致）。布局结果单槽缓存于 [`RECT_LAYOUT_CACHE`]——同代际第二次
+/// 查询起 O(1) 查表。
+///
+/// **已知边界**（pending 路径限定，快路径不受影响）：worker 侧布局不带 renderer 的字体
+/// 度量注入（`FontMetricMap` 随 font-load 事件异步入管线）与图片内在尺寸——pending 窗口内
+/// 文本/图片相关几何可能与其后 snapshot 快路径不同源；renderer apply + 重渲染后自愈。
+/// JS 新建元素（pending CreateElement）的 handle 身份在 apply 前未入 handle→selector map，
+/// 沿旧零 rect 回落（与现状一致）。FIXME(M3 后续)：字体度量快照跨线程共享后闭合文本边界。
+///
+/// https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+pub fn make_effective_dom_rect_handler(
+    dom_html: Arc<Mutex<String>>,
+    mutations: Arc<Mutex<Vec<crate::js_dom_bridge::DomMutation>>>,
+    snapshot: LayoutRectSnapshot,
+    handle_map: HandleSelectorMap,
+    viewport: Arc<Mutex<(u32, u32)>>,
+) -> RectLookupHandler {
+    if !rect_pending_layout_enabled() {
+        return make_dom_html_rect_handler(dom_html, snapshot, handle_map);
+    }
+    Arc::new(move |identity: &str| -> Option<Rect4> {
+        let html = dom_html.lock().ok()?.clone();
+        let selector: String = if is_handle_identity(identity) {
+            handle_map.lock().ok()?.get(identity).cloned()?
+        } else {
+            identity.to_string()
+        };
+        let node_id = resolve_selector_node_cached(&html, &selector)?;
+        // pending 判定只读 len，不 clone 队列（gCS 热 path 同款考量，P104）。
+        let mlen = mutations.lock().ok()?.len();
+        let applied = crate::js_dom_bridge::applied_mutations_cursor().min(mlen);
+        if mlen <= applied {
+            // 快路径：无未应用尾 → renderer 渲染后 snapshot 是真值（旧行为逐字节）。
+            let snap = snapshot.lock().ok()?;
+            return snap.get(&node_id_to_u64(node_id)).copied();
+        }
+        // pending：worker 侧有效视图布局。视口取宿主共享 cell（renderer SetViewportHint 同步；
+        // 0 未同步 → shim 缺省 1280x800 同源回落）。
+        let (vw_raw, vh_raw) = *viewport.lock().ok()?;
+        let vw = if vw_raw == 0 { 1280.0 } else { vw_raw as f32 };
+        let vh = if vh_raw == 0 { 800.0 } else { vh_raw as f32 };
+        let drain_gen = crate::js_dom_bridge::MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+        RECT_LAYOUT_CACHE.with(|slot| {
+            {
+                let s = slot.borrow();
+                // css/adopted/外链条目分量由 generation_cache_matches 对代际槽校验——
+                // 任一单独变化即判失效（同 computed_style_cache 预检语义）。
+                if let Some((h, g, v, w, ht, _)) = s.as_ref()
+                    && h == &html
+                    && *g == drain_gen
+                    && *v == mlen
+                    && *w == vw
+                    && *ht == vh
+                    && crate::js_dom_bridge::generation_cache_matches(&html, drain_gen, mlen)
+                {
+                    return s
+                        .as_ref()
+                        .expect("guarded Some above")
+                        .5
+                        .get(&node_id_to_u64(node_id))
+                        .copied();
+                }
+            } // 释放 borrow
+            let mlist = mutations.lock().ok()?.clone();
+            let map = crate::js_dom_bridge::with_cached_document_styles_lazy(
+                &html,
+                drain_gen,
+                mlen,
+                || mlist.clone(),
+                |doc, styles| {
+                    // f 体纯计算（无 JS/宿主回流）——满足代际缓存「f 不得重入」契约。
+                    let mut engine = zero_layout_engine::LayoutEngine::new(vw, vh);
+                    let layout = engine.compute(doc, styles);
+                    let cache = crate::hit_test::HitTestCache::from_document(doc, &layout.root, styles);
+                    let store = new_layout_rect_snapshot();
+                    cache.fill_layout_rect_snapshot(&store);
+                    store.lock().ok().map(|g| g.clone())
+                },
+            );
+            *slot.borrow_mut() = Some((html.clone(), drain_gen, mlen, vw, vh, map?));
+            slot.borrow().as_ref()?.5.get(&node_id_to_u64(node_id)).copied()
+        })
+    })
 }
 
 #[cfg(test)]
@@ -570,5 +693,90 @@ mod tests {
         assert_eq!(map.len(), 1, "二次填充前应 clear");
         assert!(map.get(&node_id_to_u64(id1)).is_none(), "旧 node_id 应被 clear");
         assert_eq!(map.get(&node_id_to_u64(id2)), Some(&(5.0, 5.0, 50.0, 50.0)));
+    }
+
+    /// 缺陷1（M3）：pending 样式写 → gBCR 反映新宽度（CSSOM View update style and layout
+    /// steps）。写前 snapshot 持旧值（100），drain 后快路径持 renderer 新渲染值（44,51——
+    /// 布局现算不会产出的标记值，证明走的是 snapshot 快路径而非布局）。
+    /// https://drafts.csswg.org/cssom-view/#ref-for-getboundingclientrect
+    #[test]
+    fn test_effective_rect_handler_reflects_pending_style_write() {
+        use crate::js_dom_bridge::DomMutation;
+        let html = "<html><body><div id='box' style='width:100px;height:50px'></div></body></html>".to_string();
+        let doc = zero_dom::parse_html(&html);
+        let id_box = crate::js_dom_bridge::find_by_selector(&doc, "#box").expect("#box");
+        let snapshot = new_layout_rect_snapshot();
+        // renderer 渲染后的写前 rect（100 宽）。
+        snapshot
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_box), (0.0, 0.0, 100.0, 50.0));
+
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![DomMutation::SetStyle {
+            selector: "#box".to_string(),
+            property: "width".to_string(),
+            value: "33px".to_string(),
+        }]));
+        let handler = make_effective_dom_rect_handler(
+            Arc::new(Mutex::new(html.clone())),
+            Arc::clone(&mutations),
+            Arc::clone(&snapshot),
+            new_handle_selector_map(),
+            Arc::new(Mutex::new((1280, 800))),
+        );
+        // pending：写后宽 33px（有效视图现算布局），高度不受写影响。
+        let r = handler("#box").expect("pending gBCR 应命中");
+        assert!(
+            (r.2 - 33.0).abs() < 0.01,
+            "pending 样式写应反映到 gBCR 宽度，实际 {}",
+            r.2
+        );
+        assert!((r.3 - 50.0).abs() < 0.01, "高度不受宽度写影响，实际 {}", r.3);
+
+        // drain 后（队列空，renderer 已按新 html 渲染）→ 快路径返回 snapshot 真值。
+        mutations.lock().unwrap().clear();
+        snapshot
+            .lock()
+            .unwrap()
+            .insert(node_id_to_u64(id_box), (7.0, 9.0, 44.0, 51.0));
+        let r = handler("#box").expect("drained gBCR 应命中");
+        assert_eq!(r, (7.0, 9.0, 44.0, 51.0), "drained 后应走 snapshot 快路径（标记值）");
+    }
+
+    /// 缺陷1（M3）：pending 布局缓存键含视口——同代际视口变化须重算（width:50% 几何随
+    /// 视口宽走，1280→800 宽度减半；tolerance 覆盖 UA body margin 0/8px 两口径）。
+    #[test]
+    fn test_effective_rect_handler_layout_follows_viewport() {
+        use crate::js_dom_bridge::DomMutation;
+        let html = "<html><body><div id='box' style='width:10px;height:10px'></div></body></html>".to_string();
+        let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![DomMutation::SetStyle {
+            selector: "#box".to_string(),
+            property: "width".to_string(),
+            value: "50%".to_string(),
+        }]));
+        let viewport: Arc<Mutex<(u32, u32)>> = Arc::new(Mutex::new((1280, 800)));
+        let handler = make_effective_dom_rect_handler(
+            Arc::new(Mutex::new(html)),
+            Arc::clone(&mutations),
+            new_layout_rect_snapshot(),
+            new_handle_selector_map(),
+            Arc::clone(&viewport),
+        );
+        let wide = handler("#box").expect("1280 gBCR 应命中").2;
+        assert!(
+            (600.0..650.0).contains(&wide),
+            "width:50% 在 1280 视口应约 640（±body margin），实际 {wide}"
+        );
+        *viewport.lock().unwrap() = (800, 600);
+        let narrow = handler("#box").expect("800 gBCR 应命中").2;
+        assert!(
+            (390.0..410.0).contains(&narrow),
+            "视口换 800 后应重算约 400，实际 {narrow}"
+        );
+        // 50% 宽差 = 视口差之半：(1280-16)/2 − (800-16)/2 = 240（margin 常数项相消）。
+        assert!(
+            (wide - narrow - 240.0).abs() < 1.0,
+            "50% 宽度应随视口精确缩放（{wide}−{narrow} 应为 240）"
+        );
     }
 }

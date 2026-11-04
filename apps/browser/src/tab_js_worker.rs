@@ -459,6 +459,10 @@ fn js_worker_main(
     // P1a gBCR（镜像 renderer js_worker）：RectBridge 注 `__zw_getBoundingClientRect(identity)`
     // 同步回调。handler 解析 identity(selector) → NodeId（fresh-parse dom_html，与渲染管线确定性一致）
     // → 查 rect_snapshot。kill-switch `ZW_REAL_RECT=0` 关闭（回落零 rect = 当前行为，零回归）。
+    // FIXME(defect-1/M3)：此处沿用纯 snapshot 旧 handler——TabJsWorker 无视口提示通道
+    // （renderer 侧 SetViewportHint 专线），pending 有效视图布局（renderer 通道已修，
+    // `make_effective_dom_rect_handler`）须先接视口共享 cell 再换装；tab 路径同任务
+    // style.X= → gBCR 暂仍读渲染前 rect。
     if real_rect_enabled() {
         let rect_bridge = RectBridge::new();
         rect_bridge.register(&mut *sandbox);

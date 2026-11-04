@@ -838,7 +838,10 @@ pub(super) fn computed_style_by_handle(
 /// 外链条目表分量）。谓词与 [`with_cached_document_styles`] 的 `same_gen` 判定逐字
 /// 一致（两处同文件，改一处须同步另一处；预检漏分量会在该分量单独变化时误报命中，
 /// 致变更队列被空切片顶替——坏方向不可接受）。
-fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) -> bool {
+///
+/// `pub(crate)`：rect 桥 pending 布局缓存（rect_bridge `RECT_LAYOUT_CACHE`）复用本谓词
+/// 校验其槽值仍对应当前代际——css/adopted/外链条目分量的键语义由本函数单点维护。
+pub(crate) fn generation_cache_matches(html: &str, drain_gen: usize, style_version: usize) -> bool {
     let css = active_external_css();
     let adopted = active_adopted_css();
     let entries = active_external_css_entries();

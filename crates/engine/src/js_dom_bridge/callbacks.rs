@@ -416,6 +416,12 @@ pub fn publish_mut_applied_cursor(applied: usize) {
     MUT_APPLIED_CURSOR.with(|cursor| cursor.set(applied));
 }
 
+/// 读取当前已应用前缀游标（rect 桥 pending 判定消费：`queue.len() > cursor` 即存在
+/// 未应用尾。未发布的宿主（renderer 直连等）恒 0，同 [`MUT_APPLIED_CURSOR`] 注）。
+pub fn applied_mutations_cursor() -> usize {
+    MUT_APPLIED_CURSOR.with(|cursor| cursor.get())
+}
+
 /// R358/R3243：dom_html 快照**就地换代**代际——快照写入点（renderer `SetDomSnapshot`
 /// 的 `*snap = html`、webview user_actions 批末 `*dom_html.lock() = cached_html`、R348
 /// 重绑刷新）调用 [`bump_dom_view_gen`]。快照 Arc 被回调闭包捕获（Box<dyn Fn> 不可达
