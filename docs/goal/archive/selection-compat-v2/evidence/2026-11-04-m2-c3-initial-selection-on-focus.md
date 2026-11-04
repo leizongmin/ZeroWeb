@@ -251,3 +251,11 @@ tip 跑进程链曾随 session 回收被杀一次，复跑以 systemd user unit
 （`zw-sel-tip-r2-102124.service`）脱离会话完成（guard 包裹 4/8/7200），
 二进制 = 干净 `7d50a714b` 工作树 release 构建，与 run-e 同树同构建路径；
 过程涉及的双 spawn 孤儿处置记 master.md 碰撞账。
+
+交叉印证（ZW2 clone 同 tip 树复跑，run-tip2）：可比子集判定全等
+（FIXES=158 / REGRESSIONS=0 / nonPass→nonPass=0，共享 subtest 零分歧）；
+差异均为执行覆盖而非行为——ZW2 gitignored 语料缺 `editing/event.html`
+（M1 扩面 fetch 落在 ZW3，ZW2 语料对 editing 面陈旧）致 674/675 案、
+185 subtest MISSING；`selection/stringifier_editable_element` 案级
+Timeout 属该文件固有抖动族（基线自身即含 1 Timeout + 4 NotRun）。tip
+确认以 run-tip-r2（全语料 + tip 树）为下账依据。
