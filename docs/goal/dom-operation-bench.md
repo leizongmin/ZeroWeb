@@ -1,7 +1,7 @@
 # 跨浏览器 DOM 与脚本桥接操作基准
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（**M1 已解锁**——2026-10-23 用户决策，无人值守可启动；基准开发与运行 NOT_RUN）
+**状态**：Active（M1 已解锁——2026-10-23 用户决策；**M1/M2 已交付**——2026-11-04 协议 v1 + 首轮真实 ZeroWeb/Chrome 配对数据，语义断言发现 2 个真实缺陷，见 master 与 evidence；M3 待做）
 **父目标**：[zero-web](zero-web.md) / **控制面**：[master](dom-operation-bench/master.md)
 
 ## 0. 执行摘要与 Mission

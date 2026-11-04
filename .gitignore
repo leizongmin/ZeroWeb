@@ -35,6 +35,7 @@ Thumbs.db
 
 # Benchmark results (generated)
 tests/benchmarks/results/
+tests/benchmarks/dom-ops/results/
 
 # Coverage
 tarpaulin-report.html

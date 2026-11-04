@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>dom-ops style-geometry fixture</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: sans-serif; }
+.board { padding: 8px; }
+.cell { display: inline-block; width: 24px; height: 20px; margin: 1px; vertical-align: top; }
+.c0 { color: #1a73e8; background: #1a73e8; }
+.c1 { color: #ea4335; background: #ea4335; }
+.c2 { color: #0f9d58; background: #0f9d58; }
+.c3 { color: #f4b400; background: #f4b400; }
+.c4 { color: #4285f4; background: #4285f4; }
+.c5 { color: #9e9e9e; background: #9e9e9e; }
+</style>
+</head>
+<body>
+<div id="board" class="board"></div>
+<script>
+// 固定负载：600 个 .cell，class 按 c0..c5 循环——无随机性，两侧同一 DOM。
+(function () {
+  var board = document.getElementById('board');
+  var html = [];
+  for (var i = 0; i < 600; i++) {
+    html.push('<div class="cell c' + (i % 6) + '"></div>');
+  }
+  board.innerHTML = html.join('');
+})();
+</script>
+</body>
+</html>
