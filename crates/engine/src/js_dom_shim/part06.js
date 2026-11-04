@@ -6618,7 +6618,15 @@
         }
       } catch (_e4600c) {}
     }
-    return _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
+    // s274：window load listener 全部跑完后 drain 近端 lazy 图装载队列
+    //（settle 落穿臂登记——装载事件须晚于 window load，spec lazy 图 delay
+    // load = false 不阻 load：image-loading-lazy 四子测窗序断言面）。drain
+    // 放派发返回前、listener 后——has_window_load_fired 已置位。
+    var _zwWinLoadRet = _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
+    if (event && event.type === 'load') {
+      try { if (typeof globalThis.__zwImgDrainAfterWindowLoad5277 === 'function') globalThis.__zwImgDrainAfterWindowLoad5277(); } catch (_e5277dr) {}
+    }
+    return _zwWinLoadRet;
   };
   // R2983 `window.postMessage(message, targetOrigin [, transfer])`——canonical 跨窗口消息 API。
   // webmessaging-compat M2-P1（2026-10-12）spec 化重写

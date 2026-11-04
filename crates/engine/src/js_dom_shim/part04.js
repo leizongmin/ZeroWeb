@@ -1211,6 +1211,10 @@
             // s224：请求代际表同点重置（persistent context 跨案键隔离——同
             // 选源记录表面；stale 代际会把新文档 decode 的 ep0 比对判假取代）。
             globalThis._zwImgDecodeEpoch5277 = {};
+            // s274：after-load 装载队列 + fetch 在飞键册同点重置（跨案残留防
+            // ——队列 settle 时填充、window load 后 drain，同文档生命周期）。
+            globalThis._zwImgAfterLoadQueue5277 = [];
+            globalThis._zwImgFetching5277 = {};
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];
@@ -1238,14 +1242,32 @@
               // + https://html.spec.whatwg.org/multipage/images.html#attr-img-loading
               // 。远/零面积/rect 不可得维持既有惰性记账面（保守 = 现状 deferred；
               // 负 margin 页水平远距天然排除）。
-              if (_zwImLoading === 'lazy'
-                  && !globalThis.__zwImgNearViewport5277(_zwImSel, _zwImHandle)) {
-                // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻
-                // window load——eager 化后装载仍 noBlock）。
+              if (_zwImLoading === 'lazy') {
+                if (!globalThis.__zwImgNearViewport5277(_zwImSel, _zwImHandle)) {
+                  // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻
+                  // window load——eager 化后装载仍 noBlock）。
+                  try {
+                    globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
+                    globalThis._zwLazyEver5277[_zwImKey] = true;
+                  } catch (_e5277le2) {}
+                  continue;
+                }
+                // s274：近端 lazy 图不在 settle 落穿装载——装载（load 事件）须
+                // 晚于 window load（spec：lazy 图 delay load = false 不阻 load，
+                // 装载完成序在 load 派发之后——image-loading-lazy 四子测窗序断
+                // 言面：dv/bl 零面积落穿（s274 NearViewport 细分刀）后 if 装载
+                // 先于 window load →「do not block the load event」assert 反向
+                // 红）。置旗标（drain revalidate 过 lazy 门无条件放行——scrollY
+                // =0 时远位图 NearViewport false 由旗标救）+ 登记 after-load 队
+                // 列，part06 window load listener 跑完后 drain（fetch 通道装载
+                // ——load 事件晚于 window load ✓）。eager 图照旧落穿（阻 load
+                // 语义面不动——delay-load-event 断言）。
                 try {
-                  globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
-                  globalThis._zwLazyEver5277[_zwImKey] = true;
-                } catch (_e5277le2) {}
+                  globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
+                  globalThis._zw5277ViewportFlag[_zwImKey] = true;
+                  globalThis._zwImgAfterLoadQueue5277 = globalThis._zwImgAfterLoadQueue5277 || [];
+                  globalThis._zwImgAfterLoadQueue5277.push({ sel: _zwImSel, handle: _zwImHandle });
+                } catch (_e5277alq) {}
                 continue;
               }
               // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/

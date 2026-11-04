@@ -3116,6 +3116,9 @@
       return !!(globalThis._zwLazyEver5277 && globalThis._zwLazyEver5277[key]);
     };
     var _zwImgDispatch = function (type) {
+      // s274：fetch 在飞键册终点清理（load/error 唯一出口——after-load drain
+      // /sweep 据此跳过在飞图防双 fetch 双事件）。
+      try { if (globalThis._zwImgFetching5277) delete globalThis._zwImgFetching5277[_imKey]; } catch (_e5277fc) {}
       _imInflightEnd();
       if (globalThis.__zwReadyState === 'loading') {
         globalThis._zwImgPendingEvents = globalThis._zwImgPendingEvents || [];
@@ -3219,6 +3222,9 @@
           globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
           globalThis._zwLazyEver5277[_imKey] = true;
         } catch (_e5277le) {}
+        // s274：defer 不 fetch——清在飞残留（stale 取代链断点防挂：本 run 未
+        // 发 fetch，册中旧值只可能是被取代 run 的残迹，defer 时点清正互锁）。
+        try { if (globalThis._zwImgFetching5277) delete globalThis._zwImgFetching5277[_imKey]; } catch (_e5277fd) {}
         return;
       }
       try {
@@ -3271,6 +3277,13 @@
         var _imXoAttr = '';
         try { _imXoAttr = String(_zw5277Attr(sel, handle, 'crossorigin') || ''); } catch (_eXo5277) {}
         var _imFetchP;
+        // s274：fetch 在飞登记（settle/sweep 防双 fetch 面——s273 sweep 与
+        // s274 after-load drain 的重入判据；清理点 = _zwImgDispatch 终点 +
+        // lazy 门 defer return + stale 取代链）。
+        try {
+          globalThis._zwImgFetching5277 = globalThis._zwImgFetching5277 || {};
+          globalThis._zwImgFetching5277[_imKey] = true;
+        } catch (_e5277fg) {}
         try {
           if (_imXoAttr === '') _zwImgNoCorsChannelDepth++;
           try { _imFetchP = fetch(_imSrc); } finally { if (_imXoAttr === '') _zwImgNoCorsChannelDepth--; }
@@ -3410,9 +3423,34 @@
         var k = _elKey(el.__zwSelector, el.__zwHandle);
         if (_resourceStates[k]) continue;
         if (globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[k]) continue;
+        // s274：在飞 fetch 图跳过（after-load drain 已启动装载——fetch settle
+        // 派事件；sweep 重入 revalidate 会双 fetch 双 load——step_func_done
+        // 二次调用 Fail 面）。
+        if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[k]) continue;
         globalThis.__zwImgRevalidate5277(el.__zwSelector, el.__zwHandle);
       }
     } catch (_eSw5277) {}
+  };
+  // s274：after-load 装载队列 drain——settle 落穿臂登记的近端 lazy 图在
+  // window load listener 全部跑完后装载（spec：lazy 图 delay load = false
+  // 不阻 window load，装载完成序在 load 之后——image-loading-lazy 四子测
+  // 窗序断言面）。旗标已在 settle 登记时置位（lazy 门无条件放行——drain 时
+  // scrollY=0 远位图 NearViewport false 由旗标救）。幂等 skip：已装载/在飞
+  // 图跳过（mutation/scrollIntoView 提前装载不重派——load 双派 step_func_
+  // done 二次调用 Fail 面）。
+  globalThis.__zwImgDrainAfterWindowLoad5277 = function () {
+    try {
+      var q = globalThis._zwImgAfterLoadQueue5277;
+      if (!q || !q.length) return;
+      globalThis._zwImgAfterLoadQueue5277 = [];
+      for (var i = 0; i < q.length; i++) {
+        var it = q[i];
+        var k = _elKey(it.sel, it.handle);
+        if (_resourceStates[k]) continue;
+        if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[k]) continue;
+        globalThis.__zwImgRevalidate5277(it.sel, it.handle);
+      }
+    } catch (_eDr5277) {}
   };
   // s271：lazy 视口门距离分支——「接近视口即装载」（spec lazy loading
   // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
@@ -3436,7 +3474,16 @@
         ? _nvEl.getBoundingClientRect() : null;
     } catch (_e5277nv) { return false; }
     if (!r) return false;
-    if (!(r.width > 0 && r.height > 0)) return false;
+    // s274：零面积细分——not-rendered 形态（display:none/hidden 的 gBCR 全
+    // 零 (0,0,0,0)，探针实证；Chromium IO 对 not-rendered 元素不回调，lazy
+    // 图不装载——not-rendered-image-loading-lazy「should never load」断言
+    // 面，含 below-viewport「even when scrolled into view」）判不近；位置
+    // 真实的零面积（未装载 img 无 intrinsic 尺寸 → 高 0——data:/blob: 无
+    // 解析期预抓尺寸面，Chromium LazyLoader 几何相交无面积要求，
+    // image-loading-lazy dv/bl 子测断言面）落穿到下方位置距离判定。
+    if (r.width <= 0 || r.height <= 0) {
+      if (r.left === 0 && r.top === 0 && r.right === 0 && r.bottom === 0) return false;
+    }
     var sx = globalThis.scrollX || 0, sy = globalThis.scrollY || 0;
     var M = 1250;
     return r.right - sx >= -M && r.left - sx <= vw + M

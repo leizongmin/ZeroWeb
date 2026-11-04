@@ -1,0 +1,10 @@
+Using 8 test job(s).
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=auto for disconnected image
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=eager for disconnected image
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=lazy for disconnected image
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: In-viewport loading=lazy images load immediately but do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport data:url images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport blob URL images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport loading=lazy images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/not-rendered-below-viewport-image-loading-lazy.html :: Below-viewport loading=lazy not-rendered images should never load, even when scrolled into view
+Pass html/semantics/embedded-content/the-img-element/not-rendered-image-loading-lazy.html :: In-viewport loading=lazy not-rendered images should never load
