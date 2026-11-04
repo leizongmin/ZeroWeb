@@ -1,6 +1,6 @@
 # Ladybird 建议：ZeroWeb 后续目标与启动入口
 
-**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；2026-10-23 更新：P0 后台资源生命周期已完成收口并归档，P1-release 安装更新与崩溃反馈经用户决策终止归档——非 DONE，恢复=授权 P1/P4，见各自控制面；**2026-10-23 用户决策：renderer-trust-boundary / dom-operation-bench / media-runtime-isolation 三目标 M1 解锁**，无人值守可启动，RFC 门与深结构门控不随 M1 解锁，见各自 master；2026-10-24 更新：P0 增量渲染完整计算对照已完成收口并归档（五 DC 全收，rally 双 DONE），见其控制面；2026-10-25 更新：P2 平台媒体解码与隔离已完成收口并归档（M1–M4 全交付 + D-RFC-1~4 落地对照五 DC 全证，`media-process` 维持默认关默认态、启用须用户授权，见其控制面）；2026-11-04 更新：renderer-trust-boundary 已完成收口并归档（五 DC 全收，Layer 2 landlock 默认翻开交付，模式 A））。
+**日期**：2026-10-20。7 个 goal 与 Shell 入口已准备；本轮只交付规划资产，未启动产品开发、基准、安装或发布。各目标处于 Active 启动门控，运行基线全部 **NOT_RUN**（2026-10-22 更新：P2 合成动画与 Worker Canvas 已完成收口并归档；2026-10-23 更新：P0 后台资源生命周期已完成收口并归档，P1-release 安装更新与崩溃反馈经用户决策终止归档——非 DONE，恢复=授权 P1/P4，见各自控制面；**2026-10-23 用户决策：renderer-trust-boundary / dom-operation-bench / media-runtime-isolation 三目标 M1 解锁**，无人值守可启动，RFC 门与深结构门控不随 M1 解锁，见各自 master；2026-10-24 更新：P0 增量渲染完整计算对照已完成收口并归档（五 DC 全收，rally 双 DONE），见其控制面；2026-10-25 更新：P2 平台媒体解码与隔离已完成收口并归档（M1–M4 全交付 + D-RFC-1~4 落地对照五 DC 全证，`media-process` 维持默认关默认态、启用须用户授权，见其控制面）；2026-11-04 更新：renderer-trust-boundary 已完成收口并归档（五 DC 全收，Layer 2 landlock 默认翻开交付，模式 A）；2026-11-05 更新：P1 DOM 操作基准已完成收口并归档（DC-1~5 全收，3 哨兵行入 perf-gate 常驻门禁，模式 A）——至此本文件 7 个目标全部关闭（六完成归档 + browser-delivery-loop 终止归档）。
 
 依据：[Ladybird 近期进展调研](../../research/research-ladybird-progress-2026-10-20.md)。这些目标是参考方向，不表示 ZeroWeb 已存在同样缺陷。源码与复用资产索引见 [catalog.json](catalog.json)；目标契约决定范围，master 是唯一执行状态控制面。
 
@@ -11,7 +11,7 @@
 | P0 | [Renderer 信任边界](../archive/renderer-trust-boundary.md)——✅ 已完成（2026-11-04，模式 A 归档） | [master](../archive/renderer-trust-boundary/master.md) | 无（启动脚本已随归档删除，不重启） |
 | P0 | [增量渲染完整计算对照](../archive/incremental-rendering-oracle.md)——✅ 已完成（2026-10-24，模式 A 归档） | [master](../archive/incremental-rendering-oracle/master.md) | 无（启动脚本已随归档删除，不重启） |
 | P0 | [后台资源生命周期](../archive/background-resource-lifecycle.md)——✅ 已完成（2026-10-23，模式 A 归档） | [master](../archive/background-resource-lifecycle/master.md) | 无（启动脚本已随归档删除，不重启） |
-| P1 | [DOM 操作基准](../dom-operation-bench.md) | [master](../dom-operation-bench/master.md) | [rally-goal-dom-operation-bench.sh](../../../scripts/rally-goal-dom-operation-bench.sh) |
+| P1 | [DOM 操作基准](../archive/dom-operation-bench.md)——✅ 已完成（2026-11-04 收口，2026-11-05 模式 A 归档） | [master](../archive/dom-operation-bench/master.md) | 无（启动脚本已随归档删除，不重启） |
 | P1-release | [安装更新与崩溃反馈](../archive/browser-delivery-loop.md)——⏸️ 终止归档（2026-10-23，用户决策；非 DONE，恢复=授权 P1/P4 并从归档重启） | [master](../archive/browser-delivery-loop/master.md) | 无（启动脚本已随归档删除） |
 | P2 | [合成动画与 Worker Canvas](../compositor-animation-continuity/archive/compositor-animation-continuity-goal-v1-2026-10-22.md)——✅ 已完成（2026-10-22，模式 B 归档；控制面原地保留） | [master](../compositor-animation-continuity/master.md) | 无（启动脚本已随归档删除，不重启） |
 | P2 | [平台媒体解码与隔离](../archive/media-runtime-isolation.md)——✅ 已完成（2026-10-25，模式 A 归档） | [master](../archive/media-runtime-isolation/master.md) | 无（启动脚本已随归档删除，不重启） |
@@ -22,12 +22,9 @@
 
 脚本使用 `#!/bin/sh`，不依赖 Python。复用现有 `rally run`，默认 agent 为 `claude-glm`，其余参数原样透传；要求环境已有 Rally 与对应 agent。
 
-```sh
-# 后续决定投入时，直接执行即可启动该目标。
-./scripts/rally-goal-dom-operation-bench.sh
-```
+七个目标已全部关闭（六个 ✅ 已完成归档 + browser-delivery-loop ⏸️ 终止归档，见上表）；无剩余启动脚本。
 
-> renderer-trust-boundary 已于 2026-11-04 收口归档（模式 A），启动脚本随归档删除，不重启。
+> 重启一个已归档目标 = 用户点名后从 `docs/goal/archive/<name>.md` 重新立项，不直接对归档契约执行 `rally run`。
 
 以上逐行是独立入口。脚本定位自身所在仓库，因此从其他工作目录调用也使用该仓库与目标。`--dry-run` 由 Rally 处理；Shell 不另实现计划器、状态管理器或守卫。运行结束码原样返回。
 

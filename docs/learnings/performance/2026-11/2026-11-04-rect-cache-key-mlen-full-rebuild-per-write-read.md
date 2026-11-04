@@ -17,7 +17,7 @@ dom-ops 基准 `geom.write_read.thrash`（写样式→读 gBCR 交替）ZeroWeb 
 
 ## 解决方案
 
-M3 未改此键（缺陷1 语义修复优先且已正确）；优化方向 = 键改用「失效代际」（按脏范围/批量提交推进）或增量布局（脏元素范围重算）。已按目标契约转入专用性能工作流（见 docs/goal/dom-operation-bench/evidence/2026-11-04-m3-hotspot-attribution/）。
+M3 未改此键（缺陷1 语义修复优先且已正确）；优化方向 = 键改用「失效代际」（按脏范围/批量提交推进）或增量布局（脏元素范围重算）。已按目标契约转入专用性能工作流（见 docs/goal/archive/dom-operation-bench/evidence/2026-11-04-m3-hotspot-attribution/，goal 已于 2026-11-05 归档）。
 
 ## 如何避免
 

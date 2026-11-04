@@ -1,6 +1,6 @@
 # dom-ops — 跨浏览器 DOM 与脚本桥接操作基准
 
-目标 [docs/goal/dom-operation-bench.md](../../../docs/goal/dom-operation-bench.md) 的 M1/M2 落地：固定同一页面与操作协议，比较 ZeroWeb 与 Chrome 的 DOM、样式/几何查询和 Canvas 状态操作成本。协议版本 **v1.1**（v1 于 2026-11-04 首次落地；v1.1 将 thrash 行样本 12→8——12 样本 × ~610ms + 间隙 ≈ 7.6s 贴 ZeroWeb CDP `awaitPromise` 8s 悬崖，实测 reverse 超时；数值常量的权威来源是 `run-dom-ops.mjs` 内的 `PROTOCOL` 表，本文件描述并引用它，不复制两份）。
+目标 [docs/goal/archive/dom-operation-bench.md](../../../docs/goal/archive/dom-operation-bench.md)（✅ 已完成，2026-11-05 模式 A 归档）的 M1/M2 落地：固定同一页面与操作协议，比较 ZeroWeb 与 Chrome 的 DOM、样式/几何查询和 Canvas 状态操作成本。协议版本 **v1.1**（v1 于 2026-11-04 首次落地；v1.1 将 thrash 行样本 12→8——12 样本 × ~610ms + 间隙 ≈ 7.6s 贴 ZeroWeb CDP `awaitPromise` 8s 悬崖，实测 reverse 超时；数值常量的权威来源是 `run-dom-ops.mjs` 内的 `PROTOCOL` 表，本文件描述并引用它，不复制两份）。
 
 ## 范围与边界
 

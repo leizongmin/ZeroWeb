@@ -1,24 +1,24 @@
 # 跨浏览器 DOM 与脚本桥接操作基准
 
 **版本**：v1.0 / 2026-10-20
-**状态**：Active（M1 已解锁——2026-10-23 用户决策；**M1/M2 已交付**——2026-11-04 协议 v1 + 首轮真实 ZeroWeb/Chrome 配对数据，语义断言发现 2 个真实缺陷；**M3 已收口**——缺陷 1/2 修复 + 配对常驻回归 + 两大性能热点归因到代码路径，最小修复为架构级转性能工作流；**M4 已收口**——3 哨兵行双浏览器接入 perf-gate 消费接口（比较器零改动、独立基线），DC-1..DC-5 全有证据，见 master 与 evidence）
-**父目标**：[zero-web](zero-web.md) / **控制面**：[master](dom-operation-bench/master.md)
+**状态**：✅ Completed（2026-11-04 收口——DC-1..DC-5 全满足，组合态 main 终树复验 GATE PASS exit 0；M1-M4 全交付：协议 v1.1 + ZeroWeb/Chrome 配对实测、两真实缺陷修复带常驻回归、thrash/replace.pool 热点归因、3 哨兵行入 perf-gate 独立基线常驻门禁；架构级残余转性能工作流，Firefox NOT_AVAILABLE 如实记账；2026-11-05 模式 A 归档，详见 [master](dom-operation-bench/master.md)）
+**父目标**：[zero-web](../zero-web.md) / **控制面**：[master](dom-operation-bench/master.md)
 
 ## 0. 执行摘要与 Mission
 
 固定同一页面与操作协议，比较 ZeroWeb/Chrome 的 DOM、样式/几何查询和 Canvas 状态成本，定位数量级异常并验证优化后的语义。Firefox 可在环境具备时补测，缺失不伪造数据。
 
-依据：2026-10-20 用户要求按 [Ladybird 建议](../research/research-ladybird-progress-2026-10-20.md)立项。先建立小操作基准，不自行重写 JS 引擎。
+依据：2026-10-20 用户要求按 [Ladybird 建议](../../research/research-ladybird-progress-2026-10-20.md)立项。先建立小操作基准，不自行重写 JS 引擎。
 
 ## 基线与 Support Envelope
 
-静态基线：已有 `scripts/bench-report.sh`、`scripts/perf-gate.sh` 与 [性能预算](../specs/performance-and-resource-budget.md)；DOM 原生入口在 `crates/engine/src/dom_bindings/mod.rs`，shim 在 `js_dom_shim`。新跨浏览器基准 **NOT_RUN**。
+静态基线：已有 `scripts/bench-report.sh`、`scripts/perf-gate.sh` 与 [性能预算](../../specs/performance-and-resource-budget.md)；DOM 原生入口在 `crates/engine/src/dom_bindings/mod.rs`，shim 在 `js_dom_shim`。新跨浏览器基准 **NOT_RUN**。
 
 范围：`getComputedStyle`、`getBoundingClientRect`、`replaceChildren`、列表插删、Canvas fillStyle 等状态操作；预热、操作数、样本与语义断言；桥接/样式/布局计数。
 
 边界：criterion 既有基准不替换；不能将 V8 单独性能当浏览器 DOM 性能；不是 Speedometer 全量集成任务。性能修复仍走已有对应规范回归。
 
-碰撞：按 [run-rules §9–11](../rally/run-rules.md)协调 engine/dom/script-sandbox 与 bench 脚本消费者，不覆盖既有 capture 或修改基线让门禁通过。
+碰撞：按 [run-rules §9–11](../../rally/run-rules.md)协调 engine/dom/script-sandbox 与 bench 脚本消费者，不覆盖既有 capture 或修改基线让门禁通过。
 
 ## Done Criteria / 验收场景（P1）
 
@@ -43,6 +43,6 @@
 
 ## 执行与 Document Control
 
-`./scripts/rally-goal-dom-operation-bench.sh` 直接执行启动 Rally，加 `--dry-run` 仅预览；统一 [CLI/守卫/证据](ladybird-followups/README.md)。本轮未启动或安装浏览器。
+启动脚本已随 2026-11-05 归档删除（目标已 DONE，不重启）；协议与守卫统一见 [CLI/守卫/证据](../ladybird-followups/README.md)。
 
 入口稳定，master/evidence 更新，archive 只追加；启动后 `CONTINUE` / `BLOCK`，全部 DC 有证并满足适用门禁才 `DONE`。
