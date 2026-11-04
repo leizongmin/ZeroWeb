@@ -2,9 +2,9 @@
 
 **版本**: v1.0
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M1 完成（2026-11-05：B1 全 24 目录接线，聚合基线
-31.8% 门假设成立）+ M2 批次 3 落地（B2 7 目录 44.1%），下一步 M2 批次 4
-（B3 混合布局 13 目录接线）
+**状态**: Active——M1 + M2 完成（2026-11-05：44 批次目录全部接线入账，
+B1 31.8% / B2 44.1% / B3 24.0%，三批实测 passes 9,642 为门增益配额
+2,583 的 3.7 倍），下一步 M3 末件（十六目录零回归）+ M4 复测收口
 **执行模式**: WPT 驱动（上游 css testharness 语料为验收标尺）+ 按簇批量扩面
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS 面）
 **一期**: `docs/goal/archive/css-testharness-compat.md`（35 号，2026-10-30 收口）
@@ -24,7 +24,7 @@ editing 103,397 的 1.7 倍；全关上限把头条抬到 ≈75.4%）。一期�
 | color Color-4 计算值面 | 7,199 | 最大单簇，归口评估 |
 | typed-om API 面 | 96.7% Fail | 整体未实现域 |
 | grid 布局探测簇 | 3,280 | top15 之最，布局探测 |
-| anchor-size() 序列化参数序 | ~2,500 | 引擎可修单点 |
+| anchor-size() 序列化参数序 | ~2,500 | 引擎可修单点，已就地修（2026-11-05，见里程碑 M3） |
 | text 断行 approx 面 | ~543 | 断行语义 |
 | `.xht` XML 路径 | 22 页 | XML 解析缺位挂账 |
 
@@ -91,6 +91,12 @@ B3 19,286×2%，一期同类簇率先行取下缘）。M1 首批干跑校验：B
 6.7% 为 API/表单未实现域，记 M3 甄别素材）——B2 配额 525 的 4.5 倍，门
 假设成立不改；台账见
 [evidence/2026-11-05-m2-batch3-wiring-baseline.md](css-testharness-compat-v2/evidence/2026-11-05-m2-batch3-wiring-baseline.md)。
+**批次 4 实测（2026-11-05，M2）**：B3 13 目录 1,494 案 2,665P/11,088 =
+24.0%（css-tables 40.3% 最高带；布局探测失败大头按 M0 划界记
+rendering-compat/layout goal）——B3 配额 386 的 6.9 倍。**B1/B2/B3 三批
+合计实测 9,642 passes，为门增益配额 2,583 的 3.7 倍，≥20,500 门稳**；
+台账见
+[evidence/2026-11-05-m2-batch4-wiring-baseline.md](css-testharness-compat-v2/evidence/2026-11-05-m2-batch4-wiring-baseline.md)。
 划界 layout goal 触发实测：布局耦合池
 22,566（B3 19,286 + 一期 grid 探测挂账 3,280），扣解析份额后 > 15k >
 10k → **独立 layout goal 立项条件成立**（测算与建议已通报，立项待拍板）。
@@ -122,11 +128,22 @@ blob-hash 不符定向重拉 33（一期存量页随上游滚动过期，#31 旧
 - **M1**：高密度目录批次 1-2 导入（DC-2 起步）。**已完成**（2026-11-05：
   B1 全 24 目录四件套接线——批次 1 六目录 + 批次 2 余 18 目录，干跑基线
   35.7% / 22.8%，B1 聚合 31.8% 门假设成立；见 evidence 2026-11-05 两份
-  批次台账；weekly 分片接线核对随 M2 收口统一做）。
-- **M2**：余目录按簇批量导入收尾（DC-2 完成）。**批次 3 已落地**
-  （2026-11-05：B2 7 目录接线 + 干跑基线 44.1%，见 evidence
-  2026-11-05-m2-batch3）；批次 4 = B3 混合布局 13 目录。
-- **M3**：一期失败簇承接归口（DC-3）。
+  批次台账；weekly 分片接线核对完成（2026-11-05：discover-shards 117 套
+  件全覆盖——26 手调分片载 113 + catch-all 2 片装零头 4，css-v2-face-c
+  载 B3 13 套件，零遗漏零未知））。
+- **M2**：余目录按簇批量导入收尾（DC-2 完成）。**已完成**（2026-11-05：
+  B2 7 目录接线 + 基线 44.1%，B3 13 目录接线 + 基线 24.0%，44 批次目录
+  全部入常驻通道；weekly 分片 v2-a/b/c 齐——css-v2-face-c 载 B3 13 套件
+  （提交 2037a86d7），discover-shards 核对零遗漏零未知；台账见 evidence
+  2026-11-05-m2-batch3 / batch4）。
+- **M3**：一期失败簇承接归口（DC-3）。**anchor-size() 参数序就地修已落
+  地**（2026-11-05：zero-css-parser 值级 canonical 归一 + engine 三处声
+  明值写入路径接线，`--*` 按 spec 跳过；css-anchor-position 通道
+  5,205P/40.6% → 7,457P/58.2%，+2,252，残留 12 为 calc/fallback 单位归
+  一相邻簇；css-variables 回归通道零回退；台账见
+  [evidence/2026-11-05-m3-anchor-size-serialization.md](css-testharness-compat-v2/evidence/2026-11-05-m3-anchor-size-serialization.md)）。
+  grid 探测簇→layout goal 与 color 计算值面→color 专项的归口结论由并发
+  流 M3 台账落定；余十六目录零回归对照待批次 4 干跑窗口后执行。
 - **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
 
 ## 依赖约束（run-rules §9）
