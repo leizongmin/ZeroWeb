@@ -39,7 +39,7 @@ v2 批 fontsize 腿（04:00:44 批首）跑了无门旧二进制——fontsize �
 
 multitest（10 片合并 10,092 行 = 9×1,000 + 尾片 1,092，尾片行数与 spin2d solo 完走基线恰等）：base 9,404P/407F → post 9,654P/438F，**F2P 0 / P2F 0 / newF 31**——31 全落 ？9001-last 尾片 base 截断点（813 行 + T）后从未执行的 forwarddelete+insertText 色壳 caret 族 compare innerHTML 行（gate28 截断带 flake 族先例、fix6 轮 3 newF 同族扩大面，非行为回归）。
 
-守卫腿：inserttext **3,009 行 / 227F**（2,782P/227F 基线恰等）；typing-text **腿缺失**——本地合成页 `wpt-data/editing/run/typing-text.html`（gitignored 产物、非上游文件——pin 315976933 raw 404 实证）跨 clone 全失且无行日志副本，16 断言守卫本轮缺口，页面重建挂账（fetch 通道 api.github.com 限流 403 期间无法补拉上游依赖）；探针 zz-probe-observe **13/13 绿**、zz-probe-vawrap2 **8P/2F**（tF push-down / tI 多属性 peel = 残差①已知面）、zz-probe-xel dump 型通道 2/2（qCV=rgb(0, 0, 255) 值正确，树形 `<span style="color:#0000ff">o<br>bar</span>` = br 包裹生效直接实证）。
+守卫腿：inserttext **3,009 行 / 227F**（2,782P/227F 基线恰等）；typing-text-in-direct-child-of-editing-host **6P/10F 唯一行账对 gate21/gate28 基线恒等**（32 物理行 = 16 唯一行 ×2 双写输出；实名纠正——首轮 `-one FILTER=editing/run/typing-text.html` 0 行系**短名不存在**（pin 315976933 raw 404），实名页系上游文件（raw 200）且双 clone 字节同，补跑日志 fix7-typing-text.log）；探针 zz-probe-observe **13/13 绿**、zz-probe-vawrap2 **8P/2F**（tF push-down / tI 多属性 peel = 残差①已知面）、zz-probe-xel dump 型通道 2/2（qCV=rgb(0, 0, 255) 值正确，树形 `<span style="color:#0000ff">o<br>bar</span>` = br 包裹生效直接实证）。
 
 ## 执行体证据
 
@@ -47,4 +47,4 @@ target/release/zero-wpt-runner（04:03:47 构建）grep `command !== 'fontsize'`
 
 ## 残差与后续
 
-① peel carry-form 族 ~13F（嵌套同标签外层拆分、跨元素同色 end 侧值丢失→got rgb(0,0,0) expected rgb(165,42,42)、全选区 carry 形、`<font size="undefined" style="font-size:2em">` = `_zwVaCssSizeToLegacy` 对 2em 不可映射 bug）——下轮主刀；② 读数面族 ~17F（qV 位置型 computed style 读 expected=起后字符形 ~10F、qS stylewithcss-before Chrome quirk ×5、fontsize qI-after br ×2——qI/qV formattable 过滤补 extraneous-br 可见性门候选）；③ typing-text 合成页重建（行日志无副本，需按 g19 TypingStyle 家族重造 16 断言）；④ multitest ?9001-last 尾片 31 行 fd 色壳族（截断带首执行新账，随尾片分母扩大归骨架族后续）。
+① peel carry-form 族 ~13F（嵌套同标签外层拆分、跨元素同色 end 侧值丢失→got rgb(0,0,0) expected rgb(165,42,42)、全选区 carry 形、`<font size="undefined" style="font-size:2em">` = `_zwVaCssSizeToLegacy` 对 2em 不可映射 bug）——下轮主刀；② 读数面族 ~17F（qV 位置型 computed style 读 expected=起后字符形 ~10F、qS stylewithcss-before Chrome quirk ×5、fontsize qI-after br ×2——qI/qV formattable 过滤补 extraneous-br 可见性门候选）；③ typing-text 挂账撤销——实名页上游在位 + 04:29 补跑恒等绿（前版「合成页重建」系短名 404 误判前提，作废）；④ multitest ?9001-last 尾片 31 行 fd 色壳族（截断带首执行新账，随尾片分母扩大归骨架族后续）。
