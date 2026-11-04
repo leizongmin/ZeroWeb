@@ -7339,6 +7339,8 @@
             // extractContents/fragment 移动产物改道 handle wire（R368 回归：ShadowRoot
             // extractContents 3F——span 被盖章后其文本子注册错位，序列化丢文本）。
             // https://github.com/whatwg/dom/issues/977
+            // s287：盖章 IMG 旗标（函数域 var——append 尾部 update 触发臂读）。
+            var _s287ImgStamped = false;
             if (child && child.nodeType === 1 && !child.__zwHandle && !child.__zwSelector
                 && !(handle && _isContainerHandle(handle))
                 && typeof __zw_create_element === 'function') {
@@ -7380,6 +7382,17 @@
                       __zw_set_attr_handle(child.__zwHandle, _r4004An, String(_r4004Av == null ? '' : _r4004Av));
                     } catch (_e4004aw) {}
                   }
+                } else if (child._attrs && typeof child._attrs === 'object') {
+                  // s287：`_zwParseEl` 查询产物（DOMParser img adopt/append 落地面）
+                  // 无 getAttributeNames（XML 工厂独有）——属性快照回填落 `_attrs`
+                  // 直读（宿主行 attrs 映射，构造期已就绪）。R4004 既有源回填语义
+                  // 同口径：一次直写 host，此后 set/remove 正常演进。
+                  for (var _s287Ak in child._attrs) {
+                    if (!Object.prototype.hasOwnProperty.call(child._attrs, _s287Ak)) continue;
+                    try {
+                      __zw_set_attr_handle(child.__zwHandle, String(_s287Ak), String(child._attrs[_s287Ak] == null ? '' : child._attrs[_s287Ak]));
+                    } catch (_e5287aw) {}
+                  }
                 }
               } catch (_e4004at) {}
               // R4004（html-semantics M2 切片 16）：盖章 plain 子的事件方法转 live。
@@ -7414,6 +7427,41 @@
                   return _r4004Clk && _r4004Clk.call(child);
                 };
               } catch (_e4004wrap) {}
+              // s287：盖章子的快照 on* handler 转 live——live 派发读 canonical proxy
+              // IDL handler（引擎事件不到盖章对象 expando），盖章前已赋值的 onload/
+              // onerror（parse-el 经 part02 身份键 accessor 读表）按柄转接到 proxy
+              //（R4004b 四事件方法同款 proxy 转接先例）。
+              // 二分实证（s287-label-b1 60P vs stamp 全量臂 20F 栈溢出）：盖章点提前
+              // `_makeProxy` 有序副作用——无 handler 子（label 面 div/svg/span 克隆）
+              // 在 wire append 前建 canonical proxy 破坏派发父链。门控确有 handler 才
+              // 建 proxy：无 handler 盖章面零副作用（与基线同观测），img 面保持转接。
+              try {
+                var _s287hL = child.onload, _s287hE = child.onerror;
+                if (typeof _s287hL === 'function' || typeof _s287hE === 'function') {
+                  var _s287pl = _makeProxy(null, child.__zwHandle);
+                  if (_s287pl) {
+                    if (typeof _s287hL === 'function') _s287pl.onload = _s287hL;
+                    if (typeof _s287hE === 'function') _s287pl.onerror = _s287hE;
+                  }
+                }
+              } catch (_e5287hl) {}
+              // s287：盖章 IMG 的 currentSrc accessor——消费面转发 canonical proxy
+              //（spec current request 反射；盖章前恒 undefined 与旧 expando 同观测）。
+              try {
+                if (String(_r368Tag) === 'img'
+                    && !Object.prototype.hasOwnProperty.call(child, 'currentSrc')) {
+                  Object.defineProperty(child, 'currentSrc', {
+                    get: function () {
+                      try {
+                        var _p5287 = child.__zwHandle ? _makeProxy(null, child.__zwHandle) : null;
+                        return _p5287 ? _p5287.currentSrc : undefined;
+                      } catch (_e5287cg) { return undefined; }
+                    },
+                    configurable: true,
+                  });
+                }
+              } catch (_e5287cd) {}
+              try { if (String(_r368Tag) === 'img') _s287ImgStamped = true; } catch (_e5287sf) {}
               // R368：adopt 子树传播——盖章 plain 子的 ownerDocument 重指主 document
               //（spec `concept-node-adopt` 递归 descendants）。R177/R181 的传播分支 gated
               // `!child.__zwHandle`，盖章子（含子树）在此独立传播（configurable getter，
@@ -8216,6 +8264,38 @@
               }
             } catch (_eS162q) {}
             try { if (typeof globalThis.__zwImgTreeMutated5277 === 'function') globalThis.__zwImgTreeMutated5277(sel, handle, child, true); } catch (_e5277tap) {}
+            // s287：盖章 IMG 的 update 触发——spec relevant mutations「img 插入即
+            // relevant mutation → update the image data」。盖章面（parse-el/MEl 轻
+            // 量图落地）此前零 update run：src 经 R4004/s287 回填直写 host，不走
+            // wrapper setter 钩子；非盖章图（wrapper 产物）src setter 已触发不重入。
+            // 位置在 append 落树后——picture/source 上下文经 host 树选源（s69 共享
+            // 核 walk）。门控有 src/srcset（无候选 img 走 spec 空选中面，不派）。
+            // 不扩 __zwImgTreeMutated5277 通用点亮（s284 收窄门 allowsAuto——引擎
+            // fetch 核缺「同 URL 已可用不重取」守卫挂账，盲重验 5 行 REGRESSED 面）。
+            // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+            try {
+              if (_s287ImgStamped && child.__zwHandle
+                  && typeof globalThis.__zwImgRunUpdate5277 === 'function'
+                  && typeof __zw_has_attr_handle === 'function'
+                  && (__zw_has_attr_handle(child.__zwHandle, 'src') === '1'
+                      || __zw_has_attr_handle(child.__zwHandle, 'srcset') === '1')) {
+                if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+                  globalThis.__zwImgSelectionQueue5277(null, child.__zwHandle);
+                }
+                var _s287Src = '';
+                try {
+                  if (typeof globalThis.__zwSelectUrl5277 === 'function') {
+                    _s287Src = globalThis.__zwSelectUrl5277(null, child.__zwHandle) || '';
+                  }
+                } catch (_e5287su) {}
+                var _s287Pk = null;
+                try {
+                  _s287Pk = globalThis.__zwSelectImageSource5277 ? globalThis.__zwSelectImageSource5277(null, child.__zwHandle) : null;
+                } catch (_e5287sp) {}
+                if (!_s287Src && _s287Pk && _s287Pk.url) _s287Src = String(_s287Pk.url);
+                globalThis.__zwImgRunUpdate5277(null, child.__zwHandle, _s287Src, _s287Pk ? _s287Pk.density : 1);
+              }
+            } catch (_e5287tg) {}
             // s131 after 面：同 insertBefore trap tail——form owner 键变更且该
             // INPUT radio checkedness 为 true → 新组排他 sweep（DIV 对照案 owner
             // null→null 不触发；type/name/checkedness 门在 helper 内）。

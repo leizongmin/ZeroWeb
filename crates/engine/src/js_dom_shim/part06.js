@@ -5005,6 +5005,32 @@
                 var _t8qP = node.parentNode;
                 if (_t8qP && typeof _t8qP.removeChild === 'function') _t8qP.removeChild(node);
               } catch (_eT8qCut) {}
+              // s287（html-semantics M2）：物化 twin 的快照 handler 转移 + currentSrc
+              // twin 登记——spec concept-node-adopt 返回同一节点（IDL handler 随行、
+              // load 可观测）；快照架构物化产副本（查询每 query 产新实例，holder 实例
+              // 不可达），以 R5254 身份键（part02 onload/onerror accessor 写侧表 +
+              // currentSrc 读侧表）按 twin 子树逐节点同形键（id 或 sig:TAG|cls|outer
+              // 前 64——宿主行派生重解析稳定）寻址接线：handler 转移到 twin wrapper
+              // IDL setter 入 live 派发，twin 表供 holder 实例 currentSrc 读转发。
+              // 转移时序安全：物化 setAttribute 触发的 update run 事件为 _defer 异步
+              // 派（avail 命中臂同 tick 注册 onload 不丢——R5275② 探针实证）。
+              // 同 sig 孪生键串取首个（s244 宿主路径架构固有限度同口径）。
+              (function _s287Transfer(n2) {
+                if (!n2 || typeof n2 !== 'object' || n2.nodeType !== 1) return;
+                try {
+                  var k2 = n2.id ? 'id:' + n2.id
+                    : 'sig:' + String(n2.tagName || '') + '|' + String(n2.className || '') + '|' + String(n2.outerHTML || '').slice(0, 64);
+                  if (k2) {
+                    var _hL5287 = globalThis._zwParsedImgH5287 ? globalThis._zwParsedImgH5287[k2 + '\x1fonload'] : null;
+                    var _hE5287 = globalThis._zwParsedImgH5287 ? globalThis._zwParsedImgH5287[k2 + '\x1fonerror'] : null;
+                    if (typeof _hL5287 === 'function') n2.onload = _hL5287;
+                    if (typeof _hE5287 === 'function') n2.onerror = _hE5287;
+                    if (globalThis._zwParsedImgTwin5287) globalThis._zwParsedImgTwin5287[k2] = n2;
+                  }
+                } catch (_e5287tw) {}
+                var k3 = n2.childNodes || [];
+                for (var j3 = 0; j3 < k3.length; j3++) _s287Transfer(k3[j3]);
+              })(_t8qMat);
               return _t8qMat;
             }
           }

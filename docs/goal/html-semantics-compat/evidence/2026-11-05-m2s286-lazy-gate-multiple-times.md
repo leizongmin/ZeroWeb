@@ -105,3 +105,16 @@
 - 日志 md5：multipletimes 805b1fd4、lazy-family 3a64a149、utid
   1d7707ef、imgfamily e2241e8f、fulltree-run1 e0d94401、fulltree-e2
   ea134801、focus-noise 360be6b6、make-test cc5a1210
+
+## 勘误附记（s287 复算，2026-11-05）
+
+本账本「验证」段的 family/全树绝对计数为转录错误，s287 以 (key,state)
+去重 join 复算 A/B 日志实数如下；键级定性结论（FIXED/GAINED/LOST/
+REGRESSED 判定及良性归因）复核无误：
+
+- family：A（s285-imgfamily-d）972P/54F/7T，B（s286-imgfamily-e）
+  971P/47F/7T——非正文「73P/14F/4T」。
+- 全树：7947P/407F/59T（run2 e2 唯一键）——非正文「917P/203F/52T」。
+- 补充：全树 A/B 另含 2 个 forms checkable-active-onblur-with-click
+  键 P→F（s196 域历史抖动键，在档 99 跑 83P/25F，s286→s287 反向
+  F→P 翻转实证双向噪声），当时未计入 REGRESSED 计数，此处补记归因。

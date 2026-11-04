@@ -5685,7 +5685,31 @@
     var tag = this.localName || 'div';
     var snap = { tag: tag, id: this.id, cls: this.className, attrs: this._attrs };
     var node = _zwMEl(snap, null);
-    if (typeof __zw_parse_html_child_nodes === 'function') {
+    // WC-M2：template 根的 contents 在独立 inert DocumentFragment（host 解析器真实化
+    //——`<template>` 内容子不进常规 childNodes，`__zw_parse_html_child_nodes` 对
+    // template 定位恒返空数组，`.content` 视图（plain 工厂惰性 fragment，别名
+    // childNodes）看不到任何内容子）。读参数化 outerHTML 的深 JSON
+    //（`__zw_parse_template_contents`，_zwMBuildNode template 分支同数据源）本地
+    // 构建进 childNodes。inert 印章随既有分支同口径（parse-el 恒 inert 文档面）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    if (String(tag).toLowerCase() === 'template'
+        && typeof __zw_parse_template_contents === 'function') {
+      try {
+        var _s287tcArr = JSON.parse(__zw_parse_template_contents(this.outerHTML, 'template') || '[]');
+        for (var _s287ti = 0; _s287ti < _s287tcArr.length; _s287ti++) {
+          var _s287tc = _zwMBuildDeepEntry(_s287tcArr[_s287ti], node);
+          if (_s287tc) {
+            (function stampInertTpl(n7c) {
+              if (!n7c) return;
+              try { n7c.__zwTreeScripting = false; } catch (_e7cs) {}
+              var k7c = n7c.childNodes || [];
+              for (var j7c = 0; j7c < k7c.length; j7c++) stampInertTpl(k7c[j7c]);
+            })(_s287tc);
+            node.childNodes.push(_s287tc);
+          }
+        }
+      } catch (_e287tpl) {}
+    } else if (typeof __zw_parse_html_child_nodes === 'function') {
       try {
         // R5001 M3 片 a：ownerDocument 为 inert 文档（`__zwScriptingEnabled === false`
         // ——DOMParser/createHTMLDocument 产物）时本地树按 markup 解析（noscript 实体
@@ -5862,6 +5886,53 @@
     },
     set: function (fn) {
       try { globalThis._zwParsedToggleH[this._zwEvKey()] = typeof fn === 'function' ? fn : null; } catch (_eR254s2) {}
+    },
+  });
+  // s287（html-semantics M2）：快照元素 onload/onerror IDL accessor + currentSrc
+  // twin 转发表——R5254 ontoggle 同款身份键跨实例通道。快照架构下 on* 实例属性
+  // 无派发链可达（查询每 query 产新实例，expando 随实例死）；DOMParser img 经
+  // adoptNode 物化 / R368 盖章落地后 load/error 由 live 派发，handler 须按身份键
+  // （_zwEvKey：id 或 sig 串，宿主行派生重解析稳定）持久化供物化/盖章时刻寻址
+  // 接线（spec event handler IDL 赋值即注册）。currentSrc 读侧查 adoptNode 转移
+  // 时刻登记的 twin 表（part06 写侧），未物化恒 undefined——与旧 expando 形态
+  // 同观测值，非 img 快照零回归。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#handler-event-types
+  globalThis._zwParsedImgH5287 = {};
+  globalThis._zwParsedImgTwin5287 = {};
+  ['onload', 'onerror'].forEach(function (_s287h) {
+    Object.defineProperty(_zwParseEl.prototype, _s287h, {
+      configurable: true,
+      get: function () {
+        try { return globalThis._zwParsedImgH5287[this._zwEvKey() + '\x1f' + _s287h] || null; } catch (_e5287hg) { return null; }
+      },
+      set: function (fn) {
+        try { globalThis._zwParsedImgH5287[this._zwEvKey() + '\x1f' + _s287h] = typeof fn === 'function' ? fn : null; } catch (_e5287hs) {}
+      },
+    });
+  });
+  Object.defineProperty(_zwParseEl.prototype, 'currentSrc', {
+    configurable: true,
+    get: function () {
+      try {
+        var _s287tw = globalThis._zwParsedImgTwin5287[this._zwEvKey()];
+        return _s287tw ? _s287tw.currentSrc : undefined;
+      } catch (_e5287cs) { return undefined; }
+    },
+  });
+  // s287：快照 TEMPLATE 的 content 转发——`_ensureMutTree()` 物化树的 WC-M1
+  // content fragment 视图（part03 `_zwMEl` 工厂 template 门；宿主解析按 template
+  // contents 规则把子入 content——MEl 树 childNodes 即 contents 视图组）。查询每
+  // query 产新实例且快照无 content 槽（`d.querySelector('template').content` 恒
+  // undefined——adoption.html 'adopt a cloned img in template' 首查询链抛错实测），
+  // 物化转发后 content.querySelector/cloneNode 走 MEl 既有装配机具。非 template
+  // 快照恒 undefined（`<meta content>` 属性面走 getAttribute，不受影响）。
+  Object.defineProperty(_zwParseEl.prototype, 'content', {
+    configurable: true,
+    get: function () {
+      try {
+        if (String(this.localName || '').toLowerCase() !== 'template') return undefined;
+        return this._ensureMutTree().content;
+      } catch (_e5287ct) { return undefined; }
     },
   });
   _zwParseEl.prototype.addEventListener = function (type, fn, opts) {
