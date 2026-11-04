@@ -1215,6 +1215,8 @@
             // ——队列 settle 时填充、window load 后 drain，同文档生命周期）。
             globalThis._zwImgAfterLoadQueue5277 = [];
             globalThis._zwImgFetching5277 = {};
+            // s275：deferred 冻结请求表同点重置（同文档生命周期面）。
+            globalThis._zwImgDeferredReq5277 = {};
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];
@@ -1243,6 +1245,20 @@
               // 。远/零面积/rect 不可得维持既有惰性记账面（保守 = 现状 deferred；
               // 负 margin 页水平远距天然排除）。
               if (_zwImLoading === 'lazy') {
+                // s275：defer 时点 set-up 请求冻结——settle defer 臂选源一次
+                // 登记（URL 按当时 base 冻结；纯本地解析不 fetch 不阻 load，
+                // spec lazy 分支 request set-up 于 defer 时点，唤醒面 fetch 已
+                // set-up 请求不重选——与 part03 runupdate defer 分支同语义两
+                // 通路，image-loading-lazy-base-url ×2 断言面）。
+                try {
+                  if (typeof globalThis.__zwSelectImageSource5277 === 'function') {
+                    var _zwImFz = globalThis.__zwSelectImageSource5277(_zwImSel, _zwImHandle);
+                    if (_zwImFz && _zwImFz.url) {
+                      globalThis._zwImgDeferredReq5277 = globalThis._zwImgDeferredReq5277 || {};
+                      globalThis._zwImgDeferredReq5277[_zwImKey] = { url: String(_zwImFz.url), density: _zwImFz.density };
+                    }
+                  }
+                } catch (_e5277fz) {}
                 if (!globalThis.__zwImgNearViewport5277(_zwImSel, _zwImHandle)) {
                   // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻
                   // window load——eager 化后装载仍 noBlock）。

@@ -3225,6 +3225,21 @@
         // s274：defer 不 fetch——清在飞残留（stale 取代链断点防挂：本 run 未
         // 发 fetch，册中旧值只可能是被取代 run 的残迹，defer 时点清正互锁）。
         try { if (globalThis._zwImgFetching5277) delete globalThis._zwImgFetching5277[_imKey]; } catch (_e5277fd) {}
+        // s275：defer 时点 set-up 请求冻结（spec updating-the-image-data lazy
+        // 分支：current request = 新 image request，其 request 的 URL = 当时
+        // selected source；唤醒面 fetch 该已 set-up 请求**不重选源**——
+        // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+        // ，base-url 页注释原文「the next step in the #updating-the-img-data
+        // algorithm is to fetch the request that has already been set up」。
+        // <base href>/pushState 文档 URL 变更非 img relevant mutation，冻结
+        // 存活——image-loading-lazy-base-url ×2 断言面）。本分支被 mutation
+        // 重跑再入时重新登记 = spec 重设请求（最新 attrs/URL 选源——
+        // crossorigin-change「deferred img 用最新 crossorigin」面）。fetch 臂
+        // 启动即消费（此后 restart 语义照旧）。
+        try {
+          globalThis._zwImgDeferredReq5277 = globalThis._zwImgDeferredReq5277 || {};
+          globalThis._zwImgDeferredReq5277[_imKey] = { url: _imSrc, density: _imDensity };
+        } catch (_e5277df) {}
         return;
       }
       try {
@@ -3284,6 +3299,9 @@
           globalThis._zwImgFetching5277 = globalThis._zwImgFetching5277 || {};
           globalThis._zwImgFetching5277[_imKey] = true;
         } catch (_e5277fg) {}
+        // s275：fetch 启动即消费冻结请求——此后视口面走正常选源（restart
+        // 语义），在飞/已终态图由视口 helper 的 state/在飞 skip 兜底。
+        try { if (globalThis._zwImgDeferredReq5277) delete globalThis._zwImgDeferredReq5277[_imKey]; } catch (_e5277dfc) {}
         try {
           if (_imXoAttr === '') _zwImgNoCorsChannelDepth++;
           try { _imFetchP = fetch(_imSrc); } finally { if (_imXoAttr === '') _zwImgNoCorsChannelDepth--; }
@@ -3357,6 +3375,26 @@
       globalThis.__zwImgNullSelection5277(sel, handle);
     }
   };
+  // s275：视口触发面（scrollIntoView 旗标/sweep/drain）专用重验——消费冻结
+  // 请求：spec updating-the-image-data lazy 分支 defer 时 set-up 请求（URL
+  // 按当时 base 冻结），唤醒（进入视口）面 fetch 该请求不重选源——<base>/
+  // pushState 变更非 relevant mutation，重选会用变更后 base 解析出坏 URL
+  // （image-loading-lazy-base-url ×2 勘根探针实证：select → invalid 404 →
+  // onerror unreached）。relevant mutations 不经此——mutation 面走
+  // __zwImgRevalidate5277 重选源，defer 分支重新登记 = spec 重设请求（最新
+  // attrs/URL——crossorigin-change 断言面维持）。终态/在飞图 skip（幂等
+  // ——sweep/drain 已各自有同判据，本 helper 再查兜底旗标路径）。
+  globalThis.__zwImgViewportRevalidate5277 = function (sel, handle) {
+    var _vrKey = _elKey(sel, handle);
+    if (_resourceStates[_vrKey]) return;
+    if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[_vrKey]) return;
+    var _vrFz = globalThis._zwImgDeferredReq5277 ? globalThis._zwImgDeferredReq5277[_vrKey] : null;
+    if (_vrFz && _vrFz.url) {
+      globalThis.__zwImgRunUpdate5277(sel, handle, String(_vrFz.url), _vrFz.density);
+      return;
+    }
+    globalThis.__zwImgRevalidate5277(sel, handle);
+  };
   // s225：null-selection 面（自 Revalidate 空选中臂抽取共享——RunUpdate
   // detached 延步重选空臂同语义）。仅已有请求（resourceState 在）时写
   // broken（无请求 img 维持既有「无状态」面——sweep 跳过语义）；spec：
@@ -3393,16 +3431,16 @@
     }
   };
   // s70：scrollIntoView 视口触发近似——置 per-element 旗标并重验未启动的
-  // lazy img（spec update-the-image-data 视口门：进入视口后按**最新**选中源
-  // fetch——image-loading-lazy-crossorigin-change「deferred img 用最新
-  // crossorigin」断言面）。headless 无真视口，旗标置即开（F5 视口模型收口
-  // 时随 layout 几何接管）。
+  // lazy img（spec update-the-image-data 视口门；s275 起消费 defer 时点冻结
+  // 请求不重选源——base-url ×2 断言面；「deferred img 用最新 crossorigin」
+  // 面由 mutation 重跑重设请求承接，见 __zwImgViewportRevalidate5277 注）。
+  // headless 无真视口，旗标置即开（F5 视口模型收口时随 layout 几何接管）。
   globalThis.__zwImgScrollIntoView5277 = function (sel, handle) {
     try {
       var _svKey = _elKey(sel, handle);
       globalThis._zw5277ViewportFlag = globalThis._zw5277ViewportFlag || {};
       globalThis._zw5277ViewportFlag[_svKey] = true;
-      if (!_resourceStates[_svKey]) globalThis.__zwImgRevalidate5277(sel, handle);
+      if (!_resourceStates[_svKey]) globalThis.__zwImgViewportRevalidate5277(sel, handle);
     } catch (_e5277sv) {}
   };
   // s273：滚动唤起面——scrollIntoView 落位后重验未启动的 lazy img（近似 spec
@@ -3427,7 +3465,8 @@
         // 派事件；sweep 重入 revalidate 会双 fetch 双 load——step_func_done
         // 二次调用 Fail 面）。
         if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[k]) continue;
-        globalThis.__zwImgRevalidate5277(el.__zwSelector, el.__zwHandle);
+        // s275：视口触发面消费冻结请求（唤醒不重选源——base-url ×2 断言面）。
+        globalThis.__zwImgViewportRevalidate5277(el.__zwSelector, el.__zwHandle);
       }
     } catch (_eSw5277) {}
   };
@@ -3448,7 +3487,8 @@
         var k = _elKey(it.sel, it.handle);
         if (_resourceStates[k]) continue;
         if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[k]) continue;
-        globalThis.__zwImgRevalidate5277(it.sel, it.handle);
+        // s275：视口触发面消费冻结请求（唤醒不重选源——base-url ×2 断言面）。
+        globalThis.__zwImgViewportRevalidate5277(it.sel, it.handle);
       }
     } catch (_eDr5277) {}
   };

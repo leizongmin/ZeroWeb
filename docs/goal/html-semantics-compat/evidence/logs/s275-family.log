@@ -1,0 +1,45 @@
+Using 8 test job(s).
+Pass html/semantics/embedded-content/the-img-element/below-viewport-image-loading-lazy-load-event.html :: Below-viewport loading=lazy images do not block the window load event when scrolled into viewport
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=auto for disconnected image
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=eager for disconnected image
+Pass html/semantics/embedded-content/the-img-element/disconnected-image-loading-lazy.html :: loading=lazy for disconnected image
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-available.html :: The list of available images gets checked before deciding to make a load lazy
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-base-url-2.html :: When a loading=lazy image is loaded, it loads relative to the document's base URL computed at parse-time.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-base-url.html :: When a loading=lazy image is loaded, it loads relative to the document's base URL computed at parse-time.
+Fail html/semantics/embedded-content/the-img-element/image-loading-lazy-below-viewport-dynamic.html :: Test that below viewport images with loading='lazy' and changed to loading='eager' load and do not block the window load event.
+  assert_true: The window load event should have fired before below_viewport loaded. expected true got false
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-crossorigin-change.sub.html :: Test that when deferred image is loaded, it uses the latest crossorigin attribute.
+Fail html/semantics/embedded-content/the-img-element/image-loading-lazy-different-crossorigin.html :: Lazyload images cannot load immediately from the list of available images if their tuple doesn't match other images in that list
+  promise_test: Unhandled rejection with value: "The img should not be loaded from the list of available images because of different 'crossorigin'"
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-empty-src.html :: lazy loaded image and empty src
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-far.html :: Test that lazy-loaded images do not load when far from viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-horizontal-far.html :: Test that lazy-loaded images do not load when far from viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-horizontal.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-2.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-3.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-4.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested-5.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller-nested.html :: Test that lazy-loaded images load when near viewport.
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-in-scroller.html :: Test that lazy-loaded images load when near viewport.
+Fail html/semantics/embedded-content/the-img-element/image-loading-lazy-in-viewport-dynamic.html :: Test that in viewport images with loading='lazy' and changed to loading='eager' do not block the window load event.
+  assert_true: The window load event should fire before in_viewport image loads. expected true got false
+Fail html/semantics/embedded-content/the-img-element/image-loading-lazy-multicol.html :: Test that images with loading='lazy' under multicol load once they enter the viewport.
+  assert_true: The in_viewport element should have loaded before window.load(). expected true got false
+Fail html/semantics/embedded-content/the-img-element/image-loading-lazy-multiple-times.html :: Images with loading='lazy' can be lazy loaded multiple times
+  assert_unreached: The loading=lazy below-viewport image should lazily load its second image, and not load it eagerly when the `src` attribute is changed Reached unreachable code
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-negative-margin.html :: A loading=lazy image that is pulled into an `overflow: hidden` area by a negative margin will not load because IntersectionObserver sees it as non-intersecting
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-referrerpolicy-change.sub.html :: Test that when a deferred image is loaded, it uses the latest referrerpolicy
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Images are lazyloaded
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image referrerPolicy mutation does not cause deferred loading=lazy images to be fetched
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image crossOrigin mutation does not cause deferred loading=lazy images to be fetched
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-relevant-mutations.html :: Image src mutation does not cause deferred loading=lazy images to be fetched
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-srcset.html :: loading='lazy' image with srcset
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-to-eager.html :: Below-viewport images with loading='lazy' load when set to loading='eager' or the `loading` attribute is removed
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-use-list-of-available-images.html :: Lazyload images can load immediately from the list of available images
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy-zero-intersection-area.html :: Image with zero intersection area is lazy-loaded
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: In-viewport loading=lazy images load immediately but do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport data:url images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport blob URL images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/image-loading-lazy.html :: Below-viewport loading=lazy images only load when in the viewport and do not block the window load event
+Pass html/semantics/embedded-content/the-img-element/not-rendered-below-viewport-image-loading-lazy.html :: Below-viewport loading=lazy not-rendered images should never load, even when scrolled into view
+Pass html/semantics/embedded-content/the-img-element/not-rendered-image-loading-lazy.html :: In-viewport loading=lazy not-rendered images should never load
