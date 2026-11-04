@@ -73,8 +73,9 @@ editing 103,397 的 1.7 倍；全关上限把头条抬到 ≈75.4%）。一期�
   scripts/goals README 预注）——批次落地前按 run-rules §9 与
   rendering-compat 控制面碰头，避免视口/几何语义双改。
 - **layout 引擎大改不进本 goal**：grid/flexbox 布局探测簇若定性为布局
-  引擎缺口，挂账归口 rendering-compat 或独立 layout goal；本 goal 修到
-  序列化/声明值层为止。
+  引擎缺口，归口分档（2026-11-04 用户拍板）——默认记 rendering-compat
+  控制面；M0 实测布局簇地址池 > 10k 子测试时独立 layout goal 立项。
+  本 goal 修到序列化/声明值层为止。
 - **typed-om 不力攻**：CSS Typed OM API 面整体未实现（一期已挂账）；M0
   甄别如实标记，不进数值门。
 

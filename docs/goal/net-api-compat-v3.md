@@ -26,12 +26,13 @@ privacy、corp、streams、nosniff、range、multipart、schemes、destination�
 vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面被 scheme
 门筛减）；xhr 余量未收。
 
-前账挂账锚点：
+前账挂账锚点（2026-11-04 用户拍板拆分落位）：
 
-- **WebSocket P3 通道级 scheme 翻转**（runner 页锚 http/https 双态之外
-  的 wss 端点形态）——testharness.rs M5-S1 注释「P3 挂账另案（两前置
-  审计）」，v2 重估维持挂账；本 goal 承接重估。
-- v2 收口待决：request-cache 98F 口径挂用户。
+- **WebSocket wss 面**（TLS 端点 fixture + 通道 scheme/端点寻址）——
+  **已拆基建 goal 46 号 runner-net-infra**（v2 挂账的两前置审计随其 M0
+  落地）；本 goal 只收**非 wss 依赖面**，wss 面以 46 号 DC-2 为前置。
+- **request-cache 族 98F**——**已拍板立项 47 号 http-cache**（引擎
+  HTTP 缓存层）；本 goal 沿 v2 剔除口径，47 号交付后由其承接收敛。
 - 一期/二期零回归底线继续有效（通道分母逐 subtest 对照）。
 
 ## Mission
@@ -42,8 +43,8 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
    清单与 ws fixture 端点需求；xhr 残余失败簇。
 2. **fetch 目录批量导入**（M1/M2）：过 net-api 模板（DIRS 扩面 + skip
    规则 + Makefile target + fixture shim 按需），py 端点面分批。
-3. **websockets 全量入账**（M2/M3）：P3 scheme 翻转前置审计落地（或重估
-   后维持挂账具名），ws fixture 扩端点，非 wss 依赖面先入账。
+3. **websockets 非 wss 面入账**（M2/M3）：非 wss 依赖面全量入账；wss
+   依赖面清单移交 46 号（fixture 需求 + 寻址形态），不阻塞本 goal。
 4. **xhr 残余收敛 + 复测收口**（M3/M4）：失败簇归因；coverage 复测落
    数值门。
 
@@ -51,14 +52,14 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 
 - **DC-1（M0 对账）**：fetch 未导入目录 + websockets 全量 + xhr 残余的
   构成甄别落 `docs/goal/net-api-compat-v3/evidence/`（逐目录：文件数、
-  py 端点依赖、批次归属）；WebSocket P3 重估结论落档；DC-4 数值门落定
-  并回填本文件。
+  py 端点依赖、批次归属）；wss 依赖面清单与 46 号交接档落档；DC-4
+  数值门落定并回填本文件。
 - **DC-2（通道扩面）**：M1/M2 批次目录入 testharness-net-api 常驻通道
   （DIRS + skip + Makefile + fixture 四件套）；新增 fixture 走 v2 先例
   （路由表 + echo 族）。
 - **DC-3（websockets/xhr）**：websockets 非 wss 依赖面入账（covered > 0
-  且通过数达数值门）；P3 scheme 翻转落地或重估挂账具名；xhr 残余簇归因
-  落档。
+  且通过数达数值门）；wss 面交接 46 号（清单 + fixture 需求）落档；xhr
+  残余簇归因落档。
 - **DC-4（coverage 复测）**：fetch/websockets/xhr 三面升至数值门；
   一期/二期通道既有账零回归（分母逐 subtest 对照）；头条不回落。
 
@@ -71,6 +72,10 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 
 - **url/mimesniff 不重开**：v2 收口账（IdnaTestV2 100% / url 94.1% /
   mimesniff 残余语料冲突记账）零回归门；重入条件仍归 v2 口径。
+- **request-cache 98F 归 47 号**：http-cache goal（2026-11-04 立项）承接
+  收敛；本 goal 沿 v2 剔除口径，不重复实现缓存语义。
+- **wss 面归 46 号**：TLS 端点 fixture 与 scheme/端点寻址归
+  runner-net-infra；本 goal 只消费其交付。
 - **CORS 引擎语义不重开**：`crates/security/src/cors.rs` 既有实现（s153）
   零回归门；cors topdir 专面通道归 gap-batch1（39 号）。
 - **service-workers fetch 拦截面**归 service-workers 通道既有账；本 goal

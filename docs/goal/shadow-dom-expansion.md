@@ -26,8 +26,8 @@ shadow-dom + template）已入账，但 fetch 子集窄（`fetch-web-components-
   独立深项域。
 - builtin-coverage（~126F）——customized built-ins innerHTML 解析实例化。
 - **渲染级 composed tree**（shadow 树进样式/布局/绘制、`:host`/`::slotted`
-  + Rust `resolve_slots` 消费）——收口时按 Support Envelope 排除，等用户
-  点名专项；不在本 goal DC。
+  + Rust 侧 slot 消费）——**已拆专项 goal `shadow-dom-rendering`（45 号，
+  2026-11-04 用户拍板立项）**；不在本 goal DC。
 
 ## Mission
 
@@ -61,9 +61,10 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
 
 ## 划界
 
-- **渲染级 composed tree 不进本 goal**：shadow 树进样式/布局/绘制、
-  `:host`/`::slotted` 选择器命中、Rust `resolve_slots` 接线——维持
-  web-components 收口排除条款（rendering-compat 交界，用户点名专项）。
+- **渲染级 composed tree 不进本 goal**：已拆专项 goal 45 号
+  shadow-dom-rendering（2026-11-04 用户拍板）——`:host`/`::slotted` 命中、
+  布局/绘制消费归 45 号；本 goal 只收 JS 语义面与语料滚动，与其零重叠
+  （shadow-dom 目录 fetch 子集分域记账）。
 - **custom-elements 不重开主账**：64.67% 是 web-components 通道在账
   通过率，本 goal 只做同通道扩面时的零回归门 + 滚动新面顺带入账。
 - **template 面**归 html-semantics-compat 通道既有账，不动。
