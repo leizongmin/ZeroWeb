@@ -695,7 +695,22 @@ impl LayoutEngine {
                 .get(&id)
                 .copied()
                 .is_some_and(|tid| taffy_tree.children(tid).is_ok_and(|kids| !kids.is_empty()));
-            if !has_hoisted && !has_unrepresented_text {
+            // 直属形态族（t-zchip）：item 直接子含**非提升** atomic inline（DOM 父 = 本容器，
+            // inline-block 家族/replaced-inline）——converter 把 atomic inline 映射 taffy
+            // Block 块表示（供独立 LayoutBox/paint），taffy content-based 对该块表示取块序
+            // max 而非行排和（css-display-3 §2.4：atomic inline 是行内级盒，同 IFC 横排；
+            // css-flexbox-1 §9.2.E flex base size 应为 max-content = 行排宽度和——
+            // github.com/trending nav.subnav chips a×2 塌最宽单 chip、chips 竖排实证）。
+            // 无文本子的 item（解析器/站点 DOM 丢弃 chip 间空白）同样命中，不依赖
+            // has_unrepresented_text 的 Text 子判据。
+            let has_direct_atomic_inline = b.children.iter().any(|c| {
+                c.node_id.is_some_and(|cid| {
+                    !crate::inline_finalization::is_hoisted_atomic_child(doc, Some(container), cid, styles)
+                        && crate::inline_finalization::atomic_inline_child_style(doc, cid, styles)
+                })
+            });
+            let direct_atomic_only = has_direct_atomic_inline && !has_hoisted && !has_unrepresented_text;
+            if !has_hoisted && !has_unrepresented_text && !has_direct_atomic_inline {
                 continue;
             }
             // 缺陷族形态门：li 的 LayoutBox 子全为行内级（提升原子已扁平为直接子）。
@@ -706,8 +721,9 @@ impl LayoutEngine {
             // 原子宽度表：提升原子按 taffy 同源 measure 闭包 MaxContent 重测 + 自身
             // frame + margins（first-pass 污染防护：提升原子第一趟以塌缩 li 为 CB 做
             // abspos shrink-to-fit——多词文本折到 min-content，LayoutBox.width 不可信，
-            // 故排除在 walker 口径外、一律重测）；非提升直属 atomic inline 正常流内
-            // taffy 已正确测量，读已布局 outer。
+            // 故排除在 walker 口径外、一律重测）；非提升直属 atomic inline 在原形态
+            //（item taffy 路径正常不塌缩）读已布局 outer，直属形态族（t-zchip，item
+            // 第一趟已塌缩）同款重测防污染。
             let mut atomic_widths: HashMap<NodeId, f32> = HashMap::default();
             for c in &b.children {
                 let Some(cid) = c.node_id else { continue };
@@ -737,7 +753,30 @@ impl LayoutEngine {
                     let frame = c.padding_left + c.padding_right + c.border_left + c.border_right;
                     atomic_widths.insert(cid, (mc_content + frame).max(0.0) + c.margin_left + c.margin_right);
                 } else if crate::inline_finalization::atomic_inline_child_style(doc, cid, styles) {
-                    atomic_widths.insert(cid, c.width + c.margin_left + c.margin_right);
+                    if direct_atomic_only {
+                        // t-zchip：直属形态下 item 第一趟已按块序 max 塌缩（CB 宽错），
+                        // 多词原子的已布局宽是折行 min-content 形（first-pass 污染）——
+                        // 同上方提升原子臂 MaxContent 重测取真值；单词原子重测值与
+                        // 已布局一致，行为不变。
+                        let mc_content = measure_text(
+                            cid,
+                            taffy::geometry::Size {
+                                width: None,
+                                height: None,
+                            },
+                            taffy::geometry::Size {
+                                width: AvailableSpace::MaxContent,
+                                height: AvailableSpace::MaxContent,
+                            },
+                        )
+                        .width;
+                        let frame = c.padding_left + c.padding_right + c.border_left + c.border_right;
+                        atomic_widths.insert(cid, (mc_content + frame).max(0.0) + c.margin_left + c.margin_right);
+                    } else {
+                        // 原 p114 形态（提升原子为主）的非提升直属原子：item taffy 路径
+                        // 正常（不塌缩），已布局 outer 可信——维持原读数不变。
+                        atomic_widths.insert(cid, c.width + c.margin_left + c.margin_right);
+                    }
                 }
             }
             // max-content 按段组合：原子宽经 resolver 落入 br 切开前的当前段——

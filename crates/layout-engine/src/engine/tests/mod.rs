@@ -917,6 +917,9 @@ mod r5333_flex_infinite_grow_tests;
 /// overflow visible 自动最小保留、row 轴 cross 域既有行为守卫
 ///（fieldset-as-item-overflow）。
 mod r5334_flex_scroll_item_min_tests;
+/// t-zchip（css-flexbox-1 §9.2.E）flex 容器内 block 子项 flex base size 探测量得
+/// min-content（chips 竖排）而非 max-content——GitHub trending nav.subnav 塌缩回归。
+mod t_zchip_flex_block_nav_tests;
 
 /// R5338（css-flexbox-1 §8.5 baseline alignment）：flex 叶首行基线通道锚——
 /// baseline 对齐三项异高同顶（margin 参与基线偏移）、flex-start 守卫不变。
