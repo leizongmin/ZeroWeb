@@ -173,6 +173,9 @@ impl InlineFormattingContext {
         };
         // text-indent 仅作用于首行
         let mut current_x = self.text_indent;
+        // R5415：当前行是否含 OofAnchor（零宽不产生 run）——br 空行 strut 臂据
+        // 此收窄（锚空行 strut 取容器 strut，其余空行维持 20px legacy 判例）。
+        let mut current_line_had_oof_anchor = false;
         // 跟踪当前行内最近一次贡献宽度的内容是否为可折叠空白，
         // 用于将连续纯空白 run（如 inline-block 之间被注释分隔的两个文本节点）
         // 按 CSS Text §4.1 折叠为单个空格。
@@ -599,6 +602,7 @@ impl InlineFormattingContext {
                                 ascent: 0.0,
                                 descent: 0.0,
                             };
+                            current_line_had_oof_anchor = false;
                             // R3785：新行落位——float 推压（新行带与 float 排除带重叠且
                             // 可用宽 ≤ 0 → 下推到带底；CSS §9.5 行盒不与 float 重叠）。
                             let (_, avail0) = self.effective_content_area(current_y, default_line_height);
@@ -811,6 +815,7 @@ impl InlineFormattingContext {
                                 ascent: 0.0,
                                 descent: 0.0,
                             };
+                            current_line_had_oof_anchor = false;
                             let (new_left, _) = self.effective_content_area(current_y, est_height);
                             current_x = new_left;
                             lead_gap = 0.0;
@@ -843,6 +848,7 @@ impl InlineFormattingContext {
                                 ascent: 0.0,
                                 descent: 0.0,
                             };
+                            current_line_had_oof_anchor = false;
                             // 新行重新计算浮动偏移
                             let (new_left, _) = self.effective_content_area(current_y, run.box_height());
                             current_x = new_left;
@@ -888,6 +894,7 @@ impl InlineFormattingContext {
                                         ascent: 0.0,
                                         descent: 0.0,
                                     };
+                                    current_line_had_oof_anchor = false;
                                     let (new_left, _) = self.effective_content_area(current_y, fragment_height);
                                     partial_x = new_left;
                                 }
@@ -1078,6 +1085,7 @@ impl InlineFormattingContext {
                             ascent: 0.0,
                             descent: 0.0,
                         };
+                        current_line_had_oof_anchor = false;
                         let (new_left, _) = self.effective_content_area(current_y, box_height);
                         current_x = new_left;
                         // R5216（CSS2 §9.5 rule 8）：断行产生的新空行同样按 R4234 下绕——
@@ -1157,6 +1165,7 @@ impl InlineFormattingContext {
                         };
                         self.oof_static_positions.insert(oid, (container, anchor_x, current_y));
                     }
+                    current_line_had_oof_anchor = true;
                 }
                 InlineItem::Br | InlineItem::BlockBreak | InlineItem::FloatAnchor(_) => {
                     // 强制换行：将当前行推入结果，开始新行
@@ -1247,13 +1256,31 @@ impl InlineFormattingContext {
                     // est_height 已是 strut（default_line_height）；非空行（含文本，height>0）
                     // 不受影响。与 R1285（br 在 block 间的 taffy min-height）正交——本处管
                     // br 在 IFC 内（p>br 等）的空行。kill-switch `ZW_BR_IFC_LINE=0`（default-on）。
-                    if matches!(item, InlineItem::Br) && current_line.height <= 0.0 && runtime_flags::br_ifc_line() {
-                        current_line.height = est_height;
+                    // R5415：**OOF 锚空行**（唯一流内容 = OofAnchor + Br）strut 取容器 used
+                    // line-height（R5298 捕获；preserved_empty_line_strut 内建 Path B 空
+                    // styles/显式 0 回退 20px）——OOF 锚零宽不占行高域（css-position-3 §4.1
+                    // OOF 不参与行内布局；css-inline-3 §5.2.2 线盒高不计 OOF 盒），行高
+                    // = strut 而非 20px legacy（abspos-block-level-001 ref 页：锚行 20 vs
+                    // test 页文本行 18 → 全页 +2px 错位，chromium oracle 双页均 18px 单行
+                    // 截图实证）。门收窄到锚空行：R5322 判例（非 preserve br 空行全量换
+                    // strut → ruby-align-001/001a 0.77→1.02 越阈翻红）不触——ruby 页行内
+                    // 容非 OOF 锚。kill-switch `ZW_OOF_ANCHOR_LINE_STRUT=0` 回退 20px。
+                    let br_empty_line = matches!(item, InlineItem::Br)
+                        && current_line.height <= 0.0
+                        && runtime_flags::br_ifc_line();
+                    if br_empty_line {
+                        current_line.height = if current_line_had_oof_anchor && runtime_flags::oof_anchor_line_strut()
+                        {
+                            preserved_empty_line_strut
+                        } else {
+                            est_height
+                        };
                     }
+                    let br_strut_height = current_line.height;
                     current_line.y = current_y;
                     self.lines.push(current_line);
                     last_word_on_line = false;
-                    current_y += est_height;
+                    current_y += if br_empty_line { br_strut_height } else { est_height };
                     current_line = LineBox {
                         y: f32::NAN,
                         height: 0.0,
@@ -1262,6 +1289,7 @@ impl InlineFormattingContext {
                         ascent: 0.0,
                         descent: 0.0,
                     };
+                    current_line_had_oof_anchor = false;
                     let (new_left, _) = self.effective_content_area(current_y, default_line_height);
                     current_x = new_left;
                     // R3786：本行由块断行（FloatAnchor/BlockBreak/Br）产生——新行上紧随的
