@@ -1282,6 +1282,18 @@
           if (moAttr !== 'src' && typeof globalThis.__zwImgAttrMutated5277 === 'function') {
             try { globalThis.__zwImgAttrMutated5277(sel, handle, moAttr, false, _zw5277PreAttr); } catch (_e5277idl) {}
           }
+          // s281：AUDIO/VIDEO loading IDL set → 唤醒 deferred lazy video
+          //（to-eager 断言面 IDL 路径——video.loading='eager' 经反射臂写内容
+          // 属性后落此汇流点；册空 no-op）。
+          if (moAttr === 'loading' && typeof globalThis.__zwMediaLoadingMutated5281 === 'function') {
+            try { globalThis.__zwMediaLoadingMutated5281(sel, handle); } catch (_e5281idl) {}
+          }
+          // s281：VIDEO poster IDL set → poster 待取登记/更新（poster-when-visible
+          // 断言面：无 src lazy video 上设 poster——resource timing 条目按旗标
+          // 产出，fetch 唯一通路是唤醒体旗标 flush）。
+          if (moAttr === 'poster' && typeof globalThis.__zwMediaPosterAttrMutated5281 === 'function') {
+            try { globalThis.__zwMediaPosterAttrMutated5281(sel, handle); } catch (_e5281idl2) {}
+          }
         }
         return true;
       },

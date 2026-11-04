@@ -4166,6 +4166,11 @@
                     || n === 'loading')) {
               try { globalThis.__zwImgAttrMutated5277(sel, handle, n, false, _zw5277SetPre); } catch (_e5277sa) {}
             }
+            // s281：AUDIO/VIDEO loading 属性 setAttribute 变更 → 唤醒 deferred
+            // lazy video（to-eager 断言面内容属性路径）。
+            if (n === 'loading' && typeof globalThis.__zwMediaLoadingMutated5281 === 'function') {
+              try { globalThis.__zwMediaLoadingMutated5281(sel, handle); } catch (_e5281sa) {}
+            }
             if (n === 'src' && typeof _realTag === 'function'
                 && (_realTag(sel, handle) === 'AUDIO' || _realTag(sel, handle) === 'VIDEO')) {
               if (typeof _zwMediaScheduleLoad === 'function' && !_resourceStates[_elKey(sel, handle)]) {
@@ -4461,6 +4466,12 @@
                     || n === 'referrerpolicy' || n === 'media' || n === 'type'
                     || n === 'loading')) {
               try { globalThis.__zwImgAttrMutated5277(sel, handle, n, true, _zw5277RmPre); } catch (_e5277ra) {}
+            }
+            // s281：AUDIO/VIDEO loading 属性移除 → 唤醒 deferred lazy video
+            //（to-eager 断言面 removeAttribute 内容属性路径）。
+            if (_rmExisted && n === 'loading'
+                && typeof globalThis.__zwMediaLoadingMutated5281 === 'function') {
+              try { globalThis.__zwMediaLoadingMutated5281(sel, handle); } catch (_e5281ra) {}
             }
             // R125：id 移除登记覆盖表（null = absent——sel-based 元素旧 id 查询剔除）。
             if (n === 'id' && !handle && globalThis._zwIdOverrideSet) globalThis._zwIdOverrideSet(key, null);
@@ -5450,6 +5461,24 @@
               if (_realTag(sel, handle) === 'IMG' && typeof globalThis.__zwImgScrollIntoView5277 === 'function') {
                 globalThis.__zwImgScrollIntoView5277(sel, handle);
               }
+              // s281：VIDEO scrollIntoView 旗标（显式滚动意图——lazy 门无条件
+              // 放行，window load 前滚入也即刻装载，img _zw5277ViewportFlag 同
+              // 型）+ lazy 册 sweep。两者须先于下方 rect 早退执行：script 创建
+              // 的 video 无 rect-bridge 快照（renderer 布局拍外，探针实证 gBCR
+              // 全零），早退会吞旗标与 sweep——旗标放行不依赖 rect（目标过门靠
+              // 旗标非距离）；落位 scrollTo 仅在 rect 在位时有意义（无 rect＝
+              // 无法计算落位，视口不动，sweep 以现 scrollY 再判等价）。
+              if (_realTag(sel, handle) === 'VIDEO') {
+                try {
+                  globalThis._zwMediaViewportFlag5281 = globalThis._zwMediaViewportFlag5281 || {};
+                  globalThis._zwMediaViewportFlag5281[_elKey(sel, handle)] = true;
+                } catch (_e5281si) {}
+                try {
+                  if (typeof globalThis.__zwMediaSweepLazy5281 === 'function') {
+                    globalThis.__zwMediaSweepLazy5281();
+                  }
+                } catch (_eSw5281p) {}
+              }
             } catch (_eSiv5277) {}
             var identity = sel || handle;
             if (!identity || typeof __zw_getBoundingClientRect !== 'function') return;
@@ -5473,6 +5502,8 @@
             globalThis.scrollTo(0, newTop); // behavior: instant（smooth 无动画，headless documented）
             // s273：滚动唤起面——落位后重验未启动 lazy img（近似 IntersectionObserver
             // 回调：滚动位移后距离门（含 s273 scrollX/Y 折算）放行滚入视口的图）。
+            // （s281 video sweep 不在此——script 创建 video 无 rect 快照会在此早退，
+            // 旗标+sweep 已前置到 rect 判定之前。）
             try {
               if (typeof globalThis.__zwImgSweepDeferredLazy5277 === 'function') {
                 globalThis.__zwImgSweepDeferredLazy5277();

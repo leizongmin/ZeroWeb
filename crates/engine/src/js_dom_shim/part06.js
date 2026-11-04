@@ -6675,6 +6675,10 @@
     var _zwWinLoadRet = _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
     if (event && event.type === 'load') {
       try { if (typeof globalThis.__zwImgDrainAfterWindowLoad5277 === 'function') globalThis.__zwImgDrainAfterWindowLoad5277(); } catch (_e5277dr) {}
+      // s281：video lazy 近端 after-load 唤醒 + window-load 已派发标记置位
+      //（listener 后——装载完成序在 load 之后，in-viewport「does not block
+      // window load」断言面）。
+      try { if (typeof globalThis.__zwMediaDrainAfterWindowLoad5281 === 'function') globalThis.__zwMediaDrainAfterWindowLoad5281(); } catch (_e5281dr) {}
     }
     return _zwWinLoadRet;
   };
@@ -12219,9 +12223,151 @@
     if (typeof setTimeout === 'function') setTimeout(_open, 0);
     else _open();
   }
+  // ── s281：video lazy loading 唤醒机具（drain/sweep/mutation 三入口合一）
+  // ──
+  // 三入口共享同一唤醒体：遍历 deferred 册、按冻结参数重入 _zwMediaScheduleLoad
+  //（资格再判在门内——近端 + window load 已派发 / loading 已非 lazy / 旗标放行
+  // 者装载，其余重新落册）。drain 置 window-load 已派发标记（调用点在 window
+  // load listener 全部跑完后——s274 img after-load drain 同位）。
+  function _zwMediaFetchPoster5281(absUrl) {
+    try { if (typeof fetch === 'function' && absUrl) fetch(absUrl).catch(function () {}); } catch (_e5281pf) {}
+  }
+  // s281：poster 延迟取链——lazy video 的 poster 在显式滚动意图（scrollIntoView
+  // 旗标）达成前不 fetch（poster-when-visible 断言面：不可见时不产 resource
+  // 条目、滚入后产出——条目经页 fetch 通道挂 __zwEmitResourceTiming，404 响应
+  // 同样入 buffer 探针实证）。仅 lazy video 入册；eager video poster 从不
+  // fetch（既有零回归面）。无 src 的 lazy video 同样入册（poster-when-visible
+  // 页形态——media load 不发生，poster 链独立于 ScheduleLoad 车道，经本
+  // helper + 唤醒体 flush 承载）。
+  // conn+near 判定**不参与** poster 资格：stylesheet 类规则不进布局的勘根
+  // 结论下 `__zwImgNearViewport5277` 对 class 定位元素恒真（top=8 毒化），
+  // 参与即误取 poster-deferred「不取」绿面；旗标是唯一 fetch 通路（helper
+  // 只登记/更新/弃册，永不 fetch）。
+  globalThis.__zwMediaPosterAttrMutated5281 = function (sel, handle) {
+    var _paKey = _elKey(sel, handle);
+    var _paLazy = '';
+    try { _paLazy = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase(); } catch (_e5281pl) {}
+    if (!globalThis._zwMediaPosterPending5281) globalThis._zwMediaPosterPending5281 = {};
+    var _paPo = '';
+    try { _paPo = String(_zw5277Attr(sel, handle, 'poster') || ''); } catch (_e5281pp2) {}
+    if (!_paPo || _paLazy !== 'lazy') {
+      // poster 移除/清空或非 lazy——弃册不取（eager video poster 不 fetch）。
+      delete globalThis._zwMediaPosterPending5281[_paKey];
+      return;
+    }
+    var _paAbs = _paPo;
+    try { if (typeof _zwResolveFetchUrl === 'function') _paAbs = _zwResolveFetchUrl(_paPo); } catch (_e5281pr2) {}
+    // 登记待取（幂等重设同键覆盖）。fetch 只发生在唤醒体旗标 flush。
+    globalThis._zwMediaPosterPending5281[_paKey] = { url: _paAbs, sel: sel, handle: handle };
+  };
+  function _zwMediaLazyWake5281(markWinLoad) {
+    if (markWinLoad) globalThis._zwWindowLoadDone5281 = true;
+    var reg = globalThis._zwMediaLazyDeferred5281;
+    if (reg) {
+      var keys = Object.keys(reg);
+      for (var i = 0; i < keys.length; i++) {
+        var e = reg[keys[i]];
+        if (!e) continue;
+        try {
+          if (e.kind === 'commit') {
+            // 静态宿主 commit 车道（__zw_commit_resource_element_state 汇流点
+            // defer 的条目）——重放 settle（资格再判在 _zwSettleResourceSelector
+            // 门内：近端 + window load 已派发者落 settle，其余重新落册）。
+            _zwSettleResourceSelector(e.sel, e.tag, e.url, e.outcome, e.width, e.height, e.durationMs);
+          } else {
+            // 脚本车道（ScheduleLoad 门 defer 的条目）——冻结参重入。
+            _zwMediaScheduleLoad(e.sel, e.handle, e.tag, e.absUrl, e.emptySrc, e.sourceChild);
+          }
+        } catch (_e5281wk) {}
+      }
+    }
+    // s281：poster 待取 flush——旗标（scrollIntoView 显式滚动意图）是唯一
+    // fetch 通路。poster-when-visible 的 video 无 src（media 册空）也须走到
+    // 此段，故不随 media 册早退。
+    var pend5281 = globalThis._zwMediaPosterPending5281;
+    if (pend5281) {
+      var pkeys5281 = Object.keys(pend5281);
+      for (var j = 0; j < pkeys5281.length; j++) {
+        if (!(globalThis._zwMediaViewportFlag5281 && globalThis._zwMediaViewportFlag5281[pkeys5281[j]])) continue;
+        var pe = pend5281[pkeys5281[j]];
+        if (!pe) continue;
+        delete pend5281[pkeys5281[j]];
+        _zwMediaFetchPoster5281(pe.url);
+      }
+    }
+  }
+  globalThis.__zwMediaDrainAfterWindowLoad5281 = function () { _zwMediaLazyWake5281(true); };
+  globalThis.__zwMediaSweepLazy5281 = function () { _zwMediaLazyWake5281(false); };
+  // s281：AUDIO/VIDEO loading 属性变更（setAttribute/removeAttribute 内容属性
+  // 路径 + IDL 反射 set 汇流点）唤醒 deferred lazy video——仅唤醒**未装载**
+  //（册中有记录 = deferred/未 settle；已装载图 loading 变更 no-op，img
+  // s272「relevant mutations 定义不含 loading」同判据——to-eager 断言面：
+  // eager 化 / removeAttribute('loading') 后 loadstart）。audio 非 lazy
+  // loading element，册空 no-op。
+  globalThis.__zwMediaLoadingMutated5281 = function (sel, handle) {
+    var reg = globalThis._zwMediaLazyDeferred5281;
+    var e = reg && reg[_elKey(sel, handle)];
+    if (!e) return;
+    try {
+      if (e.kind === 'commit') {
+        _zwSettleResourceSelector(e.sel, e.tag, e.url, e.outcome, e.width, e.height, e.durationMs);
+      } else {
+        _zwMediaScheduleLoad(e.sel, e.handle, e.tag, e.absUrl, e.emptySrc, e.sourceChild);
+      }
+    } catch (_e5281mu) {}
+  };
   function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc, sourceChild) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
+    // s281：video lazy loading 门（HTML §lazy loading attributes：
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
+    // ——lazy loading elements = img 与 video；audio 不在列，门只认 video）。
+    // defer 时点**不 invoke media load 算法**：下方同步段（paused 中止/位置
+    // 归零/epoch bump）、ResourceSelect、setTimeout 续段全不走——networkState
+    // 恒 NETWORK_EMPTY、readyState 恒 HAVE_NOTHING、无 loadstart/error
+    //（load-deferred/not-rendered/disconnected/preload-deferred ×2 断言面）。
+    // 资格模型（同 img s271/s274 视口门，共用 __zwImgNearViewport5277 距离
+    // 判定——文档坐标 gBCR + s273 滚动折算 + 全零 rect 判不近）：
+    //   未连接 → defer（disconnected 断言面；mutation/drain 重入再判）；
+    //   not-rendered（display:none/hidden 全零 rect → 判不近）→ defer
+    //   （never load——scrollIntoView 对零面积元素不落位，旗标不置）；
+    //   远端（margin 外）→ defer（below-viewport 族断言面）；
+    //   近端且 window load 已派发 → 唤醒装载（drain/mutation 重入面）；
+    //   近端且 window load 未派发 → defer（「does not block window load」——
+    //   in-viewport/window-onload 断言面：装载完成序在 window load 之后，
+    //   s274 img after-load 队列同型语义）。
+    // 冻结参数（spec lazy set-up 请求——唤醒 fetch 不重选源，img s275 同型）：
+    //   defer 时点固化本次六参（含 sourceChild），唤醒重入按冻结参重走本函数
+    //（source-poster-deferred 的 source 候选不丢）。
+    // scrollIntoView 旗标（_zwMediaViewportFlag5281）＝显式滚动意图，无条件
+    // 放行（img _zw5277ViewportFlag 同型——window load 前滚入也即刻装载）。
+    // 已 settle（_resourceStates 有记录）不受门——restart 语义照旧；曾 defer
+    // 离册。poster 待取（独立链，见 __zwMediaPosterAttrMutated5281）不经本
+    // 门消费：fetch 唯一通路是唤醒体旗标 flush，eager 化经 helper 复判弃册。
+    if (tag === 'video') {
+      var _mzLazy = '';
+      try { _mzLazy = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase(); } catch (_e5281lz) {}
+      var _mzFlag = globalThis._zwMediaViewportFlag5281 && globalThis._zwMediaViewportFlag5281[key];
+      if (_mzLazy === 'lazy' && !_resourceStates[key] && !_mzFlag) {
+        var _mzConn = false;
+        try { _mzConn = _makeProxy(sel, handle).isConnected === true; } catch (_e5281cn) {}
+        var _mzNear = false;
+        try { _mzNear = globalThis.__zwImgNearViewport5277(sel, handle) === true; } catch (_e5281nv) {}
+        if (!(_mzConn && _mzNear && globalThis._zwWindowLoadDone5281)) {
+          globalThis._zwMediaLazyDeferred5281 = globalThis._zwMediaLazyDeferred5281 || {};
+          globalThis._zwMediaLazyDeferred5281[key] = { sel: sel, handle: handle, tag: tag, absUrl: absUrl, emptySrc: isEmptySrc, sourceChild: sourceChild || null };
+          // poster 待取登记（有 src 的形态经此入册；无 src 形态走 poster 属性
+          // 变更汇流点——同一 helper，见 __zwMediaPosterAttrMutated5281）。
+          try { if (typeof globalThis.__zwMediaPosterAttrMutated5281 === 'function') globalThis.__zwMediaPosterAttrMutated5281(sel, handle); } catch (_e5281pp) {}
+          return;
+        }
+      }
+      // 非 lazy / 已 settle / 旗标放行 / 唤醒——离册；poster 待取交 helper
+      // 复判（非 lazy 弃册不取；仍 lazy 保留在册等旗标 flush——旗标放行的
+      // 唤醒重入先于此处跑册循环，flush 在其后补 fetch）。
+      if (globalThis._zwMediaLazyDeferred5281 && globalThis._zwMediaLazyDeferred5281[key]) delete globalThis._zwMediaLazyDeferred5281[key];
+      try { if (typeof globalThis.__zwMediaPosterAttrMutated5281 === 'function') globalThis.__zwMediaPosterAttrMutated5281(sel, handle); } catch (_e5281pp3) {}
+    }
     var ms = _mediaState[key] || (_mediaState[key] = {});
     // M3 扩批 XI（spec dom-media-load 同步段）：media load invoke → 播放中止——paused
     // 置 true（同步面）、pending play promises reject AbortError、timeupdate + pause
@@ -12410,6 +12556,34 @@
     });
   }
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {
+    // s281：video lazy 静态装载门——宿主 commit 汇流点（__zw_commit_resource_
+    // element_state 逐元素匹配后落此；source 子成功面经父 tag 分支同样落此，
+    // 探针实证：静态 <video src> 的加载不经 _zwMediaScheduleLoad，宿主 fetch
+    // 完成 commit → 本函数 → settle 是唯一静态车道）。lazy video（loading=
+    // lazy、未 settle、无旗标、非「已连接+近端+window load 已派发」唤醒形态）
+    // 不落 settle，deferred 册登记 commit 参数（kind:'commit'——唤醒面重放本
+    // 函数，LoadSequence 事件序/readyState 推进由 settle 承载，与脚本车道同
+    // 一唤醒机具）。静态形态 rect-bridge 快照在位（解析布局），资格判定可用
+    // 与脚本车道相同的距离模型。audio 非 lazy loading element，不进门。
+    var _stTag = String(tag).toLowerCase();
+    if (_stTag === 'video') {
+      var _stKey = _elKey(sel, null);
+      var _stLazy = '';
+      try { _stLazy = String(_zw5277Attr(sel, null, 'loading') || '').trim().toLowerCase(); } catch (_e5281sl) {}
+      var _stFlag = globalThis._zwMediaViewportFlag5281 && globalThis._zwMediaViewportFlag5281[_stKey];
+      var _stConn = false, _stNear = false;
+      try { _stConn = _makeProxy(sel, null).isConnected === true; } catch (_e5281sc) {}
+      try { _stNear = globalThis.__zwImgNearViewport5277(sel, null) === true; } catch (_e5281sn) {}
+      if (_stLazy === 'lazy' && !_resourceStates[_stKey] && !_stFlag) {
+        if (!(_stConn && _stNear && globalThis._zwWindowLoadDone5281)) {
+          globalThis._zwMediaLazyDeferred5281 = globalThis._zwMediaLazyDeferred5281 || {};
+          globalThis._zwMediaLazyDeferred5281[_stKey] = { kind: 'commit', sel: sel, tag: _stTag, url: url, outcome: outcome, width: width, height: height, durationMs: durationMs };
+          return null;
+        }
+      }
+      // 非 lazy / 已 settle / 旗标放行 / 唤醒——离册（曾 defer 后直载/重入）。
+      if (globalThis._zwMediaLazyDeferred5281 && globalThis._zwMediaLazyDeferred5281[_stKey]) delete globalThis._zwMediaLazyDeferred5281[_stKey];
+    }
     return _zwSettleResourceKey(_elKey(sel, null), sel, null, tag, url, outcome, width, height, undefined, durationMs);
   }
   // media-elements M3 扩批 XII：data:text/vtt 最小解析 + track 资源 settle（headless
