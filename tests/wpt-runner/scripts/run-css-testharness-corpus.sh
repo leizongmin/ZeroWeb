@@ -67,6 +67,8 @@ case "${CORPUS}" in
   filter-effects) SUBCMD=testharness-filter-effects ;;
   fill-stroke) SUBCMD=testharness-fill-stroke ;;
   compositing) SUBCMD=testharness-compositing ;;
+  mediaqueries) SUBCMD=testharness-mediaqueries ;;
+  CSS2) SUBCMD=testharness-css2 ;;
   css-*) SUBCMD="testharness-${CORPUS}" ;;
   *) echo "usage: $0 <css-values|selectors|css-variables|css-color|css-align|css-sizing|...> [runner]" >&2; exit 2 ;;
 esac

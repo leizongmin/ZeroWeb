@@ -186,6 +186,20 @@ Commands:
                        (CSSOM/style API face; css-testharness-compat-v2 goal M1)
   testharness-css-env  Run upstream css-env testharness cases (CSSOM/style API
                        face; css-testharness-compat-v2 goal M1)
+  testharness-css-conditional  Run upstream css-conditional testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-mediaqueries  Run upstream mediaqueries testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-cascade  Run upstream css-cascade testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css2  Run upstream CSS2 html-face testharness cases (CSSOM/style
+                       API face; css-testharness-compat-v2 goal M2)
+  testharness-css-forms  Run upstream css-forms testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-link-params  Run upstream css-link-params testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
+  testharness-css-font-loading  Run upstream css-font-loading testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M2)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -521,6 +535,13 @@ fn main() {
         "testharness-css-nesting" => cmd_testharness_css_nesting(&options, filter.as_deref()),
         "testharness-css-color-hdr" => cmd_testharness_css_color_hdr(&options, filter.as_deref()),
         "testharness-css-env" => cmd_testharness_css_env(&options, filter.as_deref()),
+        "testharness-css-conditional" => cmd_testharness_css_conditional(&options, filter.as_deref()),
+        "testharness-mediaqueries" => cmd_testharness_mediaqueries(&options, filter.as_deref()),
+        "testharness-css-cascade" => cmd_testharness_css_cascade(&options, filter.as_deref()),
+        "testharness-css2" => cmd_testharness_css2(&options, filter.as_deref()),
+        "testharness-css-forms" => cmd_testharness_css_forms(&options, filter.as_deref()),
+        "testharness-css-link-params" => cmd_testharness_css_link_params(&options, filter.as_deref()),
+        "testharness-css-font-loading" => cmd_testharness_css_font_loading(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1918,6 +1939,55 @@ fn cmd_testharness_css_color_hdr(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_env(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_env_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-conditional` / `testharness-mediaqueries` / `testharness-css-cascade`
+/// / `testharness-css2` / `testharness-css-forms` / `testharness-css-link-params`
+/// / `testharness-css-font-loading`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M2 批次 3——B2 规则/条件/级联簇 7 目录，CSS2 只含 html 面——.xht
+/// XML 面不在通道；契约与退出码同 `cmd_testharness_css_values`：共享底座
+/// skip 规则单点，病态案谓词排除，记录模式不设 land 门禁）。
+fn cmd_testharness_css_conditional(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_conditional_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_mediaqueries(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_mediaqueries_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_cascade(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_cascade_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css2(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css2_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_forms(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_forms_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_link_params(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_link_params_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_font_loading(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_font_loading_cases(wpt_root, filter)
     });
 }
 

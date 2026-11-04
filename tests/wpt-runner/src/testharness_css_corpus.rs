@@ -459,3 +459,57 @@ pub fn run_css_color_hdr_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 pub fn run_css_env_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-env", filter)
 }
+
+// css-testharness-compat-v2 goal M2 批次 3（css 二期 B2 规则/条件/级联簇
+// 7 目录，分母 9,751 子测试——M0 甄别表 §3；CSS2 数值门按 html 面折算 300，
+// .xht XML 面不在通道——模块头注记；mediaqueries / CSS2 上游目录名无
+// css- 前缀走 motion 先例）。
+
+/// Run the pinned upstream css-conditional testharness subset（css 二期 M2
+/// 批次 3——条件规则（@media/@supports）解析与匹配断言面，M0 分母 3,258
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_conditional_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-conditional", filter)
+}
+
+/// Run the pinned upstream mediaqueries testharness subset（css 二期 M2 批次
+/// 3——媒体查询解析与匹配断言面，M0 分母 1,768 子测试）。filter 按路径
+/// 子串过滤。
+pub fn run_mediaqueries_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/mediaqueries", filter)
+}
+
+/// Run the pinned upstream css-cascade testharness subset（css 二期 M2 批次
+/// 3——级联与继承（@import/important/origin）断言面，M0 分母 1,750 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_cascade_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-cascade", filter)
+}
+
+/// Run the pinned upstream CSS2 testharness subset（扫描根 `css/CSS2`——上游
+/// 目录名大写无 css- 前缀；css 二期 M2 批次 3——CSS2.1 html 面属性解析与
+/// 计算值断言面，M0 分母 2,548 子测试，数值门按 html 面折算 300——.xht
+/// XML 面不在通道）。filter 按路径子串过滤。
+pub fn run_css2_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/CSS2", filter)
+}
+
+/// Run the pinned upstream css-forms testharness subset（css 二期 M2 批次
+/// 3——表单元素 UI 样式断言面，M0 分母 93 子测试）。filter 按路径子串过滤。
+pub fn run_css_forms_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-forms", filter)
+}
+
+/// Run the pinned upstream css-link-params testharness subset（css 二期 M2
+/// 批次 3——link 元素参数传递断言面，M0 分母 93 子测试）。filter 按路径
+/// 子串过滤。
+pub fn run_css_link_params_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-link-params", filter)
+}
+
+/// Run the pinned upstream css-font-loading testharness subset（css 二期 M2
+/// 批次 3——FontFace/FontFaceSet 加载 API 断言面，M0 分母 241 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_font_loading_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-font-loading", filter)
+}
