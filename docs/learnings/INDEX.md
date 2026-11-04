@@ -5,13 +5,14 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（219）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（220）
 
 - 2026-11-04 [计时探针不带值断言会测到错误路径——「便宜读数」可能是零矩形快速回落](bugs/2026-11/2026-11-04-timing-probe-without-value-assertions-measures-wrong-path.md) — engine, testing
 - 2026-11-04 [SIGKILL 构建链可在 target/debug 留下"指纹新鲜、内容陈旧"的投毒构件，编译假红要先用 clean -p 验伪](bugs/2026-11/2026-11-04-sigkilled-build-poisoned-artifacts-false-compile-red.md) — engine, testing
 - 2026-11-04 [timer 回调丢 data-\* 属性——读侧回落机制与宿主半边分离交付，跨线程接线是结构必需](bugs/2026-11/2026-11-04-mutation-history-host-half-unwired-cross-thread-inbox.md) — engine
 - 2026-11-04 [include_str! 内嵌 shim 的 A/B 判读必须先做二进制谱系验证](bugs/2026-11/2026-11-04-include-str-shim-binary-lineage-ab.md) — engine, testing
 - 2026-11-04 [gBCR 不反映同任务样式写——读路径数据源分叉与 worker 侧有效视图布局](bugs/2026-11/2026-11-04-gbcr-pending-style-write-effective-view-layout.md) — engine
+- 2026-11-04 [workspace 特性统一掩盖 cfg 门控符号的未门控引用断裂](bugs/2026-11/2026-11-04-cargo-feature-unification-hides-cfg-symbol-breaks.md) — engine, 构建系统
 - 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
 - 2026-11-03 [KMAC newX 拼接是裸 X——把 TupleHash 的逐元素 encode_string 套到 KMAC 上产出全错 MAC](bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md) — zero-engine
 - 2026-11-03 [Hybrid PQ/T KEM combiner 用 CG 框架 C2PRI 定义（含 ek_T、不含 ct_PQ），不是 X-Wing 原式](bugs/2026-11/2026-11-03-hybrid-kem-c2pri-combiner-includes-ek-t.md) — engine
