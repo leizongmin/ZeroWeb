@@ -203,6 +203,11 @@ fetch_raw "html/semantics/scripting-1/the-script-element/module/import-meta/reso
 fetch_raw "images/green-1x1.png"
 fetch_raw "images/green-16x16.png"
 fetch_raw "html/semantics/embedded-content/the-img-element/srcset/resources/image.png"
+# ③f the-img-element sizes-auto-dynamic-attributes 助资产（s284）：该页断言面
+# 引用 /images/red-16x16.png（404 → onerror → load 断言永假 3F）。
+# 基准变更注记：补语料后该页 3F 预期转子测真面（sizes 重解析/eager flip/
+# stale auto-width 非持久），下轮全量 join 对应位移按语料变更归因（s284 账本）。
+fetch_raw "images/red-16x16.png"
 
 goals_fetch_all
 goals_inventory

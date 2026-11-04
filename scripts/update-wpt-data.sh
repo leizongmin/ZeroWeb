@@ -90,6 +90,11 @@
 #     resources 100x100 PNG 268B（经 gh api contents 按 lib.sh WPT_REV
 #     pin 315976933870b34d6ea30e3f6643403edae678ba 取件）；solo A/B
 #     sizes-auto 6F 全转绿——升级新 ref 后需重新补）
+#   - images/red-16x16.png 缺失（html/semantics/embedded-content/
+#     the-img-element/sizes/sizes-auto-dynamic-attributes.html 依赖；s284
+#     勘根定性该页 3F 为语料 404 非引擎缺陷——fetch fail → img onerror
+#     载入断言永假；已从上游 wpt images/ 原件本地补入 16x16 PNG 130B
+#     （同 gh api contents 按 pin 取件）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail
