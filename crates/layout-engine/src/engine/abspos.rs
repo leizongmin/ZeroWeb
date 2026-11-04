@@ -1616,8 +1616,31 @@ fn fix_abspos_static_after_inline_content_walk(
 
     // IFC 末行底（容器内容坐标，compute_final 期随宿 abspos 容器记录的标量，
     // 不依赖 inline_layout 存储——paint 路径零扰动）。None = 容器无行盒，本 pass 不适用。
+    // R5414（css-position-3 §static-position × CSS2 §9.2.1.1）：块级 abspos 静态位锚
+    // 改取容器 laid content extent（taffy 内容底）——R5227 标量 = max(行底) 含 **OOF
+    // 自身幻影行**（block-in-inline 单 IFC 模型给 OOF 子独立行；abspos-007：文本行底
+    // 16 + 幻影行底 36 → 标量 36，真静态位 = 前驱在流内容底 16＝后续 in-flow 兄弟
+    // control 的 taffy 落位），绿块下移 20px 与 control 错位、红条整面露出。content
+    // extent 与 in-flow 兄弟落位同源（taffy 块游标），自洽覆盖；锚后尚有行内容的形态
+    // 标量本就 max 越界，content extent 不劣化。float 子例外（R5414 邻域回归归因）：
+    // float 不生成行盒，标量只见行游标（between-float-and-text：行底 20＝float 落位，
+    // 精确锚），content extent 却含 float 底（220）→ 容器含 float 子时维持标量。
+    // kill-switch `ZW_R5227_CONTENT_EXTENT=0` 回退行底标量（OFF 精确回退由 corpus
+    // A/B 双窗覆盖）。
+    static CONTENT_EXTENT_ANCHOR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let content_extent_anchor =
+        *CONTENT_EXTENT_ANCHOR.get_or_init(|| std::env::var("ZW_R5227_CONTENT_EXTENT").as_deref() != Ok("0"));
     let line_bottom = box_node.oof_static_line_bottom;
-    if let Some(line_bottom) = line_bottom {
+    if let Some(recorded) = line_bottom {
+        let has_float_child = box_node
+            .children
+            .iter()
+            .any(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None));
+        let line_bottom = if content_extent_anchor && !has_float_child {
+            box_node.content_height
+        } else {
+            recorded
+        };
         // 两阶段收集/写回（同 R4017：避免 children 借用冲突）。
         let mut fixes: Vec<(usize, f32)> = Vec::new();
         for (idx, child) in box_node.children.iter().enumerate() {
