@@ -747,7 +747,23 @@
       };
       _zwVaWrap([node], sibCrit, function () { return null; });
     }
-    if (_zwJusIsInvisible(node)) return;
+    // Chrome delta（⑦ br 包裹面，2026-11-05）：invisible br（extraneous 形，
+    // 如 `<p>[foo<p><br><p>bar]` 中块 `<p><br></p>`）不作 invisible 早退——
+    // Chrome 对选区内 br 仍落独立值包裹，但仅 color 家族 + fontname：
+    // forecolor compare 期望 `<p><span style=color><br></span></p>` 形、
+    // fontname 同族包裹；**fontsize 期望 br 裸**（`<p><br></p>` 恒无
+    // font/span 包裹，fontsize 语料 2 变体实证——首版无命令门 2 P→F 回归）。
+    // 上游 wrap 合并臂已在上方尝试：br 有可并兄弟走合并（`foo<br>bar` 形，
+    // 可见 br 本就不入本臂）；孤立 extraneous br 落尾部外裹臂。等值早退
+    // （:751/:771）不受影响——已获同值继承的 br 仍零变更。其余 invisible
+    // 节点维持 spec 早退（force-the-value :2753）。五语料 + multitest 全部
+    // br compare fixture 改前零通过面（无保护面）。
+    // https://w3c.github.io/editing/execCommand.html#force-the-value
+    if (_zwJusIsInvisible(node)
+        && !(node.nodeType === 1 && _zwJusIsHtmlElement(node, 'br')
+             && command !== 'fontsize')) {
+      return;
+    }
     if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue)) {
       return;
     }
