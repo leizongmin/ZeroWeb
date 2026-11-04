@@ -1,9 +1,9 @@
 # DOM 操作基准控制面
 
 **日期**：2026-11-04
-**状态**：Active——M1-M3 已交付（M3：缺陷1/缺陷2 修复+配对回归，两大性能热点归因到代码路径）；**M4 已收口：dom-ops 门禁接线完成**——`scripts/dom-ops-gate.sh` 编排「转换→比较」，比较器原样复用 `scripts/perf-gate.sh`（零改动），独立基线 `docs/perf/baselines/domops-linux-x64.json`（3 哨兵行双浏览器，protocol v1.1）；干净窗口 GATE PASS exit 0，污染窗口 GATE FAIL 经采样日志归因环境噪声（未动基线）——见 [M4 evidence](evidence/2026-11-04-m4-gate-wiring/README.md)。协议 v1→v1.1：thrash 样本 12→8（12 样本贴 CDP awaitPromise 8s 悬崖，capture 实测 reverse 超时）。Firefox 缺测（未安装，NOT_AVAILABLE，不伪造）。
+**状态**：Done（2026-11-04 目标收口：DC-1..DC-5 全满足，组合态 main 终树复验 domops GATE PASS exit 0——cap5 干净窗口 6/6 预算内、zw 行贴基线、并行流改动无哨兵回归，见下方「M4 后续轮记录」与 cap5 产物）——M1-M3 已交付（M3：缺陷1/缺陷2 修复+配对回归，两大性能热点归因到代码路径）；**M4 已收口：dom-ops 门禁接线完成**——`scripts/dom-ops-gate.sh` 编排「转换→比较」，比较器原样复用 `scripts/perf-gate.sh`（零改动），独立基线 `docs/perf/baselines/domops-linux-x64.json`（3 哨兵行双浏览器，protocol v1.1）；干净窗口 GATE PASS exit 0，污染窗口 GATE FAIL 经采样日志归因环境噪声（未动基线）——见 [M4 evidence](evidence/2026-11-04-m4-gate-wiring/README.md)。协议 v1→v1.1：thrash 样本 12→8（12 样本贴 CDP awaitPromise 8s 悬崖，capture 实测 reverse 超时）。Firefox 缺测（未安装，NOT_AVAILABLE，不伪造）。
 **当前卡点**：无阻塞。残余转性能工作流：thrash 增量布局 / shim 节点成本（架构级）、probe8 A2 便宜态疑点、dom-ops runner 内建 suspect 检测。
-**下一步**：目标收口——DC 全有证据、组合态 main 门禁复验 GATE PASS；残余项转性能工作流跟踪。
+**下一步**：无（目标已收口）。架构级残余（thrash 增量布局 / shim 节点成本、probe8 A2 便宜态疑点、dom-ops runner 内建 suspect 检测）转性能工作流跟踪——3 哨兵行已入 perf-gate 常驻门禁，回归由 `domops-linux-x64.json` 基线拦截。
 **入口**：[目标契约](../dom-operation-bench.md) / [启动与证据协议](../ladybird-followups/README.md)
 
 ## 缺口与待决
