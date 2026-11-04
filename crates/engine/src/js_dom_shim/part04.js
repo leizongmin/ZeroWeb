@@ -856,6 +856,30 @@
               }
               return 0;
             }
+            // s283（html-semantics M2）：being-rendered 臂——spec image.width/
+            // image.height「These attributes return the rendered dimensions of
+            // the image. When the image is not being rendered, they return the
+            // width and height content attributes' values」（§4.8.3 The img
+            // element IDL 定义 letter-exact）。此前 attr 可解析即直返（渲染臂
+            // 缺席），corpus implicit-sizes-ignores-width 面实证：作者规则
+            // img{width:auto}（specificity (0,0,1)）压掉 dimension-attr
+            // presentational hint（author origin (0,0,0) 最早位，style-system
+            // collect_presentational_hints 注记）→ used width auto → 布局用
+            // 密度折算固有尺寸（s219 build_img_intrinsic_all）→ rendered
+            // 800，IDL 应返 800 而非 attr 400。layout rect 存在（上次 render
+            // 快照，_layoutRect 与 gBCR 同源）⇒ 已布局且入布局树 → 返
+            // rendered 维度（round）；无 rect（未布局/detached/display:none
+            // → host 无快照）⇒ 维持 attr 值 = not-rendered 臂内容属性值。
+            // FIXME: rect 维度 0（CSS width:0 等真渲染零盒）落 attr 臂——
+            // 零盒 IDL 应返 0，近似缺口随几何底座补。
+            // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
+            if (rgTag === 'IMG') {
+              var _rdR = _layoutRect(sel, handle);
+              if (_rdR) {
+                var _rdV = Math.round(prop === 'width' ? _rdR.w : _rdR.h);
+                if (isFinite(_rdV) && _rdV > 0) return _rdV;
+              }
+            }
             return dN;
           }
         }

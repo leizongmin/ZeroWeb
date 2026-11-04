@@ -1326,9 +1326,27 @@ fn apply_replaced_element_sizing(
             // 无条件设为 HTML 属性值，致 <canvas width=10 height=10 style="height:100%">
             // 的 width 仍为 HTML 值 10（应按 1:1 比例从 height 100px 推导为 100px）。
             if css_w_auto && css_h_auto {
-                stored_is_content_intrinsic = true;
-                taffy_style.size.width = taffy::style::Dimension::length(w);
-                taffy_style.size.height = taffy::style::Dimension::length(h);
+                // s283（html-semantics M2）：img 免 attr 直写 definite——width/height
+                // 属性已按 HTML dimension attributes 映射 presentational hint
+                //（style-system img 臂，author origin (0,0,0)）进级联，可被作者规则
+                // 覆盖；computed 双 auto = hint 被作者覆盖（img{width:auto} 场景），
+                // attr 直写会压回被覆盖值（implicit-sizes-ignores-width：
+                // img{width:auto} 与 inline style="width:auto" 均被二次入场压回
+                // attr 400 实证——规范语义 attrs 只经 hint + aspect-ratio 两通道，
+                // 绝不直写 used size）。auto 态改注入密度折算固有尺寸（与无属性
+                // `_` 臂 img_intrinsic_sizes 同通道；无固有信号保持 auto = 容器宽
+                // 回落）。无作者覆盖时 computed 即 hint Px，本臂不达（taffy definite
+                // 同值零回归）；canvas/embed/object 等无 hint 通道，维持 attr 直写。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
+                if tag != "img" {
+                    stored_is_content_intrinsic = true;
+                    taffy_style.size.width = taffy::style::Dimension::length(w);
+                    taffy_style.size.height = taffy::style::Dimension::length(h);
+                } else if let Some(&(iw, ih)) = img_intrinsic_sizes.get(&dom_id) {
+                    stored_is_content_intrinsic = true;
+                    taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                    taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                }
             } else if css_w_auto && !css_h_auto {
                 // R3796（css-sizing-3 §5.2 + csswg #12333）：width content 关键字 + height
                 // 显式 + max-height content 关键字——max-content 高 = 固有宽 / 属性比
@@ -1402,12 +1420,29 @@ fn apply_replaced_element_sizing(
                 {
                     taffy_style.aspect_ratio = Some(iw / ih);
                 }
-                // 无 aspect_ratio 也无 height，使用固定宽度
+                // s283：img 免 attr 直写——width 属性经 presentational hint 进级联，
+                // computed Auto = 作者已覆盖；auto 态改注入固有宽（同 `_` 臂
+                // img_intrinsic_sizes 通道，密度折算固有 = spec replaced auto
+                // sizing），无固有信号保持 auto；R2172 aspect_ratio 注入保留 =
+                // attrs 只喂比例的规范语义半边。canvas 等无 hint 通道维持 attr 直写。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
                 if matches!(computed.width, LengthValue::Auto) {
-                    taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                    if tag != "img" {
+                        taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                    } else if let Some(&(iw, _)) = img_intrinsic_sizes.get(&dom_id)
+                        && iw > 0.0
+                    {
+                        taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                    }
                 }
             } else if matches!(computed.width, LengthValue::Auto) {
-                taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                if tag != "img" {
+                    taffy_style.size.width = taffy::style::Dimension::length(w.max(1.0));
+                } else if let Some(&(iw, _)) = img_intrinsic_sizes.get(&dom_id)
+                    && iw > 0.0
+                {
+                    taffy_style.size.width = taffy::style::Dimension::length(iw.max(1.0));
+                }
             }
         }
         (None, Some(h)) if h > 0.0 => {
@@ -1421,11 +1456,26 @@ fn apply_replaced_element_sizing(
                 {
                     taffy_style.aspect_ratio = Some(iw / ih);
                 }
+                // s283：img 免 attr 直写——height 属性经 presentational hint 进级联，
+                // computed Auto = 作者已覆盖；auto 态改注入固有高（同上臂注记）。
+                // https://html.spec.whatwg.org/multipage/rendering.html#dimension-attributes
                 if matches!(computed.height, LengthValue::Auto) {
-                    taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                    if tag != "img" {
+                        taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                    } else if let Some(&(_, ih)) = img_intrinsic_sizes.get(&dom_id)
+                        && ih > 0.0
+                    {
+                        taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                    }
                 }
             } else if matches!(computed.height, LengthValue::Auto) {
-                taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                if tag != "img" {
+                    taffy_style.size.height = taffy::style::Dimension::length(h.max(1.0));
+                } else if let Some(&(_, ih)) = img_intrinsic_sizes.get(&dom_id)
+                    && ih > 0.0
+                {
+                    taffy_style.size.height = taffy::style::Dimension::length(ih.max(1.0));
+                }
             }
         }
         _ => {
