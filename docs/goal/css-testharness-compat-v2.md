@@ -2,9 +2,10 @@
 
 **版本**: v1.0
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M1 + M2 完成（2026-11-05：44 批次目录全部接线入账，
-B1 31.8% / B2 44.1% / B3 24.0%，三批实测 passes 9,642 为门增益配额
-2,583 的 3.7 倍），下一步 M3 末件（十六目录零回归）+ M4 复测收口
+**状态**: Done——DC-1..DC-4 全部满足（2026-11-05 收口：M4 复测 css
+topdir 17,923→29,514 = 15.09%，门 ≥20,500 过 1.44 倍，全量头条换算
+68.08% 不回落；台账见
+[evidence/2026-11-05-m4-coverage-gate.md](css-testharness-compat-v2/evidence/2026-11-05-m4-coverage-gate.md)）
 **执行模式**: WPT 驱动（上游 css testharness 语料为验收标尺）+ 按簇批量扩面
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——CSS 面）
 **一期**: `docs/goal/archive/css-testharness-compat.md`（35 号，2026-10-30 收口）
@@ -148,7 +149,12 @@ blob-hash 不符定向重拉 33（一期存量页随上游滚动过期，#31 旧
   5,201→7,457；对照中 385 子测回归经无修复对照二进制集合级 A/B 证明为
   main 六日他流演化、记对端账；台账见
   [evidence/2026-11-05-m3-sixteen-zero-regression.md](css-testharness-compat-v2/evidence/2026-11-05-m3-sixteen-zero-regression.md)）。DC-3 完成。
-- **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
+- **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。**已完成**
+  （2026-11-05：60 suite 合并复测 css topdir 29,514/195,553 = 15.09%，
+  门 ≥20,500 过 1.44 倍；十六目录 20,149 + 批次 9,365（face-a 4,102 +
+  face-b 2,731 + B3 2,532）；头条换算 68.08% 不回落；csv 数据行同提交
+  回填（60 suites，completed）；台账见
+  [evidence/2026-11-05-m4-coverage-gate.md](css-testharness-compat-v2/evidence/2026-11-05-m4-coverage-gate.md)）。
 
 ## 依赖约束（run-rules §9）
 
