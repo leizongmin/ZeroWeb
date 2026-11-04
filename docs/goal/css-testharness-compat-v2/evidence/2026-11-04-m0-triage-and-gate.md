@@ -137,8 +137,9 @@ DC-1 三件套：①剩余目录逐目录甄别（本文 §2/§3）；②语料 
 - 与 35 号差异：v2 池 24 目录已含一期 rendering 拉取的 reftest 存量页，
   幂等快路径会整体漏拉——sync 模式逐文件对账解决；空目录同一路径全量
   首拉。
-- 首跑记录（2026-11-04，日志 `.acceptance/css-v2-m0/sync-*.log`，
-  diagnostics 不入库）：见 §6 跑批台账。
+- 首跑记录（2026-11-04 启动，2026-11-05 终局）：见 §6 跑批台账
+  （终局轮日志 `.acceptance/css-v2-m0/sync-20261105-000117.log`，
+  diagnostics 不入库；台账表已录入本文件）。
 - 幂等性：重跑只补缺失/不符文件；`resources/check-layout-th.js` 根级
   helper 与 35 号同款点拉。
 
@@ -168,11 +169,22 @@ B1/B2/B3（高密度 + 导入即得/引擎可修簇），WAAPI/API 未实现/协
   目录）干跑基线若实测率 < 3%（B1），触发门复评——复评证据落 evidence
   并在控制面留痕，不允许静默改门。
 
-## 6. M0 跑批台账（2026-11-04 本轮）
+## 6. M0 跑批台账（2026-11-04～05，终态）
 
 - 上游清单：74 目录 trees 全量（`.acceptance/css-v2-m0/listings/`，
   `summary.tsv` 汇总；diagnostics 不入库，计数已录 §3 表）。
-- 语料 sync 首跑：进行中/完成状态见 §4（本轮收口前回填终态计数）。
+- 语料 sync 终态：**45 目录全部 missing=0**（`== sync 结果：45 目录
+  missing=0，0 目录有缺失 ==`，`resources/check-layout-th.js` 点拉在册）。
+  扩展过滤面（html/htm/css/headers/js/json/xml/xhtml/svg）在册 blob
+  **18,031**；本轮新拉 **6,963**（B1 837 + B2 203 + B3 5,923，前三
+  css-break 1,368 / css-flexbox 1,212 / css-gaps 788）；blob-hash 不符
+  定向重拉 **33**（css-text-decor 16、css-flexbox 10、css-content/
+  css-cascade 各 3、css-pseudo 1）——一期 rendering 存量页随上游滚动
+  过期，替换前旧文件保留（#31）。
+- 执行形态：幂等续拉跨三轮（前轮中断落盘文件自动对账通过，B1 前六目录
+  新拉 0 属正常）；jsdelivr CDN 403 突发由 raw.githubusercontent 权威
+  回退承接，零目录失败。日志 `.acceptance/css-v2-m0/sync-20261105-000117.log`
+  （diagnostics 不入库）。
 
 ## 7. 布局簇地址池测量 → layout goal 分档触发
 
