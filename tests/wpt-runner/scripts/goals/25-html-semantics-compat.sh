@@ -193,6 +193,17 @@ fetch_raw "html/semantics/embedded-content/the-img-element/resources/green.png"
 fetch_raw "html/semantics/scripting-1/the-script-element/module/import-meta/resources/export-1.mjs"
 fetch_raw "html/semantics/scripting-1/the-script-element/module/import-meta/resources/export-2.mjs"
 
+# ③e the-img-element sizes/srcset 族助资产（s282）：sizes-auto.html 六子测断言
+# 面引用 /images/green-1x1.png?…、/images/green-16x16.png?…（404 → onerror →
+# 断言永假 6F）；implicit-sizes-ignores-width.html 引用
+# srcset/resources/image.png（404 → onerror，真断言面被加载错误遮蔽）。
+# 基准变更注记：补语料后 sizes-auto 六子测预期 F→P、resize-observer-removes-auto
+# 预期文件级 Timeout→子测起跑（真面 ResizeObserver 首报，转候选），下轮全量
+# join 的对应位移按语料变更归因，非回归（2026-11-04 s282 账本 A/B 实证）。
+fetch_raw "images/green-1x1.png"
+fetch_raw "images/green-16x16.png"
+fetch_raw "html/semantics/embedded-content/the-img-element/srcset/resources/image.png"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

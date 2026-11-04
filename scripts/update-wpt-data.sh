@@ -81,6 +81,15 @@
 #     白名单。字节勿用 master：bom-utf-16be.css 上游已重编码为 UTF-8 BOM+
 #     纯文本，与 pin 版真 UTF-16BE 不符，corpus 判据按 pin 字节形写定——
 #     升级新 ref 后 make fetch-wpt-html-semantics 白名单幂等自动补齐）
+#   - images/green-1x1.png、images/green-16x16.png 与 html/semantics/
+#     embedded-content/the-img-element/srcset/resources/image.png 缺失
+#     （the-img-element sizes/img-load/srcset 家族依赖；s282 勘根定性
+#     sizes-auto 族 6F、sizes-xhr-fragment 1F、adoption 等引用面为语料
+#     404 非引擎缺陷——img onerror → 断言永假/文件级 Timeout；已从上游
+#     wpt images/ 原件本地补入 1x1 PNG 82B + 16x16 PNG 92B + srcset
+#     resources 100x100 PNG 268B（经 gh api contents 按 lib.sh WPT_REV
+#     pin 315976933870b34d6ea30e3f6643403edae678ba 取件）；solo A/B
+#     sizes-auto 6F 全转绿——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail
