@@ -59,16 +59,19 @@ canonical serialization 579、序列化 assert_equals 838、color-mix 色域
 4. 次簇 canonical serialization 579 属 CSSOM 序列化既有归口，不随
    本簇挂账。
 
-## anchor-size（~2,500）与十六目录零回归——进行中/待执行
+## anchor-size（~2,500）就地修与十六目录零回归——已落地
 
-- **anchor-size() 参数序**：一期定性「引擎可修单点」（canonical
-  serialization 簇 2,498 全部为期望 `anchor-size(--foo width)` 实得
-  `anchor-size(width --foo)` 形态）。本轮由并发 rally 流承接就地修：
-  zero-css-parser 值级 canonical 序列化 + engine inline style 路径接
-  入，修复提交与探针复验台账落地后在此补链接。
-- **十六目录零回归对照**（DC-3 末件）：待批次 4 干跑与 anchor-size 修
-  复验证窗之后执行，分母对一期台账 65,501/17,781（27.1%）逐 subtest
-  对照，结论回填本文件。
+- **anchor-size() 参数序**：已就地修（2026-11-05，提交 6be1aae94）：
+  zero-css-parser 值级 canonical 归一 + engine 三处声明值写入路径接线，
+  `--*` 按 spec 跳过；css-anchor-position 通道 5,205P/40.6% →
+  7,457P/58.2%（+2,252），残留 12 为 calc/fallback 单位归一相邻簇归
+  CSSOM 既有账。台账见
+  [2026-11-05-m3-anchor-size-serialization](2026-11-05-m3-anchor-size-serialization.md)。
+- **十六目录零回归对照**（DC-3 末件）：已执行（2026-11-05）——逐
+  subtest 对照一期 weekly CI 基线，修复触达面 0 回归；对照中出现的
+  385 子测回归经无修复对照二进制集合级 A/B 证明与修复无关（main 六日
+  他流演化，记对端账）。台账见
+  [2026-11-05-m3-sixteen-zero-regression](2026-11-05-m3-sixteen-zero-regression.md)。
 
 ## 证据
 

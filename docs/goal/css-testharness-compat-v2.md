@@ -143,7 +143,11 @@ blob-hash 不符定向重拉 33（一期存量页随上游滚动过期，#31 旧
   一相邻簇；css-variables 回归通道零回退；台账见
   [evidence/2026-11-05-m3-anchor-size-serialization.md](css-testharness-compat-v2/evidence/2026-11-05-m3-anchor-size-serialization.md)）。
   grid 探测簇→layout goal 与 color 计算值面→color 专项的归口结论由并发
-  流 M3 台账落定；余十六目录零回归对照待批次 4 干跑窗口后执行。
+  流 M3 台账落定（routing 台账已回填两簇去向）。**M3 完成**（2026-11-05：
+  十六目录零回归对照落地——修复触达面 0 回归，anchor-position
+  5,201→7,457；对照中 385 子测回归经无修复对照二进制集合级 A/B 证明为
+  main 六日他流演化、记对端账；台账见
+  [evidence/2026-11-05-m3-sixteen-zero-regression.md](css-testharness-compat-v2/evidence/2026-11-05-m3-sixteen-zero-regression.md)）。DC-3 完成。
 - **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
 
 ## 依赖约束（run-rules §9）
