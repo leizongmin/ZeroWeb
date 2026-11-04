@@ -3188,7 +3188,6 @@
     var key = _elKey(sel, handle);
     var _imKey = key;
     var _imPrev = _resourceStates[_imKey];
-    var _imHadPrev = !!_imPrev;
     var _imUrlChanged = !!(!_imPrev || _imPrev.url !== _imSrc);
     if (_imPrev && _imUrlChanged) delete _resourceStates[_imKey];
     var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
@@ -3272,6 +3271,10 @@
       // s70：同 URL 重复命中也重派（relevant-mutations 'src set to same value'
       // ——spec load 派发门控仅 maybe-omit-events）。
       var _av5275 = _zwAvailImgs[_imSrc];
+      // s286：视口旗标一次性消费——commit 点（avail 命中 settle / fetch 臂
+      // 启动）清位。留存会让滚出视口后的后续换源 run 经陈旧旗标绕过距离门
+      // eager 装载（image-loading-lazy-multiple-times 第二次换源断言面）。
+      try { if (globalThis._zw5277ViewportFlag) delete globalThis._zw5277ViewportFlag[_imKey]; } catch (_e5285vf) {}
       // s71 F1b：SVG 固有轴元数据随 avail 缓存传播（density-corrected 尺寸逐轴
       // 折算——仅 SVG 自身固有轴随密度校正，默认 300/150 轴不校正）。
       _resourceStates[_imKey] = { url: _imSrc, outcome: 'loaded', width: _av5275.width, height: _av5275.height, error: null, density: _imDensity, axes: _av5275.axes };
@@ -3324,10 +3327,15 @@
       //（__zwImgNearViewport5277「接近视口即装载」——mutation/revalidate 触发
       // 的 run 经此门；解析静态 img 的初始 settle 距离分流在 part04
       // __zwFireStaticImgSettle lazy skip 点，F5 视口模型收口前）。
-      // 曾有请求（已加载 lazy img 换 src）不受门——restart 语义照旧。
+      // s286：曾有请求的图也过门（删除 s273 `!_imHadPrev` 旁路）——spec lazy
+      // 装载可多次发生：已加载 lazy img 换 src 仍是 update-the-image-data
+      // run，lazy 态视口门逐 run 重判（Chromium LazyLoad 同型；image-
+      // loading-lazy-multiple-times 断言面：滚出视口后二次 src 变更不得
+      // eager 装载，滚回视口后经冻结请求装载）。同 URL 已可用 run 走
+      // available-images 命中臂在门前，不受影响。
       var _imLazy = '';
       try { _imLazy = String(_zw5277Attr(sel, handle, 'loading') || '').toLowerCase(); } catch (_e5277lz) {}
-      if (_imLazy === 'lazy' && !_imHadPrev
+      if (_imLazy === 'lazy'
           && !(globalThis._zw5277ViewportFlag && globalThis._zw5277ViewportFlag[_imKey])
           && !globalThis.__zwImgNearViewport5277(sel, handle)) {
         // s273：deferred 发生点登记曾-lazy（once-deferred 永不阻 window load
@@ -3380,6 +3388,10 @@
         return;
       }
       try {
+        // s286：视口旗标一次性消费（fetch commit 点清位——同 avail 臂注释；
+        // 消费点在门后 commit 位，s274 after-load drain 的「旗标救」路径不受
+        // 影响——drain 经 viewport-revalidate → 本臂 fetch 即消费）。
+        try { if (globalThis._zw5277ViewportFlag) delete globalThis._zw5277ViewportFlag[_imKey]; } catch (_e5285vf) {}
         // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
         // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
         // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
