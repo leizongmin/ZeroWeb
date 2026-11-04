@@ -1,0 +1,45 @@
+== totals ==
+baseline: P=35638 F=16111 T=4 NR=4
+run     : P=35796 F=15954 T=4 NR=4
+cases   : baseline 675 run 675
+
+== faces ==
+baseline selection face: {'Fail': 13751, 'Pass': 22304, 'Timeout': 3, 'NotRun': 4} sum 36062
+run      selection face: {'Fail': 13597, 'Pass': 22459, 'Timeout': 3, 'NotRun': 4} sum 36063
+baseline editing   face: {'Pass': 13334, 'Fail': 2360, 'Timeout': 1} sum 15695
+run      editing   face: {'Pass': 13337, 'Fail': 2357, 'Timeout': 1} sum 15695
+
+FIXES=158  REGRESSIONS=0  nonPass->nonPass status-change=0
+
+NEW subtests=2
+  [Timeout] selection/selection-nested-video.html :: selection/selection-nested-video.html
+  [Fail] selection/caret/move-around-contenteditable-false.html :: Move caret from empty editable paragraph to editable text following non-editable text in next paragraph: secon
+
+MISSING (baseline-only, compare blind spot)=1
+  [base:Timeout] selection/selection-nested-video.html :: selection have the same anchor and focus nodes because b and c are in different tree scopes.
+
+== target 'initial-selection-on-focus' ==
+  run      selection/contenteditable/initial-selection-on-focus.tentative.html?div: {'Pass': 100}
+  baseline selection/contenteditable/initial-selection-on-focus.tentative.html?div: {'Fail': 99, 'Pass': 1}
+  run      selection/contenteditable/initial-selection-on-focus.tentative.html?span: {'Pass': 51}
+  baseline selection/contenteditable/initial-selection-on-focus.tentative.html?span: {'Fail': 50, 'Pass': 1}
+
+== target 'collapse.html' ==
+  run      selection/contenteditable/collapse.html: {'Pass': 3}
+  baseline selection/contenteditable/collapse.html: {'Fail': 3}
+
+== target 'selection-outside-focused-editing-host' ==
+  run      selection/contenteditable/selection-outside-focused-editing-host.tentative.html: {'Pass': 2, 'Fail': 1}
+  baseline selection/contenteditable/selection-outside-focused-editing-host.tentative.html: {'Pass': 2, 'Fail': 1}
+
+== target 'move-around-generated-content' ==
+  run      selection/caret/move-around-generated-content.html: {'Pass': 5, 'Fail': 10}
+  baseline selection/caret/move-around-generated-content.html: {'Pass': 3, 'Fail': 12}
+
+== target 'copy-paste-of-anchor' ==
+  run      editing/other/html-text-copy-paste-of-anchor-with-href-in-content-editable.html: {'Pass': 1}
+  baseline editing/other/html-text-copy-paste-of-anchor-with-href-in-content-editable.html: {'Pass': 1}
+
+== target 'collapsible-white-space' ==
+  run      editing/other/paste-text-after-collapsible-white-space-whose-container-remove-non-first-children.html: {'Pass': 2}
+  baseline editing/other/paste-text-after-collapsible-white-space-whose-container-remove-non-first-children.html: {'Pass': 2}

@@ -10104,6 +10104,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 夭弃（send() reject/abort）不回灌清零——下链首步前若页未补 keyup 则粘滞残留；
     // 真实浏览器驱动层按键态同步面，语料无钉前按最简生命周期。
     let mut td_shift_sticky = false;
+    // selection-compat M2（2026-11-04）：Ctrl/Meta 粘滞位（Actions 链修饰键步置位/
+    // keyup 清零）——后续可打印字符键识别为快捷键组合（copy/cut/paste/selectAll
+    // 默认动作路由），不再落 InsertText。生命周期同 shift_sticky。
+    let mut td_accel_sticky = false;
     // M3 扩批 XVI：文件字节缓存（同 src 只读盘一次；注册表 contains_source 幂等）。
     let mut media_byte_cache: std::collections::HashMap<String, std::rc::Rc<Vec<u8>>> =
         std::collections::HashMap::new();
@@ -10246,6 +10250,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
                 pointer_injection,
                 &mut td_drag_mouse_suppressed,
                 &mut td_shift_sticky,
+                &mut td_accel_sticky,
             );
             // R347：目标未解析（元素尚未 materialize）→ 重新入队下帧重试。
             let unresolved = result.as_deref().is_some_and(|message| {
@@ -11666,6 +11671,7 @@ fn mut_hover_settle_if_dirty(webview: &mut WebView, last_pointer: &Option<(f32, 
     let _ = webview.execute_script(&script);
 }
 
+#[allow(clippy::too_many_arguments)] // 同 product_smoke.rs/reftest.rs 先例——链状态位逐步累积
 fn apply_testdriver_command(
     webview: &mut WebView,
     command: &TestdriverCommand,
@@ -11674,6 +11680,7 @@ fn apply_testdriver_command(
     pointer_injection: PointerStepInjection,
     drag_mouse_suppressed: &mut bool,
     shift_sticky: &mut bool,
+    accel_sticky: &mut bool,
 ) -> Option<String> {
     // R145：selector 延迟解析——enqueue 时 mutation 未 apply（正置表空），出队时
     //（跨 turn）经 stub 的 `__zw_td_selector` 现场解析（apply 已 merge handle→selector）。
@@ -11997,8 +12004,15 @@ fn apply_testdriver_command(
             // send_keys 编辑键键名先例同款）。其余键维持原字符（可打印字符字面）。
             let nav_key_name = match key.as_str() {
                 "\u{E004}" => Some("Tab"),
+                "\u{E00E}" => Some("PageUp"),
+                "\u{E00F}" => Some("PageDown"),
+                "\u{E010}" => Some("End"),
+                "\u{E011}" => Some("Home"),
+                "\u{E012}" => Some("ArrowLeft"),
                 "\u{E013}" => Some("ArrowUp"),
+                "\u{E014}" => Some("ArrowRight"),
                 "\u{E015}" => Some("ArrowDown"),
+                "\u{E016}" => Some("Insert"),
                 _ => None,
             };
             let event_key = modifier_name
@@ -12009,6 +12023,11 @@ fn apply_testdriver_command(
             // 同链跨命令持续；Tab 步按位取方向 + 后续键事件 shiftKey 继承）。
             if key == "\u{E008}" {
                 *shift_sticky = event_type == "keydown";
+            }
+            // selection-compat M2（2026-11-04）：Ctrl/Meta 粘滞位（同 shift_sticky
+            // 生命周期）——后续可打印键识别为快捷键组合（下方 accel 路由）。
+            if matches!(key.as_str(), "\u{E009}" | "\u{E03D}") {
+                *accel_sticky = event_type == "keydown";
             }
             let script = zero_engine::script_dispatch_dom_event(
                 &selector,
@@ -12133,6 +12152,32 @@ fn apply_testdriver_command(
                     }),
                 );
                 let _ = webview.execute_script(&keypress_ce);
+                return None;
+            }
+            // selection-compat M2（2026-11-04）：accel（Ctrl/Meta）粘滞位下的可打印
+            // 字符键 = 快捷键组合——默认动作路由 copy/cut/paste/selectAll（shim
+            // execCommand 默认动作臂，script_exec_command 透传），不落 InsertText、
+            // 不派 keypress（UI Events：keypress-not-fired-for-modifier-shortcuts）。
+            // 真浏览器语义：修饰组合键不产字符输入。FIXME: 其余组合键默认动作
+            //（undo/redo/bold 等）未接——无语料分压。
+            if *accel_sticky {
+                if matches!(key.as_str(), "a" | "c" | "v" | "x") {
+                    let accel_cmd = match key.as_str() {
+                        "a" => "selectAll",
+                        "c" => "copy",
+                        "v" => "paste",
+                        _ => "cut",
+                    };
+                    let _ = webview.execute_script(&zero_engine::script_exec_command(accel_cmd));
+                }
+                return None;
+            }
+            // selection-compat M2（2026-11-04）：导航键（nav_key_name 命中 = PUA 编码
+            // 特殊键）无字符默认动作——不落 InsertText（旧版把 ArrowLeft 等字面插进
+            // CE 宿主——onselectstart-on-key ?preventDefault=yes Shift+Arrow 族
+            // got 文本前缀 PUA 实证；真浏览器导航键只移 caret/滚动）。导航语义
+            //（CE caret 移动/滚动）仍挂账 runner 基建。
+            if nav_key_name.is_some() {
                 return None;
             }
             if key.chars().count() == 1 {

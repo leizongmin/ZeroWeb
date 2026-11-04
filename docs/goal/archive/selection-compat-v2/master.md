@@ -1,16 +1,16 @@
 # Selection 兼容二期运行时控制面板
 
-**状态**: Active——M1 完成（DC-1/2/3/4 全部落账，2026-11-04；含
-deleteFromDocument-HTMLDetails 翻转就地修复，一期锚净零回归）；M2 判据落定
-（2026-11-04 收口轮）：就地收敛目标 = C3 initial-selection-on-focus
-（149F，独立语义）；C2 整簇挂账立项建议（D3）
-**最后更新**: 2026-11-04
+**状态**: 已完成（DONE，2026-11-04）——M1（DC-1/2/3/4）与 M2（C3 就地
+收敛）全部落账；run-e canonical 复跑 FIXES=158 / REGRESSIONS=0，一期锚
+零回归保持；挂账 D2/D3 待用户决策（不阻塞收口，见待用户决策表）
+**最后更新**: 2026-11-04（M2 收口轮）
 
 ---
 
 ## 当前状态
 
-M1 主体完成。入口文档 [`../selection-compat.md`](../selection-compat.md)（v2.1）为
+M1 + M2 全部完成，goal 收口。入口文档
+[`../selection-compat-v2.md`](../selection-compat-v2.md)（v2.1）为
 唯一目标契约。
 
 - **DC-1 完成**：selection/ 语料 191 blob 与 pin `315976933870` 逐哈希核对
@@ -42,20 +42,38 @@ M1 主体完成。入口文档 [`../selection-compat.md`](../selection-compat.md
   三项综合证据：
   [`evidence/2026-11-04-m1-baseline-attribution.md`](evidence/2026-11-04-m1-baseline-attribution.md)。
 
-**下一步（M2）**：就地收敛 C3 `initial-selection-on-focus.tentative.html`
-?div/?span（149F；失败形态 99/99+50/50 全为「caret 期望 1 实得 0」=
-编辑宿主 focus 未挂初选区，shim 级 focus 钩子 + caret 置位，零新引擎
-概念）——实现后幂等重跑基线对照零回归；同轮复核同文件 collapse 3F +
-selection-outside-host 1F。C2 判据复判定稿：整簇挂账立项建议（D3）——
-bidi 92F 视觉序 + line/lineboundary 17F 行盒 = 引擎概念域，余 ~80F shim
-无现成字符/词移动底座；C1/C4 超限簇已挂 D2 待用户决策。
+**M2 完成（2026-11-04 收口轮）**：C3
+`initial-selection-on-focus.tentative.html` ?div/?span **149F → 0F**
+（?div 100P、?span 51P）+ 同轮复核 collapse 3F→3P；伴随收敛
+focus-propagation ×2、no-beforeinput ×1、move-around-generated-content
+×2、copy-paste 两案（paste 死循环 + anchor 插入核错层两深层根因修复）。
+全量对 M1 canonical 基线五轮收敛（A 25R→D′ **0R**），run-e canonical
+复跑 **FIXES=158 / REGRESSIONS=0**，T1 fontSize ×3 复核仍 Fail（挂账
+维持）。判据核对：目标簇 151 subtests ≤300 且零新引擎概念（既有钩子
+时序/门控修正 + runner 键盘路由补全，无新引擎概念）。证据：
+[`evidence/2026-11-04-m2-c3-initial-selection-on-focus.md`](evidence/2026-11-04-m2-c3-initial-selection-on-focus.md)
+（五轮数字、七簇根因、判据核对、run-e 确认）、
+[`evidence/2026-11-04-m2-c3-compare-e.txt`](evidence/2026-11-04-m2-c3-compare-e.txt)
+（全量七段对照原件）。
+
+**门禁账（收口轮终态）**：make test workspace 腿 3724P/5F（5 红逐名 =
+webcrypto-v3 收口账同名单 s249 CSSOM 序列化在册红，HEAD 既有）+
+browser 腿 742P/1F `default_actions_work_without_javascript`（browser
+forms/typing 兄弟流在案红，R5412 同日 stash 实证）——零新增红；fmt
+（T58 前置）PASS；`make guarded-clippy` 全工作区 -D warnings **EXIT=0**。
+
+**收口归档（模式 A，2026-11-04）**：入口 + 控制面整树迁
+`docs/goal/archive/selection-compat-v2/`（一期已占 `archive/selection-compat`，
+v2 命名照 webcrypto-compat-v3 先例）；归档链接层级修正 + README 登记 +
+`scripts/rally-goal-23-selection-compat.sh` 启动脚本删除（语料预置脚本
+`tests/wpt-runner/scripts/goals/23-selection-compat.sh` 保留）。
 
 **与兄弟 goal 的边界**：
 
-- 33 号 editing-compat——**已迁 ZeroWeb-2 工作区**（2026-11-04 进程面核实，
-  其 rally 与实例 cwd 均为 ZeroWeb-2；本仓 origin/main 当日仍见其 3 个
-  docs 提交）：selection/Range 的 editing 依赖簇归 33 号，本 goal 只挂账
-  登记、rally 不写对方控制面（2026-10-31 用户决策，避免跨工作区提交撞车）。
+- 33 号 editing-compat——工作区归属随轮次漂移（2026-11-04 当日先后观察
+  到 ZeroWeb-2 与 ZeroWeb-3 两处 rally 实例）：selection/Range 的 editing
+  依赖簇归 33 号，本 goal 只挂账登记、rally 不写对方控制面（2026-10-31
+  用户决策，避免跨工作区提交撞车）。
 - 34 号 dom-expansion（dom/ranges）——共享 Range 底座，收敛轮核对互不回归。
 - 共享底座跨界事项按 run-rules §9 先归口再动手。
 
@@ -72,7 +90,7 @@ bidi 92F 视觉序 + line/lineboundary 17F 行盒 = 引擎概念域，余 ~80F s
 | 里程碑 | 内容 | 状态 |
 |---|---|---|
 | M1 | 语料扩面 + 扩面基线 + 归因表（DC-1/2/3） | **完成**（2026-11-04，DC-4 一并收口；含 HTMLDetails 翻转就地修复） |
-| M2 | 语义簇收敛（≤300 子测试且零新引擎概念判据，超限挂账） | 判据落定（2026-11-04 收口轮）：就地收敛目标 = C3 initial-selection-on-focus 149F；C2 整簇挂账 D3；C1/C4 已挂 D2。待实现收敛 |
+| M2 | 语义簇收敛（≤300 子测试且零新引擎概念判据，超限挂账） | **完成**（2026-11-04 收口轮：C3 149F→0F + collapse 3F→3P，run-e FIXES=158/REGRESSIONS=0；C2 整簇挂账 D3、C1/C4 挂 D2 维持） |
 
 ## 碰撞管理记录（run-rules §9）
 
@@ -93,13 +111,21 @@ bidi 92F 视觉序 + line/lineboundary 17F 行盒 = 引擎概念域，余 ~80F s
   2026-11-03 收口账逐名同族），按 run-rules §9 不代修，goal 面自身全绿；
   fmt/clippy（默认 feature 全量 -D warnings）零告警。
 - 一期零回归底线锚：
-  [`../archive/selection-compat/evidence/2026-10-14-m1-baseline.md`](../archive/selection-compat/evidence/2026-10-14-m1-baseline.md)。
+  [`../selection-compat/evidence/2026-10-14-m1-baseline.md`](../selection-compat/evidence/2026-10-14-m1-baseline.md)。
+- 2026-11-04（M2 收口轮）：新一轮 rally 实例（ZeroWeb-2 工作区）发现同
+  session 残留并行实例群——上一轮 session（ZeroWeb-3 工作区，M2-C3 实现
+  与 run A→D′ 验证主体）结束后遗留 1 个孤儿 agent（双 spawn 竞态产物，
+  已重启 run-e canonical 复跑）+ 9 个同 session `--resume` 孤儿实例（父
+  进程均死、并发自足收尾脚本）。按 M1 同款预案进程树核实后终止孤儿
+  agent，9 个 resume 实例已自行退出；自足收尾脚本（finish-run-e.sh /
+  run-e runner）不受影响跑完，run-e（09:28–09:40）即为下账 canonical。
+  本轮以零重跑采纳其账（FIXES=158/REGRESSIONS=0 与 D′ 全等复核）。
 
 ## 待用户决策 / 待转登记
 
 | # | 事项 | 状态 |
 |---|------|------|
-| T1 | **33 号回归挂账**：`editing/event.html :: Command fontSize value ""/"quasit"/"15px" input event` ×3——期望 input 事件 1 次实得 0。内容归因 `90c992231`（style-with-value 实应用改造后 `__zw_ce_value_validate` 拒绝路径零事件，与 event.html「无效值也派 input」期望冲突）。复验归 33 号侧 | 待用户转登记 33 号 |
+| T1 | **33 号回归挂账**：`editing/event.html :: Command fontSize value ""/"quasit"/"15px" input event` ×3——期望 input 事件 1 次实得 0。内容归因 `90c992231`（style-with-value 实应用改造后 `__zw_ce_value_validate` 拒绝路径零事件，与 event.html「无效值也派 input」期望冲突）。复验归 33 号侧（M2 收口轮 run-e 复核：×3 仍 Fail，挂账维持） | 待用户转登记 33 号 |
 | T2 | **撤账更正（2026-11-04）**：已推送的 `9406a986f` 曾将 deleteFromDocument-HTMLDetails 翻转挂为 T1-a、内容归因 `7ddf00c39`→33 号；本轮探针隔离 + 逐提交 diff 实证根因为本 goal 域内 `a8ec673b1` 反 spec 特判（Range deleteContents ec 尾边界整删，命中面依赖解析 wrapper childNodes 同步态），已就地修复转绿（C8=0F，详见总证据文锚面对照节）——33 号侧勿接此票 | **已关闭**（就地修复） |
 | D2 | 超限语义簇立项建议（M1 归因产出）：**C1 Selection API 边界点校验族 13,277F**（addRange 5,104/collapse 5,772/extend 2,342 等——spec 边界点有效性校验：非法/畸形 Range 应拒绝或不动 anchor/focus，shim 直接应用）。修复面 ≫300 且涉及 Range 有效性判定，不在 M2 就地收敛判据内；C4 shadow/getComposedRanges 64F（tentative API + composed range 机制 = 新引擎概念域）一并挂账。**待用户决策**：是否立项 | 待用户决策 |
 | D3 | 语义簇立项建议（M2 判据复判定稿，2026-11-04 收口轮）：**C2 `Selection.modify()` 190F**——非标 tentative API：bidi 92F 需视觉序字符移动（引擎无 bidi 文本布局）、line/lineboundary 17F 需行盒查询（layout 桥新面）、余 ~80F shim 无现成字符/词移动底座且 left/right 语义本就视觉序。**待用户决策**：是否立项 | 待用户决策 |

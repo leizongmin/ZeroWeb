@@ -1521,6 +1521,16 @@ pub fn script_wheel_scroll(selector: &str, px: f32, py: f32, dx: f32, dy: f32) -
     format!("__zw_wheel_scroll('{esc_sel}',{px},{py},{dx},{dy});")
 }
 
+/// 构造「document.execCommand(cmd)」的宿主脚本（selection-compat M2，2026-11-04）。
+///
+/// Actions 链 Ctrl/Meta+可打印字符快捷键的默认动作路由（copy/cut/paste/selectAll）
+/// 消费：shim execCommand 臂内含各命令默认动作实现（copy 序列化选区入剪贴板、
+/// paste 读剪贴板 HTML 插焦点宿主、selectAll 挂 selectstart 门），返值 '1'/'' 透传。
+pub fn script_exec_command(cmd: &str) -> String {
+    let esc_cmd = escape_js_string(cmd);
+    format!("(function(){{try{{return document.execCommand('{esc_cmd}')?'1':'';}}catch(_e){{return '';}}}})()")
+}
+
 /// 构造「contenteditable 宿主 ForwardDelete」的宿主脚本（uievents-compat 尾簇 32）。
 ///
 /// shim `__zw_ce_forward_delete(sel)`：选区非空删选区；collapsed 删 caret 后一个

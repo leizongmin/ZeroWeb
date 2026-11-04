@@ -2422,7 +2422,10 @@ fn test_contenteditable_typing_r3254_m2() {
     // shim __zw_is_ce_host / __zw_ce_insert / __zw_ce_delete。
     // ① 键入：caret 处插入文本节点 + caret 随之移动 + beforeinput/input 事件序；
     // ② 布尔属性形态（`<div contenteditable>`）识别；③ 非 CE 元素 no-op；
-    // ④ Backspace 删 caret 前一单元（代理对安全）+ caret 回落；⑤ 空选 caret 落宿主开头。
+    // ④ Backspace 删 caret 前一单元（代理对安全）+ caret 回落；
+    // ⑤ 空选区键入 no-op 零事件（selection-compat M2，2026-11-04：无选区即编辑命令
+    // no-op，上游 no-beforeinput-when-no-selection 锚；原「空选 caret 落宿主开头」
+    // 兜底已按 Chromium 语义移除）。
     // 驱动路径：宿主 keydown 默认动作 → webview InsertText/DeleteBackward CE 分支
     //（script_contenteditable_probe/insert/delete）。
     use std::sync::{Arc, Mutex};
@@ -2442,7 +2445,8 @@ fn test_contenteditable_typing_r3254_m2() {
         std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
     register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
 
-    // ①+②：CE 宿主键入——空选 caret 落宿主开头，插 'X' 后文本 'Xab'，caret 在 1。
+    // ①+②：CE 宿主键入——显式建 caret 于宿主开头（selection-compat M2 后无选区不再
+    // 合成兜底 caret；真实浏览器聚焦宿主即有初选区），插 'X' 后文本 'Xab'，caret 在 1。
     sandbox
         .execute(
             r##"
@@ -2451,6 +2455,11 @@ var ce = document.getElementById("ce");
 ce.addEventListener("beforeinput", function (e) { __ev.push("before:" + e.inputType + ":" + e.data + ":" + e.cancelable); });
 ce.addEventListener("input", function (e) { __ev.push("in:" + e.inputType + ":" + e.data); });
 globalThis.__probe = __zw_is_ce_host(ce);
+var _r0 = document.createRange();
+_r0.setStart(ce.firstChild, 0);
+_r0.collapse(true);
+getSelection().removeAllRanges();
+getSelection().addRange(_r0);
 __zw_ce_insert("#ce", "X");
 globalThis.__text = ce.textContent;
 globalThis.__caret = getSelection().rangeCount > 0
@@ -2487,6 +2496,36 @@ globalThis.__caret = getSelection().rangeCount > 0
         sandbox.execute("String(globalThis.__ev)").unwrap().value,
         "before:insertText:X:true,in:insertText:X",
         "CE 键入须派 beforeinput(cancelable,data)+input(data) 事件序"
+    );
+    // ⑤：空选区键入 no-op（selection-compat M2，2026-11-04）——无选区 = 编辑命令
+    // no-op：零 DOM 变异、textContent 不变、零 beforeinput/input。
+    let before_no_sel = mutations.lock().unwrap().len();
+    sandbox
+        .execute(
+            r##"
+getSelection().removeAllRanges();
+globalThis.__evLen5 = globalThis.__ev.length;
+globalThis.__t5 = document.getElementById("ce").textContent;
+__zw_ce_insert("#ce", "Z");
+globalThis.__t5b = document.getElementById("ce").textContent;
+globalThis.__evLen5b = globalThis.__ev.length;
+"##,
+        )
+        .unwrap();
+    assert_eq!(
+        mutations.lock().unwrap().len(),
+        before_no_sel,
+        "空选区键入须零 DOM 变异"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__t5 === globalThis.__t5b)").unwrap().value,
+        "true",
+        "空选区键入须 no-op（textContent 不变）"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__evLen5 === globalThis.__evLen5b)").unwrap().value,
+        "true",
+        "空选区键入须零事件"
     );
     // ③：非 CE 元素 no-op。
     sandbox

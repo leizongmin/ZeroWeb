@@ -4933,6 +4933,20 @@
             // R3902：脚本 focus() → :focus-visible 匹配（Selectors L4 §14——脚本聚焦
             // 无先验指针交互即可见焦点；headless 近似恒匹配，见 part06 旗标注释）。
             _zwFocusVisibleMod = true;
+            // selection-compat M2（2026-11-04）：contenteditable 焦点初选区——聚焦
+            // editing host 且 selection 不在其子树内时，caret 落宿主首个可见可编辑位
+            //（walker + refocus 保持门见 part06 `__zw_initial_selection_on_focus`
+            // 注释；Chromium SetSelectionFromNone 切面，页面 API focus() 路径——宿主
+            // mousedown/Tab 路径 __zw_host_focus 归点击 caret 管线不挂）。detached 臂
+            // 已提前 return，不受扰。**先于 focus 事件派发**：uievents spec「focus
+            // MUST be taken from the element before the dispatch」+ Chromium 在
+            // listener 运行前完成初选区（WPT
+            // initial-selection-during-focus-event-propagation 断言面：
+            // window/host focus listener 内读 selection 须已 == 传播后终态；
+            // initial-selection-on-focus.tentative ?div/?span 断言面）。
+            if (typeof __zw_initial_selection_on_focus === 'function') {
+              try { __zw_initial_selection_on_focus(proxy); } catch (_eIsofF) {}
+            }
             try {
               // R148：focus/focusin 携带 relatedTarget（FocusEvent 语义——retargeting 后
               // 的旧焦点；proxy 旧焦点同样携带——focus-automated relatedTargets 断言面）。
@@ -7496,6 +7510,72 @@
             // 回插后 node document 恢复 active document）。
             if (sel) _zwUnmarkAdoptDocSel(sel);
             if (child && child.__zwSelector) _zwUnmarkAdoptDocSel(child.__zwSelector);
+            // selection-compat M2 C3 收敛（2026-11-04）：**无 handle 子挂 handle 容器
+            // （fragment/shadow——目标 sel 空）的移动语义**。spec concept-node-pre-insert
+            // 步 1「先从旧父摘除」的旧父视图半边此前缺失：fall-through 只 registry push
+            // + parentNode 重指，旧 sel 父的融合 childNodes 不收缩（语料
+            // paste-text-after-collapsible-white-space-whose-container-remove-non-first-children
+            // 页面 `while (child = host.childNodes[1]) frag.appendChild(child)` 恒见同子
+            // → 页面级自旋 90s case 超时根因；zzz-probe-m2fix3 T8 探针实证 parsed 子
+            // reparent 后 host kids 恒 2、frag 逐轮膨胀）。子两类同簿记：sel 章子
+            // （引擎树既有）与 pending 解析子（innerHTML= 同 turn _zwMEl/_zwMText 视图，
+            // 无 sel 无 handle——R5340 removeChild 臂同款三件：wire RemoveChildAt
+            // （apply 序在 SetInnerHTML 之后，pending 子已落地）+ 桶 retract（added
+            // splice + removed push——overlay 同 turn 即隐，自旋环终止）+ 迭代器/range
+            // 通知 + childList removed record（_mo_notify 汇流点全簿记）+ liveNL sync。
+            // D1 印章子 wire 让位同 R5340（双删互斥先例）。旧父读先于 R84 的 parentNode
+            // getter 重指（本块在前）。
+            // https://dom.spec.whatwg.org/#concept-node-pre-insert
+            if (child && !child.__zwHandle && handle && !sel
+                && (child.__zwSelector || child.nodeType === 1 || child.nodeType === 3)) {
+              var _mvOldSel = null, _mvOldHandle = null;
+              try {
+                var _mvOp = child.parentNode;
+                if (_mvOp && _mvOp.__zwSelector) _mvOldSel = _mvOp.__zwSelector;
+                else if (_mvOp && _mvOp.__zwHandle) _mvOldHandle = _mvOp.__zwHandle;
+              } catch (_eMvO) {}
+              if (_mvOldSel && typeof __zw_remove_child_at === 'function') {
+                var _mvIdx = -1, _mvKids = null;
+                try {
+                  _mvKids = _childNodeList(_mvOldSel, _mvOldHandle);
+                  for (var _mvi = 0; _mvi < _mvKids.length; _mvi++) {
+                    if (_mvKids[_mvi] === child) { _mvIdx = _mvi; break; }
+                  }
+                } catch (_eMvK) {}
+                if (_mvIdx >= 0) {
+                  if (!child.__zwSelPathWrite) {
+                    try { __zw_remove_child_at(_mvOldSel, String(_mvIdx)); } catch (_eMvW) {}
+                  }
+                  var _mvB = null;
+                  if (typeof _zwPendBucket === 'function') {
+                    _mvB = _zwPendBucket(_mvOldSel, _mvOldHandle);
+                  }
+                  if (_mvB) {
+                    for (var _mva = _mvB.added.length - 1; _mva >= 0; _mva--) {
+                      if (_mvB.added[_mva] === child) { _mvB.added.splice(_mva, 1); break; }
+                    }
+                    if (!_mvB.removedSet || !_mvB.removedSet.has(child)) {
+                      if (_mvB.removedSet) _mvB.removedSet.add(child);
+                      _mvB.removed.push(child);
+                    }
+                  }
+                  try { if (globalThis._zwNotifyIteratorsRemove) globalThis._zwNotifyIteratorsRemove(child); } catch (_eMvI) {}
+                  try { if (globalThis.__zwAdjustRangesForRemove) globalThis.__zwAdjustRangesForRemove(child); } catch (_eMvR) {}
+                  var _mvPv = _mvIdx > 0 ? (_mvKids[_mvIdx - 1] || null) : null;
+                  var _mvNx = _mvIdx + 1 < _mvKids.length ? (_mvKids[_mvIdx + 1] || null) : null;
+                  try { child.parentNode = null; } catch (_eMvP) {}
+                  if (child._zwSelPendingParent) {
+                    try { delete child._zwSelPendingParent; } catch (_eMvS) {}
+                  }
+                  _mo_notify(_mvOldSel, _mvOldHandle, { type: 'childList', addedNodes: [], removedNodes: [child], previousSibling: _mvPv, nextSibling: _mvNx });
+                  try {
+                    if (globalThis._zwLiveNLSync && _mvOldSel && globalThis._zwLiveNLSync[_mvOldSel]) {
+                      globalThis._zwLiveNLSync[_mvOldSel]();
+                    }
+                  } catch (_eMvL) {}
+                }
+              }
+            }
             // js-dom M4 R81：无 handle 的轻量节点（CDATASection 等 plain object）——append 到
             // handle 父时入 registry（host 无对应 mutation 类型；WPT Node-properties
             // testDiv.textContent 期望 CDATA "1234"+"5678" 计入拼接）。

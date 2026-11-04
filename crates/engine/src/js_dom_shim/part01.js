@@ -8944,10 +8944,14 @@
       if (rr) { try { s._ranges[0] = rr; } catch (_eD3w) {} }
       return rr || r0;
     }
-    var r = document.createRange();
-    r.selectNodeContents(el);
-    r.collapse(true);
-    return r;
+    // selection-compat M2（2026-11-04）：文档选区为空（rangeCount 0）→ 返 null，
+    // 不再合成兜底 caret（selectNodeContents+collapse）。Chromium 语义：编辑命令
+    // 以当前选区为作用域，空选区 = 命令 no-op 零事件（no-beforeinput-when-no-selection
+    // 断言面：removeAllRanges 后键入/删除不得派 beforeinput）。旧合成 caret 使
+    // 空选区键入照常变异。焦点初选区（part04 __zw_initial_selection_on_focus）后
+    // 聚焦宿主恒有选区，旧兜底的"无选区聚焦"场景不再存在。调用方（本文件五处
+    // 编辑 impl 与 paragraph_split_at/line_break_mutate）对 null 各自早退。
+    return null;
   };
   // CE 键入：beforeinput(insertText) → 变更 → input。变更路径按 caret 形态：
   // ① caret 在文本节点内 → nodeValue splice（SetTextChild 类 mutation 流转宿主）；
@@ -9007,6 +9011,7 @@
     var insOvSnap = (typeof globalThis.__zw_ce_value_override_snapshot === 'function')
       ? globalThis.__zw_ce_value_override_snapshot() : null;
     var range = globalThis.__zw_ce_caret_range(el);
+    if (!range) return { ok: false, text: null }; // 空选区 → 无编辑（caret_range M2 语义）
     // insertparagraph 语料等价规则：insertText '\n' ≡ insertParagraph 变更（语料
     // 只断言内容；事件序保持 insertText 面）。核心未应用（caret 不在宿主子树等）
     // → 落回下方字面 '\n' splice 旧径。FIXME: '\n' 臂不接值 override 重放
@@ -9313,6 +9318,10 @@
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var ins = String(text == null ? '' : text);
     if (ins === '') return;
+    // selection-compat M2（2026-11-04）：空文档选区 → 无编辑（beforeinput 也不派——
+    // 事件须在变异判定前把关，no-beforeinput-when-no-selection 断言面）。
+    var _selIns = (typeof _getSelection === 'function') ? _getSelection() : null;
+    if (!_selIns || !(_selIns.rangeCount > 0)) return;
     var before = new InputEvent('beforeinput', {
       bubbles: true, cancelable: true, composed: true, data: ins, inputType: 'insertText', isComposing: false
     });
@@ -9331,6 +9340,109 @@
     if (!mutIns || !mutIns.ok) return;
     el.dispatchEvent(new InputEvent('input', {
       bubbles: true, cancelable: false, composed: true, data: ins, inputType: 'insertText', isComposing: false
+    }));
+  };
+  // CE 粘贴（selection-compat M2，2026-11-04）：execCommand('paste') 默认动作的
+  // 变更核——剪贴板 text/html 在 caret 处插入；非塌陷选区先 deleteContents 替换。
+  // 事件序 beforeinput(paste, cancelable) → 变更 → input。
+  // https://w3c.github.io/input-events/#interface-InputEvent-Types
+  // 插入核（M2 C3 收敛，2026-11-04）：旧核把 M 域节点（createContextualFragment
+  // 产物，无 sel/handle 印）逐个 insertBefore——insertBefore trap 对 M 子全分支
+  // miss，wire 静默丢弃（anchor-with-href 案空宿主 refNode=null 实证 innerHTML
+  // 恒空）。改按本文件 plain 壳引擎收敛既定先例：一次锚位计算 +
+  // __zw_insert_adjacent_html 整包落引擎（shim 侧不建 stand-in——语料断言在
+  // apply 后 turn 走引擎态；同 turn 读不在本族断言面）。文本 caret 中段拆分走
+  // 「左半留驻（nodeValue setter 走 R48 __zw_set_child_text wire）+ 右半转义殿
+  // 后于 payload」，等价 splitText 双文本节点语义。
+  // FIXME: Chrome caret 语义为粘贴体尾（collapse-to-end-of-payload），当前落容
+  // 器尾；shim-only 容器（既往粘贴体内再粘贴）_zwPosSelOf 寻址失败静默不落。
+  globalThis.__zw_ce_paste_html = function (host, html) {
+    if (!host || !globalThis.__zw_is_ce_host(host)) return;
+    var range = globalThis.__zw_ce_caret_range(host);
+    if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
+    var before = new InputEvent('beforeinput', {
+      bubbles: true, cancelable: true, composed: true, data: null, inputType: 'paste', isComposing: false
+    });
+    if (host.dispatchEvent(before) === false) return;
+    if (!range.collapsed) {
+      try { range.deleteContents(); } catch (_ePd1) {}
+    }
+    var raw = String(html == null ? '' : html);
+    // 解析校验（R5001）：shim 解析抛错即整体放弃，与引擎侧 IAH 解析失败面对齐
+    var frag = null;
+    try { frag = range.createContextualFragment(raw); } catch (_ePd2) {}
+    if (!frag) return;
+    var sc = range.startContainer, so = range.startOffset | 0;
+    if (!sc) return;
+    var refParent = null, payload = raw;
+    var anchorSel = null, anchorPos = null;
+    var fbPos = 'beforeend'; // 无元素锚时的容器兜底位
+    var _esc = function (s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+    if (sc.nodeType === 3 || sc.__zwIsText) {
+      refParent = sc.parentNode;
+      if (!refParent) return;
+      var v = String(sc.nodeValue || '');
+      if (so > 0) {
+        if (so < v.length) {
+          // 左半留驻；右半转义拼 payload 尾（粘贴体在前、右半殿后）
+          try { sc.nodeValue = v.slice(0, so); } catch (_ePt1) {}
+          payload = raw + _esc(v.slice(so));
+        }
+        var nx = sc.nextSibling;
+        while (nx && nx.nodeType !== 1) nx = nx.nextSibling;
+        if (nx && typeof _zwPosSelOf === 'function') {
+          anchorSel = _zwPosSelOf(nx);
+          anchorPos = 'beforebegin';
+        }
+      } else {
+        var pv = sc.previousSibling;
+        while (pv && pv.nodeType !== 1) pv = pv.previousSibling;
+        if (pv && typeof _zwPosSelOf === 'function') {
+          anchorSel = _zwPosSelOf(pv);
+          anchorPos = 'afterend';
+        }
+        fbPos = 'afterbegin';
+      }
+    } else {
+      refParent = sc;
+      var kids = null;
+      try { kids = Array.prototype.slice.call(sc.childNodes); } catch (_ePt2) { kids = []; }
+      var at = Math.min(so, kids.length);
+      if (at < kids.length && kids[at].nodeType === 1) {
+        if (typeof _zwPosSelOf === 'function') {
+          anchorSel = _zwPosSelOf(kids[at]);
+          anchorPos = 'beforebegin';
+        }
+        if (at === 0) fbPos = 'afterbegin';
+      } else if (at < kids.length) {
+        // 插在文本子前：借前元素兄弟 afterend；无 → 容器兜底
+        var pv2 = kids[at].previousSibling;
+        while (pv2 && pv2.nodeType !== 1) pv2 = pv2.previousSibling;
+        if (pv2 && typeof _zwPosSelOf === 'function') {
+          anchorSel = _zwPosSelOf(pv2);
+          anchorPos = 'afterend';
+        }
+        if (at === 0) fbPos = 'afterbegin';
+      }
+    }
+    // 容器锚兜底：宿主/静态父有 sel 直址；补偿包装走位置串寻址
+    if (!anchorSel && refParent) {
+      if (refParent.__zwSelector) anchorSel = refParent.__zwSelector;
+      else if (typeof _zwPosSelOf === 'function') anchorSel = _zwPosSelOf(refParent);
+    }
+    if (!anchorPos) anchorPos = fbPos;
+    if (anchorSel && typeof __zw_insert_adjacent_html === 'function') {
+      try { __zw_insert_adjacent_html(anchorSel, anchorPos, payload); } catch (_ePt3) {}
+    }
+    // caret 落位 best-effort：容器尾（FIXME 见函数头注）
+    var nr = document.createRange();
+    try { nr.setStart(refParent, refParent.childNodes.length); } catch (_ePt4) {}
+    nr.collapse(true);
+    if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    host.dispatchEvent(new InputEvent('input', {
+      bubbles: true, cancelable: false, composed: true, data: null, inputType: 'paste', isComposing: false
     }));
   };
   // —— 块界 join（white-space join 簇，editing-compat goal 2026-10-30）——
@@ -9670,6 +9782,7 @@
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
+    if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
     var sc = range.startContainer, so = range.startOffset | 0;
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return; // 元素边界 caret 不回退
     if (range.collapsed && so === 0) {
@@ -9755,6 +9868,7 @@
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
+    if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
     var sc = range.startContainer, so = range.startOffset | 0;
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText))) return;
     var ec = range.endContainer;
@@ -9834,6 +9948,7 @@
     var el = document.querySelector(sel);
     if (!el || !globalThis.__zw_is_ce_host(el)) return;
     var range = globalThis.__zw_ce_caret_range(el);
+    if (!range) return; // 空选区 → 无编辑（caret_range M2 语义）
     var sc = range.startContainer, so = range.startOffset | 0;
     // 尾簇 34：空宿主/元素边界 caret（fallback range startContainer=el——宿主无
     // 文本子时 `__zw_ce_caret_range` 的 selectNodeContents 形）→ 完整事件序

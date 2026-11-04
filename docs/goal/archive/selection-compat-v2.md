@@ -1,14 +1,18 @@
 # Selection 兼容二期 — 语料扩面
 
-> **二期立项（2026-10-27，coverage 对账驱动）**：一期（[归档文档](archive/selection-compat.md)）
+> **二期立项（2026-10-27，coverage 对账驱动）**：一期（[归档文档](selection-compat.md)）
 > 收口于子集语料；coverage 对账显示 selection 面 101 文件中仍有 81 个未覆盖，
 > 缺口 31,128 子测试。本 goal 承接语料扩面 + 扩面后失败簇归因。
 > **一期零回归底线继续有效**。
 
 **版本**: v2.1
 **日期**: 2026-10-27（二期立项）；2026-10-31（无人值守收口定稿——33 号交接方式
-与 M2 阈值落定，见 Mission / 里程碑与「待用户决策」）
-**状态**: Active——M1 未启动（控制面 `selection-compat/master.md` 已建）
+与 M2 阈值落定，见 Mission / 里程碑与「待用户决策」）；2026-11-04（收口）
+**状态**: 已收口（2026-11-04 DONE）——DC-1~4 全部落账 + M2 C3 就地收敛
+（149F→0F，run-e canonical FIXES=158 / REGRESSIONS=0，一期锚零回归保持）；
+控制面与证据整树迁 [`selection-compat-v2/`](selection-compat-v2/master.md)
+（一期已占 `archive/selection-compat`，v2 命名照 webcrypto-compat-v3 先例）；
+挂账 D2/C1+C4、D3/C2 立项建议待用户决策（详见归档控制面待用户决策表）
 **执行模式**: WPT 驱动（上游 selection corpus 为验收标尺）
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——编辑/选区面）
 

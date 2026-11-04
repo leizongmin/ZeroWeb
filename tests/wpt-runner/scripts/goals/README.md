@@ -28,7 +28,7 @@ goal 入口文档 `docs/goal/<goal>.md` DC-1。
 | 20 | [net-api-compat](../../../../docs/goal/archive/net-api-compat.md) | fetch; xhr; url; mimesniff; streams; eventsource | **二期立项**（2026-10-27，coverage 对账驱动：url/mimesniff/fetch 失败簇收敛 + WebSocket 重估；[一期归档](../../../../docs/goal/archive/net-api-compat.md)） |
 | 21 | [console-compat](../../../../docs/goal/archive/console-compat.md) | console | 无（极小快赢；console 捕获通道 M1 甄别，触面先与 devtools 流协调） |
 | 22 | [touch-events-compat](../../../../docs/goal/archive/touch-events-compat.md) | touch-events | **已收口**（2026-10-14）；注入面挂宿主触摸注入管线重入 |
-| 23 | [selection-compat](../../../../docs/goal/selection-compat.md) | selection | **二期立项**（2026-10-27，coverage 对账驱动：语料 20→101 文件扩面；[一期归档](../../../../docs/goal/archive/selection-compat.md)） |
+| 23 | [selection-compat](../../../../docs/goal/archive/selection-compat-v2.md) | selection | **二期收口**（2026-10-27 立项，2026-11-04 收口归档：语料 20→191 blob 全量 + 扩面基线 51,757 subtests 68.87% + 失败簇 8 簇互斥归因 + coverage 清零路径 + M2 C3 就地收敛 149F→0F（run-e canonical 158 修/0 回归）；C1/C4、C2 立项建议移交用户；[一期归档](../../../../docs/goal/archive/selection-compat.md)；语料预置脚本保留） |
 | 24 | [compression-compat](../../../../docs/goal/archive/compression-compat.md) | compression | 无（实现型小套件，M2 实现轮） |
 | 25 | [html-semantics-compat](../../../../docs/goal/html-semantics-compat.md) | html/semantics 十子域 | **主攻大域**（分域切片收口制） |
 | 26 | [webcrypto-compat](../../../../docs/goal/archive/webcrypto-compat-v2.md) | WebCryptoAPI | **二期**（2026-10-27 立项，2026-11-01 收口归档：33,109 分母 77.89% 零回归保持，一期 7,320F 挂账域全部转正、按域立项建议移交用户；[一期归档](../../../../docs/goal/archive/webcrypto-compat.md)） |

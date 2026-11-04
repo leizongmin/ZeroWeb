@@ -9314,6 +9314,9 @@
     // implemented" 同款现状）；④ read() 空store 返 []。
     clipboard: (function () {
       var _current = null; // { blobs: {type: Blob}, types: [type…] }——最近一次 write/writeText 内容
+      // selection-compat M2（2026-11-04）：execCommand('paste') 默认动作消费的原始串
+      // 面（type→string；仅 writeText/__zwClipboardStoreWrite 可得——write(Blob) 置 null）。
+      var _raw = null;
       var _epoch = 0;      // store 代际——read() 返回项绑定当代，后续 write 令旧项 getType 失效（InvalidStateError）
       var _RE = globalThis.DOMException || Error;
       // WAB2-M2-s3：权限状态注册表（name → 'prompt'|'granted'|'denied'，默认 'prompt'）。
@@ -9510,6 +9513,7 @@
               order.push(pairs[i][0]);
             }
             _current = { blobs: blobs, types: order };
+            _raw = null; // Blob 载荷无原始串
             _epoch++;
             return undefined;
           });
@@ -9526,6 +9530,7 @@
           return Promise.reject(new _RE("Failed to execute 'writeText' on 'Clipboard': Permission denied.", 'NotAllowedError'));
         }
         _current = { blobs: { 'text/plain': new Blob([String(text != null ? text : '')], { type: 'text/plain' }) }, types: ['text/plain'] };
+        _raw = { 'text/plain': String(text != null ? text : '') };
         _epoch++;
         return Promise.resolve(undefined);
       };
@@ -9546,7 +9551,15 @@
           }
           if (order.length === 0) return;
           _current = { blobs: blobs, types: order };
+          _raw = typeToText;
           _epoch++;
+        };
+      }
+      // selection-compat M2（2026-11-04）：execCommand('paste') 默认动作的 store 读侧
+      //（__zw 前缀内部钩子同 __zwClipboardStoreWrite 约定，非 web 面）。空/无 store 返 null。
+      if (typeof globalThis.__zwClipboardStoreReadRaw !== 'function') {
+        globalThis.__zwClipboardStoreReadRaw = function () {
+          return _raw;
         };
       }
       // ②C'：闭包别名（同 _zwPermSetState——part06 execCommand copy 桥的内部消费引用）。

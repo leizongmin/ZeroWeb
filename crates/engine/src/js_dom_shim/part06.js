@@ -4400,6 +4400,41 @@
             // ②C'：改闭包别名（part02 clipboard IIFE 赋值）——counter-plugin 删除页面
             // 可见全局后 copy/cut 桥不回归。
             _zwClipStoreWrite(_cpPayload);
+          } else if ((cmd === 'copy' || cmd === 'cut') && !ev.defaultPrevented) {
+            // selection-compat M2（2026-11-04）：copy/cut **默认动作**——无 handler（或
+            // handler 未 preventDefault）时序列化当前选区入进程内剪贴板（text/html +
+            // text/plain 双 flavor；tmp 容器承接 cloneContents 后读 innerHTML 融合
+            // 视图）。Chromium 语义：快捷键/execCommand copy 的默认动作 = "update the
+            // clipboard and the platform clipboard specific format"。FIXME: cut 选区
+            // 删除步未接（仅复制面——deleteSelection 接线 defer）。
+            try {
+              var _csD = (typeof _getSelection === 'function') ? _getSelection() : null;
+              if (_csD && _csD.rangeCount > 0 && typeof _zwClipStoreWrite === 'function') {
+                var _tmpC = document.createElement('div');
+                _tmpC.appendChild(_csD._ranges[0].cloneContents());
+                var _htmlC = String(_tmpC.innerHTML || '');
+                if (_htmlC !== '') {
+                  _zwClipStoreWrite({ 'text/html': _htmlC, 'text/plain': String(_tmpC.textContent || '') });
+                }
+              }
+            } catch (_eCd) {}
+          } else if (cmd === 'paste' && !ev.defaultPrevented) {
+            // selection-compat M2（2026-11-04）：paste **默认动作**——读进程内剪贴板
+            // text/html，焦点 editing host caret 处插入（part01 __zw_ce_paste_html；
+            // 事件序 beforeinput(paste) → 变更 → input 同编辑命令面）。无焦点宿主或
+            // 无 text/html 载荷 → no-op。FIXME: text control 纯文本粘贴未接。
+            try {
+              var _prD = (typeof globalThis.__zwClipboardStoreReadRaw === 'function')
+                ? globalThis.__zwClipboardStoreReadRaw() : null;
+              var _htmlD = (_prD && _prD['text/html'] != null) ? String(_prD['text/html']) : '';
+              if (_htmlD !== '' && typeof globalThis.__zw_ce_paste_html === 'function') {
+                var _ptD = globalThis.document.activeElement;
+                if (_ptD && typeof globalThis.__zw_is_ce_host === 'function'
+                    && globalThis.__zw_is_ce_host(_ptD)) {
+                  globalThis.__zw_ce_paste_html(_ptD, _htmlD);
+                }
+              }
+            } catch (_ePd) {}
           }
         } catch (_e) {}
       } else if ((cmd === 'inserthtml' || cmd === 'inserttext')
@@ -4758,7 +4793,22 @@
               }
             } catch (_eSaTop) {}
             if (!scopeSA) scopeSA = document.body || document.documentElement;
-            if (scopeSA) selSA.selectAllChildren(scopeSA);
+            // selection-compat M2（2026-11-04）：selectAll 前置 selectstart（cancelable,
+            // bubbles，target = 焦点元素回落作用域根）——**仅塌陷选区**派发（非塌陷
+            // 选区不触发新选择手势，onselectstart-on-key 语料「Select All when d[e]f<br>」
+            // 断言面：非塌陷下 selectstartEvent 恒 null，两 variant 同判）；preventDefault
+            // 即不应用选区（selection-api「selectstart 取消 → 后续选区变更中止」；
+            // preventDefault=yes 塌陷断言面：选区保持塌陷原位）。
+            var _saOk = true;
+            if (selSA.isCollapsed) {
+              var _saTarget = document.activeElement || scopeSA;
+              try {
+                if (_saTarget && typeof _saTarget.dispatchEvent === 'function') {
+                  _saOk = _saTarget.dispatchEvent(new Event('selectstart', { bubbles: true, cancelable: true }));
+                }
+              } catch (_eSaSs) {}
+            }
+            if (_saOk && scopeSA) selSA.selectAllChildren(scopeSA);
           }
         } catch (_eSa) {}
       }
@@ -10660,6 +10710,37 @@
       if (!node) { this._ranges = []; this._zwSync(null, 0, null, 0); return; }
       var r = _makeRange(); r.setStart(node, off | 0); r.collapse(true);
       this._ranges = [r]; this._zwSync(node, off | 0, node, off | 0);
+      // selection-compat M2（2026-11-04）：collapse 落编辑宿主即聚焦该宿主——
+      // Chromium selection set 的 SetFocusedElementIfNeeded 切面（Selection
+      // collapse 进 editable 后 document.activeElement = 对应编辑宿主；WPT
+      // selection/contenteditable/collapse.html 三案断言面：siblings 跨宿主、
+      // ancestor 外层宿主、descendant 穿 ce=false 内层宿主均随 collapse 迁移）。
+      // H = 节点沿 parentNode 上行首个 contenteditable 非空 attr（''/true）
+      // 命中点（显式 false 节点不停留继续上行）；activeElement 已是 H → 不动
+      //（已聚焦宿主内常规 collapse 零扰动——editing 语料 setup 面依赖此态）。
+      // 仅 collapse 面（本文件断言域）；addRange/setBaseAndExtent 不挂（无
+      // 断言面，不扩范围）。
+      try {
+        var _h = node, _hg = 0;
+        while (_h && _hg++ < 256) {
+          if (_h.nodeType === 1 && _h.hasAttribute && _h.hasAttribute('contenteditable')) {
+            var _ceRaw = String(_h.getAttribute('contenteditable') || '').toLowerCase();
+            if (_ceRaw === '' || _ceRaw === 'true') break;
+          }
+          try { _h = _h.parentNode; } catch (_eHp) { _h = null; break; }
+        }
+        if (!_h || _h.nodeType !== 1) _h = null;
+        if (_h && typeof _h.focus === 'function') {
+          var _act = null;
+          try { _act = globalThis.document.activeElement; } catch (_eAe) {}
+          var _same = _act === _h;
+          if (!_same && _act && _act.__zwSelector != null) {
+            try { _same = (_act.__zwSelector === _h.__zwSelector)
+              && (_act.__zwHandle === _h.__zwHandle); } catch (_eSk) {}
+          }
+          if (!_same) _h.focus();
+        }
+      } catch (_eCf) {}
     };
     // setPosition = collapse 别名（https://w3c.github.io/selection-api/#dom-selection-setposition，
     // WPT onselectionchange-on-document.html 用 setPosition 设 caret）。
@@ -10816,6 +10897,137 @@
     return _selection;
   }
   globalThis.getSelection = _getSelection;
+  // selection-compat M2（2026-11-04）：contenteditable 焦点初选区（initial selection
+  // on focus）。Chromium SetSelectionFromNone 切面（页面 API focus() 路径，part04
+  // focus 臂消费）——聚焦 richly editable 宿主且当前 selection 不在其子树内时，
+  // caret 落宿主首个「可见可编辑」位。walker 语义 = VisiblePosition(host, 0)
+  // canonicalization 的 DOM 走查近似（零引擎概念：childNodes + inline
+  // white-space + contenteditable 状态链，WPT initial-selection-on-focus.tentative
+  // ?div/?span 断言面实证）：
+  // ① 文本节点：preformatted（就近继承 inline style white-space
+  //    pre/pre-wrap/break-spaces）→ (text,0)（`<p style="pre">[] abc</p>` 面）；
+  //    可折叠白空间 → 跳过前导空白 run 落首个可见字符（`<p> []abc</p>` →
+  //    (text,1)），全空白文本节点跳过；
+  // ② `<br>` / 原子元素（img/input/textarea/hr/…）→ 落其前 (parent, idx)
+  //   （`{}<br>` / `{}<input>` 面）；
+  // ③ contenteditable=false 子树 → 落子树根前（不下钻；
+  //   `{}<span contenteditable=false>abc</span>` 面）；
+  // ④ 可编辑元素递归下钻；子树耗尽前进；注释/PI 跳过（`<p><!-- --></p>` 面）；
+  // ⑤ 屏障（②③）命中时 caret 回落**本容器 run 起点**（跳过不可见内容前）——
+  //   `{}<span></span><span contenteditable=false></span>…` → (editor,0) 而非
+  //   (editor,1)，empty-inline + barrier 断言族实证形态；
+  // ⑥ 全耗尽 → (host, 0)（空宿主 / 纯不可见内容）。
+  // refocus 保持：selection anchor 已在宿主内 → 不动（同文件尾案
+  // 「shouldn't reset selection when it gets focus again」）。
+  // https://w3c.github.io/selection-api/ （caret = selection focus 位）
+  // https://html.spec.whatwg.org/multipage/interaction.html#focusing-steps
+  function _zwFirstCaretPositionInHost(host) {
+    var ATOMIC = { IMG:1, INPUT:1, TEXTAREA:1, HR:1, VIDEO:1, AUDIO:1, EMBED:1,
+      OBJECT:1, IFRAME:1, SELECT:1, CANVAS:1 };
+    var _ceStateOf = function (el) {
+      var st = '';
+      try { st = String(el.contentEditable || ''); } catch (_eCe1) { st = ''; }
+      if (st !== 'true' && st !== 'false') {
+        try {
+          if (typeof el.hasAttribute === 'function' && el.hasAttribute('contenteditable')) {
+            var raw = String(el.getAttribute('contenteditable') || '').toLowerCase();
+            st = (raw === '' || raw === 'true') ? 'true' : (raw === 'false' ? 'false' : '');
+          }
+        } catch (_eCe2) {}
+      }
+      return (st === 'true' || st === 'false') ? st : '';
+    };
+    var _editable = function (el) {
+      var cur = el, guard = 0;
+      while (cur && cur.nodeType === 1 && guard++ < 64) {
+        var st = _ceStateOf(cur);
+        if (st === 'true') return true;
+        if (st === 'false') return false;
+        try { cur = cur.parentNode; } catch (_eEp) { return false; }
+      }
+      return false;
+    };
+    var _preformatted = function (el) {
+      // white-space 是继承属性——就近取祖先 inline style 声明（host gCS 通道对
+      // innerHTML 产物 plain 元素不覆盖 white-space，inline 链是本断言面唯一
+      // 携带方式；无声明 → normal 可折叠）。
+      var cur = el, guard = 0;
+      while (cur && cur.nodeType === 1 && guard++ < 64) {
+        var v = '';
+        try { v = (cur.style && (cur.style.whiteSpace || cur.style['white-space'])) || ''; } catch (_eWs) {}
+        if (v) {
+          var lo = String(v).toLowerCase();
+          return lo === 'pre' || lo === 'pre-wrap' || lo === 'break-spaces';
+        }
+        try { cur = cur.parentNode; } catch (_eWp) { return false; }
+      }
+      return false;
+    };
+    var _scan = function (container, fromIdx) {
+      var kids = container.childNodes;
+      if (!kids) return null;
+      for (var i = fromIdx; i < kids.length; i++) {
+        var c = kids[i];
+        if (!c) continue;
+        var t = c.nodeType;
+        if (t === 3 || t === 4) {
+          var data = '';
+          try { data = String(c.data != null ? c.data : (c.nodeValue != null ? c.nodeValue : '')); } catch (_eD) {}
+          if (_preformatted(container)) {
+            if (data.length > 0) return { node: c, offset: 0 };
+            continue; // pre 空文本节点 → 跳过
+          }
+          var j = 0;
+          while (j < data.length && /[ \t\n\f\r]/.test(data.charAt(j))) j++;
+          if (j < data.length) return { node: c, offset: j };
+          continue; // 空文本 / 全空白可折叠文本 → 跳过
+        }
+        if (t !== 1) continue; // comment(8)/PI(7) 等 → 跳过
+        var tag = '';
+        try { tag = String(c.tagName || '').toUpperCase(); } catch (_eT) {}
+        if (tag === 'BR' || !_editable(c) || ATOMIC[tag]) return { node: container, offset: fromIdx }; // 屏障 → run 起点（br 前停）
+        var sub = _scan(c, 0);
+        if (sub) return sub;
+      }
+      return null;
+    };
+    var hit = _scan(host, 0);
+    return hit || { node: host, offset: 0 };
+  }
+  globalThis.__zw_initial_selection_on_focus = function (hostProxy) {
+    try {
+      if (!hostProxy || hostProxy.nodeType !== 1) return;
+      var sel = _getSelection();
+      // refocus 保持：anchor/focus 任一端点已在宿主子树内 → 不动。
+      var _inside = function (n) {
+        var cur = n, guard = 0;
+        while (cur && guard++ < 512) {
+          if (cur === hostProxy) return true;
+          try { cur = cur.parentNode; } catch (_eIp) { return false; }
+        }
+        return false;
+      };
+      var a = null, f = null;
+      try { a = sel._anchorNode; f = sel._focusNode; } catch (_eSa) {}
+      if (a && _inside(a)) return;
+      if (f && _inside(f)) return;
+      // richly editable 门：**焦点目标自身**是 editing host（自身 contenteditable
+      // 显式 true 态——'' 属性或 true；IDL contentEditable 继承态返 'inherit' 不
+      // 计）。不沿祖先链放宽：Chromium SetSelectionFromNone 只挂宿主本体聚焦，
+      // 宿主内 inline 后代（如 <a>）focus 不落 caret——html-text-copy-paste-of-
+      // anchor 语料实证：anchor 聚焦挂 caret 会碾掉 addRange 的复制选区。
+      var ce = false;
+      try { if (String(hostProxy.contentEditable || '') === 'true') ce = true; } catch (_eSt) {}
+      if (!ce && hostProxy.hasAttribute && hostProxy.hasAttribute('contenteditable')) {
+        var _ceRaw = String(hostProxy.getAttribute('contenteditable') || '').toLowerCase();
+        if (_ceRaw === '' || _ceRaw === 'true') ce = true;
+      }
+      if (!ce) return;
+      var pos = _zwFirstCaretPositionInHost(hostProxy);
+      if (!pos || !pos.node) return;
+      sel.collapse(pos.node, pos.offset);
+    } catch (_eIsof) {}
+  };
   // R5384：Selection 插入点导出（reftest harness 消费，css-ui-4 caret 定位）——取
   // `_selection` **focus 端点**（spec：caret = selection focus 位，
   // https://w3c.github.io/selection-api/ #dfn-selection-focus），上行找最近
