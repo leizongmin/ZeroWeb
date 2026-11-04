@@ -1210,6 +1210,15 @@
             globalThis._zwImgSelScan5277Done = false;
             // s224：请求代际表同点重置（persistent context 跨案键隔离——同
             // 选源记录表面；stale 代际会把新文档 decode 的 ep0 比对判假取代）。
+            // s277：**解析期启动的在飞 fetch 存活**——重置置空代际表/在飞键册，
+            // 但解析期 mutation 面（body script eager 化等）启动的 fetch 完成
+            // 回调落点在 settle 后（trickle 慢流面），置空使完成回调
+            // _imEpochStale 误判 stale 丢弃——state 不写、事件不派、装载悬空
+            //（below/in-viewport-dynamic onload 永不至）。同文档在飞键（旧在
+            // 飞键册有账）的代际账目与在飞登记照搬；异文档残留（无在飞账）
+            // 仍按原置空语义丢弃，跨案隔离不变。
+            var _zwLiveFg5277 = globalThis._zwImgFetching5277;
+            var _zwOldEp5277 = globalThis._zwImgDecodeEpoch5277;
             globalThis._zwImgDecodeEpoch5277 = {};
             // s274：after-load 装载队列 + fetch 在飞键册同点重置（跨案残留防
             // ——队列 settle 时填充、window load 后 drain，同文档生命周期）。
@@ -1217,6 +1226,22 @@
             globalThis._zwImgFetching5277 = {};
             // s275：deferred 冻结请求表同点重置（同文档生命周期面）。
             globalThis._zwImgDeferredReq5277 = {};
+            // s277：pending noBlock 持队**不在此重置**——settle 每轮
+            // loadStep5275 + dispatchEvent 各跑一次，settle#2（6612）重置会把
+            // settle#1 drain 刚持留的事件抹掉（6677 drain 前清空——
+            // zero-intersection-area/empty-src Timeout 实证）。生命周期跟随
+            // 其源 `_zwImgPendingEvents`（惰性建、drain 清——跨文档未 drain
+            // 残留语义与 pending 队列既有面一致，不额外收紧）。
+            try {
+              if (_zwLiveFg5277 && _zwOldEp5277) {
+                for (var _zwLfK in _zwLiveFg5277) {
+                  if (_zwOldEp5277[_zwLfK] !== undefined) {
+                    globalThis._zwImgDecodeEpoch5277[_zwLfK] = _zwOldEp5277[_zwLfK];
+                    globalThis._zwImgFetching5277[_zwLfK] = true;
+                  }
+                }
+              }
+            } catch (_e5277lv) {}
             var _zwImgs = document.querySelectorAll('img');
             for (var _zwIi = 0; _zwIi < _zwImgs.length; _zwIi++) {
               var _zwIm = _zwImgs[_zwIi];
@@ -1286,6 +1311,20 @@
                 } catch (_e5277alq) {}
                 continue;
               }
+              // s277：曾-lazy 图不在 settle 同步装载——loading 动态 eager 化
+              //（body script 改 attr 早于 settle，runner 无 trickle）的图现值
+              // 已是 eager，settle 原本落穿 host 快照同步派 load（早于
+              // window load——窗序断言「window load 先发、img 后至」反向红）；
+              // 且 runupdate fetch 已在 mutation 面启动（s272 唤醒），settle
+              // 再 settle 即双通道装载。曾-lazy（_zwLazyEver 登记——s277
+              // mutation 刀 + 既有 defer 臂）跳过同步装载，装载由在飞 fetch
+              // 异步 settle 承接（noBlock 已入 → window load 先发 ✓ Chromium
+              // once-lazy 口径）。纯 eager 图（_zwLazyEver 无记录——从头
+              // eager 的 delay-load-event 阻 load 断言面）不触及，settle 同
+              // 步装载语义照旧。
+              try {
+                if (globalThis._zwLazyEver5277 && globalThis._zwLazyEver5277[_zwImKey]) continue;
+              } catch (_e5277lr) {}
               // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/
               // sizes/picture 归一，spec update-the-image-data 步 3-17 的请求 URL；
               // 核心缺失回落 raw src 保底）。密度随状态入账供 naturalWidth 密度校正。
@@ -1361,6 +1400,22 @@
             try { globalThis._zwImgPendingSet = {}; } catch (_eSwPs) {}
             for (var _zwPi = 0; _zwPi < _zwPend.length; _zwPi++) {
               var _zwPe = _zwPend[_zwPi];
+              // s277：noBlock 事件不在 window load listener 前派发——runner
+              // 无 trickle 时 lazy/曾-lazy 图的装载 fetch 在解析期完成入队，
+              // 本 drain 位于 load 派发链 listener 之前（runner loadStep5275
+              // settle 点 / part06 dispatchEvent settle 点），同步派发使 img
+              // onload 早于 window load（below/in-viewport-dynamic 窗序断言
+              // 「window load 先发、img 后至」反向红——s277 r1 Fail 面）。
+              // noBlock（spec delay load = false，s273 门过滤语义——不阻
+              // load）改持 _zwImgPendHold5277，window listener 后 drain 点
+              // （__zwImgDrainAfterWindowLoad5277 同相位）派发——与 s274
+              // after-load 装载队列同窗序模型。eager 事件照旧同步派发
+              //（delay-load-event 阻 load 断言序不动）。
+              if (_zwPe.noBlock) {
+                globalThis._zwImgPendHold5277 = globalThis._zwImgPendHold5277 || [];
+                globalThis._zwImgPendHold5277.push(_zwPe);
+                continue;
+              }
               try {
                 if (_zwPe.type === 'error' && !_resourceStates[_zwPe.key]) {
                   _resourceStates[_zwPe.key] = { url: _zwPe.url, outcome: 'broken', width: 0, height: 0, error: true };
@@ -13534,10 +13589,14 @@
         // referrerpolicy 按内容状态枚举比对——写后读即新值，必须在 trap 头暂存）。名称门
         // 先行（零成本字符串比较，绝大多数 setter 零路径变化），命中才做 tag 门与读取。
         // 末尾汇流点（part05 set trap `if (moAttr)`）传 __zwImgAttrMutated5277。
+        // s277（html-semantics M2）：loading 入捕获集——lazy→eager 动态变迁
+        // 登记「曾-lazy」需写入前值（Chromium once-lazy 口径：曾处 lazy 态的图
+        // 装载不阻 window load）。IDL setter（part05 `p === 'loading'` 臂）写后
+        // 读即新值，须在 trap 头暂存。
         var _zw5277PreAttr;
         {
           var _zw5277PName = null;
-          if (p === 'src' || p === 'srcset' || p === 'sizes' || p === 'media' || p === 'type') _zw5277PName = p;
+          if (p === 'src' || p === 'srcset' || p === 'sizes' || p === 'media' || p === 'type' || p === 'loading') _zw5277PName = p;
           else if (p === 'crossOrigin') _zw5277PName = 'crossorigin';
           else if (p === 'referrerPolicy') _zw5277PName = 'referrerpolicy';
           if (_zw5277PName !== null) {

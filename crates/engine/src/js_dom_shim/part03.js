@@ -3149,7 +3149,9 @@
         globalThis._zwImgPendingSet = globalThis._zwImgPendingSet || {};
         globalThis._zwImgPendingSet[_imKey] = true;
         // s273：lazy 图事件入队带 noBlock——__zwImgLoadBlocked 过滤（不阻
-        // window load 等待，spec delay load = Eager 态 true；事件派发面不变）。
+        // window load 等待，spec delay load = Eager 态 true；事件派发面不变
+        // ——s277 起 noBlock 事件派发面后移：settle drain 持队至 window
+        // listener 后派，见 part04 drain / __zwImgDrainAfterWindowLoad5277）。
         globalThis._zwImgPendingEvents.push({ key: _imKey, sel: sel, handle: handle, type: type, url: _imSrc, noBlock: _imNoBlock() });
         return;
       }
@@ -3508,6 +3510,25 @@
   // done 二次调用 Fail 面）。
   globalThis.__zwImgDrainAfterWindowLoad5277 = function () {
     try {
+      // s277：pending noBlock 持队 drain——settle drain 分流的 lazy/曾-lazy
+      // 图 load/error 事件在 window listener 全部跑完后派发（below/in-
+      // viewport-dynamic 窗序断言面）。置前于 after-load 队列 early
+      // return——两队列独立，持队有货时不得被空 after-load 队列短路。
+      // 错误终态补写与既有 pending drain 同判据（error 型 + 态缺失 →
+      // broken）；load 型态已由 fetch settle 写入，仅派事件。
+      var hq = globalThis._zwImgPendHold5277;
+      if (hq && hq.length) {
+        globalThis._zwImgPendHold5277 = [];
+        for (var hi = 0; hi < hq.length; hi++) {
+          var he = hq[hi];
+          try {
+            if (he.type === 'error' && !_resourceStates[he.key]) {
+              _resourceStates[he.key] = { url: he.url, outcome: 'broken', width: 0, height: 0, error: true };
+            }
+            _dispatchWithBubble(he.key, he.sel, he.handle, _makeEvent(he.type, { bubbles: false, cancelable: false }));
+          } catch (_eSwHD) {}
+        }
+      }
       var q = globalThis._zwImgAfterLoadQueue5277;
       if (!q || !q.length) return;
       globalThis._zwImgAfterLoadQueue5277 = [];
@@ -3593,6 +3614,22 @@
       // LoadDeferredImage 仅唤醒 deferred——relevant-mutations-lazy「should not
       // invoke update the image data」timeout 断言面）。
       if (ln === 'loading' && !_resourceStates[_elKey(sel, handle)]) {
+        // s277：loading 变迁登记曾-lazy（preRaw = 写入前值归一 'lazy'——
+        // Chromium once-lazy 口径：曾处 lazy 态的图装载不阻 window load，
+        // eager 化唤醒面同样 noBlock——below/in-viewport-dynamic 双页窗序
+        // 断言面「window load 先发、img 后至」。runner 无 trickle 时 body
+        // script 改 eager 早于静态 settle，defer 臂从未走过（_zwLazyEver
+        // 缺登记）→ runupdate fetch 以 eager 语义入 inflight 阻 load。
+        // _zwLazyEver 只影响 noBlock 判定，登记只扩不收（defer 臂既有
+        // 登记同语义）。已装载图（上方守卫拦下）restart 语义不动。
+        try {
+          var _lzPre = String(preRaw == null ? '' : preRaw).trim().toLowerCase();
+          if (_lzPre === 'lazy') {
+            var _lzK = _elKey(sel, handle);
+            globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
+            globalThis._zwLazyEver5277[_lzK] = true;
+          }
+        } catch (_e5277lzr) {}
         globalThis.__zwImgRevalidate5277(sel, handle);
       }
       if (ln === 'width' || ln === 'height') {
