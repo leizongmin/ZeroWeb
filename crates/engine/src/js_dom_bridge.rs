@@ -2411,7 +2411,14 @@ fn merge_style_property(style: &str, property: &str, value: &str) -> String {
     if value.trim().is_empty() {
         return parts.join("; ");
     }
-    parts.push(format!("{}: {}", property.trim(), value.trim()));
+    // css-anchor-1 canonical serialization：anchor()/anchor-size() 参数序归一（锚元素
+    // dashed-ident 固定在前）；自定义属性值 spec 语义原样保留（values::anchor 模块头注）。
+    let canonical_value = if prop_key.starts_with("--") {
+        value.trim().to_string()
+    } else {
+        zero_css_parser::values::canonicalize_anchor_functions(value.trim())
+    };
+    parts.push(format!("{}: {}", property.trim(), canonical_value));
     parts.join("; ")
 }
 

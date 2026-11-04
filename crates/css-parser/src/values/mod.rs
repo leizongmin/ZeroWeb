@@ -2,6 +2,7 @@
 //!
 //! 定义 CSS 属性值的类型化表示，以及解析函数。
 
+pub mod anchor;
 pub mod color;
 pub mod color_math;
 pub mod named_colors;
@@ -15,6 +16,7 @@ mod transform_helpers;
 pub mod types;
 
 // Re-export all public items.
+pub use anchor::*;
 pub use color::*;
 pub use color_math::*;
 pub use named_colors::*;
