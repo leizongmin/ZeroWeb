@@ -8471,6 +8471,20 @@
         try { obs._schedule(); } catch (_e) {}
       }
     }
+    // s284（html-semantics M2）：lazy deferred 唤醒——script 创建 lazy 图插入后
+    // 无布局 rect（s284 gBCR handle 解析修复前恒零），defer 臂挂冻结请求后须等
+    // 「starts being rendered」渲染机会再验。observers_tick = host 渲染机会
+    // （runner 探针循环与 renderer page_scripts tick 同点），且 `_defer`
+    // microtask 殿后本 checkpoint 的 RO/IO 回调——sizes-auto-resize-observer 页
+    // 的页面 RO 回调先改 sizes，引擎 sweep 再按新值重选源，与 spec 渲染机会
+    // RO 批序一致。旗标门：仅 defer 臂重臂过（rect 不可判且非 display:none）
+    // 才扫，常态 tick 零开销。
+    if (globalThis._zwLazyDeferredAny5277
+        && typeof globalThis.__zwImgSweepDeferredLazy5277 === 'function') {
+      _defer(function() {
+        try { globalThis.__zwImgSweepDeferredLazy5277(); } catch (_e5284ws) {}
+      });
+    }
   };
   // event-loop-spec M3-S2：per-task 模式（renderer kill-switch
   // ZW_RENDERER_TICK_PER_TASK）——无状态游标协议：`tick_once(from)` 从 from 起 schedule

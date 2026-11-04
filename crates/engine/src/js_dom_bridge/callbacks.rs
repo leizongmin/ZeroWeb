@@ -672,6 +672,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s284（html-semantics M2）：handle→selector 正置表查询——img 机具 shim 侧
+    //（lazy 视口判定 / being-rendered / sizes auto 臂）对 script 创建 img
+    //（identity = handle `__n{n}`）自解析 identity 后走既有 selector 面 rect
+    // 查询。刻意不并入 `__zw_getBoundingClientRect`：该回调是全 shim 共享
+    // 面（s283 IDL rendered 臂等），全局点亮会让 clone img 的真实 rect 泄入
+    // attr 期望面（naturalWidth 族 30 行 REGRESSED，勘根 2026-11-04）——
+    // 渲染缺口（density 校正/SVG 纵横比填充）归 rendering 域，此回调把
+    // 解析面收窄到 img 机具调用点。未命中返空串。
+    sandbox.register_callback(
+        "__zw_resolve_handle_selector",
+        Box::new(move |args: &[String]| -> String {
+            let handle = args.first().map(String::as_str).unwrap_or("");
+            if handle.is_empty() {
+                return String::new();
+            }
+            let map = sel_handle_map_snapshot();
+            let m = map.lock().unwrap_or_else(|e| e.into_inner());
+            m.get(handle).cloned().unwrap_or_default()
+        }),
+    );
+
     let html = Arc::clone(dom_html);
     let m = Arc::clone(mutations);
     sandbox.register_callback(

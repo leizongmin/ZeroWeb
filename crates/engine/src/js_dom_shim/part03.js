@@ -2626,11 +2626,60 @@
       default: return null;
     }
   };
+  // s284（html-semantics M2）：auto-sizes 门（spec §4.8.3 allows auto-sizes
+  // letter-exact：loading 属性 Lazy 态 **且** sizes 属性值为 "auto"（ASCII
+  // 大小写不敏感）或以 "auto," 开头——比较用属性原值不 trim）。伪代码门控
+  // parse/auto 解析两处（source 子元素解析按 img 传参——spec update the
+  // source set「Parse child's sizes attribute with img」）。
+  // https://html.spec.whatwg.org/multipage/embedded-content.html#allows-auto-sizes
+  globalThis.__zwImgAllowsAutoSizes5277 = function (sel, handle) {
+    try {
+      var lz = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase();
+      if (lz !== 'lazy') return false;
+      var low = String(_zw5277Attr(sel, handle, 'sizes') || '').toLowerCase();
+      return low === 'auto' || low.indexOf('auto,') === 0;
+    } catch (_e5277aas) { return false; }
+  };
+  // s284：img 机具身份解析——script 创建节点 identity 是 handle `__n{n}`（sel
+  // 恒 null），rect 查询前经正置表把 handle 解析为已物化 selector（宿主回调
+  // `__zw_resolve_handle_selector`），再以静态节点同款 selector 身份走 proxy
+  // 面；未命中（未物化/文档换代）回落原参数 = 零 rect 旧行为。仅 img 机具
+  // 调用点使用，不进共享 proxy 面（blast radius 收窄：全局点亮会让 clone img
+  // 真实 rect 泄入 s283 IDL attr 期望面——naturalWidth 族 30 行 REGRESSED
+  // 勘根 2026-11-04，渲染缺口归 rendering 域）。
+  globalThis.__zwImgResolveIdentity5277 = function (sel, handle) {
+    if (sel != null && sel !== '') return sel;
+    if (handle != null && handle !== ''
+        && typeof __zw_resolve_handle_selector === 'function') {
+      try {
+        var _ri = String(__zw_resolve_handle_selector(String(handle)) || '');
+        if (_ri) return _ri;
+      } catch (_e5277ri) {}
+    }
+    return sel;
+  };
+  // s284：being-rendered 判定（rendering.html#being-rendered「有 CSS layout
+  // box」近似 = 在文档且 gBCR 非全零——s274 not-rendered 模型同源：display:
+  // none / hidden 的 gBCR 全零；visibility:hidden 有盒 → 真实 rect → rendered）。
+  globalThis.__zwImgBeingRendered5277 = function (sel, handle) {
+    try {
+      var _brSel = globalThis.__zwImgResolveIdentity5277(sel, handle);
+      var el = _makeProxy(_brSel, _brSel !== sel ? null : handle);
+      if (!el || !el.isConnected) return false;
+      var r = typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect() : null;
+      if (!r) return false;
+      return !(r.left === 0 && r.top === 0 && r.width === 0 && r.height === 0);
+    } catch (_e5277br5277) { return false; }
+  };
   // §4.8.4.3.11 parse a sizes attribute → px 数值。逗号顶层切分（括号深度感知），
   // 每项末 component = source-size-value，余下为 media-condition（matchMedia
-  // host 桥求值——逗号列表 OR、malformed → false，spec-correct）；auto 关键字
-  // （lazy auto-sizes，F5 挂账）本片按「忽略该项继续」处理。全不命中 → 100vw。
-  globalThis.__zwParseSizesAttr5277 = function (value) {
+  // host 桥求值——逗号列表 OR、malformed → false，spec-correct）。s284 起 auto
+  // 关键字按 spec 解析（F5 简化挂起项解除）：img 非 null 且 allows auto-sizes
+  // 时——being rendered → auto = concrete object size width（gBCR 宽，CSS px）
+  // 并记 img 的 last auto-sizes width；未 rendered 但 last width 非 null → 用
+  // last width；否则 auto 项忽略继续（fallback 下一项/100vw）。
+  // https://html.spec.whatwg.org/multipage/images.html#parse-a-sizes-attribute
+  globalThis.__zwParseSizesAttr5277 = function (value, imgSel, imgHandle) {
     var vw = globalThis.innerWidth || 0, vh = globalThis.innerHeight || 0;
     var list = String(value == null ? '' : value);
     var parts = [], depth = 0, start = 0;
@@ -2655,6 +2704,31 @@
       if (size === null && !isAuto) continue;
       if (condStr !== '' && !globalThis.__zwMediaMatches5277(condStr)) continue;
       if (!isAuto) return size;
+      // s284：auto 解析臂（spec letter-exact；img 语境缺省 = link/旧行为忽略——
+      // 语境在位判据 sel/handle 任一非空：script 创建节点 identity 是 handle
+      // `__n{n}`、sel 恒 null，仅判 sel 会把该面整体错判无语境落 100vw）。
+      if ((imgSel != null || imgHandle != null)
+          && globalThis.__zwImgAllowsAutoSizes5277(imgSel, imgHandle)) {
+        var _asW = null;
+        if (globalThis.__zwImgBeingRendered5277(imgSel, imgHandle)) {
+          try {
+            var _asSel = globalThis.__zwImgResolveIdentity5277(imgSel, imgHandle);
+            var _asEl = _makeProxy(_asSel, _asSel !== imgSel ? null : imgHandle);
+            var _asR = _asEl && typeof _asEl.getBoundingClientRect === 'function'
+              ? _asEl.getBoundingClientRect() : null;
+            if (_asR && isFinite(_asR.width)) {
+              _asW = _asR.width;
+              globalThis._zwLastAutoSizesWidth5277 = globalThis._zwLastAutoSizesWidth5277 || {};
+              globalThis._zwLastAutoSizesWidth5277[_elKey(imgSel, imgHandle)] = _asW;
+            }
+          } catch (_e5277asw) {}
+        } else {
+          _asW = globalThis._zwLastAutoSizesWidth5277
+            ? globalThis._zwLastAutoSizesWidth5277[_elKey(imgSel, imgHandle)] : null;
+          if (_asW != null && !isFinite(_asW)) _asW = null;
+        }
+        if (_asW != null) return _asW;
+      }
     }
     return vw;
   };
@@ -2711,9 +2785,11 @@
   // image-loading-lazy-available P→F 实证）。解析失败候选保持原串（spec
   // update the image data 步骤 13 broken 臂：current URL = selected source
   // 原始串——s223 fail-to-resolve 定谳面，__zwAbsolutizeSourceUrl5277）。
-  globalThis.__zwCreateSourceSet5277 = function (defaultSource, srcset, sizes) {
+  globalThis.__zwCreateSourceSet5277 = function (defaultSource, srcset, sizes, imgSel, imgHandle) {
     var sources = String(srcset == null ? '' : srcset) !== '' ? globalThis.__zwParseSrcsetAttr5277(srcset) : [];
-    var size = globalThis.__zwParseSizesAttr5277(sizes);
+    // s284：sizes 解析带 img 语境（auto 解析按 img 的 allows/being-rendered
+    // 态——spec create a source set 第 4 元 img）。
+    var size = globalThis.__zwParseSizesAttr5277(sizes, imgSel, imgHandle);
     var hasD1 = false, hasW = false;
     for (var i = 0; i < sources.length; i++) {
       if (sources[i].density === 1) hasD1 = true;
@@ -2755,7 +2831,8 @@
         return globalThis.__zwCreateSourceSet5277(
           _zw5277Attr(sel, handle, 'src') || '',
           _zw5277Attr(sel, handle, 'srcset') || '',
-          _zw5277Attr(sel, handle, 'sizes') || '');
+          _zw5277Attr(sel, handle, 'sizes') || '',
+          sel, handle);
       }
       if (_zw5277Tag(child) !== 'SOURCE') continue;
       var cSel = child.__zwSelector, cHandle = child.__zwHandle;
@@ -2774,7 +2851,15 @@
       if (cMedia != null && !globalThis.__zwMediaMatches5277(cMedia)) continue;
       var cType = _zw5277Attr(cSel, cHandle, 'type');
       if (cType != null && !globalThis.__zwSourceSupportedType5277(cType)) continue;
-      var setSize = globalThis.__zwParseSizesAttr5277(_zw5277Attr(cSel, cHandle, 'sizes') || '');
+      // s284：source 子元素 sizes 解析带 img 语境（spec update the source set
+      // 「Parse child's sizes attribute with img」）；img allows auto-sizes 时
+      // source 缺省 sizes 等价 "auto"（the-source-element note——picture 页
+      // sizes 只落在 img 上、source 无 sizes 属性形态，sizes-auto.html 断言面）。
+      var _cSizesAttr = _zw5277Attr(cSel, cHandle, 'sizes');
+      if (_cSizesAttr == null && globalThis.__zwImgAllowsAutoSizes5277(sel, handle)) {
+        _cSizesAttr = 'auto';
+      }
+      var setSize = globalThis.__zwParseSizesAttr5277(_cSizesAttr || '', sel, handle);
       for (var k2 = 0; k2 < cSources.length; k2++) {
         if (cSources[k2].density === undefined) {
           cSources[k2].density = cSources[k2].width !== undefined ? cSources[k2].width / setSize : 1;
@@ -3251,6 +3336,29 @@
           globalThis._zwLazyEver5277 = globalThis._zwLazyEver5277 || {};
           globalThis._zwLazyEver5277[_imKey] = true;
         } catch (_e5277le) {}
+        // s284：唤醒旗标重臂——仅 rect 不可判（gBCR 全零且非 display:none =
+        // 刚插入未过布局的 script 创建节点）才重臂；有真实 rect 的远位图 =
+        // 真 below-viewport 语义（重臂会每渲染机会重扫全页 img，零收益纯开销）。
+        // display:none = not-rendered（s274 断言面 never load）不重臂。旗标在
+        // __zw_observers_tick 渲染机会消费（part01，_defer 殿后 RO 回调）。
+        try {
+          var _dfEl = _makeProxy(sel, handle);
+          var _dfR = _dfEl && typeof _dfEl.getBoundingClientRect === 'function'
+            ? _dfEl.getBoundingClientRect() : null;
+          var _dfZero = !_dfR || (_dfR.left === 0 && _dfR.top === 0
+            && _dfR.width === 0 && _dfR.height === 0);
+          if (_dfZero) {
+            var _dfDisp = '';
+            try {
+              var _dfCs = typeof globalThis.getComputedStyle === 'function'
+                ? globalThis.getComputedStyle(_dfEl) : null;
+              _dfDisp = _dfCs ? String(_dfCs && _dfCs.display || '') : '';
+            } catch (_e5277dcs) {}
+            if (_dfDisp !== 'none') {
+              globalThis._zwLazyDeferredAny5277 = true;
+            }
+          }
+        } catch (_e5277dfl) {}
         // s274：defer 不 fetch——清在飞残留（stale 取代链断点防挂：本 run 未
         // 发 fetch，册中旧值只可能是被取代 run 的残迹，defer 时点清正互锁）。
         try { if (globalThis._zwImgFetching5277) delete globalThis._zwImgFetching5277[_imKey]; } catch (_e5277fd) {}
@@ -3483,6 +3591,9 @@
   // 双 run）；不置旗标——旗标是无条件放行语义，距离门才是「将进入视口」近似。
   globalThis.__zwImgSweepDeferredLazy5277 = function () {
     try {
+      // s284：唤醒旗标消费（defer 臂重臂、此处清——observers_tick 渲染机会
+      // 调用 O(1) 早退见 part01 调用点旗标门；scrollIntoView 路径不受门）。
+      globalThis._zwLazyDeferredAny5277 = false;
       var imgs = globalThis.document.querySelectorAll('img');
       for (var i = 0; i < imgs.length; i++) {
         var el = imgs[i];
@@ -3496,6 +3607,17 @@
         // 派事件；sweep 重入 revalidate 会双 fetch 双 load——step_func_done
         // 二次调用 Fail 面）。
         if (globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[k]) continue;
+        // s284：auto-allowing 图唤醒面弃冻结请求——「starts being rendered /
+        // concrete object size width changes」本身是 relevant mutation（spec
+        // §relevant-mutations 尾条），= 新 update run 重选源（layout rect 就绪
+        // 后 auto 项按 rendered 宽解析；defer 时点未布局选出的 100vw 冻结值
+        // 不可消费）。非 auto 图维持 s275 消费冻结语义（base-url ×2 断言面）。
+        try {
+          if (globalThis._zwImgDeferredReq5277 && globalThis._zwImgDeferredReq5277[k]
+              && globalThis.__zwImgAllowsAutoSizes5277(el.__zwSelector, el.__zwHandle)) {
+            delete globalThis._zwImgDeferredReq5277[k];
+          }
+        } catch (_eSwFr) {}
         // s275：视口触发面消费冻结请求（唤醒不重选源——base-url ×2 断言面）。
         globalThis.__zwImgViewportRevalidate5277(el.__zwSelector, el.__zwHandle);
       }
@@ -3559,7 +3681,8 @@
     if (!(vw > 0) || !(vh > 0)) return false;
     var r = null;
     try {
-      var _nvEl = _makeProxy(sel, handle);
+      var _nvSel = globalThis.__zwImgResolveIdentity5277(sel, handle);
+      var _nvEl = _makeProxy(_nvSel, _nvSel !== sel ? null : handle);
       r = _nvEl && typeof _nvEl.getBoundingClientRect === 'function'
         ? _nvEl.getBoundingClientRect() : null;
     } catch (_e5277nv) { return false; }
@@ -3674,7 +3797,31 @@
       if (!node || node.nodeType !== 1) return;
       var pTag = '';
       try { pTag = _realTag(parentSel, parentHandle) || ''; } catch (_e5277tp) {}
-      if (String(pTag).split(':').pop() !== 'PICTURE') return;
+      var isPicture = String(pTag).split(':').pop() === 'PICTURE';
+      // s284（html-semantics M2）：img 插入 = spec relevant mutation——「The img
+      // or source HTML element insertion steps … count the mutation as a relevant
+      // mutation」不限定父元素（picture 路径原有 IMG 臂不变，此处只补非 picture
+      // 父）。此前非 picture 父插入早退无重验：script 创建 lazy img（sizes-auto
+      // 页 onload 建群）插入后无 update run，冻结请求永挂 → 文件级 Timeout。
+      // 记录半 + fetch 半并调（picture IMG 臂 s221 同模式）。
+      // 刻意收窄 allowsAuto（lazy + sizes=auto）才触发：通用点亮 = 每个插入 img
+      // 多一次盲重验，引擎 fetch 核缺「同 URL 已可用不重取」守卫（spec update-
+      // the-image-data 冗余更新早退），image-base-url 不重取断言/decode attach
+      // 时序/current-request-microtask 任务计数 5 行 REGRESSED（family A/B 两轮
+      // 同键复现 2026-11-04）——守卫缺口属 fetch 语义域另行立片，此处不扩大
+      // 面。非 auto 的 script 创建 img 插入回落基线行为（无重验）。
+      // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
+      if (!isPicture && isInsert && _zw5277Tag(node) === 'IMG'
+          && globalThis.__zwImgAllowsAutoSizes5277(node.__zwSelector, node.__zwHandle)) {
+        try {
+          if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+            globalThis.__zwImgSelectionQueue5277(node.__zwSelector, node.__zwHandle);
+          }
+        } catch (_e5277imq0) {}
+        globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
+        return;
+      }
+      if (!isPicture) return;
       var nTag = _zw5277Tag(node);
       if (nTag === 'IMG') {
         // s221：picture 成员变更也是 selection 面 relevant mutation（microtask
