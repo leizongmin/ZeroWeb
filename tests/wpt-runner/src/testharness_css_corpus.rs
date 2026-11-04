@@ -330,3 +330,132 @@ pub fn run_css_borders_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Stri
 pub fn run_css_logical_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_css_corpus_dir(wpt_root, "css/css-logical", filter)
 }
+
+// css-testharness-compat-v2 goal M1 批次 2（css 二期 B1 值/属性解析序列化簇
+// 余 18 目录，分母 7,318 子测试——M0 甄别表 §3；通道契约与批次 1 一致，
+// fill-stroke / compositing 上游目录名无 css- 前缀走 motion 先例）。
+
+/// Run the pinned upstream css-text-decor testharness subset（css 二期 M1
+/// 批次 2——text-decoration 属性族解析与序列化断言面，M0 分母 1,376 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_text_decor_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-text-decor", filter)
+}
+
+/// Run the pinned upstream css-box testharness subset（css 二期 M1 批次 2——
+/// 盒模型边距属性（margin/padding 等）解析与计算值断言面，M0 分母 1,063
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_box_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-box", filter)
+}
+
+/// Run the pinned upstream css-pseudo testharness subset（css 二期 M1 批次
+/// 2——伪元素（::before/::first-line 等）生成内容断言面，M0 分母 865
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_pseudo_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-pseudo", filter)
+}
+
+/// Run the pinned upstream css-display testharness subset（css 二期 M1 批次
+/// 2——display 值与盒类型解析断言面，M0 分母 567 子测试）。filter 按路径
+/// 子串过滤。
+pub fn run_css_display_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-display", filter)
+}
+
+/// Run the pinned upstream css-mixins testharness subset（css 二期 M1 批次
+/// 2——混入规则（@mixin）自定义原语解析面，M0 分母 618 子测试）。filter
+/// 按路径子串过滤。
+pub fn run_css_mixins_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-mixins", filter)
+}
+
+/// Run the pinned upstream css-syntax testharness subset（css 二期 M1 批次
+/// 2——CSS 语法解析与错误恢复断言面，M0 分母 444 子测试）。filter 按路径
+/// 子串过滤。
+pub fn run_css_syntax_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-syntax", filter)
+}
+
+/// Run the pinned upstream fill-stroke testharness subset（css 二期 M1 批次
+/// 2——SVG 填充/描边属性解析与序列化断言面，M0 分母 409 子测试）。filter
+/// 按路径子串过滤。
+pub fn run_fill_stroke_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/fill-stroke", filter)
+}
+
+/// Run the pinned upstream css-shadow testharness subset（css 二期 M1 批次
+/// 2——box-shadow/text-shadow 解析与序列化断言面，M0 分母 377 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_shadow_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-shadow", filter)
+}
+
+/// Run the pinned upstream css-size-adjust testharness subset（css 二期 M1
+/// 批次 2——font-size-adjust 解析与计算值断言面，M0 分母 215 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_size_adjust_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-size-adjust", filter)
+}
+
+/// Run the pinned upstream css-content testharness subset（css 二期 M1 批次
+/// 2——content 属性值解析与序列化断言面，M0 分母 253 子测试）。filter 按
+/// 路径子串过滤。
+pub fn run_css_content_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-content", filter)
+}
+
+/// Run the pinned upstream css-will-change testharness subset（css 二期 M1
+/// 批次 2——will-change 属性解析断言面，M0 分母 173 子测试）。filter 按
+/// 路径子串过滤。
+pub fn run_css_will_change_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-will-change", filter)
+}
+
+/// Run the pinned upstream css-color-adjust testharness subset（css 二期 M1
+/// 批次 2——颜色调整属性（print-color-adjust/color-scheme）解析断言面，M0
+/// 分母 171 子测试）。filter 按路径子串过滤。
+pub fn run_css_color_adjust_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-color-adjust", filter)
+}
+
+/// Run the pinned upstream css-easing testharness subset（css 二期 M1 批次
+/// 2——缓动函数（linear()/cubic-bezier()/steps()）解析与序列化断言面，M0
+/// 分母 167 子测试）。filter 按路径子串过滤。
+pub fn run_css_easing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-easing", filter)
+}
+
+/// Run the pinned upstream compositing testharness subset（css 二期 M1 批次
+/// 2——混合合成（mix-blend-mode/isolation）解析与计算值断言面，M0 分母
+/// 167 子测试）。filter 按路径子串过滤。
+pub fn run_compositing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/compositing", filter)
+}
+
+/// Run the pinned upstream css-counter-styles testharness subset（css 二期
+/// M1 批次 2——@counter-style 规则与 counter() 序列化断言面，M0 分母 158
+/// 子测试）。filter 按路径子串过滤。
+pub fn run_css_counter_styles_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-counter-styles", filter)
+}
+
+/// Run the pinned upstream css-nesting testharness subset（css 二期 M1 批次
+/// 2——CSS 嵌套规则解析断言面，M0 分母 126 子测试）。filter 按路径子串
+/// 过滤。
+pub fn run_css_nesting_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-nesting", filter)
+}
+
+/// Run the pinned upstream css-color-hdr testharness subset（css 二期 M1
+/// 批次 2——HDR 颜色（dynamic-range 等）解析断言面，M0 分母 116 子测试）。
+/// filter 按路径子串过滤。
+pub fn run_css_color_hdr_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-color-hdr", filter)
+}
+
+/// Run the pinned upstream css-env testharness subset（css 二期 M1 批次 2——
+/// env() 环境变量解析断言面，M0 分母 53 子测试）。filter 按路径子串过滤。
+pub fn run_css_env_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_css_corpus_dir(wpt_root, "css/css-env", filter)
+}

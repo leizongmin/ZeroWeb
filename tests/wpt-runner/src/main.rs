@@ -150,6 +150,42 @@ Commands:
                        (CSSOM/style API face; css-testharness-compat-v2 goal M1)
   testharness-css-logical  Run upstream css-logical testharness cases
                        (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-text-decor  Run upstream css-text-decor testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-box  Run upstream css-box testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
+  testharness-css-pseudo  Run upstream css-pseudo testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-display  Run upstream css-display testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-mixins  Run upstream css-mixins testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-syntax  Run upstream css-syntax testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-fill-stroke  Run upstream fill-stroke testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-shadow  Run upstream css-shadow testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-size-adjust  Run upstream css-size-adjust testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-content  Run upstream css-content testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-will-change  Run upstream css-will-change testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-color-adjust  Run upstream css-color-adjust testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-easing  Run upstream css-easing testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-compositing  Run upstream compositing testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-counter-styles  Run upstream css-counter-styles testharness
+                       cases (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-nesting  Run upstream css-nesting testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-color-hdr  Run upstream css-color-hdr testharness cases
+                       (CSSOM/style API face; css-testharness-compat-v2 goal M1)
+  testharness-css-env  Run upstream css-env testharness cases (CSSOM/style API
+                       face; css-testharness-compat-v2 goal M1)
   testharness-editing-run  Run imported editing/run execCommand testharness cases
                        (editing-compat goal M1 / DC-2)
   testharness-editing-other  Run imported editing/other testharness cases
@@ -467,6 +503,24 @@ fn main() {
         "testharness-css-ui" => cmd_testharness_css_ui(&options, filter.as_deref()),
         "testharness-css-borders" => cmd_testharness_css_borders(&options, filter.as_deref()),
         "testharness-css-logical" => cmd_testharness_css_logical(&options, filter.as_deref()),
+        "testharness-css-text-decor" => cmd_testharness_css_text_decor(&options, filter.as_deref()),
+        "testharness-css-box" => cmd_testharness_css_box(&options, filter.as_deref()),
+        "testharness-css-pseudo" => cmd_testharness_css_pseudo(&options, filter.as_deref()),
+        "testharness-css-display" => cmd_testharness_css_display(&options, filter.as_deref()),
+        "testharness-css-mixins" => cmd_testharness_css_mixins(&options, filter.as_deref()),
+        "testharness-css-syntax" => cmd_testharness_css_syntax(&options, filter.as_deref()),
+        "testharness-fill-stroke" => cmd_testharness_fill_stroke(&options, filter.as_deref()),
+        "testharness-css-shadow" => cmd_testharness_css_shadow(&options, filter.as_deref()),
+        "testharness-css-size-adjust" => cmd_testharness_css_size_adjust(&options, filter.as_deref()),
+        "testharness-css-content" => cmd_testharness_css_content(&options, filter.as_deref()),
+        "testharness-css-will-change" => cmd_testharness_css_will_change(&options, filter.as_deref()),
+        "testharness-css-color-adjust" => cmd_testharness_css_color_adjust(&options, filter.as_deref()),
+        "testharness-css-easing" => cmd_testharness_css_easing(&options, filter.as_deref()),
+        "testharness-compositing" => cmd_testharness_compositing(&options, filter.as_deref()),
+        "testharness-css-counter-styles" => cmd_testharness_css_counter_styles(&options, filter.as_deref()),
+        "testharness-css-nesting" => cmd_testharness_css_nesting(&options, filter.as_deref()),
+        "testharness-css-color-hdr" => cmd_testharness_css_color_hdr(&options, filter.as_deref()),
+        "testharness-css-env" => cmd_testharness_css_env(&options, filter.as_deref()),
         "testharness-editing-run" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_editing_corpus::run_editing_run_cases(wpt_root, filter)
         }),
@@ -1746,6 +1800,124 @@ fn cmd_testharness_css_borders(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_css_logical(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness_css_corpus::run_css_logical_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-css-text-decor` / `testharness-css-box` / `testharness-css-pseudo`
+/// / `testharness-css-display` / `testharness-css-mixins` / `testharness-css-syntax`
+/// / `testharness-fill-stroke` / `testharness-css-shadow` / `testharness-css-size-adjust`
+/// / `testharness-css-content` / `testharness-css-will-change` / `testharness-css-color-adjust`
+/// / `testharness-css-easing` / `testharness-compositing` / `testharness-css-counter-styles`
+/// / `testharness-css-nesting` / `testharness-css-color-hdr` / `testharness-css-env`
+/// 子命令 — 跑导入的上游对应目录 testharness 用例（css-testharness-compat-v2
+/// goal M1 批次 2——B1 值/属性解析序列化簇余 18 目录；契约与退出码同
+/// `cmd_testharness_css_values`：共享底座 skip 规则单点，病态案谓词排除，
+/// 记录模式不设 land 门禁）。
+fn cmd_testharness_css_text_decor(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_text_decor_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_box(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_box_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_pseudo(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_pseudo_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_display(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_display_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_mixins(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_mixins_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_syntax(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_syntax_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_fill_stroke(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_fill_stroke_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_shadow(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_shadow_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_size_adjust(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_size_adjust_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_content(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_content_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_will_change(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_will_change_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_color_adjust(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_adjust_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_easing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_easing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_compositing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_compositing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_counter_styles(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_counter_styles_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_nesting(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_nesting_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_color_hdr(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_color_hdr_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_css_env(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness_css_corpus::run_css_env_cases(wpt_root, filter)
     });
 }
 
