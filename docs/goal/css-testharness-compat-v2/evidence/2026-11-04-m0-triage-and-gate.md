@@ -185,6 +185,59 @@ B1/B2/B3（高密度 + 导入即得/引擎可修簇），WAAPI/API 未实现/协
   新拉 0 属正常）；jsdelivr CDN 403 突发由 raw.githubusercontent 权威
   回退承接，零目录失败。日志 `.acceptance/css-v2-m0/sync-20261105-000117.log`
   （diagnostics 不入库）。
+- 修正留痕：首版脚本 B3 块漏 `css/css-lists`（§3 表有、脚本 12 目录≠13），
+  终局轮前补入并整目录首拉 350 blob；「44 目录（含 css/support）」口径
+  同步修正为 **44 批次目录 + css/support = 45 项**。
+- 逐目录 missing=0 台账（列 = 上游过滤面 blob / 终局轮新拉 / 定向重拉 /
+  missing；持久证据，不依赖 diagnostics 日志）：
+
+| 目录 | 上游 | 新拉 | 重拉 | missing |
+|---|---:|---:|---:|---:|
+| css/cssom | 241 | 0 | 0 | 0 |
+| css/css-images | 768 | 0 | 0 | 0 |
+| css/filter-effects | 606 | 0 | 0 | 0 |
+| css/css-ui | 1561 | 0 | 0 | 0 |
+| css/css-borders | 250 | 0 | 0 | 0 |
+| css/css-logical | 101 | 0 | 0 | 0 |
+| css/css-text-decor | 615 | 0 | 16 | 0 |
+| css/css-box | 179 | 3 | 0 | 0 |
+| css/css-pseudo | 579 | 2 | 1 | 0 |
+| css/css-display | 157 | 157 | 0 | 0 |
+| css/css-mixins | 50 | 50 | 0 | 0 |
+| css/css-syntax | 70 | 70 | 0 | 0 |
+| css/fill-stroke | 12 | 12 | 0 | 0 |
+| css/css-shadow | 225 | 225 | 0 | 0 |
+| css/css-size-adjust | 5 | 5 | 0 | 0 |
+| css/css-content | 132 | 0 | 3 | 0 |
+| css/css-will-change | 69 | 69 | 0 | 0 |
+| css/css-color-adjust | 57 | 57 | 0 | 0 |
+| css/css-easing | 15 | 15 | 0 | 0 |
+| css/compositing | 156 | 156 | 0 | 0 |
+| css/css-counter-styles | 496 | 2 | 0 | 0 |
+| css/css-nesting | 54 | 0 | 0 | 0 |
+| css/css-color-hdr | 4 | 4 | 0 | 0 |
+| css/css-env | 10 | 10 | 0 | 0 |
+| css/css-conditional | 449 | 7 | 0 | 0 |
+| css/mediaqueries | 108 | 108 | 0 | 0 |
+| css/css-cascade | 162 | 1 | 3 | 0 |
+| css/CSS2 | 1153 | 7 | 0 | 0 |
+| css/css-forms | 36 | 36 | 0 | 0 |
+| css/css-link-params | 4 | 4 | 0 | 0 |
+| css/css-font-loading | 40 | 40 | 0 | 0 |
+| css/css-gaps | 788 | 788 | 0 | 0 |
+| css/css-flexbox | 1956 | 1212 | 10 | 0 |
+| css/css-multicol | 725 | 269 | 0 | 0 |
+| css/css-position | 487 | 353 | 0 | 0 |
+| css/css-overflow | 1106 | 9 | 0 | 0 |
+| css/css-tables | 419 | 238 | 0 | 0 |
+| css/css-lists | 350 | 350 | 0 | 0 |
+| css/css-inline | 378 | 378 | 0 | 0 |
+| css/css-scroll-snap | 221 | 221 | 0 | 0 |
+| css/css-viewport | 224 | 224 | 0 | 0 |
+| css/css-break | 1368 | 1368 | 0 | 0 |
+| css/css-contain | 811 | 0 | 0 | 0 |
+| css/css-writing-modes | 814 | 513 | 0 | 0 |
+| css/support | 20 | 0 | 0 | 0 |
 
 ## 7. 布局簇地址池测量 → layout goal 分档触发
 
