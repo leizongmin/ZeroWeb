@@ -5,9 +5,14 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（214）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（219）
 
-- 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量并致不可中断自旋](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
+- 2026-11-04 [计时探针不带值断言会测到错误路径——「便宜读数」可能是零矩形快速回落](bugs/2026-11/2026-11-04-timing-probe-without-value-assertions-measures-wrong-path.md) — engine, testing
+- 2026-11-04 [SIGKILL 构建链可在 target/debug 留下"指纹新鲜、内容陈旧"的投毒构件，编译假红要先用 clean -p 验伪](bugs/2026-11/2026-11-04-sigkilled-build-poisoned-artifacts-false-compile-red.md) — engine, testing
+- 2026-11-04 [timer 回调丢 data-\* 属性——读侧回落机制与宿主半边分离交付，跨线程接线是结构必需](bugs/2026-11/2026-11-04-mutation-history-host-half-unwired-cross-thread-inbox.md) — engine
+- 2026-11-04 [include_str! 内嵌 shim 的 A/B 判读必须先做二进制谱系验证](bugs/2026-11/2026-11-04-include-str-shim-binary-lineage-ab.md) — engine, testing
+- 2026-11-04 [gBCR 不反映同任务样式写——读路径数据源分叉与 worker 侧有效视图布局](bugs/2026-11/2026-11-04-gbcr-pending-style-write-effective-view-layout.md) — engine
+- 2026-11-03 [throw 式诊断 bail 在 DOM merge 路径会撕裂不变量](bugs/2026-11/2026-11-03-throw-bail-diag-corrupts-merge-invariants.md) — engine, testing
 - 2026-11-03 [KMAC newX 拼接是裸 X——把 TupleHash 的逐元素 encode_string 套到 KMAC 上产出全错 MAC](bugs/2026-11/2026-11-03-kmac-newx-raw-x-vs-tuplehash-encode-string.md) — zero-engine
 - 2026-11-03 [Hybrid PQ/T KEM combiner 用 CG 框架 C2PRI 定义（含 ek_T、不含 ct_PQ），不是 X-Wing 原式](bugs/2026-11/2026-11-03-hybrid-kem-c2pri-combiner-includes-ek-t.md) — engine
 - 2026-11-02 [per-document 运行时状态用进程级 static 槽承载 → 并行测试 job 下跨页串态](bugs/2026-11/2026-11-02-per-doc-state-static-slot-parallel-jobs.md) — engine, js-dom-bridge
@@ -222,8 +227,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（29）
+## Patterns — 可复用代码模式与最佳实践（30）
 
+- 2026-11-04 [Timeout 行不是挂死证明——判读前先做 solo/in-face 预算算术](patterns/2026-11/2026-11-04-timeout-line-budget-arithmetic-before-hang-verdict.md) — testing
 - 2026-11-03 [密码学语料期望值程序化解析取数，不手抄长 hex 串](patterns/2026-11/2026-11-03-corpus-expected-values-parse-not-transcribe.md) — tests/wpt-runner
 - 2026-10-31 [coverage 面级 0P 断层的提交窗口二分法](patterns/2026-10/2026-10-31-coverage-face-zero-pass-bisect.md) — wpt_runner
 - 2026-10-29 [WPT encode-form 期望按 per-scalar fresh 编码出字节——整串流式编码对 stateful 编码必判 FAIL](patterns/2026-10/2026-10-29-wpt-encode-form-per-scalar-fresh-encoding.md) — engine, tests/wpt-runner
@@ -254,8 +260,9 @@
 - 2026-08-05 [回调闭包 Send+Sync 约束：不能缓存 Document](patterns/2026-08/2026-08-05-callback-closure-send-sync-no-document.md) — zero-engine（js_dom_bridge.rs）, zero-script-sandbox（register_callback）, zero-dom（Document）
 - 2026-07-20 [经验：reftest 布局诊断必须用 empirical ZW-output 验证，不能只靠 code-trace](patterns/2026-07/2026-07-20-reftest-layout-diagnosis-empirical-verification.md) — tests/wpt-runner（reftest harness）, crates/layout-engine（multicol 等）
 
-## Performance — 性能优化经验（48）
+## Performance — 性能优化经验（49）
 
+- 2026-11-04 [缓存键携带每次写都变的版本计数（mlen）——写读交织下缓存归零，每读全量重建](performance/2026-11/2026-11-04-rect-cache-key-mlen-full-rebuild-per-write-read.md) — engine
 - 2026-11-01 [per-call 重算视图 × mutation 循环 = 单调用线性化后的 O(n²) 地板](performance/2026-11/2026-11-01-per-call-recompute-view-mutation-loop-quadratic-floor.md) — engine/js-dom-shim
 - 2026-10-30 [push-only 注册表 + length-only gate 后的 O(n) 预处理 = 填充序列 O(n²)](performance/2026-10/2026-10-30-ring-registry-length-gate-hidden-quadratic.md) — engine/js-dom-shim
 - 2026-10-30 [未注册 globalThis 属性的 typeof 判定走慢路径——惰性注册让页面常驻付 17.6ms/次](performance/2026-10/2026-10-30-globalthis-unregistered-property-typeof-miss-cost.md) — engine
@@ -305,8 +312,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（36）
+## Platform — 平台与环境相关经验（37）
 
+- 2026-11-04 [wpt.fyi 上游取证通道（代理 + 端点口径 + per-test message 直键）](platform/2026-11/2026-11-04-wpt-fyi-upstream-evidence-recipe.md) — docs/goal/html-semantics-compat
 - 2026-11-03 [webcrypto 全量账 24MB 案楔死级联的判别指纹与串行复跑协议](platform/2026-11/2026-11-03-webcrypto-24mb-wedge-cascade-fingerprint.md) — tests/wpt-runner, zero-engine
 - 2026-11-03 [git stat 缓存盲区：同 size 同 mtime 的磁盘内容损坏不报脏](platform/2026-11/2026-11-03-git-stat-cache-blind-same-size-mtime-corruption.md) — engine
 - 2026-10-29 [规范迁移期 JS 语义以 Chrome 实测为地面真值——node 旧 V8 是反例](platform/2026-10/2026-10-29-spec-transition-ground-truth-chrome-first.md) — engine,tests/wpt-runner
