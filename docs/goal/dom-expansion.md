@@ -1,17 +1,21 @@
 # DOM 扩面 — dom/ranges + html/dom
 
-**版本**: v1.0
-**日期**: 2026-10-27（立项，coverage 对账驱动）
-**状态**: Active——M1 语料预置未启动
+**版本**: v1.1
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）
+**状态**: Active——M1 完成（语料对账 100% + 双通道扩面 + 双面基线落账）；M2 失败簇归因进行中
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + 接口完备性收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——DOM 面）
 
-## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
+## coverage 对账（2026-11-05 更新：基线 coverage-2026-11-02 为复测锚）
 
-| WPT 面 | 全量分母（子测试） | 覆盖 | 说明 |
-|---|---:|---:|---|
-| dom/ranges | 44,720 | 0/73 文件 | Range API 完备性 |
-| html/dom | 72,282 | 0/394 文件 | 40 号收口时只预置 40 文件子集 |
+| WPT 面 | 全量分母（子测试） | M1 前覆盖 | M1 后通道面 | 说明 |
+|---|---:|---:|---|---|
+| dom/ranges | 44,726 | 44/73 文件 | 63/73 文件（+19 tentative） | 已实现 API 99.07%；tentative 189F 全接口缺失挂账 |
+| html/dom | 72,326 | 81/396 文件 | ~230/396 文件（+149 案路径） | 旧面 99.89% 零回归；新面 42.41%（636F 六簇） |
+
+M1 前列来自立项日报（0 覆盖口径过时——js-dom R42 已入 44 顶层案、40 号已入
+81 文件，立项日对账未扣除既有通道）；精确锚见 `docs/compat/wptfyi/coverage-2026-11-02.json`
+（dom/ranges zw_passes 40,582/44,726、html/dom 58,627/72,326）。
 
 ## Mission
 
@@ -37,9 +41,19 @@ Document 的 DOM 接口面（394 文件，含各元素 historical/idlharness 面
 
 ## 里程碑
 
-- **M1**：语料预置 + 通道扩面 + Makefile。
-- **M2**：基线分类（ranges：已实现 API 的语义正确率；html/dom：接口存在性图）。
-- **M3**：可收敛簇修齐或挂账 + coverage 复测收口。
+- **M1**：语料预置 + 通道扩面 + Makefile。——**完成（2026-11-05）**：语料
+  对账上游 pin 全量（见 evidence/2026-11-05-m1-corpus-audit.md）；通道复用
+  既有两通道扩面 + per-dir skip 规则（ranges_case_skipped +
+  HTML_SYNTAX_CORPUS_SUBDIRS 十叶子），Makefile 四 target 零改动自覆盖，
+  见 evidence/2026-11-05-m1-channel-expansion.md。
+- **M2**：基线分类（ranges：已实现 API 的语义正确率；html/dom：接口存在性
+  图）。——首遍随 M1 落账（ranges 99.07%、html/dom 新面 42.41% 六簇 +
+  接口缺失/语义分列）；待做：documents 簇（forms/lastModified/title ~130F）
+  逐 API 归因、mutations dataChange 369F 簇根因定位。
+- **M3**：可收敛簇修齐或挂账 + coverage 复测收口。——候选簇：documents
+  语义簇、dataset 3F、mutations 尾簇 8F；挂账候选：innerText 面（渲染
+  依赖，与渲染流域划界）、partial-updates/Sanitizer/OpaqueRange 提案面、
+  .window.js/.xhtml 形态缺口。
 
 ## 依赖约束（run-rules §9）
 

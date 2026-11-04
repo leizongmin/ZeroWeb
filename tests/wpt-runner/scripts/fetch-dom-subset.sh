@@ -36,6 +36,10 @@ SUBDIRS=(
   "dom/collections"
   "dom/traversal"
   "dom/ranges"
+  # dom-expansion goal M1（docs/goal/dom-expansion.md DC-2）：OpaqueRange/
+  # createValueRange 提案面——runner 扫描面（DOM_TEST_SUBDIRS）同步；crashtests/
+  # 非断言崩溃页不拉不跑（ranges_case_skipped 双保险）。
+  "dom/ranges/tentative"
   "dom/abort"
   "dom/lists"
   "dom"

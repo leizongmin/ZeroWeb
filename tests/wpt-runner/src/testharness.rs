@@ -181,6 +181,11 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom/collections",
     "dom/traversal",
     "dom/ranges",
+    // dom-expansion goal M1（docs/goal/dom-expansion.md DC-2）：OpaqueRange/
+    // createValueRange 提案面 19 案——接口缺失即快速 TypeError 失败，按 M2
+    // 「接口存在性图」口径入分母分类；crashtests/ 不入扫描（非断言崩溃页，
+    // [`ranges_case_skipped`] 双保险排除）。
+    "dom/ranges/tentative",
     // R373（js-dom M4/DC-3 扩展）：dom/abort——AbortSignal/AbortController 域（与 fetch
     // shim 的 AbortSignal 基建同域；5 个真实用例：timeout/reason/any-crash + any.js 变体）。
     "dom/abort",
@@ -1470,11 +1475,30 @@ pub fn run_canvas_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, V
     cases
 }
 
+/// dom/ranges 面 per-dir skip 规则（dom-expansion goal M1 / DC-2；fetch 脚本头注释
+/// 同域，双保险）——仅作用于 `dom/ranges` 前缀，其余 dom/ 子域行为不变：
+/// - `dom/ranges/crashtests/`（2 案非断言崩溃页，R42 导入先例排除；扫描面本就
+///   不含该子目录，此条防 FORCE 重拉后误入）
+/// - 无 `testharness.js` 引用页——上游自述式/辅助页 3 案（2 个根目录 crash 页 +
+///   `Range-test-iframe.html` iframe 辅助页；非 testharness 形态，html-syntax
+///   通道同名规则先例）
+/// - `<iframe` 依赖面不在此排除：6 个 Aryeh Gregor 旧式案（cloneContents/
+///   deleteContents/extractContents/insertNode/surroundContents 家族）以动态
+///   iframe 为 scratch document，js-dom R115 iframe 管道就绪后已在通道内执行，
+///   维持既有行为不回退。
+fn ranges_case_skipped(relative: &str, source: &str) -> bool {
+    if relative.starts_with("dom/ranges/crashtests/") {
+        return true;
+    }
+    !source.contains("testharness")
+}
+
 /// Run the upstream `dom/` testharness cases under `wpt_root`（JS/DOM nativization goal M4 / DC-3）。
 ///
 /// 扫描 [`DOM_TEST_SUBDIRS`] 下全部主线程 .html 用例；仅依赖 `testharness.js`（与
 /// [`run_html_interaction_cases`] 同一底层 [`run_testharness_html`]，不经 canvas-tests.js）。
 /// filter 按路径子串过滤。用例由 `fetch-dom-subset.sh` 按需拉取（wpt-data gitignored）。
+/// dom/ranges 面的 per-dir skip 规则见 [`ranges_case_skipped`]（dom-expansion goal M1）。
 pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -1519,6 +1543,10 @@ pub fn run_dom_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<
                     continue;
                 }
             };
+            // dom-expansion goal M1：dom/ranges 面 per-dir skip（其余子域不变）。
+            if relative.starts_with("dom/ranges") && ranges_case_skipped(&relative, &source) {
+                continue;
+            }
             let variants = case_variants(&source);
             if variants.is_empty() {
                 let results = run_testharness_html(wpt_root, &relative, &source, &harness_source, CASE_TIMEOUT);
@@ -4494,6 +4522,14 @@ pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec
 /// encoding-compat P5 双向记账转入的文档级编码嗅探案面）。html/syntax 顶层无 .html
 /// （全在子目录）——列叶子目录；html/dom 顶层 .html（reflection-*/aria-*/historical）
 /// 直列。flat 扫描（子目录不递归），与 fetch depth-1 布局对齐。
+///
+/// dom-expansion goal M1（docs/goal/dom-expansion.md DC-2）扩面：html/dom 深层
+/// 子目录 10 个叶子——documents/（DOM tree accessors + getElementsByName 嵌套 +
+/// resource metadata management）、partial-updates/tentative（declarative partial
+/// updates 提案面，含 fragment/ 嵌套）、elements/ 五子域（elements-in-the-dom/
+/// global-attributes/images/bidi 需求/innerText）。fetch 同步见 goals/40 脚本尾部
+/// 显式目录；`.window.js`（7 案）与 `.xhtml`（12 案）形态暂不入扫描面——flat 扫描
+/// 仅取 .html/.any.js，缺口按 M2 甄别挂账。
 pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/syntax/charset",
     "html/syntax/parsing",
@@ -4506,6 +4542,16 @@ pub const HTML_SYNTAX_CORPUS_SUBDIRS: &[&str] = &[
     "html/dom/directionality",
     "html/dom/elements",
     "html/dom/render-blocking",
+    "html/dom/documents/dom-tree-accessors",
+    "html/dom/documents/dom-tree-accessors/document.getElementsByName",
+    "html/dom/documents/resource-metadata-management",
+    "html/dom/partial-updates/tentative",
+    "html/dom/partial-updates/tentative/fragment",
+    "html/dom/elements/elements-in-the-dom",
+    "html/dom/elements/global-attributes",
+    "html/dom/elements/images",
+    "html/dom/elements/requirements-relating-to-bidirectional-algorithm-formatting-characters",
+    "html/dom/elements/the-innertext-and-outertext-properties",
 ];
 
 /// html-syntax corpus 共用运行面筛减规则（fetch 脚本头注释同域，双保险）：
