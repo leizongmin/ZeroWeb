@@ -73,7 +73,7 @@ test_stylesheets_write_r2809），`git stash` A/B 双向证明为 HEAD（f888736
 常驻回归面：editing/run 五语料为 pinned 语料常驻 make 入口（wpt-suites.csv
 editing-compat 行），失败案翻转即回归断言，无需新增 import。
 
-## 残差与新账（后续轮工作面）
+## 残差与新账（后续轮工作面，fix1 时点）
 
 1. **exec 包裹形状 ~126 行**（跨五语料，骨架 `exp /font+/span+font+span vs got font`
    单族 55 行）——push-down/add-wrapper 内层语义，⑦ 下一步主攻。
@@ -84,4 +84,57 @@ editing-compat 行），失败案翻转即回归断言，无需新增 import。
    `_zwValGetAllEffectivelyContained` 走查/exec 选区恢复，与 ① 有交叉（部分案
    exec 同败）。
 3. in_array 多形 15 行归 ⑨ 合流不变。
+
+## ⑦ 残余第一笔落地：minified joiner + descend 臂自面读（fix2→fix3，2026-11-04 乙续落地、判读收口）
+
+针对 ① exec 包裹形状族先做两笔（`crates/engine/src/js_dom_shim/part01d.js`，
+探针 `tests/wpt-runner/wpt-data/editing/run/zz-probe-vawrap.html` 五案
+A1/A2/C1 + D1/D2）：
+
+1. **`_zwVaSetStyleProp` 手工合并序列化改 minified**：`k: v` + `'; '` joiner →
+   `k:v` + `';'`。语料期望 Chrome recorded 无空格形（compare innerHTML 裸串
+   等值无归一；host style.setProperty 通道同形；justify 簇 wrap 样式
+   `text-align:center` 先例同口径）。
+2. **add-wrapper descend 臂条件读换自面走查**：spec 条件读 move 后
+   effective(node)——真 Chrome computed 自 node 自面起算（自身 style/font 属性
+   + UA stylesheet 元素规则，无自面声明才继承新 styled wrapper，等价跳臂）。
+   旧 `_zwValEffectiveValue` 对 sel 注册（M 形）元素走 host 通道，plain 新建
+   styled 祖先不在宿主树 → 读旧继承 ≠ 新值 → 臂误触发：span1 被移出
+   styled wrapper 逐子重包（fontsize 4 双层套，期望单层外裹）。
+
+**fix2 首版回归撤改**：descend 臂改挂 `_zwVaSpecifiedValue` null 门只覆盖
+author-specified 面，漏 UA 规则面误跳臂——fontname 语料 tt/code/kbd/samp 8 案
+回归（`judge-qvfix2.py`：F→P 6 / P→F+newF 8，VERDICT REGRESSION，语料账
+`.acceptance/ipara-port/qv-fix2/`）。fix3 改读 `__zwPlainComputed(node,
+property)` 自面走查（plain 通道同时看见 styled wrapper 与 UA 规则表：
+plain span 爬升命中 wrapper 新值 → 等价跳臂；tt 族首步命中 UA mono 规则
+→ 臂照走，包裹收进 tt 内层）；自面无源（''）回落 host effective 保 UA
+初值口径；等价比较走 `_zwVaLooselyEquivalent`（自面 fontsize 返 px 形，
+sizeMap 桥接关键字）。
+
+**验证（qv-fix3 轮，judge-qvfix3.py 元组口径，对 qv-fix1 基线）**：
+
+- probe-vawrap3 五案 5/5 PASS（A1 `<span style="font-size:large"><span>foo</span>
+  <span>bar</span></span>` 单层外裹 + A2 font 形 + C1 多块 + D1/D2 tt 内层
+  双 flag）。
+- 五语料：fontsize F 84→78（**F→P 6**：`<span>[foo</span> <span>bar]</span>` /
+  `<p>[foo</p><p> <span>bar</span> </p><p>baz]</p>` compare innerHTML 双 flag
+  ×2 形 + qI ×2）、fontname 59→59（fix2 的 8 例回归消除）、forecolor
+  39→39、backcolor 12→12、hilitecolor 25→25——**合计 F→P 6 / P→F+newF 0，
+  VERDICT OK**；伪 T 行 0。
+- 残差更新：**219F → 213F**（fontsize 78 / fontname 59 / forecolor 39 /
+  backcolor 12 / hilitecolor 25；compare/equals 136 + qV/qS/qI 读面 77）。
+- engine lib：test-guard 包裹 `cargo test -p zero-engine --lib`
+  （zw-qvfix3-enginelib，06:02-06:03）**3,724P/5F**——5 红逐名恒 fix1 轮
+  stash A/B 定谳的 HEAD（f888736f9）既有名单
+  （p56_adopted_snapshot_restore_hook_keeps_page_value /
+  test_p99s_rule_style_preserves_custom_property_case /
+  test_stylesheet_add_rule_remove_rule_r3276 / test_stylesheets_rule_style_r2810 /
+  test_stylesheets_write_r2809），P 数 3,724 与 fix1 轮持平，零位移。
+
+descend 臂本轮对语料零净翻转（+6 全归 joiner 笔），其价值在探针 D1/D2 锁
+tt 内层包裹语义 + 双层套误触发面修复（未来 fontsize push-down 案不再误摘
+wrapper）。①族残余 ~120 行主攻（`exp /font+/span+font+span vs got font`
+单族 55 行）不变。
+
 

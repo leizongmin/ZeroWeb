@@ -239,9 +239,13 @@
         else decls[prop] = valS;
         var parts = [];
         for (var k in decls) {
-          if (Object.prototype.hasOwnProperty.call(decls, k)) parts.push(k + ': ' + decls[k]);
+          if (Object.prototype.hasOwnProperty.call(decls, k)) parts.push(k + ':' + decls[k]);
         }
-        var serial = parts.join('; ');
+        // Chrome delta（⑦ 残余，probe-vawrap 实证）：手工合并序列化走无空格
+        // minified 形（`font-size:large`）——语料期望 Chrome recorded 无空格
+        // （compare innerHTML 裸串等值，无归一），host style.setProperty 通道
+        // 同形；justify 簇 wrap 样式 `text-align:center` 先例同口径。
+        var serial = parts.join(';');
         if (serial) el.setAttribute('style', serial);
         else el.removeAttribute('style');
       }
@@ -770,8 +774,24 @@
       _zwVaSetStyleProp(newParent, property, newValue);
     }
     _zwJusMovePreservingRanges(node, newParent, newParent.childNodes.length);
+    // Chrome delta（⑦ 残余 compare 面，2026-11-04 probe-zz-probe-vawrap 实证）：
+    // spec 条件读 move 后 effective(node)——真 Chrome computed 自 node 自面
+    // 起算：自身 style/font 属性 + UA stylesheet 元素规则，无自面声明才继承
+    // 新 styled wrapper（= 新值恒等价）。我方 _zwValEffectiveValue 对 sel 注册
+    // （M 形）元素走 host 通道，plain 新建 styled 祖先不在宿主树 → 读旧继承
+    // ≠ 新值 → 臂误触发：span1 被移出 styled wrapper 逐子重包（fontsize 4
+    // 得双层套，期望单层外裹）。改读 __zwPlainComputed 自面走查（plain 通道
+    // 同时看见 wrapper 与 UA 表）：plain span 爬升命中 wrapper 新值 → 等价
+    // 跳臂；tt/code/kbd/samp 等首步命中 UA mono 规则（monospace ≠ 新值）→
+    // 臂照走（fontname 语料 8 案期望包裹收进 tt 内层；qV-fix2 首版改挂
+    // _zwVaSpecifiedValue 门只覆盖 author-specified，漏 UA 规则面误跳臂，
+    // 该 8 例回归实证）。自面无源（''）回落 host effective 保 UA 初值口径；
+    // 等价比较走 loosely（自面 fontsize 返 px 形，sizeMap 桥接关键字）。
+    var ownFace = '';
+    try { ownFace = __zwPlainComputed(node, property); } catch (_eVaFace) {}
     if (node.nodeType === 1
-        && !_zwVaEquivalentValues(command, _zwValEffectiveValue(node, command), newValue)) {
+        && !_zwVaLooselyEquivalent(command,
+            ownFace || _zwValEffectiveValue(node, command), newValue)) {
       _zwJusMovePreservingRanges(node, newParent.parentNode, _zwJusNodeIndex(newParent));
       if (newParent.parentNode) newParent.parentNode.removeChild(newParent);
       var children2 = [];
