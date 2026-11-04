@@ -15612,10 +15612,17 @@ async_test(function(test) {
     /// 包 IIFE（形参名 `global_scope` 与 completion patch 注入代码的引用名一致）+ 尾锚
     /// `})(self);`（apply_harness_completion_patch 的 replacen 锚），tests 注册表使
     /// `__zw_harness_state()` 读到 declared/pending。
+    // s280：`complete` 必须置 `phase = 4`（上游 Tests.complete 语义——
+    // https://github.com/web-platform-tests/wpt/blob/master/resources/testharness.js
+    // phase COMPLETE）。此前空操作 + phase 恒 0：completion 已发（probe.complete
+    // 真）但 terminal 三臂全不满足（arm1/2 需 phase 4、arm3 需 state null——本
+    // wrapper 的 tests 状态物使探针 state 非 null），14 个调用钉泵满 CASE_TIMEOUT
+    // ——单钉 10s 泵窗堆增长至 300-930MB，16 并流聚合 runner bin 单进程 RSS
+    // 4.0-4.4G 超 4G guard（s270 挂账①内存大户根因，R5389 workspace 腿放宽同因）。
     fn mini_harness_stateful() -> String {
         format!(
             "(function(global_scope) {{\n{MINI_HARNESS}\
-             var tests = {{tests: [], num_pending: 0, phase: 0, all_done: function() {{ return true; }}, complete: function() {{}}}};\n\
+             var tests = {{tests: [], num_pending: 0, phase: 0, all_done: function() {{ return true; }}, complete: function() {{ tests.phase = 4; }}}};\n\
              var test_environment = {{all_loaded: true}};\n\
              var __miniTest = globalThis.test;\n\
              globalThis.test = function(fn, name) {{ tests.tests.push(1); __miniTest(fn, name); }};\n\

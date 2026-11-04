@@ -1,0 +1,115 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.15s
+     Running unittests src/main.rs (target/debug/deps/zero_wpt_runner-41cc975811079daf)
+
+running 85 tests
+test testharness::tests::cache_storage_runner_reports_every_case_when_harness_is_missing ... ok
+test testharness::tests::cache_storage_window_manifest_has_expected_unique_cases ... ok
+test testharness::tests::decode_data_url_script_r5388_parses_plain_and_base64_forms ... ok
+test testharness::tests::cache_storage_fetch_handler_marks_filtered_response_types ... ok
+test testharness::tests::encoding_py_handler_generates_meta_charset_from_label_query ... ok
+test testharness::tests::fetch_with_body_fixture_distinguishes_empty_and_non_empty_request_bodies ... ok
+test testharness::tests::data_module_referrer_checker_endpoint_sims_s268 ... ok
+test testharness::tests::echo_content_escaped_py_handler_round_trips_helper_unescape ... ok
+test testharness::tests::form_url_encoding_case_skipped_faces ... ok
+test testharness::tests::harness_loaded_tails_pin_defect2_load_gate ... ok
+test testharness::tests::indexeddb_any_wrapper_loads_support_before_case ... ok
+test testharness::tests::inline_local_scripts_inlines_data_url_script_r5388 ... ok
+test testharness::tests::load_error_events_fixture_serves_query_aware_bodies ... ok
+test testharness::tests::maps_notrun_and_precondition_failed_as_neutral_r20 ... ok
+test testharness::tests::meta_referrer_policy_extract_s116 ... ok
+test testharness::tests::module_referer_policy_table_s116 ... ok
+test testharness::tests::modulepreload_endpoint_sims_s124 ... ok
+test testharness::tests::inline_delivery_preserves_id_attr_s108 ... ok
+test testharness::tests::json_module_fetcher_mime_gate_s107 ... ok
+test testharness::tests::inline_local_scripts_preserves_handlers_and_appends_delivery_tails ... ok
+test testharness::tests::inline_local_scripts_module_non_scripty_src_error_delivery_s266 ... ok
+test testharness::tests::phase_four_with_all_results_is_terminal ... ok
+test testharness::tests::inline_body_closing_tag_escaped_s112 ... ok
+test testharness::tests::inline_sched_classification_wraps_defer_async_trickle_s112 ... ok
+test testharness::tests::inline_serve_with_content_type_charset_decode_s115 ... ok
+test testharness::tests::inline_module_import_specs_rewrite_to_root_absolute_s101 ... ok
+test testharness::tests::referrer_checker_img_endpoint_sims_s270 ... ok
+test testharness::tests::script_fetcher_load_error_events_endpoint_s250 ... ok
+test testharness::tests::script_fetcher_data_module_marker_s249 ... ok
+test testharness::tests::script_fetcher_text_module_mime_agnostic_s250 ... ok
+test testharness::tests::referrer_checker_endpoint_and_host_alias_s116 ... ok
+test testharness::tests::delivery_marks_page_units_inlined_not_harness_s261 ... ok
+test testharness::tests::no_harness_script_error_is_failure ... ok
+test testharness::tests::missing_harness_completion_is_timeout ... ok
+test testharness::tests::early_completion_with_no_results_yields_file_level_timeout_s149 ... ok
+test testharness::tests::no_harness_module_script_can_clear_test_wait ... ok
+test testharness::tests::registered_tests_cannot_complete_with_empty_results ... ok
+test testharness::tests::runs_supported_html_interaction_subtests ... ok
+test testharness::tests::load_handler_sync_tests_survive_completion_wiring_r5341 ... ok
+test testharness::tests::script_throw_without_declared_tests_stays_fail_s108 ... ok
+test testharness::tests::no_harness_test_wait_must_clear_before_pass ... ok
+test testharness::tests::send_keys_dispatches_key_event_sequence_and_suppresses_modifier_keypress ... ok
+test testharness::tests::send_keys_space_activates_button_on_keyup_r3254_k4 ... ok
+test testharness::tests::serve_custom_response_endpoint_state_machine_s267 ... ok
+test testharness::tests::serve_with_content_type_scripty_intent_s115 ... ok
+test testharness::tests::service_worker_cache_storage_manifest_has_expected_unique_cases ... ok
+test testharness::tests::service_worker_cache_storage_runner_reports_every_case_when_harness_is_missing ... ok
+test testharness::tests::service_worker_core_manifest_has_expected_unique_cases ... ok
+test testharness::tests::service_worker_fetch_manifest_has_request_end_to_end_case ... ok
+test testharness::tests::service_worker_fetch_runner_reports_every_case_when_harness_is_missing ... ok
+test testharness::tests::service_worker_fixture_fetcher_accepts_canonical_cross_origin ... ok
+test testharness::tests::service_worker_fixture_fetcher_generates_import_script_from_query ... ok
+test testharness::tests::service_worker_fixture_fetcher_redirects_second_update_request ... ok
+test testharness::tests::service_worker_fixture_fetcher_rejects_unknown_external_origins ... ok
+test testharness::tests::service_worker_fixture_fetcher_wraps_any_js_with_worker_harness ... ok
+test testharness::tests::service_worker_fixture_fetcher_wraps_cache_abort_any_js_with_dynamic_fetch_fixture ... ok
+test testharness::tests::service_worker_fixture_fetcher_wraps_module_any_js_with_module_harness ... ok
+test testharness::tests::service_worker_missing_scope_html_returns_document_response ... ok
+test testharness::tests::service_worker_runner_reports_every_case_when_harness_is_missing ... ok
+test testharness::tests::sniff_document_encoding_window_multibyte_boundary ... ok
+test testharness::tests::trickle_fixture_generates_requested_chunks ... ok
+test testharness::tests::unsupported_testdriver_command_is_explicit ... ok
+test testharness::tests::vary_py_handler_respects_request_credentials ... ok
+test testharness::tests::send_keys_select_type_ahead_multi_char_r3254_k5 ... ok
+test testharness_html_semantics::tests::moving_between_documents_helper_cases_are_skipped ... ok
+test testharness::tests::waits_for_active_step_timeout_before_accepting_completion ... ok
+test testharness_wasm_core::tests::any_js_window_lane_split ... ok
+test testharness_wasm_core::tests::idlharness_skipped ... ok
+test testharness_wasm_core::tests::esm_integration_skipped ... ok
+test testharness_wasm_core::tests::plain_html_without_harness_skipped ... ok
+test testharness_wasm_core::tests::wrapper_html_with_harness_runs ... ok
+test testharness::tests::script_charset_s122 ... ok
+test testharness::tests::script_location_replace_javascript_evaluated_s118 ... ok
+test testharness::tests::anchor_url_decomposition_s121 ... ok
+test testharness::tests::form_indexed_named_access_focus_s119 ... ok
+test testharness::tests::formdata_entry_list_s123 ... ok
+test testharness::tests::script_location_href_javascript_evaluated_s118 ... ok
+test testharness::tests::script_src_set_after_docwrite_content_no_refire_s117 ... ok
+test testharness::tests::script_prepare_on_text_content_set_s109 ... ok
+test testharness::tests::script_fragment_clone_not_executed_s120 ... ok
+test testharness::tests::script_prepare_on_reinsertion_external_s110 ... ok
+test testharness::tests::script_src_set_after_docwrite_empty_s117 ... ok
+test testharness::tests::script_prepare_on_children_changed_s110 ... ok
+test testharness::tests::script_innerhtml_moved_not_executed_s118 ... ok
+test testharness::tests::script_throw_with_declared_tests_collects_results_s108 ... ok
+
+test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 277 filtered out; finished in 10.90s
+
+	Command being timed: "./target/test-guard --per-proc-mem 6 --total-mem 12 --time-limit 900 -- cargo test -p zero-wpt-runner --bin zero-wpt-runner -- testharness"
+	User time (seconds): 91.27
+	System time (seconds): 3.49
+	Percent of CPU this job got: 840%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 0:11.27
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 4656060
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 0
+	Minor (reclaiming a frame) page faults: 1405639
+	Voluntary context switches: 185641
+	Involuntary context switches: 39837
+	Swaps: 0
+	File system inputs: 448
+	File system outputs: 488
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

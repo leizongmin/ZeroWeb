@@ -250,7 +250,14 @@ test: target-disk-guard target/test-guard
 	# per-proc-mem 4→6 / total-mem 8→12（仅此腿；renderer/browser 各腿维持），
 	# 依据 /usr/bin/time -v 同守卫环境三次实测；真修（runner 测试并发工作集
 	# 瘦身）归 runner 通道碰头账（master.md 碰撞管理记录 R5389 条）。
-	ZERO_NOPROXY=1 RUST_MIN_STACK=33554432 ./target/test-guard --compile-first --per-proc-mem 6 --total-mem 12 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
+	# s280（2026-11-04）真修落地：mini_harness_stateful 模拟 harness 的 complete
+	# 空操作 + phase 恒 0 击穿 terminal 判据三臂——14 个调用钉泵满 CASE_TIMEOUT
+	# （10s/钉），单钉堆增长 300-930MB，16 并流聚合 runner bin 二进制峰 4.02G
+	# （engine 群 85 钉单独 4.44G；非 engine 群仅 0.78G）。修后逐钉普查：14 钉
+	# 10.4s→0.51s / 300-930MB→148-185MB；runner bin 全量 4G 常态阈值 RC=0
+	# （286P/0F/76I 零位移），峰 4,212,376→1,235,072 KB、墙钟 17.2→8.4s。
+	# workspace 腿回归 per-proc-mem 4 / total-mem 8 常态口径（R5389 校准解除）。
+	ZERO_NOPROXY=1 RUST_MIN_STACK=33554432 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test --workspace --exclude zero-browser --exclude zero-renderer -- --skip gpu::renderer:: --skip surface::tests::test_gpu_cpu_rendering_consistency_solid_fill & test_pid=$$!; \
 	cargo clippy --no-default-features --features quickjs $(addprefix -p ,$(QUICKJS_CLIPPY_CRATES)) --all-targets -- -D warnings & clippy_pid=$$!; \
 	rc=0; wait $$test_pid || rc=$$?; wait $$clippy_pid || rc=$$?; exit $$rc
 	ZERO_NOPROXY=1 ./target/test-guard --compile-first --per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-renderer --bin zero-renderer -- --test-threads=1
