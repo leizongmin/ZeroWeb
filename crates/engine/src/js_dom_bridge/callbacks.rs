@@ -2554,6 +2554,9 @@ pub fn register_dom_callbacks(
                 return v;
             }
             drop(list);
+            // 缺陷2：drain 后当前批空，先收宿主已应用批进历史再回落（否则 handle 属性
+            // 读跨 apply 恒落空——probe7 实证 dataset.seq 同任务读旧值翻转 null）。
+            sync_mutation_history_inbox();
             MUTATION_HISTORY
                 .with(|h| attr_value_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or_default())
         }),
@@ -2574,6 +2577,8 @@ pub fn register_dom_callbacks(
                 return if present { "1".to_string() } else { "0".to_string() };
             }
             drop(list);
+            // 缺陷2：同 `__zw_get_attr_handle`——先收宿主已应用批再回落历史。
+            sync_mutation_history_inbox();
             MUTATION_HISTORY.with(|h| {
                 if has_attr_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or(false) {
                     "1".to_string()
@@ -2587,13 +2592,17 @@ pub fn register_dom_callbacks(
     // create 句柄元素的全部属性名（`|` 分隔，变更序）——供 handle 元素 `el.dataset` 枚举（ownKeys）等
     // 遍历属性名场景。句柄元素不在 HTML 快照，属性名仅来自 SetAttrOnHandle/RemoveAttrOnHandle
     //（正序 latest-wins，无快照基底）。R3196：闭合 R3195 限制①（旧 handle dataset 枚举恒返 []）。
+    // 缺陷2：drain 后当前批空——先收宿主已应用批进历史，再当前批+历史合并正序 replay
+    //（批序 [history…, current] 单调，同 `__zw_get_attr_handle` 第 2 层注）。
     let m = Arc::clone(mutations);
     sandbox.register_callback(
         "__zw_attr_names_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            attribute_names_from_mutations(&list, &handle)
+            sync_mutation_history_inbox();
+            let mut combined = MUTATION_HISTORY.with(|h| h.borrow().iter().cloned().collect::<Vec<_>>());
+            combined.extend(m.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned());
+            attribute_names_from_mutations(&combined, &handle)
         }),
     );
 
@@ -3847,6 +3856,40 @@ pub fn clear_mutation_history() {
     MUTATION_HISTORY.with(|h| h.borrow_mut().clear());
 }
 
+// R100 宿主半边接线（缺陷2，2026-11-04）：renderer automation apply 在 renderer 主线程
+// drain（`apply_recorded_mutations`），handle 属性读回调在 js_worker 线程执行——主线程
+// 直接调 [`append_mutation_history`] 写的是错误线程的 thread_local。收件箱桥：worker
+// 启动时发布本 worker 的收件箱 Arc（每 worker 一份，多 tab 互不可见），宿主 apply 前
+// append 进收件箱，读回调入口经 [`sync_mutation_history_inbox`] 搬运进本线程历史。
+// 未发布宿主（webview 路径 apply 与 JS 同线程、引擎测试）恒 None = 零行为变化。
+thread_local! {
+    static MUTATION_HISTORY_INBOX: std::cell::RefCell<Option<Arc<std::sync::Mutex<Vec<DomMutation>>>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 发布本 JS 线程的 mutation 历史收件箱（renderer js_worker 启动时调用，同线程注册站）。
+pub fn publish_mutation_history_inbox(inbox: Arc<std::sync::Mutex<Vec<DomMutation>>>) {
+    MUTATION_HISTORY_INBOX.with(|slot| *slot.borrow_mut() = Some(inbox));
+}
+
+/// 把收件箱中宿主已 append 的应用批搬运进本线程历史（读回调回落前调用；无收件箱或
+/// 空箱即 no-op）。锁不嵌套：先独占搬空收件箱再入历史 RefCell。
+fn sync_mutation_history_inbox() {
+    let batch = MUTATION_HISTORY_INBOX.with(|slot| {
+        slot.borrow().as_ref().and_then(|inbox| {
+            let mut guard = inbox.lock().unwrap_or_else(|e| e.into_inner());
+            if guard.is_empty() {
+                None
+            } else {
+                Some(std::mem::take(&mut *guard))
+            }
+        })
+    });
+    if let Some(batch) = batch {
+        append_mutation_history(&batch);
+    }
+}
+
 /// editing-compat D1（2026-10-30）：逗号分隔 child-index 链解析（`"0,2,1"` →
 /// `[0, 2, 1]`）；任一段非数字或整串为空 → `None`（回调侧静默丢弃，与
 /// `__zw_set_child_text` 的 idx parse 失败口径一致）。
@@ -3857,13 +3900,17 @@ fn parse_child_index_path(csv: &str) -> Option<Vec<u32>> {
 }
 
 /// js-dom M3 R100：读回调的跨注册回落——当前批 miss 时查历史批（CreateElement/TextNode/
-/// SetTextOnHandle 等 latest-wins 重放语义与 HEAD 的未清空 Vec 一致）。
+/// SetTextOnHandle 等 latest-wins 重放语义与 HEAD 的未清空 Vec 一致）。缺陷2：先收
+/// 宿主已应用批进历史（renderer automation drain 在主线程，收件箱桥见
+/// [`sync_mutation_history_inbox`]），否则跨 apply 的 handle text/tag 读恒落空。
 fn query_history_text(handle: &str) -> String {
+    sync_mutation_history_inbox();
     MUTATION_HISTORY.with(|h| query_text_from_mutations(&h.borrow(), handle))
 }
 
 /// [`query_history_text`] 的 tag 版。
 fn query_history_tag(handle: &str) -> String {
+    sync_mutation_history_inbox();
     MUTATION_HISTORY.with(|h| query_tag_from_mutations(&h.borrow(), handle))
 }
 fn sel_handle_map_snapshot() -> Arc<Mutex<HashMap<String, String>>> {

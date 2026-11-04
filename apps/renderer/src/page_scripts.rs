@@ -1271,6 +1271,11 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
     if recorded.is_empty() {
         return None;
     }
+    // 缺陷2（M3，R100 宿主半边）：apply 前 append 历史收件箱——drain 后当前批清空，
+    // worker 线程 handle 属性读回落靠 MUTATION_HISTORY（part46/48 钉①装配序镜像：
+    // drain → append → apply）。不接线时跨 apply 的 handle 属性读恒落空（probe7 实证
+    // dataset.seq 同任务翻转 null）。收件箱在 js_worker（主线程 → worker 线程桥）。
+    ctx.js_worker.append_applied_mutation_history(&recorded);
     // M3-S9：webview 在场时 DOM 变更直接应用活 DOM（pipeline.cached_doc，免 HTML
     // 往返重 parse——与 browser tab_scripts 同机制）；无 webview（测试）回退 HTML 回写。
     if let Some(wv) = ctx.webview.as_deref_mut() {

@@ -4,6 +4,7 @@ import net from 'node:net'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 import { createServer as createHttpServer } from 'node:http'
 
 // 原始运行目录为本仓 checkout；经 import.meta.url 推导保持可复现（SL-008 不硬编码本机路径）。
@@ -79,6 +80,21 @@ const result = await page.evaluate((cfg) => {
   })
 }, { injectFault: false })
 console.log(JSON.stringify(result, null, 1))
+
+// 判别读：fresh evaluate 重建 worker 视图 = snapshot(cached_html) + 空队列。
+// 若 fresh 读到 data-seq → cached_html 完好，丢失仅在 await 循环内的 worker 视图；
+// 若 fresh 读 null → renderer apply 路径丢失（cached_html 缺属性）。
+const fresh = await page.evaluate(() => {
+  const box = document.getElementById('list-replace')
+  const c0 = box.children[0]
+  return {
+    childCount: box.children.length,
+    child0seq: c0 ? c0.dataset.seq : 'NO_CHILD',
+    child0attr: c0 ? c0.getAttribute('data-seq') : 'NO_CHILD',
+    child0class: c0 ? c0.className : 'NO_CHILD',
+  }
+})
+console.log('fresh-evaluate:', JSON.stringify(fresh))
 
 await browser.close().catch(() => {})
 proc.kill('SIGTERM')

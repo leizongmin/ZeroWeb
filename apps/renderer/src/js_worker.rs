@@ -220,6 +220,11 @@ pub struct RendererJsWorker {
     prio_executor: ScriptFn,
     module_executor: ModuleFn,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    /// 缺陷2（M3）：mutation 历史收件箱——宿主 apply（renderer 主线程 `apply_recorded_mutations`）
+    /// drain 前 append 本批，js_worker 线程读回调（engine `sync_mutation_history_inbox`）搬运进
+    /// 线程本地 MUTATION_HISTORY 作 handle 属性读回落（R100 宿主半边；thread_local 只在
+    /// worker 线程可见，收件箱是主线程→worker 线程的桥）。
+    history_inbox: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     /// P1a gBCR：共享 layout-rect snapshot——renderer 主循环 render 后填充，
     /// js_worker 的 RectBridge handler 读取（经 identity→NodeId 解析后查 rect）。
     rect_snapshot: LayoutRectSnapshot,
@@ -325,6 +330,9 @@ impl RendererJsWorker {
         canvas_registry: std::sync::Arc<std::sync::Mutex<zero_engine::js_dom_bridge::CanvasRegistry>>,
     ) -> Self {
         let mutations: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 缺陷2（M3）：mutation 历史收件箱（spawn 期创建——宿主 apply 与 worker 读回调共享）。
+        let history_inbox: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let history_inbox_for_worker = Arc::clone(&history_inbox);
         let rect_snapshot = new_layout_rect_snapshot();
         let handle_selector_map = new_handle_selector_map();
         let element_from_point_cache = new_element_from_point_cache();
@@ -426,6 +434,7 @@ impl RendererJsWorker {
                     doc_write_settled_for_worker,
                     media_ctx_for_worker,
                     mutations_for_worker,
+                    history_inbox_for_worker,
                     rect_snapshot_for_worker,
                     handle_selector_map_for_worker,
                     element_from_point_cache_for_worker,
@@ -517,6 +526,7 @@ impl RendererJsWorker {
             page_fetch_inflight,
             raf_interest,
             mutations,
+            history_inbox,
             rect_snapshot,
             dom_html,
             handle_selector_map,
@@ -976,6 +986,20 @@ impl RendererJsWorker {
     /// 脚本执行期间记录的 DOM 变更（由 `__zw_*` 回调写入）。
     pub fn mutations(&self) -> Arc<std::sync::Mutex<Vec<DomMutation>>> {
         Arc::clone(&self.mutations)
+    }
+
+    /// 缺陷2（M3）：把一批即将 apply 的 mutations append 进历史收件箱（宿主主线程调用）。
+    ///
+    /// R100 宿主半边：生产 apply（`apply_recorded_mutations`）drain 后当前批清空，worker
+    /// 线程 handle 属性读回落依赖 MUTATION_HISTORY——thread_local 只在 worker 线程可见，
+    /// 本收件箱是主线程 → worker 线程的搬运桥（worker 侧消费见 engine
+    /// `sync_mutation_history_inbox`）。装配序（part46/48 钉①镜像）：drain → append 本方法
+    /// → apply。
+    pub fn append_applied_mutation_history(&self, batch: &[DomMutation]) {
+        self.history_inbox
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(batch.iter().cloned());
     }
 
     /// 清空 DOM 变更队列并递增 drain 代际——「脚本执行前归账清零」的统一入口
@@ -1451,6 +1475,9 @@ fn js_worker_main(
     doc_write_settled_for_worker: Arc<std::sync::Mutex<Vec<()>>>,
     media_ctx_for_worker: Arc<std::sync::Mutex<zero_css_parser::media_query::MediaContext>>,
     mutations: Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    // 缺陷2（M3）：mutation 历史收件箱（spawn 期创建传入）——本线程启动时发布给 engine
+    // 读回调（publish_mutation_history_inbox），宿主 apply 批经此桥进本线程 MUTATION_HISTORY。
+    history_inbox: Arc<std::sync::Mutex<Vec<DomMutation>>>,
     rect_snapshot: LayoutRectSnapshot,
     handle_selector_map: HandleSelectorMap,
     element_from_point_cache: ElementFromPointCache,
@@ -1491,6 +1518,10 @@ fn js_worker_main(
         Box::new(zero_script_sandbox::QuickJSSandbox::with_config(js_config).expect("QuickJS sandbox init"));
     let page_url: Arc<std::sync::Mutex<String>> = Arc::new(std::sync::Mutex::new(String::from("about:blank")));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+    // 缺陷2（M3）：发布本线程 mutation 历史收件箱——此后 handle 属性/text/tag 读回调在
+    // 当前批 miss 时经 sync_mutation_history_inbox 收宿主已应用批（R100 宿主半边接线；
+    // 未接线前 drain 后 handle 属性读恒落空，probe7 实证）。
+    zero_engine::js_dom_bridge::publish_mutation_history_inbox(Arc::clone(&history_inbox));
     // js-dom R100/R145 identity 桥（renderer 侧）：`__zw_handle_for_selector` selector→handle
     // 反查——createElement/cloneNode 产物（__zwHandle 锚定 listener store）在宿主按 selector
     // 派发（R2944 元素级 load/error、宿主事件）时经此命中 handle key。镜像 webview
@@ -2297,6 +2328,14 @@ fn js_worker_main(
                 // 脚本已结束、shim 未重装、GC 不跑页面回调），清队语义不变、污染窗只缩不增。
                 if let Ok(mut pending) = mutations.lock() {
                     pending.clear();
+                }
+                // 缺陷2（M3）：历史与收件箱同文档域状态——旧页已应用记录在新页无效
+                //（webview load_html clear_mutation_history 同契约；handle 名跨文档不复用
+                // 但清理同时封住内存无界增长）。本臂在 worker 线程，thread_local 清理
+                // 与收件箱清空同点收口。
+                zero_engine::js_dom_bridge::clear_mutation_history();
+                if let Ok(mut inbox) = history_inbox.lock() {
+                    inbox.clear();
                 }
                 sandbox.reset_context();
                 // WHATWG HTML navigate：cross-document navigation creates a new global
@@ -6083,6 +6122,43 @@ mod tests {
             worker.execute_script_direct("String(globalThis.__h)").unwrap(),
             "40",
             "歧义 tag 经结构路径应返真实 height"
+        );
+        worker.shutdown();
+    }
+
+    #[test]
+    fn renderer_js_worker_handle_attr_read_survives_drain_via_history_inbox_m3d2() {
+        // 缺陷2（M3，R100 宿主半边接线端到端）：脚本1 createElement+dataset 写（当前批
+        // 可见）→ 模拟生产 apply 装配：drain → `append_applied_mutation_history`（收件箱桥，
+        // page_scripts::apply_recorded_mutations 生产调用点同参，append 在 clear 后 apply
+        // 位——装配序 drain → append → apply 镜像 part46/48 钉①）→ bump（drain ⇒ bump
+        // 不变式）→ 脚本2（新 execute，当前批空）读 dataset/getAttribute/枚举——经收件箱
+        // → MUTATION_HISTORY 回落存活（接线前恒落空，probe7 实证 dataset.seq 翻转 null）。
+        // 不推新快照：证明回落不依赖快照换代（生产 await 循环内 timer 回调同形态）。
+        let mut worker = RendererJsWorker::spawn(97);
+        worker.set_dom_snapshot("<html><body id='b'></body></html>", "about:blank");
+        worker
+            .execute_script_direct(
+                "globalThis.__el = document.createElement('div');\
+                 globalThis.__el.className = 'item';\
+                 globalThis.__el.dataset.seq = '7';\
+                 document.body.appendChild(globalThis.__el);",
+            )
+            .unwrap();
+        let recorded = worker.mutations().lock().unwrap().clone();
+        worker.mutations().lock().unwrap().clear();
+        // 生产 apply（apply_recorded_mutations）drain 后 append 历史收件箱（宿主半边）。
+        worker.append_applied_mutation_history(&recorded);
+        zero_engine::js_dom_bridge::bump_mut_drain_gen();
+        worker
+            .execute_script_direct(
+                "globalThis.__r = __el.getAttribute('data-seq') + '|' + Object.keys(__el.dataset).join(',') + '|' + __el.className;",
+            )
+            .unwrap();
+        assert_eq!(
+            worker.execute_script_direct("String(globalThis.__r)").unwrap(),
+            "7|seq|item",
+            "drain 后 handle 属性读经收件箱→历史回落存活（缺陷2 语义）"
         );
         worker.shutdown();
     }
