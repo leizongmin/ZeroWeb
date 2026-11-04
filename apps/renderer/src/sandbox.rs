@@ -10,15 +10,16 @@
 //!   posix_spawn → `clone(CLONE_VM|CLONE_VFORK)` + `execve`，不经 fork/vfork
 //!   syscall），黑名单不会破坏 helper spawn（执行型测试钉住）。**网络面不动**
 //!   （拍板原文；renderer 直连网络为现状，fetch_proxy 出网收窄另立切片）。
-//! - **landlock 允许清单（默认关，`ZW_RENDERER_LANDLOCK=1` opt-in）**：字体 ro、
-//!   HTTP 磁盘缓存 rw、`/dev/shm` rw（fd 通道 + 后续 media C2 帧路径）、DNS/NSS
+//! - **landlock 允许清单（默认开，`ZW_RENDERER_LANDLOCK=0` kill-switch）**：字体
+//!   ro、HTTP 磁盘缓存 rw、`/dev/shm` rw（fd 通道 + 后续 media C2 帧路径）、DNS/NSS
 //!   与 JS `Date` 时区所需的 `/etc` 只读、动态库目录 ro+EXECUTE（dlopen/NSS 老
-//!   系统）、helper 二进制所在目录 EXECUTE（execve 路径级收窄）。默认关的原因：
-//!   file:// 的 **模块体动态 import** 面由 renderer worker 本地直读
-//!   （`js_worker` 的 `__zw_compile_module` fetch 闭包 → `zero_net::read_file_url`），
-//!   允许清单不含任意路径读——默认启用会拒绝该面（2026-11-02 实证：landlock 开后
-//!   动态 import 被拒）；主文档/子资源/静态模块依赖已全部经 browser fetch_proxy
-//!   （IPC）直读，不受影响。取舍记入控制面待决，拍板后翻默认。
+//!   系统）、helper 二进制所在目录 EXECUTE（execve 路径级收窄）。默认值按 ①-a 拍板
+//!   翻开（2026-11-03 决策，2026-11-04 交付）：允许清单不含任意路径读，file:// 的
+//!   **模块体动态 import** 面由 renderer worker 本地直读（`js_worker` 的
+//!   `__zw_compile_module` fetch 闭包 → `zero_net::read_file_url`），默认启用即拒绝
+//!   该面（2026-11-02 双腿实证）——收窄即 Chrome parity（Chrome 对 file:// 页模块
+//!   加载本按 CORS 拒绝）；主文档/子资源/静态模块依赖已全部经 browser fetch_proxy
+//!   （IPC）直读，产品流不受影响。
 //! - **④ fail 语义（本切片拍板记录）**：fail-closed——任一安装失败 `Err` 上抛，
 //!   `run_desktop_role` 传播 → main exit(1)，浏览器侧呈现为 renderer 启动失败
 //!   （页面错误可见），不降级裸奔。操作员出口：`ZW_RENDERER_SANDBOX=0`（全关）、
@@ -39,13 +40,13 @@ pub fn renderer_seccomp_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZW_RENDERER_SECCOMP")
 }
 
-/// 是否启用 renderer landlock 允许清单（**默认关**；`ZW_RENDERER_LANDLOCK=1`
-/// 显式启用——file:// 产品流取舍待决后翻默认，见模块文档）。
+/// 是否启用 renderer landlock 允许清单（**默认开**；`ZW_RENDERER_LANDLOCK=0`
+/// 禁用——操作员 kill-switch；①-a 拍板 2026-11-03 翻默认，见模块文档）。
 pub fn renderer_landlock_enabled() -> bool {
-    zero_runtime_config::enabled_when_true("ZW_RENDERER_LANDLOCK")
+    zero_runtime_config::enabled_by_default("ZW_RENDERER_LANDLOCK")
 }
 
-/// 启动早期应用 renderer 沙箱（env 剥离 + seccomp + opt-in landlock）。
+/// 启动早期应用 renderer 沙箱（env 剥离 + seccomp + landlock）。
 ///
 /// 返回 `Err` 时调用方必须 fail-closed（拒绝运行），不得降级为无沙箱继续。
 pub fn apply_early_if_enabled() -> Result<(), String> {
@@ -445,12 +446,12 @@ mod tests {
         }
         assert!(renderer_sandbox_enabled());
         assert!(renderer_seccomp_enabled());
-        // landlock：默认关（file:// 取舍待决）；显式 1 启用（opt-in 语义）。
-        assert!(!renderer_landlock_enabled());
-        unsafe {
-            std::env::set_var("ZW_RENDERER_LANDLOCK", "1");
-        }
+        // landlock：默认启用（①-a 拍板翻默认）；显式 0 禁用（kill-switch 语义）。
         assert!(renderer_landlock_enabled());
+        unsafe {
+            std::env::set_var("ZW_RENDERER_LANDLOCK", "0");
+        }
+        assert!(!renderer_landlock_enabled());
         unsafe {
             std::env::remove_var("ZW_RENDERER_LANDLOCK");
         }
@@ -473,7 +474,8 @@ mod tests {
         assert!(!blocked.contains(&libc::SYS_socket), "网络面不动（拍板原文）");
     }
 
-    /// 默认生产面（seccomp only，landlock 默认关）隔离子进程执行型验收：
+    /// seccomp 面隔离子进程执行型验收（landlock 经 env 显式关——默认已开，不隔离
+    /// 会连带拒绝 fs 读探针，landlock 自有下述完整栈用例）：
     /// SYS_fork/execveat/ptrace 拒、execve+posix_spawn 存活（image-decoder spawn
     /// 保全的判别式）、stdio 存活、fs 未受限（landlock 不在环）。fork 用原始
     /// syscall 探测——glibc `fork()` 走 `SYS_clone`，测不到过滤器。子进程 env 由
@@ -540,10 +542,11 @@ mod tests {
         let output = std::process::Command::new(std::env::current_exe().expect("current test exe"))
             .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
             .env(CHILD, "1")
-            // 钉死开关态：sandbox_env_gates 等并行用例会改共享进程 env。
+            // 钉死开关态：sandbox_env_gates 等并行用例会改共享进程 env；landlock
+            // 显式关（默认已开）以隔离 seccomp 面。
             .env("ZW_RENDERER_SANDBOX", "1")
             .env("ZW_RENDERER_SECCOMP", "1")
-            .env_remove("ZW_RENDERER_LANDLOCK")
+            .env("ZW_RENDERER_LANDLOCK", "0")
             .output()
             .expect("spawn isolated seccomp probe child");
         assert!(
@@ -559,7 +562,7 @@ mod tests {
         );
     }
 
-    /// opt-in landlock 允许清单隔离子进程执行型验收（完整栈：seccomp + landlock）：
+    /// landlock 允许清单隔离子进程执行型验收（完整栈：seccomp + landlock 显式钉开）：
     /// /dev/shm 与字体目录放行、/etc/passwd 拒（允许清单判别式）、/bin/true execve
     /// 拒（EXECUTE 路径收窄——/usr/bin 不在授予面）、stdio 存活。
     /// 退出码：0=全过；1=安装失败；2=/dev/shm 写失败；3=字体目录读失败；
@@ -613,7 +616,7 @@ mod tests {
         let output = std::process::Command::new(std::env::current_exe().expect("current test exe"))
             .args(["--exact", test_name, "--nocapture", "--test-threads=1"])
             .env(CHILD, "1")
-            // 钉死开关态（完整栈 = seccomp + landlock opt-in）。
+            // 钉死开关态（完整栈 = seccomp + landlock）。
             .env("ZW_RENDERER_SANDBOX", "1")
             .env("ZW_RENDERER_SECCOMP", "1")
             .env("ZW_RENDERER_LANDLOCK", "1")

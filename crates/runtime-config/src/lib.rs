@@ -195,8 +195,8 @@ pub const ENVIRONMENT_VARIABLES: &[EnvironmentVariable] = &[
     },
     EnvironmentVariable {
         name: "ZW_RENDERER_LANDLOCK",
-        default: "disabled",
-        description: "renderer Landlock 允许清单沙箱（opt-in：字体/系统文件 ro、缓存与共享内存 rw、helper 可执行）",
+        default: "enabled",
+        description: "renderer Landlock 允许清单沙箱（字体/系统文件 ro、缓存与共享内存 rw、helper 可执行；`0` 关闭）",
     },
     EnvironmentVariable {
         name: "ZW_COMPOSITOR_SANDBOX",

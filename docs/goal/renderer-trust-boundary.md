@@ -1,7 +1,7 @@
 # Renderer 特权请求与进程信任边界
 
-**版本**：v1.4 / 2026-11-02（Layer 1 file:// 臂范围策略修复交付；v1.3 file:// IPC 臂范围缺陷发现 + ① 分层决策包；v1.2 ① 预执行核查；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
-**状态**：Active（**M1–M4 全部交付**——M2 切片 1–8、M3 切片 1–6、M4 前置与收口（2026-11-02）均完成；DC-1/3/5 DONE，DC-2 DONE（2026-11-02 重开一面——file:// IPC 直读臂无范围策略——已由 Layer 1 范围策略修复复闭，`bc719a7dc`：sanctioned 导航 + last_document_url 服务端权威锚点按面分级，http 页面读本地文件两路收口附常驻回归）；DC-4 PARTIAL——余 landlock 默认翻转（Layer 2 已拍板 ①-a，2026-11-03：接受收窄翻默认，见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md)）；环境受限项（macOS 真机、android 编译腿 + service bootstrap 接线）已拍板按平台契约降级接受为 DC-4 终态（2026-11-03，真机实证可独立立项补）；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化均已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md) 与 master.md）
+**版本**：v1.5 / 2026-11-04（Layer 2 landlock 默认翻开交付 + DC-4 转 DONE，goal 完成归档；v1.4 / 2026-11-02 Layer 1 file:// 臂范围策略修复交付；v1.3 file:// IPC 臂范围缺陷发现 + ① 分层决策包；v1.2 ① 预执行核查；v1.1 / 2026-11-02 对齐已交付实现与已拍板决策；v1.0 / 2026-10-20）
+**状态**：✅ Done——2026-11-04 收口归档（M1–M4 全部交付：M2 切片 1–8、M3 切片 1–6、M4 前置与收口 + Layer 1 file:// 范围策略修复（`bc719a7dc`）+ Layer 2 `ZW_RENDERER_LANDLOCK` 默认翻开（①-a，2026-11-03 拍板，[Layer 2 证据](renderer-trust-boundary/evidence/2026-11-04-layer2-landlock-default-flip-and-dc4-done.md)）；**DC-1~5 全部 DONE**——DC-2 的 file:// IPC 直读臂无范围策略重开面已由 Layer 1 复闭；DC-4 由 Layer 2 收口，真机验收（macOS 真机、android 编译腿）按 2026-11-03 拍板口径 B 降级接受为平台契约终态，真机实证可独立立项补；⑤ media-host 最小沙箱与 ⑥ DevTools frontend 文档化已交付（2026-11-02）。已拍板决策见 [决策包](renderer-trust-boundary/2026-11-02-decision-package-media-host-devtools.md)、[决策包](renderer-trust-boundary/2026-11-02-decision-package-landlock-default-and-file-scope.md) 与 master.md）
 **父目标**：[zero-web](zero-web.md)
 **控制面**：[master.md](renderer-trust-boundary/master.md)
 
@@ -19,7 +19,7 @@
 
 - 服务端权威绑定：StorageOp origin 按 committed origin 判属，自动化身份按 committed URL/epoch 双匹配（`apps/browser/src/process_backend.rs`；`identity_binding_tests` 7 用例常驻）。
 - CDP 默认强制 token：`run_headless` 装配层默认生成 getrandom 128-bit 令牌，stderr 与发现端点 URL 双交付；库 API 默认无 token 不变（`apps/browser/src/headless/security.rs`）。DevTools frontend page-direct 在强制下 fail-closed，已文档化接受（`docs/runtime-environment.md`、`docs/development/building-and-testing.md` 互斥记档）。
-- renderer：seccomp 默认开（阻断 execveat/fork/vfork/ptrace，execve 保留供 helper spawn）；landlock 允许清单 opt-in 默认关——冲突面唯余模块体动态 import（主文档/子资源/静态模块依赖已走 browser fetch_proxy IPC，2026-11-02 预执行核查证得），默认值待 ①-a/①-b 拍板翻转（`apps/renderer/src/sandbox.rs`）。
+- renderer：seccomp 默认开（阻断 execveat/fork/vfork/ptrace，execve 保留供 helper spawn）；landlock 允许清单默认开（①-a 拍板 2026-11-03 翻默认，2026-11-04 交付——收窄面唯余 file:// 模块体动态 import 的 renderer 本地直读臂，主文档/子资源/静态模块依赖已走 browser fetch_proxy IPC，收窄即 Chrome parity；`ZW_RENDERER_LANDLOCK=0` 操作员豁免；`apps/renderer/src/sandbox.rs`）。
 - image-decoder：seccomp + landlock 双沙箱默认开，fail-closed（`apps/image-decoder/src/sandbox.rs`）。
 - compositor landlock 已修复生效；fd 通道对端信任 = socket 0600 + 双侧 SO_PEERCRED + 每发布 128-bit token（`crates/protocol/src/fd_socket_linux.rs`）。
 - 页面特权面：`__zw*` 4 枚特权 mutator 非测试模式删除（`ZW_RENDERER_AUTOMATION=1` 测试模式跳过；`crates/engine/src/counter_plugin.rs`）；HSTS per-profile 全局共享 + 无痕独立（`SharedHstsStore`，`crates/security/src/context.rs`）。
@@ -41,7 +41,7 @@
 | DC-4 / IPC-04 | helper 启动线程、重启或遇缺少沙箱能力 | 权限/FD/文件与 socket 策略按实际平台契约生效；失败/降级行为明确。真实 helper 受限操作验收 |
 | DC-5 | 修复后验收全部场景 | 常驻回归、适用质量门禁与生产 IPC 复测有据；报告未支持平台与剩余风险，不能用页面 JS 单测替代 |
 
-未知沙箱能力与拒绝方式已在 M1 核查；不采用全平台统一强制退出，fail 语义按决策 ④ 逐进程定：compositor 维持 fail-open + warn，image-decoder、renderer、media-host 新档案 fail-closed，缺能力平台降级日志明确（[决策包 ①–④](renderer-trust-boundary/2026-11-01-decision-package-1234.md)）。发现额外产品取舍记待决。**2026-11-03 用户拍板（DC-4 归档口径 B）**：非 Linux 平台证据按「Linux-only 编译门控 + 显式降级日志」平台契约接受（代码级对照见 M4 前置），真机实证作为接受残余、可独立立项补；Layer 2 执行后 DC-4 转 DONE，goal 按模式 A 归档。
+未知沙箱能力与拒绝方式已在 M1 核查；不采用全平台统一强制退出，fail 语义按决策 ④ 逐进程定：compositor 维持 fail-open + warn，image-decoder、renderer、media-host 新档案 fail-closed，缺能力平台降级日志明确（[决策包 ①–④](renderer-trust-boundary/2026-11-01-decision-package-1234.md)）。发现额外产品取舍记待决。**2026-11-03 用户拍板（DC-4 归档口径 B）**：非 Linux 平台证据按「Linux-only 编译门控 + 显式降级日志」平台契约接受（代码级对照见 M4 前置），真机实证作为接受残余、可独立立项补。**2026-11-04 Layer 2 已执行**（①-a：landlock 默认翻开，[证据](renderer-trust-boundary/evidence/2026-11-04-layer2-landlock-default-flip-and-dc4-done.md)），DC-4 转 DONE，goal 按模式 A 归档。
 
 ## 里程碑与实施交接
 
@@ -56,6 +56,6 @@
 
 ## 执行与 Document Control
 
-统一 CLI、运行守卫、证据协议和授权边界见 [启动说明](ladybird-followups/README.md)。脚本：`./scripts/rally-goal-renderer-trust-boundary.sh`；直接执行启动 Rally，加 `--dry-run` 仅预览。
+统一 CLI、运行守卫、证据协议和授权边界见 [启动说明](ladybird-followups/README.md)。脚本：`./scripts/rally-goal-renderer-trust-boundary.sh`（**已随 2026-11-04 归档删除，goal 不重启**）；直接执行启动 Rally，加 `--dry-run` 仅预览。
 
 入口仅目标变化时更新；进展写 master/evidence，里程碑只追加 archive。M1 启动门控已按 2026-10-23 用户决策解锁并交付；内核改动仍须先获授权。启动后默认 `CONTINUE: <下一可执行切片>`；真实阻塞 `BLOCK: <原因>`；全部 DC 和适用门禁有证才输出 `DONE`。

@@ -4,15 +4,17 @@
 //! （GUI 侧 `fetch_proxy::enqueue` 一直有），文档与子资源 file:// 全部落 reqwest
 //! builder error 错误页——headless CDP 导航本地文件恒失败。修复后钉两层：
 //!
-//! 1. `file_url_page_loads_headless`——默认环境（renderer landlock 关，当前默认）
-//!    file:// 主文档 + 静态模块导入链 + 样式子资源全链可加载（错误页判别式）。
-//! 2. `file_url_page_loads_with_renderer_landlock_enabled`——`ZW_RENDERER_LANDLOCK=1`
-//!    同链照常加载：landlock 允许清单不含任意路径读，而主文档/子资源/静态模块
-//!    依赖全部经 browser fetch_proxy（IPC）直读，「打开本地文件」产品流在默认
-//!    沙箱下须保持工作（③A-renderer landlock 默认值翻开的验收前提）。
+//! 1. `file_url_page_loads_headless`——默认环境（renderer landlock 默认开，①-a
+//!    拍板 2026-11-03 翻默认）file:// 主文档 + 静态模块导入链 + 样式子资源全链
+//!    可加载（错误页判别式）：landlock 允许清单不含任意路径读，而主文档/子资源/
+//!    静态模块依赖全部经 browser fetch_proxy（IPC）直读，「打开本地文件」产品流
+//!    在默认沙箱下保持工作。
+//! 2. `file_url_page_loads_with_renderer_landlock_disabled`——`ZW_RENDERER_LANDLOCK=0`
+//!    操作员 kill-switch 腿：显式豁免后同链照常加载。
 //!
-//! 已知残余（记 goal 待决，此处不钉）：模块体动态 import 的 file:// 面经 renderer
-//! worker 本地直读，landlock 默认开后该面被拒——取舍见
+//! 已知收窄（①-a 拍板接受，此处不钉）：模块体动态 import 的 file:// 面经 renderer
+//! worker 本地直读，landlock 默认开后该面被拒——收窄即 Chrome parity（Chrome 对
+//! file:// 页模块加载本按 CORS 拒绝），取舍见
 //! `docs/goal/renderer-trust-boundary/master.md` 缺口表。
 
 use std::io::{Read, Write};
@@ -258,9 +260,9 @@ fn file_url_page_loads_headless() {
     assert_file_chain_loads(&[], "default");
 }
 
-/// landlock 默认值翻转（③A-renderer 收尾）后的验收前提：file:// 产品流在允许清单
-/// 沙箱下保持工作。当前 landlock 为 opt-in，本用例显式开启钉住该前提。
+/// landlock 默认开（①-a 翻默认交付）后的操作员 kill-switch 腿：`ZW_RENDERER_LANDLOCK=0`
+/// 显式豁免沙箱，file:// 产品流同样保持工作。
 #[test]
-fn file_url_page_loads_with_renderer_landlock_enabled() {
-    assert_file_chain_loads(&[("ZW_RENDERER_LANDLOCK", "1")], "landlock");
+fn file_url_page_loads_with_renderer_landlock_disabled() {
+    assert_file_chain_loads(&[("ZW_RENDERER_LANDLOCK", "0")], "landlock-off");
 }
