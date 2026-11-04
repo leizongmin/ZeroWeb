@@ -283,7 +283,20 @@
     if (!_zwJusIsHtmlElement(br, 'br')) return false;
     if (_zwJusIsHtmlElement(br.parentNode, 'li')
         && br.parentNode.childNodes && br.parentNode.childNodes.length === 1) return false;
-    return _zwJusPrecedesLineBreak(br);
+    // 重入断环（qCV 走查 forecolor 跨元素 peel 形实证）：extraneous 判定链
+    // precedes → 爬升 → blockStartPoint(parent, brIdx+1) → isVisible(同 br)
+    // → 本函数 无界互递归（RangeError）。in-flight 印记 + boundary 探测跳过
+    // in-flight br（见 _zwJusIsBlockStartPoint）：precedes 转而回看更前节点，
+    // 语义不变、递归有界。
+    if (br.__zwExProbeInFlight) return false;
+    br.__zwExProbeInFlight = true;
+    var r;
+    try {
+      r = _zwJusPrecedesLineBreak(br);
+    } finally {
+      br.__zwExProbeInFlight = false;
+    }
+    return r;
   }
 
   // spec visible：block node / 非折叠空白文本 / img / 非冗余 br / 有可见后代；
@@ -403,11 +416,15 @@
   // https://w3c.github.io/editing/execCommand.html#block-extending-a-range
 
   function _zwJusIsBlockStartPoint(node, offset) {
+    // extraneous 判定在途的 br 不作 boundary 候选（断 extraneous ↔ isVisible
+    // 互递归，配对印记见 _zwJusIsExtraneousLineBreak）——该子级视为不存在，
+    // 调用方（precedes/follows 回看）继续考察更前/更后节点取真实语义。
+    var cand = (node.childNodes && offset - 1 >= 0 && offset - 1 < node.childNodes.length)
+      ? node.childNodes[offset - 1] : null;
     return (!node.parentNode && offset === 0)
-      || (offset - 1 >= 0 && node.childNodes && offset - 1 < node.childNodes.length
-          && _zwJusIsVisible(node.childNodes[offset - 1])
-          && (_zwJusIsBlockNode(node.childNodes[offset - 1])
-              || _zwJusIsHtmlElement(node.childNodes[offset - 1], 'br')));
+      || (cand && !cand.__zwExProbeInFlight
+          && _zwJusIsVisible(cand)
+          && (_zwJusIsBlockNode(cand) || _zwJusIsHtmlElement(cand, 'br')));
   }
 
   function _zwJusIsBlockEndPoint(node, offset) {
@@ -1641,6 +1658,29 @@
         }
       }
     } catch (_ePSA) {}
+    // UA stylesheet 元素规则（HTML 渲染节 15.3.1：big{font-size:larger}/
+    // small{font-size:smaller}）——engine UA 样式表无该规则，host gCS 恒
+    // 缺省 16px。larger/smaller = 父链 rendered size 过 legacy 中点表定档
+    // ±1（与 font[size] ±N 相对臂同口径），clamp 1..7。font[size] 表现提示
+    // （author 源）级联在上，故后置。
+    try {
+      var tg = (el.tagName && String(el.tagName).toLowerCase()) || '';
+      if (tg === 'big' || tg === 'small') {
+        var baseUa = 16;
+        var parUa = el.parentNode;
+        var guardUa = 0;
+        while (parUa && parUa.nodeType === 1 && guardUa++ < 256) {
+          var pvUa = _zwPlainFontSizePx(parUa);
+          if (!isNaN(pvUa)) { baseUa = pvUa; break; }
+          parUa = parUa.parentNode;
+        }
+        var lgUa = parseInt(_zwValLegacyFontSize(baseUa + 'px'), 10);
+        if (isNaN(lgUa)) lgUa = 3;
+        lgUa += tg === 'big' ? 1 : -1;
+        lgUa = Math.min(7, Math.max(1, lgUa));
+        return _zwPlainFontKwPx[_zwPlainFontAttrKw[lgUa]];
+      }
+    } catch (_ePSB) {}
     return NaN;
   }
   // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
@@ -1803,8 +1843,15 @@
     return true;
   }
   function _zwValIsFormattable(node) {
-    return _zwJusIsEditable(node) && _zwJusFormattableVisible(node)
-      && (node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']));
+    // OPTIMIZATION：类型门槛前置（纯合取词换序，真值不变）——qV 走查逐节点
+    // 调用，绝大多数节点（span/div/font…）非 text/img/br，先短路免掉
+    // FormattableVisible → isVisible 的全子树下行；重排前 multitest 大树
+    // 每查询同步开销爆炸（30 分钟 0 行出账，br extraneous 断环后走查不再
+    // 被 RangeError 快速中止，全量走完暴露了这层成本）。
+    if (!(node.nodeType === 3 || _zwJusIsHtmlElement(node, ['img', 'br']))) {
+      return false;
+    }
+    return _zwJusIsEditable(node) && _zwJusFormattableVisible(node);
   }
   // getLegacyFontSize 中点表（Chrome UA 缺省标度下界 px；上界 = 下位 +1 档）。
   var _zwValLegacyBounds = [10, 13, 16, 18, 24, 32];
@@ -1840,6 +1887,16 @@
     var prop = cmd === 'fontsize' ? 'font-size'
       : (cmd === 'fontname' ? 'font-family' : 'color');
     var v = _zwJusCs(node, prop);
+    if (cmd === 'fontsize' && (v === '' || v === '16px')) {
+      // host gCS 通道无 UA stylesheet 元素规则（big/small——HTML 渲染节
+      // 15.3.1），big/small 子树读数恒 16px 缺省 → forceValue 等值早退跳包
+      // （big/small 语料期望内层包裹实证）+ qV 档位错档（small 得 3 期望
+      // 2）。host 读数为空或缺省时改 plain 走查补 UA 面（plain 同时见声明/
+      // 表现提示/UA 规则；host 非 16px 可分辨值优先保 P9-9 通道口径）。
+      var pv = '';
+      try { pv = __zwPlainComputed(node, 'font-size'); } catch (_eEvP) {}
+      if (pv && pv !== '16px') return pv;
+    }
     if (v === '') {
       // 无声明时 UA 初值（Chrome computed 口径，probe tD/tE 与语料裸行期望）——
       // gCS 通道保 P9-9 合成源契约返空，初值在此值面消费点填；fontsize 16px
@@ -1884,5 +1941,7 @@
       var v = _zwValEffectiveValue(ref, cmd);
       if (cmd === 'fontsize') v = _zwValLegacyFontSize(v);
       return { value: v == null ? '' : String(v), indeterm: indeterm };
-    } catch (_eVQ) { return { value: '', indeterm: false }; }
+    } catch (_eVQ) {
+      return { value: '', indeterm: false };
+    }
   };
