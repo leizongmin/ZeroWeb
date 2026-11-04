@@ -282,8 +282,8 @@ fn svg_img_settle_density_r5277() {
     );
     assert_eq!(
         v(&mut sandbox, "__r7"),
-        r#"{"width":100,"height":50,"axes":"both"}"#,
-        "(a2) avail 缓存携 axes"
+        r#"{"width":100,"height":50,"axes":"both","xo":"unset"}"#,
+        "(a2) avail 缓存携 axes（s276 起条目携 CORS 态）"
     );
     // (d) 未渲染臂：display:none 后 .width/.height 回原始 intrinsic（SVG 与
     // raster 同语义），naturalWidth/Height 不变。
@@ -386,7 +386,7 @@ fn svg_img_settle_density_r5277() {
         .unwrap();
     assert_eq!(
         v(&mut sandbox, "__h1"),
-        "300/100/1/{\"width\":300,\"height\":100,\"axes\":\"none\"}",
-        "(h1) sweep 覆写 host 态 → viewBox AR 组合表 300/100 + axes 入账，load 不重派"
+        "300/100/1/{\"width\":300,\"height\":100,\"axes\":\"none\",\"xo\":\"unset\"}",
+        "(h1) sweep 覆写 host 态 → viewBox AR 组合表 300/100 + axes 入账（s276 起携 CORS 态），load 不重派"
     );
 }

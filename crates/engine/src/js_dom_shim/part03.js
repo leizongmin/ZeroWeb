@@ -3084,6 +3084,21 @@
   // ④ CSP 阻止臂的 moAttr 复写删除（setter 外层已置，抽取后无此局部量）。
   // ⑤ 错误派发条件补 spec 门（null-selection 除外）：has src/srcset/picture 且
   //    previousURL 非空才派 error——空选中路径在 __zwImgNullSelection5277。
+  // s276：avail 元组键 CORS 态归一 helper（spec the-list-of-available-images
+  // 键 = (URL, CORS settings attribute state)；映射规则见 runupdate 读点注）。
+  // 写点：runupdate fetch settle 臂 + part04 静态 settle 两臂（条目补 .xo 字段
+  // ——旧条目无字段不命中，落 fetch 臂真装载后重写带 .xo）。decode() 兜底
+  // 读点仍按裸 URL（元组细化面挂账注记——现 corpus decode 页无 crossorigin
+  // 交叉面零位移）。canvas origin-clean 面（part05 finalUrl 读）键不变零位移。
+  globalThis.__zwAvailXoState5277 = function (raw) {
+    var v = String(raw == null ? '' : raw).trim().toLowerCase();
+    // s276：'unset' 字面直通（读点对**已归一**条目 .xo 二次归一——幂等，
+    // 探针实证缺此分支 'unset' 落 default 'anonymous' 全 miss）。
+    if (v === 'unset') return 'unset';
+    if (v === '') return 'unset';
+    if (v === 'use-credentials') return 'use-credentials';
+    return 'anonymous';
+  };
   globalThis.__zwImgRunUpdate5277 = function (sel, handle, _imSrc, _imDensity, _imViaDefer) {
     var key = _elKey(sel, handle);
     var _imKey = key;
@@ -3092,6 +3107,15 @@
     var _imUrlChanged = !!(!_imPrev || _imPrev.url !== _imSrc);
     if (_imPrev && _imUrlChanged) delete _resourceStates[_imKey];
     var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
+    // s276：avail 元组键的 CORS 态归一（spec the-list-of-available-images：
+    // 键 = (URL, CORS settings attribute state) 元组——https://html.spec.
+    // whatwg.org/multipage/urls-and-fetching.html#cors-settings-attribute
+    // 缺失/空 = unset、use-credentials 字面、其余含非法值 = anonymous
+    //（invalid value default）。different-crossorigin 断言面：unset 条目
+    // 对 anonymous 读图不得命中（命中即从 avail 同步装载绕过 lazy 决定）。
+    var _imXoState = _imSrc ? globalThis.__zwAvailXoState5277((function () {
+      try { return _zw5277Attr(sel, handle, 'crossorigin'); } catch (_e5277xo0) { return ''; }
+    })()) : '';
     var _imFetched = false; // R5275：fetch 臂旗标（终点消费一次 → 在飞 -1）
     // R5275：仅 fetch 臂终点计数 -1（available-images 同步臂/空 src 臂未 +1 不减
     // ——__zwImgLoadBlocked 的等待判定面）；无派发终点（InvalidState 守卫失败）
@@ -3148,7 +3172,10 @@
     var _imFail = function () {
       _zwImgDispatch('error');
     };
-    if (_imSrc && _zwAvailImgs[_imSrc]) {
+    // s276：读经 helper 归一（条目缺 .xo 字段——单测 fixture/旧条目——按
+    // unset 处理，维持既有命中面；新代码写点恒带精确 .xo）。
+    if (_imSrc && _zwAvailImgs[_imSrc]
+        && globalThis.__zwAvailXoState5277(_zwAvailImgs[_imSrc].xo) === _imXoState) {
       // R5275 ②：available-images 命中——**状态同步 settle**（naturalWidth/
       // complete 同步可读——already-loaded-image-sync-width 断言面），load 事件
       // _defer 派发（spec：relevant mutation 触发的 image loading task 异步派
@@ -3331,7 +3358,9 @@
               // `_zwCanvasSrcCrossOrigin`），无重定向时与 src 同 origin 零位移。
               var _imFinalUrl = '';
               try { _imFinalUrl = (resp && resp.url) ? String(resp.url) : ''; } catch (_eImFu) {}
-              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height, finalUrl: _imFinalUrl };
+              // s276：.xo = 请求的 CORS 态（run 启动时 attr 快照——spec 元组
+              // 键含 CORS settings attribute state，set-up 时冻结）。
+              _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height, finalUrl: _imFinalUrl, xo: globalThis.__zwAvailXoState5277(_imXoAttr) };
               _zwImgDispatch('load');
             }, function (e) {
               // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth

@@ -258,8 +258,8 @@ fn img_relevant_mutations_r5277() {
             "globalThis.innerWidth = 800; globalThis.innerHeight = 600;\
              globalThis.__zwReadyState = 'complete';\
              globalThis.devicePixelRatio = 1;\
-             globalThis._zwAvailableImages = { 'https://zero.test/a.png': { width: 100, height: 50 },\
-               'https://zero.test/b.png': { width: 200, height: 100 }, 'https://zero.test/s.png': { width: 40, height: 30 } };\
+             globalThis._zwAvailableImages = { 'https://zero.test/a.png': { width: 100, height: 50, xo: 'unset' },\
+               'https://zero.test/b.png': { width: 200, height: 100, xo: 'unset' }, 'https://zero.test/s.png': { width: 40, height: 30, xo: 'unset' } };\
              var img = document.createElement('img');\
              document.body.appendChild(img);\
              globalThis.__img = img;\
@@ -296,11 +296,22 @@ fn img_relevant_mutations_r5277() {
     // (4) crossorigin 状态门
     sandbox.execute("globalThis.__img.crossOrigin = 'anonymous';").unwrap();
     ckpt(&mut sandbox);
-    // 旗标链：(1)=1、(2) 同 URL 重派=2、(3) URL 变更 restart=3、(4a) 状态变迁同 URL 重派=4。
-    assert_eq!(v(&mut sandbox, "__flagO"), "4", "(4a) crossorigin missing→anonymous 状态变迁触发（同 URL 重派）");
+    // 旗标链：(1)=1、(2) 同 URL 重派=2、(3) URL 变更 restart=3、(4a) 状态变迁触发
+    // 重验——s276 起 avail 命中按元组 (URL, CORS state) 校验（spec the-list-of-
+    // available-images）：条目 unset 对 anonymous 读 miss → 真请求（本单测无
+    // fetch 宿主 → 失败派 error）；触发面证据 = error 派发。
+    assert_eq!(
+        v(&mut sandbox, "__flagO") + "/" + &v(&mut sandbox, "__flagE"),
+        "3/1",
+        "(4a) crossorigin missing→anonymous 状态变迁触发重验（元组不匹配 miss → error）"
+    );
     sandbox.execute("globalThis.__img.crossOrigin = 'anonymous';").unwrap();
     ckpt(&mut sandbox);
-    assert_eq!(v(&mut sandbox, "__flagO"), "4", "(4b) 同状态重写不触发");
+    assert_eq!(
+        v(&mut sandbox, "__flagO") + "/" + &v(&mut sandbox, "__flagE"),
+        "3/1",
+        "(4b) 同状态重写不触发"
+    );
     // (5) referrerpolicy 状态链（缺省→有效→无效→无效——中段两次变迁）
     sandbox
         .execute("globalThis.__img.referrerPolicy = 'no-referrer';")
@@ -312,19 +323,19 @@ fn img_relevant_mutations_r5277() {
     ckpt(&mut sandbox);
     assert_eq!(
         v(&mut sandbox, "__flagO") + "/" + &v(&mut sandbox, "__flagE"),
-        "6/0",
-        "(5) referrerpolicy 缺省→有效→无效→无效：中段两次变迁各重派（4→6）、无效→无效不动"
+        "3/3",
+        "(5) referrerpolicy 缺省→有效→无效→无效：中段两次变迁各触发重验（crossorigin 已改元组恒 miss → 各派 error）、无效→无效不动"
     );
     // (6) srcset 移除 → null selection broken、无 error（无 src/srcset/picture 关联）
     sandbox
         .execute("globalThis.__img.removeAttribute('srcset');\
                   globalThis.__r6 = String(globalThis.__img.naturalWidth) + '/' + String(globalThis.__flagE);")
         .unwrap();
-    assert_eq!(v(&mut sandbox, "__r6"), "0/0", "(6) srcset 移除 → broken（naturalWidth 0）、无 error（无关联）");
+    assert_eq!(v(&mut sandbox, "__r6"), "0/3", "(6) srcset 移除 → broken（naturalWidth 0）、无新增 error（无关联）");
     ckpt(&mut sandbox);
     assert_eq!(
         v(&mut sandbox, "__flagO") + "/" + &v(&mut sandbox, "__flagE"),
-        "6/0",
+        "3/3",
         "(6b) 计数收口"
     );
     // (7)-(9) picture 树触发面——旗标挂在 pimg 自身（flagO 是 img 的监听器，pimg
@@ -549,8 +560,8 @@ fn img_sweep_selection_density_r5277() {
     assert_eq!(v(&mut sandbox, "__r2"), "https://zero.test/g.png", "(a2) currentSrc = 选中 URL 绝对化");
     assert_eq!(
         v(&mut sandbox, "__r3"),
-        r#"{"width":80,"height":40}"#,
-        "(a3) available-images 写入选中 URL（80,40 原始尺寸）"
+        r#"{"width":80,"height":40,"xo":"unset"}"#,
+        "(a3) available-images 写入选中 URL（80,40 原始尺寸；s276 起条目携 CORS 态）"
     );
     assert_eq!(
         v(&mut sandbox, "__r4"),

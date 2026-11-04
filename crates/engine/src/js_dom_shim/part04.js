@@ -1289,6 +1289,11 @@
               // s70：选中源 settle——请求 URL = select-an-image-source 结果（srcset/
               // sizes/picture 归一，spec update-the-image-data 步 3-17 的请求 URL；
               // 核心缺失回落 raw src 保底）。密度随状态入账供 naturalWidth 密度校正。
+              // s276：avail 条目 .xo = 请求的 CORS 态（spec the-list-of-available-
+              // images 键 = (URL, CORS settings attribute state) 元组；静态图经下方
+              // SVG 臂/host 快照臂写 avail 时补记——runupdate 读点按元组校验）。
+              var _zwImXo = '';
+              try { _zwImXo = globalThis.__zwAvailXoState5277(_zwIm.getAttribute('crossorigin')); } catch (_eSwXo) { _zwImXo = 'unset'; }
               var _zwImSrc = '', _zwImDen = 1;
               try {
                 if (typeof globalThis.__zwSelectImageSource5277 === 'function') {
@@ -1324,7 +1329,7 @@
                     _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwSvgDims.width, height: _zwSvgDims.height, error: null, density: _zwImDen, axes: _zwSvgDims.axes };
                     try {
                       globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
-                      globalThis._zwAvailableImages[_zwImSrc] = { width: _zwSvgDims.width, height: _zwSvgDims.height, axes: _zwSvgDims.axes };
+                      globalThis._zwAvailableImages[_zwImSrc] = { width: _zwSvgDims.width, height: _zwSvgDims.height, axes: _zwSvgDims.axes, xo: _zwImXo };
                     } catch (_eSwa2) {}
                     if (!_zwPrior) _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
                     continue;
@@ -1341,7 +1346,7 @@
                 _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'loaded', width: _zwW, height: _zwH, error: null, density: _zwImDen };
                 try {
                   globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
-                  globalThis._zwAvailableImages[_zwImSrc] = { width: _zwW, height: _zwH };
+                  globalThis._zwAvailableImages[_zwImSrc] = { width: _zwW, height: _zwH, xo: _zwImXo };
                 } catch (_eSwa) {}
                 _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
               } else {
