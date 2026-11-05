@@ -290,6 +290,27 @@ pub struct Painter {
     /// paint_node_in_rect 自递归不经 paint_node 不入栈——该路径维持无透视合成
     ///（FIXME：如需覆盖改走 paint_node 或同款入栈）。
     pub(crate) perspective_ctx: Vec<ParentPerspective>,
+    /// R5422：3D 渲染上下文累积线性矩阵栈（CSS Transforms-2
+    /// §3d-transform-rendering）——`paint_node` 入栈/出栈，`Some(m)` = 当前元素
+    /// 处于 preserve-3d 祖先链建立的 3D 渲染上下文中，`m` 为上下文累积 3×3 线性
+    /// 矩阵（含 preserve-3d 祖先全部变换）；`None`/空栈 = 不在 3D 上下文（flat
+    /// 边界截断，子树回退自身链判定）。backface-visibility:hidden 的背面判定按
+    /// 累积矩阵 zz 分量（transform.rs `transform_chain_3d_matrix`），驱动
+    /// transform3d-backface-visibility-004/006、backface-visibility-hidden-004、
+    /// backface-visibility-with-sibling-001（R4035 旧实现只判自身链）。
+    /// 限制（FIXME）：脏矩形路径 paint_node_in_rect 自递归不入栈（同
+    /// perspective_ctx 口径）；scope 延迟 positioned 后代若与 preserve-3d 祖先
+    /// 之间隔着非 walk 路径元素，累积链缺失中间代（现存六案形均 scope=自身/
+    /// 直系，未触达）。
+    pub(crate) backface_ctx: Vec<Option<[f32; 9]>>,
+    /// R5422：3D 渲染上下文累积背面判定开关（构造期单次读取，热路径零 env 查询，
+    /// 同 [`Self::parent_perspective_enabled`] 口径）。`ZW_BACKFACE_3D_CTX=0` 关闭
+    /// → 精确回退 R4035 原语义（自身链 cos 连乘 + preserve-3d 一律不隐，无累积栈），
+    /// 供 corpus 归因 bisect。已知 ON/OFF 差异：OFF 下 backface-visibility-hidden-
+    /// animated-001/002 维持 R4035 双侧同隐自洽伪绿（t=0 冻结动画语义 × ref 页静
+    /// 态 180°，guidelines #33 案形）；ON 下暴露为真不一致（挂账 animation 推进
+    /// 依赖族）。
+    pub(crate) backface_3d_ctx_enabled: bool,
     /// R5174：父 perspective 投影合成开关（构造期单次读取，热路径零 env 查询）。
     /// `ZW_PARENT_PERSPECTIVE=0` 关闭（回退透视折叠合成；解析层 translateZ 归一与
     /// translateZ 混合列表失效不受开关控制，OFF 相对基线 corpus 差异集见
@@ -1377,6 +1398,8 @@ impl Painter {
             inline_owner_max_lh: HashMap::new(),
             mc_paint_nesting: 0,
             perspective_ctx: Vec::new(),
+            backface_ctx: Vec::new(),
+            backface_3d_ctx_enabled: std::env::var("ZW_BACKFACE_3D_CTX").as_deref() != Ok("0"),
             parent_perspective_enabled: std::env::var("ZW_PARENT_PERSPECTIVE").as_deref() != Ok("0"),
             transform_paint_phase_enabled: std::env::var("ZW_TRANSFORM_PAINT_PHASE").as_deref() != Ok("0"),
             multicol_fragment_depth: 0,
@@ -1431,6 +1454,14 @@ impl Painter {
     /// M2-S1b：注入已导出动画通道表（空表 = flag 关闭，paint 路径行为不变）。
     pub fn set_compositor_animation_channels(&mut self, channels: HashMap<u64, Vec<ExportedChannel>>) {
         self.compositor_channels = channels;
+    }
+
+    /// R5422：单实例覆盖 3D 上下文累积背面判定开关（仅测试注入；生产路径以
+    /// `ZW_BACKFACE_3D_CTX` 构造期快照为准）——避免测试改进程级 env 与并行用例
+    /// 互踩（guidelines #19）。
+    #[doc(hidden)]
+    pub fn set_backface_3d_ctx_enabled_for_test(&mut self, enabled: bool) {
+        self.backface_3d_ctx_enabled = enabled;
     }
 
     /// M2-S1b：取走本帧收集的动画作用域（调用方在视口剔除时做区间修复）。
@@ -3254,6 +3285,81 @@ impl Painter {
         doc: Option<&Document>,
         is_root_scope: bool,
     ) {
+        // R5422（CSS Transforms 2 §backface-visibility + §3d-transform-rendering）：
+        // 背面判定用累积矩阵——3D 渲染上下文（preserve-3d 祖先链）内元素叠加祖先
+        // 变换后 zz < 0 即背面；R4035 旧实现只判自身链，3D 上下文内的 hidden 子盒
+        // （transform3d-backface-visibility-004/006、hidden-004）与 preserve-3d
+        // 叶（with-sibling-001，自身无翻转但父 rotateX(120deg) 翻 z）漏隐。
+        // hidden + 背面：flat 盒整子树不渲染（子树同一投影平面，R4035 口径）；
+        // preserve-3d 盒自身维持 R4035 豁免（composited-preserve-3d 校准案：hidden
+        // 父背面但子盒为 3D 上下文独立平面照绘），仅叶盒（无子）整弃——叶无子平面，
+        // 整弃 ≡ 仅弃自身平面（spec 语义）。
+        if self.backface_3d_ctx_enabled {
+            let backface_own = box_node.node_id.and_then(|id| styles.get(&id)).map(|style| {
+                let own = super::helpers::transform_chain_3d_matrix(style);
+                let accumulated = match self.backface_ctx.last() {
+                    Some(Some(parent)) => super::helpers::compose_linear3(parent, &own),
+                    _ => own,
+                };
+                (
+                    style,
+                    accumulated,
+                    matches!(
+                        style.transform_style,
+                        zero_style_system::property::types::TransformStyleValue::Preserve3d
+                    ),
+                )
+            });
+            if let Some((style, accumulated, preserve3d)) = &backface_own
+                && matches!(
+                    style.backface_visibility,
+                    zero_style_system::property::types::BackfaceVisibilityValue::Hidden
+                )
+                && accumulated[8] < 0.0
+                && (!*preserve3d || box_node.children.is_empty())
+            {
+                return;
+            }
+            // 子盒 3D 上下文：本盒 preserve-3d → 累积矩阵透传（上下文延伸）；flat →
+            // 截断（子树压入本投影平面，回退自身链判定）。
+            let backface_ctx_pushed = backface_own
+                .as_ref()
+                .and_then(|(_, accumulated, preserve3d)| preserve3d.then_some(*accumulated));
+            self.backface_ctx.push(backface_ctx_pushed);
+            self.paint_node_with_backface_ctx(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+            self.backface_ctx.pop();
+            return;
+        }
+        // R4035 回退（ZW_BACKFACE_3D_CTX=0）：自身链 cos 连乘 + preserve-3d 一律不隐
+        //（原 paint_node_inner 检查原样上移包装器，flat 下子树同平面整隐口径不变）。
+        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
+            && matches!(
+                style.backface_visibility,
+                zero_style_system::property::types::BackfaceVisibilityValue::Hidden
+            )
+            && !matches!(
+                style.transform_style,
+                zero_style_system::property::types::TransformStyleValue::Preserve3d
+            )
+            && super::helpers::transform_shows_backface(style)
+        {
+            return;
+        }
+        self.paint_node_with_backface_ctx(box_node, styles, offset_x, offset_y, doc, is_root_scope);
+    }
+
+    /// `paint_node` 背面目判定后的公共主体（transform_depth / perspective_ctx
+    /// 入栈 + [`Self::paint_node_inner`] + 出栈）——R5422 双路径共用，避免复制
+    /// R3834/R5174 包装逻辑。
+    fn paint_node_with_backface_ctx(
+        &mut self,
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        offset_x: f32,
+        offset_y: f32,
+        doc: Option<&Document>,
+        is_root_scope: bool,
+    ) {
         // R3834：非奇异 transform ≠ none → 递增 transform_depth（本节点及其子树的
         // background-attachment: fixed 降级为 scroll，见 transform_depth 字段文档）；
         // 函数返回时恢复。子树绘制全部经由本包装器递归，深度贯穿所有收集/flush 路径。
@@ -3384,28 +3490,9 @@ impl Painter {
             return;
         }
 
-        // R4035（CSS Transforms 2 §backface-visibility）：hidden 且变换链显示背面
-        //（rotateX/rotateY 连乘 cos < 0，见 helpers::transform_shows_backface）→ 元素
-        // 及其子树整体不渲染（flat transform-style 下子树同一投影平面）。旧实现只画
-        // 诊断虚线指示器不隐藏内容（backface-visibility-hidden-002：rotateY(180deg)
-        // 红块照绘，应全隐）。
-        // preserve-3d 豁免：3D 渲染上下文中子元素不被压入父投影平面，各子盒按自身
-        // 背面状态渲染（composited-under-rotateY-180deg-preserve-3d：父 hidden 背面
-        // 但子可见）——ZW 无 3D 场景图，preserve-3d 时回退旧「不隐藏」行为（子绿块
-        // 恰覆盖父红块，逐字面匹配 ref）。
-        if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
-            && matches!(
-                style.backface_visibility,
-                zero_style_system::property::types::BackfaceVisibilityValue::Hidden
-            )
-            && !matches!(
-                style.transform_style,
-                zero_style_system::property::types::TransformStyleValue::Preserve3d
-            )
-            && super::helpers::transform_shows_backface(style)
-        {
-            return;
-        }
+        // R4035/R5422（CSS Transforms 2 §backface-visibility）：hidden + 累积背面
+        // 判定已上移至 paint_node 包装器（3D 渲染上下文矩阵栈 backface_ctx——
+        // backface-visibility-with-sibling-001 等六案形需要祖先链累积）。
 
         let abs_x = offset_x + box_node.x;
         let abs_y = offset_y + box_node.y;
