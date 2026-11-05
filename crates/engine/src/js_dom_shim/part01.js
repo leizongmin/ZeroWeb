@@ -1897,6 +1897,13 @@
       if (!v.top && !v.left) continue;
       out.push({ selector: k, scroll_top: v.top, scroll_left: v.left });
     }
+    // R5428：窗口滚动槽导出（viewport 滚动）——documentElement.scrollTop 经 M2-S7
+    // 委托 scrollTo、与 scrollX/scrollY 同镜像 `_winScroll`（cssom-view-1 §11.2：
+    // 根元素滚动 = 视口滚动，根元素可滚溢出传播至 viewport）。reftest 消费侧按
+    // 'html' 记录回流、paint 期 root-scroller 应用；零偏移跳过（同 sel 条目口径）。
+    if (_winScroll.top || _winScroll.left) {
+      out.push({ selector: 'html', scroll_top: _winScroll.top, scroll_left: _winScroll.left });
+    }
     return out;
   };
   // reflected 字符串/数值属性（title/lang/dir/tabindex）per-element-key 缓存。同 _inputValues/_classCache

@@ -104,6 +104,7 @@ mod r5392_negative_margin_float_tests;
 /// R5394 纯原子行内盒行的 strut 行盒（CSS2 §10.8.1：strut 每行必参与，
 /// va:bottom 原子盒底对齐扩展后行底；line-height:0 容器 R5303 域不回归）。
 mod r5394_atomic_line_strut_tests;
+mod r5428_viewport_scroll;
 mod s10_hotlist_paint_tests;
 mod ui_indicators;
 mod visual;

@@ -349,6 +349,14 @@ pub struct Painter {
     /// R4353：脚本化滚动偏移（selector 字符串未解析态 + paint 期解析后的 NodeId 态）。
     pub(crate) pending_scroll_offsets: Vec<(String, f32, f32)>,
     pub(crate) scroll_offsets: HashMap<NodeId, (f32, f32)>,
+    /// R5428：视口滚动（'html' 记录 = 根元素滚动，cssom-view-1 §11.2 根元素可滚溢出
+    /// 传播至 viewport；shim 侧 documentElement.scrollTop 与 window.scrollTo 同镜像
+    /// `_winScroll` 槽、dump 以 'html' 回流）。canvas 即视口窗：消费为文档内容整体
+    /// 平移（root-scroller 应用点见子盒递归 R4353 块），画布背景保持视口锚定
+    ///（CSS §14.2）。仅 reftest harness 注入；产品路径不回流（同 pending 面）。
+    pub(crate) viewport_scroll: Option<(f32, f32)>,
+    /// R5428：视口滚动根元素 NodeId（'html' 记录解析；root-scroller 门按节点比对）。
+    pub(crate) viewport_scroll_node: Option<NodeId>,
     /// R5052：脚本化文本选区（reftest harness 回流，照 R4241/R4353 模式）——selector
     /// 未解析态 + paint 期解析后的 NodeId 态。值 = UTF-16 码元区间 [start, end)（shim
     /// `_textSelection` 同语义）。
@@ -813,6 +821,14 @@ pub(crate) fn scrollable_overflow_extent(
 fn inline_overflow_extent_enabled() -> bool {
     static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *KILL.get_or_init(|| std::env::var("ZW_INLINE_OVERFLOW_EXTENT").as_deref() != Ok("0"))
+}
+
+/// R5428 kill-switch（`ZW_ROOT_VIEWPORT_SCROLL=0` 回退——'html' 滚动记录整体弃置，
+/// 视口滚动不应用，同 R4353 期「canvas 渲染无视口滚动概念」旧行为）。
+// OPTIMIZATION：进程内只读一次（R5184 口径）。
+fn root_viewport_scroll_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_ROOT_VIEWPORT_SCROLL").as_deref() != Ok("0"))
 }
 
 pub(super) fn effective_appearance(
@@ -1495,6 +1511,8 @@ impl Painter {
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
+            viewport_scroll: None,
+            viewport_scroll_node: None,
             pending_text_selections: Vec::new(),
             text_selections: HashMap::new(),
             sel_partial_line_enabled: std::env::var("ZW_SEL_PARTIAL_LINE").as_deref() != Ok("0"),
@@ -1932,12 +1950,34 @@ impl Painter {
     /// 传入 `doc` 以启用行内格式化上下文的文本换行布局。
     pub fn paint(&mut self, layout: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) {
         // R4353：滚动偏移 selector → NodeId 解析（paint 期一次；doc 缺失则保持空 map）。
+        // R5428：'html' 记录 = 视口滚动——抽出 viewport_scroll 供 root-scroller 应用
+        //（子盒递归 R4353 块），不入 per-element map（根盒重复消费会双计）。shim 侧
+        // documentElement.scrollTop 经 M2-S7 委托 window.scrollTo、与 scrollX/scrollY
+        // 同镜像 `_winScroll` 槽，dump 以 'html' 回流（cssom-view-1 §11.2：根元素可滚
+        // 溢出传播至 viewport，滚动根元素 = 滚动视口）。body 记录维持跳过（shim 未
+        // 镜像 body.scrollTop；无驱动案不扩面）。kill-switch `ZW_ROOT_VIEWPORT_SCROLL=0`
+        // 回退（html/body 记录整体弃置，旧行为）。
+        self.viewport_scroll = None;
+        self.viewport_scroll_node = None;
+        if root_viewport_scroll_enabled()
+            && let Some(doc) = doc
+        {
+            for (sel, x, y) in &self.pending_scroll_offsets {
+                if sel.eq_ignore_ascii_case("html")
+                    && self.viewport_scroll.is_none()
+                    && let Some(id) = doc.query_selector(doc.root(), zero_dom::trim_ascii_ws(sel))
+                {
+                    self.viewport_scroll = Some((*x, *y));
+                    self.viewport_scroll_node = Some(id);
+                }
+            }
+        }
         self.scroll_offsets = self
             .pending_scroll_offsets
             .iter()
             .filter(|(sel, _, _)| {
-                // 根元素滚动（documentElement/body.scrollTop）= 视口滚动——canvas
-                // 渲染无视口滚动概念，跳过（应用会整体平移页面）。
+                // 根元素滚动（documentElement/body.scrollTop）= 视口滚动（R5428 上方
+                // 已抽出应用）；body 记录维持跳过。
                 let lower = sel.to_ascii_lowercase();
                 lower != "html" && lower != "body"
             })
@@ -3688,15 +3728,58 @@ impl Painter {
         // [counts_before, now] 应用）必须覆盖其 positioned 后代；若它们非 scope，后代会被
         // 上提到祖先而漏掉效果（opacity:0 不隐藏内容的 R505 回归）。详见 R505。
         let is_scope = self_positioned || box_node.creates_stacking_context || is_root_scope;
+        // R5428：root-scroller 钳制值前置计算——定位/float 收集（下方）早于子盒递归
+        // R4353 块，scope 根收藏原点须随视口平移，否则被根 scope 认领的 positioned
+        // 后代全部绘在未滚位（css-overflow-3 §2.2/§2.3：根元素可滚溢出传播至
+        // viewport，滚动根元素 = 文档整体平移；cssom-view-1 §11.2 client 面按视口
+        // 量取）。钳制数学与 R4353 块同式（此处结果供收藏原点，块内重钳幂等）。
+        // FIXME：position:fixed 的 CB 分析未建模（css-contain-1 §3.1 contain:layout/
+        // transform 祖先使 fixed CB 转移随文档滚、viewport CB 真锚定应不随滚）——
+        // 本实现一律随文档平移，驱动案 contain-layout-021（fixed CB = contain:layout
+        // html）语义正确；真 viewport-fixed × 视口滚（fixed-z-index-blend 的
+        // .blend/.background 无背景面，像素无差）待有像素可辨驱动案再分域。
+        let is_root_scroller = self.viewport_scroll.is_some()
+            && box_node.node_id.is_some()
+            && box_node.node_id == self.viewport_scroll_node;
+        let root_scroll_clamped = if is_root_scroller {
+            let (rev_x, rev_y) = box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .map(reversed_scroll_axes)
+                .unwrap_or((false, false));
+            let (min_ox, min_oy, ex_w, ex_h) = scrollable_overflow_extent(box_node, Some(styles));
+            let (sx_raw, sy_raw) = self.viewport_scroll.unwrap_or((0.0, 0.0));
+            let nsx = if rev_x {
+                let range = ((ex_w - min_ox) - self.viewport_w).max(0.0);
+                sx_raw.clamp(-range, 0.0)
+            } else {
+                let max_sx = (ex_w - self.viewport_w).max(0.0);
+                sx_raw.clamp(0.0, max_sx)
+            };
+            let nsy = if rev_y {
+                let range = ((ex_h - min_oy) - self.viewport_h).max(0.0);
+                sy_raw.clamp(-range, 0.0)
+            } else {
+                let max_sy = (ex_h - self.viewport_h).max(0.0);
+                sy_raw.clamp(0.0, max_sy)
+            };
+            Some((nsx, nsy))
+        } else {
+            None
+        };
+        let (collect_abs_x, collect_abs_y) =
+            root_scroll_clamped.map_or((abs_x, abs_y), |(dx, dy)| (abs_x - dx, abs_y - dy));
         let mut collected_positioned: Vec<DeferredPositioned> = Vec::new();
         // R5176：变换子相位重排旗标——与主循环排除同快照（multicol 片段领地不入，
         // 见 multicol_fragment_depth）；collect 与排除集同判保证收集 ≡ 排除。
         let transform_phase_defer = self.transform_paint_phase_enabled && self.multicol_fragment_depth == 0;
         if is_scope {
+            // R5428：收藏原点经视口平移（collect_abs_*）——被根 scope 认领的
+            // positioned/float 后代随文档滚动定位。
             collect_positioned_descendants(
                 box_node,
-                abs_x,
-                abs_y,
+                collect_abs_x,
+                collect_abs_y,
                 styles,
                 &mut collected_positioned,
                 doc,
@@ -3722,10 +3805,11 @@ impl Painter {
             && !band_cell
             && self.collapse_cell_phase != Some(collapse_phase::CollapseCellPhase::ContentSweep);
         if floats_scope_collect {
+            // R5428：收藏原点经视口平移（同上方 positioned 收藏）。
             collect_floats_descendants(
                 box_node,
-                abs_x,
-                abs_y,
+                collect_abs_x,
+                collect_abs_y,
                 styles,
                 &mut collected_floats,
                 doc,
@@ -4226,16 +4310,23 @@ impl Painter {
             .node_id
             .and_then(|id| styles.get(&id))
             .map(reversed_scroll_axes);
+        // R5428：root-scroller 面（is_root_scroller/root_scroll_clamped 前置于收藏点，
+        // 见上方）——根元素即 viewport 滚动容器（css-overflow-3 §2.2/§2.3 根元素可滚
+        // 溢出传播至 viewport，根盒自身 overflow 门不适用）；canvas 即视口窗，子树整
+        // 体平移 = 文档在视口窗内滚动，画布背景（传播面）保持视口锚定。
+        let root_scroll = if is_root_scroller { self.viewport_scroll } else { None };
         let (child_offset_x, child_offset_y) = box_node
             .node_id
             .and_then(|id| self.scroll_offsets.get(&id))
             .copied()
+            .or(root_scroll)
             .filter(|_| {
                 // 仅滚动容器应用（css-overflow-3 §2.2：hidden/scroll/auto = scroll
                 // container；visible/clip 非滚动容器——scrollTop 恒 0 不平移，
-                // overflow-clip-cant-scroll 锚定）。
+                // overflow-clip-cant-scroll 锚定）。根元素例外（视口滚动容器，上方）。
                 matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
                     || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll)
+                    || is_root_scroller
             })
             .map(|(sx, sy)| {
                 // spec：scrollTop 钳到可滚动溢出范围（scrollHeight − clientHeight）——
@@ -4243,8 +4334,16 @@ impl Painter {
                 // 钳 [-range, 0]（范围 = 传递性可滚溢出跨度 − client，两侧量取）。
                 let (rev_x, rev_y) = node_scroll_axes.unwrap_or((false, false));
                 let (min_ox, min_oy, ex_w, ex_h) = scrollable_overflow_extent(box_node, Some(styles));
-                let client_w = (box_node.width - box_node.border_left - box_node.border_right).max(0.0);
-                let client_h = (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0);
+                // R5428：root-scroller 的 client 面 = 视口（cssom-view-1 §11.2——视口
+                // 滚动值域按视口尺寸量取；根盒 auto 高 = 文档高，按盒面钳会归零）。
+                let (client_w, client_h) = if is_root_scroller {
+                    (self.viewport_w, self.viewport_h)
+                } else {
+                    (
+                        (box_node.width - box_node.border_left - box_node.border_right).max(0.0),
+                        (box_node.height - box_node.border_top - box_node.border_bottom).max(0.0),
+                    )
+                };
                 let nsx = if rev_x {
                     let range = ((ex_w - min_ox) - client_w).max(0.0);
                     sx.clamp(-range, 0.0)
