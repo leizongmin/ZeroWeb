@@ -5,9 +5,14 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（222）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（227）
 
+- 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
 - 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
+- 2026-11-05 [shim helper 定义在运行核闭包内——载入期机具消费时缺位 throw 撕裂 sweep](bugs/2026-11/2026-11-05-shim-helper-closure-scope-load-time-machinery.md) — engine
+- 2026-11-05 [registry indexOf 快道的「登记序 = DOM 序」前提在部分覆盖视图下静默失效](bugs/2026-11/2026-11-05-registry-index-view-mismatch.md) — engine, js_dom_shim
+- 2026-11-05 [嵌套 flock 同锁致内层 -n 静默跳跑，复跑判读读到幻影旧账](bugs/2026-11/2026-11-05-nested-flock-phantom-log.md) — tooling
+- 2026-11-05 [日志失败计数未锚定 ^Fail 前缀，Pass 行同串误计](bugs/2026-11/2026-11-05-grep-fail-count-pass-line-collision.md) — tooling
 - 2026-11-05 [br 可见性谓词互递归：extraneous ↔ isVisible 无界环](bugs/2026-11/2026-11-05-br-visibility-predicate-mutual-recursion.md) — engine
 - 2026-11-04 [计时探针不带值断言会测到错误路径——「便宜读数」可能是零矩形快速回落](bugs/2026-11/2026-11-04-timing-probe-without-value-assertions-measures-wrong-path.md) — engine, testing
 - 2026-11-04 [SIGKILL 构建链可在 target/debug 留下"指纹新鲜、内容陈旧"的投毒构件，编译假红要先用 clean -p 验伪](bugs/2026-11/2026-11-04-sigkilled-build-poisoned-artifacts-false-compile-red.md) — engine, testing
@@ -315,9 +320,10 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（38）
+## Platform — 平台与环境相关经验（39）
 
 - 2026-11-05 [wpt-runner testharness 行输出进程末统一落盘——stdout 静默 ≠ 挂死](platform/2026-11/2026-11-05-wpt-runner-row-flush-at-process-exit.md) — wpt-runner
+- 2026-11-05 [multitest 语料 full-file 单发模式失败——必须走切片协议](platform/2026-11/2026-11-05-multitest-corpus-full-file-mode-fails-use-slices.md) — zero-web-runner,editing-compat
 - 2026-11-04 [wpt.fyi 上游取证通道（代理 + 端点口径 + per-test message 直键）](platform/2026-11/2026-11-04-wpt-fyi-upstream-evidence-recipe.md) — docs/goal/html-semantics-compat
 - 2026-11-03 [webcrypto 全量账 24MB 案楔死级联的判别指纹与串行复跑协议](platform/2026-11/2026-11-03-webcrypto-24mb-wedge-cascade-fingerprint.md) — tests/wpt-runner, zero-engine
 - 2026-11-03 [git stat 缓存盲区：同 size 同 mtime 的磁盘内容损坏不报脏](platform/2026-11/2026-11-03-git-stat-cache-blind-same-size-mtime-corruption.md) — engine
