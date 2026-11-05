@@ -181,7 +181,7 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     "dom/collections",
     "dom/traversal",
     "dom/ranges",
-    // dom-expansion goal M1（docs/goal/dom-expansion.md DC-2）：OpaqueRange/
+    // dom-expansion goal M1（docs/goal/archive/dom-expansion.md DC-2）：OpaqueRange/
     // createValueRange 提案面 19 案——接口缺失即快速 TypeError 失败，按 M2
     // 「接口存在性图」口径入分母分类；crashtests/ 不入扫描（非断言崩溃页，
     // [`ranges_case_skipped`] 双保险排除）。
@@ -4537,7 +4537,7 @@ pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec
 /// （全在子目录）——列叶子目录；html/dom 顶层 .html（reflection-*/aria-*/historical）
 /// 直列。flat 扫描（子目录不递归），与 fetch depth-1 布局对齐。
 ///
-/// dom-expansion goal M1（docs/goal/dom-expansion.md DC-2）扩面：html/dom 深层
+/// dom-expansion goal M1（docs/goal/archive/dom-expansion.md DC-2）扩面：html/dom 深层
 /// 子目录 10 个叶子——documents/（DOM tree accessors + getElementsByName 嵌套 +
 /// resource metadata management）、partial-updates/tentative（declarative partial
 /// updates 提案面，含 fragment/ 嵌套）、elements/ 五子域（elements-in-the-dom/
