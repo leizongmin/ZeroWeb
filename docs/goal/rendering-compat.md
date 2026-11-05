@@ -9,6 +9,14 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5424 归因轮（block-in-inline-001/002 弃案归因——sibling cell 触发幻影空白行＋R109_BACKFILL 高度级联双机制实证；bench-gate 定向 zero-engine 静窗补跑 GATE PASS；零代码改动 corpus 无 A/B 义务）**（2026-11-05）
+>
+> - **基线与候选**：w0 账面 711F。候选 block-in-inline-001/002（1.39%/1.40%，CSS2 box-display 块入行内拆分域，族 85 文件，此前仅域级挂账无逐案归因）。
+> - **① BII 001/002 弃案归因（实验链全实证）**：症状＝左 td（BII cell）顶部 18px 幻影空白行、td 78（应 60）、三行内容整体 +18、右 td 被下推 18。触发面纯在 **sibling cell**（单 td／去右 td／左 td 单独成页三变体全正确；右 td 内容 ≥3 行才触发——行高分配把左 td 预增高到 ≥ 自然高是门，position_cells 实测 REAL row_height=60→左 td h=60 vs 空右 td h=18 不触发）。position_cells 出口两臂左 td 子树相同（单个 18px 匿名盒）；终树 REAL 的 span 三片被**追加**在匿名盒之下（y=18）而 REPLICA 被**替换**（y=0）——rebuild 语义翻转门＝cell 预增高（无解释模型）。kill-switch 矩阵：`R109_BACKFILL=0` 收走 td 增高（78→60）＋右 td 下推（cumulative_shift 级联）但 Line 1 恒 +18（幻影行在 paint Path B IFC 域，layout store 探针空输出）；`ZW_IFC_GROW_SHIFT/ZW_CELL_IFC_STORE/PHASEA_STORE_EXT` 全无效。**弃案**：追加/替换分歧点在 compute_final 期 R109 匿名块重建语义 × 表格 §17.5.3 预增高跨子系统耦合，属在册 block-in-inline 深域结构性面，单闸门不可修。证据：[`rendering-compat/evidence/r5424-bii-sibling-cell-phantom-strut-2026-11-05.md`](rendering-compat/evidence/r5424-bii-sibling-cell-phantom-strut-2026-11-05.md)。
+> - **② bench-gate 定向 zero-engine 静窗补跑（R5420 遗留＋R5422 drift 合并）**：对端 A/B 四腿收旗后静窗执行 `ZERO_WEB_BENCH_CRATES=zero-engine make bench-gate` → **GATE PASS 19 指标（NEW=7）**；first_paint_wall_ms 三页全 PASS（welcome 15.21／medium 327.08／morning 148.56 vs 基线 17.07/280.31/175.22，预算内）。7 个 zero-engine 微基准基线 capture 两次被收紧优先拒绝：page/medium 系指标稳定 +18~28%（10 分钟热沉降后复测同值，governor=performance/4.6GHz 排除热残留）＝基线（2026-10-25 d22abffb3）以来 ~24 轮渲染改动累计成本的显形——**页基线放宽属政策决定，记待用户决策⑤，capture 随之挂起**。
+> - **清理**：两个临时诊断测试（layout-engine/engine r5424_bii_* 探针）＋mod.rs 注册删除；table.rs/inline_finalization.rs 临时仪表还原；reftest-dump PNG 清理。产品零改动。
+> - **挂账**：新增两条：⑤block-in-inline-001/002 幻影行（R109 rebuild 追加/替换语义 × 表格预增高，随 BII 深域）⑥zero-engine 微基准 7 指标 capture（随页基线放宽决策挂起）；R5423 三条＋R5422 三条＋R5421 五条＋对端账全部维持；**待用户决策清单新增**：⑤页性能基线放宽（2026-10-25 d22abffb3 基线以来 page/medium 系稳定 +18~28%＝~24 轮渲染改动累计成本，--relax＋政策文档记录路径）；①first-line-pseudo-013-016 ②box-level bidi RFC＋grid 失败簇归口 ③letter-spacing 三联合修复方向 ④3D TP 元素隔离方向维持。**下一步 R5425**：①misc 账本续扫择轻（w0-fails 轻端续扫；避开 BII/letter-spacing/3D TP/R5421 五域＋在册深域/对端面/动态域；deep intrinsic 48 变体矩阵维持挂起）②对端红腿跨轮观察维持 ③重腿前 ps 静窗纪律维持。
+
 > **▶ R5423 归因轮（letter-spacing 族三联合弃案归因＋transforms-rotateY/3D 函数簇深域定谳——TP 区域清白毁背衬实证闭环；零代码改动 corpus 无 A/B 义务；guidelines #33 探针伪绿技法沉淀）**（2026-11-05）
 >
 > - **基线与侦扫**：本轮 w0 全量窗 fail 名单 **711F**（R5422 终态 708F，3 案在册抖动族漂移带内）。两族候选全落弃案/深域：letter-spacing 族红案全名单 = 203/206/ligatures-005；3D 函数簇 8 案 = rotateY.html／transformed-rotateY-1／transform-3d-rotateY-stair-above/below-001／transform3d-matrix3d-003/004/005／transforms-rotateY-degree-60。
