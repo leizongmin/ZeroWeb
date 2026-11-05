@@ -498,6 +498,43 @@ fn inline_replaced_cyclic_pct_transfer(
     Some(aspect_ratio_transferred_width(s, child, main, ratio))
 }
 
+/// R54xx：「直接非空白文本 + inline 级元素子」混合内容盒判定——taffy 首趟内容计量
+/// 盲区形态（converter 把 inline 级元素映射为 taffy Block（R109），非叶盒按 Block
+/// 堆叠取 max 且匿名文本不在 taffy 树中不可见）。此形态的 laid 宽在首趟不可信，
+/// 测量须走 DOM 递归（R4032 臂）/ZW 基准（R54xx flex base 权威修正）；其余形态
+/// child.width 已是正确贡献（block_max_content_width 塌 0 门同款性能口径：全量
+/// 递归 bench +10.4%，2026-10 实测）。递归判定，供测量臂与 sizing pass 共用。
+pub(crate) fn subtree_has_mixed_inline_content(
+    b: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    doc: &Document,
+) -> bool {
+    let direct_text = b.node_id.is_some_and(|id| {
+        doc.child_nodes(id).iter().any(|&cid| {
+            doc.get(cid)
+                .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Text(t) if !t.content.trim().is_empty()))
+        })
+    });
+    let inline_child = b.children.iter().any(|c| {
+        c.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::Inline
+                    | DisplayValue::InlineBlock
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+                    | DisplayValue::InlineTable
+            )
+        })
+    });
+    if direct_text && inline_child {
+        return true;
+    }
+    b.children
+        .iter()
+        .any(|c| subtree_has_mixed_inline_content(c, styles, doc))
+}
+
 fn box_content_max_width_inner(
     box_node: &LayoutBox,
     doc: &Document,
@@ -620,6 +657,11 @@ fn box_content_max_width_inner(
     // R5381：inline 级替换子 outer_w 臂旗标 hoist（循环内每子一次 env 扫描不耐受，
     // R4407 同款）。
     let inline_replaced_outerw = inline_replaced_outerw_enabled();
+
+    // R54xx：inline-block 族递归宽按段入账的回调表（node_id → 全贡献）——loop 本臂
+    // 只登记不入 inline_sum，末尾 walk 经 `dom_inline_content_max_width` 原子回调把
+    // 宽度记进所在 br 段（段内加、段间 max），双段盒不再全局求和。
+    let mut ib_atom_seg: HashMap<NodeId, f32> = HashMap::new();
 
     for child in &box_node.children {
         if child.is_absolute || child.is_fixed {
@@ -748,7 +790,7 @@ fn box_content_max_width_inner(
                 // shrink。仅 display:Inline：inline-block/flex/grid 有自身盒模型，outer_w 真实有效
                 //（height-computed-001 等），不走此路。default-off 待全量 A/B 验证 net≥0。
                 inline_sum += box_content_max_width(child, doc, styles).max(0.0);
-            } else if std::env::var("ZW_IB_DESTRETCH").as_deref() == Ok("1")
+            } else if std::env::var("ZW_IB_DESTRETCH").as_deref() != Ok("0")
                 && child.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
                     matches!(
                         s.display,
@@ -758,6 +800,7 @@ fn box_content_max_width_inner(
                             | DisplayValue::InlineTable
                     )
                 })
+                && subtree_has_mixed_inline_content(child, styles, doc)
                 && !child.node_id.and_then(|cid| doc.get(cid)).is_some_and(|n| {
                     matches!(
                         &n.kind,
@@ -778,7 +821,56 @@ fn box_content_max_width_inner(
                 //（padding-right-applies-to-012：inline-block 嵌套被推到容器右缘实证）。
                 // inline-block 族有真盒模型 → 递归返回其 border-box max-content，直接
                 // 可比 outer_w。
-                inline_sum += (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
+                // R54xx 升 default-on（原 `== Ok("1")` opt-in 未启用）：测量循环腐化定谳
+                //（github trending 头部 summary caret 伪元素触发原子盒化 → taffy 首趟
+                // 内容计量按 Block 堆叠盲匿名文本 → summary laid 26px（真实 168px）→
+                // 父链 outer_w 读回受损 laid 宽循环传播）。本臂递归与 walk 原子停止点
+                // 配对无双计（walk 在 inline-block 族停止贡献 0，原子宽度归本分支）；
+                // R54xx `apply_flex_item_base_authority` 消费 flex_item_base_size 链经此
+                // 臂取得真基准写回 flex_basis。kill-switch `ZW_IB_DESTRETCH=0` 回退
+                // outer_w 旧行为。
+                // 性能门 `subtree_has_mixed_inline_content`：仅 taffy 盲区形态（混合
+                // inline 内容）递归——其余形态 child.width 已是正确贡献（同款性能口径：
+                // block_max_content_width 全量递归 bench +10.4%，见 R4000 臂注）。
+                //
+                // R54xx br 分段修正：递归宽不再全局入 inline_sum（br 分段盒中原子属
+                // **后段**，全局相加 = 436 = 260+176 双段求和实证
+                // p114_flex_item_br_segments_not_overcounted），改经
+                // `dom_inline_content_max_width` 原子回调按**段**入账（段内 文本+原子
+                // 求和、段间取 max，css-sizing-3 max-content 按强制断行分行取最宽）。
+                // 递归宽含原子全贡献（内容+自身 frame 经 ml+mr 外框），loop 本臂加 0。
+                let w = (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
+                if let Some(cid) = child.node_id {
+                    ib_atom_seg.insert(cid, w);
+                }
+            } else if mixed_walk_on
+                && child.node_id.and_then(|cid| styles.get(&cid)).is_some_and(|s| {
+                    matches!(
+                        s.display,
+                        DisplayValue::InlineBlock
+                            | DisplayValue::InlineFlex
+                            | DisplayValue::InlineGrid
+                            | DisplayValue::InlineTable
+                    )
+                })
+            {
+                // R54xx br 分段修正（else 落点）：形态门未命中的 inline-block 族纯文本
+                // 原子（`<li>hi<span style="display:inline-block">ab cd</span>` 的 span、
+                // p114 的 button——纯文本无元素子，subtree_has_mixed_inline_content=false）
+                // 此前 outer_w 直进 inline_sum——br 分段盒中原子属后段，全局相加即双段
+                // 求和（p114 436=260+176 实证）；且 walk 对 inline-block 族按原子停止
+                // 贡献 0，段回调查不到 map 条目时原子宽失去段归属。与 destretch 臂同式
+                // 登记不入 inline_sum，walk 回调按段入账。**值必须递归而非 outer_w**：
+                // 纯文本 inline-block 自身就是 R109 inline→Block 拉伸受害者（span 被
+                // taffy 拉到父 basis 宽，outer_w 随 basis 正反馈 100→140→180 实证
+                // p115 反馈环），递归 DOM 测量免疫 laid 反馈（leaf text_w=100 正确，
+                // 递归叶分支实测 text_w=100 正确）；形态门未命中只说明递归便宜（纯文本叶），不
+                // 说明 outer_w 可信。ZW_MIXED_BARE_TEXT=0 时不改道（无 walk 消费方，
+                // 保持 inline_sum 旧语义防原子丢失）。
+                let w = (box_content_max_width(child, doc, styles) + ml + mr).max(0.0);
+                if let Some(cid) = child.node_id {
+                    ib_atom_seg.insert(cid, w);
+                }
             } else {
                 inline_sum += outer_w.max(0.0);
             }
@@ -951,8 +1043,7 @@ fn box_content_max_width_inner(
         // 之前测 0，现按 DOM 文本内容度量。取 max 避免显式宽被文本低估。
         let text_w = box_node
             .node_id
-            .map_or(0.0, |id| text_content_max_width(id, doc, styles));
-        // R5318（css-sizing-3 §5.1 max-content + CSS2 §10.3.2）：替换叶盒 max-content
+            .map_or(0.0, |id| text_content_max_width(id, doc, styles)); // R5318（css-sizing-3 §5.1 max-content + CSS2 §10.3.2）：替换叶盒 max-content
         // = 固有尺寸——attr/解码尺寸在 tree.rs apply_replaced_element_sizing 已写为
         // taffy definite 宽，第一趟 box_node.width 即真实固有值（替换盒主轴永不
         // fill-stretch，无拉伸伪影）。旧文本/显式宽口径对替换叶双 0 → td 内
@@ -996,11 +1087,16 @@ fn box_content_max_width_inner(
         // wrapper shrink 被 walk 文本撑爆实证）。bare walker 时代靠 boxed-skip 免疫
         // （span 文本不经 walker），交错 walk 计全部文本后须显式守卫。
         let dom_text = if mixed_walk_on && own_explicit <= 0.5 {
-            dom_inline_text_max_width(box_node, doc, styles)
+            if ib_atom_seg.is_empty() {
+                dom_inline_text_max_width(box_node, doc, styles)
+            } else {
+                // R54xx：有 inline-block 族递归原子时走回调变体——原子宽按段入账
+                //（见 loop 内 R54xx br 分段修正注）。
+                dom_inline_content_max_width(box_node, doc, styles, &|id| ib_atom_seg.get(&id).copied())
+            }
         } else {
             0.0
-        };
-        // R4407：行感知合成——dom_text 是本容器 **inline 行**的文本宽（walk 分段取 max），
+        }; // R4407：行感知合成——dom_text 是本容器 **inline 行**的文本宽（walk 分段取 max），
         // 与 block_max（块级子各自成行）是**不同行**，取 max 而非相加；与 inline_sum
         //（inline 子 frame/原子盒外宽）同行相加 ✓。dom_text==0（flag-off / 定值盒守卫）
         // 时回落 children_inner 逐字节不变。旧 `children_inner.max(own_explicit) + dom_text`

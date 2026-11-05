@@ -23,6 +23,11 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
         Some(n) => n,
         None => return,
     };
+    // 合成节点（伪元素替身，见 [`NodeData::synthetic`]）不进序列化——伪元素
+    // 不属于文档树，innerHTML/outerHTML/标记快照均不含其内容（含子树）。
+    if node_data.synthetic {
+        return;
+    }
 
     match &node_data.kind {
         NodeKind::Document(_) => {
@@ -882,6 +887,52 @@ mod tests {
         assert!(
             serialized.contains(r#"xml:lang="en""#),
             "xml:lang 应保留前缀: {serialized}"
+        );
+    }
+
+    /// 合成节点（`NodeData::synthetic`——伪元素替身）不进 innerHTML/outerHTML
+    ///（CSS Pseudo-Elements §1：伪元素不属于文档树）。子树整体跳过；clone 保留标记。
+    /// zinc 定谳（2026-11-04）：无标记时序列化把 `zw-pseudo` 写进快照，re-parse 后
+    /// 成真实布局参与者（github trending flex 塌缩在案）。
+    #[test]
+    fn test_synthetic_nodes_excluded_from_serialization() {
+        let html = r#"<div id="host"><span>real</span></div>"#;
+        let mut doc = crate::parse_html(html);
+        let host = doc.query_selector(doc.root(), "#host").unwrap();
+
+        // 合成元素子树（zw-pseudo 盒 + 文本子）插为首个子节点。
+        let pseudo = doc.create_element("zw-pseudo");
+        doc.get_mut(pseudo).unwrap().synthetic = true;
+        let ptext = doc.create_text_node("★");
+        doc.get_mut(ptext).unwrap().synthetic = true;
+        doc.append_child(pseudo, ptext).unwrap();
+
+        // 合成文本节点插为末个子节点。
+        let tail = doc.create_text_node("tail");
+        doc.get_mut(tail).unwrap().synthetic = true;
+
+        {
+            let host_node = doc.get_mut(host).unwrap();
+            host_node.children.insert(0, pseudo);
+            host_node.children.push(tail);
+        }
+
+        let outer = doc.outer_html(host);
+        assert!(
+            !outer.contains("zw-pseudo") && !outer.contains("★") && !outer.contains("tail"),
+            "合成节点及其子树不应序列化: {outer}"
+        );
+        assert!(outer.contains("<span>real</span>"), "真实子树保持原样: {outer}");
+
+        // 合成节点自身的 outerHTML 亦空（非 DOM 语义）。
+        assert_eq!(doc.outer_html(pseudo), "", "合成节点自身 outerHTML 应为空");
+
+        // clone 保留标记（深拷贝后仍排除）。
+        let cloned = doc.clone_node(host, true);
+        let cloned_html = doc.outer_html(cloned);
+        assert!(
+            !cloned_html.contains("zw-pseudo"),
+            "clone 应保留 synthetic 标记: {cloned_html}"
         );
     }
 }
