@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ③'-a/b/d-apply 逐行 got 钉测（语料 forecolor.js :376/:382/:435/:441/
+     :727/:732/:737/:742）：setupFixture+execCommand 语料同款机制，test 名内嵌
+     got 串供 runner Pass 行直读。期望形见各 case 注释（行号 = data 行号）。 -->
+<title>zz-probe-qv5</title>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+
+// 语料 setupDiv 同款（tests.js :5283）。
+function setupFixture(testDiv, fixture) {
+    testDiv.innerHTML = fixture;
+    var startNode = null, startOffset = 0, endNode = null, endOffset = 0;
+    var cur = testDiv;
+    while (true) {
+        if (!cur || (cur !== testDiv
+            && !(cur.compareDocumentPosition(testDiv) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+        if (cur.nodeType !== 3) { cur = nextNode(cur); continue; }
+        var startIdx = cur.data.replace(/\]/g, "").indexOf("[");
+        var endIdx = cur.data.replace(/\[/g, "").indexOf("]");
+        if (startIdx !== -1) { startNode = cur; startOffset = startIdx; }
+        if (endIdx !== -1) { endNode = cur; endOffset = endIdx; }
+        cur.data = cur.data.replace(/[\[\]]/g, "");
+        cur = nextNode(cur);
+    }
+    var r = document.createRange();
+    r.setStart(startNode, startOffset);
+    r.setEnd(endNode, endOffset);
+    return r;
+}
+function nextNode(node) {
+    if (node.firstChild) return node.firstChild;
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+    while (node) {
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+    }
+    return null;
+}
+function runCase(label, fixture, cmds) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var rng = setupFixture(testDiv, fixture);
+    getSelection().removeAllRanges();
+    getSelection().addRange(rng);
+    for (var e = 0; e < cmds.length; e++) {
+        document.execCommand(cmds[e][0], false, cmds[e][1]);
+    }
+    // tests.js :5637 语料同款：normalizeSerializedStyle(testDiv) 后比较——
+    // 本仓 CSSOM 保 keyword 原文（zz-probe-cssom 实证），harness 端
+    // normalizeColor 转 rgb 后再序列化。
+    try {
+        [].forEach.call(testDiv.querySelectorAll("[style]"), function(node) {
+            if (node.style.color != "") {
+                var nc = normalizeColor(node.style.color);
+                node.style.color = "";
+                node.style.color = nc;
+            }
+            if (node.style.backgroundColor != "") {
+                var nb = normalizeColor(node.style.backgroundColor);
+                node.style.backgroundColor = "";
+                node.style.backgroundColor = nb;
+            }
+            node.setAttribute("style", node.getAttribute("style")
+                .replace(/; ?$/, "").replace(/: /g, ":"));
+        });
+    } catch (eNorm) {}
+    var got = testDiv.innerHTML;
+    test(function() { assert_true(true); },
+        label + " | got=" + got);
+}
+// a 族（keyword outer）：376 sw=true 双形可、382 sw=true 仅切分
+runCase("a-376", '<span style="color: blue">foo<span style="color: brown">[bar]</span>baz</span>',
+    [["stylewithcss", "true"], ["forecolor", "#0000FF"]]);
+runCase("a-382", '<span style="color: blue">foo<span style="color: brown">[bar]</span>baz</span>',
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]]);
+// b 族（rgb outer 嵌套 carry）：435 sw=true span carry、441 sw=false font carry
+runCase("b-435", '<span style="color: rgb(0, 0, 255)">foo<span style="color: brown">b[ar]</span>baz</span>',
+    [["stylewithcss", "true"], ["forecolor", "#0000FF"]]);
+runCase("b-441", '<span style="color: rgb(0, 0, 255)">foo<span style="color: brown">b[ar]</span>baz</span>',
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]]);
+// d 族混形（font attr brown + span brown）
+runCase("d-727", '<font color=brown>fo[o</font><span style=color:brown>b]ar</span>',
+    [["stylewithcss", "true"], ["forecolor", "#0000FF"]]);
+runCase("d-732", '<font color=brown>fo[o</font><span style=color:brown>b]ar</span>',
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]]);
+// d 族纯形（span brown + span blue）
+runCase("d-737", '<span style=color:brown>fo[o</span><span style=color:#0000ff>b]ar</span>',
+    [["stylewithcss", "true"], ["forecolor", "#0000FF"]]);
+runCase("d-742", '<span style=color:brown>fo[o</span><span style=color:#0000ff>b]ar</span>',
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]]);
+// 裸 fixture keyword 命令行（data :114/:269，q5 直腿新红归因钉测）
+runCase("q114", "foo[bar]baz",
+    [["stylewithcss", "false"], ["forecolor", "blue"]]);
+runCase("q269", "foo[bar]baz",
+    [["stylewithcss", "false"], ["forecolor", "cornsilk"]]);
+</script>

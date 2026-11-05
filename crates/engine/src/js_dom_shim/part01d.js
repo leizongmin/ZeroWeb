@@ -148,7 +148,7 @@
 
   // areEquivalentValues（参考实现 :2008）——五命令子集：fontsize/fontname 无
   // equivalentValues 定义（纯串等值），色三命令 normalizeColor 等值。
-  function _zwVaEquivalentValues(cmd, v1, v2) {
+  function _zwVaEquivalentValues(cmd, v1, v2, numericFace) {
     if (v1 === null && v2 === null) return true;
     if (typeof v1 !== 'string' || typeof v2 !== 'string') return false;
     if (v1 === v2) return true;
@@ -157,7 +157,12 @@
       // keyword 外壳切分 vs :387 hex 外壳合并录形）；css 模式保持归一键
       // （:376 css keyword 行录形接受合并形，指定形切分仅 tag 模式实证面）。
       // backcolor/hilitecolor 录形 keyword 壳合并（backcolor.js :193）恒归一键。
-      if (cmd === 'forecolor' && !_zwVaCssFlag()) {
+      // numericFace：effective 面读数走数值键——attr 来源值经
+      // _zwVaNormalizeCssColor 预归一 rgb 形，与 keyword 新值（裸 fixture
+      // forecolor blue → <font color=#0000ff>）在 Chrome 语义下恒同色
+      // （:114/:269 录形 attr-only 无冗余 style 声明）；keyword 感知仅
+      // 属指定形（CSSOM 保留 authored 形），不适用于有效值/attr 面。
+      if (cmd === 'forecolor' && !_zwVaCssFlag() && !numericFace) {
         return _zwVaChromeColorKey(v1) === _zwVaChromeColorKey(v2);
       }
       return _zwVaNormalizeColorKey(v1) === _zwVaNormalizeColorKey(v2);
@@ -189,8 +194,8 @@
     return _zwVaSizeMapData;
   }
 
-  function _zwVaLooselyEquivalent(cmd, v1, v2) {
-    if (_zwVaEquivalentValues(cmd, v1, v2)) return true;
+  function _zwVaLooselyEquivalent(cmd, v1, v2, numericFace) {
+    if (_zwVaEquivalentValues(cmd, v1, v2, numericFace)) return true;
     if (cmd !== 'fontsize' || typeof v1 !== 'string' || typeof v2 !== 'string') return false;
     var map = _zwVaSizeMap();
     return v1 === map[v2] || v2 === map[v1];
@@ -763,7 +768,7 @@
   // —— pushDownValues（参考实现 :2586）。
   function _zwVaPushDownValues(node, command, newValue) {
     if (!node.parentNode || node.parentNode.nodeType !== 1) return;
-    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue)) {
+    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue, true)) {
       return;
     }
     var currentAncestor = node.parentNode;
@@ -772,7 +777,7 @@
     while (_zwJusIsEditable(currentAncestor)
            && currentAncestor.nodeType === 1
            && !_zwVaLooselyEquivalent(command,
-                _zwValEffectiveValue(currentAncestor, command), newValue)
+                _zwValEffectiveValue(currentAncestor, command), newValue, true)
            && guard++ < 256) {
       ancestorList.push(currentAncestor);
       currentAncestor = currentAncestor.parentNode;
@@ -784,7 +789,7 @@
     if (newValue !== null
         && !_zwVaLooselyEquivalent(command,
              _zwValEffectiveValue(ancestorList[ancestorList.length - 1].parentNode, command),
-             newValue)) {
+             newValue, true)) {
       return;
     }
     while (ancestorList.length) {
@@ -849,7 +854,7 @@
       var sibCrit = function (n) {
         return _zwVaIsSimpleModifiable(n)
           && _zwVaEquivalentValues(command, _zwVaSpecifiedValue(n, command), newValue)
-          && _zwVaLooselyEquivalent(command, _zwValEffectiveValue(n, command), newValue);
+          && _zwVaLooselyEquivalent(command, _zwValEffectiveValue(n, command), newValue, true);
       };
       _zwVaWrap([node], sibCrit, function () { return null; }, command);
     }
@@ -870,7 +875,7 @@
              && command !== 'fontsize')) {
       return;
     }
-    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue)) {
+    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue, true)) {
       return;
     }
     if (!_zwVaIsAllowedChild(node, 'span')) {
@@ -890,7 +895,7 @@
       }
       return;
     }
-    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue)) {
+    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue, true)) {
       return;
     }
     var property = command === 'fontsize' ? 'font-size'
@@ -1011,7 +1016,9 @@
       insRefFv = null;
     }
     oldParentFv.insertBefore(newParent, insRefFv);
-    if (!_zwVaLooselyEquivalent(command, _zwValEffectiveValue(newParent, command), newValue)) {
+    // numericFace：fresh font 载体已落 attr 数值形（_zwVaParseSimpleColor），
+    // 与 keyword 新值同色——补写 style 声明即冗余（:114/:269 录形 attr-only）。
+    if (!_zwVaLooselyEquivalent(command, _zwValEffectiveValue(newParent, command), newValue, true)) {
       _zwVaSetStyleProp(newParent, property, newValue);
     }
     _zwJusMovePreservingRanges(node, newParent, newParent.childNodes.length);
@@ -1052,7 +1059,7 @@
         || !_zwVaIsSimpleModifiable(candidate)
         || !_zwVaEquivalentValues(command, _zwVaSpecifiedValue(candidate, command), newValue)
         || !_zwVaLooselyEquivalent(command,
-             _zwValEffectiveValue(candidate, command), newValue)) {
+             _zwValEffectiveValue(candidate, command), newValue, true)) {
       return;
     }
     var guardM = 0;
@@ -1916,7 +1923,7 @@
       var cmd = cmds[i];
       var v = snap[cmd];
       if (v === undefined || v === null || v === '') continue;
-      if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v)) continue;
+      if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v, true)) continue;
       try { _zwVaSetSelectionValue(cmd, v); } catch (_eRo) {}
     }
     try {
