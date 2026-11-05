@@ -2,19 +2,20 @@
 
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M0~M3 已落（2026-11-06：甄别 + CONFIRMED 六面通道 +
-mixed-content 扩面 + LIKELY 五面通道入账），M4 待推进
+**状态**: Active——DC-1~DC-4 全达成（2026-11-06 M0~M4：甄别 + CONFIRMED
+六面通道 + mixed-content 扩面 + LIKELY 五面通道入账 + coverage 复测收口）；
+收口归档待后续轮（evidence 路径已入 `wpt-suites.csv` gap-batch1 行，迁移须同步回填）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 通道补齐 + 按面甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——多小域批量）
 
-**当前卡点**：无硬卡点。M4 coverage 复测走 weekly `wptfyi-coverage` 分片
-矩阵（五新面 catch-all 自动接线，dispatch 复测后核对头条 ≥ 67.54% 不回落
-+ 十二面 covered>0）→ `wpt-suites.csv` 回填收口。引擎/runner 缺口按簇挂账
-（referrer-policy/preload `.py` 判据端点仿真、wai-aria testdriver
-computed label/role 查询臂、input-events 编辑管线簇、storage
-StorageManager 全域），见 M3 evidence 失败簇归因，不在 DC 内。
-**下一步**：push M3 → dispatch weekly `run_wptfyi_coverage=true` 复测 →
-快照核对 → `wpt-suites.csv` 回填数据行 → goal 收口。
+**当前卡点**：无。M4 复测快照 headline 68.10%（基线 67.54%，+0.56pp 不回落），
+十二面 covered 全 >0（[M4 收口](gap-batch1/evidence/2026-11-06-m4-coverage-retest.md)，
+CI run 42096051904）。引擎/runner 缺口按簇挂账（referrer-policy/preload
+`.py` 判据端点仿真、wai-aria testdriver computed label/role 查询臂、
+input-events 编辑管线簇、storage StorageManager 全域、gen/ wrapper 管道），
+见 M3 evidence 失败簇归因，不在 DC 内。
+**下一步**：goal 收口归档（docs/goal/archive/，同步 csv 行 evidence 路径）；
+挂账簇按归域立项建议走各自 goal。
 
 ## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）
 
@@ -67,6 +68,8 @@ runner 通道（审计已核实锚点），六面疑似部分实现须甄别，�
   pin，missing=0）；`testharness-mixed-content` 既有账零回归。
 - **DC-4（coverage 复测）**：十二面 covered 文件数 > 0 且通过子测试达
   DC-1 数值门；全量头条 ≥ 67.54% 不回落；`wpt-suites.csv` 回填数据行。
+  ✅ 2026-11-06 全满足——分面门达成为通道干跑账口径（快照分子经 universe
+  解析存在机制性差额，注记见 M4 evidence）。
 
 **DC-4 数值门决策规则（立项即定）**：CONFIRMED 六面通道落地后按干跑基线
 实数落门（不预设）；LIKELY 六面按 M0 甄别的 in-scope 地址池 × 同类域已收
@@ -124,7 +127,10 @@ zw-static-corpus 标记记账。
 - **M3**：LIKELY 面按甄别结果逐面入账（引擎缺口簇挂账他域）——✅
   2026-11-06（五面五件套 + manual 变体谓词修复 + 干跑基线 P 297 门落定，
   evidence/2026-11-06-m3-*.md；weekly catch-all 自动接线本地复核 128 套件）。
-- **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
+- **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）——✅
+  2026-11-06（weekly dispatch run 42096051904 全分片 success；快照
+  headline 68.10% 不回落、十二面 covered 全 >0；csv gap-batch1 行 331
+  文件/3,811 子测试/662P 回填；evidence/2026-11-06-m4-coverage-retest.md）。
 
 ## 依赖约束（run-rules §9）
 
