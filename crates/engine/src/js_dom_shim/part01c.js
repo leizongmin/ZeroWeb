@@ -477,6 +477,10 @@
     var startClosure = _zwJusClosestClosure(startNode, host);
     var endClosure = _zwJusClosestClosure(endNode, host);
 
+    // 原始 start 端点（li 臂/do-while 改写 startNode 前捕获；list-wide 纯壳
+    // 门判分支归属用）。
+    var origStart = startNode;
+
     // li 臂：start/end 所在最近 li 整行收编。
     var li = null;
     var n = startNode;
@@ -518,7 +522,44 @@
       } while (endNode && g2++ < 256);
     }
 
-    if (chromeTight) {
+    if (chromeTight === 'list-wide') {
+      // toggleLists enable 局部档（q16 转换主流程 Chrome delta）。end 界：
+      // vendored blockExtend 忠实语义——纯 at-length 爬升（无跨端关系守卫，
+      // :373 内壳 end 必须跨出 innerUL 才能让外壳入含域），宿主为顶护栏
+      // （:43/:48 尾文本吸收归 flat-model 臂，range 越顶会过度吸收）。
+      while (endOffset === _zwJusNodeLength(endNode) && endNode && endNode.parentNode
+          && endNode !== host) {
+        endOffset = 1 + _zwJusNodeIndex(endNode);
+        endNode = endNode.parentNode;
+      }
+      var shellsExited = 0;
+      var shellsPure = true;
+      var peekN = startNode, peekO = startOffset;
+      while (peekO === 0 && peekN && peekN.parentNode && peekN !== host) {
+        if (_zwJusIsHtmlElement(peekN, ['ol', 'ul'])) {
+          shellsExited++;
+          // 纯壳门：被退出壳的直属 li 子若存在不含原始选区 start 端点的
+          // 分支（兄弟分支残留），整壳分裂语义（Chrome 保形）依赖 start
+          // 相等剔除前序兄弟——不提交爬升（<ul><li>foo<li>[bar]<li>baz
+          // </ul> 类；对照 :373 纯壳链/单分支整壳换型）。判据用 origStart
+          // （li 臂/do-while 改写前的原始端点），非当前 startNode。
+          var pk = peekN.firstChild;
+          while (pk) {
+            if (_zwJusIsHtmlElement(pk, 'li')
+            && !_zwJusIsAncestorOf(pk, origStart) && pk !== origStart) {
+              shellsPure = false;
+            }
+            pk = pk.nextSibling;
+          }
+        }
+        peekO = _zwJusNodeIndex(peekN);
+        peekN = peekN.parentNode;
+      }
+      if (shellsExited > 0 && shellsPure) {
+        startNode = peekN;
+        startOffset = peekO;
+      }
+    } else if (chromeTight) {
       var ctS = _zwJusClampToClosure(startNode, startOffset, host, startClosure, false);
       startNode = ctS[0]; startOffset = ctS[1];
       var ctE = _zwJusClampToClosure(endNode, endOffset, host, endClosure, true);

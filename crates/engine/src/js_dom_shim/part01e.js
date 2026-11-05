@@ -737,7 +737,7 @@
       }
     }
 
-    var newRange = _zwJusBlockExtend(range, false);
+    var newRange = _zwJusBlockExtend(range, mode === 'enable' ? 'list-wide' : false);
 
     // enable：对 other tag 名可编辑元素换型或并入邻接同名列表。
     if (mode === 'enable') {
@@ -745,6 +745,46 @@
       var toConvert = _zwJusCollectContainedNodes(newRange, function (node) {
         return _zwJusIsEditable(node) && _zwJusIsHtmlElement(node, otherTagName);
       }, false);
+      // Chrome delta（语料权威，q16 直选跨嵌套形）：start 直属分支 li 内容
+      // （path kind direct）、end 跨入同一分支的嵌套子列表（list）且最外层
+      // 壳仅一 li 子时，部分含域收集不到的顶层壳前置整壳换型（:478 expected
+      // 双层换壳保尾随文本；对照 :470 list→list 分裂保壳、:448 双 li 残留
+      // UL 分出、:458 跨分支 straddle——li 子数与端点几何三分判据）。
+      var wS = range.startContainer, wE = range.endContainer, stLi = null, enLi = null, gW = 0;
+      while (wS && gW++ < 256) {
+        if (_zwJusIsHtmlElement(wS, 'li')) { stLi = wS; break; }
+        wS = wS.parentNode;
+      }
+      gW = 0;
+      while (wE && gW++ < 256) {
+        if (_zwJusIsHtmlElement(wE, 'li')) { enLi = wE; break; }
+        wE = wE.parentNode;
+      }
+      if (stLi && enLi) {
+        var shell = null, walker = stLi, gS2 = 0;
+        while (walker && gS2++ < 256) {
+          walker = walker.parentNode;
+          if (!walker || !_zwJusIsHtmlElement(walker, ['ol', 'ul'])) break;
+          shell = walker;
+        }
+        var branchS = stLi, branchE = enLi, gS3 = 0, gS4 = 0;
+        while (branchS.parentNode && branchS.parentNode !== shell && gS3++ < 256) branchS = branchS.parentNode;
+        while (branchE.parentNode && branchE.parentNode !== shell && gS4++ < 256) branchE = branchE.parentNode;
+        if (shell && branchS === branchE
+        && _zwListEndpointPathKind(range.startContainer, branchS) === 'direct'
+        && _zwListEndpointPathKind(range.endContainer, branchE) === 'list') {
+          var wLic = 0, wK = shell.firstChild;
+          while (wK) {
+            if (_zwJusIsHtmlElement(wK, 'li')) wLic++;
+            wK = wK.nextSibling;
+          }
+          if (wLic === 1 && _zwJusIsEditable(shell)
+          && _zwJusIsHtmlElement(shell, otherTagName)
+          && toConvert.indexOf(shell) === -1) {
+            toConvert.unshift(shell);
+          }
+        }
+      }
       for (var ci = 0; ci < toConvert.length; ci++) {
         var list = toConvert[ci];
         // Chrome delta（语料权威，q15 census 四面）：嵌套在被换壳 li 内、且
