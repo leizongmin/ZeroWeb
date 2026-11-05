@@ -80,6 +80,15 @@ fn script_timeout_ms() -> u64 {
     runner_flags().script_timeout_ms.unwrap_or(90_000)
 }
 
+/// V8 看门狗预算随 `ZW_TIMEOUT_MULTIPLIER` 同乘（wptrunner `--timeout-multiplier`
+/// 语义：script timeout 与 case/page 预算同源放大；Batch 2 楔死归因实证 ×4 乘数
+/// 只放大 harness/case 面、看门狗未放大 → mega-case 页在 ~90s 脚本窗处被截，
+/// 预算放大无效）。缺省 ×1.0 零行为变化。
+fn script_timeout_scaled_ms() -> u64 {
+    let ms = script_timeout_ms() as f64 * timeout_multiplier();
+    ms.round() as u64
+}
+
 /// 单案 wall-clock 预算——`ZW_CORPUS_CASE_TIMEOUT_SECS` 按跑覆盖（html-syntax-compat
 /// M2 记账：html5lib 全量语料 × document.write 面在 30s 案预算内跑不完，切片跑法用；
 /// 缺省维持 30s，零行为变化）。
@@ -9987,7 +9996,7 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // 随用例序列线性增长后，R260/R262/R263 adjust 对全部历史条目全量扫描 → 每用例
         // 二次方累积（非固定 per-op 成本，放宽超时无解）；同轮已在 shim 侧加跨树根守卫
         // 修复，90s 对修复后的单用例余量充足。
-        script_timeout_ms: script_timeout_ms(),
+        script_timeout_ms: script_timeout_scaled_ms(),
         // security-hardening M2-s1：runner 侧开启 CSP 强制（生产 default off = kill-switch；
         // runner 是 WPT 标尺的实验臂——meta CSP 装配 + script 检查点 + violation 事件经
         // 此生效）。make test 全量门禁走生产默认（off），零 delta 由工作区测试守。

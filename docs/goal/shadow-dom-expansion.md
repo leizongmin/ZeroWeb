@@ -4,7 +4,9 @@
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
 **状态**: Active——M0/M1/M2 完成 + M3 Batch 1/2 落地（2026-11-06，门值 31.4% 回填；
 Batch 2 簇 A unsafe 三 API：gethtml.html 预算内 2,210P/0F，全通道 A/B P→F=0、F→P 2,839），
-M3 余簇：簇 C referenceTarget / 簇 D 甄别 / attachment 物化臂 170F
+Batch 3 楔死归因收口（90s 看门狗 × ShadowRoot 域 declarative 写路径二次累积；
+看门狗随乘落地，×4 复测 gethtml 3,417 行仅 3F），
+M3 余项：残面修复（t8c 协同）/ 簇 C engine glue / 簇 D 甄别 / attachment 物化臂 170F
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -166,12 +168,21 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   （declarative/ 下 zz-cost/cleanup/h1/divx/hang/gethtml-slice/gethtml-trunc/
   knee-probe）——先手 evidence 挂账的 zz-knee-probe 已删，Batch 3 楔死身份
   需重建探针再跑。改动面零语义冲突，未强制消解。
-- **下一步（M3 Batch 3）**：gethtml.html 楔死子测试精确身份（重建
-  zz-knee-probe 逐测试计时 → 引擎侧修复，修复后 gethtml.html 预期 ~4,5xx
-  行全量真实上报）；
-  簇 C referenceTarget（gethtml-serialization 3F + property-reflection 余 1F +
-  reftarget 面 ~139F）实现或具名挂账；attachment safelisted 物化臂 170F 甄别；
-  簇 D 逐项甄别。
+- **Batch 3 楔死归因收口（2026-11-06 下午）**：探针法证链（knee×1/×4 + wedge2 +
+  ABC/ABC2/IJ/I12）定性收口——**无固定楔死子测试**；冻结点 = 90s V8 看门狗墙钟
+  （×1/×4 行数平坦坐实）× **ShadowRoot 域 declarative setHTMLUnsafe 组合写路径
+  每测试 O(N) 增长**（I12 终分：attachShadow 单独、元素域 setHTML 单独均平坦，
+  仅组合增长 1→21ms 边际超线性；t8c 读面索引不覆盖此写路径交互项）。runner
+  侧看门狗随乘数放大已落地（testharness.rs `script_timeout_scaled_ms`），
+  ×4 复测闭环：gethtml 3,417 行仅 3F（真实 referenceTarget Fail）、knee2 div×8
+  3,072 全量完整、二次模型三内容定量自洽。证据：
+  [batch3 rootcause](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-wedge-watchdog-rootcause.md)。
+- **下一步（M3 Batch 3 余项）**：①残面修复——t8c（html-semantics 流
+  callbacks.rs 增量索引）落地后重建 knee/gethtml 复测；ShadowRoot 域写路径残面
+  按证据文档归属读码定位修复（队列折叠兜底挂账）；
+  ②簇 C referenceTarget——dom 层先行已由并行流落地（bfb77f1a3，声明式值捕获+
+  spec 序回写），待 engine glue 与通道复测；attachment safelisted 物化臂 170F
+  甄别；簇 D 逐项甄别。
 
 ## 依赖约束（run-rules §9）
 
