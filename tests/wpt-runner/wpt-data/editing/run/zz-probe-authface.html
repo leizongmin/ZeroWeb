@@ -1,0 +1,227 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ③'-c 作者样式表盲区 + ⑤ fontname face 提示探针：值面钉测——
+     A. 数据源钉：document.styleSheets 必须可达 <link> reset.css 的 #purple 规则
+        （_zwPlainAuthorSnapshot 消费面）。
+     B. 目标面（修复前红）：#purple qV/qI 读数（forecolor qV-before 黑→紫、
+        qI-before 假→真）、#purple apply 等价早退跳包（外层 blue 壳继承→作者规则
+        紫不等→内层包裹）、fontname pre/listing 族 qV-after serif→sans-serif
+        （tag 模式 face 提示近端级联）。
+     C. 守卫面（修复前后恒绿）：a[href] UA 臂、font color 属性、plain serif/
+        fontsize "3"/hilitecolor 透明爬升、sw=true inline 读数、⑫ Arm1 bg-merge
+        载体并值形。
+     语料权威：data/forecolor.js :440-459、data/fontname.js :317-327；
+     include/reset.css（#purple / body serif / :link blue）。 -->
+<title>zz-probe-authface</title>
+<link rel=stylesheet href=../include/reset.css>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+
+// 语料 setupDiv 同款（tests.js :5283）：marker 记录于 text data 内、剥字符后
+// 直接以剥前 idx 为端点 offset——不 splitText 不摘节点。
+function setupFixture(testDiv, fixture) {
+    testDiv.innerHTML = fixture;
+    var startNode = null;
+    var startOffset = 0;
+    var endNode = null;
+    var endOffset = 0;
+    var cur = testDiv;
+    while (true) {
+        if (!cur || (cur !== testDiv
+            && !(cur.compareDocumentPosition(testDiv) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+        if (cur.nodeType !== 3) { cur = nextNode(cur); continue; }
+        var startIdx = cur.data.replace(/\]/g, "").indexOf("[");
+        var endIdx = cur.data.replace(/\[/g, "").indexOf("]");
+        if (startIdx !== -1) { startNode = cur; startOffset = startIdx; }
+        if (endIdx !== -1) { endNode = cur; endOffset = endIdx; }
+        cur.data = cur.data.replace(/[\[\]]/g, "");
+        cur = nextNode(cur);
+    }
+    var r = document.createRange();
+    r.setStart(startNode, startOffset);
+    r.setEnd(endNode, endOffset);
+    return r;
+}
+
+// tests.js 同款 nextNode（文档序前进）。
+function nextNode(node) {
+    if (node.firstChild) return node.firstChild;
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+    while (node) {
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+    }
+    return null;
+}
+
+function runCase(label, fixture, cmds, expectedArr, loose) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var rng = setupFixture(testDiv, fixture);
+    getSelection().removeAllRanges();
+    getSelection().addRange(rng);
+    for (var q = 0; q < cmds.length; q++) {
+        var cm = cmds[q][0].toLowerCase();
+        document.queryCommandIndeterm(cm);
+        document.queryCommandState(cm);
+        document.queryCommandValue(cm);
+    }
+    var rcAll = true;
+    for (var e = 0; e < cmds.length; e++) {
+        if (!document.execCommand(cmds[e][0], false, cmds[e][1])) rcAll = false;
+    }
+    var last = cmds[cmds.length - 1][0].toLowerCase();
+    var qVa = document.queryCommandValue(last);
+    var qIa = document.queryCommandIndeterm(last);
+    var got = testDiv.innerHTML;
+    var strip = function (s) { return s.replace(/[\[\]{}]/g, ""); };
+    test(function() {
+        assert_true(rcAll, label + " exec rc 全 true");
+    }, label + " rc");
+    if (!loose) {
+        test(function() {
+            assert_in_array(strip(got), expectedArr.map(strip), label);
+        }, label + " compare");
+    }
+    return { qVa: qVa, qIa: qIa, got: got };
+}
+
+// 只查询不执行：返回 { qV, qI }（preCmds 先行执行——stylewithcss 等模式开关）。
+function queryOnly(fixture, cmd, preCmds) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var rng = setupFixture(testDiv, fixture);
+    getSelection().removeAllRanges();
+    getSelection().addRange(rng);
+    for (var p = 0; preCmds && p < preCmds.length; p++) {
+        document.execCommand(preCmds[p][0], false, preCmds[p][1]);
+    }
+    return {
+        qV: document.queryCommandValue(cmd),
+        qI: document.queryCommandIndeterm(cmd)
+    };
+}
+
+// —— A. 数据源钉（作者样式表可达性；修复前后恒绿）——
+test(function() {
+    var sheets = document.styleSheets;
+    assert_true(sheets.length >= 1, "styleSheets 非空 len=" + sheets.length);
+    var seen = 0;
+    for (var i = 0; i < sheets.length; i++) {
+        var rules = null;
+        try { rules = sheets[i].cssRules; } catch (e) { rules = null; }
+        if (!rules) continue;
+        for (var j = 0; j < rules.length; j++) {
+            if (rules[j].selectorText
+                && String(rules[j].selectorText).indexOf("#purple") !== -1) seen++;
+        }
+    }
+    assert_true(seen >= 1, "reset.css #purple 规则可达 seen=" + seen);
+}, "S1 author sheet reachable");
+
+// —— B. 目标面（修复后全绿）——
+// #purple qV-before：黑→紫（③'-c 作者规则臂）。
+test(function() {
+    var r = queryOnly('<span id=purple>b[a]r</span>', 'forecolor');
+    assert_equals(r.qV, "rgb(128, 0, 128)", "T1 purple qV-before");
+}, "T1 purple qV");
+// #purple 混合选区 qI-before 假→真 + qV-before 紫首节点（语料 :440 行读面）。
+test(function() {
+    var r = queryOnly('foo<span id=purple>ba[r</span>ba]z', 'forecolor');
+    assert_true(r.qI, "T2 purple qI-before 混合");
+    assert_equals(r.qV, "rgb(128, 0, 128)", "T2 purple qV-before");
+}, "T2 purple qI/qV");
+// #purple apply：外层 blue 壳下内层包裹——apply 半边（等价早退跳包）属
+// ③'-a/b/d 同窗挂账，本刀只落值面。探针上下文对跨块/尾段 wrap 的完整 DOM
+// 序与 corpus 页有既存伪象差（A/B 变更前二进制同红——非本刀面），compare
+// 放宽为机制子串钉测；行级权威归 corpus 门禁。
+var t3 = runCase("T3 purple ba[r ba] swF",
+    'foo<span id=purple>ba[r</span>ba]z',
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]],
+    ['foo<span id="purple">ba<font color="#0000ff">[r</font></span><font color="#0000ff">ba]</font>z'],
+    true /* loose：跨块/尾段 wrap 序探针伪象，子串钉测代 compare */);
+test(function() {
+    assert_true(t3.got.indexOf('<span id="purple">ba<font color="#0000ff">r</font></span>') !== -1,
+        "T3 in-span r 包裹子串");
+    assert_true(t3.got.indexOf('<font color="#0000ff">ba</font>') !== -1,
+        "T3 尾段 ba 包裹子串");
+}, "T3 mechanism substrings");
+test(function() {
+    var r = queryOnly(
+        '<span style="color: rgb(0, 0, 255)">foo<span id=purple>b[a]r</span>baz</span>',
+        'forecolor');
+    assert_equals(r.qV, "rgb(128, 0, 128)", "T4 purple qV-before（外层壳下）");
+}, "T4 purple qV shell");
+// fontname pre/listing 族：tag 模式 qV-after serif→sans-serif + qI-after 真→假
+// （face 提示近端级联；语料 fontname.js pre/listing swF 行）。
+test(function() {
+    var r = queryOnly('[foo<pre>bar</pre>baz]', 'fontname');
+    assert_equals(r.qV, "serif", "T5 pre qV-before");
+    assert_true(r.qI, "T5 pre qI-before 混合");
+}, "T5 pre before");
+// H1 复刻：语料 :318-322 swT 同 fixture case 紧邻 :323 swF——先跑 swT 版
+// （完整 runCase 含 exec），随后 T6 swF 翻红即前置案污染实锤。
+runCase("T6pre swT fixture twin",
+    '[foo<pre>bar</pre>baz]',
+    [["stylewithcss", "true"], ["fontname", "sans-serif"]],
+    ['<span style="font-family:sans-serif">[foo</span><pre><span style="font-family:sans-serif">bar</span></pre><span style="font-family:sans-serif">baz]</span>'],
+    true /* loose */);
+var t6 = runCase("T6 pre swF apply",
+    '[foo<pre>bar</pre>baz]',
+    [["stylewithcss", "false"], ["fontname", "sans-serif"]],
+    ['<font face="sans-serif">[foo</font><pre><font face="sans-serif">bar</font></pre><font face="sans-serif">baz]</font>'],
+    true /* loose */);
+test(function() {
+    assert_true(
+        t6.got.indexOf('<pre><font face="sans-serif">bar</font></pre>') !== -1,
+        "T6 pre 内 bar 包裹子串");
+    assert_equals(t6.qVa, "sans-serif", "T6 pre qV-after");
+    assert_false(t6.qIa, "T6 pre qI-after 均一");
+}, "T6 pre values");
+var t7 = runCase("T7 listing swF apply",
+    '[foo<listing>bar</listing>baz]',
+    [["stylewithcss", "false"], ["fontname", "sans-serif"]],
+    ['<font face="sans-serif">[foo</font><listing><font face="sans-serif">bar</font></listing><font face="sans-serif">baz]</font>'],
+    true /* loose */);
+test(function() {
+    assert_true(
+        t7.got.indexOf('<listing><font face="sans-serif">bar</font></listing>') !== -1,
+        "T7 listing 内 bar 包裹子串");
+    assert_equals(t7.qVa, "sans-serif", "T7 listing qV-after");
+    assert_false(t7.qIa, "T7 listing qI-after 均一");
+}, "T7 listing values");
+
+// —— C. 守卫面（修复前后恒绿，不得翻转）——
+test(function() {
+    assert_equals(
+        queryOnly('<a href=http://www.google.com>foo[bar]baz</a>', 'forecolor').qV,
+        "rgb(0, 0, 255)", "G1 a[href] UA/作者臂");
+    assert_equals(queryOnly('<font color=blue>[foo]</font>', 'forecolor').qV,
+        "rgb(0, 0, 255)", "G2 font color 属性");
+    assert_equals(queryOnly('[foo]', 'fontname').qV, "serif", "G3 plain serif");
+    assert_equals(queryOnly('[foo]', 'fontsize').qV, "3", "G4 plain fontsize 3");
+    assert_equals(queryOnly('[foo]', 'hilitecolor').qV, "rgba(0, 0, 0, 0)",
+        "G5 hilitecolor 透明爬升");
+    assert_equals(
+        queryOnly('<span style="color: rgb(0, 0, 255)">foo[bar]baz</span>',
+            'forecolor', [["stylewithcss", "true"]]).qV,
+        "rgb(0, 0, 255)", "G6 sw=true inline 读数");
+    assert_equals(
+        queryOnly('<b>[foo]</b>', 'forecolor').qV,
+        "rgb(0, 0, 0)", "G7 b 元素不串色（bold 规则非 color）");
+}, "G guards values");
+// ⑫ Arm1 bg-merge 载体并值形守卫（apply 面走 __zwPlainComputed，作者臂 bg 无
+// 规则零影响）。
+runCase("G8 Arm1 bg-merge font6 swT",
+    "<font size=6>[foo]</font>",
+    [["stylewithcss", "true"], ["hilitecolor", "#00FFFF"]],
+    ['<font size="6" style="background-color:rgb(0, 255, 255)">foo</font>',
+     '<font style="background-color:rgb(0, 255, 255)" size="6">foo</font>']);
+</script>

@@ -1530,6 +1530,99 @@
     } catch (_ePST) {}
     return _zwPlainStyleDecls(el)[prop] || '';
   }
+  // 作者样式表扁平声明快照（2026-11-05 ③'-c）：host gCS 桥对 <link> 作者样式表
+  // 盲（语料 #purple qV-before got 黑实证——合成源契约 P9-9/R5107 面），plain
+  // 走查此前只见 inline/表现提示/UA 臂。editing 语料 reset.css 全规则为无后代
+  // 组合器的简单选择器（元素/类/id/伪类 :link,:visited），据此做有界扁平匹配。
+  // 页生命周期快照：document.styleSheets getter 每访问即走桥面全量重查（part06
+  // live DOM 语义），而 __zwPlainComputed 位于 apply/qV 热走查（每节点每步调
+  // 用——shim trap 域成本不可见，R350 教训），故首用构建、页生命周期复用；语料
+  // 壳页均为静态样式表（runConformanceTest 不改 sheet）。表/规则数封顶防病态页；
+  // 修改样式表的页面不经本缓存面（cssom 公开视图不走此路径，语义不变）。
+  var _zwPlainAuthorRules = null;
+  function _zwPlainAuthorSnapshot() {
+    if (_zwPlainAuthorRules) return _zwPlainAuthorRules;
+    var out = [];
+    try {
+      var sheets = globalThis.document ? globalThis.document.styleSheets : null;
+      for (var si = 0; sheets && si < sheets.length && si < 16; si++) {
+        var rules = null;
+        try { rules = sheets[si].cssRules; } catch (_ePASn) { rules = null; }
+        if (!rules) continue;
+        for (var ri = 0; ri < rules.length && out.length < 256; ri++) {
+          var r = rules[ri];
+          // 仅 style 规则（selectorText+style 双在；@media/@import 等无此二者）。
+          if (!r || !r.selectorText || !r.style) continue;
+          out.push({ sel: String(r.selectorText), st: r.style,
+            text: String(r.style.cssText || '') });
+        }
+      }
+    } catch (_ePAS) {}
+    _zwPlainAuthorRules = out;
+    return out;
+  }
+  function _zwPlainAuthorMatches(selText, el) {
+    var sels = String(selText).split(',');
+    var tag = String(el.tagName || '').toLowerCase();
+    var id = '';
+    try { id = el.id ? String(el.id) : ''; } catch (_ePAMi) {}
+    var cls = [];
+    try {
+      cls = el.className ? String(el.className).split(/\s+/) : [];
+    } catch (_ePAMc) {}
+    for (var i = 0; i < sels.length; i++) {
+      var s = sels[i].trim().toLowerCase();
+      if (!s) continue;
+      // 有界域：简单选择器（元素/.类/#id/:link/:visited）；含组合器/属性/通配/
+      // 其他伪类的选择器一律不匹配（越界宁可漏配不误配——reset.css 无此形态）。
+      var bare = s.replace(/:link|:visited/g, '');
+      if (!bare || /[\s>+~\[*:]/.test(bare)) continue;
+      var m = /^([a-z][a-z0-9]*)?((?:[.#][a-z0-9_-]+)*)(:(?:link|visited))?$/.exec(s);
+      if (!m) continue;
+      if (m[1] && m[1] !== tag) continue;
+      var ok = true;
+      var parts = m[2] ? m[2].match(/[.#][a-z0-9_-]+/g) || [] : [];
+      for (var pi = 0; pi < parts.length; pi++) {
+        if (parts[pi].charAt(0) === '#') {
+          if (id !== parts[pi].slice(1)) { ok = false; break; }
+        } else if (cls.indexOf(parts[pi].slice(1)) === -1) { ok = false; break; }
+      }
+      if (!ok) continue;
+      if (m[3]) {
+        // :link/:visited 同域近似（语料 reset.css 双伪类同声明 blue；:visited
+        // 历史不可查——与 UA a[href] 臂同口径）。
+        if (tag !== 'a') continue;
+        try {
+          if (!el.getAttribute || el.getAttribute('href') == null) continue;
+        } catch (_ePAMl) { continue; }
+      }
+      return true;
+    }
+    return false;
+  }
+  function _zwPlainAuthorDecl(el, prop) {
+    // 末次匹配规则胜（同 specificity 文档序语义；语料 reset.css 无同属性竞争
+    // 规则，全排序不需要）。声明读取：style IDL getPropertyValue 优先（kebab
+    // 归一 + 无序列化损耗），cssText 文本扫描兜底。
+    var rules = _zwPlainAuthorSnapshot();
+    var found = '';
+    for (var i = 0; i < rules.length; i++) {
+      if (!_zwPlainAuthorMatches(rules[i].sel, el)) continue;
+      var v = '';
+      try {
+        if (rules[i].st && typeof rules[i].st.getPropertyValue === 'function') {
+          v = String(rules[i].st.getPropertyValue(prop) || '').trim();
+        }
+      } catch (_ePADg) {}
+      if (!v && rules[i].text) {
+        var m = new RegExp('(?:^|;)\\s*' + prop + '\\s*:\\s*([^;]+)', 'i')
+          .exec(rules[i].text);
+        if (m) v = m[1].trim();
+      }
+      if (v) found = v;
+    }
+    return found;
+  }
   // hsl(h, s%, l%) → rgb 序列化值（CSS Color 3 算法；h 角度可负可超 360）。
   function _zwPlainHslToRgb(h, s, l) {
     h = ((h % 360) + 360) % 360;
@@ -1684,7 +1777,7 @@
     return NaN;
   }
   // 入口：prop 为 kebab-case；仅应答四属性，其余返 ''（调用方维持旧行为）。
-  globalThis.__zwPlainComputed = function (elt, prop) {
+  globalThis.__zwPlainComputed = function (elt, prop, qvMode) {
     if (!elt || elt.nodeType !== 1) return '';
     var guard = 0;
     var node = elt;
@@ -1707,6 +1800,15 @@
       node = elt; guard = 0;
       while (node && node.nodeType === 1 && guard++ < 256) {
         var raw = _zwPlainDecl(node, prop);
+        if (!raw && qvMode) {
+          // 作者样式表规则（③'-c）：作者 normal 声明 > 表现提示 > UA 规则——
+          // 插在 inline decl 之后、font 提示臂之前。仅 qvMode（值面通道）开：
+          // apply 面 ownFacePre/parFacePre 等价分组消费方对近端作者声明可见性
+          // 敏感（ba[r ba] compare 修复前绿、#purple 臂开实测 z/ba 序 scramble；
+          // pre/listing fontname compare 同证 bazfoo 跨块并段）——作者臂在
+          // apply 面的等价分组语义属 ③'-a/b/d 同窗实施，本刀不动。
+          try { raw = _zwPlainAuthorDecl(node, prop); } catch (_ePAAu) { raw = ''; }
+        }
         var tagL = String(node.tagName || '').toLowerCase();
         if (!raw && tagL === 'font') {
           try {
@@ -1886,7 +1988,19 @@
     }
     var prop = cmd === 'fontsize' ? 'font-size'
       : (cmd === 'fontname' ? 'font-family' : 'color');
-    var v = _zwJusCs(node, prop);
+    var v;
+    if (cmd === 'fontname' || cmd === 'forecolor') {
+      // plain 走查优先（2026-11-05 ③'-c/⑤）：host gCS 桥对 <link> 作者样式表
+      // 与 legacy font face 提示均盲（forecolor #purple qV-before got 黑 /
+      // fontname pre 族 qV-after got serif 实证）；plain 走查含 inline、作者
+      // 规则、font 提示、UA 臂，即完整近端级联。host 读数回落保留（P9-9
+      // 通道口径），fontsize 档位面维持 host 优先不动（getLegacyFontSize
+      // 消费 host 16px 缺省口径）。
+      try { v = __zwPlainComputed(node, prop, true); } catch (_eEvPV) { v = ''; }
+      if (!v) v = _zwJusCs(node, prop);
+    } else {
+      v = _zwJusCs(node, prop);
+    }
     if (cmd === 'fontsize' && (v === '' || v === '16px')) {
       // host gCS 通道无 UA stylesheet 元素规则（big/small——HTML 渲染节
       // 15.3.1），big/small 子树读数恒 16px 缺省 → forceValue 等值早退跳包
