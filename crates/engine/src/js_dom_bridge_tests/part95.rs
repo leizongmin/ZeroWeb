@@ -278,6 +278,165 @@ fn xhr_prototype_method_detached_this_t43() {
     assert_eq!(parts[1], "1", "prototype.open.call(xhr,…) 委派生效");
 }
 
+// T44（site-optimizer perf-mem T44）：PluginArray/MimeTypeArray/Plugin 接口对象形状钉①。
+// 掘金 cdn-retry bundle（bundle-dcf007.js headless 检测器，五检测器之一）以标识符直引
+// `PluginArray.prototype`——接口全局缺失即 ReferenceError 顶层断链；修复前 shim 无此三
+// 构造器、navigator.plugins 为 plain 空对象（part02 字面量 _emptyCollection()）。
+// spec：HTML §system-state #navigatorplugins（接口对象暴露，WebIDL §interface-objects）；
+// 形状对照 Chrome 活体实测（run 目录 evidence/t44-chrome-iface.json，2026-11-06）：
+// 构造器 name=<接口名>、length=0；原型 @@toStringTag 同名 {w:false,e:false,c:true}
+//（T42 core-js Ke 臂可重定义同款）；原型 gOPN 键序 PluginArray
+// [length,item,namedItem,refresh,constructor]、MimeTypeArray [length,item,namedItem,
+// constructor]、Plugin [name,filename,description,length,item,namedItem,constructor]
+//（constructor 为 own——WebIDL 接口原型对象 {w:true,e:false,c:true}，赋值新建 own
+// 默认 enumerable:false 恰合）；原型直链 Object.prototype（三接口均无父接口）。
+// https://html.spec.whatwg.org/multipage/system-state.html#navigatorplugins
+// https://webidl.spec.whatwg.org/#interface-objects
+#[test]
+fn plugin_iface_objects_shape_t44() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var P44 = ['PluginArray','MimeTypeArray','Plugin'];
+             var wantKeys44 = {PluginArray:'length,item,namedItem,refresh,constructor',
+                               MimeTypeArray:'length,item,namedItem,constructor',
+                               Plugin:'name,filename,description,length,item,namedItem,constructor'};
+             globalThis.__r44 = P44.map(function (n) {
+               var C = globalThis[n];
+               if (typeof C !== 'function') return n + ':absent';
+               if (C.name !== n || C.length !== 0) return n + ':ctor';
+               var d = Object.getOwnPropertyDescriptor(C.prototype, Symbol.toStringTag);
+               if (!d || d.value !== n || d.writable !== false || d.enumerable !== false
+                   || d.configurable !== true) return n + ':tag';
+               try {
+                 Object.defineProperty(C.prototype, Symbol.toStringTag, { value: n, configurable: true });
+               } catch (e) { return n + ':THROW'; }
+               var keys = Object.getOwnPropertyNames(C.prototype).join(',');
+               if (keys !== wantKeys44[n]) return n + ':keys=' + keys;
+               if (Object.getPrototypeOf(C.prototype) !== Object.prototype) return n + ':chain';
+               return n + ':ok';
+             }).join('|');",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r44").unwrap().value;
+    for name in ["PluginArray", "MimeTypeArray", "Plugin"] {
+        // 须按段名精确取（starts_with 会把 "PluginArray:ok" 误配给 "Plugin"）。
+        let seg = out.split('|').find(|s| s.split(':').next() == Some(name)).unwrap_or("");
+        assert_eq!(
+            seg,
+            &format!("{name}:ok"),
+            "{name} 接口对象须按 WebIDL interface object 形状在案（name/length/toStringTag c:true/原型键序/原型链）"
+        );
+    }
+}
+
+// T44 钉②：原型成员描述符面——PluginArray/MimeTypeArray 的 length 为只读访问器
+//（WebIDL readonly attribute：gOPD 有 get 无 set；e/c=true，Chrome gOPD 活体实测），
+// 操作成员 item/namedItem/refresh 为数据属性 {w,e,c}=true（WebIDL §operations，T43
+// XHR 同款）；Plugin 的 name/filename/description/length 只读访问器（无 set——实例
+// 字段只读的机制面；空插件集下无自然实例，钉描述符形态即钉只读语义）。
+#[test]
+fn plugin_proto_member_descriptors_t44() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var PA44 = globalThis.PluginArray, MA44 = globalThis.MimeTypeArray, PL44 = globalThis.Plugin;
+             if (typeof PA44 !== 'function' || typeof MA44 !== 'function' || typeof PL44 !== 'function') {
+               globalThis.__r44 = 'absent';
+             } else {
+               var seg44 = function (o, k) {
+                 var d = Object.getOwnPropertyDescriptor(o, k);
+                 if (!d) return k + ':none';
+                 if (typeof d.get === 'function') {
+                   return k + ':acc:' + (d.set === undefined ? 'noset' : 'set') + ':' + d.enumerable + ':' + d.configurable;
+                 }
+                 return k + ':' + d.writable + ':' + d.enumerable + ':' + d.configurable + ':' + typeof d.value;
+               };
+               globalThis.__r44 = [
+                 seg44(PA44.prototype,'length'), seg44(PA44.prototype,'item'), seg44(PA44.prototype,'namedItem'), seg44(PA44.prototype,'refresh'),
+                 seg44(MA44.prototype,'length'), seg44(MA44.prototype,'item'), seg44(MA44.prototype,'namedItem'),
+                 seg44(PL44.prototype,'name'), seg44(PL44.prototype,'filename'), seg44(PL44.prototype,'description'), seg44(PL44.prototype,'length'),
+                 seg44(PL44.prototype,'item'), seg44(PL44.prototype,'namedItem')
+               ].join('|');
+             }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r44").unwrap().value;
+    let expect = [
+        "length:acc:noset:true:true",
+        "item:true:true:true:function",
+        "namedItem:true:true:true:function",
+        "refresh:true:true:true:function",
+        "length:acc:noset:true:true",
+        "item:true:true:true:function",
+        "namedItem:true:true:true:function",
+        "name:acc:noset:true:true",
+        "filename:acc:noset:true:true",
+        "description:acc:noset:true:true",
+        "length:acc:noset:true:true",
+        "item:true:true:true:function",
+        "namedItem:true:true:true:function",
+    ];
+    let segs: Vec<&str> = out.split('|').collect();
+    assert_eq!(segs.len(), expect.len(), "十三成员逐一在案：{out}");
+    for (seg, want) in segs.iter().zip(expect.iter()) {
+        assert_eq!(seg, want, "Plugin 族原型成员描述符须为 WebIDL 形：{seg}");
+    }
+}
+
+// T44 钉③：navigator.plugins/mimeTypes 重铸实例面——instanceof、原型链同一性、
+// toString 标签、空插件集语义（length 0 / item / namedItem 恒 null / refresh no-op）、
+// [SameObject] 身份稳定、无 own 键（Chrome parity：length 上移原型访问器，own 面
+// 为空——JSON.stringify 形态同 Chrome）。修复前 plain 空对象（无接口原型）全臂红。
+#[test]
+fn navigator_plugins_instance_shapes_t44() {
+    let mut sandbox = t42_sandbox!("<html><body></body></html>");
+    sandbox
+        .execute(
+            "var np44 = navigator.plugins, nm44 = navigator.mimeTypes;
+             var PA44 = globalThis.PluginArray, MA44 = globalThis.MimeTypeArray;
+             if (typeof PA44 !== 'function' || typeof MA44 !== 'function') {
+               globalThis.__r44 = 'absent';
+             } else {
+               globalThis.__r44 = [
+                 String(np44 instanceof PA44),
+                 String(Object.getPrototypeOf(np44) === PA44.prototype),
+                 String(Object.prototype.toString.call(np44)),
+                 String(nm44 instanceof MA44),
+                 String(Object.prototype.toString.call(nm44)),
+                 String(np44.length), String(np44.item(0)), String(np44.namedItem('PDF Viewer')),
+                 String(nm44.length), String(nm44.item(0)), String(nm44.namedItem('application/pdf')),
+                 typeof np44.refresh, String(np44.refresh()),
+                 String(np44 === navigator.plugins), String(nm44 === navigator.mimeTypes),
+                 String(Object.getOwnPropertyNames(np44).join(',')),
+                 String('length' in np44),
+                 String(JSON.stringify(np44)),
+               ].join('|');
+             }",
+        )
+        .unwrap();
+    let out = sandbox.execute("globalThis.__r44").unwrap().value;
+    let parts: Vec<&str> = out.split('|').collect();
+    assert_eq!(parts[0], "true", "navigator.plugins instanceof PluginArray");
+    assert_eq!(parts[1], "true", "原型链同一性（getPrototypeOf === PluginArray.prototype）");
+    assert_eq!(parts[2], "[object PluginArray]", "toString 标签（原型 @@toStringTag）");
+    assert_eq!(parts[3], "true", "navigator.mimeTypes instanceof MimeTypeArray");
+    assert_eq!(parts[4], "[object MimeTypeArray]");
+    assert_eq!(parts[5], "0", "空插件集 length（诚实空集，不做条目内容模仿）");
+    assert_eq!(parts[6], "null", "item(0) 越界 null");
+    assert_eq!(parts[7], "null", "namedItem 无命中 null");
+    assert_eq!(parts[8], "0", "mimeTypes 空集 length");
+    assert_eq!(parts[9], "null");
+    assert_eq!(parts[10], "null");
+    assert_eq!(parts[11], "function", "refresh 操作在原型");
+    assert_eq!(parts[12], "undefined", "refresh() 空集 no-op 返回 undefined");
+    assert_eq!(parts[13], "true", "[SameObject] plugins 身份稳定");
+    assert_eq!(parts[14], "true", "[SameObject] mimeTypes 身份稳定");
+    assert_eq!(parts[15], "", "实例无 own 键（length 上移原型，Chrome parity）");
+    assert_eq!(parts[16], "true", "length 经原型可见");
+    assert_eq!(parts[17], "{}", "JSON.stringify 空 own 面（同 Chrome）");
+}
+
 // T43 B6 邻近变体（TV-F3）：iframe 包装路。part05.js IframeXMLHttpRequest 构造真实
 // XMLHttpRequest 实例（stamp _zwXhrBaseUrl/_zwXhrFetch own 属性）并共享主 realm 原型——
 // 原型委派不受实例自有附加属性遮蔽（委派器只查 this 的 _zwImpl_<name> 槽），wrapper

@@ -1698,6 +1698,81 @@
       Object.setPrototypeOf(globalThis.Attr.prototype, globalThis.Node.prototype);
     }
   } catch (_eAttr128) {}
+  // T44（site-optimizer perf-mem T44）：PluginArray / MimeTypeArray / Plugin 接口对象
+  // 挂载 + navigator.plugins/mimeTypes 重铸接口实例。掘金 cdn-retry bundle（headless
+  // 五检测器族之一）以标识符直引 `PluginArray.prototype`，接口全局缺失即 ReferenceError
+  // 顶层断链；修复前 navigator.plugins 为 plain 空对象（part02 字面量 _emptyCollection()，
+  // __proto__ 非 PluginArray.prototype——检测器第二操作数不符，实例重铸后两操作数均为
+  // 真值对象，检测器如实返回 false 通过）。
+  // spec：HTML §system-state #navigatorplugins / #pluginarray；WebIDL §interface-objects
+  //（接口对象）+ §interface-prototype-object（原型形状）。形状对照 Chrome 活体实测
+  //（perf-mem-20261023 run 目录 evidence/t44-chrome-iface.json，2026-11-06；part95
+  // T44 三钉常驻：构造器/描述符/实例面）。诚实范围：空插件集——headless 无插件枚举，
+  // Chrome 的 5 条 PDF 家族条目是其实现细节不模仿（上游 plugins-and-mimetypes.html 按
+  // navigator.pdfViewerEnabled 分支，falsy 侧空集断言即本形态；该属性 part02 字面量
+  // 同切片补挂 false）。本块载入期直执行（2026-11-05 学习条目：载入期消费点不可依赖
+  // 运行核闭包 helper——此处仅用平台内置，无 shim 机具依赖），try 包裹防载入期撕裂。
+  // https://html.spec.whatwg.org/multipage/system-state.html#navigatorplugins
+  // https://webidl.spec.whatwg.org/#interface-objects
+  globalThis.PluginArray = globalThis.PluginArray || function PluginArray() {};
+  globalThis.MimeTypeArray = globalThis.MimeTypeArray || function MimeTypeArray() {};
+  globalThis.Plugin = globalThis.Plugin || function Plugin() {};
+  (function () {
+    var _pa44 = globalThis.PluginArray, _ma44 = globalThis.MimeTypeArray, _pl44 = globalThis.Plugin;
+    var _len44 = function () { return 0; };
+    var _null44 = function () { return null; };
+    try {
+      // 成员面：length 只读访问器（e/c=true——Chrome gOPD 活体实测；无 set 即 WebIDL
+      // readonly attribute 机制），操作成员 {w,e,c}=true（WebIDL §operations，T43 XHR
+      // 同款）。空集语义：length 恒 0、item/namedItem 恒 null、refresh() no-op。
+      // 键序 = Chrome gOPN 实测（spec member 序）——constructor 置末定义。
+      Object.defineProperty(_pa44.prototype, 'length', { get: _len44, enumerable: true, configurable: true });
+      Object.defineProperty(_pa44.prototype, 'item', { value: _null44, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(_pa44.prototype, 'namedItem', { value: _null44, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(_pa44.prototype, 'refresh', { value: function () {}, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(_ma44.prototype, 'length', { get: _len44, enumerable: true, configurable: true });
+      Object.defineProperty(_ma44.prototype, 'item', { value: _null44, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(_ma44.prototype, 'namedItem', { value: _null44, writable: true, enumerable: true, configurable: true });
+      // Plugin 字段 name/filename/description/length 只读访问器（无 set——实例字段只读
+      // 机制面；空插件集无自然实例，getter 返 undefined 即「无数据」，不伪造值）。
+      var _plugFld44 = function () { return undefined; };
+      Object.defineProperty(_pl44.prototype, 'name', { get: _plugFld44, enumerable: true, configurable: true });
+      Object.defineProperty(_pl44.prototype, 'filename', { get: _plugFld44, enumerable: true, configurable: true });
+      Object.defineProperty(_pl44.prototype, 'description', { get: _plugFld44, enumerable: true, configurable: true });
+      Object.defineProperty(_pl44.prototype, 'length', { get: _plugFld44, enumerable: true, configurable: true });
+      Object.defineProperty(_pl44.prototype, 'item', { value: _null44, writable: true, enumerable: true, configurable: true });
+      Object.defineProperty(_pl44.prototype, 'namedItem', { value: _null44, writable: true, enumerable: true, configurable: true });
+    } catch (_e44a) {}
+    // @@toStringTag：接口原型对象 {w:false,e:false,c:true}——defineProperty 仅 value +
+    // configurable 时 writable/enumerable 缺省 false 恰合；T42 dom-iterables 循环在册
+    // 此三接口，core-js Ke 臂（configurable:true 重定义）零抛（part95 T42 全循环钉）。
+    try {
+      Object.defineProperty(_pa44.prototype, Symbol.toStringTag, { value: 'PluginArray', configurable: true });
+      Object.defineProperty(_ma44.prototype, Symbol.toStringTag, { value: 'MimeTypeArray', configurable: true });
+      Object.defineProperty(_pl44.prototype, Symbol.toStringTag, { value: 'Plugin', configurable: true });
+    } catch (_e44b) {}
+    // own constructor（WebIDL 接口原型对象 {writable:true, enumerable:false,
+    // configurable:true}——赋值新建 own 属性默认 enumerable:false 恰合）。函数创建时
+    // 原型自带 constructor 在键序首位，delete 后重赋置末（Chrome gOPN 键序尾位）。
+    delete _pa44.prototype.constructor;
+    _pa44.prototype.constructor = _pa44;
+    delete _ma44.prototype.constructor;
+    _ma44.prototype.constructor = _ma44;
+    delete _pl44.prototype.constructor;
+    _pl44.prototype.constructor = _pl44;
+    // navigator.plugins/mimeTypes 重铸（part02 plain 空对象 → 接口实例）：空集行为
+    // 不变（length/item/namedItem 语义同前值），instanceof/原型链/toString 达标；
+    // e:true 保持 navigator 枚举面不变，WorkerNavigator（part05）直读面同值。
+    // [SameObject]：defineProperty 固定值——plugins/mimeTypes 身份逐读稳定。
+    try {
+      if (globalThis.navigator && typeof globalThis.navigator === 'object') {
+        Object.defineProperty(globalThis.navigator, 'plugins',
+          { value: Object.create(_pa44.prototype), writable: true, enumerable: true, configurable: true });
+        Object.defineProperty(globalThis.navigator, 'mimeTypes',
+          { value: Object.create(_ma44.prototype), writable: true, enumerable: true, configurable: true });
+      }
+    } catch (_e44c) {}
+  })();
   // js-dom M4 R122：`attr.value = v` 的**写回传播**（spec `dom-attr-value` setter——set an attribute
   // 值须经「change an attribute」更新所属元素）。_zwMakeAttr 建的是 own 数据属性，写 value 不传播
   // （WPT "Attribute values should not be parsed."：attr.value='Y&lt;' 后 el.getAttribute('x')
