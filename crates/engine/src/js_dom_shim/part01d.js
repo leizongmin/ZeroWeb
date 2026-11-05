@@ -1365,6 +1365,13 @@
         continue;
       }
       if (cssFlag && _zwJusTag(cw) === 'span') continue;
+      // ③'-fs 收口：下方 flag-form 重物化臂（⑨）本属 css 模式——③'-b 抽走
+      // 函数首 tag 模式早退后，tag 模式 font 载体（fontsize/fontname/forecolor
+      // carry）误入此臂被换形 span CSS 形（fontsize :438 straddle A/B 实证：
+      // a04dd1522 前绿 got=font 壳恒一，539200c21 后红 got=span x-small）。
+      // tag 模式在此停臂（镜像改前整函数早退语义），font 载体保持 legacy
+      // attr 形；forecolor tag span 载体由上方 ③'-b 臂消费后 continue 不及此。
+      if (!cssFlag) continue;
       var spec = _zwVaSpecifiedValue(cw, command);
       if (spec === null) continue;
       var nested = false;
