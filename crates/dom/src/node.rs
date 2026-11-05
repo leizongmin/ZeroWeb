@@ -377,6 +377,13 @@ pub struct NodeData {
     pub parent: Option<NodeId>,
     /// 子节点列表（按文档顺序）。
     pub children: Vec<NodeId>,
+    /// 合成节点（渲染注入的 ::before/::after 伪元素替身——`zw-pseudo` 盒、伪文本
+    /// 子、content:url 图片等）。伪元素不属于文档树（CSS Pseudo-Elements §1，
+    /// https://www.w3.org/TR/css-pseudo-4/#generating-pseudo-elements）：不进
+    /// innerHTML/outerHTML 序列化。2026-11-04 zinc 定谳：无标记时序列化把合成节点
+    /// 写进 html 快照，re-parse 后成为真实布局参与者（github trending 100+ 幽灵
+    /// `zw-pseudo` 灌进 flex 容器 → 右侧下拉 114×8 塌缩），与原始字节渲染分歧。
+    pub synthetic: bool,
 }
 
 impl NodeData {
@@ -386,6 +393,7 @@ impl NodeData {
             kind,
             parent: None,
             children: Vec::new(),
+            synthetic: false,
         }
     }
 

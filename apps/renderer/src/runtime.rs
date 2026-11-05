@@ -1227,6 +1227,13 @@ impl RendererRuntime {
             changed
         });
         if changed {
+            // t-zinc（AsyncPageLoad.html 突变同步）：drain 已把活内容写入 cached_html——
+            // 同步 loader 文档快照，使后续 rerender band（字体/资源到达触发的预算会话
+            // 重建）从当前内容重渲染而非初始 fetch 原文（band 换代抹掉已应用突变 =
+            // github.com/trending collapsed stale 根因，zinc-live2/4 活体证据）。
+            if let Some(pending) = &mut self.pending_load {
+                pending.load.sync_html(self.cached_html.clone());
+            }
             self.execute_new_dynamic_scripts();
             self.try_publish_progress(true)?;
         }
@@ -2530,6 +2537,12 @@ return JSON.stringify({{action:action,name:name,val:val}});\
             let html = wv.html_content().to_string();
             if !html.is_empty() {
                 self.cached_html = html;
+                // t-zinc（AsyncPageLoad.html 突变同步）：pull 咽喉同点同步 loader 快照
+                //（T68 表单动作等路径），使 rerender band 与活内容同源（drain 侧同步点
+                // 见 drain_pending_script_mutations_inner）。
+                if let Some(pending) = self.pending_load.as_mut() {
+                    pending.load.sync_html(self.cached_html.clone());
+                }
             }
             // P9-9/R5107：外部 CSS 同步进 js worker（progressive paint publish 咽喉——
             // fetch_page_images 装入 cached_css 后先于脚本阶段到达）。worker 在下一次

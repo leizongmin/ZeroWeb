@@ -87,6 +87,13 @@ impl BudgetedRenderSession {
         self.step
     }
 
+    /// 会话源 HTML 快照（会话创建时的输入）。带推进期间页面突变同步进上层
+    /// loader 快照后，完成臂据与本值的差异判定源漂移（AsyncPageLoad::advance_render
+    /// 的 Complete 分支）。
+    pub fn source_html(&self) -> &str {
+        &self.html
+    }
+
     /// 是否已完成。
     pub fn is_complete(&self) -> bool {
         self.step == BudgetStep::Done
@@ -109,7 +116,6 @@ impl RenderPipeline {
         if session.step == BudgetStep::Done {
             return BudgetAdvance::Complete;
         }
-
         let deadline = Instant::now() + std::time::Duration::from_secs_f64(budget_ms / 1000.0);
 
         // S1 文档级指纹短路（设计卡 §4-S1；键范式与 kill-switch 见

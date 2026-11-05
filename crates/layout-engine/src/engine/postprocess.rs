@@ -89,6 +89,42 @@ fn is_shiftable_in_flow_block(box_node: &LayoutBox) -> bool {
     box_node.is_block_level && matches!(box_node.float, FloatValue::None) && !box_node.is_absolute && !box_node.is_fixed
 }
 
+/// css-flexbox-1 §4（https://www.w3.org/TR/css-flexbox-1/#flex-items）：容器是否为
+/// row 方向 flex——item 沿水平 main axis 排布、不参与块流垂直堆叠，块流式「子高
+/// delta → 兄弟位移 + 父高增量」记账不适用（auto 交叉尺寸 = max in-flow item
+/// bottom）。column 方向 main 轴即垂直，块流近似成立，不在此列。
+fn is_row_flex_container(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+        matches!(s.display, DisplayValue::Flex | DisplayValue::InlineFlex)
+            && matches!(
+                s.flex_direction,
+                FlexDirectionValue::Row | FlexDirectionValue::RowReverse
+            )
+    })
+}
+
+/// row flex 容器 auto 交叉尺寸重算：height = max(in-flow item bottom) + padding/border。
+/// definite Px 高不动（taffy 已按定值定尺）。与 table.rs 同名语义共享同一判据。
+fn recompute_row_flex_cross_size(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let definite = box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| matches!(s.height, LengthValue::Px(_)));
+    if definite {
+        return;
+    }
+    let mut max_bottom = 0.0_f32;
+    for c in &box_node.children {
+        if c.is_absolute || c.is_fixed || !matches!(c.float, FloatValue::None) {
+            continue;
+        }
+        max_bottom = max_bottom.max(c.y + c.height);
+    }
+    let padding_border = box_node.padding_top + box_node.padding_bottom + box_node.border_top + box_node.border_bottom;
+    box_node.height = max_bottom + padding_border;
+    box_node.content_height = max_bottom;
+}
+
 #[derive(Clone, Copy)]
 struct PostprocessEnvFlag(Option<bool>);
 
@@ -3087,6 +3123,14 @@ pub(super) fn clamp_percentage_max_height(
         let new_extent = box_node.children[i].y + box_node.children[i].height + box_node.children[i].margin_bottom;
         let delta = new_extent - old_extent;
         if shiftable_child && delta.abs() > 0.5 {
+            // row flex 容器：item 不参与块流（css-flexbox-1 §4）——不位移兄弟、
+            // auto 交叉尺寸按 max item bottom 重算（definite 高不动）。此前块流
+            // 增量记账把兄弟 y 平移 delta、容器高 +delta（空 display:table item 经
+            // 表收缩/§17.5.3 下限往返后 github trending flex 行错位实证）。
+            if is_row_flex_container(box_node, styles) {
+                recompute_row_flex_cross_size(box_node, styles);
+                continue;
+            }
             for sibling in box_node.children.iter_mut().skip(i + 1) {
                 if is_shiftable_in_flow_block(sibling) {
                     sibling.y += delta;

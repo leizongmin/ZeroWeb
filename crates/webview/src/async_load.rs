@@ -452,6 +452,21 @@ impl AsyncPageLoad {
         }
     }
 
+    /// 同步 loader 文档快照到当前活内容（DOM 突变 drain 后调用）。
+    ///
+    /// `self.html` 在 document fetch 完成后写定为**初始 fetch 原文**且此前从不随页面
+    /// 脚本突变更新——后续 rerender band（字体/资源到达）经 [`Self::advance_render`]
+    /// 从该原文换代 `cached_doc` 并回写 `cached_html`，把已应用的 JS 注入内容整体抹掉
+    /// （2026-11-04 github.com/trending stale 定谳：collapsed 态 75s 不自愈，resize 经
+    /// 突变 drain 才归位）。宿主在每次突变 drain 后调用本方法，使 band 重渲染与
+    /// 突变/resize 路径同源（同一活内容快照）。仅当文档已装载（`html` 为 Some）时
+    /// 覆盖——装载早期不伪造。
+    pub fn sync_html(&mut self, html: String) {
+        if self.html.is_some() {
+            self.html = Some(html);
+        }
+    }
+
     /// 放弃仍未返回的非关键子资源，并完成当前文档的最终渲染。
     ///
     /// 文档和样式已经成功呈现后，卡住的图片或字体不应把可用页面替换为宿主错误页。
@@ -659,14 +674,17 @@ impl AsyncPageLoad {
             }
             webview.set_cached_content(&html, &self.css);
             tracing::info!(url = %self.url, stage = ?self.stage, "page load: budget render start");
-            // bing-t5（C3+C4 根因）：CSS Custom Properties var() 替换——
-            // 在进入渲染前做文本级替换（collect --name: value → substitute var(--name, fallback)）。
-            let css_for_render = substitute_css_vars_text(&self.css);
             // 首个渲染预算会话在此创建（R5081 修复恢复：e776d6875「移除 T5DIAG」误删本行
             // ——render_session 恒 None → 下方 expect("session") 首渲染即 panic，renderer
             // 进程退出（webdriver 导航族 IPC 通道已关闭 ×8 即此根因）。原引入见
             // bing-t5 budget session 落地提交。
-            self.render_session = Some(BudgetedRenderSession::new(html, css_for_render));
+            // css-variables-1 §3：会话用 raw css——var() 由 style-system 原生级联解析
+            //（resolve_var_in_cascaded + R2873 pending 简写）。bing-t5 期此处的文本级
+            // var() 预替换（无冲突门/@property 跳过，比 render_html 更激进）已随
+            // render_html 侧一同移除：替换形态三路不一致（预算会话/repaint 路径）使
+            // 同 DOM 渲染出不同几何（2026-11-04 github.com/trending 资源带重渲染
+            // stale 定谳）。全路径同源收敛。
+            self.render_session = Some(BudgetedRenderSession::new(html, self.css.clone()));
         }
 
         let session = self.render_session.as_mut().expect("session");
@@ -700,8 +718,18 @@ impl AsyncPageLoad {
                     apply_ms,
                     "page load: budget render complete"
                 );
+                // 残余竞态封口（2026-11-04 zinc 定谳的内容分量）：带推进期间 drain
+                // 应用的 DOM 突变经 sync_html 写入 self.html，但本带渲染的是会话
+                // 起点快照——完成换代直接丢弃会报废这些突变（活 cached_doc 不受影响，
+                // 故 resize 即归位而 band 后几何回退 stale，zinc-live4 在案）。检测
+                // 源漂移则再排一带，用最新 html 重渲染收敛；等不到下一带的资源有限
+                // 页面由此不再滞留 stale 帧。
+                let source_drifted = self.html.as_deref() != Some(session.source_html());
                 self.render_session = None;
                 self.budget_pending = false;
+                if source_drifted {
+                    self.budget_pending = true;
+                }
                 match self.stage {
                     // 留在 FirstPaint，由 tick() 调用 begin_stylesheet_fetch。
                     PageLoadStage::FirstPaint => {}
@@ -1549,19 +1577,6 @@ fn extract_document_title(html: &str) -> Option<String> {
     None
 }
 
-/// bing-t5（C3+C4 根因，2026-10-11）：CSS 文本级 CSS Custom Properties 替换。
-/// 收集 `--name: value` 声明 → 替换 `var(--name, fallback)`（迭代至收敛，最多 8 层）。
-/// 供 `advance_render` 在渲染前调用；实现委托 engine（CI-2026-10-13 起单一实现，
-/// 含 `!important` 级联合并——此前 webview 本地副本与 engine 各一份，同名合并
-/// 语义曾双份同错）。
-fn substitute_css_vars_text(css: &str) -> String {
-    let props = zero_engine::pipeline::collect_custom_properties(css);
-    if props.is_empty() {
-        return css.to_string();
-    }
-    zero_engine::pipeline::substitute_vars(css, &props)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2079,6 +2094,50 @@ mod tests {
         assert!(!load.budget_pending);
         assert!(!load.tick(&mut wv, &mut host, 500.0));
         assert!(!load.budget_pending);
+    }
+
+    /// t-zinc 常驻回归：预算会话推进期间经 [`AsyncPageLoad::sync_html`] 同步进
+    /// loader 的 DOM 突变，不因会话完成换代报废——完成点检测源漂移重挂
+    /// `budget_pending`，下一带从最新 html 重渲染（2026-11-04 github.com/trending
+    /// collapsed stale 75s 不自愈形态：band 后几何回退、resize 才归位，zinc-live4
+    /// 活体证据）。
+    #[test]
+    fn budget_band_after_source_drift_renders_latest_html() {
+        let html = r#"<html><body><p>seed</p></body></html>"#;
+        let mutated = r#"<html><body><p>seed</p><p>drained</p></body></html>"#;
+        let mut load = AsyncPageLoad::from_html("https://example.com/", html.to_string());
+        let mut wv = WebView::new(WebViewConfig::default());
+
+        // 会话建立但不推进（0 预算：deadline 即到期，步进不执行）。
+        load.advance_render(&mut wv, 0.0);
+        assert!(load.render_session.is_some(), "预算会话应建立");
+        assert_eq!(
+            load.render_session.as_ref().unwrap().source_html(),
+            html,
+            "会话源应为初始 fetch 原文"
+        );
+
+        // 宿主在突变 drain 后同步活内容进 loader（sync_html 契约）。
+        load.sync_html(mutated.to_string());
+
+        // 本带以会话起点快照完成 → 源漂移应重挂 budget_pending 再排一带。
+        load.advance_render(&mut wv, 5000.0);
+        assert!(load.render_session.is_none(), "会话应完成换代");
+        assert!(load.budget_pending, "源漂移应重挂 budget_pending");
+
+        // 重排带从 sync 后最新 html 渲染（fresh WebView 无指纹缓存，必走全量）。
+        load.advance_render(&mut wv, 0.0);
+        assert!(load.render_session.is_some(), "漂移重挂后应重建会话");
+        assert_eq!(
+            load.render_session.as_ref().unwrap().source_html(),
+            mutated,
+            "重排带应从 sync 后最新 html 渲染"
+        );
+
+        // 收敛带完成后无漂移则不再重挂（防无限带）。
+        load.advance_render(&mut wv, 5000.0);
+        assert!(load.render_session.is_none());
+        assert!(!load.budget_pending, "无漂移时不应重挂");
     }
 
     /// R1795：CSS `url()` 图片引用（background-image）在 async 路径亦被抓取。

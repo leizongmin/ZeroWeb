@@ -624,7 +624,13 @@ impl Document {
             None => return node, // fallback: 如果节点不存在，返回自身
         };
 
+        // synthetic 标记随克隆保留（伪元素替身克隆后仍是替身——序列化排除等语义
+        // 不变，否则 cloneNode(true) 会把合成节点物化成真实节点）。
+        let synthetic = self.nodes.get(node).map(|n| n.synthetic).unwrap_or(false);
         let new_id = self.nodes.insert(NodeData::new(cloned_kind));
+        if let Some(nd) = self.nodes.get_mut(new_id) {
+            nd.synthetic = synthetic;
+        }
 
         // WC-M2（spec clone a node 步骤 6.7）：template 克隆须把 contents 深复制进
         // 新 template 的 contents（新 fragment 节点，不在新 template 的 children）。
@@ -679,7 +685,12 @@ impl Document {
             None => return node_id,
         };
 
+        // synthetic 标记随导入保留（同 clone_node：替身导入后仍是替身）。
+        let synthetic = self.nodes.get(node_id).map(|n| n.synthetic).unwrap_or(false);
         let new_id = self.nodes.insert(NodeData::new(cloned_kind));
+        if let Some(nd) = self.nodes.get_mut(new_id) {
+            nd.synthetic = synthetic;
+        }
 
         // WC-M2：template contents 随导入深复制（同 clone_node）。
         if deep {
@@ -1288,7 +1299,11 @@ impl Document {
                     // 空文本节点，标记移除
                     to_remove.push(child);
                 } else {
-                    // 收集后续相邻的文本节点，合并到当前节点
+                    // 收集后续相邻的文本节点，合并到当前节点。
+                    // synthetic 边界屏障（见 [`NodeData::synthetic`]）：伪元素替身文本
+                    // 不与真实文本互相合并——替身内容并进真实节点会经 textContent/
+                    // 序列化泄漏；真实内容并进替身则随替身从序列化消失，双侧都是丢失。
+                    let child_synthetic = self.nodes.get(child).map(|n| n.synthetic).unwrap_or(false);
                     let mut j = i + 1;
                     while j < len {
                         let next = children[j];
@@ -1298,6 +1313,10 @@ impl Document {
                             .map(|n| matches!(n.kind, NodeKind::Text(_)))
                             .unwrap_or(false);
                         if !next_is_text {
+                            break;
+                        }
+                        let next_synthetic = self.nodes.get(next).map(|n| n.synthetic).unwrap_or(false);
+                        if next_synthetic != child_synthetic {
                             break;
                         }
                         // 追加文本内容到当前节点
