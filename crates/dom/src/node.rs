@@ -365,6 +365,12 @@ pub struct ShadowRootData {
     /// 命令式：init 同名字段）——getHTML({serializableShadowRoots}) 翻转与
     /// 序列化回写 `shadowrootserializable` 的资格标记。
     pub serializable: bool,
+    /// referenceTarget（声明式：`shadowrootreferencetarget` 属性值原样捕获，
+    /// 空值属性捕获为空串；命令式：init `referenceTarget`）——None 不回写，
+    /// Some(v) 序列化为 `shadowrootreferencetarget="v"`（spec 序在 clonable
+    /// 之后、customelementregistry 之前）。
+    /// https://dom.spec.whatwg.org/#shadowroot-reference-target
+    pub reference_target: Option<String>,
 }
 
 impl ShadowRootData {
@@ -378,6 +384,7 @@ impl ShadowRootData {
             delegates_focus: false,
             clonable: false,
             serializable: false,
+            reference_target: None,
         }
     }
 }

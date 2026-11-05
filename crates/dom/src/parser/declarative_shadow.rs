@@ -395,6 +395,79 @@ mod tests {
         assert!(!data2.declarative && !data2.delegates_focus && !data2.clonable && !data2.serializable);
     }
 
+    // M3 簇 C（s301）：shadowrootreferencetarget 值捕获与 spec 序回写——属性序
+    // 无关（可先于 shadowrootmode）、空值属性捕获为空串并回写 `=""`、缺属性不
+    // 回写。https://dom.spec.whatwg.org/#shadowroot-reference-target
+    #[test]
+    fn materialized_fragment_parse_captures_reference_target() {
+        // 属性序故意倒置：referencetarget 在 shadowrootmode 之前（上游
+        // gethtml-serialization.html 的源形态）。
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootreferencetarget="target" shadowrootmode=open shadowrootclonable shadowrootserializable shadowrootdelegatesfocus><span id=target></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host = doc.query_selector(doc.root(), "div.host").expect("host present");
+        let sr = doc.shadow_root(host).expect("declarative root attached");
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert_eq!(
+            data.reference_target.as_deref(),
+            Some("target"),
+            "value captured position-independently"
+        );
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains(
+                "<template shadowrootmode=\"open\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\" shadowrootreferencetarget=\"target\">"
+            ),
+            "spec order: referencetarget after clonable, got: {html}"
+        );
+
+        // 空值属性 → Some("") → 回写 `=""`。
+        let doc2 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootreferencetarget shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host2 = doc2.query_selector(doc2.root(), "div.host").expect("host present");
+        let sr2 = doc2.shadow_root(host2).expect("declarative root attached");
+        let data2 = match doc2.get(sr2).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert_eq!(data2.reference_target.as_deref(), Some(""), "empty attr value kept");
+        let html2 = crate::serializer::serialize_node(&doc2, host2);
+        assert!(
+            html2.contains("shadowrootreferencetarget=\"\">"),
+            "empty value serializes as =\"\", got: {html2}"
+        );
+
+        // 缺属性 → None → 不回写（对照）。
+        let doc3 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let host3 = doc3.query_selector(doc3.root(), "div.host").expect("host present");
+        let sr3 = doc3.shadow_root(host3).expect("declarative root attached");
+        let data3 = match doc3.get(sr3).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(data3.reference_target.is_none(), "absent attr stays None");
+        let html3 = crate::serializer::serialize_node(&doc3, host3);
+        assert!(
+            !html3.contains("shadowrootreferencetarget"),
+            "None not serialized, got: {html3}"
+        );
+    }
+
     #[test]
     fn open_close_values_uppercased() {
         assert_eq!(

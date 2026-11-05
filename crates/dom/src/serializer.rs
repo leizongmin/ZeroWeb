@@ -177,7 +177,8 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push('"');
             // s180/gethtml（M3 Batch 2）：状态位布尔属性回写，顺序按 HTML 序列化
             // spec（shadowrootmode → shadowrootdelegatesfocus →
-            // shadowrootserializable → shadowrootclonable）——声明式物化读回
+            // shadowrootserializable → shadowrootclonable → shadowrootreferencetarget
+            // → shadowrootcustomelementregistry〔未落〕）——声明式物化读回
             // （dom/shadow.rs materialize）与 getHTML 模板形态逐字节对齐。
             // https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
             if data.delegates_focus {
@@ -188,6 +189,14 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             }
             if data.clonable {
                 output.push_str(" shadowrootclonable=\"\"");
+            }
+            // M3 簇 C（referenceTarget）：shadowrootreferencetarget 按 spec 序回写
+            // （clonable 之后、customelementregistry 之前）；None 不回写。
+            // https://dom.spec.whatwg.org/#shadowroot-reference-target
+            if let Some(target) = &data.reference_target {
+                output.push_str(" shadowrootreferencetarget=\"");
+                output.push_str(&escape_html(target));
+                output.push('"');
             }
             output.push('>');
             for &child in &node_data.children {

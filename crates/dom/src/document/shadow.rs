@@ -158,13 +158,25 @@ impl Document {
             };
             // s180/gethtml（M3 Batch 2）：三个 shadowroot* 按 HTML 布尔属性语义
             // 取存在性（存在即真，值不参与），物化产物标 declarative=true——
-            // 序列化回写与 getHTML({serializableShadowRoots}) 资格标记。
+            // 序列化回写与 getHTML({serializableShadowRoots}) 资格标记；
+            // shadowrootreferencetarget 按值捕获（见下）。
             let delegates_focus = self.get_attribute(tid, "shadowrootdelegatesfocus").is_some();
             let clonable = self.get_attribute(tid, "shadowrootclonable").is_some();
             let serializable = self.get_attribute(tid, "shadowrootserializable").is_some();
+            // M3 簇 C（referenceTarget）：`shadowrootreferencetarget` 值原样捕获（空值属性
+            // =空串；属性序无关），序列化按 spec 序回写。
+            // https://dom.spec.whatwg.org/#shadowroot-reference-target
+            let reference_target = self
+                .get_attribute(tid, "shadowrootreferencetarget")
+                .map(|s| s.to_string());
             let Ok(root) = self.attach_shadow_full(host, mode, delegates_focus, clonable, serializable, true) else {
                 continue;
             };
+            if let Some(target) = reference_target
+                && let Some(NodeKind::ShadowRoot(data)) = self.nodes.get_mut(root).map(|n| &mut n.kind)
+            {
+                data.reference_target = Some(target);
+            }
             let kids = self.nodes.get(frag).map(|n| n.children.clone()).unwrap_or_default();
             for k in kids {
                 let _ = self.append_child(root, k);
