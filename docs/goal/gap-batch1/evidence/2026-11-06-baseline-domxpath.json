@@ -1,0 +1,782 @@
+[
+  [
+    "domxpath/booleans.html",
+    [
+      {
+        "name": "\"or\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '(./span)[4] or ./br[2]' is not a valid XPath expression."
+      },
+      {
+        "name": "\"=\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) = count(./br[2])' is not a valid XPath expression."
+      },
+      {
+        "name": "\"!=\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) != count(./br[2])' is not a valid XPath expression."
+      },
+      {
+        "name": "\"<\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) < count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\">\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) > count(./br[2])' is not a valid XPath expression."
+      },
+      {
+        "name": "\">=\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) >= count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\"<=\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[3]) <= count(./br[2])' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/document.tentative.html",
+    [
+      {
+        "name": "XPath parent of documentElement",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "domxpath/elements-are-parents-of-their-attributes.html",
+    [
+      {
+        "name": "Elements are parents of their attributes",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '@foo/parent::*' is not a valid XPath expression."
+      },
+      {
+        "name": "Attributes are not children of their parents",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "domxpath/evaluator-constructor.html",
+    [
+      {
+        "name": "Constructor with 'new'",
+        "status": "Fail",
+        "message": "XPathEvaluator is not defined"
+      },
+      {
+        "name": "Constructor without 'new'",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "domxpath/evaluator-cross-realm.tentative.html",
+    [
+      {
+        "name": "evaluator from realm with XML associated document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentWindow.XPathEvaluator is not a constructor\""
+      },
+      {
+        "name": "evaluator from realm with XML associated document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentWindow.XPathEvaluator is not a constructor\""
+      },
+      {
+        "name": "evaluator from realm with HTML associated document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentWindow.XPathEvaluator is not a constructor\""
+      },
+      {
+        "name": "evaluator from realm with HTML associated document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentWindow.XPathEvaluator is not a constructor\""
+      }
+    ]
+  ],
+  [
+    "domxpath/evaluator-different-document.tentative.html",
+    [
+      {
+        "name": "evaluate operation on XML document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on HTML document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on XML document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on HTML document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on XML document, context node in XML document, with namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on HTML document, context node in HTML document, with namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on XML document, context node in HTML document, with namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.evaluate is not a function"
+      },
+      {
+        "name": "evaluate operation on HTML document, context node in XML document, with namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.evaluate is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/expression-cross-realm.tentative.html",
+    [
+      {
+        "name": "expression from realm with XML associated document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentDocument.createExpression is not a function\""
+      },
+      {
+        "name": "expression from realm with XML associated document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentDocument.createExpression is not a function\""
+      },
+      {
+        "name": "expression from realm with HTML associated document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentDocument.createExpression is not a function\""
+      },
+      {
+        "name": "expression from realm with HTML associated document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: iframe.contentDocument.createExpression is not a function\""
+      }
+    ]
+  ],
+  [
+    "domxpath/expression-different-document.tentative.html",
+    [
+      {
+        "name": "expression from XML document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from HTML document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from XML document, context node in HTML document, no namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from HTML document, context node in XML document, no namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from XML document, context node in XML document, with namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from HTML document, context node in HTML document, with namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from XML document, context node in HTML document, with namespace resolver",
+        "status": "Fail",
+        "message": "xml_doc.createExpression is not a function"
+      },
+      {
+        "name": "expression from HTML document, context node in XML document, with namespace resolver",
+        "status": "Fail",
+        "message": "html_doc.createExpression is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-concat.html",
+    [
+      {
+        "name": "concat() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'concat((./span)[2], ./b)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-contains.html",
+    [
+      {
+        "name": "contains() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'contains((./span)[1], ./b)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-id.html",
+    [
+      {
+        "name": "id(\"test1\"): <root><div id=\"test1\">Match</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"test1 test2\"): <root><div id=\"test1\">First</div><div id=\"test2\">Second</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"nonexistent\"): <root><div id=\"test1\">No match</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"Test1\"): <root><div id=\"test1\">No match</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"duplicate\"): <root><div id=\"duplicate\">First</div><div id=\"duplicate\">Second</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"test-1\"): <root><div id=\"test-1\">Match</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\"\"): <root><div id=\"\">Empty ID</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "id(\" test1 \"): <root><div id=\"test1\">Match</div></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-lang.html",
+    [
+      {
+        "name": "lang(\"en\"): <root><match xml:lang=\"en\"></match></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"en\"): <root><match xml:lang=\"EN\"></match></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"en\"): <root><match xml:lang=\"en-us\"></match></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"en\"): <root><unmatch></unmatch></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"ja\"): <root xml:lang=\"ja\"><match></match></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"ja\"): <root xml:lang=\"ja-jp\"><unmatch xml:lang=\"ja_JP\"></unmatch></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      },
+      {
+        "name": "lang(\"ko\"): <root><unmatch xml:lang=\"Ko\"></unmatch></root>",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-normalize-space.html",
+    [
+      {
+        "name": "normalize-space() without arguments",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'normalize-space()' is not a valid XPath expression."
+      },
+      {
+        "name": "normalize-space() should handle only #x20, #x9, #xD, and #xA",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'normalize-space(\" a \t  b\r\nc \")' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-starts-with.html",
+    [
+      {
+        "name": "starts-with() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'starts-with((./span)[2], ./b)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-substring-after.html",
+    [
+      {
+        "name": "substring-after() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'substring-after((./span)[1], ./b)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-substring-before.html",
+    [
+      {
+        "name": "substring-before() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'substring-before((./span)[1], ./b)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-substring.html",
+    [
+      {
+        "name": "substring() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'substring((./span)[1], count(./br))' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/fn-translate.html",
+    [
+      {
+        "name": "translate() arguments depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'translate((./span)[1], (./b)[1], ./b[2])' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/lexical-structure.html",
+    [
+      {
+        "name": "Literal: Only ' and \" should be handled as literal quotes.",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string ' 'a\"bc' ' is not a valid XPath expression."
+      },
+      {
+        "name": "ExprWhitespace: Only #x20 #x9 #xD or #xA must be handled as a whitespace.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => { parse('\\x0B\\x0C .'); }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "domxpath/node-set-tree-order.html",
+    [
+      {
+        "name": "Temporary node sets created during evaluation must be in tree order",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '(./p | ./span)[last()]' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/node-sets.html",
+    [
+      {
+        "name": "| operator should evaluate both sides of expressions with the same context node",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/numbers.html",
+    [
+      {
+        "name": "\"+\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) + count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\"-\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) - count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\"*\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) * count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\"div\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) div count(./br)' is not a valid XPath expression."
+      },
+      {
+        "name": "\"mod\" operator depending on the context node",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string 'count((./span)[1]) mod count(./br)' is not a valid XPath expression."
+      }
+    ]
+  ],
+  [
+    "domxpath/predicates.html",
+    [
+      {
+        "name": "An expression in a predicate should not change the context node",
+        "status": "Fail",
+        "message": "doc.evaluate is not a function"
+      }
+    ]
+  ],
+  [
+    "domxpath/resolver-callback-interface.html",
+    [
+      {
+        "name": "callable resolver",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "callable resolver: result is not cached",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 0"
+      },
+      {
+        "name": "callable resolver: no 'lookupNamespaceURI' lookups",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "object resolver",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "object resolver: this value and `prefix` argument",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) object \"[object Object]\" but got (undefined) undefined"
+      },
+      {
+        "name": "object resolver: 'lookupNamespaceURI' is not cached",
+        "status": "Fail",
+        "message": "assert_equals: expected 2 but got 0"
+      },
+      {
+        "name": "callable resolver: abrupt completion from Call",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "object resolver: abrupt completion from Get",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "object resolver: 'lookupNamespaceURI' is thruthy and not callable",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "object resolver: 'lookupNamespaceURI' is falsy and not callable",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "domxpath/resolver-non-string-result.html",
+    [
+      {
+        "name": "number",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "boolean",
+        "status": "Fail",
+        "message": "assert_equals: expected 1 but got 0"
+      },
+      {
+        "name": "undefined",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "null",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "symbol",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      },
+      {
+        "name": "object coercion (abrupt completion)",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => {\n    document.evaluate(\"/foo:bar\", document.documentElement, resolver);\n  }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "domxpath/result-iterateNext.html",
+    [
+      {
+        "name": "Using an ordered iterator without modifying the dom should yield the expected elements in correct order without errors.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Using an unordered iterator without modifying the dom should yield the correct number of elements without errors.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "invalidIteratorState should be false for non-iterable results.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Calling iterateNext on a non-iterable XPathResult should throw a TypeError.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => non_iterator_query.iterateNext()\" did not throw"
+      },
+      {
+        "name": "Calling iterateNext on a non-iterable XPathResult after modifying the DOM should throw a TypeError.",
+        "status": "Fail",
+        "message": "assert_throws_js: function \"() => non_iterator_query.iterateNext()\" did not throw"
+      },
+      {
+        "name": "Calling iterateNext after having modified the DOM should throw an exception.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => iterator.iterateNext()\" did not throw"
+      },
+      {
+        "name": "Calling iterateNext after having modified the DOM should throw an exception even if the iterator is exhausted.",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"() => iterator.iterateNext()\" did not throw"
+      }
+    ]
+  ],
+  [
+    "domxpath/text-html-attributes.html",
+    [
+      {
+        "name": "Select html element based on attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select html element based on attribute mixed case",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select both HTML and SVG elements based on attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select HTML element with non-ascii attribute 1",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [Element node <div id=\"log\" nonÄsciiattribute=\"\"><span></span></div>] length 1, got [] length 0"
+      },
+      {
+        "name": "Select HTML element with non-ascii attribute 2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select HTML element with non-ascii attribute 3",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [Element node <div id=\"log\" nonÄsciiattribute=\"\"><span></span></div>] length 1, got [] length 0"
+      },
+      {
+        "name": "Select SVG element based on mixed case attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select both HTML and SVG elements based on mixed case attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select SVG elements with refX attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select SVG elements with refX attribute incorrect case",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select SVG elements with refX attribute lowercase",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Select SVG element with non-ascii attribute 1",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [Element node <path id=\"b\" nonÄscii=\"\" xlink:href=\"\"></path>] length 1, got [] length 0"
+      },
+      {
+        "name": "Select SVG element with non-ascii attribute 2",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "xmlns attribute",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [] length 0, got [Element node <svg :xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"htt...] length 1"
+      },
+      {
+        "name": "svg element with XLink attribute",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "domxpath/text-html-elements.html",
+    [
+      {
+        "name": "HTML elements no namespace prefix",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTML elements namespace prefix",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array object \"string\" length 2, got [] length 0"
+      },
+      {
+        "name": "HTML elements mixed use of prefix",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array object \"string\" length 2, got [] length 0"
+      },
+      {
+        "name": "SVG elements no namespace prefix",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [] length 0, got [Element node <path></path>, Element node <path></path>] length 2"
+      },
+      {
+        "name": "SVG elements namespace prefix",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array object \"string\" length 2, got [] length 0"
+      },
+      {
+        "name": "HTML elements mixed case",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "SVG elements mixed case selector",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Non-ascii HTML element",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '//dØdd' is not a valid XPath expression."
+      },
+      {
+        "name": "Non-ascii HTML element2",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '//dødd' is not a valid XPath expression."
+      },
+      {
+        "name": "Non-ascii HTML element3",
+        "status": "Fail",
+        "message": "Failed to execute 'evaluate' on 'Document': The string '//DØDD' is not a valid XPath expression."
+      },
+      {
+        "name": "Throw with invalid prefix",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() {document.evaluate(path, document, resolver, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null)}\" did not throw"
+      }
+    ]
+  ],
+  [
+    "domxpath/xml_xpath_runner.html",
+    [
+      {
+        "name": "domxpath/xml_xpath_runner.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "domxpath/xpath-evaluate-crash.html",
+    [
+      {
+        "name": "domxpath/xpath-evaluate-crash.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: ReferenceError: XPathEvaluator is not defined\n    at eval (eval at <anonymous> (unknown source), <anonymous>:10:5)\n    at eval (<anonymous>)\n    at <anonymous>:3:38"
+      }
+    ]
+  ],
+  [
+    "domxpath/xpath-shadow-dom.html",
+    [
+      {
+        "name": "XPath //span should find element in Declarative Shadow DOM when evaluated on the element itself",
+        "status": "Fail",
+        "message": "assert_true: Span should exist in shadow DOM expected true got false"
+      },
+      {
+        "name": "XPath //span should find element in Imperative Shadow DOM when evaluated on the element itself",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "domxpath/xpathevaluatorbase-creatensresolver.html",
+    [
+      {
+        "name": "domxpath/xpathevaluatorbase-creatensresolver.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: ReferenceError: XPathEvaluator is not defined\n    at eval (eval at <anonymous> (unknown source), <anonymous>:1:16)\n    at eval (<anonymous>)\n    at <anonymous>:3:38"
+      }
+    ]
+  ]
+]

@@ -1,10 +1,17 @@
 # 覆盖率缺口小面批量补齐 batch1 — 已实现面 runner 通道 + 甄别面入账
 
-**版本**: v1.0
+**版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——立项，M0 未启动
+**状态**: Active——M0/M1/M2 已落（2026-11-06：甄别 + CONFIRMED 六面通道 + mixed-content 扩面），M3 未启动
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 通道补齐 + 按面甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——多小域批量）
+
+**当前卡点**：无硬卡点。LIKELY 五面通道（M3）与 coverage 复测（M4）待推进；
+cors `cors-makeheader.py` 端点仿真与 domxpath `XPathEvaluator` 全局等引擎/
+runner 缺口按簇挂账（evidence 失败簇归因），不在 DC 内。
+**下一步**：M3 LIKELY 五面按 M0 甄别池逐面通道入账（池 69/25/51/3/≈1 文件，
+干跑实数落定各自数值门）→ M4 coverage 复测十二面 from-0 对账 +
+`wpt-suites.csv` 回填。
 
 ## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）
 
@@ -63,6 +70,20 @@ runner 通道（审计已核实锚点），六面疑似部分实现须甄别，�
 口通过率落门；环境受限面（TLS/多 frame/worker 依赖）不进门，落
 zw-static-corpus 标记记账。
 
+**DC-4 数值门落定（2026-11-06，M1 干跑实数 + M0 池甄别）**：
+
+- CONFIRMED 六面分面门 = 干跑基线 P 数（quirks 35 / domparsing 151 /
+  domxpath 21 / subresource-integrity 32 / cors 92 / import-maps 34，合计
+  365；证据 [M1 基线](gap-batch1/evidence/2026-11-06-m1-confirmed-channel-baselines.md)）。
+- mixed-content 零回归锚：6 文件 11 子测试全入账，既有账 blob 1T +
+  imageset 1F 逐位不变（M2 同轮验证）。
+- LIKELY 五面：M0 池甄别已落（referrer-policy 69 / input-events 25 /
+  preload 51 / wai-aria 3 / storage ≈1 文件，
+  [M0 甄别](gap-batch1/evidence/2026-11-06-m0-likely-facet-triage.md)）；
+  数值门 M3 逐面干跑实数落定，预登记规则 = 门 ≥ 干跑基线 P 数（storage
+  引擎缺口全域，不设门）。环境受限面（gen/ 镜像、编辑管线簇、.any.js 面）
+  不进门。
+
 ## 划界
 
 - **domparsing/domxpath 与 dom-expansion**：DOM 接口面归 34 号；本 goal
@@ -83,9 +104,15 @@ zw-static-corpus 标记记账。
 
 ## 里程碑
 
-- **M0**：逐面甄别 + 数值门落定（DC-1）。
-- **M1**：CONFIRMED 六面通道五件套落地（DC-2）。
-- **M2**：mixed-content 语料扩面 + 基线（DC-3）。
+- **M0**：逐面甄别 + 数值门落定（DC-1）——✅ 2026-11-06（LIKELY 五面池
+  甄别 + mixed-content 窗口清单 + 门落定，evidence/2026-11-06-m0-*.md）。
+- **M1**：CONFIRMED 六面通道五件套落地（DC-2）——✅ 2026-11-06（fetch 脚本
+  + 六子命令臂 + skip 规则 + Makefile target + weekly catch-all 自动接线；
+  干跑基线 P 365，evidence/2026-11-06-m1-*.md；随轮共享路径修复
+  `inline_local_scripts` pipe=sub substitution 臂，回归单元测试在册）。
+- **M2**：mixed-content 语料扩面 + 基线（DC-3）——✅ 2026-11-06（顶层 2 +
+  tentative/autoupgrades 4 = 6 文件 11 子测试入账，missing=0；既有账逐位
+  零回归；gen/ 512 不拉照旧挂账）。
 - **M3**：LIKELY 面按甄别结果逐面入账（引擎缺口簇挂账他域）。
 - **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
 

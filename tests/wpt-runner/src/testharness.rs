@@ -3469,6 +3469,18 @@ fn run_corpus_subdirs(
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs_ext(wpt_root, subdirs, &["html"], filter, case_skipped)
+}
+
+/// [`run_corpus_subdirs`] 的扩展名变体（gap-batch1 cors 面：上游 topdir 主面
+/// 用 `.htm` 扩展名，observers 等既有 .html 调用方走缺省委托不受影响）。
+fn run_corpus_subdirs_ext(
+    wpt_root: &Path,
+    subdirs: &[&str],
+    exts: &[&str],
+    filter: Option<&str>,
+    case_skipped: fn(&str, &str) -> bool,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
         Err(error) => {
@@ -3496,7 +3508,11 @@ fn run_corpus_subdirs(
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.is_dir() || path.extension().is_none_or(|ext| ext != "html") {
+            if path.is_dir()
+                || path
+                    .extension()
+                    .is_none_or(|ext| !exts.contains(&ext.to_string_lossy().as_ref()))
+            {
                 continue;
             }
             let relative = format!("{subdir}/{}", entry.file_name().to_string_lossy());
@@ -3607,10 +3623,15 @@ pub const CSP_CORPUS_SUBDIRS: &[&str] = &[
     "content-security-policy/gen/top.meta/worker-src-wildcard",
 ];
 
-/// Mixed Content goal（security-hardening M1 / DC-1）pinned upstream subset.
-/// 顶层可执行面（blob.https.sub.html / imageset.https.sub.html）；gen/ 为
+/// Mixed Content goal（security-hardening M1 / DC-1；gap-batch1 M2 扩面 DC-3）
+/// pinned upstream subset. 顶层可执行面（blob.https.sub.html /
+/// imageset.https.sub.html）+ tentative/autoupgrades/ 四升级面（gap-batch1 M2
+/// 语料扩面——上游窗口可执行面全量，见 fetch-gap-batch1-subset.sh）；gen/ 为
 /// window.js/iframe 包装形态不拉取（fetch 脚本头注释同域）。
-pub const MIXED_CONTENT_SUBDIRS: &[&str] = &["mixed-content"];
+pub const MIXED_CONTENT_SUBDIRS: &[&str] = &[
+    "mixed-content",
+    "mixed-content/tentative/autoupgrades",
+];
 
 /// Secure Contexts goal（security-hardening M1 / DC-1）pinned upstream subset.
 pub const SECURE_CONTEXTS_SUBDIRS: &[&str] = &["secure-contexts"];
@@ -3658,6 +3679,127 @@ pub fn run_mixed_content_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// （security-hardening goal M1 / DC-1）。filter 按路径子串过滤。
 pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_corpus_subdirs(wpt_root, SECURE_CONTEXTS_SUBDIRS, filter, security_case_skipped)
+}
+
+// ══ gap-batch1 goal（docs/goal/gap-batch1.md M1 / DC-2）══
+// CONFIRMED 六面（quirks / domparsing / domxpath / subresource-integrity / cors /
+// import-maps——实现已在、只差通道）window 可执行子集通道。fetch 侧 =
+// `scripts/fetch-gap-batch1-subset.sh`（十二 corpus 目录清单 + 共享 harness 资产
+// sriharness/check-layout-th），运行面 skip 规则与 fetch 清单同域双保险。
+// LIKELY 五面（referrer-policy / input-events / preload / wai-aria / storage）
+// 语料同批落盘，通道按 M0 甄别结论 M3 逐面入账（goal 文档里程碑）。
+
+/// gap-batch1 六面共用运行面筛减基座（fetch 脚本头注释同域，双保险）：
+/// - `*(-ref|-notref).html` 参照页 / `*-manual.html`（observers/clipboard 先例）
+/// - 非 testharness 形态（source 不含 `/resources/testharness`）——quirks 全树
+///   reftest 主面与 SRI 资产页等；channel 只收 testharness 子测试面，reftest
+///   面归 reftest 通道记账（goal 划界同域）
+/// - source 含 `<iframe` / `new Worker(` / `SharedWorker(` /
+///   `navigator.serviceWorker`——runner 无 iframe 文档与 worker 执行面
+///   （security-csp 同款内容规则）
+fn gap_batch1_case_skipped(relative: &str, source: &str) -> bool {
+    let name = relative.rsplit('/').next().unwrap_or(relative);
+    if name.ends_with("-ref.html")
+        || name.ends_with("-notref.html")
+        || name.ends_with("-manual.html")
+    {
+        return true;
+    }
+    if !source.contains("/resources/testharness") {
+        return true;
+    }
+    source.contains("<iframe")
+        || source.contains("new Worker(")
+        || source.contains("SharedWorker(")
+        || source.contains("navigator.serviceWorker")
+}
+
+/// quirks corpus pinned upstream subset（quirks 模式判定 R5346 的上游对位面）：
+/// testharness 形态顶层（unitless-length 生面大分母在 excluded-properties-*）
+/// + 四变体目录；reftest 主面由非 testharness 形态谓词排除（reftest 通道记账）。
+pub const QUIRKS_SUBDIRS: &[&str] = &[
+    "quirks",
+    "quirks/unitless-length",
+    "quirks/hashless-hex-color",
+    "quirks/historical",
+    "quirks/text-decoration-doesnt-propagate-into-tables",
+];
+
+/// domparsing corpus pinned upstream subset（DOMParser/XMLSerializer shim
+/// part02.js R3019 的上游对位面）。
+// FIXME: .xhtml 变体面（parseFromString XML 文档形态）由扩展名过滤排除——
+// runner 页锚只认 .html，XML 变体面记 runner 管道限制（goal evidence 对账）。
+pub const DOMPARSING_SUBDIRS: &[&str] = &["domparsing", "domparsing/tentative"];
+
+/// domxpath corpus pinned upstream subset（XPathEvaluator shim part06.js
+/// R2981 的上游对位面——document.evaluate/XPathResult 实用子集）。
+pub const DOMXPATH_SUBDIRS: &[&str] = &["domxpath"];
+
+/// subresource-integrity corpus pinned upstream subset（SRI `_zwFetchVerifyIntegrity`
+/// part01.js + 模块 integrity s107 的上游对位面）：顶层主面 +
+/// integrity-policy/（含 tentative）+ signatures/tentative 解析面。
+// FIXME: signatures/ unencoded-digest/ 的 .window.js/.any.js wrapper 变体面
+// fetch 不拉（timing 先例），后续按簇扩批显式清单。
+pub const SUBRESOURCE_INTEGRITY_SUBDIRS: &[&str] = &[
+    "subresource-integrity",
+    "subresource-integrity/integrity-policy",
+    "subresource-integrity/integrity-policy/tentative",
+    "subresource-integrity/signatures/tentative",
+];
+
+/// cors corpus pinned upstream subset（`crates/security/src/cors.rs` s153 的上游
+/// 对位面）——顶层 .htm 主面（本面扩展名是 .htm，走 ext 变体扫描）。
+pub const CORS_SUBDIRS: &[&str] = &["cors"];
+
+/// import-maps corpus pinned upstream subset（`crates/script-sandbox/src/import_map.rs`
+/// 的上游对位面）：顶层 + data-driven/ not-overridden/ multiple-import-maps/
+/// acquiring/ csp/ 各子目录（bare/ 无 .html 面，fetch 落盘不扫）。
+pub const IMPORT_MAPS_SUBDIRS: &[&str] = &[
+    "import-maps",
+    "import-maps/data-driven",
+    "import-maps/not-overridden",
+    "import-maps/multiple-import-maps",
+    "import-maps/acquiring",
+    "import-maps/csp",
+];
+
+/// Run the pinned upstream quirks window subset
+/// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+pub fn run_quirks_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, QUIRKS_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream DOMParsing window subset
+/// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+pub fn run_domparsing_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, DOMPARSING_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream domxpath window subset
+/// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+pub fn run_domxpath_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, DOMXPATH_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream subresource-integrity window subset
+/// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+pub fn run_subresource_integrity_cases(
+    wpt_root: &Path,
+    filter: Option<&str>,
+) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, SUBRESOURCE_INTEGRITY_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream cors window subset
+/// （gap-batch1 goal M1 / DC-2）。.htm 扩展名变体走 ext 扫描。filter 按路径子串过滤。
+pub fn run_cors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs_ext(wpt_root, CORS_SUBDIRS, &["html", "htm"], filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream import-maps window subset
+/// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
+pub fn run_import_maps_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, IMPORT_MAPS_SUBDIRS, filter, gap_batch1_case_skipped)
 }
 
 // ══ timing-animation-compat goal（docs/goal/archive/timing-animation-compat.md M1 / DC-1）══
@@ -10979,7 +11121,15 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                     // net-api M5-S1：`.sub.js` 服务端替换（上游 wptserve 语义；与
                     // script fetcher M4-S22、fetch 通道本切片同口径——`.html` 案外部
                     // 脚本走本预处理直读，缺此则 constants.sub.js token 原样入页）。
-                    let c = if combined.ends_with(".sub.js") {
+                    // gap-batch1（2026-11-06）：`?pipe=sub` 查询 = wptserve substitution
+                    // 管道（含 `pipe=sub(...)` 参形）——`.sub` 命名约定之外的直引模板
+                    // 文件（cors support.js `{{ports[...]}}` 形态；上游由该管道替换，
+                    // 残留字面量 = SyntaxError → 依赖全局 ReferenceError 连坐）。token
+                    // 无关文件替换为 no-op，面行为不变。
+                    let pipe_sub = src_query.split('&').any(|kv| {
+                        kv.strip_prefix("pipe=").is_some_and(|v| v == "sub" || v.starts_with("sub("))
+                    });
+                    let c = if combined.ends_with(".sub.js") || pipe_sub {
                         apply_wpt_substitutions(&c)
                     } else {
                         c
@@ -15496,6 +15646,37 @@ async_test(function(test) {
         assert!(out.contains("addCrossOriginYellowImage()"));
         // 透传形态（src=data: 外链残留）不复存在。
         assert!(!out.contains("src=\"data:text/javascript"));
+    }
+
+    #[test]
+    fn inline_local_scripts_pipe_sub_query_substitutes_tokens() {
+        // gap-batch1（2026-11-06）：`?pipe=sub` 查询 = wptserve substitution 管道
+        // 语义——`.sub` 命名约定之外的直引模板文件（cors support.js
+        // `{{ports[...]}}` 形态）此前 token 残留入页 → SyntaxError → 依赖全局
+        // （CROSSDOMAIN 等）ReferenceError 连坐 124 子测试。回归锚：pipe=sub 臂
+        // 替换全集、无 pipe 查询的裸 .js 不替换（wptserve 语义对位）。
+        let root = std::env::temp_dir().join("zw-gap-batch1-pipe-sub-test");
+        let case_dir = "cors";
+        std::fs::create_dir_all(root.join(case_dir)).unwrap();
+        std::fs::write(
+            root.join(case_dir).join("support.js"),
+            "var PORT = {{ports[http][1]}};\nvar CROSSDOMAIN = 'ok';",
+        )
+        .unwrap();
+        let html = "<!doctype html><body>\
+            <script src=\"support.js?pipe=sub\"></script>\
+            <script src=\"support.js\"></script>\
+            </body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/status.htm"), None);
+        // pipe=sub 臂：token 替换为 wpt.test 真值（8081）。
+        assert!(out.contains("var PORT = 8081;"), "pipe=sub 体须替换 token: {out}");
+        // 同文件裸引用臂：token 原样保留（上游 wptserve 非 sub 管道不替换）。
+        assert!(
+            out.contains("var PORT = {{ports[http][1]}};"),
+            "无 pipe 查询体不替换: {out}"
+        );
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

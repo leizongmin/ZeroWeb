@@ -236,6 +236,18 @@ Commands:
                        (security-hardening goal M1 / DC-1)
   testharness-secure-contexts  Run imported Secure Contexts testharness cases
                        (security-hardening goal M1 / DC-1)
+  testharness-quirks  Run imported quirks-mode testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-domparsing  Run imported DOMParser/XMLSerializer testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-domxpath  Run imported XPathEvaluator testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-subresource-integrity  Run imported SRI testharness cases
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-cors  Run imported cors testharness cases (.htm face)
+                       (gap-batch1 goal M1 / DC-2)
+  testharness-import-maps  Run imported import-maps testharness cases
+                       (gap-batch1 goal M1 / DC-2)
   testharness-hr-time  Run imported hr-time testharness cases
                        (timing-animation-compat goal M1 / DC-1)
   testharness-performance-timeline  Run imported performance-timeline testharness cases
@@ -590,6 +602,12 @@ fn main() {
         "testharness-csp" => cmd_testharness_content_security_policy(&options, filter.as_deref()),
         "testharness-mixed-content" => cmd_testharness_mixed_content(&options, filter.as_deref()),
         "testharness-secure-contexts" => cmd_testharness_secure_contexts(&options, filter.as_deref()),
+        "testharness-quirks" => cmd_testharness_quirks(&options, filter.as_deref()),
+        "testharness-domparsing" => cmd_testharness_domparsing(&options, filter.as_deref()),
+        "testharness-domxpath" => cmd_testharness_domxpath(&options, filter.as_deref()),
+        "testharness-subresource-integrity" => cmd_testharness_subresource_integrity(&options, filter.as_deref()),
+        "testharness-cors" => cmd_testharness_cors(&options, filter.as_deref()),
+        "testharness-import-maps" => cmd_testharness_import_maps(&options, filter.as_deref()),
         "testharness-hr-time" => cmd_testharness_hr_time(&options, filter.as_deref()),
         "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
         "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
@@ -2141,6 +2159,57 @@ fn cmd_testharness_mixed_content(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_secure_contexts(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_secure_contexts_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-quirks` / `testharness-domparsing` / `testharness-domxpath` /
+/// `testharness-subresource-integrity` / `testharness-cors` /
+/// `testharness-import-maps` 子命令 — 跑导入的上游 gap-batch1 六 corpus（quirks
+/// 模式判定 / DOMParser+XMLSerializer / XPathEvaluator / SRI / cors /
+/// import-maps）window 可执行子集（gap-batch1 goal M1 / DC-2——CONFIRMED 六面
+/// 通道五件套，审计锚点：dom parser.rs R5346、shim part02.js R3019、part06.js
+/// R2981、part01.js `_zwFetchVerifyIntegrity`、security/cors.rs s153、
+/// script-sandbox/import_map.rs）。
+///
+/// 用例由 `fetch-gap-batch1-subset.sh` 按需拉到 `wpt-data/`（gitignored），运行面
+/// 按内容规则筛减（`gap_batch1_case_skipped`：ref 页 / manual / 非 testharness
+/// 形态 / iframe / worker 面）。退出码：有用例非 Pass 或用例集为空 → 1
+/// （observers 先例）。基线首跑即便大量 Fail 也只用于记录通过率（agent 经
+/// `--format json` 捕获后写 evidence/），不作为 land 门禁。filter 按路径子串
+/// 透传：make testharness-quirks FILTER=unitless。
+fn cmd_testharness_quirks(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_quirks_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_domparsing(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_domparsing_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_domxpath(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_domxpath_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_subresource_integrity(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_subresource_integrity_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_cors(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_cors_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_import_maps(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_import_maps_cases(wpt_root, filter)
     });
 }
 

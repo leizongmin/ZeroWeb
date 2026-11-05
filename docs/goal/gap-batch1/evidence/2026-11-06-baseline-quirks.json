@@ -1,0 +1,407 @@
+[
+  [
+    "quirks/classname-query-after-sibling-adoption.html",
+    [
+      {
+        "name": "Quirks mode elements with class names should remain queriable regardless of sibling adoption into standards mode documents",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "quirks/supports.html",
+    [
+      {
+        "name": "Sanity check @supports color",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "@supports quirky color",
+        "status": "Fail",
+        "message": "assert_equals: expected \"rgb(0, 255, 0)\" but got \"rgba(0, 0, 0, 0)\""
+      },
+      {
+        "name": "CSS.supports() quirky color",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Sanity check @supports length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "@supports quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"1px 1px\" but got \"0% 0%\""
+      },
+      {
+        "name": "CSS.supports() quirky length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "quirks/table-cell-width-calculation-applies-to.html",
+    [
+      {
+        "name": "table 1",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "quirks/unitless-length/excluded-properties-001.html",
+    [
+      {
+        "name": "Property background-position-x does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property background-position-y does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property block-size does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property border-bottom-left-radius does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property border-bottom-right-radius does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property border-top-left-radius does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property border-top-right-radius does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property column-gap does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property column-rule-width does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property column-width does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property flex-basis does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property grid-auto-columns does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property grid-auto-rows does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property grid-template-columns does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property grid-template-rows does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property inline-size does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property inset-block does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset-block-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset-block-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset-inline does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset-inline-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property inset-inline-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property margin-block-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property margin-block-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property margin-inline-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property margin-inline-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property min-block-size does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property min-inline-size does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property offset-distance does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property outline-offset does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property outline-width does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property padding-block-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property padding-block-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property padding-inline-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property padding-inline-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property perspective does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property row-gap does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-margin-block-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-margin-block-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-margin-bottom does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-margin-inline-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-margin-inline-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-margin-left does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-margin-right does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-margin-top does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-padding-block-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-padding-block-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-padding-bottom does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-padding-inline-end does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-padding-inline-start does not support quirky length",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Property scroll-padding-left does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-padding-right does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property scroll-padding-top does not support quirky length",
+        "status": "Fail",
+        "message": "assert_equals: expected \"567px\" but got \"1234\""
+      },
+      {
+        "name": "Property shape-margin does not support quirky length",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "quirks/unitless-length/excluded-properties-002.html",
+    [
+      {
+        "name": "Property background-blend-mode does not support quirky length",
+        "status": "Fail",
+        "message": "assert_unreached: Property background-blend-mode not supported Reached unreachable code"
+      },
+      {
+        "name": "Property background-size does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property box-shadow does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property clip-path does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property column-span does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property filter does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property mask does not support quirky length",
+        "status": "Fail",
+        "message": "assert_unreached: Property mask not supported Reached unreachable code"
+      },
+      {
+        "name": "Property object-position does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property perspective-origin does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property text-shadow does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      },
+      {
+        "name": "Property transform-origin does not support quirky length",
+        "status": "Fail",
+        "message": "assert_not_equals: got disallowed value \"1234\""
+      }
+    ]
+  ],
+  [
+    "quirks/unitless-length/excluded-properties-003.html",
+    [
+      {
+        "name": "inset does not support quirky length values",
+        "status": "Fail",
+        "message": "assert_equals: inset rejects quirky length \"1\" expected \"5px 6px 7px 8px\" but got \"1\""
+      }
+    ]
+  ]
+]

@@ -1,0 +1,632 @@
+[
+  [
+    "import-maps/bare-specifiers.sub.html",
+    [
+      {
+        "name": "import-maps/bare-specifiers.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 10396, 1058], state={\"loaded\":true,\"pending\":0,\"phase\":1,\"tests\":0}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "import-maps/data-url-specifiers.sub.html",
+    [
+      {
+        "name": "import-maps/data-url-specifiers.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 10396, 1364], state={\"loaded\":true,\"pending\":0,\"phase\":1,\"tests\":0}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "import-maps/dynamic-integrity.html",
+    [
+      {
+        "name": "script was not loaded, as its resolved URL failed its integrity check",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "script was loaded, as its resolved URL had no integrity check, despite its specifier having one",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "script was loaded, as its integrity check passed",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script with no import definition was not loaded, as it failed its integrity check",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "Bare specifier script was not loaded, as it failed its integrity check",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "Bare specifier used for integrity loaded, as its definition should have used the URL",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "script was loaded, as its integrity check passed, despite having an extra invalid hash",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "script was loaded, as its integrity check passed, despite having an invalid suffix",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "script was loaded, as its integrity check passed given multiple hashes. This also makes sure that the larger hash is picked",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "script was loaded, as its integrity check was ignored, as it was defined using a URL that looks like a bare specifier",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "import-maps/dynamic-integrity.html",
+        "status": "Timeout",
+        "message": "testharness page timeout completed the file with 2 test(s) unreported (state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":12})"
+      }
+    ]
+  ],
+  [
+    "import-maps/dynamic-module-map-key.html",
+    [
+      {
+        "name": "Module map's key is the URL after import map resolution",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"log:B\"] length 1, got [\"log:A\", \"log:B\"] length 2"
+      },
+      {
+        "name": "Cloned script node copies attribute and text content.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cloned script node copies attributes and text content.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The script tag's Already Started flag is passed to clones.",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"log:B\", \"log:D\", \"log:F\"] length 3, got [\"log:A\", \"log:B\", \"log:C\", \"log:D\", \"log:E\"] length 5"
+      },
+      {
+        "name": "The Already Started flag is set when a non-empty <script> tag is connected.",
+        "status": "NotRun",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/external-import-map-errors.html",
+    [
+      {
+        "name": "import-maps/external-import-map-errors.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":3})"
+      }
+    ]
+  ],
+  [
+    "import-maps/http-url-like-specifiers.sub.html",
+    [
+      {
+        "name": "import-maps/http-url-like-specifiers.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/import-maps-base-url.sub.html",
+    [
+      {
+        "name": "import-maps/import-maps-base-url.sub.html",
+        "status": "Timeout",
+        "message": "testharness completion callback was not called (test=function, hook=function, scripts=[203815, 10396, 1005], state={\"loaded\":true,\"pending\":0,\"phase\":1,\"tests\":0}, test_wait=false)"
+      }
+    ]
+  ],
+  [
+    "import-maps/module-map-key.html",
+    [
+      {
+        "name": "Module map's key is the URL after import map resolution",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/no-referencing-script-integrity-valid.html",
+    [
+      {
+        "name": "import-maps/no-referencing-script-integrity-valid.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "import-maps/no-referencing-script-integrity.html",
+    [
+      {
+        "name": "import-maps/no-referencing-script-integrity.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "import-maps/nonimport-integrity.html",
+    [
+      {
+        "name": "Script was not loaded as its integrity check was not ignored",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: It shouldn't have loaded\""
+      },
+      {
+        "name": "Script was loaded as its correct integrity attribute was not ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script was loaded as its empty integrity attribute was not ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Script was not loaded as its bad integrity attribute was not overridden",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: It shouldn't have loaded\""
+      },
+      {
+        "name": "Classic script was loaded as its integrity check was ignored",
+        "status": "Fail",
+        "message": "assert_equals: expected \"log:NonModule\" but got \"log:{{GET[name]}}\""
+      },
+      {
+        "name": "Image was loaded as its integrity check was ignored",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "Modulepreload was not loaded as its integrity check was not ignored",
+        "status": "Fail",
+        "message": "assert_unreached: Should have rejected: undefined Reached unreachable code"
+      },
+      {
+        "name": "Modulepreload was loaded as its correct integrity attribute was not ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Modulepreload was loaded as its empty integrity attribute was not ignored",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Modulepreload was not loaded as its bad integrity attribute was not ignored",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: It shouldn't have loaded\""
+      }
+    ]
+  ],
+  [
+    "import-maps/not-as-classic-script.html",
+    [
+      {
+        "name": "Import maps shouldn't be parsed as scripts",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The Already Started flag is passed through cloneNode",
+        "status": "Fail",
+        "message": "assert_equals: expected \"\" but got \"t_already_started.step(function() { assert_true(true, 'Classic script connected dynamically.');});\""
+      },
+      {
+        "name": "Import maps shouldn't be executed as scripts",
+        "status": "Fail",
+        "message": "assert_unreached: A dynamically-created import map is evaluated Reached unreachable code"
+      },
+      {
+        "name": "Import maps shouldn't be executed as scripts after changing type",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "External import maps shouldn't be executed as scripts",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/script-supports-importmap.html",
+    [
+      {
+        "name": "HTMLScriptElement.supports returns true for 'importmap'",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "HTMLScriptElement.supports returns false for unsupported types",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/static-after-innerText.html",
+    [
+      {
+        "name": "Module map's key is the URL after import map resolution",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/static-integrity.html",
+    [
+      {
+        "name": "import-maps/static-integrity.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/data-driven/resolving.html",
+    [
+      {
+        "name": "import-maps/data-driven/resolving.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/dynamic.html",
+    [
+      {
+        "name": "Initial import before import map",
+        "status": "Fail",
+        "message": "assert_array_equals: First import should use original module expected property 0 to be \"log:A\" but got \"log:B\" (expected array [\"log:A\"] got [\"log:B\"])"
+      },
+      {
+        "name": "Resolution after import map should not be redefined",
+        "status": "Fail",
+        "message": "assert_true: expected true got false"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/external-script-bare-descendent.html",
+    [
+      {
+        "name": "import-maps/not-overridden/external-script-bare-descendent.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/external-script-descendent-with-scope.html",
+    [
+      {
+        "name": "import-maps/not-overridden/external-script-descendent-with-scope.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/external-script-descendent.html",
+    [
+      {
+        "name": "import-maps/not-overridden/external-script-descendent.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/failed-resolution.html",
+    [
+      {
+        "name": "import-maps/not-overridden/failed-resolution.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/integrity.html",
+    [
+      {
+        "name": "import-maps/not-overridden/integrity.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/prefix.html",
+    [
+      {
+        "name": "Initial import before import map",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch module: '../resources/log.js?pipe=sub&name=A'\""
+      },
+      {
+        "name": "Prefix resolution after import map should not be redefined",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/script-descendent.html",
+    [
+      {
+        "name": "import-maps/not-overridden/script-descendent.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/not-overridden/url-resolution-conflict.html",
+    [
+      {
+        "name": "import-maps/not-overridden/url-resolution-conflict.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/already-resolved-dropped.html",
+    [
+      {
+        "name": "Rules for already resolved modules are dropped",
+        "status": "Fail",
+        "message": "assert_array_equals: lengths differ, expected array [\"log:ModuleA\"] length 1, got [] length 0"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/basic.html",
+    [
+      {
+        "name": "Second import map should be used for resolution",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 2 to be \"log:C3\" but got \"log:A3\" (expected array [\"log:B1\", \"log:B2\", \"log:C3\"] got [\"log:B1\", \"log:B2\", \"log:A3\"])"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/conflict-first-persists.html",
+    [
+      {
+        "name": "First defined rule persists in case of conflict",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First defined rule persists in case of conflict - prefixed bare specifiers",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "First defined rule persists in case of conflict - non-prefix bare specifier",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch module: 'module-b'\""
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/resolution-consistency-in-module-tree-inline.html",
+    [
+      {
+        "name": "import-maps/multiple-import-maps/resolution-consistency-in-module-tree-inline.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/resolution-consistency-in-module-tree.html",
+    [
+      {
+        "name": "import-maps/multiple-import-maps/resolution-consistency-in-module-tree.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/scope-ordering-reverse.html",
+    [
+      {
+        "name": "Scope ordering should be correct regardless of import map insertion order",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/scope-ordering.html",
+    [
+      {
+        "name": "More specific scope from second import map should be checked first",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"log:specific\" but got \"log:general\" (expected array [\"log:specific\"] got [\"log:general\"])"
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/url-resolution-conflict.html",
+    [
+      {
+        "name": "Second import map should not override same resolved URL",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/multiple-import-maps/with-errors.html",
+    [
+      {
+        "name": "Second import map should be used for resolution even after an import map with errors",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/acquiring/dynamic-import.html",
+    [
+      {
+        "name": "A dynamic import succeeds",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: Failed to fetch module: '../resources/empty.js?pipe=trickle(d1)'\""
+      },
+      {
+        "name": "After a dynamic import(), import maps work fine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/acquiring/modulepreload-link-header.html",
+    [
+      {
+        "name": "With modulepreload link header, import maps work fine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/acquiring/modulepreload.html",
+    [
+      {
+        "name": "After <link rel=modulepreload> import maps should work fine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/acquiring/script-tag-inline.html",
+    [
+      {
+        "name": "After inline <script type=\"module\"> import maps work fine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/acquiring/script-tag.html",
+    [
+      {
+        "name": "After <script type=\"module\"> import maps work fine",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/applied-to-target-dynamic.sub.html",
+    [
+      {
+        "name": "The URL after mapping violates CSP (but not the URL before mapping)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "The URL before mapping violates CSP (but not the URL after mapping)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/applied-to-target.sub.html",
+    [
+      {
+        "name": "import-maps/csp/applied-to-target.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":false,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/hash-failure.html",
+    [
+      {
+        "name": "import-maps/csp/hash-failure.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/hash.html",
+    [
+      {
+        "name": "import-maps/csp/hash.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":0,\"phase\":4,\"tests\":0})"
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/nonce-failure.html",
+    [
+      {
+        "name": "Importmap should be rejected due to nonce",
+        "status": "Fail",
+        "message": "assert_array_equals: expected property 0 to be \"log:A\" but got \"log:B\" (expected array [\"log:A\"] got [\"log:B\"])"
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/nonce.html",
+    [
+      {
+        "name": "Importmap should be accepted according to its correct nonce",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "import-maps/csp/unsafe-inline.html",
+    [
+      {
+        "name": "Importmap should be accepted due to unsafe-inline",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]

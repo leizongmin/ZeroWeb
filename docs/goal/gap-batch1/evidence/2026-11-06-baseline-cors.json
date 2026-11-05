@@ -1,0 +1,1847 @@
+[
+  [
+    "cors/304.htm",
+    [
+      {
+        "name": "A 304 response with no CORS headers inherits from the stored response",
+        "status": "Fail",
+        "message": "assert_equals: didn't get successful 1st response; expected \"Success\" but got \"\""
+      },
+      {
+        "name": "A 304 can expand Access-Control-Expose-Headers",
+        "status": "Fail",
+        "message": "assert_equals: didn't get successful 1st response; expected \"Success\" but got \"\""
+      },
+      {
+        "name": "A 304 can contract Access-Control-Expose-Headers",
+        "status": "Fail",
+        "message": "assert_equals: didn't get successful 1st response; expected \"Success\" but got \"\""
+      },
+      {
+        "name": "A 304 can change Access-Control-Allow-Origin",
+        "status": "Fail",
+        "message": "assert_equals: didn't get successful 1st response; expected \"Success\" but got \"\""
+      }
+    ]
+  ],
+  [
+    "cors/basic.htm",
+    [
+      {
+        "name": "Same domain basic usage, origin: none",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "Same domain basic usage, origin: echo",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "Cross domain basic usage, origin: none",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross domain basic usage, origin: echo",
+        "status": "Fail",
+        "message": "assert_unreached: Should be accepted Reached unreachable code"
+      },
+      {
+        "name": "Same domain different port, origin: none",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same domain different port, origin: echo",
+        "status": "Fail",
+        "message": "assert_unreached: Should be accepted Reached unreachable code"
+      },
+      {
+        "name": "Cross domain different port, origin: none",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross domain different port, origin: echo",
+        "status": "Fail",
+        "message": "assert_unreached: Should be accepted Reached unreachable code"
+      },
+      {
+        "name": "Cross domain different protocol, origin: none",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Cross domain different protocol, origin: echo",
+        "status": "Fail",
+        "message": "assert_unreached: Should be accepted Reached unreachable code"
+      },
+      {
+        "name": "Same domain different protocol different port, origin: none",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Same domain different protocol different port, origin: echo",
+        "status": "Fail",
+        "message": "assert_unreached: Should be accepted Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "cors/client-hint-request-headers-2.tentative.htm",
+    [
+      {
+        "name": "Client hint headers are simple headers",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      }
+    ]
+  ],
+  [
+    "cors/client-hint-request-headers.htm",
+    [
+      {
+        "name": "Unspecified request headers are disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Unextractable device-memory client hint header is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Unextractable DPR client hint header is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Unextractable width client hint header is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Unextractable viewport-width client hint header is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Test invalid rtt value is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Test invalid downlink value is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Test invalid ect value is disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "cors/credentials-flag.htm",
+    [
+      {
+        "name": "Setting withCredentials on a sync XHR object should not throw",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: TRUE should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: True should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: \"true\" should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: 'true' should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: false should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: 1 should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: 0 should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: ,true should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: true, should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: true%0B should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Access-Control-Allow-Credentials: true%0C should be disallowed (async)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "cors/credentials-flag.htm",
+        "status": "Timeout",
+        "message": "testharness page timeout completed the file with 3 test(s) unreported (state={\"loaded\":true,\"pending\":3,\"phase\":4,\"tests\":15})"
+      }
+    ]
+  ],
+  [
+    "cors/image-tainting-in-cross-origin-iframe.sub.html",
+    [
+      {
+        "name": "cors/image-tainting-in-cross-origin-iframe.sub.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "cors/late-upload-events.htm",
+    [
+      {
+        "name": "Late listeners: No preflight",
+        "status": "Fail",
+        "message": "assert_equals: expected 200 but got 0"
+      },
+      {
+        "name": "Late listeners: Preflight",
+        "status": "Fail",
+        "message": "assert_equals: expected 200 but got 0"
+      }
+    ]
+  ],
+  [
+    "cors/origin.htm",
+    [
+      {
+        "name": "Allow origin: *",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _*__",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: [tab]*",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _https://wpt.test___[tab]_",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: [tab]https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: //wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: ://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: ftp://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http:://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http:/wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http:wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test?",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test/",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test /",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test#",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test%23",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test:80",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test, *",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test\\0",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: HTTPS://WPT.TEST",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: HTTPS://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: -",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: **",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: ,*",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *,",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: \\0*",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: \u000b*",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: \f*",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *\\0",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *\u000b",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *\f",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: '*'",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: \"*\"",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: * *",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: * null",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *https://*",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *https://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: * https://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *, https://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: \\0https://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: null https://wpt.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http://example.net",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: null",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: null *",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: ",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test/cors/origin.htm",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test/cors/",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test/cors/",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: .test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: *.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http://test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http://.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow origin: http://*.test",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (, *)",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (*, )",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (*, *)",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (, https://wpt.test)",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (*, https://wpt.test)",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      },
+      {
+        "name": "Disallow multiple headers (https://wpt.test, https://wpt.test)",
+        "status": "Fail",
+        "message": "assert_throws_dom: send function \"function() { client.send() }\" did not throw"
+      }
+    ]
+  ],
+  [
+    "cors/preflight-cache.htm",
+    [
+      {
+        "name": "Test preflight",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"def main(request, response):\\n    headers = [(b\\\"Content-Type\\\", b\\\"text/plain\\\")]\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value == None:\\n            body = u\\\"0\\\"\\n        else:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n\\n        return headers, body\\n\\n    if request.method == u\\\"OPTIONS\\\":\\n        if not b\\\"Access-Control-Request-Method\\\" in request.headers:\\n            response.set_error(400, u\\\"No Access-Control-Request-Method header\\\")\\n            return u\\\"ERROR: No access-control-request-method in preflight!\\\"\\n\\n        headers.append((b\\\"Access-Control-Allow-Methods\\\",\\n                        request.headers[b'Access-Control-Request-Method']))\\n\\n        if b\\\"max_age\\\" in request.GET:\\n            headers.append((b\\\"Access-Control-Max-Age\\\", request.GET[b'max_age']))\\n\\n        if b\\\"token\\\" in request.GET:\\n            request.server.stash.put(request.GET.first(b\\\"token\\\"), 1)\\n\\n    headers.append((b\\\"Access-Control-Allow-Origin\\\", b\\\"*\\\"))\\n    headers.append((b\\\"Access-Control-Allow-Headers\\\", b\\\"x-print\\\"))\\n\\n    body = request.headers.get(b\\\"x-print\\\", b\\\"NO\\\")\\n\\n    return headers, body\\n\""
+      },
+      {
+        "name": "preflight for x-print should be cached",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"def main(request, response):\\n    headers = [(b\\\"Content-Type\\\", b\\\"text/plain\\\")]\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value == None:\\n            body = u\\\"0\\\"\\n        else:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n\\n        return headers, body\\n\\n    if request.method == u\\\"OPTIONS\\\":\\n        if not b\\\"Access-Control-Request-Method\\\" in request.headers:\\n            response.set_error(400, u\\\"No Access-Control-Request-Method header\\\")\\n            return u\\\"ERROR: No access-control-request-method in preflight!\\\"\\n\\n        headers.append((b\\\"Access-Control-Allow-Methods\\\",\\n                        request.headers[b'Access-Control-Request-Method']))\\n\\n        if b\\\"max_age\\\" in request.GET:\\n            headers.append((b\\\"Access-Control-Max-Age\\\", request.GET[b'max_age']))\\n\\n        if b\\\"token\\\" in request.GET:\\n            request.server.stash.put(request.GET.first(b\\\"token\\\"), 1)\\n\\n    headers.append((b\\\"Access-Control-Allow-Origin\\\", b\\\"*\\\"))\\n    headers.append((b\\\"Access-Control-Allow-Headers\\\", b\\\"x-print\\\"))\\n\\n    body = request.headers.get(b\\\"x-print\\\", b\\\"NO\\\")\\n\\n    return headers, body\\n\""
+      },
+      {
+        "name": "age = blank, should be cached",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"def main(request, response):\\n    headers = [(b\\\"Content-Type\\\", b\\\"text/plain\\\")]\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value == None:\\n            body = u\\\"0\\\"\\n        else:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n\\n        return headers, body\\n\\n    if request.method == u\\\"OPTIONS\\\":\\n        if not b\\\"Access-Control-Request-Method\\\" in request.headers:\\n            response.set_error(400, u\\\"No Access-Control-Request-Method header\\\")\\n            return u\\\"ERROR: No access-control-request-method in preflight!\\\"\\n\\n        headers.append((b\\\"Access-Control-Allow-Methods\\\",\\n                        request.headers[b'Access-Control-Request-Method']))\\n\\n        if b\\\"max_age\\\" in request.GET:\\n            headers.append((b\\\"Access-Control-Max-Age\\\", request.GET[b'max_age']))\\n\\n        if b\\\"token\\\" in request.GET:\\n            request.server.stash.put(request.GET.first(b\\\"token\\\"), 1)\\n\\n    headers.append((b\\\"Access-Control-Allow-Origin\\\", b\\\"*\\\"))\\n    headers.append((b\\\"Access-Control-Allow-Headers\\\", b\\\"x-print\\\"))\\n\\n    body = request.headers.get(b\\\"x-print\\\", b\\\"NO\\\")\\n\\n    return headers, body\\n\""
+      },
+      {
+        "name": "age = 0, should not be cached",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"def main(request, response):\\n    headers = [(b\\\"Content-Type\\\", b\\\"text/plain\\\")]\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value == None:\\n            body = u\\\"0\\\"\\n        else:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n\\n        return headers, body\\n\\n    if request.method == u\\\"OPTIONS\\\":\\n        if not b\\\"Access-Control-Request-Method\\\" in request.headers:\\n            response.set_error(400, u\\\"No Access-Control-Request-Method header\\\")\\n            return u\\\"ERROR: No access-control-request-method in preflight!\\\"\\n\\n        headers.append((b\\\"Access-Control-Allow-Methods\\\",\\n                        request.headers[b'Access-Control-Request-Method']))\\n\\n        if b\\\"max_age\\\" in request.GET:\\n            headers.append((b\\\"Access-Control-Max-Age\\\", request.GET[b'max_age']))\\n\\n        if b\\\"token\\\" in request.GET:\\n            request.server.stash.put(request.GET.first(b\\\"token\\\"), 1)\\n\\n    headers.append((b\\\"Access-Control-Allow-Origin\\\", b\\\"*\\\"))\\n    headers.append((b\\\"Access-Control-Allow-Headers\\\", b\\\"x-print\\\"))\\n\\n    body = request.headers.get(b\\\"x-print\\\", b\\\"NO\\\")\\n\\n    return headers, body\\n\""
+      },
+      {
+        "name": "age = -1, should not be cached",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"def main(request, response):\\n    headers = [(b\\\"Content-Type\\\", b\\\"text/plain\\\")]\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value == None:\\n            body = u\\\"0\\\"\\n        else:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n\\n        return headers, body\\n\\n    if request.method == u\\\"OPTIONS\\\":\\n        if not b\\\"Access-Control-Request-Method\\\" in request.headers:\\n            response.set_error(400, u\\\"No Access-Control-Request-Method header\\\")\\n            return u\\\"ERROR: No access-control-request-method in preflight!\\\"\\n\\n        headers.append((b\\\"Access-Control-Allow-Methods\\\",\\n                        request.headers[b'Access-Control-Request-Method']))\\n\\n        if b\\\"max_age\\\" in request.GET:\\n            headers.append((b\\\"Access-Control-Max-Age\\\", request.GET[b'max_age']))\\n\\n        if b\\\"token\\\" in request.GET:\\n            request.server.stash.put(request.GET.first(b\\\"token\\\"), 1)\\n\\n    headers.append((b\\\"Access-Control-Allow-Origin\\\", b\\\"*\\\"))\\n    headers.append((b\\\"Access-Control-Allow-Headers\\\", b\\\"x-print\\\"))\\n\\n    body = request.headers.get(b\\\"x-print\\\", b\\\"NO\\\")\\n\\n    return headers, body\\n\""
+      },
+      {
+        "name": "preflight first request, second from cache, wait, third should preflight again",
+        "status": "Fail",
+        "message": "assert_unreached: Got unexpected error event on the XHR object Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "cors/preflight-failure.htm",
+    [
+      {
+        "name": "Should succeed if preflight has status 200",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Should succeed if preflight has status 299",
+        "status": "Fail",
+        "message": "assert_false: expected false got true"
+      },
+      {
+        "name": "Should throw error if preflight has status 300",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 301",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 302",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 303",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 304",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 305",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 306",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 307",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 308",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 400",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 401",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 402",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 403",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 404",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 405",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 406",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 407",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 408",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 409",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 410",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 411",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 412",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 413",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 414",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 415",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 416",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 417",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 500",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 501",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 502",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 503",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 504",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 505",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 680",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Should throw error if preflight has status 790",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cors/redirect-origin.htm",
+    [
+      {
+        "name": "local (*) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "local (*) to remote (https://wpt.test), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "local (*) to remote (null), expect to fail",
+        "status": "Fail",
+        "message": "assert_false: Got response expected false got true"
+      },
+      {
+        "name": "local (*) to remote (none), expect to fail",
+        "status": "Fail",
+        "message": "assert_false: Got response expected false got true"
+      },
+      {
+        "name": "local (https://wpt.test) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "local (https://wpt.test) to remote (https://wpt.test), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "local (https://wpt.test) to remote (null), expect to fail",
+        "status": "Fail",
+        "message": "assert_false: Got response expected false got true"
+      },
+      {
+        "name": "local (https://wpt.test) to remote (none), expect to fail",
+        "status": "Fail",
+        "message": "assert_false: Got response expected false got true"
+      },
+      {
+        "name": "local (null) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "local (none) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "remote (*) to local (*), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to local (https://wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to local (null), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to local (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to local (*), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to local (https://wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to local (null), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to local (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (null) to local (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (none) to local (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to remote (https://wpt.test), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to remote (null), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to remote (*), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to remote (https://wpt.test), expect origin=https://wpt.test",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to remote (null), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to remote (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (null) to remote (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (none) to remote (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote2 (*), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to remote2 (https://wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote2 (null), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (*) to remote2 (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to remote2 (*), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to remote2 (https://wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://wpt.test) to remote2 (null), expect origin=null",
+        "status": "Fail",
+        "message": "assert_true: Got response expected true got false"
+      },
+      {
+        "name": "remote (https://wpt.test) to remote2 (none), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (null) to remote2 (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (none) to remote2 (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote (https://www1.wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (*) to remote2 (https://www1.wpt.test), expect to fail",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "remote (https://www1.wpt.test) to remote (*), expect to fail",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cors/redirect-preflight-2.htm",
+    [
+      {
+        "name": "Same-origin custom-header request, redirect to cross-origin fails after doing a non-successful preflight",
+        "status": "Fail",
+        "message": "assert_unreached: Request should not succeed! Reached unreachable code"
+      },
+      {
+        "name": "Same-origin custom-header request, redirect to cross-origin succeeds after doing a preflight",
+        "status": "Fail",
+        "message": "assert_equals: did preflight expected \"1\" but got \"import json\\n\\nfrom wptserve.utils import isomorphic_decode\\n\\ndef main(request, response):\\n    origin = request.GET.first(b\\\"origin\\\", request.headers.get(b'origin') or b'none')\\n\\n    if b\\\"check\\\" in request.GET:\\n        token = request.GET.first(b\\\"token\\\")\\n        value = request.server.stash.take(token)\\n        if value is not None:\\n            if request.GET.first(b\\\"check\\\", None) == b\\\"keep\\\":\\n                request.server.stash.put(token, value)\\n            body = u\\\"1\\\"\\n        else:\\n            body = u\\\"0\\\"\\n        return [(b\\\"Content-Type\\\", b\\\"text/plain\\\")], body\\n\\n\\n    if origin != b'none':\\n        response.headers.set(b\\\"Access-Control-Allow-Origin\\\", origin)\\n    if b'origin2' in request.GET:\\n        response.headers.append(b\\\"Access-Control-Allow-Origin\\\", request.GET.first(b'origin2'))\\n\\n    #Preflight\\n    if b'headers' in request.GET:\\n        response.headers.set(b\\\"Access-Control-Allow-Headers\\\", request.GET.first(b'headers'))\\n    if b'credentials' in request.GET:\\n        response.headers.set(b\\\"Access-Control-Allow-Credentials\\\", request.GET.first(b'credentials'))\\n    if b'methods' in request.GET:\\n        response.headers.set(b\\\"Access-Control-Allow-Methods\\\", request.GET.first(b'methods'))\\n\\n    code_raw = request.GET.first(b'code', None)\\n    if code_raw:\\n        code = int(code_raw)\\n    else:\\n        code = None\\n    if request.method == u'OPTIONS':\\n        #Override the response code if we're in a preflight and it's asked\\n        if b'preflight' in request.GET:\\n            code = int(request.GET.first(b'preflight'))\\n\\n        #Log that the preflight actually happened if we have an ident\\n        if b'token' in request.GET:\\n            request.server.stash.put(request.GET[b'token'], True)\\n\\n    if b'location' in request.GET:\\n        if code is None:\\n            code = 302\\n\\n        if code >= 300 and code < 400:\\n            response.headers.set(b\\\"Location\\\", request.GET.first(b'location'))\\n\\n    headers = {}\\n    for name, values in request.headers.items():\\n        if len(values) == 1:\\n            headers[isomorphic_decode(name)] = isomorphic_decode(values[0])\\n        else:\\n            #I have no idea, really\\n            headers[name] = values\\n\\n    headers[u'get_value'] = isomorphic_decode(request.GET.first(b'get_value', b''))\\n\\n    body = json.dumps(headers)\\n\\n    if code:\\n        return (code, b\\\"StatusText\\\"), [], body\\n    else:\\n        return body\\n\""
+      }
+    ]
+  ],
+  [
+    "cors/redirect-preflight.htm",
+    [
+      {
+        "name": "Should allow redirect 301 after succesful (200) preflight",
+        "status": "Fail",
+        "message": "assert_equals: Successfull redirect expected 200 but got 0"
+      },
+      {
+        "name": "Should allow redirect 302 after succesful (200) preflight",
+        "status": "Fail",
+        "message": "assert_equals: Successfull redirect expected 200 but got 0"
+      },
+      {
+        "name": "Should allow redirect 303 after succesful (200) preflight",
+        "status": "Fail",
+        "message": "assert_equals: Successfull redirect expected 200 but got 0"
+      },
+      {
+        "name": "Should allow redirect 307 after succesful (200) preflight",
+        "status": "Fail",
+        "message": "assert_equals: Successfull redirect expected 200 but got 0"
+      },
+      {
+        "name": "Should allow redirect 308 after succesful (200) preflight",
+        "status": "Fail",
+        "message": "assert_equals: Successfull redirect expected 200 but got 0"
+      }
+    ]
+  ],
+  [
+    "cors/redirect-userinfo.htm",
+    [
+      {
+        "name": "Disallow redirect with userinfo (user:pass@)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Disallow redirect with userinfo (user:@)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Disallow redirect with userinfo (user@)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Allow redirect without userinfo (:@ is trimmed during URL parsing)",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      },
+      {
+        "name": "Disallow redirect with userinfo (:pass@)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Allow redirect without userinfo (@ is trimmed during URL parsing)",
+        "status": "Fail",
+        "message": "assert_unreached: Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "cors/remote-origin.htm",
+    [
+      {
+        "name": "Allow origin: *",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _*__",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: [tab]*",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: https://www1.wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _https://www1.wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: _https://www1.wpt.test___[tab]_",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Allow origin: [tab]https://www1.wpt.test",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Disallow origin: https://wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: //www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: ://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: ftp://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: http:://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: http:/www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: http:www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test?",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test/",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test_/",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test#",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test%23",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test:80",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test,_*",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test\\0",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: HTTPS://WWW1.WPT.TEST",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: HTTPS://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://WWW1.WPT.TEST",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: -",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: **",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: \\0*",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *\\0",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: '*'",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: \"*\"",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *_*",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *https://*",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *_https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: *,_https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: \\0https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: null_https://www1.wpt.test",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: http://example.net",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: null",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: ",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://wpt.test/cors/remote-origin.htm",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://wpt.test/cors/",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      },
+      {
+        "name": "Disallow origin: https://www1.wpt.test/cors/",
+        "status": "Fail",
+        "message": "assert_equals: expected \"error\" but got \"load\""
+      }
+    ]
+  ],
+  [
+    "cors/request-headers.htm",
+    [
+      {
+        "name": "basic request header",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Simple request headers need not be in allow-headers",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "Unspecified request headers are disallowed",
+        "status": "Fail",
+        "message": "assert_throws_dom: function \"function() { client.send(null) }\" did not throw"
+      },
+      {
+        "name": "Strange allowheaders (case insensitive)",
+        "status": "Fail",
+        "message": "Unexpected token 'i', \"import jso\"... is not valid JSON"
+      },
+      {
+        "name": "INVALID_STATE_ERR on setRequestHeader before open()",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "INVALID_STATE_ERR on setRequestHeader after send()",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cors/response-headers.htm",
+    [
+      {
+        "name": "getResponseHeader: Expose Access-Control-Expose-Headers (x-custom-header-comma)",
+        "status": "Fail",
+        "message": "assert_equals: X-Custom-Header-Comma expected (string) \"1, 2\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Expose second Access-Control-Expose-Headers (x-second-expose)",
+        "status": "Fail",
+        "message": "assert_equals: X-Second-Expose expected (string) \"flyingpig\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Don't trim whitespace",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getResponseHeader: x-custom-header bytes",
+        "status": "Fail",
+        "message": "assert_equals: x-custom-header-bytes expected (string) \"â¦\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Exposed server field readable (Date)",
+        "status": "Fail",
+        "message": "Cannot read properties of null (reading 'length')"
+      },
+      {
+        "name": "getResponseHeader: Cache-Control: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Cache-Control expected (string) \"no-cache\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Content-Language: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Content-Language expected (string) \"nn\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Expires: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Expires expected (string) \"Thu, 01 Dec 1994 16:00:00 GMT\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Last-Modified: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Last-Modified expected (string) \"Thu, 01 Dec 1994 10:00:00 GMT\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Pragma: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Pragma expected (string) \"no-cache\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Content-Length: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Content-Length expected (string) \"4\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Content-Type: readable by default",
+        "status": "Fail",
+        "message": "assert_equals: Content-Type expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "getResponseHeader: Server: unreadable by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getResponseHeader: X-Powered-By: unreadable by default",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "getResponse: don't expose x-nonexposed",
+        "status": "Fail",
+        "message": "assert_equals: x-custom-header expected (string) \"test, test\" but got (object) null"
+      },
+      {
+        "name": "getAllResponseHeaders: don't expose x-nonexposed",
+        "status": "Fail",
+        "message": "assert_true: x-custom-header present expected true got false"
+      },
+      {
+        "name": "getResponseHeader: Combined testing of cors response headers",
+        "status": "Fail",
+        "message": "assert_equals: x-custom-header expected (string) \"test, test\" but got (object) null"
+      }
+    ]
+  ],
+  [
+    "cors/script-304.html",
+    [
+      {
+        "name": "Load a fresh cross-origin script",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      },
+      {
+        "name": "Reload same cross-origin script from the memory cache after revalidation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "cors/simple-requests-ch.tentative.htm",
+    [
+      {
+        "name": "No preflight GET and {\"save-data\":\"on\",\"device-memory\":\"2.0\",\"dpr\":\"3.0\",\"width\":\"1200\",\"viewport-width\":\"1300\",\"rtt\":\"1\",\"downlink\":\"1.0\",\"ect\":\"2g\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"save-data\":\"on\",\"device-memory\":\"2.0\",\"dpr\":\"3.0\",\"width\":\"1200\",\"viewport-width\":\"1300\",\"rtt\":\"1\",\"downlink\":\"1.0\",\"ect\":\"2g\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"save-data\":\"on\",\"device-memory\":\"2.0\",\"dpr\":\"3.0\",\"width\":\"1200\",\"viewport-width\":\"1300\",\"rtt\":\"1\",\"downlink\":\"1.0\",\"ect\":\"2g\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      }
+    ]
+  ],
+  [
+    "cors/simple-requests.htm",
+    [
+      {
+        "name": "No preflight GET and {\"Accept\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"Accept\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"Accept\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"accept-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"accept-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"accept-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"CONTENT-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"CONTENT-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"CONTENT-language\":\"test\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"Content-Type\":\"application/x-www-form-urlencoded\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"Content-Type\":\"application/x-www-form-urlencoded\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"Content-Type\":\"application/x-www-form-urlencoded\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"content-type\":\"multipart/form-data\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"content-type\":\"multipart/form-data\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"content-type\":\"multipart/form-data\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"content-type\":\"text/plain\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"content-type\":\"text/plain\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"content-type\":\"text/plain\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight GET and {\"accept\":\"test\",\"accept-language\":\"test\",\"content-language\":\"test\",\"content-type\":\"text/plain; parameter=whatever\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight HEAD and {\"accept\":\"test\",\"accept-language\":\"test\",\"content-language\":\"test\",\"content-type\":\"text/plain; parameter=whatever\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight POST and {\"accept\":\"test\",\"accept-language\":\"test\",\"content-language\":\"test\",\"content-type\":\"text/plain; parameter=whatever\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight Get and {\"content-type\":\"text/plain; parameter=extra_bonus\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "No preflight post and {\"content-type\":\"text/plain\"}",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"text/plain\" but got (object) null"
+      },
+      {
+        "name": "Check simple headers (async)",
+        "status": "Fail",
+        "message": "assert_unreached: onerror Reached unreachable code"
+      }
+    ]
+  ],
+  [
+    "cors/status-async.htm",
+    [
+      {
+        "name": "Status on GET 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "Status on GET 201",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 201 but got 0"
+      },
+      {
+        "name": "Status on GET 202",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 202 but got 0"
+      },
+      {
+        "name": "Status on GET 203",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 203 but got 0"
+      },
+      {
+        "name": "Status on GET 204",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 204 but got 0"
+      },
+      {
+        "name": "Status on GET 205",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 205 but got 0"
+      },
+      {
+        "name": "Status on GET 206",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 206 but got 0"
+      },
+      {
+        "name": "Status on GET 209",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 209 but got 0"
+      },
+      {
+        "name": "Status on GET 299",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 299 but got 0"
+      },
+      {
+        "name": "Status on POST 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "Status on HEAD 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "Status on PUT 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "Status on CHICKEN 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "Status on GET 400",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 400 but got 0"
+      },
+      {
+        "name": "Status on HEAD 401",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 401 but got 0"
+      },
+      {
+        "name": "Status on POST 404",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 404 but got 0"
+      },
+      {
+        "name": "Status on POST 500",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 500 but got 0"
+      },
+      {
+        "name": "Status on PUT 699",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on CHICKEN 501",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on GET 400 (nonsimple)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on HEAD 401 (nonsimple)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on POST 404 (nonsimple)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on PUT 699 (nonsimple)",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "Status on CHICKEN 501 (nonsimple)",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "cors/status-preflight.htm",
+    [
+      {
+        "name": "CORS - status after preflight on GET 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on GET 204",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 204 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on GET 400",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 400 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on GET 401",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 401 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 200",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 200 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 204",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 204 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 400",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 400 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 401",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 401 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 501",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 501 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on HEAD 699",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 699 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on POST 204",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 204 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on POST 400",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 400 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on POST 401",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 401 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on POST 404",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 404 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on PUT 699",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 699 but got 0"
+      },
+      {
+        "name": "CORS - status after preflight on CHICKEN 501",
+        "status": "Fail",
+        "message": "assert_equals: response status expected 501 but got 0"
+      }
+    ]
+  ],
+  [
+    "cors/status.htm",
+    [
+      {
+        "name": "1. CORS disallowed, response status 400.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "2. CORS disallowed, preflight status 200.",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "3. CORS allowed, response status 400.",
+        "status": "Fail",
+        "message": "assert_unreached: error event Reached unreachable code"
+      },
+      {
+        "name": "4. CORS allowed, preflight status 200, response status 400.",
+        "status": "Fail",
+        "message": "assert_unreached: error event Reached unreachable code"
+      },
+      {
+        "name": "5. CORS allowed, preflight status 400.",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ]
+]
