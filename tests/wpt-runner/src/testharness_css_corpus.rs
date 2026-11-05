@@ -287,7 +287,7 @@ pub fn run_css_text_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String,
 }
 
 // css-testharness-compat-v2 goal M1 批次 1（css 二期 B1 值/属性解析序列化簇
-// 首批 6 目录，分母 16,564 子测试——M0 甄别表 docs/goal/css-testharness-compat-v2/
+// 首批 6 目录，分母 16,564 子测试——M0 甄别表 docs/goal/archive/css-testharness-compat-v2/
 // evidence/2026-11-04-m0-triage-and-gate.md §3；通道契约与一期 M3 扩面一致）。
 
 /// Run the pinned upstream cssom testharness subset（css 二期 M1 批次 1——

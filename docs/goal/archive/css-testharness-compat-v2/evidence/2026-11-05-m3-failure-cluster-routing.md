@@ -75,7 +75,7 @@ canonical serialization 579、序列化 assert_equals 838、color-mix 色域
 
 ## 证据
 
-- 一期 grid/text 分簇：[archive 2026-10-30-m3-batch5-grid-text](../../archive/css-testharness-compat/evidence/2026-10-30-m3-batch5-grid-text.md)
-- 一期 color 分簇：[archive 2026-10-30-m3-batch1-color-align-sizing](../../archive/css-testharness-compat/evidence/2026-10-30-m3-batch1-color-align-sizing.md)
+- 一期 grid/text 分簇：[archive 2026-10-30-m3-batch5-grid-text](../css-testharness-compat/evidence/2026-10-30-m3-batch5-grid-text.md)
+- 一期 color 分簇：[archive 2026-10-30-m3-batch1-color-align-sizing](../css-testharness-compat/evidence/2026-10-30-m3-batch1-color-align-sizing.md)
 - 布局池测算与 B3 目录清单：[2026-11-04-m0-triage-and-gate](2026-11-04-m0-triage-and-gate.md) §7
-- anchor-size 一期定性：[archive 2026-10-30-m3-batch3-anchor-position-masking-backgrounds](../../archive/css-testharness-compat/evidence/2026-10-30-m3-batch3-anchor-position-masking-backgrounds.md)
+- anchor-size 一期定性：[archive 2026-10-30-m3-batch3-anchor-position-masking-backgrounds](../css-testharness-compat/evidence/2026-10-30-m3-batch3-anchor-position-masking-backgrounds.md)
