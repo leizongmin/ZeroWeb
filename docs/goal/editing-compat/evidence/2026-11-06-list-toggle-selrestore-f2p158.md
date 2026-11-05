@@ -76,3 +76,33 @@ q10 disable-only 门的对偶补齐：enable 归并按选区几何逐 item 门�
 - 探针 corpus-exact 4 面（q14b enable 模式）：L1 got `<ul><li>foo</li><ol><li>bar</li></ol><ul><li>baz</li></ul><li>quz</li></ul>` = :178 镜像逐字一致；L2 = :253 镜像一致（尾随文本成新 li）；K1 = :240 镜像一致（双壳 `<ol><ol>` 形）；K3 keep 面不变（门跳过实证）。L3/K2 非 :208/:245 期望形（trailing-list 外提后换壳 li 应保嵌套子列表、straddle-extra 应整体换壳分裂）——该两族仍在 F2P=8 之外，属 nested-split 边界残债余量。
 - enginelib js_dom_bridge（make guarded-test，03:26-03:28）：**3,746P/5F** 五已知红逐名恒一，红集与 q13c 日志直接 diff 为空（q13-reds.txt 缺失由本证补齐重建）；rc=2 系五已知红致 make 非零、非门禁失败。
 - judge 脚本 keep-family 控制段 grep 空系行格式不匹配（f-string 面名不落日志行），P2F=0 双 bar 已行级覆盖同一断言，不另补腿。
+
+### H. q15 nested-split 两门臂（helper 语义修复 + enable 门收窄 + 换型三分判据）
+
+q14 残债普查纠正后收敛三臂（part01e.js，29+/7− 量级）：①`_zwListEndpointPathKind` 语义修复——先撞无关列表（item 非祖先，如 :458 straddle 端点撞外层壳）不再误判 'list'，仅 item 可达且列表介于端点与 item 之间才判 'list'，不可达一律 'outside'；②enable 归并门收窄：跳过条件从 direct∧list 扩为 **start=direct ∧ end≠outside**（端点不离开该 item 的形状一律保嵌套——跨入形 :233/:448 + 单 li 直选含嵌套尾随形 :407/:418/:463/:473，Chrome 录制不 lift）；③enable 换型 pass 三分判据——嵌套在被换壳 li 内且两端点均不在列表内的子列表跳过 retag/merge（expected 保嵌套 UL 原型），对照 :448 选区跨入嵌套换型、:458 外提后列表升 sibling 位（parent 非 li）换型。探针通道重构：常驻页 dump 消息顶 runner 3.3KB 截断上限且追加块落在末尾 assert 后为死代码（已回撤），八面移独立页 zz-probe-list15.html（PRE 结构 dump + case 级 try/catch——首跑 path 错位 TypeError 中断实证「中间抛错丢全量 results」）。
+
+### I. q15 门禁账（03:55-04:02 批，arm3 重跑口径）
+
+- 语料 f1b-vs-q15 双腿 **F2P 185 / P2F 0 / newF 0 / lost 0**（行数 1761/2065 恒定，+10 与三臂全流程模拟预测逐项一致）；fails iol 53→**48**、iul 49→**44**。
+- q14-vs-q15 **F2P 10 / P2F 0**：十行全为 compare 树面 = 五面 ×2 镜像——iol `foo<li>[bar]<ul>baz`(:418)、`[foo]<ul>bar</ul>baz`(:463)、`[foo]<ul>bar</ul><li>baz`(:407)、`foo<ul>bar</ul>[baz]`(:473)、`[foo<ul>bar</ul><li>baz]+extra`(:458 straddle-extra)；iul 为 ol 基镜像。控制行 9/9（17 行族 keep 四面 + q14 已绿四面 Pass 不动，五预测行 Pass 翻转）。
+- 探针 corpus-exact 五面（q15-2/3/4/5/6，enable 保嵌套/外提分裂形逐字一致）；q15-1（双层换壳 :373）/q15-7（direct→nested 换 tag 双层 :478）/q15-8（跨列表尾文本吸收 :488）未触——转换主流程改动面，留 q16。
+- enginelib js_dom_bridge（make guarded-test）：**3,746P/5F** 五已知红逐名恒一，红集 diff q14→q15 空；rc=2 系五已知红致 make 非零、非门禁失败。
+- 事故两笔（批内自纠，未污染门禁）：首批 arm1+2 起跑后模拟发现缺臂③（换型 pass 会在归并跳过后 retag 被换壳 li 内嵌套列表，违 :407/:463/:473 expected）——TaskStop 停批（无孤儿进程、锁释放、零腿完成，无混合二进制），加臂后整跑重落；probe 页 q15-4 path 笔误（baz ul child 序）与 path 需落到文本节点的 offset 语义两处修正。
+
+### H. q15 nested-split 三臂（残债八面 census + 门几何修正）
+
+上轮 ⑰ 卡点两族普查纠偏：残债实为 **enable 嵌套八面**（:373/:407/:418/:458/:463/:473/:478/:488 compare），q10 起 stable debt（q13/q14 双日志核对全红非回归）。独立探针页 zz-probe-list15.html（常驻页 dump 消息 3.3KB runner 截断顶格、追加块落末尾 assert 后为死代码——已回退；新页带 PRE 结构 dump + case 级 try/catch）。八面按 vendored toggleLists 全流程模拟分解为三臂：
+
+1. **臂 1 helper 语义修复**：`_zwListEndpointPathKind` 原实现链上先撞无关列表即判 'list'（straddle 端点撞外层壳误判）——改 item 可达才分类，列表介于端点与 item 之间才 'list'，不可达一律 'outside'。:458 li(foo) 端点几何（direct∧outside）恢复归并触发，vendored lift→换型→splitParent+wrap 全流程模拟即 expected。
+2. **臂 2 enable 门收窄**：跳过条件从 direct∧list 扩为 **start=direct ∧ end≠outside**（端点不离开该 item 一律保嵌套：跨入形 ：448 与单 li 直选含嵌套尾随形 ：407/:418/:463/:473 同门）；start=list 或 end=outside 仍归并（q14 已绿 8 行几何不变）。
+3. **臂 3 换型门**：normalize 跳过后嵌套列表仍被 newRange 包含，enable 换型 pass 会 retag 与 ：407/:463/:473 expected（嵌套保 UL 原型）矛盾——跳过 retag/merge iff list.parent 为 li 且两端点均不在列表内（三分判据：:448 选区跨入换型、:458 外提升 sibling 位 parent 非 li 换型、单 li 直选保型）。
+
+q15 首批（仅臂 1+2）停批重跑（TaskStop 无孤儿锁自由，臂 3 模拟 ：473 retag 矛盾实证后并入，避免混合二进制）；第二批会话终止仅杀记账壳，批进程树存活跑完（判活后让位，LOCK-BUSY 退出按设计让路）。
+
+### I. q15 门禁账（03:55-03:59 批，三臂单构建）
+
+- 语料 f1b-vs-q15 双腿 **F2P 185 / P2F 0 / newF 0 / lost 0**（行数 1761/2065 恒定，恰为预测 175+10）；fails iol 53→**48**、iul 49→**44**。
+- q14-vs-q15 **F2P 10 / P2F 0 / newF 0 / lost 0**：十行全 compare 树面，五面 ×2 镜像逐字 = 预测清单（iol :407 `<ul><li>[foo]<ul><li>bar</ul><li>baz</ul>`、:418 `<li>[bar]<ul>baz`、:458 straddle-extra `<p>extra`、:463 `[foo]<ul>bar</ul>baz`、:473 `[baz]` 嵌套后直选；iul 为 ol 基镜像）。
+- 控制行：keep 族四形（:448/:393/:453/:463-变体）Pass 恒定 + 预测五行全 Pass（judge-q15.sh 显式 grep，行名对齐语料 fixture 串）。
+- 探针 5 面 corpus-exact（q15-2/3/4/5/6 = 语料 expected 形逐字一致）；q15-1（:373 双层换壳）/q15-7（:478 跨入+尾随换型双层）/q15-8（:488 尾文本吸收）未翻 = 预留 q16 转换主流程臂（fixpoint 换壳 retag、direct→nested 双层换型、跨列表 join 尾吸收）。
+- enginelib js_dom_bridge（make guarded-test）：**3,746P/5F** 五已知红逐名恒一，红集 vs q14 日志 diff 空；rc=2 系五已知红致 make 非零、非门禁失败。

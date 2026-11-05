@@ -397,15 +397,18 @@
     }
     return false;
   }
-  // 端点相对 item 的路径类别（前奏归并几何门）：从 n 沿 parent 链爬到 item
-  // ——途中命中 ol/ul → 'list'（端点在 item 的子列表内）；直达 item →
-  // 'direct'（端点在 item 直属内容）；不达 item → 'outside'。
+  // 端点相对 item 的路径类别（前奏归并几何门，q15 修正语义）：从 n 沿 parent
+  // 链爬升，仅在 item 可达时分类——先达 item → 'direct'（端点在 item 直属
+  // 内容）；先命中 ol/ul 再达 item → 'list'（端点在 item 的子列表内，列表
+  // 介于端点与 item 之间）；item 不在祖先链上（可能途中撞到无关列表，如
+  // straddle 端点撞外层壳）→ 'outside'，不得误判 'list'。
   function _zwListEndpointPathKind(n, item) {
     var g = 0;
     var p = n;
+    var inList = false;
     while (p && g++ < 256) {
-      if (p === item) return 'direct';
-      if (_zwJusIsHtmlElement(p, ['ol', 'ul'])) return 'list';
+      if (p === item) return inList ? 'list' : 'direct';
+      if (_zwJusIsHtmlElement(p, ['ol', 'ul'])) inList = true;
       p = p.parentNode;
     }
     return 'outside';
@@ -709,14 +712,17 @@
     for (ac = range.startContainer; ac && gI++ < 512; ac = ac.parentNode) {
       if (_zwJusIsHtmlElement(ac, 'li')) items.unshift(ac);
     }
-    // normalize 前奏模式×几何双门（语料权威，q9 判读面 + q14 census）：
+    // normalize 前奏模式×几何双门（语料权威，q9 判读面 + q14/q15 census）：
     // disable 无条件归并（top-level 合并形 `<div>foo</div><ol>…<ol>…` 依赖，
-    // q10 判读）；enable 按选区几何逐 item 门控——起点在 item 直属内容且终点
-    // 在 item 某子列表内（`[foo<ol><li>bar]` 跨入形，q9 P2F 17 行族，:233
-    // expected 保持嵌套换壳）跳过归并；其余形状归并（subset-of-N 外提
-    // `<ol><li>foo<ol><li>[bar]<li>baz</ol>` 期望外提换壳形 :178、尾随列表
-    // item 外提、跨 item straddle 外提——q9 F2P 行集，q10 disable-only 门
-    // 丢失 10 行）。单门含两者：无条件归并重引 17 行 P2F、全关丢失外提行。
+    // q10 判读）；enable 按选区几何逐 item 门控——起点在 item 直属内容且
+    // 终点未离开该 item（直属内容或其子列表内）的形状跳过归并：跨入形
+    // `[foo<ol><li>bar]`（q9 P2F 17 行族，:233/:448 expected 保嵌套换壳）
+    // 与单 li 直选含嵌套尾随形 `[foo]<ol><li>bar</ol>…`（q15 census 八面
+    // 中四面，:407/:418/:463/:473 expected 换壳 li 保嵌套子列表/尾随文本，
+    // Chrome 录制不 lift）。其余形状归并（起点在子列表内：subset-of-N :178
+    // 外提换壳形；终点离开 item：straddle-extra :458 外提后整体换壳分裂
+    // 形——vendored lift+换型+splitParent+wrap 全流程模拟即 expected）。
+    // 单门含两者：无条件归并重引 17 行 P2F 且回引 q15 四面、全关丢失外提行。
     if (mode === 'disable') {
       for (var ii = 0; ii < items.length; ii++) {
         _zwListNormalizeSublists(items[ii]);
@@ -724,7 +730,7 @@
     } else {
       for (var ii = 0; ii < items.length; ii++) {
         if (_zwListEndpointPathKind(range.startContainer, items[ii]) === 'direct'
-        && _zwListEndpointPathKind(range.endContainer, items[ii]) === 'list') {
+        && _zwListEndpointPathKind(range.endContainer, items[ii]) !== 'outside') {
           continue;
         }
         _zwListNormalizeSublists(items[ii]);
@@ -741,6 +747,15 @@
       }, false);
       for (var ci = 0; ci < toConvert.length; ci++) {
         var list = toConvert[ci];
+        // Chrome delta（语料权威，q15 census 四面）：嵌套在被换壳 li 内、且
+        // 选区两端点均不在列表内的子列表不换型（:407/:418/:463/:473 expected
+        // 换壳 li 保嵌套 UL 原型；对照 :448 选区跨入嵌套 `[foo<ol><li>bar]`
+        // 换型、:458 外提后列表升 sibling 位 parent 非 li 换型——三分判据）。
+        if (_zwJusIsHtmlElement(list.parentNode, 'li')
+        && !_zwListContainsNode(list, range.startContainer)
+        && !_zwListContainsNode(list, range.endContainer)) {
+          continue;
+        }
         var prevL = list.previousSibling, nextL = list.nextSibling;
         if ((_zwJusIsEditable(prevL) && _zwJusIsHtmlElement(prevL, utag))
         || (_zwJusIsEditable(nextL) && _zwJusIsHtmlElement(nextL, utag))) {
