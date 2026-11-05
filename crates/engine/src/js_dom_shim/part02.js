@@ -11642,19 +11642,6 @@
   // 无条件覆盖（R3256 注记——描述符/原型链口径随本对象整体生效）。
   globalThis.console = _zwConsoleNamespace;
 
-  // `new Image(width, height)`（HTMLImageElement 构造器，R2834）——图片预加载（`new Image().src = url` 预取 /
-  // onload 探测）+ DOM 挂载（`document.body.appendChild(img)`）高频；WPT css-images / css-backgrounds /
-  // content-visibility fixtures 经 `new Image()` 构造。旧实现返 plain object（非 DOM 元素，appendChild 失效，
-  // 无 tagName）；现返 createElement('img') proxy（镜像 Option R2832 模式），设 width/height 属性；允许 new
-  // 与无 new（返值覆盖 this）。shim 元素为 Proxy 非 ctor 实例，故 `instanceof Image` 不成立（documented）。
-  function Image(width, height) {
-    var el = globalThis.document.createElement('img');
-    if (width !== undefined) { try { el.setAttribute('width', String(width)); } catch (_e) {} }
-    if (height !== undefined) { try { el.setAttribute('height', String(height)); } catch (_e) {} }
-    return el;
-  }
-  globalThis.Image = globalThis.Image || Image;
-
   // `new Audio([src])`（HTMLAudioElement 构造器，R2835）——音效/播客/通知音频构造高频（`new Audio(url).play()`）。
   // 返 createElement('audio') proxy（镜像 Image R2834），设 src；**无 new 调用抛 TypeError**
   //（spec WebIDL constructor 语义——WPT the-audio-element/audio_constructor 断言面）；设

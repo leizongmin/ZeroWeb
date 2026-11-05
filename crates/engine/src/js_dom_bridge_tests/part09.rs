@@ -305,11 +305,28 @@ fn test_image_constructor_r2834() {
         "detached Image() src failure asynchronously dispatches error"
     );
 
-    // 无 new 调用亦返 img proxy。
+    // s294：Image.prototype 与 HTMLImageElement.prototype 同一（WebIDL named constructor——
+    // Image-constructor.html「share a prototype」钉形；旧函数版 prototype 属性 non-configurable
+    // 不可改形，class 具名构造器 + 接口原型置换落地）。
     assert_eq!(
-        sandbox.execute("String(Image().tagName)").unwrap().value,
-        "IMG",
-        "Image() 无 new 亦返 IMG proxy"
+        sandbox
+            .execute("String(Image.prototype === globalThis.HTMLImageElement.prototype)")
+            .unwrap()
+            .value,
+        "true",
+        "Image.prototype 与 HTMLImageElement.prototype 同一"
+    );
+
+    // 无 new 调用抛 TypeError（s294 spec 纠正——WebIDL named constructor 语义，Image-constructor.html
+    // 具名构造器结构钉形同族。旧断言「无 new 亦返 IMG proxy」与 spec 冲突，随结构对齐一并修正——
+    // Audio R2835 无 new TypeError 同款先例）。
+    sandbox
+        .execute("try { Image(); globalThis.__callNoNew = 'no-throw'; } catch (err) { globalThis.__callNoNew = err.name; }")
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__callNoNew)").unwrap().value,
+        "TypeError",
+        "Image() 无 new 抛 TypeError（spec WebIDL named constructor 语义）"
     );
 }
 

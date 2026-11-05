@@ -10052,6 +10052,42 @@
       }
     }
   })();
+  // s294（html-semantics M2 切片 294）：Image 具名构造器结构对齐（spec WebIDL named
+  // constructor——Image-constructor.html 钉形断言：Image.prototype 与
+  // HTMLImageElement.prototype **同一对象**、接口原型描述符 {writable:false,
+  // enumerable:false, configurable:false}、getPrototypeOf(Image) = Function.prototype、
+  // getPrototypeOf(new Image()) = HTMLImageElement.prototype）。旧 part02 R2834 普通
+  // 函数版两处不合：function 的 prototype 属性 non-configurable 不可 defineProperty 改
+  // 形（赋值又留 writable:true，assert_false(desc.writable) 断）；且与接口原型不同一。
+  // Proxy 包装 target 函数方案实证不可行（ES 内部方法不变式：target 'prototype'
+  // non-configurable + writable 时 trap 不得报 non-writable——QuickJS 运行时抛错，solo
+  // Fail 证据存档）——改 **接口原型对象整体置换**：class 的 .prototype 天生该描述符形，
+  // 置 HTMLImageElement.prototype 指向 class 原型对象，三方同一化一步到位（gOPD trap
+  // 路线已弃）。链修复：class 无 extends 原型落 Object.prototype → setPrototypeOf 接
+  // HTMLElement.prototype（spec 接口原型 [[Prototype]] = 父接口原型）；class 原型自带
+  // constructor=Image → 改指 HTMLImageElement（spec interface prototype object constructor
+  // 自反，覆盖 R290 补装）。工厂体逐字承 R2834（createElement('img') proxy + width/height
+  // 属性）。全部引用方运行时动态读（getPrototypeOf trap part05、R125 _zwMEl 建链、
+  // part01c-f/part07/08 无加载期引用）——置换后无旧对象残存观察者。行为收紧两处均为
+  // spec 正确面：无 new 调用 class 原生 TypeError（具名构造器不可调用，旧版容无 new）；
+  // new Image() instanceof Image 随同一化翻真（旧 documented false 注记失效）。全树 A/B
+  // 钉零回归。置 R290 后（swap 若先于 R290，class 自带 constructor=Image 会被其幂等跳过）。
+  // https://html.spec.whatwg.org/multipage/imagebitmap-and-images.html#image
+  // https://webidl.spec.whatwg.org/#named-constructor
+  (function () {
+    var _zwImageNamed = class Image {
+      constructor(width, height) {
+        var el = globalThis.document.createElement('img');
+        if (width !== undefined) { try { el.setAttribute('width', String(width)); } catch (_e) {} }
+        if (height !== undefined) { try { el.setAttribute('height', String(height)); } catch (_e) {} }
+        return el;
+      }
+    };
+    try { Object.setPrototypeOf(_zwImageNamed.prototype, globalThis.HTMLElement.prototype); } catch (_e294ip) {}
+    try { _zwImageNamed.prototype.constructor = globalThis.HTMLImageElement; } catch (_e294ic) {}
+    try { globalThis.HTMLImageElement.prototype = _zwImageNamed.prototype; } catch (_e294is) {}
+    globalThis.Image = _zwImageNamed;
+  })();
   // R5238（html-semantics M2 切片 36）：HTMLDialogElement.prototype.requestClose——
   // plain 世界供给（_zwMEl 产物原型链 R125 已接本 prototype，detached/XML doc 的
   // dialog 元素此前四方法全缺——dialog-requestclose-3 断言面）。trap 世界 proxy 的
@@ -21605,6 +21641,65 @@
         });
       } catch (_eS7face) {}
     }
+    // s294（html-semantics M2）：IMG 的 src IDL 反射对（HTML #dom-img-src——src 反射
+    // content attribute）。getter（url 型反射）：attr 值按 node document 的 URL 解析，
+    // 解析失败**返回属性原值**。img-src-in-synthetic-document.html 钉形：createHTMLDocument
+    //（无 browsing context，doc URL = about:blank）的 img.setAttribute('src','/test') 后
+    // img.src 期望 '/test'——'/test' 对 about:blank 解析失败回落原值（本工厂旧无
+    // accessor 读 undefined；s239 勘根已记「仅按 tag 装 href/contentDocument 少数
+    // accessor」）。身份态（材化盖章 sel/handle 在场）委托 wrapper 链 `_makeProxy().src`
+    //（R5009 片 e URL 反射——`_reflectedUrlAttr('IMG','src')` + `__zw_parse_url`，base =
+    // 主文档基 URL）；plain 态本地反射：attr 缺省/空串 → ''（R5009 片 d 空串钉形同
+    // 口径），其余按 node document URL 解析——主文档回落 `_zwDocBaseURL()`（<base>
+    // 感知，与身份链同口径），detached/子文档读 `doc.URL`（'about:blank' 缺省，R360
+    // 槽），`__zw_parse_url` 失败（空串回包）→ 原值。setter（**非可选**——首轮全树
+    // A/B 实证）：spec 反射 setter 写内容属性（不做 URL 解析，String(v) 原串入库，
+    // 同 part05 src 臂 DOMString 口径）；image-decode.html 两案 harness strict 模式
+    // `img.src=` 赋值对 getter-only 抛 TypeError「which has only a getter」（原 expando
+    // 落点被本 getter 截断），decode 候选读臂的 expando 回落设计（s69 下「plain 产物
+    // 无 src IDL setter」注记）同隐式钉住 setter 存在性。identity 态委托 wrapper 链
+    // set trap（选源队列 + update run 语义不走本地 setAttribute 近似）。
+    // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflect
+    if (String(tag || '').toLowerCase() === 'img') {
+      Object.defineProperty(node, 'src', {
+        get: function () {
+          var _isS = null, _isH = null;
+          try { _isS = node.__zwSelector || null; } catch (_e294is) {}
+          try { _isH = node.__zwHandle || null; } catch (_e294ih) {}
+          if (_isS || _isH) return _makeProxy(_isS, _isH).src;
+          var _isRaw;
+          try { _isRaw = node.getAttribute('src'); } catch (_e294ir) { _isRaw = null; }
+          if (_isRaw == null || String(_isRaw) === '') return _isRaw == null ? '' : String(_isRaw);
+          var _isBase = null;
+          try {
+            var _isDoc = node.ownerDocument;
+            if (_isDoc && _isDoc !== globalThis.document && typeof _isDoc.URL === 'string') {
+              _isBase = _isDoc.URL;
+            }
+          } catch (_e294id) {}
+          if (!_isBase) {
+            _isBase = (typeof globalThis._zwDocBaseURL === 'function')
+              ? globalThis._zwDocBaseURL()
+              : (globalThis.location ? String(globalThis.location.href) : 'about:blank');
+          }
+          try {
+            if (typeof __zw_parse_url === 'function') {
+              var _isJson = __zw_parse_url(String(_isRaw), String(_isBase));
+              if (_isJson) return JSON.parse(_isJson).href || String(_isRaw);
+            }
+          } catch (_e294ip) {}
+          return String(_isRaw);
+        },
+        set: function (v) {
+          var _svS = null, _svH = null;
+          try { _svS = node.__zwSelector || null; } catch (_e294ss) {}
+          try { _svH = node.__zwHandle || null; } catch (_e294sh) {}
+          if (_svS || _svH) { _makeProxy(_svS, _svH).src = v; return; }
+          try { node.setAttribute('src', String(v)); } catch (_e294sa) {}
+        },
+        configurable: true, enumerable: true,
+      });
+    }
     // R5000 片 b（html-syntax-compat）：HTMLElement 全局反射字符串三元组（spec
     // `the-title-attribute`/`the-lang-and-xml:lang-attributes`/`the-dir-attribute`
     // ——title/lang/dir IDL 反射 content attribute）。innerHTML 赋值同 turn 读
@@ -25557,8 +25652,9 @@
             return globalThis.__zwImgDecodeCore(_dcE, function () {
               var rd = function (n) { try { return _dcE.getAttribute(n); } catch (_eDcR) { return null; } };
               var s = String(rd('src') == null ? '' : rd('src')).trim();
-              // plain `_zwMEl` 产物无 src IDL setter——`img.src=` 落 expando，属性
-              // 读空时回落 expando（adopted-inactive-into-active 案）。
+              // `img.src=` 落点：s294 起 plain `_zwMEl` 产物有 src IDL setter（写内容
+              // 属性，attr 读即中）；此回落保留给无 setter 形态（旧 expando 语义兼容，
+              // adopted-inactive-into-active 案）。
               if (!s) { try { s = String(_dcE.src == null ? '' : _dcE.src).trim(); } catch (_eDcS) {} }
               if (!s) {
                 var ss = String(rd('srcset') == null ? '' : rd('srcset'));
