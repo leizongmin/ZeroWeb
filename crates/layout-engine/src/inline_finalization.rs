@@ -1618,13 +1618,23 @@ pub(crate) fn compute_final_inline_layouts(
         is_left: f.is_left,
     };
     for child in &mut root.children {
-        let child_ancestor: Vec<crate::inline::FloatExclusion> = own_floats
-            .iter()
-            .filter(|(id, _)| Some(*id) != child.node_id) // 排除子节点自身
-            .map(|(_, f)| transform(f, child))
-            .chain(ancestor_floats.iter().map(|f| transform(f, child)))
-            .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
-            .collect();
+        // R5421（CSS 2.2 §9.4.1/§9.5）：float 排除带只在**同一 BFC** 内生效——子盒自身
+        // 建立 BFC（float/overflow≠visible/abs|fixed/flow-root/flex 等）时，祖先 float
+        // 不侵入其后代 line box，祖先排除带整体清零；子树内自身 float 子由该层递归
+        // 重新收集。旧实现无界传播：body 级 float 兄弟经排除带侵入 float/overflow
+        // 兄弟（均建 BFC）的内部文本，行位被推到自身 overflow clip 之下 → 文本整缺
+        //（border-radius-clip-001 #txt 案形）。
+        let child_ancestor: Vec<crate::inline::FloatExclusion> = if crate::margin_collapse::establishes_bfc(child) {
+            Vec::new()
+        } else {
+            own_floats
+                .iter()
+                .filter(|(id, _)| Some(*id) != child.node_id) // 排除子节点自身
+                .map(|(_, f)| transform(f, child))
+                .chain(ancestor_floats.iter().map(|f| transform(f, child)))
+                .filter(|f| f.y + f.height > 0.0) // 裁掉完全在子节点上方的 float
+                .collect()
+        };
         compute_final_inline_layouts(child, doc, styles, &child_ancestor, img_intrinsic_sizes, context);
     }
 
