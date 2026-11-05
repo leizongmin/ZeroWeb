@@ -2169,6 +2169,17 @@
     }
     return _zwJusIsEditable(node) && _zwJusFormattableVisible(node);
   }
+  // qI 普查面（Chrome delta，④ fontsize qI-after 收口）：extraneous br 不作
+  // 可见性过滤——Chrome qI 普查含选区内未包裹 br（fontsize 语料
+  // `<p>[foo<p><br><p>bar]` 双变体记录 qI after=true：br 继承缺省值与包裹
+  // span 混合；vendored isFormattableNode 的 isVisible 冗余 br 过滤与 Chrome
+  // 录音相悖，语料权威）。qV 值面口径保持 _zwValIsFormattable 过滤不动。
+  // br 短路免掉 FormattableVisible 下行（trap 域成本同 _zwValIsFormattable 门）。
+  // https://w3c.github.io/editing/execCommand.html#indeterminate
+  function _zwValIsFormattableQI(node) {
+    if (_zwJusIsHtmlElement(node, 'br')) return _zwJusIsEditable(node);
+    return _zwValIsFormattable(node);
+  }
   // getLegacyFontSize 中点表（Chrome UA 缺省标度下界 px；上界 = 下位 +1 档）。
   var _zwValLegacyBounds = [10, 13, 16, 18, 24, 32];
   function _zwValLegacyFontSize(pxStr) {
@@ -2257,7 +2268,11 @@
       var sel = globalThis.getSelection ? globalThis.getSelection() : null;
       var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
       if (!rng) return { value: '', indeterm: false };
-      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattable);
+      // qI 普查独立于 qV 值面（单遍走查，④ 收口）：普查用 _zwValIsFormattableQI
+      // （含 extraneous br）；qV ref = 普查序首个通过 qV 过滤的节点——两走查
+      // 同文档序且 qV 过滤集 ⊆ 普查集（仅差 extraneous br），首过滤节点与旧
+      // 全量过滤走查 nodes[0] 恒等（qV 首节点口径零漂移）。
+      var nodes = _zwValGetAllEffectivelyContained(rng, _zwValIsFormattableQI);
       var indeterm = false;
       if (nodes.length > 1) {
         var first = _zwValEffectiveValue(nodes[0], cmd);
@@ -2265,7 +2280,11 @@
           if (_zwValEffectiveValue(nodes[i], cmd) !== first) { indeterm = true; break; }
         }
       }
-      var ref = nodes.length ? nodes[0] : rng.startContainer;
+      var ref = null;
+      for (var i = 0; i < nodes.length; i++) {
+        if (_zwValIsFormattable(nodes[i])) { ref = nodes[i]; break; }
+      }
+      if (!ref) ref = rng.startContainer;
       var v = _zwValEffectiveValue(ref, cmd);
       if (cmd === 'fontsize') v = _zwValLegacyFontSize(v);
       return { value: v == null ? '' : String(v), indeterm: indeterm };
