@@ -1007,16 +1007,51 @@
     try { _zwListToggle(tagName === 'ol' ? 'ol' : 'ul'); } catch (_eLt) {}
   };
 
+  // qState 布尔读面（Chrome 录制契约直读，双面拟合 P10：before 286/286 全
+  // 拟合、after 278/286 恒改善）：两端点最近列表祖先存在且 tag 恰为本命令
+  // 型，且两端点最近 li 无异型嵌套子列表。同型嵌套不翻 false（dps 行
+  // <ol><li>[foo<ol> 录 true 实证）；异型嵌套翻 false（<ol><li>[foo<ul> 录
+  // false 实证）。跨列表+同型嵌套面语料内部矛盾（:343 before 录 true vs
+  // :478 after 录 false，同树同选区），无状态读面不可双全——按 before 全保
+  // 取舍，跨壳族留待选区恢复耦合刀。mixed 判定仅归 indeterm。
+  // 规范：https://w3c.github.io/editing/execCommand.html#querycommandstate()
+  function _zwListQueryStateBool(cmd) {
+    var want = cmd === 'insertorderedlist' ? 'ol' : 'ul';
+    var opp = want === 'ol' ? 'ul' : 'ol';
+    var range = null;
+    try { range = _zwJusActiveRange(); } catch (_eAr) { return false; }
+    if (!range) return false;
+    function endpointOk(container) {
+      var node = container;
+      var list = null;
+      var li = null;
+      while (node) {
+        if (!list && _zwJusIsHtmlElement(node, ['ol', 'ul'])) list = node;
+        if (!li && _zwJusIsHtmlElement(node, 'li')) li = node;
+        node = node.parentNode;
+      }
+      if (!list || !_zwJusIsHtmlElement(list, want)) return false;
+      if (li) {
+        try {
+          if (li.querySelector(opp)) return false;
+        } catch (_eQ) {}
+      }
+      return true;
+    }
+    try {
+      return endpointOk(range.startContainer) && endpointOk(range.endContainer);
+    } catch (_eEo) { return false; }
+  }
+
   // qState/qIndeterm 读面（vendored commands.insertorderedlist/unorderedlist
-  // state/indeterm）：state = list state 恰为本命令 tag；indeterm =
-  // /^mixed( ol)?$/（ol）/ /^mixed( ul)?$/（ul）。
+  // state/indeterm）：state = _zwListQueryStateBool（端点直读，见上）；
+  // indeterm = /^mixed( ol)?$/（ol）/ /^mixed( ul)?$/（ul）。
   globalThis.__zw_ce_list_state = function (cmd) {
     var isOl = cmd === 'insertorderedlist';
-    var want = isOl ? 'ol' : 'ul';
     var st = null;
     try { st = _zwListSelectionState(); } catch (_eLs) { st = null; }
     return {
-      state: st === want,
+      state: _zwListQueryStateBool(cmd),
       indeterm: st === 'mixed' || st === (isOl ? 'mixed ol' : 'mixed ul')
     };
   };
