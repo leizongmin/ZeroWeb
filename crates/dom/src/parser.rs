@@ -117,6 +117,23 @@ pub fn parse_html_fragment_with_scripting(
     doc
 }
 
+/// [`parse_html_fragment_with_scripting`] 的**声明式 shadow 物化**变体（M3 Batch 2，
+/// s180/gethtml）——`setHTMLUnsafe` / `parseHTMLUnsafe` 的解析面（whatwg/dom#831：
+/// 物化只属文档加载与 unsafe 双 API）。解析后 [`Document::materialize_declarative_shadow_roots`]
+/// 把 `<template shadowrootmode>` 还原为 ShadowRoot 节点（三个 `shadowroot*` 布尔
+/// 属性进状态位）；被消费 template 无观测面，skip 路径值还原已由片段路径自带。
+/// https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html#dom-element-sethtmlunsafe
+pub fn parse_html_fragment_with_scripting_materialized(
+    html: &str,
+    namespace: &str,
+    local_name: &str,
+    scripting_enabled: bool,
+) -> Document {
+    let mut doc = parse_html_fragment_with_scripting(html, namespace, local_name, scripting_enabled);
+    doc.materialize_declarative_shadow_roots();
+    doc
+}
+
 /// HTML 命名空间常量（`parse_html_fragment` 的 CDATA 门判定 + DomBuilder 侧同值）。
 pub(crate) const HTML_NAMESPACE: &str = "http://www.w3.org/1999/xhtml";
 

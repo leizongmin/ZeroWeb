@@ -12,11 +12,21 @@ use super::Document;
 use super::DomError;
 
 impl Document {
-    /// 为宿主元素附加 ShadowRoot。
+    /// 为宿主元素附加 ShadowRoot（全参形态，s180/gethtml Batch 2）。
     ///
-    /// 创建一个新的 ShadowRoot 节点并附加到指定的宿主元素上。
-    /// 返回错误如果：宿主不是元素节点，或宿主已有 ShadowRoot。
-    pub fn attach_shadow(&mut self, host: NodeId, mode: ShadowRootMode) -> Result<NodeId, DomError> {
+    /// 与 [`Self::attach_shadow`] 相同的校验与挂接，另写入四个状态位：
+    /// `delegates_focus` / `clonable` / `serializable`（命令式来自 attachShadow
+    /// init，声明式来自三个 `shadowroot*` 布尔属性存在性）与 `declarative`
+    ///（声明式物化产物标记——序列化/getHTML 回写模板形态的资格）。
+    pub fn attach_shadow_full(
+        &mut self,
+        host: NodeId,
+        mode: ShadowRootMode,
+        delegates_focus: bool,
+        clonable: bool,
+        serializable: bool,
+        declarative: bool,
+    ) -> Result<NodeId, DomError> {
         // 验证宿主是元素节点
         let is_element = self
             .nodes
@@ -32,8 +42,12 @@ impl Document {
             return Err(DomError::AlreadyHasShadowRoot);
         }
 
-        // 创建 ShadowRoot 节点
-        let shadow_data = ShadowRootData::new(mode);
+        // 创建 ShadowRoot 节点（状态位随创建写入，宿主引用稍后回填）
+        let mut shadow_data = ShadowRootData::new(mode);
+        shadow_data.delegates_focus = delegates_focus;
+        shadow_data.clonable = clonable;
+        shadow_data.serializable = serializable;
+        shadow_data.declarative = declarative;
         let shadow_id = self.nodes.insert(NodeData::new(NodeKind::ShadowRoot(shadow_data)));
 
         // 设置宿主引用
@@ -54,6 +68,12 @@ impl Document {
         self.shadow_roots.insert(host, shadow_id);
 
         Ok(shadow_id)
+    }
+
+    /// 为宿主元素附加 ShadowRoot（仅 mode，四个状态位全 false——既有命令式
+    /// attachShadow 调用面的兼容入口）。
+    pub fn attach_shadow(&mut self, host: NodeId, mode: ShadowRootMode) -> Result<NodeId, DomError> {
+        self.attach_shadow_full(host, mode, false, false, false, false)
     }
 
     /// 获取宿主元素附加的 ShadowRoot，如果没有则返回 `None`。
@@ -136,7 +156,13 @@ impl Document {
             let Some(frag) = self.template_contents(tid) else {
                 continue;
             };
-            let Ok(root) = self.attach_shadow(host, mode) else {
+            // s180/gethtml（M3 Batch 2）：三个 shadowroot* 按 HTML 布尔属性语义
+            // 取存在性（存在即真，值不参与），物化产物标 declarative=true——
+            // 序列化回写与 getHTML({serializableShadowRoots}) 资格标记。
+            let delegates_focus = self.get_attribute(tid, "shadowrootdelegatesfocus").is_some();
+            let clonable = self.get_attribute(tid, "shadowrootclonable").is_some();
+            let serializable = self.get_attribute(tid, "shadowrootserializable").is_some();
+            let Ok(root) = self.attach_shadow_full(host, mode, delegates_focus, clonable, serializable, true) else {
                 continue;
             };
             let kids = self.nodes.get(frag).map(|n| n.children.clone()).unwrap_or_default();

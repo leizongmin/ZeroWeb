@@ -26,6 +26,7 @@ const CORPUS_CASE_TIMEOUT: Duration = Duration::from_secs(30);
 struct RunnerFlags {
     corpus_case_timeout_secs: Option<u64>,
     script_timeout_ms: Option<u64>,
+    timeout_multiplier_milli: u32,
     time_log: bool,
     mem_log: bool,
     raf_frame_driven: bool,
@@ -44,6 +45,14 @@ fn runner_flags() -> &'static RunnerFlags {
         script_timeout_ms: std::env::var("ZW_SCRIPT_TIMEOUT_MS")
             .ok()
             .and_then(|v| v.parse::<u64>().ok()),
+        timeout_multiplier_milli: std::env::var("ZW_TIMEOUT_MULTIPLIER")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .map(|m| {
+                let clamped = if m.is_finite() && m >= 0.1 { m } else { 1.0 };
+                (clamped * 1000.0).round() as u32
+            })
+            .unwrap_or(1000),
         time_log: std::env::var("ZW_TESTHARNESS_TIME_LOG").ok().as_deref() == Some("1"),
         mem_log: std::env::var("ZW_TESTHARNESS_MEM_LOG").ok().as_deref() == Some("1"),
         raf_frame_driven: std::env::var("ZW_TESTHARNESS_RAF_FRAME_DRIVEN").as_deref() == Ok("1"),
@@ -51,6 +60,15 @@ fn runner_flags() -> &'static RunnerFlags {
         disable_pump: std::env::var("ZW_DISABLE_PUMP").is_ok(),
         td_debug: std::env::var("ZW_TD_DEBUG").as_deref() == Ok("1"),
     })
+}
+
+/// 页超时乘数——`ZW_TIMEOUT_MULTIPLIER`（wptrunner `--timeout-multiplier` 同义面，
+/// testharness.js 原生 `setup({timeout_multiplier})` 消费）：runner 案 deadline 与
+/// harness 页预算同乘。mega-case（gethtml.html 4.5k subtest，慢引擎 60s long 预算
+/// 只报得到 ~1.8k）按跑放大页预算完整上报；缺省 1.0 = 零行为变化。
+/// https://github.com/web-platform-tests/wpt/blob/master/tools/wptrunner/wptrunner
+fn timeout_multiplier() -> f64 {
+    runner_flags().timeout_multiplier_milli as f64 / 1000.0
 }
 
 /// V8 看门狗脚本执行预算——`ZW_SCRIPT_TIMEOUT_MS` 按跑覆盖（encoding-legacy-mb
@@ -10524,7 +10542,9 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // Timeout——抛错时刻的 pending 中间态不掩盖后续 onload/异步断言的完成机会）。
     }
 
-    let deadline = Instant::now() + timeout;
+    // s180/gethtml（M3 Batch 2）：乘数同放案 deadline（harness 页预算注入同步放大，
+    // 见 [`timeout_multiplier`]）。
+    let deadline = Instant::now() + timeout.mul_f64(timeout_multiplier());
     let mut partial_results = Vec::new();
     let mut last_test_function = "unknown".to_string();
     let mut last_harness_hook = "unknown".to_string();
@@ -11030,8 +11050,16 @@ fn prepare_harness_html(
         // 返回队列余量供探测环 flood 门控（见 take_probe）。
         return (globalThis.__zw_timers || []).length;\n\
       };\n";
+    // s180/gethtml（M3 Batch 2）：页超时乘数注入——testharness.js `Tests.timeout_length`
+    // 乘 `timeout_multiplier`（long 60s × N），runner 案 deadline 同乘保持 pace。
+    let multiplier = timeout_multiplier();
+    let multiplier_setup = if (multiplier - 1.0).abs() > f64::EPSILON {
+        format!("\ntry {{ setup({{ timeout_multiplier: {multiplier} }}); }} catch (e) {{}}")
+    } else {
+        String::new()
+    };
     let harness = format!(
-        "<script{csp_nonce_attr} data-zw-harness>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}\n</script>"
+        "<script{csp_nonce_attr} data-zw-harness>\n{timer_stub}{harness_source}\n{reporter}\n{cache_abort_fixture}{multiplier_setup}\n</script>"
     );
     // R130（js-dom M4）：crash 类用例（*-crash.html）不引 testharness.js——纯脚本页
     // 断言「不崩溃」。上游跑法是浏览器不崩即 PASS；本 runner 的 completion 探针依赖

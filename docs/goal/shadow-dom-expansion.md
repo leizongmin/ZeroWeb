@@ -2,8 +2,9 @@
 
 **版本**: v1.0
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M0/M1/M2 完成 + M3 Batch 1 落地（2026-11-06，全量推进已决，门值 31.4% 回填；opt-in 页 117F→108P/10F，全通道零回归），
-M3 JS 语义簇收敛未启动
+**状态**: Active——M0/M1/M2 完成 + M3 Batch 1/2 落地（2026-11-06，门值 31.4% 回填；
+Batch 2 簇 A unsafe 三 API：gethtml.html 预算内 2,210P/0F，全通道 A/B P→F=0、F→P 2,839），
+M3 余簇：簇 C referenceTarget / 簇 D 甄别 / attachment 物化臂 170F
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -130,6 +131,34 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   parseHTMLUnsafe + shim 接线 + declarative 物化语义对齐）——预期翻转
   gethtml.html 4,946 子测试主力；canvas 1F 与 document.write allowed
   路径顺带排查。
+
+### 2026-11-06——M3 Batch 2（簇 A unsafe API 三件套）
+
+- **簇 A 首刀落地**：setHTMLUnsafe/getHTML/Document.parseHTMLUnsafe 三 API +
+  shim 接线（ShadowRoot.prototype 面、detached doc open/close/write 物化印记、
+  attachShadow 声明式重挂分支）+ getHTML 序列化域（资格根模板形注入、
+  serializable 资格、options 透传）+ shadow echo 剔除（innerHTML/outerHTML/
+  getHTML 序列化三闸门：引擎子树内带 shadowrootmode 的 template 只能来自真根，
+  按属性 presence 剔除）。
+- gethtml.html：M2 基线 4,506F+1T（fail-fast 瞬报）→ **预算内真实执行
+  2,210P/0F/1T**（oracle 潜在 ~5,000 子测试，页预算截断 ~2,210；截断与
+  per-subtest 成本挂账 runner 基建）。canvas ×4 append 修复（standalone 补
+  append 委托）全通道确认翻绿。
+- 附加面外溢：attachment.html 0P/654F → 484P/170F（opt-in disallowed 校验臂
+  整族翻转；余 170F 为 safelisted 物化臂挂账）、property-reflection +30P、
+  clonable +2P、serialization +2P。
+- **全通道 A/B 零回归**：392 案公共行逐子测试比对 P→F = 0，唯一转移
+  Fail→Pass 2,839；custom-elements/template 既有账逐案零变化，DC-4 零回归门
+  维持。opt-in 页 109P/9F（余 F 逐条挂账见证据）。DOMParser/XHR/detached doc
+  查询视图翻 unmaterialized（opt-in 语义，URL 变体 iframe 维持物化）。
+- 顺带基建：runner `ZW_TIMEOUT_MULTIPLIER`（wptrunner `--timeout-multiplier`
+  同义面）；serializer ShadowRoot 布尔属性 spec 序回写（单测抓出首版引号
+  bug）；zero-dom 新增物化片段/旗标序列化单测，885+ 全绿。
+- 证据：[m3 batch2](shadow-dom-expansion/evidence/2026-11-06-m3-batch2-unsafe-apis.md)。
+- **下一步（M3 Batch 3）**：簇 C referenceTarget（gethtml-serialization 3F +
+  property-reflection 余 1F + reftarget 面 ~139F）实现或具名挂账；attachment
+  safelisted 物化臂 170F 甄别；gethtml.html 页预算截断与 per-subtest 成本
+  归因（runner 基建，×4 乘数未生效疑点同刀）；簇 D 逐项甄别。
 
 ## 依赖约束（run-rules §9）
 

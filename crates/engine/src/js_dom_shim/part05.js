@@ -3178,12 +3178,40 @@
       // node-creation-realm 的 adoption 后 `shadow.innerHTML = "text<!--comment-->"`
       // 断言 firstChild instanceof Text / lastChild instanceof Comment。
       attachShadow: function (init) {
+        // s180/gethtml（M3 Batch 2）：声明式根重挂接——unsafe 解析产物的
+        // __zwDeclarativeSR 印记（_zwAttachDeclarativeSRView）：init 全成员相等
+        //（mode/delegatesFocus/clonable/serializable）返既有根，任一不等抛
+        // NotSupportedError（handle 域 _attachShadow 同 spec 步骤）。
+        var _dsPre180 = this.__zwDeclarativeSR;
+        if (_dsPre180) {
+          if (init == null || typeof init !== 'object') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': parameter 1 is not of type 'object'.");
+          }
+          var _dsM180 = String(init.mode);
+          if (_dsM180 !== 'open' && _dsM180 !== 'closed') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+          }
+          if (_dsPre180.mode === _dsM180
+              && !!_dsPre180.delegatesFocus === !!init.delegatesFocus
+              && !!_dsPre180.clonable === !!init.clonable
+              && !!_dsPre180.serializable === !!init.serializable) {
+            return _dsPre180;
+          }
+          throw new (globalThis.DOMException || Error)(
+            "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.",
+            'NotSupportedError');
+        }
         var shadow = {
           nodeType: 11,
           nodeName: '#shadow-root',
           mode: init && init.mode === 'closed' ? 'closed' : 'open',
           host: el,
           childNodes: [],
+          // s180/gethtml（M3 Batch 2）：init 状态位（ShadowRoot IDL 读 + getHTML
+          // serializableShadowRoots 资格——_zwResolveRoot180 直接读本对象字段）。
+          delegatesFocus: !!(init && init.delegatesFocus),
+          clonable: !!(init && init.clonable),
+          serializable: !!(init && init.serializable),
           get firstChild() { return this.childNodes.length ? this.childNodes[0] : null; },
           get lastChild() { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; },
           hasChildNodes: function () { return this.childNodes.length > 0; },
@@ -5272,6 +5300,68 @@
   // 内容查询（querySelector('button') 面）付结构性批代价，通用枚举面零扰动。
   var _zwDsHandleCounter = 0;
   var _zwDsRegMiss = {};
+  // s180/gethtml（M3 Batch 2）：声明式根视图挂载（工厂代理域）——part03
+  // `_zwMBuildDeepTreeNode` 消费 unsafe 深 JSON 的 `sr` 字段调人。ShadowRoot 原型
+  // 节点承载 shadow 子（querySelector/innerHTML 走 R366 原型面），host 侧
+  // `__zwDeclarativeSR` + `shadowRoot` own 印记——三面消费：shadowRoot 直读、
+  // attachShadow 重挂接（part03 轻量路径读 __zwDeclarativeSR）、getHTML 资格判定。
+  function _zwAttachDeclarativeSRView(host, sr, scripting) {
+    if (!host || !sr) return null;
+    var mode = sr.m === 'closed' ? 'closed' : 'open';
+    var root = {
+      nodeType: 11,
+      nodeName: '#shadow-root',
+      mode: mode,
+      host: host,
+      delegatesFocus: !!sr.d,
+      clonable: !!sr.c,
+      serializable: !!sr.s,
+      declarative: true,
+      childNodes: [],
+    };
+    try {
+      Object.defineProperty(root, 'firstChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[0] : null; } });
+      Object.defineProperty(root, 'lastChild', { configurable: true, get: function () { return this.childNodes.length ? this.childNodes[this.childNodes.length - 1] : null; } });
+    } catch (_eDsrFc) {}
+    try {
+      if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype) {
+        Object.setPrototypeOf(root, globalThis.ShadowRoot.prototype);
+      }
+    } catch (_eDsrSp) {}
+    var nodes = Array.isArray(sr.nodes) ? sr.nodes : [];
+    for (var _dsrI = 0; _dsrI < nodes.length; _dsrI++) {
+      var _dsrC = (typeof _zwMBuildDeepTreeNode === 'function') ? _zwMBuildDeepTreeNode(nodes[_dsrI], root, scripting) : null;
+      if (_dsrC) root.childNodes.push(_dsrC);
+    }
+    try { host.__zwDeclarativeSR = root; } catch (_eDsrA) {}
+    try { host.shadowRoot = root; } catch (_eDsrB) {}
+    return root;
+  }
+  // s180/gethtml（M3 Batch 2）：声明式根注册转移——setHTMLUnsafe handle 容器的
+  // 顶层子重建（_wcRebuildAsHandle detached 真 handle 树）后，工厂代理上的
+  // __zwDeclarativeSR 转登 `_shadowRoots['@'+handle]`（part04 重挂接/getHTML/
+  // shadowRoot 读三面走 handle 域既有通道）。内容直接挂 sr 视图子（镜像构建跳过
+  // ——mirrored/contentBound 先置位）；engine 绑定经 `__zw_declare_fragment` 一次性
+  // 补上（hydrate 同款——此后 AppendChildByHandle 入根正常解析）。
+  function _zwTransferDeclarativeSR(srcNode, dstProxy) {
+    var sr = srcNode && srcNode.__zwDeclarativeSR;
+    var h = dstProxy && dstProxy.__zwHandle;
+    if (!sr || !h) return;
+    var key = _elKey('', h);
+    _zwDsHandleCounter++;
+    var rootHandle = '__ds' + _zwDsHandleCounter;
+    _fragmentHandles[rootHandle] = true;
+    _shadowHandles[rootHandle] = true;
+    _shadowHandleMeta[rootHandle] = { hostSel: '', hostHandle: h, mode: sr.mode, slotAssignment: 'named',
+      delegatesFocus: !!sr.delegatesFocus, clonable: !!sr.clonable, serializable: !!sr.serializable,
+      declarative: true, mirrored: true, contentBound: true };
+    _handleChildren[rootHandle] = (sr.childNodes || []).slice();
+    _shadowRoots[key] = { handle: rootHandle, mode: sr.mode, declarative: true };
+    try {
+      if (typeof __zw_declare_fragment === 'function') __zw_declare_fragment(rootHandle);
+    } catch (_eTdfrag) {}
+    try { dstProxy.shadowRoot = _wrapHandle(rootHandle); } catch (_eTdwrap) {}
+  }
   function _zwDeclarativeShadowHydrate(key, sel, handle) {
     if (_shadowRoots[key]) return true;
     if (!sel) return false;
@@ -5293,8 +5383,13 @@
     var _dsMode = _dsInfo.mode === 'closed' ? 'closed' : 'open';
     _fragmentHandles[rootHandle] = true;
     _shadowHandles[rootHandle] = true;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named', delegatesFocus: false, declarative: true, mirrored: false };
-    _shadowRoots[key] = { handle: rootHandle, mode: _dsMode };
+    // s180/gethtml（M3 Batch 2）：d/c/s 状态位随注册数据下发（引擎侧
+    // declarative_shadow_deep_json_doc 新增键）——re-attach 全成员相等判定与
+    // getHTML serializable 资格判据同源；`declarative` 进 _shadowRoots 注册项
+    //（attachShadow 重挂接分支判据——声明式可重挂，命令式恒抛）。
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle || null, mode: _dsMode, slotAssignment: 'named',
+      delegatesFocus: !!_dsInfo.d, clonable: !!_dsInfo.c, serializable: !!_dsInfo.s, declarative: true, mirrored: false };
+    _shadowRoots[key] = { handle: rootHandle, mode: _dsMode, declarative: true };
     return true;
   }
 
@@ -5391,6 +5486,40 @@
       _zwDeclarativeShadowHydrate(key, sel, handle);
     }
     if (_shadowRoots[key]) {
+      // s180/gethtml（M3 Batch 2，spec attach a shadow root 步——declarative
+      // re-attach，whatwg/dom#831）：声明式根（DSD 物化产物）的 attachShadow 为
+      // **重挂接**——先 init/slotAssignment 校验（WebIDL 字典转换先于 attach 步骤，
+      // TypeError 优先），再与根状态全成员相等判定（mode/delegatesFocus/clonable/
+      // serializable/slotAssignment）；相等返既有根，任一不等抛 NotSupportedError。
+      // 命令式根仍恒抛（spec：命令式二次 attach 一律 NotSupportedError）。
+      // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
+      var _dsReg180 = _shadowRoots[key];
+      var _dsMeta180 = _dsReg180.handle ? _shadowHandleMeta[_dsReg180.handle] : null;
+      if (_dsReg180.declarative && _dsMeta180 && _dsMeta180.declarative) {
+        if (init == null || typeof init !== 'object') {
+          throw new TypeError("Failed to execute 'attachShadow' on 'Element': parameter 1 is not of type 'object'.");
+        }
+        var _dsMode180 = String(init.mode);
+        if (_dsMode180 !== 'open' && _dsMode180 !== 'closed') {
+          throw new TypeError("Failed to execute 'attachShadow' on 'Element': member mode is required and must be 'open' or 'closed'.");
+        }
+        var _dsSlot180 = 'named';
+        if (init.slotAssignment !== undefined && init.slotAssignment !== null) {
+          _dsSlot180 = String(init.slotAssignment);
+          if (_dsSlot180 !== 'manual' && _dsSlot180 !== 'named') {
+            throw new TypeError("Failed to execute 'attachShadow' on 'Element': Failed to read the 'slotAssignment' property from 'ShadowRootInit': The provided value '" + _dsSlot180 + "' is not a valid enum value of type ShadowRootSlotAssignment.");
+          }
+        }
+        if (_dsMeta180.mode === _dsMode180
+            && !!_dsMeta180.delegatesFocus === !!init.delegatesFocus
+            && !!_dsMeta180.clonable === !!init.clonable
+            && !!_dsMeta180.serializable === !!init.serializable
+            && (_dsMeta180.slotAssignment || 'named') === _dsSlot180) {
+          return _wrapHandle(_dsReg180.handle);
+        }
+        _throwDom('NotSupportedError',
+          "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
+      }
       _throwDom('NotSupportedError',
         "Failed to execute 'attachShadow' on 'Element': Shadow root cannot be created on a host which already hosts a shadow tree.");
     }
@@ -5473,7 +5602,14 @@
     // delegate 递归 + ShadowRoot 委派读面消费）。
     // https://dom.spec.whatwg.org/#dom-shadowrootinit-delegatesfocus
     var delegatesFocus = !!init.delegatesFocus;
-    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment, delegatesFocus: delegatesFocus };
+    // s180/gethtml（M3 Batch 2，spec attach a shadow root init 成员）：clonable/
+    // serializable 进根状态（ShadowRoot IDL 读 + getHTML serializableShadowRoots
+    // 资格 + 序列化回写 `shadowrootserializable`/`shadowrootclonable`）。
+    // https://dom.spec.whatwg.org/#dom-shadowrootinit-serializable
+    var clonable180 = !!init.clonable;
+    var serializable180 = !!init.serializable;
+    _shadowHandleMeta[rootHandle] = { hostSel: sel, hostHandle: handle, mode: mode, slotAssignment: slotAssignment,
+      delegatesFocus: delegatesFocus, clonable: clonable180, serializable: serializable180 };
     _shadowRoots[key] = { handle: rootHandle, mode: mode };
     // s168（html-semantics M2）：engine 物化通道——AttachShadow wire（宿主按身份分
     // 双回调，镜像 append_child / append_child_handle 对偶；mode 枚举与二次 attach
@@ -5482,10 +5618,320 @@
     // appendChild 按常规 parent 解析落入 shadow 树（layout 既有 slot 解析随之激活）。
     // https://dom.spec.whatwg.org/#dom-element-attachshadow
     try {
-      if (sel) __zw_attach_shadow(sel, rootHandle, mode);
-      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode);
+      // s180/gethtml：init 三状态位随 mode 下发（引擎 attach_shadow_full 写
+      // ShadowRootData——引擎树 getHTML/序列化面同态）。
+      var _dfw180 = delegatesFocus ? '1' : '0';
+      var _clw180 = clonable180 ? '1' : '0';
+      var _srw180 = serializable180 ? '1' : '0';
+      if (sel) __zw_attach_shadow(sel, rootHandle, mode, _dfw180, _clw180, _srw180);
+      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode, _dfw180, _clw180, _srw180);
     } catch (_e168aw) {}
     return _wrapHandle(rootHandle);
+  }
+
+  // ── s180/gethtml（M3 Batch 2）：setHTMLUnsafe / getHTML ──────────────────
+  // spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html
+  // #dom-element-sethtmlunsafe / #dom-element-gethtml（whatwg/dom#831 unsafe 双
+  // API + 序列化 options）。视图与引擎**双端物化**（Batch 1 教训：两端必须同态）。
+
+  // `_zwFragmentAdded` 的物化对偶——视图深臂切 `__zw_parse_html_subtree_unsafe`
+  //（_zwMBuildBodyTree 第 4 参），sr 字段经 _zwAttachDeclarativeSRView 挂声明式根。
+  // 宿主印章/parentNode 重指（R123/R136）同款。
+  function _zwFragmentAddedUnsafe(html, hostHandle) {
+    if (typeof _zwMBuildBodyTree !== 'function') return [];
+    try {
+      var _uCtxNs = '';
+      try {
+        if (hostHandle != null && typeof _nsHandles !== 'undefined' && _nsHandles[hostHandle]) {
+          _uCtxNs = String(_nsHandles[hostHandle].namespace || '');
+        }
+      } catch (_eUcn) {}
+      var _uScr;
+      try {
+        _uScr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
+      } catch (_eUtg) { _uScr = undefined; }
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _uCtxNs, _uScr, true).childNodes;
+      if (hostHandle != null) {
+        var _uHostProxy = null;
+        try { _uHostProxy = (typeof _wrapHandle === 'function') ? _wrapHandle(hostHandle) : null; } catch (_eUhp) {}
+        for (var _uJ = 0; _uJ < kids.length; _uJ++) {
+          if (kids[_uJ]) {
+            kids[_uJ].__zwFragHostHandle = hostHandle;
+            if (_uHostProxy) {
+              try { kids[_uJ].parentNode = _uHostProxy; } catch (_eUpp) {}
+            }
+          }
+        }
+      }
+      return kids;
+    } catch (_eUfa) { return []; }
+  }
+
+  // `Element/ShadowRoot.setHTMLUnsafe(value)` 实现（part04 trap 双域调人）。镜像
+  // innerHTML setter 主链（removed 快照 → 视图 → 引擎写 → handle 容器顶层重建 +
+  // registry）；MO/slotchange/radio 附属钩子不接（语料无钉面——FIXME 附属钩子按
+  // 实证簇另刀）。sr 注册随顶层重建转移（_zwMEl 印记 → handle 键注册表）。
+  function _zwSetHtmlUnsafeImpl(sel, handle, value) {
+    var _uRemoved = _childNodeList(sel, handle);
+    if (handle && (!_uRemoved || !_uRemoved.length)) {
+      var _uHc = _handleChildren[handle];
+      _uRemoved = _uHc ? _uHc.slice() : [];
+    }
+    _zwRemoveIframeWindowClientsForNodes(_uRemoved);
+    // spec LegacyNullToEmptyString（innerHTML setter 同款）。
+    var _uVal = value === null ? '' : String(value);
+    var _uAdded = _zwFragmentAddedUnsafe(_uVal, handle);
+    // s118 同章：fragment 产物 SCRIPT 盖 already-started（innerHTML setter 同款递归）。
+    if (_uAdded.length) {
+      var _uS118 = function (_ndU) {
+        if (!_ndU || _ndU.nodeType !== 1) return;
+        if (String(_ndU.tagName || '').toUpperCase() === 'SCRIPT') {
+          try { _ndU.__zwFragNoExec = true; } catch (_eU118) {}
+        }
+        var _kcU = null;
+        try { _kcU = _ndU.childNodes; } catch (_eUmK) { return; }
+        if (_kcU) for (var _miU = 0; _miU < _kcU.length; _miU++) _uS118(_kcU[_miU]);
+      };
+      for (var _kiU = 0; _kiU < _uAdded.length; _kiU++) _uS118(_uAdded[_kiU]);
+    }
+    // 引擎写：物化变体（replace_inner_html_unsafe——引擎树 ShadowRoot 同态）。
+    if (handle) __zw_set_inner_html_handle_unsafe(handle, _uVal);
+    else __zw_set_inner_html_unsafe(sel, _uVal);
+    // t8r 同款：handle 容器顶层元素子重建 detached 真 handle 树（.style 等元素
+    // 接口可读）+ sr 注册转移（重建 handle 键入 _shadowRoots——重挂接/getHTML）。
+    if (handle && !(_uVal.indexOf('<') < 0)) {
+      var _uMat = [];
+      for (var _uI = 0; _uI < _uAdded.length; _uI++) {
+        var _uK = _uAdded[_uI];
+        var _uW = (_uK && _uK.nodeType === 1) ? _wcRebuildAsHandle(_uK) : _uK;
+        if (_uW && _uW !== _uK && _uW.__zwHandle && _zwNodeParent) {
+          _zwNodeParent[_uW.__zwHandle] = { parentSel: null, parentHandle: handle, nextSibling: null };
+        }
+        if (_uK && _uK.nodeType === 1 && _uW && _uW.__zwHandle && _uK.__zwDeclarativeSR) {
+          try { _zwTransferDeclarativeSR(_uK, _uW); } catch (_eTrSR) {}
+        }
+        _uMat.push(_uW);
+      }
+      _handleChildren[handle] = _uMat;
+    } else if (handle && _uVal.indexOf('<') < 0) {
+      _handleChildren[handle] = [];
+    }
+  }
+
+  // getHTML options 解析（spec 序列化 options 字典）。
+  function _zwGetHtmlOpts180(options) {
+    var o = { srs: false, csr: false, list: [] };
+    if (options != null && typeof options === 'object') {
+      o.srs = !!options.serializableShadowRoots;
+      o.csr = !!options.closedShadowRoots;
+      var l = options.shadowRoots;
+      if (l != null) {
+        if (Array.isArray(l)) o.list = l;
+        else o.list = [l];
+      }
+    }
+    return o;
+  }
+
+  // 根资格判定（spec 序列化步——列表成员恒收；serializable×srs / closed×csr）。
+  function _zwSrQualifies180(mode, df, cl, srl, rootObj, o) {
+    if (o.list && o.list.length && rootObj != null && o.list.indexOf(rootObj) >= 0) return true;
+    if (srl && o.srs) return true;
+    if (mode === 'closed' && o.csr) return true;
+    return false;
+  }
+
+  // 节点根解析：工厂代理 `__zwDeclarativeSR` 印记优先；handle/sel 域走注册表
+  //（hydrate consult 补登记 sel 域声明式根）。返 {mode,df,cl,srl,kids} 或 null。
+  function _zwResolveRoot180(node, o) {
+    var srObj = null;
+    try { srObj = node.__zwDeclarativeSR || null; } catch (_eRr1) {}
+    if (srObj) {
+      if (!_zwSrQualifies180(srObj.mode, srObj.delegatesFocus, srObj.clonable, srObj.serializable, srObj, o)) return null;
+      return { mode: srObj.mode, delegatesFocus: srObj.delegatesFocus, clonable: srObj.clonable,
+        serializable: srObj.serializable, kids: srObj.childNodes || [] };
+    }
+    var h = null, s = null;
+    try { h = node.__zwHandle || null; } catch (_eRr2) {}
+    try { s = node.__zwSelector || null; } catch (_eRr3) {}
+    if (!h && !s) return null;
+    var key = _elKey(s, h);
+    if (!_shadowRoots[key] && typeof _zwDeclarativeShadowHydrate === 'function') {
+      _zwDeclarativeShadowHydrate(key, s, h);
+    }
+    var reg = _shadowRoots[key];
+    if (!reg) return null;
+    var meta = reg.handle ? _shadowHandleMeta[reg.handle] : null;
+    if (!meta) return null;
+    if (typeof _zwDeclarativeShadowEnsureMirrors === 'function') {
+      try { _zwDeclarativeShadowEnsureMirrors(reg.handle); } catch (_eRrM) {}
+    }
+    var rootObj = _wrapHandle(reg.handle);
+    if (!_zwSrQualifies180(meta.mode, meta.delegatesFocus, meta.clonable, meta.serializable, rootObj, o)) return null;
+    var kids = null;
+    if (typeof _handleChildNodes === 'function') {
+      try { kids = _handleChildNodes(reg.handle); } catch (_eRrK) { kids = null; }
+    }
+    if (!kids) kids = _handleChildren[reg.handle] || [];
+    return { mode: meta.mode, delegatesFocus: meta.delegatesFocus, clonable: meta.clonable,
+      serializable: meta.serializable, kids: kids };
+  }
+
+  // 根存在判定（**不含资格**——`_zwResolveRoot180` 对未资格根返 null，echo 剔除
+  // 需要独立存在面：closed/非 serializable 根同样把快照视图的 template echo 变成
+  // 非法子，spec：根不入 light 子序列化面）。
+  function _zwHasRoot180(node) {
+    try { if (node.__zwDeclarativeSR) return true; } catch (_eHr0) {}
+    var h = null, s = null;
+    try { h = node.__zwHandle || null; } catch (_eHr1) {}
+    try { s = node.__zwSelector || null; } catch (_eHr2) {}
+    if (!h && !s) return false;
+    var key = _elKey(s, h);
+    if (!_shadowRoots[key] && typeof _zwDeclarativeShadowHydrate === 'function') {
+      try { _zwDeclarativeShadowHydrate(key, s, h); } catch (_eHr3) {}
+    }
+    return !!_shadowRoots[key];
+  }
+
+  // shadow echo 子判定——快照视图 unmaterialized 解析让已物化根以 `<template
+  // shadowrootmode>` 普通模板形态存活于融合 childNodes（引擎 s168 序列化回环的
+  // 视图投影）。spec：物化根不在 light 子序列化面（innerHTML/getHTML 恒干净），
+  // 宿主有序列化根时剔除该形态子。引擎子树内 `<template shadowrootmode>` 只能
+  // 来自真根（物化解析消费一切合法声明式模板），故判定按属性 presence 精确。
+  function _zwIsShadowEcho180(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var t = '';
+    try { t = String(n.localName || n.tagName || '').toLowerCase(); } catch (_eSe0) {}
+    if (t !== 'template') return false;
+    try { return !!(n.hasAttribute && n.hasAttribute('shadowrootmode')); } catch (_eSe1) { return false; }
+  }
+
+  // 引擎串 echo 剔除（outerHTML getter 引擎臂消费）——模板 tag 含 shadowrootmode
+  // 即剔（`_zwIsShadowEcho180` 的字符串形态）。FIXME: 根内容含嵌套 template 时
+  // 非贪婪止于内层闭 tag（语料无钉面——引擎物化不达 shadow 内部模板，嵌套 DSD
+  // 与 Batch 1 同刀挂账）。
+  function _zwStripEchoHtml180(html) {
+    return String(html).replace(/<template\b[^>]*>([\s\S]*?)<\/template>|<template\b[^>]*>/g, function (m) {
+      return /\bshadowrootmode\b/.test(m) ? '' : m;
+    });
+  }
+
+  // 子列表序列化（宿主有根时剔 echo 子——`_zwSerNode180` 元素臂与 getHTML 直走
+  // 面共用同一闸门）。
+  function _zwSerKids180(parentNode, kids, o) {
+    var hasRoot = (parentNode && typeof _zwHasRoot180 === 'function') ? _zwHasRoot180(parentNode) : false;
+    var out = '';
+    for (var i = 0; i < kids.length; i++) {
+      if (hasRoot && _zwIsShadowEcho180(kids[i])) continue;
+      out += _zwSerNode180(kids[i], o);
+    }
+    return out;
+  }
+
+  // 单节点序列化（资格根模板形注入宿主开标签后——spec 顺序 shadowrootmode →
+  // delegatesfocus → serializable → clonable，与引擎 serializer 逐字节一致）。开
+  // 标签属性段借 outerHTML 前缀（R3198/R3201 转义/顺序同源）；子递归（嵌套根同判）。
+  // FIXME: 属性值含 '>' 时 indexOf('>') 开标签切分会切早（语料无钉面）。
+  var _zwVoidTags180 = /^(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)$/;
+  function _zwSerNode180(n, o) {
+    if (!n) return '';
+    var nt = 0;
+    try { nt = n.nodeType; } catch (_eSn0) {}
+    if (nt === 3) {
+      var tv = n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : '');
+      return _zwMEscapeText(String(tv));
+    }
+    if (nt === 8) {
+      var cv = n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : '');
+      return '<!--' + String(cv) + '-->';
+    }
+    if (nt === 7) {
+      return '<?' + (n.target != null ? n.target : (n.nodeName != null ? n.nodeName : '')) + ' '
+        + (n.data != null ? n.data : (n.nodeValue != null ? n.nodeValue : '')) + '?>';
+    }
+    if (nt !== 1) return '';
+    var tag = '';
+    try { tag = String(n.localName || n.tagName || '').toLowerCase(); } catch (_eSn1) {}
+    if (!tag) return '';
+    var oh = '';
+    try { oh = String(n.outerHTML || ''); } catch (_eSn2) {}
+    // template 元素（非 shadow host——序列化恒 outerHTML 原形，WC-M3 空形态机器）。
+    if (tag === 'template') return oh;
+    var gt = oh.indexOf('>');
+    var open = (oh && gt >= 0) ? oh.slice(0, gt + 1) : '<' + tag + '>';
+    var close = _zwVoidTags180.test(tag) ? '' : '</' + tag + '>';
+    var sr180 = _zwResolveRoot180(n, o);
+    var mid = '';
+    if (sr180) {
+      mid = '<template shadowrootmode="' + sr180.mode + '"';
+      if (sr180.delegatesFocus) mid += ' shadowrootdelegatesfocus=""';
+      if (sr180.serializable) mid += ' shadowrootserializable=""';
+      if (sr180.clonable) mid += ' shadowrootclonable=""';
+      mid += '>';
+      var sk = sr180.kids || [];
+      for (var si = 0; si < sk.length; si++) mid += _zwSerNode180(sk[si], o);
+      mid += '</template>';
+    }
+    var kids180 = [];
+    try { kids180 = n.childNodes || []; } catch (_eSn3) {}
+    var kidsOut = _zwSerKids180(n, kids180, o);
+    return open + mid + kidsOut + close;
+  }
+
+  // 子列表序列化 + 无资格根短路（equality 断言面逐字节同 innerHTML 机器——经
+  // proxy getter 复用既有融合序列化）。qualified 臂走 `_zwSerKids180`（parentNode
+  // echo 闸门同 innerHTML 语义）。
+  function _zwGetHtmlKids180(sel, handle, kids, o, parentNode) {
+    var hasQual = false;
+    for (var qi = 0; qi < kids.length; qi++) {
+      if (kids[qi] && kids[qi].nodeType === 1 && _zwResolveRoot180(kids[qi], o)) { hasQual = true; break; }
+    }
+    if (!hasQual) {
+      try { return _makeProxy(sel, handle).innerHTML; } catch (_eGhSc) { return ''; }
+    }
+    return _zwSerKids180(parentNode || null, kids, o);
+  }
+
+  // `Element/ShadowRoot.getHTML(options)` 实现（part04 trap 双域调人）——子列表
+  // 解析同 innerHTML getter（容器 handle 只读 registry；普通 handle 融合本地视图；
+  // sel 域 _childNodeList）。元素域自根资格时先注模板形（spec：getHTML 序列化
+  // 含自身 shadow root，`host.getHTML({serializableShadowRoots:true})` 断言面）。
+  function _zwGetHtmlImpl(sel, handle, options) {
+    var o = _zwGetHtmlOpts180(options);
+    var kids;
+    var selfN = null;
+    if (handle) {
+      if (_isContainerHandle(handle)) {
+        kids = _handleChildNodes(handle);
+      } else {
+        selfN = _makeProxy(sel, handle);
+        var _g1 = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(sel, handle) : null;
+        var _g2 = (_handleChildren[handle] || []).slice();
+        if (_g1 && _g1.length) kids = _g1.concat(_g2);
+        else if (_g2.length) kids = _g2;
+        else if (_g1) kids = _g1;
+        else kids = [];
+      }
+    } else {
+      selfN = (sel != null && sel !== '') ? _makeProxy(sel, handle) : null;
+      kids = _childNodeList(sel, handle);
+    }
+    // 自根模板形（`_zwResolveRoot180` 已内含资格判定，未资格返 null → 无前缀）。
+    var pre = '';
+    if (selfN) {
+      var selfSR = _zwResolveRoot180(selfN, o);
+      if (selfSR) {
+        pre = '<template shadowrootmode="' + selfSR.mode + '"';
+        if (selfSR.delegatesFocus) pre += ' shadowrootdelegatesfocus=""';
+        if (selfSR.serializable) pre += ' shadowrootserializable=""';
+        if (selfSR.clonable) pre += ' shadowrootclonable=""';
+        pre += '>';
+        pre += _zwSerKids180(selfN, selfSR.kids || [], o);
+        pre += '</template>';
+        return pre + _zwSerKids180(selfN, kids || [], o);
+      }
+    }
+    return _zwGetHtmlKids180(sel, handle, kids || [], o, selfN);
   }
 
   // WC-M3（spec slotchange）：shadow 树内全 slot 的 slotchange 微任务派发——分配变化
@@ -8237,6 +8683,17 @@
       } catch (_e128cv) {}
       return c;
     };
+    // s180/gethtml（M3 Batch 2）：standalone canvas 补 ParentNode.append 变参面——
+    // 委托同 handle 的 trap 代理（R57 innerHTML/outerHTML 同款桥）。gethtml.html
+    // 命令式臂 `element.append(...temp.childNodes)` 曾 TypeError（standalone 对象
+    // 无 proxy trap、缺现代 ParentNode API）。字符串包 Text / 节点插入语义在
+    // part04 trap append 臂内（spec dom-parent-node-append 前置校验同享）。
+    if (typeof _makeProxy === 'function' && el.__zwHandle) {
+      el.append = function () {
+        var _pn180 = _makeProxy(null, el.__zwHandle);
+        return _pn180.append.apply(_pn180, arguments);
+      };
+    }
     return el;
   }
   // R3077：HTMLCanvasElement width/height 反射读（spec default 300/150）。供 CANVAS get-trap getContext

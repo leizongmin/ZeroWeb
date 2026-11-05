@@ -2038,6 +2038,50 @@
       });
     }
   } catch (_e366proto) {}
+  // s180/gethtml（M3 Batch 2）：ShadowRoot.prototype getHTML/setHTMLUnsafe——轻量域
+  //（R179/R194 工厂产物 + s180 声明式根视图）沿自身 childNodes 操作；handle 域
+  // _wrapHandle proxy 由 part04 get trap 先答不达本面。getHTML 无资格根短路
+  // innerHTML accessor（equality 断言同源）；setHTMLUnsafe 物化深臂整替子列表。
+  try {
+    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
+        && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'getHTML')) {
+      Object.defineProperty(globalThis.ShadowRoot.prototype, 'getHTML', {
+        value: function (options) {
+          var kids = this.childNodes || [];
+          if (typeof _zwGetHtmlKids180 === 'function') {
+            return _zwGetHtmlKids180(null, null, kids, _zwGetHtmlOpts180(options));
+          }
+          var out = '';
+          for (var i = 0; i < kids.length; i++) {
+            var c = kids[i];
+            if (!c) continue;
+            if (c.nodeType === 3) out += String(c.data != null ? c.data : '');
+            else if (c.nodeType === 8) out += '<!--' + String(c.data != null ? c.data : '') + '-->';
+            else if (c.nodeType === 1 && typeof c.outerHTML === 'string') out += c.outerHTML;
+          }
+          return out;
+        },
+        writable: true, configurable: true,
+      });
+    }
+  } catch (_e180srgh) {}
+  try {
+    if (globalThis.ShadowRoot && globalThis.ShadowRoot.prototype
+        && !Object.getOwnPropertyDescriptor(globalThis.ShadowRoot.prototype, 'setHTMLUnsafe')) {
+      Object.defineProperty(globalThis.ShadowRoot.prototype, 'setHTMLUnsafe', {
+        value: function (value) {
+          var kids = this.childNodes;
+          if (!kids || !kids.length) return;
+          var _sv = value === null ? '' : String(value);
+          var added = (typeof _zwMBuildBodyTree === 'function')
+            ? _zwMBuildBodyTree(_sv, '', undefined, true).childNodes : [];
+          kids.length = 0;
+          for (var i = 0; i < added.length; i++) if (added[i]) kids.push(added[i]);
+        },
+        writable: true, configurable: true,
+      });
+    }
+  } catch (_e180srsu) {}
   // R366：shadow root 内容树查询（queryShadowTree）——与元素 own QSA（part05 R181/
   // R359）同构的本树 walk：querySelector/querySelectorAll 在**子树**上 compound
   // 判定（tag 大小写折叠 + id + class 全含 + attr =/存在性）。挂原型一次覆盖
@@ -2278,6 +2322,18 @@
         get: _zwDocLocationGet, set: _zwDocLocationSet, enumerable: true, configurable: true,
       });
     } catch (_eDocLoc) {}
+    return d;
+  };
+  // s180/gethtml（M3 Batch 2，spec https://html.spec.whatwg.org/multipage/dynamic-markup-insertion.html
+  // #dom-document-parsehtmlunsafe，whatwg/dom#831）：静态 Document.parseHTMLUnsafe——
+  // 文档路径解析 + **物化**（unsafe 双 API 是物化的仅存 fragment 入口；fragment
+  // 上下文与 XML/DOMParser 路径不物化）。复用 detached doc 工厂 + `__zwUnsafeMaterialize`
+  // 印记——write 流沿印记走物化深臂。
+  globalThis.Document.parseHTMLUnsafe = function (html) {
+    var s = html == null ? '' : String(html);
+    var d = _makeDetachedDocument('');
+    d.__zwUnsafeMaterialize = true;
+    if (s) d.write(s);
     return d;
   };
   try {
@@ -23406,6 +23462,15 @@
       if (ats[ai] && ats[ai].n) _da[String(ats[ai].n)] = String(ats[ai].v == null ? '' : ats[ai].v);
     }
     var node = _zwMEl({ tag: String(entry.tag || 'div'), attrs: _da, id: _da.id || '', cls: _da['class'] || '' }, parent);
+    // s180/gethtml（M3 Batch 2）：物化条目的 `sr` 字段——unsafe 解析（setHTMLUnsafe/
+    // parseHTMLUnsafe/document write 物化面）在本元素上挂声明式 shadow root 视图。
+    // spec：物化只属文档路径与 unsafe 双 API（whatwg/dom#831），template 已消费、
+    // shadow 子不进 light childNodes。挂载走 `_zwAttachDeclarativeSRView`（part05，
+    // 工厂代理无 sel/handle 不能入 _shadowRoots 注册表——own 印记 + ShadowRoot 原型
+    // 节点；re-attach/getHTML/shadowRoot 读三面共用）。
+    if (entry.sr && typeof _zwAttachDeclarativeSRView === 'function') {
+      try { _zwAttachDeclarativeSRView(node, entry.sr, scripting); } catch (_eSrB2) {}
+    }
     var kids = Array.isArray(entry.children) ? entry.children : [];
     for (var ci = 0; ci < kids.length; ci++) {
       var ck = _zwMBuildDeepTreeNode(kids[ci], node, scripting);
@@ -23417,7 +23482,10 @@
     return node;
   }
   // 建 body 元素节点树（root，parentNode=null）：从 <body>innerHtml</body> 取 body 子 entries 递归建。
-  function _zwMBuildBodyTree(innerHtml, ctxNs, scripting) {
+  // s180/gethtml（M3 Batch 2）：第 4 参 `materialize`——unsafe 物化面（setHTMLUnsafe/
+  // parseHTMLUnsafe/write 物化路径）切 `__zw_parse_html_subtree_unsafe`（条目带 `sr`
+  // 字段，_zwMBuildDeepTreeNode 挂声明式根视图）；缺省视图解析（opt-in 不物化）零变化。
+  function _zwMBuildBodyTree(innerHtml, ctxNs, scripting, materialize) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
     // OPTIMIZATION（encoding-legacy-mb DC-2，2026-10-28）：单次解析深树臂——host 一
@@ -23428,10 +23496,11 @@
     // 等价：`_zwMEl` 只消费 tag/attrs/id/cls/ns——浅快照亦不发 ns（回退 HTML ns
     // 同款），深臂 setAttribute 经 `_zwMReflectIdl` 同步 id/cls 反射。解析失败
     // 落旧臂（浅条目二次定位），零行为面收敛。
-    if (typeof __zw_parse_html_subtree === 'function') {
+    var _p5SubtreeFn = materialize ? __zw_parse_html_subtree_unsafe : __zw_parse_html_subtree;
+    if (typeof _p5SubtreeFn === 'function') {
       try {
         var _p5deep = JSON.parse(
-          __zw_parse_html_subtree(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1'));
+          _p5SubtreeFn(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1'));
         if (Array.isArray(_p5deep)) {
           for (var di5 = 0; di5 < _p5deep.length; di5++) {
             if (_p5deep[di5]) body.childNodes.push(_zwMBuildDeepTreeNode(_p5deep[di5], body, scripting));
@@ -25230,9 +25299,22 @@
         }
         if (!s) return;
         ensureTree();
-        var added = _zwMBuildBodyTree(s, '', false).childNodes;
+        // s180/gethtml（M3 Batch 2，whatwg/dom#831）：parseHTMLUnsafe 产物文档的
+        // write 走**物化**深臂（第 4 参）——`<template shadowrootmode>` 建真
+        // ShadowRoot（opt-in 页 'document.open() of a document created with
+        // parseHTMLUnsafe keeps declarative shadow DOM opt-in' 断言面）；其余
+        // detached doc 维持非物化（DOMParser/XHR/cloned 语义不变）。
+        var added = _zwMBuildBodyTree(s, '', false, doc.__zwUnsafeMaterialize === true).childNodes;
         for (var j = 0; j < added.length; j++) if (added[j]) _tree.appendChild(added[j]);
       },
+      // s180/gethtml（M3 Batch 2）：detached doc 的 open/close 最小面——spec open
+      // 清空文档后重入 write 流（parseHTMLUnsafe 空 markup 场景树已空，wipe 近似
+      // 足够）；close 为流收口 no-op。缺此二者 opt-in 页 `doc.open()` 直接 TypeError。
+      open: function () {
+        ensureTree();
+        try { _tree.childNodes.length = 0; } catch (_eDocOpen) {}
+      },
+      close: function () { /* spec：write 流关闭，无流状态可收 */ },
       writeln: function () {
         var s = '';
         for (var i = 0; i < arguments.length; i++) s += String(arguments[i] == null ? '' : arguments[i]);

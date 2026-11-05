@@ -858,6 +858,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s180/gethtml（M3 Batch 2）：物化变体——setHTMLUnsafe 视图构建数据源，元素
+    // 条目带 `sr` 字段（声明式根 mode + d/c/s 状态位 + shadow 子深 JSON）。
+    sandbox.register_callback(
+        "__zw_parse_html_subtree_unsafe",
+        Box::new(|args: &[String]| -> String {
+            let html = args.first().map(String::as_str).unwrap_or("");
+            let sel = args.get(1).map(String::as_str).unwrap_or("");
+            let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
+            let scripting = args.get(3).map(|s| s != "0").unwrap_or(true);
+            parse_html_subtree_deep_json_unsafe(html, sel, ctx_ns, scripting)
+        }),
+    );
+
     // 诊断日志桥（ZW_DBG_LOG=1 时输出 stderr）——页面/shim 打点定位长尾案的分段
     // 耗时与硬终止死点（结果 all-or-nothing 时的观测窗口）。
     sandbox.register_callback(
@@ -3118,12 +3131,17 @@ pub fn register_dom_callbacks(
         "__zw_attach_shadow",
         Box::new(move |args| {
             if args.len() >= 3 {
+                // s180/gethtml：args[3..] 为 init 三状态位（"1"/"0"；旧 shim 调用
+                // 不传时按 false——兼容窗口内零行为变化）。
                 m.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(DomMutation::AttachShadow {
                         host_selector: args[0].clone(),
                         root_handle: args[1].clone(),
                         mode: args[2].clone(),
+                        delegates_focus: args.get(3).map(|s| s == "1").unwrap_or(false),
+                        clonable: args.get(4).map(|s| s == "1").unwrap_or(false),
+                        serializable: args.get(5).map(|s| s == "1").unwrap_or(false),
                     });
             }
             "ok".into()
@@ -3141,6 +3159,9 @@ pub fn register_dom_callbacks(
                         host_handle: args[0].clone(),
                         root_handle: args[1].clone(),
                         mode: args[2].clone(),
+                        delegates_focus: args.get(3).map(|s| s == "1").unwrap_or(false),
+                        clonable: args.get(4).map(|s| s == "1").unwrap_or(false),
+                        serializable: args.get(5).map(|s| s == "1").unwrap_or(false),
                     });
             }
             "ok".into()
@@ -3593,6 +3614,40 @@ pub fn register_dom_callbacks(
                 m.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(DomMutation::SetInnerHtmlOnHandle {
+                        handle: args[0].clone(),
+                        html: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    // s180/gethtml（M3 Batch 2）：setHTMLUnsafe 物化通道（sel / handle 对偶，镜像
+    // __zw_set_inner_html 注册面）。物化语义在 apply 侧 replace_inner_html_unsafe。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_set_inner_html_unsafe",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SetInnerHtmlUnsafe {
+                        selector: args[0].clone(),
+                        html: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_set_inner_html_handle_unsafe",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SetInnerHtmlOnHandleUnsafe {
                         handle: args[0].clone(),
                         html: args[1].clone(),
                     });

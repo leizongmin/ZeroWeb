@@ -353,6 +353,18 @@ pub struct ShadowRootData {
     pub mode: ShadowRootMode,
     /// Slot 分配策略。
     pub slot_assignment: SlotAssignment,
+    /// 是否为声明式 shadow root（`<template shadowrootmode>` 物化产物）——
+    /// 序列化与 getHTML 以声明式模板形态回写的资格标记（whatwg/dom#831）。
+    pub declarative: bool,
+    /// delegatesFocus（声明式：`shadowrootdelegatesfocus` 布尔属性存在；
+    /// 命令式：attachShadow init 同名字段）。
+    pub delegates_focus: bool,
+    /// clonable（声明式：`shadowrootclonable` 布尔属性存在；命令式：init 同名字段）。
+    pub clonable: bool,
+    /// serializable（声明式：`shadowrootserializable` 布尔属性存在；
+    /// 命令式：init 同名字段）——getHTML({serializableShadowRoots}) 翻转与
+    /// 序列化回写 `shadowrootserializable` 的资格标记。
+    pub serializable: bool,
 }
 
 impl ShadowRootData {
@@ -362,6 +374,10 @@ impl ShadowRootData {
             host: None,
             mode,
             slot_assignment: SlotAssignment::Named,
+            declarative: false,
+            delegates_focus: false,
+            clonable: false,
+            serializable: false,
         }
     }
 }

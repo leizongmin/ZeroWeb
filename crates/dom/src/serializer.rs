@@ -174,7 +174,22 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
                 crate::node::ShadowRootMode::Open => "open",
                 crate::node::ShadowRootMode::Closed => "closed",
             });
-            output.push_str("\">");
+            output.push('"');
+            // s180/gethtml（M3 Batch 2）：状态位布尔属性回写，顺序按 HTML 序列化
+            // spec（shadowrootmode → shadowrootdelegatesfocus →
+            // shadowrootserializable → shadowrootclonable）——声明式物化读回
+            // （dom/shadow.rs materialize）与 getHTML 模板形态逐字节对齐。
+            // https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
+            if data.delegates_focus {
+                output.push_str(" shadowrootdelegatesfocus=\"\"");
+            }
+            if data.serializable {
+                output.push_str(" shadowrootserializable=\"\"");
+            }
+            if data.clonable {
+                output.push_str(" shadowrootclonable=\"\"");
+            }
+            output.push('>');
             for &child in &node_data.children {
                 serialize_node_inner(doc, child, output);
             }

@@ -323,6 +323,78 @@ mod tests {
         assert_eq!(doc_m.shadow_root_ids().len(), 1);
     }
 
+    // M3 Batch 2（s180/gethtml，whatwg/dom#831）：**物化片段解析**（unsafe 双 API
+    // 消费面）——`parse_html_fragment_with_scripting_materialized` 消费 template 建
+    // 真根，状态位（delegatesfocus/clonable/serializable）自属性 presence 读入。
+    #[test]
+    fn materialized_fragment_parse_attaches_flags() {
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=host><template shadowrootmode=open shadowrootdelegatesfocus shadowrootclonable shadowrootserializable><span class=content>C</span></template><p>light</p></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        // template 消费、真根建立。
+        assert!(
+            doc.query_selector(doc.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+        let host = doc.query_selector(doc.root(), "div.host").expect("host present");
+        let sr = doc.shadow_root(host).expect("declarative root attached");
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(matches!(data.mode, crate::node::ShadowRootMode::Open));
+        assert!(data.declarative, "fragment materialization stamps declarative");
+        assert!(data.delegates_focus && data.clonable && data.serializable);
+        // shadow 子树可查询（.content 移入根）。
+        assert!(doc.query_selector(sr, ".content").is_some());
+        // light 子仍在宿主（template 后的 p 不入根）。
+        assert!(doc.query_selector(host, "p").is_some());
+    }
+
+    // M3 Batch 2：attach_shadow_full 状态位与序列化回写——布尔属性按 HTML 序列化
+    // spec 顺序（shadowrootmode → delegatesfocus → serializable → clonable）回写为
+    // `=""`，与声明式物化读回及 getHTML 模板形态逐字节对齐。
+    #[test]
+    fn attach_shadow_full_flags_serialize_in_spec_order() {
+        let mut doc = crate::Document::new();
+        let host = doc.create_element("div");
+        let sr = doc
+            .attach_shadow_full(host, crate::node::ShadowRootMode::Closed, true, true, true, true)
+            .expect("attach_shadow_full succeeds");
+        doc.append_child(doc.root(), host).expect("host appended");
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains(
+                "<template shadowrootmode=\"closed\" shadowrootdelegatesfocus=\"\" shadowrootserializable=\"\" shadowrootclonable=\"\""
+            ),
+            "spec-order boolean attrs, got: {html}"
+        );
+        let data = match doc.get(sr).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(data.declarative, "flags passed through attach_shadow_full");
+        // 对照：全 false 位不产生附加属性（attach_shadow 薄包装默认位）。
+        let mut doc2 = crate::Document::new();
+        let host2 = doc2.create_element("div");
+        let sr2 = doc2
+            .attach_shadow(host2, crate::node::ShadowRootMode::Open)
+            .expect("attach_shadow succeeds");
+        let html2 = crate::serializer::serialize_node(&doc2, host2);
+        assert_eq!(
+            html2, "<div><template shadowrootmode=\"open\"></template></div>",
+            "no extra attrs when flags unset, got: {html2}"
+        );
+        let data2 = match doc2.get(sr2).map(|n| &n.kind) {
+            Some(crate::node::NodeKind::ShadowRoot(d)) => d,
+            _ => panic!("shadow root node present"),
+        };
+        assert!(!data2.declarative && !data2.delegates_focus && !data2.clonable && !data2.serializable);
+    }
+
     #[test]
     fn open_close_values_uppercased() {
         assert_eq!(
