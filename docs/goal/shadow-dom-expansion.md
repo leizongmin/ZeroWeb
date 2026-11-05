@@ -182,9 +182,14 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   （Q1 队列加速判别 + 代码互证）；修复候选：链资格 O(1) 计数器化 / ShadowRoot
   句柄读 live-aware 直读，均在 callbacks.rs = t8c 编辑面须协同落地，落地后重建
   knee/gethtml 复测（队列折叠兜底挂账）；
-  ②簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8，声明式值捕获+
-  spec 序回写），待 engine glue 与通道复测；attachment safelisted 物化臂 170F
-  甄别；簇 D 逐项甄别。
+  ②attachment 170F 甄别收口（2026-11-06 傍晚）——两个机制面：safelisted 臂 68F
+  = setHTMLUnsafe 后声明式模板从不物化（gethtml 声明式象限通过系 attachShadow
+  重建+序列化遮蔽虚构链）；disallowed 臂 102F = context 父模板被错误物化消费
+  （spec：context 元素不附着）。修复面在 dom/ = 簇 C 流活跃面，已按 §9 交付
+  证据待其落地复测：
+  [attachment triage](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-attachment-170f-triage.md)；
+  ③簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8），待 engine glue
+  与通道复测；簇 D 逐项甄别。
 
 ## 依赖约束（run-rules §9）
 
