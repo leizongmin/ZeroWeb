@@ -3145,7 +3145,12 @@ pub fn child_nodes_json(html: &str, elem_sel: &str) -> String {
 pub fn child_nodes_json_full(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
-            let doc = parse_html_with_scripting(html, scripting);
+            // 视图解析（shadow-dom 扩面 opt-in，whatwg/dom#831）：shim 本地视图/
+            // 查询产物不物化声明式 shadow root——`<template shadowrootmode>` 以普通
+            // template 存活（innerHTML 产物/DOMParser 面）。快照寻址解析
+            //（callbacks parse_html(dom_html)）保持物化不变（序列化回环闭合）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+            let doc = zero_dom::parse_html_with_scripting_unmaterialized(html, scripting);
             child_nodes_json_doc(&doc, elem_sel)
         }
         Some(ns) => {
@@ -3178,7 +3183,8 @@ pub fn child_nodes_json_ctx(html: &str, elem_sel: &str, context_ns: Option<&str>
 pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Option<&str>, scripting: bool) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
-            let mut doc = parse_html_with_scripting(html, scripting);
+            // 视图解析（opt-in 不物化，同 [`child_nodes_json_full`] HTML 分支注）。
+            let mut doc = zero_dom::parse_html_with_scripting_unmaterialized(html, scripting);
             // 与 `parse_html_element_json_full` 同款 no-ns 标记还原（查询前）。
             doc.apply_empty_ns_markers();
             let Some(node) = find_by_selector(&doc, elem_sel) else {
@@ -3375,8 +3381,12 @@ pub fn declarative_shadow_deep_json_doc(doc: &Document, elem_sel: &str) -> Strin
 /// `{"k":"E","tag":"p","attrs":[...],"children":[...]}`）——iframe/detached shim 文档的
 /// JS 树构建用。contents 子在 fragment（非文档树），selector 无法二次定位（上层
 /// `unique_selector` 穿透 fragment 错位），须一次取全子树。
+/// 视图解析（opt-in 不物化，同 [`child_nodes_json_full`] 注）——嵌套声明式模板在
+/// contents 内同样以普通 template 存活（WPT opt-in 'innerHTML on template, with
+/// nested template content' 断言 getAttribute === 'open'；物化变体曾把值留成
+/// 预变换形态 "Open" 且顶层模板被消费）。
 pub fn parse_template_contents_deep_json(html: &str, elem_sel: &str) -> String {
-    let doc = parse_html(html);
+    let doc = zero_dom::parse_html_with_scripting_unmaterialized(html, true);
     let Some(node) = find_by_selector(&doc, elem_sel) else {
         return "[]".to_string();
     };

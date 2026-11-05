@@ -11212,6 +11212,21 @@
     }
     // R307：empty-ns 标记剥离（真节点 outerHTML 含 `data-zw-empty-ns=""`，
     // host JSON info.outer 不含——键空间统一以剥离后形态为准）。
+    // WC-M3 声明式扩面（shadow-dom M3）：template 键**内容不敏感**——查询源序列化
+    //（`_zwMOuterHtml` WC-M3 切片 3）把 template 序列化为空元素形态（contents 不入
+    // 查询源），host re-parse 后 info.outer 内的 template 恒空元素形态；真节点
+    // outerHTML（`_zwMSerialize` 通用臂）内联 childNodes（deep 臂解析产物的 contents
+    // 形态）。两侧对外壳一致、对 contents 恒不一致 → 桥/wrapper 缓存键恒 miss →
+    // 查询产物回落重建 wrapper（childNodes 空、content 空——WPT opt-in
+    // 'insertAdjacentHTML on element'/'createHTMLDocument with innerHTML' 断言
+    // `tmpl.content.querySelector('.content')` 恒失败的根因）。键侧把 outer 内每个
+    // template 段剥为空元素形态（祖先串内嵌 template 同样剥——host/cand 外层元素
+    // 的 outer 差异同源），两侧归一后桥命中即真节点本体（WC-M1 content 视图随
+    // 身份保真）。匹配只落键空间，查询源/序列化产物不动（WC-M3 语义不变）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    if (outer355.indexOf('<template') >= 0) {
+      outer355 = outer355.replace(/(<template\b[^>]*>)[\s\S]*?(<\/template>)/gi, '$1$2');
+    }
     var key355 = tag355 + '\x1f' + id355 + '\x1f' + outer355.split(' data-zw-empty-ns=""').join('');
     // R188：同键出现序号后缀（仅 element 级 QSA 对同构重复元素设置）。
     if (info355 && info355._zwDupSeq) key355 += '\x1f#' + info355._zwDupSeq;

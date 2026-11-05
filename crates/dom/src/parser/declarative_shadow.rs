@@ -26,6 +26,48 @@
 
 use std::borrow::Cow;
 
+use crate::document::Document;
+use crate::node::{NodeId, NodeKind};
+
+/// 片段路径 s173 预变换的配套值还原：预变换把 `shadowrootmode` 的 `open`/`close`
+/// 改写为首字母大写以出 html5ever 0.29.1 精确匹配集（[`restore_declarative_shadow_templates`]），
+/// 文档路径随后由 `materialize_declarative_shadow_roots` 消费 template（值大小写
+/// 对语义不可见）；片段路径（innerHTML 等）按 opt-in 语义**不物化**（whatwg/dom#831），
+/// template 以普通元素存活——改写值经 getAttribute/序列化可观测，须还原为源码
+/// 小写形态（WPT declarative-shadow-dom-opt-in 断言 `getAttribute === 'open'`）。
+/// 还原只认预变换产出的两形态（`Open`/`Close`）；源码本就首字母大写的边例回显为
+/// 小写（FIXME: 源码级大小写保真需标签位置映射，欠做——语料与真实页面主流为
+/// 全小写值）。遍历含 template contents 子树（contents 内嵌套声明式模板同样可观测），
+/// 不含 shadow 树（片段解析不产 shadow 节点）。
+pub(crate) fn restore_shadowrootmode_values(doc: &mut Document) {
+    let mut stack: Vec<NodeId> = vec![doc.root()];
+    while let Some(id) = stack.pop() {
+        let (children, contents) = match doc.get(id) {
+            Some(n) => (
+                n.children.clone(),
+                if matches!(&n.kind, NodeKind::Element(e) if e.local_name() == "template") {
+                    doc.template_contents(id)
+                } else {
+                    None
+                },
+            ),
+            None => continue,
+        };
+        if let Some(v) = doc.get_attribute(id, "shadowrootmode") {
+            let restored = match v.as_str() {
+                "Open" => "open",
+                "Close" => "close",
+                _ => v.as_str(),
+            };
+            if restored != v.as_str() {
+                doc.set_attribute(id, "shadowrootmode", restored);
+            }
+        }
+        stack.extend(children);
+        stack.extend(contents);
+    }
+}
+
 /// RAWTEXT/RCDATA 元素：其文本区内 `<template` 是字面量（spec tokenizer raw text
 /// 状态）。https://html.spec.whatwg.org/multipage/parsing.html#raw-text-elements
 const RAW_TEXT_TAGS: [&str; 9] = [
@@ -231,6 +273,54 @@ mod tests {
 
     fn rewritten(html: &str) -> bool {
         matches!(restore_declarative_shadow_templates(html), Cow::Owned(_))
+    }
+
+    // 片段路径 opt-in（whatwg/dom#831）：innerHTML 类 fragment 解析不物化——template
+    // 以普通元素存活、shadowrootmode 值还原源码小写、contents 可读（WPT
+    // declarative-shadow-dom-opt-in 断言面）。
+    #[test]
+    fn fragment_parse_keeps_template_without_materializing() {
+        let doc = crate::parse_html_fragment_with_scripting(
+            r#"<div class=host><template shadowrootmode=open><span class=content>Content</span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template should survive fragment parse");
+        assert_eq!(
+            doc.get_attribute(tmpl, "shadowrootmode").as_deref(),
+            Some("open"),
+            "rewritten value must be restored to source case"
+        );
+        let contents = doc.template_contents(tmpl).expect("template contents present");
+        let span = doc
+            .query_selector(contents, ".content")
+            .expect("content subtree readable");
+        assert_eq!(doc.text_content(span).as_deref(), Some("Content"));
+        // 片段路径无 shadow root 节点（不物化）。
+        assert!(doc.shadow_root_ids().is_empty());
+    }
+
+    // 文档路径 opt-in 关闭变体（shim 视图解析消费面）：同片段语义——template 存活 +
+    // 值还原 + 不物化；真实文档路径（parse_html）仍物化（对照断言）。
+    #[test]
+    fn unmaterialized_document_parse_keeps_template() {
+        let html = r#"<html><body><div class=host><template shadowrootmode=open><span>Shadow tree</span></template></div></body></html>"#;
+        let doc = crate::parse_html_with_scripting_unmaterialized(html, true);
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template should survive unmaterialized parse");
+        assert_eq!(doc.get_attribute(tmpl, "shadowrootmode").as_deref(), Some("open"));
+        assert!(doc.shadow_root_ids().is_empty());
+        // 对照：默认文档路径物化——template 消失、shadow root 建立。
+        let doc_m = crate::parse_html(html);
+        assert!(
+            doc_m.query_selector(doc_m.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+        assert_eq!(doc_m.shadow_root_ids().len(), 1);
     }
 
     #[test]

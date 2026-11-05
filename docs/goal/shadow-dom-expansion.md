@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M0/M1/M2 完成（2026-11-06，全量推进已决，门值 31.4% 回填），
+**状态**: Active——M0/M1/M2 完成 + M3 Batch 1 落地（2026-11-06，全量推进已决，门值 31.4% 回填；opt-in 页 117F→108P/10F，全通道零回归），
 M3 JS 语义簇收敛未启动
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
@@ -107,6 +107,29 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   三 API + 片段解析物化接线（innerHTML/createContextualFragment 接
   `materialize_declarative_shadow_roots`），预期翻转 ~5,300 子测试；
   其后簇 C（referenceTarget）实现或具名挂账、簇 D 逐项甄别。
+
+### 2026-11-06——M3 Batch 1（片段解析 opt-in 语义）
+
+- **簇 B 首刀落地**：opt-in 页（declarative-shadow-dom-opt-in，120 子测试）
+  片段解析路径收敛——innerHTML/insertAdjacentHTML/createHTMLDocument/
+  document.write(fresh) 不物化、template 存活、`shadowrootmode` 值还原源码
+  小写、content 可读。**117F+1P → 108P/10F**（+107 翻转）。
+- 根因三层：shim 查询源模板空形态化（WC-M3 既定）→ 引擎 skip 路径留下
+  s173 预变换 `Open`/`Close` 可观测值 → shim 身份桥键失配丢 content 视图。
+  修复 5 文件 +170/-8：materialize 全模板值还原（dom/shadow.rs）+
+  `_zwQueryKey` template 键内容不敏感剥离（shim part03.js）+ 上轮已落的
+  parser 物化接线/片段预变换与还原一并入库。
+- **全通道 A/B 零回归**：392 案逐子测试比对 P→F = 0；旧五面
+  （custom-elements/template/sd-top/untriaged/reftarget）逐案一致；
+  decl-top +108P，池展开 +494 全在 gethtml.html（早抛解除→新子测试全落
+  簇 A——unsafe API 族 Batch 2 目标面，池随实现展开口径与 M2 预测一致）。
+  剩余 10F 逐条归因（canvas 待查 1、查询路径快照闭包 4、CFR 1、
+  parseHTMLUnsafe 1、document.write allowed 1、iframe 2）。证据：
+  [m3 batch1](shadow-dom-expansion/evidence/2026-11-06-m3-batch1-fragment-parse-optin.md)。
+- **下一步（M3 Batch 2）**：簇 A unsafe 三 API（setHTMLUnsafe/getHTML/
+  parseHTMLUnsafe + shim 接线 + declarative 物化语义对齐）——预期翻转
+  gethtml.html 4,946 子测试主力；canvas 1F 与 document.write allowed
+  路径顺带排查。
 
 ## 依赖约束（run-rules §9）
 

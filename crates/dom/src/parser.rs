@@ -37,7 +37,22 @@ pub fn parse_html(html: &str) -> Document {
 /// 等 inert 文档（spec：无 browsing context → scripting disabled；noscript 按 markup
 /// 解析、序列化走转义分支）。
 pub fn parse_html_with_scripting(html: &str, scripting_enabled: bool) -> Document {
-    parse_html_with_builder(html, scripting_enabled)
+    parse_html_with_builder(html, scripting_enabled, true)
+}
+
+/// [`parse_html_with_scripting`] 的**声明式 shadow 不物化**变体（opt-in 语义，
+/// whatwg/dom#831）：`<template shadowrootmode=open|close>` 以普通 template 存活
+///（contents 可读、属性值还原源码小写）。消费面 = shim 本地视图解析（innerHTML=
+/// 产物/DOMParser/query 视图——spec：fragment 上下文与 DOMParser 均不物化声明式
+/// 根，物化只属文档加载与 setHTMLUnsafe/parseHTMLUnsafe）。
+/// 注意与真实文档路径的区别：本变体不做 slot 解析副作用（无 ShadowRoot 节点）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+pub fn parse_html_with_scripting_unmaterialized(html: &str, scripting_enabled: bool) -> Document {
+    let mut doc = parse_html_with_builder(html, scripting_enabled, false);
+    // 片段路径同款值还原（[`declarative_shadow::restore_shadowrootmode_values`]）：
+    // template 以普通元素存活，改写值经 getAttribute/序列化可观测。
+    declarative_shadow::restore_shadowrootmode_values(&mut doc);
+    doc
 }
 
 /// HTML 片段解析（spec `html-fragment-parsing-algorithm`）——以 `(namespace, local_name)` 标识的
@@ -87,7 +102,17 @@ pub fn parse_html_fragment_with_scripting(
     let mut opts = ParseOpts::default();
     opts.tree_builder.scripting_enabled = scripting_enabled;
     let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new());
-    let mut doc = parser.one(html);
+    // 片段路径同享 s173 预变换——html5ever 0.29.1 对 shadowrootmode=open/close 值
+    // 精确匹配走 attach 分支且不插入 template（机制见 [`declarative_shadow`] 模块
+    // 文档）。文档路径已预变换；片段路径（innerHTML/insertAdjacentHTML/
+    // createContextualFragment）此前裸喂 → template 整体消失、contents 扁平化
+    // （shadow-dom 扩面 opt-in 矩阵 ~145F 根因）。opt-in 语义：片段解析不物化
+    // 声明式 shadow root（whatwg/dom#831），template 须以普通 template 存活；
+    // 物化只发生在文档路径与 setHTMLUnsafe/parseHTMLUnsafe。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    let prepassed = declarative_shadow::restore_declarative_shadow_templates(html);
+    let mut doc = parser.one(prepassed.as_ref());
+    declarative_shadow::restore_shadowrootmode_values(&mut doc);
     doc.set_scripting_enabled(scripting_enabled);
     doc
 }
@@ -574,8 +599,10 @@ impl TreeSink for DomBuilder {
     }
 }
 
-/// 使用 DomBuilder 解析 HTML（推荐方式）。
-fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
+/// 使用 DomBuilder 解析 HTML（推荐方式）。`declarative_shadows` = 声明式 shadow root
+/// 物化开关（真实文档路径 true；视图路径 false——opt-in 语义见
+/// [`parse_html_with_scripting_unmaterialized`]）。
+fn parse_html_with_builder(html: &str, scripting_enabled: bool, declarative_shadows: bool) -> Document {
     use html5ever::driver::ParseOpts;
     use tendril::TendrilSink;
 
@@ -599,7 +626,9 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool) -> Document {
     // `<template shadowrootmode>` 形态落盘，此处解析后还原为 ShadowRoot 节点，
     // drain 重序列化 → 视图重放回环闭合。spec 声明式 shadow DOM：
     // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
-    doc.materialize_declarative_shadow_roots();
+    if declarative_shadows {
+        doc.materialize_declarative_shadow_roots();
+    }
     doc.set_encoding_label(encoding_label);
     doc.set_scripting_enabled(scripting_enabled);
     doc

@@ -1,0 +1,129 @@
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: Non-fragment parsing needs no opt-in
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <a>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <abbr>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <address>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <area>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <article>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <aside>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <audio>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <b>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <base>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <bdi>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <bdo>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <blockquote>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <body>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <br>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <button>
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <canvas>
+  assert_true: Unable to find wrapper element expected true got false
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <caption>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <cite>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <code>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <col>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <data>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <datalist>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <dd>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <del>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <details>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <dfn>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <dialog>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <div>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <dl>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <dt>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <em>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <embed>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <fieldset>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <figcaption>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <figure>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <footer>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <form>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h1>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h2>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h3>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h4>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h5>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <h6>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <head>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <header>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <hr>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <html>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <i>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <img>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <input>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <ins>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <kbd>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <label>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <legend>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <li>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <link>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <main>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <map>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <mark>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <menu>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <meta>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <meter>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <nav>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <object>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <ol>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <optgroup>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <option>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <output>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <p>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <param>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <pre>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <progress>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <q>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <rp>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <rt>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <ruby>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <s>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <samp>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <search>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <section>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <slot>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <small>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <source>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <span>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <strong>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <sub>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <sup>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <summary>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <table>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <tbody>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <td>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <tfoot>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <th>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <thead>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <time>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <tr>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <track>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <u>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <ul>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <var>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <video>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on a <wbr>
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on template
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on template, with nested template content
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: innerHTML on shadowRoot
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: DOMParser (includeShadowRoots is historical)
+  assert_true: The template should be left as a <template> element expected true got false
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: createHTMLDocument with innerHTML - not supported
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: createContextualFragment - not supported
+  el.querySelector is not a function
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: document.open() of a document created with parseHTMLUnsafe keeps declarative shadow DOM opt-in
+  Document.parseHTMLUnsafe is not a function
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: insertAdjacentHTML on element - not supported
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: document.write allowed from synchronous script loaded from main document
+  assert_true: Shadow root NOT FOUND. expected true got false
+Pass shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: document.write disallowed on fresh document
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: iframe
+  assert_true: Shadow root NOT FOUND. expected true got false
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: iframe, no sandbox
+  assert_true: Shadow root NOT FOUND. expected true got false
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: XMLHttpRequest - not supported
+  assert_true: The template should be left as a <template> element expected true got false
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: XMLHttpRequest document.open() does not enable declarative shadow DOM when it is previously disabled
+  assert_true: The template should be left as a <template> element expected true got false
+Fail shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: XMLHttpRequest cloned document document.open() does not enable declarative shadow DOM when it is previously disabled
+  assert_true: The template should be left as a <template> element expected true got false
+Timeout shadow-dom/declarative/declarative-shadow-dom-opt-in.html :: shadow-dom/declarative/declarative-shadow-dom-opt-in.html

@@ -98,6 +98,24 @@ impl Document {
     pub fn materialize_declarative_shadow_roots(&mut self) {
         let templates = self.get_elements_by_tag_name("template");
         for tid in templates {
+            // s173 配套值还原（declarative_shadow 扩面）：解析前预变换把 open/close
+            // 值改写为首字母大写以出 html5ever 0.29.1 精确匹配集；被本函数**消费**的
+            // template 随物化移除（值不可观测），但被**跳过**的 template（contents
+            // 缺失/宿主非法/attach Err/模式非法）以普通元素存活——改写值经
+            // getAttribute/序列化可观测，须还原源码小写形态（WPT opt-in 断言
+            // `getAttribute === 'open'`；查询路径 serialization→re-parse 场
+            // `query_selector('template')` 命中跳过模板实证）。还原先行于模式匹配：
+            // 消费路径随后摘除 template，还原无观测面。
+            if let Some(v) = self.get_attribute(tid, "shadowrootmode") {
+                let restored = match v.as_str() {
+                    "Open" => Some("open"),
+                    "Close" => Some("close"),
+                    _ => None,
+                };
+                if let Some(restored) = restored {
+                    self.set_attribute(tid, "shadowrootmode", restored);
+                }
+            }
             let Some(mode_str) = self
                 .get_attribute(tid, "shadowrootmode")
                 .map(|s| s.to_ascii_lowercase())
