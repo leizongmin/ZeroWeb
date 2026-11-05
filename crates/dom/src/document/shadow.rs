@@ -153,6 +153,44 @@ impl Document {
             if !matches!(self.nodes.get(host).map(|n| &n.kind), Some(NodeKind::Element(_))) {
                 continue;
             }
+            // M3 簇 C（attachment safelist）：声明式物化仅在 valid shadow host 名单
+            // 元素上生效——名单外宿主（void/table 上下文等）的 template 保留普通
+            // 形态，其 shadowrootmode 值已被上方 s173 还原为源码小写（WPT
+            // attachment.html disallowed 臂：template 保留 + getAttribute 断言面）。
+            // FIXME: custom element 宿主同为 valid shadow host，待自定义元素注册
+            // 面接线后放开（上游 oracle 名单亦不含）。
+            // https://dom.spec.whatwg.org/#valid-shadow-host-name
+            const VALID_SHADOW_HOST_NAMES: &[&str] = &[
+                "article",
+                "aside",
+                "blockquote",
+                "body",
+                "div",
+                "footer",
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "h6",
+                "header",
+                "main",
+                "nav",
+                "p",
+                "section",
+                "span",
+            ];
+            let host_valid = self
+                .nodes
+                .get(host)
+                .map(|n| match &n.kind {
+                    NodeKind::Element(elem) => VALID_SHADOW_HOST_NAMES.contains(&elem.local_name()),
+                    _ => false,
+                })
+                .unwrap_or(false);
+            if !host_valid {
+                continue;
+            }
             let Some(frag) = self.template_contents(tid) else {
                 continue;
             };

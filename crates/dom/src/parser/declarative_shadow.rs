@@ -468,6 +468,65 @@ mod tests {
         );
     }
 
+    // M3 簇 C（attachment safelist）：物化仅认 valid shadow host 名单宿主——
+    // 名单外宿主（li）保留普通 template 且 shadowrootmode 值还原源码小写；
+    // 名单内宿主照常物化；wrapper 名单内宿主对 parser 重锚来的 stray template
+    //（void 宿主场景）照 spec 消费（attachment.html void 行残留失败的根因面）。
+    // https://dom.spec.whatwg.org/#valid-shadow-host-name
+    #[test]
+    fn materialize_only_on_valid_shadow_host_names() {
+        // li（名单外）：template 嵌套为其子面（parser 正常放置），保留普通形态、
+        // 值还原小写、li 无 shadow root。
+        let doc = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<li id=theelement><template shadowrootmode=open shadowrootclonable><span></span></template><span class=lightdom>Light DOM</span></li>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let tmpl = doc
+            .query_selector(doc.root(), "template[shadowrootmode]")
+            .expect("template survives on non-safelist host");
+        assert_eq!(
+            doc.get_attribute(tmpl, "shadowrootmode"),
+            Some("open".into()),
+            "skipped template value restored to source lowercase"
+        );
+        let li = doc.query_selector(doc.root(), "li#theelement").expect("li present");
+        assert!(doc.shadow_root(li).is_none(), "non-safelist host gets no root");
+
+        // div（名单内）：同一形态物化成功（对照）。
+        let doc2 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div id=theelement><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let div = doc2.query_selector(doc2.root(), "div#theelement").expect("div present");
+        assert!(doc2.shadow_root(div).is_some(), "safelist host materializes");
+        assert!(
+            doc2.query_selector(doc2.root(), "template[shadowrootmode]").is_none(),
+            "materializing path consumes the template"
+        );
+
+        // void 宿主场景：br 后的 template 被 parser 重锚到 wrapper（div）——div 是
+        // 名单内宿主，照 spec 消费该 stray template（br 本身无 root）。attachment.html
+        // 的 void/table disallowed 行残留失败即源于此（oracle 期望 template 保留）。
+        let doc3 = crate::parse_html_fragment_with_scripting_materialized(
+            r#"<div class=wrapper><br id=theelement><template shadowrootmode=open><span></span></template></div>"#,
+            "http://www.w3.org/1999/xhtml",
+            "body",
+            true,
+        );
+        let br = doc3.query_selector(doc3.root(), "br#theelement").expect("br present");
+        assert!(doc3.shadow_root(br).is_none(), "void host gets no root");
+        assert!(
+            doc3.query_selector(doc3.root(), "div.wrapper")
+                .map(|w| doc3.shadow_root(w).is_some())
+                .unwrap_or(false),
+            "wrapper consumes stray template as its own declarative root"
+        );
+    }
+
     #[test]
     fn open_close_values_uppercased() {
         assert_eq!(
