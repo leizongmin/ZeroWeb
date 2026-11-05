@@ -141,9 +141,11 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   getHTML 序列化三闸门：引擎子树内带 shadowrootmode 的 template 只能来自真根，
   按属性 presence 剔除）。
 - gethtml.html：M2 基线 4,506F+1T（fail-fast 瞬报）→ **预算内真实执行
-  2,210P/0F/1T**（oracle 潜在 ~5,000 子测试，页预算截断 ~2,210；截断与
-  per-subtest 成本挂账 runner 基建）。canvas ×4 append 修复（standalone 补
-  append 委托）全通道确认翻绿。
+  2,210P/0F/1T**（oracle 潜在 ~4,5xx 子测试）。长尾定性收口：×1/×4 成对复跑
+  行数平坦（2,056 vs 2,035，×4 注入生效页面 ~240s 超时）+ harness 超时时
+  `pending:1` → 特定子测试**楔死**坐实（非成本爆炸），楔死身份挂 knee probe
+  （runner 基建）。canvas ×4 append 修复（standalone 补 append 委托）全通道
+  确认翻绿。
 - 附加面外溢：attachment.html 0P/654F → 484P/170F（opt-in disallowed 校验臂
   整族翻转；余 170F 为 safelisted 物化臂挂账）、property-reflection +30P、
   clonable +2P、serialization +2P。
@@ -155,10 +157,11 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   同义面）；serializer ShadowRoot 布尔属性 spec 序回写（单测抓出首版引号
   bug）；zero-dom 新增物化片段/旗标序列化单测，885+ 全绿。
 - 证据：[m3 batch2](shadow-dom-expansion/evidence/2026-11-06-m3-batch2-unsafe-apis.md)。
-- **下一步（M3 Batch 3）**：簇 C referenceTarget（gethtml-serialization 3F +
-  property-reflection 余 1F + reftarget 面 ~139F）实现或具名挂账；attachment
-  safelisted 物化臂 170F 甄别；gethtml.html 页预算截断与 per-subtest 成本
-  归因（runner 基建，×4 乘数未生效疑点同刀）；簇 D 逐项甄别。
+- **下一步（M3 Batch 3）**：gethtml.html 楔死子测试精确身份（zz-knee-probe
+  逐测试计时 → 引擎侧修复，修复后 gethtml.html 预期 ~4,5xx 行全量真实上报）；
+  簇 C referenceTarget（gethtml-serialization 3F + property-reflection 余 1F +
+  reftarget 面 ~139F）实现或具名挂账；attachment safelisted 物化臂 170F 甄别；
+  簇 D 逐项甄别。
 
 ## 依赖约束（run-rules §9）
 

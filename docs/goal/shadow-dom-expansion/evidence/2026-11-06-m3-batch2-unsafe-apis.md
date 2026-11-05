@@ -98,6 +98,41 @@ solo 复跑（run1 05:18 / run2 05:27 / run3 05:31，均为 canvas append 修复
 - （注：×4 乘数未放大子测试上报量——`setup({timeout_multiplier})` 注入时机与 Tests
   构造次序疑点，挂账 runner 基建跟进；本轮 A/B 用默认预算与基线同条件。）
 
+### 截断归因：时间成本模型排除，楔死（hang）假设成立中
+
+定量排除「per-test 成本随计数增长」（无论线性外推还是二次总量）：
+
+- 300 测试探针（zz-cost 四象限）实测 ~4ms/test 线性；若成本恒定，2,210 × 4ms ≈ 8.8s
+  远低于 60s 页预算——页面不该截止。
+- 若 per-test 成本随累计计数线性涨（总量二次）：60s→240s（×4）应给 ~2× 行数
+  （N ≈ √(2D/c)），实测仅 2,210 → 2,245（+1.6%）。拟合矛盾：任取 a+b·i 模型，
+  两组冻结点 (60s, 2210) 与 (240s, 2245) 无解。
+- div×10 同构探针（3,840 潜在）冻在 1,915 行，gethtml.html 冻在 2,210/2,245——
+  冻结点随**内容位置**变、不随预算变，两文件尾部均为页级 Timeout 行。
+
+结论：特定子测试**楔死**（页面停摆空转至预算截止），非累积成本爆炸。divx 冻结点
+反推楔死候选 = 第 5 个 div 的第 ~379 号象限（declarative / mode=closed /
+clonable=true / serializable=undefined / empty=false / light=''，Element 臂）。
+逐测试计时探针（zz-knee-probe，div×8 = 3,072 测试，名字嵌 `at+<ms>` 注册耗时）
+待二进制重建后跑：若行计时平坦至末行、下一索引永远缺失即坐实楔死，并给出精确
+测试身份。引擎侧已排除：arena 不回收死节点（remove_child 只摘 children 链）但
+shadow_root_ids/query_selector_including_shadow 的调用面均不在子测试热路径；
+find_by_selector 为 live-tree 根遍历 + 有界 memo。
+
+**后续定案（05:45 成对复跑，重建二进制，`-- env ZW_TIMEOUT_MULTIPLIER=4` 注入
+生效——页面 ~240s 超时而非 60s，两跑尾部均为 harness 页级 Timeout 且
+`pending:1`）**：
+
+- ×1（gethtml-check）2,056P + 页级 T vs **×4（final-gethtml-x4）2,035P + 页级
+  T**——预算 ×4 行数平坦（±1%），楔死**坐实**；楔死子测试 = 超时时刻 harness
+  `pending` 的那一索引（最后 Pass 行的下一序位，两跑冻结点随负载微漂 ~20 行）。
+- zz-accum 探针（A 附着不清理 / B 脱离销毁 / C 单 wrapper 复用，各 300 op，
+  setHTMLUnsafe+attachShadow+getHTML）：300 op 内无一楔死；per-op 成本随 op 数
+  上升（A 2.9→12.5ms、C 13.1→18.5ms）——累积减速面存在（registry/树增长），
+  300 op 量级不足以楔死；与 oracle 冻结点 ~2,0xx 的量化衔接挂 knee probe。
+- 残余挂账（Batch 3）：楔死子测试精确身份（zz-knee-probe 逐测试计时）→ 引擎
+  侧修复；修复后 gethtml.html 预期全量 ~4,5xx 行真实上报，M4 复测以彼口径取门。
+
 ## 探针法证（研删，未入库）
 
 - echo 双发形态：`<h1><template…><slot></slot></template><span>light</span><template…></template></h1>`
