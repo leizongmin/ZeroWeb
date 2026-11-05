@@ -1,6 +1,6 @@
 # ③'-a/b/d-apply 同窗：forecolor 五 compare 行等价分组主刀与门禁终账
 
-日期：2026-11-05　提交：2cc95aaac（③' 主刀，rebase 前 539200c21，part01d.js +187/−26）+ e29b3a8bc（numericFace 收口，part01d.js +20/−13 + qv5/ab 等探针入库常驻）　基线：a04dd1522（⑥ 后、③' 前）
+日期：2026-11-05　提交：8f1687078（③' 主刀，rebase 前 539200c21/2cc95aaac，part01d.js +187/−26）+ 5a6acf2f1（numericFace 收口，rebase 前 e29b3a8bc，part01d.js +20/−13 + qv5/ab 等探针入库常驻）+ 6e5aaaa70（fs 停臂修复，q7 门禁批验证笔）　基线：a04dd1522（⑥ 后、③' 前）
 窗口：控制面 ③'-a/b/d-apply 同窗——forecolor a 分裂 ×2 + b 载体换形 ×1 + d 幽灵 br ×2
 
 ## 1. 目标与语料期望形
@@ -207,5 +207,5 @@ continue;`——镜像改前整函数早退语义；forecolor tag span 载体由
 - **enginelib**（make guarded-test，116s）：**3,740P / 5F**——五红名
   p56/p99s/r2810/r3276/r2809 逐名恒一零新红，clippy 0 error。
 - **判读**：③'-a/b/d-apply 同窗 + numericFace 收口 + fs tag-mode 停臂修复
-  **全账放行**。落地链 = 2cc95aaac（③' 九刀）+ e29b3a8bc（numericFace
-  收口）+ fs 停臂（本提交，q7 门禁批验证的修复笔）。
+  **全账放行**。落地链 = 8f1687078（③' 九刀）+ 5a6acf2f1（numericFace
+  收口）+ 6e5aaaa70（fs 停臂，q7 门禁批验证的修复笔）。
