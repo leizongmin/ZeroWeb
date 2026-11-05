@@ -927,7 +927,26 @@
         try { rngFv.setEnd(rngFv.endContainer, rngFv.endOffset + 1); } catch (_eFv2) {}
       }
     }
-    node.parentNode.insertBefore(newParent, node);
+    var oldParentFv = node.parentNode;
+    var insRefFv = node;
+    if (node.nodeType === 3 && !node.__zwHandle && !node.__zwSelector
+        && oldParentFv && oldParentFv.__zwHandle) {
+      // M-wire 裸 ref 参考点退化：裸 text ref（无 handle/印）不能作 insertBefore
+      // 参考点——part04.js 落位分发 handle 父支只收 印/handle/textEl/TEXT+TEXT
+      // 形，handle 父 + 裸 text ref + 元素 newNode 全支落空 → newParent 壳 M 侧
+      // 静默缺失，后续 movePreserving 把文本挪进未接线壳即序列化丢失。语料实证：
+      // splitText 产物 ref 带 handle 故 a[b]c 过；残门克隆壳（shim createElement
+      // 产物持 handle）内解析原件裸故 [a]bc 失。append（refNode==null 分支零参
+      // 考点要求恒接线）与插 node 前同 JS 树，纯接线修复；文本运输仍走原
+      // movePreserving（td3 SERIAL 证其 removeChild 恒接线，append 进已接线壳走
+      // R265 textEl 恒接线）。门限限定 handle 父：解析父（无 handle）裸 ref 走
+      // sel 支 pos-sel 参考位恒接线，append 化曾证伪 41 例（foo[bar…] 中列形
+      // fontsize ?1-1000，fix14 复跑同集）；父 __zwSelector 判别无效（克隆与解
+      // 析父代理面均不暴露，narrowed 复跑 47F 同集且 teal 复红）；node 末位门亦
+      // 不足（全语料行上下文克隆多片段中列形，末位判定不触发）。
+      insRefFv = null;
+    }
+    oldParentFv.insertBefore(newParent, insRefFv);
     if (!_zwVaLooselyEquivalent(command, _zwValEffectiveValue(newParent, command), newValue)) {
       _zwVaSetStyleProp(newParent, property, newValue);
     }
