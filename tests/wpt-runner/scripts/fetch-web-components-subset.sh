@@ -6,7 +6,9 @@
 # 与 fetch-dom-subset.sh 同构（同 WPT_REV pin + raw 拉单文件，显式清单）。
 # wpt-data 整体 gitignored，用例按需 fetch、不入库。
 #
-# 用例级 skip 域（Support Envelope / DC-1 排除项，非静默丢弃——evidence 基线报告同记）：
+# 用例级 skip 域（Support Envelope / DC-1 排除项，非静默丢弃——evidence 基线报告同记；
+# 2026-11-06 shadow-dom-expansion M0 差集甄别后收窄，逐目录结论见
+# docs/goal/shadow-dom-expansion/evidence/）：
 # - *-ref.html / *-notref.html：reftest 参照页（渲染面，非可执行用例）
 # - shadow-dom/ 渲染级 composed tree 用例（slot-fallback-content-00{1..8} /
 #   layout-* / directionality-* / restyle-* / shadow-style-* / invalidate-sibling-* /
@@ -15,10 +17,17 @@
 #   offsetParent-* / offsetTop-* / focus-within-* / 命中测试四面
 #   caretPositionFromPoint / elementFromPoint / highlightsFromPoint / offsetX-offsetY /
 #   dragenter-dragleave related-target）：依赖 shadow 树进样式/布局/绘制或几何命中
-#   ——等用户点名 Shadow DOM 渲染级专项（goal 排除条款）
+#   ——已立项专项 goal 45 号 shadow-dom-rendering，不进本通道
 # - shadow-dom/focus*/（焦点导航跨 shadow 边界——交互+渲染面）、crashtests/（纯崩溃
-#   面，slice 1 不导入）、declarative/（declarative shadow DOM，范围外）、leaktests/
-#   （leak harness）、reference-target/（tentative 渲染面）、untriaged/（README）
+#   面，无子测试分母）、leaktests/（leak harness，GC 可观测性环境受限）、
+#   reference/（空支撑页）
+# - declarative/【M0 重审转正】parser/template 层（s168/s173 已落）入通道；
+#   渲染级消费仍归 45 号。tentative/shadowrootadoptedstylesheets/ 同批入通道，
+#   失败按 JS 语义域如实记账（M2 分档）
+# - reference-target/【M0 重审转正】tentative 特性 JS 语义可修档入通道
+#   （referenceTarget 属性未实现，M3 归因）
+# - untriaged/【M0 重审转正】v0 遗留面按 content-level 甄别只入 testharness
+#   用例（54 案）；reftest 对页不入
 # - *.window.js（多全局包装形态——runner 无 .window.js wrapper，后续切片评估）、
 #   *.xhtml/*.svg（XML/SVG parser 形态，slice 1 排除）
 # - custom-elements/reactions/ 全导入（59 用例——per-API CEReactions 断言，
@@ -321,6 +330,184 @@ SD_HELPERS=(
   "shadow-dom/resources/shadow-dom.js"
 )
 
+# ---- shadow-dom-expansion 扩面批（docs/goal/shadow-dom-expansion.md M0 差集
+# 甄别 + M1 通道扩面，2026-11-06；pin 不变，清单按上游 pin 树 git trees API
+# 全量甄别后逐档准入，与 runner 侧 wc_case_skipped 两侧同源）：
+# - declarative/ parser/template 层：s168（materialize_declarative_shadow_roots）
+#   / s173（html5ever shadowrootmode 绕道）已落，M0 重审把「declarative 范围外」
+#   排除条款收窄为「渲染级消费归 45 号」——本层 JS 语义面转正入通道。
+# - declarative/tentative/shadowrootadoptedstylesheets/：constructable
+#   stylesheets shim 已有，module script 样式加载面 M2 基线分档（JS 语义域，
+#   失败如实入账不预排除）。
+# - reference-target/（tentative 特性）：referenceTarget 属性未实现——JS 语义
+#   可修档入池，M2 基线 + M3 归因（就地修或具名挂账）。
+# - untriaged/：v0 时代遗留面，只入 content-level 甄别出的 testharness 用例
+#   （reftest 对页与 resources/ 不入通道）。
+SD_DECL_CASES=(
+  "shadow-dom/declarative/declarative-after-attachshadow.html"
+  "shadow-dom/declarative/declarative-parser-interaction.html"
+  "shadow-dom/declarative/declarative-shadow-dom-attachment.html"
+  "shadow-dom/declarative/declarative-shadow-dom-available-to-element-internals.html"
+  "shadow-dom/declarative/declarative-shadow-dom-basic.html"
+  "shadow-dom/declarative/declarative-shadow-dom-opt-in.html"
+  "shadow-dom/declarative/declarative-shadow-dom-repeats-2.html"
+  "shadow-dom/declarative/declarative-shadow-dom-repeats-slot-assignment.html"
+  "shadow-dom/declarative/declarative-shadow-dom-repeats.html"
+  "shadow-dom/declarative/declarative-shadow-dom-serialization.html"
+  "shadow-dom/declarative/declarative-shadow-dom-slot-assignment-serialization.html"
+  "shadow-dom/declarative/declarative-shadow-dom-slot-assignment.html"
+  "shadow-dom/declarative/declarative-shadow-dom-write-to-iframe.html"
+  "shadow-dom/declarative/declarative-with-disabled-shadow.html"
+  "shadow-dom/declarative/gethtml-ordering.html"
+  "shadow-dom/declarative/gethtml.html"
+  "shadow-dom/declarative/innerhtml-before-closing-tag.html"
+  "shadow-dom/declarative/innerhtml-on-ordinary-template.html"
+  "shadow-dom/declarative/move-template-before-closing-tag.html"
+  "shadow-dom/declarative/script-access.html"
+)
+
+SD_DECL_HELPERS=(
+  "shadow-dom/declarative/support/declarative-child-frame.html"
+)
+
+SD_DECL_TENTATIVE_CASES=(
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-disconnect-iframe.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-disconnect.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-duplicate-bare-specifier.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-duplicate-importmap.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-duplicate.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-failure.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-clear.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-insertrule.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-reinsert-same.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-reinsert-swap.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-remove-middle.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-mutation-replacesync.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-ordering.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-shared.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-basic.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-clonenode-async-fetch.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-clonenode.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-document-parse-crash.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-fetched-module.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-absent-and-empty.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-reflection.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-invalid-specifier.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-async.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-basic.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-failure.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-identity.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-nested.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-ordering.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-shared.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-multiple.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-nested-async.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-nested-sync.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-placeholder-identity.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-same-document.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html"
+)
+
+SD_DECL_TENTATIVE_HELPERS=(
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/support/helpers.js"
+)
+
+SD_REFTARGET_CASES=(
+  "shadow-dom/reference-target/tentative/aria-labelledby.html"
+  "shadow-dom/reference-target/tentative/commandfor.html"
+  "shadow-dom/reference-target/tentative/dom-mutation.html"
+  "shadow-dom/reference-target/tentative/event-path.html"
+  "shadow-dom/reference-target/tentative/form.html"
+  "shadow-dom/reference-target/tentative/gethtml-serialization.html"
+  "shadow-dom/reference-target/tentative/interestfor.tentative.html"
+  "shadow-dom/reference-target/tentative/label-descendant.html"
+  "shadow-dom/reference-target/tentative/label-for.html"
+  "shadow-dom/reference-target/tentative/popovertarget.html"
+  "shadow-dom/reference-target/tentative/property-reflection-idl-setters.html"
+  "shadow-dom/reference-target/tentative/property-reflection-imperative-setup.html"
+  "shadow-dom/reference-target/tentative/property-reflection.html"
+  "shadow-dom/reference-target/tentative/reference-target-basics.html"
+  "shadow-dom/reference-target/tentative/shadowrootreferencetarget-idl-reflection.html"
+)
+
+SD_REFTARGET_HELPERS=(
+  "shadow-dom/reference-target/tentative/resources/property-reflection-helper.js"
+  "wai-aria/scripts/aria-utils.js"
+)
+
+# 顶层差集 content-level 甄别新增的 JS 语义候选（其余 50 个渲染级/ref 页归
+# 45 号 shadow-dom-rendering，不入本通道）。
+SD_TOP_DELTA_CASES=(
+  "shadow-dom/input-element-list.html"
+  "shadow-dom/input-type-radio.html"
+)
+
+# untriaged/ v0 遗留面 content-level 甄别出的 54 个 testharness 用例（reftest
+# 对页 5+5 不入通道；resources/ 两页是 iframe fixture，拉取不扫描）。
+SD_UNTRIAGED_CASES=(
+  "shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/attributes/test-006.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-001.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/extensions-to-element-interface/methods/test-002.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/activeElement-confirm-return-null.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-007.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-009.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-010.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-011.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-012.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-attributes/test-013.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-001.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-004.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-006.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-007.html"
+  "shadow-dom/untriaged/elements-and-dom-objects/shadowroot-object/shadowroot-methods/test-010.html"
+  "shadow-dom/untriaged/events/event-dispatch/test-002.html"
+  "shadow-dom/untriaged/events/event-dispatch/test-003.html"
+  "shadow-dom/untriaged/events/event-retargeting/test-001.html"
+  "shadow-dom/untriaged/events/event-retargeting/test-003.html"
+  "shadow-dom/untriaged/events/retargeting-focus-events/test-001.html"
+  "shadow-dom/untriaged/events/retargeting-focus-events/test-002.html"
+  "shadow-dom/untriaged/events/retargeting-focus-events/test-003.html"
+  "shadow-dom/untriaged/events/retargeting-relatedtarget/test-001.html"
+  "shadow-dom/untriaged/events/retargeting-relatedtarget/test-002.html"
+  "shadow-dom/untriaged/events/retargeting-relatedtarget/test-003.html"
+  "shadow-dom/untriaged/events/test-001.html"
+  "shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-001.html"
+  "shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-002.html"
+  "shadow-dom/untriaged/html-elements-in-shadow-trees/html-forms/test-003.html"
+  "shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-001.html"
+  "shadow-dom/untriaged/html-elements-in-shadow-trees/inert-html-elements/test-002.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-001.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/dom-tree-accessors-002.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-001.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/ownerdocument-002.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-001.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/selectors-api-002.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/shadow-root-001.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-005.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-007.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-009.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/test-011.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-001.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-002.html"
+  "shadow-dom/untriaged/shadow-trees/upper-boundary-encapsulation/window-named-properties-003.html"
+  "shadow-dom/untriaged/styles/test-001.html"
+  "shadow-dom/untriaged/styles/test-003.html"
+  "shadow-dom/untriaged/styles/test-005.html"
+  "shadow-dom/untriaged/styles/test-008.html"
+  "shadow-dom/untriaged/user-interaction/active-element/test-001.html"
+  "shadow-dom/untriaged/user-interaction/active-element/test-002.html"
+  "shadow-dom/untriaged/user-interaction/editing/inheritance-of-content-editable-001.html"
+  "shadow-dom/untriaged/user-interaction/ranges-and-selections/test-001.html"
+  "shadow-dom/untriaged/user-interaction/ranges-and-selections/test-002.html"
+)
+
+SD_UNTRIAGED_HELPERS=(
+  "shadow-dom/untriaged/resources/blank.html"
+  "shadow-dom/untriaged/resources/bobs_page.html"
+)
+
 TPL_CASES=(
   "html/semantics/scripting-1/the-template-element/reflect-html-for.tentative.html"
   "html/semantics/scripting-1/the-template-element/template-construction-in-inactive-document-crash.html"
@@ -376,8 +563,12 @@ TPL_HELPERS=(
   "html/semantics/scripting-1/the-template-element/resources/two-templates.html"
 )
 
-for rel in "${SHARED[@]}" "${CE_CASES[@]}" "${CE_HELPERS[@]}" "${SD_CASES[@]}" "${SD_HELPERS[@]}" "${TPL_CASES[@]}" "${TPL_HELPERS[@]}"; do
+for rel in "${SHARED[@]}" "${CE_CASES[@]}" "${CE_HELPERS[@]}" "${SD_CASES[@]}" "${SD_HELPERS[@]}" \
+  "${SD_DECL_CASES[@]}" "${SD_DECL_HELPERS[@]}" "${SD_DECL_TENTATIVE_CASES[@]}" "${SD_DECL_TENTATIVE_HELPERS[@]}" \
+  "${SD_REFTARGET_CASES[@]}" "${SD_REFTARGET_HELPERS[@]}" \
+  "${SD_TOP_DELTA_CASES[@]}" "${SD_UNTRIAGED_CASES[@]}" "${SD_UNTRIAGED_HELPERS[@]}" \
+  "${TPL_CASES[@]}" "${TPL_HELPERS[@]}"; do
   fetch_raw "$rel"
 done
 
-echo "web-components subset ready: ${#CE_CASES[@]}+${#SD_CASES[@]}+${#TPL_CASES[@]} cases + ${#CE_HELPERS[@]}+${#SD_HELPERS[@]}+${#TPL_HELPERS[@]} helpers @ ${WPT_REV:0:12}"
+echo "web-components subset ready: ${#CE_CASES[@]}+${#SD_CASES[@]}+${#SD_DECL_CASES[@]}+${#SD_DECL_TENTATIVE_CASES[@]}+${#SD_REFTARGET_CASES[@]}+${#SD_TOP_DELTA_CASES[@]}+${#SD_UNTRIAGED_CASES[@]}+${#TPL_CASES[@]} cases + ${#CE_HELPERS[@]}+${#SD_HELPERS[@]}+${#SD_DECL_HELPERS[@]}+${#SD_DECL_TENTATIVE_HELPERS[@]}+${#SD_REFTARGET_HELPERS[@]}+${#SD_UNTRIAGED_HELPERS[@]}+${#TPL_HELPERS[@]} helpers @ ${WPT_REV:0:12}"

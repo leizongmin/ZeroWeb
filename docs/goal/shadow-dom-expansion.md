@@ -2,7 +2,8 @@
 
 **版本**: v1.0
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——立项，M0 未启动
+**状态**: Active——M0/M1/M2 完成（2026-11-06，全量推进已决，门值 31.4% 回填），
+M3 JS 语义簇收敛未启动
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -71,11 +72,41 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
 
 ## 里程碑
 
-- **M0**：差集甄别 + declarative 重审 + 数值门（DC-1）。
-- **M1**：语料扩批 + 通道四件套（DC-2）。
-- **M2**：扩面基线分类（DC-3 前半）。
+- **M0**：差集甄别 + declarative 重审 + 数值门（DC-1）。✅ 2026-11-06
+- **M1**：语料扩批 + 通道四件套（DC-2）。✅ 2026-11-06
+- **M2**：扩面基线分类（DC-3 前半）。✅ 2026-11-06
 - **M3**：JS 语义簇收敛批（DC-3 后半）。
 - **M4**：coverage 复测收口（DC-4）。
+
+## 进展
+
+### 2026-11-06——M0/M1/M2 完成（单轮）
+
+- **M0（DC-1）**：上游全树 392 blobs 逐目录甄别 + declarative 排除域重审
+  （parser 层 s168/s173 已落，旧排除条款过时）→ 转正 declarative/
+  reference-target/untriaged 三域 + 顶层 2 新案；地址池按 wpt.fyi 口径
+  ≈14,500 ≥ 8k → **全量推进**，初版门 75.0%。证据：
+  [m0 差集甄别](shadow-dom-expansion/evidence/2026-11-06-m0-diff-triage-and-gate.md)。
+- **M1（DC-2）**：通道四件套扩批（fetch 脚本 +124 TH 案、`wc_case_skipped`
+  转正收窄、扫描/Makefile/weekly 零改动即接线）；修复
+  `"shadow-dom/reference"` 前缀项吞 `reference-target/` 的 skip 碰撞。
+- **M2（DC-3 前半）**：A/B 全通道零回归（custom-elements/template/sd-top
+  逐案一致；untriaged 差值恰为 2 个有意排除 fixture 页）；扩面基线
+  392 案/10,963 子测试/4,186P；失败簇 A~D 归因——簇 A（unsafe 解析/
+  序列化 API 族，~5,300 子测试，gethtml.html 单文件 4,507）为 M3 首刀。
+  **门值回填 31.4%**（实测池 5,531；wpt.fyi 估计 14,500 的差值 =
+  缺 API 早抛截断，untriaged 对照域 251=251 自洽）。证据：
+  [m2 基线与失败簇归因](shadow-dom-expansion/evidence/2026-11-06-m2-baseline-and-cluster-triage.md)。
+- **碰撞记录（run-rules §9）**：本轮与 editing-compat rally 共享 clone
+  （runner 二进制重建交错），改动面零共享语义冲突，未强制消解。质量门禁
+  按实际影响收窄：clippy `-p zero-wpt-runner --all-targets -D warnings`
+  0 告警通过（workspace 全量门因共享树 rally 活跃持锁按 §9 延后，
+  本提交改动面不含 wpt-runner 以外代码）；lei-pre-commit-guard PASS
+  （7 文件/467 行/0 发现）。
+- **下一步（M3）**：簇 A+B 首刀——setHTMLUnsafe/getHTML/parseHTMLUnsafe
+  三 API + 片段解析物化接线（innerHTML/createContextualFragment 接
+  `materialize_declarative_shadow_roots`），预期翻转 ~5,300 子测试；
+  其后簇 C（referenceTarget）实现或具名挂账、簇 D 逐项甄别。
 
 ## 依赖约束（run-rules §9）
 

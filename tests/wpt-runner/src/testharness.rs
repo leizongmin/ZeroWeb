@@ -3216,7 +3216,8 @@ pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
 /// 清单在 runner 侧按目录递归扫描 + [`WC_SKIP_PATTERNS`] 排除重建（fetch 脚本头注释
 /// 同一份 skip 域），非逐案常量——custom-elements 175 案逐条列常量维护成本高于按名
 /// 排除，且两侧用同一规则集防漂移。skip 域（Support Envelope 排除项 + 非 window
-/// 可执行形态）：
+/// 可执行形态；2026-11-06 shadow-dom-expansion M0 差集甄别后 declarative/、
+/// reference-target/、untriaged/ JS 语义面转正，渲染级仍排除归 45 号 goal）：
 /// - `*-ref.html`/`*-notref.html`（reftest 参照页）
 /// - 渲染级 composed tree / 几何命中 / 交互面（slot-fallback-content-*、layout-*、
 ///   directionality-*、restyle-*、shadow-style-*、invalidate-sibling-*、
@@ -3224,9 +3225,10 @@ pub fn run_webgl_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Ve
 ///   user-agent-shadow*、nested-hover-*、accesskey*、touch-*、wheel-*、scroll-*、
 ///   offset*、focus-within-*、caretPositionFromPoint、elementFromPoint、
 ///   highlightsFromPoint、offsetX-offsetY、drag*、css-user-agent-style-sheet-*）
-/// - 非主线程/范围外形态：declarative/（declarative SD）、leaktests/、crashtests/
-///   （slice 1 不导入崩溃面）、focus*/（焦点导航交互面）、reference-target/、
-///   resources/（helper 资产非用例）
+/// - 非主线程/范围外形态：leaktests/（leak harness）、crashtests/（无断言崩溃
+///   面）、focus*/（焦点导航交互面）、reference/（空支撑页）、resources/ 与
+///   declarative/tentative 各 support/（helper/iframe fixture 资产非用例）、
+///   declarative/tentative 崩溃复现页、untriaged/ v0 遗留 reftest 页
 pub const WC_TEST_SUBDIRS: &[&str] = &[
     "custom-elements",
     "shadow-dom",
@@ -3242,15 +3244,20 @@ fn wc_case_skipped(relative: &str) -> bool {
     if !name.ends_with(".html") || name.ends_with("-ref.html") || name.ends_with("-notref.html") {
         return true;
     }
-    // 范围外子目录（fetch 脚本不拉，双保险）。
+    // 范围外子目录（fetch 脚本不拉，双保险）。shadow-dom-expansion M0 重审后
+    // declarative/、reference-target/、untriaged/ JS 语义面转正（42 号 goal），
+    // 只保留 fixture/support 资产目录与交互/崩溃/泄漏域排除。
     for skipped_dir in [
-        "shadow-dom/declarative",
+        "shadow-dom/declarative/support",
+        "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/support",
+        "shadow-dom/untriaged/resources",
+        "shadow-dom/reference-target/tentative/resources",
         "shadow-dom/leaktests",
         "shadow-dom/crashtests",
         "shadow-dom/focus",
         "shadow-dom/focus-navigation",
-        "shadow-dom/reference-target",
-        "shadow-dom/reference",
+        // 注意不可写 "shadow-dom/reference" 前缀——会吞掉 reference-target/；
+        // 空支撑页用精确路径排除（见 UNTRIAGED_REFTEST 同段）。
         "shadow-dom/resources",
         "custom-elements/resources",
         "html/semantics/scripting-1/the-template-element/resources",
@@ -3258,6 +3265,23 @@ fn wc_case_skipped(relative: &str) -> bool {
         if dir.starts_with(skipped_dir) {
             return true;
         }
+    }
+    // declarative/tentative 崩溃复现页（无 testharness 断言，非可执行用例）。
+    if name.starts_with("shadowrootadoptedstylesheets-document-parse-crash") {
+        return true;
+    }
+    // untriaged/ v0 遗留 reftest 页（fetch 脚本不拉；双保险防本地残留误扫）
+    // + reference/ 空支撑页（精确路径，防前缀吞 reference-target/）。
+    const EXACT_PATH_SKIPS: &[&str] = &[
+        "shadow-dom/untriaged/shadow-trees/nested-shadow-trees/nested_tree_reftest.html",
+        "shadow-dom/untriaged/shadow-trees/reprojection/reprojection-001.html",
+        "shadow-dom/untriaged/shadow-trees/shadow-root-001.html",
+        "shadow-dom/untriaged/shadow-trees/shadow-root-002.html",
+        "shadow-dom/untriaged/styles/not-apply-in-shadow-root-001.html",
+        "shadow-dom/reference/empty.html",
+    ];
+    if EXACT_PATH_SKIPS.contains(&relative) {
+        return true;
     }
     // 渲染级 composed tree / 几何命中 / 交互面（等用户点名 Shadow DOM 渲染级专项）。
     const RENDER_PREFIXES: &[&str] = &[
