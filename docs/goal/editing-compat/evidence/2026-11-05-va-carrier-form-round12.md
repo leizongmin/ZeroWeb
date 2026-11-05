@@ -28,8 +28,10 @@
 
 ## 判读
 
-- **探针 zz-probe-carrier.html**（6 目标 + 5 守卫）：r3/r4 均 22 Pass/0 Fail，
-  exit=0。探针页随本提交 `git add -f` 入库（run/ gitignored，11 zz-probe 先例）。
+- **探针 zz-probe-carrier.html**（6 目标 + 10 守卫 G1-G5/J1-J5）：r3 22 Pass/0 Fail
+  （11 例，J1-J5 增补前）；r4 32 Pass/0 Fail（16 例全量，含 join 判据守卫，
+  残门定稿版 gated 构建），exit=0。探针页随 4d35466dd `git add -f` 入库
+  （run/ gitignored，11 zz-probe 先例）。
 - **五语料 fix12b**（残门定稿版，12:16:33 起 systemd zw-fix12b-gate）：
   judge-fix12.py 对 fix10 基线 **F2P 5 / P2F 0 / newF 0 / lost 0**。
   - hilitecolor 4F→0F（F2P 4：`<font size=6>[foo]</font>` 与 xx-large span
@@ -41,6 +43,9 @@
   （30/24/34/24/50/49/59/47/14 全等）；片 10（?9001-last）84F vs 基线 92F，
   差额 = 尾部截断带伪影（`testharness page timeout … 1 test(s) unreported`
   Timeout 一枚，lost 16 行全落该尾测子测面——⑪ 审计既有截断带口径）。
+  键级复核（判读后补）：真 P2F 0——行级判读唯一 P2F 键 `multitest.html?9001-last`
+  为 base 缺席键（300s 杀页残行，post#1076），非真实测行；F2P 7 逐行位置对齐
+  （base#730-768 `abc[]ef` caret 面）。
   F2P 7 = 额外红利：`abc[]ef` caret 面 backColor/fontName 组合 insertText
   载体形（Arm1 bg-merge 单成员 run 并值在 caret 场景的延伸命中，基线 7 红
   全数转绿）。
