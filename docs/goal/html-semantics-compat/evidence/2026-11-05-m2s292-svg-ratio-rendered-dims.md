@@ -140,7 +140,10 @@ make test）+ 跨流归因（r3033）+ 落账。
   keys 实测 `0,1,length,item,namedItem` vs 期望 `0,1`（length/item/
   namedItem 变 enumerable 泄漏；与 named-proxy `__zw` 印记门 /
   iframe body 合成两刀同期）。修复面属 editing-compat M3 documents 车
-  道，已飞书通知移交。
+  道。**收口对账（本轮 push 后 pull 发现）**：对方流已自修——b13988f2a
+  （test-only，期望对齐 M3 原型 enumerable 化契约）+ 5ad2d49cf 落账
+  「挂账第 6 已知红关闭」——双方归因一致（同一引入提交 51d8a6949、
+  同一断言面），r3033 在 main 已闭，无需移交通知。
 - **replica3 探针 clientWidth 臂**：引擎 clientWidth 含 border（bb=310
   时 clientWidth 310，应 300）——probe 自设断言面非语料钉面，挂账渲染
   流车道（探针已删）。
