@@ -1453,7 +1453,152 @@ pub fn decode_jpeg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let width = info.width as u32;
     let height = info.height as u32;
     let rgba = convert_jpeg_pixels_to_rgba(&pixels, info.pixel_format);
+    // CSS image-orientation from-image（默认值）解码侧语义：按 EXIF Orientation
+    // 物理重排像素并换轴，naturalWidth/Height 与绘制通道统一消费已定向位图
+    //（HTML naturalWidth「reflective of the EXIF orientation」）。
+    // https://drafts.csswg.org/css-images-3/#default-image-orientation
+    // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-naturalwidth
+    // FIXME: PNG eXIf 块方向标签未处理（png crate exif_metadata 面；html/semantics
+    // 语料消费面仅 JPEG，见 the-img-element/natural-size-orientation.html）。
+    let (rgba, width, height) = match jpeg_exif_orientation(bytes) {
+        Some(orientation) => apply_orientation(rgba, width, height, orientation),
+        None => (rgba, width, height),
+    };
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// 读取 JPEG EXIF Orientation 标签（IFD0，tag 0x0112）。
+///
+/// 只扫 SOI 后到 SOS 前的 APP1「Exif\0\0」段，IFD0 内首个命中项；Exif 子 IFD
+/// 镜像不在读取面。值域 1..=8 之外（含「unknown」9）返回 None 按无方向处理。
+/// 结构：EXIF 2.32 §4.6.4 / CIPA DC-008-2023（TIFF/EP tag 0x0112）。
+fn jpeg_exif_orientation(bytes: &[u8]) -> Option<u16> {
+    let mut pos = 2usize; // SOI 后
+    while bytes.len() >= pos + 4 && bytes[pos] == 0xFF {
+        let marker = bytes[pos + 1];
+        if marker == 0xDA {
+            break; // SOS：头段扫描结束
+        }
+        if marker == 0x01 || marker == 0xD8 || (0xD0..=0xD7).contains(&marker) {
+            pos += 2; // TEM/SOI/RSTn 无长度段
+            continue;
+        }
+        let seg_len = u16::from_be_bytes([bytes[pos + 2], bytes[pos + 3]]) as usize;
+        // 段长含自身 2 字节；病态段按无 EXIF 处理（外部输入不 panic）。
+        if seg_len < 2 || bytes.len() - pos < seg_len + 2 {
+            return None;
+        }
+        if marker == 0xE1 && bytes[pos + 4..pos + 10].starts_with(b"Exif\0\0") {
+            return parse_tiff_orientation(&bytes[pos + 10..pos + 2 + seg_len]);
+        }
+        pos += 2 + seg_len;
+    }
+    None
+}
+
+/// 在 TIFF 头（字节序 + IFD0 偏移）中读 Orientation（tag 0x0112）。
+///
+/// SHORT(3) 单值内联在条目值域前 2 字节、LONG(4) 前 4 字节；其余类型按缺失。
+/// https://exif.org/Exif2-32.PDF §4.6.4
+fn parse_tiff_orientation(tiff: &[u8]) -> Option<u16> {
+    let be = match (tiff.first()?, tiff.get(1)?) {
+        (b'M', b'M') => true,
+        (b'I', b'I') => false,
+        _ => return None,
+    };
+    let read_u16 = |o: usize| -> Option<u16> {
+        let b = tiff.get(o..o.checked_add(2)?)?;
+        Some(if be {
+            u16::from_be_bytes([b[0], b[1]])
+        } else {
+            u16::from_le_bytes([b[0], b[1]])
+        })
+    };
+    let read_u32 = |o: usize| -> Option<u32> {
+        let b = tiff.get(o..o.checked_add(4)?)?;
+        Some(if be {
+            u32::from_be_bytes([b[0], b[1], b[2], b[3]])
+        } else {
+            u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        })
+    };
+    let ifd0 = read_u32(4)? as usize;
+    let count = read_u16(ifd0)? as usize;
+    for i in 0..count {
+        let entry = ifd0.checked_add(2)?.checked_add(i.checked_mul(12)?)?;
+        if read_u16(entry)? != 0x0112 {
+            continue;
+        }
+        let value = match read_u16(entry.checked_add(2)?)? {
+            3 => read_u16(entry.checked_add(8)?).map(u32::from),
+            4 => read_u32(entry.checked_add(8)?),
+            _ => None,
+        };
+        return value.filter(|v| (1..=8).contains(v)).map(|v| v as u16);
+    }
+    None
+}
+
+/// 按 EXIF Orientation 重排 RGBA 像素并换轴（CSS from-image 解码侧语义）。
+///
+/// 映射：1 恒等 / 2 水平翻转 / 3 旋转 180° / 4 垂直翻转 / 5 主对角转置 /
+/// 6 顺时针 90° / 7 反对角转置 / 8 逆时针 90°；5-8 宽高互换。与 image crate
+/// `apply_orientation`、libvips 同表。越界值防御性恒等（解析侧已过滤）。
+/// https://exif.org/Exif2-32.PDF §4.6.4 Orientation
+fn apply_orientation(data: Vec<u8>, width: u32, height: u32, orientation: u16) -> (Vec<u8>, u32, u32) {
+    const PX: usize = 4;
+    let (w, h) = (width as usize, height as usize);
+    // 行内水平翻转 / 行间垂直翻转（原位，无越界分支——像素序恒在缓冲区界内）。
+    let flip_h = |data: &mut [u8]| {
+        for r in 0..h {
+            for c in 0..w / 2 {
+                let (a, b) = ((r * w + c) * PX, (r * w + w - 1 - c) * PX);
+                let (left, right) = data.split_at_mut(b);
+                left[a..a + PX].swap_with_slice(&mut right[..PX]);
+            }
+        }
+    };
+    let flip_v = |data: &mut [u8]| {
+        for r in 0..h / 2 {
+            let (a, b) = (r * w * PX, (h - 1 - r) * w * PX);
+            let (top, bottom) = data.split_at_mut(b);
+            top[a..a + w * PX].swap_with_slice(&mut bottom[..w * PX]);
+        }
+    };
+    let mut data = data;
+    if !(1..=8).contains(&orientation) {
+        return (data, width, height); // 越界值防御性恒等（解析侧已过滤）
+    }
+    match orientation {
+        1 => return (data, width, height),
+        2 => flip_h(&mut data),
+        3 => {
+            flip_h(&mut data);
+            flip_v(&mut data);
+        }
+        4 => flip_v(&mut data),
+        _ => {} // 5-8 转置族，落入下方循环
+    }
+    if matches!(orientation, 2..=4) {
+        return (data, width, height);
+    }
+    // 转置族（5/6/7/8）：目标 (列 x, 行 y) 从源按方向公式取像素，宽高互换。
+    let (w2, h2) = (h, w);
+    let mut dst = vec![0u8; w2 * h2 * PX];
+    for y in 0..h2 {
+        for x in 0..w2 {
+            let src = match orientation {
+                5 => x * w + y,                     // 主对角转置：dst(x,y) = src(y,x)
+                6 => (h - 1 - x) * w + y,           // 顺时针 90°：dst(x,y) = src(h-1-x, y)
+                7 => (h - 1 - x) * w + (w - 1 - y), // 反对角：dst(x,y) = src(h-1-x, w-1-y)
+                8 => x * w + (w - 1 - y),           // 逆时针 90°：dst(x,y) = src(x, w-1-y)
+                _ => y * w + x,                     // 不可达（上方已分流），恒等兜底
+            };
+            let d = (y * w2 + x) * PX;
+            dst[d..d + PX].copy_from_slice(&data[src * PX..src * PX + PX]);
+        }
+    }
+    (dst, w2 as u32, h2 as u32)
 }
 
 /// 解码 WebP 字节为 `ImageData`（RGBA）。
@@ -2363,6 +2508,158 @@ mod decode_tests {
         // JPEG 魔数 + 无效正文 → 库解码失败
         let result = decode_jpeg_bytes(&[0xFF, 0xD8, 0xFF, 0x00, 0x00]);
         assert!(result.is_err());
+    }
+
+    /// 构造带 EXIF Orientation 的 APP1 段（FF E1 + 段长 + "Exif\0\0" + TIFF），
+    /// 字节序与标签类型可配——解析器两字节序 × SHORT/LONG 值域测试基面。
+    fn exif_app1_segment(orientation: u16, big_endian: bool, tag_type: u16) -> Vec<u8> {
+        let u16b = |v: u16| {
+            if big_endian {
+                v.to_be_bytes().to_vec()
+            } else {
+                v.to_le_bytes().to_vec()
+            }
+        };
+        let u32b = |v: u32| {
+            if big_endian {
+                v.to_be_bytes().to_vec()
+            } else {
+                v.to_le_bytes().to_vec()
+            }
+        };
+        let mut tiff = Vec::new();
+        tiff.extend_from_slice(if big_endian { b"MM" } else { b"II" });
+        tiff.extend_from_slice(&u16b(42));
+        tiff.extend_from_slice(&u32b(8)); // IFD0 偏移
+        tiff.extend_from_slice(&u16b(1)); // 条目数
+        tiff.extend_from_slice(&u16b(0x0112)); // Orientation tag
+        tiff.extend_from_slice(&u16b(tag_type));
+        tiff.extend_from_slice(&u32b(1)); // count
+        let mut value = [0u8; 4];
+        let v = if tag_type == 3 {
+            u16b(orientation)
+        } else {
+            u32b(orientation as u32)
+        };
+        value[..v.len()].copy_from_slice(&v);
+        tiff.extend_from_slice(&value);
+        tiff.extend_from_slice(&u32b(0)); // next IFD
+        let mut seg = vec![0xFF, 0xE1];
+        seg.extend_from_slice(&[0, 0]); // 段长占位（含自身 2 字节）
+        seg.extend_from_slice(b"Exif\0\0");
+        seg.extend_from_slice(&tiff);
+        // JPEG 段长恒大端（字节序只作用于 TIFF 载荷）
+        let len = (seg.len() - 2) as u16;
+        seg[2..4].copy_from_slice(&len.to_be_bytes());
+        seg
+    }
+
+    /// EXIF Orientation 解析：大/小端 × SHORT/LONG 全组合命中 tag 值；
+    /// SOI + APP1 + SOS 框架下头段扫描在 SOS 停止。
+    #[test]
+    fn jpeg_exif_orientation_parses_endianness_and_types() {
+        for &(big_endian, tag_type) in &[(true, 3u16), (false, 3), (true, 4), (false, 4)] {
+            let mut jpeg = vec![0xFF, 0xD8];
+            jpeg.extend_from_slice(&exif_app1_segment(6, big_endian, tag_type));
+            jpeg.extend_from_slice(&[0xFF, 0xDA]); // SOS 终止
+            assert_eq!(
+                jpeg_exif_orientation(&jpeg),
+                Some(6),
+                "endian={big_endian} type={tag_type}"
+            );
+        }
+    }
+
+    /// EXIF Orientation 无效面：无 EXIF（真实 fixture 只有 JFIF APP0）、
+    /// 「unknown」9 越界、字节序标记残损、段长越界截断——全部 None。
+    #[test]
+    fn jpeg_exif_orientation_invalid_cases() {
+        let green = include_bytes!("testdata/green_4x3.jpg");
+        assert_eq!(jpeg_exif_orientation(green), None);
+        let with_soi = |seg: &[u8]| {
+            let mut jpeg = vec![0xFF, 0xD8];
+            jpeg.extend_from_slice(seg);
+            jpeg
+        };
+        // 越界值（unknown 9）
+        assert_eq!(jpeg_exif_orientation(&with_soi(&exif_app1_segment(9, true, 3))), None);
+        // 字节序标记残损（TIFF 头首字节在 SOI+段头+Exif\0\0 之后）
+        let mut bad = with_soi(&exif_app1_segment(6, true, 3));
+        bad[12] = b'X';
+        assert_eq!(jpeg_exif_orientation(&bad), None);
+        // 段长声越实际字节（截断）
+        let seg = exif_app1_segment(6, true, 3);
+        let truncated = with_soi(&seg[..seg.len() - 6]);
+        assert_eq!(jpeg_exif_orientation(&truncated), None);
+    }
+
+    /// 3×2 花样位图：红通道编码 A..F（10..60），其余通道固定——8 方向网格基面。
+    fn pattern_3x2() -> (Vec<u8>, u32, u32) {
+        (
+            [
+                10u8, 0, 0, 255, // A
+                20, 0, 0, 255, // B
+                30, 0, 0, 255, // C
+                40, 0, 0, 255, // D
+                50, 0, 0, 255, // E
+                60, 0, 0, 255, // F
+            ]
+            .to_vec(),
+            3,
+            2,
+        )
+    }
+
+    /// EXIF 全 8 方向映射：手算期望网格（源 A B C / D E F 行主序）逐方向断言
+    /// 维度与像素序；越界值（0 / 9）防御性恒等。映射与 image crate
+    /// `apply_orientation` / libvips 同表。
+    #[test]
+    fn apply_orientation_matches_exif_mapping() {
+        let (data, w, h) = pattern_3x2();
+        let cases: [(u16, u32, u32, &[u8]); 8] = [
+            (1, 3, 2, &[10, 20, 30, 40, 50, 60]),
+            (2, 3, 2, &[30, 20, 10, 60, 50, 40]), // C B A / F E D
+            (3, 3, 2, &[60, 50, 40, 30, 20, 10]), // F E D / C B A
+            (4, 3, 2, &[40, 50, 60, 10, 20, 30]), // D E F / A B C
+            (5, 2, 3, &[10, 40, 20, 50, 30, 60]), // A D / B E / C F
+            (6, 2, 3, &[40, 10, 50, 20, 60, 30]), // D A / E B / F C
+            (7, 2, 3, &[60, 30, 50, 20, 40, 10]), // F C / E B / D A
+            (8, 2, 3, &[30, 60, 20, 50, 10, 40]), // C F / B E / A D
+        ];
+        for &(orientation, ew, eh, expected) in &cases {
+            let (out, ow, oh) = apply_orientation(data.clone(), w, h, orientation);
+            assert_eq!((ow, oh), (ew, eh), "orientation {orientation} dims");
+            let got: Vec<u8> = (0..oh * ow).map(|i| out[i as usize * 4]).collect();
+            assert_eq!(got, expected, "orientation {orientation} pixels");
+        }
+        for o in [0u16, 9] {
+            let (out, ow, oh) = apply_orientation(data.clone(), w, h, o);
+            assert_eq!((ow, oh), (w, h), "orientation {o} identity dims");
+            assert_eq!(out, data, "orientation {o} identity pixels");
+        }
+    }
+
+    /// EXIF Orientation=6 拼接进真实 4×3 纯绿 fixture：解码输出换轴 3×4，
+    /// 像素总量守恒；Orientation=1 维与像素逐字节同无 EXIF 解码。
+    #[test]
+    fn decode_jpeg_bytes_applies_exif_orientation() {
+        let green = include_bytes!("testdata/green_4x3.jpg");
+        let mut oriented = green[..2].to_vec(); // SOI
+        oriented.extend_from_slice(&exif_app1_segment(6, true, 3));
+        oriented.extend_from_slice(&green[2..]);
+        let img = decode_jpeg_bytes(&oriented).expect("decode should succeed");
+        assert_eq!((img.width, img.height), (3, 4));
+        assert_eq!(img.pixels.len(), 3 * 4 * 4);
+        // JPEG 有损：绿色主导断言（同 decode_jpeg_bytes_green_4x3 口径）
+        let px = img.get_pixel(1, 2);
+        assert!(px[1] > 200, "green channel should be high, got {}", px[1]);
+        let mut identity = green[..2].to_vec();
+        identity.extend_from_slice(&exif_app1_segment(1, true, 3));
+        identity.extend_from_slice(&green[2..]);
+        let plain = decode_jpeg_bytes(green).unwrap();
+        let same = decode_jpeg_bytes(&identity).unwrap();
+        assert_eq!((same.width, same.height), (plain.width, plain.height));
+        assert_eq!(same.pixels, plain.pixels);
     }
 
     /// R1793：解码真实 4×3 纯绿 WebP fixture（lossless，RGB → 补 alpha=255）。
