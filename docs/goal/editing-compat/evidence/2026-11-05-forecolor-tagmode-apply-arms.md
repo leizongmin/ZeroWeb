@@ -126,7 +126,7 @@ style → attr-only 形（:114/:269 期望）；改刀后 chrome-keyway 使
 语料要求 keyword 敏感仅属指定形（CSSOM 保留 authored 形），有效值/attr
 面恒数值等值。
 
-处置：numericFace 收口已落地 e29b3a8bc（part01d.js +20/−13，
+处置：numericFace 收口已落地 5a6acf2f1（rebase 前 e29b3a8bc，part01d.js +20/−13，
 `_zwVaEquivalentValues`/`_zwVaLooselyEquivalent` 增第四参，全部 9 处
 effective 面调用传 numericFace=true 走 `_zwVaNormalizeColorKey` 数值键，
 specified 面 6 处保持 keyword 敏感——逐 hunk 审定调用点分面无一遗漏；
