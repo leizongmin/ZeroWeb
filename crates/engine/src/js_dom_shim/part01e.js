@@ -742,6 +742,12 @@
     // enable：对 other tag 名可编辑元素换型或并入邻接同名列表。
     if (mode === 'enable') {
       var retaggedFinal = null;
+      // ARM-B' 命中壳记录（:478 族 wholesale 档第二半）：壳内成员已随整壳
+      // retag 处理完毕，后置 nodeList 平铺阶段必须排除壳子树——否则首分支
+      // 直属文本以 allowedChild(li) 混入平铺重排，inline-wrap-li + 缩进合并
+      // default-wrap 臂把 foo lift 进嵌套列表（split-lift 错形，DBG 探针
+      // nodeList/gather/sublistArm 三点实证）。
+      var shellArm = null;
       var toConvert = _zwJusCollectContainedNodes(newRange, function (node) {
         return _zwJusIsEditable(node) && _zwJusIsHtmlElement(node, otherTagName);
       }, false);
@@ -782,6 +788,7 @@
           && _zwJusIsHtmlElement(shell, otherTagName)
           && toConvert.indexOf(shell) === -1) {
             toConvert.unshift(shell);
+            shellArm = shell;
           }
         }
       }
@@ -810,6 +817,14 @@
         } else {
           var retagged = _zwListRetagPreservingSelection(list, utag.toLowerCase(), [newRange]);
           if (retagged) retaggedFinal = retagged;
+          // shellArm 重锚（:478 族 wholesale 档收尾）：setTagName 为先插后删
+          // 替换，换型后原壳节点 detached——nodeList 过滤须持新壳引用（批9 v1
+          // 锚旧壳过滤恒空，probe q16-2 零位移实证）；批10 重锚后壳子树成员
+          // （首分支直属文本）不再混入平铺重排，_zwJusWrap 邻接 utag 同壳
+          // 收养臂无从触发，split-lift 消除。
+          if (retagged && list === shellArm) {
+            shellArm = retagged;
+          }
           // Chrome delta（语料权威，absorb 行）：enable-retag 后活动选区与换
           // 壳子树求交——端点在壳内保留原位（身份随逐子迁移存活），壳外钳到
           // 壳内最深文本端。Chrome retag 后选区留在 li 内（qInd=false 确定
@@ -849,6 +864,9 @@
     });
     if (mode === 'enable') {
       nodeList = nodeList.filter(function (node) {
+        if (shellArm && (node === shellArm || _zwListContainsNode(shellArm, node))) {
+          return false;
+        }
         return !_zwJusIsHtmlElement(node, ['ol', 'ul'])
           || _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul']);
       });
