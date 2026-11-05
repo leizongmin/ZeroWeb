@@ -3538,6 +3538,16 @@
               // s276：.xo = 请求的 CORS 态（run 启动时 attr 快照——spec 元组
               // 键含 CORS settings attribute state，set-up 时冻结）。
               _zwAvailImgs[_imSrc] = { width: bm.width, height: bm.height, finalUrl: _imFinalUrl, xo: globalThis.__zwAvailXoState5277(_imXoAttr) };
+              // s293：运行核 settle 补同步——选中源 URL 入宿主待补队列，泵轮钩子排空
+              // 补 cached_* 布局三表（+ s292 信号门 applied 容器）并在同泵轮重绘。
+              // load 期清单（静态 HTML 源解析）不含运行时创建/换源 img——此前其无表键：
+              // 布局零盒 + 信号门关（naturalWidth 族 srcset 克隆 12F 勘根 2026-11-05）。
+              // available-images 命中臂（_av5275 settle）不补——键已由 load 期清单或
+              // 此前 settle 补齐；零尺寸 InvalidState 臂不补——无固有信号，表项只会
+              // 投毒布局。
+              if (typeof __zwImgSyncRuntimeTable === 'function') {
+                try { __zwImgSyncRuntimeTable(_imSrc); } catch (_eSync293) {}
+              }
               _zwImgDispatch('load');
             }, function (e) {
               // R56h：零尺寸图像（SVG width=0）→ img 元素语义 = loaded（naturalWidth

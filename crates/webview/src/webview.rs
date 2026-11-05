@@ -176,6 +176,17 @@ struct ServiceWorkerHostContext {
 /// None → 走 HTTP 网络）。返回图片字节；返回 None 表示该 URL 无法本地提供（回退网络）。
 pub type ImageSourceFetcher = std::sync::Arc<dyn Fn(&str) -> Option<Vec<u8>> + Send + Sync>;
 
+/// s293（html-semantics M2）：运行核 settle 已补同步的图片布局信号表。IDL 信号门
+/// （s292 `__zwImgHasIntrinsicSignal`）在注册期克隆 cached_* 快照，运行时对 cached_*
+/// 本体的插入对闭包不可见——补表同时写本容器，门按同键并列查询。字段口径同
+/// cached_image_ratios / cached_image_sizes / cached_image_no_ratio（R717 分类）。
+#[derive(Default)]
+struct RuntimeImageSignalTables {
+    sizes: HashMap<u64, (f32, f32)>,
+    ratios: HashMap<u64, f32>,
+    no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
+}
+
 /// s256（动态 import 延迟决议）：外链动态 `import()` 取回延迟提供器（毫秒；
 /// 输入为宿主解析后的 URL）。headless/runner 路径建模 trickle 类慢模块源；
 /// `None` = 无延迟（同步契约照旧）。
@@ -767,6 +778,14 @@ pub struct WebView {
     /// width/height 非双绝对且无 viewBox 的 SVG 既无确定固有尺寸也无固有宽高比，布局不设
     /// aspect_ratio，缺失维按 default object size（宽 300 / 高 150）回退。
     cached_image_no_ratio: HashMap<u64, (Option<f32>, Option<f32>)>,
+    /// s293（html-semantics M2）：运行核 settle 待补同步的 img 选中源 URL 队列。shim
+    /// 位图 settle 臂经 `__zwImgSyncRuntimeTable` 入队（回调闭包持 Arc 克隆，&mut 排空
+    /// 在 [`Self::apply_runtime_image_syncs`]——异步回调泵轮内逐 resolve 后调用）。
+    runtime_img_sync_pending: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// s293：已补同步进 cached_* 三表的运行时图片信号。IDL 布局信号门（s292
+    /// `__zwImgHasIntrinsicSignal`）注册期快照冻结，运行时 cached_* 插入对它不可见——
+    /// 门经本容器并列查询补表增量。
+    runtime_img_sync_applied: std::sync::Arc<std::sync::Mutex<RuntimeImageSignalTables>>,
     /// CSS font-family → font_id，供 paint 解析 font-weight 粗体 face。
     font_resolver: std::collections::HashMap<String, u32>,
     /// per-family 行度量与 `ex`/`ch` aspect 映射。字体相对单位默认启用；
@@ -950,6 +969,8 @@ impl WebView {
             batch_handle_selectors: HashMap::new(),
             cached_image_ratios: HashMap::new(),
             cached_image_no_ratio: HashMap::new(),
+            runtime_img_sync_pending: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            runtime_img_sync_applied: std::sync::Arc::new(std::sync::Mutex::new(RuntimeImageSignalTables::default())),
             font_resolver: HashMap::new(),
             font_metric_map: HashMap::new(),
             prefers_color_scheme: PrefersColorSchemeValue::Light,
@@ -1772,6 +1793,120 @@ impl WebView {
             self.image_cache.insert_with_key(key, img);
         }
         (image_sizes, image_ratios, image_no_ratio, image_natural_sizes)
+    }
+
+    /// s293（html-semantics M2）：运行核 settle 补同步排空——shim 位图 settle 臂经
+    /// `__zwImgSyncRuntimeTable` 入队的选中源 URL（load 期 `extract_img_srcs` 清单外的
+    /// 运行时 img：script 注入 / srcset 换源），逐条补走 load 期同款解码 + R717 分类入
+    /// `cached_*` 三表 + `runtime_img_sync_applied`（IDL 信号门可见，快照冻结故并列容器）
+    /// + `image_cache`（paint 像素查找同键）。
+    ///
+    /// 时序契约：异步回调泵轮内逐 `resolve_async_callback` 后调用——settle 与紧随的
+    /// timer 载荷（`loadStep5275` 等待循环 → window load 断言）之间落表 + 重绘
+    /// （[`Self::repaint_after_runtime_image_sync`]），断言窗内 gBCR/IDL 读到真实布局。
+    /// runner 无渲染循环，此前 settle→load 之间无任何渲染点（探针全时点 gBCR=0x0，
+    /// naturalWidth 族 srcset 克隆 12F 勘根 2026-11-05）。
+    ///
+    /// 键/抓取口径同 [`Self::fetch_image_subresources`]（data: 原样解码入键、其余按
+    /// 文档 base join 绝对化）；运行时 fetch 已过 shim 侧 CSP 检查点（`__zwCspImgCheck`）
+    /// 与 CORS 态判定——此处不再复核，仅补布局表。已知边界：`image_natural_sizes`
+    /// 不补（pipeline 侧整表替换语义，border-image 9-slice 对运行时图暂缺——目标域
+    /// img 面不消费，与 load 期口径的差异仅此一处）。返回补表条数（0 = 无待补，
+    /// 调用方免重绘）。
+    fn apply_runtime_image_syncs(&mut self) -> usize {
+        let pending: Vec<String> = std::mem::take(&mut *self.runtime_img_sync_pending.lock().unwrap());
+        if pending.is_empty() {
+            return 0;
+        }
+        let base_url = self.current_url.clone().unwrap_or_default();
+        let mut applied = 0usize;
+        let mut seen = std::collections::HashSet::new();
+        for src in &pending {
+            if !seen.insert(src.as_str()) {
+                continue;
+            }
+            let (img, key_hash): (ImageData, u64) = if src.starts_with("data:") {
+                match decode_data_uri(src) {
+                    Ok(d) => (d, image_resource_key(src, None)),
+                    Err(e) => {
+                        tracing::debug!("runtime image sync decode failed: {e}");
+                        continue;
+                    }
+                }
+            } else {
+                let abs = url::Url::parse(&base_url)
+                    .ok()
+                    .and_then(|b| b.join(src).ok())
+                    .map(|u| u.to_string())
+                    .unwrap_or_else(|| src.clone());
+                let key_hash = image_resource_key(&abs, None);
+                match self.image_cache.get(&ImageKey::new(key_hash)) {
+                    Some(cached) => (cached.clone(), key_hash),
+                    None => {
+                        let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
+                            self.resource_get(&abs, FetchPriority::MEDIUM, "image")
+                                .ok()
+                                .map(|resp| resp.body)
+                        });
+                        let bytes = match fetched {
+                            Some(bytes) => bytes,
+                            None => {
+                                tracing::debug!("runtime image sync fetch failed: {abs}");
+                                continue;
+                            }
+                        };
+                        match decode_image(&bytes) {
+                            Ok(img) => (img, key_hash),
+                            Err(e) => {
+                                tracing::debug!("runtime image sync decode failed ({abs}): {e}");
+                                continue;
+                            }
+                        }
+                    }
+                }
+            };
+            // R717 分类（口径同 fetch_image_subresources）：ratio-only SVG 进 ratios、
+            // no-ratio SVG 进 no_ratio + sizes、其余图像走 sizes。
+            if let Some(ratio) = img.intrinsic_ratio() {
+                self.runtime_img_sync_applied
+                    .lock()
+                    .unwrap()
+                    .ratios
+                    .insert(key_hash, ratio);
+                self.cached_image_ratios.insert(key_hash, ratio);
+            } else {
+                let (w, h) = img
+                    .computed_intrinsic()
+                    .unwrap_or((img.width as f32, img.height as f32));
+                {
+                    let mut signal = self.runtime_img_sync_applied.lock().unwrap();
+                    signal.sizes.insert(key_hash, (w, h));
+                    if let Some(dims) = img.no_ratio_intrinsic() {
+                        signal.no_ratio.insert(key_hash, dims);
+                    }
+                }
+                self.cached_image_sizes.insert(key_hash, (w, h));
+                if let Some(dims) = img.no_ratio_intrinsic() {
+                    self.cached_image_no_ratio.insert(key_hash, dims);
+                }
+            }
+            self.image_cache.insert_with_key(ImageKey::new(key_hash), img);
+            applied += 1;
+        }
+        applied
+    }
+
+    /// s293：补表后的重绘收口——补表入 pipeline + cached viewport 重算（style/layout/
+    /// paint）+ gBCR 快照刷新。口径同 `sync_render_after_native_dom` 重绘块（live DOM
+    /// 未变，仅布局输入更新——不整表 render_html，保 shim 元素身份不换代）。
+    fn repaint_after_runtime_image_sync(&mut self) {
+        self.sync_pipeline_page_state();
+        if let Some(result) = self.pipeline.repaint_cached_viewport(&self.cached_css) {
+            // repaint 只读不改 Document，cached_html/桥接换代不触发。
+            self.last_render = Some(self.absorb_render_result(&result));
+            // R150：补表后 repaint——刷新 gBCR 快照（布局随新表变化）。
+            self.refresh_layout_rect_snapshot();
+        }
     }
 
     /// R34xx：@font-face 字体同步加载（headless/testharness 路径）。从 CSS 提取 font-face，
@@ -3223,6 +3358,12 @@ impl WebView {
                         if let Some(sandbox) = self.js_sandbox.as_mut() {
                             sandbox.resolve_async_callback(&id, &result);
                         }
+                        // s293：同 drain_next_async_callback_if_pending——resolve 落地即
+                        // 排空运行核图片补表（runner 静态提交后的集中排空入口，settle
+                        // 多在此落地）。
+                        if self.apply_runtime_image_syncs() > 0 {
+                            self.repaint_after_runtime_image_sync();
+                        }
                         continue;
                     }
                     _ => {}
@@ -3237,6 +3378,11 @@ impl WebView {
                     if let Some(sandbox) = self.js_sandbox.as_mut() {
                         sandbox.resolve_async_callback(&id, &result);
                     }
+                    // s293：同 drain_next_async_callback_if_pending——resolve 落地即排空
+                    // 运行核图片补表。
+                    if self.apply_runtime_image_syncs() > 0 {
+                        self.repaint_after_runtime_image_sync();
+                    }
                 }
                 Err(mpsc::RecvTimeoutError::Timeout) => {}
                 Err(mpsc::RecvTimeoutError::Disconnected) => return,
@@ -3245,22 +3391,25 @@ impl WebView {
     }
 
     fn drain_async_callbacks(&mut self) {
-        let Some(sandbox) = self.js_sandbox.as_mut() else {
-            return;
-        };
-        let mut callbacks = Vec::new();
-        while let Ok((id, result)) = self.async_callback_rx.try_recv() {
-            callbacks.push((id, result));
+        {
+            let Some(sandbox) = self.js_sandbox.as_mut() else {
+                return;
+            };
+            let mut callbacks = Vec::new();
+            while let Ok((id, result)) = self.async_callback_rx.try_recv() {
+                callbacks.push((id, result));
+            }
+            for (id, result) in callbacks {
+                sandbox.resolve_async_callback(&id, &result);
+            }
         }
-        for (id, result) in callbacks {
-            sandbox.resolve_async_callback(&id, &result);
+        // s293：bulk 排空后统一补表+重绘（批内 settle 在后续泵轮/timer 载荷前可见）。
+        if self.apply_runtime_image_syncs() > 0 {
+            self.repaint_after_runtime_image_sync();
         }
     }
 
     fn drain_next_async_callback_if_pending(&mut self, timeout: std::time::Duration) {
-        let Some(sandbox) = self.js_sandbox.as_mut() else {
-            return;
-        };
         let deadline = std::time::Instant::now() + timeout;
         loop {
             // 排水预算对每次迭代生效：回调可以 setTimeout(fn, 0) 自续（service
@@ -3289,7 +3438,21 @@ impl WebView {
                 return;
             };
             let is_interval = id.starts_with("__zwint:");
+            // s293：sandbox 借用收窄到 resolve 本体——resolve 落地后需 &mut self 排空
+            // 运行核图片补表（见下）。
+            let Some(sandbox) = self.js_sandbox.as_mut() else {
+                return;
+            };
             sandbox.resolve_async_callback(&id, &result);
+            // s293：settle 位图臂经 __zwImgSyncRuntimeTable 入队的补表在本回调落地后
+            // 立即排空+重绘——同 execute 入口泵轮的 resolve 与其后脚本侧
+            // `__zw_fire_due_timers` 的 timer 载荷（loadStep5275 等待循环 → window
+            // load 断言）之间必须完成落表，断言窗才能读到真实布局几何（runner 无
+            // 渲染循环，settle→load 间原本无任何渲染点）。无 pending 时一次锁判空
+            // 早退，零开销。
+            if self.apply_runtime_image_syncs() > 0 {
+                self.repaint_after_runtime_image_sync();
+            }
             if is_interval {
                 return;
             }
@@ -3813,12 +3976,15 @@ impl WebView {
         // 此时布局盒走无信号 auto 回落（CB − margin 拉伸），真实渲染维与 corpus 期望
         // （固有维/default object size）背离，IDL 读几何会把该布局缺口泄进断言面
         // （naturalWidth 族 srcset 克隆 62 P→F 勘根 2026-11-05，s292 replica 探针；
-        // 表缺口挂账 s293 运行时表同步）。门 = 三表任一含该键（快照口径同
-        // __zw_get_image_size）：命中 → 布局按真实固有信号 sizing，几何臂可信；
-        // 未命中 / 契约沙箱未注册 → shim 侧回落 naturalDim 近似（旧行为）。
+        // 表缺口 s293 运行时表同步收口）。门 = 三表任一含该键（快照口径同
+        // __zw_get_image_size）+ s293 补表容器（`runtime_img_sync_applied`——快照冻结，
+        // 运行时 cached_* 插入对闭包不可见，补表增量按同键并列查询）：命中 → 布局按
+        // 真实固有信号 sizing，几何臂可信；未命中 / 契约沙箱未注册 → shim 侧回落
+        // naturalDim 近似（旧行为）。
         let img_signal_sizes = self.cached_image_sizes.clone();
         let img_signal_ratios = self.cached_image_ratios.clone();
         let img_signal_no_ratio = self.cached_image_no_ratio.clone();
+        let img_signal_runtime = std::sync::Arc::clone(&self.runtime_img_sync_applied);
         let page_url_img_signal = page_url.clone();
         sandbox.register_callback(
             "__zwImgHasIntrinsicSignal",
@@ -3830,10 +3996,36 @@ impl WebView {
                 let base = page_url_img_signal.lock().unwrap();
                 let abs = zero_engine::resolve_document_url(&base, src);
                 let key = zero_engine::image_resource_key(&abs, None);
+                let runtime = img_signal_runtime.lock().unwrap();
                 let hit = img_signal_sizes.contains_key(&key)
                     || img_signal_ratios.contains_key(&key)
-                    || img_signal_no_ratio.contains_key(&key);
+                    || img_signal_no_ratio.contains_key(&key)
+                    || runtime.sizes.contains_key(&key)
+                    || runtime.ratios.contains_key(&key)
+                    || runtime.no_ratio.contains_key(&key);
                 if hit { "1".to_string() } else { "0".to_string() }
+            }),
+        );
+        // s293（html-semantics M2）：__zwImgSyncRuntimeTable —— shim 运行核位图 settle 臂
+        // 把选中源 URL 入待补队列。load 期清单来自 extract_img_srcs（静态 HTML 源解析 +
+        // R5275 模板 walk），运行时创建/换源的 img 不在其中——cached_* 布局三表无键：
+        // 布局零盒 + 信号门关（探针 zz-s293-probe 全时点 gBCR=0x0，IDL 回落 naturalDim）。
+        // 仅入队（Arc<Mutex> 回调闭包持克隆；&mut 排空/解码/分类在
+        // [`Self::apply_runtime_image_syncs`]——异步回调泵轮钩子）。256 上限丢旧：
+        // runner 泵轮逐 resolve 排空永不触顶；无泵消费的环境封顶防滞留增长。
+        let runtime_img_pending = std::sync::Arc::clone(&self.runtime_img_sync_pending);
+        sandbox.register_callback(
+            "__zwImgSyncRuntimeTable",
+            Box::new(move |args| {
+                if let Some(src) = args.first().filter(|s| !s.is_empty()) {
+                    let mut queue = runtime_img_pending.lock().unwrap();
+                    queue.push(src.clone());
+                    if queue.len() > 256 {
+                        let excess = queue.len() - 256;
+                        queue.drain(0..excess);
+                    }
+                }
+                String::new()
             }),
         );
 
