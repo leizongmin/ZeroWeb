@@ -1,0 +1,186 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ③ 载体形/prop-carry 观测探针：两臂钉测——
+     A. merge 臂：hilitecolor/backcolor 对全含无冲突载体（font size=6 /
+        span 32px）应并值到载体 style 属性（Chrome 录形 <font size=6 style=bg>），
+        部分选区仍走壳内 span 包裹（守卫 G3）。
+     B. carry-clone 臂：end 侧 peel 移出片段仅在载体持命令等价面之外的残余
+        样式时包载体克隆（残余经 clearValue 摘冲突 prop 留 carry）——fontsize
+        teal [a]bc/a[b]c 期望 bg-carry 形；单 prop 载体（font size=2）无残余
+        不克隆、真裸移，期望裸形不变（守卫 G4/G5；fix12 门禁 18 例 P2F 证伪
+        无条件克隆——克隆隔断 adjacency，`ob` 并一形 wrap merge-only 并不拢）。
+     语料权威：data/fontsize.js :835-858、data/hilitecolor.js :353-392。
+     审计证据：docs/goal/editing-compat/evidence/2026-11-05-slice-straddle-artifact-audit.md -->
+<title>zz-probe-carrier</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+
+// 语料 setupDiv 同款（tests.js :5283）：marker 记录于 text data 内、剥字符后
+// 直接以剥前 idx 为端点 offset——不 splitText 不摘节点。
+function setupFixture(testDiv, fixture) {
+    testDiv.innerHTML = fixture;
+    var startNode = null;
+    var startOffset = 0;
+    var endNode = null;
+    var endOffset = 0;
+    // 语料 setupDiv 同款子树守卫（tests.js :5330）：游标离开 testDiv 子树即停，
+    // 防止走读后续 script 文本节点（其源码含 [/] 字符会覆写端点）。
+    var cur = testDiv;
+    while (true) {
+        if (!cur || (cur !== testDiv
+            && !(cur.compareDocumentPosition(testDiv) & Node.DOCUMENT_POSITION_CONTAINS))) break;
+        if (cur.nodeType !== 3) { cur = nextNode(cur); continue; }
+        // 语料口径：startIdx 在剥 ] 串上取、endIdx 在剥 [ 串上取——
+        // 对应剥字符后的真实 offset。
+        var startIdx = cur.data.replace(/\]/g, "").indexOf("[");
+        var endIdx = cur.data.replace(/\[/g, "").indexOf("]");
+        if (startIdx !== -1) { startNode = cur; startOffset = startIdx; }
+        if (endIdx !== -1) { endNode = cur; endOffset = endIdx; }
+        cur.data = cur.data.replace(/[\[\]]/g, "");
+        cur = nextNode(cur);
+    }
+    var r = document.createRange();
+    r.setStart(startNode, startOffset);
+    r.setEnd(endNode, endOffset);
+    return r;
+}
+
+// tests.js 同款 nextNode（文档序前进）。
+function nextNode(node) {
+    if (node.firstChild) return node.firstChild;
+    if (node.nextSibling) return node.nextSibling;
+    node = node.parentNode;
+    while (node) {
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+    }
+    return null;
+}
+
+function runCase(label, fixture, cmds, expectedArr) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var rng = setupFixture(testDiv, fixture);
+    getSelection().removeAllRanges();
+    getSelection().addRange(rng);
+    // before 查询序（语料 expectedQueryResults 键序：stylewithcss 先值命令）
+    for (var q = 0; q < cmds.length; q++) {
+        var cm = cmds[q][0].toLowerCase();
+        document.queryCommandIndeterm(cm);
+        document.queryCommandState(cm);
+        document.queryCommandValue(cm);
+    }
+    var rcAll = true;
+    for (var e = 0; e < cmds.length; e++) {
+        if (!document.execCommand(cmds[e][0], false, cmds[e][1])) rcAll = false;
+    }
+    var last = cmds[cmds.length - 1][0].toLowerCase();
+    var qVa = document.queryCommandValue(last);
+    var got = testDiv.innerHTML;
+    var strip = function (s) { return s.replace(/[\[\]{}]/g, ""); };
+    test(function() {
+        assert_true(rcAll, label + " exec rc 全 true");
+    }, label + " rc");
+    test(function() {
+        assert_in_array(strip(got), expectedArr.map(strip), label);
+    }, label + " compare");
+    return { qVa: qVa, got: got };
+}
+
+// —— ③ 修复钉测目标（merge/carry-clone 两臂落地后全绿；r2 前基线 6 compare 红）——
+runCase("FS-A [a]bc",
+    '<span style="font-size:32px; background-color:rgb(0, 128, 128)">[a]bc</span>',
+    [["styleWithCSS", "false"], ["fontSize", "5"]],
+    ['<span style="background-color:rgb(0, 128, 128)"><font size="5">[a]</font></span><span style="font-size:32px; background-color:rgb(0, 128, 128)">bc</span>',
+     '<font size="5"><span style="background-color:rgb(0, 128, 128)">[a]</span></font><span style="font-size:32px; background-color:rgb(0, 128, 128)">bc</span>']);
+
+runCase("FS-B a[b]c",
+    '<span style="font-size:32px; background-color:rgb(0, 128, 128)">a[b]c</span>',
+    [["styleWithCSS", "false"], ["fontSize", "5"]],
+    ['<span style="font-size:32px; background-color:rgb(0, 128, 128)">a</span><span style="background-color:rgb(0, 128, 128)"><font size="5">[b]</font></span><span style="font-size:32px; background-color:rgb(0, 128, 128)">c</span>',
+     '<span style="font-size:32px; background-color:rgb(0, 128, 128)">a</span><font size="5"><span style="background-color:rgb(0, 128, 128)">[b]</span></font><span style="font-size:32px; background-color:rgb(0, 128, 128)">c</span>']);
+
+runCase("HC1 font6 [foo] swT",
+    "<font size=6>[foo]</font>",
+    [["stylewithcss", "true"], ["hilitecolor", "#00FFFF"]],
+    ['<font size="6" style="background-color:rgb(0, 255, 255)">foo</font>',
+     '<font style="background-color:rgb(0, 255, 255)" size="6">foo</font>']);
+
+runCase("HC2 font6 [foo] swF",
+    "<font size=6>[foo]</font>",
+    [["stylewithcss", "false"], ["hilitecolor", "#00FFFF"]],
+    ['<font size="6" style="background-color:rgb(0, 255, 255)">foo</font>',
+     '<font style="background-color:rgb(0, 255, 255)" size="6">foo</font>']);
+
+runCase("HC3 xxl [foo] swT",
+    "<span style=font-size:xx-large>[foo]</span>",
+    [["stylewithcss", "true"], ["hilitecolor", "#00FFFF"]],
+    ['<span style="font-size:xx-large; background-color:rgb(0, 255, 255)">[foo]</span>']);
+
+runCase("HC4 xxl [foo] swF",
+    "<span style=font-size:xx-large>[foo]</span>",
+    [["stylewithcss", "false"], ["hilitecolor", "#00FFFF"]],
+    ['<span style="font-size:xx-large; background-color:rgb(0, 255, 255)">[foo]</span>']);
+
+// —— 守卫（修复前后恒绿，不得翻转）——
+runCase("G1 ab[c] tail",
+    '<span style="font-size:32px; background-color:rgb(0, 128, 128)">ab[c]</span>',
+    [["styleWithCSS", "false"], ["fontSize", "5"]],
+    ['<span style="font-size:32px; background-color:rgb(0, 128, 128)">ab</span><span style="background-color:rgb(0, 128, 128)"><font size="5">[c]</font></span>',
+     '<span style="font-size:32px; background-color:rgb(0, 128, 128)">ab</span><font size="5"><span style="background-color:rgb(0, 128, 128)">[c]</span></font>']);
+
+runCase("G2 [abc] full",
+    '<span style="font-size:32px; background-color:rgb(0, 128, 128)">[abc]</span>',
+    [["styleWithCSS", "false"], ["fontSize", "5"]],
+    ['<span style="background-color:rgb(0, 128, 128)"><font size="5">[abc]</font></span>',
+     '<font size="5"><span style="background-color:rgb(0, 128, 128)">[abc]</span></font>']);
+
+runCase("G3 font6 foo[bar]baz wrap-in",
+    "<font size=6>foo[bar]baz</font>",
+    [["stylewithcss", "false"], ["hilitecolor", "#00FFFF"]],
+    ['<font size="6">foo<span style="background-color:rgb(0, 255, 255)">[bar]</span>baz</font>']);
+
+runCase("G4 single-prop move-out",
+    "foo[<font size=2>b]ar</font>baz",
+    [["styleWithCSS", "false"], ["fontSize", "4"]],
+    ['foo<font size="4">[b]</font><font size="2">ar</font>baz']);
+
+runCase("G5 B-fixture end-outside",
+    "foo<font size=2>ba[r</font>b]az",
+    [["stylewithcss", "false"], ["fontsize", "4"]],
+    ['foo<font size="2">ba</font><font size="4">[rb]</font>az']);
+
+// —— ③ 判据守卫（残余门禁）：单等价面载体 end-straddle 必须裸移（克隆隔断
+//    adjacency → 前邻 wrap merge-only 不并拢 → `ob` 分裂形 18 例 P2F，fix12
+//    门禁实证）；带残余（teal 面）才准克隆。修复前后恒绿，克隆判据翻红即警报。
+runCase("J1 join fontsize swF",
+    "fo[o<font size=2>b]ar</font>baz",
+    [["stylewithcss", "false"], ["fontsize", "4"]],
+    ['fo<font size="4">[ob]</font><font size="2">ar</font>baz']);
+
+runCase("J2 join fontsize swT",
+    "fo[o<font size=2>b]ar</font>baz",
+    [["stylewithcss", "true"], ["fontsize", "4"]],
+    ['fo<span style="font-size:large">[ob]</span><font size="2">ar</font>baz']);
+
+runCase("J3 join fontname swF",
+    "fo[o<span style=font-family:monospace>b]ar</span>baz",
+    [["stylewithcss", "false"], ["fontname", "sans-serif"]],
+    ['fo<font face="sans-serif">[ob]</font><span style="font-family:monospace">ar</span>baz']);
+
+runCase("J4 join forecolor swF",
+    "fo[o<font color=brown>b]ar</font>baz",
+    [["stylewithcss", "false"], ["forecolor", "#0000FF"]],
+    ['fo<font color="#0000ff">[ob]</font><font color="brown">ar</font>baz']);
+
+runCase("J5 join forecolor swT",
+    "fo[o<font color=brown>b]ar</font>baz",
+    [["stylewithcss", "true"], ["forecolor", "#0000FF"]],
+    ['fo<span style="color:rgb(0, 0, 255)">[ob]</span><font color="brown">ar</font>baz']);
+</script>

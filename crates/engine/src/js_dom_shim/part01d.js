@@ -300,11 +300,13 @@
         for (var k in decls) {
           if (Object.prototype.hasOwnProperty.call(decls, k)) parts.push(k + ':' + decls[k]);
         }
-        // Chrome delta（⑦ 残余，probe-vawrap 实证）：手工合并序列化走无空格
-        // minified 形（`font-size:large`）——语料期望 Chrome recorded 无空格
-        // （compare innerHTML 裸串等值，无归一），host style.setProperty 通道
-        // 同形；justify 簇 wrap 样式 `text-align:center` 先例同口径。
-        var serial = parts.join(';');
+        // Chrome delta（⑦ 残余，probe-vawrap 实证）：手工合并序列化走
+        // `k:v; k2:v2` Chrome CSSOM 形——单声明串 join 无分隔（`font-size:large`
+        // 等既有行不变）；多声明形 ③ 并值载体需要 `; ` 分隔（hilitecolor
+        // xx-large span 期望 `font-size:xx-large; background-color:…` 语料
+        // :367 实证——Chrome style attr 序列化恒 `; ` 分隔，旧 `;` 无空格形
+        // 仅单声明行被观测过）。
+        var serial = parts.join('; ');
         if (serial) el.setAttribute('style', serial);
         else el.removeAttribute('style');
       }
@@ -775,7 +777,9 @@
     // 包值；本门置 forceValue 入口统一覆盖主循环/pushDownValues/children 递归
     // 各调用点，pushDownValues 本体维持 vendored 全量。_zwJusIsWhitespaceNode
     // 感知 white-space 属性，pre 格式化空白不受此门。
-    if (node.nodeType === 3 && _zwJusIsWhitespaceNode(node)) return;
+    if (node.nodeType === 3 && _zwJusIsWhitespaceNode(node)) {
+      return;
+    }
     var i;
     if (_zwVaIsAllowedChild(node, 'span')) {
       var sibCrit = function (n) {
@@ -1045,7 +1049,7 @@
   // textEl/plain-元素 ref——**解析文本 ref（无印无章）全分支 miss 静默丢弃**，
   // 故「克隆后插到 el 之后」的任何 ref（baz 等文本兄弟）不可用；start 侧克隆
   // 落 el 之前天然避开，end 侧免克隆彻底绕开（fix4 trace8-9 实证链）。
-  function _zwVaPeelOne(el, isStart) {
+  function _zwVaPeelOne(el, isStart, command) {
     var rng = _zwVaGetActiveRange();
     if (!rng || !el.parentNode) return;
     var cont = isStart ? rng.startContainer : rng.endContainer;
@@ -1080,8 +1084,38 @@
       _zwVaPeelCarry.push(clone);
     } else {
       var elIdx = _zwJusNodeIndex(el);
-      for (var k2 = 0; k2 < ci; k2++) {
-        _zwJusMovePreservingRanges(kids[k2], parent, elIdx + k2);
+      // Chrome delta（③ carry-clone，2026-11-05）：end 侧移出片段仅在载体
+      // 持有命令等价面之外的残余样式时包载体克隆。fontsize teal `[a]bc`/
+      // `a[b]c` 期望 bg-carry 形 `<span style=bg><font size=5>…</font></span>`
+      // ——bare-move 丢 carry（got `<font size="5">a</font>` 实证）；残余
+      // 声明（bg）经克隆 clearValue 摘冲突 prop 存活，forceValue 残余下潜臂
+      // 把新包裹收进克隆内（G2 同机制）。语料 18 例 P2F（fix12 门禁实证，
+      // fontsize/fontname/forecolor 单等价载体 end-straddle）：仅命令等价面
+      // （size/font-size、color/color、face/font-family）的载体 Chrome 不留
+      // 克隆——移出片段裸落并与前邻已裹片段并拢（`ob` 合一形）；克隆隔断
+      // adjacency 后 wrap merge-only 并不拢，故必须真裸移。
+      if (_zwVaCarrierResidualStyling(el, command)) {
+        var cloneE = document.createElement(_zwJusTag(el));
+        try {
+          var atE = el.attributes;
+          for (var aE = 0; aE < atE.length; aE++) {
+            try {
+              var anE = atE[aE].name, avE = atE[aE].value;
+              if (anE.toLowerCase() === 'style') avE = _zwVaNormalizeStyleAttrCss(avE);
+              cloneE.setAttribute(anE, avE);
+            } catch (_ePaE) {}
+          }
+        } catch (_ePbE) {}
+        _zwVaShiftEndpointsForInsert(parent, elIdx);
+        parent.insertBefore(cloneE, el);
+        for (var k2 = 0; k2 < ci; k2++) {
+          _zwJusMovePreservingRanges(kids[k2], cloneE, k2);
+        }
+        _zwVaPeelCarry.push(cloneE);
+      } else {
+        for (var k2 = 0; k2 < ci; k2++) {
+          _zwJusMovePreservingRanges(kids[k2], parent, elIdx + k2);
+        }
       }
       _zwVaPeelCarry.push(el);
     }
@@ -1149,7 +1183,7 @@
         n = par;
       }
       for (var i = chain.length - 1; i >= 0; i--) {
-        _zwVaPeelOne(chain[i], isStart);
+        _zwVaPeelOne(chain[i], isStart, command);
       }
     }
   }
@@ -1212,6 +1246,75 @@
       }
       return true;
     } catch (_eLc) {
+      return false;
+    }
+  }
+
+  // ③ 并值载体自带样式面判定：style 属性 ≥1 声明，或 legacy font 的
+  // size/color/face 属性（带无关属性如 id 的 font 形不并——:1460 并值臂
+  // 同口径；裸 span/backcolor L18 归外裹）。attributes API 不可用保守不并。
+  function _zwVaCarrierHasOwnStyling(el) {
+    try {
+      var at = el.attributes;
+      if (!at) return false;
+      for (var k = 0; k < at.length; k++) {
+        var nm = String(at[k].name || '').toLowerCase();
+        if (nm === 'style') {
+          var decls = _zwPlainStyleDecls(el);
+          for (var d in decls) {
+            if (Object.prototype.hasOwnProperty.call(decls, d)) return true;
+          }
+        } else if (_zwJusTag(el) === 'font'
+            && (nm === 'size' || nm === 'color' || nm === 'face')) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_eCa) {
+      return false;
+    }
+  }
+
+  // ③ 克隆残余判据（Chrome delta，2026-11-05）：载体去掉命令等价面后仍持有
+  // 其他样式信号才准克隆。等价面映射：fontsize/fontname/forecolor 对应
+  // legacy font size/face/color 属性与 style font-size/font-family/color
+  // 声明；hilitecolor/backcolor 对应 style background-color 声明；其余命令
+  // 无等价面（任何样式均算残余，但非 font 属性形载体按裸移保守走旧路径）。
+  // 语料 18 例 P2F（fix12 门禁 fontsize/fontname/forecolor 单等价载体
+  // end-straddle）实证仅等价面时 Chrome 不留克隆；带残余（teal bg 案）
+  // 克隆存活 carry。attributes API 不可用保守不克隆。
+  function _zwVaCarrierResidualStyling(el, command) {
+    var cmd = String(command || '').toLowerCase();
+    // 克隆仅限本轮门禁覆盖的五个 font 簇命令；其余命令（bold 等 multitest
+    // 基线均在裸移下取得）保守不克隆，维持 pre-③ 裸移路径。
+    if (cmd !== 'fontsize' && cmd !== 'fontname' && cmd !== 'forecolor'
+        && cmd !== 'hilitecolor' && cmd !== 'backcolor') return false;
+    var cmdAttr = cmd === 'fontsize' ? 'size'
+      : cmd === 'fontname' ? 'face'
+      : cmd === 'forecolor' ? 'color' : '';
+    var cmdDecl = cmd === 'fontsize' ? 'font-size'
+      : cmd === 'fontname' ? 'font-family'
+      : cmd === 'forecolor' ? 'color'
+      : (cmd === 'hilitecolor' || cmd === 'backcolor') ? 'background-color' : '';
+    try {
+      var at = el.attributes;
+      if (!at) return false;
+      for (var k = 0; k < at.length; k++) {
+        var nm = String(at[k].name || '').toLowerCase();
+        if (nm === 'style') {
+          var decls = _zwPlainStyleDecls(el);
+          for (var d in decls) {
+            if (Object.prototype.hasOwnProperty.call(decls, d)
+                && String(d).toLowerCase() !== cmdDecl) return true;
+          }
+        } else if (_zwJusTag(el) === 'font'
+            && (nm === 'size' || nm === 'color' || nm === 'face')
+            && nm !== cmdAttr) {
+          return true;
+        }
+      }
+      return false;
+    } catch (_eCr) {
       return false;
     }
   }
@@ -1488,6 +1591,32 @@
     for (i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       _zwVaPushDownValues(node, command, newValue);
+      // Chromium delta（③ 载体形 merge，2026-11-05）：bg 命令对全含样式载体
+      // 并值不外裹——Chrome 录形 `<font size=6>[foo]</font>` / xx-large span
+      // 全选单成员 run 并值到载体（wrap 外裹后单成员归一收缩），裸 span 无
+      // 样式不并（backcolor L18 期望外裹形）、run 多成员不并
+      //（`[foo<font size=6>bar</font>baz]` 期望单外裹、font6 摘净——多成员
+      // 经 :786 sibCrit 合并面既有行为）。并值后后代经 forceValue :805 等值
+      // 早退自然免裹。非 bg 命令维持外裹（fontsize teal 走 carry-clone 面）。
+      var bgMerge = (command === 'hilitecolor' || command === 'backcolor')
+        && node.nodeType === 1
+        && _zwVaSpecifiedValue(node, command) === null
+        && _zwVaCarrierHasOwnStyling(node)
+        && _zwVaIsAllowedChild(node, 'span');
+      if (bgMerge) {
+        var sibJoined = false;
+        for (var mi = 0; mi < nodes.length; mi++) {
+          if (nodes[mi] === node.previousSibling
+              || nodes[mi] === node.nextSibling) {
+            sibJoined = true;
+            break;
+          }
+        }
+        if (!sibJoined) {
+          _zwVaSetStyleProp(node, 'background-color', newValue);
+          continue;
+        }
+      }
       if (_zwVaIsAllowedChild(node, 'span')) {
         _zwVaForceValue(node, command, newValue);
       }
