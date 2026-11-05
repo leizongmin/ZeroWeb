@@ -392,10 +392,6 @@
     _zwCookieJar.length = 0;
   };
 
-  // document.title 缓存。null = 未初始化（惰性读 <title> 文本）；string = 显式 set 或已读。
-  // getter 首访读 document.querySelector('title').textContent（空白折叠）；setter 仅更新缓存。
-  var _doc_title = null;
-
   // document.currentScript 索引（R3258）。-1 = 不在 classic 脚本执行期（getter 返 null）；
   // >=0 = 当前 classic 脚本在「全部 <script> 元素」（含非 JS 类型）中的序号，与
   // document.getElementsByTagName('script') 文档序一一对应（host extract_page_scripts_indexed
@@ -3236,6 +3232,48 @@
     return false;
   }
 
+  // M3 documents 簇（spec dom-document-collections）：forms/images/scripts/links 等
+  // 集合 getter 的 HTML-ns 快照——querySelectorAll 不辨 ns（foreign svg `<img>` 同
+  // tag 名命中；document.images.html `c.length === 10` 钉死 foreign img 排除）。
+  // 经 _liveQueryCollection(null, snapshot) 承接完整 HTMLCollection 语义
+  //（toStringTag/item/namedItem/ownKeys）。数组 sel 逐条 concat（与
+  // _liveQueryCollection 默认快照同构）。
+  // OPTIMIZATION（M3 性能回退修正）：snapshot 闭包内 **宿主视图戳 + pending 长度**
+  // 缓存——HTMLCollection Proxy 每属性读过 trap → snapshot()，无缓存时每读全量 qSA
+  //（探针实证 dom 通道整体超时：trap 高频读 × 3k 元素页）。失效语义与 title 缓存同
+  // 形：宿主视图变化变戳、pending 动态子（createElement/appendChild/innerHTML）
+  // 变 pendingLen；缓存键 per 集合实例（闭包 _cache）。**仅主文档**（本 helper 只
+  // 服务主文档集合 getter；detached 集合低频走 _zwMakeCollection 路径）。
+  var _zwDocHtmlNsColl = function (sels) {
+    var list = Array.isArray(sels) ? sels : [sels];
+    var _cache = { stamp: null, plen: -1, out: [] };
+    return _liveQueryCollection(null, function () {
+      var _stamp = (typeof __zw_dom_view_stamp === 'function') ? String(__zw_dom_view_stamp() || '') : '';
+      var _plen = (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) ? _zwPendingAdded.length : 0;
+      if (_stamp && _cache.stamp === _stamp && _cache.plen === _plen) return _cache.out;
+      var out = [];
+      for (var i = 0; i < list.length; i++) {
+        var found = globalThis.document.querySelectorAll(list[i]);
+        for (var j = 0; j < found.length; j++) {
+          if (_zwIsHTMLNamespace(found[j])) out.push(found[j]);
+        }
+      }
+      if (_stamp) { _cache.stamp = _stamp; _cache.plen = _plen; _cache.out = out; }
+      return out;
+    });
+  };
+  // [SameObject] 单例（spec：document.forms/images/links/scripts 恒同一对象）——
+  // getter 同读单例（embeds/plugins 同款；identity 稳定 + snapshot 缓存共享）。
+  var _zwDocCollSingletons = {};
+  var _zwDocCollCached = function (key, sels) {
+    if (!_zwDocCollSingletons[key]) _zwDocCollSingletons[key] = _zwDocHtmlNsColl(sels);
+    return _zwDocCollSingletons[key];
+  };
+  // embeds/plugins [SameObject]（spec dom-document-embeds-plugins 注记：两属性同一
+  // 对象）——字面量前建单例，两 getter 同读（embeds-plugins.html `document.embeds ===
+  // document.plugins` 钉死；旧两份独立 _liveQueryCollection 身份恒异）。
+  var _zwDocEmbedsColl = _zwDocHtmlNsColl(['embed', 'object']);
+
   globalThis.document = {
     // js-dom M3 R100：shim document 标记——generate_dom_api_polyfill（execute_script_with_dom
     // 每次前置的最小虚拟 DOM stub）据此跳过覆写（幂等安装，保 execute 路径上的真 document 桥）。
@@ -3939,7 +3977,10 @@
       // R185（js-dom M4）：class 参数 ASCII 空白分词（spec `dom-document-getelementsbyclassname`
       // 步骤 2——token 全含匹配；空/全空白 → 空 collection **不抛**——旧 `'.' + cls` 直接构
       // `'.'`/`'. '` 非法选择器触发 SyntaxError，WPT getElementsByClassName-empty-set 3F）。
-      var _r185Parts = (typeof _zwSplitClassList === 'function') ? _zwSplitClassList(cls) : [String(cls)];
+      // M3 documents 簇：WebIDL DOMString 转换先行（null→"null"/undefined→
+      // "undefined"）——Document.getElementsByClassName-null-undef class="undefined"
+      // 双命中面（旧 null/undefined 映射 '' → 空集合 0 元素）。
+      var _r185Parts = (typeof _zwSplitClassList === 'function') ? _zwSplitClassList(String(cls)) : [String(cls)];
       if (_r185Parts.length === 0) return _zwMakeCollection([], true);
       var _r185Q = '.' + _r185Parts.join('.');
       if (this && this !== globalThis.document && typeof this.querySelectorAll === 'function') {
@@ -4002,12 +4043,36 @@
     },
     // `document.getElementsByName(name)`（R2980）——按 name 属性查全文档（表单字段 / a[name] 锚点 /
     // meta[name] 高频，如 `document.getElementsByName('csrf-token')`）。此前全缺 → ReferenceError
-    // 中断含此调用的脚本。spec 返 live NodeList；headless 近似为静态数组（同 getElementsByTagName）。
-    // 委托 querySelectorAll 经 `[name="…"]` 属性选择器——name 值含 `"` / `\` 时转义保证选择器合法。
-    // R3033：返 NodeList（item），包 _zwMakeCollection(arr, false)。
+    // 中断含此调用的脚本。spec（dom-document-getelementsbyname）：HTML-ns 且 name 属性值 identical
+    // 的**全 HTML 元素**，返 live NodeList。M3 documents 簇重写——旧 `[name="…"]` 选择器委托三缺口：
+    // ① 含 foreign-ns 命中（math/svg name 属性——namespace 面 1F）；② 静态快照（appendChild 后
+    // length 不跟随——liveness 1F）；③ class string '[object Object]'（interface 面 1F）。R120
+    // _zwDocAllElements（快照 ∪ pending——同步 append 即见）+ _zwIsHTMLNamespace 过滤 +
+    // _liveQueryCollection asNodeList（Symbol.toStringTag 'NodeList' + live 重查快照）。
     getElementsByName: function(name) {
-      var v = String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      return _zwMakeCollection(globalThis.document.querySelectorAll('[name="' + v + '"]'), false);
+      var v = String(name);
+      // OPTIMIZATION：snapshot 闭包内宿主视图戳 + pending 长度缓存（同
+      // _zwDocHtmlNsColl——全元素扫描 × 高频 trap 读）。per name 值闭包 _cache。
+      var _cache = { stamp: null, plen: -1, out: [] };
+      var r = _liveQueryCollection(null, function () {
+        var _stamp = (typeof __zw_dom_view_stamp === 'function') ? String(__zw_dom_view_stamp() || '') : '';
+        var _plen = (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) ? _zwPendingAdded.length : 0;
+        if (_stamp && _cache.stamp === _stamp && _cache.plen === _plen) return _cache.out;
+        var cur = _zwDocAllElements();
+        var o = [];
+        for (var j = 0; j < cur.length; j++) {
+          var e = cur[j];
+          if (!e) continue;
+          try {
+            if (e.getAttribute && e.getAttribute('name') === v && _zwIsHTMLNamespace(e)) o.push(e);
+          } catch (_eNbl) {}
+        }
+        if (_stamp) { _cache.stamp = _stamp; _cache.plen = _plen; _cache.out = o; }
+        return o;
+      }, true);
+      // R198：instanceof NodeList 经 __zwNL 印记（NodeList Symbol.hasInstance 认记）。
+      try { r.__zwNL = true; } catch (_eNbs) {}
+      return r;
     },
     // `document.evaluate(expr, ctx, resolver, type, result)`（R2981）——XPath 1.0 实用子集求值。
     // 见 _xpathParsePath / _xpathRun 子集说明。返 XPathResult（snapshot/iterator/singleNode/scalar）。
@@ -5489,7 +5554,55 @@
       } catch (_e104db) {}
       return _wrapSelector('body');
     },
-    head: _wrapSelector('head'),
+    // M3 documents 簇（spec #dom-document-body setter）——IDL 层：非元素对象 →
+    // TypeError（Document.body.html「Setting document.body to a string.」）；非 HTML-ns
+    // body/frameset → HierarchyRequestError（「Setting document.body to a div element.」
+    // 期望 HierarchyRequestError）。落地：现 body element（body 缺则 frameset——与 getter
+    // 分派同口径）replace，均无 → append 到 documentElement。旧无 setter（赋值静默建
+    // own 属性，getter 读回赋值值）。
+    set body(newBody) {
+      if (!newBody || typeof newBody !== 'object' || (newBody.nodeType | 0) !== 1) {
+        throw new globalThis.TypeError(
+          "Failed to set the 'body' property on 'Document': parameter 1 is not of type 'HTMLElement'.");
+      }
+      var _ns = null; try { _ns = newBody.namespaceURI || null; } catch (_eBns) {}
+      var _ln = ''; try { _ln = String(newBody.localName || '').toLowerCase(); } catch (_eBln) {}
+      if (_ns !== 'http://www.w3.org/1999/xhtml' || (_ln !== 'body' && _ln !== 'frameset')) {
+        throw new (globalThis.DOMException || Error)(
+          "Failed to set the 'body' property on 'Document': the new value is not a body or frameset element.",
+          'HierarchyRequestError');
+      }
+      var _cur = null;
+      try {
+        if (__zw_query_match('body')) _cur = _wrapSelector('body');
+        else if (__zw_query_match('frameset')) _cur = _wrapSelector('frameset');
+      } catch (_eBqm) {}
+      var _de = this.documentElement;
+      if (_cur) {
+        if (_cur === newBody) return;
+        _de.replaceChild(newBody, _cur);
+        return;
+      }
+      if (_de) _de.appendChild(newBody);
+    },
+    // M3 documents 簇（spec #the-head-element）——html 元素的**首个 head 子**（HTML-ns），
+    // 无 → null。旧静态 `head: _wrapSelector('head')`：head2 插入 head 前 / createElementNS
+    // 前缀形态后 getter 不跟随（head-01/02 2F），且静态可赋值覆写（head-01 `document.head
+    // = ""` 赋值面——getter-only accessor 赋值静默 no-op，spec readonly）。ns 门沿用
+    // _zwIsHTMLNamespace（R120 _nsHandles 记录 + null/undefined 回落 HTML——解析产物 ns
+    // 不可读时保 HTML 主路径零回归）。
+    get head() {
+      var de = this.documentElement;
+      if (!de) return null;
+      var kids = de.childNodes || [];
+      for (var i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (!k || k.nodeType !== 1) continue;
+        if (String(k.localName || '').toLowerCase() !== 'head') continue;
+        try { if (_zwIsHTMLNamespace(k)) return k; } catch (_eHns) { return k; }
+      }
+      return null;
+    },
     // cdp-protocol S16（2026-09-13）：document.open/write/close——Playwright page.setContent
     // 在 utility world 执行 `document.open(); console.debug(tag); document.write(html);
     // document.close();`（PW frames.ts setContent 路径），三连此前缺失 → TypeError。
@@ -6187,6 +6300,17 @@
       var _rs8m = globalThis.__zwReadyState;
       return (_rs8m === 'loading' || _rs8m === 'interactive' || _rs8m === 'complete') ? _rs8m : 'complete';
     },
+    // M3 documents 簇（spec #resource-metadata-management——lastModified readonly
+    // DOMString）：页面无 Last-Modified 元数据（runner 不接 HTTP 响应头，*.headers
+    // sidecar 管道挂账）→ spec 回落「current date and time at local 时区」（Chrome
+    // 同口径）。格式 NN/NN/NNNN NN:NN:SS（document-lastModified-01 三测：格式 regexp +
+    // load/timeout 后 approximate-now——逐读现时满足）。旧恒 undefined 3F。
+    get lastModified() {
+      function _lm2(n) { return (n < 10 ? '0' : '') + n; }
+      var d = new Date();
+      return _lm2(d.getMonth() + 1) + '/' + _lm2(d.getDate()) + '/' + d.getFullYear()
+        + ' ' + _lm2(d.getHours()) + ':' + _lm2(d.getMinutes()) + ':' + _lm2(d.getSeconds());
+    },
     // R5007 M3 片 c（html-syntax-compat）：Document legacy 颜色/dir 别名（spec HTML
     // Document 接口——fgColor↔body text、linkColor↔body link、vlinkColor↔body vlink、
     // alinkColor↔body alink、bgColor↔body bgcolor、dir↔html dir）。getter 读 body/html
@@ -6296,34 +6420,21 @@
       }
       _firePointerLockEvent('pointerlockchange');
     },
-    // document.title——getter 返首 <title> 文本（空白折叠，spec 一致）；首访惰性读 querySelector('title')
-    // 并缓存；setter 更新缓存。R3035：setter 经 `__zw_set_text('title', v)` 写回 host `<title>` 元素（SetText
-    // mutation），使 render 反映新 title + fresh snapshot 读回保持（闭合 R2815 限制①）。**已知限制**：
-    // 不创建 `<head><title>`（spec 无 title 时应建——本沙箱无渲染 title 需求，仅已有 `<title>` 时写回，无则 no-op）。
+    // document.title（spec https://html.spec.whatwg.org/multipage/dom.html
+    // #the-title-element-2）——getter/setter 走共享体 _zwDocGetTitle/_zwDocSetTitle
+    //（part03，主文档与 detached 文档同源）：getter live 读 title 元素（SVG-ns svg
+    // root → 首个 svg:title 子；否则树序首个 HTML-ns title）child text content +
+    // ASCII 空白 strip/collapse（title-03 双空格/tab 折叠；title-05 NBSP/VT 等
+    // Unicode 空白**不**折叠——旧 /\s+/ 误含）。**无缓存**（title-01 head blown away：
+    // 缓存使 setter 值滞留，head 移除/新 title 插入后 getter 读旧值 3F——r2s2 换代
+    // 重置行随删）。setter 建面：无 title 且 head 在 → 建 HTML title append（title-06
+    // head.lastChild instanceof HTMLTitleElement）；写面保留 R5269 textContent 路径
+    //（宿主 SetText 写回 + 本地文本子同步）。
     get title() {
-      if (_doc_title !== null) return _doc_title;
-      var t = null;
-      try { t = globalThis.document.querySelector('title'); } catch (e) { t = null; }
-      _doc_title = t && t.textContent ? String(t.textContent).replace(/\s+/g, ' ').trim() : '';
-      return _doc_title;
+      return _zwDocGetTitle(globalThis.document);
     },
     set title(v) {
-      _doc_title = v == null ? '' : String(v);
-      // R5269（html-semantics M2 切片 62）：改经元素 textContent setter 落地
-      //（string replace all 同口径——该路径自带 __zw_set_text 宿主写回 + 本地文本子
-      // 注册 + childList 记录）。旧裸 `__zw_set_text('title', v)` 只写宿主快照，
-      // title 元素本地文本子视图 stale（title.text-03 setter 案 firstChild.nodeValue
-      // 读回旧值实证）。querySelector miss（无 title 文档）时回退既有裸通道，行为不变。
-      var t = null;
-      try { t = globalThis.document.querySelector('title'); } catch (_e5269t) { t = null; }
-      if (t) {
-        try { t.textContent = _doc_title; } catch (_e5269s) {}
-        return;
-      }
-      // R3035：写回 host <title>（已有则 SetText，无则 find_by_selector 不命中 → no-op）。
-      if (typeof __zw_set_text === 'function') {
-        try { __zw_set_text('title', _doc_title); } catch (_e) {}
-      }
+      _zwDocSetTitle(globalThis.document, v);
     },
     // document.URL / documentURI = 页面 URL（= location.href）；referrer = ''（无 referrer 追踪，
     // net-layer defer；standalone 渲染/reftest 无来源页，spec 空串可接受）。
@@ -6555,15 +6666,22 @@
       _zwDocAdoptedSheets = _zwAdoptedValidate(v);
       _zwAdoptedPush();
     },
-    forms: _liveQueryCollection('form'),
-    images: _liveQueryCollection('img'),
-    scripts: _liveQueryCollection('script'),
+    // M3 documents 簇：集合 getter 走 _zwDocHtmlNsColl（HTML-ns 过滤 + live）+ 静态
+    // 成员形态（字面量求值一次，`document.forms === document.forms` 身份恒定）。
+    forms: _zwDocCollCached('forms', 'form'),
+    images: _zwDocCollCached('images', 'img'),
+    scripts: _zwDocCollCached('scripts', 'script'),
     // links = a[href] + area[href]（R2833 修正：旧 `_liveQueryCollection('a')` 返全部 `<a>` 含 name-only
-    // 锚，spec 仅带 href 的 a/area）。embeds/plugins = embed + object（同 spec）；anchors = a[name]（legacy 命名锚）。
-    links: _liveQueryCollection(['a[href]', 'area[href]']),
-    embeds: _liveQueryCollection(['embed', 'object']),
-    plugins: _liveQueryCollection(['embed', 'object']),
-    anchors: _liveQueryCollection('a[name]'),
+    // 锚，spec 仅带 href 的 a/area）。embeds/plugins = embed + object（同 spec）[SameObject] 单例；
+    // anchors = a[name]（legacy 命名锚）。
+    links: _zwDocCollCached('links', ['a[href]', 'area[href]']),
+    get embeds() {
+      return _zwDocEmbedsColl;
+    },
+    get plugins() {
+      return _zwDocEmbedsColl;
+    },
+    anchors: _zwDocCollCached('anchors', 'a[name]'),
     // R5009 片 d（M4 片 d）：document.applets 恒空集合（spec historical——applet 已废，
     // applets 集合不再收集，WPT historical 'document.applets is always empty'
     // assert_array_equals [] 曾读 undefined）。
@@ -6853,6 +6971,102 @@
     'transitionstart', 'transitionend', 'transitionrun', 'transitioncancel',
     'afterscriptexecute', 'beforescriptexecute', 'securitypolicyviolation', 'slotchange',
   ].forEach(_defineWinOnHandler);
+  // M3 documents 簇（spec dom-document-nameditem / WebIDL LegacyPlatformObjects）：
+  // document 命名属性代理——named objects（embed/form/iframe/img/object 的 name 属性、
+  // object 的 id 面、img 的 id 面——后者须 name 属性在场）经 get/has trap 暴露；无
+  // LegacyOverrideBuiltIns，原型链已有属性（含 Object.prototype——constructor/__proto__、
+  // 文档 own——forms/currentScript）优先（nameditem-no-shadowing 八断言钉死）。恰 1 命中
+  // 返元素、≥2 返 per-name 缓存 live HTMLCollection（tree-order「collection is stable」+
+  // cached-list「集合随 name 属性增删重查」）、0 命中 undefined。Document 为
+  // [LegacyUnenumerableNamedProperties]——named 不入 ownKeys（不设 trap，默认目标键面，
+  // for-in/gOPN 不列；`'name' in document` 经 has trap 仍真）。
+  (function () {
+    var _namedColls = {};
+    // spec dom-document-nameditem：named objects 须为文档**树内**节点（root 后代）——
+    // remove 后（parentNode 链断/null）不再命中（nameditem-01/04/05/06/07「elements
+    // that is removed, should not be accessible」）。_zwDocAllElements 快照 ∪ pending
+    // 形态在宿主视图移除后仍含该元素（探针实证 qSA=0 而本路径命中），沿 parentNode
+    // 爬链到 #document（nodeType 9）判定树内（爬链两端可达性探针实证）。
+    function _zwNamedInTree(el) {
+      var n = el, depth = 0;
+      while (n && depth++ < 64) {
+        if (n.nodeType === 9) return true;
+        try { n = n.parentNode; } catch (_ePn) { return false; }
+      }
+      return false;
+    }
+    function _namedSnapshot(v) {
+      var els, out = [];
+      try { els = _zwDocAllElements(); } catch (_eNS) { return out; }
+      for (var i = 0; i < els.length; i++) {
+        var el = els[i];
+        if (!el) continue;
+        try {
+          if (!el.getAttribute || !_zwIsHTMLNamespace(el)) continue;
+          var tag = String(el.localName || el.tagName || '').toLowerCase();
+          var nm = el.getAttribute('name');
+          var idv = el.getAttribute('id');
+          var hit = nm === v
+            && (tag === 'embed' || tag === 'form' || tag === 'iframe' || tag === 'img' || tag === 'object');
+          if (!hit && tag === 'img' && idv === v && nm) hit = true;
+          if (!hit && tag === 'object' && idv === v) hit = true;
+          if (hit && _zwNamedInTree(el)) out.push(el);
+        } catch (_eNS2) {}
+      }
+      return out;
+    }
+    var _docTarget = globalThis.document;
+    // 原型接线（detached doc R128 同构）：document.constructor/__proto__ 面
+    //（no-shadowing `document.constructor === HTMLDocument`、`document.__proto__ ===
+    // HTMLDocument.prototype`）。own 属性优先，零既有读面变化。
+    try {
+      if (globalThis.HTMLDocument && globalThis.HTMLDocument.prototype) {
+        Object.setPrototypeOf(_docTarget, globalThis.HTMLDocument.prototype);
+      }
+    } catch (_eNP) {}
+    globalThis.document = new Proxy(_docTarget, {
+      get: function (t, prop) {
+        // spec https://dom.spec.whatwg.org/#interface-childnode：ChildNode mixin
+        //（before/after/replaceWith/remove）挂 Element/CharacterData/DocumentType，
+        // Document 不含该 mixin——`document.remove` 应缺席。R238 泛型 remove 挂
+        // Node.prototype，上方 setPrototypeOf 原型接线使 document.remove 泄漏为
+        // function（head 为 undefined），with(document) 裸名吞掉 window.remove
+        //（WPT remove-unscopable "remove() should be unscopable" 1F；R152 表按
+        // spec 只豁免 ParentNode 三方法，无 remove 可用）。get/has 双 trap 拦截
+        // 实现真缺席——仅 get 返 undefined 不够，`'remove' in document` 为真时
+        // with 的 HasBinding 仍绑定（返回 undefined 也吞裸名）。
+        if (prop === 'remove') return undefined;
+        // https://html.spec.whatwg.org/multipage/#dom-document-nameditem
+        // shim 内部探针（`__zw` 前缀命名空间——handle/sel 印记读）不做 named 查找：
+        // R262/R350/R351 的 live-range 爬链与身份键读每行数百次触达 document 包装
+        //（`document.__zwHandle` 等），每次走 `_namedSnapshot` 全树扫描 ~100µs，
+        // Range-mutations 族注册表 × 行变更数二径累积是其 90s 截断的根因
+        //（2026-11-05 分相探针实证 remMs=732ms/60 行，见 m3-documents evidence）。
+        if (typeof prop === 'string' && prop !== '' && !(prop in t)
+            && !(prop.length >= 4 && prop.slice(0, 4) === '__zw')) {
+          var m = _namedSnapshot(prop);
+          if (m.length === 1) return m[0];
+          if (m.length > 1) {
+            // per-name 缓存：同一名字恒同一集合对象（身份稳定），成员经快照重查保持 live。
+            if (!_namedColls[prop]) {
+              _namedColls[prop] = _liveQueryCollection(null, function () { return _namedSnapshot(prop); });
+            }
+            return _namedColls[prop];
+          }
+        }
+        return t[prop];
+      },
+      has: function (t, prop) {
+        // `remove` 真缺席（同 get trap 顶注——ChildNode mixin 不含 Document）。
+        if (prop === 'remove') return false;
+        if (typeof prop === 'string' && prop !== '' && !(prop in t)
+            && !(prop.length >= 4 && prop.slice(0, 4) === '__zw')) {
+          if (_namedSnapshot(prop).length > 0) return true;
+        }
+        return prop in t;
+      },
+    });
+  })();
   Object.defineProperty(globalThis.document, 'defaultView', {
     get: function() { return globalThis.window; }
   });

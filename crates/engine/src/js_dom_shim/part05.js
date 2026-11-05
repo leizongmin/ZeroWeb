@@ -11630,7 +11630,9 @@
             if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
             return this.__zwHC().length;
           },
-          set: function () {}, enumerable: false, configurable: true,
+          // WebIDL 属性/操作在接口 prototype 上 enumerable:true（for-in 可见——
+          // document.forms iteration 期望 ["0","1","2","item","namedItem","length"]）。
+          set: function () {}, enumerable: true, configurable: true,
         });
         Object.defineProperty(_hp, 'item', {
           value: function (i) {
@@ -11638,7 +11640,7 @@
             var n = this.__zwHC(), u = _zwToUint32(i);
             return u < n.length ? n[u] : null;
           },
-          writable: true, enumerable: false, configurable: true,
+          writable: true, enumerable: true, configurable: true,
         });
         Object.defineProperty(_hp, 'namedItem', {
           value: function (name) {
@@ -11660,7 +11662,7 @@
             }
             return null;
           },
-          writable: true, enumerable: false, configurable: true,
+          writable: true, enumerable: true, configurable: true,
         });
       }
     } catch (_eHP) {}
@@ -11672,18 +11674,20 @@
         if (!this || !this.__zwHC) throw new TypeError('Illegal invocation');
         return this.__zwHC().length;
       },
-      set: function () {}, enumerable: false, configurable: true,
+      // WebIDL regular attribute enumerable:true（for-in 面同 _hp 层注释）。
+      set: function () {}, enumerable: true, configurable: true,
     });
-    // WebIDL §3.6.5：接口操作（method）在 prototype 上 enumerable:false（for-in 不可见），
-    // regular attribute（length getter）enumerable:true。WPT own-props for-in 期望仅
-    // indexed/named（+length 属 prototype 层）。
+    // WebIDL（M3 documents 簇修正）：接口 prototype 上属性与操作均 enumerable:true
+    //（for-in 可见——document.forms iteration 期望 ["item","namedItem","length"]；
+    // **own 层** named 属性仍 LegacyUnenumerableNamedProperties enumerable:false，
+    // for-in/gOPN 期望仅 indexed 的案在 own 层不受此影响）。
     // R120：item/namedItem 直接转发构造器 prototype 的同一函数（WPT expando 断言
     // `fn === HTMLCollection.prototype.item` 要求 identity 相同——p 层不再定义副本）。
     try {
       var _hp2 = globalThis.HTMLCollection && globalThis.HTMLCollection.prototype;
       if (_hp2 && _hp2.item) {
-        Object.defineProperty(p, 'item', { value: _hp2.item, writable: true, enumerable: false, configurable: true });
-        Object.defineProperty(p, 'namedItem', { value: _hp2.namedItem, writable: true, enumerable: false, configurable: true });
+        Object.defineProperty(p, 'item', { value: _hp2.item, writable: true, enumerable: true, configurable: true });
+        Object.defineProperty(p, 'namedItem', { value: _hp2.namedItem, writable: true, enumerable: true, configurable: true });
       }
     } catch (_eHP2) {}
     // 恢复被 R120 段误删的原有定义（@@iterator value iterator——for-of 消费路径 +
@@ -11855,13 +11859,11 @@
   // 快照替换形态）。id 覆盖表同源清理（旧快照的 id 变更对新文档无意义）。
   globalThis.__zw_reset_pending_state = function () {
     _zwLiveCollections.length = 0;
-    // r2s2（导航后 TITLE 一致性）：document.title 缓存随快照换代失效。getter 首访惰性读
-    // `<title>` 后与 setter 显式值共用 `_doc_title`（part06）永久驻留——同 worker 就地换
-    // 文档（表单提交/location.assign 导航落地形态）后残留旧文档标题：旧页读过的旅程提交后
-    // 读回旧标题；占位文档期首读的缓存空串致新文档换入后仍读空。置 null → getter 按新文档
-    // 惰性重读（document.title getter：当前文档首 <title> 元素子文本）。
-    // https://html.spec.whatwg.org/multipage/dom.html#document.title
-    _doc_title = null;
+    // M3 documents 簇：title element 查找缓存随换代失效（part03 _zwTitleElCache——
+    // r2s2 换代滞留同 _doc_title 前车之鉴：旧文档 title 元素引用对新快照失聪）。
+    try {
+      if (typeof _zwTitleElCache !== 'undefined') { _zwTitleElCache.stamp = null; _zwTitleElCache.doc = null; _zwTitleElCache.el = null; }
+    } catch (_eTc2) {}
     // t8e：children 集合缓存随换代重置（与注册表清空同点）——旧集合自此刻起与旧文档
     // 一样失聪（页面持旧引用冻结 = 旧文档语义，slice32 dead 标记同款）；不重置则换代后
     // 缓存命中绕过重建，新快照内容不可见（R357 stale 根因同形）。

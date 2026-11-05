@@ -1872,7 +1872,10 @@
             // `dom-parentnode-getelementsbyclassname`，token 全含匹配）。用例对
             // template.content 直调（WPT single-activation getElementsByClassNameInclusive）。
             getElementsByClassName: function (names) {
-              var wanted = String(names == null ? '' : names).trim().split(/\s+/).filter(Boolean);
+              // M3 documents 簇：WebIDL DOMString 转换 null→"null"/undefined→
+              // "undefined"（非 LegacyNullToEmptyString）——WPT
+              // getElementsByClassName-null-undef class="undefined" 双命中面。
+              var wanted = String(names).trim().split(/\s+/).filter(Boolean);
               var out = [];
               function walk(node) {
                 var kids = node.children || [];
@@ -11805,7 +11808,8 @@
             // getElementsByClassName：空白分隔多类名 → 须同时含全部 → '.a.b'。
             // R124：分词用 ASCII whitespace（spec）——JS /\s+/ 的 Unicode 空白集会把
             // 单个 Unicode 空白字符类名（U+00A0 等）误切空（WPT -whitespace 19F 簇）。
-            var parts = _zwSplitClassList(arg);
+            // M3：String 先行转换（null→"null"/undefined→"undefined"，同 R151 修正面）。
+            var parts = _zwSplitClassList(String(arg));
             if (parts.length === 0) return _zwMakeCollection([], true);
             q = '.' + parts.join('.');
             if (sel && typeof __zw_query_all_sub === 'function') {

@@ -1,8 +1,8 @@
 # DOM 扩面 — dom/ranges + html/dom
 
-**版本**: v1.2
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）
-**状态**: Active——M1 完成；M2 dataChange 簇收口（369F→0F，全 dom 通道 A/B 零回归 + html 通道字节级不变），剩 documents 簇归因
+**版本**: v1.3
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）；2026-11-05（M3 documents 簇收口）
+**状态**: Active——M1/M2 完成；M3 documents 簇收口（136 F→P：html/dom/documents 93P/139F→229P/3F，全 dom+html-syntax 双通道 0 回归；连带修复 named-proxy named-miss 扫描、iframe body getter、document.remove 缺席三面），剩 coverage 复测 + dataset 3F/mutations 尾簇
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + 接口完备性收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——DOM 面）
 
@@ -54,8 +54,16 @@ Document 的 DOM 接口面（394 文件，含各元素 historical/idlharness 面
   通道 A/B 零回归、html 通道字节级不变，见
   evidence/2026-11-05-m2-datachange-fix.md；待做：documents 簇
   （forms/lastModified/title ~130F）逐 API 归因。
-- **M3**：可收敛簇修齐或挂账 + coverage 复测收口。——候选簇：documents
-  语义簇、dataset 3F、mutations 尾簇 8F；挂账候选：innerText 面（渲染
+- **M3**：可收敛簇修齐或挂账 + coverage 复测收口。——documents 语义簇
+  **收口（2026-11-05）**：html/dom/documents 93P/139F→229P/3F（136 F→P，
+  残余 3F 系 runner 管道挂账：embeds/plugins 树序、scripts live、
+  lastModified header）；全 dom 通道 A/B 0 回归（唯一连带回归
+  remove-unscopable 当轮修复，终版 6/6）、html-syntax 通道 0 回归
+  +136F→P；连带修复 named-proxy `__zw` 门（named-miss 二次方扫描，
+  remMs 28 倍）、iframe 文档 body 回落（Aryeh iframe 页复活）、
+  document.remove 缺席（ChildNode mixin 不含 Document），见
+  evidence/2026-11-05-m3-documents-cluster.md。待做：coverage 复测、
+  dataset 3F、mutations 尾簇 8F；挂账候选：innerText 面（渲染
   依赖，与渲染流域划界）、partial-updates/Sanitizer/OpaqueRange 提案面、
   .window.js/.xhtml 形态缺口。
 

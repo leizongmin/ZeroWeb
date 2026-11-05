@@ -6047,6 +6047,9 @@
     this.documentElement = this.querySelector('html');
     this.head = this.querySelector('head');
     this.body = this.querySelector('body');
+    // inert 文档无浏览上下文，脚本可见期恒已加载完（WPT resource-metadata-management
+    // document-readyState「documents created via DOMParser」断言 'complete'；旧 undefined）。
+    this.readyState = 'complete';
   }
   // R5001 M3 片 a：DOMParser 产物为 inert 文档（scripting disabled）——本地视图
   // 解析（`__zw_parse_html_child_nodes` arg[3]='0'）与序列化（`__zwTreeScripting`
