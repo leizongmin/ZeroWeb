@@ -99,12 +99,24 @@
     return _zwVaNormalizeCssColor(v);
   }
 
+  // Chrome 指定形等值键（forecolor 专用）：named keyword 色以 keyword 名为键
+  // （CSSOM 指定形保 keyword，本仓 gPV=blue 实测同形），余形（hex/rgb/hsl）
+  // 归一 rgb 串。keyword ≢ 数值同色的 rgb 新值——Chrome 录形 forecolor.js
+  // :382（keyword 外壳切分）vs :387（hex 外壳合并）实证；backcolor/hilitecolor
+  // 录形 keyword 外壳合并（backcolor.js :193），比较仍走 _zwVaNormalizeColorKey。
+  function _zwVaChromeColorKey(v) {
+    var s = String(v == null ? '' : v).trim();
+    var low = s.toLowerCase();
+    if (low && _zwPlainNamedColor[low] !== undefined) return low;
+    return _zwVaNormalizeCssColor(s);
+  }
+
   // peel 克隆 style 属性 CSSOM 归一：Chrome splitTreeNode 经 CSSOM 克隆，attr
   // 文本走声明块序列化，keyword 色落 rgb 形（语料 kept-half `color:brown` 期望
   // `color:rgb(165, 42, 42)`、`background-color:aqua/tan` 期望 rgb 形实证）。只
   // 归一 color/background-color 两属性（语料录面），余声明原文保留；`prop:value`
   // 形 `; ` 连接（harness `: /; ` 正则同一化面）；!important 色归一失败原文保留。
-  function _zwVaNormalizeStyleAttrCss(raw) {
+  function _zwVaNormalizeStyleAttrCss(raw, preserveColorKeywords) {
     var parts = String(raw == null ? '' : raw).split(';');
     var out = [];
     for (var i = 0; i < parts.length; i++) {
@@ -115,6 +127,17 @@
       var pv = d.slice(colon + 1).trim();
       if (!pn || !pv) continue;
       if (pn === 'color' || pn === 'background-color') {
+        // ③'-a（Chrome 指定形等值前置）：祖先链规范形直出保留 keyword 原文——
+        // Chrome CSSOM 对 authored keyword 色保 keyword 形（zz-probe-cssom
+        // gPV=blue 实证），forecolor 等值比较按指定形（keyword 壳 ≢ rgb 新值，
+        // forecolor.js :382 keyword 外壳切分 vs :387 hex 外壳合并实证）；
+        // keyword 保留对 bg 命令无碍（bg 比较仍关键词盲，:193 keyword 外壳
+        // 合并录形）。克隆路径（缺省 falsy）仍归一 rgb 形（kept-half 录形）。
+        if (preserveColorKeywords
+            && _zwVaChromeColorKey(pv) === pv.trim().toLowerCase()) {
+          out.push(pn + ':' + pv);
+          continue;
+        }
         var nv = _zwVaNormalizeCssColor(pv);
         if (nv) pv = nv;
       }
@@ -130,6 +153,13 @@
     if (typeof v1 !== 'string' || typeof v2 !== 'string') return false;
     if (v1 === v2) return true;
     if (cmd === 'forecolor' || cmd === 'backcolor' || cmd === 'hilitecolor') {
+      // ③'-a：forecolor tag 模式指定形比较（keyword 壳 ≢ rgb 新值——:382
+      // keyword 外壳切分 vs :387 hex 外壳合并录形）；css 模式保持归一键
+      // （:376 css keyword 行录形接受合并形，指定形切分仅 tag 模式实证面）。
+      // backcolor/hilitecolor 录形 keyword 壳合并（backcolor.js :193）恒归一键。
+      if (cmd === 'forecolor' && !_zwVaCssFlag()) {
+        return _zwVaChromeColorKey(v1) === _zwVaChromeColorKey(v2);
+      }
       return _zwVaNormalizeColorKey(v1) === _zwVaNormalizeColorKey(v2);
     }
     if (cmd === 'fontsize') {
@@ -182,7 +212,11 @@
     if (sv) return String(sv);
     if (_zwJusTag(el) === 'font') {
       if (cmd === 'forecolor' && el.hasAttribute && el.hasAttribute('color')) {
-        return el.getAttribute('color');
+        // ③'-a：font color 属性按解析数值形出（legacy attr 解析语义——
+        // forecolor.js :425 `<font color=blue>` + forecolor #0000FF 录形合并，
+        // keyword 原文不参与指定形比较）。归一失败（junk 值）回落原文。
+        var attrColor = el.getAttribute('color');
+        return _zwVaNormalizeCssColor(attrColor) || String(attrColor);
       }
       if (cmd === 'fontname' && el.hasAttribute && el.hasAttribute('face')) {
         return el.getAttribute('face');
@@ -504,7 +538,7 @@
   // —— wrap（参考实现 :1377）——globalRange 簿记换 sel._ranges[0] 单 range
   // 补偿（新 parent 直接插入臂的边界 offset 右移；移动臂经
   // _zwJusMovePreservingRanges 自带补偿）。
-  function _zwVaWrap(nodeList, siblingCriteria, newParentInstructions) {
+  function _zwVaWrap(nodeList, siblingCriteria, newParentInstructions, wrapCommand) {
     if (typeof siblingCriteria === 'undefined') {
       siblingCriteria = function () { return false; };
     }
@@ -542,11 +576,21 @@
     }
 
     var newParent;
+    // ③'-d（tag 模式跨标签 reuse 门，两臂同门）：tag 模式 forecolor 的 font
+    // 包裹成员不得灌入相邻 span 指定形壳——next 侧 forecolor.js :742 录形
+    // `<font color="#0000ff">[ob]</font><span …>ar</span>`、prev 侧 :382 录形
+    // `<span>foo</span><font>[bar]</font><span>baz</span>` 三段独立（灌入形
+    // `foobar` 两段并拢为实错）；css 模式不受限（:737 录形并入蓝壳）。
+    var crossTagBlock = wrapCommand === 'forecolor' && !_zwVaCssFlag();
     if (_zwJusIsEditable(nodeList[0].previousSibling)
-        && siblingCriteria(nodeList[0].previousSibling)) {
+        && siblingCriteria(nodeList[0].previousSibling)
+        && !(crossTagBlock
+            && _zwJusTag(nodeList[0].previousSibling) !== 'font')) {
       newParent = nodeList[0].previousSibling;
     } else if (_zwJusIsEditable(nodeList[nodeList.length - 1].nextSibling)
-        && siblingCriteria(nodeList[nodeList.length - 1].nextSibling)) {
+        && siblingCriteria(nodeList[nodeList.length - 1].nextSibling)
+        && !(crossTagBlock
+            && _zwJusTag(nodeList[nodeList.length - 1].nextSibling) !== 'font')) {
       newParent = nodeList[nodeList.length - 1].nextSibling;
     } else {
       newParent = newParentInstructions();
@@ -619,7 +663,11 @@
           && inlineKids(lastVisMember)
           && !_zwJusIsHtmlElement(nodeList[nodeList.length - 1], 'br')
           // Chrome delta：同上——nodeList 侧端点是空白-only 成员时不插 br。
-          && !_zwVaIsWsText(nodeList[nodeList.length - 1])) {
+          && !_zwVaIsWsText(nodeList[nodeList.length - 1])
+          // Chrome delta（③'-d 接点面）：连接点两侧皆裸文本时不插 br——
+          // 文本-文本连排是连续 run（forecolor.js :737/:742 录形 `obar` 无
+          // 断行；`o<br>bar` ghost br 为 ⑦ 遗留实错面）。
+          && !(firstVis.nodeType === 3 && lastVisMember.nodeType === 3)) {
         newParent.insertBefore(document.createElement('br'), newParent.firstChild);
       }
       for (i = nodeList.length - 1; i >= 0; i--) {
@@ -635,20 +683,36 @@
 
     if (_zwJusIsEditable(newParent.nextSibling)
         && siblingCriteria(newParent.nextSibling)) {
-      if (!_zwJusIsBlockNode(newParent)
-          && inlineKids(newParent.lastChild)
-          && inlineKids(newParent.nextSibling.firstChild)
-          && !_zwJusIsHtmlElement(newParent.lastChild, 'br')
-          // Chrome delta：同上——连接点 newParent 侧端点是空白-only 文本时不插 br。
-          && !_zwVaIsWsText(newParent.lastChild)) {
-        newParent.appendChild(document.createElement('br'));
-      }
-      var guardM = 0;
-      while (_zwJusHasKids(newParent.nextSibling) && guardM++ < 4096) {
-        _zwJusMovePreservingRanges(newParent.nextSibling.firstChild, newParent, -1);
-      }
-      if (newParent.nextSibling.parentNode) {
-        newParent.parentNode.removeChild(newParent.nextSibling);
+      var nextEl = newParent.nextSibling;
+      // ③'-d（tag 模式跨标签接续臂）：font 包裹 + 指定形 span 壳只拢 range 侧
+      // 首个文本接点，壳本体不动不摘——forecolor.js :742 录形
+      // `<font color="#0000ff">[ob]</font><span …>ar</span>`（ar 留蓝壳）。
+      // 单文本位移：无 br、无整树吸收。css 模式跨标签维持整树吸收面。
+      var crossTagFont = wrapCommand === 'forecolor' && !_zwVaCssFlag()
+        && _zwJusTag(nextEl) !== 'font';
+      if (crossTagFont) {
+        if (newParent.lastChild && newParent.lastChild.nodeType === 3
+            && nextEl.firstChild && nextEl.firstChild.nodeType === 3) {
+          _zwJusMovePreservingRanges(nextEl.firstChild, newParent, -1);
+        }
+      } else {
+        if (!_zwJusIsBlockNode(newParent)
+            && inlineKids(newParent.lastChild)
+            && inlineKids(nextEl.firstChild)
+            && !_zwJusIsHtmlElement(newParent.lastChild, 'br')
+            // Chrome delta：同上——连接点 newParent 侧端点是空白-only 文本时不插 br。
+            && !_zwVaIsWsText(newParent.lastChild)
+            // Chrome delta（③'-d 接点面）：两侧皆裸文本不插 br（连续 run）。
+            && !(newParent.lastChild.nodeType === 3 && nextEl.firstChild.nodeType === 3)) {
+          newParent.appendChild(document.createElement('br'));
+        }
+        var guardM = 0;
+        while (_zwJusHasKids(newParent.nextSibling) && guardM++ < 4096) {
+          _zwJusMovePreservingRanges(newParent.nextSibling.firstChild, newParent, -1);
+        }
+        if (newParent.nextSibling.parentNode) {
+          newParent.parentNode.removeChild(newParent.nextSibling);
+        }
       }
     }
 
@@ -787,7 +851,7 @@
           && _zwVaEquivalentValues(command, _zwVaSpecifiedValue(n, command), newValue)
           && _zwVaLooselyEquivalent(command, _zwValEffectiveValue(n, command), newValue);
       };
-      _zwVaWrap([node], sibCrit, function () { return null; });
+      _zwVaWrap([node], sibCrit, function () { return null; }, command);
     }
     // Chrome delta（⑦ br 包裹面，2026-11-05）：invisible br（extraneous 形，
     // 如 `<p>[foo<p><br><p>bar]` 中块 `<p><br></p>`）不作 invisible 早退——
@@ -951,6 +1015,24 @@
       _zwVaSetStyleProp(newParent, property, newValue);
     }
     _zwJusMovePreservingRanges(node, newParent, newParent.childNodes.length);
+    _zwVaCrossTagContinuation(newParent, command, sibCrit);
+  }
+
+  // ③'-d（tag 模式跨标签接续，:742 录形）：forceValue 尾臂裸插入的 font 包裹
+  // 与相邻指定形 span 壳的文本-文本接点只拢 range 侧首文本，壳本体不动不摘
+  // （`<font color="#0000ff">[ob]</font><span …>ar</span>` 录形）。同标签邻接
+  // 不入此臂（wrap 臂 merge 面既有行为）；接续门复用 sibCrit（specified 等值
+  // + loosely 等值），非等值壳不拢（防他色文本丢壳）。
+  function _zwVaCrossTagContinuation(newParent, wrapCommand, sibCrit) {
+    if (wrapCommand !== 'forecolor' || _zwVaCssFlag()) return;
+    var nextEl = newParent.nextSibling;
+    if (!nextEl || nextEl.nodeType !== 1 || !_zwJusIsEditable(nextEl)) return;
+    if (_zwJusTag(nextEl) === 'font') return;
+    if (!sibCrit || !sibCrit(nextEl)) return;
+    if (newParent.lastChild && newParent.lastChild.nodeType === 3
+        && nextEl.firstChild && nextEl.firstChild.nodeType === 3) {
+      _zwJusMovePreservingRanges(nextEl.firstChild, newParent, -1);
+    }
   }
 
   // —— reorderModifiableDescendants（参考实现 :2345）。
@@ -1051,6 +1133,8 @@
   // （Chrome 录形选区随内容进新包裹：`fo<span large>[ob]</span>…` 端点在 wrap
   // 内——qCV after 读新值，语料 26 案实证）。
   var _zwVaPeelRestore = [];
+  // ③'-a：canonicalize keyword 保留形登记（流程尾自归一，见 canonicalize 处注释）。
+  var _zwVaKwPreservePending = [];
 
   // peel 载体记录：{el}——start 侧 = 属性克隆，end 侧 = 残余 el（外段后缀
   // 载体）。供 _zwVaRematerializeCarries 嵌套 flag-form 重物化消费。
@@ -1215,11 +1299,65 @@
   // false 嵌套恒 font attr（fs4b L438）；span/style 载体已 flag-form（克隆归一
   // 臂 + 祖先规范形直出）不动。
   function _zwVaRematerializeCarries(command) {
-    if (!_zwVaCssFlag()) return;
+    var cssFlag = _zwVaCssFlag();
     for (var i = 0; i < _zwVaPeelCarry.length; i++) {
       var cw = _zwVaPeelCarry[i];
       if (!cw || !cw.parentNode) continue;
-      if (_zwJusTag(cw) === 'span') continue;
+      // ③'-b（tag 模式 forecolor span 载体臂）：peel 克隆载体恒为 span+style
+      // 形（克隆路径 _zwVaNormalizeStyleAttrCss 归一 rgb），tag 模式语料期望
+      // legacy font attr 形（forecolor.js :441 `foo<font color="#a52a2a">b</
+      // font>[ar]baz` 录形实证）。窄门：forecolor、纯单声明载体（唯一属性
+      // style 且仅 color 一声明）、嵌套形（祖先链持命令 specified，镜像下方
+      // css 模式嵌套门）、简单色可解析——不满足保守不换（rgba/junk 载体、
+      // 多声明载体、fontsize/fontname/bg 不入此臂：font 载体本就走下方
+      // css 模式转换臂，bg 无 legacy attr 形）。
+      if (!cssFlag && command === 'forecolor' && _zwJusTag(cw) === 'span') {
+        var pure = false;
+        try {
+          var atB = cw.attributes;
+          if (atB && atB.length === 1
+              && String(atB[0].name || '').toLowerCase() === 'style') {
+            var declsB = _zwPlainStyleDecls(cw);
+            var hasOwn = Object.prototype.hasOwnProperty;
+            var cnt = 0;
+            var only = false;
+            for (var dB in declsB) {
+              if (!hasOwn.call(declsB, dB)) continue;
+              cnt++;
+              if (dB === 'color') only = true;
+            }
+            pure = cnt === 1 && only;
+          }
+        } catch (_eRmB) {}
+        if (pure) {
+          var specB = _zwVaSpecifiedValue(cw, command);
+          var nestedB = false;
+          var nB = cw.parentNode;
+          var guardB = 0;
+          while (nB && guardB++ < 256) {
+            if (nB.nodeType !== 1 || !_zwJusIsEditable(nB)) break;
+            if (_zwJusIsEditingHost(nB) || _zwJusIsBlockNode(nB)) break;
+            if (_zwVaSpecifiedValue(nB, command) !== null) { nestedB = true; break; }
+            nB = nB.parentNode;
+          }
+          var hexB = specB === null ? null : _zwVaParseSimpleColor(specB);
+          if (nestedB && hexB) {
+            var fontB = document.createElement('font');
+            fontB.setAttribute('color', hexB);
+            var parentB = cw.parentNode;
+            var idxB = _zwJusNodeIndex(cw);
+            _zwVaShiftEndpointsForInsert(parentB, idxB);
+            parentB.insertBefore(fontB, cw);
+            var kidsB = [].slice.call(cw.childNodes);
+            for (var kB = 0; kB < kidsB.length; kB++) {
+              _zwJusMovePreservingRanges(kidsB[kB], fontB, kB);
+            }
+            parentB.removeChild(cw);
+          }
+        }
+        continue;
+      }
+      if (cssFlag && _zwJusTag(cw) === 'span') continue;
       var spec = _zwVaSpecifiedValue(cw, command);
       if (spec === null) continue;
       var nested = false;
@@ -1482,6 +1620,7 @@
   // 逐层把 style attr 经 _zwVaNormalizeStyleAttrCss 重写为 Chrome cssText
   // 规范形。空结果保留原文（junk attr 不动，防序列化空 attr 面漂移）。
   function _zwVaCanonicalizeAncestorStyleAttrs(rng) {
+    _zwVaKwPreservePending = [];
     var sides = [rng.startContainer, rng.endContainer];
     for (var s = 0; s < 2; s++) {
       var n = sides[s];
@@ -1492,10 +1631,17 @@
         if (typeof n.getAttribute === 'function') {
           var raw = n.getAttribute('style');
           if (raw) {
-            var norm = _zwVaNormalizeStyleAttrCss(raw);
-            if (norm && norm !== raw) {
-              try { n.setAttribute('style', norm); } catch (_eCa) {}
+            // ③'-a：keyword 原文保留（指定形比较前置面），余形照常归一。保留
+            // 形登记 _zwVaKwPreservePending——本仓 CSSOM 保 keyword 原文，
+            // 语料端 vendored normalizeColor 走 gCS 通道对 brown 族解析落黑
+            // （zz-probe-cssom 实测 brown→rgb(0, 0, 0)），harness 归一不可
+            // 依赖，流程尾自归一回 rgb 序列形（克隆路径同形，kept-half 录形）。
+            var normKw = _zwVaNormalizeStyleAttrCss(raw, true);
+            var normPlain = _zwVaNormalizeStyleAttrCss(raw);
+            if (normKw && normKw !== raw) {
+              try { n.setAttribute('style', normKw); } catch (_eCa) {}
             }
+            if (normKw !== normPlain) _zwVaKwPreservePending.push(n);
           }
         }
         n = n.parentNode;
@@ -1662,6 +1808,21 @@
       } catch (_ePr) {}
     }
     _zwVaPeelRestore = [];
+
+    // ③'-a：keyword 保留形流程尾自归一（rgb 序列形对齐克隆路径与既有基线
+    // 形；语料端 vendored normalizeColor 不可依赖——canonicalize 处注释）。
+    for (i = 0; i < _zwVaKwPreservePending.length; i++) {
+      var elKw = _zwVaKwPreservePending[i];
+      if (!elKw || !elKw.parentNode) continue;
+      try {
+        var rawKw = elKw.getAttribute('style');
+        if (rawKw) {
+          var normKw2 = _zwVaNormalizeStyleAttrCss(rawKw);
+          if (normKw2 && normKw2 !== rawKw) elKw.setAttribute('style', normKw2);
+        }
+      } catch (_eKw2) {}
+    }
+    _zwVaKwPreservePending = [];
   }
 
   // —— 纯校验导出（part06 编辑分支 beforeinput 前置）——无效值在事件前拒绝
