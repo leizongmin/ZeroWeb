@@ -1166,6 +1166,97 @@
     return rng && rng.startContainer && rng.endContainer ? rng : null;
   }
 
+  // —— Chrome delta 原语（J-A/J-D 祖先壳改写 + 邻接壳吸收 + 包缘 ws 吞入）——
+  // 权威面 = 语料 justify*.js 录制期望（真实 Chrome 行为），非 spec 算法——
+  // vendored 参考实现同页直调不产出该形（⑥ 族 census 定谳）。
+
+  // 对齐载具元素：align attr（任意值）或 style text-align 声明或 center 标签
+  //（与 ① 清理 pass 收集条件同判，另出常函数供祖先链走查/邻接壳判定复用）。
+  function _zwJusIsAlignCarrierEl(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (_zwJusIsHtmlElement(el, 'center')) return true;
+    if (el.getAttribute && el.getAttribute('align') != null) return true;
+    var st = el.getAttribute && el.getAttribute('style');
+    return !!st && /(?:^|;)\s*text-align\s*:/i.test(String(st));
+  }
+
+  // 纯 ws 文本节点（含空串）。
+  function _zwJusIsWsOnlyText(node) {
+    return !!node && node.nodeType === 3
+      && /^[ \t\n\f\r]*$/.test(String(node.nodeValue || ''));
+  }
+
+  // style attr 内 text-align 声明覆写（其余声明保留、无则追加、串空摘 attr）。
+  // 录制形 `style="text-align:center"` 单声明与值覆写均落此串（无空格序列化）。
+  function _zwJusSetInlineTextAlign(el, value) {
+    var st = el.getAttribute && el.getAttribute('style');
+    var out;
+    if (st) {
+      var decls = String(st).split(';');
+      var kept = [];
+      var replaced = false;
+      for (var i = 0; i < decls.length; i++) {
+        if (/(?:^|\s*)text-align\s*:/i.test(decls[i])) {
+          if (!replaced) { kept.push('text-align:' + value); replaced = true; }
+          continue;
+        }
+        if (decls[i].replace(/\s+/g, '') !== '') kept.push(decls[i]);
+      }
+      if (!replaced) kept.push('text-align:' + value);
+      out = kept.join(';').replace(/^;+|;+$/g, '');
+    } else {
+      out = 'text-align:' + value;
+    }
+    if (out === '') {
+      try { el.removeAttribute('style'); } catch (_eJsita1) {}
+    } else {
+      try { el.setAttribute('style', out); } catch (_eJsita2) {}
+    }
+  }
+
+  // 祖先壳改写门控：壳子节点全被含（部分覆盖选区不触发——justifyleft
+  // `<div align=left><p>[foo]<p>bar}` 录制原样不动/跨值壳内层包裹）且壳内
+  // 无非 editable 节点（contenteditable=false 边界形归既有劈分路径）。
+  function _zwJusShellRewritable(shell, rng) {
+    var kids = shell.childNodes ? [].slice.call(shell.childNodes) : [];
+    for (var i = 0; i < kids.length; i++) {
+      if (!_zwJusIsContained(kids[i], rng)) return false;
+    }
+    var allOk = true;
+    var walk = function (node) {
+      var c = node.firstChild;
+      while (c && allOk) {
+        if (!_zwJusIsEditable(c)) { allOk = false; return; }
+        walk(c);
+        c = c.nextSibling;
+      }
+    };
+    walk(shell);
+    return allOk;
+  }
+
+  // 相邻同值载具壳折叠：s 紧随（至多隔一纯 ws 文本）同值 div 壳时，ws 与壳子
+  // 节点并入 s、壳移除——录制 `<div align="center"><p>foo</p> <p>bar</p>
+  // <p>baz</p></div>` 形（justifycenter [7]/justifyright 无 ws 三节点行）。
+  function _zwJusCollapseAlignedShell(s, alignment) {
+    var guard = 0;
+    while (s && s.parentNode && guard++ < 64) {
+      var nx = s.nextSibling;
+      var ws = null;
+      if (_zwJusIsWsOnlyText(nx)) { ws = nx; nx = nx.nextSibling; }
+      if (!nx || nx.nodeType !== 1 || _zwJusTag(nx) !== 'div'
+          || !_zwJusIsAlignCarrierEl(nx)
+          || _zwJusGetAlignmentValue(nx) !== alignment) {
+        return;
+      }
+      if (ws) _zwJusMovePreservingRanges(ws, s, -1);
+      while (nx.firstChild) {
+        _zwJusMovePreservingRanges(nx.firstChild, s, -1);
+      }
+      try { nx.parentNode.removeChild(nx); } catch (_eJcol) {}
+    }
+  }
+
   globalThis.__zw_ce_justify_apply = function (alignment) {
     var range = _zwJusActiveRange();
     if (!range) return false;
@@ -1195,6 +1286,76 @@
         || !!hasTa
         || _zwJusIsHtmlElement(node, 'center');
     }, false);
+    // Chrome delta（J-A/J-D 对齐载具祖先壳改写）：① 含域无载具（祖先壳不入含
+    // 域——{} 边界选区形除外，彼时走 ① 既有路径）且选区端点同在某载具祖先壳
+    // 内、壳内容全被含、壳内全 editable 时，改写壳形态并收口。录制口径：
+    // - 目标≠left：壳归一 div style text-align=目标——div 摘 align attr 后
+    //   覆写/追加声明；center 换代 div 加声明；未知元素（quasit 族）摘 attr
+    //   后新 div 外裹。justifycenter/right/full 九祖先形（align/style × 5 值
+    //   + center）全落此臂，值==目标也换形（justifycenter [5] align=center →
+    //   style 形）。
+    // - 目标=left（缺省值）：壳剥对齐（摘 attr/剔声明）后按 ① 同判解包提升
+    //   （无属性 div 解包；center 换代后解包）——justifyleft 九祖先形全落此臂。
+    if (elementList.length === 0) {
+      var shellJ = null;
+      var ancJ = range.startContainer;
+      var gJ = 0;
+      while (ancJ && gJ++ < 128) {
+        if (_zwJusIsEditingHost(ancJ)) break;
+        if (ancJ.nodeType === 1 && _zwJusIsAlignCarrierEl(ancJ)) {
+          shellJ = ancJ;
+          break;
+        }
+        ancJ = ancJ.parentNode;
+      }
+      var endOkJ = false;
+      if (shellJ) {
+        endOkJ = newRange.endContainer === shellJ
+          || _zwJusIsAncestorOf(shellJ, newRange.endContainer);
+      }
+      if (shellJ && endOkJ && _zwJusShellRewritable(shellJ, newRange)) {
+        var tagJ = _zwJusTag(shellJ);
+        if (alignment === 'left') {
+          try { shellJ.removeAttribute('align'); } catch (_eJalp) {}
+          var stJ = shellJ.getAttribute && shellJ.getAttribute('style');
+          if (stJ && /(?:^|;)\s*text-align\s*:/i.test(String(stJ))) {
+            var declsJ = String(stJ).split(';');
+            var keptJ = [];
+            for (var dJ = 0; dJ < declsJ.length; dJ++) {
+              if (/(?:^|\s*)text-align\s*:/i.test(declsJ[dJ])) continue;
+              if (declsJ[dJ].replace(/\s+/g, '') !== '') keptJ.push(declsJ[dJ]);
+            }
+            var outJ = keptJ.join(';').replace(/^;+|;+$/g, '');
+            if (outJ === '') {
+              try { shellJ.removeAttribute('style'); } catch (_eJstp1) {}
+            } else {
+              try { shellJ.setAttribute('style', outJ); } catch (_eJstp2) {}
+            }
+          }
+          if (_zwJusIsHtmlElement(shellJ, ['div', 'span']) || tagJ === 'center') {
+            var elJ = tagJ === 'center' ? _zwJusSetTagName(shellJ, 'div') : shellJ;
+            if (elJ.attributes && !elJ.attributes.length) {
+              _zwJusRemovePreservingDescendants(elJ);
+            }
+          }
+        } else if (tagJ === 'center') {
+          var ndJ = _zwJusSetTagName(shellJ, 'div');
+          _zwJusSetInlineTextAlign(ndJ, alignment);
+        } else if (tagJ === 'div') {
+          try { shellJ.removeAttribute('align'); } catch (_eJald) {}
+          _zwJusSetInlineTextAlign(shellJ, alignment);
+        } else {
+          try { shellJ.removeAttribute('align'); } catch (_eJalu) {}
+          var wJ = document.createElement('div');
+          try { wJ.setAttribute('style', 'text-align:' + alignment); } catch (_eJwu) {}
+          if (shellJ.parentNode) {
+            shellJ.parentNode.insertBefore(wJ, shellJ);
+            _zwJusMovePreservingRanges(shellJ, wJ, 0);
+          }
+        }
+        return true;
+      }
+    }
     var i;
     for (i = 0; i < elementList.length; i++) {
       var element = elementList[i];
@@ -1235,6 +1396,47 @@
         && _zwJusGetAlignmentValue(node) !== alignment;
     });
 
+    // Chrome delta（J-A 邻接壳吸收）：目标≠left 且选区块与同值 div 载具壳相邻
+    //（中间至多一个纯 ws 文本节点）时，块移入壳内（ws 随迁入壳）、紧随同值壳
+    // 折叠并入——录制 `<div align="center"><p>foo</p> <p>bar</p></div>`（前邻
+    // ws 形）/ `<div align="right"><p>foo</p><p>[bar]</p><p>baz</p></div>`（无
+    // ws + 后随壳折叠形）。center 壳不吸收（`<center><p>foo</center> <p>[bar]`
+    // 录制新建 div）。目标=left 时选区块对齐已命中不入 nodeList，本臂自然不触
+    // 发（justifyleft 邻接形录制原样不动）。
+    if (alignment !== 'left') {
+      for (var bI = nodeList.length - 1; bI >= 0; bI--) {
+        var bJ2 = nodeList[bI];
+        if (!bJ2 || bJ2.nodeType !== 1 || !_zwJusIsHtmlElement(bJ2)) continue;
+        var parJ2 = bJ2.parentNode;
+        if (!parJ2) continue;
+        var pvJ = bJ2.previousSibling;
+        var pvWsJ = null;
+        if (_zwJusIsWsOnlyText(pvJ)) { pvWsJ = pvJ; pvJ = pvJ.previousSibling; }
+        if (pvJ && pvJ.nodeType === 1 && _zwJusTag(pvJ) === 'div'
+            && _zwJusIsAlignCarrierEl(pvJ)
+            && _zwJusGetAlignmentValue(pvJ) === alignment
+            && pvJ.parentNode === parJ2 && _zwJusIsEditable(pvJ)) {
+          if (pvWsJ) _zwJusMovePreservingRanges(pvWsJ, pvJ, -1);
+          _zwJusMovePreservingRanges(bJ2, pvJ, -1);
+          _zwJusCollapseAlignedShell(pvJ, alignment);
+          nodeList.splice(bI, 1);
+          continue;
+        }
+        var nxJ = bJ2.nextSibling;
+        var nxWsJ = null;
+        if (_zwJusIsWsOnlyText(nxJ)) { nxWsJ = nxJ; nxJ = nxJ.nextSibling; }
+        if (nxJ && nxJ.nodeType === 1 && _zwJusTag(nxJ) === 'div'
+            && _zwJusIsAlignCarrierEl(nxJ)
+            && _zwJusGetAlignmentValue(nxJ) === alignment
+            && nxJ.parentNode === parJ2 && _zwJusIsEditable(nxJ)) {
+          _zwJusMovePreservingRanges(bJ2, nxJ, 0);
+          if (nxWsJ) _zwJusMovePreservingRanges(nxWsJ, nxJ, 1);
+          _zwJusCollapseAlignedShell(nxJ, alignment);
+          nodeList.splice(bI, 1);
+        }
+      }
+    }
+
     // ③ 连续兄弟 run 逐段 wrap（sibling criteria：仅 align attr = alignment 或
     // 单声明 style text-align = alignment 的 div 可复用；新父 = div style 带值）。
     var guard3 = 0;
@@ -1244,7 +1446,8 @@
           && nodeList[0] === sublist[sublist.length - 1].nextSibling) {
         sublist.push(nodeList.shift());
       }
-      _zwJusWrap(sublist,
+      var freshJ = false;
+      var wrappedJ = _zwJusWrap(sublist,
         function (node) {
           if (!_zwJusIsHtmlElement(node, 'div')) return false;
           var attrs = node.attributes || [];
@@ -1271,11 +1474,22 @@
           return true;
         },
         function () {
+          freshJ = true;
           var np = document.createElement('div');
           // Chrome 样式序列化无空格形（录制 `style="text-align:center"`）。
           try { np.setAttribute('style', 'text-align:' + alignment); } catch (_eJnp) {}
           return np;
         });
+      // Chrome delta（J-E 包缘 ws 吞入）：新建包 div 吞并紧邻纯 ws 文本兄弟——
+      // 录制 `<div style="text-align:center"> <p>bar</p></div>`（前缘）/
+      // `<div style="text-align:center"><p>foo</p> </div>`（后缘）形；复用壳
+      // 与既有 DOM 形不动（freshJ 仅新父臂置位）。
+      if (freshJ && wrappedJ) {
+        var pvWJ = wrappedJ.previousSibling;
+        if (_zwJusIsWsOnlyText(pvWJ)) _zwJusMovePreservingRanges(pvWJ, wrappedJ, 0);
+        var nxWJ = wrappedJ.nextSibling;
+        if (_zwJusIsWsOnlyText(nxWJ)) _zwJusMovePreservingRanges(nxWJ, wrappedJ, -1);
+      }
     }
     return true;
   };
