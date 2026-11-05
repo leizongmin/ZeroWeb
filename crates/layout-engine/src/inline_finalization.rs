@@ -36,6 +36,16 @@ static CONTENT_AREA_DORMANT_ON: std::sync::LazyLock<bool> =
 static RELPOS_INLINE_SHIFT_ON: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_RELPOS_INLINE_SHIFT").as_deref() != Ok("0"));
 
+/// R5419（CSS2 §10.8.1/§10.6.2 空 inline content area）：空 inline（零宽 TextRun）
+/// 单 fragment 的盒 y 锚 = 自身基线 − 字体 ascent（chromium 空 span gBCR 顶 =
+/// baseline−A 实证；Ahem 1em 形态差 = descent 20px，empty-inline-002 驱动案）。
+/// va=baseline 时片段顶相对 content 顶差 first_frag_h − A，空 inline 臂局部合成
+/// 上移；va 定位面不动——R4383 own_baseline 判例校准面依赖「片段底 = 行基线」
+/// 不变式。ascent 常数与 strut 同源（R990）。
+/// `ZW_EMPTY_INLINE_BASELINE_ANCHOR=0` 回退片段顶锚（旧行为）。
+static EMPTY_INLINE_BASELINE_ANCHOR_ON: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_EMPTY_INLINE_BASELINE_ANCHOR").as_deref() != Ok("0"));
+
 /// R5369（CSS §9.4.3 / CSS2 §9.5）：R4222 相对 inset 回加范围扩到「float 祖先容器内的
 /// clear 子」开关（`ZW_R4222_FLOAT_ANCESTOR_SCOPE=0` 回退旧「直接子含 float」范围，
 /// default-on）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
@@ -1292,7 +1302,34 @@ pub(crate) fn sync_inline_child_boxes_from_ifc_with_ancestors(
         let fold_landed = (agg.first_ml - raw_ml).max(0.0);
         child.x = agg.first_x - fold_landed;
         if !is_slice_host {
-            child.y = agg.first_y - metrics.padding_top - metrics.border_top;
+            // R5419（CSS2 §10.8.1/§10.6.2）：**零宽空 inline**（空 span 产零宽 TextRun，
+            // first_w=0）content area 顶 = 自身基线 − 字体 ascent（与 line-height 无关；
+            // chromium 空 span gBCR 顶 = baseline−A 实证）。va=baseline 时片段顶 =
+            // 行主基线 − line_height（break_lines 空 inline 臂 height=line_height 口径），
+            // 相对 content 顶差 first_frag_h − A，局部合成上移；va 定位面不动——
+            // R4383 own_baseline（first_y + first_frag_h ≡ 行主基线）判例校准面依赖
+            // 「片段底 = 行基线」不变式。ascent 常数与 strut 同源（R990）。
+            // first_w==0 门排除原子行内级盒（canvas/img 等 replaced inline 的 fragment
+            // 非零宽，first_frag_h = 盒高非 line_height——background-color-animation-
+            // fallback-replace ref 页 canvas 误下移 85px 实证）。
+            // https://www.w3.org/TR/CSS22/visudet.html#inline-non-replaced
+            let baseline_anchored = *EMPTY_INLINE_BASELINE_ANCHOR_ON
+                && agg.first_w == 0.0
+                && matches!(style.vertical_align, VerticalAlignValue::Baseline);
+            child.y = if baseline_anchored {
+                let (font_size, _) = crate::inline::resolve_font_metrics_with_provider(
+                    Some(style),
+                    inline_ctx.font_metric_provider.as_ref(),
+                );
+                let is_ahem = style
+                    .font_family
+                    .iter()
+                    .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+                let ascent_ratio = if is_ahem { 0.8 } else { 0.928 };
+                agg.first_y + agg.first_frag_h - font_size * ascent_ratio - metrics.padding_top - metrics.border_top
+            } else {
+                agg.first_y - metrics.padding_top - metrics.border_top
+            };
         }
         child.width =
             agg.first_w + metrics.padding_left + metrics.padding_right + metrics.border_left + metrics.border_right;
