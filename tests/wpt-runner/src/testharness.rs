@@ -3652,10 +3652,7 @@ pub const CSP_CORPUS_SUBDIRS: &[&str] = &[
 /// imageset.https.sub.html）+ tentative/autoupgrades/ 四升级面（gap-batch1 M2
 /// 语料扩面——上游窗口可执行面全量，见 fetch-gap-batch1-subset.sh）；gen/ 为
 /// window.js/iframe 包装形态不拉取（fetch 脚本头注释同域）。
-pub const MIXED_CONTENT_SUBDIRS: &[&str] = &[
-    "mixed-content",
-    "mixed-content/tentative/autoupgrades",
-];
+pub const MIXED_CONTENT_SUBDIRS: &[&str] = &["mixed-content", "mixed-content/tentative/autoupgrades"];
 
 /// Secure Contexts goal（security-hardening M1 / DC-1）pinned upstream subset.
 pub const SECURE_CONTEXTS_SUBDIRS: &[&str] = &["secure-contexts"];
@@ -3723,10 +3720,7 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
 ///   （security-csp 同款内容规则）
 fn gap_batch1_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
-    if name.ends_with("-ref.html")
-        || name.ends_with("-notref.html")
-        || name.ends_with("-manual.html")
-    {
+    if name.ends_with("-ref.html") || name.ends_with("-notref.html") || name.ends_with("-manual.html") {
         return true;
     }
     if !source.contains("/resources/testharness") {
@@ -3817,7 +3811,13 @@ pub fn run_subresource_integrity_cases(
 /// Run the pinned upstream cors window subset
 /// （gap-batch1 goal M1 / DC-2）。.htm 扩展名变体走 ext 扫描。filter 按路径子串过滤。
 pub fn run_cors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_corpus_subdirs_ext(wpt_root, CORS_SUBDIRS, &["html", "htm"], filter, gap_batch1_case_skipped)
+    run_corpus_subdirs_ext(
+        wpt_root,
+        CORS_SUBDIRS,
+        &["html", "htm"],
+        filter,
+        gap_batch1_case_skipped,
+    )
 }
 
 /// Run the pinned upstream import-maps window subset
@@ -11151,7 +11151,8 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                     // 残留字面量 = SyntaxError → 依赖全局 ReferenceError 连坐）。token
                     // 无关文件替换为 no-op，面行为不变。
                     let pipe_sub = src_query.split('&').any(|kv| {
-                        kv.strip_prefix("pipe=").is_some_and(|v| v == "sub" || v.starts_with("sub("))
+                        kv.strip_prefix("pipe=")
+                            .is_some_and(|v| v == "sub" || v.starts_with("sub("))
                     });
                     let c = if combined.ends_with(".sub.js") || pipe_sub {
                         apply_wpt_substitutions(&c)
