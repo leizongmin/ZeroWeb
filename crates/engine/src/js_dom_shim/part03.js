@@ -3900,18 +3900,57 @@
       // 多一次盲重验，引擎 fetch 核缺「同 URL 已可用不重取」守卫（spec update-
       // the-image-data 冗余更新早退），image-base-url 不重取断言/decode attach
       // 时序/current-request-microtask 任务计数 5 行 REGRESSED（family A/B 两轮
-      // 同键复现 2026-11-04）——守卫缺口属 fetch 语义域另行立片，此处不扩大
-      // 面。非 auto 的 script 创建 img 插入回落基线行为（无重验）。
+      // 同键复现 2026-11-04）——fetch 核 step-11 守卫已由 s289 收口；hook 层
+      // env 门卫由 s290 补齐（下方守卫块，un-gate 双前置件就此齐备），
+      // allowsAuto 收窄门本身仍待 un-gate 切片裁决。非 auto 的 script 创建
+      // img 插入回落基线行为（无重验）。
       // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
       if (!isPicture && isInsert && _zw5277Tag(node) === 'IMG'
           && globalThis.__zwImgAllowsAutoSizes5277(node.__zwSelector, node.__zwHandle)) {
-        try {
-          if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
-            globalThis.__zwImgSelectionQueue5277(node.__zwSelector, node.__zwHandle);
+        // s290（html-semantics M2）：插入 hook env 门卫——spec reacting-to-
+        // environment-changes 同步段早退（un-gate 第二前置件，s289 账本候选
+        // ①；fetch 核 step-11 守卫不覆盖 env 重验面）。三级：
+        // ⓵「does not use srcset or picture」→ return（本臂父已非 picture，
+        //   判据 = srcset 属性非空）——image-base-url「插入后不重取」的
+        //   plain-src 面在此级拦截（已加载图插入不产生 update run；sizes=auto
+        //   无 srcset 时 spec allows-auto-sizes 不成立）。srcset 空回落 s285
+        //   lazy dormant 臂（引擎复苏通路，非 spec env run）。
+        // ⓶「pending request is not null」→ return——在飞册 truthy（s289
+        //   {url,pending} 形态；avail 臂/defer 两清除点保证非空窗 = 真在飞）。
+        //   spec env 不取代在飞请求。
+        // ⓮ 选中源 null → return；⓯「selected source and selected pixel
+        //   density are the same as the element's last selected source and
+        //   current pixel density」→ return。last-selected 基线 = settle 态
+        //   （_resourceStates url+density——spec srcset 路径仅 env finishUpdate
+        //   写该对，broken 态不写；deferred 冻结请求不写，lazy 重插唤醒面
+        //   不被 ⓯ 拦截，sizes-auto 插入点亮语义保持）。选源两次算（此处 +
+        //   Revalidate 内）仅同态重插罕见面付出。文档 fully active（引擎单
+        //   活跃文档模型）/multipart（引擎无该资源类型）两级不适用。
+        //   FIXME: 多文档 fully-active 判别随域收口承接。
+        var _ss5290 = '';
+        try { _ss5290 = String(_zw5277Attr(node.__zwSelector, node.__zwHandle, 'srcset') || '').trim(); } catch (_e5290ss) {}
+        if (_ss5290 !== '') {
+          var _k5290 = _elKey(node.__zwSelector, node.__zwHandle);
+          if (!(globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[_k5290])) {
+            var _pk5290 = null;
+            try { _pk5290 = globalThis.__zwSelectImageSource5277(node.__zwSelector, node.__zwHandle); } catch (_e5290sel) { _pk5290 = null; }
+            if (_pk5290 && _pk5290.url) {
+              var _st5290 = _resourceStates ? _resourceStates[_k5290] : null;
+              if (!(_st5290 && _st5290.outcome === 'loaded'
+                  && _pk5290.url === _st5290.url
+                  && _pk5290.density === _st5290.density)) {
+                try {
+                  if (typeof globalThis.__zwImgSelectionQueue5277 === 'function') {
+                    globalThis.__zwImgSelectionQueue5277(node.__zwSelector, node.__zwHandle);
+                  }
+                } catch (_e5277imq0) {}
+                globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
+              }
+            }
           }
-        } catch (_e5277imq0) {}
-        globalThis.__zwImgRevalidate5277(node.__zwSelector, node.__zwHandle);
-        return;
+          return;
+        }
+        // _ss5290 === ''：env ⓵ 早退（不重验），落穿 s285 lazy dormant 臂。
       }
       // s285（html-semantics M2）：非 auto lazy 图插入后旗标重臂——此类图
       // 插入时无 RunUpdate（s284 hook 门控 allowsAuto），detach 期旗标已被
