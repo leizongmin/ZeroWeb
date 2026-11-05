@@ -56,6 +56,18 @@
   ShadowRoot 句柄上 setHTMLUnsafe 声明式内容」组合写路径（= oracle 的
   ShadowRoot-domain × declarative 象限，约占 gethtml 全量一半），元素域
   declarative 写（I3）平坦。交互项归属 engine 写路径，非队列扫描读面。
+- **Q1 队列加速判别**（C0 = I2 / C5 = I2+10 plain mutations / C25 = I2+50 plain
+  mutations 各 600，×1）：C0 4→11ms（边际 ~0.025）；C25 **250 测试内即达
+  229ms/rep**、页收割点缩至 1,451 行（C0 同窗 ~2,2xx）——队列加速 ~11× 使增长
+  加速远超线性（与「每调用 O(队列) 扫 × 增量重建复合」一致），**残面 O(N) 与
+  队列长度同源坐实**（C5/C25 斜率含 GC/构建噪声，方向无歧义）。
+- **代码级机制定位**（只读侦查，与 Q1 互证）：`__zw_child_nodes` R5206 回落——
+  sel 在 raw/live 缺席时走 `with_query_view_doc`（callbacks.rs:89）；ShadowRoot
+  句柄的 sel 在选择器空间恒缺席 → setHTMLUnsafe shim 首步 `_childNodeList`
+  removed 快照读每测试落视图路径。视图缓存（callbacks.rs:170 起）链增量资格检查
+  `mut_guard[..key.count].iter().any(SetInnerHtml)` **无 SetInnerHtml 时短路不了
+  = 每次视图调用 O(全队列前缀) 线性扫** → 每测试 O(N)、总量二次。t8c WIP
+  （+390 行已核对）不覆盖此链扫。
 
 ## 修复后复测确认（预测→重建→观测闭环）
 
@@ -88,12 +100,14 @@
   语义：script timeout 与 case/page 预算同源放大；缺省 ×1.0 零行为变化）。
   R350 先例明确放宽超时不治二次病根——本项只是 mega-case 页预算语义补全，
   病根修复归队列面（t8c + 残面评估）。
-- **残面精确归属（I12 后收窄）**：增长 = ShadowRoot 域 declarative setHTMLUnsafe
-  组合写路径（attachShadow×setHTML 交互项；attachShadow 单独、元素域 setHTML
-  单独均平坦）——t8c 读面索引不覆盖，属 engine 写路径面（候选：ShadowRoot 域
-  写后结构化读回调 / shadow root 注册表关联查找，待读码定位）。t8c 落地后重建
-  knee/gethtml 复测若仍有线性残余，按本归属读码修复；队列折叠（apply 全队列 →
-  dom_html 换代 → 清队列，R348 重绑同款语义）保留为兜底。
+- **残面修复方向（Q1 + 代码级定位后收口）**：病根 = ShadowRoot 句柄读每测试
+  落 `with_query_view_doc` 视图路径 × 视图缓存链增量资格检查 O(全队列) 线性扫。
+  修复候选：①链资格检查 O(1) 化——SetInnerHtml 出现次数单调计数器（入队时维护，
+  t8c 增量索引同款手法），链扫消失；②ShadowRoot 句柄读走 live-aware 直读
+  （句柄→NodeId 解析已有 HashMap，绕过选择器空间缺席回落）。两者均在
+  callbacks.rs = t8c 编辑面，**须与其协调落地**（本轮按 §9 只定位不改）。t8c
+  落地后重建 knee/gethtml 复测；队列折叠（apply 全队列 → dom_html 换代 → 清
+  队列，R348 重绑同款语义）保留为兜底。
 
 ## 修复后预期
 

@@ -177,10 +177,12 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   ×4 复测闭环：gethtml 3,417 行仅 3F（真实 referenceTarget Fail）、knee2 div×8
   3,072 全量完整、二次模型三内容定量自洽。证据：
   [batch3 rootcause](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-wedge-watchdog-rootcause.md)。
-- **下一步（M3 Batch 3 余项）**：①残面修复——t8c（html-semantics 流
-  callbacks.rs 增量索引）落地后重建 knee/gethtml 复测；ShadowRoot 域写路径残面
-  按证据文档归属读码定位修复（队列折叠兜底挂账）；
-  ②簇 C referenceTarget——dom 层先行已由并行流落地（bfb77f1a3，声明式值捕获+
+- **下一步（M3 Batch 3 余项）**：①残面修复（已代码级定位）——ShadowRoot 句柄
+  读每测试落 `with_query_view_doc` 视图路径 × 链增量资格检查 O(全队列) 线性扫
+  （Q1 队列加速判别 + 代码互证）；修复候选：链资格 O(1) 计数器化 / ShadowRoot
+  句柄读 live-aware 直读，均在 callbacks.rs = t8c 编辑面须协同落地，落地后重建
+  knee/gethtml 复测（队列折叠兜底挂账）；
+  ②簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8，声明式值捕获+
   spec 序回写），待 engine glue 与通道复测；attachment safelisted 物化臂 170F
   甄别；簇 D 逐项甄别。
 
