@@ -22475,8 +22475,16 @@
         if (_oph262 != null && typeof _handleChildren !== 'undefined' && _handleChildren) {
           var _oreg262 = _handleChildren[_oph262];
           if (_oreg262) {
-            var _oi262 = _oreg262.indexOf(removed262);
-            if (_oi262 >= 0) { oldIndex262 = _oi262; _odone262 = true; }
+            // R262b 完整序前提校验：registry 子数 == 融合视图子数才可信 indexOf——
+            // textContent= 建的 textEl 文本子等视图-only 子不入 registry 时它是视图
+            // 子集，indexOf 位次 ≠ DOM 位次（混装箱 [textEl, a1] 中 remove a1：
+            // regIdx 0 vs DOM idx 1，offset > 0 的误 −1 与 R263 同根因）。
+            // 不齐 → 退回 live NL 扫描（原 fallback，语义权威）。
+            var _onl262 = oldParent262 && oldParent262.childNodes;
+            if (_onl262 && _onl262.length === _oreg262.length) {
+              var _oi262 = _oreg262.indexOf(removed262);
+              if (_oi262 >= 0) { oldIndex262 = _oi262; _odone262 = true; }
+            }
           }
         }
         if (!_odone262) {
@@ -22699,8 +22707,17 @@
           if (_ph263i != null && typeof _handleChildren !== 'undefined' && _handleChildren) {
             var _reg263 = _handleChildren[_ph263i];
             if (_reg263) {
-              var _ri263 = _reg263.indexOf(inserted263);
-              if (_ri263 >= 0) { newIndex263 = _ri263; return newIndex263; }
+              // R263b 完整序前提校验：「登记序 = DOM 序」仅在 registry 覆盖全部
+              // 视图子时成立——textContent= 建的 textEl 文本子等视图-only 子缺席
+              // 时 registry 是视图子集，indexOf 位次 ≠ DOM 位次（WPT
+              // Range-mutations append/insertBefore-at-end 8F 根因：append 后
+              // registry=[a1] regIdx 0 而 DOM idx 1，边界 offset 1 按 >0 误 bump
+              // 到 2）。子数不齐 → 退回 live NL 扫描（下方原 fallback）。
+              var _nl263c = newParent263 && newParent263.childNodes;
+              if (_nl263c && _nl263c.length === _reg263.length) {
+                var _ri263 = _reg263.indexOf(inserted263);
+                if (_ri263 >= 0) { newIndex263 = _ri263; return newIndex263; }
+              }
             }
           }
           var _nl263 = newParent263 && newParent263.childNodes;

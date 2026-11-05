@@ -1,17 +1,17 @@
 # DOM 扩面 — dom/ranges + html/dom
 
-**版本**: v1.4
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）；2026-11-05（M3 documents 簇收口）；2026-11-05（M3 续 dataset 簇收口）
-**状态**: Active——M1/M2/M3 完成（documents 136 F→P + dataset 簇 16 F→P 42 子测试 0F，双通道 0 回归），剩 coverage 复测 + mutations 尾簇 8F
+**版本**: v1.5
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）；2026-11-05（M3 documents 簇收口）；2026-11-05（M3 续 dataset 簇收口）；2026-11-05（M3 终 mutations 尾簇收口 + coverage 复测，goal 收口）
+**状态**: Done——M1/M2/M3 全部完成（documents 136 F→P、dataset 16 F→P 0F、mutations 尾簇 8 F→P 0F，双通道 A/B 0 回归；coverage 复测落账：ranges 已实现 API 99.81%、html/dom 新面挂账全量归类，见 evidence/2026-11-05-m3-mutations-tail-and-coverage.md）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + 接口完备性收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——DOM 面）
 
-## coverage 对账（2026-11-05 更新：基线 coverage-2026-11-02 为复测锚）
+## coverage 对账（2026-11-05 复测更新：基线 coverage-2026-11-02 为复测锚）
 
-| WPT 面 | 全量分母（子测试） | M1 前覆盖 | M1 后通道面 | 说明 |
+| WPT 面 | 全量分母（子测试） | M1 前覆盖 | 终态通道面 | 说明 |
 |---|---:|---:|---|---|
-| dom/ranges | 44,726 | 44/73 文件 | 63/73 文件（+19 tentative） | 已实现 API 99.97%（M2 dataChange 收口后，M1 时 99.07%）；tentative 189F 全接口缺失挂账 |
-| html/dom | 72,326 | 81/396 文件 | ~230/396 文件（+149 案路径） | 旧面 99.89% 零回归；新面 42.41%（636F 六簇） |
+| dom/ranges | 44,726 | 44/73 文件 | 61/73 案（含 +19 tentative） | 已实现 API 99.81%（M1 99.07% → M2 dataChange 收口 → M3 尾簇收口）；tentative 189F 全接口缺失挂账 |
+| html/dom | 72,326 | 81/396 文件 | 旧面 99.89% 零回归 + 新面 149 案 621P/484F | 新面 42.41%（636F 六簇）→ 收口后 56.1%（documents 136 + dataset 16 F→P；484F 挂账全量归类见 M3 终 evidence） |
 
 M1 前列来自立项日报（0 覆盖口径过时——js-dom R42 已入 44 顶层案、40 号已入
 81 文件，立项日对账未扣除既有通道）；精确锚见 `docs/compat/wptfyi/coverage-2026-11-02.json`
@@ -67,10 +67,19 @@ Document 的 DOM 接口面（394 文件，含各元素 historical/idlharness 面
   round-trip 门 + DOMStringMap 接口对象 + 三 ns 门 + set/delete 委托
   元素 setAttribute/removeAttribute 修 R122 实例层 stale 读），html
   通道 A/B +17P/−17F 全落本簇、dom 通道 0 回归，见
-  evidence/2026-11-05-m3-dataset-cluster.md。待做：coverage 复测、
-  mutations 尾簇 8F；挂账候选：innerText 面（渲染
-  依赖，与渲染流域划界）、partial-updates/Sanitizer/OpaqueRange 提案面、
-  .window.js/.xhtml 形态缺口。
+  evidence/2026-11-05-m3-dataset-cluster.md。mutations 尾簇 8F **收口
+  （2026-11-05 终）**：R263 insert/R262 remove 调整的 registry 快道
+  完整序前提校验（textEl 混装箱 regIdx≠DOMIdx 误 bump/误 −1，探针
+  定谳），dom 通道 A/B 0 回归 +8F→P、html 通道集合恒等，定向
+  mutations 族 0F。coverage 复测**收口（同轮）**：ranges 已实现 API
+  99.81%（189F 全 tentative 提案缺失）、html 全通道 +152P/−152F 与
+  收口簇精确对账、旧面 61F 挂账构成不变、新面 484F 全量归类
+  （innerText 400 渲染划界 + partial-updates 56 提案 + dir 13 +
+  documents 3 runner 管道 + 散案 12），DC-4 成立，见
+  evidence/2026-11-05-m3-mutations-tail-and-coverage.md。挂账终态：
+  innerText 面（渲染依赖，与渲染流域划界）、partial-updates/Sanitizer/
+  OpaqueRange 提案面、dir 动态语义（25 号域）、.window.js/.xhtml 形态
+  缺口。
 
 ## 依赖约束（run-rules §9）
 
