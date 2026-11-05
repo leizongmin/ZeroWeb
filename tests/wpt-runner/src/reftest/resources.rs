@@ -1065,6 +1065,35 @@ fn read_headers_sidecar_content_type(path: &Path) -> Option<String> {
 ///
 /// 对于每个 URL，用 `simple_hash(url)` 生成 ImageKey（与 paint 系统一致），
 /// 然后尝试从 `base_dir` 解析相对路径并加载 PNG 文件。
+/// s299（html-semantics M2 切片 299）：提取文档首个 `<base href>` 的相对引用前缀
+///（HTML §4.2.3——document base URL 的 path 前缀作用于全部相对引用）。仅用于
+/// build_image_cache 的文件系统查找路径；缓存 ImageKey 保持 raw attr 串（painter
+/// 侧 image_resource_key 同源 raw——键面改写会全量 miss）。返回 None = 无
+/// `<base>`/href 空/绝对形态（`/` 开头、含 scheme、`#` 片段——按 spec 这些引用
+/// 不受 base 的相对改写，走既有站点根解析）。
+/// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+fn extract_base_href_prefix(html: &str) -> Option<String> {
+    let idx = html.find("<base")?;
+    let rest = &html[idx..];
+    let Some(tag_end) = find_tag_end(rest) else {
+        return None;
+    };
+    let tag = &rest[..tag_end];
+    let (value_start, quote) = if let Some(p) = tag.find("href=\"") {
+        (p + 6, '"')
+    } else if let Some(p) = tag.find("href='") {
+        (p + 6, '\'')
+    } else {
+        return None;
+    };
+    let value_end = tag[value_start..].find(quote)? + value_start;
+    let href = tag[value_start..value_end].trim();
+    if href.is_empty() || href.starts_with('/') || href.starts_with('#') || href.contains("://") {
+        return None;
+    }
+    Some(href.to_string())
+}
+
 pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCache {
     let mut cache = ImageCache::new(256, 64 * 1024 * 1024);
 
@@ -1079,6 +1108,12 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
     all_urls.extend(posters);
     all_urls.sort_unstable();
     all_urls.dedup();
+
+    // s299：`<base href>` 相对引用前缀（document-adopt-base-url 钉形——
+    // `<base href="resources/">` + img src "cat.jpg"，文件实际在 base_dir/resources/
+    // 下；此前一律 `base.join(url)` 落空 → 图不渲染 → reftest ✗16%）。仅改文件
+    // 查找路径，ImageKey 键面零变化。
+    let base_href_prefix = extract_base_href_prefix(html);
 
     for url in &all_urls {
         let key = ImageKey::new(simple_hash(url));
@@ -1127,6 +1162,11 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         let path = if url.starts_with('/') && !primary.exists() {
             let alt = Path::new("tests/wpt-runner/wpt-data").join(trimmed);
             if alt.exists() { alt } else { primary }
+        } else if let Some(prefix) = &base_href_prefix {
+            // s299：`<base href>` 前缀路径优先，落空回落 primary（无 base 页与
+            // 前缀失配页共用既有 miss 语义，零行为面外移）。
+            let with_base = base.join(prefix).join(trimmed);
+            if with_base.exists() { with_base } else { primary }
         } else {
             primary
         };
@@ -1483,6 +1523,39 @@ mod tests {
             urls2,
             vec!["a.png".to_string(), "b.png".to_string(), "c.png".to_string()]
         );
+    }
+
+    /// s299：`<base href>` 相对引用前缀——build_image_cache 文件查找按 base 前缀
+    /// 解析（document-adopt-base-url 钉形：`<base href="resources/">` + img src
+    /// "cat.jpg"，文件在 base_dir/resources/ 下）；ImageKey 保持 raw 串。
+    #[test]
+    fn base_href_prefix_resolves_relative_img() {
+        use std::fs;
+        let dir = std::env::temp_dir().join("zw_reftest_base_href_test");
+        let sub = dir.join("resources");
+        fs::create_dir_all(&sub).expect("create temp dir");
+        let png_path = sub.join("cat.jpg");
+        let mut buf = Vec::new();
+        {
+            use png::{BitDepth, ColorType, Encoder};
+            let mut enc = Encoder::new(&mut buf, 1, 1);
+            enc.set_color(ColorType::Rgba);
+            enc.set_depth(BitDepth::Eight);
+            let mut w = enc.write_header().expect("PNG header");
+            w.write_image_data(&[0, 128, 0, 255]).expect("PNG data");
+        }
+        fs::write(&png_path, &buf).expect("write png");
+        let html = "<head><base href=\"resources/\"></head><body><img src=\"cat.jpg\"></body>";
+        let mut cache = build_image_cache(html, Some(&dir));
+        let src = extract_img_srcs(html).into_iter().next().expect("img src extracted");
+        assert_eq!(src, "cat.jpg", "cache key stays raw attr string");
+        let key = ImageKey::new(simple_hash(&src));
+        let img = cache
+            .get(&key)
+            .expect("img under <base href> should resolve to base/resources file (s299)");
+        assert_eq!(img.width, 1);
+        assert_eq!(&img.pixels[..4], &[0, 128, 0, 255]);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// R2134：未终止 url() 字符串在 `</style>` 处不得吸收 `</style>` 及后续 HTML。

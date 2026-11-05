@@ -7561,6 +7561,29 @@
                   }
                 }
               } catch (_e4004at) {}
+              // s299（html-semantics M2 切片 299）：盖章 stub 的 own-property IDL src
+              // 恢复。iframe 工厂产物（part05 `_zwIframeCreateElement`——仅 id 有
+              // accessor）的 `img.src=` 赋值落 own data property，不进 attributes
+              // 数组——上方 R4004 回填（getAttributeNames/_attrs 源）恒空 → host img
+              // 无 src → s287 触发臂 has-src 门不亮 → 零 fetch/渲染（语料
+              // document-adopt-base-url reftest ✗16% 根因：img 建于 iframe
+              // contentDocument、IDL src 赋值后 appendChild 收养进 body）。
+              // spec reflect：IDL src setter 写内容属性**原串**（set 期不解析），
+              // fetch 期按 node document base URL 解析；adopt（concept-node-adopt）
+              // 不剥属性——收养后 node document = 主文档，原串按主文档 base 解析
+              //（即本测钉面）。恢复点 = R368 身份盖章点（此后 host 面即
+              // canonical）；accessor 族（s294 setter 落 attributes）已由 R4004
+              // 回填，host 有 src 时不覆盖。
+              // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflect
+              // https://html.spec.whatwg.org/multipage/dom.html#concept-node-adopt
+              try {
+                if (String(_r368Tag) === 'img'
+                    && Object.prototype.hasOwnProperty.call(child, 'src')
+                    && typeof child.src === 'string' && child.src
+                    && __zw_has_attr_handle(child.__zwHandle, 'src') !== '1') {
+                  __zw_set_attr_handle(child.__zwHandle, 'src', String(child.src));
+                }
+              } catch (_eS299sr) {}
               // R4004（html-semantics M2 切片 16）：盖章 plain 子的事件方法转 live。
               // _zwMEl 本地事件面（R99 per-object listener 表 / R167 本地 dispatch /
               // R151 本地 click）与 live 派发（`_dispatchWithBubble` + `_listenerStore`）
