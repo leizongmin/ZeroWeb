@@ -219,7 +219,12 @@ r16.setStart(lis16[0].firstChild, 0);
 r16.setEnd(d16.lastChild, 3);
 getSelection().removeAllRanges(); getSelection().addRange(r16);
 try { document.execCommand("insertunorderedlist", false, ""); } catch (e) { results.push('x16 EXC ' + e); }
+var sel16 = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+function nodeDesc16(n) {
+  return n ? n.nodeName + (n.nodeType === 3 ? JSON.stringify(n.nodeValue) : '<' + (n.parentNode ? String(n.parentNode.nodeName) : '?') + '>') : 'null';
+}
 results.push('absorb html=' + JSON.stringify(d16.innerHTML)
+  + ' sel=' + (sel16 ? nodeDesc16(sel16.startContainer) + '@' + sel16.startOffset + '..' + nodeDesc16(sel16.endContainer) + '@' + sel16.endOffset : 'EMPTY')
   + ' qIndA=' + document.queryCommandIndeterm('insertunorderedlist')
   + ' qSA=' + document.queryCommandState('insertunorderedlist'));
 
@@ -399,7 +404,6 @@ results.push('i5-polluted ' + pre22
   + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
   + ' qSA=' + document.queryCommandState('insertorderedlist'));
 
-results.push('DBG=' + String(globalThis.__zwListDbgTrace || 'EMPTY'));
 assert_false(true, results.join(' || '));
 </script>
 </body>

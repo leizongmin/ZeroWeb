@@ -385,6 +385,18 @@
       : (node.childNodes ? node.childNodes.length : 0);
     return off > len ? len : off;
   }
+  // 端点是否落在列表内容内：容器自身为列表壳（(ul,2) 尾沿形）按外部处理，
+  // 容器的某层父为 li（其父链命中 ol/ul）才算内容内。
+  function _zwListInListContent(n) {
+    if (!n) return false;
+    var g = 0;
+    var p = n;
+    while (p && g++ < 256) {
+      if (_zwJusIsHtmlElement(p.parentNode, ['ol', 'ul'])) return true;
+      p = p.parentNode;
+    }
+    return false;
+  }
   function _zwListRetagPreservingSelection(node, newTag, extraRanges) {
     var sel = globalThis.getSelection ? globalThis.getSelection() : null;
     var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
@@ -452,10 +464,7 @@
           (xo.r.endContainer !== xo.ec || xo.r.endOffset !== xo.eo)) {
         try {
           xo.r.setEnd(xo.ec, _zwListClampOffset(xo.ec, xo.eo));
-          globalThis.__zwListDbgTrace += ('[xf=' + xo.r.endContainer.nodeName + '@' + xo.r.endOffset + ']');
-        } catch (_eRf) {
-          globalThis.__zwListDbgTrace += '[xfEXC ' + _eRf + ']';
-        }
+        } catch (_eRf) {}
       }
     }
     return newNode;
@@ -702,16 +711,16 @@
 
     // enable：对 other tag 名可编辑元素换型或并入邻接同名列表。
     if (mode === 'enable') {
+      var retaggedFinal = null;
       var toConvert = _zwJusCollectContainedNodes(newRange, function (node) {
         return _zwJusIsEditable(node) && _zwJusIsHtmlElement(node, otherTagName);
       }, false);
-      globalThis.__zwListDbgTrace = ((globalThis.__zwListDbgTrace || '') + '[tc=' + toConvert.length
-        + ' nR=' + (newRange && newRange.startContainer ? newRange.startContainer.nodeName + '@' + newRange.startOffset + '..' + newRange.endContainer.nodeName + '@' + newRange.endOffset : 'null'));
       for (var ci = 0; ci < toConvert.length; ci++) {
         var list = toConvert[ci];
         var prevL = list.previousSibling, nextL = list.nextSibling;
         if ((_zwJusIsEditable(prevL) && _zwJusIsHtmlElement(prevL, utag))
         || (_zwJusIsEditable(nextL) && _zwJusIsHtmlElement(nextL, utag))) {
+          retaggedFinal = _zwJusIsEditable(prevL) && _zwJusIsHtmlElement(prevL, utag) ? prevL : nextL;
           var children = [];
           var ck = list.firstChild;
           while (ck) { children.push(ck); ck = ck.nextSibling; }
@@ -721,6 +730,7 @@
           _zwDelRestoreValues(kidsValues);
         } else {
           var retagged = _zwListRetagPreservingSelection(list, utag.toLowerCase(), [newRange]);
+          if (retagged) retaggedFinal = retagged;
           // Chrome delta（语料权威，absorb 行）：enable-retag 后活动选区与换
           // 壳子树求交——端点在壳内保留原位（身份随逐子迁移存活），壳外钳到
           // 壳内最深文本端。Chrome retag 后选区留在 li 内（qInd=false 确定
@@ -801,34 +811,6 @@
 
     // enable 主循环：连续兄弟聚 sublist → p/div 换型 li / li·ol·ul 直收 /
     // inline 段 wrap 成 li。
-    (function () {
-      try {
-        var rr = newRange; var out = ' nlW';
-        var nd = rr.startContainer;
-        if (_zwJusHasKids(nd) && rr.startOffset < nd.childNodes.length) nd = nd.childNodes[rr.startOffset];
-        else if (rr.startOffset === _zwJusNodeLength(nd)) nd = _zwJusNextNodeDescendants(nd);
-        else nd = _zwJusNextNode(nd);
-        var st = rr.endContainer;
-        var brS = _zwJusHasKids(st) && rr.endOffset < st.childNodes.length;
-        var climb = '';
-        if (!brS) {
-          var cc = st;
-          while (cc && !cc.nextSibling && climb.length < 120) { climb += cc.nodeName + '>'; cc = cc.parentNode; }
-          climb += cc ? ('NEXT=' + (cc.nextSibling ? cc.nextSibling.nodeName + '<' + (cc.nextSibling.parentNode ? cc.nextSibling.parentNode.nodeName : '?') + '>' : 'null')) : 'NULL';
-        }
-        if (brS) st = st.childNodes[rr.endOffset];
-        else st = _zwJusNextNodeDescendants(st);
-        out += '[first=' + (nd ? nd.nodeName : 'null') + ' end=' + rr.endContainer.nodeName + '@' + rr.endOffset + ' kids=' + rr.endContainer.childNodes.length + ' stop=' + (st ? st.nodeName + (st.parentNode ? '<' + st.parentNode.nodeName + '>' : '<root>') : 'null') + ' ' + (brS ? 'BR1' : 'BR2') + ' ' + climb + ']';
-        var g3 = 0; var steps = [];
-        while (nd && st && _zwJusIsBefore(nd, st) && g3++ < 65536 && steps.length < 6) {
-          steps.push(nd.nodeName + (nd.parentNode ? '<' + nd.parentNode.nodeName + '>' : '<->')
-            + ':B' + (_zwJusIsContained(nd, rr) ? 1 : 0));
-          nd = _zwJusNextNode(nd);
-        }
-        out += '(' + steps.join(' ') + ')';
-        globalThis.__zwListDbgTrace += out;
-      } catch (_eDbg) { globalThis.__zwListDbgTrace += ' nlW-EXC'; }
-    })();
     while (nodeList.length) {
       var sublist = [];
       while (nodeList.length
@@ -871,7 +853,6 @@
       // simple 缩进元素且其 previousSibling 是可编辑 utag 元素 → newParent =
       // 归并后该 utag 的 lastChild（非可编辑 utag 则新插一个），wrap 的
       // isBefore 判定落 append 臂；否则恒新壳。
-      globalThis.__zwListDbgTrace += (' fw=' + sublist.length + ' prev=' + (sublist[0].previousSibling ? sublist[0].previousSibling.nodeName : '-') + ' next=' + (sublist[sublist.length - 1].nextSibling ? sublist[sublist.length - 1].nextSibling.nodeName : '-'));
       _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () {
         if (!_zwJusIsEditable(sublist[0].parentNode)
         || !_zwListIsSimpleIndentationElement(sublist[0].parentNode)
@@ -887,6 +868,41 @@
         }
         return list.lastChild;
       });
+    }
+
+    // enable 出口列表内收钳（q12 判读 + 探针里程碑证据）：吸收流经 wrap 的
+    // flat-model HTML 重写臂（editing host 直子文本成员），换壳列表与端点文
+    // 本身份整体灭失重建（探针 barAlive=false、rF=UL/- detached），入口身份
+    // 回植与 retaggedFinal 锚定均不可行；端点被引擎重锚到列表壳边界（UL@2
+    // 实证），选中区脱离 li 内容使 qState-after 翻红。按树位收钳：端点容器
+    // 自身为列表壳时（重锚落壳形）直接钳入该壳最深首/尾端（吸收后树位 =
+    // 语料 after 树 marker 全 li 内跨度）；容器在列表壳外时回退换壳列表
+    // （flat 臂未触发、列表存活的常形，与 mid-toggle 交集钳制同型收口）；
+    // 端点已在列表内容内则不动（多列表/换型行保位）。
+    {
+      var rngX = _zwJusActiveRange();
+      if (rngX) {
+        try {
+          var tS = _zwListInListContent(rngX.startContainer) ? null
+            : (_zwJusIsHtmlElement(rngX.startContainer, ['ol', 'ul'])
+            && rngX.startContainer.parentNode ? rngX.startContainer
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : null));
+          if (tS) {
+            var fF = tS;
+            while (fF.firstChild) fF = fF.firstChild;
+            rngX.setStart(fF.parentNode, _zwJusNodeIndex(fF));
+          }
+          var tE = _zwListInListContent(rngX.endContainer) ? null
+            : (_zwJusIsHtmlElement(rngX.endContainer, ['ol', 'ul'])
+            && rngX.endContainer.parentNode ? rngX.endContainer
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : null));
+          if (tE) {
+            var lF = tE;
+            while (lF.lastChild) lF = lF.lastChild;
+            rngX.setEnd(lF.parentNode, 1 + _zwJusNodeIndex(lF));
+          }
+        } catch (_eXc) {}
+      }
     }
   }
 
