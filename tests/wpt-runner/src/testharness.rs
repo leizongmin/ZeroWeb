@@ -1216,6 +1216,29 @@ const ZW_S288_404_PNG: &[u8] = &[
     0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
 
+/// s295（html-semantics）：100x100 PNG（91 B）——image-alternate-no-store.py 端点臂
+/// 的首请求回体（上游 wpt pin 315976933 `resources/green.png` 逐字节；本地语料同名
+/// 资产 cmp 一致）。上游 .py 逐请求交替 green/blue-10（固定 stash 键），首请求
+/// switch 缺 falsy → green。
+const ZW_S295_GREEN_100: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x64, 0x00, 0x00, 0x00, 0x64, 0x01, 0x03, 0x00, 0x00, 0x00, 0x4A, 0x2C, 0x07, 0x17, 0x00, 0x00, 0x00, 0x03, 0x50,
+    0x4C, 0x54, 0x45, 0x00, 0x80, 0x00, 0x9C, 0xF9, 0xA5, 0x91, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78,
+    0x01, 0x63, 0xA0, 0x2B, 0x18, 0x05, 0xA3, 0x60, 0x14, 0x8C, 0x82, 0x51, 0x00, 0x00, 0x05, 0x78, 0x00, 0x01, 0x1E,
+    0xCD, 0x28, 0xCD, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
+/// s295（html-semantics）：10x10 PNG（76 B）——image-alternate-no-store.py 端点臂
+/// 的次请求回体（上游 wpt pin 315976933 `resources/blue-10.png` 逐字节）。与 green
+/// 尺寸不同（100↔10）：同 src 重指派若绕过 list-of-available-images 复用而重取回，
+/// naturalWidth 面即翻红——交替正是上游钉「不额外取回」的机制。
+const ZW_S295_BLUE_10: &[u8] = &[
+    0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00,
+    0x0A, 0x00, 0x00, 0x00, 0x0A, 0x08, 0x06, 0x00, 0x00, 0x00, 0x8D, 0x32, 0xCF, 0xBD, 0x00, 0x00, 0x00, 0x13, 0x49,
+    0x44, 0x41, 0x54, 0x18, 0x95, 0x63, 0x60, 0x60, 0xF8, 0xFF, 0x9F, 0x38, 0x3C, 0xAA, 0x90, 0xAE, 0x0A, 0x01, 0xCB,
+    0x7C, 0xC7, 0x39, 0xC4, 0x8C, 0x07, 0x3A, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum HarnessStatus {
     /// The subtest passed.
@@ -6894,6 +6917,13 @@ fn wpt_data_fetch_handler_with_stash(
     // s150：the-link-element/stylesheet.py per-id 请求计数（handler per-case 构建——
     // 每案新计数表，键 = `?id=` token，值 = 该 id 的资源请求次数）。
     let link_sheet_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
+    // s295：image-alternate-no-store.py 逐请求交替态（上游固定 stash 键布尔——首请求
+    // falsy→green、次请求→blue-10；handler per-case 构建同上两表，案内状态自清）。
+    let alt_no_store_switch: std::sync::Arc<std::sync::Mutex<bool>> = std::sync::Arc::new(std::sync::Mutex::new(false));
+    // s295：image-and-stash.py per-uuid 计数表（上游 wptserve stash take+put-back 只增
+    // 语义；handler per-case 构建——案内键自清，uuid 案内唯一/`{{uuid()}}` 字面常量键
+    // 亦案内一致）。
+    let img_and_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
@@ -7163,6 +7193,102 @@ fn wpt_data_fetch_handler_with_stash(
                     headers,
                     body: String::new(),
                     body_bytes: Some(ZW_S288_404_PNG.to_vec()),
+                });
+            }
+            if clean == "html/semantics/embedded-content/the-img-element/resources/image-alternate-no-store.py" {
+                // s295（html-semantics）：image-alternate-no-store.py 端点仿真（上游
+                // wptserve handler 不在语料——固定 stash 键布尔逐请求交替 green.png/
+                // blue-10.png 回体，Content-Type: image/png + Cache-Control: no-store，
+                // 首 falsy→green、次→blue-10）。语料消费者 image-alternate-no-store.
+                // window.js 断言面：同 src 重指派走 list-of-available-images 复用
+                //（spec updating-the-image-data step 7.4——ignore higher-layer caching
+                // flag 入列）不触发额外取回 → 两次 decode 同图 naturalWidth 同值；若
+                // 重取回，交替臂换图（100↔10 尺寸差）宽度断言即翻红——交替正是上游
+                // 钉「不额外取回」的机制。no-store 头为 HTTP 缓存层语义，shim 复用面
+                // 走 _zwAvailableImages 内存表，头只忠实携带不入门。
+                // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+                // https://github.com/web-platform-tests/wpt/blob/
+                // 315976933870b34d6ea30e3f6643403edae678ba/
+                // html/semantics/embedded-content/the-img-element/resources/image-alternate-no-store.py
+                let switch = alt_no_store_switch
+                    .lock()
+                    .map(|mut s| {
+                        let v = *s;
+                        *s = !v;
+                        v
+                    })
+                    .unwrap_or(false);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "image/png".into()));
+                headers.push(("cache-control".into(), "no-store".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                let body = if switch { ZW_S295_BLUE_10 } else { ZW_S295_GREEN_100 };
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(body.to_vec()),
+                });
+            }
+            if clean == "html/semantics/embedded-content/the-img-element/resources/image-and-stash.py" {
+                // s295（html-semantics）：image-and-stash.py 端点仿真（上游 wptserve
+                // handler 不在语料——`?increment=<uuid>` per-uuid 计数 +1 回 image/png
+                // 体、`?read=<uuid>` 只读回计数值文本（take+put-back 不删）、其余 404）。
+                // 语料消费者 list-of-available-images-does-not-coalesce-in-flight-
+                // requests.sub.tentative 断言面：list of available images 不合并
+                // in-flight 请求（spec：列表只在 completely downloaded + load 后入列
+                // ——非请求合并器）→ 同 URL 两 img 各自独立 fetch，服务端须见恰 2 请求
+                // （fetch(path?read=) 回 "2"）。上游 increment 回 `resources/image.png`
+                //（40x30）——页断言仅 onload 到场 + 服务端计数、无尺寸面，以
+                // [`ZW_ONE_PX_PNG`] 最小合法图承载（s270 referrer 臂同款简化）。
+                // `{{uuid()}}` 模板 runner 无替换（字面常量键）——案内自洽，per-case
+                // 计数表案内自清语义等价；pipe=trickle(d1) 真实时序交错不可复现（在册
+                // trickle pipe 不可复现），计数与 onload 断言不依赖时序面不涉。
+                // https://html.spec.whatwg.org/multipage/#the-list-of-available-images
+                // https://github.com/web-platform-tests/wpt/blob/
+                // 315976933870b34d6ea30e3f6643403edae678ba/
+                // html/semantics/embedded-content/the-img-element/resources/image-and-stash.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                if let Some(uuid) = wpt_query_value(query, "increment") {
+                    if let Ok(mut stash) = img_and_stash.lock() {
+                        *stash.entry(uuid).or_insert(0) += 1;
+                    }
+                    headers.push(("content-type".into(), "image/png".into()));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(ZW_ONE_PX_PNG.to_vec()),
+                    });
+                }
+                if let Some(uuid) = wpt_query_value(query, "read") {
+                    let value = img_and_stash
+                        .lock()
+                        .ok()
+                        .and_then(|stash| stash.get(&uuid).copied())
+                        .unwrap_or(0);
+                    headers.push(("content-type".into(), "text/plain".into()));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: value.to_string(),
+                        body_bytes: Some(value.to_string().into_bytes()),
+                    });
+                }
+                headers.push(("content-type".into(), "text/plain".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 404);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 404,
+                    status_text: "Not Found".to_string(),
+                    headers,
+                    body: "Not found".to_string(),
+                    body_bytes: Some(b"Not found".to_vec()),
                 });
             }
             if clean == "beacon/resources/inspect-header.py"

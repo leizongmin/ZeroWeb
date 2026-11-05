@@ -209,6 +209,33 @@ fetch_raw "html/semantics/embedded-content/the-img-element/srcset/resources/imag
 # stale auto-width 非持久），下轮全量 join 对应位移按语料变更归因（s284 账本）。
 fetch_raw "images/red-16x16.png"
 
+# ③g the-img-element 端点仿真字节出处助资产（s295）：image-alternate-no-store.py /
+# image-and-stash.py 两端点不在语料（runner 臂内嵌字节回体，s295 账本）——语料页只
+# 引用 .py 不引用这些 .png，运行时不消费；此处拉取仅为 testharness.rs 常量字节出处
+# 可复验（fresh clone 可对上游 pin 逐字节 cmp）。green.png 已在 ③c、image.png 以
+# resources/（③c 同目录）与 srcset/resources/ 两副本在本地；顶层
+# the-img-element/image.png 是**另一路径**（update-src-complete.html 相对引用面，
+# 运行时消费，③i 补），勿与两副本混读。仅 blue-10.png 缺席。
+fetch_raw "html/semantics/embedded-content/the-img-element/resources/blue-10.png"
+# ③h the-img-element 运行时消费缺资产（s295）：not-rendered-dimension-getter.html
+# 引用 image-1.jpg（389×590，IDL width/height 未渲染回落自然维断言面）；natural-
+# size-orientation.html 引用 images/arrow-oriented-upright.jpg（EXIF upright 方向
+# 元数据，naturalWidth/Height 重定向值断言面）。缺资产 404 → onerror → load 断言
+# 永不到 → 文件级 Timeout（s227 先验判据）。基准变更注记：补语料后两页预期
+# Timeout → 子测真面，下轮全量 join 对应位移按语料变更归因，非回归（s295 账本）。
+fetch_raw "html/semantics/embedded-content/the-img-element/image-1.jpg"
+fetch_raw "images/arrow-oriented-upright.jpg"
+
+# ③i the-img-element 运行时消费缺资产（s295）：update-src-complete.html 两段引用
+# 顶层 image.png（`<img src="image.png">` + 换源 `image.png?<random>`）。缺资产时
+# 两段均 404 → decode 失败 → error：首载 resourceState=broken 使 complete getter
+# 假绿（assert_true 过）、二次换源派 error 非 load → 新 onload 永不到 → 文件级
+# Timeout（s227 同型——勘根先绕 shim 全链后验资产，教训录账本）。
+# 基准变更注记：补语料后该页预期 Timeout → 子测起跑（complete 翻转 + 二次
+# onload 两断言面，勘根确认 shim restart/fetch 链健全），下轮全量 join 对应
+# 位移按语料变更归因，非回归（s295 账本）。
+fetch_raw "html/semantics/embedded-content/the-img-element/image.png"
+
 goals_fetch_all
 goals_inventory
 goals_next_steps "${GOAL}"

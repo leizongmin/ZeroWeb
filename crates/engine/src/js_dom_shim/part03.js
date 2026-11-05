@@ -3628,10 +3628,19 @@
   // current request → broken、current URL 清空、error 仅在「有 src/srcset/
   // picture 关联」时派——'src removed'/'srcset removed' rows 撤除后无关联
   // → 不派（timeout 面）。
+  // s295：无前请求放行面收窄为「src 属性存在」（任意值含空串）——spec
+  // selected-source-null 步（https://html.spec.whatwg.org/multipage/images.html
+  // #updating-the-image-data）不以前请求为前提，但 WPT null-image-source 钉
+  // srcset=""/picture 父**不派** error（unreached_func；上游 master 同面）——
+  // 浏览器 de-facto 门 = src 属性在，与 spec 字面「uses srcset or picture 也派」
+  // 分叉，按语料契约实现；其余（srcset/picture 祖先/无属性）维持既有无状态
+  // 早退面。
   globalThis.__zwImgNullSelection5277 = function (sel, handle) {
     var _nkKey = _elKey(sel, handle);
     var _nkPrev = _resourceStates[_nkKey];
-    if (!_nkPrev) return;
+    if (!_nkPrev) {
+      try { if (_zw5277Attr(sel, handle, 'src') == null) return; } catch (_e5295nk) { return; }
+    }
     _resourceStates[_nkKey] = { url: '', outcome: 'broken', width: 0, height: 0, error: true, density: 1 };
     // error 门：post-mutation 仍有 src/srcset 关联或 picture 祖先
     var _nkHasLink = false;

@@ -455,6 +455,11 @@
           // https://html.spec.whatwg.org/multipage/images.html#update-the-image-data
           // AUDIO/VIDEO 维持原串（媒体 data: URL currentSrc 断言面不动）。
           if (resourceTag === 'IMG') {
+            // s295：null-selection broken 态（current URL 清空——spec
+            // selected-source-null 步「Change the current request's current URL
+            // to the empty string」）→ currentSrc 返回空串，不进 absolutize
+            //（'' 对 base 解析得页面 URL——update-the-source-set src="" 断言面）。
+            if (resourceState.url === '') return '';
             var _csAbs = (typeof globalThis.__zwAbsolutizeSourceUrl5277 === 'function')
               ? globalThis.__zwAbsolutizeSourceUrl5277(resourceState.url)
               : String(resourceState.url);
@@ -1491,7 +1496,18 @@
               if (!_zwImSrc) {
                 try { _zwImSrc = String(_zwIm.getAttribute('src') || ''); } catch (_eSws) {}
               }
-              if (!_zwImSrc) continue;
+              if (!_zwImSrc) {
+                // s295：选中源空静态 img 走 null-selection 面——src 属性在（空串）
+                // 的图写 broken 并派 error（spec selected-source-null 步；WPT
+                // null-image-source「img with empty src」钉面），srcset=""/picture
+                // 祖先/无属性图 helper 内无 src 早退维持静默（同页 unreached_func
+                // 钉面）。仅无既有状态图首过进入（幂等——写 broken 后后续 sweep
+                // pass _zwPrior 在位 skip，不重派 error）。
+                if (!_zwPrior && typeof globalThis.__zwImgNullSelection5277 === 'function') {
+                  globalThis.__zwImgNullSelection5277(_zwImSel, _zwImHandle);
+                }
+                continue;
+              }
               // s71 F1b：data:image/svg+xml 静态 settle——固有尺寸核优先于 host
               // 快照（runner 位图解码面不解 SVG，host `__zw_get_image_size` 的
               // SVG 语义是 viewBox 原始宽高/缺省 100×100，与本核 CSS-images
