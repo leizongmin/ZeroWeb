@@ -100,7 +100,7 @@ rendering-compat/layout goal）——B3 配额 386 的 6.9 倍。**B1/B2/B3 三�
 [evidence/2026-11-05-m2-batch4-wiring-baseline.md](css-testharness-compat-v2/evidence/2026-11-05-m2-batch4-wiring-baseline.md)。
 划界 layout goal 触发实测：布局耦合池
 22,566（B3 19,286 + 一期 grid 探测挂账 3,280），扣解析份额后 > 15k >
-10k → **独立 layout goal 立项条件成立**（测算与建议已通报，立项待拍板）。
+10k → **独立 layout goal 立项条件成立**（测算与建议已通报，立项待拍板；GB-20261105 飞书征询在案 msg `om_x100b61fd5d30fca0b081ea75b087c8e`）。
 
 **语料 sync 终态（2026-11-05，DC-1 第二件落定）**：45 目录全部 missing=0，
 扩展过滤面 18,031 blob 在册，本轮新拉 6,963（B1 837 + B2 203 + B3 5,923），
