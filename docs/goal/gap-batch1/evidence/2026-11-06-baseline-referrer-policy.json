@@ -1,0 +1,392 @@
+[
+  [
+    "referrer-policy/generic/first-meta-changed-after-second-added.http.html",
+    [
+      {
+        "name": "document referrer policy is the value of the most recently modified <meta name=\"referrer\"",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/iframe-src-change.html",
+    [
+      {
+        "name": "referrer-policy/generic/iframe-src-change.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/link-rel-prefetch.html",
+    [
+      {
+        "name": "Prefetched image.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"IndexSizeError: getImageData: zero dimension\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/meta-referrer-domparser.html",
+    [
+      {
+        "name": "DOMParser().parseFromString should not affect creator document's referrer policy",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      },
+      {
+        "name": "Parsing <meta name='referrer'> inside <template> should not affect creator document's referrer policy",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      },
+      {
+        "name": "Document.parseHTMLUnsafe() should not affect creator document's referrer policy",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/meta-referrer-outofhead-fetch.http.html",
+    [
+      {
+        "name": "Referer header was not send",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/meta-referrer-removed-1.http.html",
+    [
+      {
+        "name": "removing <meta name=\"referrer\"> should not change referrer policy",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/meta-referrer-removed-2.http.html",
+    [
+      {
+        "name": "referrer policy does not change when second <meta name=\"referrer\"> is removed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/meta-tag-in-svg-image.html",
+    [
+      {
+        "name": "Meta tag in SVG image loaded via img should be ignored",
+        "status": "Pass",
+        "message": null
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/multiple-headers-and-values.html",
+    [
+      {
+        "name": "Image uses the last recognized Referrer-Policy header value",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/multiple-headers-combined.html",
+    [
+      {
+        "name": "Image uses the last recognized Referrer-Policy header value",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/multiple-headers-one-invalid.html",
+    [
+      {
+        "name": "Referrer policy header parsing fails if one header is invalid",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"IndexSizeError: getImageData: zero dimension\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/multiple-headers-one-unknown-token.html",
+    [
+      {
+        "name": "Image uses last recognized referrer policy token from Referrer-Policy headers",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/multiple-headers.html",
+    [
+      {
+        "name": "Image uses the last recognized Referrer-Policy header",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"[object Event]\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/refresh-cross-origin.sub.html",
+    [
+      {
+        "name": "referrer-policy/generic/refresh-cross-origin.sub.html",
+        "status": "Fail",
+        "message": "page script threw (declared tests: 0): Script error: page script: TypeError: Invalid URL: /referrer-policy/generic/refresh-cross-origin.sub.html\n    at new URL (<anonymous>:22219:19)\n    at eval (eval at <anonymous> (unknown source), <anonymous>:17:14)\n    at eval (<anonymous>)\n    at <anonymous>:3:38"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/refresh-same-origin.html",
+    [
+      {
+        "name": "referrer-policy/generic/refresh-same-origin.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":18,\"phase\":4,\"tests\":18})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/refresh-same-url.html",
+    [
+      {
+        "name": "referrer-policy/generic/refresh-same-url.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":18,\"phase\":4,\"tests\":18})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/sandboxed-iframe-with-opaque-origin.html",
+    [
+      {
+        "name": "Sandboxed iframe with opaque origin doesn't send referrers to subresources",
+        "status": "Fail",
+        "message": "assert_equals: expected (undefined) undefined but got (string) \"FAILURE\""
+      },
+      {
+        "name": "Sandboxed iframe with tuple origin sends referrers to subresources",
+        "status": "Fail",
+        "message": "assert_equals: expected \"https://wpt.test/referrer-policy/generic/sandboxed-iframe-with-opaque-origin.html\" but got \"FAILURE\""
+      },
+      {
+        "name": "referrer-policy/generic/sandboxed-iframe-with-opaque-origin.html",
+        "status": "Timeout",
+        "message": "testharness page timeout completed the file with 2 test(s) unreported (state={\"loaded\":true,\"pending\":2,\"phase\":4,\"tests\":4})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/second-meta-referrer-added-before-first.http.html",
+    [
+      {
+        "name": "document referrer policy is the value of the most recently added <meta name=\"referrer\">",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"SyntaxError: Unexpected token 'i', \"import os,\"... is not valid JSON\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/generic/unsupported-csp-referrer-directive.html",
+    [
+      {
+        "name": "Image has a referrer despite CSP 'referrer' directive",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"IndexSizeError: getImageData: zero dimension\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/child-css/external-import-stylesheet.html",
+    [
+      {
+        "name": "referrer-policy/css-integration/child-css/external-import-stylesheet.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/child-css/internal-import-stylesheet-with-differentorigin-base-url-from-preload.tentative.html",
+    [
+      {
+        "name": "A child stylesheet from inline style should use the document's URL, not the document's base URL, as its referrer, even when the HTML parser preloads the stylesheet.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/child-css/internal-import-stylesheet-with-differentorigin-base-url.tentative.html",
+    [
+      {
+        "name": "A child stylesheet from inline style should use the document's URL, not the document's base URL, as its referrer.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/child-css/internal-import-stylesheet.html",
+    [
+      {
+        "name": "Child css from internal stylesheet.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/child-css/processing-instruction.html",
+    [
+      {
+        "name": "Child css via a ProcessingInstruction.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/font-face/external-import-stylesheet.html",
+    [
+      {
+        "name": "referrer-policy/css-integration/font-face/external-import-stylesheet.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/font-face/external-stylesheet.html",
+    [
+      {
+        "name": "referrer-policy/css-integration/font-face/external-stylesheet.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/font-face/internal-import-stylesheet.html",
+    [
+      {
+        "name": "Font from imported stylesheet (internal).",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/font-face/internal-stylesheet.html",
+    [
+      {
+        "name": "Font from internal stylesheet.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/font-face/processing-instruction.html",
+    [
+      {
+        "name": "Font from external stylesheet (from ProcessingInstruction).",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/external-import-stylesheet.html",
+    [
+      {
+        "name": "referrer-policy/css-integration/image/external-import-stylesheet.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/external-stylesheet.html",
+    [
+      {
+        "name": "referrer-policy/css-integration/image/external-stylesheet.html",
+        "status": "Timeout",
+        "message": "testharness completed without reporting registered tests (state={\"loaded\":true,\"pending\":1,\"phase\":4,\"tests\":1})"
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/inline-style-with-differentorigin-base-tag.tentative.html",
+    [
+      {
+        "name": "Image from inline styles.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/inline-style.html",
+    [
+      {
+        "name": "Image from inline styles.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/internal-import-stylesheet.html",
+    [
+      {
+        "name": "Image from imported stylesheet (internal).",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/internal-stylesheet.html",
+    [
+      {
+        "name": "Image from internal stylesheet.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/presentation-attribute.html",
+    [
+      {
+        "name": "Image from presentation attributes.",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ],
+  [
+    "referrer-policy/css-integration/image/processing-instruction.html",
+    [
+      {
+        "name": "Image from external stylesheet (from ProcessingInstruction).",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"Error: Network Error\""
+      }
+    ]
+  ]
+]

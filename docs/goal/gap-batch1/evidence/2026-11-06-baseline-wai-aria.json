@@ -1,0 +1,2262 @@
+[
+  [
+    "wai-aria/accessibility_properties_basic.tentative.html",
+    [
+      {
+        "name": "wai-aria/accessibility_properties_basic.tentative.html",
+        "status": "Unsupported",
+        "message": "unsupported testdriver API: get_accessibility_properties_for_element, get_accessibility_properties_for_accessibility_node"
+      }
+    ]
+  ],
+  [
+    "wai-aria/aria-actions/aria-actions-host-accname-excludes-target.tentative.html",
+    [
+      {
+        "name": "aria-actions: target excluded from host accname",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_label is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/aria-actions/aria-actions-host-accname-multiple-targets.tentative.html",
+    [
+      {
+        "name": "aria-actions: every listed direct target is excluded from host name",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_label is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/aria-actions/aria-actions-target-accname-from-aria-label.tentative.html",
+    [
+      {
+        "name": "aria-actions: host accname excludes labelled target",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_label is not a function\""
+      },
+      {
+        "name": "aria-actions: target keeps its own aria-label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_label is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/aria-actions/idl-reflection.tentative.html",
+    [
+      {
+        "name": "[Element] ariaActionsElements is null by default",
+        "status": "Fail",
+        "message": "assert_equals: expected (object) null but got (string) \"\""
+      },
+      {
+        "name": "[Element] IDL setter exposes elements via the getter, in order",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"[object HTMLButtonElement],[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[Element] Setting to null clears the IDL reflection",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[Element] ariaActionsElements distinguishes [] from null",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"\", expected array"
+      },
+      {
+        "name": "[Element] FrozenArray identity is preserved across reads until reassignment",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"[object HTMLButtonElement],[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[ElementInternals] ariaActionsElements is null by default",
+        "status": "Fail",
+        "message": "Cannot read properties of undefined (reading 'ariaActionsElements')"
+      },
+      {
+        "name": "[ElementInternals] IDL setter exposes elements via the getter, in order",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'ariaActionsElements')"
+      },
+      {
+        "name": "[ElementInternals] Setting to null clears the IDL reflection",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'ariaActionsElements')"
+      },
+      {
+        "name": "[ElementInternals] ariaActionsElements distinguishes [] from null",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'ariaActionsElements')"
+      },
+      {
+        "name": "[ElementInternals] FrozenArray identity is preserved across reads until reassignment",
+        "status": "Fail",
+        "message": "Cannot set properties of undefined (setting 'ariaActionsElements')"
+      },
+      {
+        "name": "[Element] Content attribute with resolvable IDREFs reflects to those elements",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"\", expected array"
+      },
+      {
+        "name": "[Element] Unresolvable IDREFs reflect to an empty list",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"\", expected array"
+      },
+      {
+        "name": "[Element] IDL setter writes empty string to the aria-actions content attribute",
+        "status": "Fail",
+        "message": "assert_equals: Setter writes empty string as the presence flag expected (string) \"\" but got (object) null"
+      },
+      {
+        "name": "[Element] Setting to [] writes empty string to the content attribute",
+        "status": "Fail",
+        "message": "assert_equals: expected (string) \"\" but got (object) null"
+      },
+      {
+        "name": "[Element] Setting ariaActionsElements to null removes the aria-actions content attribute",
+        "status": "Pass",
+        "message": null
+      },
+      {
+        "name": "[Element] Removing the aria-actions content attribute preserves IDL-set elements",
+        "status": "Fail",
+        "message": "assert_array_equals: Pre-condition value is \"[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[Element] Disconnecting a target hides it; reconnecting restores it",
+        "status": "Fail",
+        "message": "assert_array_equals: Pre-condition: target reflected while connected value is \"[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[Element] IDL setter takes precedence over the content attribute value",
+        "status": "Fail",
+        "message": "assert_array_equals: IDL-set element wins over content-attribute IDREF value is \"[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[Element] Cross-shadow-tree targets are filtered out",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"[object HTMLButtonElement]\", expected array"
+      },
+      {
+        "name": "[Element] Same-shadow-tree targets are reflected",
+        "status": "Fail",
+        "message": "assert_array_equals: value is \"[object HTMLButtonElement]\", expected array"
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/abstract-roles.html",
+    [
+      {
+        "name": "command role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "composite role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "input role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "landmark role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "range role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "roletype role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "section role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "sectionhead role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "select role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "structure role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "widget role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "window role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/basic.html",
+    [
+      {
+        "name": "wai-aria/role/basic.html",
+        "status": "Unsupported",
+        "message": "unsupported testdriver API: get_computed_role"
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/button-roles.html",
+    [
+      {
+        "name": "button aria-haspopup false",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup true",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup menu",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup dialog",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup listbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup tree",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-haspopup grid",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-pressed true",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-pressed false",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button aria-pressed undefined",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/contextual-roles.html",
+    [
+      {
+        "name": "footer scoped to body element is contentinfo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "contentinfo region scoped to body element is contentinfo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/contextual-roles.tentative.html",
+    [
+      {
+        "name": "role is sectionfooter (in main)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is sectionheader (in main)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/fallback-roles.html",
+    [
+      {
+        "name": "fallback role w/ region with no label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "fallback role w/ region with label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "aria 1.1 switch role w/ fallback to aria 1.0 checkbox role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring invalid foo role token",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "unknown[role=button] ignoring invalid foo role token",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button ignoring single invalid role token",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button ignoring multiple invalid role tokens",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring invalid foo role token including punctuation-contaminated known link role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring invalid unicode diacritics etc on link and group role tokens",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring tab char",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring line break",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=button] ignoring braille whitespace char",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='foo Link'][tabindex=0], illegal role and capitalized fallback role, has link role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button[role='foo Link'] with illegal role and capitalized fallback role, has link role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav[role='foo GROUP'] with illegal role and all upper case fallback role, has group role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='foo ReGiOn'][aria-label] with illegal role and alternating case fallback role, has region role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='ReGiOn foo'][aria-label] with alternating case role and illegal fallback role, has region role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='BUTTON LINK'] with tabindex=0, has button role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='ReGiOn group'] without accname, has group role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='ReGiOn group'][aria-label], has region role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role=buTtOn] ignoring line break, has button role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div[role='ReGiOn foo'] with alternating case role and illegal fallback role without accname, has generic role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/form-roles.html",
+    [
+      {
+        "name": "form without label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "form with label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/generic-roles.html",
+    [
+      {
+        "name": "generic role on p element is generic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/grid-roles.html",
+    [
+      {
+        "name": "role is grid",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is row (in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is columnheader (in row, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is rowheader (in row, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is gridcell (in row, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is rowgroup (in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is row (in rowgroup, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is columnheader (in row, in rowgroup, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is rowheader (in row, in rowgroup, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is gridcell (in row, in rowgroup, in grid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/invalid-roles.html",
+    [
+      {
+        "name": "nav with invalid role name foo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with two invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with three invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button with invalid role name foo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button with two invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button with three invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with empty character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with line break (\r) character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with tab (\t) as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with zero-width space as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with braille space (10240) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with braille space (x2800) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with non-breaking space (nbsp) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with standard space (nbsp) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role foo that has tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to overline diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role foo that has overline diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to circumflex diacritic below",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role foo that has circumflex diacritic below",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to button with tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button with role set to zero-width joiner",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button with role set to foo with zero-width joiner",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to theta (Θ)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to Persian character (ژ)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with multiple non-latin character roles, Persian character (ژ) and ♮",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to Japanese kanji",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to Arabic text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with multiple role assignments set to Arabic text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to Hebrew text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with multiple role assignments set to Hebrew text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to ampersand character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "link with role set to less than angle bracket character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to region followed by backslash",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to backslash followed by region",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "nav with role set to region with backslash after e character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with invalid role name foo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with two invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with three invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with invalid role name foo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with two invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with three invalid role names",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped empty character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped line break (\r) character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped tab (\t) as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped zero-width space as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped braille space (10240) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped braille space (x2800) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped non-breaking space (nbsp) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with escaped standard space (nbsp) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with empty character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with line break (\r) character as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with tab (\t) as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with zero-width space as role (should be treated as whitespace)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with braille space (10240) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with non-breaking space (nbsp) as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with standard space as role",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role set to tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role foo that has tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role set to button with tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role set to button with unescaped tilde diacritic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to theta (Θ)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to Persian character (ژ)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with multiple non-latin character roles, Persian character (ژ) and ♮",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to Japanese kanji",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role set to Arabic text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with multiple role assignments set to Arabic text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with role set to Hebrew text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div with multiple role assignments set to Hebrew text",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to ampersand character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to less than angle bracket character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to unescaped ampersand character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to unescaped less than angle bracket character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to region followed by backslash",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to backslash followed by region",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span with role set to region with forward slash after e character",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/list-roles.html",
+    [
+      {
+        "name": "first simple list",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "first simple listitem",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "last simple listitem",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/listbox-roles.html",
+    [
+      {
+        "name": "div role is listbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is option (in div listbox)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is group (in div listbox)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is option (in group, in div listbox)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "ul role is listbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "li role is option (in ul listbox)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/menu-roles.html",
+    [
+      {
+        "name": "role is menu",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitem (in menu)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is group (in menu)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitem (in group, in menu)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitemradio (in group, in menu)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitemcheckbox (in group, in menu)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menubar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitem (in menubar)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is group (in menubar)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitem (in group, in menubar)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitemradio (in group, in menubar)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is menuitemcheckbox (in group, in menubar)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/region-roles.html",
+    [
+      {
+        "name": "region without label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "region with label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/role_none_conflict_resolution.html",
+    [
+      {
+        "name": "heading role none with global attr aria-label",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "p role none with global attr aria-label (prohibited role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "focusable heading role none with tabindex=0",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "focusable heading role none with tabindex=-1",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "p role none without global attr aria-label (prohibited role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "non-focusable heading role none",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "none with non-global",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/role_none_conflict_resolution.tentative.html",
+    [
+      {
+        "name": "non-focusable ARIA[role=button] nesting non-focusable ARIA[role=button]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "focusable ARIA[role=button] nesting non-focusable ARIA[role=button]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "non-focusable ARIA[role=button] nesting focusable ARIA[role=button]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "focusable ARIA[role=button] nesting focusable ARIA[role=button]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/role_none_conflict_resolution_spec_ambiguities.tentative.html",
+    [
+      {
+        "name": "presentational roles conflict - ul[role=none] > li[aria-describedby]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "presentational roles conflict - table[role=none] td[aria-describedby]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "presentational roles conflict - table.with-style[role=none] td[aria-describedby]",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/roles.html",
+    [
+      {
+        "name": "role: alert",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: alertdialog",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: application",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: article",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: banner",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: blockquote",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: button",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: caption",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: checkbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: code",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: combobox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: complementary",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: contentinfo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: definition",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: deletion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: dialog",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: document",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: emphasis",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: feed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: figure",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: generic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: group",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: heading",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: insertion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: link",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: log",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: main",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: marquee",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: math",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: meter",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: note",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: paragraph",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: progressbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: radio",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: radiogroup",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: scrollbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: search",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: searchbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: separator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: slider",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: spinbutton",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: status",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: strong",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: subscript",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: suggestion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: superscript",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: switch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: term",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: textbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: time",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: timer",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: toolbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: tooltip",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: ALERT",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: ALERTDIALOG",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: APPLICATION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: ARTICLE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: BANNER",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: BLOCKQUOTE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: BUTTON",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: CAPTION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: CHECKBOX",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: CODE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: COMBOBOX",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: COMPLEMENTARY",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: CONTENTINFO",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: DEFINITION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: DELETION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: DIALOG",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: DOCUMENT",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: EMPHASIS",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: FEED",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: FIGURE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: GENERIC",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: GROUP",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: HEADING",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: INSERTION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: LINK",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: LOG",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: MAIN",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: MARQUEE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: MATH",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: METER",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: NAVIGATION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: NOTE",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: PARAGRAPH",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: PROGRESSBAR",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: RADIO",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: RADIOGROUP",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SCROLLBAR",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SEARCH",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SEARCHBOX",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SEPARATOR",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SLIDER",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SPINBUTTON",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: STATUS",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: STRONG",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SUBSCRIPT",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SUGGESTION",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SUPERSCRIPT",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: SWITCH",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TERM",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TEXTBOX",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TIME",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TIMER",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TOOLBAR",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: TOOLTIP",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Alert",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Alertdialog",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Application",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Article",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Banner",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Blockquote",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Button",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Caption",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Checkbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Code",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Combobox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Complementary",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Contentinfo",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Definition",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Deletion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Dialog",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Document",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Emphasis",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Feed",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Figure",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Generic",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Group",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Heading",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Insertion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Link",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Log",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Main",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Marquee",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Math",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Meter",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Navigation",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Note",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Paragraph",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Progressbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Radio",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Radiogroup",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Scrollbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Search",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Searchbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Separator",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Slider",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Spinbutton",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Status",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Strong",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Subscript",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Suggestion",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Superscript",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Switch",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Term",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Textbox",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Time",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Timer",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Toolbar",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: Tooltip",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/roles.tentative.html",
+    [
+      {
+        "name": "role: sectionheader",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role: sectionfooter",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/synonym-roles.html",
+    [
+      {
+        "name": "image role == computedrole image",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "synonym img role == computedrole image",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "list role == computedrole list",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "directory role == computedrole list",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div w/directory role == computedrole list",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "none role == computedrole none",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "synonym presentation role == computedrole none",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/tab-roles.html",
+    [
+      {
+        "name": "div role is tablist",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab (in div tablist)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel (with sibling div tablist)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is tablist (with selection)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is selected",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is not selected",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel (faux selected)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel (faux unselected)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is tablist (with selection, roving tabindex)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab, tab is selected and in tab order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is not selected, not tabbable",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is not selected, not tabbable (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with selection, roving tabindex",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with selection, roving tabindex (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with selection, roving tabindex (duplicate 2)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is tablist (with non-empty tabpanel)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is selected (with non-empty tabpanel content)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab and tab is not selected (with non-empty tabpanel content)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with selection, non-empty content",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with selection, non-empty content (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is tablist (with non-empty tabpanel and aria-controls)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab, tab is selected (with aria-controls)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab, tab is not selected (with aria-controls)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with aria-controls and non-empty content",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel with aria-controls and non-empty content (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role for button parent container is tablist",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "button role is tab (in div tablist)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "ul role is tablist",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab (within li), tab is selected and in tab order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab (within li), tab is not selected and in tab order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel as sibling to ul",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel as sibling to ul (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "ul role is tablist (child li have role none)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab (within li with role none), tab is selected and in tab order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tab (within li with role none), tab is not selected and in tab order",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel as sibling to ul with child role none li elements",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is tabpanel as sibling to ul with child role none li elements (duplicate)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/table-roles.html",
+    [
+      {
+        "name": "div role is caption (in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "orphan p role is caption",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span role is cell (in div with row role, in div with rowgroup role, in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "orphan span role is cell",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "span role is columnheader (in div with row role, in div with rowgroup role, in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is row (in div with rowgroup role, in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is rowgroup (in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is rowheader (in div with row role, in div with rowgroup role, in div with table role)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "div role is table",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ],
+  [
+    "wai-aria/role/tree-roles.html",
+    [
+      {
+        "name": "role is tree",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is treeitem (in tree)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is group (in treeitem)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is treeitem (in group, in treeitem)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is treegrid",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is row (in treegrid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      },
+      {
+        "name": "role is gridcell (in row, in treegrid)",
+        "status": "Fail",
+        "message": "promise_test: Unhandled rejection with value: object \"TypeError: test_driver.get_computed_role is not a function\""
+      }
+    ]
+  ]
+]

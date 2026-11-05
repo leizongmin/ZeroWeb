@@ -248,6 +248,16 @@ Commands:
                        (gap-batch1 goal M1 / DC-2)
   testharness-import-maps  Run imported import-maps testharness cases
                        (gap-batch1 goal M1 / DC-2)
+  testharness-referrer-policy  Run imported referrer-policy testharness cases
+                       (gap-batch1 goal M3)
+  testharness-input-events  Run imported input-events testharness cases
+                       (gap-batch1 goal M3)
+  testharness-preload  Run imported preload testharness cases
+                       (gap-batch1 goal M3)
+  testharness-wai-aria  Run imported wai-aria testharness cases
+                       (gap-batch1 goal M3)
+  testharness-storage  Run imported storage testharness cases
+                       (gap-batch1 goal M3)
   testharness-hr-time  Run imported hr-time testharness cases
                        (timing-animation-compat goal M1 / DC-1)
   testharness-performance-timeline  Run imported performance-timeline testharness cases
@@ -608,6 +618,11 @@ fn main() {
         "testharness-subresource-integrity" => cmd_testharness_subresource_integrity(&options, filter.as_deref()),
         "testharness-cors" => cmd_testharness_cors(&options, filter.as_deref()),
         "testharness-import-maps" => cmd_testharness_import_maps(&options, filter.as_deref()),
+        "testharness-referrer-policy" => cmd_testharness_referrer_policy(&options, filter.as_deref()),
+        "testharness-input-events" => cmd_testharness_input_events(&options, filter.as_deref()),
+        "testharness-preload" => cmd_testharness_preload(&options, filter.as_deref()),
+        "testharness-wai-aria" => cmd_testharness_wai_aria(&options, filter.as_deref()),
+        "testharness-storage" => cmd_testharness_storage(&options, filter.as_deref()),
         "testharness-hr-time" => cmd_testharness_hr_time(&options, filter.as_deref()),
         "testharness-performance-timeline" => cmd_testharness_performance_timeline(&options, filter.as_deref()),
         "testharness-user-timing" => cmd_testharness_user_timing(&options, filter.as_deref()),
@@ -2210,6 +2225,44 @@ fn cmd_testharness_cors(options: &CliOptions, filter: Option<&str>) {
 fn cmd_testharness_import_maps(options: &CliOptions, filter: Option<&str>) {
     run_observers_cmd(options, filter, |wpt_root, filter| {
         testharness::run_import_maps_cases(wpt_root, filter)
+    });
+}
+
+/// `testharness-referrer-policy` / `testharness-input-events` /
+/// `testharness-preload` / `testharness-wai-aria` / `testharness-storage`
+/// 子命令 — 跑导入的上游 gap-batch1 五 corpus（referrer-policy / input-events
+/// / preload / wai-aria / storage）window 可执行子集（gap-batch1 goal M3——
+/// LIKELY 五面按 M0 甄别池逐面入账；池清单与引擎缺位归因见
+/// evidence/2026-11-06-m0-likely-facet-triage.md）。skip 规则与 M1 六面共用
+/// `gap_batch1_case_skipped`；manual/ 目录不进子目录清单。退出码与 filter
+/// 语义同 M1 六面（见 `cmd_testharness_quirks` 文档）。
+fn cmd_testharness_referrer_policy(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_referrer_policy_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_input_events(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_input_events_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_preload(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_preload_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_wai_aria(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_wai_aria_cases(wpt_root, filter)
+    });
+}
+
+fn cmd_testharness_storage(options: &CliOptions, filter: Option<&str>) {
+    run_observers_cmd(options, filter, |wpt_root, filter| {
+        testharness::run_storage_cases(wpt_root, filter)
     });
 }
 

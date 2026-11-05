@@ -85,7 +85,8 @@ git -C "${TMP}/wpt" sparse-checkout set --no-cone \
   "resources/testharnessreport.js" \
   "resources/sriharness.js" \
   "resources/check-layout-th.js" \
-  "common/dispatcher/**"
+  "common/dispatcher/**" \
+  "common/security-features/**"
 git -C "${TMP}/wpt" fetch --filter=blob:none --depth 1 --no-tags origin "${WPT_REV}" 2>&1 | tail -1
 checkout_ok=0
 for attempt in 1 2 3 4 5; do
@@ -117,5 +118,8 @@ cp "${TMP}/wpt/resources/testharness.js" "${TMP}/wpt/resources/testharnessreport
 # SRI signatures/tentative 面的跨窗 helper（wpt-data common/ 既有 utils.js 等不覆盖）。
 mkdir -p "${WPT_DATA}/common/dispatcher"
 cp -R "${TMP}/wpt/common/dispatcher/." "${WPT_DATA}/common/dispatcher/"
+# referrer-policy generic/css-integration 判据 helper（common.sub.js 42 引用）。
+mkdir -p "${WPT_DATA}/common/security-features"
+cp -R "${TMP}/wpt/common/security-features/." "${WPT_DATA}/common/security-features/"
 
 echo "gap-batch1 corpus subset ready (WPT ${WPT_REV})"

@@ -3711,7 +3711,8 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
 // 语料同批落盘，通道按 M0 甄别结论 M3 逐面入账（goal 文档里程碑）。
 
 /// gap-batch1 六面共用运行面筛减基座（fetch 脚本头注释同域，双保险）：
-/// - `*(-ref|-notref).html` 参照页 / `*-manual.html`（observers/clipboard 先例）
+/// - `*(-ref|-notref).html` 参照页 / `*-manual.*` 手工辅助页（observers/
+///   clipboard 先例；`.html` 与 `.https.html` 等后缀变体一并排除）
 /// - 非 testharness 形态（source 不含 `/resources/testharness`）——quirks 全树
 ///   reftest 主面与 SRI 资产页等；channel 只收 testharness 子测试面，reftest
 ///   面归 reftest 通道记账（goal 划界同域）
@@ -3720,7 +3721,7 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
 ///   （security-csp 同款内容规则）
 fn gap_batch1_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
-    if name.ends_with("-ref.html") || name.ends_with("-notref.html") || name.ends_with("-manual.html") {
+    if name.ends_with("-ref.html") || name.ends_with("-notref.html") || name.contains("-manual.") {
         return true;
     }
     if !source.contains("/resources/testharness") {
@@ -3824,6 +3825,80 @@ pub fn run_cors_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
 /// （gap-batch1 goal M1 / DC-2）。filter 按路径子串过滤。
 pub fn run_import_maps_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     run_corpus_subdirs(wpt_root, IMPORT_MAPS_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+// ── gap-batch1 M3：LIKELY 五面通道（2026-11-06 按甄别池入账）──
+// 池甄别见 evidence/2026-11-06-m0-likely-facet-triage.md；数值门 = 各面干跑
+// 基线 P 数（零回落约束，control plane 预登记规则），storage 引擎缺口全域
+// 不设门。skip 规则与 M1 六面共用 gap_batch1_case_skipped（fetch 清单同域
+// 双保险）；manual/ 目录不进子目录清单（wai-aria manual 234 页为手工辅助
+// UI 面、storage persist-permission-manual 同名规则排除）。
+
+/// referrer-policy corpus pinned upstream subset（M0 池 69 文件）：
+/// generic/ + css-integration 三叶 + 4K·4K±1 变体 generic/ 镜像；gen/ 三处
+/// wrapper 面不拉不扫（M0 甄别环境受限记账）。判据 helper
+/// `common/security-features` 由 fetch 脚本落盘。
+pub const REFERRER_POLICY_SUBDIRS: &[&str] = &[
+    "referrer-policy/generic",
+    "referrer-policy/css-integration",
+    "referrer-policy/css-integration/child-css",
+    "referrer-policy/css-integration/font-face",
+    "referrer-policy/css-integration/image",
+    "referrer-policy/4K/generic",
+    "referrer-policy/4K+1/generic",
+    "referrer-policy/4K-1/generic",
+];
+
+/// input-events corpus pinned upstream subset（M0 池 25 文件顶层全量）。
+/// getTargetRanges/真实键鼠注入簇预期 engine-gap 落账（M0 甄别），IDL 静态
+/// 面可过；testdriver.js 由 runner 内建 stub 替换（run_testharness_html
+/// 全局通道，keyboard/editing 先例）。
+pub const INPUT_EVENTS_SUBDIRS: &[&str] = &["input-events"];
+
+/// preload corpus pinned upstream subset（M0 池 51 文件）：顶层 testharness
+/// 形态；resources/ 资产页不按案跑。可观察面（link load/error、performance
+/// entry）依 preload.rs 提示队列实现程度，干跑对账。
+pub const PRELOAD_SUBDIRS: &[&str] = &["preload"];
+
+/// wai-aria corpus pinned upstream subset（M0 池 3 文件）：顶层 tentative
+/// 反射 + aria-actions/idl + role/basic；manual/ 234 页不扫。ARIA enumerated
+/// 反射已实现（part01 R5009 片 e），预期高通过。
+pub const WAI_ARIA_SUBDIRS: &[&str] = &["wai-aria", "wai-aria/aria-actions", "wai-aria/role"];
+
+/// storage corpus pinned upstream subset（M0 池 ≈1 文件）：顶层 + buckets/。
+/// StorageManager estimate/persist/persisted 引擎缺位（M0 甄别）——本通道
+/// 只做 covered-file 对账入账（DC-4 covered>0），预期低通过不设门；
+/// `.any.js` 主面（27 文件）wrapper 变体不拉（timing 先例）。
+pub const STORAGE_SUBDIRS: &[&str] = &["storage", "storage/buckets"];
+
+/// Run the pinned upstream referrer-policy window subset
+/// （gap-batch1 goal M3）。filter 按路径子串过滤。
+pub fn run_referrer_policy_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, REFERRER_POLICY_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream input-events window subset
+/// （gap-batch1 goal M3）。filter 按路径子串过滤。
+pub fn run_input_events_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, INPUT_EVENTS_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream preload window subset
+/// （gap-batch1 goal M3）。filter 按路径子串过滤。
+pub fn run_preload_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, PRELOAD_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream wai-aria window subset
+/// （gap-batch1 goal M3）。filter 按路径子串过滤。
+pub fn run_wai_aria_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, WAI_ARIA_SUBDIRS, filter, gap_batch1_case_skipped)
+}
+
+/// Run the pinned upstream storage window subset
+/// （gap-batch1 goal M3）。filter 按路径子串过滤。
+pub fn run_storage_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    run_corpus_subdirs(wpt_root, STORAGE_SUBDIRS, filter, gap_batch1_case_skipped)
 }
 
 // ══ timing-animation-compat goal（docs/goal/archive/timing-animation-compat.md M1 / DC-1）══

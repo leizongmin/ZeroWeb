@@ -2,16 +2,19 @@
 
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M0/M1/M2 已落（2026-11-06：甄别 + CONFIRMED 六面通道 + mixed-content 扩面），M3 未启动
+**状态**: Active——M0~M3 已落（2026-11-06：甄别 + CONFIRMED 六面通道 +
+mixed-content 扩面 + LIKELY 五面通道入账），M4 待推进
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 通道补齐 + 按面甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——多小域批量）
 
-**当前卡点**：无硬卡点。LIKELY 五面通道（M3）与 coverage 复测（M4）待推进；
-cors `cors-makeheader.py` 端点仿真与 domxpath `XPathEvaluator` 全局等引擎/
-runner 缺口按簇挂账（evidence 失败簇归因），不在 DC 内。
-**下一步**：M3 LIKELY 五面按 M0 甄别池逐面通道入账（池 69/25/51/3/≈1 文件，
-干跑实数落定各自数值门）→ M4 coverage 复测十二面 from-0 对账 +
-`wpt-suites.csv` 回填。
+**当前卡点**：无硬卡点。M4 coverage 复测走 weekly `wptfyi-coverage` 分片
+矩阵（五新面 catch-all 自动接线，dispatch 复测后核对头条 ≥ 67.54% 不回落
++ 十二面 covered>0）→ `wpt-suites.csv` 回填收口。引擎/runner 缺口按簇挂账
+（referrer-policy/preload `.py` 判据端点仿真、wai-aria testdriver
+computed label/role 查询臂、input-events 编辑管线簇、storage
+StorageManager 全域），见 M3 evidence 失败簇归因，不在 DC 内。
+**下一步**：push M3 → dispatch weekly `run_wptfyi_coverage=true` 复测 →
+快照核对 → `wpt-suites.csv` 回填数据行 → goal 收口。
 
 ## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）
 
@@ -80,9 +83,14 @@ zw-static-corpus 标记记账。
 - LIKELY 五面：M0 池甄别已落（referrer-policy 69 / input-events 25 /
   preload 51 / wai-aria 3 / storage ≈1 文件，
   [M0 甄别](gap-batch1/evidence/2026-11-06-m0-likely-facet-triage.md)）；
-  数值门 M3 逐面干跑实数落定，预登记规则 = 门 ≥ 干跑基线 P 数（storage
-  引擎缺口全域，不设门）。环境受限面（gen/ 镜像、编辑管线簇、.any.js 面）
-  不进门。
+  数值门 M3 干跑实数落定（预登记规则 = 门 ≥ 干跑基线 P 数）：referrer-policy
+  1 / input-events 188 / preload 106 / wai-aria 2 / storage 不设门（引擎
+  缺口全域，covered>0 对账），合计 P 297
+  （[M3 基线](gap-batch1/evidence/2026-11-06-m3-likely-facet-baselines.md)）。
+  池实跑对账：wai-aria 池 3→实跑 28 文件（402F 单簇 = testdriver computed
+  label/role 缺位，M0 预期证伪）；storage 池 ≈1→实跑 3 文件（manual 变体
+  谓词修复后）。环境受限面（gen/ 镜像、编辑管线簇、.any.js 面、
+  `.py` 端点簇）不进门。
 
 ## 划界
 
@@ -113,7 +121,9 @@ zw-static-corpus 标记记账。
 - **M2**：mixed-content 语料扩面 + 基线（DC-3）——✅ 2026-11-06（顶层 2 +
   tentative/autoupgrades 4 = 6 文件 11 子测试入账，missing=0；既有账逐位
   零回归；gen/ 512 不拉照旧挂账）。
-- **M3**：LIKELY 面按甄别结果逐面入账（引擎缺口簇挂账他域）。
+- **M3**：LIKELY 面按甄别结果逐面入账（引擎缺口簇挂账他域）——✅
+  2026-11-06（五面五件套 + manual 变体谓词修复 + 干跑基线 P 297 门落定，
+  evidence/2026-11-06-m3-*.md；weekly catch-all 自动接线本地复核 128 套件）。
 - **M4**：coverage 复测收口 + wpt-suites.csv 汇总行（DC-4）。
 
 ## 依赖约束（run-rules §9）
