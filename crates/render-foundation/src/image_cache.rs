@@ -1825,6 +1825,73 @@ fn extract_svg_viewbox_dims(bytes: &[u8]) -> Option<(f32, f32)> {
     Some((vw, vh))
 }
 
+/// s292 Gap-0b：剥离根 svg 标签中负值的 width/height 属性（SVG 规范值校验：负值 = 非法
+/// 视同未指定；https://www.w3.org/TR/SVG2/types.html#presentation-attribute-value）。
+/// usvg 对负维拒绝整文档解析 → decode Err → fetch 侧丢弃 → 三表全空，布局/naturalDims
+/// 双面失真（naturalWidth 语料负维 4 plain 面：viewBox 比 600×200 应 RatioOnly(3)，
+/// natural 300×100 + 渲染 720×240）。无负维属性原样返回（零拷贝）。
+fn strip_negative_svg_dims(bytes: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    let Ok(s) = std::str::from_utf8(bytes) else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let Some(svg_start) = s.find("<svg") else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let tag_start = svg_start + 4;
+    let Some(tag_end_rel) = s[tag_start..].find('>') else {
+        return std::borrow::Cow::Borrowed(bytes);
+    };
+    let tag = &s[tag_start..tag_start + tag_end_rel];
+    // 引号感知切 attr（viewBox 值含空格，不得裸 split）
+    let mut attrs: Vec<&str> = Vec::new();
+    let mut cur_start = 0usize;
+    let mut in_quote: Option<char> = None;
+    for (i, c) in tag.char_indices() {
+        if let Some(q) = in_quote {
+            if c == q {
+                in_quote = None;
+            }
+        } else if c == '\'' || c == '"' {
+            in_quote = Some(c);
+        } else if c.is_whitespace() {
+            if cur_start < i {
+                attrs.push(&tag[cur_start..i]);
+            }
+            cur_start = i + 1;
+        }
+    }
+    if cur_start < tag.len() {
+        attrs.push(&tag[cur_start..]);
+    }
+    let mut changed = false;
+    let mut kept: Vec<&str> = Vec::with_capacity(attrs.len());
+    for attr in attrs {
+        let name_and_val: Vec<&str> = attr.splitn(2, '=').collect();
+        let neg_attr = name_and_val.len() == 2
+            && (name_and_val[0].eq_ignore_ascii_case("width") || name_and_val[0].eq_ignore_ascii_case("height"))
+            && {
+                let v = name_and_val[1].trim_matches('\'').trim_matches('"').trim();
+                v.starts_with('-')
+            };
+        if neg_attr {
+            changed = true;
+        } else {
+            kept.push(attr);
+        }
+    }
+    if !changed {
+        return std::borrow::Cow::Borrowed(bytes);
+    }
+    let mut out = String::with_capacity(s.len());
+    out.push_str(&s[..tag_start]);
+    if !kept.is_empty() {
+        out.push(' ');
+        out.push_str(&kept.join(" "));
+    }
+    out.push_str(&s[tag_start + tag_end_rel..]);
+    std::borrow::Cow::Owned(out.into_bytes())
+}
+
 /// 解析 `data:` URI 为原始字节。
 ///
 /// `data:[<mediatype>][;base64],<payload>` —— header 含 `base64` 则 base64 解码 payload，
@@ -1908,6 +1975,11 @@ fn looks_like_svg(bytes: &[u8]) -> bool {
 ///（no-ratio）——usvg 对缺失维给出默认值（如缺 height 时 h=100），该默认值非真实固有
 /// 尺寸，布局须以 `no_ratio` 信号处理（不设 aspect_ratio，缺失维按 default object size 回退）。
 pub fn decode_svg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    // s292 Gap-0b：负维属性先剥（非法视同未指定）——后续 R3760 检测 / svg_intrinsic_kind
+    // 分类 / usvg 解析 / svg_source 存字节全链一致（分类对负维本就按缺失计：
+    // parse_abs_length_value 拒负，剥离前后语义同）。
+    let stripped_negative = strip_negative_svg_dims(bytes);
+    let bytes: &[u8] = &stripped_negative;
     // R3760：viewBox 含 0 维（`viewBox="0 0 8 0"` 等）的退化 SVG——css-images-4 §5.4.1
     //（default sizing algorithm）：固有宽度/高度为 0 的图像视为空。usvg 对缺失 width/
     // height 属性的此类 SVG 仍按默认 100×100 栅格化（内容 100%×100% 会被画出 lime 实心，
@@ -2111,7 +2183,14 @@ fn svg_intrinsic_kind(bytes: &[u8]) -> SvgIntrinsicKind {
         if nums.len() == 4
             && let (Ok(vw), Ok(vh)) = (nums[2].parse::<f32>(), nums[3].parse::<f32>())
             && vh > 0.0
+            && vw > 0.0
         {
+            // s292 Gap-0（naturalWidth 语料第三组）：vw=0 与 vh=0 同判——零维 viewBox
+            // 无有效比（旧只护 vh，vw=0 时 ratio = 0/vh = 0 伪有效 → ComputedIntrinsic
+            // w/ratio = w/0 = +∞ 或 RatioOnly(0)，no_ratio 不落表，布局/naturalDims
+            // 双面失真）。css-images-4 §5.4.1：零固有维图像视为无固有——落 NoRatio
+            //（attr 维保留），R3760 早退臂据此设 no_ratio。R3760 判词「0 维 viewBox
+            // 无有效 ratio → NoRatio」的对跖半边。
             let ratio = vw / vh;
             // 一维 abs + 另一维**缺失或百分比** + viewBox → 计算真实固有尺寸（css-images-4
             // default sizing：百分比属性维不贡献固有尺寸，仅 abs 维 + viewBox 比推导另一维）。
@@ -2863,6 +2942,54 @@ mod tests {
         assert!(img.pixels.iter().all(|&b| b == 0), "1x1 应全透明");
         assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
         assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0：vw=0 零维 viewBox + width attr（naturalWidth 语料「with natural
+    /// width, viewBox with 0 height」形）——1×1 透明 pixmap + NoRatio{Some(60),None}
+    /// 落表（旧 vw=0 伪有效 ratio → ComputedIntrinsic(60, ∞)，no_ratio 不落 → 布局
+    /// bogus pixmap 注入 1×150，几何臂面 P→F）。vh=0 对跖形（viewBox 0 0 10 0）R3760
+    /// 既有测试已护。
+    #[test]
+    fn s292_gap0_zero_viewbox_width_attr_no_ratio() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"60\" viewBox=\"0 0 0 10\"></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(img.no_ratio_intrinsic(), Some((Some(60.0), None)));
+        assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0 对称守卫：vw=0 零维 viewBox 无 attr 维 → NoRatio{None,None}
+    ///（naturalWidth 语料「no natural dimensions, viewBox with 0 height」300×150 形；
+    /// 旧 RatioOnly(0) 伪比）。
+    #[test]
+    fn s292_gap0_zero_viewbox_attrless_no_ratio() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 0 10\"></svg>";
+        let img = decode_image_bytes(bytes).expect("decode");
+        assert_eq!((img.width, img.height), (1, 1));
+        assert_eq!(img.no_ratio_intrinsic(), Some((None, None)));
+        assert_eq!(img.intrinsic_ratio(), None);
+    }
+
+    /// s292 Gap-0b：负维属性（usvg 拒负 → 旧 decode Err 表空）剥后按未指定解——
+    /// viewBox 比保留（naturalWidth 语料负维 4 plain 面：natural 300×100 + 渲染
+    /// 720×240）。width=-5 单独存在 → RatioOnly(3)。
+    #[test]
+    fn s292_gap0b_negative_dims_stripped_ratio_only() {
+        let bytes = b"<svg xmlns=\"http://www.w3.org/2000/svg\" width='-5' viewBox='0 0 600 200'></svg>";
+        let img = decode_image_bytes(bytes).expect("负维剥离后应解码成功");
+        assert_eq!(img.intrinsic_ratio(), Some(3.0));
+        assert_eq!(img.no_ratio_intrinsic(), None);
+        assert_eq!(img.computed_intrinsic(), None);
+    }
+
+    /// s292 Gap-0b 对称：负百分比维（-400%/-10%）同剥——usvg 同拒 → RatioOnly(3)。
+    #[test]
+    fn s292_gap0b_negative_percent_dims_stripped() {
+        let bytes =
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\" width='-400%' height='-10%' viewBox='0 0 600 200'></svg>";
+        let img = decode_image_bytes(bytes).expect("负 % 维剥离后应解码成功");
+        assert_eq!(img.intrinsic_ratio(), Some(3.0));
+        assert_eq!(img.no_ratio_intrinsic(), None);
     }
 
     #[test]

@@ -1,0 +1,37 @@
+Using 8 test job(s).
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica.html :: bare rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica.html :: w60 rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica.html :: vb rendered
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica.html :: vb0w rendered
+  assert_equals: width expected 60 but got 1
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: bare rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: w60 rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb rendered
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb0w rendered
+  assert_equals: width expected 60 but got 1
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: bare (with srcset/1) rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: w60 (with srcset/1) rendered
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb (with srcset/1) rendered
+  assert_equals: width expected 720 but got 300
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb0w (with srcset/1) rendered
+Pass html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: bare (with srcset/2) rendered
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: w60 (with srcset/2) rendered
+  assert_equals: naturalWidth expected 60 but got 30
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb (with srcset/2) rendered
+  assert_equals: width expected 720 but got 300
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica2.html :: vb0w (with srcset/2) rendered
+  assert_equals: naturalWidth expected 60 but got 30
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom bare
+  assert_equals: bare content width expected 300 but got 310
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom w60
+  assert_equals: w60 content width expected 60 but got 70
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom vb
+  assert_equals: vb content width expected 720 but got 730
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom vb0w
+  assert_equals: vb0w bb width expected 70 but got 11
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom bare1
+  assert_equals: bare1 bb width expected 310 but got 730
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom w601
+  assert_equals: w601 bb width expected 70 but got 730
+Fail html/semantics/embedded-content/the-img-element/zz-s292-replica3.html :: geom vb1
+  assert_equals: vb1 bb height expected 250 but got 10

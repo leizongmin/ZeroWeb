@@ -1,0 +1,13 @@
+Using 8 test job(s).
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims: baseline
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims + 2x density: defaults not scaled
+Fail html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, no intrinsic dims + 2x zoom: rendered size scaled, naturalWidth/Height not
+  assert_equals: rendered width expected 600 but got 300
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only: baseline
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only + 2x density: width scaled, default height not
+Fail html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, intrinsic width only + 2x zoom: everything scaled
+  assert_equals: rendered width expected 120 but got 60
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims: baseline
+Pass html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims + 2x density: both scaled
+Fail html/semantics/embedded-content/the-img-element/svg-img-density-vs-zoom.html :: SVG, both intrinsic dims + 2x zoom: rendered size scaled, naturalWidth/Height not
+  assert_equals: rendered width expected 120 but got 60

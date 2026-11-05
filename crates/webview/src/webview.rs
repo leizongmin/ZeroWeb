@@ -3807,6 +3807,35 @@ impl WebView {
                 }
             }),
         );
+        // s292（html-semantics M2）：__zwImgHasIntrinsicSignal —— shim img width/height
+        // IDL 渲染维臂的布局信号门。运行时创建/换源的 img（script 注入、srcset 换源）
+        // 不在 load 期 fetch_image_subresources 清单里，cached_* 布局表无该资源键——
+        // 此时布局盒走无信号 auto 回落（CB − margin 拉伸），真实渲染维与 corpus 期望
+        // （固有维/default object size）背离，IDL 读几何会把该布局缺口泄进断言面
+        // （naturalWidth 族 srcset 克隆 62 P→F 勘根 2026-11-05，s292 replica 探针；
+        // 表缺口挂账 s293 运行时表同步）。门 = 三表任一含该键（快照口径同
+        // __zw_get_image_size）：命中 → 布局按真实固有信号 sizing，几何臂可信；
+        // 未命中 / 契约沙箱未注册 → shim 侧回落 naturalDim 近似（旧行为）。
+        let img_signal_sizes = self.cached_image_sizes.clone();
+        let img_signal_ratios = self.cached_image_ratios.clone();
+        let img_signal_no_ratio = self.cached_image_no_ratio.clone();
+        let page_url_img_signal = page_url.clone();
+        sandbox.register_callback(
+            "__zwImgHasIntrinsicSignal",
+            Box::new(move |args| {
+                let src = args.first().map(String::as_str).unwrap_or("");
+                if src.is_empty() {
+                    return "0".to_string();
+                }
+                let base = page_url_img_signal.lock().unwrap();
+                let abs = zero_engine::resolve_document_url(&base, src);
+                let key = zero_engine::image_resource_key(&abs, None);
+                let hit = img_signal_sizes.contains_key(&key)
+                    || img_signal_ratios.contains_key(&key)
+                    || img_signal_no_ratio.contains_key(&key);
+                if hit { "1".to_string() } else { "0".to_string() }
+            }),
+        );
 
         // t8k：WebSocket——config.ws_host_factory 注入时注册 WsBridge（__zw_ws_connect/
         // send/close/next 回调族）+ 宿主（默认 default_net_ws_host）。事件经 webview

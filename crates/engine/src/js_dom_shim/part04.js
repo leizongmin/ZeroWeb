@@ -852,6 +852,69 @@
                 if (_iwNone && resourceState && resourceState.outcome === 'loaded') {
                   return prop === 'width' ? resourceState.width : resourceState.height;
                 }
+                // s292（html-semantics M2）：未渲染近似之后、naturalDim 回落之前——
+                // **已渲染** img 的 width/height IDL = **content box** 渲染维
+                //（spec #dom-img-width「These attributes return the rendered dimensions
+                // of the image」= chrome LayoutReplaced::ContentWidth 口径；CSS2 §10.3.4
+                // 约束方程解出的 used content 尺寸）。此前 dN==null 恒返密度校正自然
+                // 尺寸——viewBox-only SVG 撑满 CB 面（naturalWidth-naturalHeight-width-height
+                // 18F：740 CB + border/margin frame，渲染 720×240，IDL 旧返 300×100）。
+                // 门（host `__zwImgHasIntrinsicSignal`，s292）：快照三表任一含该 img
+                // 资源键才进几何臂——布局按真实固有信号 sizing，gBCR 可信；未命中
+                //（运行时注入 img 无 Rust 表项，勘根 s292 L2）或契约沙箱未注册回调 →
+                // 回落 naturalDim 近似（旧行为零回归）。运行时表同步挂账 s293。
+                // 源键口径同 naturalDim 快照回落（R5275：选中源 raw URL 优先，
+                // 缺失回落 raw src——host 两回调同以原始属性串为键）。
+                // 近似链：handle 身份（script 注入 clone img）先经 s284 正置表解析
+                //（`__zwImgResolveIdentity5277`，未物化回落原参 = 零 rect 旧行为）；两轴
+                // 密度校正自然维**任一** > 0（非空像——naturalWidth 语料 0×0 面：零固
+                // 有维图 IDL 恒 0，布局钳 1×1 读几何反翻红）且 gBCR 非全零（≈ being
+                // rendered，s274 模型）才读 rect；content = border-box rect −
+                // 该轴 frame（宽轴水平、高轴垂直；gCS border-*-width 序列化已按
+                // style none/hidden 归零，R3030 面；% padding 按 % 数值近似，
+                // FIXME: 随几何底座补 % 解析）。减后 ≤ 0（框大盒小）回落 naturalDim
+                // 密度校正近似。
+                // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-width
+                try {
+                  var _nbSig = '';
+                  try {
+                    if (typeof globalThis.__zwSelectImageSource5277 === 'function') {
+                      var _nbPk = globalThis.__zwSelectImageSource5277(sel, handle);
+                      if (_nbPk && _nbPk.url) _nbSig = String(_nbPk.url);
+                    }
+                  } catch (_eNbpk) {}
+                  if (!_nbSig) {
+                    _nbSig = (handle ? __zw_get_attr_handle(handle, 'src') : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'src') : __zw_get_attr(sel, 'src'))) || '';
+                  }
+                  if (typeof __zwImgHasIntrinsicSignal === 'function' && _nbSig
+                    && String(__zwImgHasIntrinsicSignal(_nbSig)) === '1') {
+                    var _nbW = _zwImgNaturalDim(true);
+                    var _nbH = _zwImgNaturalDim(false);
+                    if (_nbW > 0 || _nbH > 0) {
+                      var _nbSel = (typeof globalThis.__zwImgResolveIdentity5277 === 'function')
+                        ? globalThis.__zwImgResolveIdentity5277(sel, handle) : sel;
+                      var _nbEl = _makeProxy(_nbSel, _nbSel !== sel ? null : handle);
+                      var _nbR = (_nbEl && typeof _nbEl.getBoundingClientRect === 'function')
+                        ? _nbEl.getBoundingClientRect() : null;
+                      if (_nbR && _nbR.width > 0 && _nbR.height > 0) {
+                        var _nbFrame = 0;
+                        if (typeof __zw_get_computed_style === 'function' && _nbSel) {
+                          var _nbPx = function (p) {
+                            var v = parseFloat(__zw_get_computed_style(_nbSel, p));
+                            return isFinite(v) ? v : 0;
+                          };
+                          _nbFrame = prop === 'width'
+                            ? _nbPx('border-left-width') + _nbPx('border-right-width')
+                              + _nbPx('padding-left') + _nbPx('padding-right')
+                            : _nbPx('border-top-width') + _nbPx('border-bottom-width')
+                              + _nbPx('padding-top') + _nbPx('padding-bottom');
+                        }
+                        var _nbV = Math.round((prop === 'width' ? _nbR.width : _nbR.height) - _nbFrame);
+                        if (isFinite(_nbV) && _nbV > 0) return _nbV;
+                      }
+                    }
+                  }
+                } catch (_e5277nb) {}
                 return _zwImgNaturalDim(prop === 'width');
               }
               return 0;
