@@ -3189,7 +3189,17 @@
     var _imKey = key;
     var _imPrev = _resourceStates[_imKey];
     var _imUrlChanged = !!(!_imPrev || _imPrev.url !== _imSrc);
-    if (_imPrev && _imUrlChanged) delete _resourceStates[_imKey];
+    if (_imPrev && _imUrlChanged) {
+      delete _resourceStates[_imKey];
+      // s289：restart 删除时点记「被删请求是否完全可用」——spec step 11 冗余
+      // 早退的 pending 判据在延步重入（detached defer/_imViaDefer）里 prev 已
+      // 失，内存表跨入列传 pending（spec restart 只作废请求，不回退 current
+      // request 的完全可用态）。
+      try {
+        globalThis._zwImgPrevLoaded5277 = globalThis._zwImgPrevLoaded5277 || {};
+        globalThis._zwImgPrevLoaded5277[_imKey] = _imPrev.outcome === 'loaded';
+      } catch (_e5277pg) {}
+    }
     var _zwAvailImgs = globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
     // s276：avail 元组键的 CORS 态归一（spec the-list-of-available-images：
     // 键 = (URL, CORS settings attribute state) 元组——https://html.spec.
@@ -3392,6 +3402,30 @@
         // 消费点在门后 commit 位，s274 after-load drain 的「旗标救」路径不受
         // 影响——drain 经 viewport-revalidate → 本臂 fetch 即消费）。
         try { if (globalThis._zw5277ViewportFlag) delete globalThis._zw5277ViewportFlag[_imKey]; } catch (_e5285vf) {}
+        // s289：spec update the image data 冗余更新早退（step 11）——
+        // https://html.spec.whatwg.org/multipage/images.html#update-the-image-data
+        // 「If the pending request is not null and urlString is the same as the
+        // pending request's current URL, then return.」pending = flight 启动时
+        // current request 已完全可用（launch 时态 loaded / restart 删除的
+        // loaded 内存表 _zwImgPrevLoaded5277，见 run 头部）；登记值 = 该请求
+        // URL（s274 boolean 表升级为 {url, pending}）。pending flight 同 URL
+        // 重入 = 冗余 run：不重启 fetch、不 bump 代纪（s224——取代语义仅
+        // **新请求**触发，在飞 decode() 链存活）、事件由原链终点照常派发。
+        // state-less 首飞同 URL 重入**不早退**——spec current unavailable →
+        // step 13 换新请求重启（decode 被取代 → EncodingError，image-decode-
+        // with-quick-attach picture 断言面维持）。插入 hook 通用点亮（un-gate）
+        // 对在飞同 URL img 的盲重验由此拦截。step 12（partial 同 URL +
+        // restart animation 任务）引擎无 progressive 解码态、无动画机具，近似
+        // 不可达（FIXME: progressive 解码/动画域）。视口旗标已在上方 commit
+        // 点消费（s286 一次性语义不变——留旗标会让后续换源 run 经陈旧旗标
+        // 绕过距离门）。
+        var _imSt289 = _resourceStates[_imKey];
+        var _imPl289 = _imSt289 ? (_imSt289.outcome === 'loaded')
+          : !!(globalThis._zwImgPrevLoaded5277 && globalThis._zwImgPrevLoaded5277[_imKey]);
+        var _imFl289 = globalThis._zwImgFetching5277 ? globalThis._zwImgFetching5277[_imKey] : null;
+        if (_imFl289 && _imFl289.url === _imSrc && _imPl289) {
+          return;
+        }
         // Resource Timing（M3-S3）：运行时 img 经页面 fetch 取图——置发起方
         // 旗标（fetch 包裹消费为 initiatorType 'img'；net 元数据经响应对象
         // __zwRtMeta 携带——resource_timing_test0 的 img encodedBodySize 精确面）。
@@ -3443,10 +3477,13 @@
         var _imFetchP;
         // s274：fetch 在飞登记（settle/sweep 防双 fetch 面——s273 sweep 与
         // s274 after-load drain 的重入判据；清理点 = _zwImgDispatch 终点 +
-        // lazy 门 defer return + stale 取代链）。
+        // lazy 门 defer return + stale 取代链）。s289：登记值 {url, pending}
+        // ——冗余更新早退守卫（上方）按 URL+pending 判据比对；消费点
+        // （ViewportRevalidate/sweep/drain/旗标救 skip）均按真值判，形态
+        // 升级零位移。
         try {
           globalThis._zwImgFetching5277 = globalThis._zwImgFetching5277 || {};
-          globalThis._zwImgFetching5277[_imKey] = true;
+          globalThis._zwImgFetching5277[_imKey] = { url: _imSrc, pending: _imPl289 };
         } catch (_e5277fg) {}
         // s275：fetch 启动即消费冻结请求——此后视口面走正常选源（restart
         // 语义），在飞/已终态图由视口 helper 的 state/在飞 skip 兜底。

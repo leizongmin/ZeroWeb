@@ -1254,6 +1254,10 @@
             var _zwLiveFg5277 = globalThis._zwImgFetching5277;
             var _zwOldEp5277 = globalThis._zwImgDecodeEpoch5277;
             globalThis._zwImgDecodeEpoch5277 = {};
+            // s289：restart 删除 loaded 内存表同点重置（跨案键隔离——上一文档
+            // 的 pending 判据不得泄入本文档 flight 启动；s277 存活的解析期在飞
+            // chain 落定走代纪/在飞册恢复，本表非在飞账目、照原置空语义）。
+            globalThis._zwImgPrevLoaded5277 = {};
             // s274：after-load 装载队列 + fetch 在飞键册同点重置（跨案残留防
             // ——队列 settle 时填充、window load 后 drain，同文档生命周期）。
             globalThis._zwImgAfterLoadQueue5277 = [];
@@ -1271,7 +1275,8 @@
                 for (var _zwLfK in _zwLiveFg5277) {
                   if (_zwOldEp5277[_zwLfK] !== undefined) {
                     globalThis._zwImgDecodeEpoch5277[_zwLfK] = _zwOldEp5277[_zwLfK];
-                    globalThis._zwImgFetching5277[_zwLfK] = true;
+                    // s289：在飞登记值透传（{url, pending}——冗余更新早退守卫判据）
+                    globalThis._zwImgFetching5277[_zwLfK] = _zwLiveFg5277[_zwLfK];
                   }
                 }
               }
