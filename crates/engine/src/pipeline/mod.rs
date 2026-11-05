@@ -3890,17 +3890,22 @@ fn style_sheet_if_eligible(doc: &Document, style_id: NodeId) -> Option<Styleshee
         return None;
     }
     let css_text = doc.text_content(style_id)?;
-    let css_text = strip_cdata(css_text.trim());
+    let css_text = css_text.trim();
     // R4022（XML #PCDATA 实体解码）：XHTML 文档（content_is_xml）的 <style> 内容
     // 按 XML 语义是 **已解析字符数据**——`&gt;` 等实体应在文档解析期解码。ZW 对
     // .xht 用 HTML tokenizer（<style> = raw text，实体保留），致 `body &gt; div`
     // 以实体串进入 CSS 解析器（选择器损坏：inline-table-width-001a/001b/002a/002b
     // 的 width/display 规则错位命中父子 div）。纯 HTML 文档 <style> raw text
     // 不解码实体（HTML 语义，chromium 同），故仅 content_is_xml gate。
+    // R5426：CDATA 段内实体**不**解码（XML 1.0 §2.7 CDATA Sections——段内不识别
+    // markup，字符引用按字面文本保留；strip_cdata 先剥壳会让 R4022 臂误吞段内实体，
+    // content-177 的 `content:'TEST &#x46;...'` 被解成 "TEST FAIL" 实证）。XML 侧
+    // 解码须先于任何剥壳（段按首个 `]]>` 收口，不嵌套）；HTML 侧 strip_cdata 为
+    // 前后缀锚定匹配，须 trim 后调用（原口径）。
     let css_text = if doc.content_is_xml() {
-        decode_xml_char_references(&css_text)
+        decode_xml_style_css(css_text)
     } else {
-        css_text.to_string()
+        strip_cdata(css_text).into_owned()
     };
     if css_text.is_empty() {
         return None;
@@ -4024,6 +4029,39 @@ pub(crate) fn collect_shadow_scoped_sheets(
         };
         out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
     }
+    out
+}
+
+/// XHTML `<style>` 内容的 CDATA 感知实体解码（R4022 + R5426）。
+///
+/// XML 1.0 §2.7（CDATA Sections，https://www.w3.org/TR/xml/#sec-cdata-sect）：
+/// 段内不识别 markup——字符引用按字面文本保留；段外为已解析字符数据，
+/// 实体照常解码（R4022）。逐段解码后剥壳拼接：[`strip_cdata`] 只处理整体单壳
+/// （CSS21 套件绝大多数），此函数额外覆盖段中段与多段情形；未闭合 `<![CDATA[`
+/// 视整个剩余文本为段（标记不识别），字面保留。
+pub(crate) fn decode_xml_style_css(css: &str) -> String {
+    const OPEN: &str = "<![CDATA[";
+    const CLOSE: &str = "]]>";
+    if !css.contains(OPEN) {
+        return decode_xml_char_references(css);
+    }
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&decode_xml_char_references(&rest[..start]));
+        let after_open = &rest[start + OPEN.len()..];
+        match after_open.find(CLOSE) {
+            Some(close) => {
+                out.push_str(&after_open[..close]);
+                rest = &after_open[close + CLOSE.len()..];
+            }
+            None => {
+                out.push_str(after_open);
+                rest = "";
+            }
+        }
+    }
+    out.push_str(&decode_xml_char_references(rest));
     out
 }
 

@@ -1408,6 +1408,14 @@ impl LayoutEngine {
                         crate::intrinsic_sizing::block_max_content_width(b, doc, styles)
                     }
                     .max(0.0);
+                    // R5426 归因存档（CSS2 §10.3.7 shrink-to-fit 折行一致性）：非塌 0
+                    // branch 盒 max-content 超 CB 可用宽时无约束 max-content 直 clamp
+                    // 成单行 fill 宽，而 leaf 文本盒（taffy R5104 measure 臂）按
+                    // available 折行取最宽行——同内容两臂盒形分岔（content-177 真实
+                    // 字体实证）。按 available 约束重测的修复臂已在窗口 A/B 验证中性
+                    //（16px 下不触发），但驱动案 content-177 依赖的 abs 直系文本种子
+                    // 臂窗口翻红已回退，本臂暂无驱动面，一并回退待布局层字体修复
+                    // 同轮落地。
                     if measured > 0.5 {
                         let target = if available.is_finite() {
                             measured.min(available)

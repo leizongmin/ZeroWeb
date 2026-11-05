@@ -1679,6 +1679,11 @@ impl super::Painter {
                 // 与 table-internal 盒（匿名盒样式继承与文本 run 实际归属分歧，
                 // table-anonymous-objects 族 12 案翻红）不播种。kill-switch
                 // `ZW_PAINT_DIRECT_TEXT_SEED=0`。
+                // R5426 归因存档：abs/fixed 盒直系文本确经 display 门漏过落 16px 默认
+                //（content-177 实证），但播种臂在真实字体窗口（fontdue 实测回调）使
+                // css-ruby/abs-in-ruby-{base,base-container,container} 3 案翻红且
+                // content-177 自身 2.35%→2.90% 变差——abs 盒 OOF 定位几何与 Path B
+                // 重跑行几何耦合未解，修复需在布局/存储层而非 paint 种子，暂不落地。
                 let direct_text_seed = direct_text_seed_enabled()
                     && matches!(
                         style.display,

@@ -16,4 +16,5 @@ mod r3893_ref_glyph_dump;
 mod r3895_nested_inline_no_ghost_paint;
 mod r4022_xml_style_entity_tests;
 mod r5053_selection_ifc_tests;
+mod r5426_cdata_entity_tests;
 mod t35_input_repaint_tests;
