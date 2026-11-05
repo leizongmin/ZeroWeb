@@ -64,3 +64,15 @@ v1 enable 出口端点身份回植不可行——探针实证 barAlive=false：�
 ### 协作账（增补）
 
 q12/q13 链多席协同：判读五席一致（rollover-0114 三实例 + 1d32a3a5 + strip-seat，judge-q9.py 独立重跑逐行一致）；seat-boundary 仲裁（fmt 席 = 1d32a3a5 独立提交、enginelib 补腿 + q13 落地 = 本席、blob audit 交叉核）见账本 note-454/458。
+
+### F. q14 nested 前奏归并几何门（enable 逐 item 跳过条件）
+
+q10 disable-only 门的对偶补齐：enable 归并按选区几何逐 item 门控。新增 `_zwListEndpointPathKind(n, item)`（part01e.js，沿 parent 链爬升 ≤256 步：先达 item → 'direct'（端点在 item 直属内容），途中先命中 ol/ul → 'list'（端点在 item 子列表内），不达 → 'outside'）。前奏对每个 item：`起点 kind=direct ∧ 终点 kind=list` 时跳过 normalizeSublists，否则归并；disable 模式保持无条件归并（top-level 合并形依赖）。语义：`[foo<ol><li>bar]` 跨入形（q9 P2F 17 行族，:233 expected 保持嵌套换壳 li）不拆；其余形状（subset-of-N :178、trailing-text :253、trailing-list :208、straddle :240/:245）归并外提——q9 F2P 行集恢复。探针 fixture 首跑踩坑自纠：ul 底必须配 ul 嵌套（iol 语料 ol↔ul 镜像），首版 ol 嵌套令 state=ol=iol tagName 误入 disable 模式，L 族面不可判读；q14b 复跑（fresh binary 未变，仅 probe 数据）取正确 enable 面。
+
+### G. q14 门禁账（03:22-03:29 批 + q14b probe 复跑）
+
+- 语料 f1b-vs-q14 双腿 **F2P 175 / P2F 0 / newF 0 / lost 0**（行数 1761/2065 恒定，F2P>167 达标、红线零回归）；fails iol 57→**53**、iul 53→**49**。
+- q13-vs-q14 **F2P 8 / P2F 0 / newF 0 / lost 0**：8 行全为 compare innerHTML 树面，两命令镜像各半——iol `foo<ul><li>[bar]<li>baz</ul><li>quz` 与 `[bar<li>baz]` 变体（subset-of-N，:178/:180）、`foo<ul><li>b[ar</ul><li>b]az</ul>`（straddle-out :240）、`foo<ul><li>[bar]</ul>baz</ul>`（trailing-text :253）；iul 为 ol 基镜像。q9 P2F 17 行族（:233 keep 面）零位移。
+- 探针 corpus-exact 4 面（q14b enable 模式）：L1 got `<ul><li>foo</li><ol><li>bar</li></ol><ul><li>baz</li></ul><li>quz</li></ul>` = :178 镜像逐字一致；L2 = :253 镜像一致（尾随文本成新 li）；K1 = :240 镜像一致（双壳 `<ol><ol>` 形）；K3 keep 面不变（门跳过实证）。L3/K2 非 :208/:245 期望形（trailing-list 外提后换壳 li 应保嵌套子列表、straddle-extra 应整体换壳分裂）——该两族仍在 F2P=8 之外，属 nested-split 边界残债余量。
+- enginelib js_dom_bridge（make guarded-test，03:26-03:28）：**3,746P/5F** 五已知红逐名恒一，红集与 q13c 日志直接 diff 为空（q13-reds.txt 缺失由本证补齐重建）；rc=2 系五已知红致 make 非零、非门禁失败。
+- judge 脚本 keep-family 控制段 grep 空系行格式不匹配（f-string 面名不落日志行），P2F=0 双 bar 已行级覆盖同一断言，不另补腿。

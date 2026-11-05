@@ -404,6 +404,44 @@ results.push('i5-polluted ' + pre22
   + ' qIndA=' + document.queryCommandIndeterm('insertorderedlist')
   + ' qSA=' + document.queryCommandState('insertorderedlist'));
 
+// ---- q14 nested 前奏归并几何门族案（enable lift 面 + keep 面对照）----
+// 逐案：新宿主 → 定位 li 文本端点 → exec iol → dump html/sel/读面。
+// lift 期望形以 iol 语料镜像为准（ul 底 + ul 嵌套 + iol 命令 → enable 模式；
+// iul 语料 :178/:253/:208/:240/:245 的 ol↔ul 镜像）。
+function q14case(name, html, selLiIdx, cmd) {
+  tc.innerHTML = '<div contenteditable>' + html + '</div>';
+  var d = tc.firstChild;
+  var lis = [];
+  (function walk(n) {
+    if (!n) return;
+    if (n.nodeType === 1 && String(n.tagName).toLowerCase() === 'li') lis.push(n);
+    var c = n.firstChild;
+    while (c) { walk(c); c = c.nextSibling; }
+  })(d);
+  var r = document.createRange();
+  r.setStart(lis[selLiIdx[0]].firstChild, selLiIdx[1]);
+  r.setEnd(lis[selLiIdx[2]].firstChild, selLiIdx[3]);
+  getSelection().removeAllRanges(); getSelection().addRange(r);
+  try { document.execCommand(cmd, false, ""); } catch (e) { results.push(name + ' EXC ' + e); return; }
+  var sel = getSelection().rangeCount > 0 ? getSelection().getRangeAt(0) : null;
+  results.push(name + ' html=' + JSON.stringify(d.innerHTML)
+    + ' sel=' + (sel ? nodeDesc(sel.startContainer) + '@' + sel.startOffset + '..' + nodeDesc(sel.endContainer) + '@' + sel.endOffset : 'EMPTY')
+    + ' qIndA=' + document.queryCommandIndeterm(cmd)
+    + ' qSA=' + document.queryCommandState(cmd));
+}
+// L1 subset-of-N（期望外提换壳 <ul><li>foo</li><ol><li>bar</ol><ul><li>baz</ul><li>quz</ul>）
+q14case('q14-L1', '<ul><li>foo<ul><li>bar</li><li>baz</li></ul><li>quz</li></ul>', [1, 0, 1, 3], 'insertorderedlist');
+// L2 尾随文本（期望外提 + 尾段成新 li：<ul><li>foo</li><ol><li>bar</ol><li>baz</li></ul>）
+q14case('q14-L2', '<ul><li>foo<ul><li>bar</li></ul>baz</ul>', [1, 0, 1, 3], 'insertorderedlist');
+// L3 尾随列表（期望换壳 li 保嵌套子列表 + 外层分裂）
+q14case('q14-L3', '<ul><li>foo<li>bar<ul><li>baz</li></ul><li>quz</li></ul>', [1, 0, 1, 3], 'insertorderedlist');
+// K1 straddle-out（期望双壳 ol<ol> 形：<ul><li>foo</ul><ol><ol><li>bar</ol><li>baz</ol>）
+q14case('q14-K1', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul>', [1, 1, 2, 1], 'insertorderedlist');
+// K2 straddle-extra（期望新壳含 li(foo)+嵌套 ul+li(baz) 分裂形）
+q14case('q14-K2', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul><p>extra</p>', [0, 0, 2, 3], 'insertorderedlist');
+// K3plain keep 对照（q10 起 Pass，期望嵌套换壳 li(foo,N) 分裂形——门必须跳过）
+q14case('q14-K3', '<ul><li>foo<ul><li>bar</li></ul><li>baz</li></ul>', [0, 0, 1, 3], 'insertorderedlist');
+
 assert_false(true, results.join(' || '));
 </script>
 </body>

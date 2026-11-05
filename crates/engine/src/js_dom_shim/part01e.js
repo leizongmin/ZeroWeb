@@ -397,6 +397,19 @@
     }
     return false;
   }
+  // 端点相对 item 的路径类别（前奏归并几何门）：从 n 沿 parent 链爬到 item
+  // ——途中命中 ol/ul → 'list'（端点在 item 的子列表内）；直达 item →
+  // 'direct'（端点在 item 直属内容）；不达 item → 'outside'。
+  function _zwListEndpointPathKind(n, item) {
+    var g = 0;
+    var p = n;
+    while (p && g++ < 256) {
+      if (p === item) return 'direct';
+      if (_zwJusIsHtmlElement(p, ['ol', 'ul'])) return 'list';
+      p = p.parentNode;
+    }
+    return 'outside';
+  }
   function _zwListRetagPreservingSelection(node, newTag, extraRanges) {
     var sel = globalThis.getSelection ? globalThis.getSelection() : null;
     var rng = sel && sel._ranges && sel._ranges.length > 0 ? sel._ranges[0] : null;
@@ -696,13 +709,24 @@
     for (ac = range.startContainer; ac && gI++ < 512; ac = ac.parentNode) {
       if (_zwJusIsHtmlElement(ac, 'li')) items.unshift(ac);
     }
-    // normalize 前奏仅 disable 面：Chrome enable 录制保留 li 内嵌列表换壳形
-    // （`<ul><li>[foo<ul><li>bar]</ul><li>baz</ul>` iol 期望
-    // `<ol><li>foo<ol>bar</ol></li></ol><ul>baz</ul>` 嵌套+分裂，ol-in-ol 同），
-    // vendored items.forEach 无条件归并与录制不符；disable 录制（li 内嵌列表
-    // 外提合并形）才需要归并。语料权威面优先。
+    // normalize 前奏模式×几何双门（语料权威，q9 判读面 + q14 census）：
+    // disable 无条件归并（top-level 合并形 `<div>foo</div><ol>…<ol>…` 依赖，
+    // q10 判读）；enable 按选区几何逐 item 门控——起点在 item 直属内容且终点
+    // 在 item 某子列表内（`[foo<ol><li>bar]` 跨入形，q9 P2F 17 行族，:233
+    // expected 保持嵌套换壳）跳过归并；其余形状归并（subset-of-N 外提
+    // `<ol><li>foo<ol><li>[bar]<li>baz</ol>` 期望外提换壳形 :178、尾随列表
+    // item 外提、跨 item straddle 外提——q9 F2P 行集，q10 disable-only 门
+    // 丢失 10 行）。单门含两者：无条件归并重引 17 行 P2F、全关丢失外提行。
     if (mode === 'disable') {
       for (var ii = 0; ii < items.length; ii++) {
+        _zwListNormalizeSublists(items[ii]);
+      }
+    } else {
+      for (var ii = 0; ii < items.length; ii++) {
+        if (_zwListEndpointPathKind(range.startContainer, items[ii]) === 'direct'
+        && _zwListEndpointPathKind(range.endContainer, items[ii]) === 'list') {
+          continue;
+        }
         _zwListNormalizeSublists(items[ii]);
       }
     }
