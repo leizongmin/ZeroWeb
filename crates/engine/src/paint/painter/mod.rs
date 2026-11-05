@@ -309,6 +309,11 @@ pub struct Painter {
     ///（`oof_static_mapped`，CB 在 multicol 之外）不参与本容器碎片复制，其子树在此
     /// 类重绘中整体抑制；映射位的一次绘制由 k=0 迭代照常完成。paint_node 入口判定。
     pub(crate) suppress_mapped_oof: bool,
+    /// R5420：floats 全局树序延迟领地——某 scope 根已收集其子树 floats（App E step 4
+    /// flush 承担施绘）且当前处于其主循环递归领地内。领地内各层 in_flow 滤除收集器
+    /// 同判 floats（collect ≡ 排除镜像），由最近收集 scope 统一施绘；flush 项施绘与
+    /// multicol 片段领地（无收集器可达）临时复位/门控。主循环递归前置位、返回前恢复。
+    pub(crate) floats_defer_active: bool,
     /// R5265：collapse cell 带相位间插 sweep 栈帧（CSS2.1 App E / Blink
     /// kCollapsedTableBorders——「后代块背景 < 带 < inline 内容」）。None = 常规
     /// 路径；Some(DecoSweep)/Some(ContentSweep) = 带前/带后 sweep 访间，由
@@ -974,6 +979,141 @@ fn nested_clip_intersect_enabled() -> bool {
     *KILL.get_or_init(|| std::env::var("ZW_NESTED_CLIP_INTERSECT").as_deref() != Ok("0"))
 }
 
+/// R5420 kill-switch（`ZW_FLOAT_GLOBAL_TREE_ORDER=0` 回退 per-container float 后置
+/// 旧序——floats 回主循环绘制、scope 收集/flush 全跳过）。
+// OPTIMIZATION：进程内只读一次（R5184 口径，同 nested_clip_intersect_enabled）。
+fn float_global_tree_order_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_FLOAT_GLOBAL_TREE_ORDER").as_deref() != Ok("0"))
+}
+
+/// R5420：float 延迟谓词——collect_floats_descendants 的收集判 ≡ 领地内 in_flow
+/// 滤除判（collect ≡ 排除镜像，R5176 同纪律：两处异判必然漏绘/双绘）。positioned /
+/// transform 相位 / SC 创建者在收集器里先行排除（自成 scope，域内 floats 归其自身
+/// 域）；in_flow 表（collapse_sweep_in_flow）本身恒排除 positioned 与 transform 相位
+/// 子——此处重复列出的分支为镜像文档，保证任一侧扩门时另一侧同改。
+fn r5420_float_deferred(child: &LayoutBox, transform_phase: bool, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    !matches!(child.float, FloatValue::None)
+        && !is_positioned_child(child)
+        && !child.creates_stacking_context
+        && !(transform_phase && box_paints_in_transform_phase(child, styles))
+}
+
+/// R5420（CSS 2.2 Appendix E step 4）：收集 scope 根子树中所有**非 positioned float
+/// 后代**（跨普通块边界、tree order pre-order），flush 按 step 4 全局树序绘制
+/// （见 paint_node floats flush 段）。遇 float 收集即停——其子树（含嵌套 floats）
+/// 随其递归 paint_node 内既有 per-node float 后置序绘制，DFS 前序即全局树序
+///（chromium PaintLayer 平面化同型：普通块不建 layer，其内 floats 挂最近 layer
+/// 祖先按全局树序；per-container 局部后置排序无法实现跨块全局树序，R503 同型教训）。
+/// 下钻排除与 collect_positioned_descendants 同型镜像：positioned / transform 相位
+///（R5176）/ SC 创建者不下钻（其域内 floats 归其自身域）；multicol cso 子跳过。
+/// clip 链（R3922/R5391 交集同款）**恒保留**——floats 是 in-flow 系内容，
+/// CSS §11.1.1 overflow 裁剪对其后代恒适用（无 positioned CB 语义的清除分支）。
+#[allow(clippy::too_many_arguments)]
+fn collect_floats_descendants<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+    doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
+) {
+    collect_floats_descendants_inner(box_node, abs_x, abs_y, styles, None, None, out, doc, transform_phase);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_floats_descendants_inner<'a>(
+    box_node: &'a LayoutBox,
+    abs_x: f32,
+    abs_y: f32,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    clip_rect: Option<Rect>,
+    clip_radii: Option<[f32; 4]>,
+    out: &mut Vec<DeferredPositioned<'a>>,
+    doc: Option<&zero_dom::Document>,
+    transform_phase: bool,
+) {
+    let (cx, cy) = child_content_origin(box_node, abs_x, abs_y);
+    let needs_clip = compute_needs_clip(box_node, styles, doc);
+    // R3922：本节点自身即 overflow 裁剪祖先 → 更新携带矩形（沿途交集，R5391）。
+    // **与 positioned 收集器的差异点**：line_clamp_clip（R3790 隐式裁剪）**入携带**
+    // ——floats 是 in-flow 系内容，css-overflow-4 with-floats-006「clamp 点前 BFC 内
+    // float 不隐藏但裁剪到 clamp 容器 content edge」明文适用；flush 施绘晚于中间层
+    // 既有 clip 步骤，不携带则 clamp 点后 float 段永久逃逸（006 A/B 实证 ✗1.19%
+    // 3/3）。positioned 收集器的 line_clamp 豁免（R3922：CB 链在 clamp 容器之外，
+    // line-clamp-with-abspos-023）是 positioned CB 语义特例，floats 不适用。
+    let css_overflow_clips = needs_clip;
+    let (clip_rect, clip_radii) = if css_overflow_clips {
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y);
+        let radii = box_node
+            .node_id
+            .and_then(|id| styles.get(&id))
+            .and_then(|s| overflow_clip_radii(box_node, s, &rect, abs_x, abs_y));
+        let rect = if nested_clip_intersect_enabled() {
+            match clip_rect {
+                Some(outer) => outer
+                    .intersection(&rect)
+                    .unwrap_or_else(|| Rect::new(outer.left(), outer.top(), 0.0, 0.0)),
+                None => rect,
+            }
+        } else {
+            rect
+        };
+        (Some(rect), radii)
+    } else {
+        (clip_rect, clip_radii)
+    };
+    let is_multicol = box_node.is_multicol;
+    for child in &box_node.children {
+        // 多列 column-span 子元素由 multicol 循环处理
+        if is_multicol && !child.column_span_offsets.is_empty() {
+            continue;
+        }
+        let child_abs_x = cx + child.x;
+        let child_abs_y = cy + child.y;
+        if is_positioned_child(child) {
+            // positioned 自成 scope（defer_abspos 的直接 abspos/fixed 子由其 overflow
+            // defer 循环绘制）——其域内 floats 均归其自身域，不收集不下钻。
+            continue;
+        }
+        if transform_phase && box_paints_in_transform_phase(child, styles) {
+            // R5176：变换 float 与 positioned 同属 step 8 组——scope step 6 flush
+            // 施绘，不入 floats 收集。
+            continue;
+        }
+        if child.creates_stacking_context {
+            // SC 创建者（float+SC 同理）自成 scope，其域内 floats 由它自己的
+            // collect/flush 收集。不下钻避免 double-collect（R505 同理）。
+            continue;
+        }
+        if r5420_float_deferred(child, transform_phase, styles) {
+            // float（非 positioned 非 SC 非 transform 相位）：收集即停（子树随其
+            // 递归 paint 绘制，嵌套 float 维持 DFS 旧序）。
+            out.push(DeferredPositioned {
+                node: child,
+                abs_x: child_abs_x,
+                abs_y: child_abs_y,
+                clip_rect,
+                clip_radii,
+            });
+            continue;
+        }
+        // in-flow 非 scope：下钻找嵌套 floats。
+        collect_floats_descendants_inner(
+            child,
+            child_abs_x,
+            child_abs_y,
+            styles,
+            clip_rect,
+            clip_radii,
+            out,
+            doc,
+            transform_phase,
+        );
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_positioned_descendants_inner<'a>(
     box_node: &'a LayoutBox,
@@ -1276,6 +1416,7 @@ impl Painter {
             counter_styles: HashMap::new(),
             transform_depth: 0,
             suppress_mapped_oof: false,
+            floats_defer_active: false,
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
@@ -3380,6 +3521,19 @@ impl Painter {
         //（仅 R1341 wrapper），区别于 R1351 any_child_has_cso（误触 deep-nesting regression）。
         let paint_as_multicol = is_multicol || box_node.is_nested_spanner_wrapper;
         let defer_abspos = needs_clip && !self_positioned && !is_multicol;
+        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
+        // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
+        // 相位已置位）→ 自身 inline/替换内容 → R792 基线重置 → sweep B（plain-block
+        // 补文本/子树，其余整体常规）。positioned 后代仍走步 2/6/7，不入 sweep。
+        // ContentSweep 访间：plain-block 子继续拆分递归，其余整体常规。
+        // R5420：判定自 in_flow 构建段前置到 collects 段之前——floats 收集 gate 需要
+        // band_cell/ContentSweep 形态互斥（带/sweep 访间本节点不收集，域内 floats 交
+        // 最近收集 scope 的 flush）。
+        let band_cell = self.collapse_cell_phase.is_none()
+            && box_node
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|st| collapse_phase::is_collapse_band_cell(box_node, st));
 
         // CSS 2.1 Appendix E 全局 positioned-descendant 延迟（step 2/6/7）：
         // scope 根（positioned 元素、根 html、或任何建立堆叠上下文的元素）收集其子树中
@@ -3406,6 +3560,35 @@ impl Painter {
                 abs_y,
                 styles,
                 &mut collected_positioned,
+                doc,
+                transform_phase_defer,
+            );
+        }
+
+        // R5420（CSS 2.2 Appendix E step 4）：scope 根收集子树中所有非 positioned float
+        // 后代（跨普通块边界、tree order）——floats 属 SC 根的 step 4 统一平面化绘制层，
+        // 不嵌套于后代块的递归序（chromium PaintLayer 平面化同型：普通块不建 layer，
+        // 其内 floats 挂最近 layer 祖先按全局树序绘制）。per-container 局部后置排序无法
+        // 实现跨块全局树序（R503 同型教训）。驱动案 overhanging-float-paint-order：
+        // body: red float（树 1）→ container 内 blue（树 2）/green（树 3），ZW 旧序
+        // container 子树先画完、red 后画 → red 盖 green（chromium: green 盖 red＝ref 页
+        // 语义，oracle 实测 green [0,80] blue [40,100] red [0,60] 文档系）。
+        // band_cell/ContentSweep 形态本节点不入收集（sweep 语义由 collapse 带驱动）；
+        // 其域内 floats 仍由最近收集 scope 的收集器收走（收集器下钻不识 band_cell，
+        // in_flow 滤除在 sweep 循环同表生效）——collect ≡ 排除镜像维持，无 double-paint。
+        let mut collected_floats: Vec<DeferredPositioned> = Vec::new();
+        let floats_scope_collect = is_scope
+            && float_global_tree_order_enabled()
+            && !paint_as_multicol
+            && !band_cell
+            && self.collapse_cell_phase != Some(collapse_phase::CollapseCellPhase::ContentSweep);
+        if floats_scope_collect {
+            collect_floats_descendants(
+                box_node,
+                abs_x,
+                abs_y,
+                styles,
+                &mut collected_floats,
                 doc,
                 transform_phase_defer,
             );
@@ -4010,16 +4193,24 @@ impl Painter {
             transform_phase_defer,
             self.flex_neg_z_parent_gate(box_node, styles),
         );
-        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插。
-        // 驱动序：sweep A（plain-block 链装饰，带之前）→ R793 裁剪 → 带补发射（deco
-        // 相位已置位）→ 自身 inline/替换内容 → R792 基线重置 → sweep B（plain-block
-        // 补文本/子树，其余整体常规）。positioned 后代仍走步 2/6/7，不入 sweep。
-        // ContentSweep 访间：plain-block 子继续拆分递归，其余整体常规。
-        let band_cell = self.collapse_cell_phase.is_none()
-            && box_node
-                .node_id
-                .and_then(|id| styles.get(&id))
-                .is_some_and(|st| collapse_phase::is_collapse_band_cell(box_node, st));
+        // R5420：floats 延迟领地＝本 scope 收集生效（floats_scope_collect）或处于外层
+        // scope 的主循环递归领地（floats_defer_active）。领地内 in_flow 滤除收集器同判
+        // floats（collect ≡ 排除镜像）——主循环与两条 collapse sweep 循环共用此表，
+        // sweep 内 floats 同样交 scope flush，旧径不再就地施绘（防 double-paint）。
+        // multicol 片段领地不入（multicol_fragment_depth > 0：cso 片段内容无收集器
+        // 可达——scope collect 对 multicol cso 子整支跳过，排除即盒永久丢失，R5176
+        // 同型）。
+        let floats_defer_on = (floats_scope_collect || self.floats_defer_active) && self.multicol_fragment_depth == 0;
+        let in_flow = if floats_defer_on {
+            in_flow
+                .into_iter()
+                .filter(|&idx| !r5420_float_deferred(&box_node.children[idx], transform_phase_defer, styles))
+                .collect::<Vec<_>>()
+        } else {
+            in_flow
+        };
+        // R5265（CSS2.1 App E / Blink kCollapsedTableBorders）：collapse cell 带相位间插
+        //（band_cell 判定已前置到 collects 段，见上）。
         if band_cell {
             let sweep_a_counts = PrimitiveCounts::snapshot(&self.primitives);
             self.paint_collapse_deco_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
@@ -4037,12 +4228,50 @@ impl Painter {
         } else if self.collapse_cell_phase == Some(collapse_phase::CollapseCellPhase::ContentSweep) {
             self.paint_collapse_content_sweep_children(box_node, styles, child_offset_x, child_offset_y, doc, &in_flow);
         } else {
+            // R5420：floats 延迟领地内 float 子已从 in_flow 滤除（见上），由本 scope
+            // 或最近收集 scope 的 flush 按 App E step 4 全局树序统一施绘。本 scope
+            // 收集生效时主循环递归领地置位（子层 in_flow 滤除同判展开），返回前恢复
+            //——后续 flush（positioned/neg-z/transform 项均为 scope，自管其域内
+            // floats）与祖先领地语义不受污染。
+            let prev_floats_defer = self.floats_defer_active;
+            if floats_scope_collect {
+                self.floats_defer_active = true;
+            }
             for child_idx in &in_flow {
                 if is_canvas_box {
                     continue;
                 }
                 let child = &box_node.children[*child_idx];
                 self.paint_node(child, styles, child_offset_x, child_offset_y, doc, false);
+            }
+            self.floats_defer_active = prev_floats_defer;
+
+            // R5420：floats flush（App E step 4，全局树序；位置＝in-flow 块之后、
+            // step 6 positioned 之前）。clip 链随收集项补裁（R3922/R5391 同款，
+            // floats 为 in-flow 系内容恒受路径 overflow 裁剪）。收集项为普通 float
+            //（非 scope）——施绘期间复位领地旗，其子树（含嵌套 float）随递归
+            // paint_node 既有 DFS 旧序自绘，不被误滤到本 flush 之外。
+            if floats_scope_collect {
+                for item in &collected_floats {
+                    let off_x = item.abs_x - item.node.x;
+                    let off_y = item.abs_y - item.node.y;
+                    let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+                    let prev_item_floats_defer = self.floats_defer_active;
+                    self.floats_defer_active = false;
+                    self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                    self.floats_defer_active = prev_item_floats_defer;
+                    if let Some(clip) = item.clip_rect {
+                        super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
+                        if let Some(radii) = item.clip_radii {
+                            super::helpers::clip_fills_to_rounded_rect(
+                                &mut self.primitives,
+                                &counts_before_item,
+                                &clip,
+                                radii,
+                            );
+                        }
+                    }
+                }
             }
         }
 

@@ -114,3 +114,4 @@ mod visual_resize_scroll;
 /// R5410：static flex item 负 z-index 下沉绘制（flex-item-z-ordering-002 锚 +
 /// 非 flex 父 legacy 守卫）。
 mod r5410_flex_item_neg_z_tests;
+mod r5420_float_global_tree_order_tests;
