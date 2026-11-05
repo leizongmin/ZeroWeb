@@ -84,3 +84,37 @@ enginelib 3,731P/5F 五红名（p56_adopted/p99s_custom_property/r3276/r2810/r28
 - ⑥ J-A/J-D justifycenter 祖先壳改写刀（~42 行）。
 - ⑦ F1/F2。multitest ?9001-last 截断带口径（⑨ 轮骨架 flake 族判定不动）。
 - 探针上下文跨块/尾段 wrap 序伪象（§3，A/B 已证与源码无关，不修）。
+
+## 9. 补充定谳（第二轮核验）：fontname 3 红机制升级——variant 切割伪象（§6「前序行状态污染」的修正，bisect 挂账改判）
+
+§6 定谳「同片前序语料行留下的页级状态污染」经第二轮核验（克隆壳页 zz-fn-clone.html
+原序复现 + 原序现场 queryCommandValue 包装器 dump + corpus 行集切齐审计）**升级为
+variant 切割伪象**——机制在 subset-tests.js 的 subtest 窗口过滤，不在前序行状态：
+
+1. **机制**：tests.js 每 case 的 subtest 计数连续（exec 断言 ×N → checks → compare →
+   before 查询断言 ×6 → after 查询断言 ×6）。`subsetTest`（subset-tests.js）对窗口外
+   subtest **直接 skip**，而 **execCommand 调用在 exec 断言的 fn 体内**——窗口外 exec
+   断言被 skip ⇒ **execCommand 从不执行**；同 case 的 after 查询取值（tests.js
+   :5618-5628）不在 subsetTest 内、**无条件同步跑** ⇒ 读到未 apply 的裸 DOM ⇒
+   `qI after=true / qV after="serif"` 恒红。
+2. **切齐铁证**（fix15a-fontname.log）：红案 `[foo<pre>bar</pre>baz]` swF 共 16 个
+   subtest，被 `?1-1000`/`?1001-2000` 窗口线从中间切开——**?1-1000 段 11 行全 Pass**
+   （exec ×2 + checks + **compare innerHTML** + stylewithcss 查询 6 + fontname qI
+   before；exec 真跑、apply 正确、compare 包裹形绿），**?1001-2000 段仅 5 行**
+   （fontname qS/qV before + qI/qS/qV after，**无 exec 行**——execCommand 在该页从未
+   执行）。16=11+5 精确切齐；污染假说若成立，?1001-2000 段应有 exec 行（真跑后被污染
+   读错），实测无 ⇒ 切割机制唯一自洽。listing `fo[o<listing>b]ar</listing>` qV after
+   同理（红在 ?2001-last 段，exec 断言落窗前段被 skip）。
+3. **原序现场实证**：克隆页（壳页同构 + sw=true 起手 hack + 全量原序 + variant
+   ?1001-2000）复现 pre 双红；页内 `document.queryCommandValue` 包装器对含 `<pre>`
+   案的每次 fontname 查询 dump（选区端点 + 当前 contenteditable DOM）——**所有
+   qV=serif 调用时刻 DOM 均裸形**（`foo<pre>bar</pre>baz`），无一次包裹形 ⇒ 值读数
+   全部发生在 apply 之前。
+4. **bisect 挂账改判（重要，防假阳性）**：§6 挂账的行级 bisect（zz-fnmini.js 注入
+   fontname.js 前 N 条语料行）**注定得到假阳性**——注入前序行会使目标案 subtest 计数
+   后移，跨过 variant 窗口线后 exec 断言被 skip，「复现红」测到的是切割伪象而非前序行
+   状态。三红系切割伪象恒红（历代基线同红一致，?1-1000 段全 Pass 同代在库），行级
+   权威改以零切割环境为准（zz-probe-authface T5-T7 / zz-probe-fncorpus 零前序裁片，
+   双环境全绿已钉）。语料页内同案跨段断言切割是 corpus runner 的既存运行学特性，
+   不属 engine 修复面，不改 runner。
+
