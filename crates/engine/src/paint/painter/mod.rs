@@ -772,17 +772,35 @@ pub(crate) fn scrollable_overflow_extent(
         && (matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
             || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll))
         && !box_node.is_multicol
-        && box_node.inline_layout.is_some()
-        && (box_node.inline_layout_width - box_node.content_width).abs() < 1.0
-        && let Some(lines) = &box_node.inline_layout
     {
-        for line in lines {
-            acc.1 = acc.1.min(line.y);
-            acc.3 = acc.3.max(line.y + line.height);
-            for frag in &line.fragments {
-                acc.0 = acc.0.min(frag.x);
-                acc.2 = acc.2.max(frag.x + frag.width);
-            }
+        // 行 span 来源二选一：stored 行有效（宽度匹配，text.rs use_stored 同校验）取
+        // 全 span（含 min 侧）；非 stored 容器（非 pure-Ahem，350 默认字体案）回退消费
+        // layout 期聚合的标量 span `inline_overflow_extent`（min 侧恒原点，负向未建模）。
+        let stored_valid =
+            box_node.inline_layout.is_some() && (box_node.inline_layout_width - box_node.content_width).abs() < 1.0;
+        let inline_span = if stored_valid {
+            box_node.inline_layout.as_ref().map(|lines| {
+                let mut span = (f32::INFINITY, f32::INFINITY, 0.0f32, 0.0f32);
+                for line in lines {
+                    span.1 = span.1.min(line.y);
+                    span.3 = span.3.max(line.y + line.height);
+                    for frag in &line.fragments {
+                        span.0 = span.0.min(frag.x);
+                        span.2 = span.2.max(frag.x + frag.width);
+                    }
+                }
+                span
+            })
+        } else {
+            box_node
+                .inline_overflow_extent
+                .map(|(right, bottom)| (0.0f32, 0.0f32, right, bottom))
+        };
+        if let Some((min_x, min_y, max_x, max_y)) = inline_span {
+            acc.0 = acc.0.min(min_x);
+            acc.1 = acc.1.min(min_y);
+            acc.2 = acc.2.max(max_x);
+            acc.3 = acc.3.max(max_y);
         }
     }
     walk(box_node, 0.0, 0.0, styles, &mut acc, false);

@@ -396,3 +396,60 @@ fn r5427_inline_arm_unions_with_child_walk() {
     let (_, _, ex_w, ex_h) = scrollable_overflow_extent(&target, Some(&styles));
     assert_eq!((ex_w, ex_h), (300.0, 200.0), "行盒与子盒 span 取并集");
 }
+
+/// ★非 stored 容器（inline_layout = None，350 默认字体案形）：回退消费 layout 期
+/// 聚合的标量 span `inline_overflow_extent`——旧行为（无此字段）恒 (0,0,0,0)。
+#[test]
+fn r5427_inline_overflow_extent_fallback_non_stored() {
+    let mut doc = zero_dom::Document::new();
+    let id = doc.create_element("div");
+
+    let mut target = make_box(Some(id), 0.0, 0.0, 100.0, 100.0);
+    target.overflow_y = OverflowClip::Hidden;
+    target.content_width = 100.0;
+    target.content_height = 100.0;
+    // layout 期聚合：nbsp 长行 200 宽 / 行底 200（background-attachment-350 形）。
+    target.inline_overflow_extent = Some((200.0, 200.0));
+
+    let styles = HashMap::new();
+    let (_, _, ex_w, ex_h) = scrollable_overflow_extent(&target, Some(&styles));
+    assert_eq!((ex_w, ex_h), (200.0, 200.0), "非 stored 容器须消费标量 span 回退");
+}
+
+/// stored 行有效时优先取全 span，标量 span 不再叠加（350 形 + stored 同盒不双计）。
+#[test]
+fn r5427_stored_lines_take_precedence_over_fallback_span() {
+    let mut doc = zero_dom::Document::new();
+    let id = doc.create_element("div");
+
+    let mut target = make_box(Some(id), 0.0, 0.0, 100.0, 100.0);
+    target.overflow_x = OverflowClip::Hidden;
+    target.content_width = 100.0;
+    target.inline_layout_width = 100.0;
+    target.inline_layout = Some(stored_lines(&[(0.0, 0.0, 150.0, 100.0)]));
+    // 陈旧/夸张的标量 span 不得穿透有效存储行。
+    target.inline_overflow_extent = Some((999.0, 999.0));
+
+    let styles = HashMap::new();
+    let (_, _, ex_w, ex_h) = scrollable_overflow_extent(&target, Some(&styles));
+    assert_eq!((ex_w, ex_h), (150.0, 100.0), "stored 行优先，标量 span 不叠加");
+}
+
+/// 标量 span 存在但宽度失配（stored 行陈旧）时仍回退标量——IFC 行几何失效
+/// 不连带作废 layout 期聚合（同一次 IFC 运行的产物，表/multicol 改宽前聚合）。
+#[test]
+fn r5427_stale_stored_lines_fall_through_to_extent_span() {
+    let mut doc = zero_dom::Document::new();
+    let id = doc.create_element("div");
+
+    let mut target = make_box(Some(id), 0.0, 0.0, 100.0, 100.0);
+    target.overflow_x = OverflowClip::Scroll;
+    target.content_width = 100.0;
+    target.inline_layout_width = 150.0;
+    target.inline_layout = Some(stored_lines(&[(0.0, 0.0, 300.0, 100.0)]));
+    target.inline_overflow_extent = Some((200.0, 150.0));
+
+    let styles = HashMap::new();
+    let (_, _, ex_w, ex_h) = scrollable_overflow_extent(&target, Some(&styles));
+    assert_eq!((ex_w, ex_h), (200.0, 150.0), "存储行失配时回退标量 span（不再弃整臂）");
+}

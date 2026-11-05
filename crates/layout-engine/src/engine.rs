@@ -2803,6 +2803,7 @@ impl LayoutEngine {
 
         LayoutBox {
             inline_reported_rect: None,
+            inline_overflow_extent: None,
             // R4945：taffy Position::Absolute + computed static 的组合 = R2156 skip
             // 提升原子（tree.rs 置 taffy 绝对定位持位，computed 无 inset 语义）。
             hoisted_atomic: taffy.style(taffy_id).map(|st| {

@@ -497,6 +497,15 @@ pub struct LayoutBox {
     /// 若不匹配（如 table/multicol 后处理改变了宽度），
     /// paint 回退到重新运行 IFC。
     pub inline_layout_width: f32,
+    /// R5427：本盒直系行内内容的溢出 span（content-box 系 (max_right, max_bottom)）。
+    ///
+    /// 由 `compute_final_inline_layouts` 在 IFC 运行后聚合（store-gate return 之前，
+    /// **所有**文本容器都写，含非 stored 容器——`inline_layout` 只对 pure-Ahem 容器存储，
+    /// paint 的 `scrollable_overflow_extent` 行内臂在 `inline_layout` 为 None 时回退消费
+    /// 此 span（滚动容器门同口径）。只存标量、不落 `inline_layout`：后者翻转 use_stored
+    /// 路径会引入非 Ahem 字体度量失真（R5227 oof_static_line_bottom 同款理由）。
+    /// 空行集 / 垂直书写模式 = `None`。
+    pub inline_overflow_extent: Option<(f32, f32)>,
     /// R2467 line-clamp slice 2：layout 期 IFC `apply_line_clamp_cap` 是否真的截断了行
     ///（容器 `line-clamp: Count(n)` 且原始行数 > n）。
     ///
@@ -874,6 +883,7 @@ impl Default for LayoutBox {
             column_span_offsets: Vec::new(),
             inline_layout: None,
             inline_layout_width: 0.0,
+            inline_overflow_extent: None,
             line_clamp_clamped: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,

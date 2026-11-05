@@ -2113,6 +2113,34 @@ pub(crate) fn compute_final_inline_layouts(
     if !inline_ctx.relpos_shifts.is_empty() {
         root.inline_relpos_shifts = Some(Box::new(inline_ctx.relpos_shifts.clone()));
     }
+    // R5427：本盒直系行内内容的溢出 span（content-box 系 (max_right, max_bottom)）存盒。
+    // **所有**文本容器都写（store-gate return 之前，R5166/R5227 先例区）：非 pure-Ahem
+    // 容器不存 inline_layout（非 Ahem 字体度量失真域），paint scrollable_overflow_extent
+    // 的行内臂在 stored 行缺席时回退消费此标量（background-attachment-350：默认字体
+    // nbsp 长行 200×200 溢出 100×100 盒，local 定位区须见纵向溢出）。只存标量、不落
+    // inline_layout——那会翻转 paint use_stored 路径（R5227 同款理由）。行 y/height 纵向、
+    // run x+relpos 横向（位移烘焙与 stored 面 line 2186 同口径）；竖排流行进轴为水平、
+    // 行盒坐标已重映射，语义不适用不入（R5227 同门）；空行集不存。存面恒写（成本
+    // O(行×run) 常数小），消费端受 ZW_INLINE_OVERFLOW_EXTENT 总门。
+    // FIXME: direction:rtl / 竖排的负向 span 未建模（无驱动案）。
+    if !root.writing_mode.is_vertical_block_flow() && !inline_ctx.lines.is_empty() {
+        let max_bottom = inline_ctx.lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+        let max_right = inline_ctx
+            .lines
+            .iter()
+            .flat_map(|l| l.runs.iter())
+            .map(|r| {
+                let shift = root
+                    .inline_relpos_shifts
+                    .as_deref()
+                    .and_then(|m| m.get(&r.node_id))
+                    .copied()
+                    .unwrap_or((0.0, 0.0));
+                r.x + shift.0 + r.width
+            })
+            .fold(0.0f32, f32::max);
+        root.inline_overflow_extent = Some((max_right, max_bottom));
+    }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);
