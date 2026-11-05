@@ -1424,7 +1424,7 @@
                       globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
                       globalThis._zwAvailableImages[_zwImSrc] = { width: _zwSvgDims.width, height: _zwSvgDims.height, axes: _zwSvgDims.axes, xo: _zwImXo };
                     } catch (_eSwa2) {}
-                    if (!_zwPrior) _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
+                    if (!_zwPrior) _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, globalThis.__zwImgMakeEvent5277('load'));
                     continue;
                   }
                 }
@@ -1441,10 +1441,10 @@
                   globalThis._zwAvailableImages = globalThis._zwAvailableImages || {};
                   globalThis._zwAvailableImages[_zwImSrc] = { width: _zwW, height: _zwH, xo: _zwImXo };
                 } catch (_eSwa) {}
-                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('load', { bubbles: false, cancelable: false }));
+                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, globalThis.__zwImgMakeEvent5277('load'));
               } else {
                 _resourceStates[_zwImKey] = { url: _zwImSrc, outcome: 'broken', width: 0, height: 0, error: true, density: _zwImDen };
-                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, _makeEvent('error', { bubbles: false, cancelable: false }));
+                _dispatchWithBubble(_zwImKey, _zwImSel, _zwImHandle, globalThis.__zwImgMakeEvent5277('error'));
               }
             }
           } catch (_eSweep) {}
@@ -1474,7 +1474,7 @@
                 if (_zwPe.type === 'error' && !_resourceStates[_zwPe.key]) {
                   _resourceStates[_zwPe.key] = { url: _zwPe.url, outcome: 'broken', width: 0, height: 0, error: true };
                 }
-                _dispatchWithBubble(_zwPe.key, _zwPe.sel, _zwPe.handle, _makeEvent(_zwPe.type, { bubbles: false, cancelable: false }));
+                _dispatchWithBubble(_zwPe.key, _zwPe.sel, _zwPe.handle, globalThis.__zwImgMakeEvent5277(_zwPe.type));
               } catch (_eSwD) {}
             }
           }
@@ -5978,6 +5978,17 @@
           // js-dom M4 R107：body/frameset 的 6 个 forwarding handler 读 window（spec
           // handler-body/frameset-attributes——IDL 属性是 window 同名 handler 的转发）。
           var _r107Tag = _realTag(sel, handle);
+          // s288：historical non-element handler 读（onloadstart/onprogress/onloadend）——
+          // 本元素无此 IDL 属性 → expando 语义（未设 undefined、已设 expando 值；media
+          // 豁免子集在 AUDIO/VIDEO 维持 handler 读面）。R2933 generic on* 分支的
+          // `|| null` 回落对这些名是 spec 偏差（body.onloadend 应为 undefined）。
+          if (globalThis._ZW_NON_ELEMENT_ON && globalThis._ZW_NON_ELEMENT_ON[_gt]
+              && !(globalThis._ZW_NON_ELEMENT_ON_MEDIA && globalThis._ZW_NON_ELEMENT_ON_MEDIA[_gt]
+                  && (_r107Tag === 'AUDIO' || _r107Tag === 'VIDEO'))) {
+            var _s288ExG = _expando[key];
+            if (_s288ExG && Object.prototype.hasOwnProperty.call(_s288ExG, prop)) { return _s288ExG[prop]; }
+            return undefined;
+          }
           if (globalThis._ZW_BODY_FORWARD_ON[_gt] && (_r107Tag === 'BODY' || _r107Tag === 'FRAMESET')
               && globalThis.window) {
             // js-dom M4 R107：content attribute 反射路径——先编译 inline handler（本元素
@@ -13834,6 +13845,17 @@
           // js-dom M4 R107：body/frameset 的 forwarding handler 写 window（spec：element
           // 的 IDL setter 先置 window 同名 handler——forwarding attributes 的取值即 window 值）。
           var _r107sTag = _realTag(sel, handle);
+          // s288：historical non-element handler 写（onloadstart/onprogress/onloadend）——
+          // 本元素无此 IDL 属性 → 落普通 expando（spec OrdinarySet own property；function
+          // 值不入 _listenerStore，事件派发不触达——img 三 handler unreached 断言面）。
+          // media 豁免子集在 AUDIO/VIDEO 维持 handler 注册面。
+          if (globalThis._ZW_NON_ELEMENT_ON && globalThis._ZW_NON_ELEMENT_ON[_ot]
+              && !(globalThis._ZW_NON_ELEMENT_ON_MEDIA && globalThis._ZW_NON_ELEMENT_ON_MEDIA[_ot]
+                  && (_r107sTag === 'AUDIO' || _r107sTag === 'VIDEO'))) {
+            var _s288ExS = _expando[key] || (_expando[key] = {});
+            _s288ExS[prop] = value;
+            return true;
+          }
           if (globalThis._ZW_BODY_FORWARD_ON[_ot] && (_r107sTag === 'BODY' || _r107sTag === 'FRAMESET')
               && globalThis.window) {
             globalThis.window['on' + _ot] = value;

@@ -7388,6 +7388,16 @@
     message: 1, messageerror: 1, offline: 1, online: 1, pagehide: 1, pageshow: 1,
     popstate: 1, rejectionhandled: 1, storage: 1, unhandledrejection: 1, unload: 1,
   };
+  // s288：historical non-element event handler 名（spec HTML webappapis「event handlers
+  // on elements, Document, and Window objects」表无此三名——loadstart/progress/loadend
+  // 的 handler IDL 属性仅存在于 XHR/FileReader 等非 Node 目标，img/body/window 读应为
+  // undefined、写落普通 expando；historical-progress-event.window.js「onloadend is not
+  // exposed」+ img 三 handler unreached 断言面）。_ZW_NON_ELEMENT_ON_MEDIA = media 元素
+  // 豁免子集——HTMLMediaElement 仍有 onloadstart/onprogress IDL（part06 _zwMediaFire
+  // 经 _listenerStore 派发，全排会断 media handler 面）；loadend 无元素持有。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#event-handlers-on-elements,-document,-and-window-objects
+  globalThis._ZW_NON_ELEMENT_ON = { loadstart: 1, progress: 1, loadend: 1 };
+  globalThis._ZW_NON_ELEMENT_ON_MEDIA = { loadstart: 1, progress: 1 };
   // js-dom M4 R113：prefixed animation/transition 事件 handler 的「event handler event type」
   // 映射（spec HTML webappapis「event handlers on elements…」表）——`onwebkitanimationend`
   // 等 handler IDL 名全小写，但其 event type 是 camelCase（webkitAnimationEnd）。on* setter

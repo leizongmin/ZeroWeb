@@ -3242,7 +3242,7 @@
       if (type === 'error' && !_resourceStates[_imKey]) {
         _resourceStates[_imKey] = { url: _imSrc, outcome: 'broken', width: 0, height: 0, error: true, density: _imDensity };
       }
-      _dispatchWithBubble(_imKey, sel, handle, _makeEvent(type, { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_imKey, sel, handle, globalThis.__zwImgMakeEvent5277(type));
     };
     // security-hardening M2-s8：img-src 检查点——`__zwCspImgCheck` 原生回调
     // （resolve abs → check_image → 阻止 → violation 入共享队列 [document 站] +
@@ -3251,7 +3251,7 @@
     // ——violation 事件时序面独立）。
     if (_imSrc && typeof __zwCspImgCheck === 'function' && __zwCspImgCheck(_imSrc) === '1') {
       _defer(function () {
-        _dispatchWithBubble(key, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+        _dispatchWithBubble(key, sel, handle, globalThis.__zwImgMakeEvent5277('error'));
       });
       _imSrc = undefined;
     }
@@ -3461,7 +3461,14 @@
         }
         _imFetchP.then(function (resp) {
           if (_imEpochStale()) { _imInflightEnd(); return; }
-          if (!resp.ok) { _imFail(); return; }
+          // s288：HTTP 状态不门槛 img load——spec update the image data 的响应处理只
+          // 门槛网络错误，非网络错误响应按体解码决断（404 + 可解码体亦 available，
+          // 404-response-with-actual-image-data 断言面；体解码失败仍由
+          // createImageBitmap reject → _imFail）。网络错误判据 = status 0（fetch 网络
+          // 错误/abort/opaque 过滤响应零状态，ok:false + status:0 同形；__zwfr wire
+          // 的真实 HTTP 响应恒 ≥200）——维持 _imFail 面不变。
+          // https://html.spec.whatwg.org/multipage/images.html#updating-the-image-data
+          if (!resp.ok && !resp.status) { _imFail(); return; }
           resp.blob().then(function (blob) {
             if (_imEpochStale()) { _imInflightEnd(); return; }
             createImageBitmap(blob).then(function (bm) {
@@ -3510,6 +3517,17 @@
       // 保持既有 error 面）→ broken + error（原语义）。
       _imFail();
     }
+  };
+  // s288：img 事件对象构造（Event 构造器形态——prototype 挂 Event.prototype，
+  // historical-progress-event 断言 `e instanceof Event` 且非 ProgressEvent；裸
+  // _makeEvent 产物原型是 Object.prototype，instanceof 恒 false）。**载入期
+  // 赋值（此处）而非运行核内**——part04 sweep/drain 的 img 事件派发在无任何
+  // update run 的页面上先行（lazy 未跑图 sweep 直派），运行核内定义会使
+  // helper 缺位 throw 撕裂 sweep 单 try（eager/invisible 族 P→F 15 面 r1 实证）。
+  globalThis.__zwImgMakeEvent5277 = function (type) {
+    var ev = _makeEvent(type, { bubbles: false, cancelable: false });
+    try { if (globalThis.Event && globalThis.Event.prototype) { Object.setPrototypeOf(ev, globalThis.Event.prototype); } } catch (_eImgEv) {}
+    return ev;
   };
   // s70：relevant mutations 重验入口——选中源非空走运行核，空选中走
   // null-selection 面（spec：current request → broken、current URL 清空、
@@ -3578,7 +3596,7 @@
         globalThis._zwImgPendingEvents.push({ key: _nkKey, sel: sel, handle: handle, type: 'error', url: '' });
         return;
       }
-      _dispatchWithBubble(_nkKey, sel, handle, _makeEvent('error', { bubbles: false, cancelable: false }));
+      _dispatchWithBubble(_nkKey, sel, handle, globalThis.__zwImgMakeEvent5277('error'));
     }
   };
   // s70：scrollIntoView 视口触发近似——置 per-element 旗标并重验未启动的

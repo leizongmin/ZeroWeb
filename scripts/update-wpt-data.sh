@@ -95,6 +95,13 @@
 #     勘根定性该页 3F 为语料 404 非引擎缺陷——fetch fail → img onerror
 #     载入断言永假；已从上游 wpt images/ 原件本地补入 16x16 PNG 130B
 #     （同 gh api contents 按 pin 取件）——升级新 ref 后需重新补）
+#   - images/rrgg-256x256.png 缺失（html/semantics/embedded-content/
+#     the-img-element/historical-progress-event.window.js 依赖；s288 勘根
+#     定性该文件级 Timeout 的悬挂腿为语料 404——async_test 等 load 永不
+#     done；已从上游 wpt images/ 原件本地补入 256x256 PNG 120B（github.com
+#     sparse clone 按 wpt pin 1eecaa0c30 取件）——升级新 ref 后需重新补。
+#     同域：404-response-with-actual-image-data.py 端点为 runner 仿真臂
+#     （testharness.rs s288，wptserve handler 不入语料），无语料资产）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail
