@@ -118,3 +118,16 @@ variant 切割伪象**——机制在 subset-tests.js 的 subtest 窗口过滤�
    双环境全绿已钉）。语料页内同案跨段断言切割是 corpus runner 的既存运行学特性，
    不属 engine 修复面，不改 runner。
 
+5. **判别窗终审实测（判读方独立证据，与上四证同判互证）**：fontname.html 裁单窗
+   `?1001-1006`（红案 after 断言 #1003-1005 窗内、exec 断言 #990-991 窗外）——
+   切割伪象假说预测红（exec 被 skip → after 读裸 DOM）、污染假说预测绿（无前序
+   exec 应更干净）；**实测 qI/qV after 双红** = 切割机制实锤。精确断言编号
+   （grep 断言行重编号）：case 64 = #990-1005，片 1 跑 #990-1000（exec ×2、checks、
+   compare、sw 查询 6、fontname qI before 全 Pass）、片 2 跑 #1001-1005。判别页
+   已删（断言编号绑定语料排列无常驻价值，方法在此记档）。
+6. **同族权威面补证**：case 62（`[foo<listing>bar</listing>baz]` swF 全选，落
+   ?1-1000 窗内完整执行序列）在 fix14e 基线与 fix15a 均 qI/qV after **Pass**——
+   tag 模式 face 读数在真实执行路径上基线已正确，⑤ plain-first 修复保留为正确
+   语义收口（face 提示 + UA mono 臂），语料端无红可治。bisect 工作文件
+   zz-fnmini.js 不再消费，可清理。
+
