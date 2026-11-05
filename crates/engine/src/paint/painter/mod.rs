@@ -759,8 +759,42 @@ pub(crate) fn scrollable_overflow_extent(
         }
     }
     let mut acc = (f32::INFINITY, f32::INFINITY, 0.0f32, 0.0f32);
+    // R5427：本盒直系行内内容（文本行盒）的溢出——行内内容不是子 LayoutBox，上方
+    // walk 不可见；纯文本滚动容器（nbsp 长行 / 超行数文本，驱动：WPT
+    // background-attachment-353 的 200×200 行溢出）此前 extent 恒缩回 content 盒
+    // → local 定位区回退 padding 盒、脚本滚动钳 0。行盒计入 scrollable overflow
+    //（css-overflow-3 §2.2）。门与消费方同口径：滚动容器（Hidden|Scroll，与 paint
+    // 子内容平移门一致；Clip 不建滚动容器）＋ stored IFC 有效（宽度匹配，与
+    // text.rs use_stored 同校验）＋非 multicol（列流存储行坐标已重映射）。
+    // FIXME: 后代盒自身的行内行溢出传递未建模（无驱动案；R5365 子盒遍历仅覆盖
+    // child-box 几何）。
+    if inline_overflow_extent_enabled()
+        && (matches!(box_node.overflow_x, OverflowClip::Hidden | OverflowClip::Scroll)
+            || matches!(box_node.overflow_y, OverflowClip::Hidden | OverflowClip::Scroll))
+        && !box_node.is_multicol
+        && box_node.inline_layout.is_some()
+        && (box_node.inline_layout_width - box_node.content_width).abs() < 1.0
+        && let Some(lines) = &box_node.inline_layout
+    {
+        for line in lines {
+            acc.1 = acc.1.min(line.y);
+            acc.3 = acc.3.max(line.y + line.height);
+            for frag in &line.fragments {
+                acc.0 = acc.0.min(frag.x);
+                acc.2 = acc.2.max(frag.x + frag.width);
+            }
+        }
+    }
     walk(box_node, 0.0, 0.0, styles, &mut acc, false);
     acc
+}
+
+/// R5427 kill-switch（`ZW_INLINE_OVERFLOW_EXTENT=0` 回退纯子盒遍历——行内行溢出
+/// 不入 extent，local 定位区/脚本滚动钳维持旧行为）。
+// OPTIMIZATION：进程内只读一次（R5184 口径，同 nested_clip_intersect_enabled）。
+fn inline_overflow_extent_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_INLINE_OVERFLOW_EXTENT").as_deref() != Ok("0"))
 }
 
 pub(super) fn effective_appearance(
