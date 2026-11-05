@@ -3307,7 +3307,18 @@
         try {
           var _imConn = _makeProxy(sel, handle);
           if (_imConn && _imConn.isConnected === false) {
+            // s291：detached 延步 run pending 标记（un-gate 第三前置件）——
+            // attr 变更时 img 未连接，update run 已延步排队；排队 run 承接
+            // 期间插入 hook env 门卫 ⓷ 读此标记早退（不另启重验：插入 run
+            // 落 spec step 11 同 URL return，decode 捕获态不被抢跑 run 的
+            // restart 取代——decode-quick-attach「: srcset」非 picture 断言
+            // 面）。回调头部即清（RunUpdate/NullSelection 两分支同清）。
+            try {
+              globalThis._zwImgDeferUpdate5277 = globalThis._zwImgDeferUpdate5277 || {};
+              globalThis._zwImgDeferUpdate5277[_imKey] = true;
+            } catch (_e5291dm) {}
             _defer(function () {
+              try { if (globalThis._zwImgDeferUpdate5277) delete globalThis._zwImgDeferUpdate5277[_imKey]; } catch (_e5291dc) {}
               // s225：延步内**重做选源**（spec update-the-image-data 对未连接
               // img 整体延步运行——whatwg/html#7383：URL 解析随 update
               // microtask 生效，src 后 <base> 变更在延步内可见，image-base-url
@@ -3890,23 +3901,21 @@
       var pTag = '';
       try { pTag = _realTag(parentSel, parentHandle) || ''; } catch (_e5277tp) {}
       var isPicture = String(pTag).split(':').pop() === 'PICTURE';
-      // s284（html-semantics M2）：img 插入 = spec relevant mutation——「The img
-      // or source HTML element insertion steps … count the mutation as a relevant
-      // mutation」不限定父元素（picture 路径原有 IMG 臂不变，此处只补非 picture
-      // 父）。此前非 picture 父插入早退无重验：script 创建 lazy img（sizes-auto
-      // 页 onload 建群）插入后无 update run，冻结请求永挂 → 文件级 Timeout。
-      // 记录半 + fetch 半并调（picture IMG 臂 s221 同模式）。
-      // 刻意收窄 allowsAuto（lazy + sizes=auto）才触发：通用点亮 = 每个插入 img
-      // 多一次盲重验，引擎 fetch 核缺「同 URL 已可用不重取」守卫（spec update-
-      // the-image-data 冗余更新早退），image-base-url 不重取断言/decode attach
-      // 时序/current-request-microtask 任务计数 5 行 REGRESSED（family A/B 两轮
-      // 同键复现 2026-11-04）——fetch 核 step-11 守卫已由 s289 收口；hook 层
-      // env 门卫由 s290 补齐（下方守卫块，un-gate 双前置件就此齐备），
-      // allowsAuto 收窄门本身仍待 un-gate 切片裁决。非 auto 的 script 创建
-      // img 插入回落基线行为（无重验）。
+      // s284（html-semantics M2）→ s291 收窄门解除（un-gate）：img 插入 = spec
+      // relevant mutation——「The img or source HTML element insertion steps …
+      // count the mutation as a relevant mutation」不限定父元素亦不限定
+      // allows-auto-sizes（s284 勘根②：allows-auto-sizes 图 starts-being-
+      // rendered 亦 relevant mutation，语义已由本臂 env 门卫覆盖）。picture
+      // 路径原有 IMG 臂不变（s221 重启语义由 empty-picture 断言面 pin，不入
+      // 本臂）。此前非 picture 父插入早退无重验：script 创建 lazy img（sizes-
+      // auto 页 onload 建群）插入后无 update run，冻结请求永挂 → 文件级
+      // Timeout。记录半 + fetch 半并调（picture IMG 臂 s221 同模式）。s284 曾
+      // 收窄 allowsAuto 防 5 行 REGRESSED（image-base-url 不重取/decode attach
+      // 时序/microtask 任务计数，family A/B 两轮同键复现 2026-11-04）——
+      // s289 fetch 核 step-11 守卫、s290 hook env 门卫、s291 ⓷ detached 延步
+      // 标记（下方守卫块）三层就绪后解除，逐面承接。
       // https://html.spec.whatwg.org/multipage/images.html#relevant-mutations
-      if (!isPicture && isInsert && _zw5277Tag(node) === 'IMG'
-          && globalThis.__zwImgAllowsAutoSizes5277(node.__zwSelector, node.__zwHandle)) {
+      if (!isPicture && isInsert && _zw5277Tag(node) === 'IMG') {
         // s290（html-semantics M2）：插入 hook env 门卫——spec reacting-to-
         // environment-changes 同步段早退（un-gate 第二前置件，s289 账本候选
         // ①；fetch 核 step-11 守卫不覆盖 env 重验面）。三级：
@@ -3918,6 +3927,15 @@
         // ⓶「pending request is not null」→ return——在飞册 truthy（s289
         //   {url,pending} 形态；avail 臂/defer 两清除点保证非空窗 = 真在飞）。
         //   spec env 不取代在飞请求。
+        // ⓷ detached 延步 run pending（_zwImgDeferUpdate5277，s291 un-gate
+        //   第三前置件）→ return——attr 变更时 img 未连接，update run 已延步
+        //   排队（fetch 臂入口 isConnected 检查，s225）；此时插入不另启重验，
+        //   排队 run 承接（spec disconnected img 的 update await 步进；插入
+        //   run 落 step 11 同 URL return）——decode-quick-attach「: srcset」
+        //   非 picture 断言面单请求存活（viaDefer 重入不 bump 代纪，decode
+        //   捕获态不被取代；抢跑 restart 会把它打成 EncodingError 红面）。
+        //   picture 臂不设此卫（empty-picture srcset 重启→EncodingError
+        //   断言面维持）。
         // ⓮ 选中源 null → return；⓯「selected source and selected pixel
         //   density are the same as the element's last selected source and
         //   current pixel density」→ return。last-selected 基线 = settle 态
@@ -3931,7 +3949,8 @@
         try { _ss5290 = String(_zw5277Attr(node.__zwSelector, node.__zwHandle, 'srcset') || '').trim(); } catch (_e5290ss) {}
         if (_ss5290 !== '') {
           var _k5290 = _elKey(node.__zwSelector, node.__zwHandle);
-          if (!(globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[_k5290])) {
+          if (!(globalThis._zwImgFetching5277 && globalThis._zwImgFetching5277[_k5290])
+              && !(globalThis._zwImgDeferUpdate5277 && globalThis._zwImgDeferUpdate5277[_k5290])) {
             var _pk5290 = null;
             try { _pk5290 = globalThis.__zwSelectImageSource5277(node.__zwSelector, node.__zwHandle); } catch (_e5290sel) { _pk5290 = null; }
             if (_pk5290 && _pk5290.url) {
