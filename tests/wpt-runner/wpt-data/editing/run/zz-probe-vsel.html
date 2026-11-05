@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- ② B 族定谳回归见证探针（2026-11-05 切片伪影审计轮）：fontsize apply 后
+     qI/qV-after 语料期望读数钉测（exec 真跑时引擎读数正确——qI=false/qV="4"
+     双变体；语料红行是 variant 切片窗外 exec 的伪影，非引擎缺陷）。
+     审计证据：docs/goal/editing-compat/evidence/2026-11-05-slice-straddle-artifact-audit.md -->
+<title>zz-probe-vsel</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+var container = document.getElementById("test-container");
+
+// —— 单 case：语料 per-case 语义（容器整换 + setup + before 查询 + exec +
+// after 查询，序同 tests.js runConformanceTest：stylewithcss 查询先于 fontsize）。——
+function runCase(fixSetup, cmds, label) {
+    container.innerHTML = "<div contenteditable></div><p>test";
+    var testDiv = container.querySelector("div[contenteditable]");
+    var range = fixSetup(testDiv);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
+    // before 查询序（语料 expectedQueryResults 键序：stylewithcss 先 fontsize）
+    document.queryCommandIndeterm("stylewithcss");
+    document.queryCommandState("stylewithcss");
+    document.queryCommandValue("stylewithcss");
+    document.queryCommandIndeterm("fontsize");
+    document.queryCommandState("fontsize");
+    document.queryCommandValue("fontsize");
+    var rc = [];
+    for (var i = 0; i < cmds.length; i++) {
+        rc.push(document.execCommand(cmds[i][0], false, cmds[i][1]));
+    }
+    // after 查询序（同键序：stylewithcss 三读在 fontsize 三读之前）
+    var swI = document.queryCommandIndeterm("stylewithcss");
+    var swS = document.queryCommandState("stylewithcss");
+    var swV = document.queryCommandValue("stylewithcss");
+    var qIa = document.queryCommandIndeterm("fontsize");
+    var qSa = document.queryCommandState("fontsize");
+    var qVa = document.queryCommandValue("fontsize");
+    test(function() {
+        assert_equals(swS, cmds[0][1] === "true", label + " stylewithcss qS-after（本案自设 mode）");
+    }, label + " swS-after");
+    test(function() {
+        assert_equals(qIa, false, label + " qI-after 期望 false（语料 got true）");
+    }, label + " qI-after");
+    test(function() {
+        assert_equals(qVa, "4", label + " qV-after 期望 4（语料 got 2）");
+    }, label + " qV-after");
+    test(function() {
+        assert_true(rc[1], label + " fontsize rc true");
+    }, label + " rc");
+    return { qIa: qIa, qVa: qVa, swS: swS, swV: swV, rc: rc };
+}
+
+// —— 前案复制（fontsize.js :647/:648，语料序紧邻 B fixture）——
+runCase(function(testDiv) {
+    testDiv.innerHTML = "foo<font size=2>bar</font>baz";
+    var t = testDiv.firstChild;                 // "foo"
+    var bar = testDiv.childNodes[1].firstChild; // "bar"
+    var baz = testDiv.lastChild;                // "baz"
+    var r = document.createRange();
+    r.setStart(t, 2); r.setEnd(baz, 1);
+    return r;
+}, [["stylewithcss", "true"], ["fontsize", "4"]], "P0");
+
+runCase(function(testDiv) {
+    testDiv.innerHTML = "foo<font size=2>bar</font>baz";
+    var t = testDiv.firstChild;
+    var baz = testDiv.lastChild;
+    var r = document.createRange();
+    r.setStart(t, 2); r.setEnd(baz, 1);
+    return r;
+}, [["stylewithcss", "false"], ["fontsize", "4"]], "P1");
+
+// —— B fixture 本案（fontsize.js :658/:663）——
+runCase(function(testDiv) {
+    testDiv.innerHTML = "foo<font size=2>bar</font>baz";
+    var bar = testDiv.childNodes[1].firstChild; // "bar"
+    var baz = testDiv.lastChild;                // "baz"
+    var r = document.createRange();
+    r.setStart(bar, 2); r.setEnd(baz, 1);       // ba[r</font>b]az
+    return r;
+}, [["stylewithcss", "true"], ["fontsize", "4"]], "V2");
+
+runCase(function(testDiv) {
+    testDiv.innerHTML = "foo<font size=2>bar</font>baz";
+    var bar = testDiv.childNodes[1].firstChild;
+    var baz = testDiv.lastChild;
+    var r = document.createRange();
+    r.setStart(bar, 2); r.setEnd(baz, 1);
+    return r;
+}, [["stylewithcss", "false"], ["fontsize", "4"]], "V3");
+</script>
