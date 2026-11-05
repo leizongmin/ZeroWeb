@@ -3725,7 +3725,7 @@ pub fn run_secure_contexts_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(
     run_corpus_subdirs(wpt_root, SECURE_CONTEXTS_SUBDIRS, filter, security_case_skipped)
 }
 
-// ══ gap-batch1 goal（docs/goal/gap-batch1.md M1 / DC-2）══
+// ══ gap-batch1 goal（docs/goal/archive/gap-batch1.md M1 / DC-2）══
 // CONFIRMED 六面（quirks / domparsing / domxpath / subresource-integrity / cors /
 // import-maps——实现已在、只差通道）window 可执行子集通道。fetch 侧 =
 // `scripts/fetch-gap-batch1-subset.sh`（十二 corpus 目录清单 + 共享 harness 资产

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fetch the pinned upstream corpus subset used by the gap-batch1 goal
-# (docs/goal/gap-batch1.md，覆盖率缺口小面批量补齐 batch1——十二小面通道).
+# (docs/goal/archive/gap-batch1.md，覆盖率缺口小面批量补齐 batch1——十二小面通道).
 #
 # 与 fetch-security-csp-subset.sh 同一 WPT_REV pin + sparse blob:none 浅克隆
 # （先例：本仓 11+ corpus 首批即百+ 文件，逐文件 raw + contents API 两处都

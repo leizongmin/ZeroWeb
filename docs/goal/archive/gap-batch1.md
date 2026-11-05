@@ -1,10 +1,9 @@
 # 覆盖率缺口小面批量补齐 batch1 — 已实现面 runner 通道 + 甄别面入账
 
-**版本**: v1.1
-**日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——DC-1~DC-4 全达成（2026-11-06 M0~M4：甄别 + CONFIRMED
-六面通道 + mixed-content 扩面 + LIKELY 五面通道入账 + coverage 复测收口）；
-收口归档待后续轮（evidence 路径已入 `wpt-suites.csv` gap-batch1 行，迁移须同步回填）
+**版本**: v1.2
+**日期**: 2026-11-04 立项（coverage-2026-11-02 对账驱动，用户「按建议立项」）；2026-11-06 收口归档
+**状态**: 已完成——DC-1~DC-4 全达成（2026-11-06 M0~M4：甄别 + CONFIRMED
+六面通道 + mixed-content 扩面 + LIKELY 五面通道入账 + coverage 复测收口）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 通道补齐 + 按面甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——多小域批量）
 
@@ -14,8 +13,7 @@ CI run 42096051904）。引擎/runner 缺口按簇挂账（referrer-policy/prelo
 `.py` 判据端点仿真、wai-aria testdriver computed label/role 查询臂、
 input-events 编辑管线簇、storage StorageManager 全域、gen/ wrapper 管道），
 见 M3 evidence 失败簇归因，不在 DC 内。
-**下一步**：goal 收口归档（docs/goal/archive/，同步 csv 行 evidence 路径）；
-挂账簇按归域立项建议走各自 goal。
+**下一步**：无行动项；引擎/runner 挂账簇按归域立项建议走各自 goal。
 
 ## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）
 
@@ -60,7 +58,7 @@ runner 通道（审计已核实锚点），六面疑似部分实现须甄别，�
 ## Done Criteria
 
 - **DC-1（M0 甄别）**：LIKELY 六面 + mixed-content 甄别结论落
-  `docs/goal/gap-batch1/evidence/`（逐面：in-scope 子测试数、引擎缺口清单、
+  `docs/goal/archive/gap-batch1/evidence/`（逐面：in-scope 子测试数、引擎缺口清单、
   环境受限标记清单）；DC-4 数值门按决策规则落定并回填本文件。
 - **DC-2（通道落地）**：CONFIRMED 六面全部入常驻通道（fetch/子命令/skip/
   Makefile/weekly 分片五件套）；`make test` 相关套件 test-guard 包裹。
