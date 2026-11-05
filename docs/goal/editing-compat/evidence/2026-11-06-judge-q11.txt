@@ -1,0 +1,60 @@
+########## corpora (vs f1b) ##########
+== f1b-insertorderedlist.log vs q11-insertorderedlist.log: base=1761 fresh=1761
+== f1b-insertunorderedlist.log vs q11-insertunorderedlist.log: base=2065 fresh=2065
+F2P=158
+P2F=0
+newF=0
+lost=0
+########## mt slices 1-9 (vs q9) ##########
+slice 1-1000: F2P=0 P2F=0 newF=0 lost=0 
+slice 1001-2000: F2P=0 P2F=0 newF=0 lost=0 
+slice 2001-3000: F2P=0 P2F=0 newF=0 lost=0 
+slice 3001-4000: F2P=0 P2F=0 newF=0 lost=0 
+slice 4001-5000: F2P=0 P2F=0 newF=0 lost=0 
+slice 5001-6000: F2P=0 P2F=0 newF=0 lost=0 
+slice 6001-7000: F2P=0 P2F=0 newF=0 lost=0 
+slice 7001-8000: F2P=0 P2F=0 newF=0 lost=0 
+slice 8001-9000: F2P=0 P2F=0 newF=0 lost=0 
+########## mt tail 9001-last (vs q9, truncation-band) ##########
+== q9-mt-part-9001-last.log vs q11-mt-part-9001-last.log: base=1030 fresh=958
+F2P=0
+P2F=0
+newF=0
+lost=10
+  lost: editing/run/multitest.html?9001-last :: [["styleWithCSS","false"],["forwardDelete",""],["fontSize","5"],["insertText","b"]] "<p><font size=\"5\">a[]</font></p><p>c</p>" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["styleWithCSS","false"],["forwardDelete",""],["fontSize","5"],["foreColor","#ff0000"],["insertText","b"]] "<p><font size=\"5\" color=\"#ff0000\">a[]</font></p
+  lost: editing/run/multitest.html?9001-last :: [["styleWithCSS","false"],["forwardDelete",""],["fontSize","5"],["insertText","b"]] "<p><font size=\"5\"><b>a[]</b></font></p><p>c</p>" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["styleWithCSS","false"],["forwardDelete",""],["fontSize","5"],["insertText","b"]] "<p><font size=\"5\"><b>a[]</b></font></p><p><i>c</i></p>" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div>{abc</div><div>def</div>}" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div style=display:flex><span>{abc</span><span>def</span>}</div>" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div style=display:grid><span>{abc</span><span>def</span>}</div>" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div><b>{abc</b></div><div>def</div>}" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div>abc</div><div><b>{def</b></div>}" compare innerHTML
+  lost: editing/run/multitest.html?9001-last :: [["delete",""],["inserttext","g"],["inserttext","h"]] "<div style=display:flex><span><b>{abc</b></span><span>def</span>}</div>" compare innerHTML
+-- q9-mt-part-9001-last.log tail lines: 1030 Timeout=1 lastline=  testharness page timeout completed the file with 1 test(s) unreported (state={"loaded":false,"pending":1,"phase":4,"te
+-- q11-mt-part-9001-last.log tail lines: 958 Timeout=1 lastline=  testharness page timeout completed the file with 1 test(s) unreported (state={"loaded":false,"pending":1,"phase":4,"te
+########## enginelib five-reds ##########
+test result: FAILED. 3740 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.16s
+-- q11 reds:
+js_dom_bridge::tests::p56_adopted_snapshot_restore_hook_keeps_page_value
+js_dom_bridge::tests::test_p99s_rule_style_preserves_custom_property_case
+js_dom_bridge::tests::test_stylesheet_add_rule_remove_rule_r3276
+js_dom_bridge::tests::test_stylesheets_rule_style_r2810
+js_dom_bridge::tests::test_stylesheets_write_r2809
+-- red-set diff q10->q11 (empty = constant):
+RED-SET-CONSTANT
+########## corpus restore + probe ##########
+multitest metas=1
+absorb html="foo<ul><li>bar</li></ul>baz" qIndA=false qSA=true 
+i5-straddle html="<ol><li>foo</li><li>bar</li></ol><div>baz</div>" sel=#text@1..#text@2 qIndA=true qSA=false expected false got true
+########## slice fail-count series (q9 -> q11) ##########
+slice 1-1000 fails base=30 fresh=30
+slice 1001-2000 fails base=24 fresh=24
+slice 2001-3000 fails base=34 fresh=34
+slice 3001-4000 fails base=24 fresh=24
+slice 4001-5000 fails base=50 fresh=50
+slice 5001-6000 fails base=49 fresh=49
+slice 6001-7000 fails base=59 fresh=59
+slice 7001-8000 fails base=47 fresh=47
+slice 8001-9000 fails base=14 fresh=14
+slice 9001-last fails base=79 fresh=69
