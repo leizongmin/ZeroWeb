@@ -21,7 +21,7 @@ part06.js stylewithcss 分支：模式应用前加编辑上下文门——沿用
 - 门内（语料 case 内 setup：选区已落在 editing host）→ 应用值，返 true；
 - 门外（页级 bootstrap：无选区无 host）→ no-op，返 false（Chromium IsEnabled 失败 Execute 返 false 同型）。
 
-滞后一拍快照模型（execCommand 入口 `__zwStyleWithCSSQuery ← !!__zwStyleWithCSS`，:4375）不动。消费者审计：mode 的读出面全 shim 仅 `queryCommandState` 滞后快照一处（`return !!__zwStyleWithCSSQuery`）；part01d `_zwCssFlag()` 为既有零调用者死代码（提及不删，guideline #4）；other 通道 103 案零 styleWithCSS 引用；集成/桥接测试面（part06.rs :1690 事件计数、:2059 supported/enabled）不经门路径。
+滞后一拍快照模型（execCommand 入口 `__zwStyleWithCSSQuery ← !!__zwStyleWithCSS`，:4375）不动。消费面审计（09:5x 核验方勘误修正）：mode 消费面有两类——查询面 `queryCommandState` 滞后快照一处（`return !!__zwStyleWithCSSQuery`）+ **apply 面 `_zwVaCssFlag()` 三处**（part01d :755 forceValue carrySrc raw-attr 保留、:879 wrap 形 font-vs-span 决策、:1165 peel 门）——初版审计 grep 误用 `_zwCssFlag` 函数名漏检，multitest 15 行 compare innerHTML F2P（全为 value 命令 + inserttext 的 forceValue wrap/carry 案例）实证 bootstrap 污染同时扭曲 DOM 输出形，门控后归 Chrome 录音形；other 通道 103 案零 styleWithCSS 引用；集成/桥接测试面（part06.rs :1690 事件计数、:2059 supported/enabled）不经门路径。
 
 ## 3. 探针证据（zz-probe-qsq.html，入库为 A 族回归见证）
 
