@@ -94,3 +94,11 @@ q15 首批（仅臂 1+2）停批重跑（TaskStop 无孤儿锁自由，臂 3 模
 - 控制行：keep 族四形（:448/:393/:453/:463-变体）Pass 恒定 + 预测五行全 Pass（judge-q15.sh 显式 grep，行名对齐语料 fixture 串）。
 - 探针 5 面 corpus-exact（q15-2/3/4/5/6 = 语料 expected 形逐字一致）；q15-1（:373 双层换壳）/q15-7（:478 跨入+尾随换型双层）/q15-8（:488 尾文本吸收）未翻 = 预留 q16 转换主流程臂（fixpoint 换壳 retag、direct→nested 双层换型、跨列表 join 尾吸收）。
 - enginelib js_dom_bridge（make guarded-test）：**3,746P/5F** 五已知红逐名恒一，红集 vs q14 日志 diff 空；rc=2 系五已知红致 make 非零、非门禁失败。
+
+### J. q16 转换主流程 list-wide 档（:373 双壳 retag + :488 尾吸收落地，commit 05111fbf4）
+
+- 根因两层：①派发层死码——'list-wide' 档插在 `if (chromeTight)` 真值判断之后，truthy 字符串被钳制臂截获，前四批门禁（177/97/97/97）实测全为钳制臂行为，重排 list-wide→钳制→旧 else 后首次真上机（教训入 docs/learnings/bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md）；②几何层——list-wide 档 end 界 vendored 忠实 at-length 爬升（宿主顶护栏），start 界 peek 纯壳提交（origStart 基准判分支归属）：:373 纯壳链 start 爬至 (host,0)、end 爬至 (host,1)，外层壳入含域 → lists-to-convert 双壳整壳换型。
+- 语料（vs q15，批 5）：iol fails 48→**46**，F2P=2 = :373 `<ul><ul><li>[foo]</ul></ul>` + :488 `foo<ol><li>bar</ol><ul><li>[baz</ul>quz]`（尾文本吸收随档顺带落地，原 DEFERRED 面）；iul fails 44→**43**，F2P=1 = :373 镜像 `<ol><ol><li>[foo]</ol></ol>`；双语料 **P2F=0**、newF=0、lost=0；f1b bar **F2P=188≥185**、P2F=0。
+- 探针 10 面（zz-probe-list16.html）：q16-1 = `<ol><ol><li>foo</li></ol></ol>`、q16-3 = `foo<ol><li>bar</li><li>baz</li><li>quz</li></ol>` 逐字期望形；六控制面（:448/:407/:463/:473/:458/跨入形）全保形；q16-2/:478 = `<ol><li><ol><li>foo</li><li>bar</li></ol>baz</li></ol>` 仍红（foo 被裹进内层 OL 首 li，期望保位）→ 残债：:478 整壳换型走 split-lift（期望 wholesale 保尾文本）+ qState 读面。
+- enginelib js_dom_bridge（make guarded-test）：**3,751P/5F** 五已知红恒一。
+- 批间波折存证：批 5 二进制在飞时本档 hunks 曾被并行席回退（04:56:46/04:59:03），验证席终判背书「批 5 源态 = 可落地增量」，工件抢救于 /tmp/qv-fix4/b5/（iul 行级完整、iol 行级以覆盖前判读转储 q16-move5.txt 为证）；落地 = 批 5 实测态逐字节恢复。并行席 sole-child 级联臂（part01e +25 行）留工作区未暂存，待其后批测量，勿随本提交误入。
