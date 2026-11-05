@@ -102,3 +102,8 @@ q15 首批（仅臂 1+2）停批重跑（TaskStop 无孤儿锁自由，臂 3 模
 - 探针 10 面（zz-probe-list16.html）：q16-1 = `<ol><ol><li>foo</li></ol></ol>`、q16-3 = `foo<ol><li>bar</li><li>baz</li><li>quz</li></ol>` 逐字期望形；六控制面（:448/:407/:463/:473/:458/跨入形）全保形；q16-2/:478 = `<ol><li><ol><li>foo</li><li>bar</li></ol>baz</li></ol>` 仍红（foo 被裹进内层 OL 首 li，期望保位）→ 残债：:478 整壳换型走 split-lift（期望 wholesale 保尾文本）+ qState 读面。
 - enginelib js_dom_bridge（make guarded-test）：**3,751P/5F** 五已知红恒一。
 - 批间波折存证：批 5 二进制在飞时本档 hunks 曾被并行席回退（04:56:46/04:59:03），验证席终判背书「批 5 源态 = 可落地增量」，工件抢救于 /tmp/qv-fix4/b5/（iul 行级完整、iol 行级以覆盖前判读转储 q16-move5.txt 为证）；落地 = 批 5 实测态逐字节恢复。并行席 sole-child 级联臂（part01e +25 行）留工作区未暂存，待其后批测量，勿随本提交误入。
+
+### J 追记（批7，05:12-05:18）：行级补证闭环 + 级联臂处置
+
+- 批7（⑲+级联臂混合态，单干净二进制 05:12:56，树上 HEAD 71dd00f8e）：iol vs q15 **F2P=2 行级实证** = `:373 <ul><ul><li>[foo]</ul></ul>` compare + `:488 foo<ol><li>bar</ol><ul><li>[baz</ul>quz]` compare——批5 iol 日志被批6 截断导致的行级身份悬案（§J 归因此前系批5 活日志判读推定）由混合态完整日志直接补证闭环；vs f1b F2P=86/P2F=0/newF=0/lost=0。iul vs f1b **F2P=102**/P2F=0/newF=0/lost=0、vs q15 F2P=1（:373 镜像）。双语料 fails 46/43 与 ⑲ 单独态逐值恒一、P2F=0；探针 10 面逐字节同批5（q16-1/3 精确形、六保面保形、q16-2/:478 仍红）；enginelib **3,754P/5F** 五红恒一（+3P 系他流 71dd00f8e EXIF 新增用例，红集 diff 空）。
+- 级联臂（armC）处置：混合态对 iol/iul/probe **零增量零回归**——batch6 独立价值（无 list-wide 时经 sole-child 级联翻转 :373 镜像，iul F2P=1）在组合态被 list-wide 完全覆盖，按死代码不入库原则**不落地**；patch 存档 `/tmp/qv-fix4/cascadec-arm-on-⑲.patch`，工作树已还原 ⑲ 干净态。:478 刀法转 DBG 探针实证（前奏 normalize 门/主循环 merge-vs-retag 分派/ARM-B'/armC 四点计数，`__zwDbgQ16` 探针页设旗），foo 进内层首 li 的重挂站点待 trace 定位；纯读码初判嫌疑 = merge 臂（splitParent+wrap）与 normalizeSublists 中间内容聚入臂，retag 本体（纯改名+选区重锚）排除。
