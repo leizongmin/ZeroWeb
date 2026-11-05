@@ -207,4 +207,5 @@ continue;`——镜像改前整函数早退语义；forecolor tag span 载体由
 - **enginelib**（make guarded-test，116s）：**3,740P / 5F**——五红名
   p56/p99s/r2810/r3276/r2809 逐名恒一零新红，clippy 0 error。
 - **判读**：③'-a/b/d-apply 同窗 + numericFace 收口 + fs tag-mode 停臂修复
-  **全账放行**，收口提交 e29b3a8bc（含 2cc95aaac）。
+  **全账放行**。落地链 = 2cc95aaac（③' 九刀）+ e29b3a8bc（numericFace
+  收口）+ fs 停臂（本提交，q7 门禁批验证的修复笔）。
