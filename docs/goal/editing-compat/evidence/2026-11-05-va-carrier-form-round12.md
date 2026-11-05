@@ -69,3 +69,15 @@
   抛 `querySelector("[contenteditable]") null`，克隆树缺 CE div）。该行基线
   即红，不阻塞本轮 F2P/P2F 判读；机制下轮单开。
 - forecolor compare 7 行挂账（purple=样式表有效值、ghost br 机制，异质）不变。
+
+## 独跑复核定谳（提交后补账，12:49-12:53）
+
+multitest 片 10 独跑复核（fix12d-mt-9001-last.log，test-guard 包裹）：
+**rows=1092 满额（首轮 1077 缺 15 行为瞬态）、Timeout=0、fails=85**——
+首轮 `testharness page timeout` 楔死为瞬态（typing 簇 delete/forwarddelete
+行楔死致整页 script timeout，后续 16 行被吞；typing 命令不经过本轮三处
+改动路径）。行级元组（judge 对 fix10-mt-part-9001-last）：
+**F2P 7 / P2F 0 / lost 0**。首轮多出的第 8 行 F2P（`abc[]` caret
+forwarddelete/inserttext compare，typing 簇基线红）在复核回红，证一过性
+翻转不计入。全分母 multitest 定谳 **F2P 7 / P2F 0 / newF 0 / lost 0**，
+逐片与 fix10 基线零位移。pristine 已恢复（variant metas=10）。
