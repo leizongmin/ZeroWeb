@@ -1,8 +1,8 @@
 # DOM 扩面 — dom/ranges + html/dom
 
-**版本**: v1.3
-**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）；2026-11-05（M3 documents 簇收口）
-**状态**: Active——M1/M2 完成；M3 documents 簇收口（136 F→P：html/dom/documents 93P/139F→229P/3F，全 dom+html-syntax 双通道 0 回归；连带修复 named-proxy named-miss 扫描、iframe body getter、document.remove 缺席三面），剩 coverage 复测 + dataset 3F/mutations 尾簇
+**版本**: v1.4
+**日期**: 2026-10-27（立项，coverage 对账驱动）；2026-11-05（M1 收口）；2026-11-05（M2 dataChange 簇收口）；2026-11-05（M3 documents 簇收口）；2026-11-05（M3 续 dataset 簇收口）
+**状态**: Active——M1/M2/M3 完成（documents 136 F→P + dataset 簇 16 F→P 42 子测试 0F，双通道 0 回归），剩 coverage 复测 + mutations 尾簇 8F
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + 接口完备性收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——DOM 面）
 
@@ -62,8 +62,13 @@ Document 的 DOM 接口面（394 文件，含各元素 historical/idlharness 面
   +136F→P；连带修复 named-proxy `__zw` 门（named-miss 二次方扫描，
   remMs 28 倍）、iframe 文档 body 回落（Aryeh iframe 页复活）、
   document.remove 缺席（ChildNode mixin 不含 Document），见
-  evidence/2026-11-05-m3-documents-cluster.md。待做：coverage 复测、
-  dataset 3F、mutations 尾簇 8F；挂账候选：innerText 面（渲染
+  evidence/2026-11-05-m3-documents-cluster.md。dataset 簇**收口
+  （2026-11-05 续）**：六案 42 子测试 26P/16F→42P/0F（named property
+  round-trip 门 + DOMStringMap 接口对象 + 三 ns 门 + set/delete 委托
+  元素 setAttribute/removeAttribute 修 R122 实例层 stale 读），html
+  通道 A/B +17P/−17F 全落本簇、dom 通道 0 回归，见
+  evidence/2026-11-05-m3-dataset-cluster.md。待做：coverage 复测、
+  mutations 尾簇 8F；挂账候选：innerText 面（渲染
   依赖，与渲染流域划界）、partial-updates/Sanitizer/OpaqueRange 提案面、
   .window.js/.xhtml 形态缺口。
 

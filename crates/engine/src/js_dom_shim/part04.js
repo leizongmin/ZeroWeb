@@ -1142,8 +1142,25 @@
         }
         // `el.dataset`——`data-*` 属性的 camelCase 键对象（get/set/has/delete/枚举）。
         // dataset.fooBar ↔ data-foo-bar 属性。handle 脱离 DOM 元素枚举受限（无 attr-names-handle）。
+        // dataset 簇收口（2026-11-05）：dataset 在 HTMLElement/SVGElement/MathMLElement
+        //（HTML/SVG/MathML 三 ns）——非三 ns 元素（createElementNS('test','test')）
+        // 无此成员（undefined）。ns 判据同 R374 relList：createElementNS 产物从
+        // _nsHandles 印记取，解析/普通建元素默认 HTML ns。
+        // https://html.spec.whatwg.org/multipage/dom.html#dom-dataset
         if (prop === 'dataset') {
-          return _datasetProxy(sel, handle);
+          var _dsNs = 'http://www.w3.org/1999/xhtml';
+          try {
+            if (handle && typeof _nsHandles !== 'undefined' && _nsHandles[handle]
+                && _nsHandles[handle].namespace != null) {
+              _dsNs = String(_nsHandles[handle].namespace);
+            }
+          } catch (_eDsNs) {}
+          if (_dsNs === 'http://www.w3.org/1999/xhtml'
+              || _dsNs === 'http://www.w3.org/2000/svg'
+              || _dsNs === 'http://www.w3.org/1998/Math/MathML') {
+            return _datasetProxy(sel, handle);
+          }
+          return undefined;
         }
         // js-dom M4 R115：iframe `contentDocument` / `contentWindow`——静态 `<iframe src>` 用例族
         // （Document-createElement/case/createElementNS 等 ~750 subtest 经 /common/dummy.{xml,xhtml}

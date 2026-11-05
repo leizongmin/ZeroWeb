@@ -14533,6 +14533,31 @@
     return s.replace(/-([a-z])/g, function(_, c) { return c.toUpperCase(); });
   }
 
+  // DOMStringMap 接口对象（spec https://html.spec.whatwg.org/multipage/dom.html#domstringmap
+  // ——无 [Constructor]，`new DOMStringMap()` TypeError；dataset 产物原型链入
+  // DOMStringMap.prototype，WPT dataset.html `dataset instanceof DOMStringMap` 四案）。
+  if (typeof globalThis.DOMStringMap !== 'function') {
+    globalThis.DOMStringMap = function DOMStringMap() {
+      throw new globalThis.TypeError("Illegal constructor");
+    };
+    try {
+      Object.defineProperty(globalThis.DOMStringMap, 'prototype', {
+        value: (function () {
+          var p = {};
+          // WebIDL interface prototype object：constructor writable/enumerable:false/
+          // configurable:true——enumerable 会进 dataset 的 for-in（for-in 走原型链枚举
+          // enumerable 项），WPT dataset-enumeration.html 计数 3/2 面。
+          Object.defineProperty(p, 'constructor', {
+            value: globalThis.DOMStringMap,
+            writable: true, enumerable: false, configurable: true,
+          });
+          return p;
+        })(),
+        writable: false, enumerable: false, configurable: false,
+      });
+    } catch (_eDsmP) {}
+  }
+
   // `el.dataset`——data-* 属性的 camelCase 键对象。get/set/has/delete/枚举（ownKeys）。
   // 注：mutate（set/delete）记 mutation，apply 在脚本末尾——同脚本内即读见旧值（stale，
   // 同 setAttribute 既有模式）；枚举读 dom_html 当前属性名。
@@ -14545,69 +14570,122 @@
       if (typeof __zw_get_attr_lw === 'function') return __zw_get_attr_lw(sel, name);
       return __zw_get_attr(sel, name);
     };
-    var hasAttrFn = function(name) {
-      try {
-        // R3195：handle 经 `__zw_has_attr_handle`（latest-wins from mutations）判存在性——旧恒返 false
-        //（R3002 时无 has-attr-handle 回调遗留），致 handle 元素 `el.dataset.foo=` 后 `el.dataset.foo`
-        // 恒 undefined（get trap 经 hasAttrFn 短路）。
-        if (handle) {
-          if (typeof __zw_has_attr_handle === 'function') return __zw_has_attr_handle(handle, name) === '1';
-          return false;
-        }
-        // R3002：sel 用 latest-wins 反映同批 SetAttr/RemoveAttr（旧 `__zw_has_attr` 纯快照 stale）。
-        if (typeof __zw_has_attr_lw === 'function') return __zw_has_attr_lw(sel, name) === '1';
-        return __zw_has_attr(sel, name) === '1';
-      } catch (_e) { return false; }
-    };
-    var dataKeys = function() {
-      // data-* → camelCase 键。sel 用 `__zw_attr_names`（latest-wins），handle 用 `__zw_attr_names_handle`
-      //（R3196：闭合 R3195 限制①——旧 handle 路径无 attr-names 变体恒返 []）。无对应回调 → []。
+    // dataset 簇收口（2026-11-05）：named property 可见性 round-trip 门（spec HTML
+    // #dom-dataset「get a DOMStringMap's name-value pairs」——eligible 属性 = `data-` 前缀
+    // 且余段无 ASCII 大写；可见键 = 余段 kebab→camel。eligible 余段上 camel→kebab
+    // 恒复原，round-trip 门与之等价：`data--foo` 的可见键是 `Foo` 不是 `-foo`，
+    // get/has/delete 对不可见键 no-op（WPT dataset-delete.html `-foo` 组、
+    // dataset.html instanceof/枚举面）。set 不走可见性表：按 spec setter 校验
+    //（SyntaxError/InvalidCharacterError，见 set trap）后恒 camel→kebab 落属性。
+    var dataAttrNames = function() {
+      // 原始 data-* 属性名。sel 用 `__zw_attr_names`（latest-wins），handle 用
+      // `__zw_attr_names_handle`（R3196：旧 handle 路径无 attr-names 变体恒返 []）。
       try {
         var names = handle
           ? (typeof __zw_attr_names_handle === 'function' ? __zw_attr_names_handle(handle) : '')
           : (typeof __zw_attr_names === 'function' ? __zw_attr_names(sel) : '');
         if (!names) return [];
-        return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; })
-                     .map(function(n) { return _kebabToCamel(n.slice(5)); });
+        return names.split('|').filter(function(n) { return n.indexOf('data-') === 0; });
       } catch (_e) { return []; }
     };
-    return new Proxy({}, {
-      get: function(_t, key) {
+    var visibleKeyOf = function(dataName) {
+      var key = _kebabToCamel(dataName);
+      return _camelToKebab(key) === dataName ? key : null;
+    };
+    var attrForVisibleKey = function(key) {
+      var ns = dataAttrNames();
+      for (var i = 0; i < ns.length; i++) {
+        var dn = ns[i].slice(5);
+        if (visibleKeyOf(dn) === key) return 'data-' + dn;
+      }
+      return null;
+    };
+    return new Proxy(
+      (function () {
+        var t = {};
+        try {
+          if (typeof globalThis.DOMStringMap === 'function' && globalThis.DOMStringMap.prototype) {
+            Object.setPrototypeOf(t, globalThis.DOMStringMap.prototype);
+          }
+        } catch (_eDsProto) {}
+        return t;
+      })(), {
+      get: function(_t, key, receiver) {
         if (typeof key !== 'string') return undefined;
         if (key === 'then') return undefined; // 防 Promise 化误判
-        var name = attrOf(key);
-        // 缺失属性 → undefined（__zw_get_attr 对缺失返空串，须用 has_attr 区分）。
-        if (!hasAttrFn(name)) return undefined;
+        // 可见键读属性；不可见键回落原型链（spec DOMStringMap 原型 shine-through——
+        // WPT dataset-prototype.html `dataset.toString === Object.prototype.toString`、
+        // Object.prototype.expando 污染后透见 42）。
+        var name = attrForVisibleKey(key);
+        if (name === null) return Reflect.get(_t, key, receiver);
         var v = readAttr(name);
         return v == null ? '' : v;
       },
       set: function(_t, key, value) {
         if (typeof key !== 'string') return false;
+        // spec HTML #dom-dataset DOMStringMap setter：① 名含 '-' 后跟 ASCII 小写
+        // 字母 → SyntaxError；② 大写前插 '-' 转小写 + 'data-' 前缀（attrOf）；④ 结果
+        // 名非 valid attribute local name（DOM Standard #valid-attribute-local-name：
+        // 非空且不含 ASCII 空白/NUL/'/'/'>'——';'(;) 等合法名字符不拒）
+        // → InvalidCharacterError（WPT dataset-set.html 末组）。
+        if (/-[a-z]/.test(key)) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the '" + key + "' property on 'DOMStringMap': The property name contains a '-' followed by a lowercase letter, which is not allowed.",
+            'SyntaxError');
+        }
         var name = attrOf(key);
-        if (handle) __zw_set_attr_handle(handle, name, String(value));
+        if (/[\t\n\f\r \u0000/>]/.test(name)) {
+          throw new (globalThis.DOMException || Error)(
+            "Failed to set the '" + key + "' property on 'DOMStringMap': The property name is not a valid attribute local name.",
+            'InvalidCharacterError');
+        }
+        // 落属性经元素自身 setAttribute（实例层 upsert/class/反射缓存同步/MO record/CE
+        // attributeChangedCallback 全链共享——直接 __zw_set_attr* 只记 host mutation，
+        // R122 实例层残留使 hasAttribute 读 stale 旧值）。回调缺席才回落裸 host 写。
+        var pr = null;
+        try { pr = typeof _makeProxy === 'function' ? _makeProxy(sel, handle) : null; } catch (_eDsMk) {}
+        if (pr && typeof pr.setAttribute === 'function') pr.setAttribute(name, String(value));
+        else if (handle) __zw_set_attr_handle(handle, name, String(value));
         else __zw_set_attr(sel, name, String(value));
-        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
         return true;
       },
       has: function(_t, key) {
-        return typeof key === 'string' && hasAttrFn(attrOf(key));
+        // 可见键命中后非可见键回落原型链（`"toString" in dataset` → true；
+        // 'expando' 污染 Object.prototype 后 `in` 透见——dataset-prototype.html）。
+        if (typeof key === 'string' && attrForVisibleKey(key) !== null) return true;
+        return Reflect.has(_t, key);
       },
       deleteProperty: function(_t, key) {
+        // 不可见键 no-op 返 true（非 visible named property 的 delete 不动属性；
+        // 返 false 会在 strict delete 抛 TypeError）。
         if (typeof key !== 'string') return false;
-        var name = attrOf(key);
-        // R3195：handle 优先 `__zw_remove_attr_handle`（真移除，与 removeAttribute 一致）——旧用 set-empty
-        // 残留 `data-x=""` 致 hasAttr 仍 true（get 返 '' 而非 undefined）。无回调 → fallback set-empty。
-        if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
-        else if (handle) __zw_set_attr_handle(handle, name, '');
+        var name = attrForVisibleKey(key);
+        if (name === null) return true;
+        // 真移除经元素自身 removeAttribute（R122 实例层剔除 + Attr 解绑 ownerElement +
+        // R46「属性不存在不产 record」MO 语义全链共享——直接 __zw_remove_attr* 只记
+        // host mutation，实例层残留使 hasAttribute/getAttribute 读 stale 旧值，
+        // dataset-delete 8F 实证）。R3195：handle 真移除（RemoveAttrOnHandle）语义同源。
+        var pr = null;
+        try { pr = typeof _makeProxy === 'function' ? _makeProxy(sel, handle) : null; } catch (_eDsMk) {}
+        if (pr && typeof pr.removeAttribute === 'function') pr.removeAttribute(name);
+        else if (handle && typeof __zw_remove_attr_handle === 'function') __zw_remove_attr_handle(handle, name);
         else if (typeof __zw_remove_attr === 'function') __zw_remove_attr(sel, name);
         else __zw_set_attr(sel, name, '');
-        _mo_notify(sel, handle, { type: 'attributes', attributeName: name });
         return true;
       },
-      ownKeys: function() { return dataKeys(); },
+      ownKeys: function() {
+        var ns = dataAttrNames(), out = [];
+        for (var i = 0; i < ns.length; i++) {
+          var k = visibleKeyOf(ns[i].slice(5));
+          if (k !== null) out.push(k);
+        }
+        return out;
+      },
       getOwnPropertyDescriptor: function(_t, key) {
-        if (typeof key !== 'string' || !hasAttrFn(attrOf(key))) return undefined;
-        return { configurable: true, enumerable: true, value: readAttr(attrOf(key)), writable: true };
+        if (typeof key !== 'string') return undefined;
+        var name = attrForVisibleKey(key);
+        if (name === null) return undefined;
+        return { configurable: true, enumerable: true, value: readAttr(name), writable: true };
       }
     });
   }
