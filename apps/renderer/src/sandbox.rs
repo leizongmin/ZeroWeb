@@ -36,12 +36,16 @@ pub fn renderer_sandbox_enabled() -> bool {
 }
 
 /// 是否启用 renderer seccomp 过滤（默认开；`ZW_RENDERER_SECCOMP=0` 禁用）。
+// 非 Linux 平台无调用方（`apply_early_if_enabled` 的 Linux 臂与 Linux-only
+// 测试是全部引用面），不门控会在 mac/windows 上 dead_code 撞 `-D warnings`。
+#[cfg(target_os = "linux")]
 pub fn renderer_seccomp_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZW_RENDERER_SECCOMP")
 }
 
 /// 是否启用 renderer landlock 允许清单（**默认开**；`ZW_RENDERER_LANDLOCK=0`
 /// 禁用——操作员 kill-switch；①-a 拍板 2026-11-03 翻默认，见模块文档）。
+#[cfg(target_os = "linux")]
 pub fn renderer_landlock_enabled() -> bool {
     zero_runtime_config::enabled_by_default("ZW_RENDERER_LANDLOCK")
 }
@@ -495,7 +499,14 @@ mod tests {
                 Ok(()) => {
                     // SAFETY: fork 原始 syscall 探针；仅子探针进程执行。fork 成功时
                     // 父侧 waitpid、子侧立即 exit，均不回到 libtest。
+                    // aarch64 等 64 位架构无独立 fork syscall（glibc 经 clone 实现，
+                    // `SYS_fork` 常量在 libc 该 target 也不存在），阻断清单同样只在
+                    // x86 家族编入 fork——非 x86 架构按「已被拒」语义（-1）直接走
+                    // execveat/ptrace/stdio/fs 后续探针。
+                    #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
                     let fork_pid = unsafe { libc::syscall(libc::SYS_fork) };
+                    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
+                    let fork_pid: libc::c_long = -1;
                     if fork_pid != -1 {
                         if fork_pid > 0 {
                             unsafe { libc::waitpid(fork_pid as i32, std::ptr::null_mut(), 0) };
