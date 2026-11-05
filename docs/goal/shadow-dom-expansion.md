@@ -6,7 +6,9 @@
 Batch 2 簇 A unsafe 三 API：gethtml.html 预算内 2,210P/0F，全通道 A/B P→F=0、F→P 2,839），
 Batch 3 楔死归因收口（90s 看门狗 × ShadowRoot 域 declarative 写路径二次累积；
 看门狗随乘落地，×4 复测 gethtml 3,417 行仅 3F），
-M3 余项：残面修复（t8c 协同）/ 簇 C engine glue / 簇 D 甄别 / attachment 物化臂 170F
+M3 余项：残面修复（t8c 协同）/ 簇 C engine glue / attachment+簇D 修复落地与复测
+（dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets）与 script-sandbox
+剔池决策（簇 D 面 2/3）
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -188,8 +190,15 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   （spec：context 元素不附着）。修复面在 dom/ = 簇 C 流活跃面，已按 §9 交付
   证据待其落地复测：
   [attachment triage](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-attachment-170f-triage.md)；
-  ③簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8），待 engine glue
-  与通道复测；簇 D 逐项甄别。
+  ③簇 D 甄别收口（2026-11-06 傍晚，52F 四面拆分）——module/fetch CSS module
+  载入链 ~17F 环境受限坐实（modulepreload onerror 实证，剔池候选挂账
+  script-sandbox）；adoptedStyleSheets 机制 ~14F 与 rendering-compat 边界耦合
+  归口挂账不双改；clone 面 ~3F（shadowrootclonable 克隆重建）+ IDL 反射属
+  shadow-dom 范围内可修小刀（M3 尾段候选）；null 链 ~18F 与 attachment 机制一
+  同根（静态物化不生效），随 m3c2 修复复测定格：
+  [cluster D triage](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-cluster-d-triage.md)；
+  ④簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8），待 engine glue
+  与通道复测。
 
 ## 依赖约束（run-rules §9）
 
