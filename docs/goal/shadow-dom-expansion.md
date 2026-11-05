@@ -157,8 +157,18 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   同义面）；serializer ShadowRoot 布尔属性 spec 序回写（单测抓出首版引号
   bug）；zero-dom 新增物化片段/旗标序列化单测，885+ 全绿。
 - 证据：[m3 batch2](shadow-dom-expansion/evidence/2026-11-06-m3-batch2-unsafe-apis.md)。
-- **下一步（M3 Batch 3）**：gethtml.html 楔死子测试精确身份（zz-knee-probe
-  逐测试计时 → 引擎侧修复，修复后 gethtml.html 预期 ~4,5xx 行全量真实上报）；
+- **碰撞记录（run-rules §9）**：Batch 2 交付期同 session 双 resume 并行
+  （04:19 与 05:31 两次 resume 同 `d72338b4`，先手侧未感知后手）。38b972751 /
+  f98948c72 / lark 通知 ×2 由先手侧落地并推送；后手侧独立复算全通道 A/B
+  （P→F=0、F→P 2,839 同值互证），并以最终二进制 ×4 filter 复验佐证楔死
+  定性（4 文件 3,194P/3F/1T——含被 sweep 扫入的 zz-gethtml-slice 探针
+  1,156P，非语料不计）。**探针清理冲突**：后手按研删纪律清 8 页
+  （declarative/ 下 zz-cost/cleanup/h1/divx/hang/gethtml-slice/gethtml-trunc/
+  knee-probe）——先手 evidence 挂账的 zz-knee-probe 已删，Batch 3 楔死身份
+  需重建探针再跑。改动面零语义冲突，未强制消解。
+- **下一步（M3 Batch 3）**：gethtml.html 楔死子测试精确身份（重建
+  zz-knee-probe 逐测试计时 → 引擎侧修复，修复后 gethtml.html 预期 ~4,5xx
+  行全量真实上报）；
   簇 C referenceTarget（gethtml-serialization 3F + property-reflection 余 1F +
   reftarget 面 ~139F）实现或具名挂账；attachment safelisted 物化臂 170F 甄别；
   簇 D 逐项甄别。
