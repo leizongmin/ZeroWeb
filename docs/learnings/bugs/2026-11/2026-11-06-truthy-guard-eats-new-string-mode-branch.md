@@ -1,3 +1,8 @@
+---
+date: 2026-11-06
+modules: engine, js_dom_shim
+---
+
 # 真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）
 
 ## 问题描述

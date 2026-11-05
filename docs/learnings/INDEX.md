@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（227）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（229）
 
+- 2026-11-06 [真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）](bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md) — engine, js_dom_shim
+- 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
 - 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
 - 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
 - 2026-11-05 [shim helper 定义在运行核闭包内——载入期机具消费时缺位 throw 撕裂 sweep](bugs/2026-11/2026-11-05-shim-helper-closure-scope-load-time-machinery.md) — engine
@@ -235,8 +237,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（30）
+## Patterns — 可复用代码模式与最佳实践（31）
 
+- 2026-11-05 [自源探针「0.00% 通过」不可信——图元清单 + black-ref 强拆定谳伪绿](patterns/2026-11/2026-11-05-reftest-passing-page-primitive-forensics.md) — engine,testing
 - 2026-11-04 [Timeout 行不是挂死证明——判读前先做 solo/in-face 预算算术](patterns/2026-11/2026-11-04-timeout-line-budget-arithmetic-before-hang-verdict.md) — testing
 - 2026-11-03 [密码学语料期望值程序化解析取数，不手抄长 hex 串](patterns/2026-11/2026-11-03-corpus-expected-values-parse-not-transcribe.md) — tests/wpt-runner
 - 2026-10-31 [coverage 面级 0P 断层的提交窗口二分法](patterns/2026-10/2026-10-31-coverage-face-zero-pass-bisect.md) — wpt_runner
