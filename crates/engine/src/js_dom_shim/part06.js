@@ -4771,6 +4771,27 @@
         // boolean 语义（true/"true" → true，其余 false）存 globalThis，供
         // queryCommandState 滞后快照读数。CSS 化 wrap 行为未接（状态先记账）。
         // https://w3c.github.io/editing/execCommand.html#stylewithcss-command
+        // editing-compat 读数面族 A（2026-11-05）：模式应用加编辑上下文门。run 页
+        // bootstrap（37 个语料壳 "silly hack"：try { execCommand("styleWithCSS",
+        // false, "true") }，无选区无 editing host 时调用）在 Chrome 录音环境未生效
+        //（Chromium canEditRichly/IsEnabled 门）——fontsize 语料 case 1 无 setup、
+        // case 2 before qS(stylewithcss) 录音=false 反推。本实现此前无条件应用，
+        // bootstrap 置 mode=true → case 1 命令入口快照 Query←true → case 2 before
+        // 读数污染（fontsize/fontname/forecolor/hilitecolor qS-before expected
+        // false got true）。门沿用 _zwQueryCommandState 编辑命令 enabled 同款判定
+        //（选区整体落单一 editing host 内）；门外 no-op 返 false（Chromium
+        // IsEnabled 失败 Execute 返 false 同型）。语料 case 内 setup 带选区 → 门
+        // 放行，滞后快照模型（justifycenter 250/250 实测）不受影响。
+        var swEnabled = false;
+        try {
+          var selSw = (typeof _getSelection === 'function') ? _getSelection() : null;
+          var rngSw = selSw && selSw.rangeCount > 0 ? selSw._ranges[0] : null;
+          var hostSw = _zwExecCmdFindEditingHost(rngSw);
+          swEnabled = !!(hostSw && rngSw && rngSw.endContainer &&
+            (rngSw.endContainer === hostSw ||
+             (typeof _zwIsAncestorOrSelf === 'function' && _zwIsAncestorOrSelf(hostSw, rngSw.endContainer))));
+        } catch (_eSwGate) {}
+        if (!swEnabled) return false;
         globalThis.__zwStyleWithCSS =
           arguments[2] === true
           || String(arguments[2] == null ? '' : arguments[2]).toLowerCase() === 'true';

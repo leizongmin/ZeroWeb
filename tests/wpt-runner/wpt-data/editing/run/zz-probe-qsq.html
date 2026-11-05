@@ -1,0 +1,96 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- A 族观测探针：qS(stylewithcss) before 滞后快照的 bootstrap 污染链复现。 -->
+<title>zz-probe-qsq</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script src=../include/implementation.js></script>
+<script>
+"use strict";
+function state() {
+    return "Query=" + globalThis.__zwStyleWithCSSQuery + " Mode=" + globalThis.__zwStyleWithCSS;
+}
+// —— 复刻 tests.js runConformanceTest 的 case 1 → case 2 序列 ——
+// 页级 bootstrap（fontsize.html :33-39 "silly hack" 原样）：无选区无 editing host
+// 时调用——Chrome 录音环境未生效（canEditRichly 门），A 族根因复现点。
+try { document.execCommand("styleWithCSS", false, "true") } catch(e) {}
+var container = document.getElementById("test-container");
+var sel = getSelection();
+// case 1: foo[]bar + fontsize=4（无 styleWithCSS setup）
+container.innerHTML = "<div contenteditable>foo[]bar</div>";
+var div1 = container.querySelector("div[contenteditable]");
+var t1 = div1.firstChild;
+var r1 = document.createRange();
+r1.setStart(t1, 3);
+r1.setEnd(t1, 3);
+sel.removeAllRanges();
+sel.addRange(r1);
+test(function() {
+    // 惰性 undefined（读点 !! 归一，:4852/:4375 同型）——断言 falsy 语义而非表示
+    assert_equals(!!globalThis.__zwStyleWithCSS, false, "S0 bootstrap 后 Mode 应 falsy（Chrome 门控）");
+    assert_false(document.queryCommandState("stylewithcss"), "S0 新文档 qS(stylewithcss) 应 false");
+}, "S0 bootstrap-applied mode (expect falsy = Chrome parity)");
+var rc1 = document.execCommand("fontsize", false, "4");
+test(function() {
+    assert_true(rc1, "S1 case1 fontsize exec 返 true");
+    assert_equals(globalThis.__zwStyleWithCSSQuery, false, "S1 入口快照 Query 应为 false");
+}, "S1 case1 fontsize entry snapshot (expect Query=false)");
+// case 2: <p>[foo</p> <p>bar]</p>（before 查询在 setup 命令之前）
+container.innerHTML = "<div contenteditable><p>[foo</p> <p>bar]</p></div><p>test";
+var div2 = container.querySelector("div[contenteditable]");
+var p1 = div2.querySelectorAll("p")[0];
+var p2 = div2.querySelectorAll("p")[1];
+var f1 = p1.firstChild; // "foo"
+var f2 = p2.firstChild; // "bar]"
+f2.data = "bar";
+var r2 = document.createRange();
+r2.setStart(f1, 0);
+r2.setEnd(f2, 3);
+sel.removeAllRanges();
+sel.addRange(r2);
+var qIb = document.queryCommandIndeterm("stylewithcss");
+var qSb = document.queryCommandState("stylewithcss");
+var qVb = document.queryCommandValue("stylewithcss");
+test(function() {
+    assert_false(qIb, "S2 case2 before qI 应 false");
+}, "S2 case2 before qI (expect false)");
+test(function() {
+    assert_false(qSb, "S2 case2 before qS 应 false（Chrome 录音；污染态为 true）");
+}, "S2 case2 before qS (expect false)");
+test(function() {
+    assert_equals(qVb, "", "S2 case2 before qV 应空串");
+}, "S2 case2 before qV (expect empty)");
+// setup + 主命令
+var rs1 = document.execCommand("stylewithcss", false, "true");
+var rs2 = document.execCommand("fontsize", false, "4");
+test(function() {
+    assert_true(rs1, "S3 选区内 setup execCommand 应返 true（门放行）");
+}, "S3 in-case setup returns true (gate passes)");
+test(function() {
+    assert_true(rs2, "S3 fontsize 返 true");
+    assert_equals(globalThis.__zwStyleWithCSSQuery, true, "S3 fontsize 入口快照 Query=true");
+}, "S3 fontsize entry snapshot (expect Query=true)");
+var qSa = document.queryCommandState("stylewithcss");
+test(function() {
+    assert_true(qSa, "S3 case2 after qS 应 true（Chrome 录音）");
+}, "S3 case2 after qS (expect true)");
+// case 3（swcss=false）before 查询：滞后一拍应读到 case 2 遗留 true
+container.innerHTML = "<div contenteditable><p>[foo</p> <p>bar]</p></div><p>test";
+var div3 = container.querySelector("div[contenteditable]");
+var p1b = div3.querySelectorAll("p")[0];
+var p2b = div3.querySelectorAll("p")[1];
+var g1 = p1b.firstChild;
+var g2 = p2b.firstChild;
+g2.data = "bar";
+var r3 = document.createRange();
+r3.setStart(g1, 0);
+r3.setEnd(g2, 3);
+sel.removeAllRanges();
+sel.addRange(r3);
+var qSb3 = document.queryCommandState("stylewithcss");
+test(function() {
+    assert_true(qSb3, "S4 case3 before qS 应 true（滞后一拍 stale）");
+}, "S4 case3 before qS (expect stale true)");
+</script>
