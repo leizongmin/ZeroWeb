@@ -1002,11 +1002,13 @@
       // simple 缩进元素且其 previousSibling 是可编辑 utag 元素 → newParent =
       // 归并后该 utag 的 lastChild（非可编辑 utag 则新插一个），wrap 的
       // isBefore 判定落 append 臂；否则恒新壳。
-      _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () {
+      var freshShell = false;
+      var newShell = _zwJusWrap(sublist, function (node) { return _zwJusIsHtmlElement(node, utag); }, function () {
         if (!_zwJusIsEditable(sublist[0].parentNode)
         || !_zwListIsSimpleIndentationElement(sublist[0].parentNode)
         || !_zwJusIsEditable(sublist[0].parentNode.previousSibling)
         || !_zwJusIsHtmlElement(sublist[0].parentNode.previousSibling, utag)) {
+          freshShell = true;
           return document.createElement(utag);
         }
         var list = sublist[0].parentNode.previousSibling;
@@ -1017,6 +1019,58 @@
         }
         return list.lastChild;
       });
+
+      // dps compare 族归并出口（dps 刀）：恒新壳落位后相邻同名可编辑列表壳
+      // 归并——Blink insert_list_command.cc mergeWithPreviousList/
+      // MergeWithNextList 等价行为（语料 pin 快照即契约口径）。三形
+      // `<ol><li>foo</ol> <p>[bar]`、`<p>[foo]</p> <ol><li>bar</ol>`、
+      // `<ol><li>foo</ol> <p>[bar]</p> <ol><li>baz</ol>` × iol/iul × div/p
+      // 共 12 行期望树实证：夹缝纯空白文本节点先按序移入存活壳归并点、再移
+      // children、空壳移除——got 双壳 `<ol><li>foo</li></ol>
+      // <ol><li>bar</li></ol>` 即缺此归并（wrap flat 重写臂成员扫描认不出
+      // 逐访问新建的空白文本包装，reusePrev/reuseNext 臂不可达，故在 list
+      // 域出口自归并，不触碰共享 wrap 路径）。缩进合并臂返回既有壳内层，
+      // 不打 freshShell 标，维持嵌套归并口径。
+      if (freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        var interimNodes = [];
+        var prevNode = newShell.previousSibling;
+        while (prevNode && prevNode.nodeType === 3
+        && /^[ \t\n\f\r]*$/.test(String(prevNode.data))) {
+          interimNodes.unshift(prevNode);
+          prevNode = prevNode.previousSibling;
+        }
+        var prevList = prevNode && _zwJusIsHtmlElement(prevNode, utag)
+          && _zwJusIsEditable(prevNode) ? prevNode : null;
+        if (prevList) {
+          for (var mi = 0; mi < interimNodes.length; mi++) {
+            _zwJusMovePreservingRanges(interimNodes[mi], prevList, -1);
+          }
+          while (newShell.firstChild) {
+            _zwJusMovePreservingRanges(newShell.firstChild, prevList, -1);
+          }
+          newShell.parentNode.removeChild(newShell);
+        }
+        var keepList = prevList || newShell;
+        if (_zwListNodeInDocument(keepList)) {
+          var fwdInterim = [];
+          var nextNode = keepList.nextSibling;
+          while (nextNode && nextNode.nodeType === 3
+          && /^[ \t\n\f\r]*$/.test(String(nextNode.data))) {
+            fwdInterim.push(nextNode);
+            nextNode = nextNode.nextSibling;
+          }
+          if (nextNode && _zwJusIsHtmlElement(nextNode, utag)
+          && _zwJusIsEditable(nextNode)) {
+            for (var fi = 0; fi < fwdInterim.length; fi++) {
+              _zwJusMovePreservingRanges(fwdInterim[fi], keepList, -1);
+            }
+            while (nextNode.firstChild) {
+              _zwJusMovePreservingRanges(nextNode.firstChild, keepList, -1);
+            }
+            nextNode.parentNode.removeChild(nextNode);
+          }
+        }
+      }
     }
 
     // enable 出口列表内收钳（q12 判读 + 探针里程碑证据）：吸收流经 wrap 的
