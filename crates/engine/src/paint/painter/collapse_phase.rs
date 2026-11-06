@@ -223,8 +223,10 @@ impl Painter {
         }
         // R793：CSS §11.1.1 — overflow 裁剪到 **padding box**（内容 + padding，
         // border 之内），非 content box。R2500：overflow:clip 轴按
-        // overflow-clip-margin 扩展（CSS Overflow 3 §3）。
-        let clip_rect = super::overflow_clip_rect(box_node, abs_x, abs_y);
+        // overflow-clip-margin 扩展（CSS Overflow 3 §3）。R5429：containment 臂
+        // 传入（css-contain-1 §3.1，collapse 驱动 cell 与主路径同源裁剪）。
+        let clip_rect =
+            super::overflow_clip_rect(box_node, abs_x, abs_y, super::node_containment_clips(box_node, styles));
         super::super::helpers::clip_all_primitives_to_rect(&mut self.primitives, counts, &clip_rect);
         // R4541（css-borders-4 §border-shape）：border-shape 声明时 overflow 内容
         // 裁剪到形状内缘。覆盖填充改写 + v2 条带裁剪与 clip-path polygon 臂共用

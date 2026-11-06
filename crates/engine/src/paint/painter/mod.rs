@@ -597,6 +597,15 @@ fn paint_containment_clips(contain: ContainComputedValue, display: DisplayValue)
         )
 }
 
+/// 本盒是否因 paint containment 触发子内容裁剪（`overflow_clip_rect` containment
+/// 臂输入；无 node 或无 style → false，与 compute_needs_clip 的 containment 臂同谓词）。
+fn node_containment_clips(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    box_node
+        .node_id
+        .and_then(|id| styles.get(&id))
+        .is_some_and(|s| paint_containment_clips(s.contain.clone(), s.display.clone()))
+}
+
 /// R5155（css-contain-1 §3.1 paint containment 圆角裁剪）：contain:paint 的裁剪
 /// 区域 = padding box 的圆角形状——四角半径取 border-box 百分比解析 + 相邻收缩
 /// （css-backgrounds-3 §5.5）后扣减对应边 border 宽 clamp 0（与 border.rs 背景内
@@ -912,7 +921,7 @@ fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedSty
 /// overflow-clip-margin 的基准盒（content-box/padding-box/border-box）± length 扩展。
 /// 默认（PaddingBox + length 0）或全非 clip → padding-box，与旧实现字节一致（零行为变更）。
 /// 仅调整 clip 轴，hidden/scroll/visible 轴保持 padding-box（零回归）。
-fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
+fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32, containment_clips: bool) -> Rect {
     use zero_css_parser::values::OverflowClipMarginBox;
     // padding-box 边（既有 overflow 裁剪基线，CSS §11.1.1 裁到 padding-box）。
     let pad_x = abs_x + box_node.border_left;
@@ -921,7 +930,15 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
     let pad_h = box_node.padding_top + box_node.content_height + box_node.padding_bottom;
     let (mut x, mut y, mut w, mut h) = (pad_x, pad_y, pad_w, pad_h);
     // 仅当某轴为 clip 时按 overflow-clip-margin 调整该轴（hidden/scroll 始终忽略 margin）。
-    if box_node.overflow_x == OverflowClip::Clip {
+    // css-contain-1 §3.1：paint containment 使 used overflow=visible 的轴视同 clip，
+    // 裁剪边 = overflow clip edge（含 clip-margin；driving: overflow-clip-margin-004）。
+    // scroll 保持滚动语义不强转、hidden 轴维持 §11.1.1 padding-box 基线；margin=0
+    //（默认）矩形与旧实现逐字节一致（零行为变更）。
+    let clips_x = box_node.overflow_x == OverflowClip::Clip
+        || (containment_clips && box_node.overflow_x == OverflowClip::Visible);
+    let clips_y = box_node.overflow_y == OverflowClip::Clip
+        || (containment_clips && box_node.overflow_y == OverflowClip::Visible);
+    if clips_x {
         let (base_x, base_w) = match box_node.overflow_clip_margin_box {
             OverflowClipMarginBox::ContentBox => (pad_x + box_node.padding_left, box_node.content_width),
             OverflowClipMarginBox::PaddingBox => (pad_x, pad_w),
@@ -931,7 +948,7 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
         x = base_x - m;
         w = base_w + 2.0 * m;
     }
-    if box_node.overflow_y == OverflowClip::Clip {
+    if clips_y {
         let (base_y, base_h) = match box_node.overflow_clip_margin_box {
             OverflowClipMarginBox::ContentBox => (pad_y + box_node.padding_top, box_node.content_height),
             OverflowClipMarginBox::PaddingBox => (pad_y, pad_h),
@@ -947,11 +964,12 @@ fn overflow_clip_rect(box_node: &LayoutBox, abs_x: f32, abs_y: f32) -> Rect {
     // hidden/scroll 轴维持 padding-box 既有基线（legacy：visible+hidden 组合按 §11.1.1
     // 折叠语义，既有绿面不动）。
     const CLIP_UNBOUNDED: f32 = 1.0e5;
-    if box_node.overflow_x == OverflowClip::Clip && box_node.overflow_y == OverflowClip::Visible {
+    // containment 下双轴都视同 clip（§3.1 used overflow 强转），无可见轴放行臂。
+    if !containment_clips && box_node.overflow_x == OverflowClip::Clip && box_node.overflow_y == OverflowClip::Visible {
         y = abs_y - CLIP_UNBOUNDED;
         h = 2.0 * CLIP_UNBOUNDED;
     }
-    if box_node.overflow_y == OverflowClip::Clip && box_node.overflow_x == OverflowClip::Visible {
+    if !containment_clips && box_node.overflow_y == OverflowClip::Clip && box_node.overflow_x == OverflowClip::Visible {
         x = abs_x - CLIP_UNBOUNDED;
         w = 2.0 * CLIP_UNBOUNDED;
     }
@@ -1134,7 +1152,8 @@ fn collect_floats_descendants_inner<'a>(
     // line-clamp-with-abspos-023）是 positioned CB 语义特例，floats 不适用。
     let css_overflow_clips = needs_clip;
     let (clip_rect, clip_radii) = if css_overflow_clips {
-        let rect = overflow_clip_rect(box_node, abs_x, abs_y);
+        // R5429：containment 臂传入（floats 携带矩形与主裁剪同源，css-contain-1 §3.1）。
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
         let radii = box_node
             .node_id
             .and_then(|id| styles.get(&id))
@@ -1227,7 +1246,8 @@ fn collect_positioned_descendants_inner<'a>(
     // R5255：矩形与 shaped edge 半径（R5201）同源计算、同源覆盖——迟延子补裁时
     // 二者成对生效，避免只带矩形漏方角。
     let (clip_rect, clip_radii) = if css_overflow_clips {
-        let rect = overflow_clip_rect(box_node, abs_x, abs_y);
+        // R5429：containment 臂传入（迟延 positioned 携带矩形与主裁剪同源）。
+        let rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
         let radii = box_node
             .node_id
             .and_then(|id| styles.get(&id))
@@ -3271,7 +3291,8 @@ impl Painter {
             // 非 content box。原实现按 content box 裁剪（起点加 padding、尺寸=content），致溢出内容
             // 落在 content 边与 padding 边之间的条带时被多裁（chromium 保留到 padding 边）。
             // R2500：overflow:clip 轴额外按 overflow-clip-margin 扩展（CSS Overflow 3 §3）。
-            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y);
+            // R5429：containment 臂传入（css-contain-1 §3.1，overflow-clip-margin-004）。
+            let clip_rect = overflow_clip_rect(box_node, abs_x, abs_y, node_containment_clips(box_node, styles));
             super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_children, &clip_rect);
             // R5155：contain:paint 圆角裁剪——图片内容窗口追加四角圆角剔除
             //（矩形交集后逐像素测试角部）。
@@ -8033,7 +8054,7 @@ mod tests {
             b
         }
         let base = box_with(OverflowClip::Clip, OverflowClip::Visible);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             r.origin.y < 0.0 && r.size.height > 1.0e5,
             "overflow-x:clip + y visible → y 轴不裁剪（矩形扩到界外），got {:?}",
@@ -8046,7 +8067,7 @@ mod tests {
         );
 
         let base = box_with(OverflowClip::Visible, OverflowClip::Clip);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             r.origin.x < 0.0 && r.size.width > 1.0e5,
             "overflow-y:clip + x visible → x 轴不裁剪，got {:?}",
@@ -8055,10 +8076,84 @@ mod tests {
 
         // 双轴 clip：两轴都按 padding-box（不扩界）
         let base = box_with(OverflowClip::Clip, OverflowClip::Clip);
-        let r = overflow_clip_rect(&base, 100.0, 100.0);
+        let r = overflow_clip_rect(&base, 100.0, 100.0, false);
         assert!(
             (r.origin.x - 100.0).abs() < 0.5 && (r.size.height - 50.0).abs() < 0.5,
             "双轴 clip → 均按 padding-box，got {:?}",
+            r
+        );
+    }
+
+    /// R5429：containment 臂（css-contain-1 §3.1）——paint containment 下 used
+    /// overflow=visible 的轴视同 clip，裁剪边 = overflow clip edge（含 clip-margin）。
+    /// driving: WPT overflow-clip-margin-004（contain:paint + clip-margin 10px，
+    /// 双侧期望 120×120 露绿）。hidden/scroll 轴不消费 margin（§11.1.1 基线）；
+    /// margin=0（默认）矩形与旧实现逐字节一致（零行为变更护栏）。
+    #[test]
+    fn r5429_containment_clip_margin_extends_clip_edge() {
+        fn contained_box() -> LayoutBox {
+            let mut b = LayoutBox {
+                overflow_x: OverflowClip::Visible,
+                overflow_y: OverflowClip::Visible,
+                ..Default::default()
+            };
+            b.content_width = 100.0;
+            b.content_height = 100.0;
+            b.overflow_clip_margin_length = 10.0;
+            b
+        }
+        // containment + visible 双轴 + margin 10 → 四边各外扩 10（driving 案形）。
+        let r = overflow_clip_rect(&contained_box(), 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 90.0).abs() < 0.5 && (r.origin.y - 90.0).abs() < 0.5,
+            "containment 裁剪边须外扩到 (90,90)，got {:?}",
+            r
+        );
+        assert!(
+            (r.size.width - 120.0).abs() < 0.5 && (r.size.height - 120.0).abs() < 0.5,
+            "containment 裁剪边须为 120×120，got {:?}",
+            r
+        );
+        // 同盒 containment=false → 纯 padding-box（旧路径不变，100×100）。
+        let r = overflow_clip_rect(&contained_box(), 100.0, 100.0, false);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.width - 100.0).abs() < 0.5,
+            "非 containment 不消费 margin（visible 轴本来就不裁），got {:?}",
+            r
+        );
+        // margin=0 → 矩形 = padding-box 逐字节同旧（零行为变更护栏）。
+        let mut zero = contained_box();
+        zero.overflow_clip_margin_length = 0.0;
+        let r = overflow_clip_rect(&zero, 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5
+                && (r.origin.y - 100.0).abs() < 0.5
+                && (r.size.width - 100.0).abs() < 0.5
+                && (r.size.height - 100.0).abs() < 0.5,
+            "margin=0 containment 矩形须同 padding-box，got {:?}",
+            r
+        );
+        // hidden 轴不消费 margin：x hidden → x 轴 padding-box，y visible+containment 外扩。
+        let mut hidden_x = contained_box();
+        hidden_x.overflow_x = OverflowClip::Hidden;
+        let r = overflow_clip_rect(&hidden_x, 100.0, 100.0, true);
+        assert!(
+            (r.origin.x - 100.0).abs() < 0.5 && (r.size.width - 100.0).abs() < 0.5,
+            "hidden 轴维持 padding-box（§11.1.1 基线），got {:?}",
+            r
+        );
+        assert!(
+            (r.origin.y - 90.0).abs() < 0.5 && (r.size.height - 120.0).abs() < 0.5,
+            "containment visible 轴仍消费 margin，got {:?}",
+            r
+        );
+        // containment + x:clip/y:visible 组合：无可见轴放行臂（双轴都裁）。
+        let mut clip_x = contained_box();
+        clip_x.overflow_x = OverflowClip::Clip;
+        let r = overflow_clip_rect(&clip_x, 100.0, 100.0, true);
+        assert!(
+            r.size.height < 1.0e5,
+            "containment 下无可见轴放行臂（y 轴视同 clip 有界），got {:?}",
             r
         );
     }
