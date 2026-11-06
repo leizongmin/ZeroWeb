@@ -1019,7 +1019,12 @@
     return wEl && wEl.parentNode === host ? wEl : wrapper;
   }
 
-  function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions) {
+  // plainSkipViaHtml（Chrome delta，formatBlock 专用）：host 直子文本成员走
+  // plain wrap 不走 ViaHtml 整段重写——`<p>[foo<p>bar]` + `<p>` 双成员同 tag 时
+  // ViaHtml 的序列化重写会使未处理成员游离复制倒序（语料 :1410 三重 p 录音铁证；
+  // formatBlock 的 skip 环已在 nodeList 预剔同 tag 成员，plain wrap 到位即净零变更）。
+  function _zwJusWrap(nodeList, siblingCriteria, newParentInstructions,
+      plainSkipViaHtml) {
     var i;
     var anyBr = false;
     for (i = 0; i < nodeList.length; i++) {
@@ -1051,7 +1056,7 @@
     // 单一 center div）、tbody/tr-attr selection 行、整表选择行部分变体。
     // flat 模型边界臂：editing host 直子文本成员 → innerHTML setter 整段重写。
     for (i = 0; i < nodeList.length; i++) {
-      if (nodeList[i].nodeType === 3 && nodeList[i].parentNode
+      if (!plainSkipViaHtml && nodeList[i].nodeType === 3 && nodeList[i].parentNode
           && _zwJusIsEditingHost(nodeList[i].parentNode)) {
         return _zwJusWrapViaHtml(nodeList[i].parentNode, nodeList,
           siblingCriteria, newParentInstructions);

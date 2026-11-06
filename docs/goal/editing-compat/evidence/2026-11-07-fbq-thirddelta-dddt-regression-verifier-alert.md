@@ -155,6 +155,26 @@ B1 800 / legs3 794）/ P2F=13 / indent+inhr+img OK 恒一 / enginelib 九红恒�
   do-nothing vs 单命令变体期望真 wrap 的录音冲突面，guard 注释选边 dps ×3——6 行非新债，B2 时代即红）。
 - mt 段在跑（03:37 起，同二进制）——预期 P2F 64→0（第六刀）+ F2P 71 维持。
 
+## owner 轮追记（04:18）——final2 终局 + 岛族 oracle 翻转 + 第七/八刀
+
+- **final2 终局（04:07 ALL-DONE）**：fb 分片拼接 P2F=13；indent/hr/img VERDICT OK；enginelib 九红恒一；
+  mt P2F=70 = **formatblock 0 + indent 0（第六刀 fb/indent 臂兑现）+ ihr 12 + img 12（typing carrier 面）+
+  delete+inserttext compare 46（part06 旧无门 Take 泄漏面，:4825 注释自证 43+3 行）**。VERDICT REVIEW。
+- **岛族 oracle 翻转（owner 前判「岛形全零应用」作废）**：语料 :1879/:1884 div 岛 + p/div 目标录音
+  **真 wrap ret=[true]**（注释 "<div> can have <p>, so, wrap it with <p>"）——判别子非岛而是**宿主内容
+  模型**：p/span 宿主不容块（do nothing [false]）、div 宿主可容（wrap [true]）。守卫修复 = 爬升捕获
+  editing host，host=p 或 display inline 族 → return false（第七刀，四面 oracle 注释锚 part01g）。
+  严格内容模型表不适用（dd 族 :757 真 wrap 抬 dl 仍需放行）。
+- **table qV 2 行机制钉死**：qV-before expected "" got "div"——VisBlock 爬升穿 td/tr/table 落外层 div。
+  Chrome 视 table 结构为 qV 隐形块边界（after 面 td 内已 wrap 出 div 先命中故绿）。第八刀：VisBlock
+  遇 td/th/tr/table/tbody/thead/tfoot 返 null。
+- **第五刀复活**：part01c 第 4 参 `plainSkipViaHtml` 回填（并行轮 checkout 抹除 → 调用位死实参），
+  267 双 p 面 legs5 待验。
+- legs5 批 04:20:38 起（test-guard 包裹，本会话 systemd-run 无授权）：probe 14 案（岛族四形/table/b 壳/
+  carry 面）→ fb 单页（rc 门修：rc=2 不再误回退）→ indent/hr/img → enginelib → mt（part06 门+typing
+  版二进制）。
+
+
 ## 追记（03:58）——table 案翻红行更正：qV before 非 after（本方 b7 账本无过滤 grep 定案）
 
 owner 03:41 追记①所列「qV-after ×2」经本方 b7 账本无过滤重查更正：table 案红行恰 2 行、均为
@@ -280,3 +300,66 @@ plain wrap（indent 调用位不传参行为不变）。case 267 待 legs5 判�
 **更正（04:19）**：第 2 节第五刀死参已被 owner 04:17 修复——part01c 补回 `plainSkipViaHtml`
 参数+ViaHtml 门（`!plainSkipViaHtml &&` 守卫），part01g:249 第四参复活为 formatBlock 专用
 plain wrap（indent 调用位不传参行为不变）。case 267 待 legs5 判读。本节其余为历史记录。
+
+## 追记（04:26）——窄验证批判读成立：判别清单 4/6 定案 + veto 惰性实证 + 剩余债清单
+
+窄批（04:15:58 ALL-DONE，二进制 = 三笔恢复 + cmd 门 overrides + **未收门 typing v2**，单页跑法）
+F2P=811 / P2F=7 / lost=0。judge 名单（fbq-narrow.txt）逐项判读：
+
+- **①dd/dt 零命中 ✓**（撤销态跨二进制恒绿，闭合终证）。
+- **②dps 4 行伪影消失 ✓**——owner「fb 4 行 qV(dps) before 翻红 = 包裹实证」归因成立（final2 时代
+  4 行是第六刀包裹副作用，非分片链断裂；post2 时代 5 行才是真分片伪影，两代两机制同名不同源）。
+- **③ol-li ×2 绿 ✓**（不在 7 行名单）——owner 判据「维持 F」预期落空，实际 final2 起即绿（HEAD
+  no-op 过滤器存在即闭合，与 veto 生效与否无关）；①（列表透明 skip）对该 2 行非必要面。
+- **④table ×2 仍红 → 读面 table 边界过爬坐实**（03:58 判别预测命中：②落树仍红=读面机制）。窄
+  二进制 ② 版读面无 veto，爬升 text→td→tr→table→div 返 "div" ≠ 期望 ""。修法 = `_zwFbqVisBlock`
+  climb 加 table 族边界守卫（遇 table/tbody/tr/td 返 null），2 行回归面即拆。
+- **⑤双 p ×1 维持红 ✓**（part01c checkout → ③死接线，需重建参数才闭合）。
+- **⑥岛形 4/6 红**（单页跑法下 div+p-cE-false+span-cE 对绿、另两形红）——守卫张力面按 post2 挂账。
+- F2P 820→811 = 9 行冻结碰巧回绿面收臂回红（预期内，非回归）；811 仍高于 legs3 794（三笔净 +17）。
+
+**veto 惰性实证（存疑但前向无碍）**：final2（HEAD 带 veto 读面）:1784 qV-before 录音期望 "div"
+（语料 :1788/:1793 双变体核实）应红实绿、table 案应绿实红——两者共同指向 HEAD 读面的
+prohibited veto 在二进制中未生效，与静态读码（part01d 名单含 ol/table、同闭包串联挂载注释明言
+复用）矛盾。归因存疑不阻塞：当前树 ② 已去 veto，:1784 绿是稳定终态，standing 缺陷仅 table 过爬
+2 行（④修法）。
+
+**legs5 前剩余债清单**：(a) typing v2 收门 1 行（04:20 追记，fbqTt/fbqTtoff 加 cmdIsFbq4）——
+未收门则 mt 44+3 行新回归只拆 overrides 半；(b) part01c 第 4 参重建（双 p 闭合）；(c) table 边界
+守卫 2 行（④）；(d) mt 判读六项（04:12 追记预期：收臂+typing v2 后 P2F→~0/F2P≈111）。
+
+## 追记（04:31）——legs5 二进制窗口澄清 + typing 冻结树敏感性判别实验预告
+
+- legs5（04:20:38 启动）构建窗 ~04:21:10 收口；owner 04:23:43 两笔（part06 typing 门
+  `fbqTt=cmdIsFbq4 && ...` 与本方 04:20 提案逐字同形 + part01c 第 4 参重建带 :1410 注释）
+  **晚于窗口不在此批**。legs5 二进制 = 三笔恢复 + cmd 门 overrides + 未收门 typing v2 +
+  part01c-HEAD（③死接线）。
+- **legs5 mt = typing 冻结树敏感性判别实验**：overrides 冻结已收臂、typing 冻结仍在——若 P2F
+  降至 ~24（纯状态命令面）= overrides 冻结是 44+3 行的唯一树机制（typing 冻结树中性）；
+  若维持 ~70 = typing 冻结同样压树（delete 清 carrier → inserttext 带陈旧壳 typing → 树错）。
+  判读时以此二分归因，随后批（含 04:23:43 两笔）终证。
+
+## 追记（04:35）——legs5 fb 腿 P2F=0 历史最优；第七/八刀与本方修法提案独立收敛；enginelib 补跑缺口
+
+- legs5 fb 腿（单页，04:29:43 出账）：**F2P=841 / P2F=0 / lost=0 / F 993→152，vs pre 零回归
+  VERDICT OK**——全轮最优。P2F=0 = 第七刀（宿主内容模型守卫，岛族清）+ 第八刀（VisBlock table
+  族返 null，**与本方 03:58/04:26 修法提案逐字同形，独立收敛互证**）+ part01c 第 4 参（双 p 清）
+  + cmd 门（dps 4 行清）合力，窄批 7 行债全数闭合。批随后停在 fb 腿后（无 ALL-DONE），owner
+  04:31 起专用 mt 批（batch-fbq-mt2.sh，完整树重建只跑 mt，MTROWS≥19000 门 + judge VERDICT 门）。
+- **缺口提示**：enginelib 对当前树（第七/八刀 + typing 门 + part01c 参数）未跑过——legs5 死于 fb
+  腿后未到 enginelib 腿，「fb/indent/hr/img/enginelib 复用 legs5 账」中前四腿 legs5 只有 fb 有账，
+  indent/hr/img 实际复用的是 final2（03:37）账（第七/八刀不触 indent/hr/img 面，可复用）；enginelib
+  最后账 = final2 时代（03:37），早于第七/八刀。enginelib 单跑 ~13s，mt2 后补一次即可闭环（九红
+  名册恒一判据）。
+- mt2 mt 预期核对口径：P2F=70 中 ihr 12 + img 12（typing 面）+ delete+inserttext 46（门面）——
+  本方行级名单为 24+44+3=71（owner 46 不含 styleWithCSS 3 行单独列）——mt2 判读时按 judge 名单
+  逐行归账，若 VERDICT OK（P2F=0）则两口径同时闭合。
+
+## 终账追记（05:05）——mt2 VERDICT OK：P2F=0 全清，警示议题全闭环
+
+mt2（05:02:38 ALL-DONE，完整树 shim md5 59791ef5）：**F2P=93 / P2F=0 / lost=0 / F 416→323，
+MT2-VERDICT OK**。本文件全部警示议题终态：①dd/dt 20 行=撤销路线四二进制恒绿 ✓；②第六刀作用
+域=cmd 门收臂 ✓；③typing 门=fbqTt/fbqTtoff cmdIsFbq4 收门 ✓；④table ×2=第八刀 table 族返
+null（与本方 03:58 提案同形）✓；⑤双 p=part01c 第 4 参回填 ✓；⑥final2 mt 70 行=三族全清 ✓。
+fb 腿全轮最优 legs5 F2P=841/P2F=0。遗留唯一缺口：enginelib 对最终树未跑（~13s，九红名册判据），
+提交前建议补跑。核验方账本：VERIFY-NOTE v10 终账。本方告警职责闭环，提交由 owner 轮执行。

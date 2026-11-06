@@ -111,11 +111,32 @@
     var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset);
     if (!sl) return false;
     var cur = sl;
+    var fbqHost = null;
     var g0 = 0;
     while (cur && g0++ < 256) {
-      if (_zwJusIsEditingHost(cur)) break;
+      if (_zwJusIsEditingHost(cur)) { fbqHost = cur; break; }
       if (!_zwJusIsEditable(cur)) return false;
       cur = cur.parentNode;
+    }
+    // Chrome delta（宿主内容模型守卫）：新块物化在选区 editing host 内，host
+    // 不能容块级子时 Chrome 整体放弃——树不变 ret=false，qV before/after 恒 ""
+    // （VisBlock 爬升遇 host 先返 null，守卫在此前拦）。语料 ret 录音四面对账：
+    // "<p> cannot have <div>, so, do nothing"（:1876）/ "<span> cannot have
+    // <p>"（:1866/:1871）→ [false]；"<div> can have <p> / <div>, so, wrap"
+    // （:1881/:1886）→ [true] 照 wrap。严格 HTML 内容模型表不适用：
+    // `<div>[foobar]</div>` + dd（:757）录音真 wrap 后 fixDisallowedAncestors
+    // 抬 dl（dd∉div 内容模型仍放行）——判据只看「host 可否含块」：p 宿主拒；
+    // 其余按 computed display inline 族拒（display:block span 岛形条目 361
+    // 可容块照 wrap）。b/i/font 样式壳不触发（壳非 host，宿主为外层块容器照
+    // wrap——mt `[["bold",""],["formatblock","<div>"]]` compare 全绿面）。
+    if (fbqHost && fbqHost.nodeType === 1) {
+      if (_zwJusIsHtmlElement(fbqHost, 'p')) return false;
+      var fbqHostDisp = 'block';
+      try {
+        fbqHostDisp = globalThis.getComputedStyle
+          ? globalThis.getComputedStyle(fbqHost).display : 'block';
+      } catch (_eFbqDisp) {}
+      if (String(fbqHostDisp).indexOf('inline') === 0) return false;
     }
 
     // "Block-extend the active range, and let new range be the result."
@@ -133,28 +154,32 @@
         && !_zwFbqHasProhibitedParagraphChildDescendant(node);
     });
 
-    // Chrome delta（同 tag no-op）：node 祖先链（非宿主、同宿主、可编辑、无
-    // prohibited 后代）上已有目标 tag 的 formattable 块 → 从 nodeList 剔除
-    // （spec splitParent/wrap 两环都不再处理）。语料树录音 ×3：`<div>[foobar]
+    // Chrome delta（同 tag no-op）：node 祖先链上已有目标 tag 的可编辑同宿主
+    // formattable 块 → 从 nodeList 剔除（spec splitParent/wrap 两环都不再处理）。
+    // 爬升对 ol/ul/li 列表透明（穿越不判、命中即剔）——prohibited-paragraph
+    // veto 在此环不适用：`<div><ol><li>[foo]</ol></div>` + div 的 div 含 li
+    // （∈ prohibited 名单）但录音要求树不变（:1784），veto 会使外层 div 漏剔
+    // → 误 wrap 出 `<li><div>foo</div></li>`。语料树录音 ×3：`<div>[foobar]
     // </div>` + div 树不变（:134）；`<p>[foo<p>bar]` + p 两 text 均链上命中 p
-    // 树不变（:1410，DOM 双 p 已闭合、期望串＝input 序列化）；`<div><ol><li>
-    // [foo]</ol></div>` + div 的 div 在链上（穿越 li/ol，:1784）。反向锚定：
-    // `<ol><li>[foobar]</ol>` + div 链上无 div（ol 直上宿主）不剔除照 wrap
-    // （`<ol><li><div>[foobar]</div></li></ol>`）；`<dl><dt>[foo]` dt 链 dl 非
-    // formattable 不剔除照换块。
+    // 树不变（:1410）；:1784 穿 li/ol 命中 div。反向锚定：`<ol><li>[foobar]</ol>`
+    // + div 链上无 div（ol 直上宿主）不剔除照 wrap（`<ol><li><div>[foobar]
+    // </div></li></ol>`，:478 p+p 同理 host 位截停）；`<dl><dt>[foo]` dt 链 dl
+    // 非 formattable 不剔除照换块。
     for (i = nodeList.length - 1; i >= 0; i--) {
       var anc2 = nodeList[i].parentNode;
       var g2 = 0;
       while (anc2 && g2++ < 256) {
         if (_zwJusIsEditingHost(anc2)) break;
+        if (_zwJusIsHtmlElement(anc2, ['ol', 'ul', 'li'])) {
+          anc2 = anc2.parentNode;
+          continue;
+        }
         if (_zwJusIsHtmlElement(anc2, v)
             && _zwJusIsEditable(anc2)
-            && _zwListInSameEditingHost(anc2, nodeList[i])
-            && !_zwFbqHasProhibitedParagraphChildDescendant(anc2)) {
+            && _zwListInSameEditingHost(anc2, nodeList[i])) {
           nodeList.splice(i, 1);
-          break;
         }
-        anc2 = anc2.parentNode;
+        break;
       }
     }
     if (!nodeList.length) return true;
@@ -243,7 +268,7 @@
               && n.attributes && n.attributes.length === 0;
           };
       _zwListFixDisallowedAncestors(_zwJusWrap(sublist, sibCrit,
-        function () { return document.createElement(v); }));
+        function () { return document.createElement(v); }, true));
     }
     return true;
   };
@@ -290,8 +315,10 @@
     return found;
   }
 
-  // 端点叶子 → FB 块：命中 _zwFbqValueBlockNames 且可编辑且无 prohibited 后代
-  // → 返元素；爬至 editing host 或断链 → null。
+  // 端点叶子 → FB 块：命中 _zwFbqValueBlockNames 且可编辑 → 返元素；爬至
+  // editing host 或断链 → null。无 prohibited-paragraph veto：`<div><ol><li>
+  // [foo]</ol></div>` qV-before 录音 "div"（:1784，div 含 li 仍返名），veto
+  // 会使该形误返 ""。
   function _zwFbqVisBlock(node, offset) {
     var leaf = _zwFbqEdgeLeaf(node, offset);
     if (!leaf) return null;
@@ -299,9 +326,13 @@
     var g = 0;
     while (cur && g++ < 256) {
       if (_zwJusIsEditingHost(cur)) return null;
+      // Chrome delta（table 结构 qV 隐形）：td/th/tr/table 族为块边界但非 FB
+      // 块名，遇之即返 null——`<div><table><tr><td>[foo]</table></div>`
+      // qV-before 录音 ""（:1794/:1799），穿 table 落外层 div 会误返 "div"。
+      if (_zwJusIsHtmlElement(cur,
+          ['td', 'th', 'tr', 'table', 'tbody', 'thead', 'tfoot'])) return null;
       if (_zwJusIsHtmlElement(cur, _zwFbqValueBlockNames)) {
-        if (_zwJusIsEditable(cur)
-            && !_zwFbqHasProhibitedParagraphChildDescendant(cur)) return cur;
+        if (_zwJusIsEditable(cur)) return cur;
         return null;
       }
       cur = cur.parentNode;

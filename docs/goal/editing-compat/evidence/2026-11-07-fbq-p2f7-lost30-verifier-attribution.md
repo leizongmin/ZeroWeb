@@ -63,3 +63,20 @@ final2（03:28:49 build＝HEAD 64bcf8491 逐字干净版，预检已撤销）ALL
 - **6 行 CE 岛回退代价**（`<div CE=false><p CE=true>[foo]` + div、span+p、`<p CE=false><span CE=true>` + p 的 compare+qV-after）：**警示档「预检 0 行收益」断言有误**——预检拒绝路径在 CE 岛形真实可达（成员爬升停在岛内 formattable 容器 → allowedChild 拒 → 树不变 → compare 绿），legs3 该 6 行绿即证。净核算：撤销回收 dd/dt +20（fb）/+95 键（mt），代价 CE 岛 -6 行——**净 +14 仍支持撤销决策**，但终判账应如实记 6 行回退代价，不得按「0 收益」口径。后续可作独立小刀（仅 host 位 dd/dt 豁免式拒绝，不动岛形）收复。
 
 **经验**：qV-*-before 断言行全部是携带敏感面（dps 直接携带 / fb 经 override 机制间接携带），窗界伪影计数不跨二进制稳定——终判 P2F 红线判读必须配伪影名册逐行核案号窗位，机械红线会在伪影上误报。
+
+## 更正（04:30 核验方）——案 342/343 非携带伪影，撤上一节误归因
+
+上一节把 table 两行归「override 间接携带伪影」是错的，narrow 单页批证伪：单页（与 pre 同窗构）该两行仍 Fail。四 log 定谳（fgrep 固定子串）：
+
+| log | 二进制 | 2 行结果 |
+|---|---|---|
+| keep-pre | 旧 qV | Pass |
+| B2-full-keep（02:28，pre-qV 重写码） | 旧 qV | Pass |
+| final2 fb-b7（干净 64bcf8491） | 双端点 qV | Fail |
+| fb-narrow（单页，同双端点） | 双端点 qV | Fail |
+
+真身：**二刀 qV 双端点重写回归**。语料 :1794/:1799 录音 qV(fb)-before=**""**（Chrome 视 td/tr/table 族为读面边界），旧 qV 返 ""→P；HEAD 实现穿 table 落外层 div 返 "div"→F。owner 工作树已落边界刀（part01g.js :329-333，td/th/tr/table/tbody/thead/tfoot 遇之返 null），legs5 验证翻绿。
+
+**final2 P2F=13 修正分解**：真债 9 行（table 2＝二刀 qV 回归已修待验＋double-p 1＝delta-③＋CE 岛 6＝撤销代价）＋伪影 4 行（dps 窗界）。narrow 批（04:15）P2F=7 与此自洽：单页消 4 dps 伪影，part01g table 刀未入 narrow build（04:17:41 晚于其 build）故 table 2 行仍红，delta-③/岛刀同样未入。
+
+**legs5 判读基线预期**（part01g 现树＝table 刀＋delta-③＋岛相关 delta，若全入 build）：table 2 翻绿、double-p 翻绿、4 dps 伪影视 9 分片组合仍在（narrow 的 cmd 门假说「dps exec 不再被包裹→携带恢复」若真则 9 分片下也翻绿——两机制 legs5 可分辨）；CE 岛 6 行维持红＝挂账代价。
