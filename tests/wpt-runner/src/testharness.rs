@@ -4560,6 +4560,17 @@ fn net_api_case_skipped(relative: &str, source: &str) -> bool {
     if name.contains(".h2.") {
         return true;
     }
+    // net-api-compat-v3 M3：fetch/api/redirect/redirect-keepalive.any.js（window 变体）
+    // ——多窗口编排面（keepalive-helper `keepaliveRedirectInUnloadTest` → window.open
+    // (NOTSAMESITE) 子窗 + opener postMessage + 子窗 close 后 nested iframe unload
+    // keepalive——runner 无多窗口管道：window.open 返回 null、message 永不到达（探针
+    // 实证 openRet=null/msg=null），六案 setting up 全挂 → 案级 Timeout）。M0 甄别档
+    // multi-globals/unload-a-document「runner 无多文档管道」同因排除口径，multi-window
+    // 管道落地后重入；.https.any.js 变体走 iframe flow（keepaliveRedirectTest）不在此门，
+    // 维持既有通过面。
+    if relative == "fetch/api/redirect/redirect-keepalive.any.js" {
+        return true;
+    }
     if relative.contains("/resources/") {
         return true;
     }
@@ -7053,6 +7064,12 @@ fn wpt_data_fetch_handler_with_stash(
     // 语义；handler per-case 构建——案内键自清，uuid 案内唯一/`{{uuid()}}` 字面常量键
     // 亦案内一致）。
     let img_and_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>> = std::sync::Arc::default();
+    // net-api-compat-v3 M3：get-set-cookie.py cookie 表（name → (value, secure)）——
+    // 上游为真 HTTP Set-Cookie 往返（wptserve + 浏览器 jar）；runner in-process fetch
+    // 通道无 Set-Cookie 消费点，表承载案内 cookie 态（clear=1 即移除——测试自身首尾
+    // clearCookies 对称，正常路径表尾恒空，跨案泄漏面自清）。
+    let get_set_cookie_stash: std::sync::Arc<Mutex<std::collections::BTreeMap<String, (String, bool)>>> =
+        std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
@@ -9437,6 +9454,73 @@ fn wpt_data_fetch_handler_with_stash(
                 let body = format!("data: {}\n\n", echoed);
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean == "xhr/resources/get-set-cookie.py" {
+                // net-api-compat-v3 M3 fixture：get-set-cookie.py cookie 端点仿真（上游
+                // wptserve handler——pin 3159769 xhr/resources/get-set-cookie.py 逐语义）：
+                // ① 响应恒 Set-Cookie 两枚——`WK-test=1`（会话 cookie）与
+                //    `WK-test-secure=1; Secure`（安全 cookie）；`?clear=1` 时均带过期
+                //    Expires（上游为昨天——epoch 同为过去时刻，删除语义等价）。
+                // ② 响应体 = 请求实际送达的 cookie 回显（逐枚前置空格 ` name=value`，
+                //    无则空体——上游 `content + b" " + cookie + b"=" + value`）。
+                // ③ Secure cookie 不随 http 请求送达（RFC 6265bis §5.4——runner 页锚
+                //    http://wpt.test，WK-test-secure 恒不在回显体——测试核心断言）。
+                // 方法面：测试用 XHR POST（GET 语义等价），分支先于非 GET 兜底门。
+                // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/get-set-cookie.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let is_clear = wpt_query_value(query, "clear").as_deref() == Some("1");
+                let is_secure_req = req.url.starts_with("https:");
+                let mut jar = match get_set_cookie_stash.lock() {
+                    Ok(jar) => jar,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                // 回显体先于本响应 Set-Cookie 生效（上游 response.content = 请求所携 cookie；
+                // secure 且非 https 请求者不送达）。
+                let mut body = String::new();
+                for (name, (value, secure)) in jar.iter() {
+                    if *secure && !is_secure_req {
+                        continue;
+                    }
+                    body.push(' ');
+                    body.push_str(name);
+                    body.push('=');
+                    body.push_str(value);
+                }
+                if is_clear {
+                    jar.remove("WK-test");
+                    jar.remove("WK-test-secure");
+                } else {
+                    jar.insert("WK-test".to_string(), ("1".to_string(), false));
+                    jar.insert("WK-test-secure".to_string(), ("1".to_string(), true));
+                }
+                drop(jar);
+                let clear_expires = "Thu, 01 Jan 1970 00:00:00 GMT";
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                headers.push((
+                    "set-cookie".into(),
+                    if is_clear {
+                        format!("WK-test=1; Expires={clear_expires}")
+                    } else {
+                        "WK-test=1".to_string()
+                    },
+                ));
+                headers.push((
+                    "set-cookie".into(),
+                    if is_clear {
+                        format!("WK-test-secure=1; Secure; Expires={clear_expires}")
+                    } else {
+                        "WK-test-secure=1; Secure".to_string()
+                    },
+                ));
                 wpt_add_fetch_metadata(&mut headers, req, 200);
                 return Ok(zero_engine::fetch_bridge::FetchResponse {
                     status: 200,

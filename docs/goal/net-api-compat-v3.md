@@ -16,10 +16,13 @@ get a final encoding 链 + status.py content 字节保真 + XML 树 tagName，
 链外搭车 responsetext-decoding 族 14 行同根因）+
 formdata/submitter 簇收口（4F → 2F：FormDataEvent + submitter 坐标双 F→P
 ——plain 世界 closest + 合成激活 click 坐标通道；余 2F 归因重分类移交他域
-——unpaired surrogate 引擎字符串语义桥 / 图像固有尺寸渲染流域，不计 DC-3 门）
-累计至 **13,255P** 零回归，changed 全 F→P，
-[证据档](net-api-compat-v3/evidence/2026-11-07-m3-formdata-closest-click-coords.md)；
-M3 余项：cookies/keepalive 2T
+——unpaired surrogate 引擎字符串语义桥 / 图像固有尺寸渲染流域，不计 DC-3 门）+
+cookies/keepalive 尾批 2T 收口（cookies.http.html T→P——get-set-cookie.py
+fixture cookie 状态机；redirect-keepalive.any.js 排除记账——多窗口编排面，
+runner 无多窗口管道）——**M3 收口 ✅**，在账失败簇/挂起全清，累计至
+**13,256P** 零回归，changed 全 F→P / 排除移出分母，
+[证据档](net-api-compat-v3/evidence/2026-11-07-m3-cookies-keepalive-tail.md)；
+下一站：M4 coverage 复测收口（DC-4 数值门）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -262,6 +265,20 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   不计 DC-3 门。定向 formdata 族 87P/2F；全量 A/B 13,253 → **13,255P**
   （+2P，分母 14,621 键不变，changed 2 全 F→P 零 P→F 零 T 变化）。
   余项：xhr 在账失败簇（cookies 1T + redirect-keepalive 1T）（DC-3）。
+  **cookies/keepalive 尾批 2T 收口 ✅**（2026-11-07，[证据档](net-api-compat-v3/evidence/2026-11-07-m3-cookies-keepalive-tail.md)）：
+  双 T 探针定谳分派。cookies.http.html T→P：testharness.rs get-set-cookie.py
+  fixture cookie 状态机（handler per-case 表——Set-Cookie 双枚 wire 保真 +
+  请求 cookie 回显体逐枚前置空格 + Secure cookie 不随 http 送达；此前 POST
+  撞非 GET 兜底门 handler Err → onerror 挂起案级 Timeout）；
+  redirect-keepalive.any.js（window 变体）排除记账：多窗口编排面
+  （window.open(NOTSAMESITE) 子窗 + opener postMessage——探针实证
+  openRet=null/msg=null，六案 setting up 全挂），M0 甄别档 multi-globals/
+  unload-a-document「runner 无多文档管道」同因口径，multi-window 管道落地后
+  重入；.https 变体走 iframe flow 不在此门维持既有绿面。定向双案
+  cookies.http.html 1P / redirect-keepalive 仅余 .https 双 P；全量 A/B
+  13,255 → **13,256P**（+1P，分母 14,621 → 14,620 键——排除移出 1；added 1
+  = cookies 子测试，removed 2 = 双案级 Timeout 键；零 P→F 零 T 变化）。
+  **M3 在账余项清零** → M4 coverage 复测收口（DC-4）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
