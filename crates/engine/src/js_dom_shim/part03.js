@@ -141,11 +141,16 @@
           'The object does not support the operation.', 'InvalidStateError');
       }
       // https://xhr.spec.whatwg.org/#the-open()-method
-      if (username !== undefined || password !== undefined) {
+      // 步骤 13-14：username/password **非 null** 才覆写 URL 对应字段（null/
+      // undefined 不动 userinfo——competing-names-passwords「user in URL」面：
+      // 旧 `!== undefined` 判把 String(null)="null" 打进 URL，凭据矩阵全毁）；
+      // 空串覆写清空对应字段（URL setter 语义）。同字段 open() 参覆盖 URL，
+      // 异字段独立回退（「user/pass in URL; user in open()」面）。
+      if (username != null || password != null) {
         try {
           var parsed = new globalThis.URL(self._zwXhrUrl);
-          if (username !== undefined) parsed.username = String(username);
-          if (password !== undefined) parsed.password = String(password);
+          if (username != null) parsed.username = String(username);
+          if (password != null) parsed.password = String(password);
           self._zwXhrUrl = parsed.href;
         } catch (_eXhrCredentialsUrl) {}
       }
@@ -764,15 +769,20 @@
             new ProgressEvent('loadstart', { lengthComputable: uComp0, loaded: 0, total: uComp0 ? ulen : 0 }));
         } catch (_eUls) {}
       }
-      // net-api M5-S12：URL 凭证 → Basic Authorization（fetch §HTTP-network fetch
-      // 「request's URL includes credentials」提取臂——XHR open() 凭证写入 URL
-      // （xhr.spec §the open()-method 步骤 14-15），网络层取走作 Basic 认证、以无
-      // 凭证 URL 分派；fetch() API 层「Request URL cannot include credentials」
-      // 构造校验（M2-S3）只面 fetch/Request，XHR 运输不经该校验。三处出口共用
-      // _zwXhrUrl/_zwXhrHeaders（sync 主发/preflight/async fetchFn），单点归一；
-      // 作者 Authorization 优先不覆写；strip 后重 send 幂等（URL 已无凭证）。
+      // net-api M3：URL 凭证提取改**延迟注入**——open()/URL userinfo 凭据不再
+      // 立即转 Authorization 首跳发出（旧实现首跳带凭据 → authentication.py 挑战
+      // 流无 401 挑战可应 → x-challenge 恒 DID-NOT——send-authentication-basic /
+      // basic-setrequestheader-existing-session 面）。userinfo 剥离保留（线上
+      // 恒无凭证 URL 分派——fetch §HTTP-network fetch 提取臂），凭据暂存
+      // reqAuthUser/reqAuthPass 供 401 Basic 挑战透明重试（同源一次，见
+      // _zwXhrAuthChallengeValue）；作者 Authorization 显式头在场不捕获
+      //（header wins，亦不参与重试——setrequestheader-and-arguments 面）。
+      // fetch() API 层「Request URL cannot include credentials」构造校验
+      //（M2-S3）只面 fetch/Request，XHR 运输不经该校验。
       // s180 红钉 credentials-iframe：iframeFetch 经 globalThis.fetch → 构造校验恒拒
       // → 网络错误（主窗 async XHR 同面——fetchFn 亦 globalThis.fetch）。
+      var reqAuthUser = null;
+      var reqAuthPass = null;
       if (self._zwXhrUrl && self._zwXhrUrl.indexOf('@') !== -1) {
         try {
           var _zwCredUrl = new globalThis.URL(self._zwXhrUrl);
@@ -783,8 +793,8 @@
                   _zwHn === 'authorization') { _zwHasAuth = true; break; }
             }
             if (!_zwHasAuth) {
-              self._zwXhrHeaders['authorization'] =
-                'Basic ' + globalThis.btoa(_zwCredUrl.username + ':' + _zwCredUrl.password);
+              reqAuthUser = _zwCredUrl.username;
+              reqAuthPass = _zwCredUrl.password;
             }
             _zwCredUrl.username = '';
             _zwCredUrl.password = '';
@@ -792,6 +802,7 @@
           }
         } catch (_eXhrCredUrl) {}
       }
+      var xhrAuthRetried = false;
       // net-api M3-S2：同步 XHR（open async=false）——host `__zw_fetch` 同步契约直返
       //（runner 路径；异步 host 回空 wire → error 路径，浏览器同步 XHR 已知限制）。
       // net-api M4-S14：同步 XHR scheme 分派先行（data:/blob: shim 侧 store 视角——
@@ -874,18 +885,11 @@
           preHeaders = _zwAddHeader(preHeaders, 'Accept', '*/*');
           preHeaders = _zwAddHeader(preHeaders, 'User-Agent',
             (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
-          var preNames = [];
-          var preParts = syncHeaders ? syncHeaders.split('\x1e') : [];
-          for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
-            var pn = String(preParts[pi]).toLowerCase();
-            if (pn === 'origin' || pn === 'content-length' || pn === 'accept' ||
-                pn === 'accept-language' || pn === 'content-language' ||
-                pn.indexOf('access-control-') === 0 || pn === 'referer' ||
-                pn === 'last-event-id' || pn === 'range') {
-              continue;
-            }
-            if (preNames.indexOf(pn) < 0) preNames.push(pn);
-          }
+          // net-api M3：名单与异步**单一事实源**对齐（_zwPreNamesOf 值条件安全
+          // 名单——safelisted CT essence/长度、accept 值域等；旧手写恒入名单使
+          // safelisted text/plain Content-Type 混入 ACRH/ACAH 覆盖——access-control-
+          // basic-allow-non-cors-safelisted-method PUT 面 P→F 回归根因）。
+          var preNames = typeof _zwPreNamesOf === 'function' ? _zwPreNamesOf(syncHeaders) : [];
           if (preNames.length > 0) {
             preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Headers', preNames.sort().join(', '));
           }
@@ -899,6 +903,47 @@
           if (!preOk) {
             throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
           }
+          // net-api M3：ACAH 覆盖同步镜像（异步 M2-S11 统一面）——逐项大小写
+          // 不敏感；authorization 恒须显式列出（`*` 永不覆盖——M4-S24 沿革），
+          // 其余名 `*` 仅无凭据通配。preflight **HTTP 级失败**（非 2xx / 缺
+          // ACAO）维持上方同步抛（basic-cors-not-enabled assert_throws 面），
+          // **ACAH 覆盖失败**走 error 事件路径非同步抛（语料 cors-setrequestheader-
+          // no-cred auth8 断 errorFired + status 0——上游 Edge 159 该腿红，语料
+          // 期望为标尺）。
+          // https://fetch.spec.whatwg.org/#cors-preflight-fetch
+          if (preOk && preNames.length > 0) {
+            var preAllowedHdrs = response_headers_get(preResp, 'access-control-allow-headers');
+            var paParts = preAllowedHdrs == null ? [] :
+              String(preAllowedHdrs).toLowerCase().split(',').map(function (s) { return s.trim(); });
+            var paStar = paParts.indexOf('*') >= 0 && !_zwWithCreds;
+            for (var pai = 0; pai < preNames.length; pai++) {
+              var pnCov = preNames[pai];
+              if (paParts.indexOf(pnCov) >= 0) continue;
+              if (pnCov === 'authorization') { preOk = false; break; }
+              if (paStar) continue;
+              preOk = false;
+              break;
+            }
+            if (!preOk) {
+              // 镜像异步 fetchFn rejection 的 request error steps：响应面全清 +
+              // DONE + upload error/loadend（有体且有 listener 时）+ error/loadend。
+              self._zwXhrSent = false;
+              self.status = 0;
+              self.statusText = '';
+              self.responseText = '';
+              self.response = '';
+              changeReadyState(4);
+              if (self._zwHadBody && self._zwUploadListener && self._zwUpload) {
+                try {
+                  self._zwUpload.dispatchEvent(new ProgressEvent('error', { lengthComputable: false, loaded: 0, total: 0 }));
+                  self._zwUpload.dispatchEvent(new ProgressEvent('loadend', { lengthComputable: false, loaded: 0, total: 0 }));
+                } catch (_ePreUe) {}
+              }
+              fireP('error', 0, 0, false);
+              fireP('loadend', 0, 0, false);
+              return;
+            }
+          }
         }
         // net-api M4-S17：同步路径 redirect 跟随（与异步同规——301/302 POST→GET、303
         // GET 丢体、307/308 保持；上限 20；跨源跳带文档 Origin）。
@@ -907,6 +952,7 @@
         var syncUrl = self._zwXhrUrl;
         var syncMethod = self._zwXhrMethod;
         var syncHops = 0;
+        var syncAuthRetried = false;
         for (;;) {
           syncWire = globalThis.__zw_fetch(
             '__zwxhr:sync', syncMethod, syncUrl,
@@ -920,6 +966,27 @@
           // https://xhr.spec.whatwg.org/#the-send()-method
           if (syncProbe.__zwFetchErrorTag === 'header-value-nul') {
             throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+          }
+          // net-api M3：401 Basic 挑战透明重试（同源一次，401 不透传 JS——
+          // 挑战流 x-challenge DID/DID-NOT 断言面；凭据门见
+          // _zwXhrAuthChallengeValue——显式凭据/会话缓存、跨源不重试）。
+          if (!syncAuthRetried && syncProbe.status === 401) {
+            var _syncAuthVal = _zwXhrAuthChallengeValue(syncProbe.status, syncProbe,
+              syncUrl, reqAuthUser, reqAuthPass);
+            if (_syncAuthVal != null) {
+              syncAuthRetried = true;
+              syncHeaders = _zwAddHeader(syncHeaders, 'Authorization', _syncAuthVal);
+              continue;
+            }
+            // net-api M3：跨源 + 凭据在场的 401 挑战 → 同步抛 NetworkError
+            //（镜像 async 同门——挑战响应不得透传跨源 JS，亦无跨源重试路径）。
+            var _syncDocOrigin = _zwUrlOrigin(_zwCurrentHref());
+            var _syncReqOrigin = _zwUrlOrigin(syncUrl);
+            if (_syncDocOrigin && _syncReqOrigin !== _syncDocOrigin &&
+                (reqAuthUser != null || reqAuthPass != null ||
+                 _zwXhrAuthSessionHas(_syncReqOrigin))) {
+              throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+            }
           }
           var syncLoc = null;
           if (_zwFetchRedirectStatus(syncProbe.status) && syncProbe.headers &&
@@ -1086,51 +1153,83 @@
         // net-api 二期 M2-S10 记账 2：异步路 setRequestHeader 首见原始大小写随
         // `__zwHeaderCase` 内部成员旁路（同步路径 `_headersToWire` caseMap 同语义；
         // 浏览器同型——XHR 线上保用户 case）。
+        // net-api M3：响应/错误臂抽名复用（401 Basic 挑战透明重试第二腿共用同
+        // 两臂——重试失败同 error 语义）。
+        var onFetchError = function () {
+          if (reqGen !== self._zwReqGen) return;
+          if (self._zwXhrAborted) return;
+          self._zwXhrSent = false; // request error steps 步骤 2：send() invoked 撤销
+          self.status = 0;
+          self.statusText = '';
+          self.responseText = '';
+          self.response = '';
+          changeReadyState(4);
+          // net-api M4-S21：request error steps 步骤 6——upload complete false 且
+          // upload listener 时 upload.{event} + loadend（0,0,false）——
+          // event-error-order 面。
+          if (self._zwHadBody && self._zwUploadListener && self._zwUpload) {
+            try {
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('error', { lengthComputable: false, loaded: 0, total: 0 }));
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('loadend', { lengthComputable: false, loaded: 0, total: 0 }));
+            } catch (_eUe) {}
+          }
+          // net-api M4-S21：error/loadend 为 ProgressEvent (0,0,false)（§5.1 fire——
+          // event-error「instanceof ProgressEvent」+ security-consideration 零值面）。
+          fireP('error', 0, 0, false);
+          fireP('loadend', 0, 0, false);
+        };
+        var onFetchResponse = function (response) {
+          if (reqGen !== self._zwReqGen) return; // 晚到响应（abort/复用后）→ 丢弃
+          // net-api M3：401 Basic 挑战透明重试（同源一次，401 不透传 JS——挑战
+          // 流面；凭据门见 _zwXhrAuthChallengeValue。upload 事件仅实际落到 fill
+          // 的响应派发一次——重试腿对 JS 不可见）。
+          if (!xhrAuthRetried && response && response.status === 401) {
+            var _asyncAuthVal = _zwXhrAuthChallengeValue(response.status, response,
+              self._zwXhrUrl, reqAuthUser, reqAuthPass);
+            if (_asyncAuthVal != null) {
+              xhrAuthRetried = true;
+              self._zwXhrHeaders['authorization'] = _asyncAuthVal;
+              fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod,
+                headers: self._zwXhrHeaders, __zwHeaderCase: self._zwXhrHeaderCase,
+                body: body, credentials: _zwWithCreds ? 'include' : 'same-origin' })
+                .then(onFetchResponse, onFetchError);
+              return;
+            }
+            // net-api M3：跨源 + 凭据在场（显式或会话缓存）的 401 挑战 → 网络
+            // 错误（透明认证挑战响应不得透传跨源 JS，亦无跨源重试路径——
+            // basic-cors 断失败面：status 0 + responseText ''；语料为标尺，
+            // 上游 Edge 159 同绿）。
+            var _docOrigin401 = _zwUrlOrigin(_zwCurrentHref());
+            var _reqOrigin401 = _zwUrlOrigin(self._zwXhrUrl);
+            if (_docOrigin401 && _reqOrigin401 !== _docOrigin401 &&
+                (reqAuthUser != null || reqAuthPass != null ||
+                 _zwXhrAuthSessionHas(_reqOrigin401))) {
+              onFetchError();
+              return;
+            }
+          }
+          // net-api M4-S21：transmission 完成（spec processRequestEndOfBody——仅
+          // upload listener 且有体；CORS 失败/超时路径不派 progress——
+          // event-error-order「no progress events due to CORS failure」面）。
+          if (self._zwHadBody && uploadListener && self._zwUpload) {
+            var uComp = ulen > 0;
+            try {
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('progress', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('load', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
+              self._zwUpload.dispatchEvent(
+                new ProgressEvent('loadend', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
+            } catch (_eUpEnd) {}
+          }
+          self._zwFillFromResponse(response, null);
+        };
         fetchFn(self._zwXhrUrl, { method: self._zwXhrMethod, headers: self._zwXhrHeaders,
           __zwHeaderCase: self._zwXhrHeaderCase, body: body,
           credentials: _zwWithCreds ? 'include' : 'same-origin' })
-          .then(function(response) {
-            if (reqGen !== self._zwReqGen) return; // 晚到响应（abort/复用后）→ 丢弃
-            // net-api M4-S21：transmission 完成（spec processRequestEndOfBody——仅
-            // upload listener 且有体；CORS 失败/超时路径不派 progress——
-            // event-error-order「no progress events due to CORS failure」面）。
-            if (self._zwHadBody && uploadListener && self._zwUpload) {
-              var uComp = ulen > 0;
-              try {
-                self._zwUpload.dispatchEvent(
-                  new ProgressEvent('progress', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
-                self._zwUpload.dispatchEvent(
-                  new ProgressEvent('load', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
-                self._zwUpload.dispatchEvent(
-                  new ProgressEvent('loadend', { lengthComputable: uComp, loaded: ulen, total: uComp ? ulen : 0 }));
-              } catch (_eUpEnd) {}
-            }
-            self._zwFillFromResponse(response, null);
-          }, function() {
-            if (reqGen !== self._zwReqGen) return;
-            if (self._zwXhrAborted) return;
-            self._zwXhrSent = false; // request error steps 步骤 2：send() invoked 撤销
-            self.status = 0;
-            self.statusText = '';
-            self.responseText = '';
-            self.response = '';
-            changeReadyState(4);
-            // net-api M4-S21：request error steps 步骤 6——upload complete false 且
-            // upload listener 时 upload.{event} + loadend（0,0,false）——
-            // event-error-order 面。
-            if (self._zwHadBody && self._zwUploadListener && self._zwUpload) {
-              try {
-                self._zwUpload.dispatchEvent(
-                  new ProgressEvent('error', { lengthComputable: false, loaded: 0, total: 0 }));
-                self._zwUpload.dispatchEvent(
-                  new ProgressEvent('loadend', { lengthComputable: false, loaded: 0, total: 0 }));
-              } catch (_eUe) {}
-            }
-            // net-api M4-S21：error/loadend 为 ProgressEvent (0,0,false)（§5.1 fire——
-            // event-error「instanceof ProgressEvent」+ security-consideration 零值面）。
-            fireP('error', 0, 0, false);
-            fireP('loadend', 0, 0, false);
-          });
+          .then(onFetchResponse, onFetchError);
       }, 0);
     };
     // net-api M4-S16：abort() spec 化（xhr.spec §the-abort()-method + §request error

@@ -15394,6 +15394,44 @@
     Object.setPrototypeOf(globalThis.indexedDB, globalThis.IDBFactory.prototype);
   }
 
+  // net-api M3：UA auth 会话缓存 + 401 Basic 挑战透明重试值（xhr.spec §send()
+  // http-authorization 注记——UA 持凭据时 401 挑战透明认证，401 响应不透传
+  // JS；send-authentication-basic / basic-setrequestheader-existing-session
+  // 挑战流 + basic-repeat-no-args「无参第二请求复用缓存凭据」面）。
+  // 语料定谳 + wpt.fyi Edge 159 master 旁证（auth 面 9 文件 8 绿，唯 cors-no-cred
+  // 1/2 与本仓同歧）：同源才透明重试（跨源 401 挑战不透传 JS 亦不重试——
+  // basic-cors 断失败面，语料期望为标尺）；open()/URL userinfo 显式凭据恒
+  // 优先于会话缓存（competing-names-passwords「must override cached
+  // credentials」面）；作者 Authorization 头显式在场不捕获 URL 凭据
+  //（header wins——setrequestheader-and-arguments 面）。
+  var _ZW_XHR_AUTH_SESSIONS = null;
+  function _zwXhrAuthChallengeValue(status, resp, reqUrl, reqUser, reqPass) {
+    if (status !== 401 || !reqUrl) return null;
+    var docOrigin = _zwUrlOrigin(_zwCurrentHref());
+    if (!docOrigin || _zwUrlOrigin(reqUrl) !== docOrigin) return null;
+    var challenge = response_headers_get(resp, 'www-authenticate');
+    if (!challenge || !/^[ \t]*basic/i.test(String(challenge))) return null;
+    if (reqUser == null && reqPass == null) {
+      var sess = _ZW_XHR_AUTH_SESSIONS && _ZW_XHR_AUTH_SESSIONS[_zwUrlOrigin(reqUrl)];
+      if (!sess) return null;
+      reqUser = sess.user;
+      reqPass = sess.pass;
+    }
+    var authVal;
+    try {
+      authVal = 'Basic ' + globalThis.btoa(String(reqUser || '') + ':' + String(reqPass || ''));
+    } catch (_eAuthB64) { return null; }
+    // 显式凭据入会话缓存（同保护空间后续无凭据请求复用——repeat-no-args 第二
+    // 请求面；缓存于发起重试时落账，语料凭据重试恒成功不区分成败时点）。
+    if (!_ZW_XHR_AUTH_SESSIONS) _ZW_XHR_AUTH_SESSIONS = {};
+    _ZW_XHR_AUTH_SESSIONS[_zwUrlOrigin(reqUrl)] = { user: reqUser || '', pass: reqPass || '' };
+    return authVal;
+  }
+  // net-api M3：跨源 401 挑战门辅助——该源是否已有会话凭据（无显式凭据请求的
+  // 挑战面判定用）。
+  function _zwXhrAuthSessionHas(origin) {
+    return Boolean(_ZW_XHR_AUTH_SESSIONS && _ZW_XHR_AUTH_SESSIONS[origin]);
+  }
   globalThis.XMLHttpRequest = function() {
     var self = this;
     self.readyState = 0;

@@ -7,10 +7,11 @@
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
 零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
 ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收口
-（99F+1T → 363P/0F/1T，+102P 至 **13,211P** 零回归，changed 全 F→P，
-[证据档](net-api-compat-v3/evidence/2026-11-06-m3-redirect-engine-clusters.md)）；
-M3 余项：xhr auth 五簇（12F）+ `__custom` 排序簇（1F）+ 重定向终跳
-sync cors-filter 同规 + xhr 在账失败簇 + keepalive 1T
+（99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P 至
+**13,223P** 零回归，changed 全 F→P，
+[证据档](net-api-compat-v3/evidence/2026-11-06-m3-xhr-auth-clusters.md)）；
+M3 余项：`__custom` 排序簇（1F）+ 重定向终跳 sync cors-filter 同规 +
+xhr 在账失败簇 + keepalive 1T
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -191,6 +192,18 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   （formdata/submitter 簇 4F + overrideMimeType Shift-JIS 接线 1F +
   cookies.http.html 挂起 1T + redirect-keepalive 1T；permissions-policy 2F
   策略面排除）（DC-3）。
+  **xhr auth 五簇 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m3-xhr-auth-clusters.md)）：
+  part02.js + part03.js 五刀——open() 非 null 覆写矩阵（8F）、URL 凭据延迟
+  注入 + 401 Basic 挑战同源透明重试一次 + UA 会话缓存（2F）、跨源挑战不透传
+  JS（async error / sync throw，1F）、sync preflight ACAH 覆盖镜像（失败
+  分型：HTTP 级失败同步抛 vs 覆盖失败 error 事件——语料双面标尺，1F）、
+  同步预检名单对齐 `_zwPreNamesOf` 单一事实源（首刀 PUT P→F 回归由全量 A/B
+  拦截后根因修复）；定向 auth 面 23/23（wpt.fyi Edge 159 auth 9 文件 8 绿
+  基准，cors-no-cred auth8 腿语料标尺反超）；全量 A/B 13,211 → **13,223P**
+  （+12P，分母 14,692 行不变，changed 12 全 F→P 零 P→F 零 T 变化）。
+  余项：`__custom` 排序簇（1F）+ 重定向终跳 sync cors-filter 同规 +
+  xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
+  cookies 1T + redirect-keepalive 1T）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
