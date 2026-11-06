@@ -4,8 +4,9 @@
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
-（枚举器窗体解锁 +1,624P 零回归），M1b 启动（语料/端点批次 + 解锁面
-新 Fail 簇归因）
+（枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
+零回归 + `.h2.` 排除记账），M2 启动（auth/响应头控制面/websockets
+非 wss fixture 分批）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -114,18 +115,25 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   eventsource +22 / fetch +12 / streams +1），案 543 → 684，A/B 交集
   12,070 对逐对字节一致零回归；新 Fail 面 = 解锁面真实缺口显影（
   access-control preflight 端点 / h1-parsing 原始线缆端点等），转 M1b/M2
-  fixture 分批与 M3 归因输入。**M1b（进行中，[簇归因图](net-api-compat-v3/evidence/2026-11-06-m1b-folder-txt-and-xhr-cluster-map.md)）**：
-  folder.txt 补拉已落（+2P 零回归，A/B 2 翻转全 Fail→Pass）；
-  xhr 解锁面 143 案 351 F+T 簇级归因已落档（redirect / setRequestHeader /
-  open 方法校验 / 解码 / auth / CORS preflight 十簇）——下一步 redirect.py
-  shim（fetch/api/redirect 16 案 + xhr redirect 面同端点收益）、h2 形态案
-  甄别排除、M2 fixture 设计稿。
+  fixture 分批与 M3 归因输入。**M1b ✅**（2026-11-06，[redirect 批次档](net-api-compat-v3/evidence/2026-11-06-m1b-redirect-batch.md) +
+  [簇归因图](net-api-compat-v3/evidence/2026-11-06-m1b-folder-txt-and-xhr-cluster-map.md)）：
+  folder.txt 补拉（+2P）；fetch/api/redirect 14 案导入（+364 子测试
+  264P/99F/1T）+ redirect.py fixture 升上游 per-token stash 语义（键
+  命名空间化防 preflight.py 误读，曾致 cors-redirect 20 案 P→F）+
+  redirect-empty-location.py / method.py 新 fixture + fetch shim 六项
+  重定向修复（error/empty-location/data-scheme/循环上限/303 HEAD/redirected）；
+  全量 A/B 12,655 → 12,924P，changed 15 全 F→P 零 P→F；`.h2.` 形态案
+  正式排除（26 子测试移出分母）；redirect 残余 99F+1T 七簇归 M3
+  （referrer 63 / mode 11 / origin 10 / method 9 / escape 4 /
+  back-to-original 2 / keepalive 1T），xhr redirect 引擎缺口并簇 M3。
 - **M2**：py 端点目录 fixture 分批（xhr auth1-11 HTTP Basic 面）+
   websockets 非 wss 依赖面入账（interfaces 74 案 + fixture `/echo_raw`
   `/sleep_10_v13` 两条新增）（DC-2/3）。
-- **M3**：xhr 在账失败簇收敛（formdata/submitter 簇 4F + overrideMimeType
-  Shift-JIS 接线 1F + cookies.http.html 挂起 1T；permissions-policy 2F
-  策略面排除）（DC-3）。
+- **M3**：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
+  xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
+  method 9F / location-escape 4F 等）+ xhr 在账失败簇收敛（formdata/
+  submitter 簇 4F + overrideMimeType Shift-JIS 接线 1F + cookies.http.html
+  挂起 1T；permissions-policy 2F 策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

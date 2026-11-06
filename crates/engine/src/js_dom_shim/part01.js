@@ -5750,6 +5750,11 @@
           }
           response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
           if (hopUrl) response.url = hopUrl;
+          // net-api-compat-v3 M1b：response.redirected spec 语义（URL list > 1——
+          // 已跟 ≥1 跳即 true；manual 模式不进 hop 保持 false；new Response() ctor
+          // 默认 false）——redirect-method「assert_true(resp.redirected)」面。
+          //   https://fetch.spec.whatwg.org/#dom-response-redirected
+          response.redirected = hopCount > 0;
           if (response && response.__zwSwFetchId) {
             // https://fetch.spec.whatwg.org/#dom-body-cancel — 页面 cancel 流时
             // 浏览器取消响应体获取（SW 场景反传到 worker stream cancel 回调）。
@@ -5794,6 +5799,20 @@
           }
           return out;
         };
+        // net-api-compat-v3 M1b：重定向落体（POST→GET 改写）后剥离体派生头——
+        // Content-Type/Encoding/Language/Location 描述旧请求体（fetch spec
+        // HTTP-redirect fetch body-null 转移语义；redirect-method strip 断言面）。
+        var _zwStripBodyDerivedHeaders = function(wire) {
+          var parts = wire ? wire.split('\x1e') : [];
+          var out = '';
+          for (var i = 0; i + 1 < parts.length; i += 2) {
+            var ln = String(parts[i]).toLowerCase();
+            if (ln === 'content-length' || ln === 'content-type' || ln === 'content-encoding' ||
+                ln === 'content-language' || ln === 'content-location') continue;
+            out = out ? out + '\x1e' + parts[i] + '\x1e' + parts[i + 1] : parts[i] + '\x1e' + parts[i + 1];
+          }
+          return out;
+        };
         var hopCount = 0;
         var _zwHopOriginOpaque = false; // net-api M4-S23：跨源重定向 → Origin opaque
         // net-api M2-S3b：response tainting "cors" 追踪（fetch spec HTTP fetch——
@@ -5808,7 +5827,48 @@
           var loc = null;
           if (_zwFetchRedirectStatus(response.status) && redirect !== 'manual' &&
               response.headers && typeof response.headers.get === 'function') {
-            loc = response.headers.get('Location');
+            // net-api-compat-v3 M1b：fetch spec HTTP-redirect fetch 顺序对齐——
+            // ① redirect-mode 'error' → network error（先于 Location 解析，Location
+            // 缺席与否无关——redirect-location「error mode with valid location」面）；
+            // ② Location 头存在但空/解析失败 → network error（redirect-empty-location
+            // follow 面）；③ Location scheme 非 HTTP(S) → network error（fetch spec
+            // step——redirect-to-dataurl / redirect-schemes no-cors/same-origin 面，
+            // 此前仅 cors 分支拒绝）。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (redirect === 'error') {
+              settled = true;
+              delete globalThis.__zw_pending[currentId || id];
+              reject(new TypeError('Redirect mode is "error"'));
+              return;
+            }
+            var _locVal = response.headers.get('Location');
+            if (_locVal !== null && _locVal !== undefined) {
+              var _locStr = String(_locVal);
+              if (_locStr.trim() === '') {
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Empty redirect Location'));
+                return;
+              }
+              var _locScheme = '';
+              try { _locScheme = new URL(_locStr, hopUrl).protocol.replace(':', ''); } catch (_eLocSch) {}
+              if (_locScheme !== 'http' && _locScheme !== 'https') {
+                settled = true;
+                delete globalThis.__zw_pending[currentId || id];
+                reject(new TypeError('Redirect to non-HTTP URL'));
+                return;
+              }
+              loc = _locStr;
+            }
+          }
+          // net-api-compat-v3 M1b：跳数超限 → network error（fetch spec HTTP-redirect
+          // fetch step——浏览器上限即 network error，不落末跳 302 作 response——
+          // redirect-count max_count=N+1 链「should reject」面）。
+          if (loc && hopCount >= 20) {
+            settled = true;
+            delete globalThis.__zw_pending[currentId || id];
+            reject(new TypeError('Too many redirects'));
+            return;
           }
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
@@ -5851,11 +5911,20 @@
             }
             var nextMethod = hopMethod;
             var nextBody = hopBody;
-            if (response.status === 303 || ((response.status === 301 || response.status === 302) && hopMethod === 'POST')) {
+            var nextWire = hopHeaders(hopWire);
+            // net-api-compat-v3 M1b：303 仅 POST→GET 改写（fetch spec HTTP-redirect
+            // fetch——此前任意方法落 GET，redirect-method「303 with HEAD」面）；
+            // 301/302 原本即仅 POST 改写。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if ((response.status === 301 || response.status === 302 || response.status === 303) &&
+                hopMethod === 'POST') {
               nextMethod = 'GET';
               nextBody = null;
+              // 体派生头剥离（Content-Type/Encoding/Language/Location 描述旧体，落体
+              // 后不得随 hop 携带——redirect-method strip 断言面；Content-Length 由
+              // hopHeaders 既有剥离覆盖）。
+              nextWire = _zwStripBodyDerivedHeaders(nextWire);
             }
-            var nextWire = hopHeaders(hopWire);
             // fetch spec：跨源重定向 → Authorization 头丢弃（xhr-authorization-redirect
             // 「cross origin redirection」期望 'none' 面）。
             if (nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
