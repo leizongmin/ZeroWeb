@@ -102,9 +102,24 @@
     var range = _zwVaGetActiveRange();
     if (!range) return true;
 
+    // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
+    // 拒。语料 ret 录音 ×3：`<div><div contenteditable=false><span|p
+    // contenteditable>[foo]</span|p></div></div>` + 裸名 div/p → [false] 树不变
+    // （Chromium FormatBlock 起点块爬升碰不可编辑块即拒）；`<div><div
+    // contenteditable=false><div contenteditable>[foo]` 形链内层 div 可编辑不拦
+    // 照 wrap（ret=true）。display:block span 岛形（条目 360）链全程可编辑不拦。
+    var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset);
+    if (!sl) return false;
+    var cur = sl;
+    var g0 = 0;
+    while (cur && g0++ < 256) {
+      if (_zwJusIsEditingHost(cur)) break;
+      if (!_zwJusIsEditable(cur)) return false;
+      cur = cur.parentNode;
+    }
+
     // "Block-extend the active range, and let new range be the result."
     var newRange = _zwJusBlockExtend(range, false);
-    throw new Error('FBQ-STAGE-1');
 
     // "For each node node contained in new range, append node to node list
     // if it is editable, ... node is either a non-list single-line container
@@ -117,7 +132,32 @@
             || _zwJusIsHtmlElement(node, ['dd', 'dt']))
         && !_zwFbqHasProhibitedParagraphChildDescendant(node);
     });
-    throw new Error('FBQ-STAGE-2 nodes=' + nodeList.length);
+
+    // Chrome delta（同 tag no-op）：node 祖先链（非宿主、同宿主、可编辑、无
+    // prohibited 后代）上已有目标 tag 的 formattable 块 → 从 nodeList 剔除
+    // （spec splitParent/wrap 两环都不再处理）。语料树录音 ×3：`<div>[foobar]
+    // </div>` + div 树不变（:134）；`<p>[foo<p>bar]` + p 两 text 均链上命中 p
+    // 树不变（:1410，DOM 双 p 已闭合、期望串＝input 序列化）；`<div><ol><li>
+    // [foo]</ol></div>` + div 的 div 在链上（穿越 li/ol，:1784）。反向锚定：
+    // `<ol><li>[foobar]</ol>` + div 链上无 div（ol 直上宿主）不剔除照 wrap
+    // （`<ol><li><div>[foobar]</div></li></ol>`）；`<dl><dt>[foo]` dt 链 dl 非
+    // formattable 不剔除照换块。
+    for (i = nodeList.length - 1; i >= 0; i--) {
+      var anc2 = nodeList[i].parentNode;
+      var g2 = 0;
+      while (anc2 && g2++ < 256) {
+        if (_zwJusIsEditingHost(anc2)) break;
+        if (_zwJusIsHtmlElement(anc2, v)
+            && _zwJusIsEditable(anc2)
+            && _zwListInSameEditingHost(anc2, nodeList[i])
+            && !_zwFbqHasProhibitedParagraphChildDescendant(anc2)) {
+          nodeList.splice(i, 1);
+          break;
+        }
+        anc2 = anc2.parentNode;
+      }
+    }
+    if (!nodeList.length) return true;
 
     // "Record the values of node list, and let values be the result."
     var values = _zwDelRecordValues(nodeList);
@@ -141,6 +181,11 @@
         var anc = node.parentNode;
         var g = 0;
         while (anc && g++ < 256) {
+          // Chrome delta（列表屏障）：祖先爬升途中遇 ol/ul 即停——`<div><ol>
+          // <li>[foo]</ol></div>` + formatblock div 录音树不变（div 不拆），spec
+          // 判据 div 同宿主 formattable 命中会拆。dl 不屏障（`<dl><dt>[foo]`
+          // 录音 dt 真拆换块）。
+          if (_zwJusIsHtmlElement(anc, ['ol', 'ul'])) break;
           if (!_zwJusIsEditingHost(anc)
               && _zwJusIsEditable(anc)
               && _zwListInSameEditingHost(anc, node)
@@ -160,7 +205,6 @@
 
     // "Restore the values from values."
     _zwDelRestoreValues(values);
-    throw new Error('FBQ-STAGE-3');
 
     // "While node list is not empty: ..."（single-line container 解包臂 ∨
     // 连续 sibling 聚 sublist 后 wrap）。
@@ -204,43 +248,75 @@
     return true;
   };
 
-  // formatBlock value 读面（vendored implementation.js :6773-6805）：block-extend
-  // 后首个可见无子 editable 叶子向上爬至首个 formattable ancestor 的子位，终判
-  // 该节点本身。语料形判定与 Chrome 录音一致：裸宿主 caret（"foo[]bar"）→ 叶子
-  // 爬升停在 host（formattable）→ 叶子非元素 → ""；apply 物化包裹 div 后 → "div"。
+  // formatBlock value 读面（vendored implementation.js :6773-6805 为 spec 算法）。
+  // Chrome 口径（语料 362 case qV-before/after 录音归纳）双端口径：起、终可见位
+  // 置各自归一到内侧可见叶子后沿父链爬升（跳过非块名祖先——`<div><ol><li>[foo]
+  // </ol></div>` 录音 "div" 证实穿越 li/ol；`<dl>[foo]</dl>` 录音 "dl" 证实读面
+  // 名册比 apply 白名单宽、另收 dl），命中读面块名册且可编辑且无 prohibited 后
+  // 代 → 返 tag；爬至 editing host → ""（宿主豁免——裸宿主 caret 形 16/16 录音
+  // ""）；两端块不同 → ""（`<p>[foo</p>bar]` 等跨块五形录音 ""，apply 后选区
+  // 重锚单块内不触发）。apply 后 caret 落 wrap 内录音非空（`<div>foo[]bar</div>`
+  // qV-after="div"），故 caret 与 range 同算法、无 collapsed 守卫。
   // https://w3c.github.io/editing/execCommand.html#the-formatblock-command
+  var _zwFbqValueBlockNames = _zwFbqFormattableNames.concat(['dl']);
+
+  // 端点 → 可见叶子（元素锚归一）：offset 0 取树序首个可见无子后代；否则取末
+  // 个。文本锚直接用。（Chromium VisiblePosition 归一：元素边界位置折叠进内侧
+  // 叶子端点——`{<p>foo</p>}` brace 全含形 qV-before 录音 "p" 实证终点 (host,1)
+  // 折回 p 内末叶。）
+  function _zwFbqEdgeLeaf(node, offset) {
+    if (node.nodeType === 3) return node;
+    var stack = [node];
+    var found = null;
+    var forward = offset === 0;
+    while (stack.length) {
+      var n = stack.pop();
+      if (!n) continue;
+      if (n.nodeType === 3 || !n.childNodes || n.childNodes.length === 0) {
+        if (_zwJusIsVisible(n)) {
+          found = n;
+          if (forward) return n;
+        }
+      } else {
+        var kids = n.childNodes;
+        var i;
+        if (forward) {
+          for (i = kids.length - 1; i >= 0; i--) stack.push(kids[i]);
+        } else {
+          for (i = 0; i < kids.length; i++) stack.push(kids[i]);
+        }
+      }
+    }
+    return found;
+  }
+
+  // 端点叶子 → FB 块：命中 _zwFbqValueBlockNames 且可编辑且无 prohibited 后代
+  // → 返元素；爬至 editing host 或断链 → null。
+  function _zwFbqVisBlock(node, offset) {
+    var leaf = _zwFbqEdgeLeaf(node, offset);
+    if (!leaf) return null;
+    var cur = leaf;
+    var g = 0;
+    while (cur && g++ < 256) {
+      if (_zwJusIsEditingHost(cur)) return null;
+      if (_zwJusIsHtmlElement(cur, _zwFbqValueBlockNames)) {
+        if (_zwJusIsEditable(cur)
+            && !_zwFbqHasProhibitedParagraphChildDescendant(cur)) return cur;
+        return null;
+      }
+      cur = cur.parentNode;
+    }
+    return null;
+  }
+
   globalThis.__zw_ce_fb_value = function () {
     var range = _zwVaGetActiveRange();
     if (!range) return '';
-    var newRange = _zwJusBlockExtend(range, false);
-    // "Let node be the first visible editable node that is contained in new
-    // range and has no children."
-    var nodes = _zwJusCollectContainedNodes(newRange, function (node) {
-      return _zwJusIsVisible(node)
-        && _zwJusIsEditable(node)
-        && !_zwJusHasKids(node);
-    }, false);
-    if (!nodes.length) return '';
-    var node = nodes[0];
-    // "While node's parent is editable and in the same editing host as node,
-    // and node is not an HTML element whose local name is a formattable
-    // block name, set node to its parent."
-    var g = 0;
-    while (node.parentNode && g++ < 256
-        && _zwJusIsEditable(node.parentNode)
-        && _zwListInSameEditingHost(node, node.parentNode)
-        && !_zwJusIsHtmlElement(node, _zwFbqFormattableNames)) {
-      node = node.parentNode;
-    }
-    // "If node is an editable HTML element whose local name is a formattable
-    // block name, and node is not the ancestor of a prohibited paragraph
-    // child, return node's local name, converted to ASCII lowercase."
-    if (_zwJusIsEditable(node)
-        && _zwJusIsHtmlElement(node, _zwFbqFormattableNames)
-        && !_zwFbqHasProhibitedParagraphChildDescendant(node)) {
-      return _zwJusTag(node);
-    }
-    return '';
+    var b1 = _zwFbqVisBlock(range.startContainer, range.startOffset);
+    if (!b1) return '';
+    var b2 = _zwFbqVisBlock(range.endContainer, range.endOffset);
+    if (b1 !== b2) return '';
+    return _zwJusTag(b1);
   };
 
   // indentNodes（vendored implementation.js :5482-5517）。ol/ul 父臂同型
