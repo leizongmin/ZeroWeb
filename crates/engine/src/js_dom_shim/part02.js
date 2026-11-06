@@ -6181,6 +6181,15 @@
     var v = this._attrs[String(n)];
     return v == null ? null : v;
   };
+  // net-api M3（六）：Element.tagName = 元素限定名（DOM spec——非 HTML ns 不
+  // 大写，XML 解析保源 case；responseXML.documentElement.tagName 断言面——
+  // overridemimetype open-state XML 案经 _zwXmlNode 树读 tagName）。非元素节点
+  // 无 tagName（undefined）。
+  // https://dom.spec.whatwg.org/#dom-element-tagname
+  Object.defineProperty(_zwXmlNode.prototype, 'tagName', {
+    get: function () { return this.nodeType === 1 ? this.nodeName : undefined; },
+    configurable: true,
+  });
   // HTML spec：template.content——仅 HTML ns template 有 content DocumentFragment
   //（_zwXmlParseDoc 开标签时建 _content）；其余元素 null（template-element 腿 1 面）。
   Object.defineProperty(_zwXmlNode.prototype, 'content', {

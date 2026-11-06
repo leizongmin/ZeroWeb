@@ -170,8 +170,11 @@
       self._zwUploadListener = false;
       self._zwHadBody = false;
       self._zwUploadStarted = false;
-      self._zwXhrOverrideMime = null;
-      self._zwXhrOverrideCharset = null;
+      // net-api M3（六）：open() **不清** override MIME/charset——spec open 步骤
+      // 明注「Override MIME type is not overridden here as the overrideMimeType()
+      // method can be invoked before the open() method」（overridemimetype
+      // unsent 态案：open 前设 Shift-JIS override，open/send 后仍须生效）。
+      // https://xhr.spec.whatwg.org/#the-open()-method
       changeReadyState(1);
     };
     // net-api M3-S2：responseType 状态机（xhr.spec §4.6.6）——枚举外忽略（nosuchtype 面）；
@@ -211,27 +214,40 @@
     // net-api M5-S11：响应体解码共享链（fill 主路径与 bad-chunk 部分体同构——
     // BOM 嗅探 + override/replacement 语义一处维护）。
     function _zwXhrDecode(bytes) {
-      var overrideCharset = self._zwXhrOverrideCharset;
-      // encoding-compat M3：xhr.spec get a final encoding + Encoding #decode 的 BOM 嗅探
-      // 序——响应字节首部 BOM（UTF-8/UTF-16LE/BE）优先于 override/response charset 定
-      // 解码器（unsupported-encodings：override=utf-32 表外回退后 FF FE BOM → utf-16le
-      // 面）。replacement（csiso2022kr 族）按 final encoding = replacement 语义整段单
-      // U+FFFD（M2 面）。
+      // encoding-compat M3：Encoding #decode 的 BOM 嗅探序——响应字节首部 BOM
+      // （UTF-8/UTF-16LE/BE）优先于 label 定解码器（unsupported-encodings：
+      // override=utf-32 表外回退后 FF FE BOM → utf-16le 面）。
       var bomEnc = (bytes[0] === 0xFF && bytes[1] === 0xFE) ? 'utf-16le'
         : (bytes[0] === 0xFE && bytes[1] === 0xFF) ? 'utf-16be'
         : (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) ? 'utf-8' : null;
-      var replacementFace = typeof __zw_text_encoding_of === 'function' && overrideCharset
-        && __zw_text_encoding_of(overrideCharset) === 'replacement';
+      // net-api M3（六）：xhr.spec get a final encoding——label 初值 = **response**
+      // CT 的 charset 参（CT 提取失败按 text/xml essence——无 charset 即 null；
+      // 「overrideMimeType() 未覆写 charset 时原始 charset 续用」edge-cases
+      // text/xml 案 + invalid-mime-type bogus 案），override MIME 的 charset 参
+      // **覆写** label（unsent/headers-received 态 enforcing Shift-JIS 面）。spec
+      // 明注本步不用 get a final MIME type（web 兼容）——override essence 不参与
+      // 编码定夺。replacement（csiso2022kr 族）按 Encoding #decode 语义整段单
+      // U+FFFD；label 表外 → getting an encoding failure → UTF-8 回落。
+      // https://xhr.spec.whatwg.org/#get-a-final-encoding
+      var label = null;
+      var ctRaw = self._zwXhrResponseHeaders['content-type'];
+      var ctParsed = ctRaw ? _zwParseMimeType(ctRaw) : null;
+      if (ctParsed) {
+        for (var li = 0; li < ctParsed.params.length; li++) {
+          if (ctParsed.params[li][0] === 'charset') label = ctParsed.params[li][1];
+        }
+      }
+      if (self._zwXhrOverrideCharset != null) label = self._zwXhrOverrideCharset;
+      var replacementFace = typeof __zw_text_encoding_of === 'function' && label
+        && __zw_text_encoding_of(label) === 'replacement';
       if (replacementFace) {
         return bytes.length ? '�' : '';
       }
       if (bomEnc) {
         return new TextDecoder(bomEnc).decode(bytes);
       }
-      if (overrideCharset) {
-        // override encoding 优先于 response charset（overridemimetype「enforcing
-        // Shift-JIS」面）；表外 override → 回落 UTF-8。
-        try { return new TextDecoder(overrideCharset).decode(bytes); } catch (_eXhrCharset) { return new TextDecoder().decode(bytes); }
+      if (label) {
+        try { return new TextDecoder(label).decode(bytes); } catch (_eXhrCharset) { return new TextDecoder().decode(bytes); }
       }
       return new TextDecoder().decode(bytes);
     }

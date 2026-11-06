@@ -9317,8 +9317,12 @@ fn wpt_data_fetch_handler_with_stash(
                 let text = wpt_query_value(query, "text").unwrap_or_else(|| "OMG".into());
                 // net-api M3-S2：content 保留原始字节（%XX → byte——shift-jis 等非 UTF-8
                 // 测试载荷经 body_bytes 保真，不落 lossy UTF-8）。
-                let content_bytes: Vec<u8> = wpt_query_value(query, "content")
-                    .map(|v| percent_encoding::percent_decode_str(&v).collect())
+                // net-api M3（六）：解码走 `wpt_query_value_bytes`（逐字节 Latin-1 映射）
+                // 再 char→u8 还原——旧实现经 `wpt_query_value`（UTF-8 lossy）后二次
+                // percent-decode，非 UTF-8 载荷（%83%65…、%FF、%C2%F0）已被 lossy 成
+                // U+FFFD 字节，engine 侧 override/charset 解码面永不可能命中。
+                let content_bytes: Vec<u8> = wpt_query_value_bytes(query, "content")
+                    .map(|v| v.chars().map(|c| c as u8).collect())
                     .unwrap_or_default();
                 let ctype = wpt_query_value(query, "type").unwrap_or_default();
                 let mut headers: Vec<(String, String)> = Vec::new();

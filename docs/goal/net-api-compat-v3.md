@@ -10,10 +10,13 @@ ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收�
 （99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P）+
 getAllResponseHeaders 排序簇收口（1F → 0F，legacy-uppercased 比较器定谳）+
 send-redirect-to-cors 八簇收口（8F → 0F，fixture 缺口归因修正——
-「sync cors-filter 同规」在账标签证伪，引擎语义本已齐备）累计至
-**13,232P** 零回归，changed 全 F→P，
-[证据档](net-api-compat-v3/evidence/2026-11-07-m3-send-redirect-to-cors-fixture.md)；
-M3 余项：xhr 在账失败簇 + keepalive 1T
+「sync cors-filter 同规」在账标签证伪，引擎语义本已齐备）+
+overridemimetype 族 + 响应解码链收口（5F+1T → 0，open() 不清 override +
+get a final encoding 链 + status.py content 字节保真 + XML 树 tagName，
+链外搭车 responsetext-decoding 族 14 行同根因）累计至
+**13,253P** 零回归，changed 全 F→P，
+[证据档](net-api-compat-v3/evidence/2026-11-07-m3-overridemimetype-encoding-chain.md)；
+M3 余项：formdata/submitter 簇 + cookies/keepalive 2T
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -228,6 +231,20 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   14,692 行不变，changed 8 全 F→P 零 P→F 零 T 变化）。
   余项：xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
   cookies 1T + redirect-keepalive 1T）（DC-3）。
+  **overridemimetype 族 + 响应解码链 ✅**（2026-11-07，[证据档](net-api-compat-v3/evidence/2026-11-07-m3-overridemimetype-encoding-chain.md)）：
+  part03.js 两刀（open() 去 override 重置——spec 明注 overrideMimeType 可先于
+  open 调用；`_zwXhrDecode` 落 **get a final encoding** 链——response CT charset
+  → override charset 覆写，spec 明注不用 final MIME type）+ part02.js
+  `_zwXmlNode` tagName getter（XML 树 responseXML.tagName 断言面）+
+  testharness.rs status.py content 双重解码修正（`wpt_query_value_bytes` 字节
+  保真——lossy 曾把 %83/%FF/%FE%FF 载荷毁成 U+FFFD，shiftjis 族 got 串指纹
+  锚定 fixture 根因）。在账标签修正：M0「1F」为 `.htm` 解锁前口径，该族实际
+  5F+1T 全数清零。定向族内 13/13；全量 A/B 13,232 → **13,253P**（+21P，
+  分母 14,621 键不变，changed 21 = F→P 20 + T→P 1 零 P→F；链外搭车
+  responsetext-decoding 13F + send-receive-utf16 1F 同根因逐行溯源；
+  responsexml 族 19 行在账外存量缺口不动）。
+  余项：xhr 在账失败簇（formdata/submitter 4F + cookies 1T +
+  redirect-keepalive 1T）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
