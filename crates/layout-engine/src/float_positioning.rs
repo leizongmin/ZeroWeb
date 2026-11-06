@@ -1965,6 +1965,21 @@ pub(crate) static CLEAR_EMPTY_CHAIN_ABSORB: std::sync::LazyLock<bool> =
 static FLOAT_EARLIEST_FIT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_EARLIEST_FIT").as_deref() != Ok("0"));
 
+/// R5441（CSS 2.1 §9.5 + §9.2.1.1 float 静态位模型）：破碎 inline 前序占据参与 float
+/// 落位。chrome 落位以「行顶旁放得下 → 贴行顶旁落（floats-placement-006/007：50+50
+/// 旁落 y=0，rtl float-left 贴左缘同此）、纯单行 inline 前序 → 贴行顶、内容绕排（s10
+/// 热榜 369 容器 4px mark + 369px float 同贴行顶）、破碎 inline（含块级子，§9.2.1.1
+/// 生成匿名块）旁放不下 → 下移到其流底（静态位；stack-floats-003：满宽破碎 inline 后
+/// mt:−100 float，旧落 band_y=0 → border −100，借 R3784 钳位救场）」为准。walk 此前
+/// 只见 float 带（R1277② inline 子不推进 flow_bottom，行顶旁落不退）。启用后仅破碎
+/// inline 级前序子记宽度占据 Σ 与行内容流底，float 旁放不下（宽 > 容器宽 − 占据 Σ，
+/// fit 判定仅宽度、rtl 免疫）时静态位地板抬升落位起点（earliest-fit 抬 band_y /
+/// 回退路径抬 line_y），其余形零扰动。
+/// kill-switch `ZW_FLOAT_INLINE_LINE_BAND=0` 回退。
+/// https://www.w3.org/TR/CSS22/visuren.html#float-position
+static FLOAT_INLINE_LINE_BAND: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_INLINE_LINE_BAND").as_deref() != Ok("0"));
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn adjust_float_positions_with_context(
     box_node: &mut LayoutBox,
@@ -2105,6 +2120,11 @@ pub(crate) fn adjust_float_positions_with_context(
     // r5226_float_after_block_cursor_anchor 同值）。无片段史时与
     // (flow_bottom, last_flow_mb) 恒等，既有锚零扰动。
     let mut flow_snap: (f32, f32) = (0.0, 0.0);
+    // R5441（CSS 2.1 §9.5 float 静态位模型）：R1277② 跳过推进的 inline 级前序子占据——
+    // 宽度 Σ 供 float「旁放不下」判定（fit 仅宽度，rtl 免疫，见 skip 分支注释），流底供
+    // 不 fit 下探的静态位地板。kill-switch `ZW_FLOAT_INLINE_LINE_BAND=0` 回退（两处同门）。
+    let mut inline_line_occupied_w = 0.0f32;
+    let mut inline_content_bottom = 0.0f32;
     // 第一个流内子元素的 margin-top 会与无 border-top/padding-top 的父容器折叠
     //（CSS §8.3.1），此时子元素位于容器 content 原点，其 margin-top 不应计入 flow_bottom，
     // 否则后续 float 的 min_float_y 会把该 margin-top 双重计入，使 float 偏低。
@@ -2173,6 +2193,25 @@ pub(crate) fn adjust_float_positions_with_context(
                 if child.fragment_node_ids.is_none() {
                     flow_snap = (flow_bottom, last_flow_mb);
                 }
+            }
+            // R5441（CSS 2.1 §9.5 + §9.2.1.1 float 静态位模型）：被 R1277② 跳过的 inline
+            // 级前序子中，仅**含块级子的破碎 inline**（§9.2.1.1 生成匿名块盒 = BFC 内真实
+            // 块结构）记占据参与 float 落位——宽度 Σ（fit 判定仅宽度，rtl 免疫）+ 行内容
+            // 流底。float 旁放不下（宽 > 容器宽 − 占据 Σ）时静态位地板（inline 流底）抬升
+            // 落位起点：stack-floats-003 形满宽破碎 inline 后 mt:−100 float 旧落 band_y=0
+            // → border −100 借 R3784 钳位救场，现下探 inline 流底 100 → border 0 chrome 位。
+            // 纯单行 inline 内容（文本 span、inline-block、空 mark）不入账——五点 oracle
+            // 对照（s10 热榜 li=369 + 4px mark + 369px float 贴行顶 y=0 不下探 vs
+            // stack-floats-003 同「beside 不可能」却下探流底）定谳判别式是破碎性而非 fit：
+            // 纯 inline 前序的 float 贴行顶、内容绕排（s10 基线 24.85 保持；宽度可信性门
+            // 曾把 s10 形 369 声明宽误入 Σ → 全量 make test 实证 paint s10 ✗40.85 回归）。
+            if lift_inline
+                && !child.is_block_level
+                && *FLOAT_INLINE_LINE_BAND
+                && child.children.iter().any(|c| c.is_block_level)
+            {
+                inline_line_occupied_w += child.margin_left + child.width + child.margin_right;
+                inline_content_bottom = inline_content_bottom.max(child.y + child.height + child.margin_bottom);
             }
             // 处理非 float 元素的 clear 属性（延迟到第二阶段）
             if matches!(child.float, FloatValue::None) {
@@ -2471,7 +2510,15 @@ pub(crate) fn adjust_float_positions_with_context(
         // 425 宽 x=−25 越容器左缘）。旧行为（双墙恒容器宽）下这些案被误判放不下
         // 而下移。https://www.w3.org/TR/CSS22/visuren.html#float-position
         let earliest_fit = if *FLOAT_EARLIEST_FIT {
-            let mut band_y = line_y;
+            // R5441：旁放不下（float 宽 > 容器宽 − inline 占据 Σ）→ 静态位地板（inline
+            // 行内容流底）抬升试探起点；fit 形零扰动。见 skip 分支与 FLOAT_INLINE_LINE_BAND 注释。
+            let inline_no_fit_floor =
+                if *FLOAT_INLINE_LINE_BAND && child_outer_width > (container_width - inline_line_occupied_w).max(0.0) {
+                    inline_content_bottom
+                } else {
+                    0.0
+                };
+            let mut band_y = line_y.max(inline_no_fit_floor);
             let mut resolved: Option<(f32, f32)> = None; // (左缘, 右缘)
             let is_right_float = matches!(child.float, FloatValue::Right);
             // R5392：fit 试探的候选带高取 max(margin 盒高, border 盒高)——负 margin
@@ -2590,6 +2637,11 @@ pub(crate) fn adjust_float_positions_with_context(
                 left_used_width = 0.0;
                 right_used_width = 0.0;
                 line_max_height = 0.0;
+            }
+            // R5441：旁放不下 → 静态位地板（与 earliest-fit 路径同口径；本路径为
+            // kill-switch 回退域，corpus 默认 earliest-fit）。见 skip 分支注释。
+            if *FLOAT_INLINE_LINE_BAND && child_outer_width > (container_width - inline_line_occupied_w).max(0.0) {
+                line_y = line_y.max(inline_content_bottom);
             }
 
             match child.float {
