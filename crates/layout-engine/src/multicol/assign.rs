@@ -45,6 +45,9 @@ pub(super) fn forced_overflow_enabled() -> bool {
 ///
 /// 这比 shortest-column-first 更符合规范行为：内容按顺序流过各列，
 /// 而非被任意分配到最短列。
+// R5431：overflow_unsplittable 分参数入列（与 contain:size `unbreakable` 语义分离），
+// 8 参超 clippy 默认 7——仓库既有 too_many_arguments 先科（float_positioning 等 5 处）。
+#[allow(clippy::too_many_arguments)]
 pub(super) fn assign_children_to_columns_balanced(
     children: &[(usize, f32)],
     col_count: usize,
@@ -52,6 +55,10 @@ pub(super) fn assign_children_to_columns_balanced(
     forced_breaks_after: &[bool],
     explicit_height: &[bool],
     unbreakable: &[bool],
+    // R5431：css-break-3 monolithic（overflow≠visible）旗标——先推后放＋breaking
+    // 臂排除。与 contain:size/nested 的 `unbreakable` 分参数：爆炸半径严格限
+    // overflow≠visible 子，既有已调簇语义逐字节不变。
+    overflow_unsplittable: &[bool],
     min_target: f32,
 ) -> Vec<Vec<ColumnFragment>> {
     if children.is_empty() || col_count == 0 {
@@ -101,7 +108,7 @@ pub(super) fn assign_children_to_columns_balanced(
         // 簇 R1037/R4522 行为不变）。仅顶层容器启用（调用处传 &[]，同 R4509 floor
         // 的 !nested gate，nested-030 教训）。spanner region balance 调用处传 &[]，
         // 不受影响（R5131 全局先推后放 fieldset×3 误伤教训）。
-        if unbreakable.get(i).copied().unwrap_or(false)
+        if (unbreakable.get(i).copied().unwrap_or(false) || overflow_unsplittable.get(i).copied().unwrap_or(false))
             && current_col_height > 0.0
             && current_col_height + child_height > target_height
             && current_col + 1 < col_count
@@ -116,8 +123,16 @@ pub(super) fn assign_children_to_columns_balanced(
         // gate 排除 overflow-unsplittable（overflow:scroll + auto height → 不拆）等回归案，
         // 捕获 span-all-children-height（height:200px/100% explicit → 拆）目标簇。
         // R1036 通用应用 net -12（18 回归），本 gate 避免回归。
+        // R5431：注释声称的 monolithic 排除此前未落实现——overflow≠visible＋explicit
+        // height 仍被拆（css-break-3 monolithic；overflow-clip-margin-mul-column-
+        // border-box 实证：overflow:clip＋height:50 容器被拆两列，ref compact 单列）。
+        // R5136 contain:size 同律先科（整体化压过 explicit 可碎片语义）。
         let is_explicit = explicit_height.get(i).copied().unwrap_or(false);
-        if is_explicit && child_height > target_height && target_height > 0.0 {
+        if is_explicit
+            && !overflow_unsplittable.get(i).copied().unwrap_or(false)
+            && child_height > target_height
+            && target_height > 0.0
+        {
             // 先消耗当前列剩余空间。
             let available = (target_height - current_col_height).max(0.0);
             if available > 0.0 {
