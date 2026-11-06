@@ -15,7 +15,7 @@
 - 2026-11-06 [runner 日志混入 NUL 字节后 grep 静默空输出——统计与 A/B 前先 Python 解析](bugs/2026-11/2026-11-06-nul-byte-in-runner-logs-silences-grep.md) — wpt-runner, testing
 - 2026-11-06 [wpt-runner flat stash 单键与上游多键 dict 语义冲突——多端点共用 token 的 fixture 须键命名空间化](bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md) — wpt-runner
 - 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
-- 2026-11-06 [DBG 插桩读点必须对齐 harness 断言时点——exec 内时点读数不能反驳终态断言失败](bugs/2026-11/2026-11-06-dbg-probe-read-point-mismatch-harness-assert.md) — zero-engine
+- 2026-11-06 [切片伪影与真实缺陷的判别：exec 是否在失败 variant 页内运行过才是决定性证据](bugs/2026-11/2026-11-06-dbg-probe-read-point-mismatch-harness-assert.md) — zero-engine
 - 2026-11-06 [fetch cors check 按 spec 步序重排——`*` 通配步骤先于 origin 比对，opaque 分支不可先行特判](bugs/2026-11/2026-11-06-cors-check-asterisk-step-precedes-origin-compare.md) — engine
 - 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
 - 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
