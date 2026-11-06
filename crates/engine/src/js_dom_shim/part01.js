@@ -2841,10 +2841,31 @@
           + String(body).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
           + '</pre></body></html>';
       }
+      // S305（html-semantics M2）：image/* 子文档按 **image document** 装载（spec
+      // navigate read image：image/* 响应建 body > 单 img 文档、img.src = 最终
+      // URL，https://html.spec.whatwg.org/multipage/document-lifecycle.html#read-image
+      // ——真浏览器 ImageDocument 框架语义）。此前 image URL 落 kind 'xml'，JPEG
+      // 等二进制字节走标记解析 → body.firstChild=#text，adopt-from-image-document
+      // 的收养 img 面全缺（✗16.00%，2026-11-06 探针定谳）。kind 升 'html' + 合成
+      // 壳：src 用 effectiveUrl（绝对最终 URL）；image/svg+xml 排除——SVG 有自
+      // 有文档类型（kind 'svg' 标记解析臂）。
+      var _zwIsImageDoc = /^image\//i.test(String(_zwFrameCt || ''))
+        && !/svg/i.test(String(_zwFrameCt || ''));
+      if (_zwIsImageDoc) {
+        kind = 'html';
+        body = '<html><head></head><body><img src="'
+          + String(effectiveUrl).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+          + '"></body></html>';
+      }
       entry.doc = _zwMakeIframeDoc(kind, body, _zwFrameCharset);
       // S184：text/plain 面回写文档 MIME（read text——上壳 kind 升 'html' 后工厂
       // 盖了 text/html；真浏览器 text 文档 contentType 恒 text/plain）。
       if (_zwIsTextPlain) { try { entry.doc.contentType = 'text/plain'; } catch (_eTpCt) {} }
+      // S305：image document MIME 回写（read image——文档 contentType = 响应 MIME
+      // essence；壳工厂盖了 text/html 须覆回）。
+      if (_zwIsImageDoc) {
+        try { entry.doc.contentType = String(_zwFrameCt).split(';')[0].trim(); } catch (_eImgCt) {}
+      }
       // uievents-compat 尾簇 23（2026-10-06）：body id 落视图——`<body id=…>` 的
       // 子文档（pointercapture_in_frame 内页）body 视图 getAttribute 此前恒 null
       //（_zwMakeIframeDoc 的 R159/R255 提取链对 fetch 形态断链）——从原始 markup
