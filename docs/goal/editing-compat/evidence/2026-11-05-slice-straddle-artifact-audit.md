@@ -29,6 +29,7 @@ run 壳页 variant 窗口（`?1-1000` 等）按**逐断言子测试**切（tests
 | forecolor | 4 | table qV-after ×1；brown sw=true qI/qV-after ×2（?2001-last straddle）；brown sw=false qS-before ×1（?2001-last leak-cut） |
 | hilitecolor | 0 | 全文件跑（壳页无切片），无伪影 |
 | justifycenter | 11 | after 段 straddle ×7（?2001-3000 ×3、?3001-4000 ×2、?4001-5000 ×2）；qS-before leak-cut ×4（?1001-2000、?2001-3000、?5001-6000、?6001-last） |
+| insertunorderedlist | 2 | dps-div straddle qInd+qState after 双行（?1001-2000；exec #990-991 落 ?1-1000 窗）——2026-11-06 eb1 轮补审定谳（三重门 + fs-win `?985-1010` 双行 PASS，见 [evidence](2026-11-06-empty-body-eb1.md)）；iol/iul 语料首次纳入本清单 |
 
 ## 4. 135 真实残差重记账（② 解散 → 族谱收敛）
 

@@ -914,6 +914,46 @@
       return;
     }
 
+    // eb1 空 context 建列表臂（empty-body 语料形，Chrome 录制口径）：
+    // ①空白 div 形 <div>{}</div>/<div>{}<br></div>——主循环换型臂对空 div
+    // 也整壳替换（探针实测 <ul><li>…</li></ul> 丢 div），语料期望保 div 壳
+    // 列表内嵌；改臂：清空 div（消费唯一 br 占位）、div 内新建列表壳+空 li，
+    // caret 入 li，div 不动。②裸 host 形 {}——nodeList 空，主循环 no-op
+    // （探针实测纯文本落 host）；Chrome 在 caret 位新建列表壳。空 host 下
+    // blockExtend 会爬出 host 落到祖先容器（探针实证 sc=祖先 DIV、ce=null），
+    // newRange 端点不可作锚；改用入口 range（blockExtend 前）的 caret 端点
+    // ——语料 caret 就在 host（tests.js setupDiv 落位）。空白 p 形仍走换
+    // 型臂整壳替换（语料已绿，不动）。②锚点仅认 editing host 本尊：嵌套形
+    // caret 落 li 内文本（首判 iol 11 行 P2F 实证，父元素可编辑即落臂会在
+    // li 里建空列表、并灭掉换型主循环），host 外一律不落臂。caret 经活动
+    // range 直写（disable 出口同款，setStart/setEnd 即选区生效）。
+    if (mode === 'enable') {
+      var ebDiv = nodeList.length === 1
+        && _zwJusIsHtmlElement(nodeList[0], ['div'])
+        && (!nodeList[0].firstChild
+        || (nodeList[0].firstChild === nodeList[0].lastChild
+        && _zwJusIsHtmlElement(nodeList[0].firstChild, ['br'])));
+      var ebAnchor = nodeList.length === 0
+        && range.startContainer.nodeType === 1
+        && _zwJusIsEditingHost(range.startContainer)
+        ? range.startContainer : null;
+      if (ebDiv || ebAnchor) {
+        try {
+          var ebHost = ebDiv ? nodeList[0] : ebAnchor;
+          if (ebDiv) {
+            while (ebHost.firstChild) ebHost.removeChild(ebHost.firstChild);
+          }
+          var ebList = document.createElement(utag);
+          var ebLi = document.createElement('li');
+          ebList.appendChild(ebLi);
+          ebHost.appendChild(ebList);
+          range.setStart(ebLi, 0);
+          range.setEnd(ebLi, 0);
+        } catch (_eEb) {}
+        nodeList = [];
+      }
+    }
+
     // enable 主循环：连续兄弟聚 sublist → p/div 换型 li / li·ol·ul 直收 /
     // inline 段 wrap 成 li。
     while (nodeList.length) {
