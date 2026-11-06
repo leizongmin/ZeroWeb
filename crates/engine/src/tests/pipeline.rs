@@ -2976,3 +2976,43 @@ fn test_s314_range_datalist_tick_marks() {
         "list→datalist 应绘 4 枚 step 对齐 tick（got with={with} without={without}）"
     );
 }
+
+/// s316（HTML §4.8.6 the-embed-element）：embed 非 potentially active → represents
+/// nothing，盒（含作者红背景）不渲染；potentially active（src+type 在）照常渲染。
+/// src="" 空串即便带 type 仍 nothing（spec：src 缺席或非空才 potentially active）。
+/// driving：embed-represent-nothing-01/02（修复前红 100×100 fill 泄绘）。
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-embed-element
+#[test]
+fn test_s316_embed_represents_nothing_paint_gate() {
+    let red_fills = |html: &str| {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        let result = pipeline.render_html(html, "");
+        result
+            .primitives()
+            .fills
+            .iter()
+            .filter(|f| f.color.r == 255 && f.color.g == 0 && f.color.b == 0)
+            .count()
+    };
+    let page = |embed: &str| {
+        format!(
+            r#"<style>embed {{ background-color: red; height: 100px; width: 100px; }}</style><body><embed {embed}></body>"#
+        )
+    };
+    assert_eq!(red_fills(&page("")), 0, "无 src+type → represents nothing 不渲染");
+    assert_eq!(
+        red_fills(&page(r#"src="x.png" type="image/png""#)),
+        1,
+        "src 非空+type set → 照常渲染"
+    );
+    assert_eq!(
+        red_fills(&page(r#"type="image/png""#)),
+        1,
+        "仅 type set → potentially active 渲染"
+    );
+    assert_eq!(
+        red_fills(&page(r#"src="" type="image/png""#)),
+        0,
+        "src=空串即便带 type 仍 nothing"
+    );
+}

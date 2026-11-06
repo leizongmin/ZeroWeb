@@ -907,6 +907,24 @@ fn widget_track_chrome_suppressed(style: &ComputedStyle, box_node: &LayoutBox, d
             || e.local_name().eq_ignore_ascii_case("progress"))
 }
 
+/// HTML §4.8.6 the-embed-element：embed 非 potentially active → represents nothing，
+/// 不渲染盒（Chrome 无 layout object；ZW 布局盒保留、paint 整盒抑制——布局空间差异
+/// 无语料驱动，像素契约同 Chrome）。potentially active 判据取渲染可见两腿：src set
+/// 或 type set，且 src 缺席或值非空串（src="" 即便带 type 仍 nothing）。media 祖先 /
+/// object 回退态两腿由布局层 fallback 子抑制结构满足（embed 为 void 本无子）。
+/// driving：embed-represent-nothing-01/02（01 无 src+type、02 script 移除后重绘同门）。
+/// https://html.spec.whatwg.org/multipage/iframe-embed-object.html#the-embed-element
+pub(crate) fn embed_represents_nothing(doc: &Document, node_id: NodeId) -> bool {
+    doc.get(node_id).is_some_and(|n| match &n.kind {
+        zero_dom::NodeKind::Element(e) if e.local_name() == "embed" => {
+            let src = e.get_attribute("src");
+            let ty = e.get_attribute("type");
+            !((src.is_some() || ty.is_some()) && src.is_none_or(|s| !s.is_empty()))
+        }
+        _ => false,
+    })
+}
+
 fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) -> bool {
     // R4066（CSS Overflow §3.3 overflow propagation）：根元素（html）的 overflow 传播到
     // 视口——自身不作内容裁剪盒；视口裁剪由画布边界自然完成。body 的 overflow 在 html
@@ -2905,6 +2923,15 @@ impl Painter {
             return;
         }
 
+        // s316（HTML §4.8.6）：embed represents nothing → 整盒不渲染（同 paint_node_inner
+        // 守卫——R3768/R3769 教训：跳过链两路径须同步加）。
+        if let Some(doc) = doc
+            && let Some(node_id) = box_node.node_id
+            && embed_represents_nothing(doc, node_id)
+        {
+            return;
+        }
+
         // R3768：跨块盒 line-clamp 中被「跳过」的 in-flow 子盒（clamp point 之后）——
         // 布局期几何已清零并标记，paint 整子树跳过（否则其背景/边框/文本照绘，如
         // line-clamp-008 的 `.red` 盒与 table）。
@@ -3582,6 +3609,14 @@ impl Painter {
         // 时无从判定，保持旧路径。脏矩形路径 paint_node_in_rect 同款守卫。
         if let Some(style) = box_node.node_id.and_then(|id| styles.get(&id))
             && matches!(style.display, DisplayValue::None)
+        {
+            return;
+        }
+        // s316（HTML §4.8.6）：embed represents nothing → 整盒不渲染（与 display:none
+        // 守卫同位；embed void 无子树，主路径/脏矩形路径双走查同款守卫）。
+        if let Some(doc) = doc
+            && let Some(node_id) = box_node.node_id
+            && embed_represents_nothing(doc, node_id)
         {
             return;
         }
