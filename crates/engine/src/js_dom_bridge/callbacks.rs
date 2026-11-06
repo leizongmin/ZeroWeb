@@ -53,6 +53,12 @@ struct ViewDocKey {
     drain_gen: usize,
     /// 条目构建时的快照换代代际（[`DOM_VIEW_GEN`]）——就地换代后旧条目/旧链作废。
     view_gen: usize,
+    /// Batch 3 楔死收口（R5206 链资格 O(1) 化）：`[0..count)` 内 `SetInnerHtml`
+    /// 出现次数。链资格判定原为每次视图调用对 `[0..key.count)` 全量线性扫
+    ///（gethtml.html ShadowRoot 句柄读每测试落视图路径 → 每调用 O(N)、总量二次，
+    /// Q1 队列加速 11× 互证）；条目构建/链步时增量维护本计数后判定降为
+    /// `sih_prefix == 0`，语义逐位一致（同前缀、同谓词，见 [`with_query_view_doc`]）。
+    sih_prefix: usize,
 }
 
 /// R57（FV M3）：查询前把 pending mutations 应用到**快照副本**——同批 mutation
@@ -112,9 +118,13 @@ pub(crate) fn with_query_view_doc<R>(
         if mut_guard.len() < count {
             true
         } else {
-            !mut_guard[applied..count]
-                .iter()
-                .any(|m| matches!(m, DomMutation::InsertAdjacentHtml { .. }))
+            // Batch 3 楔死收口：pending 尾 InsertAdjacentHtml 存在性判定 O(1) 化。
+            // 原实现每调用对 `[applied..count)` 全量线性扫——同步脚本内 applied
+            // 恒 0、count 随脚本推进 → 每调用 O(N)、总量二次（gethtml.html
+            // ShadowRoot 域每测试 setHTMLUnsafe 落视图路径的实测斜率载体，
+            // Q1 队列加速 11× 互证）。增量扫描状态语义逐位一致（同区间同谓词）。
+            let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+            tail_iah_pending(mutations, &mut_guard, drain_gen, applied, count)
         }
     };
     // FnOnce 单次调用：live 命中即消费；miss 时经 Option 还回落。
@@ -181,11 +191,13 @@ pub(crate) fn with_query_view_doc<R>(
                         && key.view_gen == view_gen
                         // R5206：链段含重置（SetInnerHtml 不应用、链基座缺重置语义，
                         // 新窗口也看不到它）即退全量重建，让 latest-wins 在全窗口生效。
+                        // Batch 3 楔死收口：资格判定由「每调用对 `[0..key.count)` 全量
+                        // 线性扫」改为条目内 `sih_prefix` 计数（构建/链步时增量维护，
+                        // 语义同前缀同谓词逐位一致）——ShadowRoot 句柄 sel 选择器空间
+                        // 恒缺席 → 每测试读落本路径，扫描即 O(N)/调用、总量二次。
                         && mut_guard.len() >= key.count
-                        && !mut_guard[..key.count]
-                            .iter()
-                            .any(|m| matches!(m, DomMutation::SetInnerHtml { .. })))
-                    .then_some(key.count)
+                        && key.sih_prefix == 0)
+                        .then_some(key.count)
                 })
                 .unwrap_or(0)
         };
@@ -210,8 +222,13 @@ pub(crate) fn with_query_view_doc<R>(
         // 当前 DOM，此处是「冻结 vs 有界过期」的显式选择，仅病理页面触达——小文档
         // parse ≪ 预算 ⇒ decide 恒 Parse，零行为变化）。O(1)/链增量路径不设防
         //（成本 = 分片段解析，量级无关）。
+        // Batch 3 楔死收口：链步新条目的 `sih_prefix` 续接旧条目计数（+ 新段增量，
+        // 存储步计），全量重建自 0 起算。
+        let mut prev_sih = 0usize;
         let mut doc = if chain_hit {
-            cache_guard.take().expect("chain_hit implies entry").1
+            let (chain_key, chain_doc) = cache_guard.take().expect("chain_hit implies entry");
+            prev_sih = chain_key.sih_prefix;
+            chain_doc
         } else {
             let miss_at = std::time::Instant::now();
             let stale_hit = QUERY_REPARSE.with(|slot| {
@@ -339,6 +356,30 @@ pub(crate) fn with_query_view_doc<R>(
         // M2-S196：视图产物（解析基座 + 结构重放）不含运行时事件态——落缓存与
         // 执行查询前注入按压态（live/命中臂各自注入，此处覆盖 rebuild+链增量臂）。
         sync_active_state(&mut doc);
+        // Batch 3 楔死收口：新条目 `sih_prefix` 增量维护——链步 = 旧条目计数 +
+        // `[prev_count..count)` 新段扫描（该段本就随 structural 重放加锁遍历，量级
+        // = 新增 mutation，摊销 O(1)）；全量重建 = `[0..count)` 单次全扫（重建本身
+        // 已是重操作，代内罕见）。R342 同窗清零防线：切片前 min(len) 收口。
+        let sih_prefix = if chain_hit {
+            prev_sih + {
+                let seg_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+                // R342 同窗清零：prev_count 相对当前 len 可能越界（资格检查与
+                // 本锁之间队列被旁路清）——start 收口 min(end)，空段降级零增量
+                //（sih_prefix 过量保守仅退化为更多全量重建，正确性安全）。
+                let end = count.min(seg_guard.len());
+                let start = prev_count.min(end);
+                seg_guard[start..end]
+                    .iter()
+                    .filter(|m| matches!(**m, DomMutation::SetInnerHtml { .. }))
+                    .count()
+            }
+        } else {
+            let full_guard = mutations.lock().unwrap_or_else(|e| e.into_inner());
+            full_guard[..count.min(full_guard.len())]
+                .iter()
+                .filter(|m| matches!(**m, DomMutation::SetInnerHtml { .. }))
+                .count()
+        };
         *cache_guard = Some((
             ViewDocKey {
                 dom_arc: Arc::clone(html),
@@ -346,10 +387,64 @@ pub(crate) fn with_query_view_doc<R>(
                 count,
                 drain_gen: MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed),
                 view_gen,
+                sih_prefix,
             },
             doc,
         ));
         f(&cache_guard.as_ref().expect("entry stored").1, false)
+    })
+}
+
+// Batch 3 楔死收口：`with_query_view_doc` live_ok 判定的增量扫描状态——
+// `(mut_arc, drain_gen, lo, hi, iah)`，`iah` = 队列 `[lo..hi)` 内
+// `InsertAdjacentHtml` 出现次数。同 drain 代内队列只增不减 ⇒ `hi` 只增（右侧增量
+// 扫新段）；applied 游标只在脚本间推进（[`MUT_APPLIED_CURSOR`] 注）⇒ `lo` 左侧
+// 剔除每代摊销 O(1)；队列换代（Arc 身份或 drain_gen 变、或区间失配）整体重建。
+thread_local! {
+    static TAIL_IAH_SCAN:
+        RefCell<Option<(Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize, usize)>> =
+        const { RefCell::new(None) };
+}
+
+/// live_ok 谓词：pending 尾 `[applied..count)` 是否无 `InsertAdjacentHtml`。
+/// 调用方须已持有队列锁（`guard` 为其切片视图）；语义与逐次
+/// `guard[applied..count].iter().any(InsertAdjacentHtml)` 逐位一致，仅扫描量降为
+/// 每代摊销 O(新增段)。
+fn tail_iah_pending(
+    mutations: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    guard: &[DomMutation],
+    drain_gen: usize,
+    applied: usize,
+    count: usize,
+) -> bool {
+    TAIL_IAH_SCAN.with(|slot| {
+        let mut st = slot.borrow_mut();
+        let valid = st.as_ref().is_some_and(|(arc, dgen, lo, hi, _)| {
+            Arc::ptr_eq(arc, mutations) && *dgen == drain_gen && *lo <= applied && *hi <= guard.len()
+        });
+        if !valid {
+            *st = Some((Arc::clone(mutations), drain_gen, applied, applied, 0));
+        }
+        let (_, _, lo, hi, iah) = st.as_mut().expect("tracker set above");
+        // 左侧：applied 推进——剔除 `[lo..applied)` 段计数（一次性补扫，摊销 O(1)）。
+        if applied > *lo {
+            let drop = guard[*lo..applied]
+                .iter()
+                .filter(|m| matches!(**m, DomMutation::InsertAdjacentHtml { .. }))
+                .count();
+            *iah -= drop.min(*iah);
+            *lo = applied;
+        }
+        // 右侧：队列增长——增量并入新段。
+        if count > *hi {
+            let add = guard[*hi..count]
+                .iter()
+                .filter(|m| matches!(**m, DomMutation::InsertAdjacentHtml { .. }))
+                .count();
+            *iah += add;
+            *hi = count;
+        }
+        *iah == 0
     })
 }
 
@@ -1668,8 +1763,7 @@ pub fn register_dom_callbacks(
         "__zw_style_rules_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            let mut text = query_inner_html_from_mutations(&list, &handle);
+            let mut text = shared_state_inner_html(&m, &handle).unwrap_or_default();
             if text.is_empty() {
                 text = query_history_text(&handle);
             }
@@ -2583,16 +2677,17 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return String::new();
             }
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(v) = attr_value_from_mutations_opt(&list, &args[0], &args[1]) {
-                return v;
+            // t8c 泛化：当前批走增量索引（原全队列逆序扫在结构操作循环下 O(n²)）。
+            if let Some(v) = shared_state_attr(&m, &args[0], &args[1]) {
+                return v.unwrap_or_default();
             }
-            drop(list);
             // 缺陷2：drain 后当前批空，先收宿主已应用批进历史再回落（否则 handle 属性
             // 读跨 apply 恒落空——probe7 实证 dataset.seq 同任务读旧值翻转 null）。
             sync_mutation_history_inbox();
-            MUTATION_HISTORY
-                .with(|h| attr_value_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or_default())
+            if let Some(v) = history_state_attr(&args[0], &args[1]) {
+                return v.unwrap_or_default();
+            }
+            String::new()
         }),
     );
 
@@ -2606,20 +2701,24 @@ pub fn register_dom_callbacks(
             if args.len() < 2 {
                 return "0".to_string();
             }
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(present) = has_attr_from_mutations_opt(&list, &args[0], &args[1]) {
-                return if present { "1".to_string() } else { "0".to_string() };
-            }
-            drop(list);
-            // 缺陷2：同 `__zw_get_attr_handle`——先收宿主已应用批再回落历史。
-            sync_mutation_history_inbox();
-            MUTATION_HISTORY.with(|h| {
-                if has_attr_from_mutations_opt(&h.borrow(), &args[0], &args[1]).unwrap_or(false) {
+            // t8c 泛化：当前批增量索引（语义同原逆序扫 latest-wins）。
+            if let Some(record) = shared_state_attr(&m, &args[0], &args[1]) {
+                return if record.is_some() {
                     "1".to_string()
                 } else {
                     "0".to_string()
-                }
-            })
+                };
+            }
+            // 缺陷2：同 `__zw_get_attr_handle`——先收宿主已应用批再回落历史。
+            sync_mutation_history_inbox();
+            if let Some(record) = history_state_attr(&args[0], &args[1]) {
+                return if record.is_some() {
+                    "1".to_string()
+                } else {
+                    "0".to_string()
+                };
+            }
+            "0".to_string()
         }),
     );
 
@@ -2634,9 +2733,33 @@ pub fn register_dom_callbacks(
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
             sync_mutation_history_inbox();
-            let mut combined = MUTATION_HISTORY.with(|h| h.borrow().iter().cloned().collect::<Vec<_>>());
-            combined.extend(m.lock().unwrap_or_else(|e| e.into_inner()).iter().cloned());
-            attribute_names_from_mutations(&combined, &handle)
+            // t8c 泛化：双层终态索引合并替代全历史 clone + 正序 replay（原实现每次
+            // 调用 clone 整个历史 Vec——结构操作循环下 O(n²) 且带大分配）。层序语义：
+            // [history…, current] 单调，per-name 由 current 层终态覆盖 history 层。
+            let hist_names: Vec<String> =
+                with_history_state_index(|idx| idx.attr_order.get(&handle).cloned().unwrap_or_default());
+            with_shared_state_index(&m, |idx| {
+                let cur_order = idx.attr_order.get(&handle).cloned().unwrap_or_default();
+                let cur_attrs = idx.attrs.get(&handle);
+                let mut names: Vec<String> = hist_names
+                    .into_iter()
+                    .filter(|n| match cur_attrs.and_then(|c| c.get(n)) {
+                        // current 层终态覆盖：重设保留、真移除剔除、无记录沿用 history 层。
+                        Some(Some(_)) => true,
+                        Some(None) => false,
+                        None => true,
+                    })
+                    .collect();
+                for n in cur_order {
+                    let present = cur_attrs.and_then(|c| c.get(&n)).map(|p| p.is_some()).unwrap_or(false);
+                    // FIXME: 同 current 层批内 remove 后重设同名属性，序落 history 层
+                    // 位置而非正序 replay 的尾追加（dataset 枚举序边缘，语料无钉面）。
+                    if present && !names.iter().any(|x| x == &n) {
+                        names.push(n);
+                    }
+                }
+                names.join("|")
+            })
         }),
     );
 
@@ -2668,9 +2791,11 @@ pub fn register_dom_callbacks(
         "__zw_get_text_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            let text = query_text_from_mutations(&list, &handle);
-            if !text.is_empty() {
+            // t8c 泛化：当前批增量索引（Some("") = 批内有记录但值为空——保留原扫
+            // 「记录存在但空值视作 miss 落回落链」语义）。
+            if let Some(text) = shared_state_text(&m, &handle)
+                && !text.is_empty()
+            {
                 return text;
             }
             // R100：当前批 miss → 线程本地已应用历史（跨注册 latest-wins 重放）。
@@ -2687,7 +2812,7 @@ pub fn register_dom_callbacks(
                         .unwrap_or_default()
                 });
             }
-            text
+            String::new()
         }),
     );
 
@@ -3601,8 +3726,8 @@ pub fn register_dom_callbacks(
         "__zw_get_inner_html_handle",
         Box::new(move |args| {
             let handle = args.first().map(String::from).unwrap_or_default();
-            let list = m.lock().unwrap_or_else(|e| e.into_inner());
-            query_inner_html_from_mutations(&list, &handle)
+            // t8c 泛化：增量索引（原每次全队列逆序扫——gethtml 语料热点 10 读/子测试）。
+            shared_state_inner_html(&m, &handle).unwrap_or_default()
         }),
     );
 
@@ -3930,6 +4055,9 @@ pub fn append_mutation_history(batch: &[DomMutation]) {
 /// js-dom M3 R100：清空 mutation 历史（文档换代——`load_html` 调用；旧页记录在新页无效）。
 pub fn clear_mutation_history() {
     MUTATION_HISTORY.with(|h| h.borrow_mut().clear());
+    // t8c 泛化：历史清队同步失效历史状态 memo（水位 ≤ len 兜底只覆盖「清后未重长跨
+    // 旧水位」；导航 clear 后同线程静默重长跨旧水位的查询须靠本显式失效）。
+    HISTORY_STATE_MEMO.with(|slot| *slot.borrow_mut() = None);
 }
 
 // R100 宿主半边接线（缺陷2，2026-11-04）：renderer automation apply 在 renderer 主线程
@@ -3979,15 +4107,17 @@ fn parse_child_index_path(csv: &str) -> Option<Vec<u32>> {
 /// SetTextOnHandle 等 latest-wins 重放语义与 HEAD 的未清空 Vec 一致）。缺陷2：先收
 /// 宿主已应用批进历史（renderer automation drain 在主线程，收件箱桥见
 /// [`sync_mutation_history_inbox`]），否则跨 apply 的 handle text/tag 读恒落空。
+/// t8c 泛化：历史读走 [`HISTORY_STATE_MEMO`] 增量索引（原全历史逆序扫，跨 apply 页面
+/// O(n²) 半边）。
 fn query_history_text(handle: &str) -> String {
     sync_mutation_history_inbox();
-    MUTATION_HISTORY.with(|h| query_text_from_mutations(&h.borrow(), handle))
+    history_state_text(handle).unwrap_or_default()
 }
 
 /// [`query_history_text`] 的 tag 版。
 fn query_history_tag(handle: &str) -> String {
     sync_mutation_history_inbox();
-    MUTATION_HISTORY.with(|h| query_tag_from_mutations(&h.borrow(), handle))
+    history_state_tag(handle)
 }
 fn sel_handle_map_snapshot() -> Arc<Mutex<HashMap<String, String>>> {
     FORWARD_HANDLE_MAP.with(|slot| {
@@ -4266,6 +4396,185 @@ fn handle_tag_from_memo(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &st
     })
 }
 
+/// t8c（[`HANDLE_TAG_MEMO`] 泛化）：handle 域 latest-wins 读状态的增量索引——text /
+/// innerHTML / 属性值·存在性 / 属性名序。此前对应读回调每次全队列逆序/正序扫（gethtml
+/// 语料实证：每子测试约 75 次 native 读 × O(队列长) → 页面级 O(n²)，4,500 子测试页在
+/// 240s 预算内只跑到 ~2,300 行）。索引懒同步增量扫：每条 mutation 至多被扫一次，单读
+/// O(1)；验证键（Arc 身份 + drain 代际 + 注册代际 + 水位回缩检测）与 [`HANDLE_TAG_MEMO`]
+/// 同款。
+#[derive(Default)]
+struct HandleStateIndex {
+    /// handle → 最新 text（CreateTextNode / CreateComment / CreateProcessingInstruction /
+    /// SetTextOnHandle，latest-wins）。
+    text: std::collections::HashMap<String, String>,
+    /// handle → 最新 tag（CreateElement / CreateElementNS——历史层 tag 读的索引对偶，
+    /// 当前层 tag 读走 [`HANDLE_TAG_MEMO`]）。
+    tag: std::collections::HashMap<String, String>,
+    /// handle → 最新 innerHTML 候选（SetInnerHtmlOnHandle + 上行 4 个 text arm——
+    /// `query_inner_html_from_mutations` 的同构集合：该扫描不区分记录种类，最新任一命中）。
+    inner_html: std::collections::HashMap<String, String>,
+    /// handle → (name → Some(值) | None = 已移除 tombstone)。latest-wins。
+    attrs: std::collections::HashMap<String, std::collections::HashMap<String, Option<String>>>,
+    /// handle → 属性名首现序（`attribute_names_from_mutations` 顺序语义：Remove 即从
+    /// 序列摘除，重设按新名尾追加——正序 replay 等价）。
+    attr_order: std::collections::HashMap<String, Vec<String>>,
+}
+
+impl HandleStateIndex {
+    fn apply(&mut self, m: &DomMutation) {
+        match m {
+            DomMutation::CreateTextNode { handle, text }
+            | DomMutation::CreateComment { handle, text }
+            | DomMutation::CreateProcessingInstruction { handle, data: text, .. }
+            | DomMutation::SetTextOnHandle { handle, text } => {
+                self.text.insert(handle.clone(), text.clone());
+                self.inner_html.insert(handle.clone(), text.clone());
+            }
+            DomMutation::CreateElement { handle, tag } => {
+                self.tag.insert(handle.clone(), tag.clone());
+            }
+            DomMutation::CreateElementNS {
+                handle, qualified_name, ..
+            } => {
+                self.tag.insert(handle.clone(), qualified_name.clone());
+            }
+            DomMutation::SetInnerHtmlOnHandle { handle, html } => {
+                self.inner_html.insert(handle.clone(), html.clone());
+            }
+            DomMutation::SetAttrOnHandle { handle, name, value } => {
+                self.attrs
+                    .entry(handle.clone())
+                    .or_default()
+                    .insert(name.clone(), Some(value.clone()));
+                let order = self.attr_order.entry(handle.clone()).or_default();
+                if !order.iter().any(|n| n == name) {
+                    order.push(name.clone());
+                }
+            }
+            DomMutation::RemoveAttrOnHandle { handle, name } => {
+                // tombstone 必须落图（原扫描语义：Remove 是一等记录——同批无前序
+                // Set 时依旧即时 absent，覆盖「Set 在已 drain 历史」的形态）。
+                self.attrs.entry(handle.clone()).or_default().insert(name.clone(), None);
+                if let Some(order) = self.attr_order.get_mut(handle) {
+                    order.retain(|n| n != name);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+thread_local! {
+    /// 共享队列（当前批）的 [`HandleStateIndex`] memo。键 (mut Arc, drain 代际,
+    /// 注册代际, 已扫水位)——语义同 [`HANDLE_TAG_MEMO`]。
+    static HANDLE_STATE_MEMO: std::cell::RefCell<
+        Option<(
+            (Arc<std::sync::Mutex<Vec<DomMutation>>>, usize, usize, usize),
+            HandleStateIndex,
+        )>,
+    > = const { std::cell::RefCell::new(None) };
+    /// 线程本地已应用历史 [`MUTATION_HISTORY`] 的 [`HandleStateIndex`] memo，
+    /// 键为已扫水位（历史只 append / 导航 clear——clear 站点同步置 None 失效）。
+    static HISTORY_STATE_MEMO: std::cell::RefCell<Option<(usize, HandleStateIndex)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// 共享队列 memo 校验 + 增量同步（同 [`handle_tag_from_memo`] 的代际/回缩防御），
+/// 返回调用方的索引读取结果。调用方读图即 clone 返回，不跨调用持借用。
+fn with_shared_state_index<R>(
+    m: &Arc<std::sync::Mutex<Vec<DomMutation>>>,
+    read: impl FnOnce(&HandleStateIndex) -> R,
+) -> R {
+    let count = m.lock().unwrap_or_else(|e| e.into_inner()).len();
+    let drain_gen = MUT_DRAIN_GEN.load(std::sync::atomic::Ordering::Relaxed);
+    let reg_epoch = REG_EPOCH.load(std::sync::atomic::Ordering::Relaxed);
+    HANDLE_STATE_MEMO.with(|slot| {
+        let mut guard = slot.borrow_mut();
+        let mut valid = guard
+            .as_ref()
+            .is_some_and(|(k, _)| Arc::ptr_eq(&k.0, m) && k.1 == drain_gen && k.2 == reg_epoch);
+        if valid {
+            // 就地截断检测：同 [`HANDLE_TAG_MEMO`]——不 bump 代际的清队使队列回缩到
+            // 水位之下，旧增量水位对新队列失明，全量重建。
+            if count < guard.as_ref().expect("memo ensured").0.3 {
+                valid = false;
+            }
+        }
+        if !valid {
+            *guard = Some(((Arc::clone(m), drain_gen, reg_epoch, 0), HandleStateIndex::default()));
+        }
+        let entry = guard.as_mut().expect("memo ensured");
+        if entry.0.3 < count {
+            let queue = m.lock().unwrap_or_else(|e| e.into_inner());
+            // R342 竞窗同类防御：水位与队列长度取 min（旁路清零不越界）。
+            let scanned = entry.0.3.min(queue.len());
+            for rec in &queue[scanned..] {
+                entry.1.apply(rec);
+            }
+            entry.0.3 = queue.len();
+        }
+        read(&entry.1)
+    })
+}
+
+/// 历史 memo 校验 + 增量同步（水位只增；导航 clear 由 [`clear_mutation_history`] 置
+/// None 失效，水位 ≤ len 作回缩兜底）。
+fn with_history_state_index<R>(read: impl FnOnce(&HandleStateIndex) -> R) -> R {
+    let count = MUTATION_HISTORY.with(|h| h.borrow().len());
+    HISTORY_STATE_MEMO.with(|slot| {
+        let mut guard = slot.borrow_mut();
+        if !guard.as_ref().is_some_and(|(wm, _)| *wm <= count) {
+            *guard = Some((0, HandleStateIndex::default()));
+        }
+        let entry = guard.as_mut().expect("memo ensured");
+        if entry.0 < count {
+            let scanned = entry.0;
+            MUTATION_HISTORY.with(|h| {
+                let hist = h.borrow();
+                for rec in hist[scanned.min(hist.len())..].iter() {
+                    entry.1.apply(rec);
+                }
+            });
+            entry.0 = count;
+        }
+        read(&entry.1)
+    })
+}
+
+/// 当前批 handle text 读（索引版 [`query_text_from_mutations`]）。Some = 批内该
+/// handle 有 text 族记录（值可能空串）；None = 无记录（调用方走历史/快照回落）。
+fn shared_state_text(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str) -> Option<String> {
+    with_shared_state_index(m, |idx| idx.text.get(handle).cloned())
+}
+
+/// 当前批 handle tag 读（索引版 [`query_tag_from_mutations`] 的历史层对偶）。
+fn history_state_tag(handle: &str) -> String {
+    with_history_state_index(|idx| idx.tag.get(handle).cloned().unwrap_or_default())
+}
+
+/// 历史层 handle text 读（索引版 [`query_text_from_mutations`] 的历史半边）。
+fn history_state_text(handle: &str) -> Option<String> {
+    with_history_state_index(|idx| idx.text.get(handle).cloned())
+}
+
+/// 当前批 handle innerHTML 读（索引版 [`query_inner_html_from_mutations`]）。
+fn shared_state_inner_html(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str) -> Option<String> {
+    with_shared_state_index(m, |idx| idx.inner_html.get(handle).cloned())
+}
+
+/// 当前批 handle 属性读。Some(Some(值)) = 设值 / Some(None) = 已移除 / None = 无记录
+///（层间回落判定同 [`attr_value_from_mutations_opt`] 的 Option 语义）。
+fn shared_state_attr(m: &Arc<std::sync::Mutex<Vec<DomMutation>>>, handle: &str, name: &str) -> Option<Option<String>> {
+    with_shared_state_index(m, |idx| {
+        idx.attrs.get(handle).and_then(|names| names.get(name).cloned())
+    })
+}
+
+/// 历史层 handle 属性读（同 [`shared_state_attr`] 语义）。
+fn history_state_attr(handle: &str, name: &str) -> Option<Option<String>> {
+    with_history_state_index(|idx| idx.attrs.get(handle).and_then(|names| names.get(name).cloned()))
+}
+
 // __zw_query_all_tagged 的 payload 单条目缓存（R-baidu3）：(dom_arc, mut_arc, count,
 // drain_gen, view_gen, sel) → payload。视图键恒等式同 QueryViewEntry（epoch Arc 身份 + 队列长度
 // + drain 代际唯一决定视图输入——drain 后重长到同 count 内容可不同，缺 drain_gen 会
@@ -4370,6 +4679,117 @@ mod handle_tag_memo_tests {
         // 旧页条目不得跨截断存活（其记录已不在队列，陈旧图服务即串 tag 面）。
         assert_eq!(handle_tag_from_memo(&m, "__h1"), None);
         assert_eq!(handle_tag_from_memo(&m, "__h2"), None);
+    }
+
+    /// t8c 泛化：handle 状态索引（text / innerHTML / attr 值·存在性·名序）的
+    /// latest-wins 与层间 Option 语义。
+    #[test]
+    fn handle_state_memo_latest_wins_layers() {
+        let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        // 空队列：全 miss（区分回落链）。
+        assert_eq!(shared_state_text(&m, "__t1"), None);
+        assert_eq!(shared_state_inner_html(&m, "__t1"), None);
+        assert_eq!(shared_state_attr(&m, "__h1", "id"), None);
+        // text 族：CreateTextNode 记录 latest-wins，innerHTML 候选同源（扫描同构集合）。
+        m.lock().unwrap().push(DomMutation::CreateTextNode {
+            handle: "__t1".into(),
+            text: "abc".into(),
+        });
+        assert_eq!(shared_state_text(&m, "__t1").as_deref(), Some("abc"));
+        assert_eq!(shared_state_inner_html(&m, "__t1").as_deref(), Some("abc"));
+        // 同 handle 重复记录：后写覆盖。
+        m.lock().unwrap().push(DomMutation::SetTextOnHandle {
+            handle: "__t1".into(),
+            text: "xy".into(),
+        });
+        assert_eq!(shared_state_text(&m, "__t1").as_deref(), Some("xy"));
+        // 元素 handle 的 innerHTML 独立记录：text 读仍 miss（面分离）。
+        m.lock().unwrap().push(DomMutation::SetInnerHtmlOnHandle {
+            handle: "__h1".into(),
+            html: "<b>x</b>".into(),
+        });
+        assert_eq!(shared_state_inner_html(&m, "__h1").as_deref(), Some("<b>x</b>"));
+        assert_eq!(shared_state_text(&m, "__h1"), None);
+        // 属性：设值 / 追加名序 / 真移除 tombstone。
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h2".into(),
+            name: "id".into(),
+            value: "a".into(),
+        });
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h2".into(),
+            name: "class".into(),
+            value: "c".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h2", "id"), Some(Some("a".into())));
+        assert_eq!(shared_state_attr(&m, "__h2", "class"), Some(Some("c".into())));
+        assert_eq!(shared_state_attr(&m, "__h2", "data-x"), None);
+        // 名序 = 首现序（attribute_names_from_mutations 语义）。
+        m.lock().unwrap().push(DomMutation::RemoveAttrOnHandle {
+            handle: "__h2".into(),
+            name: "id".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h2", "id"), Some(None));
+        // 重设同名：名序尾追加（原序列已摘除）。
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h2".into(),
+            name: "id".into(),
+            value: "b".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h2", "id"), Some(Some("b".into())));
+        // 增量水位：后追加记录即时可见（不重扫全队列的行为等价面）。
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h2".into(),
+            name: "class".into(),
+            value: "late".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h2", "class"), Some(Some("late".into())));
+    }
+
+    /// t8c 泛化：就地截断（清队不 bump 代际）下状态 memo 全量重建——旧页属性面
+    /// 不得跨截断存活（同 [`memo_in_place_truncation_rebuilds_without_drain_bump`]）。
+    #[test]
+    fn handle_state_memo_in_place_truncation_rebuilds() {
+        let m: Arc<std::sync::Mutex<Vec<DomMutation>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h1".into(),
+            name: "data-seq".into(),
+            value: "1".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h1", "data-seq"), Some(Some("1".into())));
+        // 换页就地 clear（webview load_html 历史形态，不 bump 代际）。
+        m.lock().unwrap().clear();
+        assert_eq!(shared_state_attr(&m, "__h1", "data-seq"), None);
+        // 新页重积累：同名属性新值可读。
+        m.lock().unwrap().push(DomMutation::SetAttrOnHandle {
+            handle: "__h1".into(),
+            name: "data-seq".into(),
+            value: "2".into(),
+        });
+        assert_eq!(shared_state_attr(&m, "__h1", "data-seq"), Some(Some("2".into())));
+    }
+
+    /// t8c 泛化：历史层（MUTATION_HISTORY）状态索引——append 后可读、clear 后失效。
+    #[test]
+    fn handle_state_history_layer_append_and_clear() {
+        clear_mutation_history();
+        append_mutation_history(&[DomMutation::CreateTextNode {
+            handle: "__ht".into(),
+            text: "hist".into(),
+        }]);
+        assert_eq!(history_state_text("__ht").as_deref(), Some("hist"));
+        // 层间语义：历史层记录经同一 Option 形态暴露。
+        append_mutation_history(&[DomMutation::SetAttrOnHandle {
+            handle: "__hh".into(),
+            name: "data-seq".into(),
+            value: "9".into(),
+        }]);
+        assert_eq!(history_state_attr("__hh", "data-seq"), Some(Some("9".into())));
+        assert_eq!(history_state_attr("__hh", "absent"), None);
+        // 导航 clear：历史清空且 memo 显式失效（重长跨旧水位的窗口不服务陈旧图）。
+        clear_mutation_history();
+        assert_eq!(history_state_text("__ht"), None);
+        assert_eq!(history_state_attr("__hh", "data-seq"), None);
     }
 }
 
