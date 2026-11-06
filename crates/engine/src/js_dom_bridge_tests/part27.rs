@@ -41,7 +41,10 @@ try {
   }
   walk(test_basic.cloneNode(true));
   __o.push('s1:' + (n.s1 ? n.s1.id : 'null'));
-  __o.push('inShadow:' + (n.s1 ? (n.s1.closest ? 'n/a' : 'ok') : '-'));
+  // s322 勘根：s82 起 plain 世界亦有 closest（6939ad5c8 FormData owner 面），
+  // 「closest 存在=文档树节点」旧启发式失效；探针改挂接结构断言
+  // （断言目标不变，机制随语义演进——s294 静态哨兵改正先例）。
+  __o.push('inShadow:' + (n.s1 && n.host && n.s1.parentNode === n.host.shadowRoot ? 'ok' : 'no'));
   __o.push('shadowKids:' + (n.host && n.host.shadowRoot ? n.host.shadowRoot.childNodes.length : 'n/a'));
 } catch (e) { __o.push('ERR:' + (e && e.message)); }
 __o.join('|');

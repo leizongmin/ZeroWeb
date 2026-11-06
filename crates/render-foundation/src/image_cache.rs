@@ -1055,8 +1055,8 @@ pub fn rasterize_svg_at(source: &[u8], target_w: u32, target_h: u32) -> Result<I
     ImageData::from_rgba(demultiply_resvg_rgba(pixmap.take()), target_w, target_h)
 }
 
-/// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr 或 style 声明）从源中
-/// 剥离并返回（RGBA，未知/非法值返回 None 不动源）。
+/// R3996：把 `<svg>` 根元素的 `background-color`（presentation attr、style 声明或内联
+/// `<style>` 的 `:root` 规则）从源中剥离并返回（RGBA，未知/非法值返回 None 不动源）。
 ///
 /// 根因（css-sizing replaced-element-004/006/010/020 簇实证）：usvg 0.47 把根背景生成为
 /// **viewBox rect** 的 path（`converter.rs` `background_path(background_color, view_box.rect)`），
@@ -1078,17 +1078,22 @@ fn promote_svg_root_background(source: &[u8]) -> (Vec<u8>, Option<[u8; 4]>) {
         return (source.to_vec(), None);
     };
     let tag = &after[..tag_end_rel]; // 含 "<svg"
-    // 值来源优先级（与 usvg parse 一致）：style 声明 > presentation attr。两者皆无 → 不动。
+    // 值来源优先级：style 声明 > 样式表规则 > presentation attr（CSS 级联——presentation
+    // attr 是 presentational hint，author origin 内最低，svg-img-with-external-stylesheet
+    // 驱动案的 `<style>:root{...}</style>` 为样式表来源）。三者皆无 → 不动。
     let style_val = extract_svg_attr(tag, "style");
     let style_color = style_val.as_deref().and_then(svg_style_background_color);
+    let stylesheet_color = svg_stylesheet_root_background(text);
     let attr_color = extract_svg_attr(tag, "background-color")
         .or_else(|| extract_svg_attr(tag, "background"))
         .and_then(|v| parse_svg_color(&v));
-    let color = style_color.or(attr_color);
+    let color = style_color.or(stylesheet_color).or(attr_color);
     let Some(color) = color else {
         return (source.to_vec(), None);
     };
     // 改写根标签：删 style 中的 background-color 声明（若来自 style），否则删 attr。
+    // 样式表来源时标签本无需改写（usvg 不读样式表），但落败的 presentation attr 仍须删
+    // ——usvg 会把它画成 viewBox rect，而级联上它已落败（chromium 不绘制）。
     let new_tag = if style_color.is_some() {
         let stripped_style = strip_background_decl(style_val.as_deref().unwrap_or_default());
         if stripped_style.is_empty() {
@@ -1132,6 +1137,57 @@ fn svg_style_background_color(style_val: &str) -> Option<[u8; 4]> {
             }
             None
         })
+}
+
+/// s322：扫描文档内联 `<style>` 元素中的 `:root` 规则，提取根 background-color（RGBA，
+/// 无可识别规则返回 None）。多条规则按文档序后者胜（同等特异性级联）。声明解析复用
+/// svg_style_background_color（background-color 与 background 简写均识别）。
+/// 仅内联样式生效——SVG-as-image 安全静态模式不加载外部样式表（html/semantics
+/// embedded-content svg-img-with-external-stylesheet 驱动案：
+/// `<style xmlns="…">:root { background-color: green }</style>`）。
+/// https://drafts.csswg.org/css-cascade-5/#cascade-sort
+/// https://www.w3.org/TR/SVG2/styling.html#PresentationAttributes
+fn svg_stylesheet_root_background(text: &str) -> Option<[u8; 4]> {
+    let mut color = None;
+    let mut pos = 0;
+    while let Some(rel) = text[pos..].find("<style") {
+        let start = pos + rel;
+        let after_open = &text[start + "<style".len()..];
+        // 边界检查：`<styleX` 不是 style 元素。
+        if !after_open
+            .chars()
+            .next()
+            .is_none_or(|c| c.is_whitespace() || c == '>' || c == '/')
+        {
+            pos = start + "<style".len();
+            continue;
+        }
+        let Some(tag_end_rel) = after_open.find('>') else {
+            break;
+        };
+        let body_start = start + "<style".len() + tag_end_rel + 1;
+        let body = &text[body_start..];
+        let Some(close_rel) = body.find("</style") else {
+            break;
+        };
+        pos = body_start + close_rel;
+        // 逐规则扫：选择器段 = 上一 `}`（或体首）至 `{`，声明块至下一 `}`。
+        let mut scan = &body[..close_rel];
+        while let Some(brace_rel) = scan.find('{') {
+            let selector = &scan[..brace_rel];
+            let block = &scan[brace_rel + 1..];
+            let Some(end_rel) = block.find('}') else {
+                break;
+            };
+            if selector.contains(":root")
+                && let Some(c) = svg_style_background_color(block[..end_rel].trim())
+            {
+                color = Some(c);
+            }
+            scan = &block[end_rel + 1..];
+        }
+    }
+    color
 }
 
 /// 删除 style 声明值中的 background-color / background 项（返回剩余声明，分号规范化）。
@@ -3261,6 +3317,57 @@ mod decode_tests {
         let (bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
         assert_eq!(bg4, None);
         assert_eq!(bytes4, src4.as_bytes());
+    }
+
+    /// s322：`<style>` 内 `:root` 规则的根背景提升（svg-img-with-external-stylesheet
+    /// 驱动案）。级联序 inline style > 样式表规则 > presentation attr；样式表来源不改写
+    /// 源标签（usvg 本不读样式表），落败 presentation attr 删除；非 `:root` 选择器不提升。
+    #[test]
+    fn promote_svg_root_background_from_stylesheet() {
+        // 语料形态：内联 `<style>` 的 `:root` 规则（外部样式表 SVG-as-image 不加载）
+        let src = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 1"><style xmlns="http://www.w3.org/1999/xhtml">:root { background-color: green }</style></svg>"#;
+        let (bytes, bg) = promote_svg_root_background(src.as_bytes());
+        assert_eq!(bg, Some([0, 128, 0, 255]));
+        assert_eq!(bytes, src.as_bytes(), "stylesheet source leaves tag untouched");
+        // 提升后栅格化：letterbox 区（viewBox 5:1 → 100×100 视口的上下 40px）也被填充
+        let img = rasterize_svg_at(src.as_bytes(), 100, 100).expect("rasterize");
+        assert_eq!(
+            img.get_pixel(50, 5)[1],
+            128,
+            "top letterbox filled by promoted background"
+        );
+        assert_eq!(
+            img.get_pixel(50, 95)[1],
+            128,
+            "bottom letterbox filled by promoted background"
+        );
+
+        // 级联：inline style > 样式表规则
+        let src2 = r#"<svg viewBox="0 0 5 1" style="background-color: blue"><style>:root { background-color: green }</style></svg>"#;
+        let (_bytes2, bg2) = promote_svg_root_background(src2.as_bytes());
+        assert_eq!(bg2, Some([0, 0, 255, 255]));
+
+        // 级联：样式表规则 > presentation attr（落败 attr 删除，usvg 不再绘制）
+        let src3 =
+            r#"<svg viewBox="0 0 5 1" background-color="red"><style>:root { background-color: green }</style></svg>"#;
+        let (bytes3, bg3) = promote_svg_root_background(src3.as_bytes());
+        assert_eq!(bg3, Some([0, 128, 0, 255]));
+        let out3 = String::from_utf8(bytes3).unwrap();
+        assert!(
+            !out3.contains("background-color=\"red\""),
+            "losing presentation attr stripped: {out3}"
+        );
+
+        // 同体多规则：文档序后者胜
+        let src4 = r#"<svg viewBox="0 0 5 1"><style>:root { background-color: red } :root { background-color: green }</style></svg>"#;
+        let (_bytes4, bg4) = promote_svg_root_background(src4.as_bytes());
+        assert_eq!(bg4, Some([0, 128, 0, 255]));
+
+        // 非 `:root` 选择器：不提升
+        let src5 = r#"<svg viewBox="0 0 5 1"><style>rect { background-color: green }</style></svg>"#;
+        let (bytes5, bg5) = promote_svg_root_background(src5.as_bytes());
+        assert_eq!(bg5, None);
+        assert_eq!(bytes5, src5.as_bytes());
     }
 
     /// R3998：一维 abs attr + viewBox 的 SVG，usvg 栅格化 viewport 不施 viewBox 比
