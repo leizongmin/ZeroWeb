@@ -7202,6 +7202,13 @@
     }
     // fallback：无 host → microtask 同步触发（旧行为）。
     delete globalThis.__zw_pending[id];
+    // s307（animated image 帧推进）：延迟被即时消费时向虚钟记账——真浏览器语义 =
+    // 截图前 timer 等待时长已推进动画时钟（reftest harness 脚本期读 `__zw_anim_clock`
+    // 注入渲染期活跃帧选取；无消费者通道零开销，仅累加一个数）。单次记账上限 60s
+    // 防病态大延迟撑爆虚钟。
+    var _zwDelay = _zwClampDelay(delay | 0);
+    if (typeof globalThis.__zw_anim_clock !== 'number') globalThis.__zw_anim_clock = 0;
+    globalThis.__zw_anim_clock += _zwDelay > 60000 ? 60000 : _zwDelay;
     _defer(fn);
     return handle;
   };

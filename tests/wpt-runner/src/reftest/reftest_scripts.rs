@@ -61,6 +61,7 @@ pub(super) fn apply_scripted_dom_mutations(
     Vec<ScrollOffsetRecord>,
     Vec<TextSelectionRecord>,
     Option<CeCaretRecord>,
+    f64,
 ) {
     // R-t2qq 返修 F2：adopted 槽 case 首清（置于最前——含下方无脚本早退路径）。进程级
     // 槽清空是防御位（本 harness 经下方换装回调正常路径不写它）；线程局部 case 覆盖
@@ -72,7 +73,7 @@ pub(super) fn apply_scripted_dom_mutations(
     let scripts = extract_page_scripts(html);
     let onload_handlers = extract_onload_handlers(html);
     if scripts.is_empty() && onload_handlers.is_empty() {
-        return (html.to_string(), None, Vec::new(), Vec::new(), None);
+        return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0);
     }
 
     use std::sync::Arc;
@@ -93,12 +94,12 @@ pub(super) fn apply_scripted_dom_mutations(
         #[cfg(feature = "v8")]
         let sandbox = match zero_script_sandbox::V8Sandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0),
         };
         #[cfg(not(feature = "v8"))]
         let sandbox = match zero_script_sandbox::QuickJSSandbox::with_config(config) {
             Ok(s) => Box::new(s) as Box<dyn zero_script_sandbox::Sandbox>,
-            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None),
+            Err(_) => return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0),
         };
         sandbox
     };
@@ -186,7 +187,7 @@ pub(super) fn apply_scripted_dom_mutations(
 
     if let Err(e) = sandbox.execute(generate_js_dom_shim()) {
         eprintln!("  [reftest JS] DOM shim init warning: {e}");
-        return (html.to_string(), None, Vec::new(), Vec::new(), None);
+        return (html.to_string(), None, Vec::new(), Vec::new(), None, 0.0);
     }
     // reftest harness 自有更完整的 <body>/<frameset>/<html> onload 处理（下方直接执行 handler 体 + 派发
     // 'load'）；禁用 R2946 body→window 反射以避免双 fire（重复 mutation 致 apply_mutations_to_html 失败）。
@@ -401,7 +402,22 @@ pub(super) fn apply_scripted_dom_mutations(
         eprintln!("  [reftest JS] ce caret: {ce_caret:?}");
     }
 
-    (current, focus_selector, scroll_offsets, text_selections, ce_caret)
+    // s307：脚本期 setTimeout 虚钟导出（shim timer 即时消费——`__zw_anim_clock`
+    // 累计页面等待 = 截图时刻动画时钟，渲染期活跃帧选取依据；无 timer 页恒 0）。
+    let anim_clock_ms: f64 = sandbox
+        .execute_json("(typeof __zw_anim_clock === 'number') ? __zw_anim_clock : 0")
+        .ok()
+        .and_then(|r| serde_json::from_str::<f64>(&r.value).ok())
+        .unwrap_or(0.0);
+
+    (
+        current,
+        focus_selector,
+        scroll_offsets,
+        text_selections,
+        ce_caret,
+        anim_clock_ms,
+    )
 }
 
 /// R4344：解析期 `appendChild` 位置锚定——把单个内联脚本执行期间（`range`）记录的

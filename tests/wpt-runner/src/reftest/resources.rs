@@ -153,6 +153,14 @@ fn load_video_first_frames(cache: &mut ImageCache, html: &str, base_dir: Option<
     }
 }
 
+/// s307：GIF/animated WebP 文件装载——动画感知解码（魔数分派，帧合成 +
+/// GCE/ANMF 时序；单帧返回 anim=None）。此前 reftest 通道无 GIF/WebP 装载臂：
+/// 两类文件从不入缓存 → img 空白（animated-image-update 双页 ✗2.08% 勘根）。
+fn load_anim_file(path: &Path) -> Result<(ImageData, Option<AnimationData>), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
+    decode_image_animation(&bytes)
+}
+
 /// 找到 HTML 标签的真正结束位置（> 在引号外）。
 /// 返回 > 字符的偏移量（相对于起始位置）。
 fn find_tag_end(html: &str) -> Option<usize> {
@@ -1109,6 +1117,18 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
             && let Ok(data) = load_svg_file(&path)
         {
             cache.insert_with_key(key, data);
+        } else if path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("gif") || e.eq_ignore_ascii_case("webp"))
+            && let Ok((data, anim)) = load_anim_file(&path)
+        {
+            // s307：GIF/animated WebP——动画数据随条目注入（首帧为静态位图，
+            // ImageKey 键面零变化）；渲染期 get 按动画时钟推进活跃帧。单帧文件
+            // anim=None 同 insert_with_key（零行为面外移）。
+            match anim {
+                Some(a) => cache.insert_with_animation(key, data, a),
+                None => cache.insert_with_key(key, data),
+            }
         }
     }
 

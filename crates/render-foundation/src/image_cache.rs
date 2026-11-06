@@ -8,6 +8,7 @@
 use crate::geometry::Size;
 use hashbrown::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 /// 图片缓存键 — 唯一标识一张图片
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -214,12 +215,76 @@ impl ImageData {
     }
 }
 
+/// s307（animated image 帧推进）：动画图片数据（多帧合成快照 + 时序时间线）。
+///
+/// GIF89a / animated WebP 解码出全部帧与帧时序；`ImageData` 仍只承载「当前帧」
+/// 位图（插入时 = 首帧），[`ImageCache::get`] 按动画时钟推进把条目换到活跃帧。
+/// HTML spec：img 渲染动画的当前帧
+///（https://html.spec.whatwg.org/multipage/images.html#the-img-element）。
+/// canvas drawImage 首帧语义不经此路径（R34xx，解码在桥接期一次性消费）。
+#[derive(Debug)]
+pub struct AnimationData {
+    /// 帧序列（RGBA 全画布合成快照；尺寸一致 = GIF 逻辑屏幕 / WebP VP8X canvas）
+    pub frames: Vec<ImageData>,
+    /// 每帧起点（毫秒；帧 i 活跃于 [start_ms[i], start_ms[i+1])，末帧到 total_ms）
+    pub start_ms: Vec<f64>,
+    /// 总时长（毫秒；回绕取模 = 无限循环）
+    pub total_ms: f64,
+    /// 动画时钟零点（宿主未注入虚拟时钟时按真实墙钟推进——engine 直连路径语义）
+    pub start: Instant,
+    /// 上次推进到的帧序号（get 比对，避免每查重换 `Arc`）
+    active: usize,
+}
+
+impl AnimationData {
+    /// 活跃帧序号：回绕取模后落在的时间线区间（末帧闭到 total_ms）。
+    fn frame_index_at(&self, elapsed_ms: f64) -> usize {
+        if self.total_ms <= 0.0 || self.frames.is_empty() {
+            return 0;
+        }
+        let t = elapsed_ms.rem_euclid(self.total_ms);
+        // 线性扫描（帧数有界，解码期已限 4096；首帧零等待 = 任何 t ≥ 0 命中区间 0 起）。
+        let mut idx = 0usize;
+        while idx + 1 < self.frames.len() && t >= self.start_ms[idx + 1] {
+            idx += 1;
+        }
+        idx
+    }
+}
+
+thread_local! {
+    /// s307：虚拟动画时钟（毫秒，自动画 0 点）。reftest 通道在脚本期注入页面
+    /// setTimeout 总等待（shim timer 即时消费——真浏览器语义 = 截图时刻动画已
+    /// 推进等待时长）；None = 按条目 `AnimationData::start` 墙钟推进。渲染全程
+    /// 有效，[`set_anim_virtual_elapsed`] 返回的 RAII guard drop 时还原。
+    static ANIM_VIRTUAL_ELAPSED_MS: std::cell::Cell<Option<f64>> = const { std::cell::Cell::new(None) };
+}
+
+/// [`set_anim_virtual_elapsed`] 的 RAII guard：drop 时清虚拟时钟（reftest 渲染
+/// 入口 set、函数尾自动还原——adopted-css 线程局部同款，防 rayon 跨案泄漏）。
+#[derive(Debug)]
+pub struct AnimClockGuard;
+
+impl Drop for AnimClockGuard {
+    fn drop(&mut self) {
+        ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.set(None));
+    }
+}
+
+/// 注入虚拟动画时钟（毫秒，自动画 0 点起；负值钳 0）。返回 guard，drop 清除。
+pub fn set_anim_virtual_elapsed(ms: f64) -> AnimClockGuard {
+    ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.set(Some(ms.max(0.0))));
+    AnimClockGuard
+}
+
 /// 图片缓存条目
 #[derive(Debug)]
 struct CacheEntry {
     /// 图片数据（A3 Fix C4：`Arc` 共享句柄——快照发布路径引用计数替代全量深拷贝；
     /// 像素在插入后不可变（R3254-M2，content_hash 复用前提），共享语义安全）。
     data: Arc<ImageData>,
+    /// s307：动画数据（仅动画图片 Some；`get` 推进时换写 `data` 到活跃帧）
+    animation: Option<AnimationData>,
     /// 引用计数
     ref_count: u32,
     /// 最近访问的代数（用于 GC）
@@ -1231,6 +1296,7 @@ impl ImageCache {
 
         let entry = CacheEntry {
             data: Arc::new(data),
+            animation: None,
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1245,6 +1311,21 @@ impl ImageCache {
     pub fn insert_with_key(&mut self, key: ImageKey, data: ImageData) {
         let entry = CacheEntry {
             data: Arc::new(data),
+            animation: None,
+            ref_count: 1,
+            last_access_gen: self.current_gen,
+        };
+        self.entries.insert(key, entry);
+    }
+
+    /// s307：带动画数据插入（`data` = 首帧位图；`animation` 携带全部帧与时序）。
+    ///
+    /// 条目像素不可变不变式保持：每次推进写**新的** `Arc<ImageData>`（其
+    /// content_hash 与自身像素一致），下游 GPU 纹理缓存按 content_hash 自然换新。
+    pub fn insert_with_animation(&mut self, key: ImageKey, data: ImageData, animation: AnimationData) {
+        let entry = CacheEntry {
+            data: Arc::new(data),
+            animation: Some(animation),
             ref_count: 1,
             last_access_gen: self.current_gen,
         };
@@ -1254,6 +1335,28 @@ impl ImageCache {
     /// 获取图片数据的引用，并递增引用计数
     pub fn get(&mut self, key: &ImageKey) -> Option<&ImageData> {
         let entry = self.entries.get_mut(key)?;
+        // s307：动画条目先推进到活跃帧（虚拟时钟优先，缺省按条目墙钟）。
+        // 先算出目标帧快照再换写（entry.animation 与 entry.data 不相交字段借用）。
+        if entry.animation.is_some() {
+            let elapsed = ANIM_VIRTUAL_ELAPSED_MS.with(|c| c.get()).unwrap_or_else(|| {
+                entry
+                    .animation
+                    .as_ref()
+                    .map_or(0.0, |a| a.start.elapsed().as_secs_f64() * 1000.0)
+            });
+            let next = entry.animation.as_ref().and_then(|a| {
+                let idx = a.frame_index_at(elapsed);
+                (idx != a.active)
+                    .then(|| a.frames.get(idx).map(|f| (idx, f.clone())))
+                    .flatten()
+            });
+            if let Some((idx, frame)) = next {
+                if let Some(a) = entry.animation.as_mut() {
+                    a.active = idx;
+                }
+                entry.data = Arc::new(frame);
+            }
+        }
         entry.ref_count = entry.ref_count.saturating_add(1);
         entry.last_access_gen = self.current_gen;
         Some(entry.data.as_ref())
@@ -1392,6 +1495,7 @@ impl ImageCache {
                 key.clone(),
                 CacheEntry {
                     data: Arc::clone(&entry.data),
+                    animation: None,
                     ref_count: 1,
                     last_access_gen: 0,
                 },
@@ -1725,6 +1829,89 @@ pub fn decode_webp_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     ImageData::from_rgba(rgba, width, height)
 }
 
+/// s307：WebP 多帧解码（animated WebP 帧迭代 + 时序时间线）。
+///
+/// 静态 WebP：委托 [`decode_webp_bytes`](首帧/唯帧，行为不变）。
+/// animated WebP（VP8X）：`image-webp` `read_frame` 顺序迭代——每帧返回全画布
+/// 合成 RGBA（dispose + alpha blending 由解码器内部完成）与帧时长（毫秒）。
+/// 首帧之后的解码错误降级为「保留已解帧」（部分动画优于失败，与 GIF 臂同纪律）。
+/// https://developers.google.com/speed/webp/docs/riff_container#animation
+pub fn decode_webp_animation_bytes(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
+    use std::io::Cursor;
+    let mut decoder = image_webp::WebPDecoder::new(Cursor::new(bytes)).map_err(|e| format!("WebP 解码失败: {e}"))?;
+    if !decoder.is_animated() {
+        // 静态：走既有单帧路径（时间线 None，缓存侧零行为面外移）。
+        return decode_webp_bytes(bytes).map(|img| (img, None));
+    }
+    let (width, height) = decoder.dimensions();
+    let has_alpha = decoder.has_alpha();
+    let buf_size = decoder
+        .output_buffer_size()
+        .ok_or_else(|| "WebP 无输出缓冲区大小".to_string())?;
+    let mut raw = vec![0u8; buf_size];
+    let mut frames: Vec<ImageData> = Vec::new();
+    let mut start_ms: Vec<f64> = Vec::new();
+    let mut elapsed_ms = 0.0f64;
+    // s307：帧数上限（与 GIF 臂同款病态内存防线）。
+    const WEBP_FRAME_CAP: usize = 4096;
+    loop {
+        if frames.len() >= WEBP_FRAME_CAP {
+            break;
+        }
+        let duration_ms = match decoder.read_frame(&mut raw) {
+            Ok(d) => d,
+            Err(image_webp::DecodingError::NoMoreFrames) => break,
+            Err(e) => {
+                if frames.is_empty() {
+                    return Err(format!("WebP 读取失败: {e}"));
+                }
+                break;
+            }
+        };
+        let rgba = if has_alpha {
+            raw.clone()
+        } else {
+            let mut out = Vec::with_capacity(raw.len() / 3 * 4);
+            for px in raw.as_chunks::<3>().0 {
+                out.extend_from_slice(&[px[0], px[1], px[2], 255]);
+            }
+            out
+        };
+        frames.push(ImageData::from_rgba(rgba, width, height).map_err(|e| format!("WebP frame compose: {e}"))?);
+        start_ms.push(elapsed_ms);
+        // 帧时长 0 按 100ms 钳（GIF 臂同款浏览器节奏实践；防零时长帧时间线塌缩）。
+        elapsed_ms += if duration_ms < 1 { 100.0 } else { duration_ms as f64 };
+    }
+    if frames.is_empty() {
+        return Err("WebP 无帧".into());
+    }
+    let first = frames[0].clone();
+    let anim = if frames.len() >= 2 {
+        Some(AnimationData {
+            frames,
+            start_ms,
+            total_ms: elapsed_ms,
+            start: Instant::now(),
+            active: 0,
+        })
+    } else {
+        None
+    };
+    Ok((first, anim))
+}
+
+/// s307：动画感知解码分派——[`decode_image_bytes`] 的 `(首帧, Option<动画>)`
+/// 扩展面。PNG/JPEG/SVG 恒 `(img, None)`；GIF/animated WebP 解全部帧。
+pub fn decode_image_animation(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
+    if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        decode_gif_animation_bytes(bytes)
+    } else if is_webp_magic(bytes) {
+        decode_webp_animation_bytes(bytes)
+    } else {
+        decode_image_bytes(bytes).map(|img| (img, None))
+    }
+}
+
 /// 把 `jpeg-decoder` 输出的像素（RGB24/L8/L16/CMYK32）转换为 RGBA。
 ///
 /// JPEG 不含 alpha 通道，故统一补 alpha=255。CMYK 按 JPEG 惯例（Adobe 倒置 K）
@@ -1798,10 +1985,25 @@ pub fn decode_image_bytes(bytes: &[u8]) -> Result<ImageData, String> {
 }
 
 /// R34xx（drawing-images 目录）：GIF 首帧解码（2d.drawImage.animated.gif 的
-/// drawImage 画首帧——anim-gr.gif 首帧绿）。GIF89a：逻辑屏幕 + 全局色表 +
-/// 首个图像描述符 + LZW 压缩数据（多帧忽略——静态首帧）。
+/// drawImage 画首帧——anim-gr.gif 首帧绿）。委托 [`decode_gif_animation_bytes`]
+/// 取帧 0（s307 起多帧解码，首帧语义不变）。
 /// https://www.w3.org/Graphics/GIF/spec-gif89a.txt
 fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
+    decode_gif_animation_bytes(bytes).map(|(first, _)| first)
+}
+
+/// s307：GIF 多帧解码（帧合成快照 + GCE 时序时间线）。GIF89a：逻辑屏幕 +
+/// 全局/局部色表 + 图像描述符 + LZW 压缩数据；每帧各有 GCE（透明色/延迟/处置）。
+/// 首帧解码路径与旧单帧实现逐字节同构（全零画布起、透明索引写 alpha 0、
+/// palette 越界跳过）；首帧之后的结构错误降级为「保留已解帧」（部分动画优于失败）。
+/// https://www.w3.org/Graphics/GIF/spec-gif89a.txt
+/// FIXME: 帧间处置码 3（restore to previous）按 1（leave in place）降级；
+/// FIXME: 交错存储（image descriptor packed bit6）按顺序解码，像素错位——WPT
+///       语料暂未驱动，遇到时按 spec §22 行序重排；
+/// FIXME: NETSCAPE 循环计数忽略（恒无限循环回绕——浏览器无计数扩展默认语义）；
+/// FIXME: 延迟钳制采用浏览器实践（<10ms 按 100ms，
+///       https://wiki.whatwg.org/wiki/GIF_specs#Delay_times）。
+fn decode_gif_animation_bytes(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
     if bytes.len() < 13 {
         return Err("GIF too short".into());
     }
@@ -1829,25 +2031,157 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
         }
         pos += gct_size * 3;
     }
-    // 扫描块到首个图像描述符（0x2C）。Graphic Control Extension（0x21 0xF9）携带
-    // 首帧的透明色标志（packed bit0）与透明色索引（第 5 字节）——spec gif89a §23；
-    // 多帧时每帧各有 GCE，静态首帧解码取图像描述符前最后一个 GCE。
+    // 帧循环：扫描块流，每个图像描述符（0x2C）合成一帧快照；其前最后一个 GCE
+    //（0x21 0xF9）携带本帧的透明色/延迟/处置——spec gif89a §23。
+    let mut canvas = vec![0u8; (w * h * 4) as usize];
+    let mut frames: Vec<ImageData> = Vec::new();
+    let mut start_ms: Vec<f64> = Vec::new();
+    let mut elapsed_ms = 0.0f64;
+    // s307：帧数上限——多帧全量快照的病态内存防线（单帧 4K 张 4096×4096 画布
+    // 也不越 64G；正常动画 GIF 远低于此）。
+    const GIF_FRAME_CAP: usize = 4096;
     let mut transparent: Option<u8> = None;
+    let mut delay_ms = 100.0f64;
+    let mut disposal = 0u8;
     loop {
-        if pos >= bytes.len() {
-            return Err("GIF no image descriptor".into());
+        if frames.len() >= GIF_FRAME_CAP {
+            break;
         }
-        match bytes[pos] {
-            0x2C => break,
+        let Some(&block) = bytes.get(pos) else {
+            if frames.is_empty() {
+                return Err("GIF no image descriptor".into());
+            }
+            break;
+        };
+        match block {
+            0x3B => break, // trailer
+            0x2C => {
+                // 图像描述符
+                if bytes.len() < pos + 10 {
+                    if frames.is_empty() {
+                        return Err("GIF truncated image descriptor".into());
+                    }
+                    break;
+                }
+                let left = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]) as u32;
+                let top = u16::from_le_bytes([bytes[pos + 3], bytes[pos + 4]]) as u32;
+                let iw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
+                let ih = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
+                let iflags = bytes[pos + 9];
+                pos += 10;
+                // 局部色表
+                let mut lct: Vec<[u8; 3]> = Vec::new();
+                if iflags & 0x80 != 0 {
+                    let lct_size = 2usize.pow((iflags & 0x07) as u32 + 1);
+                    if bytes.len() < pos + lct_size * 3 {
+                        if frames.is_empty() {
+                            return Err("GIF truncated LCT".into());
+                        }
+                        break;
+                    }
+                    for i in 0..lct_size {
+                        lct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
+                    }
+                    pos += lct_size * 3;
+                }
+                let use_lct = iflags & 0x80 != 0;
+                if pos >= bytes.len() {
+                    if frames.is_empty() {
+                        return Err("GIF truncated LZW min code".into());
+                    }
+                    break;
+                }
+                let min_code = bytes[pos] as usize;
+                pos += 1;
+                if min_code > 8 {
+                    return Err("GIF invalid LZW min code".into());
+                }
+                // LZW 数据子块
+                let mut lzw: Vec<u8> = Vec::new();
+                let mut truncated = false;
+                while pos < bytes.len() && bytes[pos] != 0 {
+                    let len = bytes[pos] as usize;
+                    if pos + 1 + len > bytes.len() {
+                        truncated = true;
+                        break;
+                    }
+                    lzw.extend_from_slice(&bytes[pos + 1..pos + 1 + len]);
+                    pos += 1 + len;
+                }
+                if truncated {
+                    if frames.is_empty() {
+                        return Err("GIF truncated LZW data".into());
+                    }
+                    break;
+                }
+                if pos < bytes.len() {
+                    pos += 1; // 子块 0 终止
+                }
+                let indices = match gif_lzw_decode(&lzw, min_code) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        if frames.is_empty() {
+                            return Err(e);
+                        }
+                        break;
+                    }
+                };
+                if indices.len() < (iw * ih) as usize {
+                    if frames.is_empty() {
+                        return Err("GIF LZW output too short".into());
+                    }
+                    break;
+                }
+                // 上采样到画布尺寸（左/上偏移 + GCE 透明色索引）。
+                let palette = if use_lct { &lct } else { &gct };
+                for y in 0..ih {
+                    for x in 0..iw {
+                        let si = (y * iw + x) as usize;
+                        let idx = indices[si] as usize;
+                        let (dx, dy) = (left + x, top + y);
+                        if dx >= w || dy >= h {
+                            continue;
+                        }
+                        let di = ((dy * w + dx) * 4) as usize;
+                        if Some(idx as u8) == transparent {
+                            canvas[di + 3] = 0;
+                        } else if let Some(c) = palette.get(idx) {
+                            canvas[di] = c[0];
+                            canvas[di + 1] = c[1];
+                            canvas[di + 2] = c[2];
+                            canvas[di + 3] = 255;
+                        }
+                    }
+                }
+                frames.push(ImageData::from_rgba(canvas.clone(), w, h).map_err(|e| format!("GIF frame compose: {e}"))?);
+                start_ms.push(elapsed_ms);
+                elapsed_ms += delay_ms;
+                // 帧后处置（影响下一帧绘制起点）：0/1 leave in place；2 = 帧矩形
+                // 清透明（restore to background，浏览器以透明实现背景）；3 = leave
+                //（FIXME 已标降级）。
+                if disposal == 2 {
+                    for y in top..(top + ih).min(h) {
+                        for x in left..(left + iw).min(w) {
+                            let di = ((y * w + x) * 4) as usize;
+                            canvas[di..di + 4].fill(0);
+                        }
+                    }
+                }
+            }
             0x21 => {
                 // Graphic Control Extension：packed bit0 = 透明色标志，索引在
-                // [size, packed, delay lo, delay hi, trans idx] 的第 5 字节。
+                // [size, packed, delay lo, delay hi, trans idx] 的第 5 字节；
+                // packed bit2-4 = 处置码。
                 if bytes.get(pos + 1) == Some(&0xF9) && bytes.get(pos + 2).copied().unwrap_or(0) >= 4 {
-                    transparent = if bytes[pos + 3] & 0x01 != 0 {
+                    let packed = bytes[pos + 3];
+                    transparent = if packed & 0x01 != 0 {
                         bytes.get(pos + 6).copied()
                     } else {
                         None
                     };
+                    disposal = (packed >> 2) & 0x07;
+                    let delay_cs = u16::from_le_bytes([bytes[pos + 4], bytes[pos + 5]]) as f64;
+                    delay_ms = if delay_cs < 1.0 { 100.0 } else { delay_cs * 10.0 };
                 }
                 // 扩展块：跳过标签 + 子块
                 pos += 2;
@@ -1856,90 +2190,30 @@ fn decode_gif_bytes(bytes: &[u8]) -> Result<ImageData, String> {
                 }
                 pos += 1; // 0 终止
             }
-            0x3B => return Err("GIF no image".into()),
-            _ => return Err("GIF unexpected block".into()),
-        }
-    }
-    // 图像描述符
-    if bytes.len() < pos + 10 {
-        return Err("GIF truncated image descriptor".into());
-    }
-    let left = u16::from_le_bytes([bytes[pos + 1], bytes[pos + 2]]) as u32;
-    let top = u16::from_le_bytes([bytes[pos + 3], bytes[pos + 4]]) as u32;
-    let iw = u16::from_le_bytes([bytes[pos + 5], bytes[pos + 6]]) as u32;
-    let ih = u16::from_le_bytes([bytes[pos + 7], bytes[pos + 8]]) as u32;
-    let iflags = bytes[pos + 9];
-    pos += 10;
-    // 局部色表
-    let mut lct: Vec<[u8; 3]> = Vec::new();
-    if iflags & 0x80 != 0 {
-        let lct_size = 2usize.pow((iflags & 0x07) as u32 + 1);
-        if bytes.len() < pos + lct_size * 3 {
-            return Err("GIF truncated LCT".into());
-        }
-        for i in 0..lct_size {
-            lct.push([bytes[pos + i * 3], bytes[pos + i * 3 + 1], bytes[pos + i * 3 + 2]]);
-        }
-        pos += lct_size * 3;
-    }
-    let use_lct = iflags & 0x80 != 0;
-    if pos >= bytes.len() {
-        return Err("GIF truncated LZW min code".into());
-    }
-    let min_code = bytes[pos] as usize;
-    pos += 1;
-    if min_code > 8 {
-        return Err("GIF invalid LZW min code".into());
-    }
-    // LZW 数据子块
-    let mut lzw: Vec<u8> = Vec::new();
-    while pos < bytes.len() && bytes[pos] != 0 {
-        let len = bytes[pos] as usize;
-        if pos + 1 + len > bytes.len() {
-            return Err("GIF truncated LZW data".into());
-        }
-        lzw.extend_from_slice(&bytes[pos + 1..pos + 1 + len]);
-        pos += 1 + len;
-    }
-    let indices = gif_lzw_decode(&lzw, min_code)?;
-    if indices.len() < (iw * ih) as usize {
-        return Err("GIF LZW output too short".into());
-    }
-    // 上采样到画布尺寸（左/上偏移 + GCE 透明色索引）。
-    // FIXME: 交错存储（image descriptor packed bit6, iflags & 0x40）按顺序解码，
-    // 交错 GIF 像素错位——WPT 语料暂未驱动，遇到时按 spec §22 行序重排。
-    let mut data = vec![0u8; (w * h * 4) as usize];
-    let palette = if use_lct { &lct } else { &gct };
-    for y in 0..ih {
-        for x in 0..iw {
-            let si = (y * iw + x) as usize;
-            let idx = indices[si] as usize;
-            let (dx, dy) = (left + x, top + y);
-            if dx >= w || dy >= h {
-                continue;
-            }
-            let di = ((dy * w + dx) * 4) as usize;
-            if Some(idx as u8) == transparent {
-                data[di + 3] = 0;
-            } else if let Some(c) = palette.get(idx) {
-                data[di] = c[0];
-                data[di + 1] = c[1];
-                data[di + 2] = c[2];
-                data[di + 3] = 255;
+            _ => {
+                if frames.is_empty() {
+                    return Err("GIF unexpected block".into());
+                }
+                break;
             }
         }
     }
-    Ok(ImageData {
-        width: w,
-        height: h,
-        pixels: data,
-        content_hash: 0,
-        solid_color: None,
-        intrinsic_ratio: None,
-        no_ratio: None,
-        computed_intrinsic: None,
-        svg_source: None,
-    })
+    if frames.is_empty() {
+        return Err("GIF no image".into());
+    }
+    let first = frames[0].clone();
+    let anim = if frames.len() >= 2 {
+        Some(AnimationData {
+            frames,
+            start_ms,
+            total_ms: elapsed_ms,
+            start: Instant::now(),
+            active: 0,
+        })
+    } else {
+        None
+    };
+    Ok((first, anim))
 }
 
 /// GIF LZW 解码（spec gif89a LZW——clear/EOI 代码 + 变长码宽 + 字典增长）。
@@ -4363,5 +4637,87 @@ mod r5125_filter_extents_tests {
     fn no_filter_returns_none() {
         let src = r#"<svg xmlns="http://www.w3.org/2000/svg" width="50" height="100"><rect width="50" height="100" fill="green"/></svg>"#;
         assert_eq!(svg_filter_extents(src.as_bytes(), 50, 100), None);
+    }
+}
+
+#[cfg(test)]
+mod s307_anim_frame_tests {
+    use super::*;
+
+    /// s307：GIF 多帧解码——帧序/时序/回绕（corpus animated.gif：红 100ms → 绿 10s）。
+    #[test]
+    fn test_decode_gif_animation_frames_s307() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        assert_eq!((first.width, first.height), (100, 100));
+        let px = |img: &ImageData, x: u32, y: u32| -> [u8; 4] {
+            let i = ((y * img.width + x) * 4) as usize;
+            [img.pixels[i], img.pixels[i + 1], img.pixels[i + 2], img.pixels[i + 3]]
+        };
+        // 首帧红（GCT idx 0 = 255,0,0），全画布不透明。
+        assert_eq!(px(&first, 0, 0), [255, 0, 0, 255]);
+        assert_eq!(px(&first, 99, 99), [255, 0, 0, 255]);
+        let anim = anim.expect("animated.gif 须产出动画数据");
+        assert_eq!(anim.frames.len(), 2);
+        assert_eq!(anim.start_ms, vec![0.0, 100.0]);
+        assert!((anim.total_ms - 10100.0).abs() < 1e-6, "total={}", anim.total_ms);
+        // 帧 1 绿（GCT idx 1 = 0,128,0）。
+        assert_eq!(px(&anim.frames[1], 0, 0), [0, 128, 0, 255]);
+        // 时间线：0ms→帧0；150ms→帧1；10100ms 回绕→帧0；100.5ms→帧1。
+        assert_eq!(anim.frame_index_at(0.0), 0);
+        assert_eq!(anim.frame_index_at(99.9), 0);
+        assert_eq!(anim.frame_index_at(150.0), 1);
+        assert_eq!(anim.frame_index_at(10100.0), 0);
+    }
+
+    /// s307：animated WebP 多帧解码——帧序/时序（corpus animated.webp：100ms+10000ms）。
+    #[test]
+    fn test_decode_webp_animation_frames_s307() {
+        let (first, anim) = decode_webp_animation_bytes(include_bytes!("testdata/animated.webp")).expect("decode");
+        assert_eq!((first.width, first.height), (100, 100));
+        let px = |img: &ImageData, x: u32, y: u32| -> [u8; 4] {
+            let i = ((y * img.width + x) * 4) as usize;
+            [img.pixels[i], img.pixels[i + 1], img.pixels[i + 2], img.pixels[i + 3]]
+        };
+        let anim = anim.expect("animated.webp 须产出动画数据");
+        assert_eq!(anim.frames.len(), 2);
+        assert_eq!(anim.start_ms, vec![0.0, 100.0]);
+        assert!((anim.total_ms - 10100.0).abs() < 1e-6, "total={}", anim.total_ms);
+        assert_eq!(px(&anim.frames[1], 0, 0)[1], 128, "帧 1 绿通道");
+    }
+
+    /// s307：静态 WebP/GIF 单帧——anim=None（缓存零行为面外移）。
+    #[test]
+    fn test_decode_static_no_anim_s307() {
+        let (_, anim) = decode_webp_animation_bytes(include_bytes!("testdata/green_4x3.webp")).expect("webp");
+        assert!(anim.is_none(), "静态 webp 不产出动画数据");
+    }
+
+    /// s307：ImageCache 动画条目推进——虚拟时钟注入换帧，未注入停帧 0。
+    #[test]
+    fn test_image_cache_anim_frame_advance_s307() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        let anim = anim.expect("anim");
+        let green_px = anim.frames[1].pixels.clone();
+        let green_hash = anim.frames[1].content_hash;
+        let mut cache = ImageCache::new(16, 16 * 1024 * 1024);
+        let key = ImageKey::new(42);
+        cache.insert_with_animation(key.clone(), first, anim);
+        // 未注入虚拟时钟：墙钟≈0 → 帧离线停 0（engine 直连路径确定性语义）。
+        // （条目 start = 解码时刻，测试内亚毫秒级推进不会越 100ms 首帧边界。）
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(img.pixels[0], 255, "帧 0 红");
+        cache.release(&key);
+        // 注入虚拟时钟 150ms → 活跃帧 1（绿）。
+        let _guard = set_anim_virtual_elapsed(150.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(&img.pixels[..8], &green_px[..8], "帧 1 绿");
+        assert_eq!(img.content_hash, green_hash, "hash 随帧换新");
+        cache.release(&key);
+        drop(_guard);
+        // 回绕：10100ms → 帧 0（红）。
+        let _guard = set_anim_virtual_elapsed(10100.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(img.pixels[0], 255, "回绕帧 0 红");
+        cache.release(&key);
     }
 }
