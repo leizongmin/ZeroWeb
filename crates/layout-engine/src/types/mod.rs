@@ -404,6 +404,13 @@ pub struct LayoutBox {
     /// `shift_siblings_after_clamp_shrink` 消费（后续 in-flow 兄弟上移 + 祖先 auto 高
     /// 收缩并继续上抛），消费后清零防重入双计。
     pub clamp_shrink_delta: f32,
+    /// R5436（CSS2 §10.3.5 shrink-to-fit）：本表最近一次 `apply_table_size_constraints`
+    /// 记录的纯 grid extent（列轨 + border-spacing 周界，**不含** caption 下界——caption
+    /// 可溢出表盒（§17.4.1），fit 判定仍消费 caption-inclusive intrinsic）。仅
+    /// fix_table_among_floats C 步 beside 臂消费：auto-width 表 beside 目标宽 =
+    /// min(grid extent, gap)，替代无条件填 gap。0 = 无信号（非表盒 / 表布局未跑，
+    /// 回退旧填 gap 语义）。
+    pub table_grid_max_width: f32,
     /// 是否为「孤立 table-internal 元素」（display:table-row-group/table-row/table-cell 等，
     /// 且父元素非 table/table-internal）——CSS Tables §2.4 应为其生成匿名 table 包装盒。
     /// 此标记让该元素在 establishes_bfc 中被视为匿名 table（建立 BFC，隔离 margin 折叠
@@ -873,6 +880,7 @@ impl Default for LayoutBox {
             clearance_extent_reduction: 0.0,
             clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
+            table_grid_max_width: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,

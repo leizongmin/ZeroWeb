@@ -3656,6 +3656,11 @@ fn apply_table_size_constraints(
             let intrinsic_width = (total_col_width + spacing_total_x + 2.0 * perimeter_x)
                 .max(caption_definite_width)
                 .max(caption_frame_floor);
+            // R5436（CSS2 §10.3.5 shrink-to-fit）：纯 grid extent 信号（列轨 + spacing
+            // 周界，不含 caption 下界——caption 溢出表盒语义见消费点）。intrinsic_width
+            // 自 R5213 起 max 了 caption definite 宽，作 beside 宽上限会把表盒撑到
+            // caption 宽（chromium 表盒 = grid 宽，caption 溢出）。
+            table_box.table_grid_max_width = total_col_width + spacing_total_x + 2.0 * perimeter_x;
             let is_border_box = matches!(style.box_sizing, zero_css_parser::values::BoxSizingValue::BorderBox);
             let padding_border_w =
                 table_box.padding_left + table_box.padding_right + table_box.border_left + table_box.border_right;

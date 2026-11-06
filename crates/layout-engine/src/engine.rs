@@ -2894,6 +2894,7 @@ impl LayoutEngine {
             clearance_extent_reduction: 0.0,
             clearance_chain_absorbed: false,
             clamp_shrink_delta: 0.0,
+            table_grid_max_width: 0.0,
             is_anon_table_root: false,
             is_anon_table_cell: false,
             column_gap: 0.0,

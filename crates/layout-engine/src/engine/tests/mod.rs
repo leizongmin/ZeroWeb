@@ -1022,3 +1022,7 @@ mod r5434_table_col_used_width_tests;
 /// R5435：col 指定宽钳臂缩列后行高随动（钳臂并入 R4298 remeasure 链；valign:bottom
 /// 沉底恢复）。
 mod r5435_cell_valign_extent_tests;
+
+/// R5436：float 旁 auto-width 表 beside 目标宽收口（definite-exact grid 缩到
+/// §10.3.5 shrink-to-fit 上限，欠度量形态维持填 gap）。
+mod r5436_beside_shrink_tests;

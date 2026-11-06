@@ -137,6 +137,76 @@ fn is_in_flow(b: &LayoutBox) -> bool {
     !is_float(b) && !b.is_absolute && !b.is_fixed
 }
 
+/// R5436：grid extent「definite-exact」判定。`table_grid_max_width`（B 步列轨和）只在
+/// 全部列贡献来自 definite Px 宽子盒时精确成立——含文本/多 inline 子的 cell 走 R5261
+/// run 度量，空白文本即断 run（css-sizing-3 §max-content 本应求和），欠度量值作 §10.3.5
+/// beside 上限会误缩（floats-wrap-bfc-002：spans max-content 300 测 150 → 表 150 非 200）。
+/// 门定得窄：每 cell 的 DOM 子恰为一个带 definite Px 宽的元素、无任何直接文本节点。
+fn grid_extent_exact(table: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    let mut found_cell = false;
+    // 表树固定三层：caption（跳过）+ 行群/行嵌套 + cell。
+    for group in &table.children {
+        let group_style = group.node_id.and_then(|id| styles.get(&id));
+        let group_is_row_container = group_style.is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::TableRowGroup | DisplayValue::TableHeaderGroup | DisplayValue::TableFooterGroup
+            )
+        });
+        let rows: &[LayoutBox] = if group_is_row_container {
+            &group.children
+        } else {
+            std::slice::from_ref(group)
+        };
+        for row in rows {
+            let is_row = row
+                .node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| matches!(s.display, DisplayValue::TableRow));
+            if !is_row {
+                continue;
+            }
+            for cell in &row.children {
+                if cell.is_anon_table_cell {
+                    return false;
+                }
+                if !cell_definite_single_child(cell, doc, styles) {
+                    return false;
+                }
+                found_cell = true;
+            }
+        }
+    }
+    found_cell
+}
+
+/// 单 cell definite-exact：DOM 子恰一个元素节点且带 finite Px 宽、无其它元素/文本节点。
+fn cell_definite_single_child(cell: &LayoutBox, doc: &Document, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    let Some(id) = cell.node_id else {
+        return false;
+    };
+    let mut elem: Option<NodeId> = None;
+    for k in doc.child_nodes(id) {
+        match doc.get(k).map(|n| &n.kind) {
+            Some(zero_dom::NodeKind::Element(_)) => {
+                if elem.is_some() {
+                    return false;
+                }
+                elem = Some(k);
+            }
+            // 任何直接文本节点（含空白）都使宽度信号不精确（空白亦断 R5261 run）。
+            Some(zero_dom::NodeKind::Text(_)) => return false,
+            _ => {}
+        }
+    }
+    let Some(e) = elem else {
+        return false;
+    };
+    styles
+        .get(&e)
+        .is_some_and(|s| matches!(s.width, LengthValue::Px(v) if v.is_finite()))
+}
+
 fn resolve_declared_table_width(style: &ComputedStyle, content_width: f32) -> Option<f32> {
     match &style.width {
         LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_) => None,
@@ -189,6 +259,10 @@ fn fix_inner(
     // 先用不可变读取计算 natural_y / avoidance_x / is_cleared（避免与下方可变借用冲突）
     let mut table_h = root.children[tidx].height;
     let mut table_w = root.children[tidx].width;
+    // R5436：B 步 layout_table 记录的纯 grid extent（§10.3.5 shrink-to-fit 上限信号，
+    // 见下方 beside 宽臂）与其「definite-exact」判定——提前读出避开 C 步 table 可变借用。
+    let grid_max = root.children[tidx].table_grid_max_width;
+    let grid_exact = grid_extent_exact(&root.children[tidx], doc, styles);
     // R1723：definite-width table 的「声明宽」（Px 或 Percentage 解析到容器 content_width）。
     // step5 `adjust_float_positions` 会把旁 float 的 BFC table **shrink** 到可用宽（如 150→100），
     // 故此处读到的是 shrink 后宽。但 CSS §9.5：definite-width table 应保持声明宽，放不下 float 旁
@@ -366,8 +440,23 @@ fn fix_inner(
         // float，step8 布局本已 96 正确）改写成 float 旁可用宽 464。
         // kill-switch `ZW_TABLE_FLOAT_BESIDE_KEEP_DECLARED=0` 回退 beside 一律填 mw。
         let beside_keep_declared = std::env::var("ZW_TABLE_FLOAT_BESIDE_KEEP_DECLARED").as_deref() != Ok("0");
+        // R5436（CSS2 §10.3.5/§17.5.2 shrink-to-fit）：auto-width 表 beside 不再无条件填
+        // gap——B 步 layout_table 在盒上记录纯 grid extent（table_grid_max_width，列轨 +
+        // spacing，不含 caption 下界），beside 目标宽 = min(grid extent, gap)。band-step
+        // fit 判定用 caption-inclusive effective_w（R5213），落位后表盒宽应回到 §10.3.5
+        // shrink-to-fit 上限：floats-wrap-bfc-006 T2/T4（caption 190/192 > cell 100）表盒
+        // 被填成 gap 190/195，chromium 表盒 = grid 宽 100（caption 溢出表盒）→ 紫 bar
+        // 右侧 90/95px 差；T3（grid 227 < gap 230）缩到 pref。bfc-002 系（文本 cell）
+        // B 步列宽已按可用宽收缩，grid extent ≈ gap → 数值不变（fill 语义零回归面）。
+        // declared-width 表维持 R5398 保声明宽。
+        // kill-switch `ZW_TABLE_FLOAT_BESIDE_SHRINK=0` 回退 beside 一律填 gap。
+        let beside_shrink_grid = std::env::var("ZW_TABLE_FLOAT_BESIDE_SHRINK").as_deref() != Ok("0");
         let beside_target_w = if beside && beside_keep_declared {
-            declared_w.map_or(mw, |dw| dw.min(mw))
+            match declared_w {
+                Some(dw) => dw.min(mw),
+                None if beside_shrink_grid && grid_max > 0.5 && grid_exact => grid_max.min(mw),
+                None => mw,
+            }
         } else {
             mw
         };
