@@ -363,3 +363,40 @@ MT2-VERDICT OK**。本文件全部警示议题终态：①dd/dt 20 行=撤销路
 null（与本方 03:58 提案同形）✓；⑤双 p=part01c 第 4 参回填 ✓；⑥final2 mt 70 行=三族全清 ✓。
 fb 腿全轮最优 legs5 F2P=841/P2F=0。遗留唯一缺口：enginelib 对最终树未跑（~13s，九红名册判据），
 提交前建议补跑。核验方账本：VERIFY-NOTE v10 终账。本方告警职责闭环，提交由 owner 轮执行。
+
+## 核验轮终账回填（05:30）——③B2-vs-final 对账收口 + enginelib 独立复证
+
+上文 05:05 终账遗留的 enginelib 缺口已由 owner 轮自行闭合（enginelib2 补跑 05:05，控制面 05:14
+关账，终判刀 7ab68347f 推 origin/main）。本节按控制面下一步③回填 B2-vs-final 对账终态，并落本方
+独立复证，此后本文件冻结为 fbq 轮完整档案。
+
+**enginelib 独立复证**：本方以 legs 批同参守卫单跑（`./target/test-guard --compile-first
+--per-proc-mem 4 --total-mem 8 --time-limit 900 -- cargo test -p zero-engine --lib`，log
+`.acceptance/dps/batch-fbq-enginelib-final-tree.log`）：rc=101，**3,787P/9F，九红名册与批脚本
+EXPECT 逐字恒一**，独立坐实控制面 enginelib2 结论。时序注记：跑批前 shim md5 快照 = HEAD
+（59791ef5，与 mt2 验证树同）；owner 第九刀（part06 preservesOverrides 快照扩展至 iol/iul/
+insertParagraph/ilb/justify 四向/inserthtml 结构命令族，针对 mt 残 40 键 qV(style)-after 族，
+即下一步②首族）05:26 落笔工作树，在飞刀不入本账，其门禁批由 owner 轮按分工自跑。
+
+**B2-vs-final 对账终态**（基线资产 → 终判数字链）：
+
+1. 基线资产终态：B1 双保留件（keep-B1-knife-formatblock-post.log 3264 行 / .B1-knife-keep.log
+   713 行）均为第三批 02:46:40 截断窗毒化拷贝，真实 B1 佚失；B2 keep（5016 行）经 86 案零应用
+   异常 + stale embed 证据由 owner 轮定谳「混合快照同代伪测量」。**权威基线唯一 = keep-pre
+   （5046 行，刀前 nq7 同代真实产出）**；mt 面权威基线 = batch-nq7-mt-post.log（19,331P/837F）。
+   所有基于 B2 的行级归因（含本方 v3 的 P2F=4 归属）撤销，由 final 框架取代——本方 v2 已声明，
+   此处终 sealing。
+2. fb 腿数字链（pre → 终）：keep-pre 5046 行 F=993 → legs5（04:29:43 出账，单页完整覆盖，八刀
+   全谱二进制）F=152，F2P=841 / P2F=0 / lost=0 VERDICT OK，全轮历史最优。第三刀 dd/dt 20 行
+   纯回归定谳维持：该 20 行在 B2（刀后旧二进制）、final2、narrow、legs5、mt2 五代产出中恒绿，
+   第三刀无任何正名案走其拒绝路径——已撤，不再复活。
+3. mt 面数字链（nq7-mt → 终）：final2 mt P2F=70（第六刀无门作用域，44+3+typing 半边）→ cmd
+   门收臂（overrides/typing 快照 cmdIsFbq4 门）→ mt2 P2F=0（70 行逐族翻回：typing carrier 24 +
+   delete+inserttext 43 + styleWithCSS 3）、F2P=93 零 off-family（fb 35/indent 12/ihr 23/img 23，
+   416−93=323 自洽），MT2-VERDICT OK。owner 预期口径（ihr 12+img 12+46=70）与本方行级名单
+   （24+44+3=71）两口径在 VERDICT OK 下同时闭合，无未归账行。
+4. lost-30 与 lost-4 机制终态：b7 生成器 off-by-one（漏 359-362）+ 切片排除修正，非 shim 异常
+   抛出；切片跑法 dps 粘滞链断裂 4 行假 P2F 已由单页跑法（legs5/终判）结构性消除。
+5. 残余债移交：mt F 323 键普查 + 下一步②四族（qV/qI 读面 Chrome delta 12、apply 内容模型边界
+   4、indent 27F/img 23F 零散边界、typing caret 偏尾）归 owner 轮续刀，第九刀在飞即首族。
+   本方核验职责（③）随本节回填闭环。
