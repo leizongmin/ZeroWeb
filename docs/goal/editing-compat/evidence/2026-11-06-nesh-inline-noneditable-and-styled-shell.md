@@ -64,6 +64,8 @@ census 防扩面：`<div><ol/ul…</div>` 保壳期望行分三类——①双�
 
 基线 = `batch-bq-*-post.log`（bq 刀后账面；divb 刀 iul 10→7F 已含在基线对比时序内）。二进制 marker：`neHasNe=3 stBlock=13`。批脚本 `.acceptance/dps/batch-nesh2-legs.sh`，systemd detached（MemoryMax=24G + TimeoutStartSec=90min）+ flock 串行，23:10:20→23:42:06。
 
+**tip 复核**（并行席 `zw-nesh2-tip` 单元，`.acceptance/dps/nesh2-tip-recheck.log`，head=96279529e 含 xhr 4615680c0 触碰的共享 shim 面 part02/03）：iol 1757P/4F F2P=2/P2F=0 + iul 2059P/6F F2P=4/P2F=0 与门禁批逐字一致，**TIP-VERDICT OK**（23:47:51→23:50:07）——判读结论在组合基面恒一，mt 按 divb tip 复核先例跳。
+
 ## 零扰动面说明
 
 - NE 臂族门（span 内 non-editable 直子存在）对现存绿面零命中（census）；触发形走 `nodeList=[li]` 主循环常规道（直收/freshShell/dps/sr1 全既有臂）。
