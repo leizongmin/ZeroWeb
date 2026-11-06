@@ -4459,6 +4459,22 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
     "websockets/keeping-connection-open",
     "websockets/opening-handshake",
     "websockets/security",
+    // net-api-compat-v3 M2（DC-3 主增量）：interfaces 纯客户端 WS API 语义面
+    //（73 .html + 1 .any.js；连接面 /、/echo、/empty-message、/handshake_sleep_2
+    // 既有端点 + /echo_raw、/sleep_10_v13 两条 ws_fixture 新端点；wss 常数引用
+    // 落未走分支，非 wss 依赖面不阻塞——M0 甄别档第四节）。stream（WebSocketStream
+    // 新 API）/multi-globals/unload-a-document 排除记账同 M0 甄别档。
+    "websockets/interfaces",
+    "websockets/interfaces/CloseEvent",
+    "websockets/interfaces/WebSocket/bufferedAmount",
+    "websockets/interfaces/WebSocket/close",
+    "websockets/interfaces/WebSocket/constants",
+    "websockets/interfaces/WebSocket/events",
+    "websockets/interfaces/WebSocket/extensions",
+    "websockets/interfaces/WebSocket/protocol",
+    "websockets/interfaces/WebSocket/readyState",
+    "websockets/interfaces/WebSocket/send",
+    "websockets/interfaces/WebSocket/url",
 ];
 
 /// net-api corpus 页面 scheme 判定（M5-S5，M4-S27 记账翻转）：六 corpus 用例页锚

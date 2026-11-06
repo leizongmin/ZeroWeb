@@ -5,8 +5,8 @@
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
-零回归 + `.h2.` 排除记账），M2 启动（auth/响应头控制面/websockets
-非 wss fixture 分批）
+零回归 + `.h2.` 排除记账），M2 进行中——websockets interfaces 批次已落
+（74 案 +87P 零回归，45F 九簇归 M3），余 auth/响应头控制面分批
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -126,14 +126,23 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   正式排除（26 子测试移出分母）；redirect 残余 99F+1T 七簇归 M3
   （referrer 63 / mode 11 / origin 10 / method 9 / escape 4 /
   back-to-original 2 / keepalive 1T），xhr redirect 引擎缺口并簇 M3。
-- **M2**：py 端点目录 fixture 分批（xhr auth1-11 HTTP Basic 面）+
-  websockets 非 wss 依赖面入账（interfaces 74 案 + fixture `/echo_raw`
-  `/sleep_10_v13` 两条新增）（DC-2/3）。
+- **M2（进行中，[ws interfaces 批次档](net-api-compat-v3/evidence/2026-11-06-m2-ws-interfaces-batch.md)）**：
+  websockets/interfaces 74 案导入（+132 子测试 88P/45F，全量 A/B
+  changed 0 零回归）+ ws_fixture `/echo_raw`（裸字节回写，保留 opcode
+  注入面）与 `/sleep_10_v13`（握手延迟 10s）两新端点——close-connecting
+  10s 时序面一次通过；45F 九簇全引擎侧归 M3（接口常量 ReadOnly 16F /
+  EventTarget dispatchEvent 9F / 属性描述符 6F / 事件处理器 handleEvent 形
+  4F / send 状态机 3F / 协议错误断连 3F / CONNECTING fail 语义 2F /
+  事件序 1F / CloseEvent ctor 1F），批次门 66.2% 随 M3 收敛复验。
+  余 M2：xhr auth1-11 / getResponseHeader 响应头控制面 / CORS preflight
+  端点扩表。
 - **M3**：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
   xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
-  method 9F / location-escape 4F 等）+ xhr 在账失败簇收敛（formdata/
-  submitter 簇 4F + overrideMimeType Shift-JIS 接线 1F + cookies.http.html
-  挂起 1T；permissions-policy 2F 策略面排除）（DC-3）。
+  method 9F / location-escape 4F 等）+ ws interfaces 九簇（WebIDL 常量/
+  属性描述符基建、EventTarget dispatchEvent、fail-connection 语义等）+
+  xhr 在账失败簇收敛（formdata/submitter 簇 4F + overrideMimeType
+  Shift-JIS 接线 1F + cookies.http.html 挂起 1T；permissions-policy 2F
+  策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

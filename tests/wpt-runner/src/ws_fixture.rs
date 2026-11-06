@@ -22,6 +22,12 @@
 //!   - `/wrong_accept_key`：`Sec-WebSocket-Accept` 用错误值（客户端须拒连不派发 open）
 //!   - `/invalid`：回非 101 的裸 `FOO BAR BAZ\r\n\r\n`（客户端须按握手失败处理）
 //!   - `/handshake_sleep_2`：握手前 sleep 2s（CONNECTING readyState 时序面）
+//!   - `/echo_raw`：收到的消息**裸字节**写回 socket（无帧封装——客户端发
+//!     `\x81\x04test\x83\x03LOL` 原始帧字节，回写后其解析器读出 text 帧 + 保留
+//!     opcode 3 帧触发协议错误断连；binary `exit` → 服务端关闭）（net-api-compat-v3 M2）
+//!   - `/sleep_10_v13`：握手响应延迟 10s（`do_extra_handshake` sleep——
+//!     close-connecting 于 CONNECTING 中止时序面），握手后 text echo、
+//!     `Goodbye` 服务端关闭（net-api-compat-v3 M2）
 //!   - `/set-cookie*`：101 带 `Set-Cookie: ws_test_<query>=test; Path=/`（`_http` 变体
 //!     追加 `; HttpOnly` + `Sec-WebSocket-Origin` 回显）
 //!   - `/simple_handshake`：手工响应头（`101 Switching Protocols:` 带冒号 + Set-Cookie）
@@ -424,6 +430,49 @@ fn serve_data(sock: &mut TcpStream, reader: &mut BufReader<TcpStream>, hs: &Hand
                 write_frame(sock, 0x1, reply.as_bytes())?;
                 server_close(sock, reader)
             }
+            "/echo_raw" => {
+                // net-api-compat-v3 M2：`echo_raw_wsh`——收到的消息**裸字节**写回
+                // socket（`request.connection.write(line)`，无 WS 帧封装）：客户端把
+                // `\x81\x04test\x83\x03LOL` 作一条 binary 消息发来，回写后其解析器
+                // 逐帧读出 text "test" + 保留 opcode 3 帧（协议错误 → fail 连接，
+                // events/015/017/018 的 message+error+close 断言面）；binary
+                // `b'exit'` → handler return（服务端关闭）。
+                loop {
+                    match read_message(sock, reader)? {
+                        Some(Incoming::Binary(bytes)) => {
+                            if bytes == b"exit" {
+                                return server_close(sock, reader);
+                            }
+                            sock.write_all(&bytes)?;
+                        }
+                        // 上游 write(str)：text 帧同 raw 字节回写。
+                        Some(Incoming::Text(text)) => sock.write_all(text.as_bytes())?,
+                        // 载荷非 UTF-8（上游 receive_message 抛错断连）→ close 1007。
+                        Some(Incoming::InvalidUtf8) => {
+                            write_frame(sock, 0x8, &1007u16.to_be_bytes())?;
+                            return Ok(());
+                        }
+                        _ => return Ok(()),
+                    }
+                }
+            }
+            "/sleep_10_v13" => {
+                // net-api-compat-v3 M2：`sleep_10_v13_wsh` 的 transfer_data——text
+                // echo，`Goodbye` return（不回显）→ 服务端关闭；binary 恒按 text 回发
+                //（`send_message(line, binary=False)`）。
+                loop {
+                    match read_message(sock, reader)? {
+                        Some(Incoming::Text(text)) => {
+                            if text == "Goodbye" {
+                                return server_close(sock, reader);
+                            }
+                            write_frame(sock, 0x1, text.as_bytes())?;
+                        }
+                        Some(Incoming::Binary(bytes)) => write_frame(sock, 0x1, &bytes)?,
+                        _ => return Ok(()),
+                    }
+                }
+            }
             "/echo-query" | "/echo-query_v13" => {
                 // net-api 二期 M2-S3b：websockets constructor/016 用上游 echo-query_v13
                 // handler（行为同 echo-query——原样回 query 段；_v13 为 wptserve
@@ -572,6 +621,8 @@ fn await_client_close(sock: &mut TcpStream, reader: &mut BufReader<TcpStream>) -
 const KNOWN_PATHS: &[&str] = &[
     "/",
     "/echo",
+    "/echo_raw",
+    "/sleep_10_v13",
     "/echo_exit",
     "/echo_close_data",
     "/handshake_sleep_2",
@@ -627,6 +678,13 @@ fn handle_conn(sock: TcpStream) {
         let _ = sock.write_all(&pkt);
         let _ = sock.shutdown(std::net::Shutdown::Both);
         return;
+    }
+    if hs.path == "/sleep_10_v13" {
+        // net-api-compat-v3 M2：`sleep_10_v13_wsh` 的 `do_extra_handshake` sleep
+        // 10s——101 延迟 10s 发出。close-connecting 于 CONNECTING 1s 时 close()
+        // 中止连接（断言 wasClean=false + CLOSED 事件不等服务端）；对端早断后本
+        // 线程写握手响应失败即退出，无害。
+        std::thread::sleep(Duration::from_secs(10));
     }
     let response = handshake_response(&hs.path, &hs.query, &hs);
     let mut sock = sock;
