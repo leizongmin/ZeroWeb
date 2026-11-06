@@ -1,41 +1,36 @@
 # Network API 兼容三期 — fetch 族未导入目录 + websockets 全量 + xhr 残余
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
-2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
-**状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
-（枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
-零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
-ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收口
-（99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P）+
-getAllResponseHeaders 排序簇收口（1F → 0F，legacy-uppercased 比较器定谳）+
-send-redirect-to-cors 八簇收口（8F → 0F，fixture 缺口归因修正——
-「sync cors-filter 同规」在账标签证伪，引擎语义本已齐备）+
-overridemimetype 族 + 响应解码链收口（5F+1T → 0，open() 不清 override +
-get a final encoding 链 + status.py content 字节保真 + XML 树 tagName，
-链外搭车 responsetext-decoding 族 14 行同根因）+
-formdata/submitter 簇收口（4F → 2F：FormDataEvent + submitter 坐标双 F→P
-——plain 世界 closest + 合成激活 click 坐标通道；余 2F 归因重分类移交他域
-——unpaired surrogate 引擎字符串语义桥 / 图像固有尺寸渲染流域，不计 DC-3 门）+
-cookies/keepalive 尾批 2T 收口（cookies.http.html T→P——get-set-cookie.py
-fixture cookie 状态机；redirect-keepalive.any.js 排除记账——多窗口编排面，
-runner 无多窗口管道）——**M3 收口 ✅**，在账失败簇/挂起全清，累计至
-**13,256P** 零回归，changed 全 F→P / 排除移出分母，
-[证据档](net-api-compat-v3/evidence/2026-11-07-m3-cookies-keepalive-tail.md)；
-下一站：M4 coverage 复测收口（DC-4 数值门）
+2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）；
+2026-11-07 M4 coverage 复测收口——**goal 收口 ✅**
+**状态**: **Done（收口）**——DC-1～DC-4 全落（判定见
+[证据档](net-api-compat-v3/evidence/2026-11-07-m4-coverage-retest-eventsource.md)
+§五）。批次轨迹：M0 甄别（三档 + 数值门 <10k 分支）→ M1a 枚举器窗体
+解锁（+1,624P）→ M1b redirect 批次（+264P + `.h2.` 排除）→ M2 三批
+全落 → M3 六簇收口（13,256P）→ M4 coverage 复测三面全升（fetch
+17.07% / xhr 41.88% / websockets 4.40%）+ eventsource 簇收口
+（10F+4T → 76P/0F/0T：初始失败语义 engine knife——「连接从未 establish
+→ fail the connection」+ credentials mode 通道 + MessageEvent origin
+序列化；fixture 五端点态机 + preflight×redirect 复合面探针定谳；
+request-cancellation 排除记账——无 window.stop→在途 fetch 中止管道）。
+累计 **13,275P**/1,412F/9T，逐 subtest A/B 零 P→F，
+[证据档](net-api-compat-v3/evidence/2026-11-07-m4-coverage-retest-eventsource.md)。
+挂账移交口径见证据档 §六（redirect-keepalive / request-cancellation
+重入、cookie jar、responsexml 族）。
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
 二期 `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口，通道七域
 基线 9,354 → 11,040，收口后小片 M2-S5..S19 持续 +40 级增量）
 
-## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）
+## coverage 对账（coverage-2026-11-02 基线 → 2026-11-07 M4 复测，全量头条 67.54%）
 
-| 面 | 全量分母 | zw 覆盖 | 通过率 | 未覆盖 |
+| 面 | 全量分母 | 基线 zw 覆盖 | M4 复测 | 未覆盖（复测后） |
 |---|---:|---:|---:|---:|
-| fetch | 13,274 | 133/957 文件，1,894P | 14.27% | **11,380** |
-| websockets | 2,389 | 8/799 文件，102P | 4.27% | **2,287** |
-| xhr | 2,333 | 110/440 文件，554P | 23.75% | **1,779** |
+| fetch | 13,274 | 133/957 文件，1,894P / 14.27% | **2,266P / 17.07%** | **11,008** |
+| websockets | 2,389 | 8/799 文件，102P / 4.27% | **105P / 4.40%** | **2,284** |
+| xhr | 2,333 | 110/440 文件，554P / 23.75% | **977P / 41.88%** | **1,356** |
 
 三族合计未覆盖 **15,446**。通道现状：`testharness-net-api` 已入
 NET_API_CORPUS_SUBDIRS 十四目录（fetch/api/{headers,request,response,
@@ -175,7 +170,7 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   unsent-opened ×2 vacuous P 转真实 P；批次门 97.4%（38/39）差一线，
   `__custom` 排序簇 1F（wpt.fyi Firefox 7/7 定谳的浏览器头序 vs 引擎
   字节升序）挂账随 M3 复验。
-- **M3**（进行中）：
+- **M3 ✅**（2026-11-07 在账余项清零收口）：
   **ws interfaces 九簇 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m3-ws-interfaces-clusters.md)）：
   part06.js 八刀——CloseEvent 内部槽 + getter-only accessor + ctor code 缺省
   0 + toStringTag、WebIDL 常量双挂 ReadOnly、url/readyState/bufferedAmount
@@ -279,7 +274,29 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   13,255 → **13,256P**（+1P，分母 14,621 → 14,620 键——排除移出 1；added 1
   = cookies 子测试，removed 2 = 双案级 Timeout 键；零 P→F 零 T 变化）。
   **M3 在账余项清零** → M4 coverage 复测收口（DC-4）。
-- **M4**：coverage 复测收口（DC-4）。
+- **M4 ✅**（2026-11-07，[证据档](net-api-compat-v3/evidence/2026-11-07-m4-coverage-retest-eventsource.md)）——
+  **coverage 复测（DC-4）**：wptfyi-cache 10-29 summaries 同 universe 复测
+  三面全升——fetch 1,894P/14.27% → **2,266P/17.07%**（+372P）、xhr
+  554P/23.75% → **977P/41.88%**（+423P）、websockets 102P/4.27% →
+  **105P/4.40%**（+3P），分母逐字节同口径（fetch 13,274 / xhr 2,333 /
+  websockets 2,389）；全量头条由 weekly cron 产出，本 goal 只复测三面。
+  **eventsource 簇收口**（M1a 窗体解锁显影的未归因尾巴，71 案 10F+4T →
+  76P/0F/0T）：engine knife——初始连接失败语义（spec「连接从未 establish →
+  fail the connection」重连例外分支：非 http(s) scheme 预检 + `_everAnnounced`
+  分派 rejection + sync throw failConnection）+ MessageEvent origin 属性
+  改连接 URL origin 序列化（此前派全 URL）+ credentials mode 通道
+  （withCredentials → include，链路既有仅缺传参）；fixture knife——
+  es_cookie_stash 表承载 reconnect-fail/status-reconnect/cors-cookie 三态机
+  （M3 get-set-cookie.py 先例）+ cors.py run=message/redirect/status-reconnect
+  委派三臂 + last-event-id2.py 静态三流 + OPTIONS preflight 先于委派早退
+  （探针三腿 bisect 定谳的 preflight×redirect 复合面：委派臂不分手 →
+  preflight 落 302 → 2xx 门不过）；request-cancellation 排除记账
+  （window.stop 仅 navigation-API abort，无在途 fetch 中止管道，fetch
+  cancellation 域落地后重入）。定向 76P/0F/0T；全量 A/B 13,256 →
+  **13,275P**（+19P，分母 14,690 → 14,695 键；F→P 9 / F→排除移出 1 /
+  Timeout 键移出 4 + 子测试入账 10；零 P→F 零 T 变化零其他变化）。
+  **DC-4 判定落定**（批次门随各批落账 + M1a 尾巴补齐 / DC-3 面门 100% /
+  零回归门 / 头条不回落）→ **DC-1～DC-4 全落，goal 收口**。
 
 ## 依赖约束（run-rules §9）
 

@@ -19368,8 +19368,9 @@
   // data/event/id/retry，空行派发累积事件，`:` 行注释，BOM 去除，CRLF/LF/CR 分行。readyState + onopen/
   // onmessage/onerror + addEventListener。**headless 有限流**：fetch 取整 body 后解析派发全部事件（真浏览器
   // 持续流式逐块派发；本实现 finite-stream 一次派发）。连接处理按 spec §9.2.3 分派：status ≠ 200 或
-  // Content-Type 非 text/event-stream → fail the connection（CLOSED + error，不再重连）；网络错误或 body
-  // 结束 → reestablish（CONNECTING + error + 等重连时间后带 Last-Event-ID 重连，§9.2.4）。
+  // Content-Type 非 text/event-stream → fail the connection（CLOSED + error，不再重连）；body 结束 →
+  // reestablish（CONNECTING + error + 等重连时间后带 Last-Event-ID 重连，§9.2.4）；网络错误按连接是否
+  // 曾 establish 分派——曾 → reestablish，从未（初始 CORS 失败/请求取消/非 http(s) scheme）→ fail。
   // https://html.spec.whatwg.org/multipage/server-sent-events.html
   function EventSource(url, options) {
     // spec 构造（§9.2.2）：url = parse(url, API base URL)——失败抛 SyntaxError DOMException；
@@ -19391,6 +19392,7 @@
       throw new DE('Invalid URL', 'SyntaxError');
     }
     this.url = resolved.href;
+    this._origin = resolved.origin; // MessageEvent.origin = 连接 URL origin 的序列化（§9.2.7 dispatch）
     this.readyState = EventSource.CONNECTING;
     this.withCredentials = !!(options && options.withCredentials);
     this.onopen = null; this.onmessage = null; this.onerror = null;
@@ -19398,6 +19400,7 @@
     this._lastEventId = '';
     this._retryMs = 0; // reconnection time（retry 字段更新；0 = 走默认 5000——spec UA-defined）
     this._closed = false;
+    this._everAnnounced = false; // 连接曾 announce（OPEN）——决定后续失败 reestablish vs fail
     var self = this;
     function failConnection() {
       // spec fail the connection：readyState ≠ CLOSED 时置 CLOSED + fire error，之后不再重连。
@@ -19414,9 +19417,19 @@
     }
     function connect() {
       if (self._closed) return;
+      // §9.2.4 network error 且连接从未 establish → fail the connection（重连例外分支）。
+      // URL scheme 非 http(s) 时请求必然失败且永不 establish——直接异步 fail
+      // （constructor-non-same-origin 四 scheme 面标尺：ftp/about:blank/mailto/javascript:）。
+      if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
+        setTimeout(failConnection, 0);
+        return;
+      }
       if (typeof fetch !== 'function') { reestablish(); return; }
       var headers = { 'Accept': 'text/event-stream', 'Cache-Control': 'no-cache' };
       var init = { headers: headers };
+      // §9.2.2 构造 withCredentials → credentials mode：true → include（跨源携带 cookie/
+      // 凭证），否则 same-origin（request-credentials 三案断言面）。
+      init.credentials = self.withCredentials ? 'include' : 'same-origin';
       // §9.2.4：Last-Event-ID 于 request header list 内部直设（任意 UTF-8 串）——经
       // __zwInternalHeadersWire 旁路（公共 init.headers 的 ByteString 校验会拒绝 >U+00FF）。
       if (self._lastEventId) {
@@ -19426,7 +19439,7 @@
       try {
         p = fetch(self.url, init);
       } catch (e) {
-        reestablish();
+        failConnection(); // sync throw：连接从未 establish（announce 只可能异步发生）→ fail
         return;
       }
       p.then(function (resp) {
@@ -19448,12 +19461,15 @@
           if (self._closed) return;
           // announce the connection（OPEN + open）
           self.readyState = EventSource.OPEN;
+          self._everAnnounced = true;
           self._dispatch('open', null);
           self._process(text);
           reestablish(); // body 结束 = 连接关闭（有限流模型）→ reestablish
         });
       }, function () {
-        reestablish(); // network error → reestablish（futile 判定不做——headless 本地服务稳定）
+        // network error：曾 establish → reestablish（§9.2.4）；从未 → fail the connection
+        // （§9.2.4 例外——初始 CORS 失败/请求取消等面，WPT 三浏览器行为标尺均 CLOSED）。
+        if (self._everAnnounced) { reestablish(); } else { failConnection(); }
       }).catch(function () {
         failConnection();
       });

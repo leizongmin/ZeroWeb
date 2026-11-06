@@ -49,7 +49,7 @@
             var evType = eventType || 'message';
             this._dispatch(evType,
               new MessageEvent(evType, { __zwTrusted: true, data: data.join('\n'),
-                lastEventId: this._lastEventId, origin: this.url }));
+                lastEventId: this._lastEventId, origin: this._origin }));
           }
           data = []; eventType = ''; // spec：缓冲空也清 event type 缓冲
           continue;

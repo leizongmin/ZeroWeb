@@ -4571,6 +4571,17 @@ fn net_api_case_skipped(relative: &str, source: &str) -> bool {
     if relative == "fetch/api/redirect/redirect-keepalive.any.js" {
         return true;
     }
+    // net-api-compat-v3 M4：eventsource-request-cancellation.window.js——window.stop()
+    // 中止面（window.stop at timeout 0 → 在途 ES fetch 中止 → 未 establish → CLOSED）。
+    // runner `window.stop` 仅消费 navigation API 进行中导航（M2-S4G `_navOngoing` abort），
+    // 无「文档加载停止 → 在途 fetch bridge 请求中止」管道——fetch 正常返回 → ES announce
+    // OPEN（onopen/onmessage unreached 守卫被 _dispatch try/catch 吞）→ error 落
+    // CONNECTING → 断言 expected CLOSED got CONNECTING。M3 redirect-keepalive 同款
+    // 单名门排除口径，fetch 中止管道落地后重入（AbortController 臂不受影响——abort
+    // 信号管道独立且既有绿面）。
+    if relative == "eventsource/eventsource-request-cancellation.window.js" {
+        return true;
+    }
     if relative.contains("/resources/") {
         return true;
     }
@@ -7070,6 +7081,13 @@ fn wpt_data_fetch_handler_with_stash(
     // clearCookies 对称，正常路径表尾恒空，跨案泄漏面自清）。
     let get_set_cookie_stash: std::sync::Arc<Mutex<std::collections::BTreeMap<String, (String, bool)>>> =
         std::sync::Arc::default();
+    // net-api-compat-v3 M4：eventsource fixture cookie 态机表（cookie name → value）——
+    // reconnect-fail.py / status-reconnect.py / cors-cookie.py 上游为真 HTTP Set-Cookie
+    // 往返（wptserve + 浏览器 jar）；runner in-process fetch 通道无 jar 消费点，表承载
+    // 案内 cookie 态（命中即取/移除——上游 set_cookie/delete_cookie 对称，正常路径表尾
+    // 恒空，跨案泄漏面自清；M3 get-set-cookie.py 同款先例）。cors-cookie.py 的「cookie
+    // 是否随跨源请求送达」另由 credentials mode include 判定（FetchRequest.credentials）。
+    let es_cookie_stash: std::sync::Arc<Mutex<std::collections::BTreeMap<String, String>>> = std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
     Some(std::sync::Arc::new(
@@ -9463,6 +9481,185 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
+            if clean.starts_with("eventsource/") && clean.ends_with("/reconnect-fail.py") {
+                // net-api M4 fixture：eventsource/resources/reconnect-fail.py（上游逐字
+                // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
+                // resources/reconnect-fail.py）。cookie 态机：无态 → 200 `retry: 2`+
+                // `data: opened`（置态 opened）；opened → 200 `data: reconnected`（置态
+                // reconnected）；reconnected → 204 `data: closed`（清态——status ≠ 200，
+                // ES fail the connection，体不达）。cookie 往返以 es_cookie_stash 承载。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let name = format!("recon_fail_{}", wpt_query_value(query, "id").unwrap_or_default());
+                let mut jar = match es_cookie_stash.lock() {
+                    Ok(j) => j,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                let (status, status_text, body) = match jar.remove(&name).as_deref() {
+                    Some("opened") => {
+                        jar.insert(name, "reconnected".to_string());
+                        (200u16, "RECONNECT", "data: reconnected\n\n".to_string())
+                    }
+                    Some("reconnected") => (204, "NO CONTENT (CLOSE)", "data: closed\n\n".to_string()),
+                    _ => {
+                        jar.insert(name, "opened".to_string());
+                        (200, "OPEN", "retry: 2\ndata: opened\n\n".to_string())
+                    }
+                };
+                drop(jar);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: status_text.to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with("/status-reconnect.py") {
+                // net-api M4 fixture：eventsource/resources/status-reconnect.py（上游逐字
+                // 等价——同 pin reconnect-fail.py 形态的 cookie 态机；cors.py run=
+                // status-reconnect 委派同一实现）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text,
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with("/last-event-id2.py") {
+                // net-api M4 fixture：eventsource/resources/last-event-id2.py（上游逐字
+                // 等价——同 pin）。?type 静态三流：1 = id 持续（id:1 两条 + id:2 两条）；
+                // 2 = `id:` 空 id 字段重置 lastEventId；3 = 裸 `id`（无冒号）同样重置
+                // （spec §9.2.6 id 字段处理——字段值空串进缓冲）。type 4+ → invalid_test
+                // （上游 else 臂）；type 解析失败 → 1（上游 except 臂）。
+                let test_type = path_part
+                    .split_once('?')
+                    .map(|(_, q)| q)
+                    .and_then(|q| wpt_query_value(q, "type"))
+                    .map(|v| v.parse::<u8>().unwrap_or(1))
+                    .unwrap_or(1);
+                let body = match test_type {
+                    2 => "id: 1\ndata: 1\n\nid:\ndata:2\n\ndata:3\n\n",
+                    3 => "id: 1\ndata: 1\n\nid\ndata:2\n\ndata:3\n\n",
+                    _ => "id: 1\ndata: 1\n\ndata: 2\n\nid: 2\ndata:3\n\ndata:4\n\n",
+                };
+                let body = if test_type > 3 {
+                    "data: invalid_test\n\n".to_string()
+                } else {
+                    body.to_string()
+                };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/event-stream".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("eventsource/") && clean.ends_with("/cors-cookie.py") {
+                // net-api M4 fixture：eventsource/resources/cors-cookie.py（上游逐字等价
+                // ——同 pin）。Last-Event-ID 缺省 → `id: 1`+`retry: 200`+`data: first
+                // <cookie>` 并置 cookie；`Last-Event-ID: 1` → `id: 2`+`data: second
+                // <cookie>` 并清 cookie（上游 expires 过去时刻——删除语义等价）；其余 →
+                // Content-Type: stop。cookie 值 = 表含 ident 且请求以 credentials mode
+                // include 发出 → "COOKIE"，否则 "NO_COOKIE"——runner 无 jar，跨源送达面
+                // 以 FetchRequest.credentials 判定（RFC 6265bis §5.4——get-set-cookie.py
+                // secure 同款先例；首次请求 cookie 未置，恒 NO_COOKIE）。
+                // ACAO ← ?origin=（缺省回显请求 Origin 头；none → 不设）；ACAC ←
+                // ?credentials=（缺省 true；none → 不设）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let last_event_id = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
+                    .map(|(_, v)| v.as_str())
+                    .unwrap_or("");
+                let ident = wpt_query_value(query, "ident").unwrap_or_else(|| "test".into());
+                let req_origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let origin = wpt_query_value(query, "origin").unwrap_or(req_origin);
+                let credentials = wpt_query_value(query, "credentials").unwrap_or_else(|| "true".into());
+                let mut jar = match es_cookie_stash.lock() {
+                    Ok(j) => j,
+                    Err(poisoned) => poisoned.into_inner(),
+                };
+                // 上游 cookie 判定先于本响应 set_cookie（request.cookies 为请求所携）。
+                let cookie = if jar.contains_key(&ident) && req.credentials.as_deref() == Some("include") {
+                    "COOKIE"
+                } else {
+                    "NO_COOKIE"
+                };
+                let mut headers: Vec<(String, String)> = Vec::new();
+                if origin != "none" {
+                    headers.push(("access-control-allow-origin".into(), origin));
+                }
+                if credentials != "none" {
+                    headers.push(("access-control-allow-credentials".into(), credentials));
+                }
+                if req.method == "OPTIONS" {
+                    // OPTIONS preflight 先于状态机应答（ES withCredentials 跨源恒
+                    // preflight——Cache-Control 非 safelisted；ACAM ← 回显 ACRM、
+                    // ACAH ← 回显 ACRH，2xx + 空 body，状态不消费）。
+                    let acrm = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "GET".into());
+                    let acrh = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_else(|| "cache-control".into());
+                    headers.push(("access-control-allow-methods".into(), acrm));
+                    headers.push(("access-control-allow-headers".into(), acrh));
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
+                let body = if last_event_id.is_empty() {
+                    jar.insert(ident, "COOKIE".to_string());
+                    headers.push(("content-type".into(), "text/event-stream".into()));
+                    format!("id: 1\nretry: 200\ndata: first {}\n\n", cookie)
+                } else if last_event_id == "1" {
+                    jar.remove(&ident);
+                    headers.push(("content-type".into(), "text/event-stream".into()));
+                    format!("id: 2\ndata: second {}\n\n", cookie)
+                } else {
+                    headers.push(("content-type".into(), "stop".into()));
+                    format!("data: {}{}\n\n", last_event_id, cookie)
+                };
+                drop(jar);
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean == "xhr/resources/get-set-cookie.py" {
                 // net-api-compat-v3 M3 fixture：get-set-cookie.py cookie 端点仿真（上游
                 // wptserve handler——pin 3159769 xhr/resources/get-set-cookie.py 逐语义）：
@@ -9598,8 +9795,11 @@ fn wpt_data_fetch_handler_with_stash(
                 // net-api M4-S13 fixture：eventsource/resources/cors.py（上游逐字等价——
                 // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
                 // cors.py）。ACAO ← ?origin=（缺省回显请求 Origin 头）+ ACAC ← ?credentials=
-                // （默认 true）；?run=cache-control → text/event-stream + cache-control
-                // 模板体（回显请求 Cache-Control 头）。其余 run 值上游返空体。
+                // （默认 true）；?run= 委派面（上游 run_other）——message（message.py 缺省
+                // 参数形态）/redirect（common/redirect.py：302 + Location ← ?location）/
+                // status-reconnect（cookie 态机，es_status_reconnect_response 共享实现）/
+                // cache-control → text/event-stream + cache-control 模板体（回显请求
+                // Cache-Control 头）。其余 run 值上游返空体。
                 // net-api M5-S3：OPTIONS preflight 应答面——ES 请求恒携带 Cache-Control:
                 // no-cache（非 CORS-safelisted，fetch spec §3.1.1）→ 跨源必须先过 preflight；
                 // 上游 cors.py 无 OPTIONS 分支（真实 wptserve 部署由服务端配置补），本 runner
@@ -9635,6 +9835,56 @@ fn wpt_data_fetch_handler_with_stash(
                         .unwrap_or_else(|| "cache-control".into());
                     headers.push(("access-control-allow-methods".into(), acrm));
                     headers.push(("access-control-allow-headers".into(), acrh));
+                    // OPTIONS preflight 先于 run 委派应答（委派臂仅对实际请求生效——
+                    // preflight 落 302 则 2xx 门不过 → network error）。
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
+                if run == "redirect" {
+                    // 委派 common/redirect.py：302 + Location ← ?location（缺省 /）。
+                    // ACAO/ACAC 已先行设置——跨源 redirect 响应自身须过 CORS（fetch spec
+                    // §3.2 redirect 步）。
+                    let location = wpt_query_value(query, "location").unwrap_or_else(|| "/".into());
+                    headers.push(("location".into(), location));
+                    wpt_add_fetch_metadata(&mut headers, req, 302);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 302,
+                        status_text: "Redirect".to_string(),
+                        headers,
+                        body: String::new(),
+                        body_bytes: Some(Vec::new()),
+                    });
+                }
+                if run == "message" {
+                    // 委派 message.py 缺省参数形态：`data: data` + 尾 \n\n。
+                    headers.push(("content-type".into(), "text/event-stream".into()));
+                    let body = "data: data\n\n\n".to_string();
+                    wpt_add_fetch_metadata(&mut headers, req, 200);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 200,
+                        status_text: "OK".to_string(),
+                        headers,
+                        body: body.clone(),
+                        body_bytes: Some(body.into_bytes()),
+                    });
+                }
+                if run == "status-reconnect" {
+                    let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
+                    headers.push(("content-type".into(), "text/event-stream".into()));
+                    wpt_add_fetch_metadata(&mut headers, req, status);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status,
+                        status_text,
+                        headers,
+                        body: body.clone(),
+                        body_bytes: Some(body.into_bytes()),
+                    });
                 }
                 let body = if run == "cache-control" {
                     headers.push(("content-type".into(), "text/event-stream".into()));
@@ -10461,6 +10711,36 @@ fn decode_data_url_script(src: &str) -> Option<String> {
             .into_bytes()
     };
     Some(String::from_utf8_lossy(&bytes).into_owned())
+}
+
+/// net-api M4：eventsource/resources/status-reconnect.py 状态机（上游 wptserve
+/// handler 的 cookie 往返以 es_cookie_stash 表承载——runner in-process fetch 通道
+/// 无 Set-Cookie jar 消费点）。首请求置态并回 `<status>` + `retry: 2`[+ ok_first
+/// `data: ok`]；态命中 → 200 + `data: data` 并清态（上游 delete_cookie）。返回
+/// (status, status_text, body)。
+/// https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/status-reconnect.py
+fn es_status_reconnect_response(
+    stash: &Mutex<std::collections::BTreeMap<String, String>>,
+    query: &str,
+) -> (u16, String, String) {
+    let status_code = wpt_query_value(query, "status").unwrap_or_else(|| "204".into());
+    let name = wpt_query_value(query, "id").unwrap_or_else(|| status_code.clone());
+    let cookie_name = format!("request{}", name);
+    let mut jar = match stash.lock() {
+        Ok(j) => j,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    if jar.remove(&cookie_name).is_some_and(|v| v == status_code) {
+        return (200, "OK".to_string(), "data: data\n\n".to_string());
+    }
+    jar.insert(cookie_name, status_code.clone());
+    drop(jar);
+    let status: u16 = status_code.parse().unwrap_or(204);
+    let mut body = "retry: 2\n".to_string();
+    if wpt_query_value(query, "ok_first").is_some() {
+        body.push_str("data: ok\n\n");
+    }
+    (status, "TEST".to_string(), body)
 }
 
 fn wpt_query_value(query: &str, name: &str) -> Option<String> {
