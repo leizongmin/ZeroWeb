@@ -230,6 +230,13 @@ pub const DOM_TEST_SUBDIRS: &[&str] = &[
     // 未实现，基线如实记录不放宽断言；静态 id/name 面子集经本切片修复须绿）。
     // https://html.spec.whatwg.org/multipage/window-object.html#named-access-on-the-window-object
     "html/browsers/the-window-object/named-access-on-the-window-object",
+    // T44（site-optimizer perf-mem T44，2026-11-06）：navigator.plugins/mimeTypes 行为
+    // 面——plugins-and-mimetypes.html 单文件（fetch-dom-subset.sh T44 注记：仅此一文件
+    // fetch_raw 入库，同目录 protocol-handler/manual 族不导入）。按 navigator.
+    // pdfViewerEnabled 分支：false 侧空插件集断言臂（length 0 / item / namedItem 恒
+    // null）与 shim 诚实空集同形；首测属性存在 + boolean 类型（part02 字面量同切片补挂）。
+    // https://html.spec.whatwg.org/multipage/system-state.html#navigatorplugins
+    "html/webappapis/system-state-and-capabilities/the-navigator-object",
 ];
 
 /// Selection goal（editing/contenteditable M1 / DC-1）corpus directories.

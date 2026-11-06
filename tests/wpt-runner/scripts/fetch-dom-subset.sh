@@ -132,6 +132,11 @@ fetch_dir_html "dom/nodes/Document-createElement-namespace-tests"
 #（WPT_REV 时点该目录为 16 个顶层 .html、无 resources/ 子目录——上游 cross-origin
 # 变体在后续版本才引入，本 pin 不含）。
 
+# T44（site-optimizer perf-mem T44，2026-11-06）：navigator.plugins/mimeTypes 行为用例
+# 单文件导入——DOM_TEST_SUBDIRS 扫描 the-navigator-object 目录，本 pin 时点仅此一文件
+# fetch_raw 入库（同目录 protocol-handler/manual 族不导入不跑；设计卡判据④）。
+fetch_raw "html/webappapis/system-state-and-capabilities/the-navigator-object/plugins-and-mimetypes.html"
+
 for dir in "${SUBDIRS[@]}"; do
   fetch_dir_html "${dir}"
 done

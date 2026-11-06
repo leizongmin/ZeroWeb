@@ -9371,6 +9371,12 @@
       toJSON: function () { return { brands: this.brands, mobile: this.mobile, platform: this.platform }; }
     },
     webdriver: false,
+    // T44（site-optimizer perf-mem T44）：pdfViewerEnabled——上游 WPT plugins-and-
+    // mimetypes.html 首测属性存在 + boolean 类型，且为插件断言分支选择键（falsy →
+    // 空插件集断言臂，与 headless 诚实空集一致；Chrome 的 true 侧绑定其 PDF 家族
+    // 插件条目，不模仿条目内容）。实例重铸见 part03 T44 块。
+    // https://html.spec.whatwg.org/multipage/system-state.html#dom-navigator-pdfviewerenabled
+    pdfViewerEnabled: false,
     plugins: _emptyCollection(),
     mimeTypes: _emptyCollection(),
     javaEnabled: function() { return false; },
