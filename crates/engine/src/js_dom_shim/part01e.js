@@ -675,6 +675,116 @@
     }
   }
 
+  // br compare 族行粒度预遍（br 刀，part01e enable 专用）：Chrome 录制以 br
+  // 为行界做列表换型——选区所在行整体入列、行外内容不动、行间 br 消费为 li
+  // 切分、新块紧邻 br 移除（iol/iul 语料 :13/:18/:23 exp 三形实证）。vendored
+  // blockExtend 无行概念：整块内容入列后，主循环 br 停聚臂把界外 br 吸进壳
+  // （got `foo<ol><br><li>` 形）、邻线成员卷入/遗落 + 幽灵壳（wrap flat 重写
+  // 臂成员扫描对 br/文本混合的序列化形）。本预遍仅对纯扁平块生效（origin 块
+  // 直子全 inline、含 br、双端点同块）：选区行收进临时 div（借主循环 p/div
+  // retag 臂成 li，成员为元素后不再触发 wrap 的 editing host 直子文本臂），
+  // 行间与紧邻行界的 br 移除，kept 供 nodeList 跨行成员剔除。
+  // 空行保真：只移紧邻行界各一 br，隔位 br（空行载体）不动；选区行无可见
+  // 内容时不触发（eb1 空形守护）。
+  // FIXME：选区内空行（连续 br）不产空 li，Chrome 形未对语料验证。
+  function _zwListEnableLineScope(capS, capE) {
+    if (!_zwListNodeInDocument(capS.n) || !_zwListNodeInDocument(capE.n)) return null;
+    var b = capS.n, g = 0;
+    while (b && !_zwJusIsBlockNode(b) && g++ < 256) b = b.parentNode;
+    if (!b || b.nodeType !== 1) return null;
+    // 列表语境排除（语料 P2F 定谳，iol 1747P 面两行）：b 或其任意祖先为列表
+    // 族（ol/ul/li/dl/dt/dd）时 enable 语义是整壳 retag，既有列表内 br 属 li
+    // 内容保全（`<ul><li>[foo]<br>bar<li>baz</ul>` → `<ol>` 整换期望 br 原位）
+    // ——预遍误入会把行壳塞进 li 造嵌套错形，恒 null 走旧径。
+    var la = b, laG = 0;
+    while (la && laG++ < 256) {
+      if (_zwJusIsHtmlElement(la, ['ol', 'ul', 'li', 'dl', 'dt', 'dd'])) return null;
+      la = la.parentNode;
+    }
+    if (b !== capE.n && !_zwJusIsAncestorOf(b, capE.n)) return null;
+    var kids = [];
+    var brCount = 0;
+    var kid = b.firstChild;
+    while (kid) {
+      if (!_zwJusIsInlineNode(kid) && !_zwJusIsHtmlElement(kid, 'br')) return null;
+      if (_zwJusIsHtmlElement(kid, 'br')) brCount++;
+      kids.push(kid);
+      kid = kid.nextSibling;
+    }
+    if (!brCount || !kids.length) return null;
+    // 点 → 行号：直子 inline 成员所在行 = 前方 br 数；端点容器为块本体时按
+    // offset 前方 br 数（br 后位即下一行行首）。更深端点爬升到直子。
+    function lineOf(n, o) {
+      if (n === b) {
+        var line0 = 0;
+        for (var i0 = 0; i0 < o && i0 < kids.length; i0++) {
+          if (_zwJusIsHtmlElement(kids[i0], 'br')) line0++;
+        }
+        return line0;
+      }
+      var proj = n;
+      while (proj && proj.parentNode && proj.parentNode !== b) proj = proj.parentNode;
+      if (!proj || proj.parentNode !== b) return -1;
+      var line = 0;
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] === proj) break;
+        if (_zwJusIsHtmlElement(kids[i], 'br')) line++;
+      }
+      return line;
+    }
+    var startLine = lineOf(capS.n, capS.o);
+    var endLine = lineOf(capE.n, capE.o);
+    if (startLine < 0 || endLine < 0 || startLine > endLine) return null;
+    var spanNodes = [];
+    for (var s = 0; s < kids.length; s++) {
+      if (_zwJusIsHtmlElement(kids[s], 'br')) continue;
+      var ln = 0;
+      for (var j = 0; j < s; j++) {
+        if (_zwJusIsHtmlElement(kids[j], 'br')) ln++;
+      }
+      if (ln >= startLine && ln <= endLine) spanNodes.push(kids[s]);
+    }
+    if (!spanNodes.length) return null;
+    var anyVisible = false;
+    for (var v = 0; v < spanNodes.length; v++) {
+      if (_zwJusIsVisible(spanNodes[v])) { anyVisible = true; break; }
+    }
+    if (!anyVisible) return null;
+    var firstIdx = kids.indexOf(spanNodes[0]);
+    var lastIdx = kids.indexOf(spanNodes[spanNodes.length - 1]);
+    // 行间与紧邻行界 br 移除（span 内部 + 前一紧邻 + 后一紧邻；隔位 br 不动）。
+    var lo = firstIdx > 0 ? firstIdx - 1 : 0;
+    var hi = lastIdx + 1 < kids.length ? lastIdx + 1 : kids.length - 1;
+    for (var r = hi; r >= lo; r--) {
+      if (_zwJusIsHtmlElement(kids[r], 'br')) {
+        try { b.removeChild(kids[r]); } catch (_eRb) {}
+      }
+    }
+    // 行壳：每行成员收进临时 div（树序分组；空行无成员跳过）。
+    var kept = [];
+    var group = [];
+    var groupLine = lineOf(spanNodes[0], 0);
+    for (var t = 0; t <= spanNodes.length; t++) {
+      var sn = t < spanNodes.length ? spanNodes[t] : null;
+      var sl = sn ? lineOf(sn, 0) : -1;
+      if (sn && sl === groupLine) { group.push(sn); continue; }
+      if (group.length) {
+        var d = document.createElement('div');
+        try {
+          group[0].parentNode.insertBefore(d, group[0]);
+          for (var m = 0; m < group.length; m++) {
+            _zwJusMovePreservingRanges(group[m], d, -1);
+          }
+          kept.push(d);
+        } catch (_eLw) {}
+        group = [];
+      }
+      groupLine = sl;
+      if (sn) group.push(sn);
+    }
+    return { block: b, kept: kept };
+  }
+
   // toggleLists（vendored :5690）：enable 全流程 + disable outdent 臂（ol/ul
   // 切片）移植。选区保持依赖 _zwJusWrap/_zwListMovePreservingRanges（plain 重锚）。
   function _zwListToggle(tagName) {
@@ -740,6 +850,11 @@
         _zwListNormalizeSublists(items[ii]);
       }
     }
+
+    // br 刀预遍调用（br compare 族，enable 专用）：capS/capE 端点身份快照为
+    // 输入，须在 blockExtend 之前执行——预遍删 br/移行壳会位移块子索引，事后
+    // 跑会 skew newRange 端点致 nodeList 漏员/错员。非扁平块形恒 null 零扰动。
+    var lineScope = mode === 'enable' ? _zwListEnableLineScope(capS, capE) : null;
 
     var newRange = _zwJusBlockExtend(range, mode === 'enable' ? 'list-wide' : false);
 
@@ -882,6 +997,20 @@
         return !_zwJusIsHtmlElement(node, ['ol', 'ul'])
           || _zwJusIsHtmlElement(node.parentNode, ['ol', 'ul']);
       });
+      // br 刀 kept 过滤：预遍已把选区行收进行壳、行外成员不属于本命令域——
+      // 爬升到预遍块直子，仅行壳（kept）放行：A 形 foo-text 剔除不出列、C 形
+      // bar-text 剔除不入列，行壳自身与其子树成员放行；已脱块/块外成员不受
+      // 预遍影响放行。
+      if (lineScope) {
+        nodeList = nodeList.filter(function (node) {
+          var proj = node, gP = 0;
+          while (proj && proj.parentNode !== lineScope.block && gP++ < 256) {
+            proj = proj.parentNode;
+          }
+          if (!proj || !proj.parentNode || proj === lineScope.block) return true;
+          return lineScope.kept.indexOf(proj) !== -1;
+        });
+      }
     }
 
     if (mode === 'disable') {
@@ -1019,6 +1148,16 @@
         }
         return list.lastChild;
       });
+
+      // br 刀壳臂补 fix（vendored :5928 等价，仅行粒度预遍生效面）：C 形
+      // `<p>[foo]<br>bar</p>` 行壳挂进 p 后 wrap 新壳 ol 落 p 内——ol 属
+      // prohibited-paragraph 子而 p 是 inline-contents 元素，allowedChild 祖先
+      // 链首检即 false → splitParent 拆出，残段净 `<p>bar</p>`（语料 :23 exp）。
+      // A/B 形新壳落 div host，ol/ul 对 div 放行 no-op；非预遍面恒不触发
+      // （既有绿面零扰动），置于 dps 归并出口之前——拆出后按新树位判归并。
+      if (lineScope && freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        try { _zwListFixDisallowedAncestors(newShell); } catch (_eLf) {}
+      }
 
       // dps compare 族归并出口（dps 刀）：恒新壳落位后相邻同名可编辑列表壳
       // 归并——Blink insert_list_command.cc mergeWithPreviousList/
