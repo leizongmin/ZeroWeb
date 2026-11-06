@@ -4,9 +4,11 @@
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
 **状态**: Active——M0/M1/M2 完成 + M3 Batch 1/2 落地（2026-11-06，门值 31.4% 回填；
 Batch 2 簇 A unsafe 三 API：gethtml.html 预算内 2,210P/0F，全通道 A/B P→F=0、F→P 2,839），
-Batch 3 楔死归因收口（90s 看门狗 × ShadowRoot 域 declarative 写路径二次累积；
-看门狗随乘落地，×4 复测 gethtml 3,417 行仅 3F），
-M3 余项：残面修复（t8c 协同）/ 簇 C engine glue / attachment+簇D 修复落地与复测
+Batch 3 残面修复落地（2026-11-06：语料级 A/B 0 回归，gethtml ×1 从稳定楔死
+2,268 → 3,762P/0F，×1/×2/×3 solo 随预算平滑延伸 3.4k/4.8k/5.96k（总数
+6,908，86%），无固定截断面——吞吐 >11× 与 Q1 队列 11× 互证，剩余 = 线性
+预算瓶颈非楔死），
+M3 余项：簇 C engine glue / attachment+簇D 修复落地与复测
 （dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets）与 script-sandbox
 剔池决策（簇 D 面 2/3）
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
@@ -179,11 +181,9 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   ×4 复测闭环：gethtml 3,417 行仅 3F（真实 referenceTarget Fail）、knee2 div×8
   3,072 全量完整、二次模型三内容定量自洽。证据：
   [batch3 rootcause](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-wedge-watchdog-rootcause.md)。
-- **下一步（M3 Batch 3 余项）**：①残面修复（已代码级定位）——ShadowRoot 句柄
-  读每测试落 `with_query_view_doc` 视图路径 × 链增量资格检查 O(全队列) 线性扫
-  （Q1 队列加速判别 + 代码互证）；修复候选：链资格 O(1) 计数器化 / ShadowRoot
-  句柄读 live-aware 直读，均在 callbacks.rs = t8c 编辑面须协同落地，落地后重建
-  knee/gethtml 复测（队列折叠兜底挂账）；
+- **下一步（M3 Batch 3 余项）**：①残面修复——**已落地（见下节）**，候选
+  「链资格 O(1) 计数器化」与「句柄读增量索引」均已实现（队列折叠兜底未动用，
+  挂账撤销）；
   ②attachment 170F 甄别收口（2026-11-06 傍晚）——两个机制面：safelisted 臂 68F
   = setHTMLUnsafe 后声明式模板从不物化（gethtml 声明式象限通过系 attachShadow
   重建+序列化遮蔽虚构链）；disallowed 臂 102F = context 父模板被错误物化消费
@@ -197,25 +197,37 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   shadow-dom 范围内可修小刀（M3 尾段候选）；null 链 ~18F 与 attachment 机制一
   同根（静态物化不生效），随 m3c2 修复复测定格：
   [cluster D triage](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-cluster-d-triage.md)；
-  ④簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8），待 engine glue
-  与通道复测。
+  ④簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8）；通道复测
+  随本轮闭环：gethtml ×2/×3 solo 全 0F 且覆盖 ×4 旧 3F 位置（旧轮 build
+  05:56 早于 d8f473ff8 06:30），3F 翻绿坐实，余 engine glue 深化项。
 
-### 2026-11-06——M3 Batch 3 残面落地（进行中，新一轮 session 认领）
+### 2026-11-06——M3 Batch 3 残面修复落地
 
-- **认领声明（§9 同 session 双 resume 碰撞，Batch 2 同型）**：stash
-  `m3-residual-wip`（callbacks.rs 残面 WIP：链资格 O(1) `sih_prefix` 计数化 +
-  `tail_iah_pending` 增量扫描 + t8c 读索引泛化 `HandleStateIndex`，含 collapsible_if
-  /fmt 修复）由本轮（新 session）认领 pop+commit+复测。已过：fmt、clippy
-  `-p zero-engine --all-targets -D warnings`、`cargo test -p zero-engine`
-  （3761P，5F 见下行）。A/B before（HEAD release 二进制全通道 `--json`）在跑，
-  after 复测与落地由本轮收口；备份 patch 在 `/tmp/m3-residual-wip-backup.patch`。
-  **并行侧请勿 pop 该 stash、勿重建 runner 二进制。**
-- **HEAD 既有 5F 归因待办（跨流）**：`cargo test -p zero-engine --lib` 干树
+- **落地内容**：stash `m3-residual-wip` 认领收口（§9 同 session 双 resume
+  碰撞，Batch 2 同型）——链资格 O(1) `sih_prefix` 计数化 + `tail_iah_pending`
+  增量扫描 + t8c 读索引泛化 `HandleStateIndex`（双层终态合并，HANDLE_TAG_MEMO
+  同款）；callbacks.rs 单文件 +455/−35，新增单测 3，fmt/clippy（
+  `-p zero-engine`）干净。同 clone 双 session 零编辑面冲突收口：本 session
+  修复验证（fmt/clippy/单测/A-B），上流 session 提交代码（f11555070，内容与
+  本 session 验证版零 diff）并接力 solo 复跑 ×1/×2/×3。
+- **A/B 验证（WC 通道 ×1，同机同参守卫）**：语料 392 案逐子测试身份比对
+  **P→F=0、F→P=0、vanished=0**，唯一 delta = gethtml.html **+1,494 全 Pass**；
+  gethtml ×1 从稳定楔死 2,268 → 3,762P/0F。语料组合总数勘误 6,908
+  （17 safelisted×384 + 95×4，算术确证；历史「4,506」是 ×8 楔死超时补记的
+  截断面）——×1/×2/×3 solo 随预算平滑延伸 3,443/4,819/5,958P（86%），F 恒 0、
+  无固定截断面：二次楔死已除，剩余 = 线性预算瓶颈（边际 ~38 行/s，全量需
+  ~115s 窗即 ×4，×1 30s 不可达属预算语义非病根）；吞吐 >11×（修复前 ×8
+  240s 窗 3,679 行 vs 修复后 ×2 60s 窗 4,819 行）与 Q1 队列加速 11× 互证；
+  attachment 484P/170F 前后同态。
+  [landing evidence](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-residual-fix-landing.md)
+- **HEAD 既有 5F 归因收窄（跨流）**：`cargo test -p zero-engine --lib` 干树
   （66dd8eeb3，无 WIP）复现 5F——part06 R2809 stylesheets write / part51 p99s
   custom property case / part56 p56 adopted snapshot / part06 R2810 rule style /
-  R3276 add-remove rule；签名 = cssText 尾分号/空格形态（`color: rgb(9, 105,
-  218);` vs 无分号）。与本 WIP 无关（stash 前后同 5F）；q16/s299 系提交嫌疑，
-  归属流 bisect 后修。
+  R3276 add-remove rule；签名 = cssText 声明块尾分号（Blink 形
+  `color: rgb(9, 105, 218);`）vs 测试期望旧形。归因 **s249（652a78e00，
+  2026-11-03）`_zwSerializeDecls` 末声明带分号 + 颜色归一**（adopted/insertRule
+  路径经 `_ruleFromText` 重建），认领声明时点的「q16/s299 系嫌疑」以此收窄；
+  归属 html-semantics 流（s 系）bisect 精确翻转点后修（更新 5 期望或回退路径形）。
 
 ## 依赖约束（run-rules §9）
 
