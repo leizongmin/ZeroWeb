@@ -791,6 +791,28 @@ fn paint_progress_meter_non_target_element_skipped() {
     );
 }
 
+#[test]
+fn paint_meter_appearance_none_no_value_bar() {
+    // css-ui-4 §appearance-switching：作者 `appearance: none` 关闭原生 widget——
+    // value 填充条不绘（track chrome 抑制由 pipeline 级 s313 测试覆盖）。driving：R1670
+    // meter-appearance-none-rendering 族 mismatch。
+    let (doc, m) = first_progress_meter(r#"<body><meter value="0.5"></meter></body>"#, "meter");
+    let mut painter = Painter::new();
+    // bare `ComputedStyle::default()` appearance 初值即 Auto（UA 形基线）——作者关闭形
+    // 须显式置 None（作者 `appearance: none` 覆盖后的 computed 形）。
+    let mut style = ComputedStyle::default();
+    style.appearance = zero_style_system::AppearanceComputedValue::None;
+    let mut box_node = make_box(80.0, 16.0);
+    box_node.node_id = Some(m);
+    let before = painter.primitives().fills.len();
+    painter.paint_progress_meter_value(&box_node, 0.0, 0.0, &style, &doc);
+    assert_eq!(
+        painter.primitives().fills.len(),
+        before,
+        "appearance:none meter 不应绘 value 条"
+    );
+}
+
 // ── R1679：`<select>` selected option 标签绘制（≡ R1660 paint_input_value 测试谱系）──
 
 /// 辅助：取首个 select 元素 NodeId。

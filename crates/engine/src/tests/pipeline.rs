@@ -2923,3 +2923,34 @@ fn test_s312_textarea_ellipsis_clip() {
         glyphs.iter().map(|(_, x)| *x).fold(0.0f32, f32::max)
     );
 }
+
+/// s313：meter/progress `appearance: none`——UA track chrome（bg/border）与 value
+/// 填充条整体不施画（css-ui-4 §appearance-switching；appearance 初值 auto，作者 none
+/// 覆盖后 computed None = 关闭意图）。裸 meter 照常施画。
+/// driving：R1670 meter-appearance-none-rendering 族 mismatch 四页。
+#[test]
+fn test_s313_meter_appearance_none_chrome_suppressed() {
+    let counts_of = |css: &str| {
+        let mut pipeline = RenderPipeline::new(200.0, 80.0);
+        let html = r#"<html><head><style></style></head><body><meter value="0.5"></meter></body></html>"#;
+        let result = pipeline.render_html(html, css);
+        let prims = result.primitives();
+        prims.fills.len()
+            + prims.rounded_rects.len()
+            + prims.path_fills.len()
+            + prims.strokes.len()
+            + prims.path_strokes.len()
+    };
+    // 裸 meter（UA appearance:auto）：track bg #efefef + value 条（green）+ UA 边框。
+    let auto_total = counts_of("");
+    assert!(
+        auto_total >= 2,
+        "裸 meter 应有 track bg + value 条 + 边框（got {auto_total}）"
+    );
+    // 作者 appearance:none：素盒，零图元。
+    let none_total = counts_of("meter { appearance: none; }");
+    assert_eq!(
+        none_total, 0,
+        "appearance:none meter 不应施画任何 track chrome（got {none_total}）"
+    );
+}

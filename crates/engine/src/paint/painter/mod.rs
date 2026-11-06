@@ -884,6 +884,29 @@ fn native_appearance_for_element(box_node: &LayoutBox, doc: Option<&Document>) -
     }
 }
 
+/// meter/progress 的 UA track chrome（R1670 UA 表 bg/border）在作者 `appearance: none`
+/// 下不施画。
+///
+/// css-ui-4 §appearance-switching：meter/progress 的原生外观 = track 盒（UA bg/border
+/// 与 value 填充条）整体；`none` = 素盒。appearance 初值 auto（cascade 无声明即 auto），
+/// 故这两个 tag 的 computed `None` 即作者关闭意图。value 填充条的对应门在
+/// `paint_progress_meter_value`（controls.rs）。driving：R1670
+/// meter-appearance-none-rendering 族 mismatch 四页。
+fn widget_track_chrome_suppressed(style: &ComputedStyle, box_node: &LayoutBox, doc: Option<&Document>) -> bool {
+    if !matches!(style.appearance, AppearanceComputedValue::None) {
+        return false;
+    }
+    let Some(id) = box_node.node_id else {
+        return false;
+    };
+    let Some(node) = doc.and_then(|d| d.get(id)) else {
+        return false;
+    };
+    matches!(&node.kind, zero_dom::NodeKind::Element(e)
+        if e.local_name().eq_ignore_ascii_case("meter")
+            || e.local_name().eq_ignore_ascii_case("progress"))
+}
+
 fn compute_needs_clip(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, doc: Option<&Document>) -> bool {
     // R4066（CSS Overflow §3.3 overflow propagation）：根元素（html）的 overflow 传播到
     // 视口——自身不作内容裁剪盒；视口裁剪由画布边界自然完成。body 的 overflow 在 html
@@ -3121,7 +3144,9 @@ impl Painter {
                 // 背景/边框/outline 图元绘制后统一裁到形角多边形。窗口准备走
                 // #[inline(never)] 助手（paint 递归帧敏感，深嵌套页栈溢出史）。
                 self.prepare_corner_shape_clip(style, box_node, abs_x, abs_y);
-                if style.background_color != ColorValue::Transparent && !skip_inline_box_bg {
+                // meter/progress appearance:none → UA track chrome 抑制（同主路径门）。
+                let track_chrome_off = widget_track_chrome_suppressed(style, box_node, doc);
+                if style.background_color != ColorValue::Transparent && !skip_inline_box_bg && !track_chrome_off {
                     // R5086：同 paint_node 主路径——行内盒背景移动到父 IFC 已发字形之前。
                     let r5086_bg_pos =
                         if self.inline_bg_z_order_enabled && matches!(style.display, DisplayValue::Inline) {
@@ -3186,6 +3211,7 @@ impl Painter {
                     // R4332：多行 inline（skip_inline_box_border）改由 paint_text
                     // per-fragment 描绘（union 矩形跨行整框与 chromium per-fragment 语义相悖）。
                     && !skip_inline_box_border
+                    && !track_chrome_off
                 {
                     let fieldset_legend = doc.and_then(|doc| {
                         let node = doc.get(node_id)?;
@@ -4101,12 +4127,16 @@ impl Painter {
                 } else {
                     (false, false)
                 };
+                // meter/progress appearance:none → UA track chrome（bg/border/value 条）
+                // 整体不施画（css-ui-4 native look；driving R1670 appearance-none 族）。
+                let track_chrome_off = widget_track_chrome_suppressed(style, box_node, doc);
                 if style.background_color != ColorValue::Transparent
                     && !skip_split_inline_deco
                     && !skip_inline_box_bg
                     && !skip_contents_deco
                     && !spanner_segs_active
                     && !bg_clip_text_suppress_color
+                    && !track_chrome_off
                 {
                     // R5086：行内盒且 render_fragment 已记录字形前位点 → 背景发射后把
                     // draw_order 段移动到字形之前（css2.1 附录 E：行内背景先于文本）。
@@ -4226,6 +4256,7 @@ impl Painter {
                     && !skip_inline_box_border
                     && !spanner_segs_active
                     && !band_driver
+                    && !track_chrome_off
                     && (box_node.border_top > 0.0
                         || box_node.border_right > 0.0
                         || box_node.border_bottom > 0.0

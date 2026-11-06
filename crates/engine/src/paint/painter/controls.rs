@@ -9,7 +9,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GlyphPrimitive;
-use zero_style_system::ComputedStyle;
+use zero_style_system::{AppearanceComputedValue, ComputedStyle};
 
 impl super::Painter {
     /// 绘制 `<progress>`/`<meter>` 的 value 填充条（R1671 paint 半，≡ R1660 `paint_input_value`）。
@@ -28,7 +28,7 @@ impl super::Painter {
         box_node: &LayoutBox,
         abs_x: f32,
         abs_y: f32,
-        _style: &ComputedStyle,
+        style: &ComputedStyle,
         doc: &Document,
     ) {
         let node_id = match box_node.node_id {
@@ -48,6 +48,19 @@ impl super::Painter {
             None => return,
         };
         let is_progress = elem.local_name().eq_ignore_ascii_case("progress");
+
+        // css-ui-4 §appearance-switching：value 填充条属原生 widget 外观——作者
+        // `appearance: none` 关闭（appearance 初值 auto，cascade 无声明即 auto；
+        // [`Self::effective_appearance`] 的原生映射恒非 None，故此处 effective 判定
+        // 与原始 computed 一致）。track chrome 的对应门在
+        // `widget_track_chrome_suppressed`。driving：R1670
+        // meter-appearance-none-rendering 族 mismatch 四页。
+        if matches!(
+            super::effective_appearance(style, box_node, Some(doc)),
+            AppearanceComputedValue::None
+        ) {
+            return;
+        }
 
         // 解析数值属性（HTML 规范：缺失/非法回落默认值）。value 缺失 = indeterminate → 不绘条。
         let value = match elem
