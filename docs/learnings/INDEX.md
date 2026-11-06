@@ -5,14 +5,18 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（233）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（237）
 
+- 2026-11-06 [WebSocket fail 面 error 派发：err 标记位与派发门共用 flag 导致派发永久跳过](bugs/2026-11/2026-11-06-ws-deferred-error-dispatch-flag-short-circuit.md) — engine
 - 2026-11-06 [WPT runner 完成竞态：module script unhandled rejection 上报与结果收集差一 tick](bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md) — zero-engine, tests/wpt-runner
 - 2026-11-06 [真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）](bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md) — engine, js_dom_shim
+- 2026-11-06 [XHR 同步路径 preflight 头集与响应过滤的异步镜像漂移](bugs/2026-11/2026-11-06-sync-xhr-preflight-header-drift.md) — zero-engine（js_dom_shim part01/part03）
 - 2026-11-06 [setTagName 先插后删换型使持有引用 detached，过滤判据恒假](bugs/2026-11/2026-11-06-settagName-detached-reference-breaks-filters.md) — engine
 - 2026-11-06 [runner 日志混入 NUL 字节后 grep 静默空输出——统计与 A/B 前先 Python 解析](bugs/2026-11/2026-11-06-nul-byte-in-runner-logs-silences-grep.md) — wpt-runner, testing
 - 2026-11-06 [wpt-runner flat stash 单键与上游多键 dict 语义冲突——多端点共用 token 的 fixture 须键命名空间化](bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md) — wpt-runner
 - 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
+- 2026-11-06 [DBG 插桩读点必须对齐 harness 断言时点——exec 内时点读数不能反驳终态断言失败](bugs/2026-11/2026-11-06-dbg-probe-read-point-mismatch-harness-assert.md) — zero-engine
+- 2026-11-06 [fetch cors check 按 spec 步序重排——`*` 通配步骤先于 origin 比对，opaque 分支不可先行特判](bugs/2026-11/2026-11-06-cors-check-asterisk-step-precedes-origin-compare.md) — engine
 - 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
 - 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
 - 2026-11-05 [shim helper 定义在运行核闭包内——载入期机具消费时缺位 throw 撕裂 sweep](bugs/2026-11/2026-11-05-shim-helper-closure-scope-load-time-machinery.md) — engine

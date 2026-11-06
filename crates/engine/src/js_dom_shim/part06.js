@@ -19730,14 +19730,37 @@ function _zwCaretFromSelText(sel, end) {
     // 起底再换原型（MessageEvent/part05 同形态；Event 构造器产 isTrusted=false 素 ev）。
     var ev = new Event(type, options);
     Object.setPrototypeOf(ev, CloseEvent.prototype);
-    // HTML spec §close event：wasClean（关闭握手完成）、code（默认 1005）、reason（默认 ''）。
-    ev.wasClean = !!(options && options.wasClean);
-    ev.code = options && options.code !== undefined ? options.code : 1005;
+    // HTML spec §closeevent ctor：wasClean/code/reason 落内部槽——prototype getter-only
+    // accessor 接管（net-api M3：close-basic 断言赋值忽略 + `delete e.wasClean` 无效 +
+    // `delete CloseEvent.prototype.wasClean` 后读 undefined）；code 缺省 **0**（ctor.html
+    // 断言面——1005 是 close 事件派发面缺省，非构造器面）。
+    ev._zwWasClean = !!(options && options.wasClean);
+    ev._zwCeCode = options && options.code !== undefined ? options.code : 0;
     ev.reason = (options && options.reason) || '';
     return ev;
   }
   CloseEvent.prototype = Object.create(Event.prototype);
   CloseEvent.prototype.constructor = CloseEvent;
+  Object.defineProperty(CloseEvent.prototype, 'wasClean', {
+    get: function () { return this._zwWasClean || false; },
+    set: undefined,
+    enumerable: true,
+    configurable: true, // net-api M3：delete CloseEvent.prototype.wasClean 断言面
+  });
+  Object.defineProperty(CloseEvent.prototype, 'code', {
+    get: function () { return this._zwCeCode; },
+    set: undefined,
+    enumerable: true,
+    configurable: true,
+  });
+  // net-api M3：原型 toStringTag（events/018「close e.toString() === '[object CloseEvent]'」
+  // 断言面——继承 Event.prototype 的 'Event' tag 须覆写；MessageEvent 同形先例）。
+  try {
+    if (typeof Symbol === 'function' && Symbol.toStringTag) {
+      Object.defineProperty(CloseEvent.prototype, Symbol.toStringTag,
+        { value: 'CloseEvent', configurable: true });
+    }
+  } catch (_eCeTag) {}
   globalThis.CloseEvent = globalThis.CloseEvent || CloseEvent;
 
   var _zwWsSeq = 0; // pump pending id 单调计数器
@@ -19778,6 +19801,49 @@ function _zwCaretFromSelText(sel, end) {
       return merged;
     }
     return new Uint8Array(0);
+  }
+
+  // net-api M3：listener 遍历共享（泵 _dispatch 与手动 prototype.dispatchEvent）——
+  // 函数与 {handleEvent} 双形（EventListener 接口形），this/currentTarget/AT_TARGET
+  // 标记（events/017 断言面），snapshot 快照遍历（派发中增删 listener 不影响本趟）。
+  function _zwWsInvokeListeners(ws, ev) {
+    var arr = ws._listeners[ev.type];
+    if (!arr || !arr.length) return;
+    var snapshot = arr.slice();
+    ev.currentTarget = ws;
+    ev.eventPhase = 2; // AT_TARGET
+    for (var i = 0; i < snapshot.length; i++) {
+      var l = snapshot[i];
+      try {
+        if (typeof l === 'function') l.call(ws, ev);
+        else if (l && typeof l.handleEvent === 'function') l.handleEvent.call(l, ev);
+      } catch (_e) {}
+    }
+    ev.currentTarget = null;
+    ev.eventPhase = 0;
+  }
+
+  // net-api M3：on* setter 双语义——(a) 值存取：函数或 {handleEvent: fn} 形**原样存**
+  //（events/013 断言读回 === 原对象；其余非 callable 落 null，LegacyTreatNonCallableAsNull
+  // 语义 `ws.onopen = 123` → null）；(b) 派发接线：哨兵 wrapper 按 addEventListener
+  // 注册序入列（先移除旧哨兵——events/016 断言注册序派发），wrapper 只调函数形（013
+  // 断言对象形 on* 不触发派发）。
+  function _zwWsSetHandler(ws, type, v, slot) {
+    v = (typeof v === 'function' || (v && typeof v.handleEvent === 'function')) ? v : null;
+    ws[slot] = v;
+    var old = ws._zwOnWrap ? ws._zwOnWrap[type] : null;
+    if (old) ws.removeEventListener(type, old);
+    if (v === null) {
+      if (ws._zwOnWrap) delete ws._zwOnWrap[type];
+      return;
+    }
+    var wrap = function (ev) {
+      var h = ws[slot];
+      if (typeof h === 'function') h.call(ws, ev);
+    };
+    if (!ws._zwOnWrap) ws._zwOnWrap = {};
+    ws._zwOnWrap[type] = wrap;
+    ws.addEventListener(type, wrap);
   }
 
   function WebSocket(url, protocols) {
@@ -19855,32 +19921,38 @@ function _zwCaretFromSelText(sel, end) {
         protoList.push(p);
       }
     }
-    this.url = resolved.href; // spec：url 属性 = 序列化形态
+    // net-api M3：url/readyState/bufferedAmount 落内部槽——prototype getter-only
+    // accessor 接管（url/002/003 与 readyState/002、bufferedAmount-readonly 断言
+    // 实例赋值忽略、`delete ws.url` 后仍可读（继承面）、`delete WebSocket.prototype.url`
+    // 后 undefined（accessor configurable: true））。extensions/protocol 无 accessor
+    // 断言面，维持实例 own。
+    this._zwUrl = resolved.href; // spec：url 属性 = 序列化形态
     this._messageOrigin = resolved.origin; // MessageEvent.origin = 连接 URL 的 origin 序列化
-    this.readyState = WebSocket.CONNECTING;
-    this.bufferedAmount = 0;
+    this._zwReadyState = WebSocket.CONNECTING;
+    this._zwBufferedAmount = 0;
     this.extensions = ''; // 协商扩展面未实现（RFC 6455 permessage-deflate 未协商）
     this.protocol = '';   // 服务端选中子协议（open wire 回填）
     this._binaryType = 'blob'; // 实例槽——prototype accessor 接管 binaryType 面
-    // on* 经 prototype accessor（LegacyTreatNonCallableAsNull）落 _zwOn* 槽——
-    // 实例直赋会遮蔽 accessor，故不建自有属性。
+    // on* 经 prototype accessor 落 _zwOn* 槽——setter 同步注册哨兵 listener（注册序
+    // 即派发序，events/016 断言面），实例直赋会遮蔽 accessor，故不建自有属性。
     this._zwOnOpen = null; this._zwOnMessage = null; this._zwOnError = null; this._zwOnClose = null;
+    this._zwOnWrap = {}; // type → 哨兵 wrapper（on* 变更时先移除旧哨兵）
     this._listeners = {};
     var self = this;
     var connId = 'ws' + (++_zwWsConnSeq);
     this._connId = connId;
     this._closedByUs = false;
     this._pumpStopped = false;
+    this._errorDispatched = false; // fail 面 error 恰一次标记（close-connecting-async 断言面）
+    this._zwErrSeen = false; // err wire 已见标记（宿主契约：err 后必随终结 close）
 
+    // 派发（泵内部路径）：on* 已由 setter 注册哨兵（注册序统一，events/016），遍历
+    // _listeners 即完整序；target/AT_TARGET 标记在共享遍历内（events/017）。
     this._dispatch = function (type, event) {
       var ev = event || new Event(type, { __zwTrusted: true });
       ev.type = type;
       ev.target = self;
-      // on* accessor（prototype）——裸 this['on'+type] 直读走 getter 落 _zwOn* 槽。
-      var handler = self['_zwOn' + type.charAt(0).toUpperCase() + type.slice(1)];
-      if (typeof handler === 'function') { try { handler.call(self, ev); } catch (_e) {} }
-      var arr = self._listeners[type];
-      if (arr) for (var i = 0; i < arr.length; i++) { try { arr[i].call(self, ev); } catch (_e) {} }
+      _zwWsInvokeListeners(self, ev);
     };
 
     // 宿主缺失（webview 未配置 handler / engine-reftest 裸环境）：优雅降级——不 ReferenceError，
@@ -19888,8 +19960,9 @@ function _zwCaretFromSelText(sel, end) {
     // WebSocket connection」语义。异步派发（构造器内同步派发时页面尚无法挂 handler）。
     if (typeof __zw_ws_connect !== 'function' || typeof __zw_ws_next !== 'function') {
       setTimeout(function () {
-        if (self.readyState === WebSocket.CLOSED) return;
-        self.readyState = WebSocket.CLOSED;
+        if (self._zwReadyState === WebSocket.CLOSED) return;
+        self._zwReadyState = WebSocket.CLOSED;
+        self._errorDispatched = true;
         self._dispatch('error', null);
         self._dispatch('close', new CloseEvent('close', { wasClean: false, code: 1006, reason: '' }));
       }, 0);
@@ -19924,10 +19997,10 @@ function _zwCaretFromSelText(sel, end) {
       var data = sep < 0 ? '' : wire.slice(sep + 1);
       if (kind === 'open') {
         // close-during-connect：页面已 CLOSING/CLOSED 时忽略迟到的 open wire。
-        if (self.readyState === WebSocket.CLOSING || self.readyState === WebSocket.CLOSED) {
+        if (self._zwReadyState === WebSocket.CLOSING || self._zwReadyState === WebSocket.CLOSED) {
           return;
         }
-        self.readyState = WebSocket.OPEN;
+        self._zwReadyState = WebSocket.OPEN;
         self.protocol = data || '';
         self._dispatch('open', null);
       } else if (kind === 'msg') {
@@ -19949,18 +20022,31 @@ function _zwCaretFromSelText(sel, end) {
       } else if (kind === 'sent') {
         var sentBytes = parseInt(data, 10);
         if (!isNaN(sentBytes) && sentBytes > 0) {
-          self.bufferedAmount = Math.max(0, self.bufferedAmount - sentBytes);
+          self._zwBufferedAmount = Math.max(0, self._zwBufferedAmount - sentBytes);
         }
       } else if (kind === 'err') {
-        // err 非终结：只驱动 onerror（状态终结一律由 close wire 承载）。
-        self._dispatch('error', null);
+        // err 非终结：只标记（error 统一由 close wire 臂派发——fail 面原子序：
+        // readyState 先 CLOSED 再 error → close，events/015 断言 onerror 时 readyState
+        // 已 CLOSED；close-connecting-async「error 恰一次」面）。宿主保证 err 后必有
+        // 终结 close wire（ws_bridge 契约「err 只驱动 onerror，状态终结由 close 承载」）。
+        self._zwErrSeen = true;
       } else if (kind === 'close') {
         var parts = data.split('\x1f');
         var code = parseInt(parts[0], 10);
         var clean = parts[1] === '1';
         var reason = parts.length > 2 ? parts.slice(2).join('\x1f') : '';
-        self.readyState = WebSocket.CLOSED;
+        self._zwReadyState = WebSocket.CLOSED;
         self._pumpStopped = true;
+        // net-api M3：fail the WebSocket connection error 事件先于 close 且恰一次
+        //（close-connecting-async 断言序与单次；events/015/017/018 协议错误断连面）。
+        // 触发面两支：非 clean 关闭（协议错误 reserved opcode / 握手中断 / 1006）或
+        // err wire 已见（宿主协议错误序 = err + close(1006, clean=false)——err 标记
+        // 不派发，error 在此补派）。
+        // https://html.spec.whatwg.org/#fail-the-websocket-connection
+        if (!self._errorDispatched && (!clean || self._zwErrSeen)) {
+          self._errorDispatched = true;
+          self._dispatch('error', null);
+        }
         self._dispatch('close', new CloseEvent('close', {
           wasClean: clean,
           code: isNaN(code) ? 1006 : code,
@@ -19988,10 +20074,15 @@ function _zwCaretFromSelText(sel, end) {
     } catch (_eWsCkHdr) {}
     __zw_ws_connect(connId, resolved.href, protoList.join(','), wsOrigin, wsCookieHdr);
   }
-  WebSocket.CONNECTING = 0;
-  WebSocket.OPEN = 1;
-  WebSocket.CLOSING = 2;
-  WebSocket.CLOSED = 3;
+  // net-api M3：常量 {writable:false, enumerable:true, configurable:false}（WebIDL
+  // interface constants——constants/002 赋值忽略、003 delete 忽略、005/006 redefine
+  // 抛 TypeError；构造器与 prototype 双挂）。
+  var _zwWsConsts = [['CONNECTING', 0], ['OPEN', 1], ['CLOSING', 2], ['CLOSED', 3]];
+  for (var _ci = 0; _ci < _zwWsConsts.length; _ci++) {
+    Object.defineProperty(WebSocket, _zwWsConsts[_ci][0], {
+      value: _zwWsConsts[_ci][1], writable: false, enumerable: true, configurable: false,
+    });
+  }
   WebSocket.prototype = {
     constructor: WebSocket,
     // binaryType：spec「on setting, if the new value is not the string 'blob' or
@@ -20001,16 +20092,17 @@ function _zwCaretFromSelText(sel, end) {
     set binaryType(v) {
       if (v === 'blob' || v === 'arraybuffer') this._binaryType = v;
     },
-    // on* 事件处理 IDL 面：[LegacyTreatNonCallableAsNull]——非函数赋值落 null
-    //（eventhandlers 断言面：`ws.onopen = 123` 后读回应为 null）。getter 读实例槽。
+    // on* 事件处理 IDL 面：函数与 {handleEvent: fn} 形原样存取（events/013 读回 ===
+    // 原对象），其余非 callable 落 null（[LegacyTreatNonCallableAsNull]：`ws.onopen =
+    // 123` → null）；派发接线经哨兵 wrapper（注册序，见 _zwWsSetHandler）。
     get onopen() { return this._zwOnOpen || null; },
-    set onopen(v) { this._zwOnOpen = (typeof v === 'function') ? v : null; },
+    set onopen(v) { _zwWsSetHandler(this, 'open', v, '_zwOnOpen'); },
     get onmessage() { return this._zwOnMessage || null; },
-    set onmessage(v) { this._zwOnMessage = (typeof v === 'function') ? v : null; },
+    set onmessage(v) { _zwWsSetHandler(this, 'message', v, '_zwOnMessage'); },
     get onerror() { return this._zwOnError || null; },
-    set onerror(v) { this._zwOnError = (typeof v === 'function') ? v : null; },
+    set onerror(v) { _zwWsSetHandler(this, 'error', v, '_zwOnError'); },
     get onclose() { return this._zwOnClose || null; },
-    set onclose(v) { this._zwOnClose = (typeof v === 'function') ? v : null; },
+    set onclose(v) { _zwWsSetHandler(this, 'close', v, '_zwOnClose'); },
     addEventListener: function (type, cb) {
       (this._listeners[type] || (this._listeners[type] = [])).push(cb);
     },
@@ -20020,16 +20112,34 @@ function _zwCaretFromSelText(sel, end) {
       var i = arr.indexOf(cb);
       if (i >= 0) arr.splice(i, 1);
     },
-    // spec send(data)：state ≠ OPEN → InvalidStateError DOMException；string → text 帧，
-    // BufferSource → binary 帧（wire csv-decimal）；Blob → 二进制帧（全 part 字节物化）。
+    // net-api M3：手动派发（EventTarget.dispatchEvent）——events/003/004/007/008/009/019
+    // 断言面（typeof 检查 + on*/listener 按注册序派发 + 移除后不触发）；共享遍历内设
+    // target/currentTarget/AT_TARGET。
+    dispatchEvent: function (ev) {
+      if (!ev || typeof ev.type !== 'string') return true;
+      if (ev.target == null) {
+        try { ev.target = this; } catch (_eT) {}
+      }
+      _zwWsInvokeListeners(this, ev);
+      return true;
+    },
+    // spec send(data)：CONNECTING → InvalidStateError；CLOSING/CLOSED → 静默返回
+    // undefined（net-api M3 三态，send/007/008 断言面）；参数缺省 TypeError 先于状态
+    // 检查（WebIDL 入口转换，send/001 断言面）。string → text 帧，BufferSource →
+    // binary 帧（wire csv-decimal）；Blob → 二进制帧（全 part 字节物化）。
     send: function (data) {
-      if (this.readyState !== WebSocket.OPEN) {
+      if (arguments.length === 0) {
+        throw new TypeError(
+          "Failed to execute 'send' on 'WebSocket': 1 argument required, but only 0 present.");
+      }
+      if (this._zwReadyState === WebSocket.CONNECTING) {
         var DE4 = (typeof globalThis.DOMException === 'function') ? globalThis.DOMException : DOMException;
         throw new DE4('WebSocket is not open', 'InvalidStateError');
       }
+      if (this._zwReadyState === WebSocket.CLOSING || this._zwReadyState === WebSocket.CLOSED) return;
       if (typeof __zw_ws_send !== 'function') return;
       if (typeof data === 'string') {
-        this.bufferedAmount += _zwWsUtf8ByteLength(data);
+        this._zwBufferedAmount += _zwWsUtf8ByteLength(data);
         __zw_ws_send(this._connId, 't', data);
         return;
       }
@@ -20044,7 +20154,7 @@ function _zwCaretFromSelText(sel, end) {
       if (bytes) {
         var csv = new Array(bytes.length);
         for (var j = 0; j < bytes.length; j++) csv[j] = bytes[j];
-        this.bufferedAmount += bytes.length;
+        this._zwBufferedAmount += bytes.length;
         __zw_ws_send(this._connId, 'b', csv.join(','));
         return;
       }
@@ -20052,7 +20162,7 @@ function _zwCaretFromSelText(sel, end) {
       // "null"，Send-null 断言面；其余宿主对象按 String 化发文本帧——不伪造成功亦
       // 不静默丢帧）。
       var text = String(data);
-      this.bufferedAmount += _zwWsUtf8ByteLength(text);
+      this._zwBufferedAmount += _zwWsUtf8ByteLength(text);
       __zw_ws_send(this._connId, 't', text);
     },
     // spec close(code, reason)（https://html.spec.whatwg.org/#close-the-websocket）：
@@ -20082,19 +20192,32 @@ function _zwCaretFromSelText(sel, end) {
         reason = '';
       }
       // spec step 2：CLOSING/CLOSED 幂等返回（校验之后）。
-      if (this.readyState === WebSocket.CLOSING || this.readyState === WebSocket.CLOSED) return;
-      this.readyState = WebSocket.CLOSING;
+      if (this._zwReadyState === WebSocket.CLOSING || this._zwReadyState === WebSocket.CLOSED) return;
+      this._zwReadyState = WebSocket.CLOSING;
       if (typeof __zw_ws_close === 'function') {
         __zw_ws_close(this._connId, code === undefined || code === null ? 0 : code, reason);
       }
       // close wire 由宿主回投（泵派发 close 事件）——shim 不自派发（避免双事件）。
     },
   };
-  // WebIDL：常量同时挂 interface prototype object（`ws.OPEN` / `this.CLOSED` 断言面）。
-  WebSocket.prototype.CONNECTING = 0;
-  WebSocket.prototype.OPEN = 1;
-  WebSocket.prototype.CLOSING = 2;
-  WebSocket.prototype.CLOSED = 3;
+  // WebIDL：常量同时挂 interface prototype object（`ws.OPEN` / `this.CLOSED` 断言面）；
+  // url/readyState/bufferedAmount getter-only accessor（configurable: true——url/003
+  // delete 断言面；实例赋值经 sloppy 静默忽略——url/002 / readyState/002 面）。
+  for (var _pi = 0; _pi < _zwWsConsts.length; _pi++) {
+    Object.defineProperty(WebSocket.prototype, _zwWsConsts[_pi][0], {
+      value: _zwWsConsts[_pi][1], writable: false, enumerable: true, configurable: false,
+    });
+  }
+  var _zwWsAttrs = [
+    ['url', function () { return this._zwUrl || ''; }],
+    ['readyState', function () { return this._zwReadyState; }],
+    ['bufferedAmount', function () { return this._zwBufferedAmount || 0; }],
+  ];
+  for (var _ai = 0; _ai < _zwWsAttrs.length; _ai++) {
+    Object.defineProperty(WebSocket.prototype, _zwWsAttrs[_ai][0], {
+      get: _zwWsAttrs[_ai][1], set: undefined, enumerable: true, configurable: true,
+    });
+  }
   globalThis.WebSocket = globalThis.WebSocket || WebSocket;
 
   // ── Event Timing（performance-api-compat M2-S2）──

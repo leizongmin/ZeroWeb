@@ -5,11 +5,12 @@
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
-零回归 + `.h2.` 排除记账），**M2 完成**——websockets interfaces 批次
-（74 案 +87P）+ auth 面批次（+15P 零回归）+ getResponseHeader 响应头
-控制面/preflight 端点扩表批次（+33P 零回归）三批全落；批次差额
-（ws interfaces 45F 九簇 + xhr auth 12F 五簇 + `__custom` 排序簇 1F）
-归 M3 复验
+零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
+ws interfaces 九簇收口（+45P 至 **13,109P** 零回归，批次门 100%，
+[证据档](net-api-compat-v3/evidence/2026-11-06-m3-ws-interfaces-clusters.md)，
+websockets topdir 通道 Fail 清零）；M3 余项：fetch redirect 七簇
+（99F+1T）+ xhr auth 五簇（12F）+ `__custom` 排序簇（1F）+ 重定向终跳
+sync cors-filter 同规 + xhr 在账失败簇
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -162,16 +163,23 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   unsent-opened ×2 vacuous P 转真实 P；批次门 97.4%（38/39）差一线，
   `__custom` 排序簇 1F（wpt.fyi Firefox 7/7 定谳的浏览器头序 vs 引擎
   字节升序）挂账随 M3 复验。
-- **M3**：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
+- **M3**（进行中）：
+  **ws interfaces 九簇 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m3-ws-interfaces-clusters.md)）：
+  part06.js 八刀——CloseEvent 内部槽 + getter-only accessor + ctor code 缺省
+  0 + toStringTag、WebIDL 常量双挂 ReadOnly、url/readyState/bufferedAmount
+  内部槽、on* 双语义（原样存 + 哨兵注册序）、dispatchEvent、send 三态、
+  fail-connection error 恰一次（err wire 标记与派发门拆双标记——018 二轮
+  根因，015 的 P 不证明派发）；定向 88P/45F → 133P/0F；全量 A/B
+  13,064 → **13,109P**（+45P，分母 14,692 不变，changed 45 全 F→P 零
+  P→F 零 T 变化）；批次门 100%，DC-3 interfaces 面门达成。
+  余项：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
   xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
-  method 9F / location-escape 4F 等）+ ws interfaces 九簇（WebIDL 常量/
-  属性描述符基建、EventTarget dispatchEvent、fail-connection 语义等）+
-  xhr auth 五簇（URL/open() userinfo 凭据解析 8F / 401 挑战流 UA 会话 2F /
-  跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）+
-  getAllResponseHeaders 排序簇（浏览器头序 vs 引擎字节升序，1F）+
-  重定向终跳 sync cors-filter 同规 + xhr 在账失败簇收敛（formdata/submitter
-  簇 4F + overrideMimeType Shift-JIS 接线 1F + cookies.http.html 挂起 1T；
-  permissions-policy 2F 策略面排除）（DC-3）。
+  method 9F / location-escape 4F 等）+ xhr auth 五簇（URL/open() userinfo
+  凭据解析 8F / 401 挑战流 UA 会话 2F / 跨源透明 auth 拒绝 1F / preflight
+  ACAH enforcement 1F）+ getAllResponseHeaders 排序簇（浏览器头序 vs 引擎
+  字节升序，1F）+ 重定向终跳 sync cors-filter 同规 + xhr 在账失败簇收敛
+  （formdata/submitter 簇 4F + overrideMimeType Shift-JIS 接线 1F +
+  cookies.http.html 挂起 1T；permissions-policy 2F 策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
