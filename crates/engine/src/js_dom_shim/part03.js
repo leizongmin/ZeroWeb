@@ -11474,6 +11474,43 @@
   _zwDefProtoMethod(globalThis.Element.prototype, 'webkitMatchesSelector', function (sel) {
     return globalThis.Element.prototype.matches.apply(this, arguments);
   });
+  // net-api M3（七）：Element.prototype.closest——plain 世界（`_zwMEl` 解析产物经
+  // R125 setPrototypeOf 接本原型：innerHTML/insertAdjacentHTML 同 turn 解析节点、
+  // DOMParser/detached doc 树）。trap 世界 proxy 的 closest 走 part04 get trap
+  // 特判（s81/s82）先于原型命中——R5238 同款分离，两世界不重叠可达。此前 plain
+  // 世界无 closest（undefined）——FormData 构造器 owner 判定 `f.closest('form')`
+  // 断链（WPT xhr formdata 族：同 turn 解析字段 owner 恒 null → 条目全丢）。
+  // spec closest = 祖先序（含 self）最近命中；复用 s82 `_zwClosestSingleCompounds`
+  // 单 compound 判定 + `_matchCompoundOf` 直读属性面（tagName/id/className/
+  // getAttribute 对 plain 节点与 trap proxy 锚双可读——上行跨到锚 proxy 不换轨），
+  // plain parentNode 链 48 跳封顶（R125 口径）；complex/伪类选择器保守不接
+  //（同 s82 口径——`_matchCompoundOf` 不求值 pseudos，混入会 over-match）。
+  // FIXME: complex selector 祖先走（serialize+matches 逐祖先可接全语义）。
+  // https://dom.spec.whatwg.org/#dom-element-closest
+  _zwDefProtoMethod(globalThis.Element.prototype, 'closest', function (sel) {
+    if (arguments.length === 0) {
+      throw new globalThis.TypeError(
+        "Failed to execute 'closest' on 'Element': 1 argument required, but only 0 present.");
+    }
+    var _clSel = String(sel == null ? '' : sel);
+    if (typeof __zw_selector_valid === 'function' && __zw_selector_valid(_clSel) !== '1') {
+      throw new (globalThis.DOMException || Error)(
+        "'" + _clSel + "' is not a valid selector.", 'SyntaxError');
+    }
+    var _clCs = (typeof _zwClosestSingleCompounds === 'function') ? _zwClosestSingleCompounds(_clSel) : [];
+    if (!_clCs.length) return null;
+    var _clCur = this, _clG = 0;
+    while (_clCur && _clG++ < 48) {
+      var _clNt = 0;
+      try { _clNt = _clCur.nodeType; } catch (_eClNt) { return null; }
+      if (_clNt !== 1) return null;
+      for (var _clI = 0; _clI < _clCs.length; _clI++) {
+        try { if (_matchCompoundOf(_clCur, _clCs[_clI])) return _clCur; } catch (_eClM) {}
+      }
+      try { _clCur = _clCur.parentNode; } catch (_eClP) { return null; }
+    }
+    return null;
+  });
   // R293（js-dom M4）：Element.prototype 的 insertAdjacentElement/Text（plain 元素
   // 对象——_zwMEl/createHTMLDocument 产物经 setPrototypeOf 继承本原型；WPT
   // insert-adjacent 的 "invalid caller object" 双形态在 createHTMLDocument()

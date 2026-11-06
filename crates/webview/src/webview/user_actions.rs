@@ -696,7 +696,24 @@ impl WebView {
             .submitter
             .as_ref()
             .and_then(|submitter| self.selector_for_page_node_handle(submitter.node().get()));
-        let detail = if event.input_type.is_some() || submitter_sel.is_some() || event.detail.is_some() {
+        // net-api M3（七）：UA 激活合成 click/dblclick 的落点坐标——指针激活语义
+        // 事件携带指针位置（spec UI Events §5.3 activation trigger；testdriver
+        // click = 元素 in-view 中心，testdriver.js getInViewCenterPoint 同款）。
+        // 此前 PlannedEvent 无坐标通道 → 合成 click clientX/Y 恒 0 → image
+        // submitter selected coordinates 恒记录 (0,0)（WPT xhr formdata
+        // submitter-coordinate-value：testdriver.click 与手动 dispatchEvent 的
+        // 中心坐标须一致）。rect 探测失败/detached 无盒 → None（坐标缺省面不变，
+        // 与 unactivated 图像钮 selected coordinates = 0 语义一致）。
+        let click_center = if matches!(event.event_type.as_str(), "click" | "dblclick") {
+            self.probe_in_view_center(executor, &selector)?
+        } else {
+            None
+        };
+        let detail = if event.input_type.is_some()
+            || submitter_sel.is_some()
+            || event.detail.is_some()
+            || click_center.is_some()
+        {
             Some(DomEventDetail {
                 data: event.data.clone(),
                 input_type: event.input_type.clone(),
@@ -704,6 +721,8 @@ impl WebView {
                 // uievents-compat M2 片 1：UIEvent.detail（click 连击计数/dblclick=2）
                 // 透传——shim 泛型分支 own-property 注入。
                 detail: event.detail,
+                client_x: click_center.map(|c| c.0),
+                client_y: click_center.map(|c| c.1),
                 ..Default::default()
             })
         } else {
@@ -718,6 +737,28 @@ impl WebView {
             return Ok((result.value.trim() != "prevented", result.changed || native.changed));
         }
         Ok((result.value.trim() != "prevented", result.changed))
+    }
+
+    /// 探测元素 in-view 中心（testdriver.js `getInViewCenterPoint` 同款语义——
+    /// 视口钳制后取中点）。无盒（display:none 等 width/height 全零）/detached/
+    /// 读取失败 → `None`（坐标缺省不变——clientX/Y 0 与既有 unactivated 面一致）。
+    fn probe_in_view_center(
+        &mut self,
+        executor: Option<&dyn JsExecutor>,
+        selector: &str,
+    ) -> Result<Option<(f32, f32)>, WebViewError> {
+        let script = format!(
+            "(function(){{var el=document.querySelector({sel});if(!el||!el.getBoundingClientRect){{return '';}}var r=el.getBoundingClientRect();if(!r||(r.width===0&&r.height===0)){{return '';}}var l=r.left,rt=r.right,t=r.top,b=r.bottom;if(l<0)l=0;if(t<0)t=0;var iw=Number(window.innerWidth);if(isFinite(iw)&&rt>iw)rt=iw;var ih=Number(window.innerHeight);if(isFinite(ih)&&b>ih)b=ih;return (0.5*(l+rt))+','+(0.5*(t+b));}})();",
+            sel = serde_json::to_string(selector).unwrap_or_else(|_| "null".into()),
+        );
+        let value = self.execute_dom_script(executor, &script)?.value;
+        let mut parts = value.trim().split(',');
+        let x = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+        let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+        Ok(match (x, y) {
+            (Some(x), Some(y)) => Some((x, y)),
+            _ => None,
+        })
     }
 
     fn apply_planned_mutations(

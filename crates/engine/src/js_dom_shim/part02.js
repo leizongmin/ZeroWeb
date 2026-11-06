@@ -4130,17 +4130,31 @@
       // 新增随后（静态页与原行为逐项一致；动态页 form 子树序即树序）。
       try {
         var fields = [];
+        var fieldsSrc = [];
         var _fdSeen = {};
-        var _fdPush = function (el) {
+        var _fdPush = function (el, fromFormSubtree) {
           if (!el) return;
           var k = null;
           try { k = (typeof _elKeyOf === 'function') ? _elKeyOf(el) : null; } catch (_eFdk) {}
           if (k == null) {
             try { k = el.__zwHandle ? ('@' + el.__zwHandle) : (el.__zwSelector || null); } catch (_eFdk2) {}
           }
-          if (k != null && _fdSeen[k]) return;
-          if (k != null) _fdSeen[k] = 1;
+          // net-api M3（七）：键碰撞时 form 子树源**顶替** doc 级占位——同 turn
+          // 解析物料的 sel-proxy 身份是 tag 级模糊 selector，doc 级逗号列表按文档
+          // 首个同名元素解析（probe：docQList=1 落在他 form 留存 input 上）与
+          // 子树源我方字段同键，先到先得的去重会吞掉结构正确者。顶替保留原位
+          //（树序不变——静态页双源同元素顶替无害；s123 序约定不变）。
+          if (k != null && _fdSeen[k] != null) {
+            var _fdIdx = _fdSeen[k];
+            if (fromFormSubtree && fieldsSrc[_fdIdx] !== true) {
+              fields[_fdIdx] = el;
+              fieldsSrc[_fdIdx] = true;
+            }
+            return;
+          }
+          if (k != null) _fdSeen[k] = fields.length;
           fields.push(el);
+          fieldsSrc.push(!!fromFormSubtree);
         };
         try {
           var _fdDocQ = (typeof document !== 'undefined' && document.querySelectorAll)
@@ -4150,7 +4164,7 @@
         } catch (_eFdd) {}
         try {
           var _fdFormQ = form.querySelectorAll('input, select, textarea, button');
-          for (var _fdq = 0; _fdq < _fdFormQ.length; _fdq++) _fdPush(_fdFormQ[_fdq]);
+          for (var _fdq = 0; _fdq < _fdFormQ.length; _fdq++) _fdPush(_fdFormQ[_fdq], true);
         } catch (_eFdf) {}
         var subKey = null;
         if (submitter != null && typeof _elKey === 'function') {
@@ -4159,16 +4173,27 @@
         for (var i = 0; i < fields.length; i++) {
           var f = fields[i];
           // form owner 判定：form= 属性 → getElementById；否则 closest('form')。
-          var owner = null;
-          try {
-            var formAttr = f.getAttribute ? f.getAttribute('form') : null;
-            if (formAttr) {
-              owner = (typeof document !== 'undefined' && document.getElementById)
-                ? document.getElementById(formAttr) : null;
-            } else if (typeof f.closest === 'function') {
-              owner = f.closest('form');
-            }
-          } catch (_eOwn2) {}
+          // net-api M3（七）：form 子树源字段（s123 ②源）免 closest owner 复验——
+          // 结构性属主由子树查询本身成立（spec 枚举 = form 祖先链后代；HTML 无嵌套
+          // form）。同 turn 解析产物经查询视图物化的 sel-proxy 身份是 tag 级模糊
+          // selector，s81 closest 祖先走对无 id selector 恒 null（`_zwSelIdConstraint`
+          // 无 #/[ 预门 return null → host closest 按文档首个同名元素解析）——复验
+          // 在此形态恒假阳性丢条目（WPT xhr formdata FormDataEvent：populateForm 后
+          // 同 turn 构造全字段被丢）。①源（document 级）owner 判定保留（form= 属性
+          // 站外关联的排除语义不变）。
+          var fromSubtree = fieldsSrc[i] === true;
+          var owner = fromSubtree ? form : null;
+          if (!fromSubtree) {
+            try {
+              var formAttr = f.getAttribute ? f.getAttribute('form') : null;
+              if (formAttr) {
+                owner = (typeof document !== 'undefined' && document.getElementById)
+                  ? document.getElementById(formAttr) : null;
+              } else if (typeof f.closest === 'function') {
+                owner = f.closest('form');
+              }
+            } catch (_eOwn2) {}
+          }
           if (owner !== form) continue;
           var name = f.getAttribute ? f.getAttribute('name') : f.name;
           var type = ((f.getAttribute ? f.getAttribute('type') : f.type) || '').toLowerCase();

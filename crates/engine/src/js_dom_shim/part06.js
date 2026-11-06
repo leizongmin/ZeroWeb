@@ -16272,6 +16272,51 @@
           ev.offsetY = Math.max(0, Math.round(_genCy - _genRy));
         } catch (_eGenOff) {}
       }
+      // net-api M3（七）：宿主泛型 click/dblclick 的 clientX/clientY own-property
+      // 注入（detail.clientX/Y 由 webview Activate 侧探测的 in-view 中心——
+      // user_actions.rs `probe_in_view_center`）。image submitter selected
+      // coordinates recorder（part04 `_zwImgRecordClickCoords`）从 ev.clientX/Y
+      // 读激活坐标——泛型 Event 无坐标属性 → 恒 undefined → 钳 (0,0)（WPT xhr
+      // formdata submitter-coordinate-value：testdriver.click 与手动 MouseEvent
+      // 的中心坐标须一致）。own-property 注入同 ev.detail 泛型注入形态——
+      // R108 泛型协议保持不改为 MouseEvent（见上支注记）。
+      if (type === 'click' || type === 'dblclick') {
+        // trusted mouse 坐标同步 floor（part05 `_zwMouseCoordInit` 同口径——
+        // Chromium trusted mouse 面本就整数；手动 MouseEvent 面经 ctor floor，
+        // 本通道 detail 注入同 floor 后两读数恒等——submitter-coordinate-value
+        // testdriver/手动双 prong 一致断言面）。
+        var _genFx = (detail && typeof detail.clientX === 'number') ? Math.floor(detail.clientX) : null;
+        var _genFy = (detail && typeof detail.clientY === 'number') ? Math.floor(detail.clientY) : null;
+        if (_genFx != null) {
+          try { ev.clientX = _genFx; ev.clientY = _genFy; } catch (_eGenXY) {}
+        }
+        // net-api M3（七）：宿主泛型 click 落 image submit 按钮的 selected
+        // coordinates 记录——宿主派发通道不跑页面 dispatchEvent 默认动作（R108
+        // 泛型协议），part04 `_zwImgRecordClickCoords`（trap 闭包内嵌，此处不可达）
+        // 只在页面事件路径记账，testdriver.click 的中心坐标此前恒丢失（提交面走
+        // runner requestSubmit 兜底读 `_zwImgSelCoords` → 恒 (0,0) unactivated 面）。
+        // 此处内联同口径记录（client 坐标 - 盒原点，round + 负值钳 0，键 = `_elKey`
+        // ——offsetX 注入上支同源）——只记账不触发提交（激活/提交语义留宿主 plan
+        // outcome + requestSubmit 兜底，防双导航）；非 image 目标零扰动。
+        if (type === 'click' && _genFx != null) {
+          try {
+            var _genRec = document.querySelector(sel);
+            if (_genRec && _genRec.tagName === 'INPUT'
+                && String(_genRec.getAttribute('type') || '').toLowerCase() === 'image') {
+              var _recRx = 0, _recRy = 0;
+              if (typeof __zw_getBoundingClientRect === 'function') {
+                var _recR = String(__zw_getBoundingClientRect(sel) || '').split(',');
+                var _recX = Number(_recR[0]), _recY = Number(_recR[1]);
+                if (isFinite(_recX) && isFinite(_recY)) { _recRx = _recX; _recRy = _recY; }
+              }
+              globalThis._zwImgSelCoords = globalThis._zwImgSelCoords || {};
+              globalThis._zwImgSelCoords[typeof _elKey === 'function' ? _elKey(sel, null) : sel] =
+                [Math.max(0, Math.round(_genFx - _recRx)),
+                 Math.max(0, Math.round(_genFy - _recRy))];
+            }
+          } catch (_eImgRec) {}
+        }
+      }
     }
     // R312（js-dom M4）：宿主派发 = UA 合成事件，isTrusted=true（spec——真实浏览器
     // 的用户输入/激活事件链全部 trusted；`__zw_dispatch_event` 只被 engine 的
