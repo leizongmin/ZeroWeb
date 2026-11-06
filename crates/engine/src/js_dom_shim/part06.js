@@ -4958,6 +4958,13 @@
       //（语料 before/after qV 断言读 document.queryCommandValue——tests.js:5595/
       // 5627 browser 列；effective command value + getLegacyFontSize 映射，算法
       // 与 FIXME（值 override 不可见）见 part01c __zw_ce_value_query 挂载注释）。
+      // editing-compat qv13 轮（2026-11-06）：insert{ordered,unordered}list qV
+      // tri-state 录音面（Chrome 判别面 + 壳标，归因见 part01e
+      // _zwListQvPreFires 注；bulk spec 口径 "" 由同一函数内未命中臂返回）。
+      if ((cLow === 'insertorderedlist' || cLow === 'insertunorderedlist')
+      && typeof globalThis.__zw_ce_list_value === 'function') {
+        try { return globalThis.__zw_ce_list_value(cLow); } catch (_eLstV) {}
+      }
       var vf = (typeof globalThis.__zw_ce_value_query === 'function')
         ? globalThis.__zw_ce_value_query(cLow)
         : null;

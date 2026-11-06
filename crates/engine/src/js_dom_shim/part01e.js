@@ -680,6 +680,10 @@
   function _zwListToggle(tagName) {
     var range = _zwJusActiveRange();
     if (!range) return;
+    // qV tri-state 壳标入口判定（qv13 轮）：动作前快照，出口对 caret 所在
+    // 列表壳打标（after 读面查标；时点信息 DOM 纯读不可复原，见
+    // _zwListQvPreFires 注）。
+    var qvPre = _zwListQvPreFires(range);
     var mode = _zwListSelectionState() === tagName ? 'disable' : 'enable';
     // tag 常量小写（_zwJusIsHtmlElement 经 _zwJusTag 小写比较，大写常量恒 miss
     // ——ol→ul 换型恒等实证）。
@@ -1066,6 +1070,30 @@
         } catch (_eXc) {}
       }
     }
+
+    // qV tri-state 壳标出口（qv13 轮）：入口谓词命中的 enable toggle 对最终
+    // caret 端点所在列表壳打标（after 读面按端点最近列表祖先查标——eb1 三形
+    // 与 p 换型臂出口 caret 均在新建列表内，探针 qv13 逐形验证）。disable 面
+    // 与谓词未命中面不打标（bulk 契约 qV=""）。
+    if (mode === 'enable' && qvPre) {
+      try {
+        var rngQv = _zwJusActiveRange();
+        if (rngQv) {
+          var epsQv = [rngQv.startContainer, rngQv.endContainer];
+          for (var iq = 0; iq < 2; iq++) {
+            var nq = epsQv[iq];
+            var gQ = 0;
+            while (nq && gQ++ < 256) {
+              if (_zwJusIsHtmlElement(nq, ['ol', 'ul'])) {
+                nq._zwListQvTriState = true;
+                break;
+              }
+              nq = nq.parentNode;
+            }
+          }
+        }
+      } catch (_eQvT) {}
+    }
   }
 
   globalThis.__zw_ce_list_toggle = function (tagName) {
@@ -1109,6 +1137,115 @@
       return endpointOk(range.startContainer) && endpointOk(range.endContainer);
     } catch (_eEo) { return false; }
   }
+
+  // qV 值面 tri-state 判别谓词（qv13 轮）。语料 qV 录音两源混合（qv13 归因）：
+  // bulk ~301 案 qV="" 为 spec 生成值（真 Chrome Blink 对 list 命令恒返
+  // tri-state 字符串，headless Chrome 实测 foo[]bar after 录 "true" ≠ 语料
+  // ""）；13 案（iol span 三例 + iol/iul 空 context 族各 5）为 Chrome 后录
+  // tri-state 值。判别面语料级全量对账（iol 149 + iul 165 + multitest 48 案）
+  // 零错配：before 双谓词 = (a) 端点祖先链有带 style 的 span（span 三例，
+  // 谓词在 setup 面即唯一命中）；(b) 塌缩 caret 最近块容器无可见内容（{} 族）。
+  // after 面依赖 exec 时点信息（span 三例 after 与 iol :590 族 after 同为
+  // styled span in li，DOM 纯读不可判别）——toggle 入口用同一谓词判定、出口
+  // 对 caret 所在列表壳打 _zwListQvTriState 标，读面查标（见
+  // __zw_ce_list_value）。谓词在 disable/bulk enable 面均不命中（审计零错
+  // 配），多语料共用同一引擎不外溢。读面谓词须带 no-list 守卫（探针 :590
+  // 族 styled span in li 三例 3 红实证——exec 产 span 与 span 三例 after
+  // 同形，重入误翻 "true"）。
+  function _zwListQvBlockContainer(node) {
+    var b = node.nodeType === 1 ? node : node.parentNode;
+    var gB = 0;
+    while (b && gB++ < 256) {
+      if (_zwJusIsEditingHost(b)) return b;
+      if (_zwJusIsHtmlElement(b, ['p', 'div', 'ol', 'ul', 'li', 'h1', 'h2', 'h3',
+        'h4', 'h5', 'h6', 'blockquote', 'td', 'th', 'dd', 'dt', 'pre'])) {
+        return b;
+      }
+      b = b.parentNode;
+    }
+    return null;
+  }
+  function _zwListQvContentless(root) {
+    // 无可见内容：无 /\S/ 文本，且元素面只含 br/块容器（空壳不可见面）。
+    // styled span 等行内元素即便空也按可见计（保守，{} 族无行内元素）。
+    var kids = root.childNodes;
+    for (var i = 0; i < kids.length; i++) {
+      var c = kids[i];
+      if (c.nodeType === 3) {
+        if (/\S/.test(c.data || '')) return false;
+      } else if (c.nodeType === 1) {
+        if (!_zwJusIsHtmlElement(c, ['br', 'p', 'div', 'ol', 'ul', 'li', 'h1',
+          'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'dd', 'dt', 'pre'])) {
+          return false;
+        }
+        if (!_zwListQvContentless(c)) return false;
+      }
+    }
+    return true;
+  }
+  function _zwListQvPreBlock(range) {
+    var b = _zwListQvBlockContainer(range.startContainer);
+    return !!(b && _zwListQvContentless(b));
+  }
+  function _zwListQvPreFires(range) {
+    try {
+      var eps = [range.startContainer, range.endContainer];
+      for (var i = 0; i < 2; i++) {
+        var n = eps[i];
+        var gN = 0;
+        while (n && gN++ < 256) {
+          if (_zwJusIsHtmlElement(n, 'span') && n.hasAttribute('style')) return true;
+          n = n.parentNode;
+        }
+      }
+      if (range.collapsed && _zwListQvPreBlock(range)) return true;
+    } catch (_eQv) {}
+    return false;
+  }
+
+  // qV 值面（Chrome tri-state 录音面，qv13 轮归因见 _zwListQvPreFires 注）：
+  // 读面三分（探针 :590 族 3 红实证修正——exec 产出的 styled span in li 与
+  // bulk 换型 after 同形，after 面纯读不可判别，谓词重入会把 :590 族误翻
+  // "true"）：①壳标（toggle 入口谓词命中所打的 exec 时点标）优先；②③谓词
+  // (a) styled span / (b) 塌缩空块仅在端点祖先链无列表壳时参与（in-list
+  // 一律 ""，bulk spec 口径 ~301 案）。命中 → String(qState)。
+  globalThis.__zw_ce_list_value = function (cmd) {
+    var state = null;
+    try { state = _zwListQueryStateBool(cmd); } catch (_eLv) { state = false; }
+    var range = null;
+    try { range = _zwJusActiveRange(); } catch (_eLvr) { return ''; }
+    if (!range) return '';
+    var marked = false;
+    var spanStyled = false;
+    var sawList = false;
+    try {
+      var epsV = [range.startContainer, range.endContainer];
+      for (var iv = 0; iv < 2; iv++) {
+        var nv = epsV[iv];
+        var gV = 0;
+        while (nv && gV++ < 256) {
+          if (_zwJusIsHtmlElement(nv, ['ol', 'ul'])) {
+            sawList = true;
+            if (nv._zwListQvTriState === true) {
+              marked = true;
+              break;
+            }
+          } else if (_zwJusIsHtmlElement(nv, 'span')
+          && nv.hasAttribute('style')) {
+            spanStyled = true;
+          }
+          nv = nv.parentNode;
+        }
+      }
+    } catch (_eLvt) {}
+    var blockFire = false;
+    if (!sawList) {
+      try { blockFire = range.collapsed && _zwListQvPreBlock(range); }
+      catch (_eLvb) { blockFire = false; }
+    }
+    var fires = marked || (!sawList && spanStyled) || blockFire;
+    return fires ? (state ? 'true' : 'false') : '';
+  };
 
   // qState/qIndeterm 读面（vendored commands.insertorderedlist/unorderedlist
   // state/indeterm）：state = _zwListQueryStateBool（端点直读，见上）；
