@@ -629,17 +629,69 @@ impl super::Painter {
         let shape_variations = crate::text_metrics::paint_font_variations(&style.font_variation_settings);
         let font_variation_id = self.primitives.intern_font_variations(&shape_variations);
         let shape_adjustment = crate::text_metrics::font_size_adjustment(&style.font_size_adjust);
-        let mut line_utf16_start = 0usize;
-        let block_height = lines.len() as f32 * line_height;
+        // s312：宽度软折行（textarea UA pre-wrap 显示语义，Chromium 同）——wrap 型
+        // white-space（Normal/PreWrap/PreLine/BreakSpaces）按 content box 宽在空格
+        // 断点拆视觉行，无空格可断时按字符硬断（overflow-wrap:normal 近似，控件
+        // 路径无断词词典）；Pre/Nowrap 不折行；input 单行恒不折行。视觉行携带
+        // 值内 UTF-16 起点（行首边界/caret 映射随视觉行，选区整行判定仍按逻辑行
+        // line_ranges，boundary_value 原值口径不变）。
+        // https://drafts.csswg.org/css-text-3/#white-space-property
+        let is_textarea = elem.local_name().eq_ignore_ascii_case("textarea");
+        let wrap_enabled = is_textarea && !matches!(style.white_space, WhiteSpaceValue::Pre | WhiteSpaceValue::Nowrap);
+        let avail_w = box_node.content_width;
+        let mut visual: Vec<(&str, usize, usize)> = Vec::new();
+        let mut walk_u16 = 0usize;
+        for (logical_index, line) in lines.iter().enumerate() {
+            let logical_start = walk_u16;
+            walk_u16 += line.encode_utf16().count() + 1;
+            let mut byte_start = 0usize;
+            let mut u16_start = logical_start;
+            loop {
+                let rest = &line[byte_start..];
+                let rest_w: f32 = rest
+                    .chars()
+                    .map(|ch| self.measure_char_cached(default_font_id.0, ch, font_size, false))
+                    .sum();
+                if !wrap_enabled || rest_w <= avail_w {
+                    visual.push((rest, u16_start, logical_index));
+                    break;
+                }
+                let mut cum = 0.0f32;
+                // 硬断兜底：至少推进一个 char（首个 char 超宽也不死循环）。
+                let mut hard_cut = rest.chars().next().map(char::len_utf8).unwrap_or(rest.len());
+                let mut space_cut = None;
+                for (idx, ch) in rest.char_indices() {
+                    let char_w = self.measure_char_cached(default_font_id.0, ch, font_size, false);
+                    if cum + char_w > avail_w {
+                        break;
+                    }
+                    cum += char_w;
+                    hard_cut = idx + ch.len_utf8();
+                    if ch == ' ' {
+                        space_cut = Some(hard_cut);
+                    }
+                }
+                let cut = space_cut.unwrap_or(hard_cut);
+                visual.push((&rest[..cut], u16_start, logical_index));
+                byte_start += cut;
+                u16_start += rest[..cut].encode_utf16().count();
+            }
+        }
+        let block_height = visual.len() as f32 * line_height;
         // s311：textarea 多行块顶对齐（Chromium UA 显示语义）；input 单行维持
         // content box 垂直居中（R3254-M11 原口径不变）。
-        let block_top = if elem.local_name().eq_ignore_ascii_case("textarea") {
+        let block_top = if is_textarea {
             content_y
         } else {
             content_y + (box_node.content_height - block_height).max(0.0) / 2.0
         };
-        for (line_index, line) in lines.iter().enumerate() {
-            let line_top = block_top + line_index as f32 * line_height;
+        // s312：text-overflow:ellipsis（css-overflow-3 §text-overflow）——控件路径
+        // 非 shaped 行溢出时截断并以 "…" 收尾（占位符臂恒非 shaped；shaped 值行
+        // ellipsis 未接线 FIXME 挂账）。短行零影响。
+        let ellipsis_active = matches!(style.text_overflow, TextOverflowValue::Ellipsis);
+        let ellipsis_w = self.measure_char_cached(default_font_id.0, '\u{2026}', font_size, false);
+        for (vis_index, &(line, vis_u16_base, logical_index)) in visual.iter().enumerate() {
+            let line_top = block_top + vis_index as f32 * line_height;
             let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size
                 - if is_placeholder && !elem.local_name().eq_ignore_ascii_case("textarea") {
                     font_size * 0.875
@@ -676,18 +728,18 @@ impl super::Painter {
             } else {
                 content_x
             };
-            let boundary_line = boundary_lines.get(line_index).copied().unwrap_or_default();
+            let boundary_line = boundary_lines.get(logical_index).copied().unwrap_or_default();
             // R5052：整行选中 → 该行字形用 ::selection color（行区间 ⊆ 选区；空行不算）。
             let line_fully_selected = line_selection.is_some_and(|(s, e, _, _)| {
                 line_ranges
-                    .get(line_index)
+                    .get(logical_index)
                     .is_some_and(|&(a, b)| b > a && s <= a && b <= e)
             });
             let line_color = match line_selection {
                 Some((_, _, _, sel_color)) if line_fully_selected => sel_color,
                 _ => color,
             };
-            let mut utf16_offset = line_utf16_start;
+            let mut utf16_offset = vis_u16_base;
             if has_text_boundaries {
                 self.primitives.add_text_control_boundary(TextControlBoundary {
                     node_handle,
@@ -704,7 +756,7 @@ impl super::Painter {
                     if cluster != source.as_ref().map(|source| (source.start, source.end))
                         && let Some((_, previous_end)) = cluster
                     {
-                        utf16_offset = line_utf16_start + line[..previous_end as usize].encode_utf16().count();
+                        utf16_offset = vis_u16_base + line[..previous_end as usize].encode_utf16().count();
                         self.primitives.add_text_control_boundary(TextControlBoundary {
                             node_handle,
                             utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
@@ -732,7 +784,7 @@ impl super::Painter {
                     char_x += glyph.advance_x;
                 }
                 if let Some((_, end)) = cluster {
-                    utf16_offset = line_utf16_start + line[..end as usize].encode_utf16().count();
+                    utf16_offset = vis_u16_base + line[..end as usize].encode_utf16().count();
                     self.primitives.add_text_control_boundary(TextControlBoundary {
                         node_handle,
                         utf16_offset: u32::try_from(utf16_offset).unwrap_or(u32::MAX),
@@ -742,9 +794,32 @@ impl super::Painter {
                     });
                 }
             } else {
+                // s312：ellipsis 截断面——行溢出且 text-overflow:ellipsis 时预留
+                // "…" 宽度截断并以省略号收尾（短行零影响；shaped 值行面 FIXME 挂账）。
+                let clip_limit = (ellipsis_active && total_w > avail_w).then_some(avail_w - ellipsis_w);
                 let mut source_chars = boundary_line.chars();
                 for ch in line.chars() {
                     let advance = self.measure_char_cached(default_font_id.0, ch, font_size, false);
+                    if let Some(limit) = clip_limit
+                        && char_x + advance > limit
+                    {
+                        self.primitives.add_glyph(GlyphPrimitive {
+                            x: char_x,
+                            y: baseline_y,
+                            font_size,
+                            color: line_color,
+                            glyph_id: '\u{2026}' as u32,
+                            font_glyph_index: None,
+                            source: None,
+                            font_id: default_font_id,
+                            font_variation_id,
+                            bitmap_width: None,
+                            bitmap_height: None,
+                            rotation: 0.0,
+                            synthetic_italic,
+                        });
+                        break;
+                    }
                     self.primitives.add_glyph(GlyphPrimitive {
                         x: char_x,
                         y: baseline_y,
@@ -772,10 +847,6 @@ impl super::Painter {
                         });
                     }
                 }
-            }
-            line_utf16_start += boundary_line.encode_utf16().count();
-            if line_index + 1 < boundary_lines.len() {
-                line_utf16_start += 1;
             }
             if show_caret {
                 // 占位符展示 = 值为空——插入点在文本起点而非占位文本之后。

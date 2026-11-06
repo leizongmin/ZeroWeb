@@ -2863,3 +2863,63 @@ fn test_s311_textarea_content_top_aligned() {
         "rows=1/5 单行首基线应顶对齐一致（got y1={y1}, y5={y5}）"
     );
 }
+
+/// s312：textarea 宽度软折行（UA pre-wrap 显示语义）——wrap 型 white-space 在
+/// content box 宽处按空格断点拆视觉行；white-space:nowrap 关闭折行（单行溢出）。
+#[test]
+fn test_s312_textarea_width_soft_wrap() {
+    let glyphs_of = |css: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 300.0);
+        let html = r#"<html><head><style></style></head><body><textarea placeholder="aa bb cc dd ee ff"></textarea></body></html>"#;
+        let result = pipeline.render_html(html, css);
+        let glyphs: Vec<(char, f32, f32)> = result
+            .primitives()
+            .glyphs
+            .iter()
+            .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.x, glyph.y)))
+            .collect();
+        (glyphs, result)
+    };
+    let (wrap_glyphs, _) = glyphs_of("textarea { max-width: 100px; }");
+    let baselines: std::collections::HashSet<i32> = wrap_glyphs.iter().map(|(_, _, y)| *y as i32).collect();
+    assert!(
+        baselines.len() >= 2,
+        "wrap 型应在 100px 宽内软折行（≥2 基线，got {baselines:?}）"
+    );
+    assert!(
+        wrap_glyphs.iter().all(|(_, x, _)| *x < 118.0),
+        "折行行不得溢出 content box（max x = {:?}）",
+        wrap_glyphs.iter().map(|(_, x, _)| *x).fold(0.0f32, f32::max)
+    );
+
+    let (nowrap_glyphs, _) = glyphs_of("textarea { max-width: 100px; white-space: nowrap; }");
+    let nowrap_baselines: std::collections::HashSet<i32> = nowrap_glyphs.iter().map(|(_, _, y)| *y as i32).collect();
+    assert_eq!(nowrap_baselines.len(), 1, "nowrap 应单行（got {nowrap_baselines:?}）");
+}
+
+/// s312：text-overflow:ellipsis——nowrap 溢出行截断并以 "…"（U+2026）收尾，
+/// 字形不得越过 content box 右缘。
+#[test]
+fn test_s312_textarea_ellipsis_clip() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    let html = r#"<html><head><style></style></head><body><textarea placeholder="aa bb cc dd ee ff gg"></textarea></body></html>"#;
+    let result = pipeline.render_html(
+        html,
+        "textarea { max-width: 100px; white-space: nowrap; text-overflow: ellipsis; }",
+    );
+    let glyphs: Vec<(char, f32)> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.x)))
+        .collect();
+    assert!(
+        glyphs.iter().any(|(c, _)| *c == '\u{2026}'),
+        "溢出行应以省略号收尾（got {glyphs:?}）"
+    );
+    assert!(
+        glyphs.iter().all(|(_, x)| *x < 118.0),
+        "ellipsis 截断后字形不得越过 content box 右缘（max x = {:?}）",
+        glyphs.iter().map(|(_, x)| *x).fold(0.0f32, f32::max)
+    );
+}
