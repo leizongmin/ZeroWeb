@@ -1,6 +1,7 @@
 //! html5ever 集成 — HTML 解析器和 TreeSink 实现。
 
 mod declarative_shadow;
+mod selectedcontent;
 mod xhtml_self_close;
 
 use crate::document::Document;
@@ -9,7 +10,7 @@ use crate::node::{
     TextData,
 };
 use hashbrown::HashMap;
-use html5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
+use markup5ever::interface::{ElemName, ElementFlags, NodeOrText, TreeSink};
 use markup5ever::{Attribute, QualName};
 use std::borrow::Cow;
 use std::default::Default;
@@ -101,7 +102,10 @@ pub fn parse_html_fragment_with_scripting(
     let builder = DomBuilder::new();
     let mut opts = ParseOpts::default();
     opts.tree_builder.scripting_enabled = scripting_enabled;
-    let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new());
+    // html5ever 0.38 起 parse_fragment 增第 5 参 `context_element_allows_scripting`
+    //（spec fragment parsing 的 scripting 旗标，影响 context 元素 tokenizer 初始态
+    // 甄别）——与文档级 scripting 旗标同值传入。
+    let parser = html5ever::parse_fragment(builder, opts, context_qname, Vec::new(), scripting_enabled);
     // 片段路径同享 s173 预变换——html5ever 0.29.1 对 shadowrootmode=open/close 值
     // 精确匹配走 attach 分支且不插入 template（机制见 [`declarative_shadow`] 模块
     // 文档）。文档路径已预变换；片段路径（innerHTML/insertAdjacentHTML/
@@ -639,6 +643,9 @@ fn parse_html_with_builder(html: &str, scripting_enabled: bool, declarative_shad
     opts.tree_builder.scripting_enabled = scripting_enabled;
     let parser = html5ever::parse_document(builder, opts);
     let mut doc = parser.one(html);
+    // s324（selectedcontent 初始化）：解析后单遍重建 select 的 enabled
+    // selectedcontent 后代内容快照（时点等价与 spec 差异判据见模块文档）。
+    selectedcontent::initialize_selects(&mut doc);
     // s168：声明式 Shadow DOM 重建——序列化面（serializer ShadowRoot 分支）以
     // `<template shadowrootmode>` 形态落盘，此处解析后还原为 ShadowRoot 节点，
     // drain 重序列化 → 视图重放回环闭合。spec 声明式 shadow DOM：
@@ -919,6 +926,66 @@ mod tests {
         assert!(doc.root().is_valid());
     }
 
+    // ── selectedcontent 解析期初始化（s324） ──
+
+    /// 解析后 select 的 enabled selectedcontent 后代应克隆选中 option 子节点
+    ///（无 `selected` 属性时 display size 1 回落首个非 disabled）。
+    #[test]
+    fn test_selectedcontent_parse_initial_clone_fallback() {
+        let doc = parse_html(
+            "<body><select><button><selectedcontent></selectedcontent></button>\
+             <option>one</option><option>two</option></select></body>",
+        );
+        let mut sc = None;
+        for id in doc.collect_descendants(doc.root()) {
+            if matches!(
+                doc.get(id),
+                Some(NodeData { kind: NodeKind::Element(el), .. })
+                    if el.local_name() == "selectedcontent"
+            ) {
+                sc = Some(id);
+                break;
+            }
+        }
+        let sc = sc.expect("selectedcontent 应存在");
+        assert_eq!(
+            doc.text_content(sc),
+            Some("one".to_string()),
+            "回落首个非 disabled option 内容"
+        );
+    }
+
+    /// `selected` 属性 option 优后者胜；multiple 的 enabled selectedcontent **清空**
+    /// （预置内容被清除——语料 mutations test6 末态判据，非 spec「null 不施」）。
+    #[test]
+    fn test_selectedcontent_parse_selected_attr_and_multiple() {
+        let doc = parse_html(
+            "<body><select><button><selectedcontent></selectedcontent></button>\
+             <option>one</option><option selected>two</option><option selected>three</option>\
+             </select><select multiple><button><selectedcontent id=m>legacy</selectedcontent>\
+             </button><option>x</option></select></body>",
+        );
+        let mut sc = None;
+        let mut sc_m = None;
+        for id in doc.collect_descendants(doc.root()) {
+            if let Some(NodeData {
+                kind: NodeKind::Element(el),
+                ..
+            }) = doc.get(id)
+                && el.local_name() == "selectedcontent"
+            {
+                match el.get_attribute_str("id") {
+                    Some("m") => sc_m = Some(id),
+                    _ => sc = Some(id),
+                }
+            }
+        }
+        let sc = sc.expect("selectedcontent 应存在");
+        assert_eq!(doc.text_content(sc), Some("three".to_string()), "selected 属性后者胜");
+        let sc_m = sc_m.expect("multiple select 的 selectedcontent 应存在");
+        assert_eq!(doc.text_content(sc_m), Some(String::new()), "multiple 预置内容被清空");
+    }
+
     // ── 元素和属性 ──
 
     /// 带属性的元素。
@@ -1073,7 +1140,7 @@ mod tests {
 
     // ── TreeSink 实现的覆盖率测试 ──
 
-    use html5ever::interface::TreeSink;
+    use markup5ever::interface::TreeSink;
     use markup5ever::{LocalName, Namespace, QualName};
     use tendril::StrTendril;
 
@@ -1104,7 +1171,7 @@ mod tests {
             .insert(NodeData::new(NodeKind::Text(TextData::new(" World"))));
 
         // 添加相邻文本节点，应该自动合并
-        builder.append(&root, html5ever::interface::NodeOrText::AppendNode(text2_id));
+        builder.append(&root, markup5ever::interface::NodeOrText::AppendNode(text2_id));
 
         // 验证合并后的内容
         let inner = builder.inner.borrow();
@@ -1137,7 +1204,7 @@ mod tests {
         // 添加新的文本内容，应该合并到现有文本节点
         builder.append(
             &root,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" World")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from(" World")),
         );
 
         // 验证合并
@@ -1171,7 +1238,7 @@ mod tests {
         // 添加文本（前面是元素，不应合并）
         builder.append(
             &root,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();
@@ -1224,7 +1291,7 @@ mod tests {
         }
 
         // 插入子节点到 sibling 之前
-        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(child_id));
+        builder.append_before_sibling(&sibling_id, markup5ever::interface::NodeOrText::AppendNode(child_id));
 
         // 验证
         let inner = builder.inner.borrow();
@@ -1285,7 +1352,7 @@ mod tests {
         // 在 sibling 前添加文本，应该合并到 prev_text
         builder.append_before_sibling(
             &sibling_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from(" More")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from(" More")),
         );
 
         let inner = builder.inner.borrow();
@@ -1313,7 +1380,7 @@ mod tests {
             .insert(NodeData::new(NodeKind::Text(TextData::new("new"))));
 
         // 不应该 panic
-        builder.append_before_sibling(&sibling_id, html5ever::interface::NodeOrText::AppendNode(node_id));
+        builder.append_before_sibling(&sibling_id, markup5ever::interface::NodeOrText::AppendNode(node_id));
 
         let inner = builder.inner.borrow();
         assert_eq!(inner.nodes.get(sibling_id).unwrap().parent, None);
@@ -1364,7 +1431,7 @@ mod tests {
         // 在 sibling 前添加文本（前面是元素，不应合并）
         builder.append_before_sibling(
             &sibling_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();
@@ -1495,7 +1562,7 @@ mod tests {
 
         let elem_id = builder.create_element(
             QualName::new(None, Namespace::from(""), LocalName::from("div")),
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("existing")),
                 value: StrTendril::from("value"),
             }],
@@ -1503,15 +1570,15 @@ mod tests {
         );
 
         let new_attrs = vec![
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("id")),
                 value: StrTendril::from("test-id"),
             },
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("container active"),
             },
-            html5ever::interface::Attribute {
+            markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("data-custom")),
                 value: StrTendril::from("custom-value"),
             },
@@ -1533,7 +1600,7 @@ mod tests {
 
         let elem_id = builder.create_element(
             QualName::new(None, Namespace::from(""), LocalName::from("div")),
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("original"),
             }],
@@ -1542,7 +1609,7 @@ mod tests {
 
         builder.add_attrs_if_missing(
             &elem_id,
-            vec![html5ever::interface::Attribute {
+            vec![markup5ever::interface::Attribute {
                 name: QualName::new(None, Namespace::from(""), LocalName::from("class")),
                 value: StrTendril::from("duplicate"),
             }],
@@ -1619,7 +1686,7 @@ mod tests {
         builder.append_based_on_parent_node(
             &elem_id,
             &elem_id, // prev_element（未使用）
-            html5ever::interface::NodeOrText::AppendNode(text_id),
+            markup5ever::interface::NodeOrText::AppendNode(text_id),
         );
 
         let inner = builder.inner.borrow();
@@ -1649,7 +1716,7 @@ mod tests {
         builder.append_based_on_parent_node(
             &elem_id,
             &elem_id,
-            html5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
+            markup5ever::interface::NodeOrText::AppendText(StrTendril::from("text")),
         );
 
         let inner = builder.inner.borrow();

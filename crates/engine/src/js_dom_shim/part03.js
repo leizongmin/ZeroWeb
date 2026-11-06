@@ -20005,9 +20005,10 @@
         } catch (_eFsM) {}
       }
     };
-    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); return; } }
+    var _scTail = function () { _zwScAttrTailM(node, n); };
+    for (var i = 0; i < attrs.length; i++) { if (attrs[i].name === n) { attrs[i].value = sv; _fsTail(); _scTail(); return; } }
     attrs.push({ name: n, value: sv });
-    _fsTail();
+    _fsTail(); _scTail();
   }
   // removeAttribute 移除全部同名属性（去重保险），同步清 IDL 反射字段。
   function _zwMElRemoveAttribute(n) {
@@ -20026,6 +20027,7 @@
     // R4100（html-semantics M2 切片 21）：DETAILS open 移除 → toggle 排程（had 为
     // 移除前 presence，真关变迁才入队——notify 内比对）。name 移除成组失败无 steps。
     if (n.toLowerCase() === 'open') _zwMDetailsAttrTail4100(node, n, _r4100Had);
+    _zwScAttrTailM(node, n);
   }
   function _zwMElSetAttributeNS(_ns, qn, v) { this.setAttribute(qn, v); }
   // WC-M3 切片 8 第九增量：slot 的 name / slottable 的 slot 属性写入后队列 plain 世界
@@ -27635,6 +27637,12 @@ return e;
     return null;
   }
 
+  // s324：解析期回落选中面惰性物化 memo（per-select 一次）——option.selected getter
+  // pristine 双 miss 时跑一次 setting；不可物化形态（multiple / size>1 无属性背书）
+  // 免重复走查。后续状态变更走写侧触发点（insertion/removal steps、setter 族），
+  // memo 只档重复惰性物化。
+  var _zwPristineMatDone = {};
+
   // selectedness setting algorithm（HTML §4.10.7）——非 multiple：多选中**最后者胜**
   //（前者 selectedness 显式落 false）；全不选且 display size 1 → 首个非 disabled
   // option selectedness=true（fallback）。返回 hasChanged。
@@ -27707,7 +27715,15 @@ return e;
         try { t = _realTag(n.__zwSelector, n.__zwHandle); } catch (_eR) { t = null; }
         if (t === 'OPTION' || t === 'OPTGROUP') {
           s = _zwOptNearestSelect(pSel, pHnd);
-          if (s) _zwSelectednessSetting(s.sel, s.hnd);
+          if (s) {
+            _zwSelectednessSetting(s.sel, s.hnd);
+            // s324：option/optgroup 移除 → selectedcontent **微任务**更新（移除面
+            // 同步不更新——insertion-removal「not updated synchronously / after a
+            // microtask」两段断言面）。
+            if (typeof _zwScScheduleUpdate === 'function') {
+              try { _zwScScheduleUpdate(s.sel, s.hnd); } catch (_eScRm) {}
+            }
+          }
           return;
         }
       }
@@ -27794,6 +27810,12 @@ return e;
         }
       }
       _zwSelectednessSetting(pSel, pHnd, _ctAff);
+      // s324：容器级移除面（plain innerHTML= 替换等逐点臂不可达形态）→
+      // selectedcontent 微任务更新（同步面由 s111 walk added 臂覆盖，欠账键
+      // 在同步更新时删除不重跑）。
+      if (removed && removed.length && typeof _zwScScheduleUpdate === 'function') {
+        try { _zwScScheduleUpdate(pSel, pHnd); } catch (_eScCt) {}
+      }
     }
   }
 
@@ -27820,7 +27842,14 @@ return e;
       else { delete _optSelectedClean[snap.k]; }
       if (changed) {
         var s = _zwOptNearestSelect(oSel, oHnd);
-        if (s) _zwSelectednessSetting(s.sel, s.hnd, snap.k);
+        if (s) {
+          _zwSelectednessSetting(s.sel, s.hnd, snap.k);
+          // s324：selected 属性变更步 → selectedcontent 同步更新（test5 面
+          // setAttribute('selected','') 同步断言）。
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try { _zwSelectedContentUpdate(s.sel, s.hnd); } catch (_eScAt) {}
+          }
+        }
       }
     } catch (_ePost) {}
   }
@@ -27920,6 +27949,260 @@ return e;
       return [];
     }
     return _svHits;
+  }
+
+  // ===== s324（html-semantics M2 切片 324）：selectedcontent 运行期更新机械 =====
+  // spec HTML §4.10.7 the-selectedcontent-element（whatwg/html #9799 谱系）——sc 反映
+  // 所属 select 当前选中 option 的内容快照；触发面（语料判据优先，s323/s324 evidence
+  // 账本）：sc/option/select 插入连接（s111 walk 文档序同步臂，script prepare 夹逼
+  // 语义）、option 移除（**微任务**批归一）、select.value/selectedIndex setter、
+  // option.selected setter、selected 属性变更步、form.reset（同步）。option **子**突变
+  // 不触发（重触发仅在下次更新时按当前内容重克隆，selectedcontent.html「descendant
+  // mutations not responsive」断言面）；sc 自身移除不更新（insertion-removal
+  // 「contents preserved」）。spec 差异：spec update 只施**首个** enabled sc + clear
+  // non-primary；语料（selectedcontent.html test2 / insertion-removal select1）钉
+  // **全部** enabled sc 同步保持 → 按 all-update 施克隆。multiple：语料（mutations
+  // test6 末态）钉全体 enabled sc **清空**——非 spec「null 不施」，解析 pass 同判据。
+  // disabled 判定（post-connection steps 镜像）：祖先链 option /
+  // selectedcontent 祖先或第二个 select → disabled（enabled 走查按子树整枝实现）。
+  var _zwScUpdating = false;
+  var _zwScPending = {};
+  var _zwScMicrotaskQueued = false;
+
+  // wrapper tag 甄别（s236 _zwListOfOptions 同款：身份态 _realTag；plain/甄别修正
+  // 落 wrapper.tagName——s150 实证解析期真 tag，spec tagName 不可变无陈旧面）。
+  function _zwScTagOf(n) {
+    var s = null, h = null;
+    try { s = n.__zwSelector || null; } catch (_eScTs) { s = null; }
+    try { h = n.__zwHandle || null; } catch (_eScTh) { h = null; }
+    if (s || h) {
+      var t = null;
+      try { t = _realTag(s, h); } catch (_eScTr) { t = null; }
+      if (t !== 'DIV') return t;
+      try { return String(n.tagName || '').toUpperCase(); } catch (_eScTn) { return 'DIV'; }
+    }
+    try { return String(n.tagName || '').toUpperCase(); } catch (_eScTp) { return null; }
+  }
+
+  // wrapper 子枚举（R3908 _zwListOfOptions 根枚举同口径：handle 形 _zwLocalChildNodes +
+  // _handleChildren 融合；sel 形 _childNodeList pending overlay；plain 形本地 childNodes）。
+  function _zwScChildrenOf(node) {
+    var s = null, h = null;
+    try { s = node.__zwSelector || null; } catch (_eScCs) { s = null; }
+    try { h = node.__zwHandle || null; } catch (_eScCh) { h = null; }
+    try {
+      if (h) {
+        var l = (typeof _zwLocalChildNodes === 'function') ? _zwLocalChildNodes(s, h) : null;
+        var k = (_handleChildren[h] || []).slice();
+        return (l && l.length) ? l.concat(k) : (k.length ? k : (l || []));
+      }
+      if (s) return _childNodeList(s, null) || [];
+    } catch (_eScCl) {}
+    try { return node.childNodes || []; } catch (_eScCp) { return []; }
+  }
+
+  // 连接判定（R51/t7 wrapper 链爬升到最近身份锚 → _zwMutationInDoc；plain 链
+  // R136 保证顶层子 parentNode 指宿主 proxy、深层内部链为解析树 plain 对象）。
+  function _zwScInDoc(node) {
+    try {
+      var cur = node, g = 0;
+      while (cur && g++ < 64) {
+        var s = null, h = null;
+        try { s = cur.__zwSelector || null; } catch (_eScIs) { s = null; }
+        try { h = cur.__zwHandle || null; } catch (_eScIh) { h = null; }
+        if (s || h) return _zwMutationInDoc(s, h);
+        try { cur = cur.parentNode; } catch (_eScIp) { return false; }
+      }
+    } catch (_eScIn) {}
+    return false;
+  }
+
+  // 最近祖先 select（_zwOptNearestSelect 的 wrapper 版——plain 链可爬；plain select
+  // 无身份不可更新，返回 null）。
+  function _zwScNearestSelect(node) {
+    try {
+      var cur = node, g = 0;
+      while (cur && g++ < 64) {
+        var s = null, h = null;
+        try { s = cur.__zwSelector || null; } catch (_eScNs) { s = null; }
+        try { h = cur.__zwHandle || null; } catch (_eScNh) { h = null; }
+        if (s || h) {
+          if (_zwIsSelectTag(s, h)) return { sel: s, hnd: h };
+        } else if (String(cur.tagName || '').toUpperCase() === 'SELECT') {
+          return null;
+        }
+        try { cur = cur.parentNode; } catch (_eScNp) { return null; }
+      }
+    } catch (_eScNn) {}
+    return null;
+  }
+
+  // select 的 enabled selectedcontent 后代（树序全量——all-update 判据见块注）。
+  // 整枝边界：option / selectedcontent / 嵌套 select 子树内一切 sc disabled。
+  function _zwScEnabledList(sel, handle) {
+    var out = [];
+    var root = null;
+    try { root = _zwScChildrenOf({ __zwSelector: sel, __zwHandle: handle }); } catch (_eScEr) { root = null; }
+    var walk = function (kids, depth) {
+      if (depth > 64 || !kids || !kids.length) return;
+      for (var i = 0; i < kids.length; i++) {
+        var n = kids[i];
+        if (!n) continue;
+        var nt = null;
+        try { nt = n.nodeType; } catch (_eScEn) { nt = null; }
+        if (nt !== 1) continue;
+        var tag = _zwScTagOf(n);
+        if (tag === 'SELECTEDCONTENT') { out.push(n); continue; }
+        if (tag === 'OPTION' || tag === 'SELECTEDCONTENT' || tag === 'SELECT') continue;
+        walk(_zwScChildrenOf(n), depth + 1);
+      }
+    };
+    walk(root, 0);
+    return out;
+  }
+
+  // 「clone an option into a selectedcontent」运行面：innerHTML 串往返——读
+  // chosen 当前序列化（sel 融合/host 直读、handle 融合、plain 三域 getter 皆通）
+  // 后 scNode.innerHTML = html 单次 replace-all（先清后解析插入）。不逐子
+  // cloneNode：sel 域解析文本子是父寻址轻量 wrapper，其 cloneNode 产物为无
+  // nodeType 裸对象（探针实证），且 R2822 replaceChildren 对 sel+handle 双身份
+  // 节点清 host 失真——innerHTML= 是三域统一的单记录 replace-all 通路。
+  // chosen=null（无选中/multiple）→ innerHTML='' 清空。plain sc 工厂通路不发
+  // childList 记录（_zwMElAppendChild 仅 handle 子发）——显式补**一条**合并记录
+  // （_mo_id(null,null) 退化站投递——selectedcontent.html redundant-async 子测
+  // 钉单批；spec 语料 mutations test7/8 钉 Added+Removed 单记录形态）。
+  function _zwScCloneInto(scNode, chosen) {
+    var html = '';
+    if (chosen) {
+      try { html = String(chosen.innerHTML != null ? chosen.innerHTML : ''); } catch (_eScHt) { html = ''; }
+    }
+    var plain = !(scNode.__zwSelector || scNode.__zwHandle);
+    var old = plain ? (_zwScChildrenOf(scNode) || []) : null;
+    try { scNode.innerHTML = html; } catch (_eScSet) {}
+    if (plain && typeof _mo_notify === 'function'
+        && (html !== '' || (old && old.length))) {
+      var added = [];
+      if (html !== '') {
+        try { added = _zwScChildrenOf(scNode) || []; } catch (_eScAd) { added = []; }
+      }
+      try {
+        _mo_notify(null, null, { type: 'childList', addedNodes: added, removedNodes: old });
+      } catch (_eScMn2) {}
+    }
+  }
+
+  // s324：selectedcontentelement 关联解析（select 侧内容属性反射面，attr.tentative
+  // 语料）——属性值作 id 经 document.getElementById 解析，命中 HTML selectedcontent
+  // 元素即返回；未关联/空值/悬空 id/非元素 → null。FIXME: 解析期带该属性的 select
+  // 的初始关联克隆未做（Rust 解析 pass 只施子树面；本引擎语料为脚本置面，随带初始
+  // 属性语料出现时补解析 pass 关联臂）。
+  function _zwScAssocResolve(sel, handle) {
+    var v = null;
+    try {
+      v = handle ? __zw_get_attr_handle(handle, 'selectedcontentelement')
+        : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'selectedcontentelement')
+          : __zw_get_attr(sel, 'selectedcontentelement'));
+    } catch (_eScAsA) { return null; }
+    if (v == null) return null;
+    v = String(v);
+    if (v === '') return null;
+    var d = globalThis.document;
+    if (!d || typeof d.getElementById !== 'function') return null;
+    var e = null;
+    try { e = d.getElementById(v); } catch (_eScAsG) { return null; }
+    if (!e || e.nodeType !== 1) return null;
+    var t = null;
+    try { t = _zwScTagOf(e); } catch (_eScAsT) { t = null; }
+    return t === 'SELECTEDCONTENT' ? e : null;
+  }
+
+  // update a select's selectedcontent 运行面（同步、幂等、再入门卫）。selected 取
+  // `_zwSelectSelectedView` 归一视图（last-wins + pristine 回落——解析期模型读侧镜像，
+  // 与解析 pass 的克隆结果一致）。multiple：spec「enabled sc = null 不施」，语料判据
+  // （mutations test6 末态 html）钉**全体 enabled sc 清空**——视图门关闭走 chosen=null
+  // 清空面（与解析 pass 同判据）。
+  function _zwSelectedContentUpdate(sel, handle) {
+    if (_zwScUpdating) return;
+    var key = handle ? ('@' + handle) : sel;
+    var view = null;
+    try {
+      if (!_zwSelectIsMultiple(sel, handle)) view = _zwSelectSelectedView(sel, handle);
+    } catch (_eScV) { view = null; }
+    var chosen = (view && view.length) ? view[0] : null;
+    _zwScUpdating = true;
+    try {
+      var list = _zwScEnabledList(sel, handle);
+      for (var i = 0; i < list.length; i++) {
+        if (list[i]) _zwScCloneInto(list[i], chosen);
+      }
+      // s324：selectedcontentelement 关联臂（树外 sc）——最近 select 非本 select
+      //（树内面已由 enabled 清单覆盖）时同面施克隆（attr.tentative 关联同步面）。
+      var _scAssoc = (typeof _zwScAssocResolve === 'function') ? _zwScAssocResolve(sel, handle) : null;
+      if (_scAssoc) {
+        var _ascNs = (typeof _zwScNearestSelect === 'function') ? _zwScNearestSelect(_scAssoc) : null;
+        var _ascInSel = !!(_ascNs && ((_ascNs.hnd != null && _ascNs.hnd === handle)
+          || (_ascNs.hnd == null && _ascNs.sel === sel)));
+        if (!_ascInSel) _zwScCloneInto(_scAssoc, chosen);
+      }
+    } catch (_eScU) {}
+    _zwScUpdating = false;
+    delete _zwScPending[key];
+  }
+
+  // 移除面微任务批归一（spec option removal → microtask update；per-select 去重，
+  // 同 turn 同步更新已删欠账键不重跑）。
+  function _zwScScheduleUpdate(sel, handle) {
+    try {
+      var key = handle ? ('@' + handle) : sel;
+      if (key == null) return;
+      _zwScPending[key] = { sel: sel, hnd: handle };
+      if (_zwScMicrotaskQueued) return;
+      _zwScMicrotaskQueued = true;
+      var flush = function () {
+        _zwScMicrotaskQueued = false;
+        var pending = _zwScPending;
+        _zwScPending = {};
+        var ks = Object.keys(pending);
+        for (var i = 0; i < ks.length; i++) {
+          var e = pending[ks[i]];
+          if (e) _zwSelectedContentUpdate(e.sel, e.hnd);
+        }
+      };
+      if (typeof queueMicrotask === 'function') queueMicrotask(flush);
+      else Promise.resolve().then(flush);
+    } catch (_eScSch) {}
+  }
+
+  // s111 walk 触发臂（sc post-connection steps / option insertion steps 的
+  // selectedcontent 更新面共用）——连接门在 helper 内，断开子树插入不触发
+  //（selectedcontent.html disconnected 断言面）。
+  function _zwScMaybeUpdateFor(node) {
+    try {
+      if (!_zwScInDoc(node)) return;
+      var ns = _zwScNearestSelect(node);
+      if (!ns) return;
+      // s324：moveBefore 移动面（part04 `__zwScMoveMode` 罩窗）→ 微任务批归一，
+      // 同步读保持（movebefore「not update ... before microtask」断言面）。
+      if (globalThis.__zwScMoveMode === true) {
+        _zwScScheduleUpdate(ns.sel, ns.hnd);
+        return;
+      }
+      _zwSelectedContentUpdate(ns.sel, ns.hnd);
+    } catch (_eScM) {}
+  }
+
+  // plain 形 option selected 属性写尾钩（包装态工厂层——R4100 尾钩同款：布尔反射
+  // accessor 与 setAttribute/removeAttribute 直写双通道自动覆盖，accessor 本体零改动）。
+  // identity 形走 _zwOptSelAttrPost（s236 机械），plain 面唯一汇流口在此；非 selected
+  // 属性写零成本早退。
+  function _zwScAttrTailM(node, n) {
+    if (n !== 'selected' && String(n).toLowerCase() !== 'selected') return;
+    try {
+      if (String(node.tagName || '').toUpperCase() !== 'OPTION') return;
+      if (typeof _zwScNearestSelect !== 'function' || typeof _zwSelectedContentUpdate !== 'function') return;
+      var ns = _zwScNearestSelect(node);
+      if (ns) _zwSelectedContentUpdate(ns.sel, ns.hnd);
+    } catch (_eScAtM) {}
   }
 
   // s239：plain 形 child text（无 sel/handle wrapper——childNodes 本地走查，script
@@ -29961,6 +30244,33 @@ return e;
               && Object.prototype.hasOwnProperty.call(_optSelectedClean, key)) {
             return _optSelectedClean[key] === true;
           }
+          // s324：解析期回落选中面惰性物化（pristine materialization）——dirty/clean
+          // 双 miss（解析产物无脚本态；本引擎脚本随整篇解析后执行，解析期逐 option
+          // insertion steps 的 ask-for-reset 无观察面）先在最近 select 上跑一次
+          // selectedness setting：属性背书按列表序 last-wins 物化（非末位 attr true →
+          // clean false），无属性背书 + display size 1 回落首个非 disabled → clean
+          // true。物化后本读命中 clean 层；写侧（moveBefore 插入步 last-wins 消解、
+          // setter 族）与 selectedIndex/value 读取侧共用同一状态层。
+          // https://html.spec.whatwg.org/multipage/form-elements.html#selectedness-setting-algorithm
+          if (typeof _zwOptNearestSelect === 'function' && typeof _zwSelectednessSetting === 'function') {
+            var _pzSel = null;
+            try { _pzSel = _zwOptNearestSelect(sel, handle); } catch (_ePzN) { _pzSel = null; }
+            if (_pzSel) {
+              var _pzKey = _pzSel.hnd ? ('@' + _pzSel.hnd) : _pzSel.sel;
+              if (_zwPristineMatDone[_pzKey] !== true) {
+                _zwPristineMatDone[_pzKey] = true;
+                try { _zwSelectednessSetting(_pzSel.sel, _pzSel.hnd); } catch (_ePzS) {}
+              }
+              if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+                  && Object.prototype.hasOwnProperty.call(_optSelectedDirty, key)) {
+                return _optSelectedDirty[key] === true;
+              }
+              if (typeof _optSelectedClean === 'object' && _optSelectedClean
+                  && Object.prototype.hasOwnProperty.call(_optSelectedClean, key)) {
+                return _optSelectedClean[key] === true;
+              }
+            }
+          }
           if (handle && typeof __zw_has_attr_handle === 'function') {
             try { return __zw_has_attr_handle(handle, 'selected') === '1'; } catch (_e) {}
           }
@@ -29989,6 +30299,14 @@ return e;
           if (prop === 'selectedOptions') return _zwSelectedOptionsCollection(sel, handle, key);
           if (prop === 'namedItem') {
             return function (name) { return _zwOptionsCollection(sel, handle, key).namedItem(name); };
+          }
+          // s324：HTMLSelectElement.selectedContentElement IDL getter（selectedcontentelement
+          // 内容属性反射——id 经 document.getElementById 解析；未关联/悬空 id → null）。
+          if (prop === 'selectedContentElement') {
+            if (typeof _zwScAssocResolve === 'function') {
+              try { return _zwScAssocResolve(sel, handle); } catch (_eScSeG) { return null; }
+            }
+            return null;
           }
         }
         // fileapi-compat 残余（2026-10-11）：HTMLSelectElement.length = options 数

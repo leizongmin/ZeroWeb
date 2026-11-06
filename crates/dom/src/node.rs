@@ -26,7 +26,7 @@ impl NodeId {
 // ── QuirksMode 重导出 ───────────────────────────────────────────────
 
 /// 重导出 html5ever 的 QuirksMode 类型。
-pub use html5ever::interface::QuirksMode;
+pub use markup5ever::interface::QuirksMode;
 
 // ── NodeKind ────────────────────────────────────────────────────────
 

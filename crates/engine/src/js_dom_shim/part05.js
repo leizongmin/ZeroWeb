@@ -460,6 +460,34 @@
           // §4.10.7 set the selected index——全员 selectedness=false、命中者 true +
           // dirtiness true；不触发 selectedness setting，-1/越界可全不选）。
           _zwSetSelectSelectedIndex(sel, handle, value);
+          // s324：selectedcontent 同步更新（spec set selected index 步尾）。
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try { _zwSelectedContentUpdate(sel, handle); } catch (_eScSi) {}
+          }
+        } else if (p === 'selectedContentElement' && _zwIsSelectTag(sel, handle)) {
+          // s324：`select.selectedContentElement = el`（selectedcontentelement 内容
+          // 属性反射——element → 属性落 id，null/非元素 → 移除；关联变更即同步 sc
+          // 更新，attr.tentative「IDL assign synchronously assign / not clear」断言面；
+          // 移除面同面更新对已无关联恒 no-op，内容保持）。
+          if (value && typeof value === 'object' && value.nodeType === 1) {
+            var _sceId = null;
+            try { _sceId = value.id; } catch (_eScSeI) { _sceId = null; }
+            var _sceVal = String(_sceId != null ? _sceId : '');
+            if (handle) __zw_set_attr_handle(handle, 'selectedcontentelement', _sceVal);
+            else { __zw_set_attr(sel, 'selectedcontentelement', _sceVal); moAttr = 'selectedcontentelement'; }
+          } else {
+            if (handle && typeof __zw_remove_attr_handle === 'function') {
+              __zw_remove_attr_handle(handle, 'selectedcontentelement');
+              if (typeof _zwAttrInstanceRemoveKey === 'function') _zwAttrInstanceRemoveKey(key, 'selectedcontentelement');
+              moAttr = 'selectedcontentelement';
+            } else if (!handle && typeof __zw_remove_attr === 'function') {
+              __zw_remove_attr(sel, 'selectedcontentelement');
+              moAttr = 'selectedcontentelement';
+            }
+          }
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try { _zwSelectedContentUpdate(sel, handle); } catch (_eScSeU) {}
+          }
         } else if (p === 'selected' && _realTag(sel, handle) === 'OPTION') {
           // `option.selected = x`（R3908b，HTML §4.10.9
           // https://html.spec.whatwg.org/multipage/form-elements.html#dom-option-selected）——
@@ -472,6 +500,14 @@
           // 目标 true 时绝对胜出——Chromium/WPT ask-for-reset 反向循环）。
           _optSelectedDirty[key] = !!value;
           _zwAskForReset(sel, handle, key);
+          // s324：selected setter 步尾 → selectedcontent 同步更新（最近 select 经
+          // 身份链解析——detached 无所属 select 时不触发，disconnected 断言面）。
+          if (typeof _zwSelectedContentUpdate === 'function') {
+            try {
+              var _scNsOs = _zwOptNearestSelect(sel, handle);
+              if (_scNsOs) _zwSelectedContentUpdate(_scNsOs.sel, _scNsOs.hnd);
+            } catch (_eScOs) {}
+          }
         } else if (p === 'defaultChecked') {
           // `input.defaultChecked = x`（R2840）——boolean 反射 `checked` 属性（truthy→设存在，falsy→移除）。
           // R2998：显式设 defaultChecked 重同步（清 dirty，getter 回落新属性值 latest-wins）。
@@ -11590,6 +11626,41 @@
       return _zwOverlayPendingChildNodes(out, sel, parent);
     } catch (_e) { return []; }
   }
+  // s324（html-semantics M2 切片 324）：**sel 域融合 textContent 拼串**——R380 同款
+  // 三臂门（同 turn 内 pending 视图激活：innerHTML=/appendChild/子树脏）激活时沿
+  // `_childNodeList` 融合子视图递归拼字符数据（R81 handle 分支同口径——Text/CDATA 拼
+  // data，元素递归 textContent，comment/PI 不计）。门未激活返 null（调用方回落
+  // `__zw_get_text_lw` host 读，R3028 语义零变化）。缺口实证：sel 形解析元素
+  // innerHTML= 纯文本后同 turn textContent 读 host 恒 stale（探针 div/sc 双案；
+  // host 写异步 apply，innerHTML getter 有融合臂而 textContent 无——selectedcontent
+  // 更新面 selectedcontent.html test2 的 sc.textContent 读首踩）。
+  function _zwFusedTextSel(sel) {
+    var bucket = (typeof _zwPendingByParent === 'object' && _zwPendingByParent)
+      ? _zwPendingByParent.get(sel) : null;
+    var arm1 = !!(bucket && (bucket.added.length || bucket.removed.length)
+        && (!globalThis._zwApplyGeneration || bucket.stamp === globalThis._zwApplyGeneration()));
+    var arm2 = !!(typeof _zwPendingSubtreeDirty === 'function' && _zwPendingSubtreeDirty(sel));
+    var arm3 = !!(typeof _zwPendingAttrDirty === 'function' && _zwPendingAttrDirty(sel));
+    if (!(arm1 || arm2 || arm3)) return null;
+    var kids;
+    try { kids = _childNodeList(sel, null) || []; } catch (_eFtc) { return null; }
+    var out = '';
+    for (var i = 0; i < kids.length; i++) {
+      var n = kids[i];
+      if (!n) continue;
+      var nt = null;
+      try { nt = n.nodeType; } catch (_eFtn) { nt = null; }
+      if (nt === 3 || nt === 4) {
+        out += String(n.nodeValue != null ? n.nodeValue : (n.data != null ? n.data : ''));
+      } else if (nt === 1) {
+        var t = null;
+        try { t = n.textContent; } catch (_eFtt) { t = null; }
+        if (typeof t === 'string') out += t;
+      }
+    }
+    return (out !== '' || kids.length > 0) ? out : null;
+  }
+
   // R380/pa3（js-dom M4，pending-apply RFC）：**sel 域融合 innerHTML 序列化**——pending
   // 桶非空（同 turn 内 replaceWith/removeChild/appendChild/innerHTML= 等已记账、host 快照
   // 未换代）时，host 字符串是 apply 滞后旧树；从融合 childNodes 视图序列化

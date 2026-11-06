@@ -1816,6 +1816,11 @@
             var _itSelVal = globalThis._zwGetInnerText(_itRoot);
             if (_itSelVal !== null) return _itSelVal;
           }
+          // s324：同 turn pending 视图激活（innerHTML=/appendChild 后）时 textContent
+          // 走融合拼串——host 写异步 apply，lw/快照 host 读恒 stale（探针 div/sc 双案
+          // 实证）。门未激活零变化（host 读热路径不动）。
+          var _tcFused324 = (typeof _zwFusedTextSel === 'function') ? _zwFusedTextSel(sel) : null;
+          if (_tcFused324 !== null) return _tcFused324;
           return typeof __zw_get_text_lw === 'function' ? __zw_get_text_lw(sel) : __zw_get_text(sel);
         }
         // js-dom M3 R95：`<template>`.content（HTMLTemplateElement，spec `the-template-element`：
@@ -4453,6 +4458,13 @@
             _mo_notify(sel, handle, { type: 'attributes', attributeName: n, oldValue: moOld });
             // R3909：option selected 内容属性变更步后半（Pre 快照消费）。
             if (_optSelSnap9) _zwOptSelAttrPost(_optSelSnap9, sel, handle);
+            // s324：select selectedcontentelement 关联属性变更步 → 关联 sc 同步更新
+            //（attr.tentative「setAttribute synchronously assign」断言面；移除面不挂
+            // 钩——语料钉移除不清内容）。
+            if (_r107tag === 'SELECT' && n === 'selectedcontentelement'
+                && typeof _zwSelectedContentUpdate === 'function') {
+              try { _zwSelectedContentUpdate(sel, handle); } catch (_eScSe) {}
+            }
             if (ceEntry) _ce_dispatchAttrChange(ceEntry, proxy, n, ceOld, v);
             // WC-M3 切片 8 第九增量（web-components goal，spec DOM「use these attribute
             // change steps to update a slot's/slottable's name」——slot 的 name 属性与
@@ -9181,7 +9193,17 @@
               throw new globalThis.TypeError(
                 "Failed to execute 'moveBefore' on 'Element': parameter 2 is not of type 'Node' and is not null.");
             }
-            return proxy.insertBefore(newNode, refNode != null ? refNode : null);
+            // s324：移动面 selectedcontent 更新**微任务**延后（PR #12263 movebefore
+            // 语料——移动选中 option / sc 自身时同步读保持旧内容，微任务后归一）。
+            // 旗标只罩委派窗口，`_zwScMaybeUpdateFor` 内消解。
+            var _mvScPrev = globalThis.__zwScMoveMode;
+            globalThis.__zwScMoveMode = true;
+            try {
+              return proxy.insertBefore(newNode, refNode != null ? refNode : null);
+            } finally {
+              if (_mvScPrev === undefined) delete globalThis.__zwScMoveMode;
+              else globalThis.__zwScMoveMode = _mvScPrev;
+            }
           };
         }
         if (prop === 'insertBefore') {
@@ -13092,6 +13114,11 @@
                         _optSelectedClean[_rk9] = _rd135 === true;
                       }
                       _zwSelectednessSetting(c.__zwSelector, c.__zwHandle);
+                      // s324：reset 算法尾 → selectedcontent 同步更新
+                      //（selectedcontent.html form.reset 断言面）。
+                      if (typeof _zwSelectedContentUpdate === 'function') {
+                        try { _zwSelectedContentUpdate(c.__zwSelector, c.__zwHandle); } catch (_eScRs) {}
+                      }
                     }
                     if (typeof __zw_clear_user_edited === 'function') __zw_clear_user_edited(c);
                   } catch (_e) {}
@@ -15340,6 +15367,11 @@
             if (sel && typeof __zw_select_option === 'function') {
               __zw_select_option(sel, _r3909vv);
             }
+            // s324：selectedcontent 同步更新（spec value setter 步尾——selectedness
+            // 落定后快照重克隆，selectedcontent.html「changing value」断言面）。
+            if (typeof _zwSelectedContentUpdate === 'function') {
+              try { _zwSelectedContentUpdate(sel, handle); } catch (_eScV) {}
+            }
           } else if (_realTag(sel, handle) === 'OUTPUT') {
             // https://html.spec.whatwg.org/multipage/form-elements.html#dom-output-value
             // spec §4.10.12 value setter 步：①default value override ← default value
@@ -15355,6 +15387,19 @@
             _outputValue[key] = _ov;
             if (handle) __zw_set_text_handle(handle, _ov);
             else __zw_set_text(sel, _ov);
+            // s324：value setter 的 String replace all 写文本与 textContent= 同视图
+            // 通道——本地文本视图同步重注册（R49 `_zwRegisterTextEl`，'' 清注册）。
+            // 裸 host 写不进 JS pending 视图，textContent 融合臂（part05
+            // `_zwFusedTextSel`，pending 门激活期）按旧 overlay 组合出 stale 值
+            //（textContent='5' → value='99' 同 turn 读回 '5'，r2846 回归实证）。
+            if (typeof _zwRegisterTextEl === 'function' && !handle) {
+              try {
+                if (_ov !== '') _zwRegisterTextEl(_makeProxy(sel, handle), handle, sel, _ov);
+                else if (typeof _zwUnregisterTextEl === 'function') {
+                  _zwUnregisterTextEl(_makeProxy(sel, handle));
+                }
+              } catch (_eOvR) {}
+            }
           } else if (_realTag(sel, handle) === 'INPUT') {
             // R3901（html-semantics M2）：INPUT value IDL set 按 value 模式分派（HTML
             // §4.10.5.4 dom-input-value）。filename（file）：空串清空选中文件（本引擎无

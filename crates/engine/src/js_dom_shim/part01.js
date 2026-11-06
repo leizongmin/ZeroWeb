@@ -7980,6 +7980,14 @@
                   }
                 } catch (_e109ss) {}
               } else if (_an109n.nodeType === 1) {
+                if ((_tag109 === 'SELECTEDCONTENT' || _tag109 === 'OPTION')
+                    && typeof _zwScMaybeUpdateFor === 'function') {
+                  // s324（html-semantics M2 切片 324）：sc/option 插入触发
+                  //（selectedcontent post-connection steps / option insertion steps 的
+                  // selectedcontent 更新面——inDoc 门在 helper 内；文档序同步跑，
+                  // 同批 script prepare 夹逼语义见 insertion-removal test2/3）。
+                  try { _zwScMaybeUpdateFor(_an109n); } catch (_e109sc) {}
+                }
                 // s111：detached 子树整体插入的「becomes connected」后代面——spec
                 // insert 步骤遍历**inclusive descendants**（文档序逐 script prepare），
                 // addedNodes 顶层的非 SCRIPT 元素（129 形 div 内 script）须按文档序
@@ -8025,6 +8033,12 @@
                       } catch (_e111ss) {}
                       _walk111(_kdW);
                     } else {
+                      if ((_kdTagW === 'SELECTEDCONTENT' || _kdTagW === 'OPTION')
+                          && typeof _zwScMaybeUpdateFor === 'function') {
+                        // s324：detached 子树整体插入的 sc/option 后代面（同型下降——
+                        // inclusive descendants 文档序，script prepare 夹逼语义不变）。
+                        try { _zwScMaybeUpdateFor(_kdW); } catch (_e111sc) {}
+                      }
                       _walk111(_kdW);
                     }
                   }
