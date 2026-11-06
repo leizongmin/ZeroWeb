@@ -244,6 +244,23 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   triage 面 1 计数 17F→27F 修正随 evidence。
   [park evidence](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-cluster-d-module-chain-park.md)
 
+### 2026-11-06——M3 尾段小刀开工（clone 面 + template IDL 反射，本轮 session 认领）
+
+- **认领（§9 同 clone 多 session）**：簇 D triage 挂账的两把 shadow-dom 范围内
+  小刀由本轮认领——① `<template>` shadowRoot* IDL 反射（shadowRootMode 枚举
+  limited-to-known-values / shadowRootDelegatesFocus·Clonable·Serializable 布尔反射 /
+  shadowRootReferenceTarget 字符串反射；declarative-shadow-dom-basic reflection 6F，
+  特征检测断言 HTMLTemplateElement.prototype own property——现状全缺）；②
+  cloneNode clonable 根克隆（`_zwDeepCloneEl` 克隆臂：clonable 根随宿主克隆、
+  shadow 树恒深拷与 deep 参数无关、非 clonable 保持 null + 轻量 attachShadow
+  工厂补 init clonable/serializable/delegatesFocus 状态位；shadow-root-clonable
+  「attachShadow with clonable: true」1F 直翻——实测 `clone.shadowRoot` null）。
+- **实测基线（solo 失败消息定界）**：clonable/serializable 相关全通道 ~10F 中
+  4F 属静态/setHTMLUnsafe 声明式物化不生效面（`!!root` false）——m3c2 归口
+  （§9 不碰）；本刀不触物化路径。并行侧请勿动 part03.js 三处编辑面
+  （R194b 轻量工厂 init 字段 / `_zwDeepCloneEl` 克隆臂 / HTMLTemplateElement
+  原型挂载段）。
+
 ## 依赖约束（run-rules §9）
 
 - WC 通道与 fetch-web-components-subset.sh 的 skip 规则两侧同源，改动
