@@ -1014,6 +1014,8 @@
   // false 实证）。跨列表+同型嵌套面语料内部矛盾（:343 before 录 true vs
   // :478 after 录 false，同树同选区），无状态读面不可双全——按 before 全保
   // 取舍，跨壳族留待选区恢复耦合刀。mixed 判定仅归 indeterm。
+  // FIXME(:478 族): 残余 7 结构行（选区停列表外 ×3 + 命令史态 'none' range
+  // ×4）纯读不可达，债归选区恢复耦合刀。
   // 规范：https://w3c.github.io/editing/execCommand.html#querycommandstate()
   function _zwListQueryStateBool(cmd) {
     var want = cmd === 'insertorderedlist' ? 'ol' : 'ul';
