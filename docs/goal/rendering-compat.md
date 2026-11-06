@@ -9,6 +9,11 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5439 修复否决轮（㉚ c5525 margin 实值探针定谳＋负 margin float 双破修复→corpus A/B 两真回归→R5437 判例否决回退——探针五形定谳 R3784 锚位钳位 border 口径＋两处 rel_y<0 过滤双破〔D 形 img m(-30/-30)：ZW border@(−30,0) 文本带 rel30，spec (−30,−30) rel15〕；修复＝margin-box 口径钳位＋带底过滤＋kill-switch ZW_FLOAT_MB_ANCHOR，探针 D/E 双态复验全对；ON 710F vs main 693F：互翻族 5 案 solo 洗清，**真回归 ×2**＝stack-floats-003〔mt=−100 float taffy 堆叠位丢前序块底参考，旧钳位错机制碰出对结果，margin-box 口径放任 border=−100 逃逸 container 顶〕＋c5525-fltinln-000〔全正 margin 案形 taffy 堆叠不含 mt，新臂下推 1em〕；**根因固化＝ZW taffy float 堆叠位三态并存**〔行首含 mt✓/块后丢前序底✗/部分形不含 mt✗〕，margin-box 口径前提〔taffy 堆叠位已正确〕不成立；目标案 fltmrgn ON 仍 ✗3.51%＝test4 形隔离修对整案残差未消；**零收益＋两回归 → 回退**，patch 存档 r5439-marginbox-anchor-gate.patch 可复活；**零代码改动收轮**）**（2026-11-06）
+>
+> - **A/B 定谳**：真回归双案 kill-switch OFF solo 双绿（✓0.83%/✓0.71%）＝本修复造成；stack-floats-003 ON top-strip 泄露 850 绿+250 红采样点、OFF==REF 逐块一致（PNG 取证）。证据：[`rendering-compat/evidence/r5439-negative-margin-float-2026-11-06.md`](rendering-compat/evidence/r5439-negative-margin-float-2026-11-06.md)。
+> - **挂账**：**新增**：taffy float 堆叠位语义统一专项〔堆叠参考=前序流底、margin 计入三案形一致；完成后本 patch 复活，预期 c5525 双案＋stack-floats 族同轮受益〕；㉚ 维持（修复路径已明＝先修 taffy 堆叠位再复活 margin-box 卫）；001b 四子缺陷维持；R5432 销账面/㉖-㉘/deep intrinsic 48 变体矩阵/**待用户决策清单**①-⑤ 维持（无新增）；对端 js_dom_bridge 五案红腿观察维持。**下一步 R5440**：①taffy float 堆叠位语义统一专项评估（taffy-local float 分支堆叠参考位三案形对齐；中级深度，先探针定 taffy 三态实证面再判规模）或 ㉖ root 表格化＋视口 overflow 传播开案 ②对端红腿跨轮观察维持 ③重腿前 ps 静窗纪律维持。
+
 > **▶ R5438 归因轮（㉚ p-BFC mid-line float 复合放置域定谳分解——001b 3.64% 分解四子缺陷〔p 高不含 inline float 被 overflow:auto 裁剪／mid-line float 未折方向极值缘〔RTL/taR float:left 渲染在右缘〕／前置文本不绕排／后继文本被裁〕＝IFC inline float 完整集成深域，单臂不翻绿零收益；c5525 3.37% 定谳资产全在非环境案＋margin-box 排斥语义已在〔R5312 inline_finalization.rs:1594〕，残差聚焦 float 子测行结构，下轮探针＝margin 字段实值核查〔R5312 自认后继 pass 清零退化风险〕＋折行 y 对洞位；**零代码改动收轮**）**（2026-11-06）
 >
 > - **归因**（REFTEST_DUMP 逐段色块扫描）：001b ref 形＝mid-line float 折当前行顶＋前置文本整体绕排（§9.5.1 rule 1/4）；ZW 模型＝断行＋float 块化，四子缺陷全录。c5525 test1（无 float）全绿＝纯文本路径无损，红条纹全落 float 子测文本洞位。证据：[`rendering-compat/evidence/r5438-midline-float-attribution-2026-11-06.md`](rendering-compat/evidence/r5438-midline-float-attribution-2026-11-06.md)。
