@@ -4468,7 +4468,7 @@
   // 对象不外泄 JS，无 opaque 暴露面）。FIXME(compat)：真实 opaque 过滤面
   //（JS 可见 response.type 'opaque'）未建，img 通道响应不走该过滤。
   var _zwImgNoCorsChannelDepth = 0;
-  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel) {
+  function _zwFetchApplyFilteredResponse(response, requestUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, opaqueOrigin) {
     // https://fetch.spec.whatwg.org/#concept-filtered-response-basic
     // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
     // https://fetch.spec.whatwg.org/#concept-filtered-response-opaque
@@ -4483,15 +4483,21 @@
       return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
     if (!_zwSsChannel && !_zwImgChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
-      // https://fetch.spec.whatwg.org/#cors-check——credentials mode 'include' 时通配
-      // `*` 不可用且须 ACAC true（access-control-and-redirects with-credentials 面）。
+      // https://fetch.spec.whatwg.org/#cors-check——按 spec 步序：`*` 先行通配
+      // （步骤 3，credentials 非 include；include 下 `*` 不可用——access-control-
+      // and-redirects with-credentials 面）；步骤 4 以 byte-serializing a request
+      // origin 为准——跨源重定向链已把 request's origin 置 opaque
+      //（#http-redirect-fetch），序列化为 `null`，ACAO 须字面 `null` 即匹配
+      //（authentication-redirection 跨源腿 dump-authorization-header 回显 `null`
+      // 面；比对文档 origin 恒失配 → 误判 network error）；include 恒须 ACAC true。
+      //   https://fetch.spec.whatwg.org/#cors-check
+      //   https://fetch.spec.whatwg.org/#http-redirect-fetch
       var allowOrigin = response.headers.get('access-control-allow-origin');
       var allowCreds = response.headers.get('access-control-allow-credentials');
-      if (credentials === 'include') {
-        if (allowOrigin !== requestOrigin || String(allowCreds).toLowerCase() !== 'true') {
-          throw new TypeError('Failed to fetch');
-        }
-      } else if (allowOrigin !== '*' && allowOrigin !== requestOrigin) {
+      if (credentials !== 'include' && allowOrigin === '*') {
+        // 步骤 3：非 include 下 `*` 恒过（opaque origin 同——步骤 3 先于步骤 4）。
+      } else if (allowOrigin !== (opaqueOrigin ? 'null' : requestOrigin) ||
+          (credentials === 'include' && String(allowCreds).toLowerCase() !== 'true')) {
         throw new TypeError('Failed to fetch');
       }
     }
@@ -5748,7 +5754,10 @@
           if (typeof globalThis.__zwServiceWorkerFetchSettled === 'function') {
             try { globalThis.__zwServiceWorkerFetchSettled(); } catch (_eSwFetchSettled) {}
           }
-          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
+          // net-api-compat-v3 M2：链上跨源跳已置 opaque origin → cors check 按请求
+          // opaque 序列化（`null`）比对（见 #cors-check 步骤 4——authentication-
+          // redirection 跨源腿面）。
+          response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, _zwHopOriginOpaque);
           if (hopUrl) response.url = hopUrl;
           // net-api-compat-v3 M1b：response.redirected spec 语义（URL list > 1——
           // 已跟 ≥1 跳即 true；manual 模式不进 hop 保持 false；new Response() ctor
@@ -5872,8 +5881,9 @@
           }
           if (loc && hopCount < 20) {
             // 每跳 CORS 门控（跨源重定向响应本身须过 cors check——fetch spec）。
+            // 请求 origin 在先序跳已 opaque → 按 `null` 比对（#cors-check 步骤 4）。
             try {
-              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel);
+              _zwFetchApplyFilteredResponse(response, hopUrl, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, _zwHopOriginOpaque);
             } catch (eHop) {
               settled = true;
               delete globalThis.__zw_pending[id];

@@ -5,8 +5,10 @@
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
-零回归 + `.h2.` 排除记账），M2 进行中——websockets interfaces 批次已落
-（74 案 +87P 零回归，45F 九簇归 M3），余 auth/响应头控制面分批
+零回归 + `.h2.` 排除记账），M2 进行中——websockets interfaces 批次与
+auth 面批次已落（interfaces 74 案 +87P；auth 面 +15P 零回归，fetch auth
+面全绿，xhr auth 12F 五簇归 M3），余 getResponseHeader 响应头控制面/
+CORS preflight 端点扩表
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -134,12 +136,24 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   EventTarget dispatchEvent 9F / 属性描述符 6F / 事件处理器 handleEvent 形
   4F / send 状态机 3F / 协议错误断连 3F / CONNECTING fail 语义 2F /
   事件序 1F / CloseEvent ctor 1F），批次门 66.2% 随 M3 收敛复验。
-  余 M2：xhr auth1-11 / getResponseHeader 响应头控制面 / CORS preflight
-  端点扩表。
+  **auth 面批次 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m2-auth-face.md)）：
+  auth fixture 套件（xhr authentication.py + auth1-11 三变体 token stash
+  挑战流 / fetch authentication.py 固定凭据版 / dump-authorization-header
+  OPTIONS strip_auth_header 500 探测臂）+ 引擎 cors check 按 spec 步序
+  重排（`*` 通配先行，opaque origin 仅换比对基准——`null`；曾致
+  cors-redirect 十案回退的中间迭代见
+  [learning](../../learnings/bugs/2026-11/2026-11-06-cors-check-asterisk-step-precedes-origin-compare.md)）。
+  全量 A/B changed 17（16 F→P + 1 诚实翻转 send-authentication-basic-cors
+  vacuous P）零 P→F 外溢，+15P 至 13,005P；fetch auth 面全绿 7P，
+  xhr auth 12F 五簇（URL/open() userinfo 凭据 8F / 401 挑战会话 2F /
+  跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）归 M3。
+  余 M2：getResponseHeader 响应头控制面 / CORS preflight 端点扩表。
 - **M3**：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
   xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
   method 9F / location-escape 4F 等）+ ws interfaces 九簇（WebIDL 常量/
   属性描述符基建、EventTarget dispatchEvent、fail-connection 语义等）+
+  xhr auth 五簇（URL/open() userinfo 凭据解析 8F / 401 挑战流 UA 会话 2F /
+  跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）+
   xhr 在账失败簇收敛（formdata/submitter 簇 4F + overrideMimeType
   Shift-JIS 接线 1F + cookies.http.html 挂起 1T；permissions-policy 2F
   策略面排除）（DC-3）。

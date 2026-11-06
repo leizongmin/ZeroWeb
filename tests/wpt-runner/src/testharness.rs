@@ -8100,6 +8100,126 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body_bytes),
                 });
             }
+            if clean == "xhr/resources/authentication.py"
+                || (clean.starts_with("xhr/resources/auth")
+                    && (clean.ends_with("/auth.py")
+                        || clean.ends_with("/corsenabled.py")
+                        || clean.ends_with("/corsenabled-no-authorize.py")))
+            {
+                // net-api-compat-v3 M2 fixture：xhr/resources/authentication.py 与
+                // auth1-11/{auth.py, corsenabled.py, corsenabled-no-authorize.py}
+                //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
+                // 3159769/xhr/resources/authentication.py；authN/*.py 皆委托
+                // authentication.py，N 目录仅隔离 UA auth 会话缓存）：
+                // 无 Authorization（Basic）→ token(X-User 头) stash 已记 → 200
+                // "FAIL (did not authorize)"；否则 stash 记 token 后 401
+                // Unauthorized + `WWW-Authenticate: Basic realm="test"`（体 "FAIL
+                // (should be transparent)"——UA 凭 open()/URL 凭据透明重试后
+                // 不可见）。有 Authorization → x-challenge DID/DID-NOT（stash take
+                // 判定）+ XHR-USER/SES-USER 头 + 体 `user\npass`。corsenabled 变体
+                // 加 CORS 应答（ACAO 回显 Origin + ACAC true + ACAM GET + ACAH
+                // "authorization, x-user, x-pass"（no-authorize 变体无 authorization）
+                // + expose x-challenge/xhr-user/ses-user），OPTIONS → 200 空体。
+                let req_header = |name: &str| -> Option<String> {
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                let token = req_header("x-user");
+                let credentials = req_header("authorization").and_then(|v| {
+                    let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
+                    use base64::Engine as _;
+                    let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+                    let (user, pass) = String::from_utf8_lossy(&decoded)
+                        .split_once(':')
+                        .map(|(u, p)| (u.to_string(), p.to_string()))?;
+                    Some((user, pass))
+                });
+                let corsenabled = clean.ends_with("/corsenabled.py") || clean.ends_with("/corsenabled-no-authorize.py");
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "text/plain".into()));
+                if corsenabled {
+                    headers.push((
+                        "access-control-allow-origin".into(),
+                        req_header("origin").unwrap_or_default(),
+                    ));
+                    headers.push(("access-control-allow-credentials".into(), "true".into()));
+                    headers.push(("access-control-allow-methods".into(), "GET".into()));
+                    headers.push((
+                        "access-control-allow-headers".into(),
+                        if clean.ends_with("/corsenabled-no-authorize.py") {
+                            "x-user, x-pass".into()
+                        } else {
+                            "authorization, x-user, x-pass".into()
+                        },
+                    ));
+                    headers.push((
+                        "access-control-expose-headers".into(),
+                        "x-challenge, xhr-user, ses-user".into(),
+                    ));
+                    if req.method == "OPTIONS" {
+                        wpt_add_fetch_metadata(&mut headers, req, 200);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 200,
+                            status_text: "OK".to_string(),
+                            headers,
+                            body: String::new(),
+                            body_bytes: Some(Vec::new()),
+                        });
+                    }
+                }
+                let Some((user, pass)) = credentials else {
+                    let stash_hit = token
+                        .as_ref()
+                        .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
+                        .is_some();
+                    if stash_hit {
+                        let body = "FAIL (did not authorize)".to_string();
+                        wpt_add_fetch_metadata(&mut headers, req, 200);
+                        return Ok(zero_engine::fetch_bridge::FetchResponse {
+                            status: 200,
+                            status_text: "OK".to_string(),
+                            headers,
+                            body: body.clone(),
+                            body_bytes: Some(body.into_bytes()),
+                        });
+                    }
+                    if let Some(t) = &token
+                        && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
+                    {
+                        stash.insert(t.clone(), "1".into());
+                    }
+                    headers.push(("www-authenticate".into(), "Basic realm=\"test\"".into()));
+                    let body = "FAIL (should be transparent)".to_string();
+                    wpt_add_fetch_metadata(&mut headers, req, 401);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 401,
+                        status_text: "Unauthorized".to_string(),
+                        headers,
+                        body: body.clone(),
+                        body_bytes: Some(body.into_bytes()),
+                    });
+                };
+                let challenge = token
+                    .as_ref()
+                    .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
+                    .is_some_and(|v| v == "1");
+                headers.push(("x-challenge".into(), if challenge { "DID" } else { "DID-NOT" }.into()));
+                if let Some(t) = &token {
+                    headers.push(("xhr-user".into(), t.clone()));
+                }
+                headers.push(("ses-user".into(), user.clone()));
+                let body = format!("{}\n{}", user, pass);
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/image.gif") {
                 // net-api M4-S20 fixture：xhr/resources/image.gif（responseurl 重定向
                 // 目标——1×1 GIF 43 字节标准头尾）。
@@ -8538,10 +8658,54 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
+            if clean == "fetch/api/resources/authentication.py" {
+                // net-api-compat-v3 M2 fixture：fetch/api/resources/authentication.py
+                //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
+                // 3159769/fetch/api/resources/authentication.py。与 xhr 版 token
+                // stash 挑战流不同源：固定凭据校验——Basic user:password → 200
+                // "Authentication done"；否则 401 Unauthorized +
+                // `WWW-Authenticate: Basic realm="?realm="（缺省 test）` + 提示体。
+                // 无 CORS 头（上游同形——authentication-basic 相对 URL 同源取回，
+                // resp.type 断言 "basic"）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let credentials = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
+                    .and_then(|(_, v)| {
+                        let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
+                        use base64::Engine as _;
+                        let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+                        String::from_utf8_lossy(&decoded)
+                            .split_once(':')
+                            .map(|(u, p)| (u.to_string(), p.to_string()))
+                    });
+                let realm = wpt_query_value(query, "realm").unwrap_or_else(|| "test".to_string());
+                let (status, body) = match credentials {
+                    Some((u, p)) if u == "user" && p == "password" => (200, "Authentication done".to_string()),
+                    _ => (401, "Please login with credentials 'user' and 'password'".to_string()),
+                };
+                let mut headers: Vec<(String, String)> = vec![("content-type".into(), "text/plain".into())];
+                if status == 401 {
+                    headers.push(("www-authenticate".into(), format!("Basic realm=\"{}\"", realm)));
+                }
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
             if clean.ends_with("/dump-authorization-header.py") {
                 // net-api M4-S17 fixture：fetch/api/resources/dump-authorization-header.py
                 //（上游逐字等价——回显 Authorization 或 "none"；带 Origin → ACAO 回显 +
-                // ACAC true + ACAH Authorization）。
+                // ACAC true + ACAH Authorization）。net-api-compat-v3 M2 补上游
+                // OPTIONS strip_auth_header=1 臂：预检 ACRH 含 authorization → 500
+                // "fail"（跨源重定向后预检不得携 auth 头——xhr-authorization-
+                // redirect 跨源腿断言面）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
                 let origin = req
                     .headers
                     .iter()
@@ -8555,6 +8719,25 @@ fn wpt_data_fetch_handler_with_stash(
                 let mut headers: Vec<(String, String)> = Vec::new();
                 headers.push(("content-type".into(), "text/html".into()));
                 headers.push(("cache-control".into(), "no-cache".into()));
+                if req.method == "OPTIONS"
+                    && wpt_query_value(query, "strip_auth_header").is_some()
+                    && req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                        .map(|(_, v)| v.to_ascii_lowercase().contains("authorization"))
+                        .unwrap_or(false)
+                {
+                    let body = "fail".to_string();
+                    wpt_add_fetch_metadata(&mut headers, req, 500);
+                    return Ok(zero_engine::fetch_bridge::FetchResponse {
+                        status: 500,
+                        status_text: wpt_status_text(500).to_string(),
+                        headers,
+                        body: body.clone(),
+                        body_bytes: Some(body.into_bytes()),
+                    });
+                }
                 match origin {
                     Some(o) => {
                         headers.push(("access-control-allow-origin".into(), o));
@@ -10043,6 +10226,9 @@ fn wpt_status_text(status: u16) -> &'static str {
     match status {
         200 => "OK",
         206 => "Partial Content",
+        // net-api-compat-v3 M2：fetch/api/resources/authentication.py 401 臂
+        //（上游 wptserve reason phrase）。
+        401 => "Unauthorized",
         404 => "Not Found",
         500 => "Internal Server Error",
         _ => "",
