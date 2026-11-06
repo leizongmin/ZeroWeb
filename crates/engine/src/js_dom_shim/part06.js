@@ -2519,7 +2519,8 @@
   //   （Chromium 语义）；编辑类需选区在单一 editing host 内且整个选区在 host 内
   //   （与 execCommand 编辑分支的前提一致——M2 切片 1 同款祖先链扫描）。
   //   queryCommandValue：五标准行内值命令经 __zw_ce_value_query 接通（2026-11-01，
-  //   见 queryCommandValue 臂注）；formatBlock 等其余值面未接，documented。
+  //   见 queryCommandValue 臂注）；formatBlock qV 读面经 __zw_ce_fb_value 接通
+  //  （2026-11-07，part01g）；其余命令值面未接，documented。
   function _zwExecCmdFindEditingHost(range) {
     if (!range) return null;
     var node = range.startContainer;
@@ -4626,6 +4627,21 @@
                 }
               } catch (_eVaV) {}
             }
+            // editing-compat 四命令零应用族（2026-11-07）：formatBlock 非法值与
+            // insertImage 空值前置拒绝（Chrome 口径：零事件、execCommand 返 false
+            // ——语料 <del>/<dl>/<li>/<quasit> 等变体 [false] + 树不变录音实证；
+            // spec value 白名单/空值判定，校验器在 part01g）。
+            if ((cmd === 'formatblock'
+                  && typeof globalThis.__zw_ce_fb_value_valid === 'function')
+                || (cmd === 'insertimage'
+                  && typeof globalThis.__zw_ce_img_value_valid === 'function')) {
+              try {
+                var fbvOk = (cmd === 'formatblock')
+                  ? globalThis.__zw_ce_fb_value_valid(arguments[2])
+                  : globalThis.__zw_ce_img_value_valid(arguments[2]);
+                if (fbvOk === false) return false;
+              } catch (_eFbV2) {}
+            }
             var before2 = new InputEvent('beforeinput', {
               bubbles: true, cancelable: true, composed: true,
               data: _zwExecCmdEventData(cmd, arguments[2]),
@@ -4789,6 +4805,28 @@
               // 派发，核零事件）。
               if (cmd === 'inserttext' && rng2 && host2 && typeof globalThis.__zw_ce_inserttext_mutate === 'function') {
                 try { globalThis.__zw_ce_inserttext_mutate(host2, String(arguments[2] == null ? '' : arguments[2])); } catch (_eIns) {}
+              }
+              // editing-compat 四命令零应用族（2026-11-07）：formatBlock/
+              // indent/inserthorizontalrule/insertimage 实应用——此前仅
+              // _zwExecCmdInputType 有名（事件照派、execCommand 返 true）零变更臂，
+              // 四语料独立页 + multitest Family A 241 行红。变更核心在 part01g
+              // （formatBlock action/value + indentNodes + hr/img action 忠实移植，
+              // 复用 _zwJus*/_zwList*/_zwDel* 机具）。事件口径同上 inserttext 臂。
+              if (cmd === 'formatblock' && rng2 && host2
+              && typeof globalThis.__zw_ce_fb_apply === 'function') {
+                try { globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
+              }
+              if (cmd === 'indent' && rng2 && host2
+              && typeof globalThis.__zw_ce_indent_apply === 'function') {
+                try { globalThis.__zw_ce_indent_apply(); } catch (_eIdt) {}
+              }
+              if (cmd === 'inserthorizontalrule' && rng2 && host2
+              && typeof globalThis.__zw_ce_hr_apply === 'function') {
+                try { globalThis.__zw_ce_hr_apply(); } catch (_eHr) {}
+              }
+              if (cmd === 'insertimage' && rng2 && host2
+              && typeof globalThis.__zw_ce_img_apply === 'function') {
+                try { globalThis.__zw_ce_img_apply(arguments[2]); } catch (_eImg) {}
               }
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
@@ -4964,6 +5002,14 @@
       if ((cLow === 'insertorderedlist' || cLow === 'insertunorderedlist')
       && typeof globalThis.__zw_ce_list_value === 'function') {
         try { return globalThis.__zw_ce_list_value(cLow); } catch (_eLstV) {}
+      }
+      // editing-compat 四命令零应用族（2026-11-07）：formatBlock qV 读面——
+      // block-extend 后首个可见无子 editable 叶子爬升至首个 formattable
+      // ancestor 的子位终判（vendored :6773-6805 忠实移植，part01g）；裸宿主
+      // caret 恒 ""（叶子停在 host 边界非元素），apply 物化包裹 div 后 "div"。
+      if (cLow === 'formatblock'
+      && typeof globalThis.__zw_ce_fb_value === 'function') {
+        try { return globalThis.__zw_ce_fb_value(); } catch (_eFbV) {}
       }
       var vf = (typeof globalThis.__zw_ce_value_query === 'function')
         ? globalThis.__zw_ce_value_query(cLow)

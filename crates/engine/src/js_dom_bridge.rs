@@ -5696,6 +5696,15 @@ pub fn generate_js_dom_shim() -> &'static str {
         // globalThis.__zw_ce_delete_apply 单点调用（flat 模型 _zwExecCmd-
         // ApplyDelete 同轮摘除）。
         s.push_str(include_str!("js_dom_shim/part01f.js"));
+        // part01g（2026-11-07 editing-compat 四命令零应用族）：execCommand
+        // formatBlock/insertHorizontalRule/insertImage/indent 实应用引擎 + formatBlock
+        // value 读面（参考 implementation.js :6580-6698/:5482-5517/:7141-7230/
+        // :7316-7367/:6773-6805 忠实移植）——此前四命令仅 _zwExecCmdInputType 有名
+        // （事件照派、execCommand 返 true），apply 面缺失 → DOM 零变更。挂 part01f
+        // 后同闭包复用 _zwJus*/_zwList*/_zwDel*/_zwVa* 机具；part06 经
+        // globalThis.__zw_ce_fb_apply/__zw_ce_fb_value/__zw_ce_indent_apply/
+        // __zw_ce_hr_apply/__zw_ce_img_apply 单点调用。
+        s.push_str(include_str!("js_dom_shim/part01g.js"));
         // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
         // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
         // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现
