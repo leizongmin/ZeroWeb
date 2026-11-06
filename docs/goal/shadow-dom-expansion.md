@@ -200,6 +200,23 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   ④簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8），待 engine glue
   与通道复测。
 
+### 2026-11-06——M3 Batch 3 残面落地（进行中，新一轮 session 认领）
+
+- **认领声明（§9 同 session 双 resume 碰撞，Batch 2 同型）**：stash
+  `m3-residual-wip`（callbacks.rs 残面 WIP：链资格 O(1) `sih_prefix` 计数化 +
+  `tail_iah_pending` 增量扫描 + t8c 读索引泛化 `HandleStateIndex`，含 collapsible_if
+  /fmt 修复）由本轮（新 session）认领 pop+commit+复测。已过：fmt、clippy
+  `-p zero-engine --all-targets -D warnings`、`cargo test -p zero-engine`
+  （3761P，5F 见下行）。A/B before（HEAD release 二进制全通道 `--json`）在跑，
+  after 复测与落地由本轮收口；备份 patch 在 `/tmp/m3-residual-wip-backup.patch`。
+  **并行侧请勿 pop 该 stash、勿重建 runner 二进制。**
+- **HEAD 既有 5F 归因待办（跨流）**：`cargo test -p zero-engine --lib` 干树
+  （66dd8eeb3，无 WIP）复现 5F——part06 R2809 stylesheets write / part51 p99s
+  custom property case / part56 p56 adopted snapshot / part06 R2810 rule style /
+  R3276 add-remove rule；签名 = cssText 尾分号/空格形态（`color: rgb(9, 105,
+  218);` vs 无分号）。与本 WIP 无关（stash 前后同 5F）；q16/s299 系提交嫌疑，
+  归属流 bisect 后修。
+
 ## 依赖约束（run-rules §9）
 
 - WC 通道与 fetch-web-components-subset.sh 的 skip 规则两侧同源，改动
