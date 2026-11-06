@@ -114,3 +114,38 @@ fn r5342_fitting_clamp_lines_unchanged() {
     }
     assert!((p_h - 32.0).abs() < 0.01, "p 高应 32（2×16），实得 {p_h}");
 }
+
+/// R5432：整行置换旗标镜像——strut 臂命中时 IFC `clamp_strut_applied` 经
+/// compute_final 镜像到盒 `line_clamp_strut_displaced`（paint stored 路径清零被置换
+/// glyph＋ellipsis 落行首的依据，block-ellipsis-018 红泄漏臂）；常规 clamp（ellipsis
+/// 放得下）不入旗标。
+#[test]
+fn r5432_strut_displaced_flag_mirrors_displacement() {
+    fn any_strut_displaced(node: &crate::LayoutBox) -> bool {
+        node.line_clamp_strut_displaced || node.children.iter().any(any_strut_displaced)
+    }
+    // 主判例同构：9 字长词整行被置换 → 旗标 true。
+    let css = ".clamp { width: 100px; font: 25px Ahem; line-clamp: 1; } \
+               .large { font-size: 1.5em; }";
+    let html = format!(
+        r#"<html><head><style>{css}</style></head><body>
+<div class="clamp"><span class="large">XXXXXXXXX XXX</span></div>
+</body></html>"#
+    );
+    let result = compute(&html, css);
+    assert!(
+        any_strut_displaced(&result.root),
+        "整行置换须镜像旗标 line_clamp_strut_displaced=true"
+    );
+
+    // 负向：常规 clamp（r5342 负向守卫同形）→ 全树无旗标。
+    let css = "p { width: 300px; font: 16px Ahem; line-clamp: 2; margin: 0 }";
+    let html = format!(
+        r#"<html><head><style>{css}</style></head><body><p>hello world enough text to wrap two lines here</p></body></html>"#
+    );
+    let result = compute(&html, css);
+    assert!(
+        !any_strut_displaced(&result.root),
+        "常规 clamp（ellipsis 放得下）不得置旗标"
+    );
+}

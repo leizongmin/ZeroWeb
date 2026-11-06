@@ -2081,6 +2081,9 @@ pub(crate) fn compute_final_inline_layouts(
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
     // 须在 store-gate return 之前设（非 stored 容器也走此，non-stored paint 路径冗余读之）。
     root.line_clamp_clamped = inline_ctx.clamped;
+    // R5432：整行置换旗标同站点镜像——paint stored 路径清零被置换 glyph + ellipsis
+    // 落行首（block-ellipsis-018）。须在 store-gate return 之前（同 2083 注释）。
+    root.line_clamp_strut_displaced = inline_ctx.clamp_strut_applied;
     // R4417：cap 值存盒——paint Path B（空 styles 重跑 IFC，ruby 页等非 stored 容器）
     // 无行数语义（resolve_line_clamp 对 Auto 恒 None，paint 自身 style 亦不可用），
     // exceeded 截断与省略号须从盒读 cap（auto-with-ruby-005：Path B 6 行全绘、

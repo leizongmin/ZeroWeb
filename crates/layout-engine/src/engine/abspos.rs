@@ -1376,6 +1376,102 @@ fn resolve_abspos_against_nested_cb_inner_m(
 ///
 /// margin：x 加 `margin_left`（§10.3.7 静态位为 margin-box 位；019 ref 的 div>.before
 /// `margin-left:2px` 对齐语义依赖）。
+/// R5432（css-overflow-4 §block-ellipsis × CSS2 §10.3.8）：clamp 容器几何同步——
+/// 含元素子的 abspos 盒是 taffy branch（无 measure 函数，R5236 D2 记录的同款结构性
+/// 盲区），高度取子原子贡献、inset 锚定用早期测量，**均不感知 clamp cap**（cap 是
+/// 容器 IFC 层截断，compute_final 才落存储行盒）。block-ellipsis-018 实证三源互不
+/// 一致：存储行 strut 25 正确，盒高 43.65（taffy MaxContent 期单行 generic 比率）、
+/// 锚 y=26（taffy 定位期 pre-clamp 两行总高），渐变红区露底。本 pass 在
+/// compute_final 之后读存储行盒收口：盒高 = clamp 后行盒底（+frame）；abspos
+/// `top:auto + bottom:definite` 且 CB = 直接 positioned 父时按 §10.3.8 方程重锚定
+/// y（CB padding-box 语义，§10.1）。门极窄：仅 stored 路径（`inline_layout` 非空）、
+/// abspos 非 fixed、height auto、top auto、bottom 定长、直接父 positioned；
+/// in-flow／跨块／无存储行盒形态不入（既有簇语义逐字节不变）。
+/// kill-switch `ZW_CLAMP_GEOMETRY_SYNC=0` 回退。
+pub(super) fn sync_clamped_abspos_geometry(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    if std::env::var("ZW_CLAMP_GEOMETRY_SYNC").as_deref() == Ok("0") {
+        return;
+    }
+    sync_clamped_abspos_geometry_walk(root, styles);
+}
+
+fn sync_clamped_abspos_geometry_walk(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    use zero_css_parser::values::LengthValue;
+    use zero_css_parser::values::PositionValue;
+
+    // 本盒是否 positioned（直接子 abspos 的 CB）——与 apply_abspos_shrink_to_fit_width
+    // 的 child_is_cb 同判据（is_abspos_cb 短路 + style 侧兜底）。
+    let is_cb = box_node.is_abspos_cb
+        || box_node.node_id.and_then(|id| styles.get(&id)).is_some_and(|s| {
+            matches!(
+                s.position,
+                PositionValue::Relative | PositionValue::Absolute | PositionValue::Fixed
+            )
+        });
+    if is_cb {
+        // 两阶段收集/写回（同 fix_abspos_static_position_y：避免 children 借用冲突）。
+        let mut fixes: Vec<(usize, f32, f32)> = Vec::new();
+        for (idx, child) in box_node.children.iter().enumerate() {
+            if !child.is_absolute
+                || child.is_fixed
+                || child.oof_static_mapped
+                || !child.line_clamp_clamped
+                || child.inline_layout.is_none()
+            {
+                continue;
+            }
+            let Some(style) = child.node_id.and_then(|id| styles.get(&id)) else {
+                continue;
+            };
+            // top:auto + bottom 定长（bottom:0 与 % 均入）；definite top / auto bottom
+            // 是静态位/stretch 域，不触。height:auto（作者高度压过 clamp 内容）。
+            if !matches!(style.top, LengthValue::Auto)
+                || !matches!(style.height, LengthValue::Auto)
+                || matches!(style.bottom, LengthValue::Auto)
+            {
+                continue;
+            }
+            // clamp 后行盒底（内容系）：行 y 累计堆叠，末行底 = 行盒和（float 推压
+            // gap 行形态 max 同值）。
+            let Some(lines) = &child.inline_layout else { continue };
+            let ifc_bottom = lines.iter().map(|l| l.y + l.height).fold(0.0_f32, f32::max);
+            if ifc_bottom <= 0.0 {
+                continue;
+            }
+            let frame_v = child.padding_top + child.padding_bottom + child.border_top + child.border_bottom;
+            let new_height = ifc_bottom + frame_v;
+            // §10.3.8 方程（CB padding-box）：盒下缘 = CB padding-box 底 − bottom
+            // − margin-bottom；y（树坐标 = 父 content 系）再剥父 border/padding 顶距。
+            let Some(bottom_px) =
+                resolve_abspos_real_length(&style.bottom, &style.font_size, box_node.width, box_node.height)
+            else {
+                continue;
+            };
+            let margin_bottom_px =
+                resolve_abspos_real_length(&style.margin_bottom, &style.font_size, box_node.width, box_node.height)
+                    .unwrap_or(0.0);
+            let cb_padbox_bottom = box_node.height - box_node.border_bottom - box_node.padding_bottom;
+            let new_y = cb_padbox_bottom
+                - bottom_px
+                - margin_bottom_px
+                - new_height
+                - box_node.border_top
+                - box_node.padding_top;
+            fixes.push((idx, new_y, new_height));
+        }
+        for (idx, y, height) in fixes {
+            let child = &mut box_node.children[idx];
+            child.y = y;
+            child.height = height;
+            child.content_height =
+                height - child.padding_top - child.padding_bottom - child.border_top - child.border_bottom;
+        }
+    }
+    for child in box_node.children.iter_mut() {
+        sync_clamped_abspos_geometry_walk(child, styles);
+    }
+}
+
 pub(super) fn fix_abspos_inline_static_position(
     root: &mut LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,

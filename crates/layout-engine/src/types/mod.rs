@@ -515,6 +515,11 @@ pub struct LayoutBox {
     /// paint 据此在 stored 路径补 ellipsis（text.rs line-clamp 后处理）。non-stored 路径
     ///（非 Ahem）paint IFC 用空 styles 重跑不 cap → 全量行 → `line_ys.len() > max` 仍可独立触发。
     pub line_clamp_clamped: bool,
+    /// R5432（css-overflow-4 §block-ellipsis）：本容器末保留行内容被 ellipsis **整行
+    /// 置换**（IFC R5342 strut 改写臂命中，`clamp_strut_applied` 镜像，与
+    /// `line_clamp_clamped` 同站点）。paint stored 路径据此清零该行全部 glyph 并把
+    /// ellipsis 落行首（block-ellipsis-018：被置换 span.red 1.5em 大字照绘 = 红泄漏）。
+    pub line_clamp_strut_displaced: bool,
     /// R3768 line-clamp slice 3：跨块盒 clamp 中，预算在该子用尽时该子可见行数上限
     ///（container 预算余量）。paint 期该子自身样式无 line-clamp（max_lines=None），
     /// 从此字段取 cap：非 stored 路径 paint IFC 全量行 → 按此 cap 截 glyph + 补 ellipsis。
@@ -885,6 +890,7 @@ impl Default for LayoutBox {
             inline_layout_width: 0.0,
             inline_overflow_extent: None,
             line_clamp_clamped: false,
+            line_clamp_strut_displaced: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,

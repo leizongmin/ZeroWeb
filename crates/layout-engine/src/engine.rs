@@ -1505,6 +1505,14 @@ impl LayoutEngine {
             &mut final_inline_context,
         );
 
+        // R5432（css-overflow-4 §block-ellipsis × CSS2 §10.3.8）：clamp 容器几何同步
+        // ——taffy branch abspos 盒（无 measure 函数）的高/锚不感知 clamp cap，本
+        // pass 读 compute_final 存储行盒收口（block-ellipsis-018：存储行 strut 25 vs
+        // 盒高 43.65/锚 y=26 三源不一致）。须在 compute_final 之后（存储行才落盒）、
+        // 其余 abspos 后处理之前（静态位域 auto/auto 与本 pass definite-bottom 域不相
+        // 交，序无感）。kill-switch `ZW_CLAMP_GEOMETRY_SYNC=0`。
+        abspos::sync_clamped_abspos_geometry(&mut root_box, styles);
+
         // R5166（css-position-3 §static-position）：行内流 OOF 静态位锚定——须在
         // compute_final 之后（锚位由 stored IFC 断行记录）、其余 abspos 后处理链之外
         // 覆盖 taffy block-flow cursor 静态位（11.7b 的块级公式只管 block-level 前驱
@@ -1602,6 +1610,7 @@ impl LayoutEngine {
         // line_clamp_hidden，paint 据此跳过整子树）。须在各子 IFC 终化（compute_final_inline_
         // layouts）与 R109 回填之后（inline_layout 行几何已终态）。
         apply_cross_block_line_clamp(&mut root_box, styles, doc);
+
         // R5205：clamp 收缩的兄弟位移 + 祖先缩高传播——apply_cross_block_line_clamp
         // 只收缩容器自身，布局期定位的后续兄弟/祖先高需按净差修正（line-clamp-023）。
         // 须在 12.7 vertical-rl 重定位之前（HorizontalTb 兄弟位移 pass 的既定次序）。
@@ -2904,6 +2913,7 @@ impl LayoutEngine {
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
+            line_clamp_strut_displaced: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,

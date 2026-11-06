@@ -5484,38 +5484,73 @@ impl super::Painter {
                         let last_line_y = line_ys[last_idx];
                         let ellipsis_enabled = max >= 1;
 
-                        // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
-                        let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
-                            .iter()
-                            .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
-                            .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
-                        let last_adv = last_glyph
-                            .and_then(|g| char::from_u32(g.glyph_id))
-                            .map(|c| self.measure_char_cached(default_font_id.0, c, font_size, container_is_ahem))
-                            .unwrap_or(0.0);
-                        let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
-
-                        let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
-                        let ellipsis_char = '\u{2026}';
-                        let ellipsis_width =
-                            self.measure_char_cached(default_font_id.0, ellipsis_char, font_size, container_is_ahem);
-                        let content_right = content_x + container_width + tx;
-
-                        // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
-                        // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
-                        // cutoff，text.rs:1464-1481）。
-                        let ellipsis_x = if last_text_end_x + ellipsis_width <= content_right + 0.5 {
-                            last_text_end_x
+                        // R5432（css-overflow-4 §block-ellipsis）：末保留行内容被 ellipsis
+                        // **整行置换**（R5342 strut 臂，盒旗标镜像）——清零该行**全部**
+                        // 被置换 glyph、ellipsis 落行首（content_x + tx，016 ref：置换行
+                        // 只有 `…` 独占行首）。旧 text-overflow 式裁剪臂只裁 cut_x 尾部
+                        // （018：x<75 的两个 37.5px 红块幸存照绘 = 红泄漏主体）。置换行带
+                        // 按存储末行行盒（content_y + l.y .. +l.height，valign 片段全带
+                        // 覆盖）；storage 空回退 glyph-y 带（last_line_y ±0.5）。
+                        let strut_displaced = box_node.line_clamp_strut_displaced;
+                        let strut_band = if strut_displaced {
+                            box_node
+                                .inline_layout
+                                .as_ref()
+                                .and_then(|ls| ls.last())
+                                .map(|l| (content_y + l.y - 0.5, content_y + l.y + l.height + 0.5))
+                                .unwrap_or((last_line_y - 0.5, last_line_y + 0.5))
                         } else {
-                            let cut_x = content_right - ellipsis_width;
-                            let glyphs = &mut self.primitives.glyphs;
-                            for g in glyphs[glyphs_before_fragments..].iter_mut() {
-                                if g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5 && g.x + 0.5 >= cut_x {
-                                    g.font_size = 0.0;
-                                    g.glyph_id = 0;
+                            (last_line_y - 0.5, last_line_y + 0.5)
+                        };
+                        let ellipsis_char = '\u{2026}';
+                        let ellipsis_x = if strut_displaced {
+                            {
+                                let glyphs = &mut self.primitives.glyphs;
+                                for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                                    if g.font_size > 0.0 && g.y >= strut_band.0 && g.y <= strut_band.1 {
+                                        g.font_size = 0.0;
+                                        g.glyph_id = 0;
+                                    }
                                 }
                             }
-                            cut_x
+                            content_x + tx
+                        } else {
+                            // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
+                            let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
+                                .iter()
+                                .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
+                                .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+                            let last_adv = last_glyph
+                                .and_then(|g| char::from_u32(g.glyph_id))
+                                .map(|c| self.measure_char_cached(default_font_id.0, c, font_size, container_is_ahem))
+                                .unwrap_or(0.0);
+                            let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
+
+                            let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
+                            let ellipsis_width = self.measure_char_cached(
+                                default_font_id.0,
+                                ellipsis_char,
+                                font_size,
+                                container_is_ahem,
+                            );
+                            let content_right = content_x + container_width + tx;
+
+                            // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
+                            // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
+                            // cutoff，text.rs:1464-1481）。
+                            if last_text_end_x + ellipsis_width <= content_right + 0.5 {
+                                last_text_end_x
+                            } else {
+                                let cut_x = content_right - ellipsis_width;
+                                let glyphs = &mut self.primitives.glyphs;
+                                for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                                    if g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5 && g.x + 0.5 >= cut_x {
+                                        g.font_size = 0.0;
+                                        g.glyph_id = 0;
+                                    }
+                                }
+                                cut_x
+                            }
                         };
 
                         if ellipsis_enabled {

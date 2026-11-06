@@ -169,6 +169,11 @@ pub struct InlineFormattingContext {
     pub line_clamp: Option<usize>,
     /// line-clamp 是否截断了行（第 N 行后有更多内容 → 第 N 行末须渲 ellipsis，slice 2 消费）。
     pub clamped: bool,
+    /// R5432（css-overflow-4 §block-ellipsis）：末保留行内容被 ellipsis **整行置换**
+    /// （R5342 strut 改写臂命中）。paint stored 路径据此清零该行全部被置换 glyph 并把
+    /// ellipsis 落行首（block-ellipsis-016 ref：置换行只有 `…` 独占行首；018 判例：
+    /// 被置换 span.red 大字照绘 = 红泄漏主体）。随 `clamped` 同站点镜像到 LayoutBox。
+    pub clamp_strut_applied: bool,
     /// 垂直书写模式（vertical-rl 或 vertical-lr）。
     ///
     /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
@@ -482,6 +487,7 @@ impl InlineFormattingContext {
             lines: Vec::new(),
             line_clamp: None,
             clamped: false,
+            clamp_strut_applied: false,
             vertical: false,
             vertical_rtl: false,
             block_extent: container_width,
@@ -1444,6 +1450,9 @@ impl InlineFormattingContext {
                     if first_w + ellipsis_w > self.container_width + 0.5
                         && let Some(line) = self.lines.last_mut()
                     {
+                        // R5432：整行置换旗标——paint stored 路径据此清零该行被置换
+                        // glyph + ellipsis 落行首（见字段文档）。
+                        self.clamp_strut_applied = true;
                         let strut_fs = self.container_font_size;
                         let strut_ratio = ascent_ratio_lookup(
                             &self.ascent_ratio_overrides,
