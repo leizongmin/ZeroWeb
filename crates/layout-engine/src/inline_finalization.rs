@@ -2144,6 +2144,39 @@ pub(crate) fn compute_final_inline_layouts(
             .fold(0.0f32, f32::max);
         root.inline_overflow_extent = Some((max_right, max_bottom));
     }
+    // R5435 slice 2（CSS2 §17.5.3 valign 可用空间＝行高 − 文本块高）：R1717 臂以
+    // `height - row_extra` 推导文本块高——auto 高表 row_extra=0 且 cell height 已被
+    // position_cells 均衡化为行高，推导恒 avail=0，text-only cell 的 middle/bottom
+    // 沉底失效（vertical-align-baseline-003 ref 侧：箭头 cell 停顶部行，slice 1 行高
+    // 随动后残差 0.24%）。此处取本容器 IFC（本 pass 已跑，行 y 纵向 content 顶起）
+    // 直系行内内容真底，按**均衡化后** content_height 重算 avail 并覆写 valign_offset：
+    // 行内最高 cell 与 R1717 值（=row_extra）数值相同，矮 cell 按规范下沉/居中。
+    // 须在 store-gate return 之前（非 stored cell 同样生效，R5166 先例区）；仅水平
+    // 书写模式（行 y 纵向语义，R5427/R5227 同门）；空行集不入。合成匿名 cell 借宿主
+    // 行 node_id，行样式 vertical-align 非 middle/bottom 自然不入臂（其内容为子盒域）。
+    // kill-switch `ZW_CELL_VALIGN_IFC_TRUTH=0` 回退 R1717 推导（slice 1 提交态）。
+    // LazyLock 快照：per-container 热路径不耐受 env 线性扫描（R5152/R5166 先例）。
+    static CELL_VALIGN_IFC_TRUTH: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_VALIGN_IFC_TRUTH").as_deref() != Ok("0"));
+    if is_table_cell
+        && !is_vertical_table_cell
+        && root.children.is_empty()
+        && !inline_ctx.lines.is_empty()
+        && matches!(
+            style.vertical_align,
+            zero_css_parser::values::VerticalAlignValue::Middle
+                | zero_css_parser::values::VerticalAlignValue::Bottom
+                | zero_css_parser::values::VerticalAlignValue::TextBottom
+        )
+        && *CELL_VALIGN_IFC_TRUTH
+    {
+        let text_bottom = inline_ctx.lines.iter().map(|l| l.y + l.height).fold(0.0f32, f32::max);
+        let avail = (root.content_height - text_bottom).max(0.0);
+        root.valign_offset = match style.vertical_align {
+            zero_css_parser::values::VerticalAlignValue::Middle => avail / 2.0,
+            _ => avail,
+        };
+    }
     let is_pure_ahem =
         style.font_family.len() == 1 && style.font_family[0].trim_matches('"').eq_ignore_ascii_case("Ahem");
     let is_floated = !matches!(style.float, FloatValue::None);

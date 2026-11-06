@@ -1,14 +1,14 @@
-//! R5435 slice 1（CSS2 §17.5.2.1/§17.5.3）：col 指定宽钳臂缩列后行高随动。
+//! R5435（CSS2 §17.5.2.1/§17.5.3）：col 指定宽钳臂缩列后行高随动＋valign 沉底。
 //!
-//! R5434 把 col 指定宽列的 auto cell 贡献钳到 used width，但 cell content 仍是钳前
-//! 宽度的单行度量——行高不随钳后列宽换行增高（vertical-align-baseline-003 ref 侧：
-//! 列 80 内容 12 行、行高塌 20）。修复＝钳臂实际减宽时并入 R4298 remeasure 链
-//!（clamp 子树宽＋重测内容高＋二趟 position_cells）。
+//! slice 1：R5434 把 col 指定宽列的 auto cell 贡献钳到 used width，但 cell content
+//! 仍是钳前宽度的单行度量——行高不随钳后列宽换行增高（vertical-align-baseline-003
+//! ref 侧：列 80 内容 12 行、行高塌 20）。钳臂实际减宽时并入 R4298 remeasure 链。
 //! kill-switch `ZW_TABLE_COL_SPEC_REMEASURE`。
 //!
-//! slice 1 边界：行高随动后矮 cell 仍拉伸满行高、valign:bottom 箭头文本停顶部行
-//!（R1717 arm 的 `height - extra` 推导在 auto 高表 extra=0 → avail=0；corpus 残差
-//! 0.24%）。沉底恢复＝IFC 存储臂取 cell 真文本块高（挂账㉛ slice 2 专项）。
+//! slice 2：行高随动后矮 cell 拉伸满行高，R1717 臂的 `height - extra` 推导在 auto
+//! 高表 extra=0 → avail=0，valign:bottom 箭头停顶部行。IFC 存储臂（compute_final，
+//! 行 y 真底）按均衡化后 content_height 重算 valign_offset（§17.5.3）。
+//! kill-switch `ZW_CELL_VALIGN_IFC_TRUTH`。
 //!
 //! 断言取结构不变式（换行→行高增长、无钳→无偏移），不锚像素（harness estimate
 //! metrics 与真实字体域换行数不同，见 R5426 estimate-fonts 伪绿判例）。
@@ -63,15 +63,14 @@ const NO_COL_HTML: &str = r#"<!DOCTYPE html><html><body style="margin:0">
 </body></html>"#;
 
 /// ★ driving 案形（vertical-align-baseline-003-ref 同构）：col 指定宽 80 钳臂缩列后
-/// mid cell 内容按 80 重排换行、行高随动增长，单行矮 cell 拉伸到行高。
-/// FIXME(㉛ slice 2)：valign:bottom 箭头 cell 仍停顶部行（valign_offset=0）——
-/// 沉底需 IFC 存储臂真文本高，见文档挂账。
+/// mid cell 内容按 80 重排换行、行高随动增长，单行矮 cell 拉伸到行高；
+/// valign:bottom 箭头 cell 按 IFC 真文本底下沉（slice 2，avail = 行 content 高 − 文本高）。
 #[test]
 fn r5435_col_spec_clamp_row_height_follows_reflow() {
     let cells = probe_cells(REF_LIKE_HTML);
-    let (side_ch, side_h, _side_vo) = cells[0];
+    let (side_ch, side_h, side_vo) = cells[0];
     let (mid_ch, mid_h, _mid_vo) = cells[1];
-    let (side2_ch, _side2_h, _side2_vo) = cells[2];
+    let (side2_ch, _side2_h, side2_vo) = cells[2];
     // mid cell 内容按 80px 列宽换行（6 句 Filler Text ≥ 2 行，单行 strut ≤ 30）。
     assert!(
         mid_ch > 30.0,
@@ -85,6 +84,11 @@ fn r5435_col_spec_clamp_row_height_follows_reflow() {
     // 箭头 cell 不抬高行高：content_height 被行高均衡化覆写（= mid 的 12 行高），
     // 若 remeasure 误把箭头内容按窄列增高超过 mid，side_h 会超过 mid_h（上一断言覆盖）。
     let _ = (side_ch, side2_ch);
+    // valign:bottom 沉底（slice 2，IFC 真文本高）：avail = 行 content 高 − 单行文本高 > 0。
+    assert!(side_vo > 0.0, "side valign_offset 应 > 0（沉底），got {side_vo}");
+    assert!(side2_vo > 0.0, "side2 valign_offset 应 > 0（沉底），got {side2_vo}");
+    // 沉底量 = 行 content 高 − 单行文本高（≈ 差一整行文本带，非微量）。
+    assert!(side_vo > 20.0, "side 沉底量应超过一行文本带，got {side_vo}");
 }
 
 /// ★ 负向回归卫：无 col 指定宽（钳臂不入臂）时维持旧行为——mid 单行、行高不增长、

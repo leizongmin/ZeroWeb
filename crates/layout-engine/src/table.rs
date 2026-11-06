@@ -769,8 +769,8 @@ fn layout_table_inner(
     // R5435 slice 1（CSS2 §17.5.2.1/§17.5.3 行高随动）：R5434 col 指定宽钳臂缩列后
     // 同形——cell content 仍是钳前宽度的单行度量，行高不随钳后列宽换行增高
     //（vertical-align-baseline-003 ref 侧：列 80 内容 12 行、行高塌 20）。钳臂实际
-    // 减宽（col_spec_clamped）并入同一重测链。矮 cell 沉底仍待 IFC 存储臂真文本高
-    //（R1717 推导域，挂账㉛ slice 2）。
+    // 减宽（col_spec_clamped）并入同一重测链。矮 cell 沉底由 slice 2 在 compute_final
+    // 的 IFC 存储臂按真文本高收口（inline_finalization.rs）。
     // img_intrinsic_sizes 以空表传入（engine 侧 intrinsic 表不穿 table 调用链；仅影响
     // 压缩表内 img 的固有比解析，R4149-R4151 域的属性/CSS 尺寸路径不受影响）。
     if cols_auto_shrunk || col_spec_clamped {
