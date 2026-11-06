@@ -317,6 +317,20 @@ pub(super) fn apply_scripted_dom_mutations(
         "if (typeof __zw_dispatch_event === 'function') { try { __zw_dispatch_event('html','load',null); } catch(_e){} }",
     );
 
+    // s318（WPT reftest-wait 契约）：带 reftest-wait 的页面在首次渲染后由 harness 在
+    // documentElement 上派发 `TestRendered`——页面监听它做首帧后变更（填文本等）再摘
+    // class 允许截图（上游 wptrunner 行为，https://web-platform-tests.org/writing-tests/
+    // reftests.html#controlling-when-comparison-occurs）。harness 串行模型无真首帧，
+    // load 派发后即「首个渲染窗口」近似位：此处派发给页面 listener 变更窗口，mutation
+    // 随下方 recorded 一次应用。仅 reftest-wait 页面派发（上游仅该流程触达；无监听页
+    // no-op，非 reftest-wait 页零扰动）。多轮重入（listener 摘后重挂 reftest-wait 等
+    // 下一次 TestRendered）未模拟——FIXME：无语料驱动，单轮覆盖既有全部 42 案。
+    // 先例：the-option-element dynamic-content-change-rendering（span textContent
+    // 首帧后置）。
+    let _ = sandbox.execute(
+        "if (typeof __zw_dispatch_event === 'function') { try { if (document.documentElement && document.documentElement.classList && document.documentElement.classList.contains('reftest-wait')) __zw_dispatch_event('html','TestRendered',null); } catch(_e){} }",
+    );
+
     let recorded = mutations.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if std::env::var("REFTEST_DEBUG").is_ok() {
         eprintln!("  [reftest JS] recorded {} mutation(s): {:?}", recorded.len(), recorded);
