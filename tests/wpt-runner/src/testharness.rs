@@ -10583,9 +10583,8 @@ fn wpt_sidecar_headers(root: &Path, path: &str) -> Vec<(String, String)> {
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('[') && !line.starts_with('#') && !line.starts_with(';'))
         .filter_map(|line| {
-            line.split_once(':').map(|(key, value)| {
-                (key.trim().to_string(), value.trim().to_string())
-            })
+            line.split_once(':')
+                .map(|(key, value)| (key.trim().to_string(), value.trim().to_string()))
         })
         .filter(|(_, value)| !value.is_empty())
         .collect()
