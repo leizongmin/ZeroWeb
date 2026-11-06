@@ -3,7 +3,9 @@
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
-**状态**: Active——M0 完成，M1 启动（枚举器窗体解锁 → xhr .htm 面 + .window.js 面）
+**状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
+（枚举器窗体解锁 +1,624P 零回归），M1b 启动（语料/端点批次 + 解锁面
+新 Fail 簇归因）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -77,12 +79,14 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
 2. **DC-3 面门**：websockets 非 wss 依赖面 covered > 0 且 interfaces
    批次（den 291）pass ≥ 实跑分母 × 98.5%；wss 变体面移交 46 号兑现，
    不入门。
-3. **零回归门**：一期/二期通道既有账逐 subtest 对照（M0 基线 =
-   2026-11-06 全量通道实跑 11,035P/12,078，七域分布见
+3. **零回归门**：一期/二期通道既有账逐 subtest 对照（M0 基线
+   11,035P/12,078 见
    [基线档](net-api-compat-v3/evidence/2026-11-06-m0-channel-baseline.md)；
-   与 S19 核查态一致，语料漂移差已归因）零回归；头条不回落（三族
-   coverage 通过率不低于 2026-11-05 基线：fetch 14.25% / websockets
-   4.27% / xhr 23.75%）。
+   M1a 后换代为 12,659P/14,221——换代经 A/B 交集 12,070 对逐对字节一致
+   证零回归，见 [M1a 档](net-api-compat-v3/evidence/2026-11-06-m1a-enumerator-forms-unlock.md)；
+   后续批次 A/B 以同树重跑对照为准）零回归；头条不回落（三族 coverage
+   通过率不低于 2026-11-05 基线：fetch 14.25% / websockets 4.27% / xhr
+   23.75%）。
 
 ## 划界
 
@@ -104,14 +108,15 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
 - **M0 ✅**（2026-11-06）：对账甄别 + WebSocket P3 重估 + 数值门（DC-1）——
   三甄别档落 evidence/（fetch 逐目录 / websockets 清单+wss 交接 / xhr
   残余簇归因）；wss 面不阻塞非 wss 导入（interfaces 74 案零 .https 命名）。
-- **M1（进行中）**：**M1a 枚举器窗体解锁**——共享枚举器
-  `run_any_js_corpus_subdirs_*` 只认 flat `.html`/`.any.js`：xhr 190 个
-  `.htm`（~175 案未跑，access-control preflight 族为主）+ 9 `.window.js`
-  案、fetch h1-parsing 3 `.window.js`（coverage 0 覆盖根因）、
-  content-type/content-length/data-urls `.window.js` 余量同因；按
-  webmessaging/wasm-core 通道 `.window.js` 先例扩形态。**M1b 语料/端点
-  批次**：fetch/api/redirect（16 案）+ redirect.py shim、xhr folder.txt
-  补拉 + A/B、h1-parsing resources 补拉。
+- **M1**：**M1a ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m1a-enumerator-forms-unlock.md)）——
+  枚举器 `extra_forms` 门解锁 `.htm`/`.window.js`（默认关，仅 net-api 通道
+  开启）：通道 **+1,624P**（11,035 → 12,659P；url +1,272 / xhr +317 /
+  eventsource +22 / fetch +12 / streams +1），案 543 → 684，A/B 交集
+  12,070 对逐对字节一致零回归；新 Fail 面 = 解锁面真实缺口显影（
+  access-control preflight 端点 / h1-parsing 原始线缆端点等），转 M1b/M2
+  fixture 分批与 M3 归因输入。**M1b（下一步）**：fetch/api/redirect
+  （16 案）+ redirect.py shim、xhr folder.txt 补拉 + A/B、解锁面新 Fail
+  簇逐簇归因（corsca/preflight shim 可行性分批）。
 - **M2**：py 端点目录 fixture 分批（xhr auth1-11 HTTP Basic 面）+
   websockets 非 wss 依赖面入账（interfaces 74 案 + fixture `/echo_raw`
   `/sleep_10_v13` 两条新增）（DC-2/3）。

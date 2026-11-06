@@ -4516,13 +4516,21 @@ fn navigation_case_uses_ported_origin(case_name: &str) -> bool {
 ///   执行面（runner 无 worker 文档管道，security/timing 先例）
 fn net_api_case_skipped(relative: &str, source: &str) -> bool {
     let name = relative.rsplit('/').next().unwrap_or(relative);
-    if name.ends_with("-manual.html") || name.starts_with("idlharness.") {
+    // M1a：`.htm` 老式命名与 `.html` 同 skip 口径（manual 交互面既有口径的
+    // 形态对齐——xhr send-authentication-*-manual.htm 等）。
+    if name.ends_with("-manual.html") || name.ends_with("-manual.htm") || name.starts_with("idlharness.") {
         return true;
     }
     // net-api M5-S1：websockets `.https.*` 案需安全上下文 + TLS wss 端点（上游 ?wss
     // 变体）——runner 页面为 http origin、fixture 无 TLS，两臂均不可测，筛减记账
     // （mixed-content 案在 http 页必假阴）。
     if relative.starts_with("websockets/") && name.contains(".https.") {
+        return true;
+    }
+    // net-api-compat-v3 M1a：websockets bfcache 生命周期面（back-forward-cache-*
+    // .window.js——RemoteContextHelper 多窗口 bfcache 编排，runner 无多文档/bfcache
+    // 管道；M0 甄别档排除口径，multi-globals/unload-a-document 同因先例）。
+    if relative.starts_with("websockets/") && name.contains("back-forward-cache") {
         return true;
     }
     if relative.contains("/resources/") {
@@ -4620,11 +4628,24 @@ fn run_any_js_corpus_subdirs_with_helpers(
     case_skipped: fn(&str, &str) -> bool,
     absolute_helpers: &[(&str, &str)],
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs_with_helpers_variants(wpt_root, subdirs, filter, case_skipped, absolute_helpers, false)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        subdirs,
+        filter,
+        case_skipped,
+        absolute_helpers,
+        false,
+        false,
+    )
 }
 
 /// navigation-compat S4K：同上 + variant-meta 展开（`case_variants`——uievents 尾簇 7 既有
 /// 提取器复用；expand_variants 门仅 navigation corpus 启用）。
+///
+/// net-api-compat-v3 M1a：`extra_forms` 门扩 `.htm`（xhr corpus 上游老式命名，与
+/// `.html` 同形态走 substitution + `run_testharness_html_inner`）与 `.window.js`
+/// （webmessaging/webstorage 通道既有 window 变体先例，[`run_any_js_window_case`]
+/// 形态无关）两窗体——默认关（各通道既有账分母不动），仅 net-api 通道开启。
 fn run_any_js_corpus_subdirs_with_helpers_variants(
     wpt_root: &Path,
     subdirs: &[&str],
@@ -4632,6 +4653,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
     case_skipped: fn(&str, &str) -> bool,
     absolute_helpers: &[(&str, &str)],
     expand_variants: bool,
+    extra_forms: bool,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -4658,8 +4680,13 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 continue;
             }
             let file_name = entry.file_name().to_string_lossy().to_string();
-            let is_html = file_name.ends_with(".html");
-            let is_any_js = file_name.ends_with(".any.js");
+            // net-api-compat-v3 M1a：extra_forms 门扩 `.htm`（xhr 上游老式命名）与
+            // `.window.js`（window 变体，webmessaging 通道先例）——默认关，其余通道
+            // 既有账分母不动。
+            let is_htm = extra_forms && file_name.ends_with(".htm");
+            let is_window_js = extra_forms && file_name.ends_with(".window.js");
+            let is_html = file_name.ends_with(".html") || is_htm;
+            let is_any_js = file_name.ends_with(".any.js") || is_window_js;
             if !is_html && !is_any_js {
                 continue;
             }
@@ -4738,8 +4765,19 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
 /// Run the pinned upstream net-API six-corpus window subset
 /// （net-api-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `fetch/`、`xhr/`、
 /// `streams/`——基线按 corpus 分类）。
+///
+/// net-api-compat-v3 M1a：net-api 通道开启 extra_forms（`.htm`/`.window.js`
+/// 窗体）——其余通道共用入口默认关，既有账分母不动。
 pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, NET_API_CORPUS_SUBDIRS, filter, net_api_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        NET_API_CORPUS_SUBDIRS,
+        filter,
+        net_api_case_skipped,
+        &[],
+        false,
+        true,
+    )
 }
 
 /// Run the pinned upstream encoding window subset
@@ -4792,6 +4830,7 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
         encoding_legacy_mb_case_skipped,
         &[],
         true,
+        false,
     )
 }
 
@@ -4845,6 +4884,7 @@ pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec
         form_url_encoding_case_skipped,
         &[],
         true,
+        false,
     )
 }
 
@@ -5085,6 +5125,7 @@ pub fn run_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
         navigation_case_skipped,
         NAVIGATION_ABSOLUTE_HELPERS,
         true,
+        false,
     )
 }
 
