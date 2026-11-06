@@ -863,11 +863,17 @@
             _zwUrlOrigin(self._zwXhrUrl) !== _zwUrlOrigin(_zwCurrentHref()) &&
             _zwUrlOrigin(_zwCurrentHref())) {
           var preDocOrigin = _zwUrlOrigin(_zwCurrentHref());
-          var preHeaders = syncHeaders;
-          if (!_zwHasHeader(preHeaders, 'origin')) {
-            preHeaders = _zwAddHeader(preHeaders, 'Origin', preDocOrigin);
-          }
+          // net-api M2：preflight 请求头取**最小集**（镜像异步 M4-S26——spec
+          // §cors-preflight-fetch 的 OPTIONS 不转发原请求自定义头；旧实现全转发
+          // syncHeaders 使 no-custom-header-on-preflight 端点 OPTIONS 臂探得 x-test
+          // → 400 → 恒 network error）。UA/Accept: */* 同异步注记（preflight 带
+          // UA 与 `Accept: */*` 为浏览器行为）。
+          var preHeaders = '';
+          preHeaders = _zwAddHeader(preHeaders, 'Origin', preDocOrigin);
           preHeaders = _zwAddHeader(preHeaders, 'Access-Control-Request-Method', self._zwXhrMethod);
+          preHeaders = _zwAddHeader(preHeaders, 'Accept', '*/*');
+          preHeaders = _zwAddHeader(preHeaders, 'User-Agent',
+            (typeof navigator !== 'undefined' && navigator.userAgent) || 'ZeroBrowser');
           var preNames = [];
           var preParts = syncHeaders ? syncHeaders.split('\x1e') : [];
           for (var pi = 0; pi + 1 < preParts.length; pi += 2) {
@@ -907,6 +913,14 @@
             syncHeaders, syncBody,
             '', '', 'cors', 'follow', _zwWithCreds ? 'include' : 'same-origin');
           var syncProbe = _makeResponseFromWire(syncWire);
+          // net-api M2：响应头值含 NUL → 同步 send 同步抛 NetworkError（xhr.spec
+          // send() handle errors：async false 下错误同步抛——headers-normalize-
+          // response NUL 族 assert_throws_dom 面；__zwFetchErrorTag 窄化识别，其余
+          // 错误维持既有 error 事件语义）。
+          // https://xhr.spec.whatwg.org/#the-send()-method
+          if (syncProbe.__zwFetchErrorTag === 'header-value-nul') {
+            throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
+          }
           var syncLoc = null;
           if (_zwFetchRedirectStatus(syncProbe.status) && syncProbe.headers &&
               typeof syncProbe.headers.get === 'function') {
@@ -936,6 +950,19 @@
                 } catch (_eRtSync) {}
               }, 0);
               return;
+            }
+            // net-api M2：同步终响应（无重定向）跨源 CORS 门——镜像异步终局
+            // _zwFetchApplyFilteredResponse（cors check + cors-filtered 头过滤；
+            // 旧实现直填使跨源响应非 safelisted 头暴露、缺 ACAO 也可读；重定向
+            // 终跳面仍待 M3 与 fetch redirect 簇同规）。函数内部自判同源直通；
+            // TypeError → 同步抛 NetworkError（xhr.spec sync 错误面）。
+            // https://fetch.spec.whatwg.org/#cors-check
+            // https://fetch.spec.whatwg.org/#concept-filtered-response-cors
+            try {
+              syncProbe = _zwFetchApplyFilteredResponse(syncProbe, syncUrl, 'cors', 'follow',
+                _zwWithCreds ? 'include' : 'same-origin');
+            } catch (_eSyncCors) {
+              throw new (globalThis.DOMException || Error)('Failed to fetch', 'NetworkError');
             }
             self._zwFillFromResponse(syncProbe, null);
             var _rtSyncMeta2 = syncProbe ? syncProbe.__zwRtMeta : null;

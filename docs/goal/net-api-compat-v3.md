@@ -5,10 +5,11 @@
 2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
-零回归 + `.h2.` 排除记账），M2 进行中——websockets interfaces 批次与
-auth 面批次已落（interfaces 74 案 +87P；auth 面 +15P 零回归，fetch auth
-面全绿，xhr auth 12F 五簇归 M3），余 getResponseHeader 响应头控制面/
-CORS preflight 端点扩表
+零回归 + `.h2.` 排除记账），**M2 完成**——websockets interfaces 批次
+（74 案 +87P）+ auth 面批次（+15P 零回归）+ getResponseHeader 响应头
+控制面/preflight 端点扩表批次（+33P 零回归）三批全落；批次差额
+（ws interfaces 45F 九簇 + xhr auth 12F 五簇 + `__custom` 排序簇 1F）
+归 M3 复验
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -128,7 +129,8 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   正式排除（26 子测试移出分母）；redirect 残余 99F+1T 七簇归 M3
   （referrer 63 / mode 11 / origin 10 / method 9 / escape 4 /
   back-to-original 2 / keepalive 1T），xhr redirect 引擎缺口并簇 M3。
-- **M2（进行中，[ws interfaces 批次档](net-api-compat-v3/evidence/2026-11-06-m2-ws-interfaces-batch.md)）**：
+- **M2 ✅**（三批次全落，批次差额随 M3 复验）：
+  **ws interfaces 批次**（[证据档](net-api-compat-v3/evidence/2026-11-06-m2-ws-interfaces-batch.md)）：
   websockets/interfaces 74 案导入（+132 子测试 88P/45F，全量 A/B
   changed 0 零回归）+ ws_fixture `/echo_raw`（裸字节回写，保留 opcode
   注入面）与 `/sleep_10_v13`（握手延迟 10s）两新端点——close-connecting
@@ -147,16 +149,29 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   vacuous P）零 P→F 外溢，+15P 至 13,005P；fetch auth 面全绿 7P，
   xhr auth 12F 五簇（URL/open() userinfo 凭据 8F / 401 挑战会话 2F /
   跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）归 M3。
-  余 M2：getResponseHeader 响应头控制面 / CORS preflight 端点扩表。
+  **getResponseHeader 响应头控制面 + preflight 端点扩表批次 ✅**
+  （2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m2-response-headers-preflight-batch.md)）：
+  fixture 十一端点（headers.py / chunked.py / headers.asis / parse-headers.py /
+  safelisted-request/response-headers / no-custom-header-on-preflight /
+  lowercase / sorted / headers-origin / invalid-status）+ 引擎三刀
+  （E1 响应头值含 NUL → 网络错误、E2 sync preflight 最小头集镜像异步
+  M4-S26、E6 sync 终响应跨源 cors check + cors-filtered 过滤）。
+  xhr 面定向 +33P（33 F→P 零 P→F：normalize 15 / getresponseheader 族 5 /
+  preflight 端点 7 / E6 语义暴露 6）；全量 A/B 分母 14,692 不变
+  changed 33 零外溢，13,031P → **13,064P**；invalid-status ×3 与 status/
+  unsent-opened ×2 vacuous P 转真实 P；批次门 97.4%（38/39）差一线，
+  `__custom` 排序簇 1F（wpt.fyi Firefox 7/7 定谳的浏览器头序 vs 引擎
+  字节升序）挂账随 M3 复验。
 - **M3**：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
   xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
   method 9F / location-escape 4F 等）+ ws interfaces 九簇（WebIDL 常量/
   属性描述符基建、EventTarget dispatchEvent、fail-connection 语义等）+
   xhr auth 五簇（URL/open() userinfo 凭据解析 8F / 401 挑战流 UA 会话 2F /
   跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）+
-  xhr 在账失败簇收敛（formdata/submitter 簇 4F + overrideMimeType
-  Shift-JIS 接线 1F + cookies.http.html 挂起 1T；permissions-policy 2F
-  策略面排除）（DC-3）。
+  getAllResponseHeaders 排序簇（浏览器头序 vs 引擎字节升序，1F）+
+  重定向终跳 sync cors-filter 同规 + xhr 在账失败簇收敛（formdata/submitter
+  簇 4F + overrideMimeType Shift-JIS 接线 1F + cookies.http.html 挂起 1T；
+  permissions-policy 2F 策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

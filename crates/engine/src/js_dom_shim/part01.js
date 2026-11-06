@@ -3789,9 +3789,15 @@
     return found == null ? '' : String(found);
   }
   // 旧 / 错误路径：body 为裸文本（status 200）或 `__zw_fetch_error:` 前缀（ok:false）。增 headers:{}（向后兼容）。
+  // net-api M2：错误 wire 的 tag（`__zw_fetch_error:` 后段）挂 `__zwFetchErrorTag`——
+  // 同步 XHR 对特定错误（响应头 NUL）须同步抛 NetworkError（xhr.spec send handle
+  // errors：async false → throw），靠 tag 窄化识别，其余错误语义不变。
   function _makeResponse(body) {
     var ok = typeof body === 'string' && body.indexOf('__zw_fetch_error') !== 0;
+    var errTag = (!ok && typeof body === 'string' && body.indexOf('__zw_fetch_error:') === 0)
+      ? body.slice('__zw_fetch_error:'.length) : null;
     return {
+      __zwFetchErrorTag: errTag,
       ok: ok,
       status: ok ? 200 : 0,
       statusText: ok ? 'OK' : 'Error',
@@ -3824,6 +3830,22 @@
     var headersWire = rest.slice(p2 + 1, p3);
     var body = rest.slice(p3 + 1); // 末字段，可含 \x1f
     var headers = _parseHeadersWire(headersWire);
+    // net-api M2：响应头值含 NUL → 网络错误（fetch spec HTTP-network fetch 头解析
+    // failure → network error；headers-normalize-response NUL 族同步 send() 断言
+    // NetworkError）。`\x0B`/`\x0C` 竖直空白合法（headers-some-are-empty 在账通过
+    // 面），仅 NUL 拒。
+    // https://fetch.spec.whatwg.org/#http-network-fetch
+    // https://fetch.spec.whatwg.org/#concept-header-list-decode-split
+    for (var _nvK in headers) {
+      if (!Object.prototype.hasOwnProperty.call(headers, _nvK)) continue;
+      var _nvV = headers[_nvK];
+      var _nvVals = Array.isArray(_nvV) ? _nvV : [_nvV];
+      for (var _nvI = 0; _nvI < _nvVals.length; _nvI++) {
+        if (String(_nvVals[_nvI]).indexOf('\0') >= 0) {
+          return _makeResponse('__zw_fetch_error:header-value-nul');
+        }
+      }
+    }
     var finalUrl = _takeHeaderValue(headers, 'x-zero-final-url');
     var responseType = _takeHeaderValue(headers, 'x-zero-response-type') || 'default';
     var bodyError = _takeHeaderValue(headers, 'x-zero-body-error');

@@ -8604,6 +8604,368 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(Vec::new()),
                 });
             }
+            if clean.starts_with("xhr/") && clean.ends_with("/headers.py") {
+                // net-api M2 fixture：xhr/resources/headers.py（上游逐字等价——
+                // getResponseHeader 响应头控制面：同名双值 comma join、空值、UTF-8
+                // 字节值（上游 `u"…".encode("utf-8")` 的 ByteString 头值视图即三字符
+                // U+00E2 U+0080 U+00A6）与 Set-Cookie 隐藏面；Server/Date 为 wptserve
+                // 每响应自动头，fixture 固定合法 IMF-fixdate——server-date 案仅断言
+                // 非 null）。
+                let mut headers: Vec<(String, String)> = vec![
+                    ("content-type".into(), "text/plain".into()),
+                    ("x-custom-header".into(), "test".into()),
+                    ("set-cookie".into(), "test".into()),
+                    ("set-cookie2".into(), "test".into()),
+                    ("x-custom-header-empty".into(), String::new()),
+                    ("x-custom-header-comma".into(), "1".into()),
+                    ("x-custom-header-comma".into(), "2".into()),
+                    ("x-custom-header-bytes".into(), "\u{00e2}\u{0080}\u{00a6}".into()),
+                    ("server".into(), "SimpleHTTP/0.6 Python/3.12".into()),
+                    ("date".into(), "Sun, 06 Nov 1994 08:49:37 GMT".into()),
+                ];
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "TEST".to_string(),
+                    body_bytes: Some(b"TEST".to_vec()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/chunked.py") {
+                // net-api M2 fixture：xhr/resources/chunked.py（上游语义等价——Trailer
+                // 声明 + chunked 帧体；runner 管道无传输层，体直给解帧后拼接串，
+                // trailer 头不并入响应头——chunked-trailer 案断言 Trailer 可见而
+                // X-Test-Me 不可见）。
+                let body = "First chunk\r\nSecond chunk\r\nYet another (third) chunk\r\n\
+                            Yet another (fourth) chunk\r\n";
+                let mut headers: Vec<(String, String)> = vec![
+                    ("transfer-encoding".into(), "chunked".into()),
+                    ("trailer".into(), "X-Test-Me".into()),
+                    ("content-type".into(), "text/plain".into()),
+                ];
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.to_string(),
+                    body_bytes: Some(body.as_bytes().to_vec()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/parse-headers.py") {
+                // net-api M2 fixture：xhr/resources/parse-headers.py（上游逐字等价——
+                // ?my-custom-header= 回显为响应头；头值 HTTP 语义 OWS trim（wptserve
+                // 头解析层行为，等价 JS val.trim() 断言）；值含 NUL 原样下发，由引擎
+                // 响应头 NUL 门转网络错误（headers-normalize-response NUL 族同步
+                // send() 断言 NetworkError）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let val = wpt_query_value(query, "my-custom-header").unwrap_or_default();
+                let trimmed = val.trim_matches(|c| c == ' ' || c == '\t');
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("my-custom-header".into(), trimmed.to_string()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-basic-cors-safelisted-response-headers.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
+                // response-headers.py（上游逐字等价——safelisted 七头 + 非 safelisted
+                // x-test 过滤断言面 + ACAO *；content-length 为 wptserve 每响应自动头，
+                // 体 33 字节）。
+                let body = "PASS: Cross-domain access allowed.";
+                let mut headers: Vec<(String, String)> = vec![
+                    ("access-control-allow-origin".into(), "*".into()),
+                    ("cache-control".into(), "no cache".into()),
+                    ("content-language".into(), "en".into()),
+                    ("content-length".into(), "33".into()),
+                    ("content-type".into(), "text/plain".into()),
+                    ("expires".into(), "Fri, 30 Oct 1998 14:19:41 GMT".into()),
+                    ("last-modified".into(), "Tue, 15 Nov 1994 12:45:26 GMT".into()),
+                    ("pragma".into(), "no-cache".into()),
+                    ("x-test".into(), "foobar".into()),
+                ];
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.to_string(),
+                    body_bytes: Some(body.as_bytes().to_vec()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-basic-cors-safelisted-request-headers.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
+                // request-headers.py（上游逐字等价——safelisted 请求头跨源 POST 直达
+                //（非 POST 拒 400 = 简单请求不预检），回显四头值（缺 <None>）+ ACAO
+                // 回显 + ACAC true + Cache-Control no-store）。
+                let req_header = |name: &str| -> Option<String> {
+                    req.headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case(name))
+                        .map(|(_, v)| v.clone())
+                };
+                let body = format!(
+                    "Accept: {}\nAccept-Language: {}\nContent-Language: {}\nContent-Type: {}\n",
+                    req_header("accept").unwrap_or_else(|| "<None>".into()),
+                    req_header("accept-language").unwrap_or_else(|| "<None>".into()),
+                    req_header("content-language").unwrap_or_else(|| "<None>".into()),
+                    req_header("content-type").unwrap_or_else(|| "<None>".into()),
+                );
+                let origin = req_header("origin").unwrap_or_default();
+                let mut headers: Vec<(String, String)> = vec![
+                    ("cache-control".into(), "no-store".into()),
+                    ("access-control-allow-credentials".into(), "true".into()),
+                    ("access-control-allow-origin".into(), origin),
+                    ("content-type".into(), "text/plain".into()),
+                ];
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/") && clean.ends_with("/no-custom-header-on-preflight.py") {
+                // net-api M2 fixture：xhr/resources/no-custom-header-on-preflight.py
+                //（上游逐字等价——OPTIONS 不得携带自定义头 x-test：携 → 400 FAIL，
+                // 否则 stash[token]=PASS；GET 携 x-test 回显 stash（take 语义，缺省
+                // Uninitialized），否则 400；ACAO * + ACAH x-test + Max-Age 0 恒设）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let token = wpt_query_value(query, "token").unwrap_or_default();
+                let has_x_test = req
+                    .headers
+                    .iter()
+                    .any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+                let mut headers: Vec<(String, String)> = vec![
+                    ("access-control-allow-origin".into(), "*".into()),
+                    ("access-control-allow-headers".into(), "x-test".into()),
+                    ("access-control-max-age".into(), "0".into()),
+                ];
+                let (status, body) = if req.method == "OPTIONS" {
+                    if has_x_test {
+                        (400, "FAIL: Invalid header in preflight request.".to_string())
+                    } else {
+                        if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+                            stash.insert(token, "PASS".to_string());
+                        }
+                        (200, String::new())
+                    }
+                } else if has_x_test {
+                    let state = if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+                        stash.remove(&token).unwrap_or_else(|| "Uninitialized".to_string())
+                    } else {
+                        "Uninitialized".to_string()
+                    };
+                    (200, state)
+                } else {
+                    (400, "FAIL: X-Test header missing in request".to_string())
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-preflight-request-header-lowercase.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+                // header-lowercase.py（上游逐字等价——OPTIONS 臂 ACRH 逗号表含 x-test
+                // → ACAH X-Test（大写名授权，请求侧匹配须大小写不敏感），否则 400；
+                // GET 臂携 x-test → PASS，否则 400；ACAO * + Max-Age 0 + Cache-Control
+                // no-store 恒设）。
+                let mut headers: Vec<(String, String)> = vec![
+                    ("cache-control".into(), "no-store".into()),
+                    ("access-control-allow-origin".into(), "*".into()),
+                    ("access-control-max-age".into(), "0".into()),
+                ];
+                let acrh = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                    .map(|(_, v)| v.clone());
+                let (status, body) = if req.method == "OPTIONS" {
+                    let listed = acrh
+                        .map(|v| {
+                            v.split(',')
+                                .map(|s| s.trim())
+                                .any(|s| s.eq_ignore_ascii_case("x-test"))
+                        })
+                        .unwrap_or(false);
+                    if listed {
+                        headers.push(("access-control-allow-headers".into(), "X-Test".into()));
+                        (200, String::new())
+                    } else {
+                        (400, String::new())
+                    }
+                } else {
+                    let has_x_test = req
+                        .headers
+                        .iter()
+                        .any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+                    if has_x_test {
+                        (200, "PASS".to_string())
+                    } else {
+                        (400, String::new())
+                    }
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-preflight-request-header-sorted.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+                // header-sorted.py（上游逐字等价——OPTIONS 臂 ACRH 须精确等于五头排序
+                // 串（无空格 `,` 连接），不等 → 400；GET 臂携 x-custom-s → PASS，否则
+                // 400 FAIL；ACAO 回显 origin + Cache-Control no-store 恒设）。
+                const SORTED_HEADERS: &str =
+                    "x-custom-s,x-custom-test,x-custom-u,x-custom-ua,x-custom-v";
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let mut headers: Vec<(String, String)> = vec![
+                    ("cache-control".into(), "no-store".into()),
+                    ("access-control-allow-origin".into(), origin),
+                ];
+                let acrh = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                    .map(|(_, v)| v.clone());
+                let (status, body) = if req.method == "OPTIONS" {
+                    headers.push(("access-control-max-age".into(), "0".into()));
+                    headers.push(("access-control-allow-headers".into(), SORTED_HEADERS.into()));
+                    if acrh.as_deref() == Some(SORTED_HEADERS) {
+                        (200, String::new())
+                    } else {
+                        (400, String::new())
+                    }
+                } else {
+                    let has_x_custom_s = req
+                        .headers
+                        .iter()
+                        .any(|(n, _)| n.eq_ignore_ascii_case("x-custom-s"));
+                    if has_x_custom_s {
+                        (200, "PASS".to_string())
+                    } else {
+                        (400, "FAIL".to_string())
+                    }
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-preflight-request-headers-origin.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+                // headers-origin.py（上游逐字等价——OPTIONS 臂 ACRH 含 "origin" → 400
+                //（spec 禁把 origin 列入 ACRH），否则 ACAH x-pass；GET 臂体 = x-pass
+                // 头值回显；ACAO * + Cache-Control no-store 恒设）。
+                let mut headers: Vec<(String, String)> = vec![
+                    ("cache-control".into(), "no-store".into()),
+                    ("access-control-allow-origin".into(), "*".into()),
+                ];
+                let acrh = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+                    .map(|(_, v)| v.clone());
+                let (status, body) = if req.method == "OPTIONS" {
+                    if acrh.map(|v| v.to_lowercase().contains("origin")).unwrap_or(false) {
+                        (
+                            400,
+                            "Error: 'origin' included in Access-Control-Request-Headers"
+                                .to_string(),
+                        )
+                    } else {
+                        headers.push(("access-control-allow-headers".into(), "x-pass".into()));
+                        (200, String::new())
+                    }
+                } else {
+                    let x_pass = req
+                        .headers
+                        .iter()
+                        .find(|(n, _)| n.eq_ignore_ascii_case("x-pass"))
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default();
+                    (200, x_pass)
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: body.clone(),
+                    body_bytes: Some(body.into_bytes()),
+                });
+            }
+            if clean.starts_with("xhr/")
+                && clean.ends_with("/access-control-preflight-request-invalid-status.py")
+            {
+                // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+                // invalid-status.py（上游逐字等价——OPTIONS 臂 ?code= 存在 → 该状态码
+                //（301/400/501 面——非 2xx preflight 响应须网络错误），恒设 Max-Age 1 +
+                // ACAH x-pass；GET 臂 200；ACAO 回显 origin + Cache-Control no-store
+                // 恒设）。
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let code = wpt_query_value(query, "code").and_then(|c| c.parse::<u16>().ok());
+                let origin = req
+                    .headers
+                    .iter()
+                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                let mut headers: Vec<(String, String)> = vec![
+                    ("cache-control".into(), "no-store".into()),
+                    ("access-control-allow-origin".into(), origin),
+                ];
+                let status = if req.method == "OPTIONS" {
+                    headers.push(("access-control-max-age".into(), "1".into()));
+                    headers.push(("access-control-allow-headers".into(), "x-pass".into()));
+                    code.unwrap_or(200)
+                } else {
+                    200
+                };
+                wpt_add_fetch_metadata(&mut headers, req, status);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status,
+                    status_text: wpt_status_text(status).to_string(),
+                    headers,
+                    body: String::new(),
+                    body_bytes: Some(Vec::new()),
+                });
+            }
             if clean.starts_with("xhr/") && clean.ends_with("/echo-content-cors.py") {
                 // net-api M4-S22 fixture：xhr/resources/echo-content-cors.py（上游行为
                 // 等价——ACAO/ACAH/ACAM 回显（?origin= 参数优先于请求头——上游同型怪癖）
@@ -9101,6 +9463,7 @@ fn wpt_data_fetch_handler_with_stash(
                     }
                     "headers-double-empty.asis" => "HTTP/1.1 444 HI\ndouble-trouble:\ndouble-trouble:\n",
                     "headers-basic.asis" => "HTTP/1.1 280 HELLO\nfoo-test: 1\nfoo-test: 2\nfoo-test: 3\n",
+                    "headers.asis" => "HTTP/1.1 200 YAYAYAYA\nfoo-TEST: 1\nFOO-test: 2\n__Custom: token\nALSO-here: Mr. PB\newok: lego\n",
                     "headers-some-are-empty.asis" => {
                         "HTTP/1.0 200 MEH\nHEYA:\t \nHEYA: \u{000B}\u{000C}\nHEYA: 1\t\nHEYA:\nHEYA:\t\nHEYA: \t2\n"
                     }
@@ -10226,11 +10589,15 @@ fn wpt_status_text(status: u16) -> &'static str {
     match status {
         200 => "OK",
         206 => "Partial Content",
+        // net-api-compat-v3 M2：invalid-status preflight 端点 code 面
+        //（301/400/501 reason phrase，wptserve 同源）。
+        301 => "Moved Permanently",
         // net-api-compat-v3 M2：fetch/api/resources/authentication.py 401 臂
         //（上游 wptserve reason phrase）。
         401 => "Unauthorized",
         404 => "Not Found",
         500 => "Internal Server Error",
+        501 => "Not Implemented",
         _ => "",
     }
 }
