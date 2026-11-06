@@ -8,11 +8,12 @@
 零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
 ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收口
 （99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P）+
-getAllResponseHeaders 排序簇收口（1F → 0F，legacy-uppercased 比较器定谳）
-累计至 **13,224P** 零回归，changed 全 F→P，
-[证据档](net-api-compat-v3/evidence/2026-11-06-m3-getallresponseheaders-sort.md)；
-M3 余项：重定向终跳 sync cors-filter 同规 +
-xhr 在账失败簇 + keepalive 1T
+getAllResponseHeaders 排序簇收口（1F → 0F，legacy-uppercased 比较器定谳）+
+send-redirect-to-cors 八簇收口（8F → 0F，fixture 缺口归因修正——
+「sync cors-filter 同规」在账标签证伪，引擎语义本已齐备）累计至
+**13,232P** 零回归，changed 全 F→P，
+[证据档](net-api-compat-v3/evidence/2026-11-07-m3-send-redirect-to-cors-fixture.md)；
+M3 余项：xhr 在账失败簇 + keepalive 1T
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -215,6 +216,17 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   14,692 行不变，changed 1 全 F→P 零 P→F 零 T 变化）。
   余项：重定向终跳 sync cors-filter 同规 +
   xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
+  cookies 1T + redirect-keepalive 1T）（DC-3）。
+  **send-redirect-to-cors 八簇 ✅**（2026-11-07，[证据档](net-api-compat-v3/evidence/2026-11-07-m3-send-redirect-to-cors-fixture.md)）：
+  testharness.rs corsenabled.py fixture 两处（`?safelist_content_type` 追加
+  第二条 ACAH content-type——上游逐字核对补齐；`x-request-data` 回显回落文本
+  体 `body`——fetch_bridge 文本/二进制互斥契约），**零引擎改动**。逐跳请求
+  探针归因：在账「重定向终跳 sync cors-filter 同规」标签证伪——引擎
+  preflight/redirect/cors-filter 语义本已齐备（期望 0 的对称案全绿互证），
+  8F 全部为 fixture 缺口；跨案状态污染假设经最小序列复刻页排除。定向
+  send-redirect-to-cors 23/23；全量 A/B 13,224 → **13,232P**（+8P，分母
+  14,692 行不变，changed 8 全 F→P 零 P→F 零 T 变化）。
+  余项：xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
   cookies 1T + redirect-keepalive 1T）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 

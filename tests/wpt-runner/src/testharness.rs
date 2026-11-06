@@ -9121,6 +9121,14 @@ fn wpt_data_fetch_handler_with_stash(
                 if delay_ms > 0 {
                     std::thread::sleep(std::time::Duration::from_millis(delay_ms));
                 }
+                // net-api M3：上游 `?safelist_content_type` → **追加第二条**
+                // `Access-Control-Allow-Headers: content-type`（上游逐字等价补齐——
+                // wpt corsenabled.py safelist_content_type 分支；同名多实例经 Headers
+                // get 合并「x-test, x-foo, content-type」，preflight ACAH 名单即含
+                // content-type。send-redirect-to-cors safelist 族显式 CT 断言面）。
+                if wpt_query_value(query, "safelist_content_type").is_some() {
+                    headers.push(("access-control-allow-headers".into(), "content-type".into()));
+                }
                 let req_header = |name: &str| -> Option<String> {
                     req.headers
                         .iter()
@@ -9146,9 +9154,14 @@ fn wpt_data_fetch_handler_with_stash(
                 ));
                 headers.push((
                     "x-request-data".into(),
+                    // net-api M3：上游 `request.body` 回显**任意**体（fetch_bridge 契约
+                    // 文本体在 `body`、二进制体在 `body_bytes` 互斥）——旧实现只读
+                    // body_bytes，文本体（XHR send(string)/fetch body string）回显空串
+                    //（send-redirect-to-cors 307/308 body 断言面）。
                     req.body_bytes
                         .as_ref()
                         .map(|b| String::from_utf8_lossy(b).into_owned())
+                        .or_else(|| req.body.clone())
                         .unwrap_or_default(),
                 ));
                 headers.push(("content-type".into(), "text/plain".into()));
