@@ -5,13 +5,17 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（237）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（241）
 
+- 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
+- 2026-11-07 [批脚本 md5 守卫快照须落构建后，脚本起点快照会误标二进制身份](bugs/2026-11/2026-11-07-batch-md5-guard-snapshot-timing.md) — tests/wpt-runner
 - 2026-11-06 [WebSocket fail 面 error 派发：err 标记位与派发门共用 flag 导致派发永久跳过](bugs/2026-11/2026-11-06-ws-deferred-error-dispatch-flag-short-circuit.md) — engine
 - 2026-11-06 [WPT runner 完成竞态：module script unhandled rejection 上报与结果收集差一 tick](bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md) — zero-engine, tests/wpt-runner
 - 2026-11-06 [真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）](bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md) — engine, js_dom_shim
 - 2026-11-06 [XHR 同步路径 preflight 头集与响应过滤的异步镜像漂移](bugs/2026-11/2026-11-06-sync-xhr-preflight-header-drift.md) — zero-engine（js_dom_shim part01/part03）
 - 2026-11-06 [setTagName 先插后删换型使持有引用 detached，过滤判据恒假](bugs/2026-11/2026-11-06-settagName-detached-reference-breaks-filters.md) — engine
+- 2026-11-06 [响应头值是字节序列不是 Unicode 文本——fixture percent-decode 语义两态](bugs/2026-11/2026-11-06-response-header-values-are-byte-sequences.md) — engine, tests/wpt-runner
+- 2026-11-06 [探针判读必须覆盖目标语料行族全部断言面，而非只核树](bugs/2026-11/2026-11-06-probe-assert-full-row-family.md) — engine
 - 2026-11-06 [runner 日志混入 NUL 字节后 grep 静默空输出——统计与 A/B 前先 Python 解析](bugs/2026-11/2026-11-06-nul-byte-in-runner-logs-silences-grep.md) — wpt-runner, testing
 - 2026-11-06 [wpt-runner flat stash 单键与上游多键 dict 语义冲突——多端点共用 token 的 fixture 须键命名空间化](bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md) — wpt-runner
 - 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
