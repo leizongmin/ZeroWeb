@@ -113,6 +113,17 @@ batch-dps-mt（systemd 脱离，12:36:44 起，head b116a3b53，release 31.01s
   该分项未独立复核不作门禁依据（tmpfs 曾被写满致并发席输出丢失，13:19
   恢复 3%；事故存证同 ⑮ 盘满口径）。判读账 enginelib-retry-VERDICT.txt
   （原始日志已删，canonical 行 + start 头在案）。
+- **enginelib 终证补跑（本席 retry2，systemd zw-dps-enginelib2b，
+  13:43:18 起，head 7a75de463 含 dps 刀全祖先）**：solo 窗口同入口
+  `make guarded-test` 全账完走 2m23s，ENGINELIB3-DONE 标记 + rc=2 既红带
+  ——**81 个测试二进制全扫，恰一个 FAILED 面（engine lib 3766P/5F）**，
+  五红逐名独立提取恒既知名册：p56_adopted_snapshot_restore_hook_keeps_
+  page_value / test_p99s_rule_style_preserves_custom_property_case /
+  test_stylesheet_add_rule_remove_rule_r3276 / test_stylesheets_rule_
+  style_r2810 / test_stylesheets_write_r2809（全 CSSOM/js_dom_bridge
+  域，零涉 dps JS 改动面）。log 683KB 完整在案
+  /tmp/zw-dps/enginelib-retry2.log。首跑孤儿收官 + 代跑 canonical 行 +
+  retry2 全账三源互证，enginelib 门禁收口。
 
 ## ⑥ 残债更新
 
