@@ -4723,6 +4723,53 @@
                   && typeof globalThis.__zw_ce_delete_apply === 'function') {
                 try { globalThis.__zw_ce_delete_apply(cmd === 'forwarddelete'); } catch (_eDel) {}
               }
+              // preservesOverrides 快照包裹（fbq 轮 mt 终判 P2F=64 修复 2026-11-07；
+              // 第九刀扩展同日：mt 残 40 键 qV(style)-after 结构命令族普查归因）：
+              // spec preservesOverrides: true 的结构命令（vendored 各 action 头：
+              // formatBlock/indent/hr/img :6577/:7052/:7141/:7316 + iol/iul/
+              // insertParagraph/insertLineBreak/justify 四向/insertHTML）apply 变更
+              // 选区（wrap 重锚/插入重锚/split 重锚）后 override 惰性 staleness 判定
+              // 把 stored range 快照判陈旧 → 下一次 qV/qS 读误清 override（值命令
+              // setup + 结构命令链形 queryCommandValue after 全族红——fbq4 面已由
+              // mt2 VERDICT OK 实证收口）。F6 delete 刀同款模式（part01f
+              // __zw_ce_delete_apply 先例）：动作前原始快照、落定后回写 + stored
+              // range 重锚到当前选区（_zwVaReanchorOverrides），override 存储本身
+              // document 级不动。
+              // cmd 门边界（final2 回归刀教训）：delete/forwarddelete 不裹——delete
+              // preservesOverrides=false 本应清；forwarddelete spec true 但 F6 apply
+              // 自管快照/重锚（part01f delete/ipara 先例），外层双重处理即 final2
+              // 43 行 delete+inserttext compare 翻红同病；inserttext/五值命令/style
+              // 命令 spec false 自记自还（vendored recordCurrentOverrides/
+              // restoreStatesAndValues），裹之即 final2 3 行 styleWithCSS 形翻红；
+              // outdent spec true 但无实应用臂（零变更无重锚）不需要。包裹点在
+              // delete 臂后、结构命令臂前：insertparagraph 臂的 ipara 分支已自管
+              //（part01f :1533 同款 finally 块），外层与内层快照同态、PutRaw+
+              // Reanchor 幂等；fallback 分支（paragraph_split_at）与 ilb/justify/
+              // iol/iul/inserthtml 臂裸奔 = mt 残 40 键 qV 族红源。
+              var cmdPresOv = (cmd === 'formatblock' || cmd === 'indent'
+                || cmd === 'inserthorizontalrule' || cmd === 'insertimage'
+                || cmd === 'insertorderedlist' || cmd === 'insertunorderedlist'
+                || cmd === 'insertparagraph' || cmd === 'insertlinebreak'
+                || cmd === 'justifycenter' || cmd === 'justifyleft'
+                || cmd === 'justifyright' || cmd === 'justifyfull'
+                || cmd === 'inserthtml');
+              var presOvSnap = cmdPresOv
+                && typeof _zwVaOverridesTakeRaw === 'function'
+                ? _zwVaOverridesTakeRaw() : null;
+              // typing 包裹态同包裹（fbq mt 终判 P2F=24 状态命令面补刀，2026-11-07）：
+              // hr/img apply 尾部 sel.collapse → _zwSync 清 __zwTypingTags，而 Chrome
+              // preservesOverrides 命令不清 typing style——multitest `[["bold",""],
+              // ["inserthorizontalrule",""]]` 录音 qS(bold)-after=true、caret 裸位
+              // `foo<hr>{}bar`（无 b 壳、态存乎 typing carrier）实证；fb/indent 臂
+              // 不经 _zwSync（对 range 原位写）故状态行恒绿。null 保持式条件回写
+              //（apply 面只清不设，空态保持空）；cmd 门保证 delete（规范清 typing
+              // carrier）/inserttext（规范更新 carrier）的 typing 语义零接触
+              //（final2 44 行 delete+inserttext compare + 3 行 styleWithCSS×typing
+              // 形翻红实证）。
+              var presTt = cmdPresOv && Array.isArray(globalThis.__zwTypingTags)
+                ? globalThis.__zwTypingTags.slice() : null;
+              var presTtoff = cmdPresOv && Array.isArray(globalThis.__zwTypingTagsOff)
+                ? globalThis.__zwTypingTagsOff.slice() : null;
               // R3254-M3 切片 5 → F6 后继（2026-11-02）：insertParagraph 混合
               // 派发——嵌套单行容器面走忠实移植（part01f `__zw_ce_ipara_apply`：
               // deleteSelection 前导 + 单行容器爬升 + 非 SLC wrap / pre br /
@@ -4812,43 +4859,6 @@
               // 四语料独立页 + multitest Family A 241 行红。变更核心在 part01g
               // （formatBlock action/value + indentNodes + hr/img action 忠实移植，
               // 复用 _zwJus*/_zwList*/_zwDel* 机具）。事件口径同上 inserttext 臂。
-              // preservesOverrides 快照包裹（fbq 轮 mt 终判 P2F=64 修复，2026-11-07）：
-              // 四命令 spec 均 preservesOverrides: true（vendored :6577/:7052/:7141/
-              // :7316 各 action 头），但 apply 变更选区（wrap 重锚/hr/img 插入重锚）
-              // 后 override 惰性 staleness 判定把 stored range 快照判陈旧 → 下一次
-              // qV/qS 读误清 override（五值命令 setup + 四命令链形 queryCommandValue
-              // after 全族红）。F6 delete 刀同款模式（part01f __zw_ce_delete_apply
-              // 先例）：动作前原始快照、落定后回写 + stored range 重锚到当前选区
-              // （_zwVaReanchorOverrides），override 存储本身 document 级不动。
-              // cmd 限定收窄（终判批 P2F 回归刀 2026-11-07）：包裹若无 cmd 门，
-              // delete/inserttext/bold 等核内自管 override 语义的 exec（vendored
-              // recordCurrentOverrides/restoreStatesAndValues 自记自还；delete
-              // preservesOverrides=false 本应清）也被外层快照+reanchor 双重处理
-              // ——mt 43 行 delete+inserttext compare / 3 行 styleWithCSS 形翻红、
-              // fb 4 行 qV(dps) before 翻红实证；限定后回写块靠 fbqOvSnap null 门
-              // 自动限定，非四命令 exec 零接触。
-              var cmdIsFbq4 = (cmd === 'formatblock' || cmd === 'indent'
-                || cmd === 'inserthorizontalrule' || cmd === 'insertimage');
-              var fbqOvSnap = cmdIsFbq4
-                && typeof _zwVaOverridesTakeRaw === 'function'
-                ? _zwVaOverridesTakeRaw() : null;
-              // typing 包裹态同包裹（fbq mt 终判 P2F=24 状态命令面补刀，2026-11-07）：
-              // hr/img apply 尾部 sel.collapse → _zwSync 清 __zwTypingTags，而 Chrome
-              // preservesOverrides 命令不清 typing style——multitest `[["bold",""],
-              // ["inserthorizontalrule",""]]` 录音 qS(bold)-after=true、caret 裸位
-              // `foo<hr>{}bar`（无 b 壳、态存乎 typing carrier）实证；fb/indent 臂
-              // 不经 _zwSync（对 range 原位写）故状态行恒绿。F6 delete 刀同款两阶段
-              //（part01f __zw_ce_delete_apply 先例：「值命令族 Fix A 已复、状态命令
-              // 族仍红」）。null 保持式条件回写（apply 面只清不设，空态保持空）。
-              // typing 半边同收 cmd 门（核验方 04:20 警示采纳）：快照/回写只随四臂
-              // 触发——delete（规范清 typing carrier）/inserttext（规范更新 carrier）
-              // 的 typing 语义不得被外层回滚取消（final2 44 行 delete+inserttext
-              // compare + 3 行 styleWithCSS×typing 形翻红实证）；null 保持式回写
-              // 自动限定（非四命令零接触）。
-              var fbqTt = cmdIsFbq4 && Array.isArray(globalThis.__zwTypingTags)
-                ? globalThis.__zwTypingTags.slice() : null;
-              var fbqTtoff = cmdIsFbq4 && Array.isArray(globalThis.__zwTypingTagsOff)
-                ? globalThis.__zwTypingTagsOff.slice() : null;
               if (cmd === 'formatblock' && rng2 && host2
               && typeof globalThis.__zw_ce_fb_apply === 'function') {
                 try { globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
@@ -4865,12 +4875,12 @@
               && typeof globalThis.__zw_ce_img_apply === 'function') {
                 try { globalThis.__zw_ce_img_apply(arguments[2]); } catch (_eImg) {}
               }
-              if (fbqOvSnap) {
-                _zwVaOverridesPutRaw(fbqOvSnap);
+              if (presOvSnap) {
+                _zwVaOverridesPutRaw(presOvSnap);
                 if (typeof _zwVaReanchorOverrides === 'function') _zwVaReanchorOverrides();
               }
-              if (fbqTt) globalThis.__zwTypingTags = fbqTt;
-              if (fbqTtoff) globalThis.__zwTypingTagsOff = fbqTtoff;
+              if (presTt) globalThis.__zwTypingTags = presTt;
+              if (presTtoff) globalThis.__zwTypingTagsOff = presTtoff;
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
               // 现解析（handler 移选到第二 host → input target = 第二 host）。
