@@ -109,9 +109,25 @@
   落地后重建 knee/gethtml 复测；队列折叠（apply 全队列 → dom_html 换代 → 清
   队列，R348 重绑同款语义）保留为兜底。
 
+## ×8 基线补记（t8c 落地前，R350「放宽超时无解」定量收尾）
+
+- **gethtml ×8**（script 窗 720s，页预算 8×30s=240s）：3,678P/0F + 页级
+  Timeout，截于 3,679/4,5xx（82%）。截点反推斜率 0.0355 ms/test²，与 ×1 knee
+  0.0383 **跨乘数不变**（同一内容面）——约束面自 90s 脚本窗（×1）迁移至页预算
+  （×8）。全量 4,506 行需 ~355s 窗，乘数路径到此为止，病根修复（残面 +
+  t8c 索引）是唯一路径。
+- **opt-in.html 当前态**：109P/9F/1T（M2 基线 117F+1P+1T → Batch 1 opt-in
+  语义生效）。残余 9F 小尾：wrapper 查找 ×3 / SR 缺席 ×3 / 静态 disallowed
+  模板应保留 ×1（与 attachment 机制二同根）/ `doc.open` 与 `el.querySelector`
+  API 缺口 ×2。
+- **t8c 状态**：callbacks.rs 增量索引 WIP（+493）未经提交离树，已 stash 为
+  `stash@{0}: m3-residual-wip`（eb2f55add）——刻意保全未落地，残面复测窗口
+  待其 pop+commit 后开启；本流不代 pop（§9）。
+
 ## 修复后预期
 
 - 看门狗随乘已落地：×4 下 gethtml.html 已达 3,417/4,5xx 行且仅 3F（真实
-  referenceTarget 序列化 Fail，簇 C 修复中）；剩余缺口 = 二次累积。
+  referenceTarget 序列化 Fail，簇 C 修复中）；剩余缺口 = 二次累积；×8 页预算
+  约束下 3,679 行（82%）为乘数路径上界（见补记）。
 - ShadowRoot 域 declarative 写路径残面修复后（t8c 落地重建复测验证），×1 页
   预算内应能全量真实上报 ~4,5xx 子测试（现状 ×1 仅 ~2,0xx 行）。
