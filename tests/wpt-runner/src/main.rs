@@ -344,8 +344,9 @@ struct CliOptions {
     jobs: Option<usize>,
     /// 上游 WPT 数据目录。
     wpt_data: Option<String>,
-    /// 渲染媒体类型（DC-12 @media print/screen；R1991）。默认 `Screen`。
-    media_type: zero_css_parser::media_query::MediaType,
+    /// 渲染媒体类型（DC-12 @media print/screen；R1991）。None = 未显式指定（按 case
+    /// 分类——s317 上游 print-reftest 以 print 媒体渲染）；Some 时覆盖 case 分类。
+    media_type: Option<zero_css_parser::media_query::MediaType>,
 }
 
 /// 输出格式。
@@ -414,7 +415,7 @@ fn main() {
         use_gpu: false,
         jobs: None,
         wpt_data: None,
-        media_type: zero_css_parser::media_query::MediaType::Screen,
+        media_type: None,
     };
 
     // 解析选项参数
@@ -467,8 +468,8 @@ fn main() {
                 i += 1;
                 if i < args.len() {
                     match args[i].to_ascii_lowercase().as_str() {
-                        "print" => options.media_type = zero_css_parser::media_query::MediaType::Print,
-                        "screen" => options.media_type = zero_css_parser::media_query::MediaType::Screen,
+                        "print" => options.media_type = Some(zero_css_parser::media_query::MediaType::Print),
+                        "screen" => options.media_type = Some(zero_css_parser::media_query::MediaType::Screen),
                         other => eprintln!("Unknown --media value '{other}' (expected print|screen), ignoring"),
                     }
                 }
@@ -3292,7 +3293,10 @@ fn cmd_reftest(options: &CliOptions, filter: Option<&str>) {
         let mut config = configs[*idx].clone();
         config.viewport_width = options.viewport_width as u32;
         config.viewport_height = options.viewport_height as u32;
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
 
         if options.use_gpu {
             run_reftest_gpu(case, &config)
@@ -3477,7 +3481,10 @@ fn cmd_reftest_upstream(options: &CliOptions, filter: Option<&str>) {
         // 用例尾清防其他渲染路径（GPU 腿复用线程等）残留。
         reftest::set_current_case_doc_url(Some(format!("https://wpt.live/{}", case.id)));
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
@@ -3625,7 +3632,10 @@ fn cmd_layout_dump(options: &CliOptions, filter: Option<&str>) {
 
     for case in &filtered {
         let mut config = case.to_config(options.viewport_width as u32, options.viewport_height as u32);
-        config.media_type = options.media_type;
+        // s317：CLI 未显式 --media 时不覆盖（per-case print-reftest 分类生效）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         config.wpt_root = Some(wpt_data_dir.clone());
         let base_dir = case.base_dir.as_deref();
 
@@ -3803,10 +3813,9 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
         if !oracle_path.exists() {
             return (case.id.clone(), false, None, strict_thresh_pct, false, 0, 0);
         }
-        let config = ReftestConfig {
+        let mut config = ReftestConfig {
             viewport_width: options.viewport_width as u32,
             viewport_height: options.viewport_height as u32,
-            media_type: options.media_type,
             // R4283：与 self-source upstream 路径同口径——配 wpt_root 使
             // /common/reftest-wait.js、rendering-utils.js 可解析，脚本 DOM 变更
             // （waitForAtLeastOneFrame().then(...) 后 rename/remove）在 oracle 渲染中
@@ -3815,6 +3824,11 @@ fn cmd_reftest_oracle(options: &CliOptions, filter: Option<&str>) {
             wpt_root: Some(wpt_data_dir.clone()),
             ..Default::default()
         };
+        // s317：CLI 未显式 --media 时按 Screen 兜底（oracle 对比页走 case.to_config
+        // 的 print 分类面不在此路——本命令按 category 自建 config）。
+        if let Some(mt) = options.media_type {
+            config.media_type = mt;
+        }
         let (test_fb, layout_root, mutated_html) =
             render_to_framebuffer_with_layout_with_base(&case.test_html, "", &config, case.base_dir.as_deref());
         // R57（M3）：canvas oracle A/B 的 canvas 区域对比——DC-3 测的是 canvas 绘制结果，
