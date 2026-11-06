@@ -7,10 +7,11 @@
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
 零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
 ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收口
-（99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P 至
-**13,223P** 零回归，changed 全 F→P，
-[证据档](net-api-compat-v3/evidence/2026-11-06-m3-xhr-auth-clusters.md)）；
-M3 余项：`__custom` 排序簇（1F）+ 重定向终跳 sync cors-filter 同规 +
+（99F+1T → 363P/0F/1T，+102P）+ xhr auth 五簇收口（12F → 0F，+12P）+
+getAllResponseHeaders 排序簇收口（1F → 0F，legacy-uppercased 比较器定谳）
+累计至 **13,224P** 零回归，changed 全 F→P，
+[证据档](net-api-compat-v3/evidence/2026-11-06-m3-getallresponseheaders-sort.md)；
+M3 余项：重定向终跳 sync cors-filter 同规 +
 xhr 在账失败簇 + keepalive 1T
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
@@ -202,6 +203,17 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   基准，cors-no-cred auth8 腿语料标尺反超）；全量 A/B 13,211 → **13,223P**
   （+12P，分母 14,692 行不变，changed 12 全 F→P 零 P→F 零 T 变化）。
   余项：`__custom` 排序簇（1F）+ 重定向终跳 sync cors-filter 同规 +
+  xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
+  cookies 1T + redirect-keepalive 1T）（DC-3）。
+  **getAllResponseHeaders 排序簇 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m3-getallresponseheaders-sort.md)）：
+  part03.js 单刀——序列化排序落实 xhr.spec **legacy-uppercased-byte less than**
+  比较器（名 byte-uppercased 后 byte 比较，`_`=0x5F 恒大于大写字母域，
+  `__custom` 排小写字母名后——与 fetch Headers 迭代面纯 byte 排序两套口径，
+  headers-sorting 族既有绿面零扰动；wpt.fyi「Firefox 7/7 浏览器头序」注记
+  落实为规范文本，M2 批「浏览器头序」假设证伪回退留痕证据档）；定向
+  getallresponseheaders 10/10；全量 A/B 13,223 → **13,224P**（+1P，分母
+  14,692 行不变，changed 1 全 F→P 零 P→F 零 T 变化）。
+  余项：重定向终跳 sync cors-filter 同规 +
   xhr 在账失败簇（formdata/submitter 4F + overrideMimeType Shift-JIS 1F +
   cookies 1T + redirect-keepalive 1T）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。

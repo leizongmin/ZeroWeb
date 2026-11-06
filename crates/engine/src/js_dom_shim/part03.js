@@ -1300,15 +1300,31 @@
       var ln = String(name).toLowerCase();
       return Object.prototype.hasOwnProperty.call(self._zwXhrResponseHeaders, ln) ? self._zwXhrResponseHeaders[ln] : null;
     };
-    // xhr.spec §4.6.5 getAllResponseHeaders：响应头列表逐项 `name: value\r\n` 拼接
-    //（列表序；空值头照序列化——blob-range 的 `content-type: `（type 缺省 Blob）断言面）。
+    // xhr.spec §3.6.5 getAllResponseHeaders：响应头列表逐项 `name: value\r\n` 拼接
+    //（空值头照序列化——blob-range 的 `content-type: `（type 缺省 Blob）断言面）。
+    // 排序 = sort-and-combine 合并后按 **legacy-uppercased-byte less than** 升序：
+    // 名先 byte-uppercased（仅 0x61-0x7A → 0x41-0x5A）再 byte 比较——下划线 0x5F
+    // 不属小写字母域、恒大于大写字母，`__custom` 因此排在小写字母名**之后**
+    //（getallresponseheaders headers.asis 断言 also-here/ewok/foo-test/__custom
+    // 固定序）。与 fetch Headers 迭代面的纯 byte 排序（Fetch §5.1）是两套口径，
+    // 勿合并——headers-sorting 族断 `__custom` 排首，本面反之。
+    // https://xhr.spec.whatwg.org/#legacy-uppercased-byte-less-than
     self.getAllResponseHeaders = function() {
       if (!self._zwXhrResponseHeaders) return '';
-      var out = '';
+      var names = [];
       for (var k in self._zwXhrResponseHeaders) {
         if (Object.prototype.hasOwnProperty.call(self._zwXhrResponseHeaders, k)) {
-          out += k + ': ' + self._zwXhrResponseHeaders[k] + '\r\n';
+          names.push(k);
         }
+      }
+      names.sort(function(a, b) {
+        var A = a.replace(/[a-z]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x20); });
+        var B = b.replace(/[a-z]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0x20); });
+        return A < B ? -1 : (A > B ? 1 : 0);
+      });
+      var out = '';
+      for (var i = 0; i < names.length; i++) {
+        out += names[i] + ': ' + self._zwXhrResponseHeaders[names[i]] + '\r\n';
       }
       return out;
     };
