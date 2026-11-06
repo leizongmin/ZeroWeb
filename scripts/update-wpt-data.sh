@@ -132,6 +132,14 @@
 #     已从上游 wpt 原件按 pin 取件补入 188B（md5 07368e84cb705a96ff176ec45
 #     652a4db；gh api contents 按 wpt pin efcaa5bb87 取件，2026-11-06）——
 #     升级新 ref 后需重新补）
+#   - html/semantics/document-metadata/the-link-element/{stylesheet.css,
+#     resources/stylesheet.css} 缺失（link-rel-attribute-ascii-case-insensitive
+#     .html/notref 与 stylesheet-with-base.html 依赖；s315 勘根定性 ascii-case 页
+#     mismatch 恒败为纯语料缺口（link1/link3 双 404 → test/notref 同白底）、
+#     with-base 页为缺件+`<base>` 基准缺口复合（引擎侧 base 前移同提交）——上游
+#     原件本地补入 36B 红（md5 4952ca73677541df4bacbe83cc3aae99）/ 38B 绿
+#     （md5 56ae6412c0519859b25b032fb77a2270）（raw.githubusercontent wpt master
+#     2026-11-06 取件）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

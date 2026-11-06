@@ -1505,6 +1505,14 @@ impl WebView {
             return (Vec::new(), String::new());
         }
         let base = url::Url::parse(base_url).ok();
+        // s315：`<base href>` 前移基准（HTML document-base-url——文档序首个带 href 的
+        // base；相对 href 按其 join，样式表与脚本既有 `script_effective_base_urls` 面
+        // 对齐）。driving：stylesheet-with-base。页未声明 base（或 join 失败）时维持
+        // 文档 URL 基准——不得清空（zip 对 None 直接得 None 会丢基准）。
+        let base = match (base, zero_engine::extract_document_base_href(html)) {
+            (Some(u), Some(b)) => u.join(&b).ok().or(Some(u)),
+            (base, _) => base,
+        };
         // 每 link 一个桶（按 links 文档序）；@import 子表文本进根 link 桶。
         let mut buckets: Vec<String> = vec![String::new(); links.len()];
         // s89：@import 递归抓取（对齐 async_load `poll_stylesheets` R2411 语义——相对

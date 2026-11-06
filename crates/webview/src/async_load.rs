@@ -727,7 +727,15 @@ impl AsyncPageLoad {
             None => return,
         };
         let links = extract_stylesheet_links(html);
+        // s315：`<base href>` 前移基准（≡ webview `resolve_external_css` 同款——HTML
+        // document-base-url，相对 href 按文档序首个带 href 的 base join）。页未声明
+        // base（或 join 失败）时维持文档 URL 基准——不得清空（zip 对 None 直接得
+        // None 会丢基准）。
         let base = url::Url::parse(&self.url).ok();
+        let base = match (base, zero_engine::extract_document_base_href(html)) {
+            (Some(u), Some(b)) => u.join(&b).ok().or(Some(u)),
+            (base, _) => base,
+        };
         for (href, media) in links {
             // s161（html-semantics M2）media 门：media 非空且非 'all' → 求值全不匹配
             // 不取回不入级联（与 webview `resolve_external_css` 门同款语义/视口）。

@@ -322,10 +322,16 @@ pub(super) fn load_linked_stylesheets(html: &str, base_dir: Option<&Path>) -> St
     let Some(base) = base_dir else {
         return String::new();
     };
+    // s315：`<base href>` 前移基准（HTML document-base-url——文档序首个带 href 的 base；
+    // 相对 href 按其解析而非页面目录，stylesheet-with-base driving）。Path::join 对
+    // 绝对 href 无影响（load_stylesheet_by_href 已先行特判 `/` 前缀）。
+    let base = zero_engine::extract_document_base_href(html)
+        .map(|b| base.join(&b))
+        .unwrap_or_else(|| base.to_path_buf());
 
     let mut merged = String::new();
     for href in extract_stylesheet_hrefs(html) {
-        if let Some(css) = load_stylesheet_by_href(&href, base) {
+        if let Some(css) = load_stylesheet_by_href(&href, &base) {
             if !merged.is_empty() {
                 merged.push('\n');
             }
@@ -427,6 +433,12 @@ pub(super) fn merge_page_css_document_order(
 
     let style_set: std::collections::HashSet<zero_dom::NodeId> =
         doc.get_elements_by_tag_name("style").into_iter().collect();
+    // s315：`<base href>` 前移基准（≡ load_linked_stylesheets 同款）+ 本循环自有
+    // rel/href 门补 type 门（≡ extract 层共判谓词——触发门① 走 extract 已被
+    // type 门过滤，混合 data:/file: link 页循环臂同判防漏）。
+    let base = zero_engine::extract_document_base_href(html)
+        .map(|b| base_dir.join(&b))
+        .unwrap_or_else(|| base_dir.to_path_buf());
     let mut parts: Vec<String> = Vec::new();
     for id in doc.get_elements_by_tag_names(&["style", "link"]) {
         if style_set.contains(&id) {
@@ -436,8 +448,9 @@ pub(super) fn merge_page_css_document_order(
         } else if doc
             .get_attribute(id, "rel")
             .is_some_and(|rel| rel_tokens_include_stylesheet(&rel))
+            && zero_engine::link_type_allows_stylesheet(doc.get_attribute(id, "type").as_deref())
             && let Some(href) = doc.get_attribute(id, "href").filter(|h| !h.is_empty())
-            && let Some(text) = load_stylesheet_by_href(&href, base_dir)
+            && let Some(text) = load_stylesheet_by_href(&href, &base)
         {
             parts.push(text);
         }

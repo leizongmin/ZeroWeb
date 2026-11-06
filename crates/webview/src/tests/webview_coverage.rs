@@ -232,6 +232,39 @@ fn test_fetch_url_external_stylesheet_missing_does_not_break() {
     assert!(result.is_ok(), "missing external CSS must not break navigation");
 }
 
+/// s315：URL 导航路径下 `<base href>` 必须前移外链样式表的解析基准。
+///
+/// page.html 声明 `<base href="/sub/">`，link 用**相对** href `style.css`——只按
+/// base join 才能命中 /sub/style.css（HTML document-base-url）。同时验证无 base
+/// 页不受影响（相对 href 按文档 URL 解析）。driving：stylesheet-with-base（语料
+/// 侧走 runner 路径，本测钉产品 fetch 路径同语义）。
+#[test]
+fn test_fetch_url_stylesheet_base_href_resolution() {
+    let page = "<!DOCTYPE html><html><head><base href=\"/sub/\">\
+                <link rel=\"stylesheet\" href=\"style.css\">\
+                </head><body><div id=\"x\">Hi</div></body></html>";
+    let css = "#x { background-color: rgb(0,128,0); width: 100px; height: 100px; }";
+    let mut files = HashMap::new();
+    files.insert("/page.html".to_string(), page.as_bytes().to_vec());
+    files.insert("/sub/style.css".to_string(), css.as_bytes().to_vec());
+    let server = MiniServer::start(files);
+
+    let mut webview = WebView::new(WebViewConfig::default());
+    let url = format!("{}/page.html", server.base);
+    let result = webview.fetch_url(&url).expect("fetch_url should succeed");
+
+    let has_green = result
+        .primitives
+        .fills
+        .iter()
+        .any(|f| f.color.r == 0 && f.color.g == 128 && f.color.b == 0);
+    assert!(
+        has_green,
+        "base-shifted stylesheet not applied: no pure-green fill found (got {} fills)",
+        result.primitives.fills.len()
+    );
+}
+
 /// 构造一张 3×2 纯绿 RGBA PNG 的字节（用 png 编码器）。
 fn green_3x2_png() -> Vec<u8> {
     use png::{BitDepth, ColorType, Encoder};

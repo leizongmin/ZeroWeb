@@ -10,6 +10,40 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
+/// link `type` 属性候选门（HTML §the-link-element candidate stylesheet）：type 缺失或
+/// 空串 = 无提示照常候选；非空则须规范化（trim → `;` 前参数段剥离 → ASCII 小写）后
+/// 等于 `text/css` 才候选，否则不抓取不应用（chromium 同——`type="application/javascript"`
+/// / 无 `/` 非法 MIME / `text/cssDEF` 变体均不加载）。三个 extract 函数与 webview/
+/// runner 装载路径共判（s315 driving：link-type-attribute match 页）。
+/// https://html.spec.whatwg.org/multipage/links.html#link-type-stylesheet
+pub fn link_type_allows_stylesheet(type_attr: Option<&str>) -> bool {
+    match type_attr {
+        None => true,
+        Some(t) if t.trim().is_empty() => true,
+        Some(t) => t
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .eq_ignore_ascii_case("text/css"),
+    }
+}
+
+/// 文档基准 URL 的 `<base href>` 原始值（HTML §document-base-url：文档序首个带
+/// href 的 base 元素；href 空 = 无效回落文档 URL）。返回 raw value——join 语义由
+/// 调用方按自身基准形态落实（`Url::join` / `Path::join`），engine 不耦合网络。
+/// 既有 `script_effective_base_urls` 同款语义的样式表面（s315 driving：
+/// stylesheet-with-base match 页）。
+/// https://html.spec.whatwg.org/multipage/urls-and-fetching.html#document-base-url
+pub fn extract_document_base_href(html: &str) -> Option<String> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("base")
+        .into_iter()
+        .find_map(|id| doc.get_attribute(id, "href"))
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+}
+
 /// 提取 HTML 中所有 `<link rel="stylesheet" href="...">` 的 href 原始值。
 ///
 /// 用于 URL 导航路径下外链样式表的加载（goal doc P1 缺口「外部样式表加载缺失」）：
@@ -42,6 +76,9 @@ pub fn extract_stylesheet_links(html: &str) -> Vec<(String, String)> {
         if !is_stylesheet {
             continue;
         }
+        if !link_type_allows_stylesheet(doc.get_attribute(link_id, "type").as_deref()) {
+            continue;
+        }
         if let Some(href) = doc.get_attribute(link_id, "href") {
             let href = href.trim();
             if !href.is_empty() {
@@ -67,6 +104,9 @@ pub fn extract_stylesheet_link_anchors(html: &str) -> Vec<(String, String, Strin
         let rel = doc.get_attribute(link_id, "rel").unwrap_or_default();
         let is_stylesheet = rel.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet"));
         if !is_stylesheet {
+            continue;
+        }
+        if !link_type_allows_stylesheet(doc.get_attribute(link_id, "type").as_deref()) {
             continue;
         }
         if let Some(href) = doc.get_attribute(link_id, "href") {
@@ -2684,5 +2724,51 @@ mod tests {
         assert_eq!(parse_srcset_descriptor("100h"), None, "h 缺 w → error");
         assert_eq!(parse_srcset_descriptor("0h 1w"), None, "h=0 → error");
         assert_eq!(parse_srcset_descriptor("1w junk"), None, "多余 token → error");
+    }
+
+    #[test]
+    fn link_type_allows_stylesheet_matrix_s315() {
+        use super::link_type_allows_stylesheet as allows;
+        // 缺失/空串 = 无提示候选；text/css（ASCII 大小写/参数段放行）；非 CSS MIME/
+        // 非法 MIME 拒（link-type-attribute 五形态全拒）。
+        assert!(allows(None));
+        assert!(allows(Some("")));
+        assert!(allows(Some("  ")));
+        assert!(allows(Some("text/css")));
+        assert!(allows(Some("Text/CSS")));
+        assert!(allows(Some("text/css; charset=utf-8")));
+        assert!(!allows(Some("application/javascript")));
+        assert!(!allows(Some("ABCtext/css")));
+        assert!(!allows(Some("text/cssDEF")));
+        assert!(!allows(Some("text/invalid")));
+        assert!(!allows(Some("invalid")));
+    }
+
+    #[test]
+    fn extract_stylesheet_type_gate_and_base_href_s315() {
+        use super::{extract_document_base_href, extract_stylesheet_hrefs};
+        // type 门：全非法 type 的 5 link 均不入候选（link-type-attribute 页形）；
+        // 无 type / 带参数 text/css 照常。
+        let typed = r#"<head>
+            <link rel="stylesheet" type="application/javascript" href="a.css">
+            <link rel="stylesheet" type="ABCtext/css" href="b.css">
+            <link rel="stylesheet" type="text/cssDEF" href="c.css">
+            <link rel="stylesheet" type="text/invalid" href="d.css">
+            <link rel="stylesheet" type="invalid" href="e.css">
+            <link rel="stylesheet" href="f.css">
+            <link rel="stylesheet" type="text/css; charset=utf-8" href="g.css">
+        </head>"#;
+        assert_eq!(extract_stylesheet_hrefs(typed), vec!["f.css", "g.css"]);
+        // base 提取：文档序首个带 href 的 base（raw value）；无 base/空 href 回落 None。
+        assert_eq!(
+            extract_document_base_href(r#"<head><base href="resources/"><base href="other/"></head>"#),
+            Some("resources/".to_string())
+        );
+        assert_eq!(
+            extract_document_base_href(r#"<head><base target="_b"><base href="res/"></head>"#),
+            Some("res/".to_string())
+        );
+        assert_eq!(extract_document_base_href("<head></head>"), None);
+        assert_eq!(extract_document_base_href(r#"<head><base href=""></head>"#), None);
     }
 }
