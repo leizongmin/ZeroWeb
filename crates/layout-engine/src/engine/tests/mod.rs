@@ -1030,3 +1030,7 @@ mod r5436_beside_shrink_tests;
 /// R5444：cell 固有宽不计 OOF 子（absolute/fixed）——三臂泄漏封堵（显式宽/R4028
 /// max-content/95% 启发式/char 回退），driving s-11-1-1b-005。
 mod r5444_cell_intrinsic_oof_skip_tests;
+
+/// R5445：abs-auto 盒 spec CB ≠ 直接父（无 positioned 祖先 → ICB / positioned 祖先）
+/// 双向重测（CSS2 §10.1），driving s-11-1-1b-005 残差 0.46%→0.00%。
+mod r5445_abspos_icb_cb_tests;

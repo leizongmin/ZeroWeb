@@ -55,11 +55,7 @@ fn r5444_cell_intrinsic_skips_abs_child_max_content() {
     let tbl = find(&result.root, ids[0].1).expect("tbl box");
     let cell = find(&result.root, ids[1].1).expect("cell box");
     eprintln!("R5444DBG tbl w={} cell w={}", tbl.width, cell.width);
-    assert!(
-        tbl.width <= 25.0,
-        "表宽应 ≈20（abs 子不计固有宽），实际 {}",
-        tbl.width
-    );
+    assert!(tbl.width <= 25.0, "表宽应 ≈20（abs 子不计固有宽），实际 {}", tbl.width);
     assert!(
         cell.width <= 25.0,
         "cell 宽应 ≈20（显式宽不被 abs 子 max-content 撑破），实际 {}",
@@ -87,9 +83,5 @@ fn r5444_in_flow_child_still_contributes() {
         "cell 宽应 = 流内内容 50（abs 子不计），实际 {}",
         cell.width
     );
-    assert!(
-        tbl.width <= 52.0,
-        "表宽收缩到流内内容（≈50），实际 {}",
-        tbl.width
-    );
+    assert!(tbl.width <= 52.0, "表宽收缩到流内内容（≈50），实际 {}", tbl.width);
 }

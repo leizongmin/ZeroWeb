@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（243）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（244）
 
 - 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
+- 2026-11-07 [taffy abs 包含块=直接父模型：后处理「只扩不缩」让错误钳制存活（R5445 D2 域图谱）](bugs/2026-11/2026-11-07-taffy-abs-direct-parent-cb-vs-spec-icb.md) — layout-engine
 - 2026-11-07 [OOF 固有宽剪除的作用域：table 内部盒可剪，普通块盒剪不得（R5300 补测链依赖）](bugs/2026-11/2026-11-07-oof-intrinsic-prune-scope-table-internal-vs-abs-refill-chain.md) — layout-engine, testing
 - 2026-11-07 [单测钉红的归因必须 bisect 到提交；改动域轮次必须跑改动 crate 的 lib 全腿](bugs/2026-11/2026-11-07-lib-full-leg-and-commit-level-bisect-for-pin-reds.md) — layout-engine, testing
 - 2026-11-07 [批脚本 md5 守卫快照须落构建后，脚本起点快照会误标二进制身份](bugs/2026-11/2026-11-07-batch-md5-guard-snapshot-timing.md) — tests/wpt-runner
