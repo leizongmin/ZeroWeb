@@ -52,6 +52,16 @@ static EMPTY_INLINE_BASELINE_ANCHOR_ON: std::sync::LazyLock<bool> =
 static R4222_FLOAT_ANCESTOR_SCOPE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_R4222_FLOAT_ANCESTOR_SCOPE").as_deref() != Ok("0"));
 
+/// R5442（CSS2 §9.5.1 规则 6）：float 锚位推压 no-preceding-content 前置门——锚位 0 =
+/// IFC 起点（float 行首且容器无前文内容行）时规则 6 无更早行盒可约束，静态位
+///（adjust_float_positions band+mt）已合规；旧无条件推压 `anchor > child.y` 把负 mt
+/// float 从静态位抬回容器顶（c5525-fltmrgn test4：img mt −30 静态位 = chrome 位，推后
+/// 高 30px）。仅前文有完整内容行（行槽顶锚 > 0，auto-015 形 L1-L4 后 128）推压。
+/// OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点 env::var 有可测开销）。
+/// `ZW_FLOAT_ANCHOR_PRE_GATE=0` 回退无条件推压（旧行为）。
+static FLOAT_ANCHOR_PRE_GATE: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_ANCHOR_PRE_GATE").as_deref() != Ok("0"));
+
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
 pub(crate) struct InlineFontContext<'a> {
@@ -3288,7 +3298,9 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                     && let Some(anchor_y) = anchor_y_map.get(&fid)
                 {
                     // float 不高于锚位（前文行盒顶）；已更低（clear/前 float 堆叠）则保留。
-                    if *anchor_y > child.y {
+                    // R5442：锚位 0（IFC 起点，无前文内容行）不推——规则 6 无更早行盒，
+                    // 静态位已合规（见 FLOAT_ANCHOR_PRE_GATE 文档）。
+                    if (!*FLOAT_ANCHOR_PRE_GATE || *anchor_y > 0.0) && *anchor_y > child.y {
                         child.y = *anchor_y;
                     }
                 }
@@ -3311,7 +3323,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
             .filter_map(|c| {
                 // c.y 现在是相对于父级内容区域的坐标（与 taffy 一致）
                 let rel_y = c.y;
-                if rel_y < 0.0 || c.width <= 0.0 {
+                if c.width <= 0.0 {
                     return None;
                 }
                 // R3787：h<=0 的 float 按其 DOM 子树补测内容高（宽用自身 width；容器宽
@@ -3345,11 +3357,23 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 if height <= 0.0 {
                     return None;
                 }
+                // R5442：按 margin-box 带判弃/裁顶（旧 border 顶 rel_y<0 整带丢弃）。
+                // 带顶 = border 顶 − mt（R5312 margin-box 口径）；带底 ≤ 0（整带在容器
+                // 顶上方）不约束任何行 → 丢弃；跨顶带裁顶保留可见段——锚位门放开负 mt
+                // float 后 test4 形（img mt −30 静态位 −30）带恰为 [0,15]，文本按规范绕
+                // 可见段排（R5439 oracle：spec 文本带 rel 15）。IFC 行盒 y ≥ 0，裁顶对
+                // 既有 rel_y ≥ 0 带的行排不可见。
+                let band_top = rel_y - c.margin_top;
+                let band_bottom = band_top + (c.margin_top + height + c.margin_bottom);
+                if band_bottom <= 0.0 {
+                    return None;
+                }
+                let clipped_top = band_top.max(0.0);
                 Some(FloatExclusion {
                     // R5312：margin-box 口径（同 compute_final own_floats——taffy native
                     // float 下 c.x/c.y 为 border-box 位，`+margin` 双计致 span 挤行/右移）。
-                    y: rel_y - c.margin_top,
-                    height: c.margin_top + height + c.margin_bottom,
+                    y: clipped_top,
+                    height: band_bottom - clipped_top,
                     width: c.width + c.margin_left + c.margin_right,
                     x: c.x - c.margin_left,
                     is_left: matches!(c.float, FloatValue::Left),
