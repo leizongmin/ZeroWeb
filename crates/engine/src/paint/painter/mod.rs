@@ -2767,6 +2767,10 @@ impl Painter {
             // ≡ R1660 paint_input_value 谱系）。option/optgroup 经 UA display:none 抑制
             // 不生成盒，select 按钮内无文本，须显式绘 selected option 标签。
             self.paint_select_value(box_node, abs_x, abs_y, style, doc);
+
+            // 4b5. <input type=range> datalist tick 刻度（R1687，≡ R1671 progress/meter
+            // value 条谱系）。list→datalist 逐 paint 解析，见 controls.rs。
+            self.paint_range_ticks(box_node, abs_x, abs_y, style, doc);
         }
 
         // 4c. CSS `content` 属性生成的文本（在普通文本之前）

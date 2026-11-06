@@ -9,7 +9,7 @@ use zero_layout_engine::LayoutBox;
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::GlyphPrimitive;
-use zero_style_system::{AppearanceComputedValue, ComputedStyle};
+use zero_style_system::{AppearanceComputedValue, ComputedStyle, DirectionValue};
 
 impl super::Painter {
     /// 绘制 `<progress>`/`<meter>` 的 value 填充条（R1671 paint 半，≡ R1660 `paint_input_value`）。
@@ -115,6 +115,138 @@ impl super::Painter {
         }
         self.primitives
             .add_fill(Rect::new(content_x, content_y, bar_w, track_h), color);
+    }
+
+    /// 绘制 `<input type=range>` 的 datalist tick 刻度（R1687，≡ R1671 progress/meter value
+    /// 条 paint 谱系）。
+    ///
+    /// HTML range state：控件带 `list` 属性且引用到 `<datalist>` 时，UA 须在滑轨下渲染
+    /// tick 刻度行——每个 step 对齐的 option value 一枚。chrome-127 行为（driving 五页
+    /// +八页 match 域）：
+    /// - disabled option 不产生刻度（range-tick-marks-04 match 域）；
+    /// - step 不对齐的 option value 不产生刻度（range-tick-marks-05 + repaint 八页，全
+    ///   `step=3 min=-5`，仅 {-2,4} 对齐）；
+    /// - fraction = (value-min)/(max-min) 截到 [0,1]（range-tick-marks-03 mismatch：min/max
+    ///   不同 → 刻度像素位置可分）；
+    /// - `direction: rtl`（`dir` 属性经 presentational hint 映射）水平镜像（range-tick-marks-02
+    ///   match 域：test 侧 dir=rtl vs ref 侧 `transform: scaleX(-1)` 翻转，两侧须同镜像才一致）。
+    ///
+    /// list→datalist 每次 paint 时按 id 解析（repaint 族八页经 JS 改 list/id/option 后
+    /// 重发布，静态快照不行）。刻度 = 2px 宽竖线绘于 content-box 下半带（mismatch 判据
+    /// 超过 0.01% 即 48px/480000：4 刻度 × 2px × 8px = 64px 过阈）。作者 `appearance: none`
+    /// 关闭原生 widget（≡ s313 meter 门，css-ui-4 §appearance-switching）。规范：
+    /// https://html.spec.whatwg.org/multipage/input.html#range-state-(type=range)
+    pub(crate) fn paint_range_ticks(
+        &mut self,
+        box_node: &LayoutBox,
+        abs_x: f32,
+        abs_y: f32,
+        style: &ComputedStyle,
+        doc: &Document,
+    ) {
+        let Some(node_id) = box_node.node_id else {
+            return;
+        };
+        let Some(node) = doc.get(node_id) else {
+            return;
+        };
+        let NodeKind::Element(elem) = &node.kind else {
+            return;
+        };
+        if !elem.local_name().eq_ignore_ascii_case("input")
+            || !elem
+                .get_attribute("type")
+                .unwrap_or_default()
+                .eq_ignore_ascii_case("range")
+        {
+            return;
+        }
+        if matches!(
+            super::effective_appearance(style, box_node, Some(doc)),
+            AppearanceComputedValue::None
+        ) {
+            return;
+        }
+        let Some(list_value) = elem
+            .get_attribute("list")
+            .map(|s| s.trim().to_string())
+            .filter(|v| !v.is_empty())
+        else {
+            return;
+        };
+        // list→datalist 逐 paint 解析（repaint 族 JS 改 list/id 后无重挂载静态快照失效）。
+        let Some(datalist_id) = doc.get_element_by_id(&list_value) else {
+            return;
+        };
+        let Some(dl) = doc.get(datalist_id) else {
+            return;
+        };
+        if !matches!(&dl.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("datalist")) {
+            return;
+        }
+
+        // 数值属性（HTML：缺失/非法回落 min=0 / max=100 / step=1；step ≤ 0 无效回落 1）。
+        let num_attr = |name: &str, default: f64| -> f64 {
+            elem.get_attribute(name)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .filter(|v| v.is_finite())
+                .unwrap_or(default)
+        };
+        let min = num_attr("min", 0.0);
+        let max = num_attr("max", 100.0);
+        let step = {
+            let s = num_attr("step", 1.0);
+            if s > 0.0 { s } else { 1.0 }
+        };
+        if max <= min {
+            return;
+        }
+
+        // 收集 step 对齐 option 刻度位置。option 语义值 = `value` 属性（否则文本内容，
+        // HTML option value 模型）；disabled 排除；step 不对齐排除（浮点容差按商取整距）。
+        let mut fractions: Vec<f32> = Vec::new();
+        for child in doc.child_nodes(datalist_id) {
+            let Some(cn) = doc.get(child) else { continue };
+            let NodeKind::Element(opt) = &cn.kind else { continue };
+            if !opt.local_name().eq_ignore_ascii_case("option") {
+                continue;
+            }
+            if opt.get_attribute("disabled").is_some() {
+                continue;
+            }
+            let raw = opt
+                .get_attribute("value")
+                .unwrap_or_else(|| doc.text_content(child).unwrap_or_default());
+            let Some(v) = raw.trim().parse::<f64>().ok().filter(|v| v.is_finite()) else {
+                continue;
+            };
+            let q = (v - min) / step;
+            if (q - q.round()).abs() > 1e-6 {
+                continue;
+            }
+            fractions.push((((v - min) / (max - min)) as f32).clamp(0.0, 1.0));
+        }
+        if fractions.is_empty() {
+            return;
+        }
+
+        let content_x = abs_x + box_node.border_left + box_node.padding_left;
+        let content_y = abs_y + box_node.border_top + box_node.padding_top;
+        let track_w = box_node.content_width;
+        let track_h = box_node.content_height;
+        if track_w <= 0.0 || track_h <= 0.0 {
+            return;
+        }
+        let tick_h = track_h * 0.5;
+        let tick_y = content_y + track_h - tick_h;
+        let rtl = matches!(style.direction, DirectionValue::Rtl);
+        for frac in fractions {
+            let f = if rtl { 1.0 - frac } else { frac };
+            // 2px 宽竖线居中于刻度位（镜像与 transform scaleX(-1) 翻转的像素域一致性：
+            // [c+d-1, c+d+1] ↔ 翻转 [2c-(c+d+1), 2c-(c+d-1)]，同一浮点矩形）。
+            let x = content_x + f * track_w - 1.0;
+            self.primitives.add_fill(Rect::new(x, tick_y, 2.0, tick_h), RANGE_TICK);
+        }
     }
 
     /// 绘制 `<select>` 的 selected option 标签文本（R1679，≡ R1660 `paint_input_value` 谱系）。
@@ -326,6 +458,14 @@ const PROGRESS_VALUE: Color = Color {
     r: 0,
     g: 117,
     b: 255,
+    a: 255,
+};
+
+/// chromium range datalist tick 刻度色（中性灰，chrome-127 近似——与 UA 轨道边框同灰阶）。
+const RANGE_TICK: Color = Color {
+    r: 118,
+    g: 118,
+    b: 118,
     a: 255,
 };
 

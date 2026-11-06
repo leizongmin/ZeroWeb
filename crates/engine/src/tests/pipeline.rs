@@ -2954,3 +2954,25 @@ fn test_s313_meter_appearance_none_chrome_suppressed() {
         "appearance:none meter 不应施画任何 track chrome（got {none_total}）"
     );
 }
+
+/// s314：`<input type=range>` datalist tick 刻度全链——list→datalist 解析 + step 对齐
+/// 过滤 + fraction 映射（HTML range state）。无 list 引用时零刻度（tick-01 notref 侧）。
+/// driving：R1670 range-tick-marks-01/03 mismatch 两页 + repaint 八页 match 域。
+#[test]
+fn test_s314_range_datalist_tick_marks() {
+    let fills_of = |html: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 80.0);
+        let result = pipeline.render_html(html, "");
+        result.primitives().fills.len()
+    };
+    let with = fills_of(
+        r#"<html><body><input type="range" min="-100" max="100" value="0" step="10" list="powers"><datalist id="powers"><option value="0"><option value="-30"><option value="30"><option value="50"></datalist></body></html>"#,
+    );
+    let without =
+        fills_of(r#"<html><body><input type="range" min="-100" max="100" value="0" step="10"></body></html>"#);
+    assert_eq!(
+        with,
+        without + 4,
+        "list→datalist 应绘 4 枚 step 对齐 tick（got with={with} without={without}）"
+    );
+}

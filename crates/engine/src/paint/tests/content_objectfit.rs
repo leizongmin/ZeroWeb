@@ -813,6 +813,76 @@ fn paint_meter_appearance_none_no_value_bar() {
     );
 }
 
+// ── R1687：`<input type=range>` datalist tick 刻度（≡ R1671 progress/meter 测试谱系，
+// 复用上方既有 first_input helper）──
+
+#[test]
+fn paint_range_ticks_step_aligned_only() {
+    // HTML range state：仅 step 对齐 option 产生刻度（tick-05/repaint 族 driving：
+    // step=3 min=-5，{-4,-2,0,2,4} 中仅 {-2,4} 对齐 → 2 枚，fraction 0.3/0.9）。
+    let (doc, inp) = first_input(
+        r#"<body><input type="range" min="-5" max="5" step="3" list="t"><datalist id="t"><option value="-4"><option value="-2"><option value="0"><option value="2"><option value="4"></datalist></body>"#,
+    );
+    let mut painter = Painter::new();
+    let style = ComputedStyle::default();
+    let mut box_node = make_box(80.0, 16.0);
+    box_node.node_id = Some(inp);
+    let before = painter.primitives().fills.len();
+    painter.paint_range_ticks(&box_node, 0.0, 0.0, &style, &doc);
+    let fills = &painter.primitives().fills[before..];
+    assert_eq!(fills.len(), 2, "仅 step 对齐的 -2/4 产生刻度");
+    // fraction 0.3/0.9 → x = 0.3×80-1 = 23 / 0.9×80-1 = 71；tick_y = 16-8 = 8。
+    assert!(
+        (fills[0].rect.origin.x - 23.0).abs() < 0.5 && (fills[1].rect.origin.x - 71.0).abs() < 0.5,
+        "刻度 x 应为 23/71，实际 {} / {}",
+        fills[0].rect.origin.x,
+        fills[1].rect.origin.x
+    );
+    assert!((fills[0].rect.origin.y - 8.0).abs() < 0.5 && fills[0].rect.size.height == 8.0);
+}
+
+#[test]
+fn paint_range_ticks_disabled_excluded_and_rtl_mirror() {
+    // disabled option 不产生刻度（tick-04）；direction rtl 镜像 fraction（tick-02：
+    // dir 属性经 presentational hint → direction，1-f）。
+    let (doc, inp) = first_input(
+        r#"<body><input type="range" min="0" max="100" dir="rtl" list="t"><datalist id="t"><option value="25" disabled><option value="10"></datalist></body>"#,
+    );
+    let mut painter = Painter::new();
+    let mut style = ComputedStyle::default();
+    style.direction = zero_style_system::DirectionValue::Rtl;
+    let mut box_node = make_box(80.0, 16.0);
+    box_node.node_id = Some(inp);
+    let before = painter.primitives().fills.len();
+    painter.paint_range_ticks(&box_node, 0.0, 0.0, &style, &doc);
+    let fills = &painter.primitives().fills[before..];
+    assert_eq!(fills.len(), 1, "disabled 25 排除，仅 10 产生刻度");
+    // fraction 0.1 → rtl 镜像 0.9 → x = 0.9×80-1 = 71（未镜像应为 7）。
+    assert!(
+        (fills[0].rect.origin.x - 71.0).abs() < 0.5,
+        "rtl 刻度应镜像至 x=71，实际 {}",
+        fills[0].rect.origin.x
+    );
+}
+
+#[test]
+fn paint_range_ticks_no_list_or_datalist_no_ticks() {
+    // 无 list 属性（tick-01 notref 侧）与 list 指向不存在 id（repaint 前态）均不绘。
+    for html in [
+        r#"<body><input type="range" min="0" max="100"></body>"#,
+        r#"<body><input type="range" min="0" max="100" list="gone"></body>"#,
+    ] {
+        let (doc, inp) = first_input(html);
+        let mut painter = Painter::new();
+        let style = ComputedStyle::default();
+        let mut box_node = make_box(80.0, 16.0);
+        box_node.node_id = Some(inp);
+        let before = painter.primitives().fills.len();
+        painter.paint_range_ticks(&box_node, 0.0, 0.0, &style, &doc);
+        assert_eq!(painter.primitives().fills.len(), before, "无 datalist 引用不应绘刻度");
+    }
+}
+
 // ── R1679：`<select>` selected option 标签绘制（≡ R1660 paint_input_value 测试谱系）──
 
 /// 辅助：取首个 select 元素 NodeId。
