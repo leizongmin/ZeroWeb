@@ -855,6 +855,14 @@
     }
 
     // node list：blockExtend 后 contained 可编辑（ol/ul 或其子或 li 允许子）。
+    // 出口收钳树位锚（sr1 选区恢复刀）：retag 臂换壳后、wrap 重写臂
+    // （_zwJusWrapViaHtml 整壳 innerHTML 重建）灭失节点身份前，记下换壳
+    // 列表在父级下的树位；重建后旧节点 detached，出口收钳按 (parent,
+    // index, tag) 解析同位重建孪生为收钳目标。
+    var shellHome = null;
+    if (retaggedFinal && retaggedFinal.parentNode) {
+      shellHome = { p: retaggedFinal.parentNode, i: _zwJusNodeIndex(retaggedFinal), t: retaggedFinal.nodeName };
+    }
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
       return _zwJusIsEditable(node)
         && !_zwListIsIndentationElement(node)
@@ -977,13 +985,30 @@
     // （flat 臂未触发、列表存活的常形，与 mid-toggle 交集钳制同型收口）；
     // 端点已在列表内容内则不动（多列表/换型行保位）。
     {
+      // 同位重建孪生解析（sr1 刀）：retag 换壳经 wrap flat-model 重写臂后
+      // 旧壳节点 detached（探针 rfInDoc=false 实证），按 shellHome 树位取
+      // 同父邻近同名的新壳作收钳目标。位次带漂移容差：重写臂吸收壳前/后
+      // 内容会平移重建孪生的位次（探针 sr1-38 记录 OL@1 → 重建后 OL@0 实
+      // 证），自记录位次向两侧邻近扫描同名首中者；父级失配则放弃，维持
+      // marker/path 恢复结果。
+      var shellSuccessor = function () {
+        if (!shellHome || !_zwListNodeInDocument(shellHome.p)) return null;
+        var kids = shellHome.p.childNodes;
+        for (var dd = 0; dd < kids.length; dd++) {
+          var bck = shellHome.i - dd;
+          if (bck >= 0 && bck < kids.length && kids[bck].nodeName === shellHome.t) return kids[bck];
+          var fwd = shellHome.i + dd;
+          if (fwd >= 0 && fwd < kids.length && kids[fwd].nodeName === shellHome.t) return kids[fwd];
+        }
+        return null;
+      };
       var rngX = _zwJusActiveRange();
       if (rngX) {
         try {
           var tS = _zwListInListContent(rngX.startContainer) ? null
             : (_zwJusIsHtmlElement(rngX.startContainer, ['ol', 'ul'])
             && rngX.startContainer.parentNode ? rngX.startContainer
-            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : null));
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : shellSuccessor()));
           if (tS) {
             var fF = tS;
             while (fF.firstChild) fF = fF.firstChild;
@@ -992,7 +1017,7 @@
           var tE = _zwListInListContent(rngX.endContainer) ? null
             : (_zwJusIsHtmlElement(rngX.endContainer, ['ol', 'ul'])
             && rngX.endContainer.parentNode ? rngX.endContainer
-            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : null));
+            : (retaggedFinal && _zwListNodeInDocument(retaggedFinal) ? retaggedFinal : shellSuccessor()));
           if (tE) {
             var lF = tE;
             while (lF.lastChild) lF = lF.lastChild;
