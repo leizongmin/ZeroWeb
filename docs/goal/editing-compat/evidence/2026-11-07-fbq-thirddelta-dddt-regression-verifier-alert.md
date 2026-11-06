@@ -400,3 +400,17 @@ insertParagraph/ilb/justify 四向/inserthtml 结构命令族，针对 mt 残 40
 5. 残余债移交：mt F 323 键普查 + 下一步②四族（qV/qI 读面 Chrome delta 12、apply 内容模型边界
    4、indent 27F/img 23F 零散边界、typing caret 偏尾）归 owner 轮续刀，第九刀在飞即首族。
    本方核验职责（③）随本节回填闭环。
+
+## 追记（05:43）——核验轮 A 终验：legs5 fb + mt2 行级复算成立，双核验链闭合
+
+- **legs5 fb（batch-fbq-formatblock-post.log 04:29，八刀全谱二进制）**：本方独立复算 vs keep-pre
+  ——5046 键恒一，**F2P=841 / P2F=0 / lost=0**，与核验轮③收口条目逐字合。四刀面定点逐行验证：
+  ①双 p 267 面 pre=P→legs5=P（第五刀复活修复 narrow 红行）✓；②table qV(dps) before ×2
+  pre=P→legs5=P（第八刀 VisBlock table 返 null）✓；③div 岛 + p/div 目标 compare ×2
+  pre=F→legs5=P（第七刀宿主内容模型，:1879/:1884 oracle 翻转兑现）✓；④dd-757 qV-after 真
+  wrap 面 pre=F→legs5=P 恒 ✓。
+- **mt2（batch-fbq-mt-post.log 05:02，cmd 门+typing 门收臂二进制）**：vs nq7 10092 键恒一——
+  **F2P=93 / P2F=0 / postF=0 / lost=0**，与收口条目（93=fb35+indent12+ihr23+img23；416−93=323
+  自洽）逐字合。本方 04:18 的 70 行族分解（24+43+3）全数翻回绿，零残留零新债。
+- 本方核验链（final2 归因 → narrow 判据复核 → legs5/mt2 终验）随本节闭环。第九刀批
+  （knife9 fb/iol/ilb/jc 四页扫，05:3x 起）属 owner 轮续刀，判读权让位 owner，本方不再挂 watcher。
