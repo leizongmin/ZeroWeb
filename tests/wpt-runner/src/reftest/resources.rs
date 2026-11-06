@@ -1228,8 +1228,8 @@ pub fn convert_png_buffer_to_rgba(raw: &[u8], color_type: png::ColorType, bit_de
 
 /// 加载并解码 PNG 文件为 RGBA ImageData。
 fn load_png_file(path: &Path) -> Result<ImageData, String> {
-    let file = std::fs::File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
-    let mut decoder = png::Decoder::new(file);
+    let bytes = std::fs::read(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
+    let mut decoder = png::Decoder::new(&bytes[..]);
     // DC-14 anti-false-pass：正确加载任意 color type 的 PNG（palette/grayscale/RGB/RGBA）。
     // EXPAND|STRIP_16 把 palette→RGB(A)、grayscale→RGB(A)、低位深→8bit；但输出色型不一定是
     // RGBA（palette 无 tRNS / RGB 输入 → 输出 RGB=3 字节/像素）。须用 output_buffer_size 分配
@@ -1251,12 +1251,21 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
     let width = info.width;
     let height = info.height;
 
+    // s300：PNG eXIf Orientation 与 render-foundation decode_png_bytes 同通道
+    //（早块生效/晚块忽略）；像素解码本体不委托（R217 ZERO_PNG_EXPAND 逃生舱
+    // 保留），方向探测与重排复用 render-foundation 同表实现。
+    let orientation = zero_render_foundation::image_cache::png_orientation(&bytes);
+
     if expand {
         let mut raw = vec![0u8; reader.output_buffer_size()];
         let output_info = reader
             .next_frame(&mut raw)
             .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
         let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+        let (rgba, width, height) = match orientation {
+            Some(o) => zero_render_foundation::image_cache::apply_orientation(rgba, width, height, o),
+            None => (rgba, width, height),
+        };
         return ImageData::from_rgba(rgba, width, height);
     }
 
@@ -1267,6 +1276,10 @@ fn load_png_file(path: &Path) -> Result<ImageData, String> {
         .next_frame(&mut buf)
         .map_err(|e| format!("PNG 读取失败 {}: {e}", path.display()))?;
 
+    let (buf, width, height) = match orientation {
+        Some(o) => zero_render_foundation::image_cache::apply_orientation(buf, width, height, o),
+        None => (buf, width, height),
+    };
     ImageData::from_rgba(buf, width, height)
 }
 

@@ -1427,18 +1427,110 @@ impl Default for ImageCache {
 /// 解码失败时返回描述性错误字符串（调用方决定降级策略）。
 pub fn decode_png_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     use png::Transformations;
-    let mut decoder = png::Decoder::new(bytes);
+    // png 0.18 Decoder 要求 BufRead + Seek——字节切片经 Cursor 供给。
+    let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes));
     decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
     let mut reader = decoder.read_info().map_err(|e| format!("PNG 解码失败: {e}"))?;
 
     let info = reader.info().clone();
+    // s300：方向标签在 read_info 边界快照（早块生效）——IDAT 后的 eXIf/文本块
+    // 在 next_frame 期才被解析进 Info，快照点天然实现「晚块 EXIF 被忽略」
+    //（css-images-3 #url-metadata late-metadata 语义）。
+    let orientation = png_orientation_from_info(&info);
     let width = info.width;
     let height = info.height;
 
-    let mut raw = vec![0u8; reader.output_buffer_size()];
+    // png 0.18：output_buffer_size 返回 Option<usize>（info 无效时 None）。
+    let buf_size = reader
+        .output_buffer_size()
+        .ok_or_else(|| "PNG 无输出缓冲区大小".to_string())?;
+    let mut raw = vec![0u8; buf_size];
     let output_info = reader.next_frame(&mut raw).map_err(|e| format!("PNG 读取失败: {e}"))?;
     let rgba = convert_png_buffer_to_rgba(&raw, output_info.color_type, output_info.bit_depth);
+    // CSS image-orientation from-image（默认值）解码侧语义：按 PNG eXIf Orientation
+    // 物理重排像素并换轴，与 JPEG 路径同表同通道（naturalWidth/Height 与绘制统一
+    // 消费已定向位图）。
+    // https://drafts.csswg.org/css-images-3/#default-image-orientation
+    let (rgba, width, height) = match orientation {
+        Some(orientation) => apply_orientation(rgba, width, height, orientation),
+        None => (rgba, width, height),
+    };
     ImageData::from_rgba(rgba, width, height)
+}
+
+/// 读取 PNG EXIF Orientation 标签（IFD0，tag 0x0112）。
+///
+/// 语义面（css-images-3 from-image 默认值）：eXIf 块优先，其次 ImageMagick
+///「Raw profile type exif」文本档案（tEXt/zTXt，JPEG APP1 同构载荷——双源为
+/// Chromium/Firefox 实际读取面）。只扫早块视角的 `Info`：调用方须以 read_info
+/// 边界快照供给，晚块（IDAT 后）方向标签按规范忽略。值域 1..=8 之外按无方向
+/// 处理（同 JPEG 路径）。pub 供 reftest harness `load_png_file` 独立解码路径
+/// 复用（R217 逃生舱面不委托像素解码，仅共享元数据探测）。
+/// https://drafts.csswg.org/css-images-3/#default-image-orientation
+/// https://exif.org/Exif2-32.PDF §4.6.4
+pub fn png_orientation(bytes: &[u8]) -> Option<u16> {
+    let reader = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().ok()?;
+    png_orientation_from_info(reader.info())
+}
+
+/// 从解码器 `Info` 快照读 Orientation——`decode_png_bytes` 与 `png_orientation`
+/// 共用；不公开（快照时机语义归调用方）。
+fn png_orientation_from_info(info: &png::Info<'_>) -> Option<u16> {
+    if let Some(exif) = info.exif_metadata.as_deref() {
+        // eXIf 块载荷为 TIFF 流；个别编码器带 JPEG APP1 同构「Exif\0\0」前缀，
+        // 有则剥（TIFF 头按字节序标记校验，剥错仅解析失效不误读）。
+        let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(exif);
+        if let Some(orientation) = parse_tiff_orientation(tiff) {
+            return Some(orientation);
+        }
+    }
+    const RAW_PROFILE_EXIF_KEYWORD: &str = "Raw profile type exif";
+    for text in &info.uncompressed_latin1_text {
+        if text.keyword != RAW_PROFILE_EXIF_KEYWORD {
+            continue;
+        }
+        if let Some(exif) = imagemagick_exif_raw_profile(&text.text) {
+            let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(&exif);
+            if let Some(orientation) = parse_tiff_orientation(tiff) {
+                return Some(orientation);
+            }
+        }
+    }
+    for text in &info.compressed_latin1_text {
+        if text.keyword != RAW_PROFILE_EXIF_KEYWORD {
+            continue;
+        }
+        let Ok(text) = text.get_text() else { continue };
+        if let Some(exif) = imagemagick_exif_raw_profile(&text) {
+            let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(&exif);
+            if let Some(orientation) = parse_tiff_orientation(tiff) {
+                return Some(orientation);
+            }
+        }
+    }
+    None
+}
+
+/// 解析 ImageMagick「Raw profile type exif」文本档案正文。
+///
+/// 约定格式（ImageMagick profile.c）：`"\nexif\n<8 位右对齐长度>\n"` 后接大写
+/// hex 换行分片（尾部 `"\n"`）；hex 解码即「Exif\0\0」+ TIFF（JPEG APP1 同构）。
+/// 声明长度落空（截断档案）按无 EXIF 处理。
+fn imagemagick_exif_raw_profile(text: &str) -> Option<Vec<u8>> {
+    let rest = text.split_once("\nexif\n")?.1;
+    let (len_line, hex_body) = rest.split_once('\n')?;
+    let len: usize = len_line.trim().parse().ok()?;
+    let hex: String = hex_body
+        .chars()
+        .filter(|c: &char| c.is_ascii_hexdigit())
+        .take(len.checked_mul(2)?)
+        .collect();
+    if hex.len() != len * 2 {
+        return None;
+    }
+    (0..len)
+        .map(|i| u8::from_str_radix(&hex[2 * i..2 * i + 2], 16).ok())
+        .collect()
 }
 
 /// 解码 JPEG 字节为 `ImageData`（RGBA）。
@@ -1455,11 +1547,10 @@ pub fn decode_jpeg_bytes(bytes: &[u8]) -> Result<ImageData, String> {
     let rgba = convert_jpeg_pixels_to_rgba(&pixels, info.pixel_format);
     // CSS image-orientation from-image（默认值）解码侧语义：按 EXIF Orientation
     // 物理重排像素并换轴，naturalWidth/Height 与绘制通道统一消费已定向位图
-    //（HTML naturalWidth「reflective of the EXIF orientation」）。
+    //（HTML naturalWidth「reflective of the EXIF orientation」）。PNG eXIf 面
+    // 由 decode_png_bytes 同通道处理（s300）。
     // https://drafts.csswg.org/css-images-3/#default-image-orientation
     // https://html.spec.whatwg.org/multipage/embedded-content.html#dom-img-naturalwidth
-    // FIXME: PNG eXIf 块方向标签未处理（png crate exif_metadata 面；html/semantics
-    // 语料消费面仅 JPEG，见 the-img-element/natural-size-orientation.html）。
     let (rgba, width, height) = match jpeg_exif_orientation(bytes) {
         Some(orientation) => apply_orientation(rgba, width, height, orientation),
         None => (rgba, width, height),
@@ -1543,9 +1634,10 @@ fn parse_tiff_orientation(tiff: &[u8]) -> Option<u16> {
 ///
 /// 映射：1 恒等 / 2 水平翻转 / 3 旋转 180° / 4 垂直翻转 / 5 主对角转置 /
 /// 6 顺时针 90° / 7 反对角转置 / 8 逆时针 90°；5-8 宽高互换。与 image crate
-/// `apply_orientation`、libvips 同表。越界值防御性恒等（解析侧已过滤）。
+/// `apply_orientation`、libvips 同表。越界值防御性恒等（解析侧已过滤）。pub
+/// 供 reftest harness `load_png_file` 独立解码路径复用（R217 逃生舱面）。
 /// https://exif.org/Exif2-32.PDF §4.6.4 Orientation
-fn apply_orientation(data: Vec<u8>, width: u32, height: u32, orientation: u16) -> (Vec<u8>, u32, u32) {
+pub fn apply_orientation(data: Vec<u8>, width: u32, height: u32, orientation: u16) -> (Vec<u8>, u32, u32) {
     const PX: usize = 4;
     let (w, h) = (width as usize, height as usize);
     // 行内水平翻转 / 行间垂直翻转（原位，无越界分支——像素序恒在缓冲区界内）。
@@ -2660,6 +2752,46 @@ mod decode_tests {
         let same = decode_jpeg_bytes(&identity).unwrap();
         assert_eq!((same.width, same.height), (plain.width, plain.height));
         assert_eq!(same.pixels, plain.pixels);
+    }
+
+    /// s300 PNG eXIf Orientation 四 fixture：早块 eXIf（IDAT 前）生效换轴 1×2、
+    /// 晚块 eXIf（IDAT 后）按规范忽略保持 2×1、ImageMagick「Raw profile type
+    /// exif」zTXt/tEXt 双档案源生效。像素均为 红|蓝 2×1（非对称可观测重排），
+    /// ori=6 顺时针 90° → 1×2 上红下蓝。
+    #[test]
+    fn decode_png_bytes_applies_exif_orientation() {
+        let early = decode_png_bytes(include_bytes!("testdata/exif_early_2x1.png")).unwrap();
+        assert_eq!((early.width, early.height), (1, 2), "early eXIf swapped dims");
+        assert_eq!(early.get_pixel(0, 0), [255, 0, 0, 255], "early eXIf top red");
+        assert_eq!(early.get_pixel(0, 1), [0, 0, 255, 255], "early eXIf bottom blue");
+
+        let late = decode_png_bytes(include_bytes!("testdata/exif_late_2x1.png")).unwrap();
+        assert_eq!((late.width, late.height), (2, 1), "late eXIf ignored dims");
+        assert_eq!(late.get_pixel(0, 0), [255, 0, 0, 255], "late eXIf left red");
+        assert_eq!(late.get_pixel(1, 0), [0, 0, 255, 255], "late eXIf right blue");
+
+        let raw_profile_cases: [(&str, &[u8]); 2] = [
+            ("zTXt", include_bytes!("testdata/exif_ztxt_2x1.png")),
+            ("tEXt", include_bytes!("testdata/exif_text_2x1.png")),
+        ];
+        for (kind, bytes) in raw_profile_cases {
+            let img = decode_png_bytes(bytes).unwrap();
+            assert_eq!((img.width, img.height), (1, 2), "{kind} raw profile swapped dims");
+            assert_eq!(img.get_pixel(0, 0), [255, 0, 0, 255], "{kind} top red");
+            assert_eq!(img.get_pixel(0, 1), [0, 0, 255, 255], "{kind} bottom blue");
+        }
+    }
+
+    /// s300 `png_orientation` 元数据探测面：早块双源 Some(6)、晚块 None、
+    /// 无 EXIF 的普通 PNG None。
+    #[test]
+    fn png_orientation_probes_early_chunks_only() {
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_early_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_ztxt_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_text_2x1.png")), Some(6));
+        assert_eq!(png_orientation(include_bytes!("testdata/exif_late_2x1.png")), None);
+        let red = red_2x2_png();
+        assert_eq!(png_orientation(&red), None);
     }
 
     /// R1793：解码真实 4×3 纯绿 WebP fixture（lossless，RGB → 补 alpha=255）。
