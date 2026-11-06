@@ -3327,6 +3327,25 @@ fn wc_case_skipped(relative: &str) -> bool {
     if name.starts_with("shadowrootadoptedstylesheets-document-parse-crash") {
         return true;
     }
+    // declarative/tentative CSS module 载入链家族剔池（簇 D 面 1，2026-11-06
+    // triage + wc-after 逐文件 F 签名复核，共 27 案 27F+1T）：runner 无 module
+    // loader / modulepreload / importmap fetch 支持，载入链死 → shadowRoot
+    // null 连锁，F 为伪信号——shadow-dom 范围内不可修，script-sandbox 模块
+    // 载入落地后回池（fetch 脚本 SD_DECL_TENTATIVE_MODULE_PARKED 同步）。
+    // 机制断言面（basic/multiple/invalid-specifier/idl-*/serialization/
+    // clonenode/same-document）留池，归口 rendering-compat。
+    const MODULE_LOAD_CHAIN_PREFIXES: &[&str] = &[
+        "shadowrootadoptedstylesheets-async-fetch",
+        "shadowrootadoptedstylesheets-modulepreload",
+        "shadowrootadoptedstylesheets-clonenode-async-fetch",
+        "shadowrootadoptedstylesheets-nested-async",
+        "shadowrootadoptedstylesheets-nested-sync",
+        "shadowrootadoptedstylesheets-placeholder-identity",
+        "shadowrootadoptedstylesheets-fetched-module",
+    ];
+    if MODULE_LOAD_CHAIN_PREFIXES.iter().any(|prefix| name.starts_with(prefix)) {
+        return true;
+    }
     // untriaged/ v0 遗留 reftest 页（fetch 脚本不拉；双保险防本地残留误扫）
     // + reference/ 空支撑页（精确路径，防前缀吞 reference-target/）。
     const EXACT_PATH_SKIPS: &[&str] = &[

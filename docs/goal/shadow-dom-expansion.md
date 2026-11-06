@@ -8,9 +8,10 @@ Batch 3 残面修复落地（2026-11-06：语料级 A/B 0 回归，gethtml ×1 �
 2,268 → 3,762P/0F，×1/×2/×3 solo 随预算平滑延伸 3.4k/4.8k/5.96k（总数
 6,908，86%），无固定截断面——吞吐 >11× 与 Q1 队列 11× 互证，剩余 = 线性
 预算瓶颈非楔死），
-M3 余项：簇 C engine glue / attachment+簇D 修复落地与复测
-（dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets）与 script-sandbox
-剔池决策（簇 D 面 2/3）
+M3 余项：簇 C engine glue / attachment+null 链修复落地与复测
+（dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets 机制面 ~19F）
+——簇 D 剔池决策已落地（module 载入链 27 案 27F+1T 出池，回池条件 =
+script-sandbox 模块载入）
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -228,6 +229,18 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   2026-11-03）`_zwSerializeDecls` 末声明带分号 + 颜色归一**（adopted/insertRule
   路径经 `_ruleFromText` 重建），认领声明时点的「q16/s299 系嫌疑」以此收窄；
   归属 html-semantics 流（s 系）bisect 精确翻转点后修（更新 5 期望或回退路径形）。
+- **簇 D 剔池决策落地（M3 余项③，2026-11-06 傍晚）**：module 载入链家族
+  27 案（async-fetch-*×15 / modulepreload-*×7 / nested-async / nested-sync /
+  placeholder-identity / clonenode-async-fetch / fetched-module）出池
+  27F+1T——wc-after 逐文件 F 签名复核修正 triage 的 ~17F 估数，判据 =
+  载入机制依赖（module/importmap 逐文件 grep 确认）× P=0 × 断言链整体
+  依赖载入成功。两侧同源落地：runner `wc_case_skipped` 新增
+  MODULE_LOAD_CHAIN_PREFIXES + fetch 脚本 `SD_DECL_TENTATIVE_MODULE_PARKED`
+  停拉（回池条件 = script-sandbox 模块载入落地）。复测：parked 全部消失、
+  留池 9 文件逐行与 wc-after 零移动（25F+2P 精确一致）。簇 D 54F → 25F
+  留池口径（rendering-compat 归口 ~19F + clone/IDL 尾段候选 ~6F）；
+  triage 面 1 计数 17F→27F 修正随 evidence。
+  [park evidence](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-cluster-d-module-chain-park.md)
 
 ## 依赖约束（run-rules §9）
 

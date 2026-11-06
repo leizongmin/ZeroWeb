@@ -22,8 +22,11 @@
 #   面，无子测试分母）、leaktests/（leak harness，GC 可观测性环境受限）、
 #   reference/（空支撑页）
 # - declarative/【M0 重审转正】parser/template 层（s168/s173 已落）入通道；
-#   渲染级消费仍归 45 号。tentative/shadowrootadoptedstylesheets/ 同批入通道，
-#   失败按 JS 语义域如实记账（M2 分档）
+#   渲染级消费仍归 45 号。tentative/shadowrootadoptedstylesheets/ 同批入通道；
+#   【M3 簇 D 剔池】CSS module 载入链家族 27 案（async-fetch-*/modulepreload-*/
+#   nested-*/placeholder-identity/clonenode-async-fetch/fetched-module）转
+#   SD_DECL_TENTATIVE_MODULE_PARKED 停拉（载入链死 F 为伪信号，script-sandbox
+#   模块载入落地后回池），机制断言面留池失败按 JS 语义域如实记账
 # - reference-target/【M0 重审转正】tentative 特性 JS 语义可修档入通道
 #   （referenceTarget 属性未实现，M3 归因）
 # - untriaged/【M0 重审转正】v0 遗留面按 content-level 甄别只入 testharness
@@ -337,8 +340,9 @@ SD_HELPERS=(
 #   / s173（html5ever shadowrootmode 绕道）已落，M0 重审把「declarative 范围外」
 #   排除条款收窄为「渲染级消费归 45 号」——本层 JS 语义面转正入通道。
 # - declarative/tentative/shadowrootadoptedstylesheets/：constructable
-#   stylesheets shim 已有，module script 样式加载面 M2 基线分档（JS 语义域，
-#   失败如实入账不预排除）。
+#   stylesheets shim 已有；【M3 簇 D 剔池】module 载入链家族 27 案转
+#   SD_DECL_TENTATIVE_MODULE_PARKED（载入链死 F 为伪信号，回池条件见数组注），
+#   机制断言面留池失败如实记账（rendering-compat 归口）。
 # - reference-target/（tentative 特性）：referenceTarget 属性未实现——JS 语义
 #   可修档入池，M2 基线 + M3 归因（就地修或具名挂账）。
 # - untriaged/：v0 时代遗留面，只入 content-level 甄别出的 testharness 用例
@@ -371,6 +375,24 @@ SD_DECL_HELPERS=(
 )
 
 SD_DECL_TENTATIVE_CASES=(
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-basic.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-clonenode.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-document-parse-crash.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-absent-and-empty.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-reflection.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-invalid-specifier.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-multiple.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-same-document.html"
+  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html"
+)
+
+# CSS module 载入链家族剔池（簇 D 面 1，2026-11-06 triage + wc-after 逐文件
+# F 签名复核 27F+1T——runner 无 module loader/modulepreload/importmap fetch
+# 支持，载入链死 → shadowRoot null 连锁，F 为伪信号；shadow-dom 范围内不可
+# 修，script-sandbox 模块载入落地后移回 SD_DECL_TENTATIVE_CASES 回池，与
+# runner 侧 wc_case_skipped MODULE_LOAD_CHAIN_PREFIXES 两侧同源）。
+SD_DECL_TENTATIVE_MODULE_PARKED=(
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-disconnect-iframe.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-disconnect.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-duplicate-bare-specifier.html"
@@ -386,15 +408,8 @@ SD_DECL_TENTATIVE_CASES=(
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-ordering.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch-shared.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-async-fetch.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-basic.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-clonenode-async-fetch.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-clonenode.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-document-parse-crash.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-fetched-module.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-absent-and-empty.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-feature-detection.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-idl-reflection.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-invalid-specifier.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-async.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-basic.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-failure.html"
@@ -402,12 +417,9 @@ SD_DECL_TENTATIVE_CASES=(
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-nested.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-ordering.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-modulepreload-shared.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-multiple.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-nested-async.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-nested-sync.html"
   "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-placeholder-identity.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-same-document.html"
-  "shadow-dom/declarative/tentative/shadowrootadoptedstylesheets/shadowrootadoptedstylesheets-serialization.html"
 )
 
 SD_DECL_TENTATIVE_HELPERS=(
