@@ -7,6 +7,10 @@
 //!    content_height 会把增量逐层放大，60→136→196 复合过冲）。
 //! 3. x 归位臂仅非浮动 caption：float:right 的浮动 caption（float-applies-to-015）
 //!    其 x 是合法 float 落位，归位到 margin_left 会把它从右缘拉回左缘。
+//! R5443 勘误：锚 1 的 beside 表盒宽断言旧为「填区间 gap」（R1613 旧语义）——R5436
+//! shrink 臂（6acbeea9a）落地的当轮翻红（该轮未跑 lib 全腿漏检）；headless chromium
+//! 截图 oracle 定谳 beside 表盒 = grid extent（§10.3.5 shrink-to-fit），beside 落位
+//! 断言（x/y）保留仍守原修复。
 
 use super::*;
 use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
@@ -93,10 +97,11 @@ fn r5213_interval_mixed_float_table_beside_not_below() {
         "table 应 beside（y≈0），旧 max_right 语义误判无空间推 below（y≈20），实际 y={}",
         table_box.y
     );
-    // beside 填区间宽：[100, 200] gap=100。
+    // beside 表盒宽 = grid extent（R5443 oracle：chrome 表盒 80 = cell 内容宽，
+    // gap 剩余带留容器底色；§10.3.5 shrink-to-fit，R5436 shrink 臂同判）。
     assert!(
-        table_box.width >= 95.0 && table_box.width <= 105.0,
-        "beside 表应填区间宽 ≈100，实际 {}",
+        table_box.width >= 75.0 && table_box.width <= 85.0,
+        "beside 表盒宽应 ≈80（grid extent，chrome oracle），实际 {}",
         table_box.width
     );
 }

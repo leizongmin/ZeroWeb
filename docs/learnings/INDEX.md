@@ -5,9 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（241）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（242）
 
 - 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
+- 2026-11-07 [单测钉红的归因必须 bisect 到提交；改动域轮次必须跑改动 crate 的 lib 全腿](bugs/2026-11/2026-11-07-lib-full-leg-and-commit-level-bisect-for-pin-reds.md) — layout-engine, testing
 - 2026-11-07 [批脚本 md5 守卫快照须落构建后，脚本起点快照会误标二进制身份](bugs/2026-11/2026-11-07-batch-md5-guard-snapshot-timing.md) — tests/wpt-runner
 - 2026-11-06 [WebSocket fail 面 error 派发：err 标记位与派发门共用 flag 导致派发永久跳过](bugs/2026-11/2026-11-06-ws-deferred-error-dispatch-flag-short-circuit.md) — engine
 - 2026-11-06 [WPT runner 完成竞态：module script unhandled rejection 上报与结果收集差一 tick](bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md) — zero-engine, tests/wpt-runner
