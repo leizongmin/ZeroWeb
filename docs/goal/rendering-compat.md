@@ -9,6 +9,12 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ R5437 归因轮（㉕第二刀 margin-box 越带门——006/007 chromium oracle 定谳 **chrome-fail 弃案**〔chrome 自身渲染含红块，案 ref 与 chrome 矛盾，R5367/R5425① 判例族，不可转绿〕；门完整实现＋探针 2/2＋solo 双态验证后 **corpus FIXED=0 → 否决回退**〔零可收益目标＋臂门拒绝形态落 shrink 的潜在行为面，patch 存档证据目录可复活〕；005「意外 FIXED」误归因撤案〔main 本绿＝R5222-era pushdown 臂 default-on，env=0 禁臂才红〕；main 基线窗 693F 逐位复核＋五案批跑回归 solo ×3 全绿洗清；**零代码改动收轮**；方法学入账：kill-switch 关臂 OFF 窗≠main 基线，真基线须 HEAD 二进制＋REFTEST_DUMP_PASS=1 防 stale dump）**（2026-11-06）
+>
+> - **oracle 定谳**：006/007 chrome 渲染均含红块（bfc1 auto 宽 margin box 50 > 带 25 下绕；bfc2 definite 75 ml=−50 margin box 左缘 −100 < 0 下绕）——R5217 注释准确、R5436 挂账预期不成立；007 ZW 现行为与 chrome 已逐段同构（✗2.08%＝对错误 ref 的正确偏差）。
+> - **门实现→否决**：continue 门加 `mb_left = x+ml < −0.5` 越带判定落入既有 R5222 definite pushdown 臂；探针单测 2/2（bfc2 y=100→150 x=−50 w=75 chrome 同构＋零 margin 幂等卫；单测须显式 `Parser::parse_stylesheet` 喂 CSS）；solo 006 ON ✗2.34%/OFF ✗1.82%（弃案红维持）；corpus w0 699F/w1 698F/main 基线 **693F**（=R5436 记录）；main-vs-ON REGRESSED=5（anonymous-129/153/154＋insert-middle-002＋run-in-between-003）全 solo ×3 绿洗清＝在册批跑翻转族（153 无门批也红＝二进制无关）。证据：[`rendering-compat/evidence/r5437-beside-marginbox-attribution-2026-11-06.md`](rendering-compat/evidence/r5437-beside-marginbox-attribution-2026-11-06.md)（含复活 patch）。
+> - **挂账**：**销账**㉕第二刀（弃案定谳结案，㉕ 域无残余 live 案）；R5432 销账面/㉖-㉚/deep intrinsic 48 变体矩阵/**待用户决策清单**①-⑤ 维持（无新增）；对端 js_dom_bridge 五案红腿观察维持。**下一步 R5438**：①挂账深域择优开案（优先㉚ p-BFC mid-line float 复合放置域；次选㉖ root 表格化＋视口 overflow 传播）②对端红腿跨轮观察维持 ③重腿前 ps 静窗纪律维持。
+
 > **▶ R5436 修复轮（㉕ float-aware BFC 盒放置域第一刀——beside 表盒宽语义收口：§10.3.5 shrink-to-fit grid extent 信号＋definite-exact 门控，floats-wrap-bfc-006 ✗1.18%→✓0.00%；corpus 真 FIXED=1 REGRESSED=∅（movers 全互翻族 solo 3× 洗清）；kill-switch `ZW_TABLE_FLOAT_BESIDE_SHRINK`；对端 fmt 债收口 0f788c402）**（2026-11-06）
 >
 > - **归因**（REFTEST_DUMP 双侧像素扫描）：bfc-006 四表 beside 落位 (x,y) 双侧一致、仅表盒宽差——C 步 beside 臂无条件填 gap（R1613 语义），chromium 表盒 = grid 宽、caption 溢出表盒（§17.4.1）；caption definite 宽 > grid 的表（T2 190/100、T4 192/100）被撑到 caption/gap 宽。R5213 FIXME（beside 宽语义缺 §10.3.5 pref 信号）本轮回收。
