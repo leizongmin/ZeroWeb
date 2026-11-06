@@ -7970,7 +7970,10 @@ fn wpt_data_fetch_handler_with_stash(
                     // redirect_preflight → 落穿：preflight 响应带重定向（fetch 侧拒绝）。
                 }
                 count += 1;
-                if let Some(location) = wpt_query_value(query, "location") {
+                // net-api-compat-v3 M3：location 用字节语义变体解码（wptserve/
+                // 浏览器链路上响应头值为字节序列——redirect-location-escape 面
+                // %E2%98%83 → 三字节 Latin-1 字符、%FF → U+00FF 保真）。
+                if let Some(location) = wpt_query_value_bytes(query, "location") {
                     // 上游：scheme ∈ {空,http,https}（urlparse 小写语义——scheme 仅
                     // 认首段 `^[A-Za-z][A-Za-z0-9+.-]*:` 前缀，无前缀即空）且非
                     // ?simple= 时附全量原 query（urlencode——**含 location 键自身**）
@@ -10174,12 +10177,18 @@ fn wpt_data_fetch_handler_with_stash(
                             headers.push((name, value));
                         }
                     }
-                    // wptserve `.headers` sidecar 语义：同名 sidecar 的 Content-Type
-                    // 覆盖默认 MIME（wpt_static_resource_headers）——替换而非追加
-                    //（重复 content-type 头在 CT 解析侧首项胜出，保留单头不变量）。
-                    if let Some(sidecar_ct) = wpt_sidecar_content_type(&root, clean) {
-                        headers.retain(|(n, _)| !n.eq_ignore_ascii_case("content-type"));
-                        headers.push(("content-type".into(), sidecar_ct));
+                    // wptserve `.headers` sidecar 语义（net-api-compat-v3 M3 升全量头）：
+                    // content-type 覆盖默认 MIME（wpt_static_resource_headers）——替换而非
+                    // 追加（重复 content-type 头在 CT 解析侧首项胜出，保留单头不变量）；
+                    // 其余头（cors-top.txt.headers ACAO `*` 等）absent 时追加——同名去重
+                    // 保首项（pipe 头优先，与上方 default_headers 并存序同向）。
+                    for (sidecar_name, sidecar_value) in wpt_sidecar_headers(&root, clean) {
+                        if sidecar_name.eq_ignore_ascii_case("content-type") {
+                            headers.retain(|(n, _)| !n.eq_ignore_ascii_case("content-type"));
+                            headers.push((sidecar_name, sidecar_value));
+                        } else if !headers.iter().any(|(n, _)| n.eq_ignore_ascii_case(&sidecar_name)) {
+                            headers.push((sidecar_name, sidecar_value));
+                        }
                     }
                     if clean == "service-workers/cache-storage/resources/simple.txt"
                         && wpt_query_value(query, "zw-filtered").as_deref() == Some("cors")
@@ -10367,6 +10376,22 @@ fn wpt_query_value(query: &str, name: &str) -> Option<String> {
     })
 }
 
+/// [`wpt_query_value`] 的字节语义变体——percent-decode 产物逐**字节**映射为
+/// Latin-1 字符（浏览器响应头 ByteString 语义：每字节 ↔ 每字符 U+0000..U+00FF）。
+/// 供原样回写响应头的值面（redirect.py `location`）——UTF-8 文本解码会把
+/// %E2%98%83 变 U+2603（charCode > 0xFF → JS Headers ByteString 校验拒该响应）
+/// 且 lossy 解码把 %FF 变 U+FFFD；wptserve/浏览器链路上 Location 恒为字节序列。
+/// net-api-compat-v3 M3 fixture 修正（redirect-location-escape 全簇根因之一）。
+fn wpt_query_value_bytes(query: &str, name: &str) -> Option<String> {
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        if key != name {
+            return None;
+        }
+        Some(percent_encoding::percent_decode_str(value).map(|b| b as char).collect())
+    })
+}
+
 /// `html/semantics/scripting-1/the-script-element/resources/load-error-events.py`
 /// 的 wptserve CGI 静态等价（html-semantics M2 s100；语料 pull 面不含 .py，运行时
 /// 按上游脚本语义仿真——pin 315976933870 逐字核对）：
@@ -10542,24 +10567,28 @@ fn wpt_static_resource_headers(path: &str) -> Vec<(String, String)> {
 }
 
 /// `.headers` sidecar（wptserve per-file 响应头）读取——`<path>.headers` INI 形态
-///（`[section]` 忽略、`key: value` 行），返回 Content-Type 值；文件缺失/无该行返 None。
-/// 消费面：fetch 通道静态服务对同名 sidecar 的 Content-Type 覆盖默认 MIME
-///（xmldecl support `*-vs-http` 族——断言 HTTP charset 头优先于 XML 声明/meta）。
-/// reftest 通道 CSS 侧已有独立 sidecar 读取（resources.rs charset determination）。
-fn wpt_sidecar_content_type(root: &Path, path: &str) -> Option<String> {
-    let bytes = std::fs::read(root.join(format!("{path}.headers"))).ok()?;
+///（`[section]` 忽略、`key: value` 行），返回全部头对；文件缺失返空。消费面：fetch
+/// 通道静态服务应用同名 sidecar 全量头（content-type 覆盖默认 MIME——xmldecl
+/// support `*-vs-http` 族；其余头按 absent 追加——cors-top.txt.headers ACAO `*`
+/// 面，redirect-mode follow+cors 跨源终跳 cors check 依赖）。wptserve 同名语义
+///（pipe 首项胜出）由调用方去重保首项承接。reftest 通道 CSS 侧已有独立 sidecar
+/// 读取（resources.rs charset determination）。
+fn wpt_sidecar_headers(root: &Path, path: &str) -> Vec<(String, String)> {
+    let bytes = match std::fs::read(root.join(format!("{path}.headers"))) {
+        Ok(bytes) => bytes,
+        Err(_) => return Vec::new(),
+    };
     let text = String::from_utf8_lossy(&bytes);
     text.lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('[') && !line.starts_with('#') && !line.starts_with(';'))
-        .find_map(|line| {
-            line.split_once(':').and_then(|(key, value)| {
-                key.trim()
-                    .eq_ignore_ascii_case("content-type")
-                    .then(|| value.trim().to_string())
-                    .filter(|v| !v.is_empty())
+        .filter_map(|line| {
+            line.split_once(':').map(|(key, value)| {
+                (key.trim().to_string(), value.trim().to_string())
             })
         })
+        .filter(|(_, value)| !value.is_empty())
+        .collect()
 }
 
 fn wpt_status_text(status: u16) -> &'static str {

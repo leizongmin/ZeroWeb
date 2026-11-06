@@ -6,11 +6,11 @@
 **状态**: Active——M0 完成（三甄别档 + 数值门 <10k 分支），M1a 完成
 （枚举器窗体解锁 +1,624P 零回归），M1b 完成（redirect 批次导入 +264P
 零回归 + `.h2.` 排除记账），M2 完成（三批全落），**M3 推进中**——
-ws interfaces 九簇收口（+45P 至 **13,109P** 零回归，批次门 100%，
-[证据档](net-api-compat-v3/evidence/2026-11-06-m3-ws-interfaces-clusters.md)，
-websockets topdir 通道 Fail 清零）；M3 余项：fetch redirect 七簇
-（99F+1T）+ xhr auth 五簇（12F）+ `__custom` 排序簇（1F）+ 重定向终跳
-sync cors-filter 同规 + xhr 在账失败簇
+ws interfaces 九簇收口（+45P，批次门 100%）+ fetch redirect 七簇收口
+（99F+1T → 363P/0F/1T，+102P 至 **13,211P** 零回归，changed 全 F→P，
+[证据档](net-api-compat-v3/evidence/2026-11-06-m3-redirect-engine-clusters.md)）；
+M3 余项：xhr auth 五簇（12F）+ `__custom` 排序簇（1F）+ 重定向终跳
+sync cors-filter 同规 + xhr 在账失败簇 + keepalive 1T
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -172,14 +172,25 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   根因，015 的 P 不证明派发）；定向 88P/45F → 133P/0F；全量 A/B
   13,064 → **13,109P**（+45P，分母 14,692 不变，changed 45 全 F→P 零
   P→F 零 T 变化）；批次门 100%，DC-3 interfaces 面门达成。
-  余项：redirect 引擎语义簇收敛（fetch redirect 批次 99F+1T 七簇 +
-  xhr redirect 残余——referrer 63F / redirect-mode 11F / origin 10F /
-  method 9F / location-escape 4F 等）+ xhr auth 五簇（URL/open() userinfo
-  凭据解析 8F / 401 挑战流 UA 会话 2F / 跨源透明 auth 拒绝 1F / preflight
-  ACAH enforcement 1F）+ getAllResponseHeaders 排序簇（浏览器头序 vs 引擎
-  字节升序，1F）+ 重定向终跳 sync cors-filter 同规 + xhr 在账失败簇收敛
+  **fetch redirect 七簇 ✅**（2026-11-06，[证据档](net-api-compat-v3/evidence/2026-11-06-m3-redirect-engine-clusters.md)）：
+  part01.js 六刀 + testharness.rs 两刀——referrer 链式逐跳重算（Referrer-Policy
+  替换 + 上一跳外发值为源，双引擎 128/128 定谳）、mode 三刀（sidecar 全量头 /
+  no-cors 跨源 manual 入口门 / cors check 先于 opaqueredirect 转换）、hop
+  Origin 发射门（clean 同源跳不发射 / 已污染 sticky 'null'）、hop CL 空串体门
+  + 303 任意非 GET/HEAD 改写、response tainting 持久（whatwg/fetch#737）、
+  Location 字节序列保真（fixture `wpt_query_value_bytes` + shim `%XX` 单字节
+  转义——字节语义根因落
+  [learning](../../learnings/bugs/2026-11/2026-11-06-response-header-values-are-byte-sequences.md)）；
+  定向 338P/25F/1T → 363P/0F/1T（批次门 99.7%）；全量 A/B 13,109 →
+  **13,211P**（+102P，分母 14,650 键不变，changed 102 全 F→P 零 P→F 零
+  T 变化，链外搭车 3 行逐行溯源）。
+  余项：xhr auth 五簇（URL/open() userinfo 凭据解析 8F / 401 挑战流 UA 会话
+  2F / 跨源透明 auth 拒绝 1F / preflight ACAH enforcement 1F）+
+  getAllResponseHeaders 排序簇（浏览器头序 vs 引擎字节升序，1F）+
+  重定向终跳 sync cors-filter 同规 + xhr 在账失败簇收敛
   （formdata/submitter 簇 4F + overrideMimeType Shift-JIS 接线 1F +
-  cookies.http.html 挂起 1T；permissions-policy 2F 策略面排除）（DC-3）。
+  cookies.http.html 挂起 1T + redirect-keepalive 1T；permissions-policy 2F
+  策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

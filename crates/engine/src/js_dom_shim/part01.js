@@ -4498,12 +4498,6 @@
     var responseUrl = response && response.url ? response.url : requestUrl;
     var requestOrigin = _zwUrlOrigin(_zwCurrentHref());
     var responseOrigin = _zwUrlOrigin(responseUrl || requestUrl);
-    if (redirect === 'manual' && _zwFetchRedirectStatus(response.status)) {
-      return _zwFetchMakeOpaqueLike(response, 'opaqueredirect');
-    }
-    if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
-      return _zwFetchMakeOpaqueLike(response, 'opaque');
-    }
     if (!_zwSsChannel && !_zwImgChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.get === 'function') {
       // https://fetch.spec.whatwg.org/#cors-check——按 spec 步序：`*` 先行通配
       // （步骤 3，credentials 非 include；include 下 `*` 不可用——access-control-
@@ -4512,6 +4506,10 @@
       //（#http-redirect-fetch），序列化为 `null`，ACAO 须字面 `null` 即匹配
       //（authentication-redirection 跨源腿 dump-authorization-header 回显 `null`
       // 面；比对文档 origin 恒失配 → 误判 network error）；include 恒须 ACAC true。
+      // net-api-compat-v3 M3：cors check 先于 manual→opaqueredirect 转换
+      //（HTTP-network-or-cache fetch 步序——cors check 落在 redirect status
+      // switch 之前：manual redirect with a CORS error 期望面，无 ACAO 的跨源
+      // 重定向响应须 network error 而非 opaqueredirect）。
       //   https://fetch.spec.whatwg.org/#cors-check
       //   https://fetch.spec.whatwg.org/#http-redirect-fetch
       var allowOrigin = response.headers.get('access-control-allow-origin');
@@ -4522,6 +4520,12 @@
           (credentials === 'include' && String(allowCreds).toLowerCase() !== 'true')) {
         throw new TypeError('Failed to fetch');
       }
+    }
+    if (redirect === 'manual' && _zwFetchRedirectStatus(response.status)) {
+      return _zwFetchMakeOpaqueLike(response, 'opaqueredirect');
+    }
+    if (mode === 'no-cors' && responseOrigin !== requestOrigin) {
+      return _zwFetchMakeOpaqueLike(response, 'opaque');
     }
     if (!_zwSsChannel && mode === 'cors' && responseOrigin !== requestOrigin && _zwHasRealPageOrigin() && response && response.headers && typeof response.headers.forEach === 'function') {
       // https://fetch.spec.whatwg.org/#concept-filtered-response-cors——cors 响应仅暴露
@@ -5560,6 +5564,17 @@
           else resolve(_schemeHit.response);
           return;
         }
+        // net-api-compat-v3 M3：main fetch 步骤 3 mode 分支（no-cors 臂）——redirect
+        // mode 非 follow 且 current URL 跨源 → network error（入口即拒，先于任何网络
+        // 活动）。同源 URL 先被「同源 + response tainting basic」臂截住不入本臂——
+        // redirect-mode same-origin manual+no-cors opaqueredirect 期望面与此门共存
+        //（上臂分派 data:/非 HTTP scheme 先行，arm 排序对齐 spec switch）。
+        //   https://fetch.spec.whatwg.org/#concept-main-fetch
+        if (mode === 'no-cors' && redirect !== 'follow' &&
+            _zwUrlOrigin(url) !== _zwUrlOrigin(_zwCurrentHref())) {
+          reject(new TypeError('Failed to fetch'));
+          return;
+        }
         // net-api M4-S22：CORS-preflight cache（fetch spec §cors-preflight-cache）——
         // (目标 origin, credentials) 键缓存 ACAM/ACAH + Max-Age 过期；命中（method ∈
         // ACAM 且自定义头 ⊆ ACAH——`*` 通配）则跳过 OPTIONS（preflight-cache「second
@@ -5581,6 +5596,23 @@
         var _zwBeaconPolicy = (init && typeof init.__zwBeaconReferrerPolicy === 'string' && init.__zwBeaconReferrerPolicy)
           ? init.__zwBeaconReferrerPolicy : null;
         var _zwRefIsDowngrade = String(_zwCurrentHref()).indexOf('https:') === 0 && String(url).indexOf('https:') !== 0;
+        // 策略 → Referer 外发值（M4-S25 初始请求与 M3 重定向环逐跳重算共用形）；
+        // 入参语义 = determine request's referrer 的 policy 分支逐条转写（downgrade/
+        // beacon 收紧仅 beacon 通道生效——fetch 通道 http 宇宙无降级场景，行为不变）。
+        //   https://w3c.github.io/webappsec-referrer-policy/#determine-request's-referrer
+        var _zwReferrerPolicyOut = function (policy, refUrl, targetCross, originOnly, downgrade, beacon) {
+          if (policy === 'origin') return originOnly;
+          if (policy === 'strict-origin') return (beacon && downgrade) ? null : originOnly;
+          if (policy === 'no-referrer-when-downgrade') return (beacon && downgrade) ? null : refUrl;
+          if (policy === 'unsafe-url') return refUrl;
+          if (policy === '' || policy === 'strict-origin-when-cross-origin' ||
+              policy === 'origin-when-cross-origin') {
+            if (beacon && downgrade && policy !== 'origin-when-cross-origin') return null;
+            return targetCross ? originOnly : refUrl;
+          }
+          if (policy === 'same-origin') return targetCross ? null : refUrl;
+          return null;
+        };
         var _zwRefOut = null;
         if (mode === 'cors' || _zwBeaconPolicy != null) {
           var _refPolicy = _zwBeaconPolicy != null ? _zwBeaconPolicy
@@ -5605,26 +5637,8 @@
             var _originOnly = (_zwBeaconPolicy != null
               ? _zwUrlOrigin(_zwCurrentHref())
               : _zwUrlOriginLenient(_zwCurrentHref())) + '/';
-            if (_refPolicy === 'origin') {
-              _zwRefOut = _originOnly;
-            } else if (_refPolicy === 'strict-origin') {
-              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _originOnly;
-            } else if (_refPolicy === 'no-referrer-when-downgrade') {
-              _zwRefOut = (_zwBeaconPolicy != null && _zwRefIsDowngrade) ? null : _refUrl;
-            } else if (_refPolicy === 'unsafe-url') {
-              _zwRefOut = _refUrl;
-            } else if (_refPolicy === '' || _refPolicy === 'strict-origin-when-cross-origin' ||
-                       _refPolicy === 'origin-when-cross-origin') {
-              // s-o-w-c-o 有降级条款（spec）；origin-when-cross-origin 无（只按 cross 分
-              // 全 URL/origin——不随 scheme 降级）。
-              if (_zwBeaconPolicy != null && _zwRefIsDowngrade && _refPolicy !== 'origin-when-cross-origin') {
-                _zwRefOut = null;
-              } else {
-                _zwRefOut = _tgtCross ? _originOnly : _refUrl;
-              }
-            } else if (_refPolicy === 'same-origin') {
-              _zwRefOut = _tgtCross ? null : _refUrl;
-            }
+            _zwRefOut = _zwReferrerPolicyOut(_refPolicy, _refUrl, _tgtCross, _originOnly,
+              _zwRefIsDowngrade, _zwBeaconPolicy != null);
             if (_zwRefOut && !_zwHasHeader(headersWire, 'referer')) {
               headersWire = _zwAddHeader(headersWire, 'Referer', _zwRefOut);
             }
@@ -5781,6 +5795,24 @@
           // redirection 跨源腿面）。
           response = _zwFetchApplyFilteredResponse(response, hopUrl || url, mode, redirect, credentials, _zwSsChannel, _zwImgChannel, _zwHopOriginOpaque);
           if (hopUrl) response.url = hopUrl;
+          // net-api-compat-v3 M3：response tainting 持久——链上曾跨源（initial 跨源
+          // 或任一跳跨源）后 tainting 不随「终跳回到同源」回退（main fetch mode
+          // switch 同源臂门在 response tainting "basic"；HTTP-redirect fetch 递归
+          // re-entry 保留 tainting）→ cors 链终跳同源 type 'cors'、no-cors 链终跳
+          // 同源落 opaque 过滤（whatwg/fetch#737——redirect-back-to-original-origin
+          // 「original => remote => original」cors 期望 'cors' / no-cors 期望
+          // 'opaque' 面）。opaqueredirect（manual）与已 opaque 终跳不重包。
+          //   https://fetch.spec.whatwg.org/#main-fetch
+          //   https://github.com/whatwg/fetch/issues/737
+          if (_zwChainCrossed && response.type !== 'opaqueredirect' &&
+              !(typeof _zwSsChannel !== 'undefined' && _zwSsChannel) &&
+              !(typeof _zwImgChannel !== 'undefined' && _zwImgChannel)) {
+            if (mode === 'no-cors') {
+              if (response.type !== 'opaque') response = _zwFetchMakeOpaqueLike(response, 'opaque');
+            } else if (mode === 'cors' && response.type !== 'cors') {
+              response.type = 'cors';
+            }
+          }
           // net-api-compat-v3 M1b：response.redirected spec 语义（URL list > 1——
           // 已跟 ≥1 跳即 true；manual 模式不进 hop 保持 false；new Response() ctor
           // 默认 false）——redirect-method「assert_true(resp.redirected)」面。
@@ -5852,6 +5884,11 @@
         // network error 规则②依赖它。
         var _zwRespTaintingCors = mode === 'cors' &&
           _zwUrlOriginLenient(url) !== _zwUrlOriginLenient(_zwCurrentHref());
+        // net-api-compat-v3 M3：链上「曾跨源」追踪（mode 无关）——response tainting
+        // 持久语义（main fetch mode switch 同源臂门在 tainting "basic"，cors/opaque
+        // 置位后递归 re-entry 恒不再回退；redirect-back-to-original-origin
+        // 「original => remote => original」no-cors 期望 opaque / cors 期望 cors 面）。
+        var _zwChainCrossed = _zwRespTaintingCors;
         var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
           var response = _makeResponseFromWire(raw);
@@ -5881,6 +5918,24 @@
                 reject(new TypeError('Empty redirect Location'));
                 return;
               }
+              // net-api-compat-v3 M3：Location 字节序列保真——header 值经 ByteString
+              // 逐字节 Latin-1 映射（fixture 侧 wpt_query_value_bytes 对齐），解析时
+              // 0x80..0xFF 字节以 %XX 单字节转义进 URL（非 UTF-8 重编——`new URL`
+              // query 通道会把 U+00E2 等重编为双字节 %C3%A2 mojibake）。whatwg/fetch
+              // #883 tentative 行为（redirect-location-escape 期望面：
+              // \xe2\x98\x83 → %E2%98%83、\xff → %FF、`%\xe2\x98\x83` →
+              // `%%E2%98%83`——`%` 字面保留；ASCII 值逐字符零变化）。
+              //   https://github.com/whatwg/fetch/issues/883
+              var _locEsc = '';
+              for (var _li = 0; _li < _locStr.length; _li++) {
+                var _lc = _locStr.charCodeAt(_li);
+                if (_lc >= 0x80 && _lc <= 0xFF) {
+                  _locEsc += (_lc < 0x10 ? '%0' : '%') + _lc.toString(16).toUpperCase();
+                } else {
+                  _locEsc += _locStr.charAt(_li);
+                }
+              }
+              _locStr = _locEsc;
               var _locScheme = '';
               try { _locScheme = new URL(_locStr, hopUrl).protocol.replace(':', ''); } catch (_eLocSch) {}
               if (_locScheme !== 'http' && _locScheme !== 'https') {
@@ -5944,19 +5999,70 @@
             var nextMethod = hopMethod;
             var nextBody = hopBody;
             var nextWire = hopHeaders(hopWire);
-            // net-api-compat-v3 M1b：303 仅 POST→GET 改写（fetch spec HTTP-redirect
-            // fetch——此前任意方法落 GET，redirect-method「303 with HEAD」面）；
-            // 301/302 原本即仅 POST 改写。
+            // net-api-compat-v3 M1b：301/302 仅 POST→GET 改写；net-api-compat-v3
+            // M3：303 对**任意非 GET/HEAD**方法改写 GET（fetch spec HTTP-redirect
+            // fetch 方法改写步——303 with TESTING 面；HEAD 不改写）。
             //   https://fetch.spec.whatwg.org/#http-redirect-fetch
-            if ((response.status === 301 || response.status === 302 || response.status === 303) &&
-                hopMethod === 'POST') {
+            if ((response.status === 301 || response.status === 302) && hopMethod === 'POST') {
               nextMethod = 'GET';
               nextBody = null;
               // 体派生头剥离（Content-Type/Encoding/Language/Location 描述旧体，落体
               // 后不得随 hop 携带——redirect-method strip 断言面；Content-Length 由
               // hopHeaders 既有剥离覆盖）。
               nextWire = _zwStripBodyDerivedHeaders(nextWire);
+            } else if (response.status === 303 && hopMethod !== 'GET' && hopMethod !== 'HEAD') {
+              nextMethod = 'GET';
+              nextBody = null;
+              nextWire = _zwStripBodyDerivedHeaders(nextWire);
             }
+            // net-api-compat-v3 M3：重定向链逐跳 Referer 重算——HTTP-redirect fetch
+            // 每跳经 set request's referrer policy on redirect 读重定向响应
+            // Referrer-Policy 头（非空且为已知 token → **替换**当前策略），再按
+            // determine request's referrer 重算外发值并**替换**线缆 Referer。
+            // referrerSource 取**链式**语义：上一跳实际外发值（Chromium
+            // net::RedirectInfo / Firefox ReferrerInfo 重定向路径的浏览器共识，
+            // wpt.fyi Firefox 162.0.0a1 / Edge 159.0.4378.0 master 对该案面均
+            // 128/128；与 spec 字面「request's referrer 固定文档 URL」不同——
+            // redirect-referrer-override 期望矩阵 omitted-wins / origin-严于-full
+            // 的组合语义（严格者胜）定谳链式：origin-only 源经全 URL 策略重算
+            // 仍 origin-only，空源（上跳未外发）则链上恒不复活）。beacon 通道
+            // 维持 M4-S25 一次性计算行为零回归，不参与重算。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            //   https://w3c.github.io/webappsec-referrer-policy/#set-request-referrer-policy-on-redirect
+            //   https://w3c.github.io/webappsec-referrer-policy/#determine-request's-referrer
+            if (mode === 'cors' && !_zwBeaconPolicy && typeof _refPolicy === 'string') {
+              var _hopRpRaw = response.headers.get('Referrer-Policy');
+              var _hopRpVal = _hopRpRaw == null ? '' : String(_hopRpRaw).toLowerCase();
+              var _hopRpTokens = _hopRpVal.split(',');
+              for (var hti = 0; hti < _hopRpTokens.length; hti++) {
+                var _hopRpTok = _hopRpTokens[hti].trim();
+                if (_hopRpTok === 'no-referrer' || _hopRpTok === 'no-referrer-when-downgrade' ||
+                    _hopRpTok === 'same-origin' || _hopRpTok === 'origin' ||
+                    _hopRpTok === 'origin-when-cross-origin' || _hopRpTok === 'strict-origin' ||
+                    _hopRpTok === 'strict-origin-when-cross-origin' || _hopRpTok === 'unsafe-url') {
+                  _refPolicy = _hopRpTok;
+                }
+              }
+              if (_zwRefOut) {
+                var _hopRefIsDowngrade = String(_zwRefOut).indexOf('https:') === 0 &&
+                  String(nextUrl).indexOf('https:') !== 0;
+                var _hopTgtCross = _zwUrlOrigin(_zwRefOut) !== _zwUrlOrigin(nextUrl);
+                _zwRefOut = _zwReferrerPolicyOut(_refPolicy, _zwRefOut, _hopTgtCross,
+                  _zwUrlOriginLenient(_zwRefOut) + '/', _hopRefIsDowngrade, false);
+                var _hopRefParts = nextWire ? nextWire.split('\x1e') : [];
+                var _hopKeptRef = '';
+                for (var hri = 0; hri + 1 < _hopRefParts.length; hri += 2) {
+                  if (String(_hopRefParts[hri]).toLowerCase() === 'referer') continue;
+                  _hopKeptRef = _hopKeptRef ? _hopKeptRef + '\x1e' + _hopRefParts[hri] + '\x1e' + _hopRefParts[hri + 1]
+                                            : _hopRefParts[hri] + '\x1e' + _hopRefParts[hri + 1];
+                }
+                nextWire = _zwRefOut ? _zwAddHeader(_hopKeptRef, 'Referer', _zwRefOut) : _hopKeptRef;
+              }
+            }
+            // net-api-compat-v3 M3：本跳**跳前**tainting 快照（下方跨源臂会就位改写
+            // _zwRespTaintingCors——同源→跨源跳的 Origin 发射门须用跳前值区分
+            // 「clean 链首次跨」与「已污染链再跨」，见下方 Origin 发射块）。
+            var _zwHopWasTainted = _zwRespTaintingCors;
             // fetch spec：跨源重定向 → Authorization 头丢弃（xhr-authorization-redirect
             // 「cross origin redirection」期望 'none' 面）。
             if (nextUrl && _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl)) {
@@ -5964,6 +6070,7 @@
               //（fetch spec HTTP fetch——cors check 通过即置；后续 Location
               // credentials 规则②按链上已跨源判定）。
               if (mode === 'cors') _zwRespTaintingCors = true;
+              _zwChainCrossed = true;
               var dropParts = nextWire ? nextWire.split('\x1e') : [];
               var keptWire = '';
               for (var di = 0; di + 1 < dropParts.length; di += 2) {
@@ -5987,14 +6094,24 @@
               _zwHopOriginOpaque = true;
             }
             var _hopDocOrigin = _zwUrlOrigin(_zwCurrentHref());
-            // cors 跳 Origin 一律归一：跳透明用文档 origin，跳不透明（跨跳
-            // 改写）用 'null'——**不**以 nextUrl 是否等于文档 origin 为门
-            // （跨跳回到文档 origin 的 Location 也要送 'null'，fetch spec
-            // HTTP-redirect fetch 的 opaque origin 规则按键住的是「当前跳
-            // origin ≠ Location origin」，非「Location origin ≠ 文档
-            // origin」；否则 wpt.test:8000 锚下 cors-redirect
-            // 「cors to same origin」面的 null 写不进 wire）。
+            // cors 跳 Origin 发射门（net-api-compat-v3 M3 收敛，矩阵覆盖
+            // cors-redirect 20 行 + redirect-origin 40 行全绿）：
+            // - 跳不透明（_zwHopOriginOpaque 置位——已污染链再跨源，值**sticky**，
+            //   链上恒 'null'——cors-redirect「cors to another cors / cors to same
+            //   origin」、redirect-origin「Other origin to same origin」面；
+            //   upstream Firefox/Edge 对后者红是 crbug.com/1432059 挂账面，本仓
+            //   按 corpus 期望值 'null' 发射）；
+            // - 跳前已污染或本跳跨源（clean 链首次跨）→ 文档 origin
+            //   （cors-redirect「same origin to cors」「cors to same cors」、
+            //   redirect-origin「Same origin to other origin / Other origin to
+            //   other origin」面）；
+            // - clean 同源链同源跳 → **不发射** Origin（redirect-origin
+            //   「Same origin to same origin」GET/POST 全 10 行期望 null——浏览器
+            //   共识：未跨源链的同源跳不带 Origin，fetch spec append-a-request-
+            //   origin-header cors 臂字面（恒 append）与浏览器行为不符，以
+            //   corpus 为准）。
             // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            // https://fetch.spec.whatwg.org/#append-a-request-origin-header
             if (mode === 'cors' && nextUrl && _hopDocOrigin) {
               var oParts = nextWire ? nextWire.split('\x1e') : [];
               var keptO = '';
@@ -6003,9 +6120,18 @@
                 keptO = keptO ? keptO + '\x1e' + oParts[oi] + '\x1e' + oParts[oi + 1]
                               : oParts[oi] + '\x1e' + oParts[oi + 1];
               }
-              nextWire = _zwAddHeader(keptO, 'Origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin);
+              nextWire = (_zwHopOriginOpaque || _zwHopWasTainted ||
+                          _zwUrlOrigin(nextUrl) !== _zwUrlOrigin(hopUrl))
+                ? _zwAddHeader(keptO, 'Origin', _zwHopOriginOpaque ? 'null' : _hopDocOrigin)
+                : keptO;
             }
-            if (nextBody != null) {
+            // net-api-compat-v3 M3：体 null **或空串**（无体 GET/HEAD 跳——初始 body
+            // 变量无体时为 ''，非 null）不加 Content-Length（fetch spec body 传输
+            // 后为 null → HTTP fetch 不 append；浏览器无体 GET 不带 CL——
+            // redirect-method GET/HEAD 全形态「x-request-content-length NO」面）；
+            // POST 空体跳仍带 CL:0（对齐初始请求 M2-S10 POST 缺体补 CL:0 口径）。
+            //   https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (nextBody != null && (nextBody !== '' || nextMethod === 'POST')) {
               var hopLen = 0;
               if (nextBody.indexOf('__zw_bytes:') === 0) {
                 hopLen = nextBody.slice('__zw_bytes:'.length).split(',').length;
