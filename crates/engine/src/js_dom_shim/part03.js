@@ -10159,6 +10159,83 @@
       globalThis[_zn] = _znMediaWrapped;
     }
   }
+  // R5432（shadow-dom M3 尾段小刀①，簇 D triage 面 4 IDL 反射）：HTMLTemplateElement
+  // 声明式 shadowRoot* 五成员 IDL 反射——spec the-template-element：
+  // shadowRootMode（枚举 shadow root mode，**limited to only known values** 反射：
+  // getter 值 ASCII 小写匹配 open/closed 返回之，非法/缺席返 ''；setter 非法值移除
+  // content attribute）、shadowRootDelegatesFocus / shadowRootClonable /
+  // shadowRootSerializable（布尔反射：attribute 在即真，setter true 置 '' / false
+  // 移除）、shadowRootReferenceTarget（DOMString 反射：缺席返 ''）。全部 own
+  // property（WPT declarative-shadow-dom-basic 特征检测断言
+  // HTMLTemplateElement.prototype.hasOwnProperty('shadowRootMode')）——MEl 宿主
+  // 经 R125 tag→iface 原型链可达。幂等：已有 own 成员不覆盖。
+  // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+  // https://html.spec.whatwg.org/multipage/common-dom-interfaces.html#reflecting-content-attributes-in-idl-attributes
+  try {
+    if (globalThis.HTMLTemplateElement && globalThis.HTMLTemplateElement.prototype) {
+      var _r5432TplProto = globalThis.HTMLTemplateElement.prototype;
+      var _r5432AttrGet = function (name) {
+        try { return this.getAttribute(name); } catch (_e5432g) { return null; }
+      };
+      var _r5432EnumGet = function (name) {
+        var v = _r5432AttrGet.call(this, name);
+        if (v == null) return '';
+        v = String(v).toLowerCase();
+        return (v === 'open' || v === 'closed') ? v : '';
+      };
+      var _r5432BoolGet = function (name) {
+        try { return !!this.hasAttribute(name); } catch (_e5432hb) {}
+        return _r5432AttrGet.call(this, name) != null;
+      };
+      var _r5432BoolSet = function (name, v) {
+        try {
+          if (v) this.setAttribute(name, '');
+          else this.removeAttribute(name);
+        } catch (_e5432sb) {}
+      };
+      var _r5432Define = function (prop, desc) {
+        if (!Object.prototype.hasOwnProperty.call(_r5432TplProto, prop)) {
+          try { Object.defineProperty(_r5432TplProto, prop, desc); } catch (_e5432d) {}
+        }
+      };
+      _r5432Define('shadowRootMode', {
+        configurable: true, enumerable: true,
+        get: function () { return _r5432EnumGet.call(this, 'shadowrootmode'); },
+        set: function (v) {
+          var s = String(v == null ? '' : v).toLowerCase();
+          try {
+            if (s === 'open' || s === 'closed') this.setAttribute('shadowrootmode', s);
+            else this.removeAttribute('shadowrootmode');
+          } catch (_e5432ms) {}
+        },
+      });
+      _r5432Define('shadowRootDelegatesFocus', {
+        configurable: true, enumerable: true,
+        get: function () { return _r5432BoolGet.call(this, 'shadowrootdelegatesfocus'); },
+        set: function (v) { _r5432BoolSet.call(this, 'shadowrootdelegatesfocus', v); },
+      });
+      _r5432Define('shadowRootClonable', {
+        configurable: true, enumerable: true,
+        get: function () { return _r5432BoolGet.call(this, 'shadowrootclonable'); },
+        set: function (v) { _r5432BoolSet.call(this, 'shadowrootclonable', v); },
+      });
+      _r5432Define('shadowRootSerializable', {
+        configurable: true, enumerable: true,
+        get: function () { return _r5432BoolGet.call(this, 'shadowrootserializable'); },
+        set: function (v) { _r5432BoolSet.call(this, 'shadowrootserializable', v); },
+      });
+      _r5432Define('shadowRootReferenceTarget', {
+        configurable: true, enumerable: true,
+        get: function () {
+          var v = _r5432AttrGet.call(this, 'shadowrootreferencetarget');
+          return v == null ? '' : String(v);
+        },
+        set: function (v) {
+          try { this.setAttribute('shadowrootreferencetarget', String(v == null ? '' : v)); } catch (_e5432rs) {}
+        },
+      });
+    }
+  } catch (_e5432t) {}
   // R290（js-dom M4）：接口原型的 **constructor 自反属性**（spec WebIDL「interface
   // prototype object」自带 non-enumerable constructor 指回接口构造器）。旧链
   // `Node.prototype = {}` / `Element.prototype = Object.create(...)` / 子类

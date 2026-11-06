@@ -196,7 +196,8 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   载入链 ~17F 环境受限坐实（modulepreload onerror 实证，剔池候选挂账
   script-sandbox）；adoptedStyleSheets 机制 ~14F 与 rendering-compat 边界耦合
   归口挂账不双改；clone 面 ~3F（shadowrootclonable 克隆重建）+ IDL 反射属
-  shadow-dom 范围内可修小刀（M3 尾段候选）；null 链 ~18F 与 attachment 机制一
+  shadow-dom 范围内可修小刀（M3 尾段候选，**已落地**见「M3 尾段两小刀
+  落地」节）；null 链 ~18F 与 attachment 机制一
   同根（静态物化不生效），随 m3c2 修复复测定格：
   [cluster D triage](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-cluster-d-triage.md)；
   ④簇 C referenceTarget——dom 层先行已由并行流落地（d8f473ff8）；通道复测
@@ -260,6 +261,42 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   （§9 不碰）；本刀不触物化路径。并行侧请勿动 part03.js 三处编辑面
   （R194b 轻量工厂 init 字段 / `_zwDeepCloneEl` 克隆臂 / HTMLTemplateElement
   原型挂载段）。
+
+### 2026-11-06——M3 尾段两小刀落地（template shadowRoot* IDL 反射 + clonable 根克隆）
+
+- **落地内容（三件套，part03 +77 / part04 +69，纯 JS）**：① part03
+  `HTMLTemplateElement.prototype` 五成员 IDL 反射（R5432：shadowRootMode
+  枚举 limited-to-known-values、DelegatesFocus/Clonable/Serializable 布尔、
+  ReferenceTarget 字符串，hasOwnProperty 幂等守卫 + 接口存在性守卫）；
+  ② part04 proxy set trap 名称门控派发（R-t2qq adoptedStyleSheets 同型）：
+  R98 accessor 派发仅 CE 门控，普通 template 缺派发时 unknown-prop 写落
+  expando 遮蔽原型 accessor（setter 失效根因）；getter-only 静默拒绝与平台
+  sloppy 语义一致；③ part04 cloneNode trap 收尾克隆臂（R5433，WHATWG DOM
+  concept-node-clone 步骤 2）：clonable open 根随宿主克隆、shadow 树恒深拷
+  与 deep 参数无关、非 clonable 恒 null，`_attachShadow` 同机重建 + 子节点
+  cloneNode(true) 回填。
+- **认领方案修订（A1/A2 撤销）**：认领段预告的 part03 MEl 域两刀（R194b
+  轻量工厂 init 字段 / `_zwDeepCloneEl` 克隆臂）撤销不落地——测试页 proxy
+  flavor 走 part04 trap 重建路径不经 MEl 克隆，corpus 零收益且纯体积反扰动
+  既有完成竞态族（见下条勘误）；俟 m3c2 物化落地随复测评估回装。最终编辑
+  面 = part03 仅 R5432 IDL 块、part04 两块，并行侧以此为准。
+- **A/B 门（WC ×1 全语料逐子测试身份比对，同机同参守卫）**：**P→F/T=0、
+  after-only Fail=0、F→P=14**——declarative-shadow-dom-basic ×8 /
+  reference-target-idl ×3 / adoptedstylesheets-clonenode ×2 /
+  shadow-root-clonable ×1，与两刀目标面吻合。聚合行数不直接可比（gethtml
+  ×1 预算漂移 + 同窗 module 链剔池 27 案：files 414→387）；证据（本地
+  `.acceptance/`，不入库）：`.acceptance/shadow-m3-residual/wc-after{,-r5433-final}.json`。
+- **勘误（shadowrootadoptedstylesheets 模块族整文件 0 行上报）**：非本刀
+  回归——五轮重建对照 + 页内扰动实验（追加空 `<script>` 翻转上报方向）+
+  全二进制同 reject 对照定谳 = runner 既有完成竞态（module script unhandled
+  rejection 上报与结果收集差一 tick，shim 体积经解析时序微扰翻转方向）；
+  机制与鉴别法沉淀
+  [learning](../learnings/bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md)。
+- **engine 门**：`cargo test -p zero-engine` 3,766P/5F，5F 与上节「HEAD 既有
+  5F 归因收窄」同集合（R2809/R2810/R3276/p56/p99s），干树 stash 往返复现
+  一致，归 html-semantics 流 s249 处理，本刀无关。门禁：JS-only diff，
+  `git diff --check` / `cargo fmt --all -- --check` 干净，fmt/clippy 对
+  .js 不适用。
 
 ## 依赖约束（run-rules §9）
 

@@ -7413,6 +7413,47 @@
                 }
               }
             }
+            // R5433（shadow-dom M3 尾段小刀②，簇 D triage clone 面）：proxy/handle
+            // 域克隆臂——clonable shadow root 随宿主克隆。spec clone a node 步骤 2
+            // 「If node is a shadow host whose shadow root's clonable is true」：shadow
+            // 树**恒深克隆**（宿主 deep=false 亦然——shadow-root-clonable shallowClone
+            // 断言面）；非 clonable 根不克隆（clone.shadowRoot 恒 null——clonable
+            // false/undefined 双案现状维持）。源根登记读 _shadowRoots[key]（s180
+            // attachShadow 与声明式 hydrate 同形登记），克隆根经 _attachShadow 同机
+            // 重建（mode/slotAssignment 校验 + _shadowRoots/_shadowHandleMeta/engine
+            // wire 三端一致），shadow 子经 cloneNode 递归 + appendChild 常规通道落入
+            // 克隆根（嵌套 clonable 根随递归同面覆盖）。本臂在 `if (deep)` 外——浅克隆
+            // 宿主亦得全 shadow 子（spec clone children 恒 true 面）。
+            // https://dom.spec.whatwg.org/#concept-node-clone
+            try {
+              var _r5433SrcReg = _shadowRoots[key];
+              if (_r5433SrcReg && _r5433SrcReg.mode === 'open') {
+                var _r5433SrcMeta = _shadowHandleMeta[_r5433SrcReg.handle];
+                if (_r5433SrcMeta && _r5433SrcMeta.clonable === true) {
+                  var _r5433Root = _attachShadow(null, nh, {
+                    mode: 'open',
+                    clonable: true,
+                    serializable: !!_r5433SrcMeta.serializable,
+                    delegatesFocus: !!_r5433SrcMeta.delegatesFocus,
+                    slotAssignment: _r5433SrcMeta.slotAssignment === 'manual' ? 'manual' : 'named',
+                  });
+                  if (_r5433Root) {
+                    var _r5433SrcRoot = _wrapHandle(_r5433SrcReg.handle);
+                    var _r5433Kids = _r5433SrcRoot.childNodes;
+                    if (_r5433Kids && _r5433Kids.length) {
+                      for (var _r5433i = 0; _r5433i < _r5433Kids.length; _r5433i++) {
+                        var _r5433k = _r5433Kids[_r5433i];
+                        if (!_r5433k || typeof _r5433k.cloneNode !== 'function') continue;
+                        var _r5433cc = _r5433k.cloneNode(true);
+                        if (_r5433cc) {
+                          try { _r5433Root.appendChild(_r5433cc); } catch (_e5433ap) {}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            } catch (_e5433sc) {}
             return _wrapHandle(nh);
           };
         }
@@ -13834,6 +13875,34 @@
             }
             _asrSChain = Object.getPrototypeOf(_asrSChain);
             _asrSGuard++;
+          }
+        }
+        // R5432（shadow-dom M3 尾段小刀①）：HTMLTemplateElement 声明式 shadowRoot*
+        // 五成员原型 setter 派发（R-t2qq adoptedStyleSheets 同款名称门控走查——
+        // R98 派发仅 CE 门控，普通 createElement('template') 不命中；缺派发时
+        // `t.shadowRootMode = v` 落 expando，后续读经 expando 命中原样返回、content
+        // attribute 恒不写——declarative-shadow-dom-basic 三 setter 案「getter 回读
+        // 原值/getAttribute null」根因）。命中 setter → 以 proxy 为 this 调用（反射
+        // 语义在原型 setter 内：枚举非法移除属性、布尔 true 置空串等）；getter-only
+        // → sloppy 静默拒绝（不落 expando，防遮蔽原型 getter）。原型链无此名（非
+        // template 元素）→ 走查穷尽后交回常规 expando 语义，零行为变化。
+        if (p === 'shadowRootMode' || p === 'shadowRootDelegatesFocus'
+            || p === 'shadowRootClonable' || p === 'shadowRootSerializable'
+            || p === 'shadowRootReferenceTarget') {
+          var _r5432Chain = null;
+          try { _r5432Chain = Object.getPrototypeOf(_makeProxy(sel, handle)); } catch (_e5432pc) { _r5432Chain = null; }
+          var _r5432Guard = 0;
+          while (_r5432Chain && _r5432Guard < 8) {
+            var _r5432Desc = null;
+            try { _r5432Desc = Object.getOwnPropertyDescriptor(_r5432Chain, p); } catch (_e5432pd) { _r5432Desc = null; }
+            if (_r5432Desc) {
+              if (typeof _r5432Desc.set === 'function') {
+                _r5432Desc.set.call(_makeProxy(sel, handle), value);
+              }
+              return true;
+            }
+            _r5432Chain = Object.getPrototypeOf(_r5432Chain);
+            _r5432Guard++;
           }
         }
         // js-dom M3 R98：symbol-keyed 写直入 expando（普通对象语义——symbol 永不映射内容
