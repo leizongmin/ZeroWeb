@@ -22,8 +22,14 @@
 
   // "A formattable block name is "address", "dd", "div", "dt", "h1", ...,
   // "h6", "p", or "pre"."
-  var _zwFbqFormattableNames = ['address', 'dd', 'div', 'dt', 'h1', 'h2',
-      'h3', 'h4', 'h5', 'h6', 'p', 'pre'];
+  // Chrome delta（宿主豁免同族口径）：真实 Blink 名单另收 8 个
+  // sectioning/blockquote 名——语料录音 `<article>/<aside>/<blockquote>/<footer>/
+  // <header>/<hgroup>/<nav>/<section>` exec ret=true 且树真 wrap（compare 行
+  // 刀前全红＝录音树已变），而 `<del>/<dl>/<ins>/<li>/<ol>/<ul>/<quasit>` 录音
+  // ret=[false] 维持拒。spec 白名单（implementation.js :6577-6580）不含这 8 名。
+  var _zwFbqFormattableNames = ['address', 'article', 'aside', 'blockquote',
+      'dd', 'div', 'dt', 'footer', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'header', 'hgroup', 'nav', 'p', 'pre', 'section'];
 
   // "A non-list single-line container is an HTML element whose local name is
   // one of ..."（全版 single-line container 另含 li/dt/dd，用 _zwIpara 判据）。
@@ -98,6 +104,7 @@
 
     // "Block-extend the active range, and let new range be the result."
     var newRange = _zwJusBlockExtend(range, false);
+    throw new Error('FBQ-STAGE-1');
 
     // "For each node node contained in new range, append node to node list
     // if it is editable, ... node is either a non-list single-line container
@@ -110,6 +117,7 @@
             || _zwJusIsHtmlElement(node, ['dd', 'dt']))
         && !_zwFbqHasProhibitedParagraphChildDescendant(node);
     });
+    throw new Error('FBQ-STAGE-2 nodes=' + nodeList.length);
 
     // "Record the values of node list, and let values be the result."
     var values = _zwDelRecordValues(nodeList);
@@ -138,8 +146,11 @@
               && _zwListInSameEditingHost(anc, node)
               && _zwJusIsHtmlElement(anc, _zwFbqFormattableNames)
               && !_zwFbqHasProhibitedParagraphChildDescendant(anc)) {
+            var prevP = node.parentNode;
             _zwListSplitParent([node]);
-            keep = true;
+            // 进度防御：splitParent plain 域拷贝 no-op（身份不迁）即停，防
+            // while 重拆同一祖先克隆循环（同 part01e 允许子臂防御，fbq 轮）。
+            if (node.parentNode !== prevP) keep = true;
             break;
           }
           anc = anc.parentNode;
@@ -149,6 +160,7 @@
 
     // "Restore the values from values."
     _zwDelRestoreValues(values);
+    throw new Error('FBQ-STAGE-3');
 
     // "While node list is not empty: ..."（single-line container 解包臂 ∨
     // 连续 sibling 聚 sublist 后 wrap）。

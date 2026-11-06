@@ -527,10 +527,17 @@
       return;
     }
     // 允许子臂（vendored :3886-3896）：允许于同宿主某祖先但非直父 → 逐层拆父。
+    // 进度防御（2026-11-07 fbq 轮）：splitParent 走 plain 域拷贝路径时身份不迁
+    //（副本上移、原 node 留原地）——while 判定引用不变 → 每轮重克隆整棵子树指
+    // 数膨胀挂死（formatblock 语料条目 360 display:block span / 361 不可编辑
+    // span 混合形单案复现实证）。parentNode 不变即停（真移动路径必迁位，list
+    // 刀既有调用零行为变化）；行为面（engine 产物在 plain 子树的真上移）挂账。
     var values = _zwDelRecordValues([node]);
     var pg = 0;
     while (node.parentNode && !_zwListIsAllowedChild(node, node.parentNode) && pg++ < 256) {
+      var prevParent = node.parentNode;
       _zwListSplitParent([node]);
+      if (node.parentNode === prevParent) break;
     }
     _zwDelRestoreValues(values);
   }
