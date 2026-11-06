@@ -1026,3 +1026,7 @@ mod r5435_cell_valign_extent_tests;
 /// R5436：float 旁 auto-width 表 beside 目标宽收口（definite-exact grid 缩到
 /// §10.3.5 shrink-to-fit 上限，欠度量形态维持填 gap）。
 mod r5436_beside_shrink_tests;
+
+/// R5444：cell 固有宽不计 OOF 子（absolute/fixed）——三臂泄漏封堵（显式宽/R4028
+/// max-content/95% 启发式/char 回退），driving s-11-1-1b-005。
+mod r5444_cell_intrinsic_oof_skip_tests;

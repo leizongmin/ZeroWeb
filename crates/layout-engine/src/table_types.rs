@@ -609,6 +609,20 @@ pub(crate) fn vertical_table_slot_depth(
     })
 }
 
+/// R5444 kill-switch 判据（CSS2 §17.5.2 table intrinsic = 流内内容 + css-position-3
+/// §9.1，R5370 同门）：OOF（absolute/fixed）子不计 cell/table 内部盒固有宽。旧径
+/// 三臂（显式宽/R4028 max-content/95% 启发式）+ char/leaf 文本回退都把 abs 子的
+/// laid-out/DOM max-content 计入——s-11-1-1b-005 探针实证 td(width:20px) + abs p →
+/// 列/表 279.5（p max-content），cell 黑底带随之 279.5 宽致 1.52%。
+/// `ZW_CELL_INTRINSIC_OOF_SKIP=0` 回退计数行为（R4028/R4029 提交态）。
+/// 非 table 盒不走此判据——R5300 abs 塌 0 补测链依赖普通块盒的 abs 文本宽度量
+///（ZW abs 定位以父盒为 sizing 语境；chrome §10.1 ICB 语义偏差另案挂账 D2）。
+pub(crate) fn cell_intrinsic_oof_skip_enabled() -> bool {
+    static ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_INTRINSIC_OOF_SKIP").as_deref() != Ok("0"));
+    *ON
+}
+
 pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,
@@ -783,6 +797,15 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
             inline_run_active = false;
         }
 
+        // R5444：OOF（absolute/fixed）子不计固有宽（三臂在此前全部旁路——显式宽臂
+        // probe D p width:300px 计入 300、R4028 臂 probe C/E max-content 279.5、95%
+        // 臂 laid-out 宽同泄）。abs 子的尺寸/定位语义另案（宽按父 cell 退化可用宽塌
+        // min-content 43，CSS §10.1 应 ICB——R5444 挂账 D2）。flush 在前保 R5261
+        // 「间隔任意 DOM 节点即断」的 run 断链语义。
+        if cell_intrinsic_oof_skip_enabled() && (child.is_absolute || child.is_fixed) {
+            continue;
+        }
+
         // R5345（css-sizing-3 §5 intrinsic sizing）：百分比（及 min/max/fit-content）
         // 指定宽在固有测量中按 auto 解析——块级 % 宽子的列宽贡献 = 内容 max-content
         // （R4028 递归），而非 post-taffy 对可用宽解析的拉伸值（blocks-025：td 内
@@ -883,7 +906,7 @@ pub(crate) fn compute_cell_intrinsic_width_impl(
     let char_width = if is_ahem { font_size } else { font_size * 0.6 };
 
     // 收集单元格内的文本内容长度
-    let text_len = collect_text_length(cell_box, doc);
+    let text_len = collect_text_length(cell_box, doc, styles);
     if text_len > 0 {
         // R702/R679：优先用 intrinsic max-content（DOM-based，不依赖 layout 结果）。
         // collect_text_length 把 block 子之间的空白/换行也计入字符数，致 char_count
@@ -1023,17 +1046,55 @@ fn cell_direct_text_width(
 /// 使用 DOM text_content() 方法获取元素的完整文本内容。
 /// 注意：使用 .chars().count() 计算字符数而非 .len()（字节数），
 /// 因为多字节 Unicode 字符（如 CJK）的字节数不等于字符数。
-pub(crate) fn collect_text_length(box_node: &LayoutBox, doc: &zero_dom::Document) -> usize {
-    let mut len = 0;
-    if let Some(node_id) = box_node.node_id {
-        if let Some(text) = doc.text_content(node_id) {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                len += trimmed.chars().count();
+pub(crate) fn collect_text_length(
+    box_node: &LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> usize {
+    let Some(root) = box_node.node_id else {
+        return 0;
+    };
+    // R5444：OOF（absolute/fixed）子树文本不计 char 估算（CSS Tables §17.5.2 固有宽
+    // = 流内内容；旧 doc.text_content 递归把纯 abs 内容 cell 的估算撑到 abs 文本宽
+    // ——三臂跳过 OOF 后 char 回退臂成为最后泄漏缝）。除 OOF 剪枝外与旧
+    // text_content 递归拼接 + trim 一次语义一致（collect_text 同构）。kill-switch
+    // `ZW_CELL_INTRINSIC_OOF_SKIP=0` 回退（含 abs 文本）。
+    let skip_oof = cell_intrinsic_oof_skip_enabled();
+    fn collect(
+        id: NodeId,
+        doc: &zero_dom::Document,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        skip_oof: bool,
+        out: &mut String,
+    ) {
+        let Some(node) = doc.get(id) else {
+            return;
+        };
+        match &node.kind {
+            zero_dom::NodeKind::Text(data) => out.push_str(&data.content),
+            zero_dom::NodeKind::Element(_) => {
+                if skip_oof
+                    && styles.get(&id).is_some_and(|s| {
+                        matches!(
+                            s.position,
+                            zero_css_parser::values::PositionValue::Absolute
+                                | zero_css_parser::values::PositionValue::Fixed
+                        )
+                    })
+                {
+                    return;
+                }
+                for &child in &node.children {
+                    collect(child, doc, styles, skip_oof, out);
+                }
             }
+            _ => {}
         }
     }
-    len
+    let mut text = String::new();
+    collect(root, doc, styles, skip_oof, &mut text);
+    let trimmed = text.trim();
+    trimmed.chars().count()
 }
 
 /// R1146：计算 vertical 表每列的 min-content（最长不可断 word 的宽度）。
