@@ -3323,6 +3323,18 @@ impl Painter {
                     &clip_rect,
                     radii,
                 );
+                // R5430：零模糊 outset 阴影同判据承接 clip 圆角（CSS Overflow 3 §3
+                // shaped clip edge；driving overflow-clip-margin-border-radius）。
+                // corner-shape 非初始（R5188 同判据）时跳过——裁剪边随形角，spec
+                // 半径 shadow 改写越出形角弧（corner-shape-overflow-clip-margin）。
+                if style.corner_shape.is_all_round() {
+                    super::helpers::clip_shadows_to_rounded_rect(
+                        &mut self.primitives,
+                        &counts_before_children,
+                        &clip_rect,
+                        radii,
+                    );
+                }
             }
         }
 

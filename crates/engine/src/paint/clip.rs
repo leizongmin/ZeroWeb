@@ -779,6 +779,113 @@ pub fn clip_fills_to_rounded_rect(
     }
 }
 
+/// R5430（CSS Overflow 3 §3 shaped clip edge × css-backgrounds-3 #shadow-shape）：
+/// 对快照之后新增、零模糊 outset 阴影按 clip 圆角承接——阴影可见形状（rect ± spread
+/// 平移 offset）与 clip_rect 角上两条邻边逐位重合时，该角弧线与裁剪区圆角弧逐位一致，
+/// 改写为圆角多边形 path_fill（外圈 = 承接 clip 半径的阴影形状，内圈 = clip_out
+/// punch-out 环，R5180 keyhole even-odd 同构）；原 shadow 清零 + draw_order 原位换槽
+///（R4539 惯用法）保绘制序。driving: overflow-clip-margin-border-radius（内盒无
+/// radius → R5188 圆角臂不触发 → ShadowPrimitive 方环，clip 矩形直裁保方角，缺
+/// 4×125²(1−π/4) 角带 2.76%；ref 页 R5188 臂出 r=125 圆）。
+/// blur≠0（3σ 越界形状非实心）、inset（几何为盒内收缩）、负 spread（收缩语义）
+/// 均不承接（与 R5201「阴影案驱动」边界一致；hidden 面/backdrop-filter 祖先裁剪域
+/// 挂账同 overflow_clip_radii gate）。glyph/渐变/图片仍案驱动。
+pub fn clip_shadows_to_rounded_rect(
+    primitives: &mut RenderPrimitives,
+    from: &PrimitiveCounts,
+    clip_rect: &Rect,
+    radii: [f32; 4],
+) {
+    use zero_render_foundation::primitive::{DrawOp, ShadowPrimitive};
+
+    if radii[0] <= 0.0 && radii[1] <= 0.0 && radii[2] <= 0.0 && radii[3] <= 0.0 {
+        return;
+    }
+    for i in from.shadows..primitives.shadows.len() {
+        let s = &primitives.shadows[i];
+        // 仅实心 outset 阴影（零 blur 零 inset 非负 spread）——形状 = rect ± spread
+        // 平移 offset（cpu outset_shadow_geometry 同式，CSS px 域与 clip_rect 同空间）。
+        if s.blur_radius != 0.0 || s.inset || s.spread_radius < 0.0 {
+            continue;
+        }
+        let ew = s.rect.size.width + 2.0 * s.spread_radius;
+        let eh = s.rect.size.height + 2.0 * s.spread_radius;
+        if ew <= 0.0 || eh <= 0.0 {
+            continue;
+        }
+        let ex = s.rect.origin.x - s.spread_radius + s.offset_x;
+        let ey = s.rect.origin.y - s.spread_radius + s.offset_y;
+        let extent = Rect::new(ex, ey, ew, eh);
+        // 截断后阴影形状 ⊆ clip_rect；邻边与裁剪边重合（0.01 容差，与 fills 承接
+        // 同判据）→ 该角落在裁剪区圆角角上，弧线逐位一致。
+        let coincide = |a: f32, b: f32| (a - b).abs() < 0.01;
+        let corner_radii = [
+            if coincide(extent.left(), clip_rect.left()) && coincide(extent.top(), clip_rect.top()) {
+                radii[0]
+            } else {
+                0.0
+            },
+            if coincide(extent.right(), clip_rect.right()) && coincide(extent.top(), clip_rect.top()) {
+                radii[1]
+            } else {
+                0.0
+            },
+            if coincide(extent.right(), clip_rect.right()) && coincide(extent.bottom(), clip_rect.bottom()) {
+                radii[2]
+            } else {
+                0.0
+            },
+            if coincide(extent.left(), clip_rect.left()) && coincide(extent.bottom(), clip_rect.bottom()) {
+                radii[3]
+            } else {
+                0.0
+            },
+        ];
+        if corner_radii[0] <= 0.0 && corner_radii[1] <= 0.0 && corner_radii[2] <= 0.0 && corner_radii[3] <= 0.0 {
+            continue;
+        }
+        // 改写：外圈 = 承接半径的阴影形状，内圈 = clip_out punch-out（outer shadow
+        // 「drawn outside the border edge only」，R4139 语义保持；None = 无 punch）。
+        let ry = corner_radii;
+        let mut ring = crate::paint::helpers::rounded_corner_polygon_in_box(ex, ey, ew, eh, corner_radii, ry);
+        if let Some(punch) = s.clip_out {
+            let square = rounded_rect_polygon(punch);
+            ring = crate::paint::helpers::concat_ring_vertices(ring, square);
+        }
+        let color = s.color;
+        primitives.add_path_fill(ring.into_iter().flat_map(|(x, y)| [x, y]).collect(), color);
+        primitives.shadows[i] = ShadowPrimitive {
+            rect: Rect::ZERO,
+            color,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 0.0,
+            inset: false,
+            clip: None,
+            clip_out: None,
+        };
+        if let Some(pos) = primitives
+            .draw_order
+            .iter()
+            .position(|op| matches!(op, DrawOp::Shadow(j) if *j == i))
+            && let Some(tail) = primitives.draw_order.pop()
+        {
+            primitives.draw_order[pos] = tail;
+        }
+    }
+}
+
+/// 矩形四角多边形（punch-out 内圈用；even-odd 与 winding 无关）。
+fn rounded_rect_polygon(r: Rect) -> Vec<(f32, f32)> {
+    vec![
+        (r.left(), r.top()),
+        (r.right(), r.top()),
+        (r.right(), r.bottom()),
+        (r.left(), r.bottom()),
+    ]
+}
+
 /// 对快照之后新增的所有图元应用 opacity（alpha 衰减）。
 pub fn apply_opacity_to_new_primitives(primitives: &mut RenderPrimitives, from: &PrimitiveCounts, opacity: f32) {
     for fill in primitives.fills.iter_mut().skip(from.fills) {
@@ -1382,5 +1489,90 @@ mod tests {
         clip_fills_to_rounded_rect(&mut z, &from_z, &clip, [0.0; 4]);
         assert!(z.rounded_rects.is_empty(), "全零半径不应改写");
         assert_eq!(z.fills[1].rect, clip, "全零半径应保持 fill 原样");
+    }
+
+    /// R5430：零模糊 outset 阴影承接 clip 圆角——extent（rect±spread+offset）邻边
+    /// 与裁剪边逐位重合角改写圆角 path_fill 环（clip_out punch 保持），shadow 清零
+    /// ＋draw_order 原位换槽；blur≠0 / extent 不重合 / 全零半径不承接。
+    #[test]
+    fn r5430_clip_shadows_to_rounded_rect_takes_over_clip_corners() {
+        use zero_render_foundation::primitive::ShadowPrimitive;
+        // driving 案形：clip (25,25)-(275,275) radii 全 125；内盒 (125,125) 50×50
+        // spread 100（零 blur 零 offset）→ extent 与 clip 四边重合。
+        let clip = Rect::new(25.0, 25.0, 250.0, 250.0);
+        let mut p = RenderPrimitives::new();
+        let from = PrimitiveCounts::snapshot(&p);
+        p.add_shadow(ShadowPrimitive {
+            rect: Rect::new(125.0, 125.0, 50.0, 50.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 100.0,
+            inset: false,
+            clip: None,
+            clip_out: Some(Rect::new(125.0, 125.0, 50.0, 50.0)),
+        });
+        clip_shadows_to_rounded_rect(&mut p, &from, &clip, [125.0; 4]);
+        assert_eq!(p.path_fills.len(), 1, "阴影应改写为圆角多边形 path_fill");
+        let v = &p.path_fills[0].vertices;
+        // 环 = 外圈圆角多边形（r=125 圆，64 段逼近）+ 内圈方 punch，顶点数足够。
+        assert!(v.len() >= 8 + 4, "环顶点应含外圈弧段 + punch 方角，got {}", v.len());
+        let (mut x_min, mut x_max, mut y_min, mut y_max) = (f32::MAX, f32::MIN, f32::MAX, f32::MIN);
+        for &[x, y] in v.as_chunks::<2>().0 {
+            x_min = x_min.min(x);
+            x_max = x_max.max(x);
+            y_min = y_min.min(y);
+            y_max = y_max.max(y);
+        }
+        assert!(
+            (x_min - 25.0).abs() < 2.0 && (y_min - 25.0).abs() < 2.0,
+            "外圈应达 clip 边（r=125 圆角内收）"
+        );
+        assert!(
+            (x_max - 275.0).abs() < 0.01 && (y_max - 275.0).abs() < 0.01,
+            "外圈应触及 clip 右/下边"
+        );
+        assert_eq!(p.shadows[0].rect, Rect::ZERO, "原 shadow 应清零防双绘");
+        assert!(matches!(p.draw_order[0], DrawOp::PathFill(0)), "draw_order 原位换槽");
+
+        // blur≠0 不承接（3σ 越界形状非实心，案驱动再接）。
+        let mut b = RenderPrimitives::new();
+        let from_b = PrimitiveCounts::snapshot(&b);
+        b.add_shadow(ShadowPrimitive {
+            rect: Rect::new(125.0, 125.0, 50.0, 50.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 8.0,
+            spread_radius: 100.0,
+            inset: false,
+            clip: None,
+            clip_out: None,
+        });
+        clip_shadows_to_rounded_rect(&mut b, &from_b, &clip, [125.0; 4]);
+        assert!(b.path_fills.is_empty(), "blur≠0 不应改写");
+        assert_eq!(
+            b.shadows[0].rect,
+            Rect::new(125.0, 125.0, 50.0, 50.0),
+            "blur≠0 保持原样"
+        );
+
+        // extent 邻边不重合（offset 阴影滑出裁剪角）不承接。
+        let mut o = RenderPrimitives::new();
+        let from_o = PrimitiveCounts::snapshot(&o);
+        o.add_shadow(ShadowPrimitive {
+            rect: Rect::new(125.0, 125.0, 50.0, 50.0),
+            color: Color::rgb(0, 0, 0),
+            offset_x: 12.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            spread_radius: 100.0,
+            inset: false,
+            clip: None,
+            clip_out: None,
+        });
+        clip_shadows_to_rounded_rect(&mut o, &from_o, &clip, [125.0; 4]);
+        assert!(o.path_fills.is_empty(), "extent 不重合不应改写");
     }
 }

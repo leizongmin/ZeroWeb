@@ -261,6 +261,8 @@ impl Painter {
                 })
             })
         });
+        // R5430：活跃性在 if-let 消费前快照（if let 按值 move，后置 is_none 借用冲突）。
+        let shaped_overflow_active = shaped_overflow.is_some();
         if let Some(polygon) = shaped_overflow {
             super::super::helpers::clip_with_polygon_rewrite(&mut self.primitives, counts, &polygon);
         }
@@ -277,6 +279,15 @@ impl Painter {
             && let Some(radii) = super::overflow_clip_radii(box_node, style, &clip_rect, abs_x, abs_y)
         {
             super::super::helpers::clip_fills_to_rounded_rect(&mut self.primitives, counts, &clip_rect, radii);
+            // R5430：零模糊 outset 阴影同判据承接 clip 圆角（CSS Overflow 3 §3
+            // shaped clip edge；driving overflow-clip-margin-border-radius）。
+            // shaped_overflow（border-shape/corner-shape 形角多边形）活跃或
+            // corner-shape 非初始（R5188 同判据 is_all_round；混合 kind 页
+            // shaped_overflow 为 None，spec 半径 shadow 改写越出形角弧
+            // corner-shape-overflow-clip-margin 0.30%→3.06% 实证）时跳过。
+            if !shaped_overflow_active && style.corner_shape.is_all_round() {
+                super::super::helpers::clip_shadows_to_rounded_rect(&mut self.primitives, counts, &clip_rect, radii);
+            }
         }
     }
 }
