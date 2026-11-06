@@ -7000,6 +7000,14 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
     wpt_data_fetch_handler_with_stash(wpt_root, None)
 }
 
+/// reftest 脚本沙箱 fetch 桥复用入口（s304）——无 stash 变体（进程级静态 stash 回落，
+/// 同 `wpt_data_fetch_handler` 测试包装口径）。
+pub(crate) fn reftest_mutation_fetch_handler(
+    wpt_root: &std::path::Path,
+) -> Option<zero_engine::fetch_bridge::FetchHandler> {
+    wpt_data_fetch_handler_with_stash(wpt_root, None)
+}
+
 fn wpt_data_fetch_handler_with_stash(
     wpt_root: &std::path::Path,
     serve_custom_stash: Option<ServeCustomResponseStash>,

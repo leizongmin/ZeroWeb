@@ -102,6 +102,27 @@
 #     sparse clone 按 wpt pin 1eecaa0c30 取件）——升级新 ref 后需重新补。
 #     同域：404-response-with-actual-image-data.py 端点为 runner 仿真臂
 #     （testharness.rs s288，wptserve handler 不入语料），无语料资产）
+#   - html/semantics/embedded-content/the-img-element/resources/
+#     {animated.gif,animated.webp,red.png} 缺失（animated-image-update.
+#     tentative.html、animated-webp-update.tentative.html 与 responsive-
+#     image-select-print.html 依赖；s304 勘根定性该簇部分红页含语料 404
+#     面——资产缺席时测试图走 error/占位形态，期望帧面根本不可观测；已
+#     从上游 wpt 原件本地补入 animated GIF 292B（md5 ceb7ff0068d19fbef6
+#     57cc0f09434e44）+ animated WebP 286B（md5 fe2ba7e9a9e024a91ee24e2
+#     d6def97b2）+ 100x100 PNG 510B（md5 b8ae7929d842f20ada510d963b741e1c；
+#     github.com sparse clone 按 wpt pin efcaa5bb87 取件，2026-11-03
+#     master 快照）；补后 animated 两页转为可观测 2.08% 首帧差（10000/
+#     480000，GIF/WebP 帧推进引擎面归 render-foundation decode 域）——
+#     升级新 ref 后需重新补）
+#   - common/reftest-wait.js 缺失（树级 reftest wait 机制脚本，html+css
+#     树 354 页 `<script src="/common/reftest-wait.js">` 依赖；本地语料
+#     common/ 为绕过本脚本补齐路径的手动填充残留——14 文件独缺此件，s304
+#     勘根定性脚本 404 → takeScreenshot 未定义告警刷屏、wait 机制全树失效
+#     面；已从上游 wpt sparse clone（pin efcaa5bb87）cat-file 原件补入
+#     5616B（md5 fbe764e11b37f04436f6a470ebc418e8）。注记：本脚本
+#     fetch_common_resources 走 unpinned master，该件内容随上游漂移，与
+#     WPT_DATA_REF pin 语料存在版本错位风险——升级新 ref 后重跑本脚本
+#     common/ 补齐即自动接管，或按本条手工补入）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

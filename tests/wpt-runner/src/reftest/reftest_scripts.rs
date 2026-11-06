@@ -105,8 +105,68 @@ pub(super) fn apply_scripted_dom_mutations(
 
     let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(Vec::new()));
     let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(html.to_string()));
-    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(String::from("about:blank")));
+    // s304：脚本沙箱 page_url 取真实 wpt 页面 URL（base_dir 相对 wpt_root 还原
+    // `/html/...` 路径）——页面脚本的相对 URL/fetch/XHR 按页面 URL 语义解析（此前
+    // 恒 about:blank，location 相关判定与相对取址全落空）。无法还原路径（root/dir
+    // 不同基）回落 about:blank 维持旧行为。
+    let page_url_str = wpt_root
+        .zip(base_dir)
+        .and_then(|(root, dir)| {
+            let root = std::fs::canonicalize(root).ok()?;
+            let dir = std::fs::canonicalize(dir).ok()?;
+            let rel = dir
+                .strip_prefix(&root)
+                .ok()?
+                .to_string_lossy()
+                .replace(std::path::MAIN_SEPARATOR, "/");
+            Some(format!("https://wpt.test/{rel}/"))
+        })
+        .unwrap_or_else(|| String::from("about:blank"));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new(page_url_str));
     register_dom_callbacks(&mut *sandbox, &mutations, &dom_html, &page_url, canvas_registry, None);
+    // s304：同步 fetch 桥——shim R34xx 同步返回契约（`__zw_fetch` 返回 `__zwfr:`
+    // wire 即同步 settle，无 handler 时 fetch 落 no-handler error）。mutation 沙箱
+    // 此前无 fetch 桥：页面 fetch 恒 `__zw_fetch_error:no-handler` → detached
+    // `new Image()` 预载链（fetch → blob → createImageBitmap）onload 永不派发 →
+    // 运行时插入元素不入 mutated_html（available-images.html 全白勘根 2026-11-06）。
+    // handler 复用 testharness 通道 wpt_data_fetch_handler_with_stash（wpt_root
+    // 本地文件 + wptserve py 端点协议同源）；fetch 只在脚本阶段消费（同步调用落
+    // wire，V8 execute 末 microtask checkpoint 排空 then 链）。
+    if let Some(root) = wpt_root
+        && let Some(handler) = crate::testharness::reftest_mutation_fetch_handler(root)
+    {
+        sandbox.register_callback(
+            "__zw_fetch",
+            Box::new(move |args: &[String]| -> String {
+                let method = args.get(1).cloned().unwrap_or_else(|| "GET".to_string());
+                let url = args.get(2).cloned().unwrap_or_default();
+                let headers = zero_engine::fetch_bridge::decode_headers(args.get(3).map(String::as_str).unwrap_or(""));
+                let body_raw = args.get(4).cloned().unwrap_or_default();
+                let (body, body_bytes) =
+                    if let Some(bytes) = zero_engine::fetch_bridge::decode_body_bytes_raw(&body_raw) {
+                        (None, Some(bytes))
+                    } else if body_raw.is_empty() {
+                        (None, None)
+                    } else {
+                        (Some(body_raw), None)
+                    };
+                let req = zero_engine::fetch_bridge::FetchRequest {
+                    url,
+                    method,
+                    headers,
+                    body,
+                    body_bytes,
+                    credentials: args.get(9).filter(|value| !value.is_empty()).cloned(),
+                    mode: args.get(7).filter(|value| !value.is_empty()).cloned(),
+                    redirect: args.get(8).filter(|value| !value.is_empty()).cloned(),
+                };
+                match handler(&req) {
+                    Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),
+                    Err(e) => format!("__zw_fetch_error:{e}"),
+                }
+            }),
+        );
+    }
     // R4344：清除潜在跨 case 泄漏的 live 查询文档（本函数末尾同样清）——live 文档
     // 生命周期严格限于本 case 的脚本阶段。
     zero_engine::publish_live_query_doc(None);

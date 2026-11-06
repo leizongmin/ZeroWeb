@@ -1148,13 +1148,31 @@ pub(super) fn build_image_cache(html: &str, base_dir: Option<&Path>) -> ImageCac
         let decoded = percent_decode(url.as_bytes()).decode_utf8_lossy();
         let trimmed = decoded.trim_start_matches('/');
         let primary = base.join(trimmed);
+        // s304：wpt.test 绝对 URL——mutation 沙箱 page_url 真实化后，脚本间 IDL 传值
+        // （`image.src = otherImg.src`）以绝对形态入 mutated html。剥 wpt.test 前缀按
+        // 站点根解析（镜像 testharness 通道 `wpt_data_image_fetcher` 的域名白名单与
+        // wpt-data 根读取）；存在才接管，落空回落下方既有解析（ImageKey 仍用原始
+        // url 哈希，painter 键面对齐零变化）。
+        let wpt_abs_path = url
+            .strip_prefix("https://wpt.test")
+            .or_else(|| url.strip_prefix("http://wpt.test"))
+            .or_else(|| url.strip_prefix("https://wpt.test:8000"))
+            .or_else(|| url.strip_prefix("http://wpt.test:8000"))
+            .map(|rest| {
+                let clean = rest.split(['?', '#']).next().unwrap_or(rest);
+                let decoded_rest = percent_decode(clean.as_bytes()).decode_utf8_lossy();
+                Path::new("tests/wpt-runner/wpt-data").join(decoded_rest.trim_start_matches('/'))
+            })
+            .filter(|p| p.exists());
         // R2427：站点根绝对 URL（如 "/css/support/60x60-green.png"）。WPT 下 `base_dir` 是测试
         // 文件所在目录而非站点根，`base.join(trimmed)` 解析到 `base_dir/css/support/...` 找不到
         // → 图片加载失败 → 不渲染（修复前 ~2995 个 WPT 文件的 `/` 绝对路径图片全丢，含
         // css-box/margin-trim replaced 簇）。回退到 wpt-data 站点根（镜像 `load_linked_stylesheets`
         // :175 对 `/` 外链样式表的解析）。product-smoke 的 `base_dir` 即站点根，`primary` 先解析
         // 命中故不受影响（仅当 primary 不存在才尝试回退）。
-        let path = if url.starts_with('/') && !primary.exists() {
+        let path = if let Some(wpt_path) = wpt_abs_path {
+            wpt_path
+        } else if url.starts_with('/') && !primary.exists() {
             let alt = Path::new("tests/wpt-runner/wpt-data").join(trimmed);
             if alt.exists() { alt } else { primary }
         } else if let Some(prefix) = &base_href_prefix {
