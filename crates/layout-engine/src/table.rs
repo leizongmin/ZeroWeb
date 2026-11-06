@@ -734,7 +734,7 @@ fn layout_table_inner(
     }
 
     // 2. 计算列宽
-    let (col_widths, cols_auto_shrunk) =
+    let (col_widths, cols_auto_shrunk, col_spec_clamped) =
         compute_column_widths_inner(table_box, &grid, styles, doc, inline_fonts, width_constraint);
 
     // R4495：嵌套表高度预 pass——cell 子树内的 table-display 后代先完成自身
@@ -766,9 +766,14 @@ fn layout_table_inner(
     // ref 页 280 宽文本挤 120 列实证）。须在**首趟 position_cells 之后**（cell 宽已被
     // 置为列宽）并**再跑一趟 position_cells**（行高取自增高后的 cell/子树内容底，
     // 后继行 y、表高随之修正）。
+    // R5435 slice 1（CSS2 §17.5.2.1/§17.5.3 行高随动）：R5434 col 指定宽钳臂缩列后
+    // 同形——cell content 仍是钳前宽度的单行度量，行高不随钳后列宽换行增高
+    //（vertical-align-baseline-003 ref 侧：列 80 内容 12 行、行高塌 20）。钳臂实际
+    // 减宽（col_spec_clamped）并入同一重测链。矮 cell 沉底仍待 IFC 存储臂真文本高
+    //（R1717 推导域，挂账㉛ slice 2）。
     // img_intrinsic_sizes 以空表传入（engine 侧 intrinsic 表不穿 table 调用链；仅影响
     // 压缩表内 img 的固有比解析，R4149-R4151 域的属性/CSS 尺寸路径不受影响）。
-    if cols_auto_shrunk {
+    if cols_auto_shrunk || col_spec_clamped {
         crate::table_cell_content::remeasure_cells_at_compressed_widths(table_box, doc, styles, inline_fonts);
         if matches!(
             table_box.writing_mode,
@@ -1297,12 +1302,12 @@ fn compute_column_widths_inner(
     doc: &zero_dom::Document,
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     width_constraint: Option<f32>,
-) -> (Vec<f32>, bool) {
+) -> (Vec<f32>, bool, bool) {
     let available_width = table_box.content_width;
     let col_count = grid.col_count;
 
     if col_count == 0 {
-        return (Vec::new(), false);
+        return (Vec::new(), false, false);
     }
 
     // border-collapse 模式标志（cell-width-as-content 与 fixed 空列裁剪共用）。
@@ -1678,6 +1683,14 @@ fn compute_column_widths_inner(
     // kill-switch `ZW_TABLE_COL_USED_WIDTH=0`。
     static COL_USED_WIDTH_ON: std::sync::LazyLock<bool> =
         std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COL_USED_WIDTH").as_deref() != Ok("0"));
+    // R5435 slice 1（§17.5.2.1 列宽随动行高的组成步骤）：R5434 钳臂把 col 指定宽列的
+    // 贡献收到 used width 后，cell content 仍是钳前宽度的 taffy 布局（行高＝单行度量）
+    // ——须触发 R4298 remeasure 链按列宽重排增高（vertical-align-baseline-003 ref 侧：
+    // 列 80 内容 12 行而行高塌 20）。kill-switch `ZW_TABLE_COL_SPEC_REMEASURE=0`
+    // （回退 R5434 提交态：列宽钳、行高不随动）。
+    static COL_SPEC_REMEASURE_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COL_SPEC_REMEASURE").as_deref() != Ok("0"));
+    let mut col_spec_clamped = false;
     for (row_idx, row) in grid.rows.iter().enumerate() {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
@@ -1756,7 +1769,11 @@ fn compute_column_widths_inner(
                     };
                     floor = floor.max(mn_col);
                 }
-                w.min(spec.max(floor))
+                let clamped = w.min(spec.max(floor));
+                if *COL_SPEC_REMEASURE_ON && clamped < w {
+                    col_spec_clamped = true;
+                }
+                clamped
             } else {
                 w
             };
@@ -1961,7 +1978,7 @@ fn compute_column_widths_inner(
         // 口径），周界胜者外半在盒装配（apply_table_size_constraints）时加在 extent
         // 之外（chromium 实证：fixed;width:96 + colgroup border-right:20 → 盒 106 =
         // 96 + 10，格线 0/48/96，格线距仍 48/48；空 cell 探针盒 144 = 96 + 48 同构）。
-        return (col_max_widths, false);
+        return (col_max_widths, false, col_spec_clamped);
     }
 
     // 计算总宽度
@@ -2112,7 +2129,7 @@ fn compute_column_widths_inner(
         }
     }
 
-    (col_max_widths, auto_shrunk)
+    (col_max_widths, auto_shrunk, col_spec_clamped)
 }
 
 /// R1390：table-cell 建立 BFC（CSS §9.4.1），其高度须包含浮动子（§10.6.7：

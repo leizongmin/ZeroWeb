@@ -1018,3 +1018,7 @@ mod r5409_flex_collapse_strut_tests;
 /// R5434：col 元素指定宽 = 列 used width（auto cell 可断行贡献钳到 col 宽，min-content
 /// floor 存活；vertical-align-baseline-003 ref 侧锚）。
 mod r5434_table_col_used_width_tests;
+
+/// R5435：col 指定宽钳臂缩列后行高随动（钳臂并入 R4298 remeasure 链；valign:bottom
+/// 沉底恢复）。
+mod r5435_cell_valign_extent_tests;
