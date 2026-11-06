@@ -1,0 +1,83 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- blockquote straddle 归因探针（iol/iul 残差 bq ×2+2）：跨 blockquote 边界
+     straddle + 全内含对照形。期望树取自 data/insert{ordered,unordered}list.js
+     iol :508/:513/:517/:528/:533/:538/:563/:128、iul :518/:523/:528/:543/:558/
+     :573 镜像。dump 式（rtl 探针先例）：单条恒假断言带全结果。 -->
+<title>zz-probe-bq</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+var tc = document.getElementById("test-container");
+var results = [];
+
+function bqCase(name, setup, cmds, startPath, startOff, endPath, endOff, exp) {
+    tc.innerHTML = "<div contenteditable>" + setup + "</div>";
+    var d = tc.firstChild;
+    function at(path) {
+        var n = d;
+        for (var i = 0; i < path.length; i++) {
+            var c = n.firstChild, k = path[i];
+            while (k-- > 0) c = c.nextSibling;
+            n = c;
+        }
+        return n;
+    }
+    var r;
+    try {
+        r = document.createRange();
+        r.setStart(at(startPath), startOff);
+        r.setEnd(at(endPath), endOff);
+        getSelection().removeAllRanges();
+        getSelection().addRange(r);
+    } catch (e) { results.push(name + " SETEXC " + e); return; }
+    for (var i = 0; i < cmds.length; i++) {
+        try { document.execCommand(cmds[i][0], false, cmds[i][1]); } catch (e) { results.push(name + " EXC " + e); return; }
+    }
+    results.push(name + " got=" + JSON.stringify(d.innerHTML) + " exp=" + JSON.stringify(exp));
+}
+
+// —— iol 红行 ×2（语料 :513/:533）——
+bqCase("iol-F1", "foo<blockquote>bar</blockquote>baz", [["insertorderedlist", ""]],
+    [], 0, [1, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol>baz");
+bqCase("iol-F2", "foo<blockquote>bar<br>baz</blockquote>", [["insertorderedlist", ""]],
+    [], 0, [1, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol><blockquote>baz</blockquote>");
+// —— iol 绿对照（lift 已工作面，防回归锚）——
+bqCase("iol-G2-nolift", "foo<blockquote>bar</blockquote>baz", [["insertorderedlist", ""]],
+    [1, 0], 0, [1, 0], 3,
+    "foo<blockquote><ol><li>bar</li></ol></blockquote>baz");
+bqCase("iol-G3-lift", "<ol><li>foo</ol><blockquote>bar</blockquote>baz", [["insertorderedlist", ""]],
+    [1, 0], 0, [1, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol>baz");
+bqCase("iol-G5-nolift", "foo<blockquote>bar<br>baz</blockquote>", [["insertorderedlist", ""]],
+    [1, 0], 0, [1, 0], 3,
+    "foo<blockquote><ol><li>bar</li></ol>baz</blockquote>");
+bqCase("iol-G6-lift", "<ol><li>foo</ol><blockquote>bar<br>baz</blockquote>", [["insertorderedlist", ""]],
+    [1, 0], 0, [1, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol><blockquote>baz</blockquote>");
+bqCase("iol-G7-pform", "<p>foo<blockquote><p>bar</blockquote><p>baz",
+    [["defaultparagraphseparator", "div"], ["insertorderedlist", ""]],
+    [0, 0], 0, [1, 0, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol><p>baz</p>");
+bqCase("iol-F3-pform-tail", "<p>foo<blockquote><p>bar<p>baz</blockquote>",
+    [["defaultparagraphseparator", "div"], ["insertorderedlist", ""]],
+    [0, 0], 0, [1, 0, 0], 3,
+    "<ol><li>foo</li><ol><li>bar</li></ol></ol><blockquote><p>baz</p></blockquote>");
+// —— iul 红行 ×2（语料 :523/:543 镜像）——
+bqCase("iul-F1", "foo<blockquote>bar</blockquote>baz", [["insertunorderedlist", ""]],
+    [], 0, [1, 0], 3,
+    "<ul><li>foo</li><ul><li>bar</li></ul></ul>baz");
+bqCase("iul-F2", "foo<blockquote>bar<br>baz</blockquote>", [["insertunorderedlist", ""]],
+    [], 0, [1, 0], 3,
+    "<ul><li>foo</li><ul><li>bar</li></ul></ul><blockquote>baz</blockquote>");
+
+assert_false(true, results.join(" || "));
+</script>

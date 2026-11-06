@@ -785,6 +785,61 @@
     return { block: b, kept: kept };
   }
 
+  // flat 模型幽灵重定位（blockquote straddle 族，iol :513/:533 + iul :523/:543
+  // 镜像）：enable 主循环前期 wrap 命中 _zwJusWrapViaHtml 扁平边界臂（成员含
+  // editing host 直子文本）时经 host.innerHTML= setter 整壳重建——真实树子树
+  // 全为新建对象，nodeList 残余成员沦为幽灵链：parentNode 字段仍指旧宿主、
+  // 爬升可达致 _zwListNodeInDocument 误真，但不在宿主 firstChild/nextSibling
+  // 链上且 previousSibling 误空（DBG 实证 MERGE ps=null + host 子链无旧对象
+  // 标记），残余成员后续换型落幽灵、转换对真实树不可见。逐迭代头扫残余成员：
+  // 宿主直子链身份可达即活引用跳过；幽灵按顶层 outerHTML 精确匹配重锚新树
+  // 同位对象，再沿旧索引路径下行换新引用——活树路径下缩进合并臂（G3/G7 绿面
+  // 实证）即产出语料期望树。
+  // FIXME: 同序列化兄弟歧义（如两个 <blockquote>bar</blockquote>）取首个命中；
+  // 语料现存 straddle 形无歧义面，出现歧义红行时再补二段锚（成员文本路径）。
+  function _zwListRelocateWrapGhosts(host, nodeList) {
+    if (!host) return;
+    for (var i = 0; i < nodeList.length; i++) {
+      var m = nodeList[i];
+      if (!m || !m.parentNode) continue;
+      // 下行索引路径：成员爬升到宿主直下，逐层记 childNodes 索引。
+      var path = [];
+      var anc = m;
+      var gR = 0;
+      while (anc && anc.parentNode !== host && gR++ < 256) {
+        var idx = 0;
+        var sib = anc.parentNode.firstChild;
+        while (sib && sib !== anc) { idx++; sib = sib.nextSibling; }
+        if (!sib) break;
+        path.unshift(idx);
+        anc = anc.parentNode;
+      }
+      if (!anc || anc.parentNode !== host) continue;
+      // 活引用判定：宿主 firstChild/nextSibling 链身份可达即未重建，跳过。
+      var top = host.firstChild;
+      while (top && top !== anc) top = top.nextSibling;
+      if (top === anc) continue;
+      // 幽灵：顶层按序列化精确匹配重锚新树，沿旧路径下行换新引用。
+      var ancHtml = null;
+      try { ancHtml = anc.outerHTML; } catch (_eRh) {}
+      if (!ancHtml) continue;
+      var found = null;
+      var cand = host.firstChild;
+      while (cand) {
+        if (cand.nodeType === 1) {
+          try { if (cand.outerHTML === ancHtml) { found = cand; break; } } catch (_eRh2) {}
+        }
+        cand = cand.nextSibling;
+      }
+      if (!found) continue;
+      var nn = found;
+      for (var p = 0; p < path.length && nn; p++) {
+        nn = nn.childNodes[path[p]];
+      }
+      if (nn && nn !== m) nodeList[i] = nn;
+    }
+  }
+
   // toggleLists（vendored :5690）：enable 全流程 + disable outdent 臂（ol/ul
   // 切片）移植。选区保持依赖 _zwJusWrap/_zwListMovePreservingRanges（plain 重锚）。
   function _zwListToggle(tagName) {
@@ -1013,6 +1068,16 @@
       }
     }
 
+    // 宿主锚（幽灵重定位用，见 _zwListRelocateWrapGhosts）：活动选区端点爬升
+    // 到 editing host 本尊；爬升失败恒 null，重定位臂自动禁用（零扰动）。
+    var bqHost = null;
+    try {
+      var rH = range.startContainer;
+      var gH = 0;
+      while (rH && gH++ < 256 && !_zwJusIsEditingHost(rH)) rH = rH.parentNode;
+      bqHost = rH && _zwJusIsEditingHost(rH) ? rH : null;
+    } catch (_eBh) { bqHost = null; }
+
     if (mode === 'disable') {
       while (nodeList.length) {
         var dsub = [nodeList.shift()];
@@ -1088,8 +1153,12 @@
     }
 
     // enable 主循环：连续兄弟聚 sublist → p/div 换型 li / li·ol·ul 直收 /
-    // inline 段 wrap 成 li。
+    // inline 段 wrap 成 li。迭代头幽灵重定位（ViaHtml setter 重建后残余成员
+    // 换新树引用，见 _zwListRelocateWrapGhosts）：活引用零扰动直过。
     while (nodeList.length) {
+      if (bqHost) {
+        try { _zwListRelocateWrapGhosts(bqHost, nodeList); } catch (_eRg) {}
+      }
       var sublist = [];
       while (nodeList.length
       && (!sublist.length
