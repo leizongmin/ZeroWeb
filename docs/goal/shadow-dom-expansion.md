@@ -9,10 +9,13 @@ Batch 3 残面修复落地（2026-11-06：语料级 A/B 0 回归，gethtml ×1 �
 （×4 = 120s 窗全量真实上报，页级 Timeout 消失），无固定截断面——吞吐 >11×
 与 Q1 队列 11× 互证，×1 全量差 = 写路径残余斜率（~19× 改善未归零）+ 预算
 语义非病根），
+M3 尾段两小刀落地（2026-11-06：template shadowRoot* IDL 反射 + clonable
+根克隆臂，全语料逐名 A/B P→F/T=0、F→P 14；async-fetch 族整文件 0 行上报
+勘误为 runner 既有完成竞态非回归，MEl 域两刀撤销挂 m3c2），
 M3 余项：簇 C engine glue / attachment+null 链修复落地与复测
 （dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets 机制面 ~19F）
 ——簇 D 剔池决策已落地（module 载入链 27 案 27F+1T 出池，回池条件 =
-script-sandbox 模块载入）
+script-sandbox 模块载入），declarative 物化三案复测挂 m3c2 落地后
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
