@@ -1282,10 +1282,18 @@ impl ImageCache {
 
     /// R34xx：快照全部缓存条目（key hash → ImageData clone），供 host 回调查询
     ///（webview 的 __zw_get_image_wire——headless canvas drawImage img 源 G5）。
+    /// s310：动画条目固定取**首帧**——canvas drawImage/createPattern 的 img 源
+    /// 画首帧（R34xx drawing-images 契约，2d.drawImage.animated.gif），不随
+    /// [`ImageCache::get`] 推进臂换帧（img 元素显示活跃帧与 canvas 首帧语义
+    /// 在此分叉；get() 会把 entry.data 换写为活跃帧快照，故以 animation 帧表
+    /// frames[0] 为准）。
     pub fn snapshot_entries(&self) -> std::collections::HashMap<u64, ImageData> {
         self.entries
             .iter()
-            .map(|(k, e)| (k.0, e.data.as_ref().clone()))
+            .map(|(k, e)| {
+                let data = e.animation.as_ref().and_then(|a| a.frames.first()).unwrap_or(&e.data);
+                (k.0, data.clone())
+            })
             .collect()
     }
 
@@ -4719,5 +4727,28 @@ mod s307_anim_frame_tests {
         let img = cache.get(&key).expect("entry");
         assert_eq!(img.pixels[0], 255, "回绕帧 0 红");
         cache.release(&key);
+    }
+
+    /// s310：快照条目对动画条目固定首帧——get() 已推进换写 data 后，
+    /// snapshot_entries 仍须返回 frames[0]（canvas G5 drawImage 首帧契约）。
+    #[test]
+    fn test_snapshot_entries_pins_first_frame_s310() {
+        let (first, anim) = decode_gif_animation_bytes(include_bytes!("testdata/animated.gif")).expect("decode");
+        let anim = anim.expect("anim");
+        let first_px = anim.frames[0].pixels.clone();
+        let green_px = anim.frames[1].pixels.clone();
+        let mut cache = ImageCache::new(16, 16 * 1024 * 1024);
+        let key = ImageKey::new(310);
+        cache.insert_with_animation(key.clone(), first, anim);
+        // 推进到帧 1（绿）——entry.data 已被换写。
+        let _guard = set_anim_virtual_elapsed(150.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(&img.pixels[..8], &green_px[..8], "前置：get 已推进到帧 1");
+        cache.release(&key);
+        drop(_guard);
+        // 快照仍固定首帧（红）。
+        let snap = cache.snapshot_entries();
+        let snap_px = snap.get(&310).expect("快照含键").pixels.clone();
+        assert_eq!(&snap_px[..8], &first_px[..8], "快照动画条目应固定首帧");
     }
 }

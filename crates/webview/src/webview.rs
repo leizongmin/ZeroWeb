@@ -25,9 +25,9 @@ use zero_engine::script_dispatch_native_event;
 use zero_net::{
     FetchPriority, HttpClient, HttpResponse, NetError, ResourceLoader, ResourceRequest, is_file_url, is_javascript_mime,
 };
-use zero_render_foundation::image_cache::{ImageCache, ImageData, ImageKey, decode_data_uri};
+use zero_render_foundation::image_cache::{AnimationData, ImageCache, ImageData, ImageKey};
 
-use crate::image_decoder::decode_image;
+use crate::image_decoder::{decode_data_uri_animation, decode_image_with_animation, insert_image_decoded};
 use zero_page_runtime::{
     ServiceWorkerImportedScript, ServiceWorkerManager, ServiceWorkerManagerEvent, ServiceWorkerRegistrationKey,
     ServiceWorkerVersionSlots, validate_service_worker_registration_for_document,
@@ -1705,71 +1705,80 @@ impl WebView {
             // 解码（in-scope img 子资源，goal line 118 SVG-as-img；render-foundation 共用按 magic
             // 分派）。data: 非相对，key = image_resource_key(src)（与 painter 查找一致：data: 经
             // is_non_relative_href 原样保留）。失败仅 warn 不阻断（与 HTTP fetch 失败同，宽松降级）。
-            let (img, key_hash): (ImageData, u64) = if src.starts_with("data:") {
-                match decode_data_uri(src) {
-                    Ok(d) => (d, image_resource_key(src, None)),
-                    Err(e) => {
-                        tracing::warn!("data: URI image decode failed: {e}");
-                        continue;
-                    }
-                }
-            } else {
-                let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
-                    Some(u) => u.to_string(),
-                    None => src.to_string(),
-                };
-                // security-hardening M3：img Mixed Content 检查点（可选阻塞型——HTTPS
-                // 页面 HTTP 图片自动升级 HTTPS 后抓取；阻塞/HSTS 判定同走
-                // check_resource_url）。缓存键仍按 markup 可见的原始 abs（painter 按
-                // 原始 src 解析查找，升级键会失配）。spec
-                // https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
-                let fetch_url = if self.config.mixed_content_enforcement {
-                    match self.security_context.check_resource_url(&abs, "img") {
-                        ResourceCheckResult::Allow => abs.clone(),
-                        ResourceCheckResult::Upgraded(upgraded) => upgraded,
-                        ResourceCheckResult::Blocked(reason) => {
-                            tracing::warn!("mixed content blocked image {abs}: {reason}");
+            // s310：(首帧, 动画时间线, 来自缓存)——动画感知装载；from_cache 置位时
+            // 尾部不重插（重插会以 animation: None 覆写动画条目并冻结活跃帧）。
+            let (img, anim, key_hash, from_cache): (ImageData, Option<AnimationData>, u64, bool) =
+                if src.starts_with("data:") {
+                    // R1987：data: URI（PNG/JPEG/WebP/SVG，base64 或 url-encoded）→ 直接
+                    // 解码（in-scope img 子资源，goal line 118 SVG-as-img）。s310：动画
+                    // 感知解码（data: 恒进程内，动画 GIF/WebP 携带时间线）。data: 非相对，
+                    // key = image_resource_key(src)（与 painter 查找一致：data: 经
+                    // is_non_relative_href 原样保留）。失败仅 warn 不阻断（与 HTTP fetch
+                    // 失败同，宽松降级）。
+                    match decode_data_uri_animation(src) {
+                        Ok((d, anim)) => (d, anim, image_resource_key(src, None), false),
+                        Err(e) => {
+                            tracing::warn!("data: URI image decode failed: {e}");
                             continue;
                         }
                     }
                 } else {
-                    abs.clone()
-                };
-                // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
-                // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
-                // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
-                let key_hash = image_resource_key(&abs, None);
-                match self.image_cache.get(&ImageKey::new(key_hash)) {
-                    Some(cached) => (cached.clone(), key_hash),
-                    None => {
-                        // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
-                        //（wpt-data 文件映射）；None → 回退 HTTP 网络。
-                        let fetched = self
-                            .image_source_fetcher
-                            .as_ref()
-                            .and_then(|f| f(&fetch_url))
-                            .or_else(|| {
-                                self.resource_get(&fetch_url, FetchPriority::MEDIUM, "image")
-                                    .ok()
-                                    .map(|resp| resp.body)
-                            });
-                        let bytes = match fetched {
-                            Some(bytes) => bytes,
-                            None => {
-                                tracing::warn!("image {abs} fetch failed");
-                                continue;
-                            }
-                        };
-                        match decode_image(&bytes) {
-                            Ok(img) => (img, key_hash),
-                            Err(e) => {
-                                tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                    let abs = match base.as_ref().and_then(|b| b.join(src).ok()) {
+                        Some(u) => u.to_string(),
+                        None => src.to_string(),
+                    };
+                    // security-hardening M3：img Mixed Content 检查点（可选阻塞型——HTTPS
+                    // 页面 HTTP 图片自动升级 HTTPS 后抓取；阻塞/HSTS 判定同走
+                    // check_resource_url）。缓存键仍按 markup 可见的原始 abs（painter 按
+                    // 原始 src 解析查找，升级键会失配）。spec
+                    // https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+                    let fetch_url = if self.config.mixed_content_enforcement {
+                        match self.security_context.check_resource_url(&abs, "img") {
+                            ResourceCheckResult::Allow => abs.clone(),
+                            ResourceCheckResult::Upgraded(upgraded) => upgraded,
+                            ResourceCheckResult::Blocked(reason) => {
+                                tracing::warn!("mixed content blocked image {abs}: {reason}");
                                 continue;
                             }
                         }
+                    } else {
+                        abs.clone()
+                    };
+                    // 性能门禁优化 S5（2026-08-08）：ImageCache 命中即跳过网络——DOM 变更后
+                    // reload_html_after_script 每次全页同步重抓图片（webview.rs:452 每图
+                    // 全新 TCP+TLS，UI 线程阻塞）是「日志资源请求不断」的最大来源。
+                    let key_hash = image_resource_key(&abs, None);
+                    match self.image_cache.get(&ImageKey::new(key_hash)) {
+                        Some(cached) => (cached.clone(), None, key_hash, true),
+                        None => {
+                            // R34xx：headless/testharness 路径经 image_source_fetcher 本地提供
+                            //（wpt-data 文件映射）；None → 回退 HTTP 网络。
+                            let fetched =
+                                self.image_source_fetcher
+                                    .as_ref()
+                                    .and_then(|f| f(&fetch_url))
+                                    .or_else(|| {
+                                        self.resource_get(&fetch_url, FetchPriority::MEDIUM, "image")
+                                            .ok()
+                                            .map(|resp| resp.body)
+                                    });
+                            let bytes = match fetched {
+                                Some(bytes) => bytes,
+                                None => {
+                                    tracing::warn!("image {abs} fetch failed");
+                                    continue;
+                                }
+                            };
+                            match decode_image_with_animation(&bytes) {
+                                Ok((img, anim)) => (img, anim, key_hash, false),
+                                Err(e) => {
+                                    tracing::warn!("image {abs} decode failed (PNG/JPEG/WebP): {e}");
+                                    continue;
+                                }
+                            }
+                        }
                     }
-                }
-            };
+                };
             let key = ImageKey::new(key_hash);
             // R717：ratio-only SVG（%-dim / viewBox-only）无确定固有尺寸，仅有 viewBox 比——
             // 进 image_ratios，**不**进 image_sizes（任何确定 size 都会被 taffy 当作固有高度，
@@ -1790,7 +1799,10 @@ impl WebView {
                     image_no_ratio.insert(key_hash, dims);
                 }
             }
-            self.image_cache.insert_with_key(key, img);
+            // s310：缓存 dedup 命中不重插（get 已刷 LRU 面且重插会冻结动画条目）。
+            if !from_cache {
+                insert_image_decoded(&mut self.image_cache, key, img, anim);
+            }
         }
         (image_sizes, image_ratios, image_no_ratio, image_natural_sizes)
     }
@@ -1825,46 +1837,49 @@ impl WebView {
             if !seen.insert(src.as_str()) {
                 continue;
             }
-            let (img, key_hash): (ImageData, u64) = if src.starts_with("data:") {
-                match decode_data_uri(src) {
-                    Ok(d) => (d, image_resource_key(src, None)),
-                    Err(e) => {
-                        tracing::debug!("runtime image sync decode failed: {e}");
-                        continue;
+            // s310：(首帧, 动画时间线, 来自缓存)——装载纪律同 fetch_image_subresources
+            //（data: 恒进程内动画感知解码；from_cache 置位时尾部不重插，防动画条目被冻结）。
+            let (img, anim, key_hash, from_cache): (ImageData, Option<AnimationData>, u64, bool) =
+                if src.starts_with("data:") {
+                    match decode_data_uri_animation(src) {
+                        Ok((d, anim)) => (d, anim, image_resource_key(src, None), false),
+                        Err(e) => {
+                            tracing::debug!("runtime image sync decode failed: {e}");
+                            continue;
+                        }
                     }
-                }
-            } else {
-                let abs = url::Url::parse(&base_url)
-                    .ok()
-                    .and_then(|b| b.join(src).ok())
-                    .map(|u| u.to_string())
-                    .unwrap_or_else(|| src.clone());
-                let key_hash = image_resource_key(&abs, None);
-                match self.image_cache.get(&ImageKey::new(key_hash)) {
-                    Some(cached) => (cached.clone(), key_hash),
-                    None => {
-                        let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
-                            self.resource_get(&abs, FetchPriority::MEDIUM, "image")
-                                .ok()
-                                .map(|resp| resp.body)
-                        });
-                        let bytes = match fetched {
-                            Some(bytes) => bytes,
-                            None => {
-                                tracing::debug!("runtime image sync fetch failed: {abs}");
-                                continue;
-                            }
-                        };
-                        match decode_image(&bytes) {
-                            Ok(img) => (img, key_hash),
-                            Err(e) => {
-                                tracing::debug!("runtime image sync decode failed ({abs}): {e}");
-                                continue;
+                } else {
+                    let abs = url::Url::parse(&base_url)
+                        .ok()
+                        .and_then(|b| b.join(src).ok())
+                        .map(|u| u.to_string())
+                        .unwrap_or_else(|| src.clone());
+                    let key_hash = image_resource_key(&abs, None);
+                    match self.image_cache.get(&ImageKey::new(key_hash)) {
+                        Some(cached) => (cached.clone(), None, key_hash, true),
+                        None => {
+                            let fetched = self.image_source_fetcher.as_ref().and_then(|f| f(&abs)).or_else(|| {
+                                self.resource_get(&abs, FetchPriority::MEDIUM, "image")
+                                    .ok()
+                                    .map(|resp| resp.body)
+                            });
+                            let bytes = match fetched {
+                                Some(bytes) => bytes,
+                                None => {
+                                    tracing::debug!("runtime image sync fetch failed: {abs}");
+                                    continue;
+                                }
+                            };
+                            match decode_image_with_animation(&bytes) {
+                                Ok((img, anim)) => (img, anim, key_hash, false),
+                                Err(e) => {
+                                    tracing::debug!("runtime image sync decode failed ({abs}): {e}");
+                                    continue;
+                                }
                             }
                         }
                     }
-                }
-            };
+                };
             // R717 分类（口径同 fetch_image_subresources）：ratio-only SVG 进 ratios、
             // no-ratio SVG 进 no_ratio + sizes、其余图像走 sizes。
             if let Some(ratio) = img.intrinsic_ratio() {
@@ -1890,7 +1905,10 @@ impl WebView {
                     self.cached_image_no_ratio.insert(key_hash, dims);
                 }
             }
-            self.image_cache.insert_with_key(ImageKey::new(key_hash), img);
+            // s310：缓存 dedup 命中不重插（同 fetch_image_subresources）。
+            if !from_cache {
+                insert_image_decoded(&mut self.image_cache, ImageKey::new(key_hash), img, anim);
+            }
             applied += 1;
         }
         applied

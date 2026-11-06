@@ -16,7 +16,10 @@ use zero_protocol::message::{ImageDecodeParams, ImageDecodeResultParams, IpcMess
 use zero_protocol::transport::PipeTransport;
 use zero_protocol::{IpcChannel, ProcessRole, child_process_args};
 
-use zero_render_foundation::image_cache::{ImageData, decode_image_bytes, is_raster_image_bytes};
+use zero_render_foundation::image_cache::{
+    AnimationData, ImageCache, ImageData, ImageKey, decode_data_uri_bytes, decode_image_animation, decode_image_bytes,
+    is_raster_image_bytes,
+};
 
 /// 进程内解码（默认路径，零行为变更）。
 fn decode_inline(bytes: &[u8]) -> Result<ImageData, String> {
@@ -224,10 +227,61 @@ pub fn decode_image(bytes: &[u8]) -> Result<ImageData, String> {
     proxy.decode(bytes)
 }
 
+/// s310：动画感知解码（生产 img 通道装载臂）——[`decode_image`] 的
+/// `(首帧, Option<动画>)` 形态，分派规则与 [`decode_image`] 逐臂一致：
+///
+/// - 嵌入式 WebView（内联模式）或非栅格字节（GIF 不在
+///   [`is_raster_image_bytes`] 隔离集）→ [`decode_image_animation`] 多帧解码
+///   （GIF / 动画 WebP 产出动画时间线，PNG/JPEG/SVG 恒 None）。
+/// - renderer 隔离模式 + 栅格字节 → 代理单帧（IPC `ImageDecodeResultParams`
+///   契约只携带单帧 RGBA，动画时间线不可跨进程）——动画 WebP 在隔离模式
+///   维持首帧静态。
+///
+/// FIXME(protocol): 隔离通道动画时间线扩展（ImageDecodeResultParams 增帧表 +
+/// 时序）后此臂可升级为多帧；扩展前不内联回落（隔离边界 IF-006，与
+/// [`decode_image`] spawn 失败面同纪律）。
+pub fn decode_image_with_animation(bytes: &[u8]) -> Result<(ImageData, Option<AnimationData>), String> {
+    if proxy_enabled() && is_raster_image_bytes(bytes) {
+        return decode_image(bytes).map(|img| (img, None));
+    }
+    decode_image_animation(bytes)
+}
+
+/// s310：data: URI 动画感知解码——data: 通道恒进程内解码（[`decode_image`]
+/// 契约「SVG/data URI 始终进程内解码」，隔离代理不经 data: 形态），直接走
+/// 字节侧动画分派（GIF / 动画 WebP 携带时间线，其余单帧 None）。
+pub(crate) fn decode_data_uri_animation(src: &str) -> Result<(ImageData, Option<AnimationData>), String> {
+    decode_image_animation(&decode_data_uri_bytes(src)?)
+}
+
+/// s310：解码结果入缓存——动画条目走 [`ImageCache::insert_with_animation`]
+///（携带帧表 + 时间线，paint 侧 [`ImageCache::get`] 按墙钟推进），单帧条目
+/// 走 [`ImageCache::insert_with_key`]（零行为面外移）。
+pub(crate) fn insert_image_decoded(
+    cache: &mut ImageCache,
+    key: ImageKey,
+    data: ImageData,
+    animation: Option<AnimationData>,
+) {
+    match animation {
+        Some(anim) => cache.insert_with_animation(key, data, anim),
+        None => cache.insert_with_key(key, data),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::webview::base64_decode;
+
+    /// s310：进程级隔离旗标 / env / PROXY 为跨测试共享态，cargo test 默认并行——
+    /// 所有触碰 set_process_isolation 的测试持本锁串行（否则内联模式测试会被
+    /// 并行测试翻转的隔离旗标误导入代理路径，动画时间线断言假红）。
+    static ISOLATION_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn with_isolation_lock() -> std::sync::MutexGuard<'static, ()> {
+        ISOLATION_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
 
     /// 1x1 红色 PNG（最小合法 PNG）。
     const ONE_PX_RED_PNG_B64: &str =
@@ -265,7 +319,8 @@ mod tests {
         // 重置 spawn 失败缓存，保证本测试的代理路径不被先前测试的
         // spawn 失败短路（真实子进程优先，spawn 失败走错误面不内联回落）。
         SPAWN_FAILED.store(false, std::sync::atomic::Ordering::Relaxed);
-        // edition 2024：env 修改为 unsafe（测试单线程环境无并发，安全）
+        // edition 2024：env 修改为 unsafe（进程级旗标/env 为本模块测试共享态，
+        // 持锁串行化下方注释；锁使「无并发」前提对触碰方成立）
         unsafe {
             PROCESS_ISOLATION_ENABLED.store(on, std::sync::atomic::Ordering::Relaxed);
             match bin {
@@ -277,6 +332,7 @@ mod tests {
 
     #[test]
     fn non_raster_svg_goes_inline() {
+        let _isolation = with_isolation_lock();
         // SVG（依赖资源加载）不启代理，进程内解码（C4 分发验证）
         set_process_isolation(true, None);
         let svg = b"<svg xmlns='http://www.w3.org/2000/svg' width='2' height='2'/>";
@@ -288,6 +344,7 @@ mod tests {
 
     #[test]
     fn proxy_mode_decodes_png_correctly() {
+        let _isolation = with_isolation_lock();
         // 代理模式（env 开）下 decode_image 全链路像素正确。
         // 注意：PROXY 为进程级 static（跨测试共享），本测试不依赖
         // 核心验证是隔离模式下的端到端像素正确性；进程不可用不会回退到
@@ -315,9 +372,97 @@ mod tests {
 
     #[test]
     fn embedded_webview_uses_inline_decode() {
+        let _isolation = with_isolation_lock();
         set_process_isolation(false, None);
         let img = decode_image(&test_png()).expect("进程内解码成功");
         assert_eq!(img.width, 1);
         assert_eq!(img.pixels[0], 255, "R 通道应为 255");
+    }
+
+    /// s310：corpus 双动画资产（render-foundation testdata 共用，不复制）。
+    /// animated.gif / animated.webp：红 100ms → 绿 10s，两帧 100×100。
+    fn test_animated_gif() -> &'static [u8] {
+        include_bytes!("../../render-foundation/src/testdata/animated.gif")
+    }
+    fn test_animated_webp() -> &'static [u8] {
+        include_bytes!("../../render-foundation/src/testdata/animated.webp")
+    }
+
+    #[test]
+    fn animation_decode_inline_embedded_mode_s310() {
+        let _isolation = with_isolation_lock();
+        set_process_isolation(false, None);
+        // GIF：内联多帧（2 帧，帧 1 绿）。
+        let (img, anim) = decode_image_with_animation(test_animated_gif()).expect("GIF 解码");
+        assert_eq!((img.width, img.height), (100, 100));
+        let anim = anim.expect("GIF 应产出动画时间线");
+        assert_eq!(anim.frames.len(), 2);
+        assert_eq!(anim.frames[1].pixels[1], 128, "帧 1 绿通道");
+        // 动画 WebP：内联多帧。
+        let (_, anim) = decode_image_with_animation(test_animated_webp()).expect("WebP 解码");
+        assert!(anim.is_some(), "动画 WebP 应产出动画时间线");
+        set_process_isolation(false, None);
+    }
+
+    #[test]
+    fn animation_decode_gif_inline_even_in_isolation_mode_s310() {
+        let _isolation = with_isolation_lock();
+        // GIF 不在 is_raster_image_bytes 隔离集 → 隔离模式也不走代理，仍多帧内联。
+        set_process_isolation(true, None);
+        let (_, anim) = decode_image_with_animation(test_animated_gif()).expect("GIF 解码");
+        assert!(anim.is_some(), "隔离模式 GIF 应保持内联动画解码");
+        set_process_isolation(false, None);
+    }
+
+    #[test]
+    fn animation_decode_raster_proxied_stays_first_frame_s310() {
+        let _isolation = with_isolation_lock();
+        // 隔离模式 + 栅格字节（动画 WebP）→ 代理单帧（IPC 契约无帧表）：
+        // 有真实 image-decoder 二进制时断言 (帧 0, None)；二进制缺席时 spawn
+        // 失败走错误面不内联回落（IF-006 隔离边界，与 decode_image 同纪律）。
+        set_process_isolation(true, None);
+        let exe = std::env::current_exe().expect("current_exe");
+        if let Some(bin) = exe
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.join(image_decoder_binary_filename()))
+            .filter(|p| p.exists())
+        {
+            set_process_isolation(true, Some(&bin));
+        }
+        match decode_image_with_animation(test_animated_webp()) {
+            Ok((img, anim)) => {
+                assert!(anim.is_none(), "隔离通道动画 WebP 应首帧静态（无时间线）");
+                assert_eq!((img.width, img.height), (100, 100));
+                assert_eq!(img.pixels[0], 255, "帧 0 红通道");
+            }
+            Err(e) => {
+                assert!(e.contains("image-decoder"), "spawn 失败应为隔离错误面：{e}");
+            }
+        }
+        set_process_isolation(false, None);
+    }
+
+    #[test]
+    fn insert_image_decoded_wires_animation_s310() {
+        let _isolation = with_isolation_lock();
+        use zero_render_foundation::image_cache::set_anim_virtual_elapsed;
+        set_process_isolation(false, None);
+        let (first, anim) = decode_image_with_animation(test_animated_gif()).expect("GIF 解码");
+        let green_px = anim.as_ref().expect("anim").frames[1].pixels.clone();
+        let mut cache = ImageCache::new(16, 16 * 1024 * 1024);
+        let key = ImageKey::new(310);
+        insert_image_decoded(&mut cache, key.clone(), first, anim);
+        // 动画条目：虚拟时钟 150ms → get 推进到帧 1（绿）。
+        let _guard = set_anim_virtual_elapsed(150.0);
+        let img = cache.get(&key).expect("entry");
+        assert_eq!(&img.pixels[..8], &green_px[..8], "动画条目应随时间线推进");
+        cache.release(&key);
+        drop(_guard);
+        // 单帧条目（None）：同 helper 静态装载（PNG 恒无动画），get 零推进面。
+        let (img, anim) = decode_image_with_animation(&test_png()).expect("PNG 解码");
+        assert!(anim.is_none(), "PNG 恒无动画时间线");
+        insert_image_decoded(&mut cache, key.clone(), img, None);
+        assert_eq!(cache.get(&key).expect("entry").width, 1);
     }
 }
