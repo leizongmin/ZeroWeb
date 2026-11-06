@@ -1159,6 +1159,40 @@
         try { _zwListFixDisallowedAncestors(newShell); } catch (_eLf) {}
       }
 
+      // dir 特判（rtl compare 族，语料 :726/:732/:741 双备选树 + 语料明注）：
+      // 跨块 straddle enable 走 p/div→li retag（setTagName 全属性携带），源块
+      // dir 落 li——语料明注 "do not copy dir attributes to corresponding
+      // <li>s"（dir 不影响文本方向，与父列表异值致 bullet 错位）；双备选树
+      // dir 恒在列表壳（提升形 ol[dir=rtl]）或留包裹 div（内嵌形），li 恒裸。
+      // 出口统一：freshShell 直子 li 携 dir 时，首个 dir 值迁壳（壳无 dir 时
+      // 不覆盖既有），全部直子 li 移除 dir。id/class 行已绿不受影响——
+      // "other attributes should be cloned to each list item" 契约 id/class
+      // 留 li，唯 dir 特判。
+      if (freshShell && newShell && _zwListNodeInDocument(newShell)) {
+        var dVal = null;
+        var dK = newShell.firstChild;
+        while (dK) {
+          if (dK.nodeType === 1 && _zwJusIsHtmlElement(dK, 'li') && dVal === null) {
+            try { dVal = dK.getAttribute('dir'); } catch (_eDg) { dVal = null; }
+          }
+          dK = dK.nextSibling;
+        }
+        if (dVal !== null) {
+          var hasD = false;
+          try { hasD = newShell.getAttribute('dir') !== null; } catch (_eDh) { hasD = true; }
+          if (!hasD) {
+            try { newShell.setAttribute('dir', dVal); } catch (_eDs) {}
+          }
+          var dR = newShell.firstChild;
+          while (dR) {
+            if (dR.nodeType === 1 && _zwJusIsHtmlElement(dR, 'li')) {
+              try { dR.removeAttribute('dir'); } catch (_eDr) {}
+            }
+            dR = dR.nextSibling;
+          }
+        }
+      }
+
       // dps compare 族归并出口（dps 刀）：恒新壳落位后相邻同名可编辑列表壳
       // 归并——Blink insert_list_command.cc mergeWithPreviousList/
       // MergeWithNextList 等价行为（语料 pin 快照即契约口径）。三形
