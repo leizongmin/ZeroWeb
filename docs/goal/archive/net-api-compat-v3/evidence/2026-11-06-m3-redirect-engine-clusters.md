@@ -59,7 +59,7 @@ redirect.py location 字节解码），零 fixture 新增端点、零通道配�
    ByteString 校验拒响应、%FF lossy 变 U+FFFD 丢字节）；shim 解析 Location
    前对 0x80..0xFF 字符逐个 `%XX` 单字节转义（`new URL` query 通道会 UTF-8
    重编成 mojibake）。根因与避免方式落
-   [learning](../../../learnings/bugs/2026-11/2026-11-06-response-header-values-are-byte-sequences.md)。
+   [learning](../../../../learnings/bugs/2026-11/2026-11-06-response-header-values-are-byte-sequences.md)。
 7. **keepalive 1T**（redirect-keepalive）：维持挂账（keepalive 语义簇，
    随 M3 余项 xhr 在账失败簇一并收敛）。
 

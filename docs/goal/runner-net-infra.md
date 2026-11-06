@@ -80,9 +80,10 @@
 
 ## 依赖约束（run-rules §9）
 
-- 与 43 号（net-api-compat-v3）共享 websockets 通道——fixture 接线改动
-  同窗复验其非 wss 面基线零回归；43 号 wss 面入账以本 goal DC-2 为
-  前置（两 goal 控制面互指）。
+- 与 43 号（net-api-compat-v3，已收口归档
+  [archive/net-api-compat-v3.md](archive/net-api-compat-v3.md)）共享
+  websockets 通道——fixture 接线改动同窗复验其非 wss 面基线零回归；
+  43 号 wss 面入账以本 goal DC-2 为前置（两 goal 控制面互指）。
 - ws_host_factory 通道级隔离不变（仅 websockets 用例挂接，CSP/cookies
   通道零耦合）。
 - 无人值守 fixture 构建/运行走 test-guard 与 systemd-run 内存墙钟双限

@@ -78,9 +78,11 @@ py 端点面实数落门（本 goal 不为 fixture 缺口背账）。
 
 ## 依赖约束（run-rules §9）
 
-- 与 43 号（net-api-compat-v3）共享 fetch 通道——缓存层改动同窗复验
-  v2 终账（11,040 + S 系列）逐 subtest 零回归；43 号 request-cache 账
-  以本 goal 交付承接（两 goal 控制面互指）。
+- 与 43 号（net-api-compat-v3，已收口归档
+  [archive/net-api-compat-v3.md](archive/net-api-compat-v3.md)）共享 fetch
+  通道——缓存层改动同窗复验 v2 终账（11,040 + S 系列）与 v3 终账
+  （13,275P）逐 subtest 零回归；43 号 request-cache 账以本 goal 交付
+  承接（两 goal 控制面互指）。
 - 与 46 号（runner-net-infra）py 端点前置——http-cache corpus 批次排期
   对齐 46 号 M3 框架交付。
 - 缓存语义实现处加 RFC 9111 条款锚定注释；涉及导航资源加载的缓存路径

@@ -66,7 +66,7 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 ## Done Criteria
 
 - **DC-1（M0 对账）**：fetch 未导入目录 + websockets 全量 + xhr 残余的
-  构成甄别落 `docs/goal/net-api-compat-v3/evidence/`（逐目录：文件数、
+  构成甄别落 `docs/goal/archive/net-api-compat-v3/evidence/`（逐目录：文件数、
   py 端点依赖、批次归属）；wss 依赖面清单与 46 号交接档落档；DC-4
   数值门落定并回填本文件。
 - **DC-2（通道扩面）**：M1/M2 批次目录入 testharness-net-api 常驻通道

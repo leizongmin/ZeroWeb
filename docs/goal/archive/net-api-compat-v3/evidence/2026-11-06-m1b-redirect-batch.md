@@ -21,7 +21,7 @@
    单键（上游为 per-token 多键 dict），裸 token 键会被 preflight.py
    fixture 误读（首字段 count 被当作 did-preflight，曾致 cors-redirect
    20 案 P→F；根因与规避见
-   [learnings](../../../learnings/bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md)），
+   [learnings](../../../../learnings/bugs/2026-11/2026-11-06-flat-stash-key-collision-between-endpoint-fixtures.md)），
    `clean-stash.py` fixture 同步清两键。
 3. **新 fixture**：`redirect-empty-location.py`（302 + 空 Location）、
    `method.py`（x-request-method 等六头回显 + 体回显，`?cors` CORS 应答）。
