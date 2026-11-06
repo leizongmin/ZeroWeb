@@ -874,6 +874,25 @@
     var capS = { n: range.startContainer, o: range.startOffset };
     var capE = { n: range.endContainer, o: range.endOffset };
 
+    // wholesale 同型嵌套跨入形快照（nq7 轮）：enable 面起点 li 严格包含终点
+    // li（同壳内选区跨嵌套边界，census 恰 iol :448/:478 + iul :233/:263 四
+    // 行命中）。toggle 后引擎重锚把塌缩选区留在嵌套 li 内（探针 bar@3 实
+    // 证），qState 端点直读翻 true；语料 after 录音 false/false = 'none' 签
+    // 名＝选区停列表外（P10 定谳选区恢复耦合，纯读不可双全），出口恢复到换
+    // 壳列表树位锚点。dps 族同形源全部 qSB=true 走 disable 面，enable 门天
+    // 然排除；塌缩选区（:393/:418 族 endLi==startLi）与端点反向形（:453）
+    // 均不命中。
+    var nqOut = false;
+    if (mode === 'enable') {
+      var sLiN = range.startContainer;
+      var eLiN = range.endContainer;
+      var gNq = 0;
+      while (sLiN && !_zwJusIsHtmlElement(sLiN, 'li') && gNq++ < 256) sLiN = sLiN.parentNode;
+      gNq = 0;
+      while (eLiN && !_zwJusIsHtmlElement(eLiN, 'li') && gNq++ < 256) eLiN = eLiN.parentNode;
+      nqOut = !!(sLiN && eLiN && sLiN !== eLiN && _zwListContainsNode(sLiN, eLiN));
+    }
+
     // items 前奏（vendored :5704-5727）：range 端点祖先容器 li 逐个归并子列表
     // ——end 侧爬到真 CAC 止、start 侧爬到根，unshift 成树序外先内后。
     // Chrome delta（语料权威）：归并仅 disable 面执行。enable 录制保留 li 内
@@ -1448,7 +1467,30 @@
         return null;
       };
       var rngX = _zwJusActiveRange();
-      if (rngX) {
+      // wholesale 跨入形出口恢复（nq7 刀）：换壳列表树位锚点收拢两端点，选
+      // 区停列表外＝录音 'none' 签名；锚点解析取最外层换壳（wholesale 双壳
+      // retag 的 retaggedFinal/shellSuccessor 落嵌套壳，须爬出 li/ol/ul 链到
+      // parent 非列表族层——探针 LI@1→宿主层实证）；排他跳过常规收钳（其列
+      // 表内判定对塌缩嵌套位恒真恒跳过，锚点失败时放行常规道维持既有行为）。
+      var nqDone = false;
+      if (rngX && nqOut) {
+        try {
+          var anchNq = (retaggedFinal && _zwListNodeInDocument(retaggedFinal))
+            ? retaggedFinal : shellSuccessor();
+          var gNqE = 0;
+          while (anchNq && anchNq.parentNode
+          && _zwJusIsHtmlElement(anchNq.parentNode, ['ol', 'ul', 'li']) && gNqE++ < 256) {
+            anchNq = anchNq.parentNode;
+          }
+          if (anchNq && anchNq.parentNode) {
+            var nqAt = _zwJusNodeIndex(anchNq);
+            rngX.setStart(anchNq.parentNode, nqAt);
+            rngX.setEnd(anchNq.parentNode, nqAt);
+            nqDone = true;
+          }
+        } catch (_eNq) {}
+      }
+      if (rngX && !nqDone) {
         try {
           var tS = _zwListInListContent(rngX.startContainer) ? null
             : (_zwJusIsHtmlElement(rngX.startContainer, ['ol', 'ul'])
