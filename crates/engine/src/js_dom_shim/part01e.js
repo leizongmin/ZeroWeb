@@ -801,12 +801,15 @@
     if (!host) return;
     for (var i = 0; i < nodeList.length; i++) {
       var m = nodeList[i];
-      if (!m || !m.parentNode) continue;
+      // detached 成员放行（div 边界 :775 刀）：ViaHtml 整段重建换新树的
+      // 宿主直下成员按顶层幽灵候选重锚（旧 climb 前置 parentNode 检查恒跳
+      // 过，sublist 套壳段 parentNode 检查不可达——裸 li 两枚实证）。
+      if (!m) continue;
       // 下行索引路径：成员爬升到宿主直下，逐层记 childNodes 索引。
       var path = [];
       var anc = m;
       var gR = 0;
-      while (anc && anc.parentNode !== host && gR++ < 256) {
+      while (anc && anc.parentNode && anc.parentNode !== host && gR++ < 256) {
         var idx = 0;
         var sib = anc.parentNode.firstChild;
         while (sib && sib !== anc) { idx++; sib = sib.nextSibling; }
@@ -814,7 +817,14 @@
         path.unshift(idx);
         anc = anc.parentNode;
       }
-      if (!anc || anc.parentNode !== host) continue;
+      if (!anc) continue;
+      if (!anc.parentNode) {
+        // detached 宿主直下成员（ViaHtml 整段重建换新树，div 边界 :775 刀）：
+        // 顶层幽灵候选，路径空（路径非空时孪生下行同样成立——早停层即最深
+        // 存活祖先，outerHTML 匹配后按旧路径换新引用）。
+      } else if (anc.parentNode !== host) {
+        continue;
+      }
       // 活引用判定：宿主 firstChild/nextSibling 链身份可达即未重建，跳过。
       var top = host.firstChild;
       while (top && top !== anc) top = top.nextSibling;
@@ -1180,6 +1190,13 @@
           }
           var liEl = _zwJusWrap(nodesToWrap, function () { return false; }, function () { return document.createElement('li'); });
           if (liEl) sublist.push(liEl);
+          // ViaHtml 整段重写后续套壳成员幽灵重锚（div 边界 compare :775 刀）：
+          // flat 边界臂 innerHTML setter 重建宿主子列，先前 gather 的 retag li
+          // （div1→li1 形）原引用 detached——重定位孪生后套壳段 parentNode
+          // 检查才可达（裸 li 两枚、ul 壳灭失实证），子列新 ul 壳得以建立。
+          if (bqHost) {
+            try { _zwListRelocateWrapGhosts(bqHost, sublist); } catch (_eRgS) {}
+          }
         }
       }
 

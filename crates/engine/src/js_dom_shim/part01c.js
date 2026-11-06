@@ -480,6 +480,9 @@
     // 原始 start 端点（li 臂/do-while 改写 startNode 前捕获；list-wide 纯壳
     // 门判分支归属用）。
     var origStart = startNode;
+    // 原始 end 端点（list-wide block start 边界排除臂判几何用，改写前捕获）。
+    var origEndN = endNode;
+    var origEndO = endOffset;
 
     // li 臂：start/end 所在最近 li 整行收编。
     var li = null;
@@ -527,6 +530,37 @@
       // vendored blockExtend 忠实语义——纯 at-length 爬升（无跨端关系守卫，
       // :373 内壳 end 必须跨出 innerUL 才能让外壳入含域），宿主为顶护栏
       // （:43/:48 尾文本吸收归 flat-model 臂，range 越顶会过度吸收）。
+      // Chrome delta（语料权威，div 边界 compare 族 iul :803/:809）：原始
+      // end 恰落 block start 边界（offset0 沿首子链爬升到最近 block 仍在
+      // offset0）且该 block 无列表祖先、非宿主、非起始块时，该 block 不入
+      // 含域——end 钳到 block 前（语料明注 "don't listify the last empty
+      // <div> if only its start boundary is in the range"；对照 :806
+      // end=offset3 含域、:800 start 侧对称位不触发、两语料 census 仅
+      // :803/:809 该几何；eb1 空体形 start=end 同块不触发）。
+      var exB = origEndN, exO = origEndO, gEx = 0;
+      while (exO === 0 && exB && exB.parentNode && exB !== host
+          && !_zwJusIsBlockNode(exB) && gEx++ < 256) {
+        exO = _zwJusNodeIndex(exB);
+        exB = exB.parentNode;
+      }
+      if (exO === 0 && exB && exB !== host && exB.parentNode
+      && _zwJusIsBlockNode(exB)
+      && !_zwJusIsHtmlElement(exB, ['ol', 'ul', 'li', 'td', 'th'])) {
+        var sbX = origStart, gSx = 0;
+        while (sbX && sbX.parentNode && sbX !== host
+        && !_zwJusIsBlockNode(sbX) && gSx++ < 256) {
+          sbX = sbX.parentNode;
+        }
+        var laX = exB, hasListX = false, gLx = 0;
+        while (laX && laX !== host && gLx++ < 256) {
+          if (_zwJusIsHtmlElement(laX, ['li', 'ol', 'ul'])) { hasListX = true; break; }
+          laX = laX.parentNode;
+        }
+        if (exB !== sbX && !hasListX) {
+          endNode = exB.parentNode;
+          endOffset = _zwJusNodeIndex(exB);
+        }
+      }
       while (endOffset === _zwJusNodeLength(endNode) && endNode && endNode.parentNode
           && endNode !== host) {
         endOffset = 1 + _zwJusNodeIndex(endNode);
@@ -943,10 +977,21 @@
       if (rng && wrapper) {
         if (wEl.parentNode !== host) {
           var wantOpen = _zwJusSerializeOpenTag(wrapper);
-          for (k = 0; k < host.childNodes.length; k++) {
-            var cN = host.childNodes[k];
-            if (cN.nodeType === 1 && _zwJusSerializeOpenTag(cN) === wantOpen) {
-              wEl = cN; break;
+          // 孪生定位位优先：wrapper 恰占重建子列 firstIdx 位（prefix 前缀 =
+          // 成员首索引，html 拼装序即 DOM 序）；位不可靠（解析回流/结构怪形）
+          // 再按 open tag 串扫描兜底。串扫描首命中在同 open-tag 前缀面取错
+          // 孪生（div 边界 :775 刀双 li 形：liEl 指向 liFooTwin，主循环
+          // sublist 重锚后重复引用同节点、真包装 liBarTwin 永远 bare 实证）。
+          var posW = host.childNodes[firstIdx];
+          if (posW && posW.nodeType === 1
+          && _zwJusSerializeOpenTag(posW) === wantOpen) {
+            wEl = posW;
+          } else {
+            for (k = 0; k < host.childNodes.length; k++) {
+              var cN = host.childNodes[k];
+              if (cN.nodeType === 1 && _zwJusSerializeOpenTag(cN) === wantOpen) {
+                wEl = cN; break;
+              }
             }
           }
         }
