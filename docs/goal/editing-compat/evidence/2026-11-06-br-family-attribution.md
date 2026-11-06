@@ -19,8 +19,9 @@ iul 与 iol 全同构（ol→ul）。原始日志 /tmp/zw-dps/br-probe.log（got
 ## 三机制（统一根因：br 块边界未参与 list enable 分块）
 
 - **A 吸收臂越界**：选区前邻 br 是前块（foo）的块终止符。invisible 吸收
-  臂把 br 收进新壳作直接子节点（`<ol><br><li>`）；期望 br 留在壳外 host
-  （前块终止符不属于被提取块）。
+  臂把 br 收进新壳作直接子节点（`<ol><br><li>`）；期望该行界 br 随提取
+  **移除**（语料 :15 exp `foo<ol><li>` 前无 br——非壳外保留，初稿此点
+  记反，勘误）。
 - **B 选区内 br 未作 li 分裂点**：oo|b 之间 br 应被消费为 li1/li2 边界。
   got 中该 br 反被独立 wrap 成幽灵壳 `<ol><li><br></li></ol>`（且落位错
   到 baz 之后），真实次块 "b]ar" 落出 members 裸留 host；尾 br（bar|baz
@@ -36,10 +37,14 @@ iul 与 iol 全同构（ol→ul）。原始日志 /tmp/zw-dps/br-probe.log（got
 
 ## 修复方向（主刀设计稿）
 
-part01e enable 分块按 br 切段：成员收集以 br 为块终止符、br 不进
-members（吸收臂对块边界 br 豁免）；选区内 br = li 分裂点（消费）；被提
-取块尾 br = 壳缘替代消费；宿主块容器（p）含选区内 br 时先按 br 分裂再
-提取。选区端点补偿覆盖 li 分裂与块分裂两臂（B 灭失面）。
+统一契约（三形 exp 合读）：**提取边界邻接 br 一律消费移除**——A 前邻
+行界 br 移除（:15）、B 选区内 br 消费为 li 界 + 尾随 br 移除（exp
+`</ol>baz` 直连）、C 拆分点 br 移除（exp `</ol><p>bar` 直连）；唯非提取
+边界的空行载体 br 不动。落法：enable 前行界预遍按 br 切行——提取行成员
+收临时块、边界邻接 br 移除、kept 行供主循环换型；C 形另需宿主 p 拆分臂
+（壳出 p）。选区端点随 `_zwJusMovePreservingRanges` 身份存活（B 灭失面
+随之闭合）。主刀实现由并行轮按 RUNSTATE SEAT-CLAIM（2026-11-06 13:40）
+认领在途（part01e `_zwListEnableLineScope` 预遍臂），本席让位核验。
 
 ## 门禁预期与回归隔离
 
