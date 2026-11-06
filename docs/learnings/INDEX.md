@@ -5,10 +5,11 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（230）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（231）
 
 - 2026-11-06 [真值判断链吞掉新增字符串模式分支（q16 list-wide 死码四批）](bugs/2026-11/2026-11-06-truthy-guard-eats-new-string-mode-branch.md) — engine, js_dom_shim
 - 2026-11-06 [setTagName 先插后删换型使持有引用 detached，过滤判据恒假](bugs/2026-11/2026-11-06-settagName-detached-reference-breaks-filters.md) — engine
+- 2026-11-06 [runner 日志混入 NUL 字节后 grep 静默空输出——统计与 A/B 前先 Python 解析](bugs/2026-11/2026-11-06-nul-byte-in-runner-logs-silences-grep.md) — wpt-runner, testing
 - 2026-11-06 [estimate-font 测试 harness 掩盖真实 advance 下的 reftest 回归](bugs/2026-11/2026-11-06-estimate-font-harness-masks-real-advance-reftest-regressions.md) — zero-engine,zero-layout-engine,wpt-runner
 - 2026-11-05 [WPT 探针全局调用计数被 testharness 并发臂污染](bugs/2026-11/2026-11-05-wpt-probe-global-counter-pollution.md) — wpt-runner
 - 2026-11-05 [shim/DOM 桥 insertBefore 解析文本 ref 静默丢弃](bugs/2026-11/2026-11-05-shim-insertbefore-parsed-text-ref-silent-drop.md) — engine
@@ -324,8 +325,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（40）
+## Platform — 平台与环境相关经验（41）
 
+- 2026-11-06 [editing 语料 before 读面编码录音会话状态泄漏——孤立红行先做泄漏模拟对账再定读面 bug](platform/2026-11/2026-11-06-editing-corpus-recording-session-state-leak.md) — editing-compat,wpt_runner
 - 2026-11-06 [并发重型 make 入口时 target-disk-guard 三级全清连坐兄弟门禁腿](platform/2026-11/2026-11-06-concurrent-make-disk-guard-wipes-sibling-gate.md) — make,target-disk-guard,test-guard
 - 2026-11-05 [wpt-runner testharness 行输出进程末统一落盘——stdout 静默 ≠ 挂死](platform/2026-11/2026-11-05-wpt-runner-row-flush-at-process-exit.md) — wpt-runner
 - 2026-11-05 [multitest 语料 full-file 单发模式失败——必须走切片协议](platform/2026-11/2026-11-05-multitest-corpus-full-file-mode-fails-use-slices.md) — zero-web-runner,editing-compat
