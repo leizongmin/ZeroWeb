@@ -1,8 +1,9 @@
 # Network API 兼容三期 — fetch 族未导入目录 + websockets 全量 + xhr 残余
 
-**版本**: v1.0
-**日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——立项，M0 未启动
+**版本**: v1.1
+**日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
+2026-11-06 M0 对账甄别完成（三甄别档落 evidence/，DC-4 数值门按 <10k 分支落定）
+**状态**: Active——M0 完成，M1 启动（枚举器窗体解锁 → xhr .htm 面 + .window.js 面）
 **执行模式**: WPT 驱动（上游 corpus 为验收标尺）+ 语料扩面 + fixture 甄别
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: 一期 `docs/goal/archive/net-api-compat.md`（2026-10-04 收口）；
@@ -63,10 +64,25 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 - **DC-4（coverage 复测）**：fetch/websockets/xhr 三面升至数值门；
   一期/二期通道既有账零回归（分母逐 subtest 对照）；头条不回落。
 
-**DC-4 数值门决策规则（立项即定）**：M0 甄别后按地址池分档——地址池
-（window 可执行 + fixture 可 shim）≥ 10k 子测试：全量推进，数值门 =
-地址池 × 通道既有通过率（M0 实测后填入）；< 10k：优先导入非 py 端点
-目录，py 密集目录按 fixture 可行性分批，worker 面如实排除挂账。
+**DC-4 数值门（2026-11-06 M0 落定，走 <10k 分支）**：M0 甄别（三档见
+evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.5k–3k
+子测试，**远低于 10k**——不设单点总量门，改按批次落门：
+
+1. **批次门**：每批导入面通道实跑 pass ≥ 该批 ZW 实跑子测试分母 ×
+   98.5%（M0 实测通道既有通过率下限：websockets 100% [377P/0F]、xhr
+   98.7% [586P/7F/1T]、fetch 腿 90.9% [1,900P/2,091，含 request-cache
+   族 98F 等划界挂账面——批次门只对新增导入面计，不与挂账面混算]）；
+   批次导入面 wpt.fyi den 口径含变体膨胀，不做 den 口径对齐承诺（xhr
+   档第五节记账）。
+2. **DC-3 面门**：websockets 非 wss 依赖面 covered > 0 且 interfaces
+   批次（den 291）pass ≥ 实跑分母 × 98.5%；wss 变体面移交 46 号兑现，
+   不入门。
+3. **零回归门**：一期/二期通道既有账逐 subtest 对照（M0 基线 =
+   2026-11-06 全量通道实跑 11,035P/12,078，七域分布见
+   [基线档](net-api-compat-v3/evidence/2026-11-06-m0-channel-baseline.md)；
+   与 S19 核查态一致，语料漂移差已归因）零回归；头条不回落（三族
+   coverage 通过率不低于 2026-11-05 基线：fetch 14.25% / websockets
+   4.27% / xhr 23.75%）。
 
 ## 划界
 
@@ -85,10 +101,23 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 
 ## 里程碑
 
-- **M0**：对账甄别 + WebSocket P3 重估 + 数值门（DC-1）。
-- **M1**：fetch 非 py 目录批次导入（DC-2 起步）。
-- **M2**：py 端点目录 fixture 分批 + websockets 非依赖面入账（DC-2/3）。
-- **M3**：xhr 残余簇归因收敛（DC-3）。
+- **M0 ✅**（2026-11-06）：对账甄别 + WebSocket P3 重估 + 数值门（DC-1）——
+  三甄别档落 evidence/（fetch 逐目录 / websockets 清单+wss 交接 / xhr
+  残余簇归因）；wss 面不阻塞非 wss 导入（interfaces 74 案零 .https 命名）。
+- **M1（进行中）**：**M1a 枚举器窗体解锁**——共享枚举器
+  `run_any_js_corpus_subdirs_*` 只认 flat `.html`/`.any.js`：xhr 190 个
+  `.htm`（~175 案未跑，access-control preflight 族为主）+ 9 `.window.js`
+  案、fetch h1-parsing 3 `.window.js`（coverage 0 覆盖根因）、
+  content-type/content-length/data-urls `.window.js` 余量同因；按
+  webmessaging/wasm-core 通道 `.window.js` 先例扩形态。**M1b 语料/端点
+  批次**：fetch/api/redirect（16 案）+ redirect.py shim、xhr folder.txt
+  补拉 + A/B、h1-parsing resources 补拉。
+- **M2**：py 端点目录 fixture 分批（xhr auth1-11 HTTP Basic 面）+
+  websockets 非 wss 依赖面入账（interfaces 74 案 + fixture `/echo_raw`
+  `/sleep_10_v13` 两条新增）（DC-2/3）。
+- **M3**：xhr 在账失败簇收敛（formdata/submitter 簇 4F + overrideMimeType
+  Shift-JIS 接线 1F + cookies.http.html 挂起 1T；permissions-policy 2F
+  策略面排除）（DC-3）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
