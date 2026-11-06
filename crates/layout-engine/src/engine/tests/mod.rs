@@ -1014,3 +1014,7 @@ mod r5408_replaced_clamp_transfer_tests;
 /// R5409：visibility:collapse 多线 strut 迁移（css-flexbox §4，002 Row2/Row3 锚 +
 /// 单线守卫）。
 mod r5409_flex_collapse_strut_tests;
+
+/// R5434：col 元素指定宽 = 列 used width（auto cell 可断行贡献钳到 col 宽，min-content
+/// floor 存活；vertical-align-baseline-003 ref 侧锚）。
+mod r5434_table_col_used_width_tests;

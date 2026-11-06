@@ -1345,6 +1345,8 @@ fn compute_column_widths_inner(
     // 语义，CSS Tables §4：col width 行为同该列每格显式 width）。col 无 box，须在 grid 直接读
     // DOM 属性（compute_column_widths 此前仅读 cell width，col width 被忽略）。auto 扩展期
     // 这些列冻结（同 R364 cell-explicit），仅 auto 列吸收剩余空间。
+    // R5434：col 元素指定宽快照（Pass 1 cell 贡献钳臂用；Pass 0 各分支同步记录）。
+    let mut col_elem_spec = vec![None; col_count];
     for (i, w) in crate::table_grid::collect_col_widths(table_box, col_count, styles, doc, col_available)
         .iter()
         .enumerate()
@@ -1352,6 +1354,7 @@ fn compute_column_widths_inner(
         if let Some(px) = w {
             col_max_widths[i] = col_max_widths[i].max(*px);
             col_explicit[i] = true;
+            col_elem_spec[i] = Some(*px);
         }
     }
 
@@ -1484,6 +1487,7 @@ fn compute_column_widths_inner(
                         if idx < col_count {
                             if let Some(w) = gw {
                                 col_max_widths[idx] = col_max_widths[idx].max(w);
+                                col_elem_spec[idx] = Some(w);
                             }
                             if let Some(mn) = gmin {
                                 col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1510,6 +1514,7 @@ fn compute_column_widths_inner(
                             if idx < col_count {
                                 if let Some(w) = cw {
                                     col_max_widths[idx] = col_max_widths[idx].max(w);
+                                    col_elem_spec[idx] = Some(w);
                                 }
                                 if let Some(mn) = cmin {
                                     col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1535,6 +1540,7 @@ fn compute_column_widths_inner(
                     if idx < col_count {
                         if let Some(w) = cw {
                             col_max_widths[idx] = col_max_widths[idx].max(w);
+                            col_elem_spec[idx] = Some(w);
                         }
                         if let Some(mn) = cmin {
                             col_max_widths[idx] = col_max_widths[idx].max(mn);
@@ -1660,6 +1666,18 @@ fn compute_column_widths_inner(
     // R5285：winner-center 配对写入过的槽位（content 与本行 local 半宽已配对）——
     // 无 cell 槽位（纯 col 宽/空列）在 Pass 2 后做全局线源半宽加法兜底。
     let mut paired_slots = vec![false; col_count];
+    // R5434（CSS2 §17.5.2.1 auto layout 列宽；chrome oracle 三探针定谳）：col 元素指定宽
+    // 是列的 **used width**——auto cell 可断行内容贡献不越过 col 宽（col width:80 +
+    // max-content 430 → 列 80 内容换行；chrome p2 实证），min-content floor 仍由内容
+    // 撑起（col 2px + "xx" → 列 = 词宽；col 80 + 不可断长词 → 列 = 全词宽）。floor 用
+    // R5036 `block_min_content_width` 真 min-content（词级软换行全用）。仅 cell 自身
+    // width:auto 入臂——cell 显式宽与 col 宽同为作者 floor，大者
+    // 胜（chrome p3 形）；winner-center（R5285 格线胜者配对域）与 anon cell（anon_max_
+    // width 无盒测量）不入臂。旧径 cell max-content 直接 max 进槽（col 宽仅 floor）→
+    // 列被内容撑破（vertical-align-baseline-003 ref 侧：col 80 → 430 单行）。
+    // kill-switch `ZW_TABLE_COL_USED_WIDTH=0`。
+    static COL_USED_WIDTH_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_COL_USED_WIDTH").as_deref() != Ok("0"));
     for (row_idx, row) in grid.rows.iter().enumerate() {
         let Some(row_box) = get_row_box(table_box, row) else {
             continue;
@@ -1707,7 +1725,41 @@ fn compute_column_widths_inner(
                 }
                 continue;
             }
-            let (w, _, cell_spec_px) = cell_used_width(cell_box);
+            let (w, css_width_auto, cell_spec_px) = cell_used_width(cell_box);
+            // R5434：col 元素指定宽列的 auto cell 贡献钳到 used width（floor = R364b
+            // for_explicit_floor 启发式；详见上方 kill-switch 注）。collapse 非
+            // winner-center 的 floor 同 R5241 扣半边框（边框中心距口径）。
+            let w = if *COL_USED_WIDTH_ON
+                && css_width_auto
+                && !winner_center_col
+                && let Some(Some(spec)) = col_elem_spec.get(cell.col_start).copied()
+                && w > spec
+            {
+                // floor = R5036 真 min-content（词级软换行全用；for_explicit_floor 的
+                // 95% 启发式是 max-content 域度量，非 min-content，钳臂不可用）。
+                let mut floor = crate::intrinsic_sizing::block_min_content_width(cell_box, doc, styles);
+                if is_collapsed_border && collapse_half_extent_enabled() {
+                    floor = (floor - (cell_box.border_left + cell_box.border_right) / 2.0).max(0.0);
+                }
+                // cell min-width 已折进 w（cell_used_width 出口），钳臂不得倒扣——
+                // 按 R364 显式宽同口径转列贡献（collapse 边框中心距 + ½(bl+br)；
+                // CSS Tables §17.5.3：cell min-width 是列 min-content 下限）。
+                if let Some(mn) = cell_box
+                    .node_id
+                    .and_then(|id| styles.get(&id))
+                    .and_then(|s| resolve_table_used_length(&s.min_width, s))
+                {
+                    let mn_col = if is_collapsed_border && collapse_half_extent_enabled() {
+                        mn + (cell_box.border_left + cell_box.border_right) / 2.0
+                    } else {
+                        mn
+                    };
+                    floor = floor.max(mn_col);
+                }
+                w.min(spec.max(floor))
+            } else {
+                w
+            };
             // R5285：winner-center 槽需求 = local[k]/2 + content + local[k+1]/2
             //（行局部格线胜者与 content 同行配对后 max，chromium 探针定谳模型）。
             if winner_center_col {
