@@ -114,9 +114,12 @@ evidence/）判定三族地址池（window 可执行 + fixture 可 shim）≈ 1.
   eventsource +22 / fetch +12 / streams +1），案 543 → 684，A/B 交集
   12,070 对逐对字节一致零回归；新 Fail 面 = 解锁面真实缺口显影（
   access-control preflight 端点 / h1-parsing 原始线缆端点等），转 M1b/M2
-  fixture 分批与 M3 归因输入。**M1b（下一步）**：fetch/api/redirect
-  （16 案）+ redirect.py shim、xhr folder.txt 补拉 + A/B、解锁面新 Fail
-  簇逐簇归因（corsca/preflight shim 可行性分批）。
+  fixture 分批与 M3 归因输入。**M1b（进行中，[簇归因图](net-api-compat-v3/evidence/2026-11-06-m1b-folder-txt-and-xhr-cluster-map.md)）**：
+  folder.txt 补拉已落（+2P 零回归，A/B 2 翻转全 Fail→Pass）；
+  xhr 解锁面 143 案 351 F+T 簇级归因已落档（redirect / setRequestHeader /
+  open 方法校验 / 解码 / auth / CORS preflight 十簇）——下一步 redirect.py
+  shim（fetch/api/redirect 16 案 + xhr redirect 面同端点收益）、h2 形态案
+  甄别排除、M2 fixture 设计稿。
 - **M2**：py 端点目录 fixture 分批（xhr auth1-11 HTTP Basic 面）+
   websockets 非 wss 依赖面入账（interfaces 74 案 + fixture `/echo_raw`
   `/sleep_10_v13` 两条新增）（DC-2/3）。
