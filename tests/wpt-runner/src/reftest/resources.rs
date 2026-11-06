@@ -1075,17 +1075,12 @@ fn read_headers_sidecar_content_type(path: &Path) -> Option<String> {
 fn extract_base_href_prefix(html: &str) -> Option<String> {
     let idx = html.find("<base")?;
     let rest = &html[idx..];
-    let Some(tag_end) = find_tag_end(rest) else {
-        return None;
-    };
+    let tag_end = find_tag_end(rest)?;
     let tag = &rest[..tag_end];
-    let (value_start, quote) = if let Some(p) = tag.find("href=\"") {
-        (p + 6, '"')
-    } else if let Some(p) = tag.find("href='") {
-        (p + 6, '\'')
-    } else {
-        return None;
-    };
+    let (value_start, quote) = tag
+        .find("href=\"")
+        .map(|p| (p + 6, '"'))
+        .or_else(|| tag.find("href='").map(|p| (p + 6, '\'')))?;
     let value_end = tag[value_start..].find(quote)? + value_start;
     let href = tag[value_start..value_end].trim();
     if href.is_empty() || href.starts_with('/') || href.starts_with('#') || href.contains("://") {
