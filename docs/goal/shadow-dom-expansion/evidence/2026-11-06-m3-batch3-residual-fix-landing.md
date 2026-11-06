@@ -153,3 +153,20 @@ adopted/insertRule 路径经 `_ruleFromText` 重建（part06.js `_zwAdoptedCombi
 - 下一步：M3 余项 ② attachment 170F 复测（m3c2 协同）/ ③ 簇 D 剔池决策 /
   ④ 簇 C engine glue（深化项）；写路径增量化（候选③）挂账 M3 尾段候选；
   5F 归 html-semantics 流。
+
+## 上流互证补记（d72338b4 rally resume，09:35）
+
+- **独立 ×1 复算**：以同 md5 二进制副本 solo ×1 复跑 =
+  **3,628P/0F/1T**——与 solo 3,443 / 全通道 3,762 同带；×1 三样本 ~9% 宽
+  均为墙钟方差、无固定截断面，互证上表「延伸平滑」结论。
+- **时序污染披露**：本互证跑（~09:15-09:17）与 ×3 solo 起步段并行约
+  2.5 分钟，双向扰动；污染方向只会压低行数——本 ×1 结果仍高于净跑 solo，
+  ×3 5,958 的「平滑延伸」判定对该 confound 不敏感；×4（09:25-09:31）在
+  本流停手后净跑，锚点不受影响。
+- **filter 口径**：本互证用子串 filter `gethtml`，连带命中
+  reference-target/tentative/gethtml-serialization.html（3F，簇 C ④ 深化面
+  另页）与 gethtml-ordering.html（3P）；上表 solo 用窄 filter
+  `declarative/gethtml.html`——两口径在 gethtml.html 本页无差。
+- **provenance**：solo 产物在 `.acceptance/shadow-m3-residual/`
+  （gitignored）：x1 09:04 / x2 09:12 / x3 09:24 / x4 09:31；碰撞记录中
+  「09:02」为 x1 run 起步时刻；本互证原始 JSON 留 /tmp（会话内一次性）。
