@@ -755,8 +755,15 @@ impl RenderPipeline {
         let mut ratios = HashMap::new();
         let mut no_ratio = HashMap::new();
         for img_id in doc.get_elements_by_tag_name("img") {
-            // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
-            if let Some(src) = crate::effective_img_src(doc, img_id) {
+            // s306：src → srcset → picture/source 有效图源，paint 键与 shim
+            // select-an-image-source 选源同口径（R4162 首候选近似 → 密度择优）。
+            // 选源 None 时回落旧首候选近似取键——全候选 invalid 且无 src 的
+            // broken 形态（r5386 '9e999…x'）密度折算面恒 +Inf → dim 0，键
+            // 缺席会把该面从 dim 0 退化成无条目 NaN（shim naturalWidth 0 面）。
+            let src =
+                crate::img_selected_source_url(doc, img_id, self.viewport_width as f64, self.viewport_height as f64)
+                    .or_else(|| crate::effective_img_src(doc, img_id));
+            if let Some(src) = src {
                 let key = crate::paint::image_resource_key(&src, self.document_url.as_deref());
                 if let Some(&size) = self.image_sizes.get(&key) {
                     sizes.insert(img_id, size);
@@ -918,6 +925,55 @@ impl RenderPipeline {
                     st.width = LengthValue::Px(w.into());
                 }
                 if matches!(st.height, LengthValue::Auto) {
+                    st.height = LengthValue::Px(h.into());
+                }
+            }
+        }
+    }
+
+    /// s306（html-semantics M2）：picture `source` 维度属性 → img 缺省尺寸
+    ///（R4044 同款 Auto→Px post-style pass——source width/height 不进
+    /// style-system presentational hints（crate 边界不混写），img 自身属性
+    /// 仍在 hints 面）。spec：选中 source 的 width/height 在 img 自身缺对应
+    /// 属性时逐轴充作 img 维度属性缺省；作者 CSS/自身属性在场（style 非
+    /// Auto）时让位。
+    /// https://html.spec.whatwg.org/multipage/embedded-content.html#the-source-element
+    pub(crate) fn apply_source_dimension_defaults(
+        &self,
+        doc: &zero_dom::Document,
+        styles: &mut HashMap<NodeId, ComputedStyle>,
+    ) {
+        use zero_css_parser::values::LengthValue;
+        let ctx = self.media_context();
+        let mut targets: Vec<(NodeId, Option<f32>, Option<f32>)> = Vec::new();
+        for img_id in doc.get_elements_by_tag_name("img") {
+            let Some(src_id) = select_source_element(doc, img_id, &ctx) else {
+                continue;
+            };
+            let w = if doc.get_attribute(img_id, "width").is_none() {
+                Self::parse_nonnegative_int_attr(doc.get_attribute(src_id, "width"))
+            } else {
+                None
+            };
+            let h = if doc.get_attribute(img_id, "height").is_none() {
+                Self::parse_nonnegative_int_attr(doc.get_attribute(src_id, "height"))
+            } else {
+                None
+            };
+            if w.is_some() || h.is_some() {
+                targets.push((img_id, w, h));
+            }
+        }
+        for (nid, w, h) in targets {
+            if let Some(st) = styles.get_mut(&nid) {
+                if let Some(w) = w
+                    && matches!(st.width, LengthValue::Auto)
+                {
+                    st.width = LengthValue::Px(w.into());
+                }
+                if let Some(h) = h
+                    && matches!(st.height, LengthValue::Auto)
+                {
                     st.height = LengthValue::Px(h.into());
                 }
             }
@@ -1423,8 +1479,9 @@ impl RenderPipeline {
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
         // R342：动画/过渡段（4b–cleanup）抽取为 `tick_animation_styles` 共用 helper
         //（runner 的 `tick_animation_clock` 泵复用同一段；行为等价重构零语义变化）。
-        let styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
+        let mut styles = self.tick_animation_styles(&doc, &stylesheets, current_time);
         let style_ms = style_start.elapsed().as_secs_f64() * 1000.0;
+        self.apply_source_dimension_defaults(&doc, &mut styles);
 
         // 6. 计算布局
         let layout_start = Instant::now();
@@ -1812,6 +1869,7 @@ impl RenderPipeline {
         // image 固有尺寸 sizing（width/height Auto 时设为图尺寸），build_subtree 已抑制其
         // 子节点，paint_img_element 渲染图片。绕 R109 IFC（见 R2438 child-injection 证伪）。
         self.apply_content_url_replaced_sizing(&doc, &mut styles);
+        self.apply_source_dimension_defaults(&doc, &mut styles);
 
         // 4. 计算布局
         let layout_start = Instant::now();
@@ -1970,7 +2028,8 @@ impl RenderPipeline {
         // 计算样式
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
         let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);
@@ -2058,8 +2117,9 @@ impl RenderPipeline {
         // 增量路径作 base）
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = self.style_system.compute_styles(doc, stylesheets);
         self.cached_styles = styles.clone();
+        self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
         let (img_sizes, img_ratios, img_no_ratio) = self.build_img_intrinsic_all(doc);

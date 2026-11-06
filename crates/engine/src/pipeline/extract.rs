@@ -692,54 +692,9 @@ pub fn img_selected_pixel_density(
     //（srcset_candidates——URL 内逗号合法，data: URL header 逗号不切组）。
     let mut candidates: Vec<(Option<f64>, Option<f64>)> = Vec::new();
     for (_url, desc_area) in srcset_candidates(&srcset) {
-        let mut width = None;
-        let mut density = None;
-        let mut fch = false;
-        let mut valid = true;
-        for d in desc_area.split_ascii_whitespace() {
-            if let Some(num) = d.strip_suffix('w') {
-                if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
-                    valid = false;
-                    break;
-                }
-                let wv: f64 = num.parse().unwrap_or(f64::INFINITY);
-                if wv == 0.0 {
-                    valid = false;
-                    break;
-                }
-                width = Some(wv);
-            } else if let Some(num) = d.strip_suffix('x') {
-                if width.is_some() || density.is_some() || fch {
-                    valid = false;
-                    break;
-                }
-                match parse_srcset_real(num) {
-                    Some(v) if v >= 0.0 => density = Some(v),
-                    _ => {
-                        valid = false;
-                        break;
-                    }
-                }
-            } else if let Some(num) = d.strip_suffix('h') {
-                if fch || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
-                    valid = false;
-                    break;
-                }
-                if matches!(num.parse::<f64>(), Ok(v) if v == 0.0) {
-                    valid = false;
-                    break;
-                }
-                fch = true;
-            } else {
-                valid = false;
-                break;
-            }
-        }
-        if fch && width.is_none() {
-            valid = false;
-        }
-        if valid {
-            candidates.push((width, density));
+        // 文法校验共用核（s306 抽出，`img_selected_source_url` 同源）。
+        if let Some(cand) = parse_srcset_descriptor(&desc_area) {
+            candidates.push(cand);
         }
     }
     let has_src = doc.get_attribute(img_id, "src").is_some_and(|s| !s.trim().is_empty());
@@ -851,6 +806,263 @@ fn parse_srcset_real(s: &str) -> Option<f64> {
         return None;
     }
     s.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// s306（html-semantics M2）：srcset 描述符文法共用核（w/x/h 混排校验）——
+/// `img_selected_pixel_density` 与 `img_selected_source_url` 的候选解析同源。
+/// 返 (width 描述符, density 描述符)；None = 候选 invalid（spec parse error
+/// → 候选弃）。文法同 shim `__zwParseSrcsetAttr5277`：w = 纯数字+'w'（0 →
+/// error）、x = HTML 浮点（`parse_srcset_real`，非有限拒）、h = 纯数字+'h'
+///（0 → error）；w/x 互斥、h 至多一个；h 在场必须配 w。
+/// https://html.spec.whatwg.org/multipage/images.html#parse-a-srcset-attribute
+fn parse_srcset_descriptor(desc_area: &str) -> Option<(Option<f64>, Option<f64>)> {
+    let mut width = None;
+    let mut density = None;
+    let mut fch = false;
+    for d in desc_area.split_ascii_whitespace() {
+        if let Some(num) = d.strip_suffix('w') {
+            if width.is_some() || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            let wv: f64 = num.parse().unwrap_or(f64::INFINITY);
+            if wv == 0.0 {
+                return None;
+            }
+            width = Some(wv);
+        } else if let Some(num) = d.strip_suffix('x') {
+            if width.is_some() || density.is_some() || fch {
+                return None;
+            }
+            match parse_srcset_real(num) {
+                Some(v) if v >= 0.0 => density = Some(v),
+                _ => return None,
+            }
+        } else {
+            let num = d.strip_suffix('h')?;
+            if fch || density.is_some() || !num.bytes().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            if matches!(num.parse::<f64>(), Ok(v) if v == 0.0) {
+                return None;
+            }
+            fch = true;
+        }
+    }
+    if fch && width.is_none() {
+        return None;
+    }
+    Some((width, density))
+}
+
+/// s306：`<source>` type 属性支持性门（shim `__zwSourceSupportedType5277`
+/// 白名单镜像：image/{gif,png,jpeg,svg+xml,x-icon,webp}；空值跳过检查；
+/// essence 按 RFC 7231 结构解析）。参数（;k=v）面 shim 有语法校验、此处
+/// 放行不拒——本仓 corpus 无带参 type 页 FIXME（校验收窄不影响白名单面）。
+fn source_type_supported(v: &str) -> bool {
+    let s = v.trim();
+    if s.is_empty() {
+        return true;
+    }
+    let essence = s.split(';').next().unwrap_or(s).trim();
+    let Some((t, st)) = essence.split_once('/') else {
+        return false;
+    };
+    if t.is_empty() || st.is_empty() || st.contains('/') {
+        return false;
+    }
+    let token_ok = |x: &str| {
+        !x.is_empty()
+            && x.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&c))
+    };
+    if !token_ok(t) || !token_ok(st) {
+        return false;
+    }
+    let mime = essence.to_ascii_lowercase();
+    mime == "image/gif"
+        || mime == "image/png"
+        || mime == "image/jpeg"
+        || mime == "image/svg+xml"
+        || mime == "image/x-icon"
+        || mime == "image/webp"
+}
+
+/// s306：source media 属性门（spec：media query list 求值——shim matchMedia
+/// 桥同源引擎 zero_css_parser；属性缺席/空 = 全匹配；解析失败 = 不匹配跳过
+/// 该 source；逗号列表 OR 同 matcher 求值口径）。
+fn source_media_matches(media: &str, ctx: &zero_css_parser::media_query::MediaContext) -> bool {
+    let s = media.trim();
+    if s.is_empty() {
+        return true;
+    }
+    match zero_css_parser::media_query::parse_media_query(s) {
+        Some(list) => list
+            .iter()
+            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx)),
+        None => false,
+    }
+}
+
+/// s306：picture `source` 子元素选中核（spec update the source set 前半）——
+/// 按 DOM 序走到 img 元素为止：SOURCE 元素且 media/type 门通过且 srcset
+/// 候选非空即选中（w/x 密度择优在 `img_selected_source_url`）。spec 只取
+/// img 前的兄弟 source（img 本身结束 walk）；picture 祖先缺席 → None。
+/// https://html.spec.whatwg.org/multipage/images.html#update-the-source-set
+pub(crate) fn select_source_element(
+    doc: &zero_dom::Document,
+    img_id: zero_dom::NodeId,
+    ctx: &zero_css_parser::media_query::MediaContext,
+) -> Option<zero_dom::NodeId> {
+    let parent = doc.parent_node(img_id)?;
+    let is_picture = doc
+        .get(parent)
+        .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "picture"));
+    if !is_picture {
+        return None;
+    }
+    for child in doc.child_nodes(parent) {
+        let Some(n) = doc.get(child) else {
+            continue;
+        };
+        let zero_dom::NodeKind::Element(e) = &n.kind else {
+            continue;
+        };
+        if e.local_name() == "img" {
+            return None;
+        }
+        if e.local_name() != "source" {
+            continue;
+        }
+        if let Some(media) = e.get_attribute("media")
+            && !source_media_matches(&media, ctx)
+        {
+            continue;
+        }
+        if let Some(ty) = e.get_attribute("type")
+            && !source_type_supported(&ty)
+        {
+            continue;
+        }
+        if let Some(srcset) = e.get_attribute("srcset")
+            && !srcset_candidates(&srcset).is_empty()
+        {
+            return Some(child);
+        }
+    }
+    None
+}
+
+/// s306：候选密度择优（spec select-an-image-source 步骤：密度归一 w/size +
+/// 同密度去重保首 + ≤dpr 最大密度、无则最小密度；dpr 1.0 = headless 基准同
+/// shim devicePixelRatio）。返胜出 URL；`default_src` = img src 属性补挂
+/// 候选（无 1x 且无 w 候选且非空时，spec create-a-source-set 步 4）。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+fn pick_srcset_candidate_url(pairs: &[(String, String)], size: f64, default_src: Option<&str>) -> Option<String> {
+    let mut entries: Vec<(f64, String)> = Vec::new();
+    let mut has_d1 = false;
+    let mut has_w = false;
+    for (url, desc) in pairs {
+        if let Some((w, d)) = parse_srcset_descriptor(desc) {
+            let dv = match d {
+                Some(v) => v,
+                None => match w {
+                    Some(wv) => {
+                        has_w = true;
+                        wv / size
+                    }
+                    None => 1.0,
+                },
+            };
+            if dv == 1.0 {
+                has_d1 = true;
+            }
+            entries.push((dv, url.clone()));
+        }
+    }
+    if !has_d1
+        && !has_w
+        && let Some(src) = default_src.map(str::trim).filter(|s| !s.is_empty())
+    {
+        entries.push((1.0, src.to_string()));
+    }
+    // 同密度去重保首（shim seen 表同口径）后 ≤dpr 最大、无则最小。
+    let mut uniq: Vec<(f64, String)> = Vec::new();
+    for (d, u) in entries {
+        if !uniq.iter().any(|(ud, _)| *ud == d) {
+            uniq.push((d, u));
+        }
+    }
+    let mut best: Option<(f64, String)> = None;
+    for (d, u) in &uniq {
+        if *d <= 1.0 && best.as_ref().is_none_or(|(bd, _)| *d > *bd) {
+            best = Some((*d, u.clone()));
+        }
+    }
+    let winner = match best {
+        Some(w) => w,
+        None => {
+            let min = uniq
+                .iter()
+                .min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))?;
+            (min.0, min.1.clone())
+        }
+    };
+    (winner.0 > 0.0).then_some(winner.1)
+}
+
+/// s306（html-semantics M2）：img 有效选中图源 URL——select an image source
+/// 的 host 侧最小镜像（paint/固有尺寸键与 shim 选源同口径：shim 面此前只进
+/// currentSrc/available-images/resourceState，paint 面走 R4162 首候选近似 →
+/// responsive-image-select-print 红根因）。取源序随 spec（与旧 `effective_img_src`
+/// 的 src 优先近似序不同）：picture 祖先且有通过门的 source 子元素 → 其 srcset
+/// 按 w/x 密度择优（sizes 缺省 100vw = viewport 宽）；无选中 source → img 自身
+/// srcset 密度择优（含 default source 补挂）→ 自身 src。src/srcset 皆缺席时
+/// picture source 仍先于"空回落"（spec 语义）。全 corpus reftest 面无 img 同时
+/// 带 src 与通过门 picture source 的观测页 FIXME（翻转面收窄依据见 s306 账）。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+pub fn img_selected_source_url(
+    doc: &zero_dom::Document,
+    img_id: zero_dom::NodeId,
+    viewport_w: f64,
+    viewport_h: f64,
+) -> Option<String> {
+    let has_src = doc.get_attribute(img_id, "src").is_some_and(|s| !s.trim().is_empty());
+    if let Some(src_node) = select_source_element(
+        doc,
+        img_id,
+        &zero_css_parser::media_query::MediaContext::new(viewport_w, viewport_h),
+    ) {
+        let srcset = doc.get_attribute(src_node, "srcset")?;
+        let pairs = srcset_candidates(&srcset);
+        let size = doc
+            .get_attribute(src_node, "sizes")
+            .and_then(|sizes| {
+                split_sizes_entries(&sizes)
+                    .into_iter()
+                    .find_map(|e| parse_source_size_value(e, viewport_w, viewport_h))
+            })
+            .unwrap_or_else(|| viewport_w.max(0.0));
+        return pick_srcset_candidate_url(&pairs, size, None);
+    }
+    if let Some(srcset) = doc.get_attribute(img_id, "srcset") {
+        let pairs = srcset_candidates(&srcset);
+        if !pairs.is_empty() {
+            let size = doc
+                .get_attribute(img_id, "sizes")
+                .and_then(|sizes| {
+                    split_sizes_entries(&sizes)
+                        .into_iter()
+                        .find_map(|e| parse_source_size_value(e, viewport_w, viewport_h))
+                })
+                .unwrap_or_else(|| viewport_w.max(0.0));
+            let src = doc.get_attribute(img_id, "src");
+            return pick_srcset_candidate_url(&pairs, size, src.as_deref());
+        }
+    }
+    if has_src {
+        return doc.get_attribute(img_id, "src");
+    }
+    None
 }
 
 /// R5275：template contents fragment 递归收集 `<img>`（fragment 不在文档树，
@@ -2301,5 +2513,176 @@ mod tests {
         );
         // 无 link 页零锚。
         assert!(extract_stylesheet_link_anchors("<p>no links</p>").is_empty());
+    }
+
+    #[test]
+    fn img_selected_source_url_density_picks_max_le_dpr_s306() {
+        use super::effective_img_src;
+        use super::img_selected_source_url;
+        // responsive-image-select-print 形态：source srcset w 描述符两候选，sizes
+        // 缺省 100vw。vw 800：red 1/800、green 200/800=0.25 均 ≤ dpr 1.0 → 取最大
+        // 密度 green（旧 effective_img_src 首候选近似取 red → 定谳假红根因）。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source srcset="./resources/red.png 1w, ./resources/green.png 200w"><img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("./resources/green.png")
+        );
+        assert_eq!(effective_img_src(&doc, img).as_deref(), Some("./resources/red.png"));
+        // vw 100：green 密度 2.0 > dpr → 弃，回落 ≤dpr 最大 = red。
+        assert_eq!(
+            img_selected_source_url(&doc, img, 100.0, 600.0).as_deref(),
+            Some("./resources/red.png")
+        );
+    }
+
+    #[test]
+    fn img_selected_source_url_own_srcset_and_default_src_s306() {
+        use super::img_selected_source_url;
+        // x 描述符：≤dpr 最大密度 = b（1x）。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 2x, b.png 1x"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("b.png")
+        );
+        // x 描述符无 1x → default source（src）补挂密度 1（shim create-source-set
+        // `!hasD1 && !hasW` 同口径）→ ≤dpr 最大 = fallback。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 2x"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("fallback.png")
+        );
+        // w 候选在场 → src 不补挂（hasW 门）→ 密度 0.25 ≤ dpr → a.png。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png 200w"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("a.png")
+        );
+        // 全候选 invalid → 空源集 → default source（src）补挂密度 1。
+        let doc = zero_dom::parse_html(r#"<body><img src="fallback.png" srcset="a.png bogus"></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("fallback.png")
+        );
+        // srcset 缺席 → src 直取；两者皆缺 → None。
+        let doc = zero_dom::parse_html(r#"<body><img src="only.png"><img></body>"#);
+        let imgs = doc.get_elements_by_tag_name("img");
+        assert_eq!(
+            img_selected_source_url(&doc, imgs[0], 800.0, 600.0).as_deref(),
+            Some("only.png")
+        );
+        assert_eq!(img_selected_source_url(&doc, imgs[1], 800.0, 600.0), None);
+    }
+
+    #[test]
+    fn img_selected_source_url_source_sizes_and_walk_stop_s306() {
+        use super::img_selected_source_url;
+        // source sizes=50vw → size 400：a 300/400=0.75、b 600/400=1.5 → ≤dpr 最大 = a。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source sizes="50vw" srcset="a.png 300w, b.png 600w"><img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("a.png")
+        );
+        // img 后置 source 不进候选（walk 止于 img）→ 回落 img 自身 src。
+        let doc =
+            zero_dom::parse_html(r#"<body><picture><img src="own.png"><source srcset="late.png"></picture></body>"#);
+        let img = doc.get_elements_by_tag_name("img")[0];
+        assert_eq!(
+            img_selected_source_url(&doc, img, 800.0, 600.0).as_deref(),
+            Some("own.png")
+        );
+    }
+
+    #[test]
+    fn select_source_element_gates_s306() {
+        use super::select_source_element;
+        use zero_css_parser::media_query::MediaContext;
+        // 门序：source 1 media 不命中 → 弃；source 2 type 不在白名单 → 弃；
+        // source 3 srcset 空 → 弃；source 4 全过 → 选中。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture>
+                <source srcset="a.png" media="(min-width: 4000px)">
+                <source srcset="b.png" type="image/unsupported-format">
+                <source srcset="">
+                <source srcset="d.png" media="(min-width: 400px)" type="image/png">
+                <img></picture></body>"#,
+        );
+        let img = doc.get_elements_by_tag_name("img")[0];
+        let ctx = MediaContext::new(800.0, 600.0);
+        // 期望节点 = picture 下第 4 个 source 子元素（前三个过门失败）。
+        let expected = doc
+            .child_nodes(doc.get_elements_by_tag_name("picture")[0])
+            .into_iter()
+            .filter(|id| {
+                doc.get(*id)
+                    .is_some_and(|n| matches!(&n.kind, zero_dom::NodeKind::Element(e) if e.local_name() == "source"))
+            })
+            .nth(3);
+        assert_eq!(select_source_element(&doc, img, &ctx), expected);
+        // media 解析失败（病态串）→ 不匹配弃；picture 祖先缺席 → None。
+        let doc = zero_dom::parse_html(
+            r#"<body><picture><source srcset="a.png" media="(min-width:"><img></picture><img id=x srcset="b.png"></body>"#,
+        );
+        let imgs = doc.get_elements_by_tag_name("img");
+        assert_eq!(
+            select_source_element(&doc, imgs[0], &MediaContext::new(800.0, 600.0)),
+            None
+        );
+        assert_eq!(
+            select_source_element(&doc, imgs[1], &MediaContext::new(800.0, 600.0)),
+            None
+        );
+    }
+
+    #[test]
+    fn source_type_supported_whitelist_s306() {
+        use super::source_type_supported;
+        // shim `__zwSourceSupportedType5277` 白名单镜像面：六 essence 命中、
+        // 大小写不敏感、参数串放行；空值 true；未知/无 '/'/空 token false。
+        assert!(source_type_supported("image/png"));
+        assert!(source_type_supported("IMAGE/JPEG"));
+        assert!(source_type_supported("image/svg+xml"));
+        assert!(source_type_supported("Image/X-Icon"));
+        assert!(source_type_supported("image/webp; charset=binary"));
+        assert!(source_type_supported("  image/gif  "));
+        assert!(source_type_supported(""));
+        assert!(source_type_supported("   "));
+        assert!(!source_type_supported("image/bmp"));
+        assert!(!source_type_supported("text/plain"));
+        assert!(!source_type_supported("noslash"));
+        assert!(!source_type_supported("image/"));
+    }
+
+    #[test]
+    fn parse_srcset_descriptor_grammar_s306() {
+        use super::parse_srcset_descriptor;
+        // w/x/h 文法（shim 同口径）：纯数字+'w'（0 拒）、HTML 浮点 x（负/非有限拒）、
+        // h 兼容位（0 拒、必须配 w）；w/x 互斥；多余 token 拒。
+        assert_eq!(parse_srcset_descriptor("1w"), Some((Some(1.0), None)));
+        assert_eq!(parse_srcset_descriptor("2.0x"), Some((None, Some(2.0))));
+        assert_eq!(
+            parse_srcset_descriptor("200w 1x"),
+            None,
+            "同一候选 w/x 互斥（spec error）"
+        );
+        assert_eq!(parse_srcset_descriptor(""), Some((None, None)));
+        assert_eq!(parse_srcset_descriptor("100h 200w"), Some((Some(200.0), None)));
+        assert_eq!(parse_srcset_descriptor("0w"), None, "w=0 → error");
+        assert_eq!(parse_srcset_descriptor("-1x"), None, "x 负 → error");
+        assert_eq!(parse_srcset_descriptor("9e999x"), None, "x 非有限 → error");
+        assert_eq!(parse_srcset_descriptor("+1x"), None, "x '+' 前缀 → error");
+        assert_eq!(parse_srcset_descriptor("1w 2x"), None, "w/x 互斥");
+        assert_eq!(parse_srcset_descriptor("100h"), None, "h 缺 w → error");
+        assert_eq!(parse_srcset_descriptor("0h 1w"), None, "h=0 → error");
+        assert_eq!(parse_srcset_descriptor("1w junk"), None, "多余 token → error");
     }
 }

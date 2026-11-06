@@ -912,9 +912,12 @@ impl super::Painter {
             match &node.kind {
                 NodeKind::Element(elem) if elem.local_name() == "img" => {
                     let _ = elem;
-                    // R4162：src → srcset → picture/source 有效图源（replaced-element-012）。
+                    // s306：src → srcset → picture/source 密度择优图源，paint
+                    // 键与 shim select-an-image-source 同口径（R4162 首候选近似）。
                     Some(doc)
-                        .and_then(|d| crate::effective_img_src(d, node_id))
+                        .and_then(|d| {
+                            crate::img_selected_source_url(d, node_id, self.viewport_w as f64, self.viewport_h as f64)
+                        })
                         .unwrap_or_default()
                 }
                 // R3995（HTML §4.8 embedded content）：`<object data>` / `<embed src>` /

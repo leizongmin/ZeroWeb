@@ -2743,3 +2743,55 @@ fn test_img_srcset_comma_url_density_intrinsic_r5386b() {
         "尾逗号组切分后次候选 1x 生效 → 20 不折（got {w}x{h}）"
     );
 }
+
+/// s306（html-semantics M2）：picture/source 页全管线图钉——source width 维度
+/// 属性缺省 img 尺寸 + w 描述符密度择优选源，在真实 render_html 管线的联合面。
+/// 钉形取自 responsive-image-select-print（source width=200 + red 1w/green 200w，
+/// vw 800 下 green 密度 0.25 ≤ dpr 最大胜出）：引擎须发射 green 键 ImagePrimitive
+/// 且盒 200×200（宽 = source width 属性，高 = green 1:1 比率推得）。旧管面
+/// R4162 首候选近似取红 + 无 source 维度缺省 → 红或塌缩双态假红根因。
+/// https://html.spec.whatwg.org/multipage/images.html#select-an-image-source
+#[test]
+fn test_img_source_dimension_default_and_density_selection_s306() {
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let green = "./resources/green.png";
+    let red = "./resources/red.png";
+    let gk = crate::paint::image_resource_key(green, pipeline.document_url());
+    let rk = crate::paint::image_resource_key(red, pipeline.document_url());
+    let mut sizes = std::collections::HashMap::new();
+    sizes.insert(gk, (100.0f32, 100.0f32));
+    sizes.insert(rk, (100.0f32, 100.0f32));
+    pipeline.set_image_sizes(sizes);
+    let mut ratios = std::collections::HashMap::new();
+    ratios.insert(gk, 1.0f32);
+    ratios.insert(rk, 1.0f32);
+    pipeline.set_image_ratios(ratios);
+    let html = r#"<!DOCTYPE html><html><head><style>
+  :root { print-color-adjust: exact; }
+  @page { size: 300px; margin: 0; }
+</style></head><body>
+  <picture>
+    <source width="200" srcset="./resources/red.png 1w, ./resources/green.png 200w">
+    <img>
+  </picture>
+</body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let imgs = &result.display_list.primitives.images;
+    assert_eq!(imgs.len(), 1, "img 恰一发一图元（got {}）", imgs.len());
+    let img = &imgs[0];
+    assert_eq!(img.image_key.0, gk, "密度择优选 green（≤dpr 最大密度），非首候选 red");
+    let (x, y, w, h) = (
+        img.rect.origin.x,
+        img.rect.origin.y,
+        img.rect.size.width,
+        img.rect.size.height,
+    );
+    assert!(
+        (x - 8.0).abs() < 0.01 && (y - 8.0).abs() < 0.01,
+        "body 默认 margin 8px（got {x},{y}）"
+    );
+    assert!(
+        (w - 200.0).abs() < 0.01 && (h - 200.0).abs() < 0.01,
+        "source width=200 缺省 img 宽 + 1:1 比率高（got {w}x{h}）"
+    );
+}
