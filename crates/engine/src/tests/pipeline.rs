@@ -2795,3 +2795,71 @@ fn test_img_source_dimension_default_and_density_selection_s306() {
         "source width=200 缺省 img 宽 + 1:1 比率高（got {w}x{h}）"
     );
 }
+
+/// s311：textarea 子文本（defaultValue，无 harness 值）恒经控件路径绘制——
+/// 多行内容按 \n 拆行（此前非空种子臂 return，子文本经通用 IFC 塌行折行，
+/// \n 行结构丢失），且 IFC 面整盒抑制不与控件面双绘。
+#[test]
+fn test_s311_textarea_child_text_control_path_multiline() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    // 两个短行：塌行后 "aa bb" 在缺省 textarea 宽内可排单行；控件路径必 2 基线。
+    let html = r#"<html><body><textarea>aa
+bb</textarea></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let glyphs: Vec<(char, f32)> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y)))
+        .collect();
+    let text: String = glyphs.iter().map(|(c, _)| c).collect();
+    assert_eq!(
+        text.matches('a').count(),
+        2,
+        "子文本应经控件路径单份绘制（got {text:?}）"
+    );
+    assert_eq!(text.matches('b').count(), 2, "IFC 面应整盒抑制不双绘（got {text:?}）");
+    let baselines: std::collections::HashSet<i32> = glyphs.iter().map(|(_, y)| *y as i32).collect();
+    assert_eq!(baselines.len(), 2, "\\n 行结构应保留（2 基线，got {baselines:?}）");
+}
+
+/// s311：`&#xd;` CR 实体绕过 HTML 输入流预处理进入 placeholder——textarea
+/// 显示面按换行绘制（显示换行归一 CR LF/CR → LF，Chromium/Firefox 同）。
+#[test]
+fn test_s311_textarea_placeholder_cr_entity_line_break() {
+    let mut pipeline = RenderPipeline::new(400.0, 300.0);
+    let html = r#"<html><body><textarea placeholder="a&#xd;b"></textarea></body></html>"#;
+    let result = pipeline.render_html(html, "");
+    let baselines: std::collections::HashSet<i32> = result
+        .primitives()
+        .glyphs
+        .iter()
+        .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y as i32)))
+        .map(|(_, y)| y)
+        .collect();
+    assert_eq!(baselines.len(), 2, "CR 实体应按换行绘制（2 基线）");
+}
+
+/// s311：textarea 多行块顶对齐——rows=1/rows=5 单行内容首行基线应一致
+///（content box 垂直居中口径下 rows=5 首行显著下移，Chromium UA 顶对齐）。
+#[test]
+fn test_s311_textarea_content_top_aligned() {
+    let first_x_baseline = |html: &str| {
+        let mut pipeline = RenderPipeline::new(400.0, 600.0);
+        let result = pipeline.render_html(html, "");
+        result
+            .primitives()
+            .glyphs
+            .iter()
+            .filter_map(|glyph| char::from_u32(glyph.glyph_id).map(|c| (c, glyph.y)))
+            .find(|(c, _)| *c == 'x')
+            .map(|(_, y)| y)
+            .expect("单行 textarea 应产出 x 字形")
+    };
+    let y1 = first_x_baseline(r#"<html><body><textarea rows="1">x</textarea></body></html>"#);
+    let y5 = first_x_baseline(r#"<html><body><textarea rows="5">x</textarea></body></html>"#);
+    assert!(
+        (y1 - y5).abs() < 8.0,
+        "rows=1/5 单行首基线应顶对齐一致（got y1={y1}, y5={y5}）"
+    );
+}

@@ -467,14 +467,17 @@ impl super::Painter {
         let current_value_empty = current_value.is_empty();
         // 决定渲染标签 + 是否水平居中。
         let (mut label, center): (String, bool) = if elem.local_name().eq_ignore_ascii_case("textarea") {
+            // s311：textarea 显示值恒走控件路径——无 harness 值时种子 = 子树文本内容
+            //（defaultValue，R2996 模型：textarea 语义值 = 子文本），空值回落
+            // placeholder。此前非空种子臂 return，子文本经通用 IFC 面绘制
+            //（white-space normal 塌行折行、\n 结构丢失），违反 textarea 多行显示
+            // 语义（HTML textarea 显示值 = raw value 按 \n 拆行）：
+            // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
             if !self.form_control_values.contains_key(&node_id)
                 && !self.form_control_compositions.contains_key(&node_id)
+                && current_value.is_empty()
             {
-                if current_value.is_empty() {
-                    (elem.get_attribute("placeholder").unwrap_or_default(), false)
-                } else {
-                    return;
-                }
+                (elem.get_attribute("placeholder").unwrap_or_default(), false)
             } else {
                 (current_value, false)
             }
@@ -574,10 +577,18 @@ impl super::Painter {
         let content_x = abs_x + box_node.border_left + box_node.padding_left;
         let content_y = abs_y + box_node.border_top + box_node.padding_top;
         // R3254-M11：textarea 值可含 '\n'——按行拆分绘制（此前把 '\n' 当普通 glyph 画成
-        // 单行粘连）。line-height 简化为 1.2em；整个文本块在 content box 内垂直居中
-        //（单行 input 行为与原实现一致）。font box 垂直居中于行盒：
+        // 单行粘连）。line-height 简化为 1.2em；textarea 多行块顶对齐（s311，Chromium
+        // UA 显示语义；单行 input 维持 content box 垂直居中）。font box 垂直居中于行盒：
         // https://drafts.csswg.org/css-inline-3/#line-height-property
         let line_height = font_size * 1.2;
+        // s311：textarea 显示换行归一（CR LF/CR → LF）——HTML 输入流预处理对字面 CR
+        // 等效，`&#xd;` 字符引用绕过预处理进入 placeholder/raw value，显示面按换行绘制
+        //（Chromium/Firefox 同）。仅归一 label 显示面；boundary_value 保持原值，
+        // 选区/边界 UTF-16 偏移含 CR 计数不失配。
+        // https://html.spec.whatwg.org/multipage/form-elements.html#the-textarea-element
+        if elem.local_name().eq_ignore_ascii_case("textarea") {
+            label = label.replace("\r\n", "\n").replace('\r', "\n");
+        }
         let lines: Vec<&str> = label.split('\n').collect();
         let boundary_lines: Vec<&str> = boundary_value.split('\n').collect();
         // 行 UTF-16 区间预表（≡ 下方 line_utf16_start 累计口径：行长 + 行间 '\n'）。
@@ -620,7 +631,13 @@ impl super::Painter {
         let shape_adjustment = crate::text_metrics::font_size_adjustment(&style.font_size_adjust);
         let mut line_utf16_start = 0usize;
         let block_height = lines.len() as f32 * line_height;
-        let block_top = content_y + (box_node.content_height - block_height).max(0.0) / 2.0;
+        // s311：textarea 多行块顶对齐（Chromium UA 显示语义）；input 单行维持
+        // content box 垂直居中（R3254-M11 原口径不变）。
+        let block_top = if elem.local_name().eq_ignore_ascii_case("textarea") {
+            content_y
+        } else {
+            content_y + (box_node.content_height - block_height).max(0.0) / 2.0
+        };
         for (line_index, line) in lines.iter().enumerate() {
             let line_top = block_top + line_index as f32 * line_height;
             let baseline_y = line_top + (line_height - font_size).max(0.0) / 2.0 + font_size
@@ -1169,9 +1186,10 @@ impl super::Painter {
         doc: Option<&Document>,
         styles: Option<&HashMap<NodeId, ComputedStyle>>,
     ) {
+        // s311：textarea 子树文本恒由控件路径绘制（paint_input_value 种子 =
+        // 子文本，见该处注释），IFC 面整盒抑制——此前仅 harness 值在场时抑制，
+        // 无值页子文本经通用 IFC 塌行绘制、且与控件面存在双绘风险。
         if let (Some(node_id), Some(doc)) = (box_node.node_id, doc)
-            && (self.form_control_values.contains_key(&node_id)
-                || self.form_control_compositions.contains_key(&node_id))
             && doc.get(node_id).is_some_and(
                 |node| matches!(&node.kind, NodeKind::Element(element) if element.local_name().eq_ignore_ascii_case("textarea")),
             )

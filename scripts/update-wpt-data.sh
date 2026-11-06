@@ -123,6 +123,15 @@
 #     fetch_common_resources 走 unpinned master，该件内容随上游漂移，与
 #     WPT_DATA_REF pin 语料存在版本错位风险——升级新 ref 后重跑本脚本
 #     common/ 补齐即自动接管，或按本条手工补入）
+#   - html/semantics/forms/the-textarea-element/support/placeholder.css 缺失
+#     （multiline-placeholder{,-cr,-crlf}.html 与 multiline-placeholder-ref.html
+#     4 页依赖；s311 勘根定性该簇 3F 为语料缺口非引擎缺陷——上游 CSS 对称
+#     归一 test/ref 两侧着色（textarea::placeholder 与 .placeholder 正文同为
+#     GrayText + opacity 1），缺席时 test 侧 placeholder 走引擎 UA 灰
+#     #757575、ref 侧正文默认色，逐字形色差 5508/480000=1.15% 三页齐红；
+#     已从上游 wpt 原件按 pin 取件补入 188B（md5 07368e84cb705a96ff176ec45
+#     652a4db；gh api contents 按 wpt pin efcaa5bb87 取件，2026-11-06）——
+#     升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

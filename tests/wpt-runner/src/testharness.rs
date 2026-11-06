@@ -8673,8 +8673,7 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(Vec::new()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-basic-cors-safelisted-response-headers.py")
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-cors-safelisted-response-headers.py")
             {
                 // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
                 // response-headers.py（上游逐字等价——safelisted 七头 + 非 safelisted
@@ -8701,8 +8700,7 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.as_bytes().to_vec()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-basic-cors-safelisted-request-headers.py")
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-cors-safelisted-request-headers.py")
             {
                 // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
                 // request-headers.py（上游逐字等价——safelisted 请求头跨源 POST 直达
@@ -8744,10 +8742,7 @@ fn wpt_data_fetch_handler_with_stash(
                 // Uninitialized），否则 400；ACAO * + ACAH x-test + Max-Age 0 恒设）。
                 let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
                 let token = wpt_query_value(query, "token").unwrap_or_default();
-                let has_x_test = req
-                    .headers
-                    .iter()
-                    .any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+                let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
                 let mut headers: Vec<(String, String)> = vec![
                     ("access-control-allow-origin".into(), "*".into()),
                     ("access-control-allow-headers".into(), "x-test".into()),
@@ -8781,9 +8776,7 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-preflight-request-header-lowercase.py")
-            {
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-header-lowercase.py") {
                 // net-api M2 fixture：xhr/resources/access-control-preflight-request-
                 // header-lowercase.py（上游逐字等价——OPTIONS 臂 ACRH 逗号表含 x-test
                 // → ACAH X-Test（大写名授权，请求侧匹配须大小写不敏感），否则 400；
@@ -8801,11 +8794,7 @@ fn wpt_data_fetch_handler_with_stash(
                     .map(|(_, v)| v.clone());
                 let (status, body) = if req.method == "OPTIONS" {
                     let listed = acrh
-                        .map(|v| {
-                            v.split(',')
-                                .map(|s| s.trim())
-                                .any(|s| s.eq_ignore_ascii_case("x-test"))
-                        })
+                        .map(|v| v.split(',').map(|s| s.trim()).any(|s| s.eq_ignore_ascii_case("x-test")))
                         .unwrap_or(false);
                     if listed {
                         headers.push(("access-control-allow-headers".into(), "X-Test".into()));
@@ -8814,10 +8803,7 @@ fn wpt_data_fetch_handler_with_stash(
                         (400, String::new())
                     }
                 } else {
-                    let has_x_test = req
-                        .headers
-                        .iter()
-                        .any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+                    let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
                     if has_x_test {
                         (200, "PASS".to_string())
                     } else {
@@ -8833,15 +8819,12 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-preflight-request-header-sorted.py")
-            {
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-header-sorted.py") {
                 // net-api M2 fixture：xhr/resources/access-control-preflight-request-
                 // header-sorted.py（上游逐字等价——OPTIONS 臂 ACRH 须精确等于五头排序
                 // 串（无空格 `,` 连接），不等 → 400；GET 臂携 x-custom-s → PASS，否则
                 // 400 FAIL；ACAO 回显 origin + Cache-Control no-store 恒设）。
-                const SORTED_HEADERS: &str =
-                    "x-custom-s,x-custom-test,x-custom-u,x-custom-ua,x-custom-v";
+                const SORTED_HEADERS: &str = "x-custom-s,x-custom-test,x-custom-u,x-custom-ua,x-custom-v";
                 let origin = req
                     .headers
                     .iter()
@@ -8866,10 +8849,7 @@ fn wpt_data_fetch_handler_with_stash(
                         (400, String::new())
                     }
                 } else {
-                    let has_x_custom_s = req
-                        .headers
-                        .iter()
-                        .any(|(n, _)| n.eq_ignore_ascii_case("x-custom-s"));
+                    let has_x_custom_s = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-custom-s"));
                     if has_x_custom_s {
                         (200, "PASS".to_string())
                     } else {
@@ -8885,9 +8865,7 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-preflight-request-headers-origin.py")
-            {
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-headers-origin.py") {
                 // net-api M2 fixture：xhr/resources/access-control-preflight-request-
                 // headers-origin.py（上游逐字等价——OPTIONS 臂 ACRH 含 "origin" → 400
                 //（spec 禁把 origin 列入 ACRH），否则 ACAH x-pass；GET 臂体 = x-pass
@@ -8905,8 +8883,7 @@ fn wpt_data_fetch_handler_with_stash(
                     if acrh.map(|v| v.to_lowercase().contains("origin")).unwrap_or(false) {
                         (
                             400,
-                            "Error: 'origin' included in Access-Control-Request-Headers"
-                                .to_string(),
+                            "Error: 'origin' included in Access-Control-Request-Headers".to_string(),
                         )
                     } else {
                         headers.push(("access-control-allow-headers".into(), "x-pass".into()));
@@ -8930,9 +8907,7 @@ fn wpt_data_fetch_handler_with_stash(
                     body_bytes: Some(body.into_bytes()),
                 });
             }
-            if clean.starts_with("xhr/")
-                && clean.ends_with("/access-control-preflight-request-invalid-status.py")
-            {
+            if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-invalid-status.py") {
                 // net-api M2 fixture：xhr/resources/access-control-preflight-request-
                 // invalid-status.py（上游逐字等价——OPTIONS 臂 ?code= 存在 → 该状态码
                 //（301/400/501 面——非 2xx preflight 响应须网络错误），恒设 Max-Age 1 +
@@ -9463,7 +9438,9 @@ fn wpt_data_fetch_handler_with_stash(
                     }
                     "headers-double-empty.asis" => "HTTP/1.1 444 HI\ndouble-trouble:\ndouble-trouble:\n",
                     "headers-basic.asis" => "HTTP/1.1 280 HELLO\nfoo-test: 1\nfoo-test: 2\nfoo-test: 3\n",
-                    "headers.asis" => "HTTP/1.1 200 YAYAYAYA\nfoo-TEST: 1\nFOO-test: 2\n__Custom: token\nALSO-here: Mr. PB\newok: lego\n",
+                    "headers.asis" => {
+                        "HTTP/1.1 200 YAYAYAYA\nfoo-TEST: 1\nFOO-test: 2\n__Custom: token\nALSO-here: Mr. PB\newok: lego\n"
+                    }
                     "headers-some-are-empty.asis" => {
                         "HTTP/1.0 200 MEH\nHEYA:\t \nHEYA: \u{000B}\u{000C}\nHEYA: 1\t\nHEYA:\nHEYA:\t\nHEYA: \t2\n"
                     }
