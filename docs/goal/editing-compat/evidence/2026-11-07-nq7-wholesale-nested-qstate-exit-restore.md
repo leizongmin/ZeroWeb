@@ -56,3 +56,7 @@
 - **决定性 A/B 终证**：stash 本刀后 clean HEAD（e5a219f1f）单测复跑同位 FAILED（part23.rs:1079，0 passed/1 failed，3,790 filtered out，log `nq7-ab-cleanhead.log`）——红为 main 树态（4615680c0 引入），本刀完全无涉。
 
 处置循 divb 轮 ws×2/fetch×1 先例：**非本刀回归，测试对齐属 net-api/xhr 面，挂账移交**（net-api 证据档 `2026-11-06-m3-xhr-auth-clusters.md` 无 enginelib 桥测记录，同 divb 轮「零回归审计面为 WPT harness、rust 桥测试漏审」盲区模式）；名册更新九红（本地批脚本维护）。
+
+## tip 复核（rebase 组合基面恒一）
+
+push 前 rebase 并入远端五提交（xhr part03 getAllResponseHeaders legacy-uppercased 排序 4f27056e2 + embed s316 paint 门 81d215227 + wpt-runner cors fixture 46a6e20f3 + s317 print-reftest 0a507685a + 渲染账目），共享 shim bundle 变化，按 nesh2 tip 复核先例对组合基面重验双腿：iol 1,759P/2F（F2P=4/P2F=0）+ iul 2,061P/4F（F2P=6/P2F=0）与门禁批逐字一致，**TIP-VERDICT OK**（log `nq7-tip-recheck.log`，tip head=9aafcb04e，二进制 marker nqOut=3）。
