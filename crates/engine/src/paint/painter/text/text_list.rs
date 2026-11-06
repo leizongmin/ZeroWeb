@@ -1623,17 +1623,13 @@ impl super::super::Painter {
                 let index = self
                     .get_counter("list-item")
                     .unwrap_or_else(|| self.compute_list_item_index(doc, node_id));
-                let ch = if index > 0 && index <= 26 {
-                    let base = if matches!(style.list_style_type, ListStyleTypeValue::LowerAlpha) {
-                        b'a'
-                    } else {
-                        b'A'
-                    };
-                    (base + (index as u8 - 1)) as char
-                } else {
-                    '?'
-                };
-                let text = format!("{ch}.");
+                // s321：bijective base-26 单源（format_counter_alpha）——index>26 回绕
+                // aa/ab…（type-002 start=27 → "aa."），index≤0 → decimal fallback
+                // （css-counter-styles-3 alphabetic 越界回落，type-003 start=-3/0 面；
+                // 与 roman 臂 ≤0 decimal 同形）。此前 index>26/≤0 绘 '?' 字面，且与
+                // advance 臂的 decimal 格式互歧（guidelines #6 双路径漂移）。
+                let upper = matches!(style.list_style_type, ListStyleTypeValue::UpperAlpha);
+                let text = format!("{}.", format_counter_alpha(index, upper));
                 let mut char_x = text_marker_x;
                 let char_y = text_marker_baseline_y;
                 for ch in text.chars() {
@@ -1897,11 +1893,13 @@ impl super::super::Painter {
         let text: String = match &style.list_style_type {
             ListStyleTypeValue::Decimal => format!("{index}."),
             ListStyleTypeValue::DecimalLeadingZero if (0..10).contains(&index) => format!("0{index}."),
-            ListStyleTypeValue::LowerAlpha if index > 0 && index <= 26 => {
-                format!("{}.", (b'a' + (index as u8 - 1)) as char)
+            // s321：与 paint 臂同源 format_counter_alpha（>26 回绕 / ≤0 decimal），
+            // advance 与绘制文本逐字符一致（inside 步进消费同串）。
+            ListStyleTypeValue::LowerAlpha => {
+                format!("{}.", format_counter_alpha(index, false))
             }
-            ListStyleTypeValue::UpperAlpha if index > 0 && index <= 26 => {
-                format!("{}.", (b'A' + (index as u8 - 1)) as char)
+            ListStyleTypeValue::UpperAlpha => {
+                format!("{}.", format_counter_alpha(index, true))
             }
             ListStyleTypeValue::LowerRoman => {
                 if index <= 0 {
@@ -2082,10 +2080,9 @@ impl super::super::Painter {
             }
             ListStyleTypeValue::None => return 0.0,
             // 其余（guard 未命中的 index 越界面 / 未列举面）与绘制臂同走 decimal
-            // fallback 或空 advance：alpha>26 绘 '?'，scripts 越界走 index.to_string()。
+            // fallback 或空 advance：scripts 越界走 index.to_string()。
+            // （alpha 两面 s321 已上移 format_counter_alpha 单源，不入此兜底。）
             ListStyleTypeValue::DecimalLeadingZero
-            | ListStyleTypeValue::LowerAlpha
-            | ListStyleTypeValue::UpperAlpha
             | ListStyleTypeValue::LowerGreek
             | ListStyleTypeValue::Persian
             | ListStyleTypeValue::Armenian
@@ -2140,17 +2137,28 @@ impl super::super::Painter {
 /// R1701：计算 `<li>` 的列表序号（counter），尊重 HTML4 `<ol start=N>` 起始值
 /// 与 `<li value=N>` 重置值（后续 li 从 value+1 继续）。无属性时等价 1-based 兄弟
 /// 位置（向后兼容）。fixture 22 `<ol start="3" type="A">` → C/D/J(`value=10`)/K。
+/// s321：`<ol reversed>` 降序——首项序号 = start 属性值（缺省/非法时 = li 总数，
+/// 而非 1），步进 −1，value= 钉住后从 v−1 继续（IDL `ol.reversed` 经 R3040 布尔
+/// 反射落属性，paint 读属性即覆盖 attribute/IDL 两面）。spec：
+/// https://html.spec.whatwg.org/multipage/rendering.html#lists-2
+/// （WPT 地面真值：reversed 无 start 3 项 → 3,2,1；reversed start=5 → 5,4,3）。
 pub(super) fn list_item_counter(doc: &Document, node_id: NodeId) -> i64 {
     let parent_id = match doc.parent_node(node_id) {
         Some(id) => id,
         None => return 1,
     };
     // <ol start=N>：默认 1；CSS list-item counter 允许负数，非数字忽略。
-    let start: i64 = doc
+    let start = doc
         .get_attribute(parent_id, "start")
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .unwrap_or(1);
-    let mut counter = start;
+        .and_then(|v| v.trim().parse::<i64>().ok());
+    let reversed = doc.get_attribute(parent_id, "reversed").is_some();
+    let step: i64 = if reversed { -1 } else { 1 };
+    // reversed 且无（合法）start：首项从 li 总数降序（降序列以 1 收尾）。
+    let mut counter = start.unwrap_or(if reversed {
+        doc.child_nodes(parent_id).iter().filter(|&&id| is_li(doc, id)).count() as i64
+    } else {
+        1
+    });
     let mut found = false;
     for child_id in doc.child_nodes(parent_id) {
         if child_id == node_id {
@@ -2165,7 +2173,7 @@ pub(super) fn list_item_counter(doc: &Document, node_id: NodeId) -> i64 {
             {
                 counter = v;
             }
-            counter += 1;
+            counter += step;
         }
     }
     if !found {
@@ -2209,6 +2217,7 @@ mod tests {
     use super::to_fixed_stem_branch;
     use super::to_georgian;
     use super::to_hebrew;
+    use crate::text::text_list::format_counter_alpha;
     use zero_dom::parse_html;
     use zero_layout_engine::LayoutBox;
     use zero_style_system::{ComputedStyle, DirectionValue, WritingModeValue};
@@ -2511,6 +2520,48 @@ mod tests {
         assert_eq!(list_item_counter(&doc, li(&doc, 0)), 1);
         assert_eq!(list_item_counter(&doc, li(&doc, 1)), 5); // value=5
         assert_eq!(list_item_counter(&doc, li(&doc, 2)), 6); // 从 5+1 继续
+    }
+
+    /// s321：reversed 无 start——首项从 li 总数降序（WPT reversed-1a：3 项 → 3,2,1）。
+    #[test]
+    fn list_counter_reversed_default_descends_from_item_count() {
+        let doc = parse_html("<ol reversed><li>a</li><li>b</li><li>c</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 3);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 2);
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 1);
+    }
+
+    /// s321：reversed + 显式 start——从 start 降序（WPT reversed-2：start=5 → 5,4,3）。
+    #[test]
+    fn list_counter_reversed_with_start_descends_from_start() {
+        let doc = parse_html("<ol reversed start=\"5\"><li>a</li><li>b</li><li>c</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 5);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 4);
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 3);
+    }
+
+    /// s321：reversed 下 value= 钉住后从 v−1 继续（rev-001 变体面）。
+    #[test]
+    fn list_counter_reversed_value_attr_pins_then_continues_downward() {
+        let doc = parse_html("<ol reversed start=\"10\"><li>a</li><li value=\"4\">b</li><li>c</li></ol>");
+        assert_eq!(list_item_counter(&doc, li(&doc, 0)), 10);
+        assert_eq!(list_item_counter(&doc, li(&doc, 1)), 4); // value=4
+        assert_eq!(list_item_counter(&doc, li(&doc, 2)), 3); // 从 4−1 继续
+    }
+
+    /// s321：format_counter_alpha bijective base-26 全域——27 → "aa"（type-002 面），
+    /// 26 → "z"、703 → "aaa"；≤0 → decimal fallback（type-003 面，css-counter-styles-3
+    /// alphabetic 越界回落 decimal）。
+    #[test]
+    fn format_counter_alpha_wraps_past_z_and_falls_back_decimal() {
+        assert_eq!(format_counter_alpha(1, false), "a");
+        assert_eq!(format_counter_alpha(26, false), "z");
+        assert_eq!(format_counter_alpha(27, false), "aa");
+        assert_eq!(format_counter_alpha(28, false), "ab");
+        assert_eq!(format_counter_alpha(27, true), "AA");
+        assert_eq!(format_counter_alpha(703, false), "aaa");
+        assert_eq!(format_counter_alpha(0, false), "0");
+        assert_eq!(format_counter_alpha(-3, false), "-3");
     }
 
     /// R2392：构造最小 CounterStyleRule（仅 system + symbols）用于生成测试。

@@ -591,3 +591,7 @@ css/css-sizing/svg-no-ar-min-height-min-content.html css/reference/ref-filled-gr
 css/css-sizing/replaced-max-width-min-content.html css/reference/ref-filled-green-100px-square-only.html == 2026-10-18 R5178 替换元素 min/max-width/height content 关键字 transferred/attr 固有（css-sizing-3 §5.1 + csswg #3973）
 css/css-sizing/replaced-max-height-min-content.html css/reference/ref-filled-green-100px-square-only.html == 2026-10-18 R5178 替换元素 min/max-width/height content 关键字 transferred/attr 固有（css-sizing-3 §5.1 + csswg #3973）
 css/css-sizing/svg-no-ar-max-height-min-content.html css/reference/ref-filled-green-100px-square-only.html == 2026-10-18 R5178 替换元素 min/max-width/height content 关键字 transferred/attr 固有（css-sizing-3 §5.1 + csswg #3973）
+html/semantics/grouping-content/the-ol-element/reversed-1a.html html/semantics/grouping-content/the-ol-element/reversed-1-ref.html == 2026-11-07 R-s321 ol reversed 反序计数：无 start 从 li 数递减（HTML rendering #lists-2），与 paint 侧 list_item_counter 修复同提交
+html/semantics/grouping-content/the-ol-element/reversed-1b.html html/semantics/grouping-content/the-ol-element/reversed-1-ref.html == 2026-11-07 R-s321 ol reversed：start=10 起点递减
+html/semantics/grouping-content/the-ol-element/reversed-1c.html html/semantics/grouping-content/the-ol-element/reversed-1-ref.html == 2026-11-07 R-s321 ol reversed：value 属性钉住后续向下延续
+html/semantics/grouping-content/the-ol-element/reversed-2.html html/semantics/grouping-content/the-ol-element/reversed-2-ref.html == 2026-11-07 R-s321 ol reversed：三 ol 各自 li 数递减
