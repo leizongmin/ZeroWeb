@@ -84,6 +84,9 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
 - 草稿注释中 `foo<u><a>[bar</a></u>baz]` / `foo<a><font>[bar</font></a>baz]` 两形
   与 F2b 的语义关联（最外层 a 留、上壳摘）已由现行 strip-wrappers 幸存壳臂承载
   （F6 轮实证），F2b 残 10 键是 absorption 面非 preservation 面，与草稿机制不同。
+- **已删留痕（2026-11-08 F2 刀收口）**：`git stash drop stash@{0}` 已执行，
+  SHA `89e42e88c475e020b2cc090fc746d66e24002865`（`typing-style-round-1102`，
+  评估定谳陈旧见上节，reflog 窗内可恢复）。
 
 ## 运行产物（gitignored，本地 .acceptance/dps/）
 
