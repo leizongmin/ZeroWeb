@@ -8211,3 +8211,121 @@ fn test_media_audio_lazy_gate_s333() {
         "静态 lazy audio eager 化后应唤醒 settle（readyState 推进）"
     );
 }
+
+#[test]
+fn test_canvas_ctr_illegal_ctor_and_settings_s334() {
+    // s334：canvas 双面——① CanvasRenderingContext2D Illegal constructor（spec 接口
+    // 无 [Constructor]/[LegacyFactoryFunction]，call/new 均抛 TypeError；historical
+    // 「CanvasRenderingContext2D constructors」断言面；R49xx typeof 特性检测面保持
+    // 'function'）+ ② getContext('2d', options) 的 CanvasRenderingContext2DSettings
+    // 字典转换（spec 成员字母序 Get：alpha → colorSpace（枚举 ToString 可观察）→
+    // desynchronized → willReadFrequently；每次调用都转换——创建相与缓存相各跑一轮；
+    // undefined/null → 默认零 Get；非对象/离格枚举 → TypeError）。
+    // https://webidl.spec.whatwg.org/#es-interface-call
+    // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext
+    // https://webidl.spec.whatwg.org/#es-dictionary
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① Illegal constructor：new/带参/call 三形态全 TypeError。
+    sandbox.execute(
+        "globalThis.__r1 = (function () {\
+           var out = [];\
+           function probe(f) {\
+             try { f(); out.push('no-throw'); } catch (e) {\
+               out.push(e instanceof TypeError ? 'TypeError' : 'other'); } }\
+           probe(function () { new CanvasRenderingContext2D(); });\
+           probe(function () { new CanvasRenderingContext2D(1, 1); });\
+           probe(function () { CanvasRenderingContext2D(); });\
+           return out.join(',');\
+         })();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "TypeError,TypeError,TypeError",
+        "CTR 无 [Constructor]——new/带参/call 全抛 TypeError"
+    );
+
+    // ② typeof 特性检测面不变（R49xx：页面 canvas 探针靠 typeof === 'function'）。
+    assert_eq!(
+        sandbox.execute("typeof CanvasRenderingContext2D").unwrap().value,
+        "function",
+        "Illegal constructor 不改变 typeof 面（特性检测仍识别支持）"
+    );
+
+    // ③ 创建相：字典转换字母序 Get（alpha/colorSpace/colorSpace toString/
+    //    desynchronized/willReadFrequently），ctx 非 null 且 instanceof CTR。
+    sandbox.execute(
+        "globalThis.__t = document.createElement('canvas');\
+         globalThis.__actual = [];\
+         globalThis.__opts = {\
+           get alpha() { globalThis.__actual.push('alpha'); return true; },\
+           get willReadFrequently() { globalThis.__actual.push('willReadFrequently'); return false; },\
+           get desynchronized() { globalThis.__actual.push('desynchronized'); return false; },\
+           get colorSpace() {\
+             globalThis.__actual.push('colorSpace');\
+             return { toString: function () {\
+               globalThis.__actual.push('colorSpace toString'); return 'srgb'; } }; }\
+         };\
+         globalThis.__c1 = globalThis.__t.getContext('2d', globalThis.__opts);\
+         globalThis.__r3 = globalThis.__actual.join(',') + '|' + (globalThis.__c1 !== null ? 'ctx' : 'null')\
+           + '|' + (globalThis.__c1 instanceof CanvasRenderingContext2D ? 'inst' : 'noinst');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "alpha,colorSpace,colorSpace toString,desynchronized,willReadFrequently|ctx|inst",
+        "创建相：设置字典按成员字母序转换（枚举 ToString 在位），ctx instanceof CTR"
+    );
+
+    // ④ 缓存相：同一 canvas 再 getContext('2d', options) → 转换重跑（再 5 Get）
+    //    且返回同一 ctx 实例（spec 缓存语义）。
+    sandbox.execute(
+        "globalThis.__actual = [];\
+         globalThis.__c2 = globalThis.__t.getContext('2d', globalThis.__opts);\
+         globalThis.__r4 = globalThis.__actual.join(',') + '|' + (globalThis.__c2 === globalThis.__c1 ? 'same' : 'diff');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "alpha,colorSpace,colorSpace toString,desynchronized,willReadFrequently|same",
+        "缓存相：字典转换仍每次执行（5 Get），返回缓存 ctx 同实例"
+    );
+
+    // ⑤ null options：字典转换零 Get（undefined/null → 默认），ctx 同实例。
+    sandbox.execute(
+        "globalThis.__actual = [];\
+         globalThis.__c3 = globalThis.__t.getContext('2d', null);\
+         globalThis.__r5 = String(globalThis.__actual.length) + '|' + (globalThis.__c3 === globalThis.__c1 ? 'same' : 'diff');",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r5)").unwrap().value,
+        "0|same",
+        "null options → 默认转换零 Get，缓存 ctx 同实例"
+    );
+
+    // ⑥ 离格枚举 → TypeError；非对象 options → TypeError（spec 字典转换）。
+    sandbox.execute(
+        "globalThis.__r6 = (function () {\
+           try { document.createElement('canvas').getContext('2d', { colorSpace: 'bogus' }); return 'no-throw'; }\
+           catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })();\
+         globalThis.__r7 = (function () {\
+           try { document.createElement('canvas').getContext('2d', 42); return 'no-throw'; }\
+           catch (e) { return e instanceof TypeError ? 'TypeError' : 'other'; } })();",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r6) + '|' + String(globalThis.__r7)").unwrap().value,
+        "TypeError|TypeError",
+        "离格枚举/非对象 options → TypeError（spec 字典转换）"
+    );
+}

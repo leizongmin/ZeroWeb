@@ -8586,11 +8586,17 @@
         return wctx;
       }
       if (t !== '2d') return null; // 仅 2d/webgl；其余类型（webgl2/bitmaprenderer 等）defer
+      // s334：CanvasRenderingContext2DSettings 字典转换——spec getContext 步每次调用
+      // 都执行（创建相与缓存相均跑成员 Get；成员按字母序：alpha → colorSpace（枚举
+      // ToString 可观察）→ desynchronized → willReadFrequently；undefined/null →
+      // 默认零 Get；非对象 → TypeError，离格枚举 → TypeError）。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-getcontext
+      // https://webidl.spec.whatwg.org/#es-dictionary （2d-getcontext-options 断言面）
+      var _gcs = _zwCanvasCtxSettings(arguments[1]);
       if (el._ctx) return el._ctx._zwCtxType === 'webgl' ? null : el._ctx;
       if (typeof __zw_canvas_op !== 'function') return null;
       var id = __zw_canvas_op('0', 'getContext2d', String(el.width), String(el.height),
-        (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-          ? arguments[1].colorSpace : 'srgb',
+        _gcs.colorSpace,
         (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorType === 'string')
           ? arguments[1].colorType : 'unorm8');
       if (!id || String(id).charAt(0) === '!') return null;
@@ -8601,8 +8607,8 @@
         __zw_set_attr_handle(_handle, 'data-zw-canvas-ctx', String(id));
       }
       // R34xx（color-type 目录）：记录 canvas 色彩空间（f16 画布的浮点转换基准）。
-      el._ctx._cs = (arguments.length > 1 && arguments[1] && typeof arguments[1] === 'object' && typeof arguments[1].colorSpace === 'string')
-        ? arguments[1].colorSpace : 'srgb';
+      // s334：改读字典转换产物（不再直读 options——Get 次序归 spec 字典转换单点）。
+      el._ctx._cs = _gcs.colorSpace;
       // R34xx：ctx.canvas 只读（spec——赋值忽略；2d.canvas.host.readonly）。
       Object.defineProperty(el._ctx, 'canvas', {
         value: el,
@@ -9513,11 +9519,40 @@
   // 同族 CanvasPattern/CanvasGradient/Path2D/CanvasFilter/OffscreenCanvas 本文件
   // 均已急切注册，唯 CTR 例外。https://webidl.spec.whatwg.org/#es-interfaces
   if (!globalThis.CanvasRenderingContext2D) {
-    globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+    // s334：Illegal constructor——spec CTR 接口无 [Constructor]/[LegacyFactoryFunction]，
+    // call/new 均抛 TypeError（historical「CanvasRenderingContext2D constructors」断言面）；
+    // R49xx typeof 特性检测面不变（typeof 仍 'function'）。实例经 Object.create(prototype)
+    // 产（_zwMakeCtx2d），不经本函数。
+    // https://webidl.spec.whatwg.org/#es-interface-call
+    globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {
+      throw new TypeError('Illegal constructor');
+    };
     Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
       writable: false,
       configurable: false
     });
+  }
+  // s334：CanvasRenderingContext2DSettings 字典转换（spec 成员字母序 Get；colorSpace
+  // 枚举经 ToString 可观察；undefined/null → 默认零 Get；非对象 → TypeError；离格
+  // 枚举 → TypeError）。仅转换+校验面，不做宿主存储择别（alpha/desynchronized/
+  // willReadFrequently 的行为面 defer——软渲染无 CPU/GPU 存储分岔）。
+  // https://webidl.spec.whatwg.org/#es-dictionary
+  function _zwCanvasCtxSettings(v) {
+    if (v === undefined || v === null) {
+      return { alpha: true, colorSpace: 'srgb', desynchronized: false, willReadFrequently: false };
+    }
+    if (typeof v !== 'object') throw new TypeError('CanvasRenderingContext2DSettings conversion');
+    var s = {};
+    s.alpha = v.alpha; // boolean，缺省 true
+    var _csV = v.colorSpace;
+    if (_csV !== undefined && _csV !== null) {
+      _csV = String(_csV); // 枚举 ToString 可观察面（2d-getcontext-options 断言）
+      if (_csV !== 'srgb' && _csV !== 'display-p3') throw new TypeError('CanvasRenderingContext2DSettings.colorSpace');
+    }
+    s.colorSpace = (_csV === undefined || _csV === null) ? 'srgb' : _csV;
+    s.desynchronized = v.desynchronized; // boolean，缺省 false
+    s.willReadFrequently = v.willReadFrequently; // boolean，缺省 false
+    return s;
   }
   // R34xx：WebIDL 参数语义——缺省（undefined/null）→ TypeError（missingargs：
   // 2d.conformance.requirements.missingargs）；非有限（NaN/±Infinity）数值 → 方法忽略
@@ -9541,7 +9576,11 @@
     // 不可删，spec）。R49xx 起全局注册已提前到上方急切段（typeof 检测面），
     // 此处保留幂等兜底（急切段执行后被页面 delete 之类移除全局时的再注册路径）。
     if (!globalThis.CanvasRenderingContext2D) {
-      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {};
+      // s334：同急切段——Illegal constructor（spec 无 [Constructor]；call/new 抛
+      // TypeError；实例经 Object.create(prototype) 产）。
+      globalThis.CanvasRenderingContext2D = function CanvasRenderingContext2D() {
+        throw new TypeError('Illegal constructor');
+      };
       Object.defineProperty(CanvasRenderingContext2D, 'prototype', {
         writable: false,
         configurable: false
