@@ -14323,6 +14323,10 @@
       // 时边界臂整体缺席，拆出后 fieldset 隔层形态亦按「后代」语义传播
       // select/optgroup 禁用（与 s214 host 权威模型对齐；HTML 解析不可产
       // fieldset 嵌 select 形态，仅脚手 DOM 面）。
+      // s325：SELECT 传播**仅对 option/optgroup**——select 首子 button 等
+      // 其余表单控件不继承 select 禁用（select 内 button 为 inert 非表单
+      // 控件，whatwg/html #9799 谱系；host 权威模型 arm ② 本就按 option/
+      // optgroup 门控，本臂与 host 收敛；Chromium CL 6004443 语料钉面）。
       // https://html.spec.whatwg.org/multipage/form-elements.html#concept-option-disabled
       var _fdB = _fdNode.parentNode, _fdBG = 0;
       while (_fdB && _fdBG < 64) {
@@ -14331,7 +14335,7 @@
         if (_fdBTag === 'SELECT') {
           var _fdSD = false;
           try { _fdSD = !!_fdB.disabled; } catch (_eS) {}
-          if (_fdSD) return true;
+          if (_fdSD && (_fdSelfTag === 'OPTION' || _fdSelfTag === 'OPTGROUP')) return true;
           break;
         }
         if (_fdBTag === 'OPTGROUP') {
@@ -23886,7 +23890,7 @@
   // `.childNodes` 作 addedNodes：节点支持 nodeType/tagName/nodeName/getAttribute/hasAttribute/querySelector(All)/
   // childNodes 等 introspection，满足框架/库（React/Vue）observe 后递归观测新子树的典型消费。代理为解析快照
   //（非 live 文档节点——addedNodes 代表「被加入的结构」，host 未注册 `__zw_parse_html_child_nodes` → 返 [] 旧行为）。
-  function _zwFragmentAdded(html, hostHandle) {
+  function _zwFragmentAdded(html, hostHandle, hostSel) {
     if (typeof _zwMBuildBodyTree !== 'function') return [];
     try {
       // R5000 片 b：createElementNS 容器（_nsHandles 有 ns 记录）→ 本地视图按其真实
@@ -23908,7 +23912,43 @@
       try {
         _r5000scr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
       } catch (_e5000tg) { _r5000scr = undefined; }
-      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs, _r5000scr).childNodes;
+      // s325：SELECT 容器按**真实 context** 解析——host apply 侧 replace_inner_html
+      // 以目标元素 local_name 作 fragment context（R3182），本视图原为 body 包裹
+      // 全文档解析：新 spec select 解析下两端口径分叉（嵌套 select：context=select
+      // 丢弃、body context 闭合外层；select-input-parsing 同理），同 turn 读
+      // innerHTML 观察 body 口径（select-parsing「JS added nested select(s) should
+      // be ignored」2F 钉面）。目标身份双形态（handle=createElement 域 / sel=页面
+      // 解析域，后者 hostHandle 为 null——语料 nested3/nested4 即此形态），本臂走
+      // `__zw_parse_fragment_children(html,'select')` 深条目（与宿主 fragment 解析
+      // 同源），节点经 `_zwMBuildDeepTreeNode` 建（与 `_zwMBuildBodyTree` 深臂同形态
+      // 消费）；回调缺失/解析异常回落 body 臂。
+      // https://html.spec.whatwg.org/multipage/parsing.html#html-fragment-parsing-algorithm
+      var kids;
+      var _s325SelCtx = false;
+      try {
+        _s325SelCtx = (hostHandle != null && _realTag(null, hostHandle) === 'SELECT')
+          || (hostHandle == null && hostSel != null && _realTag(hostSel, null) === 'SELECT');
+      } catch (_eS325T) { _s325SelCtx = false; }
+      if (_s325SelCtx && typeof __zw_parse_fragment_children === 'function') {
+        try {
+          var _s325deep = JSON.parse(
+            __zw_parse_fragment_children(String(html == null ? '' : html), 'select', (_r5000scr === false) ? '0' : '1'));
+          if (Array.isArray(_s325deep)) {
+            var _s325Body = _zwMEl({ tag: 'body' }, null);
+            for (var _s325i = 0; _s325i < _s325deep.length; _s325i++) {
+              if (_s325deep[_s325i]) {
+                _s325Body.childNodes.push(_zwMBuildDeepTreeNode(_s325deep[_s325i], _s325Body, _r5000scr));
+              }
+            }
+            kids = _s325Body.childNodes;
+          }
+        } catch (_eS325P) { kids = null; }
+      } else {
+        kids = null;
+      }
+      if (!kids) {
+        kids = _zwMBuildBodyTree(String(html == null ? '' : html), _r5000ctxNs, _r5000scr).childNodes;
+      }
       // R123：顶层子盖宿主 handle 印章（__zwFragHostHandle）——PI 视图等解析节点上行找
       // sel/handle 祖先时到片段根即断（_zwMEl parentNode=null），印章提供宿主回链
       //（MutationObserver.observe 回落 + piNotify 投递）。
@@ -29361,9 +29401,21 @@ return e;
         }
         return null;
       }
+      // s325：最近 select 祖先按 spec「to get the nearest ancestor select」
+      // 走查（whatwg/html #11708 修定，option-form-ancestor-select 语料钉面）：
+      // DATALIST/HR/OPTION 祖先 → null；OPTGROUP 仅首个放行（第二个 → null，
+      // 嵌套 optgroup 不产 form 关联）；SELECT → 返其 form；其余包裹层穿行。
+      // https://html.spec.whatwg.org/multipage/form-elements.html#nearest-ancestor-select
+      var _opOg = null;
       for (var _opC = lpx.parentNode, _opi = 0; _opi < 64 && _opC; _opi++) {
         if (_opC.nodeType !== 1) break;
-        if (String(_opC.tagName || '').toUpperCase() === 'SELECT') return _opC.form;
+        var _opT = String(_opC.tagName || '').toUpperCase();
+        if (_opT === 'SELECT') return _opC.form;
+        if (_opT === 'DATALIST' || _opT === 'HR' || _opT === 'OPTION') break;
+        if (_opT === 'OPTGROUP') {
+          if (_opOg) break; // 第二个 optgroup：阻断
+          _opOg = _opC;
+        }
         _opC = _opC.parentNode;
       }
     } catch (_eLoF) { return null; }

@@ -2495,6 +2495,17 @@
             if (!_xlPending) {
               try { _xlPending = this._zwSelPendingParent || null; } catch (_eXlT) {}
             }
+            // s325（html-semantics M2 切片 325）：槽让位移除标记——R334 移动留下的
+            // `_zwSelPendingParent` 槽在后续 remove()（R125 元素路径不清槽）后仍指旧
+            // 挂点，槽优先分支先于 `_parentNodeFor` 的 `_zwIsRemoved` 短路执行 →
+            // remove 后 parentNode 仍返旧父（select-options-id multiple-remove 面
+            // fourParent 残留；t1 无槽形态 mark 正常生效反证分叉）。标记中节点先走
+            // 下游 `_parentNodeFor`（其头部 mark 短路返 null，spec remove() 后
+            // parentNode null——上游注记「removed 标记已在上游短路」实指此）。
+            if (_xlPending && _xlPending.parentSel
+                && typeof _zwIsRemoved === 'function' && _zwIsRemoved(sel)) {
+              _xlPending = null;
+            }
             if (_xlPending && _xlPending.parentSel) return _wrapSelector(_xlPending.parentSel);
             // R5241（html-semantics M2 切片 39）：**容器父**（dual-form 槽 parentHandle
             // ——s38 容器挂载路径覆写）→ 容器 wrapper。sel 子挂 shadow/fragment 容器后
@@ -7881,6 +7892,25 @@
                 // 内宿主布局滞后，几何命中测试不可见——zwprobe-attach [hit=null] 实证）。
                 if (typeof _zwPtrState !== 'undefined' && _zwPtrState) _zwPtrState.upMutSel = _r334ChildSel;
               } catch (_eRe334b) {}
+              // s325（html-semantics M2 切片 325）：移动面旧 sel 父 pending 桶收编——
+              // R5340 removeChild 臂同款（added splice + removed push，removedSet 去重；
+              // wire 的 reparent 只落 host，本 turn 视图的旧父桶不 retract 时，早前
+              // append 记入 added 的子与快照基底并存 → select-options-id「moves are
+              // reflected」t3 face 计数 7 残留且跨测试粘滞）。detached 重挂（无旧父）
+              // 零成本跳过。
+              var _r334OB = null;
+              if (_r334OldSel && typeof _zwPendBucket === 'function') {
+                _r334OB = _zwPendBucket(_r334OldSel, null);
+              }
+              if (_r334OB) {
+                for (var _r334oba = _r334OB.added.length - 1; _r334oba >= 0; _r334oba--) {
+                  if (_r334OB.added[_r334oba] === child) { _r334OB.added.splice(_r334oba, 1); break; }
+                }
+                if (!_r334OB.removedSet || !_r334OB.removedSet.has(child)) {
+                  if (_r334OB.removedSet) _r334OB.removedSet.add(child);
+                  _r334OB.removed.push(child);
+                }
+              }
               // M3 扩批 XLV：**sel 子重插的移除标记清除**——静态元素 removeChild→
               // appendChild 重插后 removed 标记残留使 parentNode getter（_zwIsRemoved
               // 短路返 null）恒 null、removal-pause tick 误判（track-remove-insert-
@@ -11603,16 +11633,26 @@
                 // removed 子树的剔除集内 → 视为未命中。
                 if (hit) {
                   var _r310qb = _zwPendingByParent.get(sel);
+                  var _r310stale = false;
                   if (_r310qb && _r310qb.removed.length) {
                     for (var _r310qr = 0; _r310qr < _r310qb.removed.length; _r310qr++) {
                       var _r310qf = [];
                       _zwHCCollectSubtree(_r310qb.removed[_r310qr], _r310qf);
                       for (var _r310qi = 0; _r310qi < _r310qf.length; _r310qi++) {
-                        if (_r310qf[_r310qi] && _r310qf[_r310qi].__zwSelector === hit) return null;
+                        if (_r310qf[_r310qi] && _r310qf[_r310qi].__zwSelector === hit) { _r310stale = true; break; }
                       }
+                      if (_r310stale) break;
                     }
                   }
-                  return _zwQueryWrapIdentity(hit);
+                  // s325（html-semantics M2 切片 325）：stale 命中不再直返 null——同 turn
+                  // innerHTML 整体替换（select-options-id test3 自往返重解析）时 host
+                  // 快照恒旧（engine 纯测试环境无配对 apply），旧子必在 removed 子树 →
+                  // 原直返使 R322 pending 回落不可达，qS 对重解析新子恒 null（qsa 走
+                  // R309 重建同 turn 即见新子——qS/qsa 分叉）。改为穿落 R322 桶归并：
+                  // added 含同选择器新子则返新子（live 视图语义）；纯 remove（added
+                  // 无命中）落尾部 `return null` 语义不变。对齐 qsa R310 剔除+R322
+                  // 归并语义。
+                  if (!_r310stale) return _zwQueryWrapIdentity(hit);
                 }
                 // R322（js-dom M4/L2 切片一）：host miss 时归并域兜底——本容器桶 added 的
                 // handle 子树中第一个 compound 匹配的元素（querySelectorAll 同款归并的单数
@@ -11717,6 +11757,30 @@
                             if (_zwNodeParent) {
                               _zwNodeParent[_r322mw.__zwHandle] = { parentSel: sel, parentHandle: null, nextSibling: _r322qn._zwSelPendingParent.nextSibling || null };
                             }
+                            // s325（html-semantics M2 切片 325）：选中态键迁移——物化换
+                            // identity，解析代理的 `plainOpt:pN` 态键下 dirty/clean 选中态
+                            // 随迁到 `@handle` 键。select.value=/option.selected= 先于物化
+                            // 的编程选中落在代理键；物化后读取侧（`_zwOptSelOf` 经
+                            // `_zwOptStateKeyOf(@handle)`）原键不可达 → multiple select 无
+                            // pristine 回落 → select.value 读空串（select-options-id test3
+                            // 「initial select.value got ''」钉此——runTest 的 qS 首读物化
+                            // 顶层 option.one，恰是 value= 已选中的那条）。
+                            try {
+                              var _s325OldK = _zwOptStateKeyOf(_r322qn);
+                              var _s325NewK = _zwOptStateKeyOf(_r322mw);
+                              if (_s325OldK != null && _s325NewK != null && _s325OldK !== _s325NewK) {
+                                if (typeof _optSelectedDirty === 'object' && _optSelectedDirty
+                                    && Object.prototype.hasOwnProperty.call(_optSelectedDirty, _s325OldK)) {
+                                  _optSelectedDirty[_s325NewK] = _optSelectedDirty[_s325OldK];
+                                  delete _optSelectedDirty[_s325OldK];
+                                }
+                                if (typeof _optSelectedClean === 'object' && _optSelectedClean
+                                    && Object.prototype.hasOwnProperty.call(_optSelectedClean, _s325OldK)) {
+                                  _optSelectedClean[_s325NewK] = _optSelectedClean[_s325OldK];
+                                  delete _optSelectedClean[_s325OldK];
+                                }
+                              }
+                            } catch (_eS325om) {}
                           }
                           return _r322mw || _r322qn;
                         } catch (_e322pm) { continue; }
@@ -14243,7 +14307,9 @@
             // 曾致前导空白 markup 下多计首文本子、plain 父 append 的 child-index 整体
             // +1 错位（D1），当时以视图 trim 对齐 host。两端一起去 trim 后逐子对齐保持，
             // dir-style-04 尾随空格不再丢失）。
-            var _ihAdded = _zwFragmentAdded(_ihVal, handle);
+            // s325：第三参传 sel——页面解析域目标（handle=null）的 context 判定来源
+            //（SELECT 容器臂见 part03 `_zwFragmentAdded`）。
+            var _ihAdded = _zwFragmentAdded(_ihVal, handle, sel);
             // s118（html-semantics M2 切片 118）：innerHTML 产物 SCRIPT 盖
             // already-started 章（对象属性 `__zwFragNoExec`）——spec prepare the
             // script element「element created by the HTML fragment parsing algorithm
@@ -15362,7 +15428,14 @@
               }
             }
             if (_r3909vm != null) {
-              _optSelectedDirty[_zwOptKey(_r3909vm.__zwSelector, _r3909vm.__zwHandle)] = true;
+              // s325（html-semantics M2 切片 325）：写键改 `_zwOptStateKeyOf`——原
+              // `_zwOptKey(sel, handle)` 对**解析代理**（innerHTML= 产物，无 sel 无
+              // handle，state key = `plainOpt:pN` 实例键）双 null → 选中态写进垃圾键，
+              // `_zwOptSelOf`（读侧经 `_zwOptStateKeyOf`）恒 miss。materialization
+              // 迁移（R322 qS 物化臂 plainOpt→@handle）承接换 identity 后的可读性。
+              // select-options-id test3「value= 后 initial select.value got ''」（
+              // multiple 无 pristine 回落）钉此。
+              _optSelectedDirty[_zwOptStateKeyOf(_r3909vm)] = true;
             }
             if (sel && typeof __zw_select_option === 'function') {
               __zw_select_option(sel, _r3909vv);

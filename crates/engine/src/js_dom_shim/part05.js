@@ -11774,12 +11774,22 @@
     }
     // R55：no-pending 快路径返回副本——out 可能是基底缓存本体（_childNodeList 缓存命中/刚存入），
     // 调用方 concat/原地写不得污染缓存。
-    if (!_zwPendingAdded.length && !_zwPendingRemoved.length) return out.slice();
+    // s325（html-semantics M2 切片 325）：快路径门补桶态——原门只看全局 pending 表，
+    // 桶级 removed（R51c 消零条目不入全局表 + R334 移挂/对冲仅桶级记账）在全局表排空时
+    // 被跳过 → 基底残影泄漏（select-options-id test2「remove 后 select.length 6 残留」：
+    // 首轮 remove 全局表有条目门开；跨测试复跑前全局条目被重添加对冲/消零悉数排空，
+    // 桶 removed=[four] 独存，快路径直返未滤基底）。桶 miss 或桶空才随全局空一起快出；
+    // 全局空 + 桶空的热路径（R51c 消零主场景）不受影响。
+    var _s325BucketGate = (sel != null) ? _zwPendingByParent.get(sel) : null;
+    if (!_zwPendingAdded.length && !_zwPendingRemoved.length
+        && (!_s325BucketGate || (!_s325BucketGate.added.length && !_s325BucketGate.removed.length))) {
+      return out.slice();
+    }
     // js-dom M4 R51c：按 parentSel 分桶查询（桶在 _zwHCLiveInvalidate 记账时维护）——旧实现每次
     // childNodes 读全表扫 pending（testharness 单 turn 数千 subtest 全量重建 → 万级表 × 每读 O(n)
     // 线性增速，Range-mutations-dataChange 实测 250 次/5s → 1250 次/31s O(n²) 超时）。桶 miss 且
     // 全局表空则零成本快出。
-    var bucket = _zwPendingByParent.get(sel);
+    var bucket = _s325BucketGate;
     if (!bucket || (!bucket.added.length && !bucket.removed.length)) return out;
     // R383（editing-compat attr 门轮归因，2026-10-31）：**跨代际桶不并入序列化视图**——
     // R381 的桶级代际门只护「是否走融合」决策（R380 门），门内 `_childNodeList` 经本函数
@@ -13028,11 +13038,31 @@
       for (var pb1 = 0; pb1 < remFlat.length; pb1++) {
         var _pr = remFlat[pb1];
         if (_pb.addedSet.has(_pr)) {
-          // R51c 消零：曾 pending-added → 对冲（同全局表语义），不记 removed。
+          // s325（html-semantics M2 切片 325）：对冲前提修正——R51c 消零假设
+          // 「added ⇒ host 快照从未见过」，但 sel 子移动（R334 appendChild reparent）
+          // 的补偿条目是**基底快照成员**（基底在 apply 前仍列该子于本父；engine
+          // 纯测试环境无配对 apply，基底恒原始位）。此类条目 remove 时不对冲：
+          // 照常记 removed（overlay 剔除基底残影至 apply）+ splice added（补偿
+          // 撤销）。判据 = 本父基底缓存 identity 成员（_wrapSelector identity 稳定，
+          // 移动补偿与基底缓存同源——R5246 同款）；真 pending 新子（createElement/
+          // 解析产物，基底从未含）不在基底 → 对冲保持（R51c 热路径零变化）。
+          // select-options-id「moves are reflected」跨测试 remove 面（multiple 后
+          // remove 计数 6 残留）钉此。
+          var _s325InBase = false;
+          if (mutSel && typeof _zwChildBaseCache !== 'undefined' && _zwChildBaseCache) {
+            var _s325Base = null;
+            try { _s325Base = _zwChildBaseCache.get(mutSel) || null; } catch (_eS325bg) { _s325Base = null; }
+            if (_s325Base) {
+              for (var _s325bi = 0; _s325bi < _s325Base.length; _s325bi++) {
+                if (_s325Base[_s325bi] === _pr) { _s325InBase = true; break; }
+              }
+            }
+          }
           _pb.addedSet.delete(_pr);
           if (_pbHitN === 0) _pbHits = [];
           _pbHits.push(_pr);
           _pbHitN++;
+          if (_s325InBase && !_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }
           continue;
         }
         if (!_pb.removedSet.has(_pr)) { _pb.removed.push(_pr); _pb.removedSet.add(_pr); }

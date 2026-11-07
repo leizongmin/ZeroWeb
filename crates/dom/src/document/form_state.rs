@@ -333,9 +333,28 @@ impl Document {
             .unwrap_or_default()
             .to_ascii_lowercase();
         match tag {
-            "button" => !matches!(ty.as_str(), "button" | "reset" | "menu"),
+            "button" => match ty.as_str() {
+                // Submit Button state：恒候选（父 select 门只约束 Auto 态，见下）。
+                "submit" => true,
+                "button" | "reset" | "menu" => false,
+                // Auto 态（缺省/无效值默认）：父节点为 select 时不作 submit 按钮——
+                // select 首子 button 为 inert、非提交面（whatwg/html #9799 谱系，
+                // Chromium CL 6004443 / issue 498095295），不参与默认按钮计算。
+                // https://html.spec.whatwg.org/multipage/form-elements.html#concept-button
+                // FIXME: spec Auto 态还要求无 `command`/`commandfor` 属性，本引擎
+                // command 面未参与提交候选判定，语料出现时再接。
+                _ => !self.parent_is_select(node),
+            },
             "input" => matches!(ty.as_str(), "submit" | "image"),
             _ => false,
+        }
+    }
+
+    /// `node` 的父元素是否为 `select`（submit 候选的 select 父门）。
+    fn parent_is_select(&self, node: NodeId) -> bool {
+        match self.parent_element_node(node) {
+            Some(parent) => self.element_local_name(parent) == Some("select"),
+            None => false,
         }
     }
 
