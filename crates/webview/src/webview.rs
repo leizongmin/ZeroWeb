@@ -9802,8 +9802,8 @@ mod redirect_tests {
         );
         assert_eq!(
             wv.execute_script("String(globalThis.__text)").unwrap(),
-            "#test { background-color: rgb(255, 0, 0); }",
-            "sheet 规则经 shim CSSOM 解析（颜色 Blink rgb() 归一化形态）"
+            "#test { background-color: red; }",
+            "sheet 规则经 shim CSSOM 解析（命名色逐字——T45 撤回 s249 归一：Blink 活体 style/rule cssText 持 named 形，rgb() 形属 getComputedStyle 计算管线；CSSOM §serialize-a-declaration-block）"
         );
     }
 

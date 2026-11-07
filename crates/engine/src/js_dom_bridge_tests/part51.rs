@@ -231,7 +231,7 @@ fn test_p99s_rule_style_preserves_custom_property_case() {
     let v = Sandbox::execute(&mut sb, script).unwrap().value;
     assert_eq!(
         v,
-        r#"{"cssText":"h1 { color: red; --Zw-R: blue; font-size: 14px }","readBack":"blue","camel":"14px"}"#,
+        r#"{"cssText":"h1 { color: red; --Zw-R: blue; font-size: 14px; }","readBack":"blue","camel":"14px"}"#,
         "`--` 名 case 保留 + 非 `--` 名 kebab 归一与 camelCase IDL 读写不变"
     );
     // host 侧 style 去重键（style_prop_key）：--Foo/--foo 为独立声明互不覆盖；
