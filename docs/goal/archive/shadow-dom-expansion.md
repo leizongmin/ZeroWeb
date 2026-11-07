@@ -55,7 +55,7 @@ shadow-dom + template）已入账，但 fetch 子集窄（`fetch-web-components-
 ## Done Criteria
 
 - **DC-1（M0 对账）**：上游差集与排除域重审结论落
-  `docs/goal/shadow-dom-expansion/evidence/`（逐目录：文件数、批次归属、
+  `docs/goal/archive/shadow-dom-expansion/evidence/`（逐目录：文件数、批次归属、
   declarative 重审裁定）；DC-4 数值门按决策规则落定并回填本文件。
 - **DC-2（通道扩面）**：批次目录入常驻通道（fetch 子集 + skip 规则 +
   DIRS + Makefile target 四件套）。
@@ -293,7 +293,7 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   全二进制同 reject 对照定谳 = runner 既有完成竞态（module script unhandled
   rejection 上报与结果收集差一 tick，shim 体积经解析时序微扰翻转方向）；
   机制与鉴别法沉淀
-  [learning](../learnings/bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md)。
+  [learning](../../learnings/bugs/2026-11/2026-11-06-wpt-runner-completion-race-unhandled-rejection.md)。
 - **engine 门**：`cargo test -p zero-engine` 3,766P/5F，5F 与上节「HEAD 既有
   5F 归因收窄」同集合（R2809/R2810/R3276/p56/p99s），干树 stash 往返复现
   一致，归 html-semantics 流 s249 处理，本刀无关。门禁：JS-only diff，

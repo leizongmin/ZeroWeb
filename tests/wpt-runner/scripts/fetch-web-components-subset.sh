@@ -8,7 +8,7 @@
 #
 # 用例级 skip 域（Support Envelope / DC-1 排除项，非静默丢弃——evidence 基线报告同记；
 # 2026-11-06 shadow-dom-expansion M0 差集甄别后收窄，逐目录结论见
-# docs/goal/shadow-dom-expansion/evidence/）：
+# docs/goal/archive/shadow-dom-expansion/evidence/）：
 # - *-ref.html / *-notref.html：reftest 参照页（渲染面，非可执行用例）
 # - shadow-dom/ 渲染级 composed tree 用例（slot-fallback-content-00{1..8} /
 #   layout-* / directionality-* / restyle-* / shadow-style-* / invalidate-sibling-* /
@@ -333,7 +333,7 @@ SD_HELPERS=(
   "shadow-dom/resources/shadow-dom.js"
 )
 
-# ---- shadow-dom-expansion 扩面批（docs/goal/shadow-dom-expansion.md M0 差集
+# ---- shadow-dom-expansion 扩面批（docs/goal/archive/shadow-dom-expansion.md M0 差集
 # 甄别 + M1 通道扩面，2026-11-06；pin 不变，清单按上游 pin 树 git trees API
 # 全量甄别后逐档准入，与 runner 侧 wc_case_skipped 两侧同源）：
 # - declarative/ parser/template 层：s168（materialize_declarative_shadow_roots）
