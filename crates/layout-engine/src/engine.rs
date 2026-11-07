@@ -1486,6 +1486,11 @@ impl LayoutEngine {
             styles,
         );
 
+        // 11.10 R5459 viv 域 float 子树容器行内轴 fill：CSS §7.1 块级盒 auto 行内尺寸 fill
+        // 包含块，float 子不阻断；taffy 交换帧对此类容器不 stretch（R4428 float 子树排除域）。
+        // 在 Final Inline Layout Pass 前修，使存 IFC 直接见正确 max_depth（免 paint Path B 重跑）。
+        crate::vertical_block_flow::fill_viv_float_subtree_inline_axis(&mut root_box, styles);
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。

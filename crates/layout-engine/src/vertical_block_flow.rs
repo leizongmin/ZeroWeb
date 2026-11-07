@@ -1128,6 +1128,80 @@ fn apply_child_fill_inner(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedSt
     }
 }
 
+/// R5459 viv 域 float 子树容器行内轴 fill（gate `ZW_VIV_INLINE_FILL` default-on）。
+///
+/// **修的缺陷（R5459 探针矩阵定谳）**：CSS Writing Modes §7.1 块级盒 auto 行内尺寸 = fill
+/// 包含块行内尺寸，float 子不阻断。taffy 交换帧对含 float 子树的 viv 容器（父亦 vertical）
+/// 不 stretch——float 子不入同 BFC → float contribution sizing，容器物理 h = 流内子高 Σ
+///（探针 V2 .vp h=56/ch=40、V3 h=16/ch=0；同构无 float 臂 V1/V4/V5 fill 784 ✓；chromium
+/// oracle .vp h=497 = body content height 精确 fill）。塌 0 的 content_height 使垂直 IFC
+/// `max_depth = container_width = 0`（break_items_into_columns:2433）→ 逐词断列
+///（float-lft-orthog-htb-in-vrl-002/003 可见残差主项）。
+///
+/// **与相邻 fill 臂的边界**：R4446 正交域（parent htb）且显式排除 float 子树（vrl-008
+/// 翻红先例）；R4439 abs 容器；R1972 inf 子。本臂 viv 域 + float 子树，finite only-grow
+///（fill > current + 0.5 才 fire，不收缩既有 ≥ fill 域，inf 子不触碰）。行内轴（物理 h）
+/// fill ≠ float 流几何：R5457 float 右缘锚定与 R4428 restack 依赖容器 content_width
+///（block 轴），不受本臂改写影响。
+///
+/// **gate**：父 vertical + 自身 vertical + display Block/ListItem + height Auto + 子树含
+/// float（非 float 子树已由 taffy stretch 正确 fill，不触碰）+ 非 float/abs/fixed/multicol
+/// + fill finite > 0.5。
+///
+/// 引擎在 Final Inline Layout Pass（engine.rs compute_final_inline_layouts）之前调用，
+/// 使存 IFC 直接见正确 max_depth，不依赖 paint Path B width_matches 失配重跑。
+pub fn fill_viv_float_subtree_inline_axis(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    // env 读一次（guidelines #9：热路径 walk 内不逐节点读 env）。
+    if std::env::var("ZW_VIV_INLINE_FILL").as_deref() == Ok("0") {
+        return;
+    }
+    fill_viv_walk(root, styles);
+}
+
+fn fill_viv_walk(b: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+    let own_wm = b.writing_mode.clone();
+    let parent_content_height = b.content_height;
+    for child in &mut b.children {
+        // 自顶向下：先 fill 本层（父 content_height 已定），再递归子树级联嵌套 fill。
+        fill_viv_child(child, styles, &own_wm, parent_content_height);
+        fill_viv_walk(child, styles);
+    }
+}
+
+fn fill_viv_child(
+    c: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    parent_wm: &WritingModeValue,
+    parent_content_height: f32,
+) {
+    if !parent_wm.is_vertical_block_flow() || !c.writing_mode.is_vertical_block_flow() {
+        return; // viv 域限定；正交域归 R4446（parent htb）/R4459（正交 float 收缩）。
+    }
+    if c.is_multicol || c.is_absolute || c.is_fixed || !matches!(c.float, FloatValue::None) {
+        return; // 脱流盒与 multicol 容器自身 shrink-to-fit，不 fill。
+    }
+    let Some(s) = c.node_id.and_then(|id| styles.get(&id)) else {
+        return;
+    };
+    if !matches!(s.display, DisplayValue::Block | DisplayValue::ListItem) || !matches!(s.height, LengthValue::Auto) {
+        return;
+    }
+    if !viv_subtree_has_float(c) {
+        return; // 非 float 子树已由 taffy 交换帧 stretch 正确 fill（探针 V1/V4/V5），不触碰。
+    }
+    let fill = parent_content_height - c.margin_top - c.margin_bottom;
+    // only-grow：不收缩既有 ≥ fill 域（body 784 ≥ html ch 203 等既有态），inf 子归 R1972。
+    if !fill.is_finite() || fill <= 0.5 || fill <= c.height + 0.5 {
+        return;
+    }
+    let frame = c.border_top + c.border_bottom + c.padding_top + c.padding_bottom;
+    c.height = fill;
+    c.content_height = (fill - frame).max(0.0);
+    // R1978 同步：paint width_matches（paint/text.rs:605）比较 inline_layout_width 与 IFC 宽
+    //（= content_height），改 height 后同步避免 stored IFC 被判失配走 Path B 重跑。
+    c.inline_layout_width = c.content_height;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
