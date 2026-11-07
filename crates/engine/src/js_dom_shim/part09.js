@@ -2,16 +2,18 @@
 // part09 — SMIL 文档级时间线引擎（svg-compat-v2 goal M1/M2，2026-11-07）。
 //
 // 范围（控制面 docs/goal/svg-compat-v2.md）：M1 = B1 时钟值文法 + B2
-// interval 模型首批；M2 首批 = B3 seek 事件语义——
+// interval 模型首批；M2 = B3 seek 事件语义 + B4 syncbase 同步基——
 //   ① clock-value 严格文法：Full/Partial-clock-val（分/秒必须两位数且 <60、
 //      分数点后至少一位数字、小时两位起不限位）+ Timecount-val（h/min/s/ms，
 //      缺省 s）——B1 非法矩阵（越界分秒/分数缺数字/前导零/缺字段）逐条
 //      定谳（WPT smil-clock-value-parsing 7 合法 + 11 非法定谳面）。
-//   ② begin/end 列表：offset-value（± clock-val）+ indefinite；syncbase/
-//      eventbase/repeat-value/wallclock/accessKey 语法识别但实例不解析
-//      （FIXME(svg-compat-v2 M2)：B4 syncbase / B5 eventbase 接实例源——
-//      WPT SVGAnimationElement-exceptions 的 begin="foo.begin" 依赖本口径：
-//      识别但零实例 → getStartTime InvalidStateError）。
+//   ② begin/end 列表：offset-value（± clock-val）+ indefinite + syncbase
+//      （id.begin / id.end 带可选 ±offset，id 内 '.' 用 '\' 转义——B4 接
+//      实例源）；eventbase（裸事件名 / id.event）/ repeat-value /
+//      wallclock / accessKey 语法识别但实例不解析（FIXME(svg-compat-v2
+//      M2/B5)：eventbase 接事件源——WPT SVGAnimationElement-exceptions
+//      的 begin="foo.begin" 语义保持：查无目标 → 零实例 → getStartTime
+//      InvalidStateError）。
 //   ③ interval 解析：instance 升序首个 end > t 的 interval 为 current——
 //      WPT SVGAnimationElement-getStartTime 定谳（gap 期取下一 interval、
 //      fill=freeze 不延长 current、begin="1s; 3s" 在 t=4 后恒
@@ -57,6 +59,17 @@
 //      单点，part03 S2a cur()/animVal getter 挂钩；动画不写 DOM 属性
 //      （animVal-basics 定谳：baseVal 恒 base 值）。多动画同 (target, attr)
 //      文档序后者胜（sandwich 近似——additive 合成 = B6 FIXME）。
+//   ⑨ syncbase 同步基（B4，2026-11-07 第三批）：interval 链按文档级
+//      时间序离散事件模拟求值——每元素 begin/end 实例集 = 静态 offset +
+//      beginElement 动态实例 + syncbase 传播；目标 interval 一经创建即向
+//      依赖者传播 b/e（SMIL #Timing-SyncbaseValueSemantics）；自引用
+//      （0s;anim.end 自续链）与互指环（a↔b）按时间序自然展开，零实例源
+//      的环恒死锁（SMIL 未解析口径）。传播的 end 实例截断已建 interval
+//      （dependent-end 面）；剪枝 interval（e ≤ 0 文档起点前）不传播
+//      （first-interval dont-contribute 定谳）。静态/dyn 实例元素与 M1
+//      口径逐字节同链（首个 end > t + min(end 实例, b+actDur)——零回归面）。
+//      链缓存 per (doc, t)（beginElement 作废；属性变更靠泵轮询下 tick
+//      重算，同 tick 变更窗口 = 已知近似 FIXME(svg-compat-v2 B4)）。
 //
 // 作用域：part07 末尾已闭合外层 IIFE，本文件顶层作用域（part08 先例）；
 // 引用面仅 globalThis 契约（SVGSVGElement/SVGAnimationElement prototype、
@@ -154,22 +167,50 @@
     return v == null ? null : sign * v;
   };
 
-  // begin/end 列表 → 可解析 offset 实例数组。识别但 M2 未接实例源的形态
-  // （syncbase/eventbase/repeat 等）返回零实例不报错（exceptions 案口径）。
-  var _parseTimingList = function (s) {
+  // ── 时序 specifier 解析（SMIL #Timing-ParsingTimingSpecifiers）──────
+  // 单段 → spec：{ kind:'offset', t } | { kind:'syncbase', id, base, off }
+  // | { kind:'event', id, name, off }（eventbase/repeat——B5 接实例源）
+  // | null（indefinite / 无法识别 → 无实例）。id 内 '.' 以 '\' 转义
+  //（syncbase-escaped-dots 定谳面），首个未转义 '.' 为 id 分隔符。
+  var _parseTimingSpec = function (seg) {
+    var s = String(seg).replace(/^\s+|\s+$/g, '');
+    if (!s || s === 'indefinite') return null;
+    var off0 = _parseOffsetValue(s);
+    if (off0 != null) return { kind: 'offset', t: off0 };
+    // id 扫描：'\.' → 字面点；未转义 '.' → 进入 base/事件段
+    var id = '';
+    var rest = '';
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '\\' && s.charAt(i + 1) === '.') { id += '.'; i++; continue; }
+      if (ch === '.') { rest = s.slice(i + 1); break; }
+      id += ch;
+    }
+    if (rest) {
+      var m = /^(begin|end|repeat\(\d+\)|[a-zA-Z][a-zA-Z0-9_-]*)(?:\s*([+-])\s*(\S+))?$/.exec(rest);
+      if (!m) return null;
+      var off = 0;
+      if (m[2]) {
+        off = _parseOffsetValue(m[2] + m[3]);
+        if (off == null) return null;
+      }
+      if (m[1] === 'begin' || m[1] === 'end') {
+        return { kind: 'syncbase', id: id, base: m[1], off: off };
+      }
+      return { kind: 'event', id: id, name: m[1], off: off };   // repeat(n)/事件名 = B5 FIXME
+    }
+    // 无分隔符：裸事件名（B5 识别不解析）
+    if (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(s)) return { kind: 'event', id: null, name: s, off: 0 };
+    return null;
+  };
+
+  var _parseTimingSpecs = function (raw) {
     var out = [];
-    if (s == null) return out;
-    var parts = String(s).split(';');
+    if (raw == null) return out;
+    var parts = String(raw).split(';');
     for (var i = 0; i < parts.length; i++) {
-      var seg = parts[i].replace(/^\s+|\s+$/g, '');
-      if (!seg || seg === 'indefinite') continue;
-      // M2 实例源占位识别：syncbase（id.begin/end）、repeat-value
-      //（id.repeat(n)）、eventbase（裸事件名 / id.event）、wallclock、
-      // accessKey——FIXME(svg-compat-v2 M2)。
-      if (/[.(]/.test(seg)) continue;
-      if (/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(seg)) continue;
-      var v = _parseOffsetValue(seg);
-      if (v != null) out.push(v);
+      var sp = _parseTimingSpec(parts[i]);
+      if (sp) out.push(sp);
     }
     return out;
   };
@@ -212,52 +253,155 @@
   var _elementState = function (animEl) {
     var k = _elKey(animEl);
     if (!k) return { dynBegins: [] };
-    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false, seen: false };
+    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false, seen: false, lastT: null };
     return _elStateCache[k];
   };
 
-  // interval end：end 属性首个 > begin 的实例与 begin+activeDur 取 min；
-  // end 实例 ≤ begin（零/负时长 interval）→ null（该 instance 不成 interval）。
-  var _intervalEnd = function (animEl, b, actDur) {
-    var ends = null;
-    try { ends = _parseTimingList(animEl.getAttribute('end')); } catch (_eG) { ends = null; }
-    var cap = b + actDur;
-    for (var i = 0; i < ends.length; i++) {
-      if (ends[i] > b) return Math.min(ends[i], cap);
+  // ── B4：interval 链 = 文档级时间序离散事件模拟 ─────────────────────
+  // 每元素记录：pendB/pendE（升序实例集，传播可增长）、ib（pendB 消费
+  // 指针）、ivs（按 b 升序已建 interval，含 e ≤ 0 剪枝标记）。传播值恒 ≥
+  // 当前全局最小事件时刻，sorted-splice 插入不会落到 ib 之前（指针安全）。
+  var _insertSorted = function (arr, v) {
+    var i = 0;
+    while (i < arr.length && arr[i] < v) i++;
+    if (arr[i] === v) return;    // 同刻实例去重（cyclic-syncbase-events 的
+    arr.splice(i, 0, v);         // c.end 与 a.begin 同刻双源）
+  };
+
+  var _docChains = function (doc, t) {
+    var st = _timelineFor(doc);
+    if (st.chainCache && st.chainCache.t === t) return st.chainCache.map;
+    var els = _scanDoc(doc);
+    var recs = [];
+    var deps = {};   // 目标 id → [{ rec(依赖者), asBegin, timeKind, off }]——
+    // 键为引用目标的 id，每查询从现行文档重建（syncbase-remove-add 的
+    // 移除/重建自动重挂；查无目标 = 无实例源，exceptions 案口径）。
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var d = _parseDur(el);
+      var sd = d.kind === 'finite' ? d.s : Infinity;
+      var actDur = d.kind === 'finite' ? _activeDuration(el, sd) : Infinity;
+      var rawB = null;
+      var rawE = null;
+      try { rawB = el.getAttribute('begin'); } catch (_eB) { rawB = null; }
+      try { rawE = el.getAttribute('end'); } catch (_eE) { rawE = null; }
+      var bSpecs = _parseTimingSpecs(rawB);
+      var eSpecs = _parseTimingSpecs(rawE);
+      // begin 属性缺省/空白才回落 '0s'（spec #Timing-DefaultBegin）——
+      // 属性在但零实例（indefinite / 查无目标的 syncbase / B5 未接实例源
+      // 形态）保持无实例（SVGAnimationElement-exceptions 定谳面不可回退）。
+      if (!bSpecs.length &&
+          String(rawB == null ? '' : rawB).replace(/^\s+|\s+$/g, '') === '') {
+        bSpecs = [{ kind: 'offset', t: 0 }];
+      }
+      var key = _elKey(el);
+      var rec = {
+        key: key, sd: sd, actDur: actDur, dead: d.kind === 'invalid',
+        pendB: [], pendE: [], ib: 0, ivs: [], ivsBeyond: 0, id: ''
+      };
+      var j;
+      for (j = 0; j < bSpecs.length; j++) {
+        var sp = bSpecs[j];
+        if (sp.kind === 'offset') rec.pendB.push(sp.t);
+        else if (sp.kind === 'syncbase') {
+          var slotB = deps[sp.id] || (deps[sp.id] = []);
+          slotB.push({ rec: rec, asBegin: true, timeKind: sp.base, off: sp.off });
+        }
+      }
+      for (j = 0; j < eSpecs.length; j++) {
+        var se = eSpecs[j];
+        if (se.kind === 'offset') rec.pendE.push(se.t);
+        else if (se.kind === 'syncbase') {
+          var slotE = deps[se.id] || (deps[se.id] = []);
+          slotE.push({ rec: rec, asBegin: false, timeKind: se.base, off: se.off });
+        }
+      }
+      var dyn = _elementState(el).dynBegins;
+      for (j = 0; j < dyn.length; j++) rec.pendB.push(dyn[j]);
+      rec.pendB.sort(function (x, y) { return x - y; });
+      rec.pendE.sort(function (x, y) { return x - y; });
+      try { rec.id = String(el.getAttribute('id') || ''); } catch (_eI) { rec.id = ''; }
+      recs.push(rec);
     }
-    return cap;
+    // 时间序主循环：反复取全文档最早未消费 begin 实例建 interval。
+    // 传播只来自已建 interval；剪枝 interval（e ≤ 0 文档起点前，
+    // dont-contribute 定谳）建而不传播；t 之后每元素至多建一个 pending
+    //（gap 期 getStartTime 取下一 interval 的定谳面 + 终止界）。
+    var guard = 0;
+    for (;;) {
+      if (++guard > 2000) break;
+      var pick = null;
+      for (var i2 = 0; i2 < recs.length; i2++) {
+        var r2 = recs[i2];
+        if (r2.dead) continue;
+        var b2 = r2.pendB[r2.ib];
+        if (b2 === undefined) continue;
+        if (b2 > t && r2.ivsBeyond >= 1) continue;
+        if (b2 === Infinity) continue;
+        if (!pick || b2 < pick.b) pick = { r: r2, b: b2 };
+      }
+      if (!pick) break;
+      var r = pick.r;
+      var b = pick.b;
+      r.ib++;
+      // interval end：首个 > b 的 end 实例与 b+actDur 取 min（M1 口径恒持）；
+      // 无 end 实例 → b + actDur。
+      var e = b + r.actDur;
+      for (var k2 = 0; k2 < r.pendE.length; k2++) {
+        if (r.pendE[k2] > b) { e = Math.min(r.pendE[k2], e); break; }
+      }
+      if (!(e > b)) continue;    // 零/负时长不成 interval（实例已消费，无环）
+      var pruned = e <= 0;
+      r.ivs.push({ b: b, e: e, pruned: pruned });
+      if (b > t) r.ivsBeyond++;
+      if (pruned) continue;
+      // 传播（SMIL #Timing-SyncbaseValueSemantics）：b → '.begin' 依赖、
+      // e → '.end' 依赖——实例写给依赖者 dep.rec（键是目标 id，依赖者收值；
+      // 自引用 = 目标即依赖者，同槽自然成立）；end 实例截断依赖者已建含 v
+      // 区间（dependent-end）。
+      var slot2 = deps[r.id];
+      if (slot2) {
+        for (var d2 = 0; d2 < slot2.length; d2++) {
+          var dep = slot2[d2];
+          var depRec = dep.rec;
+          if (!depRec || depRec.dead) continue;
+          var v = (dep.timeKind === 'begin' ? b : e) + dep.off;
+          if (!isFinite(v)) continue;
+          if (dep.asBegin) {
+            _insertSorted(depRec.pendB, v);
+          } else {
+            _insertSorted(depRec.pendE, v);
+            for (var q = depRec.ivs.length - 1; q >= 0; q--) {
+              var ivq = depRec.ivs[q];
+              if (v > ivq.b && v < ivq.e) { ivq.e = v; break; }
+            }
+          }
+        }
+      }
+    }
+    var map = {};
+    for (var i3 = 0; i3 < recs.length; i3++) map[recs[i3].key] = recs[i3];
+    st.chainCache = { t: t, map: map };
+    return map;
   };
 
-  // 全部 begin 实例（属性 offset 集 + beginElement 动态集）升序；begin 属性
-  // 缺省/空白才回落 '0s'（spec #Timing-DefaultBegin）——属性在但零实例
-  //（indefinite / 未接实例源的 syncbase/eventbase 形态，M1 口径识别不解析）
-  // 保持无实例：元素不自动开始（SVGAnimationElement-exceptions 的
-  // begin="foo.begin" → getStartTime InvalidStateError 定谳面；M0 stub
-  // 恒抛不可回退）。
-  var _allBegins = function (animEl) {
-    var raw = null;
-    try { raw = animEl.getAttribute('begin'); } catch (_eB) { raw = null; }
-    var begins = _parseTimingList(raw);
-    if (!begins.length &&
-        String(raw == null ? '' : raw).replace(/^\s+|\s+$/g, '') === '') begins = [0];
-    var st = _elementState(animEl);
-    var all = begins.slice();
-    for (var i = 0; i < st.dynBegins.length; i++) all.push(st.dynBegins[i]);
-    all.sort(function (x, y) { return x - y; });
-    return all;
+  var _chainOf = function (animEl, t) {
+    var doc = null;
+    try { doc = animEl.ownerDocument; } catch (_eD) { doc = null; }
+    if (!doc) return null;
+    var map = _docChains(doc, t);
+    var r = map[_elKey(animEl)];
+    return r && !r.dead ? r : null;
   };
 
-  // current interval：instance 升序首个 end > t（SVGAnimationElement-
+  // current interval：链上首个非剪枝且 e > t 的 interval（SVGAnimationElement-
   // getStartTime 定谳；frozen 不算 current、gap 期取下一 interval）。
   var _currentInterval = function (animEl, t) {
-    var d = _parseDur(animEl);
-    if (d.kind === 'invalid') return null;
-    var sd = d.kind === 'finite' ? d.s : Infinity;
-    var actDur = d.kind === 'finite' ? _activeDuration(animEl, sd) : Infinity;
-    var all = _allBegins(animEl);
-    for (var j = 0; j < all.length; j++) {
-      var e = _intervalEnd(animEl, all[j], actDur);
-      if (e > t) return { b: all[j], e: e, sd: sd };
+    var r = _chainOf(animEl, t);
+    if (!r) return null;
+    for (var j = 0; j < r.ivs.length; j++) {
+      var iv = r.ivs[j];
+      if (!iv.pruned && iv.e > t) return { b: iv.b, e: iv.e, sd: r.sd };
     }
     return null;
   };
@@ -350,15 +494,19 @@
       var fillAttr = g('fill');
       if (fillAttr !== 'freeze') return null;
       var sd0 = d.kind === 'finite' ? d.s : Infinity;
-      var actDur0 = d.kind === 'finite' ? _activeDuration(animEl, sd0) : Infinity;
-      var all = _allBegins(animEl);
+      var rec0 = _chainOf(animEl, t);
       var lastEnd = -Infinity;
       var lastB = 0;
-      for (var j = 0; j < all.length; j++) {
-        var e0 = _intervalEnd(animEl, all[j], actDur0);
-        // 修剪：end ≤ 文档起点（0）的 interval 非 real interval（SMIL
-        // first-interval 剪枝——begin="-1s" dur=1s 的 [-1,0] 不贡献冻结值）。
-        if (e0 > 0 && e0 <= t && e0 > lastEnd) { lastEnd = e0; lastB = all[j]; }
+      if (rec0) {
+        for (var j = 0; j < rec0.ivs.length; j++) {
+          var iv0 = rec0.ivs[j];
+          // 剪枝 interval（e ≤ 0）非 real interval（SMIL first-interval
+          // 剪枝——begin="-1s" dur=1s 的 [-1,0] 不贡献冻结值）。
+          if (!iv0.pruned && iv0.e > 0 && iv0.e <= t && iv0.e > lastEnd) {
+            lastEnd = iv0.e;
+            lastB = iv0.b;
+          }
+        }
       }
       if (lastEnd === -Infinity) return null;
       if (sd0 === Infinity) return null;
@@ -479,6 +627,13 @@
     } catch (_eQ) { els = []; }
     return els;
   };
+  // FIXME(挂账-引擎查询层): doc.querySelectorAll 对动态 append 的动画元素
+  // 同步不可见（detached 快照/复合选择器缓存代际——探针实证单标签元素作用
+  // 域活络、文档作用域与复合形态延迟代际化），child 链手工遍历可即时发现
+  // 但产物 wrapper 族与消费端（target.children/_elKey）跨族 identity 失配
+  //（#32），17 子 P→F 回归实证。SMIL 动态元素发现（spec 时序目标活解析）
+  // 待查询层统一 wrapper 归一后重接——syncbase-remove-add-while-running
+  // 挂此门（F 显形记账，非 Pass 丢失）。
 
   var _scheduleTick = function (doc, st, delayMs) {
     if (st.tickTimer) return;
@@ -507,18 +662,14 @@
     }, 0);
   };
 
-  // 转移扫描：对每动画元素比较上一观测态 {ib, began, ended} 与 t 时刻
-  // active interval（b ≤ t < e），差分出事件。语义（seeking-events-1..8
-  // 定谳矩阵）： seek（isSeek）越过的 interval（首见即整体在过去）不派
-  //  任何事件； 曾 began 的 interval 失去活跃态（自然到 end / seek 出界 /
-  //  seek 回退越过 begin / 被新 instance 替代）→ endEvent； seek 落点
-  //  所在 interval（含回退重入已 ended interval）→ beginEvent； 同
-  //  interval 内 seek（跨 repeat 边界也一样）不派 repeatEvent（repeatEvent
-  //  = B5 自然播放面）。首见自然 tick（!isSeek）且已整体走完的 real
-  //  interval（e > 0 ≤ t）补派 begin+end——文档时间真实流过该 interval
-  //（event-listeners 的 [0,5ms] 案：泵首 tick 前已自然结束；多 interval
-  //  首个命中即止的近似）。e ≤ 0 的 interval 例外（first-interval 剪枝，
-  //  dont-contribute 定谳：begin=-1s dur=1s 不贡献）。
+  // 转移扫描：seek（isSeek）走差分（seeking-events-1..8 定谳矩阵：越过
+  // 零事件、出界 endEvent、落点 beginEvent、同 interval 不派 repeat）；
+  // 自然 tick 走时间序窗口重放——对 (lastT, t]（首见 lastT=-∞）内真实
+  // 流逝的 interval 边界按 b 升序补派：窗口内整体走完 → begin+end 成对；
+  // 跨窗口结束（begin 在窗前）→ 仅 endEvent；窗口内开始且 ≤ t →
+  // beginEvent（被替代的旧 interval 若未报 end 先补 end——restart 语义）。
+  // 泵 tick 抖动跨过多个边界时事件不丢、不乱序（correct-events-for-short-
+  // animations-with-syncbases 定谳面）；seek 只推进 lastT 不重放。
   var _scanDocEvents = function (doc, t, isSeek) {
     var els = _scanDoc(doc);
     for (var i = 0; i < els.length; i++) {
@@ -526,30 +677,38 @@
       var active = null;
       try { active = _activeInterval(el, t); } catch (_eA) { active = null; }
       var s = _elementState(el);
-      if (!s.seen) {
-        s.seen = true;
-        if (!isSeek && !active) {
-          var d0 = _parseDur(el);
-          if (d0.kind === 'finite') {
-            var actDur0 = _activeDuration(el, d0.s);
-            var begins0 = _allBegins(el);
-            for (var j0 = 0; j0 < begins0.length; j0++) {
-              var e0 = _intervalEnd(el, begins0[j0], actDur0);
-              if (e0 > 0 && e0 <= t) {
-                _fireSmilEvent(el, 'beginEvent');
+      s.seen = true;
+      if (!isSeek) {
+        var w0 = s.lastT == null ? -Infinity : s.lastT;
+        if (t >= w0) {
+          var rec1 = _chainOf(el, t);
+          if (rec1) {
+            for (var j0 = 0; j0 < rec1.ivs.length; j0++) {
+              var iv1 = rec1.ivs[j0];
+              if (iv1.pruned || iv1.e <= 0) continue;
+              // 窗口内结束（首见 w0=-∞ 覆盖全部已过 interval——整体成对）
+              if (iv1.e > w0 && iv1.e <= t && s.ib === iv1.b && s.began && !s.ended) {
                 _fireSmilEvent(el, 'endEvent');
-                s.ib = begins0[j0];
-                s.ie = e0;
-                s.began = true;
                 s.ended = true;
+              }
+              if (iv1.b > w0 && iv1.b <= t && s.ib !== iv1.b) {
+                if (s.ib != null && s.began && !s.ended) {
+                  _fireSmilEvent(el, 'endEvent');    // 被替代/截断
+                  s.ended = true;
+                }
+                _fireSmilEvent(el, 'beginEvent');
+                s.ib = iv1.b;
+                s.ie = iv1.e;
+                s.began = true;
+                s.ended = false;
                 s.everBegan = true;
-                break;
               }
             }
           }
-          continue;
         }
       }
+      s.lastT = t;
+      // 差分兜底：seek 语义面 + 链突变（属性轮询/beginElement）后的对齐。
       if (s.ib != null && s.began && !s.ended && (!active || active.b !== s.ib)) {
         _fireSmilEvent(el, 'endEvent');
         s.ended = true;
@@ -684,6 +843,7 @@
       if (restart === 'never' && (s.everBegan || cur)) return;
       if (restart === 'whenNotActive' && cur && cur.b <= now) return;
       s.dynBegins.push(now + n);
+      st.chainCache = null;   // 动态实例入集——链缓存作废，下查询重模拟
       // 差分状态不手动重置——下轮转移扫描按新 instance 集派
       // endEvent（旧 interval 被替代）+ beginEvent（restart=always 语义）。
       _wake(doc || this);
