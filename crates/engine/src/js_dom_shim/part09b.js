@@ -1112,23 +1112,26 @@
                 s.began = true;
                 s.ended = false;
                 s.everBegan = true;
+                s.repK = 0;
               }
               // repeatEvent 自然播放面（B5）：迭代边界 b + k·sd（k ≥ 1 且
               // k·sd < e）入窗 (max(w0, b), min(t, e)] 按 k 升序补派——仅
-              // 当前跟踪 interval（begin 前不派、end 后不派）；seek 不派
-              //（isSeek 臂外——seeking-events-5/6 恒持）。千次封顶 =
-              // OPTIMIZATION：节流追赶窗口内病态 repeatCount=indefinite ×
-              // 毫秒级 dur 的边界风暴防失控（语料真实面 ≤ 个位数边界）。
+              // 当前跟踪 interval（begin 前不派、end 后不派）；repK 已派
+              // 迭代水位去重（seek 合并派发同水位，双路不重不漏）。千次
+              // 封顶 = OPTIMIZATION：节流追赶窗口内病态 repeatCount=
+              // indefinite × 毫秒级 dur 的边界风暴防失控（语料真实面 ≤
+              // 个位数边界）。
               if (s.ib === iv1.b && s.began && !s.ended &&
                   isFinite(rec1.sd) && rec1.sd > 0) {
                 var k0 = Math.ceil((Math.max(w0, iv1.b) - iv1.b) / rec1.sd);
-                if (k0 < 1) k0 = 1;
+                if (k0 <= s.repK) k0 = s.repK + 1;
                 var fired = 0;
                 for (; iv1.b + k0 * rec1.sd < iv1.e && iv1.b + k0 * rec1.sd <= t;
                      k0++) {
                   if (++fired > 1000) break;
                   _fireSmilEvent(el, 'repeatEvent');
                 }
+                if (fired > 0) s.repK = k0 - 1;
               }
               // 窗口内结束（首见 w0=-∞ 覆盖全部已过 interval——整体成对；
               // begin 已在本轮建立跟踪的 interval 同轮内 end 成对）
@@ -1140,6 +1143,7 @@
           }
         }
       }
+      var seekW0 = s.lastT;
       s.lastT = t;
       // 差分兜底：seek 语义面 + 链突变（属性轮询/beginElement）后的对齐。
       if (s.ib != null && s.began && !s.ended && (!active || active.b !== s.ib)) {
@@ -1153,6 +1157,25 @@
         s.began = true;
         s.ended = false;
         s.everBegan = true;
+        s.repK = 0;
+      }
+      // repeatEvent seek 合并派发面（seek-repeat-event-condition 定谳）：
+      // 前向 seek 跨 ≥1 迭代边界 → 合并派一次（跳过迭代不逐个补）；paused
+      // 时间线不派（seeking-events-5/6 定谳——EventWatcher 未期待事件即
+      // fail）；水位 repK 恒推进（抑制时同推进——往返 seek 不重放）。
+      // kEnd = 最大 k ≥ 1 且 b+k·sd < e 且 b+k·sd ≤ t（边界恰落 e 不算
+      // repeat）。
+      if (isSeek && s.ib != null && s.began && !s.ended &&
+          active && active.b === s.ib && isFinite(active.sd) && active.sd > 0 &&
+          (seekW0 == null || t >= seekW0)) {
+        var kEndS = Math.floor((t - s.ib) / active.sd);
+        var kByE = Math.ceil((s.ie - s.ib) / active.sd) - 1;
+        if (kEndS > kByE) kEndS = kByE;
+        if (kEndS > s.repK) {
+          var stS = _docTimelines.get(doc);
+          if (!stS || !stS.paused) _fireSmilEvent(el, 'repeatEvent');
+          s.repK = kEndS;
+        }
       }
     }
   };
@@ -1266,6 +1289,12 @@
     _zwSvgP.pauseAnimations = function () {
       var doc = this.ownerDocument || this;
       var st = _timelineFor(doc);
+      // per-element 暂停集（Blink 每容器独立 paused——pause-and-seek-
+      // before-begin 双 svg 同文档各自 pause/unpause 消费面）；文档钟冻结
+      // 条件 = 集非空。
+      var k = _elKey(this);
+      if (!st.pausedEls) st.pausedEls = {};
+      if (k) st.pausedEls[k] = true;
       st.frozenDoc = _currentTimeOf(st);
       st.paused = true;
       if (st.tickTimer) { clearTimeout(st.tickTimer); st.tickTimer = 0; }
@@ -1273,6 +1302,9 @@
     _zwSvgP.unpauseAnimations = function () {
       var doc = this.ownerDocument || this;
       var st = _timelineFor(doc);
+      var k = _elKey(this);
+      if (k && st.pausedEls) delete st.pausedEls[k];
+      if (st.pausedEls && Object.keys(st.pausedEls).length > 0) return;
       if (!st.paused) return;
       st.paused = false;
       if (st.started) {
@@ -1280,6 +1312,15 @@
         st.baseReal = Date.now();
         _wake(doc);
       }
+    };
+    // pause-and-seek-before-begin 消费门——Blink 每容器独立 paused：只读
+    // 本元素暂停集位（文档钟冻结由 pause/unpause 集合非空条件维护，不回读
+    // ——另一 svg 持暂停时本元素 unpause 后须报 false）。
+    _zwSvgP.animationsPaused = function () {
+      var doc = this.ownerDocument || this;
+      var st = _timelineFor(doc);
+      var k = _elKey(this);
+      return !!(k && st.pausedEls && st.pausedEls[k]);
     };
     _zwSvgP.getCurrentTime = function () {
       var st = _timelineFor(this.ownerDocument || this);
@@ -1322,7 +1363,10 @@
       if (d.kind !== 'finite') {
         throw _domErr('getSimpleDuration: the simple duration is undefined or indefinite.', 'NotSupportedError');
       }
-      return d.s;
+      // Blink SMILTime 内部存 float——秒值经 float32 往返（smil-clock-value-
+      // large-hours：1193047h=4294969200s → fround 4294969344；常规值 float32
+      // 恒等零外溢）。
+      return Math.fround(d.s);
     };
     var _beginElementAt = function (offset) {
       var n = Number(offset);

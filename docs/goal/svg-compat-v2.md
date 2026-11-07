@@ -2,8 +2,22 @@
 
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——**M0 + M1 + M2 已完成（B3/B4/B5/B6a/B6b/B6c 六批
-全收口，2026-11-07）：B6a calcMode 四模式 + keyTimes/keySplines 文法
+**状态**: ✅ Completed——**M0–M4 全部完成（2026-11-07 收口，DC-1~4 全
+✅；归档与 Rally 循环处置待用户判定）**：B3/B4/B5/B6a/
+B6b/B6c/B7 七批 + M3 滚动收尾 + M4 coverage 复测全落档。收口批（M3 余项
++ M4）：语料 pin 前滚 goal 域 override（`315976933` → `28c152b74`，44 号
+脚本域内重设，共享 pin 未动；子树 +329/94/2，missing=0，通道 486→554
+文件 +9,682 子）+ 新面修复三件（getSimpleDuration fround——Blink SMILTime
+float32 往返、animationsPaused per-element 暂停集——Blink 每容器独立
+paused 消费面、repeatEvent seek 合并派发 repK 水位去重）svg 通道
++4F→P 零 P→F；DC-4 复测双口径收口：**冻结分母 1,355/15,342 = 8.83%
+≥ 8.6% 达线**（交集 −5P 纯上游 getBBox-06/07 改写语料漂移，代码零回归），
+滚动新面 +5,072P 另账，全量分母刷新待 wptfyi 周快照（独立管线不阻塞）；
+挂账 #2/#3 归口落档（均归 rendering-compat 协同）、#6 缩减记账
+（noreferrer iframe 化出通道）；web-animations constructor 域非确定
+抖动注记。台账见
+[evidence](svg-compat-v2/evidence/2026-11-07-m3-roll-m4-closeout.md)。
+七批明细：B6a calcMode 四模式 + keyTimes/keySplines 文法
 校验（comma-wsp 分隔）+ additive/accumulate 三明治 + 单位上下文
 （em/ex/%/calc() 项级求值）+ restart=always 中途截断 + freeze 迭代边界
 浮点钳制 + by-only replace underlying 起点，39F→P 零 P→F，
@@ -24,10 +38,7 @@ transform 属性恒复合定谳）+ href 显式定靶面（三消费钩子 `_sca
 B3-B5 见 archive 与 §里程碑；B7 path d 插值（EDM 整数 ms 相位精度模型
 + to-animation 线性 lerp 定谳 + SVGPathSeg 最小读消费面 + has trap
 接口原型链兜底）31F→P 零 P→F、MmAaZ 1 文件残留定谳记账、web-animations
-恒等，[evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)。
-**DC-4 数值门现势达线：1,360/15,342 =
-8.86% ≥ 8.6%**（M4 复测收口复核）；
-下一步 M3 收尾：滚动新面导入 + 挂账 #2/#3 归口**
+恒等，[evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)。**
 **卡点**: additive-type-by 1F 案级（B6c 采样断言面十一域全过后余卡
 expectFillColor——getComputedStyle().fill = #4 门，跨域记账）；engine
 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
@@ -96,6 +107,8 @@ M0 直接以分类账为底稿落批次，不需从零归因。
   FIXED/REGRESSED 记账）；挂账 #2/#3 归口结论落档。
 - **DC-4（coverage 复测）**：svg topdir 从 7.70% 升至数值门；一期已收口
   corpus 账逐 subtest 零回归；头条不回落。
+  **✅（2026-11-07 M4 收口）**：冻结分母 8.83% ≥ 8.6% 达线、svg 通道
+  零 P→F；分母刷新待 wptfyi 周快照（§M4 台账）。
 
 **DC-4 数值门决策规则（立项即定）**：SMIL 分类账地址池（199F + 29T 中
 定性可修簇）+ 滚动新面导入即得，两项合计为地址池；数值门 = 地址池 ×
@@ -152,11 +165,19 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   [B6b](svg-compat-v2/evidence/2026-11-07-m2-b6b-type-domain.md) /
   [B6c](svg-compat-v2/evidence/2026-11-07-m2-b6c-transform-domain.md)）。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
-  **B7 已完成**（2026-11-07：path d 四形态采样 + EDM 精度模型 + to-anim
+  **已完成**（2026-11-07：B7 path d 四形态采样 + EDM 精度模型 + to-anim
   lerp 定谳 + SVGPathSeg 消费面 + has trap 兜底，全通道 1,360P/343F/7T
-  = 79.5% 零 P→F；台账见
-  [evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)）。
-- **M4**：coverage 复测收口（DC-4）。
+  零 P→F，台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)；滚动
+  收尾 pin 前滚 goal 域 override missing=0 + 通道 486→554 文件簇归口 +
+  新面修复三件 +4F→P 零 P→F + #2/#3 归口（归 rendering-compat 协同）+
+  #6 缩减记账，台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m3-roll-m4-closeout.md)）。
+- **M4**：coverage 复测收口（DC-4）。**已完成**（2026-11-07：冻结分母
+  1,355/15,342 = 8.83% ≥ 8.6% 达线——交集 −5P 纯上游 getBBox-06/07
+  改写语料漂移，代码零 P→F；滚动新面 +5,072P 另账；全量分母刷新待
+  wptfyi 周快照，独立管线不阻塞；台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m3-roll-m4-closeout.md)）。
 
 ## 依赖约束（run-rules §9）
 

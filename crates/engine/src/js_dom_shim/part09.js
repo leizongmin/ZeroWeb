@@ -308,7 +308,7 @@
   var _elementState = function (animEl) {
     var k = _elKey(animEl);
     if (!k) return { dynBegins: [] };
-    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false, seen: false, lastT: null };
+    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false, seen: false, lastT: null, repK: 0 };
     return _elStateCache[k];
   };
 

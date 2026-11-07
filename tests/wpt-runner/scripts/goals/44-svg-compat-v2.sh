@@ -18,6 +18,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 source "${SCRIPT_DIR}/lib.sh"
 
+# 滚动 pin（svg-compat-v2 M3，2026-11-07）：本 goal 域内 pin 前滚至 upstream
+# master 快照。lib.sh 共享 pin 未动——22 脚本共用、一次前滚即全 goal 域语料
+# 事件，越出本 goal 范围；其余 goal 后续各自按先例滚动。RAW_ROOT 与 WPT_REV
+# 同步重推（lib.sh source 时嵌入 rev）。
+WPT_REV="28c152b74f8679534e558745fe83312c8dcca8c8"
+RAW_ROOT="https://raw.githubusercontent.com/web-platform-tests/wpt/${WPT_REV}"
+
 GOAL="svg-compat-v2"
 
 DIRS=(
