@@ -2912,6 +2912,27 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s326（html-semantics M2 切片 326）：`:filtered` 过滤态写通道——shim 过滤算法
+    // （filterable select，whatwg/html #12050 谱系）在输入值变化重算后写入被滤
+    // option 唯一选择器的 `\u001f` 连接串（空串 = 无过滤态；选择器是 CSS
+    // ident/class/structural token，不含控制字符，病态含 \x1f 的选择器经解析 miss
+    // 降级）。查询面无 retained Document 可直写，经 [`DOC_FILTERED_SELECTORS`] 槽 +
+    // [`sync_filtered_state`] 在查询构建点注入（`__zw_set_doc_active` 同型）。
+    // https://github.com/whatwg/html/issues/12050
+    sandbox.register_callback(
+        "__zw_set_doc_filtered",
+        Box::new(|args| {
+            let raw = args.first().map(String::from).unwrap_or_default();
+            let list: Vec<String> = if raw.is_empty() {
+                Vec::new()
+            } else {
+                raw.split('\u{1f}').map(String::from).collect()
+            };
+            DOC_FILTERED_SELECTORS.with(|slot| *slot.borrow_mut() = list);
+            "ok".into()
+        }),
+    );
+
     // `element.removeAttribute(name)` / `delete el.dataset.x` —— 真移除属性（区别于 SetAttr 空值；
     // 布尔/存在性属性须移除才 unset）。记 `DomMutation::RemoveAttr`。
     let m = Arc::clone(mutations);

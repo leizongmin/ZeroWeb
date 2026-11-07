@@ -27446,6 +27446,86 @@ return e;
     return typeof _st === 'string' && _st.length > 7 && _st.slice(-7) === ':SELECT';
   }
 
+  // ── s326（html-semantics M2 切片 326）：filterable select 过滤算法 ──
+  // whatwg/html #12050 谱系（open-ui combobox explainer）：`<input filter=idref>`
+  // 关联 select，输入值变化时文本不匹配的 option 进 `:filtered` 态。关联两形：
+  // ①sibling idref——filter 属性值 = 目标 select 的 id，且目标为 listbox 模式
+  //（multiple 属性或 size≠1；无 size 无 multiple 的 dropdown select 不受 sibling
+  // input 过滤——语料 'Sibling input and select pattern should not support
+  // dropdown select elements' 钉面）②nested——input 直父为 select（listbox/
+  // dropdown 皆可；html5ever 0.38 input pop-select 后 options 逸出 select，options
+  // 恒空 → 过滤自然空转）。命中判定 = option.textContent 对 input.value 的
+  // case-fold 子串包含（语料 ç/Ç、ÿ/Ÿ、𐐨/𐐀 全折叠面 toLowerCase 双侧覆盖）。
+  // beforefilter 事件 cancelable+bubbles 派发于 input，preventDefault 保持现态
+  // 不重算（select-beforefilter 语料钉面）。状态注入：被滤 option 的唯一选择器经
+  // `__zw_set_doc_filtered`（\u001f 连接）写桥线程局槽，逐查询 sync 进 Document
+  //（`:filtered` 判定源，见 zero-dom filtered 子模块）；**无关联输入不写槽**——
+  // 非过滤输入的 value 面零税，且多输入页已有过滤态不被无关联输入清除。
+  // FIXME（多输入真相合并）：同页多个关联输入各自重算只写自身命中集，跨输入并集
+  // 真相待语料钉面再扩；FIXME（样式面）：UA option:filtered{display:none} 呈现与
+  // getComputedStyle 挂账（渲染流 A2 appearance:base-select 前置，dom
+  // filtered_options 字段注记）。
+  function _zwFilterableRecompute(inputEl) {
+    if (!inputEl || typeof __zw_set_doc_filtered !== 'function') return;
+    var _fltAttr = null;
+    try { _fltAttr = inputEl.getAttribute('filter'); } catch (_eFlt1) { _fltAttr = null; }
+    var _fltTarget = null;
+    if (typeof _fltAttr === 'string' && _fltAttr !== '') {
+      var _fltT = null;
+      try { _fltT = document.getElementById(_fltAttr); } catch (_eFlt2) { _fltT = null; }
+      if (_fltT && _realTag(_fltT.__zwSelector, _fltT.__zwHandle) === 'SELECT') {
+        var _fltMult = false;
+        var _fltSize = 1;
+        try { _fltMult = !!_fltT.hasAttribute('multiple'); } catch (_eFlt3) {}
+        try {
+          var _fltSz = _fltT.getAttribute('size');
+          if (typeof _fltSz === 'string' && _fltSz !== '') {
+            var _fltSzN = parseInt(_fltSz, 10);
+            if (isFinite(_fltSzN)) _fltSize = _fltSzN;
+          }
+        } catch (_eFlt4) {}
+        // sibling 模式只支持 listbox select（multiple 或 size≠1）。
+        if (_fltMult || _fltSize !== 1) _fltTarget = _fltT;
+      }
+    } else if (_fltAttr == null) {
+      // nested 形：input 直父为 select（filter 属性缺省才探测——显式空 filter 值
+      // 非 idref，不回落 nested）。
+      try {
+        var _fltPe = inputEl.parentElement;
+        if (_fltPe && _realTag(_fltPe.__zwSelector, _fltPe.__zwHandle) === 'SELECT') _fltTarget = _fltPe;
+      } catch (_eFlt5) {}
+    }
+    if (!_fltTarget) return;
+    var _fltEv = null;
+    try { _fltEv = new globalThis.Event('beforefilter', { bubbles: true, cancelable: true }); } catch (_eFlt6) { _fltEv = null; }
+    if (_fltEv) {
+      var _fltOk = true;
+      try { _fltOk = inputEl.dispatchEvent(_fltEv) !== false; } catch (_eFlt7) { _fltOk = true; }
+      if (!_fltOk) return; // preventDefault：保持现态不重算
+    }
+    var _fltVal = '';
+    try { _fltVal = String(inputEl.value); } catch (_eFlt8) { _fltVal = ''; }
+    var _fltOut = [];
+    if (_fltVal !== '') {
+      var _fltNeedle = _fltVal.toLowerCase();
+      var _fltOpts = [];
+      try { _fltOpts = _fltTarget.options || []; } catch (_eFlt9) { _fltOpts = []; }
+      for (var _fltI = 0; _fltI < _fltOpts.length; _fltI++) {
+        var _fltOpt = _fltOpts[_fltI];
+        if (!_fltOpt) continue;
+        var _fltTxt = '';
+        try { _fltTxt = String(_fltOpt.textContent); } catch (_eFltA) { _fltTxt = ''; }
+        if (_fltTxt.toLowerCase().indexOf(_fltNeedle) < 0) {
+          // 唯一选择器寻址（__zwSelector 正向 → 反查 → id 兜底，:active 同款；
+          // 全失的 option 不可寻址跳过——`:filtered` 对其不命中，降级不误滤）。
+          var _fltSel = (typeof _zwActiveElSel === 'function') ? _zwActiveElSel(_fltOpt) : null;
+          if (_fltSel) _fltOut.push(_fltSel);
+        }
+      }
+    }
+    try { __zw_set_doc_filtered(_fltOut.join('\u001f')); } catch (_eFltB) {}
+  }
+
   // P1a select：`select.options` 集合（live）——`length`/索引访问/`item(i)` + `selectedIndex`/`value`
   // （与 select 同）。每次访问经 `querySelectorAll(sel + ' option')`（live，反映 dom_html）。
   // 各 option 经 R2664 唯一选择器，`.value`/`.selected` 读对。

@@ -619,6 +619,29 @@ thread_local! {
     static DOC_ACTIVE_SELECTOR: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
+// s326（html-semantics M2 切片 326）：`:filtered` 过滤态槽——filterable select
+// （whatwg/html #12050 谱系：`<input filter=idref>` 关联 select）的 shim 过滤算法
+// 在输入值变化时重算命中集，把被滤 option 的唯一选择器列表（`\u001f` 连接；空串 =
+// 无过滤态）经 `__zw_set_doc_filtered` 写入本槽。归属模型同 [`DOC_ACTIVE_SELECTOR`]：
+// per-document 状态、查询闭包同线程消费，thread_local 即正确归属；跨页残留选择器
+// 在异构文档解析 miss 即降级（同 `:active` 已接受的风险面）。
+// https://github.com/whatwg/html/issues/12050
+thread_local! {
+    static DOC_FILTERED_SELECTORS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// s326：把过滤态槽解析进文档（选择器列表 → NodeId，逐条 [`find_by_selector`]
+/// 求值；解析失败 = 目标已离开文档视图，跳过该项）。槽空即零成本直返（热路径
+/// 全部既有查询零变化——无 filterable 输入的文档不产生槽写入）。
+fn sync_filtered_state(doc: &mut Document) {
+    let sels = DOC_FILTERED_SELECTORS.with(|slot| slot.borrow().clone());
+    if sels.is_empty() {
+        return;
+    }
+    let ids: Vec<NodeId> = sels.iter().filter_map(|s| find_by_selector(doc, s)).collect();
+    doc.set_filtered_options(ids);
+}
+
 /// M2-S196：把按压态槽解析进文档（selector → NodeId，[`find_by_selector`] 求值；
 /// 解析失败 = 目标已离开文档视图，按无按压态处理）。幂等无条件覆盖：每条查询
 /// 路径（live doc / 视图缓存命中 / rebuild+链增量 / 字符串路径 re-parse）执行
@@ -631,6 +654,10 @@ fn sync_active_state(doc: &mut Document) {
         find_by_selector(doc, &sel)
     };
     doc.set_active_element(active);
+    // s326：过滤态随同一构建点注入（[`sync_filtered_state`] 槽空零成本）——所有
+    // 既有查询路径（live doc / 视图缓存 / 字符串 re-parse / matches / closest）
+    // 经本函数单漏斗继承，`:filtered` 与 `:active` 同批可见。
+    sync_filtered_state(doc);
 }
 
 /// t8b：structural path 快速通道——识别 [`structural_path_selector`] 生成的
@@ -3085,6 +3112,11 @@ pub fn parse_html_element_json_full(
     // HTML ns），`|div`/`|*`（EmptyNs）恒 miss。查询前还原（zero_dom
     // `Document::apply_empty_ns_markers`：ns 置空 + 剔标记属性）。
     doc.apply_empty_ns_markers();
+    // s326：`:filtered` 过滤态注入（[`sync_filtered_state`] 槽空零成本）——本函数是
+    // shim `matches`/元素子树查询（`_zwMQueryAll`）的宿主 re-parse 路径，不注入则
+    // `option.matches(':filtered')` 恒 miss（文档级 qsa 走 `with_query_doc` 漏斗已有
+    // 同批注入；`:active` 在本路径维持原状不补注入——匹配行为面变更超本切片范围）。
+    sync_filtered_state(&mut doc);
     let root = doc.root();
     let ids: Vec<NodeId> = if all {
         doc.query_selector_all(root, zero_dom::trim_ascii_ws(selector))

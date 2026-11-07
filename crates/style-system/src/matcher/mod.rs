@@ -333,6 +333,12 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // 只在 engine shim JS 栈，由管线逐帧注入 Document（镜像 :focus 通道），
             // 委派 `is_modal_dialog` 权威判定（与 `dialog:modal` UA 定位同源）。
             "modal" => doc.is_modal_dialog(element),
+            // `:filtered`：filterable select 过滤态（whatwg/html #12050 谱系——
+            // `<input filter=idref>` 关联 select，输入值变化时文本不匹配的 option
+            // 进入过滤态）。过滤态只在 engine shim JS 栈，由桥线程局槽逐查询注入
+            // Document（镜像 `:active` 的 `sync_active_state` 通道），委派
+            // `is_filtered_option` 权威判定。
+            "filtered" => doc.is_filtered_option(element),
             // 约束校验伪类（HTML §4.10.20 + CSS Selectors L4）：候选校验元素的约束状态。
             // 委派 Document 权威方法（R3284 与 DOM 选择器同源，逻辑在 dom/document/validation.rs）。
             "valid" => doc.is_valid_element(element),
@@ -1455,6 +1461,7 @@ const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
     "disabled",
     "empty",
     "enabled",
+    "filtered",
     "first-child",
     "first-of-type",
     "focus",

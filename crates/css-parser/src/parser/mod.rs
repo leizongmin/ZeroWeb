@@ -1093,6 +1093,9 @@ impl<'a> Parser<'a> {
                 | "spatial-navigation"
                 | "inert"
                 | "has-slotted"
+                // `:filtered`——filterable select 过滤态（whatwg/html #12050 谱系，
+                // open-ui combobox explainer）；matcher 臂经 Document 注入权威判定。
+                | "filtered"
                 | "open"
                 | "closed"
                 | "top-layer"

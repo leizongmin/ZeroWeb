@@ -6,6 +6,7 @@ use crate::node::*;
 use hashbrown::HashMap;
 use slotmap::SlotMap;
 
+mod filtered;
 mod focus;
 mod form_state;
 mod lang_dir;
@@ -161,6 +162,15 @@ pub struct Document {
     /// matcher 走每帧重建的 render Document，本字段不随 HTML 序列化 → 渲染样式面
     /// 须镜像 `inject_focus_state` 逐帧注入后才有真值（语料现只钉 DOM qSA 面）。
     active_element: Option<NodeId>,
+    /// 运行时过滤 option 集合（filterable select 的 `:filtered` 判定源，
+    /// whatwg/html #12050 谱系：`<input filter=idref>` 关联 select 的输入过滤）。
+    /// 解析不携带（过滤态只在 engine shim JS 栈），镜像 `active_element` 注入通道
+    /// （engine 桥线程局槽逐查询注入）；CSS matcher 与 DOM `querySelector` 共享
+    /// 同一权威。判定面见 `filtered` 子模块（`is_filtered_option`）。FIXME（渲染
+    /// 面挂账，同 `active_element`）：CSS 样式面（UA `option:filtered{display:none}`
+    /// 呈现 + getComputedStyle）待渲染流 A2 appearance:base-select 交付后镜像
+    /// `inject_focus_state` 逐帧注入，语料现只钉 DOM 查询面。
+    filtered_options: Vec<NodeId>,
 }
 
 impl Document {
@@ -189,6 +199,7 @@ impl Document {
             focus_element: None,
             modal_dialogs: Vec::new(),
             active_element: None,
+            filtered_options: Vec::new(),
         }
     }
 
@@ -217,6 +228,7 @@ impl Document {
             focus_element: None,
             modal_dialogs: Vec::new(),
             active_element: None,
+            filtered_options: Vec::new(),
         };
         // 重建 id 索引（builder 的 TreeSink 不维护 id_map；成本与旧实现（builder 的 TreeSink 不维护 id_map；成本与旧实现
         // create_element_with_qname 注册相同——O(E) 遍历 + 哈希插入）
@@ -1408,6 +1420,13 @@ impl Document {
         self.modal_dialogs = ids;
     }
 
+    /// 注入运行时过滤 option 集合（filterable select `:filtered`；shim 过滤算法
+    /// 经 engine 桥线程局槽逐查询注入，镜像 `set_active_element` 通道）。判定面见
+    /// `filtered` 子模块（`is_filtered_option`）。
+    pub fn set_filtered_options(&mut self, ids: Vec<NodeId>) {
+        self.filtered_options = ids;
+    }
+
     /// 获取文档 referrer（`document.referrer` 读，spec `dom-document-referrer`）。
     /// 来源页 URL（导航前的页面）；未注入 → `None`。
     pub fn referrer(&self) -> Option<&str> {
@@ -2140,6 +2159,30 @@ impl Document {
             // `:active` 运行时按压态（M2-S196），延后至此经 focus 子模块复评
             //（CSS Selectors L4 §15；注入通道见 set_active_element 注记）。
             crate::query::PseudoClass::Active => self.is_active_element(node),
+            // `:filtered` filterable select 过滤态（s326，whatwg/html #12050 谱系），
+            // 延后至此经 filtered 子模块复评（注入通道见 set_filtered_options 注记）。
+            crate::query::PseudoClass::Filtered => self.is_filtered_option(node),
+            // `:not(:filtered)` 否定嵌套（s326）——matches_full 对 inner 含 `:filtered`
+            // 的 Not 延后至此（deferred-true 否则泄漏成恒 false，见 query.rs Not 臂注）；
+            // 守卫臂只接 Filtered 形，其余 inner 维持 matches_full 直评语义（落 `_ => true`）。
+            // inner 静态成分（tag/class/attr）直评 + `:filtered` 经 Document 复评。
+            crate::query::PseudoClass::Not(inner)
+                if inner
+                    .pseudos
+                    .iter()
+                    .any(|p| matches!(p, crate::query::PseudoClass::Filtered)) =>
+            {
+                let static_hit = self
+                    .nodes
+                    .get(node)
+                    .and_then(|n| match &n.kind {
+                        NodeKind::Element(elem) => Some(elem),
+                        _ => None,
+                    })
+                    .map(|elem| inner.matches(elem))
+                    .unwrap_or(false);
+                !(static_hit && self.is_filtered_option(node))
+            }
             // `:valid`/`:invalid`/`:in-range`/`:out-of-range` 须约束属性上下文，延后至此经
             // validation 子模块复评（HTML §4.10.20 + CSS Selectors L4）。
             crate::query::PseudoClass::Valid => self.is_valid_element(node),

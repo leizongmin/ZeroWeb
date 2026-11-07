@@ -15538,6 +15538,14 @@
               // default 族 hasAttribute 读到幻影值——R3901 probe 'temporal→checkbox'
               // value attr absent 断言面）。读回走 dirty 缓存；sel 路径同步渲染面。
               if (!handle && sel) __zw_set_form_value(sel, _ivSan);
+              // s326（html-semantics M2 切片 326）：filterable select 过滤重算钩
+              //（whatwg/html #12050）——input value 变更（IDL set 与键入通道同臂，
+              // 键入经 __zw_text_input 直写 _inputValues 后到达此处）触发关联 select
+              // 的过滤态重算（无 filter 关联零税直返）。default/filename 模式不过滤
+              //（仅 value 模式输入面）。
+              if (typeof _zwFilterableRecompute === 'function') {
+                try { _zwFilterableRecompute(_makeProxy(sel, handle)); } catch (_eFltR) {}
+              }
             }
           } else {
             // R3906：TEXTAREA 写前校准基准（API 值换行归一形——\r\n 形变同值不折叠）。
