@@ -1,16 +1,18 @@
 # shadow-dom 扩面 — 语料滚动 + 通道重审承接
 
-**版本**: v1.1
+**版本**: v1.2（收口）
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
 2026-11-06（M0/M1/M2 + M3 Batch 1/2/3 + 尾段两小刀落地）；2026-11-07（余项
 收口契约落定；M3 清单 1 三刀收口——格式修复 + attach 恢复状态机 + canvas
 子树丢失修复，attachment solo 654P/0F，A/B P→F=0；清单 2 adoptedStyleSheets
-归口双侧留痕；M4 混合口径复测执行中）
-**状态**: Active——M0/M1/M2/M3 完成（清单 1 三刀认领门全过：P→F=0、
-vanished=0、F→P=178；attachment 170F→0；MEl 两刀回装评估定格正式撤销），
-清单 2 paperwork 落地。M4 冻结复测四判据核验中（shadow-dom topdir
-×1 口径已 94.36% ≥ 31.4% 门、custom-elements 逐 subtest 零漂移实证）。
-执行契约见「M3 收口与 M4 无人值守执行契约」节。
+归口双侧留痕；M4 混合口径复测收口——四判据全过，csv 收行，当日收口归档）
+**状态**: 已完成（2026-11-07）——DC-1~4 ✅：M0/M1/M2/M3 完成（清单 1 三刀
+认领门全过：P→F=0、vanished=0、F→P=178；attachment 170F→0；MEl 两刀回装
+评估定格正式撤销；清单 2 adoptedStyleSheets 归口双侧留痕），M4 混合口径
+复测四判据全过——shadow-dom topdir **53.84%**（门 ≥31.4%）、custom-elements
+逐 subtest 零回归（64.76%）、WC 全语料头条 8210→8437P 不回落、csv 收行
+（混合口径 13,087/11,668 = 89.16%）。裁定与法证见
+[M4 复测收口 evidence](shadow-dom-expansion/evidence/2026-11-07-m4-coverage-recap.md)。
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -436,6 +438,31 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   wpt-suites.csv 收行 → goal 终态更新 → 模式 A 收口归档。认领时点
   2026-11-07 10:57（runner CPU 6:26 进行中）。
 
+### 2026-11-07——M4 收口：混合口径复测四判据全过 + csv 收行
+
+- **×4 复跑落盘**：上一节采认的彼流 runner 未再出现在场（ps 核查），
+  本流首跑（scope 模式）随后台时限终止（~19 分钟，0 字节未落盘）后
+  **同参数原地重启完成**（exit 0）——`gethtml.html` ×4 =
+  **6,656P/0F/1T**（total 6,657；先例 6,908P 的 252 尾差全为
+  serial-matrix 尾部生成案未完成收集，共同 6,656 子测试状态零漂移，
+  法证归因见 evidence）。混合口径 **13,087 total / 11,668P = 89.16%**
+  （×1 全语料 9,856/8,437P，gethtml 换 ×4）。
+- **coverage 复测**（`merge_zw_results` max 合并 → wptfyi_gap coverage，
+  universe 与 coverage-2026-11-02 快照同源；报告 `.acceptance/` 不入库）：
+  shadow-dom topdir **8,264P/15,348 = 53.84%**（162/381 文件覆盖，66 全过；
+  立项基线 4.05%）；custom-elements **2,821P/4,356 = 64.76%**（台账
+  64.67% 仅升，+4P 为 M3 前批滚动顺带入账）。
+- **四判据裁定（全过，[evidence](shadow-dom-expansion/evidence/2026-11-07-m4-coverage-recap.md)）**：
+  ① topdir 53.84% ≥ 31.4%（1.71 倍余量）；② custom-elements 逐 subtest
+  零回归（before/after 各 3,848 子测试集合恒等、2821P 恒等、P→non-P=0、
+  vanished=0）；③ WC 全语料头条 8,210→8,437P 不回落（M4 细则只产出 WC
+  通道结果，M3 收口刀均 JS-only additive）；④ csv 收行（本提交，
+  混合口径 13,087/11,668 = 89.16%，evidence 路径随归档补 `archive/`
+  前缀）。DC-4 成立，DC-1~4 全落。
+- **收口归档**：模式 A（照 34/41 号先例）随本提交序列执行——整树迁
+  `docs/goal/archive/`、archive README 登记、引用同步（csv 证据路径补
+  前缀）、42 号启动器随归档删除（语料预置脚本保留）。
+
 ## M3 收口与 M4 无人值守执行契约（2026-11-07）
 
 本节为无人值守执行的自足依据：余项全部在册、可自主完成，不设外部等待。
@@ -495,6 +522,11 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   2. custom-elements 既有账 64.67% 台账逐 subtest 零回归；
   3. 全量头条不回落；
   4. `wpt-suites.csv` 收行（照 41 号先例，数据行 + evidence 路径）。
+  ✅ **完成（2026-11-07）**：四判据全过——① 53.84%（8,264/15,348，门值
+  1.71 倍）②逐 subtest 零回归（3,848 案集合恒等、2821P 恒等）③头条
+  8,210→8,437P 不回落 ④csv 行（混合口径 13,087/11,668 = 89.16%）；×4
+  6,657 vs 先例 6,908 尾差 252 为 serial-matrix 收集截断（共同案零漂移），
+  法证见 [M4 复测收口 evidence](shadow-dom-expansion/evidence/2026-11-07-m4-coverage-recap.md)。
 - **收口归档**：四判据全过 + DC-1~4 全落后，本流自行执行模式 A 归档（照
   34/41 号先例）：整树迁 `docs/goal/archive/`、`archive/README.md` 登记、
   goals README 行改已收口、全仓引用同步（**含 wpt-suites.csv 证据路径列补
