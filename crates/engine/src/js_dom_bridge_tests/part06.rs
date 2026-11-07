@@ -5290,3 +5290,112 @@ i.value = "Z2";
         "无闩：宿主账兜底照常派发"
     );
 }
+
+#[test]
+fn test_cssom_declared_color_invalid_hex_rejection_t47() {
+    // T47 DF-3：CSSOM declared 值 hex 臂全串校验（CSS Color 4 §16.1 <hex-color>：'#' 后
+    // 恰为 3/4/6/8 个 hex digit 全串）。旧实现 parseInt 前缀语义放行部分非法串（'#12345g'
+    // → rgb(18, 52, 5)、'#1234567g' → rgba(18, 52, 86, 0.027)——'g' 前缀截断），长度不符
+    // 或含非 hex digit 的 token 原文透传（声明保留），而 Blink 拒绝整个声明。活体对照
+    // Chrome 154（cssText 写/IDL 写/setProperty 写/insertRule 四路均丢弃、混合值仅有效
+    // 声明存活、先有效后非法赋值保留原值——evidence t47-blink-oracle-result.txt）。
+    // 非法 hex 两臂：A=全串含非 hex digit、B=长度∉{3,4,6,8}；邻近变体含 custom property
+    // 逐字保持（DF-5）与有效 hex 对照（全串校验不误伤合法归一）。
+    // https://www.w3.org/TR/css-color-4/#hex-notation
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 逐案写 rule.style（cssText 整体写 / IDL 写 / setProperty 写 / insertRule）→ 读回。
+    // 同一对象复用，整体写覆盖全部声明。
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'color: #12345g'; __p('hex6BadChar', __st.color);\
+             __st.cssText = 'color: #1234567g'; __p('hex8BadChar', __st.color);\
+             __st.cssText = 'color: #GGG'; __p('hex3UpperBad', __st.color);\
+             __st.cssText = 'color: #1x'; __p('hex2BadChar', __st.color);\
+             __st.cssText = 'color: #12g'; __p('hex3BadChar', __st.color);\
+             __st.cssText = 'color: #12'; __p('hexLen2', __st.color);\
+             __st.cssText = 'color: #12345'; __p('hexLen5', __st.color);\
+             __st.cssText = 'color: #1234567'; __p('hexLen7', __st.color);\
+             __st.cssText = 'color: #123456789'; __p('hexLen9', __st.color);\
+             __st.cssText = 'color: #'; __p('hashOnly', __st.color);\
+             __st.cssText = 'border: 1px solid #12g'; __p('mixedBorderInvalid', __st.cssText);\
+             __st.cssText = 'width: 1px; color: #1x'; __p('mixedDeclsKeepValid', __st.cssText);\
+             __st.cssText = 'color: red'; __st.color = '#12345g'; __p('idlInvalidKeepsPrev', __st.color);\
+             __st.cssText = 'color: red'; __st.setProperty('color', '#12345g'); __p('setPropertyInvalidKeepsPrev', __st.color);\
+             __st.cssText = '--x: #1x'; __p('customPropVerbatim', __st.getPropertyValue('--x'));\
+             __st.cssText = 'color: #f00'; __p('validHex3Control', __st.color);\
+             __st.cssText = 'color: #00ff0088'; __p('validHex8Control', __st.color);\
+             document.styleSheets[0].insertRule('q { color: #12g; width: 2px }', 1);\
+             __p('insertRuleDropsInvalid', document.styleSheets[0].cssRules[1].cssText);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"hex6BadChar":"","hex8BadChar":"","hex3UpperBad":"","hex2BadChar":"","hex3BadChar":"","hexLen2":"","hexLen5":"","hexLen7":"","hexLen9":"","hashOnly":"","mixedBorderInvalid":"","mixedDeclsKeepValid":"width: 1px;","idlInvalidKeepsPrev":"red","setPropertyInvalidKeepsPrev":"red","customPropVerbatim":"#1x","validHex3Control":"rgb(255, 0, 0)","validHex8Control":"rgba(0, 255, 0, 0.533)","insertRuleDropsInvalid":"q { width: 2px; }"}"##,
+        "T47 非法 hex 全串校验两臂（拒绝路径 + 邻近变体）：Blink 拒绝语义——声明整体丢弃/赋值忽略"
+    );
+}
+
+#[test]
+fn test_cssom_declared_color_alpha_boundary_arms_t47() {
+    // T47 TV-4：legacy alpha 两边界臂钉测（T46 审查指出漏钉）。a8=255 收缩臂（rgb 形）与
+    // a8=0 臂（rgba(…, 0) 形），8 位与 4 位 hex 两族各两案。CSS Color 4 §16.1.1 legacy
+    // alpha + §16.2 declared 值序列化；活体对照 Chrome 154（evidence
+    // t47-blink-oracle-result.txt alpha8-ff/alpha8-00/alpha4-ff/alpha4-00 四案同形）。
+    // https://www.w3.org/TR/css-color-4/#hex-notation
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'color: #ff0000ff'; __p('hex8AlphaFF', __st.color);\
+             __st.cssText = 'color: #ff000000'; __p('hex8Alpha00', __st.color);\
+             __st.cssText = 'color: #f00f'; __p('hex4AlphaFF', __st.color);\
+             __st.cssText = 'color: #f000'; __p('hex4Alpha00', __st.color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r#"{"hex8AlphaFF":"rgb(255, 0, 0)","hex8Alpha00":"rgba(255, 0, 0, 0)","hex4AlphaFF":"rgb(255, 0, 0)","hex4Alpha00":"rgba(255, 0, 0, 0)"}"#,
+        "T47 alpha 两边界臂（a8=255 收缩 rgb 形 / a8=0 rgba..,0 形，4/8 位两族）"
+    );
+}

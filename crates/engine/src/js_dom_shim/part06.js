@@ -1841,9 +1841,11 @@
         // r2809/r3276 insertRule/addRule cssText 子串钉）。custom property（`--` 前缀）
         // 值为字面 token 流不归一；无 color token 的值原文返回（空白形态保持，零重排）。
         // 函数值（rgb()/hsl()）内含空格/逗号不满足整 token 匹配，原文透传（Blink 会
-        // 归一函数名大小写与间距——本面未覆盖）。
+        // 归一函数名大小写与间距——本面未覆盖）。非法 hex token（T47 DF-3 全串校验
+        // 失败）→ 整声明丢弃（Blink 拒绝语义，活体四写路同形）。
         var normVal = name.charAt(0) === '-' && name.charAt(1) === '-'
           ? val : _zwNormalizeDeclValue(val);
+        if (normVal === null) continue;
         decls.push({ name: _styleDeclName(name), value: normVal });
       }
     }
@@ -1876,29 +1878,36 @@
     var t = tok.toLowerCase();
     if (t.charAt(0) === '#') {
       var hex = t.slice(1);
+      // T47 DF-3：全串校验——CSS Color 4 §16.1 <hex-color>：'#' 后恰为 3/4/6/8 个 hex
+      // digit 全串。旧实现 parseInt 前缀语义放行部分非法串（'#12345g' → rgb(18, 52, 5)、
+      // '#1234567g' → rgba(…, 0.027)——'g' 前截断），长度不符或含非 hex digit 者原文透传
+      //（声明保留）；Blink 拒绝整个声明（Chrome 154 活体 cssText 写/IDL 写/setProperty/
+      // insertRule 四路同形——js_dom_bridge_tests::
+      // test_cssom_declared_color_invalid_hex_rejection_t47）。非法返 null，由
+      // _zwNormalizeDeclValue 传至 _parseDeclarations/setProp 丢弃声明或忽略赋值。
+      // https://www.w3.org/TR/css-color-4/#hex-notation
+      if (hex.length !== 3 && hex.length !== 4 && hex.length !== 6 && hex.length !== 8) return null;
+      if (!/^[0-9a-f]+$/.test(hex)) return null;
       if (hex.length === 3 || hex.length === 4) {
         var expand = '';
         for (var i = 0; i < hex.length; i++) expand += hex.charAt(i) + hex.charAt(i);
         hex = expand;
       }
-      if (hex.length === 6 || hex.length === 8) {
-        var r = parseInt(hex.slice(0, 2), 16);
-        var g = parseInt(hex.slice(2, 4), 16);
-        var b = parseInt(hex.slice(4, 6), 16);
-        if (isNaN(r) || isNaN(g) || isNaN(b)) return tok;
-        if (hex.length === 8) {
-          var a8 = parseInt(hex.slice(6, 8), 16);
-          if (a8 === 255) return 'rgb(' + r + ', ' + g + ', ' + b + ')';
-          return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + _zwAlphaText(a8) + ')';
-        }
-        return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+      var r = parseInt(hex.slice(0, 2), 16);
+      var g = parseInt(hex.slice(2, 4), 16);
+      var b = parseInt(hex.slice(4, 6), 16);
+      if (hex.length === 8) {
+        var a8 = parseInt(hex.slice(6, 8), 16);
+        if (a8 === 255) return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+        return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + _zwAlphaText(a8) + ')';
       }
-      return tok;
+      return 'rgb(' + r + ', ' + g + ', ' + b + ')';
     }
     if (t === 'transparent' || t === 'currentcolor' || _zwNamedColorSet.indexOf('|' + t + '|') >= 0) return t;
     return tok;
   }
-  // 声明值逐 token 归一——无 color token 时返回原文（空白形态保持）。
+  // 声明值逐 token 归一——无 color token 时返回原文（空白形态保持）；含非法 color
+  // token（T47 DF-3 全串校验失败）返回 null（整值拒绝，调用方丢弃声明/忽略赋值）。
   function _zwNormalizeDeclValue(value) {
     var raw = String(value == null ? '' : value);
     var toks = raw.split(/\s+/);
@@ -1906,6 +1915,7 @@
     var changed = false;
     for (var i = 0; i < toks.length; i++) {
       var norm = _zwNormalizeColorToken(toks[i]);
+      if (norm === null) return null;
       if (norm !== toks[i]) changed = true;
       out.push(norm);
     }
@@ -1961,6 +1971,9 @@
       // js_dom_bridge_tests::test_cssom_declared_color_token_serialization_t46）；
       // custom property 值为字面 token 流不归一（DF-5）。
       var v = prop.charAt(0) === '-' && prop.charAt(1) === '-' ? raw : _zwNormalizeDeclValue(raw);
+      // T47 DF-3：非法 color token（全串校验失败）→ 本次赋值忽略，保留原值（Blink
+      // 活体 inv-idl-after-valid / inv-setprop-after-valid 案：red 后写 #12345g 仍 red）。
+      if (v === null) return;
       var idx = findIdx(prop);
       if (v === '') { // 空串 = remove（spec 一致）
         if (idx >= 0) { decls.splice(idx, 1); rebuild(); }

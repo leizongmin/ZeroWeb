@@ -38,6 +38,11 @@ pub fn parse_named_color(value: &str) -> Option<ColorValue> {
         "beige" => rgba(245, 245, 220),
         "bisque" => rgba(255, 228, 196),
         "blanchedalmond" => rgba(255, 235, 205),
+        // T47：brown / blueviolet（CSS Color 4 §6.1 命名色补键——表缺致声明被拒、回落
+        // 初始色；Chrome 154 活体 gCS rgb(165, 42, 42) / rgb(138, 43, 226)）。
+        // https://www.w3.org/TR/css-color-4/#named-colors
+        "blueviolet" => rgba(138, 43, 226),
+        "brown" => rgba(165, 42, 42),
         "burlywood" => rgba(222, 184, 135),
         "cadetblue" => rgba(95, 158, 160),
         "chartreuse" => rgba(127, 255, 0),
