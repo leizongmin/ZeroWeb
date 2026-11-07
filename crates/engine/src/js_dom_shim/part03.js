@@ -29564,7 +29564,11 @@ return e;
     var readDeclValue = function(name) {
       var raw = readRaw();
       if (!raw) return null;
-      var want = _stylePropName(name);
+      // T50：名参经 `_styleDeclName` 归一（与写/删同函数保证键一致）——全大写书写形
+      //（'COLOR'/'Z-INDEX'）折叠 kebab（Blink 154 活体：setProperty/getPropertyValue/
+      // removeProperty 名参 = CSS attribute ASCII case-insensitive，t50 oracle b01/b02/
+      // g03 案）；camelCase 与 vendor camel 语义不变（R2810/R3023）。
+      var want = _styleDeclName(name);
       // DF-6（R5114 返修二轮）：`--` 自定义属性名大小写敏感（css-variables-1 §2）——与 host
       // style_prop_key 的写存储/删除（保留原 case）精确比对；跨 case 查询不命中。常规属性名
       // 维持既有大小写不敏感比对（R3213 末次非空匹配语义不变）。
@@ -29589,7 +29593,16 @@ return e;
       return v == null ? '' : _styleValueAndPriority(v).value;
     };
     var setProp = function(name, value) {
-      var prop = _stylePropName(name);
+      // T50：写面名参接 `_styleDeclName`（与规则样式/声明文本面同函数，DF-1 同根收口）——
+      // 全大写书写形折叠（'COLOR'→'color'，此前逐大写加连字符落 '-c-o-l-o-r' 垃圾名，
+      // cascade 不识别、值归一属性上下文门失配）；custom property `--` 前缀保形
+      //（css-variables-1 §2 名 case-sensitive——"custom property names are only equal
+      // to each other if they are identical"）；vendor 形 `webkitTransform`/`-WEBKIT-`
+      // kebab 大写折叠 → `-webkit-transform`（camelCase IDL 语义不变，R3023）。读/删
+      // （readDeclValue/removeProperty）同函数键一致。Blink 154 活体 oracle（t50 oracle
+      // b 组/g 组）：setProperty/gPV/removeProperty 名参 ASCII case-insensitive kebab。
+      // https://www.w3.org/TR/cssom-1/#camel-cased-attribute-to-css-attribute
+      var prop = _styleDeclName(name);
       // T49：声明值接 T48 属性上下文归一管线（_zwNormalizeDeclValue，part06）——与声明表
       //（规则样式）路径同语义：CSS-wide keyword 全属性 ASCII lowercase（CSS Cascading 4
       // §7.1-7.4）、<color> 上下文 hex/命名/系统色/legacy 函数文本归一（CSS Color 4 §16.2/
@@ -29649,7 +29662,9 @@ return e;
         if (ps === 'removeProperty') {
           return function(name) {
             var prev = readProp(name);
-            var prop = _stylePropName(name);
+            // T50：与写/读同 `_styleDeclName` 归一（'COLOR' 删 'color' 声明——Blink 154
+            // 活体 t50 oracle b13/g04 案，removeProperty 名参 ASCII case-insensitive）。
+            var prop = _styleDeclName(name);
             if (handle && typeof __zw_remove_style_handle === 'function') {
               __zw_remove_style_handle(handle, prop);
             } else if (!handle && typeof __zw_remove_style === 'function') {

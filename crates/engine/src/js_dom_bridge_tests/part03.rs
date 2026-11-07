@@ -4372,3 +4372,181 @@ fn test_cssom_inline_style_csstext_quoted_semicolon_t49fix() {
         "T49 返修 DF-2 cssText 引号/注释感知切分全案（url 引号形 + content 引号形整值往返 + 注释分号不切 + 转义引号）"
     );
 }
+
+#[test]
+fn test_cssom_idl_write_name_normalization_t50() {
+    // T50（IDL 写面属性名归一）：`el.style` 三处键位点（写 setProp / 读 readDeclValue /
+    // 删 removeProperty）直用 `_stylePropName`——全大写书写形（`COLOR`/`Z-INDEX`）被逐大写
+    // 字母加连字符（JS camelCase IDL 语义）产出 '-c-o-l-o-r' 垃圾名，值归一属性上下文门
+    // 失配。本钉接共享 `_styleDeclName`（part06:2097，T49 修规则面同函数）——大写连续段
+    // 折叠 + custom property 保形 + webkit 前缀/vendor kebab 归一。
+    // Blink 154 活体 oracle（t50-blink-oracle-result.txt / t50-blink-oracle2-result.txt）：
+    // setProperty/gPV/removeProperty 名参 = CSS attribute（kebab）ASCII case-insensitive
+    //（'COLOR'/'Z-INDEX'/'MARGIN-TOP'/'FLOAT'/'-WEBKIT-TRANSFORM' 全案接受）；custom
+    // property case-sensitive 保形（--X/--x 双存）；大写名值归一门生效（named/hex/csswide/
+    // 系统色归一、badhex 拒保留原值、!important 存活）。
+    // **偏离披露**（设计卡 §5）：① Blink IDL named setter 大写名落 expando 不落声明，
+    // 本仓落归一声明（值保留，supported-name 全表超边界）；② Blink setProperty 拒
+    // camelCase 名参，本仓归一落库（基线即接受，非本片新增）；③ Blink 154 -webkit-transform
+    // alias 到 transform 序列化，本仓维持 CSSOM 通用形（R3023）；④ 未知名（FOOBAR/ZINDEX/
+    // CSSFLOAT）Blink expando 拒，本仓折叠落库——形状钉披露。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    // https://www.w3.org/TR/css-variables-1/#defining-custom-properties
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body>\
+         <div id=\"d1\"></div><div id=\"d2\"></div><div id=\"d3\"></div>\
+         <div id=\"d4\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('#d1').style;\
+             globalThis.__st2 = document.querySelector('#d2').style;\
+             globalThis.__st3 = document.querySelector('#d3').style;\
+             globalThis.__st4 = document.querySelector('#d4').style;\
+             globalThis.__rs = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.setProperty('COLOR', 'blue');\
+             __p('spUpperNameCssText', __st.cssText);\
+             __p('spUpperNameCamelRead', __st.color);\
+             __p('spUpperNameGpvUpper', __st.getPropertyValue('COLOR'));\
+             __p('spUpperNameItem0', __st.item(0));\
+             __p('spUpperNameLen', __st.length);\
+             __st.setProperty('Z-INDEX', '6');\
+             __p('spUpperKebabZCssText', __st.cssText);\
+             __p('spUpperKebabZCamelRead', __st.zIndex);\
+             __st.setProperty('MARGIN-TOP', '3px');\
+             __p('spUpperKebabMtCssText', __st.cssText);\
+             __st.setProperty('MARGIN-BOTTOM', '4px');\
+             __p('spUpperKebabMbCamelRead', __st.marginBottom);\
+             __st.setProperty('FLOAT', 'left');\
+             __p('spUpperFloatCssFloatRead', __st.cssFloat);\
+             __p('spUpperFloatItem4', __st.item(4));\
+             __p('spGpvCssFloatAlias', __st.getPropertyValue('cssFloat'));\
+             __st.setProperty('COLOR', 'RED');\
+             __p('upperNameUpperValue', __st.color);\
+             __st.setProperty('COLOR', '#FF0000');\
+             __p('upperNameHex', __st.color);\
+             __st.setProperty('COLOR', 'INHERIT');\
+             __p('upperNameCww', __st.color);\
+             __st.setProperty('COLOR', 'CANVAS');\
+             __p('upperNameSys', __st.color);\
+             __st.setProperty('COLOR', 'red');\
+             __st.setProperty('COLOR', '#12g');\
+             __p('upperNameBadHexIgnored', __st.color);\
+             __st.COLOR = 'RED !important';\
+             __p('upperNameImpValue', __st.color);\
+             __p('upperNameImpPriority', __st.getPropertyPriority('COLOR'));\
+             __st.setProperty('COLOR', 'red');\
+             __st.setProperty('--X', 'v1');\
+             __st.setProperty('--x', 'v2');\
+             __p('customCIXCssText', __st.cssText);\
+             __p('customCIXRead', __st.getPropertyValue('--X'));\
+             __p('customCIxRead', __st.getPropertyValue('--x'));\
+             __p('customCILen', __st.length);\
+             __st['--Y'] = 'v3';\
+             __p('customBracketYRead', __st.getPropertyValue('--Y'));\
+             __p('customBracketLowerYRead', __st.getPropertyValue('--y'));\
+             globalThis.__rmPrev = __st.removeProperty('COLOR');\
+             __p('rmUpperPrev', globalThis.__rmPrev);\
+             __p('rmUpperAfter', __st.color);\
+             __p('rmUpperLen', __st.length);\
+             __st2.setProperty('COLOR', 'red');\
+             __st2.marginTop = '1px';\
+             __st2.webkitTransform = 'scale(2)';\
+             __p('enumCssText', __st2.cssText);\
+             __p('enumLen', __st2.length);\
+             __p('enumItem0', __st2.item(0));\
+             __p('enumItem1', __st2.item(1));\
+             __p('enumItem2', __st2.item(2));\
+             __p('enumGpvUpper', __st2.getPropertyValue('COLOR'));\
+             __p('enumUpperRead', __st2.COLOR);\
+             __p('enumKebabBracketRead', __st2['margin-top']);\
+             __rs.setProperty('COLOR', 'red');\
+             __p('inlineRuleGpvEqual', __st2.getPropertyValue('COLOR') === __rs.getPropertyValue('COLOR'));\
+             __p('ruleSpUpperCssText', __rs.cssText);\
+             __rs.COLOR = 'blue';\
+             __p('ruleUpperNameCssText', __rs.cssText);\
+             __st3.fooBar = 'x2';\
+             __p('unknownCamelCssText', __st3.cssText);\
+             __p('unknownCamelRead', __st3.fooBar);\
+             __st3.FOOBAR = 'x3';\
+             __p('unknownUpperCssText', __st3.cssText);\
+             __st3.ZINDEX = '5';\
+             __p('unknownZindexCssText', __st3.cssText);\
+             __st3.CSSFLOAT = 'left';\
+             __p('unknownCssFloatCssText', __st3.cssText);\
+             __p('unknownCssFloatSpecialRead', __st3.cssFloat);\
+             __st3.setProperty('FOOBAR', 'x4');\
+             __p('unknownSpUpperCssText', __st3.cssText);\
+             __st3.setProperty('marginTop', '7px');\
+             __p('spCamelAcceptedCssText', __st3.cssText);\
+             __p('spCamelRead', __st3.marginTop);\
+             __st4.COLOR = 'red';\
+             __p('idlUpperCssText', __st4.cssText);\
+             __p('idlUpperCamelRead', __st4.color);\
+             __p('idlUpperUpperRead', __st4.COLOR);\
+             __p('idlUpperGpvUpper', __st4.getPropertyValue('COLOR'));\
+             __st4['Z-INDEX'] = '5';\
+             __p('idlUpperKebabCssText', __st4.cssText);\
+             __p('idlUpperKebabCamelRead', __st4.zIndex);\
+             __st4['MARGIN-BOTTOM'] = '4px';\
+             __p('idlUpperMbCamelRead', __st4.marginBottom);\
+             __st4.marginTop = '2px';\
+             __p('camelMtRead', __st4.marginTop);\
+             __st4.cssFloat = 'left';\
+             __p('camelCssFloatRead', __st4.cssFloat);\
+             __st4.webkitTransform = 'scale(2)';\
+             __p('vendorCamelRead', __st4.webkitTransform);\
+             __p('vendorCamelCssText', __st4.cssText);\
+             __st4['-WEBKIT-TRANSFORM'] = 'scale(3)';\
+             __p('vendorKebabUpperCssText', __st4.cssText);\
+             __p('vendorKebabUpperRead', __st4.webkitTransform);\
+             __st4['-webkit-transform'] = 'scale(4)';\
+             __p('vendorKebabLowerRead', __st4.webkitTransform);\
+             __p('vendorGpvUpperKebab', __st4.getPropertyValue('-WEBKIT-TRANSFORM'));\
+             __st4.WEBKITTransform = 'scale(5)';\
+             __p('vendorCapsCamelCssText', __st4.cssText);\
+             __p('vendorCapsCamelRead', __st4.webkitTransform);\
+             __st4['Z-INDEX'] = '6 !important';\
+             __p('idlUpperImpCssText', __st4.cssText);\
+             __p('idlUpperImpPriority', __st4.getPropertyPriority('Z-INDEX'));\
+             __p('idlUpperImpRead', __st4.zIndex);\
+             __st4.COLOR = 'RED';\
+             __p('idlUpperUpperValueCssText', __st4.cssText);\
+             __p('idlUpperUpperValueRead', __st4.color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // gCS 渲染可见性：inline 'color: red'（大写名写入）进 cascade——基线垃圾名
+    // '-c-o-l-o-r' 不被 parser 识别（值不丢但渲染静默失效）。独立 execute 承载
+    // mutation 应用（T47 先例）。
+    sandbox
+        .execute(
+            "globalThis.__p('enumGcsColor',\
+             getComputedStyle(document.querySelector('#d2')).color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"spUpperNameCssText":"color: blue","spUpperNameCamelRead":"blue","spUpperNameGpvUpper":"blue","spUpperNameItem0":"color","spUpperNameLen":1,"spUpperKebabZCssText":"color: blue; z-index: 6","spUpperKebabZCamelRead":"6","spUpperKebabMtCssText":"color: blue; z-index: 6; margin-top: 3px","spUpperKebabMbCamelRead":"4px","spUpperFloatCssFloatRead":"left","spUpperFloatItem4":"float","spGpvCssFloatAlias":"left","upperNameUpperValue":"red","upperNameHex":"rgb(255, 0, 0)","upperNameCww":"inherit","upperNameSys":"canvas","upperNameBadHexIgnored":"red","upperNameImpValue":"red","upperNameImpPriority":"important","customCIXCssText":"z-index: 6; margin-top: 3px; margin-bottom: 4px; float: left; color: red; --X: v1; --x: v2","customCIXRead":"v1","customCIxRead":"v2","customCILen":7,"customBracketYRead":"v3","customBracketLowerYRead":"","rmUpperPrev":"red","rmUpperAfter":"","rmUpperLen":7,"enumCssText":"color: red; margin-top: 1px; -webkit-transform: scale(2)","enumLen":3,"enumItem0":"color","enumItem1":"margin-top","enumItem2":"-webkit-transform","enumGpvUpper":"red","enumUpperRead":"red","enumKebabBracketRead":"1px","inlineRuleGpvEqual":true,"ruleSpUpperCssText":"margin: 0; color: red;","ruleUpperNameCssText":"margin: 0; color: blue;","unknownCamelCssText":"foo-bar: x2","unknownCamelRead":"x2","unknownUpperCssText":"foo-bar: x2; foobar: x3","unknownZindexCssText":"foo-bar: x2; foobar: x3; zindex: 5","unknownCssFloatCssText":"foo-bar: x2; foobar: x3; zindex: 5; cssfloat: left","unknownCssFloatSpecialRead":"","unknownSpUpperCssText":"foo-bar: x2; zindex: 5; cssfloat: left; foobar: x4","spCamelAcceptedCssText":"foo-bar: x2; zindex: 5; cssfloat: left; foobar: x4; margin-top: 7px","spCamelRead":"7px","idlUpperCssText":"color: red","idlUpperCamelRead":"red","idlUpperUpperRead":"red","idlUpperGpvUpper":"red","idlUpperKebabCssText":"color: red; z-index: 5","idlUpperKebabCamelRead":"5","idlUpperMbCamelRead":"4px","camelMtRead":"2px","camelCssFloatRead":"left","vendorCamelRead":"scale(2)","vendorCamelCssText":"color: red; z-index: 5; margin-bottom: 4px; margin-top: 2px; float: left; -webkit-transform: scale(2)","vendorKebabUpperCssText":"color: red; z-index: 5; margin-bottom: 4px; margin-top: 2px; float: left; -webkit-transform: scale(3)","vendorKebabUpperRead":"scale(3)","vendorKebabLowerRead":"scale(4)","vendorGpvUpperKebab":"scale(4)","vendorCapsCamelCssText":"color: red; z-index: 5; margin-bottom: 4px; margin-top: 2px; float: left; -webkit-transform: scale(5)","vendorCapsCamelRead":"scale(5)","idlUpperImpCssText":"color: red; margin-bottom: 4px; margin-top: 2px; float: left; -webkit-transform: scale(5); z-index: 6 !important","idlUpperImpPriority":"important","idlUpperImpRead":"6","idlUpperUpperValueCssText":"margin-bottom: 4px; margin-top: 2px; float: left; -webkit-transform: scale(5); z-index: 6 !important; color: red","idlUpperUpperValueRead":"red","enumGcsColor":"rgb(255, 0, 0)"}"##,
+        "T50 IDL 写面名归一全案（setProperty 大写 kebab + IDL 大写名 + vendor 形 + custom CI + 值归一门 + 未知名披露形状 + 渲染可见）"
+    );
+}
