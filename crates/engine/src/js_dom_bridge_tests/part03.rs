@@ -4550,3 +4550,87 @@ fn test_cssom_idl_write_name_normalization_t50() {
         "T50 IDL 写面名归一全案（setProperty 大写 kebab + IDL 大写名 + vendor 形 + custom CI + 值归一门 + 未知名披露形状 + 渲染可见）"
     );
 }
+
+#[test]
+fn test_cssom_idl_whitespace_name_t50fix() {
+    // T50 返修 DF-T50-1：`_styleDeclName`（part06）的 `--` 前缀早退**先于 trim**——
+    // ① 尾空白名参（'--FOO '）早退透传未修剪键：写面落 host（merge_style_property
+    // 存储侧 `property.trim()`）成 '--FOO'，读面 readDeclValue 以未修剪 want
+    //（'--FOO '）与 raw 中已修剪名（'--FOO'）精确比对不命中 → 读回空；删面
+    // removeProperty 同形 prev 读空。② 两侧空白名参（'  --FOO  '）首字符非 '-'，
+    // 早退失守落入折叠臂：[A-Z]+ 折小写丢 custom 名 case（'--FOO'→'--foo'），
+    // 违反 css-variables-1 §2 名 case-sensitive 保形。基线 `_stylePropName` 先
+    // trim 后 `--` 保形，两形均正确——本钉锁返修后回归基线等价（写/读/删键一致）。
+    // Blink 154 活体 oracle3（t50-oracle3-result.txt）：**名参全程不 trim**——
+    // 纯尾空白 custom 名（'--FOO '）原样落键（序列化转义 '--FOO\\ : v1;'，读回
+    // '--FOO ' 命中、'--FOO' 不命中，写读一致）；首空白名参（' --FOO'/
+    // '  --FOO  '）与空白常规名参（' COLOR '/' Z-INDEX '/' FLOAT '）Blink 整体
+    // 拒绝不落库。**偏离披露**（设计卡 §5 同款）：本仓 host merge 存储侧契约
+    //（property.trim()）使未修剪键不可表示，修法取 trim 前置 = 写读键一致 +
+    // 基线等价，非 Blink 逐字保真（'--FOO ' 读 '--FOO' 命中为本仓差异形状；
+    // '  --FOO  ' 本仓归一落库 vs Blink 拒）——空白常规名参接受为基线即有
+    // 语义（sanity 案锁定不随本修变化）。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    // https://www.w3.org/TR/css-variables-1/#defining-custom-properties
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body>\
+         <div id=\"d1\"></div><div id=\"d2\"></div><div id=\"d3\"></div>\
+         <div id=\"d4\"></div></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('#d1').style;\
+             globalThis.__st2 = document.querySelector('#d2').style;\
+             globalThis.__st3 = document.querySelector('#d3').style;\
+             globalThis.__st4 = document.querySelector('#d4').style;\
+             globalThis.__rs = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.setProperty('--FOO ', 'v1');\
+             __p('wsTrailCssText', __st.cssText);\
+             __p('wsTrailGpvTrail', __st.getPropertyValue('--FOO '));\
+             __p('wsTrailGpvClean', __st.getPropertyValue('--FOO'));\
+             __p('wsTrailItem0', __st.item(0));\
+             __p('wsTrailLen', __st.length);\
+             __st2.setProperty('  --FOO  ', 'v2');\
+             __p('wsBothCssText', __st2.cssText);\
+             __p('wsBothGpvClean', __st2.getPropertyValue('--FOO'));\
+             __p('wsBothItem0', __st2.item(0));\
+             __p('wsBothLen', __st2.length);\
+             __st3.setProperty('--BAZ', 'v4');\
+             globalThis.__rmPrev = __st3.removeProperty('--BAZ ');\
+             __p('wsRmPrev', globalThis.__rmPrev);\
+             __p('wsRmAfter', __st3.getPropertyValue('--BAZ'));\
+             __p('wsRmLen', __st3.length);\
+             __rs.setProperty('--QRU ', 'v3');\
+             __p('wsRuleGpvTrail', __rs.getPropertyValue('--QRU '));\
+             __p('wsRuleGpvClean', __rs.getPropertyValue('--QRU'));\
+             __p('wsRuleCssText', __rs.cssText);\
+             __st4.setProperty(' COLOR ', 'red');\
+             __p('wsRegColor', __st4.color);\
+             __p('wsRegCssText', __st4.cssText);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"wsTrailCssText":"--FOO: v1","wsTrailGpvTrail":"v1","wsTrailGpvClean":"v1","wsTrailItem0":"--FOO","wsTrailLen":1,"wsBothCssText":"--FOO: v2","wsBothGpvClean":"v2","wsBothItem0":"--FOO","wsBothLen":1,"wsRmPrev":"v4","wsRmAfter":"","wsRmLen":0,"wsRuleGpvTrail":"v3","wsRuleGpvClean":"v3","wsRuleCssText":"margin: 0; --QRU: v3;","wsRegColor":"red","wsRegCssText":"color: red"}"##,
+        "T50 返修 DF-T50-1 名参空白形全案（尾空白 custom 写读键一致 + 两侧空白 case 保形 + 删 prev + 规则面同形 + 常规名 sanity）"
+    );
+}

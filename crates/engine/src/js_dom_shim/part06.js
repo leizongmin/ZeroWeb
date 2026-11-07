@@ -2095,7 +2095,19 @@
   // backgroundColor → background-color 与 webkit IDL 前缀特例语义不变；'COLOR' →
   // 'color'，cssText 整体写/规则样式两路共享本函数，同修）。
   function _styleDeclName(name) {
-    var s = String(name);
+    // DF-T50-1（T50 返修）：trim 先于 `--` 早退——早退先于 trim 时尾空白 custom
+    // 名参（'--FOO '）未修剪透传：写面落 host（merge_style_property 存储侧
+    // property.trim()）成 '--FOO'，读/删面 want 保持 '--FOO ' 精确比对不命中
+    //（读返空、删 prev 失）；两侧空白名参（'  --FOO  '）首字符非 '-' 早退失守
+    // 落折叠臂，[A-Z]+ 折小写丢 custom 名 case（css-variables-1 §2 名
+    // case-sensitive）。基线 `_stylePropName` 即 trim 前置，本行恢复基线等价
+    //（元素三位点 T50 已接本函数，规则面/csstext 面同函数同修）。
+    // **偏离披露**：Blink 154 活体 oracle3（t50-oracle3-result.txt）名参全程
+    // 不 trim（纯尾空白 custom 名原样落键 '--FOO\ : v1;' 写读自洽、首空白
+    // 名参整体拒）——本仓 host 存储侧 trim 契约使未修剪键不可表示，取
+    // trim 归一（写读键一致 + 基线等价），空白名参形状钉
+    // test_cssom_idl_whitespace_name_t50fix 锁定。
+    var s = String(name).trim();
     if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
     var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
     return _stylePropName(folded).toLowerCase();
