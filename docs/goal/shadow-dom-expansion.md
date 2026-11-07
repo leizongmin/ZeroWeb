@@ -421,6 +421,21 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   ~19F 归口走 paperwork；M4 复测细则落定，无人值守推进至 DONE。执行契约
   见下节。
 
+### 2026-11-07——M4 ×4 复跑采认 + 收口链认领（§9 双 spawn 竞态裁定）
+
+- **竞态实录**：两 rally 流同 clone 竞跑 M4——本流首跑（scope 模式）随
+  上一 session 回收被杀（JSON 0 字节），本流 service 模式复跑旋即遭彼流
+  孤儿清扫 pkill 误伤（waiter exit 144）；彼流现役 runner（scope
+  run-p340702-i4537258，`ZW_TIMEOUT_MULTIPLIER=4`、test-guard 1800s、
+  输出路径同为 `.acceptance/shadow-m3-residual/gethtml-x4-m4.json`）与本流
+  需求为**同一测量**（冻结二进制 d7155cef5 同 provenance）——按「同轮
+  采认等待、异轮才杀」裁定采认等待，不重跑不重复占道。
+- **收口链认领（并行侧同文件编辑请避让）**：×4 落盘后由本流执行——
+  coverage 复测（wptfyi_gap 合并喂入，报告留 `.acceptance/`）→ M4
+  evidence 落档（冻结二进制 sha256 + 构建提交 + 四判据逐条裁定）→
+  wpt-suites.csv 收行 → goal 终态更新 → 模式 A 收口归档。认领时点
+  2026-11-07 10:57（runner CPU 6:26 进行中）。
+
 ## M3 收口与 M4 无人值守执行契约（2026-11-07）
 
 本节为无人值守执行的自足依据：余项全部在册、可自主完成，不设外部等待。
