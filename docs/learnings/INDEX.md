@@ -5,11 +5,13 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（247）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（249）
 
 - 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
 - 2026-11-07 [taffy abs 包含块=直接父模型：后处理「只扩不缩」让错误钳制存活（R5445 D2 域图谱）](bugs/2026-11/2026-11-07-taffy-abs-direct-parent-cb-vs-spec-icb.md) — layout-engine
+- 2026-11-07 [layout 期行内几何修复不经 paint Path B 等价注入，像素必然不变](bugs/2026-11/2026-11-07-paint-path-b-rerun-eats-inline-geometry-fixes.md) — layout-engine, engine
 - 2026-11-07 [OOF 固有宽剪除的作用域：table 内部盒可剪，普通块盒剪不得（R5300 补测链依赖）](bugs/2026-11/2026-11-07-oof-intrinsic-prune-scope-table-internal-vs-abs-refill-chain.md) — layout-engine, testing
+- 2026-11-07 [§9.7 blockification 让 float span 算块级子：inline wrapper 谓词把离流盒计成块子（R5446 嵌套 float 域）](bugs/2026-11/2026-11-07-oof-float-blockification-predicate-leak.md) — layout-engine
 - 2026-11-07 [批脚本 md5 锚两陷阱：expect/got 配方必须同一函数；md5sum 行配方对路径标签敏感](bugs/2026-11/2026-11-07-md5-anchor-recipe-identity-and-path-label.md) — tests/wpt-runner, docs/goal/editing-compat
 - 2026-11-07 [单测钉红的归因必须 bisect 到提交；改动域轮次必须跑改动 crate 的 lib 全腿](bugs/2026-11/2026-11-07-lib-full-leg-and-commit-level-bisect-for-pin-reds.md) — layout-engine, testing
 - 2026-11-07 [内部按 _elKey 建链的 map 查找跨族落空——按元素 id 回落对齐](bugs/2026-11/2026-11-07-internal-chain-key-cross-family-id-fallback.md) — crates/engine
@@ -255,8 +257,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（32）
+## Patterns — 可复用代码模式与最佳实践（33）
 
+- 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
 - 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/editing-compat
 - 2026-11-05 [自源探针「0.00% 通过」不可信——图元清单 + black-ref 强拆定谳伪绿](patterns/2026-11/2026-11-05-reftest-passing-page-primitive-forensics.md) — engine,testing
 - 2026-11-04 [Timeout 行不是挂死证明——判读前先做 solo/in-face 预算算术](patterns/2026-11/2026-11-04-timeout-line-budget-arithmetic-before-hang-verdict.md) — testing

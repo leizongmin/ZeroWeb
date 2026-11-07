@@ -1,3 +1,4 @@
+---
 date: 2026-11-07
 modules: layout-engine
 ---
