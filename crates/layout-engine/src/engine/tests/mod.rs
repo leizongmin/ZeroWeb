@@ -1034,3 +1034,7 @@ mod r5444_cell_intrinsic_oof_skip_tests;
 /// R5445：abs-auto 盒 spec CB ≠ 直接父（无 positioned 祖先 → ICB / positioned 祖先）
 /// 双向重测（CSS2 §10.1），driving s-11-1-1b-005 残差 0.46%→0.00%。
 mod r5445_abspos_icb_cb_tests;
+
+/// R5446：嵌套 inline float（wrapper span 子树内 float）锚位/极值缘/容纳高 +
+/// 直挂堆叠回归卫 + float-only wrapper 欠计高补测，driving floats-placement-vertical-001b。
+mod r5446_nested_inline_float_tests;

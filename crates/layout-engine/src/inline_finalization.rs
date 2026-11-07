@@ -1615,6 +1615,21 @@ pub(crate) fn compute_final_inline_layouts(
             ))
         })
         .collect();
+    // R5446（CSS2 §9.5.1）：wrapper 子树内嵌套 float 的排除带——旧只认直接 float 子，
+    // 嵌套 float 缺带 → IFC 行不缩窄，且 float-aware fail-closed 门（`can_skip_final_ifc`
+    // 第三参 / R1280 has_float_exclusions）得 false → 容器早退不落存储路径 → paint
+    // Path B 无锚重跑（001b "tty" 残段根因）。此刻嵌套 float 盒已被步 6 remeasure
+    // 写回终位，构造公式与直接臂同（见 [`collect_nested_float_exclusions`]）。
+    // 带只入本容器 IFC 与 fail-closed 门，不向子容器传播（嵌套 float 的跨块入侵属
+    // block-in-inline 拆分域，FIXME 另案）；wrapper 自身 IFC 的自带（float 在其子树内）
+    // 经本收集自然覆盖。kill-switch `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure/collect
+    // 侧同一开关）。
+    let nested_float_bands: Vec<crate::inline::FloatExclusion> =
+        if nested_inline_float_enabled() && !root.writing_mode.is_vertical_block_flow() {
+            collect_nested_float_exclusions(root, styles)
+        } else {
+            Vec::new()
+        };
 
     // 递归子节点。CSS float 侵入：祖先 BFC 内的 float 会侵入未建 BFC 的后代 block 的 line box，
     // 故把（祖先 float + 本容器直接 float）换算到每个子节点 box 坐标系后向其传播。
@@ -1836,7 +1851,8 @@ pub(crate) fn compute_final_inline_layouts(
         doc,
         styles,
         context.finalized_inline_blocks,
-        !own_floats.is_empty() || !ancestor_floats.is_empty(),
+        // R5446：wrapper 子树嵌套 float 同款 fail-closed——有带必走 re-break 存储路径。
+        !own_floats.is_empty() || !nested_float_bands.is_empty() || !ancestor_floats.is_empty(),
     ) {
         return;
     }
@@ -1935,10 +1951,12 @@ pub(crate) fn compute_final_inline_layouts(
     let parent_word_spacing: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_word_spacing);
     let parent_line_heights: NodeIdMap<f32> = build_text_parent_override_map(doc, &root.text_node_line_heights);
 
-    // 收集浮动排除区域 = 本容器直接 float 子 + 祖先传播下来的 float（均已在 root box 坐标系）
+    // 收集浮动排除区域 = 本容器直接 float 子 + wrapper 子树嵌套 float（R5446，均已在
+    // root box 坐标系）+ 祖先传播下来的 float
     let exclusions: Vec<crate::inline::FloatExclusion> = own_floats
         .iter()
         .map(|(_, f)| f.clone())
+        .chain(nested_float_bands.iter().cloned())
         .chain(ancestor_floats.iter().cloned())
         .collect();
 
@@ -2195,7 +2213,7 @@ pub(crate) fn compute_final_inline_layouts(
     // render v_offset is_ahem 分支正确）。Path B（override maps）对折叠 inline 元素的 is_ahem
     // 不传播 + baseline_offset 非 is_ahem-aware，致混合字体（default 容器 + Ahem span）glyph
     // 位错（floats-006 残余 4.04%）。kill-switch `ZW_FLOAT_INLINE_PAINT=0` 关闭（default-on）。
-    let has_float_exclusions = !own_floats.is_empty();
+    let has_float_exclusions = !own_floats.is_empty() || !nested_float_bands.is_empty();
     // R5169：合成匿名 cell 放行 non-Ahem 存储——cell 借宿主行 node_id，行样式（如
     // infer-cells 系列 body monospace）非 pure-Ahem 会拒存 → paint Path B（空 styles
     // 重跑）的字体/推进解析与同页真实 cell 的 stored 度量分歧（090/091 绿层推进
@@ -3254,6 +3272,222 @@ pub(crate) fn measure_text_content(
 /// 2. 收集容器内的 float 元素的几何信息，构建 FloatExclusion 列表
 /// 3. 使用 float exclusions 重新运行 InlineFormattingContext 排列文本
 /// 4. 用重新排列后的行盒更新容器的内部布局信息
+///
+/// R5446（CSS2 §9.2.1.1/§9.5.1）：inline wrapper（span 等）子树内的嵌套 float 并入
+/// 容器 IFC float 机制——旧 `has_floats` 门只认直接 float 子，嵌套 float 从未获得
+/// ①锚行顶 y（旧 span 级 remeasure 以 wrapper 0 宽容器跑 IFC）②§9.5.1 rule 6 方向
+/// 极值缘 x ③exclusion 带（文本绕排）④BFC 根 auto 高计入（floats-placement-vertical-001b
+/// 四子缺陷同源：直挂 float 对照形全对、span 包裹形全破）。vertical 书写容器不入
+/// （guidelines #29：vertical 轴模型另一套，另案挂账）。kill-switch
+/// `ZW_NESTED_INLINE_FLOAT=0` 回退旧行为。
+static NESTED_INLINE_FLOAT: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_NESTED_INLINE_FLOAT").as_deref() != Ok("0"));
+
+/// R5446：嵌套 float kill-switch 查询（collect 侧 FloatAnchor 补发臂同门——放置侧与
+/// 收集侧必须同一开关回退，半开状态会产生有锚无放置/有放置无锚的分裂行为）。
+pub(crate) fn nested_inline_float_enabled() -> bool {
+    *NESTED_INLINE_FLOAT
+}
+
+/// R5446：嵌套 float 摘要（collector 产出；锚 pass 后回填 `target`）。
+struct NestedInlineFloatInfo {
+    fid: NodeId,
+    is_left: bool,
+    width: f32,
+    margin_left: f32,
+    margin_right: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+    height: f32,
+    /// 写入目标（容器 content-box 相对）：Some((y, x))——y=锚行顶（§9.5.1 rule 5/6
+    /// 尽高；嵌套 float 从未获得有效静态位：步 5 walk 对 inline 子 `continue`、taffy
+    /// 以 wrapper 帧堆叠，故无条件取锚，R5442 静态位保留门不适用）；x=rule 6 方向
+    /// 极值缘（Left→左缘 +ml，Right→右缘 −mr）。None=锚缺失，该 float 退回旧行为。
+    target: Option<(f32, f32)>,
+}
+
+/// R5446：inline 级可下降 wrapper 判定——非块级、非原子（inline-block 族/replaced）、
+/// 非 BFC（其 float 子树归自身容器，各有 remeasure 递归）。
+pub(crate) fn nested_float_wrapper_descendable(child: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    if child.is_absolute || child.is_fixed || child.is_block_level || child.is_replaced {
+        return false;
+    }
+    if crate::margin_collapse::establishes_bfc(child) {
+        return false;
+    }
+    !child.node_id.is_some_and(|id| {
+        styles.get(&id).is_some_and(|s| {
+            matches!(
+                s.display,
+                DisplayValue::InlineBlock
+                    | DisplayValue::InlineTable
+                    | DisplayValue::InlineFlex
+                    | DisplayValue::InlineGrid
+            )
+        })
+    })
+}
+
+/// R5446：收集 wrapper 子树内嵌套 float 的 margin-box 排除带（root 盒坐标系）——
+/// 供 `compute_final_inline_layouts` 并入 `own_floats`。调用时机在 step 6 remeasure
+/// 写回之后：嵌套 float 盒几何已是终位（§9.5.1 rule 6 极值缘 + 锚行顶），构造公式
+/// 与直接 float 子臂一致（R5312 margin-box 口径：x−ml / y−mt / w+ml+mr / h+mt+mb）。
+/// 排除带非空使 float-aware fail-closed 门成立，容器落 re-break 存储路径（否则
+/// `can_skip_final_ifc` 早退 → `inline_layout` 缺存储 → paint Path B 无锚重跑分段
+/// 错乱）。几何无效（w/h≤0 或 y<0）的 float 不产带（同直接臂过滤）。vertical 书写
+/// 容器不入（guidelines #29）。kill-switch `ZW_NESTED_INLINE_FLOAT=0`。
+pub(crate) fn collect_nested_float_exclusions(
+    box_node: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> Vec<crate::inline::FloatExclusion> {
+    fn walk(
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        dx: f32,
+        dy: f32,
+        depth: usize,
+        out: &mut Vec<crate::inline::FloatExclusion>,
+    ) {
+        for child in &box_node.children {
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+            if !matches!(child.float, FloatValue::None) {
+                // depth=0（容器直接 float 子）不入——`own_floats` 直接臂已收集，重复
+                // 入带会双计（带重复对 min/max 收窄幂等，但 fail-closed 门与后续按带
+                // 消费的路径不受控）。
+                if depth == 0 {
+                    continue;
+                }
+                let rx = dx + child.x;
+                let ry = dy + child.y;
+                if ry < 0.0 || child.width <= 0.0 || child.height <= 0.0 {
+                    continue;
+                }
+                let Some(_) = child.node_id else {
+                    continue;
+                };
+                out.push(crate::inline::FloatExclusion {
+                    y: ry - child.margin_top,
+                    height: child.margin_top + child.height + child.margin_bottom,
+                    width: child.width + child.margin_left + child.margin_right,
+                    x: rx - child.margin_left,
+                    is_left: matches!(child.float, FloatValue::Left),
+                });
+            } else if nested_float_wrapper_descendable(child, styles) {
+                walk(
+                    child,
+                    styles,
+                    dx + child.x + child.border_left + child.padding_left,
+                    dy + child.y + child.border_top + child.padding_top,
+                    depth + 1,
+                    out,
+                );
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(box_node, styles, 0.0, 0.0, 0, &mut out);
+    out
+}
+
+/// R5446：收集 inline wrapper 子树下的嵌套 float（只沿 [`nested_float_wrapper_descendable`]
+/// 子下降；直接 float 子归既有路径不入本列）。同时给出已认领的顶层子索引集。
+fn collect_nested_inline_floats(
+    box_node: &LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+) -> (Vec<NestedInlineFloatInfo>, std::collections::HashSet<usize>) {
+    fn walk(
+        box_node: &LayoutBox,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        top_idx: Option<usize>,
+        out: &mut Vec<NestedInlineFloatInfo>,
+        claimed: &mut std::collections::HashSet<usize>,
+    ) {
+        for (i, child) in box_node.children.iter().enumerate() {
+            let ti = top_idx.unwrap_or(i);
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+            if !matches!(child.float, FloatValue::None) {
+                // 顶层（top_idx=None）float 是直接子，归既有 direct 路径（步 5 锚移 +
+                // direct 排除带 + float_bottom），不入本列——否则双重处置（嵌套目标把
+                // 堆叠 float 二次搬到极值缘/锚顶，floats-006 蓝块错位实证）。
+                if top_idx.is_none() {
+                    continue;
+                }
+                let Some(fid) = child.node_id else {
+                    continue;
+                };
+                claimed.insert(ti);
+                out.push(NestedInlineFloatInfo {
+                    fid,
+                    is_left: matches!(child.float, FloatValue::Left),
+                    width: child.width,
+                    margin_left: child.margin_left,
+                    margin_right: child.margin_right,
+                    margin_top: child.margin_top,
+                    margin_bottom: child.margin_bottom,
+                    height: child.height,
+                    target: None,
+                });
+                continue;
+            }
+            if nested_float_wrapper_descendable(child, styles) {
+                walk(child, styles, Some(ti), out, claimed);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    let mut claimed = std::collections::HashSet::new();
+    walk(box_node, styles, None, &mut out, &mut claimed);
+    (out, claimed)
+}
+
+/// R5446：嵌套 float 存在性早退检查（`remeasure_inline_only_containers` 的
+/// has_floats 门同步——否则 inline-only 重测会覆写容器级刚写入的 float 高）。
+fn has_nested_inline_float(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+    fn walk(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) -> bool {
+        for child in &box_node.children {
+            if child.is_absolute || child.is_fixed {
+                continue;
+            }
+            if !matches!(child.float, FloatValue::None) {
+                return true;
+            }
+            if nested_float_wrapper_descendable(child, styles) && walk(child, styles) {
+                return true;
+            }
+        }
+        false
+    }
+    walk(box_node, styles)
+}
+
+/// R5446：sync 后按父链偏移回写嵌套 float 目标位——目标为容器 content-box 相对，
+/// 盒字段相对其直接父级，故逐层累计 (x+bl+pl, y+bt+pt) 链偏移后反解
+///（wrapper 盒几何已被 IFC sync 重写，链偏移必须读 sync 后现值）。
+fn apply_nested_float_writeback(box_node: &mut LayoutBox, targets: &[(NodeId, f32, f32)], chain_x: f32, chain_y: f32) {
+    for child in &mut box_node.children {
+        if child.is_absolute || child.is_fixed {
+            continue;
+        }
+        if let Some(fid) = child.node_id
+            && let Some((_, tx, ty)) = targets.iter().find(|t| t.0 == fid)
+        {
+            child.x = tx - chain_x;
+            child.y = ty - chain_y;
+            continue;
+        }
+        apply_nested_float_writeback(
+            child,
+            targets,
+            chain_x + child.x + child.border_left + child.padding_left,
+            chain_y + child.y + child.border_top + child.padding_top,
+        );
+    }
+}
+
 pub(crate) fn remeasure_text_with_float_exclusions(
     box_node: &mut LayoutBox,
     doc: &Document,
@@ -3261,8 +3495,26 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     inline_fonts: InlineFontContext<'_>,
 ) {
+    remeasure_text_with_float_exclusions_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false);
+}
+
+fn remeasure_text_with_float_exclusions_inner(
+    box_node: &mut LayoutBox,
+    doc: &Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
+    inline_fonts: InlineFontContext<'_>,
+    claimed_nested_floats: bool,
+) {
+    // R5446：嵌套 float 收集（认领子树跳过——float 已由祖先容器处理）。
+    let (mut nested, nested_claimed) =
+        if *NESTED_INLINE_FLOAT && !claimed_nested_floats && !box_node.writing_mode.is_vertical_block_flow() {
+            collect_nested_inline_floats(box_node, styles)
+        } else {
+            (Vec::new(), std::collections::HashSet::new())
+        };
     // 收集此容器的 float 排除区域
-    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None)) || !nested.is_empty();
 
     if has_floats {
         // R3784：float 行内流锚 y 两遍测量第一遍——无 exclusion IFC 跑到每个 float 子的
@@ -3305,6 +3557,59 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                     }
                 }
             }
+            // R5446：嵌套 float 目标——y=锚行顶（无条件；见 NestedInlineFloatInfo.target
+            // 注），x=§9.5.1 rule 6 方向极值缘。盒写入延后到 sync 后（`target` 先供
+            // exclusion/containment 使用，写入需 sync 后的父链偏移）。
+            if !nested.is_empty() {
+                let cw = box_node.content_width;
+                for nf in &mut nested {
+                    let Some(anchor_y) = anchor_y_map.get(&nf.fid) else {
+                        continue;
+                    };
+                    let tx = if nf.is_left {
+                        nf.margin_left
+                    } else {
+                        (cw - nf.width - nf.margin_right).max(0.0)
+                    };
+                    nf.target = Some((*anchor_y, tx));
+                }
+                // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
+                // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
+                // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
+                // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
+                // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
+                // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
+                // `ZW_FLOAT_H_BACKFILL=0`。
+                if std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
+                    for nf in &mut nested {
+                        if nf.height > 0.0 {
+                            continue;
+                        }
+                        let fid = nf.fid;
+                        let width = nf.width;
+                        let m = measure_text_content(
+                            doc,
+                            styles,
+                            fid,
+                            Size {
+                                width: Some(width),
+                                height: None,
+                            },
+                            Size {
+                                width: AvailableSpace::Definite(width),
+                                height: AvailableSpace::Definite(f32::INFINITY),
+                            },
+                            img_intrinsic_sizes,
+                            inline_fonts,
+                            // R4332：float 非 run-in 后继块，无前缀可并入。
+                            None,
+                        );
+                        if m.height > nf.height {
+                            nf.height = m.height;
+                        }
+                    }
+                }
+            }
         }
 
         // 构建 float 排除区域列表
@@ -3316,7 +3621,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
         // 已有高度的 float（h>0，如 007 的 80px）不重复测量（零开销）。
         // kill-switch `ZW_FLOAT_H_BACKFILL=0` 回退（default-on）。
         let float_h_backfill = std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0");
-        let exclusions: Vec<FloatExclusion> = box_node
+        let mut exclusions: Vec<FloatExclusion> = box_node
             .children
             .iter()
             .filter(|c| !matches!(c.float, FloatValue::None))
@@ -3380,6 +3685,29 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 })
             })
             .collect();
+        // R5446：嵌套 float 排除带——margin-box 口径同上，y 用锚目标（此刻盒 y 仍是
+        // wrapper 帧堆叠位，sync 后才回写目标位）。
+        for nf in &nested {
+            let Some((ty, tx)) = nf.target else {
+                continue;
+            };
+            if nf.width <= 0.0 || nf.height <= 0.0 {
+                continue;
+            }
+            let band_top = ty - nf.margin_top;
+            let band_bottom = band_top + (nf.margin_top + nf.height + nf.margin_bottom);
+            if band_bottom <= 0.0 {
+                continue;
+            }
+            let clipped_top = band_top.max(0.0);
+            exclusions.push(FloatExclusion {
+                y: clipped_top,
+                height: band_bottom - clipped_top,
+                width: nf.width + nf.margin_left + nf.margin_right,
+                x: tx - nf.margin_left,
+                is_left: nf.is_left,
+            });
+        }
 
         // 如果有排除区域且容器有行内级内容
         // R3783：旧 gate `!exclusions.is_empty()`——float 子此刻 h=0（未测量）时 exclusion
@@ -3466,6 +3794,16 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 // 会与 float 重叠（c414-flt-fit-001 的 br img 落在首行起点）。all-or-nothing
                 // 语义（任一 atomic 子缺 fragment 即整体不动）防半同步撕裂。
                 sync_inline_block_positions_from_ifc(box_node, &inline_ctx, doc, styles);
+                // R5446：嵌套 float 目标位回写（sync 已定 wrapper 盒几何，父链偏移取现值）。
+                if !nested.is_empty() {
+                    let targets: Vec<(NodeId, f32, f32)> = nested
+                        .iter()
+                        .filter_map(|nf| nf.target.map(|(ty, tx)| (nf.fid, tx, ty)))
+                        .collect();
+                    if !targets.is_empty() {
+                        apply_nested_float_writeback(box_node, &targets, 0.0, 0.0);
+                    }
+                }
             }
 
             // R3784：clamp 点后的 float 子隐藏（css-overflow-4 with-floats-003：「floats
@@ -3512,6 +3850,13 @@ pub(crate) fn remeasure_text_with_float_exclusions(
                 .iter()
                 .filter(|c| !matches!(c.float, FloatValue::None) && !c.line_clamp_hidden)
                 .map(|c| c.y + c.height + c.margin_bottom)
+                .chain(
+                    // R5446：嵌套 float 底计入（锚目标 + margin-box 底；盒 y 此刻仍是
+                    // wrapper 帧位不可用）。
+                    nested
+                        .iter()
+                        .filter_map(|nf| nf.target.map(|(ty, _)| ty + nf.height + nf.margin_bottom)),
+                )
                 .fold(0.0_f32, f32::max);
 
             // 使用文本和 float 中较大的高度
@@ -3619,8 +3964,20 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     }
 
     // 递归处理子容器
-    for child in &mut box_node.children {
-        remeasure_text_with_float_exclusions(child, doc, styles, img_intrinsic_sizes, inline_fonts);
+    // R5446：认领传递——本容器已认领的顶层子（嵌套 float 归容器机制）与继承认领子树
+    // 中的 inline wrapper 跳过 float 体；块级/原子/BFC 子不受继承认领影响（其子树
+    // float 归自身容器）。
+    for (idx, child) in box_node.children.iter_mut().enumerate() {
+        let child_claimed =
+            nested_claimed.contains(&idx) || (claimed_nested_floats && nested_float_wrapper_descendable(child, styles));
+        remeasure_text_with_float_exclusions_inner(
+            child,
+            doc,
+            styles,
+            img_intrinsic_sizes,
+            inline_fonts,
+            child_claimed,
+        );
     }
 }
 
@@ -4093,7 +4450,13 @@ pub(crate) fn remeasure_inline_only_containers(
 
     // 检查此容器是否有 inline-level 子元素（is_block_level == false）
     // 且不包含 float 子元素（float 容器由 remeasure_text_with_float_exclusions 处理）
-    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None));
+    // R5446：嵌套 float（inline wrapper 子树）同域并入——否则本重测按纯 inline 容器
+    // 覆写容器级刚写入的 float 高/绕排几何（与直接 float 容器同一豁免语义；vertical
+    // 容器不入，与步 6 收集门同口径）。
+    let has_floats = box_node.children.iter().any(|c| !matches!(c.float, FloatValue::None))
+        || (*NESTED_INLINE_FLOAT
+            && !box_node.writing_mode.is_vertical_block_flow()
+            && has_nested_inline_float(box_node, styles));
     // R5218：inline-flex/inline-grid 子（is_block_level=true）计入 inline 级——纯原子
     // 族行容器也须进 IFC 重测合成行盒高。
     // R5395：inline-table 子同域计入（CSS2 §9.2.2/§9.7 行内级，R5096 判例同源；
