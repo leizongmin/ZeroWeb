@@ -507,6 +507,10 @@ pub enum DomMutation {
         /// serializable（init 同名字段——getHTML serializableShadowRoots 资格与
         /// `shadowrootserializable` 回写）。
         serializable: bool,
+        /// `slotAssignment: 'manual'`（init 枚举 shim 侧已校验；false = named）。
+        /// manual root 的 slot 分配走手动表（[`DomMutation::SlotAssign`] 通道），
+        /// [`zero_dom::Document::resolve_slots`] 对其整树跳过。
+        slot_assignment: bool,
     },
     /// [`Self::AttachShadow`] 的句柄宿主对偶（create 句柄宿主无 selector）。
     AttachShadowOnHandle {
@@ -522,6 +526,21 @@ pub enum DomMutation {
         clonable: bool,
         /// serializable（语义同 [`Self::AttachShadow`]）。
         serializable: bool,
+        /// `slotAssignment: 'manual'`（语义同 [`Self::AttachShadow`]）。
+        slot_assignment: bool,
+    },
+    /// 45 号 shadow-dom-rendering M3 手动臂：`HTMLSlotElement.assign()` 的渲染
+    /// 镜像——把 slot 的手动分配原始列表写入 dom 手动表（JS 语义面
+    /// `__zwManualAssigned`/slotchange 归 42 号已落，本通道只服务渲染消费）。
+    /// `nodes` 为空 = 清列表（无参 assign() 语义）；列表读取活过滤 parent==host
+    ///（[`zero_dom::Document::get_assigned_nodes`] manual 分支）。
+    /// https://dom.spec.whatwg.org/#dom-slot-assign
+    SlotAssign {
+        /// slot 元素引用（句柄优先，失配回落选择器——slot 多在 shadow 树内，
+        /// 经 handle 注册表解析）。
+        slot_ref: String,
+        /// 手动分配节点引用列表（顺序保留——渲染序 = assign 调用序）。
+        nodes: Vec<String>,
     },
     /// `parent.appendChild(fragment)`（P1a）——把 fragment 的**子节点移动**到 parent（flatten，
     /// fragment 自身不入树）。区别于 [`Self::AppendChild`]（append 节点自身）。父为选择器。
@@ -1667,6 +1686,7 @@ pub fn apply_dom_mutations_full(
                 ref delegates_focus,
                 ref clonable,
                 ref serializable,
+                ref slot_assignment,
             } if !handles.contains_key(host_handle) && persistent_sel(host_handle).is_some() => {
                 pending.push_front(DomMutation::AttachShadow {
                     host_selector: persistent_sel(host_handle).unwrap_or_default(),
@@ -1675,6 +1695,7 @@ pub fn apply_dom_mutations_full(
                     delegates_focus: *delegates_focus,
                     clonable: *clonable,
                     serializable: *serializable,
+                    slot_assignment: *slot_assignment,
                 });
                 continue;
             }
@@ -2390,13 +2411,15 @@ pub fn apply_dom_mutations_full(
                 delegates_focus,
                 clonable,
                 serializable,
+                slot_assignment,
             } => {
                 // s168：宿主失配硬错（同 AppendChildByHandle 口径——shim attachShadow 已过
                 // spec 校验序列：二次 attach NotSupportedError / mode TypeError / 非 HTML ns
                 // 均不入队，失配暴露 replay 真 bug）。ShadowRoot 节点挂宿主 children 下；
                 // root_handle 注册后，后续 flatten/append 按常规 parent 解析入 shadow 树。
                 // s180/gethtml：init 三状态位进 ShadowRootData（getHTML serializable
-                // 资格与序列化回写）。
+                // 资格与序列化回写）。45 号 M3 手动臂：slotAssignment 枚举随 init 入
+                // ShadowRootData（manual root 的 resolve_slots 跳过 + slot.assign() 手动表）。
                 let host = find_by_selector(doc, &host_selector)
                     .ok_or_else(|| format!("attach_shadow: no host {host_selector}"))?;
                 let mode = if mode == "open" {
@@ -2404,8 +2427,21 @@ pub fn apply_dom_mutations_full(
                 } else {
                     zero_dom::ShadowRootMode::Closed
                 };
+                let slot_assignment = if slot_assignment {
+                    zero_dom::SlotAssignment::Manual
+                } else {
+                    zero_dom::SlotAssignment::Named
+                };
                 let root = doc
-                    .attach_shadow_full(host, mode, delegates_focus, clonable, serializable, false)
+                    .attach_shadow_full(
+                        host,
+                        mode,
+                        delegates_focus,
+                        clonable,
+                        serializable,
+                        slot_assignment,
+                        false,
+                    )
                     .map_err(|e| e.to_string())?;
                 handles.insert(root_handle.clone(), root);
             }
@@ -2416,6 +2452,7 @@ pub fn apply_dom_mutations_full(
                 ref delegates_focus,
                 ref clonable,
                 ref serializable,
+                ref slot_assignment,
             } => {
                 // 45 号 shadow-dom-rendering M3（css-scoping-shadow-slotted-nested）：宿主
                 // 句柄批内 ephemeral（innerHTML 克隆的内层宿主）时翻译臂不接（contains_key
@@ -2430,8 +2467,13 @@ pub fn apply_dom_mutations_full(
                         } else {
                             zero_dom::ShadowRootMode::Closed
                         };
+                        let sa = if *slot_assignment {
+                            zero_dom::SlotAssignment::Manual
+                        } else {
+                            zero_dom::SlotAssignment::Named
+                        };
                         let root = doc
-                            .attach_shadow_full(host, m, *delegates_focus, *clonable, *serializable, false)
+                            .attach_shadow_full(host, m, *delegates_focus, *clonable, *serializable, sa, false)
                             .map_err(|e| e.to_string())?;
                         handles.insert(root_handle.clone(), root);
                     }
@@ -2441,6 +2483,35 @@ pub fn apply_dom_mutations_full(
                         );
                     }
                 }
+            }
+            DomMutation::SlotAssign {
+                ref slot_ref,
+                ref nodes,
+            } => {
+                // 45 号 M3 手动臂：slot.assign() 渲染镜像落表。slot/节点引用解析
+                // 句柄优先（批内 ephemeral → 持久表），selector 回落走 shadow 包含
+                // 查询（[`Document::query_selector_including_shadow`]——assign 参数
+                // 是页面持对象，spec 对象身份通道可及 shadow 内容；006 形态的 slot
+                // 已随 appendChild 入 shadow 树，封装查询定位不到）。shim 侧已过
+                // spec 校验（参数非节点 TypeError / 抢占 victim 同步），引擎失配
+                // 暴露 replay 真 bug——硬错同 AttachShadow 口径。
+                let slot = handles
+                    .get(slot_ref)
+                    .copied()
+                    .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(slot_ref).copied()))
+                    .or_else(|| doc.query_selector_including_shadow(slot_ref))
+                    .ok_or_else(|| format!("slot_assign: no slot {slot_ref}"))?;
+                let mut assigned = Vec::with_capacity(nodes.len());
+                for node_ref in nodes {
+                    let id = handles
+                        .get(node_ref)
+                        .copied()
+                        .or_else(|| persistent_nodes.as_deref().and_then(|p| p.get(node_ref).copied()))
+                        .or_else(|| doc.query_selector_including_shadow(node_ref))
+                        .ok_or_else(|| format!("slot_assign: no node {node_ref}"))?;
+                    assigned.push(id);
+                }
+                doc.set_manual_assigned_nodes(slot, assigned);
             }
             DomMutation::AppendFragmentChildren {
                 parent_selector,
@@ -2797,15 +2868,22 @@ fn copy_subtree_from(doc: &mut Document, src_doc: &Document, src_id: NodeId) -> 
             }
             for &child in &src_node.children {
                 // s180/gethtml（M3 Batch 2）：源子树内的声明式 ShadowRoot（unsafe 解析
-                // 物化产物）随拷贝重建——attach_shadow_full 还原四状态位，shadow 子深拷贝
-                // 入新根；slot 分配表按 NodeId 键控不随拷贝（渲染面，物化路径既有 FIXME）。
+                // 物化产物）随拷贝重建——attach_shadow_full 还原状态位（45 号 M3 手动臂
+                // 起 slotAssignment 一并随拷贝——命令式 manual root 的 setHTML 克隆保
+                // 手动分配语义面），shadow 子深拷贝入新根；slot 分配表按 NodeId 键控
+                // 不随拷贝（渲染面，物化路径既有 FIXME）。
                 if let Some(sd) = src_doc.get(child).and_then(|n| match &n.kind {
-                    NodeKind::ShadowRoot(d) => {
-                        Some((d.mode, d.delegates_focus, d.clonable, d.serializable, d.declarative))
-                    }
+                    NodeKind::ShadowRoot(d) => Some((
+                        d.mode,
+                        d.delegates_focus,
+                        d.clonable,
+                        d.serializable,
+                        d.declarative,
+                        d.slot_assignment,
+                    )),
                     _ => None,
                 }) {
-                    if let Ok(root) = doc.attach_shadow_full(new_id, sd.0, sd.1, sd.2, sd.3, sd.4) {
+                    if let Ok(root) = doc.attach_shadow_full(new_id, sd.0, sd.1, sd.2, sd.3, sd.5, sd.4) {
                         for sk in src_doc.child_nodes(child) {
                             let cc = copy_subtree_from(doc, src_doc, sk);
                             doc.append_child(root, cc).ok();

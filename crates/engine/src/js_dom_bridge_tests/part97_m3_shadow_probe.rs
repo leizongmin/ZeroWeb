@@ -25,6 +25,7 @@ fn m3_shadow_slot_move_into_shadow_root() {
             delegates_focus: false,
             clonable: false,
             serializable: false,
+            slot_assignment: false,
         },
         DomMutation::Remove { selector: "#slot1".into() },
         DomMutation::AppendChildByHandleSel {
@@ -85,6 +86,7 @@ fn m3_attach_shadow_on_ephemeral_handle_host() {
             delegates_focus: false,
             clonable: false,
             serializable: false,
+            slot_assignment: false,
         },
         // 内容经容器句柄 append（handle 子形态，既有臂）。
         DomMutation::CreateElement { handle: "__sp".into(), tag: "span".into() },

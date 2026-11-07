@@ -13600,6 +13600,37 @@
           }
         }
         this.__zwManualAssigned = list;
+        // 45 号 shadow-dom-rendering M3 手动臂：渲染镜像——受影响 slot（self +
+        // 抢占 victim）各自把新 raw 列表经 __zw_slot_assign 同步引擎手动表
+        //（assign 整体替换语义；victim 列表缩短也走本通道）。JS 语义面
+        //（__zwManualAssigned / slotchange）不变，本通道只服务引擎渲染消费。
+        // 节点引用 handle 优先回落 selector（append 系 wire 同约定）；无引用的
+        // 节点（plain 世界 Text 等无 selector 形态）跳过整个 slot 同步——半列表
+        // 会让渲染面与 JS 读取面分歧，宁可保回退内容。FIXME(45-M3+)：plain
+        // Text 分配的渲染面覆盖。
+        if (typeof __zw_slot_assign === 'function') {
+          try {
+            for (var ai = 0; ai < affected.length; ai++) {
+              var asl = affected[ai];
+              var refSl = null;
+              try { refSl = asl.__zwHandle || asl.__zwSelector || null; } catch (_eSaR1) { refSl = null; }
+              if (!refSl) continue;
+              var argsSl = [refSl];
+              var mlSl = asl.__zwManualAssigned || [];
+              var skipSl = false;
+              for (var bi = 0; bi < mlSl.length; bi++) {
+                var nbSl = mlSl[bi];
+                if (!nbSl || nbSl.nodeType === 11) continue;
+                var refNb = null;
+                try { refNb = nbSl.__zwHandle || nbSl.__zwSelector || null; } catch (_eSaR2) { refNb = null; }
+                if (!refNb) { skipSl = true; break; }
+                argsSl.push(refNb);
+              }
+              if (skipSl) continue;
+              __zw_slot_assign.apply(null, argsSl);
+            }
+          } catch (_eSa0) {}
+        }
         if (typeof globalThis.__zwDispatchManualSlotchange === 'function') {
           globalThis.__zwDispatchManualSlotchange(affected, prevMap, true);
         }

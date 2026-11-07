@@ -362,7 +362,15 @@ mod tests {
         let mut doc = crate::Document::new();
         let host = doc.create_element("div");
         let sr = doc
-            .attach_shadow_full(host, crate::node::ShadowRootMode::Closed, true, true, true, true)
+            .attach_shadow_full(
+                host,
+                crate::node::ShadowRootMode::Closed,
+                true,
+                true,
+                true,
+                crate::node::SlotAssignment::Named,
+                true,
+            )
             .expect("attach_shadow_full succeeds");
         doc.append_child(doc.root(), host).expect("host appended");
         let html = crate::serializer::serialize_node(&doc, host);
@@ -393,6 +401,32 @@ mod tests {
             _ => panic!("shadow root node present"),
         };
         assert!(!data2.declarative && !data2.delegates_focus && !data2.clonable && !data2.serializable);
+    }
+
+    // M3 手动臂：shadowrootslotassignment="manual" 按 spec 枚举回写（named 为
+    // 缺失值默认不回写，上一测试对照块已证）——序列序夹在 serializable 与
+    // clonable 之间（spec the-template-element 内容属性清单序）。
+    // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    #[test]
+    fn manual_slot_assignment_serializes_in_spec_order() {
+        let mut doc = crate::Document::new();
+        let host = doc.create_element("div");
+        doc.append_child(doc.root(), host).expect("host appended");
+        doc.attach_shadow_full(
+            host,
+            crate::node::ShadowRootMode::Open,
+            false,
+            true,
+            true,
+            crate::node::SlotAssignment::Manual,
+            true,
+        )
+        .expect("attach_shadow_full succeeds");
+        let html = crate::serializer::serialize_node(&doc, host);
+        assert!(
+            html.contains("shadowrootserializable=\"\" shadowrootslotassignment=\"manual\" shadowrootclonable=\"\""),
+            "slotassignment 夹在 serializable 与 clonable 之间, got: {html}"
+        );
     }
 
     // M3 簇 C（s301）：shadowrootreferencetarget 值捕获与 spec 序回写——属性序

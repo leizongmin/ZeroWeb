@@ -5698,13 +5698,16 @@
     // appendChild 按常规 parent 解析落入 shadow 树（layout 既有 slot 解析随之激活）。
     // https://dom.spec.whatwg.org/#dom-element-attachshadow
     try {
-      // s180/gethtml：init 三状态位随 mode 下发（引擎 attach_shadow_full 写
-      // ShadowRootData——引擎树 getHTML/序列化面同态）。
+      // s180/gethtml：init 状态位随 mode 下发（引擎 attach_shadow_full 写
+      // ShadowRootData——引擎树 getHTML/序列化面同态）。45 号 M3 手动臂起
+      // slotAssignment 一并下发（'manual' → 引擎侧 resolve_slots 跳过 + slot.assign()
+      // 手动表通道——渲染面与 JS 语义面同态）。
       var _dfw180 = delegatesFocus ? '1' : '0';
       var _clw180 = clonable180 ? '1' : '0';
       var _srw180 = serializable180 ? '1' : '0';
-      if (sel) __zw_attach_shadow(sel, rootHandle, mode, _dfw180, _clw180, _srw180);
-      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode, _dfw180, _clw180, _srw180);
+      var _saw180 = slotAssignment === 'manual' ? '1' : '0';
+      if (sel) __zw_attach_shadow(sel, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
+      else if (handle) __zw_attach_shadow_handle(handle, rootHandle, mode, _dfw180, _clw180, _srw180, _saw180);
     } catch (_e168aw) {}
     return _wrapHandle(rootHandle);
   }

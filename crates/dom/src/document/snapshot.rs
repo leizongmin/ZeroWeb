@@ -18,7 +18,8 @@ impl Document {
     ///
     /// - 深拷面（快照刻的精确状态，NodeId 全部保持有效）：`nodes`（slotmap 全表，
     ///   `NodeData: Clone` 逐节点深拷）、`root`/`id_map`/`template_contents_map`/
-    ///   `shadow_roots`/`slot_assignments`（NodeId 侧表随树一致）、
+    ///   `shadow_roots`/`slot_assignments`/`manual_slot_assignments`（NodeId 侧表随树
+    ///   一致）、
     ///   `encoding_label`/`scripting_enabled`（解析期产物）、`focus_element`/
     ///   `modal_dialogs`/`filtered_options`（运行时注入态，快照刻原值保留——与产
     ///   生该帧的样式计算状态一致）。
@@ -45,6 +46,7 @@ impl Document {
             shadow_roots: self.shadow_roots.clone(),
             template_contents_map: self.template_contents_map.clone(),
             slot_assignments: self.slot_assignments.clone(),
+            manual_slot_assignments: self.manual_slot_assignments.clone(),
             focus_element: self.focus_element,
             modal_dialogs: self.modal_dialogs.clone(),
             active_element: self.active_element,

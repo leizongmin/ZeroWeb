@@ -2,11 +2,11 @@
 //!
 //! 本模块为 [`super::Document`] 的 Shadow DOM 面（attach_shadow / shadow_root / slot 分配 /
 //! shadow 子树查询）。作为 `document` 模块的**子模块**，可访问 [`super::Document`] 的私有字段
-//!（`nodes` / `shadow_roots` / `slot_assignments`）与 `mod.rs` 的私有查询助手
+//!（`nodes` / `shadow_roots` / `slot_assignments` / `manual_slot_assignments`）与 `mod.rs` 的私有查询助手
 //!（`collect_slot_elements` / `find_first_matching_shadow` / `collect_matching_shadow`）——Rust 隐私规则：
 //! 私有项对定义模块及其后代可见，故无需任何可见性改动（行为不变重组）。
 
-use crate::node::{NodeData, NodeId, NodeKind, ShadowRootData, ShadowRootMode};
+use crate::node::{NodeData, NodeId, NodeKind, ShadowRootData, ShadowRootMode, SlotAssignment};
 
 use super::Document;
 use super::DomError;
@@ -86,8 +86,13 @@ impl Document {
     ///
     /// 与 [`Self::attach_shadow`] 相同的校验与挂接，另写入四个状态位：
     /// `delegates_focus` / `clonable` / `serializable`（命令式来自 attachShadow
-    /// init，声明式来自三个 `shadowroot*` 布尔属性存在性）与 `declarative`
+    /// init，声明式来自三个 `shadowroot*` 布尔属性存在性）、`slot_assignment`
+    ///（命令式来自 init `slotAssignment` 枚举；声明式来自
+    /// `shadowrootslotassignment` 枚举，缺失/invalid 默认 Named）与 `declarative`
     ///（声明式物化产物标记——序列化/getHTML 回写模板形态的资格）。
+    // s180/gethtml 全参形态沿用（canvas/path.rs 等既有先例）——参数均为独立
+    // 状态位，收敛成 struct 反而模糊调用面。
+    #[allow(clippy::too_many_arguments)]
     pub fn attach_shadow_full(
         &mut self,
         host: NodeId,
@@ -95,6 +100,7 @@ impl Document {
         delegates_focus: bool,
         clonable: bool,
         serializable: bool,
+        slot_assignment: SlotAssignment,
         declarative: bool,
     ) -> Result<NodeId, DomError> {
         // 验证宿主是元素节点
@@ -117,6 +123,7 @@ impl Document {
         shadow_data.delegates_focus = delegates_focus;
         shadow_data.clonable = clonable;
         shadow_data.serializable = serializable;
+        shadow_data.slot_assignment = slot_assignment;
         shadow_data.declarative = declarative;
         let shadow_id = self.nodes.insert(NodeData::new(NodeKind::ShadowRoot(shadow_data)));
 
@@ -140,10 +147,10 @@ impl Document {
         Ok(shadow_id)
     }
 
-    /// 为宿主元素附加 ShadowRoot（仅 mode，四个状态位全 false——既有命令式
+    /// 为宿主元素附加 ShadowRoot（仅 mode，其余状态位全 false——既有命令式
     /// attachShadow 调用面的兼容入口）。
     pub fn attach_shadow(&mut self, host: NodeId, mode: ShadowRootMode) -> Result<NodeId, DomError> {
-        self.attach_shadow_full(host, mode, false, false, false, false)
+        self.attach_shadow_full(host, mode, false, false, false, SlotAssignment::Named, false)
     }
 
     /// 获取宿主元素附加的 ShadowRoot，如果没有则返回 `None`。
@@ -258,13 +265,34 @@ impl Document {
             let delegates_focus = self.get_attribute(tid, "shadowrootdelegatesfocus").is_some();
             let clonable = self.get_attribute(tid, "shadowrootclonable").is_some();
             let serializable = self.get_attribute(tid, "shadowrootserializable").is_some();
+            // M3 手动臂：`shadowrootslotassignment` 枚举捕获（named/manual；缺失与
+            // invalid value default 均 Named）。html5ever 0.29.1 对该属性无值匹配
+            // 缺陷（s173 预变换仅 shadowrootmode 面），原值存活可直读。
+            // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+            let slot_assignment = match self
+                .get_attribute(tid, "shadowrootslotassignment")
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref()
+            {
+                Some("manual") => SlotAssignment::Manual,
+                _ => SlotAssignment::Named,
+            };
             // M3 簇 C（referenceTarget）：`shadowrootreferencetarget` 值原样捕获（空值属性
             // =空串；属性序无关），序列化按 spec 序回写。
             // https://dom.spec.whatwg.org/#shadowroot-reference-target
             let reference_target = self
                 .get_attribute(tid, "shadowrootreferencetarget")
                 .map(|s| s.to_string());
-            let Ok(root) = self.attach_shadow_full(host, mode, delegates_focus, clonable, serializable, true) else {
+            let Ok(root) = self.attach_shadow_full(
+                host,
+                mode,
+                delegates_focus,
+                clonable,
+                serializable,
+                slot_assignment,
+                true,
+            ) else {
                 continue;
             };
             if let Some(target) = reference_target
@@ -282,11 +310,18 @@ impl Document {
             // `resolve_slots` 无任何调用点，分配恒空 → slot 全走回退内容 → 被分配的
             // light 子树（含嵌套宿主链）无布局盒（gBCR 零 rect、命中测试不可达——
             // closedby-complex shadow 点击坐标塌 (0,0) 根因）。
-            // FIXME: 命令式 attachShadow 与宿主 childlist 后续变异（appendChild/
-            // removeChild/slot 属性改名）不触发重解析——动态场景分配过期，待变异
-            // 应用臂统一挂接。
+            // 45 号 M3 R3 变异应用臂已收口命令式面：attachShadow 与宿主 childList/
+            // slot 属性变异经 `apply_dom_mutations_full` 批末统一重解析
+            //（[`Self::resolve_slots_all_hosts`]）——此处保留物化时点即解析（解析
+            // 幂等，物化批与变异批语义一致）。
             self.resolve_slots(host);
         }
+        // ZeroWeb 内部通道（M3 手动臂）：`data-zw-manual-assigned` marker 携带
+        // `assign()` 分配关系过 serialize→re-parse 边界（spec 无声明式对影——
+        // manually assigned nodes 不落序列化产物，见
+        // [`Self::manual_assigned_slot_marker`]），物化把 slot 归位 shadow 树后
+        // 在此还原手动表并摘除 marker。
+        self.restore_manual_slot_assignments();
     }
 
     /// 声明式物化候选枚举——镜像 [`Document::collect_by_tag_name`](Document::collect_by_tag_name)
@@ -364,12 +399,26 @@ impl Document {
     /// - 如果某个 slot 没有匹配的 light DOM 子节点，使用 slot 自身的子节点作为回退内容
     ///
     /// 该方法会清除并重新计算该宿主的全部 slot 分配。
+    ///
+    /// `slotAssignment: 'manual'` 的 shadow root 整树跳过（spec：manual 模式
+    /// light 子节点不参与自动分配，分配面是 `assign()` 的手动列表——
+    /// [`Self::set_manual_assigned_nodes`] 镜像通道；这里若照常重算会把手动
+    /// 分配清成自动匹配结果）。
+    /// https://dom.spec.whatwg.org/#dom-shadowroot-slotassignment
     pub fn resolve_slots(&mut self, host_node_id: NodeId) {
         // 获取 shadow root
         let shadow_id = match self.shadow_roots.get(&host_node_id).copied() {
             Some(id) => id,
             None => return,
         };
+
+        // 45 号 M3 手动臂：manual root 不做自动分配（跳过清表与重算两步）。
+        if matches!(
+            self.nodes.get(shadow_id).map(|n| &n.kind),
+            Some(NodeKind::ShadowRoot(d)) if d.slot_assignment == SlotAssignment::Manual
+        ) {
+            return;
+        }
 
         // 收集 shadow 树中所有 <slot> 元素：(NodeId, Option<name>)
         let slot_elements = self.collect_slot_elements(shadow_id);
@@ -440,14 +489,180 @@ impl Document {
         }
     }
 
+    /// 45 号 shadow-dom-rendering M3 手动臂：写入 slot 的 `assign()` 手动分配
+    /// 原始列表（`HTMLSlotElement.assign()` 的渲染镜像通道——JS shim 侧
+    /// `__zwManualAssigned` 语义面归 42 号，本表只服务渲染消费）。assign 是
+    /// **整体替换**语义（spec assign slottables：列表清旧写新，跨 slot 抢占由
+    /// shim 侧 victim 臂同步清对方列表后各自调本方法）。
+    ///
+    /// 读取面 [`Self::get_assigned_nodes`] 对 manual root 的 slot 活过滤
+    /// parent==host，故这里存原始列表即可（assign 后节点移出宿主自动失配）。
+    /// https://dom.spec.whatwg.org/#dom-slotable-assignedslot
+    pub fn set_manual_assigned_nodes(&mut self, slot_node_id: NodeId, nodes: Vec<NodeId>) {
+        if nodes.is_empty() {
+            self.manual_slot_assignments.remove(&slot_node_id);
+        } else {
+            self.manual_slot_assignments.insert(slot_node_id, nodes);
+        }
+    }
+
+    /// slot 元素所属 shadow root 及其宿主——从 slot 沿 parent 链上溯到
+    /// [`NodeKind::ShadowRoot`] 边界（slot 恒在 shadow 树内或 light DOM；
+    /// light slot 无 shadow 上下文返 `None`，走既有自动分配表路径）。
+    fn slot_shadow_context(&self, slot_node_id: NodeId) -> Option<(NodeId, NodeId)> {
+        let mut cur = self.nodes.get(slot_node_id)?.parent;
+        while let Some(id) = cur {
+            match &self.nodes.get(id)?.kind {
+                NodeKind::ShadowRoot(d) => {
+                    return d.host.map(|host| (id, host));
+                }
+                _ => cur = self.nodes.get(id)?.parent,
+            }
+        }
+        None
+    }
+
+    /// ZeroWeb 内部序列化通道（M3 手动臂）：slot 的 `assign()` 分配关系序列化
+    /// 形态——`data-zw-manual-assigned="#id1 #id2 …"`（render 顺序，空格分隔的
+    /// `#id` 引用）。
+    ///
+    /// spec 无声明式对影：manually assigned nodes 只活在 `assign()` 运行时
+    ///（spec 明言该集合不可从脚本直接观测、可以弱引用实现），序列化产物不含
+    /// 分配关系。ZeroWeb 的 query_selector 渲染管线在 serialize→re-parse 边界
+    ///（快照/变异应用→`render_html` 重解析）重建 Document，NodeId 键控的手动表
+    /// 无法越过该边界；本通道以 marker 属性把分配关系写进序列化产物，parse 侧
+    /// 物化后由 [`Self::restore_manual_slot_assignments`] 还原并摘除。
+    ///
+    /// 降级策略：任一被分配节点无 `id`（或非元素/已移除）→ 返 `None` 不写
+    /// marker，re-parse 后该 slot 走回退内容——与真实浏览器行为一致
+    ///（assign 状态本就非持久化面）。FIXME(45-M3+)：无 id 节点的稳定引用方案
+    ///（树位路径编码）。
+    ///
+    /// 触发门：slot 所属 shadow root 为 [`SlotAssignment::Manual`] 且手动表
+    /// 非空——named root 的 assign() 列表 inert，不产生序列化痕迹。
+    pub(crate) fn manual_assigned_slot_marker(&self, slot_node_id: NodeId) -> Option<String> {
+        let (shadow_root, _) = self.slot_shadow_context(slot_node_id)?;
+        if !matches!(
+            self.nodes.get(shadow_root).map(|n| &n.kind),
+            Some(NodeKind::ShadowRoot(d)) if d.slot_assignment == SlotAssignment::Manual
+        ) {
+            return None;
+        }
+        let nodes = self.manual_slot_assignments.get(&slot_node_id)?;
+        if nodes.is_empty() {
+            return None;
+        }
+        let mut refs = Vec::with_capacity(nodes.len());
+        for &n in nodes {
+            let id = match self.nodes.get(n).map(|nd| &nd.kind) {
+                Some(NodeKind::Element(e)) => e.get_attribute("id"),
+                _ => return None,
+            };
+            match id {
+                Some(v) if !v.is_empty() => refs.push(format!("#{v}")),
+                _ => return None,
+            }
+        }
+        Some(refs.join(" "))
+    }
+
+    /// [`Self::manual_assigned_slot_marker`] 的 parse 侧对偶：扫全树（children
+    /// 边含 shadow 树——ShadowRoot 挂在宿主 children；template contents 不在
+    /// children 边，天然不达）摘 `data-zw-manual-assigned` marker 并还原手动表。
+    ///
+    /// 引用解析走 [`Self::get_element_by_id`]（light DOM O(1) 索引面；跨 shadow
+    /// 树引用命中封装边界返 `None`——与降级策略同路）。任一引用不可解析（006
+    /// hosts 4/5 场景：assign 后节点被 remove）→ 放弃整个 marker，slot 走回退
+    /// 内容；部分解析不做（spec assign 是整体替换语义，残表比空表更失真）。
+    /// 摘除先行于建表：marker 不留存活属性面（re-serialize 不再回写、快照
+    /// 等价性不破）。
+    pub(crate) fn restore_manual_slot_assignments(&mut self) {
+        let mut slots = Vec::new();
+        self.collect_manual_slot_marker_candidates(self.root, &mut slots);
+        for slot in slots {
+            let Some(marker) = self.get_attribute(slot, "data-zw-manual-assigned") else {
+                continue;
+            };
+            self.remove_attribute(slot, "data-zw-manual-assigned");
+            let manual_root = self
+                .slot_shadow_context(slot)
+                .and_then(|(shadow_root, _)| {
+                    matches!(
+                        self.nodes.get(shadow_root).map(|n| &n.kind),
+                        Some(NodeKind::ShadowRoot(d)) if d.slot_assignment == SlotAssignment::Manual
+                    )
+                    .then_some(())
+                })
+                .is_some();
+            if !manual_root {
+                continue;
+            }
+            let mut resolved = Vec::new();
+            for r in marker.split_ascii_whitespace() {
+                match r.strip_prefix('#').and_then(|id| self.get_element_by_id(id)) {
+                    Some(n) => resolved.push(n),
+                    None => {
+                        resolved.clear();
+                        break;
+                    }
+                }
+            }
+            if !resolved.is_empty() {
+                self.set_manual_assigned_nodes(slot, resolved);
+            }
+        }
+    }
+
+    /// children 边全树枚举带 `data-zw-manual-assigned` marker 的 slot 元素
+    ///（含 shadow 树内；NodeId 先收集后处理，摘除/建表不干扰遍历）。
+    fn collect_manual_slot_marker_candidates(&self, id: NodeId, result: &mut Vec<NodeId>) {
+        let Some(node_data) = self.nodes.get(id) else {
+            return;
+        };
+        if matches!(&node_data.kind, NodeKind::Element(e) if e.local_name() == "slot")
+            && self.get_attribute(id, "data-zw-manual-assigned").is_some()
+        {
+            result.push(id);
+        }
+        for &child in &node_data.children {
+            self.collect_manual_slot_marker_candidates(child, result);
+        }
+    }
+
     /// 获取 slot 元素已分配的节点列表。
     ///
     /// 在调用 `resolve_slots` 之后使用此方法获取分配结果。
     /// 如果 slot 有已分配的 light DOM 节点，返回这些节点；
     /// 如果没有已分配的节点（即使用回退内容），返回空列表。
     ///
+    /// `slotAssignment: 'manual'` shadow root 内的 slot 走手动表
+    ///（[`Self::set_manual_assigned_nodes`] 原始列表）并活过滤 parent==host
+    ///（spec assign slottables 可见面；shim 侧 assignedNodes 的 matchedM 同口径
+    /// ——assign 后移出宿主的节点不再算已分配，slot 显示回退内容）。manual 表
+    /// 命中仍以所属 shadow root 的分配策略为门（spec find slotables 的 manual
+    /// 分支——named root 的 slot 上 assign() 列表 inert，与 shim 读取面同口径；
+    /// 表未命中的 manual root slot 恒走自动表路径，[`Self::resolve_slots`] 对
+    /// manual host 不写表，结果同为空 = 回退内容）。
+    ///
     /// `slot_node_id` 是 `<slot>` 元素的 NodeId。
     pub fn get_assigned_nodes(&self, slot_node_id: NodeId) -> Vec<NodeId> {
+        // 手动分配面：先探手动表（哈希命中即走；未命中不付 parent 链上溯——
+        // named 页读取路径零新增成本）。
+        if let Some(nodes) = self.manual_slot_assignments.get(&slot_node_id)
+            && let Some((shadow_root, host)) = self.slot_shadow_context(slot_node_id)
+            && matches!(
+                self.nodes.get(shadow_root).map(|n| &n.kind),
+                Some(NodeKind::ShadowRoot(d)) if d.slot_assignment == SlotAssignment::Manual
+            )
+        {
+            let result: Vec<NodeId> = nodes
+                .iter()
+                .copied()
+                .filter(|&n| self.nodes.get(n).and_then(|nd| nd.parent) == Some(host))
+                .collect();
+            return result;
+        }
+
         // 获取 slot 的 name 属性
         let slot_name = self
             .nodes
@@ -471,14 +686,37 @@ impl Document {
     /// 快返 `None` 零开销；shadow 页每元素一次 O(slot 数 × 分配数) 反扫（表极小，
     /// 每元素样式计算一次可接受）。FIXME(45-M3+)：动态分配接线后若成热点，建
     /// 节点 → slot 反向索引。
+    ///
+    /// 45 号 M3 手动臂：manual root 的 slot 分配活在手动表（`assign()` 镜像，
+    /// [`Self::set_manual_assigned_nodes`]），与自动表同扫；手动条目按
+    /// parent==host 活过滤（与 [`Self::get_assigned_nodes`] 读侧同口径——原始
+    /// 列表节点被移出宿主后不再算已分配）。
     pub fn assigned_slot(&self, node: NodeId) -> Option<NodeId> {
-        if self.slot_assignments.is_empty() {
+        if self.slot_assignments.is_empty() && self.manual_slot_assignments.is_empty() {
             return None;
         }
-        self.slot_assignments
+        if let Some(((slot, _), _)) = self
+            .slot_assignments
             .iter()
             .find(|(_, assigned)| assigned.contains(&node))
-            .map(|((slot, _), _)| *slot)
+        {
+            return Some(*slot);
+        }
+        self.manual_slot_assignments
+            .iter()
+            .find(|(_, assigned)| assigned.contains(&node))
+            .and_then(|(&slot, _)| {
+                // 与 [`Self::get_assigned_nodes`] 同门：manual 表命中仍以所属
+                // shadow root 分配策略为准（named root 的 assign() 列表 inert）。
+                let (shadow_root, host) = self.slot_shadow_context(slot)?;
+                if !matches!(
+                    self.nodes.get(shadow_root).map(|n| &n.kind),
+                    Some(NodeKind::ShadowRoot(d)) if d.slot_assignment == SlotAssignment::Manual
+                ) {
+                    return None;
+                }
+                (self.nodes.get(node).and_then(|n| n.parent) == Some(host)).then_some(slot)
+            })
     }
 
     /// 在 ShadowRoot 子树中查找第一个匹配选择器的元素。

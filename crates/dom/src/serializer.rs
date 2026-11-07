@@ -99,6 +99,20 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
                 output.push('"');
             }
 
+            // M3 手动臂：ZeroWeb 内部序列化通道——manual root 的 slot 以
+            // `data-zw-manual-assigned` marker 回写 `assign()` 分配关系（render
+            // 顺序 `#id` 引用；spec 无声明式对影，见
+            // `Document::manual_assigned_slot_marker`），parse 侧物化后由
+            // `Document::restore_manual_slot_assignments` 还原并摘除。降级门
+            //（非 manual root/表空/无 id 引用）返 `None` 不回写。
+            if elem.local_name() == "slot"
+                && let Some(marker) = doc.manual_assigned_slot_marker(id)
+            {
+                output.push_str(" data-zw-manual-assigned=\"");
+                output.push_str(&escape_html(&marker));
+                output.push('"');
+            }
+
             output.push('>');
 
             // 自闭合元素
@@ -177,7 +191,8 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             output.push('"');
             // s180/gethtml（M3 Batch 2）：状态位布尔属性回写，顺序按 HTML 序列化
             // spec（shadowrootmode → shadowrootdelegatesfocus →
-            // shadowrootserializable → shadowrootclonable → shadowrootreferencetarget
+            // shadowrootserializable → shadowrootslotassignment →
+            // shadowrootclonable → shadowrootreferencetarget
             // → shadowrootcustomelementregistry〔未落〕）——声明式物化读回
             // （dom/shadow.rs materialize）与 getHTML 模板形态逐字节对齐。
             // https://html.spec.whatwg.org/multipage/parsing.html#serialising-html-fragments
@@ -186,6 +201,13 @@ fn serialize_node_inner_ctx(doc: &Document, id: NodeId, parent_tag: Option<&str>
             }
             if data.serializable {
                 output.push_str(" shadowrootserializable=\"\"");
+            }
+            // M3 手动臂：`shadowrootslotassignment` 枚举回写（named 为缺失值默认
+            // 不回写；manual 显式回写）——声明式物化读回
+            //（materialize_declarative_shadow_roots）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+            if data.slot_assignment == crate::node::SlotAssignment::Manual {
+                output.push_str(" shadowrootslotassignment=\"manual\"");
             }
             if data.clonable {
                 output.push_str(" shadowrootclonable=\"\"");

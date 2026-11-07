@@ -147,6 +147,13 @@ pub struct Document {
     template_contents_map: HashMap<NodeId, NodeId>,
     /// Slot 分配：键为 (slot 元素 NodeId, slot 名)，值为已分配的 NodeId 列表。
     slot_assignments: HashMap<(NodeId, String), Vec<NodeId>>,
+    /// 45 号 shadow-dom-rendering M3 手动臂：`slotAssignment: 'manual'` shadow root
+    /// 内 slot 的 `assign()` 原始列表（spec assign slottables 的 manually assigned
+    /// nodes，键控 slot 元素 NodeId）。仅 manual root 的 slot 有条目（named root 走
+    /// [`Self::slot_assignments`] 自动分配表，[`Document::resolve_slots`] 跳过
+    /// manual host 不写本表）；读取面经 [`Document::get_assigned_nodes`] 活过滤
+    /// parent==host——assign 后节点被移出宿主（006 host4/5 形态）分配随树态失效。
+    manual_slot_assignments: HashMap<NodeId, Vec<NodeId>>,
     /// 运行时焦点元素（`element.focus()`/`element.blur()` 设/清；Selectors L4 §14 `:focus`/
     /// `:focus-within` 判定源）。解析不携带（焦点是运行时状态），由 engine JS 桥注入；
     /// CSS matcher 与 DOM `querySelector` 复评共享同一权威（`:target` 的 URL 同模式）。
@@ -196,6 +203,7 @@ impl Document {
             shadow_roots: HashMap::new(),
             template_contents_map: HashMap::new(),
             slot_assignments: HashMap::new(),
+            manual_slot_assignments: HashMap::new(),
             focus_element: None,
             modal_dialogs: Vec::new(),
             active_element: None,
@@ -225,6 +233,7 @@ impl Document {
             event_listeners: HashMap::new(),
             shadow_roots: HashMap::new(),
             slot_assignments: HashMap::new(),
+            manual_slot_assignments: HashMap::new(),
             focus_element: None,
             modal_dialogs: Vec::new(),
             active_element: None,

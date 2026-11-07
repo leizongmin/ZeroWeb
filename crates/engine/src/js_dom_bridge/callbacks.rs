@@ -3299,8 +3299,9 @@ pub fn register_dom_callbacks(
         "__zw_attach_shadow",
         Box::new(move |args| {
             if args.len() >= 3 {
-                // s180/gethtml：args[3..] 为 init 三状态位（"1"/"0"；旧 shim 调用
-                // 不传时按 false——兼容窗口内零行为变化）。
+                // s180/gethtml：args[3..] 为 init 状态位（"1"/"0"；旧 shim 调用
+                // 不传时按 false——兼容窗口内零行为变化）。45 号 M3 手动臂起
+                // args[6] 为 slotAssignment manual 位（"1" = manual）。
                 m.lock()
                     .unwrap_or_else(|e| e.into_inner())
                     .push(DomMutation::AttachShadow {
@@ -3310,6 +3311,7 @@ pub fn register_dom_callbacks(
                         delegates_focus: args.get(3).map(|s| s == "1").unwrap_or(false),
                         clonable: args.get(4).map(|s| s == "1").unwrap_or(false),
                         serializable: args.get(5).map(|s| s == "1").unwrap_or(false),
+                        slot_assignment: args.get(6).map(|s| s == "1").unwrap_or(false),
                     });
             }
             "ok".into()
@@ -3330,6 +3332,28 @@ pub fn register_dom_callbacks(
                         delegates_focus: args.get(3).map(|s| s == "1").unwrap_or(false),
                         clonable: args.get(4).map(|s| s == "1").unwrap_or(false),
                         serializable: args.get(5).map(|s| s == "1").unwrap_or(false),
+                        slot_assignment: args.get(6).map(|s| s == "1").unwrap_or(false),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
+    // 45 号 shadow-dom-rendering M3 手动臂：`HTMLSlotElement.assign()` 渲染镜像
+    // 通道——args[0] 为 slot 引用（句柄优先，回落选择器），args[1..] 为手动分配
+    // 节点引用（顺序保留 = 渲染序；无参 assign() = 空列表 = 清表）。spec 参数
+    // 校验（非节点 TypeError）与跨 slot 抢占 victim 同步在 shim 侧。
+    // https://dom.spec.whatwg.org/#dom-slot-assign
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_slot_assign",
+        Box::new(move |args| {
+            if !args.is_empty() {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::SlotAssign {
+                        slot_ref: args[0].clone(),
+                        nodes: args[1..].to_vec(),
                     });
             }
             "ok".into()
