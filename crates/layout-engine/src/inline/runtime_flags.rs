@@ -46,6 +46,16 @@ pub(super) fn clamp_strut_displaced() -> bool {
     selected(*VALUE, || default_on("ZW_CLAMP_STRUT"))
 }
 
+/// R5449（css-overflow-4 §block-ellipsis / css-text-3 §3.1.4 hangable whitespace）：
+/// line-clamp 截断生效后，末保留行的 hangable 尾随空格不进 ellipsis 前内容——纯空白
+/// run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width（x 不动：R1338 对齐口径
+/// 已排除 hang 宽，位置中性）。block-ellipsis-032 判例：pre-wrap 悬挂空格 span 残留
+/// ellipsis 前露红底。default-on；`ZW_CLAMP_HANG_TRIM=0` 回退不剪（旧行为）。
+pub(super) fn clamp_hang_trim() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_CLAMP_HANG_TRIM"));
+    selected(*VALUE, || default_on("ZW_CLAMP_HANG_TRIM"))
+}
+
 pub(super) fn skip_oof() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_IFC_SKIP_OOF"));
     selected(*VALUE, || default_on("ZW_IFC_SKIP_OOF"))

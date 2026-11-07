@@ -1563,6 +1563,37 @@ impl InlineFormattingContext {
             self.lines.truncate(n);
             self.clamped = true;
         }
+        // R5449（css-overflow-4 §block-ellipsis / css-text-3 §3.1.4 hangable
+        // whitespace）：截断生效后，末保留行的 hangable 尾随空格不进 ellipsis 前内容
+        // ——纯空白 run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width（x 不
+        // 动：R1338 对齐口径已排除 hang 宽，位置中性）。predicate 与
+        // trailing_hang_width 同源（仅 ' '，tab 不剪）。
+        if self.clamped && runtime_flags::clamp_hang_trim() {
+            let (pure_count, mixed_index) = match self.lines.last() {
+                Some(l) => Self::scan_hangable_tail(&l.runs),
+                None => (0, None),
+            };
+            if pure_count > 0 || mixed_index.is_some() {
+                // 混合 run 的空格 advance 经 advance_of 读字体度量（&self 借），先于
+                // run 变更借用取值（借用分离，两段不可合并）。
+                let mixed_advance = mixed_index.map(|i| {
+                    let frag = &self.lines.last().unwrap().runs[i];
+                    self.advance_of(' ', None, frag.font_size, frag.is_ahem)
+                });
+                if let Some(line) = self.lines.last_mut() {
+                    if let Some(i) = mixed_index {
+                        let frag = &mut line.runs[i];
+                        let trailing = frag.text.chars().rev().take_while(|&c| c == ' ').count();
+                        frag.width -= trailing as f32 * mixed_advance.unwrap_or(0.0);
+                        frag.text.truncate(frag.text.len() - trailing);
+                    }
+                    for frag in line.runs.iter_mut().rev().take(pure_count) {
+                        frag.text.clear();
+                        frag.width = 0.0;
+                    }
+                }
+            }
+        }
         // R4414 临时诊断：clamp cap 后行高序列（ZW_CLAMP_PROBE=1）。
         if std::env::var("ZW_CLAMP_PROBE").as_deref() == Ok("1") {
             let hs: Vec<f32> = self.lines.iter().map(|l| l.height).collect();
@@ -1572,6 +1603,25 @@ impl InlineFormattingContext {
                 hs
             );
         }
+    }
+
+    /// R5449：扫描行尾 hangable 空格后缀——返回 (纯空白 run 数，首个混合 run 绝对
+    /// 下标)。predicate 与 `trailing_hang_width` 同源：仅计 ' '（tab 不剪），空文本
+    /// run 无尾随空格即停（保守：不越空 run 回溯）。
+    fn scan_hangable_tail(runs: &[TextFragment]) -> (usize, Option<usize>) {
+        let mut pure = 0;
+        for (index, frag) in runs.iter().enumerate().rev() {
+            let trailing = frag.text.chars().rev().take_while(|&c| c == ' ').count();
+            if trailing == 0 {
+                break;
+            }
+            if trailing == frag.text.chars().count() {
+                pure += 1;
+            } else {
+                return (pure, Some(index));
+            }
+        }
+        (pure, None)
     }
 
     /// 递归收集 `id` 子树的所有文本，跳过 `local_name` 在 `exclude` 中的元素子树，

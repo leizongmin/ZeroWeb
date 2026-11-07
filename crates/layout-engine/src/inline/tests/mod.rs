@@ -37,6 +37,8 @@ mod r5325_text_wrap_balance_tests;
 mod r5342_clamp_displaced_strut_tests;
 mod r5402_ls_line_end_fit_tests;
 mod r5404_first_line_lh_tests;
+/// R5449 clamp 截断末保留行 hangable 尾随空格剪除（css-overflow-4 §block-ellipsis）。
+mod r5449_clamp_hang_trim_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
