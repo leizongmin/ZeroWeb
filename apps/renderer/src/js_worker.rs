@@ -2396,12 +2396,12 @@ fn js_worker_main(
                 //（主线程槽在 runtime 导航落定收口对称清空）。
                 zero_engine::clear_rect_doc_cache();
                 zero_engine::js_dom_bridge::clear_view_doc_cache();
-                // T13 S3/S7 探针：复位后 V8 已用堆打点（low_memory_notification 已在
+                // T13 S3/S7 探针：复位后已用 JS 堆打点（low_memory_notification 已在
                 // reset_context 内触发；观测腿 `ZEROWEB_MEM_PROBE=1`，不进判据样本）。
                 if crate::mem_reclaim::mem_probe_enabled()
                     && let Some(heap_bytes) = sandbox.heap_used_bytes()
                 {
-                    tracing::info!(target: "mem_probe", v8_heap_bytes = heap_bytes as u64, "worker reset probe");
+                    tracing::info!(target: "mem_probe", js_heap_bytes = heap_bytes as u64, "worker reset probe");
                 }
                 // T13 R1：Reset 臂尾不再同步 trim/S3 通知——成本移出首载测窗（处置
                 // 工单主控 M1），改由主循环 settle+D 到点的 `DeferredReclaim` 臂执行
@@ -2426,10 +2426,39 @@ fn js_worker_main(
                 // T13 R1：延迟回收臂（isolate 线程命令边界，处置工单约束 4 的定时点）。
                 // S3：复位尾移来的 `low_memory_notification`——旧 Context 垃圾的全堆
                 // GC 触发（无条件：首轮 OFF 面通知即无条件执行，仅时机后移）。
+                // T37/G4 归因探针：GC 前后 JS 堆打点（`ZEROWEB_MEM_PROBE=1` 观测腿）——
+                // pre/post 差值 = 全堆 GC 可回收面，区分「活对象」与「未回收垃圾」。
+                // T38/G4 扩展：committed 堆（total_heap_size）pre/post——已提交空闲页驻留面。
+                let js_heap_pre = if crate::mem_reclaim::mem_probe_enabled() {
+                    sandbox.heap_used_bytes()
+                } else {
+                    None
+                };
+                let js_heap_total_pre = if crate::mem_reclaim::mem_probe_enabled() {
+                    sandbox.heap_total_bytes()
+                } else {
+                    None
+                };
                 sandbox.low_memory_reclaim();
                 // T13 S2：归还 glibc arena free 页（`ZEROWEB_NAV_TRIM=0` 关，token 全零）。
                 if crate::mem_reclaim::nav_trim_enabled() {
                     crate::mem_reclaim::malloc_trim_now("worker_trim", gens);
+                }
+                if let (Some(pre), Some(post)) = (
+                    js_heap_pre,
+                    if crate::mem_reclaim::mem_probe_enabled() {
+                        sandbox.heap_used_bytes()
+                    } else {
+                        None
+                    },
+                ) {
+                    let total_pre = js_heap_total_pre.unwrap_or(0) as u64;
+                    let total_post = if crate::mem_reclaim::mem_probe_enabled() {
+                        sandbox.heap_total_bytes().unwrap_or(0) as u64
+                    } else {
+                        0
+                    };
+                    tracing::info!(target: "mem_probe", js_heap_bytes_pre_gc = pre as u64, js_heap_bytes_post_gc = post as u64, js_heap_total_pre_gc = total_pre, js_heap_total_post_gc = total_post, gens = gens as u64, "worker reclaim probe");
                 }
             }
             JsWorkerCommand::Shutdown => {

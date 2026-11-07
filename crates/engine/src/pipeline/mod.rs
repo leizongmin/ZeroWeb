@@ -1637,6 +1637,24 @@ impl RenderPipeline {
         self.sel_renames.clear();
     }
 
+    /// T38/G4 归因探针（`ZEROWEB_MEM_PROBE=1` 观测腿）：文档驻留四元组
+    /// `(DOM 节点数, 过渡基线样式条数, 布局盒数, 样式表条数)`。只读 len/遍历，
+    /// 不在探针关闭路径调用；布局盒数走 `cached_layout` 树迭代栈遍历。
+    pub fn mem_probe_doc_stats(&self) -> (usize, usize, usize, usize) {
+        let doc_nodes = self.cached_doc.as_ref().map_or(0, |d| d.borrow().node_count());
+        let styles_cached = self.cached_styles.len();
+        let layout_boxes = self.cached_layout.as_ref().map_or(0, |l| {
+            let mut count = 0usize;
+            let mut stack: Vec<&zero_layout_engine::LayoutBox> = vec![&l.root];
+            while let Some(b) = stack.pop() {
+                count += 1;
+                stack.extend(b.children.iter());
+            }
+            count
+        });
+        (doc_nodes, styles_cached, layout_boxes, self.cached_stylesheets.len())
+    }
+
     /// uievents-compat M3 尾簇 4：handle→NodeId 重绑——全量 `render_html` 重建会清
     /// `persistent_handle_nodes`（R100），此后 handle 型 mutation（页内
     /// createElement 产物的后续写）报 unknown handle。结构性刷新方持 shim 侧
@@ -5289,6 +5307,29 @@ mod dirty_region_tests {
         assert_eq!((x, y), (0.0, 0.0));
         assert_eq!(w, 800.0);
         assert_eq!(h, 600.0);
+    }
+}
+
+#[cfg(test)]
+mod mem_probe_doc_stats_tests {
+    use super::*;
+
+    /// T38/G4 归因探针钉：渲染后 mem_probe_doc_stats 四元组必须可观测——
+    /// DOM 节点数/布局盒数/样式表条数非零（探针归因「文档驻留 vs 分配器滞留」
+    /// 的数据有效性前提）。`cached_styles` 仅过渡基线路径填充，普通渲染下允许为 0。
+    #[test]
+    fn mem_probe_doc_stats_reports_doc_residency() {
+        let mut pipeline = RenderPipeline::new(800.0, 600.0);
+        assert_eq!(pipeline.mem_probe_doc_stats(), (0, 0, 0, 0), "未渲染时四元组应为零");
+        let html = "<html><body><p>hi</p><div>world</div></body></html>";
+        pipeline.render_html(html, "p { color: red; }");
+        let (nodes, _styles, layout_boxes, sheets) = pipeline.mem_probe_doc_stats();
+        assert!(
+            nodes >= 5,
+            "渲染后 DOM 节点数必须 ≥ 5（html/body/p/div+文本），实际 {nodes}"
+        );
+        assert!(layout_boxes > 0, "渲染后布局盒数必须 > 0，实际 {layout_boxes}");
+        assert!(sheets >= 1, "渲染后样式表条数必须 ≥ 1，实际 {sheets}");
     }
 }
 
