@@ -59,3 +59,37 @@
 监听落地提交与 push；落地出现后核验并按需补 lark 通知与控制面同步的核验记录；
 v2 刀（typed-fate 25 键）归属按 twin 轮活性定，探针
 `zz-probe-knife11-v2.html` 在语料盘待跑（须 batch.lock 串行）。
+
+## 6. 补记（14:35，读 gates-closure 笔记后身份定谳）
+
+census 轮 `2026-11-07-knife11-gates-closure.md` 识别了本笔记 §1.4/§1.5 的
+未署名之手：**14:09:59-14:27:25 census 轮修复补跑 batch-knife11-pre.sh 的
+stash push/pop 周期**——14:09 四文件回 HEAD = 其补跑 stash push（pre 态构建，
+逐文件 `git show HEAD:$f | cmp` 口径修复）；14:26:55 恢复 = 其临时 stash
+（`406e160d`）pop（slots 4→4 恒一）。即两次抹除/恢复均为落地权轮自身批周期，
+非外力抹除；本笔记 §1.5「恢复源即 stash 对象 440687fbdb 或同字节重放」收敛
+为后者（census 补跑自有 stash 同字节重放，`git diff 440687fbdb` 空仅证字节
+等价）。配方缺陷诊断两轮独立一致（本笔记 §4 = closure §1）；pre 腿经补跑
+三腿 judge 全 VERDICT OK（rows/P/F 逐键恒等、四红线全零），gates 门禁收口。
+
+## 7. 补记（15:05，落地推送后核验）
+
+- 落地已推 origin/main：`72da4f974`（五文件同窗 +41/-13，含本会话 part06.rs
+  r3254 期望预改）+ `c700bfb2a`（gates 收口 + anchor-rebase 换基传递 + 控制面
+  第十一刀收口行，方向表述正确）。
+- 换基锚链：`ad212b5f`（12:51 判读锚，98b1e5296 基）→ `092cc4db`（14:39 现树
+  锚，s328 a896a0707 落基，399090bd anchor-rebase §1/§2 传递定谳）→ 落地字节
+  = landing-verify §1 复核一致。本会话一次 `bc9c927f` 读数系自制 recipe 路径
+  标签伪差——锚配方 = md5sum **输出行含路径串**再 md5（verdict 批 ：26 全相对
+  路径口径），裸文件名口径对同一字节得异值；字节层面 blob 对账：stash→落地
+  part01e/part01f/part06.js 零差、part01.js 仅 s328 区 hunk、flip marker
+  paren-new=2 完好。
+- 勘误指针：落地正文首段「缺省翻置从 'p' 改为 'div'」方向写反（实际
+  **'div'→'p'**，对齐 multitest 语料录音缺省而非 Chrome/spec 初始 div）——
+  399090bd landing-verify §2 已记；控制面收口行方向正确，正文勘误随其后续
+  docs 提交处理。
+- v2 动向：本地 part01f.js :1533 区再现未署名 +10 行脏改（15:0x，恰 Fix A
+  施工位点）——按 clockskew 分工先核 v2 认领轮（twin）活性，本会话不重复
+  施工；探针与 Fix A/B 处方已随 verdict-verify/landing-division 两笔记在档。
+本会话五份核验笔记随本文档提交存档；刀体五文件落地由 census 轮执行
+（含本会话 part06.rs r3254 期望预改）。
