@@ -160,6 +160,106 @@ fn test_canvas_to_blob_r3296() {
     );
 }
 
+/// s329（html-semantics M2）：canvas bitmap 无像素（宽/高 0）→ toDataURL 恒返
+/// 'data:,' + toBlob callback 收 null（异步）。此前缺位时 0 尺寸位图仍被 host
+/// 编码成真 PNG（WPT toDataURL.zero{width,size,height} + toBlob.null 四页断言
+/// 面）。零臂按属性即时读——动态 c.width=0（toBlob.null 复跑段）同臂；origin-
+/// clean 门在零臂之前（spec 步骤序，s247 面）。toBlob 零臂在惰性建 ctx 之前
+///（0 尺寸不入 host）。
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl
+/// https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob
+#[test]
+fn test_canvas_zero_dim_todataurl_datablob_s329() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><canvas id='zw' width='0'></canvas>\
+         <canvas id='zh' height='0'></canvas>\
+         <canvas id='zb' width='100' height='0'></canvas></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① width='0'（height 缺省 300）→ 'data:,'（toDataURL.zerowidth 形）。
+    // ② height='0'（width 缺省 300）→ 'data:,'（toDataURL.zeroheight 形）。
+    sandbox
+        .execute(
+            "var zw = document.getElementById('zw');\
+             var zh = document.getElementById('zh');\
+             globalThis.__zwU = zw.toDataURL();\
+             globalThis.__zhU = zh.toDataURL();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__zwU").unwrap().value,
+        "data:,",
+        "width=0 canvas toDataURL 恒 'data:,（spec bitmap 无像素臂）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__zhU").unwrap().value,
+        "data:,",
+        "height=0 canvas toDataURL 恒 'data:,（width 缺省 300 不触零臂）"
+    );
+
+    // ③ toBlob 于 height=0（toBlob.null 起手形）→ callback 收 null（异步派发）
+    // + 返 undefined；零臂在惰性建 ctx 之前（host 零尺寸位图不入）。
+    sandbox
+        .execute(
+            "var zb = document.getElementById('zb');\
+             globalThis.__zbRet = zb.toBlob(function(b){ globalThis.__zbBlob = b; });",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__zbRet)").unwrap().value,
+        "undefined",
+        "toBlob 零尺寸画布仍返 undefined（spec 非 Promise）"
+    );
+    sandbox.execute("globalThis.__noopS329 = 1;").unwrap(); // drain microtask
+    assert_eq!(
+        sandbox.execute("String(globalThis.__zbBlob === null)").unwrap().value,
+        "true",
+        "toBlob 零尺寸画布 callback 收 null（spec result=null）"
+    );
+
+    // ④ 动态置零（toBlob.null 复跑段同臂）：正常画布 getContext 绘制后
+    // c.width = 0 → toDataURL 属性即时读回 'data:,（零臂读内容属性）。
+    sandbox
+        .execute(
+            "var c = document.createElement('canvas'); c.width = 50; c.height = 50;\
+             c.getContext('2d').fillRect(0, 0, 10, 10);\
+             globalThis.__dynBefore = c.toDataURL().slice(0, 5);\
+             c.width = 0;\
+             globalThis.__dynAttr = c.getAttribute('width');\
+             globalThis.__dynAfter = c.toDataURL();",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__dynBefore").unwrap().value,
+        "data:",
+        "置零前 toDataURL 仍产 PNG data URL"
+    );
+    assert_eq!(
+        sandbox.execute("String(globalThis.__dynAttr)").unwrap().value,
+        "0",
+        "width IDL setter 反射内容属性（零臂属性即时读的前提）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__dynAfter").unwrap().value,
+        "data:,",
+        "动态置零后 toDataURL 恒 'data:,（属性即时读同臂）"
+    );
+}
+
 #[test]
 fn test_canvas_slice4_r2798() {
     // R2798：canvas slice 4——off-DOM 2D 表面补全（putImageData / globalCompositeOperation / shadow）。

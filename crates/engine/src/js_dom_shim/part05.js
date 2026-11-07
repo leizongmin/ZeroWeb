@@ -8640,6 +8640,11 @@
       if (el._ctx && el._ctx._zwUnclean) {
         throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
       }
+      // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后、
+      // 惰性建 ctx 之前；el.width/height getter 属性即时读——createElement 产物走本实例
+      // 面而非 part04 trap，c.width=0 动态置零同臂）。toDataURL.zero 断言。
+      // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl
+      if (el.width === 0 || el.height === 0) return 'data:,';
       if (!el._ctx) el.getContext('2d');
       if (!el._ctx) return 'data:,';
       var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));
@@ -8670,6 +8675,11 @@
       // 异步派发（spec 在 task 中回调；headless 近似为 microtask——Promise.resolve().then）。
       var p = Promise.resolve().then(function () {
         if (typeof __zw_canvas_op !== 'function') return null;
+        // s329：bitmap 无像素（宽/高 0）→ null（spec result=null，惰性建 ctx 之前；
+        // el.width/height getter 属性即时读——createElement 产物走本实例面而非
+        // part04 trap）。toBlob.null 断言。
+        // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob
+        if (el.width === 0 || el.height === 0) return null;
         if (!el._ctx) el.getContext('2d');
         if (!el._ctx || !el._ctx._handle) return null; // 无 ctx → 无 bitmap
         var csv = String(__zw_canvas_op(el._ctx._handle, 'toDataURL'));

@@ -1051,6 +1051,14 @@
               if (ctx && ctx._zwUnclean) {
                 throw _zwDomException('toDataURL on an origin-unclean canvas', 'SecurityError');
               }
+              // s329：bitmap 无像素（宽/高 0）→ 恒 'data:,'（spec 步骤 2，origin-clean 门之后；
+              // 按属性即时读——c.width=0 动态置零同臂）。toDataURL.zero{width,size,height} 三页断言
+              //（缺位时 host 仍把 0 尺寸位图编码成真 PNG）。
+              // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-todataurl
+              if (_zwCanvasDim(sel, handle, 'width', 300) === 0 ||
+                  _zwCanvasDim(sel, handle, 'height', 150) === 0) {
+                return 'data:,';
+              }
               if (!ctx || !ctx._handle) return 'data:,'; // 未 getContext → 无 bitmap
               var csv = String(__zw_canvas_op(ctx._handle, 'toDataURL'));
               if (!csv) return 'data:,';
@@ -1075,6 +1083,14 @@
                 //（https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob）。
                 if (_zwCanvasCtx[key] && _zwCanvasCtx[key]._zwUnclean) {
                   throw _zwDomException('toBlob on an origin-unclean canvas', 'SecurityError');
+                }
+                // s329：bitmap 无像素（宽/高 0）→ callback(null)（spec result=null，origin-clean
+                // 门之后；惰性建 ctx 之前——0 尺寸位图不入 host）。toBlob.null 断言（width=100
+                // height=0 起手 + 动态置 width=0 复跑同臂）。
+                // https://html.spec.whatwg.org/multipage/canvas.html#dom-canvas-toblob
+                if (_zwCanvasDim(sel, handle, 'width', 300) === 0 ||
+                    _zwCanvasDim(sel, handle, 'height', 150) === 0) {
+                  return null;
                 }
                 if (!_zwCanvasCtx[key] || !_zwCanvasCtx[key]._handle) {
                   // 惰性建 ctx（镜像 toDataURL getContext 调用）——经 proxy getContext get-trap 建 + 缓存。
