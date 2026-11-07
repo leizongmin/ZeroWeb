@@ -4136,3 +4136,50 @@ fn test_send_pipeline_join_mutation_queue_d1d2() {
     // 该面由真实管线钉死：join-different 语料常驻文件（修复后 Pass）+ webview.rs
     // execute_dom_script_path_generation_bump_call_site_present_d2 源码钉。
 }
+
+#[test]
+fn test_computed_named_color_brown_blueviolet_t47() {
+    // T47：brown / blueviolet 命名色 computed 管线端到端钉（css-parser named_colors 表
+    // 补键的下游消费面）。补表前 parse_named_color 返 None → 声明被拒 → gCS 回落初始色；
+    // 补表后 rgb(165, 42, 42) / rgb(138, 43, 226)。活体对照 Chrome 154 getComputedStyle
+    //（evidence t47-blink-oracle-result.txt brown-computed/blueviolet-computed）。
+    // CSS Color 4 §6.1：brown=#A52A2A、blueviolet=#8A2BE2。
+    // https://www.w3.org/TR/css-color-4/#named-colors
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body>\
+         <div id=\"nb\" style=\"color: brown\"></div>\
+         <div id=\"bv\" style=\"color: blueviolet\"></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__c1 = getComputedStyle(document.querySelector('#nb')).color;\
+             globalThis.__c2 = getComputedStyle(document.querySelector('#bv')).color;",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__c1").unwrap().value,
+        "rgb(165, 42, 42)",
+        "color: brown → gCS rgb(165,42,42)（CSS Color 4 §6.1 #A52A2A）"
+    );
+    assert_eq!(
+        sandbox.execute("globalThis.__c2").unwrap().value,
+        "rgb(138, 43, 226)",
+        "color: blueviolet → gCS rgb(138,43,226)（CSS Color 4 §6.1 #8A2BE2）"
+    );
+}

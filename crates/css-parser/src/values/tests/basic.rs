@@ -2066,3 +2066,30 @@ fn test_parse_linear_color_spaces() {
     // 常规 display-p3（gamma）仍工作（green 在 display-p3 略不同，但 a98-rgb green 已 R2255 验证）
     assert!(super::super::parse_color("color(display-p3 0 0.5 0)").is_some());
 }
+
+#[test]
+/// T47：brown / blueviolet（CSS Color 4 §6.1 命名色）解析——补表前两者返 None（声明
+/// 被拒、元素回落继承/初始色），Chrome 154 活体 getComputedStyle brown=rgb(165, 42, 42)、
+/// blueviolet=rgb(138, 43, 226)（evidence t47-blink-oracle-result.txt brown-computed/
+/// blueviolet-computed）。仅补此两键（T46 双审查记池点名缺项），不扩其他键。
+/// https://www.w3.org/TR/css-color-4/#named-colors
+fn test_parse_named_color_brown_blueviolet_t47() {
+    use crate::values::ColorValue;
+    assert!(matches!(
+        super::super::parse_color("brown"),
+        Some(ColorValue::Rgba(165, 42, 42, 255))
+    ));
+    // 大小写不敏感（§6.1 "ASCII case-insensitive"）
+    assert!(matches!(
+        super::super::parse_color("BROWN"),
+        Some(ColorValue::Rgba(165, 42, 42, 255))
+    ));
+    assert!(matches!(
+        super::super::parse_color("blueviolet"),
+        Some(ColorValue::Rgba(138, 43, 226, 255))
+    ));
+    assert!(matches!(
+        super::super::parse_color("BlueViolet"),
+        Some(ColorValue::Rgba(138, 43, 226, 255))
+    ));
+}
