@@ -16317,8 +16317,11 @@
       // R2932 的 _winOnHandlers['error']（part06，运行期已初始化——shim 单 IIFE 共享作用域）；
       // 无 window.onerror 时为 undefined，走纯事件派发。
       var onErrFn = typeof _winOnHandlers !== 'undefined' ? _winOnHandlers['error'] : null;
+      // s336：listener 表存的是 legacy adapter（part06 R2932 特判）——移除/装回须用
+      // adapter 引用，否则失配 → dispatch 时 onerror 被 event 形态二次触发。
+      var _onErrAdapter = (globalThis._zwWinOnErrorAdapter && globalThis._zwWinOnErrorAdapter()) || null;
       if (typeof onErrFn === 'function') {
-        try { _globalRemoveEventListener('error', onErrFn); } catch (_eRm) {} // 暂移：dispatch 时 onerror 不被 event 形态触发
+        try { _globalRemoveEventListener('error', _onErrAdapter || onErrFn); } catch (_eRm) {} // 暂移：dispatch 时 onerror 不被 event 形态触发
       }
       try {
         // window 'error' listener（addEventListener 注册 + tgt==='win' 槽位）派发。
@@ -16338,7 +16341,7 @@
           }
           globalThis.event = _r114Prev;
         } catch (_eO) {}
-        try { _globalAddEventListener('error', onErrFn); } catch (_eRa) {} // 装回
+        try { _globalAddEventListener('error', _onErrAdapter || onErrFn); } catch (_eRa) {} // 装回（s336 adapter 同步）
       }
     } finally {
       _zwInReportError = false;
@@ -16377,7 +16380,7 @@
   // `thisObj`：handler 内 `this` 与 `event.currentTarget`（默认 event.target）。`stopImmediatePropagation`
   // 中断当前节点内后续 listener。`once` listener（`{once:true}` 注册）派发后自动移除——用快照迭代，
   // 派发完一次性从原 list 滤除已触发的 once 条目（不扰动迭代；reentrancy 下按对象引用滤除安全）。
-  function _dispatchToListeners(key, event, phase, thisObj, slot) {
+  function _dispatchToListeners(key, event, phase, thisObj, slot, asyncDrain) {
     var listeners = _listenerStore[key];
     if (!listeners || !listeners[event.type]) return !event._defaultPrevented;
     var list = listeners[event.type];
@@ -16539,6 +16542,55 @@
     // 下一致止上溯/止同节点后续 listener。immediate flag 同理（`_immediateStopped` polyfill / `__zw_stop_immediate` native）。
     var stopped = function() { return event._propagationStopped || event.__zw_stop === true; };
     var immediateStopped = function() { return event._immediateStopped || event.__zw_stop_immediate === true; };
+    if (asyncDrain) {
+      // s336 R3（逐 listener 微任务检查点）：WebIDL call-a-user-objects-operation 尾
+      // clean-up-after-running-script——invoke 返回后 JS 执行上下文栈为空即
+      // perform-a-microtask-checkpoint。window postMessage 面派发于宿主任务（无外层
+      // 脚本栈）→ checkpoint 成立（checkpoint-after-error-event t2 判据序
+      // [h1, h1p, h2, h2p]）；error 面（report-the-error，栈非空）走同步循环不涉。
+      // 以微任务链逼近：fire 后 Promise.resolve().then(next) 让出——V8 微任务 FIFO
+      // 保证 listener 内入队的微任务先于下一 listener 排空，与 spec checkpoint 等序。
+      // 仅 postMessage 派发点启用（页面主动 dispatchEvent 的同步 window.event 面不涉）。
+      // https://webidl.spec.whatwg.org/#call-a-user-objects-operation
+      var drainSeq = [];
+      var capOnly = phase !== 'bubble';
+      if (capOnly) {
+        for (var dI = 0; dI < snap.length; dI++) if (snap[dI].capture) drainSeq.push(snap[dI]);
+      }
+      if (phase !== 'capture') {
+        // R331：target 段重取当时快照（capture 段内 swap 可见）+ slot 过滤。
+        var tSnap = (slot === undefined ? listeners[event.type] : (slot === null
+          ? listeners[event.type].filter(function(e) { return e.tgt === undefined; })
+          : listeners[event.type].filter(function(e) { return e.tgt === slot; })));
+        for (var dJ = 0; dJ < tSnap.length; dJ++) if (!tSnap[dJ].capture) drainSeq.push(tSnap[dJ]);
+      }
+      var dK = 0;
+      var drainNext = function () {
+        if (dK >= drainSeq.length || immediateStopped()) {
+          // once 批滤兜底（eventPhase/currentTarget 复位归 _dispatchWithBubble finally——
+          // 与同步路径零偏差）。
+          if (firedOnce) {
+            listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+          }
+          return;
+        }
+        var entry = drainSeq[dK++];
+        // R111：快照迭代期间被 removeEventListener 移除的 listener 跳过（原 for 同款）。
+        if (!(listeners[event.type] && listeners[event.type].indexOf(entry) >= 0)) { drainNext(); return; }
+        fire(entry);
+        if (immediateStopped()) { drainNext(); return; }
+        if (stopped() && capOnly) {
+          // capture 段 stopPropagation：target 子序不跑（原 stopped 门同款）。
+          if (firedOnce) {
+            listeners[event.type] = (listeners[event.type] || []).filter(function(e) { return firedOnce.indexOf(e) < 0; });
+          }
+          return;
+        }
+        Promise.resolve().then(drainNext);
+      };
+      drainNext();
+      return !event._defaultPrevented;
+    }
     if (phase !== 'bubble') {
       for (var i = 0; i < snap.length; i++) {
         if (snap[i].capture) {
@@ -17130,7 +17182,7 @@
     try { ctl.click(); } catch (_eFwd4004) {} finally { globalThis.__zwLblClickInProgress = false; }
   }
 
-  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy) {
+  function _dispatchWithBubble(targetKey, targetSel, targetHandle, event, targetSlot, receiverProxy, asyncDrain) {
     var target = _makeProxy(targetSel, targetHandle);
     // WC-M3 切片 8 第九增量（web-components goal）：**receiver identity 保持**——
     // dispatchEvent 的接收者本身是页面持有的 proxy；R52 消零清 `_proxyCache` 后
@@ -17656,11 +17708,11 @@
       // ① capture 阶段：root→target 方向（window → document → chain 反序），祖先派发 capture-only。
       if (!globalThis.__zw_no_capture) {
         if (passWin && winObj) {
-          _dispatchToListeners(htmlKey, event, 'capture', winObj, 'win');
+          _dispatchToListeners(htmlKey, event, 'capture', winObj, 'win', asyncDrain);
           if (bubbleStopped()) return !event._defaultPrevented;
         }
         if (passDoc && docObj) {
-          _dispatchToListeners(htmlKey, event, 'capture', docObj, 'doc');
+          _dispatchToListeners(htmlKey, event, 'capture', docObj, 'doc', asyncDrain);
           if (bubbleStopped()) return !event._defaultPrevented;
         }
         if (elemChain.length > 0) {
@@ -17677,7 +17729,7 @@
             // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
             var _r114CapSup = !!_r114C.shadow;
             if (_r114CapSup) globalThis.event = undefined;
-            _dispatchToListeners(capKey, event, 'capture', capAnc, _r114C.sel === 'html' ? null : undefined);
+            _dispatchToListeners(capKey, event, 'capture', capAnc, _r114C.sel === 'html' ? null : undefined, asyncDrain);
             if (_r114CapSup) globalThis.event = event;
             if (bubbleStopped()) return !event._defaultPrevented;
           }
@@ -17728,7 +17780,7 @@
       }
       // R114：target 在 shadow 树内 → target 站派发期间 window.event 抑制为 undefined。
       if (_r114Suppress) globalThis.event = undefined;
-      _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter);
+      _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter, asyncDrain);
       // s328：采纳对象 own on* 触发——站内 listener 序（store listeners 之后，
       // 同站 listener 全跑完再判传播停止）。
       if (typeof _s328OwnOn === 'function') {
@@ -17753,7 +17805,7 @@
             // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
             var _r114BubSup = !!_r114B.shadow;
             if (_r114BubSup) globalThis.event = undefined;
-            _dispatchToListeners(bKey, event, 'bubble', bAnc, _r114B.sel === 'html' ? null : undefined);
+            _dispatchToListeners(bKey, event, 'bubble', bAnc, _r114B.sel === 'html' ? null : undefined, asyncDrain);
             if (_r114BubSup) globalThis.event = event;
             // R4004（html-semantics M2 切片 16）：label 激活行为——click 冒泡经 label
             // 站且未取消、target 非交互内容 → synthetic click 到 labeled control
@@ -17786,10 +17838,10 @@
         // document 为 target 时链空但 window 仍冒泡（path = [document, window]）；window 为 target 无更高站。
         if (!bubbleStopped()) {
           if (passDoc && docObj) {
-            _dispatchToListeners(htmlKey, event, 'bubble', docObj, 'doc');
+            _dispatchToListeners(htmlKey, event, 'bubble', docObj, 'doc', asyncDrain);
           }
           if (!bubbleStopped() && passWin && winObj) {
-            _dispatchToListeners(htmlKey, event, 'bubble', winObj, 'win');
+            _dispatchToListeners(htmlKey, event, 'bubble', winObj, 'win', asyncDrain);
           }
         }
       }

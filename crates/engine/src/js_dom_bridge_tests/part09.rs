@@ -8417,3 +8417,79 @@ fn test_classic_strict_wrapper_uncaught_report_and_load_s335() {
         "基线包装 sentinel 链不受影响: {base_sentinel}"
     );
 }
+
+#[test]
+fn test_window_onerror_legacy_five_arg_adapter_and_report_position_s336() {
+    // s336 契约（window.onerror legacy 签名面 + strict 抛错位置透传，data-url 判据）：
+    //   ①`window.onerror = fn` 经 R2932 注册进 listener 表，但 invoke 以 OnErrorEventHandler
+    //     legacy 五参 (message, source, lineno, colno, error)（从 error 事件特性读）——
+    //     非 (event) 单参（旧版单参直传使 lineno/colno undefined → data-url 全断言红）；
+    //   ②reportError(reason, filename, lineno, colno) 四参位置进事件特性（strict tail 传
+    //     script src 或页面 URL + 非零行列——data-url 断言 url 非空、lineno/colno 非零 number）；
+    //   ③getter identity：window.onerror === fn（原始 fn 存 _winOnHandlers）；
+    //   ④event 形 listener（addEventListener('error')）仍收 event 单参（签名不混），
+    //     ev.filename 读到同一位置透传值。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#handler-onerror
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    register_dom_callbacks(
+        &mut sandbox,
+        &mutations,
+        &dom_html,
+        &page_url,
+        &canvas_registry,
+        None,
+    );
+    // onerror 五参注册面 + event 形对照 listener + DOM 内带 src 的 script 元素
+    //（strict tail 的 currentScript 同步捕获 + src 位置读取都要求元素真实在位）。
+    sandbox.execute(
+        "globalThis.__zlog=[];\
+         window.onerror=function(m,u,l,c,e){\
+           __zlog.push(m+'|'+u+'|'+l+'|'+c+'|'+(typeof e==='number'?String(e):String(e&&e.message)));\
+           return false;\
+         };\
+         globalThis.addEventListener('error',function(ev){__zlog.push('ev-filename='+ev.filename);});\
+         document.body.innerHTML='<script id=zw-s336 src=\"data:,throw 42\"></script>';",
+    )
+    .unwrap();
+    assert_eq!(
+        sandbox.execute("typeof window.onerror").unwrap().value,
+        "function",
+        "③getter identity 面：window.onerror 返原始 fn"
+    );
+    let strict = crate::js_dom_bridge::script_run_classic_page_strict("throw 42;", 0, Some("data:,throw 42"));
+    sandbox.execute(&strict).unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "42|data:,throw 42|1|1|42|ev-filename=data:,throw 42",
+        "①②④五参 legacy 签名 + 位置透传 + event 形对照：message='42'（非 Error 原值字符串化）、\
+         source=script src、lineno/colno 非零、error 原值 number、listener 形 filename 同值"
+    );
+    // null 赋值面：adapter 摘除后 event 形 listener 保持（不残留双触发）
+    sandbox.execute("globalThis.__zlog=[];window.onerror=null;").unwrap();
+    sandbox
+        .execute("globalThis.reportError(new Error('after-null'));")
+        .unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "ev-filename=",
+        "null 赋值摘 adapter——仅 event 形 listener 触发（filename='' shim 缺省）"
+    );
+}

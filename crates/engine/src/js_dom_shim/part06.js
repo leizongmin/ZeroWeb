@@ -7030,7 +7030,7 @@
   // R2932 `window.dispatchEvent`——window 为 EventTarget（spec 有 dispatchEvent）。R40 改经
   // `_dispatchWithBubble(…, 'win')`：window 为 target（AT_TARGET 只触发 tgt='win' 槽位注册，含
   // window.addEventListener + on* handler 注册），path = [window]，返 `!defaultPrevented`（spec）。
-  globalThis.dispatchEvent = function(event) {
+  globalThis.dispatchEvent = function(event, drainOpts) {
     globalThis.__zwDispatchImpl = 'part06-r5000';
     // R106：spec 入口守卫（同 document.dispatchEvent）。
     globalThis._zwDispatchGuard(event);
@@ -7115,7 +7115,8 @@
     //（settle 落穿臂登记——装载事件须晚于 window load，spec lazy 图 delay
     // load = false 不阻 load：image-loading-lazy 四子测窗序断言面）。drain
     // 放派发返回前、listener 后——has_window_load_fired 已置位。
-    var _zwWinLoadRet = _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win');
+    var _zwWinLoadRet = _dispatchWithBubble(_elKey('html', null), 'html', null, event, 'win',
+      undefined, drainOpts && drainOpts.zwAsyncDrain === true);
     if (event && event.type === 'load') {
       try { if (typeof globalThis.__zwImgDrainAfterWindowLoad5277 === 'function') globalThis.__zwImgDrainAfterWindowLoad5277(); } catch (_e5277dr) {}
       // s281：video lazy 近端 after-load 唤醒 + window-load 已派发标记置位
@@ -7195,7 +7196,9 @@
     var ev = _zwMakeMessageEvent('message', { data: payload, origin: origin, source: self, ports: ports }, payload);
     setTimeout(function () {
       try {
-        self.dispatchEvent(ev);
+        // s336 R3：postMessage 面派发走逐 listener 微任务链（宿主任务栈空——
+        // WebIDL clean-up-after-running-script checkpoint 成立面）。
+        self.dispatchEvent(ev, { zwAsyncDrain: true });
       } catch (_e) {}
     }, 0);
   };
@@ -7213,16 +7216,40 @@
   // 路径（pageshow/popstate/hashchange）可触。element 级 on* handler（onclick 等）未含（element Proxy 另处理）。
   //（本地并行实现的 onload-only accessor 已被本通用实现取代——rebase 069c9035 时采用 R2932 侧。）
   var _winOnHandlers = {};
+  // s336（legacy onerror 签名面）：window.onerror 的 invoke 签名是 OnErrorEventHandler
+  //——(message, source, lineno, colno, error) legacy 五参（从 error 事件特性读），非
+  // (event) 单参。其余 window on* 为 EventHandler 单 event 参不动。注册进 listener
+  // 表的是 adapter（事件→五参转换），原始 fn 存 _winOnHandlers（getter identity 面
+  // window.onerror===fn 保持）。下游「暂移 onerror 再装回」面（part03 report 段、
+  // R2940）须经 _zwWinOnErrorAdapter() 取 adapter 引用，否则 remove 失配致双触发。
+  // https://html.spec.whatwg.org/multipage/webappapis.html#handler-onerror
+  var _winOnHandlerAdapters = {};
+  globalThis._zwWinOnErrorAdapter = function () { return _winOnHandlerAdapters['error'] || null; };
   function _defineWinOnHandler(type) {
     Object.defineProperty(globalThis, 'on' + type, {
       configurable: true,
       get: function () { return _winOnHandlers[type] || null; },
       set: function (fn) {
         var prev = _winOnHandlers[type];
-        if (typeof prev === 'function') _globalRemoveEventListener(type, prev);
+        if (typeof prev === 'function') {
+          _globalRemoveEventListener(type, type === 'error' ? (_winOnHandlerAdapters[type] || prev) : prev);
+          delete _winOnHandlerAdapters[type];
+        }
         if (typeof fn === 'function') {
           _winOnHandlers[type] = fn;
-          _globalAddEventListener(type, fn);
+          if (type === 'error') {
+            _winOnHandlerAdapters[type] = function (ev) {
+              return fn.call(globalThis,
+                ev && ev.message !== undefined ? ev.message : '',
+                ev && ev.filename !== undefined ? ev.filename : '',
+                ev && ev.lineno !== undefined ? ev.lineno : 0,
+                ev && ev.colno !== undefined ? ev.colno : 0,
+                ev && ev.error !== undefined ? ev.error : null);
+            };
+            _globalAddEventListener(type, _winOnHandlerAdapters[type]);
+          } else {
+            _globalAddEventListener(type, fn);
+          }
         } else {
           _winOnHandlers[type] = null;
         }
@@ -11839,7 +11866,7 @@
       });
       var onErrFn = _winOnHandlers['error'];
       if (typeof onErrFn === 'function') {
-        _globalRemoveEventListener('error', onErrFn); // 暂移除，避免 dispatch 时 onerror 被 event 形式二次触发
+        _globalRemoveEventListener('error', (_winOnHandlerAdapters['error'] || onErrFn)); // s336 暂移 adapter（listener 表存 adapter——移除原始 fn 失配则 dispatch 二次触发）
         try {
           if (onErrFn.call(globalThis, msg, src, line, col, null) === true) {
             ev.preventDefault(); // onerror 返 true → 错误已处理（spec：抑制默认动作，cancelable:true 故生效）
@@ -11848,7 +11875,7 @@
       }
       _dispatchToListeners(_elKey('html', null), ev, 'all', globalThis);
       if (typeof onErrFn === 'function') {
-        _globalAddEventListener('error', onErrFn); // 装回
+        _globalAddEventListener('error', (_winOnHandlerAdapters['error'] || onErrFn)); // s336 装回 adapter
       }
     } catch (_e) {}
   };

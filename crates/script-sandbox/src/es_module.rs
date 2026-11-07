@@ -436,7 +436,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     //（`__zw_compile_module(spec, parent, type)`——合成臂按类型分派）。
     // https://tc39.es/proposal-import-attributes/#sec-import-calls
     // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
-    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    return Promise.resolve(__zw_load_module(spec, parent, _diType));\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
+    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    return Promise.resolve().then(function () {\n      return Promise.resolve(__zw_load_module(spec, parent, _diType));\n    });\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
     // s254：import.meta.resolve 宿主桥（HTML #dom-import-meta-resolve——spec 入参经
     // ToString 后走 resolve a module specifier 全算法：map 命中 → 映射 URL 绝对化；
     // URL-like 未命中 → asURL 回退）。宿主返空 = resolution failure（裸说明符未映射/
@@ -4729,5 +4729,67 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             joined, "b,c,a",
             "急切注册序 = 入口图后序（依赖先于导入方，同层按源内声明序）：{joined}"
         );
+    }
+
+    // s336（动态 import 异步求值跳——HTML fetch a single module script 的异步性）：
+    // import() 的模块体求值属后续 job，不占调用点同步块——helper 返回 Promise，取回
+    // +求值经微任务调度。序判据（WPT microtasks/evaluation-order-3 全序列的 sandbox
+    // 级钉）：入口体余下语句先完成 → 已排微任务先排空 → 子模块体及其微任务按 FIFO
+    // 落位 → rejection 续体收尾。同步求值（旧态）把子模块体插进调用点同步块 → 序错。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    #[test]
+    fn test_dynamic_import_evaluation_deferred_microtask_s336() {
+        let fetched: std::sync::Arc<std::sync::Mutex<u32>> = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let fetched_cb = std::sync::Arc::clone(&fetched);
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        let contract = "https://zero.test/resources/dep.mjs\u{1f}(function() { \
+            'use strict'; var _exports = {}; \
+            globalThis.__log.push('step-dep-1'); \
+            Promise.resolve().then(function () { globalThis.__log.push('microtask-dep'); }); \
+            globalThis.__log.push('step-dep-2'); \
+            throw new Error('error'); \
+            return _exports; })()";
+        let contract_for_cb = contract.to_string();
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(move |_args: &[String]| -> String {
+                *fetched_cb.lock().unwrap() += 1;
+                contract_for_cb.clone()
+            }),
+        );
+        let lines: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let lines_cb = std::sync::Arc::clone(&lines);
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args: &[String]| -> String {
+                lines_cb.lock().unwrap().push(args.first().cloned().unwrap_or_default());
+                String::new()
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap_or_default();
+        sandbox
+            .execute(&format!(
+                "{prelude}\nglobalThis.__log = [];\n\
+                 __log.push('entry-1');\n\
+                 Promise.resolve().then(function () {{ __log.push('microtask-entry'); }});\n\
+                 __log.push('entry-2');\n\
+                 __zw_dynamic_import.call({{ referrer: 'https://zero.test/resources/entry.mjs' }}, './dep.mjs').then(\n\
+                     function () {{ __log.push('import-fulfilled'); }},\n\
+                     function (e) {{\n\
+                     __log.push('import-catch', e && e.message);\n\
+                     __zw_report(__log.join(','));\n\
+                 }});\n\
+                 __log.push('entry-3');"
+            ))
+            .expect("执行不得整体失败");
+        let joined = lines.lock().unwrap().join("|");
+        let fetched_n = *fetched.lock().unwrap();
+        assert_eq!(
+            joined, "entry-1,entry-2,entry-3,microtask-entry,step-dep-1,step-dep-2,microtask-dep,import-catch,error",
+            "动态 import 求值不占调用点同步块，序循 spec 异步 job 面：{joined}"
+        );
+        assert_eq!(fetched_n, 1, "宿主取回恰好一次");
     }
 }

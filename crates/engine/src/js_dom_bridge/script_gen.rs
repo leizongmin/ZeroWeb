@@ -796,8 +796,16 @@ pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 /// throw 体 `queueMicrotask` 先于 throw 入队）先于 load 排空。元素引用在 catch 点同步
 /// 捕获：`document.currentScript` 由 finally 清理（R3258），微任务窗内已清不可延迟读取。
 /// `globalThis.reportError` 缺席（shim 未装）/ currentScript 解析失败均 try 守卫降级。
-const STRICT_UNCAUGHT_REPORT_TAIL: &str = "try{globalThis.reportError&&globalThis.reportError(__zw_e);}catch(_zwRe){}\
-try{var _zwCs=document.currentScript;queueMicrotask(function(){\
+// s336（报告位置保真）：reportError 五参形——filename=script src（外链原样；内联/无 src 落页面
+// URL，spec report-the-exception 的 source 面），行列非零 number（data-url 断言 lineno/colno
+// 非 0；包装偏移语义不伪造精确行）；currentScript 同步窗捕获先于报告（R3258 微任务窗内
+// 已清不可延迟读取）。
+// 占位 `__zw_SRC_EXPR__` 在 escape 前由 impl 替换为宿主字面量（source_url Some 时
+// 为 escape 后的 JS 字符串字面量；None 时 ''——falsy 落下方兜底链：元素 src（读空
+// 实证面）→ 页面 URL。字符串嵌 JS 字面量不经 format! 花括号语义，先行替换安全）。
+const STRICT_UNCAUGHT_REPORT_TAIL: &str = "var _zwCs=document.currentScript;\
+try{globalThis.reportError&&globalThis.reportError(__zw_e,__zw_SRC_EXPR__||((_zwCs&&_zwCs.src)||(globalThis.location&&globalThis.location.href)||''),1,1);}catch(_zwRe){}\
+try{queueMicrotask(function(){\
 try{_zwCs&&_zwCs.dispatchEvent(new Event('load'));}catch(_zwLe){}});}catch(_zwQm){}";
 
 /// `var` 声明的 accessor 转导出片段（R201）：get/set 双向转发 eval 绑定——后续脚本
@@ -1452,7 +1460,16 @@ fn script_run_classic_page_impl(
     // {report_tail} 进 format! 前花括号加倍——JS 体自身含 `{`/`}`（format! 转义语义），
     // 基线路径恒空串（字节形状与拆分前逐位一致）。
     let report_tail = if report_uncaught {
-        STRICT_UNCAUGHT_REPORT_TAIL.replace('{', "{{").replace('}', "}}")
+        // s336：先换宿主字面量再逃逸花括号——字面量来自 escape_js_string（引号/反斜杠
+        // 已处理，大括号在 JS 字符串内合法），占位符自身无花括号，替换序安全。
+        let src_literal = match source_url {
+            Some(url) => format!("'{}'", escape_js_string(url)),
+            None => "''".to_string(),
+        };
+        STRICT_UNCAUGHT_REPORT_TAIL
+            .replace("__zw_SRC_EXPR__", &src_literal)
+            .replace('{', "{{")
+            .replace('}', "}}")
     } else {
         String::new()
     };

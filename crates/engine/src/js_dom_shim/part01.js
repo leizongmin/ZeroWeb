@@ -11575,14 +11575,18 @@
   // 任意 throwable（含非 Error 值，`throw {foo:true}`）照传；旧 `(instanceof Error) ? reason : null`
   // 折 null 丢对象身份（WPT module/error-type-3 `log[1].foo` 断言）。
   // https://html.spec.whatwg.org/multipage/webappapis.html#dom-report-error
-  globalThis.reportError = function (reason) {
+  // s336（报告位置保真）：可选 (filename, lineno, colno) 形参——strict classic
+  // 抛错面（script_gen strict tail）传 script src / 页面 URL 与非零行列；缺省
+  // 回落 ''/0/0（基线包装与既有调用零位移）。data-url 断言 lineno/colno 非零
+  // number、url 非空——window.onerror 五参经 part06 legacy adapter 从事件特性读。
+  globalThis.reportError = function (reason, filename, lineno, colno) {
     try {
       var msg = (reason && (reason.message || reason.name)) ? String(reason.message || reason.name) : String(reason);
       var ev = new ErrorEvent('error', {
         message: msg,
-        filename: '',
-        lineno: 0,
-        colno: 0,
+        filename: filename == null ? '' : String(filename),
+        lineno: lineno == null ? 0 : (Number(lineno) || 0),
+        colno: colno == null ? 0 : (Number(colno) || 0),
         error: reason
       });
       if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);

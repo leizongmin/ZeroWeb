@@ -4661,6 +4661,21 @@ impl WebView {
             // 页面 HTTP 脚本不执行；HSTS 预载域 HTTP 脚本升级 HTTPS 后执行，
             // `mc_script_fetch_src` 携升级 URL 给 fetch 面）。内联脚本非混合内容不受检。
             // spec https://w3c.github.io/webappsec-mixed-content/#should-block-fetch。
+            // s336（报告位置保真）：filename=script src——外链按 src 绝对化；data:
+            // 为绝对形原样；取回内联页（runner 投递）用 inlined_src 原始 URL
+            //（spec report the exception 的 source 面取脚本 settings base URL——
+            // 内联脚本即页面 URL，data-url 断言 url 非空非 'Script error.'）。
+            let strict_report_src: Option<String> = match &script {
+                zero_engine::pipeline::PageScript::External(src)
+                | zero_engine::pipeline::PageScript::ExternalModule { src, .. } => Some(resolve_document_url(
+                    self.current_url.as_deref().unwrap_or("about:blank"),
+                    src,
+                )),
+                _ => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.clone())
+                    .map(|src| resolve_document_url(self.current_url.as_deref().unwrap_or("about:blank"), &src)),
+            };
             let mc_script_fetch_src: Option<String> = if self.config.mixed_content_enforcement {
                 let external_src = match &script {
                     zero_engine::pipeline::PageScript::External(src)
@@ -4796,11 +4811,39 @@ impl WebView {
             // 旧版一律页面 URL——模块体在 resources/ 子目录时其相对 import 解析到页目录
             // → 取回 404 → 空存根 → 假「Module does not provide an export」编译错
             //（nomodule-set-on-external-module-script 实证；strict 下整页 abort）。
+            // s336（内联投递模块解析基恢复）：runner 内联投递的外链模块（InlineModule +
+            // data-inline 原始 src）以模块自身 URL 恢复解析基——内联默认基 = 页面 URL，
+            // 模块体在 resources/ 子目录时动态 import() 兄弟 spec 解析到页目录 → 取回
+            // 404 → TopFetch「Failed to fetch module」（microtasks/evaluation-order-3
+            // 实证；order-4 TLA await import() 同根）。静态 import 面 spec 已被 runner
+            // 重写为 root-absolute `/…`（s101，基无关），基恢复零漂移；动态 import()
+            // 的 helper parent = _importMeta.url（= 本基），随基恢复落正确目录。
+            // 真内联模块（无 data-inline）维持页面基。
             // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+            // s336：外链模块错误事件按 R2944 src 键派发的判定面（独立于解析基——
+            // 内联投递模块 s336 起也有解析基，但元素无 src 键，仍走文档序派发）。
+            let external_module_error_face =
+                matches!(&script, zero_engine::pipeline::PageScript::ExternalModule { .. });
             let module_dep_base = match &script {
                 zero_engine::pipeline::PageScript::ExternalModule { src, .. } => {
                     Some(resolve_document_url(&doc_url, src))
                 }
+                zero_engine::pipeline::PageScript::InlineModule(_) => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.as_deref())
+                    .map(|src| {
+                        // data-inline 原始 src 双形态（s261/s101）：runner 语料投递 =
+                        // 语料根相对裸路径（`html/…`，无 scheme 无前导斜杠——host-root
+                        // join 语义），其他取回内联页 = 绝对 URL（webview.rs:4665 面，
+                        // 原样解析）。裸路径归一为 root-absolute 后解析，消除页目录
+                        // 双拼（probe 实证 parent=…/microtasks/html/semantics/…）。
+                        let normalized = if src.contains("://") || src.starts_with('/') {
+                            src
+                        } else {
+                            &format!("/{src}")
+                        };
+                        resolve_document_url(&doc_url, normalized)
+                    }),
                 _ => None,
             };
             let (code, is_module) = match script {
@@ -4975,8 +5018,10 @@ impl WebView {
                             ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch => {
                                 // 元素 error 派发目标：外链模块按 R2944 src 匹配派发
                                 //（module_cache_key = src 绝对化）；内联模块无 src，按文
-                                // 档序 script 序号派发（script_report_module_failure 同口径）。
-                                if module_dep_base.is_some() {
+                                // 档序 script 序号派发（script_report_module_failure 同口
+                                // 径）。s336：判定用外链面 bool 而非 module_dep_base——
+                                // 内联投递模块起也有解析基（元素键仍内联序号面）。
+                                if external_module_error_face {
                                     let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "error"));
                                 } else {
                                     let _ = sandbox
@@ -5043,7 +5088,8 @@ impl WebView {
                     // （window error 事件同步派发，spec report the exception 先于检查点）+ 元素
                     // load 微任务派发（spec fire load 在检查点后）；基线包装无报告面，browser/
                     // renderer 车道 sentinel→R2940 自报链共用基线（互换即双报）。
-                    script_run_classic_page_strict(&code, script_index, None)
+
+                    script_run_classic_page_strict(&code, script_index, strict_report_src.as_deref())
                 } else {
                     format!(
                         "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
@@ -9403,6 +9449,44 @@ mod redirect_tests {
             wv.execute_script("String(globalThis.__alias)").unwrap(),
             "aliased",
             "inner 体须按 ./ 拼写取到自身导出"
+        );
+    }
+
+    /// s336 回归钉：内联投递的外链模块以 data-inline 原始 src 恢复解析基。
+    /// runner 内联投递（engine 侧 InlineModule + data-inline 语料根相对裸路径）后，
+    /// 内联模块默认基 = 页面 URL——resources/ 子目录模块体的动态 import() 兄弟 spec
+    /// 解析到页目录 → 宿主取回 404 →「Failed to fetch module」（microtasks/
+    /// evaluation-order-3 实证；order-4 TLA await import 同根挂账 s337）。钉法：dep
+    /// 仅在模块自身相对位置可达，动态 import 的 helper parent 由 _importMeta.url
+    /// （= 本钉恢复的模块 URL）决定——模块体执行成功且 import 兑现即基正确。
+    /// https://tc39.es/ecma262/#sec-hostresolveimportedmodule
+    #[test]
+    fn inlined_module_dep_base_restored_from_data_inline_s336() {
+        let cfg = WebViewConfig {
+            script_source_fetcher: Some(std::sync::Arc::new(|parent: &str, spec: &str| {
+                let resolved = resolve_document_url(parent, spec);
+                if resolved.ends_with("/resources/dep.js") {
+                    Ok("globalThis.__s336Dep = 41;".to_string())
+                } else {
+                    Err(format!("404 at {resolved}"))
+                }
+            })),
+            ..WebViewConfig::default()
+        };
+        let mut wv = WebView::new(cfg);
+        wv.prepare_document_state("https://wpt.test/a/page.html");
+        wv.load_html(
+            "<!doctype html><body><script type=\"module\" data-zw-inlined data-inline=\"a/resources/entry.mjs\">\
+             import('./dep.js').then(function () { globalThis.__s336 = String(globalThis.__s336Dep); },\
+             function () { globalThis.__s336 = 'rejected'; });</script></body>",
+            None,
+        );
+        wv.run_page_scripts_strict()
+            .expect("内联投递模块解析基恢复后动态 import 必须兑现（旧页面基 → dep 404 → rejected）");
+        assert_eq!(
+            wv.execute_script("String(globalThis.__s336)").unwrap(),
+            "41",
+            "动态 import 兑现且 dep 体已执行（基 = 模块自身 URL）"
         );
     }
 
