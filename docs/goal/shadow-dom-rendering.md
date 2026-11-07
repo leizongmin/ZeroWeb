@@ -28,11 +28,14 @@ R3 变异应用臂代码落地（2026-11-08 `3744043e2`：`resolve_slots_all_hos
 批末统一挂接 `apply_dom_mutations_full`——命令式 attachShadow/childList/
 innerHTML/slot 属性改名后分配不再过期，无 shadow 页 O(1) 快返；shadow-dom
 矩阵与 R4 收口态逐位一致零漂移、全量 reftest 725/725、单测 2/2，006 归因
-改判为 manual slot 分配通道缺口——debug workspace 腿/product-smoke/
-bench-gate 因本机多会话并发风暴挂账补跑，见
+改判为 manual slot 分配通道缺口——并发风暴平息后补跑落账：workspace
+debug 腿 3814P/6F（6 案与 HEAD 环境失败名单全同零 P→F）+ clippy -D
+warnings 净 + product-smoke PASS + bench-gate 定向（dom/engine）PASS +
+fmt/renderer×2/render-foundation×2 RC=0；余 browser/quickjs 腿归 R3b
+净树门禁覆盖，见
 [R3 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r3-mutation-arm.md)）。
 下一步 M3：R3b manual slot 分配通道（wire 携带 slotAssignment + `assign()`
-桥 + Manual 模式渲染消费）；挂账腿补跑；B6 补充池通道
+桥 + Manual 模式渲染消费）；B6 补充池通道
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——

@@ -42,16 +42,26 @@ manual slot 分配通道（R3b 独立切片）。
 - `cargo fmt --check` / `cargo clippy -p zero-dom -p zero-engine
   -p zero-layout-engine --all-targets` 干净。
 
-**挂账（debug workspace 腿 + 渲染产品面）**：
-- `make test`（workspace debug 腿 + renderer/browser 腿）：三连跑均死于
-  本机基础设施竞态，非测试失败——① incremental dep-graph 竞态 Error 101；
-  ② 进程树外部 Terminated（Broken pipe）；③ test-guard 重编译竞踩
-  Error 127（每次 `make test` 前置 rustc 重编 test-guard 同路径，并发
-  `make test` 实例互踩）。根因：本机 19 个并发 agent 会话双 spawn 风暴
-  （时间戳证据 /tmp/zr3-r3-arm-make-test-*.log 多实例重叠），与本 diff
-  无关。机器余量恢复后补跑。
-- `make product-smoke`、`make bench-gate`（定向 zero-dom/zero-engine）：
-  同因未跑，挂账。
+**挂账（debug workspace 腿 + 渲染产品面）→ 补跑落账（2026-11-08 续）**：
+并发风暴平息后 systemd service 单份串行链补跑（zr3-r3arm-gates2 /
+zr3-r3-legs3 日志），已提交树 `3744043e2` 上：
+- `make test` workspace debug 腿：**3814P/6F**——6 案（img_runtime_
+  deferred_settle_r5275 / svg_img_settle_density_r5277 /
+  test_fetch_filtered_response_type_matrix /
+  test_iframe_service_worker_messages_dispatch_to_iframe_container /
+  test_t8k_websocket_error_nonterminal /
+  test_t8k_websocket_event_flow_open_message_close）与 HEAD 基线环境失败
+  名单逐字一致（fetch/websocket/img 加载事件域，R4 evidence §2b detached
+  worktree 探针已归因），零 P→F；并行 clippy 腿（quickjs features，
+  14 crate `-D warnings`）静默通过。
+- `make product-smoke`：**PASS**（welcome struct-check 0 issues + 期望类/行全中）。
+- `make bench-gate`（定向 zero-dom,zero-engine）：**PASS**（microbench
+  2/2 + absolute page-total/retained-form 预算全过，form-input 硬预算过）。
+- 其余腿：`cargo fmt --check`、renderer bin+lib、render-foundation
+  gpu::renderer:: 与 solid_fill 均 **RC=0**。
+- 仍挂账：browser bin/tests 腿 + quickjs core 腿——legs3 链编译期撞上
+  R3b 切片的进行中半成品编辑（`could not compile zero-engine` Error 101，
+  非行为失败），由 R3b 切片自身 make test 门禁在净树上覆盖。
 
 ## 3. 006 归因改判（推翻本切片前置预期）
 
@@ -78,5 +88,6 @@ make test；并行会话采认 staged 工作树先手提交推送（`3744043e2`�
 ## 5. 下一步
 
 1. **R3b manual slot 分配通道**（见 §3）。
-2. 挂账补跑：make test debug 腿 + product-smoke + bench-gate 定向。
+2. 挂账补跑余量：browser bin/tests 腿 + quickjs core 腿（R3b 切片净树
+   make test 门禁覆盖，本片无独立重跑必要）。
 3. B6 补充池通道。
