@@ -73,6 +73,28 @@ materialization 解耦**：qV(forecolor)-after 全序照设（:1997 "rgb(0, 0, 2
   `_zwCeTypingInsert`；link 外裹 + delta 过滤做在 `_zwCeTypingInsert` 单点
   （读 `__zwTypingLink`）即可全覆盖，D4 臂语料无 link×toggle-off 交形暂不触。
 
+### 四读定稿：消费侧 delta 过滤 = 双通道（2026-11-08）
+
+值通道机制图闭合（四读 part01d :1891-:1943 + part01 核尾 :9828-:9835）：
+forecolor collapsed → override 记账（:1677）→ inserttext 核头快照
+（`__zw_ce_value_override_snapshot` :1896-:1907）→ 核尾重放
+`__zw_ce_value_restore_overrides`（:1918-:1943，临时 range + 等值门 +
+`_zwVaSetSelectionValue` 重放）——**`<font color>` materialization 发生在
+重放通道，不在 `_zwCeTypingInsert`**（该函数只包 tags 无值通道）。三读
+「单点钩子」修正为双通道：
+
+- **通道 A（tags）**：`_zwCeTypingInsert` 内 link-armed 时 ①tags 滤
+  decoration（u/s——qS override 照设不动，只滤 materialization）；②`<a
+  href>` 最外裹。四调用点全覆盖，D4 臂无 link×toggle-off 交形不触。
+- **通道 B（值重放）**：核尾重放前（:9831 门内），link-armed 且
+  snap.forecolor 归一 ≡#0000ff（参照钉死，非等值门——UA 无 link 色规则
+  computed 读黑，等值门恒不过）则从 snap 剔除 forecolor；非参照值
+  （brown/black）保留重放。fontname/fontsize/hilitecolor 无语料键不滤
+  （F6b 域）。
+- **嵌套次序自然成立**：先 typing insert（`<a>` 最外）后重放（临时 range
+  罩插入文本节点已居 link 内，forceValue 落 link 内层）——brown/black 期望
+  `<a><font>a</font></a>` 次序零额外处理。
+
 ## F2b 既有-link 面（delete 族 10 键）+ delta carry 模型
 
 multitest.js :2138-:2172 连续族（链均 `delete>inserttext(a)`），七案全表：
@@ -155,7 +177,7 @@ rows 恒一。
 | 位 | 文件:行 | 动作 |
 |---|---|---|
 | arm | part06.js:4893-4900 | 置 `__zwTypingLink`=href；②清 tags（读回 risks 见待判别④） |
-| 消费+delta 过滤 | part01.js:9451 + :9585/:9640/:9731/:9748 | link armed ⇒ `<a>` 外裹；色 ≡#0000ff 不 materialize、decoration 全滤；carry 快照 ⇒ 内层 font |
+| 消费+delta 过滤 | 通道 A：part01.js `_zwCeTypingInsert`（:9490，四调用点全覆盖）；通道 B：核尾重放前 ：9831 门内 | A：link armed ⇒ `<a>` 外裹 + decoration tag 全滤；B：snap.forecolor ≡#0000ff 剔除（参照钉死）；carry 快照 ⇒ 内层 font |
 | 清除 | part06 `_zwSync`（:10355 面） | `__zwTypingLink` 同 typing 态生命周期 |
 | hasA 拆分 | part01f.js:1145-:1150 | 外链弃捕保持；内链 delta carry 新通道 |
 | tcap 门 | part01f.js:1200（delta ⑤） | hasA 时改收内层 style props 快照 |
