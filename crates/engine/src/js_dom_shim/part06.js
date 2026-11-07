@@ -5008,8 +5008,14 @@
       var jf = _zwQueryJustifyFace(commandId);
       if (jf) return jf.value;
       // editing-compat justify 簇（2026-11-01）：defaultparagraphseparator → 当前
-      // 分隔符（缺省 'div'，spec；语料 before/after 值=上一行/本行 applied 值）。
-      // styleWithCSS 值面 Chrome 恒 ''（录制 250/250），不暴露模式。
+      // 分隔符。值面未设置态保持 'div'（第十一刀双面制注，见 part01 ① sepTag）：
+      // per-command 语料各文件首案 separator qV before 值断言 "div"（未设置态；
+      // 后续案 before=上一案 after 顺序泄漏链），且 execCommand spec
+      // （w3c.github.io/editing/docs/execCommand/）2016-08 起 default
+      // single-line container name "must initially be div"。after 值=本行
+      // applied 值。产线块面缺省已翻 'p'（multitest rich 组），两读面分歧为
+      // 语料双源实证。styleWithCSS 值面 Chrome 恒 ''（录制 250/250），不暴露
+      // 模式。
       var cLow = String(commandId == null ? '' : commandId).toLowerCase();
       if (cLow === 'defaultparagraphseparator') {
         return globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';

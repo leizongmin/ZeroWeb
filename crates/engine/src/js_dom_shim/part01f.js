@@ -1528,7 +1528,9 @@
   };
 
   globalThis.__zw_ce_ipara_apply = function () {
-    var sep = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // separator 缺省 'p'（第十一刀，见 part01 ① sepTag 刀注：产线块面双面制，
+    // 值面 qV 保持 div）。
+    var sep = (globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p';
     // preservesOverrides: true——override 快照/重锚/回填同 __zw_ce_delete_apply。
     var snap = _zwVaOverridesTakeRaw();
     try {

@@ -10550,14 +10550,27 @@
     }
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
-    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div';
+    // separator 缺省双面制（第十一刀，2026-11-07）：产线块面（① sepTag/②b sep2b、
+    // part01e list retag、part01f ipara_apply）未设置态取 'p'——multitest ip 链
+    // rich 组 foo[]bar × 12 + B 簇同形 12 的 ambient insertParagraph 期望 `<p>`
+    // 分块（628 案零显式 defaultparagraphseparator 命令、bootstrap 仅
+    // styleWithCSS）。值面（part06 queryCommandValue）未设置态保持 'div'：
+    // per-command 语料各文件首案 separator qV before 值断言 "div"（后续案
+    // before=上一案 after 顺序泄漏链）。spec 分层：HTML spec 的
+    // defaultParagraphSeparator IDL 已移除（interaction §6.8.4 仅指
+    // [EXECCOMMAND]）；execCommand spec（w3c.github.io/editing/docs/execCommand/）
+    // 2016-08 起 default single-line container name "must initially be div"——
+    // 值面与之一致；rich 组 p 形属演进前录音（styled 组 div 期望翻后仍红按
+    // DC-4 记账）。显式 setter（part06）两面一票胜出不变。
+    var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p';
     // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
     // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
     // 位置拆分所在块容器——void 及其后兄弟移入新块（spec：selection.collapse 进
     // void 元素仅 (el, 0) 形合法，语料注释「cannot be tested by editing/run」）。
     // 新块标签：li 容器 → li（同列表续行，`</li><li>`），其余（div/h1-h6）→ div
-    // （defaultParagraphSeparator 缺省；h1 不可嵌 h1，语料期望 `</h1><div>` 显式
-    // div）。拆分后容器空 → 占位 <br>（`<h1><br></h1><div><img></div>` 期望形，
+    // （void 面语料固定 div，与 ① 臂产线缺省翻 p 不同面；h1 不可嵌 h1，语料期望
+    // `</h1><div>` 显式 div）。拆分后容器空 → 占位 <br>（`<h1><br></h1><div><img>
+    // </div>` 期望形，
     // 与 ① 同款 `__zwPlaceholderBr` 打标）。caret 宿主直子 void（容器=host）不接
     // （语料面皆包块容器，落 ③ 既有行断形不变）。
     if (!lineBreakOnly && !isText && boundaryNode
@@ -10697,7 +10710,8 @@
         var dispH2b = _zwCeDisplayOf(host);
         var hostBlockish2b = hostTag === 'div' && (dispH2b === '' || dispH2b === 'block');
         if (hostBlockish2b && !_zwCeIsBlockTagName(tag2)) {
-          var sep2b = document.createElement((globalThis.__zwDefaultParagraphSeparator === 'p') ? 'p' : 'div');
+          // separator 缺省 'p'（第十一刀，见 ① sepTag 刀注：产线块面双面制）。
+          var sep2b = document.createElement((globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p');
           var shell2b = block.cloneNode(false);
           var caretIn2b = 0;
           if (boundaryText) {

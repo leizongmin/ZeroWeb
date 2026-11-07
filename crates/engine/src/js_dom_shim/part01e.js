@@ -510,7 +510,9 @@
       }
       var host = _zwListEditingHostOf(node);
       if (!host || !_zwListIsAllowedChild('p', host)) return;
-      var sep = globalThis.__zwDefaultParagraphSeparator === 'p' ? 'p' : 'div';
+      // retag 目标随产线块面缺省 'p'（第十一刀，见 part01 ① sepTag 刀注双面制；
+      // 显式 setter 一票胜出，值面 qV 不在此域）。
+      var sep = globalThis.__zwDefaultParagraphSeparator === 'div' ? 'div' : 'p';
       if (!_zwListIsProhibitedParagraphChild(node)) return;
       node = _zwListRetagPreservingSelection(node, sep);
       _zwListFixDisallowedAncestors(node);

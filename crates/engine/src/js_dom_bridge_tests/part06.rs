@@ -4750,12 +4750,16 @@ document.execCommand("insertparagraph", false, "");
     );
     {
         // 换代后（F2 双块语义，2026-11-02 前段包裹 Chrome delta）：CreateElement
-        // (div headBlock + div sep1) + 头/尾段 CreateTextNode + RemoveChildAt 摘旧
+        // (p headBlock + p sep1) + 头/尾段 CreateTextNode + RemoveChildAt 摘旧
         // 文本节点 + AppendChild（宿主内）——宿主存活，前段不再 nodeValue 截断留
         // 裸层（ipara 语料 `foo[bar]baz` expected `<div>foo</div><div>baz</div>`）。
+        // knife11 起产线块面缺省 separator 为 p（undefined→p，显式 setter 一票胜出）：
+        // 语料双源强制（multitest rich 组 ambient 录音 p vs execCommand spec 2016-08
+        // default single-line container name initially div 的值面保留 div），见
+        // docs/goal/editing-compat/evidence/2026-11-07-knife11-ip-census.md。
         let m = mutations.lock().unwrap();
         let has_sep = m.iter().any(|mm| {
-            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "div")
+            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "p")
         }) && m.iter().any(|mm| {
             matches!(mm, DomMutation::AppendChild { parent_selector, .. }
                 if parent_selector.contains("ce"))
@@ -4784,11 +4788,11 @@ globalThis.__zw_ce_insert_paragraph("#ce2");
         )
         .unwrap();
     {
-        // ③ 同款本地树 mutation 面：CreateElement(div)+AppendChild @ ce2（'b' 尾段
-        // 移入新 separator 块，'a' 头段留在宿主）。
+        // ③ 同款本地树 mutation 面：CreateElement(p)+AppendChild @ ce2（'b' 尾段
+        // 移入新 separator 块，'a' 头段留在宿主；knife11 缺省翻 p，同上注）。
         let m = mutations.lock().unwrap();
         let has_sep = m.iter().any(|mm| {
-            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "div")
+            matches!(mm, DomMutation::CreateElement { tag, .. } if tag == "p")
         }) && m.iter().any(|mm| {
             matches!(mm, DomMutation::AppendChild { parent_selector, .. }
                 if parent_selector.contains("ce2"))
