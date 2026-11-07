@@ -2117,10 +2117,17 @@ fn test_manual_slot_assignments_roundtrip_through_reparse() {
     );
 
     // 活过滤：被分配节点移出宿主后不再算已分配（读侧 parent==host 门）。
+    // B 移除后 A 仍在宿主下——活跃列表只塌到 [A]；A 也移除后才塌回回退内容。
     doc2.remove_child(host2, b2).expect("B removed");
+    assert_eq!(
+        doc2.get_assigned_nodes(slot2),
+        vec![a2],
+        "移出宿主的被分配节点失配，宿主内条目保持"
+    );
+    doc2.remove_child(host2, a2).expect("A removed");
     assert!(
         doc2.get_assigned_nodes(slot2).is_empty(),
-        "移出宿主的被分配节点塌回回退内容"
+        "全部被分配节点移出宿主后塌回回退内容"
     );
 }
 
