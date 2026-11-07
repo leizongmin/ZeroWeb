@@ -1201,7 +1201,11 @@
       try {
         var dlg = _makeProxy(sel, handle);
         var cur = _zwDialogFocusedElR4600();
-        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur)));
+        // s330：slot 摊平包含——焦点锚经宿主声明式根 slot 分配进 dialog 时
+        // 纯 parentNode 链不可见（slotted light 子的 engine 父仍是宿主），
+        // Chromium close-the-dialog 同面用 FlatTreeTraversal::Contains。
+        // https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
+        anchorOk = !!(cur && dlg && (cur === dlg || dlg.contains(cur) || _zwLdFlatContains(dlg, cur)));
       } catch (_eAn) { anchorOk = false; }
     }
     if (!anchorOk) return;
@@ -1432,6 +1436,37 @@
         }
       }
     } catch (_e176sl) {}
+    return null;
+  }
+  // s330：declarative shadow 复合地址（`zwsh<len>:<host>|<local>`，engine
+  // js_dom_bridge/shadow_address.rs 铸造；host 段 = 轻树宿主唯一选择器）→
+  // 已登记 declarative 根 handle 反查（_shadowRoots 活注册 + _shadowHandleMeta
+  // 声明式面；不滤 mode——focus retarget 非封装边界，closed declarative 根同
+  // 语义）。declarative 根 hydration 只登记不物化 root wrapper 子链（part05
+  // _zwDeclarativeShadowEnsureContent 把内容绑成 zwsh sel proxy、engine 父链
+  // 锚宿主——s176「shadow 内容不摊平」），focus chain retarget walk 的
+  // wrapper hop（parentNode 命中 _shadowHandles）在该面永不触发：内容 sel
+  // 解码 hostSel 反查同注册是 declarative 边界的唯一入口。
+  // OPTIMIZATION: 前缀门外置（light sel 一步即出），注册表扫描只在
+  // declarative 内容焦点面付出（同 _zwLdSlotForHost 量级）。
+  function _zwDsRootHandleForContentSel(sel) {
+    if (typeof sel !== 'string' || sel.indexOf('zwsh') !== 0) return null;
+    var c330ds = sel.indexOf(':', 4);
+    if (c330ds < 0) return null;
+    var n330ds = parseInt(sel.slice(4, c330ds), 10);
+    if (!(n330ds >= 0)) return null;
+    var hostSel330ds = sel.slice(c330ds + 1, c330ds + 1 + n330ds);
+    if (sel.charAt(c330ds + 1 + n330ds) !== '|') return null;
+    try {
+      var keys330ds = Object.keys(_shadowRoots);
+      for (var i330ds = 0; i330ds < keys330ds.length; i330ds++) {
+        var info330ds = _shadowRoots[keys330ds[i330ds]];
+        if (!info330ds || !info330ds.handle) continue;
+        var meta330ds = _shadowHandleMeta[info330ds.handle];
+        if (!meta330ds || !meta330ds.declarative || meta330ds.hostSel !== hostSel330ds) continue;
+        return info330ds.handle;
+      }
+    } catch (_e330ds) {}
     return null;
   }
   // flat parent：light 父持有已登记声明式 open SR 且其内有 slot → slot（摊平归属）。

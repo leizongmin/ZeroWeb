@@ -3447,6 +3447,18 @@
                 try { _sraeMCur = _sraeMPar.host || null; } catch (_eAeMHst0) { _sraeMCur = null; }
                 continue;
               }
+              // s330：declarative 内容锚（compound zwsh sel）——sel 解码反查注册根：
+              // 本 root → 锚即本 root 活跃元素；他 root → 换 host 继续（嵌套面）。
+              var _sraeSel330 = null;
+              try { _sraeSel330 = _sraeMCur.__zwSelector; } catch (_eAeS0s330) {}
+              var _sraeDsh330 = _zwDsRootHandleForContentSel(_sraeSel330);
+              if (_sraeDsh330 != null) {
+                if (_sraeDsh330 === handle) return _sraeMCur;
+                var _sraeDm330 = _shadowHandleMeta[_sraeDsh330];
+                if (!_sraeDm330) break;
+                try { _sraeMCur = _makeProxy(_sraeDm330.hostSel, _sraeDm330.hostHandle); } catch (_eAeD0s330) { _sraeMCur = null; }
+                continue;
+              }
               break; // light 父 / 链尽头 → 不在本 root
             }
             var _sraeMFh = null;
@@ -3465,6 +3477,17 @@
             if (_sraeParH != null && typeof _shadowHandles !== 'undefined' && _shadowHandles[_sraeParH]) {
               if (_sraeParH === handle) return _sraeCur;
               try { _sraeCur = _sraePar.host || null; } catch (_eAeHst) { _sraeCur = null; }
+              continue;
+            }
+            // s330：declarative 内容锚 hop（同上方解析节点域——本 root 返锚、他 root 换 host）。
+            var _sraeSel330 = null;
+            try { _sraeSel330 = _sraeCur.__zwSelector; } catch (_eAeSs330) {}
+            var _sraeDsh330 = _zwDsRootHandleForContentSel(_sraeSel330);
+            if (_sraeDsh330 != null) {
+              if (_sraeDsh330 === handle) return _sraeCur;
+              var _sraeDm330 = _shadowHandleMeta[_sraeDsh330];
+              if (!_sraeDm330) return null;
+              try { _sraeCur = _makeProxy(_sraeDm330.hostSel, _sraeDm330.hostHandle); } catch (_eAeDs330) { _sraeCur = null; }
               continue;
             }
             return null; // light 树父 / 反链尽头 → 焦点不在本 root 子树

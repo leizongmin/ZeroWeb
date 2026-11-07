@@ -442,3 +442,80 @@ fn test_dialog_modal_focus_gate_s28() {
         "G6：失连元素 focus() 保持 R114 所有权语义"
     );
 }
+
+/// s330（html-semantics M2）：close-the-dialog 焦点恢复的 declarative shadow 面
+///（dialog-focus-previous-outside 三断言臂）。declarative 根 hydration 只登记不
+/// 物化 root wrapper 子链——内容是 compound `zwsh` sel proxy、engine 父链锚宿主：
+/// ① 根在 dialog 外：shadow 内容锚 close 不恢复（包含 false），document
+///    .activeElement retarget 到 host、SR.activeElement = 内层锚（focus chain
+///    retargeting 补 declarative 边界——`_zwDsRootHandleForContentSel` sel 解码
+///    反查注册根，wrapper hop 在该面不存在）。
+/// ② 根在 dialog 内：shadow 内容锚 close 恢复 prevFocused（parentNode 链经
+///    engine 锚宿主成立——`_zwNodeContains` 现行语义保持）。
+/// ③ slotted：宿主声明式根内 dialog + slot，light 焦点锚经 slot 分配进 dialog
+///    → close 恢复（Chromium FlatTreeTraversal::Contains 同面；纯 parentNode 链
+///    不可见 slot 归属——`_zwLdFlatContains` 摊平补臂）。
+/// https://html.spec.whatwg.org/multipage/interactive-elements.html#close-the-dialog
+#[test]
+fn test_dialog_focus_restore_declarative_shadow_s330() {
+    let mut sandbox = t59_sandbox_with_shim();
+    let mutations: std::sync::Arc<std::sync::Mutex<Vec<DomMutation>>> = std::sync::Arc::new(std::sync::Mutex::new(vec![]));
+    let dom_html: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new(
+        "<html><body><input id='pf'>\
+         <div id='h1'><template shadowrootmode=open><button id='sb'>sb</button></template></div>\
+         <dialog id='d1'></dialog>\
+         <dialog id='d2'><div id='h2'><template shadowrootmode=open><button id='sb2'>sb2</button></template></div></dialog>\
+         <div id='h3'><template shadowrootmode=open><dialog id='sd'><slot></slot></dialog></template><button id='h3b'>h3b</button></div>\
+         </body></html>"
+            .to_string(),
+    ));
+    let page_url: std::sync::Arc<std::sync::Mutex<String>> = std::sync::Arc::new(std::sync::Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    crate::js_dom_bridge::register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // ① declarative 根在 dialog 外：retarget 到 host + SR.activeElement 内层锚
+    // + close 不恢复（焦点保持，activeElement 仍读 host）。
+    sandbox
+        .execute(
+            "globalThis.__s330 = []; \
+             var pf = document.getElementById('pf'); \
+             var d1 = document.getElementById('d1'); \
+             var h1 = document.getElementById('h1'); \
+             var sb = h1.shadowRoot.querySelector('button'); \
+             pf.focus(); d1.show(); sb.focus(); \
+             globalThis.__s330.push(document.activeElement === h1 ? 'retarget-host' : 'doc-miss'); \
+             globalThis.__s330.push(h1.shadowRoot.activeElement === sb ? 'sr-inner' : 'sr-miss'); \
+             d1.close(); \
+             globalThis.__s330.push(document.activeElement === h1 ? 'no-restore-host' : 'close-miss');",
+        )
+        .unwrap();
+
+    // ② declarative 根在 dialog 内：包含经 engine 锚宿主成立 → close 恢复。
+    sandbox
+        .execute(
+            "var pf = document.getElementById('pf'); \
+             var d2 = document.getElementById('d2'); \
+             var sb2 = document.getElementById('h2').shadowRoot.querySelector('button'); \
+             pf.focus(); d2.show(); sb2.focus(); d2.close(); \
+             globalThis.__s330.push(document.activeElement === pf ? 'inner-restore' : 'inner-miss');",
+        )
+        .unwrap();
+
+    // ③ slotted：宿主声明式根内 dialog+slot，light 焦点锚 slot 分配 → close 恢复。
+    sandbox
+        .execute(
+            "var pf = document.getElementById('pf'); \
+             var h3 = document.getElementById('h3'); \
+             var sd = h3.shadowRoot.querySelector('dialog'); \
+             var h3b = document.getElementById('h3b'); \
+             pf.focus(); sd.show(); h3b.focus(); sd.close(); \
+             globalThis.__s330.push(document.activeElement === pf ? 'slotted-restore' : 'slotted-miss');",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s330.join('|')").unwrap().value,
+        "retarget-host|sr-inner|no-restore-host|inner-restore|slotted-restore",
+        "s330：declarative retarget 双域 + 内根恢复 + slot 摊平恢复"
+    );
+}

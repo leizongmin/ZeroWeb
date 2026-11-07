@@ -6593,6 +6593,20 @@
               try { _aeMCur = _aeMPar.host || null; } catch (_eAeMHst) { _aeMCur = null; }
               continue;
             }
+            // s330：declarative 内容锚（compound zwsh sel）无 wrapper 父可 hop
+            //（engine 父链锚宿主，s176「shadow 内容不摊平」）——sel 解码反查注册
+            // declarative 根换 host 继续；宿主自身仍 zwsh 寻址（嵌套 declarative）
+            // 时下轮迭代继续外提至最外层 host。
+            var _aeMSel330 = null;
+            try { _aeMSel330 = _aeMCur.__zwSelector; } catch (_eAeMs330) {}
+            var _aeMDsh330 = _zwDsRootHandleForContentSel(_aeMSel330);
+            if (_aeMDsh330 != null) {
+              var _aeMDm330 = _shadowHandleMeta[_aeMDsh330];
+              if (!_aeMDm330) break;
+              _aeMOuter = _aeMDm330;
+              try { _aeMCur = _makeProxy(_aeMDm330.hostSel, _aeMDm330.hostHandle); } catch (_eAeMd330) { _aeMCur = null; }
+              continue;
+            }
             break; // light 父 / 链尽头 → 上行止
           }
           if (_aeMOuter) return _makeProxy(_aeMOuter.hostSel, _aeMOuter.hostHandle);
@@ -6654,6 +6668,17 @@
             if (!_aeMeta) break;
             _aeOuter = _aeMeta;
             try { _aeCur = _aePar.host || null; } catch (_eAeHst) { _aeCur = null; }
+            continue;
+          }
+          // s330：declarative 内容锚 hop（同上方解析节点域——compound sel 解码反查注册根）。
+          var _aeSel330 = null;
+          try { _aeSel330 = _aeCur.__zwSelector; } catch (_eAeS330) {}
+          var _aeDsh330 = _zwDsRootHandleForContentSel(_aeSel330);
+          if (_aeDsh330 != null) {
+            var _aeDm330 = _shadowHandleMeta[_aeDsh330];
+            if (!_aeDm330) break;
+            _aeOuter = _aeDm330;
+            try { _aeCur = _makeProxy(_aeDm330.hostSel, _aeDm330.hostHandle); } catch (_eAeD330) { _aeCur = null; }
             continue;
           }
           break; // light 树父或链尽头 → 上行止
