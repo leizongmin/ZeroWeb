@@ -1,21 +1,16 @@
 # shadow-dom 扩面 — 语料滚动 + 通道重审承接
 
-**版本**: v1.0
-**日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——M0/M1/M2 完成 + M3 Batch 1/2 落地（2026-11-06，门值 31.4% 回填；
-Batch 2 簇 A unsafe 三 API：gethtml.html 预算内 2,210P/0F，全通道 A/B P→F=0、F→P 2,839），
-Batch 3 残面修复落地（2026-11-06：语料级 A/B 0 回归，gethtml ×1 从稳定楔死
-2,268 → 3,762P/0F，×1~×4 solo 随预算平滑延伸 3,443/4,819/5,958/6,908P
-（×4 = 120s 窗全量真实上报，页级 Timeout 消失），无固定截断面——吞吐 >11×
-与 Q1 队列 11× 互证，×1 全量差 = 写路径残余斜率（~19× 改善未归零）+ 预算
-语义非病根），
-M3 尾段两小刀落地（2026-11-06：template shadowRoot* IDL 反射 + clonable
-根克隆臂，全语料逐名 A/B P→F/T=0、F→P 14；async-fetch 族整文件 0 行上报
-勘误为 runner 既有完成竞态非回归，MEl 域两刀撤销挂 m3c2），
-M3 余项：簇 C engine glue / attachment+null 链修复落地与复测
-（dom 面，m3c2 协同）/ rendering-compat 归口（adoptedStyleSheets 机制面 ~19F）
-——簇 D 剔池决策已落地（module 载入链 27 案 27F+1T 出池，回池条件 =
-script-sandbox 模块载入），declarative 物化三案复测挂 m3c2 落地后
+**版本**: v1.1
+**日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
+2026-11-06（M0/M1/M2 + M3 Batch 1/2/3 + 尾段两小刀落地）；2026-11-07（余项
+收口契约落定，无人值守推进至 DONE）
+**状态**: Active——M0/M1/M2 完成，M3 Batch 1/2/3 与尾段两小刀落地（各批全通道
+A/B 零回归，明细见进展节）。余项已全部转为可自主收口形态（2026-11-07 用户
+拍板）：簇 C 流静止判定成立（最后代码落点 61f84064e 2026-11-06 06:44，无
+stash 无在跑进程），attachment 物化修复（170F + null 链 18F）改由本流认领；
+adoptedStyleSheets ~19F 归口 rendering-compat 走 evidence + 控制面留痕；M4
+复测细则落定。执行契约见「M3 收口与 M4 无人值守执行契约」节——本 goal 无
+外部等待项，原协作等待均已转为挂账或自主动作。
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -87,8 +82,10 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
 - **M0**：差集甄别 + declarative 重审 + 数值门（DC-1）。✅ 2026-11-06
 - **M1**：语料扩批 + 通道四件套（DC-2）。✅ 2026-11-06
 - **M2**：扩面基线分类（DC-3 前半）。✅ 2026-11-06
-- **M3**：JS 语义簇收敛批（DC-3 后半）。
-- **M4**：coverage 复测收口（DC-4）。
+- **M3**：JS 语义簇收敛批（DC-3 后半）。——余项收口按「M3 收口与 M4 无人值守
+  执行契约」节执行（attachment 物化修复本流认领 + adoptedStyleSheets 归口留痕）。
+- **M4**：coverage 复测收口（DC-4）。——执行细则同上节（M3 收口后一次复测，
+  不跑两遍）。
 
 ## 进展
 
@@ -301,6 +298,69 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   `git diff --check` / `cargo fmt --all -- --check` 干净，fmt/clippy 对
   .js 不适用。
 
+### 2026-11-07——余项收口契约落定（无人值守推进至 DONE）
+
+- **簇 C 流静止判定**：最后代码落点 61f84064e（2026-11-06 06:44 attachment
+  safelist）后无 dom/ 簇 C 提交；无 WIP stash；核查时点无任何 rally 进程
+  在跑——§9「dom/ 编辑面避让」前提消失。
+- **用户拍板（2026-11-07）**：attachment 物化修复（safelisted 68F +
+  disallowed 102F + null 链 18F 同根）改由本流认领；adoptedStyleSheets
+  ~19F 归口走 paperwork；M4 复测细则落定，无人值守推进至 DONE。执行契约
+  见下节。
+
+## M3 收口与 M4 无人值守执行契约（2026-11-07）
+
+本节为无人值守执行的自足依据：余项全部在册、可自主完成，不设外部等待。
+
+### M3 收口清单（DC-3 收尾，按序）
+
+1. **attachment 物化修复（本流认领）**：开工前先发 §9 认领声明（控制面
+   留痕 + 并行侧编辑面预告）。
+   - safelisted 臂 68F：setHTMLUnsafe 后声明式模板物化缺失——spec：
+     setHTMLUnsafe 解析输入并物化 valid shadow host 名单内的声明式模板
+     （triage：[attachment 170F 甄别](shadow-dom-expansion/evidence/2026-11-06-m3-batch3-attachment-170f-triage.md)）。
+   - disallowed 臂 102F：context 父模板被误物化消费——spec：context 元素
+     不附着，去误物化臂。
+   - null 链 ~18F 与 safelisted 臂同根（静态物化不生效），随本刀复测定格。
+   - **A/B 门**：WC 通道全语料逐子测试身份比对 P→F/T=0；custom-elements/
+     template 既有账逐案一致；declarative 物化三案复测随本刀闭环。
+   - **MEl 两刀回装评估**：物化落地后按 Batch 3 撤销时的判据复测——corpus
+     零收益则正式撤销记账（非挂账悬置）。
+2. **adoptedStyleSheets ~19F 归口 paperwork（零代码）**：归口结论（机制面、
+   渲染耦合原因、去向 rendering-compat）落 evidence；rendering-compat 控制
+   面留痕（挂账条目 + 链回本 evidence）；45 号 shadow-dom-rendering 边界
+   核对一句带过。完成判据 = 双侧控制面各有留痕，不实现、不双改。
+3. **门禁口径**：JS-only 刀 `git diff --check` + `cargo fmt --all -- --check`
+   （fmt/clippy 对 .js 不适用）；触 .rs 时按 `-p` 收窄门；`cargo test -p
+   zero-engine --lib` 允许既有 5F 集合（R2809/R2810/R3276/p56/p99s，s249
+   归 html-semantics 在案），判据 = 零新增红；workspace 全量门仅在干树窗口
+   跑，他流持锁时按 §9 延后并留痕，不构成 BLOCK。
+4. **碰撞纪律**：共享 clone 他流活跃期间不重建共享二进制；docs 提交前
+   `git diff` 自查（历史教训：探针链追加 goal 文档、同 clone 双 resume
+   碰撞两起 §9 在案）；探针页用毕即清，不留在语料树。
+
+### M4 执行细则（DC-4，M3 清单 1-2 完成后一次复测）
+
+- **计量口径**：冻结二进制（记录 sha256 + 构建提交）；`make
+  testharness-web-components` 产出全语料结果；gethtml.html 按 ×4
+  （`ZW_TIMEOUT_MULTIPLIER=4`，120s 窗全量真实上报，M3 Batch 3 已闭环该
+  口径）计量，其余案 ×1——M4 判据以该混合口径为准，避免 ×1 预算语义压低
+  gethtml 计数造成假阴性。
+- **coverage 复测**：结果 JSON 合并投喂 `wptfyi_gap.py coverage`（分母 =
+  wptfyi cache universe，与 coverage-2026-11-02 快照同源）；报告留档
+  `.acceptance/`（不入库），台账落 evidence。
+- **判据（全过才算 DC-4 成立）**：
+  1. shadow-dom topdir ≥ 31.4%（M2 回填门值；余量参考：gethtml ×4 全量
+     6,908P 一项 ≈ 45%，门可达性已实证）；
+  2. custom-elements 既有账 64.67% 台账逐 subtest 零回归；
+  3. 全量头条不回落；
+  4. `wpt-suites.csv` 收行（照 41 号先例，数据行 + evidence 路径）。
+- **收口归档**：四判据全过 + DC-1~4 全落后，本流自行执行模式 A 归档（照
+  34/41 号先例）：整树迁 `docs/goal/archive/`、`archive/README.md` 登记、
+  goals README 行改已收口、全仓引用同步（**含 wpt-suites.csv 证据路径列补
+  archive/ 前缀**）、`scripts/rally-goal-42-shadow-dom-expansion.sh` 启动器
+  随归档删除（语料预置脚本保留），归档提交后输出 DONE。
+
 ## 依赖约束（run-rules §9）
 
 - WC 通道与 fetch-web-components-subset.sh 的 skip 规则两侧同源，改动
@@ -309,3 +369,39 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   归因落 evidence 再碰头归口，不双改。
 - 上游滚动走 pin 对齐 + blob-hash 对账（goal-35 先例：文件数一致 ≠ 内容
   一致）。
+
+## Final Output Protocol
+
+### 输出规则
+
+| 情况 | 输出 | 说明 |
+|------|------|------|
+| M3 收口清单 + M4 四判据全过，DC-1~4 全落，收口归档完成 | `DONE` | 见下方 DONE 允许条件 |
+| 契约节任一项未完成且可继续推进 | `CONTINUE: <下一步>` | 默认输出 |
+| 真正不可用（工具链损坏、平台故障、语料仓不可达） | `BLOCK: <原因>` | 罕见；协作等待不构成 BLOCK |
+| verify 发现未满足条件但进展仍可推进 | `CONTINUE: <下一步>` | 返回执行，不是 DONE |
+
+### DONE 允许条件（同时满足）
+
+1. DC-1~DC-4 全部有据（evidence 台账 + 数字证据）；
+2. M3 收口清单 1-2 完成：attachment 物化修复 A/B 零回归落地 + adoptedStyleSheets
+   归口双侧留痕；
+3. M4 四判据全过（门值 31.4% / custom-elements 零回归 / 头条不回落 / csv 收行）；
+4. 门禁：零新增红（engine 既有 5F 集合在案可豁免）+ `git diff --check` 干净；
+5. 控制面自洽：状态头 = 里程碑 = 进展无「顶部新底部旧」矛盾，evidence 持久化，
+   收口归档完成。
+
+### 禁止输出 DONE 的情况
+
+- attachment/null 链复测未定格，或 A/B 出现任何 P→F；
+- adoptedStyleSheets 归口只在单侧留痕；
+- M4 复测口径与细则不符（如 gethtml 未按 ×4 混合口径计量）；
+- csv 未收行，或证据路径列未指向最终位置。
+
+### 非阻塞项（不得因此 BLOCK 或原地等待）
+
+- module 载入链 27 案：已剔池（回池条件 = script-sandbox 模块载入），不进门
+  分母——不等待；
+- engine 既有 5F（s249）：归 html-semantics 在案，零新增红即门过——不等待；
+- rendering-compat 收到归口留痕后的后续动作：本 goal 只负责留痕——不等待；
+- 上游语料滚动：pin 对齐差异如实记账即可——不阻塞收口。
