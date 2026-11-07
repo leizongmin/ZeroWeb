@@ -14,13 +14,28 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
   正则打在 file 段，恒出 `?`，已重写）＋逐键全名单
   `census-mt-residual-v5fix2-keys.txt`（244 条含 expected/got detail）。
 
-## #37 窗界嫌疑（2 键，开工前必须先核窗界 + 探针，不得直接归因引擎债）
+## #37 窗界嫌疑 → 定谳除名（2 键，签名 A 跨窗伪影，零源码修改）
 
 `[["subscript",""],["formatblock","<div>"],["inserttext","a"]] "foo[]bar"` 的
 `queryCommandState("subscript") after` 与 `queryCommandValue("formatblock") after`
-双断言（?2001-3000 窗，ab 页同案全绿）。签名 A 指纹吻合方向：仅 after 读面红、
-同案 compare 断言两页均绿。待核：该案断言块是否横跨 ?2001-3000 窗界、exec 是否
-在本窗实际运行；探针直验 in-window 行为后定谳除名或转真债。
+双断言（?2001-3000 窗红，ab 页全绿）。**本轮窗界核对定谳为 ⑪ 轮签名 A 复发，
+引擎无辜，两键除名**（真残基线 123→**121**）：
+
+- **断言块跨 ?2000/2001 窗界**：该案 23 子测试分属两窗——exec 三连
+  （subscript/formatblock/inserttext `return value`）+ `compare innerHTML` +
+  `checks for modifications` + subscript qI/qS/qV before 读全在 **?1001-2000**
+  且全绿（exec 在该窗真跑、树逐字合录音）；formatblock/inserttext 双向读 +
+  subscript qV-after + 两红行落在 **?2001-3000**。
+- **?2001-3000 窗无 exec**：红行 got = 未动 setup 树直读——qS("subscript") after
+  期望 true（树应含 sub）got false；qV("formatblock") after 期望 "div"（exec 后
+  块）got ""（裸 body）；而同窗 subscript qV-after 绿 = 期望 "" 与未动树巧合一致
+  ——Pass/Fail 分割线恰为「期望值是否编码 exec 后状态」，签名 A 指纹逐条命中。
+- **ab 页反证**：单发射全案顺序执行（含真 exec），23 子测试**全绿含两红行本体**
+  ——引擎 in-window 行为的隔离验证证据（探针等价）；同案 ?1001-2000 exec 窗
+  compare 亦绿。
+
+处置：两键按[分窗切片伪影判据](../../../learnings/bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md)记 artifact
+除名，不入引擎债账；sr2 轮先例同构（2026-11-06，iol/iul 除名 3 行零源码修改）。
 
 ## 簇表（main 残键降序；chains 为命令链签名 × 键数）
 
@@ -33,12 +48,12 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
 | F4 ilb corruption | 10 | `insertlinebreak>inserttext×2/3` 9 + createlink>ilb 1 | 期望 `abc<br>def…`；got 文本重复/幻影 `<b><i><img src="/img/lion.svg">def</i></b>` 片段——**= 既有「ilb 链 10」挂账闭合** |
 | F7 misc boundary | 18 | delete-merge-div 7（`{abc</div><div>def</div>}` 跨块 delete+双 typed）+ ip-placeholder 5（`<br>` 占位包裹形）+ table-cell br 壳 4（td/th `<b><br></b>` vs `<br>`）+ host-div-wrap 1（`<b>a</b>` vs `<div><b>a</b></div>`）+ trailing-empty-p 1 | 各自独立微机制 |
 | F6a color-case | 2 | delete 族 forecolor 尾键 | exp `#0000ff` got `#0000FF`——typed 段 font color 属性值大小写归一缺失 |
-| **X37 嫌疑** | **2** | subscript>formatblock>inserttext qS/qV | main 红 ab 绿（见上节） |
+| **X37 伪影（已定谳除名）** | **2** | subscript>formatblock>inserttext qS/qV | 签名 A 跨窗伪影（见上节），不记引擎债 |
 
-合计 **123** ✓。对账校验：既有挂账四族中「styled 壳重建 29」「inserthtml 链 12」
-「ilb 链 10」三族与普查逐键闭合；「createlink 前缀链 10」旧账为 knife10 时点计数，
-现族已扩至 36（中置结构命令族 + forecolor/underline 互序族 + delete 族组成 10
-并入同一 absorption 机制域）。
+合计 **123** ✓，其中真债候选 **121**（X37 两键 artifact 除名）。对账校验：既有
+挂账四族中「styled 壳重建 29」「inserthtml 链 12」「ilb 链 10」三族与普查逐键
+闭合；「createlink 前缀链 10」旧账为 knife10 时点计数，现族已扩至 36（中置结构
+命令族 + forecolor/underline 互序族 + delete 族组成 10 并入同一 absorption 机制域）。
 
 ## 下一刀建议：F2 link-absorption 36（残键数降序第一簇）
 
@@ -49,10 +64,9 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
   `hasA`→`return []`，注释锚 :2163/:2168 双向实证）——该排除面是 F2 直接病灶，
   但盲撤会回退 :2163/:2168 两锚（当时实证语义），需区分「pending link 态」与
   「既有 link 捕获」两条路径分别处理。
-- **开工前置**：① 尾链落地（换基门绿 + push）后才动源码；② X37 2 键先走 #37
-  窗界核对（与本刀无关，但同轮顺手清账）；③ 评估 stash@{0}
+- **开工前置**：① 尾链落地（换基门绿 + push）后才动源码；② 评估 stash@{0}
   `typing-style-round-1102`（收口协议 §运行约定——F1'/typing 域在途草稿，F2 与
-  其同域相邻，评估后决定吸收或让位）。
+  其同域相邻，评估后决定吸收或让位）。X37 两键窗界核对已在本轮完成并除名。
 
 ## 运行产物（gitignored，本地 .acceptance/dps/）
 
