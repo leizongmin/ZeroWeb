@@ -5738,7 +5738,10 @@
               // 全零），早退会吞旗标与 sweep——旗标放行不依赖 rect（目标过门靠
               // 旗标非距离）；落位 scrollTo 仅在 rect 在位时有意义（无 rect＝
               // 无法计算落位，视口不动，sweep 以现 scrollY 再判等价）。
-              if (_realTag(sel, handle) === 'VIDEO') {
+              // s333：AUDIO 同臂（spec lazy load resumption steps 已挂 audio；
+              // autoplay-when-visible / source-deferred 的 scrollIntoView 唤醒面）。
+              var _sivTag = _realTag(sel, handle);
+              if (_sivTag === 'VIDEO' || _sivTag === 'AUDIO') {
                 try {
                   globalThis._zwMediaViewportFlag5281 = globalThis._zwMediaViewportFlag5281 || {};
                   globalThis._zwMediaViewportFlag5281[_elKey(sel, handle)] = true;

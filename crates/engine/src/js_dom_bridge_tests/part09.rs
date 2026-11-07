@@ -8109,3 +8109,105 @@ fn test_focusable_area_rendering_gate_r5385() {
         "⑥ canvas 内 shadow host light 子无默认 slot 不在 flat tree → 不可聚焦（旧 shim 恒可聚焦）"
     );
 }
+
+#[test]
+fn test_media_audio_lazy_gate_s333() {
+    // s333：audio lazy loading 门（HTML §lazy loading attributes：lazy load
+    // resumption steps 挂在 img/audio/video/iframe 四元素上——s281 落地时门只
+    // 认 video，s333 按 spec 现行清单补 audio。脚本车道 _zwMediaScheduleLoad
+    // 门 + 静态车道 _zwSettleResourceSelector 门双置 + scrollIntoView 旗标臂
+    // AUDIO 扩展）。
+    // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><audio id=\"a2\" loading=\"lazy\" src=\"/media/song.mp3\"></audio></body></html>"
+            .to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // runner timer stub（同 r389 harness）。
+    sandbox.execute(
+        "globalThis.__zw_pending = {}; globalThis.__zw_timers = [];\
+         globalThis.__zw_setTimeout = function(id, delay) {\
+           globalThis.__zw_timers.push({ id: id, at: Date.now() + (delay | 0) }); };\
+         globalThis.__zw_fire_due_timers = function() {\
+           var now = Date.now(); var rest = [], due = [];\
+           var timers = globalThis.__zw_timers || [];\
+           for (var i = 0; i < timers.length; i++) {\
+             if (timers[i].at <= now) due.push(timers[i]); else rest.push(timers[i]); }\
+           globalThis.__zw_timers = rest;\
+           for (var d = 0; d < due.length; d++) {\
+             var fn = globalThis.__zw_pending[due[d].id];\
+             if (fn) { delete globalThis.__zw_pending[due[d].id]; try { fn(); } catch (_e) {} } } };",
+    ).unwrap();
+
+    // ① 脚本车道 defer：script 创建 audio + loading='lazy' + src → 门 defer，
+    //    不 invoke media load 算法（readyState HAVE_NOTHING、无 loadstart；
+    //    networkState 由 src setter 既有语义先置 NETWORK_LOADING，非本门
+    //    改动面——video defer 同形态，WPT lazy 断言面不查 networkState）。
+    sandbox.execute(
+        "globalThis.__a1 = document.createElement('audio');\
+         globalThis.__a1.loading = 'lazy';\
+         var __ls1 = 0;\
+         globalThis.__a1.addEventListener('loadstart', function () { __ls1 = 1; });\
+         globalThis.__a1.src = '/media/song.mp3';\
+         __zw_fire_due_timers();\
+         globalThis.__r1 = globalThis.__a1.readyState + ':' + __ls1;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r1)").unwrap().value,
+        "0:0",
+        "lazy audio（脚本车道）应 defer：readyState 0 / 无 loadstart"
+    );
+
+    // ② eager 唤醒：loading IDL set 'eager' → __zwMediaLoadingMutated5281 唤醒
+    //    deferred 册重入 → 门资格再判非 lazy → 装载（headless 模拟路径）。
+    //    装载续段走 queueMicrotask（_deferCont）——独立 execute 借返回期
+    //    microtask checkpoint 排空后再读（同 M2a ②口径）。
+    sandbox.execute("globalThis.__a1.loading = 'eager';").unwrap();
+    sandbox.execute(
+        "__zw_fire_due_timers();\
+         globalThis.__r2 = globalThis.__a1.readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r2)").unwrap().value,
+        "4",
+        "eager 化后 lazy audio 应唤醒装载（readyState 推进 HAVE_ENOUGH_DATA）"
+    );
+
+    // ③ 静态车道 defer：静态 <audio loading=lazy src> + 宿主 commit（async_load
+    //    抓取完成 → dispatch_resource_element_event → __zw_commit_resource_
+    //    element_state）→ _zwSettleResourceSelector 门 defer（readyState 恒 0）。
+    sandbox.execute(
+        "__zw_commit_resource_element_state('audio', 'https://wpt.test/media/song.mp3', 'loaded', 0, 0, null);\
+         __zw_fire_due_timers();\
+         globalThis.__r3 = document.querySelector('#a2').readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r3)").unwrap().value,
+        "0",
+        "lazy audio（静态车道）宿主 commit 后应 defer 不落 settle（readyState 0）"
+    );
+
+    // ④ 静态车道 eager 唤醒：loading IDL set → commit 参数重放 settle。
+    sandbox.execute(
+        "document.querySelector('#a2').loading = 'eager';\
+         __zw_fire_due_timers();\
+         globalThis.__r4 = document.querySelector('#a2').readyState;",
+    ).unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__r4)").unwrap().value,
+        "4",
+        "静态 lazy audio eager 化后应唤醒 settle（readyState 推进）"
+    );
+}

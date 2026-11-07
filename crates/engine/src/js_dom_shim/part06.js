@@ -12726,9 +12726,11 @@
   function _zwMediaScheduleLoad(sel, handle, tag, absUrl, isEmptySrc, sourceChild) {
     var key = _elKey(sel, handle);
     if (typeof setTimeout !== 'function') return;
-    // s281：video lazy loading 门（HTML §lazy loading attributes：
+    // s281：media lazy loading 门（HTML §lazy loading attributes：
     // https://html.spec.whatwg.org/multipage/urls-and-fetching.html#lazy-loading-attributes
-    // ——lazy loading elements = img 与 video；audio 不在列，门只认 video）。
+    // ——lazy load resumption steps 挂在 img/audio/video/iframe 四元素上；
+    // s281 落地时只认 video，s333 按 spec 现行清单补 audio（iframe 归
+    // navigation-compat 门控域不在本 goal 可动面）。
     // defer 时点**不 invoke media load 算法**：下方同步段（paused 中止/位置
     // 归零/epoch bump）、ResourceSelect、setTimeout 续段全不走——networkState
     // 恒 NETWORK_EMPTY、readyState 恒 HAVE_NOTHING、无 loadstart/error
@@ -12751,10 +12753,29 @@
     // 已 settle（_resourceStates 有记录）不受门——restart 语义照旧；曾 defer
     // 离册。poster 待取（独立链，见 __zwMediaPosterAttrMutated5281）不经本
     // 门消费：fetch 唯一通路是唤醒体旗标 flush，eager 化经 helper 复判弃册。
-    if (tag === 'video') {
+    if (tag === 'video' || tag === 'audio') {
       var _mzLazy = '';
       try { _mzLazy = String(_zw5277Attr(sel, handle, 'loading') || '').trim().toLowerCase(); } catch (_e5281lz) {}
       var _mzFlag = globalThis._zwMediaViewportFlag5281 && globalThis._zwMediaViewportFlag5281[key];
+      // s333：audio not-rendered 臂——HTML rendering §audio「An audio element
+      // that does not have a controls attribute should not be rendered」：
+      // https://html.spec.whatwg.org/multipage/rendering.html#audio
+      // 不渲染元素的 lazy intersection observer 永不回调（img s274 not-rendered
+      // 模型：display:none/hidden gBCR 全零判不近同型）→ lazy audio 无 controls
+      // 恒 defer，**无视旗标**（零面积元素 scrollIntoView 不落位——旗标不置
+      // 同理）。engine 布局对无 controls audio 仍建盒（UA `audio:not([controls])
+      // { display:none }` 未落地，属 style-system 渲染域），门内资格判定显式
+      // 补面。controls 动态添加的唤醒面语料暂无——FIXME 挂账。
+      var _mzAudioNoCtl = false;
+      try {
+        _mzAudioNoCtl = tag === 'audio' && _mzLazy === 'lazy' && !_resourceStates[key]
+          && _zw5277Attr(sel, handle, 'controls') == null;
+      } catch (_e5333nc) {}
+      if (_mzAudioNoCtl) {
+        globalThis._zwMediaLazyDeferred5281 = globalThis._zwMediaLazyDeferred5281 || {};
+        globalThis._zwMediaLazyDeferred5281[key] = { sel: sel, handle: handle, tag: tag, absUrl: absUrl, emptySrc: isEmptySrc, sourceChild: sourceChild || null };
+        return;
+      }
       if (_mzLazy === 'lazy' && !_resourceStates[key] && !_mzFlag) {
         var _mzConn = false;
         try { _mzConn = _makeProxy(sel, handle).isConnected === true; } catch (_e5281cn) {}
@@ -12963,21 +12984,36 @@
     });
   }
   function _zwSettleResourceSelector(sel, tag, url, outcome, width, height, durationMs) {
-    // s281：video lazy 静态装载门——宿主 commit 汇流点（__zw_commit_resource_
+    // s281：media lazy 静态装载门——宿主 commit 汇流点（__zw_commit_resource_
     // element_state 逐元素匹配后落此；source 子成功面经父 tag 分支同样落此，
     // 探针实证：静态 <video src> 的加载不经 _zwMediaScheduleLoad，宿主 fetch
-    // 完成 commit → 本函数 → settle 是唯一静态车道）。lazy video（loading=
+    // 完成 commit → 本函数 → settle 是唯一静态车道）。lazy media（loading=
     // lazy、未 settle、无旗标、非「已连接+近端+window load 已派发」唤醒形态）
     // 不落 settle，deferred 册登记 commit 参数（kind:'commit'——唤醒面重放本
     // 函数，LoadSequence 事件序/readyState 推进由 settle 承载，与脚本车道同
     // 一唤醒机具）。静态形态 rect-bridge 快照在位（解析布局），资格判定可用
-    // 与脚本车道相同的距离模型。audio 非 lazy loading element，不进门。
+    // 与脚本车道相同的距离模型。s333：门扩 audio（spec lazy load resumption
+    // steps 已挂 audio；audio 无 poster，poster 链不涉——脚本门同扩见
+    // _zwMediaScheduleLoad）。
     var _stTag = String(tag).toLowerCase();
-    if (_stTag === 'video') {
+    if (_stTag === 'video' || _stTag === 'audio') {
       var _stKey = _elKey(sel, null);
       var _stLazy = '';
       try { _stLazy = String(_zw5277Attr(sel, null, 'loading') || '').trim().toLowerCase(); } catch (_e5281sl) {}
       var _stFlag = globalThis._zwMediaViewportFlag5281 && globalThis._zwMediaViewportFlag5281[_stKey];
+      // s333：audio not-rendered 臂（同脚本门——无 controls 的 lazy audio 恒
+      // defer 且无视旗标；HTML rendering §audio「should not be rendered」，
+      // lazy intersection observer 对不渲染元素不回调）。
+      var _stAudioNoCtl = false;
+      try {
+        _stAudioNoCtl = _stTag === 'audio' && _stLazy === 'lazy' && !_resourceStates[_stKey]
+          && _zw5277Attr(sel, null, 'controls') == null;
+      } catch (_e5333sc) {}
+      if (_stAudioNoCtl) {
+        globalThis._zwMediaLazyDeferred5281 = globalThis._zwMediaLazyDeferred5281 || {};
+        globalThis._zwMediaLazyDeferred5281[_stKey] = { kind: 'commit', sel: sel, tag: _stTag, url: url, outcome: outcome, width: width, height: height, durationMs: durationMs };
+        return null;
+      }
       var _stConn = false, _stNear = false;
       try { _stConn = _makeProxy(sel, null).isConnected === true; } catch (_e5281sc) {}
       try { _stNear = globalThis.__zwImgNearViewport5277(sel, null) === true; } catch (_e5281sn) {}
