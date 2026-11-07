@@ -145,7 +145,7 @@ fn store_font_sizes_from_ifc_mode(
                         // R5446（CSS2 §9.3.1）：float 离流盒排除——与 layout 侧
                         // `has_block_level_child` 同款（storage 信号必须镜像 layout 判定，
                         // 否则 paint Path B 分段分歧）。kill-switch `ZW_NESTED_INLINE_FLOAT=0`。
-                        !(crate::inline_finalization::nested_inline_float_enabled()
+                        !(crate::inline::nested_float::nested_inline_float_enabled()
                             && !matches!(st.float, zero_css_parser::values::FloatValue::None))
                             && !matches!(
                                 st.display,
@@ -173,7 +173,7 @@ fn store_font_sizes_from_ifc_mode(
                             st.position,
                             zero_css_parser::values::PositionValue::Absolute
                                 | zero_css_parser::values::PositionValue::Fixed
-                        ) && !(crate::inline_finalization::nested_inline_float_enabled()
+                        ) && !(crate::inline::nested_float::nested_inline_float_enabled()
                             && !matches!(st.float, zero_css_parser::values::FloatValue::None))
                             && !matches!(
                                 st.display,

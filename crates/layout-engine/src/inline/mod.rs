@@ -44,6 +44,9 @@ pub use column_fragmentation::*;
 mod column_fragmentation_flow;
 pub use column_fragmentation_flow::*;
 
+// R5446：嵌套 inline float 收集器（R5448 自 inline_finalization.rs 抽出，2000 行规则）。
+pub(crate) mod nested_float;
+
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::OnceLock;

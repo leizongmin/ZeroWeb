@@ -1543,7 +1543,7 @@ is_isolated_bidi: style.is_some_and(|s| {
                         // 趟（styles 在场）判定；paint Path B 无 styles 不发（与 walk 臂
                         // 同口径，FIXME：存储信号镜像另案）。kill-switch
                         // `ZW_NESTED_INLINE_FLOAT=0`。
-                        if crate::inline_finalization::nested_inline_float_enabled() && !self.vertical {
+                        if crate::inline::nested_float::nested_inline_float_enabled() && !self.vertical {
                             for &gc in doc.child_nodes(child_id).iter() {
                                 if styles.get(&gc).is_some_and(|st| {
                                     !matches!(st.float, zero_css_parser::values::FloatValue::None)
@@ -1654,7 +1654,7 @@ is_isolated_bidi: style.is_some_and(|s| {
                             // display=Block 曾触发本门把 wrapper 载体文本置空
                             //（floats-placement-vertical-001b 的 Hello/Kitty 消失）。
                             // kill-switch `ZW_NESTED_INLINE_FLOAT=0`。
-                            && !(crate::inline_finalization::nested_inline_float_enabled()
+                            && !(crate::inline::nested_float::nested_inline_float_enabled()
                                 && !matches!(st.float, zero_css_parser::values::FloatValue::None))
                             && !matches!(
                                 st.display,
@@ -2303,7 +2303,7 @@ is_isolated_bidi: style.is_some_and(|s| {
                     // float 从未入 IFC 项列（001b 四子缺陷根因之一）。断行后置
                     // emitted_text_run = true 同 br（后继文本不carry首 run frame）。
                     // kill-switch `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure 侧同一开关）。
-                    if crate::inline_finalization::nested_inline_float_enabled()
+                    if crate::inline::nested_float::nested_inline_float_enabled()
                         && styles.get(&gc).is_some_and(|st| {
                             !matches!(st.float, zero_css_parser::values::FloatValue::None)
                         })
@@ -2551,7 +2551,7 @@ is_isolated_bidi: style.is_some_and(|s| {
                             // float）被挡出 FLAT_CHILD_WALK 落 flatten 零宽臂，float 项整体
                             // 丢失（floats-placement-vertical-001b 的 Hello 消失）。kill-switch
                             // `ZW_NESTED_INLINE_FLOAT=0`（与 remeasure 侧同一开关）。
-                            !(crate::inline_finalization::nested_inline_float_enabled()
+                            !(crate::inline::nested_float::nested_inline_float_enabled()
                                 && !matches!(st.float, zero_css_parser::values::FloatValue::None))
                                 && !matches!(
                                     st.display,
