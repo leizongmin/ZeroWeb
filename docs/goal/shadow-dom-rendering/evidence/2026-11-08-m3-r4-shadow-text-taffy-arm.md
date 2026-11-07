@@ -64,6 +64,11 @@ R4 第二臂，下一片完成后翻默认。
 - 运行环境注记：r4d 首跑 workspace 腿 Error 127（target/test-guard 瞬时缺失，
   双 agent 并发构建同一 target/ 所致；前台重建即恢复）。本轮存在同会话双
   agent 并发（rally 双 spawn），门禁采认协议见 rally-double-spawn-race。
+- `make bench-gate`（r4i，提交后树上补跑）：microbench 1/1 PASS + absolute
+  page-total/retained-form budgets PASS（welcome p95 8.08ms / morning 50.08ms /
+  medium 296.82ms / form-input p95 0.0216ms）；WARN 基线硬件不匹配
+  （AMD 9700X vs i5-13500H）——相对门禁未启用，绝对门禁全过，默认关路径
+  无布局性能面变化。
 
 ## 3. 004 回归根因（定谳）
 
