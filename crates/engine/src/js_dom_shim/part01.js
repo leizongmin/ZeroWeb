@@ -3205,6 +3205,7 @@
     // subtest 2「no scripts should run in the iframe」断言面——child postMessage 不得发生）。
     if (flags && flags.sandboxed && !flags.allowScripts) return;
     var parts = [];
+    var partSrcs = [];
     var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
     var m;
     while ((m = re.exec(body)) !== null) {
@@ -3216,12 +3217,57 @@
         if (src && typeof __zw_fetch_script === 'function') {
           try {
             var ext = String(__zw_fetch_script(pageUrl, src) || '');
-            if (ext) parts.push(ext);
+            if (ext) { parts.push(ext); partSrcs.push(src); }
           } catch (_eR206f) {}
         }
       } else if (code.trim()) {
-        parts.push(code);
+        // s339：s261 预内联投递形态（`data-zw-inlined data-inline="<原始 src>"`——
+        // runner 语料外链脚本就地内联）以 data-inline 记原始外链 URL——partSrcs 槽
+        // 语义 = 「原外链 URL 或 ''（真内联）」，下方 s339 harness 段检测按 URL 命中
+        // testharness 段。
+        var inlM = /\bdata-inline\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+        var isrc = inlM ? (inlM[2] != null ? inlM[2] : (inlM[3] != null ? inlM[3] : (inlM[4] || ''))) : '';
+        parts.push(code); partSrcs.push(isrc);
       }
+    }
+    // s339（iframe 域动态 import 模块体 window 身份桥）——子文档 harness 段后注入
+    // 注册包装段：test/async_test/promise_test 的体执行窗置全局
+    // `__zwActiveIframeWin`/`__zwActiveIframeDoc` 桥位，模块体求值包裹
+    //（script-sandbox es_module MODULE_EVAL_WINDOW_SCOPE_OPEN/CLOSE——prelude eval
+    // 臂与 v8_runtime settle 臂同形）求值时读之，模块体裸 `window`/`document`/
+    // `self` 形参遮蔽到 importing document 的 win/doc。本引擎单 isolate 共享全局，
+    // 子文档 realm 以合并 Function 形参承载（R206 形参遮蔽）；桥位修复 s338 定谳
+    // 根因链——动态 import 模块体 `window.<id>` 写此前错落主窗，iframe 续延读形参
+    // 恒 undefined（dynamic-imports-credentials 簇 12F 根因）。finally 恢复前值
+    //（嵌套安全）；桥位仅覆盖体同步窗——体内 `.then` 续延不持桥位（续延读形参
+    // window 与真浏览器同型；setTimeout 字符串求值窗仍全局——该族面承基线）。
+    // spec：模块的 settings object/realm 归属 importing document。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-scripts
+    // 仅 testharness 段在场注入——无 harness 子文档（普通 fixture）零变化。
+    var _zwHarnessIdx339 = -1;
+    for (var pi339 = 0; pi339 < partSrcs.length; pi339++) {
+      if (partSrcs[pi339] && /testharness/.test(partSrcs[pi339])) { _zwHarnessIdx339 = pi339; break; }
+    }
+    if (_zwHarnessIdx339 !== -1) {
+      parts.splice(_zwHarnessIdx339 + 1, 0,
+        '/* s339 iframe module window-scope bridge */\n' +
+        '(function () {\n' +
+        '  var _zwPT = promise_test, _zwT = test, _zwAT = async_test;\n' +
+        '  function _zwScopeBody(fn) {\n' +
+        '    if (typeof fn !== "function") return fn;\n' +
+        '    return function () {\n' +
+        '      var _zwPW = globalThis.__zwActiveIframeWin, _zwPD = globalThis.__zwActiveIframeDoc;\n' +
+        '      globalThis.__zwActiveIframeWin = window;\n' +
+        '      globalThis.__zwActiveIframeDoc = document;\n' +
+        '      try { return fn.apply(this, arguments); }\n' +
+        '      finally { globalThis.__zwActiveIframeWin = _zwPW; globalThis.__zwActiveIframeDoc = _zwPD; }\n' +
+        '    };\n' +
+        '  }\n' +
+        '  promise_test = function (f, n, p) { return _zwPT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '  test = function (f, n, p) { return _zwT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '  async_test = function (f, n, p) { return _zwAT.call(this, _zwScopeBody(f), n, p); };\n' +
+        '})();');
+      partSrcs.splice(_zwHarnessIdx339 + 1, 0, '');
     }
     if (!parts.length) return;
     try { if (win) win._zwScriptsRan = true; } catch (_eR206mark) {}
@@ -3318,11 +3364,38 @@
         'window', 'self', 'parent', 'top', 'document', 'location',
         'navigator', 'XMLHttpRequest', 'fetch', 'Headers', 'Request', 'Response', 'URL', 'caches', 'history',
         _omWrapped);
-      fn.call(
-        win, win, win, globalThis, globalThis, doc, loc,
-        win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
-        win.Response, win.URL, win.caches, win.history
-      );
+      // s339：上方注入段的注册包装对**宿主全局** `promise_test`/`test`/`async_test`
+      // 写包装——子文档 harness 的注册 API 是 IIFE 内绑定、合并 fn 作用域无同名局部，
+      // 裸赋值落宿主全局（恰是既有承重契约「嵌套 test() 落宿主 harness」的同一解析
+      // 路径——s147 注记）。fn 执行后**恢复执行前全局值**：注册发生在 fn 同步窗内、
+      // 体在注册时即被包成桥位置位形态（宿主 harness 持包过的体，恢复不撤已注册包
+      // 装），后续主页面/跨文档注册面不再继承 iframe 包装（跨页零漂移）。同路径影
+      // 子页（s147）的裸赋值落影子局部绑定，此处恢复为同值回写（no-op）。
+      var _zwReg339Pre = null;
+      try {
+        _zwReg339Pre = [['promise_test', 'promise_test' in globalThis],
+          ['test', 'test' in globalThis],
+          ['async_test', 'async_test' in globalThis]].map(function (p339) {
+          return { name: p339[0], had: p339[1], val: p339[1] ? globalThis[p339[0]] : undefined };
+        });
+      } catch (_e339cap) {}
+      try {
+        fn.call(
+          win, win, win, globalThis, globalThis, doc, loc,
+          win.navigator, win.XMLHttpRequest, win.fetch, win.Headers, win.Request,
+          win.Response, win.URL, win.caches, win.history
+        );
+      } finally {
+        try {
+          if (_zwReg339Pre) {
+            for (var _ri339 = 0; _ri339 < _zwReg339Pre.length; _ri339++) {
+              var _rp339 = _zwReg339Pre[_ri339];
+              if (_rp339.had) { globalThis[_rp339.name] = _rp339.val; }
+              else { delete globalThis[_rp339.name]; }
+            }
+          }
+        } catch (_e339res) {}
+      }
     } catch (_eR206x) {
       try { win.unexpectedException = _eR206x; } catch (_eR206w) {}
     }

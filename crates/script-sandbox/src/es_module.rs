@@ -188,6 +188,29 @@ impl std::fmt::Debug for EsModuleSandbox {
 pub const MODULE_CACHE_RESET_SCRIPT: &str =
     "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\nglobalThis.__zwModuleFetchKeys = {};\n";
 
+/// s339（iframe 域动态 import 模块体 window 身份桥）——模块体求值包裹片（open/close
+/// 夹住模块体源码）。两处求值臂（prelude eval 臂与 v8_runtime native settle 臂）在
+/// **构建期**判定全局 `__zwActiveIframeWin` 桥位：在场才夹包裹，缺席按原样求值
+/// （worker/裸 sandbox 等无 window 全局面零漂移——无条件形参遮蔽会把裸 `window`
+/// 从 ReferenceError 变为 globalThis，worker module 语义面不可接受）。
+/// 桥位由引擎 shim 在子文档 harness 段后注入的注册包装置位（js_dom_shim
+/// `_zwRunIframeScripts` 注入段——test/async_test/promise_test 体执行窗 try/finally
+/// 换入换出）。native settle 臂同步发生于 import() 求值窗内（classic 直调无跳代）
+/// ——构建期 = 桥位窗 ✓；prelude eval 臂经 s337 双跳，构建落在体返回后的微任务
+/// （桥位已清）→ 恒走原样面——桥位经该臂仅同步直调形态可达（语义保守，corpus
+/// 子文档面全走 classic native 臂）。在场包裹语义：模块体裸 `window`/`document`/
+/// `self` 形参遮蔽到 importing document 的 win/doc——本引擎单 isolate 共享全局，
+/// 子文档 realm 以合并 Function 形参承载，模块体求值不落形参作用域，window 写
+/// 此前错落主窗（s338 定谳根因链）。spec：模块的 settings object/realm 归属
+/// importing document。
+/// 内容约束：不得含单引号/反斜杠（prelude 以 `'…'` JS 字符串字面量内嵌）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#module-scripts
+pub const MODULE_EVAL_WINDOW_SCOPE_OPEN: &str =
+    "function(){var __zwW=globalThis.__zwActiveIframeWin;return (function(window,document,self){return ";
+/// s339 桥包裹闭合片（形参遮蔽调用 + 外层 IIFE 立即执行；见 [`MODULE_EVAL_WINDOW_SCOPE_OPEN`]）。
+pub const MODULE_EVAL_WINDOW_SCOPE_CLOSE: &str =
+    ";}).call(__zwW,__zwW,globalThis.__zwActiveIframeDoc||__zwW.document||__zwW,__zwW);}()";
+
 /// 把依赖 IIFE 包成 `__moduleCache` 记忆化赋值表达式——模块体求值恰好一次（HTML module
 /// map 命中即复用，https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script）。
 /// R5182：prelude 急切求值、入口体内联、后续 module script 元素三条发射路径共享同一缓存实例；
@@ -452,7 +475,16 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // （renderer/tab 宿主、无 CSP 页）回落 eval 同形。
     // https://w3c.github.io/webappsec-csp/#can-compile-strings
     // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
-    out.push_str("    __moduleCache[resolved] = (function() { return (typeof __zwRealEval === 'function' ? __zwRealEval : eval)('(' + code + ')'); })();\n");
+    // s339：桥位在场（构建期判定——同步直调形态）才夹 `MODULE_EVAL_WINDOW_SCOPE_OPEN/
+    // CLOSE` 窗口身份包裹；缺席按原样求值（与 v8_runtime settle 臂同形，worker/裸
+    // sandbox 面零漂移——见常量文档）。
+    out.push_str(
+        "    __moduleCache[resolved] = (function() { var __zwEvalSrc = globalThis.__zwActiveIframeWin ? ('(' + '",
+    );
+    out.push_str(MODULE_EVAL_WINDOW_SCOPE_OPEN);
+    out.push_str("' + code + '");
+    out.push_str(MODULE_EVAL_WINDOW_SCOPE_CLOSE);
+    out.push_str("' + ')') : ('(' + code + ')'); return (typeof __zwRealEval === 'function' ? __zwRealEval : eval)(__zwEvalSrc); })();\n");
     out.push_str("  } catch (e) {\n");
     out.push_str("    __moduleFailures[resolved] = e;\n");
     out.push_str("    throw e;\n");
@@ -5093,5 +5125,54 @@ globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message);
             captured_args[0]
         );
         assert_eq!(captured_args[0][3], "include", "credentials mode 穿入宿主");
+    }
+
+    /// s339（iframe 域动态 import 模块体 window 身份桥——prelude eval 臂）：桥位
+    /// 在场（**同步直调** `__zw_load_module` 形态；promise 双跳微任务面桥已清、
+    /// 回落逐字求值——见 [`MODULE_EVAL_WINDOW_SCOPE_OPEN`] 文档）时模块体裸
+    /// `window` 形参遮蔽到桥位对象（写落桥位、`globalThis` 仍主全局）；桥位缺席
+    /// 按原样求值——裸 `window` 仍 ReferenceError（worker/裸 sandbox 零漂移语义
+    /// 钉）。两 spec 分钉：模块 map 记忆化（s124）会让同 spec 二次 import 不重
+    /// 求值，同体断言会被首 case 缓存掩盖。单 execute 全量（sandbox 缺省
+    /// persistent_context=false——每次 execute 新 Context，跨 execute 全局不持久）。
+    #[test]
+    fn test_dynamic_import_window_scope_bridge_prelude_s339() {
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(|args: &[String]| -> String {
+                let (file, body) = match args.first().map(String::as_str) {
+                    Some("./dep.mjs") => ("dep.mjs", "(function() { window.__zwProbeFromModule = 'hit'; globalThis.__zwProbeMain = 'main-hit'; return { ns: true }; })()"),
+                    _ => ("dep2.mjs", "(function() { window.__zwProbe2FromModule = 'hit2'; return { ns2: true }; })()"),
+                };
+                format!("https://zero.test/resources/{file}\u{1f}{body}")
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap_or_default();
+        // 桥位在场：同步直调（与 classic 面原生 settle 臂同窗形态）——模块体
+        // `window` 写落桥位对象、`globalThis` 仍主全局、命名空间落缓存；随后桥位
+        // 清空 + 第二 spec（躲开首 case 缓存）：逐字求值臂——裸 `window`
+        // ReferenceError（无条件形参遮蔽缺席的语义钉），IIFE 首语句即抛、零写入。
+        let probe = format!(
+            "{prelude}\n\
+             globalThis.__zwActiveIframeWin = {{ frame: true }};\n\
+             globalThis.__zwActiveIframeDoc = {{ doc: true }};\n\
+             var nsA = __zw_load_module('./dep.mjs', 'https://zero.test/resources/entry.html');\n\
+             var rBridge = String(globalThis.__zwActiveIframeWin.__zwProbeFromModule);\n\
+             var rMain = String(globalThis.__zwProbeMain);\n\
+             var rNs = String(nsA && nsA.ns);\n\
+             globalThis.__zwActiveIframeWin = undefined;\n\
+             globalThis.__zwActiveIframeDoc = undefined;\n\
+             var rB;\n\
+             try {{ __zw_load_module('./dep2.mjs', 'https://zero.test/resources/entry.html'); rB = 'no-throw'; }}\n\
+             catch (e) {{ rB = e && e.name; }}\n\
+             [rBridge, rMain, rNs, rB, String(globalThis.__zwProbe2FromModule)].join('|');\n"
+        );
+        let result = sandbox.execute(&probe).expect("单回合探针不得整体失败");
+        assert_eq!(
+            result.value, "hit|main-hit|true|ReferenceError|undefined",
+            "桥位在场 window 写落桥位/globalThis 落主全局/命名空间落缓存；桥位缺席裸 window ReferenceError 零半写"
+        );
     }
 }

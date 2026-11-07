@@ -291,11 +291,28 @@ fn settle_dynamic_import<'s>(
         .and_then(|key| context.global(scope).get(scope, key.into()))
         .map(|v| !v.is_undefined())
         .unwrap_or(false);
+    // s339：窗口身份桥构建期判定（Rust 侧读全局 `__zwActiveIframeWin`——shim 子
+    // 文档注册包装在测试体执行窗置位；native settle 臂同步于 import() 调用窗内，
+    // 桥位必在场）。缺席按原样求值（worker/裸 sandbox 面零漂移——无条件形参遮蔽
+    // 会把裸 `window` 从 ReferenceError 变为 globalThis，语义不可接受；见
+    // es_module 常量文档）。
+    let window_bridge_active = v8::String::new(scope, "__zwActiveIframeWin")
+        .and_then(|key| context.global(scope).get(scope, key.into()))
+        .map(|v| !v.is_undefined() && !v.is_null())
+        .unwrap_or(false);
     let mut script_src = String::with_capacity(code.len() + 256);
     if !has_helpers && let Ok(prelude) = crate::build_module_runtime_prelude(&crate::ModuleRegistry::new(), None) {
         script_src.push_str(&prelude);
     }
-    script_src.push_str(code);
+    if window_bridge_active {
+        script_src.push('(');
+        script_src.push_str(crate::es_module::MODULE_EVAL_WINDOW_SCOPE_OPEN);
+        script_src.push_str(code);
+        script_src.push_str(crate::es_module::MODULE_EVAL_WINDOW_SCOPE_CLOSE);
+        script_src.push(')');
+    } else {
+        script_src.push_str(code);
+    }
     // compile/run 须在自有 TryCatch 内——宿主回调 scope 非 TryCatch，裸 run 的
     // 异常会按 uncaught 上抛（永不达 promise rejection）。
     v8::tc_scope!(let tc, scope);
@@ -3235,6 +3252,75 @@ mod tests {
             calls.lock().unwrap().as_slice(),
             [("./a.js".to_string(), "https://zero.test/page.html".to_string())],
             "resolver 收到 (spec, referrer)"
+        );
+    }
+
+    /// s339（iframe 域动态 import 模块体 window 身份桥——classic 面原生 settle
+    /// 臂）：桥位 `__zwActiveIframeWin/Doc` 在场（import() 调用窗内同步 settle——
+    /// 与 shim 子文档包装测试体执行窗同形态）时模块体裸 `window` 形参遮蔽到桥位
+    /// 对象；桥位缺席按原样求值——裸 `window` 仍 ReferenceError reject（worker/
+    /// 裸 sandbox 零漂移语义钉）。两 spec 分钉：module map 记忆化（s124）会让同
+    /// spec 二次 import 命中缓存不重求值，掩盖回落臂断言。
+    #[test]
+    fn test_native_dynamic_import_window_scope_bridge_s339() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|spec, _referrer, _nonce, _type_attr| {
+            let (resolved, body) = if spec == "./a.js" {
+                (
+                    "https://zero.test/a.js",
+                    "(function() { window.__zwNatFromModule = 'hit'; globalThis.__zwNatMain = 'main-hit'; return { from: 'a.js' }; })()",
+                )
+            } else {
+                (
+                    "https://zero.test/b.js",
+                    "(function() { window.__zwNat2FromModule = 'hit2'; return { from: 'b.js' }; })()",
+                )
+            };
+            format!("{resolved}\u{1f}{body}")
+        }));
+        sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        // 桥位置位与 import() 同脚本回合（corpus 形态：包装测试体执行窗内置位 +
+        // 调用）。微任务检查点在 execute 内跑 → .then 落定发生在返回前。
+        sandbox
+            .execute(
+                "globalThis.__zwBridgeWin = { frame: true };\n\
+                 globalThis.__zwActiveIframeWin = globalThis.__zwBridgeWin;\n\
+                 globalThis.__zwActiveIframeDoc = { doc: true };\n\
+                 import('./a.js').then(\n\
+                   function (m) { __zw_report('fulfilled:' + m.from + ':' + globalThis.__zwBridgeWin.__zwNatFromModule + ':' + globalThis.__zwNatMain); },\n\
+                   function (e) { __zw_report('rejected:' + (e && e.constructor.name)); });\n",
+            )
+            .expect("classic 上下文 import() 不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("fulfilled:a.js:hit:main-hit"),
+            "桥位在场：模块体 window 写落桥位对象、globalThis 仍主全局、命名空间落定"
+        );
+        // 桥位清空 + 第二 spec（躲开首 case module map 缓存）：逐字求值——裸
+        // window ReferenceError reject（零漂移钉；消息措辞属 V8，只钉构造器）。
+        sandbox
+            .execute(
+                "globalThis.__zwActiveIframeWin = undefined;\n\
+                 globalThis.__zwActiveIframeDoc = undefined;\n\
+                 import('./b.js').then(\n\
+                   function () { __zw_report('b:fulfilled'); },\n\
+                   function (e) { __zw_report('b:rejected:' + (e && e.constructor.name) + ':' + (e && e.message)); });\n",
+            )
+            .expect("桥位清空 import() 不得同步 throw");
+        let report = settled.lock().unwrap().clone().unwrap_or_default();
+        assert!(
+            report.starts_with("b:rejected:ReferenceError:"),
+            "桥位缺席按原样求值：裸 window 仍 ReferenceError（零漂移钉），实报 {report:?}"
         );
     }
 
