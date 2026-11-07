@@ -5,13 +5,13 @@
   "cpu_model": "13th Gen Intel(R) Core(TM) i5-13500H",
   "cpu_cores": 16,
   "os": "linux",
-  "recorded_at": "2026-10-25",
-  "git_sha": "d22abffb3",
+  "recorded_at": "2026-11-07",
+  "git_sha": "6d168d764",
   "run_config": {
     "config_hash": "a3bd66703cd27bd2752673846b8199c4465a732a1b98816b4284499baf79ff1f",
     "profile": "release"
   },
-  "justification": "R5277 机器态漂移重捕获（R4376 同款处置）：linux-x86_64 基线 2026-09-15 a732a493d 捕获后整机性能态漂移，两项 criterion（block_layout_1000_elements 3.22ms / incremental_layout 3.03ms）超旧预算但双树同刻配对 A/B 证明与代码无关——clean HEAD d22abffb3 同 bench median 3.396ms/2.948ms ≥ 本分支 3.271ms/2.934ms，分支不慢于 HEAD；flex/grid/deep/wide 等其余 23 项同刻同向抬升但在预算内（环境漂移签名）。本轮代码变更（R5277 caption frame-only 收缩）仅触及 table 路径，无 table bench 受影响。证据：/tmp/r5277_bench3.log、goal R5277 块。",
+  "justification": "deep_nesting 基线漂移跨线——非 R5449 回归：父提交 f262809ea 同协议 bisect A/B（git worktree 隔离构建）探针 290.6µs vs R5449 树 272.8µs 背靠背（R5449 树更快）；漂移链 R5446 前 249.1µs→R5446 迁移残差 +27µs（在册挂账）→本日 clean 静窗 gate p95 297.2µs 越过旧基线 214.8µs×1.35=289.9µs 预算线。新基线取 clean 静窗报告 benchmark_20261107_155108（load 0.84/pgrep 全机零）。",
   "budgets": {
     "microbench_factor": 1.35,
     "microbench_floor_ns": 1.0,
@@ -24,130 +24,130 @@
   "metrics": [
     {
       "id": "mb/zero-layout-engine/block_layout_1000_elements",
-      "p95": 3219325.147368421,
+      "p95": 3543121.4,
       "tier": "budget"
     },
     {
       "id": "mb/zero-layout-engine/deep_nesting_50_levels",
-      "p95": 214764.2962686567,
+      "p95": 297217.11,
       "tier": "budget"
     },
     {
       "id": "mb/zero-layout-engine/flex_layout_1000_elements",
-      "p95": 2940909.3703703703,
+      "p95": 3242598.8533333335,
       "tier": "budget"
     },
     {
       "id": "mb/zero-layout-engine/grid_layout_100_elements",
-      "p95": 305126.39351851854,
+      "p95": 340550.48959608324,
       "tier": "budget"
     },
     {
       "id": "mb/zero-layout-engine/incremental_layout",
-      "p95": 3034982.505263158,
+      "p95": 3263309.2,
       "tier": "budget"
     },
     {
       "id": "mb/zero-layout-engine/wide_tree_500_children",
-      "p95": 163585.70786516854,
+      "p95": 184934.16599190285,
       "tier": "budget"
     },
     {
       "id": "page/welcome/parse_ms",
-      "p95": 0.124648,
+      "p95": 0.137392,
       "tier": "budget"
     },
     {
       "id": "page/welcome/style_ms",
-      "p95": 2.709285,
+      "p95": 1.751857,
       "tier": "budget"
     },
     {
       "id": "page/welcome/layout_ms",
-      "p95": 2.828574,
+      "p95": 3.1136459999999997,
       "tier": "budget"
     },
     {
       "id": "page/welcome/paint_ms",
-      "p95": 4.24289,
+      "p95": 4.349628,
       "tier": "budget"
     },
     {
       "id": "page/welcome/total_ms",
-      "p95": 9.965385,
+      "p95": 9.411529999999999,
       "tier": "hard",
       "absolute_budget_ms": 2000.0
     },
     {
       "id": "page/medium/parse_ms",
-      "p95": 5.614623,
+      "p95": 6.008388,
       "tier": "budget"
     },
     {
       "id": "page/medium/style_ms",
-      "p95": 19.491291,
+      "p95": 23.161664,
       "tier": "budget"
     },
     {
       "id": "page/medium/layout_ms",
-      "p95": 123.388609,
+      "p95": 155.254133,
       "tier": "budget"
     },
     {
       "id": "page/medium/paint_ms",
-      "p95": 81.562838,
+      "p95": 86.037613,
       "tier": "budget"
     },
     {
       "id": "page/medium/total_ms",
-      "p95": 229.23804,
+      "p95": 269.722897,
       "tier": "hard",
       "absolute_budget_ms": 2000.0
     },
     {
       "id": "page/morning/parse_ms",
-      "p95": 0.38907600000000003,
+      "p95": 0.303063,
       "tier": "budget"
     },
     {
       "id": "page/morning/style_ms",
-      "p95": 9.679003999999999,
+      "p95": 7.750175,
       "tier": "budget"
     },
     {
       "id": "page/morning/layout_ms",
-      "p95": 22.675,
+      "p95": 23.722517,
       "tier": "budget"
     },
     {
       "id": "page/morning/paint_ms",
-      "p95": 54.429643999999996,
+      "p95": 19.481579,
       "tier": "budget"
     },
     {
       "id": "page/morning/total_ms",
-      "p95": 87.482265,
+      "p95": 50.018609,
       "tier": "hard",
       "absolute_budget_ms": 2000.0
     },
     {
       "id": "page/welcome/first_paint_wall_ms",
-      "p95": 17.065358999999997,
+      "p95": 15.931132,
       "tier": "budget"
     },
     {
       "id": "page/medium/first_paint_wall_ms",
-      "p95": 280.30805,
+      "p95": 346.72504,
       "tier": "budget"
     },
     {
       "id": "page/morning/first_paint_wall_ms",
-      "p95": 175.22204499999998,
+      "p95": 153.101553,
       "tier": "budget"
     },
     {
       "id": "resource/peak_rss_mb",
-      "p95": 192.515625,
+      "p95": 189.54296875,
       "tier": "budget"
     }
   ]
