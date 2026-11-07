@@ -11,6 +11,7 @@ pub(super) struct TreeRuntimeFlags {
     inline_box_model_coherence: bool,
     run_in: bool,
     r109_slice_vframe_overflow: bool,
+    shadow_text_box: bool,
     record_node_map: bool,
 }
 
@@ -28,6 +29,7 @@ impl TreeRuntimeFlags {
             inline_box_model_coherence: enabled("ZW_INLINE_BOX_MODEL_COHERENCE"),
             run_in: enabled("ZW_RUN_IN"),
             r109_slice_vframe_overflow: enabled("ZW_R109_SLICE_VFRAME_OVERFLOW"),
+            shadow_text_box: opt_in("ZW_SHADOW_TEXT_BOX"),
             record_node_map: std::env::var("ZW_TREE_NODE_MAP_RECORD").as_deref() == Ok("1"),
         }
     }
@@ -72,6 +74,11 @@ impl TreeRuntimeFlags {
         self.value("ZW_R109_SLICE_VFRAME_OVERFLOW", self.r109_slice_vframe_overflow)
     }
 
+    /// 45 号 R4：shadow 文本匿名叶 opt-in 开关（默认关，paint 侧完成后翻默认）。
+    pub(super) fn shadow_text_box(self) -> bool {
+        self.opt_value("ZW_SHADOW_TEXT_BOX", self.shadow_text_box)
+    }
+
     pub(super) fn record_node_map(self) -> bool {
         self.record_node_map
     }
@@ -80,10 +87,20 @@ impl TreeRuntimeFlags {
     fn value(self, name: &str, cached: bool) -> bool {
         select_value(self.snapshot_enabled, cached, || enabled(name))
     }
+
+    #[inline]
+    fn opt_value(self, name: &str, cached: bool) -> bool {
+        select_value(self.snapshot_enabled, cached, || opt_in(name))
+    }
 }
 
 fn enabled(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
+}
+
+/// opt-in 开关：默认关，显式设 "1" 才开（与 `enabled` 的默认开/`=0` 杀相反）。
+fn opt_in(name: &str) -> bool {
+    std::env::var(name).as_deref() == Ok("1")
 }
 
 #[inline]

@@ -1,7 +1,7 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
-**版本**: v1.2
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成
+**版本**: v1.3
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
@@ -12,8 +12,15 @@ DC-2 收口——slotted-has ×4 翻绿、全量 reftest 725/725 零回归、ups
 38 案 15 绿 / 23 红逐案归因（20 `:has-slotted` 范围外 / 2 命令式 M3 面 / 1 锚定位
 范围外），见
 [M2 evidence](shadow-dom-rendering/evidence/2026-11-07-m2-slotted-segment-and-flat-tree.md)）。
-下一步 M3：变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot 属性
-→ 命令式 ~26 案翻绿面）；shadow Text 布局通道（R4）；B6 补充池通道
+M3 进行中（2026-11-08 R4 前半：shadow Text taffy 侧布局通道落地，挂
+`ZW_SHADOW_TEXT_BOX` opt-in 默认关——门控矩阵 flag 关 = base 零漂移、flag 开
+仅 slot-fallback-content-004 翻 ✗1.75%；根因定谳 inline_finalization 行级
+paint 按 DOM 序自累计 Y 不读 taffy 几何，taffy/LayoutBox 两层已验证正确，
+另发现 shadow host 不绘制自身背景（pre-existing），见
+[R4 前半 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-shadow-text-taffy-arm.md)）。
+下一步 M3：R4 第二臂（paint/IFC 侧感知 shadow 文本行位 → 004 翻回 → 翻
+默认开）；变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot
+属性 → 006 + 命令式 ~26 案翻绿面）；B6 补充池通道
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——

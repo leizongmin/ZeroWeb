@@ -5042,6 +5042,34 @@ fn build_subtree(
     taffy_id
 }
 
+/// 45 号 shadow-dom-rendering M3（R4）：shadow 树内文本节点的匿名 taffy 叶——
+/// flex/grid 匿名文本项同款构造（`new_leaf_with_context` + node_map/taffy_to_dom
+/// 登记，测量回调按 text NodeId 取内容）。`collect_shadow_children` /
+/// `collect_shadow_slot_children` 此前只收 Element 子：shadow 根直挂文本、slot
+/// 回退文本、被分配到默认 slot 的 light 文本全部无布局盒（slot-fallback-content-004
+/// 回退行恒空、css-scoping nested 系列缺行根因）。纯空白文本跳过（与 flex 匿名项
+/// 同口径——块流空白折叠后不产盒）。https://dom.spec.whatwg.org/#slotting
+///
+/// 挂 `ZW_SHADOW_TEXT_BOX` 开关（opt-in，默认关）：taffy 侧布局已验证，但
+/// inline_finalization 的行级 paint 行走按 DOM 序自累计 Y，尚未感知 shadow 匿名叶
+/// 高度，默认开启会让 shadow 文本行位回退（slot-fallback-content-004 严格比对
+/// 回落）。FIXME(45-R4): paint/IFC 侧感知 shadow 文本行位后翻默认开。
+fn push_shadow_text_leaf(ctx: &mut BuildContext, text_id: NodeId, output: &mut Vec<taffy::NodeId>) {
+    let anon_style = taffy::Style {
+        display: taffy::style::Display::Block,
+        ..taffy::Style::default()
+    };
+    let anon_taffy = ctx
+        .taffy
+        .new_leaf_with_context(anon_style, text_id)
+        .unwrap_or_else(|_| ctx.taffy.new_leaf(taffy::Style::default()).unwrap());
+    if let Some(node_map) = &mut ctx.node_map {
+        node_map.insert(text_id, anon_taffy);
+    }
+    ctx.taffy_to_dom.insert(anon_taffy, text_id);
+    output.push(anon_taffy);
+}
+
 /// 递归遍历 shadow 树，收集 taffy 子节点。
 ///
 /// 遇到 `<slot>` 元素时：
@@ -5068,9 +5096,15 @@ fn collect_shadow_children(
             None => continue,
         };
 
-        // 只处理元素节点
+        // R4：文本子建匿名叶（shadow 根直挂文本此前无布局盒）；其余非元素跳过。
         let elem_data = match &child_data.kind {
             NodeKind::Element(elem) => elem,
+            NodeKind::Text(t) => {
+                if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() {
+                    push_shadow_text_leaf(ctx, child_id, output);
+                }
+                continue;
+            }
             _ => continue,
         };
 
@@ -5080,44 +5114,52 @@ fn collect_shadow_children(
             if !assigned.is_empty() {
                 // 有分配的 light DOM 节点 → 替换 slot
                 for &assigned_id in &assigned {
-                    if doc
-                        .get(assigned_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            assigned_id,
-                            parent_grid_areas,
-                            false,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(assigned_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                assigned_id,
+                                parent_grid_areas,
+                                false,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：被分配的 light 文本（默认 slot 接文本 slottable）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, assigned_id, output);
+                        }
+                        _ => {}
                     }
                 }
             } else {
                 // 无分配 → 使用 slot 的回退内容（slot 自身的子元素）
                 let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
                 for &fallback_id in &slot_children {
-                    if doc
-                        .get(fallback_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            fallback_id,
-                            parent_grid_areas,
-                            true,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(fallback_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                fallback_id,
+                                parent_grid_areas,
+                                true,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：回退文本子（slot-fallback-content-004 回退行）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, fallback_id, output);
+                        }
+                        _ => {}
                     }
                 }
             }
@@ -5162,9 +5204,15 @@ fn collect_shadow_slot_children(
             None => continue,
         };
 
-        // 只处理元素节点
+        // R4：文本子建匿名叶（shadow 内层元素直挂文本此前无布局盒）；其余非元素跳过。
         let elem_data = match &child_data.kind {
             NodeKind::Element(elem) => elem,
+            NodeKind::Text(t) => {
+                if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() {
+                    push_shadow_text_leaf(ctx, child_id, output);
+                }
+                continue;
+            }
             _ => continue,
         };
 
@@ -5173,43 +5221,51 @@ fn collect_shadow_slot_children(
             let assigned = doc.get_assigned_nodes(child_id);
             if !assigned.is_empty() {
                 for &assigned_id in &assigned {
-                    if doc
-                        .get(assigned_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            assigned_id,
-                            parent_grid_areas,
-                            false,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(assigned_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                assigned_id,
+                                parent_grid_areas,
+                                false,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：被分配的 light 文本（默认 slot 接文本 slottable）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, assigned_id, output);
+                        }
+                        _ => {}
                     }
                 }
             } else {
                 let slot_children = doc.get(child_id).map(|n| n.children.clone()).unwrap_or_default();
                 for &fallback_id in &slot_children {
-                    if doc
-                        .get(fallback_id)
-                        .is_some_and(|n| matches!(&n.kind, NodeKind::Element(_)))
-                    {
-                        let taffy_id = build_subtree(
-                            ctx,
-                            doc,
-                            styles,
-                            fallback_id,
-                            parent_grid_areas,
-                            true,
-                            writing_mode.clone(),
-                            viewport_w,
-                            viewport_h,
-                        );
-                        output.push(taffy_id);
+                    match doc.get(fallback_id).map(|n| &n.kind) {
+                        Some(NodeKind::Element(_)) => {
+                            let taffy_id = build_subtree(
+                                ctx,
+                                doc,
+                                styles,
+                                fallback_id,
+                                parent_grid_areas,
+                                true,
+                                writing_mode.clone(),
+                                viewport_w,
+                                viewport_h,
+                            );
+                            output.push(taffy_id);
+                        }
+                        // R4：回退文本子（slot-fallback-content-004 回退行）→ 匿名叶。
+                        Some(NodeKind::Text(t)) if ctx.flags.shadow_text_box() && !t.content.trim().is_empty() => {
+                            push_shadow_text_leaf(ctx, fallback_id, output);
+                        }
+                        _ => {}
                     }
                 }
             }

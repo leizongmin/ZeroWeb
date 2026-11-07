@@ -22,8 +22,24 @@ use super::DomError;
 fn is_valid_shadow_host_name(name: &str) -> bool {
     // 基本元素名单（dom.spec whatwg #valid-shadow-host-name）。
     const BASIC_VALID_SHADOW_HOST_NAMES: &[&str] = &[
-        "article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5",
-        "h6", "header", "main", "nav", "p", "section", "span",
+        "article",
+        "aside",
+        "blockquote",
+        "body",
+        "div",
+        "footer",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "header",
+        "main",
+        "nav",
+        "p",
+        "section",
+        "span",
     ];
     if BASIC_VALID_SHADOW_HOST_NAMES.contains(&name) {
         return true;
@@ -225,7 +241,7 @@ impl Document {
                 .nodes
                 .get(host)
                 .map(|n| match &n.kind {
-                    NodeKind::Element(elem) => is_valid_shadow_host_name(&elem.local_name()),
+                    NodeKind::Element(elem) => is_valid_shadow_host_name(elem.local_name()),
                     _ => false,
                 })
                 .unwrap_or(false);
