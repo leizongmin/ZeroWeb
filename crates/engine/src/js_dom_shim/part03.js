@@ -9440,6 +9440,14 @@
   //   /_zwSvgClipAttrRegion）。全 paint 关闭 → (0,0,0,0)。
   var _ZW_SVG_BBOX_EMPTY = { x: 0, y: 0, width: 0, height: 0, empty: true };
   var _zwSvgLenNum = function (el, a) {
+    // svg-compat-v2 B6：SMIL 动画值优先（keysplines-x-limits 定谳——getBBox
+    // 读动画 x；无匹配动画走属性宽松解析原路径零扰动）。
+    try {
+      if (typeof globalThis._zwSmilAnimNumber === 'function') {
+        var _av = globalThis._zwSmilAnimNumber(el, a);
+        if (_av != null && isFinite(_av)) return _av;
+      }
+    } catch (_eSmilN) {}
     // 长度属性宽松解析：缺省 → NaN（auto），'px' 后缀剥离（-05 clipPath 形用 px）。
     var v = null;
     try { v = el.getAttribute(a); } catch (_eG) { return NaN; }

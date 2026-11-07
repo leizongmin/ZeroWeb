@@ -22,13 +22,17 @@
 //      fill=freeze 不延长 current、begin="1s; 3s" 在 t=4 后恒
 //      InvalidStateError）。interval end = min(end 实例, begin + activeDur)
 //      （activeDur = repeatCount×dur / repeatDur，双给取 min）。
-//   ④ 采样：calcMode=linear（缺省）from/to、from/by、by、to、values（均匀
-//      keyTimes 线段插值）；fill=freeze 冻结于 activeEnd（activeDur 非 dur
-//      整数倍时 simpleTime = activeDur mod dur）。calcMode=discrete/
-//      spline/additive/accumulate = B6（FIXME）；keyTimes/keySplines = B6。
-//      长度 token 按 px + 物理单位换算进 user units（part03 S2a 常量表
-//      同源复制——闭包不可反向引用）；%/em/ex 上下文单位 = 挂账 #3 域
-//      （不采样 → 维持 base 行为）。
+//   ④ 采样（B6 值域感知插值管线）：calcMode linear（缺省）/discrete/
+//      spline（三次贝塞尔求解）/paced（数值累计距离）四模；keyTimes/
+//      keySplines 文法校验（违例 → 整动画无效——keysplines-x-limits 定
+//      谳）；accumulate="sum" 迭代传播 k×(last−first)；fill=freeze 冻结
+//      于 activeEnd（activeDur 非 dur 整数倍时 simpleTime = activeDur
+//      mod dur）。长度 token 按 px + 物理单位换算进 user units（part03
+//      S2a 常量表同源复制——闭包不可反向引用）；em/ex/% 经 target
+//      font-size/视口上下文解析（_lenUserUnits——svglength px-to-ems 定
+//      谳）。三明治合成 replace/additive=sum（_animatedValue）。类型化域
+//      color/transform/enum/string = B6b（FIXME——数值域不可解析即整动
+//      画无采样，现势同 F 无回归面）。
 //   ⑤ SVGSVGElement pauseAnimations/unpauseAnimations/getCurrentTime/
 //      setCurrentTime 文档级共享时间线（spec SVG2 struct.html
 //      §InterfaceSVGSVGElement——part03 M2 S3 per-element stub 的合流兑现，
@@ -446,6 +450,14 @@
         }
         if (blocked) continue;
       }
+      // restart=always（缺省）中途替换：新实例 b 落入已建活跃区间 → 旧区
+      // 间截断至 b（SMIL #Timing-RestartMechanisms「restarted」语义——活
+      // 跃 interval 被新实例终结重建；multiple-begin-additive 定谳面：x
+      // 的 to 值自第二实例起点 +半程起算，非旧实例 4s 处续用）。
+      for (var q3 = r.ivs.length - 1; q3 >= 0; q3--) {
+        var ivp = r.ivs[q3];
+        if (!ivp.pruned && ivp.b < b && ivp.e > b) ivp.e = b;
+      }
       // interval end：首个 > b 的 end 实例与 b+actDur 取 min（M1 口径恒持）；
       // 无 end 实例 → b + actDur。
       var e = b + r.actDur;
@@ -526,11 +538,17 @@
     return null;
   };
 
-  // ── 值采样 ──────────────────────────────────────────────────────────
-  // 长度 token → user units（px 域）。%/em/ex 上下文单位不采样（挂账 #3 域）。
+  // ── 值采样（B6 采样引擎：calcMode/keyTimes/keySplines/additive/
+  //    accumulate，SMIL Animation #CalcModeValueAttributes）───────────────
+  // 长度 token → user units。em/ex/% 上下文单位经 _lenUserUnits 解析
+  //（挂账 #3 采样侧部分清偿——SVGLength IDL 上下文单位另批）。
   var _lenUnitsPx = { cm: 96 / 2.54, mm: 96 / 25.4, in: 96, pt: 96 / 72, pc: 16, q: 96 / 25.4 / 4 };
+  // 长度文法：数字与单位间**不容空白**（SMIL #ToAttribute「argument-values
+  // 非法 → 动画无效」——svglength-animation-invalid-value-1/5..9
+  // "100   px" 形定谳；前后缘空白允许）。
+  var _lenTokenRe = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z%]*)\s*$/;
   var _parseLenToken = function (tok) {
-    var m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*([a-zA-Z%]*)\s*$/.exec(String(tok));
+    var m = _lenTokenRe.exec(String(tok));
     if (!m) return null;
     var v = Number(m[1]);
     var u = m[2].toLowerCase();
@@ -540,34 +558,229 @@
   };
   var _parseNumToken = function (tok) {
     var str = String(tok).replace(/^\s+|\s+$/g, '');
-    if (!str || !/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(str)) return null;
+    if (!str || !/^[+-]?(\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(str)) return null;
     var v = Number(str);
     return isFinite(v) ? v : null;
   };
 
-  var _lerp = function (a, b, f) { return a + (b - a) * f; };
-
-  // 线性采样：normalized 值对（全部可解析才插值，单 token 非法 → null）。
-  var _sampleLinear = function (vals, frac) {
-    for (var i = 0; i < vals.length; i++) if (vals[i] == null) return null;
-    if (vals.length === 1) return vals[0];
-    var seg = frac * (vals.length - 1);
-    var i2 = Math.floor(seg);
-    if (i2 >= vals.length - 1) return vals[vals.length - 1];
-    return _lerp(vals[i2], vals[i2 + 1], seg - i2);
+  // B6：目标 font-size（em/ex 上下文）——font-size 属性读 → computed
+  // style → 16px 缺省（CSS Fonts font-size 初始值 medium = 16px）。
+  var _targetFontSize = function (target) {
+    var raw = null;
+    try { raw = target.getAttribute('font-size'); } catch (_eF) { raw = null; }
+    if (raw != null) {
+      var v = _parseLenToken(raw);
+      if (v != null) return Math.abs(v);
+    }
+    try {
+      var dv = target.ownerDocument ? target.ownerDocument.defaultView : null;
+      var cs = dv && dv.getComputedStyle ? dv.getComputedStyle(target) : null;
+      if (cs && cs.fontSize) {
+        var fv = parseFloat(cs.fontSize);
+        if (isFinite(fv) && fv > 0) return fv;
+      }
+    } catch (_eF2) {}
+    return 16;
   };
 
-  // 目标属性当前 base 数值（by/to 动画的 underling 起点）。
+  // B6：% 单位视口解析——viewBox 宽高 → width/height 属性 → 300×150
+  //（spec SVG2 §7.2 initial viewport 常规缺省）。轴向按属性名：x/width 族
+  // 取宽、y/height 族取高、其余取宽。
+  var _HORIZONTAL_ATTRS = { x: 1, cx: 1, rx: 1, x1: 1, x2: 1, fx: 1, width: 1, sx: 1 };
+  var _VERTICAL_ATTRS = { y: 1, cy: 1, ry: 1, y1: 1, y2: 1, fy: 1, height: 1 };
+  var _targetViewportLen = function (target, attr) {
+    var w = 300;
+    var h = 150;
+    // 最近祖先 svg 视口（spec SVG2 §7.3：% 长度对最近祖先 svg 建立的视口
+    // 解析——svglength-additive-by-7 定谳：HTML 内嵌 svg width="800" 时
+    // % 对 800 解析，documentElement（html）落 300 缺省不符）。
+    var svg = null;
+    try {
+      var n = target;
+      while (n) {
+        var lnn = '';
+        try { lnn = String(n.localName || '').toLowerCase(); } catch (_eL2) { lnn = ''; }
+        if (lnn === 'svg') { svg = n; break; }
+        n = n.parentNode;
+      }
+    } catch (_eS) { svg = null; }
+    if (!svg) {
+      try { svg = target.ownerDocument ? target.ownerDocument.documentElement : null; } catch (_eS2) { svg = null; }
+    }
+    if (svg) {
+      var vb = null;
+      try { vb = svg.getAttribute('viewBox'); } catch (_eV) { vb = null; }
+      if (vb) {
+        var vp = String(vb).split(/[\s,]+/);
+        if (vp.length === 4 && isFinite(Number(vp[2])) && isFinite(Number(vp[3])) && Number(vp[2]) > 0 && Number(vp[3]) > 0) {
+          w = Number(vp[2]);
+          h = Number(vp[3]);
+        }
+      } else {
+        var wa = null;
+        var ha = null;
+        try { wa = svg.getAttribute('width'); ha = svg.getAttribute('height'); } catch (_eW) {}
+        var wv = wa != null ? _parseLenToken(wa) : null;
+        var hv = ha != null ? _parseLenToken(ha) : null;
+        if (wv != null && wv > 0) w = wv;
+        if (hv != null && hv > 0) h = hv;
+      }
+    }
+    return _HORIZONTAL_ATTRS[attr] ? w : (_VERTICAL_ATTRS[attr] ? h : w);
+  };
+
+  var _lenUserUnits = function (tok, target, attr) {
+    if (tok == null) return null;
+    var s = String(tok).replace(/^\s+|\s+$/g, '');
+    // CSS calc() 包裹：项级加减求值（SMIL 长度域 calc = 数×单位项序列，
+    // % 项按视口、em/ex 按字号、物理单位按 px 因子逐项折算求和——
+    // svglength-additive-by-7/8 定谳 calc(4% + 8px) = 0.04×800+8 = 40）。
+    // FIXME(svg-compat-v2 B6b)：乘除/嵌套 calc 未展开（语料无此形态）。
+    var cm = /^calc\((.*)\)$/.exec(s);
+    if (cm) {
+      var body = cm[1];
+      var re = /([+-]?)\s*((?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)([a-zA-Z%]*)/g;
+      var mm;
+      var total = 0;
+      var any = false;
+      while ((mm = re.exec(body)) !== null) {
+        var v2 = Number(mm[2]);
+        var u2 = mm[3].toLowerCase();
+        var val;
+        if (u2 === '' || u2 === 'px' || u2 === 'user') val = v2;
+        else if (u2 === '%') val = v2 / 100 * _targetViewportLen(target, attr);
+        else {
+          var f2 = _lenUnitsPx[u2];
+          if (f2) val = v2 * f2;
+          else if (u2 === 'em' || u2 === 'ex') val = v2 * _targetFontSize(target) * (u2 === 'ex' ? 0.5 : 1);
+          else return null;
+        }
+        total += (mm[1] === '-' ? -1 : 1) * val;
+        any = true;
+      }
+      return any ? total : null;
+    }
+    var m = _lenTokenRe.exec(s);
+    if (!m) return null;
+    var v = Number(m[1]);
+    var u = m[2].toLowerCase();
+    if (u === '' || u === 'px' || u === 'user') return v;
+    var f = _lenUnitsPx[u];
+    if (f) return v * f;
+    if (u === 'em' || u === 'ex') {
+      var fs = _targetFontSize(target);
+      return v * fs * (u === 'ex' ? 0.5 : 1);
+    }
+    if (u === '%') return v / 100 * _targetViewportLen(target, attr);
+    return null;
+  };
+
+  var _lerp = function (a, b, f) { return a + (b - a) * f; };
+
+  // B6：三次贝塞尔 easing 求值（CSS easing cubic-bezier 同法）——解
+  // bezier_x(t)=x 取 bezier_y(t)：牛顿迭代 8 轮 + 二分 24 轮兜底
+  //（animate-calcMode-spline-from-to 定谳 0.5 → 0.812 面）。
+  var _bezPt = function (t, p1, p2) {
+    var u = 1 - t;
+    return 3 * u * u * t * p1 + 3 * u * t * t * p2 + t * t * t;
+  };
+  var _bezSolve = function (x, x1, y1, x2, y2) {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    var t = x;
+    var i;
+    for (i = 0; i < 8; i++) {
+      var bx = _bezPt(t, x1, x2) - x;
+      if (Math.abs(bx) < 1e-7) return _bezPt(t, y1, y2);
+      var dx = 3 * (1 - t) * (1 - t) * x1 + 6 * (1 - t) * t * (x2 - x1) + 3 * t * t * (1 - x2);
+      if (Math.abs(dx) < 1e-7) break;
+      t -= bx / dx;
+      if (t < 0) t = 0;
+      if (t > 1) t = 1;
+    }
+    var lo = 0;
+    var hi = 1;
+    t = x;
+    for (i = 0; i < 24; i++) {
+      var bx2 = _bezPt(t, x1, x2) - x;
+      if (Math.abs(bx2) < 1e-7) break;
+      if (bx2 > 0) hi = t; else lo = t;
+      t = (lo + hi) / 2;
+    }
+    return _bezPt(t, y1, y2);
+  };
+
+  // B6：分号列表解析——尾分号/尾空段忽略、中段空 → null（属性无效）
+  //（keytimes/keypoints-attribute-trailing-semi 与 smil-values-empty-
+  // segments 的 trailing-semi 定谳面）。
+  var _parseSemiList = function (s) {
+    if (s == null) return null;
+    var parts = String(s).split(';');
+    var arr = [];
+    for (var i = 0; i < parts.length; i++) {
+      var tok = parts[i].replace(/^\s+|\s+$/g, '');
+      if (tok === '' && i === parts.length - 1) break;
+      if (tok === '') return null;
+      arr.push(tok);
+    }
+    return arr.length ? arr : null;
+  };
+
+  var _parseFloatTok = function (tok) {
+    var m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*$/.exec(String(tok));
+    return m ? Number(m[1]) : NaN;
+  };
+
+  // B6：keyTimes 校验（SMIL #KeyTimesAttributeSyntax）：项数 = 值数；
+  // linear/spline 首 0 末 1、discrete 首 0（末不须 1——animate-from-to-
+  // keyTimes keyTimes="0;0.25" 定谳）；非降序且各 ∈[0,1]。违例 → 整动画
+  // 无效不采样（keysplines-x-limits 同语义域定谳）。
+  var _validKeyTimes = function (nums, n, mode) {
+    if (!nums || nums.length !== n) return null;
+    if (nums[0] !== 0) return null;
+    if (mode !== 'discrete' && nums[nums.length - 1] !== 1) return null;
+    for (var i = 1; i < nums.length; i++) {
+      if (!(nums[i] >= nums[i - 1]) || nums[i] < 0 || nums[i] > 1) return null;
+    }
+    return nums;
+  };
+
+  // B6：keySplines 校验（SMIL #KeySplinesAttributeSyntax）：组数 = 段数、
+  // 每组 4 数、四值全部 ∈[0,1]（SMIL 文法「The values must all be in the
+  // range 0 to 1」——与 CSS cubic-bezier 仅限 x 不同；keysplines-x-limits
+  // /keysplines-y-limits 双面定谳，违例整动画无效）。
+  var _validKeySplines = function (s, segs) {
+    var groups = _parseSemiList(s);
+    if (!groups || groups.length !== segs) return null;
+    var out = [];
+    for (var i = 0; i < groups.length; i++) {
+      // 组内分隔符 = comma-wsp（SMIL 文法「separator: comma-wsp」——逗号
+      // 与空白混用合法，animate-keySplines 语料形态「0 ,0  1 , 1」）。
+      var nums = groups[i].split(/[\s,]+/);
+      if (nums.length !== 4) return null;
+      var q = [];
+      for (var j = 0; j < 4; j++) {
+        var v = _parseFloatTok(nums[j]);
+        if (isNaN(v) || v < 0 || v > 1) return null;
+        q.push(v);
+      }
+      out.push(q);
+    }
+    return out;
+  };
+
+  // 目标属性当前 base 数值（by/to 动画的 underling 起点，单位上下文解析）。
   var _baseNumeric = function (target, attr) {
     var raw = null;
     try { raw = target.getAttribute(attr); } catch (_eG) { raw = null; }
-    return raw == null ? 0 : _parseNumToken(raw);
+    if (raw == null) return 0;
+    return _lenUserUnits(raw, target, attr);
   };
 
   // 单动画元素在 t 的采样值（数值域）→ number | null（不支持/不活跃）。
   // calcMode 线性（缺省）；discrete/spline = B6 FIXME（暂按线性——对应案
   // 现势恒 F，无翻转面）。
-  var _sampleAnim = function (animEl, target, attr, t) {
+  var _sampleAnim = function (animEl, target, attr, t, underlying) {
     var an = null;
     try { an = animEl.getAttribute('attributeName'); } catch (_eA) { an = null; }
     if (an !== attr) return null;
@@ -585,19 +798,34 @@
     var fromTok = g('from');
     var byTok = g('by');
     var valuesTok = g('values');
-    var vals;
+    // B6：calcMode 元素缺省（set → discrete；animateMotion → paced——motion
+    // 域 B6b；其余 linear）。未知值 → 无采样（spec 属性枚举封闭）。
+    var calcMode = (g('calcMode') || '').replace(/^\s+|\s+$/g, '').toLowerCase();
+    if (!calcMode) {
+      calcMode = localName === 'set' ? 'discrete'
+        : (localName === 'animateMotion' ? 'paced' : 'linear');
+    }
+    if (calcMode !== 'linear' && calcMode !== 'discrete'
+        && calcMode !== 'spline' && calcMode !== 'paced') return null;
+    var accum = g('accumulate') === 'sum';
+    // frac/iter：iter = repeat 迭代序（accumulate 传播 k×(last−first)——
+    // accumulate-values-width 定谳面）。
     var frac;
+    var iter;
     if (cur) {
       var actTime = t - cur.b;
       var actDur = cur.e - cur.b;
       if (cur.sd === Infinity) {
         frac = 0;                             // 无 dur：恒活 from 常值
+        iter = 0;
       } else if (actDur <= 0) {
         frac = 1;
+        iter = 0;
       } else {
         // repeat 边界采样取下一 iteration 起点（f(t mod d)——simpleTime=0）。
         var simpleTime = actTime % cur.sd;
         frac = Math.min(simpleTime / cur.sd, 1);
+        iter = Math.floor(actTime / cur.sd);
       }
     } else {
       // 冻结（fill=freeze 且存在已结束的 last interval）——冻结于 activeEnd
@@ -623,52 +851,157 @@
       if (sd0 === Infinity) return null;
       var span = lastEnd - lastB;
       var simpleTime0 = span % sd0;
-      if (simpleTime0 === 0 && span > 0 && span >= sd0) simpleTime0 = sd0;
+      // 浮点精度钳制：span ≈ k·sd（残差 < 1e-9·sd）取整迭代末（frac=1——
+      // animate-end-attribute-numeric-precision 定谳：begin/dur 尾数浮点
+      // 残差致 span % sd ≈ 1e-16，冻结采样值塌向迭代起点）。
+      if (span > 0 && span >= sd0 && simpleTime0 < 1e-9 * sd0) simpleTime0 = sd0;
       frac = Math.min(simpleTime0 / sd0, 1);
+      iter = Math.floor((span - (simpleTime0 === sd0 ? 1e-9 : 0)) / sd0);
     }
     if (localName === 'set') {
       // set：离散持有 to 常值（spec SVG2 animate.html §SetElement）。
-      var sv = _parseNumToken(toTok) != null ? _parseNumToken(toTok) : _parseLenToken(toTok);
+      var sv = _lenUserUnits(toTok, target, attr);
+      if (sv == null) sv = _parseNumToken(toTok);
       return sv;
     }
+    // B6：spec 值表组装（values 优先于 from/to/by；全部 token 须可解析为
+    // 数值域，否则整动画无采样——类型化域 color/transform/enum 走 B6b，
+    // 现势同 F 无回归面）。
+    var vals = null;
+    var startV = null;
+    var endV = null;
     if (valuesTok != null) {
-      var parts = valuesTok.split(';');
+      var parts = _parseSemiList(valuesTok);
+      if (!parts) return null;
       vals = [];
       for (var p = 0; p < parts.length; p++) {
-        var tok = parts[p].replace(/^\s+|\s+$/g, '');
-        vals.push(_parseLenToken(tok) != null ? _parseLenToken(tok) : _parseNumToken(tok));
+        var pv = _lenUserUnits(parts[p], target, attr);
+        if (pv == null) return null;
+        vals.push(pv);
       }
-      return _sampleLinear(vals, frac);
-    }
-    if (fromTok != null && toTok != null) {
-      vals = [_parseLenToken(fromTok) != null ? _parseLenToken(fromTok) : _parseNumToken(fromTok),
-        _parseLenToken(toTok) != null ? _parseLenToken(toTok) : _parseNumToken(toTok)];
-      return _sampleLinear(vals, frac);
-    }
-    if (fromTok != null && byTok != null) {
-      var f0 = _parseLenToken(fromTok) != null ? _parseLenToken(fromTok) : _parseNumToken(fromTok);
-      var b0 = _parseLenToken(byTok) != null ? _parseLenToken(byTok) : _parseNumToken(byTok);
-      if (f0 == null || b0 == null) return null;
-      return _lerp(f0, f0 + b0, frac);
-    }
-    if (byTok != null) {
-      var base = _baseNumeric(target, attr);
-      var by = _parseLenToken(byTok) != null ? _parseLenToken(byTok) : _parseNumToken(byTok);
-      if (base == null || by == null) return null;
-      return _lerp(base, base + by, frac);
-    }
-    if (toTok != null) {
+    } else if (fromTok != null && toTok != null) {
+      startV = _lenUserUnits(fromTok, target, attr);
+      endV = _lenUserUnits(toTok, target, attr);
+      if (startV == null || endV == null) return null;
+    } else if (fromTok != null && byTok != null) {
+      startV = _lenUserUnits(fromTok, target, attr);
+      var b0 = _lenUserUnits(byTok, target, attr);
+      if (startV == null || b0 == null) return null;
+      endV = startV + b0;
+    } else if (byTok != null) {
+      // by-only：additive="sum" 贡献 = by×f 的**增量**（起点 0——三明治
+      // 加法面；svglength-additive-by 定谳）；replace 起点为 underlying
+      //（SMIL #AdditiveAnimation by-without-from 语义——from 隐式取
+      // underlying 值非裸 base，svglength-additive-by-2 定谳：an1 冻结
+      // 50 + by×0.5 = 75）。accumulate 的迭代传播由 accDelta 承担，不改
+      // 起点。
+      // FIXME(svg-compat-v2 B6b)：spec underlying 取 interval 起点快照，
+      // 现按采样时运行值近似——前置动画冻结/常值场景恒等，活跃前置动
+      // 画待 interval 起点三明治求值。
+      var byv = _lenUserUnits(byTok, target, attr);
+      if (byv == null) return null;
+      if (g('additive') === 'sum') {
+        startV = 0;
+      } else {
+        startV = underlying != null ? underlying : _baseNumeric(target, attr);
+        if (startV == null) return null;
+      }
+      endV = startV + byv;
+    } else if (toTok != null) {
       // to-animation：from 取目标 base 值（SMIL to-anim 的 underlying 起点
-      // 近似——Blink to-anim 特例语义 = B6 FIXME）。
-      var base0 = _baseNumeric(target, attr);
-      var tv = _parseLenToken(toTok) != null ? _parseLenToken(toTok) : _parseNumToken(toTok);
-      if (base0 == null || tv == null) return null;
-      return _lerp(base0, tv, frac);
+      // 近似——Blink to-anim 特例语义 = FIXME(svg-compat-v2 B6b)）。
+      startV = _baseNumeric(target, attr);
+      endV = _lenUserUnits(toTok, target, attr);
+      if (startV == null || endV == null) return null;
+    } else {
+      return null;
     }
-    return null;
+    var list = vals != null ? vals : [startV, endV];
+    var n1 = list.length;
+    if (n1 === 1) return list[0];
+    // B6：keyTimes/keySplines 校验（paced 忽略 keyTimes——paced-value-
+    // animation-overwrites-keyTimes 定谳）；违例 → 整动画无效。
+    var kt = null;
+    var ks = null;
+    if (calcMode !== 'paced' && g('keyTimes') != null) {
+      var ktRaw = _parseSemiList(g('keyTimes'));
+      var ktNums = null;
+      if (ktRaw) {
+        ktNums = [];
+        for (var k2 = 0; k2 < ktRaw.length; k2++) {
+          var kv = _parseFloatTok(ktRaw[k2]);
+          if (isNaN(kv)) { ktNums = null; break; }
+          ktNums.push(kv);
+        }
+      }
+      kt = ktNums ? _validKeyTimes(ktNums, n1, calcMode) : null;
+      if (kt == null) return null;
+    }
+    if (calcMode === 'spline' && g('keySplines') != null) {
+      ks = _validKeySplines(g('keySplines'), n1 - 1);
+      if (ks == null) return null;
+    }
+    var accDelta = accum ? (list[n1 - 1] - list[0]) : 0;
+    if (calcMode === 'discrete') {
+      // discrete：kt 在场值 i 自 kt[i] 起持有、否则均匀 n 段
+      //（animate-number-calcMode-discrete 两值半分定谳）。
+      var idx = 0;
+      if (kt) {
+        for (var di = 0; di < kt.length; di++) {
+          if (frac >= kt[di]) idx = di; else break;
+        }
+      } else {
+        idx = Math.min(Math.floor(frac * n1), n1 - 1);
+      }
+      return list[idx] + iter * accDelta;
+    }
+    if (calcMode === 'paced' && n1 > 2) {
+      // paced：数值域按累计 |Δ| 均匀（keyTimes 忽略）。
+      var totalD = 0;
+      var accD = [0];
+      var pi;
+      for (pi = 1; pi < n1; pi++) {
+        totalD += Math.abs(list[pi] - list[pi - 1]);
+        accD.push(totalD);
+      }
+      if (totalD === 0) return list[0] + iter * accDelta;
+      var dist = frac * totalD;
+      for (pi = 1; pi < n1; pi++) {
+        if (dist <= accD[pi] || pi === n1 - 1) {
+          var segD = accD[pi] - accD[pi - 1];
+          var fD = segD > 0 ? (dist - accD[pi - 1]) / segD : 0;
+          return _lerp(list[pi - 1], list[pi], fD) + iter * accDelta;
+        }
+      }
+    }
+    // linear / spline（spline 段内经 _bezSolve 映射）。
+    var segI;
+    var segF;
+    if (kt) {
+      segI = n1 - 2;
+      segF = 1;
+      for (var li = 0; li <= n1 - 2; li++) {
+        if (frac <= kt[li + 1]) { segI = li; break; }
+      }
+      var ktSpan = kt[segI + 1] - kt[segI];
+      segF = ktSpan > 0 ? (frac - kt[segI]) / ktSpan : 1;
+    } else {
+      var segPos = frac * (n1 - 1);
+      segI = Math.floor(segPos);
+      if (segI >= n1 - 1) {
+        segI = n1 - 2;
+        segF = 1;
+      } else {
+        segF = segPos - segI;
+      }
+    }
+    if (ks) segF = _bezSolve(segF, ks[segI][0], ks[segI][1], ks[segI][2], ks[segI][3]);
+    return _lerp(list[segI], list[segI + 1], segF) + iter * accDelta;
   };
 
-  // 目标元素 + 属性名 → 文档序动画采样值合成（后者胜 sandwich 近似）。
+  // 目标元素 + 属性名 → 文档序动画采样值三明治合成（SMIL #AdditiveAnimation
+  // sandwich model：replace 重置运行值、additive="sum" 累加——文档序优先级
+  // 后者高；首个 sum 无前置 replace 时以目标 base 起底）。
   var _animatedValue = function (target, attr, numeric) {
     var doc = null;
     try { doc = target.ownerDocument; } catch (_eD) { doc = null; }
@@ -684,8 +1017,20 @@
       var ln = '';
       try { ln = String(c.localName || '').toLowerCase(); } catch (_eL) {}
       if (!_animLocalNames[ln]) continue;
-      var v = _sampleAnim(c, target, attr, t);
-      if (v != null) result = v;    // 文档序后者胜
+      var v = _sampleAnim(c, target, attr, t, result);
+      if (v == null) continue;
+      var isSum = false;
+      try { isSum = c.getAttribute('additive') === 'sum'; } catch (_eAd) { isSum = false; }
+      if (isSum) {
+        if (result == null) {
+          var b0 = _baseNumeric(target, attr);
+          result = (b0 != null ? b0 : 0) + v;
+        } else {
+          result = result + v;
+        }
+      } else {
+        result = v;    // replace 重置
+      }
     }
     if (result == null) return null;
     return numeric ? result : { ut: 1, vu: result };

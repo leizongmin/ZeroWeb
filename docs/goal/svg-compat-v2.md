@@ -3,13 +3,14 @@
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
 **状态**: Active——**M0 + M1 已完成；M2 进行中：B3 seek + B4 syncbase +
-B5 eventbase 已收口（2026-11-07：B5 事件基动态实例源（三派发通道通知
-面）+ repeat(k)/repeatEvent + restart 门 + 条件处理门 + 处理器名错位映
-射，custom-events ×6 + event-listeners + conditional-processing-02
-8F→P、beginevents-1 等 4T→P，全通道 1,239P = 72.5% 零 P→F、
-web-animations 959 子恒等，
-[evidence](svg-compat-v2/evidence/2026-11-07-m2-b5-eventbase.md)）；
-下一步 B6 采样引擎**
+B5 eventbase + B6a 采样引擎数值域已收口（2026-11-07：B6a calcMode 四模
+式 + keyTimes/keySplines 文法校验（comma-wsp 分隔）+ additive/accumulate
+三明治 + 单位上下文（em/ex/%/calc() 项级求值）+ restart=always 中途截
+断 + freeze 迭代边界浮点钳制 + by-only replace underlying 起点，
+39F→P 零 P→F，全通道 1,278P = 74.7%、web-animations 959 子恒等，
+[evidence](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md)；B5 及
+前序见 archive 与 §里程碑）；
+下一步 B6b 类型域采样（attributeTypes/color/transform/marker-orient）**
 **卡点**: engine 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
 不双改——DC-4 前须协同批清偿或具名转挂）：display:none gBCR 回归对 2F
 （M0 翻转归因）+ geometry 再下滑 2 子（M0 快照后 main 演化，part09 在场
@@ -112,14 +113,17 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   零回归、web-animations 506P/959 复验零回归；台账见
   [evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）。
 - **M2**：SMIL 同步基/事件时基簇收敛（DC-3 主体）——B3 seek / B4
-  syncbase / B5 eventbase / B6 采样引擎。**B3 + B4 + B5 已收口**
+  syncbase / B5 eventbase / B6 采样引擎。**B3 + B4 + B5 + B6a 已收口**
   （2026-11-07：B3 seeking-events-1..8 全 P + F→P ×6 采样连带收益；B4
   时间序离散事件模拟落地 4T→P——cyclic-syncbase-2/events、
   invalid-attribute-type、syncbase-after-removal；B5 事件基动态实例源 +
-  处理器名错位映射 8F→P + 4T→P；三批均零 P→F、web-animations 恒等；
-  台账见 [B3](svg-compat-v2/evidence/2026-11-07-m2-b3-seek-events.md) /
+  处理器名错位映射 8F→P + 4T→P；B6a calcMode/keyTimes/keySplines/
+  additive-accumulate 三明治/单位上下文/restart 截断/冻结钳制 39F→P；
+  四批均零 P→F、web-animations 恒等；台账见
+  [B3](svg-compat-v2/evidence/2026-11-07-m2-b3-seek-events.md) /
   [B4](svg-compat-v2/evidence/2026-11-07-m2-b4-syncbase.md) /
-  [B5](svg-compat-v2/evidence/2026-11-07-m2-b5-eventbase.md)）。
+  [B5](svg-compat-v2/evidence/2026-11-07-m2-b5-eventbase.md) /
+  [B6a](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md)）。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
 - **M4**：coverage 复测收口（DC-4）。
 
