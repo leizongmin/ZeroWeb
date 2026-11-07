@@ -12,7 +12,7 @@
 **上一状态（2026-11-07，第九刀施工轮——330 raw 键普查归因 + shim 五臂审计 + part06 刀体三笔）：**明细（spec 全图/臂位行号/排除面成文化/验证链）见 [evidence](editing-compat/evidence/2026-11-07-knife9-preserves-overrides-structural-extension.md)。
 **上一状态（2026-11-07，fbq 四命令零应用族轮终判收口——owner 施工轮 + 双核验轮，7ab68347f 已推 origin/main）**：**legs5 fb 单页判读（04:30）：rows 5046 恒一，P 4053→4894 / F 993→152，F2P=841（历史最优）/ **P2F=0 / lost=0 → VERDICT OK**——岛族 9 行（第七刀宿主内容模型守卫：p/display-inline 族宿主拒，div 宿主照 wrap，div 岛录音 :1879/:1884 真 wrap 翻转「岛形全零应用」前判）+ table qV-before ×2（第八刀 VisBlock 遇 td/th/tr/table 族返 null）+ 双 p（第五刀接线）+ 窗界 4（单页跑法）全绿。probe 14 案实证八面。**mt2 终判（05:02 ALL-DONE，batch-fbq-mt2.sh 单腿补跑，typing 门二进制 shim md5=59791ef5=现树、特征串 cmdIsFbq4×4/fbqTtoff×2/fbqOvSnap×4 实证）：rows 10092 恒一，P 9676→9769 / F 416→323，F2P=93 / P2F=0 / post-only 0 / lost 0 → VERDICT OK**——行级对账：final2 P2F=70 全数翻回 Pass（typing carrier 24 + delete+inserttext 43 + styleWithCSS 3 逐族吻合，overrides/typing 双半边各自兑现）；F2P=93 零 off-family（fb 35/indent 12/ihr 23/img 23，416−93=323 自洽；166→93 差 73 = 冻结碰巧对齐回真红 F2F 非回归）。enginelib2 补跑（05:05）：**3,787P/9F 九红名册恒一**（final2 旧账缺口闭合）。indent/hr/img 单页腿未在现树重跑，final2 三腿账复用（apply 臂自首刀未动 + 双方可移植性论证，mt2 multitest 全族覆盖终判）。下一步：commit+push 后挂账四族择大续刀（qV/qI 读面 Chrome delta 族 → indent/img 零散边界族），mt 残 323F 键普查续做；核验轮 B2-vs-final 对账回填告警文档（分工不变）。
 
-**下一步**：mt 残 236F 普查续做：172 键 inserttext compare 族（typing 壳 caret 落位挂账主体）为最大簇、insertText styled 壳重建 ~29（F6 域）、insertparagraph compare 12 + 零散；挂账四族（fb qV/qI 读面 Chrome delta 12 行、apply 内容模型边界 4 行、indent 27F/img 23F 零散边界族）维持待刀。
+**下一步**：mt 残 236F 普查续做：172 键 inserttext compare 族（typing 壳 caret 落位挂账主体）为最大簇、insertText styled 壳重建 ~29（F6 域）、insertparagraph compare 12 + 零散；挂账四族（fb qV/qI 读面 Chrome delta 12 行、apply 内容模型边界 4 行、indent 27F/img 23F 零散边界族）维持待刀。**收口与归档协议已定稿（2026-11-07）——普查判据、刀体门禁、DC-5 口径、归档步骤按〔收口与归档协议〕节执行，无人值守轮不再另行征询。**
 
 **上一状态（2026-11-07，nq7 两刀轮：wholesale 同型嵌套跨入形出口恢复刀——控制面 ① 读面挂账族勘误收口，iol 4→**2F** / iul 6→**4F** 真债账面清零，judge 双腿 iol F2P=4/P2F=0 + iul F2P=6/P2F=0 VERDICT OK（vs bq 基线，nesh F2P 已含对比时序），mt 行级键恒等（rows 10092→10092，F2P/P2F/postF/lost 全 0，Pass=19,331/Fail=837 与 nesh2 批逐位一致），enginelib 3,782P/9F 九红名册，tip 复核（rebase 并入 xhr part03 排序 + embed s316 + wpt-runner 两提交组合基面）iol/iul 与门禁批逐字一致 TIP-VERDICT OK）**：挂账勘误（开工前窗界核对，sr2 轮签名 A 先例同法）——原记「同型嵌套 ×5 + 跨列表 ×2」修正为真债 ×4（iol :448/:478 + iul :233/:263，`<ol|ul><li>[foo<ol|ul><li>bar]` 同型嵌套跨入形 qState-after）+ 伪影除名 ×2（iol :393 + iul :428，断言块跨窗、探针 zz-probe-nq7 in-window 复核引擎无辜，除名不追）；qVb ×1/divbr ×2 既有伪影维持。刀 = part01e.js 两笔：入口快照 `nqOut`（enable ∧ 起点 li 严格包含终点 li，census 恰 4 行命中）+ 出口恢复（两端点收拢最外层换壳列表宿主层锚点、排他跳过 q13 常规收钳、锚点失败放行常规道）——复现 Chrome 录音「选区停列表外」'none' 签名（P10 命令史态定谳同族，刀口 = 出口选区恢复非读面改动）；探针十案全绿（4 真债树逐字合 + 2 伪影复核 + 反向跨入/sr1 承重/before 悖论四守卫恒等）。enginelib 第九红 `test_iframe_service_worker_messages_dispatch_to_iframe_container`（part23.rs:1079）bracket 归因外部债：net-api 4615680c0 M3 auth 改首发 Basic 注入为 401 挑战重试（part03.js :1193 唯一赋值点）而 s180 红钉测试未同步——时序 bracket（nesh2 批 23:13 绿 head=99969d8cb 早于 4615680c0 的 23:23:10；nq7 批为 4615680c0 进树后首个 enginelib 腿）+ clean-HEAD A/B 终证（stash 本刀单测同位 FAILED，log `nq7-ab-cleanhead.log`）；非本刀回归，测试对齐挂账移交 net-api 流（divb 轮 ws×2/fetch×1 同盲区第三例），本地批脚本名册更新九红。勘误 learning 落 [window-straddle-accounting-audit](../learnings/bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md)。见 [evidence](editing-compat/evidence/2026-11-07-nq7-wholesale-nested-qstate-exit-restore.md)。**卡点/下一步**：①iol/iul 残余 6 行全为已除名窗界伪影（iol :393 签名A + dps qVb；iul :428 qI/qS 签名A 双行 + divbr qS/qV 双行）——iol/iul 真债清零，伪影族维持不追；②enginelib 九红名册全外部债（五红 + ws×2/fetch×1/iframe-sw×1 均已归因移交，net-api 面收口时对齐）；③下一族候选 = iloop/illist 残差账面复测校准（q12-q16 五代共享刀后未复跑，账面陈旧）或 mt 837F 红族普查聚族选刀。
 **上一状态（2026-11-06，nesh 两刀轮：NE 整行单 li 臂（noneditable compare 双语料同形 iul `:860` / iol `:768` 各恰一行）+ ST 复用合并源块 div 壳溶解臂（styled compare iol `:688` 单行）+ 首轮门禁 P2F=2 定谳后追加 ST 臂选区保全刀，iul 7→**6F** / iol 6→**4F**，judge 双腿 iol F2P=2/P2F=0 + iul F2P=4/P2F=0 VERDICT OK（vs bq 基线，divb 三刀 F2P 已含基线时序），mt 行级 19,331P/837F 键级恒等（rows 10092→10092 F2P/P2F/postF/lost 全 0），enginelib 3,777P/8F 八红恒一）**：NE 主循环碎片化三重缺陷定谳（DBG 五时点插桩）＝nodeList 滤除非可编辑 span 割断兄弟链 → 首空白 run allInvisible 返 null → ViaHtml 重建后文本幽灵重定位 `nodeType===1` 元素门不可达 → sublist[0] TypeError 被调用点吞、toggle 单 li 烂尾；刀 = bqHost 赋值后整行单 li 臂（宿主直下扁平行 ∧ covered span 全 inline 无块无 br ∧ span 内 non-editable 直子族门 → 整行收单 li 交回主循环常规道，全 editable 行零命中零扰动）。ST 复用合并残留（freshShell wrap reusePrev 并 li 入既有 ol 但 freshShell 恒 false → dps 出口跳过 → 源块 div 无人溶解）；刀 = stBlock 捕获 + 循环后溶解臂（三重门：复用合并形 ∧ 源块仅剩列表+空白 ∧ 非宿主非列表 div/p；ST 几何全语料唯 :688 一行，eb1/:678/:683 均不触发）。首轮门禁 iol VERDICT REVIEW（P2F=2）：ST 臂 `insertBefore` 子树搬移在引擎选区重锚语义下把壳内端点甩宿主层（探针 pre-fix sel=#text"baz"<SPAN<LI<OL@0..3 → post-fix sel=DIV@1..1，:688 qState/qV after 双行 P2F——pre-fix 恰绿全凭保壳树端点恰在 ol 内，树修对反而暴露选区丢失）→ 保全刀 = 挪壳前 newShell 相对索引路径快照端点（`_zwListPathFrom`）、拆块后显式回写（`_zwListResolvePath`；端点不全在壳内不回写，不半新半旧混搭）。探针五案全绿（A-ne/B-ne-ol 树逐字 + C-st 树逐字 sel 回位 + 两守卫恒等；首版探针判读漏核 sel 的教训入证据文档）。残差全部既有族零新增：iul 6F = 同型嵌套 qState 读面 ×2（?1-1000 `<ol><li>[foo<ol><li>bar]`）+ 跨列表读面 ×2（?1001-2000 qInd/qState `<ul><li>foo<ul><li>b[ar</ul><li>b]az</ul>`）+ divbr straddle 窗界伪影 ×2（?2001-last `<div>{}<br></div>` qState/qValue）；iol 4F = 同型嵌套 qState 读面 ×3（?1001-last）+ qVb 窗界伪影 ×1（dps Value before）。见 [evidence](editing-compat/evidence/2026-11-06-nesh-inline-noneditable-and-styled-shell.md)。**卡点/下一步**：①读面挂账族收口 = iul/iol 同型嵌套 qState ×5 + 跨列表读面 ×2（P10 定谳「after 录值含命令史态＝选区恢复耦合，纯读不可双全」——刀口 = 出口选区恢复耦合，非纯读面）；②窗界伪影族维持不追（iul divbr straddle ×2 + iol qVb ×1）；③enginelib ws×2/fetch×1 跨面债维持移交 net-api 流（ba03fd7ff + f021e11fb 引入，bracket 双钉）；④下一族候选 = ①读面耦合刀 或 iol nested compare ③ 残余（q14-q16 三代刀后剩余面归因未启动）。
@@ -559,6 +559,66 @@
 > 下一步：行内壳变体（b/i/span 嵌套）join 形态、真跨块选区、以及 other 面
 > 剩余簇（insertparagraph → execCommand）按簇序立项。
 
+## 收口与归档协议（2026-11-07 定稿）
+
+本节固化 DC-4 收敛判据、DC-5 执行口径、收口门禁与归档步骤。后续轮次（含无人值守 rally 轮）按本节执行，不再另行征询；与上文历史叙述冲突时以本节为准。
+
+### DC-4 收敛定稿
+
+**完成判据（全部满足）**：
+
+1. **mt 残 Fail 键普查三分表**：对 multitest 全分母残 Fail 键逐键归入三类之一——
+   - **fixed**：刀体翻绿；
+   - **artifact**：按 learning [分窗切片伪影判据](../../learnings/INDEX.md)（#37 窗界判据——失败窗内 exec 未运行或录音会话泄漏对账吻合）定谳除名，逐键记档；
+   - **handoff**：跨域债，写明接收域与重入条件。
+   三类之外不得存在未归因键；三分表（每键具名）落 `evidence/`，作为 DC-4 验收账本。
+2. **挂账四族逐族处置**：fb qV/qI 读面 Chrome delta 12 行、apply 内容模型边界 4 行、indent 27F、img 23F——每族走普查→归因→刀（修复）/ 定谳除名 / 移交三选一收口；另接收 selection-compat-v2 划转的 fontSize T1 ×3。
+3. **单文件语料账面**：iol/iul 等伪影族维持除名不追（清单见各轮 evidence），真债清零。
+4. **每刀红线（全程有效）**：judge 元组口径 F2P≥0 且 P2F=0 / post-only=0 / lost=0 / rows 恒等；enginelib 名册恒一（名单常驻 [evidence/enginelib-red-roster-2026-11-07.txt](editing-compat/evidence/enginelib-red-roster-2026-11-07.txt)，变化当轮新增带日期档案不覆盖旧档）；make test 红面逐项归因，无新增不明红。
+
+**节奏**：按簇普查→归因→刀；簇序按残键数降序，当前最大簇 = mt inserttext compare 172 键（typing 壳 caret 落位）。伪影嫌疑行一律先按 #37 判据核窗界分布与 exec 证据再开工，不直接归因引擎债。
+
+### M3+ 划界
+
+edit-context / plaintext-only / whitespaces / chrome-compat 等邻接目录不在 DC-1 语料范围，**不作为本 goal 完成条件**；留作后续立项素材（沿用 sibling goal 划界移交 + 重入条件先例）。
+
+### DC-5 执行口径
+
+coverage 复测沿用全量对账管线（`tests/wpt-runner/scripts/wptfyi_gap.py`，fetch 前置 `source ~/use-proxy.sh`；快照先例 `docs/compat/wptfyi/coverage-2026-11-05.md`）：
+
+1. editing/run + editing/other 两腿实跑（`--json`）结果进 gap 管线复测；
+2. editing topdir 覆盖率较 2026-11-05 快照（11.41%）抬升，editing/run 文件覆盖脱离 0/120；
+3. 「未覆盖子测试清零路径成立」= 每个子测试落三态之一：已执行（P/F/T）、已具名排除（缺资源 / iframe/https 筛减 / manual / 域外划界）、上游不存在；
+4. `docs/compat/trends/wpt-suites.csv` 回填 editing 收口数据行，全量头条不回落。
+
+### 收口门禁（每刀与收口共用）
+
+- corpus 判读：judge 元组口径对上一批 log 逐行对账（F2P/P2F/post-only/lost/rows），单文件腿 + mt 全分母双红线；
+- enginelib：名册恒一（对照常驻名册；新增红当轮 bracket 归因，外部债移交记档）；
+- make test：红面逐项归因，非本 goal 域记对端账；fmt 干净；
+- 行为验证前对实际执行二进制本体核验（learning #28：`grep -a` 特征串 / `nm`）；
+- 无人值守批跑走既有守卫：`make testharness-editing-run|other` 已挂 target/test-guard + target-disk-guard，内存/墙钟阈值见 [质量门禁](../../engineering/quality-gates.md)。
+
+### Final Output Protocol
+
+DONE 允许条件 = DC-1~5 全勾有据 + 收口门禁全绿 + 残 Fail 三分表无「未归因」键 + 入口文档自洽（状态头 = DC 判定 = 验证基线，无中间态残留数据）。满足后同一轮执行归档（模式 A）：
+
+1. `git mv docs/goal/editing-compat.md docs/goal/archive/` + `git mv docs/goal/editing-compat/ docs/goal/archive/`；
+2. `docs/goal/archive/README.md` 索引表登记（终态数字 + 完成日 + 残账三分表指针）；
+3. `zero-web.md` 赛道指针改「已完成 + 归档地址」；全仓引用扫描 `grep -rn "goal/editing-compat" --include="*.md" --include="*.rs" --include="*.toml" .` 逐处更新；
+4. `scripts/rally-goal-33-editing-compat.sh` 随归档删除（语料预置脚本 `tests/wpt-runner/scripts/goals/33-editing-compat.sh` 与 Makefile 四 target 常驻保留）；
+5. `git diff --check` + lei-pre-commit-guard PASS 后提交（纯 .md 走豁免门禁）。
+
+条件不满足时输出 CONTINUE，按「下一步」续做。
+
+### 运行与状态维护约定
+
+- 语料 bootstrap：`make fetch-wpt-editing`（gitignored 按 clone 取数，换 clone 先跑；multitest 属 editing/other）。
+- mt（multitest）判读：`testharness-editing-other` FILTER 窗跑法 + judge 元组口径（judge 脚本随轮重建属常态，输出对上一批 log 逐行 tuple 对账）；语料腿全程跑完才打印，判活看 CPU / 历史墙钟，不看中途空日志。
+- stash@{0}（`typing-style-round-1102` delKeepChainShells 双壳保全草稿，2026-11-02）为 inserttext/typing 域在途草稿，早于 ⑮~第九刀多代——开工该簇前先评估其有效性，不得盲 pop、不得静默丢弃。
+- 本入口文档史档（版本/日期行与历史状态块）**只追加不重写**；提交前对账行数（2026-11-06 曾因整文件重写丢 653 行史档）。进展明细写 `evidence/`，状态头与「下一步」每轮更新。
+
+
 ## coverage 对账（coverage-2026-10-27 基线，47 套件干跑口径，终稿待 `docs/compat/wptfyi/coverage-2026-10-27.md` 复核）
 
 | WPT 面 | 全量分母（子测试） | 覆盖 |
@@ -611,8 +671,9 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   Unsupported 与 Fail 分列（能力缺失 ≠ 实现错误）；失败按命令族归簇；
   `docs/compat/trends/wpt-suites.csv` planned 行转数据行。
 - **DC-4（收敛轮）**：按失败簇逐轮修齐，每轮零回归（逐 subtest 对照），
-  evidence 落档；收敛目标与节奏按簇另行定稿。
-- **DC-5（coverage 复测）**：editing 未覆盖子测试清零路径成立。
+  evidence 落档；收敛目标与节奏**已定稿（2026-11-07，见[收口与归档协议](#收口与归档协议2026-11-07-定稿)）**。
+- **DC-5（coverage 复测）**：editing 未覆盖子测试清零路径成立
+  （**执行口径已定稿 2026-11-07，见[收口与归档协议](#收口与归档协议2026-11-07-定稿)**）。
 
 ## 里程碑
 
@@ -658,7 +719,8 @@ M2 基线先把 Unsupported / Fail / Timeout 归簇摸清，再按簇立项收�
   → **语料管线阻塞修复（D1/D2，新簇，join/键盘驱动族前置）** →
   insertparagraph → execCommand 语义逐簇立项。
 - **M3+**：扩面（edit-context / plaintext-only / whitespaces / chrome-compat
-  等不在 DC-1 语料范围的邻接目录）与收口标准按簇定稿。
+  等不在 DC-1 语料范围的邻接目录）——**2026-11-07 划界：不在本 goal 完成契约，
+  转后续立项素材（见[收口与归档协议](#收口与归档协议2026-11-07-定稿)）**。
 
 ## 依赖约束（run-rules §9）
 
