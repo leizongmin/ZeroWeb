@@ -504,12 +504,46 @@
           || (!_zwJusIsAncestorOf(parent_, startNode) && parent_ != startNode)) {
         while (_zwJusIsEditable(parent_)
             && _zwJusIsInlineNode(parent_)
-            && _zwJusNodeLength(parent_) == 0) {
+            && (_zwJusNodeLength(parent_) == 0
+                // F2b 外壳剥离补真（2026-11-08 link-absorption 刀）：幸存壳
+                // 为**空**时，仅含它的外层 inline 包裹按空摘——此前注释声称
+                // 「置空计数」但 _zwJusNodeLength 无该特例，wrapper 含空 a 时
+                // length=1 提前退出（zz-probe-f2 D2/D3 实证 got
+                // `foo<u><a>a</a></u>baz` / `foo<font…><a…></font>`，语料
+                // :2143/:2153/:2168 外壳剥离面 4 键红源）。Shape C（a 整含被
+                // 删）keepShell 已离树、原条件自然成立，本支不触（现绿不动）；
+                // keepShell 非空（部分删）不摘——Chrome 未录形，保守。
+                || (delKeepShell && parent_.firstChild === delKeepShell
+                    && parent_.childNodes.length === 1
+                    && _zwJusNodeLength(delKeepShell) == 0))) {
           var grandparent = parent_.parentNode;
           // Chrome delta：链上幸存壳不摘（打字续壳）；幸存壳置空计数使其上方
           // 仅含它的包裹仍按空摘除（u>a 链：a 留、u 摘）。非链壳照 spec 摘。
           if (parent_ !== delKeepShell && grandparent) {
-            grandparent.removeChild(parent_);
+            if (delKeepShell && parent_.firstChild === delKeepShell
+                && parent_.childNodes.length === 1) {
+              // F2b：wrapper 唯一子即幸存壳 → 换位摘壳（keepShell 升至
+              // wrapper 原位）——removeChild(parent_) 会连带摘走壳内空 link，
+              // typed 段将无处落（probe D2 形）。
+              grandparent.insertBefore(delKeepShell, parent_);
+              grandparent.removeChild(parent_);
+              // R262 换位吸附回填：壳移动触发 live-range pre-remove 调整
+              //（边界容器 = 被摘壳子树根 → (oldParent, oldIndex) 吸附出壳，
+              // 再经空壳 removeChild 二次吸附落宿主位）——caret 漂出幸存
+              // link，typed 段落壳外（probe D2 got `</a>abaz` 形）。Chrome
+              // 删除落定 caret 仍在幸存 link 内（:2143/:2153/:2168 期望
+              // `foo<a…>a[]</a>baz`），活动 range 折回壳内（collapsed 落定由
+              // 下方 exit 路径统一完成；空壳 length=0 → 折回 (壳,0)）。
+              try {
+                var srUw = _zwVaGetActiveRange();
+                if (srUw) {
+                  srUw.setStart(delKeepShell, 0);
+                  srUw.setEnd(delKeepShell, _zwJusNodeLength(delKeepShell));
+                }
+              } catch (_eUw) {}
+            } else {
+              grandparent.removeChild(parent_);
+            }
           }
           if (!grandparent) break;
           parent_ = grandparent;
@@ -1189,6 +1223,80 @@
   // 公共面（collapse/extend/collapseToStart），_zwSync 对显式 selection 变更
   // 清 typing 态（part06 :10355，防跨子测泄漏语义）——Chrome delete 不清
   // typing style（g18 multitest 实证：值命令族 Fix A 已复、状态命令族仍红）。
+  // F2 link-absorption delta carry 捕获（2026-11-08 刀，预研档集成点 6/7）：
+  // delete 动作前读 link 上下文相对参照的样式 delta，落 `__zwTypingLinkCarry`
+  // 供 typing insert 消费（part01 _zwCeTypingInsert link 内层 font）。
+  // carry = 删除内容相对 link 参照（Chrome UA blue/underline）的 delta——
+  // 通道仅 color/face/size，永不含 decoration（:2163/:2168 u 双位形零 delta
+  // 自然成立）。参照钉死 #0000ff 不读 computed（本仓 UA 样式表无 link 色规则
+  // ——computed 读黑则 :1170 黑 carry 误判零 delta，待判别②闭合）。
+  // 两形：① 物理链形（F2b :2138-:2172）——startContainer 上行至 linkEl 收
+  // 内层壳 color/face/size 声明，色经 parseSimpleColor 归一（≡#0000ff 零
+  // delta 不捕，:2138/:2139 blue 现绿保持）；② armed pending collapsed 形
+  //（F2a :1170 `createlink>delete>inserttext`）——无物理链，读 caret 上下文
+  // computed 色（_zwValEffectiveValue 'forecolor'）vs 参照。外链弃捕语义
+  //（链上行遇 <a> 前无内层壳则 carry 自然为空）与既有
+  // __zw_ce_capture_typing_chain hasA 面（tags 捕获置空）互不相干。
+  // 保守边界：物理链 collapsed 形不捕（Chrome 未录形，避免既有绿行 P2F）；
+  // armed 非 collapsed 形按 startContainer 同 ② 读（语料无行，语义同源）。
+  globalThis.__zw_ce_capture_link_carry = function (ar) {
+    var sc = ar && ar.startContainer;
+    if (!sc) return null;
+    var armed = globalThis.__zwTypingLink != null && globalThis.__zwTypingLink !== ''
+      ? String(globalThis.__zwTypingLink) : null;
+    var linkEl = null;
+    var n = sc;
+    var guard = 0;
+    while (n && n.parentNode && !_zwJusIsEditingHost(n) && guard++ < 256) {
+      if (n.nodeType == 1 && String(n.tagName || '').toLowerCase() === 'a') {
+        linkEl = n;
+        break;
+      }
+      n = n.parentNode;
+    }
+    var carry = null;
+    if (linkEl) {
+      // ① 内层壳声明面：sc → linkEl 之间 color/face/size，色归一 hex。
+      var m = sc;
+      guard = 0;
+      while (m && m !== linkEl && guard++ < 512) {
+        if (m.nodeType == 1 && m.getAttribute) {
+          var ca = m.getAttribute('color');
+          if (ca != null && typeof _zwVaParseSimpleColor === 'function') {
+            var hexc = _zwVaParseSimpleColor(ca);
+            if (hexc && hexc !== '#0000ff') {
+              carry = carry || {};
+              carry.color = hexc;
+            }
+          }
+          var fa = m.getAttribute('face');
+          if (fa != null) {
+            carry = carry || {};
+            carry.face = String(fa);
+          }
+          var sa = m.getAttribute('size');
+          if (sa != null) {
+            carry = carry || {};
+            carry.size = String(sa);
+          }
+        }
+        m = m.parentNode;
+      }
+      return carry;
+    }
+    if (!armed) return null;
+    // ② armed pending 形：caret 上下文 computed 色 vs 参照 #0000ff。
+    if (typeof _zwValEffectiveValue === 'function') {
+      var eff = _zwValEffectiveValue(sc, 'forecolor');
+      var hexc2 = (typeof _zwVaParseSimpleColor === 'function')
+        ? _zwVaParseSimpleColor(eff) : null;
+      if (hexc2 && hexc2 !== '#0000ff') {
+        carry = { color: hexc2 };
+      }
+    }
+    return carry;
+  };
+
   globalThis.__zw_ce_delete_apply = function (forward) {
     var ar = _zwVaGetActiveRange();
     if (!ar) return true;
@@ -1199,6 +1307,13 @@
     // 仅非 collapsed 面（deleteSelection 留壳路径；collapsed 动作无留壳语义）。
     var tcap = (!ar.collapsed && typeof globalThis.__zw_ce_capture_typing_chain === 'function')
       ? globalThis.__zw_ce_capture_typing_chain(ar) : null;
+    // F2 link carry 捕获 + pending link 快照：link 幸存 delete（:1170 面），
+    // armed href 槽不随动作清（capture 内部动作前读，删后链形已变）；carry
+    // 新捕获优先，无捕获保持原值（同 delta ④ 回写式）。
+    var snapLink = globalThis.__zwTypingLink;
+    var snapCarry = globalThis.__zwTypingLinkCarry;
+    var lcap = (typeof globalThis.__zw_ce_capture_link_carry === 'function')
+      ? globalThis.__zw_ce_capture_link_carry(ar) : null;
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -1214,6 +1329,10 @@
     globalThis.__zwTypingTags = (tt && tt.length) ? tt
       : (tcap && tcap.length ? tcap : tt);
     globalThis.__zwTypingTagsOff = ttoff;
+    globalThis.__zwTypingLink = snapLink;
+    globalThis.__zwTypingLinkCarry = (lcap && lcap.color != null)
+      || (lcap && lcap.face != null) || (lcap && lcap.size != null)
+      ? lcap : snapCarry;
     return true;
   };
 

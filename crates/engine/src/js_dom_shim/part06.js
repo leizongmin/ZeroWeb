@@ -4893,10 +4893,15 @@
               if (cmd === 'createlink' && rng2 && rng2.collapsed) {
                 // DC-4 判别信号（knife11 v5 三笔，2026-11-07）：collapsed
                 // createlink = 显式 typing style 命令（multitest foo[]bar
-                // rich 组 ip 面 p 形定谳读）。本仓无消费臂（typed 段 link
-                // 化不在范围），仅 part01 ① 臂判别读；清除点与 typing 包裹
-                // 态同生命周期（part06 _zwSync 防跨子测泄漏面）。
+                // rich 组 ip 面 p 形定谳读）。旗标本身仍只作 part01 ① 臂判别
+                // 读（override 读面零接触——待判别③ qV(createlink)="" 现绿）。
+                // F2a pending link 消费臂（2026-11-08 link-absorption 刀）：
+                // href 槽 + typing insert 侧 link 化（part01 _zwCeTypingInsert
+                // 读本槽）+ delta 过滤（part01d 值重放参照钉死 #0000ff）。
+                // 清除点与 typing 包裹态同生命周期（part06 _zwSync 防跨子测
+                // 泄漏面）；结构命令保全走 presTt 同款快照回写（下方 presLink）。
                 globalThis.__zwTypingCmdArmed = true;
+                globalThis.__zwTypingLink = String(arguments[2] == null ? '' : arguments[2]);
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
                 // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
@@ -4963,6 +4968,16 @@
                 ? globalThis.__zwTypingTags.slice() : null;
               var presTtoff = cmdPresOv && Array.isArray(globalThis.__zwTypingTagsOff)
                 ? globalThis.__zwTypingTagsOff.slice() : null;
+              // F2a pending link 同保全（2026-11-08 link-absorption 刀，预研档
+              // 集成点 7）：结构 13 键期望 link 全存活（multitest :1194-:1310
+              // 族 `createlink>结构>inserttext` 期望 `<a…>a</a>` 仍在），hr/img
+              // 臂尾部 sel.collapse → _zwSync 清面会误伤——并入 presTt 同款
+              // null 保持式快照/条件回写。carry 槽同生命周期（delete 中置形
+              // `createlink>delete>inserttext` 不在结构键内，零交形）。
+              var presLink = cmdPresOv && globalThis.__zwTypingLink != null
+                ? globalThis.__zwTypingLink : null;
+              var presCarry = cmdPresOv && globalThis.__zwTypingLinkCarry != null
+                ? globalThis.__zwTypingLinkCarry : null;
               // R3254-M3 切片 5 → F6 后继（2026-11-02）：insertParagraph 混合
               // 派发——嵌套单行容器面走忠实移植（part01f `__zw_ce_ipara_apply`：
               // deleteSelection 前导 + 单行容器爬升 + 非 SLC wrap / pre br /
@@ -5086,6 +5101,8 @@
               }
               if (presTt) globalThis.__zwTypingTags = presTt;
               if (presTtoff) globalThis.__zwTypingTagsOff = presTtoff;
+              if (presLink) globalThis.__zwTypingLink = presLink;
+              if (presCarry) globalThis.__zwTypingLinkCarry = presCarry;
               // spec（WPT 'Changing selection from handler'）：beforeinput handler
               // 可改选区——input 事件 target 按 **input 派发时刻** 的选区 editing host
               // 现解析（handler 移选到第二 host → input target = 第二 host）。
@@ -11284,6 +11301,11 @@
       globalThis.__zwTypingTagsOff = null; // D4 显式关账表同生命周期
       // DC-4 判别信号（knife11 v5 三笔）同生命周期清除。
       globalThis.__zwTypingCmdArmed = null;
+      // F2a pending link 态同生命周期清除（2026-11-08 link-absorption 刀）：
+      // href 槽 + carry 快照；结构命令保全走 presTt 同款快照回写（execCmd
+      // 结构臂 presLink/presCarry）。
+      globalThis.__zwTypingLink = null;
+      globalThis.__zwTypingLinkCarry = null;
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）

@@ -9531,15 +9531,64 @@
   // typing-state 簇（2026-10-31）：collapsed format 命令记录的 typing inline 包裹
   //（part06 format 臂设置/切换，Selection 方法经 _zwSync 清除）——插入文本按记录
   // 嵌套包裹（记录序 = 外层在前）。返回 { el: 挂树用根, text: caret 锚文本节点 }。
-  function _zwCeTypingInsert(tags, text) {
+  // F2 link-absorption 消费（2026-11-08 刀）：第三参 f2 = link 上下文
+  //（_zwCeF2LinkContext 产出）。① 通道 A decoration 滤——armed 时 tags 中 u/s
+  // 剔除（underline ≡ link 参照零 delta，multitest :2033-:2052 四案期望全裸；
+  // qS override 读面照设不动，只滤 materialization）；② carry font 内层
+  //（color/face/size delta，part01f __zw_ce_capture_link_carry 产出，语料
+  // :2148/:2158/:1170 形）；③ `<a href>` 最外裹（armed pending link，:1159-:1178
+  // 族期望 typed 段 link 化）。嵌套次序 a > carry-font > tags > text。
+  function _zwCeTypingInsert(tags, text, f2) {
     var tn = document.createTextNode(text);
     var root = tn;
-    for (var i = tags.length - 1; i >= 0; i--) {
-      var w = document.createElement(String(tags[i]));
+    var eff = Array.isArray(tags) ? tags : [];
+    if (f2 && f2.href && eff.length) {
+      eff = eff.filter(function (t) { return t !== 'u' && t !== 's'; });
+    }
+    for (var i = eff.length - 1; i >= 0; i--) {
+      var w = document.createElement(String(eff[i]));
       w.appendChild(root);
       root = w;
     }
+    if (f2 && f2.carry) {
+      var fnt = document.createElement('font');
+      if (f2.carry.color != null) fnt.setAttribute('color', String(f2.carry.color));
+      if (f2.carry.face != null) fnt.setAttribute('face', String(f2.carry.face));
+      if (f2.carry.size != null) fnt.setAttribute('size', String(f2.carry.size));
+      fnt.appendChild(root);
+      root = fnt;
+    }
+    if (f2 && f2.href) {
+      var la = document.createElement('a');
+      la.setAttribute('href', String(f2.href));
+      la.appendChild(root);
+      root = la;
+    }
     return { el: root, text: tn };
+  }
+  // F2 link 上下文解析（变异核单点）：href 槽仅 armed（`__zwTypingLink`）时
+  // 有效——物理 link 内键入不重裹 `<a>`（typed 段自然入链）；carry 消费须
+  // link 上下文（armed 或 sc 祖先链物理 `<a>`）——异位残留 carry（如删链后
+  // _zwSync 未触的变异核内移动）不消费。
+  function _zwCeF2LinkContext(sc, el) {
+    var href = globalThis.__zwTypingLink;
+    var out = {
+      href: (href != null && href !== '') ? String(href) : null,
+      carry: null
+    };
+    var carry = globalThis.__zwTypingLinkCarry;
+    if (!carry) return out;
+    var inLink = out.href != null;
+    var n = sc;
+    var guard = 0;
+    while (!inLink && n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && String(n.tagName || '').toLowerCase() === 'a') {
+        inLink = true;
+      }
+      n = n.parentNode;
+    }
+    if (inLink) out.carry = carry;
+    return out;
   }
   // TypingStyle 轮（2026-11-02 editing-compat）：delete 幸存壳链捕获的 typing
   // 态（part01f __zw_ce_capture_typing_chain）含 caret 仍居其中的壳层——该层
@@ -9591,6 +9640,10 @@
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
+    // F2 link 上下文（armed pending / carry 消费资格）——变异核单点解析，
+    // 四臂共用（_zwCeTypingInsert 第三参）。
+    var f2 = _zwCeF2LinkContext(sc, el);
+    var f2Wrap = !!(f2 && (f2.href || f2.carry));
     if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {
       // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
       var v = String(sc.nodeValue || '');
@@ -9665,7 +9718,8 @@
           }
           for (var ci = chain.length - 1; ci >= 0; ci--) innerTags.push(chain[ci]);
         })(sc);
-        var twD = innerTags.length ? _zwCeTypingInsert(innerTags, ins) : null;
+        var twD = (innerTags.length || f2Wrap)
+          ? _zwCeTypingInsert(innerTags, ins, f2) : null;
         var dEl = twD ? twD.el : document.createTextNode(ins);
         var dText = twD ? twD.text : dEl;
         offSplit.parentNode.insertBefore(dEl, offSplit.nextSibling || null);
@@ -9716,11 +9770,13 @@
         }
         node = dText;
         caretOff = ins.length;
-      } else if (ttags1 && ttags1.length) {
+      } else if ((ttags1 && ttags1.length) || f2Wrap) {
         // typing 包裹（wss/ilb temporary inline style 组）：头段留原节点，插入段
-        // 成 inline 包裹元素，尾段成新文本节点。
+        // 成 inline 包裹元素，尾段成新文本节点。F2：armed/carry 时裸 splice 臂
+        // 禁入（原地把字粘进宿主文本节点，pending link 无从包裹）——同分流到
+        // 三段包裹形（:1159-:1178 族期望 `foo<a…>a</a>bar`）。
         sc.nodeValue = v.slice(0, so);
-        var tw1 = _zwCeTypingInsert(ttags1, ins);
+        var tw1 = _zwCeTypingInsert(ttags1, ins, f2);
         var tp1 = sc.parentNode || el;
         tp1.insertBefore(tw1.el, sc.nextSibling || null);
         var tv1 = v.slice(eo);
@@ -9809,9 +9865,9 @@
         var v2 = String(target.nodeValue || '');
         var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
         var ttags2 = _zwCeTypingTagsAt(sc, el);
-        if (ttags2 && ttags2.length) {
+        if ((ttags2 && ttags2.length) || f2Wrap) {
           target.nodeValue = v2.slice(0, at);
-          var tw2 = _zwCeTypingInsert(ttags2, ins);
+          var tw2 = _zwCeTypingInsert(ttags2, ins, f2);
           target.parentNode.insertBefore(tw2.el, target.nextSibling || null);
           var tv2 = v2.slice(at);
           if (tv2) target.parentNode.insertBefore(document.createTextNode(tv2), tw2.el.nextSibling || null);
@@ -9827,8 +9883,8 @@
         //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
         // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
         var ttags3 = _zwCeTypingTagsAt(sc, el);
-        if (ttags3 && ttags3.length) {
-          var tw3 = _zwCeTypingInsert(ttags3, ins);
+        if ((ttags3 && ttags3.length) || f2Wrap) {
+          var tw3 = _zwCeTypingInsert(ttags3, ins, f2);
           sc.insertBefore(tw3.el, kids[idx] || null);
           node = tw3.text;
         } else {

@@ -1926,10 +1926,26 @@
       r.setEnd(node, off1);
     } catch (_eRr) { return; }
     sel._ranges = [r];
+    // F2 通道 B（2026-11-08 link-absorption 刀）：armed pending link 时
+    // forecolor 参照钉死过滤（#0000ff = Chrome UA link 参照色，本仓 UA 无
+    // link 色规则不读 computed——待判别②）。归一 ≡ 参照剔除不 materialize
+    //（multitest :1994-:2012 族期望无 font）；非参照值绕等值门强制重放——
+    // UA 填充初值黑（_zwValEffectiveValue 无声明返 'rgb(0, 0, 0)'）使 black
+    // 与 link 内 computed 恒等值、等值门恒过跳过（census black got `fooabar`
+    // 无 font、blue/brown 有 font 双向实证）。qS/qV override 读面不动
+    //（override 解耦法则②③）。fontname/fontsize/hilitecolor 无 F2 语料键
+    // 不滤（F6b 域）。
+    var armedLink = globalThis.__zwTypingLink;
+    var linkArmed = armedLink != null && armedLink !== '';
     for (var i = 0; i < cmds.length; i++) {
       var cmd = cmds[i];
       var v = snap[cmd];
       if (v === undefined || v === null || v === '') continue;
+      if (linkArmed && cmd === 'forecolor') {
+        if (_zwVaNormalizeColorKey(v) === 'rgb(0, 0, 255)') continue;
+        try { _zwVaSetSelectionValue(cmd, v); } catch (_eRoF2) {}
+        continue;
+      }
       if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v, true)) continue;
       try { _zwVaSetSelectionValue(cmd, v); } catch (_eRo) {}
     }
