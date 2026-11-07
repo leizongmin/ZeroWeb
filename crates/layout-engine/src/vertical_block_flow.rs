@@ -29,7 +29,7 @@
 
 use std::collections::HashMap;
 
-use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue};
+use zero_css_parser::values::{DisplayValue, FloatValue, LengthValue, PositionValue};
 use zero_dom::NodeId;
 use zero_style_system::ComputedStyle;
 use zero_style_system::WritingModeValue;
@@ -152,10 +152,14 @@ pub fn apply_vertical_block_flow(
         &mut float_width_rewritten,
     );
     anchor_vrl_root_children(root, styles);
-    anchor_vrl_root_box(root, icb_width);
+    let vrl_anchor_dx = anchor_vrl_root_box(root, icb_width);
     anchor_slr_root_children(root, icb_height);
     // R4459：vertical float（orthogonal，HorizontalTb 父）内在尺寸收缩 + 浮动缘重锚。
     fix_vertical_float_intrinsic(root, styles, &float_width_rewritten);
+    // R5455：根盒右移量对视口-CB abspos 盒的等量回退（float 修正后再算，链原点终态）。
+    if vrl_anchor_dx != 0.0 {
+        refix_icb_abspos_x_after_vrl_anchor(root, styles, vrl_anchor_dx);
+    }
     // R4460：vertical inline-block 的块级子行内尺寸泄漏修正。
     // fast path：无 vertical 样式页整臂跳过（泄漏 walk 全树 + 每节点 2 次 style 查表；
     // R4217 float 在场预扫描先例——bench-gate 实测 block_layout_1000_elements +36% 根因）。
@@ -248,18 +252,66 @@ fn fix_vertical_inline_block_child_leak(root: &mut LayoutBox, styles: &HashMap<N
 /// 重复计入每层子盒（vrl-002 div b.x 380→744、paint abs 752→1480 出视口，整页白屏），
 /// R4455 的「+9 绿 / 8 案 28→15.75 收敛」实为**白屏页 diff 数值靠近**的假象（test 页
 /// 内容全出视口 → diff = ref 内容像素占比），非几何正确。
-fn anchor_vrl_root_box(root: &mut LayoutBox, icb_width: f32) {
+///
+/// 返回实际施加的右移量（未过锚定门 = 0.0），供 R5455
+/// [`refix_icb_abspos_x_after_vrl_anchor`] 对视口-CB abspos 盒等量回退。
+fn anchor_vrl_root_box(root: &mut LayoutBox, icb_width: f32) -> f32 {
     if std::env::var("ZW_VIV_SIZING").as_deref() == Ok("0") {
-        return;
+        return 0.0;
     }
     if root.writing_mode != WritingModeValue::VerticalRl {
-        return;
+        return 0.0;
     }
     let delta = icb_width - root.width;
     if delta <= 0.5 || root.x > 0.5 {
-        return;
+        return 0.0;
     }
     root.x += delta;
+    delta
+}
+
+/// R5455：vrl 根锚定右移量对**视口-CB** abspos 盒的等量回退。
+///
+/// 病理（background-position-vrl-018/020/022 @12.50% 实证）：taffy 以**静态父**作
+/// CB 解析 abs 子坐标（taffy 0.7 限制；% inset 已由 pass 11.5 预解析），水平模式靠
+/// 「静态父链原点 = ICB 原点」恰巧落位正确；anchor_vrl_root_box 把根盒右移 delta
+/// 后，paint walk 沿静态链累加把 delta 计入 abs 子终位 → **双计**（018 LAYOUT_DUMP：
+/// 绿条 abs x=854 = 正确 427 + delta 427，整条出视口 → 12.50% = 100/800 全部差值）。
+///
+/// 修法：对静态链无 positioned 祖先的 abs/fixed 盒 `b.x -= anchor_dx`（fixed 的 CB
+/// 恒为视口，同域）。**不触 positioned 祖先 CB 的 abs 盒**——其 CB 盒随 restack 同
+/// 帧移动，回退会过度修正（FIXME：有驱动案再探，需按 CB 盒自身位移量回退）。
+/// `ZW_VIV_SIZING` 同族 kill-switch：anchor 返回 0.0 时本 pass 不进（调用点同门）。
+fn refix_icb_abspos_x_after_vrl_anchor(root: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, anchor_dx: f32) {
+    fn walk(
+        b: &mut LayoutBox,
+        off_x: f32,
+        positioned_ancestor: bool,
+        styles: &HashMap<NodeId, ComputedStyle>,
+        anchor_dx: f32,
+    ) {
+        let is_icb_cb = !positioned_ancestor && (b.is_absolute || b.is_fixed);
+        if is_icb_cb {
+            b.x -= anchor_dx;
+        }
+        let abs_x = off_x + b.x;
+        let self_positioned = b.is_absolute
+            || b.is_fixed
+            || b.node_id
+                .and_then(|id| styles.get(&id))
+                .is_some_and(|s| !matches!(s.position, PositionValue::Static));
+        let child_off_x = abs_x + b.padding_left + b.border_left;
+        for c in &mut b.children {
+            walk(
+                c,
+                child_off_x,
+                positioned_ancestor || self_positioned,
+                styles,
+                anchor_dx,
+            );
+        }
+    }
+    walk(root, 0.0, false, styles, anchor_dx);
 }
 
 /// R4444：sideways-lr **根盒**子块底边（行内起点）锚定。
@@ -1479,5 +1531,77 @@ mod tests {
         unsafe {
             std::env::remove_var("ZW_VERTICAL_BLOCK_FLOW_LAYOUT");
         }
+    }
+
+    /// R5455：vrl 根锚定右移量对视口-CB abspos 盒等量回退（background-position-vrl-018
+    /// @12.50% 形态直钉）。018 实测链：html(427, w=373) > body(静态, b.x=8) >
+    /// abs 绿条(b.x=427 双计态，paint 854 出视口)。修正后 abs/fixed 盒 b.x −= 427；
+    /// positioned 祖先 CB 的 abs 盒不动（CB 随 restack 同帧移动）；abs 盒的静态后代
+    /// 坐标不变（随父整体平移）。
+    #[test]
+    fn test_refix_icb_abspos_x_after_vrl_anchor() {
+        use zero_css_parser::values::PositionValue;
+
+        let mut styles = HashMap::new();
+        let rel_id = NodeId::default();
+        styles.insert(
+            rel_id,
+            ComputedStyle {
+                position: PositionValue::Relative,
+                ..Default::default()
+            },
+        );
+
+        // 流内 div（body 直接子，静态）。
+        let mut in_flow = LayoutBox::default();
+        in_flow.x = 0.0;
+        // abs 绿条（018 形态：b.x=427 = taffy 静态父帧解析值，含根锚 delta 双计）。
+        let mut abs_bar = LayoutBox::default();
+        abs_bar.x = 427.0;
+        abs_bar.is_absolute = true;
+        // abs 盒内静态后代（应随父平移，自身 b.x 不动）。
+        let mut abs_child = LayoutBox::default();
+        abs_child.x = 5.0;
+        abs_bar.children.push(abs_child);
+        // fixed 条（同域回退）。
+        let mut fixed_bar = LayoutBox::default();
+        fixed_bar.x = 611.0;
+        fixed_bar.is_fixed = true;
+        // positioned 祖先（relative）> 其 CB 域 abs 盒（不应回退）。
+        let mut rel_ancestor = LayoutBox::default();
+        rel_ancestor.x = 40.0;
+        rel_ancestor.node_id = Some(rel_id);
+        let mut abs_under_rel = LayoutBox::default();
+        abs_under_rel.x = 300.0;
+        abs_under_rel.is_absolute = true;
+        rel_ancestor.children.push(abs_under_rel);
+
+        let mut body = LayoutBox::default();
+        body.x = 8.0;
+        body.children.push(in_flow);
+        body.children.push(abs_bar);
+        body.children.push(fixed_bar);
+        body.children.push(rel_ancestor);
+
+        let mut root = LayoutBox::default();
+        root.writing_mode = WritingModeValue::VerticalRl;
+        root.x = 427.0;
+        root.width = 373.0;
+        root.children.push(body);
+
+        refix_icb_abspos_x_after_vrl_anchor(&mut root, &styles, 427.0);
+
+        let body = &root.children[0];
+        assert_eq!(body.x, 8.0, "静态链盒不动");
+        let abs_bar = &body.children[1];
+        assert_eq!(abs_bar.x, 0.0, "视口-CB abs 盒回退 −427（427→0，paint 427 不再双计）");
+        assert_eq!(abs_bar.children[0].x, 5.0, "abs 盒静态后代自身坐标不变（随父整体平移）");
+        assert_eq!(body.children[2].x, 184.0, "fixed 盒同域回退（611→184）");
+        let rel_ancestor = &body.children[3];
+        assert_eq!(rel_ancestor.x, 40.0, "positioned 祖先盒不动");
+        assert_eq!(
+            rel_ancestor.children[0].x, 300.0,
+            "positioned-CB 域 abs 盒不回退（CB 随 restack 同帧移动，回退会过度修正）"
+        );
     }
 }
