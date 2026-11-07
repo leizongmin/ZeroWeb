@@ -4776,8 +4776,20 @@
                   if (typeof globalThis.__zw_ce_ipara_apply === 'function'
                       && globalThis.__zw_ce_ipara_wants()) {
                     globalThis.__zw_ce_ipara_apply();
-                  } else {
+                  } else if (rng2.collapsed
+                      || typeof globalThis.__zw_ce_delete_apply !== 'function') {
                     globalThis.__zw_ce_paragraph_split_at(host2, rng2, false);
+                  } else {
+                    // 处方 c（knife11 v2，2026-11-07）：fallback 前
+                    // deleteSelection 前导（port `__zw_ce_ipara_apply`
+                    // :1542 前导同构）——Chrome 非 collapsed range 先删
+                    // 后拆（multitest 495-499 族 got `def<b>def</b>ghi`
+                    // 重影 = 无前导裸拆）。复用 `__zw_ce_delete_apply`
+                    // （typing delta ④/⑤ 快照回写与 override 重锚同内建；
+                    // 非 collapsed 臂即 deleteSelection）。rng2 删后失效，
+                    // 传 null 让 split_at 经 caret_range 兜底 live 重读。
+                    globalThis.__zw_ce_delete_apply(false);
+                    globalThis.__zw_ce_paragraph_split_at(host2, null, false);
                   }
                 } catch (_eIp) {}
               }
