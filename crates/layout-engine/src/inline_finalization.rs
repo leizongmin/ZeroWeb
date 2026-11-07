@@ -4321,18 +4321,55 @@ pub(crate) fn remeasure_inline_only_containers(
     // IFC 不收表尺寸、收缩臂豁免同撤，逐字节旧行为）。
     static R5395_INLINE_TABLE_ENTRY: std::sync::LazyLock<bool> =
         std::sync::LazyLock::new(|| std::env::var("ZW_INLINE_TABLE_IB_SIZING").as_deref() != Ok("0"));
+    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
+    //（content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
+    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
+    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
+    // （R4 前移至此：shadow 匿名叶 gate 的 has_inline_children 兜底臂同源消费，见下。）
+    let has_dom_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id)
+            .iter()
+            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
+    });
+    // R4 兜底臂（上方 has_inline_children 第二析取支）用**非空白** DOM 文本口径——
+    // shadow host 元素子移入 shadow 树后残留的标签间空白文本节点（004 host1:
+    // slot1 移走 + A.remove 后仅余 "\n  "）不算可测内容：IFC 对纯空白测得 total 0，
+    // 兜底照旧放行重测 → 收缩臂照旧清 0。contents 文本提升（R3848）页面为实文本，
+    // 非空白口径足以保住其重测（display-contents-text-inherit 等字节不变）。
+    let has_dom_non_ws_text = box_node.node_id.is_some_and(|id| {
+        doc.child_nodes(id).iter().any(|c| {
+            doc.get(*c).is_some_and(|n| match &n.kind {
+                NodeKind::Text(t) => !t.content.trim().is_empty(),
+                _ => false,
+            })
+        })
+    });
+    // R4（45 号 M3 第二臂）：shadow host 盒内 inline 级「子」仅为 R4 匿名文本叶
+    //（Display::Block，is_block_level 旗标沿 flex/grid 匿名项约定为 false）时，本 IFC
+    // 重测不得介入——容器几何已由 taffy 按匿名叶块流正确解出（M3 R4 taffy 树层已验证），
+    // 而 collect_inline_items 按容器 **DOM 子**收集（flat tree 之外无内容：slot 回退
+    // 文本在 shadow 树内），测得 total 0 → 「允许减小高度」臂把 host 高清 0、后继兄弟
+    // 整体上移一行（slot-fallback-content-004 基线：host h 18→0，p2 行带 89→71）。
+    // flex/grid 匿名项同旗标不入此域（容器 is_layout_container 入口早退）；contents 文本
+    // 提升（R3848）与混排 shadow host 页面容器有 DOM 直挂文本 → has_dom_text 兜底臂
+    // 照旧重测（display-contents-text-inherit 两行文本等字节不变）。
+    let has_dom_anon_text_leaves = box_node
+        .children
+        .iter()
+        .any(|c| c.is_anonymous_text_item && !c.is_absolute && !c.is_fixed);
     let has_inline_children = box_node.children.iter().any(|c| {
-        (!c.is_block_level
-            || is_atomic_inline_family_box(c, styles)
-            || (*R5395_INLINE_TABLE_ENTRY
-                && c.node_id.is_some_and(|id| {
-                    styles
-                        .get(&id)
-                        .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
-                })))
+        (!c.is_anonymous_text_item
+            && (!c.is_block_level
+                || is_atomic_inline_family_box(c, styles)
+                || (*R5395_INLINE_TABLE_ENTRY
+                    && c.node_id.is_some_and(|id| {
+                        styles
+                            .get(&id)
+                            .is_some_and(|s| matches!(s.display, DisplayValue::InlineTable))
+                    }))))
             && !c.is_absolute
             && !c.is_fixed
-    });
+    }) || (has_dom_anon_text_leaves && has_dom_non_ws_text);
     // R4108（CSS2 §9.2.1.1 块容器的匿名块序列 + §10.3.2 replaced inline）：容器**同时**有
     // 块级 in-flow 子与 inline 级子、且其 inline 级子**全部为 replaced 类标签**（svg/canvas/
     // img 等——converter 映射 taffy Block 按匿名块序列堆叠，几何已正确）时跳过本 remeasure：
@@ -4452,15 +4489,8 @@ pub(crate) fn remeasure_inline_only_containers(
                     })
                     .unwrap_or(false)
             });
-    // R105：仅含直接 DOM 文本（无 inline 元素子，文本不生成独立 LayoutBox 子）且 taffy 未测量
-    // （content_height≈0）的块也需要 remeasure——否则其 font_size 不会被 store_font_sizes_from_ifc
-    // 存储，paint IFC 默认 16，导致大字号（100px）reftest（如 inline-formatting-context-008）渲染成 16px。
-    // content_height≈0 守卫避免覆盖 taffy 已正确测量的块（font-feature/multicol-fill-auto/abspos 回归源）。
-    let has_dom_text = box_node.node_id.is_some_and(|id| {
-        doc.child_nodes(id)
-            .iter()
-            .any(|c| doc.get(*c).is_some_and(|n| matches!(n.kind, NodeKind::Text(_))))
-    });
+    // R105 的 has_dom_text 计算已前移至 has_inline_children 处（R4 shadow 匿名叶 gate
+    // 兜底臂同源消费），语义不变，此处不再重复绑定。
     // R3992：并入态 run-in 跳过 DOM 文本 remeasure——其内容已由后继块 IFC 渲染，
     // 此处按 DOM 子重测会把单行高回填进 0 高 leaf（run-in-basic-001 target 下移 19px）。
     // 判定与 measure gate / build_subtree 分派同源。

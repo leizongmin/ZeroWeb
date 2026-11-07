@@ -5050,10 +5050,10 @@ fn build_subtree(
 /// 回退行恒空、css-scoping nested 系列缺行根因）。纯空白文本跳过（与 flex 匿名项
 /// 同口径——块流空白折叠后不产盒）。https://dom.spec.whatwg.org/#slotting
 ///
-/// 挂 `ZW_SHADOW_TEXT_BOX` 开关（opt-in，默认关）：taffy 侧布局已验证，但
-/// inline_finalization 的行级 paint 行走按 DOM 序自累计 Y，尚未感知 shadow 匿名叶
-/// 高度，默认开启会让 shadow 文本行位回退（slot-fallback-content-004 严格比对
-/// 回落）。FIXME(45-R4): paint/IFC 侧感知 shadow 文本行位后翻默认开。
+/// 挂 `ZW_SHADOW_TEXT_BOX` 开关（默认开，`=0` 杀）：taffy 侧布局已验证；R4 第二臂
+/// （inline_finalization `remeasure_inline_only_containers` 的 shadow 匿名叶 gate，
+/// 修 slot-fallback-content-004 host 高被 IFC 重测清 0 的根因）落地后翻默认，
+/// 门控矩阵逐批不回落见 M3 R4 evidence。
 fn push_shadow_text_leaf(ctx: &mut BuildContext, text_id: NodeId, output: &mut Vec<taffy::NodeId>) {
     let anon_style = taffy::Style {
         display: taffy::style::Display::Block,
