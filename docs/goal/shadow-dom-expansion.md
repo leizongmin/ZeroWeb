@@ -326,6 +326,38 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
 - **下一步**：before 基线跑（在跑）→ 拼装修复 + context 透传 + 单测落地 →
   重建后 A/B（P→F/T=0 门）→ attachment/空链复测定格 → MEl 两刀回装评估。
 
+### 2026-11-07——M3 清单 1 主刀落地：格式修复 + context 透传 + contents 枚举，A/B 认领门全过
+
+- **修复落地（编辑面含 dom/ 一处修正，认领预告修订）**：
+  `deep_entry_json_unsafe` sr 字段移入元素对象闭括号内（机制一根因）；
+  `parse_html_subtree_deep_json_unsafe` 加 `context_local`（arg[4] 宿主
+  local name，HTML ns 有 context 走真实 context 物化片段解析——机制二视图
+  臂）；`_zwMBuildBodyTree`/`_zwFragmentAddedUnsafe` 透传（ShadowRoot
+  .setHTMLUnsafe 保持缺省 = 引擎 ShadowRoot 写 body 兜底同态）；
+  dom/ `materialize_declarative_shadow_roots` 候选枚举改
+  `collect_declarative_template_candidates` 私有遍历**下探 template
+  contents**（嵌套族/外层 template 包裹案枚举盲区；shadow 树内层不枚举 =
+  spec：声明式 attach 仅解析期生效）——认领段「dom/ 预期零改动」不成立，
+  contents 枚举盲区是机制面必需，单测 6 案（engine 3 + dom 3）随刀落。
+- **A/B（全语料逐子测试身份比对，同机同参守卫）**：**P→F/T=0、vanished=0、
+  F→P=121、after_only=199 全 Pass**（gethtml.html 修复前 shim JSON 异常致
+  harness 提前中断，现完整跑通）。solo attachment 484P/170F → 597P/57F；
+  basic.html 0P/11F → 16P/6F。证据（本地不入库）：
+  `.acceptance/shadow-m3-residual/wc-after-fmtfix.json`；分族/门禁/基线对拍
+  [evidence](shadow-dom-expansion/evidence/2026-11-07-m3-attachment-format-fix.md)。
+- **剩余 57F 分族（本刀暴露下层，前后同红不构成回归）**：A 34F attach 同
+  模式重挂未清空 + B 17F 恢复后第三次 attach 未抛错（attach 恢复语义/
+  状态机，下一刀认领面）；C 6F canvas disallowed 无描述 assert_true（待复
+  现甄别）；D 2F `assignedNodes()` 视图面（assignedSlot 双双已过）；E 4F
+  contents 视图 + 克隆携根面（`parse_template_contents_deep_json`
+  unmaterialized 与引擎树不同态 + MEl 克隆臂撤销面）。
+- **engine 门零新增红修正**：契约清单 3「既有 5F」口径过期——stash 往返对
+  拍实证现树先在集合为 **9F**（5F 集合 + fetch_filtered/iframe_sw_dispatch
+  /websocket×2），判据不变（零新增红），清单 3 已同步。
+- **下一步**：attach 恢复状态机刀（A+B 51F，§9 认领声明先行）→ 族 C/D/E
+  甄别与处置 → MEl 回装评估（族 E 为试金面，撤销时预告的回装时点已到）→
+  清单 2 paperwork → M4。
+
 ### 2026-11-07——余项收口契约落定（无人值守推进至 DONE）
 
 - **簇 C 流静止判定**：最后代码落点 61f84064e（2026-11-06 06:44 attachment
@@ -360,9 +392,12 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
    核对一句带过。完成判据 = 双侧控制面各有留痕，不实现、不双改。
 3. **门禁口径**：JS-only 刀 `git diff --check` + `cargo fmt --all -- --check`
    （fmt/clippy 对 .js 不适用）；触 .rs 时按 `-p` 收窄门；`cargo test -p
-   zero-engine --lib` 允许既有 5F 集合（R2809/R2810/R3276/p56/p99s，s249
-   归 html-semantics 在案），判据 = 零新增红；workspace 全量门仅在干树窗口
-   跑，他流持锁时按 §9 延后并留痕，不构成 BLOCK。
+   zero-engine --lib` 允许既有 **9F** 集合（R2809/R2810/R3276/p56/p99s +
+   fetch_filtered_response_type_matrix + iframe_service_worker_messages_
+   dispatch + websocket error/event_flow×2——2026-11-07 stash 往返对拍实证，
+   原口径 5F 过期；s249 归 html-semantics 在案），判据 = 零新增红；
+   workspace 全量门仅在干树窗口跑，他流持锁时按 §9 延后并留痕，不构成
+   BLOCK。
 4. **碰撞纪律**：共享 clone 他流活跃期间不重建共享二进制；docs 提交前
    `git diff` 自查（历史教训：探针链追加 goal 文档、同 clone 双 resume
    碰撞两起 §9 在案）；探针页用毕即清，不留在语料树。

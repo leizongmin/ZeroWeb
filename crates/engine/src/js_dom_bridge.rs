@@ -3370,14 +3370,33 @@ pub fn parse_html_subtree_deep_json(html: &str, elem_sel: &str, context_ns: Opti
 /// [`zero_dom::parse_html_fragment_with_scripting_materialized`]），条目由
 /// [`deep_entry_json_unsafe`] 发射——元素携带 `sr` 字段（声明式根 mode + 状态位 +
 /// shadow 子深 JSON，template 已消费不再出现）。
+///
+/// `context_local`（宿主元素 local name，M3 清单 1）——HTML ns 且有值时改走真实
+/// context 片段解析：全文档路径会丢弃宿主祖先（`<td><template shadowrootmode>`
+/// 场景模板重挂 body ∈ 名单被误物化，attachment 170F 勘根），片段路径保序于
+/// `context` 插入模式。foreign ns / 缺省保持原行为（`elem_sel` 全文档寻址）。
 pub fn parse_html_subtree_deep_json_unsafe(
     html: &str,
     elem_sel: &str,
     context_ns: Option<&str>,
+    context_local: Option<&str>,
     scripting: bool,
 ) -> String {
     match context_ns {
         None | Some("http://www.w3.org/1999/xhtml") => {
+            if let Some(ctx) = context_local.filter(|s| !s.is_empty()) {
+                let frag = zero_dom::parse_html_fragment_with_scripting_materialized(
+                    html,
+                    "http://www.w3.org/1999/xhtml",
+                    ctx,
+                    scripting,
+                );
+                let entries: Vec<String> = fragment_top_level_children(&frag)
+                    .into_iter()
+                    .filter_map(|c| deep_entry_json_unsafe(&frag, c))
+                    .collect();
+                return format!("[{}]", entries.join(","));
+            }
             let mut doc = zero_dom::parse_html_with_scripting(html, scripting);
             doc.apply_empty_ns_markers();
             let Some(node) = find_by_selector(&doc, elem_sel) else {
@@ -3436,8 +3455,10 @@ fn deep_entry_json_unsafe(doc: &Document, id: NodeId) -> Option<String> {
                 .iter()
                 .filter_map(|&k| deep_entry_json_unsafe(doc, k))
                 .collect();
+            // sr_field 自带前导逗号且可能为空，必须拼在元素对象闭括号**内**，
+            // 否则产出非法 JSON、shim 端 JSON.parse 静默回退未物化臂（42 号 M3 勘根）。
             Some(format!(
-                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]}}{}",
+                "{{\"k\":\"E\",\"tag\":{},\"attrs\":[{}],\"children\":[{}]{}}}",
                 tag,
                 attrs.join(","),
                 kids.join(","),

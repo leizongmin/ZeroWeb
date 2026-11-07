@@ -23838,7 +23838,10 @@
   // s180/gethtml（M3 Batch 2）：第 4 参 `materialize`——unsafe 物化面（setHTMLUnsafe/
   // parseHTMLUnsafe/write 物化路径）切 `__zw_parse_html_subtree_unsafe`（条目带 `sr`
   // 字段，_zwMBuildDeepTreeNode 挂声明式根视图）；缺省视图解析（opt-in 不物化）零变化。
-  function _zwMBuildBodyTree(innerHtml, ctxNs, scripting, materialize) {
+  // M3 清单 1：第 5 参 `ctxTag`——宿主元素 local name，unsafe 面透传引擎走真实 context
+  // 片段解析（全文档路径丢弃宿主祖先 → 声明式模板重挂 body ∈ 名单误物化，attachment
+  // 170F 勘根）；foreign ns / 缺省引擎侧忽略（'body' 兜底同款）。
+  function _zwMBuildBodyTree(innerHtml, ctxNs, scripting, materialize, ctxTag) {
     var html = '<body>' + innerHtml + '</body>';
     var body = _zwMEl({ tag: 'body' }, null);
     // OPTIMIZATION（encoding-legacy-mb DC-2，2026-10-28）：单次解析深树臂——host 一
@@ -23853,7 +23856,7 @@
     if (typeof _p5SubtreeFn === 'function') {
       try {
         var _p5deep = JSON.parse(
-          _p5SubtreeFn(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1'));
+          _p5SubtreeFn(html, 'body', ctxNs ? String(ctxNs) : '', (scripting === false) ? '0' : '1', ctxTag ? String(ctxTag) : ''));
         if (Array.isArray(_p5deep)) {
           for (var di5 = 0; di5 < _p5deep.length; di5++) {
             if (_p5deep[di5]) body.childNodes.push(_zwMBuildDeepTreeNode(_p5deep[di5], body, scripting));

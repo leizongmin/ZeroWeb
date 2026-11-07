@@ -5686,7 +5686,16 @@
       try {
         _uScr = (hostHandle != null && _realTag(null, hostHandle) === 'TEMPLATE') ? false : undefined;
       } catch (_eUtg) { _uScr = undefined; }
-      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _uCtxNs, _uScr, true).childNodes;
+      // M3 清单 1：宿主 local name 作 context 透传（真实 context 片段解析，防声明式
+      // 模板重挂 body 误物化）；shadow 容器 handle 不作元素 context——引擎 ShadowRoot
+      // 写走 body 兜底，视图同态保持 ''（全文档路径）。
+      var _uCtxTag = '';
+      try {
+        if (hostHandle != null && !(typeof _shadowHandles !== 'undefined' && _shadowHandles[hostHandle])) {
+          _uCtxTag = String(_realTag(null, hostHandle) || '');
+        }
+      } catch (_eUtg2) { _uCtxTag = ''; }
+      var kids = _zwMBuildBodyTree(String(html == null ? '' : html), _uCtxNs, _uScr, true, _uCtxTag).childNodes;
       if (hostHandle != null) {
         var _uHostProxy = null;
         try { _uHostProxy = (typeof _wrapHandle === 'function') ? _wrapHandle(hostHandle) : null; } catch (_eUhp) {}

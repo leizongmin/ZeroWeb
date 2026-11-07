@@ -111,12 +111,19 @@ impl Document {
     /// 序列化面产物；页面直写的声明式形态同样适用）解析后还原为 ShadowRoot 节点：
     /// mode 属性合法时在宿主（template 的父元素）attach_shadow、contents 子移入
     /// shadow 树、摘除 template 元素。属性缺省/非法 → 保留普通 template（spec：
-    /// 无有效 shadowrootmode 按普通 template 处理）。同宿主二次声明或嵌套声明
-    ///（shadow 树内层）暂不重建（attach Err / 文档域枚举不见 shadow 内 template
-    /// ——FIXME 嵌套 shadow 级联切片）。
+    /// 无有效 shadowrootmode 按普通 template 处理）。
+    ///
+    /// M3 清单 1（attachment 170F 勘根）：候选枚举自 [`Document::get_elements_by_tag_name`]
+    /// 改为本函数私有遍历——**下探 template contents**（嵌套声明族 + 外层 template
+    /// 包裹声明式模板案的枚举盲区：contents 内声明式模板按 spec 解析期即 attach，
+    /// [`collect_by_tag_name`](Document::collect_by_tag_name) 只走 children 边
+    /// 不可达）。shadow 树内层不枚举：声明式 attach 仅解析期生效（spec），已挂载
+    /// shadow 树中的 template 无 attach 面，跳过即 spec 行为。
     /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    /// https://dom.spec.whatwg.org/#valid-shadow-host-name
     pub fn materialize_declarative_shadow_roots(&mut self) {
-        let templates = self.get_elements_by_tag_name("template");
+        let mut templates = Vec::new();
+        self.collect_declarative_template_candidates(self.root, &mut templates);
         for tid in templates {
             // s173 配套值还原（declarative_shadow 扩面）：解析前预变换把 open/close
             // 值改写为首字母大写以出 html5ever 0.29.1 精确匹配集；被本函数**消费**的
@@ -229,6 +236,39 @@ impl Document {
             // removeChild/slot 属性改名）不触发重解析——动态场景分配过期，待变异
             // 应用臂统一挂接。
             self.resolve_slots(host);
+        }
+    }
+
+    /// 声明式物化候选枚举——镜像 [`Document::collect_by_tag_name`](Document::collect_by_tag_name)
+    /// 的 children 边遍历 + shadow 树跳过，额外下探 template contents（`shadow.rs`
+    /// 模块文档注：contents 是惰性文档片段，不属 children 边）。快照先行于物化：
+    /// 消费路径会摘除 template/移动子树，枚举一次完成，NodeId 稳定不受重挂影响。
+    fn collect_declarative_template_candidates(&self, id: NodeId, result: &mut Vec<NodeId>) {
+        let node_data = match self.nodes.get(id) {
+            Some(n) => n,
+            None => return,
+        };
+        let is_template =
+            matches!(&node_data.kind, NodeKind::Element(e) if e.local_name().eq_ignore_ascii_case("template"));
+        if is_template {
+            result.push(id);
+        }
+        for &child in &node_data.children {
+            if self.is_shadow_root_node(child) {
+                continue;
+            }
+            self.collect_declarative_template_candidates(child, result);
+        }
+        if is_template
+            && let Some(frag) = self.template_contents(id)
+            && let Some(frag_node) = self.nodes.get(frag)
+        {
+            for &child in &frag_node.children {
+                if self.is_shadow_root_node(child) {
+                    continue;
+                }
+                self.collect_declarative_template_candidates(child, result);
+            }
         }
     }
 

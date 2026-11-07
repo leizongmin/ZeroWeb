@@ -955,6 +955,8 @@ pub fn register_dom_callbacks(
 
     // s180/gethtml（M3 Batch 2）：物化变体——setHTMLUnsafe 视图构建数据源，元素
     // 条目带 `sr` 字段（声明式根 mode + d/c/s 状态位 + shadow 子深 JSON）。
+    // arg[4] ctx_tag（宿主元素 local name，M3 清单 1）——HTML ns 有值时走真实
+    // context 片段解析，避免全文档路径丢弃宿主祖先的误物化。
     sandbox.register_callback(
         "__zw_parse_html_subtree_unsafe",
         Box::new(|args: &[String]| -> String {
@@ -962,7 +964,8 @@ pub fn register_dom_callbacks(
             let sel = args.get(1).map(String::as_str).unwrap_or("");
             let ctx_ns = args.get(2).map(String::as_str).filter(|s| !s.is_empty());
             let scripting = args.get(3).map(|s| s != "0").unwrap_or(true);
-            parse_html_subtree_deep_json_unsafe(html, sel, ctx_ns, scripting)
+            let ctx_tag = args.get(4).map(String::as_str).filter(|s| !s.is_empty());
+            parse_html_subtree_deep_json_unsafe(html, sel, ctx_ns, ctx_tag, scripting)
         }),
     );
 
@@ -5107,5 +5110,65 @@ mod view_doc_replay_tests {
         });
         assert!(!one, "IAH before the last SetInnerHtml reset must not replay");
         assert!(two, "IAH after the last SetInnerHtml reset must replay");
+    }
+}
+
+#[cfg(test)]
+mod subtree_deep_json_unsafe_tests {
+    use crate::js_dom_bridge::parse_html_subtree_deep_json_unsafe;
+
+    /// M3 清单 1 主钉（attachment 170F 勘根）：`sr` 字段必须落在元素对象**内**——
+    /// Batch 2 起拼在闭括号外产出非法 JSON，shim `JSON.parse` 静默回退未物化臂，
+    /// 视图物化自 Batch 2 起未生效。消费面等价断言：宿主携带合法 `sr`（mode/d/
+    /// c/s/nodes），声明式 template 已消费（不再出现）、shadow 子不进 children。
+    #[test]
+    fn sr_field_nests_inside_element_object_and_parses() {
+        let out = parse_html_subtree_deep_json_unsafe(
+            "<div><template shadowrootmode=open><span>hi</span></template></div>",
+            "body",
+            None,
+            None,
+            true,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).expect("元素条目 + sr 字段 = 合法 JSON");
+        let div = v.as_array().expect("顶层数组").first().expect("div 条目");
+        assert_eq!(div["tag"], "div");
+        let sr = div.get("sr").expect("宿主携带 sr 字段");
+        assert_eq!(sr["m"], "open");
+        assert_eq!(sr["d"], false, "delegatesFocus 缺省 false");
+        assert_eq!(sr["nodes"][0]["tag"], "span", "shadow 子进 sr.nodes");
+        assert_eq!(
+            div["children"].as_array().map(Vec::len),
+            Some(0),
+            "template 已消费、shadow 子剥离后 children 为空"
+        );
+    }
+
+    /// 无声明式根时无 `sr` 键、输出整体合法。
+    #[test]
+    fn no_sr_key_without_declarative_root() {
+        let out = parse_html_subtree_deep_json_unsafe("<p>plain</p>", "body", None, None, true);
+        let v: serde_json::Value = serde_json::from_str(&out).expect("无 sr 输出 = 合法 JSON");
+        assert_eq!(v[0]["tag"], "p");
+        assert!(v[0].get("sr").is_none());
+    }
+
+    /// context 透传（arg[4] 宿主 local name）：HTML ns 有 context 时走真实 context
+    /// 物化片段解析——全文档路径把内容重挂 body（∈ valid 名单）致宿主祖先丢弃面
+    /// 误物化；td context 下 div 宿主照常物化且条目形态一致（td ∉ 名单，div ∈）。
+    #[test]
+    fn context_local_fragment_path_materializes_inline_host() {
+        let out = parse_html_subtree_deep_json_unsafe(
+            "<div><template shadowrootmode=open><span>s</span></template></div>",
+            "body",
+            Some("http://www.w3.org/1999/xhtml"),
+            Some("td"),
+            true,
+        );
+        let v: serde_json::Value = serde_json::from_str(&out).expect("context 路径输出 = 合法 JSON");
+        let arr = v.as_array().expect("顶层数组");
+        assert_eq!(arr.len(), 1, "td context 单条目");
+        assert_eq!(arr[0]["tag"], "div");
+        assert_eq!(arr[0]["sr"]["m"], "open", "context 路径物化同态");
     }
 }

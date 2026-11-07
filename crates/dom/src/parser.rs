@@ -1978,3 +1978,77 @@ mod cdata_fragment_tests {
         assert_eq!(body.text_content(body.root()), Some("x".to_string()));
     }
 }
+
+#[cfg(test)]
+mod declarative_materialize_contents_tests {
+    use super::*;
+
+    /// M3 清单 1（attachment/basic 勘根）：声明式模板落在**外层普通 template 的
+    /// contents 内**——[`crate::document::Document::materialize_declarative_shadow_roots`]
+    /// 候选枚举须下探 template contents（spec：contents 片段内的声明式模板解析期
+    /// 即 attach；`collect_by_tag_name` 只走 children 边不可达，枚举盲区）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#the-template-element
+    #[test]
+    fn materializes_declarative_template_inside_template_contents() {
+        let doc = parse_html_with_scripting(
+            "<template><div><template shadowrootmode=open><span>s</span></template></div></template>",
+            true,
+        );
+        // 外层普通 template 保留（非声明式，无 attach 面）。
+        let outer = doc.query_selector(doc.root(), "template").expect("外层 template 保留");
+        // contents 内 div 宿主已 attach open 根。
+        let kids = doc.template_contents_children(outer);
+        assert_eq!(kids.len(), 1, "contents 顶层应为 div 宿主");
+        let root = doc.shadow_root(kids[0]).expect("contents 内宿主已 attach");
+        assert!(matches!(
+            doc.get_shadow_root_mode(root),
+            Some(crate::ShadowRootMode::Open)
+        ));
+        // 内层声明式 template 已消费（span 直挂 shadow 树）。
+        let span = doc.query_selector_shadow(root, "span").expect("span 入 shadow 树");
+        assert!(doc.get(span).is_some());
+    }
+
+    /// 嵌套声明式（外层 contents 内再嵌声明式）——快照枚举按序物化：外层消费把
+    /// 内层 template 随 contents 移入 shadow 树，内层仍在快照内、按新父级 attach
+    /// （与 spec 解析期 attach 等价终态）。
+    #[test]
+    fn nested_declarative_templates_materialize_through_contents() {
+        let doc = parse_html_with_scripting(
+            "<div><template shadowrootmode=open><section><template shadowrootmode=closed><b>x</b></template></section></template></div>",
+            true,
+        );
+        let host = doc.query_selector(doc.root(), "div").expect("div 宿主");
+        let root = doc.shadow_root(host).expect("外层 open 根");
+        let section = doc
+            .query_selector_shadow(root, "section")
+            .expect("section 入 shadow 树");
+        let inner_root = doc.shadow_root(section).expect("内层 closed 根（嵌套族）");
+        assert!(matches!(
+            doc.get_shadow_root_mode(inner_root),
+            Some(crate::ShadowRootMode::Closed)
+        ));
+    }
+
+    /// 跳过路径的 s173 值还原覆盖 contents 内层——不可物化模板（宿主非法）以
+    /// 普通元素存活，`shadowrootmode` 须还原源码小写形态（getAttribute 观测面）。
+    #[test]
+    fn skipped_contents_template_restores_lowercase_value() {
+        let doc = parse_html_with_scripting(
+            "<template><ul><template shadowrootmode=open><span>s</span></template></ul></template>",
+            true,
+        );
+        let outer = doc.query_selector(doc.root(), "template").expect("外层 template 保留");
+        let kids = doc.template_contents_children(outer);
+        assert_eq!(kids.len(), 1, "contents 顶层应为 ul");
+        // ul ∉ valid shadow host 名单 → 内层 template 保留普通形态 + 值还原。
+        let tpl = doc.child_nodes(kids[0]);
+        assert_eq!(tpl.len(), 1, "ul 内声明式 template 保留");
+        assert_eq!(
+            doc.get_attribute(tpl[0], "shadowrootmode").as_deref(),
+            Some("open"),
+            "s173 预变换值还原（Open → open）"
+        );
+        assert!(doc.shadow_root(kids[0]).is_none(), "ul 非 valid 宿主不 attach");
+    }
+}
