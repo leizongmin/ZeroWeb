@@ -99,3 +99,4 @@
 2026-10-30,upstream,v1.10,16590,15792,95.2,failed=798;skipped=0,6dfacc0ac,R5336 block-in-inline 切片段竖框块轴语义（CSS2 §10.8.1 × R109 切片段）——taffy 页面几何精确对齐 chromium，corpus 净零 FAILSET-IDENTICAL（paint 带域转 R5337）
 2026-10-31,upstream,v1.10,16058,15323,95.4,failed=735;skipped=0,ba268c9,
 2026-11-05,upstream,v1.10,16058,15295,95.2,failed=763;skipped=0,3611e4d,
+2026-11-07,upstream,v1.10,16058,15302,95.3,failed=756;skipped=0,56f1feb,
