@@ -10326,19 +10326,41 @@
       var _znMediaCtor = globalThis[_zn];
       // tag 调用时反查（__zwHtmlTagIface 定义在本 loop 之后，定义期读恒空）。
       var _znMediaProto = _znMediaCtor.prototype; // 先存（globalThis[_zn] 被覆盖后不可再取）
-      var _znMediaWrapped = function () {
-        if (new.target && typeof globalThis.__zwIfaceSuperCreate === 'function' && globalThis.__zwHtmlTagIface) {
-          var _zwMapM2 = globalThis.__zwHtmlTagIface;
-          for (var _ztM2 in _zwMapM2) {
-            if (Object.prototype.hasOwnProperty.call(_zwMapM2, _ztM2) && _zwMapM2[_ztM2] === _zn) {
-              var _zwSupM = globalThis.__zwIfaceSuperCreate(_ztM2, new.target);
-              if (_zwSupM) return _zwSupM;
-              break;
+      // s332（html-semantics M2）：包装闭包经 IIFE 按定义轮捕获——`var _zn`/`var`
+      // 捕获都是**函数级共享绑定**（首轮 var _znCap=_zn 也会被循环尾迭代覆盖），
+      // audio 包装调用期会读到 'HTMLVideoElement' 反查错 tag 建 VIDEO 元素（契约
+      // 测试 tag:VIDEO 断言面）。ctor/proto 同捕（audio 包装的回落 throw 与
+      // prototype 引用不得被 video 迭代重绑）。
+      var _znMediaWrapped = (function (_znCap, _znMwCtor, _znMwProto) {
+        return function () {
+          // s332（html-semantics M2）：super() 在途判定收紧——元素建面只对**已注册**定制
+          // 内建构造器开放（new.target 经 customElements.getName 命中已 define 的
+          // `class X extends HTMLAudioElement`，spec 元素接口构造步「new.target 为定制
+          // 内建在途」门）；直构造 `new HTMLAudioElement()` new.target 即本包装（未注册，
+          // getName null）→ 落回下方 Illegal constructor（WPT audio_constructor 断言面，
+          // 此前任意 new 都建元素致 did-not-throw）。未注册子类 super() 同 throw（Chromium
+          // 同语义）。
+          // https://html.spec.whatwg.org/multipage/dom.html#html-element-constructors
+          if (new.target && typeof globalThis.__zwIfaceSuperCreate === 'function' && globalThis.__zwHtmlTagIface) {
+            var _zwRegM2 = null;
+            try {
+              _zwRegM2 = (globalThis.customElements && typeof globalThis.customElements.getName === 'function')
+                ? globalThis.customElements.getName(new.target) : null;
+            } catch (_eMwR) { _zwRegM2 = null; }
+            if (_zwRegM2) {
+              var _zwMapM2 = globalThis.__zwHtmlTagIface;
+              for (var _ztM2 in _zwMapM2) {
+                if (Object.prototype.hasOwnProperty.call(_zwMapM2, _ztM2) && _zwMapM2[_ztM2] === _znCap) {
+                  var _zwSupM = globalThis.__zwIfaceSuperCreate(_ztM2, new.target);
+                  if (_zwSupM) return _zwSupM;
+                  break;
+                }
+              }
             }
           }
-        }
-        return _znMediaCtor.apply(this, arguments);
-      };
+          return _znMwCtor.apply(this, arguments);
+        };
+      })(_zn, _znMediaCtor, _znMediaProto);
       _znMediaWrapped.prototype = _znMediaProto;
       try { Object.setPrototypeOf(_znMediaWrapped, _znMediaCtor); } catch (_eMst) {}
       globalThis[_zn] = _znMediaWrapped;

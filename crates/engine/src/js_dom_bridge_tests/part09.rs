@@ -457,6 +457,91 @@ fn test_audio_constructor_and_media_methods_r2835() {
     );
 }
 
+/// s332（html-semantics M2）：HTMLAudioElement/HTMLVideoElement 接口不可构造 + 定制
+/// 内建 super() 在途建元素双面。WC-M1 切片 4 的媒体接口包装（`_znMediaWrapped`）此前
+/// 对任意 new.target 都走 SuperCreate——直构造 `new HTMLAudioElement()` 返回元素不抛
+/// （WPT audio_constructor「Constructing HTMLAudioElement should throw」断言面）。
+/// spec 元素接口构造步：new.target 须为**已注册**定制内建构造器（customElements.getName
+/// 命中）才在途建元素，否则 TypeError。
+/// https://html.spec.whatwg.org/multipage/dom.html#html-element-constructors
+#[test]
+fn test_media_iface_ctor_illegal_and_customized_builtin_s332() {
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 直构造 Audio/Video 接口 → TypeError（Illegal constructor）。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             try { new HTMLAudioElement(); globalThis.__s332.push('audio-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             try { new HTMLVideoElement(); globalThis.__s332.push('video-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             try { HTMLAudioElement(); globalThis.__s332.push('call-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "TypeError|TypeError|TypeError",
+        "s332：直构造/直调用媒体接口全 TypeError"
+    );
+
+    // 注册定制内建子类 → super() 在途建元素（WC-M1 切片 4 面保持）：tagName=AUDIO +
+    // is 属性反射 extends 名 + instanceof 子类成立。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             class XAudio extends HTMLAudioElement { constructor() { super(); } }\
+             customElements.define('x-audio', XAudio, { extends: 'audio' });\
+             try {\
+               var xa = new XAudio();\
+               globalThis.__s332.push(xa.tagName === 'AUDIO' ? 'tag-audio' : 'tag:' + xa.tagName);\
+               globalThis.__s332.push(xa.getAttribute('is') === 'x-audio' ? 'is-ok' : 'is:' + xa.getAttribute('is'));\
+               globalThis.__s332.push(xa instanceof XAudio ? 'instance-ok' : 'instance-miss');\
+             } catch (e) { globalThis.__s332.push('ctor:' + e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "tag-audio|is-ok|instance-ok",
+        "s332：注册定制内建 super() 在途建 audio 元素（WC-M1 面保持）"
+    );
+
+    // video 面对称：直构造抛 + 注册子类 super() 在途建 video 元素。
+    sandbox
+        .execute(
+            "globalThis.__s332 = [];\
+             try { new HTMLVideoElement(); globalThis.__s332.push('video-no-throw'); }\
+             catch (e) { globalThis.__s332.push(e.constructor.name); }\
+             class XVideo extends HTMLVideoElement { constructor() { super(); } }\
+             customElements.define('x-video', XVideo, { extends: 'video' });\
+             try {\
+               var xv = new XVideo();\
+               globalThis.__s332.push(xv.tagName === 'VIDEO' ? 'tag-video' : 'tag:' + xv.tagName);\
+               globalThis.__s332.push(xv instanceof HTMLMediaElement ? 'media-proto-ok' : 'media-proto-miss');\
+             } catch (e) { globalThis.__s332.push('ctor:' + e.constructor.name); }",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("globalThis.__s332.join('|')").unwrap().value,
+        "TypeError|tag-video|media-proto-ok",
+        "s332：video 接口 Illegal constructor + super() 在途建 video 元素（prototype 链 Media）"
+    );
+}
+
 #[test]
 fn test_input_value_as_number_r2836() {
     // R2836：input.valueAsNumber IDL 属性（getter+setter）——number/range 输入值↔数值转换（计算器/数量输入/
