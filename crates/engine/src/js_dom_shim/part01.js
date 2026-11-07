@@ -3206,6 +3206,25 @@
     if (flags && flags.sandboxed && !flags.allowScripts) return;
     var parts = [];
     var partSrcs = [];
+    // s340（iframe 子文档 credentials 穿面）：每段 script 元素 `crossorigin` 推导
+    // 的 credentials mode 槽（'include'=use-credentials / ''=缺省 same-origin），
+    // 与 partSrcs 同索引对齐——合并体每段前置复位行 + 注册包装体执行窗恢复读出端
+    //（v8_runtime native resolver 第 5 参 `__zwActiveScriptCred`）。仅 harness 段
+    // 在场时置位（无钉面普通 fixture 零变化——保守零漂移）。
+    // spec：动态 import 的请求 credentials 取调用点 script 元素 fetch options
+    //（crossorigin 属性推导；invalid value default = anonymous → same-origin）。
+    var partCreds = [];
+    // crossorigin 属性 → credentials mode（'include' 仅 use-credentials，ASCII
+    // 大小写不敏感——与 extract.rs extract_script_credentials 同映射；缺属性/
+    // anonymous/非法值 → '' = same-origin 缺省）。bare `crossorigin`（无 = 值）
+    // 不匹配带值捕获组 → 落 ''（anonymous 空串语义，spec 同）。
+    function _zwCredFromAttrs206(attrs) {
+      var cm = /\bcrossorigin\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(String(attrs || ''));
+      var cv = cm ? (cm[2] != null ? cm[2] : (cm[3] != null ? cm[3] : (cm[4] || ''))) : null;
+      return cv != null && String(cv).replace(/[A-Z]/g, function (c) {
+        return String.fromCharCode(c.charCodeAt(0) + 32);
+      }).trim() === 'use-credentials' ? 'include' : '';
+    }
     var re = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
     var m;
     while ((m = re.exec(body)) !== null) {
@@ -3217,7 +3236,7 @@
         if (src && typeof __zw_fetch_script === 'function') {
           try {
             var ext = String(__zw_fetch_script(pageUrl, src) || '');
-            if (ext) { parts.push(ext); partSrcs.push(src); }
+            if (ext) { parts.push(ext); partSrcs.push(src); partCreds.push(_zwCredFromAttrs206(attrs)); }
           } catch (_eR206f) {}
         }
       } else if (code.trim()) {
@@ -3227,7 +3246,7 @@
         // testharness 段。
         var inlM = /\bdata-inline\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
         var isrc = inlM ? (inlM[2] != null ? inlM[2] : (inlM[3] != null ? inlM[3] : (inlM[4] || ''))) : '';
-        parts.push(code); partSrcs.push(isrc);
+        parts.push(code); partSrcs.push(isrc); partCreds.push(_zwCredFromAttrs206(attrs));
       }
     }
     // s339（iframe 域动态 import 模块体 window 身份桥）——子文档 harness 段后注入
@@ -3250,17 +3269,24 @@
     }
     if (_zwHarnessIdx339 !== -1) {
       parts.splice(_zwHarnessIdx339 + 1, 0,
-        '/* s339 iframe module window-scope bridge */\n' +
+        '/* s339 iframe module window-scope bridge (+s340 credentials slot) */\n' +
         '(function () {\n' +
         '  var _zwPT = promise_test, _zwT = test, _zwAT = async_test;\n' +
         '  function _zwScopeBody(fn) {\n' +
         '    if (typeof fn !== "function") return fn;\n' +
+        // s340：注册窗捕获段前置复位行已置的 credentials mode（promise_test(f)
+        // 调用发生在段序窗内——捕获即该注册体所属 script 元素的 mode），体执行窗
+        // 存旧→置捕获值→finally 恢复（体由 harness 异步调度，届时槽已被后续段
+        // 覆写——捕获窗与执行窗分离正是此钉的承重面）。与桥位同一 try/finally 窗。
+        '    var _zwCred = globalThis.__zwActiveScriptCred;\n' +
         '    return function () {\n' +
         '      var _zwPW = globalThis.__zwActiveIframeWin, _zwPD = globalThis.__zwActiveIframeDoc;\n' +
+        '      var _zwPC = globalThis.__zwActiveScriptCred;\n' +
         '      globalThis.__zwActiveIframeWin = window;\n' +
         '      globalThis.__zwActiveIframeDoc = document;\n' +
+        '      globalThis.__zwActiveScriptCred = _zwCred;\n' +
         '      try { return fn.apply(this, arguments); }\n' +
-        '      finally { globalThis.__zwActiveIframeWin = _zwPW; globalThis.__zwActiveIframeDoc = _zwPD; }\n' +
+        '      finally { globalThis.__zwActiveIframeWin = _zwPW; globalThis.__zwActiveIframeDoc = _zwPD; globalThis.__zwActiveScriptCred = _zwPC; }\n' +
         '    };\n' +
         '  }\n' +
         '  promise_test = function (f, n, p) { return _zwPT.call(this, _zwScopeBody(f), n, p); };\n' +
@@ -3268,6 +3294,7 @@
         '  async_test = function (f, n, p) { return _zwAT.call(this, _zwScopeBody(f), n, p); };\n' +
         '})();');
       partSrcs.splice(_zwHarnessIdx339 + 1, 0, '');
+      partCreds.splice(_zwHarnessIdx339 + 1, 0, '');
     }
     if (!parts.length) return;
     try { if (win) win._zwScriptsRan = true; } catch (_eR206mark) {}
@@ -3279,7 +3306,15 @@
     // 后续段；var 仍函数级共享）。
     var partsWrapped206 = [];
     for (var pi206 = 0; pi206 < parts.length; pi206++) {
-      partsWrapped206.push('try{' + parts[pi206] + '\n}catch(_zwE206p){window.unexpectedException=window.unexpectedException||_zwE206p;}');
+      // s340：段前置 credentials 复位行（仅 harness 子文档面）——注册窗槽值=该段
+      // 元素推导 mode（'include'/''；JSON.stringify 生成合法 JS 字面量）；下一段
+      // 前置行复位，防前段泄漏。体执行窗值由 s339 注册包装捕获/恢复（promise_test
+      // 体异步调度，届时段序置位行已跑完——捕获在注册窗同步发生）。置位行在 try
+      // 外：mode 是元素静态属性语义，段体抛错不回撤。
+      var _zwCredPre206 = _zwHarnessIdx339 !== -1
+        ? 'globalThis.__zwActiveScriptCred=' + JSON.stringify(partCreds[pi206] || '') + ';'
+        : '';
+      partsWrapped206.push(_zwCredPre206 + 'try{' + parts[pi206] + '\n}catch(_zwE206p){window.unexpectedException=window.unexpectedException||_zwE206p;}');
     }
     var combined206 = partsWrapped206.join('\n;\n');
     var names206 = {};
@@ -3375,7 +3410,11 @@
       try {
         _zwReg339Pre = [['promise_test', 'promise_test' in globalThis],
           ['test', 'test' in globalThis],
-          ['async_test', 'async_test' in globalThis]].map(function (p339) {
+          ['async_test', 'async_test' in globalThis],
+          // s340：credentials 槽同窗恢复——子文档合并体残留的段序置位值不得泄漏
+          // 到主文档后续 classic 面 import()（合并 fn 返回后主页面脚本的动态
+          // import 须回到执行前值——undefined 缺省面零漂移）。
+          ['__zwActiveScriptCred', '__zwActiveScriptCred' in globalThis]].map(function (p339) {
           return { name: p339[0], had: p339[1], val: p339[1] ? globalThis[p339[0]] : undefined };
         });
       } catch (_e339cap) {}

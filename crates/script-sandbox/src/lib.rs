@@ -536,14 +536,18 @@ pub trait Sandbox {
     /// spec/referrer/nonce 均为宿主解析语义（referrer/nonce 由
     /// [`Sandbox::set_dynamic_import_referrer`] / [`Sandbox::set_dynamic_import_nonce`]
     /// 每脚本前设定；nonce 空串 = 无 nonce）。s249：第四参 = 动态 import 属性
-    /// `with.type` 值（空串 = 无属性）。须在 `execute` 之前调用；未注册时
-    /// 动态 import() 维持引擎默认 reject 语义。
+    /// `with.type` 值（空串 = 无属性）。s340：第五参 = 调用窗 active script
+    /// credentials mode（`__zwActiveScriptCred` 全局槽读出；undefined/空串 =
+    /// 缺省 same-origin——宿主据此决定 fetch credentials 标记，spec 动态
+    /// import 的请求 credentials 取调用点 script 元素 fetch options）。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    /// 须在 `execute` 之前调用；未注册时动态 import() 维持引擎默认 reject 语义。
     ///
     /// **默认 no-op**：QuickJS 后端降级（classic 上下文动态 import() 维持不支持态）。
     #[allow(clippy::type_complexity)] // 镜像 register_callback 模式
     fn set_dynamic_import_resolver(
         &mut self,
-        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync>,
+        _resolver: std::sync::Arc<dyn Fn(&str, &str, &str, &str, &str) -> String + Send + Sync>,
     ) {
     }
 

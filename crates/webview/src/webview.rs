@@ -4555,7 +4555,7 @@ impl WebView {
             //（与 CSP violation 拒绝同通道；不回退 parent-join）。
             let map_native = page_import_map.clone();
             sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
-                move |spec: &str, parent: &str, nonce: &str, type_attr: &str| {
+                move |spec: &str, parent: &str, nonce: &str, type_attr: &str, credentials: &str| {
                     if spec.is_empty() {
                         return String::new();
                     }
@@ -4588,11 +4588,19 @@ impl WebView {
                         // s268：动态 import() 元素级 referrerpolicy 未穿（resolver
                         // 契约无元素上下文；doc 默认链回落，同上方 shim 面）。
                         None,
-                        // s338：classic 车道无 credentials 槽——same-origin 缺省
-                        //（resolver 契约 (spec, parent, nonce, type) 无该形参；延迟
-                        // promise_test 调用打破槽位刷新，s124 `__zw_lp` 同形）。
-                        // FIXME(s339)：use-credentials classic/timer 臂 capture gap。
-                        None,
+                        // s340：调用窗 active script credentials mode（resolver 第 5
+                        // 参，v8_runtime 读全局 `__zwActiveScriptCred` 穿入——shim 子
+                        // 文档合并体段序置位 + 注册包装体执行窗恢复）。空串/same-origin
+                        // 缺省**不带标记**（取回 src 逐字节零漂移，`__zw_compile_module`
+                        // 第 4 参同规）；include（use-credentials）附 `__zw_cred` 查询
+                        // 标记穿 fetcher——经典上下文 import() 触发窗与槽窗同步（注册
+                        // 包装捕获体执行窗值，延迟 promise_test 调用不再打破槽位）。
+                        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                        if credentials.is_empty() || credentials == "same-origin" {
+                            None
+                        } else {
+                            Some(credentials)
+                        },
                     );
                     // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
                     // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹

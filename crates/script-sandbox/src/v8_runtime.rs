@@ -76,8 +76,15 @@ pub type HostCallback = Arc<dyn Fn(&[String]) -> String + Send + Sync + 'static>
 /// s92 string-compilation CSP nonce 面——宿主据此对外链 module fetch 做 script-src
 /// 检查，阻止返空串 → reject TypeError）。s249：第四参 = 动态 import 属性
 /// `with.type` 值（V8 回调 import_attributes 通道提取，空串 = 无属性）。
+/// s340：第五参 = 调用窗 active script credentials mode（Rust 侧读全局
+/// `__zwActiveScriptCred`——shim 子文档合并体每段前置复位行 + 注册包装体执行
+/// 窗恢复，classic `import()` 触发窗内同步可达；undefined/空串 = 缺省
+/// same-origin，宿主据此决定 fetch credentials 标记）。spec：动态 import 的
+/// 请求 credentials mode 取调用点 script 元素的 fetch options（`crossorigin`
+/// 属性推导）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
 #[allow(clippy::type_complexity)] // 镜像 HostCallback 形态（Arc 闭包跨 V8 回调边界）
-pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str) -> String + Send + Sync + 'static>;
+pub type DynamicImportResolver = Arc<dyn Fn(&str, &str, &str, &str, &str) -> String + Send + Sync + 'static>;
 
 /// s256（动态 import 延迟决议——delay-load/trickle 慢模块时序族）：宿主延迟
 /// 回包的挂起条目。宿主 resolver 以包裹契约 `1\u{1f}<delay_ms>\u{1f}<inner>`
@@ -178,9 +185,30 @@ fn dynamic_import_callback<'s, 'i>(
         }
         return Some(promise_resolver.get_promise(scope));
     }
+    // s340：调用窗 active script credentials mode——Rust 侧读全局
+    // `__zwActiveScriptCred`（shim 子文档合并体每段前置复位行置位、注册包装体
+    // 执行窗恢复；主文档/worker 面槽缺席恒 undefined → 空串 = 缺省 same-origin
+    // 零漂移）。读槽在 state.lock() 外（锁内不做 V8 操作，既有风格）。
+    let active_cred = v8::String::new(scope, "__zwActiveScriptCred")
+        .and_then(|key| scope.get_current_context().global(scope).get(scope, key.into()))
+        .and_then(|v| {
+            if v.is_undefined() || v.is_null() {
+                None
+            } else {
+                v.to_string(scope)
+            }
+        })
+        .map(|s| s.to_rust_string_lossy(scope))
+        .unwrap_or_default();
     let contract = match state.lock() {
         Ok(st) => match st.resolver.as_ref() {
-            Some(resolver) => resolver(&spec, &st.referrer, st.nonce.as_deref().unwrap_or(""), &type_attr),
+            Some(resolver) => resolver(
+                &spec,
+                &st.referrer,
+                st.nonce.as_deref().unwrap_or(""),
+                &type_attr,
+                &active_cred,
+            ),
             // 未注册宿主：V8 默认行为即 reject 普通 Error("Not supported")（原生效语义）。
             None => {
                 if let Some(msg) = v8::String::new(scope, "Not supported")
@@ -3217,7 +3245,7 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, referrer, _nonce, _type_attr, _cred| {
             calls_cb.lock().unwrap().push((spec.to_string(), referrer.to_string()));
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
@@ -3264,7 +3292,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_window_scope_bridge_s339() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|spec, _referrer, _nonce, _type_attr, _cred| {
             let (resolved, body) = if spec == "./a.js" {
                 (
                     "https://zero.test/a.js",
@@ -3324,6 +3352,42 @@ mod tests {
         );
     }
 
+    /// s340（iframe 域动态 import credentials 穿面——native resolver 第 5 参）：
+    /// 调用窗全局 `__zwActiveScriptCred` 槽值原样穿入 resolver 第 5 参（shim 子
+    /// 文档合并体每段前置复位行 + 注册包装体执行窗恢复的读出端契约钉）；槽缺席
+    /// （undefined）/空串 → 空串（缺省 same-origin，宿主零标记——主文档/worker
+    /// 面零漂移钉）。三 spec 分钉躲 module map 缓存（s124：同 spec 二次 import
+    /// 命中缓存不重触发 resolver）。
+    #[test]
+    fn test_native_dynamic_import_credentials_slot_s340() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_cb = seen.clone();
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce, _type_attr, cred| {
+            seen_cb.lock().unwrap().push(format!("{spec}|{cred}"));
+            let body = "(function() { globalThis.__zwNsMark = true; return {}; })()";
+            format!("https://zero.test/{spec}\u{1f}{body}")
+        }));
+        sandbox
+            .execute(
+                "globalThis.__zwActiveScriptCred = 'include';\n\
+                 import('./cred.js').then(function () {});\n",
+            )
+            .expect("槽 include 面 import() 不得同步 throw");
+        sandbox
+            .execute("globalThis.__zwActiveScriptCred = '';\nimport('./empty.js').then(function () {});\n")
+            .expect("槽空串面 import() 不得同步 throw");
+        sandbox
+            .execute("import('./absent.js').then(function () {});\n")
+            .expect("槽缺席面 import() 不得同步 throw");
+        assert_eq!(
+            seen.lock().unwrap().join(","),
+            "./cred.js|include,./empty.js|,./absent.js|",
+            "槽值原样穿入第 5 参：include 直传、空串/缺席（undefined）均空串缺省"
+        );
+    }
+
     /// s252（链接/instantiation 失败——classic 上下文原生回调通道）：resolver 返回
     /// tag 3 契约（`3\x1fresolved\x1fmessage`）→ 逐次新 SyntaxError reject（spec：
     /// link 失败不入 module map、不记账——WPT dynamic-imports-script-error
@@ -3332,7 +3396,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_link_failure_s252() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "3\u{1f}https://zero.test/bad.js\u{1f}Compile error: Module https://zero.test/bad.js does not provide an export named default"
                 .to_string()
         }));
@@ -3380,14 +3444,16 @@ mod tests {
         let seen: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let seen_cb = seen.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, _nonce, type_attr| {
-            seen_cb.lock().unwrap().push(type_attr.to_string());
-            format!(
-                "https://zero.test/m.json\u{1f}(function() {{ return (function() {{ \
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |_spec, _referrer, _nonce, type_attr, _cred| {
+                seen_cb.lock().unwrap().push(type_attr.to_string());
+                format!(
+                    "https://zero.test/m.json\u{1f}(function() {{ return (function() {{ \
                  return {{ default: 'json-value:' + {} }}; }})(); }})()",
-                if type_attr == "json" { "1" } else { "0" }
-            )
-        }));
+                    if type_attr == "json" { "1" } else { "0" }
+                )
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -3444,17 +3510,19 @@ mod tests {
         let calls: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let calls_cb = calls.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |spec, _referrer, _nonce, _type_attr| {
-            calls_cb.lock().unwrap().push(spec.to_string());
-            if spec.ends_with("fail.js") {
-                return String::new(); // 取回失败三态
-            }
-            let name = spec.trim_start_matches("./").trim_end_matches(".js");
-            format!(
-                "https://zero.test/{name}.js\u{1f}(function() {{ return (function() {{ \
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |spec, _referrer, _nonce, _type_attr, _cred| {
+                calls_cb.lock().unwrap().push(spec.to_string());
+                if spec.ends_with("fail.js") {
+                    return String::new(); // 取回失败三态
+                }
+                let name = spec.trim_start_matches("./").trim_end_matches(".js");
+                format!(
+                    "https://zero.test/{name}.js\u{1f}(function() {{ return (function() {{ \
                  globalThis.__evals = (globalThis.__evals || 0) + 1; return {{ from: '{name}' }}; }})(); }})()"
-            )
-        }));
+                )
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(None));
@@ -3557,10 +3625,12 @@ mod tests {
         let nonces: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let nonces_cb = nonces.clone();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(move |_spec, _referrer, nonce, _type_attr| {
-            nonces_cb.lock().unwrap().push(nonce.to_string());
-            String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
-        }));
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(
+            move |_spec, _referrer, nonce, _type_attr, _cred| {
+                nonces_cb.lock().unwrap().push(nonce.to_string());
+                String::new() // 空契约 → reject TypeError（本测只看透传，不关心落定）
+            },
+        ));
         sandbox.set_dynamic_import_referrer("https://zero.test/page.html");
         sandbox.set_dynamic_import_nonce(Some("correct"));
         sandbox
@@ -3618,7 +3688,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_reaches_eval_compiled_string() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "https://zero.test/a.js\u{1f}(function() { return (function() { \
              globalThis.__s88_eval = true; return { from: 'a.js' }; })(); })()"
                 .to_string()
@@ -3654,7 +3724,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_fetch_failure_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             String::new()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
@@ -3696,7 +3766,7 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             // 40ms 延迟包裹 + 成功契约（IIFE 求值为 namespace；体计数一次求值）。
             "1\u{1f}40\u{1f}https://zero.test/slow.js\u{1f}(function() { return \
              (function() { globalThis.__s256 = (globalThis.__s256|0) + 1; \
@@ -3744,7 +3814,7 @@ mod tests {
     #[test]
     fn test_native_dynamic_import_graph_cut_rejects_type_error() {
         let mut sandbox = V8Sandbox::new().unwrap();
-        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr| {
+        sandbox.set_dynamic_import_resolver(std::sync::Arc::new(|_spec, _referrer, _nonce, _type_attr, _cred| {
             "https://zero.test/graphcut.js\u{1f}".to_string()
         }));
         let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
