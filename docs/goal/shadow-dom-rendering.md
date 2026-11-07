@@ -1,7 +1,7 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
 **版本**: v1.3
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
@@ -23,9 +23,16 @@ paint 行走按 DOM 序自累计 Y 之失，实为后处理 `remeasure_inline_on
 （taffy/extract 两层均正确，paint 忠实跟随坏几何），另发现 shadow host
 不绘制自身背景（pre-existing），见
 [R4 前半 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-shadow-text-taffy-arm.md)、
-[R4 第二臂 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-remeasure-gate-arm.md)）。
-下一步 M3：变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot
-属性 → 006 + 命令式 ~26 案翻绿面）；B6 补充池通道
+[R4 第二臂 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-remeasure-gate-arm.md)）；
+R3 变异应用臂代码落地（2026-11-08 `3744043e2`：`resolve_slots_all_hosts`
+批末统一挂接 `apply_dom_mutations_full`——命令式 attachShadow/childList/
+innerHTML/slot 属性改名后分配不再过期，无 shadow 页 O(1) 快返；shadow-dom
+矩阵与 R4 收口态逐位一致零漂移、全量 reftest 725/725、单测 2/2，006 归因
+改判为 manual slot 分配通道缺口——debug workspace 腿/product-smoke/
+bench-gate 因本机多会话并发风暴挂账补跑，见
+[R3 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r3-mutation-arm.md)）。
+下一步 M3：R3b manual slot 分配通道（wire 携带 slotAssignment + `assign()`
+桥 + Manual 模式渲染消费）；挂账腿补跑；B6 补充池通道
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——
