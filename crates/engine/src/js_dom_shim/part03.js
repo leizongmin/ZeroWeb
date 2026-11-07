@@ -5391,12 +5391,24 @@
       }
       // 调用点同步 eval（124 形期望序要求嵌套执行发生在 removeAttribute 调用内）
       // + 异常上报（s95 同款 window.onerror 面）+ 执行即置 run-once。
+      // s341（html-semantics M2 切片 341）：spec 脚本元素栈——执行窗 push 元素
+      // 身份、finally pop（getter 栈通道 part06；per-document 栈挂当前连接文档）。
+      // createElement('script')+appendChild 的实际执行臂（probe2 定谳：R387 trap
+      // 臂 gate 在本流不触发——_mo_notify s111 路由由此进入），
+      // moving-between-documents-during-evaluation [1]/[2] 断言面。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+      var _zwCsDoc341b = globalThis.document;
+      var _zwCsSt341b = _zwCsDoc341b.__zwScriptElStack
+        || (_zwCsDoc341b.__zwScriptElStack = []);
+      _zwCsSt341b.push(el);
       try {
         (0, eval).call(globalThis, String(text));
       } catch (_eI109) {
         if (typeof globalThis._zwReportListenerError === 'function') {
           try { globalThis._zwReportListenerError(_eI109, null); } catch (_eR109) {}
         }
+      } finally {
+        _zwCsSt341b.pop();
       }
       if (_sel109 != null) {
         (globalThis._zwScriptStarted = globalThis._zwScriptStarted || {})[_sel109] = true;
@@ -25549,6 +25561,17 @@
       // Document 同）——`Range.createContextualFragment` / detached `document.write`
       // 的本地解析按 markup 形态（noscript 实体解码 + 序列化转义分支）。
       __zwScriptingEnabled: false,
+      // s341（html-semantics M2 切片 341）：spec currentScript——detached 文档
+      // scripting disabled、自身脚本元素栈恒空 → 恒 null（IDL 面 undefined ≠ null；
+      // moving-between-documents-during-evaluation [2]/[3]
+      // `anotherDocument.currentScript === null` 断言面。执行中脚本移动进本文档
+      // 不改变其栈归属——栈条目挂 prepare 时的 source document）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+      get currentScript() {
+        var _zwDetSt341 = doc.__zwScriptElStack;
+        return (_zwDetSt341 && _zwDetSt341.length)
+          ? _zwDetSt341[_zwDetSt341.length - 1] : null;
+      },
       // R185（js-dom M4）：isSameNode（spec `dom-node-issamenode` 引用比较；WPT
       // Node-isSameNode "documents should be compared on reference"——createDocument
       // 产物的 detached doc）。

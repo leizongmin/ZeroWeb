@@ -6926,9 +6926,18 @@
     // **已知限制**：idx 对齐依赖执行期 DOM 与解析期 HTML 一致——若先前脚本动态插 <script>（document.write /
     // appendChild）使 getElementsByTagName('script') 序偏移，则后续脚本 currentScript 可能指向错误元素
     //（real browser 按解析器记录的「脚本元素」身份而非序号，无此问题；headless 序号近似，documented）。
+    // s341（html-semantics M2 切片 341）：spec 脚本元素栈通道——动态插入脚本执行窗
+    // 由 part04 R387 臂 push 元素身份、finally pop（per-document 栈挂 document 对象；
+    // 移动出树后 currentScript 仍指原元素——moving-between-documents-during-evaluation
+    // [2] 断言面，idx 通道查树序在移动后失配）。栈非空优先（嵌套：动态脚本窗内
+    // currentScript 指最内层动态脚本），空则回落 idx 通道（解析期宿主投递语义不变）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
     get currentScript() {
+      var _zwCsDoc341 = globalThis.document;
+      var _zwCsSt341 = _zwCsDoc341 && _zwCsDoc341.__zwScriptElStack;
+      if (_zwCsSt341 && _zwCsSt341.length) return _zwCsSt341[_zwCsSt341.length - 1];
       if (_zwCurrentScriptIdx < 0) return null;
-      var scripts = globalThis.document.getElementsByTagName('script');
+      var scripts = _zwCsDoc341.getElementsByTagName('script');
       var el = scripts[_zwCurrentScriptIdx];
       return el || null;
     },

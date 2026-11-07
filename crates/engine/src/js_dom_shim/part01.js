@@ -2953,6 +2953,50 @@
       _zwObserveIframeWindowClient(entry, frameKey, url);
       try { entry.win.__r206State = entry.state; } catch (_eR206m) {}
       try { _zwRunIframeScripts(entry.win, entry.doc, body, url, entry.flags); } catch (_eR206s) {}
+      // s341（html-semantics M2 切片 341）：子文档 body `onload` 事件处理器内容
+      // 属性——spec load 事件路径含 body 元素（window → document → body），真浏览器
+      // 经路径派发触发 body handler（delay-load-event-iframe 的
+      // `<body onload="parent.onloadIframe()">` 完成面——moving-between-documents
+      // /ordering delay-load-event-{1,2} 第二子测）。shim win.dispatchEvent 只派
+      // win listener——内容属性在此显式编译执行：CSP script-src-attr 门（R152 同款
+      // `__zwCspAttrAllowed`）+ `with(document)/with(this)` 基（R152 同型）+
+      // `parent` 形参绑 win.parent（R206 形参遮蔽同语义——合并 Function 作用域外
+      // 的裸 `parent` 标识符唯此通道可达）。无属性零变化（普通 fixture 面）。
+      // https://html.spec.whatwg.org/multipage/webappapis.html#event-handler-content-attributes
+      try {
+        // 属性源：finish 现场 raw markup 的 `<body …>` 标签直提——body 视图的
+        // getAttribute 链在 load 派发时点不可靠（R168 印章打在惰性 `_tree` 根，
+        // `_zwRunIframeScripts` 前 `_tree` 未建则视图查不到；簇 23 body id
+        // 「从原始 markup 直提」同型）；工厂 raw attrs 槽 `_r159BodyAttrs` 与
+        // 视图 getAttribute 依次回落（无 `<body>` 标签的合成面）。
+        var _zwBl341 = null;
+        try {
+          var _zwBm341 = /<body\b([^>]*)>/i.exec(String(body || ''));
+          var _zwBa341 = _zwBm341 ? String(_zwBm341[1] || '') : '';
+          if (!_zwBa341) _zwBa341 = String((entry.doc && entry.doc._r159BodyAttrs) || '');
+          if (_zwBa341) {
+            var _zwBo341 = /(^|\s)onload\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(_zwBa341);
+            if (_zwBo341) _zwBl341 = _zwBo341[2] != null ? _zwBo341[2]
+              : (_zwBo341[3] != null ? _zwBo341[3] : _zwBo341[4]);
+          }
+        } catch (_eBa341) {}
+        if (_zwBl341 == null && entry.doc && entry.doc.body
+            && typeof entry.doc.body.getAttribute === 'function') {
+          _zwBl341 = entry.doc.body.getAttribute('onload');
+        }
+        if (_zwBl341) {
+          var _zwBlOk341 = (typeof __zwCspAttrAllowed !== 'function')
+            || __zwCspAttrAllowed(String(_zwBl341)) === '1';
+          if (_zwBlOk341) {
+            globalThis.__zwAttrClear = true;
+            try {
+              new Function('event', 'parent',
+                'with(document) { with(this) { ' + _zwBl341 + ' } }')
+                .call(entry.doc.body, new Event('load'), entry.win.parent);
+            } finally { globalThis.__zwAttrClear = false; }
+          }
+        }
+      } catch (_eS341bl) {}
       try {
         if (entry.win && typeof entry.win.dispatchEvent === 'function') {
           entry.win.dispatchEvent(new Event('load'));

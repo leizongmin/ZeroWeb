@@ -8535,7 +8535,20 @@
                 if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
-                  (0, eval).call(globalThis, _r387src);
+                  // s341（html-semantics M2 切片 341）：spec 脚本元素栈——执行窗 push
+                  // 元素身份、finally pop（getter 栈通道 part06；per-document：栈挂
+                  // 当前连接文档。移动出树后 currentScript 仍指原元素——
+                  // moving-between-documents-during-evaluation [2] 断言面）。
+                  // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+                  var _zwCsDoc341 = globalThis.document;
+                  var _zwCsSt341 = _zwCsDoc341.__zwScriptElStack
+                    || (_zwCsDoc341.__zwScriptElStack = []);
+                  _zwCsSt341.push(child);
+                  try {
+                    (0, eval).call(globalThis, _r387src);
+                  } finally {
+                    _zwCsSt341.pop();
+                  }
                 }
                 // R387b（site-compat baidu-20260929-r1）：**动态 src 脚本加载**——src 型脚本
                 //（textContent 空）入文档后按 spec「prepare the script element」抓源执行：
@@ -8605,7 +8618,20 @@
                         var _s95typ = false;
                         try { _s95typ = _zwScriptTypeClassify(_s95self) === 'blocked'; } catch (_eS95ty) {}
                         if (!_s95typ) {
-                          (0, eval).call(globalThis, _s95Post);
+                          // s341（html-semantics M2 切片 341）：spec 脚本元素栈——
+                          // 补文本执行臂与 R387/s109 执行臂同型 push/pop（getter 栈
+                          // 通道 part06；嵌套执行窗 currentScript 指最内层真执行者，
+                          // 不再回落外层 idx 通道脚本）。
+                          // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+                          var _zwCsDoc341d = globalThis.document;
+                          var _zwCsSt341d = _zwCsDoc341d.__zwScriptElStack
+                            || (_zwCsDoc341d.__zwScriptElStack = []);
+                          _zwCsSt341d.push(_s95self);
+                          try {
+                            (0, eval).call(globalThis, _s95Post);
+                          } finally {
+                            _zwCsSt341d.pop();
+                          }
                           // 执行即置位（spec prepare 末段 already started = true）——
                           // 自摘子再补文本不重跑（execution-timing 059 形态）。
                           if (sel) {
@@ -10273,7 +10299,18 @@
                     && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[newNode.__zwHandle] = true;
-                  (0, eval).call(globalThis, _s97ibSrc);
+                  // s341（html-semantics M2 切片 341）：spec 脚本元素栈——insertBefore
+                  // 镜像臂与 R387 appendChild 臂同型 push/pop（getter 栈通道 part06）。
+                  // https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
+                  var _zwCsDoc341c = globalThis.document;
+                  var _zwCsSt341c = _zwCsDoc341c.__zwScriptElStack
+                    || (_zwCsDoc341c.__zwScriptElStack = []);
+                  _zwCsSt341c.push(newNode);
+                  try {
+                    (0, eval).call(globalThis, _s97ibSrc);
+                  } finally {
+                    _zwCsSt341c.pop();
+                  }
                 } else if (!_s97ibFrag && !_s97ibNomod
                            && !(globalThis._zwRanScripts && globalThis._zwRanScripts[newNode.__zwHandle])
                            && !globalThis.__zwHostDynamicScripts) {
