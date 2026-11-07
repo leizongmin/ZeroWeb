@@ -118,8 +118,14 @@ rows 恒一。
    collapsed 只置态不插元素，a 仅在 typing 时插入。qV 断言
    `createlink:[false,false,"",…]`（qV=""、qS=false）现绿 ⇒ arm 面不得触
    override 读面（与 knife11 v5 旗标-only 臂一致）。
-4. **全 36 键 qS/qV 数组复核**（逐刀纪律，非设计判别）：普查残键仅
-   innerHTML compare 红，qS/qV 全绿——每键施工前核全 23 子测试数组。
+4. **全 36 键 qS/qV 数组复核——已闭合（2026-11-08 全普查完成）**：forecolor
+   8（:1994-:2032 qV-after 全序照设）、underline 4（:2033-:2052 qS-after=true
+   照设）、F2b 7（:2138-:2172 dict 全零）、pending-flag 邻域（:1159-:1177
+   createlink 全零）、结构 13（:1194-:1310——indent/hr/inserthtml/img/
+   linebreak/insertparagraph dict 全零，iol/iul qS-after=true，justify×4 qV
+   left→center/justify/left/right）全部现绿仅 innerHTML 红；**pending-link
+   态在全部 dict 零出现** ⇒ arm 不触 override 设计约束逐键验证成立。knife
+   动源码前无剩余判别项。
 
 ## 集成点清单
 
