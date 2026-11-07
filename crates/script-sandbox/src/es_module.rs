@@ -4896,6 +4896,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     // 落位 → rejection 续体收尾。同步求值（旧态）把子模块体插进调用点同步块 → 序错。
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
     #[test]
+    #[cfg(feature = "v8")]
     fn test_dynamic_import_evaluation_deferred_microtask_s336() {
         let fetched: std::sync::Arc<std::sync::Mutex<u32>> = std::sync::Arc::new(std::sync::Mutex::new(0));
         let fetched_cb = std::sync::Arc::clone(&fetched);
@@ -4960,6 +4961,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
     // 依赖求值不占调用点同步块（s336 面），`step-4.1-3` 不执行（await 捷后余体）。
     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
     #[test]
+    #[cfg(feature = "v8")]
     fn test_module_tla_rejection_reported_to_window_s337() {
         let fetched: std::sync::Arc<std::sync::Mutex<u32>> = std::sync::Arc::new(std::sync::Mutex::new(0));
         let fetched_cb = std::sync::Arc::clone(&fetched);
@@ -5092,6 +5094,7 @@ globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message);
     // 宿主 __zw_compile_module 第 4 参 == "include"（webview 侧据该值追加 `__zw_cred`
     // 取回标记——runner check-cookie 臂消费）。
     #[test]
+    #[cfg(feature = "v8")]
     fn test_dynamic_import_credentials_passthrough_s338() {
         let captured: std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>> = std::sync::Arc::default();
         let captured_cb = std::sync::Arc::clone(&captured);
@@ -5136,6 +5139,7 @@ globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message);
     /// 求值，同体断言会被首 case 缓存掩盖。单 execute 全量（sandbox 缺省
     /// persistent_context=false——每次 execute 新 Context，跨 execute 全局不持久）。
     #[test]
+    #[cfg(feature = "v8")]
     fn test_dynamic_import_window_scope_bridge_prelude_s339() {
         let mut sandbox = crate::V8Sandbox::new().unwrap();
         sandbox.register_callback(
