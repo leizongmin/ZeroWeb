@@ -154,6 +154,15 @@ pub fn apply_vertical_block_flow(
     anchor_vrl_root_children(root, styles);
     let vrl_anchor_dx = anchor_vrl_root_box(root, icb_width);
     anchor_slr_root_children(root, icb_height);
+    // R5457：RL 容器孤立正交 float 块流起始（右缘）重锚。仅 RL 样式页进 walk
+    //（R4460 fast-path 先例——泄漏 walk 全树，bench-gate block_layout_1000_elements
+    // +36% 教训）。
+    if styles
+        .values()
+        .any(|s| matches!(s.writing_mode, WritingModeValue::VerticalRl))
+    {
+        anchor_orthog_float_rl_start(root);
+    }
     // R4459：vertical float（orthogonal，HorizontalTb 父）内在尺寸收缩 + 浮动缘重锚。
     fix_vertical_float_intrinsic(root, styles, &float_width_rewritten);
     // R5455：根盒右移量对视口-CB abspos 盒的等量回退（float 修正后再算，链原点终态）。
@@ -392,6 +401,89 @@ fn anchor_vrl_root_children(root: &mut LayoutBox, styles: &HashMap<NodeId, Compu
         root.children[i].x = (cursor - w).max(0.0);
         cursor -= w + ml;
     }
+}
+
+/// R5457：vertical-rl 容器内**孤立正交 float** 的块流起始（右缘）重锚。
+///
+/// CSS2.1 §9.5.1 float 定位 + css-writing-modes-3 #orthogonal-auto：正交 float 在
+/// vertical-rl 父的块流起始位 = 容器内容盒右缘（float margin-box 右缘贴该缘，超列宽
+/// 向左溢出）。chromium oracle（float-lft/rgt-orthog-htb-in-vrl-002/003 探针，
+/// 800×600）：float:left [572.52..784] / float:right [554.72..784]——两方向右缘同为
+/// .vp content 右缘，单列容器块流位与 float 方向无关（WPT 断言 as far to the right
+/// as possible 同证）。taffy 交换帧按逻辑 y 自左起排（LR 语义）→ float:left 停留
+/// 内容左缘（002 test 臂物理 x=784 右出视口实证）；float:right 因 taffy 右 float 臂
+/// 已贴右缘，本臂对其恒等 no-op。in-flow 子由 R4429 [`anchor_vrl_root_children`] /
+/// viv restack 右锚，float 子被 R4428 viv float 子树排除显式跳过——本臂补 float 缺口。
+///
+/// gate（窄门）：容器 wm=VerticalRl（LR 块流起始 = 左缘 = taffy 现状，FIXME 有驱动
+/// 案再探）+ 非 float/abs/fixed/layout-container（R4475：此类容器子坐标非 content-box
+/// 相对，公式口径不符）+ 恰一个流内 float 子且**无其他流内子**（ortho-htb-alongside
+/// -vrl-floats 族多 float / float+流内混排容器不触，taffy 原始几何自洽域维持 R4428
+/// 排除语义）+ float 子自身正交（htb；RL float 于 RL 父属 viv float 域）。
+///
+/// 窄门单列近似：多列容器块流位随行号向左推进，此处恒按首列右缘锚（FIXME 有驱动案
+/// 再探）。祖先 extent 是否含 float 溢出（html/.vp 塌宽）= #33 slice-2 另一切片。
+///
+/// env `ZW_ORTHO_FLOAT_RL_ANCHOR=0` 关闭（kill-switch，default-on）。调用点
+/// [`apply_vertical_block_flow`] step 12.7（anchor_slr_root_children 之后）。
+pub fn anchor_orthog_float_rl_start(root: &mut LayoutBox) {
+    if std::env::var("ZW_ORTHO_FLOAT_RL_ANCHOR").as_deref() == Ok("0") {
+        return;
+    }
+    anchor_orthog_float_rl_start_walk(root);
+}
+
+fn anchor_orthog_float_rl_start_walk(b: &mut LayoutBox) {
+    if let Some(i) = rl_single_orthog_float_target(b) {
+        let (w, mr) = (b.children[i].width, b.children[i].margin_right);
+        // 右缘锚定：float margin-box 右缘 = 容器 content 右缘；width 微差 <0.5px
+        // 不动（浮点噪声阈值，同族 pass 惯例）；允许负 x = 左溢出（chromium 同形，
+        // 祖先 extent 债独立切片）。
+        if w.is_finite() && w > 0.5 && b.content_width.is_finite() {
+            let anchored_x = b.content_width - mr - w;
+            if (anchored_x - b.children[i].x).abs() > 0.5 {
+                b.children[i].x = anchored_x;
+            }
+        }
+    }
+    for c in &mut b.children {
+        anchor_orthog_float_rl_start_walk(c);
+    }
+}
+
+/// R5457 gate 判定（纯查询，供单测钉门形）：返回应重锚的 float 子下标，门不匹配
+/// 返回 None。
+fn rl_single_orthog_float_target(b: &LayoutBox) -> Option<usize> {
+    if b.writing_mode != WritingModeValue::VerticalRl
+        || !matches!(b.float, FloatValue::None)
+        || b.is_absolute
+        || b.is_fixed
+        || b.is_layout_container
+    {
+        return None;
+    }
+    let mut float_idx: Option<usize> = None;
+    for (i, c) in b.children.iter().enumerate() {
+        if c.is_absolute || c.is_fixed {
+            continue;
+        }
+        if matches!(c.float, FloatValue::None) {
+            // 有其他流内子：float+流内混排容器（float 定位域 taffy 几何自洽，R4428
+            // 排除语义维持）。
+            return None;
+        }
+        if float_idx.is_some() {
+            // 第二个 float：多 float 容器（ortho-htb-alongside-vrl-floats 族）。
+            return None;
+        }
+        float_idx = Some(i);
+    }
+    let i = float_idx?;
+    // float 子自身正交（htb）——RL float 于 RL 父属 viv float 域（R4428）。
+    if b.children[i].writing_mode.is_vertical_block_flow() {
+        return None;
+    }
+    Some(i)
 }
 
 /// R1544 Phase 2 layout-time 两阶段 content-size 传播：第一趟 taffy 布局后，对 vertical
