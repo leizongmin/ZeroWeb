@@ -43,6 +43,9 @@ mod r5449_clamp_hang_trim_tests;
 mod r5450_clamp_hang_x_collapse_tests;
 /// R5451 clamp trim 后末保留行再对齐（ellipsis 计入对齐，css-overflow-4 §block-ellipsis）。
 mod r5451_clamp_hang_realign_tests;
+
+/// R5453：clamp realign ellipsis advance 度量源 = 容器 face（真面/estimate 分派），driving block-ellipsis-032。
+mod r5453_clamp_ellipsis_container_font_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

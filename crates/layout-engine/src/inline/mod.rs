@@ -274,6 +274,32 @@ pub struct InlineFormattingContext {
     /// R5298：容器字体 is_ahem 判定（strut ascent ratio 查询用，与
     /// `container_strut_line_height` 同点捕获）。
     pub container_strut_is_ahem: bool,
+    /// R5453（css-overflow-4 §block-ellipsis）：容器 font-family 解析出的 face id
+    ///（`font_id_for_style`，weight-aware，与 paint `resolve_style_font_id` 同语义）。
+    ///
+    /// clamp 末保留行再对齐的 ellipsis advance 度量源（`apply_line_clamp_cap`
+    /// 无 style 参数，capture 于 `layout()` 容器 styles 在手处）。paint 侧 ellipsis
+    /// 定位/截断门按容器 face 真面 advance 测宽（text.rs `measure_char_cached(
+    /// default_font_id, '…')`）——layout 预留同源真面度量，否则 estimate 与真面
+    /// 的 advance 差把末保留字符挤进 paint cut-back 臂被清零（block-ellipsis-032
+    /// box1/2：estimate '…' 半宽 8px vs mono 真面全角 16px，'d' 被截实证）。
+    /// `None` = Path B 空 styles / 无法解析（回退 estimate，旧语义）。
+    pub container_font_id: Option<u32>,
+    /// R5453②（css-overflow-4 §block-ellipsis）：clamp 末保留行再对齐的 ellipsis
+    /// advance 直注入值（paint Path B 专供）。
+    ///
+    /// Path B 空 styles 下 `layout()` 捕获臂空转（`container_font_id` 恒 None），
+    /// realign 预留回 estimate 半宽——paint ellipsis 截断门按容器 face 真面测宽
+    ///（text.rs ellipsis 臂），预留差把末保留字符挤进 cut-back 臂被清零（032 探针
+    /// 实证：layout 期预留 16 落 [8,216)，paint Path B 重跑预留 8 落 [16,224)，
+    /// 'd' 落 cut_x 右侧照旧截失，像素零变化）。注入由 paint 侧在
+    /// `apply_line_clamp_cap` 前完成（text.rs：`resolve_style_font_id` +
+    /// `measure_char_cached` 与 ellipsis 臂**同表达式**，字号/Ahem 判定同源），
+    /// `Some` 时 realign 直取。`None` = layout 期 IFC（走 `container_font_id`
+    /// 捕获度量，R5453①）与既有调用（回退 estimate 旧语义）。独立字段而非复用
+    /// `container_font_size`/`container_strut_is_ahem`：二者为 strut/vertical-align
+    /// 基线路径共享输入，Path B 改写会扰动无关行定位。
+    pub clamp_ellipsis_advance: Option<f32>,
     /// R5303（CSS2 §10.8.1 strut）：容器 line-height 显式为 0 的捕获标记。
     ///
     /// `container_strut_line_height == 0` 有两义——「未捕获」（paint Path B 空
@@ -507,6 +533,8 @@ impl InlineFormattingContext {
             container_font_size: DEFAULT_FONT_SIZE,
             container_strut_line_height: 0.0,
             container_strut_is_ahem: false,
+            container_font_id: None,
+            clamp_ellipsis_advance: None,
             container_strut_lh_zero: false,
             font_size_overrides: NodeIdMap::default(),
             font_id_overrides: std::rc::Rc::new(HashMap::new()),
@@ -1351,6 +1379,7 @@ impl InlineFormattingContext {
         // Path B 空 styles → 恒 0 = legacy，零扰动。
         self.container_strut_line_height = 0.0;
         self.container_strut_lh_zero = false;
+        self.container_font_id = None;
         if let Some(style) = styles.get(&container) {
             self.container_font_size = resolve_inline_font_size_px(style);
             // R5298（CSS2 §10.8.1 strut）：捕获容器自身 used line-height + 字体 Ahem
@@ -1368,6 +1397,9 @@ impl InlineFormattingContext {
                 .font_family
                 .iter()
                 .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+            // R5453：容器 face id 同点捕获（weight-aware，同 `font_id_for_style`
+            // 语义）——clamp realign ellipsis advance 度量源，见字段文档。
+            self.container_font_id = self.font_id_for_style(Some(style));
             self.plaintext_auto_align = matches!(style.unicode_bidi, zero_style_system::UnicodeBidiValue::Plaintext)
                 && matches!(
                     style.text_align,
@@ -1586,18 +1618,34 @@ impl InlineFormattingContext {
                 // 先于 clamp cap 执行且 content_width 含被剪 hang 宽（R1338 豁免是
                 // IFC 级 preserve_whitespace，032 容器 normal 的 run 级悬挂不入门），
                 // 而 kept-last 截断前恒非末行（truncate 前缀不变量）→ 对齐值取
-                // text_align。ellipsis advance 以首 kept run 字体度量（paint 侧按
-                // 块字体测宽定位 last_text_end_x，fit 门需 layout 同源预期，否则
-                // 误走 cut-back 截字形）；R4213 行组参照系未镜像（FIXME 另案）；
+                // text_align。ellipsis advance 按容器 face 度量（R5453：旧
+                // `advance_of('…', None)` 回 estimate——runner 环境 mono 真面
+                // 全角 16px vs estimate 半宽 8px，预留差把末保留字符挤进 paint
+                // cut-back 臂被清零〔032 box1/2 'd' 截失实证〕；paint 侧按容器
+                // face/字号/Ahem 判定测宽，layout 预留须同源——度量源二臂：
+                // paint Path B 注入值 `clamp_ellipsis_advance` 直取（R5453②，
+                // 与 paint ellipsis 臂同表达式）；layout 期容器 face id 捕获见
+                // `container_font_id` 字段文档（R5453①）；estimate/Path B 环境
+                // font_id None 或 advance_source 缺失仍回 estimate 零回归）；
+                // R4213 行组参照系未镜像（FIXME 另案）；
                 // 整行皆 hangable（kept 0）不位移。
                 let realign = if self.text_group_align == TextGroupAlign::None {
                     let l = self.lines.last().unwrap();
                     let kept_count = l.runs.len() - pure_count;
                     if kept_count > 0 {
-                        let anchor = &l.runs[0];
                         let (left, avail) = self.effective_content_area(l.y, l.height);
+                        // R5453②：paint Path B 注入值直取（与 paint ellipsis 截断门
+                        // 同表达式）；None（layout 期）走容器 face 捕获度量（R5453①），
+                        // estimate 环境仍回 estimate 零回归。
                         Some((
-                            self.advance_of('…', None, anchor.font_size, anchor.is_ahem),
+                            self.clamp_ellipsis_advance.unwrap_or_else(|| {
+                                self.advance_of(
+                                    '…',
+                                    self.container_font_id,
+                                    self.container_font_size,
+                                    self.container_strut_is_ahem,
+                                )
+                            }),
                             left,
                             left + avail,
                         ))

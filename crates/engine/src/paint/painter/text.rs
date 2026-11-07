@@ -2146,6 +2146,27 @@ impl super::Painter {
                 // 行级 clamp，先于 fragment 展开（Line 6 片段不再产出、不产 ghost
                 // glyph）。cap 由 layout 期写入（compute_final，clamped 时同镜像）。
                 if let Some(cap) = box_node.line_clamp_cap {
+                    // R5453②（css-overflow-4 §block-ellipsis）：Path B 空 styles →
+                    // clamp 末保留行再对齐的 ellipsis 预留无法捕获容器 face（layout()
+                    // 捕获臂空转，回 estimate 半宽），与本文件 ellipsis 截断门（容器
+                    // face 真面测宽）口径差把末保留字符挤进 cut-back 臂被清零（032
+                    // 探针实证：预留 8 → kept 落 [16,224)，'d' 被截）。先注入真面
+                    // advance——`resolve_style_font_id` + `measure_char_cached` 与
+                    // ellipsis 截断门**同表达式**（字号/Ahem 判定同源，Ahem 判定同
+                    // R2237 container_is_ahem 口径），realign 直取（见
+                    // `clamp_ellipsis_advance` 字段文档）；layout 期 IFC 不经此路径，
+                    // 走自身捕获度量。
+                    let path_b_container_font = self.resolve_style_font_id(&style.font_family, style).0;
+                    let path_b_container_is_ahem = style
+                        .font_family
+                        .iter()
+                        .any(|f| f.trim_matches('"').eq_ignore_ascii_case("Ahem"));
+                    ctx.clamp_ellipsis_advance = Some(self.measure_char_cached(
+                        path_b_container_font.0,
+                        '\u{2026}',
+                        font_size,
+                        path_b_container_is_ahem,
+                    ));
                     ctx.apply_line_clamp_cap(cap);
                 }
                 if std::env::var("ZW_PROBE_4328").is_ok() {
