@@ -39,6 +39,8 @@ mod r5402_ls_line_end_fit_tests;
 mod r5404_first_line_lh_tests;
 /// R5449 clamp 截断末保留行 hangable 尾随空格剪除（css-overflow-4 §block-ellipsis）。
 mod r5449_clamp_hang_trim_tests;
+/// R5450 clamp trim 清零 run x 折叠到剪除点（R5297 band 域幻影带收口）。
+mod r5450_clamp_hang_x_collapse_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;

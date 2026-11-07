@@ -1565,9 +1565,10 @@ impl InlineFormattingContext {
         }
         // R5449（css-overflow-4 §block-ellipsis / css-text-3 §3.1.4 hangable
         // whitespace）：截断生效后，末保留行的 hangable 尾随空格不进 ellipsis 前内容
-        // ——纯空白 run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width（x 不
-        // 动：R1338 对齐口径已排除 hang 宽，位置中性）。predicate 与
-        // trailing_hang_width 同源（仅 ' '，tab 不剪）。
+        // ——纯空白 run 清零（无字形零推进）、混合 run 剪尾随空格并收缩 width。保留
+        // 内容 x 不动（R1338 对齐口径已排除 hang 宽，位置中性）；被剪除 run 的 x
+        // 折叠见下方 R5450 块。predicate 与 trailing_hang_width 同源（仅 ' '，tab
+        // 不剪）。
         if self.clamped && runtime_flags::clamp_hang_trim() {
             let (pure_count, mixed_index) = match self.lines.last() {
                 Some(l) => Self::scan_hangable_tail(&l.runs),
@@ -1590,6 +1591,22 @@ impl InlineFormattingContext {
                     for frag in line.runs.iter_mut().rev().take(pure_count) {
                         frag.text.clear();
                         frag.width = 0.0;
+                    }
+                    // R5450：被剪除 run 的 x 折叠到剪除点（混合 run 新末端或首个纯
+                    // 空白 run 起点）。清零 run 若保留递进 x，R5297
+                    // `owner_line_band_extent_map`（(owner, line_top) → 祖先累计
+                    // (min_x, max_end)）仍 union 其 (x, x+0)，paint 侧 R639 fragment
+                    // bg 臂（whole_box）按 band 域涂背景 → block-ellipsis-032 hangable
+                    // span 红底幻影带。折叠后 band 退化为零宽点，不产生延伸。
+                    if pure_count > 0 {
+                        let tail_start = line.runs.len() - pure_count;
+                        let trim_x = match mixed_index {
+                            Some(i) => line.runs[i].x + line.runs[i].width,
+                            None => line.runs[tail_start].x,
+                        };
+                        for frag in line.runs.iter_mut().skip(tail_start) {
+                            frag.x = trim_x;
+                        }
                     }
                 }
             }
