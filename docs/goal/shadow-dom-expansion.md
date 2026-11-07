@@ -358,6 +358,22 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   甄别与处置 → MEl 回装评估（族 E 为试金面，撤销时预告的回装时点已到）→
   清单 2 paperwork → M4。
 
+### 2026-11-07——M3 清单 1 续刀：attach 恢复状态机——§9 认领声明
+
+- **§9 认领声明（attachment 剩余 A+B 51F）**：并行侧请避让以下编辑面——
+  `crates/engine/src/js_dom_shim/part05.js` `_attachShadow` 声明式重挂接分支
+  （spec 恢复语义：五成员相等时**清空** shadow 内容（复用 setHTMLUnsafe 引
+  擎写链 `__zw_set_inner_html_handle_unsafe`，视图容器同步重建）+ 注册项/
+  meta `declarative` 翻转 false（一次性恢复，其后 attachShadow 走既有命令式
+  恒抛臂）+ 返既有根）。**dom/engine Rust 侧预期零改动**（清空与抛错均走既
+  有链）；part04 trap 派发与 part03 轻量路径（factory MEl flavor）不在本刀
+  （corpus 案面均为 part04/05 proxy 域）。已知限制随刀留 FIXME：engine
+  `ShadowRootData.declarative` 旗标不随恢复翻转（消费面仅 copy_subtree/
+  hydration consult，corpus 无钉面，M4 coverage 出现再接线）。
+- **判据**：solo attachment A 族 34F（重挂未清空）+ B 族 17F（恢复后未抛
+  错）→ 归零；全语料 A/B P→F=0 复跑（before 同基线 wc-m3c2-before.json）；
+  契约清单 3 门禁同口径（零新增红）。
+
 ### 2026-11-07——余项收口契约落定（无人值守推进至 DONE）
 
 - **簇 C 流静止判定**：最后代码落点 61f84064e（2026-11-06 06:44 attachment
