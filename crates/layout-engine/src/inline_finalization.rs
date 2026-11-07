@@ -2113,6 +2113,19 @@ pub(crate) fn compute_final_inline_layouts(
     // paint 看到的行数 ≤ n，旧 `line_ys.len() > max` 判定无法独立触发 ellipsis。
     // 须在 store-gate return 之前设（非 stored 容器也走此，non-stored paint 路径冗余读之）。
     root.line_clamp_clamped = inline_ctx.clamped;
+    // R5452（css-overflow-4 §line-clamp）：cap 后保留行底镜像（容器内容坐标）。
+    // own-IFC-capped 且未落 inline_layout 的容器（非 pure-Ahem），cross-block walk
+    // 尾部按子盒底边重算高度时会缩穿保留行底（inline 子盒底边 = strut 常数盒，
+    // block-ellipsis-032：24 → 19.624 实证）；该场点容器高度 = clamp 边界 =
+    // 保留行底，postprocess 据此作 extent 下限。标量、store-gate return 之前
+    //（同上 non-stored 也走此），paint 零扰动。
+    if inline_ctx.clamped {
+        root.clamp_kept_line_bottom = inline_ctx
+            .lines
+            .iter()
+            .map(|l| l.y + l.height)
+            .fold(None::<f32>, |acc, v| Some(acc.map_or(v, |a| a.max(v))));
+    }
     // R5432：整行置换旗标同站点镜像——paint stored 路径清零被置换 glyph + ellipsis
     // 落行首（block-ellipsis-018）。须在 store-gate return 之前（同 2083 注释）。
     root.line_clamp_strut_displaced = inline_ctx.clamp_strut_applied;

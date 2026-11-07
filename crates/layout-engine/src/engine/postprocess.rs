@@ -4272,6 +4272,13 @@ pub(super) fn apply_cross_block_line_clamp(
                         && let Some(l) = &mut c.inline_layout
                     {
                         l.truncate(effective_remaining);
+                        // R5452：跨块预算再截断后保留行底随 stored 行盒同步（嵌套
+                        // clamp 场点 own-IFC 旧值偏高，walk 尾 extent 下限须以截断
+                        // 后保留行为准）。
+                        c.clamp_kept_line_bottom = l
+                            .iter()
+                            .map(|line| line.y + line.height)
+                            .fold(None::<f32>, |acc, v| Some(acc.map_or(v, |a| a.max(v))));
                     }
                     c.line_clamp_cap = Some(effective_remaining);
                     c.line_clamp_clamped = true;
@@ -4434,6 +4441,20 @@ pub(super) fn apply_cross_block_line_clamp(
                 })
                 .fold(0.0f32, f32::max)
                 .max(0.0);
+            // R5452（css-overflow-4 §line-clamp）：own-IFC-capped 容器 extent 下限 =
+            // 保留行底。容器已被 R2431 在 IFC 内裁至 n 行（`inline_layout` 未落时
+            // walk 看不到行盒），inline 子盒底边是 strut 常数盒（≤ 行盒高），仅按
+            // 子盒底边重算会把容器缩穿保留行（block-ellipsis-032：24 → 19.624，ref
+            // 24 —— 各盒全部失配的来源）。clamp 容器 auto 高度语义 = clamp 边界 =
+            // 保留行底（R5432 stored 臂同口径），故 floor 到该值；stored 容器（pure
+            // Ahem）子盒底边恰达行底、floor 恒等。Auto 限值场点（R3780）保留行底仍
+            // 受 constraint 上限（「真在边界后的经 min(constraint) 截掉」同口径）。
+            if let Some(kept_bottom) = b.clamp_kept_line_bottom {
+                extent = extent.max(match auto_constraint_px {
+                    Some(constraint) => kept_bottom.min(constraint as f32),
+                    None => kept_bottom,
+                });
+            }
             // R5205（css-overflow-4 #line-clamp + CSS2 §8.3.1）：Count(n) 收缩时末可见
             // in-flow 子的 adjoining bottom margin 吸入 extent——容器有 bottom 框边
             //（padding/border-bottom > 0）时该 margin 不与容器外塌（框边阻断折叠组），

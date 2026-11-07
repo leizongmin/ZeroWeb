@@ -1042,3 +1042,7 @@ mod r5446_nested_inline_float_tests;
 /// R5447：cell 指定绝对宽度 content-box 语义——列贡献 = width+padding+border
 ///（separated 显式臂 + fixed 分支 col_cell_spec），driving c5525-fltmult-000。
 mod r5447_cell_spec_frame_tests;
+
+/// R5452：own-IFC-capped 容器跨块 walk 尾 extent 下限 = 保留行底（clamp_kept_line_bottom
+/// 镜像），driving block-ellipsis-032。
+mod r5452_clamp_kept_bottom_tests;

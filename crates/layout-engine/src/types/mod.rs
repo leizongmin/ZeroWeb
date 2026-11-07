@@ -706,6 +706,17 @@ pub struct LayoutBox {
     ///（line-breaking-018/019 stored/Path B 分歧实证），本字段是布局侧标量，
     /// paint 零扰动。`None` = 不适用（无 abspos 静态位 pending 或无行盒）。
     pub oof_static_line_bottom: Option<f32>,
+    /// R5452（css-overflow-4 §line-clamp）：本容器 IFC 被 line-clamp cap 后
+    /// **保留行底**（容器内容坐标，`max(line.y + line.height)`）。
+    ///
+    /// compute_final 期为 `inline_ctx.clamped` 的容器镜像。用途：own-IFC-capped
+    /// 容器（R2431 已在 IFC 内裁至 n 行）不落 `inline_layout` 时（非 pure-Ahem，
+    /// store-gate 跳过），`apply_cross_block_line_clamp` 的 walk 尾部只能按子盒
+    /// 底边重算高度——inline 子盒底边是 strut 常数盒（其行高 ≤ 行盒高），把容器
+    /// 高度缩到保留行底之下（block-ellipsis-032 盒高失配实证：24 → 19.624）。
+    /// 该场点容器高度语义 = clamp 边界 = 保留行底，walk 尾部以此作 extent 下限。
+    /// **不落 `inline_layout`**（同 R5227 理由）。`None` = 未被 cap 或无行盒。
+    pub clamp_kept_line_bottom: Option<f32>,
     /// R109 §9.2.1.1：此 inline 盒被 in-flow block-level 子元素拆分（生产端接线标记）。
     ///
     /// 当为 true 时，此盒自身的 paint IFC 应跳过——其直接文本已由其匿名块片段
@@ -928,6 +939,7 @@ impl Default for LayoutBox {
             inline_block_baseline: None,
             fragment_node_ids: None,
             oof_static_line_bottom: None,
+            clamp_kept_line_bottom: None,
             is_r109_split: false,
             is_r109_block_mixed: false,
             is_multicol_region_fragment: false,

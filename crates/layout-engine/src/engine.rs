@@ -2911,6 +2911,7 @@ impl LayoutEngine {
             column_span_offsets: Vec::new(),
             oof_static_mapped: false,
             oof_static_line_bottom: None,
+            clamp_kept_line_bottom: None,
             inline_layout: None,
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
