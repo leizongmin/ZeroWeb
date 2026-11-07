@@ -3,14 +3,22 @@
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
 **状态**: Active——**M0 + M1 已完成；M2 进行中：B3 seek + B4 syncbase +
-B5 eventbase + B6a 采样引擎数值域已收口（2026-11-07：B6a calcMode 四模
-式 + keyTimes/keySplines 文法校验（comma-wsp 分隔）+ additive/accumulate
-三明治 + 单位上下文（em/ex/%/calc() 项级求值）+ restart=always 中途截
-断 + freeze 迭代边界浮点钳制 + by-only replace underlying 起点，
-39F→P 零 P→F，全通道 1,278P = 74.7%、web-animations 959 子恒等，
-[evidence](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md)；B5 及
-前序见 archive 与 §里程碑）；
-下一步 B6b 类型域采样（attributeTypes/color/transform/marker-orient）**
+B5 eventbase + B6a 采样引擎数值域 + B6b 采样引擎类型域已收口（2026-11-07：
+B6a calcMode 四模式 + keyTimes/keySplines 文法校验（comma-wsp 分隔）+
+additive/accumulate 三明治 + 单位上下文（em/ex/%/calc() 项级求值）+
+restart=always 中途截断 + freeze 迭代边界浮点钳制 + by-only replace
+underlying 起点，39F→P 零 P→F，
+[evidence](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md)；B6b
+`_sampleAnimStr` token 采样（角度域/数值列表域/不可插值离散 + from-by/
+by-only 合成 + invalid-value 负向 + additive=sum 三明治）+ animVal 反射
+消费接线（enum/bool/integer/string/angle/list/rect）+ get-trap target
+分支 + `_chainOf` 跨族 id 回落，41F→P 零 P→F，全通道 1,319P = 77.1%、
+web-animations 959 子恒等，
+[evidence](svg-compat-v2/evidence/2026-11-07-m2-b6b-type-domain.md)；B5
+及前序见 archive 与 §里程碑）；
+下一步 B6c animateTransform 域（svgtransform ×2 + additive/non-additive-
+type-by ×3）或 B7 path d 插值（M3），DC-4 现势 8.598% 差门 ~1 子由 B7
+兑付**
 **卡点**: engine 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
 不双改——DC-4 前须协同批清偿或具名转挂）：display:none gBCR 回归对 2F
 （M0 翻转归因）+ geometry 再下滑 2 子（M0 快照后 main 演化，part09 在场
@@ -113,17 +121,22 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   零回归、web-animations 506P/959 复验零回归；台账见
   [evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）。
 - **M2**：SMIL 同步基/事件时基簇收敛（DC-3 主体）——B3 seek / B4
-  syncbase / B5 eventbase / B6 采样引擎。**B3 + B4 + B5 + B6a 已收口**
+  syncbase / B5 eventbase / B6 采样引擎。**B3 + B4 + B5 + B6a + B6b
+  已收口**
   （2026-11-07：B3 seeking-events-1..8 全 P + F→P ×6 采样连带收益；B4
   时间序离散事件模拟落地 4T→P——cyclic-syncbase-2/events、
   invalid-attribute-type、syncbase-after-removal；B5 事件基动态实例源 +
   处理器名错位映射 8F→P + 4T→P；B6a calcMode/keyTimes/keySplines/
   additive-accumulate 三明治/单位上下文/restart 截断/冻结钳制 39F→P；
-  四批均零 P→F、web-animations 恒等；台账见
+  B6b token 采样器角度域/列表域/离散域 + animVal 反射接线八处 + get-trap
+  target 分支 + `_chainOf` 跨族 id 回落 41F→P——svgenum 13、angle/marker
+  11、列表域 11、numopt/integer 4、bool/string 2；五批均零 P→F、
+  web-animations 恒等；台账见
   [B3](svg-compat-v2/evidence/2026-11-07-m2-b3-seek-events.md) /
   [B4](svg-compat-v2/evidence/2026-11-07-m2-b4-syncbase.md) /
   [B5](svg-compat-v2/evidence/2026-11-07-m2-b5-eventbase.md) /
-  [B6a](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md)）。
+  [B6a](svg-compat-v2/evidence/2026-11-07-m2-b6a-sampling.md) /
+  [B6b](svg-compat-v2/evidence/2026-11-07-m2-b6b-type-domain.md)）。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
 - **M4**：coverage 复测收口（DC-4）。
 

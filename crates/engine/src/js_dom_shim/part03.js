@@ -4852,13 +4852,26 @@
     if (k) _zwSvgAnimCache[k] = w;
     return w;
   };
-  var _zwMakeAnimatedNumber = function (el, attr, initial) {
+  // SMIL 类型域 token 钩子（svg-compat-v2 B6b——part09 globalThis
+  // _zwSmilAnimToken 单点：enum/boolean/integer/string/angle/list 反射的
+  // animVal 面经此取动画字符串值；无时间线/无动画 → null 回落 base 反射）。
+  var _zwSmilAnimRaw = function (el, attr) {
+    if (!el || !globalThis._zwSmilAnimToken) return null;
+    try { return globalThis._zwSmilAnimToken(el, attr); } catch (_eSmilTk) { return null; }
+  };
+  var _zwMakeAnimatedNumber = function (el, attr, initial, _prop) {
     var w = new _zwSvgAnimatedNumberCtor();
     var read = function () {
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
       if (raw == null) return initial;
-      var n = parseFloat(raw);
+      // 多 token 形态（number-optional-number：stdDeviation/radius/
+      // kernelUnitLength 的 X/Y 拆项——svgnumberoptionalnumber-3/4 baseVal
+      // 面）按访问器名尾缀拆第 1/2 项；单值属性 tile 镜像（单值双映 spec
+      // 语义，SVGAnimatedNumber-initial-values 面）。
+      var items = String(raw).split(/[\s,]+/);
+      var idx = (/Y$/.test(String(_prop || '')) ? 1 : 0) % items.length;
+      var n = parseFloat(items[idx]);
       return isNaN(n) ? initial : n;
     };
     // baseVal 数值型 accessor（float 校验 setter——非有限值 TypeError，spec
@@ -4881,6 +4894,16 @@
           var _smilAn = globalThis._zwSmilAnimNumber(el, attr);
           if (_smilAn != null) return _smilAn;
         }
+        // 多 token 形态（number-optional-number：stdDeviation/radius/
+        // kernelUnitLength 的 X/Y 拆项——数值域整 token 解析失败落此）按
+        // 访问器名尾缀拆第 1/2 项。
+        var _tok = _zwSmilAnimRaw(el, attr);
+        if (_tok != null) {
+          var _items = String(_tok).split(/[\s,]+/);
+          var _idx = /Y$/.test(String(_prop || '')) ? 1 : 0;
+          var _v = parseFloat(_items[_idx]);
+          return isNaN(_v) ? read() : _v;
+        }
         return read();
       },
     });
@@ -4889,7 +4912,7 @@
   var _zwGetAnimatedNumber = function (el, prop, attr, initial) {
     var k = _zwSvgAnimKey(el, prop);
     if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
-    var w = _zwMakeAnimatedNumber(el, attr, initial);
+    var w = _zwMakeAnimatedNumber(el, attr, initial, prop);
     if (k) _zwSvgAnimCache[k] = w;
     return w;
   };
@@ -7220,6 +7243,16 @@
     var st = el ? null : { ut: 1, vu: 0 };
     var cur = function () {
       if (!el) return st;
+      // anim 面（readOnly 同位参数）SMIL 动画 token 优先（B6b——角度域
+      // svgangle-deg/grad/rad 插值 token 经 _zwSvgAngleParse 还原
+      // unitType/度数；解析失败回落 base 反射）。
+      if (readOnly) {
+        var tokA = _zwSmilAnimRaw(el, attr);
+        if (tokA != null) {
+          var pA = _zwSvgAngleParse(tokA);
+          if (pA) return pA;
+        }
+      }
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
       var p = raw == null ? null : _zwSvgAngleParse(raw);
@@ -7311,14 +7344,33 @@
   // SVGAnimatedInteger：baseVal 数值面，getter 整数校验（非整数内容值回落
   // initial——WPT order '-1.5' → 3）；setter ToInt32 归一（NaN → 0，不抛——
   // WPT 'aString'/元素 → 0）。
-  var _zwMakeAnimatedInteger = function (el, attr, initial) {
+  var _zwMakeAnimatedInteger = function (el, attr, initial, _prop) {
     var w = new _zwSvgAnimatedIntegerCtor();
     var read = function () {
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
       if (raw == null) return initial;
-      var n = Number(raw);
+      // 多 token 形态（order 数值对——orderX/orderY 映射同名内容属性）按
+      // 访问器名尾缀拆第 1/2 项；单值属性 tile 镜像（kernelUnitLength='2'
+      // → Y 同读 2，number-optional-number spec 单值双映语义，
+      // SVGAnimatedInteger/Number-initial-values 面）。
+      var items = String(raw).split(/[\s,]+/);
+      var idx = (/Y$/.test(String(_prop || '')) ? 1 : 0) % items.length;
+      var n = Number(items[idx]);
       return (!isFinite(n) || n % 1 !== 0) ? initial : n;
+    };
+    // animVal：SMIL 动画 token 优先（B6b——integer 域按项取整；解析失败回
+    // 落 base 反射）。多 token 形态拆项同 read；svginteger-targetX 从 0 到
+    // 2 线性插值 token '1' → 1。
+    var readAnim = function () {
+      var tok = _zwSmilAnimRaw(el, attr);
+      if (tok != null) {
+        var items = String(tok).split(/[\s,]+/);
+        var idx = /Y$/.test(String(_prop || '')) ? 1 : 0;
+        var n = Number(items[idx]);
+        if (isFinite(n)) return Math.round(n);
+      }
+      return read();
     };
     Object.defineProperty(w, 'baseVal', {
       configurable: true,
@@ -7330,13 +7382,13 @@
         try { el.setAttribute(attr, String(n)); } catch (_eWr) {}
       },
     });
-    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: readAnim });
     return w;
   };
   var _zwGetAnimatedInteger = function (el, prop, attr, initial) {
     var k = _zwSvgAnimKey(el, prop);
     if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
-    var w = _zwMakeAnimatedInteger(el, attr, initial);
+    var w = _zwMakeAnimatedInteger(el, attr, initial, prop);
     if (k) _zwSvgAnimCache[k] = w;
     return w;
   };
@@ -7355,6 +7407,18 @@
       }
       return initial;
     };
+    // animVal：SMIL 动画 token 优先（B6b——枚举域离散切换 token 直查关键词
+    // 表，svgenum-1..13 面）；角度态 token（orient '90deg'）查表落空回落
+    // initial（orientType ANGLE=2 同 base 语义）。
+    var readAnim = function () {
+      var tok = _zwSmilAnimRaw(el, attr);
+      if (tok != null) {
+        var n = map[tok];
+        if (n !== undefined) return n;
+        return initial;
+      }
+      return read();
+    };
     Object.defineProperty(w, 'baseVal', {
       configurable: true,
       get: read,
@@ -7366,7 +7430,7 @@
         try { el.setAttribute(attr, kw); } catch (_eWr) {}
       },
     });
-    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: readAnim });
     return w;
   };
   var _zwGetAnimatedEnum = function (el, prop, attr, map, setMap, initial) {
@@ -7450,6 +7514,13 @@
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
       return raw === 'true';
     };
+    // animVal：SMIL 动画 token 优先（B6b——boolean 域离散半程切换 token
+    // 直比 'true'；svgboolean-preserveAlpha 面）。
+    var readAnim = function () {
+      var tok = _zwSmilAnimRaw(el, attr);
+      if (tok != null) return tok === 'true';
+      return read();
+    };
     Object.defineProperty(w, 'baseVal', {
       configurable: true,
       get: read,
@@ -7457,7 +7528,7 @@
         try { el.setAttribute(attr, v ? 'true' : 'false'); } catch (_eWr) {}
       },
     });
-    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: readAnim });
     return w;
   };
   var _zwGetAnimatedBool = function (el, prop, attr) {
@@ -7500,15 +7571,23 @@
   // SVGRect：detached（createSVGRect）/ reflected（viewBox——'x y w h' 四数解析，
   // invalid 回零矩形；写透 setAttribute 保真四字段）。float 校验 setter（非有限
   // TypeError；null → 0 ToNumber）。
-  var _zwMakeSVGRect = function (el, attr) {
+  var _zwMakeSVGRect = function (el, attr, isAnim) {
     var rc = new _zwSvgRectCtor();
     var st = el ? null : { x: 0, y: 0, width: 0, height: 0 };
     var cur = function () {
       if (!el) return st;
       var out = { x: 0, y: 0, width: 0, height: 0 };
       var raw = null;
-      try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
-      if (raw == null) return out;
+      // anim 面 SMIL 动画 token 优先（B6b——viewBox 数值四元组插值 token
+      // 同文法，svgrect-animation-1/2 面）。
+      if (isAnim) {
+        var tokR = _zwSmilAnimRaw(el, attr);
+        if (tokR != null) raw = String(tokR);
+      }
+      if (raw == null) {
+        try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
+        if (raw == null) return out;
+      }
       var ps = String(raw).trim().split(/[\s,]+/);
       if (ps.length === 4) {
         var keys = ['x', 'y', 'width', 'height'];
@@ -7551,7 +7630,7 @@
   var _zwMakeAnimatedRect = function (el, attr) {
     var w = new _zwSvgAnimatedRectCtor();
     var base = _zwMakeSVGRect(el, attr);
-    var anim = _zwMakeSVGRect(el, attr);
+    var anim = _zwMakeSVGRect(el, attr, true);
     Object.defineProperty(w, 'baseVal', { configurable: true, get: function () { return base; } });
     Object.defineProperty(w, 'animVal', { configurable: true, get: function () { return anim; } });
     return w;
@@ -8015,6 +8094,13 @@
     var target = new _zwSvgListCtors[kind]();
     var parse = function () {
       var raw = null;
+      // anim 面（readOnly 同位参数）SMIL 动画 token 优先（B6b——lengthlist/
+      // numberlist/pointlist 插值 token 与属性同文法，svglengthlist/
+      // svgnumberlist/svgpointlist 面直入既有解析器）。
+      if (readOnly) {
+        var tokL = _zwSmilAnimRaw(el, attr);
+        if (tokL != null) return _zwSvgListParse[kind](String(tokL));
+      }
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
       return _zwSvgListParse[kind](raw);
     };
@@ -18590,6 +18676,9 @@
   // 每次 className 读返同一对象；key = 元素 key，与 _classCache 同域）。声明于 _zwSelNs
   // 旁（消费点 get trap className 与 set trap no-op 共用其存在语义，见 part03/part04）。
   var _zwSvgClsCache = {};
+  // SVGAElement.target SameObject 缓存（消费点 get trap target 分支——svgstring-1
+  // 面；key = 元素 key，口径同 _zwSvgClsCache）。
+  var _zwSvgTargetCache = {};
   // SVG ns 判定：createElementNS 产物（handle 型）经 _nsHandles（R18/R80 登记的 ns）；
   // sel-based 解析元素经 _zwSelNs（R5000 foreign content 探测）。
   // 已知限制（PR #80 缺陷审查记档）：sel 型元素 detach 后 host query miss → 归一 ''，
@@ -31669,6 +31758,37 @@ return e;
             return _svCls;
           }
           return _readClass(key, sel, handle);
+        }
+        // SVGAElement.target（spec SVG1.1 IDL InterfaceSVGAElement——[SameObject]
+        // readonly SVGAnimatedString；svgstring-animation-1 面）。SVG ns a 专用
+        //（HTML a/area 的 target 维持 reflected string）。get trap 中间分支直答
+        //（原型侧 accessor 对 proxy 不达——R93 尾部回落前被通用反射分支先吞，
+        // 同 29869 toString 探针注记口径）；SameObject per-key 缓存同 className
+        // 口径。animVal 经 SMIL token 钩子（B6b——string 域离散切换），无动画
+        // 同 baseVal 反射。
+        if (prop === 'target' && _realTag(sel, handle) === 'A' && _zwIsSvgNsEl(sel, handle)) {
+          var _svTgt = _zwSvgTargetCache[key];
+          if (!_svTgt) {
+            _svTgt = new _zwSvgAnimatedStringCtor();
+            var _tgtRead = function () {
+              var raw = null;
+              try {
+                raw = handle ? __zw_get_attr_handle(handle, 'target')
+                  : (typeof __zw_get_attr_lw === 'function' ? __zw_get_attr_lw(sel, 'target') : __zw_get_attr(sel, 'target'));
+              } catch (_eTgt) { raw = null; }
+              return raw == null ? '' : String(raw);
+            };
+            Object.defineProperty(_svTgt, 'baseVal', { get: _tgtRead, configurable: true });
+            Object.defineProperty(_svTgt, 'animVal', {
+              get: function () {
+                var tok = _zwSmilAnimRaw(_makeProxy(sel, handle), 'target');
+                return tok != null ? tok : _tgtRead();
+              },
+              configurable: true,
+            });
+            _zwSvgTargetCache[key] = _svTgt;
+          }
+          return _svTgt;
         }
         if (prop === 'id') {
           // R297：JS 原值优先（含孤立代理的 id——host 值经 lossy 换损为 U+FFFD，

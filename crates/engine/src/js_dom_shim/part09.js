@@ -514,6 +514,21 @@
     if (!doc) return null;
     var map = _docChains(doc, t);
     var r = map[_elKey(animEl)];
+    // 跨族 wrapper 键回落（挂账 #32 邻接——querySelector 产物根 svg 的
+    // children 是 sel 族 wrapper（'#id\0\0smil'），scan 产物是 handle 族
+    //（'null\0__n0\0smil'），两侧 key 不同源致链查落空——svgrect viewBox
+    // 根目标面探针实证）。链 rec 存有元素 id 属性：id 非空时按 id 对齐
+    //（语料动画元素恒带 id——runAnimationTest 按 getElementById 寻元素）。
+    if (!r || r.dead) {
+      var aid = '';
+      try { aid = String(animEl.getAttribute('id') || ''); } catch (_eI) { aid = ''; }
+      if (aid) {
+        for (var kk in map) {
+          var rr = map[kk];
+          if (rr && !rr.dead && rr.id === aid) { r = rr; break; }
+        }
+      }
+    }
     return r && !r.dead ? r : null;
   };
 
@@ -999,6 +1014,270 @@
     return _lerp(list[segI], list[segI + 1], segF) + iter * accDelta;
   };
 
+  // ── 类型域 token 采样（B6b：enum/boolean/integer/string/angle/list 反射
+  // 消费面）。与数值域共享 interval 解析助手，值表按 raw token 组装；插值
+  // 域分类（SMIL 3 #InterpolationDefaults：不可插值类型 linear/spline/paced
+  // 回落 discrete——from-to 半程切换）：
+  // ① discrete：按 kt/均匀段持有原 token；
+  // ② 全 token 角度域（deg/grad/rad 可选后缀）：度数线性插值 + 首 token
+  //   后缀（svgangle-*-deg-grad/rad 面——animVal 反射经角度解析还原
+  //   unitType/度数）；
+  // ③ 全 token 数值域：段端点列表 tiling（短表重复——SMIL 列表插值语义）
+  //   逐项线性空格连接（lengthlist/numberlist/viewBox/point 面）；
+  // ④ 其余（enum/boolean/string/URI）：离散半程切换兜底。
+  // 三明治 = replace（文档序取最后非空——类型域无 sum 合成面，spec
+  // #AdditiveAnimation 非数值域 additive 恒无效按 replace 处理）。
+  var _zwAngleTokRe = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)\s*(deg|grad|rad)?\s*$/i;
+  var _zwAngleDegOf = function (tok) {
+    var m = _zwAngleTokRe.exec(String(tok));
+    if (!m) return null;
+    var v = Number(m[1]);
+    var u = (m[2] || '').toLowerCase();
+    if (u === 'grad') return v * 0.9;
+    if (u === 'rad') return v * 180 / Math.PI;
+    return v;
+  };
+  var _zwNumFmt6 = function (v) { return String(Math.round(v * 1e6) / 1e6); };
+  // 列表 token → user units 数组（长度单位经 _parseLenToken 折算；任一项
+  // 不可解析 → null——整动画无效负向面同数值域口径）。
+  var _zwListNumItems = function (tok) {
+    var parts = String(tok).trim().split(/[\s,]+/);
+    var items = [];
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i] === '') continue;
+      var v = _parseLenToken(parts[i]);
+      if (v == null) return null;
+      items.push(v);
+    }
+    return items.length ? items : null;
+  };
+  // 数值列表 token 逐项求和（from-by/by-only 段端点合成——SMIL
+  // #FromByAnimation f(t) = from + by·p 的 b 侧；tile 短表）。
+  var _zwListSumTokens = function (aTok, byTok) {
+    var sa = _zwListNumItems(aTok);
+    var sb = _zwListNumItems(byTok);
+    if (!sa || !sb) return null;
+    var n = Math.max(sa.length, sb.length);
+    var out = [];
+    for (var i = 0; i < n; i++) out.push(_zwNumFmt6(sa[i % sa.length] + sb[i % sb.length]));
+    return out.join(' ');
+  };
+  var _sampleAnimStr = function (animEl, target, attr, t) {
+    var an = null;
+    try { an = animEl.getAttribute('attributeName'); } catch (_eA) { an = null; }
+    if (an !== attr) return null;
+    var cur = _activeInterval(animEl, t);
+    var d = _parseDur(animEl);
+    if (d.kind === 'invalid') return null;
+    var localName = '';
+    try { localName = String(animEl.localName || '').toLowerCase(); } catch (_eL) {}
+    var g = function (name) {
+      var v = null;
+      try { v = animEl.getAttribute(name); } catch (_eG) { v = null; }
+      return v == null ? null : String(v);
+    };
+    var frac;
+    var iter;
+    if (cur) {
+      var actTime = t - cur.b;
+      var actDur = cur.e - cur.b;
+      if (cur.sd === Infinity) {
+        frac = 0;                             // 无 dur：恒活 from 常值
+        iter = 0;
+      } else if (actDur <= 0) {
+        frac = 1;
+        iter = 0;
+      } else {
+        var simpleTime = actTime % cur.sd;
+        frac = Math.min(simpleTime / cur.sd, 1);
+        iter = Math.floor(actTime / cur.sd);
+      }
+    } else {
+      // 冻结（fill=freeze 且存在已结束的 last interval）——同数值域精度钳制。
+      var fillAttr = g('fill');
+      if (fillAttr !== 'freeze') return null;
+      var sd0 = d.kind === 'finite' ? d.s : Infinity;
+      var rec0 = _chainOf(animEl, t);
+      var lastEnd = -Infinity;
+      var lastB = 0;
+      if (rec0) {
+        for (var j = 0; j < rec0.ivs.length; j++) {
+          var iv0 = rec0.ivs[j];
+          if (!iv0.pruned && iv0.e > 0 && iv0.e <= t && iv0.e > lastEnd) {
+            lastEnd = iv0.e;
+            lastB = iv0.b;
+          }
+        }
+      }
+      if (lastEnd === -Infinity) return null;
+      if (sd0 === Infinity) return null;
+      var span = lastEnd - lastB;
+      var simpleTime0 = span % sd0;
+      if (span > 0 && span >= sd0 && simpleTime0 < 1e-9 * sd0) simpleTime0 = sd0;
+      frac = Math.min(simpleTime0 / sd0, 1);
+      iter = Math.floor((span - (simpleTime0 === sd0 ? 1e-9 : 0)) / sd0);
+    }
+    var toTok = g('to');
+    var fromTok = g('from');
+    var byTok = g('by');
+    var valuesTok = g('values');
+    if (localName === 'set') return toTok;
+    // raw token 值表（类型域无 by 增量语义——from-by/by-only 无效 → null）。
+    var toks = null;
+    if (valuesTok != null) {
+      toks = _parseSemiList(valuesTok);
+      if (!toks) return null;
+    } else if (fromTok != null && toTok != null) {
+      toks = [fromTok, toTok];
+    } else if (fromTok != null && byTok != null) {
+      // from-by：f(t) = from + by·p（SMIL #FromByAnimation——列表域逐项
+      // user units 合成段端点，svglengthlist-4/svgpointlist-2/svgrect-2 面）。
+      var sumTok = _zwListSumTokens(fromTok, byTok);
+      if (sumTok == null) return null;
+      toks = [fromTok, sumTok];
+    } else if (byTok != null) {
+      // by-only：起点取目标属性现值逐项 + by（属性缺席/不可解析 → 无采样）。
+      var baseRaw2 = null;
+      try { baseRaw2 = target.getAttribute(attr); } catch (_eB2) { baseRaw2 = null; }
+      if (baseRaw2 == null) return null;
+      var sumTok2 = _zwListSumTokens(String(baseRaw2), byTok);
+      if (sumTok2 == null) return null;
+      toks = [String(baseRaw2), sumTok2];
+    } else if (toTok != null) {
+      // to-only：起点取目标属性现值（SMIL to-anim 语义 base→to；属性缺席
+      // 保 null——采样返 null 时消费面回落 base 反射即类型缺省值，
+      // svgboolean-1 preserveAlpha 缺席 false 面）。
+      var baseRaw = null;
+      try { baseRaw = target.getAttribute(attr); } catch (_eB) { baseRaw = null; }
+      toks = [baseRaw != null ? String(baseRaw) : null, toTok];
+    } else {
+      return null;
+    }
+    var n1 = toks.length;
+    if (n1 === 1) return toks[0];
+    var calcMode = (g('calcMode') || '').replace(/^\s+|\s+$/g, '').toLowerCase();
+    if (!calcMode) calcMode = 'linear';
+    if (calcMode !== 'linear' && calcMode !== 'discrete'
+        && calcMode !== 'spline' && calcMode !== 'paced') return null;
+    var kt = null;
+    var ks = null;
+    if (calcMode !== 'paced' && g('keyTimes') != null) {
+      var ktRaw = _parseSemiList(g('keyTimes'));
+      var ktNums = null;
+      if (ktRaw) {
+        ktNums = [];
+        for (var k2 = 0; k2 < ktRaw.length; k2++) {
+          var kv = _parseFloatTok(ktRaw[k2]);
+          if (isNaN(kv)) { ktNums = null; break; }
+          ktNums.push(kv);
+        }
+      }
+      kt = ktNums ? _validKeyTimes(ktNums, n1, calcMode) : null;
+      if (kt == null) return null;
+    }
+    if (calcMode === 'spline' && g('keySplines') != null) {
+      ks = _validKeySplines(g('keySplines'), n1 - 1);
+      if (ks == null) return null;
+    }
+    if (calcMode === 'discrete') {
+      // discrete：kt 在场值 i 自 kt[i] 起持有、否则均匀 n 段。
+      var idx = 0;
+      if (kt) {
+        for (var di = 0; di < kt.length; di++) {
+          if (frac >= kt[di]) idx = di; else break;
+        }
+      } else {
+        idx = Math.min(Math.floor(frac * n1), n1 - 1);
+      }
+      return toks[idx];
+    }
+    // 段定位（与数值域同构；spline 段内经 _bezSolve 映射）。
+    var segI;
+    var segF;
+    if (kt) {
+      segI = n1 - 2;
+      segF = 1;
+      for (var li = 0; li <= n1 - 2; li++) {
+        if (frac <= kt[li + 1]) { segI = li; break; }
+      }
+      var ktSpan = kt[segI + 1] - kt[segI];
+      segF = ktSpan > 0 ? (frac - kt[segI]) / ktSpan : 1;
+    } else {
+      var segPos = frac * (n1 - 1);
+      segI = Math.floor(segPos);
+      if (segI >= n1 - 1) {
+        segI = n1 - 2;
+        segF = 1;
+      } else {
+        segF = segPos - segI;
+      }
+    }
+    if (ks) segF = _bezSolve(segF, ks[segI][0], ks[segI][1], ks[segI][2], ks[segI][3]);
+    var a = toks[segI];
+    var b = toks[segI + 1];
+    // ②角度域：度数域插值 + 段端点单位回写（SVGAngle.value 恒为度数；
+    // animVal 单位段内半程前取 from、后半程取 to——unitType 面 deg→200grad
+    // t=2.0 DEG / t=3.999 GRAD 定谳；插值度数按回写单位折算：90 度按 grad
+    // 表达写 100grad）。to-only 起点属性缺席按角度缺省 0（无单位=度）。
+    var da = _zwAngleDegOf(a);
+    var db = _zwAngleDegOf(b);
+    if (db != null && da == null && a == null) {
+      a = '0';
+      da = 0;
+    }
+    if (da != null && db != null) {
+      var sufRe = /^\s*[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\s*([a-zA-Z]*)\s*$/;
+      var sufA = (sufRe.exec(String(a)) || ['', ''])[1];
+      var sufB = (sufRe.exec(String(b)) || ['', ''])[1];
+      var suf = segF <= 0.5 ? sufA : sufB;
+      var sufL = suf.toLowerCase();
+      var uf = sufL === 'grad' ? 0.9 : sufL === 'rad' ? 180 / Math.PI : 1;
+      return _zwNumFmt6(_lerp(da, db, segF) / uf) + suf;
+    }
+    // ③数值列表域：逐项 user units 折算 + 段线性。列表形态（任一端多
+    // token）而任一项不可解析 → 整动画无效（SMIL invalid-value 负向面——
+    // svglengthlist/numberlist/pointlist-invalid-value 族，不落 discrete
+    // 兜底）；tile 短表；to 端项数多于 from → 常值 to 列表不插值
+    //（svglengthlist-3 数对不齐定谳 WebKit 行为）；to 端更少按 from tile
+    // 逐项插值（svgnumberoptionalnumber-3 面）。单 token 数值对直线性。
+    var aParts = String(a).trim().split(/[\s,]+/);
+    var bParts = String(b).trim().split(/[\s,]+/);
+    var aN = 0;
+    var bN = 0;
+    for (var ap = 0; ap < aParts.length; ap++) if (aParts[ap] !== '') aN++;
+    for (var bp = 0; bp < bParts.length; bp++) if (bParts[bp] !== '') bN++;
+    var na = _zwListNumItems(a);
+    var nb = _zwListNumItems(b);
+    if ((aN > 1 || bN > 1) && (!na || !nb)) return null;
+    if (na && nb) {
+      if (nb.length > na.length) return b;
+      var n2 = Math.max(na.length, nb.length);
+      var out = [];
+      for (var ii = 0; ii < n2; ii++) {
+        out.push(_zwNumFmt6(_lerp(na[ii % na.length], nb[ii % nb.length], segF)));
+      }
+      return out.join(' ');
+    }
+    // ④不可插值（enum/boolean/string/URI）：SMIL #InterpolationDefaults——
+    // 不可插值类型按 discrete 语义整值表持有（svgenum-4 五值五秒整秒切换
+    // 面）。无 keyTimes 时均匀段边界取严格 >（harness setCurrentTime 精确
+    // seek 半程——svgboolean-1 t=2.0 归前段 false 定谳，ceil-1 与 WebKit
+    // 虚拟 keyTimes 语义一致）；keyTimes 在场按 SMIL [kt[i], kt[i+1]) 持有。
+    // from-to（n=2）半程前 from 后 to。
+    var di2 = 0;
+    if (kt) {
+      for (var dq = 0; dq < kt.length; dq++) {
+        if (frac >= kt[dq]) di2 = dq; else break;
+      }
+    } else {
+      var segRaw = Math.ceil(frac * n1) - 1;
+      if (segRaw < 0) segRaw = 0;
+      di2 = Math.min(segRaw, n1 - 1);
+    }
+    return toks[di2];
+  };
+
+
   // 目标元素 + 属性名 → 文档序动画采样值三明治合成（SMIL #AdditiveAnimation
   // sandwich model：replace 重置运行值、additive="sum" 累加——文档序优先级
   // 后者高；首个 sum 无前置 replace 时以目标 base 起底）。
@@ -1044,6 +1323,53 @@
     return _animatedValue(el, attr, true);
   };
 
+
+  // 类型域 token 反射消费单点（part03 B6b 接线——globalThis 契约）。文档序
+  // 动画元素取最后非空采样（replace 语义）；fast-path 与数值域同口径
+  //（首 tick 后无 SMIL 元素文档零开销返——tickEverRan/smilSeen）。
+  globalThis._zwSmilAnimToken = function (el, attr) {
+    var doc = null;
+    try { doc = el.ownerDocument; } catch (_eD) { doc = null; }
+    if (!doc) return null;
+    var st = _docTimelines.get(doc);
+    if (st && st.tickEverRan && !st.smilSeen) return null;
+    var t = st ? _currentTimeOf(st) : 0;
+    var kids = null;
+    try { kids = el.children; } catch (_eC) { kids = null; }
+    if (!kids || !kids.length) return null;
+    var out = null;
+    for (var i = 0; i < kids.length; i++) {
+      var c = kids[i];
+      var ln = '';
+      try { ln = String(c.localName || '').toLowerCase(); } catch (_eL) {}
+      if (!_animLocalNames[ln]) continue;
+      var v = _sampleAnimStr(c, el, attr, t);
+      if (v == null) continue;
+      var isSumTk = false;
+      try { isSumTk = c.getAttribute('additive') === 'sum'; } catch (_eAdT) { isSumTk = false; }
+      if (isSumTk) {
+        // additive=sum 三明治（token 域逐项 user units——svglengthlist-5 面
+        // base+采样 delta；任一侧不可解析回落 replace 语义）。
+        var biT = null;
+        try { biT = el.getAttribute(attr); } catch (_eBaT) { biT = null; }
+        var baseItems = biT != null ? _zwListNumItems(biT) : null;
+        var vItems = _zwListNumItems(v);
+        if (baseItems && vItems) {
+          var cntS = Math.max(baseItems.length, vItems.length);
+          var outS = [];
+          for (var sq = 0; sq < cntS; sq++) {
+            outS.push(_zwNumFmt6(baseItems[sq % baseItems.length] + vItems[sq % vItems.length]));
+          }
+          out = outS.join(' ');
+        } else {
+          out = v;
+        }
+      } else {
+        out = v;    // replace 重置
+      }
+    }
+    return out;
+  };
   // ── 事件泵（task 粒度 setTimeout 轮询；paused 靠 seek 扫描驱动）──────
   // SMIL 事件统一经 dispatch 派发：onbegin/onend/onrepeat 处理器（IDL JS
   // 设值 + 内容属性 inline 编译）由 part05 派发的错位名映射触发
