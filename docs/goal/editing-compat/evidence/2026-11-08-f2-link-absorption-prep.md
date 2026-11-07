@@ -78,24 +78,34 @@ link blue ⇒ 有 delta。
 
 ### 约束锚（现绿不可回退）
 
-:2138（blue-in-link 零 delta）、:2163/:2168（u 双位形）、:2173-:2182 邻族
+:2138（blue-in-link 零 delta）、:2163/:2168（u 双位形）、:2113（裸 link 删后
+typed 段入空 link 现绿）、:2118-:2130（font 直亲壳删后幸存——非 link 形外壳
+幸存语义）、:1164/:1174（createlink 后无 typing 无空 `<a>`）、:2173-:2182 邻族
 （sub/fontsize 无 link 形，F6b 域——外壳幸存语义与 link 形相反，剥离规则必须
 link 特异）。红线：每刀 F2P≥0 且 P2F=0/post-only=0/lost=0/rows 恒一。
 
-## 待判别项（开工第一步，动源码前完成）
+## 待判别项（2026-11-08 本轮闭合①②③；④为逐刀纪律）
 
-1. **delta vs absolute**：plain `delete>inserttext`（foo[]bar 无壳无 link）的
-   corpus 期望是否带 `font color="#000000"`——带 ⇒ absolute carry（delta 模型
-   被否，:2138 需另解）；不带 ⇒ delta 模型确立。multitest.js 普查该链形。
-2. **UA link 默认色依赖**：delta 参照 = link computed style。核本仓 UA 样式
-   link 色是否 blue（与 corpus 参照一致）；不一致则参照面须 corpus 钉死值，
-   不读 computed。
-3. **stray empty `<a>`**：createlink collapsed 后**无** typing 的语料形
-   （选区移走/仅结构命令链）是否出现空 `<a>` 幸存期望——pending-flag 模型
-   （typing 时才插 a）与立即插空 a 模型分界。扫 createlink.js 及 multitest
-   相关链形。
-4. **全 36 键 qS/qV 数组复核**：普查残键仅 innerHTML compare 红，qS/qV 全绿
-   ——link arm/清除设计不得动 override 读面。
+1. **delta vs absolute——已闭合，delta 模型确立**：multitest.js 无壳
+   `foo[]bar`+`delete>inserttext` 形**不存在**（:2083-:2130 全族均带壳），
+   delta 模型在语料内无反例。另证 link 特异性：:2118-:2130 font face/size/
+   color **直亲**壳删后幸存接 typed 段（`foo<font face="sans-serif">a[]</font>`，
+   现绿）——与 :2143 font **包 link** 期望剥离相反 ⇒「外壳幸存/剥离」规则
+   必须 link 特异，不可全局化。
+2. **UA link 默认色——已闭合，钉死参照不读 computed**：本仓 UA 样式表无
+   link 色规则（computed = 继承黑），若读 computed 则 :1170（黑 vs 黑零
+   delta 需 carry）与 :2138（blue 需零 delta）双破。**参照钉死 #0000ff**
+   （Chrome UA blue）：:2138 blue≡ref 零 delta ✓、:2148 brown、:2158 black、
+   :1170 黑 均≠ref ⇒ carry ✓ 四案全合；carry 通道仅 color/face/size，
+   永不含 text-decoration（:2163/:2168 u 不 carry 自然成立）。
+3. **stray empty `<a>`——已闭合，pending-flag 模型确认**：:1164
+   `createlink>delete`（无 typing）期望 `fo[]bar` **无空 `<a>`**；:1174
+   `createlink>formatblock` 期望 `<div>foo[]bar</div>` 同证——createlink
+   collapsed 只置态不插元素，a 仅在 typing 时插入。qV 断言
+   `createlink:[false,false,"",…]`（qV=""、qS=false）现绿 ⇒ arm 面不得触
+   override 读面（与 knife11 v5 旗标-only 臂一致）。
+4. **全 36 键 qS/qV 数组复核**（逐刀纪律，非设计判别）：普查残键仅
+   innerHTML compare 红，qS/qV 全绿——每键施工前核全 23 子测试数组。
 
 ## 集成点清单
 
