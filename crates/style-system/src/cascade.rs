@@ -76,9 +76,9 @@ impl CascadeOrder {
     /// 2. important 时: user-agent > user > author（反转）
     ///    normal 时: author > user > user-agent
     /// 3. 树上下文：normal 外层树 > 内层树；important 内层树 > 外层树（CSS Scoping §5）
-    /// 4. style 属性 > sheet 声明（独立级联上下文，R4245）
-    /// 5. unlayered > layered
-    /// 6. later layer > earlier layer
+    /// 4. style 属性 > sheet 声明（独立级联上下文，R4245，不分 importance 恒最高）
+    /// 5. unlayered > layered；important 反转：layered > unlayered（cascade-5 §6.4）
+    /// 6. later layer > earlier layer；important 反转：earlier > later（cascade-5 §6.4）
     /// 7. higher specificity wins
     /// 8. later position wins
     fn sort_key(&self) -> (bool, u8, u8, bool, bool, usize, (u32, u32, u32), usize) {
@@ -110,9 +110,23 @@ impl CascadeOrder {
             1 - self.tree_context
         };
 
-        // unlayered (None) > layered (Some)
-        let is_unlayered = self.layer_index.is_none();
-        let layer_idx = self.layer_index.unwrap_or(0);
+        // 层轴（CSS Cascade 5 §6.4）：normal 分区 unlayered (None) > layered (Some)、
+        // later layer > earlier layer；important 分区反转——layered > unlayered、
+        // earlier layer > later layer。R4245 已在 slow path（cascade_slow_key）采用该
+        // 语义；45 号 M3 layer-slotted-rule 证明主路径同样需要（unlayered red!important
+        // 不当压过 layered green!important）。style 属性轴（下一轴）恒最高，不参与反转。
+        let is_unlayered = if self.important {
+            self.layer_index.is_some()
+        } else {
+            self.layer_index.is_none()
+        };
+        let layer_idx = match self.layer_index {
+            None => 0,
+            // unlayered 轴已由 is_unlayered 分离；此值仅在 layered 同侧比较中生效，
+            // important 时取 MAX-i 使早层胜晚层。
+            Some(i) if self.important => usize::MAX - i,
+            Some(i) => i,
+        };
 
         (
             self.important,       // 1. important > normal
@@ -1696,6 +1710,38 @@ mod tests {
         let late = CascadeOrder::new(Origin::Author, Some(1), (0, 0, 1), 0, false);
 
         assert!(late > early);
+    }
+
+    // CSS Cascade 5 §6.4：important 分区层序反转——layered 胜 unlayered、早层胜晚层
+    //（45 号 M3 layer-slotted-rule：unlayered red!important 不当压过 layered
+    // green!important 致恒红）。
+    #[test]
+    fn test_cascade_important_layered_beats_unlayered() {
+        let layered = CascadeOrder::new(Origin::Author, Some(0), (0, 0, 1), 0, true);
+        let unlayered = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, true);
+
+        assert!(layered > unlayered);
+    }
+
+    #[test]
+    fn test_cascade_important_earlier_layer_beats_later() {
+        let early = CascadeOrder::new(Origin::Author, Some(0), (0, 0, 1), 0, true);
+        let late = CascadeOrder::new(Origin::Author, Some(1), (0, 0, 1), 0, true);
+
+        assert!(early > late);
+    }
+
+    #[test]
+    fn test_cascade_important_style_attr_beats_layered() {
+        // style 属性上下文不分 importance 恒最高（R4245 ctx_rank 语义）。
+        let style_attr = {
+            let mut o = CascadeOrder::new(Origin::Author, None, (0, 0, 1), 0, true);
+            o.style_attribute = true;
+            o
+        };
+        let layered = CascadeOrder::new(Origin::Author, Some(5), (1, 0, 0), 9, true);
+
+        assert!(style_attr > layered);
     }
 
     #[test]

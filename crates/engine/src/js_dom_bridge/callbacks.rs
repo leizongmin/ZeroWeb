@@ -3454,6 +3454,24 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 45 号 shadow-dom-rendering M3：sel 子挂容器 handle 的 append 接线（R97 noWire
+    // 缺口补全——shadow 容器 appendChild(selChild) 的 engine 落树，变体 doc 记语义）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_append_child_handle_sel",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::AppendChildByHandleSel {
+                        parent_handle: args[0].clone(),
+                        child_selector: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     // t7（js-dom P15 修复）：plain 祖先 append 的路径寻址回调——path 由 shim 以
     // 逗号连接的 child-index 串传入（如 "0,2,1"），此处解析为 Vec<u32>。
     let parse_child_path =

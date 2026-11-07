@@ -230,6 +230,20 @@ pub enum DomMutation {
         /// 子节点句柄。
         child_handle: String,
     },
+    /// 45 号 shadow-dom-rendering M3：`containerHandle.appendChild(selChild)`——父为
+    /// 容器/元素 create 句柄，子为 markup 章的 selector 子（无 create 句柄）。R97 noWire
+    /// 缺口（shadow 容器 append 后 slot/light 子只落 JS 侧 `_handleChildren`，engine
+    /// 树看不到——slot-fallback-content-004 恒空根因）。子经 find_by_selector 解析；
+    /// 同批前序 move-out（`Remove`）已摘除时复用 detached_stash 的 NodeId（移动语义，
+    /// spec pre-insert 摘除后同节点再插）。父句柄批内未注册/子悬垂 → lenient warn+跳过
+    /// （renderer 批 lenient 口径，R125）；跨批持久父句柄的翻译臂暂未覆盖（无 sel/sel
+    /// append 变体可译），同走 warn+跳过。
+    AppendChildByHandleSel {
+        /// 父节点句柄（fragment/shadow 容器或 create 元素）。
+        parent_handle: String,
+        /// 子节点选择器（markup 章 `__zwSelector`）。
+        child_selector: String,
+    },
     /// t7（js-dom P15 修复）：`plainAncestor.appendChild(handleChild)` — 父在 host 无直接锚
     /// （`innerHTML` 解析出的 plain 视图，无 handle/sel），以「parentNode 链上最近 sel/handle
     /// 祖先锚 + child-index 路径」寻址。spec
@@ -1850,6 +1864,34 @@ pub fn apply_dom_mutations_full(
                     .ok_or_else(|| format!("unknown child handle {child_handle}"))?;
                 doc.append_child(parent, child).map_err(|e| e.to_string())?;
             }
+            // 45 号 M3：sel 子挂容器 handle 的 engine 落树（R97 noWire 缺口补全——
+            // variant doc 记 lenient 口径与移动语义）。
+            DomMutation::AppendChildByHandleSel {
+                parent_handle,
+                child_selector,
+            } => {
+                let Some(parent) = handles.get(&parent_handle).copied() else {
+                    tracing::warn!(
+                        "apply DOM mutations: append_child handle_sel parent unanchored, skipped: {parent_handle}"
+                    );
+                    continue;
+                };
+                let child = match find_by_selector(doc, &child_selector) {
+                    Some(c) => c,
+                    // R361：同批前序 move-out（`Remove`）已摘除 → stash 复用 NodeId
+                    //（appendChild 移动语义：spec pre-insert 摘除后同节点再插）。
+                    None => match detached_stash.remove(child_selector.as_str()) {
+                        Some(id) => id,
+                        None => {
+                            tracing::warn!(
+                                "apply DOM mutations: append_child handle_sel child no match, skipped: {child_selector}"
+                            );
+                            continue;
+                        }
+                    },
+                };
+                doc.append_child(parent, child).map_err(|e| e.to_string())?;
+            }
             // t7（js-dom P15 修复）：plain 祖先上的 append 以「锚 + child-index 路径」落 host。
             // 锚 handle/路径解析失败 → lenient no-op（R125 口径：host 与 JS 解析视图分歧
             // 不中止整批，跳过即修复前形态）；子 handle 悬垂仍硬错（与 AppendChildByHandle
@@ -2367,11 +2409,38 @@ pub fn apply_dom_mutations_full(
                     .map_err(|e| e.to_string())?;
                 handles.insert(root_handle.clone(), root);
             }
-            DomMutation::AttachShadowOnHandle { host_handle, .. } => {
-                // s168：翻译臂未接住（宿主句柄既不在 ephemeral 表也无持久 selector 锚）
-                // → lenient warn+跳过（R125 口径：host 与 JS 解析视图分歧不中止整批，
-                // 跳过即修复前形态）。
-                tracing::warn!("apply DOM mutations: attach_shadow handle host unanchored, skipped: {host_handle}");
+            DomMutation::AttachShadowOnHandle {
+                ref host_handle,
+                ref root_handle,
+                ref mode,
+                ref delegates_focus,
+                ref clonable,
+                ref serializable,
+            } => {
+                // 45 号 shadow-dom-rendering M3（css-scoping-shadow-slotted-nested）：宿主
+                // 句柄批内 ephemeral（innerHTML 克隆的内层宿主）时翻译臂不接（contains_key
+                // 命中），原 warn+skip 臂使内层 shadow 从不物化。宿主在 handles 表即直连
+                // attach（语义同上方 selector 变体）；跨批持久宿主已由翻译臂转为 selector
+                // 形态，悬垂句柄保持 lenient warn+跳过（R125 口径：host 与 JS 解析视图分歧
+                // 不中止整批）。https://dom.spec.whatwg.org/#dom-element-attachshadow
+                match handles.get(host_handle).copied() {
+                    Some(host) => {
+                        let m = if mode == "open" {
+                            zero_dom::ShadowRootMode::Open
+                        } else {
+                            zero_dom::ShadowRootMode::Closed
+                        };
+                        let root = doc
+                            .attach_shadow_full(host, m, *delegates_focus, *clonable, *serializable, false)
+                            .map_err(|e| e.to_string())?;
+                        handles.insert(root_handle.clone(), root);
+                    }
+                    None => {
+                        tracing::warn!(
+                            "apply DOM mutations: attach_shadow handle host unanchored, skipped: {host_handle}"
+                        );
+                    }
+                }
             }
             DomMutation::AppendFragmentChildren {
                 parent_selector,

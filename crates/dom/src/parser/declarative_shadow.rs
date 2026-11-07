@@ -614,4 +614,27 @@ mod tests {
             r#"<div><template shadowrootmode="Open"><a></template><template shadowrootmode="Close"><b></template></div>"#
         );
     }
+
+    // 45 号 M3（css-scoping-shadow-slotted-nested）：custom element 名（连字符形态）
+    // 宿主同为 valid shadow host（https://dom.spec.whatwg.org/#valid-shadow-host-name
+    // ——词汇法判定，无需注册面）；HTML spec 保留名与无连字符名不算。
+    #[test]
+    fn hyphenated_custom_element_hosts_materialize() {
+        // 连字符宿主物化。
+        let doc = crate::parse_html(
+            r#"<html><body><inner-host><template shadowrootmode=open><span>S</span></template></inner-host></body></html>"#,
+        );
+        let host = doc.query_selector(doc.root(), "inner-host").expect("host present");
+        assert!(doc.shadow_root(host).is_some(), "hyphenated host materializes");
+        // 保留名（#valid-custom-element-name 排除表）不物化。
+        let doc2 = crate::parse_html(
+            r#"<html><body><annotation-xml><template shadowrootmode=open><span>S</span></template></annotation-xml></body></html>"#,
+        );
+        assert!(doc2.shadow_root_ids().is_empty(), "reserved name keeps template");
+        // 无连字符名不物化。
+        let doc3 = crate::parse_html(
+            r#"<html><body><innerhost><template shadowrootmode=open><span>S</span></template></innerhost></body></html>"#,
+        );
+        assert!(doc3.shadow_root_ids().is_empty(), "non-hyphenated name keeps template");
+    }
 }

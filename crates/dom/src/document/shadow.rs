@@ -11,6 +11,60 @@ use crate::node::{NodeData, NodeId, NodeKind, ShadowRootData, ShadowRootMode};
 use super::Document;
 use super::DomError;
 
+/// valid shadow host 名（词汇法）：valid custom element name 或基本元素名单。
+///
+/// 45 号 M3 前名单只含基本元素；连字符宿主（`inner-host` 等 custom element 名
+/// 形态）同为 valid shadow host（命令式 attachShadow shim 侧同款 ASCII 词汇法——
+/// 小写字母开头、含连字符、`[a-z0-9._-]` 字符集；HTML spec 保留名不算 valid）。
+/// 词汇法判定即可，无需自定义元素注册面。
+/// https://dom.spec.whatwg.org/#valid-shadow-host-name
+/// https://html.spec.whatwg.org/multipage/custom-elements.html#valid-custom-element-name
+fn is_valid_shadow_host_name(name: &str) -> bool {
+    // 基本元素名单（dom.spec whatwg #valid-shadow-host-name）。
+    const BASIC_VALID_SHADOW_HOST_NAMES: &[&str] = &[
+        "article", "aside", "blockquote", "body", "div", "footer", "h1", "h2", "h3", "h4", "h5",
+        "h6", "header", "main", "nav", "p", "section", "span",
+    ];
+    if BASIC_VALID_SHADOW_HOST_NAMES.contains(&name) {
+        return true;
+    }
+    is_valid_custom_element_name_ascii(name)
+}
+
+/// valid custom element name 的 ASCII 词汇法（镜像 shim `_attachShadow` 校验形态）：
+/// `[a-z]` 开头、`[a-z0-9._-]` 组成、含至少一个连字符（非首字符），且不在 HTML
+/// spec 保留名排除表内（PCENChar 的非 ASCII 段不在此列，shim 同口径只放 ASCII）。
+fn is_valid_custom_element_name_ascii(name: &str) -> bool {
+    // HTML spec #valid-custom-element-name 排除的保留名。
+    // https://html.spec.whatwg.org/multipage/custom-elements.html#valid-custom-element-name
+    const RESERVED_CUSTOM_ELEMENT_NAMES: &[&str] = &[
+        "annotation-xml",
+        "color-profile",
+        "font-face",
+        "font-face-src",
+        "font-face-uri",
+        "font-face-format",
+        "font-face-name",
+        "missing-glyph",
+    ];
+    if RESERVED_CUSTOM_ELEMENT_NAMES.contains(&name) {
+        return false;
+    }
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    let rest = chars.as_str();
+    if !rest
+        .bytes()
+        .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_'))
+    {
+        return false;
+    }
+    rest.contains('-')
+}
+
 impl Document {
     /// 为宿主元素附加 ShadowRoot（全参形态，s180/gethtml Batch 2）。
     ///
@@ -164,34 +218,14 @@ impl Document {
             // 元素上生效——名单外宿主（void/table 上下文等）的 template 保留普通
             // 形态，其 shadowrootmode 值已被上方 s173 还原为源码小写（WPT
             // attachment.html disallowed 臂：template 保留 + getAttribute 断言面）。
-            // FIXME: custom element 宿主同为 valid shadow host，待自定义元素注册
-            // 面接线后放开（上游 oracle 名单亦不含）。
+            // 45 号 M3（css-scoping-shadow-slotted-nested）：custom element 名宿主
+            //（连字符）同为 valid shadow host——词汇法判定即可，无需注册面。
             // https://dom.spec.whatwg.org/#valid-shadow-host-name
-            const VALID_SHADOW_HOST_NAMES: &[&str] = &[
-                "article",
-                "aside",
-                "blockquote",
-                "body",
-                "div",
-                "footer",
-                "h1",
-                "h2",
-                "h3",
-                "h4",
-                "h5",
-                "h6",
-                "header",
-                "main",
-                "nav",
-                "p",
-                "section",
-                "span",
-            ];
             let host_valid = self
                 .nodes
                 .get(host)
                 .map(|n| match &n.kind {
-                    NodeKind::Element(elem) => VALID_SHADOW_HOST_NAMES.contains(&elem.local_name()),
+                    NodeKind::Element(elem) => is_valid_shadow_host_name(&elem.local_name()),
                     _ => false,
                 })
                 .unwrap_or(false);

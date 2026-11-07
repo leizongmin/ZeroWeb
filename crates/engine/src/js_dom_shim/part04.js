@@ -8096,7 +8096,16 @@
                 } catch (_eMvK) {}
                 if (_mvIdx >= 0) {
                   if (!child.__zwSelPathWrite) {
-                    try { __zw_remove_child_at(_mvOldSel, String(_mvIdx)); } catch (_eMvW) {}
+                    // 45 号 shadow-dom-rendering M3：selector 章子改走 Remove（engine
+                    // `Remove` 臂按 selector 键 detached_stash——同批 move-in
+                    // AppendChildByHandleSel 按 selector 复用 NodeId，remove/append
+                    // 同键同节点；index 线的 RemoveChildAt 不入 stash，move-in 复用不了）。
+                    // innerHTML 视图子（无章，R5340 SetInnerHTML 序依赖）保持 index 线。
+                    if (child.__zwSelector && typeof __zw_remove === 'function') {
+                      try { __zw_remove(child.__zwSelector); } catch (_eMvR) {}
+                    } else {
+                      try { __zw_remove_child_at(_mvOldSel, String(_mvIdx)); } catch (_eMvW) {}
+                    }
                   }
                   var _mvB = null;
                   if (typeof _zwPendBucket === 'function') {
@@ -8147,6 +8156,19 @@
                 && typeof _zwAriaSyncParent !== 'undefined') {
               _zwAriaSyncParent[String(child.__zwSelector)] = { parentSel: null, parentHandle: handle };
               try { child._zwSelPendingParent = { parentSel: null, parentHandle: handle, nextSibling: null }; } catch (_e5240cs) {}
+            }
+            // 45 号 shadow-dom-rendering M3（R97 noWire 缺口补全）：selector 章子挂
+            // handle 容器（shadow/fragment/handle 元素——目标 sel 空）的 **engine 落树
+            // 接线**。此前只入 `_handleChildren`（JS 视图）+ move-out Remove（engine
+            // 摘除），engine 侧子就地悬垂——shadow 容器场景 slot/light 子从不进 shadow
+            // 树（slot-fallback-content-004 恒空根因；快照回写丢子）。move-in 与
+            // move-out 同键（selector，Remove 臂 detached_stash 复用 NodeId——spec
+            // pre-insert 摘除后同节点再插）。innerHTML 视图子（无章无 engine 节点，
+            // R145 延迟 apply 面）保持 R97 本地簿记；handle 子走 `__zw_append_child_handle`
+            //（既有臂）不经此块。
+            if (handle && child && child.__zwSelector && !child.__zwHandle
+                && typeof __zw_append_child_handle_sel === 'function') {
+              try { __zw_append_child_handle_sel(handle, String(child.__zwSelector)); } catch (_eM3sel) {}
             }
             if (child && !child.__zwHandle && handle && child.nodeType) {
               if (!_handleChildren[handle]) _handleChildren[handle] = [];

@@ -97,3 +97,6 @@ include!("js_dom_bridge_tests/part96.rs");
 // renderer 信任边界 ②C'：`__zw*` 特权 mutator counter-plugin 常驻回归（非 part 编号——
 // 跨 part 面：删除策略 + 闭包化非回归 + 激活门不可旁路）。
 include!("js_dom_bridge_tests/privilege_guard.rs");
+// 45 号 shadow-dom-rendering M3：命令式面变异序列探针/回归（attachShadow 移动语义 +
+// 分配表新鲜度）。
+include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
