@@ -4523,7 +4523,27 @@
                    // range」的 caret 面 no-op（api 尾部 CE div 案 promise 挂点）。
                    // 直接走 `__zw_ce_insert`（caret 构建 + 变更 + 事件序；
                    // withTextInput=false——execCommand 不派 textInput）。
+                   // 选区让位门（editing-compat 第十刀 2026-11-07）：选区已有 range
+                   // 且起点锚爬升至 editing host 时本分支让位 generic 分支——宿主
+                   // 自选区爬升（与其余编辑命令同径）。activeElement 视图与选区
+                   // 家族视图分叉时（mt faithful 环境 setup innerHTML 换代 + 结构
+                   // 命令重锚后），变异落 activeElement 视图副本、compare 侧不可见
+                   //（faithful `[值命令,结构命令,inserttext]` 链 caret 健康
+                   // #text@3 却产出零变异树，A 簇红源）。章程面（focus 未建
+                   // Selection range / 锚不在宿主内）行为不变。
                    try {
+                     var _sel57 = (typeof _getSelection === 'function') ? _getSelection() : null;
+                     var _r57 = _sel57 && _sel57.rangeCount > 0 ? _sel57._ranges[0] : null;
+                     var _n57 = _r57 ? _r57.startContainer : null;
+                     var _g57 = 0;
+                     while (_n57 && _g57++ < 256) {
+                       if (_n57.nodeType === 1 && _n57.getAttribute
+                           && _n57.getAttribute('contenteditable') !== null
+                           && String(_n57.getAttribute('contenteditable')).toLowerCase() !== 'false') {
+                         return false;
+                       }
+                       _n57 = _n57.parentNode;
+                     }
                      var t57c = globalThis.document.activeElement;
                      return !!(t57c && typeof globalThis.__zw_is_ce_host === 'function'
                        && globalThis.__zw_is_ce_host(t57c));

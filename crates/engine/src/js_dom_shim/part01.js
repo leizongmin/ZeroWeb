@@ -9202,6 +9202,7 @@
     // 同世界 caret（连续键入流）contains 命中零开销跳过。`_zwSynced`：本轮是否
     // 发生过世界同步回灌（决定一级重锚是否让位，见下）。
     var _zwSynced = false;
+    var _zwSyncCaretLost = false;
     try {
       var _selSync = (typeof _getSelection === 'function') ? _getSelection() : null;
       var _scSync = _selSync && _selSync._ranges && _selSync._ranges[0]
@@ -9216,12 +9217,62 @@
           var _htmlSync = '';
           try { _htmlSync = String(_phSync.innerHTML || ''); } catch (_eSh) {}
           if (_htmlSync !== '') {
+            // 回灌前活锚路径捕获（editing-compat 第十刀 2026-11-07）：锚在自身
+            // 家族视图内存活（document.contains）而宿主 fused 视图滞留旧形态时，
+            // 回灌以锚侧视图重建 el 子树——重建换代会打死该活锚，②随后的
+            // sel+path 重解析在换代子树上落包裹壳边界（faithful 环境
+            // `[值命令,iol,inserttext]` 链 caret (foo,3)→(ol,1)，inserttext 走
+            // 元素臂把 typed 壳挂列表尾，A 簇红源）。回灌前按 (锚→_phSync) 索引
+            // 链捕获 caret 逻辑位，回灌后自 el 同位下行回植——内容幂等重建下
+            // 逻辑位不变。捕获失败（链断/锚离文档）不回植，章程行为不变。
+            var _syncCaret = null;
+            try {
+              var _sc0 = _selSync._ranges[0].startContainer,
+                  _so0 = _selSync._ranges[0].startOffset | 0;
+              if (_sc0 && document.contains && document.contains(_sc0)) {
+                var _pth0 = [], _cur0 = _sc0, _g0 = 0, _ok0 = true;
+                while (_cur0 && _cur0 !== _phSync && _g0++ < 256) {
+                  var _p0 = _cur0.parentNode;
+                  if (!_p0) { _ok0 = false; break; }
+                  var _kids0 = _p0.childNodes || [], _idx0 = -1;
+                  for (var _i0 = 0; _i0 < _kids0.length; _i0++) {
+                    if (_kids0[_i0] === _cur0) { _idx0 = _i0; break; }
+                  }
+                  if (_idx0 < 0) { _ok0 = false; break; }
+                  _pth0.unshift(_idx0);
+                  _cur0 = _p0;
+                }
+                if (_ok0 && _cur0 === _phSync) {
+                  _syncCaret = { path: _pth0, off: _so0,
+                    collapsed: _selSync._ranges[0].collapsed };
+                }
+              }
+            } catch (_eCp) {}
             // 撞车合并仲裁（2026-10-31）：回灌子树归本文 plain 补偿域——world-sync
             // 期间不发 D1 stamping（part04 钩子查 `__zwCeWorldSyncing`；stamp 域
             // 访问器移除面对回灌子树 remove 有缺口，语料 join 后残留 `<br>` 实证）。
             _zwSynced = true;
             globalThis.__zwCeWorldSyncing = true;
             try { el.innerHTML = _htmlSync; } catch (_eSw) {} finally { globalThis.__zwCeWorldSyncing = false; }
+            // 回植（第十刀）：捕获成功的塌缩 caret 自 el 同位下行回植；本轮跳过②
+            //（回植位即回灌前活锚逻辑位，重解析纯损耗）。非塌缩选区不回植（章程
+            // 行为）。回植落点随下行断链放弃（_syncCaret 清空，交②章程域）。
+            if (_syncCaret && _syncCaret.collapsed) {
+              try {
+                var _cR = el;
+                for (var _dR = 0; _dR < _syncCaret.path.length && _cR; _dR++) {
+                  _cR = (_cR.childNodes || [])[_syncCaret.path[_dR]];
+                }
+                if (_cR) {
+                  var _nrR = document.createRange();
+                  _nrR.setStart(_cR, _zwCeClampOffset(_cR, _syncCaret.off));
+                  _nrR.collapse(true);
+                  _selSync._ranges[0] = _nrR;
+                  _syncCaret = null;
+                }
+              } catch (_eCr) {}
+            }
+            if (_syncCaret) _zwSyncCaretLost = true;
           }
         }
       }
@@ -9240,7 +9291,22 @@
         try { s._ranges[0] = r2; } catch (_eCa) {}
         return r2;
       }
-      var rr = _zwCeReresolveCaret(r0);
+      // 活锚让位门（editing-compat 第十刀 2026-11-07）：锚仍存活于本宿主子树
+      // 内时跳过② sel-path 重解析、保留原 range。②章程（D3 注）是 setup/resync
+      // 换代后 detached 旧对象残留的补偿——joins 语料锚已移出宿主 childNodes
+      //（探针 idx=-1），章程案不受影响。锚在宿主内时 `_zwCeCaretAnchorStale`
+      // 的 sel+path 下行经 query wrapper 家族视图解析，身份翻异（落点非原对象）
+      // 是跨族身份 churn 伪阳性：结构命令（iol wrap 等）保身份迁移内容后，活锚
+      // 被误判陈旧并按登记路径重映射到包裹壳边界（multitest faithful 环境
+      // `[值命令,iol,inserttext]` 链 caret 落 (ol,1)，inserttext 走元素边界臂把
+      // typed 壳挂列表尾，A 簇 131 键红源；直调环境同锚 stale=false 零误判）。
+      // 活锚位置即当前 caret 语义位置，重解析无收益纯损耗。
+      var _rrKeep = _zwSyncCaretLost;
+      try {
+        _rrKeep = _rrKeep || !!(el && typeof el.contains === 'function'
+          && r0.startContainer && el.contains(r0.startContainer));
+      } catch (_eKc) {}
+      var rr = _rrKeep ? null : _zwCeReresolveCaret(r0);
       if (rr) { try { s._ranges[0] = rr; } catch (_eD3w) {} }
       return rr || r0;
     }
