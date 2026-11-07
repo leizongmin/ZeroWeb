@@ -8329,3 +8329,91 @@ fn test_canvas_ctr_illegal_ctor_and_settings_s334() {
         "离格枚举/非对象 options → TypeError（spec 字典转换）"
     );
 }
+
+#[test]
+fn test_classic_strict_wrapper_uncaught_report_and_load_s335() {
+    // s335 契约（strict 车道未捕获报告面，spec run-a-classic-script abrupt completion）：
+    //   ①window error 事件在 catch 内**同步**派发（reportError 原值透传——报告先于检查点）；
+    //   ②体内 queueMicrotask 微任务经包装 execute 末检查点排空——序在报告之后；
+    //   ③元素 load 微任务派发——序在微任务之后（spec fire load 在 clean-up 检查点后；
+    //     evaluation-order-1 判据 [body, global-error, microtask] + onload=testDone）；
+    //   ④sentinel 原始消息保真（first_strict_error 链不变）；
+    //   ⑤基线包装静默面保持——browser tab/renderer 车道 sentinel→R2940 自报链防双报。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> =
+        Arc::new(Mutex::new("<html><body></body></html>".to_string()));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("https://wpt.test/t.html".to_string()));
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let mut sandbox = V8Sandbox::with_config(zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    })
+    .unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    register_dom_callbacks(
+        &mut sandbox,
+        &mutations,
+        &dom_html,
+        &page_url,
+        &canvas_registry,
+        None,
+    );
+    // 侦听面 + DOM 内 script 元素（currentScript 按活列表序号解析——元素须真实在位）
+    sandbox.execute(
+        "globalThis.__zlog=[];\
+         globalThis.addEventListener('error',function(ev){__zlog.push('error:'+String(ev&&ev.error&&ev.error.message||'?'));});\
+         document.body.innerHTML='<script id=zw-s335></script>';\
+         document.getElementById('zw-s335').addEventListener('load',function(){__zlog.push('load');});",
+    )
+    .unwrap();
+    // strict 变体：体内微任务 + 抛错
+    let strict = crate::js_dom_bridge::script_run_classic_page_strict(
+        "__zlog.push('body');queueMicrotask(function(){__zlog.push('mt');});throw new Error('boom');",
+        0,
+        None,
+    );
+    sandbox.execute(&strict).unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "body|error:boom|mt|load",
+        "strict 臂：报告（catch 内同步）→ 检查点微任务 → 元素 load（spec 序）"
+    );
+    let sentinel = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert!(
+        sentinel.contains("boom"),
+        "sentinel 原始消息保真（first_strict_error 链）: {sentinel}"
+    );
+    // 基线包装（browser tab / renderer 车道共用）：静默面保持
+    sandbox.execute("globalThis.__zlog=[];").unwrap();
+    let base = crate::js_dom_bridge::script_run_classic_page(
+        "__zlog.push('body');queueMicrotask(function(){__zlog.push('mt');});throw new Error('bang');",
+        0,
+        None,
+    );
+    sandbox.execute(&base).unwrap();
+    assert_eq!(
+        sandbox
+            .execute("globalThis.__zlog.join('|')")
+            .unwrap()
+            .value,
+        "body|mt",
+        "基线包装静默如旧——无 window error 事件、无元素 load（报告归属 R2940/sentinel 链）"
+    );
+    let base_sentinel = sandbox
+        .execute(&crate::js_dom_bridge::page_script_error_check())
+        .unwrap()
+        .value;
+    assert!(
+        base_sentinel.contains("bang"),
+        "基线包装 sentinel 链不受影响: {base_sentinel}"
+    );
+}

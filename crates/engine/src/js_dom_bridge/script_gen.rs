@@ -789,6 +789,17 @@ lineNumber:{line},columnNumber:{column}}});\
 /// [`page_script_error_check`] 读取。
 pub const PAGE_SCRIPT_ERROR_GLOBAL: &str = "__zw_pgerr__";
 
+/// s335 strict 车道未捕获报告尾——进 catch 臂、哨兵写之后（JS 源文；入 format! 前花括号
+/// 加倍，见 [`script_run_classic_page_impl`]）。时序依据：①`reportError` 同步派发 window
+/// error 事件（handler 在 catch 内跑——spec report the exception 位置）；②元素 load 经
+/// queueMicrotask 延至包装 execute 末检查点——体内微任务（如 evaluation-order-1
+/// throw 体 `queueMicrotask` 先于 throw 入队）先于 load 排空。元素引用在 catch 点同步
+/// 捕获：`document.currentScript` 由 finally 清理（R3258），微任务窗内已清不可延迟读取。
+/// `globalThis.reportError` 缺席（shim 未装）/ currentScript 解析失败均 try 守卫降级。
+const STRICT_UNCAUGHT_REPORT_TAIL: &str = "try{globalThis.reportError&&globalThis.reportError(__zw_e);}catch(_zwRe){}\
+try{var _zwCs=document.currentScript;queueMicrotask(function(){\
+try{_zwCs&&_zwCs.dispatchEvent(new Event('load'));}catch(_zwLe){}});}catch(_zwQm){}";
+
 /// `var` 声明的 accessor 转导出片段（R201）：get/set 双向转发 eval 绑定——后续脚本
 /// 读 `globalThis.NAME` 得当前值，写落回 eval 绑定（WPT dom/common.js 的跨脚本再赋值
 /// 流）。仅 strict eval 使用：非 strict 的间接 eval 里 var 本已泄漏为全局数据属性，
@@ -1350,6 +1361,31 @@ fn scan_top_level_decl_exports(code: &str, is_strict: bool) -> String {
 /// [`script_report_error`] 取首行（带栈文本不改变 5-arg 消息形状），ScriptErrorParams
 /// 全文携带栈帧行（pageerror 归因面）。
 pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Option<&str>) -> String {
+    script_run_classic_page_impl(code, script_index, source_url, false)
+}
+
+/// s335 strict 车道变体（runner harness 页专用——`webview::run_page_scripts_strict` 唯一
+/// 消费方）：基线包装之上，catch 臂补 spec 未捕获报告面——`reportError` **原值透传**
+/// （window error 事件在 catch 内同步派发：spec run-a-classic-script abrupt completion →
+/// report the exception 先于 clean-up 检查点，checkpoint-after-window-onerror t1 判据；
+/// 旧版 strict 车道无任何报告面——global-error 缺失、checkpoint t1 got []、
+/// evaluation-order-1 classic-throw 全 pending 即此面）+ 元素照常 fire load（**运行时
+/// 抛错仍 fire load**——error 仅网络级取回失败面，evaluation-order-1
+/// `onerror="unreachable()"` + `onload="testDone()"` 判据）。load 派发经 queueMicrotask
+/// 延至包装 execute 末检查点：体内微任务先排空、load 在其后（spec 序
+/// `[body, global-error, microtask]`）。browser tab lane / renderer lane 走基线包装的
+/// sentinel→R2940 自报链（本变体若被复用即双报），不得互换。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-classic-script
+pub fn script_run_classic_page_strict(code: &str, script_index: usize, source_url: Option<&str>) -> String {
+    script_run_classic_page_impl(code, script_index, source_url, true)
+}
+
+fn script_run_classic_page_impl(
+    code: &str,
+    script_index: usize,
+    source_url: Option<&str>,
+    report_uncaught: bool,
+) -> String {
     let code_literal = format!("'{}'", escape_js_string(code));
     // R147（js-dom M4）：顶层函数声明的**全局发布**。间接 eval `(0,eval)` 中源内
     // 'use strict'/"use strict" 指令使 eval 建独立变量环境——顶层 `function` 声明
@@ -1413,6 +1449,13 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         // 换行不改指令序言（directive 仍为源首语句）与 eval 同变量环境语义。
         format!("+'{}'", escape_js_string(&format!("\n{tail}")))
     };
+    // {report_tail} 进 format! 前花括号加倍——JS 体自身含 `{`/`}`（format! 转义语义），
+    // 基线路径恒空串（字节形状与拆分前逐位一致）。
+    let report_tail = if report_uncaught {
+        STRICT_UNCAUGHT_REPORT_TAIL.replace('{', "{{").replace('}', "}}")
+    } else {
+        String::new()
+    };
     format!(
         // T64 返修（缺陷首轮 D1/D2）：①message/stack 访问各带 try 守卫——异形
         // throw 对象（getter 抛错）退化为栈文本可见（旧臂吞为静默）；②V8 判定
@@ -1423,9 +1466,10 @@ pub fn script_run_classic_page(code: &str, script_index: usize, source_url: Opti
         // per-script 包装（webview 侧）会把 globalThis.eval 换成检查包装，本机制自身的
         // 页面脚本执行必须走**原生 eval**（包装安装片段先捕获 __zwRealEval；无门禁时
         // 回落 eval，语义同为间接 eval 全局作用域）。
-        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
+        "globalThis.__zw_set_current_script&&globalThis.__zw_set_current_script({idx});\nglobalThis.{g}=undefined;\ntry{{(0,globalThis.__zwRealEval||eval)({code_literal}{export_suffix});}}catch(__zw_e){{globalThis.{g}=function(e){{var m='';try{{m=(e&&e.message!==undefined)?String(e.message):String(e);}}catch(_em){{m='';}}var s='';try{{s=(e&&e.stack)?String(e.stack):'';}}catch(_es){{s='';}}if(!s)return m;var nl=s.indexOf('\\n');var head=nl<0?s:s.slice(0,nl);var v8=m&&head.indexOf(m)>=0&&!/^\\s*at\\s/.test(head);return v8?s:(m?m+'\\n'+s:s);}}(__zw_e);{report_tail}}}\nfinally{{globalThis.__zw_clear_current_script&&globalThis.__zw_clear_current_script();}}",
         idx = script_index,
-        g = PAGE_SCRIPT_ERROR_GLOBAL
+        g = PAGE_SCRIPT_ERROR_GLOBAL,
+        report_tail = report_tail
     )
 }
 

@@ -16,7 +16,7 @@ use zero_engine::{
     register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
     script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
     script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
-    script_report_module_failure, script_run_classic_page, script_set_current_script,
+    script_report_module_failure, script_run_classic_page_strict, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -5039,7 +5039,11 @@ impl WebView {
                 // Classic scripts must execute in the global script scope. Wrapping them in a
                 // block changes top-level async function and lexical declaration visibility.
                 if strict {
-                    script_run_classic_page(&code, script_index, None)
+                    // s335（微任务检查点序）：strict 车道用报告变体——classic 抛错在 catch 内 reportError
+                    // （window error 事件同步派发，spec report the exception 先于检查点）+ 元素
+                    // load 微任务派发（spec fire load 在检查点后）；基线包装无报告面，browser/
+                    // renderer 车道 sentinel→R2940 自报链共用基线（互换即双报）。
+                    script_run_classic_page_strict(&code, script_index, None)
                 } else {
                     format!(
                         "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",

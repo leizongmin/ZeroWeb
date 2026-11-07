@@ -12916,12 +12916,19 @@ fn script_event_handler_attr(open_tag: &str, name: &str) -> String {
 /// 经 `document.currentScript` 派发同名事件（on* 内容属性 handler 由 shim dispatch 链
 /// R2934 编译触发，addEventListener 侦听者同样可达；事件不冒泡，window load 生命
 /// 周期不受扰）。`el_expr` 为元素表达式（调度单元传闭包捕获变量，见 inline 投递处）。
+/// s335（微任务检查点序，spec run-a-classic-script）：元素引用在体尾**同步**捕获
+/// （currentScript 由 finally/清理步清空——R3258，微任务窗内已 null，不可延迟读取），
+/// `dispatchEvent` 经 queueMicrotask **延迟到本 chunk execute 末检查点之后**——spec 的
+/// clean-up-after-running-script（检查点）先于 fire load，旧同步尾片在求值窗内
+/// （检查点前）派发，chunk 内 queueMicrotask 的微任务晚于事件（evaluation-order-1
+/// nothrow got ["body"] 判据）；检查点在同一 chunk 末排空，跨 chunk 先序不变。
 /// https://html.spec.whatwg.org/multipage/scripting.html#execute-the-script-block
 fn script_event_dispatch_tail_el(event: &str, el_expr: &str) -> String {
     format!(
         "\n;(function () {{ var _cs = {el_expr}; \
          if (_cs && typeof _cs.dispatchEvent === 'function') {{ \
-         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} }} }})();\n"
+         queueMicrotask(function () {{ \
+         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} }}); }} }})();\n"
     )
 }
 
@@ -12935,13 +12942,18 @@ fn script_event_dispatch_tail(event: &str) -> String {
 /// onload 标记缺失实证：外链 module 成功执行后 log 无 onload 推入）。改按标记
 /// 属性查回元素派发；序号口径（`getElementsByTagName` 下标）不采用——JS 字符串
 /// 内 `<script` 文本会令投递期文本计数对 DOM 真实序号膨胀（s112 同族病态面）。
+/// s335：与 classic 形同面——标记查回同步完成、事件经 queueMicrotask 延至本单元
+/// execute 末检查点后（spec run-a-module-script clean-up 检查点先于 fire load；
+/// evaluation-order-1 module nothrow 同判据）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#dom-document-currentscript
 fn script_event_dispatch_tail_unit(event: &str, unit: usize) -> String {
     format!(
         "\n;(function () {{ var _els = document.getElementsByTagName('script'); \
-         for (var _i = 0; _i < _els.length; _i++) {{ var _cs = _els[_i]; \
-         if (_cs.getAttribute && _cs.getAttribute('data-zw-unit') === '{unit}') {{ \
-         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} break; }} }} }})();\n"
+         var _cs = null; \
+         for (var _i = 0; _i < _els.length; _i++) {{ var _c = _els[_i]; \
+         if (_c.getAttribute && _c.getAttribute('data-zw-unit') === '{unit}') {{ _cs = _c; break; }} }} \
+         if (_cs) {{ queueMicrotask(function () {{ \
+         try {{ _cs.dispatchEvent(new Event('{event}')); }} catch (_zwLev) {{}} }}); }} }})();\n"
     )
 }
 
@@ -15987,6 +15999,30 @@ addEventListener("load", function() {
             "write 注入路径尾须 eval 尾直调: {HARNESS_LOADED_TAIL_CALL}"
         );
         assert!(!HARNESS_LOADED_TAIL_CALL.contains("addEventListener"));
+    }
+
+    #[test]
+    fn script_event_dispatch_tail_is_checkpoint_deferred_s335() {
+        // s335（微任务检查点序）：load/error 投递尾的派发须落在 chunk 末检查点之后——元素
+        // 引用同步捕获（currentScript 在微任务窗已清——R3258），dispatchEvent 入
+        // queueMicrotask。builder 形状钉：捕获字节序先于延迟注册、事件派发在回调体内；
+        // 行为面由 WPT evaluation-order-1（microtasks 域）钉。
+        let tail = script_event_dispatch_tail_el("load", "document.currentScript");
+        let capture = tail
+            .find("var _cs = document.currentScript")
+            .expect("同步捕获 currentScript");
+        let defer = tail.find("queueMicrotask(function () {").expect("微任务延迟注册");
+        let fire = tail.find("_cs.dispatchEvent(new Event('load'))").expect("同名事件派发");
+        assert!(capture < defer, "捕获先于延迟注册（currentScript 微任务窗已清）");
+        assert!(defer < fire, "dispatchEvent 在微任务回调内");
+        let unit = script_event_dispatch_tail_unit("load", 7);
+        let ucapture = unit.find("var _cs = null;").expect("unit 形同步捕获槽位");
+        let udefer = unit.find("queueMicrotask(function () {").expect("unit 形微任务延迟");
+        assert!(ucapture < udefer, "unit 形捕获先于延迟注册");
+        assert!(
+            unit.contains("data-zw-unit') === '7'"),
+            "unit 形保留标记查回（module 单元 currentScript 恒 null——s255 面）"
+        );
     }
 
     #[test]
