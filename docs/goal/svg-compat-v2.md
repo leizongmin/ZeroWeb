@@ -21,9 +21,13 @@ transform 属性恒复合定谳）+ href 显式定靶面（三消费钩子 `_sca
 角度域合成）+ part09 2000 行准则切分 part09b，10F→P 零 P→F，全通道
 1,329P = 77.7%、web-animations 959 子恒等，
 [evidence](svg-compat-v2/evidence/2026-11-07-m2-b6c-transform-domain.md)；
-B3-B5 见 archive 与 §里程碑。**DC-4 数值门现势达线：1,329/15,342 =
-8.66% ≥ 8.6%**（M4 复测收口复核）；
-下一步 M3：B7 path d 插值（×31）+ 滚动新面导入 + 挂账 #2/#3 归口**
+B3-B5 见 archive 与 §里程碑；B7 path d 插值（EDM 整数 ms 相位精度模型
++ to-animation 线性 lerp 定谳 + SVGPathSeg 最小读消费面 + has trap
+接口原型链兜底）31F→P 零 P→F、MmAaZ 1 文件残留定谳记账、web-animations
+恒等，[evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)。
+**DC-4 数值门现势达线：1,360/15,342 =
+8.86% ≥ 8.6%**（M4 复测收口复核）；
+下一步 M3 收尾：滚动新面导入 + 挂账 #2/#3 归口**
 **卡点**: additive-type-by 1F 案级（B6c 采样断言面十一域全过后余卡
 expectFillColor——getComputedStyle().fill = #4 门，跨域记账）；engine
 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
@@ -148,6 +152,10 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   [B6b](svg-compat-v2/evidence/2026-11-07-m2-b6b-type-domain.md) /
   [B6c](svg-compat-v2/evidence/2026-11-07-m2-b6c-transform-domain.md)）。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
+  **B7 已完成**（2026-11-07：path d 四形态采样 + EDM 精度模型 + to-anim
+  lerp 定谳 + SVGPathSeg 消费面 + has trap 兜底，全通道 1,360P/343F/7T
+  = 79.5% 零 P→F；台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m3-b7-path-d.md)）。
 - **M4**：coverage 复测收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

@@ -107,6 +107,21 @@
 //      ⑪ 起物理在 part09b（2026-11-07 2000 行准则按行边界字节精确切分，
 //      R2963 先例——本文件开 IIFE、part09b 续段同闭合并收尾，桥接层
 //      part09 后紧接 include，拼接字节序零变化）。
+//   ⑫ path 'd' 插值（B7，2026-11-07 M3 首批，物理在 part09b）：d 域
+//      parser（隐式 moveto 重复组保留 M 型——mismatch-same-seg-count
+//      兼容判定定谳，与 part03 _zwSvgPathDataOf 消费语义分叉）+ 绝对化/
+//      兼容判定/插值/分量加法 + from-to 不兼容强制 discrete（half 含边界
+//      frac≥0.5→to）+ to-only 配平线性 lerp/不配 half 直通（B7 定谳）+
+//      EDM 整数 ms 相位精度模型（correctly-rounded 单除法——预计算 frac
+//      双精度偏上越界弃）+ by-only 预乘增量三明治
+//      （underlying + p·by，accumulate 系数 k = segF+iter）+ from-to
+//      accumulate 迭代叠加 iter·to（corpus 与 by 域分叉定谳）+
+//      additive=sum 空采样值加非空 prior → prior
+//      保全；输出字母大小写随 to/by 侧（大写产绝对坐标、小写产相对
+//      delta——in_array formA/formB 双形态自动落位）。消费面
+//      SVGPathElement.pathSegList/animatedPathSegList（SVG1.1 SVGPathSeg
+//      最小读面——animated-path-helpers assert_animated_path_* 分支）；
+//      CSS d property/inherit 面（svgpath-animation-2）= 挂账 #4。
 //
 // 作用域：part07 末尾已闭合外层 IIFE，本文件顶层作用域（part08 先例）；
 // 本文件 + part09b 合成同一 IIFE（part09b 尾收 })();）。

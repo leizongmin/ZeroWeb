@@ -1531,6 +1531,35 @@
             && _zwFormNamedLookup(sel, handle, prop) !== null) {
           return true;
         }
+        // B7（svg-compat-v2 M3）：SVG 接口原型成员 `in` 可见性兜底——get trap R98 走查
+        // 供给的接口 accessor/method 面（part09b 在 SVGPathElement.prototype 上
+        // defineProperty 的 pathSegList/animatedPathSegList accessor；getTotalLength
+        // 同法 patch SVGGeometryElement.prototype）在 target 无 own key，本 trap 白名单
+        // 缺列使 `'animatedPathSegList' in path` 恒 false（WPT svg/animations
+        // animated-path-helpers.js 的 `'animatedPathSegList' in target` 消费门）。
+        // 按 getPrototypeOf trap 同款路由兜底：__zwSvgTagIface 词表先行门控（非 SVG
+        // tag 不付 ns 探测，#26 热路径成本防御同款）→ _zwIsSvgNsEl 判定 → 接口原型链
+        // own 走查命中即 true；链顶越界 guard 10（SVGPathElement→…→Node 实测 8 层）。
+        // 非 SVG tag / SVG 词表 miss 行为不变（`prop in _t` 兜底），零外溢。
+        if (typeof prop === 'string' && prop !== ''
+            && globalThis.__zwSvgTagIface
+            && globalThis.__zwSvgTagIface[_realTag(sel, handle).toLowerCase()]) {
+          try {
+            if (_zwIsSvgNsEl(sel, handle) && globalThis.SVGElement && globalThis.SVGElement.prototype) {
+              var _b7TagL = _realTag(sel, handle).toLowerCase();
+              var _b7I = globalThis.__zwSvgTagIface[_b7TagL];
+              var _b7p = (_b7I && globalThis[_b7I] && globalThis[_b7I].prototype)
+                ? globalThis[_b7I].prototype
+                : globalThis.SVGElement.prototype;
+              var _b7g = 0;
+              while (_b7p && _b7g < 10) {
+                if (Object.prototype.hasOwnProperty.call(_b7p, prop)) return true;
+                _b7p = Object.getPrototypeOf(_b7p);
+                _b7g++;
+              }
+            }
+          } catch (_eB7h) {}
+        }
         return prop in _t;
       },
       ownKeys: function() {

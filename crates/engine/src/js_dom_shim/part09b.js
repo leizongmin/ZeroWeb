@@ -12,13 +12,17 @@
 
   // 采样相位：active 简单时间 repeat 取模 / freeze 冻结 activeEnd 浮点钳制
   //（与数值/类型域采样器同式——本域新增，前两采样器路径保持原样不回改）。
-  // 返回 {frac, iter} 或 null（不活跃且无冻结）。
+  // 返回 {frac, iter, em, dm} 或 null（不活跃且无冻结）；em/dm = B7 path d
+  // 域 EDM 整数 ms 相位（simpleTime/dur ×1000 取整，null = degenerate/无限
+  // 相位——数值域消费方忽略）。
   var _smilPhase = function (animEl, g, t) {
     var cur = _activeInterval(animEl, t);
     var d = _parseDur(animEl);
     if (d.kind === 'invalid') return null;
     var frac;
     var iter;
+    var em = null;
+    var dm = null;
     if (cur) {
       var actTime = t - cur.b;
       var actDur = cur.e - cur.b;
@@ -32,6 +36,8 @@
         var simpleTime = actTime % cur.sd;
         frac = Math.min(simpleTime / cur.sd, 1);
         iter = Math.floor(actTime / cur.sd);
+        em = Math.round(simpleTime * 1000);
+        dm = Math.round(cur.sd * 1000);
       }
     } else {
       var fillAttr = g('fill');
@@ -58,8 +64,11 @@
       if (span > 0 && span >= sd0 && simpleTime0 < 1e-9 * sd0) simpleTime0 = sd0;
       frac = Math.min(simpleTime0 / sd0, 1);
       iter = Math.floor((span - (simpleTime0 === sd0 ? 1e-9 : 0)) / sd0);
+      // 冻结钳制后 simpleTime0 = sd0 → em = dm → 插值精确落 to 侧终值。
+      em = Math.round(simpleTime0 * 1000);
+      dm = Math.round(sd0 * 1000);
     }
-    return { frac: frac, iter: iter };
+    return { frac: frac, iter: iter, em: em, dm: dm };
   };
 
   // token → type 域组件向量（comma-wsp 分隔，分量全数值——任一不可解析/
@@ -440,6 +449,569 @@
     runTkT(hrefElsT, true);
     return out;
   };
+
+  // ── B7：path 'd' 插值（SMIL path data 域 + SVG1.1 SVGPathSeg 消费面）──
+  // 语义定谳（svg/animations path 语料 33 案，svg-compat-v2 M3/B7）：
+  // ① 兼容 = 段数相同且逐段大写同型；from-to 不兼容 → 强制 discrete（half
+  //   含边界 frac≥0.5→to；mismatch-same-seg-count/diff-seg-counts/
+  //   empty-from/empty-to 四面定谳）；by/from-by 不兼容或一侧空 → 无效
+  //   回落 base（by/from-by-mismatch、empty-from/empty-by/both-empty、
+  //   by-empty-base 定谳）。
+  // ② 隐式 moveto 重复组保留 M 型不转 L（mismatch-same-seg-count 定谳：
+  //   from "M…L…M…M…" vs to "M…L…L…L…" discrete——与 part03
+  //   _zwSvgPathDataOf 的 M→L 转换有意分叉，彼为消费语义、此为兼容判定）；
+  //   几何行走按新子路径 moveto（Mm-Aa-Z 定谳 Z 回 repeat-m 点）。
+  // ③ 插值 = 端点绝对化后逐参数；输出字母大小写随 to/by 侧；输出字母大写
+  //   产绝对坐标、小写产相对 delta（in_array 双形态：小写 to 侧自动落
+  //   formA 相对形态、大写落 formB 绝对形态/inverse-equals——Ll-Vv-Hh、
+  //   Mm-Aa-Z、Cc-Ss、Qq-Tt 八面定谳）。
+  // ④ by/from-by = 原始逐参数分量加法（underlying + p·by，含 A 全 7 参、
+  //   无需绝对化换算——svgpath-animation-1 定谳；accumulate 系数
+  //   k = segF+iter）；from-to 插值 = lerp(fromAbs,toAbs,segF)，
+  //   accumulate 迭代叠加 = iter·toAbs（from-to-accumulate-sum-empty-base
+  //   定谳「Iteration 1 adds 1×to」，与 by 域分叉）且 additive 缺省
+  //   replace 不混叠 base。
+  // ⑤ additive="sum" 三明治：全值逐参数加 prior-or-base（from-to-additive
+  //   定谳 base+lerp(from,to,p)）；空采样值加非空 prior → prior 保全
+  //   （additive-sum-both-empty-over-base 定谳）；加不了 → 该采样无效
+  //   跳过（by-additive-mismatch 定谳）。
+  // ⑥ 消费面：assert_animated_path_* → 'animatedPathSegList' in target
+  //   分支（animated-path-helpers.js）：pathSegList/animatedPathSegList
+  //   段对象（pathSegTypeAsLetter + 类型域字段 + Array.from 迭代——R374
+  //   iterable 同构）。CSS d property/inherit 面（svgpath-animation-2）=
+  //   挂账 #4 不入本批。values 列表（非 inherit 形态）FIXME(svg-compat-v2
+  //   M4)。
+  var _zwPathArity = function (U) {
+    return U === 'H' || U === 'V' ? 1
+      : U === 'C' ? 6 : U === 'S' || U === 'Q' ? 4
+      : U === 'A' ? 7 : U === 'Z' ? 0 : 2;  // M/L/T
+  };
+  // d 字符串 → 原始段表 [{L,u,a}]（L 原文大小写、u 大写型、a 原始参数）或
+  // null（非法 token）。逗号/空白 = comma-wsp 分隔符；首命令前数字 → null；
+  // 尾组不完整 → 丢弃（前缀保留，§PathDataErrorHandling）；Z 后数字 →
+  // 截断保留前缀（part03 同口径）；'' / 纯空白 → []（合法空路径）；首段
+  // 非 moveto（bare 'Z'）→ []。隐式 moveto 重复组保留 M 型不转 L（定谳②
+  // mismatch-same-seg-count 兼容判定面）；几何行走按新子路径 moveto（
+  // Mm-Aa-Z 定谳 Z 回 repeat-m 点）。
+  var _zwPathSegsOf = function (d) {
+    if (d == null) return null;
+    var str = String(d);
+    var segs = [];
+    var curL = null;
+    var curU = null;
+    var sawZ = false;
+    var args = [];
+    var re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)|,|(\S)|(\s+)/g;
+    var m;
+    while ((m = re.exec(str)) !== null) {
+      if (m[1] != null) {                             // 命令字母
+        if (curU != null && args.length % _zwPathArity(curU) !== 0) {
+          args = [];                                  // 尾组不完整 → 丢弃
+        }
+        curL = m[1];
+        curU = curL >= 'A' && curL <= 'Z' ? curL : String.fromCharCode(curL.charCodeAt(0) - 32);
+        if (curU === 'Z') {
+          segs.push({ L: curL, u: 'Z', a: [] });
+          sawZ = true;
+          curL = null;
+          curU = null;
+        }
+      } else if (m[2] != null) {                      // 数字
+        if (curU == null) {
+          if (sawZ) break;                            // Z 后数字 → 截断
+          return null;                                // 首命令前数字 → 非法
+        }
+        args.push(Number(m[2]));
+        var ar = _zwPathArity(curU);
+        if (ar > 0 && args.length === ar) {
+          segs.push({ L: curL, u: curU, a: args });
+          args = [];
+        }
+      } else if (m[3] != null) {
+        return null;                                  // 非命令非数字非分隔 → 非法
+      }
+      // 逗号（裸备选）/空白（m[4]）= 分隔符跳过（comma-wsp）
+    }
+    if (segs.length && segs[0].u !== 'M') return [];  // 非 moveto 开头 → 空序列
+    return segs;
+  };
+  // 原始段表 → 绝对化段表（相对端点经 current point 折算；A 仅 x,y 折算、
+  // 其余 5 参保持；Z 复位 current point 至子路径起点；M 恒重置子路径起点
+  // ——含隐式重复组）。字母/型保持——原始参数面由加法/插值消费。
+  var _zwPathAbsOf = function (segs) {
+    var out = [];
+    var cx = 0;
+    var cy = 0;
+    var sx = 0;
+    var sy = 0;
+    for (var i = 0; i < segs.length; i++) {
+      var sg = segs[i];
+      var rel = sg.L !== sg.u;
+      var v = sg.a.slice();
+      var U = sg.u;
+      if (U === 'M') {
+        if (rel) { v[0] += cx; v[1] += cy; }
+        sx = v[0]; sy = v[1];
+        cx = v[0]; cy = v[1];
+      } else if (U === 'L' || U === 'T') {
+        if (rel) { v[0] += cx; v[1] += cy; }
+        cx = v[0]; cy = v[1];
+      } else if (U === 'H') {
+        v[0] = rel ? cx + v[0] : v[0];
+        cx = v[0];
+      } else if (U === 'V') {
+        v[0] = rel ? cy + v[0] : v[0];
+        cy = v[0];
+      } else if (U === 'C') {
+        if (rel) {
+          for (var ci = 0; ci < 6; ci += 2) { v[ci] += cx; v[ci + 1] += cy; }
+        }
+        cx = v[4]; cy = v[5];
+      } else if (U === 'S' || U === 'Q') {
+        if (rel) {
+          for (var qi = 0; qi < 4; qi += 2) { v[qi] += cx; v[qi + 1] += cy; }
+        }
+        cx = v[2]; cy = v[3];
+      } else if (U === 'A') {
+        if (rel) { v[5] += cx; v[6] += cy; }
+        cx = v[5]; cy = v[6];
+      } else {                                        // Z
+        cx = sx; cy = sy;
+      }
+      out.push({ L: sg.L, u: U, a: v });
+    }
+    return out;
+  };
+  // 兼容判定：段数相同且逐段大写同型（大小写不敏感同型——定谳①）。
+  var _zwPathCompat = function (a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].u !== b[i].u) return false;
+    }
+    return true;
+  };
+  // 单参数插值：B7 EDM 整数 ms 相位在场 → (a·dm + (b−a)·em)/dm——分子
+  // 全精确整数、单次除法 correctly-rounded，与 Blink 全部 toFixed(2) 边界
+  // 一致（corpus 字面量定谳；预计算 frac 双精度偏上会越界，弃）；否则回落
+  // a + (b−a)·k（keyTimes/spline 预映射 segF 面）。
+  var _zwPathBlendV = function (a, b, k, em, dm) {
+    return em != null ? (a * dm + (b - a) * em) / dm : a + (b - a) * k;
+  };
+  // from-to 线性插值 → 绝对结果段表（字母随 to 侧；全参数插值——A 全
+  // 7 参，定谳④；em/dm = EDM 相位，null 走 segF）。
+  var _zwPathLerpSegs = function (fAbs, tAbs, k, em, dm) {
+    var out = [];
+    for (var i = 0; i < tAbs.length; i++) {
+      var t = tAbs[i];
+      var f = fAbs[i].a;
+      var a = t.a.slice();
+      for (var j = 0; j < a.length; j++) a[j] = _zwPathBlendV(f[j], a[j], k, em, dm);
+      out.push({ L: t.L, u: t.u, a: a });
+    }
+    return out;
+  };
+  // k·by 增量段表（原始参数逐分量缩放，字母保持——delta 采样面，
+  // 定谳④ by/from-by 原始分量加法；em/dm = EDM：by·em/dm 单除法）。
+  var _zwPathScaleSegs = function (rawSegs, k, em, dm) {
+    var out = [];
+    for (var i = 0; i < rawSegs.length; i++) {
+      var a = rawSegs[i].a.slice();
+      for (var j = 0; j < a.length; j++) a[j] = em != null ? a[j] * em / dm : a[j] * k;
+      out.push({ L: rawSegs[i].L, u: rawSegs[i].u, a: a });
+    }
+    return out;
+  };
+  // 增量/全值加法 → 绝对结果段表（字母随采样值侧；原始逐参数分量加——
+  // 定谳④⑤；delta=true 时采样值 a 已持 k·by 增量）。
+  var _zwPathSumSegs = function (uAbs, fSegs) {
+    var out = [];
+    for (var i = 0; i < fSegs.length; i++) {
+      var f = fSegs[i].a;
+      var a = uAbs[i].a.slice();
+      for (var j = 0; j < a.length; j++) a[j] += f[j];
+      out.push({ L: fSegs[i].L, u: fSegs[i].u, a: a });
+    }
+    return out;
+  };
+  // 绝对结果段表 → path 字符串 token：输出字母大写产绝对坐标、小写产相对
+  // delta（相对转换经输出 current point 行走——定谳③ in_array 双形态自动
+  // 落位）；数值全精度 String（helper toFixed(2) 双侧同构吸收舍入差）。
+  var _zwPathEmitStr = function (segs) {
+    var out = [];
+    var cx = 0;
+    var cy = 0;
+    var sx = 0;
+    var sy = 0;
+    for (var i = 0; i < segs.length; i++) {
+      var sg = segs[i];
+      var a = sg.a;
+      var U = sg.u;
+      if (U === 'Z') {
+        cx = sx; cy = sy;
+        out.push(sg.L);
+        continue;
+      }
+      var v = a;
+      if (sg.L !== sg.u) {
+        v = a.slice();
+        if (U === 'H') {
+          v[0] -= cx;
+        } else if (U === 'V') {
+          v[0] -= cy;
+        } else if (U === 'A') {
+          v[5] -= cx; v[6] -= cy;
+        } else {
+          var pr = U === 'C' ? 6 : U === 'S' || U === 'Q' ? 4 : 2;  // M/L/T
+          for (var pi = 0; pi < pr; pi += 2) { v[pi] -= cx; v[pi + 1] -= cy; }
+        }
+      }
+      var parts = [sg.L];
+      for (var pj = 0; pj < v.length; pj++) parts.push(String(v[pj]));
+      out.push(parts.join(' '));
+      if (U === 'M') {
+        sx = a[0]; sy = a[1];
+        cx = a[0]; cy = a[1];
+      } else if (U === 'L' || U === 'T') {
+        cx = a[0]; cy = a[1];
+      } else if (U === 'H') {
+        cx = a[0];
+      } else if (U === 'V') {
+        cy = a[0];
+      } else if (U === 'C') {
+        cx = a[4]; cy = a[5];
+      } else if (U === 'S' || U === 'Q') {
+        cx = a[2]; cy = a[3];
+      } else if (U === 'A') {
+        cx = a[5]; cy = a[6];
+      }
+    }
+    return out.join(' ');
+  };
+  // from-to/from-by 段进度（n1=2 同构 B6a：keyTimes 校验 + spline 段内
+  // _bezSolve；discrete = half 切换口径——定谳①）。返回 segF 或 null（文法
+  // 违例整动画无效）。
+  var _zwPathSegF = function (g, frac, calcMode) {
+    var segF = frac;
+    if (g('keyTimes') != null) {
+      var ktRaw = _parseSemiList(g('keyTimes'));
+      var ktNums = null;
+      if (ktRaw) {
+        ktNums = [];
+        for (var i = 0; i < ktRaw.length; i++) {
+          var kv = _parseFloatTok(ktRaw[i]);
+          if (isNaN(kv)) { ktNums = null; break; }
+          ktNums.push(kv);
+        }
+      }
+      var kt = ktNums ? _validKeyTimes(ktNums, 2, calcMode) : null;
+      if (kt == null) return null;
+      var span = kt[1] - kt[0];
+      segF = span > 0 ? (frac - kt[0]) / span : 1;
+    }
+    if (calcMode === 'spline' && g('keySplines') != null) {
+      var ks = _validKeySplines(g('keySplines'), 1);
+      if (ks == null) return null;
+      segF = _bezSolve(segF, ks[0][0], ks[0][1], ks[0][2], ks[0][3]);
+    }
+    return segF;
+  };
+  // path 'd' 域采样器 → null（无采样/无效）| { kind:'raw', token } |
+  // { kind:'segs', segs, delta }。kind='segs'：绝对结果段表（delta=true 时
+  // a 持 k·by 原始增量、由三明治层加 underlying 后产出）；kind='raw'：
+  // discrete/set 直通 token（to-only 段型不配/discrete 时同为 half 切换
+  // 直通，配平时线性 lerp——B7）。复用 B6a/B6c 相位与文法 machinery。
+  var _sampleAnimPathStr = function (animEl, target, attr, t) {
+    var an = null;
+    try { an = animEl.getAttribute('attributeName'); } catch (_eA) { an = null; }
+    if (an !== attr || attr !== 'd') return null;
+    var localName = '';
+    try { localName = String(animEl.localName || '').toLowerCase(); } catch (_eL) {}
+    if (localName !== 'animate' && localName !== 'set') return null;
+    var g = function (name) {
+      var v = null;
+      try { v = animEl.getAttribute(name); } catch (_eG) { v = null; }
+      return v == null ? null : String(v);
+    };
+    var ph = _smilPhase(animEl, g, t);
+    if (!ph) return null;
+    var frac = ph.frac;
+    var iter = ph.iter;
+    var toTok = g('to');
+    var fromTok = g('from');
+    var byTok = g('by');
+    var valuesTok = g('values');
+    var accum = g('accumulate') === 'sum';
+    var baseTok = null;
+    try { baseTok = target.getAttribute('d'); } catch (_eB) { baseTok = null; }
+    if (localName === 'set') {
+      return toTok == null ? null : { kind: 'raw', token: toTok };
+    }
+    if (valuesTok != null) {
+      return null;   // FIXME(svg-compat-v2 M4)：values 列表非 inherit 形态
+    }
+    var calcMode = (g('calcMode') || '').replace(/^\s+|\s+$/g, '').toLowerCase();
+    if (!calcMode) calcMode = 'linear';
+    if (calcMode !== 'linear' && calcMode !== 'discrete'
+        && calcMode !== 'spline' && calcMode !== 'paced') return null;
+    if (calcMode === 'paced') calcMode = 'linear';   // FIXME(svg-compat-v2 M3)
+    // B7 EDM 门控：整数 ms 相位在场且纯 linear 全程插值才走 EDM；
+    // accumulate 迭代比与 keyTimes/spline 预映射 segF 面保持原路径。
+    var useEDM = ph.em != null && ph.dm != null && !accum
+      && g('keyTimes') == null && calcMode === 'linear';
+    if (fromTok != null && toTok != null) {
+      var fRaw = _zwPathSegsOf(fromTok);
+      var tRaw = _zwPathSegsOf(toTok);
+      if (fRaw == null || tRaw == null) return null;   // 非法 token → 无效不采样
+      if (!_zwPathCompat(fRaw, tRaw) || calcMode === 'discrete') {
+        // 段数不等/段型不配或显式 discrete → 强制 discrete（half 含边界）
+        return { kind: 'raw', token: frac >= 0.5 ? toTok : fromTok };
+      }
+      var segF = null;
+      if (!useEDM) {
+        segF = _zwPathSegF(g, frac, calcMode);
+        if (segF == null) return null;
+      }
+      var fAbs = _zwPathAbsOf(fRaw);
+      var tAbs = _zwPathAbsOf(tRaw);
+      var lerped = _zwPathLerpSegs(fAbs, tAbs, segF,
+        useEDM ? ph.em : null, useEDM ? ph.dm : null);
+      if (accum && iter > 0) {
+        // accumulate=sum 迭代叠加 = iter·toAbs（from-to-accumulate-sum-
+        // empty-base 定谳「Iteration 1 adds 1×to」——非 k×(to−from) delta
+        // 叠加，与 by 域 (iter+segF)·by 分叉）
+        lerped = _zwPathSumSegs(lerped, _zwPathScaleSegs(tAbs, iter));
+      }
+      return { kind: 'segs', segs: lerped, delta: false };
+    }
+    if (fromTok != null && byTok != null) {
+      // from-by：f(t) = from + p·by（原始分量加，定谳④）；空 from/by/段型
+      // 不配 → 无效（定谳①三面）。
+      var fRaw2 = _zwPathSegsOf(fromTok);
+      var bRaw2 = _zwPathSegsOf(byTok);
+      if (!fRaw2 || !fRaw2.length || !bRaw2 || !bRaw2.length) return null;
+      if (!_zwPathCompat(fRaw2, bRaw2)) return null;
+      if (calcMode === 'discrete') {
+        return { kind: 'raw', token: frac >= 0.5
+          ? _zwPathEmitStr(_zwPathSumSegs(_zwPathAbsOf(fRaw2), _zwPathScaleSegs(bRaw2, 1)))
+          : fromTok };
+      }
+      var segF2 = null;
+      if (!useEDM) {
+        segF2 = _zwPathSegF(g, frac, calcMode);
+        if (segF2 == null) return null;
+      }
+      var k2 = useEDM ? null : segF2 + (accum ? iter : 0);
+      return {
+        kind: 'segs',
+        segs: _zwPathSumSegs(_zwPathAbsOf(fRaw2), _zwPathScaleSegs(bRaw2, k2,
+          useEDM ? ph.em : null, useEDM ? ph.dm : null)),
+        delta: false,
+      };
+    }
+    if (byTok != null) {
+      // by-only：underlying + p·by（delta=true——预乘 k·by 增量、三明治层加
+      // base/prior，replace/sum 单动画同值定谳）；空/无 base、段型不配 →
+      // 无效（定谳①）。
+      var bRaw3 = _zwPathSegsOf(byTok);
+      if (!bRaw3 || !bRaw3.length) return null;
+      var uRaw = _zwPathSegsOf(baseTok == null ? '' : baseTok);
+      if (!uRaw || !uRaw.length) return null;
+      if (!_zwPathCompat(uRaw, bRaw3)) return null;
+      if (calcMode === 'discrete') {
+        return { kind: 'raw', token: frac >= 0.5
+          ? _zwPathEmitStr(_zwPathSumSegs(_zwPathAbsOf(uRaw), _zwPathScaleSegs(bRaw3, 1)))
+          : baseTok };
+      }
+      var segF3 = null;
+      if (!useEDM) {
+        segF3 = _zwPathSegF(g, frac, calcMode);
+        if (segF3 == null) return null;
+      }
+      var k3 = useEDM ? null : segF3 + (accum ? iter : 0);
+      return {
+        kind: 'segs',
+        segs: _zwPathScaleSegs(bRaw3, k3, useEDM ? ph.em : null, useEDM ? ph.dm : null),
+        delta: true,
+      };
+    }
+    if (toTok != null) {
+      // to-only：base/to 段型匹配且非 discrete → 线性 lerp(base, to)（B7
+      // 定谳——animate-path-to-animation @2.0/dur 4s = lerp@0.5 中值非半程
+      // 切换）；不配或 discrete → base→to half 切换 raw token（to-empty-base
+      // corpus 注释明示 structurally incompatible → discrete at 50%；空
+      // base = [] 对非空 to 恒不配，自然落此支）。base 非法 → 无效。
+      var tRaw2 = _zwPathSegsOf(toTok);
+      if (!tRaw2 || !tRaw2.length) return null;
+      var bRaw4 = _zwPathSegsOf(baseTok == null ? '' : baseTok);
+      if (bRaw4 == null) return null;
+      if (!_zwPathCompat(bRaw4, tRaw2) || calcMode === 'discrete') {
+        return { kind: 'raw', token: frac >= 0.5 ? toTok : baseTok };
+      }
+      var segF4 = null;
+      if (!useEDM) {
+        segF4 = _zwPathSegF(g, frac, calcMode);
+        if (segF4 == null) return null;
+      }
+      return {
+        kind: 'segs',
+        segs: _zwPathLerpSegs(_zwPathAbsOf(bRaw4), _zwPathAbsOf(tRaw2), segF4,
+          useEDM ? ph.em : null, useEDM ? ph.dm : null),
+        delta: false,
+      };
+    }
+    return null;
+  };
+  // path 'd' 三明治钩子（globalThis 契约，SVGPathElement.animatedPathSegList
+  // 消费）。文档序：replace 重置运行值；additive="sum" 全值加 prior-or-base
+  // （delta 采样加 underlying/prior——replace/sum 单动画同值）；空采样值加
+  // 非空 prior → prior 保全（定谳⑤）；加不了 → 该采样无效跳过。children +
+  // href 双路候选合并同三钩子口径（fast-path 同——tickEverRan&&!smilSeen）。
+  globalThis._zwSmilAnimPath = function (el, attr) {
+    var doc = null;
+    try { doc = el.ownerDocument; } catch (_eD) { doc = null; }
+    if (!doc) return null;
+    var st = _docTimelines.get(doc);
+    if (st && st.tickEverRan && !st.smilSeen) return null;
+    var t = st ? _currentTimeOf(st) : 0;
+    var kids = null;
+    try { kids = el.children; } catch (_eC) { kids = null; }
+    var hrefElsP = null;
+    if (!st || !st.tickEverRan || st.smilSeen) {
+      try { hrefElsP = _zwHrefAnimList(doc, el); } catch (_eHP) { hrefElsP = null; }
+    }
+    if ((!kids || !kids.length) && !hrefElsP) return null;
+    var result = null;                              // 当前运行值 token
+    var baseRawP = function () {
+      var b = null;
+      try { b = el.getAttribute('d'); } catch (_eB) { b = null; }
+      return _zwPathSegsOf(b == null ? '' : String(b));
+    };
+    var runPk = function (list, isHrefPass) {
+      if (!list) return;
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        var ln = '';
+        try { ln = String(c.localName || '').toLowerCase(); } catch (_eL) {}
+        if (!_animLocalNames[ln]) continue;
+        if (!isHrefPass && _zwAnimHrefOf(c) != null) continue;    // href 指靶归 href 面处理
+        var r = null;
+        try { r = _sampleAnimPathStr(c, el, attr, t); } catch (_eS) { r = null; }
+        if (r == null) continue;
+        var isSumP = false;
+        try { isSumP = c.getAttribute('additive') === 'sum'; } catch (_eAdP) { isSumP = false; }
+        if (r.kind === 'raw') {
+          if (isSumP) {
+            // sum + 空采样值加非空 prior → prior 保全（定谳⑤）
+            var rs = _zwPathSegsOf(r.token);
+            var prior0 = result != null ? _zwPathSegsOf(result) : baseRawP();
+            if (rs && rs.length === 0 && prior0 && prior0.length > 0) continue;
+          }
+          result = r.token;
+          continue;
+        }
+        if (r.delta || isSumP) {
+          var priorSegs = null;
+          if (result != null) {
+            priorSegs = _zwPathSegsOf(result);
+          }
+          if (priorSegs == null) priorSegs = baseRawP();
+          var uAbsP = _zwPathAbsOf(priorSegs || []);
+          if (!_zwPathCompat(uAbsP, r.segs)) continue;   // 加不了 → 采样无效
+          if (!r.segs.length) continue;
+          result = _zwPathEmitStr(_zwPathSumSegs(uAbsP, r.segs));
+          continue;
+        }
+        result = _zwPathEmitStr(r.segs);            // replace 重置
+      }
+    };
+    runPk(kids, false);
+    runPk(hrefElsP, true);
+    return result;
+  };
+  // SVG1.1 SVGPathSeg 消费面（animated-path-helpers assert_animated_path_*
+  // 'animatedPathSegList' in target 分支——SVG2 已移除、Chromium 兼容保有
+  // 的最小读面，仅喂 helper 序列化所需字段）。段对象持原文大小写字母 +
+  // pathSegType 常量（SVG1.1 §PathElement 表）+ kCommandDescriptor 类型域
+  // 字段（M/L/T x,y；C 6；S/Q 4；A 7 含 flags；H x；V y）。
+  var _zwPathSegTypeNum = { M: 1, m: 2, L: 3, l: 4, C: 5, c: 6, S: 7, s: 8,
+    Q: 9, q: 10, A: 11, a: 12, H: 13, h: 14, V: 15, v: 16, Z: 17, z: 17 };
+  var _zwPSegCtor = globalThis.SVGPathSeg;
+  if (!_zwPSegCtor) {
+    // 构造器仅作段对象工厂，不挂 globalThis——WPT svg/historical.html 断言
+    // `'SVGPathSeg' in window === false`（SVG2 移除清单）。
+    _zwPSegCtor = function SVGPathSeg() {};
+    try { _zwPSegCtor.prototype[Symbol.toStringTag] = 'SVGPathSeg'; } catch (_eT) {}
+  }
+  var _zwMakePathSeg = function (sg) {
+    var s = new _zwPSegCtor();
+    s.pathSegTypeAsLetter = sg.L;
+    s.pathSegType = _zwPathSegTypeNum[sg.L] || 0;
+    var a = sg.a;
+    var U = sg.u;
+    if (U === 'M' || U === 'L' || U === 'T') {
+      s.x = a[0]; s.y = a[1];
+    } else if (U === 'C') {
+      s.x1 = a[0]; s.y1 = a[1]; s.x2 = a[2]; s.y2 = a[3]; s.x = a[4]; s.y = a[5];
+    } else if (U === 'Q') {
+      s.x1 = a[0]; s.y1 = a[1]; s.x = a[2]; s.y = a[3];
+    } else if (U === 'S') {
+      s.x2 = a[0]; s.y2 = a[1]; s.x = a[2]; s.y = a[3];
+    } else if (U === 'A') {
+      s.r1 = a[0]; s.r2 = a[1]; s.angle = a[2];
+      s.largeArcFlag = a[3]; s.sweepFlag = a[4]; s.x = a[5]; s.y = a[6];
+    } else if (U === 'H') {
+      s.x = a[0];
+    } else if (U === 'V') {
+      s.y = a[0];
+    }
+    return s;
+  };
+  var _zwMakePathSegList = function (segs) {
+    var arr = [];
+    for (var i = 0; i < segs.length; i++) arr.push(_zwMakePathSeg(segs[i]));
+    var list = {};
+    list.length = arr.length;
+    for (var j = 0; j < arr.length; j++) list[j] = arr[j];
+    list.getItem = function (idx) { return arr[idx]; };
+    list.item = list.getItem;
+    // Array.from(list) 消费面（helper serializePathSegList）——R374 iterable
+    // 同构：快照数组迭代器。
+    list[Symbol.iterator] = (function (snapshot) {
+      return function () { return snapshot[Symbol.iterator](); };
+    })(arr);
+    return list;
+  };
+  var _zwPathElCtor = globalThis.SVGPathElement;
+  if (_zwPathElCtor && _zwPathElCtor.prototype) {
+    var _zwProtoP = _zwPathElCtor.prototype;
+    if (!Object.prototype.hasOwnProperty.call(_zwProtoP, 'pathSegList')) {
+      Object.defineProperty(_zwProtoP, 'pathSegList', {
+        configurable: true,
+        get: function () {
+          var d = null;
+          try { d = this.getAttribute('d'); } catch (_eD) { d = null; }
+          var segs = _zwPathSegsOf(d == null ? '' : String(d));
+          return _zwMakePathSegList(segs || []);
+        },
+      });
+    }
+    if (!Object.prototype.hasOwnProperty.call(_zwProtoP, 'animatedPathSegList')) {
+      Object.defineProperty(_zwProtoP, 'animatedPathSegList', {
+        configurable: true,
+        get: function () {
+          var tok = null;
+          try { tok = globalThis._zwSmilAnimPath(this, 'd'); } catch (_eS) { tok = null; }
+          var segs = tok != null ? _zwPathSegsOf(tok) : null;
+          if (segs == null) {
+            var d = null;
+            try { d = this.getAttribute('d'); } catch (_eD2) { d = null; }
+            segs = _zwPathSegsOf(d == null ? '' : String(d));
+          }
+          return _zwMakePathSegList(segs || []);
+        },
+      });
+    }
+  }
   // ── 事件泵（task 粒度 setTimeout 轮询；paused 靠 seek 扫描驱动）──────
   // SMIL 事件统一经 dispatch 派发：onbegin/onend/onrepeat 处理器（IDL JS
   // 设值 + 内容属性 inline 编译）由 part05 派发的错位名映射触发
