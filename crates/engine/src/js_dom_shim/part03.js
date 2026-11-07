@@ -29538,8 +29538,29 @@ return e;
     };
     var setProp = function(name, value) {
       var prop = _stylePropName(name);
-      if (handle) __zw_set_style_handle(handle, prop, String(value));
-      else __zw_set_style(sel, prop, String(value));
+      // T49：声明值接 T48 属性上下文归一管线（_zwNormalizeDeclValue，part06）——与声明表
+      //（规则样式）路径同语义：CSS-wide keyword 全属性 ASCII lowercase（CSS Cascading 4
+      // §7.1-7.4）、<color> 上下文 hex/命名/系统色/legacy 函数文本归一（CSS Color 4 §16.2/
+      // §6.3/#rgb-functions）、自定义属性字面 token 流保形（DF-5）、白名单外 ident 保形
+      //（DF-1）。此前原文透传落库与 stylesheet 路径序列化分歧（T48 证据综述已知限制
+      //「元素 inline style 原文透传」本片闭合）。
+      // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+      // https://www.w3.org/TR/css-style-attr/#parsing
+      // 尾部 `!important`（setProperty priority 参回拼形 / IDL `'red !important'` 形，R3193）
+      // 先剥离再归一后回拼——priority 后缀非 <color> token，混入归一会在非法 hex 拒绝面误
+      // 扩展（'red !important' 须存活，js_dom_bridge_tests part15 钉）。T47 DF-3：非法
+      // color token 全串校验失败 → 本次赋值忽略保留原值（与规则样式 setProp 同形）。空值
+      // 原样透传宿主（R3211 空值删声明语义在宿主 merge 侧，须保持可达）。
+      var raw = String(value);
+      var v = raw;
+      if (prop.charAt(0) !== '-' || prop.charAt(1) !== '-') {
+        var pri = _styleValueAndPriority(raw);
+        var core = _zwNormalizeDeclValue(pri.value, prop);
+        if (core === null) return;
+        v = pri.priority ? core + ' !important' : core;
+      }
+      if (handle) __zw_set_style_handle(handle, prop, v);
+      else __zw_set_style(sel, prop, v);
       _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
     };
     var propNames = function() {
@@ -29592,9 +29613,19 @@ return e;
       set: function(_t, p, v) {
         var ps = String(p);
         if (ps === 'cssText') {
-          // 整体替换 style 属性（解析由 host/style-system 在 render 时处理）。
-          if (handle) __zw_set_attr_handle(handle, 'style', String(v));
-          else __zw_set_attr(sel, 'style', String(v));
+          // T49：整体写经声明块解析 + T48 归一 + 规范序列化（_parseDeclarations/
+          // _zwSerializeDecls，与规则样式 cssText 写同一对管线，s249/T48 同源）——Blink
+          // cssText setter parse-reserialize 语义（CSSOM §the-cssstyledeclaration-interface
+          // cssText attribute + CSS Style Attributes §2）。非法 <color> 声明整体丢弃
+          //（T47 DF-3 逐声明判定）；null → ''（WebIDL [LegacyNullToEmptyString]）。
+          // **已知限制**（与规则样式路径同源继承）：`;`/`:` 朴素切分不感知引号/注释——
+          // url("a;b") 形跨声明误切、声明内注释并入属性名（render 期 parser 仍按落库
+          // 文本以 CSS 语法处理，视觉形态不变）。
+          // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+          // https://www.w3.org/TR/css-style-attr/#parsing
+          var text = _zwSerializeDecls(_parseDeclarations(String(v == null ? '' : v)));
+          if (handle) __zw_set_attr_handle(handle, 'style', text);
+          else __zw_set_attr(sel, 'style', text);
           _mo_notify(sel, handle, { type: 'attributes', attributeName: 'style' });
           return true;
         }

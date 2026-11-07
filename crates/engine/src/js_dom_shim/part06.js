@@ -2042,9 +2042,19 @@
   // 规则/元素样式声明名归一（DF-5，R5114 返修）：`--` 前缀名 case-sensitive 保留原样；
   // 其余维持既有 `_stylePropName` camelCase→kebab + lowercase（R2810 语义不变）。
   // 写读两侧同函数保证键一致。
+  // T49 勘误：声明**文本**解析面的属性名是 ASCII case-insensitive kebab-case
+  //（css-syntax-3 识别 CSS ident 后属性名大小写不敏感）——全大写书写形（cssText/
+  // insertRule 'COLOR:'）经 `_stylePropName` 的逐大写字母加连字符（JS camelCase IDL
+  // 语义，cssom-1 §camel-cased-attribute-to-css-attribute）产出 '-c-o-l-o-r' 垃圾名，
+  // 声明因此失配读面。词首外「小写/数字后随大写」以外的大写连字不属 kebab 书写形：
+  // 无小写后随的大写连续段先折叠小写再走 `_stylePropName`（camelCase 宽容接受
+  // backgroundColor → background-color 与 webkit IDL 前缀特例语义不变；'COLOR' →
+  // 'color'，cssText 整体写/规则样式两路共享本函数，同修）。
   function _styleDeclName(name) {
     var s = String(name);
-    return s.charAt(0) === '-' && s.charAt(1) === '-' ? s : _stylePropName(s).toLowerCase();
+    if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
+    var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
+    return _stylePropName(folded).toLowerCase();
   }
 
   // CSSRule.style per-rule CSSStyleDeclaration（R2810）——backed by 规则声明块（从 rule.cssText 的 `{ ... }`
