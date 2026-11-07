@@ -29618,9 +29618,14 @@ return e;
           // cssText setter parse-reserialize 语义（CSSOM §the-cssstyledeclaration-interface
           // cssText attribute + CSS Style Attributes §2）。非法 <color> 声明整体丢弃
           //（T47 DF-3 逐声明判定）；null → ''（WebIDL [LegacyNullToEmptyString]）。
-          // **已知限制**（与规则样式路径同源继承）：`;`/`:` 朴素切分不感知引号/注释——
-          // url("a;b") 形跨声明误切、声明内注释并入属性名（render 期 parser 仍按落库
-          // 文本以 CSS 语法处理，视觉形态不变）。
+          // DF-2（T49 返修）：声明切分经 _zwSplitDeclSegs 引号/注释感知——url("a;b")/
+          // content:"a;b" 引号形、`/* ; */` 注释形、`\"` 转义引号整值落库（基线整体
+          // 原文落库保真已复原，t49fix 钉锁往返）。**已知限制**（与规则样式路径同源
+          // 继承）：① url() 非引号形值内 `;` 仍按声明分隔（切分不做括号配对）；② 读
+          // 侧逐属性（readDeclValue/propNames）维持朴素切分——值内引号分号声明的逐属
+          // 性读回截断、注释残段（如 '*/'）计入 length/item 名集，均为基线即有边界
+          //（基线原文落库同输入同形），cssText/getAttribute 原文往返已保真（t49fix
+          // 钉锁读侧现形）。
           // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
           // https://www.w3.org/TR/css-style-attr/#parsing
           var text = _zwSerializeDecls(_parseDeclarations(String(v == null ? '' : v)));

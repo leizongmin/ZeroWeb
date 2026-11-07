@@ -4311,3 +4311,64 @@ fn test_cssom_inline_style_csstext_normalize_t49() {
         "T49 inline style cssText 整体写归一全案（parse-reserialize + 逐声明拒绝 + custom 保形 + 清空）"
     );
 }
+
+#[test]
+fn test_cssom_inline_style_csstext_quoted_semicolon_t49fix() {
+    // T49 返修（DF-2，review/t49-findings-disposition.json accepted_fix_in_pr）：cssText
+    // setter 声明切分须引号/注释感知——基线（85dfc1ec7）经 __zw_set_attr 整体原文落库，
+    // T49 引入 _parseDeclarations 朴素 `;` 切分后引号形值内分号被误切、落库截断（落库
+    // 保真回归，视觉通道恒等不豁免 JS 可观测面数据丢失）：
+    // ① url() 引号形 `url("data:image/png;base64,AAA")` 整值保留（cssText/getAttribute 往返）；
+    // ② content 引号形 `"a;b"` 整值保留；
+    // ③ 注释内分号不切分（`color: red /* ; */ ; background: blue` → 双声明，注释原文并入值）；
+    // ④ 字符串内转义引号 `\"` 不闭合字符串（content: "say \"a;b\"" 整值保留）。
+    // length 断言取读侧现形：readDeclValue/propNames 维持朴素切分（基线即有边界），
+    // 注释残段 '*/' 计入名集 → length=3（基线原文落库同输入同形——非本片回归；
+    // Blink 注释感知解析为 2，与逐属性读回截断并列为读侧已知限制披露）。
+    // https://www.w3.org/TR/css-syntax-3/#comment-diagram（注释跨 `;`）
+    // https://www.w3.org/TR/css-syntax-3/#string-token-diagram（字符串内 `\` 转义）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // BS = '\\'（JS 字面反斜杠经 fromCharCode 构造，避开 Rust/JS 双层转义混写）。
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('#d').style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             var BS = String.fromCharCode(92);\
+             __st.cssText = 'background: url(\"data:image/png;base64,AAA\")';\
+             __p('urlDataUri', __st.cssText);\
+             __p('urlDataUriAttr', document.querySelector('#d').getAttribute('style'));\
+             __st.cssText = 'content: \"a;b\"'; __p('contentSemi', __st.cssText);\
+             __st.cssText = 'color: red /* ; */ ; background: blue';\
+             __p('commentSemi', __st.cssText);\
+             __p('commentSemiLen', __st.length);\
+             __p('commentSemiBg', __st.getPropertyValue('background'));\
+             __st.cssText = 'content: \"say ' + BS + '\"a;b' + BS + '\"\"';\
+             __p('escapedQuote', __st.cssText);\
+             __st.cssText = 'color: navy'; __p('afterReset', __st.cssText);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"urlDataUri":"background: url(\"data:image/png;base64,AAA\");","urlDataUriAttr":"background: url(\"data:image/png;base64,AAA\");","contentSemi":"content: \"a;b\";","commentSemi":"color: red /* ; */; background: blue;","commentSemiLen":3,"commentSemiBg":"blue","escapedQuote":"content: \"say \\\"a;b\\\"\";","afterReset":"color: navy;"}"##,
+        "T49 返修 DF-2 cssText 引号/注释感知切分全案（url 引号形 + content 引号形整值往返 + 注释分号不切 + 转义引号）"
+    );
+}
