@@ -10708,8 +10708,9 @@
     }
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
-    // separator 缺省双面制（第十一刀，2026-11-07）：产线块面（① sepTag/②b sep2b、
-    // part01e list retag、part01f ipara_apply）未设置态取 'p'——multitest ip 链
+    // separator 缺省双面制（第十一刀，2026-11-07；① 臂 host-copy 修正见下
+    // DC-4 刀注）：产线块面（②b sep2b、part01e list retag、part01f
+    // ipara_apply）未设置态取 'p'——multitest ip 链
     // rich 组 foo[]bar × 12 + B 簇同形 12 的 ambient insertParagraph 期望 `<p>`
     // 分块（628 案零显式 defaultparagraphseparator 命令、bootstrap 仅
     // styleWithCSS）。值面（part06 queryCommandValue）未设置态保持 'div'：
@@ -10721,6 +10722,46 @@
     // 值面与之一致；rich 组 p 形属演进前录音（styled 组 div 期望翻后仍红按
     // DC-4 记账）。显式 setter（part06）两面一票胜出不变。
     var sepTag = (globalThis.__zwDefaultParagraphSeparator === 'div') ? 'div' : 'p';
+    // DC-4（knife11 v3，2026-11-07 探针相 P3/P4 双源定谳；四轮门禁定谳
+    // 三门终形 v5 判别信号）：① 臂 unset 面 **无挂起 state/value override
+    // 且无显式 typing 命令在案**时新块标签随宿主（host copy；run 语料
+    // 496/499 de]f 族 recording `<div>abc</div><div><b>def</b>ghi</div>`，
+    // 与 v2 容器面 _zwIpWrapTag host-copy 同向）；**有挂起 override**
+    // （collapsed caret 先行 forecolor/backcolor 五值命令值面）或 **显式
+    // typing 命令在案**（collapsed format 命令 / createlink 置
+    // __zwTypingCmdArmed 旗标，multitest foo[]bar rich 组 23 案 recording
+    // `<p>foo</p><p>{}bar</p>` p 形）保持双面制产线缺省 'p'（与 v2 基线
+    // 同面；r3 mt 13 案 P2F 定谳：值命令走 override 表、format 命令走
+    // 旗标面）。判别不读 __zwTypingTags 本体：双源在案（显式命令 + 处方 c
+    // delete 前导删 styled 内容 arm 包裹壳供 inserttext 消费——v4 探针
+    // 4 案（CASE496/499 + ip-first 族 2 案）tt=["b"] 无 format 命令实证，
+    // 同帧 recording 要求 ① 面 host copy + <b>def</b> 包裹并存，v4 读
+    // 壳即双案族全 P2F 定谳）。override 读先走 staleness 复位
+    // （_zwVaOverridesReset，part01d 同闭包）：选区已变即清，陈旧
+    // override 不参与判别；旗标随 multitest 每案 setup addRange 公共面清
+    // （part06 _zwSync），无跨案泄漏。显式 setter 一票胜出（typeof 门——
+    // r3 ip 4 案 explicit-p P2F 与 wss 电池 32F 定谳）。
+    _zwVaOverridesReset();
+    var hasPendingOvr = false;
+    for (var kOvr in _zwVaStateOverrides) {
+      if (Object.prototype.hasOwnProperty.call(_zwVaStateOverrides, kOvr)) {
+        hasPendingOvr = true;
+        break;
+      }
+    }
+    if (!hasPendingOvr) {
+      for (var kOvr2 in _zwVaValueOverrides) {
+        if (Object.prototype.hasOwnProperty.call(_zwVaValueOverrides, kOvr2)) {
+          hasPendingOvr = true;
+          break;
+        }
+      }
+    }
+    var cmdArmed1 = globalThis.__zwTypingCmdArmed === true;
+    if (typeof globalThis.__zwDefaultParagraphSeparator !== 'string'
+        && !hasPendingOvr && !cmdArmed1) {
+      sepTag = hostTag;
+    }
     // ⓪ void 元素 caret 拆分（editing-compat void 簇，2026-10-31）：collapsed caret
     // 落在 void 元素（br/img/hr/input/embed/wbr）上时，insertParagraph = 在 void
     // 位置拆分所在块容器——void 及其后兄弟移入新块（spec：selection.collapse 进
@@ -10799,11 +10840,25 @@
         var head1 = v1.slice(0, boundaryOff);
         var tail1 = v1.slice(eo);
         var headBlock1 = document.createElement(sepTag);
+        // DC-4（editing-compat 496/499 fallback 病形，2026-11-07 探针 Q1-Q7
+        // 定谳）：宿主桥 plain 子跨域移动必须先 plain removeChild 再挂 engine
+        // 块——raw appendChild 对在挂 plain 子是序列化拷贝（Q6 s3：view 残留
+        // 原文本 → `ghi<p>ghi</p>` 残段）；engine 块挂载用 insertBefore 在
+        // fully-plain 宿主是静默半挂（Q6 s1：wrapper 父指针已设、view/childNodes
+        // 未动 → head 块消失）。收集后统一 detach→append 保序，不走 engine 父
+        // insertBefore（挂载延后至两块建齐，append 面 Q7 s3 物化一致）。
         var mv1h = boundaryText.previousSibling;
+        var headParts1 = [];
         while (mv1h) {
-          var nx1h = mv1h.previousSibling;
-          headBlock1.insertBefore(mv1h, headBlock1.firstChild);
-          mv1h = nx1h;
+          headParts1.push(mv1h);
+          mv1h = mv1h.previousSibling;
+        }
+        for (var hi1 = headParts1.length - 1; hi1 >= 0; hi1--) {
+          var hn1 = headParts1[hi1];
+          if (hn1.parentNode) {
+            try { hn1.parentNode.removeChild(hn1); } catch (e1h) {}
+          }
+          headBlock1.appendChild(hn1);
         }
         if (head1) headBlock1.appendChild(document.createTextNode(head1));
         if (!(headBlock1.childNodes || []).length) {
@@ -10811,37 +10866,52 @@
           phbr1a.__zwPlaceholderBr = true;
           headBlock1.appendChild(phbr1a);
         }
-        host.insertBefore(headBlock1, boundaryText || null);
         if (tail1) sep1.appendChild(document.createTextNode(tail1));
         refAfter1 = boundaryText.nextSibling;
         host.removeChild(boundaryText);
         var mv1t = refAfter1;
+        var tailParts1 = [];
         while (mv1t) {
-          var nx1t = mv1t.nextSibling;
-          sep1.appendChild(mv1t);
-          mv1t = nx1t;
+          tailParts1.push(mv1t);
+          mv1t = mv1t.nextSibling;
+        }
+        for (var ti1 = 0; ti1 < tailParts1.length; ti1++) {
+          var tn1 = tailParts1[ti1];
+          if (tn1.parentNode) {
+            try { tn1.parentNode.removeChild(tn1); } catch (e1t) {}
+          }
+          sep1.appendChild(tn1);
         }
         if (!(sep1.childNodes || []).length) {
           var phbr1b = document.createElement('br');
           phbr1b.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1b);
         }
-        host.insertBefore(sep1, headBlock1.nextSibling || null);
+        host.appendChild(headBlock1);
+        host.appendChild(sep1);
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
+        // 跨域移动纪律同 boundaryText 臂（先 detach 再 append，挂载延后）。
         refAfter1 = (host.childNodes || [])[so] || null;
         var mv1 = refAfter1;
+        var tailParts1e = [];
         while (mv1) {
-          var nx1 = mv1.nextSibling;
-          sep1.appendChild(mv1);
-          mv1 = nx1;
+          tailParts1e.push(mv1);
+          mv1 = mv1.nextSibling;
+        }
+        for (var ti1e = 0; ti1e < tailParts1e.length; ti1e++) {
+          var tn1e = tailParts1e[ti1e];
+          if (tn1e.parentNode) {
+            try { tn1e.parentNode.removeChild(tn1e); } catch (e1e) {}
+          }
+          sep1.appendChild(tn1e);
         }
         if (!(sep1.childNodes || []).length) {
           var phbr1c = document.createElement('br');
           phbr1c.__zwPlaceholderBr = true;
           sep1.appendChild(phbr1c);
         }
-        host.insertBefore(sep1, refAfter1 || null);
+        host.appendChild(sep1);
       }
       var nr1 = document.createRange();
       nr1.setStart(sep1, 0);

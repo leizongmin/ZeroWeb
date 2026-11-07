@@ -4881,7 +4881,22 @@
                   }
                   globalThis.__zwTypingTags = ttags;
                   globalThis.__zwTypingTagsOff = toff;
+                  // DC-4 判别信号（knife11 v5 三笔，2026-11-07）：显式命令
+                  // 臂独占记账。__zwTypingTags 双源在案（显式 collapsed
+                  // format 命令 + 处方 c delete 前导删 styled 内容——后者
+                  // recording 要求 ① 臂面 host copy 同帧保 inserttext 包裹，
+                  // v4 探针 4 案 + mt F2P 族定谳不能作 ① 面判别读），故
+                  // ① 臂判别只读本旗标：仅显式命令置位。
+                  globalThis.__zwTypingCmdArmed = true;
                 } catch (_eTt) {}
+              }
+              if (cmd === 'createlink' && rng2 && rng2.collapsed) {
+                // DC-4 判别信号（knife11 v5 三笔，2026-11-07）：collapsed
+                // createlink = 显式 typing style 命令（multitest foo[]bar
+                // rich 组 ip 面 p 形定谳读）。本仓无消费臂（typed 段 link
+                // 化不在范围），仅 part01 ① 臂判别读；清除点与 typing 包裹
+                // 态同生命周期（part06 _zwSync 防跨子测泄漏面）。
+                globalThis.__zwTypingCmdArmed = true;
               }
               if (fmtTag2 && rng2 && !rng2.collapsed) {
                 // 切片 4 toggle 语义：起点已在 <tag> 包裹内 → 解除；否则包裹。
@@ -11258,6 +11273,8 @@
       // 走 `_ranges` 直接赋值不经此，state 存活到下一显式变更。
       globalThis.__zwTypingTags = null;
       globalThis.__zwTypingTagsOff = null; // D4 显式关账表同生命周期
+      // DC-4 判别信号（knife11 v5 三笔）同生命周期清除。
+      globalThis.__zwTypingCmdArmed = null;
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
