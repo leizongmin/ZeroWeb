@@ -10,11 +10,11 @@ use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
-    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_csp_info,
-    extract_script_referrer_policies, extract_script_source_positions, extract_style_elements_csp,
-    extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key, page_script_error_check,
-    register_dom_callbacks, resolve_document_url, script_clear_current_script, script_dispatch_dom_event,
-    script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
+    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_credentials,
+    extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
+    extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
+    page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
+    script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
     script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
     script_report_module_failure, script_run_classic_page_strict, script_set_current_script,
 };
@@ -3813,6 +3813,10 @@ impl WebView {
         // 标记查询参数穿入）。与 CSP info 同为序号对齐 sidecar（全 script 元素文档序
         // ），无条件提取（referrer 族页面无 CSP 配置）。
         let script_referrer_policies = extract_script_referrer_policies(&html);
+        // s338（html-semantics）：script 元素级 credentials mode（`crossorigin` 属性——
+        // 内联模块元素动态 import() 的取回 credentials；序号对齐 sidecar 同上两表）。
+        // 无条件提取（credentials 族页面无 CSP/referrer 配置）。
+        let script_credentials = extract_script_credentials(&html);
         let csp_active = self.config.csp_enforcement && self.security_context.has_document_csp();
         // security-hardening M2-s6：eval 门禁快照（v8 crate 无 codegen 写入面——shim 层
         // eval/Function 包装抛 EvalError + violation 入 connect 共享队列）。
@@ -4498,6 +4502,9 @@ impl WebView {
                     // s249：第三参 = 动态 import 属性 `with.type`（prelude 校验后的
                     // type 串；空串 = 无属性，JS 模块语义）。
                     let type_attr = args.get(2).map(String::as_str).unwrap_or("");
+                    // s338：第四参 = 调用点模块 credentials mode（prelude `__zw_load_module`
+                    // 穿入：include/same-origin；空 = 旧宿主/直调形态，same-origin 缺省）。
+                    let credentials = args.get(3).map(String::as_str).unwrap_or("");
                     // s254：import map 应用（map 阶段命中才改写；未命中既有 parent-join
                     // 路径零漂移）。s260：Blocked → 空契约（TypeError 拒绝面，
                     // 不回退 parent-join 抓取被阻断 URL）。
@@ -4513,6 +4520,20 @@ impl WebView {
                         // 无元素上下文；doc 默认链回落）——语料无钉面，spec 动态面
                         // 挂账（s116 module-import-referrer 同域）。
                         None,
+                        // s338：credentials 经 `__zw_cred` 查询标记穿 fetcher 契约
+                        //（fetcher 无 credentials 形参，s124 `__zw_lp` 同法；真实 HTTP
+                        // 宿主忽略未知查询参数，renderer/tab 旧宿主第 4 参缺省
+                        // same-origin 面）。registry/缓存记账键取原始 spec，不带标记。
+                        // same-origin 缺省面**不带标记**（取回 src 逐字节零漂移——既有
+                        // 精确 src 匹配 fetcher/端点臂不受扰，s124 有值才附标记同规）；
+                        // fetcher 臂无标记 = same-origin 缺省语义。
+                        // FIXME(s339)：classic 车道（native resolver）无 credentials
+                        // 槽——延迟 promise_test 调用打破槽位刷新（s124 同形挂账）。
+                        if credentials.is_empty() || credentials == "same-origin" {
+                            None
+                        } else {
+                            Some(credentials)
+                        },
                     )
                 }),
             );
@@ -4567,6 +4588,11 @@ impl WebView {
                         // s268：动态 import() 元素级 referrerpolicy 未穿（resolver
                         // 契约无元素上下文；doc 默认链回落，同上方 shim 面）。
                         None,
+                        // s338：classic 车道无 credentials 槽——same-origin 缺省
+                        //（resolver 契约 (spec, parent, nonce, type) 无该形参；延迟
+                        // promise_test 调用打破槽位刷新，s124 `__zw_lp` 同形）。
+                        // FIXME(s339)：use-credentials classic/timer 臂 capture gap。
+                        None,
                     );
                     // s256：延迟包裹 `1\x1f<delay_ms>\x1f<contract>`——延迟 >0 时挂起
                     // resolver 到期 settle（v8_runtime 回调臂）。契约已同步算好，包裹
@@ -4617,6 +4643,9 @@ impl WebView {
                             type_attr.as_deref(),
                             // s268：动态插入内联 module 无元素策略属性——doc 默认链
                             // 回落（同动态 import 面）。
+                            None,
+                            // s338：动态插入 module 无元素 credentials 上下文——
+                            // same-origin 缺省（语料无钉面）。
                             None,
                             &mut registry,
                             &mut visited,
@@ -4989,6 +5018,9 @@ impl WebView {
                         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
                         // https://github.com/whatwg/html/pull/9210
                         let script_referrer = script_referrer_policies.get(script_index).and_then(|p| p.as_deref());
+                        // FIXME(s339)：外链模块元素 crossorigin credentials 未穿（语料
+                        // 无钉面；内联模块动态 import 面经 compile_module_script_with_
+                        // credentials + `__zw_cred` 标记已收口）。
                         match collect_module_deps_recursive(
                             &fetcher_m,
                             &dep_base_m,
@@ -4996,6 +5028,7 @@ impl WebView {
                             true,
                             type_attr.as_deref(),
                             script_referrer,
+                            None,
                             &mut registry,
                             &mut visited_m,
                         ) {
@@ -5045,7 +5078,22 @@ impl WebView {
                 let url = module_dep_base
                     .clone()
                     .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
-                match zero_script_sandbox::compile_module_script(&code, &url, &module_cache_key, &registry) {
+                // s338：入口转换穿元素 credentials mode（crossorigin → include，缺省
+                // same-origin）——重写发射的 `_importCred` 由该值发射，动态 import() 取
+                // 回经 `__zw_dynamic_import` → `__zw_load_module` → `__zw_compile_module`
+                // 第 4 参 → `__zw_cred` 查询标记穿 fetcher（runner check-cookie 臂消费）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                let script_credentials_mode = script_credentials
+                    .get(script_index)
+                    .and_then(|c| c.as_deref())
+                    .unwrap_or("same-origin");
+                match zero_script_sandbox::compile_module_script_with_credentials(
+                    &code,
+                    &url,
+                    &module_cache_key,
+                    &registry,
+                    script_credentials_mode,
+                ) {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
@@ -8016,6 +8064,7 @@ fn compile_module_contract(
     spec: &str,
     type_attr: Option<&str>,
     referrer_policy: Option<&str>,
+    credentials: Option<&str>,
 ) -> String {
     let mut reg = zero_script_sandbox::ModuleRegistry::new();
     let mut visited = std::collections::HashSet::new();
@@ -8026,6 +8075,7 @@ fn compile_module_contract(
         false,
         type_attr,
         referrer_policy,
+        credentials,
         &mut reg,
         &mut visited,
     ) {
@@ -8067,7 +8117,7 @@ fn compile_module_contract(
 /// 解析后同 URL → visited 命中一次取回，两导入方查找同落该键
 ///（module/imports.html imports-self-inner 实证面）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-#[allow(clippy::too_many_arguments)] // s268：策略穿参 +1 形参（8 参——既有图收集签名面）
+#[allow(clippy::too_many_arguments)] // s338：credentials 穿参 +1 形参（9 参——既有图收集签名面）
 fn collect_module_deps_recursive(
     fetcher: &ScriptSourceFetcher,
     parent_url: &str,
@@ -8075,6 +8125,7 @@ fn collect_module_deps_recursive(
     is_dep: bool,
     type_attr: Option<&str>,
     referrer_policy: Option<&str>,
+    credentials: Option<&str>,
     registry: &mut zero_script_sandbox::ModuleRegistry,
     visited: &mut std::collections::HashSet<String>,
 ) -> Result<(), ModuleGraphFailure> {
@@ -8110,6 +8161,18 @@ fn collect_module_deps_recursive(
         Some(policy) => {
             let sep = if fetch_spec.contains('?') { '&' } else { '?' };
             format!("{fetch_spec}{sep}__zw_lp={policy}")
+        }
+        None => fetch_spec,
+    };
+    // s338：credentials 同通道穿参（`__zw_cred=<mode>`，runner fetcher check-cookie
+    // 端点臂消费；真实 HTTP 宿主忽略未知查询参数）。静态图 descendant 继承入口
+    // mode（下方递归透传——spec 图内取回沿顶层 fetch options）。值恒 same-origin/
+    // include 内部常量，无转义面。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    let fetch_spec = match credentials {
+        Some(mode) => {
+            let sep = if fetch_spec.contains('?') { '&' } else { '?' };
+            format!("{fetch_spec}{sep}__zw_cred={mode}")
         }
         None => fetch_spec,
     };
@@ -8209,6 +8272,7 @@ fn collect_module_deps_recursive(
         // s268：descendant 逐层继承顶层元素的策略（图内请求 Referrer 策略 = 发起
         // 取回的 script 元素策略；嵌套模块自身属性面语料无钉 FIXME——spec 各请求
         // 按其发起元素就近取属性，本通道先按顶层继承口径收口三数据模块 face）。
+        // s338：credentials 同口径逐层继承入口 mode。
         collect_module_deps_recursive(
             fetcher,
             &url,
@@ -8216,6 +8280,7 @@ fn collect_module_deps_recursive(
             true,
             attr.as_deref(),
             referrer_policy,
+            credentials,
             registry,
             visited,
         )?;

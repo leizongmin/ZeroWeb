@@ -5753,6 +5753,15 @@ impl Default for ServeCustomResponseState {
 type ServeCustomResponseStash =
     std::sync::Arc<std::sync::Mutex<std::collections::BTreeMap<String, ServeCustomResponseState>>>;
 
+/// s338：dynamic-import credentials 判据面的案级 cookie 表（(cookie host, name) →
+/// value）——上游为真 HTTP Set-Cookie 往返（wptserve + 浏览器 jar）；runner in-process
+/// 取回/fetch 通道无 jar 消费点，表承载案内 cookie 态（`set-cookie.py` fetch 臂写入、
+/// `check-cookie.py` script 取回臂按 credentials mode + host 判定读取——M3
+/// get-set-cookie / M4 es_cookie 同款先例）。**案级作用域**：生产路径（case 构建
+/// 点）script fetcher 与 fetch 桥两闭包共享同一 Arc，每案新建（跨案泄漏面自清）；
+/// 单测经各 None 回落包装默认空表。
+type CredentialCookieStash = std::sync::Arc<std::sync::Mutex<HashMap<(String, String), String>>>;
+
 /// 单测回调面（生产路径走案级 stash——见 [`wpt_data_script_fetcher_with_stash`]）。
 static SERVE_CUSTOM_RESPONSE_STASH: std::sync::LazyLock<ServeCustomResponseStash> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new())));
@@ -5763,17 +5772,78 @@ fn wpt_data_script_fetcher(
     wpt_root: &std::path::Path,
     doc_referrer_policy: Option<String>,
 ) -> Option<zero_webview::ScriptSourceFetcher> {
-    wpt_data_script_fetcher_with_stash(wpt_root, doc_referrer_policy, None)
+    wpt_data_script_fetcher_with_stash(wpt_root, doc_referrer_policy, None, None)
 }
 
 fn wpt_data_script_fetcher_with_stash(
     wpt_root: &std::path::Path,
     doc_referrer_policy: Option<String>,
     serve_custom_stash: Option<ServeCustomResponseStash>,
+    cred_cookies: Option<CredentialCookieStash>,
 ) -> Option<zero_webview::ScriptSourceFetcher> {
     let root = wpt_root.to_path_buf();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
+    let cred_cookies = cred_cookies.unwrap_or_default();
     Some(std::sync::Arc::new(move |page_url: &str, src: &str| {
+        // s338：check-cookie.py 端点仿真（上游 wptserve handler 不在语料——动态
+        // import credentials mode 判据面回体 `window.<id> = '<result>';`，result ∈
+        // found / not found / "different value: <v>"，逐字镜像上游；id/cookieName
+        // 缺失回空体）。置于宿主前缀剥离**之前**：cross 臂 src 为
+        // `http://www2.wpt.test:8000/...`（www2 不在 strip_wpt_host_prefix 允许
+        // 名单——通用剥离维持严格，期望外源失败页面零回归），本臂自带 host 解析。
+        // credentials 判定：`__zw_cred` 查询标记（webview `__zw_compile_module` 通道
+        // 穿入，消费即剥离语义同 s124 `__zw_lp`；无标记 = classic/native 通道 →
+        // same-origin 缺省）——attach = include（use-credentials）或请求与页面同源
+        //（spec credentials mode 语义）；命中 cookie 值 "1" → found。host 键取请求
+        // authority host（无 PSL/domain-match 建模——语料 12 臂 set/check 同 host
+        // 精确命中，FIXME 挂账跨子域 jar 面）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        // https://fetch.spec.whatwg.org/#credentials
+        if src.contains("check-cookie.py") {
+            let query = src.split('?').nth(1).unwrap_or("");
+            let id = wpt_query_value(query, "id").unwrap_or_default();
+            let cookie_name = wpt_query_value(query, "cookieName").unwrap_or_default();
+            if id.is_empty() || cookie_name.is_empty() {
+                return Ok(String::new());
+            }
+            let credentials = query
+                .split('&')
+                .find_map(|kv| kv.strip_prefix("__zw_cred="))
+                .unwrap_or("same-origin");
+            // 请求源判定：绝对 URL 取 authority（含端口），相对/origin-absolute 同页面源。
+            let module_authority = src
+                .split_once("://")
+                .and_then(|(_, rest)| rest.find('/').map(|cut| &rest[..cut]));
+            let page_authority = page_url
+                .split_once("://")
+                .and_then(|(_, rest)| rest.find('/').map(|cut| &rest[..cut]));
+            let same_origin = match (module_authority, page_authority) {
+                (Some(m), Some(p)) => m == p,
+                _ => true,
+            };
+            let attach = credentials == "include" || same_origin;
+            let module_host = module_authority
+                .map(|a| a.split(':').next().unwrap_or(a))
+                .unwrap_or_else(|| {
+                    page_authority
+                        .map(|a| a.split(':').next().unwrap_or(a))
+                        .unwrap_or("wpt.test")
+                });
+            let cookie_value = if attach {
+                cred_cookies
+                    .lock()
+                    .ok()
+                    .and_then(|stash| stash.get(&(module_host.to_string(), cookie_name.clone())).cloned())
+            } else {
+                None
+            };
+            let result = match cookie_value.as_deref() {
+                Some("1") => "found",
+                Some(value) => return Ok(format!("window.{id} = 'different value: {value}';")),
+                None => "not found",
+            };
+            return Ok(format!("window.{id} = '{result}';"));
+        }
         let path_part = match strip_wpt_host_prefix(src) {
             Some(path) => path,
             None if src.starts_with("http://") || src.starts_with("https://") => {
@@ -7046,7 +7116,7 @@ pub fn run_canvas_worker_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(St
 /// 既有单测签名面——回落进程级静态 stash（见 [`SERVE_CUSTOM_RESPONSE_STASH`]）。
 #[cfg(test)]
 fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fetch_bridge::FetchHandler> {
-    wpt_data_fetch_handler_with_stash(wpt_root, None)
+    wpt_data_fetch_handler_with_stash(wpt_root, None, None)
 }
 
 /// reftest 脚本沙箱 fetch 桥复用入口（s304）——无 stash 变体（进程级静态 stash 回落，
@@ -7054,14 +7124,19 @@ fn wpt_data_fetch_handler(wpt_root: &std::path::Path) -> Option<zero_engine::fet
 pub(crate) fn reftest_mutation_fetch_handler(
     wpt_root: &std::path::Path,
 ) -> Option<zero_engine::fetch_bridge::FetchHandler> {
-    wpt_data_fetch_handler_with_stash(wpt_root, None)
+    wpt_data_fetch_handler_with_stash(wpt_root, None, None)
 }
 
 fn wpt_data_fetch_handler_with_stash(
     wpt_root: &std::path::Path,
     serve_custom_stash: Option<ServeCustomResponseStash>,
+    cred_cookies: Option<CredentialCookieStash>,
 ) -> Option<zero_engine::fetch_bridge::FetchHandler> {
     let root = wpt_root.to_path_buf();
+    // s338：credentials 判据面 cookie 表——案级共享（set-cookie.py fetch 臂写入、
+    // script fetcher check-cookie 臂读取，两闭包同一 Arc）；None 回落空表
+    //（test 包装/非 credentials 族案面零共享）。
+    let cred_cookies = cred_cookies.unwrap_or_default();
     // page-state-compat M2：beacon/resources 三端点共享 stash（handler per-case 构建——
     // 每案新 stash 与 wptserve server.stash 语义对齐；id 键 = token()/UUID 案内唯一）。
     let beacon_stash: std::sync::Arc<std::sync::Mutex<HashMap<String, String>>> = std::sync::Arc::default();
@@ -7126,6 +7201,42 @@ fn wpt_data_fetch_handler_with_stash(
                     headers,
                     body: "wpt.test root\n".to_string(),
                     body_bytes: Some(b"wpt.test root\n".to_vec()),
+                });
+            }
+            if clean == "cookies/resources/set-cookie.py" {
+                // s338：set-cookie.py 端点仿真（上游 wptserve handler 不在语料——
+                // dynamic-import credentials 判据面的置 cookie 通道；helper 以
+                // fetch(credentials: 'include') 于 check-cookie import 前调用，同源
+                // 相对 + cross 绝对（www2）各一枚）。写案级 cookie 表（键 (host,
+                // name)，值 "1"——上游 `name=1` 字面；path/samesite/secure 参数不建模
+                // ——语料 path 覆盖 check-cookie 所在目录，jar 无 path 作用域近似，
+                // FIXME 挂账）。回体/Content-Type 逐字镜像上游（application/json +
+                // `var dummy='value';`）；ACO 反射头 runner fetch 通道无 CORS 执行面，
+                // 不建模。host 取请求 URL authority（无 scheme = origin-absolute →
+                // runner 页面恒 wpt.test）。
+                // https://github.com/web-platform-tests/wpt/blob/3159769/cookies/resources/set-cookie.py
+                let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+                let name = wpt_query_value(query, "name").unwrap_or_default();
+                if !name.is_empty() {
+                    let host = req
+                        .url
+                        .split_once("://")
+                        .and_then(|(_, rest)| rest.find('/').map(|cut| &rest[..cut]))
+                        .map(|authority| authority.split(':').next().unwrap_or(authority).to_string())
+                        .unwrap_or_else(|| "wpt.test".to_string());
+                    if let Ok(mut stash) = cred_cookies.lock() {
+                        stash.insert((host, name), "1".to_string());
+                    }
+                }
+                let mut headers: Vec<(String, String)> = Vec::new();
+                headers.push(("content-type".into(), "application/json".into()));
+                wpt_add_fetch_metadata(&mut headers, req, 200);
+                return Ok(zero_engine::fetch_bridge::FetchResponse {
+                    status: 200,
+                    status_text: "OK".to_string(),
+                    headers,
+                    body: "var dummy='value';".to_string(),
+                    body_bytes: Some(b"var dummy='value';".to_vec()),
                 });
             }
             if clean == "FileAPI/file/resources/echo-content-escaped.py" {
@@ -11173,6 +11284,10 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
     // 共用 fixed token，跨案共享会互踩——见 [`ServeCustomResponseState`] 注）。
     let serve_custom_stash: ServeCustomResponseStash =
         std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
+    // s338：credentials 判据面 cookie 表案级共享——fetch 桥（set-cookie.py fetch 面）
+    // 与 script fetcher（check-cookie.py 模块取回面）两闭包同一 Arc，每案新建
+    //（跨案泄漏面自清，同 [`ServeCustomResponseState`] 案级口径）。
+    let cred_cookies: CredentialCookieStash = std::sync::Arc::default();
     let mut webview = WebView::new(WebViewConfig {
         width: 800,
         height: 600,
@@ -11200,12 +11315,19 @@ pub(crate) fn run_testharness_html_with_pointer_injection(
         // js-dom goal：dom 用例同样需要本地 .js 内联 + 图片资源，两条路径统一走 wpt_root。
         image_source_fetcher: wpt_data_image_fetcher(wpt_root),
         // R34xx：fetch() 本地资源（2d.composite.image.* fetch+createImageBitmap 路径）。
-        fetch_handler: wpt_data_fetch_handler_with_stash(wpt_root, Some(std::sync::Arc::clone(&serve_custom_stash))),
+        // s338：credentials 判据面 cookie 表案级共享（set-cookie fetch 臂 + check-cookie
+        // script 取回臂两闭包同一 Arc，每案新建）。
+        fetch_handler: wpt_data_fetch_handler_with_stash(
+            wpt_root,
+            Some(std::sync::Arc::clone(&serve_custom_stash)),
+            Some(std::sync::Arc::clone(&cred_cookies)),
+        ),
         // R34xx（G6）：.worker.js 变体 + worker importScripts 的脚本源。
         script_source_fetcher: wpt_data_script_fetcher_with_stash(
             wpt_root,
             extract_meta_referrer_policy(source),
             Some(std::sync::Arc::clone(&serve_custom_stash)),
+            Some(cred_cookies),
         ),
         // s256（动态 import 延迟决议）：native 通道外链 module 取回延迟——trickle
         // 管道（`?pipe=trickle(dN)`）建模为真实网络秒级延迟。runner 同步 fetcher
@@ -15594,6 +15716,94 @@ mod tests {
             ".referrer { content: \"\" }"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // s338 回归钉：dynamic-import credentials cookie 往返——set-cookie.py fetch 臂写
+    // 案级表（同源相对 + cross www2 绝对两枚），check-cookie.py 取回臂按 `__zw_cred`
+    // 标记 + 同源判定回体：include/use-credentials 或同源 → found；cross + 无标记
+    //（classic native 通道缺省）/cross + same-origin（anonymous）→ not found。回体
+    // `window.<id> = '<result>';` 逐字镜像上游 check-cookie.py。
+    #[test]
+    fn dynamic_import_credentials_cookie_roundtrip_s338() {
+        let stash: CredentialCookieStash = std::sync::Arc::default();
+        let handler = wpt_data_fetch_handler_with_stash(
+            Path::new("/nonexistent-wpt-root"),
+            None,
+            Some(std::sync::Arc::clone(&stash)),
+        )
+        .unwrap();
+        let fetcher =
+            wpt_data_script_fetcher_with_stash(Path::new("/nonexistent-wpt-root"), None, None, Some(stash)).unwrap();
+        let make_req = |url: String| zero_engine::fetch_bridge::FetchRequest {
+            url,
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: Some("include".to_string()),
+            mode: Some("no-cors".to_string()),
+            redirect: None,
+        };
+        // 置 cookie 两枚（语料 helper 原序：同源相对 + cross www2 绝对）。
+        let same = handler(&make_req(
+            "/cookies/resources/set-cookie.py?name=same&path=/html/semantics/scripting-1/the-script-element/module/"
+                .to_string(),
+        ))
+        .unwrap();
+        assert_eq!(same.status, 200);
+        assert_eq!(same.body, "var dummy='value';");
+        handler(&make_req(
+            "http://www2.wpt.test:8000/cookies/resources/set-cookie.py?name=cross&path=/html/semantics/scripting-1/the-script-element/module/".to_string(),
+        ))
+        .unwrap();
+        let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/resources/dynamic-import-credentials-iframe.sub.html";
+        let cross_checker =
+            "http://www2.wpt.test:8000/html/semantics/scripting-1/the-script-element/module/resources/check-cookie.py";
+        // ① 同源 + include → found。
+        assert_eq!(
+            fetcher(
+                page,
+                "./check-cookie.py?id=test0&cookieName=same&origin=https://wpt.test&__zw_cred=include"
+            )
+            .unwrap(),
+            "window.test0 = 'found';"
+        );
+        // ② 同源 + 无标记（classic native 缺省 same-origin）→ found。
+        assert_eq!(
+            fetcher(
+                page,
+                "./check-cookie.py?id=test1&cookieName=same&origin=https://wpt.test"
+            )
+            .unwrap(),
+            "window.test1 = 'found';"
+        );
+        // ③ cross www2 + include（use-credentials 臂）→ found。
+        assert_eq!(
+            fetcher(
+                page,
+                &format!("{cross_checker}?id=test2&cookieName=cross&origin=https://wpt.test&__zw_cred=include")
+            )
+            .unwrap(),
+            "window.test2 = 'found';"
+        );
+        // ④ cross + 无标记 → not found（crossOrigin 未指定的 cross 臂）。
+        assert_eq!(
+            fetcher(
+                page,
+                &format!("{cross_checker}?id=test3&cookieName=cross&origin=https://wpt.test")
+            )
+            .unwrap(),
+            "window.test3 = 'not found';"
+        );
+        // ⑤ cross + same-origin（anonymous 臂）→ not found。
+        assert_eq!(
+            fetcher(
+                page,
+                &format!("{cross_checker}?id=test4&cookieName=cross&origin=https://wpt.test&__zw_cred=same-origin")
+            )
+            .unwrap(),
+            "window.test4 = 'not found';"
+        );
     }
 
     // s270 回归钉：referrer-checker-img.py 图片端点仿真——空/缺 expected_referrer

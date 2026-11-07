@@ -1837,6 +1837,31 @@ pub fn extract_script_referrer_policies(html: &str) -> Vec<Option<String>> {
         .collect()
 }
 
+/// 提取每个 `<script>` 元素的 credentials mode（html-semantics s338——dynamic-import
+/// credentials 判据面：模块脚本元素 `crossorigin` 属性决定其 credentials mode，动态
+/// `import()` 取回沿用该 mode）。
+///
+/// 返回向量序号口径同 [`extract_script_csp_info`]（全部 script 元素文档序）。
+/// `use-credentials`（ASCII 大小写不敏感）→ `Some("include")`；缺失/`anonymous`/
+/// 非法值（spec invalid value default = anonymous）→ `None`（消费侧缺省
+/// same-origin）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn extract_script_credentials(html: &str) -> Vec<Option<String>> {
+    let doc = zero_dom::parse_html(html);
+    doc.get_elements_by_tag_name("script")
+        .into_iter()
+        .map(|script_id| {
+            doc.get_attribute(script_id, "crossorigin").and_then(|v| {
+                if v.trim().eq_ignore_ascii_case("use-credentials") {
+                    Some("include".to_string())
+                } else {
+                    None
+                }
+            })
+        })
+        .collect()
+}
+
 /// 提取每个 `<script>` 元素**内容起始位置**的 1-based 行/列号（security-hardening
 /// M2-s2）——CSP 违规事件 `lineNumber`/`columnNumber` 源（spec CSP3
 /// §securitypolicyviolationevent：被阻止的内联脚本位置 = 内容首字符在文档源的行列）。

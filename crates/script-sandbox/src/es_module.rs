@@ -216,12 +216,30 @@ pub fn compile_module_script(
     cache_key: &str,
     registry: &ModuleRegistry,
 ) -> Result<String, ScriptError> {
+    compile_module_script_with_credentials(source, url, cache_key, registry, "same-origin")
+}
+
+/// [`compile_module_script`] 的 credentials 变体（s338——module 元素 `crossorigin`
+/// 属性决定其模块脚本的 credentials mode，动态 `import()` 取回沿用该 mode：
+/// `use-credentials` → `include`，其余（缺失/anonymous/非法值按 spec invalid
+/// value default = anonymous）→ `same-origin`）。经重写发射的 IIFE 局部
+/// `_importCred` 穿透到 `__zw_dynamic_import`（spec fetch a single module script
+/// 的 credentials mode 步骤；动态 import 的请求 credentials = 定义其的模块脚本
+/// 元素 credentials mode）。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn compile_module_script_with_credentials(
+    source: &str,
+    url: &str,
+    cache_key: &str,
+    registry: &ModuleRegistry,
+    credentials: &str,
+) -> Result<String, ScriptError> {
     let uses_await = source.contains("await");
     // s269：async 包裹判定与消费上下文（依赖 await 发射）同源——`import(`（动态
     // import 重写后的 helper 调用态）也触发 async 包裹（prelude 契约既有行为），此时
     // TLA 依赖的消费点同样可合法 await。
     let async_body = source.contains("import(") || uses_await;
-    let body = build_module_script(source, url, registry, async_body, &mut HashSet::new())?;
+    let body = build_module_script(source, url, registry, async_body, credentials, &mut HashSet::new())?;
     // R5182：首行初始化文档级模块缓存（幂等）——独立调用路径（EsModuleSandbox、SW 编译）
     // 不经过 prelude 也能安全使用记忆化发射点。
     let init = "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\n";
@@ -255,7 +273,7 @@ pub fn compile_module_script(
 
 /// 编译依赖模块为可求值的 IIFE 表达式（返回 exports 对象）。
 pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
-    build_dep_iife(specifier, registry, &mut HashSet::new())
+    build_dep_iife(specifier, registry, "same-origin", &mut HashSet::new())
 }
 
 /// s255：入口图 depth-first post-order 注册序——模块体求值序按依赖图后序、同层按
@@ -354,7 +372,12 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // `import()`（Vite 现代浏览器探测 `import("_").catch(()=>1)`）在求值瞬间需要 helper 已定义；
     // 反序时入口模块体在 prelude 第 2 条语句执行 → `__zw_dynamic_import is not defined` ReferenceError，
     // 探测中断、后续语句永不执行 → 站点误回落 legacy 加载路径。
-    out.push_str("globalThis.__zw_load_module = function(spec, parentHint, typeHint) {\n");
+    // s338：第 4 参 credHint = 动态 import() 调用点模块的 credentials mode（重写发射
+    // 经 `.call({referrer, credentials})` 穿入，s338 面；缺省 same-origin——classic
+    // 直调形态/旧发射无此槽）。穿给宿主第 4 参（renderer/tab 旧宿主契约忽略多余
+    // 参数，行为同 same-origin 缺省；webview 侧以 `__zw_cred` 查询标记穿 fetcher，
+    // 见 webview __zw_compile_module）。
+    out.push_str("globalThis.__zw_load_module = function(spec, parentHint, typeHint, credHint) {\n");
     // t8j：parent 优先取调用点穿入的 referrer（rewrite_dynamic_imports 的 `.call({referrer})`），
     // 回退全局 _importMeta（直接调用形态）——模块 IIFE 局部的 _importMeta 在此不可见。
     out.push_str(
@@ -397,7 +420,9 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     );
     out.push_str("  var kr = __zwModuleFetchKeys[fk];\n");
     out.push_str("  if (kr !== undefined && __moduleCache[kr]) return __moduleCache[kr];\n");
-    out.push_str("  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '');\n");
+    out.push_str(
+        "  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '', credHint || '');\n",
+    );
     out.push_str("  if (!r) throw new TypeError(\"Failed to fetch module: '\" + spec + \"'\");\n");
     out.push_str("  var sep = r.indexOf('\\u001f');\n");
     // s252：tag 3（链接失败）判定须先于缓存/失败表读取（逐次新对象，不入两表）。
@@ -451,12 +476,12 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     //（`__zw_compile_module(spec, parent, type)`——合成臂按类型分派）。
     // https://tc39.es/proposal-import-attributes/#sec-import-calls
     // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
-    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    // s337：双跳取回——单跳时取回体与元素 load 尾片同代竞争（同步块排队序先于
+    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  // s338：credentials mode = 调用点发射穿入的 `this.credentials`（模块 IIFE 局部\n  // _importCred，元素 crossorigin 面），缺省 same-origin（classic 直调/旧发射）。\n  // 恒在 try 外先读——`this` 在后续 then 链内失效。\n  var _diCred = (this && this.credentials) || 'same-origin';\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    // s337：双跳取回——单跳时取回体与元素 load 尾片同代竞争（同步块排队序先于
     // load 尾片），evaluation-order-4 判据 load 须先于动态依赖体（Chrome 取回跨
     // 宏任务，body 反应晚于 load 尾片代）；双跳后 hop1 空代让位 load 尾片，依赖
     // 体落次代。order-3 序不变（hop1 无日志，依赖体本就后于 mt-3.1）。
     // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-    return Promise.resolve().then(function () {\n      return Promise.resolve().then(function () {\n        return Promise.resolve(__zw_load_module(spec, parent, _diType));\n      });\n    });\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
+    return Promise.resolve().then(function () {\n      return Promise.resolve().then(function () {\n        return Promise.resolve(__zw_load_module(spec, parent, _diType, _diCred));\n      });\n    });\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
     // s254：import.meta.resolve 宿主桥（HTML #dom-import-meta-resolve——spec 入参经
     // ToString 后走 resolve a module specifier 全算法：map 命中 → 映射 URL 绝对化；
     // URL-like 未命中 → asURL 回退）。宿主返空 = resolution failure（裸说明符未映射/
@@ -474,7 +499,7 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
         if entry == Some(spec.as_str()) {
             continue;
         }
-        let iife = build_dep_iife(&spec, registry, &mut HashSet::new())?;
+        let iife = build_dep_iife(&spec, registry, "same-origin", &mut HashSet::new())?;
         let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
         // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。判定用
@@ -526,7 +551,10 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
                 //（如 `throw new Error('import() failed')`）时引号提前终止字符串 → 整脚
                 // 本 SyntaxError（base 发射串无引号仅值污染）。发射体只引用调用点词法
                 // 作用域的 `_importMeta`（代码态重写目标已保证定义），零引号。
-                out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                // s338：credentials 槽同理引用 IIFE 局部 `_importCred`（build_module_script
+                // / build_dep_iife 头部发射，元素 crossorigin 面；两处发射点覆盖全部重写
+                // 落点），零引号零字面值。
+                out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, ");
                 i += "import(".len();
                 continue;
             }
@@ -582,9 +610,10 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
             }
             RewriteCtx::TemplateExpr(depth) => {
                 // 模板 `${}` 表达式区内仍是代码——真实 `import(` 照常重写（仍在模块
-                // IIFE 词法作用域内，发射体 `_importMeta` 合法；标识符边界守卫同上）。
+                // IIFE 词法作用域内，发射体 `_importMeta`/`_importCred` 合法；标识符
+                // 边界守卫同上，s338 credentials 槽同规）。
                 if source[i..].starts_with("import(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
-                    out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url }, ");
+                    out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, ");
                     i += "import(".len();
                     continue;
                 }
@@ -848,6 +877,7 @@ fn build_module_script(
     url: &str,
     registry: &ModuleRegistry,
     async_body: bool,
+    credentials: &str,
     visited: &mut HashSet<String>,
 ) -> Result<String, ScriptError> {
     let mut output = String::with_capacity(source.len() * 3);
@@ -859,6 +889,12 @@ fn build_module_script(
     output.push_str("  'use strict';\n");
     output.push_str("  var _exports = {};\n");
     output.push_str(&format!("  var _importMeta = {{ url: {} }};\n", json_stringify(url)));
+    // s338：本模块 credentials mode 的 IIFE 局部绑定——动态 import() 重写发射读此
+    // 局部量穿 `__zw_dynamic_import`（spec：动态 import 请求 credentials = 定义模块
+    // 脚本元素的 credentials mode；依赖 IIFE 同发射继承入口 mode，静态图取回同
+    // mode 语义对齐）。值恒内部常量（same-origin/include），json_stringify 仅卫生。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    output.push_str(&format!("  var _importCred = {};\n", json_stringify(credentials)));
     // s254：import.meta.resolve（HTML #import-metadata——入参 ToString 后经宿主回调走
     // resolve a module specifier 全算法；本模块基址穿入）。恒发射：无 map 时即纯
     // URL 解析（spec 语义），无 map 页面行为面不受扰。
@@ -881,9 +917,23 @@ fn build_module_script(
             continue;
         }
         if let Some(clause) = strip_import_keyword(trimmed) {
-            output.push_str(&transform_import(clause, url, registry, visited, async_body)?);
+            output.push_str(&transform_import(
+                clause,
+                url,
+                registry,
+                visited,
+                async_body,
+                credentials,
+            )?);
         } else if let Some(clause) = strip_export_keyword(trimmed) {
-            output.push_str(&transform_export(clause, url, registry, visited, async_body)?);
+            output.push_str(&transform_export(
+                clause,
+                url,
+                registry,
+                visited,
+                async_body,
+                credentials,
+            )?);
         } else {
             // 普通语句：替换 import.meta 与动态 import()
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
@@ -907,6 +957,7 @@ fn build_module_script(
 fn build_dep_iife(
     specifier: &str,
     registry: &ModuleRegistry,
+    credentials: &str,
     visited: &mut HashSet<String>,
 ) -> Result<String, ScriptError> {
     let source = registry
@@ -927,6 +978,9 @@ fn build_dep_iife(
         "  var _importMeta = {{ url: {} }};\n",
         json_stringify(specifier)
     ));
+    // s338：依赖继承入口 credentials mode（spec 静态图取回沿入口 fetch options 同
+    // mode；重写发射读本局部量）。发射点见 build_module_script 同名注。
+    output.push_str(&format!("  var _importCred = {};\n", json_stringify(credentials)));
     // s254：依赖模块同型 resolve 面（见 build_module_script 注记）。
     output.push_str(
         "  _importMeta.resolve = function (spec) { return __zwImportMapResolve(String(spec), _importMeta.url); };\n",
@@ -942,9 +996,23 @@ fn build_dep_iife(
             continue;
         }
         if let Some(clause) = strip_import_keyword(trimmed) {
-            output.push_str(&transform_import(clause, specifier, registry, visited, is_async)?);
+            output.push_str(&transform_import(
+                clause,
+                specifier,
+                registry,
+                visited,
+                is_async,
+                credentials,
+            )?);
         } else if let Some(clause) = strip_export_keyword(trimmed) {
-            output.push_str(&transform_export(clause, specifier, registry, visited, is_async)?);
+            output.push_str(&transform_export(
+                clause,
+                specifier,
+                registry,
+                visited,
+                is_async,
+                credentials,
+            )?);
         } else {
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
             output.push_str("  ");
@@ -1006,6 +1074,7 @@ fn await_prefix(dep_is_async: bool, enclosing_async: bool) -> &'static str {
 fn inline_dep_once(
     specifier: &str,
     registry: &ModuleRegistry,
+    credentials: &str,
     visited: &mut HashSet<String>,
 ) -> Result<DepInline, ScriptError> {
     if !visited.contains(specifier) {
@@ -1015,7 +1084,7 @@ fn inline_dep_once(
             .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?;
         let is_async = module_source_has_top_level_await(source);
         return Ok(DepInline::Fresh(
-            build_dep_iife(specifier, registry, visited)?,
+            build_dep_iife(specifier, registry, credentials, visited)?,
             is_async,
         ));
     }
@@ -1036,13 +1105,14 @@ fn transform_import(
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
     enclosing_async: bool,
+    credentials: &str,
 ) -> Result<String, ScriptError> {
     // import 'module' — 副作用导入
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
         let raw_specifier = extract_string_literal(clause.split(';').next().unwrap_or(clause).trim())?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         return match &dep {
             // R5182：Fresh 内联包记忆化——与 prelude 急切求值共享实例，不重复执行模块体。
             DepInline::Fresh(code, _) => Ok(format!(
@@ -1067,7 +1137,7 @@ fn transform_import(
         // R3398：防循环/菱形 import 无限递归（仅首次访问时内联依赖 IIFE；重入 → 引用首份
         // 导出，避免 a↔b 循环致栈溢出 abort）。镜像 import 'm' 副作用导入的 visited 守卫。
         let safe = safe_ident(&specifier);
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         let exports_var = match &dep {
             DepInline::Fresh(..) => format!("_mod_{safe}"),
             DepInline::Visited(..) => format!("_modref_{safe}"),
@@ -1111,7 +1181,7 @@ fn transform_import(
             ensure_module_export(&specifier, imported, registry)?;
         }
         let safe = safe_ident(&specifier);
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         let exports_var = match &dep {
             DepInline::Fresh(..) => format!("_mod_{safe}"),
             // 重入：首份导出在既有 `_mod_{safe}` 中；守卫引用存入独立名避免遮蔽外层声明
@@ -1146,7 +1216,7 @@ fn transform_import(
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         ensure_module_export(&specifier, "default", registry)?;
         let safe = safe_ident(&specifier);
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         let exports_var = match &dep {
             DepInline::Fresh(..) => format!("_mod_{safe}"),
             DepInline::Visited(..) => format!("_modref_{safe}"),
@@ -1397,6 +1467,7 @@ fn transform_export(
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
     enclosing_async: bool,
+    credentials: &str,
 ) -> Result<String, ScriptError> {
     // export * [as N] from 'module'（压缩形态 export*from"m" / export*as N from"m" 同样命中）
     if let Some(after_star) = clause.strip_prefix('*') {
@@ -1408,7 +1479,7 @@ fn transform_export(
             let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
             let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
             let safe = safe_ident(&specifier);
-            let dep = inline_dep_once(&specifier, registry, visited)?;
+            let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
             let exports_var = match &dep {
                 DepInline::Fresh(..) => format!("_mod_{safe}"),
                 DepInline::Visited(..) => format!("_modref_{safe}"),
@@ -1447,7 +1518,7 @@ fn transform_export(
         let raw_specifier = extract_import_specifier_from_rest(spec_part)?;
         let specifier = resolve_registered_specifier(&raw_specifier, importer_url, registry)?;
         let safe = safe_ident(&specifier);
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         let exports_var = match &dep {
             DepInline::Fresh(..) => format!("_mod_{safe}"),
             DepInline::Visited(..) => format!("_modref_{safe}"),
@@ -1490,7 +1561,7 @@ fn transform_export(
             let imported = item.split_once(" as ").map_or(item, |(name, _)| name).trim();
             ensure_module_export(&specifier, imported, registry)?;
         }
-        let dep = inline_dep_once(&specifier, registry, visited)?;
+        let dep = inline_dep_once(&specifier, registry, credentials, visited)?;
         let exports_var = match &dep {
             DepInline::Fresh(..) => format!("_mod_{safe}"),
             DepInline::Visited(..) => format!("_modref_{safe}"),
@@ -2389,15 +2460,15 @@ mod tests {
         let r =
             rewrite_dynamic_imports("var a = \"import('./x.js')\"; var b = 'import(\\'y.js\\')'; import('./z.js');");
         assert!(
-            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './x.js')"),
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './x.js')"),
             "双引号串内 import( 不重写：{r}"
         );
         assert!(
-            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, 'y.js')"),
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, 'y.js')"),
             "单引号串（内嵌转义引号）内 import( 不重写：{r}"
         );
         assert!(
-            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, "),
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, "),
             "代码态真实 import( 照常重写：{r}"
         );
         assert_eq!(r.matches("import(").count(), 2, "字面量内两处原样保留：{r}");
@@ -2417,7 +2488,9 @@ mod tests {
             "含 import 前缀的标识符调用原样保留: {r}"
         );
         assert!(
-            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './real.js')"),
+            r.contains(
+                "__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './real.js')"
+            ),
             "前邻空白的真实 import( 照常重写: {r}"
         );
         assert_eq!(r.matches("__zw_dynamic_import").count(), 1, "恰一处重写: {r}");
@@ -2428,7 +2501,7 @@ mod tests {
             "模板表达式区内标识符后缀原样保留: {t}"
         );
         assert!(
-            t.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './b.js')"),
+            t.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './b.js')"),
             "模板表达式区内真实 import( 照常重写: {t}"
         );
     }
@@ -2438,11 +2511,11 @@ mod tests {
         // 模板文本区不重写；`${}` 表达式区照常重写（含嵌套对象花括号深度）。
         let r = rewrite_dynamic_imports("var t = `text import('./a.js') ${ {n: 1}.n } ${ import('./b.js') }`;");
         assert!(
-            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './a.js')"),
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './a.js')"),
             "模板文本区内不重写：{r}"
         );
         assert!(
-            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './b.js')"),
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './b.js')"),
             "模板表达式区内照常重写：{r}"
         );
     }
@@ -2451,12 +2524,14 @@ mod tests {
     fn test_rewrite_skips_import_inside_comments() {
         let r = rewrite_dynamic_imports("// import('./c.js')\n/* import('./d.js') */ import('./e.js');");
         assert!(
-            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './c.js')")
-                && !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './d.js')"),
+            !r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './c.js')")
+                && !r.contains(
+                    "__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './d.js')"
+                ),
             "行/块注释内不重写：{r}"
         );
         assert!(
-            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './e.js')"),
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './e.js')"),
             "注释后代码态照常重写：{r}"
         );
     }
@@ -2472,7 +2547,7 @@ mod tests {
         );
         assert!(!r.contains(r#"_importMeta.url }, "x.js")"#), "串内 import( 未重写：{r}");
         assert!(
-            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url }, './y.js')"),
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './y.js')"),
             "代码态照常重写：{r}"
         );
         assert!(r.ends_with("// importé"), "多字节行注释原样保留：{r}");
@@ -2933,8 +3008,15 @@ mod tests {
         let source = "\
 __zw_report('resolve=' + import.meta.resolve('bare'));\n\
 try { import.meta.resolve(); } catch (e) { __zw_report('noarg=' + e.constructor.name); }";
-        let module = build_module_script(source, "https://zero.test/m.js", &registry, false, &mut HashSet::new())
-            .expect("模块编译不得失败");
+        let module = build_module_script(
+            source,
+            "https://zero.test/m.js",
+            &registry,
+            false,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .expect("模块编译不得失败");
         // transform 恒发射 resolve 面（无 map 页面即纯 URL 解析语义，行为不受扰）。
         assert!(
             module.contains("_importMeta.resolve = function"),
@@ -3145,8 +3227,15 @@ __zw_report('A=' + a.default + '|B=' + b.default);";
         let source = "\
 var s = 'import() failed';\n\
 import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { __zw_report('slen=' + s.length + '|rej=' + (e && e.message)); });";
-        let module = build_module_script(source, "https://zero.test/m.js", &registry, false, &mut HashSet::new())
-            .expect("模块编译不得失败");
+        let module = build_module_script(
+            source,
+            "https://zero.test/m.js",
+            &registry,
+            false,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .expect("模块编译不得失败");
         sandbox
             .execute(&format!("{prelude}\n{module}"))
             .expect("单引号字符串含 import( 时改写不得产生 SyntaxError（红态：整脚本解析失败）");
@@ -4607,6 +4696,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "https://zero.test/6a.js",
             &reg,
             false,
+            "same-origin",
             &mut HashSet::new(),
         )
         .expect_err("6 形双星号同名必须链接失败");
@@ -4636,6 +4726,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "https://zero.test/7a.js",
             &reg,
             false,
+            "same-origin",
             &mut HashSet::new(),
         )
         .expect_err("7 形星号子链歧义必须传播为链接失败");
@@ -4654,6 +4745,7 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "https://zero.test/ok-a.js",
             &reg,
             false,
+            "same-origin",
             &mut HashSet::new(),
         )
         .expect("单星号路径必须照常消解");
@@ -4687,8 +4779,15 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         );
         let prelude = build_module_runtime_prelude(&reg, None).expect("prelude 构建不得失败");
         let entry = "import { foo } from './s255-dep.js';\nexport * from './s255-dep.js';";
-        let module = build_module_script(entry, "https://zero.test/entry.js", &reg, false, &mut HashSet::new())
-            .expect("入口编译不得失败");
+        let module = build_module_script(
+            entry,
+            "https://zero.test/entry.js",
+            &reg,
+            false,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .expect("入口编译不得失败");
         sandbox
             .execute(&format!(
                 "{prelude}\n{module}\n__zw_report('count=' + globalThis.__s255count);"
@@ -4736,8 +4835,15 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         reg.register("./ord-c.js", &format!("{marker}'c');\nexport const c = 1;"));
         let prelude = build_module_runtime_prelude(&reg, Some("./ord-a.js")).expect("prelude 构建不得失败");
         let entry = "import { a } from './ord-a.js';";
-        let module = build_module_script(entry, "https://zero.test/main.js", &reg, false, &mut HashSet::new())
-            .expect("入口编译不得失败");
+        let module = build_module_script(
+            entry,
+            "https://zero.test/main.js",
+            &reg,
+            false,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .expect("入口编译不得失败");
         sandbox
             .execute(&format!(
                 "globalThis.__s255ord = [];\n{prelude}\n{module}\n__zw_report(globalThis.__s255ord.join(','));"
@@ -4894,5 +5000,98 @@ globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message);
             "TLA rejection 经 catch 桥 reportError 恰一次且序循 spec（step-4.1-3 不执行）：{all}"
         );
         assert_eq!(fetched_n, 1, "宿主取回恰好一次");
+    }
+
+    // s338（dynamic-import credentials 面）发射契约钉：credentials 穿参 → IIFE 局部
+    // `_importCred` 发射 + 重写发射 `credentials: _importCred` 引用（零引号零字面值，
+    // t8j-r2 同规）；缺省路径（compile_module_script）发射 same-origin；prelude 双面
+    // 穿参（__zw_load_module 第 4 参 credHint → __zw_compile_module 第 4 参，
+    // __zw_dynamic_import 读 this.credentials）。
+    #[test]
+    fn test_module_credentials_emission_s338() {
+        let registry = ModuleRegistry::new();
+        let source = "const p = import('./dep.mjs');\n";
+        let include = compile_module_script_with_credentials(
+            source,
+            "https://zero.test/resources/entry.mjs",
+            "https://zero.test/resources/entry.mjs",
+            &registry,
+            "include",
+        )
+        .expect("入口编译不得失败");
+        assert!(
+            include.contains("var _importCred = \"include\";"),
+            "include credentials 的 IIFE 局部发射缺席：{include}"
+        );
+        assert!(
+            include.contains("credentials: _importCred"),
+            "重写发射 credentials 槽缺席：{include}"
+        );
+        let default = compile_module_script(
+            source,
+            "https://zero.test/resources/entry.mjs",
+            "https://zero.test/resources/entry.mjs",
+            &registry,
+        )
+        .expect("入口编译不得失败");
+        assert!(
+            default.contains("var _importCred = \"same-origin\";"),
+            "缺省 credentials 发射非 same-origin：{default}"
+        );
+        let prelude = build_module_runtime_prelude(&registry, None).expect("prelude 构建不得失败");
+        assert!(
+            prelude.contains("__zw_load_module = function(spec, parentHint, typeHint, credHint)"),
+            "prelude __zw_load_module 第 4 参缺席"
+        );
+        assert!(
+            prelude.contains(
+                "__zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '', credHint || '')"
+            ),
+            "prelude 宿主调用 credentials 第 4 参缺席"
+        );
+        assert!(
+            prelude.contains("this.credentials"),
+            "prelude 调用点 credentials 读缺席"
+        );
+    }
+
+    // s338 行为钉：include credentials 入口的动态 import() → __zw_dynamic_import
+    // `.call({referrer, credentials})` → prelude `_diCred` → __zw_load_module 第 4 参 →
+    // 宿主 __zw_compile_module 第 4 参 == "include"（webview 侧据该值追加 `__zw_cred`
+    // 取回标记——runner check-cookie 臂消费）。
+    #[test]
+    fn test_dynamic_import_credentials_passthrough_s338() {
+        let captured: std::sync::Arc<std::sync::Mutex<Vec<Vec<String>>>> = std::sync::Arc::default();
+        let captured_cb = std::sync::Arc::clone(&captured);
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(move |args: &[String]| -> String {
+                captured_cb.lock().unwrap().push(args.to_vec());
+                "https://zero.test/resources/dep.mjs\u{1f}(function() { return {}; })()".to_string()
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        let transformed = compile_module_script_with_credentials(
+            "const p = import('./dep.mjs');\n",
+            "https://zero.test/resources/entry.mjs",
+            "https://zero.test/resources/entry.mjs",
+            &registry,
+            "include",
+        )
+        .expect("入口编译不得失败");
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap_or_default();
+        sandbox
+            .execute(&format!("{prelude}\n{transformed}"))
+            .expect("执行不得整体失败");
+        let captured_args = captured.lock().unwrap();
+        assert_eq!(captured_args.len(), 1, "宿主取回恰好一次");
+        assert_eq!(
+            captured_args[0].len(),
+            4,
+            "宿主调用带 credentials 第 4 参：{:?}",
+            captured_args[0]
+        );
+        assert_eq!(captured_args[0][3], "include", "credentials mode 穿入宿主");
     }
 }

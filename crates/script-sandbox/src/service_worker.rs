@@ -5710,9 +5710,11 @@ fn evaluate_classic_script(sandbox: &mut dyn Sandbox, source: &str, script_url: 
     // t8j-r2（D2）：rewrite 发射体裸引用 `_importMeta.url`（重写点须有该词法/全局绑定）——
     // 模块 IIFE 路径自带 `var _importMeta`；经典脚本路径在此补全局绑定（referrer=SW 脚本
     // URL；SW 动态 import 调用点本就被 prelude stub 以 TypeError 拒绝，referrer 不消费）。
+    // s338：发射体并裸引用 `_importCred`（credentials 槽）——同法补全局缺省 same-origin
+    //（对象字面量求值先于 stub 调用，缺绑定即 ReferenceError 抢在 TypeError 拒绝面前）。
     let source = rewrite_dynamic_imports(source);
     let setup = format!(
-        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {}; globalThis._importMeta = {{ url: {} }};",
+        "globalThis.__zwCurrentScriptURL = {}; globalThis.__zwCurrentScriptSource = {}; globalThis._importMeta = {{ url: {} }}; globalThis._importCred = \"same-origin\";",
         serde_json::to_string(script_url).unwrap(),
         serde_json::to_string(original_source).unwrap(),
         serde_json::to_string(script_url).unwrap()
