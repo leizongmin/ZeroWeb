@@ -4670,6 +4670,14 @@
         : { ut: 1, vu: 0 });
     var cur = function () {
       if (listCtx) return listCtx.cur();
+      // SMIL animVal 反射（svg-compat-v2 M1）：只读面（animVal） consult 文档级
+      // SMIL 时钟（part09 globalThis._zwSmilAnimValue 单点）——有活动/冻结动画
+      // 即返回动画态 {ut, vu}，无则 null 走 base 反射。baseVal 面（readOnly=false）
+      // 不受影响（动画不写 DOM 属性——animVal-basics 定谳）。
+      if (readOnly && el && globalThis._zwSmilAnimValue) {
+        var _smilAv = globalThis._zwSmilAnimValue(el, attr);
+        if (_smilAv) return _smilAv;
+      }
       if (!el) return st;
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
@@ -4854,7 +4862,9 @@
       return isNaN(n) ? initial : n;
     };
     // baseVal 数值型 accessor（float 校验 setter——非有限值 TypeError，spec
-    // WebIDL float 转换）；animVal getter-only 数值。
+    // WebIDL float 转换）；animVal getter-only 数值——SMIL 动画态优先
+    //（svg-compat-v2 M1：part09 globalThis._zwSmilAnimNumber 单点，无动画
+    // 回落 base 反射）。
     Object.defineProperty(w, 'baseVal', {
       configurable: true,
       get: read,
@@ -4864,7 +4874,16 @@
         try { el.setAttribute(attr, String(n)); } catch (_eWr) {}
       },
     });
-    Object.defineProperty(w, 'animVal', { configurable: true, get: read });
+    Object.defineProperty(w, 'animVal', {
+      configurable: true,
+      get: function () {
+        if (el && globalThis._zwSmilAnimNumber) {
+          var _smilAn = globalThis._zwSmilAnimNumber(el, attr);
+          if (_smilAn != null) return _smilAn;
+        }
+        return read();
+      },
+    });
     return w;
   };
   var _zwGetAnimatedNumber = function (el, prop, attr, initial) {

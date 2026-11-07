@@ -6838,6 +6838,11 @@
     // location-api 载入前 replace 面）。
     if (event && event.type === 'load') {
       try { globalThis.__zwDocCompletelyLoaded = true; } catch (_eS4M) {}
+      // svg-compat-v2 M1：SMIL 文档时间线起点（part09 globalThis 单点）——spec
+      // SMIL 文档 begin 在 load 时刻；此前 SMIL API 读恒 0（WPT
+      // SVGAnimationElement-getStartTime 的 pre-load pause 断言
+      // getCurrentTime()===0 定谳）。
+      try { if (typeof globalThis._zwSmilDocStart === 'function') globalThis._zwSmilDocStart(document); } catch (_eSmilStart) {}
       // R4600c（html-semantics s26 续，2026-10-22）：flush autofocus candidates——
       // spec https://html.spec.whatwg.org/multipage/interaction.html#flushing-autofocus-candidates
       // 文档退出 loading 态 → autofocus processed flag 置位 + 首个候选跑 focusing

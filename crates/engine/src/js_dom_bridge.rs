@@ -5792,6 +5792,20 @@ pub fn generate_js_dom_shim() -> &'static str {
         // part08b 的 _zwGlslShared 词法/类型表交接（用后即清），发布
         // _zwGlDrawBackend 供 part08 draw op 调用期查表；必须后于 part08b。
         s.push_str(include_str!("js_dom_shim/part08d.js"));
+        // part09（2026-11-07 svg-compat-v2 M1）：SMIL 文档级时间线引擎——时钟值
+        // 严格文法（B1）、begin/end offset 列表 + interval 解析（首个 end>t 为
+        // current，SVGAnimationElement-getStartTime 定谳）、linear from/to/by/
+        // values 采样 + fill=freeze、SVGSVGElement pause/seek/getCurrentTime
+        // 文档级共享时间线（part03 _zwSvgSvgCtlState stub FIXME 合流兑现——
+        // part09 加载序在后无条件覆写四方法；currentTranslate/currentScale/
+        // deselectAll 留 part03）、SVGAnimationElement getStartTime/
+        // getSimpleDuration 真值 + beginElement 动态实例、事件泵（begin/end
+        // Event task 粒度 setTimeout ≤50ms 轮询——learnings #30 禁 microtask）。
+        // animVal 反射消费经 globalThis._zwSmilAnimValue/_zwSmilAnimNumber 单点
+        //（part03 S2a SVGLength 只读面 cur()/SVGAnimatedNumber.animVal getter
+        // 挂钩）；文档时间线起点经 part06 window load 派发点 _zwSmilDocStart。
+        // https://www.w3.org/TR/2001/REC-smil-animation-20010904/
+        s.push_str(include_str!("js_dom_shim/part09.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }

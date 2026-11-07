@@ -2,10 +2,14 @@
 
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——**M0 已完成（2026-11-07：语料 missing=0 + 批次划分 +
-数值门 ≥8.6% 落定，[evidence](svg-compat-v2/evidence/2026-11-07-m0-corpus-sync-and-batches.md)）；下一步 M1（通道定型 + B1/B2 首批）**
-**卡点**: engine display:none gBCR 回归对 2F（M0 翻转归因，svg/geometry =
-挂账 #2/#4 协同域，按划界不双改——DC-4 前须协同批清偿或具名转挂）
+**状态**: Active——**M0 + M1 已完成（2026-11-07：part09 SMIL 文档级时间线
+落地，B1 收敛 7F→0 + B2 定谳面 P，全通道 486 案 1,708 子 1,209P = 70.8%
+零回归，[evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）；
+下一步 M2（B3 seek / B4 syncbase / B5 事件基 / B6 采样引擎）**
+**卡点**: engine 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
+不双改——DC-4 前须协同批清偿或具名转挂）：display:none gBCR 回归对 2F
+（M0 翻转归因）+ geometry 再下滑 2 子（M0 快照后 main 演化，part09 在场
+A/B 逐子 0 flip 归因非本 goal，嫌疑 4a5fd3051 声明式物化）
 **执行模式**: WPT 驱动（上游 svg corpus 为验收标尺）+ 专项语义收敛 + 语料扩面
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——SVG 面）
 **一期**: `docs/goal/archive/svg-compat.md`（80 号，2026-10-22 收口，corpus
@@ -51,6 +55,9 @@ M0 直接以分类账为底稿落批次，不需从零归因。
   DC-4 数值门按决策规则落定并回填本文件。
 - **DC-2（SMIL 通道）**：SMIL 面入常驻通道（runner 子命令或 svg 通道
   扩面，M0 定）+ skip 规则 + Makefile target；分类账基线复核落档。
+  **✅（2026-11-07 M1 定型）**：svg 通道承载（`animations/` 一期即无目录
+  排除，skip 规则 `svg_case_skipped` + Makefile `testharness-svg` 均在，
+  不设独立子命令），见 M1 evidence §4。
 - **DC-3（语义收敛）**：SMIL 批次簇逐批收敛或具名挂账（每批 evidence：
   FIXED/REGRESSED 记账）；挂账 #2/#3 归口结论落档。
 - **DC-4（coverage 复测）**：svg topdir 从 7.70% 升至数值门；一期已收口
@@ -86,7 +93,10 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   落档、数值门 ≥8.6% 落定回填；台账见
   [evidence](svg-compat-v2/evidence/2026-11-07-m0-corpus-sync-and-batches.md)）。
 - **M1**：SMIL 通道落地 + 时序基簇第一批（DC-2 起步）——B1 时钟值文法
-  （7F）+ B2 interval 模型首批。
+  （7F）+ B2 interval 模型首批。**已完成**（2026-11-07：part09.js 落地 +
+  DC-2 通道定型 + B1 收敛 7F→0 + B2 定谳面 P；全通道 1,209P/468F/31T
+  零回归、web-animations 506P/959 复验零回归；台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）。
 - **M2**：SMIL 同步基/事件时基簇收敛（DC-3 主体）——B3 seek / B4
   syncbase / B5 eventbase / B6 采样引擎。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
