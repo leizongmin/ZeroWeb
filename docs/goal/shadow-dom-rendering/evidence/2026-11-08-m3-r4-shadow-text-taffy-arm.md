@@ -55,6 +55,11 @@ R4 第二臂，下一片完成后翻默认。
   身份桥邻域），与本片 diff（layout-engine 私有 shadow 文本臂 + dom 一行等义
   lint + rustfmt 规范化）无机制性交集——判 HEAD 既有失败，归 engine bridge
   通道对端碰头账，本片不扩 scope 处理。
+  **归因实证（detached worktree 探针 @48e973ae9）**：origin/main tip 本机同跑
+  `cargo test -p zero-engine --lib js_dom_bridge::tests::` = 1379P/6F 名单全同；
+  该 commit 即 CI run 42404172408 的 headSha，其 build-and-test 全平台绿（仅
+  benchmarks 门挂）——6F 为本机环境面既有失败，与本流已推/未推提交及本片
+  diff 均无关。
 - 运行环境注记：r4d 首跑 workspace 腿 Error 127（target/test-guard 瞬时缺失，
   双 agent 并发构建同一 target/ 所致；前台重建即恢复）。本轮存在同会话双
   agent 并发（rally 双 spawn），门禁采认协议见 rally-double-spawn-race。
