@@ -1,7 +1,7 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
 **版本**: v1.3
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
@@ -12,14 +12,19 @@ DC-2 收口——slotted-has ×4 翻绿、全量 reftest 725/725 零回归、ups
 38 案 15 绿 / 23 红逐案归因（20 `:has-slotted` 范围外 / 2 命令式 M3 面 / 1 锚定位
 范围外），见
 [M2 evidence](shadow-dom-rendering/evidence/2026-11-07-m2-slotted-segment-and-flat-tree.md)）。
-M3 进行中（2026-11-08 R4 前半：shadow Text taffy 侧布局通道落地，挂
-`ZW_SHADOW_TEXT_BOX` opt-in 默认关——门控矩阵 flag 关 = base 零漂移、flag 开
-仅 slot-fallback-content-004 翻 ✗1.75%；根因定谳 inline_finalization 行级
-paint 按 DOM 序自累计 Y 不读 taffy 几何，taffy/LayoutBox 两层已验证正确，
-另发现 shadow host 不绘制自身背景（pre-existing），见
-[R4 前半 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-shadow-text-taffy-arm.md)）。
-下一步 M3：R4 第二臂（paint/IFC 侧感知 shadow 文本行位 → 004 翻回 → 翻
-默认开）；变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot
+M3 进行中（2026-11-08 R4 完成：shadow Text 布局通道两臂落地——taffy 侧
+匿名叶 + inline_finalization `remeasure_inline_only_containers` 匿名叶
+gate，`ZW_SHADOW_TEXT_BOX` 翻默认开（`=0` 杀）。slot-fallback-content-004
+严格比对 ✗1.75%→✓0.00% 首次真通过（flag 关基线的 ✓0.86% 实为回退文本
+未绘制的欠阈值假象）；门控矩阵 32P/3F 零 P→F、真通过-可信档 8→9，
+kill-switch 腿与 flag 关基线全等。**根因改判**（推翻前半片定谳）：非
+paint 行走按 DOM 序自累计 Y 之失，实为后处理 `remeasure_inline_only_containers`
+对 slot 化 plain-block host 测得 IFC 行数 0 → 收缩臂清 0 host 高度
+（taffy/extract 两层均正确，paint 忠实跟随坏几何），另发现 shadow host
+不绘制自身背景（pre-existing），见
+[R4 前半 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-shadow-text-taffy-arm.md)、
+[R4 第二臂 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r4-remeasure-gate-arm.md)）。
+下一步 M3：变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot
 属性 → 006 + 命令式 ~26 案翻绿面）；B6 补充池通道
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
