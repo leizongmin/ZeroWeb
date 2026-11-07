@@ -419,6 +419,27 @@ impl Document {
         }
     }
 
+    /// 45 号 shadow-dom-rendering M3 R3（变异应用臂）：重解析全部 shadow host 的
+    /// slot 分配——供 engine 变异应用批次（`apply_dom_mutations_full`）批末统一
+    /// 挂接。命令式 attachShadow、宿主 childList 变异（appendChild/insertBefore/
+    /// removeChild/innerHTML）与 slot/name 属性改名此前都不触发 [`Self::resolve_slots`]
+    ///（仅声明式物化时点解析一次，见 [`Self::materialize_declarative_shadow_roots`]
+    /// FIXME——已收口），动态场景分配过期：slot 走回退内容、被分配 light 子树无
+    /// 布局盒。批次粒度全量重解析而非增量跟踪：每文档 shadow host 数量极小，
+    /// [`Self::resolve_slots`] 每宿主 O(子数+slot 数) 幂等；无 shadow 页
+    /// `shadow_roots` 空 O(1) 快返。嵌套 shadow 宿主在 `shadow_roots` 表内逐层
+    /// 各自解析（与逐宿主调用语义一致）。
+    /// https://dom.spec.whatwg.org/#assigning-slots-and-slots
+    pub fn resolve_slots_all_hosts(&mut self) {
+        if self.shadow_roots.is_empty() {
+            return;
+        }
+        let hosts: Vec<NodeId> = self.shadow_roots.keys().copied().collect();
+        for host in hosts {
+            self.resolve_slots(host);
+        }
+    }
+
     /// 获取 slot 元素已分配的节点列表。
     ///
     /// 在调用 `resolve_slots` 之后使用此方法获取分配结果。

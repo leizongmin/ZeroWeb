@@ -981,6 +981,79 @@ fn test_resolve_slots_matching_element() {
     assert_eq!(assigned[0], header, "分配的节点应是 header");
 }
 
+/// 45 号 M3 R3（变异应用臂）：命令式 attachShadow 后未经逐宿主 resolve_slots，
+/// resolve_slots_all_hosts 统一重解析应补齐分配（engine apply_dom_mutations_full
+/// 批末挂接的 dom 侧语义收口）。
+#[test]
+fn test_resolve_slots_all_hosts_after_imperative_attach() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-widget");
+    doc.append_child(root, host).unwrap();
+
+    // light DOM 先于 shadow 树存在
+    let title = doc.create_element("h1");
+    doc.set_attribute(title, "slot", "title");
+    doc.append_child(host, title).unwrap();
+    let body = doc.create_element("div");
+    doc.append_child(host, body).unwrap();
+
+    // 命令式 attachShadow（无 resolve_slots 调用——变异应用臂语义）
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let title_slot = doc.create_element("slot");
+    doc.set_attribute(title_slot, "name", "title");
+    doc.append_child(shadow, title_slot).unwrap();
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots_all_hosts();
+
+    assert_eq!(doc.get_assigned_nodes(title_slot), vec![title]);
+    assert_eq!(doc.get_assigned_nodes(default_slot), vec![body]);
+}
+
+/// 45 号 M3 R3（变异应用臂）：初始解析后宿主 childList 变异（appendChild）与
+/// slot 属性改名，resolve_slots_all_hosts 应使分配与新树态一致（旧分配清零重收集）。
+#[test]
+fn test_resolve_slots_all_hosts_after_mutations() {
+    let mut doc = Document::new();
+    let root = doc.root();
+
+    let host = doc.create_element("my-panel");
+    doc.append_child(root, host).unwrap();
+    let first = doc.create_element("span");
+    doc.append_child(host, first).unwrap();
+
+    let shadow = doc.attach_shadow(host, ShadowRootMode::Open).unwrap();
+    let named_slot = doc.create_element("slot");
+    doc.set_attribute(named_slot, "name", "a");
+    let default_slot = doc.create_element("slot");
+    doc.append_child(shadow, named_slot).unwrap();
+    doc.append_child(shadow, default_slot).unwrap();
+
+    doc.resolve_slots_all_hosts();
+    // 初始：first（无 slot 属性）走默认 slot
+    assert_eq!(doc.get_assigned_nodes(default_slot), vec![first]);
+    assert!(doc.get_assigned_nodes(named_slot).is_empty());
+
+    // 变异 1：childList——追加带 slot="a" 的子节点
+    let second = doc.create_element("em");
+    doc.set_attribute(second, "slot", "a");
+    doc.append_child(host, second).unwrap();
+
+    // 变异 2：slot 属性改名——first 从默认档改入 a 档
+    doc.set_attribute(first, "slot", "a");
+
+    doc.resolve_slots_all_hosts();
+
+    assert_eq!(doc.get_assigned_nodes(named_slot), vec![first, second]);
+    assert!(
+        doc.get_assigned_nodes(default_slot).is_empty(),
+        "改名后默认 slot 分配应清空"
+    );
+}
+
 /// 测试 slot 分配：无匹配元素时使用 slot 的回退内容。
 ///
 /// 场景：shadow 树中有 <slot name="footer">，但 light DOM 中

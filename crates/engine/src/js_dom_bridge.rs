@@ -2523,6 +2523,14 @@ pub fn apply_dom_mutations_full(
         }
     }
 
+    // 45 号 shadow-dom-rendering M3 R3（变异应用臂统一挂接，shadow.rs FIXME 收口）：
+    // 批次应用后重解析全部 shadow host 的 slot 分配——命令式 attachShadow、宿主
+    // childList 变异、innerHTML 与 slot/name 属性改名都经本通道落地，批末统一
+    // 重解析使动态分配与树态一致（布局树 shadow 分支经 `get_assigned_nodes` 在
+    // 下帧布局消费）。无 shadow 页 O(1) 快返零开销（dom 侧封装）。
+    // https://dom.spec.whatwg.org/#assigning-slots-and-slots
+    doc.resolve_slots_all_hosts();
+
     // P1a gBCR path A：为本次 batch 创建的每个 handle 算唯一稳定选择器（歧义者跳过）。
     // 供 RectBridge handler 解析 handle-identity（`__n{n}`）→ selector → NodeId → rect。
     let mut handle_selectors: HashMap<String, String> = HashMap::new();

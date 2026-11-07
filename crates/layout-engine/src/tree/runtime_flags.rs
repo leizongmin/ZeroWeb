@@ -88,20 +88,10 @@ impl TreeRuntimeFlags {
     fn value(self, name: &str, cached: bool) -> bool {
         select_value(self.snapshot_enabled, cached, || enabled(name))
     }
-
-    #[inline]
-    fn opt_value(self, name: &str, cached: bool) -> bool {
-        select_value(self.snapshot_enabled, cached, || opt_in(name))
-    }
 }
 
 fn enabled(name: &str) -> bool {
     std::env::var(name).as_deref() != Ok("0")
-}
-
-/// opt-in 开关：默认关，显式设 "1" 才开（与 `enabled` 的默认开/`=0` 杀相反）。
-fn opt_in(name: &str) -> bool {
-    std::env::var(name).as_deref() == Ok("1")
 }
 
 #[inline]
