@@ -298,6 +298,34 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
   `git diff --check` / `cargo fmt --all -- --check` 干净，fmt/clippy 对
   .js 不适用。
 
+### 2026-11-07——M3 收口清单 1 开工：§9 认领声明 + 探针勘根
+
+- **§9 认领声明（契约清单 1，本流认领 attachment 物化修复）**：并行侧请避让
+  以下编辑面——`crates/engine/src/js_dom_bridge.rs`（`deep_entry_json_unsafe`
+  sr 字段拼装修复 + `parse_html_subtree_deep_json_unsafe` context 参数透传 +
+  JSON 有效性单测）、`crates/engine/src/js_dom_shim/part03.js`（
+  `_zwMBuildBodyTree`/`_zwFragmentAddedUnsafe`/ShadowRoot.setHTMLUnsafe
+  context 透传）；`crates/dom` 侧预期零改动（解析+物化+宿主名单已由
+  61f84064e/d8f473ff8 落位；单测断言如需扩展可触 `parser/declarative_shadow.rs`
+  tests）。探针页（zz-attach3/zz-attach4）用毕已清，遗留 zz-attach-probe/
+  zz-attach2-probe（triage 产 gitignored）一并清。
+- **勘根（探针法证，现树复测坐实）**：attachment.html 现树 484P/170F 与
+  r5433-final 参考零位移——机制一真根因 = Batch 2 引入的 deep JSON `sr`
+  字段拼装错位（format 串把 `,"sr":{...}` 拼在条目对象**闭括号外**，
+  产出非法 JSON → shim `JSON.parse` 抛错静默回退 legacy 未物化臂 → 视图
+  侧物化自 Batch 2 起从未生效；gethtml 通道通过属 attachment triage 所述
+  「模板滞留 + attachShadow 重建 + 序列化遮蔽」虚构链）。Rust 侧
+  parse+materialize+copy 链完好（zero-dom declarative 单测 12/12 绿）。
+  机制二（context 父模板误物化）残面在视图臂：`__zw_parse_html_subtree_unsafe`
+  仅透传 ns 不透传 context local name，html-ns 走全文档解析 → 解析丢弃父
+  （td/caption/head 等）的模板重挂 body ∈ 宿主名单被误消费；engine 侧
+  fragment 真实 context + 宿主名单已正确。
+- **校准记录**：declarative-shadow-dom-basic.html "Basic test" 在 r5433-final
+  参考即红（非 html5ever 0.38 升级新回归）；全语料现树 before 基线
+  （wc-m3c2-before.json）随本刀 A/B 落档。
+- **下一步**：before 基线跑（在跑）→ 拼装修复 + context 透传 + 单测落地 →
+  重建后 A/B（P→F/T=0 门）→ attachment/空链复测定格 → MEl 两刀回装评估。
+
 ### 2026-11-07——余项收口契约落定（无人值守推进至 DONE）
 
 - **簇 C 流静止判定**：最后代码落点 61f84064e（2026-11-06 06:44 attachment
