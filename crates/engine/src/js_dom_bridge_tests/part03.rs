@@ -4183,3 +4183,192 @@ fn test_computed_named_color_brown_blueviolet_t47() {
         "color: blueviolet → gCS rgb(138,43,226)（CSS Color 4 §6.1 #8A2BE2）"
     );
 }
+
+#[test]
+fn test_cssom_inline_style_decl_value_normalization_t49() {
+    // T49（inline style 写入归一）：`el.style` 声明写面接 T48 属性上下文归一管线
+    //（_zwNormalizeDeclValue），闭合与声明表（规则样式）路径的序列化分歧。
+    // ① IDL 写 + setProperty 写：<color> 上下文 named/hex/legacy 函数文本归一（CSSOM
+    //    §CSSStyleDeclaration setPropertyValue/setItem + CSS Style Attributes §2
+    //    declaration 解析——declared value ASCII lowercase 语义与规则路径同源，T48
+    //    Blink 154 活体 oracle 已钉文本面）；CSS-wide keyword 全属性 lowercase（Cascade 4
+    //    §7.1-7.4）；系统色 lowercase（CSS Color 4 §6.3）。
+    // ② 现代空格语法保形：T48 分歧形状钉（funcModernNoConvert）——inline 与规则路径同形。
+    // ③ 自定义属性字面 token 流（DF-5）+ 白名单外 ident 保形（DF-1）。
+    // ④ 非法 color token 赋值忽略保留原值（T47 DF-3，与规则样式 setProp 同形——Blink 活体
+    //    inv-idl-after-valid）；`!important` 两形（setProperty priority 参回拼 / IDL 尾缀）
+    //    存活且值核归一（priority 后缀非 <color> token）。
+    // ⑤ 一致性主钉：同输入经 inline（element.style）与声明表（rule.style）路径结果恒等。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    // https://www.w3.org/TR/css-style-attr/#parsing
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('p').style;\
+             globalThis.__rs = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.color = 'RED'; __p('idlNamedUpper', __st.color);\
+             __st.color = '#FF0000'; __p('idlHex6', __st.color);\
+             __st.color = '#F00A'; __p('idlHex4Alpha', __st.color);\
+             __st.setProperty('color', 'rgba(255,0,0,.5)'); __p('setpropFuncDot5', __st.color);\
+             __st.setProperty('color', 'RGB( 255 , 0 , 0 )'); __p('setpropFuncWs', __st.color);\
+             __st.color = 'rgb(255 0 0)'; __p('modernSpaceVerbatim', __st.color);\
+             __st.color = 'INHERIT'; __p('cwwInherit', __st.color);\
+             __st.color = 'CANVAS'; __p('sysCanvas', __st.color);\
+             __st.setProperty('--x', 'RED rgb(255,0, 0) INHERIT'); __p('cpVerbatim', __st.getPropertyValue('--x'));\
+             __st.animationName = 'RED'; __p('animRed', __st.animationName);\
+             __st.width = '#F00'; __p('widthHexVerbatim', __st.width);\
+             __st.color = 'rgb(255, 0, 0)'; __st.color = '#12g'; __p('invalidIgnored', __st.color);\
+             __st.setProperty('color', '#12g3'); __p('invalidSetpropIgnored', __st.color);\
+             __st.color = 'blue'; __st.color = 'RED !important';\
+             __p('idlImportantValue', __st.color);\
+             __p('idlImportantPriority', __st.getPropertyPriority('color'));\
+             __st.cssText = 'color: #F00 !important'; __p('cssTextImportant', __st.cssText);\
+             __rs.color = 'RED'; __p('ruleNamedUpper', __rs.color);\
+             __rs.color = '#FF0000'; __p('ruleHex6', __rs.color);\
+             __rs.color = 'rgb(255 0 0)'; __p('ruleModernSpace', __rs.color);\
+             __rs.color = 'INHERIT'; __p('ruleCwwInherit', __rs.color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"idlNamedUpper":"red","idlHex6":"rgb(255, 0, 0)","idlHex4Alpha":"rgba(255, 0, 0, 0.667)","setpropFuncDot5":"rgba(255, 0, 0, 0.5)","setpropFuncWs":"rgb(255, 0, 0)","modernSpaceVerbatim":"rgb(255 0 0)","cwwInherit":"inherit","sysCanvas":"canvas","cpVerbatim":"RED rgb(255,0, 0) INHERIT","animRed":"RED","widthHexVerbatim":"#F00","invalidIgnored":"rgb(255, 0, 0)","invalidSetpropIgnored":"rgb(255, 0, 0)","idlImportantValue":"red","idlImportantPriority":"important","cssTextImportant":"color: rgb(255, 0, 0) !important;","ruleNamedUpper":"red","ruleHex6":"rgb(255, 0, 0)","ruleModernSpace":"rgb(255 0 0)","ruleCwwInherit":"inherit"}"##,
+        "T49 inline style 声明写归一全案（T48 管线同语义 + !important 两形 + 非法忽略 + inline/规则恒等）"
+    );
+}
+
+#[test]
+fn test_cssom_inline_style_csstext_normalize_t49() {
+    // T49（inline style 写入归一）：`el.style.cssText` 整体写——Blink cssText setter
+    // parse-reserialize 语义（CSSOM §the-cssstyledeclaration-interface cssText attribute：
+    // 解析为 declarations 后序列化回写内容属性）。经 _parseDeclarations + _zwSerializeDecls
+    //（与规则样式 cssText 写同一对管线，s249/T48 同源）：
+    // ① 归一序列化形（'color: red; width: 10px;'——末声明带分号）+ length/per-property 读一致；
+    // ② 属性名 ASCII lowercase（COLOR: → color:）；
+    // ③ 非法 <color> 声明整体丢弃（T47 DF-3），合法声明保留（混合块逐声明判定）；
+    // ④ custom property 值字面流保形（DF-5）与 color 归一混排；
+    // ⑤ 空串清空（serialize '' → SetAttr style ''）。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    // https://www.w3.org/TR/css-style-attr/#parsing
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('#d').style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'color: RED; width: 10px';\
+             __p('whole', __st.cssText);\
+             __p('wholeColor', __st.color);\
+             __p('wholeLen', __st.length);\
+             __st.cssText = 'COLOR: #FF0000'; __p('upperName', __st.cssText);\
+             __st.cssText = '--y: RED; color: RED'; __p('mixedCustom', __st.cssText);\
+             __st.cssText = 'color: #12g; width: 5px'; __p('invalidDropped', __st.cssText);\
+             __st.cssText = 'margin: 0 ; padding: 5px'; __p('trailingSemi', __st.cssText);\
+             __st.cssText = ''; __p('cleared', __st.cssText);\
+             __p('clearedLen', __st.length);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"whole":"color: red; width: 10px;","wholeColor":"red","wholeLen":2,"upperName":"color: rgb(255, 0, 0);","mixedCustom":"--y: RED; color: red;","invalidDropped":"width: 5px;","trailingSemi":"margin: 0; padding: 5px;","cleared":"","clearedLen":0}"##,
+        "T49 inline style cssText 整体写归一全案（parse-reserialize + 逐声明拒绝 + custom 保形 + 清空）"
+    );
+}
+
+#[test]
+fn test_cssom_inline_style_csstext_quoted_semicolon_t49fix() {
+    // T49 返修（DF-2，review/t49-findings-disposition.json accepted_fix_in_pr）：cssText
+    // setter 声明切分须引号/注释感知——基线（85dfc1ec7）经 __zw_set_attr 整体原文落库，
+    // T49 引入 _parseDeclarations 朴素 `;` 切分后引号形值内分号被误切、落库截断（落库
+    // 保真回归，视觉通道恒等不豁免 JS 可观测面数据丢失）：
+    // ① url() 引号形 `url("data:image/png;base64,AAA")` 整值保留（cssText/getAttribute 往返）；
+    // ② content 引号形 `"a;b"` 整值保留；
+    // ③ 注释内分号不切分（`color: red /* ; */ ; background: blue` → 双声明，注释原文并入值）；
+    // ④ 字符串内转义引号 `\"` 不闭合字符串（content: "say \"a;b\"" 整值保留）。
+    // length 断言取读侧现形：readDeclValue/propNames 维持朴素切分（基线即有边界），
+    // 注释残段 '*/' 计入名集 → length=3（基线原文落库同输入同形——非本片回归；
+    // Blink 注释感知解析为 2，与逐属性读回截断并列为读侧已知限制披露）。
+    // https://www.w3.org/TR/css-syntax-3/#comment-diagram（注释跨 `;`）
+    // https://www.w3.org/TR/css-syntax-3/#string-token-diagram（字符串内 `\` 转义）
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body><div id=\"d\"></div></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // BS = '\\'（JS 字面反斜杠经 fromCharCode 构造，避开 Rust/JS 双层转义混写）。
+    sandbox
+        .execute(
+            "globalThis.__st = document.querySelector('#d').style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             var BS = String.fromCharCode(92);\
+             __st.cssText = 'background: url(\"data:image/png;base64,AAA\")';\
+             __p('urlDataUri', __st.cssText);\
+             __p('urlDataUriAttr', document.querySelector('#d').getAttribute('style'));\
+             __st.cssText = 'content: \"a;b\"'; __p('contentSemi', __st.cssText);\
+             __st.cssText = 'color: red /* ; */ ; background: blue';\
+             __p('commentSemi', __st.cssText);\
+             __p('commentSemiLen', __st.length);\
+             __p('commentSemiBg', __st.getPropertyValue('background'));\
+             __st.cssText = 'content: \"say ' + BS + '\"a;b' + BS + '\"\"';\
+             __p('escapedQuote', __st.cssText);\
+             __st.cssText = 'color: navy'; __p('afterReset', __st.cssText);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"urlDataUri":"background: url(\"data:image/png;base64,AAA\");","urlDataUriAttr":"background: url(\"data:image/png;base64,AAA\");","contentSemi":"content: \"a;b\";","commentSemi":"color: red /* ; */; background: blue;","commentSemiLen":3,"commentSemiBg":"blue","escapedQuote":"content: \"say \\\"a;b\\\"\";","afterReset":"color: navy;"}"##,
+        "T49 返修 DF-2 cssText 引号/注释感知切分全案（url 引号形 + content 引号形整值往返 + 注释分号不切 + 转义引号）"
+    );
+}

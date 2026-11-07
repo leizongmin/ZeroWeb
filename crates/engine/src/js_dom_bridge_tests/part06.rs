@@ -5560,3 +5560,50 @@ fn test_cssom_declared_noncolor_verbatim_t48() {
         "T48 非 <color> 上下文保形全案（DF-1 ident 保形 + csswide 全属性 + hex 非色上下文原文 + custom property 字面流）"
     );
 }
+
+#[test]
+fn test_cssom_rule_style_csstext_quoted_semicolon_t49fix() {
+    // T49 返修（DF-2）规则面钉：_parseDeclarations 为规则样式（_makeRuleStyle body 解析
+    // + cssText 写）与 insertRule（_ruleFromText）共享——朴素 `;` 切分对引号形值内分号
+    // 误切在规则侧同病（body 初始解析与整体写两路），共享点修复须两面钉锁：
+    // ① url() 引号形经规则 cssText 写后 getPropertyValue 整值读回；
+    // ② content 引号形 `"a;b"` 整值读回 + 同块 color 归一不受损（RED → red）。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { color: red; font-size: 14px; }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__rule = document.styleSheets[0].cssRules[0];\
+             globalThis.__st = __rule.style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'background: url(\"data:image/png;base64,AAA\")';\
+             __p('ruleUrlDataUri', __st.getPropertyValue('background'));\
+             __st.cssText = 'content: \"a;b\"; color: RED';\
+             __p('ruleContentSemi', __st.getPropertyValue('content'));\
+             __p('ruleColorNorm', __st.color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"ruleUrlDataUri":"url(\"data:image/png;base64,AAA\")","ruleContentSemi":"\"a;b\"","ruleColorNorm":"red"}"##,
+        "T49 返修 DF-2 规则面钉：_parseDeclarations 引号形整值（url 引号形 + content 引号形 + 同块归一不损）"
+    );
+}

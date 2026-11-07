@@ -1816,13 +1816,57 @@
   // CSSRule.style（R2810）：per-rule CSSStyleDeclaration，backed by 规则声明块，mutation 同样 flush 写回。
   // **已知限制**：① 视觉生效于下次 render（写源 SetText 入队，cascade 异步）；② 仅 `<style>`（`<link>` defer 网络）；
   // ③ 每次访问 styleSheets 重新查询（live DOM，非缓存）；④ insertRule ruleText 仅按首 `{` 切分（best-effort）。
+  // 声明块切分：仅字符串/注释外的 `;` 处切段（DF-2，T49 返修——朴素 split(';') 把
+  // url("a;b")/content:"a;b" 引号形值内分号误当声明分隔致落库截断）。感知：
+  // ① 双/单引号字符串（CSS Syntax §4.3.1 string token——同引号闭合，`\` 转义下一
+  //   字符故 `\"` 不闭合；未终结字符串消费至 EOF）；
+  // ② `/* */` 注释（§4.2——`/*` 起消费至 `*/`，EOF 终止未闭合注释），注释内 `;`
+  //   不切分（注释原文并入所在段，声明内注释由值保真路径携带）。
+  // **已知限制**：url() 非引号形值内 `;` 仍按声明分隔（url-token 语法允许 `;`，本
+  // 切分不做括号配对；引号形 data URI 为页面常态，t49fix 钉锁引号形）。
+  function _zwSplitDeclSegs(text) {
+    var segs = [];
+    var cur = '';
+    var i = 0;
+    var n = text.length;
+    while (i < n) {
+      var ch = text.charAt(i);
+      if (ch === '/' && text.charAt(i + 1) === '*') {
+        var end = text.indexOf('*/', i + 2);
+        if (end < 0) { cur += text.slice(i); break; }
+        cur += text.slice(i, end + 2);
+        i = end + 2;
+      } else if (ch === '"' || ch === '\'') {
+        var j = i + 1;
+        while (j < n) {
+          var cj = text.charAt(j);
+          if (cj === '\\') { j += 2; }
+          else { if (cj === ch) { j++; break; } j++; }
+        }
+        if (j > n) j = n;
+        cur += text.slice(i, j);
+        i = j;
+      } else if (ch === ';') {
+        segs.push(cur);
+        cur = '';
+        i++;
+      } else {
+        cur += ch;
+        i++;
+      }
+    }
+    segs.push(cur);
+    return segs;
+  }
+
   // CSS Declaration 块文本（`prop: value; prop2: value2`）→ 有序 [{name, value}]。name 归一小写。
+  // 切分经 _zwSplitDeclSegs（引号/注释感知，DF-2 返修）。
   // 供 [`_makeRuleStyle`] 解析 rule.cssText body 与 style.cssText 整体写。
   function _parseDeclarations(text) {
     // css-variables-1：`--` 前缀名 case-sensitive——DF-5（R5114 返修）保留原样，
     // 其余属性名维持既有 lowercase 归一。
     var decls = [];
-    var segs = String(text == null ? '' : text).split(';');
+    var segs = _zwSplitDeclSegs(String(text == null ? '' : text));
     for (var i = 0; i < segs.length; i++) {
       var seg = segs[i];
       var c = seg.indexOf(':');
@@ -2042,9 +2086,19 @@
   // 规则/元素样式声明名归一（DF-5，R5114 返修）：`--` 前缀名 case-sensitive 保留原样；
   // 其余维持既有 `_stylePropName` camelCase→kebab + lowercase（R2810 语义不变）。
   // 写读两侧同函数保证键一致。
+  // T49 勘误：声明**文本**解析面的属性名是 ASCII case-insensitive kebab-case
+  //（css-syntax-3 识别 CSS ident 后属性名大小写不敏感）——全大写书写形（cssText/
+  // insertRule 'COLOR:'）经 `_stylePropName` 的逐大写字母加连字符（JS camelCase IDL
+  // 语义，cssom-1 §camel-cased-attribute-to-css-attribute）产出 '-c-o-l-o-r' 垃圾名，
+  // 声明因此失配读面。词首外「小写/数字后随大写」以外的大写连字不属 kebab 书写形：
+  // 无小写后随的大写连续段先折叠小写再走 `_stylePropName`（camelCase 宽容接受
+  // backgroundColor → background-color 与 webkit IDL 前缀特例语义不变；'COLOR' →
+  // 'color'，cssText 整体写/规则样式两路共享本函数，同修）。
   function _styleDeclName(name) {
     var s = String(name);
-    return s.charAt(0) === '-' && s.charAt(1) === '-' ? s : _stylePropName(s).toLowerCase();
+    if (s.charAt(0) === '-' && s.charAt(1) === '-') return s;
+    var folded = s.replace(/[A-Z]+(?![a-z])/g, function (m) { return m.toLowerCase(); });
+    return _stylePropName(folded).toLowerCase();
   }
 
   // CSSRule.style per-rule CSSStyleDeclaration（R2810）——backed by 规则声明块（从 rule.cssText 的 `{ ... }`
