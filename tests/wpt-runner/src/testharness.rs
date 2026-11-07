@@ -14638,15 +14638,41 @@ const TESTDRIVER_STUB: &str = r#"<script>
     var sel = selectorFor(element);
     // uievents-compat M3 尾簇：目标已断连 → 祖先链回退（首个 querySelector 命中的
     // 近祖）。truthy 判定（isConnected 实现差异容忍——getter 缺失/非布尔回退不触发）。
+    var out = sel;
     try {
       if (!element.isConnected && queuedChains[id]) {
         var chain = queuedChains[id];
         for (var i = 1; i < chain.length; i++) {
-          try { if (document.querySelector(chain[i])) return chain[i]; } catch (_eQ) {}
+          try { if (document.querySelector(chain[i])) { out = chain[i]; break; } } catch (_eQ) {}
         }
       }
     } catch (_eC2) {}
-    return sel;
+    // s328（html-semantics）：页面可见对象登记——pending 视图（innerHTML 同 turn
+    // children 枚举）持有的解析对象（_zwMEl 形）与 apply 后 sel 域 wrap 产物不是
+    // 同一对象，宿主按键注入只携带 sel 串，shim `_resolveInputTarget` 据此回写
+    // `event.target` 会拿到非页面对象（beforeinput.tentative `events.has(element)`
+    // Map 身份键控断言 miss）。此处把（解析成功的 sel → 页面可见对象）登记
+    // `__zwTdVisibleTargets` 供 shim 采纳。仅登记目标自身 sel（out === sel）——
+    // 祖先链回退 sel 指向近祖，登记会把祖先 sel 错绑到已移除目标。
+    try {
+      if (out && out === sel) {
+        globalThis.__zwTdVisibleTargets = globalThis.__zwTdVisibleTargets || {};
+        __zwTdVisibleTargets[out] = element;
+        // s328 补充：宿主 InsertText 链路把 sel 经 `__zw_query_match` 归一成
+        // canonical 形（unique_selector_for_node nth-child 形）再进
+        // `_resolveInputTarget`——stub nth 兜底臂产 `:nth-of-type` 形，两形字符串
+        // 不同 → 仅登记 out 时 shim 侧按 canonical 键查找恒 miss（probe2 实测
+        // sel/resolved 均 nth-child 形、regKeys 仅 nth-of-type 形）。canonical
+        // 解析此刻可用（apply 已完成，selectorFor nth 臂 qSA 验证同 turn 通过），
+        // 同对象双键登记。
+        if (typeof __zw_query_match === 'function') {
+          var canon328 = null;
+          try { canon328 = __zw_query_match(out); } catch (_e328c) {}
+          if (canon328 && canon328 !== out) __zwTdVisibleTargets[canon328] = element;
+        }
+      }
+    } catch (_e328reg) {}
+    return out;
   };
   globalThis.__zw_td_forget = function(id) { delete queuedElements[id]; delete queuedChains[id]; };
   globalThis.__zw_td_resolve = function(id, error) {

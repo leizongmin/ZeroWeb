@@ -17483,8 +17483,16 @@
         target = tgtObj;
       }
       event.currentTarget = target;
+      // s328（html-semantics M2）：采纳对象 IDL on* own 属性臂——真实 proxy 的 on*
+      // IDL setter 经 set trap 登记 _listenerStore，采纳对象（td registry 页面可见
+      // 对象，_zwMEl 形无 trap）的 own 数据属性即处理器；且按 spec IDL 设值覆盖
+      // 内容属性编译（跳过 _ensureInlineHandler 登记同型 handler 防双 fire）。
+      var _s328OwnOn = (!isDocTarget && !isWinTarget && target && target.__zwTdAdopted === true)
+        ? target['on' + event.type] : undefined;
       if (!isDocTarget && !isWinTarget) {
-        _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+        if (typeof _s328OwnOn !== 'function') {
+          _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+        }
       }
       // R40：html 元素为 target（host lifecycle `__zw_dispatch_event('html', …)`）时 target 站也只触发
       // html 元素槽位（null slot）——doc/win 注册留给后续 doc/win 虚站（否则 target 站全触发 + 虚站再
@@ -17501,6 +17509,11 @@
       // R114：target 在 shadow 树内 → target 站派发期间 window.event 抑制为 undefined。
       if (_r114Suppress) globalThis.event = undefined;
       _dispatchToListeners(targetKey, event, 'all', target, tgtSlotFilter);
+      // s328：采纳对象 own on* 触发——站内 listener 序（store listeners 之后，
+      // 同站 listener 全跑完再判传播停止）。
+      if (typeof _s328OwnOn === 'function') {
+        _s328OwnOn.call(target, event);
+      }
       if (_r114Suppress) globalThis.event = event;
       if (bubbleStopped()) return !event._defaultPrevented;
 
