@@ -623,6 +623,16 @@ pub(crate) fn cell_intrinsic_oof_skip_enabled() -> bool {
     *ON
 }
 
+/// R5447（CSS2 §17.5.2 cell content-box 语义；chrome oracle A-G/H 形定谳）：cell 指定
+/// 绝对宽度的列贡献 = width + padding + border（separated 显式臂 + fixed 分支
+/// col_cell_spec 两处，`c5525-fltmult-000` ref 侧 td width:100 + border:20×2 旧径
+/// 列 100 应 140）。`ZW_CELL_SPEC_FRAME=0` 回退 specified 直接当列宽的旧行为。
+pub(crate) fn cell_spec_frame_enabled() -> bool {
+    static ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_CELL_SPEC_FRAME").as_deref() != Ok("0"));
+    *ON
+}
+
 pub(crate) fn compute_cell_intrinsic_width(
     cell_box: &LayoutBox,
     styles: &HashMap<NodeId, ComputedStyle>,

@@ -1417,7 +1417,17 @@ fn compute_column_widths_inner(
                 explicit
             } else if is_collapsed_border {
                 explicit + (cell_box.border_left + cell_box.border_right) / 2.0
+            } else if spec_px.is_some() && cell_spec_frame_enabled() {
+                // R5447（CSS2 §17.5.2 cell 是普通盒模型 content-box；chrome oracle
+                // A/B/C/F/G 形定谳：width:100 + border:20×2 → td 外宽 140、width:60 +
+                // padding:20×2 → 100，auto/fixed 同口径）：cell 指定绝对宽度是 content
+                // 语义，separated 列宽（border-box 间距口径，auto 臂 intrinsic 同源
+                // R2050）= width + padding + border。`ZW_CELL_SPEC_FRAME=0` 回退
+                // specified 直接当列宽的旧行为。
+                explicit + cell_box.padding_left + cell_box.padding_right + cell_box.border_left + cell_box.border_right
             } else {
+                // % 宽等 spec_px 为 None 的回落：cell_box.width 已是 taffy 布局后的
+                // border-box 口径，不再加 frame（防双重计入）。
                 explicit
             };
             // R364b：显式 width 不小于单元格 min-content（CSS 表格：列宽下限 = 内容
@@ -1667,6 +1677,9 @@ fn compute_column_widths_inner(
     };
     // R5162：显式 width 单元格的原始 specified px（无 R364b 内容 floor）——fixed 分支
     // 步骤 2 用（fixed 布局内容不 dilate 列宽，floor 的 min-content 属内容域）。
+    // R5447：存入时加水平 frame（content-box specified → 列 border-box 口径，chrome
+    // oracle H 形实证：fixed + 表宽 400 + td width:100 + border:20×2 → 列 140、auto 列
+    // 均分 260）；`ZW_CELL_SPEC_FRAME=0` 回退原始 px。
     let mut col_cell_spec = vec![None; col_count];
     // R5285：winner-center 配对写入过的槽位（content 与本行 local 半宽已配对）——
     // 无 cell 槽位（纯 col 宽/空列）在 Pass 2 后做全局线源半宽加法兜底。
@@ -1788,7 +1801,18 @@ fn compute_column_widths_inner(
                 col_max_widths[cell.col_start] = col_max_widths[cell.col_start].max(w);
             }
             if let Some(px) = cell_spec_px {
-                col_cell_spec[cell.col_start] = Some(px);
+                // R5447：fixed 分支列宽是 border-box 口径——content-box specified 加
+                // 水平 frame（chrome oracle H 形；`ZW_CELL_SPEC_FRAME=0` 回退原始 px）。
+                col_cell_spec[cell.col_start] = if cell_spec_frame_enabled() {
+                    Some(
+                        px + cell_box.padding_left
+                            + cell_box.padding_right
+                            + cell_box.border_left
+                            + cell_box.border_right,
+                    )
+                } else {
+                    Some(px)
+                };
             }
             // R364：记录该列是否有显式 width 属性（用于扩展填满时冻结）。
             if cell_box
