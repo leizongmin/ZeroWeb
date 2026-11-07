@@ -3208,6 +3208,52 @@ pub(crate) fn measure_text_content_with_baseline(
             None,
         );
     }
+    // R5456（CSS Writing Modes §7.1 交换帧；#33 orthogonal float h=NaN 根因）：
+    // 父 vertical（is_vertical）而自身 horizontal-tb 的正交收缩叶（float / abs
+    // 收窄——块级正交子 fill 语义不变，FIXME 有驱动案再扩 inline-block/块级）。
+    // 旧路径 IFC 按父 vertical 模式测量：taffy float 臂以 MaxContent 测
+    //（taffy-local block.rs Size::MAX_CONTENT）→ 约束 INFINITY → vertical-rl 列
+    // x = 约束右缘锚定 → measured_width = INFINITY → 返回物理高 inf → 后处理
+    // inf−inf = NaN（float-lft-orthog-htb-in-vrl-002/003 ✗6.91% 驱动案）。正交盒
+    // 以**自身取向**排版：IFC 横排（with_vertical(false)），行内约束 = width 槽位
+    //（taffy float/abs 臂实测该槽承载物理水平量：float MaxContent→INFINITY 单行
+    // max-content；abs Definite(CB 宽) 单行 advance，R5104 同约定）；返回按交换帧
+    // 转置（taffy w = 物理 Y extent = 自身块轴高，taffy h = 物理 X extent = 自身
+    // 行内宽），extract_layout 反交换复原物理几何。ZW_ORTHO_HTB_MEASURE=0
+    // kill-switch。
+    if !own_vertical
+        && is_vertical
+        && styles.get(&dom_id).is_some_and(|s| {
+            !matches!(s.float, zero_css_parser::values::FloatValue::None)
+                || matches!(
+                    s.position,
+                    zero_css_parser::values::PositionValue::Absolute | zero_css_parser::values::PositionValue::Fixed
+                )
+        })
+        && std::env::var("ZW_ORTHO_HTB_MEASURE").as_deref() != Ok("0")
+    {
+        let mut ortho_ctx = crate::inline::InlineFormattingContext::new(width).with_vertical(false);
+        ortho_ctx = configure_inline_fonts(ortho_ctx, inline_fonts, false);
+        ortho_ctx.layout(doc, dom_id, styles);
+        let ortho_inline = ortho_ctx
+            .all_fragments()
+            .iter()
+            .map(|f| f.x + f.width)
+            .fold(0.0_f32, f32::max);
+        let ortho_block = if ortho_ctx.lines.is_empty() {
+            let (fs, lh) = crate::inline::resolve_font_metrics(styles.get(&dom_id));
+            lh.max(fs)
+        } else {
+            ortho_ctx.total_height()
+        };
+        return (
+            Size {
+                width: known_dimensions.width.unwrap_or(ortho_block),
+                height: known_dimensions.height.unwrap_or(ortho_inline),
+            },
+            None,
+        );
+    }
     // R5104（CSS2 §10.3.7 shrink-to-fit）：auto 宽 abspos/fixed 叶的 taffy absolute
     // 测量臂以 Definite(CB 宽) 约束跑 ContentSize（max-content）测量——IFC 以该宽排出
     // 单行，measured_width = 文本真实 advance（如 247.4）；taffy 盒宽经 round_layout

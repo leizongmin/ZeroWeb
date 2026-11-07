@@ -92,11 +92,14 @@ impl LayoutEngine {
         let mut changed = false;
         // R5036：栈携带第一趟 content CB 宽——fit-content(%) 的 arg 相对 CB 解析
         //（css-sizing-3 #valdef-width-fit-content-length-percentage；root 的 CB = viewport）。
-        let mut stack: Vec<(&LayoutBox, f32)> = vec![(root, root.width.max(0.0))];
-        while let Some((b, cb_w)) = stack.pop() {
+        // R5456：栈携带 parent WM——R5368 float 钉宽域门需要正交语境（父 vertical）
+        // 排除（见 stf_pin_on 域门注）。
+        let mut stack: Vec<(&LayoutBox, f32, WritingModeValue)> =
+            vec![(root, root.width.max(0.0), WritingModeValue::HorizontalTb)];
+        while let Some((b, cb_w, parent_wm)) = stack.pop() {
             let self_frame = b.padding_left + b.padding_right + b.border_left + b.border_right;
             let child_cb = (b.width - self_frame).max(0.0);
-            stack.extend(b.children.iter().map(|c| (c, child_cb)));
+            stack.extend(b.children.iter().map(|c| (c, child_cb, b.writing_mode.clone())));
             let Some(id) = b.node_id else { continue };
             let Some(s) = styles.get(&id) else { continue };
             // 仅水平书写模式的 flex/grid 容器，或 R1018 block-level（width:max-content/fit-content）
@@ -403,7 +406,15 @@ impl LayoutEngine {
                 //（block-flow-direction-vrl-006 四 vertical-rl float：钉宽致字形列
                 // 重排 blue+15200/yellow−15200 实证）。vertical float 维持 R1015 旧臂；
                 // 垂直 shrink-to-fit 归 writing-mode 深域（既有避让清单）。
-                && matches!(b.writing_mode, WritingModeValue::HorizontalTb);
+                && matches!(b.writing_mode, WritingModeValue::HorizontalTb)
+                // R5456（CSS Writing Modes §7.1 交换帧）：正交 float（自身 htb、父
+                // vertical）同病排除——cb_w 是父 LayoutBox 物理宽 = 交换帧下父**块轴**
+                // extent（.vp content 40 = 单列行高 16+border，非行内轴可用 768），
+                // available 取错轴把钉宽钳到 123.2（float-lft-orthog-htb-in-vrl-002
+                // 单行 max-content 262.4 钉成 3 行 wrapped）；钉写 style.size.width
+                // 对已交换 taffy 样式是物理高轴槽，轴语义双错。正交 float 维持 R1015
+                // 旧臂（max-content 测量与物理宽同轴，b.width==intrinsic 时 no-op）。
+                && matches!(parent_wm, WritingModeValue::HorizontalTb);
             let mut float_has_cyclic_pct = false;
             let intrinsic = if stf_pin_on {
                 float_has_cyclic_pct = subtree_has_cyclic_pct_width(b, styles);
