@@ -2,14 +2,20 @@
 
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
-**状态**: Active——**M0 + M1 已完成（2026-11-07：part09 SMIL 文档级时间线
-落地，B1 收敛 7F→0 + B2 定谳面 P，全通道 486 案 1,708 子 1,209P = 70.8%
-零回归，[evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）；
-下一步 M2（B3 seek / B4 syncbase / B5 事件基 / B6 采样引擎）**
+**状态**: Active——**M0 + M1 已完成；M2 进行中：B3 seek 事件语义已收口
+（2026-11-07：seek 转移模型 + 处理器 IDL 直调，seeking-events-1..8
+8T→8P，全通道 1,223P = 71.6% 零 P→F，
+[evidence](svg-compat-v2/evidence/2026-11-07-m2-b3-seek-events.md)）；
+下一步 B4 syncbase / B5 事件基 / B6 采样引擎**
 **卡点**: engine 渲染耦合回归集（svg/geometry = 挂账 #2/#4 协同域，按划界
 不双改——DC-4 前须协同批清偿或具名转挂）：display:none gBCR 回归对 2F
 （M0 翻转归因）+ geometry 再下滑 2 子（M0 快照后 main 演化，part09 在场
-A/B 逐子 0 flip 归因非本 goal，嫌疑 4a5fd3051 声明式物化）
+A/B 逐子 0 flip 归因非本 goal，嫌疑 4a5fd3051 声明式物化）。
+B3 后新增显形挂账面（案从 Timeout 转完成后真实断言显形，非 Pass 丢失）：
+first-interval ×2（挂账 #4 getComputedStyle 空串/color 插值）+
+href-mpath ×2（挂账 #2 getCTM/路径引用邻接）+
+animate-currentcolor-in-visited-link（渲染交互）——并入 DC-4 前协同
+清偿/具名转挂清单
 **执行模式**: WPT 驱动（上游 svg corpus 为验收标尺）+ 专项语义收敛 + 语料扩面
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——SVG 面）
 **一期**: `docs/goal/archive/svg-compat.md`（80 号，2026-10-22 收口，corpus
@@ -98,7 +104,10 @@ timing-animation-compat 收口 70.5% 双锚点）；**数值门 = svg topdir
   零回归、web-animations 506P/959 复验零回归；台账见
   [evidence](svg-compat-v2/evidence/2026-11-07-m1-smil-channel-b1-b2.md)）。
 - **M2**：SMIL 同步基/事件时基簇收敛（DC-3 主体）——B3 seek / B4
-  syncbase / B5 eventbase / B6 采样引擎。
+  syncbase / B5 eventbase / B6 采样引擎。**B3 已收口**（2026-11-07：
+  seeking-events-1..8 全 P + F→P ×6 采样连带收益，零 P→F，web-animations
+  959 子恒等；台账见
+  [evidence](svg-compat-v2/evidence/2026-11-07-m2-b3-seek-events.md)）。
 - **M3**：滚动新面导入 + 挂账 #2/#3 归口（DC-3 收尾）——B7 path d 插值。
 - **M4**：coverage 复测收口（DC-4）。
 

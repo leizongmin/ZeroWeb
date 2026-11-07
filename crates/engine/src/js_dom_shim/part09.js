@@ -1,8 +1,8 @@
 // ============================================================================
-// part09 — SMIL 文档级时间线引擎（svg-compat-v2 goal M1，2026-11-07）。
+// part09 — SMIL 文档级时间线引擎（svg-compat-v2 goal M1/M2，2026-11-07）。
 //
-// 范围（M1 = DC-2 起步批次，控制面 docs/goal/svg-compat-v2.md）：B1 时钟值
-// 文法 + B2 interval 模型首批——
+// 范围（控制面 docs/goal/svg-compat-v2.md）：M1 = B1 时钟值文法 + B2
+// interval 模型首批；M2 首批 = B3 seek 事件语义——
 //   ① clock-value 严格文法：Full/Partial-clock-val（分/秒必须两位数且 <60、
 //      分数点后至少一位数字、小时两位起不限位）+ Timecount-val（h/min/s/ms，
 //      缺省 s）——B1 非法矩阵（越界分秒/分数缺数字/前导零/缺字段）逐条
@@ -37,14 +37,21 @@
 //      exceptions 案语义保持：零 instance → InvalidStateError、无/非有限
 //      simple duration → NotSupportedError）+ beginElement/beginElementAt
 //      动态 instance（float 校验保持；restart=never/whenNotActive 门控）。
-//   ⑦ 事件泵：beginEvent/endEvent task 粒度派发（setTimeout 轮询 ≤50ms，
-//      learnings #30——事件间隔禁 microtask 链；paused/未 started 不轮询，
-//      seek 驱动 WPT 案 pause 后泵恒停零打扰）。seek 不重放事件
-//      （FIXME(svg-compat-v2 M2/B3)：seek 事件语义——seeking-events-1..8）；
-//      repeatEvent = M2（FIXME）。泵观察的 interval 迁移差分出事件：旧
-//      interval 消失（end 越界或被替代）→ endEvent，新 interval begin ≤
-//      now → beginEvent；首见元素 interval 已整体过去（插入即过期）→
-//      begin+end 立即补派（SMIL LC-Start 插入语义）。
+//   ⑦ 事件模型（B3，2026-11-07 第二批）：转移扫描——每元素比较上一观测
+//      态 {ib, began, ended} 与当前 active interval（b ≤ t < e），差分派发：
+//      seek 越过的 interval 零事件（seeking-events-1 定谳）；曾 began 的
+//      interval 失活（自然 end / seek 出界 / seek 回退 / 被替代）→
+//      endEvent；seek 落点所在 interval（含回退重入已 ended interval）→
+//      beginEvent；同 interval 内 seek 不派 repeatEvent（seeking-events-5/6
+//      定谳；repeatEvent 自然播放面 = B5 FIXME）。派发 task 粒度
+//      （setTimeout ≤50ms 轮询 + setCurrentTime 的一次性 seek 扫描——
+//      learnings #30 禁 microtask；同步派发会早于 seek 后才挂的
+//      EventWatcher）。onbegin/onend/onrepeat 处理器 IDL（JS 设值 + 内容
+//      属性 inline 编译）经 _fireSmilEvent 错位名映射直调（onendEvent 非
+//      处理器名恒不触发——event-listeners 定谳）；addEventListener 面走
+//      dispatchEvent。first-interval 剪枝：end ≤ 文档起点的 interval 非
+//      real interval，冻结采样不贡献（first-interval-in-the-past-
+//      dont-contribute 定谳）。
 //   ⑧ animVal 反射消费：globalThis._zwSmilAnimValue（SVGLength 只读面 →
 //      {ut, vu} 态）/ _zwSmilAnimNumber（SVGAnimatedNumber.animVal → 数值）
 //      单点，part03 S2a cur()/animVal getter 挂钩；动画不写 DOM 属性
@@ -82,19 +89,22 @@
   };
 
   // ── 时间线状态（per document）────────────────────────────────────────
-  // { started, paused, frozenDoc, baseDoc, baseReal, tickTimer }
+  // { started, paused, frozenDoc, baseDoc, baseReal, tickTimer, seekTimer }
   var _timelineFor = function (doc) {
     var st = null;
     try { st = _docTimelines.get(doc); } catch (_eG) { st = null; }
     if (!st) {
-      st = { started: false, paused: false, frozenDoc: 0, baseDoc: 0, baseReal: 0, tickTimer: 0 };
+      st = { started: false, paused: false, frozenDoc: 0, baseDoc: 0, baseReal: 0, tickTimer: 0, seekTimer: 0 };
       try { _docTimelines.set(doc, st); } catch (_eS) {}
     }
     return st;
   };
 
   var _currentTimeOf = function (st) {
-    if (!st.started) return 0;           // spec：文档 begin（load）前时间线未启动，读恒 0
+    // 未 started：frozenDoc 即文档时（初始 0；pre-load seek 经 setCurrentTime
+    // 落此——WPT seeking-events 的 pause+seek 驱动面与 getStartTime 案的
+    // pre-load getCurrentTime()===0 断言两满足）。
+    if (!st.started) return st.frozenDoc;
     if (st.paused) return st.frozenDoc;
     return st.baseDoc + (Date.now() - st.baseReal) / 1000;
   };
@@ -202,7 +212,7 @@
   var _elementState = function (animEl) {
     var k = _elKey(animEl);
     if (!k) return { dynBegins: [] };
-    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false };
+    if (!_elStateCache[k]) _elStateCache[k] = { dynBegins: [], ib: null, ie: null, began: false, ended: false, seen: false };
     return _elStateCache[k];
   };
 
@@ -252,6 +262,15 @@
     return null;
   };
 
+  // active interval：b ≤ t < e（事件模型与采样用——pending（b > t）不算
+  // 活跃；t ≥ 0 文档时域下 e > t 即 e > 0，first-interval-in-the-past-
+  // dont-contribute 的 end ≤ 文档起点 interval 在此自然修剪）。
+  var _activeInterval = function (animEl, t) {
+    var cur = _currentInterval(animEl, t);
+    if (cur && cur.b <= t) return cur;
+    return null;
+  };
+
   // ── 值采样 ──────────────────────────────────────────────────────────
   // 长度 token → user units（px 域）。%/em/ex 上下文单位不采样（挂账 #3 域）。
   var _lenUnitsPx = { cm: 96 / 2.54, mm: 96 / 25.4, in: 96, pt: 96 / 72, pc: 16, q: 96 / 25.4 / 4 };
@@ -297,7 +316,7 @@
     var an = null;
     try { an = animEl.getAttribute('attributeName'); } catch (_eA) { an = null; }
     if (an !== attr) return null;
-    var cur = _currentInterval(animEl, t);
+    var cur = _activeInterval(animEl, t);
     var d = _parseDur(animEl);
     if (d.kind === 'invalid') return null;
     var localName = '';
@@ -337,7 +356,9 @@
       var lastB = 0;
       for (var j = 0; j < all.length; j++) {
         var e0 = _intervalEnd(animEl, all[j], actDur0);
-        if (e0 <= t && e0 > lastEnd) { lastEnd = e0; lastB = all[j]; }
+        // 修剪：end ≤ 文档起点（0）的 interval 非 real interval（SMIL
+        // first-interval 剪枝——begin="-1s" dur=1s 的 [-1,0] 不贡献冻结值）。
+        if (e0 > 0 && e0 <= t && e0 > lastEnd) { lastEnd = e0; lastB = all[j]; }
       }
       if (lastEnd === -Infinity) return null;
       if (sd0 === Infinity) return null;
@@ -419,7 +440,12 @@
     return _animatedValue(el, attr, true);
   };
 
-  // ── 事件泵（task 粒度 setTimeout 轮询；paused/未 started 恒停）───────
+  // ── 事件泵（task 粒度 setTimeout 轮询；paused 靠 seek 扫描驱动）──────
+  // SMIL 事件处理器 IDL 名 ↔ 事件类型错位映射（spec SVG2 animate.html：
+  // onbegin/onend/onrepeat 分别是 beginEvent/endEvent/repeatEvent 的处理器
+  // ——event-listeners 案定谳：onendEvent 不是处理器名，恒不触发）。
+  var _smilHandlerNames = { beginEvent: 'onbegin', endEvent: 'onend', repeatEvent: 'onrepeat' };
+
   var _fireSmilEvent = function (el, type) {
     try {
       var ev = null;
@@ -428,7 +454,20 @@
       } else if (typeof globalThis.Event === 'function') {
         ev = new globalThis.Event(type, { bubbles: false, cancelable: false });
       }
-      if (ev) el.dispatchEvent(ev);
+      // on* 处理器（IDL 属性 JS 设值 + 内容属性 inline 编译——经 proxy get
+      // trap 的 _ensureInlineHandler 惰性编译）单点直调；类型名错位故不走
+      // dispatch 的 on<type> 泛型路。addEventListener 注册面经 dispatchEvent。
+      if (ev) {
+        var hn = _smilHandlerNames[type];
+        if (hn) {
+          var h = null;
+          try { h = el[hn]; } catch (_eH) { h = null; }
+          if (typeof h === 'function') {
+            try { h.call(el, ev); } catch (_eHC) {}
+          }
+        }
+        el.dispatchEvent(ev);
+      }
     } catch (_eF) {}
   };
 
@@ -449,68 +488,100 @@
     }, delayMs);
   };
 
-  // 泵激活入口（load/pause-seek/beginElement 唤醒；paused/未 started no-op）。
+  // 泵激活入口（load/beginElement 唤醒；paused/未 started no-op）。
   var _wake = function (doc) {
     var st = _docTimelines.get(doc);
     if (!st || !st.started || st.paused) return;
     _scheduleTick(doc, st, 5);
   };
 
+  // seek 一次性扫描（setCurrentTime 驱动；paused 也派——WPT seeking 案
+  // pause+seek 是唯一时间驱动源）。合并窗口：已排程则复用（执行时读最新
+  // frozenDoc，幂等）。事件经 task 粒度派发——同步派发会早于测试的
+  // EventWatcher 挂钩（seeking-events-1 watcher 在 seek 后才建）。
+  var _scheduleSeekScan = function (doc, st) {
+    if (st.seekTimer) return;
+    st.seekTimer = setTimeout(function () {
+      st.seekTimer = 0;
+      _scanDocEvents(doc, _currentTimeOf(st), true);
+    }, 0);
+  };
+
+  // 转移扫描：对每动画元素比较上一观测态 {ib, began, ended} 与 t 时刻
+  // active interval（b ≤ t < e），差分出事件。语义（seeking-events-1..8
+  // 定谳矩阵）： seek（isSeek）越过的 interval（首见即整体在过去）不派
+  //  任何事件； 曾 began 的 interval 失去活跃态（自然到 end / seek 出界 /
+  //  seek 回退越过 begin / 被新 instance 替代）→ endEvent； seek 落点
+  //  所在 interval（含回退重入已 ended interval）→ beginEvent； 同
+  //  interval 内 seek（跨 repeat 边界也一样）不派 repeatEvent（repeatEvent
+  //  = B5 自然播放面）。首见自然 tick（!isSeek）且已整体走完的 real
+  //  interval（e > 0 ≤ t）补派 begin+end——文档时间真实流过该 interval
+  //（event-listeners 的 [0,5ms] 案：泵首 tick 前已自然结束；多 interval
+  //  首个命中即止的近似）。e ≤ 0 的 interval 例外（first-interval 剪枝，
+  //  dont-contribute 定谳：begin=-1s dur=1s 不贡献）。
+  var _scanDocEvents = function (doc, t, isSeek) {
+    var els = _scanDoc(doc);
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      var active = null;
+      try { active = _activeInterval(el, t); } catch (_eA) { active = null; }
+      var s = _elementState(el);
+      if (!s.seen) {
+        s.seen = true;
+        if (!isSeek && !active) {
+          var d0 = _parseDur(el);
+          if (d0.kind === 'finite') {
+            var actDur0 = _activeDuration(el, d0.s);
+            var begins0 = _allBegins(el);
+            for (var j0 = 0; j0 < begins0.length; j0++) {
+              var e0 = _intervalEnd(el, begins0[j0], actDur0);
+              if (e0 > 0 && e0 <= t) {
+                _fireSmilEvent(el, 'beginEvent');
+                _fireSmilEvent(el, 'endEvent');
+                s.ib = begins0[j0];
+                s.ie = e0;
+                s.began = true;
+                s.ended = true;
+                s.everBegan = true;
+                break;
+              }
+            }
+          }
+          continue;
+        }
+      }
+      if (s.ib != null && s.began && !s.ended && (!active || active.b !== s.ib)) {
+        _fireSmilEvent(el, 'endEvent');
+        s.ended = true;
+      }
+      if (active && (s.ib !== active.b || !s.began || s.ended)) {
+        _fireSmilEvent(el, 'beginEvent');
+        s.ib = active.b;
+        s.ie = active.e;
+        s.began = true;
+        s.ended = false;
+        s.everBegan = true;
+      }
+    }
+  };
+
   var _pumpTick = function (doc) {
     var st = _docTimelines.get(doc);
     if (!st || !st.started || st.paused) return;
     var t = _currentTimeOf(st);
-    var els = _scanDoc(doc);
-    var next = Infinity;
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      var cur = null;
-      try { cur = _currentInterval(el, t); } catch (_eI) { cur = null; }
-      var s = _elementState(el);
-      if (cur) {
-        if (s.ib !== cur.b) {
-          // interval 迁移：旧 interval 终结（end 越过或被新 instance 替代）
-          if (s.ib != null && !s.ended) _fireSmilEvent(el, 'endEvent');
-          var beganNow = cur.b <= t;
-          if (beganNow) _fireSmilEvent(el, 'beginEvent');
-          s.ib = cur.b;
-          s.ie = cur.e;
-          s.began = beganNow;
-          s.ended = false;
-          if (beganNow) s.everBegan = true;
-        } else {
-          if (!s.began && cur.b <= t) { _fireSmilEvent(el, 'beginEvent'); s.began = true; }
-          if (!s.ended && cur.e <= t) { _fireSmilEvent(el, 'endEvent'); s.ended = true; }
-        }
-        if (cur.b > t && cur.b < next) next = cur.b;
-        if (cur.e > t && cur.e < next) next = cur.e;
-      } else {
-        // 无 current interval：旧 interval 若未报 end 即终结（含整体在
-        // 过去的首见插入——begin/end 补派，SMIL LC-Start 语义）。
-        if (s.ib != null) {
-          if (!s.ended) _fireSmilEvent(el, 'endEvent');
-          s.ib = null;
-          s.ie = null;
-          s.began = false;
-          s.ended = false;
-        } else if (!s.seenPast) {
-          // 首见即无 interval：检查 last interval 是否整体在过去。
-          var d = _parseDur(el);
-          if (d.kind === 'finite') {
-            var sd0 = d.s;
-            var actDur0 = _activeDuration(el, sd0);
-            var begins = _allBegins(el);
-            for (var j = 0; j < begins.length; j++) {
-              var e0 = _intervalEnd(el, begins[j], actDur0);
-              if (e0 <= t) { _fireSmilEvent(el, 'beginEvent'); _fireSmilEvent(el, 'endEvent'); break; }
-            }
-          }
-          s.seenPast = true;
-        }
-      }
-    }
+    _scanDocEvents(doc, t, false);
     // 轮询节律：下一边界 ≤50ms 提前到点，否则 50ms 保底（属性变更无钩子、
     // 变更感知靠轮询——begin-attribute-mutation 消费面）。
+    var next = Infinity;
+    var els = _scanDoc(doc);
+    for (var i = 0; i < els.length; i++) {
+      var cur = null;
+      try { cur = _currentInterval(els[i], t); } catch (_eI) { cur = null; }
+      if (cur) {
+        if (cur.b > t && cur.b < next) next = cur.b;
+        if (cur.e > t && cur.e < next) next = cur.e;
+      }
+    }
     var delay = 50;
     if (next < Infinity) {
       var ms = (next - t) * 1000;
@@ -568,6 +639,8 @@
         st.baseReal = Date.now();
         _wake(doc);
       }
+      // seek 事件转移（task 粒度——同步派发会早于 seek 后才挂的 EventWatcher）
+      _scheduleSeekScan(doc, st);
     };
   }
 
@@ -611,9 +684,8 @@
       if (restart === 'never' && (s.everBegan || cur)) return;
       if (restart === 'whenNotActive' && cur && cur.b <= now) return;
       s.dynBegins.push(now + n);
-      s.ib = null;    // 泵差分状态作废——下 tick 按新 instance 集重判
-      s.ended = false;
-      s.began = false;
+      // 差分状态不手动重置——下轮转移扫描按新 instance 集派
+      // endEvent（旧 interval 被替代）+ beginEvent（restart=always 语义）。
       _wake(doc || this);
     };
     _zwAnimP.beginElement = function () { _beginElementAt.call(this, 0); };
