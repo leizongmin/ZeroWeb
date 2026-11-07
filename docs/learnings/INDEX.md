@@ -5,8 +5,10 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（249）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（251）
 
+- 2026-11-08 [shim 侧 iframe 子文档脚本段的 src 检测在 runner 语料面恒空——s261 预内联投递剥 src，须读 data-inline](bugs/2026-11/2026-11-08-iframe-child-doc-inlined-scripts-data-inline.md) — crates/engine/src/js_dom_shim, tests/wpt-runner
+- 2026-11-08 [完成态 op 绑定的证据文件字节冻结与 open_findings 非空即不就绪](bugs/2026-11/2026-11-08-frozen-evidence-and-open-findings-contract.md) — .agents/skills/zeroweb-site-optimizer
 - 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
 - 2026-11-07 [taffy abs 包含块=直接父模型：后处理「只扩不缩」让错误钳制存活（R5445 D2 域图谱）](bugs/2026-11/2026-11-07-taffy-abs-direct-parent-cb-vs-spec-icb.md) — layout-engine
 - 2026-11-07 [layout 期行内几何修复不经 paint Path B 等价注入，像素必然不变](bugs/2026-11/2026-11-07-paint-path-b-rerun-eats-inline-geometry-fixes.md) — layout-engine, engine
@@ -345,8 +347,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（41）
+## Platform — 平台与环境相关经验（42）
 
+- 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine
 - 2026-11-06 [editing 语料 before 读面编码录音会话状态泄漏——孤立红行先做泄漏模拟对账再定读面 bug](platform/2026-11/2026-11-06-editing-corpus-recording-session-state-leak.md) — editing-compat,wpt_runner
 - 2026-11-06 [并发重型 make 入口时 target-disk-guard 三级全清连坐兄弟门禁腿](platform/2026-11/2026-11-06-concurrent-make-disk-guard-wipes-sibling-gate.md) — make,target-disk-guard,test-guard
 - 2026-11-05 [wpt-runner testharness 行输出进程末统一落盘——stdout 静默 ≠ 挂死](platform/2026-11/2026-11-05-wpt-runner-row-flush-at-process-exit.md) — wpt-runner
