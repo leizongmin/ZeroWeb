@@ -216,10 +216,15 @@ md5 part01=852f0996…/part06=5538d0eb… 与 v5 构建锚 951358a4 同树，
 v5fix2 前缀不覆写 v5 ABORT 证据）全绿，六门全过：
 
 - **mt 全分母 VERDICT OK**：rows 10092→10092，P 9967→9969，F 125→123，
-  **F2P=2 P2F=0 post-only 0 lost 0**——红线 `foo[]<br>` div/p 双变体
-  逐案兑现；raw 19940P/244F **Timeout=0**（v5 批 lost=16 的
+  **F2P=2 P2F=0 post-only 0 lost 0**——红线 496/499 族 `[ip,
+  inserttext d/e/f]` × `abc[<b>def]</b>ghi` / `abc{<b>def</b>}ghi`
+  双变体逐案兑现（multitest.html?9001-last + multitest-ab 变体重复
+  发射 4 raw 行折 2 judge 键，与 P4「mt F2P=2 键同病」同形键预测吻合，
+  零计划外翻键；`foo[]<br>` div/p 双变体系 **ip 单腿** F2P=2 键，见
+  P6，非本腿）；raw 19940P/244F **Timeout=0**（v5 批 lost=16 的
   multitest-ab 页 Timeout 截断带 solo 复跑未再现，纯并发编译毒化伪影
-  定谳；16 行 lost 行域与 v5 批逐案同带）。
+  定谳；16 行 lost 行域与 v5 批逐案同带）。[键归属勘误
+  VERIFY-NOTE-knife11-v5fix2-tailchain-verify.md]。
 - **enginelib 名册恒一**：3798P/6F，六红逐名精确（ROSTER OK）。
 - **iol 恒一 VERDICT OK**：rows 1761→1761，1759P/2F；**iul 恒一
   VERDICT OK**：rows 2065→2065，2061P/4F。
