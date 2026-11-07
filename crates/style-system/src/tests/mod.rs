@@ -25,5 +25,7 @@ mod registered_property;
 mod review_r3345;
 mod root_font_units;
 mod shadow_host_segment;
+/// 45 号 M2：`::slotted` 段级联测试。
+mod shadow_slotted_segment;
 mod shorthand_coverage;
 mod style_system_coverage;

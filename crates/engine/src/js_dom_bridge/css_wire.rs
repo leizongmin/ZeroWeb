@@ -121,6 +121,32 @@ fn css_selector_to_string(sel: &zero_css_parser::Selector) -> String {
                         s.push_str(arg);
                         s.push(')');
                     }
+                    // 45 号 M2：`::slotted(<compound>)` best-effort 序列化（compound
+                    // 按类型/子类选择器直排，保真口径同上）。
+                    zero_css_parser::PseudoElementSelector::Slotted(arg) => {
+                        s.push_str("::slotted(");
+                        if let Some(ts) = &arg.type_selector {
+                            match ts {
+                                zero_css_parser::TypeSelector::Universal => s.push('*'),
+                                zero_css_parser::TypeSelector::Tag(t) => s.push_str(t),
+                                zero_css_parser::TypeSelector::Namespaced { .. } => s.push('*'),
+                            }
+                        }
+                        for sub in &arg.subclass_selectors {
+                            match sub {
+                                zero_css_parser::SubclassSelector::Id(id) => {
+                                    s.push('#');
+                                    s.push_str(id);
+                                }
+                                zero_css_parser::SubclassSelector::Class(c) => {
+                                    s.push('.');
+                                    s.push_str(c);
+                                }
+                                _ => {}
+                            }
+                        }
+                        s.push(')');
+                    }
                 },
                 SubclassSelector::Nesting => s.push('&'),
             }

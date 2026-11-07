@@ -1020,6 +1020,17 @@ impl<'a> Parser<'a> {
         if parts.is_empty() {
             None
         } else {
+            // `::slotted` 仅允许出现在选择器最后一个化合物（CSS Shadow §3.2.4：
+            // ::slotted 之后缀组合器非法——slotted-parsing `::slotted(*) span` driving）。
+            if parts.len() > 1
+                && parts[..parts.len() - 1].iter().any(|(c, _)| {
+                    c.subclass_selectors
+                        .iter()
+                        .any(|s| matches!(s, SubclassSelector::PseudoElement(PseudoElementSelector::Slotted(_))))
+                })
+            {
+                return None;
+            }
             Some(Selector {
                 complex: ComplexSelector { parts },
             })
@@ -1192,10 +1203,56 @@ impl<'a> Parser<'a> {
         )
     }
 
+    /// tree-abiding 伪元素名表（CSS Shadow §3.2.4：`::slotted` 缀后仅 tree-abiding
+    /// 伪元素可缀；css-pseudo-4 §3 tree-abiding 定义 + css-overflow-5 scroll 家族）。
+    /// `::slotted` 自身不在表内——不得二次缀连。输入为已归一化小写名。
+    fn is_tree_abiding_pseudo_element(name: &str) -> bool {
+        matches!(
+            name,
+            "before"
+                | "after"
+                | "marker"
+                | "placeholder"
+                | "file-selector-button"
+                | "details-content"
+                | "picker-icon"
+                | "scroll-marker"
+                | "scroll-marker-group"
+                | "scroll-button"
+        )
+    }
+
+    /// 解析 `::slotted(<compound-selector>)` 的 Ident+`(` 形态（调用时伪元素名已消耗、
+    /// peek 为 `(`）。见 [`Self::consume_slotted_argument`]。
+    fn consume_slotted_pseudo_element(&mut self) -> Option<SubclassSelector> {
+        self.advance(); // (
+        let arg = self.consume_slotted_argument()?;
+        if !matches!(self.peek(), Token::RParen) {
+            return None;
+        }
+        self.advance(); // )
+        Some(SubclassSelector::PseudoElement(PseudoElementSelector::Slotted(arg)))
+    }
+
+    /// 解析 `::slotted` 参数 `<compound-selector>`（CSS Shadow §3.2.4：语法为单化合物
+    /// 选择器，组合器链非法）。空参数（`::slotted()`）非法——consume_compound_selector
+    /// 对空化合物返 None。`:has` 入参合法（csswg-drafts#10586 后形态；
+    /// slotted-has-001..004 driving：`::slotted(:has(:first-child))` 须命中）。
+    /// FIXME(45-M2+)：宽容解析形态（`::slotted(:invalid)` 整体不塌）未实现——参数
+    /// 非法即整选择器非法（更严；slotted-parsing 的 forgiving 臂归 testharness 面）。
+    fn consume_slotted_argument(&mut self) -> Option<Box<CompoundSelector>> {
+        self.skip_whitespace();
+        let arg = self.consume_compound_selector()?;
+        Some(Box::new(arg))
+    }
+
     /// 消耗复合选择器。
     fn consume_compound_selector(&mut self) -> Option<CompoundSelector> {
         let mut type_selector = None;
         let mut subclass_selectors = Vec::new();
+        // `::slotted` 缀后限制状态位（45 号 M2）：Slotted 子类入列后，compound 内
+        // 只允许再缀 tree-abiding 伪元素（见循环内各门）。
+        let mut slotted_seen = false;
 
         // 类型选择器（R3757：支持 CSS Namespaces 3 §3.1 的 `prefix|name` / `*|name` /
         // `prefix|*` 形式——`|` 为 Delim，前置 Ident/`*` 与后置 Ident/`*` 组合解析；
@@ -1233,6 +1290,18 @@ impl<'a> Parser<'a> {
 
         // 子类选择器循环
         loop {
+            // `::slotted` 缀后粗门（slotted-parsing 契约）：Slotted 之后任何子类选择器
+            // 起始形态（`#id`/`.class`/[attr]/`&`）整选择器非法（CSS Shadow §3.2.4：缀后仅
+            // tree-abiding 伪元素——`::slotted(*).class` 等逐案 driving）。终止符
+            //（Whitespace/LBrace/Comma/RParen/Eof）不在列——compound 边界照常 break。
+            if slotted_seen
+                && matches!(
+                    self.peek(),
+                    Token::Hash(_) | Token::Delim('.') | Token::LBracket | Token::Delim('&')
+                )
+            {
+                return None;
+            }
             match self.peek().clone() {
                 // ID 选择器
                 Token::Hash(id) => {
@@ -1264,6 +1333,21 @@ impl<'a> Parser<'a> {
                             // CSS 伪元素名 ASCII 大小写不敏感（CSS Syntax §5），归一化为小写
                             // 供下游 matcher 按小写名匹配（WPT case-sensitive-003 `::FiRst-LiNe`）。
                             let name = name.to_ascii_lowercase();
+                            // 缀后门：Slotted 之后再缀非 tree-abiding 伪元素（含二次
+                            // `::slotted`、`::first-line`/`::selection` 等 originating
+                            // 形态）整选择器非法（CSS Shadow §3.2.4 + slotted-parsing）。
+                            if slotted_seen && !Self::is_tree_abiding_pseudo_element(&name) {
+                                return None;
+                            }
+                            // `::slotted(<compound-selector>)`（45 号 M2，CSS Shadow §3.2.4，
+                            // https://drafts.csswg.org/css-shadow-1/#slotted-pseudo）：Ident+`(`
+                            // 形态（伪元素名与 `(` 间有空白时）。无参裸 `::slotted` 非法
+                            //（不在 is_known_pseudo_element 表，合法形态只经本臂产出）。
+                            if name == "slotted" {
+                                subclass_selectors.push(self.consume_slotted_pseudo_element()?);
+                                slotted_seen = true;
+                                continue;
+                            }
                             // 未知伪元素使选择器非法（CSS Selectors L3），返回 None
                             if !Self::is_known_pseudo_element(&name) {
                                 return None;
@@ -1305,6 +1389,25 @@ impl<'a> Parser<'a> {
                             // `ident + (` 无空白直连产生 Function（已含 `(`），如
                             // `::scroll-button(block-end)`。语义同 Ident+LParen 分支。
                             let name = name.to_ascii_lowercase();
+                            // 缀后门：Slotted 之后 Function token 形式伪元素同受白名单
+                            // 限制——二次 `::slotted`（不在 tree-abiding 表）等非法
+                            //（CSS Shadow §3.2.4；同 Ident 分支口径）。
+                            if slotted_seen && !Self::is_tree_abiding_pseudo_element(&name) {
+                                return None;
+                            }
+                            // `::slotted(...)` Function token 形态（无空白直连，WPT 主用形态）。
+                            if name == "slotted" {
+                                self.advance(); // Function token（已含 `(`）
+                                let arg = self.consume_slotted_argument()?;
+                                if !matches!(self.peek(), Token::RParen) {
+                                    return None;
+                                }
+                                self.advance(); // )
+                                subclass_selectors
+                                    .push(SubclassSelector::PseudoElement(PseudoElementSelector::Slotted(arg)));
+                                slotted_seen = true;
+                                continue;
+                            }
                             if !Self::is_known_functional_pseudo_element(&name) {
                                 return None;
                             }
@@ -1331,6 +1434,15 @@ impl<'a> Parser<'a> {
                         // （CSS Syntax §5），归一化为小写——既为下方 `match name.as_str()` 分发，
                         // 也为 PseudoClassSelector::Simple 存储供 matcher 匹配（WPT case-sensitive-003）。
                         let name = name.to_ascii_lowercase();
+                        // 缀后门：Slotted 之后单冒号仅 tree-abiding 伪元素别名
+                        //（before/after）可用，其余伪类/伪元素非法（CSS Shadow §3.2.4；
+                        // Function token 形式伪类由下方独立分支门拦截）。
+                        // FIXME(45-M2+)：`:is()`/`:where()` 宽容解析形态（slotted-parsing
+                        // test_valid_forgiving_selector 臂）未按宽容语义放行——整选择器
+                        // 非法更严，reftest 语料无观测面（testharness 面，42 号）。
+                        if slotted_seen && !Self::is_tree_abiding_pseudo_element(&name) {
+                            return None;
+                        }
                         self.advance();
                         if matches!(self.peek(), Token::LParen) {
                             self.advance(); // (
@@ -1388,6 +1500,11 @@ impl<'a> Parser<'a> {
                         // 函数伪类（Function token 形式，tokenizer 直接产生 Function）。
                         // 函数名 ASCII 大小写不敏感（CSS Syntax §5），归一化为小写（同上）。
                         let name = name.to_ascii_lowercase();
+                        // 缀后门：Slotted 之后 Function token 形式伪类（`:is(...)` 等）
+                        // 同样非法（与 Ident+LParen 分支同口径）。
+                        if slotted_seen {
+                            return None;
+                        }
                         self.advance(); // 消耗 Function token（已包含 '('）
                         let pseudo = match name.as_str() {
                             "not" => self.parse_pseudo_class_function_list("not")?,

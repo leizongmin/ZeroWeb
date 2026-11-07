@@ -20,75 +20,98 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
     let mut c = 0u32; // type, pseudo-element
 
     for (compound, _) in &selector.complex.parts {
-        if let Some(ts) = &compound.type_selector {
-            match ts {
-                TypeSelector::Tag(_) => c += 1,
-                TypeSelector::Universal => {}
-                // R3757：`prefix|name` 计入类型选择器特异性；`*|`/`prefix|*` 通配不计。
-                TypeSelector::Namespaced { ns, name } => {
-                    if ns.is_some() || !name.is_empty() {
-                        c += 1;
-                    }
+        let (ca, cb, cc) = compound_specificity(compound);
+        a += ca;
+        b += cb;
+        c += cc;
+    }
+
+    (a, b, c)
+}
+
+/// 单化合物的 specificity 贡献（[`specificity`] 与 `::slotted` 参数共用）。
+fn compound_specificity(compound: &CompoundSelector) -> (u32, u32, u32) {
+    let mut a = 0u32; // ID
+    let mut b = 0u32; // class, attribute, pseudo-class
+    let mut c = 0u32; // type, pseudo-element
+
+    if let Some(ts) = &compound.type_selector {
+        match ts {
+            TypeSelector::Tag(_) => c += 1,
+            TypeSelector::Universal => {}
+            // R3757：`prefix|name` 计入类型选择器特异性；`*|`/`prefix|*` 通配不计。
+            TypeSelector::Namespaced { ns, name } => {
+                if ns.is_some() || !name.is_empty() {
+                    c += 1;
                 }
             }
         }
+    }
 
-        for sub in &compound.subclass_selectors {
-            match sub {
-                SubclassSelector::Id(_) => a += 1,
-                SubclassSelector::Class(_) => b += 1,
-                SubclassSelector::Attribute(_) => b += 1,
-                // `&` 嵌套选择器：编译后已替换为父级化合物（特异性自然正确）；
-                // 未编译残余（不应出现）贡献 0。
-                SubclassSelector::Nesting => {}
-                SubclassSelector::PseudoClass(pc) => {
-                    match pc {
-                        PseudoClassSelector::Is(sels)
-                        | PseudoClassSelector::Not(sels)
-                        | PseudoClassSelector::Has(sels) => {
-                            // :is()/:not()/:has() 取参数列表中最大的 specificity
-                            let max_spec = max_specificity(sels);
-                            a += max_spec.0;
-                            b += max_spec.1;
-                            c += max_spec.2;
-                        }
-                        PseudoClassSelector::Where(_) => {
-                            // :where() specificity 为 0，不增加
-                        }
-                        // `:host` / `:host(<compound-selector>)`（CSS Scoping §3）：伪类基
-                        // (0,1,0)；带参形态叠加参数 specificity（Selectors L4 特异性计参）。
-                        PseudoClassSelector::Host(args) => {
-                            b += 1;
-                            if let Some(sels) = args {
-                                let max_spec = max_specificity(sels);
-                                a += max_spec.0;
-                                b += max_spec.1;
-                                c += max_spec.2;
-                            }
-                        }
-                        // `:host-context(<compound-selector>)`（CSS Scoping §4）：同 `:host()` 计参。
-                        PseudoClassSelector::HostContext(sels) => {
-                            b += 1;
-                            let max_spec = max_specificity(sels);
-                            a += max_spec.0;
-                            b += max_spec.1;
-                            c += max_spec.2;
-                        }
-                        // :nth-child(an+b of S) / :nth-last-child(an+b of S)（Selectors L4 §16）：
-                        // specificity = 伪类基 (0,1,0) + of 列表最大 specificity
-                        //（如 `:nth-child(even of .foo,#bar,target)` = (1,1,0) = (0,1,0)+(1,0,0)）。
-                        PseudoClassSelector::NthChildOf(_, sels) | PseudoClassSelector::NthLastChildOf(_, sels) => {
-                            b += 1;
-                            let max_spec = max_specificity(sels);
-                            a += max_spec.0;
-                            b += max_spec.1;
-                            c += max_spec.2;
-                        }
-                        _ => b += 1,
+    for sub in &compound.subclass_selectors {
+        match sub {
+            SubclassSelector::Id(_) => a += 1,
+            SubclassSelector::Class(_) => b += 1,
+            SubclassSelector::Attribute(_) => b += 1,
+            // `&` 嵌套选择器：编译后已替换为父级化合物（特异性自然正确）；
+            // 未编译残余（不应出现）贡献 0。
+            SubclassSelector::Nesting => {}
+            SubclassSelector::PseudoClass(pc) => {
+                match pc {
+                    PseudoClassSelector::Is(sels) | PseudoClassSelector::Not(sels) | PseudoClassSelector::Has(sels) => {
+                        // :is()/:not()/:has() 取参数列表中最大的 specificity
+                        let max_spec = max_specificity(sels);
+                        a += max_spec.0;
+                        b += max_spec.1;
+                        c += max_spec.2;
                     }
+                    PseudoClassSelector::Where(_) => {
+                        // :where() specificity 为 0，不增加
+                    }
+                    // `:host` / `:host(<compound-selector>)`（CSS Scoping §3）：伪类基
+                    // (0,1,0)；带参形态叠加参数 specificity（Selectors L4 特异性计参）。
+                    PseudoClassSelector::Host(args) => {
+                        b += 1;
+                        if let Some(sels) = args {
+                            let max_spec = max_specificity(sels);
+                            a += max_spec.0;
+                            b += max_spec.1;
+                            c += max_spec.2;
+                        }
+                    }
+                    // `:host-context(<compound-selector>)`（CSS Scoping §4）：同 `:host()` 计参。
+                    PseudoClassSelector::HostContext(sels) => {
+                        b += 1;
+                        let max_spec = max_specificity(sels);
+                        a += max_spec.0;
+                        b += max_spec.1;
+                        c += max_spec.2;
+                    }
+                    // :nth-child(an+b of S) / :nth-last-child(an+b of S)（Selectors L4 §16）：
+                    // specificity = 伪类基 (0,1,0) + of 列表最大 specificity
+                    //（如 `:nth-child(even of .foo,#bar,target)` = (1,1,0) = (0,1,0)+(1,0,0)）。
+                    PseudoClassSelector::NthChildOf(_, sels) | PseudoClassSelector::NthLastChildOf(_, sels) => {
+                        b += 1;
+                        let max_spec = max_specificity(sels);
+                        a += max_spec.0;
+                        b += max_spec.1;
+                        c += max_spec.2;
+                    }
+                    _ => b += 1,
                 }
-                SubclassSelector::PseudoElement(_) => c += 1,
             }
+            // `::slotted(<compound-selector>)`（45 号 M2，CSS Shadow §3.2.4）：伪元素基
+            // (0,0,1) + 参数化合物 specificity（spec：pseudo-element + specificity of
+            // argument——slotted-specificity.html driving：`::slotted(#id)` (1,0,1) >
+            // `::slotted(*)` (0,0,1)）。
+            SubclassSelector::PseudoElement(PseudoElementSelector::Slotted(arg)) => {
+                c += 1;
+                let (ca, cb, cc) = compound_specificity(arg);
+                a += ca;
+                b += cb;
+                c += cc;
+            }
+            SubclassSelector::PseudoElement(_) => c += 1,
         }
     }
 

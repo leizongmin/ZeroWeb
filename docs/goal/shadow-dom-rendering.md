@@ -1,13 +1,19 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
-**版本**: v1.1
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成
+**版本**: v1.2
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
 B4 focus-pseudo 3/3 strict 真通过，WC 全量 A/B 零回归，见
-[M1 evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)），
-M2 未启动（下一里程碑：`::slotted(...)` 命中翻转）
+[M1 evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)）；
+M2 完成（`::slotted(...)` 命中翻转 + flat-tree 组合子 + R5 继承切父 + 增量退化门，
+DC-2 收口——slotted-has ×4 翻绿、全量 reftest 725/725 零回归、upstream slotted
+38 案 15 绿 / 23 红逐案归因（20 `:has-slotted` 范围外 / 2 命令式 M3 面 / 1 锚定位
+范围外），见
+[M2 evidence](shadow-dom-rendering/evidence/2026-11-07-m2-slotted-segment-and-flat-tree.md)）。
+下一步 M3：变异应用臂 `resolve_slots` 统一挂接（attachShadow/childList/slot 属性
+→ 命令式 ~26 案翻绿面）；shadow Text 布局通道（R4）；B6 补充池通道
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——

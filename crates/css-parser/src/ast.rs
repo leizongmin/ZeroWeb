@@ -476,6 +476,14 @@ pub enum PseudoElementSelector {
         /// 方向关键字或 `*` 通配（已归一化小写）。
         arg: String,
     },
+    /// `::slotted(<compound-selector>)`（45 号 shadow-dom-rendering M2，CSS Shadow §3.2.4，
+    /// https://drafts.csswg.org/css-shadow-1/#slotted-pseudo）：slot 分配内容伪元素。
+    /// 参数为单化合物选择器（解析期强制）；`:has` 可入参（csswg-drafts#10586 后形态，
+    /// slotted-has-001..004 实证）。特异性 = 伪元素 (0,0,1) + 参数（`selector::specificity`）。
+    /// 匹配语义：`::slotted` 子类所在化合物匹配 slot 元素，参数匹配 slot 的已分配元素，
+    /// 前缀组合子沿 flat tree（slot → shadow host → …）上行——由 style-system slotted
+    /// 段收集器消费；常规匹配路径恒不匹配（同 `:host` 族分道模式）。
+    Slotted(Box<CompoundSelector>),
 }
 
 // ── @supports ─────────────────────────────────────────────────────────

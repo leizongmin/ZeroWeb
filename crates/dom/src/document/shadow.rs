@@ -393,6 +393,23 @@ impl Document {
             .unwrap_or_default()
     }
 
+    /// 45 号 shadow-dom-rendering M2：反查节点被分配到的 slot 元素。
+    ///
+    /// [`Self::get_assigned_nodes`] 的对偶——样式/匹配侧从 slotted 元素出发定位其
+    /// flat tree 父（`::slotted` 段收集的级联源定位）。分配表空（非 shadow 页常态）
+    /// 快返 `None` 零开销；shadow 页每元素一次 O(slot 数 × 分配数) 反扫（表极小，
+    /// 每元素样式计算一次可接受）。FIXME(45-M3+)：动态分配接线后若成热点，建
+    /// 节点 → slot 反向索引。
+    pub fn assigned_slot(&self, node: NodeId) -> Option<NodeId> {
+        if self.slot_assignments.is_empty() {
+            return None;
+        }
+        self.slot_assignments
+            .iter()
+            .find(|(_, assigned)| assigned.contains(&node))
+            .map(|((slot, _), _)| *slot)
+    }
+
     /// 在 ShadowRoot 子树中查找第一个匹配选择器的元素。
     ///
     /// 类似 `query_selector`，但范围限定在 shadow DOM 树内，
