@@ -917,7 +917,7 @@ jobs:
           ref: main
 
       - name: Merge result shards
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: zw-results-*
           path: /tmp/zw-results
