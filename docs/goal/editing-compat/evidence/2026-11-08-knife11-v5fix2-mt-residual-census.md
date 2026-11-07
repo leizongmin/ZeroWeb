@@ -68,6 +68,23 @@ DC-4 收敛定稿（残键数降序）立项下一刀；产出簇表 + #37 嫌�
   `typing-style-round-1102`（收口协议 §运行约定——F1'/typing 域在途草稿，F2 与
   其同域相邻，评估后决定吸收或让位）。X37 两键窗界核对已在本轮完成并除名。
 
+## stash@{0} 评估（2026-11-08 本轮完成，F2 开工前置清账）
+
+`typing-style-round-1102`（delKeepChainShells 双壳保全草稿，2026-11-02）评估定谳
+**陈旧 + 目标债已被后继处方治愈，保留待删**（按运行约定不盲 pop、不静默丢弃，
+删除随 F2 刀落地提交一并执行留痕）：
+
+- **不适树**：`git apply --check` 失败——strip-wrappers 段自 2026-11-02 后重构
+  （delKeepShell 逻辑迁至 part01f.js :479 `origChainHasInline` 形 + sameStrip 环），
+  草稿 hunks 上下文全部漂移。
+- **目标债已闭**：草稿针对的 `<b><i>[def]</i></b>` 双壳保全族（delete/forwarddelete
+  × 3 选择形 × 双页）在 v5fix2 基线 **12/12 全 Pass**——knife11 v2 typed-fate
+  处方（caret 入壳 `__zw_ce_caret_in_leading_shell` + 非 collapsed fallback
+  deleteSelection 前导）已覆盖该语义，草稿无残余价值面。
+- 草稿注释中 `foo<u><a>[bar</a></u>baz]` / `foo<a><font>[bar</font></a>baz]` 两形
+  与 F2b 的语义关联（最外层 a 留、上壳摘）已由现行 strip-wrappers 幸存壳臂承载
+  （F6 轮实证），F2b 残 10 键是 absorption 面非 preservation 面，与草稿机制不同。
+
 ## 运行产物（gitignored，本地 .acceptance/dps/）
 
 - `census-mt-residual-v5fix2.py`（v2 普查脚本）、`census-mt-residual-v5fix2.out`
