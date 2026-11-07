@@ -177,6 +177,13 @@ pub struct InlineFormattingContext {
     /// ellipsis 落行首（block-ellipsis-016 ref：置换行只有 `…` 独占行首；018 判例：
     /// 被置换 span.red 大字照绘 = 红泄漏主体）。随 `clamped` 同站点镜像到 LayoutBox。
     pub clamp_strut_applied: bool,
+    /// R5454（css-overflow-4 §block-ellipsis）：justify 容器 clamp 末保留行再对齐把
+    /// ellipsis 计入 justify 分配项（gap_count = kept_count，末 gap 落 ellipsis 槽位
+    /// 前）。paint ellipsis 定位须同步落线尾 `[line_limit − ell, line_limit)`，而非
+    /// 默认的紧贴末 glyph（032 box3：ref `text-align-last:justify` 行 '…' 为独立
+    /// 分配项，紧贴落位与 ref 差 1 个 gap）。随 `clamp_strut_applied` 同站点镜像到
+    /// LayoutBox（stored 路径行快照无 IFC 字段，盒旗标为 stored/Path B 共用信号）。
+    pub clamp_ellipsis_justify_flush: bool,
     /// 垂直书写模式（vertical-rl 或 vertical-lr）。
     ///
     /// 当为 true 时，字符沿 y 轴向下推进，"行"变为垂直列，
@@ -517,6 +524,7 @@ impl InlineFormattingContext {
             line_clamp: None,
             clamped: false,
             clamp_strut_applied: false,
+            clamp_ellipsis_justify_flush: false,
             vertical: false,
             vertical_rtl: false,
             block_extent: container_width,
@@ -1687,10 +1695,16 @@ impl InlineFormattingContext {
                 // kept + ellipsis 合宽按对齐值落位（032 right 盒：offset −40，
                 // "This" 左裁；Δ 附加后行起点 = line_limit − kept_w − ell_w ＝ ref
                 // 把 ellipsis 计入行内容右对齐的行起点）。justify：kept run 重均布
-                // 至 [left, line_limit − ell_w]（ellipsis 作末项占 ell 宽；ref
-                // text-align-last:justify 把 ellipsis 计入分配项，内部 gap 口径差
-                // 1/gap_count 级另案），cleared tail 与末 kept run 同步位移不占
-                // gap；溢出行 extra 为负＝压缩 gap，与原 justify 口径一致。
+                // 至 [left, line_limit − ell_w]，**ellipsis 作末项参与分配**
+                //（R5454：gap_count = kept_count——ref `text-align-last:justify`
+                // 行 '…' 为独立分配项，末 gap 落 ellipsis 槽位前；032 box3 数值
+                // 定谳：kept_w 173.9、D = 232−173.9−16 = 42.1，ref 正常 justify
+                // pass（runs 含 ellipsis）remaining = 42.1、gap_count = 4，与
+                // D/k 逐位同值；旧 kept_count−1 口径差 1/gap_count 级已销），
+                // cleared tail 与末 kept run 同步位移不占 gap；溢出行 extra 为负
+                // ＝压缩 gap，与原 justify 口径一致。paint ellipsis 定位须同步落
+                // 线尾槽位（`clamp_ellipsis_justify_flush` 盒旗标镜像，非紧贴末
+                // glyph）。
                 if let Some((ell_advance, left, line_limit)) = realign {
                     match self.text_align {
                         TextAlign::Left => {}
@@ -1712,13 +1726,21 @@ impl InlineFormattingContext {
                             }
                         }
                         TextAlign::Justify => {
+                            // R5454：旗标先于行变更借用取值（disjoint 字段经 self
+                            // 不可分离借用）。kept ≥ 2 才有均布语义，与下方 realign
+                            // 门同源——flag = 真实触发了 ellipsis 末项分配。
+                            let kept_count = self.lines.last().map_or(0, |l| l.runs.len() - pure_count);
+                            if kept_count >= 2 {
+                                self.clamp_ellipsis_justify_flush = true;
+                            }
                             if let Some(line) = self.lines.last_mut() {
-                                let kept_count = line.runs.len() - pure_count;
                                 if kept_count >= 2 {
                                     let first_x = line.runs[0].x;
                                     let last_kept = &line.runs[kept_count - 1];
                                     let kept_w = last_kept.x + last_kept.width - first_x;
-                                    let gap_count = (kept_count - 1) as f32;
+                                    // R5454：ellipsis 计入分配项（含末 gap），见上方
+                                    // R5451 注释块数值定谳。
+                                    let gap_count = kept_count as f32;
                                     let extra = (line_limit - left - kept_w - ell_advance) / gap_count;
                                     for (j, frag) in line.runs.iter_mut().enumerate() {
                                         if j < kept_count {

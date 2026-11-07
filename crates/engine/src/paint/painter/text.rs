@@ -5628,17 +5628,6 @@ impl super::Painter {
                             }
                             content_x + tx
                         } else {
-                            // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
-                            let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
-                                .iter()
-                                .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
-                                .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
-                            let last_adv = last_glyph
-                                .and_then(|g| char::from_u32(g.glyph_id))
-                                .map(|c| self.measure_char_cached(default_font_id.0, c, font_size, container_is_ahem))
-                                .unwrap_or(0.0);
-                            let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
-
                             let default_font_id = self.resolve_style_font_id(&style.font_family, style).0;
                             let ellipsis_width = self.measure_char_cached(
                                 default_font_id.0,
@@ -5648,21 +5637,47 @@ impl super::Painter {
                             );
                             let content_right = content_x + container_width + tx;
 
-                            // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
-                            // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
-                            // cutoff，text.rs:1464-1481）。
-                            if last_text_end_x + ellipsis_width <= content_right + 0.5 {
-                                last_text_end_x
+                            // R5454（css-overflow-4 §block-ellipsis）：justify realign
+                            // 把 ellipsis 计入末保留行 justify 分配项（盒旗标镜像，与
+                            // R5432 strut 旗标同站点）——layout 侧 ellipsis 槽位 =
+                            // [line_limit − ell, line_limit)，末 gap 与 kept 间隔同宽
+                            // expansion；paint 定位同槽位落线尾。ref
+                            // text-align-last:justify 行（032 box3）'…' 为独立分配项，
+                            // 紧贴末 glyph 落位差 1 个 gap。flush 槽位由 realign 保证
+                            // 与末 kept glyph 无 overlap（末 kept 终点 = line_limit −
+                            // ell − gap < 槽位起点），无需 cut-back。
+                            if box_node.line_clamp_ellipsis_justify_flush {
+                                content_right - ellipsis_width
                             } else {
-                                let cut_x = content_right - ellipsis_width;
-                                let glyphs = &mut self.primitives.glyphs;
-                                for g in glyphs[glyphs_before_fragments..].iter_mut() {
-                                    if g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5 && g.x + 0.5 >= cut_x {
-                                        g.font_size = 0.0;
-                                        g.glyph_id = 0;
+                                // 末行最右可见 glyph 及其字符 advance（求末行文本 end x）。
+                                let last_glyph = self.primitives.glyphs[glyphs_before_fragments..]
+                                    .iter()
+                                    .filter(|g| g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5)
+                                    .max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
+                                let last_adv = last_glyph
+                                    .and_then(|g| char::from_u32(g.glyph_id))
+                                    .map(|c| {
+                                        self.measure_char_cached(default_font_id.0, c, font_size, container_is_ahem)
+                                    })
+                                    .unwrap_or(0.0);
+                                let last_text_end_x = last_glyph.map(|g| g.x + last_adv).unwrap_or(content_x + tx);
+
+                                // 定位：紧跟末行文本末尾；若 + ellipsis 宽超 content_right（末行已占满），
+                                // 回退到 content_right 右对齐 + 截掉末行尾部 glyph 让位（镜像 text-overflow
+                                // cutoff，text.rs:1464-1481）。
+                                if last_text_end_x + ellipsis_width <= content_right + 0.5 {
+                                    last_text_end_x
+                                } else {
+                                    let cut_x = content_right - ellipsis_width;
+                                    let glyphs = &mut self.primitives.glyphs;
+                                    for g in glyphs[glyphs_before_fragments..].iter_mut() {
+                                        if g.font_size > 0.0 && (g.y - last_line_y).abs() < 0.5 && g.x + 0.5 >= cut_x {
+                                            g.font_size = 0.0;
+                                            g.glyph_id = 0;
+                                        }
                                     }
+                                    cut_x
                                 }
-                                cut_x
                             }
                         };
 

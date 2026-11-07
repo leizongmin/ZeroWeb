@@ -2916,6 +2916,7 @@ impl LayoutEngine {
             inline_layout_width: 0.0,
             line_clamp_clamped: false,
             line_clamp_strut_displaced: false,
+            line_clamp_ellipsis_justify_flush: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,

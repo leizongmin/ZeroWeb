@@ -2129,6 +2129,13 @@ pub(crate) fn compute_final_inline_layouts(
     // R5432：整行置换旗标同站点镜像——paint stored 路径清零被置换 glyph + ellipsis
     // 落行首（block-ellipsis-018）。须在 store-gate return 之前（同 2083 注释）。
     root.line_clamp_strut_displaced = inline_ctx.clamp_strut_applied;
+    // R5454：justify ellipsis 线尾旗标同站点镜像——realign 把 ellipsis 计入 justify
+    // 分配项（gap_count = kept_count，末 gap 落 ellipsis 槽位前），paint 定位须落
+    // 线尾 [line_limit − ell, line_limit) 而非紧贴末 glyph（032 box3：ref
+    // text-align-last:justify '…' 为独立分配项，紧贴落位差 1 个 gap ≈ 10px）。
+    // stored 路径行快照（inline_layout）无 IFC 字段，盒旗标为 stored/Path B 共用
+    // 信号；须在 store-gate return 之前（同 2083 注释）。
+    root.line_clamp_ellipsis_justify_flush = inline_ctx.clamp_ellipsis_justify_flush;
     // R4417：cap 值存盒——paint Path B（空 styles 重跑 IFC，ruby 页等非 stored 容器）
     // 无行数语义（resolve_line_clamp 对 Auto 恒 None，paint 自身 style 亦不可用），
     // exceeded 截断与省略号须从盒读 cap（auto-with-ruby-005：Path B 6 行全绘、

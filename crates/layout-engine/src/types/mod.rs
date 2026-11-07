@@ -527,6 +527,13 @@ pub struct LayoutBox {
     /// `line_clamp_clamped` 同站点）。paint stored 路径据此清零该行全部 glyph 并把
     /// ellipsis 落行首（block-ellipsis-018：被置换 span.red 1.5em 大字照绘 = 红泄漏）。
     pub line_clamp_strut_displaced: bool,
+    /// R5454（css-overflow-4 §block-ellipsis）：justify 容器 clamp 末保留行再对齐把
+    /// ellipsis 计入 justify 分配项（IFC `clamp_ellipsis_justify_flush` 镜像，与
+    /// `line_clamp_strut_displaced` 同站点）。paint ellipsis 定位据此落线尾
+    /// `[line_limit − ell, line_limit)`（realign 的 ellipsis 槽位，末 gap 与 kept
+    /// 间隔同宽 expansion），而非默认紧贴末 glyph——ref `text-align-last:justify`
+    /// 行（block-ellipsis-032 box3）'…' 为独立分配项，紧贴落位差 1 个 gap。
+    pub line_clamp_ellipsis_justify_flush: bool,
     /// R3768 line-clamp slice 3：跨块盒 clamp 中，预算在该子用尽时该子可见行数上限
     ///（container 预算余量）。paint 期该子自身样式无 line-clamp（max_lines=None），
     /// 从此字段取 cap：非 stored 路径 paint IFC 全量行 → 按此 cap 截 glyph + 补 ellipsis。
@@ -910,6 +917,7 @@ impl Default for LayoutBox {
             inline_overflow_extent: None,
             line_clamp_clamped: false,
             line_clamp_strut_displaced: false,
+            line_clamp_ellipsis_justify_flush: false,
             line_clamp_cap: None,
             line_clamp_hidden: false,
             line_clamp_clip: false,
