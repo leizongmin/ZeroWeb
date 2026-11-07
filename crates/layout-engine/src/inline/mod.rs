@@ -1581,6 +1581,32 @@ impl InlineFormattingContext {
                     let frag = &self.lines.last().unwrap().runs[i];
                     self.advance_of(' ', None, frag.font_size, frag.is_ahem)
                 });
+                // R5451（css-overflow-4 §block-ellipsis：ellipsis 计入末保留行参与
+                // 对齐）再对齐预计算（&self 借，与下方 run 变更借用分离）。对齐 pass
+                // 先于 clamp cap 执行且 content_width 含被剪 hang 宽（R1338 豁免是
+                // IFC 级 preserve_whitespace，032 容器 normal 的 run 级悬挂不入门），
+                // 而 kept-last 截断前恒非末行（truncate 前缀不变量）→ 对齐值取
+                // text_align。ellipsis advance 以首 kept run 字体度量（paint 侧按
+                // 块字体测宽定位 last_text_end_x，fit 门需 layout 同源预期，否则
+                // 误走 cut-back 截字形）；R4213 行组参照系未镜像（FIXME 另案）；
+                // 整行皆 hangable（kept 0）不位移。
+                let realign = if self.text_group_align == TextGroupAlign::None {
+                    let l = self.lines.last().unwrap();
+                    let kept_count = l.runs.len() - pure_count;
+                    if kept_count > 0 {
+                        let anchor = &l.runs[0];
+                        let (left, avail) = self.effective_content_area(l.y, l.height);
+                        Some((
+                            self.advance_of('…', None, anchor.font_size, anchor.is_ahem),
+                            left,
+                            left + avail,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 if let Some(line) = self.lines.last_mut() {
                     if let Some(i) = mixed_index {
                         let frag = &mut line.runs[i];
@@ -1606,6 +1632,63 @@ impl InlineFormattingContext {
                         };
                         for frag in line.runs.iter_mut().skip(tail_start) {
                             frag.x = trim_x;
+                        }
+                    }
+                }
+                // R5451：trim 生效后末保留行再对齐。right/center：整行附加位移使
+                // kept + ellipsis 合宽按对齐值落位（032 right 盒：offset −40，
+                // "This" 左裁；Δ 附加后行起点 = line_limit − kept_w − ell_w ＝ ref
+                // 把 ellipsis 计入行内容右对齐的行起点）。justify：kept run 重均布
+                // 至 [left, line_limit − ell_w]（ellipsis 作末项占 ell 宽；ref
+                // text-align-last:justify 把 ellipsis 计入分配项，内部 gap 口径差
+                // 1/gap_count 级另案），cleared tail 与末 kept run 同步位移不占
+                // gap；溢出行 extra 为负＝压缩 gap，与原 justify 口径一致。
+                if let Some((ell_advance, left, line_limit)) = realign {
+                    match self.text_align {
+                        TextAlign::Left => {}
+                        align @ (TextAlign::Center | TextAlign::Right) => {
+                            if let Some(line) = self.lines.last_mut() {
+                                let kept_count = line.runs.len() - pure_count;
+                                let first_x = line.runs[0].x;
+                                let last_kept = &line.runs[kept_count - 1];
+                                let kept_w = last_kept.x + last_kept.width - first_x;
+                                let desired_first = if align == TextAlign::Right {
+                                    line_limit - kept_w - ell_advance
+                                } else {
+                                    left + (line_limit - left - kept_w - ell_advance) / 2.0
+                                };
+                                let delta = desired_first - first_x;
+                                for frag in &mut line.runs {
+                                    frag.x += delta;
+                                }
+                            }
+                        }
+                        TextAlign::Justify => {
+                            if let Some(line) = self.lines.last_mut() {
+                                let kept_count = line.runs.len() - pure_count;
+                                if kept_count >= 2 {
+                                    let first_x = line.runs[0].x;
+                                    let last_kept = &line.runs[kept_count - 1];
+                                    let kept_w = last_kept.x + last_kept.width - first_x;
+                                    let gap_count = (kept_count - 1) as f32;
+                                    let extra = (line_limit - left - kept_w - ell_advance) / gap_count;
+                                    for (j, frag) in line.runs.iter_mut().enumerate() {
+                                        if j < kept_count {
+                                            frag.x += extra * j as f32;
+                                        }
+                                    }
+                                }
+                                // cleared tail 重折叠到末 kept run 新末端：原 justify
+                                // 分 gap 时把 hang run 也当内容，折叠位（trim point）
+                                // 与 kept 端之间隔着旧 gap，uniform 位移不复 glued
+                                //（R5297 band 域零延伸口径不变）。
+                                if kept_count >= 1 {
+                                    let new_kept_end = line.runs[kept_count - 1].x + line.runs[kept_count - 1].width;
+                                    for frag in line.runs.iter_mut().skip(kept_count) {
+                                        frag.x = new_kept_end;
+                                    }
+                                }
+                            }
                         }
                     }
                 }

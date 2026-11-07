@@ -41,6 +41,8 @@ mod r5404_first_line_lh_tests;
 mod r5449_clamp_hang_trim_tests;
 /// R5450 clamp trim 清零 run x 折叠到剪除点（R5297 band 域幻影带收口）。
 mod r5450_clamp_hang_x_collapse_tests;
+/// R5451 clamp trim 后末保留行再对齐（ellipsis 计入对齐，css-overflow-4 §block-ellipsis）。
+mod r5451_clamp_hang_realign_tests;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
