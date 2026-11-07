@@ -55,6 +55,25 @@ pub fn specificity(selector: &Selector) -> (u32, u32, u32) {
                         PseudoClassSelector::Where(_) => {
                             // :where() specificity 为 0，不增加
                         }
+                        // `:host` / `:host(<compound-selector>)`（CSS Scoping §3）：伪类基
+                        // (0,1,0)；带参形态叠加参数 specificity（Selectors L4 特异性计参）。
+                        PseudoClassSelector::Host(args) => {
+                            b += 1;
+                            if let Some(sels) = args {
+                                let max_spec = max_specificity(sels);
+                                a += max_spec.0;
+                                b += max_spec.1;
+                                c += max_spec.2;
+                            }
+                        }
+                        // `:host-context(<compound-selector>)`（CSS Scoping §4）：同 `:host()` 计参。
+                        PseudoClassSelector::HostContext(sels) => {
+                            b += 1;
+                            let max_spec = max_specificity(sels);
+                            a += max_spec.0;
+                            b += max_spec.1;
+                            c += max_spec.2;
+                        }
                         // :nth-child(an+b of S) / :nth-last-child(an+b of S)（Selectors L4 §16）：
                         // specificity = 伪类基 (0,1,0) + of 列表最大 specificity
                         //（如 `:nth-child(even of .foo,#bar,target)` = (1,1,0) = (0,1,0)+(1,0,0)）。

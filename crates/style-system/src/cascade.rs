@@ -42,6 +42,11 @@ pub struct CascadeOrder {
     /// 的回退「上一上下文」= author origin（driving: revert-layer-009/012）。sheet 声明
     /// 恒 false（普通路径排序零变化）。
     pub style_attribute: bool,
+    /// 45 号 M1（CSS Scoping §5，https://drafts.csswg.org/css-scoping/#cascading）：
+    /// 树上下文——0 = 外层树（文档表），1 = 更深嵌套树（shadow 宿主段）。normal 声明
+    /// 外层胜、!important 内层胜（sort_key 按 important 反转该轴）。既有声明恒 0
+    ///（同值比较落入后轴，非 shadow 页排序逐位不变）。
+    pub tree_context: u8,
 }
 
 impl CascadeOrder {
@@ -60,6 +65,7 @@ impl CascadeOrder {
             position,
             important,
             style_attribute: false,
+            tree_context: 0,
         }
     }
 
@@ -69,12 +75,13 @@ impl CascadeOrder {
     /// 1. normal < important
     /// 2. important 时: user-agent > user > author（反转）
     ///    normal 时: author > user > user-agent
-    /// 3. style 属性 > sheet 声明（独立级联上下文，R4245）
-    /// 4. unlayered > layered
-    /// 5. later layer > earlier layer
-    /// 6. higher specificity wins
-    /// 7. later position wins
-    fn sort_key(&self) -> (bool, u8, bool, bool, usize, (u32, u32, u32), usize) {
+    /// 3. 树上下文：normal 外层树 > 内层树；important 内层树 > 外层树（CSS Scoping §5）
+    /// 4. style 属性 > sheet 声明（独立级联上下文，R4245）
+    /// 5. unlayered > layered
+    /// 6. later layer > earlier layer
+    /// 7. higher specificity wins
+    /// 8. later position wins
+    fn sort_key(&self) -> (bool, u8, u8, bool, bool, usize, (u32, u32, u32), usize) {
         // 计算 origin 排序值
         // normal: author(2) > user(1) > ua(0)
         // important: ua(0) > user(1) > author(2) -- 注意反转
@@ -94,6 +101,15 @@ impl CascadeOrder {
             }
         };
 
+        // 树上下文排序值（CSS Scoping §5）：normal 外层(0) 胜内层(1) → 外层取 1；
+        // important 反转 → 内层取 1。既有声明 tree_context 恒 0 → normal 恒 1、
+        // important 恒 0，两两比较同值落入后轴（非 shadow 页零变化）。
+        let tree_ctx_priority = if self.important {
+            self.tree_context
+        } else {
+            1 - self.tree_context
+        };
+
         // unlayered (None) > layered (Some)
         let is_unlayered = self.layer_index.is_none();
         let layer_idx = self.layer_index.unwrap_or(0);
@@ -101,11 +117,12 @@ impl CascadeOrder {
         (
             self.important,       // 1. important > normal
             origin_priority,      // 2. 来源优先级
-            self.style_attribute, // 3. style 属性上下文 > sheet（R4245）
-            is_unlayered,         // 4. unlayered > layered
-            layer_idx,            // 5. later layer > earlier
-            self.specificity,     // 6. higher specificity
-            self.position,        // 7. later position
+            tree_ctx_priority,    // 3. 树上下文（CSS Scoping §5，45 号 M1）
+            self.style_attribute, // 4. style 属性上下文 > sheet（R4245）
+            is_unlayered,         // 5. unlayered > layered
+            layer_idx,            // 6. later layer > earlier
+            self.specificity,     // 7. higher specificity
+            self.position,        // 8. later position
         )
     }
 }
@@ -817,7 +834,7 @@ impl CascadeCtx {
 ///（cascade-5：important 时早层胜、unlayered 最低）——revert-layer-005：L2 的
 /// revert-layer!important 须胜 L3 red!important（旧序 L3 胜 → revert 不触发 → 恒红）。
 /// 仅 revert-layer 页进入 slow path，此键不影响普通页面。
-fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u64, (u32, u32, u32), usize) {
+fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u8, u64, (u32, u32, u32), usize) {
     let origin_priority = if order.important {
         match order.origin {
             Origin::UserAgent => 2,
@@ -831,6 +848,13 @@ fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u64, (u32, u32, u32), us
             Origin::UserAgent => 0,
         }
     };
+    // 树上下文轴（45 号 M1，CSS Scoping §5）：语义与 sort_key 同——normal 外层胜、
+    // important 内层胜。既有声明恒 0 → 同值落入后轴，非 shadow 页零变化。
+    let tree_ctx_priority = if order.important {
+        order.tree_context
+    } else {
+        1 - order.tree_context
+    };
     let ctx_rank = match (order.style_attribute, order.important, order.layer_index) {
         (true, _, _) => u64::MAX, // style 属性上下文恒最高
         // normal：layered(i) < unlayered < style
@@ -843,6 +867,7 @@ fn cascade_slow_key(order: &CascadeOrder) -> (bool, u8, u64, (u32, u32, u32), us
     (
         order.important,
         origin_priority,
+        tree_ctx_priority,
         ctx_rank,
         order.specificity,
         order.position,

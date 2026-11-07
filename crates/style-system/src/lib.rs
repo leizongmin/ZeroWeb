@@ -778,6 +778,9 @@ impl StyleSystem {
                     &parent_custom,
                     quirks_mode,
                     None,
+                    // s168：增量路径无 shadow 作用域输入（shadow 封闭变更入口已退全量，
+                    // 见 :813 注释）——宿主段级联段在此不可达。
+                    None,
                 );
                 // 反例 B 修复：祖先链重算与全量递归同源——伪元素就地挂载，
                 // 防 ::before/::after 等伪样式被无伪样式结果覆盖（含 CSSOM
@@ -945,6 +948,8 @@ impl StyleSystem {
                 &saved_custom,
                 quirks_mode,
                 Some("before"),
+                // FIXME(45-M2+)：宿主段伪元素（`:host::before`）不接宿主段——M1 语料不覆盖。
+                None,
             );
             let after = *self.compute_element_style_internal(
                 doc,
@@ -955,6 +960,7 @@ impl StyleSystem {
                 &saved_custom,
                 quirks_mode,
                 Some("after"),
+                None,
             );
             // ::marker 伪元素（CSS Lists 3）：仅 `<li>` 计算（paint_list_marker 同 gate；
             // ZW 以 tag 名 `li` 判定 list-item，非 display:list-item）。继承自本元素 → 默认
@@ -976,6 +982,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("marker"),
+                    None,
                 );
                 // R3911：letter-spacing/word-spacing 等 ::marker 支持的文本属性也触发存储
                 //（css-pseudo-4 #content-properties；driving: marker-letter-spacing 显式臂）。
@@ -1031,6 +1038,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("placeholder"),
+                    None,
                 );
                 if ph.color != elem_style.color {
                     computed.placeholder_pseudo = Some(ph);
@@ -1089,6 +1097,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("selection"),
+                    None,
                 );
                 // R5065（css-pseudo-4 §highlight-styling）：UA 默认高亮表面——
                 // ::selection 规则改动了非 bg/color 高亮属性（text-decoration 族）
@@ -1173,6 +1182,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("scroll-marker-group"),
+                    None,
                 );
             }
             // R4261（CSS Overflow 5 §scroll-marker）：`::scroll-marker` per-item 伪元素——
@@ -1193,6 +1203,7 @@ impl StyleSystem {
                     &saved_custom,
                     quirks_mode,
                     Some("scroll-marker"),
+                    None,
                 );
                 if !matches!(marker.content, property::types::ContentComputedValue::Normal) {
                     computed.scroll_marker_pseudo = Some(marker);
@@ -1240,6 +1251,7 @@ impl StyleSystem {
                         &saved_custom,
                         quirks_mode,
                         Some(&format!("scroll-button({dir})")),
+                        None,
                     );
                     if !matches!(style.content, property::types::ContentComputedValue::Normal) {
                         buttons.push((slot as u8, style));
@@ -1434,6 +1446,9 @@ impl StyleSystem {
                         parent_custom,
                         quirks_mode,
                         None,
+                        // 45 号 M1：主走查携带 shadow 作用域视图——元素为 shadow host 时
+                        // 收集宿主段级联段（:host 族声明，tree_context=1 排序轴）。
+                        Some(shadow_view),
                     );
                     if let Some(k) = &cache_key {
                         style_cache.insert(k.clone(), (*c).clone());
@@ -1625,6 +1640,7 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-line"),
+            None,
         );
         // R5320（CSS2 §5.12.1 切片 2 bg 位）：background-color 与元素不同也
         // 存储——bg-only 页（`p:first-line { background: green }`）此前 None
@@ -1683,6 +1699,7 @@ impl StyleSystem {
             parent_custom,
             quirks_mode,
             Some("first-letter"),
+            None,
         );
         (first_letter.color != elem_style.color).then(|| Box::new(first_letter))
     }
@@ -1713,6 +1730,8 @@ impl StyleSystem {
             &ComputedStyle::empty_custom_properties(),
             doc.quirks_mode(),
             None,
+            // 单元素路径无 shadow 作用域输入（shadow 页走 compute_styles_with_shadow）。
+            None,
         )
     }
 
@@ -1732,6 +1751,7 @@ impl StyleSystem {
         parent_custom: &CustomProperties,
         quirks_mode: QuirksMode,
         pseudo: Option<&str>,
+        shadow_view: Option<&ShadowScopeView>,
     ) -> Box<ComputedStyle> {
         // R3867：返回 Box——把 3.3KB 的 ComputedStyle 返回值从调用方（compute_styles_recursive，
         // 每元素递归一帧）的 sret 栈槽移到堆。深嵌套页 debug 构建的递归帧曾逼近 2MB 测试线程栈顶
@@ -1778,6 +1798,25 @@ impl StyleSystem {
                 container_ctx.as_ref(),
                 name,
             ),
+        };
+
+        // 1.1. 宿主段级联段收集（45 号 M1，CSS Scoping §3，https://drafts.csswg.org/css-scoping/#host-selector）：
+        // 本元素挂有 shadow root 且该树带样式表时，从其 shadow sheets 收集 `:host` 族
+        // 声明（独立 tree_context=1 排序轴，见 cascade.rs / 下方展开段）。文档表规则不经
+        // 此通道——matcher 常规路径对 `:host` 族恒不匹配，宿主段语义只在 host 元素自身
+        // 生效；shadow sheets 无 `:host` 规则时走查为空、零开销兜底。
+        // FIXME(45-M2+)：伪元素路径（`pseudo=Some`）与宿主段伪元素（`:host::before` 等）
+        // 不接宿主段——M1 语料不覆盖，M2/`::slotted` 批次再扩。
+        let host_matching: Vec<matcher::MatchingDecl> = if pseudo.is_none() {
+            match shadow_view.zip(doc.shadow_root(element)) {
+                Some((view, root)) => {
+                    let (sheets, _index) = view.for_root(root);
+                    matcher::collect_host_declarations_with_media(doc, element, sheets, media_ctx.as_ref())
+                }
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
         };
 
         // 伪元素无匹配规则时直接返回 originating element 自身样式（content 恒
@@ -2446,6 +2485,7 @@ impl StyleSystem {
         let cache_key_ref = CascadeKeyRef {
             hints: &hints,
             matching: &matching,
+            host_matching: &host_matching,
             inline: &inline_decls,
             ua: &ua_decl_inputs,
             quirks: quirks_mode == QuirksMode::Quirks,
@@ -2453,7 +2493,9 @@ impl StyleSystem {
         let outcome: std::sync::Arc<CascadeOutcome> = match self.cascade_cache.lookup_ref(&cache_key_ref) {
             Some(hit) => hit,
             None => {
-                // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式。
+                // 1.5. 展开简写属性（保留层索引）：非 UA 段 = 表现提示 + 匹配声明 + 内联样式
+                // + 宿主段（45 号 M1，仅 host 元素非空）。末位 u8 = tree_context
+                //（CSS Scoping §5 树上下文轴，cascade.rs CascadeOrder）。
                 #[allow(clippy::type_complexity)]
                 let mut expanded_with_layer: Vec<(
                     String,
@@ -2462,6 +2504,7 @@ impl StyleSystem {
                     (u32, u32, u32),
                     Option<usize>,
                     bool,
+                    u8,
                 )> = Vec::new();
                 if !hints.is_empty() {
                     #[allow(clippy::type_complexity)]
@@ -2470,14 +2513,23 @@ impl StyleSystem {
                         .map(|(p, v)| (p.clone(), v.clone(), false, (0, 0, 0)))
                         .collect();
                     for (prop, val, imp, spec) in shorthand::expand_shorthands(&input) {
-                        expanded_with_layer.push((prop, val, imp, spec, None, false));
+                        expanded_with_layer.push((prop, val, imp, spec, None, false, 0));
                     }
                 }
                 for (property, value, important, specificity, layer_index) in &matching {
                     let input = (property.clone(), value.clone(), *important, *specificity);
                     let expanded = shorthand::expand_shorthands(&[input]);
                     for (prop, val, imp, spec) in expanded {
-                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false));
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 0));
+                    }
+                }
+                // 45 号 M1：宿主段声明展开——tree_context=1（shadow 树上下文）。
+                // 仅本元素为 shadow host 且其树有样式表时非空（收集见上方步骤 1）。
+                for (property, value, important, specificity, layer_index) in &host_matching {
+                    let input = (property.clone(), value.clone(), *important, *specificity);
+                    let expanded = shorthand::expand_shorthands(&[input]);
+                    for (prop, val, imp, spec) in expanded {
+                        expanded_with_layer.push((prop, val, imp, spec, *layer_index, false, 1));
                     }
                 }
                 if !inline_decls.is_empty() {
@@ -2490,7 +2542,8 @@ impl StyleSystem {
                     for (prop, val, imp, spec) in expanded {
                         // 内联样式没有 layer，使用 None；R4245：标记 style 属性级联上下文
                         //（排序在 unlayered 之上；revert-layer 回退「上一上下文」= author origin）
-                        expanded_with_layer.push((prop, val, imp, spec, None, true));
+                        // 45 号 M1：style 属性属宿主元素自身（外树上下文），tree_context=0。
+                        expanded_with_layer.push((prop, val, imp, spec, None, true, 0));
                     }
                 }
                 // UA 展开列表（原 1.7 尾段：借用在 declarations 构造，此处随 outcome 缓存）。
@@ -2517,7 +2570,7 @@ impl StyleSystem {
                         order: CascadeOrder::new(Origin::UserAgent, None, *specificity, position, *important),
                     });
                 }
-                for (position, (property, value, important, specificity, layer_index, style_attribute)) in
+                for (position, (property, value, important, specificity, layer_index, style_attribute, tree_context)) in
                     expanded_with_layer.iter().enumerate()
                 {
                     declarations.push(CascadedDeclaration {
@@ -2530,6 +2583,7 @@ impl StyleSystem {
                             position,
                             important: *important,
                             style_attribute: *style_attribute,
+                            tree_context: *tree_context,
                         },
                     });
                 }
@@ -3638,16 +3692,18 @@ static CASCADE_CACHE_DEFAULT_ENABLED: std::sync::LazyLock<Option<bool>> =
         _ => None,
     });
 
-/// 声明组合级联缓存的键：cascade 输入**全部四个源**的原始声明序列 + quirks。
+/// 声明组合级联缓存的键：cascade 输入**全部五个源**的原始声明序列 + quirks。
 ///
 /// 正确性边界：[`cascade::cascade_with_orders`]（cascade.rs）与
 /// [`shorthand::expand_shorthands`] 是输入声明序列的纯函数——键必须唯一决定
-/// 该输入。四源按 `compute_element_style_internal` 生产顺序排列（同段内顺序
+/// 该输入。五源按 `compute_element_style_internal` 生产顺序排列（同段内顺序
 /// 即源码/生产序；段序恒定），逐字段完整比对命中（哈希仅桶定位，见
 /// [`CascadeCache`]）。quirks 影响级联合法性判定（cascade.rs
 /// `is_cascade_value_valid` 传参），进键保证跨文档安全；media/container 上下文
 /// 只影响 matching 收集（键前已执行），custom properties/继承只影响 cascade
-/// 之后的阶段（不在缓存范围）。
+/// 之后的阶段（不在缓存范围）。45 号 M1 起新增宿主段源——仅 shadow host 元素
+/// 非空；非 host 元素为空切片，不贡献哈希字节、比对恒等（非 shadow 页键与
+/// 历史形态一致）。
 #[derive(Debug)]
 struct CascadeKeySources {
     /// CSS2 Appendix D 表现提示（`collect_presentational_hints` 输出）。
@@ -3655,6 +3711,9 @@ struct CascadeKeySources {
     /// 选择器匹配收集（`matcher::collect_matching_declarations_with_media` /
     /// `collect_pseudo_declarations_with_media` 输出）。
     matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
+    /// 45 号 M1：宿主段收集（`collect_host_declarations_with_media` 输出，
+    /// tree_context=1 级联段；非 host 元素恒空）。
+    host_matching: Vec<(String, String, bool, (u32, u32, u32), Option<usize>)>,
     /// 内联 style 属性（`parse_inline_style` 输出）。
     inline: Vec<(String, String, bool)>,
     /// UA 默认注入（`ua_decl_inputs`，含 hidden/UA display/dialog/svg/td-th/body/h1-6 等）。
@@ -3668,16 +3727,18 @@ struct CascadeKeySources {
 struct CascadeKeyRef<'a> {
     hints: &'a [(String, String)],
     matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
+    host_matching: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
     inline: &'a [(String, String, bool)],
     ua: &'a [(String, String, bool, (u32, u32, u32), Option<usize>)],
     quirks: bool,
 }
 
-/// FNV-1a 预过滤哈希：覆盖四源全部字段。桶定位用，正确性由完整比对
+/// FNV-1a 预过滤哈希：覆盖五源全部字段。桶定位用，正确性由完整比对
 ///（[`cascade_key_eq`]）保证。owned/借用两形态共用同一函数，保证同键同哈希。
 fn cascade_key_hash(
     hints: &[(String, String)],
     matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
+    host_matching: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
     inline: &[(String, String, bool)],
     ua: &[(String, String, bool, (u32, u32, u32), Option<usize>)],
     quirks: bool,
@@ -3705,6 +3766,15 @@ fn cascade_key_hash(
         mix(&mut h, &spec.2.to_ne_bytes());
         mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
     }
+    for (p, v, imp, spec, layer) in host_matching {
+        mix_str(&mut h, p);
+        mix_str(&mut h, v);
+        mix(&mut h, &[*imp as u8]);
+        mix(&mut h, &spec.0.to_ne_bytes());
+        mix(&mut h, &spec.1.to_ne_bytes());
+        mix(&mut h, &spec.2.to_ne_bytes());
+        mix(&mut h, &layer.map(|l| l as u64 + 1).unwrap_or(0).to_ne_bytes());
+    }
     for (p, v, imp) in inline {
         mix_str(&mut h, p);
         mix_str(&mut h, v);
@@ -3723,10 +3793,12 @@ fn cascade_key_hash(
     h
 }
 
-/// 借用键与存储键的逐字段完整比对（属性/值/important/specificity/layer/quirks）。
+/// 借用键与存储键的逐字段完整比对（属性/值/important/specificity/layer/quirks；
+/// 45 号 M1 增宿主段源）。
 fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
     a.hints == b.hints.as_slice()
         && a.matching == b.matching.as_slice()
+        && a.host_matching == b.host_matching.as_slice()
         && a.inline == b.inline.as_slice()
         && a.ua == b.ua.as_slice()
         && a.quirks == b.quirks
@@ -3736,10 +3808,10 @@ fn cascade_key_eq(a: &CascadeKeyRef<'_>, b: &CascadeKeySources) -> bool {
 /// 结果不缓存——仅未命中分支局部用于 declarations 构造，命中后无消费方。
 #[derive(Debug)]
 struct CascadeOutcome {
-    /// 非 UA 段展开结果（hints+matching+inline，六元组含 style 属性标志），即
-    /// `expanded_with_layer`；后半段 author width/height 判定（select/input
-    /// intrinsic sizing 门）仍从它读取。
-    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool)>,
+    /// 非 UA 段展开结果（hints+matching+host+inline，七元组：末位 style 属性标志、
+    /// tree_context——45 号 M1），即 `expanded_with_layer`；后半段 author width/height
+    /// 判定（select/input intrinsic sizing 门）仍从它读取。
+    expanded: Vec<(String, String, bool, (u32, u32, u32), Option<usize>, bool, u8)>,
     /// `cascade_with_orders` 输出（步骤 4 起按 `&` 消费，Arc 共享不可变安全）。
     cascaded: HashMap<String, String>,
     orders: HashMap<String, CascadeOrder>,
@@ -3796,7 +3868,14 @@ impl CascadeCache {
         if !self.enabled {
             return None;
         }
-        let h = cascade_key_hash(key.hints, key.matching, key.inline, key.ua, key.quirks);
+        let h = cascade_key_hash(
+            key.hints,
+            key.matching,
+            key.host_matching,
+            key.inline,
+            key.ua,
+            key.quirks,
+        );
         self.map
             .get(&h)?
             .iter()
@@ -3816,11 +3895,19 @@ impl CascadeCache {
         let owned = CascadeKeySources {
             hints: key.hints.to_vec(),
             matching: key.matching.to_vec(),
+            host_matching: key.host_matching.to_vec(),
             inline: key.inline.to_vec(),
             ua: key.ua.to_vec(),
             quirks: key.quirks,
         };
-        let h = cascade_key_hash(&owned.hints, &owned.matching, &owned.inline, &owned.ua, owned.quirks);
+        let h = cascade_key_hash(
+            &owned.hints,
+            &owned.matching,
+            &owned.host_matching,
+            &owned.inline,
+            &owned.ua,
+            owned.quirks,
+        );
         self.map.entry(h).or_default().push((owned, outcome));
     }
 }

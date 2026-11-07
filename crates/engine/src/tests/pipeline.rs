@@ -3016,3 +3016,24 @@ fn test_s316_embed_represents_nothing_paint_gate() {
         "src=空串即便带 type 仍 nothing"
     );
 }
+
+/// 45 号 shadow-dom-rendering M1：shadow 树内联 `<style>` 真实样式 shadow 内部元素
+///（R1 面——pipeline `collect_inline_shadow_scopes` → `compute_styles_with_shadow`）。
+/// B3 vw-units 的样式面即此形（其 shadow sheet `div { width: 100vw; … }` 命中 shadow
+/// 内部 div）；reftest 载体为 iframe src 嵌入文档，harness 不渲染 iframe 内容 →
+/// reftest 面挂账（控制面已记），本测试钉样式面真通过。
+#[test]
+fn test_shadow_inline_sheet_styles_shadow_inner_element() {
+    use zero_render_foundation::color::Color;
+    let html = r#"<html><body><div id="host"><template shadowrootmode="open"><style>div { background: rgb(0, 128, 0); width: 50px; height: 50px; }</style><div></div></template></div></body></html>"#;
+    let mut pipeline = RenderPipeline::new(200.0, 100.0);
+    let frame = pipeline.render_html(html, "");
+    assert!(
+        frame
+            .primitives()
+            .fills
+            .iter()
+            .any(|f| f.color == Color::rgba(0, 128, 0, 255)),
+        "shadow 内联 sheet 的 div 规则应命中 shadow 内部元素并参与绘制（45 号 M1 R1 面）"
+    );
+}

@@ -78,6 +78,10 @@ fn pseudo_class_to_string(pc: &PseudoClassSelector) -> String {
         | PseudoClassSelector::NthLastOfType(_) => "nth".to_string(),
         PseudoClassSelector::Lang(l) => format!("lang({})", l.join(",")),
         PseudoClassSelector::Dir(d) => format!("dir({d})"),
+        // 45 号 M1：`:host` 族（参数重建，同上功能伪类口径）。
+        PseudoClassSelector::Host(Some(l)) => format!("host({})", selectors_to_string(l)),
+        PseudoClassSelector::Host(None) => "host".to_string(),
+        PseudoClassSelector::HostContext(l) => format!("host-context({})", selectors_to_string(l)),
     }
 }
 

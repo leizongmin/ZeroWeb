@@ -1289,6 +1289,17 @@ pub(crate) fn apply_recorded_mutations(ctx: &mut PageScriptContext<'_>, html: &s
                     // handle_selectors 还要作 evict 的 batch_handles 借用。
                     map.extend(handle_selectors.iter().map(|(h, s)| (h.clone(), s.clone())));
                 }
+                // 45 号 shadow-dom-rendering M1：shadow 树内 focus()（[`DomMutation::FocusChangedInShadow`]，
+                // 未入上方 focus 队列——地址须 apply 铸造后才有）经保留键取 zwsh 地址补入
+                // 队列（runtime drain `sync_focus_from_js` 同 selector 通道消费）。
+                if recorded
+                    .iter()
+                    .any(|m| matches!(m, DomMutation::FocusChangedInShadow { .. }))
+                    && let Some(zwsh) = handle_selectors.get(zero_engine::js_dom_bridge::FOCUS_SELECTOR_KEY)
+                    && let Ok(mut queue) = ctx.js_worker.focus_changes().lock()
+                {
+                    queue.push(Some(zwsh.clone()));
+                }
                 // slice33：R100 失效契约（webview 侧 evict_removed_identities 同源）——
                 // 被移除 handle 的 worker 侧 gBCR 反查表条目同步清除，防 RectBridge
                 // 把旧 handle 锚到同选择器的新节点上。

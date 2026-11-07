@@ -9,6 +9,11 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ 跨 goal 碰头留痕（45 号 shadow-dom-rendering M1——`:host` 族命中 + scoped sheets 进渲染管线，触通用样式面，run-rules §9 双侧留痕）**（2026-11-07）
+>
+> - **触碰面**（45 号 M1，[evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)）：style-system matcher（`:host`/`:host()`/`:host-context` 真命中臂＋zwsh 快径）、cascade（`tree_context` 级联轴：document → host → shadow）、engine pipeline 渲染入口（`compute_styles_with_shadow` shadow scopes 装配＋`inject_focus_state` 改走 `find_by_selector` 单漏斗）、css-parser 选择器合法化（`Host`/`HostContext` AST 变体——`::slotted` 仍非法属 45 号 M2）、js_dom_bridge focus 通路（shadow 内 `focus()` → `:focus` composed 链匹配到 host）。**无 layout-engine 触碰**。
+> - **义务对账**：`make reftest` 全量零回归＋workspace `make test`（门禁数字见 M1 evidence §9）；WC testharness 全量 A/B 新红 0/恶化 0（F=1403 与 42 号 M4 冻结二进制精确相等）。
+> - **本 goal 侧零代码改动**；45 号后续 M2 `::slotted(...)`/M3 slotted 布局消费若触通用路径，再依 §9 留痕碰头。
 > **▶ R5449 归因＋修复轮（line-clamp block-ellipsis 家族三案归因——021 chrome-fail 弃案定谳／032 hangable whitespace 修复切片落地／bidi-003 挂起。chrome headless oracle（google-chrome --headless=old --screenshot，/usr/bin/chromium GUI 路径 SIGTRAP 不可用）：021 ZW 与 chrome .relative 域逐像素同像〔0.52% 差全落 `<p>` 字体 AA〕＝上游 ref 语义 chrome 自身不满足，案不可转换；032 chrome 无 unprefixed line-clamp〔ZW 领先〕，真缺口＝ellipsis 前 hangable 空白未移除〔.hangs span pre-wrap 8 空格＋红底字形/advance 残留〕；bidi-003 双参语法＋bidi-plaintext ellipsis 方向深特征域挂起。修复＝`apply_line_clamp_cap` 截断生效分支后 hangable 尾剪：`scan_hangable_tail` 定界〔predicate 与 trailing_hang_width 同源：仅 ' '，tab 不剪，空文本 run 即停〕→ 首个混合 run 剪尾随空格收缩 width〔advance_of 读度量与 run 变更借用分离〕→ 纯空白 run 后缀清零〔无字形零推进〕；x 不动＝R1338 对齐口径已排除 hang 宽位置中性；paint Path B 同调自动继承；kill-switch `ZW_CLAMP_HANG_TRIM=0`）**（2026-11-07）
 >
 > - **修复体**（inline/mod.rs apply_line_clamp_cap 尾剪＋scan_hangable_tail＋runtime_flags.rs clamp_hang_trim）。常驻测试＝inline/tests/r5449_clamp_hang_trim_tests.rs 3 单元钉（纯空白 run 清零〔强制断行三行确定性构成〕／混合 run 剪尾 width 收回 2×advance／无 clamp 负向）＋tests/r5449_clamp_hang_trim.rs 2 集成钉（032 形态端到端——外部 sheet 传入，HTML 内嵌 `<style>` 不经 StyleSystem 解析／无 clamp 负向）＋r5449_clamp_hang_trim_kill_switch.rs 独占进程 1 钉（=0 空格保留，R3858 教训）。

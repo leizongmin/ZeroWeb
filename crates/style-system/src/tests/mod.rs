@@ -24,5 +24,6 @@ mod r4398_probe_ws;
 mod registered_property;
 mod review_r3345;
 mod root_font_units;
+mod shadow_host_segment;
 mod shorthand_coverage;
 mod style_system_coverage;

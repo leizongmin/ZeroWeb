@@ -4,7 +4,7 @@
 //! 检查标签名、ID、类、属性和伪类。
 
 /// 匹配声明结果类型：(属性名, 属性值, 是否important, 特异性, 层索引)
-type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
+pub(crate) type MatchingDecl = (String, String, bool, (u32, u32, u32), Option<usize>);
 
 use std::collections::HashMap;
 
@@ -378,6 +378,11 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
         // `:lang()`/`:dir()` 委派 Document 权威方法（R3281 与 DOM 选择器同源，逻辑提升见 dom/document/lang_dir.rs）。
         PseudoClassSelector::Lang(range) => doc.matches_lang(element, range),
         PseudoClassSelector::Dir(dir) => doc.matches_dir(element, dir),
+        // `:host` / `:host(...)` / `:host-context(...)`（CSS Scoping §3/§4）：常规
+        // 匹配路径恒不匹配——宿主段规则由 [`collect_host_declarations_with_media`]
+        // 在宿主元素的独立 tree-context 级联段收集（45 号 shadow-dom-rendering M1）。
+        // 文档表规则与 shadow 树内元素一律不得经本路径命中宿主段语义。
+        PseudoClassSelector::Host(_) | PseudoClassSelector::HostContext(_) => false,
     }
 }
 
@@ -2242,6 +2247,200 @@ pub fn collect_pseudo_declarations_with_media(
     results
 }
 
+/// 45 号 shadow-dom-rendering M1：`:host` / `:host(...)` / `:host-context(...)`
+/// 宿主段声明收集（CSS Scoping §3/§4，https://drafts.csswg.org/css-scoping/#host-selector）。
+///
+/// shadow 树样式表中的 `:host` 族规则作用于宿主元素；作用域正确性由调用方保证——
+/// 只传宿主自身 shadow root 的 sheets（文档表规则不得经此通道）。
+///
+/// 与常规收集（[`collect_matching_declarations_with_media`]）分道的理由：常规路径对
+/// `:host` 族恒不匹配（见 [`matches_pseudo_class`]），宿主段声明由本收集器单独产出，
+/// 以独立 tree-context 级联段参与排序（外树 author normal 声明胜 shadow 宿主段、
+/// important 反转——[`crate::cascade::CascadeOrder`] tree_context 轴）。走查为直接
+/// 规则遍历（无桶索引）：宿主元素每代至多数个、shadow sheets 低频小表，非热路径；
+/// 层索引独立计数（tree-context 排序先于层序，跨树层比较由 tree-context 消解，
+/// 段内自洽即可）。
+pub fn collect_host_declarations_with_media(
+    doc: &Document,
+    host: NodeId,
+    stylesheets: &[zero_css_parser::Stylesheet],
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+) -> Vec<MatchingDecl> {
+    let mut results = Vec::new();
+    let mut layer_counter: usize = 0;
+    let mut layer_map: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for stylesheet in stylesheets {
+        collect_host_from_rules(
+            doc,
+            host,
+            &stylesheet.rules,
+            &mut results,
+            media_ctx,
+            None,
+            &mut layer_counter,
+            &mut layer_map,
+        );
+    }
+    results
+}
+
+/// [`collect_host_declarations_with_media`] 的规则走查（@media/@layer 递归语义同
+/// [`collect_from_rules`]；`@supports` 现场求值；其余 at-rule 整体忽略——CSS 未知
+/// at-rule body 不参与级联）。
+#[allow(clippy::too_many_arguments)]
+fn collect_host_from_rules(
+    doc: &Document,
+    host: NodeId,
+    rules: &[zero_css_parser::ast::Rule],
+    results: &mut Vec<MatchingDecl>,
+    media_ctx: Option<&zero_css_parser::media_query::MediaContext>,
+    current_layer: Option<usize>,
+    layer_counter: &mut usize,
+    layer_map: &mut std::collections::HashMap<String, usize>,
+) {
+    for rule in rules {
+        match rule {
+            zero_css_parser::ast::Rule::Style(style_rule) => {
+                // 同规则多选择器只收集一次（collect_from_rules 的 last_matched_rule 语义）。
+                let mut collected = false;
+                for selector in &style_rule.selectors {
+                    if !collected && matches_host_target(doc, host, selector) {
+                        push_style_rule_decls(style_rule, selector, results, current_layer);
+                        collected = true;
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::At(at_rule) => {
+                if let zero_css_parser::ast::AtRuleBody::Block(inner_rules) = &at_rule.body
+                    && at_rule.name.eq_ignore_ascii_case("media")
+                {
+                    let hit = media_ctx.is_some_and(|ctx| {
+                        zero_css_parser::media_query::parse_media_query(&at_rule.prelude)
+                            .unwrap_or_default()
+                            .iter()
+                            .any(|q| zero_css_parser::media_query::evaluate_media_query(q, ctx))
+                    });
+                    if hit {
+                        collect_host_from_rules(
+                            doc,
+                            host,
+                            inner_rules,
+                            results,
+                            media_ctx,
+                            current_layer,
+                            layer_counter,
+                            layer_map,
+                        );
+                    }
+                }
+            }
+            zero_css_parser::ast::Rule::Layer(layer_rule) => {
+                // R4246：层名首次出现序注册；空语句只注册不递归（collect_from_rules 同语义）。
+                if layer_rule.rules.is_empty() {
+                    if layer_rule.name.is_empty() {
+                        *layer_counter += 1;
+                    } else {
+                        for name in layer_rule.name.split(',') {
+                            let name = name.trim();
+                            if !name.is_empty() {
+                                register_layer_name(layer_map, layer_counter, name);
+                            }
+                        }
+                    }
+                } else {
+                    let layer_idx = if layer_rule.name.is_empty() {
+                        let idx = *layer_counter;
+                        *layer_counter += 1;
+                        idx
+                    } else {
+                        register_layer_name(layer_map, layer_counter, layer_rule.name.trim())
+                    };
+                    collect_host_from_rules(
+                        doc,
+                        host,
+                        &layer_rule.rules,
+                        results,
+                        media_ctx,
+                        Some(layer_idx),
+                        layer_counter,
+                        layer_map,
+                    );
+                }
+            }
+            zero_css_parser::ast::Rule::Supports(supports_rule)
+                if evaluate_supports_condition(&supports_rule.condition) =>
+            {
+                collect_host_from_rules(
+                    doc,
+                    host,
+                    &supports_rule.rules,
+                    results,
+                    media_ctx,
+                    current_layer,
+                    layer_counter,
+                    layer_map,
+                );
+            }
+            _ => {
+                // @keyframes/@import 等不参与匹配。
+            }
+        }
+    }
+}
+
+/// 45 号 M1：宿主段匹配谓词。`:host` 族只允许出现在选择器末化合物（CSS Scoping
+/// §3 host-selector 语法）；去除该子类后的选择器主体匹配宿主（组合器前体照常沿
+/// light 域匹配，如 `body > :host`），且按形态判定参数：
+/// - `:host(args)`：宿主匹配任一参数选择器；
+/// - `:host-context(args)`：宿主沿 shadow-including 祖先链上行，任一**元素**祖先
+///   匹配任一参数（物理父链上跳过 ShadowRoot 节点即穿出本 shadow 树，落到外层
+///   宿主继续上行——css-scoping §4 祖先定义）。
+fn matches_host_target(doc: &Document, host: NodeId, selector: &Selector) -> bool {
+    let Some(last) = selector.complex.parts.last() else {
+        return false;
+    };
+    let host_idx = last.0.subclass_selectors.iter().rposition(|sub| {
+        matches!(
+            sub,
+            SubclassSelector::PseudoClass(PseudoClassSelector::Host(_))
+                | SubclassSelector::PseudoClass(PseudoClassSelector::HostContext(_))
+        )
+    });
+    let Some(idx) = host_idx else {
+        return false;
+    };
+    let SubclassSelector::PseudoClass(pc) = &last.0.subclass_selectors[idx] else {
+        return false;
+    };
+    let mut stripped = selector.clone();
+    if let Some(stripped_last) = stripped.complex.parts.last_mut() {
+        stripped_last.0.subclass_selectors.remove(idx);
+    }
+    if !matches_selector(doc, host, &stripped) {
+        return false;
+    }
+    match pc {
+        PseudoClassSelector::Host(None) => true,
+        PseudoClassSelector::Host(Some(args)) => args.iter().any(|s| matches_selector(doc, host, s)),
+        PseudoClassSelector::HostContext(args) => {
+            let mut cur = doc.parent_node(host);
+            while let Some(ancestor) = cur {
+                // 祖先链上非元素节点（文本/注释）不参与匹配，继续上行。
+                if doc
+                    .get(ancestor)
+                    .is_some_and(|n| matches!(n.kind, zero_dom::NodeKind::Element(_)))
+                    && args.iter().any(|s| matches_selector(doc, ancestor, s))
+                {
+                    return true;
+                }
+                cur = doc.parent_node(ancestor);
+            }
+            false
+        }
+        _ => false,
+    }
+}
+
 /// 返回选择器的尾部伪元素名（如 `"before"`/`"after"`），若无则 `None`。
 ///
 /// 按 CSS 语法，伪元素总是最后一个复合选择器的最后一个子类选择器。
@@ -2786,6 +2985,19 @@ fn collect_style_rule_decls(
     if !matched {
         return false;
     }
+    push_style_rule_decls(style_rule, selector, results, current_layer);
+    true
+}
+
+/// 将已命中 Style 规则的声明推入收集结果（specificity 按命中选择器计）。
+/// 45 号 M1 起 [`collect_host_declarations_with_media`] 与常规收集共用此出栈路径，
+/// 保证 justify-all 双声明展开等收集层语义两边一致。
+fn push_style_rule_decls(
+    style_rule: &zero_css_parser::ast::StyleRule,
+    selector: &Selector,
+    results: &mut Vec<MatchingDecl>,
+    current_layer: Option<usize>,
+) {
     let spec = zero_css_parser::selector::specificity(selector);
     for decl in &style_rule.declarations {
         // CSS Text 3 §7.1：`text-align: justify-all` = justify +
@@ -2818,7 +3030,6 @@ fn collect_style_rule_decls(
             ));
         }
     }
-    true
 }
 
 /// R4246：注册层名到层索引（首次出现序；已注册名返回既有索引）。

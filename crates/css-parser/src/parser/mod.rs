@@ -1074,7 +1074,6 @@ impl<'a> Parser<'a> {
                 | "read-write"
                 | "user-invalid"
                 | "defined"
-                | "host"
                 | "fullscreen"
                 | "modal"
                 | "picture-in-picture"
@@ -1103,14 +1102,12 @@ impl<'a> Parser<'a> {
     }
 
     /// 已知函数伪类名（`name(...)` 形式，未被上方 match 显式分发处理的）。
+    /// `:host(...)`/`:host-context(...)` 已显式分发（CSS Scoping §3/§4），不在宽容清单。
     fn is_known_function_pseudo_class(name: &str) -> bool {
         if name.starts_with('-') {
             return true;
         }
-        matches!(
-            name,
-            "dir" | "matches" | "any" | "host-context" | "nth-col" | "nth-last-col"
-        )
+        matches!(name, "dir" | "matches" | "any" | "nth-col" | "nth-last-col")
     }
 
     /// 已知伪元素名。vendor 前缀 + `view-transition-*` 视为已知。
@@ -1349,6 +1346,10 @@ impl<'a> Parser<'a> {
                                 "nth-last-of-type" => self.parse_nth_last_of_type_pattern()?,
                                 "lang" => self.parse_lang(),
                                 "dir" => self.parse_dir(),
+                                // `:host(<compound-selector>)` / `:host-context(<compound-selector>)`
+                                // （CSS Scoping §3/§4）：宿主段函数形态（45 号 shadow-dom-rendering M1）。
+                                "host" => self.parse_host_function_arg()?,
+                                "host-context" => self.parse_host_context_function_arg()?,
                                 _ => {
                                     // 未知函数伪类（如 `:foo(...)`）使选择器非法：整块消耗参数
                                     //（含 Function token 的 `(`）后再判非法，避免参数碎片化泄漏。
@@ -1367,6 +1368,11 @@ impl<'a> Parser<'a> {
                                 "before" | "after" | "first-letter" | "first-line" => {
                                     subclass_selectors
                                         .push(SubclassSelector::PseudoElement(PseudoElementSelector::Standard(name)));
+                                }
+                                // `:host` 无参形态（CSS Scoping §3）：host 段专用 AST 变体。
+                                "host" => {
+                                    subclass_selectors
+                                        .push(SubclassSelector::PseudoClass(PseudoClassSelector::Host(None)));
                                 }
                                 _ => {
                                     // 未知简单伪类（如 `:invalidPseudoClass`）使选择器非法
@@ -1394,6 +1400,9 @@ impl<'a> Parser<'a> {
                             "nth-last-of-type" => self.parse_nth_last_of_type_pattern()?,
                             "lang" => self.parse_lang(),
                             "dir" => self.parse_dir(),
+                            // `:host(...)` / `:host-context(...)`（同 Ident+`(` 分支）。
+                            "host" => self.parse_host_function_arg()?,
+                            "host-context" => self.parse_host_context_function_arg()?,
                             _ => {
                                 // 未知函数伪类（Function token 形式）使选择器非法：整块消耗参数
                                 //（Function token 的 `(` 已含）后再判非法，避免参数碎片化泄漏。
@@ -1459,6 +1468,34 @@ impl<'a> Parser<'a> {
             _ => PseudoClassSelector::Simple(name.to_string()),
         };
         Some(pseudo)
+    }
+
+    /// 解析 `:host(<compound-selector>)` 参数（CSS Scoping §3：spec 语法单化合物选择器，
+    /// https://drafts.csswg.org/css-scoping/#host-selector）。调用前已消耗 `(`。
+    /// 列表长度 ≠ 1 或选择器含组合器链（非单化合物）→ 整选择器非法（同未知函数伪类
+    /// 路径返回 None，残余 token 由 `consume_balanced_function_args` 收口前已耗尽 `)`）。
+    fn parse_host_function_arg(&mut self) -> Option<PseudoClassSelector> {
+        let selectors = self.consume_selector_list_for_function(false);
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+        if selectors.len() != 1 || selectors[0].complex.parts.len() != 1 {
+            return None;
+        }
+        Some(PseudoClassSelector::Host(Some(selectors)))
+    }
+
+    /// 解析 `:host-context(<compound-selector>)` 参数（CSS Scoping §4，语法约束同
+    /// [`Self::parse_host_function_arg`]）。调用前已消耗 `(`。
+    fn parse_host_context_function_arg(&mut self) -> Option<PseudoClassSelector> {
+        let selectors = self.consume_selector_list_for_function(false);
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        }
+        if selectors.len() != 1 || selectors[0].complex.parts.len() != 1 {
+            return None;
+        }
+        Some(PseudoClassSelector::HostContext(selectors))
     }
 
     /// 为函数伪类内部消耗选择器列表。

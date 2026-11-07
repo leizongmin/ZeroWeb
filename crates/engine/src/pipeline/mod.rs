@@ -487,7 +487,13 @@ impl RenderPipeline {
     /// 显式注入。painter 的 `set_focused_node` 只管原生控件焦点外观，此处补样式匹配面。
     fn inject_focus_state(&self, doc: &mut zero_dom::Document) {
         if let Some(selector) = self.focused_selector.as_deref()
-            && let Some(id) = doc.query_selector(doc.root(), selector)
+            // 45 号 shadow-dom-rendering M1：经 [`find_by_selector`] 单漏斗解析——
+            // `doc.query_selector` 带封装门（不降 ShadowRoot 子树）且不识 zwsh 形态，
+            // shadow 树内焦点（`zwsh<len>:<host>|<local>`，R3254-M7' FocusChanged 通道
+            // 的 shadow 臂铸造地址）解析恒 miss → `:focus` 永不命中宿主（B4
+            // focus-pseudo-on-shadow-host 勘根）。单漏斗含 shadow 域 fastpath，常规
+            // selector 路径行为不变（structural fastpath + 通用引擎同序）。
+            && let Some(id) = crate::js_dom_bridge::find_by_selector(doc, selector)
         {
             doc.set_focus_element(Some(id));
         }
@@ -1283,7 +1289,7 @@ impl RenderPipeline {
         };
         let stylesheets = self.cached_stylesheets.clone();
         let doc = doc_rc.borrow();
-        let styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let styles = compute_styles_for_doc(&mut self.style_system, &doc, &stylesheets);
         drop(doc);
         self.cached_styles = styles;
     }
@@ -1299,7 +1305,7 @@ impl RenderPipeline {
     ) -> HashMap<NodeId, ComputedStyle> {
         self.animation_clock
             .register_from_stylesheets(stylesheets, &self.media_context());
-        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
 
         // 4b. 过渡检测：比较新旧基础样式，启动必要的过渡
         {
@@ -1822,7 +1828,7 @@ impl RenderPipeline {
         let style_start = Instant::now();
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(&doc, &stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, &doc, &stylesheets);
         // 3.2 R3882：静态动画首帧（CSS Animations §4 未知时间轴下的渲染近似）——
         // `render_html` 是无时间轴的静态渲染路径（reftest 截图、首帧绘制），对声明了
         // animation-name 的元素按 t=0 求值一次插值（fill-mode/backwards 与负 delay
@@ -2028,7 +2034,7 @@ impl RenderPipeline {
         // 计算样式
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
         self.apply_source_dimension_defaults(doc, &mut styles);
 
         // 计算布局
@@ -2117,7 +2123,7 @@ impl RenderPipeline {
         // 增量路径作 base）
         self.style_system
             .set_viewport(self.viewport_width as f64, self.viewport_height as f64);
-        let mut styles = self.style_system.compute_styles(doc, stylesheets);
+        let mut styles = compute_styles_for_doc(&mut self.style_system, doc, stylesheets);
         self.cached_styles = styles.clone();
         self.apply_source_dimension_defaults(doc, &mut styles);
 
@@ -2673,7 +2679,7 @@ impl RenderPipeline {
         }
         if self.cached_styles.is_empty() {
             // 首帧（render_html 路径不维护 cached_styles）：全量计算并作为 base。
-            let s = self.style_system.compute_styles(doc, &stylesheets);
+            let s = compute_styles_for_doc(&mut self.style_system, doc, &stylesheets);
             self.cached_styles = s;
         } else {
             self.style_system
@@ -4090,6 +4096,66 @@ pub(crate) fn collect_shadow_scoped_sheets(
         out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
     }
     out
+}
+
+/// 45 号 M1（CSS Scoping §3，https://drafts.csswg.org/css-scoping/#declarations-in-shadow-trees）：
+/// shadow 树内联 `<style>` 作用域表收集——每个 shadow root 一个 [`ShadowScopeStylesheets`]，
+/// 作者级联源 = 本树 `<style>`（树序）。走查本 shadow 子树、**跳过嵌套 ShadowRoot 子树**
+///（各归其作用域）；`<style>` 过 [`style_sheet_if_eligible`] 三门（type/media/disabled）
+/// 与文档面同语义。无 shadow 树 / 树内无表 → 空向量（调用方回落 [`StyleSystem::compute_styles`]，
+/// 非 shadow 页零行为变化、仅一次 shadow_root_ids 扫描开销）。
+///
+/// FIXME(45-M2+)：`<link rel=stylesheet>` 外部表与 `ShadowRoot.adoptedStyleSheets` 不在
+/// 本收集面（M1 语料为树内联 `<style>`；外部表经 gCS 通道 [`collect_shadow_scoped_sheets`]
+/// 已接，主管线待 M2 一并接入）。
+pub(crate) fn collect_inline_shadow_scopes(doc: &Document) -> Vec<zero_style_system::ShadowScopeStylesheets> {
+    let mut out = Vec::new();
+    for root in doc.shadow_root_ids() {
+        let mut sheets = Vec::new();
+        collect_shadow_inline_sheets(doc, root, &mut sheets);
+        if !sheets.is_empty() {
+            out.push(zero_style_system::ShadowScopeStylesheets { root, sheets });
+        }
+    }
+    out
+}
+
+/// [`collect_inline_shadow_scopes`] 的树序走查：元素 `<style>` 过门收表；嵌套
+/// ShadowRoot 子树整体跳过（其 `<style>` 属该层作用域）；其余元素递归下降。
+fn collect_shadow_inline_sheets(doc: &Document, node: NodeId, sheets: &mut Vec<Stylesheet>) {
+    for child in doc.child_nodes(node) {
+        match doc.get(child).map(|n| &n.kind) {
+            Some(NodeKind::Element(e)) if e.name.local.as_ref().eq_ignore_ascii_case("style") => {
+                if let Some(sheet) = style_sheet_if_eligible(doc, child) {
+                    sheets.push(sheet);
+                }
+            }
+            // 嵌套 shadow 树：整棵子树不进本级收集（CSS Scoping：树内 `<style>`
+            // 只影响本树——嵌套树走其自身 ShadowRoot 的作用域条目）。
+            Some(NodeKind::ShadowRoot(_)) => {}
+            Some(NodeKind::Element(_)) => {
+                collect_shadow_inline_sheets(doc, child, sheets);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 45 号 M1：全量样式计算统一入口——文档含带表 shadow 树时走
+/// [`StyleSystem::compute_styles_with_shadow`]（CSS Scoping 作用域级联 + `:host`
+/// 宿主段），否则原 [`StyleSystem::compute_styles`]（逐位一致）。六个主管线
+/// compute 调用点共用；gCS/handle 视图通道已有各自接入（computed_style.rs）。
+pub(crate) fn compute_styles_for_doc(
+    style_system: &mut StyleSystem,
+    doc: &Document,
+    stylesheets: &[Stylesheet],
+) -> HashMap<NodeId, ComputedStyle> {
+    let shadow_scopes = collect_inline_shadow_scopes(doc);
+    if shadow_scopes.is_empty() {
+        style_system.compute_styles(doc, stylesheets)
+    } else {
+        style_system.compute_styles_with_shadow(doc, stylesheets, &shadow_scopes)
+    }
 }
 
 /// XHTML `<style>` 内容的 CDATA 感知实体解码（R4022 + R5426）。

@@ -87,6 +87,7 @@ mod css_nesting;
 mod dir_pseudo;
 mod font_feature_values;
 mod forgiving_selector_list;
+mod host_selector;
 mod lang_list;
 mod nth_invalid;
 mod nth_of_selector;

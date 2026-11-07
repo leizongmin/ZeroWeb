@@ -1,9 +1,13 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
 **版本**: v1.1
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
-[evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)），M1 未启动
+[M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
+M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
+B4 focus-pseudo 3/3 strict 真通过，WC 全量 A/B 零回归，见
+[M1 evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)），
+M2 未启动（下一里程碑：`::slotted(...)` 命中翻转）
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——
@@ -67,13 +71,22 @@ Text 不进布局；R5 slotted 继承走 light 父；R6 增量样式 shadow 全�
 B2 布局失效/静态分配 5 案、B3 样式失效/继承 3 案、B4 `:host` 伪类族 3 案、
 B5 交互耦合 1 案（静态面记账），M4 收口 = **20/20 全绿且逐批不回落**
 （基线 16P/4F：slot-fallback-004/006、
-shadow-style-invalidation-vw-units、focus-pseudo-on-shadow-host-1）。B6
+shadow-style-invalidation-vw-units、focus-pseudo-on-shadow-host-1）。
+**M1 更新（2026-11-07）**：focus-pseudo-on-shadow-host-1 翻绿——B4 3/3 全部
+strict 真通过（修前 -1/-2 是阈值伪象，PNG 法证见 M1 evidence §2），基线余
+3F；vw-units 归因勘误为 iframe 载体面（M1 evidence §4），具名不变。B6
 testharness 渲染耦合补充池 10 案（42 号 skip 规则排除归 45 号——归口
-结论为并入本 goal）随 M1 通道落地计门，门值实测回填。具名挂账：交互面
+结论为并入本 goal）：核实 10 案均不在 web-components fetch 子集（11-06
+基线 JSON 与 M1 WC 全量日志零命中），计门挂补充池通道落地（M0 evidence
+§6 M3+ 项），门值届时实测回填。具名挂账：交互面
 （nested-hover 悬停臂、accesskey）——runner 无真实输入注入 reftest 面，
 静态等价通过不记真通过；hit-test 四面与 selection/Highlight 交叠按 M1
 通道归因定档。邻域：selection/shadow-dom 9 案（selection 语料 23 号既有账）
 不改归属，M4 并跑对账 9/9 不回落；渲染级 shadow 耦合 reftest 总面 29 案。
+对端移交（04fb3e133 提交在册）：s331 closedby-complex 18F 勘根 = R3 动态
+slot 分配缺位（`shadow.rs` 物化注释既有——slotted light 子树无布局盒，
+gBCR 塌 (0,0) 命中测试不可达），归 M3 变异应用臂 `resolve_slots` 挂接批
+一并验收，不另开缺口。
 
 ## 划界
 
@@ -92,7 +105,9 @@ testharness 渲染耦合补充池 10 案（42 号 skip 规则排除归 45 号—
 
 - **M0**：挂接点审计 + reftest 盘点 + 数值门（DC-1）——**✅ 2026-11-07 完成**
   （[evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）。
-- **M1**：`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序（DC-2 前半）。
+- **M1**：`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序（DC-2 前半）
+  ——**✅ 2026-11-07 完成**（B4 3/3 + B1/B2 零回落 + WC 全量 A/B 零回归；
+  [evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)）。
 - **M2**：`::slotted(...)` 命中翻转 + flat-tree 组合子（DC-2 收口）。
 - **M3**：动态 slot 分配接线 + shadow Text 布局通道 + reftest 分批验收（DC-3）。
 - **M4**：复测收口（DC-4）。

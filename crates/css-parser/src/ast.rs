@@ -442,6 +442,15 @@ pub enum PseudoClassSelector {
     Lang(Vec<String>),
     /// `:dir()` 选择器（参数为 `ltr`/`rtl`，归一化为小写）。
     Dir(String),
+    /// `:host` 伪类（CSS Scoping §3，https://drafts.csswg.org/css-scoping/#host-selector）：
+    /// 匹配 shadow host 元素。`None` = 无参形式；`Some` = `:host(<compound-selector>)`
+    /// 限定形态（spec 语法单化合物选择器，解析期强制单化合物、非组合器链）。
+    /// 特异性 = 伪类 (0,1,0) + 参数（见 `selector::specificity`）。
+    Host(Option<Vec<Selector>>),
+    /// `:host-context(<compound-selector>)` 伪类（CSS Scoping §4）：host 且 light
+    /// 域祖先链（穿出 shadow 边界上行）任一祖先匹配参数时命中。同 `:host()` 强制
+    /// 单化合物参数。
+    HostContext(Vec<Selector>),
 }
 
 /// nth 函数的模式（如 `2n+1`、`odd`、`even`、`3`）。

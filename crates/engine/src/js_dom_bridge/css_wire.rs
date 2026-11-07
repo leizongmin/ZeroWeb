@@ -72,6 +72,9 @@ fn pseudo_class_str(p: &zero_css_parser::PseudoClassSelector) -> String {
         P::NthLastOfType(_) => ":nth-last-of-type(*)".to_string(),
         P::Lang(_) => ":lang(*)".to_string(),
         P::Dir(d) => format!(":dir({})", d),
+        // 45 号 M1：`:host` 族 best-effort 序列化（参数不重建，同上功能伪类口径）。
+        P::Host(_) => ":host".to_string(),
+        P::HostContext(_) => ":host-context(*)".to_string(),
     }
 }
 

@@ -562,7 +562,23 @@ pub enum DomMutation {
         /// 新焦点元素稳定选择器；None 表示 blur（聚焦到 body）。
         selector: Option<String>,
     },
+    /// 页面 focus() 落在 shadow 树内元素（45 号 shadow-dom-rendering M1）——handle-only
+    /// proxy 无 sel 域（`deep_entry_json` 条目不带地址段），shim 按容器链上报 shadow 根
+    /// handle + 元素序路径，apply 臂经 [`resolve_focus_shadow_address`] 铸造 s176 zwsh
+    /// 域定位选择器（[`FOCUS_SELECTOR_KEY`] 保留键出表）。
+    FocusChangedInShadow {
+        /// shadow 根 handle（`attachShadow` 产物的 handle 容器键）。
+        root_handle: String,
+        /// 元素序路径：`-` 连接的 0-based 元素 index 逐跳下行（`"0"` = 根直接子）。
+        child_path: String,
+    },
 }
+
+/// [`DomMutation::FocusChangedInShadow`] apply 臂铸造的 zwsh 地址在返回
+/// `handle → selector` 映射中的保留键。真实 handle 键为 shim 侧数字串形态，
+/// 本键不会被任何 handle 反查命中；消费方（reftest runner focus_selector 提取 /
+/// renderer focus 队列翻译）按键名读取。
+pub const FOCUS_SELECTOR_KEY: &str = "__zw_focus";
 
 /// R3254-L3：UTF-8 字节偏移 → UTF-16 code unit 偏移（selection/composition 契约）。
 /// 偏移落在多字节字符内部时截断到该字符起点；超长取末尾。
@@ -1476,6 +1492,10 @@ pub fn apply_dom_mutations_full(
     // 路径」改为 lenient warn+跳过，见 SetAttr arm）。SetText 的 lenient no-op（R3076）
     // 保持不变。
     let mut pending: std::collections::VecDeque<DomMutation> = mutations.iter().cloned().collect();
+    // 45 号 shadow-dom-rendering M1：`FocusChangedInShadow` 臂铸造的 zwsh 地址暂存
+    //（map 构建在批循环之后，臂内不可直插）——批循环结束统一登记保留键
+    // [`FOCUS_SELECTOR_KEY`]（见 `handle_selectors` 构建点注释）。
+    let mut focus_shadow_sel: Option<String> = None;
     // R361（js-dom M4）：**批内 detach→insert 移动语义的 detached-stash**——同一 dispatch
     // 内 listener 执行 `parent.removeChild(target); other.appendChild(target)`（WPT
     // Event-dispatch-target-moved）产生两条 wire：Remove{'#target'} 使 target 脱离文档 →
@@ -1652,6 +1672,23 @@ pub fn apply_dom_mutations_full(
             }
             DomMutation::FocusChanged { .. } => {
                 // 焦点状态由宿主（renderer）消费，不写 DOM。
+            }
+            DomMutation::FocusChangedInShadow {
+                ref root_handle,
+                ref child_path,
+            } => {
+                // 45 号 shadow-dom-rendering M1：shadow 树内 focus() 地址铸造（不写 DOM，
+                // 同 [`DomMutation::FocusChanged`] 语义）——rootHandle（同批 [`DomMutation::AttachShadow`]
+                // 已注册）→ ShadowRoot 节点 → 元素序链下行 → s176 zwsh 定位选择器。解析
+                // 失败（根未注册/链越界/嵌套 shadow 宿主不可达）→ 静默无注入（无稳定
+                // 地址 = 焦点不落 retained 状态，R3254-M7' 空串同口径）。
+                let resolved = resolve_focus_shadow_address(doc, &handles, root_handle, child_path);
+                if resolved.is_none() {
+                    tracing::warn!(
+                        "apply DOM mutations: focus_changed_in_shadow no stable address, skipped: {root_handle}/{child_path}"
+                    );
+                }
+                focus_shadow_sel = resolved;
             }
             DomMutation::SetAttr { selector, name, value } => {
                 // siteopt t4（2026-10-01）P19：selector 失配 lenient warn+跳过，不再 Err。
@@ -2435,6 +2472,12 @@ pub fn apply_dom_mutations_full(
             handle_selectors.insert(handle.clone(), sel);
         }
     }
+    // 45 号 M1：shadow 树内 focus() 的铸造地址走保留键出表（见 [`FOCUS_SELECTOR_KEY`]）
+    //——真实 handle 键为数字串形态，本键不与任何 handle 反查冲突；runner/renderer
+    // 消费方按键名读取后走 selector 字符串通道（`focused_selector`）。
+    if let Some(zwsh) = focus_shadow_sel {
+        handle_selectors.insert(FOCUS_SELECTOR_KEY.to_string(), zwsh);
+    }
 
     // js-dom M3 R100：回填 NodeId 持久表——本批 ephemeral handles（含从持久表预植的
     // 存活条目）中**节点仍存活**者全量 merge（文本节点等无唯一选择器的 handle 也覆盖
@@ -2974,6 +3017,45 @@ pub fn apply_mutations_to_html_with_handles(
     let mut doc = parse_html(html);
     let handle_selectors = apply_dom_mutations(&mut doc, mutations)?;
     Ok((doc.outer_html(doc.root()), handle_selectors))
+}
+
+/// 45 号 shadow-dom-rendering M1：shadow 树内 focus() 的地址铸造——rootHandle（本批
+/// [`DomMutation::AttachShadow`] 注册进 `handles`）→ ShadowRoot 节点 → `child_path`
+/// 元素序链（`-` 连接 0-based 元素 index，逐跳只数元素子）下行 → s176 zwsh 域定位
+/// 选择器（[`shadow_scoped_selector`]：host 段 light 树唯一选择器 + local 段根子树内
+/// 唯一；嵌套 shadow 宿主不可达 → None）。返回 None = 无稳定地址，消费方按「无注入」
+/// 处理（R3254-M7' 空串同口径）。
+fn resolve_focus_shadow_address(
+    doc: &Document,
+    handles: &HashMap<String, NodeId>,
+    root_handle: &str,
+    child_path: &str,
+) -> Option<String> {
+    let root_node = handles.get(root_handle).copied()?;
+    if !matches!(doc.get(root_node).map(|n| &n.kind), Some(NodeKind::ShadowRoot(_))) {
+        return None;
+    }
+    let host = doc.get(root_node)?.parent?;
+    let mut cur = root_node;
+    for step in child_path.split('-') {
+        let idx: usize = step.trim().parse().ok()?;
+        let mut seen = 0usize;
+        let mut hit = None;
+        for c in doc.child_nodes(cur) {
+            if matches!(doc.get(c).map(|n| &n.kind), Some(NodeKind::Element(_))) {
+                if seen == idx {
+                    hit = Some(c);
+                    break;
+                }
+                seen += 1;
+            }
+        }
+        cur = hit?;
+    }
+    if cur == root_node {
+        return None;
+    }
+    shadow_scoped_selector(doc, host, cur)
 }
 
 /// 从 HTML 快照查询全部匹配元素的**唯一**选择器（`|` 分隔，供 `__zw_query_all`→querySelectorAll）。

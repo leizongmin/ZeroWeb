@@ -8,7 +8,8 @@ use std::path::Path;
 
 use zero_engine::pipeline::PageScript;
 use zero_engine::{
-    DomMutation, apply_mutations_to_html, extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
+    DomMutation, FOCUS_SELECTOR_KEY, apply_mutations_to_html, apply_mutations_to_html_with_handles,
+    extract_page_scripts, generate_js_dom_shim, register_dom_callbacks,
 };
 
 /// R4353：脚本化滚动偏移记录（`element.scrollTop/scrollLeft = n`，shim `_scrollOffsets`
@@ -342,18 +343,29 @@ pub(super) fn apply_scripted_dom_mutations(
     // R4321：先应用 recorded mutations（既有行为，作用于原始 html），再两段式落地
     // document.write 缓冲（合成 SetOuterHtml 作用于上一步产物）。两段分离保证合成
     // 选择器失配等 Err 只回落 write 兜底（= 旧行为），不殃及 recorded mutations。
-    let focus_selector = recorded
-        .iter()
-        .filter_map(|m| match m {
-            DomMutation::FocusChanged { selector } => Some(selector.clone()),
-            _ => None,
-        })
-        .next_back()
-        .flatten();
+    // R4344：焦点回流（R4241 口径）——最后一次 focus 变更生效。45 号 M1 起 shadow 树内
+    // focus() 为 [`DomMutation::FocusChangedInShadow`]（apply 时经 [`FOCUS_SELECTOR_KEY`]
+    // 保留键铸造 zwsh 地址），此处只记录「最后一次焦点变更是否 shadow 形态」，地址在
+    // 下方 apply 返回的 handle_selectors 里按键读取。
+    let mut focus_selector: Option<String> = None;
+    let mut last_focus_is_shadow = false;
+    for m in &recorded {
+        match m {
+            DomMutation::FocusChanged { selector } => {
+                focus_selector = selector.clone();
+                last_focus_is_shadow = false;
+            }
+            DomMutation::FocusChangedInShadow { .. } => last_focus_is_shadow = true,
+            _ => {}
+        }
+    }
     let mut current = html.to_string();
     if !recorded.is_empty() {
-        match apply_mutations_to_html(html, &recorded) {
-            Ok(new_html) => {
+        match apply_mutations_to_html_with_handles(html, &recorded) {
+            Ok((new_html, handle_selectors)) => {
+                if last_focus_is_shadow {
+                    focus_selector = handle_selectors.get(FOCUS_SELECTOR_KEY).cloned();
+                }
                 if std::env::var("REFTEST_DEBUG_HTML").is_ok() {
                     let sample = new_html.chars().take(2000).collect::<String>();
                     eprintln!("  [reftest JS] mutated html (first 2000): {sample}");

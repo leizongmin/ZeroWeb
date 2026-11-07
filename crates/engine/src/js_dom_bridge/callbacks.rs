@@ -2897,6 +2897,25 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // 45 号 shadow-dom-rendering M1：shadow 树内 focus()（handle-only proxy 无 sel 域）
+    // 地址上报——shim 按容器链回溯 shadow 根 handle + 元素序路径，apply 臂铸造 s176
+    // zwsh 定位选择器（[`FOCUS_SELECTOR_KEY`] 保留键出表）。
+    let m = Arc::clone(mutations);
+    sandbox.register_callback(
+        "__zw_focus_changed_shadow_child",
+        Box::new(move |args| {
+            if args.len() >= 2 {
+                m.lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .push(DomMutation::FocusChangedInShadow {
+                        root_handle: args[0].clone(),
+                        child_path: args[1].clone(),
+                    });
+            }
+            "ok".into()
+        }),
+    );
+
     // M2-S196（html-semantics focus 时序域，2026-11-01）：`:active` 按压态写通道——
     // shim trusted UA 按压面（键盘 Space 激活族 / 指针 down 序列，label 路由后在
     // shim 侧算好最终目标 selector）写入字符串槽（空串 = 清除：pointerup/Space

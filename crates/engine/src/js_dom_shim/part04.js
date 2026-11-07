@@ -5302,6 +5302,24 @@
             // R3254-M7'：通知宿主同步 retained 焦点状态（键盘路由 + 滚动守卫）。空串 → host 不采纳
             //（selector 缺失的 focus 无稳定目标）；宿主侧另有 is_focusable_selector 校验兜底。
             if (sel && typeof __zw_focus_changed === 'function') __zw_focus_changed(sel);
+            // 45 号 shadow-dom-rendering M1：shadow 树内 handle-only 元素 focus()——
+            // deep JSON 条目无 sel 段（handle 容器枚举产物），按容器链回溯 shadow 根
+            // handle + 直接子元素序上报，engine apply 臂铸造 s176 zwsh 域定位地址
+            //（`__zw_focus_changed_shadow_child` → FocusChangedInShadow → 保留键出表）。
+            // 仅直接子面（B4 语料 `shadowRoot.firstChild.focus()`）；更深链
+            // FIXME(45-M2+) 按 _zwNodeParent 逐跳扩链（语料无钉面，先最小通路）。
+            else if (handle && typeof __zw_focus_changed_shadow_child === 'function'
+                     && typeof _zwNodeParent !== 'undefined' && _zwNodeParent[handle]) {
+              var _fscRoot = _zwNodeParent[handle].parentHandle;
+              if (_fscRoot != null && _shadowHandles[_fscRoot] && _handleChildren[_fscRoot]) {
+                var _fscIdx = -1;
+                for (var _fscI = 0; _fscI < _handleChildren[_fscRoot].length; _fscI++) {
+                  var _fscK = _handleChildren[_fscRoot][_fscI];
+                  if (_fscK && _fscK.__zwHandle === handle) { _fscIdx = _fscI; break; }
+                }
+                if (_fscIdx >= 0) __zw_focus_changed_shadow_child(String(_fscRoot), String(_fscIdx));
+              }
+            }
             // R5257（html-semantics M2 切片 52，2026-10-24）：focus 滚动进视口（spec
             // focusing steps 尾 UA 滚动面，CSSOM View scroll a target into view——WPT
             // focus-after-close「outViewPortButton.focus() 后 scroll 事件 + scrollTop>0」
