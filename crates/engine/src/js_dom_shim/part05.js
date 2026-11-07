@@ -17027,7 +17027,16 @@
     // 已把 handler 注册进 _et_listeners（listener 循环已调）——handler 函数与已调 listener
     // 同一引用时跳过，防双 fire（R2783 回归实证 b:hi 双发）。handler 返 true → preventDefault
     //（HTML onerror 语义；其余 handler 返值 spec 忽略，此处仅 onerror 认）。
-    var _r114On = target['on' + event.type];
+    // SVG 动画事件错位名映射（SVG2 animate.html §SVGAnimationElement，表定义
+    // 在 part01 _ZW_SMIL_TYPE_TO_BASE/_ZW_SMIL_BASE_TO_TYPE——beginEvent/
+    // endEvent/repeatEvent 的处理器是 onbegin/onend/onrepeat；裸 "begin"/
+    // "end"/"repeat" 非注册事件类型，泛型 on<type> 查找必须跳过，否则 onbegin
+    // 内容属性被 Event("begin") 误触发——WPT custom-events/event-listeners
+    // 定谳面，svg-compat-v2 B5）。
+    var _r114SmilBase = globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[event.type];
+    var _r114Reserved = globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type];
+    var _r114Prop = _r114Reserved ? null : 'on' + (_r114SmilBase || event.type);
+    var _r114On = _r114Prop === null ? undefined : target[_r114Prop];
     if (typeof _r114On === 'function') {
       var _r114Already = false;
       var _r114Arrs = target._et_listeners;
@@ -17057,6 +17066,15 @@
         }
       }
     }
+    // SMIL eventbase 动态实例源通知（svg-compat-v2 B5，part09 契约）：元素上
+    // 任何事件真发即通知文档级时间线——begin="click"/"id.event" 形态的实例
+    // 创建（SMIL #Eventvalue semantics）。通知方零 SMIL 语义：无时间线/无
+    // 动画元素时 part09 侧即返，热路径只付一次 typeof + WeakMap 读。
+    try {
+      if (typeof globalThis._zwSmilNotifyEvent === 'function') {
+        globalThis._zwSmilNotifyEvent(target, event.type);
+      }
+    } catch (_eSmilN) {}
     globalThis.event = _r114Prev;
     return !event._defaultPrevented;
   };

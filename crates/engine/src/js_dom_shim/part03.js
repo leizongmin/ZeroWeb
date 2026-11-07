@@ -16426,7 +16426,12 @@
   // 由 on* getter（返回编译 fn）+ _dispatchWithBubble target 阶段（点击触发）调用。
   function _ensureInlineHandler(key, sel, handle, type, codeOverride) {
     if (_onHandlers[key] && _onHandlers[key][type] !== undefined) return; // 已编译 fn / 已查无 false / JS 设值
+    // svg-compat-v2 B5：type 为 SMIL 动画事件时 attr 后缀取错位基名
+    //（beginEvent 事件编译 attr `onbegin`——缓存/注册键仍为事件 type）。
     var attr = 'on' + type;
+    if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[type]) {
+      attr = 'on' + globalThis._ZW_SMIL_TYPE_TO_BASE[type];
+    }
     var code = null;
     if (codeOverride !== undefined && codeOverride !== null) {
       // R152（js-dom M4）：调用方显式提供的属性体——setAttribute('on*', v) 的 R134 重编译
@@ -17461,7 +17466,10 @@
             var _r114C = _r114Entry(elemChain[i]);
             _r114ApplyAdj(_r114C); // 切片 8 第二增量：per-station shadow-adjusted target
             var capKey = _elKey(_r114C.sel, _r114C.handle);
-            _ensureInlineHandler(capKey, _r114C.sel, _r114C.handle, event.type); // R2935 祖先 inline on* handler 触发
+            // svg-compat-v2 B5：保留事件名（裸 begin/end/repeat）跳过 on* 编译。
+            if (!(globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type])) {
+              _ensureInlineHandler(capKey, _r114C.sel, _r114C.handle, event.type); // R2935 祖先 inline on* handler 触发
+            }
             var capAnc = _r114C.sel ? _wrapSelector(_r114C.sel) : _wrapHandle(_r114C.handle);
             // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
             var _r114CapSup = !!_r114C.shadow;
@@ -17487,11 +17495,20 @@
       // IDL setter 经 set trap 登记 _listenerStore，采纳对象（td registry 页面可见
       // 对象，_zwMEl 形无 trap）的 own 数据属性即处理器；且按 spec IDL 设值覆盖
       // 内容属性编译（跳过 _ensureInlineHandler 登记同型 handler 防双 fire）。
-      var _s328OwnOn = (!isDocTarget && !isWinTarget && target && target.__zwTdAdopted === true)
-        ? target['on' + event.type] : undefined;
+      // svg-compat-v2 B5：SMIL 错位名（beginEvent 读 onbegin）+ 保留名跳过。
+      var _s328OnT = event.type;
+      if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[_s328OnT]) {
+        _s328OnT = globalThis._ZW_SMIL_TYPE_TO_BASE[_s328OnT];
+      }
+      var _s328OwnOn = (!isDocTarget && !isWinTarget && target && target.__zwTdAdopted === true
+        && !(globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type]))
+        ? target['on' + _s328OnT] : undefined;
       if (!isDocTarget && !isWinTarget) {
         if (typeof _s328OwnOn !== 'function') {
-          _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+          // svg-compat-v2 B5：保留事件名（裸 begin/end/repeat）跳过 on* 编译。
+          if (!(globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type])) {
+            _ensureInlineHandler(targetKey, targetSel, targetHandle, event.type); // R2934 inline on* handler 触发
+          }
         }
       }
       // R40：html 元素为 target（host lifecycle `__zw_dispatch_event('html', …)`）时 target 站也只触发
@@ -17525,7 +17542,10 @@
             var _r114B = _r114Entry(elemChain[k]);
             _r114ApplyAdj(_r114B); // 切片 8 第二增量：per-station shadow-adjusted target
             var bKey = _elKey(_r114B.sel, _r114B.handle);
-            _ensureInlineHandler(bKey, _r114B.sel, _r114B.handle, event.type); // R2935 祖先 inline on* handler 冒泡触发
+            // svg-compat-v2 B5：保留事件名（裸 begin/end/repeat）跳过 on* 编译。
+            if (!(globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[event.type])) {
+              _ensureInlineHandler(bKey, _r114B.sel, _r114B.handle, event.type); // R2935 祖先 inline on* handler 冒泡触发
+            }
             var bAnc = _r114B.sel ? _wrapSelector(_r114B.sel) : _wrapHandle(_r114B.handle);
             // R114：shadow 段站（entry.shadow）派发期间 window.event 置 undefined，站后复原。
             var _r114BubSup = !!_r114B.shadow;

@@ -6169,6 +6169,19 @@
           if (globalThis._ZW_PREFIXED_HANDLER_TYPES && globalThis._ZW_PREFIXED_HANDLER_TYPES[_gt]) {
             _gt = globalThis._ZW_PREFIXED_HANDLER_TYPES[_gt];
           }
+          // svg-compat-v2 B5：onbeginEvent/onendEvent/onrepeatEvent 非任何 IDL
+          // handler 名（真浏览器落 expando、读 undefined——事件派发不触达；
+          // custom-events/event-listeners 定谳面）。
+          if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[_gt]) {
+            var _sB5ExG = _expando[key];
+            if (_sB5ExG && Object.prototype.hasOwnProperty.call(_sB5ExG, prop)) { return _sB5ExG[prop]; }
+            return undefined;
+          }
+          // svg-compat-v2 B5：SMIL 动画 handler 错位注册键（onbegin 读注册键
+          // beginEvent——attr 编译由 _ensureInlineHandler 内 TYPE_TO_BASE 派生）。
+          if (globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[_gt]) {
+            _gt = globalThis._ZW_SMIL_BASE_TO_TYPE[_gt];
+          }
           // js-dom M4 R107：body/frameset 的 6 个 forwarding handler 读 window（spec
           // handler-body/frameset-attributes——IDL 属性是 window 同名 handler 的转发）。
           var _r107Tag = _realTag(sel, handle);
@@ -6275,6 +6288,14 @@
             // ——event.target 保持页面持有对象 identity（R52 消零后 `_makeProxy`
             // 重建分裂 proxy 的 countermeasure；见 _dispatchWithBubble 注记）。
             var notPrevented = _dispatchWithBubble(key, sel, handle, event, undefined, this);
+            // svg-compat-v2 B5：eventbase 通知（元素派发尾——part05 EventTarget
+            // 通知面覆盖不到元素路径；part03 _dispatchWithBubble 是引擎内部
+            // 共享入口不能在此挂，否则 invalid/focus 等内部合成派发也进 SMIL）。
+            try {
+              if (typeof globalThis._zwSmilNotifyEvent === 'function') {
+                globalThis._zwSmilNotifyEvent(this, event.type);
+              }
+            } catch (_eSmilN1) {}
             // M2-S6（navigation-compat，2026-10-10）：派发 click 的激活行为——synthetic
             // 派发 click 同样跑默认动作（real browser 对 dispatchEvent(new
             // MouseEvent('click')) 触发锚导航——WPT navigate-svg-anchor-fragment
@@ -6372,7 +6393,13 @@
             // R108：合成 click 打标——pre-click activation 认它（非 MouseEvent 实例）。
             ev._zwSyntheticClick = true;
             var notPrevented = _dispatchWithBubble(key, sel, handle, ev);
-            // R57 守卫：click() API（synthetic 标）保持原 R57 路径零变化（历史绿面——
+            // svg-compat-v2 B5：eventbase 通知（click() API 同 dispatchEvent 尾
+            // 通知面——test_driver.click 落本通道）。
+            try {
+              if (typeof globalThis._zwSmilNotifyEvent === 'function') {
+                globalThis._zwSmilNotifyEvent(this, ev.type);
+              }
+            } catch (_eSmilN2) {}
             // R57 与 R108 的 isClickApi 协作契约不动）；UA 指针 click（PointerEvent
             // 实例、无 synthetic 标——R108 激活链已做 checked 翻转 + input/change）不
             // 重复走本内联默认动作。
@@ -14196,6 +14223,21 @@
           // 注册键改用映射后的真实 type（别名表命中时），未命中保持原样（generic on* 面）。
           if (globalThis._ZW_PREFIXED_HANDLER_TYPES && globalThis._ZW_PREFIXED_HANDLER_TYPES[_ot]) {
             _ot = globalThis._ZW_PREFIXED_HANDLER_TYPES[_ot];
+          }
+          // svg-compat-v2 B5：onbeginEvent/onendEvent/onrepeatEvent 非任何 IDL
+          // handler 名（真浏览器落 expando、派发不触达——custom-events 断言
+          // 「onendEvent never fired: expected 0」）。若照泛型 on* 注册会与同键
+          // onend 互相驱逐（后写者从 _listenerStore 移除先写者）。须先于下方
+          // BASE_TO_TYPE 映射检查——onend 映射成 endEvent 后会误入本门。
+          if (globalThis._ZW_SMIL_TYPE_TO_BASE && globalThis._ZW_SMIL_TYPE_TO_BASE[_ot]) {
+            var _sB5ExS = _expando[key] || (_expando[key] = {});
+            _sB5ExS[prop] = value;
+            return true;
+          }
+          // svg-compat-v2 B5：SMIL 动画 handler 错位注册键（onbegin → 事件
+          // type beginEvent——派发 beginEvent 触发，裸 begin 不触发）。
+          if (globalThis._ZW_SMIL_BASE_TO_TYPE && globalThis._ZW_SMIL_BASE_TO_TYPE[_ot]) {
+            _ot = globalThis._ZW_SMIL_BASE_TO_TYPE[_ot];
           }
           // js-dom M4 R107：body/frameset 的 forwarding handler 写 window（spec：element
           // 的 IDL setter 先置 window 同名 handler——forwarding attributes 的取值即 window 值）。

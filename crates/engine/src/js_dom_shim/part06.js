@@ -16492,6 +16492,21 @@
     // bubbles:false（上方分支）不向 window 虚站冒泡。sel='html' 仅为 doc 槽位的三合一 key 入口。
     var ok = _dispatchWithBubble(r145Key, r145Handle ? null : sel, r145Handle || null, ev,
       type === 'readystatechange' ? 'doc' : undefined);
+    // svg-compat-v2 B5：宿主派发通道（UA 合成事件——testdriver.click/runner
+    // 输入链）绕过页面 dispatchEvent 与 part05 两通知面，派发尾补 eventbase
+    // 通知（SMIL #Eventvalue semantics 不区分 trusted/合成）。restart-never-
+    // and-begin-click 定谳面。
+    try {
+      if (typeof globalThis._zwSmilNotifyEvent === 'function' && ev) {
+        var _smilHostTarget = null;
+        try {
+          _smilHostTarget = r145Handle
+            ? (typeof _makeProxy === 'function' ? _makeProxy(null, r145Handle) : null)
+            : document.querySelector(sel);
+        } catch (_eSmilH) { _smilHostTarget = null; }
+        if (_smilHostTarget) globalThis._zwSmilNotifyEvent(_smilHostTarget, type);
+      }
+    } catch (_eSmilH2) {}
     // R312（js-dom M4）：UA 通道印记一次性——本（宿主）dispatch 完成即消费；同一
     // 事件对象再经页面脚本 dispatchEvent 时 guard 按 legacy DOM3 语义翻
     // isTrusted=false（WPT Event-dispatch-redispatch 的 before/after 断言对）。

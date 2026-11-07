@@ -7672,6 +7672,17 @@
     webkitanimationend: 'webkitAnimationEnd',
     webkittransitionend: 'webkitTransitionEnd',
   };
+  // svg-compat-v2 B5：SVG 动画事件处理器错位映射（SVG2 animate.html
+  // §SVGAnimationElement——onbegin/onend/onrepeat 的 handler event type 是
+  // beginEvent/endEvent/repeatEvent）。TYPE_TO_BASE 供派发侧：type → 内容
+  // 属性后缀（beginEvent 事件编译 attr `onbegin`）；BASE_TO_TYPE 供
+  // setter/getter：handler 名 → 注册键（el.onbegin=fn 后派发 beginEvent
+  // 触发）。裸 'begin'/'end'/'repeat' 是 BASE_TO_TYPE 键 = 保留事件名：
+  // 派发侧 on* 编译/泛型查找必须跳过（onbegin 内容属性不得被自定义
+  // Event("begin") 误触发——WPT custom-events/event-listeners 定谳面；
+  // onendEvent 等未知名不进表 = 恒无 handler）。
+  globalThis._ZW_SMIL_TYPE_TO_BASE = { beginEvent: 'begin', endEvent: 'end', repeatEvent: 'repeat' };
+  globalThis._ZW_SMIL_BASE_TO_TYPE = { begin: 'beginEvent', end: 'endEvent', repeat: 'repeatEvent' };
   // js-dom R343：标准 → webkit 前缀的**派发侧**别名（compat spec `#css-prefixed-animations`——
   // UA 动画系统产生 animationstart/iteration/end + transitionrun/start/end 事件时，同元素上
   // 对应 webkit 前缀名 listener 也触发；WPT EventListener-invoke-legacy「Legacy listener of X」
