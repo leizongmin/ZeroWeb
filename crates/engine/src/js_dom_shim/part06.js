@@ -1830,16 +1830,18 @@
       var name = seg.slice(0, c).trim();
       var val = seg.slice(c + 1).trim();
       if (name) {
-        // s249（CSSOM 颜色序列化）+ T45 勘误：color 值 cssText 归一——仅 hex
-        //（#rgb/#rgba/#rrggbb/#rrggbbaa）与 transparent → rgb()/rgba() legacy 逗号形
-        //（CSSOM §serializing CSS values + CSS Color 4 transparent 形——WPT css-module
-        // 家族 `background-color: #FF0000` 期望 `rgb(255, 0, 0)`）。**命名色原文保留**
-        //（Blink 活体：style.color/cssText 命名色持 named 形——r2810 `style.color==='red'`、
-        // r2809/r3276 insertRule/addRule cssText 子串钉；rgb() 形属计算值 gCS 管线，
-        // 由 Rust computed-style 侧承担，见 part04/part13 gCS rgb 期望）。custom
-        // property（`--` 前缀）值为字面 token 流不归一；无 color token 的值原文返回
-        //（空白形态保持，零重排）。函数值（rgb()/hsl()）内含空格/逗号不满足整 token
-        // 匹配，原文透传。
+        // s249（CSSOM 颜色序列化）+ T45/T46 勘误：color 值 cssText 归一——hex
+        //（#rgb/#rgba/#rrggbb/#rrggbbaa）→ rgb()/rgba() legacy 逗号形（WPT css-module
+        // 家族 `background-color: #FF0000` 期望 `rgb(255, 0, 0)`）；transparent/
+        // currentcolor/命名色 → ASCII lowercase keyword（CSS Color 4 §16.2 declared
+        // 值保留 ASCII lowercase keyword、§16.6 currentcolor；T46 DF-2 勘误：declared
+        // transparent 保留 "transparent"，rgba(0, 0, 0, 0) 形属 computed gCS 管线由
+        // Rust 侧承担，见 part03/part04 gCS 期望）。**命名色不转 rgb()**（T45 勘误：
+        // Blink 活体 style/rule cssText 持 named 形——r2810 `style.color==='red'`、
+        // r2809/r3276 insertRule/addRule cssText 子串钉）。custom property（`--` 前缀）
+        // 值为字面 token 流不归一；无 color token 的值原文返回（空白形态保持，零重排）。
+        // 函数值（rgb()/hsl()）内含空格/逗号不满足整 token 匹配，原文透传（Blink 会
+        // 归一函数名大小写与间距——本面未覆盖）。
         var normVal = name.charAt(0) === '-' && name.charAt(1) === '-'
           ? val : _zwNormalizeDeclValue(val);
         decls.push({ name: _styleDeclName(name), value: normVal });
@@ -1848,12 +1850,28 @@
     return decls;
   }
 
-  // alpha 串：4 位 hex 归一 rgba 形——1 → rgb 形（Chrome 形态）；其余去尾零。
-  function _zwAlphaText(a) {
-    if (a === 1) return '1';
-    return String(parseFloat(a.toFixed(4)));
+  // CSS Color 4 §6.1 named colors 全表（148 键，ASCII lowercase，§6.1 "ASCII
+  // case-insensitive"）——`|` 包边整串按 `|kw|` 整词 indexOf（无 keyword 前缀误命中）。
+  var _zwNamedColorSet = '|aliceblue|antiquewhite|aqua|aquamarine|azure|beige|bisque|black|blanchedalmond|blue|blueviolet|brown|burlywood|cadetblue|chartreuse|chocolate|coral|cornflowerblue|cornsilk|crimson|cyan|darkblue|darkcyan|darkgoldenrod|darkgray|darkgreen|darkgrey|darkkhaki|darkmagenta|darkolivegreen|darkorange|darkorchid|darkred|darksalmon|darkseagreen|darkslateblue|darkslategray|darkslategrey|darkturquoise|darkviolet|deeppink|deepskyblue|dimgray|dimgrey|dodgerblue|firebrick|floralwhite|forestgreen|fuchsia|gainsboro|ghostwhite|gold|goldenrod|gray|green|greenyellow|grey|honeydew|hotpink|indianred|indigo|ivory|khaki|lavender|lavenderblush|lawngreen|lemonchiffon|lightblue|lightcoral|lightcyan|lightgoldenrodyellow|lightgray|lightgreen|lightgrey|lightpink|lightsalmon|lightseagreen|lightskyblue|lightslategray|lightslategrey|lightsteelblue|lightyellow|lime|limegreen|linen|magenta|maroon|mediumaquamarine|mediumblue|mediumorchid|mediumpurple|mediumseagreen|mediumslateblue|mediumspringgreen|mediumturquoise|mediumvioletred|midnightblue|mintcream|mistyrose|moccasin|navajowhite|navy|oldlace|olive|olivedrab|orange|orangered|orchid|palegoldenrod|palegreen|paleturquoise|palevioletred|papayawhip|peachpuff|peru|pink|plum|powderblue|purple|rebeccapurple|red|rosybrown|royalblue|saddlebrown|salmon|sandybrown|seagreen|seashell|sienna|silver|skyblue|slateblue|slategray|slategrey|snow|springgreen|steelblue|tan|teal|thistle|tomato|turquoise|violet|wheat|white|whitesmoke|yellow|yellowgreen|';
+  // legacy alpha 串（CSS Color 4 §16.1.1）：存在 n∈[0,100] 使 round-half-up(n×2.55)=a8 →
+  // n/100；否则 round-half-up(a8÷0.255)/1000。整数算术 (255n+50)/100 规避 n×2.55 在
+  // n≡10 (mod 20) 的 .5 边界浮点误差（旧 toFixed(4) 形与 Blink/§16.1.1 不符——T46 TV-2）。
+  // Chrome 154 活体全案对齐：AA→0.667、88→0.533、1A→0.1、80→0.5、0A→0.04、01→0.004、FE→0.996。
+  function _zwAlphaText(a8) {
+    for (var n = 0; n <= 100; n++) {
+      if (Math.floor((255 * n + 50) / 100) === a8) return String(n / 100);
+    }
+    return String(Math.floor((a8 * 1000 + 127.5) / 255) / 1000);
   }
-  // 单 token 颜色归一：hex/transparent → rgb()/rgba()；命名色与非 color token 原文返回（T45 勘误）。
+  // 单 token 颜色归一（declared value 形）：hex → rgb()/rgba() legacy 逗号形；
+  // transparent/currentcolor/命名色 → ASCII lowercase keyword（CSS Color 4 §16.2
+  // "for the declared value, the ASCII lowercase keyword value is retained" + §16.6
+  // currentcolor——T46 DF-3；declared transparent 保留 "transparent" 而非 rgba 形
+  //（T46 DF-2：§16.2 末句 rgba(0, 0, 0, 0) 属 serialized computed value，由 Rust
+  // computed-style 侧承担，见 js_dom_bridge_tests/part03.rs test_get_computed_style_colors）；
+  // 命名色不转 rgb()（T45 勘误）。非 color token 原文返回。已知限制：本函数无属性上下文，
+  // 非 color 属性值中撞名 color keyword 的 ident（如 animation-name: RED 的 custom ident）
+  // 同被 lower——Blink 该处 case-sensitive（per-token 归一为 T45 以来的既定形状）。
   function _zwNormalizeColorToken(tok) {
     var t = tok.toLowerCase();
     if (t.charAt(0) === '#') {
@@ -1869,15 +1887,15 @@
         var b = parseInt(hex.slice(4, 6), 16);
         if (isNaN(r) || isNaN(g) || isNaN(b)) return tok;
         if (hex.length === 8) {
-          var a = parseInt(hex.slice(6, 8), 16) / 255;
-          if (a === 1) return 'rgb(' + r + ', ' + g + ', ' + b + ')';
-          return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + _zwAlphaText(a) + ')';
+          var a8 = parseInt(hex.slice(6, 8), 16);
+          if (a8 === 255) return 'rgb(' + r + ', ' + g + ', ' + b + ')';
+          return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + _zwAlphaText(a8) + ')';
         }
         return 'rgb(' + r + ', ' + g + ', ' + b + ')';
       }
       return tok;
     }
-    if (t === 'transparent') return 'rgba(0, 0, 0, 0)';
+    if (t === 'transparent' || t === 'currentcolor' || _zwNamedColorSet.indexOf('|' + t + '|') >= 0) return t;
     return tok;
   }
   // 声明值逐 token 归一——无 color token 时返回原文（空白形态保持）。
@@ -1937,7 +1955,12 @@
     }
     function setProp(name, value) {
       var prop = _styleDeclName(name);
-      var v = String(value == null ? '' : value).trim();
+      var raw = String(value == null ? '' : value).trim();
+      // T46 DF-3：IDL 属性写/setProperty 写与 cssText 写同归一（Blink 活体
+      // style.color='RED' 读回 'red'——本表 idlWriteUpper/setPropertyUpper 案，
+      // js_dom_bridge_tests::test_cssom_declared_color_token_serialization_t46）；
+      // custom property 值为字面 token 流不归一（DF-5）。
+      var v = prop.charAt(0) === '-' && prop.charAt(1) === '-' ? raw : _zwNormalizeDeclValue(raw);
       var idx = findIdx(prop);
       if (v === '') { // 空串 = remove（spec 一致）
         if (idx >= 0) { decls.splice(idx, 1); rebuild(); }

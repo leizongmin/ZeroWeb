@@ -3529,6 +3529,65 @@ fn test_stylesheets_rule_style_r2810() {
 }
 
 #[test]
+fn test_cssom_declared_color_token_serialization_t46() {
+    // T46 DF-2/DF-3/TV-2：rule.style declared 值 color token 序列化专案钉（T45 归一臂行为
+    // 保持 + T46 勘误）。期望对齐 CSS Color 4 §16.2（declared 值：named/system/deprecated/
+    // transparent 保留 ASCII lowercase keyword，其余 sRGB → rgb()/rgba() legacy 逗号形）、
+    // §16.1.1（legacy alpha 算法）、§16.6（currentcolor）；活体对照 Chrome 154
+    //（cssText 写、IDL 写、setProperty 写、rule cssText 四路同形）。
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 逐案写 rule.style（cssText 整体写 / IDL 属性写 / setProperty 写）→ 读回。同一对象复用，
+    // 整体写覆盖全部声明。custom property（--）与无 color token 值作行为保持对照。
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'color: #F00'; __p('hex3Upper', __st.color);\
+             __st.cssText = 'color: #f00'; __p('hex3Lower', __st.color);\
+             __st.cssText = 'color: #FF0000'; __p('hex6Upper', __st.color);\
+             __st.cssText = 'color: #F00A'; __p('hex4Upper', __st.color);\
+             __st.cssText = 'color: #FF0000AA'; __p('hex8Upper', __st.color);\
+             __st.cssText = 'color: #ff000080'; __p('hex8Half', __st.color);\
+             __st.cssText = 'color: #ff000001'; __p('hex8Eps', __st.color);\
+             __st.cssText = 'color: transparent'; __p('transparent', __st.color);\
+             __st.cssText = 'color: TRANSPARENT'; __p('transparentUpper', __st.color);\
+             __st.cssText = 'color: RED'; __p('namedUpper', __st.color);\
+             __st.cssText = 'color: red'; __p('namedLower', __st.color);\
+             __st.cssText = 'color: REBECCAPURPLE'; __p('rebeccapurple', __st.color);\
+             __st.cssText = 'color: CURRENTCOLOR'; __p('currentColorUpper', __st.color);\
+             __st.cssText = 'border: 1px solid RED'; __p('namedInMixedValue', __st.cssText);\
+             __st.color = 'BLUE'; __p('idlWriteUpper', __st.color);\
+             __st.setProperty('color', 'PURPLE'); __p('setPropertyUpper', __st.color);\
+             __st.cssText = '--x: RED'; __p('customPropVerbatim', __st.getPropertyValue('--x'));\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r#"{"hex3Upper":"rgb(255, 0, 0)","hex3Lower":"rgb(255, 0, 0)","hex6Upper":"rgb(255, 0, 0)","hex4Upper":"rgba(255, 0, 0, 0.667)","hex8Upper":"rgba(255, 0, 0, 0.667)","hex8Half":"rgba(255, 0, 0, 0.5)","hex8Eps":"rgba(255, 0, 0, 0.004)","transparent":"transparent","transparentUpper":"transparent","namedUpper":"red","namedLower":"red","rebeccapurple":"rebeccapurple","currentColorUpper":"currentcolor","namedInMixedValue":"border: 1px solid red;","idlWriteUpper":"blue","setPropertyUpper":"purple","customPropVerbatim":"RED"}"#,
+        "T46 declared 值 color token 序列化全案（hex legacy 形 + alpha §16.1.1 + keyword ASCII lowercase）"
+    );
+}
+
+#[test]
 fn test_event_subclasses_r2811() {
     // R2811：Event 子类簇——UIEvent / MouseEvent / FocusEvent / WheelEvent / PointerEvent / InputEvent。
     // 现代输入事件表面：feature-detection（typeof === 'function'）+ `new MouseEvent('click',{clientX,...})`
