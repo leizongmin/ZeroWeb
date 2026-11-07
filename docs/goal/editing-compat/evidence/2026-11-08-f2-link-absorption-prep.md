@@ -12,18 +12,25 @@ innerHTML。期望/实得采样（main 窗片，ab 页同形 shared-red）：
 | 链 | 期望 | 实得 |
 |---|---|---|
 | `createlink>inserttext` | `foo<a href="…">a</a>bar` | `fooabar`（裸，link 全缺） |
-| `forecolor(X)>createlink>inserttext` | `foo<a href="…">a</a>bar` | `foo<font color="…">a</font>bar` |
-| `createlink>forecolor(X)>inserttext` | `foo<a href="…">a</a>bar`（**无 font**） | 同上 |
-| `createlink>underline>inserttext` | `foo<a href="…">a</a>bar`（**无 u**） | `foo<u>a</u>bar` |
+| `forecolor(#0000FF/blue)…`（双序 :1994-:2012） | `foo<a href="…">a</a>bar`（无 font——≡参照） | `foo<font color="#0000ff">a</font>bar` |
+| `forecolor(brown)…`（双序 :2014/:2019） | `foo<a…><font color="#a52a2a">a</font></a>bar`（**carry**） | 未逐键采样（同族 got） |
+| `forecolor(black)…`（双序 :2024/:2029） | `foo<a…><font color="#000000">a</font></a>bar`（**carry**） | 同上 |
+| `underline`（单/双应用、双序 :2033-:2052） | `foo<a href="…">a</a>bar`（全四案无 u） | `foo<u>a</u>bar` |
 | `createlink>formatblock>inserttext` | `<div>foo<a…>a</a>bar</div>` | `<div>fooabar</div>` |
 | `createlink>indent/hr/img/iol/linebreak/inserthtml…>inserttext` | 结构落位后 `<a…>a</a>` 仍在 | typed 段裸奔 |
 | `createlink>delete>inserttext` | `fo<a…><font color="#000000">a</font></a>bar` | `foabar` |
 
-语义定形：① collapsed createlink 置 pending link 态，typed 段并入 `<a href>`；
-② **createlink 清空既有 typing style**（forecolor 前置序期望裸 link）；③ link
-armed 期间**显式样式命令不再上 carry**（forecolor/underline 后置序期望同样裸
-link，双序一致）；④ 结构命令不清 pending link（13 键期望 link 全存活）；⑤
-delete 中置例外：delete 重引字体 carry，复合于 link **内层**（见 delta 模型）。
+语义定形（**统一 delta 法则**，2026-11-08 待判别④修正——初审「link armed 压制
+样式」模型经 ：2014-:2030 brown/black 双序 carry 反证废止）：① collapsed
+createlink 置 pending link 态，typed 段并入 `<a href>`；② typed 段在 link
+上下文**仅 materialize ≠ 钉死 link 参照（#0000ff/underline）的属性**——
+forecolor #0000FF/blue ≡ 参照 ⇒ 无 font；brown/black ≠ 参照 ⇒ font 内层
+carry；underline/decoration ≡ 参照 ⇒ 全四案无 u；③ **override 读面与
+materialization 解耦**：qV(forecolor)-after 全序照设（:1997 "rgb(0, 0, 255)"、
+:2017 "rgb(165, 42, 42)"）、qS(underline)-after 照设 true（:2037）——knife
+不动 override 置位，只在 typing insert materialization 层做 delta 过滤；
+④ 结构命令不清 pending link（13 键期望 link 全存活）；⑤ delete 中置/既有-link
+的 carry 同一法则（见 F2b 节）。
 
 ### 现状接线
 
@@ -32,13 +39,16 @@ delete 中置例外：delete 重引字体 carry，复合于 link **内层**（�
   不在范围）」**。F2a = 补消费臂：新增 `__zwTypingLink`（href 槽）+ typing
   insert 侧 link 化；不动旗标判别语义（knife11 v5 ① 臂判别读依赖）。
 - 消费点：`part01.js:9451` `_zwCeTypingInsert(tags, text)` 及四调用点
-  （:9585/:9640/:9731/:9748）。link armed 时 link-only 应用 + 抑制
-  `__zwTypingTags`（②③的统一实现位）。
+  （:9585/:9640/:9731/:9748）。link armed 时 `<a href>` 外裹 + **delta 过滤**
+  （②法则的统一实现位）：色值归一化后 ≡ #0000ff 不 materialize、decoration
+  类 tag（u/s?）在 link 上下文全滤（corpus 四案全裸）——非 link 上下文过滤
+  不生效（:1153-:1157 backcolor 形照旧 materialize，现绿不动）。
 - 清除点：与 typing 包裹态同生命周期（part06 `_zwSync` 选区变更清面，
   part01f.js:1190 注释锚指 part06 :10355），防跨子测泄漏。
-- 判别注记：③的抑制若放在 override 置位层会动 qS/qV-after 读——这些键的
-  qS/qV 断言现绿（残键仅 innerHTML compare 行），抑制必须**只在 typing
-  insert 消费层**，override 读面不动。开工时逐键复核全 23 子测试数组。
+- 判别注记：override 读面与 materialization 解耦（②③法则）——qS/qV 断言
+  现绿（残键仅 innerHTML compare 行），knife 不动 override 置位层；delta
+  过滤只在 typing insert 消费层。开工时逐键复核全 23 子测试数组（待判别④
+  逐刀纪律）。
 
 ## F2b 既有-link 面（delete 族 10 键）+ delta carry 模型
 
@@ -82,7 +92,11 @@ link blue ⇒ 有 delta。
 typed 段入空 link 现绿）、:2118-:2130（font 直亲壳删后幸存——非 link 形外壳
 幸存语义）、:1164/:1174（createlink 后无 typing 无空 `<a>`）、:2173-:2182 邻族
 （sub/fontsize 无 link 形，F6b 域——外壳幸存语义与 link 形相反，剥离规则必须
-link 特异）。红线：每刀 F2P≥0 且 P2F=0/post-only=0/lost=0/rows 恒一。
+link 特异）。范围边界注记：:2053-:2062（subscript×fontsize 显式 collapsed
+互序，qV fontsize-after 照设 "2" 而期望**无** font materialization）属 F6b
+域独立机制（显式 fontsize 在 sub 上下文不 materialize 的 Chrome 面），F2 刀
+不触及、F6b 开工时单独立判别。红线：每刀 F2P≥0 且 P2F=0/post-only=0/lost=0/
+rows 恒一。
 
 ## 待判别项（2026-11-08 本轮闭合①②③；④为逐刀纪律）
 
@@ -112,7 +126,7 @@ link 特异）。红线：每刀 F2P≥0 且 P2F=0/post-only=0/lost=0/rows 恒�
 | 位 | 文件:行 | 动作 |
 |---|---|---|
 | arm | part06.js:4893-4900 | 置 `__zwTypingLink`=href；②清 tags（读回 risks 见待判别④） |
-| 抑制+消费 | part01.js:9451 + :9585/:9640/:9731/:9748 | link armed ⇒ link-only；carry 快照 ⇒ 内层 font |
+| 消费+delta 过滤 | part01.js:9451 + :9585/:9640/:9731/:9748 | link armed ⇒ `<a>` 外裹；色 ≡#0000ff 不 materialize、decoration 全滤；carry 快照 ⇒ 内层 font |
 | 清除 | part06 `_zwSync`（:10355 面） | `__zwTypingLink` 同 typing 态生命周期 |
 | hasA 拆分 | part01f.js:1145-:1150 | 外链弃捕保持；内链 delta carry 新通道 |
 | tcap 门 | part01f.js:1200（delta ⑤） | hasA 时改收内层 style props 快照 |
