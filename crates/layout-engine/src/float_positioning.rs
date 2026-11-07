@@ -41,6 +41,15 @@ static R5215_ATOMIC_FLOW: std::sync::LazyLock<bool> =
 static FLOAT_REPLAY_FIRST_MT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REPLAY_FIRST_MT").as_deref() != Ok("0"));
 
+/// R5448（CSS2 §9.5）：walk 不稳帧内跳过跨兄弟 float 带集/底边继承——前序兄弟含
+/// inline 内容 + float 时块高 remeasure 步 6 才物化（walk h=0），后继兄弟帧 y 偏小
+/// δ：带集换算 `fy − cy` 整体下移 δ 成幻影排斥带、底边换算成幻影 floor 推压
+///（c5525-fltmrgn-000 f3 被幻影带压到 75 应 30，R5371 实证）。两者在不稳帧内都不
+/// 继承；remeasure 步 6 终位继承（collect_nested_float_exclusions 域）不受影响。
+/// `ZW_FLOAT_STALE_FRAME_BAND_SKIP=0` 回退。
+static FLOAT_STALE_FRAME_BAND_SKIP: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_STALE_FRAME_BAND_SKIP").as_deref() != Ok("0"));
+
 pub(crate) fn adjust_float_positions(
     box_node: &mut LayoutBox,
     doc: &zero_dom::Document,
@@ -4127,6 +4136,10 @@ pub(crate) fn adjust_float_positions_with_context(
     // R5399：最近流内前驱块 mb 单趟跟踪（float/abspos 脱流不破坏 §8.3.1 邻接，
     // 跳过继续回溯）——供子 walk 的 unhoist 兄弟间距保留。
     let mut prev_in_flow_mb = 0.0f32;
+    // R5448：前序兄弟 walk 高不稳旗标（见 FLOAT_STALE_FRAME_BAND_SKIP 文档）——
+    // sticky 累积（任一前序不稳即其后所有兄弟帧都带其 δ），消费在下面两处：
+    // 带集继承跳过 + 底边不传。
+    let mut prior_float_height_unstable = false;
     for (idx, child) in box_node.children.iter_mut().enumerate() {
         let (left_ctx, right_ctx) = child_float_contexts
             .get(idx)
@@ -4161,7 +4174,9 @@ pub(crate) fn adjust_float_positions_with_context(
             let has_prior_floats = !inherited_floats.is_empty()
                 || !nested_geoms_acc.is_empty()
                 || float_child_indices.iter().any(|ci| *ci < idx);
-            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && has_prior_floats {
+            // R5448：不稳帧内带集不继承（换算下移 δ 幻影排斥，见环首注释）。
+            let stale_frame = *FLOAT_STALE_FRAME_BAND_SKIP && prior_float_height_unstable;
+            let child_inherited: Vec<FloatGeom> = if nested_avoid_on && has_prior_floats && !stale_frame {
                 // float_geometries 借用 box_node.children；先取出 child 偏移再 map（避免与 child mut 借用冲突）。
                 let (cx, cy) = (child.x, child.y);
                 inherited_floats
@@ -4179,11 +4194,18 @@ pub(crate) fn adjust_float_positions_with_context(
             } else {
                 Vec::new()
             };
+            // R5448：不稳帧内底边不传（left_ctx/right_ctx 含前序不稳兄弟的 walk 底，
+            // 换算成幻影 floor 推压；传盒自身内容顶 = 无约束中性值）。
+            let (inherited_left, inherited_right) = if stale_frame {
+                (box_content_abs_y, box_content_abs_y)
+            } else {
+                (box_content_abs_y + left_ctx, box_content_abs_y + right_ctx)
+            };
             adjust_float_positions_with_context(
                 child,
                 child_content_abs_y,
-                box_content_abs_y + left_ctx,
-                box_content_abs_y + right_ctx,
+                inherited_left,
+                inherited_right,
                 &child_inherited,
                 doc,
                 styles,
@@ -4217,6 +4239,24 @@ pub(crate) fn adjust_float_positions_with_context(
             nested_left_acc = nested_left_acc.max(nl);
             nested_right_acc = nested_right_acc.max(nr);
             nested_geoms_acc.extend(nested_float_geoms(child, child.x, child.y, outer_content_y_offset));
+        }
+        // R5448：本子刚递归定谳完，按其形态更新不稳旗标（供后继兄弟消费）——流内
+        // 非 BFC 且子树含 float、且有 inline 内容（直接文本/inline 级子）的容器，块高
+        // remeasure 步 6 才物化（walk h=0）。仅 float 无文本容器不入：float 不参与
+        // 非 BFC auto 高（§9.7），real h 亦 0 → δ=0 帧稳定；BFC-auto 载体不入：taffy
+        // 已含 float 堆叠高（δ=0）。float_subtrees=None（全树无 float）恒 false，
+        // 门全关零开销（deep_nesting 等无 float 文档不受扰）。
+        if *FLOAT_STALE_FRAME_BAND_SKIP
+            && !child.is_absolute
+            && !child.is_fixed
+            && matches!(child.float, FloatValue::None)
+            && !crate::margin_collapse::establishes_bfc(child)
+            && float_subtrees.is_some_and(|m| child.node_id.is_none_or(|id| m.get(&id).copied().unwrap_or(true)))
+            && child
+                .node_id
+                .is_some_and(|id| crate::inline_content::has_inline_content(doc, styles, id))
+        {
+            prior_float_height_unstable = true;
         }
     }
 
