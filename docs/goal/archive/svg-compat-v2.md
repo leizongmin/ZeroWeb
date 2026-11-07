@@ -1,9 +1,14 @@
 # svg 二期 — SMIL 时钟模型专项 + 语料滚动扩面
 
+> **整体归档（模式 A，2026-11-08）**：M4 收口判定 DC-1~4 全满足；evidence
+> 控制面随入口归档，挂账 #2/#3（getCTM 族/SVGLength 上下文单位）重入归口
+> 保留（归 rendering-compat 协同）。对应 Rally 启动脚本已删除（语料预置
+> 脚本 `tests/wpt-runner/scripts/goals/44-svg-compat-v2.sh` 保留）。
+
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）
 **状态**: ✅ Completed——**M0–M4 全部完成（2026-11-07 收口，DC-1~4 全
-✅；归档与 Rally 循环处置待用户判定）**：B3/B4/B5/B6a/
+✅；2026-11-08 模式 A 归档，Rally 启动脚本随归档删除）**：B3/B4/B5/B6a/
 B6b/B6c/B7 七批 + M3 滚动收尾 + M4 coverage 复测全落档。收口批（M3 余项
 + M4）：语料 pin 前滚 goal 域 override（`315976933` → `28c152b74`，44 号
 脚本域内重设，共享 pin 未动；子树 +329/94/2，missing=0，通道 486→554

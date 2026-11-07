@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Goal: svg-compat-v2（编号 44——推进顺序见同目录 README.md；契约
-# docs/goal/svg-compat-v2.md，DC-1 语料续拉对齐 pin + 差集清单 + missing=0）。
+# docs/goal/archive/svg-compat-v2.md（2026-11-08 模式 A 归档；2026-11-07
+# 收口），DC-1 语料续拉对齐 pin + 差集清单 + missing=0）。
 #
 # 与 80 号脚本的差异——sync 补差模式：一期收口（2026-10-22）后 svg/ 语料经
 # 10-27 局部重拉后残缺（本地 1,444 vs 一期入账 2,144，缺 ~700 文件），且
