@@ -5551,6 +5551,21 @@
             && !!_dsMeta180.clonable === !!init.clonable
             && !!_dsMeta180.serializable === !!init.serializable
             && (_dsMeta180.slotAssignment || 'named') === _dsSlot180) {
+          // spec 恢复/upgrade 步（whatwg/dom#831，WPT attachment.html 恢复案）：
+          // 同模式重挂取回既有声明式根时须**清空** shadow 内容（WPT 断言
+          // innerHTML === ''），且为**一次性**——声明式标记翻转 false，其后任一
+          // attachShadow 走下方命令式根恒抛臂（WPT 'second time ... fails'）。
+          // 清空双面：mutation 队列（命令式根 handle 直绑 ShadowRoot 节点；转登/
+          // 水合 `__ds` 句柄引擎侧落声明 fragment no-op）+ 视图容器同步清
+          //（assertion 同步读面——shadowRoot.innerHTML 经 handle 子读链）。
+          // FIXME: engine `ShadowRootData.declarative` 旗标与 materialized shadow
+          // 树不随本臂翻转/清空（corpus 无钉面——恢复后 getHTML/序列化/布局读
+          // absent，M4 coverage 出现再接线）。
+          // https://dom.spec.whatwg.org/#concept-attach-a-shadow-root
+          try { __zw_set_inner_html_handle_unsafe(_dsReg180.handle, ''); } catch (_eUpg180) {}
+          try { _handleChildren[_dsReg180.handle] = []; } catch (_eUpgV180) {}
+          if (_dsMeta180) _dsMeta180.declarative = false;
+          _dsReg180.declarative = false;
           return _wrapHandle(_dsReg180.handle);
         }
         _throwDom('NotSupportedError',
@@ -8738,6 +8753,26 @@
         var _pn180 = _makeProxy(null, el.__zwHandle);
         return _pn180.append.apply(_pn180, arguments);
       };
+    }
+    // 42 号 M3 清单 1 续刀（canvas C 族收口）：standalone canvas 的**子节点操作面**
+    //（R57「DOM 集成/appendChild 为 follow-up」到期，s180 append 同款桥）。旧对象
+    // 仅 R57 handle 记账面——无 appendChild/insertBefore/removeChild、无 childNodes
+    // 视图：`_wcRebuildAsHandle`（part03 createElement 重建臂）对 canvas 子递归
+    // `el.appendChild(ck)` TypeError → 外层 catch 弃转 plain 节点返回 → 子树全丢
+    //（WPT attachment canvas disallowed 族 `querySelector('template[shadowrootmode]')`
+    // miss，6F）。经同 handle 的 trap 代理委托共享实现（WebIDL 校验/R368 plain 子
+    // 盖章/wire/_recordHandleChild 记账/s95/s131 全套复用，不复制 trap 逻辑），
+    // childNodes 读面同桥（R140 live NodeList 按 handle 键缓存——与 trap 面同一视图）。
+    if (typeof _makeProxy === 'function' && el.__zwHandle) {
+      el.appendChild = function (c) { return _makeProxy(null, el.__zwHandle).appendChild(c); };
+      el.insertBefore = function (c, r) { return _makeProxy(null, el.__zwHandle).insertBefore(c, r); };
+      el.removeChild = function (c) { return _makeProxy(null, el.__zwHandle).removeChild(c); };
+      try {
+        Object.defineProperty(el, 'childNodes', {
+          configurable: true, enumerable: true,
+          get: function () { return _makeProxy(null, el.__zwHandle).childNodes; },
+        });
+      } catch (_eM3Cc180) {}
     }
     return el;
   }

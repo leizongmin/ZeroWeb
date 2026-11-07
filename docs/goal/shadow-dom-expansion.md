@@ -3,14 +3,14 @@
 **版本**: v1.1
 **日期**: 2026-11-04（立项，coverage-2026-11-02 对账驱动，用户「按建议立项」）；
 2026-11-06（M0/M1/M2 + M3 Batch 1/2/3 + 尾段两小刀落地）；2026-11-07（余项
-收口契约落定，无人值守推进至 DONE）
-**状态**: Active——M0/M1/M2 完成，M3 Batch 1/2/3 与尾段两小刀落地（各批全通道
-A/B 零回归，明细见进展节）。余项已全部转为可自主收口形态（2026-11-07 用户
-拍板）：簇 C 流静止判定成立（最后代码落点 61f84064e 2026-11-06 06:44，无
-stash 无在跑进程），attachment 物化修复（170F + null 链 18F）改由本流认领；
-adoptedStyleSheets ~19F 归口 rendering-compat 走 evidence + 控制面留痕；M4
-复测细则落定。执行契约见「M3 收口与 M4 无人值守执行契约」节——本 goal 无
-外部等待项，原协作等待均已转为挂账或自主动作。
+收口契约落定；M3 清单 1 三刀收口——格式修复 + attach 恢复状态机 + canvas
+子树丢失修复，attachment solo 654P/0F，A/B P→F=0；清单 2 adoptedStyleSheets
+归口双侧留痕；M4 混合口径复测执行中）
+**状态**: Active——M0/M1/M2/M3 完成（清单 1 三刀认领门全过：P→F=0、
+vanished=0、F→P=178；attachment 170F→0；MEl 两刀回装评估定格正式撤销），
+清单 2 paperwork 落地。M4 冻结复测四判据核验中（shadow-dom topdir
+×1 口径已 94.36% ≥ 31.4% 门、custom-elements 逐 subtest 零漂移实证）。
+执行契约见「M3 收口与 M4 无人值守执行契约」节。
 **执行模式**: WPT 驱动（上游 shadow-dom corpus 为验收标尺）+ 语料扩面 + 按簇语义收敛
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅，
@@ -373,6 +373,43 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
 - **判据**：solo attachment A 族 34F（重挂未清空）+ B 族 17F（恢复后未抛
   错）→ 归零；全语料 A/B P→F=0 复跑（before 同基线 wc-m3c2-before.json）；
   契约清单 3 门禁同口径（零新增红）。
+- **落账（同日收口）**：判据全过——A+B 归零、A/B 门 P→F=0（见下节收官
+  记录）。编辑面实际落点含同文件 `_zwMakeCanvas` 扩展（C 族 canvas 刀），
+  已在下节如实补记。
+
+### 2026-11-07——M3 清单 1 收口：canvas 子树丢失修复（C 族 6F）+ 认领门全过
+
+- **C 族勘根与修复**：canvas disallowed 6F 真根因＝standalone canvas 对象
+  （`_zwMakeCanvas`，R57 时代「DOM 集成/appendChild 为 follow-up」到期）
+  无 `childNodes` 视图、无 append/insert/remove 方法——`_wcRebuildAsHandle`
+  （part03 createElement 重建臂）对 canvas 子递归 `el.appendChild(ck)`
+  TypeError → 外层 catch 弃转 plain 节点 → 子树全丢（探针实证
+  `<canvas><span>y</span></canvas>` setHTMLUnsafe 后视图
+  `<canvas></canvas>`；与声明式无关，前后同红）。修复＝s180 append 同款
+  桥：同 handle 的 trap 代理委托 appendChild/insertBefore/removeChild +
+  childNodes 读面（共享 WebIDL 校验/R368 盖章/wire/_recordHandleChild
+  记账，不复制 trap 逻辑）。**编辑面扩展如实补记**：认领声明（上一节）
+  编辑面为 `_attachShadow` 恢复臂，本刀另触 `part05.js`
+  `_zwMakeCanvas`（canvas 子节点面）——同文件不同函数，无并行冲突面。
+- **solo 定格**：attachment.html 597P/57F →（恢复臂）648P/6F →（本刀）
+  **654P/0F**——认领判据 A 34F + B 17F + C 6F 全归零；basic.html
+  16P/6F 三刀不变（D/E 残面前后同红，与本刀无关）。
+- **全语料 A/B 复跑（认领门）**：vs `wc-m3c2-before.json`（365 文件
+  8210P/1581F/8T）——after 365 文件 **8437P/1403F**/8T/6U/2PF；
+  **P→F=0、T→F=0、vanished=0；F→P=178**（= fmtfix 轮 121 + 本轮三刀
+  57，逐案一致）；after_only=49 全 Pass 且全在 gethtml.html（×1 预算
+  截断波动——M4 已按 ×4 混合口径计量，非口径变化）。认领门全过。
+- **MEl 两刀回装评估（契约清单 1 项，落账不悬置）**：**正式撤销记账**。
+  依据：族 E 试金面 `template.content.cloneNode(true)` 走 part04 trap
+  域 `_tplContent.cloneNode`（sel 形态 contents 子 plain →
+  `_wcRebuildAsHandle` 重建，part04:2124），不经 Batch 3 撤销的
+  `_zwDeepCloneEl` MEl 克隆臂——回装零 corpus 收益；E 面「Inner div
+  should have a shadow root」残根＝重建臂不携 shadow root 登记（新域
+  面，不在本刀契约）。两刀撤销维持，撤销理由本节定格。
+- **残面落账（前后同红，不属清单 1）**：D 2F（basic `assignedNodes()`
+  视图面——静态返 []、fragment 返裸对象）；E 4F（contents 视图
+  unmaterialized 态 + 克隆不携根）。均不触认领门与四判据，随 M4 复测
+  如实计入分母。
 
 ### 2026-11-07——余项收口契约落定（无人值守推进至 DONE）
 
@@ -402,10 +439,19 @@ components 收口时同类簇通过率；< 8k：只导入 JS 语义面目录，�
      template 既有账逐案一致；declarative 物化三案复测随本刀闭环。
    - **MEl 两刀回装评估**：物化落地后按 Batch 3 撤销时的判据复测——corpus
      零收益则正式撤销记账（非挂账悬置）。
+   - ✅ **完成（2026-11-07）**：三刀收口（格式修复 4a5fd3051 + attach 恢复
+     状态机 + canvas 子树丢失修复），attachment solo **654P/0F**，A/B 门
+     P→F/T=0、vanished=0、F→P=178；MEl 评估定格**正式撤销**（E 面走
+     part04 trap 重建不经 MEl 克隆，回装零收益——进展节定格）。
 2. **adoptedStyleSheets ~19F 归口 paperwork（零代码）**：归口结论（机制面、
    渲染耦合原因、去向 rendering-compat）落 evidence；rendering-compat 控制
    面留痕（挂账条目 + 链回本 evidence）；45 号 shadow-dom-rendering 边界
    核对一句带过。完成判据 = 双侧控制面各有留痕，不实现、不双改。
+   ✅ **完成（2026-11-07）**：双侧留痕落地——
+   [归口 evidence](shadow-dom-expansion/evidence/2026-11-07-m3-adoptedstylesheets-routing.md)（9 文件
+   5P/23F 精确口径 + 四消息簇归因）+ rendering-compat.md ticker 跨目标
+   归口条目（链回 evidence）+ 45 号划界核对（constructable stylesheets
+   明文不在其范围，无双改风险）。
 3. **门禁口径**：JS-only 刀 `git diff --check` + `cargo fmt --all -- --check`
    （fmt/clippy 对 .js 不适用）；触 .rs 时按 `-p` 收窄门；`cargo test -p
    zero-engine --lib` 允许既有 **9F** 集合（R2809/R2810/R3276/p56/p99s +

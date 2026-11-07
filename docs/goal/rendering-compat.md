@@ -9,6 +9,11 @@
 > **说明**
 > 本文档是 ZeroWeb 页面渲染兼容性的专项目标执行契约。目标是以 WPT reftest 通过率为验证标准，将 ZeroWeb 的 CSS 渲染输出对齐到 Chromium（Chrome/Edge）水平。本文定义了使命、边界、完成标准、执行协议和文档治理规则，供后续 `rally run` 会话作为稳定输入使用。
 
+> **▶ 跨目标归口轮（42 号 shadow-dom-expansion M3 清单 2——adoptedStyleSheets 残面归口 paperwork，零代码）**（2026-11-07）
+>
+> - **挂账条目**：`shadowrootadoptedstylesheets` 族（WC testharness 通道，declarative/tentative 在跑口径 **9 文件 5P/23F**，module 载入链家族已剔池在案）归口本 goal。机制面两簇：①CSSOM 构造样式表缺失——具名 specifier → `ShadowRoot.adoptedStyleSheets` 恒 0（basic/clonenode sanity `expected 1/2 got 0` 全簇）；②adopted sheet 对 shadow 树的**样式应用管线**（`expected rgb(0,0,255) got ""`）＝渲染耦合主因，computed style 需消费 adopted 列表。下游 clonenode 9F 多为 sanity 级联；IDL 反射面 2F 随①。42 号不再实现该族；45 号划界明文 constructable stylesheets 不在其范围，无双改风险。
+> - **链回证据**：[`shadow-dom-expansion/evidence/2026-11-07-m3-adoptedstylesheets-routing.md`](shadow-dom-expansion/evidence/2026-11-07-m3-adoptedstylesheets-routing.md)（逐文件口径表 + F 消息簇归因）。
+
 > **▶ R5445 修复轮（D2 域收口——abs-auto 盒 spec CB ≠ 直接父双向重测：taffy 无「最近 positioned 祖先/ICB」CB 语义、一律按直接父 content width 钳制，旧后处理「只扩不缩＋branch-text 窄门」使钳制存活〔探针矩阵 G1-G5＋chrome oracle：非 positioned 窄父叶 96 vs 796、分支同泄、positioned 祖先隔非 positioned wrapper 96 vs 796；直父=CB 两对照形一致＝债 corpus-wide 潜伏根由〕；修复＝CB 种子 INF→root.width〔宽轴专用，% 高臂 INF-skip 不动〕＋栈旗标 spec_cb_is_parent/cb_horizontal〔CB 切换点才查 styles，#9〕＋D2 臂三门双向写〔R5236 排除同款〕＋**vertical 门二轮补**〔首版 corpus 真回归 float-rgt-orthog-htb-in-vlr-003 ON ✗5.78%/OFF ✓3.37% 确定性＝ref 侧 orthogonal abs 盒重写拆自洽补偿，#29/#33 双教训→cb_horizontal 门，R4436 先例〕，driving s-11-1-1b-005 ✓0.46%→**✓0.00% strict ×3 全链收口 1.52%→0.00%**；kill-switch `ZW_ABSPOS_ICB_CB=0`）**（2026-11-07）
 >
 > - **修复体**（engine/sizing.rs 单 pass 切片）：①种子 ②旗标 ③D2 臂（`!spec_cb_is_parent && cb_horizontal && 无 aspect-ratio && 无 definite max-width`）双向写（branch-text 沿用只扩）④vertical 门。常驻测试＝engine/tests/r5445_abspos_icb_cb_tests.rs 3 钉（ICB／positioned 祖先跨 wrapper／直父钳制回归卫）。探针页 zz5445 用后删。
