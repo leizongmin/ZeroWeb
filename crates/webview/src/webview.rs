@@ -4923,7 +4923,7 @@ impl WebView {
                     }
                 }
             };
-            let full = if is_module {
+            let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
                 // WPT invalid-import-errors-order 判据；type 值 ∉ module type map →
@@ -5167,6 +5167,28 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // https://html.spec.whatwg.org/multipage/webappapis.html#hostimportmoduledynamically-retrieval
             sandbox.set_dynamic_import_nonce(script_csp_info.get(script_index).and_then(|i| i.nonce.as_deref()));
             sandbox.set_dynamic_import_referrer(&referrer);
+            // s337（async 入口模块元素 load 面）：runner 投递的 from-external 内联
+            // 模块（data-inline 在案）async 入口面（await / import( 谓词，与 es_module
+            // async_body 同源）——体尾 load 尾片（runner 面）位于 async 体 await 之后，
+            // 拒绝路径（TLA rejection）永不可达；catch 桥 reportError 又在 execute 内
+            // 检查点末触发 window error → testDone 即席断言——检查点后派发（旧 s107
+            // sync 端臂）load 恒迟到（evaluation-order-4 定谳：6 条无 script-load）。
+            // 本面把 load 派发 queueMicrotask **append 在 execute 之前**——sync 端入队
+            // = 检查点 gen1 位次（mt-4.1 后、动态依赖体前，corpus 判据序）；TLA 成功
+            // 路径亦由本面单发。非 async 面维持 runner 体尾 / s107 双臂零漂移；真作者
+            // 内联（无 data-inline）不发射，load-error-events-inline 判据不动。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+            let inlined_from_external = script_csp_info
+                .get(script_index)
+                .is_some_and(|info| info.inlined_src.is_some());
+            let async_module_face = is_module && (code.contains("await") || code.contains("import("));
+            if is_module && inlined_from_external && async_module_face {
+                full.push_str(&format!(
+                    "\nPromise.resolve().then(function () {{ {} }});",
+                    script_dispatch_script_event_by_ordinal(script_index, "load")
+                ));
+            }
+
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
                 let _ = sandbox.execute(
@@ -5192,8 +5214,18 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // 「Load event should not be fired」；内联无 fetch，load/error 不适用）。
             // 求值抛错走上方 s102 面（其附 load），此处仅外链成功臂，按 src 匹配派发
             //（R2944 同口径）；s255 哨兵已报告的求值抛错不再进本臂。
+            // s337：runner 投递面（inlined_from_external）async 入口跳过——load 改由
+            // execute 前包装尾（sync 端 queueMicrotask 入队，检查点 gen1 位次）承担，
+            // sync 端派发先于检查点排空会错位（evaluation-order-4 判据位次）。浏览器
+            // 道外链 async 模块维持本臂（外链无本包装尾，跳过即 load 缺席——s107 面
+            // 零漂移）。
             // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
-            if is_module && execution.is_ok() && module_dep_base.is_some() && eval_err_reported.is_empty() {
+            if is_module
+                && execution.is_ok()
+                && module_dep_base.is_some()
+                && eval_err_reported.is_empty()
+                && !(inlined_from_external && async_module_face)
+            {
                 let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "load"));
             }
             let script_error = if strict && !is_module && execution.is_ok() {

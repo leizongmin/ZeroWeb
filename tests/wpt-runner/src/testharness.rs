@@ -12777,10 +12777,19 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                         // s255：module 单元尾片改标记查回（currentScript 在 module
                         // 体恒 null——既有尾片死代码，ierr-6/7 onload 标记缺失实证）；
                         // classic 单元维持 currentScript 形（s100 既有通道不动）。
-                        if is_module_unit {
-                            unit_body.push_str(&script_event_dispatch_tail_unit(tail_event, unit_id));
-                        } else {
-                            unit_body.push_str(&script_event_dispatch_tail(tail_event));
+                        // s337：async 入口 module 单元（await / import( 谓词，与
+                        // es_module async_body 同源）省略 load 尾片——尾片在体末、
+                        // async 体 await 之后，拒绝路径（TLA rejection）永不可达；
+                        // TLA 成功路径尾片又与引擎 s337 load 臂双发。engine webview
+                        // s337 load 臂（同步求值 + 检查点后序号派发）单独承担本面。
+                        // error 尾片（网络失败面，体不执行无 await 窗）保持不动。
+                        let async_module_unit = unit_body.contains("await") || unit_body.contains("import(");
+                        if !(is_module_unit && async_module_unit && tail_event == "load") {
+                            if is_module_unit {
+                                unit_body.push_str(&script_event_dispatch_tail_unit(tail_event, unit_id));
+                            } else {
+                                unit_body.push_str(&script_event_dispatch_tail(tail_event));
+                            }
                         }
                         output.push_str(&unit_body);
                     }

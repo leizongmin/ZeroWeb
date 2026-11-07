@@ -230,7 +230,22 @@ pub fn compile_module_script(
         // 对象）。共享 async 模块的跨元素恰好一次留待后续切片（活体证据：MDN 入口链均同步）。
         // s269：TLA 依赖的缓存实例即 Promise（build_dep_iife async 包裹），消费方 await
         // 归一（await_prefix）——缓存 Promise 与缓存导出对象两态消费面自洽。
-        Ok(format!("{init}(async function() {{\n{body}\n}})();\n"))
+        // s337（TLA rejection 上报面）：async 入口的 rejection 是模块求值失败的唯一
+        // 错误通路——await 掷与体同步 throw 全走 promise 拒绝，宿主包装 try/catch
+        // （webview s255 面）接不到。spec run-a-module-script 求值 rejection →
+        // report the exception（window error 事件，ev.error 为原值拒绝理由）。
+        // build_module_script 已发射完整 async IIFE（尾 `})()`），不得再包一层：
+        // 双层包裹令内层 promise 沦为语句求值即弃，外层以 undefined resolve，
+        // rejection 永不达 catch（红态实测序对而 reportError 缺席）。catch 桥直附
+        // 调用尾：非页面宿主无 shim reportError → 守卫空转。不设 __zwModEvalErrObj
+        // 哨兵：哨兵由宿主 post-check 同步读清（s255），异步置位会陈旧滞留并被下一
+        // 模块元素误报。元素 load 不补发（runner 投递尾微任务 fire / webview s107
+        // 成功臂已覆盖，补发即双发）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+        let entry_expr = body.trim_end();
+        Ok(format!(
+            "{init}{entry_expr}.catch(function (__zwModTlaErr) {{ try {{ if (typeof reportError === 'function') {{ reportError(__zwModTlaErr); }} }} catch (_zwTlaRpt) {{}} }});\n"
+        ))
     } else {
         // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
         // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。
@@ -436,7 +451,12 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     //（`__zw_compile_module(spec, parent, type)`——合成臂按类型分派）。
     // https://tc39.es/proposal-import-attributes/#sec-import-calls
     // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
-    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    return Promise.resolve().then(function () {\n      return Promise.resolve(__zw_load_module(spec, parent, _diType));\n    });\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
+    out.push_str("globalThis.__zw_dynamic_import = function(spec, attributes) {\n  var parent = (this && this.referrer) || ((typeof _importMeta !== 'undefined' && _importMeta.url) || 'about:blank');\n  try {\n    var _diType = '';\n    if (attributes !== undefined && attributes !== null) {\n      if (typeof attributes !== 'object') {\n        throw new TypeError('Import attributes argument must be an object');\n      }\n      var _diWith = attributes.with;\n      if (_diWith !== undefined && _diWith !== null) {\n        if (typeof _diWith !== 'object') {\n          throw new TypeError('Import attributes \\'with\\' value must be an object');\n        }\n        var _diRawType = _diWith.type;\n        if (_diRawType !== undefined) {\n          _diType = String(_diRawType);\n          if (_diType !== 'json' && _diType !== 'css' && _diType !== 'text') {\n            throw new TypeError('Unsupported module type \"' + _diType + '\"');\n          }\n        }\n      }\n    }\n    // s337：双跳取回——单跳时取回体与元素 load 尾片同代竞争（同步块排队序先于
+    // load 尾片），evaluation-order-4 判据 load 须先于动态依赖体（Chrome 取回跨
+    // 宏任务，body 反应晚于 load 尾片代）；双跳后 hop1 空代让位 load 尾片，依赖
+    // 体落次代。order-3 序不变（hop1 无日志，依赖体本就后于 mt-3.1）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    return Promise.resolve().then(function () {\n      return Promise.resolve().then(function () {\n        return Promise.resolve(__zw_load_module(spec, parent, _diType));\n      });\n    });\n  } catch (e) {\n    return Promise.reject(e);\n  }\n};\n");
     // s254：import.meta.resolve 宿主桥（HTML #dom-import-meta-resolve——spec 入参经
     // ToString 后走 resolve a module specifier 全算法：map 命中 → 映射 URL 绝对化；
     // URL-like 未命中 → asURL 回退）。宿主返空 = resolution failure（裸说明符未映射/
@@ -4789,6 +4809,89 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         assert_eq!(
             joined, "entry-1,entry-2,entry-3,microtask-entry,step-dep-1,step-dep-2,microtask-dep,import-catch,error",
             "动态 import 求值不占调用点同步块，序循 spec 异步 job 面：{joined}"
+        );
+        assert_eq!(fetched_n, 1, "宿主取回恰好一次");
+    }
+
+    // s337（TLA rejection 上报面——WPT microtasks/evaluation-order-4 的 sandbox 级钉）：
+    // 入口体 `await import()` 拒绝（依赖体 throw）→ async IIFE promise 拒绝，此为模块
+    // 求值失败的唯一错误通路（宿主包装 try/catch 接不到 promise 拒绝）。旧态无人接→
+    // window error 不触达（runner 面 `window.onerror = testDone` 永不触发→Timeout）。
+    // 修后 catch 桥 reportError 恰一次、携原值拒绝理由（ev.error 身份面）。全序列判据：
+    // 入口同步块→入口微任务→依赖体及其微任务→rejection 续体（reportError）——
+    // 依赖求值不占调用点同步块（s336 面），`step-4.1-3` 不执行（await 捷后余体）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+    #[test]
+    fn test_module_tla_rejection_reported_to_window_s337() {
+        let fetched: std::sync::Arc<std::sync::Mutex<u32>> = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let fetched_cb = std::sync::Arc::clone(&fetched);
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        // evaluation-order-4.2.mjs：体 throw → import() promise 拒绝（语料原序）。
+        let contract = concat!(
+            "https://zero.test/resources/evaluation-order-4.2.mjs\u{1f}",
+            "(function() { 'use strict'; var _exports = {}; ",
+            "globalThis.__log.push('step-4.2-1'); ",
+            "Promise.resolve().then(function () { globalThis.__log.push('microtask-4.2'); }); ",
+            "globalThis.__log.push('step-4.2-2'); ",
+            "throw new Error('error'); ",
+            "return _exports; })()",
+        );
+        let contract_for_cb = contract.to_string();
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(move |_args: &[String]| -> String {
+                *fetched_cb.lock().unwrap() += 1;
+                contract_for_cb.clone()
+            }),
+        );
+        let lines: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let lines_cb = std::sync::Arc::clone(&lines);
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args: &[String]| -> String {
+                lines_cb.lock().unwrap().push(args.first().cloned().unwrap_or_default());
+                String::new()
+            }),
+        );
+        let registry = ModuleRegistry::new();
+        // evaluation-order-4.1.mjs（语料原序）：队列微任务后 await import。
+        let source = concat!(
+            "globalThis.__log.push('step-4.1-1');\n",
+            "queueMicrotask(function () { globalThis.__log.push('microtask-4.1'); });\n",
+            "globalThis.__log.push('step-4.1-2');\n",
+            "await import('./evaluation-order-4.2.mjs');\n",
+            "globalThis.__log.push('step-4.1-3');\n",
+        );
+        let transformed = compile_module_script(
+            source,
+            "https://zero.test/resources/evaluation-order-4.1.mjs",
+            "https://zero.test/resources/evaluation-order-4.1.mjs",
+            &registry,
+        )
+        .expect("入口编译不得失败");
+        let prelude = build_module_runtime_prelude(&registry, None).unwrap_or_default();
+        // 五跳梯：读态续体排在全部 rejection 链代际之后（链深 ≤ 4）。
+        let ladder = concat!(
+            "Promise.resolve().then(function(){}).then(function(){}).then(function(){})",
+            ".then(function(){}).then(function(){ __zw_report('LOG:' + __log.join(',')); ",
+            "__zw_report('ERR:' + __errs.join(',')); });",
+        );
+        let full_js = format!(
+            "{prelude}\n\
+globalThis.__log = [];\n\
+globalThis.__errs = [];\n\
+globalThis.queueMicrotask = globalThis.queueMicrotask || function (f) {{ Promise.resolve().then(f); }};\n\
+globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message); }};\n\
+{transformed}\n\
+{ladder}"
+        );
+        sandbox.execute(&full_js).expect("执行不得整体失败");
+        let all = lines.lock().unwrap().join("|");
+        let fetched_n = *fetched.lock().unwrap();
+        assert_eq!(
+            all, "LOG:step-4.1-1,step-4.1-2,microtask-4.1,step-4.2-1,step-4.2-2,microtask-4.2|ERR:error",
+            "TLA rejection 经 catch 桥 reportError 恰一次且序循 spec（step-4.1-3 不执行）：{all}"
         );
         assert_eq!(fetched_n, 1, "宿主取回恰好一次");
     }
