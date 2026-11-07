@@ -31,8 +31,8 @@
 //      S2a 常量表同源复制——闭包不可反向引用）；em/ex/% 经 target
 //      font-size/视口上下文解析（_lenUserUnits——svglength px-to-ems 定
 //      谳）。三明治合成 replace/additive=sum（_animatedValue）。类型化域
-//      color/transform/enum/string = B6b（FIXME——数值域不可解析即整动
-//      画无采样，现势同 F 无回归面）。
+//      enum/string/angle/list/bool/integer/rect = B6b；transform = ⑪
+//     （B6c）；color = FIXME（style 协同面）。
 //   ⑤ SVGSVGElement pauseAnimations/unpauseAnimations/getCurrentTime/
 //      setCurrentTime 文档级共享时间线（spec SVG2 struct.html
 //      §InterfaceSVGSVGElement——part03 M2 S3 per-element stub 的合流兑现，
@@ -93,8 +93,23 @@
 //      不在此）。onbegin/onend/onrepeat 处理器改经 part05 错位名映射统一
 //      派发（直调面移除——泛型 on<type> 查找对 beginEvent→onbegin 别名 +
 //      裸 begin/end/repeat 跳过，custom-events/event-listeners 定谳）。
+//   ⑪ animateTransform 采样（B6c，2026-11-07 第五批）：type 域组件向量
+//      插值（translate/scale/rotate/skewX/skewY；type 缺省 translate）+
+//      calcMode linear 缺省/discrete/spline + accumulate 迭代传播逐分量 +
+//      by-only 零向量起点（additive-type-by 定谳）；三明治钩子
+//      _zwSmilAnimTransform（globalThis 契约）——animVal 表项级合成
+//      replace 重置/sum 追加：gradientTransform/patternTransform replace
+//      清 base（animate-gradient-transform 定谳 animVal 单项）、transform
+//      属性 replace 恒与 base 复合（additive-type-by 定谳 animVal 2 项）。
+//      part03 SVGAnimatedTransformList.animVal parse 接线 + SVGTransform
+//      angle 态（rotate/skewX/skewY 原始角度）。另有 _sampleAnimStr by-only
+//      角度域度数合成（orient by-only——additive-type-by 定谳）。
+//      ⑪ 起物理在 part09b（2026-11-07 2000 行准则按行边界字节精确切分，
+//      R2963 先例——本文件开 IIFE、part09b 续段同闭合并收尾，桥接层
+//      part09 后紧接 include，拼接字节序零变化）。
 //
 // 作用域：part07 末尾已闭合外层 IIFE，本文件顶层作用域（part08 先例）；
+// 本文件 + part09b 合成同一 IIFE（part09b 尾收 })();）。
 // 引用面仅 globalThis 契约（SVGSVGElement/SVGAnimationElement prototype、
 // __zwMakeTrustedEvent、setTimeout、WeakMap、DOMException、Date.now）。
 // per-element 键形态镜像 part03 _zwSvgAnimKey（__zwSelector+\0+__zwHandle）。
@@ -1136,13 +1151,22 @@
       if (sumTok == null) return null;
       toks = [fromTok, sumTok];
     } else if (byTok != null) {
-      // by-only：起点取目标属性现值逐项 + by（属性缺席/不可解析 → 无采样）。
+      // by-only：起点取目标属性现值逐项 + by（属性缺席/不可解析 → 无采样）；
+      // 列表合成不达（单位化角度 token）→ 角度域度数合成（SMIL
+      // #FromByAnimation——B6c：additive-type-by orient by-only 定谳
+      // -45deg + 45deg·p，段端点角度插值共用②路径）。
       var baseRaw2 = null;
       try { baseRaw2 = target.getAttribute(attr); } catch (_eB2) { baseRaw2 = null; }
       if (baseRaw2 == null) return null;
       var sumTok2 = _zwListSumTokens(String(baseRaw2), byTok);
-      if (sumTok2 == null) return null;
-      toks = [String(baseRaw2), sumTok2];
+      if (sumTok2 != null) {
+        toks = [String(baseRaw2), sumTok2];
+      } else {
+        var daB = _zwAngleDegOf(baseRaw2);
+        var dbB = _zwAngleDegOf(byTok);
+        if (daB == null || dbB == null) return null;
+        toks = [String(baseRaw2), _zwNumFmt6(daB + dbB)];
+      }
     } else if (toTok != null) {
       // to-only：起点取目标属性现值（SMIL to-anim 语义 base→to；属性缺席
       // 保 null——采样返 null 时消费面回落 base 反射即类型缺省值，
@@ -1277,443 +1301,3 @@
     return toks[di2];
   };
 
-
-  // 目标元素 + 属性名 → 文档序动画采样值三明治合成（SMIL #AdditiveAnimation
-  // sandwich model：replace 重置运行值、additive="sum" 累加——文档序优先级
-  // 后者高；首个 sum 无前置 replace 时以目标 base 起底）。
-  var _animatedValue = function (target, attr, numeric) {
-    var doc = null;
-    try { doc = target.ownerDocument; } catch (_eD) { doc = null; }
-    if (!doc) return null;
-    var st = _docTimelines.get(doc);
-    var t = st ? _currentTimeOf(st) : 0;
-    var kids = null;
-    try { kids = target.children; } catch (_eC) { kids = null; }
-    if (!kids || !kids.length) return null;
-    var result = null;
-    for (var i = 0; i < kids.length; i++) {
-      var c = kids[i];
-      var ln = '';
-      try { ln = String(c.localName || '').toLowerCase(); } catch (_eL) {}
-      if (!_animLocalNames[ln]) continue;
-      var v = _sampleAnim(c, target, attr, t, result);
-      if (v == null) continue;
-      var isSum = false;
-      try { isSum = c.getAttribute('additive') === 'sum'; } catch (_eAd) { isSum = false; }
-      if (isSum) {
-        if (result == null) {
-          var b0 = _baseNumeric(target, attr);
-          result = (b0 != null ? b0 : 0) + v;
-        } else {
-          result = result + v;
-        }
-      } else {
-        result = v;    // replace 重置
-      }
-    }
-    if (result == null) return null;
-    return numeric ? result : { ut: 1, vu: result };
-  };
-
-  // animVal 反射消费单点（part03 S2a 挂钩——globalThis 契约）。
-  globalThis._zwSmilAnimValue = function (el, attr) {
-    return _animatedValue(el, attr, false);
-  };
-  globalThis._zwSmilAnimNumber = function (el, attr) {
-    return _animatedValue(el, attr, true);
-  };
-
-
-  // 类型域 token 反射消费单点（part03 B6b 接线——globalThis 契约）。文档序
-  // 动画元素取最后非空采样（replace 语义）；fast-path 与数值域同口径
-  //（首 tick 后无 SMIL 元素文档零开销返——tickEverRan/smilSeen）。
-  globalThis._zwSmilAnimToken = function (el, attr) {
-    var doc = null;
-    try { doc = el.ownerDocument; } catch (_eD) { doc = null; }
-    if (!doc) return null;
-    var st = _docTimelines.get(doc);
-    if (st && st.tickEverRan && !st.smilSeen) return null;
-    var t = st ? _currentTimeOf(st) : 0;
-    var kids = null;
-    try { kids = el.children; } catch (_eC) { kids = null; }
-    if (!kids || !kids.length) return null;
-    var out = null;
-    for (var i = 0; i < kids.length; i++) {
-      var c = kids[i];
-      var ln = '';
-      try { ln = String(c.localName || '').toLowerCase(); } catch (_eL) {}
-      if (!_animLocalNames[ln]) continue;
-      var v = _sampleAnimStr(c, el, attr, t);
-      if (v == null) continue;
-      var isSumTk = false;
-      try { isSumTk = c.getAttribute('additive') === 'sum'; } catch (_eAdT) { isSumTk = false; }
-      if (isSumTk) {
-        // additive=sum 三明治（token 域逐项 user units——svglengthlist-5 面
-        // base+采样 delta；任一侧不可解析回落 replace 语义）。
-        var biT = null;
-        try { biT = el.getAttribute(attr); } catch (_eBaT) { biT = null; }
-        var baseItems = biT != null ? _zwListNumItems(biT) : null;
-        var vItems = _zwListNumItems(v);
-        if (baseItems && vItems) {
-          var cntS = Math.max(baseItems.length, vItems.length);
-          var outS = [];
-          for (var sq = 0; sq < cntS; sq++) {
-            outS.push(_zwNumFmt6(baseItems[sq % baseItems.length] + vItems[sq % vItems.length]));
-          }
-          out = outS.join(' ');
-        } else {
-          out = v;
-        }
-      } else {
-        out = v;    // replace 重置
-      }
-    }
-    return out;
-  };
-  // ── 事件泵（task 粒度 setTimeout 轮询；paused 靠 seek 扫描驱动）──────
-  // SMIL 事件统一经 dispatch 派发：onbegin/onend/onrepeat 处理器（IDL JS
-  // 设值 + 内容属性 inline 编译）由 part05 派发的错位名映射触发
-  //（beginEvent→onbegin / endEvent→onend / repeatEvent→onrepeat；裸
-  // begin/end/repeat 类型查找跳过——onendEvent 非处理器名恒不触发，
-  // custom-events/event-listeners 定谳面），addEventListener 注册面走
-  // listeners 循环——单通道无双 fire。
-  var _fireSmilEvent = function (el, type) {
-    try {
-      var ev = null;
-      if (typeof globalThis.__zwMakeTrustedEvent === 'function') {
-        ev = globalThis.__zwMakeTrustedEvent(type, { bubbles: false, cancelable: false });
-      } else if (typeof globalThis.Event === 'function') {
-        ev = new globalThis.Event(type, { bubbles: false, cancelable: false });
-      }
-      if (ev) el.dispatchEvent(ev);
-    } catch (_eF) {}
-  };
-
-  var _scanDoc = function (doc) {
-    var els = [];
-    try {
-      var found = doc.querySelectorAll('animate, set, animateTransform, animateMotion');
-      for (var i = 0; i < found.length; i++) els.push(found[i]);
-    } catch (_eQ) { els = []; }
-    return els;
-  };
-  // FIXME(挂账-引擎查询层): doc.querySelectorAll 对动态 append 的动画元素
-  // 同步不可见（detached 快照/复合选择器缓存代际——探针实证单标签元素作用
-  // 域活络、文档作用域与复合形态延迟代际化），child 链手工遍历可即时发现
-  // 但产物 wrapper 族与消费端（target.children/_elKey）跨族 identity 失配
-  //（#32），17 子 P→F 回归实证。SMIL 动态元素发现（spec 时序目标活解析）
-  // 待查询层统一 wrapper 归一后重接——syncbase-remove-add-while-running
-  // 挂此门（F 显形记账，非 Pass 丢失）。
-
-  var _scheduleTick = function (doc, st, delayMs) {
-    if (st.tickTimer) return;
-    st.tickTimer = setTimeout(function () {
-      st.tickTimer = 0;
-      _pumpTick(doc);
-    }, delayMs);
-  };
-
-  // 泵激活入口（load/beginElement 唤醒；paused/未 started no-op）。
-  var _wake = function (doc) {
-    var st = _docTimelines.get(doc);
-    if (!st || !st.started || st.paused) return;
-    _scheduleTick(doc, st, 5);
-  };
-
-  // seek 一次性扫描（setCurrentTime 驱动；paused 也派——WPT seeking 案
-  // pause+seek 是唯一时间驱动源）。合并窗口：已排程则复用（执行时读最新
-  // frozenDoc，幂等）。事件经 task 粒度派发——同步派发会早于测试的
-  // EventWatcher 挂钩（seeking-events-1 watcher 在 seek 后才建）。
-  var _scheduleSeekScan = function (doc, st) {
-    if (st.seekTimer) return;
-    st.seekTimer = setTimeout(function () {
-      st.seekTimer = 0;
-      _scanDocEvents(doc, _currentTimeOf(st), true);
-    }, 0);
-  };
-
-  // 转移扫描：seek（isSeek）走差分（seeking-events-1..8 定谳矩阵：越过
-  // 零事件、出界 endEvent、落点 beginEvent、同 interval 不派 repeat）；
-  // 自然 tick 走时间序窗口重放——对 (lastT, t]（首见 lastT=-∞）内真实
-  // 流逝的 interval 边界按 b 升序补派：窗口内整体走完 → begin+end 成对；
-  // 跨窗口结束（begin 在窗前）→ 仅 endEvent；窗口内开始且 ≤ t →
-  // beginEvent（被替代的旧 interval 若未报 end 先补 end——restart 语义）。
-  // 泵 tick 抖动跨过多个边界时事件不丢、不乱序（correct-events-for-short-
-  // animations-with-syncbases 定谳面）；seek 只推进 lastT 不重放。
-  var _scanDocEvents = function (doc, t, isSeek) {
-    var els = _scanDoc(doc);
-    for (var i = 0; i < els.length; i++) {
-      var el = els[i];
-      if (!_condOK(el)) continue;   // 条件判否元素零事件（02 定谳面）
-      var active = null;
-      try { active = _activeInterval(el, t); } catch (_eA) { active = null; }
-      var s = _elementState(el);
-      s.seen = true;
-      if (!isSeek) {
-        var w0 = s.lastT == null ? -Infinity : s.lastT;
-        if (t >= w0) {
-          var rec1 = _chainOf(el, t);
-          if (rec1) {
-            for (var j0 = 0; j0 < rec1.ivs.length; j0++) {
-              var iv1 = rec1.ivs[j0];
-              if (iv1.pruned || iv1.e <= 0) continue;
-              // interval 起点入窗：被替代旧 interval 先补 end 再 begin
-              //（restart 语义——B4 口径恒持）
-              if (iv1.b > w0 && iv1.b <= t && s.ib !== iv1.b) {
-                if (s.ib != null && s.began && !s.ended) {
-                  _fireSmilEvent(el, 'endEvent');    // 被替代/截断
-                  s.ended = true;
-                }
-                _fireSmilEvent(el, 'beginEvent');
-                s.ib = iv1.b;
-                s.ie = iv1.e;
-                s.began = true;
-                s.ended = false;
-                s.everBegan = true;
-              }
-              // repeatEvent 自然播放面（B5）：迭代边界 b + k·sd（k ≥ 1 且
-              // k·sd < e）入窗 (max(w0, b), min(t, e)] 按 k 升序补派——仅
-              // 当前跟踪 interval（begin 前不派、end 后不派）；seek 不派
-              //（isSeek 臂外——seeking-events-5/6 恒持）。千次封顶 =
-              // OPTIMIZATION：节流追赶窗口内病态 repeatCount=indefinite ×
-              // 毫秒级 dur 的边界风暴防失控（语料真实面 ≤ 个位数边界）。
-              if (s.ib === iv1.b && s.began && !s.ended &&
-                  isFinite(rec1.sd) && rec1.sd > 0) {
-                var k0 = Math.ceil((Math.max(w0, iv1.b) - iv1.b) / rec1.sd);
-                if (k0 < 1) k0 = 1;
-                var fired = 0;
-                for (; iv1.b + k0 * rec1.sd < iv1.e && iv1.b + k0 * rec1.sd <= t;
-                     k0++) {
-                  if (++fired > 1000) break;
-                  _fireSmilEvent(el, 'repeatEvent');
-                }
-              }
-              // 窗口内结束（首见 w0=-∞ 覆盖全部已过 interval——整体成对；
-              // begin 已在本轮建立跟踪的 interval 同轮内 end 成对）
-              if (iv1.e > w0 && iv1.e <= t && s.ib === iv1.b && s.began && !s.ended) {
-                _fireSmilEvent(el, 'endEvent');
-                s.ended = true;
-              }
-            }
-          }
-        }
-      }
-      s.lastT = t;
-      // 差分兜底：seek 语义面 + 链突变（属性轮询/beginElement）后的对齐。
-      if (s.ib != null && s.began && !s.ended && (!active || active.b !== s.ib)) {
-        _fireSmilEvent(el, 'endEvent');
-        s.ended = true;
-      }
-      if (active && (s.ib !== active.b || !s.began || s.ended)) {
-        _fireSmilEvent(el, 'beginEvent');
-        s.ib = active.b;
-        s.ie = active.e;
-        s.began = true;
-        s.ended = false;
-        s.everBegan = true;
-      }
-    }
-  };
-
-  var _pumpTick = function (doc) {
-    var st = _docTimelines.get(doc);
-    if (!st || !st.started || st.paused) return;
-    var t = _currentTimeOf(st);
-    _scanDocEvents(doc, t, false);
-    st.tickEverRan = true;
-    // 轮询节律：下一边界 ≤50ms 提前到点，否则 50ms 保底（属性变更无钩子、
-    // 变更感知靠轮询——begin-attribute-mutation 消费面）。
-    var next = Infinity;
-    var els = _scanDoc(doc);
-    st.smilSeen = els.length > 0;
-    for (var i = 0; i < els.length; i++) {
-      if (!_condOK(els[i])) continue;   // 条件判否元素无边界
-      var cur = null;
-      try { cur = _currentInterval(els[i], t); } catch (_eI) { cur = null; }
-      if (cur) {
-        if (cur.b > t && cur.b < next) next = cur.b;
-        if (cur.e > t && cur.e < next) next = cur.e;
-      }
-    }
-    var delay = 50;
-    if (next < Infinity) {
-      var ms = (next - t) * 1000;
-      if (ms < 5) ms = 5;
-      if (ms < delay) delay = ms;
-    }
-    _scheduleTick(doc, st, delay);
-  };
-
-  // ── 文档时间线起点（part06 window load 派发点挂钩）───────────────────
-  globalThis._zwSmilDocStart = function (doc) {
-    if (!doc) return;
-    var st = _timelineFor(doc);
-    if (st.started) return;
-    st.started = true;
-    st.baseDoc = st.frozenDoc;   // pre-load seek 结转
-    st.baseReal = Date.now();
-    if (!st.paused) _scheduleTick(doc, st, 5);
-  };
-
-  // ── B5：eventbase 动态实例源（part05 派发尾通知契约）─────────────────
-  // spec SMIL #Eventvalue semantics：事件真发即对引用该事件基的动画元素写
-  // dynBegins 实例（当前文档时 + offset）。base 解析：id 名 → 全文档
-  // getElementById（非 SVG 元素允许——eventbase-non-svg-element 定谳）；
-  // 裸事件名 → 目标元素（animate 的父元素——与采样目标解析同口径）。每次
-  // 通知从现行文档全量扫描 = 移除/重建自动反映（syncbase deps 同口径）；
-  // 条件判否元素不入实例源。repeat(k) 形态是静态传播不走此路。性能面：
-  // 首 tick 后无 SMIL 元素的文档快路径返（tickEverRan/smilSeen 标记——首
-  // tick 前恒扫描，覆盖 onload 同步派发）。pre-load 通知：时间线状态经
-  // _timelineFor 现建（eventbase-non-svg-element 定谳——inline 脚本 load 前
-  // 派发实例不丢，文档时间线起点后 interval [0,…) 生效）。
-  globalThis._zwSmilNotifyEvent = function (target, type) {
-    try {
-      var doc = null;
-      try { doc = target && target.ownerDocument; } catch (_eD) { doc = null; }
-      if (!doc) {
-        try { if (target && target.documentElement) doc = target; } catch (_eT) { doc = null; }
-      }
-      if (!doc) return;
-      var st = _timelineFor(doc);
-      if (!st) return;
-      if (st.tickEverRan && !st.smilSeen) return;
-      var t = _currentTimeOf(st);
-      var els = _scanDoc(doc);
-      var hit = false;
-      for (var i = 0; i < els.length; i++) {
-        var el = els[i];
-        if (!_condOK(el)) continue;
-        var rawB = null;
-        try { rawB = el.getAttribute('begin'); } catch (_eB) { rawB = null; }
-        var specs = _parseTimingSpecs(rawB);
-        for (var j = 0; j < specs.length; j++) {
-          var sp = specs[j];
-          if (sp.kind !== 'event' || /^repeat\(\d+\)$/.test(sp.name)) continue;
-          var base = null;
-          if (sp.id) {
-            try { base = doc.getElementById(sp.id); } catch (_eI) { base = null; }
-          } else {
-            try { base = el.parentElement; } catch (_eP) { base = null; }
-          }
-          if (!base || sp.name !== type) continue;
-          // base 与派发 target 同节点判定：对象 identity 跨访问族恒败
-          //（#32），键（__zwSelector+__zwHandle，节点稳定）一致兜底。
-          var same = base === target;
-          if (!same) {
-            var kt = null;
-            try { kt = _elKey(target); } catch (_eK2) { kt = null; }
-            var kb = _elKey(base);
-            same = kb != null && kt != null && kb === kt;
-          }
-          if (!same) continue;
-          var s = _elementState(el);
-          s.dynBegins.push(t + sp.off);
-          hit = true;
-        }
-      }
-      if (hit) {
-        st.chainCache = null;   // 实例入集——下查询重模拟
-        _wake(doc);
-      }
-    } catch (_eN) {}
-  };
-
-  // ── SVGSVGElement 文档级时间线控制（覆写 part03 M2 S3 per-element stub）─
-  if (globalThis.SVGSVGElement && globalThis.SVGSVGElement.prototype) {
-    var _zwSvgP = globalThis.SVGSVGElement.prototype;
-    _zwSvgP.pauseAnimations = function () {
-      var doc = this.ownerDocument || this;
-      var st = _timelineFor(doc);
-      st.frozenDoc = _currentTimeOf(st);
-      st.paused = true;
-      if (st.tickTimer) { clearTimeout(st.tickTimer); st.tickTimer = 0; }
-    };
-    _zwSvgP.unpauseAnimations = function () {
-      var doc = this.ownerDocument || this;
-      var st = _timelineFor(doc);
-      if (!st.paused) return;
-      st.paused = false;
-      if (st.started) {
-        st.baseDoc = st.frozenDoc;
-        st.baseReal = Date.now();
-        _wake(doc);
-      }
-    };
-    _zwSvgP.getCurrentTime = function () {
-      var st = _timelineFor(this.ownerDocument || this);
-      return _currentTimeOf(st);
-    };
-    _zwSvgP.setCurrentTime = function (seconds) {
-      var n = Number(seconds);
-      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
-      var doc = this.ownerDocument || this;
-      var st = _timelineFor(doc);
-      if (!st.started || st.paused) {
-        st.frozenDoc = n;
-      } else {
-        st.baseDoc = n;
-        st.baseReal = Date.now();
-        _wake(doc);
-      }
-      // seek 事件转移（task 粒度——同步派发会早于 seek 后才挂的 EventWatcher）
-      _scheduleSeekScan(doc, st);
-    };
-  }
-
-  // ── SVGAnimationElement 真值接口（覆写 part03 M4 异常 stub）─────────
-  if (globalThis.SVGAnimationElement && globalThis.SVGAnimationElement.prototype) {
-    var _zwAnimP = globalThis.SVGAnimationElement.prototype;
-    _zwAnimP.getStartTime = function () {
-      var doc = null;
-      try { doc = this.ownerDocument; } catch (_eD) { doc = null; }
-      var st = doc ? _docTimelines.get(doc) : null;
-      var t = st ? _currentTimeOf(st) : 0;
-      var cur = null;
-      try { cur = _currentInterval(this, t); } catch (_eI) { cur = null; }
-      if (!cur) {
-        throw _domErr('getStartTime: the current interval is unresolved.', 'InvalidStateError');
-      }
-      return cur.b;
-    };
-    _zwAnimP.getSimpleDuration = function () {
-      var d = _parseDur(this);
-      if (d.kind !== 'finite') {
-        throw _domErr('getSimpleDuration: the simple duration is undefined or indefinite.', 'NotSupportedError');
-      }
-      return d.s;
-    };
-    var _beginElementAt = function (offset) {
-      var n = Number(offset);
-      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
-      var doc = null;
-      try { doc = this.ownerDocument; } catch (_eD) { doc = null; }
-      var st = doc ? _timelineFor(doc) : _timelineFor(this);
-      var now = _currentTimeOf(st);
-      var restart = '';
-      try { restart = String(this.getAttribute('restart') || 'always'); } catch (_eR) { restart = 'always'; }
-      var cur = null;
-      try { cur = _currentInterval(this, now); } catch (_eI) { cur = null; }
-      // restart 门控（spec #Timing-RestartMechanisms——beginElement 动态实例面；
-      // begin 属性实例的 restart 语义 = M2 FIXME）。never：任一 interval 一经
-      // 开始即永不再启（everBegan 含已过 interval）。
-      var s = _elementState(this);
-      if (restart === 'never' && (s.everBegan || cur)) return;
-      if (restart === 'whenNotActive' && cur && cur.b <= now) return;
-      s.dynBegins.push(now + n);
-      st.chainCache = null;   // 动态实例入集——链缓存作废，下查询重模拟
-      // 差分状态不手动重置——下轮转移扫描按新 instance 集派
-      // endEvent（旧 interval 被替代）+ beginEvent（restart=always 语义）。
-      _wake(doc || this);
-    };
-    _zwAnimP.beginElement = function () { _beginElementAt.call(this, 0); };
-    _zwAnimP.beginElementAt = function (offset) { _beginElementAt.call(this, offset); };
-    _zwAnimP.endElement = function () {
-      // 动态 end 实例 = M2 FIXME（interval-restart-events / end 属性操作面）；
-      // 控制面保持可调用（part03 stub 同口径）。
-    };
-    _zwAnimP.endElementAt = function (offset) {
-      var n = Number(offset);
-      if (!isFinite(n)) throw new TypeError('The provided float value is non-finite');
-    };
-  }
-})();

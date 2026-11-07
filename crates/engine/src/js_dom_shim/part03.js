@@ -7545,6 +7545,49 @@
       get: function () { return _zwGetAnimatedBool(this, 'preserveAlpha', 'preserveAlpha'); },
     });
   }
+  // svg-compat-v2 B6c：SVGFilterPrimitiveElement.result（spec SVG2 filters.html
+  // §InterfaceSVGFilterPrimitiveElement primitive mixin——[SameObject]
+  // SVGAnimatedString；x/y/width/height 同 mixin 族走 _zwSvgLenDefs reflection，
+  // string 面独立落 prototype）。animVal：SMIL token 优先（B6b string 域离散
+  // 持有；by/from-by 对 string 域无效 → null 回落——non-additive-type-by
+  // /non-additive-type-from-by「should have no effect」定谳面），无动画回落
+  // 属性反射，缺席 ''。
+  var _zwMakeAnimatedStringField = function (el, attr) {
+    var w = new _zwSvgAnimatedStringCtor();
+    var read = function () {
+      var raw = null;
+      try { raw = el.getAttribute(attr); } catch (_eRs) { raw = null; }
+      return raw == null ? '' : String(raw);
+    };
+    var readAnim = function () {
+      var tok = _zwSmilAnimRaw(el, attr);
+      if (tok != null) return String(tok);
+      return read();
+    };
+    Object.defineProperty(w, 'baseVal', {
+      configurable: true,
+      get: read,
+      set: function (v) {
+        try { el.setAttribute(attr, v == null ? '' : String(v)); } catch (_eWs) {}
+      },
+    });
+    Object.defineProperty(w, 'animVal', { configurable: true, get: readAnim });
+    return w;
+  };
+  var _zwGetAnimatedStringField = function (el, prop, attr) {
+    var k = _zwSvgAnimKey(el, prop);
+    if (k && _zwSvgAnimCache[k]) return _zwSvgAnimCache[k];
+    var w = _zwMakeAnimatedStringField(el, attr);
+    if (k) _zwSvgAnimCache[k] = w;
+    return w;
+  };
+  if (globalThis.SVGFilterPrimitiveElement && globalThis.SVGFilterPrimitiveElement.prototype
+      && !Object.prototype.hasOwnProperty.call(globalThis.SVGFilterPrimitiveElement.prototype, 'result')) {
+    Object.defineProperty(globalThis.SVGFilterPrimitiveElement.prototype, 'result', {
+      configurable: true,
+      get: function () { return _zwGetAnimatedStringField(this, 'result', 'result'); },
+    });
+  }
   if (globalThis.SVGMarkerElement && globalThis.SVGMarkerElement.prototype
       && !Object.prototype.hasOwnProperty.call(globalThis.SVGMarkerElement.prototype, 'orientAngle')) {
     Object.defineProperty(globalThis.SVGMarkerElement.prototype, 'orientAngle', {
@@ -8328,6 +8371,17 @@
       });
     }
   }
+  // kernelMatrix（SVGAnimatedNumberList——SVG1.1 §18.4 feConvolveMatrix；
+  // additive-type-by kernelMatrix.animVal 面，B6c href 定靶接线连带补缺）。
+  if (globalThis.SVGFEConvolveMatrixElement && globalThis.SVGFEConvolveMatrixElement.prototype) {
+    var _zwFecmProto = globalThis.SVGFEConvolveMatrixElement.prototype;
+    if (!Object.prototype.hasOwnProperty.call(_zwFecmProto, 'kernelMatrix')) {
+      Object.defineProperty(_zwFecmProto, 'kernelMatrix', {
+        configurable: true,
+        get: function () { return _zwGetAnimatedNumberList(this, 'kernelMatrix', 'kernelMatrix'); },
+      });
+    }
+  }
   var _zwSvgPolyIfaces = ['SVGPolygonElement', 'SVGPolylineElement'];
   for (var _zwPi = 0; _zwPi < _zwSvgPolyIfaces.length; _zwPi++) {
     var _zwPolyIface = globalThis[_zwSvgPolyIfaces[_zwPi]];
@@ -8443,13 +8497,13 @@
         var cx = args.length > 1 ? args[1] : 0;
         var cy = args.length > 2 ? args[2] : 0;
         var co = Math.cos(rad(args[0])), si = Math.sin(rad(args[0]));
-        st = { type: 4, a: co, b: si, c: -si, d: co, e: cx * (1 - co) + cy * si, f: cy * (1 - co) - cx * si };
+        st = { type: 4, a: co, b: si, c: -si, d: co, e: cx * (1 - co) + cy * si, f: cy * (1 - co) - cx * si, ang: args[0] };
       } else if (fn === 'skewX') {
         if (args.length !== 1) return [];
-        st = { type: 5, a: 1, b: 0, c: Math.tan(rad(args[0])), d: 1, e: 0, f: 0 };
+        st = { type: 5, a: 1, b: 0, c: Math.tan(rad(args[0])), d: 1, e: 0, f: 0, ang: args[0] };
       } else {
         if (args.length !== 1) return [];
-        st = { type: 6, a: 1, b: Math.tan(rad(args[0])), c: 0, d: 1, e: 0, f: 0 };
+        st = { type: 6, a: 1, b: Math.tan(rad(args[0])), c: 0, d: 1, e: 0, f: 0, ang: args[0] };
       }
       out.push(st);
       pos += m[0].length;
@@ -8481,12 +8535,22 @@
     var t = new _zwSvgTransformCtor();
     var m = _zwMakeSVGMatrix();
     var type = 1;
+    // 角度态（spec SVG2 §InterfaceSVGTransform.angle：rotate/skewX/skewY 持
+    // 原始角度——矩阵反解 atan2 会丢 0-360 环绕（rotate(200) → -160），解析
+    // /set* 存原始值，矩阵态（consolidate）无角度 → 0）。
+    var ang = 0;
     var setAll = function (ty, st) {
       m.a = st.a; m.b = st.b; m.c = st.c; m.d = st.d; m.e = st.e; m.f = st.f;
       type = ty;
+      if (st && st.ang != null) ang = st.ang;
+      else if (ty === 4) ang = Math.atan2(st.b, st.a) * 180 / Math.PI;
+      else if (ty === 5) ang = Math.atan(st.c) * 180 / Math.PI;
+      else if (ty === 6) ang = Math.atan(st.b) * 180 / Math.PI;
+      else ang = 0;
     };
     if (initState) setAll(initState.type, initState);
     Object.defineProperty(t, 'type', { configurable: true, get: function () { return type; } });
+    Object.defineProperty(t, 'angle', { configurable: true, get: function () { return type === 4 || type === 5 || type === 6 ? ang : 0; } });
     Object.defineProperty(t, 'matrix', { configurable: true, get: function () { return m; } });
     var num = function (v) {
       var n = Number(v);
@@ -8500,21 +8564,24 @@
       setAll(3, { a: num(x), b: 0, c: 0, d: y === undefined ? num(x) : num(y), e: 0, f: 0 });
     };
     t.setRotate = function (angle, cx, cy) {
-      var r = num(angle) * Math.PI / 180;
+      var av = num(angle);
+      var r = av * Math.PI / 180;
       var co = Math.cos(r), si = Math.sin(r);
       var px = cx === undefined ? 0 : num(cx);
       var py = cy === undefined ? 0 : num(cy);
-      setAll(4, { a: co, b: si, c: -si, d: co, e: px * (1 - co) + py * si, f: py * (1 - co) - px * si });
+      setAll(4, { a: co, b: si, c: -si, d: co, e: px * (1 - co) + py * si, f: py * (1 - co) - px * si, ang: av });
     };
     t.setSkewX = function (angle) {
-      setAll(5, { a: 1, b: 0, c: Math.tan(num(angle) * Math.PI / 180), d: 1, e: 0, f: 0 });
+      var av = num(angle);
+      setAll(5, { a: 1, b: 0, c: Math.tan(av * Math.PI / 180), d: 1, e: 0, f: 0, ang: av });
     };
     t.setSkewY = function (angle) {
-      setAll(6, { a: 1, b: Math.tan(num(angle) * Math.PI / 180), c: 0, d: 1, e: 0, f: 0 });
+      var av = num(angle);
+      setAll(6, { a: 1, b: Math.tan(av * Math.PI / 180), c: 0, d: 1, e: 0, f: 0, ang: av });
     };
     // 对象态抽取（所有权克隆 / consolidate / 序列化消费）。
     t.__zwTransformState = function () {
-      return { type: type, a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f };
+      return { type: type, a: m.a, b: m.b, c: m.c, d: m.d, e: m.e, f: m.f, ang: ang };
     };
     return t;
   };
@@ -8530,13 +8597,33 @@
     var parse = function () {
       var raw = null;
       try { raw = el.getAttribute(attr); } catch (_eRd) { raw = null; }
-      if (cacheArr && raw === cacheRaw) return cacheArr;
-      var sts = _zwSvgTransformParse(raw);
-      var arr = [];
-      for (var i = 0; i < sts.length; i++) arr.push(_zwTransformFromState(sts[i]));
-      cacheRaw = raw;
-      cacheArr = arr;
-      return arr;
+      var base;
+      if (cacheArr && raw === cacheRaw) {
+        base = cacheArr;
+      } else {
+        var sts = _zwSvgTransformParse(raw);
+        base = [];
+        for (var i = 0; i < sts.length; i++) base.push(_zwTransformFromState(sts[i]));
+        cacheRaw = raw;
+        cacheArr = base;
+      }
+      // animVal（readOnly）SMIL 动画项追加（svg-compat-v2 B6c——part09
+      // globalThis._zwSmilAnimTransform 单点；null = 无活跃/冻结动画，base
+      // 表直返，非动画路径零变化）。动画在册时 base 条目取副本（animVal
+      // 条目不穿透 baseVal live 对象身份——spec animVal 只读面）。
+      if (readOnly && typeof globalThis._zwSmilAnimTransform === 'function') {
+        var animTl = null;
+        try { animTl = globalThis._zwSmilAnimTransform(el, attr); } catch (_eSmTl) { animTl = null; }
+        if (animTl && animTl.items && animTl.items.length) {
+          var outTl = [];
+          if (!animTl.clearBase) {
+            for (var bi = 0; bi < base.length; bi++) outTl.push(_zwTransformFromState(base[bi].__zwTransformState()));
+          }
+          for (var ai = 0; ai < animTl.items.length; ai++) outTl.push(_zwTransformFromState(animTl.items[ai]));
+          return outTl;
+        }
+      }
+      return base;
     };
     var roThrow = function () {
       throw _zwSvgLenDomErr('transform list is read-only', 'NoModificationAllowedError');

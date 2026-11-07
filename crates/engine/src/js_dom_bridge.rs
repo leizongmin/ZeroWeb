@@ -5888,6 +5888,13 @@ pub fn generate_js_dom_shim() -> &'static str {
         // 挂钩）；文档时间线起点经 part06 window load 派发点 _zwSmilDocStart。
         // https://www.w3.org/TR/2001/REC-smil-animation-20010904/
         s.push_str(include_str!("js_dom_shim/part09.js"));
+        // part09b（2026-11-07 svg-compat-v2 B6c 切分）：part09 超 2000 行准则
+        // 按行边界字节精确切分（R2963 先例，拼接字节序零变化零行为变更）——
+        // 前半（part09）= 时间线状态/文法/interval 链/数值与类型域采样器，
+        // 后半（part09b，续 part09 自身 IIFE 同闭合并收尾 })();）=
+        // animateTransform 域采样 + animVal 反射消费钩子 + 事件泵 +
+        // SVGSVGElement/SVGAnimationElement 接口。
+        s.push_str(include_str!("js_dom_shim/part09b.js"));
         s.replace("__ZERO_BUILD_VERSION__", zero_product_version::VERSION)
     })
 }
