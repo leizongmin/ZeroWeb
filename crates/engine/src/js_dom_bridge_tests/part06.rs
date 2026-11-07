@@ -5399,3 +5399,164 @@ fn test_cssom_declared_color_alpha_boundary_arms_t47() {
         "T47 alpha 两边界臂（a8=255 收缩 rgb 形 / a8=0 rgba..,0 形，4/8 位两族）"
     );
 }
+
+#[test]
+fn test_cssom_declared_color_context_normalization_t48() {
+    // T48（属性上下归一片，池项：T46 DF-1/TV-3 + 系统色/CSS-wide keyword + T46 TV-2 函数值）：
+    // <color> 上下文归一面专案钉。
+    // ① CSS-wide keywords：全属性有效、declared 序列化 ASCII lowercase（CSS Cascading
+    //    Level 4 §7.1-§7.4 + Level 5 revert-layer；Blink 154 活体 t48 oracle a1-a5/a10——
+    //    color 上下文五键 + `INHERIT !important` 形）。
+    // ② 系统色：CSS Color 4 §6.3 declared 值 ASCII lowercase（同 §16.2 命名色；活体
+    //    oracle b-*：modern 19 键 - listitemtext + deprecated 23 键 = Chrome 154 接受面；
+    //    LISTITEMTEXT Chrome 不接受→整声明丢弃，ZW 无 ident 拒绝面保持逐字——分歧形状钉）。
+    // ③ legacy 颜色函数文本归一（T46 TV-2：函数名 lowercase + 参数逗号空格 + 数字文本
+    //    规范形 '.5'→'0.5'/'0.50'→'0.5'/'255.0'→'255'/'+255'→'255'，活体 oracle d1-d5/n3/n6）；
+    //    现代空格语法/hsl→rgb 转换/通道 clamp（Blink parse-reserialize，oracle d6-d9/n1/n4）
+    //    本切片不覆盖——分歧形状钉锁现状。
+    // ④ T46/T47 锚点复核（命名色/hex/非法 hex 拒绝语义在 color 上下文不变）。
+    // https://www.w3.org/TR/css-cascade-4/#defaulting-keywords
+    // https://www.w3.org/TR/css-color-4/#css-system-colors
+    // https://www.w3.org/TR/css-color-4/#rgb-functions
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'color: RED'; __p('anchorNamedUpper', __st.color);\
+             __st.cssText = 'color: #F00A'; __p('anchorHex4', __st.color);\
+             __st.cssText = 'border: 1px solid RED'; __p('anchorBorderNamed', __st.cssText);\
+             __st.cssText = 'color: #12g'; __p('anchorInvalidHexDrop', __st.color);\
+             __st.cssText = 'border: 1px solid #12g'; __p('anchorBorderInvalidHex', __st.cssText);\
+             __st.cssText = 'color: INHERIT'; __p('cwwInherit', __st.color);\
+             __st.cssText = 'color: INITIAL'; __p('cwwInitial', __st.color);\
+             __st.cssText = 'color: UNSET'; __p('cwwUnset', __st.color);\
+             __st.cssText = 'color: REVERT'; __p('cwwRevert', __st.color);\
+             __st.cssText = 'color: REVERT-LAYER'; __p('cwwRevertLayer', __st.color);\
+             __st.cssText = 'color: INHERIT !important'; __p('cwwInheritImportant', __st.cssText);\
+             __st.cssText = 'color: CANVAS'; __p('sysCanvas', __st.color);\
+             __st.cssText = 'color: BUTTONTEXT'; __p('sysButtonText', __st.color);\
+             __st.cssText = 'color: GRAYTEXT'; __p('sysGrayText', __st.color);\
+             __st.cssText = 'color: ACCENTCOLOR'; __p('sysAccentColor', __st.color);\
+             __st.cssText = 'color: SELECTEDITEMTEXT'; __p('sysSelectedItemText', __st.color);\
+             __st.cssText = 'color: ACTIVECAPTION'; __p('sysDepActiveCaption', __st.color);\
+             __st.cssText = 'color: INFOTEXT'; __p('sysDepInfoText', __st.color);\
+             __st.cssText = 'color: THREEDSHADOW'; __p('sysDepThreeDShadow', __st.color);\
+             __st.cssText = 'color: WINDOWTEXT'; __p('sysDepWindowText', __st.color);\
+             __st.cssText = 'color: BACKGROUND'; __p('sysDepBackground', __st.color);\
+             __st.cssText = 'color: LISTITEMTEXT'; __p('sysListItemNotAccepted', __st.color);\
+             __st.cssText = 'background: CANVAS'; __p('sysInBgShorthand', __st.cssText);\
+             __st.cssText = 'color: rgb(255,0,0)'; __p('funcTight', __st.color);\
+             __st.cssText = 'color: RGB(255, 0, 0)'; __p('funcUpper', __st.color);\
+             __st.cssText = 'color: rgba(255,0,0,.5)'; __p('funcAlphaDot5', __st.color);\
+             __st.cssText = 'color: rgba(255, 0, 0, 0.50)'; __p('funcAlphaTrailing0', __st.color);\
+             __st.cssText = 'color: rgb( 255 , 0 , 0 )'; __p('funcWs', __st.color);\
+             __st.cssText = 'color: rgb(255.0, 0, 0)'; __p('funcIntFloat', __st.color);\
+             __st.cssText = 'color: rgb(+255, 0, 0)'; __p('funcPlus', __st.color);\
+             __st.cssText = 'border: 1px solid RGB(255, 0, 0)'; __p('funcInBorder', __st.cssText);\
+             __st.cssText = 'background: RGB(255, 0, 0)'; __p('funcInBg', __st.cssText);\
+             __st.cssText = 'color: HSL(0, 100%, 50%)'; __p('funcHslNoConvert', __st.color);\
+             __st.cssText = 'color: rgb(255 0 0)'; __p('funcModernNoConvert', __st.color);\
+             __st.cssText = 'color: rgb(300, 0, 0)'; __p('funcNoClamp', __st.color);\
+             __st.cssText = 'color: rgba(255, 0, 0, -0.5)'; __p('funcAlphaNoClamp', __st.color);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"anchorNamedUpper":"red","anchorHex4":"rgba(255, 0, 0, 0.667)","anchorBorderNamed":"border: 1px solid red;","anchorInvalidHexDrop":"","anchorBorderInvalidHex":"","cwwInherit":"inherit","cwwInitial":"initial","cwwUnset":"unset","cwwRevert":"revert","cwwRevertLayer":"revert-layer","cwwInheritImportant":"color: inherit !important;","sysCanvas":"canvas","sysButtonText":"buttontext","sysGrayText":"graytext","sysAccentColor":"accentcolor","sysSelectedItemText":"selecteditemtext","sysDepActiveCaption":"activecaption","sysDepInfoText":"infotext","sysDepThreeDShadow":"threedshadow","sysDepWindowText":"windowtext","sysDepBackground":"background","sysListItemNotAccepted":"LISTITEMTEXT","sysInBgShorthand":"background: canvas;","funcTight":"rgb(255, 0, 0)","funcUpper":"rgb(255, 0, 0)","funcAlphaDot5":"rgba(255, 0, 0, 0.5)","funcAlphaTrailing0":"rgba(255, 0, 0, 0.5)","funcWs":"rgb(255, 0, 0)","funcIntFloat":"rgb(255, 0, 0)","funcPlus":"rgb(255, 0, 0)","funcInBorder":"border: 1px solid rgb(255, 0, 0);","funcInBg":"background: rgb(255, 0, 0);","funcHslNoConvert":"hsl(0, 100%, 50%)","funcModernNoConvert":"rgb(255 0 0)","funcNoClamp":"rgb(300, 0, 0)","funcAlphaNoClamp":"rgba(255, 0, 0, -0.5)"}"##,
+        "T48 <color> 上下文归一全案（csswide lowercase + 系统色 41 键 + legacy 函数文本归一 + 转换面分歧形状钉 + T46/T47 锚点）"
+    );
+}
+
+#[test]
+fn test_cssom_declared_noncolor_verbatim_t48() {
+    // T48（属性上下归一片）：非 <color> 上下文保形面专案钉。
+    // ① T46 DF-1 修复臂：非 color 属性值中撞名 color keyword 的 ident 是 custom ident，
+    //    逐字保留（Blink case-sensitive，活体 oracle e1-e6：animation-name: RED/
+    //    CURRENTCOLOR/transparent + will-change/transition-property/grid-area 同形）；
+    //    系统色形 ident 同保形（oracle c1-c2）。
+    // ② CSS-wide keyword 上下文无关：animation-name 同 lowercase + !important 形
+    //   （oracle a6-a9/x1）——T46 TV-3 分歧缺口修复。
+    // ③ 非 color/未知属性值中 hex 不归一不拒绝（shim 无属性 grammar 校验/属性注册表）：
+    //    width: #F00 原文保留（Blink 按属性 grammar 丢弃，oracle e7/e10）、foo: #12g 原文
+    //    保留（Blink cssText setter 对未知属性名声明整体丢弃，oracle2 u1-u6——T47 DF-1
+    //    「Blink 原文保留」前提不成立，shim 保留面记已知限制）；color 上下文拒绝语义对照。
+    // ④ custom property 值字面 token 流（DF-5）：T47 TV-LOW-1 oracle 直探臂（oracle f1-f5）；
+    //    `--x: INHERIT` 保留（Blink 按 css-variables §3 css-wide 语义 lowercase，oracle
+    //    f3/x2/x3——DF-5 不变式优先，分歧形状钉）。
+    // https://www.w3.org/TR/css-cascade-4/#defaulting-keywords
+    // https://www.w3.org/TR/css-variables-1/#using-variables
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><head><style>p { margin: 0 }</style></head><body><p>x</p></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    sandbox
+        .execute(
+            "globalThis.__st = document.styleSheets[0].cssRules[0].style;\
+             globalThis.__res = {};\
+             function __p(k, v) { globalThis.__res[k] = v; }\
+             __st.cssText = 'animation-name: RED'; __p('animRed', __st.animationName);\
+             __st.cssText = 'animation-name: CURRENTCOLOR'; __p('animCurrentcolor', __st.animationName);\
+             __st.cssText = 'animation-name: transparent'; __p('animTransparentLc', __st.animationName);\
+             __st.cssText = 'animation-name: CANVAS'; __p('animSystemIdent', __st.animationName);\
+             __st.cssText = 'animation-name: WINDOWTEXT'; __p('animSystemIdent2', __st.animationName);\
+             __st.cssText = 'will-change: RED'; __p('willChangeRed', __st.getPropertyValue('will-change'));\
+             __st.cssText = 'transition-property: TRANSPARENT'; __p('transPropTransparent', __st.getPropertyValue('transition-property'));\
+             __st.cssText = 'grid-area: RED'; __p('gridAreaRed', __st.getPropertyValue('grid-area'));\
+             __st.cssText = 'animation-name: INHERIT'; __p('animInherit', __st.animationName);\
+             __st.cssText = 'animation-name: REVERT'; __p('animRevert', __st.animationName);\
+             __st.cssText = 'animation-name: INITIAL !important'; __p('animInitialImportant', __st.cssText);\
+             __st.cssText = 'width: #F00'; __p('widthHex', __st.cssText);\
+             __st.cssText = 'width: #12g'; __p('widthInvalidHex', __st.cssText);\
+             __st.cssText = 'width: RED'; __p('widthRed', __st.cssText);\
+             __st.cssText = 'foo: #F00'; __p('unknownValidHex', __st.cssText);\
+             __st.cssText = 'foo: #12g'; __p('unknownInvalidHex', __st.cssText);\
+             __st.cssText = 'width: 1px; foo: bar'; __p('mixedUnknownKeep', __st.cssText);\
+             __st.cssText = '--x: #1x'; __p('cpInvalidHex', __st.getPropertyValue('--x'));\
+             __st.cssText = '--x: RED'; __p('cpNamedUpper', __st.getPropertyValue('--x'));\
+             __st.cssText = '--x: CANVAS'; __p('cpSystem', __st.getPropertyValue('--x'));\
+             __st.cssText = '--x: rgb(255,0, 0)'; __p('cpFuncTight', __st.getPropertyValue('--x'));\
+             __st.cssText = '--x: INHERIT'; __p('cpCssWideVerbatim', __st.getPropertyValue('--x'));\
+             __st.cssText = 'width: 1px; color: #12g'; __p('mixedColorInvalidDropped', __st.cssText);\
+             JSON.stringify(globalThis.__res);",
+        )
+        .unwrap();
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__res)").unwrap().value,
+        r##"{"animRed":"RED","animCurrentcolor":"CURRENTCOLOR","animTransparentLc":"transparent","animSystemIdent":"CANVAS","animSystemIdent2":"WINDOWTEXT","willChangeRed":"RED","transPropTransparent":"TRANSPARENT","gridAreaRed":"RED","animInherit":"inherit","animRevert":"revert","animInitialImportant":"animation-name: initial !important;","widthHex":"width: #F00;","widthInvalidHex":"width: #12g;","widthRed":"width: RED;","unknownValidHex":"foo: #F00;","unknownInvalidHex":"foo: #12g;","mixedUnknownKeep":"width: 1px; foo: bar;","cpInvalidHex":"#1x","cpNamedUpper":"RED","cpSystem":"CANVAS","cpFuncTight":"rgb(255,0, 0)","cpCssWideVerbatim":"INHERIT","mixedColorInvalidDropped":"width: 1px;"}"##,
+        "T48 非 <color> 上下文保形全案（DF-1 ident 保形 + csswide 全属性 + hex 非色上下文原文 + custom property 字面流）"
+    );
+}
