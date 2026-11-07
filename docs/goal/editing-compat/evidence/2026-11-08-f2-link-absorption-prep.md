@@ -50,6 +50,29 @@ materialization 解耦**：qV(forecolor)-after 全序照设（:1997 "rgb(0, 0, 2
   过滤只在 typing insert 消费层。开工时逐键复核全 23 子测试数组（待判别④
   逐刀纪律）。
 
+### 保全 wrap 与 delete 幸存（2026-11-08 三读补勘）
+
+三读 part06 值/结构命令臂保全机制（:4942-:4964 `cmdPresOv` 门 + :4949-:4964
+快照 + :5083-:5088 回写）补出集成表第 7/8 点：
+
+- **第 7 点（结构命令保全 wrap）**：hr/img 臂尾部 sel.collapse → `_zwSync`
+  清 typing 态（:4952-:4956 注释锚），而结构 13 键期望 link 全存活 ⇒
+  `__zwTypingLink` 必须并入 `presTt` 同款快照/条件回写（null 保持式）。`cmdPresOv`
+  门 :4942-:4948 已覆盖全部 13 键命令（formatblock/indent/hr/img/iol/iul/
+  insertparagraph/insertlinebreak/justify×4/inserthtml），扩一个全局量零新门。
+- **第 8 点（delete 幸存语义）**：:1170 `createlink>delete>inserttext` 期望
+  `fo<a…><font color="#000000">a</font></a>bar`——pending link **幸存
+  delete**，与 typing carrier 规范清除语义相异（:4931-:4941 cmd 门注释
+  「delete 规范清 typing carrier」；final2 44 行 delete+inserttext compare 为
+  carrier 清除证据面）。F2 knife 的 delete 臂不得清 `__zwTypingLink`；:1170
+  的 `#000000` carry 走 F2b tcap delta 通道（被删 "o" 黑 vs link blue），
+  与 carrier 保全互不相干。
+- 消费面形态勘定（part01 四调用点）：D4 拆壳臂 ：9624（innerTags 链推导，
+  非 typing tags）+ 文本 splice 臂 ：9679（ttags1）+ 元素边界两臂
+  :9770/:9787（ttags2/ttags3）——后三臂统一经 `_zwCeTypingTagsAt` 过滤后进
+  `_zwCeTypingInsert`；link 外裹 + delta 过滤做在 `_zwCeTypingInsert` 单点
+  （读 `__zwTypingLink`）即可全覆盖，D4 臂语料无 link×toggle-off 交形暂不触。
+
 ## F2b 既有-link 面（delete 族 10 键）+ delta carry 模型
 
 multitest.js :2138-:2172 连续族（链均 `delete>inserttext(a)`），七案全表：
@@ -137,9 +160,13 @@ rows 恒一。
 | hasA 拆分 | part01f.js:1145-:1150 | 外链弃捕保持；内链 delta carry 新通道 |
 | tcap 门 | part01f.js:1200（delta ⑤） | hasA 时改收内层 style props 快照 |
 | 外壳剥离 | part01f.js 删除落定 strip 面 | 空 link 外层 inline 壳扩含 font |
+| 保全 wrap | part06.js:4962-:4966 + :5083-:5088 | `__zwTypingLink` 并入 presTt 同款快照/条件回写 |
+| delete 幸存 | part01f.js delete apply 面 | delete 臂不清 `__zwTypingLink`（:1170 面） |
 
 ## 运行注记
 
 本预研为纯只读分析（语料行号、期望/实得取自 census 残键全名单
 `.acceptance/dps/census-mt-residual-v5fix2-keys.txt`），与换基门尾链零冲突；
-落档时换基门 mt 腿在飞（03:22），源码未动。
+落档时换基门 mt 腿在飞（03:22），源码未动。三读补勘落档时门 mt 腿收尾中
+（03:39），仍零源码触面；期间 origin 另进 shadow M3 系 2 提交
+（ddb1e73cf/9360e07c5），本地 9 提交待 writer 落地 rebase 线性汇合。
