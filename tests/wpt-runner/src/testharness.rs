@@ -14574,15 +14574,23 @@ const TESTDRIVER_STUB: &str = r#"<script>
     }
     try {
       var parent = element.parentNode;
-      if (parent && parent.querySelectorAll) {
+      // s327（html-semantics）：兄弟枚举不走 `parent.querySelectorAll(':scope > tag')`
+      // ——本仓 `:scope` 语义为文档根（query.rs `:root` 等价，非 qSA 上下文引用元素），
+      // 非根 parent 下恒空 → 本兜底臂全废 → 无 id 动态控件（beforeinput.tentative
+      // 匿名 input 族）整链 "no stable selector"。直查 `parent.children` 按 tag 计数
+      // 等价且不依赖 `:scope` 上下文语义。
+      if (parent && parent.children) {
         var idx = 1;
-        var sibs = parent.querySelectorAll(':scope > ' + tag);
-        for (var si = 0; si < sibs.length; si++) {
-          if (sibs[si] === element) break;
-          idx++;
+        var sibCount = 0;
+        var kids = parent.children;
+        for (var ki = 0; ki < kids.length; ki++) {
+          if (String(kids[ki].tagName || '').toLowerCase() === tag) {
+            sibCount++;
+            if (kids[ki] === element) idx = sibCount;
+          }
         }
-        if (sibs.length > 0) {
-          var viaNth = selectorFor(parent) ;
+        if (sibCount > 0) {
+          var viaNth = selectorFor(parent);
           if (viaNth) {
             var sel = viaNth + ' > ' + tag + ':nth-of-type(' + idx + ')';
             var m3 = document.querySelectorAll(sel);
