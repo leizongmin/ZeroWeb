@@ -1366,11 +1366,12 @@ fn viv_mixed_extent_child(
 /// gate（最小切片）：父 vertical + 子非 vertical（正交交换帧域）；子流内非
 /// float/abs/fixed/multicol + display Block/ListItem（float 域 R1015/R5368、abs 域
 /// R5461、inline-block 域 R4437 各有臂，不触）；子物理宽 Auto + height Auto（显式
-/// 尺寸/content 关键字 FIXME）；**父 style 宽 Auto**（definite CB 域
-/// sizing-orthog-htb-in-vrl-007..012 批次 FIXME）；子 DOM 无元素子（纯文本叶，
-/// inline 元素子域 R4469 口径 FIXME）。
+/// 尺寸/content 关键字 FIXME）；父 style 宽 Auto（indefinite → ICB）或 Px
+///（definite → min(父 content 宽, ICB)，R5463 扩展；%/关键字 FIXME）；子 DOM 无
+/// 元素子（纯文本叶，inline 元素子域 R4469 口径 FIXME）。
 ///
-/// action：available = ICB 宽 − 子 Px 水平 margin（auto/% 不计，FIXME）；stf =
+/// action：available = constraint − 子 Px 水平 margin（auto/% 不计，FIXME；constraint
+/// 按 gate：indefinite → ICB、Px definite → min(父 content 宽, ICB)）；stf =
 /// min(max-content, max(min-content, available))（intrinsic_sizing 同源测量）；
 /// 水平 IFC 以 stf 断行 → content_width = stf、width = stf + frame（min/max-width
 /// 钳 5.5 口径），content_height = Σ 行高、height = Σ 行高 + frame（compute_final
@@ -1379,7 +1380,7 @@ fn viv_mixed_extent_child(
 /// 父 vertical-rl 块流起始 = 右缘：x 左移 delta 保块流位（**按父 WM** 判向——子恒
 /// htb，R5460 viv 臂按自身 WM 的判法在本域恒假）；父 vertical-lr 起始 = 左缘，x 不动。
 /// 父祖先链宽度不回写（body/html 无边框背景零可见像素，与 R5460 html root sizing 链
-/// 同账）；definite-CB/inline 元素子/content 关键字域 FIXME 有驱动案再收。
+/// 同账）；%/关键字 CB/inline 元素子/content 关键字域 FIXME 有驱动案再收。
 /// kill-switch `ZW_ORTHO_BLOCK_STF=0`。
 pub(crate) fn orthog_block_inline_axis_stf(
     root: &mut LayoutBox,
@@ -1407,7 +1408,15 @@ fn orthog_block_stf_walk(
     let parent_node_id = b.node_id;
     for child in &mut b.children {
         if in_vertical {
-            orthog_block_stf_child(child, doc, styles, inline_fonts, viewport_width, parent_node_id);
+            orthog_block_stf_child(
+                child,
+                doc,
+                styles,
+                inline_fonts,
+                viewport_width,
+                parent_node_id,
+                b.content_width,
+            );
         }
         orthog_block_stf_walk(child, doc, styles, inline_fonts, viewport_width, in_vertical);
     }
@@ -1420,6 +1429,7 @@ fn orthog_block_stf_child(
     inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
     viewport_width: f32,
     parent_node_id: Option<NodeId>,
+    parent_content_width: f32,
 ) {
     use zero_css_parser::values::LengthValue;
     if c.writing_mode.is_vertical_block_flow() {
@@ -1441,15 +1451,19 @@ fn orthog_block_stf_child(
     if !matches!(s.width, LengthValue::Auto) || !matches!(s.height, LengthValue::Auto) {
         return;
     }
-    // 父 style 宽 auto = containing block 行内尺寸 indefinite → 约束 = ICB（§7.1
-    // orthogonal-auto）；definite CB（Px/%/关键字）域 FIXME（007..012 批次）。匿名父
+    // §7.1 orthogonal-auto：constraint = min(available, ICB)。父 style 宽 auto =
+    // CB 行内尺寸 indefinite → available = ICB；父 Px = definite → available =
+    // 父 content box 宽（物理水平 = 父块方向 extent，taffy 已解 definite，探针证
+    // cw 可信；sizing-orthog-htb-in-vrl-007..012 批次域）；%/关键字域 FIXME。匿名父
     //（无 node_id）保守跳过。
-    let parent_width_auto = parent_node_id
-        .and_then(|pid| styles.get(&pid))
-        .is_some_and(|ps| matches!(ps.width, LengthValue::Auto));
-    if !parent_width_auto {
+    let Some(ps) = parent_node_id.and_then(|pid| styles.get(&pid)) else {
         return;
-    }
+    };
+    let constraint_border = match &ps.width {
+        LengthValue::Auto => viewport_width,
+        LengthValue::Px(_) => parent_content_width.min(viewport_width),
+        _ => return,
+    };
     // 纯文本叶（DOM 无元素子；inline 元素子域 R4469 口径 FIXME）。
     if doc
         .child_nodes(id)
@@ -1464,7 +1478,7 @@ fn orthog_block_stf_child(
     let margin_left = resolve_margin_px(&s.margin_left);
     let margin_right = resolve_margin_px(&s.margin_right);
     let frame_h = c.border_left + c.border_right + c.padding_left + c.padding_right;
-    let available_border = viewport_width - margin_left - margin_right;
+    let available_border = constraint_border - margin_left - margin_right;
     if !available_border.is_finite() || available_border <= 0.0 {
         return;
     }
@@ -1472,8 +1486,12 @@ fn orthog_block_stf_child(
     if available <= 0.0 {
         return;
     }
-    let minc = crate::intrinsic_sizing::block_min_content_width(c, doc, styles);
-    let maxc = crate::intrinsic_sizing::block_max_content_width(c, doc, styles);
+    // intrinsic_sizing 返回 **border-box 基**（inner + 自身 frame，R5368 口径——float
+    // shrink-to-fit 等消费方按外宽贡献消费）；本公式以 content 基与 available（已扣
+    // frame）比较，调用点剥 frame_h 防 frame 双计（R5463 判别矩阵定谳：SHORT 域
+    // maxc 202 含 border 6，双计曾致 w=208 应 202）。
+    let minc = (crate::intrinsic_sizing::block_min_content_width(c, doc, styles) - frame_h).max(0.0);
+    let maxc = (crate::intrinsic_sizing::block_max_content_width(c, doc, styles) - frame_h).max(0.0);
     if !maxc.is_finite() || maxc <= 0.0 || !minc.is_finite() {
         return;
     }
@@ -1515,9 +1533,7 @@ fn orthog_block_stf_child(
         c.content_width = stf_content;
         // 块流起始按**父 WM** 判向（子恒 htb）：父 vertical-rl 起始 = 右缘，x 左移
         // delta 保块流位；vertical-lr 起始 = 左缘，x 不动。
-        if let Some(ps) = parent_node_id.and_then(|pid| styles.get(&pid))
-            && ps.writing_mode == zero_style_system::WritingModeValue::VerticalRl
-        {
+        if ps.writing_mode == zero_style_system::WritingModeValue::VerticalRl {
             c.x -= delta;
         }
     }

@@ -9,8 +9,11 @@
 //!
 //! 谱系：R4437（orthogonal inline-block 测量臂）、R5456（正交 float/abs 叶）、
 //! R5461（正交 abs 叶 shrink-to-fit）、R5460（viv 容器块轴 extent）——本钉为
-//! 块级正交子域收口。kill-switch 回退锚见 r5462_orthog_block_stf_kill_switch.rs
-//!（独立进程，R3858 教训）。
+//! 块级正交子域收口。R5463 扩展：definite CB（父 Px）constraint = min(父 content
+//! 宽, ICB) ＋ stf intrinsic 基校正（intrinsic_sizing 返回 border-box 基，消费前
+//! 剥 frame——SHORT 钉 336→266 勘误），该域主判例见
+//! r5463_definite_cb_orthog_stf.rs。kill-switch 回退锚见
+//! r5462_orthog_block_stf_kill_switch.rs（独立进程，R3858 教训）。
 
 use zero_layout_engine::{LayoutEngine, LayoutResult};
 
@@ -85,10 +88,12 @@ fn full_text_fills_icb_constraint_border_box() {
 fn short_text_shrinks_to_max_content() {
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), CSS);
     let ob = find_ortho(&r.root);
-    // shrink-to-fit 内容响应：短文本 max-content ≈ 266（10 数单行）→ border-box 336。
+    // shrink-to-fit 内容响应：短文本 max-content 196（10 数单行，content 基）→
+    // border-box 266。R5463 修正：intrinsic_sizing 返回 border-box 基（含 frame），
+    // stf 公式消费前剥 frame——旧钉锁的双计值 336（=196+70+70）已勘误。
     assert!(
-        (ob.width - 336.0).abs() < 0.5,
-        "短文本应收缩到 max-content+frame=336，实得 {}",
+        (ob.width - 266.0).abs() < 0.5,
+        "短文本应收缩到 max-content+frame=266，实得 {}",
         ob.width
     );
     assert!(
@@ -135,13 +140,15 @@ fn explicit_width_and_definite_cb_untouched() {
         "显式宽 400+frame=470 不越权，实得 {}",
         ob.width
     );
-    // definite CB（父 style 宽 Px → §7.1 约束非 ICB，另账 FIXME）：不触。
+    // definite CB（父 style 宽 Px）：R5463 起 constraint = min(父 content 宽, ICB)
+    // ＝400 → available 330 ≥ max-content 196 → stf 收缩 196+70=266（不再断言旧
+    // 不触态 90；该域主判例移 r5463_definite_cb_orthog_stf.rs）。
     let css_cb = CSS.replace("div#cb { width: auto; }", "div#cb { width: 400px; }");
     let r = compute(&body_html("01 02 03 04 05 06 07 08 09 10"), &css_cb);
     let ob = find_ortho(&r.root);
     assert!(
-        (ob.width - 90.0).abs() < 0.5,
-        "definite CB 域不触（维持 taffy 既有 90），实得 {}",
+        (ob.width - 266.0).abs() < 0.5,
+        "definite CB 400 域 stf 收缩 196+frame=266，实得 {}",
         ob.width
     );
 }
