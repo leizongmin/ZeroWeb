@@ -2,18 +2,20 @@
 
 ## 状态头（2026-11-08）
 
-- **当前状态**：M2 完成（**DC-2 ✅** 2026-11-08）——D3-D5 接线 + websockets
-  通道 A/B：既有 110 案 381 行全等零回归，wss 池 +101 案 360 subtest 全绿
-  （100% 过 98.5% 批次门，covered > 0）。
+- **当前状态**：M2 完成（DC-2 ✅）；M3 迁移前基线落账 + 组成归因完成——
+  基线 = **13,582P/1,337F/8T（14,927 subtest，含 wss 360P/101 键）**，
+  provenance 三重核实（树 411e862bb 代码态 + rustfmt 机械面 / run 内新建
+  二进制 / 域级对账既有锚全等）。组成三项归因（老代码同语料重跑实验）：
+  分母 −129 = 语料漂移（老代码重跑分母逐 subtest 同 14,567）；fetch 域
+  +72P/−72F = M4 窗口后 http-cache M1-b + CacheMode M1-a 净效应（零 P→F
+  零新 T）；wss +360 = M2 接线。见
+  [基线归因档](evidence/2026-11-08-m3-baseline-reattribution.md)。
 - **卡点**：无。
-- **下一步**：M3 py 路由框架（py 普查档 §三：注册表 + EndpointCtx stash）。
-  迁移前基线已起跑（2026-11-08）：net-api 全通道 13,275P 面经 systemd 单元
-  `m3-baseline-164121`（test-guard 4G/8G/14400s + MemoryMax=12G，日志
-  `/tmp/m3-baseline-164121.log`，树 = 411e862bb 干净态）。**基线完成前
-  runner 源码冻结**（provenance 纪律）；落账后启 153 臂注册表迁移（逐字节
-  等价 A/B）+ S12 cors-preflight-redirect 补丁收编。基线二进制出处 =
-  411e862bb；推送时 rebase 拾入 3f2d80d27（跨流机械 rustfmt，编译完成后
-  才进树，无行为面），A/B 判读按 411e862bb 口径。
+- **下一步**：M3 py 路由框架开工（py 普查档 §三蓝图）：新建
+  testharness_py_routes 模块（EndpointCtx stash 表 + 保序注册表 +
+  dispatch 骨架），按族分批迁 84 条基础臂（testharness.rs 7379-11007 段）
+  + 四 fetcher 闭包臂，每批全量 A/B 对照基线日志 changed 空集；随后
+  S12 补丁收编 + update 脚本缺口清偿（语料 pin 形态核对 → 销账或补条目）。
 
 ## 里程碑状态表
 
@@ -40,7 +42,9 @@
 ## 零回归复验面（DC-2/DC-3/DC-4 共用锚）
 
 1. websockets 通道既有面（M2 A/B 锚：110 案 381 行，[M2 档](evidence/2026-11-08-m2-wss-wiring.md)）；
-2. net-api 全通道 13,275P 面（43 号 M4 终账）；
+2. net-api 全通道基线 13,582P/1,337F/8T（2026-11-08 落账 +
+   [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)，
+   supersedes 43 号 M4 终账 13,275P 口径）；
 3. S3b `/echo-query_v13`（constructor/016）；
 4. S12 cors-preflight-redirect 面；
 5. inspect-headers.py POST 豁免面。
