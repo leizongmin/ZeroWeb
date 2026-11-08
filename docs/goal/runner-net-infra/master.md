@@ -37,6 +37,10 @@
   文件 ≤2000 行），表文本 vs 迁移提交逐字节全等，单测 298P/0F +
   全量 A/B 第三跑 multiset 空集（切片五档 §六）；与上游 7f1c9f717
   lint 合流后 clippy --fix 收敛归零（d19247694，碰撞管理 22:47 条）。
+  **M4 互指记账面已落**（2026-11-08 续轮）：43 号 wss 面入账注记（归档
+  入口挂账锚点）、47 号 corpus 批次可消费互指（fetch 通道主表承接面）
+  与 39 号 P-B 判据族互指三处；py 池数值门判定与四 fixture 面
+  终验 A/B 随切片六收口一并落证。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
@@ -44,8 +48,10 @@
   goal py 框架交付（M4 承接）。
 - **下一步**：fetcher 闭包三分表迁移（清单档拓扑：script/sw 两 fetcher →
   独立表实例 py_script_fetch_routes()/py_sw_fetch_routes()，stash Arc
-  共享不可断）→ DC-3 收口；M4 验收含 43 号 wss 面入账 + 47 号 corpus
-  门承接。
+  共享不可断；**已认领在编**——碰撞管理 22:49 条，面让予纪律见 22:55
+  条）→ DC-3 收口；M4 余项 = 43 号 wss 面入账 ✅（2026-11-08）+ 47 号
+  corpus 门承接互指 ✅（2026-11-08）→ py 池数值门判定 + 四 fixture 面
+  终验 A/B 随切片六收口落证。
 
 ## 里程碑状态表
 
@@ -55,7 +61,7 @@
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
 | M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一~五 ✅ 残链清空；余 fetcher 闭包三分表） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） |
-| M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
+| M4 下游消费验收 + 零回归收口（DC-4） | 进行中（互指记账面 ✅ 2026-11-08：43 号 wss 面入账 + 47/39 号控制面互指；py 池门判定与四 fixture 面终验 A/B 随切片六收口） | 门型见两审计档第四节；互指落点见状态头 M4 段 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
 
@@ -154,3 +160,9 @@
   stash 恒等约束守门（script fetcher 的 serve_custom_stash/cred_cookies
   与 PyEndpointCtx 同 Arc，不得另建）；他轮勿碰两 fetcher 闭包段与
   testharness_py_routes 表面，逐臂普查证据随切片六档落。
+- 2026-11-08 22:55 续轮实例（M4 记账面）：对 22:41 在飞 needless_borrow
+  六文件件跑 fmt/clippy -D warnings/单测三件套全过后，见 d19247694
+  同内容收编件已落库——零重复提交，验证即独立补验；切片六 .rs 面让予
+  22:49 认领实例，本实例承接 M4 互指记账（43 号入账注记 + 47/39 号
+  控制面互指三处，见状态头 M4 段与各 goal 文档），不碰两 fetcher
+  闭包段与 testharness_py_routes 表面。

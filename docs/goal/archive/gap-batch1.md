@@ -13,6 +13,11 @@ CI run 42096051904）。引擎/runner 缺口按簇挂账（referrer-policy/prelo
 `.py` 判据端点仿真、wai-aria testdriver computed label/role 查询臂、
 input-events 编辑管线簇、storage StorageManager 全域、gen/ wrapper 管道），
 见 M3 evidence 失败簇归因，不在 DC 内。
+**46 号 M4 互指（2026-11-08）**：referrer/preload 判据端点的框架承接面已
+落——runner py 路由注册表承接判据回显端点（referrer-checker-img 注册行 +
+s270 单测在账，见 46 号 [runner-net-infra](../runner-net-infra.md) M3
+框架），script fetcher 判据族分表随 46 号切片六在途；本 goal 重启专面
+通道时端点按普查档 P-B 分类落 46 号注册表即可，无新语义。
 **下一步**：无行动项；引擎/runner 挂账簇按归域立项建议走各自 goal。
 
 ## coverage 对账（coverage-2026-11-02 基线，全量头条 67.54%）

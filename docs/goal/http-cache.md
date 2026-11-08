@@ -128,7 +128,11 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   （13,256P，2026-11-07 收口）逐 subtest 零回归；43 号 request-cache 账以
   本 goal 交付承接（两 goal 控制面互指）。
 - 与 46 号（runner-net-infra）py 端点前置——http-cache corpus 批次排期
-  对齐 46 号 M3 框架交付。
+  对齐 46 号 M3 框架交付。**46 号 M4 互指（2026-11-08）**：py 框架主表
+  承接面已落——85 行保序注册表 + stash 端点先例 route_cache_py 注册且
+  http-cache 通道 102/102 行为验证，fetch 通道 corpus 批次可消费；
+  script/service-worker fetcher 分表随 46 号切片六在途（判定端点族不涉
+  本 goal corpus 面），完整交付以 46 号 DC-3 收口为准。
 - 缓存语义实现处加 RFC 9111 条款锚定注释；涉及导航资源加载的缓存路径
   改动与 rendering-compat 的加载性能门（benchmarks perf-gate）同窗核对，
   防缓存命中路径改变加载时序预算。

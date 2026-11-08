@@ -46,6 +46,8 @@ vintage 等，M0 逐目录甄别）；websockets 仅 8 文件（?wss 变体面�
 - **WebSocket wss 面**（TLS 端点 fixture + 通道 scheme/端点寻址）——
   **已拆基建 goal 46 号 runner-net-infra**（v2 挂账的两前置审计随其 M0
   落地）；本 goal 只收**非 wss 依赖面**，wss 面以 46 号 DC-2 为前置。
+  **已入账（2026-11-08）**：46 号 DC-2 落地——TLS 端点 fixture + D3-D5
+  寻址接线，wss 池 101 案 360 subtest 全绿过批次门（[46 号 M2 档](../runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）。
 - **request-cache 族 98F**——**已拍板立项 47 号 http-cache**（引擎
   HTTP 缓存层）；本 goal 沿 v2 剔除口径，47 号交付后由其承接收敛。
 - 一期/二期零回归底线继续有效（通道分母逐 subtest 对照）。
