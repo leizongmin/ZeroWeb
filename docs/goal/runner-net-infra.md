@@ -1,11 +1,13 @@
 # runner 网络 fixture 基建 — TLS/wss 端点 + wptserve py 端点 shim 框架化
 
-**版本**: v1.2
+**版本**: v1.3
 **日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）；
-2026-11-08 M0 双审计完成（DC-1 ✅）；2026-11-08 M1 完成（DC-2 前半 ✅——
-TLS 端点 fixture + 信任旁路钩子 + wss 连通单测 + 通道 A/B 零回归，
-[M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)）
-**状态**: Active——M0 ✅ M1 ✅，M2（scheme/端点寻址接线）未启动
+2026-11-08 M0 双审计完成（DC-1 ✅）；2026-11-08 M1 完成（DC-2 前半 ✅，
+[M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)）；
+2026-11-08 M2 完成（**DC-2 ✅**——D3-D5 寻址接线 + websockets 通道 A/B
+零回归 + wss 池 101 案 360 subtest 全绿过批次门，
+[M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）
+**状态**: Active——M0 ✅ M1 ✅ M2 ✅，M3（py 路由框架）未启动
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -104,7 +106,12 @@ TLS 端点 fixture + 信任旁路钩子 + wss 连通单测 + 通道 A/B 零回�
   端到端单测 2/2 绿；websockets 通道 A/B 零回归（381P/0F 双跑全等，
   changed 空集）。实施发现与 M2 交底见
   [M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)。
-- **M2**：scheme/端点寻址接线（DC-2 收口）。
+- **M2 ✅**（2026-11-08）：scheme/端点寻址接线（DC-2 收口）——D3 `{{ports[wss][0]}}`
+  → TLS fixture 端点；D4 websockets 子树追加式变体枚举（html + any.js META
+  解析臂，net-api 通道独开）；D5 `wpt_flags=https` 变体页锚 https；通道 A/B
+  零回归（110 案 381 行全等）+ wss 池 101 案 360 subtest 全绿（100% 过
+  98.5% 批次门）。池记账与实施发现见
+  [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)。
 - **M3**：py 路由框架 + v2 先例迁移 + 补丁收编（DC-3）。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
 

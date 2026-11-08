@@ -2,13 +2,12 @@
 
 ## 状态头（2026-11-08）
 
-- **当前状态**：M1 完成（DC-2 前半 ✅ 2026-11-08）——TLS 端点 fixture +
-  zero-net 信任旁路钩子 + wss 端到端连通单测 2/2 绿；websockets 通道 A/B
-  零回归 changed 空集（381P/0F 双跑全等）。
+- **当前状态**：M2 完成（**DC-2 ✅** 2026-11-08）——D3-D5 接线 + websockets
+  通道 A/B：既有 110 案 381 行全等零回归，wss 池 +101 案 360 subtest 全绿
+  （100% 过 98.5% 批次门，covered > 0）。
 - **卡点**：无。
-- **下一步**：M2 scheme/端点寻址接线（D3-D5：token 映射 + websockets 子树
-  变体枚举 + cookies 页锚 https + `.https.` 案重估）；接线后 A/B 基线 =
-  [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) 381P 明细。
+- **下一步**：M3 py 路由框架（py 普查档 §三：注册表 + EndpointCtx stash）；
+  迁移前先固化 net-api 13,275P 基线，153 臂迁入逐字节等价 A/B + S12 补丁收编。
 
 ## 里程碑状态表
 
@@ -16,14 +15,16 @@
 |---|---|---|
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
-| M2 scheme/端点寻址接线（DC-2 收口） | 未启动 | 蓝图 wss 审计档 D3-D5 |
+| M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
 | M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 未启动 | 蓝图 py 普查档 §三 |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
 
 - **wss 池**：102 wss 变体案（41 html + 61 any.js）covered > 0，批次门 =
-  实跑分母 × 98.5%；h2 变体 92 实例维持排除；mixed-content.https
+  实跑分母 × 98.5%（M2 实跑池 101 键，普查 102 的组成修正与 cookies/003-005
+  预排除归因见 [M2 档](evidence/2026-11-08-m2-wss-wiring.md) §二.1/§二.2）；
+  h2 变体 92 实例维持排除；mixed-content.https
   （引擎 mixed-content 缺口并记）与 third-party-cookie-accepted（语料
   helper 缺口并记）不入门、如实落账。
 - **py 池**：P-A 三目录池（den 606）+ P-B 判据族框架承接面落地（注册面 +
@@ -32,7 +33,7 @@
 
 ## 零回归复验面（DC-2/DC-3/DC-4 共用锚）
 
-1. websockets 通道既有 377P 面（43 号 M0 基线）；
+1. websockets 通道既有面（M2 A/B 锚：110 案 381 行，[M2 档](evidence/2026-11-08-m2-wss-wiring.md)）；
 2. net-api 全通道 13,275P 面（43 号 M4 终账）；
 3. S3b `/echo-query_v13`（constructor/016）；
 4. S12 cors-preflight-redirect 面；
