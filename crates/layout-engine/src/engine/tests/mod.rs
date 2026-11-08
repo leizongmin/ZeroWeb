@@ -866,6 +866,8 @@ mod r5294_dyn_trailing_space_tests;
 mod r5295_wrapped_padding_box_x_tests;
 /// R5470 float 重测后兄弟重锚（步 6 传播臂）+ §10.6.3 高度门测试。
 mod r5470_float_remeasure_sibling_reanchor_tests;
+/// R5471 own_floats 排除带 margin-box 判弃/裁顶口径测试。
+mod r5471_float_band_marginbox_tests;
 mod trending_band_strut_tests;
 
 mod r5250_inline_relpos_shift_map;

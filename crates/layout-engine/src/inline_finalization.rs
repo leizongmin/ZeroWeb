@@ -80,6 +80,14 @@ static FLOAT_ANCHOR_PRE_GATE: std::sync::LazyLock<bool> =
 static FLOAT_REMEASURE_SIB_SHIFT: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REMEASURE_SIB_SHIFT").as_deref() != Ok("0"));
 
+/// own_floats 排除带判弃/裁顶口径门（R5471，CSS2 §9.5 float margin box）。
+/// 开（默认）：判弃按 margin-box 带底（整带在容器顶上方才丢），跨顶带裁顶保留
+/// 可见段——对齐步 6 remeasure R5442 同构臂，stored IFC 与重测口径一致（c5525
+/// test4 负 mt float 形态）。关：旧口径按 border 顶 rel_y < 0 整带丢弃、通过带
+/// 不裁顶（y 可为负）。OPTIMIZATION：进程级单读（R5108 同上）。
+static FLOAT_BAND_MARGINBOX_CLIP: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_BAND_MARGINBOX").as_deref() != Ok("0"));
+
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
 pub(crate) struct InlineFontContext<'a> {
@@ -1612,10 +1620,32 @@ pub(crate) fn compute_final_inline_layouts(
         .filter(|c| !matches!(c.float, zero_css_parser::values::FloatValue::None))
         .filter_map(|c| {
             let rel_y = c.y;
-            if rel_y < 0.0 || c.width <= 0.0 || c.height <= 0.0 {
+            if c.width <= 0.0 || c.height <= 0.0 {
                 return None;
             }
             let id = c.node_id?;
+            let band_top = rel_y - c.margin_top;
+            let band_height = c.margin_top + c.height + c.margin_bottom;
+            // R5471（CSS2 §9.5）：带判弃/裁顶按 **margin-box** 口径（对齐步 6 remeasure
+            // R5442 同构臂）——旧 border 顶 rel_y<0 整带丢弃：负 mt float（c5525 test4
+            // img mt−30，border 顶 p-rel −30、margin-box 带 [0,15]）带被丢 → stored IFC
+            // float-unaware（首行 x=0 应 15）→ paint use_stored 重放错位墨，img 右侧
+            // 45×15 红标记露出（c5525 ✓0.28% 残余主体）。带底 ≤ 0（整带在容器顶上方）
+            // 不约束任何行 → 丢弃；跨顶带裁顶保留可见段——IFC 行盒 y ≥ 0，裁顶对既有
+            // rel_y ≥ 0 带的行排不可见。kill-switch 退旧口径（判弃 border 顶、不裁顶）。
+            let (band_y, band_h) = if *FLOAT_BAND_MARGINBOX_CLIP {
+                let band_bottom = band_top + band_height;
+                if band_bottom <= 0.0 {
+                    return None;
+                }
+                let clipped_top = band_top.max(0.0);
+                (clipped_top, band_bottom - clipped_top)
+            } else {
+                if rel_y < 0.0 {
+                    return None;
+                }
+                (band_top, band_height)
+            };
             Some((
                 id,
                 crate::inline::FloatExclusion {
@@ -1624,8 +1654,8 @@ pub(crate) fn compute_final_inline_layouts(
                     // 旧式 `+margin` 再加一次 = 双计（outline-028 ml:5 案：带 [10,25] 应
                     // [0,15]，span 被挤到行 2 + 右移 10px）。左/上缘回退 margin 得 margin-box
                     // 原点；margin 字段被后继 pass 清零时 c.x−0 = 原值，两约定同成立。
-                    y: rel_y - c.margin_top,
-                    height: c.margin_top + c.height + c.margin_bottom,
+                    y: band_y,
+                    height: band_h,
                     width: c.width + c.margin_left + c.margin_right,
                     x: c.x - c.margin_left,
                     is_left: matches!(c.float, zero_css_parser::values::FloatValue::Left),
