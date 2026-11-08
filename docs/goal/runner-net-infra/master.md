@@ -146,3 +146,11 @@
   手法收敛（170 行，两类机械变换），clippy 零告警 + fmt 净 + 单测
   298P/0F 持平，随收敛提交落库。上游 s347（08f55becb，testharness.rs
   内联 module）与本流唯一交叉行 :5934 无冲突。
+- 2026-11-08 22:49 切片六认领（本实例）：fetcher 闭包三分表迁移开工——
+  按[清单档](evidence/2026-11-08-fetcher-closure-inventory.md)拓扑迁
+  script fetcher（`wpt_data_script_fetcher_with_stash`）与 service-worker
+  fetcher（`wpt_data_service_worker_script_fetcher`）为独立表实例
+  （`py_script_fetch_routes()`/`py_sw_fetch_routes()`），清单档 §二
+  stash 恒等约束守门（script fetcher 的 serve_custom_stash/cred_cookies
+  与 PyEndpointCtx 同 Arc，不得另建）；他轮勿碰两 fetcher 闭包段与
+  testharness_py_routes 表面，逐臂普查证据随切片六档落。
