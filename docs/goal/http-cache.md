@@ -1,8 +1,8 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.1
-**日期**: 2026-11-08（M0 完成——基线修正、102F 分簇、corpus 盘点、数值门落定）
-**状态**: Active——DC-1 达成（[M0 对账档](http-cache/evidence/2026-11-08-m0-reconciliation.md)、[架构落点说明书](http-cache/evidence/2026-11-08-m0-architecture.md)），下一步 M1
+**版本**: v1.2
+**日期**: 2026-11-08（M1 完成——C 簇 48 收敛，DC-2 前半达成；下一步 M2）
+**状态**: Active——DC-1（[M0 对账档](http-cache/evidence/2026-11-08-m0-reconciliation.md)、[架构落点说明书](http-cache/evidence/2026-11-08-m0-architecture.md)）+ M1（[M1-b 证据档](http-cache/evidence/2026-11-08-m1b-c-cluster.md)，request-cache 族 76P/30F）达成，下一步 M2
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口——
@@ -93,9 +93,12 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   + corpus 盘点（fetch/http-cache 20 文件、Chrome 417/554）+ 架构落点
   说明书（wire 第 11 参、CacheMode 扩六态、runner CaseHttpCache 复用
   zero-net HttpCache、IPC 零变化）+ 数值门落定回填。
-- **M1**：缓存核心接线——net CacheMode 扩六态 + 矩阵单测（M1-a）→ runner
-  cache.py fixture + CaseHttpCache 包裹（M1-b）→ C 簇 48（default/
-  default-conditional）收敛（DC-2 前半）。
+- **M1 ✅**（2026-11-08，DC-2 前半）：M1-a（CacheMode 扩六态 + 矩阵单测，
+  @ f1fb5956b）+ M1-b（runner cache.py fixture 1:1 仿真 + 案级 HttpCache
+  包裹 + net 注入映射修正——M1-a 的 no-cache/reload 注入映射与语料相反已
+  改正、stale-at-birth 可存性 RFC 9111 §3，@ 666d1f293）。实测 request-cache
+  族 **76P/30F**：C 簇 48/48 绿（default 8 + default-conditional 40）；headers
+  族 286/286 零回归；余 30F 全为 B 簇 wire 传播面（[证据档](http-cache/evidence/2026-11-08-m1b-c-cluster.md)）。
 - **M2**：wire 传播（wire 第 11 参 + FetchRequest.cache + shim 8 调用点 +
   双 app handler 映射）+ 模式态六态 B 簇 54 收敛（DC-2 收口 / DC-3）。
 - **M3**：102/102 复测 + v2/v3 零回归 A/B + corpus 批次对齐 46 号排期
