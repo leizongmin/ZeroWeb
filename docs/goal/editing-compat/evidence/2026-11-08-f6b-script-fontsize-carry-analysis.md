@@ -39,6 +39,15 @@ F6b 簇 14 键（knife11 普查口径：sub/sup+delete/fwddelete 4 + sub×fontsi
 4. **A vs N 嵌套序矛盾**（语料自身）：A 族（裸文本+空壳删除）font 内；N 族（嵌套树内删除）font 外。判别特征=删除位是否在既有壳内。引擎需按上下文分派两种序。
 5. 引擎现状 systematic 反转：N3（应丢）引擎发、N1（应换 size=1+换序）引擎保 size=2、C 族两序都错——删位 typing style 记录源与组合序双缺陷。
 
+## 引擎代码路径锚点（2026-11-08 续轮定位）
+
+- **C 通道（指定值）**：fontsize collapsed 臂 `_zwVaSetValueOverride`（part01d :1677，`_zwVaSetSelectionValue` 无 contained formattable 分支）→ inserttext 核头快照（part01 :9733 `__zw_ce_value_override_snapshot`）→ 插入后重放 `__zw_ce_value_restore_overrides`（part01 :10095-10099）→ 临时 range 走 setSelectionValue 包 font。现状偏差：重放无桶等价跳过（size2 多包）且有默认值跳过面（size3=16px 被当缺省丢弃）；font 落位在 armed sub 壳外（重放整段包裹）。
+- **A 通道（删除携带）**：删除捕获在 part01f `__zw_ce_capture_typing_chain`（:1169）+ delete 入口 F2 link-carry（:1222 注释块，仅 link 上下文捕 color/face/size）；typing 组合 `_zwCeTypingInsert`（part01 :9581）carry font 落 tags **内层**——与 A 族期望形（`<sub><font size=3>` font 在 sub 内）同构，缺口仅是 sub/sup 上下文的 fontSize 捕获（现有捕获门=link 上下文，不含裸 sub 壳）。
+- **N 通道（嵌套树）**：同删除 strip-wrappers/keep-shell（part01f `_zwDelKeepShellOf`）+ 同 C 重放路径；需语料形三面：幸存 font 壳改 attr 重映射（N1 size2→1）、font 壳换序到 sub 外（N2/N4-N6）、font 壳溶解（N3）。
+- **sub/sup arming**：collapsed 臂 part06 :4916-4961（`__zwTypingTags` ± 互斥 :4945）；bool 读面 fallback :2788。
+- **桶映射静态表**：part01d :180-199 `_zwVaLooselyEq` sizeMap（font[size] 1-7 级联读数表，host UA 计算口径 10/13/16/18/24/32/48）——C 等价比较与 N 重映射共用此表的候选基座。
+- 机制模型（自洽核）：删除记录=caret 位**未缩放** effective px→桶（N1: 13px→桶1→size1 ✓、N2: 16px→桶3→size3 ✓）；打字重放比较= caret 位**含 sub 缩放** effective→桶（C1: 指定 13px 桶1 ≡ 13.3px 缩放桶1 → 跳 ✓、C3: 16px 桶3 ≠ 桶1 → 包 size3 ✓）。序规则：指定值/嵌套树通道 font 外（语料 editorial 注释），typing-carry 通道 font 内（A 族语料形=oracle 实证）。
+
 ## 悬案与下一步
 
 - N4-N6（尾选区）oracle SETUP-FAIL：probe 标记解析器未支持 `[bar` 无闭合 ] 形；尾版期望=闭版对应尾版（语料 line 2288+），实现时逐块核对语料原文即可。
