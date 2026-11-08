@@ -18,7 +18,7 @@
 | 簇 | 键数 | 链 × markup | got 特征 |
 |---|---:|---|---|
 | **F4 ilb corruption** | **9** | `insertlinebreak>inserttext(d)>inserttext(e)` 5 + `…>inserttext(f)` 3 + `…>inserttext(c)>inserttext(d)>inserttext(e)` 1 | img 变体幻影 `<b><i><img src="/img…` 4 + `<s></s>` 空壳 2 + 纯文本重复（`abc<br>dec…` / `<br>de<div>…`）3 |
-| **F7 delete-merge-div** | **6** | `delete>inserttext(g)>inserttext(h)` 全在 ?9001-last：flex span 2（裸/`<b>` 壳）+ grid span 2（裸/`<b>` 壳）+ div 跨块 `<b>` 壳 2 | 合并后尾残 `<br>`（`exp <div>abc</div><div><b>d</b></div> got <div>abc</div><div><b>d</b><br></div>`）——跨块 merge 尾清理单域；flex/grid 容器与 div 跨块同基本面 |
+| **F7 delete-merge-div** | **6** | `delete>inserttext(g)>inserttext(h)` 全在 ?9001-last：flex span 2（裸/`<b>` 壳）+ grid span 2（裸/`<b>` 壳）+ div 跨块 `<b>` 壳 2 | 两微机制（raw log assert_in_array 实证，键表无该簇 detail 行勿引形状频率表）：①flex/grid 4 键 typed 壳尾外兄弟位尾残 `<br>`（exp `<span>gh</span>` 或 `<span>gh<br></span>`，got `<span>gh</span><br></div>`）；②div 跨块 2 键 delete 后空 `<b></b>` 壳未清 + typed 新壳并存（exp `<div><b>gh</b></div>` 形，got `<div><b></b><b>gh</b></div>`——F1'-B `_zwCeTypingForwardMerge` 同族反向：空前驱壳消费/合并缺失） |
 | **F7 ip-placeholder** | **4** | `swcss>delete>insertparagraph>inserttext` 2 + `swcss>insertparagraph>inserttext` 2 × `<div><b>[abc]</b></div>` / `<div>abc<b>[def]</b></div>` 双形 | `<div><br></div><div><b>a</b><br></div>` 置换形——占位 br 消费/置换语义单域 |
 | F7 host-div-wrap | 1 | `swcss>delete>inserttext(a)` | exp `<b>a</b>` got `<div><b>a</b></div>`（宿主 div 裹壳残留） |
 | F7 trailing-empty-p | 1 | `forwarddelete>inserttext(d)` × `<p>abc[]<br> </p> <p><br></p>` | exp `<p>abcd</p>` got `<p>abcd</p> <p><br></p>` |
@@ -53,7 +53,10 @@
   typing；markup 全带 flex/grid 容器或 div 跨块 + inline 壳。与 ④ 刀同域的
   跨块合并 caret 位（块级伴随物=flex/grid span、div 边界）——先对照 ④ 刀
   `_zwShellCarryAtBoundary` 块级止步表（flex/grid 容器 span 是否在块表）评估
-  是 carry 门覆盖缺口还是独立合并形缺陷。
+  是 carry 门覆盖缺口还是独立合并形缺陷。修订（06:0x 核验勘误笔）：簇表 got
+  特征按 raw log 分支化为尾残 br（flex/grid 4）+ 空 same-tag 壳并存（div 跨块 2）
+  两微机制；`exp <div><b>d</b><br></div>` 对系 ip-placeholder 键专属，delete-merge
+  簇键表无 detail 行系 census 脚本 assert_in_array 附着缺口，取证以 raw log 为准。
 - ip-placeholder 4 + 零散 2 键（host-div-wrap/trailing-empty-p）：微机制分治，
   不与本刀强并。
 - F6b handoff 4 / F6a 2 / F1' fontsize(4) 1：维持既有 backlog / 待小刀归并。
