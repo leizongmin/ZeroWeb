@@ -9776,18 +9776,17 @@ fn harness_nonce_attr(case_source: &str) -> String {
 
 /// M2-s2：CSP violation 源位置表（**prepared ordinal 空间**）。
 ///
-/// prepare_harness_html 会把若干外链脚本**整标签移除**（testharnessreport /
-/// testdriver-vendor / testdriver-actions → 空串替换），其后脚本在装配后文档的
-/// script 序号前移——gate 的 script_index 与 shim getElementsByTagName 序号都在
-/// prepared 空间，位置表必须同空间。本函数从原始 case 源提取位置，再按「被移除
-/// 标签剔除」重映射（扫描口径与 [`zero_engine::extract_script_source_positions`]
-/// 一致：逐 `<script` 开标签、无 `>` 即止）。
+/// prepare_harness_html 会把若干外链脚本**整标签移除**（testdriver-vendor /
+/// testdriver-actions → 空串替换；s354 起 testharnessreport 改保空元素——真浏览器
+/// 的 script 元素在文档中恒在，整标签移除使装配后文档的 script 集合序相对浏览器
+/// 前移一位，`getElementsByTagName('script')[N]` 位置取元素案（execution-timing
+/// 056 族）取错目标），其后脚本在装配后文档的 script 序号前移——gate 的
+/// script_index 与 shim getElementsByTagName 序号都在 prepared 空间，位置表必须
+/// 同空间。本函数从原始 case 源提取位置，再按「被移除标签剔除」重映射（扫描口径
+/// 与 [`zero_engine::extract_script_source_positions`] 一致：逐 `<script` 开标签、
+/// 无 `>` 即止）。
 fn csp_script_positions_prepared(source: &str) -> Vec<(u32, u32)> {
-    const REMOVED_SRC_MARKERS: [&str; 3] = [
-        "/resources/testharnessreport.js",
-        "/resources/testdriver-vendor.js",
-        "/resources/testdriver-actions.js",
-    ];
+    const REMOVED_SRC_MARKERS: [&str; 2] = ["/resources/testdriver-vendor.js", "/resources/testdriver-actions.js"];
     let positions = zero_engine::extract_script_source_positions(source);
     let mut out = Vec::with_capacity(positions.len());
     let mut rest = source;
@@ -9976,7 +9975,17 @@ fn prepare_harness_html(
     } else {
         inject_harness_script_before_page_scripts(source, &harness)
     };
-    html = replace_script_source(&html, "/resources/testharnessreport.js", "");
+    // s354（html-semantics M2 切片 354）：report 标签改保**空元素**——reporter 执行
+    // 已并入上方 harness 块（{reporter} 段），空串替换整标签移除则使装配后文档少一个
+    // script 元素、集合序相对真浏览器前移一位（`getElementsByTagName('script')[N]`
+    // 位置取元素案取错目标——056 的 `[3]` 落到 inline#1 而非空 script，域跑
+    // `expected 4 got 3` 根因）。空元素不进交付集（extract 空源 bail）、不盖
+    // `_zwParserDelivered`（spec 空源 prepare 早退不置 already-started——补文本仍可
+    // 触发）、CSP 位置表经 csp_script_positions_prepared 的 markers 同步剔除该标记
+    // 保序号对齐。write/fetch 通道（testharness_py_routes report 服务）本就保元素，
+    // 两通道 DOM 形态自此一致。
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    html = replace_script_source(&html, "/resources/testharnessreport.js", "<script></script>");
     html = replace_script_source(
         &html,
         "/resources/testdriver.js",
