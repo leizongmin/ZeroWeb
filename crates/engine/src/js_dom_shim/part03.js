@@ -15203,12 +15203,17 @@
   // feature-detect + 链式 + 终态可见全通。fill: none（默认）/ auto 不自动持久化（spec：finish 后无 effect）。
   // keyframe 解析：数组每项为属性 dict + 可选 meta 键 offset/easing/composite；末态取 offset===1 项，无则末项。
   function _applyKeyframeProps(props, sel, handle) {
-    // 把单关键帧 dict 的 CSS 属性写入元素 inline style。跳过 meta 键；camelCase→kebab（复用 _stylePropName）。
+    // 把单关键帧 dict 的 CSS 属性写入元素 inline style。跳过 meta 键；camelCase→kebab（复用 _styleDeclName）。
     if (!props || typeof props !== 'object') return;
     for (var propName in props) {
       if (!Object.prototype.hasOwnProperty.call(props, propName)) continue;
       if (propName === 'offset' || propName === 'easing' || propName === 'composite') continue;
-      var cssProp = _stylePropName(propName);
+      // T51：名参经 `_styleDeclName` 归一（与 IDL 写面/规则面/csstext 面同函数）——全大写
+      // 书写形（'COLOR'）逐大写字母加连字符落 '-c-o-l-o-r' 垃圾键（cascade 不识别，动画
+      // 终态静默失效），大写折叠 + `--` 保形 + vendor 归一收口。Blink 154 oracle（t51-
+      // oracle-result.txt）：关键帧 dict 解析面仅收 camelCase + custom 名，全大写/vendor
+      // 形解析期丢弃——本仓归一落库为 recorded known deviation（写面键一致优先）。
+      var cssProp = _styleDeclName(propName);
       var val = String(props[propName]);
       if (handle && typeof __zw_set_style_handle === 'function') {
         try { __zw_set_style_handle(handle, cssProp, val); } catch (_e) {}
