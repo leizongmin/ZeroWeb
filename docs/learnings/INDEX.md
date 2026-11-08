@@ -5,11 +5,17 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（252）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（258）
 
+- 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
+- 2026-11-09 [deleteSelection 跨壳边界选区静默空转：收集器两道叠加缺陷](bugs/2026-11/2026-11-09-delete-selection-cross-shell-noop.md) — engine
+- 2026-11-08 [归因批须断言现行门禁腿定义：腿定义漂移使 5 次重载 bisect 答了已废弃的问题](bugs/2026-11/2026-11-08-rss-razor-edge-same-content-time-ab.md) — tests/wpt-runner,testing
+- 2026-11-08 [match 判别式临时 MutexGuard 存活到整个 match——臂内再锁自死锁](bugs/2026-11/2026-11-08-match-scrutinee-mutex-guard-deadlock.md) — net, wpt-runner
 - 2026-11-08 [shim 侧 iframe 子文档脚本段的 src 检测在 runner 语料面恒空——s261 预内联投递剥 src，须读 data-inline](bugs/2026-11/2026-11-08-iframe-child-doc-inlined-scripts-data-inline.md) — crates/engine/src/js_dom_shim, tests/wpt-runner
+- 2026-11-08 [手搓 make test 镜像腿缺前置 standalone binary 构建——cargo fail-fast 放大成整腿早停](bugs/2026-11/2026-11-08-hand-rolled-gate-legs-miss-standalone-binary-build.md) — engine, webdriver, testing
 - 2026-11-08 [门禁批计数跨域混算——multitest raw 行数(×2 双窗) ≠ judge 键域(去重)，完账检查与残数预期必须同域取数](bugs/2026-11/2026-11-08-gate-batch-count-domain-alignment.md) — tests/wpt-runner, .acceptance/dps
 - 2026-11-08 [完成态 op 绑定的证据文件字节冻结与 open_findings 非空即不就绪](bugs/2026-11/2026-11-08-frozen-evidence-and-open-findings-contract.md) — .agents/skills/zeroweb-site-optimizer
+- 2026-11-08 [构建锁等待继承二进制内容：无 Compiling 行的构建不能作归因锚点](bugs/2026-11/2026-11-08-build-lock-inherited-binary-provenance.md) — tests/wpt-runner,build-support
 - 2026-11-07 [控制面挂账失败族开工前先核窗界分布，签名 A 跨窗伪影会伪装成引擎债](bugs/2026-11/2026-11-07-window-straddle-accounting-audit.md) — engine,testing
 - 2026-11-07 [taffy abs 包含块=直接父模型：后处理「只扩不缩」让错误钳制存活（R5445 D2 域图谱）](bugs/2026-11/2026-11-07-taffy-abs-direct-parent-cb-vs-spec-icb.md) — layout-engine
 - 2026-11-07 [layout 期行内几何修复不经 paint Path B 等价注入，像素必然不变](bugs/2026-11/2026-11-07-paint-path-b-rerun-eats-inline-geometry-fixes.md) — layout-engine, engine
@@ -260,8 +266,9 @@
 - 2026-07-29 [reftest-upstream 大目录触发 test-guard OOM 杀进程（fail-list 捕获空致误判）](bugs/2026-07/2026-07-29-reftest-upstream-large-dir-testguard-oom.md) — tests/wpt-runner（cmd_reftest_upstream）, scripts/test-guard.rs（OOM 包裹器）
 - 2026-07-25 [product-smoke 输出 PNG 路径陷阱（stale 文件致假 bug 误判）](bugs/2026-07/2026-07-25-product-smoke-png-stale-trap.md) — tests/wpt-runner（cmd_product_smoke）, legacy/product smoke 诊断流程
 
-## Patterns — 可复用代码模式与最佳实践（33）
+## Patterns — 可复用代码模式与最佳实践（34）
 
+- 2026-11-09 [样式 carry 刀的捕获三形分账与壳级缩放口径](patterns/2026-11/2026-11-09-style-carry-capture-consume-routing.md) — engine
 - 2026-11-08 [自源 reftest 争议语义定谳：ref 页行为语义 = ZW 自身对应实现，先读 ref 页写法再对 ZW 同路径数值](patterns/2026-11/2026-11-08-self-source-ref-page-semantics-equal-zw-implementation.md) — layout-engine,testing
 - 2026-11-07 [共享树多轮并行写作期的提交推送：临时 worktree + detached rebase + HEAD:main](patterns/2026-11/2026-11-07-shared-tree-push-via-temp-worktree.md) — docs/goal/editing-compat
 - 2026-11-05 [自源探针「0.00% 通过」不可信——图元清单 + black-ref 强拆定谳伪绿](patterns/2026-11/2026-11-05-reftest-passing-page-primitive-forensics.md) — engine,testing
@@ -348,8 +355,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（43）
+## Platform — 平台与环境相关经验（44）
 
+- 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine
 - 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine
 - 2026-11-08 [批脚本被外部 SIGTERM 后 runner 孤儿持锁继续跑——先判孤儿活性再决定等待完账，补跑分支禁止原地截断](platform/2026-11/2026-11-08-flock-fd-orphan-runner-recovery.md) — .acceptance/dps, scripts
 - 2026-11-06 [editing 语料 before 读面编码录音会话状态泄漏——孤立红行先做泄漏模拟对账再定读面 bug](platform/2026-11/2026-11-06-editing-corpus-recording-session-state-leak.md) — editing-compat,wpt_runner

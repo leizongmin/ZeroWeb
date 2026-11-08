@@ -1,0 +1,16 @@
+# enginelib 已知红名册（2026-11-09，F6b v1.2 批 enginelib 门复核，7 红恒一）
+# 相对 2026-11-07 档（九红）与 F1'-B 收口刀门（2026-11-08，6-red OK）变化：
+# +1 js_dom_bridge::tests::test_response_body_readable_stream_r2967
+#   bracket 定谳（2026-11-09 F6b v1.2 批）：净树（stash 五 shim，stash 58ce304876）
+#   对照恒红同形——`response.body` undefined TypeError（js_dom_bridge_tests/part10.rs:718，
+#   fetch/ReadableStream 桥接面），与 F6b 刀体（js_dom_shim contenteditable carry/qV/
+#   收集器）零交集，非 flaky（0.10s 确定性失败两次同形）。fetch 域，移交 net-api/webview
+#   流对齐（同名册先例 fetch×1 f021e11fb、ws×2 ba03fd7ff）。
+# 名册变化当轮新增带日期文件，不覆盖旧档。
+js_dom_bridge::tests::img_runtime_deferred_settle_r5275
+js_dom_bridge::tests::svg_img_settle_density_r5277
+js_dom_bridge::tests::test_fetch_filtered_response_type_matrix
+js_dom_bridge::tests::test_iframe_service_worker_messages_dispatch_to_iframe_container
+js_dom_bridge::tests::test_response_body_readable_stream_r2967
+js_dom_bridge::tests::test_t8k_websocket_error_nonterminal
+js_dom_bridge::tests::test_t8k_websocket_event_flow_open_message_close
