@@ -56,7 +56,8 @@ pub struct ResourceLoadEvent {
     pub coalesced_subscriber_count: usize,
 }
 
-/// 请求对缓存的要求。
+/// 请求对缓存的要求（对齐 fetch spec `cache` 六模式态；前四态为既有语义，
+/// `Reload`/`ForceCache` 为 http-cache goal M1 扩展）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheMode {
     /// 遵循响应新鲜度，正常复用缓存。
@@ -66,7 +67,21 @@ pub enum CacheMode {
     /// 不读写此请求对应的缓存条目。
     NoStore,
     /// 只允许命中缓存；未命中返回 504 语义错误。
+    ///
+    /// fetch spec §http-cache-fetch：仅 same-origin 模式合法（shim 校验）；
+    /// 有存储条目（含 stale）即服务且不验证，零条目 → 504 语义网络错误。
     OnlyIfCached,
+    /// 强制走网络（不读缓存）；网络成功后按存储策略覆盖写缓存。
+    ///
+    /// fetch spec §http-network-or-cache-fetch：reload 请求跳过 HTTP-cache
+    /// lookup，响应照常可入缓存（覆盖同键旧条目）；网络可见头注入
+    /// `Cache-Control: max-age=0`（用户未显式给出 Cache-Control 时）。
+    Reload,
+    /// 有存储条目即用（含 stale，不验证）；零条目才走网络并入缓存。
+    ///
+    /// fetch spec §http-network-or-cache-fetch：force-cache 对 stale 条目
+    /// 不发起再验证直接复用；`Vary: *` 条目永不匹配（§4.1）→ 视为未命中。
+    ForceCache,
 }
 
 /// 可聚合的资源加载计数；不包含 URL、请求头或响应体等敏感内容。
@@ -229,6 +244,11 @@ impl ResourceLoader {
         if request.cache_mode == CacheMode::NoStore {
             return self.submit_network(cache, request, Vec::new(), false);
         }
+        if request.cache_mode == CacheMode::Reload {
+            // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+            // reload 不读缓存；网络成功后按存储策略覆盖写（may_store=true）。
+            return self.submit_network(cache, request, Vec::new(), true);
+        }
 
         let lookup = cache
             .lock()
@@ -240,14 +260,21 @@ impl ResourceLoader {
                 self.record_event(&request, CacheOutcome::FreshHit, None, 0);
                 immediate(Ok(cached.into_response()))
             }
-            CacheLookup::Hit(_) | CacheLookup::Revalidate { .. } if request.cache_mode == CacheMode::OnlyIfCached => {
-                self.stats
-                    .lock()
-                    .expect("resource loader stats lock")
-                    .only_if_cached_misses += 1;
-                self.record_event(&request, CacheOutcome::OnlyIfCachedMiss, None, 0);
-                // only-if-cached 可使用 fresh 条目；stale 条目不能启动验证网络请求。
-                immediate(Err("only-if-cached cache miss (504)".to_string()))
+            // https://fetch.spec.whatwg.org/#http-cache-fetch
+            // only-if-cached 有存储条目（含 stale）即服务且不验证；零条目 →
+            // 504 语义错误，不能启动验证网络请求。
+            CacheLookup::Revalidate { cached, .. } if request.cache_mode == CacheMode::OnlyIfCached => {
+                self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
+                self.record_event(&request, CacheOutcome::FreshHit, None, 0);
+                immediate(Ok(cached.into_response()))
+            }
+            // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+            // force-cache 对 stale 条目不发起再验证直接复用（`Vary: *` 条目
+            // 在 lookup 层永不匹配 → 走 Miss 网络臂）。
+            CacheLookup::Revalidate { cached, .. } if request.cache_mode == CacheMode::ForceCache => {
+                self.stats.lock().expect("resource loader stats lock").fresh_hits += 1;
+                self.record_event(&request, CacheOutcome::FreshHit, None, 0);
+                immediate(Ok(cached.into_response()))
             }
             CacheLookup::Hit(_) => {
                 let conditional = cache
@@ -283,7 +310,9 @@ impl ResourceLoader {
             request.partition = self.partition.clone();
         }
         request.cache_mode = request_cache_mode(&request.headers).unwrap_or(request.cache_mode);
-        if request.cache_mode == CacheMode::NoStore {
+        if matches!(request.cache_mode, CacheMode::NoStore | CacheMode::Reload) {
+            // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+            // no-store / reload 均不读缓存。
             return CacheLookup::Miss;
         }
 
@@ -302,6 +331,16 @@ impl ResourceLoader {
                     cached,
                     conditional_headers,
                 }
+            }
+            // https://fetch.spec.whatwg.org/#http-cache-fetch
+            // only-if-cached / force-cache 对 stale（待验证）条目直接复用不验证。
+            CacheLookup::Revalidate { cached, .. }
+                if matches!(
+                    request.cache_mode,
+                    CacheMode::OnlyIfCached | CacheMode::ForceCache
+                ) =>
+            {
+                CacheLookup::Hit(cached)
             }
             lookup => lookup,
         };
@@ -443,6 +482,18 @@ impl ResourceLoader {
         for (name, value) in conditional_headers {
             if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case(&name)) {
                 headers.push((name, value));
+            }
+        }
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
+        // 可观察头注入（用户未显式给出 Cache-Control 时）：no-cache →
+        // `Cache-Control: no-cache`（spec 要求）；reload → `Cache-Control:
+        // max-age=0`（Chromium 判据形态——WPT expected_max_age_headers）。
+        // 注入只影响网络请求头，不参与 identity_key（键取 request.headers 原头）。
+        if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control")) {
+            match request.cache_mode {
+                CacheMode::NoCache => headers.push(("Cache-Control".into(), "no-cache".into())),
+                CacheMode::Reload => headers.push(("Cache-Control".into(), "max-age=0".into())),
+                _ => {}
             }
         }
         // FIXME(t8k-delta F1)：cookie 注入摘除理由同 submit_http_with_context_in_partition 内注释
@@ -737,6 +788,121 @@ mod tests {
             Some(CacheMode::NoStore)
         );
         assert_eq!(request_cache_mode(&[]), None);
+    }
+
+    /// 存一条 `no-cache`+ETag 条目（revalidate_only——lookup 恒给 Revalidate，
+    /// 等价 stale 待验证形态，无需时间旅行）。
+    fn store_revalidate_only_entry(cache: &Arc<Mutex<HttpCache>>, url: &str, body: &[u8]) {
+        assert!(cache.lock().unwrap().put(
+            url,
+            &crate::HttpResponse {
+                status_code: 200,
+                headers: vec![
+                    ("Cache-Control".into(), "no-cache".into()),
+                    ("ETag".into(), "\"v1\"".into()),
+                ],
+                body: body.to_vec(),
+                url: url.into(),
+                redirect_count: 0,
+            }
+        ));
+    }
+
+    /// http-cache goal M1-a：only-if-cached 对 stale（待验证）条目直接服务、
+    /// 零网络触达（fetch spec §http-cache-fetch——WPT only-if-cached stale 臂）。
+    #[test]
+    fn only_if_cached_serves_stale_entry_without_revalidation() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "oic-test");
+        let url = "https://cdn.example/oic.png";
+        store_revalidate_only_entry(&cache, url, b"stale-body");
+
+        let response = loader
+            .submit(ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::OnlyIfCached))
+            .recv()
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.body, b"stale-body");
+        assert_eq!(response.status_code, 200);
+        let stats = loader.stats();
+        assert_eq!(stats.fresh_hits, 1, "缓存直接服务须计命中");
+        assert_eq!(stats.only_if_cached_misses, 0);
+        assert_eq!(stats.network_requests, 0, "stale 命中不得发起再验证网络请求");
+    }
+
+    /// http-cache goal M1-a：force-cache 对 stale 条目直接服务、零网络触达
+    /// （fetch spec §http-network-or-cache-fetch——WPT force-cache stale 臂）。
+    #[test]
+    fn force_cache_serves_stale_entry_without_revalidation() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "fc-test");
+        let url = "https://cdn.example/fc.png";
+        store_revalidate_only_entry(&cache, url, b"stale-body");
+
+        let response = loader
+            .submit(ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::ForceCache))
+            .recv()
+            .unwrap()
+            .unwrap();
+        assert_eq!(response.body, b"stale-body");
+        assert_eq!(loader.stats().network_requests, 0);
+    }
+
+    /// http-cache goal M1-a：only-if-cached 零条目 → 504 语义错误（既有语义保留）。
+    #[test]
+    fn only_if_cached_miss_is_504_error() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "oic-miss-test");
+        let result = loader
+            .submit(ResourceRequest::get(
+                "https://cdn.example/absent.png",
+                FetchPriority::MEDIUM,
+            )
+            .with_cache_mode(CacheMode::OnlyIfCached))
+            .recv()
+            .unwrap();
+        assert!(result.is_err());
+        assert_eq!(loader.stats().only_if_cached_misses, 1);
+    }
+
+    /// http-cache goal M1-a：lookup_cache 面——reload 不读缓存；
+    /// only-if-cached / force-cache 把待验证条目折叠为直接命中。
+    #[test]
+    fn lookup_cache_matrix_for_reload_and_serve_stale_modes() {
+        let cache = Arc::new(Mutex::new(HttpCache::new()));
+        let loader = ResourceLoader::new(Arc::clone(&cache), "lookup-matrix-test");
+        let url = "https://cdn.example/matrix.png";
+        store_revalidate_only_entry(&cache, url, b"stale-body");
+
+        let reload = loader
+            .lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::Reload));
+        assert!(
+            matches!(reload, CacheLookup::Miss),
+            "reload 不读缓存（lookup_cache 面同 submit 语义）"
+        );
+
+        let oic = loader
+            .lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::OnlyIfCached));
+        match oic {
+            CacheLookup::Hit(cached) => assert_eq!(cached.body, b"stale-body"),
+            other => panic!("only-if-cached stale 须折叠为 Hit，得 {other:?}"),
+        }
+
+        let fc = loader
+            .lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::ForceCache));
+        assert!(matches!(fc, CacheLookup::Hit(_)));
+    }
+
+    /// http-cache goal M1-a：新两态参与在途事务身份——reload/force-cache
+    /// 与 default 同 URL 不共享网络事务（identity_key 含 cache 模式）。
+    #[test]
+    fn new_cache_modes_join_distinct_transactions() {
+        let base = ResourceRequest::get("https://example.com/x", FetchPriority::MEDIUM);
+        let reload = base.clone().with_cache_mode(CacheMode::Reload);
+        let force = base.clone().with_cache_mode(CacheMode::ForceCache);
+        assert_ne!(base.identity_key(), reload.identity_key());
+        assert_ne!(base.identity_key(), force.identity_key());
+        assert_ne!(reload.identity_key(), force.identity_key());
     }
 
     #[test]
