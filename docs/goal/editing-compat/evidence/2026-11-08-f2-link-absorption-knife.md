@@ -127,3 +127,23 @@ font）。环境态差异根因未查（FIXME 在案），无语料行、mt 为�
   (page, assertion) 精确），census 为准，语义模型无变化。
 - enginelib 6-red 名册（knife10c 档）恒一红线；SMIL/net 外债归因见
   [roster 档](enginelib-red-roster-2026-11-07-knife10c.txt)。
+
+## v3 换基重验批（2026-11-08 08:36→09:38 ALL-DONE，组合态回执）
+
+刀体推送 5470e071a（rebase 并入远端 11 提交）后，组合态门禁按换基门先例全新跑
+（batch-f2-link-absorption-gate-v3.sh，head=d34a3404d 单干净二进制；此前两发 ABORT 均
+系 multitest-ab 页级 5min 预算超时尾截断伪象——lost 88 全落 ab 尾段、judge 键域仍全绿，
+第三发复现消失判 flaky 收口）：
+
+- probe-f2 **14/0**、probe **224/17** 恒一；
+- ip **7195 行恒一** P 6989/F 206 零漂移 `VERDICT OK`；
+- mt judge **rows 10092 恒一、F2P 38（assertion 级）、P2F 0、post-only 0、lost 0、
+  Timeout 0**（P 9969→10007、F 123→85，raw 20016P/168F 共 20184 行完整非截断）；
+- calibrate **entry 级 F2P 76、universe 78、族外 0、stay 2**（= createlink>inserthtml
+  ×2 白名单）、残键 168=244−76 互洽；
+- enginelib **3815P/6F**（P +1 系基座新增测试，6-red 名册恒一 `FIX-GATE ROSTER OK`）；
+- iol 1759P/2F、iul 2061P/4F 行恒一零漂移 `VERDICT OK`；battery 七腿全 OK F=0 T=0。
+
+**VERDICT：组合态（刀体 + M2-S340/S341 + shadow M3 入站栈）全绿回执，F2 刀收口闭环**；
+F3 inserthtml caret 后移刀修复窗开（处方 07:22 定谳、红线 07:26 口径）。批日志
+`.acceptance/dps/batch-f2-link-absorption-gate-v3.log`。
