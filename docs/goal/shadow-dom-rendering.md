@@ -1,7 +1,7 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
 **版本**: v1.3
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）；2026-11-08 M3 R3b 代码落地 + B6 通道落地（006 矩阵实测未翻绿挂查）
 **状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
@@ -34,8 +34,21 @@ warnings 净 + product-smoke PASS + bench-gate 定向（dom/engine）PASS +
 fmt/renderer×2/render-foundation×2 RC=0；余 browser/quickjs 腿归 R3b
 净树门禁覆盖，见
 [R3 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r3-mutation-arm.md)）。
-下一步 M3：R3b manual slot 分配通道（wire 携带 slotAssignment + `assign()`
-桥 + Manual 模式渲染消费）；B6 补充池通道
+R3b 代码落地 + B6 通道落地（2026-11-08，`88302c3bf`/`c272e84bb`/跨流
+`79d703f48`/B6 `3d0a2b2e8`）：manual slot 分配通道（slotAssignment wire
+全参透传 + `assign()` 渲染镜像 + serialize→re-parse marker 回环 + Manual
+渲染消费，单测 6）+ `testharness-shadow-dom` 补充池通道（渲染级排除域
+10 案显式清单两侧同源）。门禁账（净 HEAD）：reftest 全量 **725/725 零
+回归**、quickjs 5-crate/bin/lib rc=0、browser bin 742P/1F 在册同型、
+fmt/clippy/公式腿见账；**DC-4 矩阵实测 32P/3F——006 未翻绿（4.90%
+px differ），R3b 目标案未收口**，归因调查挂账；cdp_focus_governance
+6F 为 mtime 守卫拒跑（在流编辑所致）待净树复核非行为账红；
+quickjs-ren-lib mutation_arm 1F 为 11-03 起在册对端碰头红（apps/renderer
+面非本流域）。B6 基线首跑 10 案 101 子测 15P/86F——几何命中簇零过符合
+无输入注入口径，滚动/焦点面已过。见
+[R3b evidence](shadow-dom-rendering/evidence/2026-11-08-m3-r3b-manual-slot-channel.md)。
+下一步 M3：**006 未翻绿翻查修复（最高优先）** → 净树 browser tests
+复核 → M4 复测收口（DC-4 数值门逐批 + B6 门值回填）
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——
