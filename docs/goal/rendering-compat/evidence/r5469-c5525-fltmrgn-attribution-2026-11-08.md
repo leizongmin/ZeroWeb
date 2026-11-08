@@ -30,6 +30,8 @@ chromium per-row 实测（p1 f3，rel_y 像素行）：`0-44 右带 [75,89] 墨`
 
 ## 2. 残余 ✗2.90% 定域（下一步挂账）
 
+> **R5470 勘误（2026-11-09）**：本节 test4/blob3 的「bg-image 原点左移」签名**不成立**——彼时 diff 带分析未剥离布局位移贡献。R5470 定谳 c5525 主体残差 = 布局域双缺陷（taffy 对含 float 子容器 collapse-through + 步 6 高度物化不传播，p3-p6 累计上移 15/60/75/90px），修复后 c5525 ✗2.90%→**✓0.28%**（见 [r5470 证据档](r5470-float-collapse-through-sib-reanchor-2026-11-09.md)）。test6 墨 z 序结论保留为 0.28% 残差域；test4/blob3 发射源重开归因时须先在布局修复后的基线上重取 diff 带。
+
 c5525 = 6 子测试纵排。修复后 diff 带（ZW vs REF 与 ZW vs chromium oracle 双口径一致）全部落在 test4/test6 区，**test1/2/3/5 已全关**：
 
 1. **test6 绘制序缺陷（定谳，挂账深域）**：mr−30/mb−30 → img border box 与 3 行文本重叠。ZW 行几何**逐位正确**（TEMP IFC dump：L1 runs x=15/45/75、L2 x=0w30/45/75、L3 x=0w15，与 pattern-6 要求的墨位一致），但 img `pattern-grg-rrg-rgg.png` 的红格在墨位**露出**（ZW 像素 R vs chromium 全绿）→ **文字墨绘于 float 内容之下**。CSS2.1 App E：行内级内容（文字墨）应绘于非定位 float 之上；chromium 的墨覆盖 img 红格正是全绿的关键。swatch-green img（test2/3/5）全绿，历来无案暴露此序。域 = engine/render-foundation 图元 z 序（float vs 行内墨），非行断域。

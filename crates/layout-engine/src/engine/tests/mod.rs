@@ -864,6 +864,8 @@ mod r5294_dyn_trailing_space_tests;
 /// R5295（CSS2 §8.4）：换行 padded 行内盒 border-box 左缘写回——逐片段盒缘
 /// 收敛（run 首片段扣自身 pl、续行/空片段不扣），负偏回归守护。
 mod r5295_wrapped_padding_box_x_tests;
+/// R5470 float 重测后兄弟重锚（步 6 传播臂）+ §10.6.3 高度门测试。
+mod r5470_float_remeasure_sibling_reanchor_tests;
 mod trending_band_strut_tests;
 
 mod r5250_inline_relpos_shift_map;

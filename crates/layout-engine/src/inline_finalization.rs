@@ -66,6 +66,20 @@ static R4222_FLOAT_ANCESTOR_SCOPE: std::sync::LazyLock<bool> =
 static FLOAT_ANCHOR_PRE_GATE: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_ANCHOR_PRE_GATE").as_deref() != Ok("0"));
 
+/// R5470（CSS2 §8.3.1 × §10.6.3）：float 排除感知 IFC 重测的高度增量传播——步 5
+/// float walk 以 taffy float-unaware 文本帧定位兄弟，步 6 排除感知重测改变含 float
+/// 块高度后，同容器后续流内兄弟仍停驻旧帧位，差值即「含 float 前驱之后兄弟间距
+/// 塌陷」签名（c5525-fltmrgn-000：p3-p6 累计上移 15/60/75/90px；最小页 min-f：
+/// 前驱块高 30→45 后 p3 不随动）。本臂把子树根高度增量（δ = 子树 height 差，含
+/// 本子自身重测写入与孙层吸收量）平移给同容器后续流内兄弟并吸收进本层高，逐级
+/// 上浮。float 兄弟（脱流）仅在生长块旧底边之下随动——并置于旧底之上的 float
+/// 锚定更早流位，平移会双计；abs/fixed 锚定不随动。纵排块轴为 x，不处理
+///（FIXME: vertical 域待探）。OPTIMIZATION：进程级单读（R5108 教训：热路径逐节点
+/// env::var 有可测开销）。`ZW_FLOAT_REMEASURE_SIB_SHIFT=0` 回退不传播（旧行为，
+/// 高度吸收一并回退）。
+static FLOAT_REMEASURE_SIB_SHIFT: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("ZW_FLOAT_REMEASURE_SIB_SHIFT").as_deref() != Ok("0"));
+
 /// 行内布局使用的字体相关依赖。
 #[derive(Clone, Copy, Default)]
 pub(crate) struct InlineFontContext<'a> {
@@ -3349,7 +3363,7 @@ pub(crate) fn remeasure_text_with_float_exclusions(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     inline_fonts: InlineFontContext<'_>,
 ) {
-    remeasure_text_with_float_exclusions_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false);
+    remeasure_text_with_float_exclusions_inner(box_node, doc, styles, img_intrinsic_sizes, inline_fonts, false, false);
 }
 
 fn remeasure_text_with_float_exclusions_inner(
@@ -3359,6 +3373,7 @@ fn remeasure_text_with_float_exclusions_inner(
     img_intrinsic_sizes: &HashMap<NodeId, (f32, f32)>,
     inline_fonts: InlineFontContext<'_>,
     claimed_nested_floats: bool,
+    in_multicol: bool,
 ) {
     // R5446：嵌套 float 收集（认领子树跳过——float 已由祖先容器处理）。
     let (mut nested, nested_claimed) =
@@ -3721,11 +3736,12 @@ fn remeasure_text_with_float_exclusions_inner(
             // BFC 触发集（§9.4.1）：is_flow_root（flow-root/inline-block/contain:layout|
             // paint）+ float/abspos/fixed 自身 + multicol + 布局容器（flex/grid/table 系，
             // 高度路径不同但保守并入）+ table-caption + overflow 非 visible。
-            // env ZW_IFC_AUTOHEIGHT_BFC=1 启用（**default-off**——机制按 §10.6.3/§10.6.7
-            // 正确且 chromium oracle 探针吻合，但 floats-no-content-beside-001 /
-            // floats-clear-multicol-001 暴露 cleared-br 行位/多列内部两处被旧高度掩盖
-            // 的既存偏差，default-on 为净 +1 红；待后续轮修清后翻默认）。default-off =
-            // 退回无条件 max(float_bottom) 旧行为。
+            // env ZW_IFC_AUTOHEIGHT_BFC=0 回退（R5470 翻默认 **default-on**——机制按
+            // §10.6.3/§10.6.7 正确且 chromium oracle 探针吻合；c5525-fltmrgn 最小页
+            // min-a 实证 float extent 计入普通块高使前驱后兄弟位 +15px 偏低，与
+            // R5470 兄弟传播臂配套）。R5026 时代 default-off 记录的两处暴露
+            //（floats-no-content-beside-001 / floats-clear-multicol-001 的 cleared-br
+            // 行位/多列内部既存偏差）随传播臂 A/B 复核，见 docs/goal/rendering-compat。
             let establishes_bfc = box_node.is_flow_root
                 || !matches!(box_node.float, FloatValue::None)
                 || box_node.is_absolute
@@ -3735,8 +3751,15 @@ fn remeasure_text_with_float_exclusions_inner(
                 || box_node.is_table_caption
                 || !matches!(box_node.overflow_x, OverflowClip::Visible)
                 || !matches!(box_node.overflow_y, OverflowClip::Visible);
-            let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() == Ok("1");
-            let content_height = if bfc_gate && !establishes_bfc {
+            let bfc_gate = std::env::var("ZW_IFC_AUTOHEIGHT_BFC").as_deref() != Ok("0");
+            // R5470：行盒证据门——text_height=0（IFC 零行盒）时行盒底不可信，不得据以
+            // 收窄：floats-149 的 .block 流内内容经 display:inline div 中间层物化，行盒
+            // 不进本容器 IFC 行流（lines=0、span 层 h=19），行盒真值经 nested 臂折返
+            // float_bottom——零行盒证据下退回 max 旧口径（含 float extent），待行盒归属
+            // 缺陷单列修复后移除本臂。multicol 子树同退旧口径（floats-clear-multicol-001：
+            // 列断流里 float 参与列内布局并撑列，§10.6.3 单列收窄把 .container 250→20
+            // 致 br clear 的 clearance/列位判定链断，clear 从第三列 float 尾错回第一列）。
+            let content_height = if bfc_gate && !establishes_bfc && text_height > 0.0 && !in_multicol {
                 text_height
             } else {
                 text_height.max(float_bottom)
@@ -3821,17 +3844,92 @@ fn remeasure_text_with_float_exclusions_inner(
     // R5446：认领传递——本容器已认领的顶层子（嵌套 float 归容器机制）与继承认领子树
     // 中的 inline wrapper 跳过 float 体；块级/原子/BFC 子不受继承认领影响（其子树
     // float 归自身容器）。
-    for (idx, child) in box_node.children.iter_mut().enumerate() {
-        let child_claimed =
-            nested_claimed.contains(&idx) || (claimed_nested_floats && nested_float_wrapper_descendable(child, styles));
+    // R5470：float 子树重测后的兄弟重锚——含 float+inline 内容的块在 taffy 层是
+    // collapse-through（行内内容对 taffy 块堆叠不可见，taffy-raw 实证 h=0 且折链吃掉
+    // 兄弟 margin），真实高度步 6 才物化；重测后首个后继流内兄弟须落到生长块
+    // margin-box 堆叠位 = child.y + child.height + collapse(child.mb, sib.mt)，其后
+    // 兄弟随正差整体平移（保留 taffy 兄弟间距与 clearance/BFC 避让的合法超额——
+    // 只正差下推，不回拉）。float 子自身脱流不重锚（流兄弟不避它定位）；abs/fixed
+    // 不动；float 兄弟仅在生长块旧底边之下随动。容器高按尾流内兄弟 margin-box
+    // 堆叠底重算（只升不降）。纵排块轴为 x，不处理（FIXME: vertical 域待探）；
+    // multicol 子树不处理（floats-clear-multicol-001：列断流内兄弟沿列断切分，
+    // 单列堆叠假设把 br clear 后的 .clear 推出列到 303/第一列，multicol 亦被撑高）。
+    // kill-switch `ZW_FLOAT_REMEASURE_SIB_SHIFT=0` 回退。
+    let mut stacking_push: f32 = 0.0;
+    let subtree_in_multicol = in_multicol || box_node.is_multicol;
+    for idx in 0..box_node.children.len() {
+        let child_claimed = nested_claimed.contains(&idx)
+            || (claimed_nested_floats && nested_float_wrapper_descendable(&box_node.children[idx], styles));
+        let child_height_before = box_node.children[idx].height;
         remeasure_text_with_float_exclusions_inner(
-            child,
+            &mut box_node.children[idx],
             doc,
             styles,
             img_intrinsic_sizes,
             inline_fonts,
             child_claimed,
+            subtree_in_multicol,
         );
+        if !*FLOAT_REMEASURE_SIB_SHIFT || subtree_in_multicol || box_node.writing_mode.is_vertical_block_flow() {
+            continue;
+        }
+        let child = &box_node.children[idx];
+        // 仅流内块级且本步高度物化（|Δh| > 0.5）的块参与重锚——高度未变时 taffy
+        // 折叠（float-only 容器 §8.3.1 塌穿）本就合规；高度物化 = 真实行内容落位，
+        // taffy 折链基失效。无 float 块高度不变，天然不触发。
+        if !matches!(child.float, FloatValue::None)
+            || child.is_absolute
+            || child.is_fixed
+            || !child.is_block_level
+            || (child.height - child_height_before).abs() <= 0.5
+        {
+            continue;
+        }
+        let Some(first_sib) = box_node.children[idx + 1..]
+            .iter()
+            .position(|s| !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
+        else {
+            continue;
+        };
+        let sib_idx = idx + 1 + first_sib;
+        let gap = crate::margin_collapse::collapse_two_margins(
+            box_node.children[idx].margin_bottom,
+            box_node.children[sib_idx].margin_top,
+        );
+        let target_y = box_node.children[idx].y + box_node.children[idx].height + gap;
+        let push = target_y - box_node.children[sib_idx].y;
+        if push <= 0.5 {
+            continue;
+        }
+        let grown_floor = box_node.children[idx].y + child_height_before;
+        for sib in box_node.children[idx + 1..].iter_mut() {
+            if sib.is_absolute || sib.is_fixed {
+                continue;
+            }
+            if !matches!(sib.float, FloatValue::None) {
+                if sib.y >= grown_floor - 0.5 {
+                    sib.y += push;
+                }
+                continue;
+            }
+            sib.y += push;
+        }
+        stacking_push += push;
+    }
+    if stacking_push > 0.5 && *FLOAT_REMEASURE_SIB_SHIFT {
+        // 尾流内兄弟 margin-box 堆叠底重算容器高（taffy 折链基不再可信，只升不降）
+        if let Some(last) = box_node
+            .children
+            .iter()
+            .rev()
+            .find(|s| !s.is_absolute && !s.is_fixed && matches!(s.float, FloatValue::None))
+        {
+            let stacked_bottom = last.y + last.height + last.margin_bottom;
+            if stacked_bottom > box_node.content_height + 0.5 {
+                box_node.height += stacked_bottom - box_node.content_height;
+                box_node.content_height = stacked_bottom;
+            }
+        }
     }
 }
 
