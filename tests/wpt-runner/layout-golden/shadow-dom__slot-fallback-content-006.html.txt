@@ -1,0 +1,23 @@
+=== LAYOUT_DUMP (abs_y / height / margin-top / padding-top) ===
+html                     abs_y=    0.0 h= 402.0 ch= 402.0 mt=  0.0 pt=  0.0 x=   0.0 w= 800.0 dmt=  0.0
+  (anon)                   abs_y=    0.0 h=   0.0 ch=   0.0 mt=  0.0 pt=  0.0 x=   0.0 w=   0.0 dmt=  0.0
+  body                     abs_y=   16.0 h= 378.0 ch= 378.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  8.0
+    p                        abs_y=   16.0 h=  18.0 ch=  18.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    div                      abs_y=   50.0 h=  36.0 ch=  36.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=   50.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=   68.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+    p                        abs_y=  102.0 h=  18.0 ch=  18.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    div                      abs_y=  136.0 h=  36.0 ch=  36.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=  136.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=  154.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+    p                        abs_y=  188.0 h=  18.0 ch=  18.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    div                      abs_y=  222.0 h=  36.0 ch=  36.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=  222.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      div                      abs_y=  240.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+    p                        abs_y=  274.0 h=  18.0 ch=  18.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    div                      abs_y=  308.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      (anon)                   abs_y=  308.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+    p                        abs_y=  342.0 h=  18.0 ch=  18.0 mt= 16.0 pt=  0.0 x=   8.0 w= 784.0 dmt= 16.0
+    div                      abs_y=  376.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+      (anon)                   abs_y=  376.0 h=  18.0 ch=  18.0 mt=  0.0 pt=  0.0 x=   8.0 w= 784.0 dmt=  0.0
+    (anon)                   abs_y=   16.0 h=   0.0 ch=   0.0 mt=  0.0 pt=  0.0 x=   8.0 w=   0.0 dmt=  0.0
