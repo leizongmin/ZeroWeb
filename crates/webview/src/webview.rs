@@ -4720,6 +4720,25 @@ impl WebView {
         // declared>0 放行收集（uncaught exception 不降级 test status）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
         let mut first_strict_error: Option<String> = None;
+        // s349（html-semantics M2 切片 349）：解析交付集预盖章——spec already-started
+        // 在 prepare（parser 遇到元素）即置位，求值被「a style sheet that is blocking
+        // scripts」推迟不改变该事实。页面脚本阶段起点把交付索引表穿沙箱，shim 按索引
+        // 盖 `_zwParserDelivered[sel]`（part06 __zw_stamp_parser_scripts）——script0
+        // 在样式表等待窗内被改写 textContent 时，s109 childList 触发臂按已交付拦截，
+        // 不按 LIVE 文本重 prepare（script-text-modifications 双案）。索引与
+        // currentScript 同号空间（全 script 元素文档序，extract_page_scripts_sched
+        // 透传）。best-effort：盖章失败只重开等待窗触发面，不中止脚本阶段。与
+        // `_zwScriptStarted` 分表——s110 async getter 的执行事实臂（sc2 执行前读
+        // false、122 reinsert 前读真）不被预盖章污染。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if !scripts.is_empty() {
+            let stamp_js = format!(
+                "if(typeof globalThis.__zw_stamp_parser_scripts==='function')\
+                 globalThis.__zw_stamp_parser_scripts([{}]);",
+                scripts.iter().map(|(_, i)| i.to_string()).collect::<Vec<_>>().join(",")
+            );
+            let _ = self.js_sandbox.as_mut().map(|sb| sb.execute(&stamp_js));
+        }
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
@@ -4789,14 +4808,28 @@ impl WebView {
                         self.security_context.check_script(nonce, None, Some(&abs))
                     }
                     None => {
-                        // 内联 hash（spec §source-list-hash-matching：对 trim 后内容计算，
-                        // 与 extract 侧的 trim 口径一致）。
-                        let code = match &script {
-                            zero_engine::pipeline::PageScript::Inline(c)
-                            | zero_engine::pipeline::PageScript::InlineModule(c) => Some(c.trim()),
-                            _ => None,
+                        // 内联 hash（CSP source-list hash matching：hash 源 = 元素
+                        // child text content 原文，不做 trim；s349
+                        // script-text-modifications-csp 语料 pin = 含首换行原文摘要
+                        // 实证——旧口径对 trim 后执行体摘要使带缘空白/多行内联恒失配
+                        // 误阻。提取侧执行体为 trim 后文本（JS 语义等价），hash 源取
+                        // csp_info.raw_text 原文；单行脚本 trim==raw，既有案零漂移）。
+                        // https://w3c.github.io/webappsec-csp/#source-list-hash-matching-algorithm
+                        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+                        let is_inline = matches!(
+                            &script,
+                            zero_engine::pipeline::PageScript::Inline(_)
+                                | zero_engine::pipeline::PageScript::InlineModule(_)
+                        );
+                        let hash = if is_inline {
+                            script_csp_info
+                                .get(script_index)
+                                .and_then(|info| info.raw_text.as_deref())
+                                .filter(|text| !text.is_empty())
+                                .map(zero_security::csp::script_hash_sha256_base64)
+                        } else {
+                            None
                         };
-                        let hash = code.map(zero_security::csp::script_hash_sha256_base64);
                         self.security_context.check_script(nonce, hash.as_deref(), None)
                     }
                 }
@@ -4841,6 +4874,49 @@ impl WebView {
                 );
                 let _ = sandbox.execute(&snippet);
                 continue;
+            }
+            // s349（html-semantics M2 切片 349）：script-blocking stylesheet 等待窗
+            // ——runner 交错扫描窗保留 trickle 延迟（part01 fetch wrapper s349 面）
+            // 后，取回在飞的 media 匹配 sheet 挂起其后 pending script 求值：等待泵
+            // 以 runner timer wheel（__zw_fire_due_timers，真实时钟）驱动 trickle
+            // 取回发行与页面 timer（script-text-modifications 500ms 改写窗），
+            // sheet settle（load/error 均在 _zwSsVisitCss settle 点计数归零）即放行。
+            // spec：a style sheet that is blocking scripts 阻塞其后 parser-inserted
+            // script 的求值，timer 窗照常运转。探测以 runner wheel 在场为前提
+            //（非 runner 车道扫描窗折叠基线不变，计数非零亦零等待）；30s 封顶
+            //（part01 trickle 上限同源）防挂死，封顶后照常求值（红而非悬）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-a-script
+            // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
+            let blocking_probe_js = "(typeof globalThis.__zwScriptBlockingSheetsPending === 'function') \
+                 && (typeof globalThis.__zw_fire_due_timers === 'function') \
+                 && globalThis.__zwScriptBlockingSheetsPending()";
+            if sandbox
+                .execute(blocking_probe_js)
+                .map(|r| r.value.trim() == "true")
+                .unwrap_or(false)
+            {
+                let wait_deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+                loop {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                    let _ = sandbox.execute(
+                        "if (typeof globalThis.__zw_fire_due_timers === 'function') \
+                         globalThis.__zw_fire_due_timers();",
+                    );
+                    let settled = !sandbox
+                        .execute(blocking_probe_js)
+                        .map(|r| r.value.trim() == "true")
+                        .unwrap_or(true);
+                    if settled {
+                        break;
+                    }
+                    if std::time::Instant::now() >= wait_deadline {
+                        tracing::warn!(
+                            "script-blocking stylesheet 等待封顶（30s）: {}",
+                            self.current_url.clone().unwrap_or_else(|| "about:blank".to_string())
+                        );
+                        break;
+                    }
+                }
             }
             // s90（string-compilation base URL 面）：spec 脚本基 URL = 创建时刻的
             // 文档基 URL（后续 `<base>` 变更不回溯）——内联脚本用捕获表；外链经典

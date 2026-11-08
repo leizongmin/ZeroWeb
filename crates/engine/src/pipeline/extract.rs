@@ -1838,6 +1838,15 @@ pub struct ScriptElementCsp {
     /// 检查），内联投递丢 src——宿主检查点按此值走外链 URL 检查路径（同源放行/
     /// 异源阻止），不按内联 hash 路径误判。
     pub inlined_src: Option<String>,
+    /// s349：元素 child text content **原文**（CSP inline hash 源——spec
+    /// source-list hash matching 对 inline script 按元素 child text content 原文
+    /// 摘要，不做 trim。执行体（`extract_page_scripts`）为 trim 后文本，JS 语义
+    /// 等价但不可作 hash 源——带缘空白/多行内联脚本原文摘要 ≠ trim 摘要
+    ///（script-text-modifications-csp 语料 pin = 含首换行原文摘要实证）。
+    /// 外链 src 形元素无文本子 → 恒空串（消费侧仅内联形态读取且空串摘要无意义）。
+    /// https://w3c.github.io/webappsec-csp/#source-list-hash-matching-algorithm
+    /// https://html.spec.whatwg.org/multipage/infrastructure.html#child-text-content
+    pub raw_text: Option<String>,
 }
 
 /// 提取每个 `<script>` 元素的 CSP 检查点输入（nonce + harness 标记 + 内联投递
@@ -1861,6 +1870,7 @@ pub fn extract_script_csp_info(html: &str) -> Vec<ScriptElementCsp> {
                 .get_attribute(script_id, "data-inline")
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            raw_text: doc.child_text_content(script_id),
         })
         .collect()
 }
@@ -2511,30 +2521,43 @@ mod tests {
                 super::ScriptElementCsp {
                     nonce: Some("abc".to_string()),
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some(String::new())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some("{\"x\":1}".to_string())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: true,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some("alert(1)".to_string())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: None
+                    inlined_src: None,
+                    raw_text: Some(String::new())
                 },
                 super::ScriptElementCsp {
                     nonce: None,
                     zw_harness: false,
-                    inlined_src: Some("support/helper.js".to_string())
+                    inlined_src: Some("support/helper.js".to_string()),
+                    raw_text: Some("var x=1;".to_string())
                 },
             ],
-            "nonce + harness 标记 + 内联投递原始 src 按全量 script 文档序对齐（含非 JS type 占位）"
+            "nonce + harness 标记 + 内联投递原始 src + child text content 原文按全量 script 文档序对齐（含非 JS type 占位）"
+        );
+        // s349：raw_text 为 child text content 原文（不 trim）——带缘空白内联的
+        // hash 源保真（script-text-modifications-csp 语料 pin = 含首换行原文）。
+        let raw_html = "<html><body><script>\nvar a = 1;\n</script></body></html>";
+        assert_eq!(
+            extract_script_csp_info(raw_html)[0].raw_text.as_deref(),
+            Some("\nvar a = 1;\n"),
+            "raw_text 保留首尾换行原文（hash 源不 trim）"
         );
         let scripts = extract_page_scripts_indexed(html);
         // 页面脚本序列 4 条（JSON type 过滤，占位 1 号），this_idx 与 info 向量对位。

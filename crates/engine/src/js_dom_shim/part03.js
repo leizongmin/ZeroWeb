@@ -5249,9 +5249,15 @@
       try { _sel109 = el.__zwSelector; } catch (_eA109) {}
       try { _hdl109 = el.__zwHandle; } catch (_eB109) {}
       // spec prepare 步骤 1：already started（同表互斥——R387/s95/s96 或本面任一
-      // 执行过即 no-op）。
+      // 执行过即 no-op）。s349：解析交付集预盖章表同门——宿主页面脚本阶段起点盖
+      // `_zwParserDelivered[sel]`（part06 __zw_stamp_parser_scripts），求值被阻塞
+      // 样式表推迟的 parser 脚本在此窗口内被改写文本时不得按 LIVE 体重 prepare
+      // （script-text-modifications 双案；与 `_zwScriptStarted` 分表——s110 async
+      // getter 执行事实臂不受预盖章影响）。
       var _started109 = (_sel109 != null && !!(globalThis._zwScriptStarted
                           && globalThis._zwScriptStarted[_sel109]))
+        || (_sel109 != null && !!(globalThis._zwParserDelivered
+                          && globalThis._zwParserDelivered[_sel109]))
         || (_hdl109 != null && !!(globalThis._zwRanScripts && globalThis._zwRanScripts[_hdl109]));
       if (_started109) return;
       // connected 门（spec children changed 步骤 1 未连接返回；attribute change
@@ -6631,6 +6637,13 @@
   var _zwSsLoadPending = 0;
   var _zwSsTailFired = false;
   globalThis.__zwStylesheetFetchPending = function () { return _zwSsTailFired && _zwSsLoadPending > 0; };
+  // s349（html-semantics M2 切片 349）：script-blocking 在飞计数——media 匹配的
+  // sheet 取回在飞（根 visit 起止；@import 内层聚合于根回调，根级计数覆盖整链）
+  // 时挂起其后 pending script 求值。webview 交错点等待泵探测本谓词，并以
+  // __zw_fire_due_timers 在场为共同前提——非 runner 车道计数可能非零但泵缺席，
+  // 谓词真亦零等待（part01 折叠基线不变），不会误挂。
+  var _zwSsBlockPending = 0;
+  globalThis.__zwScriptBlockingSheetsPending = function () { return _zwSsBlockPending > 0; };
   // s154 单发重查排程（见下方②）：同身份只排一次；+0ms 后按原身份重跑（身份
   // 缺失时回落 elObj 现读——R368 盖章形 append 臂的 elObj 后到章）。重查再 bail
   // 不再排程（_zwSsRetryDone 印记），detached 恒态零循环。
@@ -6946,7 +6959,13 @@
       // https://html.spec.whatwg.org/multipage/semantics.html#the-link-element
       // https://html.spec.whatwg.org/multipage/rendering.html#render-blocking
       var _ssDoVisit = function () {
+        // s349：script-blocking 在飞计数——media 匹配臂计数（s163 defer 臂
+        // _ssMediaBlocks false 不计数，spec 非 matching sheet 不阻塞 parsing
+        // script）；同步 error 臂（mixed 门/取回抛，_zwSsVisitCss 同 tick 回调）
+        // 自归零无泄漏。
+        if (_ssMediaBlocks) _zwSsBlockPending++;
         globalThis._zwSsVisitCss(_ssHref, _ssAbs, 0, function (_ssV) {
+          if (_ssMediaBlocks) _zwSsBlockPending--;
           if (_ssKey != null) {
             _zwExtSheetTexts[_ssKey] = (_ssV === 'load') ? _ssCollect.join(';\n') : '';
             if (_ssV === 'load') {

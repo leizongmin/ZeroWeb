@@ -6510,13 +6510,23 @@
             // wptserve trickle 语法：trickle(d1) / trickle(1)——字母前缀可选。
             // s152：静态 stylesheet 交错扫描窗内折叠（__zwScanCollapseTrickle——
             // part03 _zwStylesheetStaticScanUpto 触发窗置位，同步段结束即清）。
-            // spec 的 script-blocking stylesheet 等待语义由「load 先于后继脚本
-            // 本」承载；runner 无 parser 阻塞，保留 3s 延迟只会把 load 推迟到后
-            // 继脚本断言之后（WPT link-load-fired-before-scripting-unblocked 判
-            // 式面）。fetch API 面 timeout 竞速用例不在扫描窗内，延迟语义零变化。
+            // s349（html-semantics M2 切片 349）：折叠收窄到非 runner 车道——
+            // s152 折叠以「load 先于后继脚本体」近似 script-blocking 等待语义；
+            // runner 车道现由 webview 交错点等待泵真实承载
+            //（__zwScriptBlockingSheetsPending 探测 + __zw_fire_due_timers 泵），
+            // 窗内保留延迟才有阻塞窗（script-text-modifications 500ms 改写窗、
+            // 106/150 sheet 阻断面）；非 runner 车道（reftest/product/单测——
+            // __zw_test_setTimeout 未装）等待泵缺席，保持折叠基线（保留延迟只会
+            // 平移 load 时序——s152 判式面
+            // link-load-fired-before-scripting-unblocked）。fetch API 面 timeout
+            // 竞速用例不在扫描窗内，延迟语义零变化。
             var _tp = /[?&]pipe=trickle\((?:[a-z]+)?(\d+)\)/.exec(_us);
-            if (_tp && globalThis.__zwScanCollapseTrickle !== true) {
-              _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+            if (_tp) {
+              var _ssScanCollapseOnly = globalThis.__zwScanCollapseTrickle === true
+                && typeof globalThis.__zw_test_setTimeout !== 'function';
+              if (!_ssScanCollapseOnly) {
+                _delayMs = Math.min(parseInt(_tp[1], 10) * 1000 || 0, 30000);
+              }
             }
           }
         }

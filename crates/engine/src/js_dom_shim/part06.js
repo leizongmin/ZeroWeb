@@ -7740,6 +7740,30 @@
     }
   };
   globalThis.__zw_clear_current_script = function () { _zwCurrentScriptIdx = -1; };
+  // s349（html-semantics M2 切片 349）：解析交付集预盖章——宿主在页面脚本阶段起点
+  // 投递交付索引表（extract 门通过的 classic/module 集，文档序索引与 currentScript
+  // 同号空间），按索引取元素置 `_zwParserDelivered[sel]`。spec 的 already-started
+  // 置位时机是 prepare（parser 遇到元素即置），求值被「a style sheet that is
+  // blocking scripts」推迟不改变该事实——script-text-modifications：script0 在
+  // 样式表等待窗内被 500ms 定时器改写 textContent，childList 触发臂（part01 s109）
+  // 按 LIVE 文本重 prepare 会执行改写后文本（upstream 已 started → no-op）。投递期
+  // 盖章使触发臂在执行前即拦。空源 bail/type 阻断/nomodule/for-event 压制单元不在
+  // 交付集（不盖）——145 形空脚本补文本仍可触发。与 `_zwScriptStarted` **分表**：
+  // s110 async getter 的「已 started → true」臂编码执行事实（重触发面），预盖章
+  // 不得污染（引擎沙箱静态页 sc2 执行前读 false 面、122 reinsert 前读真由 started
+  // 臂保——本表只进 part03 `_zwScriptMaybeStartDynamic` 的 started 门）。
+  // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+  globalThis.__zw_stamp_parser_scripts = function (idxList) {
+    if (!idxList || !idxList.length) return;
+    if (!globalThis._zwParserDelivered) globalThis._zwParserDelivered = {};
+    var _s349Scripts = globalThis.document.getElementsByTagName('script');
+    for (var _s349i = 0; _s349i < idxList.length; _s349i++) {
+      var _s349El = _s349Scripts[idxList[_s349i]];
+      if (_s349El && _s349El.__zwSelector) {
+        globalThis._zwParserDelivered[_s349El.__zwSelector] = true;
+      }
+    }
+  };
   // `new FontFace(family, source, descriptors)`：family 字符串、source = URL 字串（binary source 非标准 headless 不支持）、
   // descriptors = {style, weight, stretch, unicodeRange, variant, featureSettings}（默认 normal/400）。.status =
   // 'unloaded'|'loading'|'loaded'|'error'。.load() 返 Promise<FontFace>——经 host `__zw_load_font(family, src, id,

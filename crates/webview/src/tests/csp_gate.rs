@@ -505,6 +505,48 @@ bad.dispatchEvent(new Event('click'));
     );
 }
 
+/// 内联 hash 源 = 元素 child text content 原文（s349）：带首/尾换行的内联脚本按
+/// 原文摘要放行执行、零 violation（旧 trim 口径摘要失配 → 误阻 + violation——
+/// 本测试在旧行为下红）。CSP source-list hash matching，corpus 形态
+/// script-text-modifications-csp（pin = 含首换行原文摘要）。
+/// https://w3c.github.io/webappsec-csp/#source-list-hash-matching-algorithm
+#[test]
+fn csp_inline_hash_matches_raw_text_content_s349() {
+    // raw = "\nwindow.__zwRawHashExecuted = true;\n" 的 sha256-base64（trim 后
+    // 摘要 CKQHcnGb2FyyX5+lJnraB2otESJ6kZ0q/8aQnqOadEA= 与 pin 不等——旧口径误阻）。
+    let mut wv = WebView::new(WebViewConfig {
+        csp_enforcement: true,
+        ..WebViewConfig::default()
+    });
+    wv.prepare_document_state("https://wpt.test/csp/case.html");
+    wv.load_html(
+        r#"<html><head>
+<meta http-equiv="Content-Security-Policy" content="script-src 'nonce-ok' 'sha256-VYeK9Im5b0Ls9v5/mzH2XB5a0S6bNa5b2VbV3awTe1Q='">
+</head><body>
+<script nonce="ok">
+globalThis.__vio = [];
+document.addEventListener('securitypolicyviolation', function(e) {
+  globalThis.__vio.push({ d: e.effectiveDirective });
+});
+</script>
+
+<script>
+window.__zwRawHashExecuted = true;
+</script>
+</body></html>"#,
+        None,
+    );
+    wv.run_page_scripts().expect("run page scripts");
+    // 原文摘要放行执行（旧 trim 口径下恒 blocked → undefined）。
+    assert_eq!(
+        wv.execute_script("String(window.__zwRawHashExecuted)").unwrap(),
+        "true",
+        "带缘空白内联脚本按原文 hash 放行"
+    );
+    let vio = wv.execute_script("JSON.stringify(globalThis.__vio)").unwrap();
+    assert_eq!(vio.trim(), "[]", "hash 匹配零 violation: {vio}");
+}
+
 /// 运行时 img src-set 检查点（security-hardening M2-s8）：createElement('img') +
 /// src set 在 `img-src 'none'` 下被阻止 + violation 元素站派发（target = IMG）+
 /// onerror。securitypolicyviolation img corpus 形态。
