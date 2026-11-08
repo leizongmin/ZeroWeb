@@ -6,8 +6,12 @@
   通道 A/B：既有 110 案 381 行全等零回归，wss 池 +101 案 360 subtest 全绿
   （100% 过 98.5% 批次门，covered > 0）。
 - **卡点**：无。
-- **下一步**：M3 py 路由框架（py 普查档 §三：注册表 + EndpointCtx stash）；
-  迁移前先固化 net-api 13,275P 基线，153 臂迁入逐字节等价 A/B + S12 补丁收编。
+- **下一步**：M3 py 路由框架（py 普查档 §三：注册表 + EndpointCtx stash）。
+  迁移前基线已起跑（2026-11-08）：net-api 全通道 13,275P 面经 systemd 单元
+  `m3-baseline-164121`（test-guard 4G/8G/14400s + MemoryMax=12G，日志
+  `/tmp/m3-baseline-164121.log`，树 = 411e862bb 干净态）。**基线完成前
+  runner 源码冻结**（provenance 纪律）；落账后启 153 臂注册表迁移（逐字节
+  等价 A/B）+ S12 cors-preflight-redirect 补丁收编。
 
 ## 里程碑状态表
 
