@@ -1345,6 +1345,11 @@ fn compute_column_widths_inner(
     // 扩展填满容器时这些列冻结（不吸收剩余空间），仅 auto 列吸收——chromium auto 表行为
     //（table-cell-width-0：width:0/2px/20px 列保持其宽，width:auto 的 .normal 列填满剩余）。
     let mut col_explicit = vec![false; col_count];
+    // R5466 片 2：列冻结下限快照——显式贡献进入 col_max_widths 后，同列其他 auto cell
+    // 仍可能把列撑到更高（R364b 片 1 口径 w = max(specified, min-content floor)）；
+    // R4298 超宽压缩按此下限冻结显式列（chrome：列下限 = max(specified, min-content)，
+    // 赤字由 slack 列吸收；vrl-007 ref 臂探针 57.75/388.5/57.75 实证）。
+    let mut col_frozen_floor = vec![0.0f32; col_count];
 
     // R1718：`<col>`/`<colgroup>` width 属性 → 列宽 floor + col_explicit（≡ 显式 cell width
     // 语义，CSS Tables §4：col width 行为同该列每格显式 width）。col 无 box，须在 grid 直接读
@@ -1360,6 +1365,7 @@ fn compute_column_widths_inner(
             col_max_widths[i] = col_max_widths[i].max(*px);
             col_explicit[i] = true;
             col_elem_spec[i] = Some(*px);
+            col_frozen_floor[i] = col_frozen_floor[i].max(*px);
         }
     }
 
@@ -1821,6 +1827,9 @@ fn compute_column_widths_inner(
                 .is_some_and(|s| !matches!(s.width, zero_css_parser::values::LengthValue::Auto))
             {
                 col_explicit[cell.col_start] = true;
+                // R5466 片 2：冻结下限 = 显式 cell 的 used 贡献 w（含 R364b 片 1 floor、
+                // R5447 frame 口径），同列后续显式贡献取 max。
+                col_frozen_floor[cell.col_start] = col_frozen_floor[cell.col_start].max(w);
             }
         }
     }
@@ -2049,6 +2058,15 @@ fn compute_column_widths_inner(
     // 0→5.22 实证），不压缩。
     let table_is_floated = table_style.is_some_and(|s| !matches!(s.float, FloatValue::None));
     let shrink_eligible = has_explicit_width && !table_is_floated;
+    // R5466 片 2：压缩冻结臂——赤字按各列 slack（当前 − 冻结下限）比例分摊，显式列
+    // （col 元素/显式 cell）不摊薄到下限之下（css-tables-3 §3.4.3：列下限 = max(
+    // specified, min-content)；与下方 R364 扩展臂对称——扩展填满时显式列冻结，超宽
+    // 压缩同样不该被摊薄；vrl-007 ref 臂 67.92/1931/67.92 → 侧列冻 67.92、data 列
+    // 吸收赤字，chrome 探针 57.75/388.5/57.75 同构实证）。floor 和已超 available 或
+    // 赤字 ≥ 总 slack（无 slack 可摊）时回退整行比例压缩旧径（CAP 溢出域）。
+    // kill-switch `ZW_TABLE_SHRINK_FREEZE=0` 回退纯比例压缩。
+    static SHRINK_FREEZE_ON: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_TABLE_SHRINK_FREEZE").as_deref() != Ok("0"));
     let mut auto_shrunk = false;
     if !fixed_capped && shrink_eligible && *AUTO_SHRINK_ON {
         let total: f32 = col_max_widths.iter().sum();
@@ -2056,9 +2074,22 @@ fn compute_column_widths_inner(
         // taffy content_width=0，contain-inline-size-table 实证）——压缩到 ~0 违背 CSS 意图
         // （该表经「列和 = 表宽」shrink-to-sum 路径取 100 正常渲染），跳过。
         if total > col_available + 0.5 && total > 0.0 && col_available >= 1.0 {
-            let ratio = col_available / total;
-            for w in &mut col_max_widths {
-                *w *= ratio;
+            let deficit = total - col_available;
+            let total_floor: f32 = col_frozen_floor.iter().sum();
+            let total_slack = total - total_floor;
+            if *SHRINK_FREEZE_ON && total_floor > 0.0 && total_floor <= col_available + 0.5 && deficit < total_slack {
+                let slack_ratio = deficit / total_slack;
+                for (i, w) in col_max_widths.iter_mut().enumerate() {
+                    let slack = (*w - col_frozen_floor[i]).max(0.0);
+                    if slack > 0.0 {
+                        *w -= slack * slack_ratio;
+                    }
+                }
+            } else {
+                let ratio = col_available / total;
+                for w in &mut col_max_widths {
+                    *w *= ratio;
+                }
             }
             auto_shrunk = true;
         }
