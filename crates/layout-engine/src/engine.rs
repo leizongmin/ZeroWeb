@@ -1491,6 +1491,17 @@ impl LayoutEngine {
         // 在 Final Inline Layout Pass 前修，使存 IFC 直接见正确 max_depth（免 paint Path B 重跑）。
         crate::vertical_block_flow::fill_viv_float_subtree_inline_axis(&mut root_box, styles);
 
+        // 11.11 R5460 viv 域混合内容容器块轴 extent：auto block-size = fit-content，
+        // 自身 IFC Σ 列宽为 viv float 排除域的 extent 下限（taffy frame-only 塌宽）。
+        // 须在 11.10 fill 后（列断深度 = content_height 已可信）、R5457 float 右缘重锚
+        //（apply step 12.7）前落定——float 子几何随最终 content_width 自动跟随。
+        crate::vertical_block_flow::viv_mixed_content_block_extent(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+        );
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。

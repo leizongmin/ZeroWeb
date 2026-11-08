@@ -1202,6 +1202,156 @@ fn fill_viv_child(
     c.inline_layout_width = c.content_height;
 }
 
+/// R5460 viv 域混合内容容器（直接文本 + 脱流子）块轴 extent 补偿（gate
+/// `ZW_VIV_MIXED_EXTENT` default-on）。
+///
+/// **修的缺陷（chromium oracle B/C 变体定谳，float-lft-orthog-htb-in-vrl-002/vlr-002）**：
+/// css-writing-modes-3 §7.3 auto block-size = fit-content，混合内容容器块轴 extent =
+/// max(自身 IFC Σ 列宽, Σ 流内子 margin-box extent)。taffy 交换帧对含 float 子树的容器
+///（R4428 viv float 排除域）块轴给 frame-only 塌宽（探针 .vp w=16 纯边框，自身文本列 40
+/// 不贡献）；纯文本容器（V1 w=56）与 float-only 容器（C 变体 16，无行盒 extent=0）taffy
+/// 语义已对，本臂 only-grow 不触碰。
+///
+/// **gate**：父/自身 vertical + display Block/ListItem + height Auto + 子树含 float 或
+/// 含 abs/fixed 子（两形态 taffy 交换帧均不给 viv 容器自身列宽贡献；reftest 双臂自洽
+/// 要求驱动案 test 臂 float / ref 臂 abs 同步补偿）+ 非 float/abs/fixed/multicol + 无
+/// 流内非 float 元素子（纯「inline 内容 + 脱流子」域；inline 级元素子混排需 R4469 原子
+/// 注入口径，FIXME 另账）。列断深度 = content_height——须在 R5459 fill（engine.rs
+/// 11.10）之后调用，auto 高容器深度已 fill 可信（塌 0 时整臂 no-op）。
+///
+/// **回写**：width = Σ 列宽 + block 轴 frame，content_width = Σ 列宽，only-grow；
+/// vertical-rl 块流起始 = 右缘，x 左移 delta 保持块流位（R4428 viv restack 在 float
+/// 子树页整体关闭，taffy 右缘锚无人重算）；vertical-lr 块流起始 = 左缘，x 不动。float
+/// 子几何不在此改写：R5457 [`anchor_orthog_float_rl_start`]（apply step 12.7）按最终
+/// content_width 右缘重锚，自动跟随（`anchored_x = content_width − mr − w`）。
+/// 同 node_id 的 R109 inline-split 片段盒不入本臂（块子混排容器片段，其块轴语义归
+/// R109/R4460 泄漏修正域，r5457 混排 gate 契约哨戒）。
+pub(crate) fn viv_mixed_content_block_extent(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    // env 读一次（热路径 walk 内不逐节点读 env，同 R5459 fill 惯例）。
+    if std::env::var("ZW_VIV_MIXED_EXTENT").as_deref() == Ok("0") {
+        return;
+    }
+    viv_mixed_extent_walk(root, doc, styles, inline_fonts);
+}
+
+fn viv_mixed_extent_walk(
+    b: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+) {
+    let own_wm = b.writing_mode.clone();
+    let own_id = b.node_id;
+    for child in &mut b.children {
+        viv_mixed_extent_child(child, doc, styles, inline_fonts, &own_wm, own_id);
+        viv_mixed_extent_walk(child, doc, styles, inline_fonts);
+    }
+}
+
+fn viv_mixed_extent_child(
+    c: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    parent_wm: &WritingModeValue,
+    parent_node_id: Option<NodeId>,
+) {
+    if !parent_wm.is_vertical_block_flow() || !c.writing_mode.is_vertical_block_flow() {
+        return; // viv 域限定（同 R5459 fill 门）；纯 IFC 域归 R4445/R4469（5.5）。
+    }
+    // R109 inline-split 片段盒与宿主元素同 node_id（块子混排容器文本片段，float 嵌
+    // 片段内）——其块轴语义归 R109/R4460 泄漏修正域，本臂 fire 其上将经级联改写宿主
+    // 几何、破坏 R5457 混排容器 gate 契约（r5457 gate_excludes_float_with_inflow_sibling
+    // 翻红实证）。真容器 node_id 恒异于父。
+    if parent_node_id.is_some() && parent_node_id == c.node_id {
+        return;
+    }
+    if c.is_multicol || c.is_absolute || c.is_fixed || !matches!(c.float, FloatValue::None) {
+        return; // 脱流盒与 multicol 容器自身 shrink-to-fit，不补偿。
+    }
+    let Some(id) = c.node_id else {
+        return;
+    };
+    let Some(s) = styles.get(&id) else {
+        return;
+    };
+    if !matches!(s.display, DisplayValue::Block | DisplayValue::ListItem) || !matches!(s.height, LengthValue::Auto) {
+        return;
+    }
+    // 物理宽 auto 限定（物理属性不换轴存储，style.width = 物理宽；逻辑 block-size 在
+    // vertical 域亦落 style.width，apply.rs:184——auto 宽（含 content 关键字）才补偿，
+    // 显式宽容器不越权）。min/max-width 钳制同 5.5 口径（em/rem 解析阶段已落 Px）。
+    if !matches!(
+        s.width,
+        LengthValue::Auto | LengthValue::MinContent | LengthValue::MaxContent | LengthValue::FitContent(_)
+    ) {
+        return;
+    }
+    // 子树含 float 或含 abs/fixed 子：两形态 taffy 交换帧都不给 viv 容器自身列宽贡献
+    //（float = R4428 viv float 排除域；abs = 交换帧 absolute sizing 域，R5455 家族）。
+    // reftest 双臂自洽（DC-14）要求驱动案双臂同步归位——002 test 臂（float）与 ref 臂
+    //（abs + inline span）同塌 16，须同补偿；纯文本容器（V1，无 float/abs）taffy 语义
+    // 已对（56），不触碰（避免 R4445 记录的 measure-vs-taffy 分歧翻红域）。
+    let has_oof_child = c.children.iter().any(|ch| ch.is_absolute || ch.is_fixed);
+    if !viv_subtree_has_float(c) && !has_oof_child {
+        return;
+    }
+    // 混合内容域：流内子仅 float。有 inline 级/块级元素子时 taffy/5.5 语义自洽，
+    // 且自身列宽须原子注入对齐（R4469），不在此域。
+    let has_in_flow_element_child = c
+        .children
+        .iter()
+        .any(|ch| !ch.is_absolute && !ch.is_fixed && matches!(ch.float, FloatValue::None));
+    if has_in_flow_element_child {
+        return;
+    }
+    // 列断深度 = content_height：R5459 fill 后 auto 高容器已 fill 可信；仍塌 0/inf
+    //（fill 门未 fire 的既有 ≥ 域）则跳过，不按坏深度断列。
+    let depth = c.content_height;
+    if !depth.is_finite() || depth <= 0.5 {
+        return;
+    }
+    // R4463 同源真实 IFC 测量：lines.len()/列宽与 paint 同源（同 resolver + measure）。
+    // float 子由 collect_items 发 FloatAnchor（断行语义同 BlockBreak，无 strut）——
+    // float 文本不入本容器列宽度量（CSS2 §9.5 脱流）。
+    let mut col_ctx = crate::inline::InlineFormattingContext::new(depth)
+        .with_vertical(true)
+        .with_vertical_rtl(matches!(c.writing_mode, WritingModeValue::VerticalRl))
+        .with_vertical_central_baselines(crate::inline_finalization::collect_vertical_central_baselines(
+            c, styles,
+        ));
+    col_ctx = crate::inline_finalization::configure_inline_fonts(col_ctx, inline_fonts, false);
+    col_ctx.layout(doc, id, styles);
+    if col_ctx.lines.is_empty() {
+        return; // float-only 容器无行盒（chromium C 变体 extent=0），不补偿。
+    }
+    let block_extent = col_ctx.total_height();
+    let frame = c.border_left + c.border_right + c.padding_left + c.padding_right;
+    let (min_w, max_w) = match (&s.min_width, &s.max_width) {
+        (LengthValue::Px(lo), LengthValue::Px(hi)) => (*lo as f32, *hi as f32),
+        (LengthValue::Px(lo), _) => (*lo as f32, f32::MAX),
+        (_, LengthValue::Px(hi)) => (0.0, *hi as f32),
+        _ => (0.0, f32::MAX),
+    };
+    let new_width = (block_extent + frame).max(min_w).min(max_w);
+    if !new_width.is_finite() || new_width <= c.width + 0.5 {
+        return; // only-grow：塌宽域（16）grow 回 56；语义已对域不收缩。
+    }
+    let delta = new_width - c.width;
+    c.width = new_width;
+    c.content_width = block_extent;
+    // 块流起始 = 右缘（vertical-rl）：width grow 左缘左移，块流位（taffy 右缘锚）保持；
+    // vertical-lr 起始 = 左缘，右缘自由伸展，x 不动。
+    if c.writing_mode == WritingModeValue::VerticalRl {
+        c.x -= delta;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
