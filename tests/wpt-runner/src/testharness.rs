@@ -3360,6 +3360,10 @@ fn wc_case_skipped(relative: &str) -> bool {
         return true;
     }
     // 渲染级 composed tree / 几何命中 / 交互面（等用户点名 Shadow DOM 渲染级专项）。
+    // 其中几何命中/滚动/焦点/caret/Highlight/交互 10 案已由 45 号 goal 补充池
+    // 通道执行（run_shadow_render_pool_cases / SHADOW_RENDER_POOL_CASES，与
+    // scripts/goals/45-shadow-dom-rendering.sh SUPPLEMENT_POOL 两侧同源），
+    // 本通道排除防双计。
     const RENDER_PREFIXES: &[&str] = &[
         "slot-fallback-content-",
         "layout-",
@@ -3455,6 +3459,75 @@ fn collect_wc_cases(
         let results = run_testharness_html(wpt_root, &relative, &source, harness_source, CASE_TIMEOUT);
         cases.push((relative, results));
     }
+}
+
+/// Shadow DOM 渲染级补充池（shadow-dom-rendering goal B6）——42 号 WC 通道
+/// [`wc_case_skipped`] 渲染级排除域（几何命中/滚动/焦点/caret/Highlight/交互）
+/// 的 10 案显式清单。用例由 `scripts/goals/45-shadow-dom-rendering.sh`
+/// （SUPPLEMENT_POOL 段，与本清单两侧同源，增删必同步）拉到 `wpt-data/`
+/// （gitignored）。helper 解析与 [`run_web_components_cases`] 同机制
+/// （`inline_local_scripts` 内联用例自带 helper），非 META 显式配对。
+pub const SHADOW_RENDER_POOL_CASES: &[&str] = &[
+    "shadow-dom/offsetParent-across-shadow-boundaries.html",
+    "shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html",
+    "shadow-dom/focus-within-shadow.html",
+    "shadow-dom/scroll-restore-shadow.html",
+    "shadow-dom/scroll-to-the-fragment-in-shadow-tree.html",
+    "shadow-dom/Document-caretPositionFromPoint.tentative.html",
+    "shadow-dom/DocumentOrShadowRoot-prototype-elementFromPoint.html",
+    "shadow-dom/HighlightRegistry-highlightsFromPoint.html",
+    "shadow-dom/MouseEvent-prototype-offsetX-offsetY.html",
+    "shadow-dom/accesskey.tentative.html",
+];
+
+/// Run the shadow-dom render-coupled supplement pool（shadow-dom-rendering
+/// goal B6）。
+///
+/// 遍历 [`SHADOW_RENDER_POOL_CASES`] 显式清单（非目录递归——shadow-dom/ 其余面
+/// 仍归 [`run_web_components_cases`]，防双计）；缺文件 → Fail 结果（fetch 未跑
+/// 或清单漂移即可见）。filter 按路径子串过滤。
+pub fn run_shadow_render_pool_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
+    let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
+        Ok(source) => source,
+        Err(error) => {
+            return SHADOW_RENDER_POOL_CASES
+                .iter()
+                .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+                .map(|path| {
+                    (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load testharness.js".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    )
+                })
+                .collect();
+        }
+    };
+
+    SHADOW_RENDER_POOL_CASES
+        .iter()
+        .filter(|path| filter.is_none_or(|filter| path.contains(filter)))
+        .map(|path| {
+            let case_source = match read_corpus_to_string(wpt_root.join(path)) {
+                Ok(source) => source,
+                Err(error) => {
+                    return (
+                        (*path).to_string(),
+                        vec![HarnessSubtestResult {
+                            name: "load shadow-dom supplement case".into(),
+                            status: HarnessStatus::Fail,
+                            message: Some(error.to_string()),
+                        }],
+                    );
+                }
+            };
+            let results = run_testharness_html(wpt_root, path, &case_source, &harness_source, CASE_TIMEOUT);
+            ((*path).to_string(), results)
+        })
+        .collect()
 }
 
 /// IntersectionObserver / ResizeObserver pinned upstream subset——event-loop-spec goal

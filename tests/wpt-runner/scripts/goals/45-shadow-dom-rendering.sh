@@ -60,6 +60,8 @@ REFTEST_POOL=(
 )
 
 # -- testharness 渲染耦合补充池（42 号 skip 规则排除归 45 号，M1 通道计门）----
+# 与 tests/wpt-runner/src/testharness.rs SHADOW_RENDER_POOL_CASES 两侧同源
+# （runner 通道 testharness-shadow-dom 消费）：增删案两侧必同步。
 SUPPLEMENT_POOL=(
   shadow-dom/offsetParent-across-shadow-boundaries.html
   shadow-dom/offsetTop-offsetLeft-across-shadow-boundaries.html

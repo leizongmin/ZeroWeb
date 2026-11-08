@@ -97,6 +97,8 @@ Commands:
                        (performance-api-compat goal M1 / DC-1)
   testharness-web-components  Run imported custom-elements/shadow-dom/the-template-element
                        testharness cases (web-components goal M1 / DC-1)
+  testharness-shadow-dom  Run shadow-dom render-coupled supplement pool cases
+                       (shadow-dom-rendering goal B6)
   testharness-intersection-observer  Run imported IntersectionObserver testharness cases
                        (event-loop-spec goal M1 / DC-1)
   testharness-resize-observer  Run imported ResizeObserver testharness cases
@@ -540,6 +542,9 @@ fn main() {
             testharness_console::run_console_cases(wpt_root, filter)
         }),
         "testharness-web-components" => cmd_testharness_web_components(&options, filter.as_deref()),
+        "testharness-shadow-dom" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness::run_shadow_render_pool_cases(wpt_root, filter)
+        }),
         "testharness-intersection-observer" => cmd_testharness_intersection_observer(&options, filter.as_deref()),
         "testharness-resize-observer" => cmd_testharness_resize_observer(&options, filter.as_deref()),
         "testharness-clipboard-apis" => cmd_testharness_clipboard_apis(&options, filter.as_deref()),
