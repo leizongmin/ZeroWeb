@@ -1,8 +1,8 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.5
-**日期**: 2026-11-08（M3 corpus 批次完成——fetch/http-cache 端点表落地 + 首批 124P/138 入账；DC-4 余 M4 终验）
-**状态**: Active——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现）、DC-4 corpus 门 ✅（[M3 corpus 证据档](http-cache/evidence/2026-11-08-m3-corpus-import.md)，124P/138 vs Chrome 43.5%），余 M4 零回归收口（头条不回落核对 + 全窗终验）
+**版本**: v1.6
+**日期**: 2026-11-09（M4 终验收口——全窗 A/B 零回归 + fetch 头条 +103P 不回落；DC-1~DC-4 全达成）
+**状态**: **Done**——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现）、DC-4 ✅（[M4 终验证据档](http-cache/evidence/2026-11-09-m4-final-verification.md)：全窗 13,992P 真 P→F=0 对 v2/v3 双基线、fetch 头条 2,369P/17.85% 对 v3 复测 +103P、corpus 124P/138 入账）；越界发现一项引擎回归（ddb1e73cf shadow 栈溢出，非本 goal 面）记[待决项](#待决项)
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口——
@@ -127,9 +127,16 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   (http-cache/evidence/2026-11-08-m3-corpus-import.md)）；零回归：族窗
   106P/0F + headers 286/286 + zero-net 530P/0F（落盘形态门镜像回退教训
   ——DC-3 单实现指缓存语义层，通道落盘策略可合法分歧，见证据档 §六）。
-- **M4**：零回归复测收口（DC-4）——受影响窗已绿（本批改动面有界：
-  包裹器 4 路径精确匹配，余 fetch 通道零触碰），余头条不回落核对
-  （weekly cron 面）+ 全窗 A/B 终验。
+- **M4 ✅**（2026-11-09，DC-4 收口）：全窗 A/B 终验——net-api 全窗 952 文件
+  13,992P/1,322F/9T，对 M2 全窗账真 P→F=0/F→P=0/subtest 集合零漂移（唯一
+  差异 = fetch/http-cache 13 新文件 124P/14F 纯增量），对 v3 终账真 P→F=0、
+  F→P 104 恰为记账收敛集（[M4 证据档](http-cache/evidence/2026-11-09-m4-final-verification.md)）；
+  fetch 头条 **2,369P/17.85%**（post-goal CI 对账 run 42499865933）对 v3
+  复测基线 2,266P/17.07% **+103P 不回落**，fetch/api 面 2,098→2,202P；
+  正式快照被环比护栏拦下（web-components/shadow-dom 面 −100% 塌陷系
+  越界发现项 ddb1e73cf 引擎栈溢出的真实后果），头条数值由同 run artifact
+  本地同脚本聚合产出（证据档 §五）；weekly 管线两层容错落地（套件级
+  6b3a7d00c + 空文件级 757f4db84）。
 
 ## 依赖约束（run-rules §9）
 
@@ -149,3 +156,17 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   改动与 rendering-compat 的加载性能门（benchmarks perf-gate）同窗核对，
   防缓存命中路径改变加载时序预算。
 - 无人值守构建/测试走 test-guard 与 systemd-run 内存墙钟双限。
+
+## 待决项（2026-11-09 M4 终验越界发现，移交处理）
+
+1. **shadow M3 引擎栈溢出回归（ddb1e73cf，2026-11-08 02:20 落地）**：
+   `build-deep-detached-shadow-then-append-text.html`（servo#43998 同型，
+   999 层嵌套 attachShadow 后深层 append 文本）主线程栈溢出，套件启动
+   ~50s 崩。bisect 定谳于 [M4 证据档](http-cache/evidence/2026-11-09-m4-final-verification.md) §四b（56f1febb7 基线单案全绿→ddb1e73cf 首坏）。
+   影响面：web-components 套件三面全废、CI html-sem 分片常红、weekly
+   快照 custom-elements/shadow-dom 面记 0（环比护栏拦快照回写）。归
+   shadow 域（45 号已归档，engine 共享面）；修复合入后下一 weekly cron
+   快照自然回落。
+2. **快照补写口径**：若希望在回归修复前先有正式快照落盘（web-components
+   /shadow-dom 两面如实记 0），需 `--no-guard` 重出——属环比护栏的人工
+   确认豁免，未拍板前不执行；默认等修复后自然回落。
