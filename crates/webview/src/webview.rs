@@ -5346,9 +5346,21 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             // 对象 + 元素照常 fire load）。返回 '1' = 求值抛错已报告——s107 成功臂
             // 须跳过（防 load 双发）；'' = 无抛错。execute Err（包装级 parse 失败）
             // 时哨兵臂不达，下方 s102 臂照旧。
+            // s347（报告位置）：内联模块 lineno = 开标签在**原始源**中的行号——复用
+            // M2-s2 CSP 位置表（runner 经 config.csp_script_positions 注入 prepared
+            // 空间原始源行号，避开 harness 内联扭曲；csp 关闭面表空回落 0 = 旧行为）。
+            // 判据 evaluation-error-5：文档 16 行 `<script type="module">a</script>`
+            // 求值抛错 lineno 16。外链模块体行号属模块自身 URL 内坐标（runner 投递
+            // 内联面同，非页面文档坐标），维持 0（FIXME：语料无钉面）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+            let eval_err_lineno = if is_module && module_dep_base.is_none() && !inlined_from_external {
+                script_positions.get(script_index).map(|pos| pos.0).unwrap_or(0)
+            } else {
+                0
+            };
             let eval_err_reported = if is_module {
                 sandbox
-                    .execute(&script_module_eval_error_report(script_index))
+                    .execute(&script_module_eval_error_report(script_index, eval_err_lineno))
                     .map(|r| r.value)
                     .unwrap_or_default()
             } else {

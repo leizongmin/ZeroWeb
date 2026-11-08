@@ -794,13 +794,18 @@ pub fn script_module_cache_probe(cache_key: &str) -> String {
 /// 重构 `new SyntaxError(msg)`——应用数据丢失（WPT error-type-3 判据 `log[1].foo`
 /// 对 `throw {foo:true}` 原值断言）。返回 '1' 表示有哨兵已上报，'' 表示无（宿主据
 /// 此门控 s107 成功臂 load 派发，防双发）。
+/// s347：`lineno` = 报告位置——内联模块由宿主取 M2-s2 位置表（原始源开标签行，
+/// runner 经 config.csp_script_positions 注入 prepared 空间，避开 harness 内联扭曲）
+/// 传入（evaluation-error-5 判据 lineno 16）；0 = 未知位置（旧行为，外链/降级面——
+/// 外链模块体行号属模块自身 URL 内坐标，语料无钉面 FIXME）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-pub fn script_module_eval_error_report(script_ordinal: usize) -> String {
+/// https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
+pub fn script_module_eval_error_report(script_ordinal: usize, lineno: u32) -> String {
     format!(
         "(function(){{\
 if(globalThis.__zwModEvalErrObj===undefined)return '';\
 var __zwErr=globalThis.__zwModEvalErrObj;globalThis.__zwModEvalErrObj=undefined;\
-try{{reportError(__zwErr);}}catch(_e){{}}\
+try{{reportError(__zwErr, '', {lineno});}}catch(_e){{}}\
 try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
 if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}\
 return '1';}})()"
