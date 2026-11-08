@@ -166,3 +166,16 @@
   22:49 认领实例，本实例承接 M4 互指记账（43 号入账注记 + 47/39 号
   控制面互指三处，见状态头 M4 段与各 goal 文档），不碰两 fetcher
   闭包段与 testharness_py_routes 表面。
+- 2026-11-08 23:05 三实例并发观测与 SW 面让予（8407e081 续轮本条）：
+  同级实例正在应用 SW fetcher 分表至 testharness.rs（工作树 703+/440-
+  未提交，23:03 落树；表设计 = in-place 单 suffix 行 ×24 + handler
+  `Result<Option<HttpResponse>, String>` 落穿语义，与普查档 §二
+  sw_fetch.rs 模块化设计不同形——按先完成者采纳，收编时逐件核对
+  等价，模块化拆分留作 6b 收尾补项）。其 22:48 基线单元失败
+  （MAKE_EXIT=2），A/B 对照锚维持切片五 `/tmp/m3s5-base-214840.log`；
+  23:03 上游 s348（9afb87f69，webview 模块 parse 归属，
+  the-script-element 域 2 案 F→P）不含 runner 面改动——补验 A/B
+  如现同签名漂移按切片五 §三先例归因 s348，不记为迁移回归。本实例 SW 分表生成器写就
+  未应用即退役，.rs 面（testharness.rs 两 fetcher 段 + py_routes
+  表面）让予在编实例（同文件单编辑方），转入落库件独立补验位
+  （fmt/clippy -D warnings/单测三件套 + 全量 A/B multiset 空集复核）。
