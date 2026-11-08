@@ -11383,6 +11383,14 @@
       if (typeof globalThis.__zw_ce_value_overrides_clear === 'function') {
         globalThis.__zw_ce_value_overrides_clear();
       }
+      // F1'-B（2026-11-08 editing-compat）[2]：swcss 模式同生命周期清除——
+      // recording 每案隔离（gentest fresh iframe），multitest 同页跑法若不清，
+      // 唯一 swcss(true) 案（:2847）置位后泄漏给后继案令 typing 物化漂移；
+      // 选区变更即清（每案 setup removeAllRanges/addRange）。语料无
+      // qS(stylewithcss) 读数面（record {}），滞后快照读数不受影响。结构命令
+      // presTt 同款保全未接（语料无 [swcss(true)+结构命令+typing] 链形，
+      // FIXME: 出现该链形时需 presSw 快照回写）。
+      globalThis.__zwStyleWithCSS = false;
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）

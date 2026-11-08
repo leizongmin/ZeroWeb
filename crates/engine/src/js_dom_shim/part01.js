@@ -9655,6 +9655,71 @@
     if (!have) return tags;
     return tags.filter(function (t) { return have.indexOf(t) < 0; });
   }
+  // F1'-B（2026-11-08 editing-compat）[2]：swcss(true) typing 样式并壳——Chrome
+  // CSS 模式 typing 不产 tag 壳，armed tag 折算 CSS 属性并入 caret 祖先链 span
+  // 的 style attr（multitest `<span style=font-weight:bold>{}<br></span>`+
+  // stylewithcss(true)+italic+inserttext 期望 `<span style="font-weight:bold;
+  // font-style:italic">a</span>` 录音实证）。链上首 span 的 style 已含同名
+  // 属性 → 冲突不并（fallback 既有 tag 壳径，FIXME: 嵌套 span 壳形未接）。
+  // 返回 { sp: 承接 span, add: [prop:value] } 或 null。
+  var _zwCeSwcssTypingProps = {
+    b: 'font-weight:bold',
+    i: 'font-style:italic',
+    u: 'text-decoration:underline',
+    s: 'text-decoration:line-through'
+  };
+  function _zwCeSwcssAbsorbSpan(sc, el) {
+    if (globalThis.__zwStyleWithCSS !== true) return null;
+    var tags = globalThis.__zwTypingTags;
+    if (!Array.isArray(tags) || !tags.length) return null;
+    var add = [];
+    for (var i = 0; i < tags.length; i++) {
+      var p = _zwCeSwcssTypingProps[String(tags[i])];
+      if (p) add.push(p);
+    }
+    if (!add.length) return null;
+    var n = sc;
+    var guard = 0;
+    while (n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && String(n.tagName || '').toLowerCase() === 'span') {
+        var raw = '';
+        try { raw = String(n.getAttribute('style') || ''); } catch (_eSa) {}
+        var decls = raw.toLowerCase().split(';');
+        for (var j = 0; j < add.length; j++) {
+          var pn = add[j].split(':')[0];
+          for (var q = 0; q < decls.length; q++) {
+            if (String(decls[q]).split(':')[0].replace(/^\s+|\s+$/g, '') === pn) {
+              return null; // 同名属性已存在（冲突或冗余）→ 不并壳
+            }
+          }
+        }
+        return { sp: n, add: add };
+      }
+      n = n.parentNode;
+    }
+    return null;
+  }
+  // F1'-B（2026-11-08 editing-compat）[21]：typing 壳前向并入——typed 壳与
+  // 紧随其后的同 tag 壳合并（`a[]<b>c</b>`+bold+italic+inserttext 期望
+  // `a<b><i>b</i>c</b>` 录音实证：typed `<b><i>b</i></b>` 头插进既有 `<b>c</b>`；
+  // 反例 `a[]<i>c</i>` 期望不并——外层 tag 不同即不并）。link 上下文（f2Wrap）
+  // 不并（F2 面独立吸收机制）；b/i/u/s 装饰族之外（sub/sup 等）不并（F6b 域）。
+  function _zwCeTypingForwardMerge(twEl, hasF2) {
+    if (!twEl || hasF2 || twEl.nodeType !== 1) return;
+    var tag = String(twEl.tagName || '').toLowerCase();
+    if ('b i u s'.split(' ').indexOf(tag) < 0) return;
+    var nx = twEl.nextSibling;
+    if (!nx || nx.nodeType !== 1
+        || String(nx.tagName || '').toLowerCase() !== tag) return;
+    // 显式摘除后头插（shim appendChild/insertBefore 隐式 detach 缺口先例
+    // ——zz-probe-d4x X4，DocumentFragment 无移动语义；元素侧同法保守）。
+    while (twEl.firstChild) {
+      var mvSw = twEl.firstChild;
+      if (mvSw.parentNode) mvSw.parentNode.removeChild(mvSw);
+      nx.insertBefore(mvSw, nx.firstChild);
+    }
+    if (twEl.parentNode) twEl.parentNode.removeChild(twEl);
+  }
   // 变异核导出（editing-compat inserttext 簇 2026-11-01）：R3254-M2 branch3
   // execCommand 分支（part06 inserttext 臂）与键盘 __zw_ce_insert 共用。事件序
   // （beforeinput/textInput/input）留在各入口，本核只做变更：caret 世界同步 +
@@ -9684,6 +9749,14 @@
     // 四臂共用（_zwCeTypingInsert 第三参）。
     var f2 = _zwCeF2LinkContext(sc, el);
     var f2Wrap = !!(f2 && (f2.href || f2.carry));
+    // F1'-B swcss 并壳承接（变异前决策——sole-child 占位 br 快照挂此刻）。
+    var swAbs = _zwCeSwcssAbsorbSpan(sc, el);
+    var swBr = null;
+    if (swAbs && swAbs.sp.childNodes && swAbs.sp.childNodes.length === 1) {
+      var fcSw = swAbs.sp.childNodes[0];
+      if (fcSw && fcSw.nodeType === 1
+          && String(fcSw.tagName || '').toLowerCase() === 'br') swBr = fcSw;
+    }
     if (sc && (sc.nodeType === 3 || sc.__zwIsText)) {
       // 文本节点 splice（UTF-16 单元；选区非空先删区间）。
       var v = String(sc.nodeValue || '');
@@ -9700,7 +9773,7 @@
       // —— separator br 与 typed 段同壳合并 + 末占位 br 重挂 off 壳）。
       var offSplit = null;
       var toff0 = globalThis.__zwTypingTagsOff;
-      if (range.collapsed && Array.isArray(toff0) && toff0.length) {
+      if (range.collapsed && Array.isArray(toff0) && toff0.length && !swAbs) {
         var nOff = sc.parentNode;
         var guardOff = 0;
         while (nOff && nOff !== el && guardOff++ < 256) {
@@ -9758,11 +9831,40 @@
           }
           for (var ci = chain.length - 1; ci >= 0; ci--) innerTags.push(chain[ci]);
         })(sc);
+        // F1'-B（2026-11-08）：显式 typing 态并入——本臂原只按幸存壳链重包裹，
+        // 显式 toggle-on 命令被丢（`<b>a[]</b>c`+bold-off+italic-on 期望
+        // `<b>a</b><i>b</i>c` 录音 :584/:585 实证，got 裸文本）；off 拆出后
+        // typed 段仍需武装 tags（幸存链已含的 tag 去重，序 = 链壳外→内、
+        // 显式 tags 垫内层）。
+        var ttEx = globalThis.__zwTypingTags;
+        if (Array.isArray(ttEx)) {
+          for (var txi = 0; txi < ttEx.length; txi++) {
+            var txTag = String(ttEx[txi]);
+            if (txTag && innerTags.indexOf(txTag) < 0) innerTags.push(txTag);
+          }
+        }
         var twD = (innerTags.length || f2Wrap)
           ? _zwCeTypingInsert(innerTags, ins, f2) : null;
         var dEl = twD ? twD.el : document.createTextNode(ins);
         var dText = twD ? twD.text : dEl;
-        offSplit.parentNode.insertBefore(dEl, offSplit.nextSibling || null);
+        // 文本后继改锚插入（F1'-B 判读定谳 2026-11-08）：offSplit.nextSibling 为
+        // 解析文本节点时，insertBefore(handle 元素 × 文本 ref) 落入 part04 sel 域
+        // wire 死区——D3 臂 refNode.nodeType===1 门、R265 族 handle 父门全 miss，
+        // 探针 dbg kids 实证静默丢弃（`<b>a[]</b>c` got `<b>a</b>c`，typed 段
+        // 无踪）。语料 :584/:585 形（文本后继居尾）：显式摘除文本（隐式 detach
+        // 缺口同 zz-probe-d4x X4 教训）→ dEl 改锚 append（refNode null 分支）→
+        // 文本以 dEl 为 ref 经 R5058 text wire 回填（dEl 为末元素时 beforeend
+        // 兜底 = 正确位序）。FIXME: 文本后继尚有元素兄弟的位序保持未接（R5058
+        // beforeend 兜底落尾；语料普查无此形）。
+        var postInsT = null;
+        var nsD = offSplit.nextSibling;
+        if (nsD && nsD.nodeType === 3) {
+          postInsT = String(nsD.nodeValue || '');
+          if (nsD.parentNode) nsD.parentNode.removeChild(nsD);
+          offSplit.parentNode.insertBefore(dEl, null);
+        } else {
+          offSplit.parentNode.insertBefore(dEl, nsD || null);
+        }
         var tailHasText = false;
         if (tailSeq) (function _zwD4Scan(x) {
           for (var c = x.firstChild; c; c = c.nextSibling) {
@@ -9808,9 +9910,12 @@
             }
           }
         }
+        if (postInsT) {
+          offSplit.parentNode.insertBefore(document.createTextNode(postInsT), dEl.nextSibling || null);
+        }
         node = dText;
         caretOff = ins.length;
-      } else if ((ttags1 && ttags1.length) || f2Wrap) {
+      } else if ((ttags1 && ttags1.length && !swAbs) || f2Wrap) {
         // typing 包裹（wss/ilb temporary inline style 组）：头段留原节点，插入段
         // 成 inline 包裹元素，尾段成新文本节点。F2：armed/carry 时裸 splice 臂
         // 禁入（原地把字粘进宿主文本节点，pending link 无从包裹）——同分流到
@@ -9821,6 +9926,8 @@
         tp1.insertBefore(tw1.el, sc.nextSibling || null);
         var tv1 = v.slice(eo);
         if (tv1) tp1.insertBefore(document.createTextNode(tv1), tw1.el.nextSibling || null);
+        // F1'-B [21]：同 tag 前向并壳（尾段空才并——尾段非空时并壳会错位残段）。
+        if (!tv1) _zwCeTypingForwardMerge(tw1.el, f2Wrap);
         node = tw1.text;
         caretOff = ins.length;
       } else {
@@ -9905,12 +10012,13 @@
         var v2 = String(target.nodeValue || '');
         var at = (kids[idx] === target) ? 0 : v2.length; // offset 子即文本 → 插其头；前一个子 → 插其尾
         var ttags2 = _zwCeTypingTagsAt(sc, el);
-        if ((ttags2 && ttags2.length) || f2Wrap) {
+        if ((ttags2 && ttags2.length && !swAbs) || f2Wrap) {
           target.nodeValue = v2.slice(0, at);
           var tw2 = _zwCeTypingInsert(ttags2, ins, f2);
           target.parentNode.insertBefore(tw2.el, target.nextSibling || null);
           var tv2 = v2.slice(at);
           if (tv2) target.parentNode.insertBefore(document.createTextNode(tv2), tw2.el.nextSibling || null);
+          if (!tv2) _zwCeTypingForwardMerge(tw2.el, f2Wrap);
           node = tw2.text;
         } else {
           target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
@@ -9923,9 +10031,10 @@
         //（insertlinebreak-wss 现有 inline 样式组 nowrap 变体：`<b>abc<br>[]<br>`
         // 位插 'def' → got `<b>abc<br><br>def</b>`，期望 `abc<br>def<br>` 形）。
         var ttags3 = _zwCeTypingTagsAt(sc, el);
-        if ((ttags3 && ttags3.length) || f2Wrap) {
+        if ((ttags3 && ttags3.length && !swAbs) || f2Wrap) {
           var tw3 = _zwCeTypingInsert(ttags3, ins, f2);
           sc.insertBefore(tw3.el, kids[idx] || null);
+          _zwCeTypingForwardMerge(tw3.el, f2Wrap);
           node = tw3.text;
         } else {
           node = document.createTextNode(ins);
@@ -9938,6 +10047,21 @@
       return { ok: false, text: null }; // 非 text/element caret 容器（document 级等）——best-effort 不做
     }
     if (!node) return { ok: false, text: null }; // void 臂 detached 形（无父 void）best-effort 不做
+    // F1'-B swcss 并壳落笔（[2]）：armed 折算属性并入承接 span style attr
+    //（原串保留 verbatim + `; ` 分隔追加——Chrome CSSOM 序列化形，part01d
+    // _zwVa 合并序列化先例）；span 入插前仅含占位 br → typed 段就位后消费
+    //（语料 :2847 期望 `a</span>` 无 br）。
+    if (swAbs) {
+      try {
+        var rawSw = String(swAbs.sp.getAttribute('style') || '');
+        var nextSw = rawSw;
+        for (var si = 0; si < swAbs.add.length; si++) {
+          nextSw = nextSw ? nextSw + '; ' + swAbs.add[si] : swAbs.add[si];
+        }
+        swAbs.sp.setAttribute('style', nextSw);
+        if (swBr && swBr.parentNode) swBr.parentNode.removeChild(swBr);
+      } catch (_eSwAp) {}
+    }
     // 插入消费拆分占位 br（wss block 形：新块/inline 壳的占位断在内容进场后
     // 移除——期望 `abc<div><i>def</i></div>` 形，带标 br 见拆分 ① 臂与 ②b
     // inline 盒臂）。**不门 typing state**（preserving 组无 format 前置同样
