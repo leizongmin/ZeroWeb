@@ -10,9 +10,10 @@ use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
-    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_indexed, extract_script_credentials,
+    extract_img_srcs, extract_meta_csp_policies, extract_script_credentials,
     extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
-    extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
+    extract_page_scripts_sched, extract_style_elements_csp, extract_stylesheet_link_anchors,
+    generate_js_dom_shim, image_resource_key,
     page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
     script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
     script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
@@ -3825,7 +3826,28 @@ impl WebView {
             .csp_enforcement
             .then(|| self.security_context.eval_violation())
             .flatten();
-        let scripts = extract_page_scripts_indexed(&html);
+        let scripts = {
+            // s342：解析器插入调度序——deferred（外链/内联 `defer` classic、无 `async`
+            // module）整体移 batch 尾按文档序执行（spec 文档解析完后执行的 deferred
+            // 列表——module 脚本隐式 defer 语义；charset-01 实证外链 module 在引擎
+            // batch 内阻塞串行执行，挪位即改执行序，parse 位只留会打乱与内联 module
+            // 的文档序交错）。async module 保持 Blocking 槽（s343 面）。稳定分桶保各组
+            // 内文档序；script_index 原样透传（CSP/referrer/credentials sidecar 表按
+            // 序号取，与执行序解耦）。取回发起随执行位后移为已知偏差（spec prepare 时
+            // 取回即发起，A/B 无案面依赖）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let mut blocking: Vec<_> = Vec::new();
+            let mut deferred: Vec<_> = Vec::new();
+            for (script, idx, sched) in extract_page_scripts_sched(&html) {
+                if matches!(sched, zero_engine::pipeline::ScriptSched::Deferred) {
+                    deferred.push((script, idx));
+                } else {
+                    blocking.push((script, idx));
+                }
+            }
+            blocking.extend(deferred);
+            blocking
+        };
         // s90（string-compilation base URL 面）：每脚本 parse 时刻的文档基 URL 捕获
         // 表（DOM 文档序，与 script_index 同序号空间；纯函数于原文，动态 `<base>`
         // 变更天然不回溯）。外链脚本不经此表（referrer 用自身 src，见循环内）。

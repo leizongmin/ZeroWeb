@@ -186,6 +186,23 @@ pub enum PageScript {
     },
 }
 
+/// 解析器插入脚本的调度分类（spec prepare-the-script-element 的 parser-inserted
+/// 时序面）：classic 无 defer = parse 位同步执行；`defer` classic 与 module 无
+/// `async` = 文档解析完后按文档序执行（deferred 列表——module 脚本隐式 defer）；
+/// module 带 `async` = 尽快就绪即执行（asap 列表——本引擎暂按 parse 位/取回完成
+/// 执行，s342 未动）。classic 的 `async` 属性本引擎未建模（同 Blocking 槽）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScriptSched {
+    /// parse 位同步执行（batch 文档序槽）。
+    Blocking,
+    /// 文档解析完后按文档序执行（deferred 列表——`defer` classic 与无 `async`
+    /// module；runner 侧移 batch 尾执行）。
+    Deferred,
+    /// module 带 `async`——尽快就绪即执行（当前行为同 Blocking 槽，s343 面挂账）。
+    AsyncModule,
+}
+
 /// HTML「ASCII whitespace」剥离（TAB/LF/FF/CR/SPACE）——s93（classic 脚本属性面）：spec 剥离
 /// 仅此五种，不含 Unicode White_Space 充数；旧 `str::trim` 连 \x0B/\x85/\xA0 等一起剥，
 /// `type="text/javascript\x0B"` 被误判为 JS 执行（WPT script-type-whitespace 5F 红因）。
@@ -300,6 +317,16 @@ pub fn extract_page_scripts(html: &str) -> Vec<PageScript> {
 /// `document.currentScript`（HTML §4.11.3.1：classic 脚本执行期间 currentScript 指向自身元素）。
 /// 序号在过滤**之前**递增（每遇一个 `<script>` 即 +1），确保与 `getElementsByTagName('script')` 一一对应。
 pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
+    extract_page_scripts_sched(html)
+        .into_iter()
+        .map(|(script, idx, _)| (script, idx))
+        .collect()
+}
+
+/// 与 [`extract_page_scripts_indexed`] 相同，且每条目附解析器插入调度分类
+/// [`ScriptSched`]（s342：runner 侧按分类把 deferred 条目移 batch 尾——spec
+/// 文档解析完后按文档序执行面）。
+pub fn extract_page_scripts_sched(html: &str) -> Vec<(PageScript, usize, ScriptSched)> {
     let doc = zero_dom::parse_html(html);
     let mut scripts = Vec::new();
     let mut script_ids = Vec::new();
@@ -358,6 +385,24 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
         } else {
             doc.get_attribute(script_id, "src")
         };
+        // s342：defer/async 属性 → 解析器插入调度分类（spec prepare-the-script-element
+        // 时序面；module 的 defer 属性为 no-op——module 无 async 即隐式 defer）。
+        // classic 的 defer 仅外链生效：parser-inserted 无 src classic 一律立即执行
+        //（defer no-op，execution-timing/090 实测形态）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let sched = if is_module {
+            if doc.get_attribute(script_id, "async").is_some() {
+                ScriptSched::AsyncModule
+            } else {
+                ScriptSched::Deferred
+            }
+        } else if doc.get_attribute(script_id, "defer").is_some()
+            && src_attr.as_deref().is_some_and(|s| !s.trim().is_empty())
+        {
+            ScriptSched::Deferred
+        } else {
+            ScriptSched::Blocking
+        };
         if let Some(src) = src_attr {
             let src = src.trim();
             if src.is_empty() {
@@ -393,9 +438,10 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
                             integrity,
                         },
                         this_idx,
+                        sched,
                     ));
                 } else {
-                    scripts.push((PageScript::External(src.to_string()), this_idx));
+                    scripts.push((PageScript::External(src.to_string()), this_idx, sched));
                 }
                 script_ids.push(script_id);
                 continue;
@@ -416,9 +462,9 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             let code = strip_script_cdata(raw.trim()).trim();
             if !code.is_empty() {
                 if is_module {
-                    scripts.push((PageScript::InlineModule(code.to_string()), this_idx));
+                    scripts.push((PageScript::InlineModule(code.to_string()), this_idx, sched));
                 } else {
-                    scripts.push((PageScript::Inline(code.to_string()), this_idx));
+                    scripts.push((PageScript::Inline(code.to_string()), this_idx, sched));
                 }
                 script_ids.push(script_id);
             }
@@ -432,10 +478,10 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
     // this_idx 仍为全体 script 元素 pre-order 序（与 shim getElementsByTagName('script')
     // 对齐），执行序与序号解耦。
     // https://html.spec.whatwg.org/multipage/syntax.html#the-rules-for-parsing-tokens-in-foreign-content
-    let mut entries: Vec<(zero_dom::NodeId, usize, PageScript)> = scripts
+    let mut entries: Vec<(zero_dom::NodeId, usize, PageScript, ScriptSched)> = scripts
         .into_iter()
         .zip(script_ids)
-        .map(|((script, idx), id)| (id, idx, script))
+        .map(|((script, idx, sched), id)| (id, idx, script, sched))
         .collect();
     entries.sort_by(|a, b| match a.1.cmp(&b.1) {
         Ordering::Equal => Ordering::Equal,
@@ -454,7 +500,7 @@ pub fn extract_page_scripts_indexed(html: &str) -> Vec<(PageScript, usize)> {
             }
         }
     });
-    entries.into_iter().map(|(_, idx, script)| (script, idx)).collect()
+    entries.into_iter().map(|(_, idx, script, sched)| (script, idx, sched)).collect()
 }
 
 /// 判 `anc` 是否 `desc` 的祖先（沿父链上行）——脚本 end-tag 排序用。
@@ -2795,5 +2841,43 @@ mod tests {
         );
         assert_eq!(extract_document_base_href("<head></head>"), None);
         assert_eq!(extract_document_base_href(r#"<head><base href=""></head>"#), None);
+    }
+
+    /// s342（script 调度面）：解析器插入脚本按 spec prepare-the-script-element 分桶
+    /// ——module 无 `async` 一律 Deferred（`defer` 属性对 module 是 no-op，隐式
+    /// defer 已覆盖）；module 带 `async` 走 AsyncModule（当前引擎按 Blocking 槽执行，
+    /// s343 面）；classic 的 `defer` 仅外链生效（parser-inserted 无 src classic 一律
+    /// 立即执行），其余 Blocking。Driving WPT：module/module-vs-script-1.html、
+    /// module/charset-01.html（外链 module 文档序交错）、execution-timing/090.html
+    ///（inline defer no-op）。
+    /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    #[test]
+    fn extract_page_scripts_sched_classification_s342() {
+        use super::{extract_page_scripts_sched, ScriptSched};
+        let html = r#"<body>
+            <script type="module" src="m1.js"></script>
+            <script type="module" async src="m2.js"></script>
+            <script type="module" defer src="m3.js"></script>
+            <script defer src="d1.js"></script>
+            <script defer>inline_defer_noop();</script>
+            <script defer src="">empty_src_falls_inline();</script>
+            <script>plain();</script>
+        </body>"#;
+        let scheds: Vec<ScriptSched> = extract_page_scripts_sched(html)
+            .into_iter()
+            .map(|(_, _, s)| s)
+            .collect();
+        assert_eq!(
+            scheds,
+            vec![
+                ScriptSched::Deferred,    // module 无 async（隐式 defer）
+                ScriptSched::AsyncModule, // module async（s343 执行面）
+                ScriptSched::Deferred,    // module defer 属性 no-op，仍隐式 defer
+                ScriptSched::Deferred,    // classic defer 外链生效
+                ScriptSched::Blocking,    // classic defer 内联 no-op
+                ScriptSched::Blocking,    // classic defer 空 src 落内联臂（defer no-op）
+                ScriptSched::Blocking,    // plain classic parse 位
+            ]
+        );
     }
 }
