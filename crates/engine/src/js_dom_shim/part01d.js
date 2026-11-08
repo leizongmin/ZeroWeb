@@ -875,7 +875,22 @@
              && command !== 'fontsize')) {
       return;
     }
-    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue, true)) {
+    // F6b（2026-11-09 诊断 D3 定谳档）fontsize 等值门 script 缩放口径：
+    // 引擎 gCS 盲 UA 元素规则（sub/sup 壳级读缺省 16px），medium(16px) ≡
+    // 盲读即整门跳过 → C3/C4 值重放被吞（期望壳外 font size3）。**仅壳级**
+    // （node 即 sub/sup 元素）按 0.83em 缩放比较（16→13.28 ≠ medium 桶3 →
+    // 壳重放放行）；段文本级保持盲读——壳外裹后 text 已见壳值（font3 attr
+    // 16px ≡ medium）内层自然溶解（D3b 双包实证：全 in-script 缩放会把
+    // text 也裹一层）。C1/C2 等桶溶解在 restore 门已消化不达此处。非
+    // fontsize 零差（F6b 域收敛——其余命令等值面维持原口径）。
+    var effVaF6b = _zwValEffectiveValue(node, command);
+    if (command === 'fontsize'
+        && node.nodeType === 1
+        && (_zwJusTag(node) === 'sub' || _zwJusTag(node) === 'sup')) {
+      var pxVa = parseFloat(effVaF6b);
+      if (!isNaN(pxVa)) effVaF6b = (pxVa * 0.83) + 'px';
+    }
+    if (_zwVaLooselyEquivalent(command, effVaF6b, newValue, true)) {
       return;
     }
     if (!_zwVaIsAllowedChild(node, 'span')) {
@@ -895,7 +910,16 @@
       }
       return;
     }
-    if (_zwVaLooselyEquivalent(command, _zwValEffectiveValue(node, command), newValue, true)) {
+    // 同上口径第二道门（下潜臂后）：仅壳级缩放、段文本级盲读（首道门
+    // 注释——双包消解同源：text 盲读见壳值即等值溶解，不重裹内层）。
+    var effVaF6b2 = _zwValEffectiveValue(node, command);
+    if (command === 'fontsize'
+        && node.nodeType === 1
+        && (_zwJusTag(node) === 'sub' || _zwJusTag(node) === 'sup')) {
+      var pxVa2 = parseFloat(effVaF6b2);
+      if (!isNaN(pxVa2)) effVaF6b2 = (pxVa2 * 0.83) + 'px';
+    }
+    if (_zwVaLooselyEquivalent(command, effVaF6b2, newValue, true)) {
       return;
     }
     var property = command === 'fontsize' ? 'font-size'
@@ -1932,6 +1956,28 @@
   // forceValue——就地 splice 使 caret 锚为整节点，直接 forceValue 会过裹全串）
   // ；fontsize 记录侧已 normalize 关键字，直进主流程（legacy 换算在 attr 臂）。
   // 尾部 caret 塌到 range 终点（vendored 尾部 collapseToEnd 对应面）。
+  // F6b 门机具（2026-11-08 oracle 定谳档）：node 位 DOM sub/sup 祖先判定
+  // （host 止）+ 关键字→桶（part01 __zw_f6b_bucket_of 消费，px 表
+  // x-small..xxx-large = 10/13/16/18/24/32/48 与 part01d sizeMapData 同源）。
+  function _zwVaNodeInScriptF6b(node) {
+    var n = (node && node.nodeType === 1) ? node : (node ? node.parentNode : null);
+    var guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 256) {
+      var tn = String(n.tagName || '').toLowerCase();
+      if (tn === 'sub' || tn === 'sup') return true;
+      if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(n)) return false;
+      n = n.parentNode;
+    }
+    return false;
+  }
+  function _zwVaKwBucketF6b(kw) {
+    var pxMap = { 'x-small': 10, small: 13, medium: 16, large: 18,
+      'x-large': 24, 'xx-large': 32, 'xxx-large': 48 };
+    var px = pxMap[String(kw)];
+    if (px == null || typeof globalThis.__zw_f6b_bucket_of !== 'function') return null;
+    return globalThis.__zw_f6b_bucket_of(px);
+  }
+
   globalThis.__zw_ce_value_restore_overrides = function (node, off0, off1, snap) {
     if (!node || !snap) return;
     var sel = globalThis.getSelection ? globalThis.getSelection() : null;
@@ -1954,6 +2000,7 @@
     // 不滤（F6b 域）。
     var armedLink = globalThis.__zwTypingLink;
     var linkArmed = armedLink != null && armedLink !== '';
+    var f6bDissolvedKw = null;
     for (var i = 0; i < cmds.length; i++) {
       var cmd = cmds[i];
       var v = snap[cmd];
@@ -1963,7 +2010,26 @@
         try { _zwVaSetSelectionValue(cmd, v); } catch (_eRoF2) {}
         continue;
       }
-      if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v, true)) continue;
+      // F6b（2026-11-08 oracle 定谳档）fontsize 重放等值门 script 缩放桶
+      // 口径：caret 位 DOM sub/sup 时按 0.83em 缩放最近档比较（语料 C1/C2
+      // `sub,fontsize=2,inserttext` 期望无 font——指定 small 桶2 ≡ sub 内
+      // 13.28px 桶2；C3/C4 fontsize=3 期望 font size3 壳外——medium 桶3 ≠
+      // 桶2 重放）。walk_px 恒 16px 缺省口径盲作者 inline 字号，故非
+      // script 上下文保旧口径零行为差（script 位 author 字号不在 F6b 语料
+      // 形内，FIXME: script×author-font-size 混合形未接）。
+      if (cmd === 'fontsize'
+          && typeof globalThis.__zw_f6b_bucket_of === 'function'
+          && typeof globalThis.__zw_f6b_walk_px === 'function'
+          && _zwVaNodeInScriptF6b(node)) {
+        var f6bCb = globalThis.__zw_f6b_bucket_of(globalThis.__zw_f6b_walk_px(node));
+        var f6bVb = _zwVaKwBucketF6b(v);
+        if (f6bCb != null && f6bVb != null && f6bCb === f6bVb) {
+          f6bDissolvedKw = v;
+          continue;
+        }
+      } else if (_zwVaEquivalentValues(cmd, _zwValEffectiveValue(node, cmd), v, true)) {
+        continue;
+      }
       try { _zwVaSetSelectionValue(cmd, v); } catch (_eRo) {}
     }
     try {
@@ -1973,6 +2039,15 @@
       c.collapse(true);
       sel._ranges = [c];
     } catch (_eRo2) {}
+    // F6b qV 载体重绑（2026-11-09 门禁批 P2F 2 判读）：等桶溶解后树无 font
+    // 壳，基线 qV("fontsize")="2" 经壳树读偶然满足（重放裹壳）；语料期望值
+    // 命令效果仍可查（multitest.js :2059/:2064 qV-after "2"）——溶解臂收
+    // 集、caret 塌到位后重绑 override（reset 以插入段尾 caret 重锚存活）。
+    // 跨案清除走既有 _zwSync 选区变更面，无泄漏。包 wrap 路径（C3/C4）与
+    // 非 script 等值跳过路径不动（壳在，树读即真）。
+    if (f6bDissolvedKw != null) {
+      try { _zwVaSetValueOverride('fontsize', f6bDissolvedKw); } catch (_eRoF6b) {}
+    }
   };
 
   // 选区整体是否落在同一 a[href] 内（Chrome foreColor 不改链内样式的 delta

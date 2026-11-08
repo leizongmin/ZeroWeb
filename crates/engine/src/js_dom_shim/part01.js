@@ -9588,12 +9588,77 @@
   //（color/face/size delta，part01f __zw_ce_capture_link_carry 产出，语料
   // :2148/:2158/:1170 形）；③ `<a href>` 最外裹（armed pending link，:1159-:1178
   // 族期望 typed 段 link 化）。嵌套次序 a > carry-font > tags > text。
+  // F6b（2026-11-08 oracle 定谳档）script×fontsize 打字机具：px 直走表——
+  // host 缺省 16px 基，下行链 font[size=N] 绝对档覆写 + sub/sup 0.83em 缩放
+  //（UA 表与 style-system lib.rs :2288 同源）；桶 = 中点表最近档（part01d
+  // _zwValLegacyBounds 同源 10/13/16/18/24/32/48）。删除位捕获（part01f
+  // __zw_ce_capture_script_carry）与打字位重放（A=本核 f2.f6bBucket 内层臂、
+  // N=__zw_ce_f6b_post_insert 外层臂）共用此表。语料机制：删除位桶 vs
+  // caret 位（script 缩放后）桶——等桶溶解、异桶 font size=N（A 族 armed
+  // 壳内层 / N 族前树壳外层 editorial hoist，oracle 12 案全合）。
+  var _zwF6bSizePx = { 1: 10, 2: 13, 3: 16, 4: 18, 5: 24, 6: 32, 7: 48 };
+  // part01f capture 内层 font[size] 档读取共用（:1307 capture）。
+  globalThis.__zw_f6b_size_px = _zwF6bSizePx;
+  globalThis.__zw_f6b_walk_px = function (node) {
+    var chain = [];
+    var n = (node && node.nodeType === 1) ? node
+      : (node ? node.parentNode : null);
+    var guard = 0;
+    while (n && n.nodeType === 1 && guard++ < 256) {
+      if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(n)) break;
+      chain.push(n);
+      n = n.parentNode;
+    }
+    var px = 16;
+    for (var i = chain.length - 1; i >= 0; i--) {
+      var tn = String(chain[i].tagName || '').toLowerCase();
+      if (tn === 'sub' || tn === 'sup') {
+        px = px * 0.83;
+        continue;
+      }
+      if (tn === 'font' && chain[i].getAttribute
+          && chain[i].getAttribute('size') != null) {
+        var v = parseInt(chain[i].getAttribute('size'), 10);
+        if (!isNaN(v)) {
+          if (v < 1) v = 1;
+          if (v > 7) v = 7;
+          px = _zwF6bSizePx[v];
+        }
+      }
+    }
+    return px;
+  };
+  // 桶 = 7 档最近距离（整档值归本档：bucket_of(16)=3——中点扫描在整档值
+  // 上差一档（16 落桶2），2026-11-08 诊断 fixture D1 实证后改距离式）。
+  globalThis.__zw_f6b_bucket_of = function (px) {
+    var bounds = [10, 13, 16, 18, 24, 32, 48];
+    var best = 1;
+    var bestD = px > bounds[0] ? px - bounds[0] : bounds[0] - px;
+    for (var i = 1; i < 7; i++) {
+      var d = px > bounds[i] ? px - bounds[i] : bounds[i] - px;
+      if (d < bestD) { bestD = d; best = i + 1; }
+    }
+    return best;
+  };
   function _zwCeTypingInsert(tags, text, f2) {
     var tn = document.createTextNode(text);
     var root = tn;
     var eff = Array.isArray(tags) ? tags : [];
     if (f2 && f2.href && eff.length) {
       eff = eff.filter(function (t) { return t !== 'u' && t !== 's'; });
+    }
+    // F6b A 通道（armed script tag，2026-11-08 oracle 定谳档）：script carry
+    // 桶落 armed sub/sup 壳**内层**——先裹 text，再被下方 tags 循环包入
+    //（语料 `fo<sub><font size="3">a[]</font></sub>bar` 形；旧版裹 root 于
+    // tags 循环后落壳外，2026-11-09 诊断 D1c 实证）。等桶溶解在消费面门
+    //（_zwCeF6bArmedBucket 等桶返 null 不携——见 :9698）。eff 含 script tag
+    // 才消费（f2 构造面无 tag 判定——四臂共用上下文）。
+    if (f2 && f2.f6bBucket != null
+        && (eff.indexOf('sub') >= 0 || eff.indexOf('sup') >= 0)) {
+      var f6f = document.createElement('font');
+      f6f.setAttribute('size', String(f2.f6bBucket));
+      f6f.appendChild(root);
+      root = f6f;
     }
     for (var i = eff.length - 1; i >= 0; i--) {
       var w = document.createElement(String(eff[i]));
@@ -9640,6 +9705,85 @@
     if (inLink) out.carry = carry;
     return out;
   }
+  // F6b A 通道 f2 携带（2026-11-08 oracle 定谳档，2026-11-09 inner 旗标收
+  // 敛）：armed script tag 时比较删除位 carry 桶 vs caret 位缩放桶——caret
+  // 位按 armed 壳内层落位加乘 0.83（插入后文本居 armed sub/sup 内，UA 缩
+  // 放生效面）；等桶溶解不携（unified rule），异桶携桶供 _zwCeTypingInsert
+  // 内层 font 臂消费。carry.inner 旗标（capture armed-only 无内层 font 形）
+  // 独占此臂——N 通道 carry（inScript 形）恒返 null 走 post-insert 外层臂
+  //（N2 内壳 hoist 不得被内层臂截胡：D5 实证 caret 落壳内时 eff 滤 tag，
+  // 内层臂 eff 检查本就失活，旗标使路由显式）。前树形（无 armed tag）不
+  // 在此臂——mutate 核 post-insert 外层臂管（N 通道）。
+  function _zwCeF6bArmedBucket(sc) {
+    var carry = globalThis.__zwTypingScriptCarry;
+    if (!carry || carry.bucket == null || !carry.inner) return null;
+    if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+        || typeof globalThis.__zw_f6b_bucket_of !== 'function') return null;
+    var at = globalThis.__zwTypingTags;
+    if (!Array.isArray(at)) return null;
+    var scriptArmed = false;
+    for (var i = 0; i < at.length; i++) {
+      if (at[i] === 'sub' || at[i] === 'sup') { scriptArmed = true; break; }
+    }
+    if (!scriptArmed) return null;
+    var cpx = globalThis.__zw_f6b_walk_px(sc) * 0.83;
+    if (globalThis.__zw_f6b_bucket_of(cpx) === carry.bucket) return null;
+    return carry.bucket;
+  }
+  // F6b N 通道（前树幸存 script 壳形，2026-11-08 oracle 定谳档）mutate 核
+  // post-insert 外层臂：caret 落 DOM sub/sup 壳内且 carry 在账（armed tag
+  // 形已在 _zwCeTypingInsert 内层臂消费，此处让位）。两步——
+  // ① 剥离 script 壳至宿主间幸存 font[size] 壳（:2178/:2398 期望 size 重
+  //   映射、:2188/:2408 等桶溶解——幸存原壳恒消，由 carry 重放重建）；
+  // ② carry 桶 vs caret 位缩放桶（walk_px 见剥离后新树）：异桶 font
+  //   size=N 包 script 壳外（editorial hoist——:2178 size="1"、:2183
+  //   size="3" 形），等桶不包（:2173/:2393 引擎绿溶解形零扰动）。
+  globalThis.__zw_ce_f6b_post_insert = function (node) {
+    try {
+      var carry = globalThis.__zwTypingScriptCarry;
+      if (!carry || carry.bucket == null) return;
+      if (carry.inner) return; // A 通道已在内层臂消费，此处让位（不剥外层）
+      if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+          || typeof globalThis.__zw_f6b_bucket_of !== 'function') return;
+      var scriptEl = null;
+      var n = node && node.parentNode;
+      var guard = 0;
+      while (n && n.nodeType === 1 && guard++ < 256) {
+        var tn = String(n.tagName || '').toLowerCase();
+        if (tn === 'sub' || tn === 'sup') { scriptEl = n; break; }
+        if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(n)) return;
+        n = n.parentNode;
+      }
+      if (!scriptEl) return;
+      // ① 剥离外层幸存 font[size] 壳（unwrap 直迁子节点，原位保序）。
+      var anc = scriptEl.parentNode;
+      var sGuard = 0;
+      while (anc && anc.nodeType === 1 && sGuard++ < 32
+             && !(typeof _zwJusIsEditingHost === 'function'
+                  && _zwJusIsEditingHost(anc))) {
+        var next = anc.parentNode;
+        if (String(anc.tagName || '').toLowerCase() === 'font' && anc.getAttribute
+            && anc.getAttribute('size') != null) {
+          var kids = [];
+          for (var k = anc.firstChild; k; k = k.nextSibling) kids.push(k);
+          for (var ki = 0; ki < kids.length; ki++) {
+            try { anc.parentNode.insertBefore(kids[ki], anc); } catch (_eUw) { break; }
+          }
+          try { anc.parentNode.removeChild(anc); } catch (_eRm) {}
+        }
+        anc = next;
+      }
+      // ② 异桶重放（等桶溶解=不动作）。
+      var cb = globalThis.__zw_f6b_bucket_of(globalThis.__zw_f6b_walk_px(node));
+      if (cb === carry.bucket) return;
+      var fontEl = document.createElement('font');
+      fontEl.setAttribute('size', String(carry.bucket));
+      var sp = scriptEl.parentNode;
+      if (!sp) return;
+      sp.insertBefore(fontEl, scriptEl);
+      fontEl.appendChild(scriptEl);
+    } catch (_eF6bPi) {}
+  };
   // TypingStyle 轮（2026-11-02 editing-compat）：delete 幸存壳链捕获的 typing
   // 态（part01f __zw_ce_capture_typing_chain）含 caret 仍居其中的壳层——该层
   // 由 DOM 祖先自然承接，重复包裹会产出 `<b><i><b>d</b></i></b>` 双裹形
@@ -9758,6 +9902,10 @@
     // F2 link 上下文（armed pending / carry 消费资格）——变异核单点解析，
     // 四臂共用（_zwCeTypingInsert 第三参）。
     var f2 = _zwCeF2LinkContext(sc, el);
+    // F6b A 通道桶（armed script tag 异桶判定后携带——_zwCeF6bArmedBucket
+    // 内含等桶溶解门；前树形返 null 走 post-insert 外层臂）。
+    var f6bBucket = _zwCeF6bArmedBucket(sc);
+    if (f6bBucket != null) f2.f6bBucket = f6bBucket;
     var f2Wrap = !!(f2 && (f2.href || f2.carry));
     // F1'-B swcss 并壳承接（变异前决策——sole-child 占位 br 快照挂此刻）。
     var swAbs = _zwCeSwcssAbsorbSpan(sc, el);
@@ -10099,6 +10247,14 @@
     nr.setStart(node, caretOff);
     nr.collapse(true);
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
+    // F6b N 通道（2026-11-08 oracle 定谳档）：前树幸存 script 壳外层臂——
+    // 剥离外层 font[size] 壳 + carry 桶异同重放（函数体见
+    // __zw_ce_f6b_post_insert；armed 形已在 _zwCeTypingInsert 内层臂消费，
+    // 此处 armed 让位）。置于值 override 重放前（F6b 与五值命令语料键零交，
+    // 序不敏感；剥离先行保 walk_px 见净树）。
+    if (node && typeof globalThis.__zw_ce_f6b_post_insert === 'function') {
+      try { globalThis.__zw_ce_f6b_post_insert(node); } catch (_eF6bHook) {}
+    }
     // 值 override 重放（快照在核头）：覆盖插入段重放，就地 splice 的整节点
     // 过裹由重放入口临时 range + setSelectionValue 边界 splitText 消化（只裹
     // 插入段）；caret 随后塌到插入段尾（vendored 尾部 collapseToEnd 面）。

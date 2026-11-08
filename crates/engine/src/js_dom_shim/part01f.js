@@ -1297,6 +1297,55 @@
     return carry;
   };
 
+  // F6b（2026-11-08 oracle 定谳档，2026-11-09 诊断 D1-D7 实证改口径）
+  // script 上下文删除位打字 carry 捕获——删除位（动作前 active range 起点）
+  // 三形分账（等桶溶解/异桶重放消费在 typing 侧，此处只记账）：
+  // ① inScript 且 caret 上行先遇内层 font[size]（script 壳内）→ 记该 font
+  //    自身档桶（缩放前口径——W1 13px→2 溶解、N2 16px→3 壳外 hoist）；
+  // ② 其余 inScript（外层 font 或无 font）→ walk_px 直走桶（已含 script
+  //    0.83 缩放与 font 档覆写——N1 10.79→1 重映射、N3 13.28→2 溶解）；
+  // ③ armed-only（无壳形，A 族）→ walk_px 桶 + inner:true（消费面内层臂
+  //    专用旗标——A 族期望 font 落 armed 壳内层，桶 = 未缩放 caret 档）。
+  // 非 script 删除返 null 清陈旧 carry（scope 语义：carry 不跨非 script
+  // 删除存续；_zwSync 同生命周期清除）。
+  globalThis.__zw_ce_capture_script_carry = function (ar) {
+    var sc = ar && ar.startContainer;
+    if (!sc) return null;
+    var inScript = false;
+    var innerFontPx = null;
+    var n = (sc.nodeType === 1) ? sc : sc.parentNode;
+    var guard = 0;
+    while (n && n.nodeType === 1 && !_zwJusIsEditingHost(n) && guard++ < 256) {
+      var tn = String(n.tagName || '').toLowerCase();
+      if (tn === 'sub' || tn === 'sup') { inScript = true; break; }
+      // 内层 font[size]（break 前记录 = caret 与 script 壳之间）——最近者
+      // 胜（首个命中即锁，不随上行覆写）。
+      if (innerFontPx == null && tn === 'font' && n.getAttribute
+          && n.getAttribute('size') != null) {
+        var fv = parseInt(n.getAttribute('size'), 10);
+        if (!isNaN(fv)) {
+          if (fv < 1) fv = 1;
+          if (fv > 7) fv = 7;
+          innerFontPx = globalThis.__zw_f6b_size_px
+            ? globalThis.__zw_f6b_size_px[fv] : null;
+        }
+      }
+      n = n.parentNode;
+    }
+    var tags = globalThis.__zwTypingTags;
+    var armedScript = Array.isArray(tags)
+      && (tags.indexOf('sub') >= 0 || tags.indexOf('sup') >= 0);
+    if (!inScript && !armedScript) return null;
+    if (typeof globalThis.__zw_f6b_walk_px !== 'function'
+        || typeof globalThis.__zw_f6b_bucket_of !== 'function') return null;
+    if (inScript && innerFontPx != null) {
+      return { bucket: globalThis.__zw_f6b_bucket_of(innerFontPx) };
+    }
+    var b = globalThis.__zw_f6b_bucket_of(globalThis.__zw_f6b_walk_px(sc));
+    if (!inScript) return { bucket: b, inner: true };
+    return { bucket: b };
+  };
+
   globalThis.__zw_ce_delete_apply = function (forward) {
     var ar = _zwVaGetActiveRange();
     if (!ar) return true;
@@ -1314,6 +1363,11 @@
     var snapCarry = globalThis.__zwTypingLinkCarry;
     var lcap = (typeof globalThis.__zw_ce_capture_link_carry === 'function')
       ? globalThis.__zw_ce_capture_link_carry(ar) : null;
+    // F6b script carry 捕获（2026-11-08 oracle 定谳档）：动作前 active range
+    // 起点记账（删后链形已变，:2183 内层 font[size] 桶必须动作前读）；非
+    // script 删除记 null 清陈旧（scope 语义）。
+    var f6bCap = (typeof globalThis.__zw_ce_capture_script_carry === 'function')
+      ? globalThis.__zw_ce_capture_script_carry(ar) : null;
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -1333,6 +1387,10 @@
     globalThis.__zwTypingLinkCarry = (lcap && lcap.color != null)
       || (lcap && lcap.face != null) || (lcap && lcap.size != null)
       ? lcap : snapCarry;
+    // F6b script carry 回写（2026-11-08 oracle 定谳档）：替换式——非 script
+    // 删除捕获 null 即清账（不跨非 script 删除存续）；消费面
+    // （part01 内层臂/post-insert 外层臂）各自设等桶门。
+    globalThis.__zwTypingScriptCarry = f6bCap;
     return true;
   };
 

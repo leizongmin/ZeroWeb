@@ -390,8 +390,19 @@
     }
     var nodeList = [];
     var guard = 0;
-    while (node && stop && _zwJusIsBefore(node, stop) && guard++ < 65536) {
-      if (_zwJusIsContained(node, range) && cond(node)) {
+    // 含界判定就地展开（2026-11-09 F6b 尾选区 delete 空转定谳）：spec
+    // contained 语义为含界（起点不早于 range 起点、终点不晚于 range 终点
+    // ——w3c editing spec #contained），端界归一到元素边界后与端界等值的
+    // 节点（`<sub>[bar` 起点≡壳界、`baz]` 终点≡宿主界）按严格版会被排除
+    // 致空转。就地含界比较使收集面归 spec 口径；_zwJusIsContained 严格版
+    // 保留给其余调用面（:1314/:2189/part01f:1573 行为不变）。
+    // stop=null 卫兵：end 界落宿主链顶（NextNodeDescendants 走根）时迭代
+    // 至树尽——此后无节点，界外溢收集不存在。
+    while (node && (!stop || _zwJusIsBefore(node, stop)) && guard++ < 65536) {
+      if (_zwJusBpCompare(node, 0, range.startContainer, range.startOffset) >= 0
+          && _zwJusBpCompare(node, _zwJusNodeLength(node),
+              range.endContainer, range.endOffset) <= 0
+          && cond(node)) {
         nodeList.push(node);
         if (stopAtMatch) { node = _zwJusNextNodeDescendants(node); continue; }
       }
@@ -2333,6 +2344,30 @@
       // 过 legacy 中点映射落 '3'（medium）。
       v = cmd === 'fontname' ? 'serif'
         : (cmd === 'forecolor' ? 'rgb(0, 0, 0)' : '16px');
+    }
+    // F6b r2（2026-11-09 r1 批 ABORT 定谳）：sub/sup UA 0.83em 缩放在 host gCS
+    // 与 plain 走查双通道盲读（style-system UA 表 sub,sup{font-size:0.83em}
+    // shim 侧不可见）——C1/C2 等桶溶解位 qV("fontsize") 回落缺省 16px 过中点
+    // 映射得 '3'，语料/Chrome computed 语义 16×0.83=13.28px→'2'。仅缺省回落位
+    // 且**无显式 font[size] 载体**时缩放：载体在场（C3/C4 `<font size=3><sub>`
+    // /A/N 族）的 16px 是 attr 派生真值（legacy '3'），盲读同串不同源，近端
+    // 不可分辨故按载体存在性分派；作者 px 声明路径（plain 非 16px 直返）不触。
+    // r1 全量 P2F 矩阵实证影响面恰 C1/C2 四断言行（C3/C4 载体读数、N 族无
+    // fontsize qV 断言均不受扰）。
+    // https://w3c.github.io/editing/execCommand.html#value-overrides-and-query
+    if (cmd === 'fontsize' && v === '16px') {
+      var scN = node;
+      var gS = 0;
+      var hasCarrier = false;
+      var inScript = false;
+      while (scN && scN.nodeType === 1 && gS++ < 256) {
+        var tnS = String(scN.tagName || '').toLowerCase();
+        if (tnS === 'sub' || tnS === 'sup') inScript = true;
+        if (tnS === 'font' && scN.hasAttribute && scN.hasAttribute('size')) hasCarrier = true;
+        if (typeof _zwJusIsEditingHost === 'function' && _zwJusIsEditingHost(scN)) break;
+        scN = scN.parentNode;
+      }
+      if (inScript && !hasCarrier) v = (16 * 0.83) + 'px';
     }
     return v;
   }
