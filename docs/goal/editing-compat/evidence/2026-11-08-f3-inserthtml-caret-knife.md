@@ -114,3 +114,27 @@ Leg X 与 appendoff 臂补全判读矩阵（上表五腿 + 三腿）：
 2. **同源 learning 自证**：[learning](../../../learnings/bugs/2026-11/2026-11-08-rss-razor-edge-same-content-time-ab.md) 根因第 1 条原文「门禁腿定义**从全家**改为单页（勘误 11:22）」——勘误前门禁 probe 腿即全家，与铁证互洽；learning 另载「门禁单页腿全天未被杀过」，与上节「门腿 10:14 杀 +0.67% / 10:25 杀 +5.4%」两点直接矛盾（该两点若为单页门腿则 learning 该句为假）。
 
 **修订后时间线**：08:38 v2 单页腿静窗过（224/17）→ 10:14 / 10:25 批 probe 腿=全语料（原 08:43 脚本作者性错腿），结构杀 4.22G/4.42G（224/17 期望永不触达，杀先行）→ 午后 solo 全语料 12+1 份全杀（12 份现档可查 + r1 腿 1 份 transcript 在案、现档已被 r2 覆盖）→ 11:29 r2 单页腿静窗过（224/17）。**「门腿剃刀边+负载相关」叙事撤销**（其四时点系列混腿：两点为全语料杀，单页腿全天两时点皆静过），静窗纪律作为操作规范保留但不再是门腿存活的必要条件。终局结论不变（内容皆无罪、F3 刀中性、单页 v2 腿为正确门腿），证据链以本节为准。
+
+## 门禁判读（r3）——PASS，F3 刀收口
+
+**r3 过程（12:41:00 发射，head=cf856b9c2 单一树整批，part06 md5 `771c2225…` 硬绑定断言 + 修后特征串双门；r3 教训兑现：pull 先于发射，整批无二进制分裂窗）**：13:43:19 ALL-DONE 全绿。
+
+| 腿 | 结果 | 红线 |
+|---|---|---|
+| 基线自证（v3 换基基线 vs knife11-v5fix2） | rows 10092 P 9969→10007 F 123→85，F2P 38 P2F 0 | VERDICT OK（rebase 漂移已入基线） |
+| probe-f2 | 14/0 | ✓ |
+| probe（knife11-v2 单页） | 224/17 | ✓（与晨间门同腿同限） |
+| ip 单文件 vs knife11-v5fix | rows 7195 恒一，F2P 0 P2F 0 | 零漂移 ✓ |
+| inserthtml.html vs f3base | rows 1565 恒一，119F 恒等，F2P 0 | P2F 0 ✓（corpus compare innerHTML 不含 caret 敏感案，翻绿不必要） |
+| exec-command 三腿 vs f3base | F2P 0 P2F 0 | 零漂移 ✓ |
+| **mt vs v3 换基基线** | rows 10092 恒一，P 10007→**10019**，F 85→**73**，**F2P 12** P2F 0 post-only 0 lost 0 | **F2P=12=预期值**（∈[10,14]）VERDICT OK |
+| mt calibrate（entry 级） | rows 20184 恒一，**F2P 24** P2F 0 postF 0 lost 0；flips 2 in-family + 22 out-family | **24=预期值**（∈[20,28]） |
+| iol / iul vs v5fix2 | 1761 行 2F / 2065 行 4F 恒一 | 零漂移 ✓ |
+| enginelib | 3815P/6F | 名册恒一（FIX-GATE ROSTER OK） |
+| ambient 七腿电池 | 420/880/1104/552/3456/2607/1455 行，全 F=0 T=0 | ✓ |
+
+**翻键签名独立复核（gate 脚本瑕疵披露后的替代判定）**：gate calibrate 段两处瑕疵——①flip/stay 清单文件落 repo root（cwd 相对重定向）而脚本 grep `.acceptance/dps/` 路径 → 恒 "No such file"；②`:96` 空变量整数比较报 `[: : integer expected`，"mt 校准核验 OK" 系空转分支。判定不依赖该 OK：产物文件移正后独立复核——[f3-mt-flip.txt](../../../.acceptance/dps/f3-mt-flip.txt) 24 行 **24/24 含 inserthtml 签名、0 行不含**（22 out-family 全为 `[fmt]>inserthtml(ab<b>c</b>d)>inserttext(a)` 跨命令链、2 in-family 为 inserthtml 头链）；[f3-mt-stay.txt](../../../.acceptance/dps/f3-mt-stay.txt) 76 行 **0 行含 inserthtml** → **inserthtml 残 stay=0**（F2 轮 stay=2 白名单随此收编）。
+
+**判定**：r3 全绿，F3 inserthtml caret 刀收口——12 census 键 caret 后移兑现，mt 残 85→73F（−12）。红线四元组（F2P/P2F/post-only/lost）与 rows 恒等全程成立；enginelib 名册恒一；battery 七腿零回归。cf856b9c2 纯 JS 域（shim+docs），fmt 不适用。
+
+**遗留挂账（F3 域外 FIXME）**：zz-probe-f3 S2 实体 frag / S4 纯文本 frag 2 败=纯文本臂 detached-node caret 既有缺口（pre-F3 既有行为，census 键全为标记 frag 不受影响）；手审预警未触发（mt F2P=12 足额，pending-link wrap 物化路径无需追查）。
