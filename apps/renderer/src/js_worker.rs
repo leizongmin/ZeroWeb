@@ -13,7 +13,7 @@ use zero_engine::{
     generate_js_dom_shim, make_effective_dom_rect_handler, new_element_from_point_cache, new_handle_selector_map,
     new_layout_rect_snapshot, register_dom_callbacks, shim_test_mode_enabled,
 };
-use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
+use zero_net::{CacheMode, FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
     ImportMap, ImportMapResolution, ModuleRegistry, SandboxConfig, build_module_runtime_prelude,
     compile_dependency_iife, compile_module_script, extract_static_module_import_specifiers,
@@ -2473,6 +2473,7 @@ fn media_http_bytes(url: &str) -> Option<Vec<u8>> {
         url: url.to_string(),
         headers: Vec::new(),
         body: None,
+        cache_mode: CacheMode::Default,
     };
     match ResourceLoader::shared().submit_http(req, FetchPriority::MEDIUM).recv() {
         Ok(Ok(resp)) if media_http_response_ok(resp.status_code, &resp.body) => Some(resp.body),
@@ -2552,6 +2553,10 @@ pub fn default_fetch_handler(page_fetch_inflight: Arc<std::sync::Mutex<HashMap<S
                 .body_bytes
                 .clone()
                 .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec())),
+            // http-cache goal M2：init.cache 六态 → 缓存模式（显式模式权威——
+            // fetch spec 模式态仅来自 init.cache；None/default → Default 且保留
+            // 请求头 CC 启发式，见 CacheMode::from_request_cache 与 submit 优先级）。
+            cache_mode: CacheMode::from_request_cache(req.cache.as_deref()).unwrap_or(CacheMode::Default),
         };
         // 登记先于 submit：任务一旦进入调度器即可被文档卸载取消。
         if let Ok(mut inflight) = page_fetch_inflight.lock() {

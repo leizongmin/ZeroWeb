@@ -7584,8 +7584,9 @@ pub(crate) fn wpt_cache_py_fixture(
 ///   后回放缓存响应、其余 → `put_with_headers` 存储（storable_mode 内部门控）后
 ///   回放网络响应；未命中 → base 后 `put_with_headers` 再回放。
 ///
-/// FIXME(http-cache M2)：wire 第 11 参落地后按 FetchRequest.cache 六模式态分派
-/// （reload/force-cache/only-if-cached/no-store/no-cache 全矩阵）。
+/// http-cache goal M2：wire 第 12 参（`FetchRequest.cache` 六模式态）全矩阵分派，
+/// 语义镜像 [`zero_net::ResourceLoader::submit`]（DC-3 单实现——缓存本体同为
+/// zero-net `HttpCache`，仅提交编排按 runner 同步契约适配）。
 fn wpt_cache_py_wrapped_handler(
     base: zero_engine::fetch_bridge::FetchHandler,
     case_cache: std::sync::Arc<std::sync::Mutex<zero_net::HttpCache>>,
@@ -7604,15 +7605,47 @@ fn wpt_cache_py_wrapped_handler(
         if !cacheable_endpoint {
             return base(req);
         }
-        // step 16：default + 脚本显式条件头 → 旁路（读写在脚本侧自管）。
-        if zero_net::cache_policy::has_explicit_conditional_request_headers(&req.headers) {
+        // fetch 通道 `init.cache` 六模式态（wire 第 12 参）：显式五模式为权威，
+        // None/default → Default 保留既有语义（M1-b C 簇面零变化）。
+        let mode =
+            zero_net::CacheMode::from_request_cache(req.cache.as_deref()).unwrap_or(zero_net::CacheMode::Default);
+        let url = req.url.clone();
+        // step 16：default + 脚本显式条件头 → no-store 旁路（读写在脚本侧自管）。
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 16）
+        if mode == zero_net::CacheMode::Default
+            && zero_net::cache_policy::has_explicit_conditional_request_headers(&req.headers)
+        {
             let mut wire = req.clone();
             for pair in zero_net::cache_policy::bypass_cache_request_injection(&wire.headers) {
                 wire.headers.push(pair);
             }
             return base(&wire);
         }
-        let url = req.url.clone();
+        // no-store：不读不写；step 18 注入 Pragma/CC no-cache（语料 no_store
+        // expected_no_cache_headers 判据面）。
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 18）
+        if mode == zero_net::CacheMode::NoStore {
+            let mut wire = req.clone();
+            for pair in zero_net::cache_policy::bypass_cache_request_injection(&wire.headers) {
+                wire.headers.push(pair);
+            }
+            return base(&wire);
+        }
+        // reload：不读；网络臂覆盖写（同 step 18 注入；语料 reload
+        // `["default", ..., "default"]` 腿依赖 reload 后 default 读到新体——put 覆盖旧条目）。
+        if mode == zero_net::CacheMode::Reload {
+            let mut wire = req.clone();
+            for pair in zero_net::cache_policy::bypass_cache_request_injection(&wire.headers) {
+                wire.headers.push(pair);
+            }
+            let resp = base(&wire)?;
+            case_cache.lock().expect("case http cache lock").put_with_headers(
+                &url,
+                &req.headers,
+                &wpt_cache_py_fetch_response_to_http(&resp, &url),
+            );
+            return Ok(resp);
+        }
         // lookup 的锁 guard 先行释放（let 绑定）——match 临时存活到整个 match
         // 结束，臂内 put/not_modified 再锁同一 Mutex 会自死锁。
         let lookup = case_cache
@@ -7620,53 +7653,104 @@ fn wpt_cache_py_wrapped_handler(
             .expect("case http cache lock")
             .lookup(&url, &req.headers);
         match lookup {
-            zero_net::CacheLookup::Hit(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
+            zero_net::CacheLookup::Hit(cached) if mode != zero_net::CacheMode::NoCache => {
+                Ok(wpt_cache_py_cached_fetch_response(cached))
+            }
+            // https://fetch.spec.whatwg.org/#http-cache-fetch
+            // only-if-cached / force-cache 对 stale（待验证）条目直接复用不验证；
+            // `Vary: *` 条目复用禁止（RFC 9111 §4.1）——落条件再验证臂。
+            zero_net::CacheLookup::Revalidate { cached, .. }
+                if matches!(
+                    mode,
+                    zero_net::CacheMode::OnlyIfCached | zero_net::CacheMode::ForceCache
+                ) && !wpt_cached_response_is_vary_star(&cached) =>
+            {
+                Ok(wpt_cache_py_cached_fetch_response(cached))
+            }
+            // no-cache：新鲜条目亦不直接回放——强制条件再验证（loader lookup_cache
+            // NoCache Hit→Revalidate 转换同款）。
+            zero_net::CacheLookup::Hit(_) => {
+                let conditional_headers = case_cache
+                    .lock()
+                    .expect("case http cache lock")
+                    .conditional_headers_with_request(&url, &req.headers);
+                wpt_cache_py_network_arm(&base, req, &case_cache, &url, conditional_headers, mode)
+            }
             zero_net::CacheLookup::Revalidate {
                 conditional_headers, ..
-            } => {
-                let mut wire = req.clone();
-                for (name, value) in conditional_headers {
-                    if !wire
-                        .headers
-                        .iter()
-                        .any(|(existing, _)| existing.eq_ignore_ascii_case(&name))
-                    {
-                        wire.headers.push((name, value));
-                    }
-                }
-                let resp = base(&wire)?;
-                if resp.status == 304 {
-                    // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 11.4）
-                    // 304 → 元数据合并到缓存条目后回放缓存响应；无条目可合并（理论不可达
-                    // ——条件头只在有条目时附加）照传裸 304。
-                    let network = wpt_cache_py_fetch_response_to_http(&resp, &url);
-                    return match case_cache.lock().expect("case http cache lock").not_modified(
-                        &url,
-                        &req.headers,
-                        &network,
-                    ) {
-                        Some(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
-                        None => Ok(resp),
-                    };
-                }
-                case_cache.lock().expect("case http cache lock").put_with_headers(
-                    &url,
-                    &req.headers,
-                    &wpt_cache_py_fetch_response_to_http(&resp, &url),
-                );
-                Ok(resp)
+            } => wpt_cache_py_network_arm(&base, req, &case_cache, &url, conditional_headers, mode),
+            // https://fetch.spec.whatwg.org/#http-cache-fetch
+            // only-if-cached 未命中 → 504 语义网络错误（不启动验证网络请求；
+            // shim 侧 handler Err → fetch TypeError reject）。
+            zero_net::CacheLookup::Miss if mode == zero_net::CacheMode::OnlyIfCached => {
+                Err("only-if-cached cache miss (504)".to_string())
             }
-            zero_net::CacheLookup::Miss => {
-                let resp = base(req)?;
-                case_cache.lock().expect("case http cache lock").put_with_headers(
-                    &url,
-                    &req.headers,
-                    &wpt_cache_py_fetch_response_to_http(&resp, &url),
-                );
-                Ok(resp)
-            }
+            zero_net::CacheLookup::Miss => wpt_cache_py_network_arm(&base, req, &case_cache, &url, Vec::new(), mode),
         }
     })
+}
+
+/// runner 缓存包裹的网络臂（loader `submit_network` 镜像）：条件头合并（用户已带
+/// 同名头不覆盖）→ no-cache 补 `Cache-Control: max-age=0`（step 17「不含才追加」
+/// ——语料 expected_max_age_headers 判据面）→ 调 base；304 → `not_modified` 元数据
+/// 合并后回放缓存响应、其余 → `put_with_headers`（storable_mode 内部门控）后回放。
+fn wpt_cache_py_network_arm(
+    base: &zero_engine::fetch_bridge::FetchHandler,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+    case_cache: &std::sync::Mutex<zero_net::HttpCache>,
+    url: &str,
+    conditional_headers: Vec<(String, String)>,
+    mode: zero_net::CacheMode,
+) -> Result<zero_engine::fetch_bridge::FetchResponse, String> {
+    let mut wire = req.clone();
+    for (name, value) in conditional_headers {
+        if !wire
+            .headers
+            .iter()
+            .any(|(existing, _)| existing.eq_ignore_ascii_case(&name))
+        {
+            wire.headers.push((name, value));
+        }
+    }
+    // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 17）
+    if mode == zero_net::CacheMode::NoCache
+        && !wire
+            .headers
+            .iter()
+            .any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control"))
+    {
+        wire.headers.push(("Cache-Control".into(), "max-age=0".into()));
+    }
+    let resp = base(&wire)?;
+    if resp.status == 304 {
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 11.4）
+        // 304 → 元数据合并到缓存条目后回放缓存响应；无条目可合并（理论不可达
+        // ——条件头只在有条目时附加）照传裸 304。
+        let network = wpt_cache_py_fetch_response_to_http(&resp, url);
+        return match case_cache
+            .lock()
+            .expect("case http cache lock")
+            .not_modified(url, &req.headers, &network)
+        {
+            Some(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
+            None => Ok(resp),
+        };
+    }
+    case_cache.lock().expect("case http cache lock").put_with_headers(
+        url,
+        &req.headers,
+        &wpt_cache_py_fetch_response_to_http(&resp, url),
+    );
+    Ok(resp)
+}
+
+/// 缓存条目回放形态是否 `Vary: *`（RFC 9111 §4.1 复用禁止——stale 免验复用臂
+/// 判定；与 [`zero_net::ResourceLoader`] 的同判定镜像，见 cached_response_is_vary_star）。
+fn wpt_cached_response_is_vary_star(cached: &zero_net::CachedResponse) -> bool {
+    cached
+        .headers
+        .iter()
+        .any(|(name, value)| name.eq_ignore_ascii_case("vary") && value.split(',').any(|field| field.trim() == "*"))
 }
 
 /// 缓存条目 → FetchResponse 回放（缓存命中的客户端可见形态——与
@@ -12864,6 +12948,7 @@ mod tests {
             credentials: Some("include".to_string()),
             mode: Some("no-cors".to_string()),
             redirect: None,
+            cache: None,
         };
         // 置 cookie 两枚（语料 helper 原序：同源相对 + cross www2 绝对）。
         let same = handler(&make_req(
@@ -12942,6 +13027,7 @@ mod tests {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
         let endpoint = |query: &str| {
             handler(&make_req(format!(
@@ -14140,6 +14226,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
         let resp = handler(&make_req(
             "https://wpt.test/dom/nodes/encoding.py?label=unicode-1-1-utf-8",
@@ -14182,6 +14269,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
         let endpoint = "https://wpt.test/html/semantics/scripting-1/the-script-element/serve-custom-response.py";
         let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/module/shared-dependency-repeated-import.html";
@@ -14353,6 +14441,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
         // 基本 urlencoded 对。
         let basic = handler(&make_req("POST", Some("basic=test"))).unwrap();
@@ -14418,6 +14507,7 @@ async_test(function(test) {
             credentials: credentials.map(str::to_string),
             mode: None,
             redirect: None,
+            cache: None,
         };
         let set_url =
             "https://wpt.test/service-workers/cache-storage/resources/vary.py?set-vary-value-override-cookie=x-test";
@@ -14462,6 +14552,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
 
         let get = handler(&make_req("GET", None)).unwrap();
@@ -14485,6 +14576,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
 
         let resp = handler(&req).unwrap();
@@ -14506,6 +14598,7 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
 
         // 200 组：test 含 `_load` → 执行体（executed = true）+ text/javascript。
@@ -15639,6 +15732,7 @@ globalThis.test(function() {
             credentials: None,
             mode: None,
             redirect: None,
+            cache: None,
         };
 
         let resp = handler(&req).unwrap();
@@ -15656,6 +15750,7 @@ globalThis.test(function() {
         let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
         let make_req =
             |url: &str, mode: Option<&str>, redirect: Option<&str>| zero_engine::fetch_bridge::FetchRequest {
+                cache: None,
                 url: url.to_string(),
                 method: "GET".to_string(),
                 headers: Vec::new(),

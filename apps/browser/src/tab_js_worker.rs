@@ -13,7 +13,7 @@ use zero_engine::{
     generate_js_dom_shim, make_dom_html_rect_handler, new_element_from_point_cache, new_handle_selector_map,
     new_layout_rect_snapshot, register_dom_callbacks, shim_test_mode_enabled,
 };
-use zero_net::{FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
+use zero_net::{CacheMode, FetchPriority, HttpMethod, HttpRequest, ResourceLoader, ResourceRequest};
 use zero_script_sandbox::{
     ImportMap, ImportMapResolution, ModuleRegistry, SandboxConfig, build_module_runtime_prelude,
     compile_dependency_iife, compile_module_script, extract_static_module_import_specifiers,
@@ -673,6 +673,9 @@ pub fn default_fetch_handler() -> FetchHandler {
                 .body_bytes
                 .clone()
                 .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec())),
+            // http-cache goal M2：init.cache 六态 → 缓存模式（与 renderer
+            // js_worker fetch handler 同构映射，双通道一致）。
+            cache_mode: CacheMode::from_request_cache(req.cache.as_deref()).unwrap_or(CacheMode::Default),
         };
         let resp = ResourceLoader::shared()
             .submit_http(http_req, FetchPriority::MEDIUM)

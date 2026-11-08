@@ -221,13 +221,17 @@ pub(crate) fn compute_initial_age(response: &HttpResponse) -> u64 {
 /// 响应是否应写入缓存及其模式。
 pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     let cc = parse_cache_control(response);
-    // https://www.rfc-editor.org/rfc/rfc9111#section-4.1
-    // Vary: * 永不匹配后续请求，私有缓存不得存为可复用条目。
-    if cc.no_store
-        || vary_header_value(response).is_some_and(|vary| vary.split(',').any(|field| field.trim() == "*"))
-        || !is_cacheable_status(response.status_code)
-    {
+    if cc.no_store || !is_cacheable_status(response.status_code) {
         return None;
+    }
+    // https://www.rfc-editor.org/rfc/rfc9111#section-4.1
+    // Vary: * 永不匹配后续请求——复用被禁止，但 RFC 只禁**使用**不禁存储（http-cache
+    // goal M2：WPT request-cache-force-cache vary 臂判据——Chromium 对不可复用的
+    // Vary:* 条目仍以其验证器发条件请求，故须存为仅再验证条目；复用禁止由 lookup
+    // 层保证——revalidate_only 条目恒 Revalidate 不 Hit，且 only-if-cached/force-cache
+    // 的 stale 复用臂跳过 Vary:* 条目，见 resource_loader）。
+    if vary_header_value(response).is_some_and(|vary| vary.split(',').any(|field| field.trim() == "*")) {
+        return has_validators(response).then_some(CacheStoreMode::RevalidateOnly);
     }
     if cc.no_cache {
         return has_validators(response).then_some(CacheStoreMode::RevalidateOnly);
@@ -335,13 +339,18 @@ mod tests {
     }
 
     #[test]
-    fn vary_star_is_not_storable() {
-        let r = resp(vec![("cache-control", "max-age=60"), ("vary", "*")]);
-        assert_eq!(storable_mode(&r), None);
+    fn vary_star_is_storable_only_for_revalidation() {
+        // http-cache goal M2：Vary:* 仅禁复用不禁存储（RFC 9111 §4.1）——带验证器
+        // 存为仅再验证条目（lookup 恒 Revalidate 不 Hit；loader stale 复用臂跳过），
+        // 无验证器不存。
+        let no_validator = resp(vec![("cache-control", "max-age=60"), ("vary", "*")]);
+        assert_eq!(storable_mode(&no_validator), None);
+        let with_validator = resp(vec![("cache-control", "max-age=60"), ("etag", "\"v1\""), ("vary", "*")]);
+        assert_eq!(storable_mode(&with_validator), Some(CacheStoreMode::RevalidateOnly));
     }
 
     #[test]
-    fn repeated_vary_field_lines_are_combined_and_vary_star_remains_unstorable() {
+    fn repeated_vary_field_lines_are_combined_and_vary_star_unstorable_without_validator() {
         let r = resp(vec![("vary", "Accept-Language"), ("Vary", "Accept-Encoding")]);
         assert_eq!(
             vary_header_value(&r).as_deref(),

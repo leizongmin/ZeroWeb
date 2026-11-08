@@ -4922,7 +4922,7 @@
   // wire 就地结算，行为不变。
   // https://fetch.spec.whatwg.org/#cors-preflight-fetch
   // p: { id, url, method, preHeaders, preNames, preDocOrigin, opaqueOrigin,
-  //      credentials, mode, redirect } → Promise<{ resp, ok }>。缓存与失败处置由调用方
+  //      credentials, mode, redirect, cache } → Promise<{ resp, ok }>。缓存与失败处置由调用方
   // 执行（M2-S11：两臂均仅覆盖检查成功后写缓存——spec store 步位于 CORS check
   // 成功分支内，失败预检不落缓存）。
   function _zwRunPreflight(p) {
@@ -4985,7 +4985,8 @@
         preResolve({ resp: preResp, ok: preOk, methods: preMethods, allowed: preAllowedHdrs });
       };
       globalThis.__zw_pending[p.id] = settlePre;
-      var preWireSync = __zw_fetch(p.id, 'OPTIONS', p.url, p.preHeaders, '', '', '', p.mode, p.redirect, p.credentials);
+      var preWireSync = __zw_fetch(p.id, 'OPTIONS', p.url, p.preHeaders, '', '', '', p.mode, p.redirect, p.credentials,
+        '', p.cache || '');
       // 同步返回契约（headless webview fetch_handler 直返 wire）——就地结算；
       // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 __zw_pending
       // 删除 + Promise 单 settle 防护。
@@ -5639,6 +5640,11 @@
                                   : init.__zwInternalHeadersWire;
       }
       var redirect = String(init.redirect || (isRequestLike ? input.redirect : '') || 'follow');
+      // http-cache goal M2：cache 模式态取值（同 mode/redirect 缺省链；枚举合法性
+      // 已在 _zwRequestValidate 校验——非法值 TypeError，only-if-cached 须配
+      // same-origin。wire 第 12 参（index 11）传枚举原值，`default` 由宿主侧
+      // from_request_cache 映射回缺省）。
+      var cache = String(init.cache || (isRequestLike ? input.cache : '') || 'default');
       var body = '';
       // UA 内部 Content-Length（HTTP 语义；forbidden request-header 名单内 JS 不可自设，
       // fetch 层对已知字节体统一补齐——xhr send-blob content.py 回显断言面）。
@@ -5889,7 +5895,7 @@
             id: preId,
             url: url, method: method, preHeaders: preHeaders, preNames: _preNames,
             preDocOrigin: preDocOrigin, opaqueOrigin: false,
-            credentials: credentials, mode: mode, redirect: redirect,
+            credentials: credentials, mode: mode, redirect: redirect, cache: cache,
           }).then(function (pre) {
             if (!pre.ok) {
               reject(new TypeError('Failed to fetch'));
@@ -6082,6 +6088,20 @@
         var _zwChainCrossed = _zwRespTaintingCors;
         var settleFetch = function(raw, hopUrl, hopMethod, hopBody, hopWire, currentId) {
           if (settled) return;
+          // http-cache goal M2：handler Err（`__zw_fetch_error:` wire——only-if-cached
+          // 504 语义等）→ fetch spec network error → TypeError reject（fetch promise
+          // 恒不 resolve status-0 伪对象；request-cache 语料 response:"error" 臂
+          // assert_throws_js(TypeError) 判据面）。
+          var _errWireTag = null;
+          if (typeof raw === 'string' && raw.indexOf('__zw_fetch_error:') === 0) {
+            _errWireTag = raw.slice('__zw_fetch_error:'.length);
+          }
+          if (_errWireTag != null) {
+            settled = true;
+            delete globalThis.__zw_pending[currentId || id];
+            reject(new TypeError('Failed to fetch'));
+            return;
+          }
           var response = _makeResponseFromWire(raw);
           var loc = null;
           if (_zwFetchRedirectStatus(response.status) && redirect !== 'manual' &&
@@ -6160,6 +6180,18 @@
             }
             var nextUrl = hopUrl;
             try { nextUrl = new URL(loc, hopUrl).href; } catch (_eHopLoc) {}
+            // http-cache goal M2：fetch spec HTTP-redirect fetch——mode same-origin
+            // 链上跳到跨源 Location → network error（only-if-cached 强制 same-origin，
+            // request-cache-only-if-cached「does not follow redirects across origins
+            // and rejects」判据面：缓存重放的 302 跨源跳零网络触达即断）。
+            // https://fetch.spec.whatwg.org/#http-redirect-fetch
+            if (mode === 'same-origin' && nextUrl &&
+                _zwUrlOriginLenient(nextUrl) !== _zwUrlOriginLenient(hopUrl)) {
+              settled = true;
+              delete globalThis.__zw_pending[currentId || id];
+              reject(new TypeError('Failed to fetch'));
+              return;
+            }
             // net-api M2-S3b：fetch spec HTTP-redirect fetch——Location URL 带
             // credentials（username/password 非空）→ 两条 network error 规则：
             // ① mode cors 且 request's origin 与 locationURL origin 不同源；
@@ -6352,7 +6384,11 @@
               };
               try {
                 var hopSync = __zw_fetch(hopId, nextMethod, nextUrl, nextWire,
-                  nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials);
+                  nextBody == null ? '' : nextBody, '', '', mode, redirect, credentials,
+                  // http-cache goal M2：index 10 client-id 位恒空，index 11 携带
+                  // 主 fetch 的 cache 模式态（重定向链逐跳沿用——only-if-cached
+                  // 同源重定向缓存重放面）。
+                  '', cache);
                 // 同步返回契约（headless webview fetch_handler 直返 wire）——本跳就地结算；
                 // 异步契约（fetch_bridge 返 ""）→ 等 __zwResolveCallback。双结算由 settled 防护。
                 if (typeof hopSync === 'string' &&
@@ -6404,7 +6440,7 @@
                 id: rpId,
                 url: nextUrl, method: nextMethod, preHeaders: rpHeaders, preNames: _rpNames,
                 preDocOrigin: rpDocOrigin, opaqueOrigin: _zwHopOriginOpaque,
-                credentials: credentials, mode: mode, redirect: redirect,
+                credentials: credentials, mode: mode, redirect: redirect, cache: cache,
               }).then(function (rp) {
                 if (!rp.ok) {
                   settled = true;
@@ -6509,7 +6545,11 @@
             String(globalThis.__zwFetchReferrer || ''),
             mode,
             redirect,
-            credentials
+            credentials,
+            // http-cache goal M2：index 10 恒空（iframe 通道 client-id 载荷位——
+            // R115/S7 调用点占用），index 11 = init.cache 模式态。
+            '',
+            cache
           );
           // R34xx：同步返回契约——headless/testharness 宿主（webview fetch_handler）同步返 wire；
           // 浏览器异步路径（fetch_bridge）返 "" → no-op（__zwResolveCallback 后到，双 settle 由

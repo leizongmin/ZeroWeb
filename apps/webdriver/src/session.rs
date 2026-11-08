@@ -931,6 +931,7 @@ fn proxy_fetch(http: &HttpClient, renderer: &mut RendererHandle, params: FetchPa
         url: params.url,
         headers: params.headers,
         body: params.body,
+        cache_mode: zero_net::CacheMode::Default,
     });
     match response {
         Ok(response) => renderer

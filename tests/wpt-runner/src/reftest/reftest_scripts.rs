@@ -161,6 +161,7 @@ pub(super) fn apply_scripted_dom_mutations(
                     credentials: args.get(9).filter(|value| !value.is_empty()).cloned(),
                     mode: args.get(7).filter(|value| !value.is_empty()).cloned(),
                     redirect: args.get(8).filter(|value| !value.is_empty()).cloned(),
+                    cache: None,
                 };
                 match handler(&req) {
                     Ok(resp) => zero_engine::fetch_bridge::serialize_response(&resp),

@@ -280,6 +280,7 @@ impl HttpClient {
             url: format!("{}://{authority}/", parsed.scheme()),
             headers: Vec::new(),
             body: None,
+            cache_mode: crate::resource_loader::CacheMode::Default,
         };
         self.send_async_stream(request, |_| {}).await
     }
@@ -1067,6 +1068,7 @@ mod integration_tests {
             method: crate::HttpMethod::Post,
             url,
             headers: Vec::new(),
+            cache_mode: crate::resource_loader::CacheMode::Default,
             body: None,
         };
         let resp = client.send(req).unwrap();
@@ -1086,6 +1088,7 @@ mod integration_tests {
         let req = HttpRequest {
             method: crate::HttpMethod::Put,
             url,
+            cache_mode: crate::resource_loader::CacheMode::Default,
             headers: Vec::new(),
             body: Some(b"put data".to_vec()),
         };
@@ -1105,6 +1108,7 @@ mod integration_tests {
         let client = HttpClient::new();
         let req = HttpRequest {
             method: crate::HttpMethod::Delete,
+            cache_mode: crate::resource_loader::CacheMode::Default,
             url,
             headers: Vec::new(),
             body: None,
@@ -1371,6 +1375,7 @@ mod integration_tests {
 
         let client = HttpClient::new();
         let req = HttpRequest {
+            cache_mode: crate::resource_loader::CacheMode::Default,
             method: crate::HttpMethod::Put,
             url: url1,
             headers: Vec::new(),

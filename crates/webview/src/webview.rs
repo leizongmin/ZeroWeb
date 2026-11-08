@@ -3963,6 +3963,7 @@ impl WebView {
                                     credentials: None,
                                     mode: None,
                                     redirect: None,
+                                    cache: None,
                                 };
                                 let resp = match handler(&req).ok() {
                                     Some(resp) => resp,
@@ -4233,6 +4234,11 @@ impl WebView {
                             .flatten(),
                         redirect: (!fetch_id.starts_with("r115iframe:"))
                             .then(|| args.get(8).filter(|value| !value.is_empty()).cloned())
+                            .flatten(),
+                        // http-cache goal M2：init.cache 六态 wire 解码（fetch_bridge
+                        // 同序 index 11；iframe 通道不吃 cache 语义——r115 藏体加载面）。
+                        cache: (!fetch_id.starts_with("r115iframe:"))
+                            .then(|| args.get(11).filter(|value| !value.is_empty()).cloned())
                             .flatten(),
                     };
                     let page_url = sw_page_url.lock().map(|url| url.clone()).unwrap_or_default();
@@ -7126,6 +7132,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 credentials: request.credentials.clone(),
                 mode: None,
                 redirect: None,
+                cache: None,
             })?;
             return Ok(ServiceWorkerFetchResponse {
                 status: response.status,
@@ -7165,6 +7172,7 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     url: request.url.clone(),
                     headers: request.headers.clone(),
                     body: request_body,
+                    cache_mode: zero_net::CacheMode::Default,
                 })
                 .map_err(|error| error.to_string())?
         };
