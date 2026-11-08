@@ -141,11 +141,11 @@ text 账 `zr3-b6-baseline-082500.log`：
 
 | 案 | 子测面 |
 |---|---|
-| offsetParent-across-shadow-boundaries | 12F/10P（部分过） |
+| offsetParent-across-shadow-boundaries | 18F/4P（部分过；M4 收口轮按基线日志订正——原誊 12F/10P 系誊写误差，头条 15P/86F 两处一致不受影响） |
 | offsetTop-offsetLeft-across-shadow-boundaries | 2P/1F |
 | focus-within-shadow | 1P |
 | scroll-restore-shadow | 1P |
-| scroll-to-the-fragment-in-shadow-tree | 8P/2F |
+| scroll-to-the-fragment-in-shadow-tree | 7P/3F（M4 收口轮按基线日志订正——原誊 8P/2F） |
 | Document-caretPositionFromPoint.tentative | 14F |
 | DocumentOrShadowRoot-prototype-elementFromPoint | 41F |
 | HighlightRegistry-highlightsFromPoint | 4F |

@@ -14,7 +14,7 @@ interactive 域最大残红簇 `dialog-popover-closedby-complex.html` 18F（shad
 
 ## 判域与移交
 
-- **主根因**（shadow 栈布局盒退化）= layout-engine/渲染管线对 declarative shadow 内容的布局面——`docs/goal/shadow-dom-rendering` M3（slotted 内容进布局树与绘制输出）章程内。该 goal M0 对账已记布局扁平化 2026-05-31 落地但存在 R1-R6 六缺口；本案为其 testharness 侧实证面。**修复后 `dialog-popover-closedby-complex.html` 可作其验收语料**（normal-DOM 变体全 P 证明 light-dismiss 逻辑面零阻塞）。
+- **主根因**（shadow 栈布局盒退化）= layout-engine/渲染管线对 declarative shadow 内容的布局面——`docs/goal/archive/shadow-dom-rendering` M3（slotted 内容进布局树与绘制输出）章程内。该 goal M0 对账已记布局扁平化 2026-05-31 落地但存在 R1-R6 六缺口；本案为其 testharness 侧实证面。**修复后 `dialog-popover-closedby-complex.html` 可作其验收语料**（normal-DOM 变体全 P 证明 light-dismiss 逻辑面零阻塞）。
 - **从属缺陷 D1**（本 goal 挂账）：`resolve_pointer_target`（tests/wpt-runner/src/testharness.rs:13291）JS 扫描输出协议用 `|` 分隔 sel|px|py——compound zwsh 地址（`zwsh<len>:<host>|<local>`）与 msel 回落串都含 `|`，split 后坐标 parse 失败 → (origin, off) 回落。修法：分隔符换 `\u{1f}`（JS 字面 `\u001f` + Rust `split('\u{1f}')`，协议仅本函数内消费）。当前无独立可动面（根因在布局），布局落地后成为 closedby-complex 收口的必要前置——届时随收口切片同改同验。
 - **从属面 2**：modal 组合的 `_zwDialogModalFocusGateOk` 包含判定走非 flat 链（s330 已记最小爆炸半径不动）——slot 分配内容在模态 inert 门被误分类，modal 半簇（9F）叠加此面。
 

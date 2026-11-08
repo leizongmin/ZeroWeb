@@ -109,7 +109,7 @@ session，产物 `.acceptance/m1-wc-ab/`，不入库）：
 本轮触碰通用样式面：`style-system` matcher（`:host` 族臂）、cascade
 （`tree_context` 轴参数）、engine pipeline 渲染入口（shadow scopes 装配
 + focus 注入漏斗）、css-parser 选择器合法化。rendering-compat 控制面
-[留痕](../../rendering-compat.md)（跨 goal 碰头块），义务面：`make reftest`
+[留痕](../../../rendering-compat.md)（跨 goal 碰头块），义务面：`make reftest`
 全量零回归 + workspace `make test`（本轮门禁 §9）。
 
 ## 9. 门禁记录

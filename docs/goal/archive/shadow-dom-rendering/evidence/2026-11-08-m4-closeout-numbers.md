@@ -39,8 +39,10 @@ docs 落账的组合态，pull --rebase 后净树 dirty=0）
   highlightsFromPoint 4F / offsetX-offsetY 3F）0 过——runner 无输入注入与
   布局几何查询管道，按 M0 具名挂账口径不变；
 - 滚动/焦点面已过：focus-within-shadow 1P、scroll-restore-shadow 1P、
-  scroll-to-the-fragment-in-shadow-tree 8P/2F；
-- offsetParent 簇 12F/10P、offsetTop-offsetLeft 2P/1F、accesskey 2F
+  scroll-to-the-fragment-in-shadow-tree 7P/3F（按基线日志订正，原誊 8P/2F
+  系誊写误差，与 R3b evidence 订正同源）；
+- offsetParent 簇 18F/4P（按基线日志订正，原誊 12F/10P）、
+  offsetTop-offsetLeft 2P/1F、accesskey 2F
   （`pressAccessKey` helper 解析缺口，静态等价挂账）；
 - 回池条件：webdriver 输入管线接 reftest/testharness 通道（不改）。
 
@@ -54,7 +56,7 @@ docs 落账的组合态，pull --rebase 后净树 dirty=0）
   test_t8k_websocket_error_nonterminal /
   test_t8k_websocket_event_flow_open_message_close），net-api 外域在册债
   非本流域——该簇在册归因见
-  [html-semantics m2s329 evidence](../../html-semantics-compat/evidence/2026-11-07-m2s329-canvas-zero-dim-to-dataurl-blob.md)
+  [html-semantics m2s329 evidence](../../../html-semantics-compat/evidence/2026-11-07-m2s329-canvas-zero-dim-to-dataurl-blob.md)
   （stash 法证「6 红全既有」，早于本流全部改动）；3814→3815 为测试自然
   增长，**零新增红**。fmt ✓、quickjs clippy 零错、standalone binaries
   构建 ✓ 同链出账（target/ 被磁盘守卫全量清空后冷重建 670 crate）。

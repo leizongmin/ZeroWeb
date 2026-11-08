@@ -1,9 +1,13 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
 **版本**: v1.4
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）；2026-11-08 M3 R3b 代码落地 + B6 通道落地；2026-11-08 M3 追加轮——006 翻绿根因修复（append sel 项通道，R3b 目标案收口）；2026-11-08 M4 复测收口完成——M0-M4 全部完成，goal 收口
-**状态**: 收口——M0-M4 全部完成（2026-11-08 M4 复测收口落账，待归档
-sweep）。以下为各里程碑历史账：M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）；2026-11-08 M3 R3b 代码落地 + B6 通道落地；2026-11-08 M3 追加轮——006 翻绿根因修复（append sel 项通道，R3b 目标案收口）；2026-11-08 M4 复测收口完成——M0-M4 全部完成，goal 收口；2026-11-08 归档
+（模式 A：目录迁 `docs/goal/archive/`）
+**状态**: ✅ Completed（2026-11-08——M0-M4 全部完成：DC-4 数值门 19/20 +
+vw-units 具名挂账、邻域 9/9、rendering-compat 全量 725/725 零回归、B6 门值
+回填 15P/86F 零位移、make test 全腿红面在册零新增；evidence 见
+[M4 收口](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)）。
+以下为各里程碑历史账：M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
 B4 focus-pseudo 3/3 strict 真通过，WC 全量 A/B 零回归，见
@@ -69,8 +73,6 @@ solo **✓0.07%**（修复前 4.90% 稳定红）、DC-4 矩阵 **33P/2F**（余 
 关闭**；product-smoke/gpu×2/quickjs 三腿 370P/0F/bench-gate 全绿）、头条
 slot-fallback-content-006 不回落。见
 [M4 evidence](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)。
-下一步：归档 sweep（模式 A：目录迁移 archive/ + wpt-suites.csv 证据路径
-同步 + README 检查清单核对）
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——

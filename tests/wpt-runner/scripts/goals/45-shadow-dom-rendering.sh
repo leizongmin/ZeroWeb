@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Goal: shadow-dom-rendering（编号 45——推进顺序见同目录 README.md；契约
-# docs/goal/shadow-dom-rendering.md，M0 盘点 + 数值门见
-# docs/goal/shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md）。
+# docs/goal/archive/shadow-dom-rendering.md，M0 盘点 + 数值门见
+# docs/goal/archive/shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md）。
 #
 # 渲染级语料预置：shadow-dom reftest 池 20 案 + refs + 补充池 10 案的显式清单拉取
 # （非整目录——shadow-dom/ 的 JS 语义面归 42 号 shadow-dom-expansion 通道，
@@ -110,7 +110,7 @@ fi
 echo "missing=0 断言通过。"
 
 cat <<'NEXT'
-== 下一步检查单（契约 docs/goal/shadow-dom-rendering.md）==
+== 下一步检查单（契约 docs/goal/archive/shadow-dom-rendering.md）==
 - M1：:host 族 + scoped sheets 进渲染管线（evidence §6 改动面 1-5）；
   验收 = B3/B4 红案翻绿 + B1/B2 零回落 + make reftest 全量零回归
 - M2：::slotted() 合法化 + matcher arm + flat-tree 组合子（DC-2 收口）
