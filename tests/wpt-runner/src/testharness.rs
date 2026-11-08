@@ -5876,6 +5876,116 @@ fn extract_meta_referrer_policy(source: &str) -> Option<String> {
     (!label.is_empty()).then_some(label)
 }
 
+/// s351（css-module relative-urls 双案）：css 模块响应体内相对 url() 按**样式表
+/// 响应 URL** 绝对化。spec：相对 URL 以样式表 base URL（fetch response URL，重定向
+/// 面 = 终跳目标）在解析时定锚，computed 值 = 绝对 URL（CSS Values §3.2、CSSOM
+/// serializer）；引擎 url() 解析面整体缺失（css parser 无 base URL 上下文，Url 逐字
+/// 存储——挂账），本车道臂在取回层建模同一可观察结果。`base` = 交付文件绝对 URL
+///（`https://wpt.test/<file_rel>`，s350 端点目录锚同法）。识别 `url(<payload>)`
+///（大小写不敏感、引号单/双/裸三形）；payload 为相对引用（无 scheme、非 `/` 开头、
+/// 非 `#` 片段）才重写，逐段归一 `.`/`..`。百分号解码/charset 面未建模（语料两
+/// fixture 均 ASCII 字面）。
+/// https://drafts.csswg.org/css-values-4/#urls
+fn rewrite_relative_css_urls_s351(css: &str, base: &str) -> String {
+    let mut out = String::with_capacity(css.len());
+    let mut rest = css;
+    while let Some(rel) = {
+        // 大小写不敏感找下一个 `url(`：在剩余文本上做 lowercase 查找一次/轮。
+        let lower = rest.to_ascii_lowercase();
+        lower.find("url(")
+    } {
+        let (head, tail) = rest.split_at(rel);
+        out.push_str(head);
+        let body = &tail[4..];
+        // payload：可选空白 + 可选引号 + 至匹配闭引号/`)`。裸形遇空白/引号外 `)` 止。
+        let trimmed = body.trim_start();
+        let (quote, after_quote) = match trimmed.chars().next() {
+            Some(q @ ('\'' | '"')) => (Some(q), &trimmed[1..]),
+            _ => (None, trimmed),
+        };
+        let payload_end = quote.map(|q| after_quote.find(q)).unwrap_or_else(|| {
+            after_quote
+                .find(|c: char| c == ')' || c.is_whitespace())
+                .or(Some(after_quote.len()))
+        });
+        let Some(payload_end) = payload_end else {
+            // 未闭合引号——原样放行余文（病态输入不建模，引擎 parse 面兜底）。
+            out.push_str(&tail[..4]);
+            rest = &tail[4..];
+            continue;
+        };
+        let close_rel = quote.map_or(payload_end, |q| {
+            after_quote[payload_end + q.len_utf8()..]
+                .find(')')
+                .map_or(usize::MAX, |i| payload_end + q.len_utf8() + i)
+        });
+        if close_rel == usize::MAX {
+            // `)` 缺失——原样放行（同上）。
+            out.push_str(&tail[..4]);
+            rest = &tail[4..];
+            continue;
+        }
+        let payload = after_quote[..payload_end].trim();
+        let absolute = if is_relative_css_url_ref(payload) {
+            Some(join_css_url_ref(base, payload))
+        } else {
+            None
+        };
+        // `)` 在 tail 坐标的下标：quoted 臂 close_rel 相对 after_quote（tail 偏移
+        // 4 + 开引号 1 = 5），unquoted 臂 payload_end 即 `)` 位（无开引号，tail 偏移 4）。
+        let close_in_tail = if quote.is_some() {
+            5 + close_rel
+        } else {
+            4 + payload_end
+        };
+        match absolute {
+            Some(abs) => out.push_str(&format!("url(\"{abs}\")")),
+            // 非相对引用（绝对/片段/data:）：原文逐字保留该 url() 段。
+            None => out.push_str(&tail[..close_in_tail + 1]),
+        }
+        rest = &tail[close_in_tail + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// s351：payload 是否相对引用——非空、无 scheme（RFC 3986 scheme 形 `x:` 前缀）、
+/// 不以 `/` 开头（站点绝对）、不以 `#` 开头（同文档片段）。
+fn is_relative_css_url_ref(payload: &str) -> bool {
+    if payload.is_empty() || payload.starts_with('/') || payload.starts_with('#') {
+        return false;
+    }
+    match payload.find(':') {
+        None => true,
+        Some(i) => {
+            // 首段恰为 scheme 形（`x:`）→ 绝对引用；否则（路径内冒号）按相对处理。
+            let scheme = &payload[..i];
+            let scheme_form = !scheme.is_empty()
+                && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c));
+            !scheme_form
+        }
+    }
+}
+
+/// s351：相对引用按 base（绝对 URL）归一——`scheme://host/<dir>/<ref>` 逐段处理
+/// `.`/`..`（RFC 3986 §5.2 移除点段；base 末段为文件名，先取目录再拼接）。
+fn join_css_url_ref(base: &str, reference: &str) -> String {
+    let dir = base.rsplit_once('/').map(|(d, _)| d).unwrap_or(base);
+    let joined = format!("{dir}/{reference}");
+    let mut normalized: Vec<&str> = Vec::new();
+    for seg in joined.split('/') {
+        match seg {
+            "." => {}
+            ".." => {
+                normalized.pop();
+            }
+            _ => normalized.push(seg),
+        }
+    }
+    normalized.join("/")
+}
+
 /// s116：wpt host 别名前缀剥离——`http(s)://<别名>[:port]/<path>` → `/<path>`。
 /// 别名集窄收 wpt.test + www1.wpt.test（referrer 族跨源面实际所需；**www2 不可达
 /// 保持**——dynamic-imports-fetch-error "cross-origin without CORS" 判据页依赖
@@ -6446,8 +6556,21 @@ fn wpt_data_script_fetcher_with_stash(
             if !matched {
                 return Err(format!("data module MIME mismatch for {mtype}: {file_rel} ({mime})"));
             }
+            // s351：css 模块响应体相对 url() 按响应 URL 绝对化（见 rewrite_relative_css_urls）。
+            // fetcher 契约 `(page_url, src)` 无响应 URL 通道（s349 同形限制），锚定在
+            // 交付文件路径（重定向面 = 终跳 hop，重定向跟随已把 hop_clean 归一为终
+            // 目标路径）——与引擎合成模块（s249 `new CSSStyleSheet().replaceSync`）下
+            // 游 computed 值序列化（Url 逐字存储）对齐。
+            let resolve = mtype == "css";
             return std::fs::read(root.join(&file_rel))
                 .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                .map(|text| {
+                    if resolve {
+                        rewrite_relative_css_urls_s351(&text, &format!("https://wpt.test/{file_rel}"))
+                    } else {
+                        text
+                    }
+                })
                 .map_err(|e| format!("data module fetch failed: {file_rel} ({e})"));
         }
         if let Some((file_rel, mime)) = json_intent {
@@ -13000,6 +13123,49 @@ mod tests {
             )
             .unwrap(),
             "text/plain,*/*;q=0.5"
+        );
+    }
+
+    // s351 回归钉：css 模块响应体相对 url() 按响应 URL 绝对化——静态文件面锚交付
+    // 文件自身路径、redirect.py 面锚终跳目标（重定向跟随已归一）；text 型响应体
+    // 不改写。helper 面：单/双/无引号三形、`..` 归一、绝对 URL/片段逐字放行。
+    #[test]
+    fn css_module_relative_urls_resolved_against_response_url_s351() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("wpt-data");
+        let fetch = wpt_data_script_fetcher(&root, None).unwrap();
+        let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/css-module/relative-urls.html";
+        let expected = "https://wpt.test/html/semantics/scripting-1/the-script-element/css-module/resources/image.png";
+        // 静态文件面：`./image.png` → 交付 css 文件同目录绝对 URL。
+        let body = fetch(page, "./resources/load-relative-url.css?__zw_mtype=css").unwrap();
+        assert!(
+            body.contains(&format!("url(\"{expected}\")")),
+            "静态面相对 url 须绝对化: {body}"
+        );
+        // redirect.py 面：location 终跳 target.css → 锚 resources/ 目录（响应 URL）。
+        let body = fetch(
+            page,
+            "/common/redirect.py?location=/html/semantics/scripting-1/the-script-element/css-module/resources/redirect-target.css&__zw_mtype=css",
+        )
+        .unwrap();
+        assert!(
+            body.contains(&format!("url(\"{expected}\")")),
+            "重定向面相对 url 须锚响应 URL: {body}"
+        );
+        // helper 独立面：裸形/`..` 归一/绝对与片段放行。
+        assert_eq!(
+            rewrite_relative_css_urls_s351("a{b:url(sub/x.png)}", "https://wpt.test/d/page.css"),
+            "a{b:url(\"https://wpt.test/d/sub/x.png\")}"
+        );
+        assert_eq!(
+            rewrite_relative_css_urls_s351("a{b:url('../up/x.png')}", "https://wpt.test/d/e/f.css"),
+            "a{b:url(\"https://wpt.test/d/up/x.png\")}"
+        );
+        assert_eq!(
+            rewrite_relative_css_urls_s351(
+                "a{b:url(https://o.test/i.png);c:url(#frag);d:url(\"data:text/plain,x\")}",
+                "https://wpt.test/d/f.css"
+            ),
+            "a{b:url(https://o.test/i.png);c:url(#frag);d:url(\"data:text/plain,x\")}"
         );
     }
 

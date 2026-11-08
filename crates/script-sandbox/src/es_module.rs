@@ -1873,6 +1873,38 @@ fn statement_ends_with_from(s: &str) -> bool {
             .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$')
 }
 
+/// s351：import/export 声明在 specifier 字面量收尾处、后续行以 `with {` 起头时不切句
+///（attributes 子句续行，见 [`split_statements`] s351 注）。三重形状先验防误吞：
+/// 声明关键词开头（整词）+ `'`/`"` 收尾（module specifier 必为 string literal，
+/// 反引号模板形非法且未闭合模板不续行）+ 跨空白前瞻 `with` 整词 + `{`。
+fn statement_continues_with_attributes(statement: &str, lookahead: &[char]) -> bool {
+    let t = statement.trim_start();
+    // 关键词整词门：import/export 同为 6 字节。
+    if !(t.starts_with("import") || t.starts_with("export"))
+        || t.as_bytes()
+            .get(6)
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$')
+    {
+        return false;
+    }
+    // specifier 收尾门：module specifier 必为 `'…'`/`"…"` string literal。
+    if !matches!(t.chars().last(), Some('\'') | Some('"')) {
+        return false;
+    }
+    // 跨空白前瞻 `with` 整词 + 非空白 `{`（`with (obj)` legacy 语句形不续行）。
+    let rest = lookahead.iter().collect::<String>();
+    let rest = rest.trim_start();
+    if !rest.starts_with("with")
+        || rest
+            .as_bytes()
+            .get(4)
+            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'$')
+    {
+        return false;
+    }
+    rest[4..].trim_start().starts_with('{')
+}
+
 /// 模块源是否含**顶层** await（TLA——函数体/对象字面量/类体内的 await 不算，
 /// spec：仅模块体直接 await 是模块级求值暂停点）。
 /// https://tc39.es/ecma262/#sec-moduleevaluation
@@ -2260,7 +2292,18 @@ pub(crate) fn split_statements(source: &str) -> Vec<String> {
             // `"spec";` 两段后提取与 transform（同吃本扫描）双双漏配 import 形。
             // 深度 0 下以完整标识符 `from` 收尾的合法语句仅 import/export-from 形，
             // 续行守卫安全。
-            if ch == '\n' && statement_ends_with_from(statement) {
+            // s351：specifier 行尾 + 后续行 with 子句续行——`import x from\n"spec"\n
+            // with { type: "css" };`（css-module/redirect-relative-urls 静态 import
+            // 书写形）：attributes 子句是 import/export-from 声明文法的一部分
+            //（https://tc39.es/proposal-import-attributes/ ，换行不终止声明），
+            // 在 specifier 行尾切句会把 with 子句独立成句——提取丢属性面（无类型
+            // 取回）、transform 发射孤儿 `with { … };` 残句（非合法 JS 语句形）。
+            // 守卫三条件与Gate：import/export 开头 + specifier 字面量收尾 + 前瞻
+            // `with {`（`with (obj)` legacy 语句形不续行）。
+            if ch == '\n'
+                && (statement_ends_with_from(statement)
+                    || statement_continues_with_attributes(statement, &chars[index..]))
+            {
                 current.push(ch);
             } else {
                 if !statement.is_empty() {
@@ -3615,6 +3658,28 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
             "export const msg = 'see export { x } from \\'not-a-module.js\\' here';",
         );
         assert!(phantom.is_empty(), "幻影依赖: {phantom:?}");
+    }
+
+    // s351 回归钉：跨行 with 子句续行（css-module/redirect-relative-urls 静态 import
+    // 书写形——specifier 与 with 子句分行）必须吐出完整 (spec, type) 对；独立成句的
+    // `with { ... }` 不得污染前句无属性 import 的提取（type 缺省面不变）。
+    #[test]
+    fn test_attributes_extractor_multiline_with_clause_s351() {
+        let specs = extract_static_module_imports_with_attributes(
+            "import redirected from\n    \"/common/redirect.py?location=/t/redirect-target.css\"\n    with { type: \"css\" };",
+        );
+        assert_eq!(
+            specs,
+            vec![(
+                "/common/redirect.py?location=/t/redirect-target.css".to_string(),
+                Some("css".to_string())
+            )],
+            "跨行 with 子句须并入前句 import: {specs:?}"
+        );
+        // 无属性 import 后随无关 with 语句（legacy sloppy 形）：子句不匹配属性语法
+        //（`(obj)` 括号形）→ 不吞句、属性面维持 None。
+        let plain = extract_static_module_imports_with_attributes("import x from \"./a.js\"\nwith (obj) { y(); }");
+        assert_eq!(plain, vec![("./a.js".to_string(), None)]);
     }
 
     #[test]
