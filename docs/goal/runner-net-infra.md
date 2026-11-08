@@ -7,7 +7,8 @@
 2026-11-08 M2 完成（**DC-2 ✅**——D3-D5 寻址接线 + websockets 通道 A/B
 零回归 + wss 池 101 案 360 subtest 全绿过批次门，
 [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）
-**状态**: Active——M0 ✅ M1 ✅ M2 ✅，M3（py 路由框架）未启动
+**状态**: Active——M0 ✅ M1 ✅ M2 ✅，M3（py 路由框架）**进行中**——
+PyRoute 注册表已落地（切片二，链头 12 臂入表），84 臂按族分批迁移
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -112,7 +113,13 @@
   零回归（110 案 381 行全等）+ wss 池 101 案 360 subtest 全绿（100% 过
   98.5% 批次门）。池记账与实施发现见
   [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)。
-- **M3**：py 路由框架 + v2 先例迁移 + 补丁收编（DC-3）。
+- **M3 进行中**（2026-11-08）：切片一 = fetch handler 闭包体整体迁出
+  testharness_py_routes 模块（19,236→15,630 行，A/B multiset 空集）；切片二 =
+  `PyRoute` 保序注册表落地（PyRouteMatch::Exact + handler None=落穿 + 表序
+  = 臂序），链头 12 条全等臂迁入（A/B multiset 空集 +
+  [切片二档](runner-net-infra/evidence/2026-11-08-m3-slice2-registry-head12.md)）；
+  余臂按族分批迁移（xhr → eventsource/fetch → inspect-headers/尾段）+
+  四 fetcher 闭包臂 + S12 redirect.py 臂收编随批次落。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
