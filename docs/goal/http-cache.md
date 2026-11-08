@@ -1,8 +1,8 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.2
-**日期**: 2026-11-08（M1 完成——C 簇 48 收敛，DC-2 前半达成；下一步 M2）
-**状态**: Active——DC-1（[M0 对账档](http-cache/evidence/2026-11-08-m0-reconciliation.md)、[架构落点说明书](http-cache/evidence/2026-11-08-m0-architecture.md)）+ M1（[M1-b 证据档](http-cache/evidence/2026-11-08-m1b-c-cluster.md)，request-cache 族 76P/30F）达成，下一步 M2
+**版本**: v1.3
+**日期**: 2026-11-08（M2 完成——wire 传播 + B 簇收敛，族 102/102 + 全窗口零回归；下一步 M3 corpus 批次挂 46 号）
+**状态**: Active——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现），DC-4 余 corpus 门挂 46 号（划界内），下一步 M3 corpus 批次
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口——
@@ -99,11 +99,21 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   改正、stale-at-birth 可存性 RFC 9111 §3，@ 666d1f293）。实测 request-cache
   族 **76P/30F**：C 簇 48/48 绿（default 8 + default-conditional 40）；headers
   族 286/286 零回归；余 30F 全为 B 簇 wire 传播面（[证据档](http-cache/evidence/2026-11-08-m1b-c-cluster.md)）。
-- **M2**：wire 传播（wire 第 11 参 + FetchRequest.cache + shim 8 调用点 +
-  双 app handler 映射）+ 模式态六态 B 簇 54 收敛（DC-2 收口 / DC-3）。
-- **M3**：102/102 复测 + v2/v3 零回归 A/B + corpus 批次对齐 46 号排期
-  （DC-3/DC-4 前半）。
-- **M4**：零回归复测收口（DC-4）。
+- **M2 ✅**（2026-11-08，DC-2 收口/DC-3）：wire 传播（**实落第 12 参**——
+  index 10 已被 iframe client-id 占用，M0 说明书原记 11 参修正）+
+  FetchRequest.cache + shim 八调用点 + 双 app handler 映射 + runner 六模式
+  态全矩阵分派；显式模式权威（fetch spec §4.6）+ Vary:* 仅再验证
+  （RFC 9111 §4.1）@ f2f9ee1cb。族 **102/102**（B 簇 30F 全收敛）；
+  M2 shim 错误语义转换引入的 3 条 P→F（keepalive POST 撞 py_routes 非
+  GET 兜底门）经 trickle.py POST 端点臂修复（v3 fixture 先例，账面 3P/3F
+  持平）；全窗口 JSON-vs-JSON 真 P→F=0、F→P 104、T 零变化（[M2 证据档]
+  (http-cache/evidence/2026-11-08-m2-wire-propagation.md)）。
+- **M3**：102/102 复测 ✅（本账即复测）；v2/v3 零回归 A/B ✅（对 v3 终账
+  13,275P 真 P→F=0，v2 链传递覆盖）；**corpus 批次挂 46 号**——
+  fetch/http-cache 20 文件未入窗（wpt-data 无目录，py stash 端点前置），
+  批次排期对齐 46 号 M3 框架交付（DC-4 corpus 门余项）。
+- **M4**：零回归复测收口（DC-4）——本地窗已绿，余头条不回落核对（weekly
+  cron 面）+ corpus 批次入账后终验。
 
 ## 依赖约束（run-rules §9）
 

@@ -7423,8 +7423,12 @@ fn wpt_data_fetch_handler_with_stash(
             crate::testharness_py_routes::dispatch(&route_ctx, req)
         });
     // http-cache goal M1-b：cache.py 端点的案级缓存包裹（零回归门控——包裹器按
-    // 精确端点路径分派，非 cache.py 请求原样直通 base）。
-    Some(wpt_cache_py_wrapped_handler(base, case_cache))
+    // 精确端点路径分派，非 cache.py 请求原样直通 base）；trickle.py POST 臂
+    // 内层直通（keepalive-quota 通道，见 wpt_trickle_py_wrapped_handler）。
+    Some(wpt_cache_py_wrapped_handler(
+        wpt_trickle_py_wrapped_handler(base),
+        case_cache,
+    ))
 }
 
 /// http-cache goal M1-b：request-cache 族 `fetch/api/request/resources/cache.py`
@@ -7564,6 +7568,45 @@ pub(crate) fn wpt_cache_py_fixture(
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
+    })
+}
+
+/// `fetch/api/resources/trickle.py` 端点臂（http-cache goal M2 回归修复）——
+/// 非 GET 请求回 200 空体，其余直通 base。仅 POST 消费方
+/// request-keepalive-quota 需要此臂（根因与账面详见函数体内注释）。
+fn wpt_trickle_py_wrapped_handler(
+    base: zero_engine::fetch_bridge::FetchHandler,
+) -> zero_engine::fetch_bridge::FetchHandler {
+    std::sync::Arc::new(move |req: &zero_engine::fetch_bridge::FetchRequest| {
+        // request-keepalive-quota 以 keepalive POST 打 `fetch/api/resources/
+        // trickle.py`——上游为 wptserve 延迟端点（corpus 拉取面排除 .py）。
+        // POST 撞 py_routes 非 GET 兜底门（net-api M4-S18）→ handler Err；该
+        // Err 在 http-cache M2 后按 fetch spec 网络错误语义 reject（TypeError
+        // `Failed to fetch`），三条 under/at-quota 臂 P→F（v3 终账伪 resolve
+        // ——status-0 兼容路径——掩盖的账）。本臂对 POST 回 200 空体恢复 HTTP
+        // 响应语义（测试断言只涉 promise 完成不涉 status/体）；GET 仍穿透
+        // 既有静态缺文件 404 响应路径（response-cancel-stream 等既有消费方
+        // 账面零扰动）。
+        // FIXME(runner-net-infra)：真实 trickle 分块延迟（`?count=N&ms=M`）与
+        // fetch keepalive 配额池（beacon 池未共享，part02 FIXME 同面）未建模
+        // ——延迟缺席下 slow 臂 instant resolve 与 v3 终账伪 resolve 观察等
+        // 价，账面 3P/3F 持平。
+        let path = wpt_url_path(&req.url);
+        let path = path.strip_prefix('/').unwrap_or(path);
+        let clean = path.split(['?', '#']).next().unwrap_or(path);
+        if clean == "fetch/api/resources/trickle.py" && !req.method.eq_ignore_ascii_case("GET") {
+            let mut headers: Vec<(String, String)> = Vec::new();
+            headers.push(("content-type".into(), "text/plain".into()));
+            wpt_add_fetch_metadata(&mut headers, req, 200);
+            return Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers,
+                body: String::new(),
+                body_bytes: Some(Vec::new()),
+            });
+        }
+        base(req)
     })
 }
 
