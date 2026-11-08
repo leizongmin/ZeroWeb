@@ -20,14 +20,19 @@ pub(crate) use crate::testharness::{
     wpt_cache_py_fixture, wpt_load_error_events_response, wpt_pipe_headers, wpt_pipe_status, wpt_query_value,
     wpt_query_value_bytes, wpt_sidecar_headers, wpt_static_resource_headers, wpt_status_text, wpt_url_path,
 };
+// 47 号 http-cache goal M3：fetch/http-cache 端点族 stash 类型回供构建点
+//（testharness.rs PyEndpointCtx 构建处显式注记用）。
+pub(crate) use http_cache::HttpCachePyStash;
 
 mod es;
 mod fetch;
+mod http_cache;
 mod misc;
 mod site;
 mod xhr;
 use es::*;
 use fetch::*;
+use http_cache::*;
 use misc::*;
 use site::*;
 use xhr::*;
@@ -47,6 +52,11 @@ pub(crate) struct PyEndpointCtx {
     pub(crate) es_cookie_stash: Arc<Mutex<std::collections::BTreeMap<String, String>>>,
     pub(crate) vary_value_override: Arc<Mutex<Option<String>>>,
     pub(crate) cache_py_stash: CachePyStash,
+    // 47 号 http-cache goal M3：fetch/http-cache 语料端点（resources/http-cache.py
+    // 状态机）的案级观察 stash（uuid → 请求态序列；take/put-back = remove/insert，
+    // dispatch=state 与 test 分支首步取走。per-case 构建、案内键自清、跨案零泄漏，
+    // 与 cache_py_stash 同款）。
+    pub(crate) http_cache_py_stash: HttpCachePyStash,
     #[allow(dead_code)]
     // 与外层 wpt_cache_py_wrapped_handler 共享同一 Arc（包裹器承载缓存语义；dispatch 内 cache.py 臂直调 fixture）——切片对齐保留
     pub(crate) case_cache: Arc<Mutex<zero_net::HttpCache>>,
@@ -120,6 +130,19 @@ fn py_routes() -> &'static [PyRoute] {
         PyRoute {
             matches: PyRouteMatch::Exact("fetch/api/request/resources/cache.py"),
             handle: route_cache_py,
+        },
+        // 47 号 http-cache goal M3 语料导入：fetch/http-cache 端点族（须先于
+        // 尾部非 GET 405 门——invalidate/post-patch 语料的 PUT/DELETE 直达）。
+        PyRoute {
+            matches: PyRouteMatch::Exact("fetch/http-cache/resources/http-cache.py"),
+            handle: route_http_cache_py,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exacts(&[
+                "fetch/http-cache/resources/cached_pragma_rand.py",
+                "fetch/http-cache/resources/cached_pragma_immutable_rand.py",
+            ]),
+            handle: route_cached_pragma_py,
         },
         PyRoute {
             matches: PyRouteMatch::Exact("cookies/resources/set-cookie.py"),

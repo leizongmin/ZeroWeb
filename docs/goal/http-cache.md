@@ -1,8 +1,8 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.4
-**日期**: 2026-11-08（M3 net 层语义前置完成——RFC 9111 五缺口收口 + 全窗口零回归；corpus 批次仍挂 46 号）
-**状态**: Active——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现），DC-4 余 corpus 门挂 46 号（划界内），下一步 M3 corpus 批次
+**版本**: v1.5
+**日期**: 2026-11-08（M3 corpus 批次完成——fetch/http-cache 端点表落地 + 首批 124P/138 入账；DC-4 余 M4 终验）
+**状态**: Active——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现）、DC-4 corpus 门 ✅（[M3 corpus 证据档](http-cache/evidence/2026-11-08-m3-corpus-import.md)，124P/138 vs Chrome 43.5%），余 M4 零回归收口（头条不回落核对 + 全窗终验）
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口——
@@ -70,7 +70,9 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
    分母同缩。
 2. **http-cache corpus 门（按批次）**：每批导入面 window 变体实跑 pass ≥
    实跑分母 × Chrome 同簇通过率（逐文件 wptfyi 10-29 基准见对账档 §三）；
-   covered > 0 为通道存在性底线；批次排期对齐 46 号 M3。
+   covered > 0 为通道存在性底线；批次排期对齐 46 号 M3。**✅ 首批 2026-11-08
+   达成**：124P/138 vs 地板 ≈60（聚合）/104（10-29 窗绝对），covered 138
+   （[M3 corpus 证据档](http-cache/evidence/2026-11-08-m3-corpus-import.md)）。
 3. **零回归门**：v2 终账（11,040 + S 系列）与 v3 终账（13,256P）逐 subtest
    零回归；fetch 头条不低于 v3 复测值 2,266P/17.07%（wpt.fyi universe）。
 
@@ -114,11 +116,20 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   合并泛化 + §4.3.4 更新独立于 304 可存 + §4.4 失效门 2xx|3xx 与
   POST/PATCH 存储路径；zero-net lib 530P/0F，multiset 零回归 NEW==M2
   全等、对 v3 终账真 P→F=0，[M3 证据档]
-  (http-cache/evidence/2026-11-08-m3-net-semantics.md)）；**corpus 批次
-  挂 46 号**——fetch/http-cache 20 文件未入窗（wpt-data 无目录，py
-  stash 端点前置），批次排期对齐 46 号 M3 框架交付（DC-4 corpus 门余项）。
-- **M4**：零回归复测收口（DC-4）——本地窗已绿，余头条不回落核对（weekly
-  cron 面）+ corpus 批次入账后终验。
+  (http-cache/evidence/2026-11-08-m3-net-semantics.md)）；**corpus 批次 ✅**
+  （2026-11-08，DC-4 corpus 门达成）：fetch/http-cache 端点表 1:1 移植
+  （http-cache.py 状态机 + 双 pragma 端点，46 号 PyRoute 注册表 3 行）+
+  包裹器门控扩 4 路径（非 GET §4.4 unsafe 落账镜像 + 请求 CC 头推导镜像
+  ——`request_cache_mode`/`apply_unsafe_response_to_cache` pub 复用）+
+  语料入窗 13 .any.js + 1 pragma html（split-cache/basic-auth 按 M0 §三
+  排除）。实跑 **124P/138**（86.2%）vs Chrome 同簇 104/239（43.5%），
+  超出 Chrome 面 = 失效矩阵 +9、启发式 +6、请求 CC +7（[M3 corpus 证据档]
+  (http-cache/evidence/2026-11-08-m3-corpus-import.md)）；零回归：族窗
+  106P/0F + headers 286/286 + zero-net 530P/0F（落盘形态门镜像回退教训
+  ——DC-3 单实现指缓存语义层，通道落盘策略可合法分歧，见证据档 §六）。
+- **M4**：零回归复测收口（DC-4）——受影响窗已绿（本批改动面有界：
+  包裹器 4 路径精确匹配，余 fetch 通道零触碰），余头条不回落核对
+  （weekly cron 面）+ 全窗 A/B 终验。
 
 ## 依赖约束（run-rules §9）
 
@@ -127,12 +138,13 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   通道——缓存层改动同窗复验 v2 终账（11,040 + S 系列）与 v3 终账
   （13,256P，2026-11-07 收口）逐 subtest 零回归；43 号 request-cache 账以
   本 goal 交付承接（两 goal 控制面互指）。
-- 与 46 号（runner-net-infra）py 端点前置——http-cache corpus 批次排期
-  对齐 46 号 M3 框架交付。**46 号 M4 互指（2026-11-08）**：py 框架主表
-  承接面已落——85 行保序注册表 + stash 端点先例 route_cache_py 注册且
-  http-cache 通道 102/102 行为验证，fetch 通道 corpus 批次可消费；
+- 与 46 号（runner-net-infra）py 端点前置——**46 号 M4 互指（2026-11-08）**：
+  py 框架主表承接面已落——85 行保序注册表 + stash 端点先例 route_cache_py
+  注册且 http-cache 通道 102/102 行为验证，fetch 通道 corpus 批次可消费；
   script/service-worker fetcher 分表随 46 号切片六在途（判定端点族不涉
-  本 goal corpus 面），完整交付以 46 号 DC-3 收口为准。
+  本 goal corpus 面），完整交付以 46 号 DC-3 收口为准。**消费落地**：端点
+  表已由本 goal 落地（2026-11-08 corpus 批次，普查档 P-A 池分工兑现），
+  本批 additive 面与切片六无冲突。
 - 缓存语义实现处加 RFC 9111 条款锚定注释；涉及导航资源加载的缓存路径
   改动与 rendering-compat 的加载性能门（benchmarks perf-gate）同窗核对，
   防缓存命中路径改变加载时序预算。

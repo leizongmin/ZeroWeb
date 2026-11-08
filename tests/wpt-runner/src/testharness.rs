@@ -4518,6 +4518,11 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
     "fetch/api/abort",
     "fetch/api/credentials",
     "fetch/api/cors",
+    // 47 号 http-cache goal M3（DC-4 corpus 门）：13 .any.js + 1 pragma html。
+    // 端点族 resources/http-cache.py 由 py 路由注册表承接（46 号 M3 普查档
+    // P-A 池分工——47 号只写端点表）；split-cache/basic-auth 案级排除见
+    // net_api_case_skipped（M0 对账档 §三）。
+    "fetch/http-cache",
     // net-api-compat-v3 M1b：redirect 批次（fetch redirect.py fixture token/max_count/
     // simple 语义升级 + redirect-empty-location.py 新 fixture 后导入；`.h2.` 形态案
     // skip 规则排除）。
@@ -4677,6 +4682,16 @@ fn net_api_case_skipped(relative: &str, source: &str) -> bool {
     // 单名门排除口径，fetch 中止管道落地后重入（AbortController 臂不受影响——abort
     // 信号管道独立且既有绿面）。
     if relative == "eventsource/eventsource-request-cancellation.window.js" {
+        return true;
+    }
+    // 47 号 http-cache goal M3（DC-4 corpus 门，M0 对账档 §三排除口径）：
+    // split-cache.html——多窗口 popup + BroadcastChannel 编排（runner 无多文档
+    // 管道，multi-globals 同因先例）；basic-auth-cache-test*.html——HTTP Basic
+    // 认证弹窗编排（runner 无认证 UI；Chrome 分母 0，M0 §三 den 0 记账同因）。
+    if relative == "fetch/http-cache/split-cache.html"
+        || relative == "fetch/http-cache/basic-auth-cache-test.html"
+        || relative == "fetch/http-cache/basic-auth-cache-test-ref.html"
+    {
         return true;
     }
     if relative.contains("/resources/") {
@@ -7397,6 +7412,11 @@ fn wpt_data_fetch_handler_with_stash(
     // 等价实现：记录分支 take+append+put（即 entry push），querystate 分支 take
     // 取走清空。per-case 构建，同上各表案内键自清、跨案零泄漏）。
     let cache_py_stash: CachePyStash = std::sync::Arc::default();
+    // 47 号 http-cache goal M3：fetch/http-cache 语料端点（resources/http-cache.py
+    // 状态机）的案级 stash（uuid → 请求态序列，端点表见
+    // testharness_py_routes::http_cache——46 号 M3 普查档 P-A 池分工「47 号只写
+    // 端点表」；take/put-back 与 dispatch=state 取走语义同 cache_py_stash 款）。
+    let http_cache_py_stash = std::sync::Arc::default();
     // http-cache goal M1-b：案级 HTTP 缓存（DC-3 单实现——直接复用 zero-net
     // HttpCache，与浏览器通道同一缓存语义层；包裹器见 wpt_cache_py_wrapped_handler）。
     let case_cache = std::sync::Arc::new(std::sync::Mutex::new(zero_net::HttpCache::new()));
@@ -7416,6 +7436,7 @@ fn wpt_data_fetch_handler_with_stash(
         es_cookie_stash: std::sync::Arc::clone(&es_cookie_stash),
         vary_value_override: std::sync::Arc::clone(&vary_value_override),
         cache_py_stash: std::sync::Arc::clone(&cache_py_stash),
+        http_cache_py_stash,
         case_cache: std::sync::Arc::clone(&case_cache),
     });
     let base: zero_engine::fetch_bridge::FetchHandler =
@@ -7640,18 +7661,44 @@ fn wpt_cache_py_wrapped_handler(
         // 语料 cache.py URL 不含点段（`resources/cache.py?token=...` 直链），
         // 不做 base 内的 `..` 归一。
         let clean = path.split(['?', '#']).next().unwrap_or(path);
-        // 非 GET / 带体不过缓存层（缓存层只建模无体 GET——loader 同口径）。
-        let cacheable_endpoint = clean == "fetch/api/request/resources/cache.py"
-            && req.method.eq_ignore_ascii_case("GET")
-            && req.body.is_none()
-            && req.body_bytes.is_none();
+        // M3 语料导入：门控扩至 fetch/http-cache 端点族（http-cache.py 状态机 +
+        // Pragma 对照端点——语料经缓存语义消费的四个路径全量）。缓存层只建模
+        // 无体 GET（loader 同口径）。
+        let cacheable_endpoint = matches!(
+            clean,
+            "fetch/api/request/resources/cache.py"
+                | "fetch/http-cache/resources/http-cache.py"
+                | "fetch/http-cache/resources/cached_pragma_rand.py"
+                | "fetch/http-cache/resources/cached_pragma_immutable_rand.py"
+        );
         if !cacheable_endpoint {
             return base(req);
         }
-        // fetch 通道 `init.cache` 六模式态（wire 第 12 参）：显式五模式为权威，
-        // None/default → Default 保留既有语义（M1-b C 簇面零变化）。
-        let mode =
+        if !req.method.eq_ignore_ascii_case("GET") || req.body.is_some() || req.body_bytes.is_some() {
+            // RFC 9111 §4.4 unsafe 落账镜像（loader HTTP 直发臂同编排——
+            // `apply_unsafe_response_to_cache`）：invalidate 语料的 POST/PUT/
+            // DELETE 成功响应使请求 URL 与同源 Location/Content-Location 目标
+            // 失效，post-patch 语料的 Content-Location 表示落盘供后续 GET 复用。
+            // 仅门内路径生效（既有非 GET 请求——如 trickle keepalive——原样直通）。
+            let response = base(req)?;
+            zero_net::resource_loader::apply_unsafe_response_to_cache(
+                &mut case_cache.lock().expect("case http cache lock"),
+                &req.url,
+                &req.headers,
+                &wpt_cache_py_fetch_response_to_http(&response, &req.url),
+            );
+            return Ok(response);
+        }
+        // fetch 通道 `init.cache` 六模式态（wire 第 12 参）：显式五模式为权威；
+        // None/default → loader `submit` 同款请求 CC 头推导（only-if-cached/
+        // no-store/no-cache——cc-request 语料判据面，DC-3 单实现）。
+        let wire_mode =
             zero_net::CacheMode::from_request_cache(req.cache.as_deref()).unwrap_or(zero_net::CacheMode::Default);
+        let mode = if wire_mode == zero_net::CacheMode::Default {
+            zero_net::resource_loader::request_cache_mode(&req.headers).unwrap_or(zero_net::CacheMode::Default)
+        } else {
+            wire_mode
+        };
         let url = req.url.clone();
         // step 16：default + 脚本显式条件头 → no-store 旁路（读写在脚本侧自管）。
         // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 16）
@@ -7779,6 +7826,10 @@ fn wpt_cache_py_network_arm(
             None => Ok(resp),
         };
     }
+    // 落盘不设形态门（与 loader `submit_network` 的 3xx/206 门有意分歧）——
+    // request-cache 族 only-if-cached redirect 腿依赖 302+验证器/显式新鲜度
+    // 落盘复用（M2 族账 102/102 锁定行为，DC-4 零回归门）；可存性本体仍由
+    // `put_with_headers` 内部 storable_mode 裁决。
     case_cache.lock().expect("case http cache lock").put_with_headers(
         url,
         &req.headers,

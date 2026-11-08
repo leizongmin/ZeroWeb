@@ -504,22 +504,16 @@ impl ResourceLoader {
                     let mut store = jar.lock().expect("shared cookie store lock");
                     store_set_cookie_headers(&mut store, &url, &response.headers);
                 }
-                // RFC 9111 §4.4——non-error（2xx|3xx）响应使目标 URI 缓存失效（含
-                // 最终 URL 与同源 Location/Content-Location 目标，见
-                // `unsafe_invalidation_targets`）。
+                // RFC 9111 §4.4 unsafe 落账（失效 + POST/PATCH Content-Location
+                // 存储）——编排收敛 [`apply_unsafe_response_to_cache`]（runner
+                // 端点包裹器共用，http-cache goal M3）。
                 if response.is_success() || response.is_redirect() {
-                    let mut cache = cache.lock().expect("HTTP cache lock");
-                    for target in unsafe_invalidation_targets(&url, response) {
-                        cache.invalidate(&target);
-                    }
-                    // RFC 9110 §9.3.3 / RFC 9111 §4——POST/PATCH 响应仅在 Content-Location
-                    // 与有效请求 URI 一致时可作为该资源的表示落盘，后续 GET 复用
-                    // （http-cache goal M3 post-patch 语料：200 + `private, max-age=1000`
-                    // + `Content-Location: ""`）。失效先于存储：本响应自身按 §3 可存性
-                    // 落盘，不被自己的失效抹除。
-                    if response.is_success() && content_location_matches_target(&url, response) {
-                        cache.put_with_headers(&url, &request_headers, response);
-                    }
+                    apply_unsafe_response_to_cache(
+                        &mut cache.lock().expect("HTTP cache lock"),
+                        &url,
+                        &request_headers,
+                        response,
+                    );
                 }
             }
             let bytes = result.as_ref().map(|response| response.body.len() as u64).unwrap_or(0);
@@ -788,7 +782,41 @@ fn content_location_matches_target(request_url: &str, response: &HttpResponse) -
     base.join(content_location).is_ok_and(|target| target == request_url)
 }
 
-fn request_cache_mode(headers: &[(String, String)]) -> Option<CacheMode> {
+/// unsafe 请求成功响应的缓存落账（失效 + POST/PATCH `Content-Location` 表示
+/// 存储）——loader HTTP 直发臂与 runner http-cache 端点包裹器（M3 语料导入，
+/// DC-3 单实现）共用同一编排。
+///
+/// https://www.rfc-editor.org/rfc/rfc9111#section-4.4
+pub fn apply_unsafe_response_to_cache(
+    cache: &mut crate::HttpCache,
+    request_url: &str,
+    request_headers: &[(String, String)],
+    response: &crate::HttpResponse,
+) {
+    if !(response.is_success() || response.is_redirect()) {
+        return;
+    }
+    // RFC 9111 §4.4——non-error（2xx|3xx）响应使目标 URI 缓存失效（含
+    // 最终 URL 与同源 Location/Content-Location 目标，见
+    // `unsafe_invalidation_targets`）。
+    for target in unsafe_invalidation_targets(request_url, response) {
+        cache.invalidate(&target);
+    }
+    // RFC 9110 §9.3.3 / RFC 9111 §4——POST/PATCH 响应仅在 Content-Location
+    // 与有效请求 URI 一致时可作为该资源的表示落盘，后续 GET 复用
+    // （http-cache goal M3 post-patch 语料：200 + `private, max-age=1000`
+    // + `Content-Location: ""`）。失效先于存储：本响应自身按 §3 可存性
+    // 落盘，不被自己的失效抹除。
+    if response.is_success() && content_location_matches_target(request_url, response) {
+        cache.put_with_headers(request_url, request_headers, response);
+    }
+}
+
+/// 请求头 Cache-Control 启发式模式推导（fetch spec §4.6——`default` 态下
+/// 请求 CC 的 only-if-cached/no-store/no-cache 指示模式）。pub：runner
+/// http-cache 端点包裹器（`wpt_cache_py_wrapped_handler`）镜像 loader
+/// `submit` 的同一推导（http-cache goal M3 语料导入——DC-3 单实现）。
+pub fn request_cache_mode(headers: &[(String, String)]) -> Option<CacheMode> {
     let value = headers
         .iter()
         .find(|(name, _)| name.eq_ignore_ascii_case("cache-control"))?
