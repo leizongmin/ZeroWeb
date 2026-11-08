@@ -18,8 +18,10 @@
 | 簇 | 键数 | 链 × markup | got 特征 |
 |---|---:|---|---|
 | **F4 ilb corruption** | **9** | `insertlinebreak>inserttext(d)>inserttext(e)` 5 + `…>inserttext(f)` 3 + `…>inserttext(c)>inserttext(d)>inserttext(e)` 1 | img 变体幻影 `<b><i><img src="/img…` 4 + `<s></s>` 空壳 2 + 纯文本重复（`abc<br>dec…` / `<br>de<div>…`）3 |
-| **F7 delete-merge-div** | **6** | `delete>inserttext(g)>inserttext(h)` 全在 ?9001-last：flex span 2（裸/`<b>` 壳）+ grid span 2（裸/`<b>` 壳）+ div 跨块 `<b>` 壳 2 | 合并后 typed 段重复/错位（`<div>abc<br>defabc…` 形）——flex/grid 容器与 div 跨块合并同基本面 |
-| **F7 ip-placeholder** | **4** | `swcss>delete>insertparagraph>inserttext` 2 + `swcss>insertparagraph>inserttext` 2 × `<div><b>[abc]</b></div>` / `<div>abc<b>[def]</b></div>` 双形 | 块内置换/尾随空块形 |
+| **F7 delete-merge-div** | **6** | `delete>inserttext(g)>inserttext(h)` 全在 ?9001-last：flex span 2（裸/`<b>` 壳）+ grid span 2（裸/`<b>` 壳）+ div 跨块 `<b>` 壳 2 | 合并后尾残 `<br>`（`exp <div>abc</div><div><b>d</b></div> got <div>abc</div><div><b>d</b><br></div>`）——跨块 merge 尾清理单域；flex/grid 容器与 div 跨块同基本面 |
+| **F7 ip-placeholder** | **4** | `swcss>delete>insertparagraph>inserttext` 2 + `swcss>insertparagraph>inserttext` 2 × `<div><b>[abc]</b></div>` / `<div>abc<b>[def]</b></div>` 双形 | `<div><br></div><div><b>a</b><br></div>` 置换形——占位 br 消费/置换语义单域 |
+| F7 host-div-wrap | 1 | `swcss>delete>inserttext(a)` | exp `<b>a</b>` got `<div><b>a</b></div>`（宿主 div 裹壳残留） |
+| F7 trailing-empty-p | 1 | `forwarddelete>inserttext(d)` × `<p>abc[]<br> </p> <p><br></p>` | exp `<p>abcd</p>` got `<p>abcd</p> <p><br></p>` |
 | F6b handoff（backlog） | 4 | `delete>inserttext(a)` × `<font size=2><sub>` / `<sub><font size=3>` 双形双位 | 幽灵 `<sub>a</sub>` 外溢尾壳（`…</font><sub>a</sub>baz`）——N1/N2/N4/N5 引擎产出形 vs 语料期望形分歧维持 |
 | F6a color-case | 2 | `delete>inserttext(a)` × 蓝色 font 壳 | exp `#0000ff` got `#0000FF` 大小写归一缺失 |
 | F1' fontsize(4) 残 | 1 | `swcss>fontsize(4)>insertText(a)` × `<font size=7>{}<br></font>` | 他机制（非 shell carry 域），与 F7/F4 同窗评估 |
@@ -42,10 +44,11 @@
 
 ## ⑤ 刀建议（DC-4 降序）
 
-- **F4 ilb 9**：got 形两分——① 文本重复/错位（`abc<br>dec` = 首字符 dup +
-  尾块丢失，7 键含 img/s 变体）② 幻影片段（`<b><i><img`、`<s></s>`，2 键）。
-  链形统一为 ilb 后多步 typing，与 F1'-B（swcss typing 拆壳）不同域（此处无
-  swcss 前缀），病灶在 insertlinebreak 应用路径的壳/块边界。
+- **F4 ilb 9**：got 形一致候选（文本重复 `dec`/`cdec` + 幻影片段
+  `<b><i><img`/`<s></s>` + `<br>` 前置错位）——链形统一为 ilb 后多步 typing，
+  与 F1'-B（swcss typing 拆壳）不同域（此处无 swcss 前缀），病灶在
+  insertlinebreak 应用路径的壳/块边界（typing 快照回写/重复发射域），
+  单一机制首刀候选。
 - **F7 delete-merge-div 6**：链形统一 `delete>inserttext(g)>inserttext(h)` 双步
   typing；markup 全带 flex/grid 容器或 div 跨块 + inline 壳。与 ④ 刀同域的
   跨块合并 caret 位（块级伴随物=flex/grid span、div 边界）——先对照 ④ 刀
