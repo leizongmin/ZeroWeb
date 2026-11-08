@@ -415,7 +415,7 @@ impl ResourceLoader {
         } else {
             request.cache_mode
         };
-        if matches!(mode, CacheMode::NoStore | CacheMode::OnlyIfCached) || !response.is_success() {
+        if matches!(mode, CacheMode::NoStore | CacheMode::OnlyIfCached) || !storeable_response_shape(response) {
             return false;
         }
         let partition = if request.partition == "default" {
@@ -478,6 +478,7 @@ impl ResourceLoader {
         }
         let cache = self.cache_for_partition(&partition);
         let url = request.url.clone();
+        let request_headers = request.headers.clone();
         let event_request = ResourceRequest::get(url.clone(), priority)
             .with_partition(partition)
             .with_destination(destination);
@@ -503,10 +504,21 @@ impl ResourceLoader {
                     let mut store = jar.lock().expect("shared cookie store lock");
                     store_set_cookie_headers(&mut store, &url, &response.headers);
                 }
-                if response.is_success() {
+                // RFC 9111 §4.4——non-error（2xx|3xx）响应使目标 URI 缓存失效（含
+                // 最终 URL 与同源 Location/Content-Location 目标，见
+                // `unsafe_invalidation_targets`）。
+                if response.is_success() || response.is_redirect() {
                     let mut cache = cache.lock().expect("HTTP cache lock");
                     for target in unsafe_invalidation_targets(&url, response) {
                         cache.invalidate(&target);
+                    }
+                    // RFC 9110 §9.3.3 / RFC 9111 §4——POST/PATCH 响应仅在 Content-Location
+                    // 与有效请求 URI 一致时可作为该资源的表示落盘，后续 GET 复用
+                    // （http-cache goal M3 post-patch 语料：200 + `private, max-age=1000`
+                    // + `Content-Location: ""`）。失效先于存储：本响应自身按 §3 可存性
+                    // 落盘，不被自己的失效抹除。
+                    if response.is_success() && content_location_matches_target(&url, response) {
+                        cache.put_with_headers(&url, &request_headers, response);
                     }
                 }
             }
@@ -622,7 +634,7 @@ impl ResourceLoader {
                         let mut store = jar.lock().expect("shared cookie store lock");
                         store_set_cookie_headers(&mut store, &url, &response.headers);
                     }
-                    if may_store && response.is_success() {
+                    if may_store && storeable_response_shape(&response) {
                         let _ =
                             cache
                                 .lock()
@@ -753,6 +765,27 @@ where
         }
     });
     out
+}
+
+/// GET 通道的响应落盘形态门（§3 可存性本体由 [`crate::cache_policy::storable_mode`]
+/// 统一裁决——http-cache goal M3：status 语料 fresh 4xx/5xx/未知码腿依赖非 2xx 落盘）。
+/// 3xx 复用需重定向链语义支撑（FIXME(http-cache): 重定向缓存）、206 需 Range 支持
+/// （RFC 9111 §3.1——不支持 Range 的缓存 MUST NOT 存部分内容），二者不落盘。
+fn storeable_response_shape(response: &HttpResponse) -> bool {
+    !(300..=399).contains(&response.status_code) && response.status_code != 206
+}
+
+/// POST/PATCH 响应的 `Content-Location` 是否与有效请求 URI 一致（RFC 9110 §9.3.3）；
+/// 头缺失或 URL 不可解析按不一致处理。空引用（`""`）join 到响应最终 URL 自身。
+fn content_location_matches_target(request_url: &str, response: &HttpResponse) -> bool {
+    let Some(content_location) = response.header("content-location") else {
+        return false;
+    };
+    let Ok(request_url) = url::Url::parse(request_url) else {
+        return false;
+    };
+    let base = url::Url::parse(&response.url).unwrap_or_else(|_| request_url.clone());
+    base.join(content_location).is_ok_and(|target| target == request_url)
 }
 
 fn request_cache_mode(headers: &[(String, String)]) -> Option<CacheMode> {
@@ -1267,6 +1300,65 @@ mod tests {
         assert!(matches!(
             loader.lookup_cache(&request.clone().with_cache_mode(CacheMode::Reload)),
             CacheLookup::Miss
+        ));
+    }
+
+    #[test]
+    fn storeable_shape_rejects_redirects_and_partial_content() {
+        // 语料 status 腿（fresh 4xx/5xx）依赖非 2xx 落盘；仅 3xx/206 形态排除。
+        assert!(storeable_response_shape(&fresh_response("https://a.test/x")));
+        assert!(storeable_response_shape(&{
+            let mut r = fresh_response("https://a.test/x");
+            r.status_code = 404;
+            r
+        }));
+        assert!(!storeable_response_shape(&{
+            let mut r = fresh_response("https://a.test/x");
+            r.status_code = 302;
+            r
+        }));
+        assert!(!storeable_response_shape(&{
+            let mut r = fresh_response("https://a.test/x");
+            r.status_code = 206;
+            r
+        }));
+    }
+
+    #[test]
+    fn content_location_gate_matches_only_effective_request_uri() {
+        // 语料 post-patch 腿：`Content-Location: ""` 空引用 join 到最终 URL 自身。
+        let patch = |url: &str, location: Option<&str>| {
+            let mut r = fresh_response(url);
+            r.status_code = 200;
+            r.headers = location
+                .map(|value| vec![("Content-Location".into(), value.into())])
+                .unwrap_or_default();
+            r
+        };
+        assert!(content_location_matches_target(
+            "https://a.test/item",
+            &patch("https://a.test/item", Some(""))
+        ));
+        assert!(content_location_matches_target(
+            "https://a.test/item",
+            &patch("https://a.test/item", Some("/item"))
+        ));
+        assert!(content_location_matches_target(
+            "https://a.test/item",
+            &patch("https://a.test/other", Some("../item"))
+        ));
+        // 目标不一致 / 头缺失 / 请求 URL 不可解析 → 不落盘。
+        assert!(!content_location_matches_target(
+            "https://a.test/item",
+            &patch("https://a.test/item", Some("/elsewhere"))
+        ));
+        assert!(!content_location_matches_target(
+            "https://a.test/item",
+            &patch("https://a.test/item", None)
+        ));
+        assert!(!content_location_matches_target(
+            "not a url",
+            &patch("https://a.test/item", Some(""))
         ));
     }
 }

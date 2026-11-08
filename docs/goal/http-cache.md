@@ -1,7 +1,7 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.3
-**日期**: 2026-11-08（M2 完成——wire 传播 + B 簇收敛，族 102/102 + 全窗口零回归；下一步 M3 corpus 批次挂 46 号）
+**版本**: v1.4
+**日期**: 2026-11-08（M3 net 层语义前置完成——RFC 9111 五缺口收口 + 全窗口零回归；corpus 批次仍挂 46 号）
 **状态**: Active——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现），DC-4 余 corpus 门挂 46 号（划界内），下一步 M3 corpus 批次
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
@@ -108,10 +108,15 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   GET 兜底门）经 trickle.py POST 端点臂修复（v3 fixture 先例，账面 3P/3F
   持平）；全窗口 JSON-vs-JSON 真 P→F=0、F→P 104、T 零变化（[M2 证据档]
   (http-cache/evidence/2026-11-08-m2-wire-propagation.md)）。
-- **M3**：102/102 复测 ✅（本账即复测）；v2/v3 零回归 A/B ✅（对 v3 终账
-  13,275P 真 P→F=0，v2 链传递覆盖）；**corpus 批次挂 46 号**——
-  fetch/http-cache 20 文件未入窗（wpt-data 无目录，py stash 端点前置），
-  批次排期对齐 46 号 M3 框架交付（DC-4 corpus 门余项）。
+- **M3**：102/102 复测 ✅（本账即复测）；**net 层语义前置 ✅**（2026-11-08
+  ——RFC 9111 五缺口收口：§3 可存条件重写 + §4.2.2 启发式新鲜度 +
+  No-Vary-Search 缓存键（自描述键，语料优先语义带 FIXME）+ §3.2 304
+  合并泛化 + §4.3.4 更新独立于 304 可存 + §4.4 失效门 2xx|3xx 与
+  POST/PATCH 存储路径；zero-net lib 530P/0F，multiset 零回归 NEW==M2
+  全等、对 v3 终账真 P→F=0，[M3 证据档]
+  (http-cache/evidence/2026-11-08-m3-net-semantics.md)）；**corpus 批次
+  挂 46 号**——fetch/http-cache 20 文件未入窗（wpt-data 无目录，py
+  stash 端点前置），批次排期对齐 46 号 M3 框架交付（DC-4 corpus 门余项）。
 - **M4**：零回归复测收口（DC-4）——本地窗已绿，余头条不回落核对（weekly
   cron 面）+ corpus 批次入账后终验。
 
