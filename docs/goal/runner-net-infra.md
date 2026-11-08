@@ -1,9 +1,12 @@
 # runner 网络 fixture 基建 — TLS/wss 端点 + wptserve py 端点 shim 框架化
 
-**版本**: v1.0
-**日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）
-**状态**: Active——立项，M0 未启动
+**版本**: v1.1
+**日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）；
+2026-11-08 M0 双审计完成（DC-1 ✅：wss 审计 + py 普查档落 evidence/，DC-4
+数值门落定回填本文）
+**状态**: Active——M0 ✅，M1（TLS 端点 fixture）未启动
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
+**控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
 
 ## 基线事实（2026-11-04 核实）
@@ -58,6 +61,22 @@
 落门（wss 面 + py 目录两池分列）；框架迁移案逐字节等价为硬门，不设
 通过率门。
 
+**DC-4 数值门落定（2026-11-08 M0 双审计）**：
+
+- **wss 池**：102 wss 变体案（41 `.html` + 61 `.any.js`，`// META: variant=`
+  面经普查显影）covered > 0，批次门 = 实跑子测试分母 × 98.5%；h2 变体
+  92 实例维持 `.h2.` 排除口径；mixed-content.https.any.js（引擎
+  mixed-content 缺口并记）与 cookies/third-party-cookie-accepted.https.html
+  （语料 helper 缺口并记）不入门、缺口如实落账。审计见
+  [wss 审计档](runner-net-infra/evidence/2026-11-08-m0-wss-audit.md)。
+- **py 池**：解锁 = 普查 P-A 三目录池（fetch/http-cache 19 案 +
+  stale-while-revalidate 7 案 + fetch/origin 1 案，den 606）+ P-B 判据
+  端点族（referrer/preload）框架承接面落地（注册面 + 单测各 ≥1 例，
+  47 号/39 号控制面互指可消费）；下游实导入数归各 goal 账。普查见
+  [py 普查档](runner-net-infra/evidence/2026-11-08-m0-py-endpoint-census.md)。
+- **等价硬门**：迁移案（既有 153 臂）逐字节等价 100%——A/B changed 空集
+  （wss 池新增案除外）。
+
 ## 划界
 
 - **不碰引擎网络栈语义**：default_net_ws_host/fetch_bridge 真栈行为
@@ -72,7 +91,11 @@
 
 ## 里程碑
 
-- **M0**：双审计 + 数值门（DC-1）。
+- **M0 ✅**（2026-11-08）：双审计 + 数值门（DC-1）——wss 依赖面 102 变体
+  案实测（41 html + 61 any.js META 注释面）+ scheme 翻转设计（D1-D6）；
+  py 端点 153 臂现状普查 + 逐下游分类（47 号三池/39 号判据族/策略面排除/
+  worker 面照旧）。证据落
+  [evidence/](runner-net-infra/evidence/2026-11-08-m0-wss-audit.md)。
 - **M1**：TLS 端点 fixture + wss 连通（DC-2 前半）。
 - **M2**：scheme/端点寻址接线（DC-2 收口）。
 - **M3**：py 路由框架 + v2 先例迁移 + 补丁收编（DC-3）。
