@@ -298,10 +298,19 @@ def load_zw_results(path: Path, env_markers: list[str]) -> dict[str, dict]:
     返回 {规范路径: {passes, fails, neutral, total, full_pass, suspicious,
     env_fails, env_limited}}。子测试条目形状非法直接报错（runner 是自家
     工具，畸形输出意味着 runner 侧 bug，静默计 Fail 会污染 gap 清单）。
+    空文件（套件崩在产出任何 JSON 前，shell 重定向已建文件）按未跑同态
+    返回空集并告警——与分片「该面记 0」容错契约一致；非空畸形仍硬错。
     """
     try:
-        cases = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, UnicodeDecodeError) as error:
+        raw = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as error:
+        raise ToolError(f"读取 ZeroWeb 结果失败 {path}: {error}") from error
+    if not raw.strip():
+        print(f"警告: {path} 为空——套件未产出结果，按未跑同态记账", file=sys.stderr)
+        return {}
+    try:
+        cases = json.loads(raw)
+    except json.JSONDecodeError as error:
         raise ToolError(f"读取 ZeroWeb 结果失败 {path}: {error}") from error
     if not isinstance(cases, list):
         raise ToolError(f"{path} 顶层不是数组——确认是 zero-wpt-runner --json 输出")
@@ -1374,6 +1383,12 @@ def run_self_test() -> None:
             raise AssertionError("畸形子测试未被拦截")
         except ToolError:
             pass
+
+    # 加载侧：空文件（套件崩在产出 JSON 前）按未跑同态返回空集，不报错
+    with tempfile.TemporaryDirectory() as tmp:
+        blank = Path(tmp) / "blank.json"
+        blank.write_text("")
+        assert load_zw_results(blank, DEFAULT_ENV_MARKERS) == {}
 
     # 空环境标记在 gap 入口被拒绝（空子串会命中一切失败信息）
     with tempfile.TemporaryDirectory() as tmp:
