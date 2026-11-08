@@ -850,7 +850,30 @@ impl InlineFormattingContext {
                             };
                             current_line_had_oof_anchor = false;
                             // 新行重新计算浮动偏移
-                            let (new_left, _) = self.effective_content_area(current_y, run.box_height());
+                            let (mut new_left, new_avail) =
+                                self.effective_content_area(current_y, run.box_height());
+                            // R5469（CSS2 §9.5 rule 8「shortened line box too small to
+                            // contain any further content → shifted downward until it
+                            // either fits or there are no more floats present」）：fit 门
+                            // 断行开出的新行首词放不下 float 缩短后的新带时同 R5240 下绕——
+                            // R5240 只在 loop-head 空行臂生效，fit 门 fall-through 开的新行
+                            // 不经 loop-head 重评，行首词原地强放缩短带溢出（c5525-fltmrgn
+                            // -000 test3：float 左 margin-top+left 30/30 时 float 带底 75，
+                            // y60 新行带 15px 强放 30px 词溢出，chromium 下绕带底满宽整行，
+                            // p 高 90→105）。与 loop-head R5240 共用 kill-switch
+                            // `ZW_FIRST_WORD_FLOAT_FIT=0`。
+                            if runtime_flags::first_word_float_fit()
+                                && !hang_trailing_space
+                                && wrap_allowed
+                                && !atomic_gl_first_word
+                                && new_avail < word_width
+                                && !self.float_exclusions.is_empty()
+                            {
+                                let (new_y, lo, _) =
+                                    self.shift_new_line_below_floats(current_y, run.box_height(), word_width);
+                                current_y = new_y;
+                                new_left = lo;
+                            }
                             current_x = new_left;
                             lead_gap = 0.0; // 行首词无前导 gap
                         }

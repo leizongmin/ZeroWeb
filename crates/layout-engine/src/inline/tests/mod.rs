@@ -49,6 +49,8 @@ mod r5453_clamp_ellipsis_container_font_tests;
 
 /// R5454：clamp justify realign ellipsis 计入分配项（gap_count = kept_count）+ 线尾旗标，driving block-ellipsis-032 box3。
 mod r5454_clamp_justify_ellipsis_item_tests;
+/// R5469：fit 门断行新行首词放不下 float 缩短带下绕（CSS2 §9.5 rule 8，c5525-fltmrgn-000）。
+mod r5469_postbreak_word_float_fit_probe;
 mod text_align;
 mod text_indent;
 mod vertical_bidi;
