@@ -68,7 +68,7 @@
 
 ### 残余批判读
 
-batch-f1p-b-residual-gate.sh 21:53 发射 → **21:54:23 ALL-DONE 全绿**：白名单定长复验 8/0（每签名=2）；iol **1761 rows 恒一**（F 2 伪影恒）VERDICT OK、iul **2065 rows 恒一**（F 4 恒）VERDICT OK；enginelib **3817P/6F** 六红名册逐名恒一（P +2 系基座新增测试，非本刀面）；battery 七腿 F=0 T=0（420/880/1104/552/3456/2607/1455）。
+batch-f1p-b-residual-gate.sh 21:38:41 发射（log 头 pid=3838206 实证；初稿「21:53」系时间笔误，账本前置核账条同勘误）→ **21:54:23 ALL-DONE 全绿**：白名单定长复验 8/0（每签名=2）；iol **1761 rows 恒一**（F 2 伪影恒）VERDICT OK、iul **2065 rows 恒一**（F 4 恒）VERDICT OK；enginelib **3817P/6F** 六红名册逐名恒一（P +2 系基座新增测试，非本刀面）；battery 七腿 F=0 T=0（420/880/1104/552/3456/2607/1455）。
 
 **F1'-B 收口 VERDICT OK**：刀体三 shim（part01 刀体 + part06 swcss 清除 + part01d 不变）+ 探针 zz-probe-f1b 七案 + 全门禁链（主批五段 + 残余批四段）。
 
