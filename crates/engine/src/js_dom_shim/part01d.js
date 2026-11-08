@@ -1906,6 +1906,23 @@
     return snap;
   };
 
+  // —— 页面脚本选区变更 override 清除导出（part06 Selection shim _zwSync 消费）
+  // ——Chrome typing style + spec overrides 随程序化选区设置清空（multitest
+  // qV-before 默认值实证：前一子测 backcolor #00FFFF 执行后次案 qV-before 恒
+  // "rgba(0, 0, 0, 0)"）。F1' styled 壳重建刀（2026-11-08）根因面：跨子测陈旧
+  // override 经 delete take/putRaw + reanchor（preservesOverrides 语义）保鲜，
+  // insertText 快照读命中 → typed 段以 monospace/7/red/cyan 陈旧壳重裹
+  // （mt 25 键 F1'-A 族）。清点挂 _zwSync（Selection 公共 API 唯一通道）；
+  // 内部路径不经此（typed caret 走 _ranges 直写、delete 走 reanchor+putRaw、
+  // 结构命令 preservesOverrides take/put 包裹尾回写恢复）。stored range 置
+  // null → 下一次读走既有 staleness reset 重锚当前选区。
+  // https://w3c.github.io/selection-api/ （程序化选区变更语义）
+  globalThis.__zw_ce_value_overrides_clear = function () {
+    _zwVaStateOverrides = {};
+    _zwVaValueOverrides = {};
+    _zwVaStoredRange = null;
+  };
+
   // —— typing 值 override 重放导出（part01 __zw_ce_inserttext_mutate 变异尾
   // 消费）——vendored insertText action 的 restoreStatesAndValues（:4458）：
   // 插入后对覆盖插入段的 active range 逐条值 override 等值比较（areEquivalent

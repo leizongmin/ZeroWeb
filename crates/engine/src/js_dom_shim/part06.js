@@ -11376,6 +11376,13 @@
       // 结构臂 presLink/presCarry）。
       globalThis.__zwTypingLink = null;
       globalThis.__zwTypingLinkCarry = null;
+      // F1' styled 壳重建刀（2026-11-08）：值/状态 override 同面清除——Chrome
+      // 程序化选区变更清 typing style + overrides（multitest qV-before 默认值
+      // 实证）。内部路径不经 _zwSync（typed caret _ranges 直写 / delete
+      // reanchor+putRaw / 结构命令 preservesOverrides 包裹尾回写恢复）。
+      if (typeof globalThis.__zw_ce_value_overrides_clear === 'function') {
+        globalThis.__zw_ce_value_overrides_clear();
+      }
       this._anchorNode = aNode; this._anchorOffset = aOff;
       this._focusNode = fNode; this._focusOffset = fOff;
       // editing-compat D3（2026-10-30）：补偿节点（plain，无 sel/handle/写路径身份印）
