@@ -2,20 +2,22 @@
 
 ## 状态头（2026-11-08）
 
-- **当前状态**：M2 完成（DC-2 ✅）；M3 迁移前基线落账 + 组成归因完成——
-  基线 = **13,582P/1,337F/8T（14,927 subtest，含 wss 360P/101 键）**，
-  provenance 三重核实（树 411e862bb 代码态 + rustfmt 机械面 / run 内新建
-  二进制 / 域级对账既有锚全等）。组成三项归因（老代码同语料重跑实验）：
-  分母 −129 = 语料漂移（老代码重跑分母逐 subtest 同 14,567）；fetch 域
-  +72P/−72F = M4 窗口后 http-cache M1-b + CacheMode M1-a 净效应（零 P→F
-  零新 T）；wss +360 = M2 接线。见
-  [基线归因档](evidence/2026-11-08-m3-baseline-reattribution.md)。
+- **当前状态**：M3 进行中——基线落账 + 组成归因完成（基线 =
+  **13,582P/1,337F/8T（14,927 subtest，含 wss 360P/101 键）**，
+  [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)）；
+  **切片一完成**：py 路由底座模块 `testharness_py_routes` 迁出
+  （84 条臂整体迁 testharness.rs → PyEndpointCtx + dispatch，
+  testharness.rs 19,236→15,630 行），全量 A/B 逐 subtest multiset
+  空集 + 七域分布全等
+  （[切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md)）。
 - **卡点**：无。
-- **下一步**：M3 py 路由框架开工（py 普查档 §三蓝图）：新建
-  testharness_py_routes 模块（EndpointCtx stash 表 + 保序注册表 +
-  dispatch 骨架），按族分批迁 84 条基础臂（testharness.rs 7379-11007 段）
-  + 四 fetcher 闭包臂，每批全量 A/B 对照基线日志 changed 空集；随后
-  S12 补丁收编 + update 脚本缺口清偿（语料 pin 形态核对 → 销账或补条目）。
+- **下一步**：切片二起注册表化（py 普查档 §三蓝图）：`PyRoute`
+  保序注册表（PyRouteMatch 谓词 Exact/Suffix/DirSuffix/Custom +
+  handle 返 Option<Result> None=落穿），首批迁 12 条全等匹配臂
+  （dispatch 头部 is_empty→image-and-stash 段），迁移边界前缀推进
+  （注册表在前 + 残链在后），每批全量 A/B 对照基线 multiset 空集；
+  四 fetcher 闭包臂随后同框架分表迁移；S12 补丁收编 + update 脚本
+  缺口清偿随批次落。
 
 ## 里程碑状态表
 
@@ -24,7 +26,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 未启动 | 蓝图 py 普查档 §三 |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）

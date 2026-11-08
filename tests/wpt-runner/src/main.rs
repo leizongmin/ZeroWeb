@@ -25,6 +25,7 @@ mod testharness_fileapi;
 mod testharness_html_semantics;
 mod testharness_page_state;
 mod testharness_pointerlock;
+mod testharness_py_routes;
 mod testharness_svg;
 mod testharness_wasm_core;
 mod testharness_webcrypto;
