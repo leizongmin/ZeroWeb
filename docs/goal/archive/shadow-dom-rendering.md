@@ -151,7 +151,16 @@ testharness 渲染耦合补充池 10 案（42 号 skip 规则排除归 45 号—
 对端移交（04fb3e133 提交在册）：s331 closedby-complex 18F 勘根 = R3 动态
 slot 分配缺位（`shadow.rs` 物化注释既有——slotted light 子树无布局盒，
 gBCR 塌 (0,0) 命中测试不可达），归 M3 变异应用臂 `resolve_slots` 挂接批
-一并验收，不另开缺口。
+一并验收，不另开缺口。**M4 验收回执**：净态重跑 18F 原样，验收未通过，
+勘根改判——非 R3 臂缺口（臂已落地验证），归点击 hit-test/布局几何查询
+通道（[closeout §8](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)，
+B6 几何命中簇同口径）。第二会话独立复核同判并钉机制层：td_debug 实证
+指针解析对 shadow/flattened 落点铸出**扁平父链 light 选择器**（非 zwsh
+命名空间）引擎解析不着，而帧对齐后 shadow dialog rect 表几何精确
+（gBCR `50,100,200,100`）——几何数据在、寻址通道断，收敛归 selector
+身份/指针寻址面；修复触 shim selector 铸造路径（共享面，selector
+identity A/B 广谱），专项切片接。见
+[独立复核账 §5](shadow-dom-rendering/evidence/2026-11-08-m4-reclose-account.md)。
 
 ## 划界
 
@@ -179,7 +188,9 @@ gBCR 塌 (0,0) 命中测试不可达），归 M3 变异应用臂 `resolve_slots`
   ——**✅ 2026-11-08 完成**（R3 变异应用臂 + R4 shadow Text 两臂 + R3b manual
   通道 + B6 通道 + 追加轮 append sel 通道 006 翻绿；evidence 见 M3 各片）。
 - **M4**：复测收口（DC-4）——**✅ 2026-11-08 完成**
-  （[evidence](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)）。
+  （[evidence](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)；
+  第二会话独立复核同账双源：
+  [复核账](shadow-dom-rendering/evidence/2026-11-08-m4-reclose-account.md)）。
 
 ## 依赖约束（run-rules §9）
 
