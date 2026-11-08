@@ -5,17 +5,19 @@
 - **当前状态**：M3 进行中——基线落账 + 组成归因完成（基线 =
   **13,582P/1,337F/8T（14,927 subtest，含 wss 360P/101 键）**，
   [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)）；
-  **切片一完成**：py 路由底座模块 `testharness_py_routes` 迁出
-  （84 条臂整体迁 testharness.rs → PyEndpointCtx + dispatch，
-  testharness.rs 19,236→15,630 行），全量 A/B 逐 subtest multiset
-  空集 + 七域分布全等
-  （[切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md)）。
+  切片一完成（py 路由底座模块迁出，testharness.rs 19,236→15,630 行，
+  [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md)）；
+  **切片二完成**：`PyRoute` 保序注册表落地（PyRouteMatch::Exact +
+  PyRouteHandler None=落穿语义 + py_routes() 表），链头 12 条全等匹配
+  臂迁入（站点根→image-and-stash 段），机械等价（12 臂体与 HEAD 逐行
+  零差）+ 全量 A/B multiset 空集 + 七域全等
+  （[切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md)）。
 - **卡点**：无。
-- **下一步**：切片二起注册表化（py 普查档 §三蓝图）：`PyRoute`
-  保序注册表（PyRouteMatch 谓词 Exact/Suffix/DirSuffix/Custom +
-  handle 返 Option<Result> None=落穿），首批迁 12 条全等匹配臂
-  （dispatch 头部 is_empty→image-and-stash 段），迁移边界前缀推进
-  （注册表在前 + 残链在后），每批全量 A/B 对照基线 multiset 空集；
+- **下一步**：切片三 xhr 族臂迁入（DirSuffix 谓词引入——目录前缀 +
+  文件名后缀；纯前缀臂如 `starts_with("xhr/")` 需 Prefix 或 Custom
+  变体，按臂条件定），迁移边界前缀推进（注册表在前 + 残链在后），
+  每批全量 A/B 对照基线 multiset 空集；其后 eventsource/fetch 族 →
+  inspect-headers/方法豁免（Custom 谓词）→ 尾段收口（84 臂全量入表）；
   四 fetcher 闭包臂随后同框架分表迁移；S12 补丁收编 + update 脚本
   缺口清偿随批次落。
 
@@ -26,7 +28,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md) |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
