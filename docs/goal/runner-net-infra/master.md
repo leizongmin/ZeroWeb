@@ -137,3 +137,11 @@
   （m3s5-split-ab-222458 vs 基线锚）验证态。另：六文件 170 行
   needless_borrow 清理在飞（未暂存，他实例工作面），他轮勿碰；其
   收尾后切片六 fetcher 闭包三分表迁移再认领开工。
+- 2026-11-08 22:47 合流收口：push 前 pull --rebase 与上游 7f1c9f717
+  （切片四 40 臂 69 处机械 lint + android fetch 臂 cache_mode）冲突
+  一处（py_routes 单文件 UU）——取本流迁移版后，rebase 零后续冲突；
+  上游 lint 类（needless_return/needless_borrow）在本树余 90 处
+  （= 上游修过的 40 臂态 + 本流 21 新臂同形态），以 clippy --fix 同
+  手法收敛（170 行，两类机械变换），clippy 零告警 + fmt 净 + 单测
+  298P/0F 持平，随收敛提交落库。上游 s347（08f55becb，testharness.rs
+  内联 module）与本流唯一交叉行 :5934 无冲突。

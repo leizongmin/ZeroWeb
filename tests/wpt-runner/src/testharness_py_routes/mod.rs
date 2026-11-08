@@ -666,7 +666,7 @@ pub(crate) fn dispatch(
             // 追加（重复 content-type 头在 CT 解析侧首项胜出，保留单头不变量）；
             // 其余头（cors-top.txt.headers ACAO `*` 等）absent 时追加——同名去重
             // 保首项（pipe 头优先，与上方 default_headers 并存序同向）。
-            for (sidecar_name, sidecar_value) in wpt_sidecar_headers(&root, clean) {
+            for (sidecar_name, sidecar_value) in wpt_sidecar_headers(root, clean) {
                 if sidecar_name.eq_ignore_ascii_case("content-type") {
                     headers.retain(|(n, _)| !n.eq_ignore_ascii_case("content-type"));
                     headers.push((sidecar_name, sidecar_value));
@@ -759,7 +759,7 @@ pub(crate) fn dispatch(
                         let substituted = wpt_apply_get_query_substitutions(html, query);
                         let inlined = inline_local_scripts(
                             &substituted,
-                            &root,
+                            root,
                             clean,
                             sniff_document_encoding(&substituted).as_deref(),
                         );

@@ -51,13 +51,13 @@ pub(crate) fn route_common_redirect(
     let mut headers = Vec::new();
     headers.push(("location".into(), final_url));
     wpt_add_fetch_metadata(&mut headers, req, 302);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 302,
         status_text: "Found".to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// dom/nodes/encoding.py 臂——注册表切片五迁入，体逐字节保持。
@@ -84,13 +84,13 @@ pub(crate) fn route_dom_encoding(
     let body = format!("<!doctype html><meta charset=\"{label}\">");
     let mut headers = Vec::new();
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// cache-storage vary.py 臂——注册表切片五迁入，体逐字节保持。
@@ -134,13 +134,13 @@ pub(crate) fn route_sw_vary(
         headers.push(("vary".into(), vary));
     }
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "vary response".to_string(),
         body_bytes: Some(b"vary response".to_vec()),
-    }));
+    }))
 }
 
 /// cache-storage fetch-status.py 臂——注册表切片五迁入，体逐字节保持。
@@ -156,13 +156,13 @@ pub(crate) fn route_sw_fetch_status(
         .unwrap_or(200);
     let mut headers = wpt_pipe_headers(query);
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// cors-approved.txt 臂——注册表切片五迁入，体逐字节保持。
@@ -177,13 +177,13 @@ pub(crate) fn route_sw_cors_approved(
         ("content-type".into(), "text/plain".into()),
     ];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "plaintext\n".to_string(),
         body_bytes: Some(b"plaintext\n".to_vec()),
-    }));
+    }))
 }
 
 /// cors-denied.txt 臂——注册表切片五迁入，体逐字节保持。
@@ -195,13 +195,13 @@ pub(crate) fn route_sw_cors_denied(
 ) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
     let mut headers = vec![("content-type".into(), "text/plain".into())];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "Cross-origin request blocked by missing CORS response header\n".to_string(),
         body_bytes: Some(b"Cross-origin request blocked by missing CORS response header\n".to_vec()),
-    }));
+    }))
 }
 
 /// cache-storage redirect.py 臂——注册表切片五迁入，体逐字节保持。
@@ -221,13 +221,13 @@ pub(crate) fn route_sw_cache_redirect(
         "/service-workers/cache-storage/resources/simple.txt".into(),
     ));
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// common/blank.html 臂——注册表切片五迁入，体逐字节保持。
@@ -244,13 +244,13 @@ pub(crate) fn route_blank_html(
     let mut headers = wpt_pipe_headers(query);
     headers.push(("content-type".into(), "text/html".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "<!doctype html>\n<meta charset=\"utf-8\">\n<title>Blank</title>\n".to_string(),
         body_bytes: Some(b"<!doctype html>\n<meta charset=\"utf-8\">\n<title>Blank</title>\n".to_vec()),
-    }));
+    }))
 }
 
 /// websockets/security/check.py 臂——注册表切片五迁入，体逐字节保持。
@@ -272,13 +272,13 @@ pub(crate) fn route_ws_security_check(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.to_string(),
         body_bytes: Some(body.as_bytes().to_vec()),
-    }));
+    }))
 }
 
 /// xmldecl trickle.py 臂——注册表切片五迁入，体逐字节保持。
@@ -300,13 +300,13 @@ pub(crate) fn route_xmldecl_trickle(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/html".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: String::from_utf8_lossy(body).into_owned(),
         body_bytes: Some(body.to_vec()),
-    }));
+    }))
 }
 
 /// load-error-events.py 臂——注册表切片五迁入，体逐字节保持。
@@ -326,11 +326,11 @@ pub(crate) fn route_load_error_events(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/javascript".into()));
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }

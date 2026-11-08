@@ -98,13 +98,13 @@ pub(crate) fn route_xhr_upload(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: content.clone(),
         body_bytes: Some(content.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr form.py 臂——注册表切片三迁入，体逐字节保持。
@@ -176,13 +176,13 @@ pub(crate) fn route_xhr_form(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: content.clone(),
         body_bytes: Some(content.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr echo-content-type.py 臂——注册表切片三迁入，体逐字节保持。
@@ -203,13 +203,13 @@ pub(crate) fn route_xhr_echo_content_type(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: ct.clone(),
         body_bytes: Some(ct.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr access-control-origin-header 臂——注册表切片三迁入，体逐字节保持。
@@ -234,13 +234,13 @@ pub(crate) fn route_xhr_access_control_origin_header(
     headers.push(("access-control-allow-credentials".into(), "true".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
     let body = format!("PASS: Cross-domain access allowed.\nHTTP_ORIGIN: {}", origin);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr over-1-meg.txt 臂——注册表切片三迁入，体逐字节保持。
@@ -256,13 +256,13 @@ pub(crate) fn route_xhr_over_1_meg(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr access-control-basic-allow-star 臂——注册表切片三迁入，体逐字节保持。
@@ -279,13 +279,13 @@ pub(crate) fn route_xhr_basic_allow_star(
     headers.push(("access-control-allow-origin".into(), "*".into()));
     let body = "PASS: Cross-domain access allowed.".to_string();
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr access-control-basic-allow(-no-credentials) 族 臂——注册表切片三迁入，体逐字节保持。
@@ -312,13 +312,13 @@ pub(crate) fn route_xhr_basic_allow(
     }
     let body = "PASS: Cross-domain access allowed.".to_string();
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr redirect-cors 臂——注册表切片三迁入，体逐字节保持。
@@ -372,13 +372,13 @@ pub(crate) fn route_xhr_redirect_cors(
         headers.push(("access-control-allow-headers".into(), allow_header));
     }
     wpt_add_fetch_metadata(&mut headers, req, 302);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 302,
         status_text: wpt_status_text(302).to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// xhr authentication 族谓词——authentication.py 全等 + authN 目录三委托端点。
@@ -503,13 +503,13 @@ pub(crate) fn route_xhr_authentication(
     headers.push(("ses-user".into(), user.clone()));
     let body = format!("{}\n{}", user, pass);
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr image.gif 臂——注册表切片四迁入，体逐字节保持。
@@ -528,13 +528,13 @@ pub(crate) fn route_xhr_image_gif(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "image/gif".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(body),
-    }));
+    }))
 }
 
 /// xhr trickle.py 臂——注册表切片四迁入，体逐字节保持。
@@ -560,13 +560,13 @@ pub(crate) fn route_xhr_trickle(
         headers.push(("content-length".into(), (count * 13).to_string()));
     }
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr top.txt 臂——注册表切片四迁入，体逐字节保持。
@@ -582,13 +582,13 @@ pub(crate) fn route_xhr_top_txt(
     let mut headers = wpt_pipe_headers(query);
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "top\n".to_string(),
         body_bytes: Some(b"top\n".to_vec()),
-    }));
+    }))
 }
 
 /// xhr access-control-basic-put-allow 臂——注册表切片四迁入，体逐字节保持。
@@ -644,13 +644,13 @@ pub(crate) fn route_xhr_basic_put_allow(
         }));
     }
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: format!("Wrong method: {}", req.method),
         body_bytes: Some(format!("Wrong method: {}", req.method).into_bytes()),
-    }));
+    }))
 }
 
 /// xhr reset-token 臂——注册表切片四迁入，体逐字节保持。
@@ -677,13 +677,13 @@ pub(crate) fn route_xhr_reset_token(
     headers.push(("content-type".into(), "text/plain".into()));
     headers.push(("access-control-allow-origin".into(), origin));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "PASS".to_string(),
         body_bytes: Some(b"PASS".to_vec()),
-    }));
+    }))
 }
 
 /// xhr preflight-cache 三联（DirSuffixes） 臂——注册表切片四迁入，体逐字节保持。
@@ -784,13 +784,13 @@ pub(crate) fn route_xhr_preflight_cache(
         stash.insert(token, next_state);
     }
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr preflight-request-*-returns-* 对（DirSuffixes） 臂——注册表切片四迁入，体逐字节保持。
@@ -843,13 +843,13 @@ pub(crate) fn route_xhr_preflight_returns(
         }));
     }
     wpt_add_fetch_metadata(&mut headers, req, 400);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 400,
         status_text: wpt_status_text(400).to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// xhr headers.py 臂——注册表切片四迁入，体逐字节保持。
@@ -878,13 +878,13 @@ pub(crate) fn route_xhr_headers(
         ("date".into(), "Sun, 06 Nov 1994 08:49:37 GMT".into()),
     ];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "TEST".to_string(),
         body_bytes: Some(b"TEST".to_vec()),
-    }));
+    }))
 }
 
 /// xhr chunked.py 臂——注册表切片四迁入，体逐字节保持。
@@ -906,13 +906,13 @@ pub(crate) fn route_xhr_chunked(
         ("content-type".into(), "text/plain".into()),
     ];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.to_string(),
         body_bytes: Some(body.as_bytes().to_vec()),
-    }));
+    }))
 }
 
 /// xhr parse-headers.py 臂——注册表切片四迁入，体逐字节保持。
@@ -933,13 +933,13 @@ pub(crate) fn route_xhr_parse_headers(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("my-custom-header".into(), trimmed.to_string()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// xhr cors-safelisted-response-headers 臂——注册表切片四迁入，体逐字节保持。
@@ -966,13 +966,13 @@ pub(crate) fn route_xhr_safelisted_response_headers(
         ("x-test".into(), "foobar".into()),
     ];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.to_string(),
         body_bytes: Some(body.as_bytes().to_vec()),
-    }));
+    }))
 }
 
 /// xhr cors-safelisted-request-headers 臂——注册表切片四迁入，体逐字节保持。
@@ -1007,13 +1007,13 @@ pub(crate) fn route_xhr_safelisted_request_headers(
         ("content-type".into(), "text/plain".into()),
     ];
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr no-custom-header-on-preflight 臂——注册表切片四迁入，体逐字节保持。
@@ -1055,13 +1055,13 @@ pub(crate) fn route_xhr_no_custom_header_on_preflight(
         (400, "FAIL: X-Test header missing in request".to_string())
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr preflight-request-header-lowercase 臂——注册表切片四迁入，体逐字节保持。
@@ -1105,13 +1105,13 @@ pub(crate) fn route_xhr_preflight_header_lowercase(
         }
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr preflight-request-header-sorted 臂——注册表切片四迁入，体逐字节保持。
@@ -1158,13 +1158,13 @@ pub(crate) fn route_xhr_preflight_header_sorted(
         }
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr preflight-request-headers-origin 臂——注册表切片四迁入，体逐字节保持。
@@ -1207,13 +1207,13 @@ pub(crate) fn route_xhr_preflight_headers_origin(
         (200, x_pass)
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr preflight-request-invalid-status 臂——注册表切片四迁入，体逐字节保持。
@@ -1248,13 +1248,13 @@ pub(crate) fn route_xhr_preflight_invalid_status(
         200
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: wpt_status_text(status).to_string(),
         headers,
         body: String::new(),
         body_bytes: Some(Vec::new()),
-    }));
+    }))
 }
 
 /// xhr echo-content-cors 臂——注册表切片四迁入，体逐字节保持。
@@ -1309,13 +1309,13 @@ pub(crate) fn route_xhr_echo_content_cors(
         .or_else(|| req.body.clone())
         .unwrap_or_default();
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr corsenabled 臂——注册表切片四迁入，体逐字节保持。
@@ -1393,13 +1393,13 @@ pub(crate) fn route_xhr_corsenabled(
     ));
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "Test".to_string(),
         body_bytes: Some(b"Test".to_vec()),
-    }));
+    }))
 }
 
 /// xhr redirect.py 臂——注册表切片四迁入，体逐字节保持。
@@ -1435,13 +1435,13 @@ pub(crate) fn route_xhr_redirect(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("location".into(), location));
     wpt_add_fetch_metadata(&mut headers, req, code);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: code,
         status_text: wpt_status_text(code).to_string(),
         headers,
         body: "TEST".to_string(),
         body_bytes: Some(b"TEST".to_vec()),
-    }));
+    }))
 }
 
 /// xhr well-formed.xml 臂——注册表切片四迁入，体逐字节保持。
@@ -1458,13 +1458,13 @@ pub(crate) fn route_xhr_well_formed_xml(
     headers.push(("access-control-allow-origin".into(), "*".into()));
     headers.push(("content-type".into(), "application/xml".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr pass.txt 臂——注册表切片四迁入，体逐字节保持。
@@ -1482,13 +1482,13 @@ pub(crate) fn route_xhr_pass_txt(
     headers.push(("access-control-allow-origin".into(), "*".into()));
     headers.push(("content-type".into(), "text/plain".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: "PASS\n".to_string(),
         body_bytes: Some(b"PASS\n".to_vec()),
-    }));
+    }))
 }
 
 /// xhr content.py 臂——注册表切片四迁入，体逐字节保持。
@@ -1546,13 +1546,13 @@ pub(crate) fn route_xhr_content(
         }
     });
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// status.py（xhr/ 前缀 + fetch/api 精确——Custom 谓词） 臂——注册表切片四迁入，体逐字节保持。
@@ -1590,13 +1590,13 @@ pub(crate) fn route_status_py(
     headers.push(("content-type".into(), ctype));
     headers.push(("x-request-method".into(), req.method.clone()));
     wpt_add_fetch_metadata(&mut headers, req, code);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: code,
         status_text: text,
         headers,
         body: String::from_utf8_lossy(&content_bytes).into_owned(),
         body_bytes: Some(content_bytes),
-    }));
+    }))
 }
 
 /// status.py 谓词——xhr/ 前缀或 fetch/api/resources/status.py 全等。
@@ -1670,13 +1670,13 @@ pub(crate) fn route_get_set_cookie(
         },
     ));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// xhr/resources/*.asis 臂——注册表切片五迁入，体逐字节保持。
@@ -1739,11 +1739,11 @@ pub(crate) fn route_xhr_asis(
         format!("{}\n", body_lines.join("\n"))
     };
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text,
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }

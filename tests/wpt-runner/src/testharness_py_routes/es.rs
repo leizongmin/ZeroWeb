@@ -32,13 +32,13 @@ pub(crate) fn route_es_message(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), mime));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource message2.py 臂——注册表切片四迁入，体逐字节保持。
@@ -59,13 +59,13 @@ pub(crate) fn route_es_message2(
     headers.push(("content-type".into(), "text/event-stream".into()));
     headers.push(("cache-control".into(), "no-cache".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource last-event-id.py 臂——注册表切片四迁入，体逐字节保持。
@@ -95,13 +95,13 @@ pub(crate) fn route_es_last_event_id(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/event-stream".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource .event_stream 臂——注册表切片四迁入，体逐字节保持。
@@ -130,13 +130,13 @@ pub(crate) fn route_es_event_stream(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/event-stream".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource reconnect-fail.py 臂——注册表切片四迁入，体逐字节保持。
@@ -174,13 +174,13 @@ pub(crate) fn route_es_reconnect_fail(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/event-stream".into()));
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text: status_text.to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource status-reconnect.py 臂——注册表切片四迁入，体逐字节保持。
@@ -195,17 +195,17 @@ pub(crate) fn route_es_status_reconnect(
     // 等价——同 pin reconnect-fail.py 形态的 cookie 态机；cors.py run=
     // status-reconnect 委派同一实现）。
     let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-    let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
+    let (status, status_text, body) = es_status_reconnect_response(es_cookie_stash, query);
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/event-stream".into()));
     wpt_add_fetch_metadata(&mut headers, req, status);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status,
         status_text,
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource last-event-id2.py 臂——注册表切片四迁入，体逐字节保持。
@@ -239,13 +239,13 @@ pub(crate) fn route_es_last_event_id2(
     let mut headers: Vec<(String, String)> = Vec::new();
     headers.push(("content-type".into(), "text/event-stream".into()));
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource cors-cookie.py 臂——注册表切片四迁入，体逐字节保持。
@@ -340,13 +340,13 @@ pub(crate) fn route_es_cors_cookie(
     };
     drop(jar);
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
 
 /// eventsource/resources/cors.py 臂——注册表切片五迁入，体逐字节保持。
@@ -440,7 +440,7 @@ pub(crate) fn route_es_cors(
         }));
     }
     if run == "status-reconnect" {
-        let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
+        let (status, status_text, body) = es_status_reconnect_response(es_cookie_stash, query);
         headers.push(("content-type".into(), "text/event-stream".into()));
         wpt_add_fetch_metadata(&mut headers, req, status);
         return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
@@ -464,11 +464,11 @@ pub(crate) fn route_es_cors(
         String::new()
     };
     wpt_add_fetch_metadata(&mut headers, req, 200);
-    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
         status: 200,
         status_text: "OK".to_string(),
         headers,
         body: body.clone(),
         body_bytes: Some(body.into_bytes()),
-    }));
+    }))
 }
