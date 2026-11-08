@@ -5200,7 +5200,8 @@ impl WebView {
                             script_index,
                             "SyntaxError",
                             &module_cache_key,
-                            &[module_cache_key.clone()],
+                            // clippy 1.99 cloned_ref_to_slice_refs：单元素借用切片免 clone。
+                            std::slice::from_ref(&module_cache_key),
                         ));
                         tracing::warn!("模块脚本编译警告: {e}");
                         continue;
