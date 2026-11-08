@@ -33,9 +33,10 @@
   S12 update 脚本缺口核对销账（pin 树原生含 succeeded 腿，条件成立）。
   [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)。
   **文件族拆分随后落库**：testharness_py_routes.rs（4,822 行）→ 目录模块
-  底座 mod.rs（810 行）+ site/xhr/fetch/es/misc 五族（89 项全迁出，每
-  文件 ≤2000 行），表文本 vs 3db404d45 逐字节全等，单测 298P/0F +
-  全量 A/B 第三跑 multiset 空集（切片五档 §六）。
+  底座 mod.rs（809 行）+ site/xhr/fetch/es/misc 五族（89 项全迁出，每
+  文件 ≤2000 行），表文本 vs 迁移提交逐字节全等，单测 298P/0F +
+  全量 A/B 第三跑 multiset 空集（切片五档 §六）；与上游 7f1c9f717
+  lint 合流后 clippy --fix 收敛归零（d19247694，碰撞管理 22:47 条）。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
