@@ -715,6 +715,78 @@ if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
     )
 }
 
+/// 构造「module 编译失败记账 + 原值复报」shim 脚本（html-semantics M2 s344）：
+/// [`script_report_module_failure`] 的 module map 记账变体——parse 失败对象按
+/// `cache_key` 记入 `globalThis.__moduleFailures`（首元素构造入表），同键后续
+/// module script 元素复报**同对象**不重建（spec：parse error 缓存于 module map，
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script；
+/// WPT compilation-error-1 判据 log.every(exn => exn === log[0])）。s344-r2：`dep_keys`
+/// 为入口图注册键（调用方按字典序给）——图内既有失败记录优先复报（编译失败源于
+/// 依赖 parse 错误时该错误属依赖记录，见函数体注记）。load 派发面与旧臂一致
+/// （fetch 成功后的失败类元素照常 fire load）。
+pub fn script_report_module_failure_cached(
+    msg: &str,
+    script_ordinal: usize,
+    error_ctor: &str,
+    cache_key: &str,
+    dep_keys: &[String],
+) -> String {
+    let esc_msg = escape_js_string(msg);
+    let esc_ctor = escape_js_string(error_ctor);
+    let esc_key = escape_js_string(cache_key);
+    // s344-r2（依赖图失败扫描）：编译失败可能源于**依赖**的 parse 错误（入口自身语法
+    // 合法——syntaxerror-nested.js import 已失败的 syntaxerror.js）——spec：该错误属
+    // 依赖模块记录的缓存错误，入口加载失败复报**同一对象**（compilation-error-1 判据
+    // log.every(exn => exn === log[0])，5 元素 3 个 src 全同源）。扫描先于新建：命中
+    // 任一图内键既有失败记录 → 复报该对象且**不再新建**（入口键不落新记录）；全空才
+    // 入口键新建。键序由调用方定（webview 按字典序）保证确定性。
+    let dep_keys_js = dep_keys
+        .iter()
+        .map(|k| format!("'{}'", escape_js_string(k)))
+        .collect::<Vec<_>>()
+        .join(",");
+    format!(
+        "(function(){{\
+globalThis.__moduleFailures=globalThis.__moduleFailures||{{}};\
+var K='{esc_key}';\
+var __zwErr=globalThis.__moduleFailures[K];\
+if(__zwErr===undefined){{var __zwDepKeys=[{dep_keys_js}];\
+for(var __zwDi=0;__zwDi<__zwDepKeys.length;__zwDi++){{\
+if(globalThis.__moduleFailures[__zwDepKeys[__zwDi]]!==undefined){{\
+__zwErr=globalThis.__moduleFailures[__zwDepKeys[__zwDi]];break;}}}}}}\
+if(__zwErr===undefined){{__zwErr=new {esc_ctor}('{esc_msg}');globalThis.__moduleFailures[K]=__zwErr;}}\
+try{{reportError(__zwErr);}}catch(_e){{}}\
+try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
+if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}}})()"
+    )
+}
+
+/// 构造「module 入口失败/缓存预检」前缀（html-semantics M2 切片 344-r2）：入口包装
+/// 在 prelude **之前**查失败表与缓存表——
+/// ① 入口键已持失败记录（首元素图中止、中间祖先记账或入口自身求值失败）→ 复抛该
+///    对象：后续同入口元素零 prelude、零体求值，s255 哨兵原值上报（choice-of-error-3
+///    判据：第二元素若照跑 prelude 会重求值图外 fresh 模块 throw?3c——log 翻倍）；
+/// ② 入口键已缓存（前序元素已完成求值）→ 跳过 prelude：依赖必然已完成（入口缓存
+///    ⟺ 入口图后序全部完成），重复发射仅产生空转记忆化命中；返回值以 `{` 起头，
+///    调用方以 `}` 收口包住 prelude。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+pub fn script_module_entry_precheck(cache_key: &str) -> String {
+    let esc_key = escape_js_string(cache_key);
+    format!(
+        "if(globalThis.__moduleFailures['{esc_key}']!==undefined)throw globalThis.__moduleFailures['{esc_key}'];\nif(globalThis.__moduleCache['{esc_key}']===undefined){{"
+    )
+}
+
+/// 构造「module 缓存命中探测」表达式（html-semantics M2 切片 344-r2）：宿主在执行
+/// 前查入口键缓存态——命中 = 本单元体不再调用（记忆化短路），runner 体尾 load 尾片
+/// 死代码 → 元素 load 须由宿主序号派发承担（spec：load 属元素 fetch 完成路径而非
+/// 求值，module map 去重只作用求值；nested-imports 判据 log=["1","2"]）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+pub fn script_module_cache_probe(cache_key: &str) -> String {
+    let esc_key = escape_js_string(cache_key);
+    format!("globalThis.__moduleCache['{esc_key}'] !== undefined")
+}
+
 /// 构造「module 求值抛错原值报告」shim 脚本（html-semantics M2 s255）：模块体求值
 /// 抛出的**原值对象**（宿主侧 try/catch 哨兵 `globalThis.__zwModEvalErrObj` 暂存）
 /// 经 `reportError` 原样上报 + 元素照常 fire load（spec：评估失败与编译失败同面——

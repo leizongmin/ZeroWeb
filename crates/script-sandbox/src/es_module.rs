@@ -217,10 +217,29 @@ pub const MODULE_EVAL_WINDOW_SCOPE_CLOSE: &str =
 /// 调用方保证 `globalThis.__moduleCache` 已初始化（`compile_module_script` 输出与 prelude 的
 /// 首行 init 均已就位后才轮到本表达式求值）。命中判定用 `=== undefined`（contains 语义，
 /// TV-4：不依赖「导出对象恒真值」这一未强制不变量）。
-fn memoized_dep_expr(key: &str, code: &str) -> String {
+/// s344：求值失败记忆——体抛错时原值记入 `__moduleFailures[key]` 后重抛（传播语义不变）；
+/// 后续同键求值复抛**同对象**不重求值（spec：parse error 与 evaluation error 均缓存在
+/// module map，跨 script 元素/动态 import 同源——WPT choice-of-error-3 判据
+/// `log[1] === log[3]`、evaluation-error-1 判据每元素一 error 事件共 9 元素）。入口复放
+/// 路径经宿主包装 catch 置 s255 哨兵 → post-check 原值上报 window error 事件 + 元素
+/// fire load（体尾 load 投递因抛错跳过，无双发）。
+/// s344-r2（中间模块错误记账）：`ancestors` 为该依赖在入口图 DFS 路径上的祖先键
+/// （[`module_graph_postorder`] 逐模块携带）——失败同时记入各祖先键（未记录时），
+/// 即 spec 中间模块记录同样持有该求值错误：choice-of-error-3 入口 3a 的图
+/// [throw2?3d←3b←3a] 首元素在 throw2?3d 抛 `{bar}` 中止 prelude，3b 自身发射未达，
+/// 旧版只记 throw2?3d 键 → 第二元素（入口 3b）短路面落空、prelude 重跑图外模块
+/// throw?3c（log 翻倍 6≠5）；祖先记账后第二元素入口键命中 → 宿主 s344-r2 预检
+/// 复抛同对象，`log[1] === log[3]` 同源。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+fn memoized_dep_expr(key: &str, code: &str, ancestors: &[String]) -> String {
     let key_js = json_stringify(key);
+    let ancestors_js = ancestors
+        .iter()
+        .map(|a| json_stringify(a))
+        .collect::<Vec<_>>()
+        .join(",");
     format!(
-        "(globalThis.__moduleCache[{key_js}] = globalThis.__moduleCache[{key_js}] === undefined ? ({code}) : globalThis.__moduleCache[{key_js}])"
+        "(globalThis.__moduleFailures[{key_js}] !== undefined ? (function(){{ throw globalThis.__moduleFailures[{key_js}]; }})() : (globalThis.__moduleCache[{key_js}] = globalThis.__moduleCache[{key_js}] === undefined ? (function(){{ try {{ return ({code}); }} catch (__zwModMemoErr) {{ globalThis.__moduleFailures[{key_js}] = __zwModMemoErr; for (var __zwModAncIdx = 0; __zwModAncIdx < [{ancestors_js}].length; __zwModAncIdx++) {{ var __zwModAncKey = [{ancestors_js}][__zwModAncIdx]; if (globalThis.__moduleFailures[__zwModAncKey] === undefined) {{ globalThis.__moduleFailures[__zwModAncKey] = __zwModMemoErr; }} }} throw __zwModMemoErr; }} }})() : globalThis.__moduleCache[{key_js}]))"
     )
 }
 
@@ -289,8 +308,9 @@ pub fn compile_module_script_with_credentials(
         ))
     } else {
         // 记忆化入口体：本模块若已作为他元素依赖求值过（缓存命中）→ 复用实例，模块体
-        // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。
-        Ok(format!("{init}{}", memoized_dep_expr(cache_key, &body)))
+        // 恰好执行一次（红态实测入口计数 2：prelude 急切 + 转换体各一次）。入口自身无
+        // 导入者 → 祖先恒空（失败只记入口键；中间传播由 prelude 发射的祖先链承担）。
+        Ok(format!("{init}{}", memoized_dep_expr(cache_key, &body, &[])))
     }
 }
 
@@ -305,12 +325,16 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
 /// 7d/7e 颠倒。入口图不可达的 registry 余量按字典序追加（保持全量急切注册覆盖，
 /// 仅定序）；未注册依赖与解析失败说明符跳过（定序尽力而为，链接/语法错误仍由
 /// build 路径如实报告）。
+/// s344-r2：逐模块携带 DFS 祖先键（入口→自身路径，不含自身；入口/余量 = 空）——
+/// 供 [`memoized_dep_expr`] 失败记账传播到中间模块（spec 求值错误中间缓存语义，
+/// choice-of-error-3 判据）。余量模块不在入口图内、无导入者关系 → 祖先恒空。
 /// https://tc39.es/ecma262/#sec-moduleevaluation
-fn module_graph_postorder(entry: Option<&str>, registry: &ModuleRegistry) -> Vec<String> {
+fn module_graph_postorder(entry: Option<&str>, registry: &ModuleRegistry) -> Vec<(String, Vec<String>)> {
     let mut ordered = Vec::new();
     let mut visited = HashSet::new();
+    let mut path = Vec::new();
     if let Some(entry) = entry {
-        postorder_visit(entry, registry, &mut visited, &mut ordered);
+        postorder_visit(entry, registry, &mut visited, &mut ordered, &mut path);
     }
     let mut leftovers: Vec<&str> = registry
         .specifiers()
@@ -318,7 +342,7 @@ fn module_graph_postorder(entry: Option<&str>, registry: &ModuleRegistry) -> Vec
         .filter(|spec| !visited.contains(*spec))
         .collect();
     leftovers.sort_unstable();
-    ordered.extend(leftovers.into_iter().map(str::to_string));
+    ordered.extend(leftovers.into_iter().map(|spec| (spec.to_string(), Vec::new())));
     ordered
 }
 
@@ -326,7 +350,8 @@ fn postorder_visit(
     specifier: &str,
     registry: &ModuleRegistry,
     visited: &mut HashSet<String>,
-    ordered: &mut Vec<String>,
+    ordered: &mut Vec<(String, Vec<String>)>,
+    path: &mut Vec<String>,
 ) {
     if !visited.insert(specifier.to_string()) {
         return;
@@ -334,10 +359,12 @@ fn postorder_visit(
     let Some(source) = registry.get(specifier) else {
         return;
     };
+    path.push(specifier.to_string());
     for dep in static_dependency_specifiers(source, specifier, registry) {
-        postorder_visit(&dep, registry, visited, ordered);
+        postorder_visit(&dep, registry, visited, ordered, path);
     }
-    ordered.push(specifier.to_string());
+    path.pop();
+    ordered.push((specifier.to_string(), path.clone()));
 }
 
 /// s255：模块源静态依赖说明符（import / export-from 的 module request，源内出现序）。
@@ -525,21 +552,21 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // s255：注册序 = 入口图 depth-first post-order（模块体求值序可观察，见
     // module_graph_postorder 注记；旧 registry.specifiers() 哈希序致依赖体副作用
     // 顺序不定——instantiation-error-7 实测 7d/7e 颠倒）。
-    for spec in module_graph_postorder(entry, registry) {
+    for (spec, ancestors) in module_graph_postorder(entry, registry) {
         // R5182：入口跳过急切求值——入口由调用方的转换体求值一次（否则 prelude 急切执行
         // 一遍 + 转换体再执行一遍，模块体副作用翻倍；红态实测入口计数 2）。
         if entry == Some(spec.as_str()) {
             continue;
         }
         let iife = build_dep_iife(&spec, registry, "same-origin", &mut HashSet::new())?;
-        let escaped = spec.replace('\\', "\\\\").replace('\'', "\\'");
         // R5182：已缓存（本文档更早的 module script 元素已求值）→ 不再执行——同文档模块
         // 恰好一次（红态实测共享依赖跨元素计数 4；HTML module map 命中即复用）。判定用
         // `=== undefined`（contains 语义，TV-4）。s269：TLA 依赖缓存 Promise——消费方
         // await 归一（await_prefix），动态 import() 面 Promise.resolve 天然解包。
-        out.push_str(&format!(
-            "if (__moduleCache['{escaped}'] === undefined) __moduleCache['{escaped}'] = {iife};\n"
-        ));
+        // s344：记忆化发射统一走 `memoized_dep_expr`（失败表先行：命中失败记记录复抛
+        // 同对象不重求值——裸守卫形态下已失败依赖在后续元素 prelude 重跑体、抛新对象，
+        // choice-of-error-3 `log[1] === log[3]` 判据翻转）。
+        out.push_str(&format!("{};\n", memoized_dep_expr(&spec, &iife, &ancestors)));
     }
     Ok(out)
 }
@@ -1150,7 +1177,7 @@ fn transform_import(
             DepInline::Fresh(code, _) => Ok(format!(
                 "  var _mod_{safe} = {}{};\n",
                 await_prefix(dep.is_async(), enclosing_async),
-                memoized_dep_expr(&specifier, code)
+                memoized_dep_expr(&specifier, code, &[])
             )),
             DepInline::Visited(..) => Ok(String::new()),
         };
@@ -1181,7 +1208,7 @@ fn transform_import(
                 result.push_str(&format!(
                     "  var {exports_var} = {}{};\n",
                     await_prefix(dep.is_async(), enclosing_async),
-                    memoized_dep_expr(&specifier, code)
+                    memoized_dep_expr(&specifier, code, &[])
                 ));
             }
             DepInline::Visited(..) => {
@@ -1226,7 +1253,7 @@ fn transform_import(
                 result.push_str(&format!(
                     "  var {exports_var} = {}{};\n",
                     await_prefix(dep.is_async(), enclosing_async),
-                    memoized_dep_expr(&specifier, code)
+                    memoized_dep_expr(&specifier, code, &[])
                 ));
             }
             DepInline::Visited(..) => {
@@ -1260,7 +1287,7 @@ fn transform_import(
                 result.push_str(&format!(
                     "  var {exports_var} = {}{};\n",
                     await_prefix(dep.is_async(), enclosing_async),
-                    memoized_dep_expr(&specifier, code)
+                    memoized_dep_expr(&specifier, code, &[])
                 ));
             }
             DepInline::Visited(..) => {
@@ -1523,7 +1550,7 @@ fn transform_export(
                     result.push_str(&format!(
                         "  var {exports_var} = {}{};\n",
                         await_prefix(dep.is_async(), enclosing_async),
-                        memoized_dep_expr(&specifier, code)
+                        memoized_dep_expr(&specifier, code, &[])
                     ));
                 }
                 DepInline::Visited(..) => {
@@ -1564,7 +1591,7 @@ fn transform_export(
                 result.push_str(&format!(
                     "  var {exports_var} = {}{};\n",
                     await_prefix(dep.is_async(), enclosing_async),
-                    memoized_dep_expr(&specifier, code)
+                    memoized_dep_expr(&specifier, code, &[])
                 ));
             }
             DepInline::Visited(..) => {
@@ -1607,7 +1634,7 @@ fn transform_export(
                 result.push_str(&format!(
                     "  var {exports_var} = {}{};\n",
                     await_prefix(dep.is_async(), enclosing_async),
-                    memoized_dep_expr(&specifier, code)
+                    memoized_dep_expr(&specifier, code, &[])
                 ));
             }
             DepInline::Visited(..) => {
@@ -3607,7 +3634,9 @@ import('./dep.js').then(function () { __zw_report('dep-ok'); }, function (e) { _
         .unwrap();
         assert!(compiled.contains("(async function() {"));
         assert!(
-            compiled.contains("= await (globalThis.__moduleCache"),
+            // s344：记忆化表达式失败表先行——await 前缀包住整个表达式（失败复抛
+            // 分支在 async 上下文照旧落 promise 拒绝，语义不变）。
+            compiled.contains("= await (globalThis.__moduleFailures["),
             "async 入口对 TLA 依赖消费须 await: {compiled}"
         );
     }
@@ -5177,6 +5206,189 @@ globalThis.reportError = function (e) {{ globalThis.__errs.push(e && e.message);
         assert_eq!(
             result.value, "hit|main-hit|true|ReferenceError|undefined",
             "桥位在场 window 写落桥位/globalThis 落主全局/命名空间落缓存；桥位缺席裸 window ReferenceError 零半写"
+        );
+    }
+
+    /// s344（module 记录求值恰一次 + 失败记忆）：同步入口体发射失败表先行复抛 +
+    /// try/catch 记忆化形态（evaluation-error/compilation-error 跨元素同对象判据的
+    /// 发射面）；TLA async 入口维持不记忆化（FIXME(R5182) 语义不变）。
+    #[test]
+    fn test_memoized_entry_failure_memory_s344() {
+        let registry = ModuleRegistry::new();
+        let compiled = compile_module_script(
+            "globalThis.__side = 1;",
+            "https://zero.test/e.js",
+            "https://zero.test/e.js",
+            &registry,
+        )
+        .unwrap();
+        assert!(
+            compiled.contains(r#"globalThis.__moduleFailures["https://zero.test/e.js"] !== undefined"#),
+            "入口体失败表先行检查（s344 复抛形态）: {compiled}"
+        );
+        assert!(
+            compiled.contains(r#"globalThis.__moduleFailures["https://zero.test/e.js"] = __zwModMemoErr"#),
+            "入口体抛错记忆原值后重抛: {compiled}"
+        );
+        let tla = compile_module_script(
+            "await 1;",
+            "https://zero.test/tla.js",
+            "https://zero.test/tla.js",
+            &registry,
+        )
+        .unwrap();
+        assert!(
+            !tla.contains("__zwModMemoErr"),
+            "TLA async 入口不记忆化（FIXME(R5182) 维持）: {tla}"
+        );
+    }
+
+    /// s344：prelude 依赖急切求值发射统一走记忆化表达式（失败表先行 + try/catch 记
+    /// 录）——裸 `if (__moduleCache[K] === undefined) __moduleCache[K] = IIFE` 守卫
+    /// 形态废止（已失败依赖在后续元素 prelude 重跑体抛新对象，choice-of-error-3
+    /// `log[1] === log[3]` 判据翻转）；依赖求值序 = 入口图源内声明序（s344 入口
+    /// 入册后 postorder 从入口可达）。
+    #[test]
+    fn test_prelude_dep_emission_memoized_and_source_order_s344() {
+        let mut registry = ModuleRegistry::new();
+        registry.register("https://zero.test/za.js", "globalThis.__za = 1;");
+        registry.register("https://zero.test/ab.js", "globalThis.__ab = 1;");
+        // 入口自身入册（s344 webview 同法）——import 声明序 ab 在前、za 在后。
+        registry.register(
+            "https://zero.test/entry.js",
+            "import './ab.js';\nimport './za.js';\nglobalThis.__entry = 1;",
+        );
+        let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/entry.js")).unwrap();
+        assert!(
+            !prelude.contains("=== undefined) __moduleCache['"),
+            "裸守卫形态废止（依赖发射统一记忆化）: {prelude}"
+        );
+        assert!(prelude.contains("__zwModMemoErr"), "依赖发射带失败记忆: {prelude}");
+        let pos_ab = prelude
+            .find(r#""https://zero.test/ab.js"] !== undefined"#)
+            .expect("ab 依赖发射在场");
+        let pos_za = prelude
+            .find(r#""https://zero.test/za.js"] !== undefined"#)
+            .expect("za 依赖发射在场");
+        assert!(
+            pos_ab < pos_za,
+            "依赖求值序 = 入口源内声明序（ab 先于 za；旧字典序 leftovers 反转）"
+        );
+    }
+
+    /// s344：记忆化表达式行为钉——体抛错 → 失败原值入表；同键复调复抛**同对象**
+    /// 不重跑体（体副作用计数恒 1）；成功 → 缓存实例复用。
+    #[test]
+    fn test_memoized_expr_replay_same_object_s344() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://zero.test/thr.js",
+            "globalThis.__runs = (globalThis.__runs||0)+1; throw {bar: true};",
+        );
+        let iife = build_dep_iife(
+            "https://zero.test/thr.js",
+            &registry,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .unwrap();
+        let expr = memoized_dep_expr("https://zero.test/thr.js", &iife, &[]);
+        let probe = format!(
+            "globalThis.__moduleCache = {{}};globalThis.__moduleFailures = {{}};\n\
+             var e1, e2;\n\
+             try {{ {} }} catch (e) {{ e1 = e; }}\n\
+             try {{ {} }} catch (e) {{ e2 = e; }}\n\
+             __zw_report([String(globalThis.__runs), String(e1 !== undefined && e1 === e2), String(e1 && e1.bar)].join('|'));\n",
+            expr, expr
+        );
+        sandbox.execute(&probe).expect("探针求值成功");
+        assert_eq!(
+            reported.lock().unwrap().as_deref(),
+            Some("1|true|true"),
+            "体恰好跑一次（__runs=1）+ 复调复抛同对象（e1===e2）+ 原值保真（bar=true）"
+        );
+    }
+
+    /// s344-r2（中间模块错误记账）：记忆化发射携带入口图 DFS 祖先键——体抛错时失败
+    /// 原值**同时记入各祖先键**（spec 求值错误中间缓存：choice-of-error-3 首元素在
+    /// 叶依赖 throw2?3d 抛错中止 prelude，中间模块 3b 自身发射未达，第二元素入口
+    /// 3b 的短路面依赖 3b 键已记账——宿主 s344-r2 预检复抛同对象）。
+    #[test]
+    fn test_memoized_expr_records_ancestor_failures_s344r2() {
+        let mut registry = ModuleRegistry::new();
+        registry.register("https://zero.test/sb.js", "import './sthrow.js';\nglobalThis.__sb = 1;");
+        registry.register("https://zero.test/sthrow.js", "throw {bar: true};");
+        registry.register("https://zero.test/sa.js", "import './sb.js';\nglobalThis.__sa = 1;");
+        let prelude = build_module_runtime_prelude(&registry, Some("https://zero.test/sa.js")).unwrap();
+        // 叶依赖 sthrow 的祖先链 = [sa（入口）, sb]（发射内嵌于记忆化 catch 循环）；
+        // sb 的祖先链 = [sa]；入口自身不入 prelude（R5182）。
+        assert!(
+            prelude.contains(r#"["https://zero.test/sa.js","https://zero.test/sb.js"]"#),
+            "叶依赖发射携带全祖先链: {prelude}"
+        );
+        assert!(
+            prelude.contains("[\"https://zero.test/sa.js\"]"),
+            "中间依赖发射携带入口祖先: {prelude}"
+        );
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::new().unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::new().unwrap();
+        let reported: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let reported_cb = reported.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *reported_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let iife = build_dep_iife(
+            "https://zero.test/sthrow.js",
+            &registry,
+            "same-origin",
+            &mut HashSet::new(),
+        )
+        .unwrap();
+        let expr = memoized_dep_expr(
+            "https://zero.test/sthrow.js",
+            &iife,
+            &[
+                "https://zero.test/sa.js".to_string(),
+                "https://zero.test/sb.js".to_string(),
+            ],
+        );
+        let probe = format!(
+            "globalThis.__moduleCache = {{}};globalThis.__moduleFailures = {{}};\n\
+             try {{ {} }} catch (_e) {{}}\n\
+             __zw_report([\n\
+               String(globalThis.__moduleFailures['https://zero.test/sthrow.js'] !== undefined),\n\
+               String(globalThis.__moduleFailures['https://zero.test/sb.js'] !== undefined),\n\
+               String(globalThis.__moduleFailures['https://zero.test/sa.js'] !== undefined),\n\
+               String(globalThis.__moduleFailures['https://zero.test/sb.js'] === globalThis.__moduleFailures['https://zero.test/sthrow.js'])\n\
+             ].join('|'));\n",
+            expr
+        );
+        sandbox.execute(&probe).expect("探针求值成功");
+        assert_eq!(
+            reported.lock().unwrap().as_deref(),
+            Some("true|true|true|true"),
+            "失败原值同记叶键与全祖先键（同对象跨键共享）"
         );
     }
 }

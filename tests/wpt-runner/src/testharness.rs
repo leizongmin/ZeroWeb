@@ -6034,6 +6034,20 @@ fn wpt_data_script_fetcher_with_stash(
         // 通道收口。
         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+        // s344：delayed-modulescript.py 动态端点模块取回臂（上游 wptserve handler
+        // 不在语料——上游 sleep 后回 text/javascript JS module，`export delayedLoaded`
+        // 等；语料缺资产 → 404 → error 代替 load，nested-imports 文件红「unexpected」
+        // ——s227 缺资产同形）。本地无 wptserve：按端点路径回静态 JS module 体。
+        // delay 语义对消费页零观察面（nested-imports 仅断言 onload 序/全 loaded；
+        // error-and-slow-dependency 断言 parse 失败 abort graph——同步图编译不受取回
+        // 时延影响；import-subgraph-404 断言 404 dep 图失败；slow-cycle 循环图 loaded
+        // 面），省 sleep 阻塞 job 线程。
+        if clean.ends_with("/module/resources/delayed-modulescript.py") {
+            return Ok(
+                "export const a = 1;\nexport let delayedLoaded = false;\nsetTimeout(function () { delayedLoaded = true; }, 0);\n"
+                    .to_string(),
+            );
+        }
         if clean == "html/semantics/scripting-1/the-script-element/serve-custom-response.py" {
             let query = src.split('?').nth(1).unwrap_or("");
             let key = wpt_query_value(query, "key").unwrap_or_default();

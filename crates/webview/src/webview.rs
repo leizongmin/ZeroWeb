@@ -15,8 +15,9 @@ use zero_engine::{
     extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
     page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
     script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
-    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,
-    script_report_module_failure, script_run_classic_page_strict, script_set_current_script,
+    script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_cache_probe,
+    script_module_entry_precheck, script_module_eval_error_report, script_report_module_failure,
+    script_report_module_failure_cached, script_run_classic_page_strict, script_set_current_script,
 };
 // R3150（闭合 R3121 latent）：script_dispatch_native_event 唯一用法（dispatch_event native_dom 分支）
 // 受 `#[cfg(feature = "v8")]` 门控——quickjs feature 下 unused import。独立 gated import 消 latent warning。
@@ -4848,22 +4849,6 @@ impl WebView {
                     .cloned()
                     .unwrap_or_else(|| doc_url.clone()),
             };
-            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
-            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
-            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
-            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
-            // spec 模块 map 只按请求 URL 缓存 fetch 型模块，内联 module script 每元素是
-            // 独立模块记录：内联键 = 页面 URL 挂 ordinal 片段（仍为绝对 URL，相对 import
-            // 解析基准不变——URL 构造剥旧 fragment）；外链键 = src 绝对化（同 src 两元素
-            // 命中同键恰好一次，spec 语义；异 src 各自求值）。
-            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
-            let module_cache_key = match &script {
-                zero_engine::pipeline::PageScript::InlineModule(_) => {
-                    format!("{doc_url}#!zw-inline-module-{script_index}")
-                }
-                zero_engine::pipeline::PageScript::ExternalModule { src, .. } => resolve_document_url(&doc_url, src),
-                _ => doc_url.clone(),
-            };
             // s101：外链模块静态 import 的收集基 = 模块自身绝对 URL（spec：import 语句
             // 相对 requesting module 解析，referrer 为模块自身）；内联模块基 = 页面 URL。
             // 旧版一律页面 URL——模块体在 resources/ 子目录时其相对 import 解析到页目录
@@ -4903,6 +4888,30 @@ impl WebView {
                         resolve_document_url(&doc_url, normalized)
                     }),
                 _ => None,
+            };
+            // s94 附带修复（module 缓存键）：R5182 `__moduleCache` 文档级记忆化键旧一律传
+            // 页面 URL——同文档第二枚 module script（内联/外链皆然）被首枚的记忆化命中
+            // 短路，模块体零次求值（currentScript-null 双内联 module 定谳：testharness
+            // "completed without reporting registered tests"；probe-csn-d 双纯内联最小复现）。
+            // s344（module 记录键恢复）：runner 内联投递的外链模块（InlineModule +
+            // data-inline）旧键 = 页面 URL 挂 ordinal 片段——同 src 多元素各持独立键，
+            // 入口记忆化恒 miss，模块体逐元素重求值/重抛新错误对象（single-evaluation-1
+            // 实测 this.js 求值 4 次入 log；evaluation-error/compilation-error 同对象
+            // 判据全数翻转）。记录键改挂解析基 = 模块自身绝对 URL（module_dep_base），
+            // 与 ExternalModule/spec module map 同 URL 同键恰好一次求值；真内联模块
+            //（无 data-inline，spec 每元素独立模块记录）维持 ordinal 键（s94 语义不变）。
+            // 错误/成功元素事件派发键（s336/s107）不受扰——两臂均以 external_module_
+            // error_face 门控或按 src 属性匹配（内联投递元素无 src 属性，派发 no-op
+            // 与旧 ordinal 键同面）。
+            // https://html.spec.whatwg.org/multipage/webappapis.html#module-map
+            let module_cache_key = match &script {
+                zero_engine::pipeline::PageScript::InlineModule(_) => module_dep_base
+                    .clone()
+                    .unwrap_or_else(|| format!("{doc_url}#!zw-inline-module-{script_index}")),
+                zero_engine::pipeline::PageScript::ExternalModule { .. } => {
+                    module_dep_base.clone().unwrap_or_else(|| doc_url.clone())
+                }
+                _ => doc_url.clone(),
             };
             // s343（html-semantics M2 切片 343）：外链 classic 成功取回面标记——元素
             // fire load 派发锚（下方 match 按 src 消费后 lose 绑定；fetch Err 臂
@@ -4988,6 +4997,9 @@ impl WebView {
                     }
                 }
             };
+            // s344-r2：入口图注册键（s102 包装级 parse 失败报告的失败扫描清单——
+            // compile Ok 臂填装；编译 Err 臂 continue 不达 s102，恒空）。
+            let mut module_dep_keys: Vec<String> = Vec::new();
             let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
@@ -5133,6 +5145,21 @@ impl WebView {
                     Ok(transformed) => {
                         // R5182：入口（当前 script 元素）不在 prelude 急切求值——由 transformed 体承担，
                         // 模块体恰好执行一次（__moduleCache 挂 globalThis，跨元素共享、随导航重建复位）。
+                        // s344：入口模块记录入册（prelude 按既有语义跳过入口急切求值）——
+                        // module_graph_postorder 以入口为根（s255 依赖求值序 = 入口图源内
+                        // 声明序）；旧入口不在 registry，postorder 从入口不可达 → 全依赖落
+                        // leftovers 字典序追加，duplicated-imports-1/2 实测
+                        // export-default 抢跑（'export-default' < 'export-something'）。
+                        registry.register(&url, &code);
+                        // s344-r2：装填 s102 失败扫描清单（图注册键 + 入口键，字典序
+                        // 定序——compilation-error-1 判据：syntaxerror-nested.js 的
+                        // 包装级 parse 失败源于依赖 syntaxerror.js，复报该键既有的
+                        // 失败对象）。
+                        module_dep_keys = registry.specifiers().into_iter().map(str::to_string).collect();
+                        if !module_dep_keys.iter().any(|k| k == &module_cache_key) {
+                            module_dep_keys.push(module_cache_key.clone());
+                        }
+                        module_dep_keys.sort_unstable();
                         let prelude = zero_script_sandbox::build_module_runtime_prelude(&registry, Some(&url))
                             .unwrap_or_default();
                         // s255（求值错原值报告面）：try/catch 哨兵暂存**原值抛出对象**
@@ -5141,9 +5168,15 @@ impl WebView {
                         // `script_module_eval_error_report` 在 JS 侧取哨兵原样上报）。
                         // 包装级 parse 失败（体语法错）时整体 execute 仍 Err → 下方
                         // s102 臂照旧，语义不变。
+                        // s344-r2（入口预检前缀）：失败/缓存两表先于 prelude 查访——入口键
+                        // 已持失败记录（首元素图中止 + 中间祖先记账，spec 求值错误中间缓存）
+                        // → 复抛同对象零 prelude 零体求值（choice-of-error-3 第二元素若照
+                        // 跑 prelude 会重求值图外 fresh 模块 throw?3c，log 翻倍 6≠5）；入口
+                        // 键已缓存 → 跳过 prelude（依赖必然已完成，重复发射仅空转记忆化）。
                         // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
+                        let entry_precheck = script_module_entry_precheck(&module_cache_key);
                         format!(
-                            "__zw_begin_script && __zw_begin_script();\ntry {{\n{prelude}\n{transformed}\n}} catch (__zwModEvalErr) {{ globalThis.__zwModEvalErrObj = __zwModEvalErr; }}"
+                            "__zw_begin_script && __zw_begin_script();\ntry {{\n{entry_precheck}\n{prelude}\n}}\n{transformed}\n}} catch (__zwModEvalErr) {{ globalThis.__zwModEvalErrObj = __zwModEvalErr; }}"
                         )
                     }
                     Err(e) => {
@@ -5154,11 +5187,20 @@ impl WebView {
                         // strict 亦不 abort——与外链取回失败同属 prepare 阶段失败面而非
                         // 内联体抛错（旧版 strict 整页 abort 以 declared tests: 0 掩盖
                         // 页面其余用例——runner「空洞」面）。
+                        // s344：失败记账入 module map——**本入口键**缓存（同 src 后续
+                        // 元素复报同对象：instantiation-error-3 判据 log[0] === log[4]
+                        // 同根两元素同源；不同根不共享——spec 链接失败逐记录独立，
+                        // log[0] !== log[2] 异根新对象）。跨键扫描在本臂翻车（不同根
+                        // 共享失败依赖被并成同对象，error-type-2/3、choice-of-error-2、
+                        // instantiation-error-3/5 全红）——扫描语义属 **s102 臂**（包装级
+                        // parse 错误源于依赖源文件，见下方 s102 处）。
                         // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                        let _ = sandbox.execute(&script_report_module_failure(
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
                             &format!("{e}"),
                             script_index,
                             "SyntaxError",
+                            &module_cache_key,
+                            &[module_cache_key.clone()],
                         ));
                         tracing::warn!("模块脚本编译警告: {e}");
                         continue;
@@ -5273,6 +5315,20 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                 ));
             }
 
+            // s344-r2（缓存命中探测）：执行前查入口键缓存态——命中 = 本单元体不再调用
+            // （记忆化短路），runner 体尾 load 尾片死代码。仅限 runner 投递的内联模块
+            // 面（真作者内联 load/error 不适用——load-error-events-inline 判据）；async
+            // 面单元由上方 s337 微任务臂承担（命中与否恒发，再发即双发）；首评单元
+            // 缓存未命中探测为假，load 由体尾承担无双发。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            let module_cache_hit = is_module
+                && inlined_from_external
+                && !async_module_face
+                && sandbox
+                    .execute(&script_module_cache_probe(&module_cache_key))
+                    .map(|r| r.value == "true")
+                    .unwrap_or(false);
+
             let execution = sandbox.execute(&full).map(|_| ());
             if eval_wrap_active {
                 let _ = sandbox.execute(
@@ -5312,6 +5368,15 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             {
                 let _ = sandbox.execute(&script_dispatch_script_event(&module_cache_key, "load"));
             }
+            // s344-r2（缓存命中 load 补派发）：spec load 属元素 fetch 完成路径而非求值
+            // ——module map 去重只作用求值，每元素各自 fire（nested-imports 判据
+            // log=["1","2"]，命中单元体尾死代码致 "2" 缺席）。探测命中 + 无哨兵 +
+            // 体正常完成才派发（求值抛错由 s255 post-check 附 load 不进本臂；包装级
+            // parse 失败 execute Err 同不进）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+            if module_cache_hit && execution.is_ok() && eval_err_reported.is_empty() {
+                let _ = sandbox.execute(&script_dispatch_script_event_by_ordinal(script_index, "load"));
+            }
             let script_error = if strict && !is_module && execution.is_ok() {
                 match sandbox.execute(&page_script_error_check()) {
                     Ok(result) if result.value.is_empty() => None,
@@ -5350,11 +5415,21 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     // spec 评估失败语义与编译失败同类：向 window 报异常 + 元素照常
                     // fire load + 页面继续（strict 亦不 abort——模块失败非内联 classic
                     // 体抛错，上游页面继续运行、其余用例照报）。
+                    // s344-r2（包装级 parse 失败记账 + 依赖图失败扫描）：此臂的错误
+                    // 多为**包装级 parse**（坏源码经变换存活、在 V8 parse 期炸）——
+                    // spec：parse error 缓存于 module map，同 src 后续元素复报同对象
+                    // 且依赖其的模块（入口语法合法）复报**同一依赖记录错误**
+                    //（compilation-error-1 判据 log.every(exn => exn === log[0])，
+                    // 5 元素 3 src 全同源；syntaxerror-nested 的扫描清单 = 依赖键 +
+                    // 入口键，字典序定序）。求值错误原值上报走 s255 哨兵面，本臂仅
+                    // 接哨兵未达的包装级失败。
                     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                    let _ = sandbox.execute(&script_report_module_failure(
+                    let _ = sandbox.execute(&script_report_module_failure_cached(
                         &format!("{e}"),
                         script_index,
                         "SyntaxError",
+                        &module_cache_key,
+                        &module_dep_keys,
                     ));
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
