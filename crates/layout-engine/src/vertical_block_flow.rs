@@ -143,6 +143,8 @@ pub fn apply_vertical_block_flow(
     // 打架（ortho-htb-alongside-vrl-floats-002/014、clearance-calculations-vrl-008 翻红实证）。
     // R4428 flip：default-on（A/B 净 +5 零新翻红）；`=0` kill-switch 回退。
     let viv = std::env::var("ZW_VIV_SIZING").as_deref() != Ok("0") && !viv_subtree_has_float(root);
+    // R5464 vrl definite 容器列组 CB 右缘锚定开关（env 读一次，apply_inner 内不逐节点读）。
+    let column_cb_anchor = std::env::var("ZW_VRL_COLUMN_CB_ANCHOR").as_deref() != Ok("0");
     let mut float_width_rewritten: Vec<NodeId> = Vec::new();
     apply_inner(
         root,
@@ -150,6 +152,7 @@ pub fn apply_vertical_block_flow(
         &WritingModeValue::HorizontalTb,
         viv,
         &mut float_width_rewritten,
+        column_cb_anchor,
     );
     anchor_vrl_root_children(root, styles);
     let vrl_anchor_dx = anchor_vrl_root_box(root, icb_width);
@@ -851,12 +854,20 @@ fn apply_inner(
     parent_wm: &WritingModeValue,
     viv: bool,
     float_width_rewritten: &mut Vec<NodeId>,
+    column_cb_anchor: bool,
 ) {
     // 先递归子（用本盒 wm 作子父 wm），再处理本盒——自底向上。
     let own_wm = b.writing_mode.clone();
     for child in &mut b.children {
         let child_viv = viv && !viv_subtree_has_float(child);
-        apply_inner(child, styles, &own_wm, child_viv, float_width_rewritten);
+        apply_inner(
+            child,
+            styles,
+            &own_wm,
+            child_viv,
+            float_width_rewritten,
+            column_cb_anchor,
+        );
     }
 
     let Some(block_indices) = vertical_block_child_indices_ex(b, styles, parent_wm, viv) else {
@@ -898,7 +909,31 @@ fn apply_inner(
         })
         .collect();
 
-    let layout = compute_vertical_block_flow(&outer_sizes, b.writing_mode.clone(), 0.0);
+    let mut layout = compute_vertical_block_flow(&outer_sizes, b.writing_mode.clone(), 0.0);
+
+    // R5464（CSS Writing Modes §7.1 vrl 块流基位）：vrl + definite CSS 宽容器（R4566
+    // width_definite_keep 判据 = restack Σ 基准与容器宽的发散域——auto 容器 extent=Σ
+    // 改写自洽）列组右起基准改用容器 content 宽。vrl 块流起始 = CB 行内 start 侧 =
+    // content 右缘；Σ 基准下组贴 Σ 右缘、CB 右侧露空隙（007：cb 400、Σ=440 → sb
+    // [420,440] 溢出右缘 40px；chromium oracle 探针：cb 400 内 sb 右缘贴 content
+    // 右缘、ob/sa 溢出向左不钳）。整组平移 dx（margin-box 基准同移，DOM 序与列距
+    // 不变）；溢出向左允许负 x（compute_vertical_block_flow 的钳 0 不适用）。vlr
+    // 左缘锚定与容器宽无关，镜像域不动（宽重解兄弟列重叠 FIXME 另账）。
+    // kill-switch `ZW_VRL_COLUMN_CB_ANCHOR=0`。
+    if column_cb_anchor
+        && b.writing_mode == WritingModeValue::VerticalRl
+        && b.content_width > 0.5
+        && b.node_id
+            .and_then(|id| styles.get(&id))
+            .is_some_and(|s| !matches!(s.width, LengthValue::Auto))
+    {
+        let dx = b.content_width - layout.content_width;
+        if dx.abs() > 0.5 {
+            for off in &mut layout.child_offsets {
+                off.0 += dx;
+            }
+        }
+    }
 
     // 重定位子：offset 相对 content-box top-left；LayoutBox.x/y 相对父 content area
     //（与 multicol position_multicol_children 约定一致：child.x = col_x + margin_left）。
@@ -1712,6 +1747,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
@@ -1740,6 +1776,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         let b1 = &container.children[0];
         let b2 = &container.children[1];
@@ -1759,6 +1796,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         assert_eq!(container.children[1].x, 50.0, "HorizontalTb 容器不应被改");
         assert_eq!(container.width, 800.0, "HorizontalTb 容器 width 不变");
@@ -1775,6 +1813,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         assert_eq!(container.width, 800.0, "单子容器不应触发 width 修正");
     }
@@ -1794,6 +1833,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         // B1（DOM 首）右起：B1.x > B2.x（RTL），容器宽 = Σ 子宽 + frame = 104。
         assert!(
@@ -1830,6 +1870,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         assert_eq!(container.children[1].x, 50.0, "definite-width abspos 容器不应被改");
         assert_eq!(container.width, 800.0, "definite-width abspos 容器 width 不变");
@@ -1853,6 +1894,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         assert!(
             (container.width - 104.0).abs() < 0.5,
@@ -1873,6 +1915,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         assert_eq!(h_container.width, 800.0, "horizontal table-cell 容器 width 不变");
     }
@@ -1893,6 +1936,7 @@ mod tests {
             &WritingModeValue::HorizontalTb,
             false,
             &mut Vec::new(),
+            true,
         );
         // 容器未被重定位（B2 保留错误的「对角」初值 x=50，width 不变）。
         assert_eq!(container.children[1].x, 50.0, "percent-margin 容器不应被重定位");
