@@ -8526,13 +8526,30 @@
                 // s113：type/language 门（_zwScriptTypeClassify，part03 导出）——
                 // blocked（data block：非法 type/language，script-type-and-language-js
                 // 动态判据）三执行臂全不触发、不置 run-once；module 型沿旧通道。
-                var _r387typ = false;
-                try { _r387typ = _zwScriptTypeClassify(child) === 'blocked'; } catch (_e387ty) {}
-                if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
+                // s343（html-semantics M2 切片 343）：分类一次捕获——module 型改分派
+                // （见下臂注），classic/blocked 语义不变。
+                var _r387cls343 = '';
+                try { _r387cls343 = String(_zwScriptTypeClassify(child)); } catch (_e387ty) {}
+                var _r387typ = _r387cls343 === 'blocked';
+                // s343（html-semantics M2 切片 343）：动态插入**内联 module**（textContent
+                // 非空 + type=module）不在本臂同步 classic-eval——spec 动态插入脚本的求
+                // 值排队任务（whatwg/html#9864：内联 async="" module 追加后不立即执行、
+                // 解析错误异步报），同步 eval 在 append 调用窗内跑体并吞掉 s250 已建的
+                // 任务化 prepare（inline-async-inserted-execorder 实证：体执行先于
+                // append 返回、「error 事件非任务」同根因）。委派 part03
+                // _zwScriptMaybeStartDynamic module 分支（already-started/connected/
+                // for-event 门重检幂等 + run-once 章同步置 + __zw_compile_inline_module
+                // setTimeout 编译求值 + 四态事件契约：编译失败面 window 报告/元素事件
+                // 语义不变）。src 形外链 module（textContent 空）不经此臂——沿下方
+                // R387b _zwPrepareSrcScript 既有面零漂移。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                if (_r387conn && !_r387frag && _r387cls343 === 'module' && _r387src) {
+                  if (typeof _zwScriptMaybeStartDynamic === 'function') _zwScriptMaybeStartDynamic(child);
+                } else if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && !_r387src && typeof _r377runScript === 'function') {
                   // 融合读失败回落 R377 registry 收集路径（run-once 标记同源）。
                   _r377runScript(child.__zwHandle);
                 }
-                if (_r387conn && !_r387frag && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
+                if (_r387conn && !_r387frag && _r387cls343 !== 'module' && !_r387typ && !_r387nomod && !_r387forev && _r387src && !(globalThis._zwRanScripts && globalThis._zwRanScripts[child.__zwHandle])) {
                   if (!globalThis._zwRanScripts) globalThis._zwRanScripts = {};
                   globalThis._zwRanScripts[child.__zwHandle] = true;
                   // s341（html-semantics M2 切片 341）：spec 脚本元素栈——执行窗 push
@@ -8615,9 +8632,18 @@
                       if (!_s95nomod) {
                         // s113：type/language 门（R387 同口径）——blocked（data
                         // block）不执行、不置 run-once（摘属性后重走门）。
-                        var _s95typ = false;
-                        try { _s95typ = _zwScriptTypeClassify(_s95self) === 'blocked'; } catch (_eS95ty) {}
-                        if (!_s95typ) {
+                        // s343（html-semantics M2 切片 343）：module 型分派——补文本
+                        // 臂与 R387 内联臂同根因（动态内联 module 求值是排队任务，
+                        // whatwg/html#9864），同步 classic-eval 会吞掉 s250 任务化
+                        // prepare。委派 part03 _zwScriptMaybeStartDynamic module 分支
+                        //（run-once 章在其内置，下方 classic 臂章置位不再走）。
+                        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                        var _s95cls343 = '';
+                        try { _s95cls343 = String(_zwScriptTypeClassify(_s95self)); } catch (_eS95ty) {}
+                        var _s95typ = _s95cls343 === 'blocked';
+                        if (_s95cls343 === 'module') {
+                          if (typeof _zwScriptMaybeStartDynamic === 'function') _zwScriptMaybeStartDynamic(_s95self);
+                        } else if (!_s95typ) {
                           // s341（html-semantics M2 切片 341）：spec 脚本元素栈——
                           // 补文本执行臂与 R387/s109 执行臂同型 push/pop（getter 栈
                           // 通道 part06；嵌套执行窗 currentScript 指最内层真执行者，

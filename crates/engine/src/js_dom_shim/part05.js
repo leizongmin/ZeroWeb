@@ -14616,6 +14616,23 @@
         if (!_s4pN || typeof _s4pN !== 'object' || !_s4pN.__zwHandle) continue;
         try {
           if (String(_s4pN.tagName || '').toUpperCase() !== 'SCRIPT') continue;
+          // s343（html-semantics M2 切片 343）：module 单元不走本臂同步 eval——
+          // M2-S4P 建 arm 时只建模 classic 内联（textContent 非空即 (0,eval) 同步
+          // 求值），`document.head.append(module)` 体在插入语句内跑完（probe10
+          // 实证 start|body|after-append 序），违背 spec 动态插入 module 的
+          // evaluate 排在插入脚本之后（s251 同语义；whatwg/html#9864 判据
+          // inline-async-inserted-execorder）。委派 _zwScriptMaybeStartDynamic
+          //（s250 内联 module 分支：run-once 记账先行 + 整体 setTimeout 延迟 +
+          // __zw_compile_inline_module 四态契约），与 R387/s95 cls343 同形；
+          // 委派后不回落 classic eval（module 永不同步求值，即使宿主让位或缺
+          // 回调）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          var _s4pCls343 = '';
+          try { _s4pCls343 = String(_zwScriptTypeClassify(_s4pN)); } catch (_eS4pc343) {}
+          if (_s4pCls343 === 'module') {
+            if (typeof _zwScriptMaybeStartDynamic === 'function') _zwScriptMaybeStartDynamic(_s4pN);
+            continue;
+          }
           var _s4pSrc = '';
           try { _s4pSrc = String(_s4pN.textContent || ''); } catch (_eS4pt) {}
           if (_s4pSrc && !(globalThis._zwRanScripts && globalThis._zwRanScripts[_s4pN.__zwHandle])) {

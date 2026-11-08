@@ -4904,6 +4904,13 @@ impl WebView {
                     }),
                 _ => None,
             };
+            // s343（html-semantics M2 切片 343）：外链 classic 成功取回面标记——元素
+            // fire load 派发锚（下方 match 按 src 消费后 lose 绑定；fetch Err 臂
+            // continue 已带 error 派发，不落 load）。
+            let classic_external_src_343 = match &script {
+                zero_engine::pipeline::PageScript::External(src) => Some(src.clone()),
+                _ => None,
+            };
             let (code, is_module) = match script {
                 zero_engine::pipeline::PageScript::Inline(c) => (c, false),
                 // R3083：`<script type="module">` 经 compile_module_script 转 import/export 为经典可执行
@@ -5351,6 +5358,19 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     ));
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
+            }
+            // s343（html-semantics M2 切片 343）：外链 classic 取回+执行完成 → 元素
+            // fire load（spec load 事件属 fetch 完成路径——s102 只补了失败 error 面，
+            // 成功 load 此前缺席；runner s343 plain defer 透传后 load-error-events-1
+            // test1_load（defer 200 onload 臂）元素 load 恒缺 → 页面 Timeout 定谳）。
+            // 执行体抛错仍 fire load（spec report the exception 与 load 解耦，同模块
+            // s102「元素照常 fire load」口径）。runner 投递内联单元（Inline 形）不经
+            // 本臂，s100 体尾 load 投递无双发；动态 src 通道（shim prepare 家族）另
+            // 派，非本臂消费面。
+            // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
+            if let Some(src_343) = classic_external_src_343 {
+                let abs = resolve_document_url(&doc_url, &src_343);
+                let _ = sandbox.execute(&script_dispatch_script_event(&abs, "load"));
             }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }

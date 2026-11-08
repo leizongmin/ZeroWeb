@@ -12650,6 +12650,9 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
     // s255：投递单元标记计数——module 单元 load/error 尾按 `data-zw-unit` 查回元素
     // （见 script_event_dispatch_tail_unit）。
     let mut unit_counter: usize = 0;
+    // s343：plain defer 归属预扫（透传臂条件，见臂注）——扫描与主循环同构（体对
+    // 标签扫描不透明），探测视图与 transform 自身一致。
+    let defer_route_343 = page_has_deferred_module(html);
     loop {
         let Some(start) = remaining.find("<script") else {
             output.push_str(remaining);
@@ -12843,6 +12846,69 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
             })
         };
         let rest_start = open_end + 1;
+        // s343（html-semantics M2 切片 343）：**内联** async module 单元（无 src、体内
+        // 静态 import 携 trickle 查询）注册页面侧调度器——src 形在下方 resolved Some 臂
+        // 有同款面（module_async_sched_343）；src 缺席单元原走 resolved None 整段透传，
+        // 引擎按 InlineModule 批内求值且本地取回不兑现 trickle 延迟，slow import 即刻
+        // 完成（zdiag 管线 dump 实证 verbatim 透传），inline-async-execorder 的
+        // fast-before-slow 判据被打破。延迟 = transform 体内静态 spec 的 max trickle；
+        // async 无 trickle（延迟 0）与绑定形/动态 import 体不落本臂——既有透传面不变。
+        // nomodule/nonce 单元不经本臂（nomodule prepare 门与 CSP nonce 槽位面归引擎）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if extract_script_src(open).is_none()
+            && !zero_engine::open_tag_has_attr(open, "nomodule")
+            && zero_engine::attr_from_open_tag(open, "nonce").is_none()
+            && matches!(
+                zero_engine::attr_from_open_tag(open, "type"),
+                Some(t) if t.trim().eq_ignore_ascii_case("module")
+            )
+            && zero_engine::open_tag_has_attr(open, "async")
+            && let Some(off) = remaining[rest_start..].find("</script>")
+        {
+            let inline_body_343 = &remaining[rest_start..rest_start + off];
+            if let Some((sched_body_343, delay_343)) =
+                transform_inline_module_async_sched(inline_body_343).filter(|(_, delay)| *delay > 0)
+            {
+                let sched_body_343 = sched_body_343.replace("</script", "<\\/script");
+                let tail_343 = script_event_dispatch_tail_el("load", "_zwEl");
+                output.push_str(&remaining[..start]);
+                output.push_str(&format!(
+                    "<script type=\"module\">__zwSchedRegister(\"async\", {delay_343}, \
+                     (function (_zwEl) {{ return (async function () {{\n{sched_body_343}{tail_343}\n}})(); }})(document.currentScript));</script>"
+                ));
+                let end = rest_start + off + "</script>".len();
+                remaining = &remaining[end..];
+                continue;
+            }
+        }
+        // s343（html-semantics M2 切片 343）：plain defer 单元（defer 属性、无 async、
+        // 无 trickle 查询）**条件**整段透传外链——页面存在 deferred module（type=module
+        // 无 async，extract 归 Deferred → 引擎 s342 batch deferred 桶）时透传：defer
+        // classic 与 deferred module 同桶按文档序交错执行（execorder parsedOrdered
+        // 判据——s112 注册面 defer 队列在 interactive 后 drain，晚于桶尾批内相位，
+        // 两套 deferred 机制并存打散文档序）。无 deferred module 页面维持 s112 注册
+        //（087/103/114 判据面：plain defer + trickle defer 文档序同队列（087）、
+        // interactive readystatechange 时 defer 未执行的相位断言（103）、src 变更
+        // mutation 冻结语义（114）依赖调度器 drain 相位与注册 shell 无 src 形）。
+        // trickle defer（("defer", N>0)）恒走注册面——取回延迟模拟仍由调度器承担。
+        // http(s)/integrity/nonce/nomodule/src 缺席单元不经本臂（resolved None 透传 /
+        // sched None 各有专用面）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        if defer_route_343 && matches!(script_sched_unit(open, src.unwrap_or("")), Some(("defer", 0))) {
+            // 整段透传（s97 同形：spec rawtext 语义，体对标签扫描不透明）。
+            match remaining[rest_start..].find("</script>") {
+                Some(off) => {
+                    let end = rest_start + off + "</script>".len();
+                    output.push_str(&remaining[..end]);
+                    remaining = &remaining[end..];
+                }
+                None => {
+                    output.push_str(remaining);
+                    break;
+                }
+            }
+            continue;
+        }
         match resolved {
             Some((combined, status, content)) => {
                 output.push_str(&remaining[..start]);
@@ -12919,11 +12985,6 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 // 区分：webview CSP 检查点与 eval 门禁据此不再把 CSP 页所有外链页脚本
                 // 整体豁免（s253 勘根「错进错出」面）——内联页脚本按原始 src 走外链
                 // URL 检查路径（同源 'self' 放行 / 异源阻止）并装 eval 包装。
-                output.push_str(&format!(
-                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-inlined data-inline=\""
-                ));
-                output.push_str(&combined);
-                output.push_str("\">");
                 let mut unit_body = String::new();
                 let tail_event = if status == 200 {
                     // s101（内联模块依赖解析基）：type="module" 外链内联后，模块体内相对
@@ -12951,6 +13012,61 @@ fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encodi
                 // 同口径。
                 // https://html.spec.whatwg.org/multipage/syntax.html#script-data-state
                 let mut unit_body = unit_body.replace("</script", "<\\/script");
+                // s343（html-semantics M2 切片 343）：trickled async module 单元注册
+                // 页面侧调度器——async module 的 spec 相位是「取回就绪即执行」（ASAP
+                // 集，prepare-the-script-element 步骤 22），trickle 查询模拟的取回延迟
+                // 须在执行序中兑现（inline-async-execorder：fast 完成序先于 slow，既有
+                // 投递面剥 async 归引擎 deferred 桶 = 文档序，slow 抢跑 fast）。延迟 =
+                // src 与全部静态 spec 查询的 max trickle；调度闭包是 classic 语境
+                //（import 声明非法），静态 import 经 transform 改写 await import()（裸
+                // 副作用形之外维持既有投递面）。load 投递尾恒附（引擎未见单元，s337
+                // 双发守卫不适用）。async 无 trickle（延迟 0）不注册——既有投递面不变。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                let module_async_sched_343 =
+                    if is_module_unit && zero_engine::open_tag_has_attr(open, "async") && tail_event == "load" {
+                        transform_inline_module_async_sched(&unit_body)
+                            .map(|(body, delay)| {
+                                let delay = delay.max(trickle_delay_ms(src.unwrap_or("")));
+                                (body, delay)
+                            })
+                            .filter(|(_, delay)| *delay > 0)
+                    } else {
+                        None
+                    };
+                // s343（html-semantics M2 切片 343）：外链 async module 投递 shell 保真
+                // async 属性——投递改写剥 async 使 extract 把 async module 分类成
+                // Deferred（module 无 async 隐式 defer），单元从 parse 位执行挪到
+                // deferred 桶尾；inline-async-execorder 实证慢速 async 单元注册面的
+                // 调度 drain 在批内虚拟时兑现后，fast 单元才在桶尾执行（probe13 时序
+                // dump fast,fast,slow,slow,slow,fast——fast 迟于全部 slow）。async 保真
+                // 归位 AsyncModule → 引擎 Blocking 槽（s342 口径：async module 保持
+                // parse 位）。注册面消费的单元（上方臂改注册）不保真——注册 shell 带
+                // async 会提前到 Blocking 槽，注册序先于同批 async 单元执行，drain 窗
+                // 定时器先兑现反转文档序。
+                // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                let async_attr = if is_module_unit
+                    && zero_engine::open_tag_has_attr(open, "async")
+                    && module_async_sched_343.is_none()
+                {
+                    " async"
+                } else {
+                    ""
+                };
+                output.push_str(&format!(
+                    "<script{id_attr}{nonce_attr}{nomodule_attr}{type_attr}{async_attr}{onload_attr}{onerror_attr}{unit_attr} data-zw-inlined data-inline=\""
+                ));
+                output.push_str(&combined);
+                output.push_str("\">");
+                if let Some((sched_body_343, delay_343)) = module_async_sched_343 {
+                    let tail_343 = script_event_dispatch_tail_el("load", "_zwEl");
+                    output.push_str(&format!(
+                        "__zwSchedRegister(\"async\", {delay_343}, \
+                         (function (_zwEl) {{ return (async function () {{\n{sched_body_343}{tail_343}\n}})(); }})(document.currentScript));"
+                    ));
+                    output.push_str("</script>");
+                    remaining = &remaining[rest_start..];
+                    continue;
+                }
                 // s112：defer/async/trickle 单元改注册进页面侧调度器（分类见
                 // script_sched_unit）——执行体闭包化，相位由生命周期链驱动。load/error
                 // 投递尾不能读 document.currentScript：setTimeout/drain 相位执行时
@@ -13075,6 +13191,80 @@ fn script_sched_unit(open: &str, raw_src: &str) -> Option<(&'static str, u64)> {
         return None;
     };
     Some((kind, delay_ms))
+}
+
+/// s343（html-semantics M2 切片 343）：页面存在 deferred module（解析器插入
+/// `type=module` 且无 `async` 属性的 `<script>`——extract 归 ScriptSched::Deferred，
+/// 经投递面落入引擎 batch deferred 桶）→ plain defer classic 同桶透传交错；否则
+/// false，plain defer 维持 s112 调度器注册面。扫描迭代与 `inline_local_scripts`
+/// 主循环同构（`<script` 起始、`>` 封口、体至 `</script>` 不透明）——JS 字符串/
+/// 注释内的 `<script` 书写形态被体跳过吸收，不误判（document.write writer 族）。
+/// 无封口的病态形态保守返回 false（该形态下主循环也只透传不改写）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn page_has_deferred_module(html: &str) -> bool {
+    let mut rest = html;
+    while let Some(start) = rest.find("<script") {
+        let Some(open_end) = rest[start..].find('>') else {
+            return false;
+        };
+        let open_end = start + open_end;
+        let open = &rest[start..=open_end];
+        if matches!(
+            zero_engine::attr_from_open_tag(open, "type"),
+            Some(t) if t.trim().eq_ignore_ascii_case("module")
+        ) && !zero_engine::open_tag_has_attr(open, "async")
+        {
+            return true;
+        }
+        let Some(close_off) = rest[open_end + 1..].find("</script>") else {
+            return false;
+        };
+        rest = &rest[open_end + 1 + close_off + "</script>".len()..];
+    }
+    false
+}
+
+/// s343（html-semantics M2 切片 343）：trickled async module 单元的调度改装体——
+/// 静态 import 声明改写为 `await import()`（调度闭包 classic 语境，import 声明非法；
+/// spec 内经 s101 重写恒为双引号 root-absolute 串，引号形直接定位）。仅**全部裸副
+/// 作用形**（`import<ws>"spec"`）可改装：default/named/namespace 绑定形（引号串前
+/// 越过空白非 `import` 关键字，如 `from`）与动态 `import(` 调用不落静态 spec 面，
+/// 返回 None 维持既有投递面。延迟 = 体内全部静态 spec 查询的 max trickle（单元
+/// src 侧延迟由调用方并入——本函数只见投递体）。无静态 import 的体原样返回
+///（外部 async module 体即模块文件内容，无需 await 包裹即可入 async 闭包）。
+/// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+fn transform_inline_module_async_sched(body: &str) -> Option<(String, u64)> {
+    let mut out = body.to_string();
+    let mut delay = 0u64;
+    for spec in zero_script_sandbox::extract_static_module_import_specifiers(body) {
+        delay = delay.max(trickle_delay_ms(&spec));
+        let needle = format!("\"{spec}\"");
+        // 同 spec 多处出现逐处改装；已改装形（`await import("spec")`，引号前是 `(`）
+        // 跳过续找，避免自命中背扫描误拒。
+        let mut from = 0usize;
+        while let Some(rel) = out[from..].find(&needle) {
+            let pos = from + rel;
+            let bytes = out.as_bytes();
+            if pos > 0 && bytes[pos - 1] == b'(' {
+                from = pos + needle.len();
+                continue;
+            }
+            let mut word_end = pos;
+            while word_end > 0 && matches!(bytes[word_end - 1], b'\t' | b'\n' | 0x0C | b'\r' | b' ') {
+                word_end -= 1;
+            }
+            // 关键字背扫须落在 `import` 尾且起点是字符边界（非边界 = 多字节前缀截断，
+            // 非裸形——`from` 绑定形/再导出/动态调用等维持既有投递面）。
+            let word_start = word_end.checked_sub(6)?;
+            if !out.is_char_boundary(word_start) || !out[word_start..word_end].eq_ignore_ascii_case("import") {
+                return None;
+            }
+            let replaced = format!("await import(\"{spec}\")");
+            out.replace_range(word_start..pos + needle.len(), &replaced);
+            from = word_start;
+        }
+    }
+    Some((out, delay))
 }
 
 /// s101：内联投递模块体的静态 import spec 重写为 root-absolute（wpt_root 相对路径）。
@@ -17602,10 +17792,15 @@ async_test(function(test) {
 
     #[test]
     fn inline_sched_classification_wraps_defer_async_trickle_s112() {
-        // s112（parser 外链时序调度）：defer/async/trickle 单元改注册 __zwSchedRegister
+        // s112（parser 外链时序调度）：async/trickle 单元改注册 __zwSchedRegister
         //（分类冻结于预处理——spec prepare 定格 async/defer 归类，103/111/112 运行期
         // removeAttribute 不重分类）；普通阻塞单元维持原位直执；nomodule 不入调度器
         //（prepare 门专用面）；trickle 毫秒 = dN×1000；load 投递尾随闭包体内联。
+        // s343：plain defer 单元**条件**归属——页面存在 deferred module（type=module
+        // 无 async）时整段透传入引擎 deferred 桶（defer classic 与 deferred module
+        // 文档序交错，execorder parsedOrdered 判据）；否则维持 s112 注册面
+        //（kind=defer delay=0——087/103/114 相位与 mutation 冻结语义依赖调度器
+        // interactive 后 drain 相位）。本 fixture 无 module 单元 → 注册面。
         let root = std::env::temp_dir().join("zw-s112-sched-classify-test");
         let case_dir = "html/semantics/scripting-1/the-script-element/execution-timing";
         std::fs::create_dir_all(root.join(case_dir).join("scripts")).unwrap();
@@ -17621,12 +17816,12 @@ async_test(function(test) {
 
         let out = inline_local_scripts(html, &root, &format!("{case_dir}/sched.html"), None);
 
-        // defer → kind=defer delay=0；async+trickle → kind=async；无 defer/async +
-        // trickle → kind=block。trickle 毫秒 = dN×1000。注册体 = 元素捕获 IIFE 返回的
-        // 执行闭包（投递尾相位执行时 currentScript 已清，见投递处注释）。
+        // s343（无 module 页面）：plain defer → 注册 kind=defer delay=0；async+
+        // trickle → kind=async；无 defer/async + trickle → kind=block；defer+
+        // trickle → kind=defer delay=dN×1000（trickle 取回延迟模拟仍走注册面）。
         assert!(
             out.contains("__zwSchedRegister(\"defer\", 0, (function (_zwEl) {"),
-            "defer 单元须注册 kind=defer delay=0: {out}"
+            "plain defer 单元须注册 kind=defer delay=0: {out}"
         );
         assert!(
             out.contains("__zwSchedRegister(\"async\", 3000, (function (_zwEl) {"),
@@ -17640,16 +17835,123 @@ async_test(function(test) {
             out.contains("__zwSchedRegister(\"defer\", 1000, (function (_zwEl) {"),
             "defer+trickle 单元须注册 kind=defer delay=1000: {out}"
         );
-        // 4 单元注册 + 普通阻塞/nomodule 两单元原位直执（注册调用恰 4 处）。
+        // 4 单元注册 + 普通阻塞/nomodule 两单元原位直执（注册恰 4 处）。
         assert_eq!(out.matches("__zwSchedRegister").count(), 4, "{out}");
-        // 投递形态保真：id 随写保留（111/112 getElementById 面）+ onload 属性保留 +
-        // load 投递尾在闭包体内（注册体内联，元素表达式 = 捕获形参 _zwEl）。
+        // 投递形态保真：id 随写保留（111/112 getElementById 面）+ onload 属性保留
+        //（defer+trickle 注册单元）+ load 投递尾在闭包体内（注册体内联，元素表达式
+        // = 捕获形参 _zwEl）。
         assert!(out.contains("id=\"d\""), "{out}");
         assert!(out.contains("onload=\"onL()\""), "{out}");
         assert!(out.contains("})(document.currentScript));"), "{out}");
         assert_eq!(out.matches("var _cs = _zwEl;").count(), 4, "{out}");
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn plain_defer_route_conditional_on_deferred_module_s343() {
+        // s343：plain defer 归属条件——页面存在 deferred module（type=module 无
+        // async）时 defer classic 整段透传（引擎 deferred 桶文档序交错）；无 module
+        // 页面维持 s112 注册面。JS 字符串内的 `<script type=module>` 书写形态被体
+        // 跳过吸收（document.write writer 族不误判）。
+        assert!(page_has_deferred_module(
+            "<!doctype html><body><script type=\"module\" src=\"m.js\"></script><script defer src=\"a.js\"></script></body>"
+        ));
+        // async module 是 ASAP 集（Blocking 槽）——不触发透传。
+        assert!(!page_has_deferred_module(
+            "<!doctype html><body><script type=\"module\" async src=\"m.js\"></script><script defer src=\"a.js\"></script></body>"
+        ));
+        // 字符串形态：体对标签扫描不透明——writer 串里的 type=module 不计。
+        assert!(
+            !page_has_deferred_module(
+                "<!doctype html><body><script>document.write('<script type=\"module\" src=\"m.js\"><\\/script>');</script><script defer src=\"a.js\"></script></body>"
+            ),
+            "字符串内 script 标签须被体跳过"
+        );
+        // 集成：module + plain defer 页 → defer 单元整段透传（无注册调用）。
+        let root = std::env::temp_dir().join("zw-s343-defer-route-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element/execution-timing";
+        std::fs::create_dir_all(root.join(case_dir).join("scripts")).unwrap();
+        std::fs::write(root.join(case_dir).join("scripts/a.js"), "log('a');").unwrap();
+        let html = "<!doctype html><body>\
+            <script type=\"module\" src=\"scripts/a.js\"></script>\
+            <script defer src=\"scripts/a.js\"></script>\
+            </body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/route.html"), None);
+        std::fs::remove_dir_all(&root).ok();
+        assert!(
+            out.contains("<script defer src=\"scripts/a.js\"></script>"),
+            "deferred module 在场时 plain defer 须整段透传: {out}"
+        );
+        assert_eq!(out.matches("__zwSchedRegister").count(), 0, "{out}");
+    }
+
+    #[test]
+    fn transform_inline_module_async_sched_bare_import_rewrite_s343() {
+        // s343：裸副作用形静态 import 改写 await import() + 体内 spec max trickle
+        // 延迟；绑定形/再导出维持 None（既有投递面）；无静态 import 体原样透传
+        //（外部 async module 体即模块文件内容，原样入 async 闭包）。
+        let (out, delay) = transform_inline_module_async_sched(
+            "import \"./resources/slow-module.js?pipe=trickle(d2)&unique=2\";\nloaded.push(\"slow\");",
+        )
+        .unwrap();
+        assert!(
+            out.contains("await import(\"./resources/slow-module.js?pipe=trickle(d2)&unique=2\")"),
+            "{out}"
+        );
+        assert_eq!(out.matches("import \"").count(), 0, "{out}");
+        assert_eq!(delay, 2000);
+        // 同 spec 两处逐处改装（改装形引号前是 `(`，背扫不与 await 形自命中）。
+        let (out2, _) = transform_inline_module_async_sched("import \"./a.js\";\nimport \"./a.js\";").unwrap();
+        assert_eq!(out2.matches("await import(\"./a.js\")").count(), 2, "{out2}");
+        // 绑定形 → None。
+        assert!(transform_inline_module_async_sched("import x from \"./a.js\";").is_none());
+        assert!(transform_inline_module_async_sched("import { a } from \"./a.js\";").is_none());
+        // 再导出（export…from 静态 spec 面）→ None。
+        assert!(transform_inline_module_async_sched("export { a } from \"./a.js\";").is_none());
+        // 无静态 import → 原样透传 + 零延迟。
+        let (out3, d3) = transform_inline_module_async_sched("loaded.push(\"fast\");").unwrap();
+        assert_eq!(out3, "loaded.push(\"fast\");");
+        assert_eq!(d3, 0);
+    }
+
+    #[test]
+    fn inline_async_module_srcless_trickle_registers_s343() {
+        // s343：无 src 内联 async module 单元（体内静态 import 携 trickle）注册页面
+        // 调度器——import 声明改写 await import() + 延迟 = spec max trickle；async 无
+        // trickle 与非 async / 非 module / nomodule 单元维持整段透传（引擎面）。
+        let root = std::env::temp_dir().join("zw-s343-srcless-async-module-test");
+        let case_dir = "html/semantics/scripting-1/the-script-element/module";
+        std::fs::create_dir_all(root.join(case_dir).join("resources")).unwrap();
+        let html = "<!doctype html><body>\
+            <script type=\"module\" async>\
+            import \"./resources/slow-module.js?pipe=trickle(d2)&unique=2\";\
+            loaded.push(\"slow\");\
+            </script>\
+            <script type=\"module\" async>\
+            loaded.push(\"fast\");\
+            </script>\
+            <script type=\"module\">\
+            import \"./resources/slow-module.js?pipe=trickle(d2)&unique=3\";\
+            </script>\
+            </body>";
+        let out = inline_local_scripts(html, &root, &format!("{case_dir}/srcless.html"), None);
+        std::fs::remove_dir_all(&root).ok();
+        // trickled async 内联单元 → 调度器注册（async 2000）。
+        assert!(
+            out.contains("__zwSchedRegister(\"async\", 2000, (function (_zwEl) {"),
+            "{out}"
+        );
+        assert!(
+            out.contains("await import(\"./resources/slow-module.js?pipe=trickle(d2)&unique=2\")"),
+            "{out}"
+        );
+        // async 无 trickle 单元不注册（透传，引擎 InlineModule 面）。
+        assert!(
+            out.contains("<script type=\"module\" async>loaded.push(\"fast\");</script>"),
+            "{out}"
+        );
+        assert_eq!(out.matches("__zwSchedRegister").count(), 1, "{out}");
     }
 
     #[test]
