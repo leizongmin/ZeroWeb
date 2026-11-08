@@ -6043,6 +6043,8 @@
       globalThis.__zwDocWriteNestedDone = {};
       globalThis.__zwDocWriteSlotCount = 0;
       globalThis.__zwDocWriteNewFrom = 0;
+      // s353：解析阻塞面记账同步重置（已放行前缀归零 = 空缓冲全放行）。
+      globalThis.__zwDocWriteVisLen = 0;
       try {
         var _dwoBody = globalThis.document.body;
         if (_dwoBody) _dwoBody.innerHTML = '';
@@ -6286,7 +6288,20 @@
             }
             _dwsWm++;
           }
-          if (!_dwsThrowaway) globalThis.__zwDocWriteExecWatermark = _dwsList.length;
+          if (!_dwsThrowaway) {
+            globalThis.__zwDocWriteExecWatermark = _dwsList.length;
+            // s353：主链排水续流——spec：pending parsing-blocking script 求值完成
+            // 后 parser 恢复解析停车段。水位线先行落定（续流面从旧物化数续走新物
+            // 化槽位）；挂链/嵌套在途不续流（其消费回调续跑面到本口）。
+            var _dwsPend = (typeof globalThis.__zwDocWritePendingSlot === 'number')
+              ? globalThis.__zwDocWritePendingSlot : -1;
+            if (_dwsPend < 0 && globalThis.__zwDocWriteNestedBusy !== true
+              && !(globalThis.__zwDocWriteNestedQueue || []).length
+              && globalThis.__zwDocWriteVisExtend
+              && globalThis.__zwDocWriteVisExtend()) {
+              try { globalThis.__zwDocWriteRunFace(); } catch (_eS97vx) {}
+            }
+          }
         };
         // s97/s352：handle 域副本构建共享 helper——主链与嵌套链同一透传语义
         //（全属性透传 + xlink:href 回退补 src）。
@@ -6357,14 +6372,104 @@
             _ndConsume();
           }
         };
+      // s353（html-semantics M2 切片 353）：写流解析阻塞面——spec pending
+      // parsing-blocking script：src 外链（无 defer/async）准备期间 parser 停在
+      // 该元素，同 chunk 其后标记不解析（068：write('<script src>…</script>'
+      // + '<div>') 的 div 在外链求值前不得物化，find-foo 断言 NO）。
+      // `__zwDocWriteVisLen` = 已物化缓冲前缀长度；停车段在主链排水后续流物化
+      //（walk-end 续流）。defer/async/xlink:href/内联不设边界（不阻塞解析）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#pending-parsing-blocking-script
+      // 扫描器近似解析器：注释区跳过；script 文本（内联体/fallback）整体跳至闭合
+      //（写入串按惯例 `\/` 转义闭合，语料零违反）。
+      // FIXME(spec-gap): 引号属性值内 '<script' 字面、script 文本内未转义闭合的
+      // 病态形状不作 token 级识别（语料 0 形；误检劣化为「延后物化」自愈于排水
+      // 续流）；跨开放元素的边界切片树形可能与流式解析有差（语料 0 形）。
+      globalThis.__zwDocWriteFindBlockingClose = function (_fbText, _fbFrom) {
+        if (typeof _fbText !== 'string' || !_fbText) return -1;
+        var _fbLow = _fbText.toLowerCase();
+        var _fbLen = _fbLow.length;
+        var _fbI = (typeof _fbFrom === 'number' && _fbFrom >= 0 && _fbFrom < _fbLen) ? _fbFrom : 0;
+        var _fbGuard = 0;
+        while (_fbI < _fbLen && _fbGuard++ < 8192) {
+          var _fbS = _fbLow.indexOf('<script', _fbI);
+          if (_fbS < 0) return -1;
+          var _fbC = _fbLow.indexOf('<!--', _fbI);
+          if (_fbC >= 0 && _fbC < _fbS) {
+            var _fbCe = _fbLow.indexOf('-->', _fbC + 4);
+            if (_fbCe < 0) return -1;
+            _fbI = _fbCe + 3;
+            continue;
+          }
+          var _fbNc = _fbLow.charAt(_fbS + 7);
+          if (_fbNc !== '/' && _fbNc !== '>' && !/\s/.test(_fbNc)) {
+            _fbI = _fbS + 7;
+            continue;
+          }
+          var _fbJ = _fbS + 7;
+          var _fbQ = '';
+          while (_fbJ < _fbLen) {
+            var _fbCh = _fbLow.charAt(_fbJ);
+            if (_fbQ !== '') {
+              if (_fbCh === _fbQ) _fbQ = '';
+            } else if (_fbCh === '"' || _fbCh === "'") {
+              _fbQ = _fbCh;
+            } else if (_fbCh === '>') {
+              break;
+            }
+            _fbJ++;
+          }
+          if (_fbJ >= _fbLen) return -1;
+          var _fbTag = _fbLow.slice(_fbS, _fbJ + 1);
+          var _fbEnd = -1;
+          var _fbK = _fbLow.indexOf('</script', _fbJ);
+          if (_fbK < 0) {
+            _fbEnd = _fbLen;
+          } else {
+            var _fbGt = _fbLow.indexOf('>', _fbK);
+            _fbEnd = (_fbGt >= 0) ? _fbGt + 1 : _fbLen;
+          }
+          if (/\ssrc\s*=/.test(_fbTag) && !/\sasync\b/.test(_fbTag) && !/\sdefer\b/.test(_fbTag)) {
+            return _fbEnd;
+          }
+          _fbI = _fbEnd;
+        }
+        return -1;
+      };
+      // s353：停车段续流——主链排水后 parser 恢复：从 visLen 扫下一阻塞外链，
+      // 物化 [visLen, 新边界) 段（有阻塞则新边界 = 其闭合后，其后继续停车）。
+      // 段耗账推进不受解析异常回退（insertAdjacentHTML 容错解析极少抛；真抛时
+      // 保活性优先——停车段卡死比内容缺失更劣）。
+      globalThis.__zwDocWriteVisExtend = function () {
+        var _veBody = null;
+        try { _veBody = globalThis.document.body; } catch (_veEb) { return false; }
+        var _veBuf = globalThis.__zwDocWriteBuffer;
+        if (!_veBody || typeof _veBuf !== 'string') return false;
+        var _veVis = (typeof globalThis.__zwDocWriteVisLen === 'number')
+          ? globalThis.__zwDocWriteVisLen : 0;
+        if (_veVis >= _veBuf.length) return false;
+        var _veFound = (typeof globalThis.__zwDocWriteFindBlockingClose === 'function')
+          ? globalThis.__zwDocWriteFindBlockingClose(_veBuf, _veVis) : -1;
+        var _veNew = (_veFound >= 0 && _veFound < _veBuf.length) ? _veFound : _veBuf.length;
+        var _veGate = globalThis.__zwDocWriteReplay;
+        globalThis.__zwDocWriteReplay = true;
+        try {
+          _veBody.insertAdjacentHTML('beforeend', _veBuf.slice(_veVis, _veNew));
+        } catch (_veE) {}
+        globalThis.__zwDocWriteReplay = _veGate;
+        globalThis.__zwDocWriteVisLen = _veNew;
+        return true;
+      };
       }
       if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
+      var _dwpPreLen = globalThis.__zwDocWriteBuffer.length;
       for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
         globalThis.__zwDocWriteBuffer += String(arguments[_dwW] == null ? '' : arguments[_dwW]);
       }
       // 显式 open/close 周期（PW setContent）维持原缓冲语义——close() 一次性应用。
       if (globalThis.__zwDocWriteOpen === true) return;
       // 隐式 open 流：基线快照（首 write 时）+ 累计缓冲同步重放（append 语义）。
+      // s353：首写 init 先行于停车决策（visLen 归零在决策扫描前落定，决策后置会
+      // 被本块覆写为 0 → 停车决策失效，曾靠 walk-end 续流自愈——不再依赖该跳）。
       var _dwbFirst = typeof globalThis.__zwDocWriteBase !== 'string';
       if (_dwbFirst) {
         try {
@@ -6380,7 +6485,45 @@
           globalThis.__zwDocWriteNestedDone = {};
           globalThis.__zwDocWriteSlotCount = 0;
           globalThis.__zwDocWriteNewFrom = 0;
+          // s353：解析阻塞面记账同步重置（空缓冲全放行基点，决策在下方重定界）。
+          globalThis.__zwDocWriteVisLen = 0;
         } catch (_eDwb0) { globalThis.__zwDocWriteBase = ''; }
+      }
+      // s353：解析阻塞停车决策（隐式流专用，显式流早退不触）。
+      var _dwpVis = (typeof globalThis.__zwDocWriteVisLen === 'number')
+        ? globalThis.__zwDocWriteVisLen : 0;
+      if (_dwpVis > _dwpPreLen) {
+        // 段耗账越界夹挤（记账漂移防御）——整段放行。
+        globalThis.__zwDocWriteVisLen = _dwpVis = _dwpPreLen;
+      }
+      var _dwpChain = (typeof globalThis.__zwDocWritePendingSlot === 'number'
+        && globalThis.__zwDocWritePendingSlot >= 0)
+        || globalThis.__zwDocWriteNestedBusy === true
+        || (globalThis.__zwDocWriteNestedQueue || []).length > 0;
+      var _dwpEval = (typeof globalThis.__zwDocWriteEvalSlot === 'number')
+        && globalThis.__zwDocWriteEvalSlot >= 0;
+      if (_dwpChain && !_dwpEval) {
+        // 挂链 fetch 在途、无求值窗：写入落在挂链闭合后、其求值前不解析——内容
+        // 随停车段在主链排水后续流（visLen 不动；流位置在全部既有写入之后，
+        // 009 多写序：页面顺序写的 include-2 不得越过先写的 include-3）。
+      } else if (_dwpEval && _dwpVis < _dwpPreLen) {
+        // 求值窗内嵌套写入 + 停车段在途：本次写入按插入点语义重排——执行链
+        // 脚本的写入紧贴当前解析位（visLen），既有停车段后移。保持「已物化槽位 =
+        // 最终槽位列表前缀」不变式（槽位号按物化序分配，停车段物化时新槽位恒
+        // 尾插）。
+        var _dwpTail = globalThis.__zwDocWriteBuffer.slice(_dwpPreLen);
+        var _dwpParked = globalThis.__zwDocWriteBuffer.slice(_dwpVis, _dwpPreLen);
+        globalThis.__zwDocWriteBuffer = globalThis.__zwDocWriteBuffer.slice(0, _dwpVis) + _dwpTail + _dwpParked;
+        globalThis.__zwDocWriteVisLen = _dwpVis + _dwpTail.length;
+      } else {
+        // 空闲 / 求值窗内嵌套写入且停车段空（写入落当前插入点立即物化，嵌套
+        // write 面依赖即时物化入嵌套链 s352 口径）：本次写入含 src 阻塞外链 →
+        // 边界 = 其闭合标签后（其后停车）；无 → 全量放行（既有口径）。
+        var _dwpFound = (typeof globalThis.__zwDocWriteFindBlockingClose === 'function')
+          ? globalThis.__zwDocWriteFindBlockingClose(globalThis.__zwDocWriteBuffer, _dwpPreLen)
+          : -1;
+        globalThis.__zwDocWriteVisLen = (_dwpFound >= 0 && _dwpFound < globalThis.__zwDocWriteBuffer.length)
+          ? _dwpFound : globalThis.__zwDocWriteBuffer.length;
       }
       try {
         var _dwbBody = globalThis.document.body;
@@ -6405,7 +6548,14 @@
               globalThis.__zwDocWriteBaseChildCount = _dwbBody.childNodes
                 ? _dwbBody.childNodes.length : 0;
             }
-            _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer);
+            // s353：解析阻塞面——仅物化已放行前缀（visLen），停车段待主链排水
+            // 续流物化（walk-end 续流）。
+            var _dwbVis = (typeof globalThis.__zwDocWriteVisLen === 'number')
+              ? globalThis.__zwDocWriteVisLen : 0;
+            if (_dwbVis > globalThis.__zwDocWriteBuffer.length) {
+              globalThis.__zwDocWriteVisLen = _dwbVis = globalThis.__zwDocWriteBuffer.length;
+            }
+            _dwbBody.insertAdjacentHTML('beforeend', globalThis.__zwDocWriteBuffer.slice(0, _dwbVis));
           } finally {
             globalThis.__zwDocWriteReplay = _dwbPrevGate;
           }
@@ -6452,6 +6602,8 @@
             globalThis.__zwDocWriteNestedDone = {};
             globalThis.__zwDocWriteSlotCount = 0;
             globalThis.__zwDocWriteNewFrom = 0;
+            // s353：解析阻塞面记账同步重置（close 一次性应用流无停车语义）。
+            globalThis.__zwDocWriteVisLen = 0;
             if (typeof globalThis.__zwDocWriteRunFace === 'function') {
               globalThis.__zwDocWriteRunFace();
             }
