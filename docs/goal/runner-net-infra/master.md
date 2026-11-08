@@ -13,8 +13,8 @@
   切片三 11 臂初版 7 条 DirSuffix 谓词带列表字面量缺陷（永不匹配→
   落穿，机械验证发现已修），**修复后 23 臂态全量 A/B multiset 空集 +
   七域全等已落证**（m3s3-ab-181241 主证 + 181630 冗余印证），谓词
-  修复随 6be021b87 落库，证据与事件见[切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md)
-  与[切片三档](evidence/2026-11-08-m3-slice3-xhr-head11.md)。
+  修复随 6be021b87 落库，证据与事件见
+  [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)。
 - **卡点**：无。
 - **下一步**：切片四 fetch/api 族 + eventsource 族臂迁入（前缀推进，
   残链头现于 fetch/api/resources/redirect.py），每批全量 A/B 对照
@@ -29,7 +29,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md) + [切片三档](evidence/2026-11-08-m3-slice3-xhr-head11.md)（23 臂态 A/B 双跑空集，含谓词修复） |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
