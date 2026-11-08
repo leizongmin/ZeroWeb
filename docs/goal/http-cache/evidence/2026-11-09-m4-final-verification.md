@@ -144,8 +144,27 @@
   影响面：web-components 套件启动 ~50s 即崩（custom-elements/shadow-dom/
   template 三面全废）、CI html-sem 分片常红、weekly 快照该两面记 0。
   11-07 快照（56f1febb7）该案通过，回归窗 = ddb1e73cf（11-08 02:20 落地）
-  起。修复归属 shadow 域 goal（45 号已归档，engine 共享面），本轮不越界
+  起。初步归 shadow 域（45 号已归档）；同日收尖归因见下条，本轮不越界
   修——已记控制面待决项。
+- **根因帧定位 + 崩溃阶段收尖（2026-11-09 同日）**：gdb backtrace（须去
+  `ulimit -v`——内存墙会饿死 V8 sandbox 预留，首试误报 OOM）定谳溢出帧
+  在 **style-system**：`compute_styles_recursive` 逐树层自递归 ~2,000 帧
+  打满主栈，进入链 `compute_styles_with_shadow` ← `compute_styles` ←
+  `RenderPipeline::render_html` ← `WebView::apply_pending_shared_mutations`
+  ← `run_page_scripts_strict`；dom 侧 append_child/resolve_slots 均平铺
+  迭代，排除。三支探针（999 层 detached 嵌套 shadow）收尖崩溃阶段：
+  probeA 仅构建 **通过**、probeB 挂入文档 **崩**、probeC 挂入 + 深层
+  append 文本 **崩**——崩溃点在挂树触发样式计算，非构建、非 append
+  传播链。产品面同样暴露：`apps/browser/src/tab_worker.rs` spawn 未设
+  stack_size（默认 ~2MB 线程栈），远浅于 999 层的深嵌套页即可打爆。
+  修复方向 = style-system 遍历迭代化，属渲染流专属面（run-rules §9）+
+  perf 关键路径（改动须 perf-gate）；ddb1e73cf 的内层 shadow 物化本身
+  是正确行为不回退。控制面待决项已按此口径收尖（探针文件为一次性诊断
+  产物，已自语料删除）。
+- **goal 面零漂移复核（2026-11-09，收口后一致性检查）**：current main
+  caa08eb45 定向复跑 request-cache 族窗 **106P/0F** + headers 窗
+  **286P/0F**，均与 M3/M4 账面全等——他流 cf2e22863 engine 提交落地后
+  goal 交付面零漂移，文档与实态一致。
 
 ## 五、核实方法
 

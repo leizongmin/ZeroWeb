@@ -159,14 +159,21 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
 
 ## 待决项（2026-11-09 M4 终验越界发现，移交处理）
 
-1. **shadow M3 引擎栈溢出回归（ddb1e73cf，2026-11-08 02:20 落地）**：
+1. **深嵌套树样式递归栈溢出（bisect 首坏 ddb1e73cf，2026-11-08 02:20 落地）**：
    `build-deep-detached-shadow-then-append-text.html`（servo#43998 同型，
-   999 层嵌套 attachShadow 后深层 append 文本）主线程栈溢出，套件启动
-   ~50s 崩。bisect 定谳于 [M4 证据档](http-cache/evidence/2026-11-09-m4-final-verification.md) §四b（56f1febb7 基线单案全绿→ddb1e73cf 首坏）。
-   影响面：web-components 套件三面全废、CI html-sem 分片常红、weekly
-   快照 custom-elements/shadow-dom 面记 0（环比护栏拦快照回写）。归
-   shadow 域（45 号已归档，engine 共享面）；修复合入后下一 weekly cron
-   快照自然回落。
+   999 层嵌套 attachShadow 后挂入文档）主线程栈溢出。**根因帧在
+   style-system**（2026-11-09 gdb backtrace 定位，[M4 证据档]
+   (http-cache/evidence/2026-11-09-m4-final-verification.md) §四b）：
+   `compute_styles_recursive` 逐树层自递归（999 嵌套 ≈2,000 帧 ≈8MB 主栈
+   打满），经 `compute_styles_with_shadow` 进入；ddb1e73cf 的内层 shadow
+   物化（正确行为）首次把 2,000 层 composed 树送进该递归。产品面同样
+   暴露：tab-worker 线程默认 ~2MB 栈（apps/browser/src/tab_worker.rs spawn
+   未设 stack_size），浅得多的深嵌套页即可打爆。**修复归属渲染流**
+   （style-system 为 run-rules §9 渲染流专属面 + perf 关键路径，改迭代
+   化遍历须 perf-gate；引擎侧物化为正确行为不回退）——本流（zero-web/
+   net）按碰头纪律不代修。影响面：web-components 套件三面全废、CI
+   html-sem 分片常红、weekly 快照 custom-elements/shadow-dom 面记 0
+   （环比护栏拦快照回写）。
 2. **快照补写口径**：若希望在回归修复前先有正式快照落盘（web-components
    /shadow-dom 两面如实记 0），需 `--no-guard` 重出——属环比护栏的人工
    确认豁免，未拍板前不执行；默认等修复后自然回落。
