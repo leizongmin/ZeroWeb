@@ -5084,7 +5084,30 @@
               // ilb 语料 0P/552F 全灭（expected "abc<br><br>" got "abc"）。行断变更
               // 核心（不拆块），事件口径同上 insertparagraph 臂（fireEvents 已派）。
               if (cmd === 'insertlinebreak' && rng2 && host2) {
-                try { globalThis.__zw_ce_line_break_mutate(host2, rng2); } catch (_eIlb) {}
+                try {
+                  // 同节点非 collapsed 面（单文本 `foo[bar]baz` 形）让位原径：
+                  // line_break_at boundaryText 头尾切片（eo 截尾）对该面本就
+                  // 忠实（knife9 语料 1641P 基），delete 前导的 whitespace
+                  // canonicalize 无谓引入字节漂移风险；跨节点面才走前导。
+                  if (rng2.collapsed || rng2.startContainer === rng2.endContainer
+                      || typeof globalThis.__zw_ce_delete_apply !== 'function') {
+                    globalThis.__zw_ce_line_break_mutate(host2, rng2);
+                  } else {
+                    // 处方 c（knife11 v2 同构，2026-11-09 ⑤ F4 ilb 轮）：非
+                    // collapsed range 先 deleteSelection 后行断（spec
+                    // implementation.js :7387 insertlinebreak action 首步
+                    // deleteSelection {stripWrappers:false}）。mt 530-556 族
+                    // got `dec`/`cdec` 重复/img 幻影/`<s></s>` 残壳/`<br>` 逸出
+                    // = 无前导裸断（line_break_at 的边界切片按 collapsed 设
+                    // 计，非 collapsed 起点 eo 切尾错位 + 块元素位上爬越宿主）。
+                    // 复用 `__zw_ce_delete_apply`（空壳摘除与 caret 落位同
+                    // delete 臂口径；typing delta ④/⑤ 快照回写同内建）。rng2
+                    // 删后失效，传 null 让 line_break_mutate 经 caret_range
+                    // 兜底 live 重读（paragraph_split_at :11513 同形）。
+                    globalThis.__zw_ce_delete_apply(false);
+                    globalThis.__zw_ce_line_break_mutate(host2, null);
+                  }
+                } catch (_eIlb) {}
               }
               // editing-compat justify 簇（2026-10-31）：justify* 实应用——此前
               // _zwExecCmdInputType 含四命令（事件照派）但零变更臂，justify 族

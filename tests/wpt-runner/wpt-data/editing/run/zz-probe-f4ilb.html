@@ -1,0 +1,152 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F4 ilb 探针（2026-11-09 ⑤ 刀 ilb 轮）：非 collapsed 选区 insertLineBreak 缺
+     deleteSelection 前导（spec implementation.js :7387 首步 deleteSelection
+     {stripWrappers:false}；part06 ilb 臂直达 __zw_ce_line_break_mutate 无前置）。
+     刀体三臂（part06 ilb 臂处方 c delete 前导 + part01 ③ 块 caret 归一补臂
+     lineBreakOnly 面 + _zwCeLineBreakAt 断点后 caret 下游归一）。
+     9 案 = multitest.js ilb-first 全族（img 幻影 4 + 文本 dup 3 + <s></s> 残壳 2，
+     ?9001-last F 残），G1-G2 = collapsed 护栏（bold+ilb、bold+ilb+typing carrier）。
+     faithful 相原样 runConformanceTest = 断言权威（11/11）；直调相 per-step
+     dump 定位 ilb 后 caret 与树中间态，CASE530 直调选区寻址伪影（img 跨界 +
+     文本内端 offset，mt harness 同案绿）trace 不判。运行：
+     make testharness-editing-run-one FILTER=zz-probe-f4ilb.html -->
+<title>zz-probe-f4ilb</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=../data/multitest.js></script>
+<script src=/resources/testharness.js></script>
+<script src="/common/subset-tests.js"></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// —— 案签名选择：multitest.js ilb-first 全族（9 案）+ collapsed 护栏 2 案。
+var ILB_CASES = [];
+var GUARD_CASES = [];
+for (var ti = 0; ti < browserTests.length; ti++) {
+    var t0 = browserTests[ti];
+    if (!t0 || !Array.isArray(t0[1]) || !t0[1].length) continue;
+    if (t0[1][0][0] === "insertlinebreak") ILB_CASES.push(ti);
+    var j = JSON.stringify(t0[1]);
+    if (j === '[["bold",""],["insertlinebreak",""]]') GUARD_CASES.push(ti);
+    if (j === '[["bold",""],["insertlinebreak",""],["inserttext","a"]]') GUARD_CASES.push(ti);
+}
+// —— compare 截获（faithful 相 assert 的 got/exp 捕获）
+var __zwCmpLog = [];
+var __origAE = window.assert_equals;
+window.assert_equals = function (actual, expected, msg) {
+    if (String(msg).indexOf("Unexpected innerHTML") >= 0) {
+        __zwCmpLog.push({ actual: String(actual), expected: String(expected) });
+    }
+    return __origAE.call(window, actual, expected, msg);
+};
+// —— faithful 相：ilb 9 案 + 护栏 2 案原样跑 runConformanceTest（复现 mt 环境）
+var faFa = [];
+ILB_CASES.concat(GUARD_CASES).forEach(function (i) {
+    try { runConformanceTest(browserTests[i]); } catch (e) { faFa.push(i + ":" + e); }
+});
+// —— 直调相：per-step dump（机制定谳主证据）
+var container = document.getElementById("test-container");
+container.innerHTML = "<div contenteditable></div><p>sentinel";
+var testDiv = container.querySelector("div[contenteditable]");
+function caretDump() {
+    var s = getSelection();
+    if (s.rangeCount === 0) return "norange";
+    var r = s.getRangeAt(0);
+    function nd(n, o) { return n ? n.nodeName + "@" + o : "null"; }
+    return nd(r.startContainer, r.startOffset) + ".." + nd(r.endContainer, r.endOffset);
+}
+// [ ] { } 忠实提取（tests.js :5330-5393 同语义：{ 在文本首 → (parent,index)；
+//     文本中 → (parent,index+1)；] } 同端点处理；标记所在文本节点移标记）
+function extractRangeFaithful(root) {
+    var sNode = null, sOff = -1, eNode = null, eOff = -1;
+    var cur = root;
+    function nextNode(node) {
+        if (node.firstChild) return node.firstChild;
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+        while (node) { if (node.nextSibling) return node.nextSibling; node = node.parentNode; }
+        return null;
+    }
+    while (cur) {
+        if (cur.nodeType === 3) {
+            var data = cur.data;
+            var startIdx = data.replace(/\]/g, "").indexOf("[");
+            var endIdx = data.replace(/\[/g, "").indexOf("]");
+            cur.data = data.replace(/[\[\]]/g, "");
+            data = cur.data;
+            if (startIdx !== -1) { sNode = cur; sOff = startIdx; }
+            if (endIdx !== -1) { eNode = cur; eOff = endIdx; }
+            data = cur.data.replace(/\}/g, "");
+            var elStartIdx = data.indexOf("{");
+            data = cur.data.replace(/\{/g, "");
+            var elEndIdx = data.indexOf("}");
+            if (elStartIdx === 0) { sNode = cur.parentNode; sOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur); }
+            else if (elStartIdx !== -1) { sNode = cur.parentNode; sOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur) + 1; }
+            if (elEndIdx === 0) { eNode = cur.parentNode; eOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur); }
+            else if (elEndIdx !== -1) { eNode = cur.parentNode; eOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur) + 1; }
+            cur.data = cur.data.replace(/[{}]/g, "");
+            if (!cur.data.length) {
+                if (cur === sNode || cur === eNode) { cur = nextNode(cur); continue; }
+                var oldCur = cur;
+                cur = nextNode(cur);
+                if (oldCur.parentNode) oldCur.parentNode.removeChild(oldCur);
+                continue;
+            }
+        }
+        cur = nextNode(cur);
+    }
+    if (!sNode || !eNode) return null;
+    var r = document.createRange();
+    r.setStart(sNode, sOff); r.setEnd(eNode, eOff);
+    if (r.collapsed) r.setEnd(sNode, sOff);
+    return r;
+}
+var results = [];
+var resultsTrace = []; // 直调相伪影案 trace（不入断言面——CASE530 见下注）
+function runDirect(i) {
+    var t = browserTests[i];
+    // CASE530 直调相选区寻址伪影（r1/r3 同形，早于本刀刀体）：img 在选区内 +
+    // 跨节点文本内端 offset（(text,3)→(text,2)）时直调 addRange 后 caret 溢出
+    // 宿主树落探针自身 script 文本（sel=SCRIPT@1 → inserttext #text@5169 拼进
+    // 脚本文本）。mt harness setup 路径同一案全绿（faithful 相 11/11 权威），
+    // 非引擎行为债——直调 trace 保留不判，断言面由 faithful 相承担。
+    var traceOnly = (i === 530);
+    testDiv.innerHTML = t[0];
+    var r = extractRangeFaithful(testDiv);
+    if (!r) { results.push("CASE" + i + " EXTRACT-FAIL"); return; }
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    var steps = [];
+    t[1].forEach(function (c) {
+        var ok; try { ok = document.execCommand(c[0], false, c[1]); } catch (err) { ok = "THROW:" + err; }
+        steps.push(c[0] + "=>rc=" + ok + " html=" + testDiv.innerHTML + " sel=" + caretDump());
+    });
+    normalizeSerializedStyle(testDiv);
+    var got = testDiv.innerHTML;
+    var exp = t[2];
+    var pass = Array.isArray(exp) ? (exp.indexOf(got) >= 0)
+        : (got === exp.replace(/[\[\]{}]/g, ""));
+    (traceOnly ? resultsTrace : results).push("CASE" + i + " ok=" + pass
+        + " | exp=" + (Array.isArray(exp) ? JSON.stringify(exp) : exp)
+        + " | got=" + got
+        + " | " + steps.join(" ; "));
+}
+ILB_CASES.forEach(runDirect);
+GUARD_CASES.forEach(runDirect);
+// —— 汇总断言（每案一行可 grep：CASE<i> ok=true/false；护栏恒绿面；
+//     resultsTrace 伪影案 trace 并入 FAITHFUL-SUMMARY 消息，不进断言面）
+results.forEach(function (line) {
+    test(function () {
+        var ok = line.indexOf(" ok=true ") >= 0;
+        assert_true(ok, line);
+    }, "F4ILB " + line.slice(0, 40));
+});
+test(function () {
+    assert_true(faFa.length === 0, "FAITHFUL faFa=" + faFa.join(",")
+        + " | CMP=" + JSON.stringify(__zwCmpLog.slice(0, 12))
+        + " | TRACE=" + JSON.stringify(resultsTrace));
+}, "F4ILB-FAITHFUL-SUMMARY");
+</script>

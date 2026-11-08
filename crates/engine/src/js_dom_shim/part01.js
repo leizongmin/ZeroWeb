@@ -11134,6 +11134,24 @@
     var nr3 = document.createRange();
     nr3.setStart(boundaryParent, idx3 + 1);
     nr3.collapse(true);
+    // 断点后 caret 下游归一（F4 ilb 轮，2026-11-09；Blink VisiblePosition
+    // AfterNode(br) deep-equivalent 形）：断点后首子为元素时沿 inline 链下钻
+    // 首文本位——随后 typing 落壳内（mt 530/546 族录音 `<b><i>def</i></b>`
+    // 形；裸位 caret 使 typed 段裸落壳外 got `de<b><i>f</i></b>`）。块界不
+    // 下钻；文本首子/断器（含第二断器 br）位保持原 caret（现行为零扰动）。
+    if ((boundaryParent.childNodes || [])[idx3 + 1]
+        && boundaryParent.childNodes[idx3 + 1].nodeType === 1) {
+      var drT = null;
+      (function _drill(n, d) {
+        if (!n || d > 16 || drT) return;
+        if (n.nodeType === 3) { drT = n; return; }
+        if (n.nodeType !== 1) return;
+        if (_zwCeIsBlockTagName(String(n.tagName || '').toLowerCase())) return;
+        var ks = n.childNodes || [];
+        for (var di = 0; di < ks.length; di++) _drill(ks[di], d + 1);
+      })(boundaryParent.childNodes[idx3 + 1], 0);
+      if (drT) { nr3.setStart(drT, 0); nr3.collapse(true); }
+    }
     if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr3]; }
     return true;
   }
@@ -11165,6 +11183,18 @@
       boundaryParent = host; boundaryOff = so;
     } else {
       boundaryParent = sc.parentNode; boundaryNode = sc;
+    }
+    // ③ 块 caret 归一补臂（F4 ilb 轮，2026-11-09）：行断面块元素 caret
+    //（deleteSelection 落位 `(div, k)` 形——mt 536/548/556 族）行断位在块内
+    // offset 处：br 插块内子 offset 位。元素臂 (父, sc) 上爬对 inline caret
+    // 是 void 语料形，对块 caret 则把 br 推出宿主直子块（got `<br>de<div>…`
+    // 逃逸形）。仅 lineBreakOnly 臂重映射（⓪/①/② ip 臂 boundary 语义不动
+    // ——⓪ gate 读 boundaryNode、① gate 读 boundaryParent === host）。
+    if (lineBreakOnly && !isText && sc !== host
+        && _zwCeIsBlockTagName(String(sc.tagName || '').toLowerCase())) {
+      boundaryParent = sc;
+      boundaryNode = (sc.childNodes || [])[so] || null;
+      boundaryOff = so;
     }
     var hostTag = String(host.tagName || '').toLowerCase();
     var dispHost = _zwCeDisplayOf(host);
