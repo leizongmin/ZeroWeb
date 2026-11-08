@@ -7344,7 +7344,15 @@ fn wpt_data_fetch_handler_with_stash(
     let es_cookie_stash: std::sync::Arc<Mutex<std::collections::BTreeMap<String, String>>> = std::sync::Arc::default();
     let serve_custom_stash = serve_custom_stash.unwrap_or_else(|| std::sync::Arc::clone(&SERVE_CUSTOM_RESPONSE_STASH));
     let vary_value_override = std::sync::Arc::new(std::sync::Mutex::new(None::<String>));
-    Some(std::sync::Arc::new(
+    // http-cache goal M1-b：request-cache 族 cache.py 端点的案级观察 stash（键 =
+    // token，值 = 逐请求记录的观察头序列——上游 wptserve stash take+put-back 的
+    // 等价实现：记录分支 take+append+put（即 entry push），querystate 分支 take
+    // 取走清空。per-case 构建，同上各表案内键自清、跨案零泄漏）。
+    let cache_py_stash: CachePyStash = std::sync::Arc::default();
+    // http-cache goal M1-b：案级 HTTP 缓存（DC-3 单实现——直接复用 zero-net
+    // HttpCache，与浏览器通道同一缓存语义层；包裹器见 wpt_cache_py_wrapped_handler）。
+    let case_cache = std::sync::Arc::new(std::sync::Mutex::new(zero_net::HttpCache::new()));
+    let base: zero_engine::fetch_bridge::FetchHandler = std::sync::Arc::new(
         move |req: &zero_engine::fetch_bridge::FetchRequest| {
             let path_part = wpt_url_path(&req.url);
             let path_part = path_part.strip_prefix('/').unwrap_or(path_part);
@@ -7381,6 +7389,14 @@ fn wpt_data_fetch_handler_with_stash(
                     body: "wpt.test root\n".to_string(),
                     body_bytes: Some(b"wpt.test root\n".to_vec()),
                 });
+            }
+            if clean == "fetch/api/request/resources/cache.py" {
+                // http-cache goal M1-b：request-cache 族 cache.py 端点仿真（上游
+                // wptserve handler 1:1 移植——token 观察记录、querystate 取走 JSON、
+                // ETag/Last-Modified/Expires/Vary/ACO 按参数回显、304 条件命中、
+                // 302 redirect，见 wpt_cache_py_fixture；其前的缓存语义由外层
+                // wpt_cache_py_wrapped_handler 承载）。
+                return wpt_cache_py_fixture(req, &cache_py_stash, &path_part);
             }
             if clean == "cookies/resources/set-cookie.py" {
                 // s338：set-cookie.py 端点仿真（上游 wptserve handler 不在语料——
@@ -10964,7 +10980,285 @@ fn wpt_data_fetch_handler_with_stash(
                 }
             }
         },
-    ))
+    );
+    // http-cache goal M1-b：cache.py 端点的案级缓存包裹（零回归门控——包裹器按
+    // 精确端点路径分派，非 cache.py 请求原样直通 base）。
+    Some(wpt_cache_py_wrapped_handler(base, case_cache))
+}
+
+/// http-cache goal M1-b：request-cache 族 `fetch/api/request/resources/cache.py`
+/// 端点仿真——上游 wptserve handler（web-platform-tests master
+/// fetch/api/request/resources/cache.py，2026-11-08 拉取）1:1 移植：
+/// - token 观察记录：逐请求记录 If-None-Match/If-Modified-Since/Pragma/
+///   Cache-Control（仅在场者记，值原样；`ignore` 参数在场整条留空）；
+///   记录先于响应分支（304/302 腿同样入账）；
+/// - `querystate` 分支：把记录序列 JSON 取走（wptserve take 语义——取后清空，
+///   缺记录回 `null`）+ `Content-Type: text/plain`；
+/// - `tag` 参数引号化（`"tag"`）同时用作 ETag 头与 If-None-Match 比对；ETag 与
+///   Last-Modified 互斥（tag 优先——上游 if/elif）；Expires/Vary/Cache-Control
+///   （响应头）按参数回显（空参数视缺省——上游 falsy 判定）；
+/// - 全部非 querystate 响应带 `Access-Control-Allow-Origin: *`（only-if-cached
+///   redirect 臂跨源可达，上游注释同义）；
+/// - `redirect` 参数 → 302 "Redirect" + Location + 空体（先于条件判定）；
+/// - 条件命中（If-None-Match == 引号 tag，或 If-Modified-Since == date，
+///   字符串全等——上游逐字；对应参数缺省时必不等）→ 304 "Not Modified" 空体；
+/// - 否则 200 "OK" + text/plain + `content` 参数。
+type CachePyStash = std::sync::Arc<
+    std::sync::Mutex<HashMap<String, Vec<std::collections::BTreeMap<String, String>>>>,
+>;
+
+fn wpt_cache_py_fixture(
+    req: &zero_engine::fetch_bridge::FetchRequest,
+    stash: &CachePyStash,
+    path_part: &str,
+) -> Result<zero_engine::fetch_bridge::FetchResponse, String> {
+    let query = path_part.split_once('?').map(|(_, query)| query).unwrap_or("");
+    let get_param = |name: &str| wpt_query_value(query, name);
+    let req_header = |name: &str| {
+        req.headers
+            .iter()
+            .find(|(existing, _)| existing.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    };
+    let token = get_param("token").unwrap_or_default();
+    // 上游各参数 `request.GET.first(name, None)` + falsy 判定——空值视缺省。
+    let tag = get_param("tag").filter(|tag| !tag.is_empty());
+    let date = get_param("date").filter(|date| !date.is_empty());
+    let expires = get_param("expires").filter(|expires| !expires.is_empty());
+    let vary = get_param("vary").filter(|vary| !vary.is_empty());
+    let cc = get_param("cache_control").filter(|cc| !cc.is_empty());
+    let redirect = get_param("redirect").filter(|redirect| !redirect.is_empty());
+    let inm = req_header("if-none-match").map(str::to_string);
+    let ims = req_header("if-modified-since").map(str::to_string);
+    let pragma = req_header("pragma").map(str::to_string);
+    let req_cc = req_header("cache-control").map(str::to_string);
+    let ignore = get_param("ignore").is_some();
+    // 上游 tag 引号化先于 ETag 头与条件比对（`'"%s"'` 同形）。
+    let quoted_tag = tag.as_ref().map(|tag| format!("\"{tag}\""));
+
+    if get_param("querystate").is_some() {
+        // wptserve stash take 语义——取走即清空；无记录回 "null"（JSON null）。
+        let taken = stash.lock().ok().and_then(|mut all| all.remove(&token));
+        let json = match taken {
+            Some(records) => serde_json::to_string(&records).unwrap_or_else(|_| "[]".to_string()),
+            None => "null".to_string(),
+        };
+        let headers: Vec<(String, String)> = vec![("Content-Type".into(), "text/plain".into())];
+        return Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: json.clone(),
+            body_bytes: Some(json.into_bytes()),
+        });
+    }
+
+    // 观察记录（上游 take+append+put 等价——entry push；先于响应分支）。
+    if let Ok(mut all) = stash.lock() {
+        let mut record = std::collections::BTreeMap::new();
+        if !ignore {
+            if let Some(value) = &inm {
+                record.insert("If-None-Match".to_string(), value.clone());
+            }
+            if let Some(value) = &ims {
+                record.insert("If-Modified-Since".to_string(), value.clone());
+            }
+            if let Some(value) = &pragma {
+                record.insert("Pragma".to_string(), value.clone());
+            }
+            if let Some(value) = &req_cc {
+                record.insert("Cache-Control".to_string(), value.clone());
+            }
+        }
+        all.entry(token).or_default().push(record);
+    }
+
+    let mut headers: Vec<(String, String)> = Vec::new();
+    // ETag 与 Last-Modified 互斥（tag 优先——上游 if/elif）。
+    if let Some(quoted) = &quoted_tag {
+        headers.push(("ETag".into(), quoted.clone()));
+    } else if let Some(date) = &date {
+        headers.push(("Last-Modified".into(), date.clone()));
+    }
+    if let Some(expires) = &expires {
+        headers.push(("Expires".into(), expires.clone()));
+    }
+    if let Some(vary) = &vary {
+        headers.push(("Vary".into(), vary.clone()));
+    }
+    if let Some(cc) = &cc {
+        headers.push(("Cache-Control".into(), cc.clone()));
+    }
+    headers.push(("Access-Control-Allow-Origin".into(), "*".into()));
+
+    if let Some(redirect) = redirect {
+        headers.push(("Location".into(), redirect));
+        return Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 302,
+            status_text: "Redirect".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        });
+    }
+    // 条件命中：与引号 tag / date 参数字符串全等（对应参数缺省时 zip 为 None）。
+    let inm_match = inm
+        .as_ref()
+        .zip(quoted_tag.as_ref())
+        .is_some_and(|(inm, tag)| inm == tag);
+    let ims_match = ims
+        .as_ref()
+        .zip(date.as_ref())
+        .is_some_and(|(ims, date)| ims == date);
+    if inm_match || ims_match {
+        return Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 304,
+            status_text: "Not Modified".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        });
+    }
+    let body = get_param("content").unwrap_or_default();
+    headers.push(("Content-Type".into(), "text/plain".into()));
+    Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    })
+}
+
+/// http-cache goal M1-b：cache.py 端点的案级 HTTP 缓存包裹（runner fetch 通道
+/// DC-3 单实现——直接复用 zero-net HttpCache，与浏览器通道同一缓存语义层）。
+/// 零回归门控：仅精确路径 `fetch/api/request/resources/cache.py` 的无体 GET 过
+/// 缓存层，其余请求原样直通 base（M3 http-cache 语料导入时按端点路径逐个扩展）。
+///
+/// 语义镜像 `ResourceLoader::submit` default 路径（M1-b runner fetch 通道全部按
+/// default 模式——request.cache 六态 wire 传播是 M2）：
+/// - default + 脚本显式条件头（If-Modified-Since 等五头）→ fetch spec §4.6
+///   step 16 旁路：不读不写缓存，注入 Pragma/CC no-cache（step 18 可观察面）后
+///   直通 base（用户条件头原样透传、零验证器合并；响应裸 304 照传——
+///   default-conditional 语料断言 response.status === 304 的面）；
+/// - 其余 default → 缓存查找：新鲜命中直接回放缓存响应（base 不达——stash 计数
+///   不增长，request-cache 断言核心）；可再验证 → 合并条件头（用户已带同名头不
+///   覆盖，loader submit_network 同款）调 base，304 → `not_modified` 元数据合并
+///   后回放缓存响应、其余 → `put_with_headers` 存储（storable_mode 内部门控）后
+///   回放网络响应；未命中 → base 后 `put_with_headers` 再回放。
+///
+/// FIXME(http-cache M2)：wire 第 11 参落地后按 FetchRequest.cache 六模式态分派
+/// （reload/force-cache/only-if-cached/no-store/no-cache 全矩阵）。
+fn wpt_cache_py_wrapped_handler(
+    base: zero_engine::fetch_bridge::FetchHandler,
+    case_cache: std::sync::Arc<std::sync::Mutex<zero_net::HttpCache>>,
+) -> zero_engine::fetch_bridge::FetchHandler {
+    std::sync::Arc::new(move |req: &zero_engine::fetch_bridge::FetchRequest| {
+        let path = wpt_url_path(&req.url);
+        let path = path.strip_prefix('/').unwrap_or(path);
+        // 语料 cache.py URL 不含点段（`resources/cache.py?token=...` 直链），
+        // 不做 base 内的 `..` 归一。
+        let clean = path.split(['?', '#']).next().unwrap_or(path);
+        // 非 GET / 带体不过缓存层（缓存层只建模无体 GET——loader 同口径）。
+        let cacheable_endpoint = clean == "fetch/api/request/resources/cache.py"
+            && req.method.eq_ignore_ascii_case("GET")
+            && req.body.is_none()
+            && req.body_bytes.is_none();
+        if !cacheable_endpoint {
+            return base(req);
+        }
+        // step 16：default + 脚本显式条件头 → 旁路（读写在脚本侧自管）。
+        if zero_net::cache_policy::has_explicit_conditional_request_headers(&req.headers) {
+            let mut wire = req.clone();
+            for pair in zero_net::cache_policy::bypass_cache_request_injection(&wire.headers) {
+                wire.headers.push(pair);
+            }
+            return base(&wire);
+        }
+        let url = req.url.clone();
+        // lookup 的锁 guard 先行释放（let 绑定）——match 临时存活到整个 match
+        // 结束，臂内 put/not_modified 再锁同一 Mutex 会自死锁。
+        let lookup = case_cache
+            .lock()
+            .expect("case http cache lock")
+            .lookup(&url, &req.headers);
+        match lookup {
+            zero_net::CacheLookup::Hit(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
+            zero_net::CacheLookup::Revalidate { conditional_headers, .. } => {
+                let mut wire = req.clone();
+                for (name, value) in conditional_headers {
+                    if !wire
+                        .headers
+                        .iter()
+                        .any(|(existing, _)| existing.eq_ignore_ascii_case(&name))
+                    {
+                        wire.headers.push((name, value));
+                    }
+                }
+                let resp = base(&wire)?;
+                if resp.status == 304 {
+                    // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 11.4）
+                    // 304 → 元数据合并到缓存条目后回放缓存响应；无条目可合并（理论不可达
+                    // ——条件头只在有条目时附加）照传裸 304。
+                    let network = wpt_cache_py_fetch_response_to_http(&resp, &url);
+                    return match case_cache
+                        .lock()
+                        .expect("case http cache lock")
+                        .not_modified(&url, &req.headers, &network)
+                    {
+                        Some(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
+                        None => Ok(resp),
+                    };
+                }
+                case_cache
+                    .lock()
+                    .expect("case http cache lock")
+                    .put_with_headers(&url, &req.headers, &wpt_cache_py_fetch_response_to_http(&resp, &url));
+                Ok(resp)
+            }
+            zero_net::CacheLookup::Miss => {
+                let resp = base(req)?;
+                case_cache
+                    .lock()
+                    .expect("case http cache lock")
+                    .put_with_headers(&url, &req.headers, &wpt_cache_py_fetch_response_to_http(&resp, &url));
+                Ok(resp)
+            }
+        }
+    })
+}
+
+/// 缓存条目 → FetchResponse 回放（缓存命中的客户端可见形态——与
+/// [`zero_net::CachedResponse::into_response`] 同构，状态短语经 wpt_status_text）。
+fn wpt_cache_py_cached_fetch_response(
+    cached: zero_net::CachedResponse,
+) -> zero_engine::fetch_bridge::FetchResponse {
+    let body = String::from_utf8_lossy(&cached.body).into_owned();
+    zero_engine::fetch_bridge::FetchResponse {
+        status: cached.status_code,
+        status_text: wpt_status_text(cached.status_code).to_string(),
+        headers: cached.headers,
+        body,
+        body_bytes: Some(cached.body),
+    }
+}
+
+/// FetchResponse → HttpResponse（缓存层存取转换——status/body 保真，url 取请求
+/// URL，重定向计数 0：runner fixture 无重定向链）。
+fn wpt_cache_py_fetch_response_to_http(
+    resp: &zero_engine::fetch_bridge::FetchResponse,
+    url: &str,
+) -> zero_net::HttpResponse {
+    zero_net::HttpResponse {
+        status_code: resp.status,
+        headers: resp.headers.clone(),
+        body: resp
+            .body_bytes
+            .clone()
+            .unwrap_or_else(|| resp.body.as_bytes().to_vec()),
+        url: url.to_string(),
+        redirect_count: 0,
+    }
 }
 
 fn wpt_url_path(url: &str) -> &str {

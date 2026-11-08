@@ -234,8 +234,54 @@ pub(crate) fn storable_mode(response: &HttpResponse) -> Option<CacheStoreMode> {
     }
     match compute_ttl_secs(&cc, response) {
         Some(ttl) if ttl > 0 => Some(CacheStoreMode::Fresh(ttl)),
-        _ => None,
+        // RFC 9111 §3——生成即过期（ttl=0：`max-age=0` / 已过期 `Expires`）但带验证器的
+        // 响应**可存储**为仅再验证条目：后续请求得以发条件请求拿 304，而非每次全量
+        // 回源（WPT request-cache 语料 stale 臂依赖此语义）；无验证器时存了也无法
+        // 再验证，不存。`None`（无任何新鲜度信息）不启用启发式新鲜度（§4.2.2 未实现，
+        // 见 http-cache goal M3 评估）。
+        // https://www.rfc-editor.org/rfc/rfc9111#section-3
+        Some(_) => has_validators(response).then_some(CacheStoreMode::RevalidateOnly),
+        None => None,
     }
+}
+
+/// 请求是否携带**显式条件头**。
+///
+/// `default` 模式请求若由脚本显式设置 `If-Modified-Since` / `If-None-Match` /
+/// `If-Unmodified-Since` / `If-Match` / `If-Range` 之一，fetch 规范将缓存模式置为
+/// `no-store`：不读缓存、不写缓存、用户条件头原样透传（调用方自行管理再验证，
+/// 缓存层不得代合并验证器——否则日期变体腿会命中旧 200 而非服务器 304）。
+/// Chromium 对齐行为，WPT request-cache-default-conditional 断言面。
+/// https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 16）
+pub fn has_explicit_conditional_request_headers(headers: &[(String, String)]) -> bool {
+    const CONDITIONAL_HEADERS: [&str; 5] = [
+        "if-modified-since",
+        "if-none-match",
+        "if-unmodified-since",
+        "if-match",
+        "if-range",
+    ];
+    headers
+        .iter()
+        .any(|(name, _)| CONDITIONAL_HEADERS.iter().any(|header| name.eq_ignore_ascii_case(header)))
+}
+
+/// `no-store` / `reload` 绕行请求的网络可观察注入头。
+///
+/// 返回需追加的 `(头名, 值)`：缺 `Pragma` 补 `Pragma: no-cache`，缺 `Cache-Control`
+/// 补 `Cache-Control: no-cache`（任一已存在则不重复注入）。WPT request-cache-reload
+/// / -no_store 语料的 `expected_no_cache_headers` 断言两头**同时**在场——这是
+/// 服务器可观测的缓存绕行形态。
+/// https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 18）
+pub fn bypass_cache_request_injection(headers: &[(String, String)]) -> Vec<(String, String)> {
+    let mut injection = Vec::with_capacity(2);
+    if !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("pragma")) {
+        injection.push(("Pragma".into(), "no-cache".into()));
+    }
+    if !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("cache-control")) {
+        injection.push(("Cache-Control".into(), "no-cache".into()));
+    }
+    injection
 }
 
 fn parse_http_date(date_str: &str) -> Result<u64, ()> {
@@ -366,5 +412,70 @@ mod tests {
         // 无 Date 时回落 now（行为同旧）：Expires 在远过去 → ttl=0 → 不可新鲜存储。
         let no_date_past = resp(vec![("expires", "Wed, 21 Oct 2015 07:28:00 GMT")]);
         assert_eq!(storable_mode(&no_date_past), None);
+    }
+
+    /// RFC 9111 §3——生成即过期但带验证器的响应存为仅再验证条目（stale 臂前置）。
+    #[test]
+    fn stale_at_birth_with_validators_is_storable_for_revalidation() {
+        // max-age=0 + ETag → 可存（每次使用前再验证）。
+        let with_etag = resp(vec![("cache-control", "max-age=0"), ("etag", "\"v1\"")]);
+        assert_eq!(storable_mode(&with_etag), Some(CacheStoreMode::RevalidateOnly));
+        // 过期 Expires + Last-Modified → 可存。
+        let with_lm = resp(vec![
+            ("date", "Wed, 21 Oct 2099 07:28:00 GMT"),
+            ("expires", "Wed, 21 Oct 2099 07:27:00 GMT"),
+            ("last-modified", "Wed, 21 Oct 2015 07:28:00 GMT"),
+        ]);
+        assert_eq!(storable_mode(&with_lm), Some(CacheStoreMode::RevalidateOnly));
+        // 生成即过期但无验证器 → 存了无法再验证，不存。
+        let bare = resp(vec![("cache-control", "max-age=0")]);
+        assert_eq!(storable_mode(&bare), None);
+    }
+
+    /// fetch spec §4.6 step 16——五显式条件头识别（大小写不敏感、逐头独立）。
+    #[test]
+    fn explicit_conditional_request_headers_are_detected() {
+        assert!(has_explicit_conditional_request_headers(&[(
+            "If-None-Match".into(),
+            "\"v1\"".into()
+        )]));
+        assert!(has_explicit_conditional_request_headers(&[(
+            "if-modified-since".into(),
+            "Wed, 21 Oct 2015 07:28:00 GMT".into()
+        )]));
+        for name in ["If-Unmodified-Since", "If-Match", "If-Range"] {
+            assert!(
+                has_explicit_conditional_request_headers(&[(name.into(), "x".into())]),
+                "{name} 属显式条件头"
+            );
+        }
+        assert!(!has_explicit_conditional_request_headers(&[
+            ("Accept".into(), "*/*".into()),
+            ("Cache-Control".into(), "no-cache".into()),
+        ]));
+    }
+
+    /// fetch spec §4.6 step 18——绕行注入两头齐发，用户已给的任一头不重复注入。
+    #[test]
+    fn bypass_injection_adds_pragma_and_cache_control_only_when_absent() {
+        let injection = bypass_cache_request_injection(&[("Accept".into(), "*/*".into())]);
+        assert_eq!(
+            injection,
+            vec![
+                ("Pragma".to_string(), "no-cache".to_string()),
+                ("Cache-Control".to_string(), "no-cache".to_string()),
+            ]
+        );
+        // 用户已带 Cache-Control → 只补 Pragma。
+        assert_eq!(
+            bypass_cache_request_injection(&[("Cache-Control".into(), "no-cache".into())]),
+            vec![("Pragma".to_string(), "no-cache".to_string())]
+        );
+        // 两头均在 → 零注入。
+        assert!(bypass_cache_request_injection(&[
+            ("Pragma".into(), "no-cache".into()),
+            ("Cache-Control".into(), "no-cache".into()),
+        ])
+        .is_empty());
     }
 }

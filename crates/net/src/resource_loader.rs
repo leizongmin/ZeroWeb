@@ -8,6 +8,7 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 
+use crate::cache_policy::{bypass_cache_request_injection, has_explicit_conditional_request_headers};
 use crate::fetch_scheduler::FetchTelemetry;
 use crate::{
     CacheLookup, FetchJobResult, FetchPriority, HttpCache, HttpClient, HttpMethod, HttpRequest, HttpResponse,
@@ -62,9 +63,16 @@ pub struct ResourceLoadEvent {
 pub enum CacheMode {
     /// 遵循响应新鲜度，正常复用缓存。
     Default,
-    /// 不使用未验证的缓存响应。
+    /// 不使用未验证的缓存响应：有存储条目则条件再验证后使用网络结果。
+    ///
+    /// 网络可见注入 `Cache-Control: max-age=0`（用户未显式给出 Cache-Control 时；
+    /// fetch spec §http-network-or-cache-fetch step 17，WPT no-cache 文件
+    /// expected_max_age_headers 断言面）。
     NoCache,
     /// 不读写此请求对应的缓存条目。
+    ///
+    /// 网络可见注入 `Pragma: no-cache` + `Cache-Control: no-cache`（fetch spec
+    /// §http-network-or-cache-fetch step 18，与 reload 同形）。
     NoStore,
     /// 只允许命中缓存；未命中返回 504 语义错误。
     ///
@@ -75,7 +83,8 @@ pub enum CacheMode {
     ///
     /// fetch spec §http-network-or-cache-fetch：reload 请求跳过 HTTP-cache
     /// lookup，响应照常可入缓存（覆盖同键旧条目）；网络可见头注入
-    /// `Cache-Control: max-age=0`（用户未显式给出 Cache-Control 时）。
+    /// `Pragma: no-cache` + `Cache-Control: no-cache`（step 18，用户已给
+    /// 对应头则不重复；WPT reload 文件 expected_no_cache_headers 断言面）。
     Reload,
     /// 有存储条目即用（含 stale，不验证）；零条目才走网络并入缓存。
     ///
@@ -248,6 +257,17 @@ impl ResourceLoader {
             // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
             // reload 不读缓存；网络成功后按存储策略覆盖写（may_store=true）。
             return self.submit_network(cache, request, Vec::new(), true);
+        }
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 16）
+        // default 模式带脚本显式条件头（If-Modified-Since 等五头）→ 置为 no-store
+        // 旁路：不读缓存、不写缓存，用户条件头原样透传、零验证器合并（调用方自行
+        // 管理再验证；Chromium 对齐，WPT request-cache-default-conditional 断言面）。
+        // 置为 NoStore 后 submit_network 按 step 18 注入 Pragma/CC no-cache。
+        if request.cache_mode == CacheMode::Default
+            && has_explicit_conditional_request_headers(&request.headers)
+        {
+            request.cache_mode = CacheMode::NoStore;
+            return self.submit_network(cache, request, Vec::new(), false);
         }
 
         let lookup = cache
@@ -484,16 +504,24 @@ impl ResourceLoader {
                 headers.push((name, value));
             }
         }
-        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch
-        // 可观察头注入（用户未显式给出 Cache-Control 时）：no-cache →
-        // `Cache-Control: no-cache`（spec 要求）；reload → `Cache-Control:
-        // max-age=0`（Chromium 判据形态——WPT expected_max_age_headers）。
+        // https://fetch.spec.whatwg.org/#http-network-or-cache-fetch（step 17/18）
+        // 可观察头注入（用户已给对应头则不重复——spec「不含才追加」；WPT
+        // request-cache 语料的 expected_no_cache_headers / expected_max_age_headers
+        // 即此形态，2026-11-08 本地语料逐文件核实）：
+        // - no-cache → `Cache-Control: max-age=0`（step 17；WPT no-cache 文件
+        //   expected_max_age_headers [true]）；
+        // - no-store / reload（含 default+显式条件头旁路，见 submit）→
+        //   `Pragma: no-cache` + `Cache-Control: no-cache`（step 18；WPT reload /
+        //   no_store 文件 expected_no_cache_headers [true] 双头在场）。
         // 注入只影响网络请求头，不参与 identity_key（键取 request.headers 原头）。
-        if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control")) {
-            match request.cache_mode {
-                CacheMode::NoCache => headers.push(("Cache-Control".into(), "no-cache".into())),
-                CacheMode::Reload => headers.push(("Cache-Control".into(), "max-age=0".into())),
-                _ => {}
+        if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control"))
+            && request.cache_mode == CacheMode::NoCache
+        {
+            headers.push(("Cache-Control".into(), "max-age=0".into()));
+        }
+        if matches!(request.cache_mode, CacheMode::NoStore | CacheMode::Reload) {
+            for pair in bypass_cache_request_injection(&headers) {
+                headers.push(pair);
             }
         }
         // FIXME(t8k-delta F1)：cookie 注入摘除理由同 submit_http_with_context_in_partition 内注释
