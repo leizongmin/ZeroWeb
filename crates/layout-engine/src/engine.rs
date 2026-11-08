@@ -1515,6 +1515,19 @@ impl LayoutEngine {
             self.inline_font_context(&font_overrides),
         );
 
+        // 11.12 R5462（CSS Writing Modes §7.1 orthogonal-auto）：vertical 父下的块级
+        // 正交 htb 子 auto 物理宽按 §7.1 约束（CB indefinite → ICB）shrink-to-fit 重解
+        // ——taffy 交换帧测量闭包以父当前收缩宽当子行内约束，100 数塌 130（chromium
+        // 780）、块轴 extent 塌 ICB fill（784 vs Σ 行高 130）。须在 Final Inline Layout
+        // 前落定：存储 IFC（步 12）以新 content_width 重排，paint use_stored 直接成立。
+        crate::vertical_block_flow::orthog_block_inline_axis_stf(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+            self.viewport_width,
+        );
+
         // 12. 后处理：Final Inline Layout Pass（Phase A）。
         // 为含有直接文本子节点的容器计算最终行内布局并存储结果。
         // paint 系统消费存储的 IFC 结果，不再重跑 IFC。

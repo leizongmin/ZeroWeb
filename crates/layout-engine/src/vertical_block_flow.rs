@@ -1352,6 +1352,192 @@ fn viv_mixed_extent_child(
     }
 }
 
+/// R5462（CSS Writing Modes §7.1 orthogonal-auto × css-sizing-3 shrink-to-fit）：
+/// vertical 父下的**块级**正交 htb 子 auto 物理宽按 §7.1 约束重解并重排内容。
+///
+/// 塌陷机制（sizing-orthog-htb-in-vrl-016 ✗20.95%，正交块级旧测量路径 FIXME 域，
+/// R4437/R5456 收窄先例同债）：taffy 交换帧对块级正交子的测量闭包以**父当前收缩
+/// 宽**（循环首趟值：cb 内容 60/20）当子行内约束 → 文本按父宽断行，子盒宽 = 断行
+/// extent + frame（100 数塌 130 vs chromium 780，短文本塌 90）；块轴 extent 塌
+/// ICB 高 fill（784 vs Σ 行高 130）。§7.1：正交盒 containing block 的行内尺寸
+/// indefinite（width auto 链）时 constraint = ICB 行内尺寸，inline size =
+/// min(max-content, max(min-content, constraint))。
+///
+/// gate（最小切片）：父 vertical + 子非 vertical（正交交换帧域）；子流内非
+/// float/abs/fixed/multicol + display Block/ListItem（float 域 R1015/R5368、abs 域
+/// R5461、inline-block 域 R4437 各有臂，不触）；子物理宽 Auto + height Auto（显式
+/// 尺寸/content 关键字 FIXME）；**父 style 宽 Auto**（definite CB 域
+/// sizing-orthog-htb-in-vrl-007..012 批次 FIXME）；子 DOM 无元素子（纯文本叶，
+/// inline 元素子域 R4469 口径 FIXME）。
+///
+/// action：available = ICB 宽 − 子 Px 水平 margin（auto/% 不计，FIXME）；stf =
+/// min(max-content, max(min-content, available))（intrinsic_sizing 同源测量）；
+/// 水平 IFC 以 stf 断行 → content_width = stf、width = stf + frame（min/max-width
+/// 钳 5.5 口径），content_height = Σ 行高、height = Σ 行高 + frame（compute_final
+/// 空容器守卫不回写非空盒高，须本 pass 落定；存储 IFC 于步 12 以新 content_width
+/// 重排，paint use_stored 的 width_matches 经 inline_layout_width 存储时同步成立）。
+/// 父 vertical-rl 块流起始 = 右缘：x 左移 delta 保块流位（**按父 WM** 判向——子恒
+/// htb，R5460 viv 臂按自身 WM 的判法在本域恒假）；父 vertical-lr 起始 = 左缘，x 不动。
+/// 父祖先链宽度不回写（body/html 无边框背景零可见像素，与 R5460 html root sizing 链
+/// 同账）；definite-CB/inline 元素子/content 关键字域 FIXME 有驱动案再收。
+/// kill-switch `ZW_ORTHO_BLOCK_STF=0`。
+pub(crate) fn orthog_block_inline_axis_stf(
+    root: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+) {
+    // env 读一次（热路径 walk 内不逐节点读 env，同 R5459/R5460 惯例）。
+    if std::env::var("ZW_ORTHO_BLOCK_STF").as_deref() == Ok("0") {
+        return;
+    }
+    orthog_block_stf_walk(root, doc, styles, inline_fonts, viewport_width, false);
+}
+
+fn orthog_block_stf_walk(
+    b: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+    ancestor_vertical: bool,
+) {
+    let in_vertical = ancestor_vertical || b.writing_mode.is_vertical_block_flow();
+    let parent_node_id = b.node_id;
+    for child in &mut b.children {
+        if in_vertical {
+            orthog_block_stf_child(child, doc, styles, inline_fonts, viewport_width, parent_node_id);
+        }
+        orthog_block_stf_walk(child, doc, styles, inline_fonts, viewport_width, in_vertical);
+    }
+}
+
+fn orthog_block_stf_child(
+    c: &mut LayoutBox,
+    doc: &zero_dom::Document,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    inline_fonts: crate::inline_finalization::InlineFontContext<'_>,
+    viewport_width: f32,
+    parent_node_id: Option<NodeId>,
+) {
+    use zero_css_parser::values::LengthValue;
+    if c.writing_mode.is_vertical_block_flow() {
+        return; // viv 域归 R4431/R5459/R5460（§7.3 fit-content 面）。
+    }
+    if c.is_absolute || c.is_fixed || c.is_multicol || !matches!(c.float, FloatValue::None) {
+        return; // 脱流域：float R1015/R5368、abs R5461 各有臂。
+    }
+    let Some(id) = c.node_id else {
+        return;
+    };
+    let Some(s) = styles.get(&id) else {
+        return;
+    };
+    if !matches!(s.display, DisplayValue::Block | DisplayValue::ListItem) {
+        return;
+    }
+    // 物理宽/高均 auto（物理属性不换轴存储，style.width = 物理宽）。
+    if !matches!(s.width, LengthValue::Auto) || !matches!(s.height, LengthValue::Auto) {
+        return;
+    }
+    // 父 style 宽 auto = containing block 行内尺寸 indefinite → 约束 = ICB（§7.1
+    // orthogonal-auto）；definite CB（Px/%/关键字）域 FIXME（007..012 批次）。匿名父
+    //（无 node_id）保守跳过。
+    let parent_width_auto = parent_node_id
+        .and_then(|pid| styles.get(&pid))
+        .is_some_and(|ps| matches!(ps.width, LengthValue::Auto));
+    if !parent_width_auto {
+        return;
+    }
+    // 纯文本叶（DOM 无元素子；inline 元素子域 R4469 口径 FIXME）。
+    if doc
+        .child_nodes(id)
+        .iter()
+        .any(|&cid| matches!(doc.get(cid).map(|n| &n.kind), Some(zero_dom::NodeKind::Element(_))))
+    {
+        return;
+    }
+    // shrink-to-fit：约束落 **border-box**（WPT ref 臂 width:100vw + box-sizing:
+    // border-box 定谳：正交盒 border-box = 视口宽）——available 先扣自身 frame 再与
+    // content 基 intrinsic 比较：available_border = ICB − Px 水平 margin（auto/% 不计）。
+    let margin_left = resolve_margin_px(&s.margin_left);
+    let margin_right = resolve_margin_px(&s.margin_right);
+    let frame_h = c.border_left + c.border_right + c.padding_left + c.padding_right;
+    let available_border = viewport_width - margin_left - margin_right;
+    if !available_border.is_finite() || available_border <= 0.0 {
+        return;
+    }
+    let available = (available_border - frame_h).max(0.0);
+    if available <= 0.0 {
+        return;
+    }
+    let minc = crate::intrinsic_sizing::block_min_content_width(c, doc, styles);
+    let maxc = crate::intrinsic_sizing::block_max_content_width(c, doc, styles);
+    if !maxc.is_finite() || maxc <= 0.0 || !minc.is_finite() {
+        return;
+    }
+    // stf = min(max-content, max(min-content, available))——内容基 intrinsic 与
+    // available 同为 content 基（frame 已扣，回加见 new_width）。
+    let stf_content = maxc.min(minc.max(available)).max(0.0);
+    if !stf_content.is_finite() || stf_content <= 0.0 {
+        return;
+    }
+    // 水平 IFC 以 stf 断行（R5461 同构：自身 htb → with_vertical(false)）。
+    let mut ctx = crate::inline::InlineFormattingContext::new(stf_content).with_vertical(false);
+    ctx = crate::inline_finalization::configure_inline_fonts(ctx, inline_fonts, false);
+    ctx.layout(doc, id, styles);
+    if ctx.lines.is_empty() {
+        return; // 无行盒（空内容），不越权。
+    }
+    let block_extent = ctx.total_height();
+    let frame_v = c.border_top + c.border_bottom + c.padding_top + c.padding_bottom;
+    // min/max-width Px 钳（5.5 口径，em/rem 解析阶段已落 Px）。
+    let (min_w, max_w) = match (&s.min_width, &s.max_width) {
+        (LengthValue::Px(lo), LengthValue::Px(hi)) => (*lo as f32, *hi as f32),
+        (LengthValue::Px(lo), _) => (*lo as f32, f32::MAX),
+        (_, LengthValue::Px(hi)) => (0.0, *hi as f32),
+        _ => (0.0, f32::MAX),
+    };
+    let new_width = (stf_content + frame_h).max(min_w).min(max_w);
+    let new_height = block_extent + frame_v;
+    if !new_width.is_finite() || !new_height.is_finite() {
+        return;
+    }
+    let width_changed = (new_width - c.width).abs() > 0.5;
+    let height_changed = (new_height - c.height).abs() > 0.5;
+    if !width_changed && !height_changed {
+        return; // 语义已对域零扰动。
+    }
+    if width_changed {
+        let delta = new_width - c.width;
+        c.width = new_width;
+        c.content_width = stf_content;
+        // 块流起始按**父 WM** 判向（子恒 htb）：父 vertical-rl 起始 = 右缘，x 左移
+        // delta 保块流位；vertical-lr 起始 = 左缘，x 不动。
+        if let Some(ps) = parent_node_id.and_then(|pid| styles.get(&pid))
+            && ps.writing_mode == zero_style_system::WritingModeValue::VerticalRl
+        {
+            c.x -= delta;
+        }
+    }
+    if height_changed {
+        // compute_final 空容器守卫不回写非空盒高（inline_finalization:2512），块轴
+        // extent 须本 pass 落定；存储 IFC（步 12）以新 content_width 重排后 Σ 行高
+        // 与此处一致。
+        c.height = new_height;
+        c.content_height = block_extent;
+    }
+}
+
+/// Px 定长 margin 解析（auto/% → 0；% 相对 ICB 宽的换算域 FIXME，本臂不计）。
+fn resolve_margin_px(value: &LengthValue) -> f32 {
+    if let LengthValue::Px(v) = value {
+        return *v as f32;
+    }
+    0.0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
