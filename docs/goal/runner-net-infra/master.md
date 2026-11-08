@@ -46,10 +46,10 @@
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
   现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
   goal py 框架交付（M4 承接）。
-- **下一步**：fetcher 闭包三分表迁移（清单档拓扑：script/sw 两 fetcher →
-  独立表实例 py_script_fetch_routes()/py_sw_fetch_routes()，stash Arc
-  共享不可断；**已认领在编**——碰撞管理 22:49 条，面让予纪律见 22:55
-  条）→ DC-3 收口；M4 余项 = 43 号 wss 面入账 ✅（2026-11-08）+ 47 号
+- **下一步**：fetcher 闭包三分表迁移余 **6b script fetcher 分表**（清单档
+  拓扑：script fetcher → py_script_fetch_routes()，P0-P3 前置留守 + T 族
+  表行，stash Arc 共享不可断）→ DC-3 收口；SW 侧 6a 已落库（23:55 条）。
+  M4 余项 = 43 号 wss 面入账 ✅（2026-11-08）+ 47 号
   corpus 门承接互指 ✅（2026-11-08）→ py 池数值门判定 + 四 fixture 面
   终验 A/B 随切片六收口落证。
 
@@ -60,7 +60,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一~五 ✅ 残链清空；余 fetcher 闭包三分表） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一~五 ✅ 残链清空；切片六 6a ✅ SW fetcher 分表；余 6b script fetcher 分表） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） + [切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)（SW fetcher 21 臂分表，net-api + SW-core 双 A/B 空集） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 进行中（互指记账面 ✅ 2026-11-08：43 号 wss 面入账 + 47/39 号控制面互指；py 池门判定与四 fixture 面终验 A/B 随切片六收口） | 门型见两审计档第四节；互指落点见状态头 M4 段 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
@@ -179,3 +179,15 @@
   未应用即退役，.rs 面（testharness.rs 两 fetcher 段 + py_routes
   表面）让予在编实例（同文件单编辑方），转入落库件独立补验位
   （fmt/clippy -D warnings/单测三件套 + 全量 A/B multiset 空集复核）。
+- 2026-11-08 23:55 切片六 6a 落库（22:49 认领本实例）：SW fetcher 闭包
+  链 459 行 → `py_sw_fetch_routes()` 24 行表 + 21 handler（T1-T6 机械
+  等价，落穿臂 2 手写尾包裹同形），表设计 in-place 单 suffix 行 ×24
+  采纳（与 23:05 条兄弟轮预案一致；sw_fetch.rs 模块化留 6b）。门禁
+  全绿：验证器 ALL PASS（A 逐臂 token 全等 + B 表序 + C 静态尾）+
+  fmt/check/clippy -D warnings 净 + 单测 298P/0F + **net-api 全量 A/B
+  multiset 空集**（13,614P/1,305F/8T 锚 d19247694 vs B 9f2b7cdef，四域
+  锚全等；23:03 条预告的 s348 双案不在本套件，零归因需要）+
+  **SW-core 双跑 multiset 空集**（246P/3F/0T，worktree@9f2b7cdef 干净
+  基线 vs 主树本批，页面直方图逐项全等；net-api 不行使 SW 臂故 SW 面
+  改由 SW-core 承载，普查档 §三.2 缺陷订正见证据档 §四）。SW 波资产
+  45 fetch 本 clone 首次拉取（gitignored）。证据：[切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)。

@@ -127,7 +127,10 @@ PyRoute 注册表全量落地（切片五，残链 21 臂迁入后 dispatch 残�
   Custom 行表内原位承载，dispatch 收口为「注册表循环 + 静态回退尾」；
   基线锚对合流后 HEAD 重录，全量 A/B 计数敏感 multiset 空集 +
   [切片五档](runner-net-infra/evidence/2026-11-08-m3-slice5-residual-clear.md)）；
-  余 = 四 fetcher 闭包三分表迁移（DC-3 收口）。
+  **切片六 6a = SW fetcher 分表**（闭包链 459 行 → 24 行表 + 21 handler，
+  落穿臂尾包裹同形；net-api 与 SW-core 双 A/B multiset 空集 +
+  [切片六 6a 档](runner-net-infra/evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)）；
+  余 = 6b script fetcher 分表（DC-3 收口）。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
