@@ -2890,13 +2890,13 @@
 
   // R3254-M3 切片 6：insertHTML（execCommand 臂）——选区在宿主直子文本节点内 →
   // 宿主 innerHTML 在选区对应串偏移处 splice 插入 fragment 串（选区非空先删选中
-  // 段——与 insertParagraph 同款实体感知偏移扫描）。caret 落插入内容后（文本边界
-  // best-effort——插入含标签时落宿主 childNodes 扫描位）。
+  // 段——与 insertParagraph 同款实体感知偏移扫描）。caret 落插入内容后（含标签时
+  // wantStart+frag 文本长度映射新 childNodes，F3 重映射）。
   function _zwExecCmdApplyInsertHtml(host, range, fragHtml) {
     var frag = (fragHtml == null) ? '' : String(fragHtml);
     if (frag === '') return;
     var sc = range.startContainer, so = range.startOffset | 0;
-    var ec = range.endContainer, eo = range.collapsed ? so : (range.endOffset | 0);
+    var eo = range.collapsed ? so : (range.endOffset | 0);
     if (!(sc && (sc.nodeType === 3 || sc.__zwIsText) && sc.parentNode === host)) return;
     var kids = host.childNodes || [];
     var textOffset = 0;
@@ -2927,15 +2927,73 @@
       if (hEnd < 0) hEnd = hStart;
     }
     host.innerHTML = html.slice(0, hStart) + frag + html.slice(hEnd);
-    // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → 落宿主直子扫描位
-    //（frag 后元素边界，best-effort——fragment 解析产物树形态 host 侧才知）。
+    // caret：插入段若为纯文本 → 落 frag 内文本偏移；含标签 → wantStart + frag
+    // 解码纯文本长度（tag 序列跳过、实体记 1——与解析产物文本贡献同口径；首版
+    // 漏跳 tag 把标记字符计入文本长度，wantCaret 越界落 host 末端，r2 批
+    // mt F2P=0 ABORT 手审定谳）映射新 kids2 文本坐标（文本子直达 (node,off)；
+    // 元素子位落其文本长度边界 → (host, ci+1)，位落其内 → 单层递归 best-effort）。
+    // F3（2026-11-08）：旧臂 `kids.indexOf(ec)` 在 :2901 插入前快照上索引已被
+    // 下方 innerHTML 替换销毁的 endContainer，caret 恒落插入内容起点而非末尾
+    //（editing spec execCommand insertHTML：caret 置插入内容之后）。
     try {
       var nr = document.createRange();
       if (!/[<]/.test(frag)) {
         nr.setStart(sc, so + frag.length);
       } else {
+        var fragTextLen = 0;
+        for (var fi = 0; fi < frag.length; fi++) {
+          var fc = frag.charAt(fi);
+          if (fc === '<') {
+            var fgt = frag.indexOf('>', fi);
+            if (fgt > fi) { fi = fgt; continue; } // 标签串贡献 0 文本（HTML 长度≠解码文本长度）
+          }
+          if (fc === '&') {
+            var fsemi = frag.indexOf(';', fi);
+            if (fsemi > fi && fsemi - fi <= 10) { fragTextLen++; fi = fsemi; continue; }
+          }
+          fragTextLen++;
+        }
+        var wantCaret = wantStart + fragTextLen;
+        // 元素文本长度经 nodeValue 递归求和（OPTIMIZATION：不用 textContent——
+        // 其 getter 全子树串拼接，O(子树) 中间串分配在 4G 守卫线上是 GC 债）。
+        var kTextLen = function (n) {
+          if (n.nodeType === 3 || n.__zwIsText) return String(n.nodeValue || '').length;
+          var t = 0;
+          var c = n.childNodes || [];
+          for (var i = 0; i < c.length; i++) t += kTextLen(c[i]);
+          return t;
+        };
         var kids2 = host.childNodes || [];
-        nr.setStart(host, Math.min(kids2.length, kids.indexOf(ec) >= 0 ? kids.indexOf(ec) + 1 : kids2.length));
+        var acc = 0;
+        var placed = false;
+        for (var ci = 0; ci < kids2.length; ci++) {
+          var kc = kids2[ci];
+          var kIsText = (kc.nodeType === 3 || kc.__zwIsText);
+          var kLen = kTextLen(kc);
+          if (kIsText) {
+            if (wantCaret <= acc + kLen) { nr.setStart(kc, wantCaret - acc); placed = true; break; }
+          } else if (wantCaret < acc + kLen) {
+            var target = wantCaret - acc;
+            var gk = kc.childNodes || [];
+            var gacc = 0;
+            var gDone = false;
+            for (var gi = 0; gi < gk.length; gi++) {
+              var g = gk[gi];
+              var gLen = kTextLen(g);
+              if (target <= gacc + gLen) { nr.setStart(g, target - gacc); gDone = true; break; }
+              gacc += gLen;
+            }
+            if (!gDone) nr.setStart(kc, gk.length);
+            placed = true;
+            break;
+          } else if (wantCaret === acc + kLen) {
+            nr.setStart(host, ci + 1);
+            placed = true;
+            break;
+          }
+          acc += kLen;
+        }
+        if (!placed) nr.setStart(host, kids2.length);
       }
       nr.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr]; }
