@@ -109,6 +109,11 @@ draft-ietf-httpbis-no-vary-search（2026-05 版）解析 + 等价判定 + 键编
 - 对账口径：multiset（Counter）而非 dict——dict 折叠重复 (file,name)
   键会虚差 1（v3 终账 14,695 vs 14,696 即此伪影）；后续零回归账一律
   multiset。
+- **变基后复跑全等**：推送前 pull --rebase 吸收 7f1c9f717（46 号
+  py_routes 69 处机械 lint + android fetch 臂补 cache_mode）；重建
+  runner 复跑全窗（`/tmp/zw-results-httpcache-m3/rebased.json`）——
+  REBASED == 变基前 NEW == M2 终账，multiset 全等，上游机械改动确证
+  行为中性，零回归账与推送树一致。
 
 ## 四、划界与挂账
 
