@@ -6309,6 +6309,24 @@ fn wpt_data_script_fetcher_with_stash(
             }
             return Ok(referer);
         }
+        // s350（html-semantics M2 切片 350）：json/text-module http-accept-header-checker.py
+        // 动态端点模块取回臂（上游 wptserve handler 不在语料——回体逐字镜像上游：
+        // json → `{"accept": "<Accept>"}` JSON module、text → 裸 Accept 文本 module）。
+        // Accept 值 = 按模块类型钉死的 spec 常量（JSON modules fetch 步：
+        // `application/json,*/*;q=0.5`；text modules 草案同形 `text/plain,*/*;q=0.5`）
+        // ——fetcher 契约 `(page_url, src)` 无头通道，值按端点目录归属的模块类型锚定
+        // （json-module/ → json、text-module/ → text；text 型取回报文另带
+        // `__zw_mtype=text` 标记可交叉核对，json 面目录即类型锚——s268
+        // compute_module_referer 服务端求值同法）。置于 `__zw_mtype` intent 臂**之前**
+        //（s267 同理由：.py 非 json/scripty MIME，intent 臂接管即 Err——静态 import
+        // 链断 tests 缺失）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        if clean.contains("the-script-element/json-module/http-accept-header-checker.py") {
+            return Ok("{\"accept\": \"application/json,*/*;q=0.5\"}".to_string());
+        }
+        if clean.contains("the-script-element/text-module/http-accept-header-checker.py") {
+            return Ok("text/plain,*/*;q=0.5".to_string());
+        }
         // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
         // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
         // 形参，s124 `__zw_lp` 同法穿参；真实 HTTP 宿主忽略未知查询参数，本臂消费
@@ -12961,6 +12979,28 @@ mod tests {
             "encoding/legacy-mb-schinese/gbk/gbk-decoder.any.js",
             "",
         ));
+    }
+
+    // s350 回归钉：json/text-module http-accept-header-checker.py 端点臂——json 面
+    // 回 JSON module 体、text 面回裸文本 module 体，Accept 值按端点目录锚定的模块
+    // 类型取 spec 常量（与语料断言值逐字节一致）；text 型取回报文携带的
+    // `__zw_mtype=text` 标记不误触 mtype intent 臂（端点臂前置）。
+    #[test]
+    fn accept_header_checker_serves_module_type_anchors_s350() {
+        let fetch = wpt_data_script_fetcher(Path::new("/nonexistent-wpt-root"), None).unwrap();
+        let page = "https://wpt.test/html/semantics/scripting-1/the-script-element/page.html";
+        assert_eq!(
+            fetch(page, "./json-module/http-accept-header-checker.py").unwrap(),
+            "{\"accept\": \"application/json,*/*;q=0.5\"}"
+        );
+        assert_eq!(
+            fetch(
+                page,
+                "./text-module/http-accept-header-checker.py?__zw_mtype=text&__zw_lp=strict-origin-when-cross-origin"
+            )
+            .unwrap(),
+            "text/plain,*/*;q=0.5"
+        );
     }
 
     // s107 回归钉：fetcher JSON module 意图面——`.json` 静态文件默认
