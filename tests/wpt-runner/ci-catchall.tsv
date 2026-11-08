@@ -7,3 +7,4 @@ intersection-observer	fetch-wpt-observers
 resize-observer	fetch-wpt-observers
 editing-run	fetch-wpt-editing
 editing-other	fetch-wpt-editing
+shadow-dom	fetch-wpt-shadow-render-pool
