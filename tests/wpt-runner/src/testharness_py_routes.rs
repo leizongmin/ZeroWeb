@@ -43,12 +43,26 @@ pub(crate) struct PyEndpointCtx {
 pub(crate) enum PyRouteMatch {
     /// 路径全等（归一后 clean；空串 = 站点根）。
     Exact(&'static str),
+    /// 路径全等多臂 OR（同族多端点共享 handler）。
+    Exacts(&'static [&'static str]),
+    /// 目录前缀 + 单文件名后缀。
+    DirSuffix { dir: &'static str, suffix: &'static str },
+    /// 目录前缀 + 多文件名后缀任一（原 `starts_with && (ends_with || …)` 臂）。
+    DirSuffixes {
+        dir: &'static str,
+        suffixes: &'static [&'static str],
+    },
 }
 
 impl PyRouteMatch {
     fn test(&self, clean: &str, _req: &zero_engine::fetch_bridge::FetchRequest) -> bool {
         match self {
             Self::Exact(path) => clean == *path,
+            Self::Exacts(paths) => paths.contains(&clean),
+            Self::DirSuffix { dir, suffix } => clean.starts_with(dir) && clean.ends_with(suffix),
+            Self::DirSuffixes { dir, suffixes } => {
+                clean.starts_with(dir) && suffixes.iter().any(|s| clean.ends_with(s))
+            }
         }
     }
 }
@@ -133,6 +147,84 @@ fn py_routes() -> &'static [PyRoute] {
                 "html/semantics/embedded-content/the-img-element/resources/image-and-stash.py",
             ),
             handle: route_image_and_stash,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exacts(&[
+                "beacon/resources/inspect-header.py",
+                "beacon/resources/content-type-and-body.py",
+                "beacon/resources/url-echo.py",
+            ]),
+            handle: route_beacon_inspect_header,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("service-workers/service-worker/resources/fetch-with-body-worker.py"),
+            handle: route_fetch_with_body_worker,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/upload.py",
+            },
+            handle: route_xhr_upload,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/form.py",
+            },
+            handle: route_xhr_form,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/echo-content-type.py",
+            },
+            handle: route_xhr_echo_content_type,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffixes {
+                dir: "fetch/api/resources/",
+                suffixes: &["/echo-content.py", "/echo-content.h2.py"],
+            },
+            handle: route_fetch_echo_content,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-origin-header.py",
+            },
+            handle: route_xhr_access_control_origin_header,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/over-1-meg.txt",
+            },
+            handle: route_xhr_over_1_meg,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-basic-allow-star.py",
+            },
+            handle: route_xhr_basic_allow_star,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffixes {
+                dir: "xhr/",
+                suffixes: &[
+                    "/access-control-basic-allow.py",
+                    "/access-control-basic-allow-no-credentials.py",
+                ],
+            },
+            handle: route_xhr_basic_allow,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/redirect-cors.py",
+            },
+            handle: route_xhr_redirect_cors,
         },
     ]
 }
@@ -611,6 +703,536 @@ fn route_image_and_stash(
         body_bytes: Some(b"Not found".to_vec()),
     }));
 }
+/// beacon inspect-header/content-type-and-body/url-echo 族 臂——注册表切片三迁入，体逐字节保持。
+fn route_beacon_inspect_header(
+    ctx: &PyEndpointCtx,
+    clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let beacon_stash = &ctx.beacon_stash;
+    // page-state-compat M2 fixture：beacon/resources 三端点（上游行为等价——
+    // https://github.com/web-platform-tests/wpt/blob/315976933870/beacon/resources/
+    // inspect-header.py、content-type-and-body.py、url-echo.py）。共享 take 语义
+    // stash（wptserve server.stash.put/take——读后即删）；beacon POST 打 put/store，
+    // 断言侧 fetch 轮询打 get/stat。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let cmd = wpt_query_value(query, "cmd")
+        .map(|v| v.to_lowercase())
+        .unwrap_or_default();
+    let id = wpt_query_value(query, "id").unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let mut status: u16 = 200;
+    let mut body = String::new();
+    if clean.ends_with("inspect-header.py") {
+        headers.push(("content-type".into(), "text/plain".into()));
+        let header = wpt_query_value(query, "header").unwrap_or_default();
+        if cmd == "put" {
+            // 上游 request.headers.get(header, b"")——头缺席存空串。
+            let value = req
+                .headers
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case(&header))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            if let Ok(mut stash) = beacon_stash.lock() {
+                stash.insert(id, value);
+            }
+        } else if cmd == "get" {
+            // take 语义；有值（含空串）回 x-request-<header>（pollResult 依
+            // headers.get != undefined 结束轮询——无值则不发射头，轮询继续）。
+            let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
+            if let Some(value) = stored {
+                headers.push((format!("x-request-{}", header.to_lowercase()), value));
+            }
+        } else {
+            status = 400;
+            body = "ERROR: Bad Command!".into();
+        }
+    } else if clean.ends_with("content-type-and-body.py") {
+        headers.push(("content-type".into(), "text/plain".into()));
+        if cmd == "put" {
+            // 上游 stash[id] = Content-Type + ": " + body（头缺席 CT 为空串——
+            // ArrayBuffer/View 无 CT 腿期望 `: <bytes>`）。
+            let ct = req
+                .headers
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
+            let body_bytes = req
+                .body_bytes
+                .clone()
+                .or_else(|| req.body.clone().map(String::into_bytes))
+                .unwrap_or_default();
+            let value = format!("{}: {}", ct, String::from_utf8_lossy(&body_bytes));
+            if let Ok(mut stash) = beacon_stash.lock() {
+                stash.insert(id, value);
+            }
+        } else if cmd == "get" {
+            let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
+            match stored {
+                Some(value) => body = value,
+                // 上游缺值 set_error(400)（cmd 合法但 stash 空）。
+                None => {
+                    status = 400;
+                    body = "ERROR: Bad Command!".into();
+                }
+            }
+        } else {
+            status = 400;
+            body = "ERROR: Bad Command!".into();
+        }
+    } else {
+        // url-echo.py：store 存原始（百分号编码形态）query 串；stat take 返回
+        //（无值空体，状态恒 200——上游仅非法 cmd 置 400）。
+        if cmd == "store" {
+            let raw_query = req.url.split_once('?').map(|(_, q)| q).unwrap_or("");
+            if let Ok(mut stash) = beacon_stash.lock() {
+                stash.insert(id, raw_query.to_string());
+            }
+            headers.push(("content-type".into(), "text/plain".into()));
+        } else if cmd == "stat" {
+            headers.push(("content-type".into(), "text/plain".into()));
+            body = beacon_stash
+                .lock()
+                .ok()
+                .and_then(|mut s| s.remove(&id))
+                .unwrap_or_default();
+        } else {
+            status = 400;
+        }
+    }
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// service-workers fetch-with-body-worker 臂——注册表切片三迁入，体逐字节保持。
+fn route_fetch_with_body_worker(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // https://github.com/web-platform-tests/wpt/blob/04067ce9c7c2165e71ad7d0dde10a4c5cb394a83/service-workers/service-worker/resources/fetch-with-body-worker.py
+    let has_body = req.body_bytes.as_ref().is_some_and(|bytes| !bytes.is_empty())
+        || req.body.as_ref().is_some_and(|body| !body.is_empty());
+    let status = if has_body { 200 } else { 400 };
+    let body = if has_body { "BODY" } else { "NO BODY" };
+    let mut headers = wpt_pipe_headers(path_part.split_once('?').map(|(_, query)| query).unwrap_or(""));
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.to_string(),
+        body_bytes: Some(body.as_bytes().to_vec()),
+    }));
+}
+/// xhr upload.py 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_upload(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S19 fixture：xhr/resources/upload.py（上游行为等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+    // upload.py）。解析 multipart/form-data 体：无 filename 的 part 按名排序
+    // 输出 `key=value,`，随后 `\n`，再 filename part 按名排序输出
+    // `key=filename:ctype:len,`。
+    let boundary = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+        .and_then(|(_, v)| {
+            let lower = v.to_lowercase();
+            lower
+                .find("boundary=")
+                .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
+        })
+        .unwrap_or_default();
+    let body = req.body_bytes.clone().unwrap_or_default();
+    let mut text_parts: Vec<(String, String)> = Vec::new();
+    let mut file_parts: Vec<(String, String, String, usize)> = Vec::new();
+    if !boundary.is_empty() && !body.is_empty() {
+        let delim = format!("--{}", boundary);
+        let delim_bytes = delim.as_bytes();
+        let mut segments: Vec<&[u8]> = Vec::new();
+        let mut start = 0;
+        for i in 0..body.len() {
+            if body[i..].starts_with(delim_bytes) {
+                if i >= start + 2 {
+                    segments.push(&body[start..i]);
+                }
+                start = i + delim_bytes.len();
+            }
+        }
+        for seg in segments {
+            // 每段：前导 \r\n + 头部 + \r\n\r\n + 体（尾随 \r\n 去除）。
+            let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
+            let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
+                Some(pos) => pos,
+                None => continue,
+            };
+            let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
+            let mut value = &seg[sep + 4..];
+            if value.ends_with(b"\r\n") {
+                value = &value[..value.len() - 2];
+            }
+            let mut name = String::new();
+            let mut filename: Option<String> = None;
+            let mut ctype = String::new();
+            for line in head.split("\r\n") {
+                if let Some(cd) = line.strip_prefix("content-disposition:") {
+                    for attr in cd.split(';') {
+                        let attr = attr.trim();
+                        if let Some(nv) = attr.strip_prefix("name=") {
+                            name = nv.trim_matches('"').to_string();
+                        } else if let Some(fv) = attr.strip_prefix("filename=") {
+                            filename = Some(fv.trim_matches('"').to_string());
+                        }
+                    }
+                } else if let Some(ct) = line.strip_prefix("content-type:") {
+                    ctype = ct.trim().to_string();
+                }
+            }
+            if name.is_empty() {
+                continue;
+            }
+            match filename {
+                Some(fname) => file_parts.push((
+                    name,
+                    fname,
+                    if ctype.is_empty() { "None".into() } else { ctype },
+                    value.len(),
+                )),
+                None => text_parts.push((name, String::from_utf8_lossy(value).into_owned())),
+            }
+        }
+    }
+    text_parts.sort_by(|a, b| a.0.cmp(&b.0));
+    file_parts.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut content = String::new();
+    for (k, v) in &text_parts {
+        content.push_str(&format!("{}={},", k, v));
+    }
+    content.push('\n');
+    for (k, f, ct, len) in &file_parts {
+        content.push_str(&format!("{}={}:{}:{},", k, f, ct, len));
+    }
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: content.clone(),
+        body_bytes: Some(content.into_bytes()),
+    }));
+}
+/// xhr form.py 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_form(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：xhr/resources/form.py（上游行为等价——multipart
+    // 体按文档序回显 `name:value;`；text part 提取与 upload.py 同型）。
+    let boundary = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+        .and_then(|(_, v)| {
+            let lower = v.to_lowercase();
+            lower
+                .find("boundary=")
+                .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
+        })
+        .unwrap_or_default();
+    let body = req.body_bytes.clone().unwrap_or_default();
+    let mut content = String::new();
+    if !boundary.is_empty() && !body.is_empty() {
+        let delim = format!("--{}", boundary);
+        let delim_bytes = delim.as_bytes();
+        let mut segments: Vec<&[u8]> = Vec::new();
+        let mut start = 0;
+        for i in 0..body.len() {
+            if body[i..].starts_with(delim_bytes) {
+                if i >= start + 2 {
+                    segments.push(&body[start..i]);
+                }
+                start = i + delim_bytes.len();
+            }
+        }
+        for seg in segments {
+            let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
+            let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
+                Some(pos) => pos,
+                None => continue,
+            };
+            let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
+            let mut value = &seg[sep + 4..];
+            if value.ends_with(b"\r\n") {
+                value = &value[..value.len() - 2];
+            }
+            let mut name = String::new();
+            let mut has_filename = false;
+            for line in head.split("\r\n") {
+                if let Some(cd) = line.strip_prefix("content-disposition:") {
+                    for attr in cd.split(';') {
+                        let attr = attr.trim();
+                        if let Some(nv) = attr.strip_prefix("name=") {
+                            name = nv.trim_matches('"').to_string();
+                        } else if attr.starts_with("filename=") {
+                            has_filename = true;
+                        }
+                    }
+                }
+            }
+            // 上游 form.py 对 text part 回显（file part 跳过——本次用例无）。
+            if !name.is_empty() && !has_filename {
+                content.push_str(&format!("{}:{};", name, String::from_utf8_lossy(value)));
+            }
+        }
+    }
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: content.clone(),
+        body_bytes: Some(content.into_bytes()),
+    }));
+}
+/// xhr echo-content-type.py 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_echo_content_type(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：xhr/resources/echo-content-type.py（上游行为
+    // 等价——回显请求 Content-Type 头，content-type-unmodified 面）。
+    let ct = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: ct.clone(),
+        body_bytes: Some(ct.into_bytes()),
+    }));
+}
+/// fetch/api/resources/ echo-content(.h2) 族 臂——注册表切片三迁入，体逐字节保持。
+fn route_fetch_echo_content(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api 二期 M2-S3 fixture：fetch/api/basic/echo-content.py 与
+    // echo-content.h2.py（上游行为等价——原样回显请求体，request-upload
+    // 面断言 resp.text() == 上传体）。`.h2.py` 端点上游走 h2 流式上传；
+    // runner 侧流→字节泵尽后经常规 wire 到达，此处不区分。
+    let body = req
+        .body_bytes
+        .clone()
+        .or_else(|| req.body.clone().map(|s| s.into_bytes()))
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    let lossy = String::from_utf8_lossy(&body).into_owned();
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: lossy,
+        body_bytes: Some(body),
+    }));
+}
+/// xhr access-control-origin-header 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_access_control_origin_header(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：xhr/resources/access-control-origin-header.py
+    //（上游行为等价——ACAO 回显 Origin + body "PASS: Cross-domain access
+    // allowed.\nHTTP_ORIGIN: <origin>"，access-control-basic-allow- 面）。
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    headers.push(("access-control-allow-origin".into(), origin.clone()));
+    headers.push(("access-control-allow-credentials".into(), "true".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    let body = format!("PASS: Cross-domain access allowed.\nHTTP_ORIGIN: {}", origin);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr over-1-meg.txt 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_over_1_meg(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：xhr/resources/over-1-meg.txt（上游行为等价——
+    // 1.16MB "abcd" 重复体，over-1-meg 面）。
+    let body = "abcd".repeat(290_000);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr access-control-basic-allow-star 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_basic_allow_star(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow-star.py
+    //（上游逐字等价——ACAO * + PASS 体）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    headers.push(("access-control-allow-origin".into(), "*".into()));
+    let body = "PASS: Cross-domain access allowed.".to_string();
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr access-control-basic-allow(-no-credentials) 族 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_basic_allow(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow.py 与
+    // access-control-basic-allow-no-credentials.py（上游逐字等价——ACAO 回显
+    // 请求 Origin；allow 变体另带 ACAC true，no-credentials 变体不带）。
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_else(|| "*".to_string());
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    headers.push(("access-control-allow-origin".into(), origin));
+    if clean.ends_with("/access-control-basic-allow.py") {
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+    }
+    let body = "PASS: Cross-domain access allowed.".to_string();
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr redirect-cors 臂——注册表切片三迁入，体逐字节保持。
+fn route_xhr_redirect_cors(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S17 fixture：xhr/resources/redirect-cors.py（上游行为等价——
+    // GET → 302 + Location；?allow_origin= 回显 Origin、?allow_header= 透传
+    // ACAH；OPTIONS preflight 面待 engine preflight 语义，此实现 GET 面）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let location = wpt_query_value(query, "location").unwrap_or_default();
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if req.method == "OPTIONS" {
+        // 上游语义：preflight 不重定向（redirect_preflight 才 302）+ ACAM/Max-Age。
+        headers.push(("access-control-allow-methods".into(), "GET".into()));
+        headers.push(("access-control-max-age".into(), "1".into()));
+        if wpt_query_value(query, "allow_origin").is_some() {
+            headers.push(("access-control-allow-origin".into(), origin));
+        }
+        if let Some(allow_header) = wpt_query_value(query, "allow_header") {
+            headers.push(("access-control-allow-headers".into(), allow_header));
+        }
+        let preflight_redirect = wpt_query_value(query, "redirect_preflight").is_some();
+        let status: u16 = if preflight_redirect { 302 } else { 200 };
+        if preflight_redirect {
+            headers.push(("location".into(), location));
+        }
+        wpt_add_fetch_metadata(&mut headers, req, status);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status,
+            status_text: wpt_status_text(status).to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    headers.push(("location".into(), location));
+    if wpt_query_value(query, "allow_origin").is_some() {
+        headers.push(("access-control-allow-origin".into(), origin));
+    }
+    if let Some(allow_header) = wpt_query_value(query, "allow_header") {
+        headers.push(("access-control-allow-headers".into(), allow_header));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, 302);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 302,
+        status_text: wpt_status_text(302).to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+
 /// fetch handler 分派入口——原闭包体逐字节迁出（testharness.rs 原位只剩
 /// ctx 构建 + 本调用）；臂序/行为不变，后续批次在本文件内逐族转注册项。
 pub(crate) fn dispatch(
@@ -618,7 +1240,6 @@ pub(crate) fn dispatch(
     req: &zero_engine::fetch_bridge::FetchRequest,
 ) -> Result<zero_engine::fetch_bridge::FetchResponse, String> {
     let root = &ctx.root;
-    let beacon_stash = &ctx.beacon_stash;
     let get_set_cookie_stash = &ctx.get_set_cookie_stash;
     let es_cookie_stash = &ctx.es_cookie_stash;
     let vary_value_override = &ctx.vary_value_override;
@@ -655,423 +1276,6 @@ pub(crate) fn dispatch(
         if let Some(result) = (route.handle)(ctx, clean, &path_part, req) {
             return result;
         }
-    }
-    if clean == "beacon/resources/inspect-header.py"
-        || clean == "beacon/resources/content-type-and-body.py"
-        || clean == "beacon/resources/url-echo.py"
-    {
-        // page-state-compat M2 fixture：beacon/resources 三端点（上游行为等价——
-        // https://github.com/web-platform-tests/wpt/blob/315976933870/beacon/resources/
-        // inspect-header.py、content-type-and-body.py、url-echo.py）。共享 take 语义
-        // stash（wptserve server.stash.put/take——读后即删）；beacon POST 打 put/store，
-        // 断言侧 fetch 轮询打 get/stat。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let cmd = wpt_query_value(query, "cmd")
-            .map(|v| v.to_lowercase())
-            .unwrap_or_default();
-        let id = wpt_query_value(query, "id").unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        let mut status: u16 = 200;
-        let mut body = String::new();
-        if clean.ends_with("inspect-header.py") {
-            headers.push(("content-type".into(), "text/plain".into()));
-            let header = wpt_query_value(query, "header").unwrap_or_default();
-            if cmd == "put" {
-                // 上游 request.headers.get(header, b"")——头缺席存空串。
-                let value = req
-                    .headers
-                    .iter()
-                    .find(|(n, _)| n.eq_ignore_ascii_case(&header))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
-                if let Ok(mut stash) = beacon_stash.lock() {
-                    stash.insert(id, value);
-                }
-            } else if cmd == "get" {
-                // take 语义；有值（含空串）回 x-request-<header>（pollResult 依
-                // headers.get != undefined 结束轮询——无值则不发射头，轮询继续）。
-                let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
-                if let Some(value) = stored {
-                    headers.push((format!("x-request-{}", header.to_lowercase()), value));
-                }
-            } else {
-                status = 400;
-                body = "ERROR: Bad Command!".into();
-            }
-        } else if clean.ends_with("content-type-and-body.py") {
-            headers.push(("content-type".into(), "text/plain".into()));
-            if cmd == "put" {
-                // 上游 stash[id] = Content-Type + ": " + body（头缺席 CT 为空串——
-                // ArrayBuffer/View 无 CT 腿期望 `: <bytes>`）。
-                let ct = req
-                    .headers
-                    .iter()
-                    .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_default();
-                let body_bytes = req
-                    .body_bytes
-                    .clone()
-                    .or_else(|| req.body.clone().map(String::into_bytes))
-                    .unwrap_or_default();
-                let value = format!("{}: {}", ct, String::from_utf8_lossy(&body_bytes));
-                if let Ok(mut stash) = beacon_stash.lock() {
-                    stash.insert(id, value);
-                }
-            } else if cmd == "get" {
-                let stored = beacon_stash.lock().ok().and_then(|mut s| s.remove(&id));
-                match stored {
-                    Some(value) => body = value,
-                    // 上游缺值 set_error(400)（cmd 合法但 stash 空）。
-                    None => {
-                        status = 400;
-                        body = "ERROR: Bad Command!".into();
-                    }
-                }
-            } else {
-                status = 400;
-                body = "ERROR: Bad Command!".into();
-            }
-        } else {
-            // url-echo.py：store 存原始（百分号编码形态）query 串；stat take 返回
-            //（无值空体，状态恒 200——上游仅非法 cmd 置 400）。
-            if cmd == "store" {
-                let raw_query = req.url.split_once('?').map(|(_, q)| q).unwrap_or("");
-                if let Ok(mut stash) = beacon_stash.lock() {
-                    stash.insert(id, raw_query.to_string());
-                }
-                headers.push(("content-type".into(), "text/plain".into()));
-            } else if cmd == "stat" {
-                headers.push(("content-type".into(), "text/plain".into()));
-                body = beacon_stash
-                    .lock()
-                    .ok()
-                    .and_then(|mut s| s.remove(&id))
-                    .unwrap_or_default();
-            } else {
-                status = 400;
-            }
-        }
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean == "service-workers/service-worker/resources/fetch-with-body-worker.py" {
-        // https://github.com/web-platform-tests/wpt/blob/04067ce9c7c2165e71ad7d0dde10a4c5cb394a83/service-workers/service-worker/resources/fetch-with-body-worker.py
-        let has_body = req.body_bytes.as_ref().is_some_and(|bytes| !bytes.is_empty())
-            || req.body.as_ref().is_some_and(|body| !body.is_empty());
-        let status = if has_body { 200 } else { 400 };
-        let body = if has_body { "BODY" } else { "NO BODY" };
-        let mut headers = wpt_pipe_headers(path_part.split_once('?').map(|(_, query)| query).unwrap_or(""));
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.to_string(),
-            body_bytes: Some(body.as_bytes().to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/upload.py") {
-        // net-api M4-S19 fixture：xhr/resources/upload.py（上游行为等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
-        // upload.py）。解析 multipart/form-data 体：无 filename 的 part 按名排序
-        // 输出 `key=value,`，随后 `\n`，再 filename part 按名排序输出
-        // `key=filename:ctype:len,`。
-        let boundary = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
-            .and_then(|(_, v)| {
-                let lower = v.to_lowercase();
-                lower
-                    .find("boundary=")
-                    .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
-            })
-            .unwrap_or_default();
-        let body = req.body_bytes.clone().unwrap_or_default();
-        let mut text_parts: Vec<(String, String)> = Vec::new();
-        let mut file_parts: Vec<(String, String, String, usize)> = Vec::new();
-        if !boundary.is_empty() && !body.is_empty() {
-            let delim = format!("--{}", boundary);
-            let delim_bytes = delim.as_bytes();
-            let mut segments: Vec<&[u8]> = Vec::new();
-            let mut start = 0;
-            for i in 0..body.len() {
-                if body[i..].starts_with(delim_bytes) {
-                    if i >= start + 2 {
-                        segments.push(&body[start..i]);
-                    }
-                    start = i + delim_bytes.len();
-                }
-            }
-            for seg in segments {
-                // 每段：前导 \r\n + 头部 + \r\n\r\n + 体（尾随 \r\n 去除）。
-                let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
-                let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
-                    Some(pos) => pos,
-                    None => continue,
-                };
-                let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
-                let mut value = &seg[sep + 4..];
-                if value.ends_with(b"\r\n") {
-                    value = &value[..value.len() - 2];
-                }
-                let mut name = String::new();
-                let mut filename: Option<String> = None;
-                let mut ctype = String::new();
-                for line in head.split("\r\n") {
-                    if let Some(cd) = line.strip_prefix("content-disposition:") {
-                        for attr in cd.split(';') {
-                            let attr = attr.trim();
-                            if let Some(nv) = attr.strip_prefix("name=") {
-                                name = nv.trim_matches('"').to_string();
-                            } else if let Some(fv) = attr.strip_prefix("filename=") {
-                                filename = Some(fv.trim_matches('"').to_string());
-                            }
-                        }
-                    } else if let Some(ct) = line.strip_prefix("content-type:") {
-                        ctype = ct.trim().to_string();
-                    }
-                }
-                if name.is_empty() {
-                    continue;
-                }
-                match filename {
-                    Some(fname) => file_parts.push((
-                        name,
-                        fname,
-                        if ctype.is_empty() { "None".into() } else { ctype },
-                        value.len(),
-                    )),
-                    None => text_parts.push((name, String::from_utf8_lossy(value).into_owned())),
-                }
-            }
-        }
-        text_parts.sort_by(|a, b| a.0.cmp(&b.0));
-        file_parts.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut content = String::new();
-        for (k, v) in &text_parts {
-            content.push_str(&format!("{}={},", k, v));
-        }
-        content.push('\n');
-        for (k, f, ct, len) in &file_parts {
-            content.push_str(&format!("{}={}:{}:{},", k, f, ct, len));
-        }
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: content.clone(),
-            body_bytes: Some(content.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/form.py") {
-        // net-api M4-S21 fixture：xhr/resources/form.py（上游行为等价——multipart
-        // 体按文档序回显 `name:value;`；text part 提取与 upload.py 同型）。
-        let boundary = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
-            .and_then(|(_, v)| {
-                let lower = v.to_lowercase();
-                lower
-                    .find("boundary=")
-                    .map(|idx| v[idx + 9..].trim().trim_matches('"').to_string())
-            })
-            .unwrap_or_default();
-        let body = req.body_bytes.clone().unwrap_or_default();
-        let mut content = String::new();
-        if !boundary.is_empty() && !body.is_empty() {
-            let delim = format!("--{}", boundary);
-            let delim_bytes = delim.as_bytes();
-            let mut segments: Vec<&[u8]> = Vec::new();
-            let mut start = 0;
-            for i in 0..body.len() {
-                if body[i..].starts_with(delim_bytes) {
-                    if i >= start + 2 {
-                        segments.push(&body[start..i]);
-                    }
-                    start = i + delim_bytes.len();
-                }
-            }
-            for seg in segments {
-                let seg = seg.strip_prefix(b"\r\n").unwrap_or(seg);
-                let sep = match seg.windows(4).position(|w| w == b"\r\n\r\n") {
-                    Some(pos) => pos,
-                    None => continue,
-                };
-                let head = String::from_utf8_lossy(&seg[..sep]).to_lowercase();
-                let mut value = &seg[sep + 4..];
-                if value.ends_with(b"\r\n") {
-                    value = &value[..value.len() - 2];
-                }
-                let mut name = String::new();
-                let mut has_filename = false;
-                for line in head.split("\r\n") {
-                    if let Some(cd) = line.strip_prefix("content-disposition:") {
-                        for attr in cd.split(';') {
-                            let attr = attr.trim();
-                            if let Some(nv) = attr.strip_prefix("name=") {
-                                name = nv.trim_matches('"').to_string();
-                            } else if attr.starts_with("filename=") {
-                                has_filename = true;
-                            }
-                        }
-                    }
-                }
-                // 上游 form.py 对 text part 回显（file part 跳过——本次用例无）。
-                if !name.is_empty() && !has_filename {
-                    content.push_str(&format!("{}:{};", name, String::from_utf8_lossy(value)));
-                }
-            }
-        }
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: content.clone(),
-            body_bytes: Some(content.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/echo-content-type.py") {
-        // net-api M4-S21 fixture：xhr/resources/echo-content-type.py（上游行为
-        // 等价——回显请求 Content-Type 头，content-type-unmodified 面）。
-        let ct = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("content-type"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: ct.clone(),
-            body_bytes: Some(ct.into_bytes()),
-        });
-    }
-    if clean.starts_with("fetch/api/resources/")
-        && (clean.ends_with("/echo-content.py") || clean.ends_with("/echo-content.h2.py"))
-    {
-        // net-api 二期 M2-S3 fixture：fetch/api/basic/echo-content.py 与
-        // echo-content.h2.py（上游行为等价——原样回显请求体，request-upload
-        // 面断言 resp.text() == 上传体）。`.h2.py` 端点上游走 h2 流式上传；
-        // runner 侧流→字节泵尽后经常规 wire 到达，此处不区分。
-        let body = req
-            .body_bytes
-            .clone()
-            .or_else(|| req.body.clone().map(|s| s.into_bytes()))
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        let lossy = String::from_utf8_lossy(&body).into_owned();
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: lossy,
-            body_bytes: Some(body),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-origin-header.py") {
-        // net-api M4-S21 fixture：xhr/resources/access-control-origin-header.py
-        //（上游行为等价——ACAO 回显 Origin + body "PASS: Cross-domain access
-        // allowed.\nHTTP_ORIGIN: <origin>"，access-control-basic-allow- 面）。
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        headers.push(("access-control-allow-origin".into(), origin.clone()));
-        headers.push(("access-control-allow-credentials".into(), "true".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        let body = format!("PASS: Cross-domain access allowed.\nHTTP_ORIGIN: {}", origin);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/over-1-meg.txt") {
-        // net-api M4-S21 fixture：xhr/resources/over-1-meg.txt（上游行为等价——
-        // 1.16MB "abcd" 重复体，over-1-meg 面）。
-        let body = "abcd".repeat(290_000);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-allow-star.py") {
-        // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow-star.py
-        //（上游逐字等价——ACAO * + PASS 体）。
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        headers.push(("access-control-allow-origin".into(), "*".into()));
-        let body = "PASS: Cross-domain access allowed.".to_string();
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/")
-        && (clean.ends_with("/access-control-basic-allow.py")
-            || clean.ends_with("/access-control-basic-allow-no-credentials.py"))
-    {
-        // net-api M4-S17 fixture：xhr/resources/access-control-basic-allow.py 与
-        // access-control-basic-allow-no-credentials.py（上游逐字等价——ACAO 回显
-        // 请求 Origin；allow 变体另带 ACAC true，no-credentials 变体不带）。
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| "*".to_string());
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        headers.push(("access-control-allow-origin".into(), origin));
-        if clean.ends_with("/access-control-basic-allow.py") {
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-        }
-        let body = "PASS: Cross-domain access allowed.".to_string();
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
     }
     if clean.starts_with("xhr/") && clean.ends_with("/redirect-cors.py") {
         // net-api M4-S17 fixture：xhr/resources/redirect-cors.py（上游行为等价——

@@ -7,19 +7,20 @@
   [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)）；
   切片一完成（py 路由底座模块迁出，testharness.rs 19,236→15,630 行，
   [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md)）；
-  **切片二完成**：`PyRoute` 保序注册表落地（PyRouteMatch::Exact +
-  PyRouteHandler None=落穿语义 + py_routes() 表），链头 12 条全等匹配
-  臂迁入（站点根→image-and-stash 段），机械等价（12 臂体与 HEAD 逐行
-  零差）+ 全量 A/B multiset 空集 + 七域全等
-  （[切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md)）。
+  **切片二+三落地**：`PyRoute` 保序注册表（Exact/Exacts/DirSuffix/
+  DirSuffixes 谓词 + None=落穿语义），链头 23 臂迁入（站点根→xhr
+  redirect-cors 段）。切片二 12 臂态 = 54c5f4cea（A/B multiset 空集）；
+  切片三 11 臂初版 7 条 DirSuffix 谓词带列表字面量缺陷（永不匹配→
+  落穿，机械验证发现已修），**修复后 23 臂态全量 A/B multiset 空集 +
+  七域全等已落证**（m3s3-ab-181241），谓词修复随本批提交落库，证据
+  与事件见
+  [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)。
 - **卡点**：无。
-- **下一步**：切片三 xhr 族臂迁入（DirSuffix 谓词引入——目录前缀 +
-  文件名后缀；纯前缀臂如 `starts_with("xhr/")` 需 Prefix 或 Custom
-  变体，按臂条件定），迁移边界前缀推进（注册表在前 + 残链在后），
-  每批全量 A/B 对照基线 multiset 空集；其后 eventsource/fetch 族 →
-  inspect-headers/方法豁免（Custom 谓词）→ 尾段收口（84 臂全量入表）；
-  四 fetcher 闭包臂随后同框架分表迁移；S12 补丁收编 + update 脚本
-  缺口清偿随批次落。
+- **下一步**：切片四 fetch/api 族 + eventsource 族臂迁入（前缀推进，
+  残链头现于 fetch/api/resources/redirect.py），每批全量 A/B 对照
+  基线 multiset 空集；其后 inspect-headers/方法豁免（Custom 谓词）→
+  尾段收口（84 臂全量入表）；四 fetcher 闭包臂随后同框架分表迁移；
+  S12 补丁收编 + update 脚本缺口清偿随批次落。
 
 ## 里程碑状态表
 
@@ -28,7 +29,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md) |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅*） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（*23 臂态 A/B 收口中，含谓词修复） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
@@ -75,3 +76,9 @@
   同文件单编辑方（迁移面 .rs 归当前在编实例，他轮勿碰）；同二进制
   A/B 跑窗口互斥（并发双跑失败面不作账）；产物按先完成者采纳、互补
   者按件核对收编；各轮动手前 pull --rebase 重读本节。
+- 2026-11-08 18:14 只读观察（致当前在编实例，未动 .rs）：工作树切片三
+  批次内 7 处 `DirSuffix { suffix: "['/upload.py']" }` 形态字面量（upload/
+  form/echo-content-type/access-control-origin-header/over-1-meg/
+  basic-allow-star/redirect-cors）——`['…']` 疑为生成脚本把单元素后缀
+  误转 list repr，`ends_with` 恒不匹配；多后缀 DirSuffixes 数组形态正常。
+  A/B 前修正或以红灯定位。
