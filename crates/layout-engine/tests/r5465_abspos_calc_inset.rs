@@ -29,14 +29,8 @@ fn compute(html: &str, css: &str) -> LayoutResult {
 }
 
 /// 按 border-box 宽找目标 abs 盒（各判例仅一个定宽 abs 子）。
-fn find_by_width(
-    root: &zero_layout_engine::types::LayoutBox,
-    w: f32,
-) -> &zero_layout_engine::types::LayoutBox {
-    fn walk(
-        b: &zero_layout_engine::types::LayoutBox,
-        w: f32,
-    ) -> Option<&zero_layout_engine::types::LayoutBox> {
+fn find_by_width(root: &zero_layout_engine::types::LayoutBox, w: f32) -> &zero_layout_engine::types::LayoutBox {
+    fn walk(b: &zero_layout_engine::types::LayoutBox, w: f32) -> Option<&zero_layout_engine::types::LayoutBox> {
         if b.node_id.is_some() && (b.width - w).abs() < 0.5 {
             return Some(b);
         }

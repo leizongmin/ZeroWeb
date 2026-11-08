@@ -11003,9 +11003,7 @@ fn wpt_data_fetch_handler_with_stash(
 /// - 条件命中（If-None-Match == 引号 tag，或 If-Modified-Since == date，
 ///   字符串全等——上游逐字；对应参数缺省时必不等）→ 304 "Not Modified" 空体；
 /// - 否则 200 "OK" + text/plain + `content` 参数。
-type CachePyStash = std::sync::Arc<
-    std::sync::Mutex<HashMap<String, Vec<std::collections::BTreeMap<String, String>>>>,
->;
+type CachePyStash = std::sync::Arc<std::sync::Mutex<HashMap<String, Vec<std::collections::BTreeMap<String, String>>>>>;
 
 fn wpt_cache_py_fixture(
     req: &zero_engine::fetch_bridge::FetchRequest,
@@ -11106,10 +11104,7 @@ fn wpt_cache_py_fixture(
         .as_ref()
         .zip(quoted_tag.as_ref())
         .is_some_and(|(inm, tag)| inm == tag);
-    let ims_match = ims
-        .as_ref()
-        .zip(date.as_ref())
-        .is_some_and(|(ims, date)| ims == date);
+    let ims_match = ims.as_ref().zip(date.as_ref()).is_some_and(|(ims, date)| ims == date);
     if inm_match || ims_match {
         return Ok(zero_engine::fetch_bridge::FetchResponse {
             status: 304,
@@ -11184,7 +11179,9 @@ fn wpt_cache_py_wrapped_handler(
             .lookup(&url, &req.headers);
         match lookup {
             zero_net::CacheLookup::Hit(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
-            zero_net::CacheLookup::Revalidate { conditional_headers, .. } => {
+            zero_net::CacheLookup::Revalidate {
+                conditional_headers, ..
+            } => {
                 let mut wire = req.clone();
                 for (name, value) in conditional_headers {
                     if !wire
@@ -11201,27 +11198,29 @@ fn wpt_cache_py_wrapped_handler(
                     // 304 → 元数据合并到缓存条目后回放缓存响应；无条目可合并（理论不可达
                     // ——条件头只在有条目时附加）照传裸 304。
                     let network = wpt_cache_py_fetch_response_to_http(&resp, &url);
-                    return match case_cache
-                        .lock()
-                        .expect("case http cache lock")
-                        .not_modified(&url, &req.headers, &network)
-                    {
+                    return match case_cache.lock().expect("case http cache lock").not_modified(
+                        &url,
+                        &req.headers,
+                        &network,
+                    ) {
                         Some(cached) => Ok(wpt_cache_py_cached_fetch_response(cached)),
                         None => Ok(resp),
                     };
                 }
-                case_cache
-                    .lock()
-                    .expect("case http cache lock")
-                    .put_with_headers(&url, &req.headers, &wpt_cache_py_fetch_response_to_http(&resp, &url));
+                case_cache.lock().expect("case http cache lock").put_with_headers(
+                    &url,
+                    &req.headers,
+                    &wpt_cache_py_fetch_response_to_http(&resp, &url),
+                );
                 Ok(resp)
             }
             zero_net::CacheLookup::Miss => {
                 let resp = base(req)?;
-                case_cache
-                    .lock()
-                    .expect("case http cache lock")
-                    .put_with_headers(&url, &req.headers, &wpt_cache_py_fetch_response_to_http(&resp, &url));
+                case_cache.lock().expect("case http cache lock").put_with_headers(
+                    &url,
+                    &req.headers,
+                    &wpt_cache_py_fetch_response_to_http(&resp, &url),
+                );
                 Ok(resp)
             }
         }
@@ -11230,9 +11229,7 @@ fn wpt_cache_py_wrapped_handler(
 
 /// 缓存条目 → FetchResponse 回放（缓存命中的客户端可见形态——与
 /// [`zero_net::CachedResponse::into_response`] 同构，状态短语经 wpt_status_text）。
-fn wpt_cache_py_cached_fetch_response(
-    cached: zero_net::CachedResponse,
-) -> zero_engine::fetch_bridge::FetchResponse {
+fn wpt_cache_py_cached_fetch_response(cached: zero_net::CachedResponse) -> zero_engine::fetch_bridge::FetchResponse {
     let body = String::from_utf8_lossy(&cached.body).into_owned();
     zero_engine::fetch_bridge::FetchResponse {
         status: cached.status_code,
@@ -11252,10 +11249,7 @@ fn wpt_cache_py_fetch_response_to_http(
     zero_net::HttpResponse {
         status_code: resp.status,
         headers: resp.headers.clone(),
-        body: resp
-            .body_bytes
-            .clone()
-            .unwrap_or_else(|| resp.body.as_bytes().to_vec()),
+        body: resp.body_bytes.clone().unwrap_or_else(|| resp.body.as_bytes().to_vec()),
         url: url.to_string(),
         redirect_count: 0,
     }

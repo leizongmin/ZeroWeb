@@ -263,9 +263,7 @@ impl ResourceLoader {
         // 旁路：不读缓存、不写缓存，用户条件头原样透传、零验证器合并（调用方自行
         // 管理再验证；Chromium 对齐，WPT request-cache-default-conditional 断言面）。
         // 置为 NoStore 后 submit_network 按 step 18 注入 Pragma/CC no-cache。
-        if request.cache_mode == CacheMode::Default
-            && has_explicit_conditional_request_headers(&request.headers)
-        {
+        if request.cache_mode == CacheMode::Default && has_explicit_conditional_request_headers(&request.headers) {
             request.cache_mode = CacheMode::NoStore;
             return self.submit_network(cache, request, Vec::new(), false);
         }
@@ -355,10 +353,7 @@ impl ResourceLoader {
             // https://fetch.spec.whatwg.org/#http-cache-fetch
             // only-if-cached / force-cache 对 stale（待验证）条目直接复用不验证。
             CacheLookup::Revalidate { cached, .. }
-                if matches!(
-                    request.cache_mode,
-                    CacheMode::OnlyIfCached | CacheMode::ForceCache
-                ) =>
+                if matches!(request.cache_mode, CacheMode::OnlyIfCached | CacheMode::ForceCache) =>
             {
                 CacheLookup::Hit(cached)
             }
@@ -514,7 +509,9 @@ impl ResourceLoader {
         //   `Pragma: no-cache` + `Cache-Control: no-cache`（step 18；WPT reload /
         //   no_store 文件 expected_no_cache_headers [true] 双头在场）。
         // 注入只影响网络请求头，不参与 identity_key（键取 request.headers 原头）。
-        if !headers.iter().any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control"))
+        if !headers
+            .iter()
+            .any(|(existing, _)| existing.eq_ignore_ascii_case("cache-control"))
             && request.cache_mode == CacheMode::NoCache
         {
             headers.push(("Cache-Control".into(), "max-age=0".into()));
@@ -882,11 +879,10 @@ mod tests {
         let cache = Arc::new(Mutex::new(HttpCache::new()));
         let loader = ResourceLoader::new(Arc::clone(&cache), "oic-miss-test");
         let result = loader
-            .submit(ResourceRequest::get(
-                "https://cdn.example/absent.png",
-                FetchPriority::MEDIUM,
+            .submit(
+                ResourceRequest::get("https://cdn.example/absent.png", FetchPriority::MEDIUM)
+                    .with_cache_mode(CacheMode::OnlyIfCached),
             )
-            .with_cache_mode(CacheMode::OnlyIfCached))
             .recv()
             .unwrap();
         assert!(result.is_err());
@@ -902,8 +898,8 @@ mod tests {
         let url = "https://cdn.example/matrix.png";
         store_revalidate_only_entry(&cache, url, b"stale-body");
 
-        let reload = loader
-            .lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::Reload));
+        let reload =
+            loader.lookup_cache(&ResourceRequest::get(url, FetchPriority::MEDIUM).with_cache_mode(CacheMode::Reload));
         assert!(
             matches!(reload, CacheLookup::Miss),
             "reload 不读缓存（lookup_cache 面同 submit 语义）"

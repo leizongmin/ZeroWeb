@@ -16,14 +16,8 @@ fn compute(html: &str, css: &str) -> LayoutResult {
     engine.compute(&doc, &styles)
 }
 
-fn find_by_width(
-    root: &zero_layout_engine::types::LayoutBox,
-    w: f32,
-) -> &zero_layout_engine::types::LayoutBox {
-    fn walk(
-        b: &zero_layout_engine::types::LayoutBox,
-        w: f32,
-    ) -> Option<&zero_layout_engine::types::LayoutBox> {
+fn find_by_width(root: &zero_layout_engine::types::LayoutBox, w: f32) -> &zero_layout_engine::types::LayoutBox {
+    fn walk(b: &zero_layout_engine::types::LayoutBox, w: f32) -> Option<&zero_layout_engine::types::LayoutBox> {
         if b.node_id.is_some() && (b.width - w).abs() < 0.5 {
             return Some(b);
         }

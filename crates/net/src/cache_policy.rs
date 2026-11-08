@@ -261,9 +261,11 @@ pub fn has_explicit_conditional_request_headers(headers: &[(String, String)]) ->
         "if-match",
         "if-range",
     ];
-    headers
-        .iter()
-        .any(|(name, _)| CONDITIONAL_HEADERS.iter().any(|header| name.eq_ignore_ascii_case(header)))
+    headers.iter().any(|(name, _)| {
+        CONDITIONAL_HEADERS
+            .iter()
+            .any(|header| name.eq_ignore_ascii_case(header))
+    })
 }
 
 /// `no-store` / `reload` 绕行请求的网络可观察注入头。
@@ -278,7 +280,10 @@ pub fn bypass_cache_request_injection(headers: &[(String, String)]) -> Vec<(Stri
     if !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("pragma")) {
         injection.push(("Pragma".into(), "no-cache".into()));
     }
-    if !headers.iter().any(|(name, _)| name.eq_ignore_ascii_case("cache-control")) {
+    if !headers
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("cache-control"))
+    {
         injection.push(("Cache-Control".into(), "no-cache".into()));
     }
     injection
@@ -472,10 +477,12 @@ mod tests {
             vec![("Pragma".to_string(), "no-cache".to_string())]
         );
         // 两头均在 → 零注入。
-        assert!(bypass_cache_request_injection(&[
-            ("Pragma".into(), "no-cache".into()),
-            ("Cache-Control".into(), "no-cache".into()),
-        ])
-        .is_empty());
+        assert!(
+            bypass_cache_request_injection(&[
+                ("Pragma".into(), "no-cache".into()),
+                ("Cache-Control".into(), "no-cache".into()),
+            ])
+            .is_empty()
+        );
     }
 }
