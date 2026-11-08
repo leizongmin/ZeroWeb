@@ -134,6 +134,11 @@ pollster = "0.4"
 
 # WebSocket（无头浏览器协议）
 tungstenite = { version = "0.29", features = ["rustls-tls-webpki-roots"] }
+# TLS（wss fixture 端点 + zero-net 客户端测试信任旁路钩子——goal runner-net-infra
+# D1/D2；default-features=false + ring 与既有依赖图一致，零新增 aws-lc-rs 后端）
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12", "ring"] }
+# 自签证书运行期生成（仅 wpt-runner wss fixture 端点用；证书仅驻内存不出仓）
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 
 # 哈希（crypto.subtle.digest：SHA-1/256/384/512，RustCrypto；digest 0.10 已为 transitive dep）。
 # oid feature：DigestInfo OID 常量（AssociatedOid），rsa PKCS1v15/PSS 签名填充需要

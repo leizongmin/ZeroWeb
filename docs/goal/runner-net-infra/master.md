@@ -2,19 +2,20 @@
 
 ## 状态头（2026-11-08）
 
-- **当前状态**：M0 双审计完成（DC-1 ✅ 2026-11-08）——wss 审计 + scheme
-  设计档、py 端点普查档落 evidence/，DC-4 数值门落定回填入口文档。
+- **当前状态**：M1 完成（DC-2 前半 ✅ 2026-11-08）——TLS 端点 fixture +
+  zero-net 信任旁路钩子 + wss 端到端连通单测 2/2 绿；websockets 通道 A/B
+  零回归 changed 空集（381P/0F 双跑全等）。
 - **卡点**：无。
-- **下一步**：M1 TLS 端点 fixture + wss 端到端连通单测（workspace 增
-  rustls 0.23/ring + wpt-runner 增 rcgen；ws_fixture 泛化 IO 层 + TLS 监听 +
-  zero-net 信任旁路钩子——实施蓝图见 wss 审计档 §三 D1/D2）。
+- **下一步**：M2 scheme/端点寻址接线（D3-D5：token 映射 + websockets 子树
+  变体枚举 + cookies 页锚 https + `.https.` 案重估）；接线后 A/B 基线 =
+  [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) 381P 明细。
 
 ## 里程碑状态表
 
 | 里程碑 | 状态 | 证据 |
 |---|---|---|
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
-| M1 TLS 端点 fixture + wss 连通（DC-2 前半） | 未启动 | — |
+| M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | 未启动 | 蓝图 wss 审计档 D3-D5 |
 | M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 未启动 | 蓝图 py 普查档 §三 |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |

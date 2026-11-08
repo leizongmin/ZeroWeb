@@ -5,9 +5,12 @@
 //! 支持连接到 `ws://` 和 `wss://` 服务器，发送和接收文本/二进制消息，
 //! 以及正常关闭连接。
 
+use std::net::ToSocketAddrs;
+use std::sync::{Arc, OnceLock};
+
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::header::{COOKIE, ORIGIN};
-use tungstenite::stream::MaybeTlsStream;
+use tungstenite::stream::{MaybeTlsStream, NoDelay};
 use tungstenite::{Message, WebSocket as TungWebSocket};
 use url::Url;
 
@@ -52,6 +55,42 @@ fn url_credentials(url: &str) -> Option<String> {
         Some((user, pass)) => Some(format!("{user}:{pass}")),
         None => Some(userinfo.to_string()),
     }
+}
+
+/// runner 测试环境 wss TLS 信任源覆盖（goal runner-net-infra D2——runner 的 wss
+/// fixture 注入「仅 fixture 自签 CA」的 [`rustls::ClientConfig`]）。产品代码永不
+/// 设置：进程默认 `None` ⇒ wss 走 `tungstenite::connect` 生产路径逐字节不变
+/// （webpki-roots 信任源零变化）。OnceLock 单次安装，安装点 = wss fixture 端口
+/// 首拉，早于任何 wss 连接。
+static WSS_TEST_TLS_CONFIG: OnceLock<Arc<rustls::ClientConfig>> = OnceLock::new();
+
+/// 安装 wss 客户端 TLS 信任覆盖（runner 测试环境专用旁路，见
+/// [`WSS_TEST_TLS_CONFIG`]；重复安装静默忽略——fixture 端口进程级单例下仅首个
+/// 生效）。
+pub fn install_wss_test_tls_config(config: Arc<rustls::ClientConfig>) {
+    let _ = WSS_TEST_TLS_CONFIG.set(config);
+}
+
+/// wss 旁路分支的 TCP 拨号（复刻 `tungstenite::client::connect_to_some`：DNS 全
+/// 地址逐试 + NoDelay；IPv6 括号剥除同源——runner fixture 场景 host 恒为
+/// `127.0.0.1`，全地址循环为生产语义等价保留）。scheme 判定在调用点，wss 默认
+/// 端口 443（`connect` 的 Mode::Tls 分支同值）。
+fn dial_wss_tcp(request: &tungstenite::http::Request<()>) -> tungstenite::Result<std::net::TcpStream> {
+    let uri = request.uri();
+    let host = uri.host().ok_or(tungstenite::error::UrlError::NoHostName)?;
+    let host = if host.starts_with('[') {
+        &host[1..host.len() - 1]
+    } else {
+        host
+    };
+    let addrs = (host, uri.port_u16().unwrap_or(443)).to_socket_addrs()?;
+    for addr in addrs {
+        if let Ok(stream) = std::net::TcpStream::connect(addr) {
+            stream.set_nodelay(true)?;
+            return Ok(stream);
+        }
+    }
+    Err(tungstenite::error::UrlError::UnableToConnect(uri.to_string()).into())
 }
 
 /// 可选 WebSocket 握手请求头（WHATWG HTML「establish a WebSocket connection」）。
@@ -234,8 +273,28 @@ impl WebSocket {
             );
         }
 
-        let (socket, response) =
-            tungstenite::connect(request).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+        // wss 信任旁路分支（[`WSS_TEST_TLS_CONFIG`] 设置且 scheme 为 wss 时生效）：
+        // 拨号/NoDelay/错误映射按 `tungstenite::connect` 同款复刻，仅 TLS connector
+        // 换注入配置；未覆盖的 ws:// 与未安装钩子的 wss:// 保持生产路径不变。
+        let connection = match (WSS_TEST_TLS_CONFIG.get(), parsed_url.scheme()) {
+            (Some(config), "wss") => {
+                let stream = dial_wss_tcp(&request).map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
+                tungstenite::client_tls_with_config(
+                    request,
+                    stream,
+                    None,
+                    Some(tungstenite::Connector::Rustls(Arc::clone(config))),
+                )
+                .map_err(|e| match e {
+                    tungstenite::HandshakeError::Failure(f) => f,
+                    tungstenite::HandshakeError::Interrupted(_) => {
+                        panic!("bug: blocking handshake not blocked (tungstenite 同款断言)")
+                    }
+                })
+            }
+            _ => tungstenite::connect(request),
+        };
+        let (socket, response) = connection.map_err(|e| WebSocketError::ConnectionFailed(e.to_string()))?;
 
         // 101 选定子协议透出（WHATWG HTML「process the WebSocket handshake response」
         // ——响应头选中值经宿主层落到 `ws.protocol` 属性）。

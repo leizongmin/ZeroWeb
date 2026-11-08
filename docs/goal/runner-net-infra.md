@@ -1,10 +1,11 @@
 # runner 网络 fixture 基建 — TLS/wss 端点 + wptserve py 端点 shim 框架化
 
-**版本**: v1.1
+**版本**: v1.2
 **日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）；
-2026-11-08 M0 双审计完成（DC-1 ✅：wss 审计 + py 普查档落 evidence/，DC-4
-数值门落定回填本文）
-**状态**: Active——M0 ✅，M1（TLS 端点 fixture）未启动
+2026-11-08 M0 双审计完成（DC-1 ✅）；2026-11-08 M1 完成（DC-2 前半 ✅——
+TLS 端点 fixture + 信任旁路钩子 + wss 连通单测 + 通道 A/B 零回归，
+[M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)）
+**状态**: Active——M0 ✅ M1 ✅，M2（scheme/端点寻址接线）未启动
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -96,7 +97,13 @@
   py 端点 153 臂现状普查 + 逐下游分类（47 号三池/39 号判据族/策略面排除/
   worker 面照旧）。证据落
   [evidence/](runner-net-infra/evidence/2026-11-08-m0-wss-audit.md)。
-- **M1**：TLS 端点 fixture + wss 连通（DC-2 前半）。
+- **M1 ✅**（2026-11-08）：TLS 端点 fixture + wss 连通（DC-2 前半）——
+  workspace 增 rustls 0.23（ring，零 aws-lc-rs）/rcgen 0.14；zero-net 进程级
+  wss 信任旁路钩子（未设 = 生产路径逐字节不变）；ws_fixture 泛化 IO 层 +
+  `fixture_wss_port()` TLS 监听（自签 CA+叶两级证书，仅驻内存）；wss/明文
+  端到端单测 2/2 绿；websockets 通道 A/B 零回归（381P/0F 双跑全等，
+  changed 空集）。实施发现与 M2 交底见
+  [M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)。
 - **M2**：scheme/端点寻址接线（DC-2 收口）。
 - **M3**：py 路由框架 + v2 先例迁移 + 补丁收编（DC-3）。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
