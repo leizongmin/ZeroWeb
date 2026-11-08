@@ -6036,6 +6036,13 @@
       globalThis.__zwDocWriteDeferQueue = [];
       globalThis.__zwDocWriteDeferArmed = false;
       globalThis.__zwDocWriteDeferDrained = false;
+      // s352：嵌套链记账同步重置（新写流独立——队/在途旗/标记/消费/槽位计数/分界）。
+      globalThis.__zwDocWriteNestedQueue = [];
+      globalThis.__zwDocWriteNestedBusy = false;
+      globalThis.__zwDocWriteNestedMark = {};
+      globalThis.__zwDocWriteNestedDone = {};
+      globalThis.__zwDocWriteSlotCount = 0;
+      globalThis.__zwDocWriteNewFrom = 0;
       try {
         var _dwoBody = globalThis.document.body;
         if (_dwoBody) _dwoBody.innerHTML = '';
@@ -6102,10 +6109,22 @@
             _dwsWalk(_dwsTop);
           }
           // 求值窗（嵌套 write 进入）：从求值槽位下一起走即时 pass——只执行新增
-          // 内联、src 槽位留给续流链、不动水位线/挂链记账（主链续流收口）。
+          // 内联、src 槽位按 s352 嵌套链/既有主链分派、不动水位线/挂链记账（主链
+          // 续流收口）。
           var _dwsEvalSlot = (typeof globalThis.__zwDocWriteEvalSlot === 'number')
             ? globalThis.__zwDocWriteEvalSlot : -1;
           var _dwsThrowaway = _dwsEvalSlot >= 0;
+          // s352：本面走查时点已物化的槽位总数——嵌套链新旧槽位分界（write() 在
+          // 重放前快照为 `__zwDocWriteNewFrom`，嵌套 pass 以 ≥ 分界判「本 write
+          // 新物化」）。
+          globalThis.__zwDocWriteSlotCount = _dwsList.length;
+          // s352：主链入口门——嵌套链在途（busy 或队未排空）时主链延迟（spec 插入
+          // 点序：嵌套写入外链先于此前已写入未执行槽位）；先驱动再判（驱动可能就
+          // 绪启动/续流）。
+          if (!_dwsThrowaway) {
+            globalThis.__zwDocWriteNestedDrive();
+            if (globalThis.__zwDocWriteNestedBusy) return;
+          }
           var _dwsWm = _dwsThrowaway ? _dwsEvalSlot + 1 : (globalThis.__zwDocWriteExecWatermark || 0);
           var _dwsGuard = 0;
           while (_dwsWm < _dwsList.length && _dwsGuard++ < 1024) {
@@ -6124,7 +6143,43 @@
               try { _dwsSrc = String(_dwsEl.getAttribute && _dwsEl.getAttribute('xlink:href') || ''); } catch (_eS114xh) {}
             }
             if (_dwsSrc) {
-              if (_dwsThrowaway) { _dwsWm++; continue; }
+              // s114 defer/async 检测上移：s352 嵌套链分支同需分类，主链改道分支共用。
+              var _dwsIsDefer = false, _dwsIsAsync = false;
+              try { _dwsIsDefer = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('defer')); } catch (_eS114df) {}
+              try { _dwsIsAsync = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('async')); } catch (_eS114as) {}
+              if (_dwsThrowaway) {
+                // s352（html-semantics M2 切片 352）：嵌套 write 的 src 槽位——spec
+                // 插入点语义：写入落在**当前求值脚本**的插入点（parser input stream
+                // 当前 script 元素后），先于此前已写入但尚未执行的 src 槽位（041：
+                // include-4 求值窗内写入的 include-3 须先于此前已写入的 include-1；
+                // 既有口径按缓冲追加序留主链，主链按槽位序走查 → include-1 先于
+                // include-3 逆序）。本 write 新物化槽位（槽位号 ≥ `__zwDocWriteNewFrom`
+                // 分界）入嵌套队串行执行；旧槽位维持主链既有序。defer 写入维持 s114
+                // 改道（the-end 相位，不属阻塞链）；已标记/已消费槽位跳过（同窗多
+                // write 不重入队）。
+                // https://html.spec.whatwg.org/multipage/dynamic.html#document-write-steps
+                if (_dwsIsDefer && !_dwsIsAsync && typeof globalThis.__zwSchedRegister === 'function') {
+                  _dwsWm++;
+                  continue;
+                }
+                var _dwsMark = globalThis.__zwDocWriteNestedMark
+                  || (globalThis.__zwDocWriteNestedMark = {});
+                if (_dwsMark[_dwsWm] || (globalThis.__zwDocWriteNestedDone || {})[_dwsWm]) {
+                  _dwsWm++;
+                  continue;
+                }
+                var _dwsNewFrom = (typeof globalThis.__zwDocWriteNewFrom === 'number')
+                  ? globalThis.__zwDocWriteNewFrom : 0;
+                if (_dwsWm >= _dwsNewFrom) {
+                  _dwsMark[_dwsWm] = true;
+                  var _dwsQueue = globalThis.__zwDocWriteNestedQueue
+                    || (globalThis.__zwDocWriteNestedQueue = []);
+                  _dwsQueue.push({ el: _dwsEl, slot: _dwsWm });
+                  globalThis.__zwDocWriteNestedDrive();
+                }
+                _dwsWm++;
+                continue;
+              }
               // s114（html-semantics M2 切片 114）：写入 defer 外链改道——spec：
               // parser-inserted defer 外链解析期并行取回、the-end 相位依文档序执行
               //（先于 DCL）。既有阻塞链（下方）取回即执行，写面无插入点时序，defer
@@ -6138,9 +6193,6 @@
               // async 属性在场仍走既有阻塞链（写面 async 语义既有口径）；
               // `__zwSchedRegister` 缺席（非 runner 环境）不改道，维持阻塞链。
               // https://html.spec.whatwg.org/multipage/scripting.html#the-end
-              var _dwsIsDefer = false, _dwsIsAsync = false;
-              try { _dwsIsDefer = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('defer')); } catch (_eS114df) {}
-              try { _dwsIsAsync = !!(_dwsEl.hasAttribute && _dwsEl.hasAttribute('async')); } catch (_eS114as) {}
               if (_dwsIsDefer && !_dwsIsAsync && typeof globalThis.__zwSchedRegister === 'function') {
                 var _dwsDeferBlocked = false;
                 try {
@@ -6181,38 +6233,23 @@
               }
               // fetch 中槽位：本面阻塞返回（写入内联待外链求值后续流）。水位线先
               // 停在本槽位（重入锚点 = 挂链槽位），续流回调推进到槽位后。
+              // s352：嵌套链已消费的 src 槽位主链跳过（副本已执行；驱动续流后主链
+              // 从水位线重走查，槽位记账见嵌套驱动消费）。
+              if ((globalThis.__zwDocWriteNestedDone || {})[_dwsWm]) { _dwsWm++; continue; }
               if (globalThis.__zwDocWritePendingSlot === _dwsWm) return;
               globalThis.__zwDocWriteExecWatermark = _dwsWm;
               globalThis.__zwDocWritePendingSlot = _dwsWm;
-              var _dwsCopy = _dwsEl;
-              if (!_dwsEl.__zwHandle && typeof globalThis.document.createElement === 'function') {
-                // 回放（innerHTML/insertAdjacentHTML）物化的元素可能是本地 plain
-                // wrapper（_zwMBuildDeepEntry/_zwMEl 产物，无 __zwHandle）——
-                // prepare 首 gate（!child.__zwHandle）直接返回。按
-                // _wcRebuildAsHandle 先例重建 handle 域副本并**全属性透传**
-                //（onload/onerror 载荷随 load/error 事件在副本上派发——012
-                // 「include-N load」序；nomodule/for/event/type 门读副本同值）；
-                // 副本脱离树（load-error-events 族元素事件保真仍挂账，语料
-                // execution-timing 只断言执行顺序）。
-                try {
-                  _dwsCopy = globalThis.document.createElement('script');
-                  var _dwsAttrs = null;
-                  try { _dwsAttrs = _dwsEl.attributes; } catch (_eS97a) {}
-                  if (_dwsAttrs) {
-                    for (var _dwsA = 0; _dwsA < _dwsAttrs.length; _dwsA++) {
-                      var _dwsAt = _dwsAttrs[_dwsA];
-                      if (_dwsAt && _dwsAt.name) {
-                        try { _dwsCopy.setAttribute(_dwsAt.name, _dwsAt.value); } catch (_eS97as) {}
-                      }
-                    }
-                  }
-                  // s114：xlink:href 回退形补 src（门 url 读 child.src/
-                  // getAttribute('src')；src 在场时透传已带，仅回退形落此重写）。
-                  if (_dwsSrc && !_dwsCopy.hasAttribute('src')) {
-                    try { _dwsCopy.setAttribute('src', _dwsSrc); } catch (_eS114cp) {}
-                  }
-                } catch (_eS97cp) { _dwsCopy = _dwsEl; }
-              }
+              // 回放（innerHTML/insertAdjacentHTML）物化的元素可能是本地 plain
+              // wrapper（_zwMBuildDeepEntry/_zwMEl 产物，无 __zwHandle）——
+              // prepare 首 gate（!child.__zwHandle）直接返回。按
+              // _wcRebuildAsHandle 先例重建 handle 域副本并**全属性透传**
+              //（onload/onerror 载荷随 load/error 事件在副本上派发——012
+              // 「include-N load」序；nomodule/for/event/type 门读副本同值）；
+              // 副本脱离树（load-error-events 族元素事件保真仍挂账，语料
+              // execution-timing 只断言执行顺序）。
+              // s114：xlink:href 回退形补 src（门 url 读 child.src/
+              // getAttribute('src')；src 在场时透传已带，仅回退形落此重写）。
+              var _dwsCopy = globalThis.__zwDocWriteBuildCopy(_dwsEl, _dwsSrc);
               var _dwsSlot = _dwsWm;
               try {
                 if (typeof globalThis._zwPrepareSrcScript === 'function') {
@@ -6251,6 +6288,75 @@
           }
           if (!_dwsThrowaway) globalThis.__zwDocWriteExecWatermark = _dwsList.length;
         };
+        // s97/s352：handle 域副本构建共享 helper——主链与嵌套链同一透传语义
+        //（全属性透传 + xlink:href 回退补 src）。
+        globalThis.__zwDocWriteBuildCopy = function (_el, _src) {
+          var _copy = _el;
+          if (!_el.__zwHandle && typeof globalThis.document.createElement === 'function') {
+            try {
+              _copy = globalThis.document.createElement('script');
+              var _attrs = null;
+              try { _attrs = _el.attributes; } catch (_eS97a) {}
+              if (_attrs) {
+                for (var _a = 0; _a < _attrs.length; _a++) {
+                  var _at = _attrs[_a];
+                  if (_at && _at.name) {
+                    try { _copy.setAttribute(_at.name, _at.value); } catch (_eS97as) {}
+                  }
+                }
+              }
+              if (_src && !_copy.hasAttribute('src')) {
+                try { _copy.setAttribute('src', _src); } catch (_eS114cp) {}
+              }
+            } catch (_eS97cp) { _copy = _el; }
+          }
+          return _copy;
+        };
+        // s352（html-semantics M2 切片 352）：嵌套链驱动——嵌套 write 的 src 槽位
+        // 依插入点语义先于既有未执行槽位串行执行（041：include-3 先于 include-1）。
+        // 单 `__zwDocWritePendingSlot` 串行器复用（求值窗标记由 part03 从挂链槽位
+        // 派生——嵌套外链求值窗内嵌套 write 的即时 pass 依赖此派生）：无挂链才启动
+        //（求值窗内挂链即当前求值脚本自身——延迟到其续流；busy 期间主链入口门阻塞，
+        // 见 RunFace 门）。消费记账 `__zwDocWriteNestedDone`：主链走查跳过已消费
+        // 槽位；水位线不动（旧主链锚点槽位仍按原序走查——水位线跳进会越过未领用
+        // 槽位，include-1 漏执行）。
+        globalThis.__zwDocWriteNestedDrive = function () {
+          if (globalThis.__zwDocWriteNestedBusy) return;
+          var _ndq = globalThis.__zwDocWriteNestedQueue;
+          if (!_ndq || !_ndq.length) return;
+          var _ndp = globalThis.__zwDocWritePendingSlot;
+          if (typeof _ndp === 'number' && _ndp >= 0) return;
+          if (typeof globalThis._zwPrepareSrcScript !== 'function') return;
+          globalThis.__zwDocWriteNestedBusy = true;
+          var _ndItem = _ndq.shift();
+          var _ndEl = _ndItem && _ndItem.el;
+          var _ndSlot = _ndItem && _ndItem.slot;
+          var _ndSrc = '';
+          try { _ndSrc = String(_ndEl && _ndEl.getAttribute && _ndEl.getAttribute('src') || ''); } catch (_eNsrc) {}
+          if (!_ndSrc) {
+            try { _ndSrc = String(_ndEl && _ndEl.getAttribute && _ndEl.getAttribute('xlink:href') || ''); } catch (_eNxh) {}
+          }
+          var _ndCopy = globalThis.__zwDocWriteBuildCopy(_ndEl, _ndSrc);
+          globalThis.__zwDocWritePendingSlot = _ndSlot;
+          var _ndConsume = function () {
+            var _ndDone = globalThis.__zwDocWriteNestedDone
+              || (globalThis.__zwDocWriteNestedDone = {});
+            _ndDone[_ndSlot] = true;
+            if (globalThis.__zwDocWritePendingSlot === _ndSlot) {
+              globalThis.__zwDocWritePendingSlot = -1;
+            }
+            globalThis.__zwDocWriteNestedBusy = false;
+            globalThis.__zwDocWriteNestedDrive();
+            if (!globalThis.__zwDocWriteNestedBusy) {
+              try { globalThis.__zwDocWriteRunFace(); } catch (_eNrf) {}
+            }
+          };
+          try {
+            globalThis._zwPrepareSrcScript(_ndCopy, _ndConsume);
+          } catch (_eNprep) {
+            _ndConsume();
+          }
+        };
       }
       if (typeof globalThis.__zwDocWriteBuffer !== 'string') globalThis.__zwDocWriteBuffer = '';
       for (var _dwW = 0; _dwW < arguments.length; _dwW++) {
@@ -6268,6 +6374,12 @@
           globalThis.__zwDocWritePendingSlot = -1;
           globalThis.__zwDocWriteEvalSlot = -1;
           globalThis.__zwDocWriteDoneSlots = {};
+          globalThis.__zwDocWriteNestedQueue = [];
+          globalThis.__zwDocWriteNestedBusy = false;
+          globalThis.__zwDocWriteNestedMark = {};
+          globalThis.__zwDocWriteNestedDone = {};
+          globalThis.__zwDocWriteSlotCount = 0;
+          globalThis.__zwDocWriteNewFrom = 0;
         } catch (_eDwb0) { globalThis.__zwDocWriteBase = ''; }
       }
       try {
@@ -6277,6 +6389,10 @@
           // setter 消费；追加语义下基线内容原样复活，非真移除）。
           var _dwbPrevGate = globalThis.__zwDocWriteReplay;
           globalThis.__zwDocWriteReplay = true;
+          // s352：嵌套链新旧槽位分界快照（重放前已物化槽位总数——嵌套 pass 以
+          // ≥ 分界判「本 write 新物化」入嵌套队）。
+          globalThis.__zwDocWriteNewFrom = (typeof globalThis.__zwDocWriteSlotCount === 'number')
+            ? globalThis.__zwDocWriteSlotCount : 0;
           try {
             _dwbBody.innerHTML = globalThis.__zwDocWriteBase;
             if (_dwbFirst) {
@@ -6330,6 +6446,12 @@
             globalThis.__zwDocWritePendingSlot = -1;
             globalThis.__zwDocWriteEvalSlot = -1;
             globalThis.__zwDocWriteDoneSlots = {};
+            globalThis.__zwDocWriteNestedQueue = [];
+            globalThis.__zwDocWriteNestedBusy = false;
+            globalThis.__zwDocWriteNestedMark = {};
+            globalThis.__zwDocWriteNestedDone = {};
+            globalThis.__zwDocWriteSlotCount = 0;
+            globalThis.__zwDocWriteNewFrom = 0;
             if (typeof globalThis.__zwDocWriteRunFace === 'function') {
               globalThis.__zwDocWriteRunFace();
             }
