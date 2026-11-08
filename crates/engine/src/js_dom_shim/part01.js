@@ -10179,8 +10179,18 @@
           if (!tv2) _zwCeTypingForwardMerge(tw2.el, f2Wrap);
           node = tw2.text;
         } else {
-          target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
-          node = target;
+          // F1' shell carry consume（2026-11-09 ④ 刀）：at===0（caret 在文本
+          // 头、左邻可为元素壳）时 typed 段可并入左边界壳链 carry（命中即
+          // 插 innermost 壳尾并清账）；at>0（前子文本内 splice）不消费
+          // （splice 自延壳内文本，消费即双插）。
+          var car2 = (at === 0 && typeof globalThis.__zw_ce_shell_carry_consume === 'function')
+            ? globalThis.__zw_ce_shell_carry_consume(sc, idx, ins) : null;
+          if (car2) {
+            node = car2; // caretOff 走下方共享 at+ins.length（at===0 同值）
+          } else {
+            target.nodeValue = v2.slice(0, at) + ins + v2.slice(at);
+            node = target;
+          }
         }
         caretOff = at + ins.length;
       } else {
@@ -10195,8 +10205,18 @@
           _zwCeTypingForwardMerge(tw3.el, f2Wrap);
           node = tw3.text;
         } else {
-          node = document.createTextNode(ins);
-          sc.insertBefore(node, kids[idx] || null);
+          // F1' shell carry consume（2026-11-09 ④ 刀）：元素位 caret 裸插面
+          // ——壳链 carry 命中（左边界链逐节点同一）时 typed 段并入 innermost
+          // 壳尾（`fooA` extend-in-place 形，插入由 consume 内部完成），
+          // consume 即清；未命中走原裸插（残形维持现状，零回退面）。
+          var car3 = (typeof globalThis.__zw_ce_shell_carry_consume === 'function')
+            ? globalThis.__zw_ce_shell_carry_consume(sc, idx, ins) : null;
+          if (car3) {
+            node = car3;
+          } else {
+            node = document.createTextNode(ins);
+            sc.insertBefore(node, kids[idx] || null);
+          }
         }
         caretOff = ins.length;
       }

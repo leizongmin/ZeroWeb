@@ -11677,6 +11677,9 @@
       // F6b script carry 同生命周期清除（2026-11-08 oracle 定谳档；delete
       // 臂替换式记账 + 此处 _zwSync 面清除，与 link carry 同型）。
       globalThis.__zwTypingScriptCarry = null;
+      // F1' shell carry 同生命周期清除（2026-11-09 ④ 刀；delete 臂替换式
+      // 记账 + consume 即清 + 此处 _zwSync 面清除，与 script carry 同型）。
+      globalThis.__zwTypingShellCarry = null;
       // F1' styled 壳重建刀（2026-11-08）：值/状态 override 同面清除——Chrome
       // 程序化选区变更清 typing style + overrides（multitest qV-before 默认值
       // 实证）。内部路径不经 _zwSync（typed caret _ranges 直写 / delete

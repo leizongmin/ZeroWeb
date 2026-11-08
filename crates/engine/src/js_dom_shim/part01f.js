@@ -1368,6 +1368,12 @@
     // script 删除记 null 清陈旧（scope 语义）。
     var f6bCap = (typeof globalThis.__zw_ce_capture_script_carry === 'function')
       ? globalThis.__zw_ce_capture_script_carry(ar) : null;
+    // F1' shell carry 捕获（2026-11-09 ④ 刀 typing 壳继承轮）：collapsed
+    // 跨块合并前置形的左边界 inline 壳链节点引用（Chrome TypingStyle 自删除
+    // 边界推导——caret collapse 到两块间元素位丢壳层，typed 段裸落，残 23F
+    // 普查档 ④）。仅 collapsed 面（非 collapsed 走 delta ⑤ tcap，互不相干）。
+    var shellCap = (ar.collapsed && typeof globalThis.__zw_ce_capture_shell_carry === 'function')
+      ? globalThis.__zw_ce_capture_shell_carry(ar, forward) : null;
     if (!ar.collapsed) {
       _zwDelDeleteSelection();
     } else if (forward) {
@@ -1391,6 +1397,10 @@
     // 删除捕获 null 即清账（不跨非 script 删除存续）；消费面
     // （part01 内层臂/post-insert 外层臂）各自设等桶门。
     globalThis.__zwTypingScriptCarry = f6bCap;
+    // F1' shell carry 回写（2026-11-09 ④ 刀）：替换式（同 F6b script carry
+    // 口径——非边界 collapsed 删除捕获 null 即清账；消费面 part01 元素位
+    // caret 两臂，consume 即清；_zwSync 面清除同槽位）。
+    globalThis.__zwTypingShellCarry = shellCap;
     return true;
   };
 

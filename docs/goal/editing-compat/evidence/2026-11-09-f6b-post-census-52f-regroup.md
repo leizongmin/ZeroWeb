@@ -18,7 +18,7 @@ F6b 刀收口（206678d4b）后的 mt 残键重分簇。目的：按 DC-4 降序
 
 | 簇 | 键数 | 构成 | got 特征 |
 |---|---:|---|---|
-| **F1' typed 壳继承残** | **23** | swcss-false delete/forwarddelete+insertText 16（蓝红双 span 段族，单一 got 形）+ fontSize 中置 6（fontSize(5)×foreColor 组合 2 + 纯 fontSize(5) 4）+ fontsize(4) 单命令 1 | delete 合并跨块后打字落**裸文本**（`<span 蓝>foo</span>A<span 红>bar</span>`），期望并入左侧 typing 态壳（`fooA`）——与 F1'-B 收口 learning 的 D4 拆壳臂丢 armed tags→裸字根因同域（[learning](../../../learnings/bugs/2026-11/2026-11-09-delete-selection-cross-shell-noop.md)）；fontSize 中置族 got 为旧 font size 壳重裹/丢层 |
+| **F1' typed 壳继承残** | **23** | swcss-false delete/forwarddelete+insertText 16（蓝红双 span 段族，单一 got 形）+ fontSize 中置 6（fontSize(5)×foreColor 组合 2 + 纯 fontSize(5) 4）+ fontsize(4) 单命令 1 | delete 合并跨块后打字落**裸文本**（`<span 蓝>foo</span>A<span 红>bar</span>`），期望并入左侧 typing 态壳（`fooA`）——与 F1'-B 收口的 D4 拆壳臂丢 armed tags→裸字根因同域（[F1'-B evidence](2026-11-08-f1p-b-typing-wrap-knife.md)，learnings 无独立档）；fontSize 中置族 got 为旧 font size 壳重裹/丢层 |
 | F7 misc boundary | 12 | delete-merge-div 6（flex/grid 4 + div 跨块 2）+ ip-placeholder 4（`<div><b>[abc]</b></div>` delete/insertparagraph 组合，got `<div><br></div>` 置换形）+ host-div-wrap 1 + trailing-empty-p 1 | 各自独立微机制（普查档口径不变，键数漂移见下节） |
 | F4 ilb corruption | 9 | `insertlinebreak>inserttext×2/3` 9（img 变体 4 + `<s></s>` 空壳变体 2 + 纯文本 3） | 文本重复/幻影 `<b><i><img>` 片段，机制同普查档 |
 | F6b handoff（backlog） | 4 | delete+inserttext × `<font size=2><sub>` / `<sub><font size=3>` 双形 | N1/N2/N4/N5 引擎产出形与语料期望形分歧，F6b evidence DC-4 表已定 backlog |

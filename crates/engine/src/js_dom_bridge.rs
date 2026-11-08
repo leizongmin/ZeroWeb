@@ -5995,6 +5995,15 @@ pub fn generate_js_dom_shim() -> &'static str {
         // globalThis.__zw_ce_fb_apply/__zw_ce_fb_value/__zw_ce_indent_apply/
         // __zw_ce_hr_apply/__zw_ce_img_apply 单点调用。
         s.push_str(include_str!("js_dom_shim/part01g.js"));
+        // part01h（2026-11-09 editing-compat ④ F1' typed 壳继承残）：collapsed
+        // delete/forwarddelete 跨块合并形的 typing 态壳链 carry（Chrome
+        // TypingStyle 自删除边界推导，spec 无此概念——caret collapse 到两块间
+        // 元素位丢壳层，typed 段裸落，残 23F）。挂 part01g 后同闭包复用
+        // _zwJus* 机具；part01f __zw_ce_delete_apply 经
+        // __zw_ce_capture_shell_carry 捕获+替换式回写 __zwTypingShellCarry，
+        // part01 inserttext 元素位 caret 两臂经 __zw_ce_shell_carry_consume
+        // 消费（逐节点同一门，consume 即清），part06 _zwSync 面清除。
+        s.push_str(include_str!("js_dom_shim/part01h.js"));
         // part02a（2026-11-01 webcrypto-compat-v3 M2-1 门禁面）：SubtleCrypto 接口
         // 对象 + 静态 supports(operation, algorithm, lengthOrAdditionalAlgorithm)
         // （wicg/webcrypto-modern-algos：注册面×op 真实支持矩阵 + 参数校验，未实现

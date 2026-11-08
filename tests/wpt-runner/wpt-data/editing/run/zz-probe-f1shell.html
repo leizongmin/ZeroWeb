@@ -1,0 +1,181 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F1' shell carry 判别探针（2026-11-09 ④ 刀 typing 壳继承轮）：collapsed
+     delete/fd 跨块合并形的左边界壳链 carry（残 23F——16 蓝红双 span 族 +
+     fontSize 中置 6）。C1-C16 = 蓝红族 8 delete + 8 fd 语料原形（期望 typed
+     段并入左 span：`fooA` extend-in-place，adjacent same-shell 不合并）；
+     C17-C22 = fontSize 中置 6（carry 链 [b,font]/[font]，值 override 重放
+     祖先已满足须跳过——不产嵌套/第二壳）。护栏：G1 左邻裸文本（链空不捕）、
+     G2 词中删除（非边界不捕）、G3 链含 <a> 弃捕（:2163/:2168 语义）、
+     G5 选区变更清 carry（_zwSync 面删除槽位）、G7 fd 词中（非跨块合并形）。
+     运行：make testharness-editing-run-one FILTER=zz-probe-f1shell.html -->
+<title>zz-probe-f1shell</title>
+<div id=log></div>
+<script src=/resources/testharness.js></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+function setupCaseV2(markup) {
+    var container = document.createElement("div");
+    document.body.appendChild(container);
+    container.innerHTML = "<div contenteditable></div>";
+    var host = container.querySelector("div[contenteditable]");
+    host.innerHTML = markup;
+    var marker = { s: null, e: null };
+    (function strip(n) {
+        if (n.nodeType === 3) {
+            var si = n.data.indexOf("[");
+            if (si >= 0 && !marker.s) marker.s = { node: n, off: si };
+            var ei = n.data.indexOf("]");
+            if (ei >= 0 && !marker.e) marker.e = { node: n, off: ei };
+        }
+        for (var c = 0; c < n.childNodes.length; c++) strip(n.childNodes[c]);
+    })(host);
+    var sel = getSelection();
+    var r = document.createRange();
+    if (marker.s && marker.e) {
+        var sOff = marker.s.off;
+        var eOff = marker.e.off;
+        if (marker.s.node === marker.e.node && eOff > sOff) eOff -= 1;
+        marker.s.node.deleteData(sOff, 1);
+        marker.e.node.deleteData(eOff, 1);
+        r.setStart(marker.s.node, sOff);
+        r.setEnd(marker.e.node, eOff);
+        if (r.collapsed) r.setEnd(marker.s.node, sOff);
+    } else {
+        r.selectNodeContents(host);
+        r.collapse(true);
+    }
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return host;
+}
+function runChain(host, chain) {
+    for (var i = 0; i < chain.length; i++) {
+        document.execCommand(chain[i][0], false, chain[i][1]);
+    }
+}
+var BL = 'color:rgb(0, 0, 255)';
+var RD = 'color:rgb(255, 0, 0)';
+var SPAN_B = '<span style="' + BL + '">';
+var SPAN_R = '<span style="' + RD + '">';
+// C1-C8：delete 族 8 变体（语料 ?9001-last 蓝红段族，[]bar 在红 span 内）。
+var delSetups = [
+    '<p>' + SPAN_B + 'foo</span></p><p>' + SPAN_R + '[]bar</span></p>',
+    '<p>' + SPAN_B + 'foo</span><br></p><p>' + SPAN_R + '[]bar</span></p>',
+    '<p>' + SPAN_B + 'foo<br></span></p><p>' + SPAN_R + '[]bar</span></p>',
+    '<p>' + SPAN_B + 'foo</span></p>' + SPAN_R + '[]bar</span>',
+    '<p>' + SPAN_B + 'foo</span><br></p>' + SPAN_R + '[]bar</span>',
+    '<p>' + SPAN_B + 'foo<br></span></p>' + SPAN_R + '[]bar</span>',
+    SPAN_B + 'foo</span><br><p>' + SPAN_R + '[]bar</span></p>',
+    SPAN_B + 'foo<br></span><p>' + SPAN_R + '[]bar</span></p>'
+];
+var expInP = '<p>' + SPAN_B + 'fooA</span>' + SPAN_R + 'bar</span></p>';
+var expTop = SPAN_B + 'fooA</span>' + SPAN_R + 'bar</span>';
+for (var ci = 0; ci < delSetups.length; ci++) {
+    (function (i) {
+        var exp = i >= 6 ? expTop : expInP;
+        test(function () {
+            var host = setupCaseV2(delSetups[i]);
+            runChain(host, [["styleWithCSS", "false"], ["delete", ""], ["insertText", "A"]]);
+            assert_equals(host.innerHTML, exp, "C" + (i + 1) + " shell carry consume");
+        }, "C" + (i + 1) + " delete blue-red v" + (i + 1));
+    })(ci);
+}
+// C9-C16：fd 族 8 变体（foo[] 在蓝 span 尾）。
+var fdSetups = [
+    '<p>' + SPAN_B + 'foo[]</span></p><p>' + SPAN_R + 'bar</span></p>',
+    '<p>' + SPAN_B + 'foo[]</span><br></p><p>' + SPAN_R + 'bar</span></p>',
+    '<p>' + SPAN_B + 'foo[]<br></span></p><p>' + SPAN_R + 'bar</span></p>',
+    '<p>' + SPAN_B + 'foo[]</span></p>' + SPAN_R + 'bar</span>',
+    '<p>' + SPAN_B + 'foo[]</span><br></p>' + SPAN_R + 'bar</span>',
+    '<p>' + SPAN_B + 'foo[]<br></span></p>' + SPAN_R + 'bar</span>',
+    SPAN_B + 'foo[]</span><br><p>' + SPAN_R + 'bar</span></p>',
+    SPAN_B + 'foo[]<br></span><p>' + SPAN_R + 'bar</span></p>'
+];
+for (var fi = 0; fi < fdSetups.length; fi++) {
+    (function (i) {
+        var exp = i >= 6 ? expTop : expInP;
+        test(function () {
+            var host = setupCaseV2(fdSetups[i]);
+            runChain(host, [["styleWithCSS", "false"], ["forwarddelete", ""], ["insertText", "A"]]);
+            assert_equals(host.innerHTML, exp, "C" + (i + 9) + " shell carry consume (fd)");
+        }, "C" + (i + 9) + " forwarddelete blue-red v" + (i + 1));
+    })(fi);
+}
+// C17-C18：fontSize(5)×foreColor 组合（carry 链 [font]，override 重放祖先
+// 已满足跳过——期望单壳 ab 无嵌套/第二壳）。
+var fontSizeForeExp = '<p><font size="5" color="#ff0000">ab</font>c</p>';
+test(function () {
+    var host = setupCaseV2('<p><font size="5" color="#ff0000">a</font></p><p>[]c</p>');
+    runChain(host, [["styleWithCSS", "false"], ["delete", ""], ["fontSize", "5"], ["foreColor", "#ff0000"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, fontSizeForeExp, "C17 carry + override 祖先满足");
+}, "C17 delete fontSize foreColor");
+test(function () {
+    var host = setupCaseV2('<p><font size="5" color="#ff0000">a[]</font></p><p>c</p>');
+    runChain(host, [["styleWithCSS", "false"], ["forwardDelete", ""], ["fontSize", "5"], ["foreColor", "#ff0000"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, fontSizeForeExp, "C18 carry + override 祖先满足 (fd)");
+}, "C18 forwardDelete fontSize foreColor");
+// C19-C22：纯 fontSize(5)（carry 链 [b,font]，期望 b 并入内层 <b> 尾）。
+test(function () {
+    var host = setupCaseV2('<p><font size="5"><b>a</b></font></p><p>[]c</p>');
+    runChain(host, [["styleWithCSS", "false"], ["delete", ""], ["fontSize", "5"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, '<p><font size="5"><b>ab</b></font>c</p>', "C19 carry [b,font]");
+}, "C19 delete fontSize plain");
+test(function () {
+    var host = setupCaseV2('<p><font size="5"><b>a</b></font></p><p><i>[]c</i></p>');
+    runChain(host, [["styleWithCSS", "false"], ["delete", ""], ["fontSize", "5"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, '<p><font size="5"><b>ab</b></font><i>c</i></p>', "C20 carry [b,font] 右 i 壳");
+}, "C20 delete fontSize right-i");
+test(function () {
+    var host = setupCaseV2('<p><font size="5"><b>a[]</b></font></p><p>c</p>');
+    runChain(host, [["styleWithCSS", "false"], ["forwardDelete", ""], ["fontSize", "5"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, '<p><font size="5"><b>ab</b></font>c</p>', "C21 carry [b,font] (fd)");
+}, "C21 forwardDelete fontSize plain");
+test(function () {
+    var host = setupCaseV2('<p><font size="5"><b>a[]</b></font></p><p><i>c</i></p>');
+    runChain(host, [["styleWithCSS", "false"], ["forwardDelete", ""], ["fontSize", "5"], ["insertText", "b"]]);
+    assert_equals(host.innerHTML, '<p><font size="5"><b>ab</b></font><i>c</i></p>', "C22 carry [b,font] 右 i 壳 (fd)");
+}, "C22 forwardDelete fontSize right-i");
+// G1：左邻裸文本——壳链空不捕，bare 合流（现状保持零回退）。
+test(function () {
+    var host = setupCaseV2('<p>foo</p><p>[]bar</p>');
+    runChain(host, [["delete", ""], ["inserttext", "a"]]);
+    assert_equals(host.innerHTML, '<p>fooabar</p>', "G1 链空不捕 bare");
+}, "G1 bare-left no carry");
+// G2：词中删除——非全边界位不捕。
+test(function () {
+    var host = setupCaseV2('foo[]bar');
+    runChain(host, [["delete", ""], ["inserttext", "a"]]);
+    assert_equals(host.innerHTML, 'foabar', "G2 词中不捕");
+}, "G2 mid-word no carry");
+// G3：左链含 <a> 弃捕（:2163/:2168 语义）——typed 段不入 link。
+test(function () {
+    var host = setupCaseV2('<p><a href="x">foo</a></p><p>[]bar</p>');
+    runChain(host, [["delete", ""], ["inserttext", "a"]]);
+    assert_equals(host.innerHTML, '<p><a href="x">foo</a>abar</p>', "G3 <a> 链弃捕 bare");
+}, "G3 link-chain excluded");
+// G5：delete（carry 在账）→ 选区变更（_zwSync）→ typed——carry 须已清，
+// typed 段不并入蓝 span（fooA 不得出现）。
+test(function () {
+    var host = setupCaseV2('<p>' + SPAN_B + 'foo</span></p><p>' + SPAN_R + '[]bar</span></p>');
+    runChain(host, [["styleWithCSS", "false"], ["delete", ""]]);
+    var span = host.querySelectorAll("span")[1];
+    var sel = getSelection();
+    var r = document.createRange();
+    r.setStart(span.firstChild, 0);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    runChain(host, [["insertText", "A"]]);
+    var html = host.innerHTML;
+    assert_true(html.indexOf("fooA") < 0, "G5 carry 经选区变更清除 (got=" + html + ")");
+    assert_true(html.indexOf("A") >= 0, "G5 typed 在场 (got=" + html + ")");
+}, "G5 carry cleared via selection change");
+// G7：fd 词中（块尾非块界）——非跨块合并形不捕。
+test(function () {
+    var host = setupCaseV2('<p><b>foo[]</b>bar</p>');
+    runChain(host, [["forwarddelete", ""], ["inserttext", "a"]]);
+    assert_equals(host.innerHTML, '<p><b>foo</b>aar</p>', "G7 fd 词中不捕（fd caret 重锚元素位现状形）");
+}, "G7 fd mid-block no carry");
+</script>
