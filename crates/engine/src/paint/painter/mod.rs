@@ -23,7 +23,7 @@ use zero_layout_engine::types::{NestedSpannerSegKind, OverflowClip};
 use zero_render_foundation::color::Color;
 use zero_render_foundation::geometry::Rect;
 use zero_render_foundation::primitive::{
-    PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
+    DrawOp, PaintAnimationProperty, PaintAnimationScope, RenderPrimitives, RoundedRectPrimitive, TransformPrimitive,
 };
 use zero_style_system::property::types::{DirectionValue, DisplayValue, FlexDirectionValue};
 use zero_style_system::{
@@ -335,6 +335,29 @@ pub struct Painter {
     /// 同判 floats（collect ≡ 排除镜像），由最近收集 scope 统一施绘；flush 项施绘与
     /// multicol 片段领地（无收集器可达）临时复位/门控。主循环递归前置位、返回前恢复。
     pub(crate) floats_defer_active: bool,
+    /// R5472（CSS2 App E step4 < step5）：floats flush 段逐容器 splice 目标位表。
+    /// float_insert_active＝scope 收集了非空 floats 且处于其下降内——每个盒的行内
+    /// 墨相位（paint_inline_content_phase 入口，见 collapse_phase）以 draw_order
+    /// 当前长度记录宿主块 pre-ink 位；flush 施绘后各 float 段 splice 到其宿主位
+    /// ——float 绘于宿主装饰之上（App E step4 > step3，c5525-fltmrgn test4 旧
+    /// p4-band 同面）且宿主墨盖过 float（step5 > step4，test6 img mr−30 红格
+    /// z 序缺陷）；float 间与跨块树序不变（R5420 驱动案 overhanging-float-paint-
+    /// order 语义保留）。单点 splice 已证不可行（earliest-ink 实验把 float 插到
+    /// 后继块 bg 之前——pattern bg 盖 img，c5525 族 ✗1.92% 回归）；跨块「float >
+    /// 全部块装饰 ∧ < 全部墨」的精确序需三桶分离（FIXME 在册），本表取逐容器
+    /// 近似。表按 NodeId 键控，激活边沿清空（prev=false→true）；无 NodeId 宿主/
+    /// 重复访（multicol 片段）取末次记录，缺记录项留在 flush 原位（旧行为）。
+    ///
+    /// R5472b：目标位不取宿主 pre-ink 原值，取窗 (宿主位, flush) 内首个墨位
+    ///（Glyph op）——纯结构宿主（div 无墨，fltblck）须越过：后继兄弟块 bg 属
+    /// step3 应在 float 之下，宿主 pre-ink 位在其之前会把 float 压到该 bg 之下
+    ///（fltblck ✗1.42% 实证）；窗内首个墨位之后仍有块级装饰 op（Fill/…/Shadow）
+    /// 时 DFS 序不可单点插入（stack-floats-001 型：inline 墨后随 inline 内块 bg），
+    /// 放弃 splice 留 flush 原位（基线旧序）。
+    pub(crate) float_pre_ink_pos: HashMap<NodeId, usize>,
+    /// R5472：float_pre_ink_pos 记录门（激活边沿判定见上）。float 项施绘期间与
+    /// flush 后复位——项内墨不得记位。
+    pub(crate) float_insert_active: bool,
     /// R5265：collapse cell 带相位间插 sweep 栈帧（CSS2.1 App E / Blink
     /// kCollapsedTableBorders——「后代块背景 < 带 < inline 内容」）。None = 常规
     /// 路径；Some(DecoSweep)/Some(ContentSweep) = 带前/带后 sweep 访间，由
@@ -534,6 +557,9 @@ struct DeferredPositioned<'a> {
     /// R5255：随 clip_rect 同源携带的 shaped clip edge 半径（R5201，仅 clip 轴）。
     /// 迟延 positioned/变换子此前只承接矩形补裁，圆角裁剪边漏成方角。
     clip_radii: Option<[f32; 4]>,
+    /// R5472（仅 floats 收集项）：宿主块 NodeId（直接父盒）——flush 后 splice 目标
+    /// 位查 float_pre_ink_pos 用；positioned/变换收集项恒 None（step 6/7/8 原位）。
+    container: Option<NodeId>,
 }
 
 /// 子节点的 content-box origin（父 abs + padding + border，扣除 scroll 偏移）。
@@ -1135,6 +1161,28 @@ fn float_global_tree_order_enabled() -> bool {
     *KILL.get_or_init(|| std::env::var("ZW_FLOAT_GLOBAL_TREE_ORDER").as_deref() != Ok("0"))
 }
 
+/// R5472 kill-switch（`ZW_FLOAT_APP_E_INSERT=0` 跳过 floats flush 段 splice——flush
+/// 段留在下降末（floats 绘在行内墨上，R5420 原位）。 OnceLock 单读，OFF 反证走
+/// 独立测试进程（R3858 教训）。
+fn floats_app_e_insert_enabled() -> bool {
+    static KILL: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *KILL.get_or_init(|| std::env::var("ZW_FLOAT_APP_E_INSERT").as_deref() != Ok("0"))
+}
+
+/// R5472 splice 守卫：[from..to) 内含状态性/位置性破坏 op（BlendMode 标记之后入
+/// src 缓冲、Transform/Clip 对已绘内容做位置性后处理、Filter 作用于已绘区域）或
+/// 存在 animation scope（draw_order 半开区间按 paint 期索引绑定，splice 移位失效）
+/// 时放弃本 scope 的 splice，保持 flush 段原位。
+fn splice_range_state_safe(ops: &[DrawOp], from: usize, to: usize, has_animation_scopes: bool) -> bool {
+    !has_animation_scopes
+        && !ops[from..to].iter().any(|op| {
+            matches!(
+                op,
+                DrawOp::BlendMode(_) | DrawOp::Transform(_) | DrawOp::Clip(_) | DrawOp::Filter(_)
+            )
+        })
+}
+
 /// R5420：float 延迟谓词——collect_floats_descendants 的收集判 ≡ 领地内 in_flow
 /// 滤除判（collect ≡ 排除镜像，R5176 同纪律：两处异判必然漏绘/双绘）。positioned /
 /// transform 相位 / SC 创建者在收集器里先行排除（自成 scope，域内 floats 归其自身
@@ -1245,6 +1293,7 @@ fn collect_floats_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect,
                 clip_radii,
+                container: box_node.node_id,
             });
             continue;
         }
@@ -1346,6 +1395,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect: child_clip,
                 clip_radii: child_radii,
+                container: None,
             });
         } else if transform_phase && box_paints_in_transform_phase(child, styles) {
             // R5176（css-transforms-1 §4 + App E step 8）：in-flow/float 变换元素与
@@ -1362,6 +1412,7 @@ fn collect_positioned_descendants_inner<'a>(
                 abs_y: child_abs_y,
                 clip_rect,
                 clip_radii,
+                container: None,
             });
         } else if child.creates_stacking_context {
             // in-flow 但建立堆叠上下文（opacity<1/transform/filter 等 CSS3 SC 触发器）：
@@ -1422,6 +1473,7 @@ fn collect_mapped_oof_in_multicol<'a>(
                     abs_y: child_abs_y,
                     clip_rect: None,
                     clip_radii: None,
+                    container: None,
                 });
             }
         } else if child.creates_stacking_context {
@@ -1569,6 +1621,8 @@ impl Painter {
             transform_depth: 0,
             suppress_mapped_oof: false,
             floats_defer_active: false,
+            float_pre_ink_pos: HashMap::new(),
+            float_insert_active: false,
             list_inside_marker_advance: HashMap::new(),
             pending_scroll_offsets: Vec::new(),
             scroll_offsets: HashMap::new(),
@@ -4575,8 +4629,18 @@ impl Painter {
             //——后续 flush（positioned/neg-z/transform 项均为 scope，自管其域内
             // floats）与祖先领地语义不受污染。
             let prev_floats_defer = self.floats_defer_active;
+            let prev_float_insert = self.float_insert_active;
+            let has_deferred_floats = floats_scope_collect && !collected_floats.is_empty();
             if floats_scope_collect {
                 self.floats_defer_active = true;
+                if has_deferred_floats {
+                    // R5472：激活边沿（prev=false→true）清空目标位表——内层 scope
+                    // （prev 已 true）不清，外层记录保留至外层 flush。
+                    if !prev_float_insert {
+                        self.float_pre_ink_pos.clear();
+                    }
+                    self.float_insert_active = true;
+                }
             }
             for child_idx in &in_flow {
                 if is_canvas_box {
@@ -4593,14 +4657,22 @@ impl Painter {
             //（非 scope）——施绘期间复位领地旗，其子树（含嵌套 float）随递归
             // paint_node 既有 DFS 旧序自绘，不被误滤到本 flush 之外。
             if floats_scope_collect {
+                let flush_start = self.primitives.draw_order.len();
+                // R5472：各 float 段的 draw_order 起止（施绘前快照，tree order 升序）。
+                let mut item_ranges: Vec<(usize, usize)> = Vec::with_capacity(collected_floats.len());
                 for item in &collected_floats {
                     let off_x = item.abs_x - item.node.x;
                     let off_y = item.abs_y - item.node.y;
                     let counts_before_item = PrimitiveCounts::snapshot(&self.primitives);
+                    let range_start = self.primitives.draw_order.len();
                     let prev_item_floats_defer = self.floats_defer_active;
+                    let prev_item_insert = self.float_insert_active;
                     self.floats_defer_active = false;
+                    self.float_insert_active = false;
                     self.paint_node(item.node, styles, off_x, off_y, doc, false);
+                    self.float_insert_active = prev_item_insert;
                     self.floats_defer_active = prev_item_floats_defer;
+                    item_ranges.push((range_start, self.primitives.draw_order.len()));
                     if let Some(clip) = item.clip_rect {
                         super::helpers::clip_all_primitives_to_rect(&mut self.primitives, &counts_before_item, &clip);
                         if let Some(radii) = item.clip_radii {
@@ -4611,6 +4683,110 @@ impl Painter {
                                 radii,
                             );
                         }
+                    }
+                }
+                self.float_insert_active = prev_float_insert;
+                // R5472（CSS2 App E step4 < step5）：各 float 段重排到窗 (宿主 pre-ink
+                // 位, flush) 内首个墨位——float 绘于窗内块装饰之上（step4 > step3）、
+                // 首墨之下（step5 > step4）；无记录宿主（匿名盒/非下降路径）留 flush
+                // 原位（旧行为）。R5472b 语义门：首墨位之后到 flush 仍有块级装饰
+                // op（Fill/…/Shadow＝step3 bg 在墨后 DFS 发射，stack-floats-001
+                // inline 墨后随 inline 内块 bg 型）时窗序不可单点插入，该 float 放弃
+                // splice 留 flush 原位。不可移动项的段在重建时按 tree order 回填
+                // flush 位（v1 曾丢弃——漏绘）。单遍重建：原 op 按序输出、扫到目标位
+                // 插入该宿主名下 float 段（tree order），flush 位回填不可移动段
+                // ——float 间与跨块树序不变（R5420 驱动案 overhanging-float-paint-
+                // order 语义保留）。guard：影响域 [min_target..end) 含状态性/位置性
+                // 破坏 op（BlendMode 标记之后入 blend 源缓冲、Transform/Clip 对已绘
+                // 内容位置性后处理、Filter 作用于已绘区域）或存在 animation scope
+                //（draw_order 半开区间按 paint 期索引绑定）时整体放弃保持旧序。op
+                // 身份（桶+索引）不变，typed Vec 与既有 clip 重写按身份寻址
+                //（clip.rs position+pop-tail）不受重排影响。
+                let targets: Vec<Option<usize>> = collected_floats
+                    .iter()
+                    .map(|item| {
+                        item.container
+                            .and_then(|id| self.float_pre_ink_pos.get(&id).copied())
+                            .filter(|&host_pos| host_pos <= flush_start)
+                            .and_then(|host_pos| {
+                                let window = &self.primitives.draw_order[host_pos..flush_start];
+                                let glyph = window
+                                    .iter()
+                                    .position(|op| matches!(op, DrawOp::Glyph(_)))
+                                    .map(|g| host_pos + g)
+                                    .unwrap_or(host_pos);
+                                // 语义门：首墨位之后不得再有块级装饰 op——有则放弃。
+                                let deco_after_ink = self.primitives.draw_order[glyph..flush_start].iter().any(|op| {
+                                    matches!(
+                                        op,
+                                        DrawOp::Fill(_)
+                                            | DrawOp::RoundedRect(_)
+                                            | DrawOp::PathFill(_)
+                                            | DrawOp::PathStroke(_)
+                                            | DrawOp::Stroke(_)
+                                            | DrawOp::Gradient(_)
+                                            | DrawOp::Image(_)
+                                            | DrawOp::Shadow(_)
+                                    )
+                                });
+                                (!deco_after_ink).then_some(glyph)
+                            })
+                    })
+                    .collect();
+                let movable: Vec<usize> = targets
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, t)| t.filter(|&p| p <= flush_start).map(|_| i))
+                    .collect();
+                if has_deferred_floats && floats_app_e_insert_enabled() && !movable.is_empty() {
+                    let end = self.primitives.draw_order.len();
+                    let min_target = movable.iter().map(|&i| targets[i].unwrap()).min().unwrap();
+                    if flush_start < end
+                        && splice_range_state_safe(
+                            &self.primitives.draw_order,
+                            min_target,
+                            end,
+                            !self.animation_scopes.is_empty(),
+                        )
+                    {
+                        // 目标位 → float 段索引组（tree order；同宿主多 float 保序）。
+                        let mut by_target: Vec<(usize, Vec<usize>)> = Vec::new();
+                        for &i in &movable {
+                            let t = targets[i].unwrap();
+                            match by_target.last_mut() {
+                                Some((lt, idxs)) if *lt == t => idxs.push(i),
+                                _ => by_target.push((t, vec![i])),
+                            }
+                        }
+                        let old = &self.primitives.draw_order[..end];
+                        let mut rebuilt: Vec<DrawOp> = Vec::with_capacity(end);
+                        let mut seg_iter = by_target.iter().peekable();
+                        for (pos, op) in old.iter().enumerate() {
+                            while let Some((t, idxs)) = seg_iter.peek()
+                                && *t == pos
+                            {
+                                for &i in idxs {
+                                    let (s, e) = item_ranges[i];
+                                    rebuilt.extend_from_slice(&old[s..e]);
+                                }
+                                seg_iter.next();
+                            }
+                            if pos < flush_start {
+                                rebuilt.push(*op);
+                            }
+                        }
+                        // R5472b：放弃 splice 的项按 tree order 回填 flush 位——
+                        // flush 段已被跳过，不回填即漏绘。
+                        let mut is_movable = vec![false; collected_floats.len()];
+                        for &i in &movable {
+                            is_movable[i] = true;
+                        }
+                        for (i, (s, e)) in item_ranges.iter().enumerate() {
+                            if !is_movable[i] {
+                                rebuilt.extend_from_slice(&old[*s..*e]);
+                            }
+                        }
+                        self.primitives.draw_order = rebuilt;
                     }
                 }
             }

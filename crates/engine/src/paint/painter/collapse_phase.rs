@@ -147,6 +147,17 @@ impl Painter {
         styles: &HashMap<NodeId, ComputedStyle>,
         doc: Option<&Document>,
     ) {
+        // R5472（CSS2 App E step4 < step5）：floats-defer 下降内每个盒的行内墨相位
+        // 入口记录 pre-ink 位（draw_order 当前长度）——flush 时以其为窗起点查首个
+        // 墨位（Glyph op）作 float 段 splice 目标位（float 绘于窗内块装饰上、首个
+        // 墨之下）。float 项施绘期间 floats_defer_active=false 不记录（项内墨不
+        // 入表）。
+        if self.float_insert_active
+            && self.floats_defer_active
+            && let Some(id) = box_node.node_id
+        {
+            self.float_pre_ink_pos.insert(id, self.primitives.draw_order.len());
+        }
         // R2251 content-visibility:hidden → 直属文本跳过绘制（元素自身盒装饰仍绘）。
         // kill-switch `ZW_CONTENT_VISIBILITY`，default-on。
         // R4058：UA display:inline 的**替换元素**（svg 根等）是 atomic inline——

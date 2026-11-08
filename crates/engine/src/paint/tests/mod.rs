@@ -116,3 +116,5 @@ mod visual_resize_scroll;
 /// 非 flex 父 legacy 守卫）。
 mod r5410_flex_item_neg_z_tests;
 mod r5420_float_global_tree_order_tests;
+/// R5472：floats flush 段逐容器 App E step4<step5 splice（draw_order 序钉子）。
+mod r5472_float_app_e_insert_tests;
