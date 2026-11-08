@@ -11,7 +11,9 @@
   `m3-baseline-164121`（test-guard 4G/8G/14400s + MemoryMax=12G，日志
   `/tmp/m3-baseline-164121.log`，树 = 411e862bb 干净态）。**基线完成前
   runner 源码冻结**（provenance 纪律）；落账后启 153 臂注册表迁移（逐字节
-  等价 A/B）+ S12 cors-preflight-redirect 补丁收编。
+  等价 A/B）+ S12 cors-preflight-redirect 补丁收编。基线二进制出处 =
+  411e862bb；推送时 rebase 拾入 3f2d80d27（跨流机械 rustfmt，编译完成后
+  才进树，无行为面），A/B 判读按 411e862bb 口径。
 
 ## 里程碑状态表
 
@@ -55,3 +57,6 @@
   通道 WebSocket 用例零耦合。
 - 渲染流共享面（engine/Cargo.lock 等）改动即碰头信号：本 goal 预计触碰
   Cargo.toml workspace 依赖（rustls/rcgen）——与并行流撞车时暂停一边记本节。
+- 2026-11-08 碰头记录：并行流 3f2d80d27 对 tests/wpt-runner 五文件做机械
+  rustfmt——与 M3 迁移面（testharness.rs）重叠。迁移开工前先 pull --rebase
+  取齐，迁移中发现的格式冲突以重排为准不改语义。
