@@ -14562,6 +14562,32 @@
           }
         }
         added.push(item);
+      } else if (item && typeof item === 'object' && item.__zwSelector
+          && sel && typeof __zw_insert_adjacent_sel_element === 'function') {
+        // R4200 同源补齐（append/replaceChildren 通道）：sel 项（静态解析元素，仅有
+        // __zwSelector 无 __zwHandle）此前掉入下方文本分支——`String(item)` 产出
+        // '[object HTMLDivElement]' 文本节点且真身滞留原父。slot-fallback-content-006
+        // 五处 `host.append(A,B)` 全坏：垃圾文本叠渲染 + 真身未移动致 manual 分配
+        // 通道 parent!=host 过滤全惰性（45 号 M3 R3b 后矩阵 006 仍 4.90% 的根因，
+        // 探针 r3b-probe2/3/4 实证分型）。走 R334/R182 sel wire（'beforeend' =
+        // append 尾插；host insert_nodes_at_position 自带 reparent 移动语义），
+        // insertAdjacent 漏斗 R4200 已修同型洞，本函数是漏网通道。
+        // https://dom.spec.whatwg.org/#dom-parentnode-append
+        __zw_insert_adjacent_sel_element(sel, 'beforeend', item.__zwSelector);
+        // R4200：清同步移除标记（remove→append 重插面，标记残留 isConnected 恒 false）。
+        try {
+          if (typeof _zwUnmarkRemoved === 'function') _zwUnmarkRemoved(item.__zwSelector);
+        } catch (_e4200umA) {}
+        // R4200：同步可见性——pending 父槽（parentNode getter 在 host 异步 apply
+        // 前即返新父）+ 重解析索引（同 turn getElementById 可见）+ 兄弟基缓存失效。
+        try {
+          item._zwSelPendingParent = { parentSel: sel, nextSibling: null };
+          if (typeof globalThis.__zwPendReselAdd === 'function') globalThis.__zwPendReselAdd(item.__zwSelector, item);
+          if (globalThis._zwSiblingBaseInvalidateAll) globalThis._zwSiblingBaseInvalidateAll();
+        } catch (_e4200svA) {}
+        added.push(item);
+        // FIXME(45-M3+)：handle 父（sel 为空）+ sel 项组合仍缺 wire——appendChild
+        // trap 的 C3 移动语义块（part04）未镜像进本函数，同组合当前仍落文本分支。
       } else {
         var tn = __zw_create_text(String(item));
         if (tn) _textHandles[tn] = true;

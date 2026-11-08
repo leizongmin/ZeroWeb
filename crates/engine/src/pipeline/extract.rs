@@ -500,7 +500,10 @@ pub fn extract_page_scripts_sched(html: &str) -> Vec<(PageScript, usize, ScriptS
             }
         }
     });
-    entries.into_iter().map(|(_, idx, script, sched)| (script, idx, sched)).collect()
+    entries
+        .into_iter()
+        .map(|(_, idx, script, sched)| (script, idx, sched))
+        .collect()
 }
 
 /// 判 `anc` 是否 `desc` 的祖先（沿父链上行）——脚本 end-tag 排序用。
@@ -2853,7 +2856,7 @@ mod tests {
     /// https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
     #[test]
     fn extract_page_scripts_sched_classification_s342() {
-        use super::{extract_page_scripts_sched, ScriptSched};
+        use super::{ScriptSched, extract_page_scripts_sched};
         let html = r#"<body>
             <script type="module" src="m1.js"></script>
             <script type="module" async src="m2.js"></script>

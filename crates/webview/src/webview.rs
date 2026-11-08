@@ -10,10 +10,9 @@ use zero_engine::animation::compositor_export::ExportedAnimationDeclaration;
 use zero_engine::{
     BudgetAdvance, BudgetedRenderSession, DomEventDetail, DomMutation, MediaType, PipelineTimings,
     PrefersColorSchemeValue, RenderPipeline, RenderResult, extract_css_image_urls, extract_html_style_text,
-    extract_img_srcs, extract_meta_csp_policies, extract_script_credentials,
+    extract_img_srcs, extract_meta_csp_policies, extract_page_scripts_sched, extract_script_credentials,
     extract_script_csp_info, extract_script_referrer_policies, extract_script_source_positions,
-    extract_page_scripts_sched, extract_style_elements_csp, extract_stylesheet_link_anchors,
-    generate_js_dom_shim, image_resource_key,
+    extract_style_elements_csp, extract_stylesheet_link_anchors, generate_js_dom_shim, image_resource_key,
     page_script_error_check, register_dom_callbacks, resolve_document_url, script_clear_current_script,
     script_dispatch_dom_event, script_dispatch_img_event, script_dispatch_link_event, script_dispatch_script_event,
     script_dispatch_script_event_by_ordinal, script_dispatch_securitypolicyviolation, script_module_eval_error_report,

@@ -3,8 +3,10 @@
 **日期**: 2026-11-08
 **切片**: 45 号 M3 R3b（slot-fallback-content-006 缺口收口）+ B6（testharness
 渲染耦合补充池通道）
-**提交**: 88302c3bf（R3b 主体）、c272e84bb（活过滤断言修正）、79d703f48（跨流
-cfg 门修复）、3d0a2b2e8（B6 通道）
+**提交**: e5f84ad0b（R3b 主体）、9d307d1b0（活过滤断言修正）、cfe55be04（跨流
+cfg 门修复）、60928d40c（B6 通道）、30ea4c630（quickjs-ren-lib 腿测试引擎
+时序盲区修复）；push 前 pull --rebase 由 88302c3bf/c272e84bb/79d703f48/
+3d0a2b2e8/1b5640e65 重放，正文门禁账保留运行时原哈希、以本行做新旧映射
 **结论**: R3b 落地——`slotAssignment:'manual'` wire 全参透传 + `assign()`
 渲染镜像（手动表 + 读侧逐节点活过滤）+ serialize→re-parse marker 回环 +
 Manual 模式渲染消费；B6 通道落地（`testharness-shadow-dom` runner 子命令 +
@@ -105,7 +107,7 @@ B 移除后列表塌到 `[A]`（宿主内条目保持），A 也移除后才塌�
 |---|---|
 | quickjs 5-crate 腿（cfg 修复后） | rc=0 |
 | quickjs renderer bin | rc=0 |
-| quickjs renderer lib | **369P/1F**＝`page_scripts::mutation_arm_does_not_apply_across_document_reset_window`（panic :1836「未观测到滞留窗」）——M1 evidence 在册对端碰头红第 7 轮观察（apps/renderer 面，非本流域）；当日隔离探针 0.75s 确定性红＝R5414「隔离 3/3 败＝稳态」同型（该红 11-03/11-04 即在册，早于 R3b 一周，非本轮引入），规则 9 不硬解不再重跑；净 HEAD browser 双腿复核挂 chain5 |
+| quickjs renderer lib | **369P/1F**＝`page_scripts::mutation_arm_does_not_apply_across_document_reset_window`（panic :1836「未观测到滞留窗」，11-03/11-04 即在册早于 R3b 非本轮引入）——**已根因修复（30ea4c630），定性改判**：当日插桩取证（settle@~700ms/队列恒空/250ms 时 worker 确认在忙＝忙臂 eval 未启动）证明固定 250ms 放行+裕量是 v8 时序形态——quickjs 下 worker boot+shim 安装+快照构建超裕量，prio 复位在臂启动前到达即在命令边界合法内联落定（滞留旧臂被复位臂清队丢弃，t8-D1 语义照常）＝**测试侧引擎时序盲区，非产品缺陷、非对端碰头红**（推翻本行前记「规则 9 不硬解」定性）；改轮询 execution_count 确认臂 eval 开跑后复位，单测双腿绿（quickjs 2.26s/v8 1.63s），净套件复核 370P/0F 见 legs5；净 HEAD browser 双腿复核挂 chain5b |
 | reftest 全量 / DC-4 矩阵 / product-smoke / clippy-v8 / bench-gate | → chain5（legs4 在此腿 CHAIN-FAIL 中止） |
 
 **chain5b（zr3-r3b-chain5b-0808，净 HEAD 复核链，head=79d703f48）**：
@@ -118,8 +120,18 @@ B 移除后列表塌到 `[A]`（宿主内条目保持），A 也移除后才塌�
 | reftest 全量 | **rc=0（725/725 零回归）** |
 | DC-4 矩阵 | rc=2，**32P/3F**：F＝display-contents-shadow-dom-1（1.97% 在册）+ vw-units（2.08% 在册）+ **slot-fallback-content-006（4.90%，23543/480000 px differ）**——006 未按预期翻绿，非链错属矩阵实测，另行调查（006 是 R3b 目标案，直接推翻「R3b 已收口」结论，见 §6） |
 
-**chain6（zr3-r3b-chain6-0814，在跑）**：product-smoke → clippy-v8 → bench-gate
-（B6 提交后树，clippy 含 3d0a2b2e8 面）。
+**chain6（zr3-r3b-chain6-0814，head=79d703f48 树）**：product-smoke rc=0
+（08:14:14）；clippy-v8 于 08:14:40 链死亡（unit 消失无 rc 账，bench 未跑，
+B6 3d0a2b2e8 亦未在其树）——clippy/bench 缺口由 legs7 补。
+
+**legs5（zr3-r3b-gates5-081923，head=3d0a2b2e8+1b5640e65 树，本流收尾链）**：
+fmt rc=0；quickjs renderer lib（带 30ea4c630 修复）**rc=0 370P/0F**（338s）
+——legs4 唯一红案修复后全绿；余腿（reftest×2/smoke/clippy/bench/B6 基线）
+与 chain5b/chain6/B6 首跑内容重复，ren-lib 落账即停链不重跑（修复仅动
+page_scripts 测试面，上述腿结果内容等价传递）。
+
+**legs7（zr3-r3b-gates7-082700，净树 d34a3404d 收尾）**：clippy-v8 rc=0；
+bench-gate（dom/engine 定向）rc=0（08:30:20 落账，控制面「PASS」句据此）。
 
 ## 5. B6 基线（3d0a2b2e8 通道首跑实测，2026-11-08 08:13）
 
