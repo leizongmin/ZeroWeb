@@ -5722,6 +5722,40 @@
       if (_tyCls250 === 'blocked') return false;
       var url = '';
       try { url = String(child.src || (child.getAttribute && child.getAttribute('src')) || ''); } catch (_eS96u) {}
+      // s356（html-semantics M2 切片 356）：**空 src error 面**——spec prepare src
+      // 步「If src is the empty string, then queue an element task ... fire an
+      // event named error at el, and return」（显式步先于 URL 解析，与 <base> 无关
+      // ——fetch-src/empty、empty-with-base 判据：src="" 动态插入须派 trusted
+      // error（bubbles/cancelable 缺省 false、target=元素）、体不执行、不取回
+      //（unreachable.js 在场亦不 fetch——chrome Pass 真值：空串短路于 fetch 前）。
+      // already-started 记账照常置位（spec 置位先于 src 步——重插不重触发）；
+      // error 异步（element task——`queued` 同步置位后派发的非同步断言面）。
+      // 旧实现静默 bail（双案 Timeout 根因）。**src 属性缺席不进本臂**——spec 空
+      // src 步以「has a src content attribute」为前提；无 src+空体脚本走空性早退
+      //（不置 already-started——s354 056/057 判据：后设 .src/追加文本仍可触发，
+      // execution-timing 022/024 late-src 形；首版无前提误置 run-once 把后设 src
+      // 触发臂挡死 = P→F 回归，域 join 暴露后定谳修正）。module/classic 共用
+      //（src 步在 type 切换分支前——module 空分支旧 `!url` bail 同根一并收口）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _hasSrcAttr356 = false;
+      try { _hasSrcAttr356 = !!(child.hasAttribute && child.hasAttribute('src')); } catch (_eS356h) {}
+      if (!url && _hasSrcAttr356) {
+        if (_gwHdl != null) {
+          globalThis._zwRanScripts = globalThis._zwRanScripts || {};
+          globalThis._zwRanScripts[_gwHdl] = true;
+        } else {
+          globalThis._zwScriptStarted = globalThis._zwScriptStarted || {};
+          globalThis._zwScriptStarted[_gwSel] = true;
+        }
+        setTimeout(function () {
+          try {
+            child.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+              ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error'));
+          } catch (_eS356e) {}
+          if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS356c) {} }
+        }, 0);
+        return true;
+      }
       // s250：module 型动态 src prepare——宿主 __zw_compile_module 三态契约
       //（s87 ①②③ 同源），取回编译 setTimeout 延迟（classic 取回时序同形——
       // load-after-execution 交错断言面；s124 modulepreload 同步取回先例不適

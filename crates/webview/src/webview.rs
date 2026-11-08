@@ -5025,8 +5025,17 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
-                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            // s356：src 相对面按**文档基 URL** 解析（spec prepare-the-script-element
+                            // src 步——encoding-parsing a URL given src, relative to el's node
+                            // document；`<base href>` 前移基准）。script_bases = s90 parse 时刻
+                            // 快照表（script_index 同空间），即 spec 基；绝对形（HSTS 升级/根
+                            // 绝对/绝对 src）join 恒等零漂移。fetch-src/alpha/base 判据：基下
+                            // `test.js` 须解析到 beta/test.js。动态面不走此缝（shim fetch 经
+                            // `_zwResolveFetchUrl` M5-S7 已基解析）。
+                            // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+                            let fetch_src_base = script_bases.get(script_index).map(String::as_str).unwrap_or(page_url);
+                            let fetch_src = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            let fetch_src = &resolve_document_url(fetch_src_base, fetch_src);
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => (code, false),
                                 Err(e) => {
@@ -5053,8 +5062,12 @@ impl WebView {
                     match &self.script_source_fetcher {
                         Some(fetch) => {
                             let page_url = self.current_url.as_deref().unwrap_or("about:blank");
-                            // security-hardening M3：HSTS 升级 URL 就位时按升级 URL fetch。
-                            let fetch_src: &str = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            // s356：同 classic 臂——external module src 按文档基 URL 解析
+                            //（spec prepare src 步同段：fetch an external module script graph
+                            // given url，url 同基解析；语料 module src 恒根绝对，join 恒等）。
+                            let fetch_src_base = script_bases.get(script_index).map(String::as_str).unwrap_or(page_url);
+                            let fetch_src = mc_script_fetch_src.as_deref().unwrap_or(src.as_str());
+                            let fetch_src = &resolve_document_url(fetch_src_base, fetch_src);
                             match fetch(page_url, fetch_src) {
                                 Ok(code) => {
                                     // s107（SRI）：integrity 属性在场 → 按响应字节校验

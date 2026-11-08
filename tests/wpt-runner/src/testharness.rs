@@ -6283,6 +6283,22 @@ fn wpt_data_script_fetcher_with_stash(
         // 通道收口。
         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+        // s356：script-not-found-not-executed{,-2}.py 动态端点 classic src 臂（上游
+        // wptserve handler 不在语料——语料仅 .html，双态 {1P,1F} 的 Fail 腿为端点
+        // 缺席：.py 落扩展名非 scripty 臂恒 Err，test2 的 200 执行面不可达，
+        // s227/s344 缺资产同形）。上游 pin 1eecaa0c30 逐字：.py = 404 +
+        // text/javascript + `test1_token = "script executed";`、-2.py = 200 + 同形
+        // test2 体。fetcher 契约无 status 通道：404 → Err（非 200 加载失败与网络
+        // 错误对页面可观察面同形——error 事件，s346 口径；「404 体不得执行」断言
+        // 由 token 不变承载，Err 已覆盖）；200 → Ok 执行。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        // （fetch 步骤非 ok 状态 → 失败 → error 事件、脚本不执行）
+        if clean == "html/semantics/scripting-1/the-script-element/script-not-found-not-executed.py" {
+            return Err("script-not-found-not-executed.py: 404".to_string());
+        }
+        if clean == "html/semantics/scripting-1/the-script-element/script-not-found-not-executed-2.py" {
+            return Ok("test2_token = \"script executed\";".to_string());
+        }
         // s346：module-fetch-tester.py 动态端点模块取回臂（上游 wptserve handler
         // 不在语料——whatwg/html#10327「Don't cache HTTP errors in the module map」
         // 判据端点：key 维度请求计数 + mode fail-first 首发 404 / always-fail 恒
@@ -10163,6 +10179,43 @@ fn inject_harness_script_before_page_scripts(source: &str, harness: &str) -> Str
 pub(crate) fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str, doc_encoding: Option<&str>) -> String {
     // case 所在目录（相对 wpt_root），如 "dom/nodes"。
     let case_dir = case_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
+    // s356：文档基 URL 预扫（spec document base URL——首个**带非空 href** 的 base
+    // 元素，href 相对 fallback（case 目录）解析；记录其标签尾偏移——其后脚本才
+    // 受基影响，spec src 按脚本 parse 时刻的文档基 URL 解析）。根绝对/协议相对/
+    // 绝对 src 基无关（URL join 语义：根绝对换段、绝对全换）。
+    // fetch-src/alpha/base 判据：`<base href=../beta/>` 下 `test.js` 须读
+    // beta/test.js（chrome Pass 真值；旧版按 case_dir 读 alpha/test.js 假 Fail）。
+    // https://html.spec.whatwg.org/multipage/infrastructure.html#document-base-url
+    let mut doc_base: Option<(usize, String)> = None;
+    {
+        let mut scan = html;
+        let mut offset = 0usize;
+        while let Some(pos) = scan.find("<base") {
+            let abs = offset + pos;
+            let after = &scan[pos..];
+            // 边界：`<base` 后须随空白/`>`/`/`（排除 `<basefont` 前缀撞名）。
+            let boundary_ok = after[5..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_whitespace() || c == '>' || c == '/');
+            let Some(gt) = after.find('>') else { break };
+            if boundary_ok {
+                let open = &after[..=gt];
+                if let Some(href) = zero_engine::attr_from_open_tag(open, "href").filter(|h| !h.trim().is_empty()) {
+                    let rel = href.trim();
+                    let joined = if rel.starts_with('/') || case_dir.is_empty() {
+                        normalize_relative(rel)
+                    } else {
+                        normalize_relative(&format!("{case_dir}/{rel}"))
+                    };
+                    doc_base = Some((abs + gt + 1, joined));
+                    break;
+                }
+            }
+            offset = abs + gt + 1;
+            scan = &html[offset..];
+        }
+    }
     let mut output = String::with_capacity(html.len());
     let mut remaining = html;
     // s255：投递单元标记计数——module 单元 load/error 尾按 `data-zw-unit` 查回元素
@@ -10227,15 +10280,25 @@ pub(crate) fn inline_local_scripts(html: &str, wpt_root: &Path, case_path: &str,
                 // s100：查询串先剥离再归一——.py fixture src 携带 `?test=` 查询（CGI 端点），
                 // 路径归一与语料读面只对路径段，查询由 fixture 仿真面消费。
                 let (path_src, src_query) = s.split_once('?').unwrap_or((s, ""));
+                // s356：基生效位置——脚本 parse 时刻在首个带 href 的 base 元素之后
+                // 才按其基解析（spec 文档基 URL 随 base 元素 encounter 演进；base
+                // 前脚本回落 fallback）。doc_base.0 = base 标签尾偏移。
+                let cur_off = html.len() - remaining.len();
+                let base_applies = doc_base.as_ref().is_some_and(|(end, _)| cur_off >= *end);
                 let combined = if let Some(root_rel) = path_src.strip_prefix('/') {
                     normalize_relative(root_rel)
                 } else {
-                    // 规范化 "./" 前缀 + 相对 case_dir 解析（含 ../ 上溯）。
+                    // 规范化 "./" 前缀 + 相对基解析（含 ../ 上溯；无基回落 case_dir）。
                     let rel = path_src.strip_prefix("./").unwrap_or(path_src);
-                    if case_dir.is_empty() {
+                    let base_dir = if base_applies {
+                        doc_base.as_ref().map(|(_, b)| b.as_str()).unwrap_or(case_dir)
+                    } else {
+                        case_dir
+                    };
+                    if base_dir.is_empty() {
                         rel.to_string()
                     } else {
-                        normalize_relative(&format!("{case_dir}/{rel}"))
+                        normalize_relative(&format!("{base_dir}/{rel}"))
                     }
                 };
                 // s250：module 型判定上移（s115 面复用）——module 外链不进 s100 内联投递
