@@ -23,17 +23,25 @@
   第 64 行（注册表 = 原链 63 行序 + 合流 1 行），trickle/http-cache
   M2 两上游语义面与本批不相交（合流判定与复核链见切片四档 §五），
   残链 19 臂、链头 = xhr/resources/get-set-cookie.py。
+  **切片五完成**（2026-11-08 深夜）：残链 21 臂全量迁入（普查概数 19 与
+  实提 21 之差 = 405 门 + OPTIONS blanket 两臂口径归属），method 面
+  谓词首入表（Custom ×2，405 门/OPTIONS blanket 表内原位承载——移表尾
+  会被 method 无关行截答），dispatch 收口为「注册表循环 + 静态回退尾」，
+  表 85 行 = 原链 84 臂 + s346 合流行；基线锚对合流后 HEAD 重录
+  （13,614P/1,305F/8T，vs 16:41 锚 32 子测试 F→P 漂移全部归因
+  c6dcbce0a http-cache M2 wire），A/B 升级计数敏感 multiset 空集落证；
+  S12 update 脚本缺口核对销账（pin 树原生含 succeeded 腿，条件成立）。
+  [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
   现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
   goal py 框架交付（M4 承接）。
-- **下一步**：残链 19 臂分批迁入（普查档 §二 六a 尾 → 六b → 六c），
-  每批全量 A/B multiset 空集——基线锚须先对合流后 HEAD 重录（本批
-  空集锚为合流前 16:41 态，上游 trickle/http-cache M2 账面扰动归各自
-  提交）；其后 fetcher 闭包三分表迁移（清单档拓扑）→ S12 补丁收编
-  核对 → update 脚本缺口清偿随批次落；M4 验收含 47 号 corpus 门
-  承接。
+- **下一步**：文件族拆分 testharness_py_routes.rs（迁移后 4,822 行超
+  2000 行守卫，底座 + 五族 site/xhr/fetch/es/misc，纯移动 + 表序不动，
+  随后跑全量 A/B 对新锚）；其后 fetcher 闭包三分表迁移（清单档拓扑：
+  script/sw 两 fetcher → 独立表实例，stash Arc 共享不可断）→ DC-3
+  收口；M4 验收含 43 号 wss 面入账 + 47 号 corpus 门承接。
 
 ## 里程碑状态表
 
@@ -42,7 +50,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅ 切片四 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一~五 ✅ 残链清空；余 fetcher 闭包三分表） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
@@ -62,7 +70,10 @@
 1. websockets 通道既有面（M2 A/B 锚：110 案 381 行，[M2 档](evidence/2026-11-08-m2-wss-wiring.md)）；
 2. net-api 全通道基线 13,582P/1,337F/8T（2026-11-08 落账 +
    [归因档](evidence/2026-11-08-m3-baseline-reattribution.md)，
-   supersedes 43 号 M4 终账 13,275P 口径）；
+   supersedes 43 号 M4 终账 13,275P 口径）——M3 切片五起对合流后
+   HEAD 重录为 **13,614P/1,305F/8T**（32 子测试 F→P 归因 c6dcbce0a
+   http-cache M2 wire，[切片五档](evidence/2026-11-08-m3-slice5-
+   residual-clear.md) §三；后续批次以新锚对照）；
 3. S3b `/echo-query_v13`（constructor/016）；
 4. S12 cors-preflight-redirect 面；
 5. inspect-headers.py POST 豁免面。

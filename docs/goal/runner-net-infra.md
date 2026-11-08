@@ -8,7 +8,9 @@
 零回归 + wss 池 101 案 360 subtest 全绿过批次门，
 [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）
 **状态**: Active——M0 ✅ M1 ✅ M2 ✅，M3（py 路由框架）**进行中**——
-PyRoute 注册表已落地（切片二，链头 12 臂入表），84 臂按族分批迁移
+PyRoute 注册表全量落地（切片五，残链 21 臂迁入后 dispatch 残链清空，
+表 85 行 = 原链 84 臂 + s346 合流行），余 = fetcher 闭包三分表迁移
+（DC-3 收口）
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -118,8 +120,14 @@ PyRoute 注册表已落地（切片二，链头 12 臂入表），84 臂按族�
   `PyRoute` 保序注册表落地（PyRouteMatch::Exact + handler None=落穿 + 表序
   = 臂序），链头 12 条全等臂迁入（A/B multiset 空集 +
   [切片二档](runner-net-infra/evidence/2026-11-08-m3-slice2-registry-head12.md)）；
-  余臂按族分批迁移（xhr → eventsource/fetch → inspect-headers/尾段）+
-  四 fetcher 闭包臂 + S12 redirect.py 臂收编随批次落。
+  切片三+四 = 51 臂按族批迁（谓词面扩至六变体，S12 redirect.py 收编随
+  切片四落，A/B multiset 空集 +
+  [切片四档](runner-net-infra/evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)）；
+  **切片五 = 残链清空**（末 21 臂迁入，405 门/OPTIONS blanket 以
+  Custom 行表内原位承载，dispatch 收口为「注册表循环 + 静态回退尾」；
+  基线锚对合流后 HEAD 重录，全量 A/B 计数敏感 multiset 空集 +
+  [切片五档](runner-net-infra/evidence/2026-11-08-m3-slice5-residual-clear.md)）；
+  余 = 四 fetcher 闭包三分表迁移（DC-3 收口）。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
 
 ## 依赖约束（run-rules §9）
