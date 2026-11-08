@@ -8072,13 +8072,23 @@
             // FIXME(architecture): 写流执行身份盖章断链，若增量解析落地应回归
             // already-started 表判。
             var _anGo117 = true;
+            var _anProxy117 = _makeProxy(sel, handle);
             if (!handle) {
               try {
-                var _anTxt117 = String(_makeProxy(sel, handle).text != null ? _makeProxy(sel, handle).text : '');
+                var _anTxt117 = String(_anProxy117.text != null ? _anProxy117.text : '');
                 if (_anTxt117.trim() !== '') _anGo117 = false;
               } catch (_e109tx117) {}
             }
-            if (_anGo117) _zwScriptMaybeStartDynamic(_makeProxy(sel, handle));
+            // s357（html-semantics M2 切片 357）：spec 属性变更步骤 value 非 null
+            // 才 run post-connection steps——摘除（value=null）不触发 prepare。写后
+            // 状态近似：属性已不在场 = 摘除记录，跳过（remove-src-attr-prepare-
+            // a-script 判据面：type='' 后摘 src，旧实现经本臂触发 maybe-start-
+            // dynamic → src 已空落内联分支同步 eval 体 = innerText 旗标臂红）。
+            // https://html.spec.whatwg.org/multipage/scripting.html#script-attribute-change-steps
+            try {
+              if (!(_anProxy117.hasAttribute && _anProxy117.hasAttribute(_an109))) _anGo117 = false;
+            } catch (_eS357an) {}
+            if (_anGo117) _zwScriptMaybeStartDynamic(_anProxy117);
           }
           // s110：async 内容属性加至 script → force async=false（spec 独立条款——
           // 「When an async attribute is added … set force async to false」，非 prepare

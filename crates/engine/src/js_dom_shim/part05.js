@@ -14633,6 +14633,26 @@
             if (typeof _zwScriptMaybeStartDynamic === 'function') _zwScriptMaybeStartDynamic(_s4pN);
             continue;
           }
+          // s357（html-semantics M2 切片 357）：spec prepare 中止序对齐——①type
+          // 分类 blocked（data block：非法 type/language）在 src 分支前中止，体不
+          // 执行、不置 run-once（remove-src-attr-prepare-a-script 判据面：type=
+          // invalid + src + 内联体 .append()，期望双旗标恒 false——旧实现直呼内联
+          // eval，innerText 旗标臂红）。②src 属性在场走 src 分支（外链取回、体
+          // 忽略）——委派 _zwPrepareSrcScript（gate 内 already-started/nomodule/
+          // for-event/空 src/module 臂完整重检），与 R387b appendChild 面
+          //（execution-timing 049 external-only 判据）同语义；旧实现内联 eval 且
+          // 抢先置 run-once 把 s111 notify 臂的外链取回挡死（probe15 实证
+          // didExecute 恒 false）。
+          // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+          if (_s4pCls343 === 'blocked') continue;
+          var _s4pHasSrc357 = false;
+          try { _s4pHasSrc357 = !!(_s4pN.hasAttribute && _s4pN.hasAttribute('src')); } catch (_eS357hs) {}
+          if (_s4pHasSrc357) {
+            if (typeof globalThis._zwPrepareSrcScript === 'function') {
+              globalThis._zwPrepareSrcScript(_s4pN);
+            }
+            continue;
+          }
           var _s4pSrc = '';
           try { _s4pSrc = String(_s4pN.textContent || ''); } catch (_eS4pt) {}
           if (_s4pSrc && !(globalThis._zwRanScripts && globalThis._zwRanScripts[_s4pN.__zwHandle])) {
