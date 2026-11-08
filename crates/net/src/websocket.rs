@@ -10,7 +10,7 @@ use std::sync::{Arc, OnceLock};
 
 use tungstenite::client::IntoClientRequest;
 use tungstenite::http::header::{COOKIE, ORIGIN};
-use tungstenite::stream::{MaybeTlsStream, NoDelay};
+use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{Message, WebSocket as TungWebSocket};
 use url::Url;
 

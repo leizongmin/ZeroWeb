@@ -117,7 +117,7 @@ pub fn fixture_wss_port() -> u16 {
                             let Ok(conn) = ServerConnection::new(config) else {
                                 return;
                             };
-                            handle_conn(FixtureStream::Tls(rustls::StreamOwned::new(conn, sock)));
+                            handle_conn(FixtureStream::Tls(Box::new(rustls::StreamOwned::new(conn, sock))));
                         })
                         .ok();
                 }
@@ -229,7 +229,7 @@ impl WsHost for FixtureWsHost {
 /// 经 [`Read`]/[`Write`] 泛化面复用，明文/wss 端点行为零分叉（M1 泛化 IO 层）。
 enum FixtureStream {
     Plain(TcpStream),
-    Tls(rustls::StreamOwned<ServerConnection, TcpStream>),
+    Tls(Box<rustls::StreamOwned<ServerConnection, TcpStream>>),
 }
 
 impl Read for FixtureStream {
@@ -262,7 +262,7 @@ impl FixtureStream {
         match self {
             Self::Plain(s) => s.shutdown(std::net::Shutdown::Both),
             Self::Tls(s) => {
-                let _ = s.conn.send_close_notify();
+                s.conn.send_close_notify();
                 let _ = s.flush();
                 s.sock.shutdown(std::net::Shutdown::Both)
             }

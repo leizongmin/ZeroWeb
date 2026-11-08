@@ -1991,6 +1991,25 @@ pub(crate) fn case_variants(source: &str) -> Vec<String> {
     out
 }
 
+/// runner-net-infra M2（D4）：any.js 形态 variant 解析——上游 any.js 封装用
+/// `// META: variant=<query>` 注释声明变体矩阵（websockets 语料 61 案 `?wss`
+/// 面经 M0 普查显影），既有 [`case_variants`] 只解析 `<meta name="variant">`
+/// html 标签形态。注释形态仅 net-api 通道 websockets 路径消费（D4 最小分母），
+/// 其余通道 any.js 案分母不动。大小写与 [`wpt_meta_scripts`] 同款精确前缀
+///（上游 META 注释为规范大写形）。
+fn case_meta_variants(source: &str) -> Vec<String> {
+    source
+        .lines()
+        .filter_map(|line| {
+            let variant = line.trim().strip_prefix("// META: variant=")?.trim();
+            if variant.is_empty() {
+                return None;
+            }
+            Some(variant.to_string())
+        })
+        .collect()
+}
+
 /// touch-events-compat goal corpus subdir（M1 / DC-1）：上游 `touch-events/` flat 布局。
 pub const TOUCH_EVENTS_TEST_SUBDIRS: &[&str] = &["touch-events"];
 
@@ -4555,7 +4574,12 @@ pub const NET_API_CORPUS_SUBDIRS: &[&str] = &[
 /// secure-context 面）维持 https 页锚不动。websockets 已在此列（M5-S1 特例被
 /// 覆盖，语义不变）。子串前缀匹配与 [`run_net_api_cases`] 的通道枚举同口径。
 fn net_api_case_uses_http_page(case_name: &str) -> bool {
-    NET_API_CORPUS_SUBDIRS.iter().any(|dir| case_name.starts_with(dir))
+    // runner-net-infra M2（D5）：`?wss&wpt_flags=https` 变体（websockets
+    // cookies/001-007 七案）页锚 https——上游 wptserve 语义 = https 页
+    //（secure-context 面，document.cookie Secure/SameSite 判据前提）+ wss 连接
+    //（constants.sub.js location.protocol 臂翻 wss 分支）。wpt_flags=https 落在
+    // case 名 query 里，路径前缀仍命中；页锚归 https://wpt.test（无端口锚）。
+    NET_API_CORPUS_SUBDIRS.iter().any(|dir| case_name.starts_with(dir)) && !case_name.contains("wpt_flags=https")
 }
 
 /// s116：referrer corpus 页面 scheme 判定——referrer-strict-policies 前提「文档
@@ -4756,8 +4780,7 @@ fn run_any_js_corpus_subdirs_with_helpers(
         filter,
         case_skipped,
         absolute_helpers,
-        false,
-        false,
+        CorpusRunOptions::default(),
     )
 }
 
@@ -4768,14 +4791,28 @@ fn run_any_js_corpus_subdirs_with_helpers(
 /// `.html` 同形态走 substitution + `run_testharness_html_inner`）与 `.window.js`
 /// （webmessaging/webstorage 通道既有 window 变体先例，[`run_any_js_window_case`]
 /// 形态无关）两窗体——默认关（各通道既有账分母不动），仅 net-api 通道开启。
+/// 共享 corpus runner 的通道形态开关（默认全关，各通道按需开启——既有账分母
+/// 不动的闸门面）。
+#[derive(Clone, Copy, Default)]
+struct CorpusRunOptions {
+    /// navigation-compat S4K：`<meta name="variant">` 展开矩阵（html 形态，
+    /// 变体键替代基础键）。
+    expand_variants: bool,
+    /// net-api-compat-v3 M1a：`.htm`（xhr 上游老式命名）与 `.window.js`
+    /// （window 变体）窗体。
+    extra_forms: bool,
+    /// runner-net-infra M2（D4）：websockets 子树 wss 变体枚举（追加键，
+    /// 仅 net-api 通道——最小分母）。
+    ws_wss_variants: bool,
+}
+
 fn run_any_js_corpus_subdirs_with_helpers_variants(
     wpt_root: &Path,
     subdirs: &[&str],
     filter: Option<&str>,
     case_skipped: fn(&str, &str) -> bool,
     absolute_helpers: &[(&str, &str)],
-    expand_variants: bool,
-    extra_forms: bool,
+    options: CorpusRunOptions,
 ) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -4805,8 +4842,8 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             // net-api-compat-v3 M1a：extra_forms 门扩 `.htm`（xhr 上游老式命名）与
             // `.window.js`（window 变体，webmessaging 通道先例）——默认关，其余通道
             // 既有账分母不动。
-            let is_htm = extra_forms && file_name.ends_with(".htm");
-            let is_window_js = extra_forms && file_name.ends_with(".window.js");
+            let is_htm = options.extra_forms && file_name.ends_with(".htm");
+            let is_window_js = options.extra_forms && file_name.ends_with(".window.js");
             let is_html = file_name.ends_with(".html") || is_htm;
             let is_any_js = file_name.ends_with(".any.js") || is_window_js;
             if !is_html && !is_any_js {
@@ -4823,14 +4860,33 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 continue;
             }
             // navigation-compat S4K：variant-meta 展开（expand_variants 且 html 形态）。
-            let variants = if expand_variants && is_html {
+            let variants = if options.expand_variants && is_html {
                 case_variants(&source)
             } else {
                 Vec::new()
             };
+            // runner-net-infra M2（D4）：websockets 子树 wss 变体枚举（仅 net-api
+            // 通道开启，其余通道分母不动）。基础 URL 单跑保留为 default 账，仅
+            // **追加** wss 变体键（`?wss` / `?wss&wpt_flags=https`）；`?default`
+            // 不重复跑（避免子测试双计）；`?wpt_flags=h2` 不含 wss 天然排除
+            // （runner 无 HTTP/2 WS 栈，`.h2.` 口径延伸，M0 审计 92 实例记账）。
+            let ws_wss_enumeration = options.ws_wss_variants && relative.starts_with("websockets/");
             if is_any_js {
                 let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
-                cases.push((relative, results));
+                cases.push((relative.clone(), results));
+                if ws_wss_enumeration {
+                    // any.js 形态 variant 键追加跑：case 名带 query → 包装页
+                    // location.search 消费（constants.sub.js url_has_variant('wss')
+                    // 翻 wss 分支）；any_js_window_wrapper 已带 substitution 面。
+                    for variant in case_meta_variants(&source)
+                        .into_iter()
+                        .filter(|variant| variant.contains("wss"))
+                    {
+                        let case_v = format!("{relative}{variant}");
+                        let results_v = run_any_js_window_case(wpt_root, &case_v, &source, &harness_source);
+                        cases.push((case_v, results_v));
+                    }
+                }
             } else {
                 let extras: Vec<(String, String)> = absolute_helpers
                     .iter()
@@ -4861,7 +4917,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                         &extra_refs,
                         corpus_case_timeout(),
                     );
-                    cases.push((relative, results));
+                    cases.push((relative.clone(), results));
                 } else {
                     // navigation-compat S4K：每变体独立运行（case URL 追加 query——
                     // WPT variant 用例矩阵；case 名带 query 与上游 dashboard 对齐）。
@@ -4871,6 +4927,27 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                             wpt_root,
                             &case_v,
                             &source,
+                            &harness_source,
+                            &extra_refs,
+                            corpus_case_timeout(),
+                        );
+                        cases.push((case_v, results_v));
+                    }
+                }
+                if ws_wss_enumeration {
+                    // html 形态 wss 变体键追加跑：与基础页同 substitution 面
+                    //（同 :4855 路径），query 是唯一差异。`?wss&wpt_flags=https`
+                    // 变体页锚 https 见 net_api_case_uses_http_page（D5）。
+                    for variant in case_variants(&source)
+                        .into_iter()
+                        .filter(|variant| variant.contains("wss"))
+                    {
+                        let case_v = format!("{relative}{variant}");
+                        let substituted = apply_wpt_substitutions(&source);
+                        let results_v = run_testharness_html_inner(
+                            wpt_root,
+                            &case_v,
+                            &substituted,
                             &harness_source,
                             &extra_refs,
                             corpus_case_timeout(),
@@ -4897,8 +4974,13 @@ pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
         filter,
         net_api_case_skipped,
         &[],
-        false,
-        true,
+        CorpusRunOptions {
+            extra_forms: true,
+            // runner-net-infra M2（D4）：net-api 通道对 websockets 子树开 wss 变体
+            // 枚举（最小分母——其余 corpus 分母不动，见 loop 内 ws_wss_enumeration）。
+            ws_wss_variants: true,
+            ..CorpusRunOptions::default()
+        },
     )
 }
 
@@ -4951,8 +5033,10 @@ pub fn run_encoding_legacy_mb_cases(wpt_root: &Path, filter: Option<&str>) -> Ve
         filter,
         encoding_legacy_mb_case_skipped,
         &[],
-        true,
-        false,
+        CorpusRunOptions {
+            expand_variants: true,
+            ..CorpusRunOptions::default()
+        },
     )
 }
 
@@ -5005,8 +5089,10 @@ pub fn run_form_url_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec
         filter,
         form_url_encoding_case_skipped,
         &[],
-        true,
-        false,
+        CorpusRunOptions {
+            expand_variants: true,
+            ..CorpusRunOptions::default()
+        },
     )
 }
 
@@ -5246,8 +5332,10 @@ pub fn run_navigation_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(Strin
         filter,
         navigation_case_skipped,
         NAVIGATION_ABSOLUTE_HELPERS,
-        true,
-        false,
+        CorpusRunOptions {
+            expand_variants: true,
+            ..CorpusRunOptions::default()
+        },
     )
 }
 
@@ -5465,10 +5553,14 @@ pub(crate) fn apply_wpt_substitutions(source: &str) -> String {
         .replace("{{ports[https][0]}}", "8444")
         .replace("{{ports[https][1]}}", "8443")
         // net-api M5-S1：websockets 常量面（constants.sub.js SCHEME_DOMAIN_PORT）——
-        // ws/wss/h2 三 token 全映射到内嵌 WS fixture 端口（wss/h2 变体不执行，token
-        // 落在未走的分支里；?default 变体走 ws + fixture 端口，宿主改写见 ws_fixture）。
+        // ws token 映射内嵌 WS fixture 明文端口（?default 变体走 ws 分支，宿主改写
+        // 见 ws_fixture）。runner-net-infra M2（D3）：wss token 改映射 TLS fixture
+        // 端点 `fixture_wss_port()`（自签 CA+叶两级证书，信任根经 zero-net
+        // install_wss_test_tls_config 旁路注入）——`?wss` 变体接线后实跑，token
+        // 此前落在未走分支零观察面。h2 token 维持明文映射不动（runner 无 HTTP/2
+        // WS 栈，`?wpt_flags=h2` 变体排除，token 只落排除分支）。
         .replace("{{ports[ws][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
-        .replace("{{ports[wss][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
+        .replace("{{ports[wss][0]}}", &crate::ws_fixture::fixture_wss_port().to_string())
         .replace("{{ports[h2][0]}}", &crate::ws_fixture::fixture_ws_port().to_string())
 }
 
@@ -15414,6 +15506,28 @@ const TESTDRIVER_STUB: &str = r#"<script>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // runner-net-infra M2（D4）：any.js META 注释 variant 解析臂——websockets
+    // 语料三形（?wss / ?default / ?wpt_flags=h2，M0 普查实测形态）全解析 +
+    // 枚举过滤面（contains("wss")）只留 wss 池。
+    #[test]
+    fn case_meta_variants_parses_anyjs_meta_comment_forms() {
+        let source = "// META: global=window\n\
+                      // META: variant=?default\n\
+                      // META: variant=?wss\n\
+                      // META: variant=?wpt_flags=h2\n\
+                      // META: script=/websockets/constants.sub.js\n\
+                      async_test(function(t) {});\n";
+        let variants = case_meta_variants(source);
+        assert_eq!(
+            variants,
+            vec!["?default".to_string(), "?wss".to_string(), "?wpt_flags=h2".to_string()]
+        );
+        let wss_pool: Vec<&String> = variants.iter().filter(|v| v.contains("wss")).collect();
+        assert_eq!(wss_pool, ["?wss"]);
+        // 非 META 注释行/大小写形不解析（与 wpt_meta_scripts 同款精确前缀）。
+        assert!(case_meta_variants("// meta: variant=?wss\n// META: variants=?wss\n").is_empty());
+    }
 
     // s261：投递标记保真——内联投递区分 runner 基建与页面脚本。页面内容单元
     // （case 引用的 helper .js / 页面外链脚本）打 `data-zw-inlined`，基建
