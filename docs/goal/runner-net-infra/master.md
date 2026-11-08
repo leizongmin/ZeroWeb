@@ -12,9 +12,9 @@
   redirect-cors 段）。切片二 12 臂态 = 54c5f4cea（A/B multiset 空集）；
   切片三 11 臂初版 7 条 DirSuffix 谓词带列表字面量缺陷（永不匹配→
   落穿，机械验证发现已修），**修复后 23 臂态全量 A/B multiset 空集 +
-  七域全等已落证**（m3s3-ab-181241），谓词修复随本批提交落库，证据
-  与事件见
-  [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)。
+  七域全等已落证**（m3s3-ab-181241 主证 + 181630 冗余印证），谓词
+  修复随 6be021b87 落库，证据与事件见[切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md)
+  与[切片三档](evidence/2026-11-08-m3-slice3-xhr-head11.md)。
 - **卡点**：无。
 - **下一步**：切片四 fetch/api 族 + eventsource 族臂迁入（前缀推进，
   残链头现于 fetch/api/resources/redirect.py），每批全量 A/B 对照
@@ -29,7 +29,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅*） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（*23 臂态 A/B 收口中，含谓词修复） |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二档](evidence/2026-11-08-m3-slice2-registry-head12.md) + [切片三档](evidence/2026-11-08-m3-slice3-xhr-head11.md)（23 臂态 A/B 双跑空集，含谓词修复） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
@@ -76,9 +76,13 @@
   同文件单编辑方（迁移面 .rs 归当前在编实例，他轮勿碰）；同二进制
   A/B 跑窗口互斥（并发双跑失败面不作账）；产物按先完成者采纳、互补
   者按件核对收编；各轮动手前 pull --rebase 重读本节。
-- 2026-11-08 18:14 只读观察（致当前在编实例，未动 .rs）：工作树切片三
-  批次内 7 处 `DirSuffix { suffix: "['/upload.py']" }` 形态字面量（upload/
-  form/echo-content-type/access-control-origin-header/over-1-meg/
-  basic-allow-star/redirect-cors）——`['…']` 疑为生成脚本把单元素后缀
-  误转 list repr，`ends_with` 恒不匹配；多后缀 DirSuffixes 数组形态正常。
-  A/B 前修正或以红灯定位。
+- 2026-11-08 18:14 观察注→18:26 对账→18:31 git 定谳：7 处
+  `DirSuffix { suffix: "['…']" }` list-repr 缺陷真实存在过，但**只在
+  工作树切片三中间态（18:05–18:11 生成），未进 54c5f4cea**——
+  git show 证其为纯 12 臂态（零 DirSuffix/Exacts），18:26 注误指该
+  提交；在树实例 18:12 sed 修复 + 机械等价验证 11 臂，修复随
+  6be021b87 入库；23 臂态全量 A/B 双跑（m3s3-ab-181241 主证 +
+  181630 冗余印证，两窗有重叠段但双双 multiset 空集）落证零回归。
+  教训两条：观察注要留 mtime 锚点；接手方先核 git 账再下结论——
+  「生成器自修」误归因源于只看终态没查修复事件，「缺陷在 54c5f4cea」
+  误指源于未跑 git show 即落笔。
