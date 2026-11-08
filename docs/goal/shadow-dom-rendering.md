@@ -1,8 +1,9 @@
 # Shadow DOM 渲染级 — composed tree 进样式/布局/绘制 + :host/::slotted 命中
 
-**版本**: v1.3
-**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）；2026-11-08 M3 R3b 代码落地 + B6 通道落地；2026-11-08 M3 追加轮——006 翻绿根因修复（append sel 项通道，R3b 目标案收口）
-**状态**: Active——M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
+**版本**: v1.4
+**日期**: 2026-11-04（立项，用户拍板「现在就立」——web-components 收口排除条款转正）；2026-11-07 M0 完成；2026-11-07 M1 完成；2026-11-07 M2 完成；2026-11-08 M3 R4 前半（taffy 侧，kill-switch 落地）；2026-11-08 M3 R4 完成（第二臂 IFC 重测 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开）；2026-11-08 M3 R3 变异应用臂代码落地（`resolve_slots_all_hosts` 批末挂接）；2026-11-08 M3 R3b 代码落地 + B6 通道落地；2026-11-08 M3 追加轮——006 翻绿根因修复（append sel 项通道，R3b 目标案收口）；2026-11-08 M4 复测收口完成——M0-M4 全部完成，goal 收口
+**状态**: 收口——M0-M4 全部完成（2026-11-08 M4 复测收口落账，待归档
+sweep）。以下为各里程碑历史账：M0 完成（挂接点审计 + reftest 盘点 + 数值门，见
 [M0 evidence](shadow-dom-rendering/evidence/2026-11-07-m0-hookpoint-audit-and-corpus.md)）；
 M1 完成（`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序 + shadow focus 通路，
 B4 focus-pseudo 3/3 strict 真通过，WC 全量 A/B 零回归，见
@@ -12,7 +13,7 @@ DC-2 收口——slotted-has ×4 翻绿、全量 reftest 725/725 零回归、ups
 38 案 15 绿 / 23 红逐案归因（20 `:has-slotted` 范围外 / 2 命令式 M3 面 / 1 锚定位
 范围外），见
 [M2 evidence](shadow-dom-rendering/evidence/2026-11-07-m2-slotted-segment-and-flat-tree.md)）。
-M3 进行中（2026-11-08 R4 完成：shadow Text 布局通道两臂落地——taffy 侧
+M3 完成（2026-11-08，切片账如下。R4 完成：shadow Text 布局通道两臂落地——taffy 侧
 匿名叶 + inline_finalization `remeasure_inline_only_containers` 匿名叶
 gate，`ZW_SHADOW_TEXT_BOX` 翻默认开（`=0` 杀）。slot-fallback-content-004
 严格比对 ✗1.75%→✓0.00% 首次真通过（flag 关基线的 ✓0.86% 实为回退文本
@@ -58,8 +59,18 @@ solo **✓0.07%**（修复前 4.90% 稳定红）、DC-4 矩阵 **33P/2F**（余 
 2.08% + display-contents-shadow-dom-1 1.97% 在册）、reftest 全量 725/725
 零回归、product-smoke/clippy-v8/fmt/bench-gate（dom/engine）净、B6 基线零位移。
 见 [追加轮 evidence](shadow-dom-rendering/evidence/2026-11-08-m3-append-sel-channel.md)。
-下一步 M3：净树余腿复核（make test 全腿镜像 + workspace 腿带 standalone
-binary 构建前置重跑）→ M4 复测收口（DC-4 数值门逐批 + B6 门值回填）
+**M4 复测收口完成（2026-11-08）——goal 收口**：DC-4 数值门逐批 **19/20
+全绿 + vw-units 具名挂账**（B1 8/8 含 006 0.07% 保持翻绿 + B2 5/5 含三案
+恒白守卫 + B4 3/3 + B5 1/1 静态面 + B3 2/3）、邻域 selection/shadow-dom
+**9/9 不回落**、reftest 全量 **725/725 双跑零回归**、B6 门值回填 **15P/86F
+零位移**（86 Fail 与基线 diff 零差异）、make test 全腿出账（workspace
+3815P/6F 在册名册恒一零新增；browser bin 742P/1F 在册同型；browser tests
+9 集成二进制全 ok 含 **cdp_focus_governance 净树 6P/0F——R3b §6 挂账项②
+关闭**；product-smoke/gpu×2/quickjs 三腿 370P/0F/bench-gate 全绿）、头条
+slot-fallback-content-006 不回落。见
+[M4 evidence](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)。
+下一步：归档 sweep（模式 A：目录迁移 archive/ + wpt-suites.csv 证据路径
+同步 + README 检查清单核对）
 **执行模式**: 引擎专项（渲染管线挂接）+ WPT shadow-dom 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——Web Components 渲染面）
 **前账**: `docs/goal/archive/web-components.md`（2026-09-11 收口，DC-1~5 ✅——
@@ -160,9 +171,13 @@ gBCR 塌 (0,0) 命中测试不可达），归 M3 变异应用臂 `resolve_slots`
 - **M1**：`:host` 族命中 + scoped sheets 进渲染管线 + 级联顺序（DC-2 前半）
   ——**✅ 2026-11-07 完成**（B4 3/3 + B1/B2 零回落 + WC 全量 A/B 零回归；
   [evidence](shadow-dom-rendering/evidence/2026-11-07-m1-host-segment-and-focus-wire.md)）。
-- **M2**：`::slotted(...)` 命中翻转 + flat-tree 组合子（DC-2 收口）。
-- **M3**：动态 slot 分配接线 + shadow Text 布局通道 + reftest 分批验收（DC-3）。
-- **M4**：复测收口（DC-4）。
+- **M2**：`::slotted(...)` 命中翻转 + flat-tree 组合子（DC-2 收口）——**✅ 2026-11-07 完成**
+  （[evidence](shadow-dom-rendering/evidence/2026-11-07-m2-slotted-segment-and-flat-tree.md)）。
+- **M3**：动态 slot 分配接线 + shadow Text 布局通道 + reftest 分批验收（DC-3）
+  ——**✅ 2026-11-08 完成**（R3 变异应用臂 + R4 shadow Text 两臂 + R3b manual
+  通道 + B6 通道 + 追加轮 append sel 通道 006 翻绿；evidence 见 M3 各片）。
+- **M4**：复测收口（DC-4）——**✅ 2026-11-08 完成**
+  （[evidence](shadow-dom-rendering/evidence/2026-11-08-m4-closeout-numbers.md)）。
 
 ## 依赖约束（run-rules §9）
 
