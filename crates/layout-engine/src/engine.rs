@@ -1341,6 +1341,19 @@ impl LayoutEngine {
         // R3905（CSS2 §10.3.7）：rtl CB 中全-auto inset abspos 静态位置镜像（左缘贴 CB 右缘）。
         fix_rtl_abspos_static_position(&mut root_box, styles);
 
+        // 11.4b R5461（CSS2 §10.3.7 × Writing Modes §7.1 交换帧）：正交 htb abs 叶
+        // auto 物理宽按真 CB（视口 ICB）shrink-to-fit 重解——taffy 交换帧 R5293 回灌臂
+        // 把 pass1 测得的物理块轴 extent（盒高）经 known.width 反馈成水平 IFC 约束，
+        // 行内 extent 塌最宽词（002 ref 臂 abs 89 vs chromium 211.48，R5455 家族）。
+        // 须在 11.5 视口重解析前（右锚方程消费修正后 width）与 Final Inline Layout 前。
+        abspos_sizing::resolve_orthog_abspos_shrink_to_fit(
+            &mut root_box,
+            doc,
+            styles,
+            self.inline_font_context(&font_overrides),
+            self.viewport_width,
+        );
+
         // 11.5 后处理：修正没有 positioned ancestor 的 absolute 元素的**百分比**
         // inset 与尺寸。
         // CSS 2.1 §10.1：absolute 元素无 positioned ancestor 时，containing block 是
