@@ -14422,6 +14422,9 @@ async_test(function(test) {
             credentials: None,
             mode: None,
             redirect: None,
+            // http-cache M2 wire 第 12 参（c6dcbce0a）漏改本 test 初始化器的
+            // 最小补齐：缺省 → None（字段语义见 fetch_bridge），与全 None 行一致。
+            cache: None,
         };
         let endpoint = "https://wpt.test/html/semantics/scripting-1/the-script-element/module-fetch-tester.py";
         let page =

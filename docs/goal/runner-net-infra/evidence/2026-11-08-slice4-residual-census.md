@@ -18,6 +18,11 @@ Exact/Exacts/DirSuffix/DirSuffixes 四变体）；残链 = dispatch 注册表循
 
 ## 二、批次切分（每批全量 A/B multiset 空集门）
 
+> 执行注记（同日切片四档）：切片四实际以 40 臂合并批执行（本表四+五+
+> 六a 前段，fetch redirect.py → cors-cookie），谓词面引入 Suffix/Custom
+> （§一 两处修正见切片四档 §一/§三）；残链 19 臂按本表六a 尾 → 六b →
+> 六c 续推。
+
 | 批次 | 臂段（残链序） | 臂数 | 新谓词面 |
 |---|---|---:|---|
 | 切片四 | xhr 续段（redirect-cors → access-control-preflight-request-header-lowercase 前）+ fetch/api 全等四臂 | ~19 | 无（四变体承载） |

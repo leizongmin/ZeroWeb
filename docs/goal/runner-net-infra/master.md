@@ -15,12 +15,25 @@
   七域全等已落证**（m3s3-ab-181241 主证 + 181630 冗余印证），谓词
   修复随 6be021b87 落库，证据与事件见
   [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)。
+  **切片四完成**（2026-11-08 晚）：残链清障 + 40 臂合并批迁入
+  （fetch/api 头段 + xhr 中段 + eventsource 主块 = 普查档四+五+六a
+  前段），谓词面扩至六变体（+Suffix/Custom），A/B multiset 空集 +
+  七域全等落证（[切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)）；
+  同窗 main FF 六提交取齐，s346 module-fetch-tester.py 行合流表尾
+  第 64 行（注册表 = 原链 63 行序 + 合流 1 行），trickle/http-cache
+  M2 两上游语义面与本批不相交（合流判定与复核链见切片四档 §五），
+  残链 19 臂、链头 = xhr/resources/get-set-cookie.py。
 - **卡点**：无。
-- **下一步**：切片四 fetch/api 族 + eventsource 族臂迁入（前缀推进，
-  残链头现于 fetch/api/resources/redirect.py），每批全量 A/B 对照
-  基线 multiset 空集；其后 inspect-headers/方法豁免（Custom 谓词）→
-  尾段收口（84 臂全量入表）；四 fetcher 闭包臂随后同框架分表迁移；
-  S12 补丁收编 + update 脚本缺口清偿随批次落。
+- **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
+  keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
+  现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
+  goal py 框架交付（M4 承接）。
+- **下一步**：残链 19 臂分批迁入（普查档 §二 六a 尾 → 六b → 六c），
+  每批全量 A/B multiset 空集——基线锚须先对合流后 HEAD 重录（本批
+  空集锚为合流前 16:41 态，上游 trickle/http-cache M2 账面扰动归各自
+  提交）；其后 fetcher 闭包三分表迁移（清单档拓扑）→ S12 补丁收编
+  核对 → update 脚本缺口清偿随批次落；M4 验收含 47 号 corpus 门
+  承接。
 
 ## 里程碑状态表
 
@@ -29,7 +42,7 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一 ✅ 切片二+三 ✅ 切片四 ✅） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） |
 | M4 下游消费验收 + 零回归收口（DC-4） | 未启动 | 门型见两审计档第四节 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
@@ -86,3 +99,14 @@
   教训两条：观察注要留 mtime 锚点；接手方先核 git 账再下结论——
   「生成器自修」误归因源于只看终态没查修复事件，「缺陷在 54c5f4cea」
   误指源于未跑 git show 即落笔。
+- 2026-11-08 20:35 合流记录：切片四 40 臂在途态与 main FF 六提交
+  （524b3b548→a47d00cf9）冲突一处（注册表表尾，autostash）。解法 =
+  原链序连续优先（40 行 = 行 24–63），s346 module-fetch-tester.py 行
+  合流表尾第 64 行；trickle POST 包裹器（d8d563e14，拦截路径
+  fetch/api/resources/trickle.py）与 http-cache M2 wire（c6dcbce0a）
+  与本批语义不相交，判定与复核链见切片四档 §五。顺带处置 origin
+  既有红：runner 单测编译 E0063（c6dcbce0a 漏改 test 初始化器）以
+  `cache: None` 一行最小补齐随本批落库；py_routes 29 处 clippy 既有
+  债维持碰头挂账不硬解。过程教训：本批执行实例 18:58 A/B 跑完后
+  中断，对照分析 20:17 由后续 session 以孤儿日志补齐——证据档
+  「待填」栏不得跨实例存续，长跑等待窗是实例死亡高发段。

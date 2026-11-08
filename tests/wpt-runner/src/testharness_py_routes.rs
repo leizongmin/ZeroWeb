@@ -39,7 +39,7 @@ pub(crate) struct PyEndpointCtx {
 }
 
 /// py 端点路由匹配谓词——沿既有臂口径（py 普查档 §三：路径全等；
-/// 目录+文件名后缀与自定义谓词随后续批次引入，不新增匹配语义）。
+/// 目录+文件名后缀、裸后缀与复合谓词按臂原条件 1:1 引入）。
 pub(crate) enum PyRouteMatch {
     /// 路径全等（归一后 clean；空串 = 站点根）。
     Exact(&'static str),
@@ -52,10 +52,14 @@ pub(crate) enum PyRouteMatch {
         dir: &'static str,
         suffixes: &'static [&'static str],
     },
+    /// 裸文件名后缀（任意目录——原无前缀条件的 ends_with 臂）。
+    Suffix(&'static str),
+    /// 复合谓词（fn 指针——原组合条件臂）。
+    Custom(PyPredicate),
 }
 
 impl PyRouteMatch {
-    fn test(&self, clean: &str, _req: &zero_engine::fetch_bridge::FetchRequest) -> bool {
+    fn test(&self, clean: &str, req: &zero_engine::fetch_bridge::FetchRequest) -> bool {
         match self {
             Self::Exact(path) => clean == *path,
             Self::Exacts(paths) => paths.contains(&clean),
@@ -63,6 +67,8 @@ impl PyRouteMatch {
             Self::DirSuffixes { dir, suffixes } => {
                 clean.starts_with(dir) && suffixes.iter().any(|s| clean.ends_with(s))
             }
+            Self::Suffix(suffix) => clean.ends_with(suffix),
+            Self::Custom(pred) => pred(clean, req),
         }
     }
 }
@@ -77,6 +83,9 @@ pub(crate) type PyRouteHandler = fn(
     &str,
     &zero_engine::fetch_bridge::FetchRequest,
 ) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>>;
+
+/// 复合谓词签名（clean + 请求；纯函数，静态表内联不可表达时用）。
+pub(crate) type PyPredicate = fn(&str, &zero_engine::fetch_bridge::FetchRequest) -> bool;
 
 /// py 端点路由注册项（py 普查档 §三蓝图）——保序注册表行；表序 =
 /// 既有 if 链臂序（先命中先返回），新端点 = 注册项声明。
@@ -225,6 +234,263 @@ fn py_routes() -> &'static [PyRoute] {
                 suffix: "/redirect-cors.py",
             },
             handle: route_xhr_redirect_cors,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "fetch/api/resources/",
+                suffix: "/redirect.py",
+            },
+            handle: route_fetch_redirect,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("fetch/api/resources/redirect-empty-location.py"),
+            handle: route_fetch_redirect_empty_location,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("fetch/api/resources/method.py"),
+            handle: route_fetch_method,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Custom(pred_xhr_authentication),
+            handle: route_xhr_authentication,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/image.gif",
+            },
+            handle: route_xhr_image_gif,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Suffix("/echo-headers.py"),
+            handle: route_echo_headers,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Suffix("/delay.py"),
+            handle: route_delay,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("xhr/resources/trickle.py"),
+            handle: route_xhr_trickle,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("xhr/resources/top.txt"),
+            handle: route_xhr_top_txt,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-basic-put-allow.py",
+            },
+            handle: route_xhr_basic_put_allow,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/reset-token.py",
+            },
+            handle: route_xhr_reset_token,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffixes {
+                dir: "xhr/",
+                suffixes: &[
+                    "/access-control-basic-preflight-cache.py",
+                    "/access-control-basic-preflight-cache-timeout.py",
+                    "/access-control-basic-preflight-cache-invalidation.py",
+                ],
+            },
+            handle: route_xhr_preflight_cache,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffixes {
+                dir: "xhr/",
+                suffixes: &[
+                    "/access-control-preflight-request-header-returns-origin.py",
+                    "/access-control-preflight-request-allow-headers-returns-star.py",
+                ],
+            },
+            handle: route_xhr_preflight_returns,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/headers.py",
+            },
+            handle: route_xhr_headers,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/chunked.py",
+            },
+            handle: route_xhr_chunked,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/parse-headers.py",
+            },
+            handle: route_xhr_parse_headers,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-basic-cors-safelisted-response-headers.py",
+            },
+            handle: route_xhr_safelisted_response_headers,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-basic-cors-safelisted-request-headers.py",
+            },
+            handle: route_xhr_safelisted_request_headers,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/no-custom-header-on-preflight.py",
+            },
+            handle: route_xhr_no_custom_header_on_preflight,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-preflight-request-header-lowercase.py",
+            },
+            handle: route_xhr_preflight_header_lowercase,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-preflight-request-header-sorted.py",
+            },
+            handle: route_xhr_preflight_header_sorted,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-preflight-request-headers-origin.py",
+            },
+            handle: route_xhr_preflight_headers_origin,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/access-control-preflight-request-invalid-status.py",
+            },
+            handle: route_xhr_preflight_invalid_status,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/echo-content-cors.py",
+            },
+            handle: route_xhr_echo_content_cors,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Exact("fetch/api/resources/authentication.py"),
+            handle: route_fetch_authentication,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Suffix("/dump-authorization-header.py"),
+            handle: route_dump_authorization_header,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/corsenabled.py",
+            },
+            handle: route_xhr_corsenabled,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/redirect.py",
+            },
+            handle: route_xhr_redirect,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/well-formed.xml",
+            },
+            handle: route_xhr_well_formed_xml,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/pass.txt",
+            },
+            handle: route_xhr_pass_txt,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "xhr/",
+                suffix: "/content.py",
+            },
+            handle: route_xhr_content,
+        },
+        PyRoute {
+            matches: PyRouteMatch::Custom(pred_status_py),
+            handle: route_status_py,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/message.py",
+            },
+            handle: route_es_message,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/message2.py",
+            },
+            handle: route_es_message2,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/last-event-id.py",
+            },
+            handle: route_es_last_event_id,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: ".event_stream",
+            },
+            handle: route_es_event_stream,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/reconnect-fail.py",
+            },
+            handle: route_es_reconnect_fail,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/status-reconnect.py",
+            },
+            handle: route_es_status_reconnect,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/last-event-id2.py",
+            },
+            handle: route_es_last_event_id2,
+        },
+        PyRoute {
+            matches: PyRouteMatch::DirSuffix {
+                dir: "eventsource/",
+                suffix: "/cors-cookie.py",
+            },
+            handle: route_es_cors_cookie,
         },
         PyRoute {
             matches: PyRouteMatch::Exact("html/semantics/scripting-1/the-script-element/module-fetch-tester.py"),
@@ -1270,6 +1536,1983 @@ fn route_xhr_redirect_cors(
     }));
 }
 
+/// xhr authentication 族谓词——authentication.py 全等 + authN 目录三委托端点。
+fn pred_xhr_authentication(clean: &str, _req: &zero_engine::fetch_bridge::FetchRequest) -> bool {
+    clean == "xhr/resources/authentication.py"
+        || (clean.starts_with("xhr/resources/auth")
+            && (clean.ends_with("/auth.py")
+                || clean.ends_with("/corsenabled.py")
+                || clean.ends_with("/corsenabled-no-authorize.py")))
+}
+
+/// status.py 谓词——xhr/ 前缀或 fetch/api/resources/status.py 全等。
+fn pred_status_py(clean: &str, _req: &zero_engine::fetch_bridge::FetchRequest) -> bool {
+    clean.ends_with("/status.py") && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py")
+}
+
+/// fetch/api/resources/ redirect.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_fetch_redirect(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S17/S23 fixture：fetch/api/resources/redirect.py（上游行为
+    // 等价）：ACAO 回显 Origin（无 Origin → *）+ ACAC（Origin 在时）+
+    // ?redirect_status=（默认 302）+ Location（**附全量原 query + count**——
+    // 上游 urlencode(url_parameters) 语义，M4-S23 对齐）。OPTIONS 分支：
+    // 无 ?redirect_preflight → 200 不重定向（preflight 须不跟随——
+    // cors-preflight-redirect 面）；有 → **落穿重定向逻辑返回 redirect_status**
+    //（上游同构——preflight 命中重定向 → fetch 判失败）。
+    // net-api-compat-v3 M1b：升上游逐字语义（pin 315976933870 fetch/api/
+    // resources/redirect.py）——?token= per-token stash {count,preflight}
+    //（take→put，重置走 clean-stash.py）、?max_count= 超限回 200 + 文本
+    // str(count-1)（redirect-count 断言体=跟随跳数）、?simple= 不附 query/
+    // count（redirect-location-escape 断言 resp.url 精确后缀）、
+    // ?redirect_referrerpolicy= → Referrer-Policy 透传（redirect-referrer-
+    // override 面）。无 token 时 count 不持久（每请求回 1——上游 stash
+    // take 未命中即默认 0 语义；process-global 原子计数废除）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let status: u16 = wpt_query_value(query, "redirect_status")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(302);
+    let token = wpt_query_value(query, "token");
+    // stash 值 `count\x1fpreflight`；键 `redirect\x1f{token}` 命名空间——
+    // runner stash 是 flat HashMap（上游 wptserve stash 为 per-token 多键
+    // dict，端点间不冲突），若直写 {token} 键，preflight.py fixture 会把
+    // 首字段 count 误读为 did-preflight（cors-redirect 20 案 P→F 回归根
+    // 因，2026-11-06）；clean-stash.py 同步清两键（上游语义：clean 按
+    // token 抹全部端点状态）。
+    let stash_key = |tok: &str| format!("redirect\x1f{}", tok);
+    let stash_put = |stash: &mut std::collections::HashMap<String, String>, key: &str, count: u64, preflight: &str| {
+        stash.insert(key.to_string(), format!("{}\x1f{}", count, preflight));
+    };
+    let mut count: u64 = 0;
+    let mut preflight_flag = false;
+    if let Some(tok) = &token
+        && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
+        && let Some(v) = stash.remove(&stash_key(tok))
+    {
+        let mut parts = v.split('\x1f');
+        count = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
+        preflight_flag = parts.next() == Some("1");
+    }
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone());
+    let mut headers: Vec<(String, String)> = vec![
+        ("content-type".into(), "text/plain".into()),
+        ("cache-control".into(), "no-cache".into()),
+        ("pragma".into(), "no-cache".into()),
+        (
+            "access-control-allow-origin".into(),
+            origin.clone().unwrap_or_else(|| "*".into()),
+        ),
+    ];
+    if origin.is_some() {
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+    }
+    if req.method == "OPTIONS" {
+        preflight_flag = true;
+        if let Some(allow_headers) = wpt_query_value(query, "allow_headers") {
+            headers.push(("access-control-allow-headers".into(), allow_headers));
+        }
+        if wpt_query_value(query, "redirect_preflight").is_none() {
+            if let (Some(tok), Ok(mut stash)) = (&token, WPT_TOKEN_STASH.lock()) {
+                stash_put(&mut stash, &stash_key(tok), count, "1");
+            }
+            wpt_add_fetch_metadata(&mut headers, req, 200);
+            return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers,
+                body: String::new(),
+                body_bytes: Some(Vec::new()),
+            }));
+        }
+        // redirect_preflight → 落穿：preflight 响应带重定向（fetch 侧拒绝）。
+    }
+    count += 1;
+    // net-api-compat-v3 M3：location 用字节语义变体解码（wptserve/
+    // 浏览器链路上响应头值为字节序列——redirect-location-escape 面
+    // %E2%98%83 → 三字节 Latin-1 字符、%FF → U+00FF 保真）。
+    if let Some(location) = wpt_query_value_bytes(query, "location") {
+        // 上游：scheme ∈ {空,http,https}（urlparse 小写语义——scheme 仅
+        // 认首段 `^[A-Za-z][A-Za-z0-9+.-]*:` 前缀，无前缀即空）且非
+        // ?simple= 时附全量原 query（urlencode——**含 location 键自身**）
+        // + count=N（自变 URL 防循环去重误判）。
+        let scheme_head = location.split(['/', '?', '#']).next().unwrap_or("");
+        let scheme = match scheme_head.split_once(':') {
+            Some((s, _))
+                if !s.is_empty()
+                    && s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                    && s.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) =>
+            {
+                s.to_ascii_lowercase()
+            }
+            _ => String::new(),
+        };
+        let scheme_httpish = scheme.is_empty() || scheme == "http" || scheme == "https";
+        let mut target = location.clone();
+        if scheme_httpish && wpt_query_value(query, "simple").is_none() {
+            let sep = if target.contains('?') { '&' } else { '?' };
+            // 原样携带 raw pair 字节（wpt_query_value 已 percent-decode，
+            // 回填用 raw 段避免二次编解码漂移；上游 urlencode 大写 %XX 与
+            // 语料 encodeURIComponent/escape 产物一致）。
+            target.push(sep);
+            target.push_str(query);
+            target.push_str(&format!("&count={}", count));
+        }
+        headers.push(("location".into(), target));
+    }
+    if let Some(rp) = wpt_query_value(query, "redirect_referrerpolicy") {
+        headers.push(("referrer-policy".into(), rp));
+    }
+    // FIXME(上游 delay 参数)：语料 fetch/api/redirect 无 delay 消费者，
+    // fixture 不睡眠（wptserve time.sleep 等价待有面再接）。
+    if let Some(tok) = &token
+        && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
+    {
+        stash_put(
+            &mut stash,
+            &stash_key(tok),
+            count,
+            if preflight_flag { "1" } else { "0" },
+        );
+        if let Some(max_count) = wpt_query_value(query, "max_count").and_then(|v| v.parse::<u64>().ok())
+            && count > max_count
+        {
+            // 上游：超限停止重定向，200 + str(count-1)（末跳非重定向）。
+            let body = (count - 1).to_string();
+            headers.push(("content-type".into(), "text/plain".into()));
+            wpt_add_fetch_metadata(&mut headers, req, 200);
+            return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers,
+                body: body.clone(),
+                body_bytes: Some(body.into_bytes()),
+            }));
+        }
+    }
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+/// fetch/api/resources/redirect-empty-location.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_fetch_redirect_empty_location(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api-compat-v3 M1b fixture：fetch/api/resources/redirect-empty-
+    // location.py（上游逐字——https://github.com/web-platform-tests/wpt/
+    // blob/3159769/fetch/api/resources/redirect-empty-location.py）：
+    // 302 + 空 Location 头（fetch follow → TypeError、manual →
+    // opaqueredirect）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("location".into(), String::new()));
+    wpt_add_fetch_metadata(&mut headers, req, 302);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 302,
+        status_text: wpt_status_text(302).to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+/// fetch/api/resources/method.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_fetch_method(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api-compat-v3 M1b fixture：fetch/api/resources/method.py（上游
+    // 逐字——https://github.com/web-platform-tests/wpt/blob/3159769/fetch/
+    // api/resources/method.py）：x-request-method/content-type/content-
+    // length/content-encoding/content-language/content-location 回显请求；
+    // 体=请求体（redirect-method 断言重定向后方法/头/体保真）；?cors →
+    // ACAO */ACAC true/ACAM/ACAH + expose x-request-method。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let req_header = |name: &str| -> String {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| "NO".into())
+    };
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if wpt_query_value(query, "cors").is_some() {
+        headers.push(("access-control-allow-origin".into(), "*".into()));
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+        headers.push(("access-control-allow-methods".into(), "GET, POST, PUT, FOO".into()));
+        headers.push(("access-control-allow-headers".into(), "x-test, x-foo".into()));
+        headers.push(("access-control-expose-headers".into(), "x-request-method".into()));
+    }
+    headers.push(("x-request-method".into(), req.method.clone()));
+    headers.push(("x-request-content-type".into(), req_header("content-type")));
+    headers.push(("x-request-content-length".into(), req_header("content-length")));
+    headers.push(("x-request-content-encoding".into(), req_header("content-encoding")));
+    headers.push(("x-request-content-language".into(), req_header("content-language")));
+    headers.push(("x-request-content-location".into(), req_header("content-location")));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    let body_bytes = req
+        .body_bytes
+        .clone()
+        .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec()))
+        .unwrap_or_default();
+    let body_text = String::from_utf8_lossy(&body_bytes).to_string();
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body_text,
+        body_bytes: Some(body_bytes),
+    }));
+}
+/// xhr authentication.py + authN 三委托端点（Custom 谓词） 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_authentication(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api-compat-v3 M2 fixture：xhr/resources/authentication.py 与
+    // auth1-11/{auth.py, corsenabled.py, corsenabled-no-authorize.py}
+    //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
+    // 3159769/xhr/resources/authentication.py；authN/*.py 皆委托
+    // authentication.py，N 目录仅隔离 UA auth 会话缓存）：
+    // 无 Authorization（Basic）→ token(X-User 头) stash 已记 → 200
+    // "FAIL (did not authorize)"；否则 stash 记 token 后 401
+    // Unauthorized + `WWW-Authenticate: Basic realm="test"`（体 "FAIL
+    // (should be transparent)"——UA 凭 open()/URL 凭据透明重试后
+    // 不可见）。有 Authorization → x-challenge DID/DID-NOT（stash take
+    // 判定）+ XHR-USER/SES-USER 头 + 体 `user\npass`。corsenabled 变体
+    // 加 CORS 应答（ACAO 回显 Origin + ACAC true + ACAM GET + ACAH
+    // "authorization, x-user, x-pass"（no-authorize 变体无 authorization）
+    // + expose x-challenge/xhr-user/ses-user），OPTIONS → 200 空体。
+    let req_header = |name: &str| -> Option<String> {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    let token = req_header("x-user");
+    let credentials = req_header("authorization").and_then(|v| {
+        let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
+        use base64::Engine as _;
+        let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+        let (user, pass) = String::from_utf8_lossy(&decoded)
+            .split_once(':')
+            .map(|(u, p)| (u.to_string(), p.to_string()))?;
+        Some((user, pass))
+    });
+    let corsenabled = clean.ends_with("/corsenabled.py") || clean.ends_with("/corsenabled-no-authorize.py");
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    if corsenabled {
+        headers.push((
+            "access-control-allow-origin".into(),
+            req_header("origin").unwrap_or_default(),
+        ));
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+        headers.push(("access-control-allow-methods".into(), "GET".into()));
+        headers.push((
+            "access-control-allow-headers".into(),
+            if clean.ends_with("/corsenabled-no-authorize.py") {
+                "x-user, x-pass".into()
+            } else {
+                "authorization, x-user, x-pass".into()
+            },
+        ));
+        headers.push((
+            "access-control-expose-headers".into(),
+            "x-challenge, xhr-user, ses-user".into(),
+        ));
+        if req.method == "OPTIONS" {
+            wpt_add_fetch_metadata(&mut headers, req, 200);
+            return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers,
+                body: String::new(),
+                body_bytes: Some(Vec::new()),
+            }));
+        }
+    }
+    let Some((user, pass)) = credentials else {
+        let stash_hit = token
+            .as_ref()
+            .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
+            .is_some();
+        if stash_hit {
+            let body = "FAIL (did not authorize)".to_string();
+            wpt_add_fetch_metadata(&mut headers, req, 200);
+            return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+                status: 200,
+                status_text: "OK".to_string(),
+                headers,
+                body: body.clone(),
+                body_bytes: Some(body.into_bytes()),
+            }));
+        }
+        if let Some(t) = &token
+            && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
+        {
+            stash.insert(t.clone(), "1".into());
+        }
+        headers.push(("www-authenticate".into(), "Basic realm=\"test\"".into()));
+        let body = "FAIL (should be transparent)".to_string();
+        wpt_add_fetch_metadata(&mut headers, req, 401);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 401,
+            status_text: "Unauthorized".to_string(),
+            headers,
+            body: body.clone(),
+            body_bytes: Some(body.into_bytes()),
+        }));
+    };
+    let challenge = token
+        .as_ref()
+        .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
+        .is_some_and(|v| v == "1");
+    headers.push(("x-challenge".into(), if challenge { "DID" } else { "DID-NOT" }.into()));
+    if let Some(t) = &token {
+        headers.push(("xhr-user".into(), t.clone()));
+    }
+    headers.push(("ses-user".into(), user.clone()));
+    let body = format!("{}\n{}", user, pass);
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr image.gif 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_image_gif(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S20 fixture：xhr/resources/image.gif（responseurl 重定向
+    // 目标——1×1 GIF 43 字节标准头尾）。
+    let body: Vec<u8> = vec![
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
+        0xff, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b,
+    ];
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "image/gif".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(body),
+    }));
+}
+/// echo-headers.py（Suffix 谓词引入） 臂——注册表切片四迁入，体逐字节保持。
+fn route_echo_headers(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：request-content-length 载体——回显全部请求头
+    // 为 `Name: value` 行（request-content-length.any.js 断言
+    // responseText 含 `Content-Length: <len>`）。
+    // net-api M2-S10：头名逐字回显（不再 title-case——request-headers-case
+    // 「THIS-is-A-test: 1, 2」原始大小写断言面；引擎内部头已按 HTTP 惯例
+    // Title-Case 发出，`Content-Length: <len>` 大小写敏感 includes 面由
+    // 引擎侧保住）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    let mut body = String::new();
+    for (n, v) in &req.headers {
+        body.push_str(&format!("{}: {}\n", n, v));
+    }
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// delay.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_delay(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S20 fixture：xhr/resources/delay.py（上游行为等价——?ms= 延迟
+    // 后回 text/plain "TEST"；延迟由 shim 侧 setTimeout 实现——runner 同步契约
+    // 下 host sleep 冻结 JS，此处立即应答）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    // net-api M5-S10：OPTIONS preflight 应答（ACAO 回显 + ACAM/ACAH ACRM/ACRH
+    // 并入——上游 wptserve 自动应答 preflight 的合规 CORS 服务端语义；
+    // timeout-multiple-fetches「CORS preflights should not reset the timer」
+    // YO 方法面——无此分支时 OPTIONS 落入本 200 应答无 CORS 头 → preflight
+    // 拒 → onerror 而非 ontimeout。M5-S3 eventsource cors.py 同先例）。
+    if req.method == "OPTIONS" {
+        headers.push((
+            "access-control-allow-origin".into(),
+            req.headers
+                .iter()
+                .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+                .map(|(_, v)| v.clone())
+                .unwrap_or_else(|| "*".into()),
+        ));
+        let mut allow_methods: Vec<String> = ["GET", "POST", "HEAD", "OPTIONS"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        if let Some(acrm) = req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+            .map(|(_, v)| v.trim().to_ascii_uppercase())
+            && !acrm.is_empty()
+            && !allow_methods.contains(&acrm)
+        {
+            allow_methods.push(acrm);
+        }
+        headers.push(("access-control-allow-methods".into(), allow_methods.join(", ")));
+        if let Some(acrh) = req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+            .map(|(_, v)| v.trim().to_string())
+            .filter(|v| !v.is_empty())
+        {
+            headers.push(("access-control-allow-headers".into(), acrh));
+        }
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "TEST".to_string(),
+        body_bytes: Some(b"TEST".to_vec()),
+    }));
+}
+/// xhr trickle.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_trickle(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S21 fixture：xhr/resources/trickle.py（上游行为等价——count 块
+    // × 每块 13 字节（与 fetch/api/resources/trickle.py 同 "TEST_TRICKLE\n" 块形，
+    // 单测锚定该体）；specifylength=1 时补 Content-Length: <total>。逐块延迟
+    // 由 finite 模型折叠——响应一次到位，progress 事件由 shim fill 侧派发）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let count = wpt_query_value(query, "count")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(10)
+        .min(128);
+    let body = "TEST_TRICKLE\n".repeat(count);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    if path_part.contains("specifylength=1") {
+        headers.push(("content-length".into(), (count * 13).to_string()));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr top.txt 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_top_txt(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S18 fixture：xhr/resources/top.txt（cors-expose-star 载体，
+    // ?pipe=header(...) 管道头经既有 wpt_pipe_headers 处理）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut headers = wpt_pipe_headers(query);
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "top\n".to_string(),
+        body_bytes: Some(b"top\n".to_vec()),
+    }));
+}
+/// xhr access-control-basic-put-allow 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_basic_put_allow(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S22 fixture：xhr/resources/access-control-basic-put-allow.py
+    //（上游逐字等价——OPTIONS: ACAM PUT + ACAO 回显 + ACAC；PUT: ACAO 回显 +
+    // 体 "PASS: Cross-domain access allowed.\n<body>"，non-cors-safelisted
+    // method 面）。
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    if req.method == "OPTIONS" {
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+        headers.push(("access-control-allow-methods".into(), "PUT".into()));
+        headers.push(("access-control-allow-origin".into(), origin));
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    if req.method == "PUT" {
+        headers.push(("access-control-allow-credentials".into(), "true".into()));
+        headers.push(("access-control-allow-origin".into(), origin));
+        let body = format!(
+            "PASS: Cross-domain access allowed.\n{}",
+            req.body_bytes
+                .as_ref()
+                .map(|b| String::from_utf8_lossy(b).into_owned())
+                .or_else(|| req.body.clone())
+                .unwrap_or_else(|| "Could not read in content.".into())
+        );
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: body.clone(),
+            body_bytes: Some(body.into_bytes()),
+        }));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: format!("Wrong method: {}", req.method),
+        body_bytes: Some(format!("Wrong method: {}", req.method).into_bytes()),
+    }));
+}
+/// xhr reset-token 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_reset_token(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S22 fixture：xhr/resources/reset-token.py（上游逐字等价——
+    // stash[token] 置空 + "PASS"，preflight-cache 族用例起点）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let token = wpt_query_value(query, "token").unwrap_or_default();
+    if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+        stash.insert(token, String::new());
+    }
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    headers.push(("access-control-allow-origin".into(), origin));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "PASS".to_string(),
+        body_bytes: Some(b"PASS".to_vec()),
+    }));
+}
+/// xhr preflight-cache 三联（DirSuffixes） 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_cache(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S22 fixture：xhr/resources/access-control-basic-preflight-cache*
+    // （上游逐字等价的 token 状态机——OPTIONS 到达序断言 preflight cache 行为：
+    // cache.py 二请求须复用缓存、timeout.py 须过期重发、invalidation.py 须
+    // method/header 变更失效。状态迁移见上游 .py 三件）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let token = wpt_query_value(query, "token").unwrap_or_default();
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let is_timeout = clean.ends_with("-timeout.py");
+    let is_invalidation = clean.ends_with("-invalidation.py");
+    // stash take 语义（上游 request.server.stash.take）——缺省或空值均视
+    // Uninitialized（Python falsy：reset-token.py put 的是 b""）。
+    let state = if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+        stash.remove(&token).unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let state = if state.is_empty() {
+        "Uninitialized".to_string()
+    } else {
+        state
+    };
+    let method = req.method.clone();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    headers.push(("access-control-allow-origin".into(), origin));
+    headers.push(("access-control-allow-credentials".into(), "true".into()));
+    let (status, body, next_state) = match state.as_str() {
+        "Uninitialized" => {
+            if method == "OPTIONS" {
+                headers.push(("access-control-allow-methods".into(), "PUT".into()));
+                if is_timeout {
+                    headers.push(("access-control-allow-headers".into(), "x-test".into()));
+                }
+                headers.push((
+                    "access-control-max-age".into(),
+                    if is_timeout { "1".into() } else { "10".into() },
+                ));
+                (200, String::new(), "OPTIONSSent".to_string())
+            } else {
+                (400, format!("FAIL {method}: Uninitialized"), state)
+            }
+        }
+        "OPTIONSSent" => {
+            if method == "PUT" {
+                (200, "PASS: First PUT request.".to_string(), "FirstPUTSent".to_string())
+            } else {
+                (400, format!("FAIL {method}: OPTIONSSent"), state)
+            }
+        }
+        "FirstPUTSent" => {
+            if method == "PUT" && !is_timeout && !is_invalidation {
+                (200, "PASS: Second PUT request. Preflight worked.".to_string(), state)
+            } else if method == "OPTIONS" {
+                headers.push((
+                    "access-control-allow-methods".into(),
+                    if is_invalidation {
+                        "PUT, XMETHOD".into()
+                    } else {
+                        "PUT".into()
+                    },
+                ));
+                if is_timeout || is_invalidation {
+                    headers.push(("access-control-allow-headers".into(), "x-test".into()));
+                }
+                (200, String::new(), "SecondOPTIONSSent".to_string())
+            } else {
+                (
+                    400,
+                    format!("FAIL {method}: Second PUT request sent without preflight"),
+                    state,
+                )
+            }
+        }
+        "SecondOPTIONSSent" => {
+            if method == "PUT" || method == "XMETHOD" {
+                (200, "PASS: Second OPTIONS request was sent.".to_string(), state)
+            } else {
+                (400, format!("FAIL {method}: SecondOPTIONSSent"), state)
+            }
+        }
+        _ => (400, format!("FAIL {method}: {state}"), state),
+    };
+    if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+        stash.insert(token, next_state);
+    }
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr preflight-request-*-returns-* 对（DirSuffixes） 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_returns(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S22 fixture：access-control-preflight-request-*-returns-*.py
+    //（上游逐字等价——OPTIONS: ACAO 回显（或 *）+ ACAH X-Test（或 *）；
+    // GET: ACAO * + X-Test 在 → "PASS"，否则 400）。
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let star_variant = clean.ends_with("-allow-headers-returns-star.py");
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if req.method == "OPTIONS" {
+        headers.push((
+            "access-control-allow-origin".into(),
+            if star_variant { "*".into() } else { origin },
+        ));
+        headers.push((
+            "access-control-allow-headers".into(),
+            if star_variant { "*".into() } else { "X-Test".into() },
+        ));
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    headers.push(("access-control-allow-origin".into(), "*".into()));
+    let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+    if has_x_test {
+        headers.push(("content-type".into(), "text/plain".into()));
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: "PASS".to_string(),
+            body_bytes: Some(b"PASS".to_vec()),
+        }));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, 400);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 400,
+        status_text: wpt_status_text(400).to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+/// xhr headers.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_headers(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/headers.py（上游逐字等价——
+    // getResponseHeader 响应头控制面：同名双值 comma join、空值、UTF-8
+    // 字节值（上游 `u"…".encode("utf-8")` 的 ByteString 头值视图即三字符
+    // U+00E2 U+0080 U+00A6）与 Set-Cookie 隐藏面；Server/Date 为 wptserve
+    // 每响应自动头，fixture 固定合法 IMF-fixdate——server-date 案仅断言
+    // 非 null）。
+    let mut headers: Vec<(String, String)> = vec![
+        ("content-type".into(), "text/plain".into()),
+        ("x-custom-header".into(), "test".into()),
+        ("set-cookie".into(), "test".into()),
+        ("set-cookie2".into(), "test".into()),
+        ("x-custom-header-empty".into(), String::new()),
+        ("x-custom-header-comma".into(), "1".into()),
+        ("x-custom-header-comma".into(), "2".into()),
+        ("x-custom-header-bytes".into(), "\u{00e2}\u{0080}\u{00a6}".into()),
+        ("server".into(), "SimpleHTTP/0.6 Python/3.12".into()),
+        ("date".into(), "Sun, 06 Nov 1994 08:49:37 GMT".into()),
+    ];
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "TEST".to_string(),
+        body_bytes: Some(b"TEST".to_vec()),
+    }));
+}
+/// xhr chunked.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_chunked(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/chunked.py（上游语义等价——Trailer
+    // 声明 + chunked 帧体；runner 管道无传输层，体直给解帧后拼接串，
+    // trailer 头不并入响应头——chunked-trailer 案断言 Trailer 可见而
+    // X-Test-Me 不可见）。
+    let body = "First chunk\r\nSecond chunk\r\nYet another (third) chunk\r\n\
+                Yet another (fourth) chunk\r\n";
+    let mut headers: Vec<(String, String)> = vec![
+        ("transfer-encoding".into(), "chunked".into()),
+        ("trailer".into(), "X-Test-Me".into()),
+        ("content-type".into(), "text/plain".into()),
+    ];
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.to_string(),
+        body_bytes: Some(body.as_bytes().to_vec()),
+    }));
+}
+/// xhr parse-headers.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_parse_headers(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/parse-headers.py（上游逐字等价——
+    // ?my-custom-header= 回显为响应头；头值 HTTP 语义 OWS trim（wptserve
+    // 头解析层行为，等价 JS val.trim() 断言）；值含 NUL 原样下发，由引擎
+    // 响应头 NUL 门转网络错误（headers-normalize-response NUL 族同步
+    // send() 断言 NetworkError）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let val = wpt_query_value(query, "my-custom-header").unwrap_or_default();
+    let trimmed = val.trim_matches(|c| c == ' ' || c == '\t');
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("my-custom-header".into(), trimmed.to_string()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+/// xhr cors-safelisted-response-headers 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_safelisted_response_headers(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
+    // response-headers.py（上游逐字等价——safelisted 七头 + 非 safelisted
+    // x-test 过滤断言面 + ACAO *；content-length 为 wptserve 每响应自动头，
+    // 体 33 字节）。
+    let body = "PASS: Cross-domain access allowed.";
+    let mut headers: Vec<(String, String)> = vec![
+        ("access-control-allow-origin".into(), "*".into()),
+        ("cache-control".into(), "no cache".into()),
+        ("content-language".into(), "en".into()),
+        ("content-length".into(), "33".into()),
+        ("content-type".into(), "text/plain".into()),
+        ("expires".into(), "Fri, 30 Oct 1998 14:19:41 GMT".into()),
+        ("last-modified".into(), "Tue, 15 Nov 1994 12:45:26 GMT".into()),
+        ("pragma".into(), "no-cache".into()),
+        ("x-test".into(), "foobar".into()),
+    ];
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.to_string(),
+        body_bytes: Some(body.as_bytes().to_vec()),
+    }));
+}
+/// xhr cors-safelisted-request-headers 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_safelisted_request_headers(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
+    // request-headers.py（上游逐字等价——safelisted 请求头跨源 POST 直达
+    //（非 POST 拒 400 = 简单请求不预检），回显四头值（缺 <None>）+ ACAO
+    // 回显 + ACAC true + Cache-Control no-store）。
+    let req_header = |name: &str| -> Option<String> {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    let body = format!(
+        "Accept: {}\nAccept-Language: {}\nContent-Language: {}\nContent-Type: {}\n",
+        req_header("accept").unwrap_or_else(|| "<None>".into()),
+        req_header("accept-language").unwrap_or_else(|| "<None>".into()),
+        req_header("content-language").unwrap_or_else(|| "<None>".into()),
+        req_header("content-type").unwrap_or_else(|| "<None>".into()),
+    );
+    let origin = req_header("origin").unwrap_or_default();
+    let mut headers: Vec<(String, String)> = vec![
+        ("cache-control".into(), "no-store".into()),
+        ("access-control-allow-credentials".into(), "true".into()),
+        ("access-control-allow-origin".into(), origin),
+        ("content-type".into(), "text/plain".into()),
+    ];
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr no-custom-header-on-preflight 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_no_custom_header_on_preflight(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/no-custom-header-on-preflight.py
+    //（上游逐字等价——OPTIONS 不得携带自定义头 x-test：携 → 400 FAIL，
+    // 否则 stash[token]=PASS；GET 携 x-test 回显 stash（take 语义，缺省
+    // Uninitialized），否则 400；ACAO * + ACAH x-test + Max-Age 0 恒设）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let token = wpt_query_value(query, "token").unwrap_or_default();
+    let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+    let mut headers: Vec<(String, String)> = vec![
+        ("access-control-allow-origin".into(), "*".into()),
+        ("access-control-allow-headers".into(), "x-test".into()),
+        ("access-control-max-age".into(), "0".into()),
+    ];
+    let (status, body) = if req.method == "OPTIONS" {
+        if has_x_test {
+            (400, "FAIL: Invalid header in preflight request.".to_string())
+        } else {
+            if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+                stash.insert(token, "PASS".to_string());
+            }
+            (200, String::new())
+        }
+    } else if has_x_test {
+        let state = if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
+            stash.remove(&token).unwrap_or_else(|| "Uninitialized".to_string())
+        } else {
+            "Uninitialized".to_string()
+        };
+        (200, state)
+    } else {
+        (400, "FAIL: X-Test header missing in request".to_string())
+    };
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr preflight-request-header-lowercase 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_header_lowercase(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+    // header-lowercase.py（上游逐字等价——OPTIONS 臂 ACRH 逗号表含 x-test
+    // → ACAH X-Test（大写名授权，请求侧匹配须大小写不敏感），否则 400；
+    // GET 臂携 x-test → PASS，否则 400；ACAO * + Max-Age 0 + Cache-Control
+    // no-store 恒设）。
+    let mut headers: Vec<(String, String)> = vec![
+        ("cache-control".into(), "no-store".into()),
+        ("access-control-allow-origin".into(), "*".into()),
+        ("access-control-max-age".into(), "0".into()),
+    ];
+    let acrh = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+        .map(|(_, v)| v.clone());
+    let (status, body) = if req.method == "OPTIONS" {
+        let listed = acrh
+            .map(|v| v.split(',').map(|s| s.trim()).any(|s| s.eq_ignore_ascii_case("x-test")))
+            .unwrap_or(false);
+        if listed {
+            headers.push(("access-control-allow-headers".into(), "X-Test".into()));
+            (200, String::new())
+        } else {
+            (400, String::new())
+        }
+    } else {
+        let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
+        if has_x_test {
+            (200, "PASS".to_string())
+        } else {
+            (400, String::new())
+        }
+    };
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr preflight-request-header-sorted 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_header_sorted(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+    // header-sorted.py（上游逐字等价——OPTIONS 臂 ACRH 须精确等于五头排序
+    // 串（无空格 `,` 连接），不等 → 400；GET 臂携 x-custom-s → PASS，否则
+    // 400 FAIL；ACAO 回显 origin + Cache-Control no-store 恒设）。
+    const SORTED_HEADERS: &str = "x-custom-s,x-custom-test,x-custom-u,x-custom-ua,x-custom-v";
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = vec![
+        ("cache-control".into(), "no-store".into()),
+        ("access-control-allow-origin".into(), origin),
+    ];
+    let acrh = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+        .map(|(_, v)| v.clone());
+    let (status, body) = if req.method == "OPTIONS" {
+        headers.push(("access-control-max-age".into(), "0".into()));
+        headers.push(("access-control-allow-headers".into(), SORTED_HEADERS.into()));
+        if acrh.as_deref() == Some(SORTED_HEADERS) {
+            (200, String::new())
+        } else {
+            (400, String::new())
+        }
+    } else {
+        let has_x_custom_s = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-custom-s"));
+        if has_x_custom_s {
+            (200, "PASS".to_string())
+        } else {
+            (400, "FAIL".to_string())
+        }
+    };
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr preflight-request-headers-origin 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_headers_origin(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+    // headers-origin.py（上游逐字等价——OPTIONS 臂 ACRH 含 "origin" → 400
+    //（spec 禁把 origin 列入 ACRH），否则 ACAH x-pass；GET 臂体 = x-pass
+    // 头值回显；ACAO * + Cache-Control no-store 恒设）。
+    let mut headers: Vec<(String, String)> = vec![
+        ("cache-control".into(), "no-store".into()),
+        ("access-control-allow-origin".into(), "*".into()),
+    ];
+    let acrh = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+        .map(|(_, v)| v.clone());
+    let (status, body) = if req.method == "OPTIONS" {
+        if acrh.map(|v| v.to_lowercase().contains("origin")).unwrap_or(false) {
+            (
+                400,
+                "Error: 'origin' included in Access-Control-Request-Headers".to_string(),
+            )
+        } else {
+            headers.push(("access-control-allow-headers".into(), "x-pass".into()));
+            (200, String::new())
+        }
+    } else {
+        let x_pass = req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("x-pass"))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_default();
+        (200, x_pass)
+    };
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr preflight-request-invalid-status 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_preflight_invalid_status(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2 fixture：xhr/resources/access-control-preflight-request-
+    // invalid-status.py（上游逐字等价——OPTIONS 臂 ?code= 存在 → 该状态码
+    //（301/400/501 面——非 2xx preflight 响应须网络错误），恒设 Max-Age 1 +
+    // ACAH x-pass；GET 臂 200；ACAO 回显 origin + Cache-Control no-store
+    // 恒设）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let code = wpt_query_value(query, "code").and_then(|c| c.parse::<u16>().ok());
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let mut headers: Vec<(String, String)> = vec![
+        ("cache-control".into(), "no-store".into()),
+        ("access-control-allow-origin".into(), origin),
+    ];
+    let status = if req.method == "OPTIONS" {
+        headers.push(("access-control-max-age".into(), "1".into()));
+        headers.push(("access-control-allow-headers".into(), "x-pass".into()));
+        code.unwrap_or(200)
+    } else {
+        200
+    };
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: String::new(),
+        body_bytes: Some(Vec::new()),
+    }));
+}
+/// xhr echo-content-cors 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_echo_content_cors(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S22 fixture：xhr/resources/echo-content-cors.py（上游行为
+    // 等价——ACAO/ACAH/ACAM 回显（?origin= 参数优先于请求头——上游同型怪癖）
+    // + X-Request-* 探针头 + ACAC true + 体回显请求体，cors-upload 面）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let q_origin = wpt_query_value(query, "origin");
+    let req_header = |name: &str| -> Option<String> {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    let origin = q_origin.clone().or_else(|| req_header("origin")).unwrap_or_default();
+    let acrh = q_origin
+        .clone()
+        .or_else(|| req_header("access-control-request-headers"));
+    let acrm = q_origin.or_else(|| req_header("access-control-request-method"));
+    let mut headers: Vec<(String, String)> = vec![
+        ("x-request-method".into(), req.method.clone()),
+        (
+            "x-request-content-length".into(),
+            req_header("content-length").unwrap_or_else(|| "NO".into()),
+        ),
+        (
+            "x-request-content-type".into(),
+            req_header("content-type").unwrap_or_else(|| "NO".into()),
+        ),
+        ("access-control-allow-credentials".into(), "true".into()),
+        ("content-type".into(), "text/plain".into()),
+    ];
+    if !origin.is_empty() {
+        headers.push(("access-control-allow-origin".into(), origin));
+    }
+    if let Some(h) = acrh {
+        headers.push(("access-control-allow-headers".into(), h));
+    }
+    if let Some(m) = acrm {
+        headers.push(("access-control-allow-methods".into(), format!("OPTIONS, {m}")));
+    }
+    let body = req
+        .body_bytes
+        .as_ref()
+        .map(|b| String::from_utf8_lossy(b).into_owned())
+        .or_else(|| req.body.clone())
+        .unwrap_or_default();
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// fetch/api/resources/authentication.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_fetch_authentication(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api-compat-v3 M2 fixture：fetch/api/resources/authentication.py
+    //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
+    // 3159769/fetch/api/resources/authentication.py。与 xhr 版 token
+    // stash 挑战流不同源：固定凭据校验——Basic user:password → 200
+    // "Authentication done"；否则 401 Unauthorized +
+    // `WWW-Authenticate: Basic realm="?realm="（缺省 test）` + 提示体。
+    // 无 CORS 头（上游同形——authentication-basic 相对 URL 同源取回，
+    // resp.type 断言 "basic"）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let credentials = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
+        .and_then(|(_, v)| {
+            let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
+            use base64::Engine as _;
+            let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
+            String::from_utf8_lossy(&decoded)
+                .split_once(':')
+                .map(|(u, p)| (u.to_string(), p.to_string()))
+        });
+    let realm = wpt_query_value(query, "realm").unwrap_or_else(|| "test".to_string());
+    let (status, body) = match credentials {
+        Some((u, p)) if u == "user" && p == "password" => (200, "Authentication done".to_string()),
+        _ => (401, "Please login with credentials 'user' and 'password'".to_string()),
+    };
+    let mut headers: Vec<(String, String)> = vec![("content-type".into(), "text/plain".into())];
+    if status == 401 {
+        headers.push(("www-authenticate".into(), format!("Basic realm=\"{}\"", realm)));
+    }
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: wpt_status_text(status).to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// dump-authorization-header.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_dump_authorization_header(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S17 fixture：fetch/api/resources/dump-authorization-header.py
+    //（上游逐字等价——回显 Authorization 或 "none"；带 Origin → ACAO 回显 +
+    // ACAC true + ACAH Authorization）。net-api-compat-v3 M2 补上游
+    // OPTIONS strip_auth_header=1 臂：预检 ACRH 含 authorization → 500
+    // "fail"（跨源重定向后预检不得携 auth 头——xhr-authorization-
+    // redirect 跨源腿断言面）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone());
+    let auth = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
+        .map(|(_, v)| v.clone());
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/html".into()));
+    headers.push(("cache-control".into(), "no-cache".into()));
+    if req.method == "OPTIONS"
+        && wpt_query_value(query, "strip_auth_header").is_some()
+        && req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+            .map(|(_, v)| v.to_ascii_lowercase().contains("authorization"))
+            .unwrap_or(false)
+    {
+        let body = "fail".to_string();
+        wpt_add_fetch_metadata(&mut headers, req, 500);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 500,
+            status_text: wpt_status_text(500).to_string(),
+            headers,
+            body: body.clone(),
+            body_bytes: Some(body.into_bytes()),
+        }));
+    }
+    match origin {
+        Some(o) => {
+            headers.push(("access-control-allow-origin".into(), o));
+            headers.push(("access-control-allow-credentials".into(), "true".into()));
+        }
+        None => {
+            headers.push(("access-control-allow-origin".into(), "*".into()));
+        }
+    }
+    headers.push(("access-control-allow-headers".into(), "Authorization".into()));
+    let body = auth.unwrap_or_else(|| "none".into());
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr corsenabled 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_corsenabled(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S16 fixture：xhr/resources/corsenabled.py（上游逐字等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+    // corsenabled.py）。CORS 全开（ACAO * + ACAC + methods/headers/expose）+
+    // X-Request-* 探针头 + ?delay=；体 "Test"。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut headers: Vec<(String, String)> = vec![
+        ("access-control-allow-origin".into(), "*".into()),
+        ("access-control-allow-credentials".into(), "true".into()),
+        ("access-control-allow-methods".into(), "GET, POST, PUT, FOO".into()),
+        ("access-control-allow-headers".into(), "x-test, x-foo".into()),
+        (
+            "access-control-expose-headers".into(),
+            "x-request-method, x-request-content-type, x-request-query, x-request-content-length, x-request-data"
+                .into(),
+        ),
+    ];
+    let delay_ms = wpt_query_value(query, "delay")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0)
+        .min(10_000);
+    if delay_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+    }
+    // net-api M3：上游 `?safelist_content_type` → **追加第二条**
+    // `Access-Control-Allow-Headers: content-type`（上游逐字等价补齐——
+    // wpt corsenabled.py safelist_content_type 分支；同名多实例经 Headers
+    // get 合并「x-test, x-foo, content-type」，preflight ACAH 名单即含
+    // content-type。send-redirect-to-cors safelist 族显式 CT 断言面）。
+    if wpt_query_value(query, "safelist_content_type").is_some() {
+        headers.push(("access-control-allow-headers".into(), "content-type".into()));
+    }
+    let req_header = |name: &str| -> Option<String> {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    headers.push(("x-request-method".into(), req.method.clone()));
+    let req_query = path_part
+        .split_once('?')
+        .map(|(_, q)| q.to_string())
+        .unwrap_or_default();
+    headers.push((
+        "x-request-query".into(),
+        if req_query.is_empty() { "NO".into() } else { req_query },
+    ));
+    headers.push((
+        "x-request-content-length".into(),
+        req_header("content-length").unwrap_or_else(|| "NO".into()),
+    ));
+    headers.push((
+        "x-request-content-type".into(),
+        req_header("content-type").unwrap_or_else(|| "NO".into()),
+    ));
+    headers.push((
+        "x-request-data".into(),
+        // net-api M3：上游 `request.body` 回显**任意**体（fetch_bridge 契约
+        // 文本体在 `body`、二进制体在 `body_bytes` 互斥）——旧实现只读
+        // body_bytes，文本体（XHR send(string)/fetch body string）回显空串
+        //（send-redirect-to-cors 307/308 body 断言面）。
+        req.body_bytes
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .or_else(|| req.body.clone())
+            .unwrap_or_default(),
+    ));
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "Test".to_string(),
+        body_bytes: Some(b"Test".to_vec()),
+    }));
+}
+/// xhr redirect.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_redirect(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S16 fixture：xhr/resources/redirect.py（上游逐字等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+    // redirect.py）。?code=（默认 302）+ ?location=（缺省本路径?followed）；
+    // ?followed= → 200 "MAGIC HAPPENED"（Content:Type 破损头照抄——上游语义）；
+    // 否则 → code + Location + "TEST"。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let code: u16 = wpt_query_value(query, "code")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(302);
+    let followed = wpt_query_value(query, "followed").is_some();
+    if followed {
+        let mut headers: Vec<(String, String)> = Vec::new();
+        headers.push(("content:type".into(), "text/plain".into()));
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: "MAGIC HAPPENED".to_string(),
+            body_bytes: Some(b"MAGIC HAPPENED".to_vec()),
+        }));
+    }
+    let location = wpt_query_value(query, "location").unwrap_or_else(|| format!("{}?followed", clean));
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("location".into(), location));
+    wpt_add_fetch_metadata(&mut headers, req, code);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: code,
+        status_text: wpt_status_text(code).to_string(),
+        headers,
+        body: "TEST".to_string(),
+        body_bytes: Some(b"TEST".to_vec()),
+    }));
+}
+/// xhr well-formed.xml 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_well_formed_xml(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S16 fixture：xhr/resources/well-formed.xml（上游逐字——
+    // responseurl-after-abort 的 HEADERS_RECEIVED/LOADING abort 时序载体）。
+    let body = "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n  <p id=\"n&#49;\">1</p>\n  <p xmlns=\"namespacesarejuststrings\" id=\"n2\">2</p>\n</html>\n".to_string();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("access-control-allow-origin".into(), "*".into()));
+    headers.push(("content-type".into(), "application/xml".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// xhr pass.txt 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_pass_txt(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S16 fixture：xhr/resources/pass.txt（abort-progress-events
+    // 的 send+abort 竞态载体——内容不断言，请求须可进入在飞态）。
+    // M4-S18：ACAO *（runner 页面 https 而 get-host-info HTTP_ORIGIN 为 http——
+    // 跨 scheme hop 的 cors check 放行面，runner 环境适配）。
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("access-control-allow-origin".into(), "*".into()));
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: "PASS\n".to_string(),
+        body_bytes: Some(b"PASS\n".to_vec()),
+    }));
+}
+/// xhr content.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_xhr_content(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S15 fixture：xhr/resources/content.py（上游逐字等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+    // content.py）。回显请求体（?content= 覆写）+ Content-type text/plain
+    //（?response_charset_label= 追加 ;charset=）+ X-Request-Method/Query/
+    // Content-Length/Content-Type 请求探针头。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let ctype = match wpt_query_value(query, "response_charset_label") {
+        Some(label) => format!("text/plain;charset={}", label),
+        None => "text/plain".to_string(),
+    };
+    headers.push(("content-type".into(), ctype));
+    headers.push(("x-request-method".into(), req.method.clone()));
+    let req_query = path_part
+        .split_once('?')
+        .map(|(_, q)| q.to_string())
+        .unwrap_or_default();
+    headers.push((
+        "x-request-query".into(),
+        if req_query.is_empty() { "NO".into() } else { req_query },
+    ));
+    let req_header = |name: &str| -> Option<String> {
+        req.headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case(name))
+            .map(|(_, v)| v.clone())
+    };
+    headers.push((
+        "x-request-content-length".into(),
+        req_header("content-length").unwrap_or_else(|| "NO".into()),
+    ));
+    headers.push((
+        "x-request-content-type".into(),
+        req_header("content-type").unwrap_or_else(|| "NO".into()),
+    ));
+    let body = wpt_query_value(query, "content").unwrap_or_else(|| {
+        let bytes_body = req
+            .body_bytes
+            .as_ref()
+            .map(|b| String::from_utf8_lossy(b).into_owned())
+            .unwrap_or_default();
+        if bytes_body.is_empty() {
+            req.body.clone().unwrap_or_default()
+        } else {
+            bytes_body
+        }
+    });
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// status.py（xhr/ 前缀 + fetch/api 精确——Custom 谓词） 臂——注册表切片四迁入，体逐字节保持。
+fn route_status_py(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M2-S3c：fetch/api/resources/status.py 同语义接入——上游
+    // fetch/api/resources/status.py 与 xhr/resources/status.py 逐字同源
+    //（code/text/content/type + X-Request-Method）。此前仅 xhr/ 前缀
+    // 命中，fetch/api 面落静态读库 404（response-null-body「expected
+    // 204 but got 404」、text-utf8 fetched-data 族）。
+    // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
+    // status.py）。?code=（默认 200）&text=（默认 OMG）&content=&type=
+    // → 自定义状态行 + Content-Type + body。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let code: u16 = wpt_query_value(query, "code")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let text = wpt_query_value(query, "text").unwrap_or_else(|| "OMG".into());
+    // net-api M3-S2：content 保留原始字节（%XX → byte——shift-jis 等非 UTF-8
+    // 测试载荷经 body_bytes 保真，不落 lossy UTF-8）。
+    // net-api M3（六）：解码走 `wpt_query_value_bytes`（逐字节 Latin-1 映射）
+    // 再 char→u8 还原——旧实现经 `wpt_query_value`（UTF-8 lossy）后二次
+    // percent-decode，非 UTF-8 载荷（%83%65…、%FF、%C2%F0）已被 lossy 成
+    // U+FFFD 字节，engine 侧 override/charset 解码面永不可能命中。
+    let content_bytes: Vec<u8> = wpt_query_value_bytes(query, "content")
+        .map(|v| v.chars().map(|c| c as u8).collect())
+        .unwrap_or_default();
+    let ctype = wpt_query_value(query, "type").unwrap_or_default();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), ctype));
+    headers.push(("x-request-method".into(), req.method.clone()));
+    wpt_add_fetch_metadata(&mut headers, req, code);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: code,
+        status_text: text,
+        headers,
+        body: String::from_utf8_lossy(&content_bytes).into_owned(),
+        body_bytes: Some(content_bytes),
+    }));
+}
+/// eventsource message.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_message(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S12 fixture：eventsource/resources/message.py（上游逐字等价——
+    // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
+    // message.py）。?mime=（默认 text/event-stream）&message=（默认 data: data）
+    // &newline=none（尾 \n\n 省略）&sleep=（ms）→ SSE 单响应。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let mime = wpt_query_value(query, "mime").unwrap_or_else(|| "text/event-stream".into());
+    let message = wpt_query_value(query, "message").unwrap_or_else(|| "data: data".into());
+    let newline = if wpt_query_value(query, "newline").as_deref() == Some("none") {
+        ""
+    } else {
+        "\n\n"
+    };
+    let sleep_ms = wpt_query_value(query, "sleep")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0)
+        .min(10_000);
+    if sleep_ms > 0 {
+        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+    }
+    let body = format!("{}{}\n", message, newline);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), mime));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource message2.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_message2(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S12 fixture：eventsource/resources/message2.py（上游为无限循环
+    // 流式写——headless 有限流模型取一轮循环体即覆盖页面断言的前三个事件；
+    // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
+    // message2.py）。
+    let body = "data:msg\ndata: msg\n\n:\nfalsefield:msg\n\nfalsefield:msg\n\n\
+                Data:data\n\ndata\n\ndata:end\n\n"
+        .to_string();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    headers.push(("cache-control".into(), "no-cache".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource last-event-id.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_last_event_id(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S12 fixture：eventsource/resources/last-event-id.py（上游逐字
+    // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
+    // resources/last-event-id.py）。带 Last-Event-ID 请求头则回 `data: <id>`，
+    // 否则回 `id: <idvalue 默认 …>\nretry: 200\ndata: hello`（重连面）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let last_id = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    let body = if !last_id.is_empty() {
+        format!("data: {}\n\n", last_id)
+    } else {
+        let idvalue = wpt_query_value(query, "idvalue").unwrap_or_else(|| "\u{2026}".into());
+        format!("id: {}\nretry: 200\ndata: hello\n\n", idvalue)
+    };
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource .event_stream 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_event_stream(
+    _ctx: &PyEndpointCtx,
+    clean: &str,
+    _path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4-S12 fixture：eventsource/resources/accept.event_stream 与
+    // cache-control.event_stream（上游为 wptserve 模板文件
+    // `data: {{headers[<name>]}}`——按文件名回显对应请求头；
+    // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/）。
+    let header_name = clean
+        .rsplit('/')
+        .next()
+        .and_then(|f| f.strip_suffix(".event_stream"))
+        .unwrap_or("accept");
+    let echoed = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(header_name))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let body = format!("data: {}\n\n", echoed);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource reconnect-fail.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_reconnect_fail(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let es_cookie_stash = &ctx.es_cookie_stash;
+    // net-api M4 fixture：eventsource/resources/reconnect-fail.py（上游逐字
+    // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
+    // resources/reconnect-fail.py）。cookie 态机：无态 → 200 `retry: 2`+
+    // `data: opened`（置态 opened）；opened → 200 `data: reconnected`（置态
+    // reconnected）；reconnected → 204 `data: closed`（清态——status ≠ 200，
+    // ES fail the connection，体不达）。cookie 往返以 es_cookie_stash 承载。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let name = format!("recon_fail_{}", wpt_query_value(query, "id").unwrap_or_default());
+    let mut jar = match es_cookie_stash.lock() {
+        Ok(j) => j,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    let (status, status_text, body) = match jar.remove(&name).as_deref() {
+        Some("opened") => {
+            jar.insert(name, "reconnected".to_string());
+            (200u16, "RECONNECT", "data: reconnected\n\n".to_string())
+        }
+        Some("reconnected") => (204, "NO CONTENT (CLOSE)", "data: closed\n\n".to_string()),
+        _ => {
+            jar.insert(name, "opened".to_string());
+            (200, "OPEN", "retry: 2\ndata: opened\n\n".to_string())
+        }
+    };
+    drop(jar);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: status_text.to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource status-reconnect.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_status_reconnect(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let es_cookie_stash = &ctx.es_cookie_stash;
+    // net-api M4 fixture：eventsource/resources/status-reconnect.py（上游逐字
+    // 等价——同 pin reconnect-fail.py 形态的 cookie 态机；cors.py run=
+    // status-reconnect 委派同一实现）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text,
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource last-event-id2.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_last_event_id2(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    // net-api M4 fixture：eventsource/resources/last-event-id2.py（上游逐字
+    // 等价——同 pin）。?type 静态三流：1 = id 持续（id:1 两条 + id:2 两条）；
+    // 2 = `id:` 空 id 字段重置 lastEventId；3 = 裸 `id`（无冒号）同样重置
+    // （spec §9.2.6 id 字段处理——字段值空串进缓冲）。type 4+ → invalid_test
+    // （上游 else 臂）；type 解析失败 → 1（上游 except 臂）。
+    let test_type = path_part
+        .split_once('?')
+        .map(|(_, q)| q)
+        .and_then(|q| wpt_query_value(q, "type"))
+        .map(|v| v.parse::<u8>().unwrap_or(1))
+        .unwrap_or(1);
+    let body = match test_type {
+        2 => "id: 1\ndata: 1\n\nid:\ndata:2\n\ndata:3\n\n",
+        3 => "id: 1\ndata: 1\n\nid\ndata:2\n\ndata:3\n\n",
+        _ => "id: 1\ndata: 1\n\ndata: 2\n\nid: 2\ndata:3\n\ndata:4\n\n",
+    };
+    let body = if test_type > 3 {
+        "data: invalid_test\n\n".to_string()
+    } else {
+        body.to_string()
+    };
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/event-stream".into()));
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+/// eventsource cors-cookie.py 臂——注册表切片四迁入，体逐字节保持。
+fn route_es_cors_cookie(
+    ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let es_cookie_stash = &ctx.es_cookie_stash;
+    // net-api M4 fixture：eventsource/resources/cors-cookie.py（上游逐字等价
+    // ——同 pin）。Last-Event-ID 缺省 → `id: 1`+`retry: 200`+`data: first
+    // <cookie>` 并置 cookie；`Last-Event-ID: 1` → `id: 2`+`data: second
+    // <cookie>` 并清 cookie（上游 expires 过去时刻——删除语义等价）；其余 →
+    // Content-Type: stop。cookie 值 = 表含 ident 且请求以 credentials mode
+    // include 发出 → "COOKIE"，否则 "NO_COOKIE"——runner 无 jar，跨源送达面
+    // 以 FetchRequest.credentials 判定（RFC 6265bis §5.4——get-set-cookie.py
+    // secure 同款先例；首次请求 cookie 未置，恒 NO_COOKIE）。
+    // ACAO ← ?origin=（缺省回显请求 Origin 头；none → 不设）；ACAC ←
+    // ?credentials=（缺省 true；none → 不设）。
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let last_event_id = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    let ident = wpt_query_value(query, "ident").unwrap_or_else(|| "test".into());
+    let req_origin = req
+        .headers
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
+        .map(|(_, v)| v.clone())
+        .unwrap_or_default();
+    let origin = wpt_query_value(query, "origin").unwrap_or(req_origin);
+    let credentials = wpt_query_value(query, "credentials").unwrap_or_else(|| "true".into());
+    let mut jar = match es_cookie_stash.lock() {
+        Ok(j) => j,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    // 上游 cookie 判定先于本响应 set_cookie（request.cookies 为请求所携）。
+    let cookie = if jar.contains_key(&ident) && req.credentials.as_deref() == Some("include") {
+        "COOKIE"
+    } else {
+        "NO_COOKIE"
+    };
+    let mut headers: Vec<(String, String)> = Vec::new();
+    if origin != "none" {
+        headers.push(("access-control-allow-origin".into(), origin));
+    }
+    if credentials != "none" {
+        headers.push(("access-control-allow-credentials".into(), credentials));
+    }
+    if req.method == "OPTIONS" {
+        // OPTIONS preflight 先于状态机应答（ES withCredentials 跨源恒
+        // preflight——Cache-Control 非 safelisted；ACAM ← 回显 ACRM、
+        // ACAH ← 回显 ACRH，2xx + 空 body，状态不消费）。
+        let acrm = req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| "GET".into());
+        let acrh = req
+            .headers
+            .iter()
+            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| "cache-control".into());
+        headers.push(("access-control-allow-methods".into(), acrm));
+        headers.push(("access-control-allow-headers".into(), acrh));
+        wpt_add_fetch_metadata(&mut headers, req, 200);
+        return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+            status: 200,
+            status_text: "OK".to_string(),
+            headers,
+            body: String::new(),
+            body_bytes: Some(Vec::new()),
+        }));
+    }
+    let body = if last_event_id.is_empty() {
+        jar.insert(ident, "COOKIE".to_string());
+        headers.push(("content-type".into(), "text/event-stream".into()));
+        format!("id: 1\nretry: 200\ndata: first {}\n\n", cookie)
+    } else if last_event_id == "1" {
+        jar.remove(&ident);
+        headers.push(("content-type".into(), "text/event-stream".into()));
+        format!("id: 2\ndata: second {}\n\n", cookie)
+    } else {
+        headers.push(("content-type".into(), "stop".into()));
+        format!("data: {}{}\n\n", last_event_id, cookie)
+    };
+    drop(jar);
+    wpt_add_fetch_metadata(&mut headers, req, 200);
+    return Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status: 200,
+        status_text: "OK".to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }));
+}
+
 /// fetch handler 分派入口——原闭包体逐字节迁出（testharness.rs 原位只剩
 /// ctx 构建 + 本调用）；臂序/行为不变，后续批次在本文件内逐族转注册项。
 pub(crate) fn dispatch(
@@ -1313,1791 +3556,6 @@ pub(crate) fn dispatch(
         if let Some(result) = (route.handle)(ctx, clean, &path_part, req) {
             return result;
         }
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/redirect-cors.py") {
-        // net-api M4-S17 fixture：xhr/resources/redirect-cors.py（上游行为等价——
-        // GET → 302 + Location；?allow_origin= 回显 Origin、?allow_header= 透传
-        // ACAH；OPTIONS preflight 面待 engine preflight 语义，此实现 GET 面）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let location = wpt_query_value(query, "location").unwrap_or_default();
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        if req.method == "OPTIONS" {
-            // 上游语义：preflight 不重定向（redirect_preflight 才 302）+ ACAM/Max-Age。
-            headers.push(("access-control-allow-methods".into(), "GET".into()));
-            headers.push(("access-control-max-age".into(), "1".into()));
-            if wpt_query_value(query, "allow_origin").is_some() {
-                headers.push(("access-control-allow-origin".into(), origin));
-            }
-            if let Some(allow_header) = wpt_query_value(query, "allow_header") {
-                headers.push(("access-control-allow-headers".into(), allow_header));
-            }
-            let preflight_redirect = wpt_query_value(query, "redirect_preflight").is_some();
-            let status: u16 = if preflight_redirect { 302 } else { 200 };
-            if preflight_redirect {
-                headers.push(("location".into(), location));
-            }
-            wpt_add_fetch_metadata(&mut headers, req, status);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status,
-                status_text: wpt_status_text(status).to_string(),
-                headers,
-                body: String::new(),
-                body_bytes: Some(Vec::new()),
-            });
-        }
-        headers.push(("location".into(), location));
-        if wpt_query_value(query, "allow_origin").is_some() {
-            headers.push(("access-control-allow-origin".into(), origin));
-        }
-        if let Some(allow_header) = wpt_query_value(query, "allow_header") {
-            headers.push(("access-control-allow-headers".into(), allow_header));
-        }
-        wpt_add_fetch_metadata(&mut headers, req, 302);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 302,
-            status_text: wpt_status_text(302).to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean.starts_with("fetch/api/resources/") && clean.ends_with("/redirect.py") {
-        // net-api M4-S17/S23 fixture：fetch/api/resources/redirect.py（上游行为
-        // 等价）：ACAO 回显 Origin（无 Origin → *）+ ACAC（Origin 在时）+
-        // ?redirect_status=（默认 302）+ Location（**附全量原 query + count**——
-        // 上游 urlencode(url_parameters) 语义，M4-S23 对齐）。OPTIONS 分支：
-        // 无 ?redirect_preflight → 200 不重定向（preflight 须不跟随——
-        // cors-preflight-redirect 面）；有 → **落穿重定向逻辑返回 redirect_status**
-        //（上游同构——preflight 命中重定向 → fetch 判失败）。
-        // net-api-compat-v3 M1b：升上游逐字语义（pin 315976933870 fetch/api/
-        // resources/redirect.py）——?token= per-token stash {count,preflight}
-        //（take→put，重置走 clean-stash.py）、?max_count= 超限回 200 + 文本
-        // str(count-1)（redirect-count 断言体=跟随跳数）、?simple= 不附 query/
-        // count（redirect-location-escape 断言 resp.url 精确后缀）、
-        // ?redirect_referrerpolicy= → Referrer-Policy 透传（redirect-referrer-
-        // override 面）。无 token 时 count 不持久（每请求回 1——上游 stash
-        // take 未命中即默认 0 语义；process-global 原子计数废除）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let status: u16 = wpt_query_value(query, "redirect_status")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(302);
-        let token = wpt_query_value(query, "token");
-        // stash 值 `count\x1fpreflight`；键 `redirect\x1f{token}` 命名空间——
-        // runner stash 是 flat HashMap（上游 wptserve stash 为 per-token 多键
-        // dict，端点间不冲突），若直写 {token} 键，preflight.py fixture 会把
-        // 首字段 count 误读为 did-preflight（cors-redirect 20 案 P→F 回归根
-        // 因，2026-11-06）；clean-stash.py 同步清两键（上游语义：clean 按
-        // token 抹全部端点状态）。
-        let stash_key = |tok: &str| format!("redirect\x1f{}", tok);
-        let stash_put =
-            |stash: &mut std::collections::HashMap<String, String>, key: &str, count: u64, preflight: &str| {
-                stash.insert(key.to_string(), format!("{}\x1f{}", count, preflight));
-            };
-        let mut count: u64 = 0;
-        let mut preflight_flag = false;
-        if let Some(tok) = &token
-            && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
-            && let Some(v) = stash.remove(&stash_key(tok))
-        {
-            let mut parts = v.split('\x1f');
-            count = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
-            preflight_flag = parts.next() == Some("1");
-        }
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone());
-        let mut headers: Vec<(String, String)> = vec![
-            ("content-type".into(), "text/plain".into()),
-            ("cache-control".into(), "no-cache".into()),
-            ("pragma".into(), "no-cache".into()),
-            (
-                "access-control-allow-origin".into(),
-                origin.clone().unwrap_or_else(|| "*".into()),
-            ),
-        ];
-        if origin.is_some() {
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-        }
-        if req.method == "OPTIONS" {
-            preflight_flag = true;
-            if let Some(allow_headers) = wpt_query_value(query, "allow_headers") {
-                headers.push(("access-control-allow-headers".into(), allow_headers));
-            }
-            if wpt_query_value(query, "redirect_preflight").is_none() {
-                if let (Some(tok), Ok(mut stash)) = (&token, WPT_TOKEN_STASH.lock()) {
-                    stash_put(&mut stash, &stash_key(tok), count, "1");
-                }
-                wpt_add_fetch_metadata(&mut headers, req, 200);
-                return Ok(zero_engine::fetch_bridge::FetchResponse {
-                    status: 200,
-                    status_text: "OK".to_string(),
-                    headers,
-                    body: String::new(),
-                    body_bytes: Some(Vec::new()),
-                });
-            }
-            // redirect_preflight → 落穿：preflight 响应带重定向（fetch 侧拒绝）。
-        }
-        count += 1;
-        // net-api-compat-v3 M3：location 用字节语义变体解码（wptserve/
-        // 浏览器链路上响应头值为字节序列——redirect-location-escape 面
-        // %E2%98%83 → 三字节 Latin-1 字符、%FF → U+00FF 保真）。
-        if let Some(location) = wpt_query_value_bytes(query, "location") {
-            // 上游：scheme ∈ {空,http,https}（urlparse 小写语义——scheme 仅
-            // 认首段 `^[A-Za-z][A-Za-z0-9+.-]*:` 前缀，无前缀即空）且非
-            // ?simple= 时附全量原 query（urlencode——**含 location 键自身**）
-            // + count=N（自变 URL 防循环去重误判）。
-            let scheme_head = location.split(['/', '?', '#']).next().unwrap_or("");
-            let scheme = match scheme_head.split_once(':') {
-                Some((s, _))
-                    if !s.is_empty()
-                        && s.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-                        && s.chars()
-                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')) =>
-                {
-                    s.to_ascii_lowercase()
-                }
-                _ => String::new(),
-            };
-            let scheme_httpish = scheme.is_empty() || scheme == "http" || scheme == "https";
-            let mut target = location.clone();
-            if scheme_httpish && wpt_query_value(query, "simple").is_none() {
-                let sep = if target.contains('?') { '&' } else { '?' };
-                // 原样携带 raw pair 字节（wpt_query_value 已 percent-decode，
-                // 回填用 raw 段避免二次编解码漂移；上游 urlencode 大写 %XX 与
-                // 语料 encodeURIComponent/escape 产物一致）。
-                target.push(sep);
-                target.push_str(query);
-                target.push_str(&format!("&count={}", count));
-            }
-            headers.push(("location".into(), target));
-        }
-        if let Some(rp) = wpt_query_value(query, "redirect_referrerpolicy") {
-            headers.push(("referrer-policy".into(), rp));
-        }
-        // FIXME(上游 delay 参数)：语料 fetch/api/redirect 无 delay 消费者，
-        // fixture 不睡眠（wptserve time.sleep 等价待有面再接）。
-        if let Some(tok) = &token
-            && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
-        {
-            stash_put(
-                &mut stash,
-                &stash_key(tok),
-                count,
-                if preflight_flag { "1" } else { "0" },
-            );
-            if let Some(max_count) = wpt_query_value(query, "max_count").and_then(|v| v.parse::<u64>().ok())
-                && count > max_count
-            {
-                // 上游：超限停止重定向，200 + str(count-1)（末跳非重定向）。
-                let body = (count - 1).to_string();
-                headers.push(("content-type".into(), "text/plain".into()));
-                wpt_add_fetch_metadata(&mut headers, req, 200);
-                return Ok(zero_engine::fetch_bridge::FetchResponse {
-                    status: 200,
-                    status_text: "OK".to_string(),
-                    headers,
-                    body: body.clone(),
-                    body_bytes: Some(body.into_bytes()),
-                });
-            }
-        }
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean == "fetch/api/resources/redirect-empty-location.py" {
-        // net-api-compat-v3 M1b fixture：fetch/api/resources/redirect-empty-
-        // location.py（上游逐字——https://github.com/web-platform-tests/wpt/
-        // blob/3159769/fetch/api/resources/redirect-empty-location.py）：
-        // 302 + 空 Location 头（fetch follow → TypeError、manual →
-        // opaqueredirect）。
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("location".into(), String::new()));
-        wpt_add_fetch_metadata(&mut headers, req, 302);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 302,
-            status_text: wpt_status_text(302).to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean == "fetch/api/resources/method.py" {
-        // net-api-compat-v3 M1b fixture：fetch/api/resources/method.py（上游
-        // 逐字——https://github.com/web-platform-tests/wpt/blob/3159769/fetch/
-        // api/resources/method.py）：x-request-method/content-type/content-
-        // length/content-encoding/content-language/content-location 回显请求；
-        // 体=请求体（redirect-method 断言重定向后方法/头/体保真）；?cors →
-        // ACAO */ACAC true/ACAM/ACAH + expose x-request-method。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let req_header = |name: &str| -> String {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| "NO".into())
-        };
-        let mut headers: Vec<(String, String)> = Vec::new();
-        if wpt_query_value(query, "cors").is_some() {
-            headers.push(("access-control-allow-origin".into(), "*".into()));
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-            headers.push(("access-control-allow-methods".into(), "GET, POST, PUT, FOO".into()));
-            headers.push(("access-control-allow-headers".into(), "x-test, x-foo".into()));
-            headers.push(("access-control-expose-headers".into(), "x-request-method".into()));
-        }
-        headers.push(("x-request-method".into(), req.method.clone()));
-        headers.push(("x-request-content-type".into(), req_header("content-type")));
-        headers.push(("x-request-content-length".into(), req_header("content-length")));
-        headers.push(("x-request-content-encoding".into(), req_header("content-encoding")));
-        headers.push(("x-request-content-language".into(), req_header("content-language")));
-        headers.push(("x-request-content-location".into(), req_header("content-location")));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        let body_bytes = req
-            .body_bytes
-            .clone()
-            .or_else(|| req.body.as_ref().map(|b| b.as_bytes().to_vec()))
-            .unwrap_or_default();
-        let body_text = String::from_utf8_lossy(&body_bytes).to_string();
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body_text,
-            body_bytes: Some(body_bytes),
-        });
-    }
-    if clean == "xhr/resources/authentication.py"
-        || (clean.starts_with("xhr/resources/auth")
-            && (clean.ends_with("/auth.py")
-                || clean.ends_with("/corsenabled.py")
-                || clean.ends_with("/corsenabled-no-authorize.py")))
-    {
-        // net-api-compat-v3 M2 fixture：xhr/resources/authentication.py 与
-        // auth1-11/{auth.py, corsenabled.py, corsenabled-no-authorize.py}
-        //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
-        // 3159769/xhr/resources/authentication.py；authN/*.py 皆委托
-        // authentication.py，N 目录仅隔离 UA auth 会话缓存）：
-        // 无 Authorization（Basic）→ token(X-User 头) stash 已记 → 200
-        // "FAIL (did not authorize)"；否则 stash 记 token 后 401
-        // Unauthorized + `WWW-Authenticate: Basic realm="test"`（体 "FAIL
-        // (should be transparent)"——UA 凭 open()/URL 凭据透明重试后
-        // 不可见）。有 Authorization → x-challenge DID/DID-NOT（stash take
-        // 判定）+ XHR-USER/SES-USER 头 + 体 `user\npass`。corsenabled 变体
-        // 加 CORS 应答（ACAO 回显 Origin + ACAC true + ACAM GET + ACAH
-        // "authorization, x-user, x-pass"（no-authorize 变体无 authorization）
-        // + expose x-challenge/xhr-user/ses-user），OPTIONS → 200 空体。
-        let req_header = |name: &str| -> Option<String> {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-        };
-        let token = req_header("x-user");
-        let credentials = req_header("authorization").and_then(|v| {
-            let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
-            use base64::Engine as _;
-            let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
-            let (user, pass) = String::from_utf8_lossy(&decoded)
-                .split_once(':')
-                .map(|(u, p)| (u.to_string(), p.to_string()))?;
-            Some((user, pass))
-        });
-        let corsenabled = clean.ends_with("/corsenabled.py") || clean.ends_with("/corsenabled-no-authorize.py");
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        if corsenabled {
-            headers.push((
-                "access-control-allow-origin".into(),
-                req_header("origin").unwrap_or_default(),
-            ));
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-            headers.push(("access-control-allow-methods".into(), "GET".into()));
-            headers.push((
-                "access-control-allow-headers".into(),
-                if clean.ends_with("/corsenabled-no-authorize.py") {
-                    "x-user, x-pass".into()
-                } else {
-                    "authorization, x-user, x-pass".into()
-                },
-            ));
-            headers.push((
-                "access-control-expose-headers".into(),
-                "x-challenge, xhr-user, ses-user".into(),
-            ));
-            if req.method == "OPTIONS" {
-                wpt_add_fetch_metadata(&mut headers, req, 200);
-                return Ok(zero_engine::fetch_bridge::FetchResponse {
-                    status: 200,
-                    status_text: "OK".to_string(),
-                    headers,
-                    body: String::new(),
-                    body_bytes: Some(Vec::new()),
-                });
-            }
-        }
-        let Some((user, pass)) = credentials else {
-            let stash_hit = token
-                .as_ref()
-                .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
-                .is_some();
-            if stash_hit {
-                let body = "FAIL (did not authorize)".to_string();
-                wpt_add_fetch_metadata(&mut headers, req, 200);
-                return Ok(zero_engine::fetch_bridge::FetchResponse {
-                    status: 200,
-                    status_text: "OK".to_string(),
-                    headers,
-                    body: body.clone(),
-                    body_bytes: Some(body.into_bytes()),
-                });
-            }
-            if let Some(t) = &token
-                && let Ok(mut stash) = WPT_TOKEN_STASH.lock()
-            {
-                stash.insert(t.clone(), "1".into());
-            }
-            headers.push(("www-authenticate".into(), "Basic realm=\"test\"".into()));
-            let body = "FAIL (should be transparent)".to_string();
-            wpt_add_fetch_metadata(&mut headers, req, 401);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 401,
-                status_text: "Unauthorized".to_string(),
-                headers,
-                body: body.clone(),
-                body_bytes: Some(body.into_bytes()),
-            });
-        };
-        let challenge = token
-            .as_ref()
-            .and_then(|t| WPT_TOKEN_STASH.lock().ok().and_then(|mut s| s.remove(t)))
-            .is_some_and(|v| v == "1");
-        headers.push(("x-challenge".into(), if challenge { "DID" } else { "DID-NOT" }.into()));
-        if let Some(t) = &token {
-            headers.push(("xhr-user".into(), t.clone()));
-        }
-        headers.push(("ses-user".into(), user.clone()));
-        let body = format!("{}\n{}", user, pass);
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/image.gif") {
-        // net-api M4-S20 fixture：xhr/resources/image.gif（responseurl 重定向
-        // 目标——1×1 GIF 43 字节标准头尾）。
-        let body: Vec<u8> = vec![
-            0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff,
-            0xff, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b,
-        ];
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "image/gif".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(body),
-        });
-    }
-    if clean.ends_with("/echo-headers.py") {
-        // net-api M4-S21 fixture：request-content-length 载体——回显全部请求头
-        // 为 `Name: value` 行（request-content-length.any.js 断言
-        // responseText 含 `Content-Length: <len>`）。
-        // net-api M2-S10：头名逐字回显（不再 title-case——request-headers-case
-        // 「THIS-is-A-test: 1, 2」原始大小写断言面；引擎内部头已按 HTTP 惯例
-        // Title-Case 发出，`Content-Length: <len>` 大小写敏感 includes 面由
-        // 引擎侧保住）。
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        let mut body = String::new();
-        for (n, v) in &req.headers {
-            body.push_str(&format!("{}: {}\n", n, v));
-        }
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.ends_with("/delay.py") {
-        // net-api M4-S20 fixture：xhr/resources/delay.py（上游行为等价——?ms= 延迟
-        // 后回 text/plain "TEST"；延迟由 shim 侧 setTimeout 实现——runner 同步契约
-        // 下 host sleep 冻结 JS，此处立即应答）。
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        // net-api M5-S10：OPTIONS preflight 应答（ACAO 回显 + ACAM/ACAH ACRM/ACRH
-        // 并入——上游 wptserve 自动应答 preflight 的合规 CORS 服务端语义；
-        // timeout-multiple-fetches「CORS preflights should not reset the timer」
-        // YO 方法面——无此分支时 OPTIONS 落入本 200 应答无 CORS 头 → preflight
-        // 拒 → onerror 而非 ontimeout。M5-S3 eventsource cors.py 同先例）。
-        if req.method == "OPTIONS" {
-            headers.push((
-                "access-control-allow-origin".into(),
-                req.headers
-                    .iter()
-                    .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_else(|| "*".into()),
-            ));
-            let mut allow_methods: Vec<String> = ["GET", "POST", "HEAD", "OPTIONS"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect();
-            if let Some(acrm) = req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
-                .map(|(_, v)| v.trim().to_ascii_uppercase())
-                && !acrm.is_empty()
-                && !allow_methods.contains(&acrm)
-            {
-                allow_methods.push(acrm);
-            }
-            headers.push(("access-control-allow-methods".into(), allow_methods.join(", ")));
-            if let Some(acrh) = req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-                .map(|(_, v)| v.trim().to_string())
-                .filter(|v| !v.is_empty())
-            {
-                headers.push(("access-control-allow-headers".into(), acrh));
-            }
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: String::new(),
-                body_bytes: Some(Vec::new()),
-            });
-        }
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "TEST".to_string(),
-            body_bytes: Some(b"TEST".to_vec()),
-        });
-    }
-    if clean == "xhr/resources/trickle.py" {
-        // net-api M4-S21 fixture：xhr/resources/trickle.py（上游行为等价——count 块
-        // × 每块 13 字节（与 fetch/api/resources/trickle.py 同 "TEST_TRICKLE\n" 块形，
-        // 单测锚定该体）；specifylength=1 时补 Content-Length: <total>。逐块延迟
-        // 由 finite 模型折叠——响应一次到位，progress 事件由 shim fill 侧派发）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let count = wpt_query_value(query, "count")
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(10)
-            .min(128);
-        let body = "TEST_TRICKLE\n".repeat(count);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        if path_part.contains("specifylength=1") {
-            headers.push(("content-length".into(), (count * 13).to_string()));
-        }
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean == "xhr/resources/top.txt" {
-        // net-api M4-S18 fixture：xhr/resources/top.txt（cors-expose-star 载体，
-        // ?pipe=header(...) 管道头经既有 wpt_pipe_headers 处理）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let mut headers = wpt_pipe_headers(query);
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "top\n".to_string(),
-            body_bytes: Some(b"top\n".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-put-allow.py") {
-        // net-api M4-S22 fixture：xhr/resources/access-control-basic-put-allow.py
-        //（上游逐字等价——OPTIONS: ACAM PUT + ACAO 回显 + ACAC；PUT: ACAO 回显 +
-        // 体 "PASS: Cross-domain access allowed.\n<body>"，non-cors-safelisted
-        // method 面）。
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        if req.method == "OPTIONS" {
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-            headers.push(("access-control-allow-methods".into(), "PUT".into()));
-            headers.push(("access-control-allow-origin".into(), origin));
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: String::new(),
-                body_bytes: Some(Vec::new()),
-            });
-        }
-        if req.method == "PUT" {
-            headers.push(("access-control-allow-credentials".into(), "true".into()));
-            headers.push(("access-control-allow-origin".into(), origin));
-            let body = format!(
-                "PASS: Cross-domain access allowed.\n{}",
-                req.body_bytes
-                    .as_ref()
-                    .map(|b| String::from_utf8_lossy(b).into_owned())
-                    .or_else(|| req.body.clone())
-                    .unwrap_or_else(|| "Could not read in content.".into())
-            );
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: body.clone(),
-                body_bytes: Some(body.into_bytes()),
-            });
-        }
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: format!("Wrong method: {}", req.method),
-            body_bytes: Some(format!("Wrong method: {}", req.method).into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/reset-token.py") {
-        // net-api M4-S22 fixture：xhr/resources/reset-token.py（上游逐字等价——
-        // stash[token] 置空 + "PASS"，preflight-cache 族用例起点）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let token = wpt_query_value(query, "token").unwrap_or_default();
-        if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
-            stash.insert(token, String::new());
-        }
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        headers.push(("access-control-allow-origin".into(), origin));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "PASS".to_string(),
-            body_bytes: Some(b"PASS".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/")
-        && (clean.ends_with("/access-control-basic-preflight-cache.py")
-            || clean.ends_with("/access-control-basic-preflight-cache-timeout.py")
-            || clean.ends_with("/access-control-basic-preflight-cache-invalidation.py"))
-    {
-        // net-api M4-S22 fixture：xhr/resources/access-control-basic-preflight-cache*
-        // （上游逐字等价的 token 状态机——OPTIONS 到达序断言 preflight cache 行为：
-        // cache.py 二请求须复用缓存、timeout.py 须过期重发、invalidation.py 须
-        // method/header 变更失效。状态迁移见上游 .py 三件）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let token = wpt_query_value(query, "token").unwrap_or_default();
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let is_timeout = clean.ends_with("-timeout.py");
-        let is_invalidation = clean.ends_with("-invalidation.py");
-        // stash take 语义（上游 request.server.stash.take）——缺省或空值均视
-        // Uninitialized（Python falsy：reset-token.py put 的是 b""）。
-        let state = if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
-            stash.remove(&token).unwrap_or_default()
-        } else {
-            String::new()
-        };
-        let state = if state.is_empty() {
-            "Uninitialized".to_string()
-        } else {
-            state
-        };
-        let method = req.method.clone();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/plain".into()));
-        headers.push(("access-control-allow-origin".into(), origin));
-        headers.push(("access-control-allow-credentials".into(), "true".into()));
-        let (status, body, next_state) = match state.as_str() {
-            "Uninitialized" => {
-                if method == "OPTIONS" {
-                    headers.push(("access-control-allow-methods".into(), "PUT".into()));
-                    if is_timeout {
-                        headers.push(("access-control-allow-headers".into(), "x-test".into()));
-                    }
-                    headers.push((
-                        "access-control-max-age".into(),
-                        if is_timeout { "1".into() } else { "10".into() },
-                    ));
-                    (200, String::new(), "OPTIONSSent".to_string())
-                } else {
-                    (400, format!("FAIL {method}: Uninitialized"), state)
-                }
-            }
-            "OPTIONSSent" => {
-                if method == "PUT" {
-                    (200, "PASS: First PUT request.".to_string(), "FirstPUTSent".to_string())
-                } else {
-                    (400, format!("FAIL {method}: OPTIONSSent"), state)
-                }
-            }
-            "FirstPUTSent" => {
-                if method == "PUT" && !is_timeout && !is_invalidation {
-                    (200, "PASS: Second PUT request. Preflight worked.".to_string(), state)
-                } else if method == "OPTIONS" {
-                    headers.push((
-                        "access-control-allow-methods".into(),
-                        if is_invalidation {
-                            "PUT, XMETHOD".into()
-                        } else {
-                            "PUT".into()
-                        },
-                    ));
-                    if is_timeout || is_invalidation {
-                        headers.push(("access-control-allow-headers".into(), "x-test".into()));
-                    }
-                    (200, String::new(), "SecondOPTIONSSent".to_string())
-                } else {
-                    (
-                        400,
-                        format!("FAIL {method}: Second PUT request sent without preflight"),
-                        state,
-                    )
-                }
-            }
-            "SecondOPTIONSSent" => {
-                if method == "PUT" || method == "XMETHOD" {
-                    (200, "PASS: Second OPTIONS request was sent.".to_string(), state)
-                } else {
-                    (400, format!("FAIL {method}: SecondOPTIONSSent"), state)
-                }
-            }
-            _ => (400, format!("FAIL {method}: {state}"), state),
-        };
-        if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
-            stash.insert(token, next_state);
-        }
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/")
-        && (clean.ends_with("/access-control-preflight-request-header-returns-origin.py")
-            || clean.ends_with("/access-control-preflight-request-allow-headers-returns-star.py"))
-    {
-        // net-api M4-S22 fixture：access-control-preflight-request-*-returns-*.py
-        //（上游逐字等价——OPTIONS: ACAO 回显（或 *）+ ACAH X-Test（或 *）；
-        // GET: ACAO * + X-Test 在 → "PASS"，否则 400）。
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let star_variant = clean.ends_with("-allow-headers-returns-star.py");
-        let mut headers: Vec<(String, String)> = Vec::new();
-        if req.method == "OPTIONS" {
-            headers.push((
-                "access-control-allow-origin".into(),
-                if star_variant { "*".into() } else { origin },
-            ));
-            headers.push((
-                "access-control-allow-headers".into(),
-                if star_variant { "*".into() } else { "X-Test".into() },
-            ));
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: String::new(),
-                body_bytes: Some(Vec::new()),
-            });
-        }
-        headers.push(("access-control-allow-origin".into(), "*".into()));
-        let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
-        if has_x_test {
-            headers.push(("content-type".into(), "text/plain".into()));
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: "PASS".to_string(),
-                body_bytes: Some(b"PASS".to_vec()),
-            });
-        }
-        wpt_add_fetch_metadata(&mut headers, req, 400);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 400,
-            status_text: wpt_status_text(400).to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/headers.py") {
-        // net-api M2 fixture：xhr/resources/headers.py（上游逐字等价——
-        // getResponseHeader 响应头控制面：同名双值 comma join、空值、UTF-8
-        // 字节值（上游 `u"…".encode("utf-8")` 的 ByteString 头值视图即三字符
-        // U+00E2 U+0080 U+00A6）与 Set-Cookie 隐藏面；Server/Date 为 wptserve
-        // 每响应自动头，fixture 固定合法 IMF-fixdate——server-date 案仅断言
-        // 非 null）。
-        let mut headers: Vec<(String, String)> = vec![
-            ("content-type".into(), "text/plain".into()),
-            ("x-custom-header".into(), "test".into()),
-            ("set-cookie".into(), "test".into()),
-            ("set-cookie2".into(), "test".into()),
-            ("x-custom-header-empty".into(), String::new()),
-            ("x-custom-header-comma".into(), "1".into()),
-            ("x-custom-header-comma".into(), "2".into()),
-            ("x-custom-header-bytes".into(), "\u{00e2}\u{0080}\u{00a6}".into()),
-            ("server".into(), "SimpleHTTP/0.6 Python/3.12".into()),
-            ("date".into(), "Sun, 06 Nov 1994 08:49:37 GMT".into()),
-        ];
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "TEST".to_string(),
-            body_bytes: Some(b"TEST".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/chunked.py") {
-        // net-api M2 fixture：xhr/resources/chunked.py（上游语义等价——Trailer
-        // 声明 + chunked 帧体；runner 管道无传输层，体直给解帧后拼接串，
-        // trailer 头不并入响应头——chunked-trailer 案断言 Trailer 可见而
-        // X-Test-Me 不可见）。
-        let body = "First chunk\r\nSecond chunk\r\nYet another (third) chunk\r\n\
-                    Yet another (fourth) chunk\r\n";
-        let mut headers: Vec<(String, String)> = vec![
-            ("transfer-encoding".into(), "chunked".into()),
-            ("trailer".into(), "X-Test-Me".into()),
-            ("content-type".into(), "text/plain".into()),
-        ];
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.to_string(),
-            body_bytes: Some(body.as_bytes().to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/parse-headers.py") {
-        // net-api M2 fixture：xhr/resources/parse-headers.py（上游逐字等价——
-        // ?my-custom-header= 回显为响应头；头值 HTTP 语义 OWS trim（wptserve
-        // 头解析层行为，等价 JS val.trim() 断言）；值含 NUL 原样下发，由引擎
-        // 响应头 NUL 门转网络错误（headers-normalize-response NUL 族同步
-        // send() 断言 NetworkError）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let val = wpt_query_value(query, "my-custom-header").unwrap_or_default();
-        let trimmed = val.trim_matches(|c| c == ' ' || c == '\t');
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("my-custom-header".into(), trimmed.to_string()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-cors-safelisted-response-headers.py") {
-        // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
-        // response-headers.py（上游逐字等价——safelisted 七头 + 非 safelisted
-        // x-test 过滤断言面 + ACAO *；content-length 为 wptserve 每响应自动头，
-        // 体 33 字节）。
-        let body = "PASS: Cross-domain access allowed.";
-        let mut headers: Vec<(String, String)> = vec![
-            ("access-control-allow-origin".into(), "*".into()),
-            ("cache-control".into(), "no cache".into()),
-            ("content-language".into(), "en".into()),
-            ("content-length".into(), "33".into()),
-            ("content-type".into(), "text/plain".into()),
-            ("expires".into(), "Fri, 30 Oct 1998 14:19:41 GMT".into()),
-            ("last-modified".into(), "Tue, 15 Nov 1994 12:45:26 GMT".into()),
-            ("pragma".into(), "no-cache".into()),
-            ("x-test".into(), "foobar".into()),
-        ];
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.to_string(),
-            body_bytes: Some(body.as_bytes().to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-basic-cors-safelisted-request-headers.py") {
-        // net-api M2 fixture：xhr/resources/access-control-basic-cors-safelisted-
-        // request-headers.py（上游逐字等价——safelisted 请求头跨源 POST 直达
-        //（非 POST 拒 400 = 简单请求不预检），回显四头值（缺 <None>）+ ACAO
-        // 回显 + ACAC true + Cache-Control no-store）。
-        let req_header = |name: &str| -> Option<String> {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-        };
-        let body = format!(
-            "Accept: {}\nAccept-Language: {}\nContent-Language: {}\nContent-Type: {}\n",
-            req_header("accept").unwrap_or_else(|| "<None>".into()),
-            req_header("accept-language").unwrap_or_else(|| "<None>".into()),
-            req_header("content-language").unwrap_or_else(|| "<None>".into()),
-            req_header("content-type").unwrap_or_else(|| "<None>".into()),
-        );
-        let origin = req_header("origin").unwrap_or_default();
-        let mut headers: Vec<(String, String)> = vec![
-            ("cache-control".into(), "no-store".into()),
-            ("access-control-allow-credentials".into(), "true".into()),
-            ("access-control-allow-origin".into(), origin),
-            ("content-type".into(), "text/plain".into()),
-        ];
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/no-custom-header-on-preflight.py") {
-        // net-api M2 fixture：xhr/resources/no-custom-header-on-preflight.py
-        //（上游逐字等价——OPTIONS 不得携带自定义头 x-test：携 → 400 FAIL，
-        // 否则 stash[token]=PASS；GET 携 x-test 回显 stash（take 语义，缺省
-        // Uninitialized），否则 400；ACAO * + ACAH x-test + Max-Age 0 恒设）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let token = wpt_query_value(query, "token").unwrap_or_default();
-        let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
-        let mut headers: Vec<(String, String)> = vec![
-            ("access-control-allow-origin".into(), "*".into()),
-            ("access-control-allow-headers".into(), "x-test".into()),
-            ("access-control-max-age".into(), "0".into()),
-        ];
-        let (status, body) = if req.method == "OPTIONS" {
-            if has_x_test {
-                (400, "FAIL: Invalid header in preflight request.".to_string())
-            } else {
-                if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
-                    stash.insert(token, "PASS".to_string());
-                }
-                (200, String::new())
-            }
-        } else if has_x_test {
-            let state = if let Ok(mut stash) = WPT_TOKEN_STASH.lock() {
-                stash.remove(&token).unwrap_or_else(|| "Uninitialized".to_string())
-            } else {
-                "Uninitialized".to_string()
-            };
-            (200, state)
-        } else {
-            (400, "FAIL: X-Test header missing in request".to_string())
-        };
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-header-lowercase.py") {
-        // net-api M2 fixture：xhr/resources/access-control-preflight-request-
-        // header-lowercase.py（上游逐字等价——OPTIONS 臂 ACRH 逗号表含 x-test
-        // → ACAH X-Test（大写名授权，请求侧匹配须大小写不敏感），否则 400；
-        // GET 臂携 x-test → PASS，否则 400；ACAO * + Max-Age 0 + Cache-Control
-        // no-store 恒设）。
-        let mut headers: Vec<(String, String)> = vec![
-            ("cache-control".into(), "no-store".into()),
-            ("access-control-allow-origin".into(), "*".into()),
-            ("access-control-max-age".into(), "0".into()),
-        ];
-        let acrh = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-            .map(|(_, v)| v.clone());
-        let (status, body) = if req.method == "OPTIONS" {
-            let listed = acrh
-                .map(|v| v.split(',').map(|s| s.trim()).any(|s| s.eq_ignore_ascii_case("x-test")))
-                .unwrap_or(false);
-            if listed {
-                headers.push(("access-control-allow-headers".into(), "X-Test".into()));
-                (200, String::new())
-            } else {
-                (400, String::new())
-            }
-        } else {
-            let has_x_test = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-test"));
-            if has_x_test {
-                (200, "PASS".to_string())
-            } else {
-                (400, String::new())
-            }
-        };
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-header-sorted.py") {
-        // net-api M2 fixture：xhr/resources/access-control-preflight-request-
-        // header-sorted.py（上游逐字等价——OPTIONS 臂 ACRH 须精确等于五头排序
-        // 串（无空格 `,` 连接），不等 → 400；GET 臂携 x-custom-s → PASS，否则
-        // 400 FAIL；ACAO 回显 origin + Cache-Control no-store 恒设）。
-        const SORTED_HEADERS: &str = "x-custom-s,x-custom-test,x-custom-u,x-custom-ua,x-custom-v";
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = vec![
-            ("cache-control".into(), "no-store".into()),
-            ("access-control-allow-origin".into(), origin),
-        ];
-        let acrh = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-            .map(|(_, v)| v.clone());
-        let (status, body) = if req.method == "OPTIONS" {
-            headers.push(("access-control-max-age".into(), "0".into()));
-            headers.push(("access-control-allow-headers".into(), SORTED_HEADERS.into()));
-            if acrh.as_deref() == Some(SORTED_HEADERS) {
-                (200, String::new())
-            } else {
-                (400, String::new())
-            }
-        } else {
-            let has_x_custom_s = req.headers.iter().any(|(n, _)| n.eq_ignore_ascii_case("x-custom-s"));
-            if has_x_custom_s {
-                (200, "PASS".to_string())
-            } else {
-                (400, "FAIL".to_string())
-            }
-        };
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-headers-origin.py") {
-        // net-api M2 fixture：xhr/resources/access-control-preflight-request-
-        // headers-origin.py（上游逐字等价——OPTIONS 臂 ACRH 含 "origin" → 400
-        //（spec 禁把 origin 列入 ACRH），否则 ACAH x-pass；GET 臂体 = x-pass
-        // 头值回显；ACAO * + Cache-Control no-store 恒设）。
-        let mut headers: Vec<(String, String)> = vec![
-            ("cache-control".into(), "no-store".into()),
-            ("access-control-allow-origin".into(), "*".into()),
-        ];
-        let acrh = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-            .map(|(_, v)| v.clone());
-        let (status, body) = if req.method == "OPTIONS" {
-            if acrh.map(|v| v.to_lowercase().contains("origin")).unwrap_or(false) {
-                (
-                    400,
-                    "Error: 'origin' included in Access-Control-Request-Headers".to_string(),
-                )
-            } else {
-                headers.push(("access-control-allow-headers".into(), "x-pass".into()));
-                (200, String::new())
-            }
-        } else {
-            let x_pass = req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("x-pass"))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_default();
-            (200, x_pass)
-        };
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/access-control-preflight-request-invalid-status.py") {
-        // net-api M2 fixture：xhr/resources/access-control-preflight-request-
-        // invalid-status.py（上游逐字等价——OPTIONS 臂 ?code= 存在 → 该状态码
-        //（301/400/501 面——非 2xx preflight 响应须网络错误），恒设 Max-Age 1 +
-        // ACAH x-pass；GET 臂 200；ACAO 回显 origin + Cache-Control no-store
-        // 恒设）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let code = wpt_query_value(query, "code").and_then(|c| c.parse::<u16>().ok());
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let mut headers: Vec<(String, String)> = vec![
-            ("cache-control".into(), "no-store".into()),
-            ("access-control-allow-origin".into(), origin),
-        ];
-        let status = if req.method == "OPTIONS" {
-            headers.push(("access-control-max-age".into(), "1".into()));
-            headers.push(("access-control-allow-headers".into(), "x-pass".into()));
-            code.unwrap_or(200)
-        } else {
-            200
-        };
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: String::new(),
-            body_bytes: Some(Vec::new()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/echo-content-cors.py") {
-        // net-api M4-S22 fixture：xhr/resources/echo-content-cors.py（上游行为
-        // 等价——ACAO/ACAH/ACAM 回显（?origin= 参数优先于请求头——上游同型怪癖）
-        // + X-Request-* 探针头 + ACAC true + 体回显请求体，cors-upload 面）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let q_origin = wpt_query_value(query, "origin");
-        let req_header = |name: &str| -> Option<String> {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-        };
-        let origin = q_origin.clone().or_else(|| req_header("origin")).unwrap_or_default();
-        let acrh = q_origin
-            .clone()
-            .or_else(|| req_header("access-control-request-headers"));
-        let acrm = q_origin.or_else(|| req_header("access-control-request-method"));
-        let mut headers: Vec<(String, String)> = vec![
-            ("x-request-method".into(), req.method.clone()),
-            (
-                "x-request-content-length".into(),
-                req_header("content-length").unwrap_or_else(|| "NO".into()),
-            ),
-            (
-                "x-request-content-type".into(),
-                req_header("content-type").unwrap_or_else(|| "NO".into()),
-            ),
-            ("access-control-allow-credentials".into(), "true".into()),
-            ("content-type".into(), "text/plain".into()),
-        ];
-        if !origin.is_empty() {
-            headers.push(("access-control-allow-origin".into(), origin));
-        }
-        if let Some(h) = acrh {
-            headers.push(("access-control-allow-headers".into(), h));
-        }
-        if let Some(m) = acrm {
-            headers.push(("access-control-allow-methods".into(), format!("OPTIONS, {m}")));
-        }
-        let body = req
-            .body_bytes
-            .as_ref()
-            .map(|b| String::from_utf8_lossy(b).into_owned())
-            .or_else(|| req.body.clone())
-            .unwrap_or_default();
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean == "fetch/api/resources/authentication.py" {
-        // net-api-compat-v3 M2 fixture：fetch/api/resources/authentication.py
-        //（上游逐字——https://github.com/web-platform-tests/wpt/blob/
-        // 3159769/fetch/api/resources/authentication.py。与 xhr 版 token
-        // stash 挑战流不同源：固定凭据校验——Basic user:password → 200
-        // "Authentication done"；否则 401 Unauthorized +
-        // `WWW-Authenticate: Basic realm="?realm="（缺省 test）` + 提示体。
-        // 无 CORS 头（上游同形——authentication-basic 相对 URL 同源取回，
-        // resp.type 断言 "basic"）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let credentials = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
-            .and_then(|(_, v)| {
-                let b64 = v.strip_prefix("Basic ").or_else(|| v.strip_prefix("basic "))?;
-                use base64::Engine as _;
-                let decoded = base64::engine::general_purpose::STANDARD.decode(b64.trim()).ok()?;
-                String::from_utf8_lossy(&decoded)
-                    .split_once(':')
-                    .map(|(u, p)| (u.to_string(), p.to_string()))
-            });
-        let realm = wpt_query_value(query, "realm").unwrap_or_else(|| "test".to_string());
-        let (status, body) = match credentials {
-            Some((u, p)) if u == "user" && p == "password" => (200, "Authentication done".to_string()),
-            _ => (401, "Please login with credentials 'user' and 'password'".to_string()),
-        };
-        let mut headers: Vec<(String, String)> = vec![("content-type".into(), "text/plain".into())];
-        if status == 401 {
-            headers.push(("www-authenticate".into(), format!("Basic realm=\"{}\"", realm)));
-        }
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: wpt_status_text(status).to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.ends_with("/dump-authorization-header.py") {
-        // net-api M4-S17 fixture：fetch/api/resources/dump-authorization-header.py
-        //（上游逐字等价——回显 Authorization 或 "none"；带 Origin → ACAO 回显 +
-        // ACAC true + ACAH Authorization）。net-api-compat-v3 M2 补上游
-        // OPTIONS strip_auth_header=1 臂：预检 ACRH 含 authorization → 500
-        // "fail"（跨源重定向后预检不得携 auth 头——xhr-authorization-
-        // redirect 跨源腿断言面）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone());
-        let auth = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("authorization"))
-            .map(|(_, v)| v.clone());
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/html".into()));
-        headers.push(("cache-control".into(), "no-cache".into()));
-        if req.method == "OPTIONS"
-            && wpt_query_value(query, "strip_auth_header").is_some()
-            && req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-                .map(|(_, v)| v.to_ascii_lowercase().contains("authorization"))
-                .unwrap_or(false)
-        {
-            let body = "fail".to_string();
-            wpt_add_fetch_metadata(&mut headers, req, 500);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 500,
-                status_text: wpt_status_text(500).to_string(),
-                headers,
-                body: body.clone(),
-                body_bytes: Some(body.into_bytes()),
-            });
-        }
-        match origin {
-            Some(o) => {
-                headers.push(("access-control-allow-origin".into(), o));
-                headers.push(("access-control-allow-credentials".into(), "true".into()));
-            }
-            None => {
-                headers.push(("access-control-allow-origin".into(), "*".into()));
-            }
-        }
-        headers.push(("access-control-allow-headers".into(), "Authorization".into()));
-        let body = auth.unwrap_or_else(|| "none".into());
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/corsenabled.py") {
-        // net-api M4-S16 fixture：xhr/resources/corsenabled.py（上游逐字等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
-        // corsenabled.py）。CORS 全开（ACAO * + ACAC + methods/headers/expose）+
-        // X-Request-* 探针头 + ?delay=；体 "Test"。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let mut headers: Vec<(String, String)> = vec![
-            ("access-control-allow-origin".into(), "*".into()),
-            ("access-control-allow-credentials".into(), "true".into()),
-            ("access-control-allow-methods".into(), "GET, POST, PUT, FOO".into()),
-            ("access-control-allow-headers".into(), "x-test, x-foo".into()),
-            (
-                "access-control-expose-headers".into(),
-                "x-request-method, x-request-content-type, x-request-query, x-request-content-length, x-request-data"
-                    .into(),
-            ),
-        ];
-        let delay_ms = wpt_query_value(query, "delay")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0)
-            .min(10_000);
-        if delay_ms > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-        }
-        // net-api M3：上游 `?safelist_content_type` → **追加第二条**
-        // `Access-Control-Allow-Headers: content-type`（上游逐字等价补齐——
-        // wpt corsenabled.py safelist_content_type 分支；同名多实例经 Headers
-        // get 合并「x-test, x-foo, content-type」，preflight ACAH 名单即含
-        // content-type。send-redirect-to-cors safelist 族显式 CT 断言面）。
-        if wpt_query_value(query, "safelist_content_type").is_some() {
-            headers.push(("access-control-allow-headers".into(), "content-type".into()));
-        }
-        let req_header = |name: &str| -> Option<String> {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-        };
-        headers.push(("x-request-method".into(), req.method.clone()));
-        let req_query = path_part
-            .split_once('?')
-            .map(|(_, q)| q.to_string())
-            .unwrap_or_default();
-        headers.push((
-            "x-request-query".into(),
-            if req_query.is_empty() { "NO".into() } else { req_query },
-        ));
-        headers.push((
-            "x-request-content-length".into(),
-            req_header("content-length").unwrap_or_else(|| "NO".into()),
-        ));
-        headers.push((
-            "x-request-content-type".into(),
-            req_header("content-type").unwrap_or_else(|| "NO".into()),
-        ));
-        headers.push((
-            "x-request-data".into(),
-            // net-api M3：上游 `request.body` 回显**任意**体（fetch_bridge 契约
-            // 文本体在 `body`、二进制体在 `body_bytes` 互斥）——旧实现只读
-            // body_bytes，文本体（XHR send(string)/fetch body string）回显空串
-            //（send-redirect-to-cors 307/308 body 断言面）。
-            req.body_bytes
-                .as_ref()
-                .map(|b| String::from_utf8_lossy(b).into_owned())
-                .or_else(|| req.body.clone())
-                .unwrap_or_default(),
-        ));
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "Test".to_string(),
-            body_bytes: Some(b"Test".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/redirect.py") {
-        // net-api M4-S16 fixture：xhr/resources/redirect.py（上游逐字等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
-        // redirect.py）。?code=（默认 302）+ ?location=（缺省本路径?followed）；
-        // ?followed= → 200 "MAGIC HAPPENED"（Content:Type 破损头照抄——上游语义）；
-        // 否则 → code + Location + "TEST"。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let code: u16 = wpt_query_value(query, "code")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(302);
-        let followed = wpt_query_value(query, "followed").is_some();
-        if followed {
-            let mut headers: Vec<(String, String)> = Vec::new();
-            headers.push(("content:type".into(), "text/plain".into()));
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: "MAGIC HAPPENED".to_string(),
-                body_bytes: Some(b"MAGIC HAPPENED".to_vec()),
-            });
-        }
-        let location = wpt_query_value(query, "location").unwrap_or_else(|| format!("{}?followed", clean));
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("location".into(), location));
-        wpt_add_fetch_metadata(&mut headers, req, code);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: code,
-            status_text: wpt_status_text(code).to_string(),
-            headers,
-            body: "TEST".to_string(),
-            body_bytes: Some(b"TEST".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/well-formed.xml") {
-        // net-api M4-S16 fixture：xhr/resources/well-formed.xml（上游逐字——
-        // responseurl-after-abort 的 HEADERS_RECEIVED/LOADING abort 时序载体）。
-        let body = "<html xmlns=\"http://www.w3.org/1999/xhtml\">\n  <p id=\"n&#49;\">1</p>\n  <p xmlns=\"namespacesarejuststrings\" id=\"n2\">2</p>\n</html>\n".to_string();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("access-control-allow-origin".into(), "*".into()));
-        headers.push(("content-type".into(), "application/xml".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/pass.txt") {
-        // net-api M4-S16 fixture：xhr/resources/pass.txt（abort-progress-events
-        // 的 send+abort 竞态载体——内容不断言，请求须可进入在飞态）。
-        // M4-S18：ACAO *（runner 页面 https 而 get-host-info HTTP_ORIGIN 为 http——
-        // 跨 scheme hop 的 cors check 放行面，runner 环境适配）。
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("access-control-allow-origin".into(), "*".into()));
-        headers.push(("content-type".into(), "text/plain".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: "PASS\n".to_string(),
-            body_bytes: Some(b"PASS\n".to_vec()),
-        });
-    }
-    if clean.starts_with("xhr/") && clean.ends_with("/content.py") {
-        // net-api M4-S15 fixture：xhr/resources/content.py（上游逐字等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
-        // content.py）。回显请求体（?content= 覆写）+ Content-type text/plain
-        //（?response_charset_label= 追加 ;charset=）+ X-Request-Method/Query/
-        // Content-Length/Content-Type 请求探针头。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let mut headers: Vec<(String, String)> = Vec::new();
-        let ctype = match wpt_query_value(query, "response_charset_label") {
-            Some(label) => format!("text/plain;charset={}", label),
-            None => "text/plain".to_string(),
-        };
-        headers.push(("content-type".into(), ctype));
-        headers.push(("x-request-method".into(), req.method.clone()));
-        let req_query = path_part
-            .split_once('?')
-            .map(|(_, q)| q.to_string())
-            .unwrap_or_default();
-        headers.push((
-            "x-request-query".into(),
-            if req_query.is_empty() { "NO".into() } else { req_query },
-        ));
-        let req_header = |name: &str| -> Option<String> {
-            req.headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case(name))
-                .map(|(_, v)| v.clone())
-        };
-        headers.push((
-            "x-request-content-length".into(),
-            req_header("content-length").unwrap_or_else(|| "NO".into()),
-        ));
-        headers.push((
-            "x-request-content-type".into(),
-            req_header("content-type").unwrap_or_else(|| "NO".into()),
-        ));
-        let body = wpt_query_value(query, "content").unwrap_or_else(|| {
-            let bytes_body = req
-                .body_bytes
-                .as_ref()
-                .map(|b| String::from_utf8_lossy(b).into_owned())
-                .unwrap_or_default();
-            if bytes_body.is_empty() {
-                req.body.clone().unwrap_or_default()
-            } else {
-                bytes_body
-            }
-        });
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.ends_with("/status.py") && (clean.starts_with("xhr/") || clean == "fetch/api/resources/status.py") {
-        // net-api M2-S3c：fetch/api/resources/status.py 同语义接入——上游
-        // fetch/api/resources/status.py 与 xhr/resources/status.py 逐字同源
-        //（code/text/content/type + X-Request-Method）。此前仅 xhr/ 前缀
-        // 命中，fetch/api 面落静态读库 404（response-null-body「expected
-        // 204 but got 404」、text-utf8 fetched-data 族）。
-        // net-api M3-S2 fixture：xhr/resources/status.py（上游逐字等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/xhr/resources/
-        // status.py）。?code=（默认 200）&text=（默认 OMG）&content=&type=
-        // → 自定义状态行 + Content-Type + body。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let code: u16 = wpt_query_value(query, "code")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(200);
-        let text = wpt_query_value(query, "text").unwrap_or_else(|| "OMG".into());
-        // net-api M3-S2：content 保留原始字节（%XX → byte——shift-jis 等非 UTF-8
-        // 测试载荷经 body_bytes 保真，不落 lossy UTF-8）。
-        // net-api M3（六）：解码走 `wpt_query_value_bytes`（逐字节 Latin-1 映射）
-        // 再 char→u8 还原——旧实现经 `wpt_query_value`（UTF-8 lossy）后二次
-        // percent-decode，非 UTF-8 载荷（%83%65…、%FF、%C2%F0）已被 lossy 成
-        // U+FFFD 字节，engine 侧 override/charset 解码面永不可能命中。
-        let content_bytes: Vec<u8> = wpt_query_value_bytes(query, "content")
-            .map(|v| v.chars().map(|c| c as u8).collect())
-            .unwrap_or_default();
-        let ctype = wpt_query_value(query, "type").unwrap_or_default();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), ctype));
-        headers.push(("x-request-method".into(), req.method.clone()));
-        wpt_add_fetch_metadata(&mut headers, req, code);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: code,
-            status_text: text,
-            headers,
-            body: String::from_utf8_lossy(&content_bytes).into_owned(),
-            body_bytes: Some(content_bytes),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/message.py") {
-        // net-api M4-S12 fixture：eventsource/resources/message.py（上游逐字等价——
-        // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
-        // message.py）。?mime=（默认 text/event-stream）&message=（默认 data: data）
-        // &newline=none（尾 \n\n 省略）&sleep=（ms）→ SSE 单响应。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let mime = wpt_query_value(query, "mime").unwrap_or_else(|| "text/event-stream".into());
-        let message = wpt_query_value(query, "message").unwrap_or_else(|| "data: data".into());
-        let newline = if wpt_query_value(query, "newline").as_deref() == Some("none") {
-            ""
-        } else {
-            "\n\n"
-        };
-        let sleep_ms = wpt_query_value(query, "sleep")
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0)
-            .min(10_000);
-        if sleep_ms > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
-        }
-        let body = format!("{}{}\n", message, newline);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), mime));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/message2.py") {
-        // net-api M4-S12 fixture：eventsource/resources/message2.py（上游为无限循环
-        // 流式写——headless 有限流模型取一轮循环体即覆盖页面断言的前三个事件；
-        // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/
-        // message2.py）。
-        let body = "data:msg\ndata: msg\n\n:\nfalsefield:msg\n\nfalsefield:msg\n\n\
-                    Data:data\n\ndata\n\ndata:end\n\n"
-            .to_string();
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        headers.push(("cache-control".into(), "no-cache".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/last-event-id.py") {
-        // net-api M4-S12 fixture：eventsource/resources/last-event-id.py（上游逐字
-        // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
-        // resources/last-event-id.py）。带 Last-Event-ID 请求头则回 `data: <id>`，
-        // 否则回 `id: <idvalue 默认 …>\nretry: 200\ndata: hello`（重连面）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let last_id = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("");
-        let body = if !last_id.is_empty() {
-            format!("data: {}\n\n", last_id)
-        } else {
-            let idvalue = wpt_query_value(query, "idvalue").unwrap_or_else(|| "\u{2026}".into());
-            format!("id: {}\nretry: 200\ndata: hello\n\n", idvalue)
-        };
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with(".event_stream") {
-        // net-api M4-S12 fixture：eventsource/resources/accept.event_stream 与
-        // cache-control.event_stream（上游为 wptserve 模板文件
-        // `data: {{headers[<name>]}}`——按文件名回显对应请求头；
-        // https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/resources/）。
-        let header_name = clean
-            .rsplit('/')
-            .next()
-            .and_then(|f| f.strip_suffix(".event_stream"))
-            .unwrap_or("accept");
-        let echoed = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case(header_name))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let body = format!("data: {}\n\n", echoed);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/reconnect-fail.py") {
-        // net-api M4 fixture：eventsource/resources/reconnect-fail.py（上游逐字
-        // 等价——https://github.com/web-platform-tests/wpt/blob/3159769/eventsource/
-        // resources/reconnect-fail.py）。cookie 态机：无态 → 200 `retry: 2`+
-        // `data: opened`（置态 opened）；opened → 200 `data: reconnected`（置态
-        // reconnected）；reconnected → 204 `data: closed`（清态——status ≠ 200，
-        // ES fail the connection，体不达）。cookie 往返以 es_cookie_stash 承载。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let name = format!("recon_fail_{}", wpt_query_value(query, "id").unwrap_or_default());
-        let mut jar = match es_cookie_stash.lock() {
-            Ok(j) => j,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        let (status, status_text, body) = match jar.remove(&name).as_deref() {
-            Some("opened") => {
-                jar.insert(name, "reconnected".to_string());
-                (200u16, "RECONNECT", "data: reconnected\n\n".to_string())
-            }
-            Some("reconnected") => (204, "NO CONTENT (CLOSE)", "data: closed\n\n".to_string()),
-            _ => {
-                jar.insert(name, "opened".to_string());
-                (200, "OPEN", "retry: 2\ndata: opened\n\n".to_string())
-            }
-        };
-        drop(jar);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text: status_text.to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/status-reconnect.py") {
-        // net-api M4 fixture：eventsource/resources/status-reconnect.py（上游逐字
-        // 等价——同 pin reconnect-fail.py 形态的 cookie 态机；cors.py run=
-        // status-reconnect 委派同一实现）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let (status, status_text, body) = es_status_reconnect_response(&es_cookie_stash, query);
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        wpt_add_fetch_metadata(&mut headers, req, status);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status,
-            status_text,
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/last-event-id2.py") {
-        // net-api M4 fixture：eventsource/resources/last-event-id2.py（上游逐字
-        // 等价——同 pin）。?type 静态三流：1 = id 持续（id:1 两条 + id:2 两条）；
-        // 2 = `id:` 空 id 字段重置 lastEventId；3 = 裸 `id`（无冒号）同样重置
-        // （spec §9.2.6 id 字段处理——字段值空串进缓冲）。type 4+ → invalid_test
-        // （上游 else 臂）；type 解析失败 → 1（上游 except 臂）。
-        let test_type = path_part
-            .split_once('?')
-            .map(|(_, q)| q)
-            .and_then(|q| wpt_query_value(q, "type"))
-            .map(|v| v.parse::<u8>().unwrap_or(1))
-            .unwrap_or(1);
-        let body = match test_type {
-            2 => "id: 1\ndata: 1\n\nid:\ndata:2\n\ndata:3\n\n",
-            3 => "id: 1\ndata: 1\n\nid\ndata:2\n\ndata:3\n\n",
-            _ => "id: 1\ndata: 1\n\ndata: 2\n\nid: 2\ndata:3\n\ndata:4\n\n",
-        };
-        let body = if test_type > 3 {
-            "data: invalid_test\n\n".to_string()
-        } else {
-            body.to_string()
-        };
-        let mut headers: Vec<(String, String)> = Vec::new();
-        headers.push(("content-type".into(), "text/event-stream".into()));
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
-    }
-    if clean.starts_with("eventsource/") && clean.ends_with("/cors-cookie.py") {
-        // net-api M4 fixture：eventsource/resources/cors-cookie.py（上游逐字等价
-        // ——同 pin）。Last-Event-ID 缺省 → `id: 1`+`retry: 200`+`data: first
-        // <cookie>` 并置 cookie；`Last-Event-ID: 1` → `id: 2`+`data: second
-        // <cookie>` 并清 cookie（上游 expires 过去时刻——删除语义等价）；其余 →
-        // Content-Type: stop。cookie 值 = 表含 ident 且请求以 credentials mode
-        // include 发出 → "COOKIE"，否则 "NO_COOKIE"——runner 无 jar，跨源送达面
-        // 以 FetchRequest.credentials 判定（RFC 6265bis §5.4——get-set-cookie.py
-        // secure 同款先例；首次请求 cookie 未置，恒 NO_COOKIE）。
-        // ACAO ← ?origin=（缺省回显请求 Origin 头；none → 不设）；ACAC ←
-        // ?credentials=（缺省 true；none → 不设）。
-        let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
-        let last_event_id = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("last-event-id"))
-            .map(|(_, v)| v.as_str())
-            .unwrap_or("");
-        let ident = wpt_query_value(query, "ident").unwrap_or_else(|| "test".into());
-        let req_origin = req
-            .headers
-            .iter()
-            .find(|(n, _)| n.eq_ignore_ascii_case("origin"))
-            .map(|(_, v)| v.clone())
-            .unwrap_or_default();
-        let origin = wpt_query_value(query, "origin").unwrap_or(req_origin);
-        let credentials = wpt_query_value(query, "credentials").unwrap_or_else(|| "true".into());
-        let mut jar = match es_cookie_stash.lock() {
-            Ok(j) => j,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-        // 上游 cookie 判定先于本响应 set_cookie（request.cookies 为请求所携）。
-        let cookie = if jar.contains_key(&ident) && req.credentials.as_deref() == Some("include") {
-            "COOKIE"
-        } else {
-            "NO_COOKIE"
-        };
-        let mut headers: Vec<(String, String)> = Vec::new();
-        if origin != "none" {
-            headers.push(("access-control-allow-origin".into(), origin));
-        }
-        if credentials != "none" {
-            headers.push(("access-control-allow-credentials".into(), credentials));
-        }
-        if req.method == "OPTIONS" {
-            // OPTIONS preflight 先于状态机应答（ES withCredentials 跨源恒
-            // preflight——Cache-Control 非 safelisted；ACAM ← 回显 ACRM、
-            // ACAH ← 回显 ACRH，2xx + 空 body，状态不消费）。
-            let acrm = req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-method"))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| "GET".into());
-            let acrh = req
-                .headers
-                .iter()
-                .find(|(n, _)| n.eq_ignore_ascii_case("access-control-request-headers"))
-                .map(|(_, v)| v.clone())
-                .unwrap_or_else(|| "cache-control".into());
-            headers.push(("access-control-allow-methods".into(), acrm));
-            headers.push(("access-control-allow-headers".into(), acrh));
-            wpt_add_fetch_metadata(&mut headers, req, 200);
-            return Ok(zero_engine::fetch_bridge::FetchResponse {
-                status: 200,
-                status_text: "OK".to_string(),
-                headers,
-                body: String::new(),
-                body_bytes: Some(Vec::new()),
-            });
-        }
-        let body = if last_event_id.is_empty() {
-            jar.insert(ident, "COOKIE".to_string());
-            headers.push(("content-type".into(), "text/event-stream".into()));
-            format!("id: 1\nretry: 200\ndata: first {}\n\n", cookie)
-        } else if last_event_id == "1" {
-            jar.remove(&ident);
-            headers.push(("content-type".into(), "text/event-stream".into()));
-            format!("id: 2\ndata: second {}\n\n", cookie)
-        } else {
-            headers.push(("content-type".into(), "stop".into()));
-            format!("data: {}{}\n\n", last_event_id, cookie)
-        };
-        drop(jar);
-        wpt_add_fetch_metadata(&mut headers, req, 200);
-        return Ok(zero_engine::fetch_bridge::FetchResponse {
-            status: 200,
-            status_text: "OK".to_string(),
-            headers,
-            body: body.clone(),
-            body_bytes: Some(body.into_bytes()),
-        });
     }
     if clean == "xhr/resources/get-set-cookie.py" {
         // net-api-compat-v3 M3 fixture：get-set-cookie.py cookie 端点仿真（上游
