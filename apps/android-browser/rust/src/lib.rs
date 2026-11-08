@@ -1020,6 +1020,7 @@ fn proxy_renderer_fetch(slot: usize, params: FetchParams) -> Result<(), String> 
         url: request_url.clone(),
         headers,
         body: params.body,
+        cache_mode: zero_net::CacheMode::Default,
     }) {
         Ok(response) if response.body.len() <= MAX_RESPONSE_BYTES => {
             // 顶层导航的 attachment 响应由 browser 进程接管为下载（FR-006），不再
