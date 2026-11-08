@@ -126,11 +126,17 @@ logs：`.acceptance/zr3-appendfix-maketest-1001.log`（legs10）、
 （链 A）、`zr3-m4-close11b-1023.log`（legs11b）、
 `zr3-appendfix-legs11-1035.log`（链 C）。
 
-## §8 对端移交验收（s331 closedby-complex，挂账待复核）
+## §8 对端移交验收（s331 closedby-complex，验收结论：未通过，改判归因）
 
 M0 记录的对端移交项（s331 `dialog-popover-closedby-complex` 18F shadow-slots
-变体，勘根 = R3 动态 slot 分配缺位，归 M3 变异应用臂批一并验收）：本轮诊断
-探针（`make testharness-html-semantics FILTER=closedby-complex`）在 runner
-层秒败（`Using 8 test job(s)` 后 make Error 1，无逐案输出）——**取证无效，
-非逐案红**，验收结论挂账待净态重跑；该案语料属 html-semantics runner 通道，
-复核由该通道净态出账后回填。
+变体，勘根 = R3 动态 slot 分配缺位，归 M3 变异应用臂批一并验收）：净态重跑
+（`make testharness-html-semantics FILTER=closedby-complex`，rc=2）
+**18F 原样**——逐案断言形态一致（点击 dialog/popover 后 `should be open
+expected true but got false`：点击经 shadow slot 内容不命中 dialog，
+popover 被判外点关闭）。**验收结论：未通过；归因改判**——非 R3 变异应用
+臂缺口（该臂已落地并经矩阵/单测验证），而是**点击 hit-test 经 slotted
+内容的布局几何查询通道缺口**，与 B6 几何命中簇（elementFromPoint 41F 等
+0 过）同一具名挂账口径（runner 无输入注入/布局几何查询管道），回池条件
+同 B6（webdriver 输入管线 + 几何查询接通道）。log：
+`.acceptance/zr3-m4-closedby-retry-1049.log`。首跑 runner 层秒败系瞬时
+并发竞态（重试即复现正常逐案输出），非语料/runner 缺陷。
