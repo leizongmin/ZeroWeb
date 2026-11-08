@@ -92,3 +92,31 @@
   内重绑定行同文）——均由断言拦截，未进提交。
 - verify 脚本 rustfmt 折行适配：表 Exact/DirSuffix 长路径行被 rustfmt 展开
   （与既有表 122-147 行同形态），B 段解析改空白全剥 + 尾逗号容忍。
+## 六、文件族拆分落库（§一交付面第四项的执行记录，独立第二提交）
+
+- 拆分器 /tmp/m3s5_split.py 一次通过（DeprecationWarning 一处为脚本内部
+  re.sub 计数位置参数，不影响产物）；89 项五族清单与 route/pred 清单
+  完备性互斥断言通过，逐 item 子文件连续在场断言（round-trip）通过。
+  产物（fmt 后终值，全部 ≤2000 行）：mod.rs 809（底座：ctx/谓词变体/
+  注册表/dispatch）+ site.rs 645（15）+ xhr.rs 1,749（37）+ fetch.rs
+  892（17）+ es.rs 474（9）+ misc.rs 336（11），合计 4,905 行；旧单文件
+  git rm（E0761 防双模块歧义）。
+- 表序零改动独立复核：`fn py_routes()` 表文本 vs 拆分前提交
+  （3db404d45）逐字节全等，85 行两侧一致。
+- 编译与单测：cargo fmt --check 净；cargo check -p zero-wpt-runner
+  零警告（子模块 `use super::*` 反供 + `pub(crate) use` re-export 可见性
+  接线一次成形）；runner 单测 298P/0F（单元 m3s5-split-ut-222421，
+  与拆分前同数）。外部引用仅 testharness.rs :5934 rustdoc 链接补
+  `site::` 段（route_module_fetch_tester 迁 site.rs 后 glob import 不再
+  re-export，路径需全）；:7407/:7423（PyEndpointCtx/dispatch）留守
+  mod.rs 路径不变。
+- 全量 A/B 第三跑（拆分树，单元 m3s5-split-ab-222458，22:25:51 起
+  runner，22:32:56 收尾，test-guard --per-proc-mem 4 --total-mem 8
+  --time-limit 900，MAKE_EXIT=2 与基线同形态）：对 §三重录基线
+  /tmp/m3s5-base-214840.log——**multiset 空集（计数敏感口径）**——总账
+  13,614P/1,305F/8T 双侧全等（分母 14,927 一致），四域锚全等：wss
+  741=741、S3b 016 2=2、S12 10=10、inspect-headers 70=70。拆分
+  纯移动零行为变化落证。
+- 过程注记：A/B 等待窗内本 session 五次实例中断/重启，各自落了 §六
+  草稿（数值一致、两份含 fmt 前旧行数）——续轮合并为本节单稿落证；
+  systemd 单元跨 session 存活是长跑未废的原因。

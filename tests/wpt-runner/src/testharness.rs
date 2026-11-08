@@ -5931,7 +5931,7 @@ pub(crate) type CredentialCookieStash = std::sync::Arc<std::sync::Mutex<HashMap<
 static SERVE_CUSTOM_RESPONSE_STASH: std::sync::LazyLock<ServeCustomResponseStash> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new())));
 
-/// s346：module-fetch-tester.py 请求计数表（页面 fetch() stat 臂 [`testharness_py_routes::route_module_fetch_tester`]
+/// s346：module-fetch-tester.py 请求计数表（页面 fetch() stat 臂 [`testharness_py_routes::site::route_module_fetch_tester`]
 /// 与模块取回臂共享——s267 [`SERVE_CUSTOM_RESPONSE_STASH`] 同型）。键 = 端点 `key`
 /// 查询参数（corpus `token()` UUID——跨案/跨 job 碰撞不可能，进程级表只增内存有界；
 /// 案级清空不建模 FIXME 语料无钉面）。

@@ -32,16 +32,19 @@
   c6dcbce0a http-cache M2 wire），A/B 升级计数敏感 multiset 空集落证；
   S12 update 脚本缺口核对销账（pin 树原生含 succeeded 腿，条件成立）。
   [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)。
+  **文件族拆分随后落库**：testharness_py_routes.rs（4,822 行）→ 目录模块
+  底座 mod.rs（810 行）+ site/xhr/fetch/es/misc 五族（89 项全迁出，每
+  文件 ≤2000 行），表文本 vs 3db404d45 逐字节全等，单测 298P/0F +
+  全量 A/B 第三跑 multiset 空集（切片五档 §六）。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
   现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
   goal py 框架交付（M4 承接）。
-- **下一步**：文件族拆分 testharness_py_routes.rs（迁移后 4,822 行超
-  2000 行守卫，底座 + 五族 site/xhr/fetch/es/misc，纯移动 + 表序不动，
-  随后跑全量 A/B 对新锚）；其后 fetcher 闭包三分表迁移（清单档拓扑：
-  script/sw 两 fetcher → 独立表实例，stash Arc 共享不可断）→ DC-3
-  收口；M4 验收含 43 号 wss 面入账 + 47 号 corpus 门承接。
+- **下一步**：fetcher 闭包三分表迁移（清单档拓扑：script/sw 两 fetcher →
+  独立表实例 py_script_fetch_routes()/py_sw_fetch_routes()，stash Arc
+  共享不可断）→ DC-3 收口；M4 验收含 43 号 wss 面入账 + 47 号 corpus
+  门承接。
 
 ## 里程碑状态表
 
@@ -121,3 +124,9 @@
   债维持碰头挂账不硬解。过程教训：本批执行实例 18:58 A/B 跑完后
   中断，对照分析 20:17 由后续 session 以孤儿日志补齐——证据档
   「待填」栏不得跨实例存续，长跑等待窗是实例死亡高发段。
+- 2026-11-08 22:33 同 session 多实例中断爆发：A/B 等待窗内本 goal 执行
+  session 五次中断/重启，各自对同一已完成跑（m3s5-split-ab-222458）落
+  §六草稿并暂存（数值一致、两份含 fmt 前旧行数）——续轮按互补链仲裁
+  合并为切片五档单节 §六落证；systemd 单元跨 session 存活使长跑未被
+  废弃。教训：等待窗内不落「待填」占位的纪律有效，但多实例并发写同
+  一档需续轮先 grep 重复节标题再合并。
