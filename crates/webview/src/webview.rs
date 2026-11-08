@@ -4739,6 +4739,16 @@ impl WebView {
             );
             let _ = self.js_sandbox.as_mut().map(|sb| sb.execute(&stamp_js));
         }
+        // s355（html-semantics M2 切片 355）：交付排水门置位——页脚本交付循环期间
+        // 动态插入的 classic/module src 脚本由 shim gate 挂起（part03 s355 臂），
+        // 循环毕 flush 发起。spec 动态 src 取回为异步任务，让后于 parser 交付窗
+        // 内后继脚本（051 alt B：count-script-tags.js 在 inline#2 后执行；
+        // module 同门——execorder dynamic async-ordered 的 FIFO 交错序）。
+        // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+        let _ = self
+            .js_sandbox
+            .as_mut()
+            .map(|sb| sb.execute("globalThis.__zwDeliveryDrainActive = true;"));
         for (script, script_index) in scripts {
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
             // security-hardening M3：外链 script Mixed Content 检查点（阻塞型——HTTPS
@@ -5603,6 +5613,16 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             }
             self.drain_async_navigation_callbacks_until_idle(std::time::Duration::from_millis(50));
         }
+        // s355：交付排水门 flush——循环毕清旗标并逐臂发起挂起的动态 src fetch
+        //（shim `__zwFlushDrainPendingSrc`：fetch promise 微任务同求值排空，取回
+        // 体在本 execute 内求值；trickle 慢源由 runner timer wheel + loadStep5275
+        // in-flight 等待承接）。空队列 + 清旗标为常量开销。
+        let _ = self.js_sandbox.as_mut().map(|sb| {
+            sb.execute(
+                "if (typeof globalThis.__zwFlushDrainPendingSrc === 'function') \
+                 globalThis.__zwFlushDrainPendingSrc();",
+            )
+        });
         // s157（html-semantics M2 切片 157）：尾随静态 link 触发收口——per-script
         // 交错扫描只覆盖「script 之前的 link」（spec：script-blocking stylesheet
         // 只阻塞其后 pending script），最后一个 script 之后的尾随 link

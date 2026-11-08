@@ -5605,7 +5605,23 @@
   // s346（html-semantics M2 切片 346）：动态外链 module join 完成面共享 helper
   //（_zwPrepareSrcScriptGate module 臂 owner/waiter 两路同用；①取回失败、
   // ②specifier 解析失败、③编译成功三态逐字保持 s250 臂原语义）。
+  // s355：FIFO 队入队守卫——排水挂起把 module entry 的入队从登记时推迟到
+  // settle/fail 时（flush 臂序 = 挂起登记序 = 插入序，队位保序；经典臂 entry
+  // 本就在 fetch 臂内入队，同口径）。已入队幂等（waiter 复驱/双 settle 面）。
+  function _zwQueueEntry355(entry) {
+    if (!entry || entry.queued355) return;
+    entry.queued355 = true;
+    if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
+    globalThis._zwInOrderScriptQueue.push(entry);
+  }
   function _zwDynModuleFail346(el, entry) {
+    if (entry) {
+      _zwQueueEntry355(entry);
+      entry.failed = true;
+      entry.ready = true;
+      globalThis._zwDrainInOrderScriptQueue();
+      return;
+    }
     if (entry) {
       entry.failed = true;
       entry.ready = true;
@@ -5624,6 +5640,7 @@
     if (sep >= 0 && code === '') {
       // specifier 解析失败 → load（空码经执行器即仅派 load，队列/直执同形）。
       if (entry) {
+        _zwQueueEntry355(entry);
         entry.ready = true;
         globalThis._zwDrainInOrderScriptQueue();
       } else {
@@ -5632,6 +5649,7 @@
       return;
     }
     if (entry) {
+      _zwQueueEntry355(entry);
       entry.ready = true;
       entry.code = code;
       globalThis._zwDrainInOrderScriptQueue();
@@ -5663,6 +5681,16 @@
   }
   // 门体：返 true 仅当 fetch 链已发起（求值完成回调经 _zwOnRan 在 then/catch 尾触发）。
   function _zwPrepareSrcScriptGate(child, _zwOnRan) {
+    // s355：排水门活跃判定（webview 页脚本交付循环内置位 `__zwDeliveryDrainActive`；
+    // 写流 src 挂链面豁免——`__zwDocWritePendingSlot` ≥0 = part06 写入执行链/
+    // 嵌套驱动，s353 停车语义要求写流 src 先于其后 markup）。classic 与 module
+    // src 臂共用：spec 动态 src（不分类型）取回为异步任务，让后于 parser 交付
+    // 窗内后继脚本。
+    function _zwDrainHold355() {
+      if (globalThis.__zwDeliveryDrainActive !== true) return false;
+      return !(typeof globalThis.__zwDocWritePendingSlot === 'number'
+        && globalThis.__zwDocWritePendingSlot >= 0);
+    }
     try {
       // s110：身份门放宽到 sel 形——重插入的 parser 单元（execution-timing 122-126
       // 形 getElementById 取回的 type=text/plain 外链）只有 __zwSelector 无
@@ -5733,10 +5761,8 @@
         } catch (_eS110q250) {}
         var _msEntry250 = _faAsyncQueue250 ? null
           : { ready: false, failed: false, code: '', url: url, el: child, cb: _zwOnRan };
-        if (_msEntry250) {
-          if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
-          globalThis._zwInOrderScriptQueue.push(_msEntry250);
-        }
+        // s355：entry 入队移 settle/fail 时（_zwQueueEntry355——排水挂起后 flush
+        // 臂序 = 插入序，登记时入队会先于挂起的经典臂 entry 打乱队位）。
         var _msBase250 = (typeof globalThis._zwDocBaseURL === 'function')
           ? globalThis._zwDocBaseURL()
           : ((globalThis.location && globalThis.location.href) || 'about:blank');
@@ -5751,7 +5777,8 @@
         // iframe 视图隔离）；键 = 原始 src 串（FIXME: spec 按解析 URL 记账——跨
         // 拼写同 URL join 与跨基解析差异未建模，语料无钉面）。态机：absent → 置
         // null 占位发起（占位同步置位——join 窗口覆盖同任务内后继插入）；null →
-        // 登记 waiter 异步续（队列位次保持——entry 已在本臂上方入 FIFO）；成功
+        // 登记 waiter 异步续（entry 对象登记段创建、settle 时入队——s355 排水
+        // 面队位由 flush 臂序承载）；成功
         // 契约 → 缓存直取完成（无新取回，setTimeout 延迟保持既有任务化 prepare
         // 时序——s343 inline-async-inserted-execorder 同理由）。owner 完成：①取回
         // 失败 → 先删键再逐面失败（waiter 兄弟 handler 同步重插时占位已清，得新
@@ -5768,12 +5795,27 @@
           return true;
         }
         if (typeof _mmHit346 === 'string') {
-          setTimeout(function () {
-            _zwDynModuleSettle346(_msUrl250, _msEl250, _msEntry250, _zwOnRan, _mmHit346);
-          }, 0);
+          // s355：缓存直取 settle 臂同挂排水门（无新取回，但 settle 的 FIFO drain
+          // 时序让后于交付窗内后继脚本——execorder dynamic async-ordered 面）。
+          var _msArm355a = function () {
+            // s355：臂首入队（与经典臂同口径——队位 = flush 臂序 = 插入序）。
+            _zwQueueEntry355(_msEntry250);
+            setTimeout(function () {
+              _zwDynModuleSettle346(_msUrl250, _msEl250, _msEntry250, _zwOnRan, _mmHit346);
+            }, 0);
+          };
+          if (_zwDrainHold355()) {
+            (globalThis.__zwDrainPendingSrcArms = globalThis.__zwDrainPendingSrcArms || []).push(_msArm355a);
+            return true;
+          }
+          _msArm355a();
           return true;
         }
         _mmMap346[_msUrl250] = null;
+        var _msArm355 = function () {
+        // s355：臂首入队（与经典臂同口径——队位 = flush 臂序 = 插入序，owner
+        // 先于其 waiter——waiter settle 时入队随遍历序）。
+        _zwQueueEntry355(_msEntry250);
         setTimeout(function () {
           var _msR250 = '';
           try {
@@ -5803,6 +5845,14 @@
             }
           }
         }, 0);
+        };
+        // s355：owner 取回臂挂排水门——占位（上方同步置位）保持 join 窗口语义
+        //（同窗 waiter 登记路径不受影响，settle 由本臂 flush 后驱动）。
+        if (_zwDrainHold355()) {
+          (globalThis.__zwDrainPendingSrcArms = globalThis.__zwDrainPendingSrcArms || []).push(_msArm355);
+          return true;
+        }
+        _msArm355();
         return true;
       }
       if (!url || typeof fetch !== 'function'
@@ -5832,13 +5882,6 @@
           || !(globalThis._zwScriptForceAsync && _faKey != null
             && globalThis._zwScriptForceAsync[_faKey] === false);
       } catch (_eS110q) {}
-      // Resource Timing（M3 slice 1）：置发起方旗标（fetch 包裹消费为
-      // initiatorType 'script' + 真实时长窗口）——R387b 原语义。
-      _zwRtPendingInitiator = 'script';
-      // s110：外链取回 in-flight 计数——runner load 等待面（loadStep5275 重试条件
-      // 扩展读 `__zwScriptFetchPending`）。计数圈住 fetch() 发起到取回/失败回调
-      // 整窗（含 shim 侧 trickle/delay setTimeout 延迟）；门 bail 不计数，宿主
-      // 让位（__zwHostOwnsDynamicScripts）路径不进本段。
       // s122（html-semantics M2 切片 122）：charset 属性感知解码——spec fetch a
       // classic script 编码判定链的 charset 属性级（fetch 发起时刻读取，后续变更
       // 不回溯——script-charset-03 判据：windows-1250 置位后 append、fetch 在飞
@@ -5847,6 +5890,8 @@
       // `_zwEncodingFromLabel(label, false)` 归一（脚本编码无 HTML meta 特例），
       // 未知 label 顺延 UTF-8 文本面（原行为）。有效标签 → arrayBuffer 真
       // 字节 + TextDecoder 解码（.text() 恒 UTF-8 语义不走）。
+      // s355：读取留登记时（prepare 时刻快照——排水挂起推迟 fetch 发起，编码
+      // 判定仍取插入时值，不随 flush 时点回溯）。
       // https://html.spec.whatwg.org/multipage/scripting.html#fetch-a-classic-script
       var _zwCsEnc = '';
       try {
@@ -5857,18 +5902,43 @@
             : __zw_get_attr(_gwSel, 'charset'));
         if (_csRaw122) _zwCsEnc = _zwEncodingFromLabel(_csRaw122, false) || '';
       } catch (_eCs122) {}
-      var _p110 = fetch(url);
-      globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
-      var _zwSettled110 = function () {
-        globalThis._zwScriptFetchInFlight
-          = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
-      };
+      // s355（html-semantics M2 切片 355）：**交付排水门**——webview 页脚本交付
+      // 循环置位 `__zwDeliveryDrainActive` 时，动态插入 classic src 的 fetch 臂
+      // 挂起 `__zwDrainPendingSrcArms`、循环毕宿主经 `__zwFlushDrainPendingSrc`
+      // 逐臂发起：spec 动态 src 取回是异步任务，parser 交付窗内插入让后于其后
+      // parser 脚本（051 alt B 序 ['inline #1','end #1','inline #2','count:6']；
+      // 旧臂 fetch promise 在交付单元间排空，count 落 inline#2 前不配双
+      // alternative 任一）。module src 臂同门（module 分支 _msArm355——
+      // execorder dynamic async-ordered 的 FIFO 交错序：module settle 的队列
+      // drain 让后于交付窗内 classic entry 入队）。写流 src 挂链豁免
+      // （`__zwDocWritePendingSlot` ≥0 = part06 写入执行链/嵌套驱动面——s353
+      // 停车语义要求写流 src 先于其后 markup，挂起会翻 068）；宿主让位
+      // （renderer）在上方门已 return false
+      // 不进本臂。flush 序 = 登记序 = 插入序，in-order FIFO entry 随臂入队
+      // 语义不变；async 属性/force-async 判定留登记时（prepare 时刻快照）。
+      // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+      var _zwArm96 = function () {
+      // Resource Timing（M3 slice 1）：置发起方旗标（fetch 包裹消费为
+      // initiatorType 'script' + 真实时长窗口）——R387b 原语义。
+      _zwRtPendingInitiator = 'script';
+      // s110：外链取回 in-flight 计数——runner load 等待面（loadStep5275 重试条件
+      // 扩展读 `__zwScriptFetchPending`）。计数圈住 fetch() 发起到取回/失败回调
+      // 整窗（含 shim 侧 trickle/delay setTimeout 延迟）；门 bail 不计数，宿主
+      // 让位（__zwHostOwnsDynamicScripts）路径不进本段。
+      // s355：entry 创建+入队前置到 fetch 发起前——flush 臂首入队保队位 =
+      // 插入序（臂序），慢源 entry 不因 settle 晚而失位（头阻塞语义完整）。
       var _faEntry = _faAsyncQueue ? null
         : { ready: false, failed: false, code: '', url: url, el: el96, cb: _zwOnRan };
       if (_faEntry) {
         if (!globalThis._zwInOrderScriptQueue) globalThis._zwInOrderScriptQueue = [];
         globalThis._zwInOrderScriptQueue.push(_faEntry);
       }
+      var _p110 = fetch(url);
+      globalThis._zwScriptFetchInFlight = (globalThis._zwScriptFetchInFlight || 0) + 1;
+      var _zwSettled110 = function () {
+        globalThis._zwScriptFetchInFlight
+          = Math.max(0, (globalThis._zwScriptFetchInFlight || 0) - 1);
+      };
       _p110.then(function (_r) {
         if (!_r.ok && _r.status) throw new Error('HTTP ' + _r.status);
         if (_zwCsEnc && typeof TextDecoder === 'function' && _r.arrayBuffer) {
@@ -5903,6 +5973,12 @@
         } catch (_eS96e) {}
         if (typeof _zwOnRan === 'function') { try { _zwOnRan(); } catch (_eS97cb2) {} }
       });
+      };
+      if (_zwDrainHold355()) {
+        (globalThis.__zwDrainPendingSrcArms = globalThis.__zwDrainPendingSrcArms || []).push(_zwArm96);
+        return true;
+      }
+      _zwArm96();
       return true;
     } catch (_eS96gate) {
       if (typeof globalThis._zwReportListenerError === 'function') {
@@ -5921,6 +5997,22 @@
   globalThis._zwDrainInOrderScriptQueue = _zwDrainQueueImpl;
   globalThis.__zwScriptFetchPending = _zwFetchPendingImpl;
   globalThis._zwScriptForevBlocked = _zwScriptForevBlocked;
+  // s355：交付排水门 flush——宿主页脚本交付循环毕调用（webview
+  // run_page_scripts_impl 尾）：清旗标 + 逐臂发起挂起的动态 src fetch。单臂
+  // throw 上报后继续后续臂（与 _zwPrepareSrcScript 顶层 catch 同策略，不因
+  // 单脚本体异常丢队列）。
+  globalThis.__zwFlushDrainPendingSrc = function () {
+    globalThis.__zwDeliveryDrainActive = false;
+    var _fdq355 = globalThis.__zwDrainPendingSrcArms || [];
+    globalThis.__zwDrainPendingSrcArms = [];
+    for (var _fdi355 = 0; _fdi355 < _fdq355.length; _fdi355++) {
+      try { _fdq355[_fdi355](); } catch (_fdE355) {
+        if (typeof globalThis._zwReportListenerError === 'function') {
+          try { globalThis._zwReportListenerError(_fdE355, null); } catch (_fdR355) {}
+        }
+      }
+    }
+  };
   // s124（html-semantics M2 切片 124）：**link rel=modulepreload 取回面**——插入后
   // 按 spec link processing 抓取模块（宿主 `__zw_fetch_script` 通道；未注册嵌入方
   // typeof-check no-op，行为不变）。取回成功：体在全局求值 + 以解析后绝对 URL 键
