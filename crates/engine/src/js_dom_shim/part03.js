@@ -13147,11 +13147,26 @@
     // 成 class 再经 new 二次执行（双副作用）。
     var src = '';
     try { src = Function.prototype.toString.call(ctor); } catch (_eTs) {}
+    // s358（html-semantics M2 切片 358）：ctor 异常上报——spec 升级算法 catch 段尾
+    // 「Rethrow the exception」（custom-elements.html#upgrades §4.13.5），drain 面
+    // 「If this throws an exception, catch it, and report it for ... associated realm's
+    // global object」（custom-elements.html#custom-element-reactions §4.13.6）——即升级
+    // 异常不向页面传播（createElement 正常返回）但须 report 到 window（ErrorEvent.error
+    // 承载异常对象）。此前两臂静默吞掉，WPT custom-element-exception 的 window error
+    // listener log.length==1 断言落空。class 臂先捕获、_zwCeExisting 复位（finally）后
+    // 再上报——listener 内同步再建 CE 不消费过期 this 注入印记。吞后继续形态保留：
+    // 升级无重试由上方 _ceUpgraded 章门承载（spec definition-null 步的面内等价）。
     if (/^\s*class[\s{]/.test(src)) {
+      var _eS358Ctor = null;
       _zwCeExisting = el;
-      try { new ctor(); } catch (_eNew) {} finally { _zwCeExisting = null; }
+      try { new ctor(); } catch (_eNew) { _eS358Ctor = _eNew; } finally { _zwCeExisting = null; }
+      if (_eS358Ctor) {
+        try { globalThis._zwReportListenerError(_eS358Ctor, null); } catch (_eS358rp) {}
+      }
     } else {
-      try { ctor.call(el); } catch (_eCall) {}
+      try { ctor.call(el); } catch (_eCall) {
+        try { globalThis._zwReportListenerError(_eCall, null); } catch (_eS358rp2) {}
+      }
     }
     // R3274 + spec「upgrade a custom element」enqueue step：升级时对**已存在**的 observed
     // 属性派发初始 attributeChangedCallback(name, null, value)，先于 connectedCallback。
