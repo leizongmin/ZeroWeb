@@ -5596,6 +5596,50 @@
   function _zwFetchPendingImpl() {
     return (globalThis._zwScriptFetchInFlight || 0) > 0;
   }
+  // s346（html-semantics M2 切片 346）：动态外链 module join 完成面共享 helper
+  //（_zwPrepareSrcScriptGate module 臂 owner/waiter 两路同用；①取回失败、
+  // ②specifier 解析失败、③编译成功三态逐字保持 s250 臂原语义）。
+  function _zwDynModuleFail346(el, entry) {
+    if (entry) {
+      entry.failed = true;
+      entry.ready = true;
+      globalThis._zwDrainInOrderScriptQueue();
+      return;
+    }
+    // s129：UA 取回失败派 error 是 trusted（fetch-src/failure.html isTrusted 断言面）。
+    try {
+      el.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
+        ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error'));
+    } catch (_e346mf) {}
+  }
+  function _zwDynModuleSettle346(url, el, entry, cb, contract) {
+    var sep = contract.indexOf('\u001f');
+    var code = sep >= 0 ? contract.slice(sep + 1) : contract;
+    if (sep >= 0 && code === '') {
+      // specifier 解析失败 → load（空码经执行器即仅派 load，队列/直执同形）。
+      if (entry) {
+        entry.ready = true;
+        globalThis._zwDrainInOrderScriptQueue();
+      } else {
+        try { el.dispatchEvent(new Event('load')); } catch (_e346sl0) {}
+      }
+      return;
+    }
+    if (entry) {
+      entry.ready = true;
+      entry.code = code;
+      globalThis._zwDrainInOrderScriptQueue();
+      return;
+    }
+    try {
+      globalThis._zwExecuteFetchedScript(url, el, code, cb);
+    } catch (_e346run) {
+      if (typeof globalThis._zwReportListenerError === 'function') {
+        try { globalThis._zwReportListenerError(_e346run, null); } catch (_e346rp) {}
+      }
+      try { el.dispatchEvent(new Event('load')); } catch (_e346sl1) {}
+    }
+  }
   function _zwPrepareSrcScript(child, _zwOnRan) {
     var _zwAsync = false;
     try {
@@ -5692,47 +5736,65 @@
           : ((globalThis.location && globalThis.location.href) || 'about:blank');
         var _msUrl250 = url;
         var _msEl250 = child;
+        // s346（html-semantics M2 切片 346）：spec module map join 语义——动态插入
+        // 外链 module 的并发同 URL 装载 join 单次取回（whatwg/html#10327 判据面
+        // concurrent-failed-imports：5 并发失败装载计 1 次 fetch、各自得自身取回
+        // 结果；兄弟 error handler 同步重插同 specifier 须新取回——HTTP 失败**不**
+        // 入 module map。旧实现每元素独立 __zw_compile_module 取回，无 join）。
+        // 映射挂当前连接文档（s341 __zwScriptElStack 同法，per-document 作用域，
+        // iframe 视图隔离）；键 = 原始 src 串（FIXME: spec 按解析 URL 记账——跨
+        // 拼写同 URL join 与跨基解析差异未建模，语料无钉面）。态机：absent → 置
+        // null 占位发起（占位同步置位——join 窗口覆盖同任务内后继插入）；null →
+        // 登记 waiter 异步续（队列位次保持——entry 已在本臂上方入 FIFO）；成功
+        // 契约 → 缓存直取完成（无新取回，setTimeout 延迟保持既有任务化 prepare
+        // 时序——s343 inline-async-inserted-execorder 同理由）。owner 完成：①取回
+        // 失败 → 先删键再逐面失败（waiter 兄弟 handler 同步重插时占位已清，得新
+        // 取回）；②③ → 契约入缓存 + waiter 逐个同面完成（同 IIFE __moduleCache
+        // 记忆化——模块体仍恰一次求值；load/error 每元素派发）。
+        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+        var _mmDoc346 = globalThis.document;
+        var _mmMap346 = _mmDoc346.__zwDynModuleMap || (_mmDoc346.__zwDynModuleMap = {});
+        var _mmWait346 = _mmDoc346.__zwDynModuleWaiters || (_mmDoc346.__zwDynModuleWaiters = {});
+        var _mmHit346 = _mmMap346[_msUrl250];
+        if (_mmHit346 === null) {
+          (_mmWait346[_msUrl250] || (_mmWait346[_msUrl250] = [])).push(
+            { el: _msEl250, entry: _msEntry250, cb: _zwOnRan });
+          return true;
+        }
+        if (typeof _mmHit346 === 'string') {
+          setTimeout(function () {
+            _zwDynModuleSettle346(_msUrl250, _msEl250, _msEntry250, _zwOnRan, _mmHit346);
+          }, 0);
+          return true;
+        }
+        _mmMap346[_msUrl250] = null;
         setTimeout(function () {
           var _msR250 = '';
           try {
             _msR250 = String(globalThis.__zw_compile_module(_msUrl250, _msBase250, '') || '');
           } catch (_eMsC250) {}
           if (!_msR250) {
-            if (_msEntry250) {
-              _msEntry250.failed = true;
-              _msEntry250.ready = true;
-              globalThis._zwDrainInOrderScriptQueue();
-            } else {
-              try { _msEl250.dispatchEvent(typeof globalThis.__zwMakeTrustedEvent === 'function'
-                ? globalThis.__zwMakeTrustedEvent('error', {}) : new Event('error')); } catch (_eMsE250) {}
+            // ① 取回失败——spec：HTTP 失败不入 module map（whatwg/html#10327）。
+            delete _mmMap346[_msUrl250];
+            var _mwFail346 = _mmWait346[_msUrl250];
+            delete _mmWait346[_msUrl250];
+            _zwDynModuleFail346(_msEl250, _msEntry250);
+            if (_mwFail346) {
+              for (var _mwFailIdx346 = 0; _mwFailIdx346 < _mwFail346.length; _mwFailIdx346++) {
+                _zwDynModuleFail346(_mwFail346[_mwFailIdx346].el, _mwFail346[_mwFailIdx346].entry);
+              }
             }
             return;
           }
-          var _msSep250 = _msR250.indexOf('\u001f');
-          var _msCode250 = _msSep250 >= 0 ? _msR250.slice(_msSep250 + 1) : _msR250;
-          if (_msSep250 >= 0 && _msCode250 === '') {
-            // specifier 解析失败 → load（空码经执行器即仅派 load，队列/直执同形）。
-            if (_msEntry250) {
-              _msEntry250.ready = true;
-              globalThis._zwDrainInOrderScriptQueue();
-            } else {
-              try { _msEl250.dispatchEvent(new Event('load')); } catch (_eMsL250) {}
+          _mmMap346[_msUrl250] = _msR250;
+          var _mwDone346 = _mmWait346[_msUrl250];
+          delete _mmWait346[_msUrl250];
+          _zwDynModuleSettle346(_msUrl250, _msEl250, _msEntry250, _zwOnRan, _msR250);
+          if (_mwDone346) {
+            for (var _mwDoneIdx346 = 0; _mwDoneIdx346 < _mwDone346.length; _mwDoneIdx346++) {
+              var _mwW346 = _mwDone346[_mwDoneIdx346];
+              _zwDynModuleSettle346(_msUrl250, _mwW346.el, _mwW346.entry, _mwW346.cb, _msR250);
             }
-            return;
-          }
-          if (_msEntry250) {
-            _msEntry250.ready = true;
-            _msEntry250.code = _msCode250;
-            globalThis._zwDrainInOrderScriptQueue();
-            return;
-          }
-          try {
-            globalThis._zwExecuteFetchedScript(_msUrl250, _msEl250, _msCode250, _zwOnRan);
-          } catch (_eMsRun250) {
-            if (typeof globalThis._zwReportListenerError === 'function') {
-              try { globalThis._zwReportListenerError(_eMsRun250, null); } catch (_eMsRp250) {}
-            }
-            try { _msEl250.dispatchEvent(new Event('load')); } catch (_eMsL2b250) {}
           }
         }, 0);
         return true;

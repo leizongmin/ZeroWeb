@@ -226,7 +226,44 @@ fn py_routes() -> &'static [PyRoute] {
             },
             handle: route_xhr_redirect_cors,
         },
+        PyRoute {
+            matches: PyRouteMatch::Exact("html/semantics/scripting-1/the-script-element/module-fetch-tester.py"),
+            handle: route_module_fetch_tester,
+        },
     ]
+}
+
+/// html/semantics/scripting-1/the-script-element/module-fetch-tester.py 臂——s346
+/// （html-semantics）：页面 fetch() stat 通道（concurrent-failed-imports 判据取
+/// `?action=stat` 回计数）。非 stat 请求按上游镜像计数 + 404/200 分派（corpus 面
+/// 页面 fetch() 不取模块本体——模块取回走 script fetcher 臂，两 face 同调
+/// [`crate::testharness::module_fetch_tester_serve`] 共享 [`crate::testharness::MODULE_FETCH_TESTER_STASH`]，
+/// 计数/应答逐字节一致）。
+/// https://github.com/web-platform-tests/wpt/blob/master/html/semantics/scripting-1/the-script-element/module-fetch-tester.py
+fn route_module_fetch_tester(
+    _ctx: &PyEndpointCtx,
+    _clean: &str,
+    path_part: &str,
+    req: &zero_engine::fetch_bridge::FetchRequest,
+) -> Option<Result<zero_engine::fetch_bridge::FetchResponse, String>> {
+    let query = path_part.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let key = wpt_query_value(query, "key").unwrap_or_default();
+    let action = wpt_query_value(query, "action").unwrap_or_default();
+    let mode = wpt_query_value(query, "mode").unwrap_or_default();
+    let (status, status_text, body) = match crate::testharness::module_fetch_tester_serve(&key, &action, &mode) {
+        Ok(body) => (200, "OK", body),
+        Err(_) => (404, "Not Found", "not found".to_string()),
+    };
+    let mut headers: Vec<(String, String)> = Vec::new();
+    headers.push(("content-type".into(), "text/plain".into()));
+    wpt_add_fetch_metadata(&mut headers, req, status);
+    Some(Ok(zero_engine::fetch_bridge::FetchResponse {
+        status,
+        status_text: status_text.to_string(),
+        headers,
+        body: body.clone(),
+        body_bytes: Some(body.into_bytes()),
+    }))
 }
 
 /// 站点根（wpt.test /） 臂——注册表首批（切片二）迁移，体逐字节保持。

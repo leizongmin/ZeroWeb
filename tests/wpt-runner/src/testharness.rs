@@ -5931,6 +5931,38 @@ pub(crate) type CredentialCookieStash = std::sync::Arc<std::sync::Mutex<HashMap<
 static SERVE_CUSTOM_RESPONSE_STASH: std::sync::LazyLock<ServeCustomResponseStash> =
     std::sync::LazyLock::new(|| std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new())));
 
+/// s346：module-fetch-tester.py 请求计数表（页面 fetch() stat 臂 [`testharness_py_routes::route_module_fetch_tester`]
+/// 与模块取回臂共享——s267 [`SERVE_CUSTOM_RESPONSE_STASH`] 同型）。键 = 端点 `key`
+/// 查询参数（corpus `token()` UUID——跨案/跨 job 碰撞不可能，进程级表只增内存有界；
+/// 案级清空不建模 FIXME 语料无钉面）。
+type ModuleFetchTesterStash = std::sync::Arc<std::sync::Mutex<HashMap<String, u32>>>;
+static MODULE_FETCH_TESTER_STASH: std::sync::LazyLock<ModuleFetchTesterStash> =
+    std::sync::LazyLock::new(std::sync::Arc::default);
+
+/// s346：module-fetch-tester.py 共享状态机（上游 wptserve handler 逐字镜像，
+/// whatwg/html#10327「Don't cache HTTP errors in the module map」判据端点）——
+/// `action=stat` 回计数不计数；其余计数后按 mode 判定：缺省 fail-first（计数 1
+/// → 404 "not found"）、always-fail（恒 404）、其余 mode 恒成功回 JS module
+/// `export default 'hello';`（application/javascript——fetcher 契约无 status/
+/// MIME 通道，404 = Err 加载失败面）。模块取回臂与页面 fetch() 臂同调本函数，
+/// 两 face 计数/应答逐字节一致。
+/// https://github.com/web-platform-tests/wpt/blob/master/html/semantics/scripting-1/the-script-element/module-fetch-tester.py
+pub(crate) fn module_fetch_tester_serve(key: &str, action: &str, mode: &str) -> Result<String, String> {
+    let Ok(mut stash) = MODULE_FETCH_TESTER_STASH.lock() else {
+        return Err("module-fetch-tester.py stash poisoned".to_string());
+    };
+    if action == "stat" {
+        return Ok(stash.get(key).copied().unwrap_or(0).to_string());
+    }
+    let count = stash.entry(key.to_string()).or_insert(0);
+    *count += 1;
+    let mode_eff = if mode.is_empty() { "fail-first" } else { mode };
+    if mode_eff == "always-fail" || (mode_eff == "fail-first" && *count == 1) {
+        return Err("module-fetch-tester.py HTTP 404 not found".to_string());
+    }
+    Ok("export default 'hello';".to_string())
+}
+
 /// 既有单测签名面——回落进程级静态 stash（见上）。
 #[cfg(test)]
 fn wpt_data_script_fetcher(
@@ -6126,6 +6158,22 @@ fn wpt_data_script_fetcher_with_stash(
         // 通道收口。
         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
         // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+        // s346：module-fetch-tester.py 动态端点模块取回臂（上游 wptserve handler
+        // 不在语料——whatwg/html#10327「Don't cache HTTP errors in the module map」
+        // 判据端点：key 维度请求计数 + mode fail-first 首发 404 / always-fail 恒
+        // 404；action=stat 回计数不计数——页面 fetch() 通道 py_routes
+        // route_module_fetch_tester 同调 [`module_fetch_tester_serve`] 共享
+        // [`MODULE_FETCH_TESTER_STASH`]）。404 → Err（fetcher 契约无 status 通道，
+        // 非 200 加载失败与网络错误对页面可观察面同形——error 事件）；成功 → Ok
+        // （上游回体逐字镜像）。置于 `__zw_mtype` intent 臂前（s267 同理由——
+        // .py 非 css MIME，intent 臂先接管即断计数观察面）。
+        if clean == "html/semantics/scripting-1/the-script-element/module-fetch-tester.py" {
+            let query = src.split('?').nth(1).unwrap_or("");
+            let key = wpt_query_value(query, "key").unwrap_or_default();
+            let action = wpt_query_value(query, "action").unwrap_or_default();
+            let mode = wpt_query_value(query, "mode").unwrap_or_default();
+            return module_fetch_tester_serve(&key, &action, &mode);
+        }
         // s344：delayed-modulescript.py 动态端点模块取回臂（上游 wptserve handler
         // 不在语料——上游 sleep 后回 text/javascript JS module，`export delayedLoaded`
         // 等；语料缺资产 → 404 → error 代替 load，nested-imports 文件红「unexpected」
@@ -14222,6 +14270,72 @@ async_test(function(test) {
             "#test { background-color: rgb(0, 255, 0); }"
         );
         assert_eq!(stat(key_css), "1");
+    }
+
+    #[test]
+    fn module_fetch_tester_endpoint_state_machine_s346() {
+        // s346（module-fetch-tester.py 端点）：模块取回臂 + 页面 fetch() stat 臂
+        // 共享 stash 的状态机端到端——concurrent-failed-imports 判据面（缺省
+        // fail-first 首发计数 1 + Err、二发计数 2 + 上游逐字 JS 回体；always-fail
+        // 恒 Err 计数递增；stat 只读不计数）。fetcher 契约无 status 通道，404 与
+        // 网络错误对页面同形 Err；页面 fetch() 通道 404 有 status 应答（上游
+        // wptserve 语义）。
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let fetcher = wpt_data_script_fetcher(Path::new("/nonexistent-wpt-root"), None).unwrap();
+        let make_req = |url: &str| zero_engine::fetch_bridge::FetchRequest {
+            url: url.to_string(),
+            method: "GET".to_string(),
+            headers: Vec::new(),
+            body: None,
+            body_bytes: None,
+            credentials: None,
+            mode: None,
+            redirect: None,
+        };
+        let endpoint = "https://wpt.test/html/semantics/scripting-1/the-script-element/module-fetch-tester.py";
+        let page =
+            "https://wpt.test/html/semantics/scripting-1/the-script-element/module/concurrent-failed-imports.html";
+        let stat = |key: &str| {
+            handler(&make_req(&format!("{endpoint}?key={key}&action=stat")))
+                .unwrap()
+                .body
+        };
+        let module_fetch = |key: &str, mode: &str| {
+            let mode_param = if mode.is_empty() {
+                String::new()
+            } else {
+                format!("&mode={mode}")
+            };
+            fetcher(page, &format!("../module-fetch-tester.py?key={key}{mode_param}"))
+        };
+
+        // fail-first（缺省）：首发 404 → Err + 计数 1；二发成功回上游逐字节体。
+        let key = "s346-test-token-ff";
+        assert_eq!(stat(key), "0");
+        assert!(module_fetch(key, "").is_err());
+        assert_eq!(stat(key), "1");
+        assert_eq!(module_fetch(key, "").unwrap(), "export default 'hello';");
+        assert_eq!(stat(key), "2");
+
+        // always-fail：恒 Err，计数逐次递增。
+        let key_af = "s346-test-token-af";
+        assert!(module_fetch(key_af, "always-fail").is_err());
+        assert!(module_fetch(key_af, "always-fail").is_err());
+        assert_eq!(stat(key_af), "2");
+
+        // stat 只读不计数（wptserve stash take+put-back 同语义）。
+        assert_eq!(stat(key_af), "2");
+        assert_eq!(stat(key_af), "2");
+
+        // 页面 fetch() 通道同一 key 同一计数（两 face 共享 stash）+ 404 应答形态。
+        let key_pg = "s346-test-token-pg";
+        let miss = handler(&make_req(&format!("{endpoint}?key={key_pg}"))).unwrap();
+        assert_eq!(miss.status, 404);
+        assert_eq!(miss.body, "not found");
+        let hit = handler(&make_req(&format!("{endpoint}?key={key_pg}"))).unwrap();
+        assert_eq!(hit.status, 200);
+        assert_eq!(hit.body, "export default 'hello';");
+        assert_eq!(stat(key_pg), "2");
     }
 
     #[test]
