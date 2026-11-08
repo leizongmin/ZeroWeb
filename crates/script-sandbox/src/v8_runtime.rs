@@ -1264,6 +1264,41 @@ impl V8Sandbox {
         })
     }
 
+    /// s348（html-semantics-compat）：compile-only 校验（parse 不执行）——与
+    /// [`Self::execute`] 编译步同 context、同 classic Script 编译面，仅省略 run 与
+    /// watchdog（无执行、无超时、无微任务检查点、无回调挂载——零副作用）。宿主经
+    /// [`crate::Sandbox::parse_check`] trait 分发进入。
+    pub fn parse_check(&mut self, code: &str) -> Result<(), ScriptError> {
+        if code.trim().is_empty() {
+            return Ok(());
+        }
+        let persistent = self.config.persistent_context;
+        // SAFETY: cached_context 和 isolate 是不同的字段（同 execute）。
+        let cached_ptr: *mut _ = &mut self.cached_context;
+        let isolate = self.isolate.as_mut().ok_or(ScriptError::NotInitialized)?;
+        // SAFETY: 同 execute——stack-like enter/exit 纪律（EnterGuard 配对退出）。
+        unsafe {
+            isolate.enter();
+        }
+        let _enter_guard = IsolateEnterGuard { isolate };
+
+        v8::scope!(let hs, isolate);
+        // SAFETY: cached_ptr 指向 self.cached_context，与 self.isolate 不重叠。
+        let context = unsafe { resolve_context(persistent, cached_ptr, hs) };
+        let mut ctx_scope = v8::ContextScope::new(hs, context);
+        v8::tc_scope!(let try_catch, &mut ctx_scope);
+
+        let Some(code_str) = v8::String::new(try_catch, code) else {
+            return Err(ScriptError::InvalidInput("failed to create V8 string".into()));
+        };
+        let script = v8::Script::compile(try_catch, code_str, None);
+        if try_catch.has_caught() || script.is_none() {
+            let msg = v8_try_catch_message!(try_catch);
+            return Err(ScriptError::CompileError(msg));
+        }
+        Ok(())
+    }
+
     /// 在沙箱中执行JavaScript脚本并返回JSON字符串。
     pub fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         if code.trim().is_empty() {
@@ -1565,6 +1600,9 @@ impl crate::Sandbox for V8Sandbox {
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError> {
         V8Sandbox::execute_json(self, code)
     }
+    fn parse_check(&mut self, code: &str) -> Result<(), ScriptError> {
+        V8Sandbox::parse_check(self, code)
+    }
     fn register_callback(&mut self, name: &str, callback: Box<dyn Fn(&[String]) -> String + Send + Sync>) {
         V8Sandbox::register_callback(self, name, callback)
     }
@@ -1647,6 +1685,25 @@ mod tests {
     use super::*;
 
     // ── 创建与初始化 ──
+
+    // s348（parse_check compile-only 面）：合法源 Ok、语法错归 CompileError、编译
+    // 不执行（副作用源零求值——归属扫描面无副作用契约）、空源 trivially Ok。
+    #[test]
+    fn parse_check_compiles_without_execution() {
+        let mut sandbox = V8Sandbox::new().unwrap();
+        assert!(sandbox.parse_check("var __zwProbe = 42;").is_ok(), "合法源编译通过");
+        let err = sandbox.parse_check("var a = ;").expect_err("语法错必须编译失败");
+        assert!(matches!(err, ScriptError::CompileError(_)), "归 CompileError: {err:?}");
+        assert!(err.to_string().contains("Compile error"), "{err}");
+        assert!(
+            sandbox.parse_check("globalThis.__zwSideEffect = true;").is_ok(),
+            "副作用源编译通过"
+        );
+        let r = sandbox.execute("typeof globalThis.__zwSideEffect").unwrap();
+        assert_eq!(r.value, "undefined", "compile-only 不执行: {:?}", r.value);
+        assert!(sandbox.parse_check("").is_ok(), "空源 trivially 通过");
+        assert!(sandbox.parse_check("   \n ").is_ok(), "空白源 trivially 通过");
+    }
 
     /// T13 S3：reset_context 尾 `low_memory_notification` 后 context 重建语义不破——
     /// 持久 isolate 下旧全局随 Context 丢弃，新 execute 拿到全新全局对象（导航复位

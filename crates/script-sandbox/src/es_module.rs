@@ -330,6 +330,50 @@ pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Re
     build_dep_iife(specifier, registry, "same-origin", &mut HashSet::new(), &mut path)
 }
 
+/// s348（html-semantics-compat）：包装级 parse 失败的**记录归属扫描**——沿入口图
+/// postorder（[`module_graph_postorder`]，求值序）定位首个 parse 失败模块，返回其
+/// 注册键（错误记录属主）。spec：parse error 属失败模块自身的 module record（module
+/// map 失败记账），入口/中间模块不加新记录；多失败图（循环双根 choice-of-error-1）
+/// 各根按各自 DFS 序报告**不同记录**的错误——旧 s102 臂按入口键新建 + 字典序
+/// dep-scan 复报，双根并成同对象（assert_not_equals 红态实证）。parse 优先于既有
+/// 记录（spec：图内 parse 失败在求值前的 instantiate 阶段暴露，求值错误记录不抢）。
+/// 逐键：
+/// ① 转换单元（[`compile_dependency_iife`]，与装配脚本同 classic 语法面；raw 源含
+///    import/export 不可 classic 编译）parse-check 失败 → 即返该键；
+/// ② 体合法但键带既有失败记录（前序元素求值/parse 记账，`recorded_failures` 快照）
+///    → 记为回落候选，扫描继续；
+/// ③ 空/占位源（网络失败预存根）与 build Err（解析/链接失败类，非 parse 面）跳过。
+/// 扫描完仍无 parse 失败：返回首个回落候选（非 parse 失败语义=旧 dep-scan 的求值序
+/// 版）；全无 → None（调用方回落旧 s102 记账臂）。调用方经
+/// [`crate::Sandbox::parse_check`] 注入 compile-only 校验。
+/// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+pub fn module_parse_failure_owner(
+    entry: Option<&str>,
+    registry: &ModuleRegistry,
+    recorded_failures: &HashSet<String>,
+    parse_check: &mut dyn FnMut(&str) -> Result<(), String>,
+) -> Option<String> {
+    let mut recorded = None;
+    for (key, _) in module_graph_postorder(entry, registry) {
+        let Some(source) = registry.get(&key) else {
+            continue;
+        };
+        if source.trim().is_empty() {
+            continue;
+        }
+        let Ok(unit) = compile_dependency_iife(&key, registry) else {
+            continue;
+        };
+        if parse_check(&unit).is_err() {
+            return Some(key);
+        }
+        if recorded.is_none() && recorded_failures.contains(&key) {
+            recorded = Some(key);
+        }
+    }
+    recorded
+}
+
 /// s255：入口图 depth-first post-order 注册序——模块体求值序按依赖图后序、同层按
 /// 源内声明序（ECMA-262 EvaluateModule 图遍历语义）。旧实现在 registry 哈希序注册
 /// （HashMap 迭代序），多依赖模块的副作用顺序不确定——instantiation-error-7 实测
@@ -2601,6 +2645,55 @@ fn is_reserved_word(name: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // s348（包装级 parse 失败记录归属）：postorder 求值序定位首个 parse 失败模块
+    // （非入口键）；parse 失败优先于既有记录；无 parse 失败回落首个既有记录键
+    // （求值序，旧 dep-scan 的有序版）；全无 → None（调用方回落旧记账臂）。
+    #[test]
+    fn test_module_parse_failure_owner_postorder_s348() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://z.test/root.js",
+            "import './dep_ok.js';\nimport './dep_bad.js';\nlog.push(1);",
+        );
+        registry.register("https://z.test/dep_ok.js", "globalThis.x = 1;");
+        registry.register("https://z.test/dep_bad.js", "log.push(0);\n%!#$@#$@#$@");
+        let stub_parse = |unit: &str| -> Result<(), String> {
+            if unit.contains("%!#$") {
+                Err("Compile error: SyntaxError: Unexpected token '%'".into())
+            } else {
+                Ok(())
+            }
+        };
+        // ① parse 失败优先于既有记录（recorded 只挂 root = 模拟旧入口键记账残留）：
+        // postorder [dep_ok, dep_bad, root]，dep_bad 命中即返、root 记录不探测。
+        let recorded: HashSet<String> = ["https://z.test/root.js".to_string()].into_iter().collect();
+        let mut checks = 0usize;
+        let mut stub_count = |unit: &str| {
+            checks += 1;
+            stub_parse(unit)
+        };
+        let owner = module_parse_failure_owner(Some("https://z.test/root.js"), &registry, &recorded, &mut stub_count);
+        assert_eq!(
+            owner.as_deref(),
+            Some("https://z.test/dep_bad.js"),
+            "postorder 首失败=失败模块自身键"
+        );
+        assert_eq!(checks, 2, "dep_ok+dep_bad 两次校验即返");
+        // ② 无 parse 失败：回落首个既有记录键（求值序——dep_ok 先于 root）。
+        let recorded2: HashSet<String> = ["https://z.test/dep_ok.js".to_string()].into_iter().collect();
+        let mut all_ok = |_: &str| Ok::<(), String>(());
+        let owner2 = module_parse_failure_owner(Some("https://z.test/root.js"), &registry, &recorded2, &mut all_ok);
+        assert_eq!(
+            owner2.as_deref(),
+            Some("https://z.test/dep_ok.js"),
+            "回落候选取求值序首记录键"
+        );
+        // ③ 全无 → None（调用方回落旧记账臂）。
+        let owner3 =
+            module_parse_failure_owner(Some("https://z.test/root.js"), &registry, &HashSet::new(), &mut all_ok);
+        assert_eq!(owner3, None, "无 parse 失败无记录 → 扫描不达");
+    }
 
     // s91（string-compilation module 面）：rewrite 的字符串/模板/注释上下文感知——
     // 字面量内的 `import(` 是 eval/Function/setTimeout 字符串的**运行时代码**，编译到

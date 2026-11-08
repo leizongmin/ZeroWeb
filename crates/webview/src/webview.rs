@@ -5006,6 +5006,12 @@ impl WebView {
             // s344-r2：入口图注册键（s102 包装级 parse 失败报告的失败扫描清单——
             // compile Ok 臂填装；编译 Err 臂 continue 不达 s102，恒空）。
             let mut module_dep_keys: Vec<String> = Vec::new();
+            // s348：registry 与入口转换基 url 提升到元素循环域——s102 臂归属扫描
+            // （module_parse_failure_owner）在 execute 失败后消费，需图注册态与入口键。
+            let mut registry = zero_script_sandbox::ModuleRegistry::new();
+            let url = module_dep_base
+                .clone()
+                .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
             let mut full = if is_module {
                 // s105（html-semantics-compat）：import attributes 静态校验（parse 面，
                 // 先于图收集——属性键 SyntaxError 优先于 specifier 解析错误的 TypeError，
@@ -5027,7 +5033,6 @@ impl WebView {
                 // ensure_module_export 对空源报「does not provide an export」，模块化 corpus 的命名
                 // 导入全数 compile error；WPT focus-reset basic/multiple-intercept 首证）。递归收集
                 // （transitive deps 一并入册）；单 spec 失败回落空存根（保旧「不阻塞模块 body 执行」语义）。
-                let mut registry = zero_script_sandbox::ModuleRegistry::new();
                 // s254：页面 import map 入册——静态依赖收集的 resolve_registered_specifier
                 // map 阶段生效（多进程宿主 js_worker 同形态）。
                 if let Some(map) = &page_import_map {
@@ -5129,9 +5134,6 @@ impl WebView {
                 // 口径下入口体 import 经 resolve_registered_specifier URL-join 归一到依赖
                 // 注册键——基错即 join 落页目录 → 假 Module not found（s101 钉实证）。
                 // https://tc39.es/ecma262/#sec-hostresolveimportedmodule
-                let url = module_dep_base
-                    .clone()
-                    .unwrap_or_else(|| self.current_url.as_deref().unwrap_or("about:blank").to_string());
                 // s338：入口转换穿元素 credentials mode（crossorigin → include，缺省
                 // same-origin）——重写发射的 `_importCred` 由该值发射，动态 import() 取
                 // 回经 `__zw_dynamic_import` → `__zw_load_module` → `__zw_compile_module`
@@ -5442,14 +5444,71 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
                     // 5 元素 3 src 全同源；syntaxerror-nested 的扫描清单 = 依赖键 +
                     // 入口键，字典序定序）。求值错误原值上报走 s255 哨兵面，本臂仅
                     // 接哨兵未达的包装级失败。
+                    // s348（记录归属扫描）：spec parse error 属**失败模块自身记录**，
+                    // 非入口键——嵌套首元素（compilation-error-2）旧口径把新记录落
+                    // 入口键，后续直连元素复建第二对象（every(exn===log[0]) 红）；
+                    // 循环双根（choice-of-error-1）字典序 dep-scan 把双根并成同对象
+                    //（assert_not_equals 红）。沿入口图 postorder（求值序）归属扫描
+                    // 定位失败模块键（parse 优先于既有记录、build Err/空源跳过），
+                    // 命中 → 按属主键记账报告（复用旧报告面的缓存/新建语义）；扫描
+                    // 不达（非 parse 失败面）→ 回落旧口径（入口键记账 + 字典序
+                    // dep-scan，语义不变）。后端支持先经 trivial 编译探测：无
+                    // parse_check 面（QuickJS 默认）→ 整个扫描跳过落旧口径（车道
+                    // 行为与 s344 基线逐位一致）。快照取 __moduleFailures 键集
+                    //（parse_check 无副作用，扫描中途无新记录，快照即扫描期真值）。
                     // https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
-                    let _ = sandbox.execute(&script_report_module_failure_cached(
-                        &format!("{e}"),
-                        script_index,
-                        "SyntaxError",
-                        &module_cache_key,
-                        &module_dep_keys,
-                    ));
+                    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+                    let mut parse_err: Option<String> = None;
+                    let parse_supported = !matches!(
+                        sandbox.parse_check("1"),
+                        Err(zero_script_sandbox::ScriptError::EngineUnavailable(_))
+                    );
+                    let owner = if parse_supported {
+                        let recorded_failures: std::collections::HashSet<String> = sandbox
+                            .execute_json("Object.keys(globalThis.__moduleFailures || {})")
+                            .ok()
+                            .and_then(|r| serde_json::from_str(&r.value).ok())
+                            .unwrap_or_default();
+                        let mut check = |unit: &str| -> Result<(), String> {
+                            match sandbox.parse_check(unit) {
+                                Ok(()) => Ok(()),
+                                Err(zero_script_sandbox::ScriptError::EngineUnavailable(_)) => Ok(()),
+                                Err(other) => {
+                                    let msg = format!("{other}");
+                                    parse_err = Some(msg.clone());
+                                    Err(msg)
+                                }
+                            }
+                        };
+                        let owner = zero_script_sandbox::module_parse_failure_owner(
+                            Some(&url),
+                            &registry,
+                            &recorded_failures,
+                            &mut check,
+                        );
+                        drop(check);
+                        owner
+                    } else {
+                        None
+                    };
+                    let report_msg = parse_err.unwrap_or_else(|| format!("{e}"));
+                    if let Some(owner_key) = owner {
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
+                            &report_msg,
+                            script_index,
+                            "SyntaxError",
+                            &owner_key,
+                            &[],
+                        ));
+                    } else {
+                        let _ = sandbox.execute(&script_report_module_failure_cached(
+                            &report_msg,
+                            script_index,
+                            "SyntaxError",
+                            &module_cache_key,
+                            &module_dep_keys,
+                        ));
+                    }
                 }
                 tracing::warn!("页面脚本执行警告: {e}");
             }

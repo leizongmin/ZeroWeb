@@ -441,6 +441,19 @@ pub trait Sandbox {
     fn execute(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
     /// 执行 JavaScript 代码，返回 JSON 字符串结果（`JSON.stringify` 包装）。
     fn execute_json(&mut self, code: &str) -> Result<ScriptResult, ScriptError>;
+    /// s348（html-semantics-compat）：compile-only 校验（parse 不执行）——模块包装级
+    /// parse 失败的记录归属扫描面（webview s102 臂经
+    /// [`crate::module_parse_failure_owner`] 逐模块调用，与装配脚本的 classic 编译
+    /// 同语法面、同 context）。仅编译丢弃产物，不运行任何代码、无副作用。
+    /// https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    ///
+    /// **默认不支持**（EngineUnavailable——调用方按扫描不达回落旧记账臂）；V8 后端
+    /// 实现，QuickJS 后端待接（FIXME：quickjs eval 无独立 parse 面，接线后两车道对齐）。
+    fn parse_check(&mut self, _code: &str) -> Result<(), ScriptError> {
+        Err(ScriptError::EngineUnavailable(
+            "parse_check unsupported by this backend".into(),
+        ))
+    }
     /// 注册宿主回调，挂为全局函数 `name`（JS 调 `name(...)` 触发 Rust 闭包）。
     /// 须在 `execute` 之前调用。回调参数为 JS 参数的字符串数组，返回字符串。
     #[allow(clippy::type_complexity)]
