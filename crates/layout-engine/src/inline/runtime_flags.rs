@@ -364,6 +364,18 @@ pub(super) fn first_line_lh() -> bool {
     selected(*VALUE, || default_on("ZW_FIRST_LINE_LH"))
 }
 
+/// R5473（CSS2 §9.5 float 离流盒）：**行中** float 锚不产生换行——后继 inline 内容
+/// 留原行续排（行内带消费机制已把前文推到 float 右侧带）。chromium oracle 定谳
+///（floats-placement-vertical-001b 形 `<span>Hello<span float/></span>Kitty`：
+/// "HelloKitty" 同行 x≈50 起，ZW 旧径 Kitty 掉行 1 为独有缺陷）。R3784 引入时
+/// 「语义同 BlockBreak」为借推行机制的权宜，非 spec 决策。**行首锚**（空行）仍走
+/// R3779b 臂（不推行 + current_x 带左缘重锚，003l 形 s1 落带右侧依赖该重锚）。
+/// default-on；`ZW_FLOAT_ANCHOR_NO_BREAK=0` 回退锚推行旧行为。
+pub(super) fn float_anchor_no_break() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_ANCHOR_NO_BREAK"));
+    selected(*VALUE, || default_on("ZW_FLOAT_ANCHOR_NO_BREAK"))
+}
+
 /// R5417（CSS2 §10.3.5 inline-block margin box 参排）：IFC 原子 fit 门占位 =
 /// **margin box**（= ml + border box + mr，与同臂 placement advance 同口径）。
 /// 旧径只计 border box：原子横 margin 越出行缘不折行、强留本行横向溢出

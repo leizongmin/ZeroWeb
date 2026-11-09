@@ -1269,6 +1269,22 @@ impl InlineFormattingContext {
                         let anchor_idx = self.lines.len();
                         self.float_anchor_line_idxs.insert(*fid, anchor_idx);
                         last_push_was_float_anchor = true;
+                        // R5473（CSS2 §9.5 float 离流盒）：**行中** float 锚不产生换行
+                        // ——后继 inline 内容留原行续排（行内带消费机制已把前文推到带
+                        // 右侧，后文无碰撞时同行相接）。chromium oracle 定谳（001b 形
+                        // `<span>Hello<span float/></span>Kitty`："HelloKitty" 同行
+                        // x≈50 起＝ZW 旧径 Kitty 掉行 1 独有缺陷）。R3784「语义同
+                        // BlockBreak」为借推行机制的权宜（锚行号/空行判定现成），非
+                        // spec 决策。**行首锚**（空行）不在此跳过——落 R3779b 臂同效果
+                        //（不推行）且必须经其 current_x 带左缘重锚（003l 形 s1 落带
+                        // 右侧依赖该重锚，跳过则 s1/s2 滞留 x=0 与 float 重叠）。
+                        // 锚记录照旧（行中锚 = 当前行顶）；R3786 块断行旗仅对真推行的
+                        // Br/BlockBreak 成立。连续 float 锚继承保留。
+                        if runtime_flags::float_anchor_no_break()
+                            && !(current_line.runs.is_empty() && current_line.height <= 0.0)
+                        {
+                            continue;
+                        }
                     } else {
                         last_push_was_float_anchor = false;
                     }
