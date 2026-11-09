@@ -1,15 +1,15 @@
 # WebCrypto控制面
 
-**2026-11-10 · Active**。DC-1 收账完成：语料修复 + derived_bits_length 楔死定位与修复（deriveBits `length` 缺 [EnforceRange] 入口归一——2\*\*32+8 曾穿透到 host KDF 致 PBKDF2 512MB dkLen 不可终止；part02.js 入口归一 + ECDH/X25519/KDF/Argon2 分支收敛 + part53.rs M6 契约同步 −8→TypeError）+ 全量重跑 r6 终账 **70,627 keys = P 67,877 + F 2,750 + T 0**（3m58s，exit 0）；对 r1 与 11-03 收口锚均**零回归**（drift 恰为 failures.js 修复显形 800 F + enforceRange 32 P，分母逐位对平）。coverage 试跑（ce5ca39646 / 792c7512e3 两 basis，guard 过）净增 **41,098**（67,877 − 发布快照 26,779）≥ 31,000 达标线。\
-**卡点** CI coverage 已于修复后 HEAD re-dispatch：run [42667268541](https://github.com/leizongmin/ZeroWeb/actions/runs/42667268541)（4482feb56，concurrency 取代旧二进制 run 42659662102）；DC-2 新显形 800 F（generateKey failures 面）待逐路径归类。\
-**下一步** 跟踪 run 42667268541 产物并核验 crypto 分片非空；DC-2 余量归类（failures 面 800 + Ed448 面 1,950 = secure-curves 1,946 + getPublicKey 4，均 NotSupportedError；r1 的 turboSHAKE 4 T 已在 r6 清零）；CI 快照回写后做 DC-3 邻域无可归因回退核验；分片/本地守卫线已随根因修复回落 3600（r6 实测 3m58s，~15 倍余量，本轮落账）。
+**2026-11-10 · Active**。DC-2 收账完成：generateKey 数值成员 [EnforceRange] 修复（AES `length` unsigned short / HMAC `length`、RSA `modulusLength` unsigned long 三处入口归一，与 deriveBits 同根因类；part53.rs 契约块 ±2^32 → TypeError）+ 全量 r7 终账 **70,627 keys = P 68,677 + F 1,950 + T 0**（墙钟 ~4 分钟量级，与 editing 流探针并发，不作精确账面）；对 r6 锚对照 **REGRESSED 0 / FIXED 恰 800 / FLIPPED 0 / DRIFT 0**，余 F 1,950 全为 Ed448 降 scope 面（NotSupportedError）。coverage 两 basis 净增 **41,898**（68,677 − 发布快照 26,779）≥ 31,000 达标线。\
+**卡点** DC-3 待 weekly run [42667268541](https://github.com/leizongmin/ZeroWeb/actions/runs/42667268541) 收尾（crypto 分片已回并核验：产物非空，**与本地 r6 逐 key 一致** 70,627 keys 0 漂移）；该 run 为 deriveBits 修复 HEAD（4482feb56），未含本批 generateKey 修复。\
+**下一步** run 收尾后 DC-3 全量对账（快照回写、邻域无可归因回退核验；如需含 generateKey 修复的 CI 账可再 dispatch 一次）；挂账：HMAC generateKey 显式 `length: 0` 现为块大小密钥、spec 为 OperationError（corpus 未覆盖，待补契约后另批处理，见 [evidence 2026-11-10 第五节](evidence/2026-11-10-dc2-generatekey-enforcerange.md)）。
 
 [执行契约](../wptfyi-webcrypto.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | 收账完成 | r6 终账（修复后语料 + EnforceRange 二进制）70,627 keys / T 0 / 3m58s；锚对照 vs r1、11-03 零回归；楔死取证链与修复见 [evidence 2026-11-09 第五节](evidence/2026-11-09-dc1-corpus-repair-and-baseline.md) |
-| DC-2 按簇收敛 | 已盘面 | F 2,750 全部具名：Ed448 面 1,950（secure-curves Ed448 1,946 + getPublicKey 4，均 NotSupportedError；2026-11-02 拍板降 scope，MSRV 1.85 无可用签名实现，2026-11-10 生态复测无变化）+ generateKey failures 面新显形 800（failures.js v3 内容修复后枚举恢复，与 deriveBits 同根因，待修） |
-| DC-3 全量对账 | 待产物 | 分片收录口径净增 41,098 ≥ 31,000（coverage-r6 两 basis 试跑）；CI run 42667268541（修复后 HEAD）在跑，待有效产物 + 邻域核验 |
+| DC-2 按簇收敛 | 收账完成 | F 全部具名并处理：generateKey failures 面 800 已修（[EnforceRange] 三处入口归一，r7 转 P）+ Ed448 面 1,950 降 scope（2026-11-02 拍板，MSRV 1.85 无可用签名实现，2026-11-10 生态复测无变化）；r7 对 r6 零回归见 [evidence 2026-11-10](evidence/2026-11-10-dc2-generatekey-enforcerange.md) |
+| DC-3 全量对账 | 待产物 | 分片收录口径净增 41,898 ≥ 31,000（coverage-r7 两 basis 试跑）；CI run 42667268541 在跑（crypto 分片已回核验），待全 run 收尾 + 快照回写 + 邻域核验 |
 
 碰撞记录暂无。注意：`engine/src/js_dom_bridge/crypto_asym.rs` 在 zero-web 流写面内，DC-2 若涉及引擎改动先核对时序，避免同文件碰撞。

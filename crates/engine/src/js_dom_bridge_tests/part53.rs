@@ -147,6 +147,31 @@ fn test_crypto_subtle_kw_jwk_m3b() {
     assert_eq!(sandbox.execute("String(globalThis.__e7)").unwrap().value, "SyntaxError", "generateKey AES-KW 空 usages → SyntaxError");
     assert_eq!(sandbox.execute("String(globalThis.__e8)").unwrap().value, "SyntaxError", "generateKey 含非法 usage → SyntaxError（先于 length 校验）");
 
+    // generateKey 数值成员 [EnforceRange]（WPT generateKey/failures.js "Bad algorithm
+    // property" ±2^32 组）：AES length（unsigned short）/HMAC length、RSA modulusLength
+    // （unsigned long）超界/负值 → TypeError（WebIDL 转换先于任何算法步序）；
+    // in-range 非法值 512 仍 OperationError。同 derivedBits length 归一（neg:TypeError）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+    sandbox
+        .execute(
+            "globalThis.__ef='(pending)';\
+             Promise.all([\
+               errname(crypto.subtle.generateKey({name:'AES-CBC',length:4294967424},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'AES-CBC',length:-4294967168},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'AES-OCB',length:512},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:4294967424},true,['sign'])),\
+               errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:-4294967168},true,['sign'])),\
+               errname(crypto.subtle.generateKey({name:'RSA-OAEP',hash:'SHA-256',modulusLength:4294968320,publicExponent:new Uint8Array([1,0,1])},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'RSA-OAEP',hash:'SHA-256',modulusLength:-4294966272,publicExponent:new Uint8Array([1,0,1])},true,['encrypt']))\
+             ]).then(function(ns){globalThis.__ef=ns.join(',');});",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ef)").unwrap().value,
+        "TypeError,TypeError,OperationError,TypeError,TypeError,TypeError,TypeError",
+        "generateKey ±2^32 数值成员 → TypeError（AES/HMAC/RSA [EnforceRange]）、in-range 512 → OperationError"
+    );
+
     // jwk 导入/导出 round-trip：字段断言（kty/k/alg/key_ops/ext）+ 误用 kty → DataError +
     // ext:false + extractable:true → DataError。
     sandbox

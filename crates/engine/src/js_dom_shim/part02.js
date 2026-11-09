@@ -742,6 +742,16 @@
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
         var isChaCha = algo.name === 'ChaCha20-Poly1305';
         if (isAes) {
+          // AesKeyGenParams.length = [EnforceRange] unsigned short（WebIDL 转换，先于
+          // 任何算法步序）：NaN/±Infinity/<0/>65535/非整数 → TypeError（WPT failures.js
+          // "Bad algorithm property" ±2^32 组；64..512 组仍走后续 OperationError）。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+          if (typeof algorithm === 'object' && algorithm && algorithm.length != null) {
+            var aesLenNum = Number(algorithm.length);
+            if (!(isFinite(aesLenNum) && aesLenNum >= 0 && aesLenNum <= 65535 && aesLenNum === Math.floor(aesLenNum))) {
+              reject(new TypeError('AES key length must be an unsigned short')); return;
+            }
+          }
           var allowed = algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey'] : ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'];
           var u = _zw_normalizeUsages(usages, allowed);
           if (!u) { reject(new _zw_subtleDE('Invalid key usages for ' + algo.name, 'SyntaxError')); return; }
@@ -766,6 +776,16 @@
           }
           resolve(new CryptoKey('secret', extractable, { name: algo.name }, cu, Array.from(_zw_randomBytes(32))));
         } else if (algo.name === 'HMAC') {
+          // HmacKeyGenParams.length = [EnforceRange] unsigned long（WebIDL 转换，先于
+          // 任何算法步序）：NaN/±Infinity/<0/>2^32-1/非整数 → TypeError（WPT failures.js
+          // "Bad algorithm property" ±2^32 组）；缺省 = hash 块大小不变。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+          if (algo.length != null) {
+            var hmacLenNum = Number(algo.length);
+            if (!(isFinite(hmacLenNum) && hmacLenNum >= 0 && hmacLenNum <= 4294967295 && hmacLenNum === Math.floor(hmacLenNum))) {
+              reject(new TypeError('HMAC length must be an unsigned long')); return;
+            }
+          }
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
           if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
           var lenBits = _zw_keyLengthBits(algo);
