@@ -10,7 +10,7 @@ handoff 立项时判「引擎产出形与语料期望形分歧」（probe 17/0 �
 - 根因＝`__zw_ce_f6b_post_insert` ② 异桶重放 `fontEl.appendChild(scriptEl)` 在 mt 顺序执行面不隐式 detach：typed 文本节点为 caret 锚节点态时 script 壳移动不脱旧亲链，元素双亲（font1 + host）被 innerHTML 序列化两次——got 形逐字复现（期望形+幽灵重复尾）。F6b 三臂（捕获/分账/路由/重映射）全正确，唯 DOM 写点非真移动。
 - 孤立页同码通过＝缺口状态相关；先例注释在案（part01 F1'-B `_zwCeTypingForwardMerge`「显式摘除后头插——zz-probe-d4x X4，DocumentFragment 无移动语义；元素侧同法保守」）。修法循先例使移动无条件正确，两态语义恒等（显式 detach+append ≡ 正常 move）。
 
-## 刀体（commit 8ac40127b，part01 +6 + fixture +43）
+## 刀体（commit 8ac40127b，push 时重放 dcea9b117，part01 +6 + fixture +43）
 
 part01.js `__zw_ce_f6b_post_insert` ② 异桶重放段：`sp.insertBefore(fontEl, scriptEl)` 后、`fontEl.appendChild(scriptEl)` 前插入 `if (scriptEl.parentNode) scriptEl.parentNode.removeChild(scriptEl);` + 先例注释。不新增臂、不动捕获/路由/等桶溶解/A 通道（`carry.inner` 早退与 `cb === carry.bucket` 溶解路径零扰动——W1 见证形与 A 族 17 案回归面）。
 
@@ -42,3 +42,4 @@ v1 enginelib ABORT 根因＝failed 总数门正则写反（cargo `test result` �
 
 - 批先入库协议第二次实践：刀体先 commit（8ac40127b）再发射，EXPECTED_HEAD 锚定；本刀 commit 由 lane8 支援位代落（本施工位验证链在飞期间），guard 追扫 PASS（2 文件/49 行/0 发现）补记合规。
 - part01.js 12448 行（存量超限沿 ④/⑦ 记账）；本刀 +6 行净增。
+- push 时 pull --rebase 并入 origin s366/s5477/R5477 归档三 commit → 刀体重放 8ac40127b→dcea9b117、docs 82bcb2916→6da883235（F7m d32500215 先例同款字节对账，当日补记）：刀体 hunks fix^..fix 隔离逐位恒一（f276661d），docs 重放 diff 恒一（1dc05820），八点锚七点恒一（part01 45f946ea/fixture 8a3f16e2/part01c/d/f/h/bridge f7d65f32）；漂移一点 part06 2fdb996f→247d1370＝并入 s366（869dc3f71）SVG write 注入域 +124 行 hunk，非刀体域。批判读绑定批时 head（8ac40127b，part06=s365 基线 2fdb996f）域内有效；s366 自带本域门禁（143 F→P）。
