@@ -75,6 +75,38 @@ shards:
     # （~3–5 万次/variant），90s 缺省预算内跑不完被截成全案 synthetic
     # Fail——Makefile testharness-encoding-legacy-mb 同款 600000。
     script_timeout: 600000
+  # 2026-11-10 wptfyi-runtime DC-1（test262 通道接入 79862fbb3）：53,441 案
+  # 本地全量 ~2.2h（普通案 ~165–200ms，test/harness/ 116 案自测 stress
+  # ~7s/案），单分片 CI 必超 360min job 硬顶——按一级目录拆三片。runner
+  # filter `|` 分隔多段任一命中（test262 通道专用语义，其他套件 filter
+  # 不含 | 行为不变）。result_tag 互异——aggregate 产物平铺（merge-multiple）
+  # 同名覆盖，form-encode 先例。time_limit 本地实测 ×2 + 余量；harness/
+  # 顶层 41 库文件全在 skip 面，不设分片。
+  - name: test262-language
+    suites: "test262"
+    fetch: "fetch-wpt-test262"
+    fetch_scripts: ""
+    filter: "third_party/test262/test/language"
+    result_tag: language
+    time_limit: 9000
+    job_timeout: 240
+  - name: test262-builtins
+    suites: "test262"
+    fetch: "fetch-wpt-test262"
+    fetch_scripts: ""
+    filter: "third_party/test262/test/built-ins"
+    result_tag: builtins
+    time_limit: 9000
+    job_timeout: 240
+  - name: test262-misc
+    suites: "test262"
+    fetch: "fetch-wpt-test262"
+    fetch_scripts: ""
+    filter: >-
+      third_party/test262/test/staging|third_party/test262/test/annexB|third_party/test262/test/intl402|third_party/test262/test/harness
+    result_tag: misc
+    time_limit: 5400
+    job_timeout: 150
   # form-url-encoding encode 面 68 文件按编码目录拆六分片。两轮教训：
   # ① 预算（run 40985139206/41005658107 整点杀树）——form 提交导航
   #   密集负载 CI ≈ 本地 3–4×，全套件 4.5h+ 超 GH job 360min 硬上限；

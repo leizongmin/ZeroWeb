@@ -386,7 +386,9 @@ fn build_test262_wrapper(
 /// 目录递归扫描（wasm-core/workers 先例；排序收集保证基线顺序跨轮可复现），
 /// 变体名 = 上游 manifest URL 规则（[variant_suffix]），报告路径与 wpt.fyi
 /// summary 逐字对齐（coverage exact match）。skip 规则见 [test262_case_skipped]。
-/// filter 按路径子串过滤（如 `third_party/test262/test/language/statements`）。
+/// filter 按路径子串过滤，`|` 分隔多段任一命中即收（如
+/// `third_party/test262/test/language/statements`；CI misc 分片合并
+/// staging/annexB/intl402 三目录时用多段）。
 pub fn run_test262_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let load_resource = |relative: &str| -> Result<String, String> {
         read_corpus_to_string(wpt_root.join(relative)).map_err(|error| error.to_string())
@@ -487,7 +489,7 @@ pub fn run_test262_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
             Ok(relative) => relative.to_string_lossy().to_string(),
             Err(_) => continue,
         };
-        if filter.is_some_and(|filter| !relative.contains(filter)) {
+        if filter.is_some_and(|filter| !filter.split('|').any(|f| relative.contains(f))) {
             continue;
         }
         let Ok(source) = read_corpus_to_string(&path) else {
