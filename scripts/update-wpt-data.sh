@@ -158,6 +158,12 @@
 #     页残红为 tc39 proposal-defer-import-eval issue #83 已知循环 TLA 死锁面
 #     （bounded Fail 非 hang）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
+#   - s364（2026-11-09）自建诊断探针清理：probe12-defer-slow.html + probe12-slow.js +
+#     probe12-fast.js（execution-timing/）与 probe13-async-srcfast.html（module/）为
+#     历史轮次恒红 dump 探针（assert ["__FAIL__"] 恒假带现场，gitignore 未入库）——
+#     本地删除收口径：the-script-element 域 4F→2F（残 F=143/052 流式物化长挂）；
+#     probe8/9/10 系列（module/）为 Pass 中的行为钉，维持本地回归保护不删。
+#     upgrade 后探针不回归（从未入库）。
 
 set -euo pipefail
 
