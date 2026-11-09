@@ -8536,7 +8536,23 @@ fn collect_module_deps_recursive(
             }
             Err(e) => {
                 let message = serde_json::to_string(&e.to_string()).map_err(|_| fetch_failure())?;
-                format!("throw new SyntaxError({message});")
+                let url_js = serde_json::to_string(&url).map_err(|_| fetch_failure())?;
+                // s359（报告位置 file 坐标）：parse 失败的 SyntaxError 携带**本数据模块
+                // URL**（`fileName` 自有属性）——求值抛错经 s255 哨兵上报时 reportError
+                // 第二参从原值读取，WPT json-module/parse-error-location 判据
+                // `e.filename === parse-error.json 的绝对 URL`。spec extract error
+                // information 的 filename 属 implementation-defined derived values，
+                // 按抛出模块定位（浏览器一致行为）。
+                // 首行补 `export default undefined;`——纯 throw 体无导出面，入口静态
+                // import 的 compile 期 export 扫描（ensure_module_export）会先于本体
+                // 求值以「does not provide an export named default」链接失败短路
+                //（probe17 实证），SyntaxError 永不执行；补 default 导出后链接成立，
+                // 抛错在求值期发生（spec：JSON parse 失败属 internalize 期失败，
+                // 经模块记录传播 SyntaxError——parse-error/parse-error-location 双判据）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#extract-error
+                format!(
+                    "export default undefined;var __zwJsonParseErr=new SyntaxError({message});__zwJsonParseErr.fileName={url_js};throw __zwJsonParseErr;"
+                )
             }
         };
         registry.register(&url, &synth);

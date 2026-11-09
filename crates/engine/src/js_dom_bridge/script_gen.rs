@@ -798,6 +798,10 @@ pub fn script_module_cache_probe(cache_key: &str) -> String {
 /// runner 经 config.csp_script_positions 注入 prepared 空间，避开 harness 内联扭曲）
 /// 传入（evaluation-error-5 判据 lineno 16）；0 = 未知位置（旧行为，外链/降级面——
 /// 外链模块体行号属模块自身 URL 内坐标，语料无钉面 FIXME）。
+/// s359：`filename` = 原值对象的 `fileName` 自有属性（有则透传，无则回落 '' 旧行为）
+/// ——JSON 数据模块 parse 失败的 SyntaxError 由 synth 面携带本模块 URL
+/// （parse-error-location 判据 `e.filename === parse-error.json` 绝对 URL）；其余
+/// 求值抛错（普通 Error 实例）无 `fileName` 属性 → 保持 ''（零位移）。
 /// https://html.spec.whatwg.org/multipage/webappapis.html#run-a-module-script
 /// https://html.spec.whatwg.org/multipage/webappapis.html#report-the-error
 pub fn script_module_eval_error_report(script_ordinal: usize, lineno: u32) -> String {
@@ -805,7 +809,7 @@ pub fn script_module_eval_error_report(script_ordinal: usize, lineno: u32) -> St
         "(function(){{\
 if(globalThis.__zwModEvalErrObj===undefined)return '';\
 var __zwErr=globalThis.__zwModEvalErrObj;globalThis.__zwModEvalErrObj=undefined;\
-try{{reportError(__zwErr, '', {lineno});}}catch(_e){{}}\
+try{{reportError(__zwErr, (__zwErr && __zwErr.fileName) || '', {lineno});}}catch(_e){{}}\
 try{{var __zwEl=document.getElementsByTagName('script')[{script_ordinal}];\
 if(__zwEl)__zwEl.dispatchEvent(new Event('load'));}}catch(_e){{}}\
 return '1';}})()"
