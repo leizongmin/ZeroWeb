@@ -363,9 +363,30 @@ enum OutputFormat {
 }
 
 fn main() {
+    // 深组合树用例在默认 8MB OS 主线程栈上爆栈：shadow-dom 999 层嵌套 shadow 链
+    // （wpt-data build-deep-detached-shadow-then-append-text.html，组合树 ~2000 节点）
+    // × `compute_styles_recursive` 逐层栈帧 ≈ 8MB（weekly html-sem 分片
+    // testharness-web-components 空 JSON 红的面）。RUST_MIN_STACK 只影响 std::thread
+    // 派生线程，主线程栈由 OS 定额——整轮 runner 换道 256MB 大栈线程执行；
+    // cmd_* 的 std::process::exit 在任意线程均直接终止进程，退出码语义不变，
+    // panic 经 join() 传播为 101（与 Rust 运行时 panic 退出码一致）。
+    // 修复挂账：style 递归迭代化为引擎流根治项（此处只换执行道，不触热路径）。
+    let runner = std::thread::Builder::new()
+        .stack_size(256 * 1024 * 1024)
+        .spawn(run_main)
+        .expect("spawn runner main thread");
+    match runner.join() {
+        Ok(()) => std::process::exit(0),
+        Err(_) => std::process::exit(101),
+    }
+}
+
+/// 原 main 主体——在 [`main`] 换道的大栈线程上执行。
+fn run_main() {
     // ②A-env（renderer 信任边界 ②）：runner 即自动化——置测试模式信号，本进程 webview
     // 保留 `__zw*` 测试钩子（counter-plugin 跳过；testdriver stub 依赖）。
-    // SAFETY: main 启动首语句、单线程期，先于一切线程与 WebView 创建。
+    // SAFETY: run_main 启动首语句、单线程期（此刻新线程外无其他零引擎线程），先于一切
+    // WebView 创建。
     unsafe {
         std::env::set_var("ZW_RENDERER_AUTOMATION", "1");
     }
