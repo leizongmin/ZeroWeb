@@ -3519,29 +3519,46 @@ fn remeasure_text_with_float_exclusions_inner(
             // 240，可用 160<200 → 降带 (0, prev_bottom)；ml=0 并排放带右缘）；fit 时
             // y 取 max(锚, 前 float 顶)（§9.5.1 rule 2 顶不低于前 float），x=带右缘
             // （前 float 右缘）；不 fit 时 y=max(锚, 前 float 底)、x=带左缘（own ml）。
-            // 旧径（逐 float 独立目标）同层 float 全钉带左缘原点重叠。右 float 维持
+            // 旧径（逐 float 独立目标）同层 float 全钉带原点重叠。右 float 维持
             // 极值缘臂（镜像域另案观察）。kill-switch `ZW_NESTED_FLOAT_CASCADE=0`。
+            // R5489（CSS2 §9.5.1 镜像域，chromium 五形 oracle R5488 定谳）：右 float
+            // 镜像序列级联——fit 判定可用＝前右 float 左缘−wrapper 链偏移（r_a：240−40
+            // =200≥160 fit；r_orig：200−40=160<200 降带）；fit→y=max(锚,前顶)、x=前
+            // 左缘−w（r_a (80,0)＝放前左缘非光标位）；不 fit→y=max(锚,前底)、x=极值缘
+            //（r_orig (200,18)）。左右各自独立序列（混合交互 rule 4 外缘约束另案）。
             if !nested.is_empty() {
                 let cw = box_node.content_width;
                 let cascade = nested_float_cascade_enabled();
-                // R5487：已落位左 float 序列（目标空间，容器 content-box 相对）——
-                // 仅左 float 入列（右 float 极值缘臂不参与序列，混合序保持旧径）。
+                // R5487/R5489：已落位左/右 float 序列（目标空间，容器 content-box
+                // 相对）——左 float 入 placed、右 float 入 placed_r，各自序列内避让。
                 let mut placed: Vec<(f32, f32, f32, f32)> = Vec::new();
+                let mut placed_r: Vec<(f32, f32, f32, f32)> = Vec::new();
                 for nf in &mut nested {
                     let Some(anchor_y) = anchor_y_map.get(&nf.fid) else {
                         continue;
                     };
-                    let prev = if cascade && nf.is_left {
+                    let prev = if !cascade {
+                        None
+                    } else if nf.is_left {
                         placed.last().copied()
                     } else {
-                        None
+                        placed_r.last().copied()
                     };
                     let (ty, tx) = if let Some((py, px, pw, ph)) = prev {
-                        let cursor = px + pw + nf.chain_offset;
-                        if nf.width <= (cw - cursor) {
-                            ((*anchor_y).max(py), px + pw)
+                        if nf.is_left {
+                            let cursor = px + pw + nf.chain_offset;
+                            if nf.width <= (cw - cursor) {
+                                ((*anchor_y).max(py), px + pw)
+                            } else {
+                                ((*anchor_y).max(py + ph), nf.margin_left)
+                            }
                         } else {
-                            ((*anchor_y).max(py + ph), nf.margin_left)
+                            let avail = px - nf.chain_offset;
+                            if nf.width <= avail {
+                                ((*anchor_y).max(py), px - nf.width)
+                            } else {
+                                ((*anchor_y).max(py + ph), (cw - nf.width - nf.margin_right).max(0.0))
+                            }
                         }
                     } else {
                         let tx = if nf.is_left {
@@ -3554,6 +3571,8 @@ fn remeasure_text_with_float_exclusions_inner(
                     nf.target = Some((ty, tx));
                     if nf.is_left {
                         placed.push((ty, tx, nf.width, nf.height));
+                    } else {
+                        placed_r.push((ty, tx, nf.width, nf.height));
                     }
                 }
             }

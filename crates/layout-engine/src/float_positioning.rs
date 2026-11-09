@@ -4516,11 +4516,21 @@ pub(crate) fn fix_inline_carrier_right_float_abs(
             cb_content_right_abs
         };
     let is_inline_carrier = !box_node.is_block_level && !box_node.is_flow_root && !is_table_internal;
+    // R5489（CSS2 §9.5.1）：可下降 inline wrapper（物化 inline 层）内的右 float 归
+    // R5446 nested float 机器（target 序列级联＋sync 后 writeback），本臂终末重写会
+    // 以逐 float 独立极值缘覆写级联结果，且 content_left_abs 双计层 margin（R5488
+    // 缺陷 A/B：r_orig writeback x=160（abs 200=chromium）被覆写为 120）。豁免判定
+    // 与 collect walk 同源（[`nested_float_wrapper_descendable`]：inline-block/BFC/
+    // 块级载体不豁免——其 float 归自身容器 direct 路径，本臂照旧）。kill-switch 随
+    // `ZW_NESTED_INLINE_FLOAT`（nested 关闭＝完整回退，本臂照旧）。
+    let nested_claimed = crate::inline::nested_float::nested_inline_float_enabled()
+        && crate::inline::nested_float::nested_float_wrapper_descendable(box_node, styles);
     for child in &mut box_node.children {
         if child.is_absolute || child.is_fixed {
             continue;
         }
         if is_inline_carrier
+            && !nested_claimed
             && matches!(child.float, FloatValue::Right)
             && let Some(cr) = cb_right
         {
