@@ -11315,8 +11315,21 @@
       }
     }
     // ① 宿主级拆分（insertLineBreak 模式跳过块拆分面）。
-    if (!lineBreakOnly && block === host && hostTag === 'div' && (dispHost === '' || dispHost === 'block')
-        && boundaryParent === host && (isText || boundaryNode === null)) {
+    // ⑦ A2（2026-11-09 ip-placeholder ① 路由，mt 485/487）：扩宿主直子空壳
+    // 元素 caret 形——A1 消解后 caret (b,0) 挂宿主直子 inline 壳（boundaryNode
+    // 即该壳、block===boundaryNode、壳内无可见内容）。Chrome 拆分 = 壳起子移
+    // 入新块 + 头侧空占位 <br> 前置 + caret 入壳链首（exp `<br><div><b>a</b>
+    // </div>`）；有内容壳面（`<b>foo[]bar</b>` wrap 形语料）与块级 caret 不在
+    // 诉求，窄门不收（落 ③ 现径）。
+    var arm1EmptyShellEl = !lineBreakOnly && !isText && boundaryNode
+      && boundaryNode.nodeType === 1 && block === boundaryNode
+      && boundaryParent === host && so === 0
+      && !_zwCeIsBlockTagName(String(boundaryNode.tagName || '').toLowerCase())
+      && ![].some.call((boundaryNode.childNodes || []), _zwJusIsVisible);
+    if (!lineBreakOnly && (block === host || arm1EmptyShellEl) && hostTag === 'div'
+        && (dispHost === '' || dispHost === 'block')
+        && boundaryParent === host
+        && (isText || boundaryNode === null || arm1EmptyShellEl)) {
       var sep1 = document.createElement(sepTag);
       var refAfter1 = null;
       if (boundaryText) {
@@ -11382,7 +11395,10 @@
       } else {
         // 宿主元素边界 (host, so)：so 位起子移入新块，原位插 separator。
         // 跨域移动纪律同 boundaryText 臂（先 detach 再 append，挂载延后）。
-        refAfter1 = (host.childNodes || [])[so] || null;
+        // ⑦ A2：空壳元素 caret 形（arm1EmptyShellEl）边界即 caret 宿主直子
+        // 壳本身（boundaryNode；so 是壳内偏移非宿主子位，恒 0）。
+        refAfter1 = arm1EmptyShellEl ? boundaryNode
+          : ((host.childNodes || [])[so] || null);
         var mv1 = refAfter1;
         var tailParts1e = [];
         while (mv1) {
@@ -11402,9 +11418,33 @@
           sep1.appendChild(phbr1c);
         }
         host.appendChild(sep1);
+        // ⑦ A2 头侧占位：caret 前侧宿主级空（A1 消解形 host=[b]）→ 占位
+        // <br> 前置于新块（exp `<br><div><b>a</b></div>`）。带标同 ① phbr
+        // 惯例——typing 占位消费扫描上行止于新块块界，宿主级带标 br 不入
+        // 扫描链（caret 落新块内），485 typing 后 `<br>` 幸存。空判沿
+        // sep1.previousSibling 反向（sep1 自身刚挂载，_zwJusIsVisible 对块
+        // 节点恒真不可用）：头侧子仅折叠 ws 算空。
+        var a2HeadEmpty = true;
+        for (var a2hn = sep1.previousSibling; a2hn; a2hn = a2hn.previousSibling) {
+          if (a2hn.nodeType === 1
+              || (a2hn.nodeType === 3 && !_zwJusIsCollapsedWhitespaceNode(a2hn))) {
+            a2HeadEmpty = false;
+            break;
+          }
+        }
+        if (a2HeadEmpty) {
+          var phbr1d = document.createElement('br');
+          phbr1d.__zwPlaceholderBr = true;
+          host.insertBefore(phbr1d, sep1);
+        }
       }
+      // 处方 b 同款 caret 入壳下行（⑦ A2：新块头 inline 壳链——exp 485/487
+      // typed 段入既有壳 `<div><b>a</b></div>`；文本/占位 br 头面 firstChild
+      // 非 fmt 壳 → null → (sep1,0) 原位不变，语料已锁面零漂移）。
       var nr1 = document.createRange();
-      nr1.setStart(sep1, 0);
+      var sh1 = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+        ? globalThis.__zw_ce_caret_in_leading_shell(sep1) : null;
+      nr1.setStart(sh1 ? sh1[0] : sep1, sh1 ? sh1[1] : 0);
       nr1.collapse(true);
       if (typeof _getSelection === 'function') { _getSelection()._ranges = [nr1]; }
       return true;

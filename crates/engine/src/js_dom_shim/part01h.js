@@ -184,3 +184,124 @@
     globalThis.__zwTypingShellCarry = null;
     return node;
   };
+
+  // —— A4 行尾 ws 前向不可见 adjunct（2026-11-09 ⑦ 刀 trailing-empty-p，mt
+  // 626）：FD walk 的 invisible 兄弟子判定扩展。根因：spec visible 对 ws 文本
+  // 走文档序**回看**（_zwJusIsCollapsedWhitespaceNode，前一路径遇非空白文本
+  // 即判行中可见），而 walk 先吃掉块尾 br 后 ws 的回看命中块内正文——行尾
+  // 折叠 ws 被误判可见，walk 经 cond4 下降进 ws、text 分支把它当字符单删后
+  // 返回，跨块合并径不达（got `<p>abcd</p> <p><br></p>`）。Chrome/Blink 按
+  // **前向**行界折叠：块尾 ws 后方到块界/行断（br/块）之间无可见内容即折叠
+  // 不可见，FD 一并吸收后继续合并（exp `<p>abcd</p>`）。谓词自身带上下文
+  // （_zwJusIsWhitespaceNode 按父链 white-space 判定，pre/break-spaces 面 ws
+  // 非折叠空白 → adjunct 恒假，627 wss 护栏不动）。
+  // https://w3c.github.io/editing/execCommand.html#delete-the-contents
+  function _zwA4SubtreeVisible(el) {
+    var k = el.childNodes || [];
+    for (var i = 0; i < k.length; i++) {
+      var c = k[i];
+      if (c.nodeType === 3) {
+        if (!_zwJusIsWhitespaceNode(c)) return true;
+      } else if (c.nodeType === 1) {
+        if (_zwJusIsHtmlElement(c, 'img')) return true;
+        if (!_zwJusIsHtmlElement(c, 'br') && _zwA4SubtreeVisible(c)) return true;
+      }
+    }
+    return false;
+  }
+
+  // ws 文本节点前向行界直判：文档序前向从下一兄弟起扫描，遇非折叠空白文本
+  // 或含可见内容的 inline 子树即行中可见（假），遇 br/块/块界爬升耗尽即行尾
+  // 折叠（真）。img 按 spec visible 恒可见（ws 前 img 即行中）。
+  function _zwA4TrailWsInvisible(nd) {
+    if (!nd || nd.nodeType !== 3 || !_zwJusIsWhitespaceNode(nd)) return false;
+    var n = nd;
+    var guard = 0;
+    while (n && guard++ < 256) {
+      var s = n.nextSibling;
+      if (!s) {
+        var p = n.parentNode;
+        if (!p) return true;
+        if (_zwJusIsBlockNode(p) || _zwJusIsEditingHost(p)) return true;
+        n = p;
+        continue;
+      }
+      if (s.nodeType === 3) {
+        if (!_zwJusIsWhitespaceNode(s)) return false;
+        n = s;
+        continue;
+      }
+      if (s.nodeType === 1) {
+        if (_zwJusIsBlockNode(s)) return true;
+        if (_zwJusIsHtmlElement(s, 'br')) { n = s; continue; }
+        if (_zwA4SubtreeVisible(s)) return false;
+        n = s;
+        continue;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  // —— A1 空 sole div 消解（2026-11-09 ⑦ 刀 host-div-wrap / ip-placeholder
+  // ① 路由，multitest 483/485/487）：deleteSelection 全删空 caret 块时 Chrome
+  // 消解壳提宿主——exp `<div><b>[abc]</b></div>` delete 后 typing = `<b>a</b>`
+  // （got `<div><b>a</b></div>` = 壳未消解）。落 part01h 卫星（part01f 恰
+  // 2000 行锚定，④ 刀先例；同闭包复用 _zwDel*/_zwJus*/_zwList* 机具）。
+  // 消解条件（482 blockquote 全删空**不消解**反例收窄）：
+  //   ① caret 块为宿主直子 div（tag 收窄 div；blockquote/h1-6/p 不消解）；
+  //   ② 子全 inline 且无可见内容（空壳链；空 `<p></p>` 块子不提）；
+  //   ③ 宿主级无其他元素子/可见内容（消解后宿主只剩提壳链）。
+  // 动作 = 子提宿主原位（保序）+ 块删除 + caret 塌缩提壳链首（处方 b 同款
+  // `__zw_ce_caret_in_leading_shell`，typed 段入壳——483 typing `<b>a</b>`）。
+  // 调用点自限非 collapsed 面（part01f delete_apply 尾 + ipara_apply 前导
+  // delete 后）；collapsed delete/fd 内部 deleteSelection 各支路不经此。
+  // 跨域摘挂纪律同 DC-4（plain removeChild 后挂载；子为 inline plain 节点，
+  // host.insertBefore 同域安全）。
+  // https://w3c.github.io/editing/execCommand.html#the-delete-command
+  globalThis.__zw_ce_dissolve_emptied_div_tail = function () {
+    try {
+      var ar = _zwVaGetActiveRange();
+      if (!ar || !ar.startContainer) return false;
+      var blk = _zwDelGetBlockNodeOf(ar.startContainer);
+      if (!blk || blk.nodeType !== 1 || _zwJusTag(blk) !== 'div') return false;
+      var host = _zwListEditingHostOf(blk);
+      if (!host || blk.parentNode !== host) return false;
+      var kids = blk.childNodes || [];
+      if (!kids.length) return false;
+      for (var i = 0; i < kids.length; i++) {
+        if (!_zwJusIsInlineNode(kids[i])) return false;
+        if (_zwJusIsVisible(kids[i])) return false;
+      }
+      var sibs = host.childNodes || [];
+      for (var j = 0; j < sibs.length; j++) {
+        var s = sibs[j];
+        if (s === blk) continue;
+        if (s.nodeType === 1 && !_zwJusIsInlineNode(s)) return false;
+        if (_zwJusIsVisible(s)) return false;
+      }
+      while (blk.firstChild) {
+        var kid = blk.firstChild;
+        if (kid.parentNode) {
+          try { blk.removeChild(kid); } catch (_eA1rm) {}
+        }
+        host.insertBefore(kid, blk);
+      }
+      host.removeChild(blk);
+      var first = kids[0];
+      var nrA1 = document.createRange();
+      var shA1 = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
+        ? globalThis.__zw_ce_caret_in_leading_shell(host) : null;
+      if (shA1) {
+        nrA1.setStart(shA1[0], shA1[1]);
+      } else {
+        nrA1.setStart(first, 0);
+      }
+      nrA1.collapse(true);
+      if (typeof _getSelection === 'function') { _getSelection()._ranges = [nrA1]; }
+      try { globalThis.getSelection().collapse(nrA1.startContainer, nrA1.startOffset); } catch (_eA1cl) {}
+      return true;
+    } catch (_eA1) {
+      return false;
+    }
+  };

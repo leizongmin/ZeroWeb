@@ -1,0 +1,130 @@
+<!doctype html>
+<meta charset=utf-8>
+<!-- F7 misc 探针（2026-11-09 ⑦ 刀 misc 轮）：mt 残 15F 首位六键四微机制。
+     ip-placeholder 双臂（① 空段占位裹壳形：delete 全删空 sole div 后 IP，Chrome
+     裸 <br> 前置 + 新块装壳，got <div><br></div> 独立占位块 + typed 块尾 br 未
+     消费；② typed 后块级占位 br 幸存：中置 caret 形纯尾 br 未消费）+
+     host-div-wrap（delete 全删空 sole div 后 typing，Chrome 消解空 div 壳提宿主）
+     + trailing-empty-p（FD 前向合并后块尾 ws 残留：spec visible 对 ws 文本走
+     文档序回看，walk 先吃块尾 br 后回看命中块内正文误判行中可见，walk 下降
+     进 ws 当字符单删后返回跨块合并径不达；Chrome 前向行界折叠，A4 adjunct
+     `_zwA4TrailWsInvisible` 前向直判行尾 ws 不可见并入 walk cond1/cond2；
+     wss 形合法幸存 627 为护栏，`_zwJusIsWhitespaceNode` 父链上下文判定 pre
+     面天然不折叠）。六案 = multitest.js 483/485/486/487/488/626；护栏 9 案 =
+     482（blockquote 全删空不消解——消解臂 tag 收窄 div）、484（双形式容忍案，
+     尾 br Chrome 可变）、489-492（文本 caret 面占位 br 消费现径）、495/497
+     （跨壳双侧内容 IP）、627（wss A4 护栏）。faithful 相原样 runConformanceTest
+     = 断言权威；直调相 per-step dump 仅 trace 证据不判（CASE483 直调选区寻址
+     伪影：caret 溢宿主树落探针自身 script 文本，mt harness 同案绿）。
+     运行：make testharness-editing-run-one FILTER=zz-probe-f7m.html -->
+<title>zz-probe-f7m</title>
+<div id=log></div>
+<div id=test-container></div>
+<script src=../include/implementation.js></script>
+<script>var testsJsLibraryOnly = true</script>
+<script src=../include/tests.js></script>
+<script src=../data/multitest.js></script>
+<script src=/resources/testharness.js></script>
+<script src="/common/subset-tests.js"></script>
+<script src=/resources/testharnessreport.js></script>
+<script>
+"use strict";
+// —— 案签名选择：六红目标 + 九护栏（multitest.js 固定索引，本 clone 对账）。
+var F7M_TARGETS = [483, 485, 486, 487, 488, 626];
+var F7M_GUARDS = [482, 484, 489, 490, 491, 492, 495, 497, 627];
+// —— compare 截获（faithful 相 assert 的 got/exp 捕获）
+var __zwCmpLog = [];
+var __origAE = window.assert_equals;
+window.assert_equals = function (actual, expected, msg) {
+    if (String(msg).indexOf("Unexpected innerHTML") >= 0) {
+        __zwCmpLog.push({ actual: String(actual), expected: String(expected) });
+    }
+    return __origAE.call(window, actual, expected, msg);
+};
+// —— faithful 相：15 案原样跑 runConformanceTest（复现 mt 环境）
+var faFa = [];
+F7M_TARGETS.concat(F7M_GUARDS).forEach(function (i) {
+    try { runConformanceTest(browserTests[i]); } catch (e) { faFa.push(i + ":" + e); }
+});
+// —— 直调相：per-step dump（机制 trace 证据，不判）
+var container = document.getElementById("test-container");
+container.innerHTML = "<div contenteditable></div><p>sentinel";
+var testDiv = container.querySelector("div[contenteditable]");
+function caretDump() {
+    var s = getSelection();
+    if (s.rangeCount === 0) return "norange";
+    var r = s.getRangeAt(0);
+    function nd(n, o) { return n ? n.nodeName + "@" + o : "null"; }
+    return nd(r.startContainer, r.startOffset) + ".." + nd(r.endContainer, r.endOffset);
+}
+// [ ] { } 忠实提取（tests.js :5330-5393 同语义）
+function extractRangeFaithful(root) {
+    var sNode = null, sOff = -1, eNode = null, eOff = -1;
+    var cur = root;
+    function nextNode(node) {
+        if (node.firstChild) return node.firstChild;
+        if (node.nextSibling) return node.nextSibling;
+        node = node.parentNode;
+        while (node) { if (node.nextSibling) return node.nextSibling; node = node.parentNode; }
+        return null;
+    }
+    while (cur) {
+        if (cur.nodeType === 3) {
+            var data = cur.data;
+            var startIdx = data.replace(/\]/g, "").indexOf("[");
+            var endIdx = data.replace(/\[/g, "").indexOf("]");
+            cur.data = data.replace(/[\[\]]/g, "");
+            data = cur.data;
+            if (startIdx !== -1) { sNode = cur; sOff = startIdx; }
+            if (endIdx !== -1) { eNode = cur; eOff = endIdx; }
+            data = cur.data.replace(/\}/g, "");
+            var elStartIdx = data.indexOf("{");
+            data = cur.data.replace(/\{/g, "");
+            var elEndIdx = data.indexOf("}");
+            if (elStartIdx === 0) { sNode = cur.parentNode; sOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur); }
+            else if (elStartIdx !== -1) { sNode = cur.parentNode; sOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur) + 1; }
+            if (elEndIdx === 0) { eNode = cur.parentNode; eOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur); }
+            else if (elEndIdx !== -1) { eNode = cur.parentNode; eOff = Array.prototype.indexOf.call(cur.parentNode.childNodes, cur) + 1; }
+            cur.data = cur.data.replace(/[{}]/g, "");
+            if (!cur.data.length) {
+                if (cur === sNode || cur === eNode) { cur = nextNode(cur); continue; }
+                var oldCur = cur;
+                cur = nextNode(cur);
+                if (oldCur.parentNode) oldCur.parentNode.removeChild(oldCur);
+                continue;
+            }
+        }
+        cur = nextNode(cur);
+    }
+    if (!sNode || !eNode) return null;
+    var r = document.createRange();
+    r.setStart(sNode, sOff); r.setEnd(eNode, eOff);
+    if (r.collapsed) r.setEnd(sNode, sOff);
+    return r;
+}
+var resultsTrace = []; // 直调相 trace 全量并入 summary 消息，不建测试不判
+function runDirect(i) {
+    var t = browserTests[i];
+    testDiv.innerHTML = t[0];
+    var r = extractRangeFaithful(testDiv);
+    if (!r) { resultsTrace.push("CASE" + i + " EXTRACT-FAIL"); return; }
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    var steps = [];
+    t[1].forEach(function (c) {
+        var ok; try { ok = document.execCommand(c[0], false, c[1]); } catch (err) { ok = "THROW:" + err; }
+        steps.push(c[0] + "=>rc=" + ok + " html=" + testDiv.innerHTML + " sel=" + caretDump());
+    });
+    normalizeSerializedStyle(testDiv);
+    resultsTrace.push("CASE" + i
+        + " | exp=" + (Array.isArray(t[2]) ? JSON.stringify(t[2]) : t[2])
+        + " | got=" + testDiv.innerHTML
+        + " | " + steps.join(" ; "));
+}
+F7M_TARGETS.forEach(runDirect);
+// —— 汇总断言（faithful 权威面；直调 trace 并入 summary 消息供 grep 证据）
+test(function () {
+    assert_true(faFa.length === 0, "FAITHFUL faFa=" + faFa.join(",")
+        + " | CMP=" + JSON.stringify(__zwCmpLog.slice(0, 12))
+        + " | TRACE=" + JSON.stringify(resultsTrace));
+}, "F7M-FAITHFUL-SUMMARY");
+</script>

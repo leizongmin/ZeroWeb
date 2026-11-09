@@ -951,11 +951,13 @@
     while (true) {
       if (!node) return true;
       if (offset == _zwJusNodeLength(node) && _zwJusIsEditable(node.nextSibling)
-          && _zwJusIsInvisible(node.nextSibling)) {
+          && (_zwJusIsInvisible(node.nextSibling)
+            || _zwA4TrailWsInvisible(node.nextSibling))) {
         node.parentNode.removeChild(node.nextSibling);
       } else if (offset < node.childNodes.length
           && _zwJusIsEditable(node.childNodes[offset])
-          && _zwJusIsInvisible(node.childNodes[offset])) {
+          && (_zwJusIsInvisible(node.childNodes[offset])
+            || _zwA4TrailWsInvisible(node.childNodes[offset]))) {
         node.removeChild(node.childNodes[offset]);
       } else if ((offset == _zwJusNodeLength(node) && _zwJusIsInlineNode(node)
             && node.parentNode) || _zwJusIsInvisible(node)) {
@@ -1416,6 +1418,14 @@
     // 口径——非边界 collapsed 删除捕获 null 即清账；消费面 part01 元素位
     // caret 两臂，consume 即清；_zwSync 面清除同槽位）。
     globalThis.__zwTypingShellCarry = shellCap;
+    // ⑦ A1 尾消解（2026-11-09 host-div-wrap，mt 483/485）：非 collapsed
+    // deleteSelection 全删空宿主唯一元素子 div 时 Chrome 消解壳提宿主——
+    // caret 塌缩提壳链首（typing 落壳，exp `<b>a</b>`）。仅非 collapsed 臂调
+    // （collapsed delete/fd 无消解语义诉求）；482 blockquote 反例由 helper
+    // tag 收窄挡。消解保节点身份，上方 override 重锚不失效。
+    if (!ar.collapsed && typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function') {
+      try { globalThis.__zw_ce_dissolve_emptied_div_tail(); } catch (_eA1Tail) {}
+    }
     return true;
   };
 
@@ -1746,6 +1756,24 @@
             return false;
           }
         }
+        // ⑦ A1 消解后宿主级空壳 caret（2026-11-09 mt 485/487）：startContainer
+        // 为宿主直子 inline 壳、壳内无可见内容、(so=0) 且其前宿主级无可见兄弟
+        // ——Chrome 产裸占位 <br> 头垫 + 壳装新块（exp `<br><div><b>a</b>
+        // </div>`）；ipara wrap 臂产 `<div><br></div>` 双块形不符 → 让位 legacy
+        // ① 宿主级臂（part01 `_zwCeParagraphMutate`）。宿主直子 inline 链有内
+        // 容面（`<b>foo[]bar</b>` 探针 v4 P3 定谳 wrap 形）壳内可见 → 不命中。
+        if (node.nodeType === 1 && offset === 0
+            && node.parentNode === ipHost
+            && _zwJusIsInlineNode(node)
+            && !_zwIparaHasVisibleChild(node)) {
+          var a1Prev = node.previousSibling;
+          var a1PrevVisible = false;
+          while (a1Prev) {
+            if (_zwJusIsVisible(a1Prev)) { a1PrevVisible = true; break; }
+            a1Prev = a1Prev.previousSibling;
+          }
+          if (!a1PrevVisible) return false;
+        }
       }
       return true;
     } catch (_eWants) {
@@ -1789,7 +1817,26 @@
         var _zwIpHost = _zwListEditingHostOf(ar0.startContainer);
         _zwIpWrapTag = _zwIpHost ? _zwJusTag(_zwIpHost) : 'div';
       }
-      if (!_zwIpCol) _zwDelDeleteSelection();
+      if (!_zwIpCol) {
+        _zwDelDeleteSelection();
+        // ⑦ A1（2026-11-09 host-div-wrap 姊妹面，mt 487）：前导 delete 全删
+        // 空宿主唯一元素子 div 时 Chrome 消解壳提宿主（caret 提壳链首）——
+        // 消解命中即宿主级空壳 caret 形，本 port 的 SLC 爬升/wrap 臂管线不再
+        // 适用（双 div 形 vs exp `<br><div><b>a</b></div>`），转 `__zw_ce_
+        // paragraph_split_at` ① 宿主级臂（同 ipara_wants=false 让位路径）。
+        // fireEvents=false——beforeinput/input 已由 part06 ip 臂事件序派发。
+        if (typeof globalThis.__zw_ce_dissolve_emptied_div_tail === 'function'
+            && globalThis.__zw_ce_dissolve_emptied_div_tail()) {
+          var _zwIpHostA1 = null;
+          try {
+            _zwIpHostA1 = _zwListEditingHostOf(_zwVaGetActiveRange().startContainer);
+          } catch (_eA1Host) {}
+          if (_zwIpHostA1
+              && typeof globalThis.__zw_ce_paragraph_split_at === 'function') {
+            return globalThis.__zw_ce_paragraph_split_at(_zwIpHostA1, null, false);
+          }
+        }
+      }
       // "If the active range's start node is neither editable nor an editing
       // host, return true."
       ar0 = _zwVaGetActiveRange();
@@ -1975,13 +2022,16 @@
       if (!_zwIparaHasVisibleChild(container)) {
         container.appendChild(document.createElement('br'));
       }
-      if (!_zwIparaHasVisibleChild(newContainer)) {
-        newContainer.appendChild(document.createElement('br'));
-      }
-      // 处方 b：caret 入壳下行（新块头 inline 壳链，见
-      // __zw_ce_caret_in_leading_shell 注）。
+      // 处方 b 壳链判定提前（A3 共用）：新块头 inline 壳链（fmt 壳表）。
       var _zwIpShell = (typeof globalThis.__zw_ce_caret_in_leading_shell === 'function')
         ? globalThis.__zw_ce_caret_in_leading_shell(newContainer) : null;
+      // ⑦ A3（2026-11-09 mt 486/488）：新块头 inline 壳链非空块——Chrome 不
+      // 垫尾 br（exp `<div>abc</div><div><b>d</b></div>`；got `<div><b>d</b>
+      // <br></div>` = 空壳判不可见误垫）。垫底收窄为真空壳面（无头壳链）；
+      // caret 随处方 b 入壳链首，typed 段填壳。
+      if (!_zwIparaHasVisibleChild(newContainer) && !_zwIpShell) {
+        newContainer.appendChild(document.createElement('br'));
+      }
       try {
         if (_zwIpShell) globalThis.getSelection().collapse(_zwIpShell[0], _zwIpShell[1]);
         else globalThis.getSelection().collapse(newContainer, 0);
