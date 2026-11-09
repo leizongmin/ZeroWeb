@@ -4915,6 +4915,13 @@
             } catch (_eTb) {}
             var notCanceled = host2.dispatchEvent(before2) !== false;
             try { before2._zwUaDispatch = false; } catch (_eTb2) {}
+            // editing-compat apply 内容模型边界族（2026-11-09）：formatBlock
+            // apply 拒绝返回值贯通——part01g 可编辑链/宿主内容模型两守卫返回
+            // false（Chrome ret 录音 [false] 树不变，语料 :1864/:1871/:1876
+            // "<span> cannot have <p>" / "<p> cannot have <div>"），此前 apply
+            // 返回值被丢弃、execCommand 尾恒返 true（ret 断言行 ×3 红）。
+            // 仅 formatBlock 臂写入；其余命令/未触发面保持 undefined→true。
+            var fbqRet2;
             if (notCanceled) {
               // R3254-M3 切片 1/4（editing goal，2026-09-07）：**格式命令实应用 +
               // toggle 语义**——bold/italic/underline/strikethrough 对选中文本做
@@ -5184,7 +5191,7 @@
               // 复用 _zwJus*/_zwList*/_zwDel* 机具）。事件口径同上 inserttext 臂。
               if (cmd === 'formatblock' && rng2 && host2
               && typeof globalThis.__zw_ce_fb_apply === 'function') {
-                try { globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
+                try { fbqRet2 = globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
               }
               if (cmd === 'indent' && rng2 && host2
               && typeof globalThis.__zw_ce_indent_apply === 'function') {
@@ -5314,7 +5321,7 @@
           }
         } catch (_eSa) {}
       }
-      return true;
+      return fbqRet2 !== false;
     },
     // R3254-M3 切片 3：真实反射——supported/enabled 按实际接通命令面判定
     //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。

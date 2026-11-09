@@ -103,11 +103,15 @@
     if (!range) return true;
 
     // Chrome delta（可编辑链守卫）：起点叶子到编辑宿主链上遇不可编辑元素 →
-    // 拒。语料 ret 录音 ×3：`<div><div contenteditable=false><span|p
-    // contenteditable>[foo]</span|p></div></div>` + 裸名 div/p → [false] 树不变
-    // （Chromium FormatBlock 起点块爬升碰不可编辑块即拒）；`<div><div
-    // contenteditable=false><div contenteditable>[foo]` 形链内层 div 可编辑不拦
-    // 照 wrap（ret=true）。display:block span 岛形（条目 360）链全程可编辑不拦。
+    // 拦（不应用，零树变更）但 **返 true**——该形 Chrome ret 录音 [true]（语料
+    // 条目 362 `{ <span cE=false>A/B/C }` 真意 wrap 不可编辑节点、本引擎不
+    // 具备该 wrap 能力只拦不报 false）；part06 :5187 返回值贯通（2026-11-09
+    // apply 内容模型边界刀）后返 false 会误翻 entry 362 ret 行（P2F）。
+    // `contenteditable=false` 宿主 + 内层 contenteditable 元素形（:1864/:1871/
+    // :1876）不走此守卫——链在内层 editing host 即截停，由下方宿主内容模型
+    // 守卫拒（ret=false 对齐 Chrome）。`<div><div contenteditable=false><div
+    // contenteditable>[foo]` 形链内层 div 可编辑不拦照 wrap（ret=true）。
+    // display:block span 岛形（条目 360）链全程可编辑不拦。
     var sl = _zwFbqEdgeLeaf(range.startContainer, range.startOffset);
     if (!sl) return false;
     var cur = sl;
@@ -115,7 +119,7 @@
     var g0 = 0;
     while (cur && g0++ < 256) {
       if (_zwJusIsEditingHost(cur)) { fbqHost = cur; break; }
-      if (!_zwJusIsEditable(cur)) return false;
+      if (!_zwJusIsEditable(cur)) return true;
       cur = cur.parentNode;
     }
     // Chrome delta（宿主内容模型守卫）：新块物化在选区 editing host 内，host
@@ -123,7 +127,9 @@
     // （VisBlock 爬升遇 host 先返 null，守卫在此前拦）。语料 ret 录音四面对账：
     // "<p> cannot have <div>, so, do nothing"（:1876）/ "<span> cannot have
     // <p>"（:1866/:1871）→ [false]；"<div> can have <p> / <div>, so, wrap"
-    // （:1881/:1886）→ [true] 照 wrap。严格 HTML 内容模型表不适用：
+    // （:1881/:1886）→ [true] 照 wrap。**ret=false 经 part06 :5187 返回值贯通
+    // execCommand 尾返回**（2026-11-09 apply 内容模型边界刀——此前返回值被
+    // 丢弃恒 true，语料 ret 断言行 ×3 红）。严格 HTML 内容模型表不适用：
     // `<div>[foobar]</div>` + dd（:757）录音真 wrap 后 fixDisallowedAncestors
     // 抬 dl（dd∉div 内容模型仍放行）——判据只看「host 可否含块」：p 宿主拒；
     // 其余按 computed display inline 族拒（display:block span 岛形条目 361
