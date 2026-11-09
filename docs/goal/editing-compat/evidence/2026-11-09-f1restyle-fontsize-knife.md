@@ -78,8 +78,8 @@ Chrome 走 split 语义，语料无此形）。
 - battery 七腿 420/880/1104/552/3456/2607/1455 全 F=0 T=0。
 - binary sig 六串 + 刀串 `_zwCeF1RestyleShell` 计数 4=源码。
 
-**判定：DC-4 红线全过，F1' 键收口——mt assert 级 4→2F、键级 3→1F（残
-=X37×2 除名维持），F1' 簇全程 23→1→0 清账。**
+**判定：DC-4 红线全过，F1' 键收口——mt assert 级 4→2F、键级 3→2F（残=X37 双键：subscript qS-after + formatblock qV-after，除
+名维持），F1' 簇全程 23→1→0 清账。**
 
 ## 教训
 
