@@ -2121,9 +2121,10 @@ pub(crate) fn compute_final_inline_layouts(
     // R355 放宽 R84 的「单行」限制为「多行」：解 large-font 簇（inline-formatting-context-008/009
     // 的 100px 文本 paint 阶段被 16px 默认值覆盖）。多行存储经 chromium-Oracle 实测确证 net-positive
     // （ifc-008 -4.01% / ifc-009 -1.95% Z_vs_chromium，见 evidence/r355-multiline-oracle-*.txt）。
-    // **例外**：浮动容器保持 R84 单行限制——multicol-fill-auto-001 的 ref 用 float div 模拟列
-    // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
-    // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
+    // **例外**：浮动容器多行拒存（R355）已由 R5483 放行臂翻转（`ZW_FLOAT_MULTILINE_STORE`
+    // 关闭态回退本例外）——R355 当年以 multicol-fill-auto-001 的 ref float div 模拟列
+    // test/ref 对称维护为由拒存（chromium-Oracle 9.15% 不变 = 非真回归），R5483 探针
+    // 定谳 chromium float 行盒归属自身 IFC 不分行数，corpus 全窗 A/B 定谳见 R5483 轮。
     inline_ctx.layout(doc, node_id, styles);
     // R5166：汇聚本容器 IFC 记录的行内流 OOF 静态位（css-position-3 §static-position）。
     // 须在 store-gate return 之前——非 stored 容器（非 pure-Ahem 等）的锚位同样有效。
@@ -2293,11 +2294,18 @@ pub(crate) fn compute_final_inline_layouts(
         // floats-149 形归因：display:inline 中间层物化 + 子 span 块化 float 后，文本行
         // 真 owner = float span 自身（其 IFC 已产 1 行），旧门「非 pure-Ahem 且无排除带」
         // 拒存 → 全树零行盒，paint Path B 兜视觉但行盒消费面失据（R5470 回退臂挂账主案）。
-        // 多行 float 不放行（下行 is_floated 多行拒存臂维持 R355 multicol 对称域）。
+        // 多行 float 归 R5483 臂放行（下行；关闭态 R355 拒存臂维持）。
         || (is_floated
             && inline_ctx.lines.len() == 1
-            && crate::inline::float_own_line_store_enabled());
-    if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
+            && crate::inline::float_own_line_store_enabled())
+        // R5483（行盒归属主案多行 float 切片）：多行 float 放行（R5475 行数推广；
+        // chromium oracle 单/多行同模型——float 行盒归属自身 IFC 不分行数）。
+        || (is_floated
+            && inline_ctx.lines.len() > 1
+            && crate::inline::float_multiline_store_enabled());
+    if (!is_pure_ahem && !allow_non_ahem_store)
+        || (is_floated && inline_ctx.lines.len() > 1 && !crate::inline::float_multiline_store_enabled())
+    {
         return;
     }
 

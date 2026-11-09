@@ -395,11 +395,24 @@ pub(super) fn atomic_margin_box_fit() -> bool {
 /// float span 自身（chromium 同构：float 是 BFC 根，其文本行归属 float 内部 IFC）。
 /// ZW 侧 span IFC 已正确产 1 行，旧 store 门因「非 pure-Ahem 且无 float 排除带」拒存
 /// → 全树零行盒 → paint Path B 逐盒重跑兜住视觉，行盒消费面（滚动溢出行臂等）失据。
-/// 多行 float 仍拒存（R355 multicol-fill-auto-001 float 模拟列的 test/ref 对称域）。
+/// 多行 float 归 R5483 臂（下行 float_multiline_store）。
 /// default-on；`ZW_FLOAT_OWN_LINE_STORE=0` 回退旧口径。
 pub(super) fn float_own_line_store() -> bool {
     static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_OWN_LINE_STORE"));
     selected(*VALUE, || default_on("ZW_FLOAT_OWN_LINE_STORE"))
+}
+
+/// R5483（行盒归属主案多行 float 切片）：**多行 float 容器**（is_floated 且 IFC 产
+/// ≥2 行）inline_layout 落盘放行——R5475 单行放行的行数推广。R5483 探针定谳：
+/// floats-149 形多行文本（8 词 float 宽 50% 折 4 行）span IFC 产 4 行、盒高 72 正确
+/// （float extent 通道），但 store 门 R355 臂 `is_floated && lines > 1` 无条件拒存
+/// → 行盒消费面失据与单行修复前同态；chromium oracle 单/多行同模型（float 行盒
+/// 归属自身 IFC 不分行数）。R355 拒存域收窄为本开关关闭态回退（当年
+/// multicol-fill-auto-001 float div 模拟列 ref 的 self-source 对称维护臂）。
+/// default-on；`ZW_FLOAT_MULTILINE_STORE=0` 回退 R355 拒存口径。
+pub(super) fn float_multiline_store() -> bool {
+    static VALUE: LazyLock<bool> = LazyLock::new(|| default_on("ZW_FLOAT_MULTILINE_STORE"));
+    selected(*VALUE, || default_on("ZW_FLOAT_MULTILINE_STORE"))
 }
 
 #[cfg(test)]

@@ -30,6 +30,12 @@ pub(crate) fn float_own_line_store_enabled() -> bool {
     runtime_flags::float_own_line_store()
 }
 
+/// R5483：多行 float 容器行盒落盘放行（R5475 行数推广）——转发 runtime_flags
+/// 供 inline_finalization store 门消费。
+pub(crate) fn float_multiline_store_enabled() -> bool {
+    runtime_flags::float_multiline_store()
+}
+
 // R830：行内布局核心数据类型抽出，glob 再导出保持公开路径。
 mod inline_types;
 pub use inline_types::*;
