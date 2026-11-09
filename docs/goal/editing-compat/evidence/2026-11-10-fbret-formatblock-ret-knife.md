@@ -13,7 +13,7 @@ commit **0bc8d545b**（原 ac2b12294 → 3a307c259 → 0bc8d545b 三代 rebase �
 
 | 批 | 树 | 结果 |
 |---|---|---|
-| v1 | ac2b12294 | probe 绿 + fb 主门绿（4897/149 F2P=3 flip 白名单 3）+ **mt 腿 ABORT**：P 20023 vs 期望 20182 缺 159 全为末窗墙钟截尾（multitest-ab −142 行、?9001-last −14 行，两页 Timeout）——webcrypto r4 lane（ZeroWeb-2，23:49-00:49 全窗重叠）+ 23:59 rebase 并入 test262 使 mt 腿重建二进制编译 CPU 叠毒；日志 batch-fbret-gate-v1-abort1.log |
+| v1 | ac2b12294 | probe 绿 + fb 主门绿（4897/149 F2P=3 flip 白名单 3）+ **mt 腿 ABORT**：P 20023 vs 期望 20182 缺 159 全为末窗墙钟截尾（multitest-ab −143 行、?9001-last −16 行，两页各另添 1 Timeout 行）——webcrypto r4 lane（ZeroWeb-2，23:49-00:49 全窗重叠）+ 23:59 rebase 并入 test262 使 mt 腿重建二进制编译 CPU 叠毒；日志 batch-fbret-gate-v1-abort1.log |
 | v2 | ac2b12294 构建 | 单二进制全链重射：**mt 20182/2 Timeout=0 judge 零翻越 VERDICT OK** + iol 1759 / iul 2061 行级恒一 OK + **ip 腿 ABORT**：test-guard 900s 截尾（webcrypto r5 lane 98.7% CPU 全程重叠，插入段历史墙钟本近帽沿）P=0 |
 | v3 | **0bc8d545b**（含 layout s5483 并入，二进制重建） | 现树全链重射（终判绑定推送字节纪律；ip 帽提 1800s）：**ALL-DONE 03:25:37 全绿**，02:13:07 发射，solo 窗（webcrypto DC-1 已收账） |
 
