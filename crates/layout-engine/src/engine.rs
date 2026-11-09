@@ -1706,8 +1706,9 @@ impl LayoutEngine {
         }
 
         // R5477：终末块级 BFC 根 float 位移校正（CSS2 §9.5 chromium FloatAvoider 语义；
-        // 只校正仍与 float 重叠者，不触碰既有旁置/收缩绿域）。kill-switch
-        // ZW_BFC_ROOT_FLOAT_DISPLACE=0。
+        // 只校正仍与 float 重叠者，不触碰既有旁置/收缩绿域）。R5478 escaped-float 臂
+        // 默认开（非 BFC 根块内 float 逃逸并入候选域，V1–V4 oracle 定谳）。kill-switch
+        // ZW_BFC_ROOT_FLOAT_DISPLACE=0、ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED=0。
         crate::bfc_root_displace::apply_bfc_root_float_displace(&mut root_box, styles);
 
         // R5070：终末 inline 载体右浮 CB 修正（CSS §9.5/§10.3.5 包含块 = 最近块级祖先；

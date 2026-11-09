@@ -43,20 +43,29 @@ fn y_overlaps(child_top: f32, child_bottom: f32, float_top: f32, float_bottom: f
 
 /// 终末校正入口（engine.rs 终末 pass 链调用）。kill-switch `ZW_BFC_ROOT_FLOAT_DISPLACE=0`。
 /// env 入口读一次边界快照传递（guideline #9：稳定开关禁逐节点热路径查询）。
+///
+/// R5478 escaped-float 臂（**默认开**，kill-switch `ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED=0`）：
+/// 非 BFC 根流内块级直接子的子树 float 逃逸收集（CSS2 §9.5 同 BFC 不重叠语义的
+/// escaped 形；chromium oracle V1–V4 四形态定谳，旁置装得下 x=左 float 右缘 max /
+/// 装不下下绕 float 底，与直接子形同 FloatAvoider 模型）。**已知保守残差**：beside
+/// ＋width:auto 子形 chromium 会把 BFC 根收缩到 float 旁可用宽（V1 oracle (100,0)
+/// 宽 350；显式宽不收缩 V3/V4 实证），本 pass position-only 不写宽度 → 未收缩判据
+/// 装不下即下绕（V1 落 (0,50)），宽度收缩域待独立切片。
 pub(crate) fn apply_bfc_root_float_displace(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     if std::env::var("ZW_BFC_ROOT_FLOAT_DISPLACE").as_deref() == Ok("0") {
         return;
     }
-    displace_in_container(box_node, styles);
+    let escaped = std::env::var("ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED").as_deref() != Ok("0");
+    displace_in_container(box_node, styles, escaped);
     for child in &mut box_node.children {
-        displace_subtree(child, styles);
+        displace_subtree(child, styles, escaped);
     }
 }
 
-fn displace_subtree(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
-    displace_in_container(box_node, styles);
+fn displace_subtree(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, escaped: bool) {
+    displace_in_container(box_node, styles, escaped);
     for child in &mut box_node.children {
-        displace_subtree(child, styles);
+        displace_subtree(child, styles, escaped);
     }
 }
 
@@ -69,12 +78,37 @@ fn container_gate(box_node: &LayoutBox, styles: &HashMap<NodeId, ComputedStyle>)
     })
 }
 
-fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
+/// escaped floats 收集：从非 BFC 根流内块级节点子树收集 float margin box（容器
+/// 内容系坐标，沿 `content_x/content_y` 链累加）。停止边界：float（自身建 BFC，
+/// 整体随 float margin box）、定位/r109、BFC 根（其内 float 不逃逸）。
+fn collect_escaped_floats(node: &LayoutBox, content_ox: f32, content_oy: f32, out: &mut Vec<FloatBox>) {
+    for child in &node.children {
+        let child_left = content_ox + child.x;
+        let child_top = content_oy + child.y;
+        if !matches!(child.float, FloatValue::None) {
+            // 与直接子收集同口径：top = border-box y（不减 margin_top），bottom 含 margin_bottom。
+            out.push((
+                child.float.clone(),
+                child_left - child.margin_left,
+                child_top,
+                child_left + child.width + child.margin_right,
+                child_top + child.height + child.margin_bottom,
+            ));
+            continue;
+        }
+        if child.is_absolute || child.is_fixed || child.is_r109_split || child.is_flow_root {
+            continue;
+        }
+        collect_escaped_floats(child, child_left + child.content_x, child_top + child.content_y, out);
+    }
+}
+
+fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, escaped: bool) {
     if !container_gate(box_node, styles) {
         return;
     }
     // 同容器 float 子 margin-box 几何收集（R1733 同口径：直接子 float）。
-    let floats: Vec<FloatBox> = box_node
+    let mut floats: Vec<FloatBox> = box_node
         .children
         .iter()
         .filter(|c| !matches!(c.float, FloatValue::None))
@@ -88,6 +122,20 @@ fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, Comp
             )
         })
         .collect();
+    // R5478 escaped 臂：escaped floats 并入候选域（默认开，kill-switch ESCAPED=0）。
+    if escaped {
+        for child in &box_node.children {
+            let escapes = matches!(child.float, FloatValue::None)
+                && child.is_block_level
+                && !child.is_flow_root
+                && !child.is_absolute
+                && !child.is_fixed
+                && !child.is_r109_split;
+            if escapes {
+                collect_escaped_floats(child, child.x + child.content_x, child.y + child.content_y, &mut floats);
+            }
+        }
+    }
     if floats.is_empty() {
         return;
     }
