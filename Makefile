@@ -1221,8 +1221,10 @@ testharness-compression: target-disk-guard fetch-wpt-compression target/test-gua
 fetch-wpt-webcrypto:
 	bash tests/wpt-runner/scripts/goals/38-webcrypto-compat-v3.sh
 
+# 2026-11-09 v3 全语料（69,795 keys）本地与 CI 同阈：默认 3600，1800 会守卫
+# 墙钟杀树（ci-shards crypto 分片同批放宽）。
 testharness-webcrypto: target-disk-guard fetch-wpt-webcrypto target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
 
 # WebGL goal M2（docs/goal/webgl-compat.md）：webgl/ 语料 fetch 走 goals/99 预置
 # 脚本（GOAL_PULL_ANY_JS + idlharness 资产补拉——2026-10-22 裁决③）；runner 通道
