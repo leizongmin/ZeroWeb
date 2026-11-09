@@ -70,9 +70,26 @@ shadow-dom 摆动归因：covered_files 不变（172，同面同语料），pass
 渲染流 s5482/s5483（c2880ee2c / 6e540963e）+ editing 流 T53
 （1893d9d10）+ runtime 流 test262 折叠（2214db000，test262 域内）。
 webcrypto 触面（part01b/part02 shim、crypto 分片 fetch/预算、part53
-契约）无任何 shadow-dom 路径可达。**归渲染/editing 流待查**（各自控制
-面记账），非本目标回退；已知该面曾有 11-08 run 掉零前科，不排除
-run 间 env 竞态（7a5e6ecd9 在册的 r5270↔r5296 形态）。
+契约）无任何 shadow-dom 路径可达。
+
+**产物级法证定谳（2026-11-10 并行席补充）：页超时截断摆动，零行为
+翻转，不立流级挂账。** 以 16:12Z cron 快照（`8ba9975d9`）为近基线复
+比 + 两 run `zw-results-*` 产物逐字节对拍：
+
+- 组差全部落单文件：`shadow-dom/declarative/gethtml.html` 3,015 →
+  2,524 子测试（Pass 同落 −491），前缀 2,523 状态逐位一致，两 run 尾部
+  同为文件级 Timeout 条目（message "testharness page timeout completed
+  the file with 1 test(s) unreported"）——runner 页超时预算内跑多少算
+  多少，新 run html-sem job 26:01 → 28:38（hosted runner 速度方差）
+  少跑 491。
+- 同形态佐证：editing/run `zz-probe-f6bwin.html` 分片 −651（universe
+  外探针页，不进组账面，仅证 runner 方差）、css-writing-modes
+  `text-input-vertical-overflow-no-scroll.html` −1（7 测试未报截断）、
+  dom/ranges `Range-mutations-replaceData.html` +37（正方向截断差，
+  621 → 658）。四笔前缀均零状态翻转；html-semantics 产物两 run md5
+  相同。
+- 结论：第四节的渲染/editing 流待查项与 11-08 掉零前科、r5270↔r5296
+  竞态形态同根——env 竞态（页超时截断）定谳，渲染/editing 流无债。
 
 ## 五、收口门禁
 
@@ -93,6 +110,7 @@ run 间 env 竞态（7a5e6ecd9 在册的 r5270↔r5296 形态）。
 ## 六、遗留（不在本目标范围）
 
 - test262 单分片预算（catch-all-8 5400s 杀树）：runtime 流课题。
-- shadow-dom −491 摆动：渲染/editing 流课题（第四节）。
+- ~~shadow-dom −491 摆动~~：已定谳页超时截断 env 方差（第四节产物法证），
+  渲染/editing 流无课题。
 - crypto 分片 time_limit 3600（本地实测 238s）未再收敛：保守余量维持，
   CI 实测 10m40s（含 fetch/build）已留案。
