@@ -813,16 +813,58 @@ def merge_zw_results(
     return merged, suspicious, multi_suite
 
 
-def resolve_to_universe(name: str, universe: dict[str, int]) -> str | None:
-    """ZeroWeb 上报名 → 全量清单路径：变体按执行 scope 优先，exact 兜底。
+def resolve_to_universe(
+    name: str, universe: dict[str, int], sliced_index: dict[str, dict] | None = None
+) -> str | None:
+    """ZeroWeb 上报名 → 全量清单路径：变体按执行 scope 优先，exact 兜底，
+    最后分片组兜底。
 
     清单里完全没有（上游改名/删除，或三家均未收录该路径）返回 None——
     该结果不进分子也不进分母，单独计数。
+
+    分片组兜底：wpt.fyi 对超大文件按 `?N-M` 分片收录（整文件路径不在清单），
+    ZW 整文件结果按变体规则解析不到。返回分片组 base 键（不在 universe），
+    调用方按 [`build_sliced_totals`] 条目记账。
     """
     for candidate in variant_candidates(name):
         if candidate in universe:
             return candidate
+    if sliced_index:
+        for candidate in variant_candidates(name):
+            if candidate in sliced_index:
+                return candidate
     return name if name in universe else None
+
+
+def build_sliced_totals(summaries: dict[str, dict]) -> dict[str, dict]:
+    """wpt.fyi 分片收录的整文件基路径索引：base → {paths, total}。
+
+    wpt.fyi runner 对超大文件（crypto derive_bits_keys 的 hkdf/pbkdf2/RSA
+    successes 族等）按 `?N-M` 分片收录，每家分片边界一致（同 revision stable
+    run 实测三家相同）；单家内分片是整文件的划分，跨家取各自 sum(c[1]) 的
+    最大值，与整文件口径一致，不双记。ZW 只报整文件路径，经
+    [`resolve_to_universe`] 分片组兜底命中 base 后，分子按 ZW 整文件结果记
+    一次，分母取 max(三家分片合计, ZW 实际)。
+    """
+    paths_by_base: dict[str, set[str]] = defaultdict(set)
+    totals_by_base: dict[str, dict[str, int]] = defaultdict(dict)
+    for product, summary in summaries.items():
+        acc: dict[str, int] = defaultdict(int)
+        for path, entry in summary.items():
+            base, sep, _query = path.partition("?")
+            if not sep:
+                continue
+            paths_by_base[base].add(path)
+            acc[base] += entry["c"][1]
+        for base, total in acc.items():
+            totals_by_base[base][product] = total
+    return {
+        base: {
+            "paths": sorted(paths_by_base[base]),
+            "total": max(totals_by_base[base].values()),
+        }
+        for base in paths_by_base
+    }
 
 
 def group_key(path: str) -> str:
@@ -918,9 +960,19 @@ def cmd_coverage(args: argparse.Namespace) -> None:
         )
 
     universe = build_universe(summaries)
+    sliced_index = build_sliced_totals(summaries)
     zw_merged, suspicious, multi_suite = merge_zw_results(
         result_files, args.env_marker
     )
+
+    def account(group: dict, den_files: int, den_subtests: int, zw: dict) -> None:
+        """单条 ZW 结果的分子分母记账；den_files 为该结果覆盖的清单路径数。"""
+        group["den_files"] += den_files
+        group["covered_files"] += den_files
+        group["full_pass_files"] += den_files if zw["full_pass"] else 0
+        group["den_subtests"] += den_subtests
+        group["zw_passes"] += zw["passes"]
+        group["zw_env_fails"] += zw["env_fails"]
 
     groups: dict[str, dict] = defaultdict(
         lambda: {key: 0 for key in COVERAGE_GROUP_KEYS}
@@ -928,20 +980,23 @@ def cmd_coverage(args: argparse.Namespace) -> None:
     covered: set[str] = set()
     zw_only = 0
     for name, zw in zw_merged.items():
-        target = resolve_to_universe(name, universe)
+        target = resolve_to_universe(name, universe, sliced_index)
         if target is None:
             zw_only += 1
             continue
-        covered.add(target)
         group = groups[group_key(target)]
-        # ZW 语料 pin 与浏览器 run 存在 revision 漂移：上游加子测试时以
-        # ZW 实际执行数修正分母（浏览器侧 [0,0] 的 skip 文件同理）。
-        group["den_files"] += 1
-        group["covered_files"] += 1
-        group["full_pass_files"] += 1 if zw["full_pass"] else 0
-        group["den_subtests"] += max(universe[target], zw["total"])
-        group["zw_passes"] += zw["passes"]
-        group["zw_env_fails"] += zw["env_fails"]
+        if target in universe:
+            covered.add(target)
+            # ZW 语料 pin 与浏览器 run 存在 revision 漂移：上游加子测试时以
+            # ZW 实际执行数修正分母（浏览器侧 [0,0] 的 skip 文件同理）。
+            account(group, 1, max(universe[target], zw["total"]), zw)
+        else:
+            # 分片组兜底：整文件结果入分子记一次，其全部分片路径整体标记
+            # 已覆盖（未覆盖循环不再重复计分母），文件分母维持分片路径数
+            # 口径与既有快照可比。
+            sliced = sliced_index[target]
+            covered.update(sliced["paths"])
+            account(group, len(sliced["paths"]), max(sliced["total"], zw["total"]), zw)
     # 未覆盖路径：记 0 分子，分母照计——这就是缺口地图的主体。
     for path, browser_total in universe.items():
         if path in covered:
@@ -1061,6 +1116,9 @@ def render_coverage_markdown(
         )
     lines.append("- 分子：ZeroWeb 实跑 `--json` 结果的 Pass 子测试数；未覆盖路径"
                  "记 0（不强行跑）。同一文件被多个套件跑到取最完整一次，不双记。")
+    lines.append("- 分片收录路径（超大文件被 wpt.fyi 按 `?N-M` 分片，整文件路径"
+                 "不在清单）：ZeroWeb 整文件结果按分片组归组入分子记一次，分母"
+                 "取三家各自分片合计的最大值；文件分母仍按分片路径数计数。")
     lines.append("- 缺口分解：未覆盖子测试（扩语料导入）与已覆盖的失败子测试"
                  "（修引擎）分开看；失败中命中环境受限标记（zw-static-corpus）"
                  "的部分是语料边界，单列不计引擎缺口。")

@@ -1526,8 +1526,8 @@ fn cmd_testharness_webgl(options: &CliOptions, filter: Option<&str>) {
 /// testharness 用例（webcrypto-compat goal M1 / DC-1——getRandomValues/randomUUID/
 /// subtle 分域基线）。
 ///
-/// 用例由 `scripts/goals/26-webcrypto-compat.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
-/// （gitignored；git trees 深挖 + /common 依赖补拉）；扫描根与 skip 规则见
+/// 用例由 `scripts/goals/38-webcrypto-compat-v3.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
+/// （gitignored；v3 转正子树全子树新增式 + /common 依赖补拉）；扫描根与 skip 规则见
 /// `testharness::run_webcrypto_cases`（idlharness 记账排除）。退出码：有用例
 /// 非 Pass 或用例集为空 → 1（与 testharness-compression 一致）。基线首跑即便大量
 /// Fail 也只用于记录通过率（`--format json` 捕获后写 evidence/），不作为 land 门禁。

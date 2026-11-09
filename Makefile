@@ -1211,12 +1211,15 @@ testharness-html-semantics: target-disk-guard fetch-wpt-html-semantics target/te
 testharness-compression: target-disk-guard fetch-wpt-compression target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-compression $(if $(FILTER),$(FILTER),)
 
-# webcrypto goal M1 / DC-1（docs/goal/archive/webcrypto-compat.md）：WebCryptoAPI 语料
-# fetch 走 goals/26 预置脚本（git trees 深挖 + /common 补拉）；runner 可执行子集
-# skip 域见 testharness.rs webcrypto_case_skipped 文档。
+# WebCryptoAPI 语料（wptfyi-webcrypto 目标 DC-1 周跑接入）：fetch 走 goals/38
+# 全子树新增式脚本（v3 转正子树 cb6cc97a = HEAD 布局全量：老 stable 案 +
+# modern-algos/secure-curves 两新族 + 散新案，幂等跳过已存在文件）。26 号脚本
+# 锁旧 pin 布局（已退役 .tentative. 路径 + 旧内容支撑文件），对 v3 语料是
+# 污染源，勿再对本语料目录运行。runner 可执行子集 skip 域见
+# testharness.rs webcrypto_case_skipped 文档。
 # make testharness-webcrypto FILTER=digest。
 fetch-wpt-webcrypto:
-	bash tests/wpt-runner/scripts/goals/26-webcrypto-compat.sh
+	bash tests/wpt-runner/scripts/goals/38-webcrypto-compat-v3.sh
 
 testharness-webcrypto: target-disk-guard fetch-wpt-webcrypto target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)

@@ -21,7 +21,9 @@ shards:
     suites: "webcrypto"
     fetch: "fetch-wpt-webcrypto"
     fetch_scripts: ""
-    time_limit: 1800
+    # 2026-11-09 v3 全语料接入（HEAD 布局 69,795 keys，phase-1 33,109 的
+    # 2.1 倍）：1800 按 phase-1 体量定，随全量语料放宽到 3600。
+    time_limit: 3600
   - name: html-sem
     suites: "html-semantics web-components"
     fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
