@@ -319,7 +319,17 @@ fn solve_auto_bfc_margin_beside(
     let right = (container_width - mr).min(band_right);
     let right = if is_left_float {
         // 左 float：band 钉 border-box 左缘，right 取 frame 下限后夹回 band。
-        right.max(left + frame).min(band_right)
+        // R5481：tight 门（chromium oracle p1 left-margin-tight 定谳——float 440
+        // 带 10 < frame 30 时下绕 float 底 (0,50) 宽 CB−margin_h=440，与右 float
+        // 镜像门、R5479/R5480 margin:0 域同一 frame-floor 模型；R5217 当年探针形
+        // 全 fit 域（gap ≥ frame），tight 行为未实证、「夹回 band 永不下绕」系
+        // 猜测臂）。fit 形零变化（p3 lf mr=10 (100,0) 宽 340、R5217 lf mr=15/22/28
+        // [14,2] 实证域——r−left ≥ frame 门不触发）。
+        let r = right.max(left + frame).min(band_right);
+        if !wrap && r - left < frame {
+            wrap = true;
+        }
+        r
     } else {
         // 右 float：右缘钉 float margin-box 左缘，钉后宽不足 frame → 下绕。
         if !wrap && right - left < frame {
