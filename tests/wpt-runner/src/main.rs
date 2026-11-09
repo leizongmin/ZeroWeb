@@ -27,6 +27,7 @@ mod testharness_page_state;
 mod testharness_pointerlock;
 mod testharness_py_routes;
 mod testharness_svg;
+mod testharness_test262;
 mod testharness_wasm_core;
 mod testharness_webcrypto;
 mod testharness_webmessaging;
@@ -76,6 +77,8 @@ Commands:
   testharness-wasm  Run pinned WebAssembly (wasm/jsapi) window testharness cases (page-wasm goal M1 / DC-1)
   testharness-wasm-core  Run imported wasm/core + wasm/webapi testharness corpus
                        (wasm-compat goal M1 / DC-2)
+  testharness-test262  Run imported third_party/test262 corpus (upstream serve
+                       wrapper chain folded single-page; wptfyi-runtime goal DC-1)
   testharness-webstorage  Run pinned WebStorage window testharness cases (webstorage-compat goal M1 / DC-1)
   testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
   testharness-webmessaging  Run imported webmessaging (postMessage/MessageChannel/BroadcastChannel)
@@ -530,6 +533,9 @@ fn run_main() {
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-wasm-core" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_wasm_core::run_wasm_core_cases(wpt_root, filter)
+        }),
+        "testharness-test262" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_test262::run_test262_cases(wpt_root, filter)
         }),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),

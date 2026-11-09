@@ -430,6 +430,19 @@ fetch-wpt-wasm-core:
 testharness-wasm-core: target-disk-guard fetch-wpt-wasm fetch-wpt-wasm-core target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-wasm-core $(if $(FILTER),$(FILTER),)
 
+# wptfyi-runtime goal DC-1（docs/goal/wptfyi-runtime.md）：third_party/test262 上游
+# 语料 vendoring（goals/48-test262-runtime.sh——git partial clone + cone sparse，
+# pin = lib.sh WPT_REV，vendored.toml 记 test262 上游 rev b66872a9）+ runner 通道
+# （testharness_test262.rs——上游 serve 包装链折叠单页执行，变体名 .test262.html /
+# .test262.strict.html / .test262-module.html 与 wpt.fyi summary 逐字对齐）。
+# 基线首跑 Fail 多为预期（记录通过率用），不作为 land 门禁。filter 按路径子串
+# 透传：make testharness-test262 FILTER=third_party/test262/test/language/statements。
+fetch-wpt-test262:
+	bash tests/wpt-runner/scripts/goals/48-test262-runtime.sh
+
+testharness-test262: target-disk-guard fetch-wpt-test262 target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-test262 $(if $(FILTER),$(FILTER),)
+
 # net-api-compat goal M1 / DC-1：上游六 corpus（fetch/xhr/url/mimesniff/streams/
 # eventsource）window 可执行子集。用例 gitignored（goals/20-net-api-compat.sh 按需
 # 拉取，GITHUB_TOKEN 可选抬高列目录限流）；skip 域（server-handler .py 重依赖/策略
