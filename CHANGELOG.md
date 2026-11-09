@@ -8,12 +8,16 @@
 
 ### 变更
 
-- **TLS 栈安全升级**：rustls 升至 0.23.45，修复 GHSA-2mjx-qc3c-rqvc（reqwest/WebSocket 传输侧依赖，Cargo.lock 层升级）。
+- **TLS 栈安全升级**：rustls 升至 0.23.45，修复 GHSA-2mjx-qc3c-rqvc（reqwest/WebSocket 传输侧依赖，Cargo.lock 层升级；Cargo.lock 现随上游 patch 至 0.23.46，同为 0.23.x 内升级）。
 - **浏览器进程模型固定化**：`zero-browser` 不再支持 `--single-process` / `--multi-process` 或相应环境变量开关；tab 固定使用 `zero-renderer`，页面帧固定经 `zero-compositor`，栅格图像固定由 renderer 启动 `zero-image-decoder`。`ZeroWebView` 仍保持进程内嵌入实现。
 - **浏览器二进制瘦身**：发布版 `zero-browser` 不再编译进程内 `tab_worker`、页面脚本 worker 和页面脚本调度，也不再链接 `zero-webview`、V8、QuickJS 或脚本 sandbox；headless 的导航、内联 HTML、脚本执行及截图改由 `zero-renderer` IPC 驱动，browser 只保留宿主、网络代理、绘制快照导入和 chrome 呈现职责。默认 Windows release 从 71.4 MB 降至 18.5 MB；renderer 继续独占 V8 页面脚本执行。
 
 ### 新增
 
+- **Web Crypto 数值参数加固与 goal 收口（webcrypto goal，2026-11-09/10）**：`deriveBits` / `generateKey` 数值成员补 `[EnforceRange]` 入口归一——修复超大 `length` 穿透 host KDF 致 PBKDF2 不可终止楔死，AES/HMAC `length` 与 RSA `modulusLength` ±2^32 邻域穿透统一落 `OperationError`，HMAC `length:0` 显式 `OperationError`；v3 全语料快照 67,877/70,920 ≈ 95.6%（净增 +41,098），DC-1~DC-3 收口 DONE。
+- **Test262 语言兼容通道接入（wptfyi-runtime DC-1，2026-11-09/10）**：`zero-wpt-runner` 新增 `testharness-test262` 子命令——上游 serve.py test262 包装链的折叠单页等价执行，语料按 pin 上游 rev vendoring；CI 三分片接线（53,441 案超单分片 360min 硬顶）；全量基线 53,166 案 96.39%。配套 runner filter 多段语义、harness 探针免疫测试体原型污染两形态、深组合树换道 256MB 大栈线程。
+- **渲染修复族续（R5472–R5484，2026-11-09/10）**：float 语义深水区切片——§9.5 BFC margin-aware 域左 float tight 下绕门与 escaped＋margin≠0 收缩右界夹 margin-right（三域 frame-floor 模型收敛）、行盒归属单行/多行 float store 门放行、display:inline 中间层物化侵蚀修正（块容器 content 宽分母预解算 + abspos/fixed 排除锚），均以 chromium oracle 定谳；corpus 各轮全窗 A/B 净中性（账面维持 688F/16,599）。
+- **编辑命令与 shadow 选择器修复（2026-11-09/10）**：`formatBlock` 拒绝 ret 贯通（apply 内容模型边界族 ret 行翻绿）；编辑器 style 面板写面值归一（`writeDecl` 接共享归一管线）+ fontsize armed 壳原位 restyle；shadow 内容唯一选择器跨界结构串断链修复与 runner 宿主链 shadow 选择器/坐标双根因修复（closedby-complex 16F→9F）。
 - **进程沙箱与调试安全（renderer-trust-boundary goal 收口，2026-11-02/04）**：renderer seccomp 收窄默认开启（阻断 execveat/fork/vfork/ptrace）+ Landlock 允许清单沙箱默认启用（`ZW_RENDERER_LANDLOCK=0` 操作员豁免，fail-closed 降级日志）；image-decoder 与 media-host seccomp + Landlock 双沙箱默认开启且 fail-closed；headless CDP 默认强制随机 token（stderr 与发现端点 URL 双交付）+ CDP 端口 DNS rebinding 防护（Host 头非本机名拒连）。
 - **网络平台语义族（net-api-compat-v3 与 http-cache 两 goal 收口，2026-11-07/09）**：net-api-compat-v3 DC-1~4 收口归档（通道 12,659→13,275P 全轮零回归）——XHR auth 五簇、fetch redirect 七簇、WebSocket IDL 属性面、EventSource 初始连接失败语义与五端点 fixture；HTTP 缓存 M4 终验收口——RFC 9111 五缺口收口，DC-1~DC-4 全达成，fetch 头条 +103P 不回落。
 - **渲染修复族续（R5428–R5471，2026-11-06/09）**：line-clamp block-ellipsis 家族六连刀（hangable whitespace trim、末保留行再对齐、盒高缩穿、'…' advance 度量、justify gap 口径）；正交/纵书写模式族（orthogonal float h=NaN 根因、RL 容器孤立 float 右缘重锚、viv 混合内容 extent 补偿、definite-CB §7.1 约束扩展、vrl 列组右缘锚定、abspos calc(%) ICB 基准求值）；c5525 float 域定谳即修复（taffy collapse-through 高度不传播 × §10.6.3 高度门 BFC 门翻默认、shortened line box 姊妹入口、own_floats 排除带 margin-box 判弃/裁顶）；cell 指定宽 content-box frame、嵌套 inline float 并入容器 IFC、abs-auto spec-CB 双向重测等——fail 718→688（上游分母 16,594→16,599）。
