@@ -174,6 +174,13 @@
   exit 1——工作树语料已不在（gitignored）且 20 号拉取脚本划界排除
   fetch/http-cache，经 47 号脚本带 GITHUB_TOKEN 续拉后复跑全等；语料
   预置脚本保留的决策被此轮验证。
+- **三账归档终核（2026-11-09，document 复核轮独立重跑）**：current main
+  7f6604ea3 systemd-run 24G scope 顺序重跑三账——request-cache 族窗
+  **106P/0F/0T**、headers 窗 **286P/0F/0T**、corpus 窗 **124P/14F/0T**
+  （rc=2 系预期内 14F 使 make Error 1 正常传播，非异常）。14F 逐 subtest
+  与 M3 归因 §四逐条吻合（partial 8F 全 Range 面、post-patch 2F 上游
+  判据、cc-request 504 腿、credentials 混合计数 2F、pragma public 腿）。
+  至此归档复跑声明（族/headers/corpus 三账零漂移）以独立第三轮实跑坐实。
 
 ## 五、核实方法
 
