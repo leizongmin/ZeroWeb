@@ -318,8 +318,11 @@ fn build_test262_wrapper(
          <script src=\"/resources/testharnessreport.js\"></script>\
          <script>\n\
          setup({ allow_uncaught_exception: true });\n\
-         const t = async_test(\"Test\");\n\
-         window.test262HarnessDone = t.step_func_done(function(status, message) {\n\
+         // 折叠页内用例源与 bootstrap 共享全局词法环境——outer 句柄用碰撞安全名
+         //（上游两页结构中用例源在 inner 页独立 window，`const t` 无碰撞面；语料
+         // 顶层 `var/let t` 声明与词法 `t` 并存即 SyntaxError——staging 10 案实证）。
+         const __zwT262Outer = async_test(\"Test\");\n\
+         window.test262HarnessDone = __zwT262Outer.step_func_done(function(status, message) {\n\
          \x20 if (status === 1) { throw new Error(message || \"Test failed\"); }\n\
          \x20 else if (status === 2) { throw new Error(message || \"Harness Error\"); }\n\
          });\n\
@@ -682,6 +685,8 @@ mod tests {
             None,
         );
         assert!(html.contains("setup({ allow_uncaught_exception: true });"));
+        // 折叠页碰撞安全名——用例源顶层 `var/let t` 不与 outer 句柄词法冲突。
+        assert!(html.contains("const __zwT262Outer"));
         let wiring = html.find("window.test262HarnessDone").expect("wiring");
         let reporter = html.find("REPORTER").expect("reporter");
         let provider = html.find("PROVIDER").expect("provider");
