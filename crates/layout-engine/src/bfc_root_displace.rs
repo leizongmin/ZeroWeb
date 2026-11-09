@@ -47,25 +47,35 @@ fn y_overlaps(child_top: f32, child_bottom: f32, float_top: f32, float_bottom: f
 /// R5478 escaped-float 臂（**默认开**，kill-switch `ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED=0`）：
 /// 非 BFC 根流内块级直接子的子树 float 逃逸收集（CSS2 §9.5 同 BFC 不重叠语义的
 /// escaped 形；chromium oracle V1–V4 四形态定谳，旁置装得下 x=左 float 右缘 max /
-/// 装不下下绕 float 底，与直接子形同 FloatAvoider 模型）。**已知保守残差**：beside
-/// ＋width:auto 子形 chromium 会把 BFC 根收缩到 float 旁可用宽（V1 oracle (100,0)
-/// 宽 350；显式宽不收缩 V3/V4 实证），本 pass position-only 不写宽度 → 未收缩判据
-/// 装不下即下绕（V1 落 (0,50)），宽度收缩域待独立切片。
+/// 装不下下绕 float 底，与直接子形同 FloatAvoider 模型）。
+///
+/// R5479 auto 宽 beside 收缩形（**默认开**，kill-switch `ZW_BFC_AUTO_BESIDE_MODEL=0`）：
+/// beside＋width:auto 子形收缩到 float 旁可用带宽旁置并写宽（chromium oracle 九形
+/// 定谳：V1 (100,0) 宽 350、右 float (0,0) 宽 350、双侧夹 (100,0) 宽 250；收缩带宽
+/// < 框架和 border+padding 时下绕 float 底全 CB——tight 门）。主链 beside 域
+/// （float_positioning R1369/R5217）先于子树递归定谳，拿不到权威 escaped 几何，
+/// 时序不可行，故在本终末 pass 补域（终末链之后无 auto 宽回填，写入不被重置）。
 pub(crate) fn apply_bfc_root_float_displace(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>) {
     if std::env::var("ZW_BFC_ROOT_FLOAT_DISPLACE").as_deref() == Ok("0") {
         return;
     }
     let escaped = std::env::var("ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED").as_deref() != Ok("0");
-    displace_in_container(box_node, styles, escaped);
+    let auto_beside = std::env::var("ZW_BFC_AUTO_BESIDE_MODEL").as_deref() != Ok("0");
+    displace_in_container(box_node, styles, escaped, auto_beside);
     for child in &mut box_node.children {
-        displace_subtree(child, styles, escaped);
+        displace_subtree(child, styles, escaped, auto_beside);
     }
 }
 
-fn displace_subtree(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, escaped: bool) {
-    displace_in_container(box_node, styles, escaped);
+fn displace_subtree(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    escaped: bool,
+    auto_beside: bool,
+) {
+    displace_in_container(box_node, styles, escaped, auto_beside);
     for child in &mut box_node.children {
-        displace_subtree(child, styles, escaped);
+        displace_subtree(child, styles, escaped, auto_beside);
     }
 }
 
@@ -103,7 +113,12 @@ fn collect_escaped_floats(node: &LayoutBox, content_ox: f32, content_oy: f32, ou
     }
 }
 
-fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, ComputedStyle>, escaped: bool) {
+fn displace_in_container(
+    box_node: &mut LayoutBox,
+    styles: &HashMap<NodeId, ComputedStyle>,
+    escaped: bool,
+    auto_beside: bool,
+) {
     if !container_gate(box_node, styles) {
         return;
     }
@@ -173,28 +188,76 @@ fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, Comp
         // space"）：beside + 盒宽 ≤ 容器内容右缘，装不下走下绕层（oracle beside
         // 形定谳：300 容器 150 float + 200 宽 BFC 根 → 下绕 float 底，不旁置溢出）。
         let content_right = box_node.border_left + box_node.padding_left + box_node.content_width;
-        let beside = floats
+        // R5479：auto 宽 beside 收缩形（chromium headless oracle 九形定谳）：
+        // beside＋width:auto 子形 chromium 把 BFC 根收缩到 float 旁可用宽旁置（V1
+        // (100,0) 宽 350、E4 右 float (0,0) 宽 350、E3 双侧 (100,0) 宽 250），收缩带
+        // 宽 < 框架和（border+padding）时下绕 float 底全 CB（E1/e5/e6/e7 定谳 (0,50)
+        // 宽 450）。主链 beside 域（float_positioning R1369/R5217）看不到 escaped
+        // floats（排斥循环先于递归定谳，时序拿不到权威几何），故在本终末 pass 补域：
+        // 候选 x 处收缩带宽 = min(容器内容右缘，层位 y 交带内右 float margin-box 左缘
+        // min) − x，≥ 框架和可行并随位移写宽；declared-width 盒维持原判据。
+        let (child_is_auto, child_frame) = {
+            let c = &box_node.children[idx];
+            (
+                c.declared_width_auto && escaped && auto_beside,
+                c.border_left + c.border_right + c.padding_left + c.padding_right,
+            )
+        };
+        // declared-width 盒维持原全局 beside（R5477 八形调优域零回归）；auto 宽收缩形
+        // beside/右界按层位 y 交带算（E3 双侧夹 (100,0) 宽 250 定谳须带内右 float 界）。
+        let beside_global = floats
             .iter()
             .filter(|(d, ..)| matches!(d, FloatValue::Left))
             .map(|(_, _, _, fr, _)| *fr)
             .fold(f32::NEG_INFINITY, f32::max);
-        let beside_usable = beside.is_finite() && beside + child_w <= content_right + 0.5;
         let mut levels: Vec<f32> = floats.iter().map(|(_, _, _, _, fb)| *fb).collect();
         levels.push(child_top);
         levels.retain(|&l| l >= child_top - 0.5);
         levels.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         levels.dedup();
-        let mut resolved: Option<(f32, f32)> = None;
+        let mut resolved: Option<(f32, f32, Option<f32>)> = None;
         for &level in &levels {
+            // 层位 y 交带（beside 左缘与右 float 收缩右界都按本层位带算）。
+            let band: Vec<&FloatBox> = floats
+                .iter()
+                .filter(|(_, _, ft, _, fb)| y_overlaps(level, level + child_h, *ft, *fb))
+                .collect();
+            let beside = if child_is_auto {
+                band.iter()
+                    .filter(|(d, ..)| matches!(d, FloatValue::Left))
+                    .map(|(_, _, _, fr, _)| *fr)
+                    .fold(f32::NEG_INFINITY, f32::max)
+            } else {
+                beside_global
+            };
+            let beside_usable = beside.is_finite()
+                && if child_is_auto {
+                    beside >= child_ml - 0.5 && (content_right - beside) >= child_frame - 0.5
+                } else {
+                    beside + child_w <= content_right + 0.5
+                };
             for cx in [child_ml, beside] {
                 if !cx.is_finite() || (cx != child_ml && !beside_usable) {
                     continue;
                 }
-                let hit = floats.iter().any(|(_, fl, ft, fr, fb)| {
-                    y_overlaps(level, level + child_h, *ft, *fb) && x_overlaps(cx, child_w, *fl, *fr)
-                });
+                let (w_eff, shrink_w) = if child_is_auto {
+                    let band_right = band
+                        .iter()
+                        .filter(|(d, ..)| matches!(d, FloatValue::Right))
+                        .map(|(_, fl, ..)| *fl)
+                        .fold(content_right, f32::min);
+                    let w = (band_right - cx).max(0.0);
+                    (w, if w < child_w - 0.5 { Some(w) } else { None })
+                } else {
+                    (child_w, None)
+                };
+                if child_is_auto && w_eff < child_frame - 0.5 {
+                    // 收缩带宽不足框架和 → 本候选不可行（走下绕层位）。
+                    continue;
+                }
+                let hit = band.iter().any(|(_, fl, _, fr, _)| x_overlaps(cx, w_eff, *fl, *fr));
                 if !hit {
-                    resolved = Some((cx, level));
+                    resolved = Some((cx, level, shrink_w));
                     break;
                 }
             }
@@ -202,7 +265,7 @@ fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, Comp
                 break;
             }
         }
-        let Some((target_x, target_y)) = resolved else {
+        let Some((target_x, target_y, shrink_w)) = resolved else {
             continue;
         };
         // 只推不拉（R5470 纪律）：目标位须不低于现位（x 重钉仅伴随下推）。
@@ -215,6 +278,12 @@ fn displace_in_container(box_node: &mut LayoutBox, styles: &HashMap<NodeId, Comp
             let child = &mut box_node.children[idx];
             child.x = target_x;
             child.y = target_y;
+            // R5479：auto 宽 beside 收缩形写宽（float_positioning shrink_bfc_content_width
+            // 同式同步 content_width；终末链之后无 auto 宽回填 pass，写入不被重置）。
+            if let Some(w) = shrink_w {
+                child.width = w;
+                child.content_width = (child.width - child_frame).max(0.0);
+            }
         }
         // 后继流内兄弟随推（sibling.y ≥ 旧位才推；float/定位/r109 兄弟不动）。
         if dy > 0.5 {

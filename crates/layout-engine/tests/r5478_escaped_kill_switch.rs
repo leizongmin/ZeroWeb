@@ -38,6 +38,8 @@ fn find_box(root: &LayoutBox, id: zero_dom::NodeId) -> Option<&LayoutBox> {
 fn kill_switch_keeps_pre_displace_flow_origin() {
     unsafe { std::env::set_var("ZW_BFC_ROOT_FLOAT_DISPLACE_ESCAPED", "0") };
 
+    // V2 形（显式宽 300）：开关关闭时 escaped floats 不收集，#flowroot 维持流内
+    // 原点 (0, 0) 与 float 带盖绘＝escaped 形行为失败的旧版本状态。
     let html = r#"<html><head><style>
 body { margin: 0; }
 #host { width: 450px; }
@@ -66,5 +68,36 @@ body { margin: 0; }
         "开关关闭：#flowroot 维持流内原点 (0, 0)（与 float 带盖绘＝escaped 形行为失败的旧版本状态），实际 ({}, {})",
         b.x,
         b.y
+    );
+
+    // R5479 auto 宽 beside 收缩形：开关关闭时宽度写同回退——auto 宽 #flowroot
+    // 维持全宽 450 流内原点（chromium (100, 0) 宽 350 旁置收缩＝开启态 r5479
+    // left-beside 锚）。
+    let html_auto = r#"<html><head><style>
+body { margin: 0; }
+#host { width: 450px; }
+.f { float: left; width: 50px; height: 50px; }
+#flowroot { display: flow-root; border: 15px solid black; height: 80px; }
+</style></head>
+<body>
+<div id="host">
+  <div id="fakegroup">
+    <div class="f" style="background: cyan;"></div>
+  </div>
+  <div id="flowroot"></div>
+</div>
+</body></html>"#;
+    let doc2 = zero_dom::parse_html(html_auto);
+    let styles2 = sys.compute_styles(&doc2, &sheets(html_auto));
+    let mut engine2 = LayoutEngine::new(500.0, 220.0);
+    let result2 = engine2.compute(&doc2, &styles2);
+    let nid2 = doc2.get_element_by_id("flowroot").expect("#flowroot 存在");
+    let b2 = find_box(&result2.root, nid2).expect("#flowroot 布局盒存在");
+    assert!(
+        (b2.x - 0.0).abs() <= 0.5 && (b2.y - 0.0).abs() <= 0.5 && (b2.width - 450.0).abs() <= 0.5,
+        "开关关闭：auto 宽 #flowroot 维持流内全宽 (0, 0) 宽 450（宽度写同回退），实际 ({}, {}) 宽 {}",
+        b2.x,
+        b2.y,
+        b2.width
     );
 }
