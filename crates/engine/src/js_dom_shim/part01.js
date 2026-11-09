@@ -9791,6 +9791,12 @@
       var sp = scriptEl.parentNode;
       if (!sp) return;
       sp.insertBefore(fontEl, scriptEl);
+      // 显式摘除后头插（shim appendChild 隐式 detach 缺口先例——zz-probe-d4x
+      // X4、F1'-B 前向并入同法）：mt 顺序执行面 typed 文本为 caret 锚节点时
+      // script 壳移动不脱旧亲链，元素双亲被 innerHTML 序列化两次＝N 族
+      // :2178/:2183/:2398/:2403 重复尾根因（2026-11-09 side-band trace 定谳
+      // POST-in 单壳树 → POST-out 双壳树）。
+      if (scriptEl.parentNode) scriptEl.parentNode.removeChild(scriptEl);
       fontEl.appendChild(scriptEl);
     } catch (_eF6bPi) {}
   };
