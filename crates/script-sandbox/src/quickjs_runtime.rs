@@ -355,7 +355,7 @@ impl QuickJSSandbox {
                 ctx.as_raw().as_ptr(),
                 c_code.as_ptr(),
                 code.len() as u64,
-                b"execute_classic_catch\0".as_ptr().cast(),
+                c"execute_classic_catch".as_ptr(),
                 qjs_sys::JS_EVAL_TYPE_GLOBAL as ::std::os::raw::c_int,
             );
             let is_exc = qjs_sys::JS_IsException(raw);
@@ -687,7 +687,6 @@ mod tests {
     /// var/fn、catch 序 `[catch 同步, 体内微任务, load 微任务]`、`__zw_e` 跑后即删。
     #[test]
     fn test_execute_classic_gdi_catch_order_s369_quickjs() {
-        use crate::Sandbox;
         let mut sandbox = QuickJSSandbox::with_config(crate::SandboxConfig {
             persistent_context: true,
             ..Default::default()
