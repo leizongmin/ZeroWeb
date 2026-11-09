@@ -1238,6 +1238,14 @@
         var _mgDp = _proxyCache[_mgK];
         if (!_mgDp || !_mgDp.hasAttribute || !_mgDp.hasAttribute('open')) continue;
         try { if (!_mgDp.isConnected) continue; } catch (_eMgIc) { continue; }
+        // s372：flat 包含先行——slotted light 子（宿主 SR 内 slot 分配）的 engine
+        // parentNode 链锚宿主（host3→host2→body），shadow-including 上行链不经过
+        // 模态 dialog（住宿主 SR 内）→ 恒判模态外 → runner best-scan 全跳 → msel
+        // 兜底 over-dismiss（closedby-complex modal 组合 clickOn(popoverB) 形态）。
+        // Chromium inert/hit-test 用 flat tree（FlatTreeTraversal::Contains，s330
+        // close-the-dialog 同面）→ 复用 light-dismiss flat 包含；shadow-including
+        // 保底（s29 纯 shadow 内容候选——part04/part06 焦点门调用面）。
+        try { if (_zwLdFlatContains(_mgDp, el)) return true; } catch (_eMgFc) {}
         return _zwDialogShadowInclContains(_mgDp, el);
       }
     } catch (_eMg) {}
@@ -1636,6 +1644,21 @@
     // 保守跳过 light dismiss（shadow 内点击占比面大——complex 影域 testcase 全部
     // clickOn 落 shadow 元素；真空区点击 targetSel 为空照常 dismiss）。
     if (targetSel && !target) return;
+    // s372：backdrop-through——栈顶模态 ::backdrop 几何覆盖视口（s30 同源近似），
+    // 几何命中目标 T 位于 top-layer 序栈顶模态 M 之下（T 非 M flat 子树内）时
+    // 命中面是 M 的 backdrop：有效目标取 M，既有 backdropHit 盒内外分流随即生效
+    //（M 自身判 'out'、flat 含 M 的 popover 保持——closedby-complex modalB 组合
+    // clickOn(dialogA) 期望 dA open + pA open（pA flat 含 dB）+ dB 关）。T 在 M
+    // 子树内（M 自身或其后打开的 top-layer 元素）是 backdrop 之上真实元素，
+    // 不 retarget；既有 msel 通道（best-scan 全跳 → targetSel===bdTop）不变。
+    var _bdTopS372 = _zwDialogModalTopSel();
+    if (_bdTopS372 && _bdTopS372 !== targetSel) {
+      var _bdTS372 = _zwLdResolveTarget(_bdTopS372);
+      if (_bdTS372 && !(target === _bdTS372 || _zwLdFlatContains(_bdTS372, target))) {
+        target = _bdTS372;
+        targetSel = _bdTopS372;
+      }
+    }
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
       try {
@@ -1705,6 +1728,16 @@
     if (!dialogs || !dialogs.length) return;
     var target = _zwLdResolveTarget(targetSel);
     if (targetSel && !target) return;
+    // s372：backdrop-through（check 腿同款——两腿同 retarget 保证 sameTarget
+    // 同态比对一致，否则 down 腿 retarget 后 up 腿不复现 → 槽态错配不关）。
+    var _bdTopS372 = _zwDialogModalTopSel();
+    if (_bdTopS372 && _bdTopS372 !== targetSel) {
+      var _bdTS372 = _zwLdResolveTarget(_bdTopS372);
+      if (_bdTS372 && !(target === _bdTS372 || _zwLdFlatContains(_bdTS372, target))) {
+        target = _bdTS372;
+        targetSel = _bdTopS372;
+      }
+    }
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
       try {
