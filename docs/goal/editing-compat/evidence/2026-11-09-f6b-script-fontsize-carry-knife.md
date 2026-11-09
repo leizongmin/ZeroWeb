@@ -59,7 +59,7 @@ fixture：`zz-probe-f6b.html` 17 案（A4+C5+N6+绿见证 W1/W2——C 族含 qV
 ### DC-4 残键三分表（census 14 键逐键）
 
 - **fixed（10）**：A1 subscript+delete / A2 subscript+forwarddelete / A3 superscript+delete / A4 superscript+forwarddelete / C1 subscript+fontsize(2) / C2 fontsize(2)+subscript / C3 subscript+fontsize(3) / C4 fontsize(3)+subscript / N3 outer font3 等桶溶解 / N6 tail outer font3 等桶溶解。
-- **handoff（4）**：N1 outer font2 remap / N2 inner font3 hoist / N4 tail outer font2 remap / N5 tail inner font3 hoist——引擎产出形（probe 17/0 佐证）与语料期望形分歧，残红非回归（judge 行恒一）；接收域 = F6b 残键语料形对齐独立刀（backlog），重入条件 = 专项普查该四键语料期望序列化。
+- **handoff（4）**：N1 outer font2 remap / N2 inner font3 hoist / N4 tail outer font2 remap / N5 tail inner font3 hoist——~~引擎产出形（probe 17/0 佐证）与语料期望形分歧~~ **定谳修正（2026-11-09 handoff 刀）：产出形正确，败在 post_insert 重放 appendChild 隐式 detach 缺口致双亲序列化（trace 定谳）；已收口**，见 [2026-11-09-f6bn-handoff-knife.md](2026-11-09-f6bn-handoff-knife.md)。
 - **域外附带 fixed（4，非 census）**：B-table `delete/forwarddelete>inserttext(B)` × td/th——收集器共享面翻绿，随本刀入账。
 
 ## learning（四条落 docs/learnings/，2026-11-09）

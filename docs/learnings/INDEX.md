@@ -5,8 +5,9 @@
 > 布局契约：`<分类>/<YYYY-MM>/<YYYY-MM-DD>-<topic>.md`，日期以 frontmatter 为准。
 > 方法论蒸馏层见 `.agents/skills/zeroweb-guidelines/SKILL.md`。
 
-## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（260）
+## Bugs — 踩坑记录（根因 + 修复 + 如何避免）（261）
 
+- 2026-11-09 [shim appendChild 隐式 detach 缺口状态相关——孤立探针同码全绿不等于实现正确，执行态分歧用窗口克隆+side-band trace 定位](bugs/2026-11/2026-11-09-shim-appendchild-implicit-detach-state-gap.md) — engine
 - 2026-11-09 [数值分桶中点扫描在整档值上系统性差一档](bugs/2026-11/2026-11-09-numeric-bucket-midpoint-scan-off-by-one.md) — engine
 - 2026-11-09 [FD walk 吸收臂设计前先逐迭代 trace 执行路径——静态模型把 br-branch 当落点，实际 walk cond1 已先吃掉 br](bugs/2026-11/2026-11-09-fd-walk-execution-path-trace-before-absorb-arm.md) — engine
 - 2026-11-09 [deleteSelection 跨壳边界选区静默空转：收集器两道叠加缺陷](bugs/2026-11/2026-11-09-delete-selection-cross-shell-noop.md) — engine
