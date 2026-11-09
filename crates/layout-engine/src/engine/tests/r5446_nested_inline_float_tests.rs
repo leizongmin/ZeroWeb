@@ -75,8 +75,14 @@ fn r5446_nested_wrapper_float_at_left_edge_and_contained() {
         "p 高不应被 50px float 撑高（§10.6.3，chromium 18），实际 {}",
         p.0.height
     );
-    // FIXME(pre-existing)：ZW 此形 2 行（36px）vs chromium 1 行（18px）——Kitty 换行
-    // 域行排差异，行盒归属缺陷在册案的邻域，另案归因。
+    // R5473（CSS2 §9.5 float 离流盒）：行中 float 锚不推行——Kitty 与 Hello 同行
+    //（chromium oracle 定谳 "HelloKitty" 同行），p 高 = 单行 strut 18；旧径 Kitty
+    // 掉行 1 使 p 高 36（2 行），修复后销 R5471 FIXME（2 行 vs 1 行行排差异）。
+    assert!(
+        (p.0.height - 18.0).abs() < 0.5,
+        "Kitty 应与 Hello 同行（R5473 行中锚不推行），p 高 = 18 单行，实际 {}",
+        p.0.height
+    );
 }
 
 /// RTL wrapper（probe g 形）：dir=rtl 宿主内 float:right 落右缘
