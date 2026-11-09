@@ -4539,6 +4539,26 @@ impl WebView {
                     let Some(spec_eff) = apply_import_map(&map_compile, parent, spec) else {
                         return String::new();
                     };
+                    // s360：第五参 = defer 标记（shim `__zw_load_module_deferred` 穿 '1'）
+                    // ——入口走延迟求值发射（build_module_script_deferred：depsPromise 急切
+                    // 依赖图 + runBody 延迟体），产物记录对象 IIFE 由 shim 门面化。合同
+                    // 失败回落空串（shim 顶层取回失败面 TypeError——与 eager 契约空串同
+                    // 语义；链接失败 tag 3 由该函数自带）。
+                    // https://tc39.es/proposal-defer-import-eval/
+                    let deferred = args.get(4).map(String::as_str) == Some("1");
+                    if deferred {
+                        return compile_module_contract_deferred(
+                            &fetcher_compile,
+                            parent,
+                            &spec_eff,
+                            if credentials.is_empty() || credentials == "same-origin" {
+                                None
+                            } else {
+                                Some(credentials)
+                            },
+                        )
+                        .unwrap_or_default();
+                    }
                     compile_module_contract(
                         &fetcher_compile,
                         parent,
@@ -5317,16 +5337,23 @@ impl WebView {
             } else {
                 // Classic scripts must execute in the global script scope. Wrapping them in a
                 // block changes top-level async function and lexical declaration visibility.
+                // s360（import.defer 面）：bundled V8 默认关 --js-import-defer 旗，classic
+                // 源内 `import.defer(` parse 即 SyntaxError——源码面重写到 shim
+                // `__zwClassicImportDefer`（`import(` 走 V8 原生宿主回调不重写，无匹配
+                // 时源逐字节原样）。classic 车道动态延迟导入 spec：defer 动态形式返回
+                // 延迟命名空间 promise，依赖图急切求值、入口体延迟到属性访问。
+                // https://tc39.es/proposal-defer-import-eval/
+                let classic_code = zero_script_sandbox::rewrite_classic_deferred_imports(&code);
                 if strict {
                     // s335（微任务检查点序）：strict 车道用报告变体——classic 抛错在 catch 内 reportError
                     // （window error 事件同步派发，spec report the exception 先于检查点）+ 元素
                     // load 微任务派发（spec fire load 在检查点后）；基线包装无报告面，browser/
                     // renderer 车道 sentinel→R2940 自报链共用基线（互换即双报）。
 
-                    script_run_classic_page_strict(&code, script_index, strict_report_src.as_deref())
+                    script_run_classic_page_strict(&classic_code, script_index, strict_report_src.as_deref())
                 } else {
                     format!(
-                        "{set}\n__zw_begin_script&&__zw_begin_script();\n{code}",
+                        "{set}\n__zw_begin_script&&__zw_begin_script();\n{classic_code}",
                         set = script_set_current_script(script_index),
                     )
                 }
@@ -8416,6 +8443,52 @@ fn compile_module_contract(
         Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
             tracing::warn!("collect module {spec} (transitive fetch): {failure:?}");
             String::new()
+        }
+    }
+}
+
+/// s360：defer 契约（[`compile_module_contract`] 的延迟求值变体）——入口以
+/// [`zero_script_sandbox::compile_dependency_iife_deferred`] 编译为记录对象 IIFE
+///（`{exports, depsPromise, runBody}`），依赖图急切求值、入口体延迟。失败面镜像
+/// eager 契约：链接失败 tag 3 逐次新 SyntaxError、其余空串 TypeError。
+/// https://tc39.es/proposal-defer-import-eval/
+fn compile_module_contract_deferred(
+    fetcher: &ScriptSourceFetcher,
+    parent: &str,
+    spec: &str,
+    credentials: Option<&str>,
+) -> Option<String> {
+    let mut reg = zero_script_sandbox::ModuleRegistry::new();
+    let mut visited = std::collections::HashSet::new();
+    match collect_module_deps_recursive(
+        fetcher,
+        parent,
+        spec,
+        false,
+        None,
+        None,
+        credentials,
+        &mut reg,
+        &mut visited,
+    ) {
+        Ok(()) => {
+            let resolved = resolve_document_url(parent, spec);
+            match zero_script_sandbox::compile_dependency_iife_deferred(&resolved, &reg) {
+                Ok(iife) => Some(format!("{resolved}\u{1f}{iife}")),
+                Err(e @ zero_script_sandbox::ScriptError::CompileError(_)) => {
+                    tracing::warn!("compile defer module {spec} (transitive fetch): {e}");
+                    Some(format!("3\u{1f}{resolved}\u{1f}{e}"))
+                }
+                Err(_) => {
+                    tracing::warn!("compile defer module {spec} (transitive fetch)");
+                    None
+                }
+            }
+        }
+        Err(ModuleGraphFailure::DepResolution) => Some(format!("{}\u{1f}", resolve_document_url(parent, spec))),
+        Err(failure @ (ModuleGraphFailure::TopFetch | ModuleGraphFailure::DepFetch)) => {
+            tracing::warn!("collect defer module {spec} (transitive fetch): {failure:?}");
+            None
         }
     }
 }

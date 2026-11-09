@@ -144,6 +144,19 @@
 #     原件本地补入 36B 红（md5 4952ca73677541df4bacbe83cc3aae99）/ 38B 绿
 #     （md5 56ae6412c0519859b25b032fb77a2270）（raw.githubusercontent wpt master
 #     2026-11-06 取件）——升级新 ref 后需重新补）
+#   - html/semantics/scripting-1/the-script-element/module/dynamic-import/
+#     resources/{side-effect-module.js,module-with-tla-dep.js,tla-module.js,
+#     cyclic-tla-dep-a.js,cyclic-tla-dep-b.js} 缺失（import.defer 三 tentative 页
+#     依赖：basic-deferred-evaluation / tla-deferred-evaluation /
+#     cyclic-tla-defer-eval；s360 勘根定性三页 SyntaxError 恒败为双缺口——bundled
+#     V8 默认关 --js-import-defer 旗（语法面，引擎侧 transform 层重写收口）+
+#     资源 404（fetch 按扩展名白名单漏收新目录）；已按 lib.sh WPT_REV pin
+#     315976933870b34d6ea30e3f6643403edae678ba 从上游原件补入 58B（md5
+#     4d4df47b73875ae8b8781b93855948a8）/ 118B（ada0c57bac189e1540a45e1173c4b227）/
+#     97B（33e7b388292cfb792c6040eb54694ecd）/ 121B（cc63c221f594e31e916a2e3cfb777719）/
+#     109B（123fdb8f9fb663cdc9109454e5c671ab）；basic+tla 两页 solo 转绿，cyclic
+#     页残红为 tc39 proposal-defer-import-eval issue #83 已知循环 TLA 死锁面
+#     （bounded Fail 非 hang）——升级新 ref 后需重新补）
 #   common/ 已由本脚本自动补齐。
 
 set -euo pipefail

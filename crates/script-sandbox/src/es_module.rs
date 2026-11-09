@@ -185,8 +185,7 @@ impl std::fmt::Debug for EsModuleSandbox {
 /// 重建全局对象（缓存随之消失，无须本脚本）；tab worker 路径（`tab_scripts::script_phase_begin`）
 /// 与 webview 进程内路径（`run_page_scripts_impl`，无 reset_context）持持久 context，
 /// 必须显式执行本脚本——不复位则同 URL 模块在新文档零次求值（D1 回归）。
-pub const MODULE_CACHE_RESET_SCRIPT: &str =
-    "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\nglobalThis.__zwModuleFetchKeys = {};\n";
+pub const MODULE_CACHE_RESET_SCRIPT: &str = "globalThis.__moduleCache = {};\nglobalThis.__moduleFailures = {};\nglobalThis.__zwModuleFetchKeys = {};\nglobalThis.__zwDeferRecords = {};\nglobalThis.__zwDeferFetchKeys = {};\n";
 
 /// s339（iframe 域动态 import 模块体 window 身份桥）——模块体求值包裹片（open/close
 /// 夹住模块体源码）。两处求值臂（prelude eval 臂与 v8_runtime native settle 臂）在
@@ -328,6 +327,26 @@ pub fn compile_module_script_with_credentials(
 pub fn compile_dependency_iife(specifier: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
     let mut path = vec![specifier.to_string()];
     build_dep_iife(specifier, registry, "same-origin", &mut HashSet::new(), &mut path)
+}
+
+/// s360：入口模块的延迟求值编译（[`build_module_script_deferred`] 变体——宿主
+/// `__zw_compile_module` 第 5 参 defer 标记分派；产物为 `{exports, depsPromise,
+/// runBody}` 记录对象 IIFE，依赖图急切求值、入口体延迟到门面属性访问）。
+/// https://tc39.es/proposal-defer-import-eval/
+pub fn compile_dependency_iife_deferred(specifier: &str, registry: &ModuleRegistry) -> Result<String, ScriptError> {
+    let source = registry
+        .get(specifier)
+        .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?
+        .to_string();
+    let mut path = vec![specifier.to_string()];
+    build_module_script_deferred(
+        &source,
+        specifier,
+        registry,
+        "same-origin",
+        &mut HashSet::new(),
+        &mut path,
+    )
 }
 
 /// s348（html-semantics-compat）：包装级 parse 失败的**记录归属扫描**——沿入口图
@@ -646,6 +665,36 @@ fn is_identifier_continue_byte(b: u8) -> bool {
 }
 
 pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
+    rewrite_imports_impl(source, ImportRewriteMode::Module)
+}
+
+/// s360（html-semantics-compat import.defer 面）：重写目标档位。
+/// - [`ImportRewriteMode::Module`]：模块管线（`import(` → `__zw_dynamic_import`、
+///   `import.defer(` → `__zw_import_defer`——发射体引用模块 IIFE 局部 `_importMeta`/
+///   `_importCred`，与既有 eager 臂同槽）。
+/// - [`ImportRewriteMode::ClassicDeferOnly`]：classic 页面脚本面——**只**重写
+///   `import.defer(`（→ `__zwClassicImportDefer`，helper 自读 s90 referrer 槽）；
+///   `import(` 不重写（classic 上下文走 V8 原生宿主回调 s88，重写反而失去槽位
+///   referrer——模块 lane 的 `_importMeta` 局部量在 classic 源不存在）。
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ImportRewriteMode {
+    Module,
+    ClassicDeferOnly,
+}
+
+/// classic 页面脚本源的 import.defer 重写（s360——defer 动态形式在 bundled V8 默认
+/// 关旗（`--js-import-defer` 未开）下 parse 即 SyntaxError「Unexpected identifier
+/// 'defer'」，须在源码面重写到 JS helper；`import(` 原生通道不受扰）。
+pub fn rewrite_classic_deferred_imports(source: &str) -> String {
+    if !source.contains("import.defer") {
+        return source.to_string();
+    }
+    rewrite_imports_impl(source, ImportRewriteMode::ClassicDeferOnly)
+}
+
+/// import 动态调用重写核心（[`rewrite_dynamic_imports`] 与
+/// [`rewrite_classic_deferred_imports`] 共享的上下文感知扫描器）。
+fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
     // s91（string-compilation module 面）：字符串/模板/注释上下文感知——旧版纯文本
     // 扫描把**字符串字面量内**的 `import(`（eval/Function/setTimeout 字符串、事件处
     // 理器属性体的源码形态）也重写并发射 `_importMeta.url`，该绑定是模块 IIFE 局部
@@ -666,7 +715,10 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
             // s267：标识符边界守卫——前邻标识符续字符时 `import(` 是标识符后缀
             // （repeated-import 页 `removeScriptReimport()` 探针实证 mid-identifier
             // 误重写 → ReferenceError），非 import 关键字，原样拷贝继续。
-            if source[i..].starts_with("import(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+            if source[i..].starts_with("import(")
+                && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                && mode == ImportRewriteMode::Module
+            {
                 // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
                 // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
                 // 经典脚本路径在宿主侧设置 `globalThis._importMeta`），而 `__zw_dynamic_import`
@@ -683,6 +735,27 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
                 // 落点），零引号零字面值。
                 out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, ");
                 i += "import(".len();
+                continue;
+            }
+            // s360：`import.defer(` 动态延迟导入重写——bundled V8 默认关 `--js-import-defer`
+            // 旗，该语法 parse 即 SyntaxError「Unexpected identifier 'defer'」。Module 档
+            // 发射体引用模块 IIFE 局部 `_importMeta`/`_importCred`（同 eager 臂槽位纪律，
+            // 零引号）；ClassicDeferOnly 档发射 `__zwClassicImportDefer`（helper 自读
+            // s90 referrer 槽 / s340 credentials 槽，classic 源无 IIFE 局部量可引）。
+            // spec 延迟求值语义见 part01 shim `__zw_import_defer` 注记。
+            // https://tc39.es/proposal-defer-import-eval/
+            if source[i..].starts_with("import.defer(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+                match mode {
+                    ImportRewriteMode::Module => {
+                        out.push_str(
+                            "__zw_import_defer.call({ referrer: _importMeta.url, credentials: _importCred }, ",
+                        );
+                    }
+                    ImportRewriteMode::ClassicDeferOnly => {
+                        out.push_str("__zwClassicImportDefer(");
+                    }
+                }
+                i += "import.defer(".len();
                 continue;
             }
             match bytes[i] {
@@ -739,9 +812,28 @@ pub(crate) fn rewrite_dynamic_imports(source: &str) -> String {
                 // 模板 `${}` 表达式区内仍是代码——真实 `import(` 照常重写（仍在模块
                 // IIFE 词法作用域内，发射体 `_importMeta`/`_importCred` 合法；标识符
                 // 边界守卫同上，s338 credentials 槽同规）。
-                if source[i..].starts_with("import(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+                if source[i..].starts_with("import(")
+                    && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                    && mode == ImportRewriteMode::Module
+                {
                     out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, ");
                     i += "import(".len();
+                    continue;
+                }
+                // s360：模板表达式区仍是模块 IIFE 词法作用域内代码——defer 臂同
+                // 栈空分支（发射体局部量合法、标识符边界守卫同规）。
+                if source[i..].starts_with("import.defer(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+                    match mode {
+                        ImportRewriteMode::Module => {
+                            out.push_str(
+                                "__zw_import_defer.call({ referrer: _importMeta.url, credentials: _importCred }, ",
+                            );
+                        }
+                        ImportRewriteMode::ClassicDeferOnly => {
+                            out.push_str("__zwClassicImportDefer(");
+                        }
+                    }
+                    i += "import.defer(".len();
                     continue;
                 }
                 match c {
@@ -1023,6 +1115,46 @@ fn build_module_script(
     visited: &mut HashSet<String>,
     path: &mut Vec<String>,
 ) -> Result<String, ScriptError> {
+    build_module_script_inner(source, url, registry, async_body, false, credentials, visited, path)
+}
+
+/// s360（html-semantics-compat import.defer 面）：入口模块的**延迟求值**发射变体——
+/// 依赖图急切求值（`depsPromise`，async 承载 TLA 依赖 await 归一）、入口体延迟
+/// （`runBody`，首次命名空间属性访问触发、恰好一次）。产物 IIFE 返回
+/// `{ exports, depsPromise, runBody }` 记录对象（非导出面），由 shim
+/// `__zw_load_module_deferred` 求值记账、`__zw_make_defer_facade` 建 Proxy 门面。
+/// 体延迟作用域近似：导出声明经关键词剥离提升为 IIFE 顶层 `var` 赋值（getter 闭包
+/// 目标）、`export function/class` 声明提前到顶层（函数提升即 spec 瞬时初始化语义；
+/// class 提前求值为近似，语料无钉面 FIXME）、提升 import 发射的 `var` 剥离为赋值
+/// （deps fn 局部 `var` 不可见顶层 getter/体）。TLA 入口体 runBody 为 async——属性
+/// 访问在体 settle 前读到 undefined（spec 延迟命名空间对 TLA 模块的访问挂起语义未
+/// 建模，FIXME，语料无钉面——tla 钉面入口体本身无 TLA）。
+/// https://tc39.es/proposal-defer-import-eval/
+pub fn build_module_script_deferred(
+    source: &str,
+    url: &str,
+    registry: &ModuleRegistry,
+    credentials: &str,
+    visited: &mut HashSet<String>,
+    path: &mut Vec<String>,
+) -> Result<String, ScriptError> {
+    let async_body = module_source_has_top_level_await(source);
+    build_module_script_inner(source, url, registry, async_body, true, credentials, visited, path)
+}
+
+/// [`build_module_script`] / [`build_module_script_deferred`] 共享发射核。
+/// `deferred = true` 时 deps/body 拆分发射（见上方变体注记）；`false` 逐字节同旧路径。
+#[allow(clippy::too_many_arguments)] // s360：deferred 穿参 +1 形参（8 参——既有图收集签名面）
+fn build_module_script_inner(
+    source: &str,
+    url: &str,
+    registry: &ModuleRegistry,
+    async_body: bool,
+    deferred: bool,
+    credentials: &str,
+    visited: &mut HashSet<String>,
+    path: &mut Vec<String>,
+) -> Result<String, ScriptError> {
     let mut output = String::with_capacity(source.len() * 3);
     if async_body {
         output.push_str("(async function() {\n");
@@ -1076,18 +1208,46 @@ fn build_module_script(
     for (exported, local) in &export_getters {
         output.push_str(&export_getter_line(exported, local));
     }
+    // s360（deferred）：提升发射拆分——deps 段（急切）与体段（延迟）分缓冲装配。
+    // deps fn 内提升发射**原样内联**（`var _mod_…` 为 deps fn 局部——import 绑定
+    // getter 是 globalThis defineProperty，闭包捕获 fn 局部量即可见；体经 getter 读
+    // 绑定，无须顶层可见性）。命名空间导入绑定（`var ns = _mod_x;` 体裸引用形）
+    // 补 globalThis getter（命名空间绑定 spec 不可变，getter 恒等透传）。
+    let mut hoisted = String::new();
+    let mut body = String::new();
+    let mut top_decls = String::new();
     // s345 提升 import：全部 import 语句发射于体首（源内声明序），先于普通语句——
     // 依赖图急切求值（prelude postorder）或体首 memoized 发射承接，绑定先于使用。
+    // s360（deferred）：deps fn 为 async（TLA 依赖 await 归一）→ 提升发射恒按
+    // enclosing_async=true。
     for clause in &import_clauses {
-        output.push_str(&transform_import(
+        let mut emitted = transform_import(
             clause,
             url,
             registry,
             visited,
             path,
-            async_body,
+            if deferred { true } else { async_body },
             credentials,
-        )?);
+        )?;
+        if deferred {
+            emitted.push_str(&namespace_binding_getters(&emitted));
+        }
+        hoisted.push_str(&emitted);
+    }
+    // s360（deferred）：顶层预声明——导出 getter 闭包目标（体声明臂剥离关键词后的
+    // 赋值落点）。恒 `var`（TDZ 近似同 eager 形态：体运行前读导出得 undefined 非
+    // ReferenceError，见 export_getter_line 注记）。
+    if deferred {
+        output.push_str("  var __zwBodyRan = false;\n");
+        let mut promoted: Vec<&str> = export_getters.iter().map(|(_, l)| l.as_str()).collect();
+        promoted.sort_unstable();
+        promoted.dedup();
+        for local in &promoted {
+            if is_plain_ident(local) {
+                output.push_str(&format!("  var {local};\n"));
+            }
+        }
     }
 
     // 次遍：非 import 语句按源序发射（export 声明只发裸声明，接线由体首 getter 承担）。
@@ -1100,27 +1260,110 @@ fn build_module_script(
             continue;
         }
         if let Some(clause) = strip_export_keyword(trimmed) {
-            output.push_str(&transform_export(
-                clause,
-                url,
-                registry,
-                visited,
-                path,
-                async_body,
-                credentials,
-            )?);
+            let emitted = transform_export(clause, url, registry, visited, path, async_body, credentials)?;
+            if deferred {
+                // s360：`export function/class` 声明提升到顶层（函数提升 = spec 瞬时
+                // 初始化；class 提前求值近似，语料无钉面）。const/let/var 声明臂
+                // 剥离关键词为顶层 var 赋值（getter 目标可见性，见上方预声明）。
+                let t = emitted.trim_start();
+                if t.starts_with("function ") || t.starts_with("class ") {
+                    top_decls.push_str(&emitted);
+                    continue;
+                }
+                if let Some(rest) = t
+                    .strip_prefix("const ")
+                    .or_else(|| t.strip_prefix("let "))
+                    .or_else(|| t.strip_prefix("var "))
+                {
+                    body.push_str(&assignment_from_decl(rest));
+                    continue;
+                }
+            }
+            // s360：体缓冲统一（提升 import 后追加）——原 eager 直写 output 会把
+            // 导出/普通语句插到提升 import 之前，体序倒置（e.C(self) 实证红）。
+            body.push_str(&emitted);
         } else {
-            // 普通语句：替换 import.meta 与动态 import()
+            // 普通语句：替换 import.meta 与动态 import()（s360：defer 臂同扫）
             let s = rewrite_dynamic_imports(&trimmed.replace("import.meta", "_importMeta"));
-            output.push_str("  ");
-            output.push_str(&s);
-            output.push_str(";\n");
+            let line = format!("  {s};\n");
+            body.push_str(&line);
         }
     }
 
+    if deferred {
+        // s360：顶层声明（export function/class 提升——见次遍剥离注记）。
+        output.push_str(&top_decls);
+        // deps fn（急切依赖求值——async 承载 TLA 依赖 await 归一）+ 体 fn
+        //（延迟、恰好一次——__zwBodyRan 守卫）。记录对象由 shim
+        // `__zw_load_module_deferred` 求值记账、`__zw_make_defer_facade` 建门面。
+        output.push_str("  var __zwDepsPromise = (async function() {\n");
+        output.push_str(&hoisted);
+        output.push_str("  })();\n");
+        if async_body {
+            output.push_str("  var __zwRunBody = async function () {\n");
+        } else {
+            output.push_str("  var __zwRunBody = function () {\n");
+        }
+        output.push_str("    if (__zwBodyRan) { return; }\n    __zwBodyRan = true;\n");
+        output.push_str(&body);
+        output.push_str("  };\n");
+        output.push_str("  return { exports: _exports, depsPromise: __zwDepsPromise, runBody: __zwRunBody };\n");
+        output.push_str("})()\n");
+        return Ok(output);
+    }
+
+    output.push_str(&hoisted);
+    output.push_str(&body);
     output.push_str("  return _exports;\n");
     output.push_str("})()\n");
     Ok(output)
+}
+
+/// s360：命名空间导入绑定（`import * as ns from …`）的体可见性 getter——deferred
+/// 发射把提升 import 内联进 deps fn（`var ns = _mod_x;` 为 fn 局部），体经裸标识符
+/// 引用 `ns` 须落 globalThis getter（命名空间绑定 spec 不可变 → getter 恒等透传
+/// dep 导出面）。只匹配整行紧凑形态 `  var NAME = _mod[_ref]_ID;`（deps fn 局部
+/// 发射自 Shape；memoized 多行表达式内部不匹配——整行边界守卫）。
+fn namespace_binding_getters(emitted: &str) -> String {
+    let mut out = String::new();
+    for line in emitted.lines() {
+        let t = line.trim_start();
+        if !line.starts_with("  var ") {
+            continue;
+        }
+        let Some((name, rhs)) = t
+            .strip_prefix("var ")
+            .map(|r| r.strip_suffix(';').unwrap_or(r))
+            .and_then(|r| r.split_once(" = "))
+        else {
+            continue;
+        };
+        let name = name.trim();
+        let rhs = rhs.trim();
+        let is_dep_local = rhs.starts_with("_mod_") || rhs.starts_with("_modref_");
+        if is_dep_local
+            && !name.starts_with("_mod")
+            && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '$')
+        {
+            out.push_str(&format!(
+                "  try {{ Object.defineProperty(globalThis, {}, {{ get: function() {{ return {rhs}; }}, configurable: true }}); }} catch (_zwImpErr) {{}}\n",
+                json_stringify(name)
+            ));
+        }
+    }
+    out
+}
+
+/// s360：transform_export 声明臂产物（`value = tlaValue;\n` / `{a, b} = x;` 剥关键词
+/// 后余段）转顶层赋值语句——解构对象形态语句位 `{` 为块语句歧义，加括号成赋值表达
+/// 式（spec Statement vs ExpressionStatement 歧义消除）。
+fn assignment_from_decl(rest: &str) -> String {
+    let t = rest.trim_end();
+    let t = t.strip_suffix(';').unwrap_or(t);
+    if t.trim_start().starts_with('{') {
+        return format!("  ({t});\n");
+    }
+    format!("  {t};\n")
 }
 
 /// 为依赖模块构建内联的 IIFE（返回其导出对象）。
@@ -2759,6 +3002,97 @@ mod tests {
             "代码态真实 import( 照常重写：{r}"
         );
         assert_eq!(r.matches("import(").count(), 2, "字面量内两处原样保留：{r}");
+    }
+
+    // s360（import.defer 面）：Module 档 defer 臂——`import.defer(` 重写为
+    // `__zw_import_defer.call({referrer, credentials}, `（发射体零引号、引用模块
+    // IIFE 局部量，同 eager 臂槽位纪律）；字面量内不重写；eager `import(` 臂共存。
+    #[test]
+    fn test_rewrite_defer_import_module_lane_s360() {
+        let r =
+            rewrite_dynamic_imports("var s = \"import.defer('./lit.js')\"; import.defer('./a.js'); import('./b.js');");
+        assert!(
+            r.contains("__zw_import_defer.call({ referrer: _importMeta.url, credentials: _importCred }, './a.js')"),
+            "代码态 import.defer( 重写：{r}"
+        );
+        assert_eq!(
+            r.matches("import.defer").count(),
+            1,
+            "字面量内 import.defer( 原样保留唯一一处（走原生 parse 面）：{r}"
+        );
+        assert!(
+            r.contains("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, './b.js')"),
+            "eager import( 臂共存不扰：{r}"
+        );
+    }
+
+    // s360：ClassicDeferOnly 档——classic 页面脚本只重写 `import.defer(`（→
+    // __zwClassicImportDefer，helper 自读槽位）；`import(` 走 V8 原生宿主回调不重写；
+    // 无匹配源逐字节原样（classic 面零漂移守卫）。
+    #[test]
+    fn test_rewrite_defer_import_classic_lane_s360() {
+        let src = "promise_test(async () => { const ns = await import.defer('./a.js'); import('./b.js'); });";
+        let r = rewrite_classic_deferred_imports(src);
+        assert!(
+            r.contains("__zwClassicImportDefer('./a.js')"),
+            "classic import.defer( 重写：{r}"
+        );
+        assert!(
+            r.contains("import('./b.js')"),
+            "classic import( 原样保留（native 宿主回调通道）：{r}"
+        );
+        assert!(!r.contains("__zw_dynamic_import"), "classic 面 eager 臂禁入：{r}");
+        // 无匹配：逐字节原样。
+        let plain = "var x = 1; function f() { return import.meta; }";
+        assert_eq!(rewrite_classic_deferred_imports(plain), plain, "无匹配源逐字节原样");
+    }
+
+    // s360：延迟求值发射形态——deps fn（async，依赖 memoized 内联 + `var` 剥离为
+    // 赋值）、体 fn（runBody 守卫 + 导出声明关键词剥离为顶层赋值）、导出 getter
+    // 顶层预声明、记录对象三臂（exports/depsPromise/runBody）。
+    #[test]
+    fn test_deferred_emission_shape_s360() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://z.test/entry.js",
+            "import { v } from './dep.js';\nexport const value = v;\nglobalThis.__entryRan = true;",
+        );
+        registry.register(
+            "https://z.test/dep.js",
+            "globalThis.__depRan = true;\nexport const v = 42;",
+        );
+        let out = compile_dependency_iife_deferred("https://z.test/entry.js", &registry).unwrap();
+        assert!(
+            out.contains("var __zwDepsPromise = (async function() {"),
+            "deps fn 急切段发射：{out}"
+        );
+        assert!(
+            out.contains("return { exports: _exports, depsPromise: __zwDepsPromise, runBody: __zwRunBody };"),
+            "记录对象三臂：{out}"
+        );
+        assert!(out.contains("if (__zwBodyRan) { return; }"), "体恰好一次守卫：{out}");
+        // 提升发射原样内联 deps fn（var 局部 + import 绑定 globalThis getter 闭包捕获）。
+        assert!(
+            out.contains("var __zwDepsPromise = (async function() {\n  var _mod_"),
+            "deps fn 内提升发射原样（var 局部）：{out}"
+        );
+        assert!(
+            out.contains("Object.defineProperty(globalThis, \"v\""),
+            "import 绑定 getter（deps fn 内发射，闭包捕获局部量）：{out}"
+        );
+        // 导出声明关键词剥离 + 顶层 var 预声明（getter 闭包目标可见性）。
+        assert!(
+            out.contains("  var value;\n") && out.contains("value = v;"),
+            "export const 剥离为顶层 var + 赋值：{out}"
+        );
+        assert!(
+            out.contains("Object.defineProperty(_exports, \"value\""),
+            "导出 getter 照常发射：{out}"
+        );
+        // eager 路径不受扰（同源编译无 defer 语义产物）。
+        let eager = compile_dependency_iife("https://z.test/entry.js", &registry).unwrap();
+        assert!(!eager.contains("__zwDepsPromise"), "eager 发射零 defer 产物：{eager}");
+        assert!(eager.contains("return _exports;"), "eager 发射导出面不变：{eager}");
     }
 
     #[test]

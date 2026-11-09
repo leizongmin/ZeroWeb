@@ -12264,6 +12264,83 @@
       if (typeof globalThis.dispatchEvent === 'function') globalThis.dispatchEvent(ev);
     } catch (_e) {}
   };
+  // s360（html-semantics-compat import.defer 面，tc39 proposal-defer-import-eval）：动态延迟
+  // 导入运行时——bundled V8 默认关 --js-import-defer 旗，`import.defer(spec)` 语法 parse 即
+  // SyntaxError，源码面重写承接（es_module rewrite_imports_impl：模块 lane → __zw_import_defer
+  // 经 .call 穿 referrer/credentials、classic lane → __zwClassicImportDefer 自读 s90 referrer
+  // 槽 / s340 credentials 槽）。语义：依赖图急切求值（depsPromise——build_module_script_deferred
+  // async deps fn，TLA 依赖 await 归一）、入口体延迟到命名空间属性访问（runBody 恰好一次）；
+  // 门面 Proxy get 臂（仅导出名）先触发体再透传导出面，has/ownKeys 只读不触发。
+  // 未建模面：体抛错后的失败记账
+  // （eager 面 __moduleFailures 同源语义，语料无钉面 FIXME）；TLA 入口体的属性访问挂起
+  // （发射侧 async runBody 近似，语料无钉面 FIXME）。
+  globalThis.__zwDeferRecords = globalThis.__zwDeferRecords || {};
+  globalThis.__zwDeferFetchKeys = globalThis.__zwDeferFetchKeys || {};
+  // defer 契约装载——镜像 __zw_load_module 四态失败面（宿主返空 = 顶层取回失败逐次新
+  // TypeError；3\u001f = 链接失败逐次新 SyntaxError；图失败 TypeError；求值抛原样透传），
+  // 记账走独立 defer 表（eager 面 __moduleCache 键值是导出面，defer 记录是三臂对象——
+  // 同 URL 混用 eager/defer 的记录共享语义未建模，FIXME 语料无钉面）。
+  globalThis.__zw_load_module_deferred = function (spec, parentHint, typeHint, credHint) {
+    var parent = parentHint || 'about:blank';
+    var fk = spec + '\u001f' + parent + '\u001f' + (typeof typeHint === 'string' ? typeHint : '');
+    var kr = globalThis.__zwDeferFetchKeys[fk];
+    if (kr !== undefined && globalThis.__zwDeferRecords[kr]) return globalThis.__zwDeferRecords[kr];
+    if (typeof __zw_compile_module !== 'function') throw new TypeError("Failed to fetch module: '" + spec + "'");
+    var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '', credHint || '', 1);
+    if (!r) throw new TypeError("Failed to fetch module: '" + spec + "'");
+    var sep = r.indexOf('\u001f');
+    if (sep === 1 && r.charCodeAt(0) === 51) {
+      var p3 = r.slice(2);
+      var m3 = p3.indexOf('\u001f');
+      throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);
+    }
+    var resolved = sep >= 0 ? r.slice(0, sep) : spec;
+    if (globalThis.__zwDeferRecords[resolved]) return globalThis.__zwDeferRecords[resolved];
+    var code = sep >= 0 ? r.slice(sep + 1) : r;
+    if (sep >= 0 && code === '') throw new TypeError("Failed to fetch module graph: '" + resolved + "'");
+    var src = globalThis.__zwActiveIframeWin
+      ? ('(function(){var __zwW=globalThis.__zwActiveIframeWin;return (function(window,document,self){return (' + code + ');}).call(__zwW,__zwW,globalThis.__zwActiveIframeDoc||__zwW.document||__zwW,__zwW);}())')
+      : ('(' + code + ')');
+    globalThis.__zwDeferRecords[resolved] = (typeof __zwRealEval === 'function' ? __zwRealEval : eval)(src);
+    globalThis.__zwDeferFetchKeys[fk] = resolved;
+    return globalThis.__zwDeferRecords[resolved];
+  };
+  // 延迟命名空间门面——**仅导出名触发**延迟求值（spec 延迟命名空间语义：属性访问
+  // 触发的是导出绑定求值，非导出属性/内部探查如 await 归一化的 then 查找不触发——
+  // 否则 `await import.defer()` 决议即提前跑体，红态实证 getter 臂无守卫时 flag 提前
+  // 置位）。导出 getter 已在记录 IIFE 首装（build_module_script 体首 getter 面），
+  // `in` 存在性判定先于 runBody 触发、不读 getter 值。
+  globalThis.__zw_make_defer_facade = function (record) {
+    return new Proxy({}, {
+      get: function (_t, name) {
+        if (!(name in record.exports)) return undefined;
+        record.runBody();
+        return record.exports[name];
+      },
+      has: function (_t, name) { return name in record.exports; },
+      ownKeys: function () { return Reflect.ownKeys(record.exports); }
+    });
+  };
+  // 模块 lane 入口（rewrite_imports_impl Module 档发射 `.call({referrer, credentials}, spec)`）。
+  globalThis.__zw_import_defer = function (spec) {
+    var parent = (this && this.referrer) || 'about:blank';
+    var cred = (this && this.credentials) || 'same-origin';
+    try {
+      return Promise.resolve(__zw_load_module_deferred(spec, parent, '', cred)).then(function (record) {
+        return Promise.resolve(record.depsPromise).then(function () {
+          return globalThis.__zw_make_defer_facade(record);
+        });
+      });
+    } catch (e) { return Promise.reject(e); }
+  };
+  // classic lane 入口（ClassicDeferOnly 档发射直调）——referrer 取 s90 槽（无参
+  // __zwSwapImportReferrer = 纯 getter），credentials 取 s340 槽。
+  globalThis.__zwClassicImportDefer = function (spec) {
+    var parent = 'about:blank';
+    try { if (typeof __zwSwapImportReferrer === 'function') parent = __zwSwapImportReferrer() || parent; } catch (_e) {}
+    var cred = (typeof globalThis.__zwActiveScriptCred === 'string' && globalThis.__zwActiveScriptCred) || 'same-origin';
+    return globalThis.__zw_import_defer.call({ referrer: parent, credentials: cred }, spec);
+  };
   // scroll（R2817/R3047）——window 滚动方法/属性。headless 无真视口滚动 → R3047 改 JS-side 状态追踪：
   // scrollTo/scrollBy 更新 `_winScroll`，scrollX/scrollY/pageXOffset/pageYOffset 经 defineProperty getter 读回
   //（程序化滚动 round-trip 自洽；无真视口滚动，仅 JS-observable 状态）。`scrollIntoView` 为 Element 方法（非 window），
