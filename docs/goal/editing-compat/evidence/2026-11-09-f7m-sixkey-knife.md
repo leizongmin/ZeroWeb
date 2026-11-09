@@ -2,7 +2,9 @@
 
 mt 残 15F（[delmerge 收口档](2026-11-09-f7-delmerge-knife.md) ⑦ 车道）首位六键：host-div-wrap 1（mt 483）+ ip-placeholder 4（485/486/487/488 双臂）+ trailing-empty-p 1（626），护栏 9 案（482 blockquote / 484 双形式 / 489-492 文本 caret 占位 br 现径 / 495/497 跨壳 IP / 627 wss A4 护栏）。
 
-## 刀体（commit 298fbc8a6 + 边界守卫修正 a8fb68673，两 shim + part01f + fixture）
+## 刀体（commit 9b65084a5 + 边界守卫修正 7add7482c，两 shim + part01f + fixture）
+
+推送时 pull --rebase 并入远端 11 提交（R5476/R5475/s364/runner-net-infra/http-cache 归档 + s5475 layout + s363 module-map + s362 SW stub + wpt-runner M3 6b script-fetcher 重构），刀体重放 298fbc8a6→9b65084a5、a8fb68673→7add7482c。重放后字节对账：刀体 hunks fix^..fix 隔离两笔逐位恒一；八点锚 part01 3fda6e51→ce7929b2 属并入 s363 module-map 两 hunks（`__zw_load_module_deferred` eager-cache 早退 + 注释，:12319 装载域）非刀体域，余七点锚（part01c/part01d/part01f/part01h/part06/bridge）+ f7m fixture d79c5136 恒一。批判读绑定批时 head=a8fb68673 域内有效。
 
 - **A1 host-div-wrap（part01h 消解卫星 + part01f 双调用点）**：`__zw_ce_dissolve_emptied_div_tail(ar0)`——deleteSelection 全删空宿主直子 div 时 Chrome 消解壳提宿主（子提宿主保序 + 块删除 + caret 经 `__zw_ce_caret_in_leading_shell` 提壳链首，483 typing `<b>a</b>` 落壳）。四门：tag 收窄 div（482 blockquote 全删空不消解反例）∧ 宿主级无其他元素子/可见内容 ∧ **ar0 前选区 containment**（删除前选区完全含于块内某内联壳子树——⑥ delmerge 边界祖先语义，见下节）∧ **display∈{'',block}**（flex/grid 保留，与 ① 臂 dispHost 门同语义）。调用点自限非 collapsed 面：delete_apply 尾钩（传 entry ar）+ ipara_apply 前导 delete 后钩（捕获 `_zwIpAr0` 传入）重派 `__zw_ce_paragraph_split_at` ① 宿主级臂（485/487）。
 - **A2 ip-placeholder ①（part01 ① 臂扩门）**：`arm1EmptyShellEl` 空壳元素边界（`block===boundaryNode` 非块 tag 且无可见子）并入 ① gate 的 `(block===host||arm1EmptyShellEl)` + `(isText||boundaryNode===null||arm1EmptyShellEl)`；`refAfter1` 元素臂修正（boundaryNode 原位非 childNodes[so]）；头垫（sep1 前向兄弟链反向判空垫裸 `__zwPlaceholderBr`，`_zwJusIsVisible` 块恒真故不能用 some 谓词）+ caret 经壳链下钻首面（文本/占位 br 头面 sh1 null 原位零漂移）+ ipara_wants 让位门（元素位 caret 前方无可见内容让 false——typing 落 ① 臂）。485/487 typing `<b>a</b>` 入壳。
