@@ -4997,6 +4997,35 @@ impl WebView {
             let doc_url = self.current_url.clone().unwrap_or_else(|| "about:blank".to_string());
             let referrer = match &script {
                 zero_engine::pipeline::PageScript::External(src) => resolve_document_url(&doc_url, src),
+                // s367：runner 内联投递的外链经典脚本（s261 data-inline）以**原 src 解析
+                // 绝对 URL** 恢复 s88 动态 import() 解析基——classic 上下文 import() 走
+                // 原生宿主回调读槽位 referrer（s88 注记），spec 的解析基准 = 调用脚本
+                // 基 URL（外链脚本 = 自身 URL；ECMA-262 HostResolveImportedModule 的
+                // referencingScript 基）。旧值 = 页面基：内联体相对 spec 解析到页目录
+                // → 取回 404 → `Failed to fetch module`（code-cache-base-url 六子测
+                // 实证；s336 同形修复只覆盖了模块 lane 的 _importMeta/依赖收集基，
+                // classic 槽位面缺位）。真内联脚本（无 data-inline）维持脚本基快照
+                //（spec 内联脚本基 = 文档基，零漂移）。
+                // https://html.spec.whatwg.org/multipage/webappapis.html#script-settings-for-scripts
+                zero_engine::pipeline::PageScript::Inline(_) => script_csp_info
+                    .get(script_index)
+                    .and_then(|info| info.inlined_src.as_deref())
+                    .map(|src| {
+                        // s336 同款双形态归一（s261/s101）：runner 语料投递 = 语料根
+                        // 相对裸路径归一为 root-absolute；取回内联页 = 绝对 URL 原样解析。
+                        let normalized = if src.contains("://") || src.starts_with('/') {
+                            src
+                        } else {
+                            &format!("/{src}")
+                        };
+                        resolve_document_url(&doc_url, normalized)
+                    })
+                    .unwrap_or_else(|| {
+                        script_bases
+                            .get(script_index)
+                            .cloned()
+                            .unwrap_or_else(|| doc_url.clone())
+                    }),
                 _ => script_bases
                     .get(script_index)
                     .cloned()
