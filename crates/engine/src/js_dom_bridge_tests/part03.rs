@@ -4847,3 +4847,123 @@ fn test_cssom_mstyle_panel_write_name_t52() {
         "T52 物化 style 面板写面名归一全案（全大写三形折叠 + vendor 保形 + custom 保形/值 trim + IDL 值 trim/空白弃 + camel/kebab/csstext 对照）"
     );
 }
+
+#[test]
+fn test_cssom_mstyle_panel_write_value_t53() {
+    // T53（物化元素 style 面板写面**值**归一，T52 FIXME W4 follow-up 收口）：_zwMStyleProxy
+    // writeDecl（part03:22419，物化形 .style 写面唯一通道）值参此前仅 trim——与声明面
+    //（_styleProxy setProp part03:29902，T49 起接 `_zwNormalizeDeclValue` 管线）值形分歧：
+    // named/hex/legacy 函数 color token 原文落库（'RED'/'#F00'/'rgb(255,0,0)' 不归一）、
+    // csswide 关键字大小写原样（'INHERIT' 不 lowercase）、非法 color 不拒绝（'#12345g'
+    // 落库——声明面 T47 DF-3 全串校验失败整值忽略）。本钉 writeDecl 值参接同一共享管线
+    //（part06:2050 `_zwNormalizeDeclValue`）：色 token 归一（T46 口径：named/system/
+    // transparent/currentcolor ASCII lowercase keyword、hex → legacy rgb()/rgba()）、
+    // csswide 全属性 ASCII lowercase（T48 a 组：上下文无关）、<color> 上下文非法 token
+    // 整值拒绝（T47 DF-3：赋值忽略保留原值）、白名单外属性/ident 保形（T46 DF-1：非
+    // color 上下文零归一）、custom `--` 值字面 token 流保形（DF-5；T52 trim 口径不变）。
+    // 尾部 `!important`（IDL 尾缀形 / setProperty priority 参回拼形）先剥离再归一 core
+    // 后回拼——与声明面 setProp 同形（priority 后缀非 <color> token，混入会在非法 hex
+    // 拒绝面误扩展）。
+    // Blink 154 活体（t53-oracle-result.txt，Chrome 154.0.8037.92 headless 2026-11-09）：
+    // v01 'RED'→'color: red'、v02 '#F00'→'rgb(255, 0, 0)'、v03/v04 函数紧凑/大写+小数
+    // 规范形→legacy 逗号形、v06-v08 csswide 三形 lowercase、v09 非法 hex 整弃（len 0）、
+    // v10 valid 后非法保留原值、v12 animationName 'RED' 保形（custom ident）、v13 custom
+    // 值 '  RED  ' → trim 保形——归一面正目标全数同向。
+    // **recorded known deviation**（T48/T50 口径，本片不动）：① Blink IDL 写 'red
+    // !important' 整弃（v15/v18 大小写同形），本仓 strip→归一→回拼声明存活（R3193 族
+    // part15 既钉「须存活」，声明面同形）；② Blink 非 color 属性按 grammar 归一
+    //（width '10PX'→'10px'，v11）、shorthand 展开长手（border v05 十七长手），本仓无
+    // 属性 grammar/展开面原文保留（T48 e7/e10 既录边界）；③ Blink custom 值内 csswide
+    // lowercase（'--Bar: INHERIT'→'inherit'，v14），本仓 DF-5 字面 token 流保形；④
+    // Blink cssText 整体写 parse-reserialize（v17 'color: RED'→'color: red'），本仓
+    // 原文 setAttribute mini-impl 边界（T52 FIXME 既录，本片不触碰）。
+    // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+    // https://www.w3.org/TR/css-color-4/#serializing-color-values
+    // https://www.w3.org/TR/css-cascade-4/#defaulting-keywords
+    // https://www.w3.org/TR/css-style-attr/#parsing
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 同 T52 B 族（implementation-doc createElement = plain _zwMEl 物化形，写落节点
+    // attrs 纯反射不经宿主通道；独立文档 17 元素零宿主交互，learning #32 保留引用直写）。
+    sandbox
+        .execute(
+            "globalThis.__doc53 = document.implementation.createHTMLDocument('');\
+             globalThis.__els53 = [];\
+             for (var i = 0; i < 17; i++) globalThis.__els53.push(globalThis.__doc53.createElement('div'));\
+             if (globalThis.__els53.length !== 17) throw new Error('setup:els=' + globalThis.__els53.length);\
+             if (typeof globalThis.__els53[0].style.setProperty !== 'function') throw new Error('setup:no-style');\
+             globalThis.__r53 = {};",
+        )
+        .unwrap();
+
+    // 值归一七面（color token 四形 + shorthand 分量 + csswide 三形 + 非法两形 +
+    // 非 color/ident/custom 保形四形 + important 尾缀两形 + cssText 原文边界对照）。
+    // 整案对照：单断言全量 dump——失败即全部实际形态一次可见。
+    sandbox
+        .execute(
+            "var q = function (i) { return globalThis.__els53[i].style; };\
+             var r = globalThis.__r53;\
+             q(0).color = 'RED';\
+             r.vNamedCssText = q(0).cssText;\
+             r.vNamedGpv = q(0).getPropertyValue('color');\
+             q(1).color = '#F00';\
+             r.vHexCssText = q(1).cssText;\
+             q(2).color = 'rgb(255,0,0)';\
+             r.vFuncCompactCssText = q(2).cssText;\
+             q(3).color = 'RGB(0, 128.0, 0)';\
+             r.vFuncUpperDecCssText = q(3).cssText;\
+             q(4).border = '1px solid RED';\
+             r.vBorderShorthandCssText = q(4).cssText;\
+             q(5).color = 'INHERIT';\
+             r.vCsswideColorCssText = q(5).cssText;\
+             q(6).zIndex = 'INHERIT';\
+             r.vCsswideZindexCssText = q(6).cssText;\
+             q(7).setProperty('color', 'INITIAL');\
+             r.vCsswideSpCssText = q(7).cssText;\
+             q(8).color = '#12345g';\
+             r.vInvalidCssText = q(8).cssText;\
+             r.vInvalidLen = q(8).length;\
+             q(9).color = 'red';\
+             q(9).color = '#12345g';\
+             r.vInvAfterValidCssText = q(9).cssText;\
+             r.vInvAfterValidGpv = q(9).getPropertyValue('color');\
+             q(10).width = '10PX';\
+             r.vNoncolorVerbatimCssText = q(10).cssText;\
+             q(11).animationName = 'RED';\
+             r.vIdentVerbatimCssText = q(11).cssText;\
+             q(12).setProperty('--foo', '  RED  ');\
+             r.vCustomVerbatimCssText = q(12).cssText;\
+             r.vCustomVerbatimGpv = q(12).getPropertyValue('--foo');\
+             q(13).setProperty('--Bar', 'INHERIT');\
+             r.vCustomCsswideCssText = q(13).cssText;\
+             q(14).color = 'RED !important';\
+             r.vPriorityIdlCssText = q(14).cssText;\
+             r.vPriorityIdlGpv = q(14).getPropertyValue('color');\
+             q(15).setProperty('color', 'BLUE', 'important');\
+             r.vSpPriorityCssText = q(15).cssText;\
+             q(0).cssText = 'color: RED';\
+             r.vCsstextRawCssText = q(0).cssText;\
+             JSON.stringify(r);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r53)").unwrap().value,
+        r##"{"vNamedCssText":"color: red","vNamedGpv":"red","vHexCssText":"color: rgb(255, 0, 0)","vFuncCompactCssText":"color: rgb(255, 0, 0)","vFuncUpperDecCssText":"color: rgb(0, 128, 0)","vBorderShorthandCssText":"border: 1px solid red","vCsswideColorCssText":"color: inherit","vCsswideZindexCssText":"z-index: inherit","vCsswideSpCssText":"color: initial","vInvalidCssText":"","vInvalidLen":0,"vInvAfterValidCssText":"color: red","vInvAfterValidGpv":"red","vNoncolorVerbatimCssText":"width: 10PX","vIdentVerbatimCssText":"animation-name: RED","vCustomVerbatimCssText":"--foo: RED","vCustomVerbatimGpv":"RED","vCustomCsswideCssText":"--Bar: INHERIT","vPriorityIdlCssText":"color: red !important","vPriorityIdlGpv":"red","vSpPriorityCssText":"color: blue !important","vCsstextRawCssText":"color: RED"}"##,
+        "T53 物化 style 面板写面值归一全案（color token 四形归一 + shorthand 分量 + csswide 三形 lowercase + 非法 hex 整弃/valid 后保留 + 非 color/ident/custom 保形 + important 两形 + csstext 边界对照）"
+    );
+}

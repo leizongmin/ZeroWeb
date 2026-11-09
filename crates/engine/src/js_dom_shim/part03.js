@@ -22430,6 +22430,30 @@
       // https://www.w3.org/TR/css-variables-1/#custom-properties
       var want = _styleDeclName(name);
       var custom = want.charAt(0) === '-' && want.charAt(1) === '-';
+      // T53：值参接 T48 属性上下文归一管线（_zwNormalizeDeclValue，part06）——与声明面
+      //（_styleProxy setProp/规则样式 setProp）同语义，T52 FIXME 值归一面收口：<color>
+      // 上下文 hex/命名/系统色/legacy 函数文本归一（CSS Color 4 §16.2/§6.3/#rgb-functions，
+      // T46 口径）；CSS-wide keyword 全属性 ASCII lowercase（CSS Cascading 4 §7.1-7.4，
+      // 上下文无关）；非法 color token 全串校验失败 → 整值拒绝本次赋值保留原值（T47
+      // DF-3，早退先于同名声明移除）；白名单外属性/ident 保形（T46 DF-1）；custom `--`
+      // 值字面 token 流保形（DF-5——本面 T52 trim 口径不变）。尾部 `!important`（IDL
+      // 尾缀形 / setProperty priority 参回拼形，R3193）先剥离再归一 core 后回拼——
+      // priority 后缀非 <color> token，混入归一会在非法 hex 拒绝面误扩展。Blink 154
+      // 活体（t53-oracle-result.txt）v01-v10/v16 正目标全数同向；既录分歧形状本面维持
+      // 声明面口径不动：Blink IDL '!important' 尾缀整弃（v15/v18）vs 本仓声明存活
+      //（R3193 族 part15 既钉）、非 color 属性 grammar（v11）/shorthand 展开（v05）
+      // 本仓原文保留（T48 e7/e10 边界）、custom 值内 csswide Blink lowercase（v14）vs
+      // DF-5 保形、cssText 整体写 Blink parse-reserialize（v17）vs 本面原文 setAttribute
+      // mini-impl 边界（T52 既录不触碰）。
+      // https://www.w3.org/TR/cssom-1/#the-cssstyledeclaration-interface
+      // https://www.w3.org/TR/css-style-attr/#parsing
+      var v = String(value == null ? '' : value).trim();
+      if (v !== '' && !custom) {
+        var pri = _styleValueAndPriority(v);
+        var core = _zwNormalizeDeclValue(pri.value, want);
+        if (core === null) return; // T47 DF-3：非法 color → 赋值忽略，保留原值
+        v = pri.priority ? core + ' !important' : core;
+      }
       var parts = readRaw().split(';');
       var out = [];
       for (var i = 0; i < parts.length; i++) {
@@ -22444,11 +22468,6 @@
       // 面/规则样式/_styleProxy T49 起已收口声明面 trim 口径分歧）；trim 后空串 = 仅
       // 移除（纯空白值声明弃——Blink 154 活体 m05 '  rgb(255, 0, 0)  ' → 'color:
       // rgb(255, 0, 0);'、m06 纯空白值弃、m13 custom 值 '  v3  ' → '--Bar: v3'）。
-      // FIXME（T49 设计卡 W4 follow-up）：值归一面（_zwNormalizeDeclValue——color token
-      // 归一/csswide 关键字/非法 color 拒绝）物化世界未接，本片仅收口名参双位点 + 值
-      // trim；cssText 整体写原文 setAttribute mini-impl 边界不触碰。
-      // https://www.w3.org/TR/css-style-attr/#parsing
-      var v = String(value == null ? '' : value).trim();
       if (v !== '') out.push(want + ': ' + v);
       node.setAttribute('style', out.join('; '));
     };
