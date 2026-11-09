@@ -12,7 +12,8 @@ use zero_style_system::ComputedStyle;
 
 use crate::inline::nested_float::{
     apply_nested_float_writeback, collect_nested_float_exclusions, collect_nested_inline_floats,
-    has_nested_inline_float, nested_float_wrapper_descendable, nested_inline_float_enabled,
+    has_nested_inline_float, nested_float_cascade_enabled, nested_float_wrapper_descendable,
+    nested_inline_float_enabled,
 };
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, TextGroupAlign, WordBreakMode};
 pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
@@ -3472,56 +3473,87 @@ fn remeasure_text_with_float_exclusions_inner(
                     }
                 }
             }
+            // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
+            // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
+            // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
+            // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
+            // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
+            // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
+            // `ZW_FLOAT_H_BACKFILL=0`。R5487：补测前移至目标计算前——级联降带 y
+            // 取 prev.y+prev.h 需真高（0 高会使堆叠塌回同带）。
+            if !nested.is_empty() && std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
+                for nf in &mut nested {
+                    if nf.height > 0.0 {
+                        continue;
+                    }
+                    let fid = nf.fid;
+                    let width = nf.width;
+                    let m = measure_text_content(
+                        doc,
+                        styles,
+                        fid,
+                        Size {
+                            width: Some(width),
+                            height: None,
+                        },
+                        Size {
+                            width: AvailableSpace::Definite(width),
+                            height: AvailableSpace::Definite(f32::INFINITY),
+                        },
+                        img_intrinsic_sizes,
+                        inline_fonts,
+                        // R4332：float 非 run-in 后继块，无前缀可并入。
+                        None,
+                    );
+                    if m.height > nf.height {
+                        nf.height = m.height;
+                    }
+                }
+            }
             // R5446：嵌套 float 目标——y=锚行顶（无条件；见 NestedInlineFloatInfo.target
             // 注），x=§9.5.1 rule 6 方向极值缘。盒写入延后到 sync 后（`target` 先供
             // exclusion/containment 使用，写入需 sync 后的父链偏移）。
+            // R5487（CSS2 §9.5.1 float 横向排布）：左 float 序列级联——chromium 定谳
+            //（google-chrome headless 四形 oracle，R5486 归因轮）：fit 判定用 inline
+            // 光标位 = 前 float 右缘 + wrapper 链偏移（ml=40 层两 50% float：cursor=
+            // 240，可用 160<200 → 降带 (0, prev_bottom)；ml=0 并排放带右缘）；fit 时
+            // y 取 max(锚, 前 float 顶)（§9.5.1 rule 2 顶不低于前 float），x=带右缘
+            // （前 float 右缘）；不 fit 时 y=max(锚, 前 float 底)、x=带左缘（own ml）。
+            // 旧径（逐 float 独立目标）同层 float 全钉带左缘原点重叠。右 float 维持
+            // 极值缘臂（镜像域另案观察）。kill-switch `ZW_NESTED_FLOAT_CASCADE=0`。
             if !nested.is_empty() {
                 let cw = box_node.content_width;
+                let cascade = nested_float_cascade_enabled();
+                // R5487：已落位左 float 序列（目标空间，容器 content-box 相对）——
+                // 仅左 float 入列（右 float 极值缘臂不参与序列，混合序保持旧径）。
+                let mut placed: Vec<(f32, f32, f32, f32)> = Vec::new();
                 for nf in &mut nested {
                     let Some(anchor_y) = anchor_y_map.get(&nf.fid) else {
                         continue;
                     };
-                    let tx = if nf.is_left {
-                        nf.margin_left
+                    let prev = if cascade && nf.is_left {
+                        placed.last().copied()
                     } else {
-                        (cw - nf.width - nf.margin_right).max(0.0)
+                        None
                     };
-                    nf.target = Some((*anchor_y, tx));
-                }
-                // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
-                // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
-                // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
-                // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
-                // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
-                // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
-                // `ZW_FLOAT_H_BACKFILL=0`。
-                if std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
-                    for nf in &mut nested {
-                        if nf.height > 0.0 {
-                            continue;
+                    let (ty, tx) = if let Some((py, px, pw, ph)) = prev {
+                        let cursor = px + pw + nf.chain_offset;
+                        if nf.width <= (cw - cursor) {
+                            ((*anchor_y).max(py), px + pw)
+                        } else {
+                            ((*anchor_y).max(py + ph), nf.margin_left)
                         }
-                        let fid = nf.fid;
-                        let width = nf.width;
-                        let m = measure_text_content(
-                            doc,
-                            styles,
-                            fid,
-                            Size {
-                                width: Some(width),
-                                height: None,
-                            },
-                            Size {
-                                width: AvailableSpace::Definite(width),
-                                height: AvailableSpace::Definite(f32::INFINITY),
-                            },
-                            img_intrinsic_sizes,
-                            inline_fonts,
-                            // R4332：float 非 run-in 后继块，无前缀可并入。
-                            None,
-                        );
-                        if m.height > nf.height {
-                            nf.height = m.height;
-                        }
+                    } else {
+                        let tx = if nf.is_left {
+                            nf.margin_left
+                        } else {
+                            (cw - nf.width - nf.margin_right).max(0.0)
+                        };
+                        (*anchor_y, tx)
+                    };
+                    nf.target = Some((ty, tx));
+                    if nf.is_left {
+                        placed.push((ty, tx, nf.width, nf.height));
                     }
                 }
             }
