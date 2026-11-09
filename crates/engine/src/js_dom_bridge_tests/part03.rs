@@ -4730,3 +4730,120 @@ fn test_cssom_keyframe_write_name_t51() {
         "T51 keyframe 写面名归一全案（camel kebab + 全大写折叠 + custom 双形保形 + vendor camel/kebab + 双项对照）"
     );
 }
+
+#[test]
+fn test_cssom_mstyle_panel_write_name_t52() {
+    // T52（物化元素 style 面板写面归一，T49 设计卡 W4 挂账本片收口）：_zwMStyleProxy
+    //（part03 _zwMStyleProxy，DOMParser 快照直取/implementation-doc createElement 等
+    // plain _zwMEl 物化形的 CSSStyleDeclaration 平行 mini 实现——读写都落节点自身
+    // style 内容属性纯反射，不经 __zw_set_style 宿主通道；adoptNode 产物经
+    // _wcRebuildAsHandle 走 handle 族 _styleProxy 面，非本位点）
+    // readDeclValue/writeDecl 双位点名参直走 `_stylePropName`——与 T50 修前元素写面
+    // 同款缺陷：全大写书写形（'COLOR'/'Z-INDEX'/'-WEBKIT-TRANSFORM'）经
+    // _camelToKebab 逐大写字母加连字符产出 '-c-o-l-o-r'/'-z--i-n-d-e-x' 形垃圾键落库
+    // → cascade 不识别、正名读面 miss，物化世界样式写静默失效。本钉双位点接共享
+    // `_styleDeclName`（part06:2097，T49/T50/T51 已收口写面同函数）——大写折叠 +
+    // `--` 保形（css-variables-1 §2 名 case-sensitive）+ webkit vendor 归一自动继承；
+    // camelCase→kebab 与 vendor 前缀语义不变（R2810/R3023）。
+    // 值 trim 口径（T49/T50 已收口声明面同形）：IDL set trap 原文透传不 trim，与
+    // setProperty 面（_zwMStyleProxy 内已 trim）/规则样式/_styleProxy 写面（T49 起
+    // trim+归一）分歧——writeDecl 统一 trim：Blink 154 活体（t52-oracle-result.txt，
+    // Chrome 154.0.8037.92）m05 '  rgb(255, 0, 0)  ' → 'color: rgb(255, 0, 0);'、
+    // m06 纯空白值弃声明、m13 custom 值 '  v3  ' → '--Bar: v3'。custom 属性值 trim
+    // 后回拼非空判定（空白值 = 移除）与 Blink parse 一致。
+    // **recorded known deviation**（T50/T51 口径，不动）：① Blink IDL 全大写名 = expando
+    // 不落声明（m02/m03）、setProperty('ZINDEX') 未知属性丢弃（m10），本仓写面一贯
+    // 接受大写名归一落库（'COLOR'→'color'、'ZINDEX'→'zindex'）——垃圾键落库是实际
+    // 缺陷，键一致优先于 Blink 丢弃语义；② custom 名参全程不 trim（Blink m14
+    // '--QRU\ ' 保形）本仓 trim 归一（DF-T50-1 既录）；③ Blink webkit camel 别名折叠
+    // 'transform'（m04/m11）本仓落 '-webkit-transform'（基线即有语义，本修零变化）。
+    // FIXME（T49 设计卡 W4 follow-up）：值归一面（_zwNormalizeDeclValue 管线——color
+    // token 归一/csswide 关键字/非法 color 拒绝）物化世界未接，本片仅收口名参双位点
+    // + 值 trim，cssText 整体写原文 setAttribute mini-impl 边界不触碰。
+    // https://www.w3.org/TR/cssom-1/#camel-cased-attribute-to-css-attribute
+    // https://www.w3.org/TR/css-variables-1/#custom-properties
+    // https://www.w3.org/TR/css-style-attr/#parsing
+    use std::sync::{Arc, Mutex};
+    use zero_script_sandbox::{Sandbox, V8Sandbox};
+    let config = zero_script_sandbox::SandboxConfig {
+        persistent_context: true,
+        ..Default::default()
+    };
+    let mut sandbox = V8Sandbox::with_config(config).unwrap();
+    sandbox.execute(generate_js_dom_shim()).unwrap();
+    let mutations: Arc<Mutex<Vec<DomMutation>>> = Arc::new(Mutex::new(vec![]));
+    let dom_html: Arc<Mutex<String>> = Arc::new(Mutex::new(
+        "<html><body></body></html>".to_string(),
+    ));
+    let page_url: Arc<Mutex<String>> = Arc::new(Mutex::new("about:blank".to_string()));
+    let canvas_registry: std::sync::Arc<std::sync::Mutex<crate::js_dom_bridge::CanvasRegistry>> =
+        std::sync::Arc::new(std::sync::Mutex::new(crate::js_dom_bridge::CanvasRegistry::new()));
+    register_dom_callbacks(&mut sandbox, &mutations, &dom_html, &page_url, &canvas_registry, None);
+
+    // 物化 plain 族建立（红跑 v3 族诊断定谳，t52-red-probe-v3.log）：候选 A 主文档
+    // createElement 与 D adoptNode 产物 = 宿主注册/handle 族（.style 走 _styleProxy，
+    // T49/T50 已收口——'COLOR' 即归一落库），非本钉位点；候选 B implementation.
+    // createHTMLDocument createElement 与 C DOMParser 快照直取（不 adopt）= plain
+    // _zwMEl 物化形（原型 accessor 1663 服务 _zwMStyleProxy，写落节点 attrs 纯反射）
+    // —— v3 实证 'COLOR' 写落 '-c-o-l-o-r: rgb(255, 0, 0)' 垃圾键、正名 gpv miss。
+    // 本钉取 B 族（独立文档 createElement，11 元素零宿主交互，learning #32 多族包装
+    // identity：保留引用直写、不 querySelector 重查）。
+    sandbox
+        .execute(
+            "globalThis.__doc52 = document.implementation.createHTMLDocument('');\
+             globalThis.__els52 = [];\
+             for (var i = 0; i < 11; i++) globalThis.__els52.push(globalThis.__doc52.createElement('div'));\
+             if (globalThis.__els52.length !== 11) throw new Error('setup:els=' + globalThis.__els52.length);\
+             if (typeof globalThis.__els52[0].style.setProperty !== 'function') throw new Error('setup:no-style');\
+             globalThis.__r52 = {};",
+        )
+        .unwrap();
+
+    // 四形写面 + 值 trim 形（camelCase/kebab 基线形 + 全大写三形 + vendor 两形 +
+    // custom 三形 + IDL 值 trim 两形 + cssText 原文边界对照）。整案对照：单断言
+    // 全量 dump——失败即全部实际形态一次可见。
+    sandbox
+        .execute(
+            "var q = function (i) { return globalThis.__els52[i].style; };\
+             var r = globalThis.__r52;\
+             q(0).zIndex = '5';\
+             r.wsCamelCssText = q(0).cssText;\
+             q(1)['COLOR'] = 'rgb(255, 0, 0)';\
+             r.upColorIdlCssText = q(1).cssText;\
+             r.upColorIdlGpvLower = q(1).getPropertyValue('color');\
+             q(2).setProperty('Z-INDEX', '7');\
+             r.upZindexKebabCssText = q(2).cssText;\
+             r.upZindexKebabGpv = q(2).getPropertyValue('z-index');\
+             q(3).setProperty('ZINDEX', '8');\
+             r.upZindexPlainCssText = q(3).cssText;\
+             q(4).webkitTransform = 'scale(2)';\
+             r.vendorCamelCssText = q(4).cssText;\
+             r.vendorCamelRead = q(4).webkitTransform;\
+             q(5).setProperty('-WEBKIT-TRANSFORM', 'scale(3)');\
+             r.vendorKebabUpperCssText = q(5).cssText;\
+             q(6).setProperty('--foo', 'v1');\
+             q(6).setProperty('--FOO', 'v2');\
+             r.customTwoCaseCssText = q(6).cssText;\
+             r.customTwoCaseGpvFoo = q(6).getPropertyValue('--foo');\
+             r.customTwoCaseGpvFOO = q(6).getPropertyValue('--FOO');\
+             q(7).setProperty('--Bar', '  v3  ');\
+             r.customTrimGpv = q(7).getPropertyValue('--Bar');\
+             q(8).setProperty('--QRU ', 'v4');\
+             r.customWsNameGpvClean = q(8).getPropertyValue('--QRU');\
+             q(9).color = '  rgb(0, 128, 0)  ';\
+             r.trimIdlCssText = q(9).cssText;\
+             r.trimIdlGpv = q(9).getPropertyValue('color');\
+             q(10).zIndex = '   ';\
+             r.wsonlyLen = q(10).length;\
+             r.wsonlyCssText = q(10).cssText;\
+             q(1).cssText = 'color: red';\
+             r.csstextRawCssText = q(1).cssText;\
+             JSON.stringify(r);",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("JSON.stringify(globalThis.__r52)").unwrap().value,
+        r##"{"wsCamelCssText":"z-index: 5","upColorIdlCssText":"color: rgb(255, 0, 0)","upColorIdlGpvLower":"rgb(255, 0, 0)","upZindexKebabCssText":"z-index: 7","upZindexKebabGpv":"7","upZindexPlainCssText":"zindex: 8","vendorCamelCssText":"-webkit-transform: scale(2)","vendorCamelRead":"scale(2)","vendorKebabUpperCssText":"-webkit-transform: scale(3)","customTwoCaseCssText":"--foo: v1; --FOO: v2","customTwoCaseGpvFoo":"v1","customTwoCaseGpvFOO":"v2","customTrimGpv":"v3","customWsNameGpvClean":"v4","trimIdlCssText":"color: rgb(0, 128, 0)","trimIdlGpv":"rgb(0, 128, 0)","wsonlyLen":0,"wsonlyCssText":"","csstextRawCssText":"color: red"}"##,
+        "T52 物化 style 面板写面名归一全案（全大写三形折叠 + vendor 保形 + custom 保形/值 trim + IDL 值 trim/空白弃 + camel/kebab/csstext 对照）"
+    );
+}
