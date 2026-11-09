@@ -2817,6 +2817,10 @@ pub(crate) fn adjust_float_positions_with_context(
     let nested_avoid_on = std::env::var("ZW_NESTED_BFC_FLOAT_AVOID").as_deref() != Ok("0");
     // R5217 margin-aware 钉位总开关，循环外取一次（热路径逐对 env 查询有可测开销）。
     let margin_solve_on = std::env::var("ZW_BFC_MARGIN_SOLVE").as_deref() != Ok("0");
+    // R5480 auto 宽 BFC tight 下绕门总开关，循环外取一次（同款纪律）。收缩带宽
+    // < 框架和（border+padding LR）时 chromium 不旁置、下绕 float 底全 CB 重解
+    //（CSS2 §9.5×§10.3.3，oracle vd-extreme-direct / e5 rf-tight 定谳）。
+    let auto_tight_wrap_on = std::env::var("ZW_BFC_AUTO_TIGHT_WRAP").as_deref() != Ok("0");
     // R5221：下绕 BFC 的流游标修正（chromium 交错布局语义，007 探针定谳）。Phase 1
     // 用 BFC 避让**前**的流位放置后继 float 与兄弟预位；auto 宽 BFC 在 Phase 2 下绕
     // 到 float 底后其真实底边下移，后继 float 的流位置 ≥ 该底（007：float2 从
@@ -3689,13 +3693,30 @@ pub(crate) fn adjust_float_positions_with_context(
                                     // 父 content-box 左 + margin_left（child.x 相对父 content-box）。
                                     child.x = child.margin_left;
                                 } else if avoidance_x > child.x {
-                                    // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）
-                                    child.x = avoidance_x;
-                                    // 缩小宽度以不超出容器
-                                    let max_width = container_width - child.x;
-                                    if child.width > max_width {
-                                        child.width = max_width.max(0.0);
+                                    // taffy 未推 → ZW 推到 float 右 + shrink-to-fit（原行为）。
+                                    // R5480：auto 宽形 tight 门（chromium oracle vd-extreme-direct
+                                    // 定谳）——收缩带宽（container_width − avoidance_x）< 框架和
+                                    // frame 时不旁置，下绕 float 底全 CB 重解（x=ml、w=CB −
+                                    // margin_h，流游标/快照抬升与 R5221 下绕臂同款）；declared
+                                    // 宽形维持原判据（R1369/R1728 must_pushdown 域零回归）。
+                                    let max_width = container_width - avoidance_x;
+                                    if auto_tight_wrap_on && child.declared_width_auto && max_width < frame - 0.5 {
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
                                         shrink_bfc_content_width(child);
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
+                                    } else {
+                                        child.x = avoidance_x;
+                                        // 缩小宽度以不超出容器
+                                        if child.width > max_width {
+                                            child.width = max_width.max(0.0);
+                                            shrink_bfc_content_width(child);
+                                        }
                                     }
                                 }
                             }
@@ -3774,9 +3795,14 @@ pub(crate) fn adjust_float_positions_with_context(
                                     }
                                 } else if std::env::var("ZW_BFC_RIGHT_PUSHBELOW").as_deref() != Ok("0")
                                     && is_definite_width
+                                    && !child.declared_width_auto
                                     && !has_following_block_sibling[idx]
                                     && !child.is_layout_container
                                 {
+                                    // R5480：门加 `!declared_width_auto`（左臂 R1728 同款纪律的
+                                    // 右镜像补齐）——左臂收缩后的 auto 宽 BFC 不被 is_definite_width
+                                    // 代理误判 definite 走下绕（双侧夹 oracle (100,0) 宽 250 定谳），
+                                    // 落 else 臂带内收缩。
                                     if float_bottom > child.y {
                                         child.y = float_bottom;
                                     }
@@ -3790,9 +3816,24 @@ pub(crate) fn adjust_float_positions_with_context(
                                     // R5217：float_x 是 float border-box 左缘，§9.5 约束边是
                                     // margin-box 左缘（001/002 v=0 cells 实证 ref 宽 16 =
                                     // float_x − margin_l，旧算式给 18 多留 float 左 margin）。
-                                    let new_width = float_x - *float_margin_l - child.x;
-                                    child.width = new_width.max(0.0);
-                                    shrink_bfc_content_width(child);
+                                    // R5480：auto 宽形 tight 门（e5 rf-tight oracle 定谳）——收缩带
+                                    // 宽 < 框架和时下绕 float 底全 CB 重解；带内（含左臂收缩后的
+                                    // 双侧形）维持带内收缩旁置（双侧夹 (100,0) 宽 250 oracle）。
+                                    let new_width = (*float_x - *float_margin_l - child.x).max(0.0);
+                                    if auto_tight_wrap_on && child.declared_width_auto && new_width < frame - 0.5 {
+                                        if float_bottom > child.y {
+                                            child.y = float_bottom;
+                                        }
+                                        child.x = ml;
+                                        child.width = (container_width - margin_h).max(0.0);
+                                        shrink_bfc_content_width(child);
+                                        let new_bottom = child.y + child.height;
+                                        wrap_floors.push((idx + 1, new_bottom));
+                                        pending_geom_bump = Some(new_bottom);
+                                    } else {
+                                        child.width = new_width;
+                                        shrink_bfc_content_width(child);
+                                    }
                                 }
                             }
                             _ => {}
