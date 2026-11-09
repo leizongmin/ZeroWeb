@@ -96,13 +96,10 @@ usages/length/空 usages）不受影响，part53.rs 既有契约
   `formatblock.html` 探针并发在跑（只读同一 release 二进制，无构建/写面
   冲突，墙钟计时不作锚证据）。
 
-## 五、挂账观察（不在本批修）
+## 五、挂账观察（本批已销账，见补充节）
 
-- HMAC generateKey 显式 `length: 0`：现状经 `_zw_keyLengthBits` 落
-  「0 → hash 块大小」分支**生成 512/1024 位密钥**，spec 要求 0 →
-  OperationError；corpus 未覆盖该组合（failures.js HMAC 只有 ±2^32 组），
-  part02.js:773 附近旧注释（「显式 length 0（或负）→ OperationError」）
-  与实际行为不符。留后续批：行为对齐 + 注释修正 + 契约补测，一并落账。
+- ~~HMAC generateKey 显式 `length: 0`~~：已于同日第二批修复销账，
+  见文末「补充：HMAC length:0 销账」。
 
 ## 六、CI run 42667268541 crypto 分片核验（DC-1 遗留项收口）
 
@@ -110,3 +107,25 @@ usages/length/空 usages）不受影响，part53.rs 既有契约
 本地 r6：**70,627 keys 完全一致，0 漂移 0 状态错位**（CI 分片跑在
 4482feb56 = deriveBits 修复后、本批 generateKey 修复前的二进制，账面即
 r6 口径）。其余分片与全量对账归 DC-3。
+
+## 补充：HMAC length:0 销账（2026-11-10 同日第二批）
+
+- 规格核实（Web Crypto API Editor's Draft，抓取自
+  w3c.github.io/webcrypto）：HMAC generateKey 步骤 2——length 缺省 →
+  hash 块大小；非零 → 取值；**显式 0 → OperationError**。importKey
+  侧 length:0 → DataError 本仓已正确（part02.js importKey HMAC 分支
+  显式 0 判定在位）；deriveKey 目标 HMAC 的 get key length 路径对 0
+  是 **TypeError**——与 generateKey 语义不同，故不改共享助手
+  `_zw_keyLengthBits`（它会连带翻转 deriveKey 行为），在 generateKey
+  调用点判显式 0（part02.js `!lenBits || 显式 0` 合并条件）。
+- 语料 ground truth：generateKey/successes.js 无 HMAC 字面用例
+  （HMAC 矩阵经 wrapper 注入），`length` 字样零命中——corpus 不覆盖
+  显式 length 值域，本修复不动 r7 账面数字。
+- 实现：part02.js HMAC generateKey 分支合并条件 + spec 链接注释；
+  part53.rs 契约补 length:0 → OperationError 与缺省 SHA-256 → 512
+  位双断言（`test_crypto_subtle_kw_jwk_m3b`）。
+- 验证：定向契约 1/1 通过（test-guard --compile-first --per-proc-mem
+  4 --total-mem 8 --time-limit 900）；`cargo clippy -p zero-engine
+  --all-targets` 无告警（systemd-run scope MemoryMax=24G）；
+  `cargo fmt --check` 干净。旧行为（0 → 生成 512/1024 位密钥）即
+  本文件第五节原记录，不另附复跑证据。

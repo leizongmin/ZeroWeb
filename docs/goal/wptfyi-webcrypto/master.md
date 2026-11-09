@@ -2,7 +2,7 @@
 
 **2026-11-10 · Active**。DC-2 收账完成：generateKey 数值成员 [EnforceRange] 修复（AES `length` unsigned short / HMAC `length`、RSA `modulusLength` unsigned long 三处入口归一，与 deriveBits 同根因类；part53.rs 契约块 ±2^32 → TypeError）+ 全量 r7 终账 **70,627 keys = P 68,677 + F 1,950 + T 0**（墙钟 ~4 分钟量级，与 editing 流探针并发，不作精确账面）；对 r6 锚对照 **REGRESSED 0 / FIXED 恰 800 / FLIPPED 0 / DRIFT 0**，余 F 1,950 全为 Ed448 降 scope 面（NotSupportedError）。coverage 两 basis 净增 **41,898**（68,677 − 发布快照 26,779）≥ 31,000 达标线。\
 **卡点** DC-3 待 weekly run [42667268541](https://github.com/leizongmin/ZeroWeb/actions/runs/42667268541) 收尾（crypto 分片已回并核验：产物非空，**与本地 r6 逐 key 一致** 70,627 keys 0 漂移）；该 run 为 deriveBits 修复 HEAD（4482feb56），未含本批 generateKey 修复。\
-**下一步** run 收尾后 DC-3 全量对账（快照回写、邻域无可归因回退核验；如需含 generateKey 修复的 CI 账可再 dispatch 一次）；挂账：HMAC generateKey 显式 `length: 0` 现为块大小密钥、spec 为 OperationError（corpus 未覆盖，待补契约后另批处理，见 [evidence 2026-11-10 第五节](evidence/2026-11-10-dc2-generatekey-enforcerange.md)）。
+**下一步** run 收尾后 DC-3 全量对账（快照回写、邻域无可归因回退核验；如需含 generateKey 修复的 CI 账可再 dispatch 一次）。挂账已清：HMAC generateKey 显式 `length: 0` → OperationError 已修（generateKey 调用点判显式 0，不改共享助手防 deriveKey 语义外溢；part53.rs 契约双断言，corpus 未覆盖不动账面），见 [evidence 补充节](evidence/2026-11-10-dc2-generatekey-enforcerange.md)。
 
 [执行契约](../wptfyi-webcrypto.md) · [全量预算](../../compat/wptfyi-90-plan.md)
 

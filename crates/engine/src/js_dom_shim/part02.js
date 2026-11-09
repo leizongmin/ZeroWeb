@@ -789,8 +789,12 @@
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
           if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
           var lenBits = _zw_keyLengthBits(algo);
-          if (!lenBits) {
-            // spec HmacKeyGenParams：显式 length 0（或负）→ OperationError。
+          // spec HMAC generateKey 步骤 2：length 缺省 → hash 块大小；非零 → 取值；
+          // 显式 0 → OperationError。_zw_keyLengthBits 对缺省与显式 0 同返块大小，
+          // 故在调用点判显式 0（deriveKey 的 get key length 路径对 0 是 TypeError，
+          // 语义不同，不改共享助手；负值已在上面的 EnforceRange 面拦截）。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
+          if (!lenBits || (algo.length != null && Number(algo.length) === 0)) {
             reject(new _zw_subtleDE('Invalid HMAC length: ' + algo.length, 'OperationError')); return;
           }
           if (hu.length === 0) {

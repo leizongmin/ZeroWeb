@@ -172,6 +172,23 @@ fn test_crypto_subtle_kw_jwk_m3b() {
         "generateKey ±2^32 数值成员 → TypeError（AES/HMAC/RSA [EnforceRange]）、in-range 512 → OperationError"
     );
 
+    // HMAC generateKey 显式 length 0 → OperationError（spec 步骤 2：缺省才落块大小；
+    // _zw_keyLengthBits 对缺省与显式 0 同返块大小，调用点判显式 0）；缺省 length
+    // 仍按块大小出钥（SHA-256 → 512 位）。corpus 未覆盖，挂账销账面。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
+    sandbox
+        .execute(
+            "globalThis.__eg='(pending)'; globalThis.__eg2='(pending)';\
+             var pz=errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:0},true,['sign']))\
+               .then(function(n){ globalThis.__eg=n; });\
+             var pd=crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256'},true,['sign'])\
+               .then(function(k){ globalThis.__eg2=String(k.algorithm.length); });\
+             Promise.all([pz,pd]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__eg)").unwrap().value, "OperationError", "generateKey HMAC 显式 length:0 → OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__eg2)").unwrap().value, "512", "generateKey HMAC 缺省 length → SHA-256 块大小 512");
+
     // jwk 导入/导出 round-trip：字段断言（kty/k/alg/key_ops/ext）+ 误用 kty → DataError +
     // ext:false + extractable:true → DataError。
     sandbox
