@@ -32,4 +32,4 @@ commit **0bc8d545b**（原 ac2b12294 → 3a307c259 → 0bc8d545b 三代 rebase �
 
 ## 收口结论
 
-apply 内容模型边界族 4 行收口：ret ×3 翻绿（F2P=3 恰值）+ entry 362 ret 行链守卫纠偏保持绿（P2F=0）；族内残红仅 entry 362 compare（既有 F2F 挂账族，不属本刀域）。挂账四族余三族：fb qV/qI 读面 Chrome delta 12 行、indent 27F、img 23F。
+apply 内容模型边界挂账族 4 行全收口：ret ×3 本刀翻绿（fb F2P=3 恰值）+ family compare/qV-after ×1 前刀宿主内容模型守卫（7ab68347f）已绿——legs5 既有账口径（宿主守卫后残 ret ×3 恒红）即本刀域。entry 362 ret 行 legs5 基线本就绿，part01g 链守卫返 true 纠偏为 ret 贯通后**防 P2F**（首版贯通误翻实证），非翻绿行；族内残红仅 entry 362 compare（既有 F2F 挂账族，不属本刀域）。挂账四族余三族：fb qV/qI 读面 Chrome delta 12 行、indent 27F、img 23F。
