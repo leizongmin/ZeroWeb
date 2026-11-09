@@ -1581,33 +1581,46 @@
     try { out.sort(_zwLdDocOrderCompare); } catch (_eLdSo) {}
     return out;
   }
+  // s371：compound 定位选择器（zwsh 前缀，engine shadow_address 铸造命名空间串）
+  // 内容树同串寻址——声明式 open 根注册表扫描 + 子树 `__zwSelector` 同串比对。
+  // `_zwLdResolveTarget`（light-dismiss）与 document.querySelector 主查询入口
+  //（part06，zwsh 前缀分派）共用：testdriver stub `selectorFor` 信任门
+  // `querySelector(sel) === element` 与 runner `resolve_pointer_target` origin
+  // 解析都经该入口——此前 zwsh 串在 R158 守卫抛 SyntaxError，门失败回落启发式
+  // plain 选择器与 light 树同形元素碰撞（closedby-complex shadow 段 clickOn
+  // 解析到 normal 段孪生 → light-dismiss 误关，16F 根因）。
+  // OPTIMIZATION: 扫描只付在 zwsh 前缀查询（light sel 一步直通既有通道零变化）；
+  // `_makeProxy` 按 `_elKey` 缓存 proxy，同节点重复枚举身份稳定（信任门 === 需要）。
+  function _zwShadowContentByCompoundSel(sel) {
+    var found = null;
+    var scan = function (kids) {
+      if (found || !kids || !kids.length) return;
+      for (var i176t = 0; i176t < kids.length; i176t++) {
+        var k176t = kids[i176t];
+        if (!k176t || k176t.nodeType !== 1) continue;
+        try {
+          if (k176t.__zwSelector === sel) { found = k176t; return; }
+          scan(k176t.children);
+        } catch (_e176t) {}
+      }
+    };
+    try {
+      var keysT = Object.keys(_shadowRoots);
+      for (var q176 = 0; q176 < keysT.length && !found; q176++) {
+        var infoT = _shadowRoots[keysT[q176]];
+        if (!infoT || !infoT.handle || infoT.mode !== 'open') continue;
+        var metaT = _shadowHandleMeta[infoT.handle];
+        if (!metaT || !metaT.declarative) continue;
+        scan(_handleChildNodes(infoT.handle));
+      }
+    } catch (_e176t2) {}
+    return found;
+  }
   function _zwLdResolveTarget(targetSel) {
     if (!targetSel) return null;
     if (String(targetSel).indexOf('zwsh') === 0) {
       // compound 定位选择器：light 查询通道解析不着，内容树同串寻址。
-      var found = null;
-      var scan = function (kids) {
-        if (found || !kids || !kids.length) return;
-        for (var i176t = 0; i176t < kids.length; i176t++) {
-          var k176t = kids[i176t];
-          if (!k176t || k176t.nodeType !== 1) continue;
-          try {
-            if (k176t.__zwSelector === targetSel) { found = k176t; return; }
-            scan(k176t.children);
-          } catch (_e176t) {}
-        }
-      };
-      try {
-        var keysT = Object.keys(_shadowRoots);
-        for (var q176 = 0; q176 < keysT.length && !found; q176++) {
-          var infoT = _shadowRoots[keysT[q176]];
-          if (!infoT || !infoT.handle || infoT.mode !== 'open') continue;
-          var metaT = _shadowHandleMeta[infoT.handle];
-          if (!metaT || !metaT.declarative) continue;
-          scan(_handleChildNodes(infoT.handle));
-        }
-      } catch (_e176t2) {}
-      return found;
+      return _zwShadowContentByCompoundSel(String(targetSel));
     }
     try { return document.querySelector(targetSel); } catch (_eLdT4) { return null; }
   }

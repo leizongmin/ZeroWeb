@@ -3531,6 +3531,18 @@
       } catch (_e) { return null; }
     },
     querySelector: function(sel) {
+      // s371（html-semantics）：compound 定位选择器（zwsh 前缀）分派——置于 R158
+      // 守卫之前：守卫的 CSS 语法校验对引擎命名空间串抛 SyntaxError（`zwsh<len>:`
+      // 形非 CSS 选择器，selector_is_valid 不识），且 `__zw_query_match` light
+      // 通道解析不着 shadow 内容。未命中 → null 落既有语义（真 zwsh 类型选择器
+      // 页面串继续走守卫/查询通道）。消费面：testdriver stub `selectorFor` 信任
+      // 门、runner `resolve_pointer_target` origin 解析（closedby-complex shadow
+      // 段 clickOn 选择器碰撞 → light-dismiss 误关 16F 的解锁键）。
+      if (typeof sel === 'string' && sel.indexOf('zwsh') === 0
+          && typeof _zwShadowContentByCompoundSel === 'function') {
+        var _q371 = _zwShadowContentByCompoundSel(sel);
+        if (_q371) return _q371;
+      }
       // R158：非法选择器守卫（spec SyntaxError——WPT runInvalidSelectorTest 的
       // document.querySelector 入口）。置于 pending 回落之前（非法即抛，不查）。
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);

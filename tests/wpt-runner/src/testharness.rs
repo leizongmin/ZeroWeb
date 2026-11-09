@@ -11604,10 +11604,16 @@ return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):msel)+'|'+px+'|
             out.trim()
         );
     }
-    let mut parts = out.trim().split('|');
-    let hit = parts.next().unwrap_or_default().trim().to_string();
-    let x = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
-    let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+    // s371（html-semantics）：坐标字段自尾反析、hit 段重join——zwsh compound 定位
+    // 选择器自身含 `|`（`zwsh<len>:<host>|<local>`，engine shadow_address 铸造形），
+    // 页内 best-scan 命中 shadow 元素（shim qSA 遍历含 shadow 内容）时首段直 split
+    // 把 sel 撕在 host/local 界、坐标 parse 恒 None → s176 elementFromPoint 回落
+    // 整段跳过 → 回落 origin 派发（closedby-complex shadow 段 click 落 body →
+    // light-dismiss 误关 16F 残余断点）。`|` 在 light 结构串不出现，尾两段恒坐标。
+    let mut fields: Vec<&str> = out.trim().split('|').collect();
+    let y = fields.pop().and_then(|v| v.trim().parse::<f32>().ok());
+    let x = fields.pop().and_then(|v| v.trim().parse::<f32>().ok());
+    let hit = fields.join("|").trim().to_string();
     // s176（html-semantics M2）：shadow 内容命中回落——页内扫描 `body, body *` 走
     // 封装查询门（shadow 内容不可枚举），shadow 盒上的落点此前塌回 body/空命中，
     // click 坐标与 light-dismiss 目标全错（closedby-complex shadow 20 行根因之二）。
