@@ -194,8 +194,10 @@ CSV 字符串/数组爆炸面）。spec：deriveBits `length` 为
 - 对 11-03 收口锚（污染前语料）：**REGRESSED 0 / FIXED 0 / FLIPPED 0 /
   case 漂移 0**——69,795 共享 keys 逐位一致；漂移恰为 **832 = 800**
   （failures 面，全 F）**+ 32**（enforceRange，全 P），分母对平
-  70,627−69,795。F 2,750 分解：Ed448 1,946（拍板降 scope）+
-  TurboSHAKE 4（flake 挂账）+ 新显形 800（DC-2 余量）。
+  70,627−69,795。F 2,750 分解：Ed448 面 1,950（secure-curves Ed448
+  1,946 + getPublicKey Ed448 4，均 NotSupportedError，2026-11-02 拍板
+  降 scope 账）+ 新显形 800（DC-2 余量）；T 0——r1 的 4 T（turboSHAKE
+  flake）在 r6 清零。
 
 ## 六、门禁与验证清单（本轮）
 

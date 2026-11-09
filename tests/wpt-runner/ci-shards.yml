@@ -22,10 +22,10 @@ shards:
     fetch: "fetch-wpt-webcrypto"
     fetch_scripts: ""
     # 2026-11-09 v3 全语料接入（HEAD 布局 69,795 keys，phase-1 33,109 的
-    # 2.1 倍）：1800 按 phase-1 体量定，随全量语料放宽到 3600；2026-11-10
-    # 本地 r4 实证 3600 单核仍杀树（修复后语料 Hybrid-KEM 全量枚举，空 JSON
-    # 无产出），与 sec/mb-decode 同档放宽 7200。
-    time_limit: 7200
+    # 2.1 倍）：1800 按 phase-1 体量定，随全量语料放宽到 3600；楔死期临时
+    # 7200（r3–r5 derived_bits_length 楔死，6a10ddaf8）随 deriveBits
+    # [EnforceRange] 根因修复回落 3600：r6 全语料本地实证 238s（2026-11-10）。
+    time_limit: 3600
   - name: html-sem
     suites: "html-semantics web-components"
     fetch: "fetch-wpt-html-semantics fetch-wpt-web-components"
