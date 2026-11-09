@@ -358,8 +358,9 @@
 - 2026-08-07 [WPT reftest @font-face loader 缓存：键必须等于构造函数输入（+Arc 共享解析结果）](performance/2026-08/2026-08-07-wpt-reftest-font-face-cache.md) — tests/wpt-runner/src/reftest.rs（FRESH_LOADER_CACHE）, crates/render-foundation/src/font/loader.rs（FontLoader::duplicate, fonts: HashMap<u32, Arc<fontdue::Font>>）
 - 2026-08-07 [CJK 字形栅格化重尾优化：FreeType face 缓存 + 采样哈希](performance/2026-08/2026-08-07-cjk-raster-face-cache.md)
 
-## Platform — 平台与环境相关经验（44）
+## Platform — 平台与环境相关经验（45）
 
+- 2026-11-10 [weekly coverage 快照组级摆动的产物法证——页超时截断三征定谳](platform/2026-11/2026-11-10-wpt-weekly-page-timeout-truncation-attribution.md) — zero-wpt-runner,wptfyi-runtime
 - 2026-11-09 [wpt testharness 断言消息只在 Fail 输出——状态转储用聚合单断言](platform/2026-11/2026-11-09-wpt-testharness-fail-only-dump-aggregation.md) — wpt-runner, engine
 - 2026-11-08 [GitHub PR baseRefOid 粘滞锚：head push 不重锚，main 未前进时 PR 侧事件也不重锚](platform/2026-11/2026-11-08-github-pr-base-ref-oid-anchor-drift.md) — crates/engine
 - 2026-11-08 [批脚本被外部 SIGTERM 后 runner 孤儿持锁继续跑——先判孤儿活性再决定等待完账，补跑分支禁止原地截断](platform/2026-11/2026-11-08-flock-fd-orphan-runner-recovery.md) — .acceptance/dps, scripts
