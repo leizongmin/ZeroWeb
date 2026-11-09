@@ -34,7 +34,9 @@
    goal 排除、挂账 html-syntax-compat）；big5/iso-2022-jp-encoder（form-url
    通道划界）；idlharness ×4 变体（57×4，net-api 先例 skip）；eof-* reftest 面
    ×4（P,P,P 单测试）；encodeInto-tail-unmodified + json-document-utf8 语料缺
-   （2 源，30 号 fetch 脚本可补拉）。
+   encodeInto-tail-unmodified + json-document-utf8 语料缺（2 源——2026-11-10
+   补拉复核：pin 31597693 两文件 404、universe revision 792c7512e3 为 200，
+   上游 pin 后新增，pin 纪律下不可补拉；DC-3 同 revision 归一时自动出分母）。
 
 ## 对目标净增的账
 
@@ -56,7 +58,8 @@
 
 ## 待办
 
-- worker 变体通道组装（encoding 通道 opt-in 门，主攻 ~10,900）
-- wasm 缺口 2,803 同口径定量
-- encoding 缺语料 2 源补拉（30 号脚本）
+- worker 变体通道组装（encoding 通道 opt-in 门，主攻 ~10,900）——已完成
+  （[worker 收口](dc2-worker-variants-2026-11-10.md)）
+- wasm 缺口 2,803 同口径定量——已完成（[wasm 收口](dc2-wasm-gap-2026-11-10.md)）
+- encoding 缺语料 2 源补拉——已关闭（pin 404，见上文第 4 条复核结论）
 - 三 Fail 引擎缺口（SAB 写入可见性、detached chunk 容错）
