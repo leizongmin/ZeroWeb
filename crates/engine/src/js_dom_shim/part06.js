@@ -18124,6 +18124,34 @@
     }
     return sel;
   }
+  // s374（html-semantics）：模态 inert 命中 retarget——命中元素被栈顶模态 dialog
+  // 阻断（_zwDialogModalFocusGateOk=false——spec blocked by a modal dialog）时整段
+  // 指针序改道 html 根 sel（R40 既有 'html' 派发先例）。document 观察面等价：
+  // click 冒泡 html→document，body 及 modal 祖先均不在传播路径
+  //（modal-dialog-ancestor-is-inert 断言面「点击模态 dialog 祖先只达 document」；
+  // Chromium hit-test 对 inert 节点全落空时指针事件 target=文档根）。
+  // 谓词取焦点门（focus 切面）+ **top-layer 豁免**——门不含 top-layer 成员判定，
+  // 栈外 top-layer dialog 及其子树（closedby 组合 clickOn(dialogA-under-modalB)、
+  // popover 面）可交互，不得按 modal 外一律 retarget；top-layer 命中走既有
+  // backdrop-through（s372）分类，事件通道不动。
+  function _zwPointerInertRetarget(sel) {
+    try {
+      if (!sel) return sel;
+      var el = (typeof _makeProxy === 'function') ? _makeProxy(sel, null) : null;
+      if (!el) return sel;
+      if (typeof _zwDialogModalFocusGateOk === 'function'
+          && _zwDialogModalFocusGateOk(el)) return sel;
+      var _tlCur = el, _tlG = 0;
+      while (_tlCur && _tlG++ < 64) {
+        var _tlK = null;
+        try { _tlK = _tlCur.__zwSelector || null; } catch (_eTlK) { _tlK = null; }
+        if (_tlK && _zwTopLayer[_tlK]) return sel;
+        try { _tlCur = _tlCur.parentNode; } catch (_eTlP) { break; }
+      }
+      return 'html';
+    } catch (_eIr) {}
+    return sel;
+  }
   // uievents-compat M2 片 1（2026-10-03）：合成指针悬停态 + 边界事件序（spec
   // https://www.w3.org/TR/pointerevents2/ §11 + UI Events §5.3 mouseover/out、
   // §5.4 enter/leave）。宿主驱动路径（webview Activate 前置悬停迁移、runner
@@ -18930,6 +18958,10 @@
     } catch (_eLdPd) {}
     var st = _zwPtrState;
     var _dragSel0 = sel; // 拖选 sel 键回落锚（retarget 前的 origin 元素）
+    // s374：模态 inert 命中 retarget——light-dismiss down 腿（上方，自有模态门）
+    // 已按原始 sel 分类，此后整段序（悬停迁移/pointerdown/mousedown/焦点迁移/
+    // caret 落点）按 retarget 后目标走。
+    sel = _zwPointerInertRetarget(sel);
     button = button | 0;
     if (st.portalCap) {
       // 捕获期 portal down——事件随捕获目标（chorded down 走 move 语义前已分流）。
@@ -19055,6 +19087,51 @@
         }
         if (_selCaret && _selCaret.offsetNode && _zwDocDragSelectAllowed(_selCaret.offsetNode)) {
           _getSelection().collapse(_selCaret.offsetNode, _selCaret.offset);
+        } else {
+          // s374（html-semantics）：CE 宿主 mousedown caret 落点——编辑域 caret 面
+          // 此前只挂 focus() 脚本路径（part04 `__zw_initial_selection_on_focus`，
+          // 其注释明示 mousedown 路径归本管线），拖选门对 CE 子树不接管后 mousedown
+          // 点击 CE 宿主不锚 caret → 键入 `__zw_ce_insert` 空选区静默 no-op
+          //（inert-node-is-uneditable 断言面：点击 modal dialog 内 CE 宿主后键入须
+          // 插入文本）。落点 = CE 内命中点 caret（_zwCaretFromPointDoc 同源命中，
+          // Chromium 点击位语义）；宿主链命中 miss 回退宿主首 caret 位
+          //（_zwFirstCaretPositionInHost 复用初选区 machinery，初选区 richly
+          // editable 同门——命中节点链须上行至 contenteditable=true 宿主且不跨
+          // 表单控件，input/textarea 内点击属控件 caret 域不入本臂）。门 =
+          // _zwIsFocusableSel（与上方焦点迁移默认动作同门——inert CE 宿主点击不
+          // 聚焦亦不落 caret，「inert 节点不可编辑」断言面）。
+          if (typeof _zwIsFocusableSel === 'function' && _zwIsFocusableSel(downEff)) {
+            var _ceHitNode = (_selCaret && _selCaret.offsetNode) ? _selCaret.offsetNode : null;
+            var _ceCollapsed = false;
+            if (_ceHitNode) {
+              var _ceCur = _ceHitNode, _ceHost = null, _ceG = 0;
+              while (_ceCur && _ceG++ < 64) {
+                if (_ceCur.nodeType === 1) {
+                  var _ceTag = String(_ceCur.nodeName || '').toLowerCase();
+                  if (_ceTag === 'input' || _ceTag === 'textarea') { _ceHost = null; break; }
+                  var _ceAttr = _ceCur.getAttribute ? _ceCur.getAttribute('contenteditable') : null;
+                  if (_ceAttr != null && String(_ceAttr) !== 'false') { _ceHost = _ceCur; break; }
+                }
+                try { _ceCur = _ceCur.parentNode; } catch (_eCeP) { break; }
+              }
+              if (_ceHost) {
+                _getSelection().collapse(_ceHitNode, _selCaret.offset);
+                _ceCollapsed = true;
+              }
+            }
+            if (!_ceCollapsed && typeof globalThis.__zw_is_ce_host === 'function'
+                && typeof _makeProxy === 'function'
+                && typeof _zwFirstCaretPositionInHost === 'function') {
+              var _ceDownProxy = null;
+              try { _ceDownProxy = _makeProxy(downEff, null); } catch (_eCePx) {}
+              if (_ceDownProxy && globalThis.__zw_is_ce_host(_ceDownProxy)) {
+                var _cePos = _zwFirstCaretPositionInHost(_ceDownProxy);
+                if (_cePos && _cePos.node) {
+                  _getSelection().collapse(_cePos.node, _cePos.offset);
+                }
+              }
+            }
+          }
         }
       } catch (_eSelDown) {}
     }
@@ -19215,6 +19292,10 @@
     try {
       if (typeof __zw_dialog_light_dismiss_up === 'function') __zw_dialog_light_dismiss_up(capturedSel || upSel, x, y);
     } catch (_eLdUp) {}
+    // s374：模态 inert retarget 置于 light-dismiss up 腿**之后**——closedby 组合的
+    // backdrop-through 分类（s372）须吃原始几何命中 sel；此后 pointerup/mouseup/
+    // click 组合按 retarget 后目标走（inert 命中 → html 根，document 观察面）。
+    upSel = _zwPointerInertRetarget(upSel);
     // 尾簇 6c：变异代际快照——up 派发（pointerup/mouseup）期间页内 listener 的
     // DOM 变异（attach/move-under-cursor）以此检测，驱动 post-up 结算。
     var upTick0 = st.mutTick;
