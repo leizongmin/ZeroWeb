@@ -9849,6 +9849,56 @@
       n = n.parentNode;
     }
   }
+  // F1' restyle（2026-11-09 editing-compat ⑧' 刀）：caret 居 armed 值壳内元素
+  // 位（zz-probe-f1dbg D2 实证 caret_range → (font@0)，非 host 级提升）的原位
+  // restyle。fontsize collapsed armed 后 insertText，caret 容器本身即 font[size]
+  // 壳、offset 0、壳内容仅单 br/空时，Chrome TypingStyle 复用既有壳原地改档
+  // （multitest :9780/:19877 期望 assert_in_array 首形 `<font size="4">a<br>
+  // </font>` 录音——壳复用原位 size 7→4，br 留壳内）；我方壳内裸插后值
+  // override 重放走异桶壳外重放（F6bN C/N 族先例语义），新壳旁落于幸存壳外
+  // 致两壳分裂（got `<font size="4">a</font><font size="7"><br></font>`＝
+  // lane9 残键全貌）。修法＝restyle 后 typed 段裸插壳内：重放等值门读
+  // font[size] 指定形（kwMap 档 'large'）≡ override 档零再裹，异桶重放径
+  // 自然不触。内容门（保守设计——含文壳 Chrome 走 split 语义，语料无此形不入
+  // 本臂；census 素材补注：fontsize 42 键 fixture 全裸 foo[]bar 零 font[size]
+  // 壳配对）：offset 0 ∧ 壳子恰空或单 br。armed 冲突门：override 经读侧同款
+  // 归一档（记录侧存 keyword 形——__zw_ce_value_apply fontsize 臂 normalize
+  // 后以 'large' 进流程、塌缩无 contained 臂 _zwVaSetValueOverride 直存；
+  // part01d _zwVaLegacyValueOf 归一 keyword/数字/px 三形）≠ 壳 size 纯数字档
+  // ——相对 +n/-n 形不入（parseInt("+1")=1 折档误判冲突，part01d
+  // specifiedValue 相对臂同坑先例）；同值面 replay 等值门本就零裹不入臂。
+  // 壳内 br 无 __zwPlaceholderBr 标记不被插入后占位消费扫描摘除（:10298 只认
+  // 标记）＝期望首形 br 留壳内。
+  function _zwCeF1RestyleShell(sc, so, ovSnap, ins) {
+    if (so !== 0) return null;
+    if (!ovSnap || ovSnap.fontsize == null) return null;
+    var ov = String(ovSnap.fontsize);
+    if (!/^[1-7]$/.test(ov)) {
+      if (typeof _zwVaLegacyValueOf !== 'function') return null;
+      var ovL = _zwVaLegacyValueOf(ov);
+      if (ovL == null || !/^[1-7]$/.test(String(ovL))) return null;
+      ov = String(ovL);
+    }
+    var sh = sc;
+    if (!sh || sh.nodeType !== 1
+        || String(sh.tagName || '').toLowerCase() !== 'font') return null;
+    if (!sh.hasAttribute || !sh.hasAttribute('size')) return null;
+    var sizeRaw = String(sh.getAttribute('size'));
+    if (!/^[0-9]+$/.test(sizeRaw)) return null;
+    var sm = parseInt(sizeRaw, 10);
+    if (isNaN(sm) || sm === parseInt(ov, 10)) return null;
+    var k2 = sh.childNodes || [];
+    if (k2.length > 1) return null;
+    if (k2.length === 1) {
+      var c1 = k2[0];
+      if (c1.nodeType !== 1
+          || String(c1.tagName || '').toLowerCase() !== 'br') return null;
+    }
+    sh.setAttribute('size', ov);
+    var tn = document.createTextNode(ins);
+    sh.insertBefore(tn, k2.length ? k2[0] : null);
+    return tn;
+  }
   // F1'-B（2026-11-08 editing-compat）[2]：swcss(true) typing 样式并壳——Chrome
   // CSS 模式 typing 不产 tag 壳，armed tag 折算 CSS 属性并入 caret 祖先链 span
   // 的 style attr（multitest `<span style=font-weight:bold>{}<br></span>`+
@@ -10258,8 +10308,18 @@
           if (car3) {
             node = car3;
           } else {
-            node = document.createTextNode(ins);
-            sc.insertBefore(node, kids[idx] || null);
+            // F1' restyle（⑧' 刀）：armed 值壳冲突原位 restyle 臂（见
+            // _zwCeF1RestyleShell 注；caret 居壳内时 sc 即壳本体，命中即
+            // typed 段入壳首，未命中走原裸插零回退面）。swcss(true) 面
+            // CSS 模式语义不入本臂。
+            var rst3 = (!swAbs && typeof _zwCeF1RestyleShell === 'function')
+              ? _zwCeF1RestyleShell(sc, so, insOvSnap, ins) : null;
+            if (rst3) {
+              node = rst3;
+            } else {
+              node = document.createTextNode(ins);
+              sc.insertBefore(node, kids[idx] || null);
+            }
           }
         }
         caretOff = ins.length;
