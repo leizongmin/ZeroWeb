@@ -4816,6 +4816,11 @@ struct CorpusRunOptions {
     /// net-api-compat-v3 M1a：`.htm`（xhr 上游老式命名）与 `.window.js`
     /// （window 变体）窗体。
     extra_forms: bool,
+    /// wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源缺省（无
+    /// `META: global=`）或含 worker/dedicatedworker token 时追加 dedicated worker
+    /// 腿，上报 `.any.worker.js` 键（gap 对账映射 `.any.worker.html` 分母变体）——
+    /// 默认关，各通道既有账分母不动。
+    worker_variants: bool,
     /// runner-net-infra M2（D4）：websockets 子树 wss 变体枚举（追加键，
     /// 仅 net-api 通道——最小分母）。
     ws_wss_variants: bool,
@@ -4889,6 +4894,33 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             if is_any_js {
                 let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
                 cases.push((relative.clone(), results));
+                // wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源追加
+                // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
+                // `.any.worker.html` 分母变体）。上游 wptserve 对 `.any.js` 双变体
+                // 服务（serve.py AnyWorkerHtmlHandler 无条件面；manifest global= 缺省
+                // window+dedicatedworker——writing-tests/testharness.html#test-globals）：
+                // 实证 8c04fb8d43 三家 union 37 个 encoding worker 变体基文件全部为
+                // 「无 global= META（缺省双变体）或显式 window,worker token」，
+                // `global=window`-only（single-byte-decoder）分母无 worker 变体；
+                // sharedworker/serviceworker token 只生成专属变体页不生成
+                // `.any.worker.html`，不跑。
+                if options.worker_variants {
+                    let globals = crate::testharness_workers::wpt_meta_globals(&source);
+                    let dedicated_variant = globals.is_empty()
+                        || globals
+                            .iter()
+                            .any(|global| global == "worker" || global == "dedicatedworker");
+                    if dedicated_variant {
+                        let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
+                        let results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                            wpt_root,
+                            &worker_key,
+                            &worker_key,
+                            &harness_source,
+                        );
+                        cases.push((worker_key, results));
+                    }
+                }
                 if ws_wss_enumeration {
                     // any.js 形态 variant 键追加跑：case 名带 query → 包装页
                     // location.search 消费（constants.sub.js url_has_variant('wss')
@@ -5002,8 +5034,23 @@ pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
 /// Run the pinned upstream encoding window subset
 /// （encoding-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `textdecoder-`、
 /// `streams/`、`legacy-mb-japanese/`——基线按域分类）。
+///
+/// wptfyi-runtime DC-2：开启 worker_variants——`.any.js` 源缺省（无 `META:
+/// global=`）或含 worker/dedicatedworker token 时追加 dedicated worker 腿
+/// （`.any.worker.js` 键，gap 对账映射 `.any.worker.html` 分母变体，
+/// ~10,900 子测试缺口主攻面）。
 pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, ENCODING_CORPUS_SUBDIRS, filter, encoding_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        ENCODING_CORPUS_SUBDIRS,
+        filter,
+        encoding_case_skipped,
+        &[],
+        CorpusRunOptions {
+            worker_variants: true,
+            ..CorpusRunOptions::default()
+        },
+    )
 }
 
 /// encoding/legacy-mb 文档族通道语料叶目录（fetch 脚本 goals/31-encoding-legacy-mb.sh

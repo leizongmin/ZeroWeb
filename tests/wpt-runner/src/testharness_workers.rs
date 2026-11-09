@@ -194,12 +194,27 @@ fn run_worker_js_case(wpt_root: &Path, relative: &str, harness_source: &str) -> 
 /// 一致，跨轮可比）。
 fn run_any_js_dedicated_case(wpt_root: &Path, relative: &str, harness_source: &str) -> Vec<HarnessSubtestResult> {
     let worker_relative = relative.replacen(".any.js", ".any.worker.js", 1);
+    run_any_js_dedicated_case_as(wpt_root, relative, &worker_relative, harness_source)
+}
+
+/// dedicated 变体参数化执行（wptfyi-runtime DC-2 encoding worker 变体面）：
+/// `case_key` 与 `worker_url` 分离——encoding 通道同一 `.any.js` 源的 worker 腿
+/// 上报 `.any.worker.js` 键（gap 对账 `_VARIANT_RULES` 映射 `.any.worker.html`
+/// 分母变体，与 window 腿的 `.any.html` 分子互不覆盖；workers 通道既有 `.any.js`
+/// 键台账不动）。worker URL 经 fetch 通道按 `.worker.js` 后缀映射回磁盘 `.any.js`
+/// 源，行为与 [`run_any_js_dedicated_case`] 同链路。
+pub(crate) fn run_any_js_dedicated_case_as(
+    wpt_root: &Path,
+    case_key: &str,
+    worker_url: &str,
+    harness_source: &str,
+) -> Vec<HarnessSubtestResult> {
     let page = format!(
         "<!doctype html><meta charset=\"utf-8\">\
          <script src=\"/resources/testharness.js\"></script>\
-         <script>fetch_tests_from_worker(new Worker('/{worker_relative}'));</script>"
+         <script>fetch_tests_from_worker(new Worker('/{worker_url}'));</script>"
     );
-    run_testharness_html_inner(wpt_root, relative, &page, harness_source, &[], corpus_case_timeout())
+    run_testharness_html_inner(wpt_root, case_key, &page, harness_source, &[], corpus_case_timeout())
 }
 
 /// 目录枚举辅助：`dir`（wpt_root 相对）及其全部子目录加入 `out`（wpt_root 相对
