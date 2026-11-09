@@ -222,6 +222,16 @@ pub enum PseudoClass {
     /// 合法性 + selector validity 接受面与 style-system
     /// `SUPPORTED_SIMPLE_PSEUDO_CLASSES` 对齐。
     Filtered,
+    /// `:open`——处于打开态的元素（CSS Selectors L4 #open-state；HTML §4.11.2
+    /// dialog / §4.11.1 details——带 `open` 属性）。纯元素属性求值（静态可判，无
+    /// 运行时注入）。select 的 picker 打开态（customizable-select 谱系）为运行时
+    /// shim 状态，静态 DOM 不可知 → select 上 `:open` 恒不匹配（真值通道随 picker
+    /// 态注入面挂账）。无 open/closed 状态的元素（非 dialog/details）两者均不匹配
+    ///（Chromium 同面）。
+    Open,
+    /// `:closed`——处于关闭态的 dialog/details 元素（[`PseudoClass::Open`] 补集，
+    /// 同限定 dialog/details；非 open-state 元素两者均不匹配）。
+    Closed,
 }
 
 /// `:nth-*` 的 `an+b` 表达式（a=系数，b=常量；匹配条件：存在 k≥0 使 position = a*k+b）。
@@ -511,6 +521,10 @@ impl SimpleSelector {
             PseudoClass::Checked => is_checked(elem),
             PseudoClass::Required => is_required(elem),
             PseudoClass::Optional => is_optional(elem),
+            // `:open`/`:closed`——dialog/details open 属性态（纯元素 tag+属性求值；
+            // 判定 helper 与 style-system matcher 共用，R3300 DOM/CSS 同源）。
+            PseudoClass::Open => is_open_state_element(elem),
+            PseudoClass::Closed => matches!(elem.local_name(), "dialog" | "details") && !is_open_state_element(elem),
             // `:read-write`/`:read-only` 须含 disabled 态判定（spec：禁用控件只读）——
             // `<fieldset disabled>` 传播禁用须祖先链求值（matches_full 无 Document 访问），
             // 故延后返 true，由 Document::element_matches_selector 经
@@ -1217,6 +1231,17 @@ fn is_any_link(elem: &ElementData) -> bool {
     matches!(elem.local_name(), "a" | "area" | "link") && elem.has_attribute("href")
 }
 
+/// `:open` 的判定（CSS Selectors L4 #open-state；HTML §4.11.2 dialog / §4.11.1
+/// details——`open` 属性在场即打开态）。
+///
+/// `pub`：style-system matcher 的 `:open`/`:closed` 求值复用（R3300 DOM/CSS
+/// 同源一致性——两通道共享同一 helper，避免判定分叉）。select picker 打开态
+///（customizable-select 谱系）无运行时信号，静态近似恒 false（见
+/// [`PseudoClass::Open`] 注记）。
+pub fn is_open_state_element(elem: &ElementData) -> bool {
+    matches!(elem.local_name(), "dialog" | "details") && elem.has_attribute("open")
+}
+
 /// 判定 tag 名是否为**合法 custom element 名**（HTML spec PotentialCustomElementName，
 /// https://html.spec.whatwg.org/multipage/custom-elements.html#prod-potentialcustomelementname）。
 ///
@@ -1474,6 +1499,11 @@ fn parse_pseudo(name: &str, args: Option<&str>) -> Option<PseudoClass> {
         // 识别目的：使 `dialog:not(:modal)` 等复合选择器不被当无效（静默返空），与 CSS matcher 一致。
         "fullscreen" => Some(PseudoClass::Fullscreen),
         "modal" => Some(PseudoClass::Modal),
+        // `:open`/`:closed`——dialog/details open 属性态（CSS Selectors L4
+        // #open-state）。纯元素属性求值（matches_full 内直评）；select picker 态
+        // 静态近似恒 false，见 PseudoClass::Open 注记。
+        "open" => Some(PseudoClass::Open),
+        "closed" => Some(PseudoClass::Closed),
         // `:focus`/`:focus-visible`/`:focus-within`——运行时焦点状态（JS .focus() / 用户交互激活），
         // 静态解析不可知 → 识别为合法伪类但静态永不匹配（matches_full 内 false，镜像 :visited/:fullscreen）。
         // 识别目的：使 `input:not(:focus)` 等复合选择器不被当无效（静默返空），与 CSS matcher 一致。
@@ -2200,6 +2230,73 @@ mod tests {
         );
         assert_eq!(trim_ascii_ws("  .a  "), ".a");
         assert_eq!(trim_ascii_ws("\u{00A0}.a"), "\u{00A0}.a", "U+00A0 非裁剪集");
+    }
+
+    // s373：`:open`/`:closed` parse 识别 + dialog/details 属性态求值（CSS Selectors
+    // L4 #open-state）。此前落 `_ => None` → shim matches(':open') 走
+    // `__zw_selector_valid` 先验门抛 SyntaxError（customizable-select dialog-mode
+    // 语料两案红态）。select picker 打开态静态近似恒不匹配（运行时 shim 态无注入
+    // 通道，见 PseudoClass::Open 注记）；div 等非 open-state 元素两者均不匹配。
+    #[test]
+    fn zz_s373_open_closed_pseudo_parse_and_eval() {
+        // parse：两伪类合法且复合形式整体有效。
+        for sel_str in [":open", ":closed", "dialog:open", "details:closed", "select:open"] {
+            let sel = parse_simple_selector(sel_str).unwrap_or_else(|| panic!("{sel_str} 应解析为合法伪类"));
+            assert_eq!(sel.pseudos.len(), 1, "{sel_str} 应含 1 伪类");
+            assert!(
+                matches!(sel.pseudos[0], PseudoClass::Open | PseudoClass::Closed),
+                "{sel_str} 应解析为 Open/Closed 变体"
+            );
+        }
+
+        let doc = crate::parse_html(
+            "<body>\
+             <dialog id=\"d-open\" open></dialog>\
+             <dialog id=\"d-closed\"></dialog>\
+             <details id=\"det-open\" open><summary>s</summary></details>\
+             <details id=\"det-closed\"></details>\
+             <div id=\"plain\"></div>\
+             <select id=\"sel\" open></select>\
+             </body>",
+        );
+        let root = doc.root();
+        let ids = |sel: &str| -> Vec<String> {
+            doc.query_selector_all(root, sel)
+                .into_iter()
+                .map(|id| {
+                    doc.get(id)
+                        .and_then(|n| match &n.kind {
+                            crate::NodeKind::Element(e) => e.get_attribute("id").map(|s| s.to_string()),
+                            _ => None,
+                        })
+                        .unwrap_or_default()
+                })
+                .collect()
+        };
+
+        assert_eq!(
+            ids("dialog:open"),
+            vec!["d-open".to_string()],
+            "dialog[open] 匹配 :open"
+        );
+        assert_eq!(
+            ids("dialog:closed"),
+            vec!["d-closed".to_string()],
+            "dialog（无 open）匹配 :closed"
+        );
+        assert_eq!(ids("details:open"), vec!["det-open".to_string()]);
+        assert_eq!(ids("details:closed"), vec!["det-closed".to_string()]);
+        // 非 open-state 元素（div）两者均不匹配（Chromium 同面）。
+        assert!(ids("div:open").is_empty(), "div 不匹配 :open");
+        assert!(ids("div:closed").is_empty(), "div 不匹配 :closed");
+        // select picker 打开态静态近似：即使带 open 属性（非 open-state 元素）也不匹配。
+        assert!(
+            ids("select:open").is_empty(),
+            "select 不匹配 :open（picker 态静态近似）"
+        );
+        assert!(ids("select:closed").is_empty(), "select 不匹配 :closed");
+        // selector validity 门（shim matches 先验消费面）：合法选择器不再抛 SyntaxError。
+        assert!(selector_is_valid("dialog:open") && selector_is_valid("select:closed"));
     }
 }
 

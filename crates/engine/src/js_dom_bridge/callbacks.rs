@@ -905,6 +905,19 @@ pub fn register_dom_callbacks(
         }),
     );
 
+    // s373：模态 dialog selector 集合同步（runner 面 gCS 通道）——shim
+    // showModal()/close()/reset 同步点全量推送 `_zwDialogModalAllSels()` 现值；
+    // gCS 代际槽 compute 前消费（apply_runner_modal_state，computed_style_cache）。
+    // 同步推送的原因（WPT test() 同 turn gCS 断言、拍间轮询恒 stale）见
+    // RUNNER_MODAL_SELECTORS 注记。
+    sandbox.register_callback(
+        "__zw_set_modal_state",
+        Box::new(|args: &[String]| -> String {
+            crate::js_dom_bridge::set_runner_modal_dialog_selectors(args.first().map(String::as_str).unwrap_or(""));
+            "1".into()
+        }),
+    );
+
     // R5001 M3 片 a 收口（html-syntax-compat）：`Range.createContextualFragment`——
     // markup 从 arg[0]，context tag 从 arg[1]（spec §8.5.7 的 context 元素），scripting
     // 从 arg[2]（'0' = inert 文档）。返片段顶层子 JSON（`__zw_parse_html_child_nodes`

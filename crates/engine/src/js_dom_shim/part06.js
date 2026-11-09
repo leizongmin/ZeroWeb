@@ -4049,7 +4049,12 @@
           if (sSel) return _wrapSelector(sSel);
           // s78 F4：image-map 命中（usemap img 形状面——SVG 命中后置臂）
           var imSel = (typeof _zwImgMapHitSel === 'function') ? _zwImgMapHitSel(nx, ny) : null;
-          return imSel ? _wrapSelector(imSel) : null;
+          if (imSel) return _wrapSelector(imSel);
+          // s373：gBCR 最小包含盒近似 + inert 屏蔽（_zwEfpHitSel 定义于 hit-test
+          // helper 区 17985 附近——var 函数表达式，调用时已赋值；此前非 SVG 页恒
+          // null，dialog-inert 全屏 modal 可命中断言面）。
+          var efpSel = (typeof _zwEfpHitSel === 'function') ? _zwEfpHitSel(nx, ny) : null;
+          return efpSel ? _wrapSelector(efpSel) : null;
         } catch (_eEFPsvg) { return null; }
       }
       var sel = __zw_elementFromPoint(String(x), String(y));
@@ -17987,6 +17992,70 @@
       // 无形状覆盖 → img 自身（spec：无 area 覆盖命中点 → image element）
       try { return img.__zwSelector || null; } catch (_eIS) { return null; }
     }
+    return null;
+  };
+  // s373（2026-11-10）：inert 子树屏蔽判定（elementFromPoint 近似臂专用）——
+  // 自身或祖先链带 `inert` 属性 → 不可命中（HTML §inert：inert subtree 的节点
+  // 「hit testing 不可命中」；modal-dialog-ancestor-is-inert / dialog-inert
+  // 动态翻转断言面）。64 层 guard 与 R4600 焦点门同款防反链环。
+  function _zwEfpInertBlocked(el) {
+    try {
+      var cur = el, g = 0;
+      while (cur && g++ < 64) {
+        if (cur.hasAttribute && cur.hasAttribute('inert')) return true;
+        cur = cur.parentNode || null;
+      }
+    } catch (_eIg) {}
+    return false;
+  }
+  // s373：elementFromPoint 缺席臂 gBCR 近似（_zwHitTestSel 尾臂同构 + inert 屏蔽
+  // + 逆序遍历）——runner headless 无 ElementFromPointBridge（`__zw_elementFromPoint`
+  // 回调缺席）时 spec API 走本近似；此前缺席臂只有 SVG/image-map 形状命中，非 SVG
+  // 页恒 null（dialog-inert「Dialog is hittable by default」红态根因）。逆序 +
+  // 面积严格最小：同面积（全屏 modal dialog vs body）文档序靠后（≈更深/topmost）
+  // 者赢；inert 命中被屏蔽 → 回落次小含点元素（穿透语义：body/html 兜底，断言面
+  // 「Dialog becomes inert dynamically」）。
+  // https://drafts.csswg.org/css-scroll-to-top-anchor/#hit-testing 之几何近似：
+  // spec hit-testing 依赖渲染树 z 序，headless 近似以最小包含盒代之。
+  var _zwEfpHitSel = function (x, y) {
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      var all = document.querySelectorAll('body, body *');
+      var best = null, bestArea = Infinity, hasLayout = false;
+      for (var i = all.length - 1; i >= 0; i--) {
+        var el = all[i];
+        if (!el.getBoundingClientRect) continue;
+        if (_zwEfpInertBlocked(el)) continue;
+        var r = el.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          hasLayout = true;
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            var area = r.width * r.height;
+            if (area < bestArea) {
+              bestArea = area;
+              best = el;
+            }
+          }
+        }
+      }
+      if (best) return best.__zwSelector || null;
+      // 无布局证据（runner 同 turn 内 showModal 后 gBCR 快照 stale——布局矩形由
+      // render 管线写 rect_snapshot，探测环泵后才更新）→ 栈顶模态 dialog 视口命中
+      // 近似（s30 backdrop 命中先例：模态 dialog 无布局盒，以栈顶模态近似；backdrop
+      // 几何覆盖视口 → 视口内命中点落栈顶模态 dialog）。AllSelsRaw 不过 open 属性门
+      //（`_zwSetAttr` 异步同 turn stale）；栈序外层先 → 栈顶取末项。inert 栈顶 →
+      // 不可命中返 null（inert hit-testing 穿透的下层元素近似面挂账——当前无布局
+      // 信号可分辨下层，dialog-inert 断言面仅要求 !== dialog）。
+      var rawSels = (typeof _zwDialogModalAllSelsRaw === 'function') ? _zwDialogModalAllSelsRaw() : '';
+      if (!hasLayout && rawSels) {
+        var arr = rawSels.split(',');
+        var topSel = arr[arr.length - 1];
+        var proxy = null;
+        try { proxy = document.querySelector(topSel); } catch (_eQ) {}
+        if (proxy && !_zwEfpInertBlocked(proxy)) return topSel;
+        return null;
+      }
+    } catch (_eEfp2) {}
     return null;
   };
   // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——

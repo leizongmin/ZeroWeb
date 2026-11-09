@@ -11457,6 +11457,10 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
                 .map(str::to_string)
                 .collect(),
         );
+        // s373：gCS 代际槽通道不经本环——改由 shim showModal()/close()/reset 同步点
+        // 经 `__zw_set_modal_state` 宿主回调推送（RUNNER_MODAL_SELECTORS）：WPT
+        // test() 是同步函数，showModal 后同 turn 的 gCS 断言在下一拍前执行，拍间
+        // 轮询该面恒 stale（modal-dialog-in-visibility-hidden 三断言同 turn 连跑）。
         // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
         // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
         // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
