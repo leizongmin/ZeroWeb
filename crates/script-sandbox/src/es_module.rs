@@ -2092,8 +2092,25 @@ fn transform_export(
         }
         return Ok(result);
     }
+    // export default 具名函数声明（[async] function[*] Name）——声明语义发射：
+    // 裸函数声明（hoisted、模块级可变绑定）+ default 活导出 getter（体首
+    // [`local_export_bindings`] 承担）。不可走 expr 分支的 `_exports.default =
+    // function fn(){…}`——函数表达式自带不可变自名绑定，体内 `fn = …` 报
+    // "Assignment to constant variable"（test262 language/module-code/
+    // eval-gtbndng-indirect-update-dflt 与 expressions/dynamic-import/usage
+    // 同型 19 案实证；spec：导出默认函数声明本地绑定与普通函数声明同为可变，
+    // Chrome 156 实测可赋值）。
+    // https://tc39.es/ecma262/#prod-ExportDeclaration
+    if let Some(rest) = clause.strip_prefix("default")
+        && default_function_decl_binding_name(rest).is_some()
+    {
+        let decl = rewrite_dynamic_imports(&rest.trim_start().replace("import.meta", "_importMeta"));
+        return Ok(format!("  {decl}\n"));
+    }
     // export default expr — 压缩形态 export default{…} 同样命中；`default` 后为
     // 标识符组成字符时不匹配（`export defaultx` 是非法语句，交回退路径原样报错）。
+    // 具名函数声明已在上一分支分流；匿名形态（无源可引用名）expr 分支语义等价
+    // （Function.name 经赋值目标推断恰为 "default"）。
     if let Some(expr) = clause.strip_prefix("default")
         && !expr.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
     {
@@ -2721,8 +2738,52 @@ fn extract_binding_name(decl: &str) -> &str {
 /// （const/let/var/function/class/解构/`export { a, b as c }`）时返回
 ///（导出名，本地名）对（声明形态两名相同；列表形态 `as` 改名）；再导出/
 /// default 形态返回空（接线不在体首 getter 承担面）。
+/// `export default` 具名函数声明的本地绑定名提取（`default` 之后的声明文本）：
+/// `[async] function[*] Name(` → `Some(Name)`。匿名形态（`function(`/`function*(`
+/// /无 `async` 关键字面）返回 None——模块级 `*default*` 绑定无源可引用名，expr
+/// 分支赋值形态语义等价。`functionX`/`asyncXxx` 标识符表达式形态与箭头、对象
+/// 字面量等返回 None（非声明，走 expr 分支）。
+fn default_function_decl_binding_name(rest: &str) -> Option<&str> {
+    let mut rest = rest.trim_start();
+    if let Some(after) = rest.strip_prefix("async") {
+        let next = after.chars().next()?;
+        if !matches!(next, ' ' | '\t' | '\n' | '\r') {
+            return None;
+        }
+        rest = after.trim_start();
+    }
+    let after_function = rest.strip_prefix("function")?;
+    // `functionX`——标识符表达式形态（`export default functionX(…)` 合法表达式）
+    if after_function
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
+    {
+        return None;
+    }
+    let rest = after_function.strip_prefix('*').unwrap_or(after_function);
+    let name_start = rest.trim_start();
+    let name_end = name_start
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+        .unwrap_or(name_start.len());
+    let name = &name_start[..name_end];
+    if !name.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '$') {
+        return None;
+    }
+    let after_name = &name_start[name_end..];
+    after_name.trim_start().starts_with('(').then_some(name)
+}
+
 fn local_export_bindings(clause: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
+    // export default 具名函数声明 → ("default", 本地名) 别名对（活绑定 getter；
+    // 声明形态发射见 [`transform_export`]——体内可变绑定 + default 活读）。
+    if let Some(rest) = clause.strip_prefix("default")
+        && let Some(name) = default_function_decl_binding_name(rest)
+    {
+        pairs.push(("default".to_string(), name.to_string()));
+        return pairs;
+    }
     for prefix in ["const ", "let ", "var ", "function ", "class "] {
         if let Some(decl) = clause.strip_prefix(prefix) {
             if let Some(names) = extract_destructuring_export_names(decl) {
@@ -3529,6 +3590,78 @@ mod tests {
         let mut sb = EsModuleSandbox::new().unwrap();
         let r = sb.execute_module("export default 99;", None).unwrap();
         assert!(r.namespace_json.contains("99"));
+    }
+
+    /// export default 具名函数声明：模块级可变绑定 + default 活导出——体内自赋值
+    /// 合法，导入侧经活 getter 读到改写后值（test262
+    /// language/module-code/eval-gtbndng-indirect-update-dflt 家族钉面；
+    /// spec：导出默认函数声明本地绑定与普通函数声明同为可变——Chrome 156 行为锚）。
+    /// 多行体 + 顶格闭括号形态与语料逐字同构。
+    #[test]
+    fn export_default_named_function_declaration_mutable_binding() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module(
+            "./fixture.js",
+            "export default function fn() {\n  fn = 2;\n  return 1;\n}",
+        );
+        let r = sb
+            .execute_module(
+                "import f from './fixture.js'\nexport const called = f()\nexport const after = f",
+                None,
+            )
+            .unwrap();
+        assert!(
+            r.namespace_json.contains("\"called\":1"),
+            "{}",
+            r.namespace_json
+        );
+        assert!(
+            r.namespace_json.contains("\"after\":2"),
+            "{}",
+            r.namespace_json
+        );
+    }
+
+    /// export default 匿名函数声明：无源可引用名，expr 分支赋值形态语义等价
+    /// （Function.name 经赋值目标推断为 "default"，不可变自绑定不可达）——回归面。
+    /// 函数值不可 JSON 序列化，经导入侧调用观测。
+    #[test]
+    fn export_default_anonymous_function_declaration_expr_path() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./anon.js", "export default function () { return 41; }");
+        let r = sb
+            .execute_module("import f from './anon.js'\nexport const v = f()", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("\"v\":41"), "{}", r.namespace_json);
+    }
+
+    /// 具名 async/generator 声明形态同走声明分支（`async function`、`function*`）。
+    #[test]
+    fn export_default_named_async_function_declaration() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module(
+                "export default async function af() { return 7; }\nexport const p = af",
+                None,
+            )
+            .unwrap();
+        assert!(!r.namespace_json.is_empty());
+        let mut sb2 = EsModuleSandbox::new().unwrap();
+        sb2.register_module(
+            "./gen.js",
+            "export default function* gen() { yield 1; }",
+        );
+        let r2 = sb2
+            .execute_module(
+                "import g from './gen.js'\nexport const first = g().next().value",
+                None,
+            )
+            .unwrap();
+        assert!(
+            r2.namespace_json.contains("\"first\":1"),
+            "{}",
+            r2.namespace_json
+        );
     }
 
     #[test]
