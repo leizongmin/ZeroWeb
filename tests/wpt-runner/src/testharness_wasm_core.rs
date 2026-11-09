@@ -176,8 +176,7 @@ pub fn run_wasm_core_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
             let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
             cases.push((relative.clone(), results));
         }
-        if relative.ends_with(".any.js") && crate::testharness_workers::dedicated_worker_variant(&source)
-        {
+        if relative.ends_with(".any.js") && crate::testharness_workers::dedicated_worker_variant(&source) {
             let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
             let results = crate::testharness_workers::run_any_js_dedicated_case_as(
                 wpt_root,
@@ -256,7 +255,9 @@ mod tests {
     /// 生成 dedicated 变体腿；window-only / 仅 sharedworker 不生成。
     #[test]
     fn dedicated_variant_lane() {
-        assert!(crate::testharness_workers::dedicated_worker_variant("promise_test(t => {});"));
+        assert!(crate::testharness_workers::dedicated_worker_variant(
+            "promise_test(t => {});"
+        ));
         assert!(crate::testharness_workers::dedicated_worker_variant(
             "// META: global=window,worker\npromise_test(t => {});"
         ));

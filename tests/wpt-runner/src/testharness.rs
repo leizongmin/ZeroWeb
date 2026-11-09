@@ -4917,9 +4917,7 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
                 // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
                 // `.any.worker.html` 分母变体）。分道判定（缺省双变体 /
                 // worker token 语义）见 [`crate::testharness_workers::dedicated_worker_variant`]。
-                if options.worker_variants
-                    && crate::testharness_workers::dedicated_worker_variant(&source)
-                {
+                if options.worker_variants && crate::testharness_workers::dedicated_worker_variant(&source) {
                     let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
                     let results = crate::testharness_workers::run_any_js_dedicated_case_as(
                         wpt_root,
