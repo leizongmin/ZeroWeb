@@ -6195,13 +6195,6 @@ fn wpt_data_script_fetcher_with_stash(
         // Err 不可区分，空脚本与 "\n" 执行语义恒等）；④ 扩展名 .js/.mjs scripty，
         // 其余（含无扩展名）非 scripty。其余 pipe 指令（trickle 等）不涉 MIME 照旧忽略。
         // https://html.spec.whatwg.org/multipage/workers.html#dom-workerglobalscope-importscripts
-        fn mime_is_scripty(mime: &str) -> bool {
-            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-            matches!(
-                essence.as_str(),
-                "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
-            )
-        }
         let mime_from_pipe = src.split('?').nth(1).and_then(|query| {
             query
                 .split('&')
@@ -6237,10 +6230,6 @@ fn wpt_data_script_fetcher_with_stash(
         // 交付 fn 指向的文件（fn 相对 .py 所在目录解析——corpus
         // `fn=json-module/module.json` 对 the-script-element/ 目录成立）。
         // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-        fn mime_is_json(mime: &str) -> bool {
-            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-            essence == "application/json" || essence == "text/json" || essence.ends_with("+json")
-        }
         let json_intent: Option<(String, String)> = if clean.ends_with(".json") {
             // wptserve 对 .json 文件默认 Content-Type: application/json；
             // `?pipe=header(...)` / `.headers` sidecar 可覆盖（MIME 判定派生序同 scripty 面）。
@@ -6293,459 +6282,23 @@ fn wpt_data_script_fetcher_with_stash(
         // 由 token 不变承载，Err 已覆盖）；200 → Ok 执行。
         // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
         // （fetch 步骤非 ok 状态 → 失败 → error 事件、脚本不执行）
-        if clean == "html/semantics/scripting-1/the-script-element/script-not-found-not-executed.py" {
-            return Err("script-not-found-not-executed.py: 404".to_string());
-        }
-        if clean == "html/semantics/scripting-1/the-script-element/script-not-found-not-executed-2.py" {
-            return Ok("test2_token = \"script executed\";".to_string());
-        }
-        // s346：module-fetch-tester.py 动态端点模块取回臂（上游 wptserve handler
-        // 不在语料——whatwg/html#10327「Don't cache HTTP errors in the module map」
-        // 判据端点：key 维度请求计数 + mode fail-first 首发 404 / always-fail 恒
-        // 404；action=stat 回计数不计数——页面 fetch() 通道 py_routes
-        // route_module_fetch_tester 同调 [`module_fetch_tester_serve`] 共享
-        // [`MODULE_FETCH_TESTER_STASH`]）。404 → Err（fetcher 契约无 status 通道，
-        // 非 200 加载失败与网络错误对页面可观察面同形——error 事件）；成功 → Ok
-        // （上游回体逐字镜像）。置于 `__zw_mtype` intent 臂前（s267 同理由——
-        // .py 非 css MIME，intent 臂先接管即断计数观察面）。
-        if clean == "html/semantics/scripting-1/the-script-element/module-fetch-tester.py" {
-            let query = src.split('?').nth(1).unwrap_or("");
-            let key = wpt_query_value(query, "key").unwrap_or_default();
-            let action = wpt_query_value(query, "action").unwrap_or_default();
-            let mode = wpt_query_value(query, "mode").unwrap_or_default();
-            return module_fetch_tester_serve(&key, &action, &mode);
-        }
-        // s344：delayed-modulescript.py 动态端点模块取回臂（上游 wptserve handler
-        // 不在语料——上游 sleep 后回 text/javascript JS module，`export delayedLoaded`
-        // 等；语料缺资产 → 404 → error 代替 load，nested-imports 文件红「unexpected」
-        // ——s227 缺资产同形）。本地无 wptserve：按端点路径回静态 JS module 体。
-        // delay 语义对消费页零观察面（nested-imports 仅断言 onload 序/全 loaded；
-        // error-and-slow-dependency 断言 parse 失败 abort graph——同步图编译不受取回
-        // 时延影响；import-subgraph-404 断言 404 dep 图失败；slow-cycle 循环图 loaded
-        // 面），省 sleep 阻塞 job 线程。
-        if clean.ends_with("/module/resources/delayed-modulescript.py") {
-            return Ok(
-                "export const a = 1;\nexport let delayedLoaded = false;\nsetTimeout(function () { delayedLoaded = true; }, 0);\n"
-                    .to_string(),
-            );
-        }
-        if clean == "html/semantics/scripting-1/the-script-element/serve-custom-response.py" {
-            let query = src.split('?').nth(1).unwrap_or("");
-            let key = wpt_query_value(query, "key").unwrap_or_default();
-            let mtype = query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype="));
-            let Ok(mut stash) = serve_custom_stash.lock() else {
-                return Err("serve-custom-response.py stash poisoned".to_string());
-            };
-            let state = stash.entry(key).or_default();
-            if let Some(body) = state.delivered_ok.clone() {
-                return Ok(body);
+        // T 族端点臂（s356/s346/s344/s267/s268/s350/s249/s107/s115/s250/s116/s124）
+        // 已迁入 [`py_script_fetch_routes`] 注册表（切片六 6b——表序 = 既有链臂序，
+        // 先命中先答；各臂排序理由注记随 handler 保留）。其后为静态回退尾
+        //（R1 scripty 链以下留守）。
+        let ctx = ScriptRouteCtx {
+            root: &root,
+            doc_referrer_policy: &doc_referrer_policy,
+            serve_custom_stash: &serve_custom_stash,
+        };
+        let env = ScriptFetchEnv {
+            json_intent: &json_intent,
+        };
+        for route in py_script_fetch_routes() {
+            if !route.matches.test(&env, src, clean) {
+                continue;
             }
-            if state.network_error || state.status_code != 200 {
-                state.run_count += 1;
-                return Err(format!(
-                    "serve-custom-response.py load failure: network_error={} status={}",
-                    state.network_error, state.status_code
-                ));
-            }
-            state.run_count += 1;
-            let essence = state
-                .content_type
-                .split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_ascii_lowercase();
-            let module_mime = matches!(
-                essence.as_str(),
-                "text/javascript"
-                    | "application/javascript"
-                    | "text/ecmascript"
-                    | "application/ecmascript"
-                    | "application/json"
-                    | "text/json"
-                    | "text/css"
-            ) || essence.ends_with("+json");
-            let mime_ok = match mtype {
-                // s250：text 数据模块 spec 无 MIME 校验步。
-                Some("text") => true,
-                Some("css") => essence == "text/css",
-                _ => module_mime,
-            };
-            if !mime_ok {
-                return Err(format!("serve-custom-response.py non-module MIME: {essence}"));
-            }
-            let body = match essence.as_str() {
-                "application/javascript" | "text/javascript" | "text/ecmascript" | "application/ecmascript" => {
-                    "export default 'hello';"
-                }
-                "application/json" | "text/json" => "{\"hello\": \"world\"}",
-                "text/css" => "#test { background-color: rgb(0, 255, 0); }",
-                _ => "42",
-            };
-            state.delivered_ok = Some(body.to_string());
-            return Ok(body.to_string());
-        }
-        // s268：css/json/text-module referrer-checker.py 动态端点仿真（s116 JS 模块
-        // 臂的数据模块三风味扩展——上游 wptserve handler 不在语料，回体逐字镜像
-        // 上游：css → `.referrer { content: "<Referer>" }`、json →
-        // `{"referrer": "<Referer>"}`、text → 裸 Referer 文本（no-referrer → 空体，
-        // 引擎 text 数据模块空体合成面 s268 放行））。置于 `__zw_mtype` intent 臂
-        // **之前**（同 s267 臂理由：数据模块取回报文携带 `__zw_mtype` 标记，intent
-        // 臂按扩展名 MIME 派生接管 .py 会 Err——import 链断 tests:0）。
-        // 策略链 = `__zw_lp`（webview collect_module_deps_recursive 静态 import 图
-        // 元素级 referrerpolicy 穿参——script 元素属性通道，消费即剥离语义同 s124
-        // echo-referrer 臂）→ pipe → 文档策略 → spec 默认 SWCO（s124 同序）。
-        // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
-        // https://fetch.spec.whatwg.org/#determine-request-s-referrer
-        if clean.contains("the-script-element/css-module/resources/referrer-checker.py")
-            || clean.contains("the-script-element/json-module/referrer-checker.py")
-            || clean.contains("the-script-element/text-module/referrer-checker.py")
-        {
-            let full_url = zero_engine::resolve_document_url(page_url, src);
-            let lp_policy = src
-                .split('?')
-                .nth(1)
-                .unwrap_or("")
-                .split('&')
-                .find_map(|kv| kv.strip_prefix("__zw_lp="));
-            let parent_query = page_url.split('?').nth(1).unwrap_or("");
-            let pipe_policy = parent_query.split('&').find_map(|kv| {
-                kv.strip_prefix("pipe=").and_then(|pipe| {
-                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
-                    let (name, value) = inner.split_once(',')?;
-                    name.trim()
-                        .eq_ignore_ascii_case("referrer-policy")
-                        .then(|| value.trim().to_ascii_lowercase())
-                })
-            });
-            let effective = lp_policy
-                .filter(|p| is_known_referrer_policy(p))
-                .map(|p| p.to_string())
-                .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
-                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
-                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
-            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
-            if clean.contains("css-module/") {
-                let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
-                return Ok(format!(".referrer {{ content: \"{escaped}\" }}"));
-            }
-            if clean.contains("json-module/") {
-                let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
-                return Ok(format!("{{\"referrer\": \"{escaped}\"}}"));
-            }
-            return Ok(referer);
-        }
-        // s350（html-semantics M2 切片 350）：json/text-module http-accept-header-checker.py
-        // 动态端点模块取回臂（上游 wptserve handler 不在语料——回体逐字镜像上游：
-        // json → `{"accept": "<Accept>"}` JSON module、text → 裸 Accept 文本 module）。
-        // Accept 值 = 按模块类型钉死的 spec 常量（JSON modules fetch 步：
-        // `application/json,*/*;q=0.5`；text modules 草案同形 `text/plain,*/*;q=0.5`）
-        // ——fetcher 契约 `(page_url, src)` 无头通道，值按端点目录归属的模块类型锚定
-        // （json-module/ → json、text-module/ → text；text 型取回报文另带
-        // `__zw_mtype=text` 标记可交叉核对，json 面目录即类型锚——s268
-        // compute_module_referer 服务端求值同法）。置于 `__zw_mtype` intent 臂**之前**
-        //（s267 同理由：.py 非 json/scripty MIME，intent 臂接管即 Err——静态 import
-        // 链断 tests 缺失）。
-        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-        if clean.contains("the-script-element/json-module/http-accept-header-checker.py") {
-            return Ok("{\"accept\": \"application/json,*/*;q=0.5\"}".to_string());
-        }
-        if clean.contains("the-script-element/text-module/http-accept-header-checker.py") {
-            return Ok("text/plain,*/*;q=0.5".to_string());
-        }
-        // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
-        // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
-        // 形参，s124 `__zw_lp` 同法穿参；真实 HTTP 宿主忽略未知查询参数，本臂消费
-        // 即剥离——json 面由上方既有 intent 通道覆盖，不加标记避免双通道分叉）。
-        // MIME 派生序（wptserve 语义）：serve-with-content-type.py 的 `ct` 查询 →
-        // `pipe=header(Content-Type,…)` → `.headers` sidecar → 扩展名规范映射
-        //（.css→text/css、.txt→text/plain）。type↔MIME 匹配校验（HTML module type
-        // map：css←text/css；s250：text 型 spec 无 MIME 校验，见下方匹配处）——
-        // 不匹配 → Err（网络错误语义，
-        // content-type-checking ct=application/css 臂判据）。命中交付文件原文
-        //（UTF-8 lossy——模块响应体恒 UTF-8 解码口径，charset 参数/BOM 嗅探未建模
-        // 挂账）。重定向跟随：`/common/redirect.py?location=T`（wptserve 302 语义，
-        // s248 fetch 通道臂同源）——location 绝对值按 strip_wpt_host_prefix 允许
-        // 名单映射、origin 相对值原样、其余相对值按 redirect.py 目录解析；≤4 跳。
-        // 无标记的 redirect.py 取回不进本臂（维持既有非 scripty 语义，零回归面）。
-        // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
-        if let Some(mtype) = src
-            .split('?')
-            .nth(1)
-            .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype=")))
-        {
-            if mtype != "css" && mtype != "text" {
-                return Err(format!("unsupported data module type marker: {mtype}"));
-            }
-            // 重定向跟随（common/redirect.py 仅在标记臂建模；语料面单跳即终）。
-            let mut hop_src = src.to_string();
-            let mut hop_clean = clean.to_string();
-            for _hop in 0..4 {
-                if hop_clean != "common/redirect.py" {
-                    break;
-                }
-                let query = hop_src.split('?').nth(1).unwrap_or("");
-                let loc = percent_encoding::percent_decode_str(query)
-                    .decode_utf8_lossy()
-                    .split('&')
-                    .find_map(|kv| kv.strip_prefix("location="))
-                    .unwrap_or("")
-                    .to_string();
-                if loc.is_empty() {
-                    return Err("redirect.py missing location".to_string());
-                }
-                let resolved = if let Some(path) = strip_wpt_host_prefix(&loc) {
-                    path
-                } else if loc.starts_with('/') {
-                    loc
-                } else if loc.starts_with("http://") || loc.starts_with("https://") {
-                    return Err(format!("redirect target host not available: {loc}"));
-                } else {
-                    let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
-                    normalize_relative(&format!("{dir}/{loc}"))
-                };
-                let path = resolved.split(['?', '#']).next().unwrap_or(&resolved).to_string();
-                hop_clean = path.strip_prefix('/').unwrap_or(&path).to_string();
-                hop_src = resolved;
-            }
-            if hop_clean == "common/redirect.py" {
-                return Err("redirect.py location loop".to_string());
-            }
-            let (file_rel, mime) = if std::path::Path::new(&hop_clean).file_name()
-                == Some(std::ffi::OsStr::new("serve-with-content-type.py"))
-            {
-                let query = hop_src.split('?').nth(1).unwrap_or("");
-                match parse_serve_with_content_type_query(query) {
-                    Some((file, ct)) => {
-                        let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
-                        (format!("{dir}/{file}"), ct)
-                    }
-                    None => {
-                        return Err(format!("serve-with-content-type.py missing fn/ct: {hop_src}"));
-                    }
-                }
-            } else {
-                let hop_pipe = hop_src.split('?').nth(1).and_then(|query| {
-                    query
-                        .split('&')
-                        .find_map(|kv| kv.strip_prefix("pipe="))
-                        .and_then(|pipe| {
-                            let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
-                            let (name, value) = inner.split_once(',')?;
-                            name.trim()
-                                .eq_ignore_ascii_case("content-type")
-                                .then(|| value.trim().to_string())
-                        })
-                });
-                let hop_sidecar = read_corpus_to_string(root.join(format!("{hop_clean}.headers")))
-                    .ok()
-                    .and_then(|headers| {
-                        headers.lines().find_map(|line| {
-                            let (key, value) = line.split_once(':')?;
-                            key.trim()
-                                .eq_ignore_ascii_case("content-type")
-                                .then(|| value.trim().to_string())
-                        })
-                    });
-                let mime = hop_pipe.or(hop_sidecar).unwrap_or_else(|| {
-                    if hop_clean.ends_with(".css") {
-                        "text/css".to_string()
-                    } else if hop_clean.ends_with(".txt") {
-                        "text/plain".to_string()
-                    } else {
-                        String::new()
-                    }
-                });
-                (hop_clean.clone(), mime)
-            };
-            let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-            // s250：text 型**无 MIME essence 校验**——spec fetch a single module script
-            // step 7 仅对 css（text/css）/json（JSON MIME type）/js（JavaScript MIME
-            // type）校验响应 MIME，「moduleType 为 text → 无条件创建 text module
-            // script」；上游 text-module/ignore-content-type.any.js 同判据（裸 `file`
-            // 语料 wptserve 实测 application/octet-stream 仍可 import）。误校验会把
-            // integrity.html matches 臂（import "./file" with type:text）打成网络错。
-            let matched = match mtype {
-                "css" => essence == "text/css",
-                _ => true,
-            };
-            if !matched {
-                return Err(format!("data module MIME mismatch for {mtype}: {file_rel} ({mime})"));
-            }
-            // s351：css 模块响应体相对 url() 按响应 URL 绝对化（见 rewrite_relative_css_urls）。
-            // fetcher 契约 `(page_url, src)` 无响应 URL 通道（s349 同形限制），锚定在
-            // 交付文件路径（重定向面 = 终跳 hop，重定向跟随已把 hop_clean 归一为终
-            // 目标路径）——与引擎合成模块（s249 `new CSSStyleSheet().replaceSync`）下
-            // 游 computed 值序列化（Url 逐字存储）对齐。
-            let resolve = mtype == "css";
-            return std::fs::read(root.join(&file_rel))
-                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                .map(|text| {
-                    if resolve {
-                        rewrite_relative_css_urls_s351(&text, &format!("https://wpt.test/{file_rel}"))
-                    } else {
-                        text
-                    }
-                })
-                .map_err(|e| format!("data module fetch failed: {file_rel} ({e})"));
-        }
-        if let Some((file_rel, mime)) = json_intent {
-            if mime_is_json(&mime) {
-                return std::fs::read(root.join(&file_rel))
-                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                    .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
-            }
-            // s115：scripty ct——serve-with-content-type.py 交付 scripty fixture 文件。
-            // 解码恒 UTF-8 lossy（fetcher 无脚本类型/charset 属性上下文）：模块面 spec
-            // 本就恒 UTF-8——charset 参数/属性双忽略、BOM 忽略不嗅探（体内 U+FEFF 为
-            // JS 空白：UTF-8 BOM 模块照常执行、UTF-16 内容乱码语法错——module/
-            // charset-01/02/03 三页判据面）；classic 运行时取回无 charset 属性上下文，
-            // 同 UTF-8 近似（parser classic 面的 charset 感知在 inline_local_scripts
-            // 投递时完成）。非 scripty 非 JSON → Err（网络错误语义，s107 原口径）。
-            if mime_is_scripty(&mime) {
-                return std::fs::read(root.join(&file_rel))
-                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-                    .map_err(|e| format!("script fetch failed: {file_rel} ({e})"));
-            }
-            return Err(format!("non-scripty MIME for script fixture: {file_rel} ({mime})"));
-        }
-        // s250：load-error-events.py 动态端点仿真（上游 wptserve handler 不在语料，
-        // 同 serve-with-content-type.py 口径）——load-error-events 四页（module/ 走
-        // resources/ 素模块风味；css/json/text 三目录各有数据模块风味）的 src 臂
-        // 判据源：`test` 查询参数决定交付体——`*_load` 臂 200 + 单行 module 源
-        //（import 数据模块成功后置 `<test>.executed = true`），`*_error` 臂 200 +
-        // import 404 目标（本体不 404——error 由**内部 import 取回失败**触发，元素
-        // 体不执行）；素模块风味 `*_error` 直接 404（上游 return status, … 字面）。
-        // test 名校验 `^[a-zA-Z0-9_]+$` 与上游 assert(re.match(...)) 同口径，违例 →
-        // Err（500 语义）。三风味数据模块体逐字镜像上游（import 目标/属性字面）。
-        // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
-        if std::path::Path::new(clean).file_name() == Some(std::ffi::OsStr::new("load-error-events.py")) {
-            let test = src
-                .split('?')
-                .nth(1)
-                .unwrap_or("")
-                .split('&')
-                .find_map(|kv| kv.strip_prefix("test="))
-                .unwrap_or("");
-            if test.is_empty() || !test.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                return Err(format!("load-error-events.py bad test param: {src}"));
-            }
-            let unreached =
-                format!("{test}.test.step(function() {{ assert_unreached(\"404 script should not be executed\"); }});");
-            let body = if clean.contains("text-module/load-error-events.py") {
-                if test.contains("_load") {
-                    format!("import \"./file.txt\" with {{ type: \"text\"}}; {test}.executed = true;")
-                } else {
-                    format!("import \"./not_found.txt\" with {{ type: \"text\"}}; {unreached}")
-                }
-            } else if clean.contains("json-module/load-error-events.py") {
-                if test.contains("_load") {
-                    format!("import \"./module.json\" with {{ type: \"json\"}}; {test}.executed = true;")
-                } else {
-                    format!("import \"./not_found.json\" with {{ type: \"json\"}}; {unreached}")
-                }
-            } else if clean.contains("css-module/") {
-                if test.contains("_load") {
-                    format!("import \"./basic.css\" with {{ type: \"css\"}}; {test}.executed = true;")
-                } else {
-                    format!("import \"./not_found.css\" with {{ type: \"css\"}}; {unreached}")
-                }
-            } else if test.contains("_load") {
-                format!("\"use strict\"; {test}.executed = true;")
-            } else {
-                // 素模块风味（the-script-element/resources/）：`*_error` 本体 404。
-                return Err(format!("load-error-events.py 404 fixture: {src}"));
-            };
-            return Ok(body);
-        }
-        // s116：referrer-checker.py 动态端点仿真（上游 wptserve handler 不在语料——
-        // `request.headers.referer` → `export const referrer = '<Referer>';`）。仅
-        // module/resources/ 面（JS 模块 checker；text-module/ css-module/ 同名端点按
-        // 数据模块内容形态回体——type:text/css 合成面挂账）。
-        // Referer 按 Fetch determine-request's-referrer：引用源 = 引用方模块 URL（本
-        // 回调首参——顶层模块图首跳即文档 URL，包装子跳即包装 URL，collect_module_deps
-        // 逐层穿 parent）；策略链 = 引用方自身交付的 Referrer-Policy 响应头（wptserve
-        // `?pipe=header(Referrer-Policy,P)` 查询模板——读父 URL query）优先，缺省继承
-        // 文档策略（<meta name=referrer> 逐页随闭包捕获），非法 label 按 spec 忽略
-        // 顺延，全缺 → spec 默认 strict-origin-when-cross-origin。
-        // https://fetch.spec.whatwg.org/#determine-request-s-referrer
-        // https://github.com/whatwg/html/pull/9210（descendant 继承判据页）
-        if clean.contains("the-script-element/module/resources/referrer-checker.py") {
-            let full_url = zero_engine::resolve_document_url(page_url, src);
-            let parent_query = page_url.split('?').nth(1).unwrap_or("");
-            let pipe_policy = parent_query.split('&').find_map(|kv| {
-                kv.strip_prefix("pipe=").and_then(|pipe| {
-                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
-                    let (name, value) = inner.split_once(',')?;
-                    name.trim()
-                        .eq_ignore_ascii_case("referrer-policy")
-                        .then(|| value.trim().to_ascii_lowercase())
-                })
-            });
-            // 逐臂过滤：非法 pipe label 按 spec 忽略后顺延文档策略（整体 or+filter
-            // 会把合法 doc policy 连带丢弃——descendants invalid-policy 臂实测）。
-            let effective = pipe_policy
-                .filter(|p| is_known_referrer_policy(p))
-                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
-                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
-            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
-            return Ok(format!("export const referrer = '{referer}';"));
-        }
-        // s124：echo-referrer.py 动态端点仿真（上游 wptserve handler 不在语料——
-        // `window.referrers["<uid>"] = "<Referer>";` 回体，modulepreload referrerpolicy
-        // 三页判据面：link rel=modulepreload 取回 + 动态 import 共用此端点记账）。
-        // 策略链 = `__zw_lp` 查询参数（引擎 shim link modulepreload 取回面的元素级
-        // referrerpolicy 通道——fetcher 契约 (page_url, src) 无策略形参，shim 以内部
-        // 标记参数携带，计算前剥离；无参数回落 referrer-checker 同链 pipe → 文档策略 →
-        // spec 默认）。uid 取查询参数原样（语料页数值形）；Referer 内嵌 JS 字符串面
-        // 做最小转义。无 uid → 回体不记账（上游 first(b"uid", b"") 同义）。
-        // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
-        // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
-        if clean.contains("preload/resources/echo-referrer.py") {
-            let full_url = zero_engine::resolve_document_url(page_url, src);
-            let lp_policy = src
-                .split('?')
-                .nth(1)
-                .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_lp=")));
-            let parent_query = page_url.split('?').nth(1).unwrap_or("");
-            let pipe_policy = parent_query.split('&').find_map(|kv| {
-                kv.strip_prefix("pipe=").and_then(|pipe| {
-                    let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
-                    let (name, value) = inner.split_once(',')?;
-                    name.trim()
-                        .eq_ignore_ascii_case("referrer-policy")
-                        .then(|| value.trim().to_ascii_lowercase())
-                })
-            });
-            let effective = lp_policy
-                .filter(|p| is_known_referrer_policy(p))
-                .map(|p| p.to_string())
-                .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
-                .or_else(|| doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
-                .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
-            let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
-            let uid = src
-                .split('?')
-                .nth(1)
-                .unwrap_or("")
-                .split('&')
-                .find_map(|kv| kv.strip_prefix("uid="))
-                .unwrap_or("")
-                .replace("%3D", "=")
-                .replace("%3d", "=");
-            let referer = referer.replace('\\', "\\\\").replace('"', "\\\"");
-            return Ok(format!("window.referrers[\"{uid}\"] = \"{referer}\";"));
-        }
-        // s124：script.py 端点仿真（上游 wptserve handler 不在语料——modulepreload
-        // cross-origin referrerpolicy 页的取回目标
-        // `https://{{domains[www1]}}:{{ports[https][0]}}/common/security-features/
-        // subresource/script.py`，判据仅 onload 到场（"should load"），无 Referer
-        // 断言）。回体非空 JS（引擎 modulepreload 面以空体承载取回失败）；MIME 面
-        // 上游默认 text/javascript。strip_wpt_host_prefix 已剥 www1.wpt.test:8444
-        // 别名前缀，此处按路径命中。
-        // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
-        if clean == "common/security-features/subresource/script.py" {
-            return Ok("globalThis.__zwScriptPyLoaded = (globalThis.__zwScriptPyLoaded || 0) + 1;".to_string());
+            return (route.handle)(&ctx, &env, page_url, src, clean);
         }
         let scripty = if let Some(mime) = mime_from_pipe {
             mime_is_scripty(&mime)
@@ -6851,6 +6404,748 @@ fn wpt_data_script_fetcher_with_stash(
             })
             .map_err(|e| format!("script fetch failed: {clean} ({e})"))
     }))
+}
+
+/// MIME essence 判定 helper——script fetcher 闭包内嵌 fn 提升模块级（切片六 6b
+/// 分表后 T10 handler 与 R1 scripty 链尾段共用；体逐字节保持）。
+fn mime_is_scripty(mime: &str) -> bool {
+    let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    matches!(
+        essence.as_str(),
+        "text/javascript" | "application/javascript" | "text/ecmascript" | "application/ecmascript"
+    )
+}
+
+/// JSON MIME type 判定 helper（s107 意图面）——同上提升，体逐字节保持。
+fn mime_is_json(mime: &str) -> bool {
+    let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    essence == "application/json" || essence == "text/json" || essence.ends_with("+json")
+}
+
+/// script fetcher 路由谓词——主注册表 `PyRouteMatch` 同构收窄面（fetcher 契约
+/// `(page_url, src)` 无 method/headers 面）；`Custom` 谓词扩至 `(env, src, clean)`
+/// 三键——`__zw_mtype` 标记、json_intent env、basename 全等三类原式承载。
+enum ScriptFetchMatch {
+    /// 路径全等（归一后 clean）。
+    Exact(&'static str),
+    /// 裸文件名后缀（任意目录）。
+    Suffix(&'static str),
+    /// 路径包含（目录锚）。
+    Contains(&'static str),
+    /// 复合谓词（fn 指针——src/env 键与 basename 臂）。
+    Custom(fn(&ScriptFetchEnv, &str, &str) -> bool),
+}
+
+impl ScriptFetchMatch {
+    fn test(&self, env: &ScriptFetchEnv, src: &str, clean: &str) -> bool {
+        match self {
+            Self::Exact(path) => clean == *path,
+            Self::Suffix(suffix) => clean.ends_with(suffix),
+            Self::Contains(needle) => clean.contains(needle),
+            Self::Custom(predicate) => predicate(env, src, clean),
+        }
+    }
+}
+
+/// script fetcher 表行 handler——闭包返回型同形（臂体 `return Ok/Err` 零包装
+/// 变换；T9/T10 if-let 头换 let-else，不可达臂注记随体）。
+type ScriptRouteHandler = fn(&ScriptRouteCtx, &ScriptFetchEnv, &str, &str, &str) -> Result<String, String>;
+
+/// script fetcher 表行（谓词 + handler；表序 = 链臂序）。
+struct PyScriptRoute {
+    matches: ScriptFetchMatch,
+    handle: ScriptRouteHandler,
+}
+
+/// script fetcher 案级上下文——闭包捕获借出（stash Arc 恒等：serve_custom_stash
+/// 与 fetch 桥闭包共享同一 per-case Arc，普查档 §二硬约束；cred_cookies 仅
+/// check-cookie 前置臂消费，不进表故不入 ctx）。
+struct ScriptRouteCtx<'a> {
+    root: &'a std::path::Path,
+    doc_referrer_policy: &'a Option<String>,
+    serve_custom_stash: &'a ServeCustomResponseStash,
+}
+
+/// script fetcher per-call 派生值（P3 前置算出，借用形——R1 scripty 链尾段仍按
+/// 闭包本体现值消费零改动；mime_from_pipe/sidecar 仅尾段消费，不进 env）。
+struct ScriptFetchEnv<'a> {
+    json_intent: &'a Option<(String, String)>,
+}
+
+/// script fetcher 端点注册表（切片六 6b——py 普查档 §一蓝图 script 分表；
+/// 表序 = 既有 if 链臂序 T1-T14，先命中先答，新端点 = 注册项声明）。
+fn py_script_fetch_routes() -> &'static [PyScriptRoute] {
+    &[
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Exact(
+                "html/semantics/scripting-1/the-script-element/script-not-found-not-executed.py",
+            ),
+            handle: route_script_not_found,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Exact(
+                "html/semantics/scripting-1/the-script-element/script-not-found-not-executed-2.py",
+            ),
+            handle: route_script_not_found_2,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Exact("html/semantics/scripting-1/the-script-element/module-fetch-tester.py"),
+            handle: route_script_module_fetch_tester,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Suffix("/module/resources/delayed-modulescript.py"),
+            handle: route_script_delayed_modulescript,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Exact("html/semantics/scripting-1/the-script-element/serve-custom-response.py"),
+            handle: route_script_serve_custom_response,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Custom(|_, _, clean| {
+                clean.contains("the-script-element/css-module/resources/referrer-checker.py")
+                    || clean.contains("the-script-element/json-module/referrer-checker.py")
+                    || clean.contains("the-script-element/text-module/referrer-checker.py")
+            }),
+            handle: route_script_referrer_checker_data,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Contains("the-script-element/json-module/http-accept-header-checker.py"),
+            handle: route_script_accept_header_json,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Contains("the-script-element/text-module/http-accept-header-checker.py"),
+            handle: route_script_accept_header_text,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Custom(|_, src, _| {
+                src.split('?')
+                    .nth(1)
+                    .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype=")))
+                    .is_some()
+            }),
+            handle: route_script_data_module_intent,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Custom(|env, _, _| env.json_intent.is_some()),
+            handle: route_script_json_intent,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Custom(|_, _, clean| {
+                std::path::Path::new(clean).file_name() == Some(std::ffi::OsStr::new("load-error-events.py"))
+            }),
+            handle: route_script_load_error_events,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Contains("the-script-element/module/resources/referrer-checker.py"),
+            handle: route_script_referrer_checker_module,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Contains("preload/resources/echo-referrer.py"),
+            handle: route_script_echo_referrer,
+        },
+        PyScriptRoute {
+            matches: ScriptFetchMatch::Exact("common/security-features/subresource/script.py"),
+            handle: route_script_subresource_script,
+        },
+    ]
+}
+
+/// route_script_not_found 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_not_found(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s267：serve-custom-response.py 动态端点模块取回臂（上游 wptserve handler
+    // 不在语料——action 三查询臂在 [`wpt_data_fetch_handler`]，页面 fetch() 面）。
+    // 置于 `__zw_mtype` intent 臂**之前**：css/text 型动态 import 由
+    // collect_module_deps_recursive 追加 `__zw_mtype` 标记（s249），端点 URL
+    // 须先经本臂消费——否则 intent 臂按扩展名 MIME 派生接管（.py 非 css MIME
+    // → Err 不计数，stat 可观察面断裂——solo 探针实证 stat "0"）。
+    // 无 action 的模块取回按 stash 键态回体：network-error=true → 计数 + Err
+    // （上游断连不回响应）；status != 200 → 计数 + Err（fetcher 契约无 status
+    // 通道，非 200 加载失败与网络错误对页面可观察面同形——error 事件/import
+    // 拒绝）；成功 → 计数 + Ok（按 content_type 回体：JS MIME →
+    // `export default 'hello';`、application/json → `{"hello": "world"}`、
+    // text/css → `#test { ... }`、其余 → "42"）。MIME 准入门按 `__zw_mtype`：
+    // text 型无 MIME 校验（s250 同口径）；css 型按 module type map（css←
+    // text/css）；无标记（JS 模块）按 JS MIME ∪ json 数据模块意图集（s107
+    // 同集）。fetcher 契约无 with-type 形参的 intent-blind 面随 s249 标记
+    // 通道收口。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+    // s356：script-not-found-not-executed{,-2}.py 动态端点 classic src 臂（上游
+    // wptserve handler 不在语料——语料仅 .html，双态 {1P,1F} 的 Fail 腿为端点
+    // 缺席：.py 落扩展名非 scripty 臂恒 Err，test2 的 200 执行面不可达，
+    // s227/s344 缺资产同形）。上游 pin 1eecaa0c30 逐字：.py = 404 +
+    // text/javascript + `test1_token = "script executed";`、-2.py = 200 + 同形
+    // test2 体。fetcher 契约无 status 通道：404 → Err（非 200 加载失败与网络
+    // 错误对页面可观察面同形——error 事件，s346 口径；「404 体不得执行」断言
+    // 由 token 不变承载，Err 已覆盖）；200 → Ok 执行。
+    // https://html.spec.whatwg.org/multipage/scripting.html#prepare-the-script-element
+    // （fetch 步骤非 ok 状态 → 失败 → error 事件、脚本不执行）
+    Err("script-not-found-not-executed.py: 404".to_string())
+}
+
+/// route_script_not_found_2 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_not_found_2(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    Ok("test2_token = \"script executed\";".to_string())
+}
+
+/// route_script_module_fetch_tester 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_module_fetch_tester(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s346：module-fetch-tester.py 动态端点模块取回臂（上游 wptserve handler
+    // 不在语料——whatwg/html#10327「Don't cache HTTP errors in the module map」
+    // 判据端点：key 维度请求计数 + mode fail-first 首发 404 / always-fail 恒
+    // 404；action=stat 回计数不计数——页面 fetch() 通道 py_routes
+    // route_module_fetch_tester 同调 [`module_fetch_tester_serve`] 共享
+    // [`MODULE_FETCH_TESTER_STASH`]）。404 → Err（fetcher 契约无 status 通道，
+    // 非 200 加载失败与网络错误对页面可观察面同形——error 事件）；成功 → Ok
+    // （上游回体逐字镜像）。置于 `__zw_mtype` intent 臂前（s267 同理由——
+    // .py 非 css MIME，intent 臂先接管即断计数观察面）。
+    let query = src.split('?').nth(1).unwrap_or("");
+    let key = wpt_query_value(query, "key").unwrap_or_default();
+    let action = wpt_query_value(query, "action").unwrap_or_default();
+    let mode = wpt_query_value(query, "mode").unwrap_or_default();
+    module_fetch_tester_serve(&key, &action, &mode)
+}
+
+/// route_script_delayed_modulescript 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_delayed_modulescript(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s344：delayed-modulescript.py 动态端点模块取回臂（上游 wptserve handler
+    // 不在语料——上游 sleep 后回 text/javascript JS module，`export delayedLoaded`
+    // 等；语料缺资产 → 404 → error 代替 load，nested-imports 文件红「unexpected」
+    // ——s227 缺资产同形）。本地无 wptserve：按端点路径回静态 JS module 体。
+    // delay 语义对消费页零观察面（nested-imports 仅断言 onload 序/全 loaded；
+    // error-and-slow-dependency 断言 parse 失败 abort graph——同步图编译不受取回
+    // 时延影响；import-subgraph-404 断言 404 dep 图失败；slow-cycle 循环图 loaded
+    // 面），省 sleep 阻塞 job 线程。
+    Ok(
+        "export const a = 1;\nexport let delayedLoaded = false;\nsetTimeout(function () { delayedLoaded = true; }, 0);\n"
+            .to_string(),
+    )
+}
+
+/// route_script_serve_custom_response 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_serve_custom_response(
+    ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    let query = src.split('?').nth(1).unwrap_or("");
+    let key = wpt_query_value(query, "key").unwrap_or_default();
+    let mtype = query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype="));
+    let Ok(mut stash) = ctx.serve_custom_stash.lock() else {
+        return Err("serve-custom-response.py stash poisoned".to_string());
+    };
+    let state = stash.entry(key).or_default();
+    if let Some(body) = state.delivered_ok.clone() {
+        return Ok(body);
+    }
+    if state.network_error || state.status_code != 200 {
+        state.run_count += 1;
+        return Err(format!(
+            "serve-custom-response.py load failure: network_error={} status={}",
+            state.network_error, state.status_code
+        ));
+    }
+    state.run_count += 1;
+    let essence = state
+        .content_type
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let module_mime = matches!(
+        essence.as_str(),
+        "text/javascript"
+            | "application/javascript"
+            | "text/ecmascript"
+            | "application/ecmascript"
+            | "application/json"
+            | "text/json"
+            | "text/css"
+    ) || essence.ends_with("+json");
+    let mime_ok = match mtype {
+        // s250：text 数据模块 spec 无 MIME 校验步。
+        Some("text") => true,
+        Some("css") => essence == "text/css",
+        _ => module_mime,
+    };
+    if !mime_ok {
+        return Err(format!("serve-custom-response.py non-module MIME: {essence}"));
+    }
+    let body = match essence.as_str() {
+        "application/javascript" | "text/javascript" | "text/ecmascript" | "application/ecmascript" => {
+            "export default 'hello';"
+        }
+        "application/json" | "text/json" => "{\"hello\": \"world\"}",
+        "text/css" => "#test { background-color: rgb(0, 255, 0); }",
+        _ => "42",
+    };
+    state.delivered_ok = Some(body.to_string());
+    Ok(body.to_string())
+}
+
+/// route_script_referrer_checker_data 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_referrer_checker_data(
+    ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    page_url: &str,
+    src: &str,
+    clean: &str,
+) -> Result<String, String> {
+    // s268：css/json/text-module referrer-checker.py 动态端点仿真（s116 JS 模块
+    // 臂的数据模块三风味扩展——上游 wptserve handler 不在语料，回体逐字镜像
+    // 上游：css → `.referrer { content: "<Referer>" }`、json →
+    // `{"referrer": "<Referer>"}`、text → 裸 Referer 文本（no-referrer → 空体，
+    // 引擎 text 数据模块空体合成面 s268 放行））。置于 `__zw_mtype` intent 臂
+    // **之前**（同 s267 臂理由：数据模块取回报文携带 `__zw_mtype` 标记，intent
+    // 臂按扩展名 MIME 派生接管 .py 会 Err——import 链断 tests:0）。
+    // 策略链 = `__zw_lp`（webview collect_module_deps_recursive 静态 import 图
+    // 元素级 referrerpolicy 穿参——script 元素属性通道，消费即剥离语义同 s124
+    // echo-referrer 臂）→ pipe → 文档策略 → spec 默认 SWCO（s124 同序）。
+    // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+    // https://fetch.spec.whatwg.org/#determine-request-s-referrer
+    let full_url = zero_engine::resolve_document_url(page_url, src);
+    let lp_policy = src
+        .split('?')
+        .nth(1)
+        .unwrap_or("")
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("__zw_lp="));
+    let parent_query = page_url.split('?').nth(1).unwrap_or("");
+    let pipe_policy = parent_query.split('&').find_map(|kv| {
+        kv.strip_prefix("pipe=").and_then(|pipe| {
+            let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+            let (name, value) = inner.split_once(',')?;
+            name.trim()
+                .eq_ignore_ascii_case("referrer-policy")
+                .then(|| value.trim().to_ascii_lowercase())
+        })
+    });
+    let effective = lp_policy
+        .filter(|p| is_known_referrer_policy(p))
+        .map(|p| p.to_string())
+        .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
+        .or_else(|| ctx.doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+        .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+    let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+    if clean.contains("css-module/") {
+        let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
+        return Ok(format!(".referrer {{ content: \"{escaped}\" }}"));
+    }
+    if clean.contains("json-module/") {
+        let escaped = referer.replace('\\', "\\\\").replace('"', "\\\"");
+        return Ok(format!("{{\"referrer\": \"{escaped}\"}}"));
+    }
+    Ok(referer)
+}
+
+/// route_script_accept_header_json 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_accept_header_json(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s350（html-semantics M2 切片 350）：json/text-module http-accept-header-checker.py
+    // 动态端点模块取回臂（上游 wptserve handler 不在语料——回体逐字镜像上游：
+    // json → `{"accept": "<Accept>"}` JSON module、text → 裸 Accept 文本 module）。
+    // Accept 值 = 按模块类型钉死的 spec 常量（JSON modules fetch 步：
+    // `application/json,*/*;q=0.5`；text modules 草案同形 `text/plain,*/*;q=0.5`）
+    // ——fetcher 契约 `(page_url, src)` 无头通道，值按端点目录归属的模块类型锚定
+    // （json-module/ → json、text-module/ → text；text 型取回报文另带
+    // `__zw_mtype=text` 标记可交叉核对，json 面目录即类型锚——s268
+    // compute_module_referer 服务端求值同法）。置于 `__zw_mtype` intent 臂**之前**
+    //（s267 同理由：.py 非 json/scripty MIME，intent 臂接管即 Err——静态 import
+    // 链断 tests 缺失）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    Ok("{\"accept\": \"application/json,*/*;q=0.5\"}".to_string())
+}
+
+/// route_script_accept_header_text 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_accept_header_text(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    Ok("text/plain,*/*;q=0.5".to_string())
+}
+
+/// route_script_data_module_intent 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_data_module_intent(
+    ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    src: &str,
+    clean: &str,
+) -> Result<String, String> {
+    // s249：CSS/text 数据模块 intent——collect_module_deps_recursive 以内部标记
+    // `__zw_mtype=<css|text>` 携带模块类型（fetcher 契约 `(page_url, src)` 无类型
+    // 形参，s124 `__zw_lp` 同法穿参；真实 HTTP 宿主忽略未知查询参数，本臂消费
+    // 即剥离——json 面由上方既有 intent 通道覆盖，不加标记避免双通道分叉）。
+    // MIME 派生序（wptserve 语义）：serve-with-content-type.py 的 `ct` 查询 →
+    // `pipe=header(Content-Type,…)` → `.headers` sidecar → 扩展名规范映射
+    //（.css→text/css、.txt→text/plain）。type↔MIME 匹配校验（HTML module type
+    // map：css←text/css；s250：text 型 spec 无 MIME 校验，见下方匹配处）——
+    // 不匹配 → Err（网络错误语义，
+    // content-type-checking ct=application/css 臂判据）。命中交付文件原文
+    //（UTF-8 lossy——模块响应体恒 UTF-8 解码口径，charset 参数/BOM 嗅探未建模
+    // 挂账）。重定向跟随：`/common/redirect.py?location=T`（wptserve 302 语义，
+    // s248 fetch 通道臂同源）——location 绝对值按 strip_wpt_host_prefix 允许
+    // 名单映射、origin 相对值原样、其余相对值按 redirect.py 目录解析；≤4 跳。
+    // 无标记的 redirect.py 取回不进本臂（维持既有非 scripty 语义，零回归面）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#module-type-map
+    let Some(mtype) = src
+        .split('?')
+        .nth(1)
+        .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_mtype=")))
+    else {
+        // 不可达——表谓词已保证标记在场（切片六 6b 迁入注记）。
+        return Err("__zw_mtype arm matched without marker".to_string());
+    };
+    if mtype != "css" && mtype != "text" {
+        return Err(format!("unsupported data module type marker: {mtype}"));
+    }
+    // 重定向跟随（common/redirect.py 仅在标记臂建模；语料面单跳即终）。
+    let mut hop_src = src.to_string();
+    let mut hop_clean = clean.to_string();
+    for _hop in 0..4 {
+        if hop_clean != "common/redirect.py" {
+            break;
+        }
+        let query = hop_src.split('?').nth(1).unwrap_or("");
+        let loc = percent_encoding::percent_decode_str(query)
+            .decode_utf8_lossy()
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("location="))
+            .unwrap_or("")
+            .to_string();
+        if loc.is_empty() {
+            return Err("redirect.py missing location".to_string());
+        }
+        let resolved = if let Some(path) = strip_wpt_host_prefix(&loc) {
+            path
+        } else if loc.starts_with('/') {
+            loc
+        } else if loc.starts_with("http://") || loc.starts_with("https://") {
+            return Err(format!("redirect target host not available: {loc}"));
+        } else {
+            let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+            normalize_relative(&format!("{dir}/{loc}"))
+        };
+        let path = resolved.split(['?', '#']).next().unwrap_or(&resolved).to_string();
+        hop_clean = path.strip_prefix('/').unwrap_or(&path).to_string();
+        hop_src = resolved;
+    }
+    if hop_clean == "common/redirect.py" {
+        return Err("redirect.py location loop".to_string());
+    }
+    let (file_rel, mime) =
+        if std::path::Path::new(&hop_clean).file_name() == Some(std::ffi::OsStr::new("serve-with-content-type.py")) {
+            let query = hop_src.split('?').nth(1).unwrap_or("");
+            match parse_serve_with_content_type_query(query) {
+                Some((file, ct)) => {
+                    let dir = hop_clean.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("");
+                    (format!("{dir}/{file}"), ct)
+                }
+                None => {
+                    return Err(format!("serve-with-content-type.py missing fn/ct: {hop_src}"));
+                }
+            }
+        } else {
+            let hop_pipe = hop_src.split('?').nth(1).and_then(|query| {
+                query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("pipe="))
+                    .and_then(|pipe| {
+                        let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+                        let (name, value) = inner.split_once(',')?;
+                        name.trim()
+                            .eq_ignore_ascii_case("content-type")
+                            .then(|| value.trim().to_string())
+                    })
+            });
+            let hop_sidecar = read_corpus_to_string(ctx.root.join(format!("{hop_clean}.headers")))
+                .ok()
+                .and_then(|headers| {
+                    headers.lines().find_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.trim()
+                            .eq_ignore_ascii_case("content-type")
+                            .then(|| value.trim().to_string())
+                    })
+                });
+            let mime = hop_pipe.or(hop_sidecar).unwrap_or_else(|| {
+                if hop_clean.ends_with(".css") {
+                    "text/css".to_string()
+                } else if hop_clean.ends_with(".txt") {
+                    "text/plain".to_string()
+                } else {
+                    String::new()
+                }
+            });
+            (hop_clean.clone(), mime)
+        };
+    let essence = mime.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    // s250：text 型**无 MIME essence 校验**——spec fetch a single module script
+    // step 7 仅对 css（text/css）/json（JSON MIME type）/js（JavaScript MIME
+    // type）校验响应 MIME，「moduleType 为 text → 无条件创建 text module
+    // script」；上游 text-module/ignore-content-type.any.js 同判据（裸 `file`
+    // 语料 wptserve 实测 application/octet-stream 仍可 import）。误校验会把
+    // integrity.html matches 臂（import "./file" with type:text）打成网络错。
+    let matched = match mtype {
+        "css" => essence == "text/css",
+        _ => true,
+    };
+    if !matched {
+        return Err(format!("data module MIME mismatch for {mtype}: {file_rel} ({mime})"));
+    }
+    // s351：css 模块响应体相对 url() 按响应 URL 绝对化（见 rewrite_relative_css_urls）。
+    // fetcher 契约 `(page_url, src)` 无响应 URL 通道（s349 同形限制），锚定在
+    // 交付文件路径（重定向面 = 终跳 hop，重定向跟随已把 hop_clean 归一为终
+    // 目标路径）——与引擎合成模块（s249 `new CSSStyleSheet().replaceSync`）下
+    // 游 computed 值序列化（Url 逐字存储）对齐。
+    let resolve = mtype == "css";
+    std::fs::read(ctx.root.join(&file_rel))
+        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+        .map(|text| {
+            if resolve {
+                rewrite_relative_css_urls_s351(&text, &format!("https://wpt.test/{file_rel}"))
+            } else {
+                text
+            }
+        })
+        .map_err(|e| format!("data module fetch failed: {file_rel} ({e})"))
+}
+
+/// route_script_json_intent 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_json_intent(
+    ctx: &ScriptRouteCtx,
+    env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    let Some((file_rel, mime)) = env.json_intent else {
+        // 不可达——表谓词已保证意图在场（切片六 6b 迁入注记）。
+        return Err("json_intent arm matched without intent".to_string());
+    };
+    if mime_is_json(mime) {
+        return std::fs::read(ctx.root.join(file_rel))
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .map_err(|e| format!("json module fetch failed: {file_rel} ({e})"));
+    }
+    // s115：scripty ct——serve-with-content-type.py 交付 scripty fixture 文件。
+    // 解码恒 UTF-8 lossy（fetcher 无脚本类型/charset 属性上下文）：模块面 spec
+    // 本就恒 UTF-8——charset 参数/属性双忽略、BOM 忽略不嗅探（体内 U+FEFF 为
+    // JS 空白：UTF-8 BOM 模块照常执行、UTF-16 内容乱码语法错——module/
+    // charset-01/02/03 三页判据面）；classic 运行时取回无 charset 属性上下文，
+    // 同 UTF-8 近似（parser classic 面的 charset 感知在 inline_local_scripts
+    // 投递时完成）。非 scripty 非 JSON → Err（网络错误语义，s107 原口径）。
+    if mime_is_scripty(mime) {
+        return std::fs::read(ctx.root.join(file_rel))
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .map_err(|e| format!("script fetch failed: {file_rel} ({e})"));
+    }
+    Err(format!("non-scripty MIME for script fixture: {file_rel} ({mime})"))
+}
+
+/// route_script_load_error_events 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_load_error_events(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    src: &str,
+    clean: &str,
+) -> Result<String, String> {
+    // s250：load-error-events.py 动态端点仿真（上游 wptserve handler 不在语料，
+    // 同 serve-with-content-type.py 口径）——load-error-events 四页（module/ 走
+    // resources/ 素模块风味；css/json/text 三目录各有数据模块风味）的 src 臂
+    // 判据源：`test` 查询参数决定交付体——`*_load` 臂 200 + 单行 module 源
+    //（import 数据模块成功后置 `<test>.executed = true`），`*_error` 臂 200 +
+    // import 404 目标（本体不 404——error 由**内部 import 取回失败**触发，元素
+    // 体不执行）；素模块风味 `*_error` 直接 404（上游 return status, … 字面）。
+    // test 名校验 `^[a-zA-Z0-9_]+$` 与上游 assert(re.match(...)) 同口径，违例 →
+    // Err（500 语义）。三风味数据模块体逐字镜像上游（import 目标/属性字面）。
+    // https://html.spec.whatwg.org/multipage/webappapis.html#fetch-a-single-module-script
+    let test = src
+        .split('?')
+        .nth(1)
+        .unwrap_or("")
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("test="))
+        .unwrap_or("");
+    if test.is_empty() || !test.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+        return Err(format!("load-error-events.py bad test param: {src}"));
+    }
+    let unreached =
+        format!("{test}.test.step(function() {{ assert_unreached(\"404 script should not be executed\"); }});");
+    let body = if clean.contains("text-module/load-error-events.py") {
+        if test.contains("_load") {
+            format!("import \"./file.txt\" with {{ type: \"text\"}}; {test}.executed = true;")
+        } else {
+            format!("import \"./not_found.txt\" with {{ type: \"text\"}}; {unreached}")
+        }
+    } else if clean.contains("json-module/load-error-events.py") {
+        if test.contains("_load") {
+            format!("import \"./module.json\" with {{ type: \"json\"}}; {test}.executed = true;")
+        } else {
+            format!("import \"./not_found.json\" with {{ type: \"json\"}}; {unreached}")
+        }
+    } else if clean.contains("css-module/") {
+        if test.contains("_load") {
+            format!("import \"./basic.css\" with {{ type: \"css\"}}; {test}.executed = true;")
+        } else {
+            format!("import \"./not_found.css\" with {{ type: \"css\"}}; {unreached}")
+        }
+    } else if test.contains("_load") {
+        format!("\"use strict\"; {test}.executed = true;")
+    } else {
+        // 素模块风味（the-script-element/resources/）：`*_error` 本体 404。
+        return Err(format!("load-error-events.py 404 fixture: {src}"));
+    };
+    Ok(body)
+}
+
+/// route_script_referrer_checker_module 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_referrer_checker_module(
+    ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    page_url: &str,
+    src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s116：referrer-checker.py 动态端点仿真（上游 wptserve handler 不在语料——
+    // `request.headers.referer` → `export const referrer = '<Referer>';`）。仅
+    // module/resources/ 面（JS 模块 checker；text-module/ css-module/ 同名端点按
+    // 数据模块内容形态回体——type:text/css 合成面挂账）。
+    // Referer 按 Fetch determine-request's-referrer：引用源 = 引用方模块 URL（本
+    // 回调首参——顶层模块图首跳即文档 URL，包装子跳即包装 URL，collect_module_deps
+    // 逐层穿 parent）；策略链 = 引用方自身交付的 Referrer-Policy 响应头（wptserve
+    // `?pipe=header(Referrer-Policy,P)` 查询模板——读父 URL query）优先，缺省继承
+    // 文档策略（<meta name=referrer> 逐页随闭包捕获），非法 label 按 spec 忽略
+    // 顺延，全缺 → spec 默认 strict-origin-when-cross-origin。
+    // https://fetch.spec.whatwg.org/#determine-request-s-referrer
+    // https://github.com/whatwg/html/pull/9210（descendant 继承判据页）
+    let full_url = zero_engine::resolve_document_url(page_url, src);
+    let parent_query = page_url.split('?').nth(1).unwrap_or("");
+    let pipe_policy = parent_query.split('&').find_map(|kv| {
+        kv.strip_prefix("pipe=").and_then(|pipe| {
+            let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+            let (name, value) = inner.split_once(',')?;
+            name.trim()
+                .eq_ignore_ascii_case("referrer-policy")
+                .then(|| value.trim().to_ascii_lowercase())
+        })
+    });
+    // 逐臂过滤：非法 pipe label 按 spec 忽略后顺延文档策略（整体 or+filter
+    // 会把合法 doc policy 连带丢弃——descendants invalid-policy 臂实测）。
+    let effective = pipe_policy
+        .filter(|p| is_known_referrer_policy(p))
+        .or_else(|| ctx.doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+        .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+    let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+    Ok(format!("export const referrer = '{referer}';"))
+}
+
+/// route_script_echo_referrer 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_echo_referrer(
+    ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    page_url: &str,
+    src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s124：echo-referrer.py 动态端点仿真（上游 wptserve handler 不在语料——
+    // `window.referrers["<uid>"] = "<Referer>";` 回体，modulepreload referrerpolicy
+    // 三页判据面：link rel=modulepreload 取回 + 动态 import 共用此端点记账）。
+    // 策略链 = `__zw_lp` 查询参数（引擎 shim link modulepreload 取回面的元素级
+    // referrerpolicy 通道——fetcher 契约 (page_url, src) 无策略形参，shim 以内部
+    // 标记参数携带，计算前剥离；无参数回落 referrer-checker 同链 pipe → 文档策略 →
+    // spec 默认）。uid 取查询参数原样（语料页数值形）；Referer 内嵌 JS 字符串面
+    // 做最小转义。无 uid → 回体不记账（上游 first(b"uid", b"") 同义）。
+    // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+    // https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-attribute
+    let full_url = zero_engine::resolve_document_url(page_url, src);
+    let lp_policy = src
+        .split('?')
+        .nth(1)
+        .and_then(|query| query.split('&').find_map(|kv| kv.strip_prefix("__zw_lp=")));
+    let parent_query = page_url.split('?').nth(1).unwrap_or("");
+    let pipe_policy = parent_query.split('&').find_map(|kv| {
+        kv.strip_prefix("pipe=").and_then(|pipe| {
+            let inner = pipe.strip_prefix("header(")?.strip_suffix(')')?;
+            let (name, value) = inner.split_once(',')?;
+            name.trim()
+                .eq_ignore_ascii_case("referrer-policy")
+                .then(|| value.trim().to_ascii_lowercase())
+        })
+    });
+    let effective = lp_policy
+        .filter(|p| is_known_referrer_policy(p))
+        .map(|p| p.to_string())
+        .or_else(|| pipe_policy.filter(|p| is_known_referrer_policy(p)))
+        .or_else(|| ctx.doc_referrer_policy.clone().filter(|p| is_known_referrer_policy(p)))
+        .unwrap_or_else(|| "strict-origin-when-cross-origin".to_string());
+    let referer = compute_module_referer(page_url, &full_url, &effective).unwrap_or_default();
+    let uid = src
+        .split('?')
+        .nth(1)
+        .unwrap_or("")
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("uid="))
+        .unwrap_or("")
+        .replace("%3D", "=")
+        .replace("%3d", "=");
+    let referer = referer.replace('\\', "\\\\").replace('"', "\\\"");
+    Ok(format!("window.referrers[\"{uid}\"] = \"{referer}\";"))
+}
+
+/// route_script_subresource_script 臂——注册表切片六 6b 迁入，体逐字节保持（dedent + ctx/env 重绑定）。
+fn route_script_subresource_script(
+    _ctx: &ScriptRouteCtx,
+    _env: &ScriptFetchEnv,
+    _page_url: &str,
+    _src: &str,
+    _clean: &str,
+) -> Result<String, String> {
+    // s124：script.py 端点仿真（上游 wptserve handler 不在语料——modulepreload
+    // cross-origin referrerpolicy 页的取回目标
+    // `https://{{domains[www1]}}:{{ports[https][0]}}/common/security-features/
+    // subresource/script.py`，判据仅 onload 到场（"should load"），无 Referer
+    // 断言）。回体非空 JS（引擎 modulepreload 面以空体承载取回失败）；MIME 面
+    // 上游默认 text/javascript。strip_wpt_host_prefix 已剥 www1.wpt.test:8444
+    // 别名前缀，此处按路径命中。
+    // https://html.spec.whatwg.org/multipage/links.html#link-type-modulepreload
+    Ok("globalThis.__zwScriptPyLoaded = (globalThis.__zwScriptPyLoaded || 0) + 1;".to_string())
 }
 
 #[derive(Default)]
