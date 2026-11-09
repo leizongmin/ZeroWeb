@@ -9825,6 +9825,30 @@
     if (!have) return tags;
     return tags.filter(function (t) { return have.indexOf(t) < 0; });
   }
+  // F6a（2026-11-09 editing-compat）：inserttext 位 caret 祖先链 font[color]
+  // hex 大小写归一。幸存壳层由 DOM 祖先自然承接（TypingStyle 轮 _zwCeTypingTagsAt
+  // 同款链走——typed 文本落进 delete 幸存的原壳，attr 原样直传），Chrome 录音
+  // 期望形为小写 canonical hex（multitest :2128/:2348 期望 color="#0000ff"、
+  //  直传 #0000FF 失配＝F6a 残红 2 键全貌）。仅 case-fold 纯 hex 值（# + hex
+  //  字符）：命名色壳在语料中恒溶解无幸存录音形（blue :2143、brown :2153），
+  //  不做语义转换；face/size、F2 link carry（capture_link_carry 已 parseSimpleColor
+  //  归一）、F6b script 溶解重放三路径零交叉。execCommand 草案未定义本归一，
+  //  权威＝Chrome 录音语料形（DC-4 语料形对齐）。
+  function _zwCeNormalizeHexColorShells(sc, el) {
+    var n = sc;
+    var guard = 0;
+    while (n && n !== el && guard++ < 256) {
+      if (n.nodeType === 1 && n.getAttribute
+          && String(n.tagName || '').toLowerCase() === 'font') {
+        var c = n.getAttribute('color');
+        if (typeof c === 'string' && c.charAt(0) === '#'
+            && /^[#][0-9a-fA-F]+$/.test(c) && c !== c.toLowerCase()) {
+          n.setAttribute('color', c.toLowerCase());
+        }
+      }
+      n = n.parentNode;
+    }
+  }
   // F1'-B（2026-11-08 editing-compat）[2]：swcss(true) typing 样式并壳——Chrome
   // CSS 模式 typing 不产 tag 壳，armed tag 折算 CSS 属性并入 caret 祖先链 span
   // 的 style attr（multitest `<span style=font-weight:bold>{}<br></span>`+
@@ -9915,6 +9939,10 @@
     }
     var sc = range.startContainer, so = range.startOffset | 0;
     var node = null, caretOff = 0;
+    // F6a：caret 链幸存 font[color] hex 归一（typed 落壳前，见上方函数注）。
+    if (typeof _zwCeNormalizeHexColorShells === 'function') {
+      _zwCeNormalizeHexColorShells(sc, el);
+    }
     // F2 link 上下文（armed pending / carry 消费资格）——变异核单点解析，
     // 四臂共用（_zwCeTypingInsert 第三参）。
     var f2 = _zwCeF2LinkContext(sc, el);
