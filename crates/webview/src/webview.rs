@@ -5442,7 +5442,13 @@ globalThis.Function=new Proxy(globalThis.Function,{construct:function(t,args){if
             let inlined_from_external = script_csp_info
                 .get(script_index)
                 .is_some_and(|info| info.inlined_src.is_some());
-            let async_module_face = is_module && (code.contains("await") || code.contains("import("));
+            let async_module_face = is_module
+                && (code.contains("await")
+                    || code.contains("import(")
+                    // s361：静态 defer import 声明传染 async IIFE 形态（es_module
+                    // build_dep_iife / compile_module_script 同谓词）——load 派发臂
+                    // 须随编译形态走，否则 async 体 load 尾片回退 sync 端臂。
+                    || zero_script_sandbox::source_has_deferred_import_decl(&code));
             if is_module && inlined_from_external && async_module_face {
                 full.push_str(&format!(
                     "\nPromise.resolve().then(function () {{ {} }});",
@@ -8424,7 +8430,15 @@ fn compile_module_contract(
             // 依赖查找经 resolve_registered_specifier 统一归一到解析 URL，跨拼写命中。
             let resolved = resolve_document_url(parent, spec);
             match zero_script_sandbox::compile_dependency_iife(&resolved, &reg) {
-                Ok(iife) => format!("{resolved}\u{1f}{iife}"),
+                // s361：产物前拼动态 import helper 段（语句包立即执行函数后接 iife
+                // 表达式——契约 eval 是 `(code)` 表达式求值形态）——嵌套 `import()`
+                // 内联体在非 module 页面（prelude 从未执行）的 eval 上下文缺
+                // `__zw_dynamic_import`（cyclic 页 ReferenceError 红态实证面）；
+                // helper 定义幂等，module 页面包重定义零行为漂移。
+                Ok(iife) => format!(
+                    "{resolved}\u{1f}(function(){{{}return ({iife});}})()",
+                    zero_script_sandbox::module_dynamic_import_helpers_prelude()
+                ),
                 // s252：链接/instantiation 期失败（缺导出等 CompileError）→ tag 3 逐次新
                 // SyntaxError（spec：link 失败不入 module map、不记账，逐次新错误对象——
                 // WPT dynamic-imports-script-error「instantiation error」判据 SyntaxError
@@ -8474,7 +8488,12 @@ fn compile_module_contract_deferred(
         Ok(()) => {
             let resolved = resolve_document_url(parent, spec);
             match zero_script_sandbox::compile_dependency_iife_deferred(&resolved, &reg) {
-                Ok(iife) => Some(format!("{resolved}\u{1f}{iife}")),
+                // s361：helper 段同拼（见 compile_module_contract Ok 臂注记）——defer
+                // 契约 eval 上下文的嵌套 `import()` 内联体同缺 helper 面。
+                Ok(iife) => Some(format!(
+                    "{resolved}\u{1f}(function(){{{}return ({iife});}})()",
+                    zero_script_sandbox::module_dynamic_import_helpers_prelude()
+                )),
                 Err(e @ zero_script_sandbox::ScriptError::CompileError(_)) => {
                     tracing::warn!("compile defer module {spec} (transitive fetch): {e}");
                     Some(format!("3\u{1f}{resolved}\u{1f}{e}"))

@@ -278,8 +278,9 @@ pub fn compile_module_script_with_credentials(
     let uses_await = source.contains("await");
     // s269：async 包裹判定与消费上下文（依赖 await 发射）同源——`import(`（动态
     // import 重写后的 helper 调用态）也触发 async 包裹（prelude 契约既有行为），此时
-    // TLA 依赖的消费点同样可合法 await。
-    let async_body = source.contains("import(") || uses_await;
+    // TLA 依赖的消费点同样可合法 await。s361：静态 defer import 声明同传染（判定
+    // 理由见 build_dep_iife 同名注记）。
+    let async_body = source.contains("import(") || uses_await || source_has_deferred_import_decl(source);
     let mut path = vec![url.to_string()];
     let body = build_module_script(
         source,
@@ -475,19 +476,13 @@ fn static_dependency_specifiers(source: &str, importer_url: &str, registry: &Mod
         .collect()
 }
 
-/// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
-///
-/// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis` 持久——同文档多个 module
-/// script 元素共享一份模块缓存（HTML module map 语义，fetch-a-single-module-script 命中
-/// 即复用）。**文档边界由宿主负责**：renderer 路径经 `reset_context` 销毁重建全局对象自然
-/// 复位；tab worker 与 webview 进程内路径持持久 context，须在每文档脚本阶段起点执行
-/// [`MODULE_CACHE_RESET_SCRIPT`]（否则跨文档导航后同 URL 模块零次求值——D1 回归）。
-/// `entry` 为入口模块 URL：入口图内模块（含入口）不在 prelude 急切执行——求值由
-/// 调用方 `compile_module_script` 转换体的内联图承担（s345：循环依赖须在入口 IIFE 内
-/// 闭合——导出 getter 先于提升 import 发射，依赖体经活对象读未初始化 let/const 自然
-/// TDZ；prelude 急切求值会把入口源码内联进循环依赖 IIFE，体序倒置且 TDZ 失明）。
-/// 入口图不可达的 registry 余量照旧急切求值，序为字典序（全量预热覆盖契约不变）。
-pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
+/// s361：动态 import 运行时 helper 段（三表 init + `__zw_load_module` +
+/// `__zw_dynamic_import` + `__zwImportMapResolve` 全局定义，registry 无关）——
+/// [`build_module_runtime_prelude`] 前缀复用；webview 动态/defer 契约产物同拼：
+/// 契约 eval 上下文在非 module 页面（prelude 从未执行）缺 helper——嵌套
+/// `import()` 内联体 ReferenceError（cyclic-tla-defer-eval 红态实证面）。
+/// 重复定义幂等（同形覆盖，页面包 + 契约包双发射零行为漂移）。
+pub fn module_dynamic_import_helpers_prelude() -> String {
     let mut out = String::from(
         "globalThis.__moduleCache = globalThis.__moduleCache || {};\nglobalThis.__moduleFailures = globalThis.__moduleFailures || {};\nglobalThis.__zwModuleFetchKeys = globalThis.__zwModuleFetchKeys || {};\n",
     );
@@ -624,6 +619,25 @@ pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&st
     // 接线未达，FIXME 挂账）同样回落 TypeError 而非 ReferenceError。
     // https://html.spec.whatwg.org/multipage/webappapis.html#dom-import-meta-resolve
     out.push_str("globalThis.__zwImportMapResolve = function (spec, base) {\n  if (typeof __zw_importmap_resolve !== 'function') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  var r = __zw_importmap_resolve(spec, base);\n  if (r === '') throw new TypeError(\"Failed to resolve module specifier '\" + spec + \"'\");\n  return r;\n};\n");
+    out
+}
+
+/// 生成模块运行时 prelude（`__moduleCache` + 动态 `import()` 支持）。
+///
+/// R5182（模块恰好一次求值）：`__moduleCache` 挂 `globalThis` 持久——同文档多个 module
+/// script 元素共享一份模块缓存（HTML module map 语义，fetch-a-single-module-script 命中
+/// 即复用）。**文档边界由宿主负责**：renderer 路径经 `reset_context` 销毁重建全局对象自然
+/// 复位；tab worker 与 webview 进程内路径持持久 context，须在每文档脚本阶段起点执行
+/// [`MODULE_CACHE_RESET_SCRIPT`]（否则跨文档导航后同 URL 模块零次求值——D1 回归）。
+/// `entry` 为入口模块 URL：入口图内模块（含入口）不在 prelude 急切执行——求值由
+/// 调用方 `compile_module_script` 转换体的内联图承担（s345：循环依赖须在入口 IIFE 内
+/// 闭合——导出 getter 先于提升 import 发射，依赖体经活对象读未初始化 let/const 自然
+/// TDZ；prelude 急切求值会把入口源码内联进循环依赖 IIFE，体序倒置且 TDZ 失明）。
+/// 入口图不可达的 registry 余量照旧急切求值，序为字典序（全量预热覆盖契约不变）。
+pub fn build_module_runtime_prelude(registry: &ModuleRegistry, entry: Option<&str>) -> Result<String, ScriptError> {
+    // s361：helper 段抽离（[module_dynamic_import_helpers_prelude]）——契约产物
+    // 同拼面，见该函数注记。
+    let mut out = module_dynamic_import_helpers_prelude();
     // s345：入口图内模块（含入口）不再 prelude 急切求值——求值由入口转换体的**内联图**
     // 承担（体首提升 import 的 memoized 发射，内联递归本身即入口图后序；循环依赖在入口
     // IIFE 内闭合，导出 getter 先于提升 import 发射 → 依赖体经活对象读到未初始化
@@ -910,6 +924,21 @@ pub(crate) fn strip_import_keyword(stmt: &str) -> Option<&str> {
     }
 }
 
+/// s361：剥离静态 deferred namespace 声明的 `defer` 前缀（tc39
+/// proposal-defer-import-eval 静态形式 `import defer * as ns from` → 名空间子句）。
+/// 发射面（[`transform_import`]）与图收集面（[`extract_static_module_imports_with_attributes`]
+/// / [`extract_static_module_import_specifiers`]）共用同一归一——漏归一则
+/// [`import_clause_shape_ok`] 按 default 绑定形态判 `defer * as ns` 失败 → 依赖
+/// 漏收（Module not found，cyclic 页红态实证面）。守卫：`defer` 后须 `*`，排除
+/// `import defer from 'm'`（default 绑定名恰为 defer）与 `import deferredX`
+/// （绑定名 defer 前缀重叠）。
+fn strip_defer_prefix(clause: &str) -> &str {
+    match clause.strip_prefix("defer") {
+        Some(after) if after.trim_start().starts_with('*') => after.trim_start(),
+        _ => clause,
+    }
+}
+
 // https://tc39.es/ecma262/#sec-exports
 // 识别 export 语句并剥离关键字。识别 `export ` 与压缩形态 `export{`、`export*`。
 fn strip_export_keyword(stmt: &str) -> Option<&str> {
@@ -983,6 +1012,7 @@ pub fn extract_static_module_import_specifiers(source: &str) -> Vec<String> {
     for stmt in split_statements(source) {
         let trimmed = stmt.trim();
         let specifier = if let Some(clause) = strip_import_keyword(trimmed) {
+            let clause = strip_defer_prefix(clause);
             if !import_clause_shape_ok(clause) {
                 continue;
             }
@@ -1025,6 +1055,7 @@ pub fn extract_static_module_imports_with_attributes(source: &str) -> Vec<(Strin
             }
             continue;
         };
+        let clause = strip_defer_prefix(clause);
         if !import_clause_shape_ok(clause) {
             continue;
         }
@@ -1385,7 +1416,11 @@ fn build_dep_iife(
         .get(specifier)
         .ok_or_else(|| ScriptError::RuntimeError(format!("Module not found: {specifier}")))?
         .to_string();
-    let is_async = module_source_has_top_level_await(&source);
+    // s361：静态 defer import 声明传染 async（IIFE 须 async 承接 defer 目标 TLA
+    // 的 await 归一发射——sync IIFE 中 `await memoized` 是语法错误且死锁时序不成立：
+    // B 的动态 import(A) 触发的 A eager 编译若为 sync 形态，体会在 deps 挂起前同步
+    // 跑（cyclic-tla-defer-eval flag 断言红态实证面）。
+    let is_async = module_source_has_top_level_await(&source) || source_has_deferred_import_decl(&source);
     build_module_script(&source, specifier, registry, is_async, credentials, visited, path)
 }
 
@@ -1498,6 +1533,13 @@ fn transform_import(
     enclosing_async: bool,
     credentials: &str,
 ) -> Result<String, ScriptError> {
+    // s361：静态 deferred namespace 归一（见 [`strip_defer_prefix`]）。目标模块
+    // 求值语义：提案明文带 TLA 的模块不被 defer——图急切 evaluate 阶段照常跑体至
+    // TLA 挂起（tc39 issue #83 的循环 TLA 死锁时序即建立在此急切求值上），名空间
+    // 臂 await 归一发射天然承接；sync 目标经本臂 eager 内联（体提前求值，spec
+    // 违背——deferred record 形态与动态面门面统一为后续切片，语料无钉面 FIXME）。
+    // https://tc39.es/proposal-defer-import-eval/
+    let clause = strip_defer_prefix(clause);
     // import 'module' — 副作用导入
     if clause.starts_with('\'') || clause.starts_with('"') || clause.starts_with('`') {
         let raw_specifier = extract_string_literal(clause.split(';').next().unwrap_or(clause).trim())?;
@@ -2168,6 +2210,21 @@ fn module_source_has_top_level_await(source: &str) -> bool {
     split_statements(source)
         .iter()
         .any(|statement| statement_scan_has_top_level_await(statement))
+}
+
+/// s361：模块源含**静态** `import defer *` deferred namespace 声明（tc39
+/// proposal-defer-import-eval 静态形式）。async_body 传染谓词——含该声明的模块
+/// 编译为 async IIFE（求值时序与 TLA 目标 await 挂起耦合，见
+/// [`transform_import`] defer 归一臂注记）。误判排除：`import defer from 'm'`
+/// （default 绑定名恰为 defer——`defer` 后须 `*`）、`import deferredX`（标识符
+/// 续字符）、`import.defer(` 动态形态（[`strip_import_keyword`] 对 `.` 起始返
+/// None 天然排除）。
+pub fn source_has_deferred_import_decl(source: &str) -> bool {
+    split_statements(source).iter().any(|statement| {
+        strip_import_keyword(statement.trim())
+            .and_then(|clause| clause.strip_prefix("defer"))
+            .is_some_and(|after| after.trim_start().starts_with('*'))
+    })
 }
 
 /// 单语句扫描（字节面——UTF-8 续字节不与 ASCII 引号/反斜杠/斜杠冲突，
@@ -3093,6 +3150,110 @@ mod tests {
         let eager = compile_dependency_iife("https://z.test/entry.js", &registry).unwrap();
         assert!(!eager.contains("__zwDepsPromise"), "eager 发射零 defer 产物：{eager}");
         assert!(eager.contains("return _exports;"), "eager 发射导出面不变：{eager}");
+    }
+
+    // s361：静态 deferred namespace（`import defer * as ns from`）——defer 前缀归一
+    // 名空间臂（async TLA 目标 await 归一急切求值、活导出面绑定）；default 绑定名
+    // 恰为 `defer` 与标识符前缀重叠（`deferredX`）不误归一。
+    #[test]
+    fn test_static_defer_namespace_arm_s361() {
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://z.test/a.js",
+            "import defer * as nsB from './b.js';\nexport const value = nsB.tlaValue;",
+        );
+        registry.register(
+            "https://z.test/b.js",
+            "globalThis.__bRan = true;\nawait Promise.resolve();\nexport const tlaValue = 'tla';",
+        );
+        let out = compile_dependency_iife_deferred("https://z.test/a.js", &registry).unwrap();
+        assert!(
+            out.contains("= await (globalThis.__moduleFailures"),
+            "async TLA 目标 await 归一发射（deps fn 急切求值，死锁时序面）：{out}"
+        );
+        assert!(
+            out.contains("var nsB = _mod_") || out.contains("var nsB = _modref_"),
+            "defer 归一名空间臂绑定发射：{out}"
+        );
+        assert!(!out.contains("import defer"), "归一后源内 defer 声明不再出现：{out}");
+        // 边界：default 绑定名恰为 `defer`——不归一，走 default 导入臂。
+        let mut registry2 = ModuleRegistry::new();
+        registry2.register(
+            "https://z.test/c.js",
+            "import defer from './d.js';\nglobalThis.__got = defer;",
+        );
+        registry2.register("https://z.test/d.js", "export default 7;");
+        let out2 = compile_dependency_iife_deferred("https://z.test/c.js", &registry2).unwrap();
+        assert!(
+            out2.contains("Object.defineProperty(globalThis, \"defer\""),
+            "default 绑定名 defer 走 default 臂（getter 名 defer）：{out2}"
+        );
+        // 边界：标识符前缀重叠 `deferredX`——default 绑定不误归一。
+        let mut registry3 = ModuleRegistry::new();
+        registry3.register(
+            "https://z.test/e.js",
+            "import deferredX from './d.js';\nglobalThis.__got2 = deferredX;",
+        );
+        registry3.register("https://z.test/d.js", "export default 9;");
+        let out3 = compile_dependency_iife_deferred("https://z.test/e.js", &registry3).unwrap();
+        assert!(
+            out3.contains("Object.defineProperty(globalThis, \"deferredX\""),
+            "deferredX 绑定不误归一：{out3}"
+        );
+    }
+
+    // s361：静态 defer 声明传染 async IIFE——eager 编译（build_dep_iife /
+    // compile_module_script）对含 `import defer *` 的源以 async 包裹（承接 defer
+    // 目标 TLA 的 await 归一发射；sync 形态下 cyclic 页 A eager 编译体提前跑红态面）。
+    #[test]
+    fn test_defer_import_async_contagion_s361() {
+        assert!(
+            source_has_deferred_import_decl("import defer * as ns from './b.js';"),
+            "标准静态形态命中"
+        );
+        assert!(
+            source_has_deferred_import_decl("import defer*as ns from './b.js';"),
+            "压缩形态命中"
+        );
+        assert!(
+            !source_has_deferred_import_decl("import defer from './d.js';"),
+            "default 绑定名 defer 不命中"
+        );
+        assert!(
+            !source_has_deferred_import_decl("import deferredX from './d.js';"),
+            "标识符前缀重叠不命中"
+        );
+        assert!(
+            !source_has_deferred_import_decl("import.defer('./b.js');"),
+            "动态形态不命中"
+        );
+        let mut registry = ModuleRegistry::new();
+        registry.register(
+            "https://z.test/a.js",
+            "import defer * as nsB from './b.js';\nexport const value = nsB.tlaValue;",
+        );
+        registry.register(
+            "https://z.test/b.js",
+            "globalThis.__bRan = true;\nawait Promise.resolve();\nexport const tlaValue = 'tla';",
+        );
+        // eager 编译传染：A 无自身 TLA，但含 defer 声明 → async IIFE。
+        let eager = compile_dependency_iife("https://z.test/a.js", &registry).unwrap();
+        assert!(
+            eager.starts_with("(async function() {"),
+            "含 defer 声明的 eager 编译传染 async 包裹：{eager}"
+        );
+        assert!(
+            eager.contains("= await (globalThis.__moduleFailures"),
+            "async 包裹下 await 合法（deps 挂起时序成立面）：{eager}"
+        );
+        // 非 defer 源零传染（回归守卫）。
+        let mut registry4 = ModuleRegistry::new();
+        registry4.register("https://z.test/plain.js", "globalThis.__p = 1;");
+        let plain = compile_dependency_iife("https://z.test/plain.js", &registry4).unwrap();
+        assert!(
+            plain.starts_with("(function() {"),
+            "无 defer 声明源保持 sync IIFE（零传染回归面）：{plain}"
+        );
     }
 
     #[test]
