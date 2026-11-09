@@ -5,19 +5,22 @@ runner 探针两形态缺陷修复）；DC-2 encoding + wasm worker 变体面收
 `f57d91099` +11,728 过、`c181cccab` +1,129 过）+ test262 三大失败簇定性
 （eval-code 早期错误 / source-phase imports / import defer 均 V8 引擎侧，
 [证据](evidence/dc2-test262-cluster-triage-2026-11-10.md)）+ export default
-具名函数声明簇修复（`e3b0caa2b` +27 过，[证据](evidence/dc2-test262-export-default-fix-2026-11-10.md)）：
-净增账 ~75,059 / 76,000。
+具名函数声明簇修复（+27 过）+ expressions 负例桶 import 形态严格化修复
+（+67 过，[证据](evidence/dc2-test262-import-shape-fix-2026-11-10.md)）：
+净增账 ~75,126 / 76,000。
 
 **卡点** 净增 76,000 账：test262 ~51,250 + encoding 自动 +10,925 + encoding
-worker +11,728 + wasm worker +1,129 + export-default 簇 +27 ≈ 75,059，
-余 ~941：encoding 残余 ~1,194 中的可回收项（iframe 面 ~330；缺语料 2 源已
-关闭——pin 404 不可补拉，DC-3 同 revision 归一自动出分母）+ wasm 引擎小簇
-~56 + test262 零星可回收项（四大簇 ~280 案已定性引擎侧不回收）。engine
-挂账 2 项（timer 异常无 window error 报告、unhandledrejection 未实现）见证据文。
+worker +11,728 + wasm worker +1,129 + export-default 簇 +27 + import 形态簇
++67 ≈ 75,126，余 ~874：encoding 残余 ~1,194 中的可回收项（iframe 面 ~330；
+缺语料 2 源已关闭——pin 404 不可补拉，DC-3 同 revision 归一自动出分母）+
+wasm 引擎小簇 ~56 + test262 剩余簇（module early-error 132——含 escaped-await
+IIFE 降级输入、SAB clone 106、ShadowRealm 57、递归深度 34；expressions 负例
+桶已关闭：67 修复 + 9 定性引擎/结构侧）。engine 挂账 2 项（timer 异常无
+window error 报告、unhandledrejection 未实现）见证据文。
 
 **下一步** ① test262 剩余簇归簇（module early-error 132、SAB clone 106、
-ShadowRealm 57、expressions 负例 76、递归深度 34——逐簇定性可修 vs 引擎
-差异，[DC-1 基线](evidence/dc1-full-baseline-2026-11-10.md)）；② encoding
+ShadowRealm 57、递归深度 34——逐簇定性可修 vs 引擎差异，
+[DC-1 基线](evidence/dc1-full-baseline-2026-11-10.md)）；② encoding
 残余可回收项（iframe 面 ~330 需 iframe/realm 管道，评估收益）；③ DC-3 全量
 对账（同 revision 归一、验收线 1,393,955）。
 
@@ -26,7 +29,7 @@ ShadowRealm 57、expressions 负例 76、递归深度 34——逐簇定性可修
 | 里程碑 | 状态 | 缺口和证据 |
 |---|---|---|
 | DC-1 基线与试跑 | **完成** | [DC-1 全量基线](evidence/dc1-full-baseline-2026-11-10.md)——53,166 案 96.39%，变体/归簇定量，CI 三分片 + filter 多段语义，探针缺陷两形态修复；[通道试跑](evidence/dc1-channel-smoke-2026-11-09.md)；发布快照基线 1,317,955 / 1,398,399 |
-| DC-2 按簇收敛 | 进行中 | [encoding 定量](evidence/dc2-encoding-gap-2026-11-10.md) + [encoding worker 收口](evidence/dc2-worker-variants-2026-11-10.md)（`f57d91099`，+11,728 过、组残余 ~1,194）+ [wasm 定量与 worker 收口](evidence/dc2-wasm-gap-2026-11-10.md)（`c181cccab`，+1,129 过、残余 1,674 = 引擎 ~56 + 划界 ~1,369）+ [test262 三簇定性](evidence/dc2-test262-cluster-triage-2026-11-10.md)（eval-code 早期错误 / source-phase / import defer 均 V8 引擎侧，~250 案不回收）+ [export default 具名声明簇修复](evidence/dc2-test262-export-default-fix-2026-11-10.md)（`e3b0caa2b`，+27 过）；剩余簇：module 早期错误检出、$262.createRealm（281 案）/agent（112 案）/gc（15 案）、ReferenceError 语义 |
+| DC-2 按簇收敛 | 进行中 | [encoding 定量](evidence/dc2-encoding-gap-2026-11-10.md) + [encoding worker 收口](evidence/dc2-worker-variants-2026-11-10.md)（`f57d91099`，+11,728 过、组残余 ~1,194）+ [wasm 定量与 worker 收口](evidence/dc2-wasm-gap-2026-11-10.md)（`c181cccab`，+1,129 过、残余 1,674 = 引擎 ~56 + 划界 ~1,369）+ [test262 三簇定性](evidence/dc2-test262-cluster-triage-2026-11-10.md)（eval-code 早期错误 / source-phase / import defer 均 V8 引擎侧，~250 案不回收）+ [export default 具名声明簇修复](evidence/dc2-test262-export-default-fix-2026-11-10.md)（+27 过）+ [expressions 负例桶 import 形态严格化](evidence/dc2-test262-import-shape-fix-2026-11-10.md)（+67 过：63 import-defer + 4 importcall；8 strict callexpression 三引擎一致定性引擎侧）；剩余簇：module 早期错误检出（IIFE 降级输入）、$262.createRealm（281 案）/agent（112 案）/gc（15 案）、ReferenceError 语义 |
 | DC-3 全量对账 | 待执行 | 验收线为 1,393,955 项通过，证据待补 |
 
 碰撞记录暂无。遇到共享文件或语料 pin 冲突时，记下对应 goal、范围和可并行工作。
