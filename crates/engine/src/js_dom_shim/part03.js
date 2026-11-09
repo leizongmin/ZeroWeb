@@ -13262,11 +13262,64 @@
     reg[name] = { ctor: ctor, options: options || {}, localName: _wcExtends, isCustomizedBuiltIn: _wcExtends !== null, disabledFeatures: _wcDisFeat };
     byCtor.set(ctor, name);
     _ce_registry_gen++;
+    if (_wcExtends !== null) _ce_cbi_count++;
     try { void ctor.observedAttributes; } catch (_eObs) {}
     if (!opts.noUpgrade) {
       try {
         if (globalThis.document && globalThis.document.documentElement) {
-          _ceUpgradeSubtree(globalThis.document);
+          // OPTIMIZATION（2026-11-10，github.com 新 bundle define×56 撞 30s 看门狗
+          // 定谳；shim 两侧 head 字节全等=latent 二次面被动暴露）：define 升级弃
+          // 逐节点 DFS（firstChild/nextSibling 每节点 2-3 次代理 trap→宿主往返
+          // ~10ms/节点 + tag miss 每节点 getAttribute('is') 1 次往返），改两阶段：
+          // 阶段一定位候选（零 ctor 执行），阶段二仅对候选执行升级（候选个位数，
+          // ctor 体变异 DOM 不再污染全量 tag 读）。阶段一按世界分支：
+          // - autonomous（`_ce_cbi_count===0`，常态）：`_ceDefineCandidates` 按
+          //   tagged payload 直取（单次往返/缓存解析，免全量代理枚举——全量枚举
+          //   的 nodeType/tagName trap 链快照重建是 56 defines 形态剩余主源，
+          //   杀点栈 `_zwDocAllElements`→push→get trap→`_zwIsSelectTag` 实证）。
+          // - cbi 注册世界：`_zwDocAllElements()` 全量平面筛选 + 每节点 is 反查
+          //  （结构性必多读，仅该世界承担；筛选窗口零 ctor ⇒ `_zwTagCache` 印章
+          //   新鲜 ⇒ tag 读零宿主往返，baidu scanAndDoRender 2 万元素 15s 自旋
+          //   同病同药；pendingAdded 增长致印章失配的混排退化已被两阶段分离消除
+          //  ——实测混排形态 3 walk 24.7s 仍撞看门狗）。
+          // 候选序=文档序（payload 记录序/列表序=树序，与旧 DFS 先序一致）；
+          // Text/Comment 无 tag 本被旧 DFS 跳过，候选天然 miss，覆盖域等价。
+          // 快照候选序不受升级期 ctor 变异影响（spec：候选集 define 步一次性
+          // 确定）；升级期间新建元素经创建面钩子升级（R90/R365/R366）。根调用
+          // 不落 document 节点——消除 document-proxy get trap 读 tagName 触发
+          // `_namedSnapshot` 全树扫描（part06 Range-mutations 90s 截断同源浪费，
+          // 旧形态 11 defines=11 次全树白扫）。升级一次性/connectedCallback/ctor
+          // 再入语义零变化（升级原语 `_ceUpgradeNode` 单节点化与创建/附着面共用，
+          // 子树语义调用方走 `_ceUpgradeSubtree`）。
+          // https://html.spec.whatwg.org/multipage/custom-elements.html#dom-customelementregistry-define
+          //（upgrade step：升级文档树中定义名匹配元素——匹配集合按名定位后逐个
+          // 升级，非全树逐点重扫）。
+          var _cands;
+          if (_ce_cbi_count > 0) {
+            _cands = [];
+            var _els = _zwDocAllElements();
+            for (var _ei = 0; _ei < _els.length; _ei++) {
+              var _cew = _els[_ei];
+              if (!_cew) continue;
+              var _tagLc = _elTagName(_cew);
+              var _entry = _tagLc ? _ce_registry[_tagLc] : undefined;
+              // customized built-in 候选：registry 无 autonomous 命中时反查 is
+              //（本分支 `_ce_cbi_count>0` 恒真——cbi 注册世界承担逐节点读）。
+              if (!_entry && _tagLc) {
+                var _upIs = null;
+                try { _upIs = _cew.getAttribute('is'); } catch (_eUpIs1) { _upIs = null; }
+                if (_upIs && globalThis.__zwCERegistryLookup) {
+                  _entry = globalThis.__zwCERegistryLookup(String(_upIs), _tagLc) || undefined;
+                }
+              }
+              if (_entry && _entry.ctor) _cands.push(_cew);
+            }
+          } else {
+            _cands = _ceDefineCandidates(name);
+          }
+          for (var _ui = 0; _ui < _cands.length; _ui++) {
+            _ceUpgradeNode(_cands[_ui]);
+          }
         }
       } catch (_e149u) {}
     }
@@ -13894,7 +13947,12 @@
       var tagLc = tag.toLowerCase();
       var entry = _ce_registry[tagLc];
       // WC-M1 切片 4：customized built-in 升级——is 内容属性命中（localName 匹配）。
-      if (!entry) {
+      // OPTIMIZATION（2026-11-10）：registry 无任何 customized built-in entry 时
+      // （`_ce_cbi_count===0`，define 只增不减）is 反查结构性恒 miss——每节点
+      // getAttribute('is') 宿主往返全可省（同 `_ceEntryFor` 的 gen=0 结构性空
+      // 快道先例 part03 `~41ms 主项` 注）。守卫只为省无谓往返，语义不变
+      //（有 cbi entry 时照走原链）。
+      if (!entry && _ce_cbi_count > 0) {
         var upIs = null;
         try { upIs = el.getAttribute('is'); } catch (_eUpIs) { upIs = null; }
         if (upIs && globalThis.__zwCERegistryLookup) {
@@ -13928,16 +13986,119 @@
         }
       }
     }
-    // 递归子节点（firstChild → nextSibling 链）。
-    var child = el.firstChild;
-    while (child) {
-      var next = child.nextSibling;
-      _ceUpgradeNode(child);
-      child = next;
-    }
+    // 单节点原语（2026-11-10 define walk 两阶段拆分）：只升级本节点，不递归子树
+    //——define 全文档升级走 `_ceDefine` 平面候选 walk（候选序=文档序）；子树
+    // 语义调用方（customElements.upgrade、`__zwCeAttachForAdded` 解析产物整树）
+    // 经 `_ceUpgradeSubtree` 显式递归。旧行为为本函数尾递归 firstChild/nextSibling
+    // 链——平面 walk 逐候选调用时会对每候选重走整子树（O(N·depth) trap 往返），
+    // 故递归上提到子树入口。
   }
   function _ceUpgradeSubtree(root) {
     _ceUpgradeNode(root);
+    // 递归子节点（firstChild → nextSibling 链）——树序先序升级，含 Text/Comment
+    //（`_ceUpgradeNode` 无 tag 早退）；define 全文档升级不经此处（见上注）。
+    var child = root.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      _ceUpgradeSubtree(child);
+      child = next;
+    }
+  }
+  // define 升级候选直取（autonomous 定义，`_ce_cbi_count===0` 世界）——tagged
+  // payload（`__zw_query_all_tagged('*')` 单次往返的 sel\x1ftag 记录串）按名匹配，
+  // 只 wrap 命中 sel；不做全量元素枚举（56 defines × 3 万元素 nodeType/tagName
+  // trap 链的快照重建 = define walk 剩余主源，见 `_ceDefine` 升级块注）。
+  // OPTIMIZATION（2026-11-10）：
+  // - payload 解析缓存（stamp 相同 ⇒ 宿主视图未变 ⇒ sel/tag 对解析结果复用）；
+  //   tag 只随宿主视图变（payload 字节决定），spec tagName 不可变
+  //   （https://dom.spec.whatwg.org/#dom-element-tagname）——与 R-baidu3 同论证。
+  // - pending 动态子并入与 `_zwDocAllElements` 同判据（R54 in-doc 门 + R5206
+  //   视图回放补偿代理排除——payload 已含回放内容，补偿代理并入即双计）；候选
+  //   按 wrapper identity 去重（pending 已 apply 的条目与 payload 并存窗口）。
+  // - 命中序 = payload 记录序 = 宿主文档序（=树序，与旧 DFS 先序一致）。
+  // - 无 tagged 回调环境回落 `_zwDocAllElements()` 全量筛选（印章新鲜窗口内
+  //   tag 读零宿主往返，语义同）。
+  var _ceDefWalkCache = { stamp: null, payload: null, entries: null };
+  function _ceDefineCandidates(nameLc) {
+    var cands = [];
+    var seen = new Set();
+    var pushCand = function (el) {
+      if (!el || seen.has(el)) return;
+      seen.add(el);
+      cands.push(el);
+    };
+    var tagged = null;
+    if (typeof __zw_dom_view_stamp === 'function') {
+      try {
+        var _st = String(__zw_dom_view_stamp() || '');
+        if (_st && _ceDefWalkCache.stamp === _st && _ceDefWalkCache.entries) {
+          // stamp 未变 ⇒ payload 与 entries 仍新鲜。
+          tagged = _ceDefWalkCache.payload;
+        }
+      } catch (_eSt) { }
+    }
+    if (tagged === null) {
+      tagged = (typeof __zw_query_all_tagged === 'function') ? String(__zw_query_all_tagged('*') || '') : '';
+      if (tagged && typeof __zw_dom_view_stamp === 'function') {
+        try {
+          var _st2 = String(__zw_dom_view_stamp() || '');
+          if (_st2) {
+            _ceDefWalkCache.stamp = _st2;
+            _ceDefWalkCache.payload = tagged;
+            _ceDefWalkCache.entries = null; // 下方解析后回填
+          }
+        } catch (_eSt2) { }
+      }
+    }
+    if (tagged) {
+      if (_ceDefWalkCache.entries === null || _ceDefWalkCache.payload !== tagged) {
+        var entries = [];
+        var recs = tagged.split('|');
+        for (var i = 0; i < recs.length; i++) {
+          var rec = recs[i];
+          var sp = rec.indexOf('\x1f');
+          if (sp < 0) continue;
+          var rest = rec.slice(sp + 1);
+          var sp2 = rest.indexOf('\x1f');
+          // t7：第三段为 ns（本处只比 tag，忽略）；tag 存储形态小写（part05
+          // tmap 同源解析、`_realTag` 读出侧大写化）。
+          var tag = sp2 < 0 ? rest : rest.slice(0, sp2);
+          entries.push([rec.slice(0, sp), tag]);
+        }
+        _ceDefWalkCache.payload = tagged;
+        _ceDefWalkCache.entries = entries;
+      }
+      var es = _ceDefWalkCache.entries;
+      for (var j = 0; j < es.length; j++) {
+        if (es[j][1] === nameLc) {
+          try {
+            var px = _wrapSelector(es[j][0]);
+            if (px) pushCand(px);
+          } catch (_eW) { }
+        }
+      }
+    } else {
+      // 无 tagged 形态：平面快照全量筛选（零 ctor 执行窗口内 `_zwTagCache`
+      // 印章新鲜 ⇒ tag 读零宿主往返）。
+      var els = _zwDocAllElements();
+      for (var k = 0; k < els.length; k++) {
+        var el = els[k];
+        if (el && _elTagName(el) === nameLc) pushCand(el);
+      }
+    }
+    // 动态 pending 子（与 `_zwDocAllElements` 同判据；tag 读逐条、表小）。
+    if (typeof _zwPendingAdded !== 'undefined' && _zwPendingAdded) {
+      for (var p = 0; p < _zwPendingAdded.length; p++) {
+        var pd = _zwPendingAdded[p];
+        if (!pd || pd.nodeType !== 1) continue;
+        if (pd.__zwHandle && typeof _zwMutationInDoc === 'function' && !_zwMutationInDoc(null, pd.__zwHandle)) continue;
+        if (!pd.__zwHandle && !pd.__zwSelector && pd._zwSelPendingParent
+            && pd._zwSelPendingParent.parentSel && pd._zwSelPendingParent.inViewReplay
+            && !pd._zwSelPendingParent.noWire) continue;
+        if (_elTagName(pd) === nameLc) pushCand(pd);
+      }
+    }
+    return cands;
   }
   // R3274：升级时对 ctor.observedAttributes 派发初始 attributeChangedCallback（name, null, 当前值）。
   // observedAttributes 缺失（ctor 无静态 getter）/ 空 → 无回调。getAttribute 经元素自身方法读（native
@@ -14140,6 +14301,8 @@
   }
   var _ceIsChecked = {}; // key → is 反查已做（免每 setter 重查 host 回调——热路径）
   var _ce_registry_gen = 0; // registry 世代号（define ++）
+  var _ce_cbi_count = 0; // customized built-in entry 计数（define ++，registry 无卸载）——
+                         // =0 时升级 walk 的每节点 is 反查结构性恒 miss，可省（同 gen=0 快道先例）。
   // is 属性写入/移除后失效该 key 的 CE entry 缓存（is 反查结果与 is 属性存在性耦合）。
   globalThis.__zwCeInvalidateEntry = function (key) {
     delete _ceEntryByKey[key];
