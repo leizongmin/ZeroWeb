@@ -147,12 +147,18 @@ pub fn parse_color_with_scheme(value: &str, dark: bool) -> Option<ColorValue> {
     }
 
     // 系统颜色 dark used-scheme 面板（CSS Color 4 §system-colors：系统色按元素 used
-    // color-scheme 取 light/dark 面板值；Chrome dark CanvasText=白 先例）。dark=true 仅覆
-    // CanvasText 族五键；light 面板 = 既有静态值（parse_color 恒 dark=false，既有调用方
+    // color-scheme 取 light/dark 面板值；Chrome dark CanvasText=白 先例）。dark=true 覆
+    // CanvasText 族五键与 Canvas 背景族（canvas/window，Chrome dark=#202124 先例，与
+    // CanvasText 白配套）；light 面板 = 既有静态值（parse_color 恒 dark=false，既有调用方
     // 零回归）。driving: html/semantics meta color-scheme 语料 assert 经 CanvasText
-    // light(黑)/dark(白) 差分判定文档 scheme（compute-root-color-scheme.js）。
+    // light(黑)/dark(白) 差分判定文档 scheme（compute-root-color-scheme.js）；
+    // the-dialog-element/default-color 案2 经 Canvas dark 差分断言面板（dialog UA 色）。
+    // scrollbar 等 dark 面板异值键不在本臂（无钉面不扩刀，light 静态值兜底）。
     if dark {
         let l = value.to_ascii_lowercase();
+        if matches!(l.as_str(), "canvas" | "window") {
+            return Some(ColorValue::Rgba(32, 33, 36, 255));
+        }
         if matches!(
             l.as_str(),
             "canvastext" | "captiontext" | "infotext" | "menutext" | "windowtext"
@@ -1575,6 +1581,28 @@ mod tests {
         // 现代色大小写不敏感
         assert_eq!(parse_color("canvas"), parse_color("Canvas"));
         assert_eq!(parse_color("graytext"), parse_color("GrayText"));
+    }
+
+    // ── 系统颜色 dark used-scheme 面板（s375：Canvas 背景族）────────────
+
+    #[test]
+    fn test_system_color_dark_panel_canvas_family() {
+        // driving: the-dialog-element/default-color 案2——dialog UA background-color:
+        // Canvas 须按元素 used color-scheme 取 dark 面板值（Chrome dark=#202124），
+        // 与 CanvasText dark 白配套构成 not_equals 差分面。
+        assert_eq!(
+            parse_color_with_scheme("Canvas", true),
+            Some(ColorValue::Rgba(32, 33, 36, 255))
+        );
+        // Window 同族同面板；大小写不敏感与 parse_color 一致。
+        assert_eq!(
+            parse_color_with_scheme("window", true),
+            Some(ColorValue::Rgba(32, 33, 36, 255))
+        );
+        // light 面板 = 既有静态白，不受 dark 臂影响。
+        assert_eq!(parse_color_with_scheme("Canvas", false), parse_color("Canvas"));
+        // scrollbar 等 dark 面板异值键不在本臂——dark 下保持 light 静态兜底。
+        assert_eq!(parse_color_with_scheme("Scrollbar", true), parse_color("Scrollbar"));
     }
 
     // ── CSS Color 4 color() 预定义颜色空间（R2255）──────────────────────
