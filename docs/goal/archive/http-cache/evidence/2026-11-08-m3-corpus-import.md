@@ -2,7 +2,7 @@
 
 **日期**: 2026-11-08
 **前置**: 46 号 runner-net-infra M3 框架交付（PyRoute 注册表化，切片一~五
-已落 master；[py 端点普查档](../../runner-net-infra/evidence/2026-11-08-m0-py-endpoint-census.md)
+已落 master；[py 端点普查档](../../../runner-net-infra/evidence/2026-11-08-m0-py-endpoint-census.md)
 P-A 池分工「47 号只写端点表」）+ 本 goal M3 net 层语义（@ 72fcd2434，
 zero-net lib 530P/0F）。
 

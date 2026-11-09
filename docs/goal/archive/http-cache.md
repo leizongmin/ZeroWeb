@@ -1,8 +1,8 @@
 # 引擎 HTTP 缓存层 — freshness/条件请求/request.cache 模式态（内存态语义层）
 
-**版本**: v1.6
-**日期**: 2026-11-09（M4 终验收口——全窗 A/B 零回归 + fetch 头条 +103P 不回落；DC-1~DC-4 全达成）
-**状态**: **Done**——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现）、DC-4 ✅（[M4 终验证据档](http-cache/evidence/2026-11-09-m4-final-verification.md)：全窗 13,992P 真 P→F=0 对 v2/v3 双基线、fetch 头条 2,369P/17.85% 对 v3 复测 +103P、corpus 124P/138 入账）；越界发现一项引擎回归（ddb1e73cf shadow 栈溢出，非本 goal 面）记[待决项](#待决项)
+**版本**: v1.7
+**日期**: 2026-11-09（M4 终验收口——全窗 A/B 零回归 + fetch 头条 +103P 不回落；DC-1~DC-4 全达成）；同日归档（模式 A，归档复跑定向三账零漂移）
+**状态**: **Done（已归档）**——DC-1 ✅、DC-2 ✅（[M2 证据档](http-cache/evidence/2026-11-08-m2-wire-propagation.md)，族 102/102 + 真 P→F=0）、DC-3 ✅（双通道同层单实现）、DC-4 ✅（[M4 终验证据档](http-cache/evidence/2026-11-09-m4-final-verification.md)：全窗 13,992P 真 P→F=0 对 v2/v3 双基线、fetch 头条 2,369P/17.85% 对 v3 复测 +103P、corpus 124P/138 入账）；越界发现一项引擎回归（ddb1e73cf shadow 栈溢出，非本 goal 面）记[待决项](#待决项)
 **执行模式**: 引擎专项（网络栈基建）+ WPT fetch/api 语料验收
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——网络面）
 **前账**: `docs/goal/archive/net-api-compat-v2.md`（2026-10-29 收口——
@@ -53,7 +53,7 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
 ## Done Criteria
 
 - **DC-1（M0 对账）**：98F 分簇 + corpus 盘点 + 架构落点说明书（含 IPC
-  契约影响面判定）落 `docs/goal/http-cache/evidence/`；DC-4 数值门落定
+  契约影响面判定）落 `docs/goal/archive/http-cache/evidence/`；DC-4 数值门落定
   并回填本文件。
 - **DC-2（缓存核心）**：freshness/条件请求/Vary 语义落引擎（RFC 9111
   对应条款注释锚定）；单测覆盖命中/过期/再验证三路径。
@@ -141,7 +141,7 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
 ## 依赖约束（run-rules §9）
 
 - 与 43 号（net-api-compat-v3，已收口归档
-  [archive/net-api-compat-v3.md](archive/net-api-compat-v3.md)）共享 fetch
+  [net-api-compat-v3.md](./net-api-compat-v3.md)）共享 fetch
   通道——缓存层改动同窗复验 v2 终账（11,040 + S 系列）与 v3 终账
   （13,256P，2026-11-07 收口）逐 subtest 零回归；43 号 request-cache 账以
   本 goal 交付承接（两 goal 控制面互指）。

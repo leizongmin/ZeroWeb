@@ -62,7 +62,7 @@
 ## 三、fetch 头条不回落——cron 快照面核对
 
 - **基线锚**：v3 复测 2,266P/17.07%（wpt.fyi universe 2026-11-02 快照分母
-  13,274；[43 号档案](../../../goal/archive/net-api-compat-v3.md) coverage
+  13,274；[43 号档案](../../net-api-compat-v3.md) coverage
   对账表）。
 - **coverage-2026-11-07 快照**（weekly cron run 42389581601，所测树
   56f1febb7）：fetch 组聚合 **2,265P/13,324 = 17.00%**。

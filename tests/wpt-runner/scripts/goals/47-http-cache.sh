@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Goal: http-cache（编号 47——引擎 HTTP 缓存层 goal 的 corpus 消费面，控制面
-# docs/goal/http-cache.md）
+# docs/goal/archive/http-cache.md，2026-11-09 已收口归档；脚本保留供语料续拉）
 #
 # 拉取 fetch/http-cache 语料（M0 对账档 §三盘点：20 文件，Chrome window
 # 变体 417/554=75.3%；DC-4 corpus 门按批次对基准，批次排期对齐 46 号

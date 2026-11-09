@@ -2,7 +2,7 @@
 
 **版本**: v1.0
 **日期**: 2026-11-08（M0 交付）
-**需求来源**: `docs/goal/http-cache.md`（Mission/DC-2/DC-3/DC-4，用户 2026-11-04 拍板立项）
+**需求来源**: `docs/goal/archive/http-cache.md`（Mission/DC-2/DC-3/DC-4，用户 2026-11-04 拍板立项）
 **现状对账**: [M0 对账档](2026-11-08-m0-reconciliation.md)（代码现状、102F 分簇、corpus 盘点）
 **流程**: lei-spec-rfc 标准模式——需求材料以控制面为权威，本文只交付设计（RFC）与实施交接
 
@@ -303,7 +303,7 @@ js_worker 线程模型、browser 单进程的 tab_js_worker 同构。`__zw_fetch
 | `apps/browser/src/tab_js_worker.rs` | 同上同构 | M2 |
 | `tests/wpt-runner/src/testharness.rs` | cache.py 路由臂 + 案级 stash；CaseHttpCache 包裹层（FetchResponse↔HttpResponse 适配）；cache 模式映射 | M2/M3 |
 | `tests/wpt-runner/src/main.rs` / Makefile | 无新 target——`testharness-net-api FILTER=` 既有面 | — |
-| `docs/goal/http-cache.md` | 里程碑/DC 账面回填 | 每批 |
+| `docs/goal/archive/http-cache.md` | 里程碑/DC 账面回填 | 每批 |
 
 ### 6.2 推荐修改顺序（依赖序）
 
