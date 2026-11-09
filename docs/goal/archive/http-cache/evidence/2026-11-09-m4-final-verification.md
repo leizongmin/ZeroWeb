@@ -165,6 +165,13 @@
   caa08eb45 定向复跑 request-cache 族窗 **106P/0F** + headers 窗
   **286P/0F**，均与 M3/M4 账面全等——他流 cf2e22863 engine 提交落地后
   goal 交付面零漂移，文档与实态一致。
+- **corpus 窗归档后复跑（2026-11-09，零漂移复核尾项）**：current main
+  4b020ea96 复跑 FILTER=http-cache **124P/14F**，逐文件与 M3 corpus 账
+  全等（含 cc-request 1F/credentials 2F/partial 1P·8F/post-patch 2F/
+  pragma 1F 失败分布；partial 落绑定跑形态）。过程注记：首跑空结果
+  exit 1——工作树语料已不在（gitignored）且 20 号拉取脚本划界排除
+  fetch/http-cache，经 47 号脚本带 GITHUB_TOKEN 续拉后复跑全等；语料
+  预置脚本保留的决策被此轮验证。
 
 ## 五、核实方法
 
