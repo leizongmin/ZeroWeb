@@ -27,6 +27,10 @@
 - 单文件腿（vs F1' 终态零漂移）：iol 1759P/2F、iul 2061P/4F、ip 6989P/206F、ilb 1658P/33F、ihtml 1446P/119F；exec×3 行级恒一（1332P/474F、0P/1F、5P/1F）。
 - enginelib：failed=7 名册双门恒一（6 先例 + r2967 外部债）；battery 七腿 420/880/1104/552/3456/2607/1455 全同数 F=0 T=0；binary sig 全在产物 + fbqRet2×3 计数恒一 + `__zw_ce_fb_indeterm` 在产物。
 
+## 推送重锚（rebase 并入组合树）
+
+刀体经 rebase 推为 857fdf2fa。入站域（aa61062bf）：b9f00f5b4 触 part06（:3531 +12）与 4d3bae756/b9f00f5b4 触 part01（+92/−23）——与刀臂 part06 :5358-5364 域不相交（相隔 ~1800 行），刀核文件 part01g md5 `5b1990ec` 恒一、bridge `b6b9a516` 恒一，刀臂特征串 `__zw_ce_fb_indeterm` ×3 + fbqRet2 接线在树。按推树组合纪律补 fb 腿重绑：组合树重建二进制直跑 formatblock 全页 **5007P/39F**（rc=2 与 39 残红一致，仅留痕），judge vs fbr3 **F2P=110 / P2F=0 VERDICT OK**（fbr4b-fb-rebind.log，2026-11-10）——刀判读绑定推树字节恒一。重锚后锚值：part06 `321fca20`、part01 `308b4a44`、其余六点恒一；下一刀批脚本按现树重取锚。
+
 ## 挂账
 
 - apply 侧包裹形族（compare innerHTML + 关联 qV-after）：color:blue 样式携带、xmp/listing、table tr 跨胞、div>p、blockquote 嵌套/拆分、hgroup、h1<br> 合并、del、p→h5 dps-div 交互。
