@@ -30,7 +30,7 @@
 ```bash
 make android-apk            # 模拟器 Debug（x86_64）→ app/build/outputs/apk/emulator/debug/app-emulator-debug.apk
 make android-release-apk    # arm64 Release → app/build/outputs/apk/arm64/release/app-arm64-release.apk
-make android-renderer-apk   # arm64 Release + renderer feature（V8 从源码交叉编译；六项前置环境 + 代理，见 evidence/v8-renderer-path.md）
+make android-renderer-apk   # arm64 Release + renderer feature（V8 从源码交叉编译；六项前置环境 + 代理，见 ../../../docs/goal/archive/android-browser/evidence/v8-renderer-path.md）
 ```
 
 - **依赖**：Android SDK platform 36、NDK（经 cargo-ndk 驱动）、rustup target `aarch64-linux-android` / `x86_64-linux-android`、JDK 17；`make android-preflight` 自校验

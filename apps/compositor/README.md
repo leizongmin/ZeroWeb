@@ -4,7 +4,7 @@
 
 ## 概述
 
-`ZeroWeb Compositor` (`zero-compositor`) 是 ZeroWeb 多进程架构中的合成器独立进程（C2 骨架），对照 Ladybird 2026-05 合成器独立进程设计（调研报告 §3.3/§3.4）：合成与 backing store 管理从渲染进程移出。渲染进程把页面绘制快照（`CompositorFrame` / `PaintSnapshotParams`）经 IPC 送达本进程，本进程完成光栅化与双缓冲管理，供显示消费方读取。
+`ZeroWeb Compositor` (`zero-compositor`) 是 ZeroWeb 多进程架构中的合成器独立进程（C2），对照 Ladybird 2026-05 合成器独立进程设计（调研报告 §3.3/§3.4）：合成与 backing store 管理从渲染进程移出。渲染进程把页面绘制快照（`CompositorFrame` / `PaintSnapshotParams`）经 IPC 送达本进程，本进程完成光栅化与双缓冲管理，供显示消费方读取。
 
 详见 `docs/goal/archive/compositor-process-rfc-2026-08-07.md`（已实施归档）。
 

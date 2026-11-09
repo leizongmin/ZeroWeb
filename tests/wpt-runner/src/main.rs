@@ -27,6 +27,7 @@ mod testharness_page_state;
 mod testharness_pointerlock;
 mod testharness_py_routes;
 mod testharness_svg;
+mod testharness_test262;
 mod testharness_wasm_core;
 mod testharness_webcrypto;
 mod testharness_webmessaging;
@@ -76,6 +77,8 @@ Commands:
   testharness-wasm  Run pinned WebAssembly (wasm/jsapi) window testharness cases (page-wasm goal M1 / DC-1)
   testharness-wasm-core  Run imported wasm/core + wasm/webapi testharness corpus
                        (wasm-compat goal M1 / DC-2)
+  testharness-test262  Run imported third_party/test262 corpus (upstream serve
+                       wrapper chain folded single-page; wptfyi-runtime goal DC-1)
   testharness-webstorage  Run pinned WebStorage window testharness cases (webstorage-compat goal M1 / DC-1)
   testharness-fileapi  Run imported FileAPI (blob/file/FileReader/url) window testharness cases (fileapi-compat goal M1 / DC-1)
   testharness-webmessaging  Run imported webmessaging (postMessage/MessageChannel/BroadcastChannel)
@@ -530,6 +533,9 @@ fn run_main() {
         "testharness-wasm" => cmd_testharness_wasm(&options, filter.as_deref()),
         "testharness-wasm-core" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
             testharness_wasm_core::run_wasm_core_cases(wpt_root, filter)
+        }),
+        "testharness-test262" => run_observers_cmd(&options, filter.as_deref(), |wpt_root, filter| {
+            testharness_test262::run_test262_cases(wpt_root, filter)
         }),
         "testharness-webstorage" => cmd_testharness_webstorage(&options, filter.as_deref()),
         "testharness-compression" => cmd_testharness_compression(&options, filter.as_deref()),
@@ -1520,8 +1526,8 @@ fn cmd_testharness_webgl(options: &CliOptions, filter: Option<&str>) {
 /// testharness 用例（webcrypto-compat goal M1 / DC-1——getRandomValues/randomUUID/
 /// subtle 分域基线）。
 ///
-/// 用例由 `scripts/goals/26-webcrypto-compat.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
-/// （gitignored；git trees 深挖 + /common 依赖补拉）；扫描根与 skip 规则见
+/// 用例由 `scripts/goals/38-webcrypto-compat-v3.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
+/// （gitignored；v3 转正子树全子树新增式 + /common 依赖补拉）；扫描根与 skip 规则见
 /// `testharness::run_webcrypto_cases`（idlharness 记账排除）。退出码：有用例
 /// 非 Pass 或用例集为空 → 1（与 testharness-compression 一致）。基线首跑即便大量
 /// Fail 也只用于记录通过率（`--format json` 捕获后写 evidence/），不作为 land 门禁。

@@ -2,7 +2,7 @@
 
 待升级但存在 **API 破坏性变更** 的依赖项清单，需通过专项逐个处理。
 
-> 最后检查日期：2026-10-20（本轮复核：上表五项版本与 Cargo.lock 实测一致（winit 0.30.13 / html5ever 0.29.1 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移；2026-10-19 以来依赖变动仅 engine 接线 `simplecss` 0.2（workspace 既有依赖，CSS 解析面新增消费而非版本升级），不入积压。上轮复核（2026-10-19）：2026-10-15 以来依赖变动为 2026-10-17 webcrypto subtle 面接线一批加密 crate（engine 消费 `aes` / `cbc` / `ctr` / `rsa` / `p256` / `p384` / `p521` / `ed25519-dalek` / `x25519-dalek` 等，均为新增消费面而非积压项版本升级）与 2026-10-14 `rustls` Cargo.lock 升至 0.23.45（GHSA-2mjx-qc3c-rqvc，reqwest/WebSocket 传输侧传递依赖，0.23.x 内升级），均不入积压。上轮复核（2026-10-15）：2026-10-10 以来依赖变动仅上述 rustls 一项。上轮复核（2026-10-10）：2026-10-03 以来依赖变动仅 2026-10-08 WebSocket 页面 API 为 `tungstenite` 启用 `rustls-tls-webpki-roots` feature（版本 0.29 不变），不入积压。上轮复核（2026-10-03）：2026-09-14 以来依赖变动为 2026-09-24 security-hardening M2-s1 zero-security 接线 `sha2`（workspace 既有依赖，hash 门禁用）与 2026-10-02 encoding-compat M2 engine/dom 接线 `encoding_rs` 0.8（Cargo.lock 0.8.35，net 同款 workspace 既有依赖），均为新增消费面而非版本升级，不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
+> 最后检查日期：2026-11-10（本轮复核：html5ever 已于 2026-11-07（commit `ebaea54b7`，selectedcontent 元素族落地随升）由 0.29 升至 `0.38`（Cargo.toml `html5ever = "0.38"` / Cargo.lock 0.38.0），第 3 节改记已完成；`rustls` Cargo.lock 随上游 patch 0.23.45→0.23.46（0.23.x 内）；其余积压项版本与 Cargo.lock 实测一致（winit 0.30.13 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移。上轮复核（2026-10-20）：上表五项版本与 Cargo.lock 实测一致（winit 0.30.13 / html5ever 0.29.1 / reqwest 0.12.28 / wasmi 0.40.0 / v8 150.2.0），无漂移；2026-10-19 以来依赖变动仅 engine 接线 `simplecss` 0.2（workspace 既有依赖，CSS 解析面新增消费而非版本升级），不入积压。上轮复核（2026-10-19）：2026-10-15 以来依赖变动为 2026-10-17 webcrypto subtle 面接线一批加密 crate（engine 消费 `aes` / `cbc` / `ctr` / `rsa` / `p256` / `p384` / `p521` / `ed25519-dalek` / `x25519-dalek` 等，均为新增消费面而非积压项版本升级）与 2026-10-14 `rustls` Cargo.lock 升至 0.23.45（GHSA-2mjx-qc3c-rqvc，reqwest/WebSocket 传输侧传递依赖，0.23.x 内升级），均不入积压。上轮复核（2026-10-15）：2026-10-10 以来依赖变动仅上述 rustls 一项。上轮复核（2026-10-10）：2026-10-03 以来依赖变动仅 2026-10-08 WebSocket 页面 API 为 `tungstenite` 启用 `rustls-tls-webpki-roots` feature（版本 0.29 不变），不入积压。上轮复核（2026-10-03）：2026-09-14 以来依赖变动为 2026-09-24 security-hardening M2-s1 zero-security 接线 `sha2`（workspace 既有依赖，hash 门禁用）与 2026-10-02 encoding-compat M2 engine/dom 接线 `encoding_rs` 0.8（Cargo.lock 0.8.35，net 同款 workspace 既有依赖），均为新增消费面而非版本升级，不入积压；另 tests/playwright-matrix 为 Node 测试-only 工程（playwright-core 1.63.0 pin + ws），不属 Rust 依赖积压范畴）
 
 ## 概要
 
@@ -10,7 +10,7 @@
 |------|------|------|--------|------|--------|
 | [wgpu](#1-wgpu) | ✅ 已完成（`24`→`30`，R3275） | — | — | — | — |
 | [winit](#2-winit) | `0.30` | `0.31` | pre-1.0 minor | 中 | P2 |
-| [html5ever](#3-html5ever) | `0.29` | `0.39` | pre-1.0 minor ×10 | 高 | P2 |
+| [html5ever](#3-html5ever) | ✅ 已完成（`0.29`→`0.38`，2026-11-07） | — | — | — | — |
 | [reqwest](#4-reqwest) | `0.12` | `0.13` | pre-1.0 minor | 低 | P3 |
 | [v8](#5-v8原-rusty-v8已更名) | `150.2.0` | 上游最新 | 受 Deno 发布制约 | 高 | P3 |
 | [wasmi](#6-wasmi) | `0.40` | `1.1` | Major 1.x（0→1） | 高 | P2 |
@@ -39,17 +39,12 @@
 
 ---
 
-## 3. html5ever
+## 3. html5ever — ✅ 已完成（2026-11-07）
 
-- **当前**: `0.29`
-- **目标**: `0.39`
+- **当前**: `0.38`（Cargo.toml `html5ever = "0.38"`，Cargo.lock 0.38.0）
 - **涉及 crate**: `dom`
-- **跳过原因**: 跨越 10 个 pre-1.0 小版本，解析器驱动 trait（`TreeSink`）API 大概率有 breaking changes。
-- **升级策略**:
-  1. 检查 `html5ever` [changelog](https://github.com/servo/html5ever/releases) / 源码 diff
-  2. `dom` 实现了 `TreeSink` trait，是核心适配点
-  3. 升级后必须跑 DOM 构建 + CSS 选择器 + WPT reftest 全套测试
-  4. 备选：评估是否迁移到其他 HTML 解析器
+- **完成情况**: 2026-11-07 commit `ebaea54b7`（selectedcontent 元素族落地）随升 0.29→0.38，`dom` 的 `TreeSink` 适配完成，DOM 构建 + WPT 全通道随例行门禁通过。
+- **备注**: 后续 `0.38`→`0.39` 为常规 minor 跟进，不再列破坏性积压；上游 [changelog](https://github.com/servo/html5ever/releases) 照常关注。
 
 ---
 

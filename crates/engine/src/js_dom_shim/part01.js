@@ -841,6 +841,11 @@
     // Chromium 同款）。focusing steps 派发的 focus/focusin 监听器同栈内可见，但
     // close/showModal 重入均不经栈序判定，观测序不变。
     _zwDialogModalStack.push(key);
+    // s373：模态 selector 集合同步推 gCS 通道（__zw_set_modal_state 宿主回调 →
+    // RUNNER_MODAL_SELECTORS → 代际槽注入）——WPT test() 同 turn 内 gCS 断言
+    //（modal-dialog-in-visibility-hidden），拍间轮询通道该断言面恒 stale。
+    // 全量推送 AllSels 现值幂等，嵌套 showModal 无序漂移。
+    if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(_zwDialogModalAllSelsRaw()); } catch (_eMs) {} }
     // R4600：Set previously focused element = focused element → run the dialog
     // focusing steps（spec show a modal dialog 步——标模态后、toggle 排程前）。
     try { _expando[key + '::prevFocusedR4600'] = _zwDialogFocusedElR4600(); } catch (_eDgPf2) {}
@@ -874,6 +879,9 @@
     // 各自兜底。
     var _msI = _zwDialogModalStack.indexOf(key);
     if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    // s373：模态集清态同步推 gCS 通道（镜像 showModal 推送点；close 后同 turn
+    // gCS 须见空集——visibility 继承恢复/`:modal` 退匹配）。
+    if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(_zwDialogModalAllSelsRaw()); } catch (_eMs2) {} }
     if (returnValue !== undefined) _expando[key + '::returnValue'] = String(returnValue);
     // R4600（html-semantics M2 切片 26）：焦点恢复（spec close-the-dialog
     // previously focused element 尾步——dialog-closedby corner-cases focusin-showModal
@@ -951,6 +959,8 @@
     delete _zwTopLayer[key];
     var _msI = _zwDialogModalStack.indexOf(key);
     if (_msI !== -1) _zwDialogModalStack.splice(_msI, 1);
+    // s373：open 属性直写移除的模态清态同步推 gCS 通道（镜像 close-the-dialog 推送点）。
+    if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(_zwDialogModalAllSelsRaw()); } catch (_eMs3) {} }
     _zwDialogQueueCloseEvent4200(key, sel, handle);
     _zwDialogToggleQueueNotify4200(key, sel, handle, true, null);
   }
@@ -1238,6 +1248,14 @@
         var _mgDp = _proxyCache[_mgK];
         if (!_mgDp || !_mgDp.hasAttribute || !_mgDp.hasAttribute('open')) continue;
         try { if (!_mgDp.isConnected) continue; } catch (_eMgIc) { continue; }
+        // s372：flat 包含先行——slotted light 子（宿主 SR 内 slot 分配）的 engine
+        // parentNode 链锚宿主（host3→host2→body），shadow-including 上行链不经过
+        // 模态 dialog（住宿主 SR 内）→ 恒判模态外 → runner best-scan 全跳 → msel
+        // 兜底 over-dismiss（closedby-complex modal 组合 clickOn(popoverB) 形态）。
+        // Chromium inert/hit-test 用 flat tree（FlatTreeTraversal::Contains，s330
+        // close-the-dialog 同面）→ 复用 light-dismiss flat 包含；shadow-including
+        // 保底（s29 纯 shadow 内容候选——part04/part06 焦点门调用面）。
+        try { if (_zwLdFlatContains(_mgDp, el)) return true; } catch (_eMgFc) {}
         return _zwDialogShadowInclContains(_mgDp, el);
       }
     } catch (_eMg) {}
@@ -1333,6 +1351,29 @@
     return '';
   }
   globalThis._zwDialogModalAllSels = _zwDialogModalAllSels;
+  // s373：gCS 通道推送变体——**不过滤 open 属性/连接态**。showModal 同 turn 内
+  // `_zwSetAttr('open')` 异步入队（纯快照读 stale），AllSels 的 hasAttribute 门在
+  // 推送点必判 false → 推空集，modal-dialog-in-visibility-hidden 断言面恒红。
+  // 模态真值 = `_zwDialogModal[key]` 内存态（showModal 已标、close/attrClosed 已
+  // 清），open 属性与元素存在性交由 compute 侧 query_selector 判（gCS 的 mutation
+  // drain 先于注入，slot doc 已含 open；stale selector 解析不出自然落空，与
+  // pipeline inject_modal_state 的 filter_map 同语义）。
+  function _zwDialogModalAllSelsRaw() {
+    try {
+      var _mrN = _zwDialogModalStack ? _zwDialogModalStack.length : 0;
+      var _mrOut = [];
+      for (var _mrI = 0; _mrI < _mrN; _mrI++) {
+        var _mrK = _zwDialogModalStack[_mrI];
+        if (!_zwDialogModal[_mrK]) continue; // 非模态栈项（show() 组栈共用）或 stale
+        var _mrP = _proxyCache[_mrK];
+        var _mrS = _mrP ? _mrP.__zwSelector : null;
+        if (_mrS) _mrOut.push(_mrS);
+      }
+      return _mrOut.join(',');
+    } catch (_eMr) {}
+    return '';
+  }
+  globalThis._zwDialogModalAllSelsRaw = _zwDialogModalAllSelsRaw;
   // 宿主 hit-test 谓词入口（runner resolve_pointer_target 页面域调用；shim 内
   // 部消费者走词法绑定不经此）。
   globalThis._zwDialogModalFocusGateOk = _zwDialogModalFocusGateOk;
@@ -1581,33 +1622,46 @@
     try { out.sort(_zwLdDocOrderCompare); } catch (_eLdSo) {}
     return out;
   }
+  // s371：compound 定位选择器（zwsh 前缀，engine shadow_address 铸造命名空间串）
+  // 内容树同串寻址——声明式 open 根注册表扫描 + 子树 `__zwSelector` 同串比对。
+  // `_zwLdResolveTarget`（light-dismiss）与 document.querySelector 主查询入口
+  //（part06，zwsh 前缀分派）共用：testdriver stub `selectorFor` 信任门
+  // `querySelector(sel) === element` 与 runner `resolve_pointer_target` origin
+  // 解析都经该入口——此前 zwsh 串在 R158 守卫抛 SyntaxError，门失败回落启发式
+  // plain 选择器与 light 树同形元素碰撞（closedby-complex shadow 段 clickOn
+  // 解析到 normal 段孪生 → light-dismiss 误关，16F 根因）。
+  // OPTIMIZATION: 扫描只付在 zwsh 前缀查询（light sel 一步直通既有通道零变化）；
+  // `_makeProxy` 按 `_elKey` 缓存 proxy，同节点重复枚举身份稳定（信任门 === 需要）。
+  function _zwShadowContentByCompoundSel(sel) {
+    var found = null;
+    var scan = function (kids) {
+      if (found || !kids || !kids.length) return;
+      for (var i176t = 0; i176t < kids.length; i176t++) {
+        var k176t = kids[i176t];
+        if (!k176t || k176t.nodeType !== 1) continue;
+        try {
+          if (k176t.__zwSelector === sel) { found = k176t; return; }
+          scan(k176t.children);
+        } catch (_e176t) {}
+      }
+    };
+    try {
+      var keysT = Object.keys(_shadowRoots);
+      for (var q176 = 0; q176 < keysT.length && !found; q176++) {
+        var infoT = _shadowRoots[keysT[q176]];
+        if (!infoT || !infoT.handle || infoT.mode !== 'open') continue;
+        var metaT = _shadowHandleMeta[infoT.handle];
+        if (!metaT || !metaT.declarative) continue;
+        scan(_handleChildNodes(infoT.handle));
+      }
+    } catch (_e176t2) {}
+    return found;
+  }
   function _zwLdResolveTarget(targetSel) {
     if (!targetSel) return null;
     if (String(targetSel).indexOf('zwsh') === 0) {
       // compound 定位选择器：light 查询通道解析不着，内容树同串寻址。
-      var found = null;
-      var scan = function (kids) {
-        if (found || !kids || !kids.length) return;
-        for (var i176t = 0; i176t < kids.length; i176t++) {
-          var k176t = kids[i176t];
-          if (!k176t || k176t.nodeType !== 1) continue;
-          try {
-            if (k176t.__zwSelector === targetSel) { found = k176t; return; }
-            scan(k176t.children);
-          } catch (_e176t) {}
-        }
-      };
-      try {
-        var keysT = Object.keys(_shadowRoots);
-        for (var q176 = 0; q176 < keysT.length && !found; q176++) {
-          var infoT = _shadowRoots[keysT[q176]];
-          if (!infoT || !infoT.handle || infoT.mode !== 'open') continue;
-          var metaT = _shadowHandleMeta[infoT.handle];
-          if (!metaT || !metaT.declarative) continue;
-          scan(_handleChildNodes(infoT.handle));
-        }
-      } catch (_e176t2) {}
-      return found;
+      return _zwShadowContentByCompoundSel(String(targetSel));
     }
     try { return document.querySelector(targetSel); } catch (_eLdT4) { return null; }
   }
@@ -1623,6 +1677,21 @@
     // 保守跳过 light dismiss（shadow 内点击占比面大——complex 影域 testcase 全部
     // clickOn 落 shadow 元素；真空区点击 targetSel 为空照常 dismiss）。
     if (targetSel && !target) return;
+    // s372：backdrop-through——栈顶模态 ::backdrop 几何覆盖视口（s30 同源近似），
+    // 几何命中目标 T 位于 top-layer 序栈顶模态 M 之下（T 非 M flat 子树内）时
+    // 命中面是 M 的 backdrop：有效目标取 M，既有 backdropHit 盒内外分流随即生效
+    //（M 自身判 'out'、flat 含 M 的 popover 保持——closedby-complex modalB 组合
+    // clickOn(dialogA) 期望 dA open + pA open（pA flat 含 dB）+ dB 关）。T 在 M
+    // 子树内（M 自身或其后打开的 top-layer 元素）是 backdrop 之上真实元素，
+    // 不 retarget；既有 msel 通道（best-scan 全跳 → targetSel===bdTop）不变。
+    var _bdTopS372 = _zwDialogModalTopSel();
+    if (_bdTopS372 && _bdTopS372 !== targetSel) {
+      var _bdTS372 = _zwLdResolveTarget(_bdTopS372);
+      if (_bdTS372 && !(target === _bdTS372 || _zwLdFlatContains(_bdTS372, target))) {
+        target = _bdTS372;
+        targetSel = _bdTopS372;
+      }
+    }
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
       try {
@@ -1692,6 +1761,16 @@
     if (!dialogs || !dialogs.length) return;
     var target = _zwLdResolveTarget(targetSel);
     if (targetSel && !target) return;
+    // s372：backdrop-through（check 腿同款——两腿同 retarget 保证 sameTarget
+    // 同态比对一致，否则 down 腿 retarget 后 up 腿不复现 → 槽态错配不关）。
+    var _bdTopS372 = _zwDialogModalTopSel();
+    if (_bdTopS372 && _bdTopS372 !== targetSel) {
+      var _bdTS372 = _zwLdResolveTarget(_bdTopS372);
+      if (_bdTS372 && !(target === _bdTS372 || _zwLdFlatContains(_bdTS372, target))) {
+        target = _bdTS372;
+        targetSel = _bdTopS372;
+      }
+    }
     var backdropHit = false;
     if (px != null && py != null && targetSel) {
       try {
@@ -11843,7 +11922,7 @@
   // M2 RFC s1（FR-10）：锁态/激活 per-page 清理——_pl*（含 _plUnadjusted）+ _fs*（fullscreen
   // 同族跨导航泄漏，用户 2026-10-19 确认随修）+ 瞬态激活双旗。导航后新文档无锁、无激活；
   // 清零不派事件（文档已替换，无监听面意义）。
-  globalThis.__zw_reset_form_state = function() { _inputValues = {}; globalThis.__zwTdVisibleTargets = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
+  globalThis.__zw_reset_form_state = function() { _inputValues = {}; globalThis.__zwTdVisibleTargets = {}; _inputValuesSet = {}; _inputDefault = {}; _inputDefaultDirty = {}; _boolDefault = {}; _boolDefaultDirty = {}; _checkedDirtyState = {}; _optSelectedDirty = {}; _optSelectedClean = {}; _optSelAttrDefault = {}; _inputFiles = {}; _classCache = {}; _customValidity = {}; _userEdited = {}; _s128ChgBase = {}; _indeterminate = {}; _textSelection = {}; _numberEditor = {}; _outputDefault = {}; _outputValue = {}; _resourceStates = {}; _shadowRoots = {}; _shadowHandles = {}; _shadowHandleMeta = {}; _handleChildren = {}; _expando = {}; _scrollOffsets = {}; _winScroll = { top: 0, left: 0 }; _elementAnimations = {}; _pointerCapture = {}; _zwTopLayer = {}; _popoverTargetEl = {}; _zwCanvasCtx = {}; _zwDialogModal = {}; _zwDialogModalStack = []; if (typeof __zw_set_modal_state === 'function') { try { __zw_set_modal_state(''); } catch (_eMsR) {} } _zwDialogInvokerSourceR4400 = {}; if (typeof _zwDetailsToggleQ4009 !== 'undefined') _zwDetailsToggleQ4009 = {}; if (typeof _zwDetailsToggleSourceR4400 !== 'undefined') _zwDetailsToggleSourceR4400 = {}; _plKey = null; _plSel = null; _plHandle = null; _plTarget = null; _plUnadjusted = false; _fsKey = null; _fsSel = null; _fsHandle = null; _zwTransientActive = false; _zwActiveEver = false; if (typeof globalThis.__zwDetailsInitOpen5254 !== 'undefined') globalThis.__zwDetailsInitOpen5254 = {}; if (typeof globalThis.__zwDetailsInitOpenMark5254 === 'function') globalThis.__zwDetailsInitOpenMark5254(); if (typeof globalThis.__zw_pointer_reset === 'function') globalThis.__zw_pointer_reset(); };
 
   // 现代动态 reftest 常用模式：`requestAnimationFrame(() => requestAnimationFrame(() => { …setup…; takeScreenshot(); }))`
   // 把 DOM setup 延迟到「布局/绘制后」。harness 在脚本+load 派发后才截图，故 rAF

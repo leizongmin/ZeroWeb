@@ -7,7 +7,8 @@ use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 use taffy::prelude::*;
 use zero_css_parser::values::{
-    ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue, OverflowValue, PositionValue,
+    BoxSizingValue, ClearValue, DisplayValue, FlexDirectionValue, FlexWrapValue, FloatValue, LengthValue,
+    OverflowValue, PositionValue,
 };
 use zero_dom::{Document, NodeId, NodeKind};
 use zero_style_system::{ComputedStyle, WritingModeValue};
@@ -3151,6 +3152,13 @@ fn webkit_box_align_self_ignore_enabled() -> bool {
     *ENABLED.get_or_init(|| std::env::var("ZW_WEBKIT_BOX_ALIGN_SELF_IGNORE").as_deref() != Ok("0"))
 }
 
+/// R5484 kill-switch 读取：`ZW_INLINE_CB_PCT_WIDTH=0` 回退 inline 中间层百分比宽的
+/// taffy 物化层解算（物化层 fill 宽 = 块容器 − inline margin，chromium 偏离域）。
+fn inline_cb_pct_width_enabled() -> bool {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ENABLED.get_or_init(|| std::env::var("ZW_INLINE_CB_PCT_WIDTH").as_deref() != Ok("0"))
+}
+
 /// R5158 kill-switch 读取：`ZW_BODY_OVERFLOW_VISIBLE=0` 回退 body→viewport overflow
 /// 传播的 taffy 半边（css-overflow-3 §3.3）。
 fn body_overflow_visible_enabled() -> bool {
@@ -3256,6 +3264,59 @@ fn build_subtree(
             .is_some_and(|pid| styles.get(&pid).is_some_and(|ps| ps.legacy_webkit_box_flex))
     {
         taffy_style.align_self = None;
+    }
+
+    // R5484（CSS2 §10.2 包含块定义 × §9.2.1.1）：position:static 的 display:inline 盒
+    // **不建立包含块**，其子元素百分比宽应相对最近**块容器**祖先的 content 宽解算
+    // （chromium 同）。taffy 物化把 inline 中间层表示为 fill 剩余宽的块状节点
+    // （blk 400 − inline ml 40 = 360），percent 留给 taffy 即相对物化层 360 解算——
+    // floats-149 形 span width:50% 得 180（chromium 200）。此处把「DOM 父为
+    // display:inline 且 position:static」的节点百分比宽预解算为 definite：沿祖先
+    // 链找首个块容器（display ≠ Inline）的 definite Px 宽（border-box 扣 frame），
+    // 定位 inline 祖先建立包含块即停（其宽未知，不定解）；祖先宽非 definite 或链断
+    // 维持 taffy percent。height/min/max 百分比另一域不涉。
+    // 节点自身 absolute/fixed 不入臂：§10.2 其包含块为最近定位祖先 padding box
+    //（taffy 定位 CB 已按此解析，预解算会用错误分母覆写正确值）。
+    // kill-switch `ZW_INLINE_CB_PCT_WIDTH=0`。
+    if inline_cb_pct_width_enabled()
+        && let LengthValue::Percentage(pct) = &computed.width
+        && pct.is_finite()
+        && *pct >= 0.0
+        && !matches!(computed.position, PositionValue::Absolute | PositionValue::Fixed)
+        && doc.parent_node(dom_id).is_some_and(|pid| {
+            styles.get(&pid).is_some_and(|ps| {
+                matches!(ps.display, DisplayValue::Inline) && matches!(ps.position, PositionValue::Static)
+            })
+        })
+    {
+        let mut cur = doc.parent_node(dom_id);
+        let mut cb_w: Option<f32> = None;
+        while let Some(id) = cur {
+            let Some(ps) = styles.get(&id) else { break };
+            if !matches!(ps.display, DisplayValue::Inline) {
+                if let LengthValue::Px(cw) = ps.width
+                    && cw.is_finite()
+                    && cw > 0.0
+                {
+                    let content = if matches!(ps.box_sizing, BoxSizingValue::BorderBox) {
+                        (cw as f32 - frame_width(ps)).max(0.0)
+                    } else {
+                        cw as f32
+                    };
+                    if content > 0.0 {
+                        cb_w = Some(content);
+                    }
+                }
+                break;
+            }
+            if !matches!(ps.position, PositionValue::Static) {
+                break;
+            }
+            cur = doc.parent_node(id);
+        }
+        if let Some(w) = cb_w {
+            taffy_style.size.width = taffy::style::Dimension::length(w * (*pct as f32) / 100.0);
+        }
     }
 
     // R4073（css-position-3 §abspos-auto-size）：abspos 元素按 content-based 尺寸

@@ -745,6 +745,149 @@ pub fn rewrite_classic_deferred_imports(source: &str) -> String {
     rewrite_imports_impl(source, ImportRewriteMode::ClassicDeferOnly)
 }
 
+/// `import` 起点前一个非空白 token 是否 `new` 关键字（`new import(` /
+/// `new import.defer(`——ImportCall 非 MemberExpression，new 形语法非法：保留原文
+/// 交 bundled V8 原生 parse 拒绝，test262 dynamic-import/syntax/invalid
+/// no-new-call-expression 负例家族依赖引擎原生错误而非重写层放行）。
+/// `renew import(` 的 new 为标识符后缀（前邻标识符续字符），非 new 表达式。
+fn preceded_by_new_keyword(source: &str, import_start: usize) -> bool {
+    let trimmed = source[..import_start].trim_end();
+    if !trimmed.ends_with("new") {
+        return false;
+    }
+    trimmed.len() == 3 || !is_identifier_continue_byte(trimmed.as_bytes()[trimmed.len() - 4])
+}
+
+/// 动态 import 调用参数列表合法性预扫（重写前判定——形态严格化）：`open_paren`
+/// 指向实参 `(`，自其后扫到匹配 `)`。合法单参形——非空、无顶层 `...` rest、
+/// 无顶层 `,` 多参——返回 true；空参（`import()` / `import.defer()`）、rest、
+/// 多参、残缺未闭合返回 false（保留原文交 bundled V8 原生 parse 拒绝——
+/// dynamic-import/syntax/invalid 负例家族依赖引擎原生错误而非重写层放行；
+/// `import()` 空参 V8 报「import() requires a specifier」）。嵌套括号内的逗号与
+/// spread（`import([1, 2])` / `import([...r])`）不计顶层；字符串、注释内字符
+/// 不算 token；模板按 `${}` 嵌套深度跳过。轻量扫描器既限：正则字面量内引号
+/// 可能带偏字符串态（同主扫描器取舍，误判方向 = 不重写 → 原生通道兜底）。
+fn dynamic_import_args_well_formed(source: &str, open_paren: usize) -> bool {
+    let bytes = source.as_bytes();
+    let mut i = open_paren + 1;
+    let mut depth = 0usize;
+    let mut seen_token = false;
+    while i < source.len() {
+        match bytes[i] {
+            b'\'' | b'"' => {
+                seen_token = true;
+                let q = bytes[i];
+                i += 1;
+                let mut closed = false;
+                while i < source.len() {
+                    if bytes[i] == b'\\' {
+                        i += 2;
+                    } else {
+                        if bytes[i] == q {
+                            i += 1;
+                            closed = true;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                if !closed {
+                    return false;
+                }
+            }
+            b'`' => {
+                seen_token = true;
+                i += 1;
+                let mut tpl_depth = 0usize; // `${` 未闭合计数（内层再嵌模板不支持）
+                let mut closed = false;
+                while i < source.len() {
+                    match bytes[i] {
+                        b'\\' => i += 2,
+                        b'`' if tpl_depth == 0 => {
+                            i += 1;
+                            closed = true;
+                            break;
+                        }
+                        b'$' if bytes.get(i + 1) == Some(&b'{') => {
+                            tpl_depth += 1;
+                            i += 2;
+                        }
+                        b'}' if tpl_depth > 0 => {
+                            tpl_depth -= 1;
+                            i += 1;
+                        }
+                        b'\'' | b'"' => {
+                            let q = bytes[i];
+                            i += 1;
+                            let mut inner_closed = false;
+                            while i < source.len() {
+                                if bytes[i] == b'\\' {
+                                    i += 2;
+                                } else {
+                                    if bytes[i] == q {
+                                        i += 1;
+                                        inner_closed = true;
+                                        break;
+                                    }
+                                    i += 1;
+                                }
+                            }
+                            if !inner_closed {
+                                return false;
+                            }
+                        }
+                        _ => i += 1,
+                    }
+                }
+                if !closed {
+                    return false;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'/') => {
+                while i < source.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                let mut closed = false;
+                while i + 1 < source.len() {
+                    if bytes[i] == b'*' && bytes[i + 1] == b'/' {
+                        i += 2;
+                        closed = true;
+                        break;
+                    }
+                    i += 1;
+                }
+                if !closed {
+                    return false;
+                }
+            }
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                seen_token = true;
+                i += 1;
+            }
+            b')' | b']' | b'}' => {
+                if depth == 0 {
+                    // 实参括号闭合——无任何 token 即空参非法形。
+                    return seen_token;
+                }
+                depth -= 1;
+                i += 1;
+            }
+            b',' if depth == 0 => return false,
+            b'.' if depth == 0 && bytes.get(i + 1) == Some(&b'.') => return false,
+            c if c.is_ascii_whitespace() => i += 1,
+            _ => {
+                seen_token = true;
+                i += 1;
+            }
+        }
+    }
+    false
+}
+
 /// import 动态调用重写核心（[`rewrite_dynamic_imports`] 与
 /// [`rewrite_classic_deferred_imports`] 共享的上下文感知扫描器）。
 fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
@@ -771,6 +914,11 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
             if source[i..].starts_with("import(")
                 && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
                 && mode == ImportRewriteMode::Module
+                // 形态严格化（s360-r2）：`new import(` 与非法参形（空参 / rest /
+                // 多参）不重写——保留原文交 V8 原生 parse 拒绝（test262 负例）；
+                // 合法页面代码不受扰。
+                && !preceded_by_new_keyword(source, i)
+                && dynamic_import_args_well_formed(source, i + "import(".len() - 1)
             {
                 // t8j：经 `.call({referrer})` 把调用点 referrer 穿给 helper——重写点在模块 IIFE
                 // 内（build_module_script / build_dep_iife 均定义 `var _importMeta`；service_worker
@@ -797,7 +945,13 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
             // s90 referrer 槽 / s340 credentials 槽，classic 源无 IIFE 局部量可引）。
             // spec 延迟求值语义见 part01 shim `__zw_import_defer` 注记。
             // https://tc39.es/proposal-defer-import-eval/
-            if source[i..].starts_with("import.defer(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+            // s360-r2 形态严格化守卫同 import( 臂（new 形 / 空参 / rest / 多参
+            // 不重写 → V8 原生 SyntaxError「Unexpected identifier 'defer'」）。
+            if source[i..].starts_with("import.defer(")
+                && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                && !preceded_by_new_keyword(source, i)
+                && dynamic_import_args_well_formed(source, i + "import.defer(".len() - 1)
+            {
                 match mode {
                     ImportRewriteMode::Module => {
                         out.push_str(
@@ -868,6 +1022,9 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                 if source[i..].starts_with("import(")
                     && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
                     && mode == ImportRewriteMode::Module
+                    // s360-r2 形态严格化守卫同栈空分支。
+                    && !preceded_by_new_keyword(source, i)
+                    && dynamic_import_args_well_formed(source, i + "import(".len() - 1)
                 {
                     out.push_str("__zw_dynamic_import.call({ referrer: _importMeta.url, credentials: _importCred }, ");
                     i += "import(".len();
@@ -875,7 +1032,13 @@ fn rewrite_imports_impl(source: &str, mode: ImportRewriteMode) -> String {
                 }
                 // s360：模板表达式区仍是模块 IIFE 词法作用域内代码——defer 臂同
                 // 栈空分支（发射体局部量合法、标识符边界守卫同规）。
-                if source[i..].starts_with("import.defer(") && (i == 0 || !is_identifier_continue_byte(bytes[i - 1])) {
+                // s360-r2 形态严格化守卫同 import( 臂（new 形 / 空参 / rest / 多参
+                // 不重写 → V8 原生 SyntaxError「Unexpected identifier 'defer'」）。
+                if source[i..].starts_with("import.defer(")
+                    && (i == 0 || !is_identifier_continue_byte(bytes[i - 1]))
+                    && !preceded_by_new_keyword(source, i)
+                    && dynamic_import_args_well_formed(source, i + "import.defer(".len() - 1)
+                {
                     match mode {
                         ImportRewriteMode::Module => {
                             out.push_str(
@@ -2092,8 +2255,25 @@ fn transform_export(
         }
         return Ok(result);
     }
+    // export default 具名函数声明（[async] function[*] Name）——声明语义发射：
+    // 裸函数声明（hoisted、模块级可变绑定）+ default 活导出 getter（体首
+    // [`local_export_bindings`] 承担）。不可走 expr 分支的 `_exports.default =
+    // function fn(){…}`——函数表达式自带不可变自名绑定，体内 `fn = …` 报
+    // "Assignment to constant variable"（test262 language/module-code/
+    // eval-gtbndng-indirect-update-dflt 与 expressions/dynamic-import/usage
+    // 同型 19 案实证；spec：导出默认函数声明本地绑定与普通函数声明同为可变，
+    // Chrome 156 实测可赋值）。
+    // https://tc39.es/ecma262/#prod-ExportDeclaration
+    if let Some(rest) = clause.strip_prefix("default")
+        && default_function_decl_binding_name(rest).is_some()
+    {
+        let decl = rewrite_dynamic_imports(&rest.trim_start().replace("import.meta", "_importMeta"));
+        return Ok(format!("  {decl}\n"));
+    }
     // export default expr — 压缩形态 export default{…} 同样命中；`default` 后为
     // 标识符组成字符时不匹配（`export defaultx` 是非法语句，交回退路径原样报错）。
+    // 具名函数声明已在上一分支分流；匿名形态（无源可引用名）expr 分支语义等价
+    // （Function.name 经赋值目标推断恰为 "default"）。
     if let Some(expr) = clause.strip_prefix("default")
         && !expr.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '$')
     {
@@ -2721,8 +2901,52 @@ fn extract_binding_name(decl: &str) -> &str {
 /// （const/let/var/function/class/解构/`export { a, b as c }`）时返回
 ///（导出名，本地名）对（声明形态两名相同；列表形态 `as` 改名）；再导出/
 /// default 形态返回空（接线不在体首 getter 承担面）。
+/// `export default` 具名函数声明的本地绑定名提取（`default` 之后的声明文本）：
+/// `[async] function[*] Name(` → `Some(Name)`。匿名形态（`function(`/`function*(`
+/// /无 `async` 关键字面）返回 None——模块级 `*default*` 绑定无源可引用名，expr
+/// 分支赋值形态语义等价。`functionX`/`asyncXxx` 标识符表达式形态与箭头、对象
+/// 字面量等返回 None（非声明，走 expr 分支）。
+fn default_function_decl_binding_name(rest: &str) -> Option<&str> {
+    let mut rest = rest.trim_start();
+    if let Some(after) = rest.strip_prefix("async") {
+        let next = after.chars().next()?;
+        if !matches!(next, ' ' | '\t' | '\n' | '\r') {
+            return None;
+        }
+        rest = after.trim_start();
+    }
+    let after_function = rest.strip_prefix("function")?;
+    // `functionX`——标识符表达式形态（`export default functionX(…)` 合法表达式）
+    if after_function
+        .chars()
+        .next()
+        .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '$')
+    {
+        return None;
+    }
+    let rest = after_function.strip_prefix('*').unwrap_or(after_function);
+    let name_start = rest.trim_start();
+    let name_end = name_start
+        .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+        .unwrap_or(name_start.len());
+    let name = &name_start[..name_end];
+    if !name.starts_with(|c: char| c.is_alphabetic() || c == '_' || c == '$') {
+        return None;
+    }
+    let after_name = &name_start[name_end..];
+    after_name.trim_start().starts_with('(').then_some(name)
+}
+
 fn local_export_bindings(clause: &str) -> Vec<(String, String)> {
     let mut pairs = Vec::new();
+    // export default 具名函数声明 → ("default", 本地名) 别名对（活绑定 getter；
+    // 声明形态发射见 [`transform_export`]——体内可变绑定 + default 活读）。
+    if let Some(rest) = clause.strip_prefix("default")
+        && let Some(name) = default_function_decl_binding_name(rest)
+    {
+        pairs.push(("default".to_string(), name.to_string()));
+        return pairs;
+    }
     for prefix in ["const ", "let ", "var ", "function ", "class "] {
         if let Some(decl) = clause.strip_prefix(prefix) {
             if let Some(names) = extract_destructuring_export_names(decl) {
@@ -3143,6 +3367,118 @@ mod tests {
         assert_eq!(rewrite_classic_deferred_imports(plain), plain, "无匹配源逐字节原样");
     }
 
+    // s360-r2（形态严格化）：非法调用形不重写——空参（`import()` /
+    // `import.defer()`）、rest（`import.defer(...a)`）、new 形（ImportCall 非
+    // MemberExpression）保留原文交 bundled V8 原生 parse 拒绝；test262
+    // dynamic-import/syntax/invalid 负例家族与 assignmenttargettype importcall
+    // 4 案（negative phase=parse）依赖引擎原生错误，重写层放行会把负例翻成
+    // marker Fail（`$DONOTEVALUATE()` 先抛）。合法单参形照常重写不受扰。
+    #[test]
+    fn test_rewrite_strict_shapes_keep_source_s360r2() {
+        let plain = "let f = () => { import.defer(); };";
+        assert_eq!(
+            rewrite_classic_deferred_imports(plain),
+            plain,
+            "空参 import.defer( 保留原文（V8 原生 SyntaxError）：{plain}"
+        );
+        let rest = "function g(...a) { return import.defer(...a); }";
+        assert_eq!(
+            rewrite_classic_deferred_imports(rest),
+            rest,
+            "rest 参 import.defer( 保留原文：{rest}"
+        );
+        let newcall = "new import.defer('./empty_FIXTURE.js');";
+        assert_eq!(
+            rewrite_classic_deferred_imports(newcall),
+            newcall,
+            "new import.defer( 保留原文：{newcall}"
+        );
+        let eager_empty = "import() = 1;";
+        assert_eq!(
+            rewrite_dynamic_imports(eager_empty),
+            eager_empty,
+            "Module 档空参 import( 保留原文（V8: requires a specifier）：{eager_empty}"
+        );
+        let defer_empty_module = "(import.defer()) = 1;";
+        assert_eq!(
+            rewrite_dynamic_imports(defer_empty_module),
+            defer_empty_module,
+            "Module 档空参 import.defer( 保留原文：{defer_empty_module}"
+        );
+        let new_eager = "new import('./x.js');";
+        assert_eq!(
+            rewrite_dynamic_imports(new_eager),
+            new_eager,
+            "new import( 保留原文：{new_eager}"
+        );
+        // 合法形回归：守卫不误伤。
+        let ok = "import.defer('./a.js');";
+        assert!(
+            rewrite_classic_deferred_imports(ok).contains("__zwClassicImportDefer('./a.js')"),
+            "合法单参 import.defer( 照常重写：{ok}"
+        );
+    }
+
+    // s360-r2：参数列表预扫的上下文精度——嵌套括号内逗号/spread 是单参表达式
+    // 的一部分（`import((a, b))` / `import([1, 2])` / `import([...r])` 合法照重）；
+    // 顶层多参、注释后顶层逗号、模板区空参非法形不重写；残缺未闭合保守不重写。
+    #[test]
+    fn test_rewrite_args_scan_context_s360r2() {
+        let nested = "import((a, b));";
+        assert!(
+            rewrite_dynamic_imports(nested).contains("__zw_dynamic_import"),
+            "嵌套括号内逗号 = 合法单参：{nested}"
+        );
+        let arr = "import([1, 2]);";
+        assert!(
+            rewrite_dynamic_imports(arr).contains("__zw_dynamic_import"),
+            "数组字面量内逗号 = 合法单参：{arr}"
+        );
+        let spread_in_arr = "import([...r]);";
+        assert!(
+            rewrite_dynamic_imports(spread_in_arr).contains("__zw_dynamic_import"),
+            "数组内 spread 不计顶层 rest：{spread_in_arr}"
+        );
+        let multi = "import(a, b);";
+        assert_eq!(rewrite_dynamic_imports(multi), multi, "顶层多参保留原文：{multi}");
+        let comment_comma = "import('a' /* , */, 'b');";
+        assert_eq!(
+            rewrite_dynamic_imports(comment_comma),
+            comment_comma,
+            "注释后顶层逗号 = 多参保留原文：{comment_comma}"
+        );
+        let tpl = "`x${import()}y`;";
+        assert_eq!(
+            rewrite_dynamic_imports(tpl),
+            tpl,
+            "模板表达式区空参 import( 保留原文：{tpl}"
+        );
+        let tpl_ok = "`x${import('./t.js')}y`;";
+        assert!(
+            rewrite_dynamic_imports(tpl_ok).contains("__zw_dynamic_import"),
+            "模板表达式区合法形照常重写：{tpl_ok}"
+        );
+        let truncated = "import(";
+        assert_eq!(
+            rewrite_dynamic_imports(truncated),
+            truncated,
+            "残缺未闭合保守不重写：{truncated}"
+        );
+    }
+
+    // s360-r2：new 关键字回扫——`renew import(` 的 new 为标识符后缀非 new 表达式
+    // （照常重写），`renewed` 同理；跨空白/换行的 `new\n  import(` 仍命中回扫。
+    #[test]
+    fn test_rewrite_new_keyword_boundary_s360r2() {
+        let suffix = "renew import('./x.js');";
+        assert!(
+            rewrite_dynamic_imports(suffix).contains("__zw_dynamic_import"),
+            "标识符后缀 renew 不构成 new 表达式：{suffix}"
+        );
+        let spaced = "new\n  import('./x.js');";
+        assert_eq!(rewrite_dynamic_imports(spaced), spaced, "跨空白 new 回扫命中：{spaced}");
+    }
+
     // s360：延迟求值发射形态——deps fn（async，依赖 memoized 内联 + `var` 剥离为
     // 赋值）、体 fn（runBody 守卫 + 导出声明关键词剥离为顶层赋值）、导出 getter
     // 顶层预声明、记录对象三臂（exports/depsPromise/runBody）。
@@ -3529,6 +3865,60 @@ mod tests {
         let mut sb = EsModuleSandbox::new().unwrap();
         let r = sb.execute_module("export default 99;", None).unwrap();
         assert!(r.namespace_json.contains("99"));
+    }
+
+    /// export default 具名函数声明：模块级可变绑定 + default 活导出——体内自赋值
+    /// 合法，导入侧经活 getter 读到改写后值（test262
+    /// language/module-code/eval-gtbndng-indirect-update-dflt 家族钉面；
+    /// spec：导出默认函数声明本地绑定与普通函数声明同为可变——Chrome 156 行为锚）。
+    /// 多行体 + 顶格闭括号形态与语料逐字同构。
+    #[test]
+    fn export_default_named_function_declaration_mutable_binding() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module(
+            "./fixture.js",
+            "export default function fn() {\n  fn = 2;\n  return 1;\n}",
+        );
+        let r = sb
+            .execute_module(
+                "import f from './fixture.js'\nexport const called = f()\nexport const after = f",
+                None,
+            )
+            .unwrap();
+        assert!(r.namespace_json.contains("\"called\":1"), "{}", r.namespace_json);
+        assert!(r.namespace_json.contains("\"after\":2"), "{}", r.namespace_json);
+    }
+
+    /// export default 匿名函数声明：无源可引用名，expr 分支赋值形态语义等价
+    /// （Function.name 经赋值目标推断为 "default"，不可变自绑定不可达）——回归面。
+    /// 函数值不可 JSON 序列化，经导入侧调用观测。
+    #[test]
+    fn export_default_anonymous_function_declaration_expr_path() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        sb.register_module("./anon.js", "export default function () { return 41; }");
+        let r = sb
+            .execute_module("import f from './anon.js'\nexport const v = f()", None)
+            .unwrap();
+        assert!(r.namespace_json.contains("\"v\":41"), "{}", r.namespace_json);
+    }
+
+    /// 具名 async/generator 声明形态同走声明分支（`async function`、`function*`）。
+    #[test]
+    fn export_default_named_async_function_declaration() {
+        let mut sb = EsModuleSandbox::new().unwrap();
+        let r = sb
+            .execute_module(
+                "export default async function af() { return 7; }\nexport const p = af",
+                None,
+            )
+            .unwrap();
+        assert!(!r.namespace_json.is_empty());
+        let mut sb2 = EsModuleSandbox::new().unwrap();
+        sb2.register_module("./gen.js", "export default function* gen() { yield 1; }");
+        let r2 = sb2
+            .execute_module("import g from './gen.js'\nexport const first = g().next().value", None)
+            .unwrap();
+        assert!(r2.namespace_json.contains("\"first\":1"), "{}", r2.namespace_json);
     }
 
     #[test]

@@ -3224,13 +3224,23 @@
   // publicKey 恒 extractable=true（spec 公共生成步骤）；usages 按类型拆分到两端。
   function _zw_rsaGenerateKey(algorithm, extractable, usages, algo, resolve, reject) {
     var name = algo.name;
+    // RsaKeyGenParams.modulusLength = required [EnforceRange] unsigned long（WebIDL
+    // 转换，先于任何算法步序——usage SyntaxError 之前）：NaN/±Infinity/<0/>2^32-1/
+    // 非整数 → TypeError（WPT failures.js "Bad algorithm property" ±2^32 组）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+    var gen = (typeof algorithm === 'object' && algorithm) ? algorithm : {};
+    if (gen.modulusLength != null) {
+      var rsaLenNum = Number(gen.modulusLength);
+      if (!(isFinite(rsaLenNum) && rsaLenNum >= 0 && rsaLenNum <= 4294967295 && rsaLenNum === Math.floor(rsaLenNum))) {
+        reject(new TypeError('RSA modulusLength must be an unsigned long')); return;
+      }
+    }
     var u = _zw_normalizeUsages(usages, _zw_rsaAllowedUsages(name));
     if (!u) {
       reject(new _zw_subtleDE('Invalid key usages for ' + name, 'SyntaxError')); return;
     }
     // RsaHashedKeyGenParams 必填成员 modulusLength/publicExponent（WebIDL required；
     // corpus failures 未覆盖缺成员，缺省按 0/空 → host 拒绝 OperationError，与 e 非法同径）。
-    var gen = (typeof algorithm === 'object' && algorithm) ? algorithm : {};
     var bits = (gen.modulusLength != null) ? Number(gen.modulusLength) : 0;
     var eBytes = (gen.publicExponent != null) ? _zw_bufToBytes(gen.publicExponent) : [];
     if (typeof __zw_crypto_subtle_rsa_generate !== 'function') {

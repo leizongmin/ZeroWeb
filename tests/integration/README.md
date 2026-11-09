@@ -15,7 +15,7 @@
 - **安全与存储** — `net_security` / `security_pipeline`：网络层与安全管线；`storage`：localStorage / IndexedDB 持久化
 - **浏览器 shell** — `browser_shell_integration`：标签页、导航、地址栏与 IPC 序列化协作
 - **图形与沙箱** — `canvas_render` / `e2e_canvas_dom`：Canvas 2D；`wasm_sandbox`：WASM 运行时集成
-- **产品级验证** — `product_level_smoke` / `real_website_compat` / `viewport_adaptive` / `font_fallback_render`：真实站点兼容、响应式视口与字体回退；`e2e_lit_library` / `e2e_web_components`：第三方库（lit）与 Web Components 端到端验收
+- **产品级验证** — `product_level_smoke` / `real_website_compat` / `viewport_adaptive` / `font_fallback_render`：真实站点兼容、响应式视口与字体回退；`e2e_lit_library` / `e2e_vue_library` / `e2e_web_components`：第三方库（lit、Vue 3）与 Web Components 端到端验收（Vue fixture 见 `fixtures/vue`）；`tests/` 另有 `p125_select_menu_query` / `p125_select_menu_webview` / `r5424_runtime_img_table_sync` 等回归测试
 
 ## 运行方式
 

@@ -196,11 +196,12 @@ fn displace_in_container(
         // floats（排斥循环先于递归定谳，时序拿不到权威几何），故在本终末 pass 补域：
         // 候选 x 处收缩带宽 = min(容器内容右缘，层位 y 交带内右 float margin-box 左缘
         // min) − x，≥ 框架和可行并随位移写宽；declared-width 盒维持原判据。
-        let (child_is_auto, child_frame) = {
+        let (child_is_auto, child_frame, child_mr) = {
             let c = &box_node.children[idx];
             (
                 c.declared_width_auto && escaped && auto_beside,
                 c.border_left + c.border_right + c.padding_left + c.padding_right,
+                if c.margin_right_auto { 0.0 } else { c.margin_right },
             )
         };
         // declared-width 盒维持原全局 beside（R5477 八形调优域零回归）；auto 宽收缩形
@@ -246,7 +247,14 @@ fn displace_in_container(
                         .filter(|(d, ..)| matches!(d, FloatValue::Right))
                         .map(|(_, fl, ..)| *fl)
                         .fold(content_right, f32::min);
-                    let w = (band_right - cx).max(0.0);
+                    // R5482：收缩右界夹 margin-right（chromium oracle M1–M3 混合形
+                    // escaped＋margin≠0 定谳——R5217 margin-aware 钉位解原样适用
+                    // escaped 域：right = min(CB − mr, band_right)、w = right − cx；
+                    // mr=0 时与旧公式同值（R5479 九形 margin:0 域零变化）。M2 形
+                    // chromium (100,0) 宽 340＝band 350 − mr 10（pre-fix 350 缺口）；
+                    // wrap 层 band 空时 w = CB − mr − cx = CB − margin_h（M1 (0,50)
+                    // 宽 440 同式）。
+                    let w = ((content_right - child_mr).min(band_right) - cx).max(0.0);
                     (w, if w < child_w - 0.5 { Some(w) } else { None })
                 } else {
                     (child_w, None)

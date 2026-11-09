@@ -24,6 +24,14 @@ pub(crate) fn nested_inline_float_enabled() -> bool {
     *NESTED_INLINE_FLOAT
 }
 
+/// R5487：嵌套 float 序列级联 kill-switch 读取（`ZW_NESTED_FLOAT_CASCADE=0` 回退
+/// R5446 逐 float 独立目标——同层连续 float 无避让全钉带左缘原点重叠）。
+pub(crate) fn nested_float_cascade_enabled() -> bool {
+    static ENABLED: std::sync::LazyLock<bool> =
+        std::sync::LazyLock::new(|| std::env::var("ZW_NESTED_FLOAT_CASCADE").as_deref() != Ok("0"));
+    *ENABLED
+}
+
 /// R5446：嵌套 float 摘要（collector 产出；锚 pass 后回填 `target`）。
 pub(crate) struct NestedInlineFloatInfo {
     pub(crate) fid: NodeId,
@@ -38,7 +46,13 @@ pub(crate) struct NestedInlineFloatInfo {
     /// 尽高；嵌套 float 从未获得有效静态位：步 5 walk 对 inline 子 `continue`、taffy
     /// 以 wrapper 帧堆叠，故无条件取锚，R5442 静态位保留门不适用）；x=rule 6 方向
     /// 极值缘（Left→左缘 +ml，Right→右缘 −mr）。None=锚缺失，该 float 退回旧行为。
+    /// R5487 级联开启时左 float 改走序列避让（见 inline_finalization 目标循环）。
     pub(crate) target: Option<(f32, f32)>,
+    /// R5487：容器 content 缘到该 float 的 wrapper 链水平偏移（Σ margin_left +
+    /// border_left + padding_left）——chromium fit 判定的 inline 光标位含此偏移
+    ///（ml=40 层两 50% float：cursor=40+200=240，可用 160<200 → 降带；ml=0 并排，
+    /// oracle 四形定谳）。仅左 float 级联 fit 门消费。
+    pub(crate) chain_offset: f32,
 }
 
 /// R5446：inline 级可下降 wrapper 判定——非块级、非原子（inline-block 族/replaced）、
@@ -136,6 +150,7 @@ pub(crate) fn collect_nested_inline_floats(
         box_node: &LayoutBox,
         styles: &HashMap<NodeId, ComputedStyle>,
         top_idx: Option<usize>,
+        chain_offset: f32,
         out: &mut Vec<NestedInlineFloatInfo>,
         claimed: &mut HashSet<usize>,
     ) {
@@ -165,17 +180,25 @@ pub(crate) fn collect_nested_inline_floats(
                     margin_bottom: child.margin_bottom,
                     height: child.height,
                     target: None,
+                    chain_offset,
                 });
                 continue;
             }
             if nested_float_wrapper_descendable(child, styles) {
-                walk(child, styles, Some(ti), out, claimed);
+                walk(
+                    child,
+                    styles,
+                    Some(ti),
+                    chain_offset + child.margin_left + child.border_left + child.padding_left,
+                    out,
+                    claimed,
+                );
             }
         }
     }
     let mut out = Vec::new();
     let mut claimed = HashSet::new();
-    walk(box_node, styles, None, &mut out, &mut claimed);
+    walk(box_node, styles, None, 0.0, &mut out, &mut claimed);
     (out, claimed)
 }
 

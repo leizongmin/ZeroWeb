@@ -2055,6 +2055,50 @@ impl StyleSystem {
         if tag_name.as_deref() == Some("dialog") && doc.get_attribute(element, "open").is_some() {
             ua_decl_inputs.push(("display".to_string(), "block".to_string(), false, (0, 0, 0), None));
         }
+        // s372：`[popover]` UA 定位——规范 UA 样式表
+        // `[popover] { position: fixed; inset: 0; width: fit-content; height: fit-content;
+        // margin: auto; border: solid; padding: 0.25em; overflow: auto; color: CanvasText;
+        // background-color: Canvas; }` 仅注入 position:fixed：inset:0/margin:auto/
+        // fit-content 居中语义依赖布局侧 abspos 收缩/fit-content 求值（R-s31 dialog 定位
+        // 注入实验回退先例——满视口拉伸/出流重叠回归），随该缺口一并挂账渲染流；
+        // display:none-when-closed（`:not(:popover-open)`）不在本刀——show/hide 为 shim
+        // JS 态（R3071）无 display 通道。UA 优先级 0,0,0，作者样式可覆盖。此前缺失 →
+        // popover in-flow 布局，slot 嵌套形态（closedby-complex shadow 段）popover 盒叠
+        // dialog 中心 → elementFromPoint 命中 popover → light-dismiss 分类错（under/over
+        // dismiss 双形态）。
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-css-user-agent-style-sheet-and-presentational-hints
+        if pseudo.is_none() && doc.get_attribute(element, "popover").is_some() {
+            ua_decl_inputs.push(("position".to_string(), "fixed".to_string(), false, (0, 0, 0), None));
+        }
+        // s373：`dialog` UA 色面——规范 UA 样式表 `dialog { margin: auto; border: solid;
+        // padding: 1em; background-color: Canvas; color: CanvasText }` 仅注入色两项：
+        // margin/border/padding 改盒几何（随 R-s31 定位挂账面），色为纯绘制声明零几何
+        // 影响。此前缺失 → dialog 背景 transparent（default-color「background should
+        // match Canvas」红态）。UA 优先级 0,0,0 作者可覆盖；Canvas/CanvasText 静态
+        // 解析（named_colors light 形映射），color-scheme dark 分支随系统色 scheme
+        // 感知面挂账。
+        // https://html.spec.whatwg.org/multipage/rendering.html#the-dialog-element-2
+        if pseudo.is_none() && tag_name.as_deref() == Some("dialog") {
+            ua_decl_inputs.push(("color".to_string(), "CanvasText".to_string(), false, (0, 0, 0), None));
+            ua_decl_inputs.push((
+                "background-color".to_string(),
+                "Canvas".to_string(),
+                false,
+                (0, 0, 0),
+                None,
+            ));
+        }
+        // s373：`dialog:modal { visibility: visible }`——模态 dialog 从 UA 层强制可见，
+        // 父链 visibility:hidden 不再隐匿模态 dialog（modal-dialog-in-visibility-hidden
+        // 「Modal dialog should have visibility: visible by default in UA sheet」钉面）；
+        // 作者显式声明仍可覆盖（UA 优先级 0,0,0，该案第三断言同验）。非模态 dialog 不
+        // 注入——visibility 按常规继承（该案第一断言「Non-modal … inherit」钉面）。
+        // modal 判定与 CSS matcher 同源（Document::is_modal_dialog，镜像 :focus 注入
+        // 通道）。
+        // https://html.spec.whatwg.org/multipage/rendering.html#flow-content-3
+        if pseudo.is_none() && tag_name.as_deref() == Some("dialog") && doc.is_modal_dialog(element) {
+            ua_decl_inputs.push(("visibility".to_string(), "visible".to_string(), false, (0, 0, 0), None));
+        }
         // R-s31 备注：dialog UA **定位**（`dialog { position: absolute; inset-inline: 0;
         // margin: auto }` + `dialog:modal { position: fixed; inset-block: 0 }`，
         // rendering.html#the-dialog-element-2/#modal-dialogs）本轮实验后**不注入**——

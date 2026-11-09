@@ -430,6 +430,19 @@ fetch-wpt-wasm-core:
 testharness-wasm-core: target-disk-guard fetch-wpt-wasm fetch-wpt-wasm-core target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-wasm-core $(if $(FILTER),$(FILTER),)
 
+# wptfyi-runtime goal DC-1（docs/goal/wptfyi-runtime.md）：third_party/test262 上游
+# 语料 vendoring（goals/48-test262-runtime.sh——git partial clone + cone sparse，
+# pin = lib.sh WPT_REV，vendored.toml 记 test262 上游 rev b66872a9）+ runner 通道
+# （testharness_test262.rs——上游 serve 包装链折叠单页执行，变体名 .test262.html /
+# .test262.strict.html / .test262-module.html 与 wpt.fyi summary 逐字对齐）。
+# 基线首跑 Fail 多为预期（记录通过率用），不作为 land 门禁。filter 按路径子串
+# 透传：make testharness-test262 FILTER=third_party/test262/test/language/statements。
+fetch-wpt-test262:
+	bash tests/wpt-runner/scripts/goals/48-test262-runtime.sh
+
+testharness-test262: target-disk-guard fetch-wpt-test262 target/test-guard zero-wpt-runner-release
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-test262 $(if $(FILTER),$(FILTER),)
+
 # net-api-compat goal M1 / DC-1：上游六 corpus（fetch/xhr/url/mimesniff/streams/
 # eventsource）window 可执行子集。用例 gitignored（goals/20-net-api-compat.sh 按需
 # 拉取，GITHUB_TOKEN 可选抬高列目录限流）；skip 域（server-handler .py 重依赖/策略
@@ -1198,15 +1211,21 @@ testharness-html-semantics: target-disk-guard fetch-wpt-html-semantics target/te
 testharness-compression: target-disk-guard fetch-wpt-compression target/test-guard zero-wpt-runner-release
 	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),900) -- ./target/release/zero-wpt-runner testharness-compression $(if $(FILTER),$(FILTER),)
 
-# webcrypto goal M1 / DC-1（docs/goal/archive/webcrypto-compat.md）：WebCryptoAPI 语料
-# fetch 走 goals/26 预置脚本（git trees 深挖 + /common 补拉）；runner 可执行子集
-# skip 域见 testharness.rs webcrypto_case_skipped 文档。
+# WebCryptoAPI 语料（wptfyi-webcrypto 目标 DC-1 周跑接入）：fetch 走 goals/38
+# 全子树新增式脚本（v3 转正子树 cb6cc97a = HEAD 布局全量：老 stable 案 +
+# modern-algos/secure-curves 两新族 + 散新案，幂等跳过已存在文件）。26 号脚本
+# 锁旧 pin 布局（已退役 .tentative. 路径 + 旧内容支撑文件），对 v3 语料是
+# 污染源，勿再对本语料目录运行。runner 可执行子集 skip 域见
+# testharness.rs webcrypto_case_skipped 文档。
 # make testharness-webcrypto FILTER=digest。
 fetch-wpt-webcrypto:
-	bash tests/wpt-runner/scripts/goals/26-webcrypto-compat.sh
+	bash tests/wpt-runner/scripts/goals/38-webcrypto-compat-v3.sh
 
+# 2026-11-09 v3 全语料（69,795 keys）本地与 CI 同阈；楔死期临时放宽 3600→7200
+# （r3–r5 derived_bits_length 楔死，6a10ddaf8）已随 deriveBits [EnforceRange]
+# 根因修复回落：r6 全语料实证 238s（2026-11-10），3600 留 ~15 倍余量。
 testharness-webcrypto: target-disk-guard fetch-wpt-webcrypto target/test-guard zero-wpt-runner-release
-	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),1800) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
+	./target/test-guard --per-proc-mem 4 --total-mem 8 --time-limit $(or $(TIME_LIMIT),3600) -- ./target/release/zero-wpt-runner testharness-webcrypto $(if $(FILTER),$(FILTER),)
 
 # WebGL goal M2（docs/goal/webgl-compat.md）：webgl/ 语料 fetch 走 goals/99 预置
 # 脚本（GOAL_PULL_ANY_JS + idlharness 资产补拉——2026-10-22 裁决③）；runner 通道

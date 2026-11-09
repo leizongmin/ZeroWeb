@@ -2971,6 +2971,9 @@ pub fn run_fs_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<H
 /// Run the pinned upstream WebAssembly jsapi window subset
 /// （page-wasm goal M1 / DC-1）。结构同 [`run_fs_cases`]：固定清单 + META script
 /// 自动解析 + [`any_js_window_wrapper`] window 变体执行。
+///
+/// wptfyi-runtime DC-2：无 META 缺省双变体源追加 dedicated worker 腿
+/// （`.any.worker.js` 键，encoding 通道同款分道）。
 pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
     let harness_source = match read_corpus_to_string(wpt_root.join("resources/testharness.js")) {
         Ok(source) => source,
@@ -2999,14 +3002,14 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
             let case_source = match read_corpus_to_string(wpt_root.join(path)) {
                 Ok(source) => source,
                 Err(error) => {
-                    return (
+                    return vec![(
                         (*path).to_string(),
                         vec![HarnessSubtestResult {
                             name: "load WebAssembly case".into(),
                             status: HarnessStatus::Fail,
                             message: Some(error.to_string()),
                         }],
-                    );
+                    )];
                 }
             };
             let case_dir = Path::new(path).parent().unwrap_or_else(|| Path::new(""));
@@ -3020,14 +3023,14 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 match read_corpus_to_string(support_path) {
                     Ok(source) => support_sources.push((script, source)),
                     Err(error) => {
-                        return (
+                        return vec![(
                             (*path).to_string(),
                             vec![HarnessSubtestResult {
                                 name: format!("load WebAssembly support {script}"),
                                 status: HarnessStatus::Fail,
                                 message: Some(error.to_string()),
                             }],
-                        );
+                        )];
                     }
                 }
             }
@@ -3037,9 +3040,25 @@ pub fn run_wasm_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec
                 .collect::<Vec<_>>();
             let html = any_js_window_wrapper(path, &support_refs, &case_source);
             let results = run_testharness_html(wpt_root, path, &html, &harness_source, CASE_TIMEOUT);
-            ((*path).to_string(), results)
+            let mut cases = vec![((*path).to_string(), results)];
+            // wptfyi-runtime DC-2（wasm worker 变体面）：encoding 通道同款 dedicated
+            // 腿——上报 `.any.worker.js` 键（对账映射 `.any.worker.html` 分母变体；
+            // jsapi 32 源全为无 META 缺省双变体形态，分道判定见
+            // [`crate::testharness_workers::dedicated_worker_variant`]）。
+            if crate::testharness_workers::dedicated_worker_variant(&case_source) {
+                let worker_key = path.replacen(".any.js", ".any.worker.js", 1);
+                let worker_results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                    wpt_root,
+                    &worker_key,
+                    &worker_key,
+                    &harness_source,
+                );
+                cases.push((worker_key, worker_results));
+            }
+            cases
         })
-        .collect()
+        .collect::<Vec<Vec<(String, Vec<HarnessSubtestResult>)>>>()
+        .concat()
 }
 
 /// Run the pinned upstream WebStorage window subset
@@ -4816,6 +4835,11 @@ struct CorpusRunOptions {
     /// net-api-compat-v3 M1a：`.htm`（xhr 上游老式命名）与 `.window.js`
     /// （window 变体）窗体。
     extra_forms: bool,
+    /// wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源缺省（无
+    /// `META: global=`）或含 worker/dedicatedworker token 时追加 dedicated worker
+    /// 腿，上报 `.any.worker.js` 键（gap 对账映射 `.any.worker.html` 分母变体）——
+    /// 默认关，各通道既有账分母不动。
+    worker_variants: bool,
     /// runner-net-infra M2（D4）：websockets 子树 wss 变体枚举（追加键，
     /// 仅 net-api 通道——最小分母）。
     ws_wss_variants: bool,
@@ -4889,6 +4913,22 @@ fn run_any_js_corpus_subdirs_with_helpers_variants(
             if is_any_js {
                 let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
                 cases.push((relative.clone(), results));
+                // wptfyi-runtime DC-2（encoding worker 变体面）：`.any.js` 源追加
+                // dedicated worker 腿，上报 `.any.worker.js` 键（对账映射
+                // `.any.worker.html` 分母变体）。分道判定（缺省双变体 /
+                // worker token 语义）见 [`crate::testharness_workers::dedicated_worker_variant`]。
+                if options.worker_variants
+                    && crate::testharness_workers::dedicated_worker_variant(&source)
+                {
+                    let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
+                    let results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                        wpt_root,
+                        &worker_key,
+                        &worker_key,
+                        &harness_source,
+                    );
+                    cases.push((worker_key, results));
+                }
                 if ws_wss_enumeration {
                     // any.js 形态 variant 键追加跑：case 名带 query → 包装页
                     // location.search 消费（constants.sub.js url_has_variant('wss')
@@ -5002,8 +5042,23 @@ pub fn run_net_api_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, 
 /// Run the pinned upstream encoding window subset
 /// （encoding-compat goal M1 / DC-1）。filter 按路径子串过滤（如 `textdecoder-`、
 /// `streams/`、`legacy-mb-japanese/`——基线按域分类）。
+///
+/// wptfyi-runtime DC-2：开启 worker_variants——`.any.js` 源缺省（无 `META:
+/// global=`）或含 worker/dedicatedworker token 时追加 dedicated worker 腿
+/// （`.any.worker.js` 键，gap 对账映射 `.any.worker.html` 分母变体，
+/// ~10,900 子测试缺口主攻面）。
 pub fn run_encoding_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String, Vec<HarnessSubtestResult>)> {
-    run_any_js_corpus_subdirs(wpt_root, ENCODING_CORPUS_SUBDIRS, filter, encoding_case_skipped)
+    run_any_js_corpus_subdirs_with_helpers_variants(
+        wpt_root,
+        ENCODING_CORPUS_SUBDIRS,
+        filter,
+        encoding_case_skipped,
+        &[],
+        CorpusRunOptions {
+            worker_variants: true,
+            ..CorpusRunOptions::default()
+        },
+    )
 }
 
 /// encoding/legacy-mb 文档族通道语料叶目录（fetch 脚本 goals/31-encoding-legacy-mb.sh
@@ -10134,10 +10189,18 @@ globalThis.GLOBAL = globalThis.GLOBAL || {
 globalThis.__zw_harness_results = [];
 globalThis.__zw_harness_complete = false;
 add_result_callback(function(test) {
-  globalThis.__zw_harness_results.push({
-    name: String(test.name || ''),
-    status: Number(test.status),
-    message: test.message == null ? null : String(test.message)
+  // 用 [[DefineOwnProperty]]（defineProperty）写 own 索引，不走 [[Set]]：
+  // test262 用例会在 Array.prototype 上定义索引 accessor（15.4.4.x-7-c-i 族、
+  // set-length frozen 案），result 回调在用例体执行后才触发，此时 push 命中
+  // 继承 setter 丢值 → 结果数组空洞 → 探针 JSON.stringify 出 null 反序列化失败。
+  var results = globalThis.__zw_harness_results;
+  Object.defineProperty(results, results.length, {
+    value: {
+      name: String(test.name || ''),
+      status: Number(test.status),
+      message: test.message == null ? null : String(test.message)
+    },
+    writable: true, enumerable: true, configurable: true
   });
 });
 add_completion_callback(function() {
@@ -11394,6 +11457,10 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
                 .map(str::to_string)
                 .collect(),
         );
+        // s373：gCS 代际槽通道不经本环——改由 shim showModal()/close()/reset 同步点
+        // 经 `__zw_set_modal_state` 宿主回调推送（RUNNER_MODAL_SELECTORS）：WPT
+        // test() 是同步函数，showModal 后同 turn 的 gCS 断言在下一拍前执行，拍间
+        // 轮询该面恒 stale（modal-dialog-in-visibility-hidden 三断言同 turn 连跑）。
         // M3 扩批：time-marches-on——cue enter/exit 调度按桥真值时钟推进（泵 tick 同拍；
         // spec media.html#time-marches-on——track-cues-* 播放推进族断言面）。与 timer
         // 泵同一 execute_script 通道（无 registry 锁持有——桥回调各自加锁）。
@@ -11427,7 +11494,15 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
     // relay flood 期结果数组达数千条，全量重发是 O(R²) 序列化（8632 子测试的
     // pbkdf2 worker 腿均摊每轮数百 KB stringify+parse）。`__ZW_PROBE_SEEN__` 由
     // 调用方按轮内联（避免 format! 对 JS 花括号的转义噪声）。
-    let probe_script = "JSON.stringify({\
+    // probe 包 IIFE：stringify 前暂删 Object.prototype.toJSON、finally 恢复——
+    // test262 no-boolean-toJSON 等用例把 Object.prototype.toJSON 劫持为返回标量，
+    // 探针 JSON.stringify(整体对象) 被调 toJSON 劫持返回 `2`，serde 反序列化失败。
+    // delete 撞 non-configurable 时静默失败回到原行为（单案 Fail，无回归面）。
+    let probe_script = "(function(){\
+             var saved_tojson = Object.prototype.toJSON;\
+             delete Object.prototype.toJSON;\
+             try {\
+               return JSON.stringify({\
              complete:(function(){\
                if (globalThis.__zw_harness_complete) return true;\
                var timers = globalThis.__zw_timers || [];\
@@ -11449,7 +11524,10 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
              due_timer:(globalThis.__zw_timers||[]).length > 0 && (globalThis.__zw_timers||[])[0].at <= Date.now(),\
              test_wait:!!(document.documentElement && document.documentElement.classList\
                && document.documentElement.classList.contains('test-wait')),\
-             commands:(globalThis.__zw_td_queue||[]).splice(0)})";
+             commands:(globalThis.__zw_td_queue||[]).splice(0)});\
+             } finally {\
+               if (typeof saved_tojson === 'function') Object.prototype.toJSON = saved_tojson;\
+             }})()";
     let value = webview
         .execute_script(&probe_script.replacen("__ZW_PROBE_SEEN__", &probe_seen.to_string(), 1))
         .map_err(|error| error.to_string())?;
@@ -11585,10 +11663,16 @@ return (best?((best.__zwSelector||(best.id?'#'+best.id:''))||''):msel)+'|'+px+'|
             out.trim()
         );
     }
-    let mut parts = out.trim().split('|');
-    let hit = parts.next().unwrap_or_default().trim().to_string();
-    let x = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
-    let y = parts.next().and_then(|v| v.trim().parse::<f32>().ok());
+    // s371（html-semantics）：坐标字段自尾反析、hit 段重join——zwsh compound 定位
+    // 选择器自身含 `|`（`zwsh<len>:<host>|<local>`，engine shadow_address 铸造形），
+    // 页内 best-scan 命中 shadow 元素（shim qSA 遍历含 shadow 内容）时首段直 split
+    // 把 sel 撕在 host/local 界、坐标 parse 恒 None → s176 elementFromPoint 回落
+    // 整段跳过 → 回落 origin 派发（closedby-complex shadow 段 click 落 body →
+    // light-dismiss 误关 16F 残余断点）。`|` 在 light 结构串不出现，尾两段恒坐标。
+    let mut fields: Vec<&str> = out.trim().split('|').collect();
+    let y = fields.pop().and_then(|v| v.trim().parse::<f32>().ok());
+    let x = fields.pop().and_then(|v| v.trim().parse::<f32>().ok());
+    let hit = fields.join("|").trim().to_string();
     // s176（html-semantics M2）：shadow 内容命中回落——页内扫描 `body, body *` 走
     // 封装查询门（shadow 内容不可枚举），shadow 盒上的落点此前塌回 body/空命中，
     // click 坐标与 light-dismiss 目标全错（closedby-complex shadow 20 行根因之二）。

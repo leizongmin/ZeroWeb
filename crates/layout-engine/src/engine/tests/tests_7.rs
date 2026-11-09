@@ -701,11 +701,14 @@ fn test_r355_multiline_stored_layout_pure_ahem() {
         .map(|f| f.font_size);
     assert_eq!(nf_fs, Some(100.0), "#nf 存储 font_size 应为 100px，实际={:?}", nf_fs);
 
-    // (2) 浮动多行纯 Ahem：保持 R84 单行限制——多行不存储。
+    // (2) 浮动多行纯 Ahem：R5483 多行 float 放行（行盒归属自身 IFC 不分行数，
+    // chromium oracle 单/多行同模型）——R355 浮动 guard（「保 multicol-fill-auto-001
+    // self-source」拒存）经 corpus 全窗 A/B 证伪（放行后该案 ✓0.00% 净中性）。
+    let fl_lines = fl_box.inline_layout.as_ref().map(|l| l.len());
     assert!(
-        fl_box.inline_layout.is_none(),
-        "#fl 浮动多行纯 Ahem 不应存储 inline_layout（R355 浮动 guard，保 multicol-fill-auto-001 self-source），实际={}",
-        fl_box.inline_layout.is_some()
+        fl_box.inline_layout.is_some() && fl_lines.is_some_and(|n| n > 1),
+        "#fl 浮动多行纯 Ahem 应存储多行 inline_layout（R5483 放行），实际 lines={:?}",
+        fl_lines
     );
 }
 

@@ -1059,3 +1059,6 @@ mod r5452_clamp_kept_bottom_tests;
 /// 容器涨高 370) + 不触碰不变式（旁置非重叠 BFC 根原样），kill-switch 锚见
 /// tests/r5477_bfc_root_displace_kill_switch.rs。
 mod r5477_bfc_root_displace_tests;
+
+/// s372：[popover] UA position:fixed 几何契约（closedby-complex light-dismiss 命中前提）。
+mod s372_popover_ua_fixed_tests;

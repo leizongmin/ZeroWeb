@@ -5,8 +5,9 @@
 //! testharness_webmessaging/workers 先例），经 `pub(crate)` 复用其执行底座
 //! （`run_testharness_html` / `any_js_window_wrapper` / `wpt_meta_scripts` /
 //! `wpt_js_has_long_timeout` / `CASE_TIMEOUT`）。用例由
-//! `scripts/goals/26-webcrypto-compat.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
-//! （gitignored，WPT pin 子树 `084495e783…`）。
+//! `scripts/goals/38-webcrypto-compat-v3.sh` 按需拉到 `wpt-data/WebCryptoAPI/`
+//! （gitignored，v3 转正子树 `084495e783…`——commit `cb6cc97a…` 的 WebCryptoAPI
+//! 子树，HEAD 布局全量）。
 //!
 //! 双腿分道（M2 worker 腿接线——上游 wptserve `.any.js` 变体语义）：
 //! - window 腿：`.any.js` / `.window.js` 全量（M1 起既有面，台账键不变——
@@ -36,8 +37,8 @@ use crate::testharness_workers::wpt_meta_globals;
 use crate::wpt_file_loader::read_corpus_to_string;
 use std::path::Path;
 
-/// corpus 目录——fetch 脚本 `scripts/goals/26-webcrypto-compat.sh`（同 WPT_REV
-/// pin，git trees 深挖 `lib.sh fetch_dir_deep`）拉取 `.any.js`/`.window.js` 用例
+/// corpus 目录——fetch 脚本 `scripts/goals/38-webcrypto-compat-v3.sh`（v3 转正
+/// 子树全子树新增式拉取）拉取 `.any.js`/`.window.js` 用例
 /// 与 vectors/support 到 `wpt-data/WebCryptoAPI/`（gitignored）。
 const WEBCRYPTO_TEST_DIR: &str = "WebCryptoAPI";
 

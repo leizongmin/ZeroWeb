@@ -1311,7 +1311,15 @@ impl LayoutEngine {
             // 解析，仍需 shrink-to-fit 补测（§10.3.8 + css-sizing-3 default object size）。
             // 双维均已解析的 replaced 维持排除（R1683/R3935 警告）。
             let replaced_collapsed = b.is_replaced && (b.width <= 0.5 || b.height <= 0.5);
-            if !b.is_absolute || (b.is_replaced && !replaced_collapsed) {
+            // s372：fixed 塌 0 宽扩展——corpus 语例 dialog/popover 全为 position:fixed
+            //（inline 或 s372 UA 规则），taffy 对含元素子的 fixed branch 盒
+            // content_size = 流内子 max（OOF 全剔 → 0），与 abs 塌 0 同形；本 pass 门
+            // 此前只吃 is_absolute（LayoutBox is_fixed 独立旗标）→ fixed 塌 0 无补测
+            //（closedby-complex 全盒宽 0 → click 中心落空 over-dismiss）。fixed 仅开
+            // 宽侧塌 0 补测：>0.5 扩臂（R5236 branch-text / R5445 D2）与高侧（taffy
+            // 折行语义既有绿面）维持 abs 域不动，replaced 不入本扩展（自有 R4015 臂）。
+            let fixed_width_rescue = !b.is_absolute && b.is_fixed && !b.is_replaced && b.width <= 0.5;
+            if !b.is_absolute && !fixed_width_rescue {
                 continue;
             }
             // R4034b（CSS Containment 1 §3）：contain:size（含 strict）→ 元素按「无内容」
@@ -1362,7 +1370,9 @@ impl LayoutEngine {
             let width_stretch = matches!(s.width, LengthValue::Stretch) && !(left_def.is_some() && right_def.is_some());
             let mut width_fix =
                 (matches!(s.width, LengthValue::Auto) || width_stretch) && !(left_def.is_some() && right_def.is_some());
-            let mut height_fix = matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
+            // s372：height_fix 仅 abs 域（fixed 扩展只开宽侧塌 0 补测，见 fixed_width_rescue）。
+            let mut height_fix =
+                b.is_absolute && matches!(s.height, LengthValue::Auto) && !(top_def.is_some() && bottom_def.is_some());
             // R5152：multicol 例外只放开宽侧（列几何参与 shrink-to-fit）——高侧维持
             // R4034b containment 语义（auto 高已由 converter 解析 0/CIS），行高近似
             // 不得把内容拉回。R5157：grid 例外两侧同放（row track 几何是尺寸声明，
@@ -1378,7 +1388,7 @@ impl LayoutEngine {
             // R5445 D2 盒判定结果（gate 块内赋值，写侧消费——双向写只对 D2 盒开启；
             // d2_only = D2 且非 branch-text——后者沿用既有只扩口径）。
             let mut d2_only = false;
-            if width_fix && b.width > 0.5 {
+            if width_fix && b.width > 0.5 && b.is_absolute {
                 // R5236 D2（CSS2 §10.3.8 shrink-to-fit）：R2156 slice19 提升原子为 taffy
                 // Absolute 子（R4941）后，含 IFC 文本的 branch 盒（有元素子 → taffy branch、
                 // 无 measure 函数）宽 = taffy 子贡献 max（block.rs content_size =
@@ -1429,7 +1439,8 @@ impl LayoutEngine {
             };
             if let Ok(mut style) = taffy_tree.style(taffy_id).cloned() {
                 let width_collapsed = b.width <= 0.5;
-                if width_fix && (width_collapsed || !b.is_replaced) {
+                // s372：fixed 只入塌 0 臂（非塌 0 fixed 盒维持 taffy 解析，不入补测写侧）。
+                if width_fix && (width_collapsed || (!b.is_replaced && b.is_absolute)) {
                     let used = left_def.unwrap_or(0.0) + right_def.unwrap_or(0.0);
                     let available = (cb_width - used).max(0.0);
                     // R4238：stretch 臂——直接取 insets 之间可用宽（border-box），无收缩。

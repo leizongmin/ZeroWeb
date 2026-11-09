@@ -1900,3 +1900,166 @@ fn test_shadow_local_selector_ladder_s176() {
     assert_eq!(find_by_selector(&doc, &s1), Some(spans[0]), "span[0] 往返");
     assert_eq!(find_by_selector(&doc, &s2), Some(spans[1]), "span[1] 往返");
 }
+
+/// s370（html-semantics）：shadow 内容唯一选择器门钉案——**轻树同身份元素顶替
+/// 唯一性计数**回归。closedby-complex 双 testcase 实证链：light 段 `dialog.dialogB`
+/// 唯一计数达标（封装门剪 ShadowRoot 子树，计数域只看 light 树）→ shadow slot 的
+/// 结构路径锚定借 light 身份铸出 `dialog.dialogB > slot:nth-child(1)` 跨界串——该串
+/// 从 root 解析不回 shadow slot（子枚举/tag 读全 miss），shim light-dismiss
+/// `_zwLdFindSlot` 递归断链，shadow 段 18F（每次跨 shadow 点击误关最近 open
+/// dialog）。修复：`unique_selector_for_node` 对 parent 链穿 ShadowRoot 的节点返
+/// None，`node_entry_json` 走 s176 compound 回落（child_nodes 条目带
+/// `zwsh<len>:<host>|<local>` 串，`try_shadow_scoped_fastpath` 对称解析回原节点）。
+#[test]
+fn test_shadow_content_selector_gate_s370() {
+    use crate::js_dom_bridge::{
+        child_nodes_json_doc, find_by_selector, shadow_scoped_selector, unique_selector_for_node,
+    };
+    // 语料同构：light 段 dialog.dialogB（唯一身份）+ shadow 段同 class dialog/slot。
+    let html = "<html><body>\
+                <div class='testcase'><dialog class='dialogB'><slot></slot></dialog></div>\
+                <div class='testcase'><div id='host'><template shadowrootmode='open'>\
+                <dialog class='dialogB'><slot></slot></dialog>\
+                </template></div></div>\
+                </body></html>";
+    let doc = zero_dom::parse_html(html);
+    let host = find_by_selector(&doc, "#host").expect("host 应可寻址");
+    let sr = doc.shadow_root(host).expect("声明式根应已物化");
+    let shadow_dlg = doc.query_selector(sr, "dialog.dialogB").expect("shadow dialog 应可查");
+    let shadow_slot = doc.query_selector(sr, "slot").expect("shadow slot 应可查");
+    // 轻树同身份元素在场，shadow 内容仍不可 doc 寻址（不借 light 身份）。
+    assert_eq!(
+        unique_selector_for_node(&doc, shadow_dlg),
+        None,
+        "shadow dialog 不应借 light dialog.dialogB 的唯一计数"
+    );
+    assert_eq!(
+        unique_selector_for_node(&doc, shadow_slot),
+        None,
+        "shadow slot 不应铸跨界结构串"
+    );
+    // light 段本身不受影响：同 class dialog 仍以 tag.class 唯一寻址。
+    let light_dlg = find_by_selector(&doc, "div.testcase > dialog.dialogB").expect("light dialog 应可寻址");
+    assert_eq!(
+        unique_selector_for_node(&doc, light_dlg).as_deref(),
+        Some("dialog.dialogB"),
+        "light dialog 唯一选择器不变"
+    );
+    // child_nodes 条目：compound 串 + 解析回 shadow 原节点（roundtrip 行为钉）。
+    let dlg_sel = shadow_scoped_selector(&doc, host, shadow_dlg).expect("shadow dialog 应可铸 compound");
+    let kids = child_nodes_json_doc(&doc, &dlg_sel);
+    let slot_sel = kids
+        .split("\"s\":\"")
+        .nth(1)
+        .map(|rest| &rest[..rest.find('"').expect("s 字段闭合")])
+        .expect("shadow 子条目应带 s");
+    assert!(slot_sel.starts_with("zwsh"), "slot 条目应为 compound 串: {kids}");
+    assert_eq!(
+        find_by_selector(&doc, slot_sel),
+        Some(shadow_slot),
+        "compound 串应解析回 shadow slot（roundtrip）"
+    );
+    let _ = shadow_scoped_selector(&doc, host, shadow_slot).expect("slot 应可铸 compound");
+}
+
+/// s370（html-semantics）：shadow 内容 gBCR rect 面钉案——closedby-complex shadow 段
+/// 16F 勘根（zw-probe-s370 探针定谳：showPopover 状态建立成功、matches 正常，但
+/// clickOn 的 `getBoundingClientRect()` 对 shadow 内容返零 rect → 点击 (0,0) 落在
+/// 全部 dialog/popover 外 → light-dismiss 全关）。布局树含 shadow 内容（layout-engine
+/// `collect_shadow_children` slot 摊平），`fill_layout_rect_snapshot` 后 rect snapshot
+/// 应含 shadow NodeId 键——RectBridge handler 以 zwsh compound 串解析回 NodeId 后查
+/// 此表（`make_dom_html_rect_handler`）。本钉守住「布局→snapshot→解析」三段一致性。
+#[test]
+fn test_shadow_content_layout_rect_s370() {
+    use crate::hit_test::{HitTestCache, node_id_to_u64};
+    use crate::js_dom_bridge::find_by_selector;
+    use crate::pipeline::RenderPipeline;
+    use crate::rect_bridge::{fill_layout_rect_snapshot, new_layout_rect_snapshot};
+    use std::collections::HashMap;
+
+    // 语料同构：声明式 shadow host + slot + 内联定位 shadow 内容。
+    let html = "<html><body>\
+                <div id='host'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='top: 150px'>Popover 1<slot></slot></div>\
+                </template>light text</div>\
+                </body></html>";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(html, "");
+    let cache: HitTestCache = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    let snap = new_layout_rect_snapshot();
+    cache.fill_layout_rect_snapshot(&snap);
+    let map = snap.lock().unwrap();
+
+    // light 树对照：host rect 在表（管线既有面）。
+    let doc = zero_dom::parse_html(html);
+    let host = find_by_selector(&doc, "#host").expect("host 应可寻址");
+    assert!(map.contains_key(&node_id_to_u64(host)), "light host rect 应在 snapshot");
+    // shadow 内容：zwsh compound 串解析回原节点后 rect 在表（断点面）。
+    let sr = doc.shadow_root(host).expect("声明式根应已物化");
+    let pa = doc.query_selector(sr, ".popoverA").expect("shadow 内容应可查");
+    let pa_sel = crate::js_dom_bridge::shadow_scoped_selector(&doc, host, pa).expect("应可铸 compound");
+    assert_eq!(
+        find_by_selector(&doc, &pa_sel),
+        Some(pa),
+        "compound 串应解析回 shadow 内容"
+    );
+    let got = map.get(&node_id_to_u64(pa));
+    let rect = got.copied().unwrap_or((0.0, 0.0, 0.0, 0.0));
+    assert!(
+        got.is_some() && rect.2 > 0.0 && rect.3 > 0.0,
+        "shadow 内容 rect 应在 snapshot 且非退化（got {rect:?}）"
+    );
+}
+
+/// s370（html-semantics）：三层嵌套摊平 shadow 内容 rect 面钉案——closedby-complex
+/// shadow 段 16F 勘根收口（zw-probe-a/g 域跑定谳：单 SR/平级双 SR/两层 slot 摊平
+/// 全部 rect 非零，真语料三层嵌套摊平 popoverA 与摊平 light 内容 popoverB rect 零）。
+/// 本测真语料同构（3 层 SR + 两层摊平链：SR#1 slot 摊平带 SR#2 的 host、popoverA
+/// slot 再摊平带 SR#3 的 host）——红 = 布局缺口纯管线复现。
+#[test]
+fn test_shadow_nested_flatten_rect_s370() {
+    use crate::hit_test::{HitTestCache, node_id_to_u64};
+    use crate::js_dom_bridge::find_by_selector;
+    use crate::pipeline::RenderPipeline;
+    use crate::rect_bridge::{fill_layout_rect_snapshot, new_layout_rect_snapshot};
+    use std::collections::HashMap;
+
+    // closedby-complex shadow 段同构：三层嵌套声明式 SR + 两层 slot 摊平链。
+    let html = "<html><body><div class='testcase'>\
+                <div><template shadowrootmode='open'>\
+                <div class='anchorA'>A<slot></slot></div>\
+                </template>\
+                <div><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template>\
+                <div><template shadowrootmode='open'>\
+                <div class='anchorB'>B<slot></slot></div>\
+                </template>\
+                <div class='lightB'>LB</div>\
+                </div></div></div></body></html>";
+    let mut pipeline = RenderPipeline::new(800.0, 600.0);
+    let _ = pipeline.render_html(html, "");
+    let cache: HitTestCache = pipeline.build_hit_test_cache().expect("hit cache 应可建");
+    let snap = new_layout_rect_snapshot();
+    cache.fill_layout_rect_snapshot(&snap);
+    let map = snap.lock().unwrap();
+
+    let doc = zero_dom::parse_html(html);
+    let host1 = find_by_selector(&doc, "div.testcase > div").expect("host1 应可寻址");
+    let sr1 = doc.shadow_root(host1).expect("SR#1 应物化");
+    let a = doc.query_selector(sr1, ".anchorA").expect("anchorA 应可查");
+    let host2 = find_by_selector(&doc, "div.testcase > div > div").expect("host2 应可寻址");
+    let sr2 = doc.shadow_root(host2).expect("SR#2 应物化");
+    let pa = doc.query_selector(sr2, ".popoverA").expect("popoverA 应可查");
+    let host3 = find_by_selector(&doc, "div.testcase > div > div > div").expect("host3 应可寻址");
+    let sr3 = doc.shadow_root(host3).expect("SR#3 应物化");
+    let b = doc.query_selector(sr3, ".anchorB").expect("anchorB 应可查");
+    let lb = find_by_selector(&doc, ".lightB").expect("lightB 应可寻址");
+    for (name, id) in [("anchorA", a), ("popoverA", pa), ("anchorB", b), ("lightB", lb)] {
+        let rect = map.get(&node_id_to_u64(id)).copied();
+        assert!(
+            matches!(rect, Some((_, _, w, h)) if w > 0.0 && h > 0.0),
+            "三层嵌套摊平的 {name} rect 应非退化（got {rect:?}）"
+        );
+    }
+}

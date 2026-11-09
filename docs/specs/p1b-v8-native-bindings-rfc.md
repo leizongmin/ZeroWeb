@@ -241,7 +241,7 @@ native（A）读写既不反映 polyfill（B）也不反映 renderer（C）—�
 | 路径/模块 | 动作 | 目的 | 风险 |
 |----------|------|------|------|
 | `crates/engine/src/dom_bindings/`（新） | 新增 | 原生绑定模块 | 新代码，需 GC 设计验证 |
-| `crates/engine/src/js_dom_shim.js` | 渐进改写/萎缩 | 高层 API 改调原生；S7 删减 | 既有 14137 测试依赖 |
+| `crates/engine/src/js_dom_shim.js`（后续已拆分为 `js_dom_shim/` 目录分片） | 渐进改写/萎缩 | 高层 API 改调原生；S7 删减 | 既有 14137 测试依赖 |
 | `crates/engine/src/js_dom_bridge.rs` | 渐进改写/萎缩 | `__zw_*` 逐步被原生替代 | 同上 |
 | `crates/script-sandbox/src/v8_runtime.rs` | 可能小改 | 暴露 raw scope/handle 供原生绑定（若 register_callback 不够） | 引擎层，谨慎 |
 

@@ -624,3 +624,199 @@ fn test_webview_config_url_auto_loaded_via_builder() {
     let wv_builder = WebViewBuilder::new().url("https://example.com").build();
     assert_eq!(wv_builder.url(), Some("https://example.com"));
 }
+
+// ── s370（html-semantics）声明式 shadow 内容 gBCR 面 ──
+
+/// s370（html-semantics）：closedby-complex shadow 段 16F 勘根钉——engine 纯
+/// pipeline 单测绿（`test_shadow_content_layout_rect_s370`），本测复刻 runner
+/// 全管线（load_html + execute_script）：light 对照 rect 非零、shadow 内容经
+/// zwsh compound 串 rect 非零（红态实证零 rect → clickOn (0,0) → light-dismiss
+/// 误关）。
+#[test]
+fn test_shadow_content_gbcr_webview_s370() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body>\
+                <div id='unrelated'>Unrelated</div>\
+                <div class='testcase'><div id='host'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template></div></div>\
+                </body></html>";
+    wv.load_html(html, None);
+    let out = wv
+        .execute_script(
+            "(function(){\
+               var host = document.querySelector('#host');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var sel = String(pa.__zwSelector || '');\
+               var r = pa.getBoundingClientRect();\
+               var lu = document.querySelector('#unrelated').getBoundingClientRect();\
+               var qs = 'x';\
+               var ident = 'x';\
+               try { var q = document.querySelector(sel); qs = String(!!q); ident = String(q === pa); } catch (e) { qs = 'THREW:' + e.name; }\
+               return JSON.stringify({ sel: sel, rect: [r.x, r.y, r.width, r.height],\
+                 light: [lu.x, lu.y, lu.width, lu.height], qs: qs, ident: ident });\
+             })()",
+        )
+        .expect("execute_script 应成功");
+    let sel_start = out.find("\"sel\":\"").map(|i| i + 7).expect("sel 字段应存在");
+    let sel_end = out[sel_start..].find('"').expect("sel 闭合") + sel_start;
+    let sel = &out[sel_start..sel_end];
+    assert!(sel.starts_with("zwsh"), "shadow 内容 proxy 应带 compound 串: {out}");
+    // s371 收紧：shim querySelector 已有 zwsh 前缀分派（s370 挂账缺口修复——
+    // part06 主查询入口置于 R158 守卫前，`_zwShadowContentByCompoundSel` 同串寻址），
+    // SyntaxError 二态不再成立，恒命中。
+    assert!(
+        out.contains("\"qs\":\"true\""),
+        "querySelector(zwsh) 应命中 shadow 内容: {out}"
+    );
+    // s371 信任门钉：testdriver stub `selectorFor` 的 `querySelector(sel) === element`
+    // 语义——同串查询返回 findElements 枚举的同身份 proxy（_makeProxy `_elKey` 缓存）。
+    assert!(
+        out.contains("\"ident\":\"true\""),
+        "querySelector(zwsh) 应返回同身份 proxy（selectorFor 信任门语义）: {out}"
+    );
+    assert!(!out.contains("\"light\":[0,0,0,0]"), "light 对照 rect 应非零: {out}");
+    assert!(!out.contains("\"rect\":[0,0,0,0]"), "shadow 内容 rect 应非零: {out}");
+}
+
+/// s370（html-semantics）：三层嵌套摊平的 webview 全管线 gBCR 钉——engine 纯管线
+/// 同构单测绿（`test_shadow_nested_flatten_rect_s370`），runner 域跑同构页红态
+/// （zw-probe-a 定谳 popoverA rect 零）。本测分离 runner 侧断点（红 = webview
+/// 执行链缺口：live doc shadow 物化状态 / snapshot 刷新代际）。
+#[test]
+fn test_shadow_nested_flatten_gbcr_webview_s370() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body>\
+                <div id='unrelated'>Unrelated</div>\
+                <div class='testcase'>\
+                <div><template shadowrootmode='open'>\
+                <div class='anchorA'>A<slot></slot></div>\
+                </template>\
+                <div id='host2'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template></div>\
+                </div></div>\
+                </body></html>";
+    wv.load_html(html, None);
+    // 模拟 testharness 生命周期：先注入 DOM（mutations apply → re-render），
+    // 再读 shadow 内容 rect——runner 域跑红态即在此相位（testharness log 注入后）。
+    let _ = wv
+        .execute_script(
+            "(function(){\
+               var d = document.createElement('div');\
+               d.id = 'log';\
+               d.textContent = 'injected';\
+               document.body.appendChild(d);\
+               return 'OK';\
+             })()",
+        )
+        .expect("注入脚本应成功");
+    // runner 同款入口复测：execute_script_with_dom（mutation 收集+应用链）。
+    let out_wd = wv
+        .execute_script_with_dom(
+            "(function(){\
+               var host = document.querySelector('#host2');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var r = pa.getBoundingClientRect();\
+               return JSON.stringify({ rect: [r.x, r.y, r.width, r.height] });\
+             })()",
+        )
+        .expect("with_dom execute 应成功");
+    assert!(
+        !out_wd.contains("[0,0,0,0]"),
+        "with_dom 入口 shadow 内容 rect 应非零: {out_wd}"
+    );
+    let out = wv
+        .execute_script(
+            "(function(){\
+               var host = document.querySelector('#host2');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var sel = String(pa.__zwSelector || '');\
+               var r = pa.getBoundingClientRect();\
+               var lu = document.querySelector('#unrelated').getBoundingClientRect();\
+               return JSON.stringify({ sel: sel, rect: [r.x, r.y, r.width, r.height],\
+                 light: [lu.x, lu.y, lu.width, lu.height] });\
+             })()",
+        )
+        .expect("execute_script 应成功");
+    assert!(
+        !out.contains("\"rect\":[0,0,0,0]"),
+        "三层嵌套摊平 shadow 内容 rect 应非零: {out}"
+    );
+}
+
+/// s371（html-semantics）：runner 探测环结构性刷新的 shadow 保真钉——runner 泵
+/// 每轮读 `document.documentElement.outerHTML`（shim 序列化）喂
+/// `refresh_if_html_changed` 全量重渲染（testharness.rs 探测环同款）。勘根排除
+/// 记录（s370 红态 16F 曾疑此链）：echo 模板序列化保真（`documentElement` 无根
+/// → s180 剔除门不触发）、engine 物化消费嵌套 echo、rect 快照刷新全链保真——
+/// 域跑红根因在 clickOn 选择器链（s371 两修复），本测把该排除面钉成常驻。
+#[test]
+fn test_runner_refresh_shadow_rect_s371() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body>\
+                <div id='unrelated'>Unrelated</div>\
+                <div class='testcase'>\
+                <div><template shadowrootmode='open'>\
+                <div class='anchorA'>A<slot></slot></div>\
+                </template>\
+                <div id='host2'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template></div>\
+                </div></div>\
+                </body></html>";
+    wv.load_html(html, None);
+    let read_rect = |wv: &mut WebView| -> String {
+        wv.execute_script(
+            "(function(){\
+               var host = document.querySelector('#host2');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var r = pa.getBoundingClientRect();\
+               return JSON.stringify([r.x, r.y, r.width, r.height]);\
+             })()",
+        )
+        .expect("execute_script 应成功")
+    };
+    assert!(
+        !read_rect(&mut wv).contains("[0,0,0,0]"),
+        "刷新前 shadow 内容 rect 应非零"
+    );
+    // runner 真实相位：testharness 注入结果元素 → shim mutation → 序列化与
+    // cached_html 经 mutation 应用路径同步（apply 链快照含 echo 模板）。
+    let _ = wv
+        .execute_script(
+            "(function(){\
+               var d = document.createElement('div');\
+               d.id = 'log';\
+               d.textContent = 'injected';\
+               document.body.appendChild(d);\
+               return 'OK';\
+             })()",
+        )
+        .expect("注入脚本应成功");
+    let shim = wv
+        .execute_script("document.documentElement ? document.documentElement.outerHTML : ''")
+        .expect("outerHTML 序列化应成功");
+    assert!(
+        shim.matches("shadowrootmode").count() >= 2 && shim.contains("host2"),
+        "shim 序列化应保真嵌套声明式 shadow（echo 模板存活）: {shim}"
+    );
+    // runner 刷新窗口里 cached_html 与 shim 序列化可分叉（mutation 队列滞后一
+    // turn）；追加注释强制分叉走真刷新臂，钉「忠实序列化 → 重渲染 → 物化 →
+    // rect 快照」链。
+    let forced = wv.refresh_if_html_changed(format!("{shim}<!-- s371 -->").trim());
+    assert!(forced, "强制分叉应走真刷新臂");
+    let after = read_rect(&mut wv);
+    assert!(
+        !after.contains("[0,0,0,0]"),
+        "runner 同款结构性刷新后 shadow 内容 rect 应保持非零: {after}"
+    );
+}

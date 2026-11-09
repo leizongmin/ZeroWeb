@@ -509,6 +509,21 @@
       return new Promise(function (resolve, reject) {
         var name = (typeof algorithm === 'object' && algorithm) ? algorithm.name : algorithm;
         name = _zw_upperAscii(String(name == null ? '' : name));
+        // [EnforceRange] unsigned long? length（WebIDL 转换，先于任何算法步序）：
+        // NaN/±Infinity/<0/>2^32-1/非整数 → TypeError；null/undefined/省略 → null
+        // （ECDH/X25519 全宽；HKDF/PBKDF2/Argon2 → 各自 OperationError 分支）。
+        // 此前 2^32+8（≥0 且 8 倍数）穿透到 host KDF：dkLen≈512MB，PBKDF2 10^5
+        // 迭代×2^25 块纯 CPU 不可终止——全语料 r4/r5 楔死根因（derived_bits_length
+        // enforceRange 组）。#21 外部可控尺寸封顶。
+        // https://w3c.github.io/webcrypto/#SubtleCrypto-method-deriveBits  https://heycam.github.io/webidl/#es-enforce-range
+        var lenArg = null;
+        if (length != null) {
+          var lnNum = Number(length);
+          if (!(isFinite(lnNum) && lnNum >= 0 && lnNum <= 4294967295 && lnNum === Math.floor(lnNum))) {
+            reject(new TypeError('deriveBits length must be an unsigned long')); return;
+          }
+          lenArg = lnNum;
+        }
         if (name === 'ECDH') {
           // ECDH（M4b）：校验序（derive.js 断言）——public 成员缺失/非 CryptoKey
           // TypeError → baseKey 非 ECDH/非 private/无 "deriveBits" usage/public 非法或
@@ -524,10 +539,7 @@
             reject(_zw_subtleDE('crypto.subtle deriveBits requires host callback', 'NotSupportedError')); return;
           }
           var fieldLen = _zw_ecFieldLen[key.algorithm.namedCurve];
-          var lenBits = (length == null) ? fieldLen * 8 : Number(length);
-          if (!(lenBits >= 0)) {
-            reject(new TypeError('deriveBits length must be a number')); return;
-          }
+          var lenBits = (lenArg == null) ? fieldLen * 8 : lenArg;
           if (lenBits > fieldLen * 8) {
             reject(new _zw_subtleDE('deriveBits length must not exceed the field size', 'OperationError')); return;
           }
@@ -558,10 +570,7 @@
             reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
           }
           var xMaxBits = (name === 'X448') ? 448 : 256;
-          var xLenBits = (length == null) ? xMaxBits : Number(length);
-          if (!(xLenBits >= 0)) {
-            reject(new TypeError('deriveBits length must be a number')); return;
-          }
+          var xLenBits = (lenArg == null) ? xMaxBits : lenArg;
           if (xLenBits > xMaxBits) {
             reject(new _zw_subtleDE('deriveBits length must not exceed the output size', 'OperationError')); return;
           }
@@ -583,7 +592,7 @@
           if (!key.usages || key.usages.indexOf('deriveBits') < 0) {
             reject(new _zw_subtleDE('Key usages do not include "deriveBits"', 'InvalidAccessError')); return;
           }
-          _zw_argon2Derive(algorithm, key, length, resolve, reject);
+          _zw_argon2Derive(algorithm, key, lenArg, resolve, reject);
           return;
         }
         if ((name !== 'PBKDF2' && name !== 'HKDF')) {
@@ -609,11 +618,11 @@
         // length：负数/非 8 倍数/null/undefined/omitted → OperationError
         //（derived_bits_length KDF 组 "should throw an exception"）；0 → 空
         // ArrayBuffer（kdf.js/derived_bits_length "with 0 length" 组断言 resolve 空）。
-        if (typeof length !== 'number' || length < 0 || length % 8 !== 0) {
+        if (lenArg == null || lenArg % 8 !== 0) {
           reject(new _zw_subtleDE('deriveBits length must be a positive multiple of 8', 'OperationError')); return;
         }
-        if (length === 0) { resolve(new Uint8Array(0)); return; }
-        _zw_performDerive(algorithm, key, length).then(resolve, reject);
+        if (lenArg === 0) { resolve(new Uint8Array(0)); return; }
+        _zw_performDerive(algorithm, key, lenArg).then(resolve, reject);
       });
     },
     // deriveKey(algorithm, baseKey, derivedKeyAlgo, extractable, usages) → Promise<CryptoKey>。
@@ -733,6 +742,16 @@
         var isAes = (algo.name === 'AES-GCM' || algo.name === 'AES-CBC' || algo.name === 'AES-CTR' || algo.name === 'AES-KW' || algo.name === 'AES-OCB');
         var isChaCha = algo.name === 'ChaCha20-Poly1305';
         if (isAes) {
+          // AesKeyGenParams.length = [EnforceRange] unsigned short（WebIDL 转换，先于
+          // 任何算法步序）：NaN/±Infinity/<0/>65535/非整数 → TypeError（WPT failures.js
+          // "Bad algorithm property" ±2^32 组；64..512 组仍走后续 OperationError）。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+          if (typeof algorithm === 'object' && algorithm && algorithm.length != null) {
+            var aesLenNum = Number(algorithm.length);
+            if (!(isFinite(aesLenNum) && aesLenNum >= 0 && aesLenNum <= 65535 && aesLenNum === Math.floor(aesLenNum))) {
+              reject(new TypeError('AES key length must be an unsigned short')); return;
+            }
+          }
           var allowed = algo.name === 'AES-KW' ? ['wrapKey', 'unwrapKey'] : ['encrypt', 'decrypt', 'wrapKey', 'unwrapKey'];
           var u = _zw_normalizeUsages(usages, allowed);
           if (!u) { reject(new _zw_subtleDE('Invalid key usages for ' + algo.name, 'SyntaxError')); return; }
@@ -757,11 +776,25 @@
           }
           resolve(new CryptoKey('secret', extractable, { name: algo.name }, cu, Array.from(_zw_randomBytes(32))));
         } else if (algo.name === 'HMAC') {
+          // HmacKeyGenParams.length = [EnforceRange] unsigned long（WebIDL 转换，先于
+          // 任何算法步序）：NaN/±Infinity/<0/>2^32-1/非整数 → TypeError（WPT failures.js
+          // "Bad algorithm property" ±2^32 组）；缺省 = hash 块大小不变。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+          if (algo.length != null) {
+            var hmacLenNum = Number(algo.length);
+            if (!(isFinite(hmacLenNum) && hmacLenNum >= 0 && hmacLenNum <= 4294967295 && hmacLenNum === Math.floor(hmacLenNum))) {
+              reject(new TypeError('HMAC length must be an unsigned long')); return;
+            }
+          }
           var hu = _zw_normalizeUsages(usages, ['sign', 'verify']);
           if (!hu) { reject(new _zw_subtleDE('Invalid key usages for HMAC', 'SyntaxError')); return; }
           var lenBits = _zw_keyLengthBits(algo);
-          if (!lenBits) {
-            // spec HmacKeyGenParams：显式 length 0（或负）→ OperationError。
+          // spec HMAC generateKey 步骤 2：length 缺省 → hash 块大小；非零 → 取值；
+          // 显式 0 → OperationError。_zw_keyLengthBits 对缺省与显式 0 同返块大小，
+          // 故在调用点判显式 0（deriveKey 的 get key length 路径对 0 是 TypeError，
+          // 语义不同，不改共享助手；负值已在上面的 EnforceRange 面拦截）。
+          // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
+          if (!lenBits || (algo.length != null && Number(algo.length) === 0)) {
             reject(new _zw_subtleDE('Invalid HMAC length: ' + algo.length, 'OperationError')); return;
           }
           if (hu.length === 0) {

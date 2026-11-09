@@ -1210,11 +1210,29 @@ fn unique_selector_for_node_ctx(doc: &Document, ctx: Option<UniqSelCtx>, node: N
     // 不 merge、换代后不重锚）。物化 shadow 树 parent 链达 root（attach_shadow 挂
     // host 子列表），不受此门影响。
     let mut cur = node;
+    let mut crossed_shadow_root = false;
     loop {
         if cur == doc.root() {
             break;
         }
         cur = doc.get(cur)?.parent?;
+        // s370（html-semantics）：parent 链穿 ShadowRoot = shadow 内容——**不可 doc
+        // 寻址**，返 None（调用方走 shadow 域定位：[`shadow_content_entry_selector`]
+        // compound 串，`try_shadow_scoped_fastpath` 与铸造同域对称解析；hit_test 同款
+        // 回落既有）。物化 shadow 树 parent 链虽达 root（s175 门放行），但解析域与
+        // 计数域不对称：唯一性计数走 `query_selector_all(root, …)`（s168 封装门剪
+        // ShadowRoot 子树，只数 light 树），同身份 light 元素可顶替计数达标——
+        // closedby-complex 双 testcase 实证：shadow slot 经 light `dialog.dialogB`
+        // 锚定铸出 `dialog.dialogB > slot:nth-child(1)` 跨界串，该串从 root 解析不回
+        // shadow slot（shim 子枚举/tag 读全 miss → light-dismiss findSlot 递归断链，
+        // shadow 段 18F）。None 后 node_entry_json 回落 compound 串（s176 通道）。
+        // https://dom.spec.whatwg.org/#shadow-trees
+        if matches!(doc.get(cur)?.kind, NodeKind::ShadowRoot(_)) {
+            crossed_shadow_root = true;
+        }
+    }
+    if crossed_shadow_root {
+        return None;
     }
     if let Some(parts) = stable_selector_parts(doc, node)
         && uniq_stable_count(doc, ctx, &parts) == 1

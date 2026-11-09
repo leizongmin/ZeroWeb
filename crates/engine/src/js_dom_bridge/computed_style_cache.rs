@@ -281,6 +281,84 @@ pub(crate) fn active_external_css() -> Arc<str> {
 }
 
 thread_local! {
+    /// 已注入代际键 `(Arc 指针, drain_gen, style_version)`：同键跳过重注入（模态
+    /// 集不变且槽 doc 未换代时 query_selector 重解析纯浪费）；模态态变化写新
+    /// `Arc`（指针变）或槽 doc 换代（gen 前进）均使键失配 → 重注入。NodeId 随
+    /// doc 换代失效，故键必须含 gen 分量。
+    static APPLIED_RUNNER_MODAL_KEY: RefCell<(usize, usize, usize)> = const { RefCell::new((0, 0, 0)) };
+}
+
+/// runner 模态 dialog selector 集合（s373，2026-11-10）：shim `showModal()`/
+/// `close()` 尾部同步经 `__zw_set_modal_state` 宿主回调全量推送
+/// `_zwDialogModalAllSels()` 现值，gCS 代际槽 compute 前经
+/// [`apply_runner_modal_state`] 注入槽 doc 的 `modal_dialogs`——UA
+/// `dialog:modal { visibility: visible }`（style-system UA 注入）与 `:modal`
+/// 样式判定的 runner 面真相源。
+///
+/// 同步推送而非探测环拍间轮询：WPT test() 是同步函数——`showModal()` 后同 turn
+/// 内立即 `getComputedStyle` 断言（modal-dialog-in-visibility-hidden 三断言同
+/// turn 连跑），拍间轮询的集合滞后一拍（showModal 前的旧值）→ gCS 面恒 stale。
+/// pipeline `set_modal_dialog_selectors`（探测环仍喂）只服务 render fresh-parse
+/// 的每帧新 Document，gCS 走的代际槽 doc 是另一生命周期。全局 `RwLock` 非
+/// thread_local——镜像 [`QUERY_STYLE_OVERRIDE`] 先例（写入方与 compute 消费方
+/// 不必同线程）。`None` = 非 runner 环境（真渲染路径）→ 注入零干扰。
+static RUNNER_MODAL_SELECTORS: LazyLock<RwLock<Option<Arc<Vec<String>>>>> = LazyLock::new(|| RwLock::new(None));
+
+/// `__zw_set_modal_state` 宿主回调（shim showModal/close/reset 同步点调用）：
+/// 全量替换模态 selector 集合。逗号分隔串（`_zwDialogModalAllSels()` 原始形态），
+/// 空串 = 空集合（close 后清态）。
+pub fn set_runner_modal_dialog_selectors(raw: &str) {
+    let list: Vec<String> = raw
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect();
+    if let Ok(mut slot) = RUNNER_MODAL_SELECTORS.write() {
+        *slot = Some(Arc::new(list));
+    }
+}
+
+/// gCS 代际槽 compute 前注入 runner 模态态（见 [`RUNNER_MODAL_SELECTORS`]）。
+///
+/// 无条件 `set_modal_dialogs`（含空集）——槽 doc 是持久对象（非 render fresh-parse），
+/// close 后的清态只能靠下一拍注入落空集；pipeline `inject_modal_state` 的「非空才
+/// set」语义是 fresh-parse 场景（每次重建无 stale），不适用本通道。
+fn apply_runner_modal_state(
+    slot: &mut (
+        String,
+        usize,
+        usize,
+        Document,
+        HashMap<NodeId, ComputedStyle>,
+        Vec<Stylesheet>,
+        Arc<str>,
+        Arc<str>,
+        Arc<Vec<(String, String)>>,
+        Arc<Vec<(String, String, String)>>,
+        Vec<ShadowScopeStylesheets>,
+    ),
+    drain_gen: usize,
+    style_version: usize,
+) {
+    let Some(sels) = RUNNER_MODAL_SELECTORS.read().ok().and_then(|slot| slot.clone()) else {
+        return; // 非 runner 环境（真渲染路径走 pipeline 注入）→ 零干扰
+    };
+    let key = (Arc::as_ptr(&sels) as usize, drain_gen, style_version);
+    if APPLIED_RUNNER_MODAL_KEY.with(|cell| *cell.borrow()) == key {
+        return;
+    }
+    // selector 解析对 stale 容忍（dialog 已移除等）→ 解析不出的项静默落空，与
+    // pipeline inject_modal_state 的 filter_map 同语义。
+    let ids: Vec<NodeId> = sels
+        .iter()
+        .filter_map(|sel| slot.3.query_selector(slot.3.root(), sel))
+        .collect();
+    slot.3.set_modal_dialogs(ids);
+    APPLIED_RUNNER_MODAL_KEY.with(|cell| *cell.borrow_mut() = key);
+}
+
+thread_local! {
     /// 外部 CSS 解析记忆化（P9-9/R5107 定向门禁缓解）：全量兜底路径与 sheets 脏
     /// 重建每代重跑 [`collect_stylesheets`]，css 文本不变也重复 tokenize+parse
     /// （200KB 量级 parse ~9ms/代 → 代际耗时 4.9x 超阈值；克隆 AST ~1ms）。按精确
@@ -621,6 +699,12 @@ fn finish_generation_update(
             None => return false,
         }
     }
+    // s373：runner 模态态注入在 compute 前——本次增量重算（changed 子树）按注入后的
+    // modal 态级联（UA `dialog:modal{visibility:visible}` / `:modal` 判定）。注入放
+    // `f` 前（调用方）来不及：增量 compute 已在 slot 更新内完成，styles 按旧 modal
+    // 态产出，断言消费 stale 值。模态态变化必经 open 属性 mutation → dialog 自身在
+    // changed 集 → 注入后的重算覆盖目标元素。
+    apply_runner_modal_state(slot, drain_gen, style_version);
     let mut sys = StyleSystem::new();
     // 视口与全量路径同源（compute_styles_for_doc 的 1280×800 默认）。
     sys.set_viewport(1280.0, 800.0);
@@ -1002,6 +1086,16 @@ pub fn with_cached_document_styles<T>(
             }
         }
         // 不变式：上方 borrow_mut 块保证槽必为 Some（命中沿用或换代重填），故 expect 不可达。
+        // s373：runner 模态态注入在 f 前统一汇点——同代快路径与换代路径都过此处
+        //（同代重入经 applied 键短路，零 query_selector 成本）。
+        {
+            let mut slot = cell.borrow_mut();
+            apply_runner_modal_state(
+                slot.as_mut().expect("generation cache populated"),
+                drain_gen,
+                style_version,
+            );
+        }
         let binding = cell.borrow();
         let (_, _, _, doc, styles, ..) = binding.as_ref().expect("generation cache populated");
         f(doc, styles)

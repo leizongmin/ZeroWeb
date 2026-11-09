@@ -5,7 +5,8 @@
 //! 先例），经 `pub(crate)` 复用其执行底座（`run_any_js_window_case` /
 //! `run_testharness_html_inner` / `corpus_case_timeout`）。既有 jsapi 通道
 //! （`testharness::WASM_CASES` 固定清单 + `testharness-wasm` 子命令）是 DC-4
-//! 回归底线，**保持字节不动**；本模块只覆盖扩面语料。
+//! 回归底线，window 键面不动（wptfyi-runtime DC-2 追加 dedicated worker 键）；本
+//! 模块只覆盖扩面语料。
 //!
 //! 用例由 `scripts/goals/32-wasm-compat.sh`（GOAL_FETCH_DEEP=1 git trees 深挖 +
 //! GOAL_PULL_ANY_JS=1 + GOAL_PULL_WASM=1）按 pin 315976933870b34d6ea30e3f6643403edae678ba
@@ -27,8 +28,9 @@
 //! 运行面 = 目录递归扫描（workers 先例）+ [`wasm_core_case_skipped`] 内容规则筛减。
 //! `.any.js` 走 window 变体通道（goal 契约「含 .any.js window 变体通道」；
 //! `run_any_js_window_case`），`.html`/`.htm`（含 wrapper 页）走标准 html 通道。
-//! dedicated/shared/service worker-only 变体（`// META: global=` 无 window token）
-//! M1 不设通道——skip 记账（jsapi 通道同口径先例），挂账 M2 归簇评估。
+//! dedicated 变体（缺省双变体 / worker token / worker-only）wptfyi-runtime DC-2
+//! 起走 dedicated worker 腿（encoding/jsapi 通道同款分道，上报 `.any.worker.js`
+//! 键）；仅 sharedworker/serviceworker 仍不设通道。
 
 use crate::testharness::{
     HarnessStatus, HarnessSubtestResult, corpus_case_timeout, run_any_js_window_case, run_testharness_html_inner,
@@ -51,8 +53,9 @@ const WASM_WEBAPI_TEST_DIR: &str = "wasm/webapi";
 ///   （compression/webcrypto/timing 先例）。
 /// - `.html`/`.htm` 不含 `testharness` 引用：reftest 参照页/manual/demo
 ///   （workers 先例——wrapper 页自带 `/resources/testharness.js` 引用，天然放行）。
-/// - `.any.js` `// META: global=` 无 `window` token：worker-only 变体，M1 window
-///   变体通道之外（模块头注记），skip 记账。
+/// - `.any.js` worker-only 变体（`// META: global=` 无 `window` token）不再整案
+///   skip——wptfyi-runtime DC-2 worker 变体面起由 dedicated 通道分道承接
+///   （[`run_wasm_core_cases`] 执行循环；此前 M1 window-only skip 记账）。
 fn wasm_core_case_skipped(relative: &str, source: &str) -> bool {
     if relative.contains("esm-integration/") {
         return true;
@@ -61,13 +64,7 @@ fn wasm_core_case_skipped(relative: &str, source: &str) -> bool {
     if name.starts_with("idlharness.") {
         return true;
     }
-    if (relative.ends_with(".html") || relative.ends_with(".htm")) && !source.contains("testharness") {
-        return true;
-    }
-    if relative.ends_with(".any.js") && !wpt_meta_global_includes_window(source) {
-        return true;
-    }
-    false
+    (relative.ends_with(".html") || relative.ends_with(".htm")) && !source.contains("testharness")
 }
 
 /// Parse `// META: global=` tokens（workers 模块 `wpt_meta_globals` 同语义——
@@ -158,19 +155,38 @@ pub fn run_wasm_core_cases(wpt_root: &Path, filter: Option<&str>) -> Vec<(String
         if wasm_core_case_skipped(&relative, &source) {
             continue;
         }
-        let results = if relative.ends_with(".html") || relative.ends_with(".htm") {
-            run_testharness_html_inner(
+        if relative.ends_with(".html") || relative.ends_with(".htm") {
+            let results = run_testharness_html_inner(
                 wpt_root,
                 &relative,
                 &source,
                 &harness_source,
                 &[],
                 corpus_case_timeout(),
-            )
-        } else {
-            run_any_js_window_case(wpt_root, &relative, &source, &harness_source)
-        };
-        cases.push((relative, results));
+            );
+            cases.push((relative, results));
+            continue;
+        }
+        // wptfyi-runtime DC-2（wasm worker 变体面）：`.any.js` 分道（分道判定见
+        // [`crate::testharness_workers::dedicated_worker_variant`]）——window lane
+        // 跑 window 腿（`.window.js` 恒 window lane），dedicated lane 追加
+        // dedicated worker 腿、上报 `.any.worker.js` 键（对账映射
+        // `.any.worker.html` 分母变体；worker-only 源由此入账，此前 M1 整案 skip）。
+        if relative.ends_with(".window.js") || wpt_meta_global_includes_window(&source) {
+            let results = run_any_js_window_case(wpt_root, &relative, &source, &harness_source);
+            cases.push((relative.clone(), results));
+        }
+        if relative.ends_with(".any.js") && crate::testharness_workers::dedicated_worker_variant(&source)
+        {
+            let worker_key = relative.replacen(".any.js", ".any.worker.js", 1);
+            let results = crate::testharness_workers::run_any_js_dedicated_case_as(
+                wpt_root,
+                &worker_key,
+                &worker_key,
+                &harness_source,
+            );
+            cases.push((worker_key, results));
+        }
     }
     cases
 }
@@ -212,16 +228,17 @@ mod tests {
         ));
     }
 
-    /// `.any.js` window 变体分道：含 window token 放行；worker-only skip；
-    /// 无 global= META 默认 window 放行；`//META:` 无空格兼容（upstream serve.py
-    /// meta 解析，workers 模块同款）。
+    /// `.any.js` 排除规则：window token 放行；worker-only 不再整案 skip
+    /// （DC-2 dedicated 通道分道承接，skip 判定只在执行循环分道）；无 global=
+    /// META 默认放行；`//META:` 无空格兼容（upstream serve.py meta 解析，
+    /// workers 模块同款）。
     #[test]
     fn any_js_window_lane_split() {
         assert!(!wasm_core_case_skipped(
             "wasm/webapi/abort.any.js",
             "// META: global=window,dedicatedworker,sharedworker\npromise_test(t => {});"
         ));
-        assert!(wasm_core_case_skipped(
+        assert!(!wasm_core_case_skipped(
             "wasm/webapi/worker-only.any.js",
             "// META: global=dedicatedworker,sharedworker\npromise_test(t => {});"
         ));
@@ -232,6 +249,22 @@ mod tests {
         assert!(!wasm_core_case_skipped(
             "wasm/webapi/no-space.any.js",
             "//META: global=window\npromise_test(t => {});"
+        ));
+    }
+
+    /// dedicated 变体分道判定（DC-2 共享 helper）：无 META 缺省 / worker token
+    /// 生成 dedicated 变体腿；window-only / 仅 sharedworker 不生成。
+    #[test]
+    fn dedicated_variant_lane() {
+        assert!(crate::testharness_workers::dedicated_worker_variant("promise_test(t => {});"));
+        assert!(crate::testharness_workers::dedicated_worker_variant(
+            "// META: global=window,worker\npromise_test(t => {});"
+        ));
+        assert!(!crate::testharness_workers::dedicated_worker_variant(
+            "// META: global=window\npromise_test(t => {});"
+        ));
+        assert!(!crate::testharness_workers::dedicated_worker_variant(
+            "// META: global=window,sharedworker\npromise_test(t => {});"
         ));
     }
 }

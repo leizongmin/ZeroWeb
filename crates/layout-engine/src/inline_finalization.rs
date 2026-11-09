@@ -12,7 +12,8 @@ use zero_style_system::ComputedStyle;
 
 use crate::inline::nested_float::{
     apply_nested_float_writeback, collect_nested_float_exclusions, collect_nested_inline_floats,
-    has_nested_inline_float, nested_float_wrapper_descendable, nested_inline_float_enabled,
+    has_nested_inline_float, nested_float_cascade_enabled, nested_float_wrapper_descendable,
+    nested_inline_float_enabled,
 };
 use crate::inline::{FloatExclusion, InlineFormattingContext, TextAlign, TextGroupAlign, WordBreakMode};
 pub(crate) use crate::inline_content::{has_direct_text, has_inline_content};
@@ -2121,9 +2122,10 @@ pub(crate) fn compute_final_inline_layouts(
     // R355 放宽 R84 的「单行」限制为「多行」：解 large-font 簇（inline-formatting-context-008/009
     // 的 100px 文本 paint 阶段被 16px 默认值覆盖）。多行存储经 chromium-Oracle 实测确证 net-positive
     // （ifc-008 -4.01% / ifc-009 -1.95% Z_vs_chromium，见 evidence/r355-multiline-oracle-*.txt）。
-    // **例外**：浮动容器保持 R84 单行限制——multicol-fill-auto-001 的 ref 用 float div 模拟列
-    // （其 test 用真 multicol 已在上方 line 242 排除存储），浮动容器多行存储打破 test/ref 对称致
-    // self-source 发散；该 case chromium-Oracle 9.15% 不变 = 非真回归，guard 仅维持 self-source 一致。
+    // **例外**：浮动容器多行拒存（R355）已由 R5483 放行臂翻转（`ZW_FLOAT_MULTILINE_STORE`
+    // 关闭态回退本例外）——R355 当年以 multicol-fill-auto-001 的 ref float div 模拟列
+    // test/ref 对称维护为由拒存（chromium-Oracle 9.15% 不变 = 非真回归），R5483 探针
+    // 定谳 chromium float 行盒归属自身 IFC 不分行数，corpus 全窗 A/B 定谳见 R5483 轮。
     inline_ctx.layout(doc, node_id, styles);
     // R5166：汇聚本容器 IFC 记录的行内流 OOF 静态位（css-position-3 §static-position）。
     // 须在 store-gate return 之前——非 stored 容器（非 pure-Ahem 等）的锚位同样有效。
@@ -2293,11 +2295,18 @@ pub(crate) fn compute_final_inline_layouts(
         // floats-149 形归因：display:inline 中间层物化 + 子 span 块化 float 后，文本行
         // 真 owner = float span 自身（其 IFC 已产 1 行），旧门「非 pure-Ahem 且无排除带」
         // 拒存 → 全树零行盒，paint Path B 兜视觉但行盒消费面失据（R5470 回退臂挂账主案）。
-        // 多行 float 不放行（下行 is_floated 多行拒存臂维持 R355 multicol 对称域）。
+        // 多行 float 归 R5483 臂放行（下行；关闭态 R355 拒存臂维持）。
         || (is_floated
             && inline_ctx.lines.len() == 1
-            && crate::inline::float_own_line_store_enabled());
-    if (!is_pure_ahem && !allow_non_ahem_store) || (is_floated && inline_ctx.lines.len() > 1) {
+            && crate::inline::float_own_line_store_enabled())
+        // R5483（行盒归属主案多行 float 切片）：多行 float 放行（R5475 行数推广；
+        // chromium oracle 单/多行同模型——float 行盒归属自身 IFC 不分行数）。
+        || (is_floated
+            && inline_ctx.lines.len() > 1
+            && crate::inline::float_multiline_store_enabled());
+    if (!is_pure_ahem && !allow_non_ahem_store)
+        || (is_floated && inline_ctx.lines.len() > 1 && !crate::inline::float_multiline_store_enabled())
+    {
         return;
     }
 
@@ -3464,56 +3473,106 @@ fn remeasure_text_with_float_exclusions_inner(
                     }
                 }
             }
+            // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
+            // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
+            // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
+            // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
+            // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
+            // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
+            // `ZW_FLOAT_H_BACKFILL=0`。R5487：补测前移至目标计算前——级联降带 y
+            // 取 prev.y+prev.h 需真高（0 高会使堆叠塌回同带）。
+            if !nested.is_empty() && std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
+                for nf in &mut nested {
+                    if nf.height > 0.0 {
+                        continue;
+                    }
+                    let fid = nf.fid;
+                    let width = nf.width;
+                    let m = measure_text_content(
+                        doc,
+                        styles,
+                        fid,
+                        Size {
+                            width: Some(width),
+                            height: None,
+                        },
+                        Size {
+                            width: AvailableSpace::Definite(width),
+                            height: AvailableSpace::Definite(f32::INFINITY),
+                        },
+                        img_intrinsic_sizes,
+                        inline_fonts,
+                        // R4332：float 非 run-in 后继块，无前缀可并入。
+                        None,
+                    );
+                    if m.height > nf.height {
+                        nf.height = m.height;
+                    }
+                }
+            }
             // R5446：嵌套 float 目标——y=锚行顶（无条件；见 NestedInlineFloatInfo.target
             // 注），x=§9.5.1 rule 6 方向极值缘。盒写入延后到 sync 后（`target` 先供
             // exclusion/containment 使用，写入需 sync 后的父链偏移）。
+            // R5487（CSS2 §9.5.1 float 横向排布）：左 float 序列级联——chromium 定谳
+            //（google-chrome headless 四形 oracle，R5486 归因轮）：fit 判定用 inline
+            // 光标位 = 前 float 右缘 + wrapper 链偏移（ml=40 层两 50% float：cursor=
+            // 240，可用 160<200 → 降带 (0, prev_bottom)；ml=0 并排放带右缘）；fit 时
+            // y 取 max(锚, 前 float 顶)（§9.5.1 rule 2 顶不低于前 float），x=带右缘
+            // （前 float 右缘）；不 fit 时 y=max(锚, 前 float 底)、x=带左缘（own ml）。
+            // 旧径（逐 float 独立目标）同层 float 全钉带原点重叠。右 float 维持
+            // 极值缘臂（镜像域另案观察）。kill-switch `ZW_NESTED_FLOAT_CASCADE=0`。
+            // R5489（CSS2 §9.5.1 镜像域，chromium 五形 oracle R5488 定谳）：右 float
+            // 镜像序列级联——fit 判定可用＝前右 float 左缘−wrapper 链偏移（r_a：240−40
+            // =200≥160 fit；r_orig：200−40=160<200 降带）；fit→y=max(锚,前顶)、x=前
+            // 左缘−w（r_a (80,0)＝放前左缘非光标位）；不 fit→y=max(锚,前底)、x=极值缘
+            //（r_orig (200,18)）。左右各自独立序列（混合交互 rule 4 外缘约束另案）。
             if !nested.is_empty() {
                 let cw = box_node.content_width;
+                let cascade = nested_float_cascade_enabled();
+                // R5487/R5489：已落位左/右 float 序列（目标空间，容器 content-box
+                // 相对）——左 float 入 placed、右 float 入 placed_r，各自序列内避让。
+                let mut placed: Vec<(f32, f32, f32, f32)> = Vec::new();
+                let mut placed_r: Vec<(f32, f32, f32, f32)> = Vec::new();
                 for nf in &mut nested {
                     let Some(anchor_y) = anchor_y_map.get(&nf.fid) else {
                         continue;
                     };
-                    let tx = if nf.is_left {
-                        nf.margin_left
+                    let prev = if !cascade {
+                        None
+                    } else if nf.is_left {
+                        placed.last().copied()
                     } else {
-                        (cw - nf.width - nf.margin_right).max(0.0)
+                        placed_r.last().copied()
                     };
-                    nf.target = Some((*anchor_y, tx));
-                }
-                // R5446：嵌套 float 高补测——collector 在步 6 入口取样 `child.height`，
-                // 此刻 taffy 对 float 叶子的内容高欠计恒 0（R3787 直接臂同问题，彼处由
-                // float_h_backfill 按其 DOM 子树补测）；0 高致排除带被 w/h 过滤丢弃 +
-                // float_bottom 恒 0 → 容器高度塌 0（floats-149 div.block 绿条消失实证）。
-                // 补测值只进 `nf.height`（exclusion/float_bottom 消费），不写 LayoutBox
-                // ——后继 pass 与 paint 路径各有自己的回填语义。kill-switch 同直接臂
-                // `ZW_FLOAT_H_BACKFILL=0`。
-                if std::env::var("ZW_FLOAT_H_BACKFILL").as_deref() != Ok("0") {
-                    for nf in &mut nested {
-                        if nf.height > 0.0 {
-                            continue;
+                    let (ty, tx) = if let Some((py, px, pw, ph)) = prev {
+                        if nf.is_left {
+                            let cursor = px + pw + nf.chain_offset;
+                            if nf.width <= (cw - cursor) {
+                                ((*anchor_y).max(py), px + pw)
+                            } else {
+                                ((*anchor_y).max(py + ph), nf.margin_left)
+                            }
+                        } else {
+                            let avail = px - nf.chain_offset;
+                            if nf.width <= avail {
+                                ((*anchor_y).max(py), px - nf.width)
+                            } else {
+                                ((*anchor_y).max(py + ph), (cw - nf.width - nf.margin_right).max(0.0))
+                            }
                         }
-                        let fid = nf.fid;
-                        let width = nf.width;
-                        let m = measure_text_content(
-                            doc,
-                            styles,
-                            fid,
-                            Size {
-                                width: Some(width),
-                                height: None,
-                            },
-                            Size {
-                                width: AvailableSpace::Definite(width),
-                                height: AvailableSpace::Definite(f32::INFINITY),
-                            },
-                            img_intrinsic_sizes,
-                            inline_fonts,
-                            // R4332：float 非 run-in 后继块，无前缀可并入。
-                            None,
-                        );
-                        if m.height > nf.height {
-                            nf.height = m.height;
-                        }
+                    } else {
+                        let tx = if nf.is_left {
+                            nf.margin_left
+                        } else {
+                            (cw - nf.width - nf.margin_right).max(0.0)
+                        };
+                        (*anchor_y, tx)
+                    };
+                    nf.target = Some((ty, tx));
+                    if nf.is_left {
+                        placed.push((ty, tx, nf.width, nf.height));
+                    } else {
+                        placed_r.push((ty, tx, nf.width, nf.height));
                     }
                 }
             }

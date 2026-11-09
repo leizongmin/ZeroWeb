@@ -147,6 +147,48 @@ fn test_crypto_subtle_kw_jwk_m3b() {
     assert_eq!(sandbox.execute("String(globalThis.__e7)").unwrap().value, "SyntaxError", "generateKey AES-KW 空 usages → SyntaxError");
     assert_eq!(sandbox.execute("String(globalThis.__e8)").unwrap().value, "SyntaxError", "generateKey 含非法 usage → SyntaxError（先于 length 校验）");
 
+    // generateKey 数值成员 [EnforceRange]（WPT generateKey/failures.js "Bad algorithm
+    // property" ±2^32 组）：AES length（unsigned short）/HMAC length、RSA modulusLength
+    // （unsigned long）超界/负值 → TypeError（WebIDL 转换先于任何算法步序）；
+    // in-range 非法值 512 仍 OperationError。同 derivedBits length 归一（neg:TypeError）。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey  https://heycam.github.io/webidl/#es-enforce-range
+    sandbox
+        .execute(
+            "globalThis.__ef='(pending)';\
+             Promise.all([\
+               errname(crypto.subtle.generateKey({name:'AES-CBC',length:4294967424},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'AES-CBC',length:-4294967168},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'AES-OCB',length:512},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:4294967424},true,['sign'])),\
+               errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:-4294967168},true,['sign'])),\
+               errname(crypto.subtle.generateKey({name:'RSA-OAEP',hash:'SHA-256',modulusLength:4294968320,publicExponent:new Uint8Array([1,0,1])},true,['encrypt'])),\
+               errname(crypto.subtle.generateKey({name:'RSA-OAEP',hash:'SHA-256',modulusLength:-4294966272,publicExponent:new Uint8Array([1,0,1])},true,['encrypt']))\
+             ]).then(function(ns){globalThis.__ef=ns.join(',');});",
+        )
+        .unwrap();
+    assert_eq!(
+        sandbox.execute("String(globalThis.__ef)").unwrap().value,
+        "TypeError,TypeError,OperationError,TypeError,TypeError,TypeError,TypeError",
+        "generateKey ±2^32 数值成员 → TypeError（AES/HMAC/RSA [EnforceRange]）、in-range 512 → OperationError"
+    );
+
+    // HMAC generateKey 显式 length 0 → OperationError（spec 步骤 2：缺省才落块大小；
+    // _zw_keyLengthBits 对缺省与显式 0 同返块大小，调用点判显式 0）；缺省 length
+    // 仍按块大小出钥（SHA-256 → 512 位）。corpus 未覆盖，挂账销账面。
+    // https://w3c.github.io/webcrypto/#SubtleCrypto-method-generateKey
+    sandbox
+        .execute(
+            "globalThis.__eg='(pending)'; globalThis.__eg2='(pending)';\
+             var pz=errname(crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256',length:0},true,['sign']))\
+               .then(function(n){ globalThis.__eg=n; });\
+             var pd=crypto.subtle.generateKey({name:'HMAC',hash:'SHA-256'},true,['sign'])\
+               .then(function(k){ globalThis.__eg2=String(k.algorithm.length); });\
+             Promise.all([pz,pd]);",
+        )
+        .unwrap();
+    assert_eq!(sandbox.execute("String(globalThis.__eg)").unwrap().value, "OperationError", "generateKey HMAC 显式 length:0 → OperationError");
+    assert_eq!(sandbox.execute("String(globalThis.__eg2)").unwrap().value, "512", "generateKey HMAC 缺省 length → SHA-256 块大小 512");
+
     // jwk 导入/导出 round-trip：字段断言（kty/k/alg/key_ops/ext）+ 误用 kty → DataError +
     // ext:false + extractable:true → DataError。
     sandbox
@@ -918,7 +960,9 @@ fn test_crypto_subtle_okp_m5() {
 // 向量锚定 RFC 5869 §A.1（HKDF-SHA256 IKM 0b×22 → OKM 3cb25f25..865）与
 // PBKDF2-HMAC-SHA256 公开向量（P="password", S="salt", c=1 → 120fb6cf..17b）；
 // 错误矩阵镜像 WPT hkdf/pbkdf2（去连字符 "SHA256"/非摘要 "PBKDF2" 作 hash →
-// NotSupportedError；0 length → resolve 空；44/null/省略/负数 → OperationError）、
+// NotSupportedError；0 length → resolve 空；44/null/省略 → OperationError；
+// 负数/NaN/超 u32 → TypeError——[EnforceRange] 转换失败，derived_bits_length
+// enforceRange 组同语义）、
 // generateKey/failures_bad_algorithm（HMAC hash MD5 → NotSupportedError）、
 // sign_verify/hmac（HMAC 算法名 + ECDSA key → InvalidAccessError，spec sign/verify
 // 公共步骤）。[SecureContext]（spec idl，subtle/CryptoKey 仅安全上下文暴露）：
@@ -1025,7 +1069,7 @@ fn test_crypto_subtle_residual_m6() {
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(
         sandbox.execute("String(globalThis.__a.slice().sort())").unwrap().value,
-        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:OperationError,null:OperationError,okm:true,omit:OperationError,zero:0",
+        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:TypeError,null:OperationError,okm:true,omit:OperationError,zero:0",
         "HKDF 绿路 + hash 注册语义 + length 矩阵（RFC 5869 §A.1 锚定）"
     );
     assert_eq!(

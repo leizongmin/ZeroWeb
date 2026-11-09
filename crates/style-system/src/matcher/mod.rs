@@ -339,6 +339,23 @@ fn matches_pseudo_class(doc: &Document, element: NodeId, pc: &PseudoClassSelecto
             // Document（镜像 `:active` 的 `sync_active_state` 通道），委派
             // `is_filtered_option` 权威判定。
             "filtered" => doc.is_filtered_option(element),
+            // `:open`/`:closed`——dialog/details open 属性态（CSS Selectors L4
+            // #open-state；HTML §4.11.2 dialog / §4.11.1 details）。纯元素属性求值，
+            // 复用 zero_dom 权威 helper（R3300 DOM/CSS 同源）。select 的 picker
+            // 打开态（customizable-select 谱系）无运行时信号 → select 上两者恒不
+            // 匹配（真值通道随 picker 态注入面挂账）。
+            "open" | "closed" => {
+                let elem = doc.get(element).and_then(|n| match &n.kind {
+                    NodeKind::Element(e) => Some(e),
+                    _ => None,
+                });
+                match elem {
+                    Some(e) if matches!(e.local_name(), "dialog" | "details") => {
+                        (name == "open") == zero_dom::is_open_state_element(e)
+                    }
+                    _ => false,
+                }
+            }
             // 约束校验伪类（HTML §4.10.20 + CSS Selectors L4）：候选校验元素的约束状态。
             // 委派 Document 权威方法（R3284 与 DOM 选择器同源，逻辑在 dom/document/validation.rs）。
             "valid" => doc.is_valid_element(element),
@@ -1467,6 +1484,8 @@ const SUPPORTED_SIMPLE_PSEUDO_CLASSES: &[&str] = &[
     "empty",
     "enabled",
     "filtered",
+    "open",
+    "closed",
     "first-child",
     "first-of-type",
     "focus",

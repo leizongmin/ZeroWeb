@@ -3531,6 +3531,18 @@
       } catch (_e) { return null; }
     },
     querySelector: function(sel) {
+      // s371（html-semantics）：compound 定位选择器（zwsh 前缀）分派——置于 R158
+      // 守卫之前：守卫的 CSS 语法校验对引擎命名空间串抛 SyntaxError（`zwsh<len>:`
+      // 形非 CSS 选择器，selector_is_valid 不识），且 `__zw_query_match` light
+      // 通道解析不着 shadow 内容。未命中 → null 落既有语义（真 zwsh 类型选择器
+      // 页面串继续走守卫/查询通道）。消费面：testdriver stub `selectorFor` 信任
+      // 门、runner `resolve_pointer_target` origin 解析（closedby-complex shadow
+      // 段 clickOn 选择器碰撞 → light-dismiss 误关 16F 的解锁键）。
+      if (typeof sel === 'string' && sel.indexOf('zwsh') === 0
+          && typeof _zwShadowContentByCompoundSel === 'function') {
+        var _q371 = _zwShadowContentByCompoundSel(sel);
+        if (_q371) return _q371;
+      }
       // R158：非法选择器守卫（spec SyntaxError——WPT runInvalidSelectorTest 的
       // document.querySelector 入口）。置于 pending 回落之前（非法即抛，不查）。
       if (globalThis._zwQueryGuard) globalThis._zwQueryGuard(sel, arguments.length);
@@ -4037,7 +4049,12 @@
           if (sSel) return _wrapSelector(sSel);
           // s78 F4：image-map 命中（usemap img 形状面——SVG 命中后置臂）
           var imSel = (typeof _zwImgMapHitSel === 'function') ? _zwImgMapHitSel(nx, ny) : null;
-          return imSel ? _wrapSelector(imSel) : null;
+          if (imSel) return _wrapSelector(imSel);
+          // s373：gBCR 最小包含盒近似 + inert 屏蔽（_zwEfpHitSel 定义于 hit-test
+          // helper 区 17985 附近——var 函数表达式，调用时已赋值；此前非 SVG 页恒
+          // null，dialog-inert 全屏 modal 可命中断言面）。
+          var efpSel = (typeof _zwEfpHitSel === 'function') ? _zwEfpHitSel(nx, ny) : null;
+          return efpSel ? _wrapSelector(efpSel) : null;
         } catch (_eEFPsvg) { return null; }
       }
       var sel = __zw_elementFromPoint(String(x), String(y));
@@ -4915,6 +4932,13 @@
             } catch (_eTb) {}
             var notCanceled = host2.dispatchEvent(before2) !== false;
             try { before2._zwUaDispatch = false; } catch (_eTb2) {}
+            // editing-compat apply 内容模型边界族（2026-11-09）：formatBlock
+            // apply 拒绝返回值贯通——part01g 可编辑链/宿主内容模型两守卫返回
+            // false（Chrome ret 录音 [false] 树不变，语料 :1864/:1871/:1876
+            // "<span> cannot have <p>" / "<p> cannot have <div>"），此前 apply
+            // 返回值被丢弃、execCommand 尾恒返 true（ret 断言行 ×3 红）。
+            // 仅 formatBlock 臂写入；其余命令/未触发面保持 undefined→true。
+            var fbqRet2;
             if (notCanceled) {
               // R3254-M3 切片 1/4（editing goal，2026-09-07）：**格式命令实应用 +
               // toggle 语义**——bold/italic/underline/strikethrough 对选中文本做
@@ -5184,7 +5208,7 @@
               // 复用 _zwJus*/_zwList*/_zwDel* 机具）。事件口径同上 inserttext 臂。
               if (cmd === 'formatblock' && rng2 && host2
               && typeof globalThis.__zw_ce_fb_apply === 'function') {
-                try { globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
+                try { fbqRet2 = globalThis.__zw_ce_fb_apply(arguments[2]); } catch (_eFb) {}
               }
               if (cmd === 'indent' && rng2 && host2
               && typeof globalThis.__zw_ce_indent_apply === 'function') {
@@ -5314,7 +5338,7 @@
           }
         } catch (_eSa) {}
       }
-      return true;
+      return fbqRet2 !== false;
     },
     // R3254-M3 切片 3：真实反射——supported/enabled 按实际接通命令面判定
     //（_zwQueryCommandState；defer 面——styleWithCSS/undo/justify* 等——返 false）。
@@ -5335,6 +5359,14 @@
       if ((liLow === 'insertorderedlist' || liLow === 'insertunorderedlist')
       && typeof globalThis.__zw_ce_list_state === 'function') {
         try { return !!globalThis.__zw_ce_list_state(liLow).indeterm; } catch (_eLstI) {}
+      }
+      // editing-compat fb 读面刀（2026-11-10）：formatBlock Indeterm——原始端
+      // 点 FB 块恰单侧有块、或异型且宿主内无公共 FB 块祖先 → true；同型多块、
+      // 单块、异型爬达共同祖先形 → false。判据与语料行号注见 part01g
+      // __zw_ce_fb_indeterm。
+      if (liLow === 'formatblock'
+      && typeof globalThis.__zw_ce_fb_indeterm === 'function') {
+        try { return !!globalThis.__zw_ce_fb_indeterm(); } catch (_eFbI) {}
       }
       // editing-compat style-with-value 簇（2026-11-01）：五标准行内值命令
       // Indeterm——含域 formattable 有效值 ≥2 互异（参考实现 :8470 生成块，
@@ -17960,6 +17992,70 @@
       // 无形状覆盖 → img 自身（spec：无 area 覆盖命中点 → image element）
       try { return img.__zwSelector || null; } catch (_eIS) { return null; }
     }
+    return null;
+  };
+  // s373（2026-11-10）：inert 子树屏蔽判定（elementFromPoint 近似臂专用）——
+  // 自身或祖先链带 `inert` 属性 → 不可命中（HTML §inert：inert subtree 的节点
+  // 「hit testing 不可命中」；modal-dialog-ancestor-is-inert / dialog-inert
+  // 动态翻转断言面）。64 层 guard 与 R4600 焦点门同款防反链环。
+  function _zwEfpInertBlocked(el) {
+    try {
+      var cur = el, g = 0;
+      while (cur && g++ < 64) {
+        if (cur.hasAttribute && cur.hasAttribute('inert')) return true;
+        cur = cur.parentNode || null;
+      }
+    } catch (_eIg) {}
+    return false;
+  }
+  // s373：elementFromPoint 缺席臂 gBCR 近似（_zwHitTestSel 尾臂同构 + inert 屏蔽
+  // + 逆序遍历）——runner headless 无 ElementFromPointBridge（`__zw_elementFromPoint`
+  // 回调缺席）时 spec API 走本近似；此前缺席臂只有 SVG/image-map 形状命中，非 SVG
+  // 页恒 null（dialog-inert「Dialog is hittable by default」红态根因）。逆序 +
+  // 面积严格最小：同面积（全屏 modal dialog vs body）文档序靠后（≈更深/topmost）
+  // 者赢；inert 命中被屏蔽 → 回落次小含点元素（穿透语义：body/html 兜底，断言面
+  // 「Dialog becomes inert dynamically」）。
+  // https://drafts.csswg.org/css-scroll-to-top-anchor/#hit-testing 之几何近似：
+  // spec hit-testing 依赖渲染树 z 序，headless 近似以最小包含盒代之。
+  var _zwEfpHitSel = function (x, y) {
+    try {
+      if (typeof document === 'undefined' || !document.querySelectorAll) return null;
+      var all = document.querySelectorAll('body, body *');
+      var best = null, bestArea = Infinity, hasLayout = false;
+      for (var i = all.length - 1; i >= 0; i--) {
+        var el = all[i];
+        if (!el.getBoundingClientRect) continue;
+        if (_zwEfpInertBlocked(el)) continue;
+        var r = el.getBoundingClientRect();
+        if (r && r.width > 0 && r.height > 0) {
+          hasLayout = true;
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            var area = r.width * r.height;
+            if (area < bestArea) {
+              bestArea = area;
+              best = el;
+            }
+          }
+        }
+      }
+      if (best) return best.__zwSelector || null;
+      // 无布局证据（runner 同 turn 内 showModal 后 gBCR 快照 stale——布局矩形由
+      // render 管线写 rect_snapshot，探测环泵后才更新）→ 栈顶模态 dialog 视口命中
+      // 近似（s30 backdrop 命中先例：模态 dialog 无布局盒，以栈顶模态近似；backdrop
+      // 几何覆盖视口 → 视口内命中点落栈顶模态 dialog）。AllSelsRaw 不过 open 属性门
+      //（`_zwSetAttr` 异步同 turn stale）；栈序外层先 → 栈顶取末项。inert 栈顶 →
+      // 不可命中返 null（inert hit-testing 穿透的下层元素近似面挂账——当前无布局
+      // 信号可分辨下层，dialog-inert 断言面仅要求 !== dialog）。
+      var rawSels = (typeof _zwDialogModalAllSelsRaw === 'function') ? _zwDialogModalAllSelsRaw() : '';
+      if (!hasLayout && rawSels) {
+        var arr = rawSels.split(',');
+        var topSel = arr[arr.length - 1];
+        var proxy = null;
+        try { proxy = document.querySelector(topSel); } catch (_eQ) {}
+        if (proxy && !_zwEfpInertBlocked(proxy)) return topSel;
+        return null;
+      }
+    } catch (_eEfp2) {}
     return null;
   };
   // uievents-compat M3 尾簇（2026-10-04）：命中测试（视口 CSS 像素 → 选择器）——
