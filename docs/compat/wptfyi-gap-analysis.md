@@ -110,6 +110,8 @@ gap 会得到不同浏览器基准，跨日对比请引用快照文件而非重�
 
 ## 全量对账（coverage）
 
+按全量子测试贡献排序的执行目标见 [接近 90% 的五个 Rally 目标](wptfyi-90-plan.md)。
+
 `coverage` 子命令把 ZeroWeb 实跑结果放到三家 aligned stable run 的**并集
 全量清单**上对账——这是网站「全量 WPT 通过率」的统计口径：
 
