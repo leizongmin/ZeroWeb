@@ -19,7 +19,13 @@
 
 ## 门禁批
 
-（批后填：批名、锚、全腿判读。）
+批 batch-fbq-read-gate-v1（锚 head **20fd3eb2a** + 八点 md5：part01g `5b1990ec` / part06 `0a779fd7` / bridge `b6b9a516` 新锚，五点沿 v3 恒一；特征串 fbqRet2×3 + `__zw_ce_fb_indeterm` 3/1 + 读面辅助×5；ensure_solo + flock）：**ALL-DONE 2026-11-10 05:42:24 全绿**（04:36:48 发射，66 分钟，solo 窗）。
+
+- probe：f6bwin 2092P/0F + k11 224P/17F judge 零漂移。
+- fb 主门：5007P/39F（期望恒一）；judge vs fbr3 基线 **F2P=110 / P2F=0 / post-only 0 / lost 0 VERDICT OK**；行级 flip 白名单 110 全命中 `queryCommand(Value|Indeterm)("formatblock") before/after`（56+40+14 断言面分布与预验恒一）。
+- mt：20182P/2F judge 键级零翻越 VERDICT OK（残 2F 维持 X37 双键除名）。
+- 单文件腿（vs F1' 终态零漂移）：iol 1759P/2F、iul 2061P/4F、ip 6989P/206F、ilb 1658P/33F、ihtml 1446P/119F；exec×3 行级恒一（1332P/474F、0P/1F、5P/1F）。
+- enginelib：failed=7 名册双门恒一（6 先例 + r2967 外部债）；battery 七腿 420/880/1104/552/3456/2607/1455 全同数 F=0 T=0；binary sig 全在产物 + fbqRet2×3 计数恒一 + `__zw_ce_fb_indeterm` 在产物。
 
 ## 挂账
 
