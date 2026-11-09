@@ -30,6 +30,10 @@
 - 单文件腿（vs F1' 终态零漂移）：iol 1759P/2F、iul 2061P/4F、ip 6989P/206F、ilb 1658P/33F、ihtml 1446P/119F；exec×3 judge 零漂移。
 - enginelib：failed=7 名册双门恒一；battery 七腿 420/880/1104/552/3456/2607/1455 全同数 F=0 T=0；binary sig 全在产物 + wrap-only ×4 计数恒一。
 
+## 推送重锚（rebase 并入组合树）
+
+刀体+docs 经 rebase 推为 35d5ffd00 / 847bfa316。入站域（4d2e3bc6e，渲染流 s373 dialog + s374 inert 双施工）：d7968539c/4d2e3bc6e 触 part01/part06（dialog/inert/CE click caret 面）——刀核文件 part01g md5 `179ffca2` 恒一、bridge `b6b9a516` 恒一。按推树组合纪律补 fb 腿重绑：组合树重建二进制直跑 formatblock 全页 **5015P/31F**，judge vs 批门 **F2P=0 / P2F=0 / lost 0 VERDICT OK**（fbw2-fb-rebind.log）——刀判读绑定推树字节恒一。重锚后锚值：part01 `6fca2f31`、part06 `0a7329fb`、part01g/bridge 恒一；下一刀批脚本按现树重取锚。
+
 ## 挂账
 
 - **color:blue 数据丢失族 ×8**（升级：非兼容面而是破坏性缺陷，下一刀）。
