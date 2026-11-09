@@ -1,11 +1,15 @@
 # M2——wire 传播 + B 簇收敛：request-cache 族 102/102，DC-2/DC-3 落定
 
-**日期**: 2026-11-08（M2 完成；wire 传播 @ f2f9ee1cb，trickle 回归修复 @ 本档同提交）
+**日期**: 2026-11-08（M2 完成；wire 传播 @ c6dcbce0a，trickle 回归修复 @ 本档同提交）
 **前置**: M1-b 证据档（C 簇 48 绿，余 30F 全为 wire 传播面）。
+
+> **勘误（2026-11-09）**：本档原记 commit `f2f9ee1cb`，11-08 晚 `pull --rebase`
+> 改写后实为 `c6dcbce0a`——改动统计 14 文件 +395/-76 与下述交付内容逐字
+> 吻合；本档及 M3/控制面所引 hash 已就地替换。
 
 ## 一、交付内容
 
-### wire 传播（commit f2f9ee1cb，14 文件 +395/-76）
+### wire 传播（commit c6dcbce0a，14 文件 +395/-76）
 
 1. **net**：`HttpRequest.cache_mode` 字段 + `CacheMode::from_request_cache`
    五模式映射（`default`/缺省 → None 走既有语义）；显式 `cache_mode` 优先于

@@ -105,7 +105,7 @@ fetch/api DC-4 按「剔除 request-cache 族 98F」口径达标；待决项经�
   index 10 已被 iframe client-id 占用，M0 说明书原记 11 参修正）+
   FetchRequest.cache + shim 八调用点 + 双 app handler 映射 + runner 六模式
   态全矩阵分派；显式模式权威（fetch spec §4.6）+ Vary:* 仅再验证
-  （RFC 9111 §4.1）@ f2f9ee1cb。族 **102/102**（B 簇 30F 全收敛）；
+  （RFC 9111 §4.1）@ c6dcbce0a。族 **102/102**（B 簇 30F 全收敛）；
   M2 shim 错误语义转换引入的 3 条 P→F（keepalive POST 撞 py_routes 非
   GET 兜底门）经 trickle.py POST 端点臂修复（v3 fixture 先例，账面 3P/3F
   持平）；全窗口 JSON-vs-JSON 真 P→F=0、F→P 104、T 零变化（[M2 证据档]
