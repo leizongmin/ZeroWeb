@@ -12279,7 +12279,8 @@
   // defer 契约装载——镜像 __zw_load_module 四态失败面（宿主返空 = 顶层取回失败逐次新
   // TypeError；3\u001f = 链接失败逐次新 SyntaxError；图失败 TypeError；求值抛原样透传），
   // 记账走独立 defer 表（eager 面 __moduleCache 键值是导出面，defer 记录是三臂对象——
-  // 同 URL 混用 eager/defer 的记录共享语义未建模，FIXME 语料无钉面）。
+  // s363：同 URL 混用 eager/defer 已按 spec module map 单键语义共享记录，双向钩子
+  // 见 __zw_load_module_deferred resolved 段与 es_module prelude __zw_load_module 对应段）。
   globalThis.__zw_load_module_deferred = function (spec, parentHint, typeHint, credHint) {
     var parent = parentHint || 'about:blank';
     var fk = spec + '\u001f' + parent + '\u001f' + (typeof typeHint === 'string' ? typeHint : '');
@@ -12295,6 +12296,16 @@
       throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);
     }
     var resolved = sep >= 0 ? r.slice(0, sep) : spec;
+    // s363（mixed eager/defer 同 URL 记录共享——spec module map 单键）：eager 先取
+    // 已求值完毕的 URL 再走 import.defer 时，以其导出面构造「已求值三臂」记录入
+    // defer 表（runBody 空函数——体已跑，facade get trap 触发无害），门面属性访问
+    // 直取导出值，不再二次求值。
+    if (globalThis.__moduleCache[resolved]) {
+      var erec = { exports: globalThis.__moduleCache[resolved], depsPromise: Promise.resolve(), runBody: function () {} };
+      globalThis.__zwDeferRecords[resolved] = erec;
+      globalThis.__zwDeferFetchKeys[fk] = resolved;
+      return erec;
+    }
     if (globalThis.__zwDeferRecords[resolved]) return globalThis.__zwDeferRecords[resolved];
     var code = sep >= 0 ? r.slice(sep + 1) : r;
     if (sep >= 0 && code === '') throw new TypeError("Failed to fetch module graph: '" + resolved + "'");

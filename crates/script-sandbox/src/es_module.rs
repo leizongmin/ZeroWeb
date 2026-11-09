@@ -497,6 +497,17 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     // 直调形态/旧发射无此槽）。穿给宿主第 4 参（renderer/tab 旧宿主契约忽略多余
     // 参数，行为同 same-origin 缺省；webview 侧以 `__zw_cred` 查询标记穿 fetcher，
     // 见 webview __zw_compile_module）。
+    // s363（mixed eager/defer 同 URL 记录共享）：eager import 命中 defer 共享记录的
+    // 统一等待 helper——先等记录依赖图完成（depsPromise；spec eager import 语义 =
+    // 全图求值完成），再触发体求值（runBody 恰一次守卫内建于 deferred 编译产物），
+    // resolve 导出面。cyclic TLA 死锁面（s361）依赖此等待序：deps 挂起时 promise
+    // 不落定，体不提前跑。
+    out.push_str("globalThis.__zwEagerFromDefer = function (drec) {\n");
+    out.push_str("  return Promise.resolve(drec.depsPromise).then(function () {\n");
+    out.push_str("    drec.runBody();\n");
+    out.push_str("    return drec.exports;\n");
+    out.push_str("  });\n");
+    out.push_str("};\n");
     out.push_str("globalThis.__zw_load_module = function(spec, parentHint, typeHint, credHint) {\n");
     // t8j：parent 优先取调用点穿入的 referrer（rewrite_dynamic_imports 的 `.call({referrer})`），
     // 回退全局 _importMeta（直接调用形态）——模块 IIFE 局部的 _importMeta 在此不可见。
@@ -539,7 +550,13 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
         "  var fk = spec + '\\u001f' + parent + '\\u001f' + (typeof typeHint === 'string' ? typeHint : '');\n",
     );
     out.push_str("  var kr = __zwModuleFetchKeys[fk];\n");
-    out.push_str("  if (kr !== undefined && __moduleCache[kr]) return __moduleCache[kr];\n");
+    // s363：fk 缓存命中的 defer 共享键（同 URL 先被 import.defer 取过）走等待 helper
+    // ——复 import 与首次同形态（Promise，等依赖图完成后触发体），spec eager import
+    // 等全图求值完成语义在复取路径保持。
+    out.push_str("  if (kr !== undefined && __moduleCache[kr]) {\n");
+    out.push_str("    if (globalThis.__zwDeferRecords && globalThis.__zwDeferRecords[kr]) return __zwEagerFromDefer(globalThis.__zwDeferRecords[kr]);\n");
+    out.push_str("    return __moduleCache[kr];\n");
+    out.push_str("  }\n");
     out.push_str(
         "  var r = __zw_compile_module(spec, parent, typeof typeHint === 'string' ? typeHint : '', credHint || '');\n",
     );
@@ -552,7 +569,29 @@ pub fn module_dynamic_import_helpers_prelude() -> String {
     out.push_str("    throw new SyntaxError(m3 >= 0 ? p3.slice(m3 + 1) : p3);\n");
     out.push_str("  }\n");
     out.push_str("  var resolved = sep >= 0 ? r.slice(0, sep) : spec;\n");
-    out.push_str("  if (__moduleCache[resolved]) return __moduleCache[resolved];\n");
+    // s363（mixed eager/defer 同 URL 记录共享——spec module map 单键，两视图同一记录）：
+    // defer 先取的 URL 再走 eager import 时，**先等 defer 记录依赖图完成**（depsPromise，
+    // spec eager import 语义 = 全图求值完成）再触发体求值（runBody 恰一次守卫内建）
+    // 并以其导出面入 eager 缓存——此后同 URL eager 复 import 走既有缓存快速路径。
+    // 返回 Promise 形态：消费方 __zw_dynamic_import 以 `Promise.resolve(...)` 展开
+    // （es_module 625 发射面），既有同步直调面（单测）无 defer 记录落穿不受扰。
+    // 守卫 `__zwDeferRecords &&`：契约 eval 上下文（s361 拼接 helpers）无 part01、
+    // defer 表缺位时按原路径落穿零漂移。cyclic TLA 死锁面（s361）依赖此等待序——
+    // 红态实证：同步 runBody 在 deps 挂起时提前跑体，`module A's body should never
+    // run` 断言红（P→F），死锁时序破坏。记账（fk+缓存，exports 引用同源）同步做——
+    // 复 import 经 fk/resolved 快速路径命中 defer 表后走同一等待 helper（形态一致，
+    // 生产消费面 __zw_dynamic_import 以 Promise.resolve 包裹展开两形态通吃）。
+    out.push_str("  if (globalThis.__zwDeferRecords && globalThis.__zwDeferRecords[resolved]) {\n");
+    out.push_str("    var drec = globalThis.__zwDeferRecords[resolved];\n");
+    out.push_str("    __moduleCache[resolved] = drec.exports;\n");
+    out.push_str("    __zwModuleFetchKeys[fk] = resolved;\n");
+    out.push_str("    return __zwEagerFromDefer(drec);\n");
+    out.push_str("  }\n");
+    // s363：resolved 层复取命中 defer 共享键——同款等待 helper（fk 不同键同 URL 时）。
+    out.push_str("  if (__moduleCache[resolved]) {\n");
+    out.push_str("    if (globalThis.__zwDeferRecords && globalThis.__zwDeferRecords[resolved]) return __zwEagerFromDefer(globalThis.__zwDeferRecords[resolved]);\n");
+    out.push_str("    return __moduleCache[resolved];\n");
+    out.push_str("  }\n");
     out.push_str("  if (__moduleFailures[resolved]) throw __moduleFailures[resolved];\n");
     out.push_str("  var code = sep >= 0 ? r.slice(sep + 1) : r;\n");
     out.push_str("  if (sep >= 0 && code === '') {\n");
@@ -3593,6 +3632,88 @@ mod tests {
             settled.lock().unwrap().as_deref(),
             Some("rejected:TypeError:Failed to fetch module: '_nope'"),
             "失败以 TypeError rejection 呈现且原因携带 spec（红态：同步 throw 后首个 execute 即 Err）"
+        );
+    }
+
+    /// s363（mixed eager/defer 同 URL 记录共享——defer 先取、eager 后取臂）：prelude
+    /// `__zw_load_module` 在 resolved 层命中 defer 表时**等待记录依赖图完成**
+    /// （depsPromise——spec eager import 语义 = 全图求值完成）再触发体求值（runBody，
+    /// 恰一次守卫内建于 deferred 编译产物）并以其导出面入 eager 缓存。HTML spec
+    /// module map 单键——两视图同一记录，体不得二次求值。红态两段：修复前 eager 面
+    /// 只查 `__moduleCache`，defer 先取的 URL 走宿主重新编译+求值，体跑两次；首版
+    /// 钩子同步 runBody 在 deps 挂起时提前跑体，破坏 cyclic TLA 死锁时序（s361
+    /// `module A's body should never run` P→F）。
+    /// 两段 execute（s256 同款）：钩子 promise 链跨 execute 由后段末尾 checkpoint
+    /// 排空（persistent context 存活）。
+    #[test]
+    fn test_mixed_eager_hits_defer_record_s363() {
+        #[cfg(feature = "v8")]
+        let mut sandbox = crate::V8Sandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        #[cfg(all(feature = "quickjs", not(feature = "v8")))]
+        let mut sandbox = crate::QuickJSSandbox::with_config(crate::SandboxConfig {
+            persistent_context: true,
+            ..Default::default()
+        })
+        .unwrap();
+        // 宿主契约 stub：若被调说明共享钩子未命中 defer 表（红态 = IIFE 求值计数走
+        // eager 面 +1，runs 与 evals 双计）。
+        sandbox.register_callback(
+            "__zw_compile_module",
+            Box::new(|args| {
+                let spec = args.first().cloned().unwrap_or_default();
+                format!(
+                    "{spec}\u{1f}(function(){{ globalThis.__s363e = (globalThis.__s363e|0) + 1; \
+                 return {{ v: globalThis.__s363e }}; }})()"
+                )
+            }),
+        );
+        let settled: std::sync::Arc<std::sync::Mutex<Option<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(None));
+        let settled_cb = settled.clone();
+        sandbox.register_callback(
+            "__zw_report",
+            Box::new(move |args| {
+                *settled_cb.lock().unwrap() = args.first().cloned();
+                String::new()
+            }),
+        );
+        let prelude = module_dynamic_import_helpers_prelude();
+        // 第一段：prelude + defer 表预置 + eager import 挂链（checkpoint 排首跳）。
+        sandbox
+            .execute(&format!(
+                "{prelude}\n\
+                 globalThis.__s363runs = 0;\n\
+                 globalThis.__s363ran = false;\n\
+                 globalThis.__zwDeferRecords = {{ 'https://z.test/m.js': {{\n\
+                   exports: {{ w: 'deferred' }}, depsPromise: Promise.resolve(),\n\
+                   runBody: function () {{ if (globalThis.__s363ran) return; globalThis.__s363ran = true; \
+                   globalThis.__s363runs = (globalThis.__s363runs|0) + 1; }} }} }};\n\
+                 globalThis.__s363p = __zw_load_module('https://z.test/m.js', 'about:blank', '', '');\n"
+            ))
+            .expect("eager 命中 defer 记录挂链不得同步 throw");
+        // 第二段：消费链（末尾 checkpoint 排空整链）。
+        sandbox
+            .execute(
+                "globalThis.__s363p.then(function (ns) {{\n\
+                   var once = (globalThis.__s363runs === 1);\n\
+                   var wv = !!(ns && ns.w === 'deferred');\n\
+                   var notEager = (globalThis.__s363e === undefined);\n\
+                   Promise.resolve(__zw_load_module('https://z.test/m.js', 'about:blank', '', '')).then(function (ns2) {{\n\
+                     var stillOnce = (globalThis.__s363runs === 1);\n\
+                     var cached = !!(ns2 && ns2 === ns);\n\
+                     __zw_report([once, wv, notEager, stillOnce, cached].join(','));\n\
+                   }}, function (e2) {{ __zw_report('ERR2:' + (e2 && e2.message)); }});\n\
+                 }}, function (e1) {{ __zw_report('ERR1:' + (e1 && e1.message)); }});\n",
+            )
+            .expect("消费链不得同步 throw");
+        assert_eq!(
+            settled.lock().unwrap().as_deref(),
+            Some("true,true,true,true,true"),
+            "defer 先取记录被 eager import 等图完成后触发恰一次：runBody 计 1、导出面同源、宿主编译未被调、复 import 走缓存同引用"
         );
     }
 

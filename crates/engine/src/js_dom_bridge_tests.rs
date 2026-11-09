@@ -100,3 +100,6 @@ include!("js_dom_bridge_tests/privilege_guard.rs");
 // 45 号 shadow-dom-rendering M3：命令式面变异序列探针/回归（attachShadow 移动语义 +
 // 分配表新鲜度）。
 include!("js_dom_bridge_tests/part97_m3_shadow_probe.rs");
+
+// 46 号 s363 mixed eager/defer 同 URL 记录共享：defer 面命中 eager 缓存零再求值钉。
+include!("js_dom_bridge_tests/part98_s363_mixed_eager_defer.rs");
