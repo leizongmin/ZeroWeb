@@ -133,5 +133,5 @@ testharness.rs:6781，闭包体 6786–7257，纯 if/else 链 + 公共尾）
 
 - [x] 普查 + 设计（本档 §一/§二）——2026-11-08 认领提交 548cfa3d5 后落。
 - [x] 6a：SW 分表（生成器 + 验证器 + A/B）——2026-11-08 落库，见[切片六 6a 档](2026-11-08-m3-slice6-sw-fetcher-registry.md)；表设计按先完成者采纳为 in-place 单 suffix 行 ×24（§二 sw_fetch.rs 模块化留 6b 收尾补项）。
-- [x] 6b：script 分表——2026-11-09 落库，见[切片六 6b 档](2026-11-09-m3-slice6b-script-fetcher-registry.md)。普查重录：T1-T10 → **T1-T14**（s356 not-found ×2 + s350 accept-header ×2 新臂入链，§三表行数 script 10 → 14）；设计偏差四项（in-place 镜像 6a 采纳态、env 收窄 json_intent 单字段、cred_cookies 不入 ctx、模块化退役）见 6b 档 §三；行为面（html-semantics FILTER=the-script-element 双跑）待静默窗口补跑后收口。
-- [ ] 收口：控制面/任务文档 DC-3 行更新 + M3 里程碑 ✅（余 6b 行为面补证）。
+- [x] 6b：script 分表——2026-11-09 落库，见[切片六 6b 档](2026-11-09-m3-slice6b-script-fetcher-registry.md)。普查重录：T1-T10 → **T1-T14**（s356 not-found ×2 + s350 accept-header ×2 新臂入链，§三表行数 script 10 → 14）；设计偏差四项（in-place 镜像 6a 采纳态、env 收窄 json_intent 单字段、cred_cookies 不入 ctx、模块化退役）见 6b 档 §三；行为面（html-semantics FILTER=the-script-element）A/B multiset 空集已补证（同日续轮，6b 档 §四.5）。
+- [x] 收口：控制面/任务文档 DC-3 行更新 + M3 里程碑 ✅——2026-11-09（M3 全切片落库：主表 85 行 + SW 24 行 + script 14 行，DC-3 四项全过）。

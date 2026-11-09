@@ -50,20 +50,21 @@
   两文件定向补拉后绿，HEAD 同红 stash 复证）+ net-api 全量 multiset
   changed=1（xhr/send-timeout-events P→F，等负载受控探针 HEAD 3/3F
   vs B 3/3F 同型 → 环境归因）+ fmt/clippy -D warnings 净。
-  **余项**：html-semantics FILTER=the-script-element 行为面双跑
-  （本轮 load>300 并行腿噪声不可判，待静默窗口）→ DC-3 收口 +
-  M3 ✅。
+  **余项收口**（2026-11-09 续轮）：html-semantics
+  FILTER=the-script-element 行为面双跑落证——A = pre-6b 二进制
+  （7f6604ea3 源态换出构建）vs B = 本树重建，243 案 473 结果行
+  multiset **changed = 0**，双侧 exit 1 既有红案逐项全等 →
+  **DC-3 ✅ M3 ✅**（首批 A 锚曾现 charset 家族 Timeout 漂移，
+  A3 重锚归零 = 并行腿噪声归因，见 6b 档 §四.5 过程注记）。
   [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
   现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
   goal py 框架交付（M4 承接）。
-- **下一步**：6b 已落库（2026-11-09）——余 **html-semantics
-  FILTER=the-script-element 行为面双跑**（静默窗口，A=HEAD 态
-  stash 录制 vs B，multiset 空集）→ 普查档 §四收口勾 +
-  DC-3/M3 ✅。M4 余项 = py 池数值门判定 + 四 fixture 面
-  终验 A/B 随切片六收口落证。
+- **下一步**：M3 收口完成（2026-11-09）——**M4 余项** = py 池
+  数值门判定（M0 普查清单实数落门）+ 四 fixture 面终验 A/B
+  落证（DC-4 收口）。
 
 ## 里程碑状态表
 
@@ -72,8 +73,8 @@
 | M0 双审计 + 数值门（DC-1） | ✅ 2026-11-08 | [wss 审计档](evidence/2026-11-08-m0-wss-audit.md) + [py 普查档](evidence/2026-11-08-m0-py-endpoint-census.md) |
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
-| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | 进行中（切片一~五 ✅ 残链清空；切片六 6a ✅ SW fetcher 分表 + 6b ✅ script fetcher 分表落库；余 6b 行为面双跑 → 收口） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） + [切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)（SW fetcher 21 臂分表，net-api + SW-core 双 A/B 空集） + [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)（script fetcher 14 臂分表，token 级 A/B 全过 + net-api multiset changed=1 等负载探针环境归因 + 单测 303P/0F，行为面待静默窗口） |
-| M4 下游消费验收 + 零回归收口（DC-4） | 进行中（互指记账面 ✅ 2026-11-08：43 号 wss 面入账 + 47/39 号控制面互指；py 池门判定与四 fixture 面终验 A/B 随切片六收口） | 门型见两审计档第四节；互指落点见状态头 M4 段 |
+| M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | ✅ 2026-11-09（切片一~五：残链清空 + 主表 85 行；切片六：6a SW fetcher 21 臂 + 6b script fetcher 14 臂分表，行为面 multiset 空集收口） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） + [切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)（SW fetcher 21 臂分表，net-api + SW-core 双 A/B 空集） + [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)（script fetcher 14 臂分表，token 级 A/B 全过 + 单测 303P/0F + net-api multiset 等负载探针环境归因 + 行为面 473 行 multiset 空集收口） |
+| M4 下游消费验收 + 零回归收口（DC-4） | 进行中（互指记账面 ✅ 2026-11-08：43 号 wss 面入账 + 47/39 号控制面互指；M3 已收口，余 py 池数值门判定 + 四 fixture 面终验 A/B 落证） | 门型见两审计档第四节；互指落点见状态头 M4 段 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
 
@@ -204,8 +205,10 @@
   B 14/14（fmt 前后双过）+ fmt/clippy -D warnings 净 + 单测 303P/0F
   （s351 css-module 钉语料缺口补拉后绿，HEAD 同红复证）+ net-api
   全量 multiset changed=1（等负载探针 HEAD≡B → 环境归因）。
-  行为面（html-semantics FILTER=the-script-element 双跑）待静默窗口
-  补跑后收口（工作面让出）。证据：[切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
+  同日续轮补证：行为面（html-semantics FILTER=the-script-element）
+  A/B multiset 空集（473 行 changed=0）→ **DC-3 收口 + M3 ✅**，
+  M4 余项（py 池数值门 + 四 fixture 面终验）转当前工作面。
+  证据：[切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
 - 2026-11-08 23:55 切片六 6a 落库（22:49 认领本实例）：SW fetcher 闭包
   链 459 行 → `py_sw_fetch_routes()` 24 行表 + 21 handler（T1-T6 机械
   等价，落穿臂 2 手写尾包裹同形），表设计 in-place 单 suffix 行 ×24

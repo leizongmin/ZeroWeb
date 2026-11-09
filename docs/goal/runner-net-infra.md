@@ -1,19 +1,20 @@
 # runner 网络 fixture 基建 — TLS/wss 端点 + wptserve py 端点 shim 框架化
 
-**版本**: v1.4
+**版本**: v1.5
 **日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）；
 2026-11-08 M0 双审计完成（DC-1 ✅）；2026-11-08 M1 完成（DC-2 前半 ✅，
 [M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)）；
 2026-11-08 M2 完成（**DC-2 ✅**——D3-D5 寻址接线 + websockets 通道 A/B
 零回归 + wss 池 101 案 360 subtest 全绿过批次门，
 [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）；
-2026-11-09 切片六 6b 落库（script fetcher 14 臂分表，
+2026-11-09 **M3 完成（DC-3 ✅）**——fetcher 闭包三分表收口（script
+fetcher 14 臂分表 + 行为面 multiset 空集，
 [6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）
-**状态**: Active——M0 ✅ M1 ✅ M2 ✅，M3（py 路由框架）**进行中**——
-PyRoute 注册表全量落地（切片五）+ fetcher 闭包三分表 6a SW（24 行表
-+ 21 handler）/ 6b script（14 行表 + handler，token 级验证器全过 +
-单测 303P/0F + net-api multiset 等负载归因）均已落库（2026-11-09），
-余 = 6b 行为面双跑（静默窗口）→ DC-3 收口
+**状态**: Active——M0 ✅ M1 ✅ M2 ✅，**M3 ✅（2026-11-09，DC-3 ✅）**——
+PyRoute 注册表全量落地（主表 85 行 + SW fetcher 24 行 + script
+fetcher 14 行三分表），各批行为逐字节等价 A/B 复验落证；M4
+（DC-4 下游消费验收）进行中——余 py 池数值门判定 + 四 fixture
+面终验 A/B
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -136,10 +137,10 @@ PyRoute 注册表全量落地（切片五）+ fetcher 闭包三分表 6a SW（24
   **切片六 6b = script fetcher 分表**（闭包链 14 臂 → 14 行表 +
   handler，T9/T10 let-else 头；token 级验证器 A/B 全过 + 单测
   303P/0F（11/14 臂行使钉）+ net-api 全量 multiset changed=1
-  等负载探针环境归因 +
-  [切片六 6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）；
-  余 = 6b 行为面（html-semantics FILTER=the-script-element）双跑
-  （静默窗口）→ DC-3 收口。
+  等负载探针环境归因 + 行为面 html-semantics FILTER=
+  the-script-element 473 行 multiset 空集 +
+  [切片六 6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）——
+  **M3 收口，DC-3 ✅**。
 - **M4**：下游消费验收 + 零回归收口（DC-4）。
 
 ## 依赖约束（run-rules §9）

@@ -108,10 +108,20 @@ fetcher 段：
    注：script fetcher 臂在 net-api 套件不行使（6a 档 §四订正同源），
    本跑为全量回归面守门；臂级行使证据由 §4 单测钉承担。
 5. **行为面（html-semantics FILTER=the-script-element 双跑）**：
-   **待静默窗口补跑**——本轮机器 load>300 并行腿持续，RAF/timing
-   噪声双侧对称不可判，推迟不折损判据（承 6a §四同型协议，6b
-   版按本节 §3 单测钉 + §4 全量守门先行落库，行为面为收口前
-   最后补证项）。
+   **multiset 空集落证**（2026-11-09 续轮）——A = pre-6b 二进制
+   （源态 7f6604ea3 换出构建，`/tmp/zw6bA-runner`，strings 验证无
+   6b 符号）vs B = 本树 make 重建，243 案 473 结果行（含 8 NotRun）
+   per-subtest multiset **changed = 0**；双侧 exit 1（套件既有红案
+   ——delay-load-event assert、load-error-events ReferenceError 等
+   ——逐项双侧全等）。臂行使面覆盖：module/serve-custom-response/
+   not-found/delayed/load-error/referrer-checker/accept-header 全族
+   落在本套件且双侧结果全等。
+   - 过程注记：首批 A 锚（a1/a2 两跑逐字节同）曾与 B 出现 10/20 行
+     漂移——charset 家族 5 案 Timeout + 5 案 F→P；A3 重锚（同
+     corpus、静默窗）后漂移归零，判定 a1/a2 窗口为并行编译腿噪声
+     （机器 load 峰值 >300）非重构差异；教训 = 行为面锚须在无并行
+     噪声窗录制，pgrep -f 轮询勿用自含匹配串（本轮误读「崩溃」
+     实为正常完跑）。
 6. **基线锚漂移归因**（承认领条目，A 锚 vs 切片五锚 +396）：
    http-cache +138（124P/14F 与 30584b1e7 账逐字对上）+
    websockets 面 Pass 741→999 = +258（d19247694..87efb6aa9
