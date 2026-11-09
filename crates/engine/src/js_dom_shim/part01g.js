@@ -38,6 +38,17 @@
         'h4', 'h5', 'h6', 'listing', 'p', 'pre', 'xmp']);
   }
 
+  // Chrome delta（2026-11-10 fb apply 侧包裹刀）：xmp/listing 为 wrap-only 块
+  // ——Chrome formatBlock 不作 single-line container 解包，元素整体保留并入
+  // 新块：`<xmp>[foobar]</xmp>` + <p> 录音 `<p><xmp>[foobar]</xmp></p>`、
+  // + <div> 录音 `<div><xmp>[foo]</xmp></div>`（formatblock.js :633/:1764/
+  // :1774，xmp/listing 十行 compare 全形）；spec unwrap 臂产出 `<p>foobar</p>`
+  // 与录音相悖。unwrap 门豁免、nodeList 收集门单独放行（xmp/listing 非 p
+  // 允许子，spec 判据收不进）。
+  function _zwFbqIsWrapOnlyBlock(node) {
+    return _zwJusIsHtmlElement(node, ['xmp', 'listing']);
+  }
+
   // node 的后代中存在 prohibited paragraph child（getDescendants 不含自身；
   // 手爬 childNodes 栈，spec getDescendants(node).some(isProhibitedParagraphChild)）。
   function _zwFbqHasProhibitedParagraphChildDescendant(node) {
@@ -155,6 +166,7 @@
     var nodeList = _zwJusGetContainedNodes(newRange, function (node) {
       return _zwJusIsEditable(node)
         && (_zwFbqIsNonListSingleLineContainer(node)
+            || _zwFbqIsWrapOnlyBlock(node)
             || _zwJusIsAllowedChild(node, 'p')
             || _zwJusIsHtmlElement(node, ['dd', 'dt']))
         && !_zwFbqHasProhibitedParagraphChildDescendant(node);
@@ -242,7 +254,12 @@
     while (nodeList.length) {
       var sublist;
       // "If the first member of node list is a single-line container: ..."
-      if (_zwIparaIsSingleLineContainer(nodeList[0])) {
+      // Chrome delta（wrap-only 块）：xmp/listing 虽名在 single-line container
+      // 表，Chrome 不解包（语料十行录音元素整体入新块，见 _zwFbqIsWrapOnlyBlock
+      // 注）——unwrap 门豁免，走 else 臂 wrap 单元整体。聚合停止条件仍用全表
+      // （xmp/listing 阻断连续 sibling 并入同一 sublist，单元素独立成块）。
+      if (_zwIparaIsSingleLineContainer(nodeList[0])
+          && !_zwFbqIsWrapOnlyBlock(nodeList[0])) {
         sublist = Array.prototype.slice.call(nodeList[0].childNodes);
         var vals2 = _zwDelRecordValues(sublist);
         // "Remove the first member of node list from its parent, preserving
