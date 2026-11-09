@@ -57,14 +57,25 @@
   **DC-3 ✅ M3 ✅**（首批 A 锚曾现 charset 家族 Timeout 漂移，
   A3 重锚归零 = 并行腿噪声归因，见 6b 档 §四.5 过程注记）。
   [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
+  **M4/DC-4 收口**（2026-11-09 终账）：wss 池门 = covered 101 键 > 0 +
+  实跑批次门 `?wss` 变体子测试 **489/489 Pass = 100%**（net-api A/B
+  双跑双侧同值，超 98.5% 门）；py 池门 = P-A/P-B 两族注册面 + 单测钉
+  + 互指三要素齐备（P-A 端点状态机钉
+  `http_cache_py_endpoint_state_machine_dc4_pa_pool` 本批补齐——经
+  主表注册面端到端 OPTIONS preflight / 缺 uuid falsy 404 /
+  dispatch=test 状态序列 / dispatch=state 取走即清，单测 304P/0F +
+  clippy -D warnings 净）；等价硬门 = 五面 + 行为面 changed 空集
+  （唯一 1 项 xhr/send-timeout P→F 环境归因已探针钉死）+ 头条
+  13,993P ≥ 锚 13,614P 不回落 → **DC-4 ✅，goal 四项 DC 全过收口**。
+  [终账档](evidence/2026-11-09-m4-dc4-final-closure.md)。
 - **卡点**：无。
 - **承接挂账**：真实 trickle 分块延迟（`?count=N&ms=M`）+ fetch
   keepalive 配额池未建模（d8d563e14 `FIXME(runner-net-infra)` 挂入，
   现账面 3P/3F 持平）；47 号 M2 族门 102/102 已过、corpus 门挂本
   goal py 框架交付（M4 承接）。
-- **下一步**：M3 收口完成（2026-11-09）——**M4 余项** = py 池
-  数值门判定（M0 普查清单实数落门）+ 四 fixture 面终验 A/B
-  落证（DC-4 收口）。
+- **下一步**：goal 收口（2026-11-09，DC-1~DC-4 全过，随本批归档
+  archive/）——无余项；承接挂账（trickle 分块延迟 + keepalive 配额
+  池）维持 d8d563e14 FIXME 在案，非本 goal 门。
 
 ## 里程碑状态表
 
@@ -74,7 +85,7 @@
 | M1 TLS 端点 fixture + wss 连通（DC-2 前半） | ✅ 2026-11-08 | [M1 档](evidence/2026-11-08-m1-tls-endpoint.md) |
 | M2 scheme/端点寻址接线（DC-2 收口） | ✅ 2026-11-08 | [M2 档](evidence/2026-11-08-m2-wss-wiring.md) |
 | M3 py 路由框架 + 先例迁移 + 补丁收编（DC-3） | ✅ 2026-11-09（切片一~五：残链清空 + 主表 85 行；切片六：6a SW fetcher 21 臂 + 6b script fetcher 14 臂分表，行为面 multiset 空集收口） | 蓝图 py 普查档 §三 + [切片一档](evidence/2026-11-08-m3-slice1-route-module-extract.md) + [切片二+三档](evidence/2026-11-08-m3-slice2-registry-head12.md)（23 臂态 A/B 双跑空集，含谓词修复） + [切片四档](evidence/2026-11-08-m3-slice4-fetch-es-40arms.md)（40 臂批 A/B 空集 + FF 合流记录） + [切片五档](evidence/2026-11-08-m3-slice5-residual-clear.md)（残链 21 臂清空 + 基线锚重录归因） + [切片六 6a 档](evidence/2026-11-08-m3-slice6-sw-fetcher-registry.md)（SW fetcher 21 臂分表，net-api + SW-core 双 A/B 空集） + [切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)（script fetcher 14 臂分表，token 级 A/B 全过 + 单测 303P/0F + net-api multiset 等负载探针环境归因 + 行为面 473 行 multiset 空集收口） |
-| M4 下游消费验收 + 零回归收口（DC-4） | 进行中（互指记账面 ✅ 2026-11-08：43 号 wss 面入账 + 47/39 号控制面互指；M3 已收口，余 py 池数值门判定 + 四 fixture 面终验 A/B 落证） | 门型见两审计档第四节；互指落点见状态头 M4 段 |
+| M4 下游消费验收 + 零回归收口（DC-4） | ✅ 2026-11-09（wss 池 101 键 covered>0 + 批次门 489/489=100%；py 池 P-A/P-B 注册面 + 单测钉 + 互指齐备；五面 + 行为面 changed 空集 + 头条 13,993P 不回落） | [终账档](evidence/2026-11-09-m4-dc4-final-closure.md)；门型原文见两审计档第四节；互指落点见状态头 M4 段 |
 
 ## 数值门（DC-4，2026-11-08 M0 落定）
 
@@ -87,6 +98,10 @@
 - **py 池**：P-A 三目录池（den 606）+ P-B 判据族框架承接面落地（注册面 +
   单测 ≥1 例/族，下游控制面互指可消费）；迁移案逐字节等价 100% 硬门
   （A/B changed 空集，wss 面显式声明除外）。
+
+**终账（2026-11-09 M4）**：wss 池批次门实测 489/489 Pass = 100%；
+py 池两族三要素（注册面/单测钉/互指）齐备；等价硬门五面 + 行为面
+changed 空集落证——[终账档](evidence/2026-11-09-m4-dc4-final-closure.md) §一/§二/§五。
 
 ## 零回归复验面（DC-2/DC-3/DC-4 共用锚）
 
@@ -101,6 +116,11 @@
 4. S12 cors-preflight-redirect 面；
 5. inspect-headers.py POST 豁免面。
 迁移/接线前后逐 subtest A/B 对照，changed 集为空（wss 池新增案除外）。
+
+**终账（2026-11-09 M4）**：锚 1/3/4/5 A/B 双侧全等（锚 5 现行套件
+0 行——行使案不在拉取面，注册面在主表、普查档迁移 A/B 承证，缺席
+对称）；锚 2 changed=1（xhr/send-timeout-events P→F，等负载受控
+探针 HEAD≡B 环境归因）——[终账档 §三](evidence/2026-11-09-m4-dc4-final-closure.md)。
 
 ## 碰撞管理（run-rules §9）
 
@@ -209,6 +229,12 @@
   A/B multiset 空集（473 行 changed=0）→ **DC-3 收口 + M3 ✅**，
   M4 余项（py 池数值门 + 四 fixture 面终验）转当前工作面。
   证据：[切片六 6b 档](evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)。
+- 2026-11-09 M4/DC-4 收口认领与落库（11:40 条本实例续）：py 池数值门
+  判定 + 四 fixture 面终验落证收口——P-A 端点状态机钉补齐
+  （testharness.rs 单测一处，经主表注册面端到端）+
+  [终账档](evidence/2026-11-09-m4-dc4-final-closure.md) + 控制面数值门/
+  零回归面终账注记 + goal 文档 DC-4 行收口。DC-1~DC-4 全过，goal
+  随本批归档 archive/（相对互指三处同步改写）。
 - 2026-11-08 23:55 切片六 6a 落库（22:49 认领本实例）：SW fetcher 闭包
   链 459 行 → `py_sw_fetch_routes()` 24 行表 + 21 handler（T1-T6 机械
   等价，落穿臂 2 手写尾包裹同形），表设计 in-place 单 suffix 行 ×24

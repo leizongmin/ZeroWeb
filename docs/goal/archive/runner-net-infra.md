@@ -1,6 +1,6 @@
 # runner 网络 fixture 基建 — TLS/wss 端点 + wptserve py 端点 shim 框架化
 
-**版本**: v1.5
+**版本**: v1.6
 **日期**: 2026-11-04（立项，用户拍板——websockets wss 面前置 + py 端点基建打包）；
 2026-11-08 M0 双审计完成（DC-1 ✅）；2026-11-08 M1 完成（DC-2 前半 ✅，
 [M1 档](runner-net-infra/evidence/2026-11-08-m1-tls-endpoint.md)）；
@@ -9,12 +9,12 @@
 [M2 档](runner-net-infra/evidence/2026-11-08-m2-wss-wiring.md)）；
 2026-11-09 **M3 完成（DC-3 ✅）**——fetcher 闭包三分表收口（script
 fetcher 14 臂分表 + 行为面 multiset 空集，
-[6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）
-**状态**: Active——M0 ✅ M1 ✅ M2 ✅，**M3 ✅（2026-11-09，DC-3 ✅）**——
-PyRoute 注册表全量落地（主表 85 行 + SW fetcher 24 行 + script
-fetcher 14 行三分表），各批行为逐字节等价 A/B 复验落证；M4
-（DC-4 下游消费验收）进行中——余 py 池数值门判定 + 四 fixture
-面终验 A/B
+[6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）；
+2026-11-09 **M4 完成（DC-4 ✅）**——wss 池批次门 489/489 = 100% +
+py 池两族三要素齐备 + 五面零回归 + 头条不回落，
+[终账档](runner-net-infra/evidence/2026-11-09-m4-dc4-final-closure.md)
+**状态**: **Done（收口）**——DC-1~DC-4 全落（2026-11-09）；完成日
+2026-11-09，随本批归档 archive/
 **执行模式**: runner 基建专项（fixture 管道）+ 下游 goal 消费验收
 **控制面**: [master.md](runner-net-infra/master.md)
 **父目标**: `docs/goal/zero-web.md`（真实可用浏览器——测试基建面）
@@ -65,7 +65,11 @@ fetcher 14 行三分表），各批行为逐字节等价 A/B 复验落证；M4
   逐字节等价，A/B 复验）；S12 本地补丁收编 + update 脚本缺口清偿。
 - **DC-4（消费验收）**：43 号 websockets wss 面入账（covered > 0）；
   下游 py 目录解锁数达 M0 数值门；四既有 fixture 面 A/B 零回归；
-  头条不回落。
+  头条不回落。——✅ 2026-11-09 终账落证（wss 池 101 键 covered>0 +
+  批次门 489/489 = 100%；py 池 P-A/P-B 注册面 + 单测钉 + 互指齐备；
+  五面 + 行为面 changed 空集，唯一 1 项环境归因探针钉死；头条
+  13,993P ≥ 锚 13,614P），见
+  [终账档](runner-net-infra/evidence/2026-11-09-m4-dc4-final-closure.md)。
 
 **DC-4 数值门决策规则（立项即定）**：解锁子测试数按 M0 普查清单实数
 落门（wss 面 + py 目录两池分列）；框架迁移案逐字节等价为硬门，不设
@@ -141,12 +145,17 @@ fetcher 14 行三分表），各批行为逐字节等价 A/B 复验落证；M4
   the-script-element 473 行 multiset 空集 +
   [切片六 6b 档](runner-net-infra/evidence/2026-11-09-m3-slice6b-script-fetcher-registry.md)）——
   **M3 收口，DC-3 ✅**。
-- **M4**：下游消费验收 + 零回归收口（DC-4）。
+- **M4 ✅**（2026-11-09）：下游消费验收 + 零回归收口（DC-4）——
+  互指记账面（43 号 wss 面入账 + 47/39 号控制面互指，2026-11-08）+
+  py 池数值门判定（P-A 端点状态机钉补齐，单测 304P/0F）+ 四 fixture
+  面终验 A/B 落证（五面 changed 空集 + 头条不回落）——
+  [终账档](runner-net-infra/evidence/2026-11-09-m4-dc4-final-closure.md)。
+  **goal 四项 DC 全过，收口。**
 
 ## 依赖约束（run-rules §9）
 
 - 与 43 号（net-api-compat-v3，已收口归档
-  [archive/net-api-compat-v3.md](archive/net-api-compat-v3.md)）共享
+  [archive/net-api-compat-v3.md](./net-api-compat-v3.md)）共享
   websockets 通道——fixture 接线改动同窗复验其非 wss 面基线零回归；
   43 号 wss 面入账以本 goal DC-2 为前置（两 goal 控制面互指）。
 - ws_host_factory 通道级隔离不变（仅 websockets 用例挂接，CSP/cookies

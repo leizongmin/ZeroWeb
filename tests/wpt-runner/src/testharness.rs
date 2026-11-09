@@ -15450,6 +15450,83 @@ async_test(function(test) {
         assert_eq!(stat(key_pg), "2");
     }
 
+    // P-A 池钉（46 号 DC-4 py 池门「注册面 + 单测 ≥1 例/族」）：http-cache.py
+    // 端点状态机经主表注册面端到端——OPTIONS preflight、缺 uuid falsy 404、
+    // dispatch=test 状态序列（Test-Requests base64 配置 + Server-Request-Count
+    // 递增 + NOTEHDRS 记名）、dispatch=state 取走即清（二次取 null，跨案零泄漏）。
+    #[test]
+    fn http_cache_py_endpoint_state_machine_dc4_pa_pool() {
+        use base64::Engine as _;
+        let handler = wpt_data_fetch_handler(Path::new("/nonexistent-wpt-root")).unwrap();
+        let make_req =
+            |url: &str, method: &str, headers: Vec<(String, String)>| zero_engine::fetch_bridge::FetchRequest {
+                url: url.to_string(),
+                method: method.to_string(),
+                headers,
+                body: None,
+                body_bytes: None,
+                credentials: None,
+                mode: None,
+                redirect: None,
+                cache: None,
+            };
+        fn header_of<'a>(resp: &'a zero_engine::fetch_bridge::FetchResponse, name: &str) -> Option<&'a str> {
+            resp.headers
+                .iter()
+                .find(|(existing, _)| existing.eq_ignore_ascii_case(name))
+                .map(|(_, value)| value.as_str())
+        }
+        let endpoint = "https://wpt.test/fetch/http-cache/resources/http-cache.py";
+        // OPTIONS 先于 uuid 判定 → preflight 固定头组 + 体。
+        let pre = handler(&make_req(endpoint, "OPTIONS", vec![])).unwrap();
+        assert_eq!(pre.status, 200);
+        assert_eq!(pre.body, "Preflight request");
+        assert_eq!(header_of(&pre, "Access-Control-Allow-Methods"), Some("GET"));
+        // 缺/空 uuid → 404（上游 falsy 判定同路径）。
+        let no_uuid = handler(&make_req(endpoint, "GET", vec![])).unwrap();
+        assert_eq!(no_uuid.status, 404);
+        assert_eq!(no_uuid.body, "UUID not found");
+        // dispatch=test：Test-Requests base64 JSON 配置（按发序逐条取 requests[i]），
+        // 两发计数递增 + etag 记名。
+        let config = r#"[
+            {"response_headers":[["etag","pin-etag"]],"response_status":[200,"OK"]},
+            {"response_headers":[["etag","pin-etag-2"]],"response_status":[200,"OK"]}
+        ]"#;
+        let test_requests = base64::engine::general_purpose::STANDARD.encode(config);
+        let uuid = "dc4-pa-pin";
+        let url = format!("{endpoint}?uuid={uuid}");
+        let send_test = |marker: &str| {
+            handler(&make_req(
+                &format!("{url}&dispatch=test"),
+                "GET",
+                vec![
+                    ("Test-Requests".into(), test_requests.clone()),
+                    ("x-pin".into(), marker.into()),
+                ],
+            ))
+            .unwrap()
+        };
+        let first = send_test("a");
+        assert_eq!(first.status, 200);
+        assert_eq!(header_of(&first, "Server-Request-Count"), Some("1"));
+        assert_eq!(header_of(&first, "etag"), Some("pin-etag"));
+        assert_eq!(first.body, uuid); // 缺 response_body → 体 = uuid
+        let second = send_test("b");
+        assert_eq!(header_of(&second, "Server-Request-Count"), Some("2"));
+        assert_eq!(header_of(&second, "etag"), Some("pin-etag-2"));
+        // dispatch=state 取走即清：序列两态 → 二次取 null（跨案零泄漏）。
+        let state_url = format!("{url}&dispatch=state");
+        let state = handler(&make_req(&state_url, "GET", vec![])).unwrap();
+        let states: serde_json::Value = serde_json::from_str(&state.body).unwrap();
+        assert_eq!(states.as_array().map(Vec::len), Some(2));
+        assert_eq!(states[0]["request_method"], "GET");
+        assert_eq!(states[0]["request_headers"]["x-pin"], "a");
+        assert_eq!(states[1]["request_headers"]["x-pin"], "b");
+        assert_eq!(states[0]["response_headers"]["etag"], "pin-etag");
+        let state_again = handler(&make_req(&state_url, "GET", vec![])).unwrap();
+        assert_eq!(state_again.body, "null");
+    }
+
     #[test]
     fn echo_content_escaped_py_handler_round_trips_helper_unescape() {
         // form-submission-0 三族回显端点：POST body 逐字节转义（printable ASCII 与
