@@ -624,3 +624,122 @@ fn test_webview_config_url_auto_loaded_via_builder() {
     let wv_builder = WebViewBuilder::new().url("https://example.com").build();
     assert_eq!(wv_builder.url(), Some("https://example.com"));
 }
+
+// ── s370（html-semantics）声明式 shadow 内容 gBCR 面 ──
+
+/// s370（html-semantics）：closedby-complex shadow 段 16F 勘根钉——engine 纯
+/// pipeline 单测绿（`test_shadow_content_layout_rect_s370`），本测复刻 runner
+/// 全管线（load_html + execute_script）：light 对照 rect 非零、shadow 内容经
+/// zwsh compound 串 rect 非零（红态实证零 rect → clickOn (0,0) → light-dismiss
+/// 误关）。
+#[test]
+fn test_shadow_content_gbcr_webview_s370() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body>\
+                <div id='unrelated'>Unrelated</div>\
+                <div class='testcase'><div id='host'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template></div></div>\
+                </body></html>";
+    wv.load_html(html, None);
+    let out = wv
+        .execute_script(
+            "(function(){\
+               var host = document.querySelector('#host');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var sel = String(pa.__zwSelector || '');\
+               var r = pa.getBoundingClientRect();\
+               var lu = document.querySelector('#unrelated').getBoundingClientRect();\
+               var qs = 'x';\
+               try { qs = String(!!document.querySelector(sel)); } catch (e) { qs = 'THREW:' + e.name; }\
+               return JSON.stringify({ sel: sel, rect: [r.x, r.y, r.width, r.height],\
+                 light: [lu.x, lu.y, lu.width, lu.height], qs: qs });\
+             })()",
+        )
+        .expect("execute_script 应成功");
+    let sel_start = out.find("\"sel\":\"").map(|i| i + 7).expect("sel 字段应存在");
+    let sel_end = out[sel_start..].find('"').expect("sel 闭合") + sel_start;
+    let sel = &out[sel_start..sel_end];
+    assert!(sel.starts_with("zwsh"), "shadow 内容 proxy 应带 compound 串: {out}");
+    // querySelector(zwsh) 现状二态钉：shim 侧无 zwsh 前缀分派（s370 挂账缺口，
+    // SyntaxError）但部分时序下 engine 侧分派命中——缺口修复后收紧为恒 "true"。
+    // 本测主目标 = gBCR rect 面（light 对照 + shadow 非零），qs 仅记录。
+    assert!(
+        out.contains("\"qs\":\"true\"") || out.contains("\"qs\":\"THREW:SyntaxError\""),
+        "querySelector(zwsh) 应为命中或已挂账 SyntaxError 二态之一: {out}"
+    );
+    assert!(!out.contains("\"light\":[0,0,0,0]"), "light 对照 rect 应非零: {out}");
+    assert!(!out.contains("\"rect\":[0,0,0,0]"), "shadow 内容 rect 应非零: {out}");
+}
+
+/// s370（html-semantics）：三层嵌套摊平的 webview 全管线 gBCR 钉——engine 纯管线
+/// 同构单测绿（`test_shadow_nested_flatten_rect_s370`），runner 域跑同构页红态
+/// （zw-probe-a 定谳 popoverA rect 零）。本测分离 runner 侧断点（红 = webview
+/// 执行链缺口：live doc shadow 物化状态 / snapshot 刷新代际）。
+#[test]
+fn test_shadow_nested_flatten_gbcr_webview_s370() {
+    let mut wv = WebView::new(WebViewConfig::default());
+    let html = "<html><body>\
+                <div id='unrelated'>Unrelated</div>\
+                <div class='testcase'>\
+                <div><template shadowrootmode='open'>\
+                <div class='anchorA'>A<slot></slot></div>\
+                </template>\
+                <div id='host2'><template shadowrootmode='open'>\
+                <div class='popoverA' popover style='position: fixed; top: 150px'>Popover 1<slot></slot></div>\
+                </template></div>\
+                </div></div>\
+                </body></html>";
+    wv.load_html(html, None);
+    // 模拟 testharness 生命周期：先注入 DOM（mutations apply → re-render），
+    // 再读 shadow 内容 rect——runner 域跑红态即在此相位（testharness log 注入后）。
+    let _ = wv
+        .execute_script(
+            "(function(){\
+               var d = document.createElement('div');\
+               d.id = 'log';\
+               d.textContent = 'injected';\
+               document.body.appendChild(d);\
+               return 'OK';\
+             })()",
+        )
+        .expect("注入脚本应成功");
+    // runner 同款入口复测：execute_script_with_dom（mutation 收集+应用链）。
+    let out_wd = wv
+        .execute_script_with_dom(
+            "(function(){\
+               var host = document.querySelector('#host2');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var r = pa.getBoundingClientRect();\
+               return JSON.stringify({ rect: [r.x, r.y, r.width, r.height] });\
+             })()",
+        )
+        .expect("with_dom execute 应成功");
+    assert!(
+        !out_wd.contains("[0,0,0,0]"),
+        "with_dom 入口 shadow 内容 rect 应非零: {out_wd}"
+    );
+    let out = wv
+        .execute_script(
+            "(function(){\
+               var host = document.querySelector('#host2');\
+               var sr = host && host.shadowRoot;\
+               var pa = sr ? sr.querySelector('.popoverA') : null;\
+               if (!pa) return 'NO-PA';\
+               var sel = String(pa.__zwSelector || '');\
+               var r = pa.getBoundingClientRect();\
+               var lu = document.querySelector('#unrelated').getBoundingClientRect();\
+               return JSON.stringify({ sel: sel, rect: [r.x, r.y, r.width, r.height],\
+                 light: [lu.x, lu.y, lu.width, lu.height] });\
+             })()",
+        )
+        .expect("execute_script 应成功");
+    assert!(
+        !out.contains("\"rect\":[0,0,0,0]"),
+        "三层嵌套摊平 shadow 内容 rect 应非零: {out}"
+    );
+}
