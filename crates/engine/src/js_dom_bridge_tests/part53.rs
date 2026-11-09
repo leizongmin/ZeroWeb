@@ -918,7 +918,9 @@ fn test_crypto_subtle_okp_m5() {
 // 向量锚定 RFC 5869 §A.1（HKDF-SHA256 IKM 0b×22 → OKM 3cb25f25..865）与
 // PBKDF2-HMAC-SHA256 公开向量（P="password", S="salt", c=1 → 120fb6cf..17b）；
 // 错误矩阵镜像 WPT hkdf/pbkdf2（去连字符 "SHA256"/非摘要 "PBKDF2" 作 hash →
-// NotSupportedError；0 length → resolve 空；44/null/省略/负数 → OperationError）、
+// NotSupportedError；0 length → resolve 空；44/null/省略 → OperationError；
+// 负数/NaN/超 u32 → TypeError——[EnforceRange] 转换失败，derived_bits_length
+// enforceRange 组同语义）、
 // generateKey/failures_bad_algorithm（HMAC hash MD5 → NotSupportedError）、
 // sign_verify/hmac（HMAC 算法名 + ECDSA key → InvalidAccessError，spec sign/verify
 // 公共步骤）。[SecureContext]（spec idl，subtle/CryptoKey 仅安全上下文暴露）：
@@ -1025,7 +1027,7 @@ fn test_crypto_subtle_residual_m6() {
     std::thread::sleep(std::time::Duration::from_millis(500));
     assert_eq!(
         sandbox.execute("String(globalThis.__a.slice().sort())").unwrap().value,
-        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:OperationError,null:OperationError,okm:true,omit:OperationError,zero:0",
+        "dkbad:NotSupportedError,frac:OperationError,hyph:NotSupportedError,nd:NotSupportedError,neg:TypeError,null:OperationError,okm:true,omit:OperationError,zero:0",
         "HKDF 绿路 + hash 注册语义 + length 矩阵（RFC 5869 §A.1 锚定）"
     );
     assert_eq!(
