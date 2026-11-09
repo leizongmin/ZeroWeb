@@ -10134,10 +10134,18 @@ globalThis.GLOBAL = globalThis.GLOBAL || {
 globalThis.__zw_harness_results = [];
 globalThis.__zw_harness_complete = false;
 add_result_callback(function(test) {
-  globalThis.__zw_harness_results.push({
-    name: String(test.name || ''),
-    status: Number(test.status),
-    message: test.message == null ? null : String(test.message)
+  // 用 [[DefineOwnProperty]]（defineProperty）写 own 索引，不走 [[Set]]：
+  // test262 用例会在 Array.prototype 上定义索引 accessor（15.4.4.x-7-c-i 族、
+  // set-length frozen 案），result 回调在用例体执行后才触发，此时 push 命中
+  // 继承 setter 丢值 → 结果数组空洞 → 探针 JSON.stringify 出 null 反序列化失败。
+  var results = globalThis.__zw_harness_results;
+  Object.defineProperty(results, results.length, {
+    value: {
+      name: String(test.name || ''),
+      status: Number(test.status),
+      message: test.message == null ? null : String(test.message)
+    },
+    writable: true, enumerable: true, configurable: true
   });
 });
 add_completion_callback(function() {
@@ -11427,7 +11435,15 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
     // relay flood 期结果数组达数千条，全量重发是 O(R²) 序列化（8632 子测试的
     // pbkdf2 worker 腿均摊每轮数百 KB stringify+parse）。`__ZW_PROBE_SEEN__` 由
     // 调用方按轮内联（避免 format! 对 JS 花括号的转义噪声）。
-    let probe_script = "JSON.stringify({\
+    // probe 包 IIFE：stringify 前暂删 Object.prototype.toJSON、finally 恢复——
+    // test262 no-boolean-toJSON 等用例把 Object.prototype.toJSON 劫持为返回标量，
+    // 探针 JSON.stringify(整体对象) 被调 toJSON 劫持返回 `2`，serde 反序列化失败。
+    // delete 撞 non-configurable 时静默失败回到原行为（单案 Fail，无回归面）。
+    let probe_script = "(function(){\
+             var saved_tojson = Object.prototype.toJSON;\
+             delete Object.prototype.toJSON;\
+             try {\
+               return JSON.stringify({\
              complete:(function(){\
                if (globalThis.__zw_harness_complete) return true;\
                var timers = globalThis.__zw_timers || [];\
@@ -11449,7 +11465,10 @@ fn take_probe(webview: &mut WebView, last_refresh_ver: &mut u64, probe_seen: usi
              due_timer:(globalThis.__zw_timers||[]).length > 0 && (globalThis.__zw_timers||[])[0].at <= Date.now(),\
              test_wait:!!(document.documentElement && document.documentElement.classList\
                && document.documentElement.classList.contains('test-wait')),\
-             commands:(globalThis.__zw_td_queue||[]).splice(0)})";
+             commands:(globalThis.__zw_td_queue||[]).splice(0)});\
+             } finally {\
+               if (typeof saved_tojson === 'function') Object.prototype.toJSON = saved_tojson;\
+             }})()";
     let value = webview
         .execute_script(&probe_script.replacen("__ZW_PROBE_SEEN__", &probe_seen.to_string(), 1))
         .map_err(|error| error.to_string())?;
